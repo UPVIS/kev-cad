@@ -55,7 +55,7 @@ def main() -> None:
         version(5, T0 + 900),
         version(4, T0 + 700),
         version(3, T0 + 500, kennzahlen=None, nachberechnung="V3 ließ sich nicht neu rechnen: NameError"),
-        version(2, T0 + 300, quelle="uebernahme", titel="Vorgeschichte: model.py Stand 2", wer="unbekannt",
+        version(2, T0 + 300, quelle="uebernahme", titel="Übernommener Stand", wer="unbekannt",
                 wer_text="Auto-Lauf"),
         version(1, T0, geerbt=True, zweig="haupt", titel="Erster Stand"),
     ]

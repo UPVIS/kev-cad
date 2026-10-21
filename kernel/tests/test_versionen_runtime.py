@@ -81,8 +81,10 @@ def test_lauf_legt_version_an_mit_kennzahlen_und_bild(env):
     assert v["kennzahlen"]["teile"] == 2 and v["params"] == {"b": 20}
     assert v["kennzahlen"]["fehler"] == 0  # Prüfstand kommt nach dem Lauf dazu
     assert Path(v["bild"]).is_file() and v["bild"].endswith("bilder/1.png")
-    bild_req = next(h for h in app.since(start) if h["type"] == "VERSION_BILD_REQ")
+    _, _, bild_req, bild_nutzlast = app.wait_for(lambda h: h["type"] == "VERSION_BILD_REQ", start=start)
     assert bild_req["nr"] == 1 and {t["teil"] for t in bild_req["teile"]} == {"Platte", "Klotz"}
+    netze = unpack_netze(bild_req["teile"], bild_nutzlast)  # die Netze reisen mit
+    assert all(len(n["triangles"]) > 0 for n in netze)
     assert msg["varianten"][0]["name"] == "Hauptstand" and msg["ungesichert"] is False
     assert warte(lambda: (p / ".kevcad" / "versionen" / "daten" / "1.json").is_file())
     assert len(list((p / ".kevcad" / "versionen" / "geometrie").glob("*.kvg"))) == 2
@@ -200,3 +202,33 @@ def test_meilenstein_varianten_und_app_nachrichten(env):
     app.send({"type": "VERSION_RESTORE", "id": "a-6", "version": "V99"})
     nein = app.wait_for(lambda h: h.get("reply_to") == "a-6", start=start)[2]
     assert nein["ok"] is False and "V99" in nein["message"]
+
+
+def test_uebernahme_und_nachberechnung_im_hintergrund(env):
+    """Alte Stände kommen beim Öffnen ins Archiv; Kennzahlen und Vorschaubild rechnet ein eigener Prozess nach."""
+    rt, app = env["rt"], env["app"]
+    path = env["tmp"] / "Alt"
+    path.mkdir()
+    (path / "model.py").write_text(CODE2)
+    (path / "kevcad.json").write_text('{"inventar_regel": false}\n')
+    alt = path / ".kevcad" / "versions"
+    alt.mkdir(parents=True)
+    (alt / "0001-model.py").write_text(CODE1)
+    (alt / "0002-model.py").write_text(CODE2)
+    start = app.mark()
+    assert rt.project_open(str(path))["ok"]
+    vs = rt.versionen()["versionen"]
+    assert [(v["nr"], v["quelle"]) for v in vs] == [(2, "uebernahme"), (1, "uebernahme")]
+    res = rt.run()
+    assert res["ok"] and res["version"]["nr"] == 2 and res["version"]["neu"] is False
+
+    def nachgerechnet():
+        v1 = next(v for v in rt.versionen()["versionen"] if v["nr"] == 1)
+        return v1["kennzahlen"] is not None and v1["bild"] is not None
+
+    assert warte(nachgerechnet, 180)
+    v1 = next(v for v in rt.versionen()["versionen"] if v["nr"] == 1)
+    assert v1["kennzahlen"]["teile"] == 2 and v1["params"] == {"b": 20}
+    assert any(h["type"] == "VERSION_BILD_REQ" and h["nr"] == 1 for h in app.since(start))
+    assert rt.execute("b")["result"] == "40"  # der Rechenprozess der Laufzeit blieb unberührt
+    assert warte(lambda: rt._ver_rechner is None, 30)  # Hintergrundprozess wieder beendet

@@ -351,7 +351,8 @@ class FakeService:
                 "unveraendert": False, "titel": f"Wiederhergestellt aus {version}",
                 "lauf": {"ok": True, "teile": 3, "pruefung": {"zusammenfassung": ""}}, "ms": 900}
 
-    def versionen_vergleichen(self, a: str, b: str | None = None, zeigen: bool = True, **kw: Any) -> dict[str, Any]:
+    def versionen_vergleichen(self, a: str, b: str | None = None, *, zeigen: bool = True,
+                              **kw: Any) -> dict[str, Any]:
         self._record("versionen_vergleichen", a, b, zeigen)
         return {"ok": True, "a": {"nr": 2, "titel": "Geändert: model.py"}, "b": {"nr": None, "titel": "Aktueller Stand"},
                 "aktuell": b is None, "zusammenfassung": "Teile: 1 geändert",

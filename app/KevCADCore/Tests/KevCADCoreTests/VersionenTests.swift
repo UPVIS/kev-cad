@@ -1,4 +1,5 @@
 import Foundation
+import OCCTSwiftViewport
 import XCTest
 import simd
 
@@ -131,6 +132,22 @@ final class VersionenTests: XCTestCase {
             header: frame.header, payload: frame.payload.dropLast(4))))
         XCTAssertThrowsError(try VersionMessage.decode(type: "VERSION_VERGLEICH", frame: Frame(
             header: frame.header, payload: frame.payload + Data([0, 0, 0, 0]))))
+    }
+
+    func testBildRahmenOhneBodenplatte() {
+        let boden = BoundingBox(min: SIMD3(-10_000, -3000, -5), max: SIMD3(11_000, 3000, 0))
+        let wagen = BoundingBox(min: SIMD3(0, 0, 0), max: SIMD3(610, 410, 250))
+        let ball = BoundingBox(min: SIMD3(700, 0, 0), max: SIMD3(917, 217, 217))
+        let r = AppController.bildRahmen([boden, wagen, ball])
+        XCTAssertEqual(r?.min, SIMD3(0, 0, 0))
+        XCTAssertEqual(r?.max, SIMD3(917, 410, 250))
+        // zwei Bodenplatten (hell und dunkel, wie im Kugelschieber)
+        let dunkel = BoundingBox(min: SIMD3(-3000, -1500, -5), max: SIMD3(3000, 1500, 0))
+        XCTAssertEqual(AppController.bildRahmen([boden, dunkel, wagen, ball])?.max, SIMD3(917, 410, 250))
+        // ohne Ausreißer bleibt alles drin
+        XCTAssertEqual(AppController.bildRahmen([wagen, ball])?.max, SIMD3(917, 410, 250))
+        XCTAssertEqual(AppController.bildRahmen([wagen])?.max, wagen.max)
+        XCTAssertNil(AppController.bildRahmen([]))
     }
 
     func testAnfragenDerApp() throws {

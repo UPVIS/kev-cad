@@ -57,5 +57,5 @@ def test_vergleichen_mit_code(srv):
     assert "Parameter hoehe: 120 → 140" in text and "geändert: Grundplatte (Form" in text and "neu: Deckel" in text
     assert "model.py (+1 −1)" in text and "+hoehe = param(\"hoehe\", 140)" in text
     assert "Geisterkörper" in text
-    assert fake.calls_of("versionen_vergleichen") == [(("V2", None, True), {})]
+    assert fake.calls_of("versionen_vergleichen") == [(("V2", None, True), {})]  # zeigen als Schlüsselwort
     assert "diff" not in res.structured_content["code"]  # der volle Unterschied steht nur im Text

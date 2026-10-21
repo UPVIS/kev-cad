@@ -43,7 +43,7 @@ AGENT_AKTIV_S = 90.0  # Auto-Lauf so kurz nach einem Werkzeug des Agenten zählt
 LISTE_LIMIT = 400
 MAX_GEISTER_DREIECKE = 3_000_000
 SCHATTEN_RUN_BASIS = 1_000_000_000
-NACHRECHNEN_RUHE_S = 12.0  # so lange nach einem Lauf von Kevin oder dem Agenten keine Nachberechnung
+NACHRECHNEN_RUHE_S = 3.0  # so lange nach einem Lauf von Kevin oder dem Agenten keine Nachberechnung
 
 
 class VersionenRuntimeMixin:
@@ -67,6 +67,14 @@ class VersionenRuntimeMixin:
         self._ver_schatten = itertools.count(1)
         self._ver_nachrechnen: threading.Thread | None = None
         self._ver_generation = 0
+        self._ver_rechner = None  # HintergrundRechner für die Nachberechnung (eigener Prozess, bei Bedarf)
+
+    def _versionen_schliessen(self) -> None:
+        """Beim Beenden der Laufzeit: Hintergrund-Rechenprozess beenden."""
+        self._ver_generation += 1
+        rechner, self._ver_rechner = self._ver_rechner, None
+        if rechner is not None:
+            rechner.stop()
 
     def set_agent_session(self, sitzung: str | None) -> None:
         """Vom MCP-Server: Kennung der MCP-Sitzung, die gerade ein Werkzeug aufruft (für „Wer“ einer Version)."""
@@ -296,7 +304,7 @@ class VersionenRuntimeMixin:
         koepfe, nutzlast = pack_netze(eintraege)
         req = {"type": "VERSION_BILD_REQ", "nr": nr, "width": BILD_BREITE, "height": BILD_HOEHE, "view": "iso",
                "teile": koepfe}
-        reply, png, error = self._request(req, 30.0)
+        reply, png, error = self._request(req, 30.0, nutzlast)
         if error or not reply.get("ok") or not png:
             self._log(f"[versionen] Vorschaubild V{nr}: {error or reply.get('message') or 'kein Bild'}")
             return False
@@ -359,8 +367,11 @@ class VersionenRuntimeMixin:
         return {"ok": True, "teile": teile, "bom": final.get("bom"), "params": dict(final.get("params") or {}),
                 "ms": ms}
 
-    def _schatten_lauf(self, archiv: Versionsarchiv, v: Version, timeout_s: float = 300.0) -> dict[str, Any]:
-        """Version ``v`` in einem eigenen Ordner rechnen, ohne die App oder die Szene zu berühren."""
+    def _schatten_lauf(self, archiv: Versionsarchiv, v: Version, timeout_s: float = 300.0,
+                       hintergrund: bool = False) -> dict[str, Any]:
+        """Version ``v`` in einem eigenen Ordner rechnen, ohne die App oder die Szene zu berühren. ``hintergrund``:
+        im eigenen, niedriger priorisierten Prozess (Nachberechnung), sonst im Rechenprozess der Laufzeit zwischen den
+        Läufen (Vergleich: dessen Tessellierungsspeicher macht es schnell)."""
         from kevcad_kernel.runtime import Job
 
         ordner = archiv.ordner / "lauf" / f"{v.nr}-{next(self._ver_schatten)}"
@@ -372,6 +383,21 @@ class VersionenRuntimeMixin:
         except (OSError, GitFehler) as exc:
             shutil.rmtree(ordner, ignore_errors=True)
             return {"ok": False, "error": f"Version V{v.nr} nicht auspackbar: {exc}"}
+        if hintergrund:
+            from kevcad_kernel.project import _read_settings
+            from kevcad_kernel.versionen.hintergrund import HintergrundRechner
+
+            if self._ver_rechner is None:
+                self._ver_rechner = HintergrundRechner(log=self._log)
+            settings, _ = _read_settings(ordner)
+            deviation, angular = self._precision()
+            try:
+                return self._ver_rechner.rechne(
+                    run=SCHATTEN_RUN_BASIS + next(self._ver_schatten), path=str(model), code=code,
+                    inventar_regel=settings.get("inventar_regel", True) is not False, deviation=deviation,
+                    angular=angular, catalog=self._catalog_dirs(), timeout_s=timeout_s)
+            finally:
+                shutil.rmtree(ordner, ignore_errors=True)
         job = Job(kind="schatten", code=code, source="versionen", timeout_s=timeout_s, path=str(model),
                   params={"_text": f"V{v.nr} wird nachgerechnet"})
         self._enqueue(job)
@@ -379,15 +405,15 @@ class VersionenRuntimeMixin:
         shutil.rmtree(ordner, ignore_errors=True)
         return job.result or {"ok": False, "error": "ohne Ergebnis"}
 
-    def _versionen_daten(self, archiv: Versionsarchiv, v: Version, timeout_s: float = 300.0
-                         ) -> tuple[dict[str, Any] | None, dict[str, dict], str | None]:
+    def _versionen_daten(self, archiv: Versionsarchiv, v: Version, timeout_s: float = 300.0,
+                         hintergrund: bool = False) -> tuple[dict[str, Any] | None, dict[str, dict], str | None]:
         """Daten einer Version für den Vergleich: aus dem Zwischenspeicher, sonst neu gerechnet. Rückgabe
         (daten, netze je Formschlüssel aus einem neuen Lauf, Fehlertext)."""
         speicher = self._ver_speicher
         d = speicher.lade_daten(v.nr) if speicher else None
         if d is not None and speicher is not None and speicher.hat_alle_netze(d):
             return d, {}, None
-        res = self._schatten_lauf(archiv, v, timeout_s)
+        res = self._schatten_lauf(archiv, v, timeout_s, hintergrund=hintergrund)
         if not res.get("ok"):
             msg = res.get("error") or "Lauf fehlgeschlagen"
             if res.get("line"):
@@ -426,42 +452,48 @@ class VersionenRuntimeMixin:
     # =================================================================================================================
 
     def _nachrechnen_starten(self, generation: int) -> None:
-        if self._ver_nachrechnen is not None and self._ver_nachrechnen.is_alive():
-            return
+        # ein noch laufender Faden eines früheren Projekts endet von selbst (andere Generation)
         t = threading.Thread(target=self._nachrechnen, args=(generation,), name="kevcad-versionen-nach", daemon=True)
         self._ver_nachrechnen = t
         t.start()
 
     def _ruhig(self) -> bool:
+        """Kein Lauf in der Schlange und der letzte ist ein paar Sekunden her (die Nachberechnung rechnet in einem
+        eigenen Prozess, soll den Live-Aufbau aber nicht ausbremsen)."""
         with self._jobs_cond:
             leer = not self._jobs and self._current is None
-        return leer and self._worker.ready and time.monotonic() - self._ver_aktiv > NACHRECHNEN_RUHE_S
+        return leer and time.monotonic() - self._ver_aktiv > NACHRECHNEN_RUHE_S
 
     def _nachrechnen(self, generation: int) -> None:
         """Fehlende Kennzahlen und Vorschaubilder (übernommene Stände, Versionen aus der Zeit ohne App) nachrechnen,
         neueste zuerst, nur wenn der Kernel sonst nichts zu tun hat."""
         gesendet = time.monotonic()
+        versucht: set[int] = set()  # je Öffnen des Projekts ein Versuch (der Katalog kann sich inzwischen ändern)
         while not self._closed and generation == self._ver_generation:
             archiv = self._archiv
             if archiv is None or not archiv.verfuegbar:
                 return
             offen = None
             for v in archiv.versionen():
+                if v.nr in versucht:
+                    continue
                 m = archiv.meta.get("versionen", {}).get(str(v.nr), {})
-                if m.get("nachberechnung"):
-                    continue  # schon gescheitert
                 if not m.get("kennzahlen") or (not m.get("bild") and self._link.connected):
                     offen = v
                     break
             if offen is None:
                 self._versionen_senden()
+                rechner, self._ver_rechner = self._ver_rechner, None
+                if rechner is not None:
+                    rechner.stop()  # Speicher freigeben, bis wieder etwas nachzurechnen ist
                 return
             while not self._ruhig():
                 if self._closed or generation != self._ver_generation:
                     return
                 time.sleep(0.5)
+            versucht.add(offen.nr)
             try:
-                daten, netze, fehler = self._versionen_daten(archiv, offen)
+                daten, netze, fehler = self._versionen_daten(archiv, offen, hintergrund=True)
                 if generation != self._ver_generation:
                     return
                 if fehler or daten is None:
@@ -469,10 +501,10 @@ class VersionenRuntimeMixin:
                     continue
                 if not archiv.meta_von(offen.nr).get("bild") and self._link.connected:
                     eintraege = self._netze_fuer_bild(daten, netze)
-                    if not self._versionen_bild_netze(archiv, offen.nr, eintraege):
-                        if not self._link.connected:
-                            continue
+                    if not self._versionen_bild_netze(archiv, offen.nr, eintraege) and self._link.connected:
                         archiv.aktualisiere(offen.nr, nachberechnung="Vorschaubild nicht erzeugt")
+                    elif archiv.meta_von(offen.nr).get("nachberechnung"):
+                        archiv.aktualisiere(offen.nr, nachberechnung=None)
             except Exception as exc:  # noqa: BLE001
                 self._log(f"[versionen] Nachberechnung V{offen.nr}: {exc!r}")
                 archiv.aktualisiere(offen.nr, nachberechnung=f"{type(exc).__name__}: {exc}")

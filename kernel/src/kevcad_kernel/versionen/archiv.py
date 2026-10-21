@@ -236,7 +236,7 @@ class Versionsarchiv:
             ts = max(ts, vorher_ts)
             vorher_ts = ts
             wer = {"agent": "agent", "app": "kevin"}.get(quelle or "", "unbekannt")
-            text = nachricht(f"Vorgeschichte: model.py Stand {nr}", nr=nr, wer=wer, quelle="uebernahme",
+            text = nachricht("Übernommener Stand", nr=nr, wer=wer, quelle="uebernahme",
                              zweig=HAUPT).encode("utf-8")
             strom += f"commit refs/heads/{HAUPT}\nmark :{i + 1}\n".encode()
             strom += f"author Kev CAD <kevcad@localhost> {ts} +0000\n".encode()

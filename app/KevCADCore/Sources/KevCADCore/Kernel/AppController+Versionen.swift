@@ -99,23 +99,25 @@ extension AppController: VersionenActions {
     /// gerade im Viewer zu sehen ist) und als SCREENSHOT_RES zurückschicken.
     func answerVersionBild(_ b: VersionBildAnfrage) {
         let w = max(16, min(b.width, 2048)), h = max(16, min(b.height, 2048))
-        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
-        var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+        var boxen: [BoundingBox] = []
         var bodies: [ViewportBody] = []
         for (i, t) in b.teile.enumerated() where t.netz.triangleCount > 0 {
             let n = t.netz
+            var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+            var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
             for v in 0..<n.vertexCount {
                 let p = SIMD3<Float>(n.positions[v * 3], n.positions[v * 3 + 1], n.positions[v * 3 + 2])
                 lo = simd_min(lo, p)
                 hi = simd_max(hi, p)
             }
+            boxen.append(BoundingBox(min: lo, max: hi))
             // Der Offscreen-Renderer erwartet sRGB; die Farben aus model.py sind sRGB
             bodies.append(
                 ViewportBody(
                     id: "bild\u{1F}\(i)", vertexData: Self.interleaved(n), indices: n.triangles, edges: n.edgeLines,
                     color: SIMD4(t.farbe.x, t.farbe.y, t.farbe.z, 1), roughness: 0.55))
         }
-        guard !bodies.isEmpty, lo.x <= hi.x,
+        guard !bodies.isEmpty, let rahmen = Self.bildRahmen(boxen),
             let sv = ViewportCoordinator.standardView(protocolName: b.view)
         else {
             send(
@@ -125,8 +127,7 @@ extension AppController: VersionenActions {
             return
         }
         var camera = sv.cameraState(distance: 1000, orthographicScale: 100)
-        camera = ViewportCoordinator.fitted(camera, to: BoundingBox(min: lo, max: hi), aspect: Float(w) / Float(h),
-                                            padding: 1.05)
+        camera = ViewportCoordinator.fitted(camera, to: rahmen, aspect: Float(w) / Float(h), padding: 1.05)
         let started = CACurrentMediaTime()
         guard
             let r = screenshots.render(
@@ -146,6 +147,24 @@ extension AppController: VersionenActions {
                 replyTo: b.id, ok: true, width: w, height: h, camera: ViewportCoordinator.cameraJSON(camera, height: h),
                 mmPerPx: nil),
             payload: r.png)
+    }
+
+    /// Ausschnitt des Vorschaubilds: alle Teile, aber ohne einzelne Riesen wie eine Bodenplatte, die viel größer ist
+    /// als der ganze Rest (sonst zeigt das kleine Bild nur den Boden).
+    static func bildRahmen(_ boxen: [BoundingBox]) -> BoundingBox? {
+        guard !boxen.isEmpty else { return nil }
+        func vereinigt(_ idx: [Int]) -> BoundingBox? {
+            guard let first = idx.first else { return nil }
+            return idx.dropFirst().reduce(boxen[first]) { $0.union(boxen[$1]) }
+        }
+        let sortiert = Array(boxen.indices).sorted { boxen[$0].diagonalLength > boxen[$1].diagonalLength }
+        // bis zu drei Riesen (etwa helle und dunkle Bodenfliesen) weglassen, wenn jeder viel größer ist als der Rest
+        var weg = 0
+        for k in 1...max(1, min(3, sortiert.count - 1)) where sortiert.count > k {
+            guard let rest = vereinigt(Array(sortiert.dropFirst(k))) else { continue }
+            if sortiert.prefix(k).allSatisfy({ boxen[$0].diagonalLength > 4 * max(rest.diagonalLength, 1) }) { weg = k }
+        }
+        return vereinigt(Array(sortiert.dropFirst(weg)))
     }
 
     // MARK: VersionenActions

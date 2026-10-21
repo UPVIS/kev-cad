@@ -159,7 +159,7 @@ def register_versionen_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         code_zeilen: Annotated[int, Field(ge=0, le=4000, description="Max lines of code diff in the result")] = 150,
     ) -> CallToolResult:
         res = await t.work(f"vergleicht {a} mit {b or 'dem aktuellen Stand'}", svc.versionen_vergleichen, a, b,
-                           zeigen)
+                           zeigen=zeigen)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Vergleich nicht möglich: {err}", res)

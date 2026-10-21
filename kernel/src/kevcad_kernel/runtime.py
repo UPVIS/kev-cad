@@ -534,6 +534,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, VersionenRuntimeMixin)
             cur.final = {"type": "CLOSED"}
             cur.finished.set()
         self._worker.stop(timeout=1.0)
+        self._versionen_schliessen()  # Versionen: Hintergrund-Rechenprozess der Nachberechnung
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -1012,12 +1013,13 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, VersionenRuntimeMixin)
             slot["error"] = message
             slot["event"].set()
 
-    def _request(self, header: dict[str, Any], timeout_s: float) -> tuple[dict[str, Any], bytes, str | None]:
+    def _request(self, header: dict[str, Any], timeout_s: float,
+                 payload: bytes = b"") -> tuple[dict[str, Any], bytes, str | None]:
         rid = f"k-{next(self._ids)}"
         slot: dict[str, Any] = {"event": threading.Event(), "reply": None, "payload": b"", "error": None}
         with self._lock:
             self._pending[rid] = slot
-        if not self._send_app({**header, "id": rid}):
+        if not self._send_app({**header, "id": rid}, payload):
             with self._lock:
                 self._pending.pop(rid, None)
             return {}, b"", APP_NOT_CONNECTED
