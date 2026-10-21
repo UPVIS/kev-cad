@@ -39,24 +39,21 @@ extension StandardViewName {
         }
     }
 
-    /// Tastenbelegung: 1 bis 7 wie in PLAN-MVP.md Abschnitt 9, die drei weiteren Isometrien auf 8, 9, 0.
-    var key: KeyEquivalent {
+    /// Blender-Belegung (Ziffernblock oder Zahlenreihe): 1 vorne, 3 rechts, 7 oben, mit Strg die Gegenseite.
+    var blenderKey: (key: KeyEquivalent, modifiers: EventModifiers)? {
         switch self {
-        case .top: return "1"
-        case .front: return "2"
-        case .right: return "3"
-        case .back: return "4"
-        case .left: return "5"
-        case .bottom: return "6"
-        case .iso: return "7"
-        case .isoFrontLeft: return "8"
-        case .isoBackRight: return "9"
-        case .isoBackLeft: return "0"
+        case .front: return ("1", [])
+        case .back: return ("1", .control)
+        case .right: return ("3", [])
+        case .left: return ("3", .control)
+        case .top: return ("7", [])
+        case .bottom: return ("7", .control)
+        default: return nil
         }
     }
 
-    /// Reihenfolge in Menüs, passend zur Tastenbelegung.
-    static let menuOrder: [StandardViewName] = [.top, .front, .right, .back, .left, .bottom, .iso]
+    /// Reihenfolge in Menüs, passend zur Blender-Belegung.
+    static let menuOrder: [StandardViewName] = [.front, .back, .right, .left, .top, .bottom, .iso]
     static let extraIsoOrder: [StandardViewName] = [.isoFrontLeft, .isoBackRight, .isoBackLeft]
 }
 

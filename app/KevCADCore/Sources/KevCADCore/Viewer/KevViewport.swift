@@ -18,8 +18,14 @@ public struct KevViewport: View {
         ZStack(alignment: .top) {
             MetalViewportView(controller: coordinator.controller, bodies: $coordinator.bodies)
                 .background(MTKViewProbe { [weak c = coordinator] view in c?.attach(view) })
+            // Maus und Trackpad wie in Blender (BlenderNavigation.swift); das Paket bekommt keine Mausereignisse mehr
+            NavigationInputLayer(coordinator: coordinator)
             OverlayCanvas(coordinator: coordinator, viewport: coordinator.controller)
                 .allowsHitTesting(false)
+            AxisGizmo(viewport: coordinator.controller, coordinator: coordinator)
+                .padding(.top, 10)
+                .padding(.trailing, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 }

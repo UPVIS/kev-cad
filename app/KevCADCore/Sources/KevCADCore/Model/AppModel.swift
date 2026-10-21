@@ -152,6 +152,9 @@ public final class AppModel: ObservableObject {
     @Published public var slowMotion = false
     @Published public var triangleCount = 0
     @Published public var log: [LogLine] = []
+    /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
+    @Published public var selectionMode: SelectionMode = .parts
+    @Published public var orthographic = false
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?
@@ -194,4 +197,43 @@ public protocol AppActions: AnyObject {
 @MainActor
 public protocol MeasurementRemoving: AnyObject {
     func removeMeasurement(id: UUID)
+}
+
+// MARK: - Blender-Steuerung
+
+/// Was ein Klick im Viewport auswählt: ganze Teile (wie Blenders Objektmodus) oder einzelne Elemente.
+public enum SelectionMode: String, Sendable, CaseIterable {
+    case parts, elements
+}
+
+/// Ansicht und Auswahl wie in Blender (Ziffernblock bzw. Zahlenreihe, Komma, Pos1, A, H, /, Tab). Implementiert vom
+/// App-Kern; die Oberfläche ruft sie über `model.actions as? NavigationActions` auf.
+@MainActor
+public protocol NavigationActions: AnyObject {
+    /// 1/3/7 (mit Strg die Gegenseite): Blickrichtung wechseln, Drehpunkt und Abstand bleiben, automatisch parallel.
+    func axisView(_ view: StandardViewName)
+    /// 9: Ansicht von der Gegenseite.
+    func viewOpposite()
+    /// 5: Perspektive und Parallelprojektion umschalten.
+    func toggleProjection()
+    /// 4/6/8/2: in 15°-Schritten drehen (Grad um die Z-Achse bzw. nach oben/unten).
+    func orbitStep(yaw: Double, pitch: Double)
+    /// Strg+4/6/8/2: schwenken, Anteil der Bildhöhe.
+    func panStep(x: Double, y: Double)
+    /// + und -: zoomen, positive Schritte vergrößern.
+    func zoomStep(_ steps: Int)
+    /// Komma bzw. Punkt (Ziffernblock): Auswahl zentrieren und einpassen; ohne Auswahl alles.
+    func viewSelected()
+    /// Pos1: alles einpassen.
+    func viewAll()
+    /// A: alles auswählen.
+    func selectAll()
+    /// Strg+I: Auswahl umkehren.
+    func invertSelection()
+    /// Umschalt+H: alles außer der Auswahl ausblenden.
+    func hideUnselected()
+    /// /: lokale Ansicht (nur Auswahl zeigen und einpassen) an und aus.
+    func toggleLocalView()
+    /// Tab: Teile oder Elemente auswählen.
+    func setSelectionMode(_ mode: SelectionMode)
 }

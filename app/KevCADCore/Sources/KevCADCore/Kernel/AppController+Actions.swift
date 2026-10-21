@@ -34,7 +34,9 @@ extension AppController {
 
     private func projectReply(_ result: Result<KernelMessage, RequestError>, action: String) {
         switch result {
-        case .success(.project): break  // schon in handle(_:) übernommen
+        case .success(.project):
+            // schon in handle(_:) übernommen; nach einem Update gleich rechnen, damit die Teile wieder da sind
+            if pendingRestore != nil { runModel() }
         case .success(let m): log(.warning, "Projekt \(action): unerwartete Antwort \(m.typeName)")
         case .failure(let e): log(.error, "Projekt \(action) fehlgeschlagen: \(e.message)")
         }
@@ -165,7 +167,24 @@ extension AppController {
 
     public func clearMeasurements() {
         model.measurements = []
+        // Auch die Maße, die der Agent mit measure(show=True) eingeblendet hat (kommen zusätzlich als Anmerkung)
+        removeDimensionAnnotations(matching: nil)
         refreshOverlay()
+    }
+
+    /// Eingeblendete Maße (Anmerkungen der Art dimension) entfernen: alle oder nur die mit diesen Endpunkten.
+    func removeDimensionAnnotations(matching points: [SIMD3<Float>]?) {
+        annotations.removeAll { ann in
+            guard case .dimension(let a, let b, _, _) = ann.item else { return false }
+            guard let points, points.count >= 2 else { return true }
+            return Self.samePair(a, b, points[0], points[1])
+        }
+    }
+
+    static func samePair(_ a: SIMD3<Float>, _ b: SIMD3<Float>, _ c: SIMD3<Float>, _ d: SIMD3<Float>) -> Bool {
+        let eps: Float = 1e-3
+        return (simd_distance(a, c) < eps && simd_distance(b, d) < eps)
+            || (simd_distance(a, d) < eps && simd_distance(b, c) < eps)
     }
 
     // MARK: Einstellungen
@@ -240,6 +259,9 @@ extension AppController {
 // Ergänzung der Oberfläche (AP4, MeasurementRemoving in AppModel.swift): eine einzelne Messung löschen.
 extension AppController: MeasurementRemoving {
     public func removeMeasurement(id: UUID) {
+        if let m = model.measurements.first(where: { $0.id == id }) {
+            removeDimensionAnnotations(matching: m.points)
+        }
         model.measurements.removeAll { $0.id == id }
         refreshOverlay()
     }
@@ -364,6 +386,12 @@ extension AppController {
             switch kind {
             case "dimension":
                 guard pts.count >= 2 else { return (false, "Maß braucht zwei Punkte") }
+                // Gehört das Maß zu einer Messung, die schon in der Liste steht, nicht doppelt zeichnen
+                if model.measurements.contains(where: {
+                    $0.points.count >= 2 && Self.samePair($0.points[0], $0.points[1], pts[0], pts[1])
+                }) {
+                    return (true, id)
+                }
                 let t = text.isEmpty ? "\(GermanFormat.mm(Double(simd_distance(pts[0], pts[1]))))" : text
                 item = .dimension(a: pts[0], b: pts[1], text: t, color: Self.annotationColor)
             case "arrow":
