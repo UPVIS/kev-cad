@@ -1,13 +1,9 @@
-# 3D-Druckteile konstruieren (Bambu Lab P2S, FDM)
-
-> **Kevins Drucker ist ein Bambu Lab P1P** (am 21.10.2026 bestätigt): gleicher Bauraum (256³ mm) und gleiche Düse
-> wie der P2S, für den dieses Regelwerk zuerst geschrieben wurde, aber **offen, ohne Gehäuse und Kammer**. Die
-> Umstellung auf P1P-Werte läuft. Bis dahin: bei Kammerangaben den Wert für „offen“ nehmen, ABS, ASA, PC und PA nur
-> mit Einhausung empfehlen, sonst PLA oder PETG.
+# 3D-Druckteile konstruieren (Bambu Lab P1P, FDM)
 
 Zusatz zum Skill `kev-cad`. Gilt für jedes neue Druckteil (`lager.druckteil(form, name, material)`). Zuerst nach
 diesen Regeln konstruieren, dann prüfen lassen (`pruefe_druckteil`, Abschnitt 15) und die Hinweise abarbeiten.
-Standard: Düse 0,4 mm, Schicht 0,2 mm, PETG. Zahlen mit Quelle in eckigen Klammern (Liste am Ende);
+Kevins Drucker: **Bambu Lab P1P** (offen, ohne Gehäuse), Düse 0,4 mm, Schicht 0,2 mm; Standardfilament
+„Amazon Basics PLA“, sonst PETG. Zahlen mit Quelle in eckigen Klammern (Liste am Ende);
 **EW** = Erfahrungswert, nicht direkt belegt, bewusst vorsichtig. Die Daten stehen auch maschinenlesbar in
 `kevcad_kernel/druck/regeln.py`.
 
@@ -15,15 +11,18 @@ Standard: Düse 0,4 mm, Schicht 0,2 mm, PETG. Zahlen mit Quelle in eckigen Klamm
 
 | Größe | Wert |
 |---|---|
-| Bauraum | 256 × 256 × 256 mm [B-FAQ]; 5 mm Rand für Brim lassen, mit AMS kommt ein Prime Tower 35 mm dazu [BS-P] |
-| Düse | 0,4 mm gehärteter Stahl (auch CF-Filamente); 0,2/0,6/0,8 möglich [B-FAQ, BS-P] |
+| Bauraum | 256 × 256 mm, Druckhöhe **250 mm** laut Profil (Datenblatt 256³) [BS-M, B-P1P]; vorne links 18 × 28 mm gesperrt [BS-M]; 5 mm Rand für Brim, mit AMS dazu Prime Tower 35 mm [BS-P] |
+| Bauart | **offener Rahmen, kein Gehäuse, keine Kammer**; Einhausung als P1P Enclosure Kit nachrüstbar [B-P1P, B-Kit] |
+| Düse | 0,4 mm **Edelstahl**, 0,2/0,6/0,8 optional; CF/GF-Filamente brauchen eine gehärtete Düse (HRC 40) [B-P1P, BS-M, BS-F] |
 | Linienbreite | außen 0,42, innen und Füllung 0,45, erste Schicht 0,50 mm [BS-P] |
 | Schichthöhe | 0,20 Standard, 0,08–0,28; erste Schicht 0,20 [BS-P] |
-| Profil „0.20 Standard“ | 2 Wände, 5 Deck- (≥ 1 mm) und 3 Bodenschichten, 15 % Grid, Stützen aus, Brim 5 mm [BS-P] |
-| Stützenschwelle | 30° vom Waagrechten bei 0,20 mm (15° bei 0,08 … 35° bei 0,24) = Überhang bis 60° von der Senkrechten [BS-P] |
+| Profil „0.20mm Standard @BBL P1P“ | 2 Wände, 5 Deck- (≥ 1 mm) und 3 Bodenschichten, 15 % Grid, Stützen aus, Brim 5 mm, „Dünne Wände erkennen“ aus [BS-P] |
+| Stützenschwelle | 30° vom Waagrechten bei 0,20 mm (15° bei 0,08 … 40° bei 0,28) = Überhang bis 60° von der Senkrechten [BS-P] |
 | Elefantenfuß-Ausgleich | 0,15 mm im Profil [BS-P] |
-| Temperaturen | Düse bis 300 °C, Bett bis 110 °C; Kammer geschlossen, **nicht aktiv beheizt** (passiv ca. 50 °C) [B-FAQ, CK-P2S] |
-| AMS | AMS 2 Pro (Combo), AMS HT, AMS 1. Gen.; kein AMS Hub [B-FAQ] |
+| Temperaturen | Düse bis 300 °C, Bett bis **100 °C** [B-P1P] |
+| Kühlung | Bauteillüfter; Zusatzlüfter nur optional (Enclosure Kit) [B-P1P, BS-M] |
+| Materialien | ideal: PLA, PETG, TPU, PVA, PET; „capable“: PA, PC, ABS, ASA; CF/GF „not recommended“ [B-P1P]. Bambu-Wiki für offene Drucker: ABS, ASA, PC, PA „Not Recommended“ [B-Fil] |
+| AMS | nur Zubehör: AMS, AMS 2 Pro (mit Upgrade-Kit) oder AMS HT, bis 4 Einheiten [B-AMS]; ohne AMS Farbwechsel von Hand |
 
 Überhangwinkel in dieser Datei immer **von der Senkrechten**: 0° = Wand, 90° = waagrechte Unterseite.
 
@@ -44,19 +43,20 @@ Wandstärke = Vielfaches der Linienbreite. Bambu rechnet den Bahnabstand als Bre
 | Bohrung | Ø ≥ 2 mm [H-Info]; unter 1 mm setzt sie zu [X] – kleine Bohrungen nachbohren |
 | waagrechte Platte | ≥ 3 Schichten (0,6 mm); 1 Schicht hält nicht |
 | Z-Maße | Vielfache der Schichthöhe (0,2): Absätze, Taschentiefen, Plattendicken; sonst rundet der Slicer um bis zu 0,1 mm |
-| Toleranz Dienstleister | ±0,5 %, mindestens ±0,5 mm [H-Info, X]; der P2S schafft eng konstruiert ca. ±0,1–0,2 mm (EW) |
+| Toleranz Dienstleister | ±0,5 %, mindestens ±0,5 mm [H-Info, X]; der P1P schafft eng konstruiert ca. ±0,1–0,2 mm (EW) |
 
 ## 3 Ausrichtung und Festigkeit
 
 Ein FDM-Teil ist in Schichtrichtung (Z) am schwächsten. Beim Konstruieren schon festlegen, wie es auf dem Bett liegt.
+Werte für **offen** gedruckt (wie auf dem P1P), soweit gemessen:
 
 | Material | Zug in Z / in XY | Quelle |
 |---|---|---|
 | PLA | 31 / 63 MPa ≈ 50 % (45° geneigt: 40 MPa) | [CK-45] |
-| PETG | ≈ 39 % | [CK-45] |
-| ABS | 54 % offen, 59 % passiv geschlossen (wie P2S), 75 % mit 65 °C Kammer | [CK-Kammer] |
-| ASA | ≈ 38 % | [CK-45] |
-| PC | ≈ 68 % | [CK-45] |
+| PETG | ≈ 39 %; offen bei kühler Umgebung eher weniger | [CK-45, B-Fil] |
+| ABS | **54 % offen** (geschlossen 59 %, 65 °C Kammer 75 %) | [CK-Kammer] |
+| PC (Blend) | **65 % offen** (geschlossen 72 %, 65 °C Kammer 77 %) | [CK-Kammer] |
+| ASA | ≈ 38 % (Messung nicht offen; offen eher weniger) | [CK-45] |
 
 - Hauptlast (Zug, Biegung, Hebel, Haken, Laschen) in die Schichtebene legen; Haken und Stifte flach statt stehend.
 - Wände bringen mehr Festigkeit als Füllung: Funktionsteile mit 3–4 Wänden und 20–40 % Füllung drucken [HR, CK-Grad].
@@ -98,15 +98,16 @@ So kommt man ohne Stützen aus:
 | Material | Verzug | Schwund linear | kritisch ab Auflagelänge (EW) |
 |---|---|---|---|
 | PLA, PLA-CF, TPU | kaum | 0,2–0,3 % (EW) | – |
-| PETG | gering, „does not shrink or warp“ [P-PETG] | ca. 0,4 % (EW) | 200 mm |
-| ASA | mittel, weniger als ABS [P-ASA] | 0,4–0,6 % [RJG] | 100 mm |
-| ABS | stark [P-ABS] | 0,5–0,7 % [RJG], FDM bis 1–2 % [P-ABS] | 80 mm |
-| PC | stark [P-PC] | 0,8 % [RJG] | 80 mm |
-| PA | stark, CF-Typen deutlich weniger [P-PA] | 0,5–2 % [RJG] | 80 mm (PA-CF 150) |
+| PETG | gering, „does not shrink or warp“ [P-PETG] | ca. 0,4 % (EW) | 180 mm |
+| ASA | offen stark (weniger als ABS [P-ASA]) | 0,4–0,6 % [RJG] | 60 mm, nur mit Einhausung |
+| ABS | offen sehr stark [P-ABS, B-Fil] | 0,5–0,7 % [RJG], FDM bis 1–2 % [P-ABS] | 50 mm, nur mit Einhausung |
+| PC | offen sehr stark [P-PC, B-Fil] | 0,8 % [RJG] | 40 mm, nur mit Einhausung |
+| PA | offen stark, CF-Typen deutlich weniger [P-PA] | 0,5–2 % [RJG] | 50 mm (PA-CF 100), nur mit Einhausung |
 
 Gegen Verzug: Ecken der Grundfläche mit R ≥ 4 mm, Bodenfase ca. 0,3 mm [HR]; Mouse Ears (Scheiben Ø 10–15 mm,
-0,4 mm hoch) oder Brim 5–10 mm; große Flächen in Rippen auflösen; bei PC weniger Füllung [P-PC]. Auf dem P2S Bett
-10 min vorheizen und Tür zu, weil die Kammer nicht aktiv heizt. Bambu skaliert Schwund nicht (100 %) [BS-F, B-Shr].
+0,4 mm hoch) oder Brim 5–10 mm; große Flächen in Rippen auflösen; bei PC weniger Füllung [P-PC]. Der P1P ist offen:
+Zugluft vermeiden, Bett vorheizen; ABS, ASA, PC und PA nur mit Einhausung (Enclosure Kit oder Druckbox), sonst PLA
+oder PETG [B-Fil]. Die Längen sind für offenen Bauraum geschätzt (EW). Bambu skaliert Schwund nicht (100 %) [BS-F, B-Shr].
 
 ## 6 Bohrungen, Passungen, Spiele
 
@@ -223,40 +224,56 @@ Bettseite tief vertieft (≥ 0,6) und gespiegelt lesbar planen; der Elefantenfu�
 
 ## 11 Materialien
 
-| Material | Düse / Bett (P2S-Profil) | Kammer | Trocknen | AMS | Besonderheit |
+Werte aus den P1P-Profilen in Kevins Bambu Studio [BS-F]; Kammer gibt es keine.
+
+| Material | Düse / Bett (P1P-Profil) | Auf dem offenen P1P | Trocknen | AMS (Zubehör) | Besonderheit |
 |---|---|---|---|---|---|
-| PLA | 220 / 55 °C | Deckel ab Bett 45 °C öffnen | 55 °C 8 h | ja | weich ab ca. 55 °C |
-| PLA-CF | 230 / 55 °C | wie PLA | 55 °C 8 h | ja | steif, spröde |
-| PETG | 250 / 70 °C | geschlossen (Lagenhaftung) | 65 °C 12 h | ja | zäh, gut für Clips |
-| ABS | 270 / 90 °C | zu, vorheizen | 80 °C 8 h | ja | Verzug, Lagentrennung |
-| ASA | 270 / 100 °C | zu, vorheizen | 80 °C 8 h | ja | UV-fest, für draußen |
-| PC | 280 / 100 °C | zu, vorheizen | 80 °C 8 h, Pflicht | ja | starker Verzug |
-| PA / PA-CF | 275–290 / 100 °C, Klebestift | zu, vorheizen | 80 °C 8–12 h, Pflicht | AMS HT | Maße ändern sich mit Feuchte |
-| TPU 95A | 230 / 35 °C | offen | 70 °C 8 h, Pflicht | **nein** | siehe unten |
+| PLA (Kevin: Amazon Basics PLA) | **205 / 47 °C** (Bambu PLA Basic: 220 / 65 °C) | ideal | 55 °C 8 h | ja | weich ab ca. 55 °C |
+| PETG | 255 / 80 °C Texturplatte (70 °C Eng.-Platte) | geht; Zugluft meiden, Lagenhaftung offen etwas geringer [B-Fil] | 65 °C 12 h | ja | zäh, gut für Clips |
+| TPU 95A | 230 / 45 °C | ideal | 70 °C 8 h, Pflicht | **nein** | siehe unten |
+| PLA-CF | 230 / 65 °C | nur mit gehärteter Düse (HRC 40) | 55 °C 8 h | ja | steif, spröde |
+| ABS | 270 / 100 °C | **nur mit Einhausung** | 80 °C 8 h | ja | Verzug, Lagentrennung |
+| ASA | 260 / 100 °C | **nur mit Einhausung** | 80 °C 8 h | ja | UV-fest, für draußen |
+| PC | 280 / 100 °C (P1P-Maximum, empfohlen 100–120) | **nur mit Einhausung** | 80 °C 8 h, Pflicht | ja | starker Verzug |
+| PA / PA-CF | 260 / 290 °C, Bett 100 °C, Klebestift | **nur mit Einhausung**, PA-CF zusätzlich gehärtete Düse | 80 °C 8–12 h, Pflicht | trocken, PA-CF nur Bambu | Maße ändern sich mit Feuchte |
 
-Quellen [BS-F, B-Fil, P-…]. Harzdruck (Standardharz) kann der P2S nicht; die Prüfung rechnet dafür nur grob.
+Quellen [BS-F, KEV-PLA, B-P1P, B-Fil]. Die Prüfung warnt bei ABS, ASA, PC und PA auf dem offenen P1P und bei
+CF-Filamenten ohne gehärtete Düse. **Harzdruck gibt es nicht** (kein Harzdrucker; die Prüfung meldet einen Fehler).
 
-**TPU 95A:** Bambu druckt TPU ab 85A [B-TPU]. Nicht über AMS 2 Pro oder AMS 1; nur AMS HT mit eigenem TPU-Ausgang oder
-externe Spule („TPU for AMS“ ist die Ausnahme) [B-TPU]. Max. 3,6 mm³/s (ca. 40 mm/s), Flow-Dynamics-Kalibrierung aus,
-Lagerung unter 20 % rF [BS-F, B-TPU]. Konstruktiv: keine Brücken und Überhänge [P-Flex], Wand ≥ 1,2 mm, Passungen mit
-0,3–0,5 mm Spiel (EW); Teil so legen, dass nichts überhängt.
+**Kevins Amazon Basics PLA** erbt „Bambu PLA Basic @BBL P1P“ und ändert nur Düse (205 °C, max. 210) und Bett (47 °C)
+[KEV-PLA]. Für die Konstruktion gelten die PLA-Regeln unverändert: Überhang 60°, Brücke 30 mm (EW), Schwund ca. 0,3 %.
+Die niedrigere Düsentemperatur hilft eher bei Überhängen und Brücken, die Lagenhaftung ist eher etwas geringer (EW).
 
-## 12 Mehrfarbe mit dem AMS
+**TPU 95A:** Bambu druckt TPU ab 85A [B-TPU]. Nicht über AMS oder AMS 2 Pro; nur AMS HT mit eigenem TPU-Ausgang oder
+externe Spule – beim P1P ohne AMS der Normalfall („TPU for AMS“ ist die Ausnahme) [B-TPU]. Max. 3,6 mm³/s
+(ca. 40 mm/s), Flow-Dynamics-Kalibrierung aus, Lagerung unter 20 % rF [BS-F, B-TPU]. Konstruktiv: keine Brücken und
+Überhänge [P-Flex], Wand ≥ 1,2 mm, Passungen mit 0,3–0,5 mm Spiel (EW); Teil so legen, dass nichts überhängt.
 
+## 12 Mehrfarbe
+
+Der P1P hat ab Werk kein AMS; es ist Zubehör (AMS, AMS 2 Pro mit Upgrade-Kit oder AMS HT) [B-P1P, B-AMS].
+
+- Ohne AMS: Farbwechsel von Hand an einer Schichtgrenze (Pause im Bambu-Studio-Schichtregler einfügen) – lohnt nur
+  für wenige Wechsel, z. B. erhabene Schrift oben.
 - Farbwechsel passieren schichtweise: Farbgrenzen in Z aufs Schichtraster legen; farbige Bereiche ≥ 2 Bahnen breit
   (0,9 mm) und ≥ 2 Schichten hoch (EW).
-- Prime Tower ist an (35 mm breit) und wächst bis zum letzten Farbwechsel [BS-P, B-PT]. Wechsel nach unten legen spart:
-  im Bambu-Beispiel 14,8 → 9,1 g Turm [B-Waste]. Spülen ins Innere/Füllung möglich, Spülfaktor 0,8–0,9 [B-Waste].
+- Mit AMS: Prime Tower ist an (35 mm breit) und wächst bis zum letzten Farbwechsel [BS-P, B-PT]. Wechsel nach unten
+  legen spart: im Bambu-Beispiel 14,8 → 9,1 g Turm [B-Waste]. Spülen ins Innere/Füllung möglich, Spülfaktor 0,8–0,9
+  [B-Waste].
 - Günstigste Mehrfarbe: Schrift oder Logo erhaben (0,6 mm) auf der Oberseite – nur die obersten Schichten wechseln.
 - In model.py je Farbe ein eigener Körper (eigenes `show`/`druckteil`), im Slicer dem Filament zuordnen.
 
 ## 13 Druckeinstellungen, die zur Konstruktion gehören
 
-- Funktionsteile: 3–4 Wände (1,2–1,6 mm), 20–40 % Füllung (Gyroid), statt Standard 2 Wände / 15 % [BS-P, HR].
+- Funktionsteile: 3–4 Wände (1,2–1,6 mm), 20–40 % Füllung (Gyroid), statt Standard 2 Wände / 15 % [BS-P, HR]. Das
+  P1P-Profil „0.20mm Strength“ nimmt 6 Wände und 25 % Füllung [BS-P].
 - Dünnwandige Teile bestehen nur aus Wänden: Wandstärke = Vielfaches der Bahnbreite (Abschnitt 2).
-- Feinere Schicht (0,12–0,16) für steilere Überhänge und feine Details, gröbere (0,24) für große, einfache Teile.
+- Feinere Schicht (0,12–0,16) für steilere Überhänge und feine Details, gröbere (0,24–0,28) für große, einfache Teile
+  (Stützenschwelle im Profil 20–40° je nach Schicht) [BS-P].
 - Lochkompensation einmal kalibrieren [B-XY]; Elefantenfuß-Ausgleich 0,15 bleibt an.
-- ABS/ASA/PC/PA: trocknen, vorheizen, Brim; PETG/PLA: Bett sauber, ohne Brim.
+- Ohne Zusatzlüfter kühlt der P1P Brücken und Überhänge nur mit dem Bauteillüfter: lange Brücken lieber vermeiden und
+  mit einem Testdruck prüfen (EW).
+- PLA/PETG: Bett sauber, ohne Brim. ABS/ASA/PC/PA nur in einer Einhausung: trocknen, vorheizen, Brim.
 
 ## 14 Rezepte (build123d)
 
@@ -432,7 +449,8 @@ Höhe, Schichten, Abmessungen, Bauraum-Ausnutzung, Masse voll, Laufzeit) und `dr
 
 | `art` | prüft |
 |---|---|
-| `bauraum` | passt in 256³ mit Rand, notfalls diagonal; sonst Fehler mit Teilungsvorschlag |
+| `bauraum` | passt in 256 × 256 × 250 mit Rand und frei vom Sperrbereich, notfalls diagonal; sonst Fehler mit Teilungsvorschlag |
+| `material` | Harzdruck (Fehler), ABS/ASA/PC/PA ohne Einhausung, CF-Filament ohne gehärtete Düse (Warnung) |
 | `auflage` | Auflage < 25 mm², Kante/Punkt, schlanke Teile |
 | `ueberhang` | Flächen steiler als die Materialgrenze, nicht auf dem Bett (schmale ≤ 1 mm ausgenommen) |
 | `bruecke`, `kragarm`, `freie_unterseite` | waagrechte Unterseiten: Spannweite in einer Brückenrichtung, frei auskragend, ohne Halt |
@@ -446,13 +464,18 @@ Höhe, Schichten, Abmessungen, Bauraum-Ausnutzung, Masse voll, Laufzeit) und `dr
 
 ## Quellen
 
-- [B-FAQ] Bambu Lab Wiki, P2S FAQ – https://wiki.bambulab.com/en/p2s/manual/p2s-faq
-- [BS-P], [BS-F] Bambu Studio, Prozess- und Filamentprofile P2S – https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL
+- [B-P1P] Bambu Lab, P1P Technical Specifications – https://public-cdn.bambulab.com/store/bambulab-P1P-tech-specs.pdf
+- [B-Kit] Bambu Lab Wiki, P1P Enclosure Kit – https://wiki.bambulab.com/en/p1/manual/p1p-to-p1s
+- [B-AMS] Bambu Lab Store, AMS 2 Pro (an X1/P1 mit Buffer/Hub, bis 4 AMS) – https://us.store.bambulab.com/products/ams-2-pro
+- [BS-M], [BS-P], [BS-F] Bambu Studio, Profile „Bambu Lab P1P 0.4 nozzle“, „0.20mm Standard @BBL P1P“ und Filamente
+  „@BBL P1P“ – installiert unter `~/Library/Application Support/BambuStudio/system/BBL/`, gleich im Repo
+  https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL
+- [KEV-PLA] Kevins Bambu-Studio-Filament „Amazon Basics PLA“ (`~/Library/Application Support/BambuStudio/user/…/filament/`)
 - [BS-Cut] Bambu Studio, Schnittwerkzeug (GLGizmoAdvancedCut) – https://github.com/bambulab/BambuStudio/tree/master/src
 - [BS-Flow] Bambu Studio, Flow.cpp – https://github.com/bambulab/BambuStudio/blob/master/src/libslic3r/Flow.cpp
 - [B-Shr] Bambu Lab Wiki, 3D Prints Shrinkage – https://wiki.bambulab.com/en/knowledge-sharing/3d-prints-shrinkage
 - [B-XY] Bambu Lab Wiki, XY Hole/Contour Compensation – https://wiki.bambulab.com/en/software/bambu-studio/xy-hole-contour-compensation
-- [B-Fil] Bambu Lab Wiki, Filament Guide – https://wiki.bambulab.com/en/general/filament-guide-material-table
+- [B-Fil] Bambu Lab Wiki, Filament Guide (Tabelle offene/geschlossene Drucker) – https://wiki.bambulab.com/en/general/filament-guide-material-table
 - [B-TPU] Bambu Lab Wiki, TPU Printing Guide – https://wiki.bambulab.com/en/knowledge-sharing/tpu-printing-guide
 - [B-PT] Bambu Lab Wiki, Prime Tower – https://wiki.bambulab.com/en/software/bambu-studio/parameter/prime-tower
 - [B-Waste] Bambu Lab Wiki, Reduce Waste – https://wiki.bambulab.com/en/software/bambu-studio/reduce-wasting-during-filament-change
@@ -477,7 +500,6 @@ Höhe, Schichten, Abmessungen, Bauraum-Ausnutzung, Masse voll, Laufzeit) und `dr
 - [CK-45] CNC Kitchen, Stop printing flat – https://www.cnckitchen.com/blog/stop-printing-flat-the-45-secret-for-stronger-parts
 - [CK-Kammer] CNC Kitchen, Does a heated chamber make prints stronger? – https://www.cnckitchen.com/blog/does-a-heated-chamber-make-your-3d-prints-stronger
 - [CK-Grad] CNC Kitchen, Gradient infill – https://www.cnckitchen.com/blog/gradient-infill-for-3d-prints
-- [CK-P2S] CNC Kitchen, Bambu Lab P2S review – https://www.cnckitchen.com/blog/bambu-lab-p2s-review
 - [BAY] Bayer MaterialScience, Snap-Fit Joints for Plastics – https://cdn.sparkfun.com/assets/home_page_posts/1/4/1/0/Plastic_Snap_fit_design.pdf
 - [MH] MatterHackers, Living hinge design – https://www.matterhackers.com/news/living-hinge:--design-guidelines-and-material-selection
 - [W] Würth, DINO Kapitel 9 – https://www.wuerth-industrie.com/web/media/de/pictures/wuerthindustrie/technikportal/dinokapitel/Kapitel_09_DINO_techn_Teil.pdf
