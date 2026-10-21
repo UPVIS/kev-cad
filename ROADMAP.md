@@ -12,6 +12,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | 4 | Foto und Video als Referenz (Object Capture, Foto mit Live-Differenz, Abweichung) | [PLAN-PHASE4-REFERENZ.md](PLAN-PHASE4-REFERENZ.md) | geplant, startet nach Phase 2 parallel zu Phase 3 |
 | 5 | Kamerasimulation (Sensor, Objektiv, Blick durch die Kamera, Kamerabild) und Animation (Bewegen, Rollen, Gelenke, Kollision, Video) | [PLAN-PHASE5-KAMERA-ANIMATION.md](PLAN-PHASE5-KAMERA-ANIMATION.md) | in Arbeit (zwei Stränge parallel, auf Basis von `phase2`) |
 | – | 3D-Druck-Konstruktionsregeln und Druckprüfung | – | in Arbeit (eigener Strang) |
+| – | Zwangsbedingungen wie in CAD-Programmen: auf, konzentrisch, bündig, Abstand, Winkel, Gelenke mit Freiheitsgraden, Maß- und Parameterbedingungen, Löser und Prüfung | [PLAN-BEDINGUNGEN.md](PLAN-BEDINGUNGEN.md) | in Arbeit (eigener Strang) |
 | – | Prüfung jeder Konstruktion: Durchdringung, Schweben, Standsicherheit, Einbaubarkeit (Montagereihenfolge, Werkzeugzugang), Mehrfachansichten zur Bildanalyse | – | in Arbeit (eigener Strang auf Basis von `phase2`) |
 | – | Vermessung mit wenigen Bildern, Video-Rekonstruktion (Vorarbeit Phase 4) | PLAN-PHASE4-REFERENZ.md | in Arbeit (zwei Stränge) |
 | 6 | Datenblätter und Zeichnungen als PDF, Drucken | PLAN-MVP.md Abschnitt 15 | offen |

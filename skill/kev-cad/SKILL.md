@@ -36,6 +36,21 @@ nur melden:
 - Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
   daran.
 
+## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
+
+Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück, nicht an frei gewählten Koordinaten:
+
+- **Lage aus dem Gegenstück ableiten:** Position aus der Bezugsfläche oder Achse des tragenden Teils berechnen (Oberkante,
+  Bohrungsmitte, Bezugspunkt aus dem Katalog), etwa `z_rahmen = rolle.bounding_box().max.Z`, nie dieselbe Zahl zweimal
+  von Hand.
+- **Maße als Beziehungen:** abgeleitete Maße aus Parametern rechnen (`innen = aussen - 2 * wand`), Parameter mit
+  sinnvollen Grenzen versehen und im Code prüfen (`assert wand >= 1.2`).
+- **Verbindungen benennen:** Was auf was sitzt, was konzentrisch ist und welches Spiel gilt, steht als Kommentar oder
+  Prüfzeile im Code, damit es nach Änderungen weiter stimmt.
+- **Gelenke** (Klappe, Rad, Schieber) mit Achse und Weg festlegen; die Prüfung gilt über den ganzen Weg.
+- Kev CAD bekommt dafür feste Bedingungen mit Löser und Prüfung (`PLAN-BEDINGUNGEN.md`); bis dahin gilt diese Regel von
+  Hand.
+
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
