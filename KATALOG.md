@@ -134,3 +134,64 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
   `3d-druck` oder `harzdruck`. Stücklistenzeile `art: "druckteil"` mit Masse und Filamentkosten.
 - Ist die Inventar-Regel an, ist jedes gezeigte Teil ohne `verbauen`/`druckteil` ein Verstoß (Skizzen aus `execute`
   ausgenommen).
+
+## Zukaufteil (Phase 3)
+
+Fertig gekaufte Teile mit Hersteller und Nummer: Schubladenauszug, Scharnier, Rolle, Rollwagen, Kamera-Zubehör. Sie
+liegen in der Projekt-Ebene (`<projekt>/katalog.json`) oder, wenn Kevin sie in mehreren Projekten nutzt, im eigenen
+Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist nicht weitergegeben werden).
+
+```json
+{
+  "id": "alutec-05200",
+  "art": "zukaufteil",
+  "name": "ALUTEC Transportroller 05200",
+  "hersteller": "ALUTEC",
+  "mpn": "05200",
+  "gtin": "4005187052009",
+  "url": "https://www.beispiel-shop.de/p/alutec-05200",
+  "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
+  "preis": {"je_stueck": 24.99, "waehrung": "EUR", "brutto": true, "stand": "2026-10-21",
+            "quelle": "https://www.beispiel-shop.de/p/alutec-05200"},
+  "masse": {"l": 610, "b": 410, "h": 128},
+  "gewicht": 1800,
+  "material": "polypropylen",
+  "cad": {"quelle": "download", "datei": "zukauf/alutec-05200/05200.step", "lizenz": "Herstellerbedingungen",
+          "stand": "2026-10-21"},
+  "ersatz": {"form": "quader", "masse": {"l": 610, "b": 410, "h": 128}},
+  "einbaupunkt": {"pos": [0, 0, 0], "richtung": [0, 0, 1], "hinweis": "Mitte der Aufstandsfläche, Z nach oben"},
+  "bezugspunkte": {"oben": {"pos": [0, 0, 128], "richtung": [0, 0, 1], "hinweis": "Ladefläche"}},
+  "status": "vorgeschlagen",
+  "hinweis": "Maße aus dem Shop, Höhe gemessen"
+}
+```
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `hersteller`, `mpn` | ja (außer bei reinen Shop-Artikeln ohne MPN, dann `shop_nr`) | Hersteller und Herstellernummer |
+| `gtin` | nein | EAN/GTIN, 8 bis 14 Ziffern |
+| `url`, `bild` | nein | Produktseite und Bild |
+| `preis` | nein | `je_stueck`, `waehrung`, `brutto` (bool, wie im Shop angegeben), `stand` (Datum), `quelle` |
+| `masse` | ja | Hüllmaße in mm (`l`, `b`, `h` bzw. `d`, `l`); Grundlage für den Ersatzkörper und die Prüfung des Imports |
+| `gewicht` | nein | g; sonst aus Volumen × Dichte des Materials |
+| `material` | nein | `id` eines Materials, für Farbe und Masse |
+| `cad` | nein | `quelle` (`traceparts` \| `hersteller` \| `download` \| `bd_warehouse` \| `skript` \| `keins`), `datei` (relativ zum Ordner der Katalogdatei) oder bei `skript` `modul`/`datei` plus `funktion` wie bei den Kameras, `lizenz`, `stand`, optional `traceparts_id` |
+| `ersatz` | nein | `form` (`quader` \| `zylinder`) und `masse`; gilt, solange kein CAD da ist. Im Viewer halbtransparent, im Namen „(vereinfacht)“ |
+| `einbaupunkt` | nein | Ursprung und Ausrichtung des Teils in seinen lokalen Koordinaten (Standard: Mitte der Unterseite, Z oben) |
+| `bezugspunkte` | nein | benannte Punkte mit `pos`, `richtung`, `hinweis` im lokalen System, wie bei Kameras und Kamera-Zubehör |
+
+Inventar-Regel: Ein Zukaufteil aus dem Dialog „Zukaufteil hinzufügen …“ in der App legt Kevin selbst an, es ist sofort
+`frei`. Legt Claude es über MCP an, ist es `vorgeschlagen`, bis Kevin es im Lagerkatalog freigibt. Kameras, Objektive und
+Kamera-Zubehör (`art` `kamera`, `objektiv`, `kamerazubehoer`) sind Sonderformen von Zukaufteilen mit eigenen Feldern
+und folgen denselben Regeln.
+
+In model.py:
+
+```python
+wagen = lager.zukauf("alutec-05200")                       # nach id, sonst lager.zukauf(mpn="05200", hersteller="ALUTEC")
+rw = wagen.verbauen("Rollwagen")                           # Part am Einbaupunkt; Hersteller-CAD oder Ersatzkörper
+show(Pos(0, 0, 0) * rw, "Rollwagen")
+oben = wagen.bezugspunkt("oben")                           # Location für das Platzieren anderer Teile
+```
+
+Stücklistenzeile `art: "zukaufteil"` mit Hersteller, Nummer, Stückpreis mit Datum, Link und CAD-Quelle.
