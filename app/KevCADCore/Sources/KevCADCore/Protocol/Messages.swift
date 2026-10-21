@@ -509,6 +509,8 @@ public enum KernelMessage: Sendable {
     case bom(BOMMessage)
     /// Phase 2: Lagerkatalog auf CATALOG_REQ.
     case catalog(CatalogMessage)
+    /// Phase 5: Animation (ANIM_DEF, ANIM_REMOVE, ANIM_COLLISIONS, ANIM_PLAY, ANIM_SEEK, ANIM_VIDEO_REQ).
+    case animation(AnimationMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -532,6 +534,7 @@ public enum KernelMessage: Sendable {
         case .error: return "ERROR"
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
+        case .animation(let a): return a.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -546,6 +549,7 @@ public enum KernelMessage: Sendable {
         case .error(let m): return m.replyTo
         case .bom(let m): return m.replyTo
         case .catalog(let m): return m.replyTo
+        case .animation(let m): return m.replyTo
         default: return nil
         }
     }
@@ -577,6 +581,7 @@ public enum KernelMessage: Sendable {
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
+        case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

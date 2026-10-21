@@ -16,13 +16,15 @@ Vorgabewert, ``show`` und ``step`` werden ignoriert.
 - ``param(name, default, min=None, max=None)``: benannter Parameter in mm; Vorgabe oder Wert aus ``run(params=...)``.
 - ``lager``: Lagerteile aus dem Katalog verbauen (``lager.teil(...).verbauen(...)``) und 3D-Druckteile kennzeichnen
   (``lager.druckteil(...)``), siehe ``kevcad.lager``. Mit Inventar-Regel muss jedes gezeigte Teil daher stammen.
+- ``animation(dauer, fps, name)``: Animation mit Spuren auf gezeigten Teilen (bewege, drehe, pfad, rolle, folge,
+  gelenk, sichtbar, ansicht), siehe ``kevcad.bewegung``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["show", "step", "param", "lager"]
+__all__ = ["show", "step", "param", "lager", "animation"]
 
 _hooks: dict[str, Any] = {}
 
@@ -52,3 +54,4 @@ def param(name: str, default: float, min: float | None = None, max: float | None
 
 
 from kevcad import lager  # noqa: E402 - braucht _hooks
+from kevcad.bewegung import animation  # noqa: E402 - braucht _hooks

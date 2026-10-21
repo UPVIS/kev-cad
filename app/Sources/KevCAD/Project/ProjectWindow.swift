@@ -49,6 +49,7 @@ struct ProjectWindow: View {
             GeometryReader { geo in
                 VStack(spacing: 0) {
                     ViewportArea(model: model, state: state)
+                    AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
                     if state.showBOM {
                         PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
                         BOMPanel(model: model, state: state)

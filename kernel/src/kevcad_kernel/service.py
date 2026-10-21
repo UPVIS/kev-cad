@@ -144,6 +144,27 @@ class KernelService(Protocol):
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
 
+    # Phase 5: Animation (siehe PROTOCOL.md, Abschnitt „Phase 5: Animation“; umgesetzt in anim_runtime.py)
+    def animation_list(self) -> dict[str, Any]:
+        """{"ok", "animationen": [{"name", "dauer", "fps", "bilder", "teile", "kamerafahrt", "spuren", "standard",
+        "warnungen"?, "kollisionen"?}], "stand": {"name", "zeit", "bild", "spielt", …} | None}"""
+
+    def animation_play(self, name: str | None = None, an: bool = True, schleife: bool = False,
+                       geschwindigkeit: float = 1.0, von_vorn: bool = False) -> dict[str, Any]:
+        """Abspielen oder anhalten in der App. {"ok", "name", "an", "schleife", "dauer"}"""
+
+    def animation_seek(self, zeit: float, name: str | None = None) -> dict[str, Any]:
+        """Zur Zeit springen (s). {"ok", "name", "zeit", "bild"}"""
+
+    def animation_video(self, name: str | None = None, breite: int = 1920, hoehe: int | None = None,
+                        fps: float | None = None, kamera: str | None = None, format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        """Video aus der App nach <projekt>/output/animationen/. {"ok", "path", "width", "height", "fps", "bilder",
+        "ms"}; ``kamera`` vorerst nur None (Viewer-Kamera bzw. Kamerafahrt aus anim.ansicht)."""
+
+    def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
+        """Kollisionen an jedem ``schritt``-ten Bild. {"ok", "name", "kollisionen": [{"teile", "von", "bis", "zeit",
+        "bild", "tiefe", "volumen", "ort"}], "geprueft": {…}}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

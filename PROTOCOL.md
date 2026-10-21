@@ -224,3 +224,49 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
+
+## Phase 5: Animation
+
+Rein additiv (Strang ANI, PLAN-PHASE5-KAMERA-ANIMATION.md A1–A4); ältere Gegenseiten ignorieren die neuen Typen.
+Animationen entstehen in model.py (`animation(...)`, siehe `kernel/src/kevcad/bewegung.py`); der Kernel wertet sie nach
+dem Lauf aus (`kevcad_kernel/animation.py`) und schickt sie nach `RUN_END` und `BOM`. Beim Verbinden kommen alle
+Animationen des letzten Laufs nach `BOM` mit. `RUN_END`-Ergebnisse für MCP tragen `animationen` (Zusammenfassung).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `ANIM_DEF` | `run`, `name`, `dauer` (s), `fps`, `bilder` (N = round(dauer · fps) + 1, Bild k bei min(k / fps, dauer)), `teile` (P bewegte Teile), `kamera` (bool, Kamerafahrt dabei), `sichtbar` (Liste `{"teile": [...], "zeiten": [[t, an], ...]}`), `standard` (bool, erste Animation des Laufs), `warnungen`, `spuren` | float32 LE: N × P × 12, dann bei `kamera` N × 7 |
+| `ANIM_REMOVE` | `name` | – |
+| `ANIM_COLLISIONS` | `name`, `run`, `kollisionen` (siehe unten), `geprueft` (`paare`, `bilder`, `schritt`, `geprueft_bilder`, `exakt`, `symmetrisch`, `ms`, …), optional `reply_to` | – |
+| `ANIM_PLAY` | `id`, `name`, `an` (bool), `schleife`, `geschwindigkeit` (1 = Echtzeit), `von_vorn` | App antwortet `ACK` |
+| `ANIM_SEEK` | `id`, `name`, `zeit` (s; hält an) | App antwortet `ACK` |
+| `ANIM_VIDEO_REQ` | `id`, `name`, `width`, `height`, `fps`, `kamera` (null = Viewer-Kamera bzw. Kamerafahrt; reserviert für „Kamera/<name>“), `format` (`mp4` = H.264 \| `prores` = ProRes 422), `path` (absolute Zieldatei, `<projekt>/output/animationen/<name>.mp4`) | App antwortet `ANIM_VIDEO_RES` |
+
+Nutzlast von `ANIM_DEF`:
+
+- Matrizen: je Bild, je Teil (Reihenfolge `teile`) 12 Werte = die oberen drei Zeilen der 4 × 4-Lage **spaltenweise**
+  (`m00 m10 m20  m01 m11 m21  m02 m12 m22  m03 m13 m23`, wie `transform` an PART_UPSERT). Die Lage bildet die Ruhelage
+  aus model.py auf die Lage im Bild ab (Welt = Lage · Punkte des Teils). Teile ohne Eintrag stehen still.
+- Kamerafahrt (nur bei `kamera: true`): je Bild `Lage x y z`, `Ziel x y z`, `Bildwinkel` (vertikal, Grad; 0 = unverändert).
+- Sichtbarkeit: ein Teil in `sichtbar` gilt zur Zeit t nach dem letzten Eintrag mit Zeit ≤ t; vor dem ersten Eintrag gilt
+  das Gegenteil des ersten. Teile ohne Eintrag bleiben, wie sie sind.
+
+`kollisionen[i]` (je Teilpaar und zusammenhängender Zeitspanne der geprüften Bilder):
+
+```json
+{"teile": ["Bowlingball", "Pfosten"], "von": 5.1, "bis": 5.6, "zeit": 5.4, "bild": 162, "tiefe": 12.5,
+ "volumen": 830.0, "ort": [1500.0, -340.0, 100.0], "bilder": [153, 156, 159, 162, 165, 168]}
+```
+
+`zeit`/`bild`: stärkste Durchdringung; `tiefe` (mm): kleinste Ausdehnung des Schnittkörpers (Näherung der
+Eindringtiefe); `volumen` mm³; `ort` Mitte des Schnittkörpers in Weltkoordinaten. Berührungen (Volumen unter 0,5 mm³ oder
+Dicke unter 0,05 mm) und Paare aus `anim.erlaube(...)` zählen nicht.
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `ANIM_STATE` | `name`, `zeit`, `bild`, `spielt`, `schleife`, `geschwindigkeit` (bei Abspielen, Anhalten, Springen, nicht je Bild) | – |
+| `ANIM_COLLISIONS_REQ` | `id`, `name`, `schritt` (jedes n-te Bild, Vorgabe 3) | `ANIM_COLLISIONS` mit `reply_to` |
+| `ANIM_VIDEO_RES` | `reply_to`, `ok`, `path`, `frames`, `ms`, `message`, `kamera` | – |

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import kevcad_kernel
+from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
@@ -78,13 +79,14 @@ class Job:
     steps: list[str] = field(default_factory=list)
     started: float = 0.0
     cancelled: str | None = None  # Grund, wenn der Lauf nicht mehr zählt (anderes Projekt geöffnet)
+    animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
 
     @property
     def key(self) -> tuple[str, str, str]:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime:
+class KernelRuntime(AnimationRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
@@ -571,6 +573,7 @@ class KernelRuntime:
             if not same:
                 for rec in self.scene.clear():
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
+                self._anim_project_changed()
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -758,6 +761,7 @@ class KernelRuntime:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            self._anim_publish(job, result)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -876,6 +880,9 @@ class KernelRuntime:
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+        elif kind == "ANIM":
+            if header.get("run") == job.run:
+                job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
@@ -921,6 +928,7 @@ class KernelRuntime:
                 bom = self._bom
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            self._anim_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -993,7 +1001,7 @@ class KernelRuntime:
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1023,6 +1031,8 @@ class KernelRuntime:
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE"):
             self._pool.submit(self._handle_app_request, header)
+        elif self._anim_app_message(kind, header):
+            pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
 
