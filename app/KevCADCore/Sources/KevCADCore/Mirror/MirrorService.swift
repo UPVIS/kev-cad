@@ -44,6 +44,7 @@ public final class MirrorService {
     private var lastCameraFlush: CFTimeInterval = 0
     private var cancellables = Set<AnyCancellable>()
     private var unknownTypes = Set<String>()
+    private var aspectTimer: Timer?
     private let packQueue = DispatchQueue(label: "de.upvis.kevcad.mirror.netze", qos: .utility)
     private static let cacheLimitBytes = 96 << 20
 
@@ -86,11 +87,25 @@ public final class MirrorService {
     public func start() throws {
         try server.start()
         controller.log(.info, "Spiegel lauscht auf \(server.path) (Epoche \(epoche))")
+        // Seitenverhältnis der Ansicht (kamera.aspect) ändert sich mit der Fenstergröße, ohne dass die Kamera sich rührt
+        aspectTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.connections.isEmpty else { return }
+                self.flushCamera()
+            }
+        }
     }
 
     public func stop() {
+        aspectTimer?.invalidate()
+        aspectTimer = nil
         server.stop()
         connections = [:]
+    }
+
+    /// Kamerastand mit dem Seitenverhältnis der Ansicht am Mac.
+    private var currentCamera: MirrorCamera {
+        MirrorCamera(controller.viewport.camera, aspect: controller.viewport.aspectRatio)
     }
 
     // MARK: Hooks aus dem AppController
@@ -314,7 +329,7 @@ public final class MirrorService {
         if watchers.isEmpty { sentState = state } else if sentState == nil { sentState = state }
         // Ein neuer Zuschauer bekommt den Stand, auf den sich alle folgenden Änderungen beziehen
         let full = sentState ?? state
-        let cam = MirrorCamera(controller.viewport.camera)
+        let cam = currentCamera
         for id in waiting {
             for page in pages { server.send(page, to: [id]) }
             var s = full
@@ -418,7 +433,7 @@ public final class MirrorService {
         lastCameraFlush = t0
         let watchers = watcherIDs
         guard !watchers.isEmpty else { return }
-        let cam = MirrorCamera(controller.viewport.camera)
+        let cam = currentCamera
         guard cam != sentCamera else { return }
         sentCamera = cam
         var source = MirrorSource.mac
@@ -435,7 +450,7 @@ public final class MirrorService {
         let c = controller
         let scene = c.scene
         var s = MirrorViewState()
-        s.kamera = MirrorCamera(c.viewport.camera)
+        s.kamera = currentCamera
         s.auswahl = MirrorSelection(run: scene.latestRun, refs: scene.selection.map(\.string))
         s.verborgen = scene.order.filter { !scene.isVisible($0) }
         s.isoliert = scene.isolated
@@ -608,6 +623,24 @@ public final class MirrorService {
             }
             pendingSource = .iphone
             c.setDisplayStyle(style)
+
+        case .einpassen?:
+            // Wie Pos1 (alles) bzw. „.“ (die genannten Teile), mit den Rändern und der Projektion des Macs
+            cameraSource = (.iphone, CACurrentMediaTime() + 1.0)
+            if cmd.args["refs"]?.arrayValue == nil {
+                c.viewAll()
+            } else {
+                let (known, missing) = scene.expand(cmd.refs.compactMap(ElementRef.init))
+                if let b = scene.worldBounds(of: known), !known.isEmpty {
+                    c.viewport.fit(b, animated: true)
+                    if !missing.isEmpty { fehler = "Nicht gefunden: \(missing.joined(separator: ", "))" }
+                } else if cmd.refs.isEmpty {
+                    c.viewAll()
+                } else {
+                    ok = false
+                    fehler = "Unbekannte Referenz: \(missing.joined(separator: ", "))"
+                }
+            }
 
         case nil:
             ok = false

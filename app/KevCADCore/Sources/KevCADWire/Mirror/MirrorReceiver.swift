@@ -49,7 +49,10 @@ public struct MirrorReceiver: Sendable {
     private var pages: [Int: [MirrorPart]] = [:]
     private var pageKey: (epoche: String, run: Int, seiten: Int)?
     private var assembler = MeshAssembler()
-    private var requested = Set<String>()
+    /// Angeforderte Netze und wann (für das Wiederholen nach etwa 10 s).
+    private var requested: [String: Date] = [:]
+    /// Nach so vielen Sekunden ohne Antwort darf ein MESH_REQ wiederholt werden (MIRROR.md).
+    public static let meshRetrySeconds: TimeInterval = 10
 
     public init() {}
 
@@ -67,28 +70,30 @@ public struct MirrorReceiver: Sendable {
         hasScene && state != nil && parts.allSatisfy { meshes[$0.hash] != nil }
     }
 
-    /// Hashes der Teile ohne Netz (ohne die schon angeforderten).
-    public var missingMeshes: [String] {
+    /// Hashes der Teile ohne Netz (ohne die angeforderten, die noch keine `meshRetrySeconds` alt sind).
+    public func missingMeshes(now: Date = Date()) -> [String] {
         var seen = Set<String>()
         var out: [String] = []
-        for p in parts where meshes[p.hash] == nil && !requested.contains(p.hash) && seen.insert(p.hash).inserted {
+        for p in parts where meshes[p.hash] == nil && seen.insert(p.hash).inserted {
+            if let at = requested[p.hash], now.timeIntervalSince(at) < Self.meshRetrySeconds { continue }
             out.append(p.hash)
         }
         return out
     }
 
-    /// MESH_REQ für die fehlenden Netze (merkt sie als angefordert) oder nil, wenn nichts fehlt.
-    public mutating func takeMeshRequest() -> MirrorMeshRequest? {
-        let missing = missingMeshes
+    /// MESH_REQ für die fehlenden Netze (merkt sie als angefordert) oder nil, wenn nichts fehlt. Bleibt eine Anfrage
+    /// länger als `meshRetrySeconds` unbeantwortet, kommt der Hash wieder mit.
+    public mutating func takeMeshRequest(now: Date = Date()) -> MirrorMeshRequest? {
+        let missing = missingMeshes(now: now)
         guard !missing.isEmpty else { return nil }
-        requested.formUnion(missing)
+        for h in missing { requested[h] = now }
         return MirrorMeshRequest(hashes: missing)
     }
 
     /// Netz von außen einsetzen (z. B. aus einem Plattenspeicher nach Hash).
     public mutating func insertMesh(hash: String, raw: Data) {
         meshes[hash] = raw
-        requested.remove(hash)
+        requested[hash] = nil
     }
 
     public mutating func removeMesh(hash: String) { meshes[hash] = nil }
@@ -96,7 +101,7 @@ public struct MirrorReceiver: Sendable {
     /// Nach dem Trennen: halbe Netze und Anforderungen vergessen (der volle Stand kommt nach dem nächsten WATCH neu).
     public mutating func connectionLost() {
         assembler.reset()
-        requested = []
+        requested = [:]
         pages = [:]
         pageKey = nil
     }
@@ -160,13 +165,15 @@ public struct MirrorReceiver: Sendable {
             }
 
         case .mesh(let block, let payload):
+            // Wiederholte Anfrage: Blöcke eines schon vollständigen Netzes verwerfen
+            guard meshes[block.hash] == nil else { return [.ignored("Netz \(block.hash) ist schon vollständig")] }
             do {
                 guard let done = try assembler.add(block, payload: payload) else { return [] }
                 meshes[done.hash] = done.raw
-                requested.remove(done.hash)
+                requested[done.hash] = nil
                 return [.meshReady(done.hash)]
             } catch {
-                requested.remove(block.hash)
+                requested[block.hash] = nil
                 return [.meshRejected(hash: block.hash, reason: "\(error)")]
             }
 
@@ -224,7 +231,7 @@ public struct MirrorReceiver: Sendable {
         pageKey = nil
         bbox = nil
         assembler.reset()
-        requested = []
+        requested = [:]
         return [.epochChanged(old: old, new: e)]
     }
 }

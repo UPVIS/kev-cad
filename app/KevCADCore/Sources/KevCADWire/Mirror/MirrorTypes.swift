@@ -279,10 +279,12 @@ public struct MirrorCamera: Codable, Equatable, Sendable {
     public var ortho: Bool
     /// Sichtbare Höhe in mm bei Parallelprojektion.
     public var orthoScale: Float
+    /// Optional: Breite / Höhe der Ansicht am Mac (damit zeigt das iPhone beim Mitfolgen denselben Ausschnitt).
+    public var aspect: Float?
 
     public init(
         rotation: [Float] = [0, 0, 0, 1], pivot: [Float] = [0, 0, 0], distance: Float = 400, fov: Float = 45,
-        ortho: Bool = false, orthoScale: Float = 100
+        ortho: Bool = false, orthoScale: Float = 100, aspect: Float? = nil
     ) {
         self.rotation = rotation
         self.pivot = pivot
@@ -290,10 +292,11 @@ public struct MirrorCamera: Codable, Equatable, Sendable {
         self.fov = fov
         self.ortho = ortho
         self.orthoScale = orthoScale
+        self.aspect = aspect
     }
 
     enum CodingKeys: String, CodingKey {
-        case rotation, pivot, distance, fov, ortho
+        case rotation, pivot, distance, fov, ortho, aspect
         case orthoScale = "ortho_scale"
     }
 
@@ -307,6 +310,7 @@ public struct MirrorCamera: Codable, Equatable, Sendable {
         fov = (try? c.decodeIfPresent(Float.self, forKey: .fov)) ?? 45
         ortho = (try? c.decodeIfPresent(Bool.self, forKey: .ortho)) ?? false
         orthoScale = (try? c.decodeIfPresent(Float.self, forKey: .orthoScale)) ?? 100
+        aspect = try? c.decodeIfPresent(Float.self, forKey: .aspect)
     }
 }
 

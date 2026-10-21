@@ -46,7 +46,7 @@ def build() -> tuple[dict[str, bytes], dict[str, Any]]:
     lo, hi = bbox["min"], bbox["max"]
     pivot = [round((a + b) / 2, 3) for a, b in zip(lo, hi)]
     kamera = {"rotation": look_from((1.0, -1.2, 0.8)), "pivot": pivot, "distance": 2152.6, "fov": 45.0,
-              "ortho": False, "ortho_scale": 1614.4}
+              "ortho": False, "ortho_scale": 1614.4, "aspect": 1.6}
     agents = [
         {"session_id": SESSION_A, "aktiv": True, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "führt model.py aus",
          "zuletzt": "2026-10-21T22:05:12Z"},
@@ -129,6 +129,8 @@ def build() -> tuple[dict[str, bytes], dict[str, Any]]:
     add("cmd_sichtbarkeit.bin", {"type": "CMD", "id": "i-43", "op": "sichtbarkeit",
                                  "args": {"mode": "isolate", "refs": ["Gestell"]}}, "zustand", 6,
         op="sichtbarkeit", id="i-43")
+    add("cmd_einpassen.bin", {"type": "CMD", "id": "i-45", "op": "einpassen", "args": {"refs": ["Deckel"]}},
+        "zustand", 7, op="einpassen", id="i-45", refs=["Deckel"])
     add("cmd_res.bin", {"type": "CMD_RES", "reply_to": "i-42", "ok": True, "fehler": None}, "zustand", 15,
         reply_to="i-42", ok=True)
     add("cmd_res_fehler.bin", {"type": "CMD_RES", "reply_to": "i-44", "ok": False,

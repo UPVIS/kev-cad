@@ -1,7 +1,7 @@
 """Spiegel-Simulator (MIRROR.md, Version 1): bietet einen Spiegel-Socket an wie die Kev-CAD-App, ohne App und Kernel.
 
 Spielt eine Kernel-Aufzeichnung (`.kcadrec`, siehe samples/mirror-recordings/README.md) als Live-Aufbau mit
-Zeitverhalten ab, beantwortet HELLO, WATCH, UNWATCH, MESH_REQ und CMD wie die App (eigener Zustand, Wirkung als
+Zeitverhalten ab, beantwortet HELLO, WATCH, UNWATCH, MESH_REQ (auch wiederholt) und CMD (auch `einpassen`) wie die App (eigener Zustand, Wirkung als
 STATE_DELTA bzw. CAMERA mit `quelle: "iphone"` an alle) und kann Kamerafahrten, Auswahlwechsel und einen Neustart mit
 neuer Epoche auslösen. Je Verbindung eine Sendewarteschlange mit dem Vorrang aus MIRROR.md (zustand > kamera
 latest-only ≤ 40/s > szene > netz, Netzblöcke einzeln nacheinander).
@@ -303,7 +303,7 @@ class MirrorSim:
     def __init__(self, socket_path: str, recording: Path = DEFAULT_RECORDING, *, speed: float = 1.0,
                  part_delay_ms: float = 0.0, bundle_id: str = "de.upvis.kevcad.sim", app_build: int = 0,
                  session_id: str = DEFAULT_SESSION, start_full: bool = False, build_on_watch: bool = True,
-                 quiet: bool = False) -> None:
+                 quiet: bool = False, aspect: float = 1.6) -> None:
         self.socket_path = socket_path
         self.speed = max(speed, 1e-3)
         self.part_delay_ms = part_delay_ms
@@ -340,7 +340,7 @@ class MirrorSim:
         self.sessions[0].taetigkeit = f"baut {self.recorded_project['name']}"
         self.view: dict[str, Any] = {
             "kamera": {"rotation": look_from((1.0, -1.2, 0.8)), "pivot": [0.0, 0.0, 0.0], "distance": 1000.0,
-                       "fov": 45.0, "ortho": False, "ortho_scale": 800.0},
+                       "fov": 45.0, "ortho": False, "ortho_scale": 800.0, "aspect": aspect},
             "auswahl": {"run": 0, "refs": []}, "verborgen": [], "isoliert": None, "hervorgehoben": [],
             "darstellung": "shaded_edges", "schnitt": None, "masse": [], "befunde": [],
             "lauf": {"run": 0, "laeuft": False, "schritt": None, "fehler": None},
@@ -606,7 +606,8 @@ class MirrorSim:
             if op == "kamera":
                 kamera = args.get("kamera")
                 if isinstance(kamera, dict) and len(kamera.get("rotation") or []) == 4:
-                    self._camera(kamera, "iphone")
+                    # aspect beschreibt die Ansicht am Mac, nicht die des iPhones
+                    self._camera({**kamera, "aspect": self.view["kamera"].get("aspect")}, "iphone")
                 return  # latest-only, ohne Antwort
             if op == "auswahl":
                 ok, fehler = self._cmd_auswahl(args)
@@ -620,6 +621,8 @@ class MirrorSim:
                 fehler = f"Nicht gefunden: {', '.join(unknown)}" if unknown else None
             elif op == "ansicht":
                 ok, fehler = self._cmd_ansicht(args)
+            elif op == "einpassen":
+                ok, fehler = self._cmd_einpassen(args)
             elif op == "darstellung":
                 display = args.get("display")
                 if display in DISPLAYS:
@@ -676,6 +679,19 @@ class MirrorSim:
             self._delta("iphone", verborgen=[n for n in self.parts if n in hidden or n in known], isoliert=None)
         else:
             self._delta("iphone", verborgen=[n for n in hidden if n not in known], isoliert=None)
+        return True, f"Nicht gefunden: {', '.join(unknown)}" if unknown else None
+
+    def _cmd_einpassen(self, args: dict[str, Any]) -> tuple[bool, str | None]:
+        """Wie Pos1 (ohne refs: alles Sichtbare) bzw. „.“ (die genannten Teile); Kev CAD wählt Ränder und Projektion."""
+        refs = args.get("refs")
+        if refs is None or refs == []:
+            visible = [n for n in self.parts if n not in self.view["verborgen"]]
+            self._camera(self._fit_camera(visible or None), "iphone")
+            return True, None
+        known, unknown = self._expand([r for r in refs if isinstance(r, str)])
+        if not known:
+            return False, f"Unbekannte Referenz: {', '.join(unknown)}"
+        self._camera(self._fit_camera(known), "iphone")
         return True, f"Nicht gefunden: {', '.join(unknown)}" if unknown else None
 
     def _cmd_ansicht(self, args: dict[str, Any]) -> tuple[bool, str | None]:
@@ -882,11 +898,12 @@ def main() -> int:
     ap.add_argument("--auto", action="store_true", help="Aktionen der Reihe nach von selbst abspielen")
     ap.add_argument("--intervall", type=float, default=4.0, help="Abstand der Aktionen bei --auto in s")
     ap.add_argument("--neustart-alle", type=int, default=0, help="bei --auto jede N-te Runde ein Neustart")
+    ap.add_argument("--aspect", type=float, default=1.6, help="Seitenverhältnis der Mac-Ansicht in kamera.aspect")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     sim = MirrorSim(args.socket, args.recording, speed=args.speed, part_delay_ms=args.part_delay_ms,
                     bundle_id=args.bundle_id, session_id=args.session_id, start_full=args.start == "fertig",
-                    build_on_watch=args.start == "leer", quiet=args.quiet)
+                    build_on_watch=args.start == "leer", quiet=args.quiet, aspect=args.aspect)
     signal.signal(signal.SIGTERM, _interrupt)
     sim.start()
     if args.auto:

@@ -138,6 +138,7 @@ final class MirrorFixtureTests: XCTestCase {
 
         guard case .camera(let c) = try MirrorMessage.decode(WireFiles.fixture("camera.bin")) else { return XCTFail() }
         XCTAssertEqual(c.kamera.distance, 1800)
+        XCTAssertEqual(c.kamera.aspect, 1.6)
         try roundTrip("camera.bin", c)
         // Kamera über den Viewport-Typ hin und zurück
         for (a, b) in zip(MirrorCamera(c.kamera.cameraState).rotation, c.kamera.rotation) {
@@ -156,6 +157,12 @@ final class MirrorFixtureTests: XCTestCase {
         XCTAssertEqual(a.refs, values("cmd_auswahl.bin")["refs"]?.stringList)
         XCTAssertEqual(a.args["modus"]?.stringValue, "setzen")
         try roundTrip("cmd_auswahl.bin", MirrorCommand.auswahl(id: a.id, refs: a.refs, run: 3, modus: "setzen"))
+
+        guard case .command(let e) = try MirrorMessage.decode(WireFiles.fixture("cmd_einpassen.bin")) else {
+            return XCTFail()
+        }
+        XCTAssertEqual(e.knownOp, .einpassen)
+        try roundTrip("cmd_einpassen.bin", MirrorCommand.einpassen(id: e.id, refs: e.refs))
 
         guard case .command(let s) = try MirrorMessage.decode(WireFiles.fixture("cmd_sichtbarkeit.bin")) else {
             return XCTFail()
@@ -190,5 +197,11 @@ final class MirrorFixtureTests: XCTestCase {
         XCTAssertNil(r.takeMeshRequest(), "nichts doppelt anfordern")
         for file in ["mesh_block_1.bin", "mesh_block_last.bin"] { _ = try r.apply(frame: WireFiles.fixture(file)) }
         XCTAssertNotNil(try r.geometry(of: XCTUnwrap(r.part("Drehknopf"))))
+        // Wiederholte Anfrage: Blöcke eines schon vollständigen Netzes werden verworfen
+        let again = try r.apply(frame: WireFiles.fixture("mesh_block_1.bin"))
+        if case .ignored = again.first {} else { XCTFail("Block eines fertigen Netzes muss verworfen werden") }
+        // Nach 10 s ohne Antwort kommen fehlende Netze wieder in die Anfrage
+        let later = try XCTUnwrap(r.takeMeshRequest(now: Date().addingTimeInterval(11)))
+        XCTAssertEqual(later.hashes.count, distinct, "alle noch fehlenden Netze des Gestells")
     }
 }

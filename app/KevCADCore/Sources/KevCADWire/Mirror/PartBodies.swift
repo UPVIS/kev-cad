@@ -107,12 +107,13 @@ public struct PartBodies: Sendable {
 // MARK: - Kamera
 
 extension MirrorCamera {
-    /// Aus dem Kamerastand des Viewports (`panOffset` wirkt dort nicht und bleibt weg).
-    public init(_ c: CameraState) {
+    /// Aus dem Kamerastand des Viewports (`panOffset` wirkt dort nicht und bleibt weg); `aspect` = Breite / Höhe.
+    public init(_ c: CameraState, aspect: Float? = nil) {
         let q = c.rotation.vector
         self.init(
             rotation: [q.x, q.y, q.z, q.w], pivot: [c.pivot.x, c.pivot.y, c.pivot.z], distance: c.distance,
-            fov: c.fieldOfView, ortho: c.isOrthographic, orthoScale: c.orthographicScale)
+            fov: c.fieldOfView, ortho: c.isOrthographic, orthoScale: c.orthographicScale,
+            aspect: aspect.map { ($0 * 10000).rounded() / 10000 })
     }
 
     /// Als Kamerastand für den Viewport (gleiche Konvention: Kamera → Welt, Blick entlang −Z der Kamera).

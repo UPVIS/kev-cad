@@ -492,7 +492,7 @@ public struct MirrorCommand: MirrorOutgoing, Decodable, Equatable {
     public var prio: MirrorPriority { op == Op.kamera.rawValue ? .kamera : .zustand }
 
     public enum Op: String, Sendable, CaseIterable {
-        case kamera, auswahl, sichtbarkeit, fokus, ansicht, darstellung
+        case kamera, auswahl, sichtbarkeit, fokus, ansicht, darstellung, einpassen
     }
 
     public var id: String
@@ -540,6 +540,13 @@ public struct MirrorCommand: MirrorOutgoing, Decodable, Equatable {
 
     public static func darstellung(id: String, display: String) -> MirrorCommand {
         MirrorCommand(id: id, op: Op.darstellung.rawValue, args: .object(["display": .string(display)]))
+    }
+
+    /// Kev CAD passt die Kamera selbst ein (wie Pos1 bzw. „.“ am Mac); ohne `refs` auf alles.
+    public static func einpassen(id: String, refs: [String]? = nil) -> MirrorCommand {
+        MirrorCommand(
+            id: id, op: Op.einpassen.rawValue,
+            args: .object(refs.map { ["refs": .array($0.map(JSONValue.string))] } ?? [:]))
     }
 
     // Lesen der Argumente

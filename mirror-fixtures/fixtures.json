@@ -216,7 +216,8 @@
      "distance": 2152.6,
      "fov": 45.0,
      "ortho": false,
-     "ortho_scale": 1614.4
+     "ortho_scale": 1614.4,
+     "aspect": 1.6
     },
     "auswahl": {
      "run": 3,
@@ -344,7 +345,8 @@
     "distance": 1800.0,
     "fov": 45.0,
     "ortho": false,
-    "ortho_scale": 1614.4
+    "ortho_scale": 1614.4,
+    "aspect": 1.6
    }
   },
   "cmd_kamera.bin": {
@@ -373,6 +375,17 @@
    "payload_bytes": 0,
    "op": "sichtbarkeit",
    "id": "i-43"
+  },
+  "cmd_einpassen.bin": {
+   "type": "CMD",
+   "prio": "zustand",
+   "seq": 7,
+   "payload_bytes": 0,
+   "op": "einpassen",
+   "id": "i-45",
+   "refs": [
+    "Deckel"
+   ]
   },
   "cmd_res.bin": {
    "type": "CMD_RES",

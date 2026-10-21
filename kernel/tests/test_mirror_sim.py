@@ -152,6 +152,15 @@ def test_commands_answer_and_echo(sock_dir):
             r = c.wait_for(lambda h, cid=cid: h.get("reply_to") == cid)
             assert r["ok"] is False and r["fehler"]
 
+        start = c.mark()
+        c.cmd("i9", "einpassen", refs=["Deckel"])
+        assert c.wait_for(lambda h: h.get("reply_to") == "i9", start=start)["ok"] is True
+        k = c.wait_for(lambda h: h["type"] == "CAMERA", start=start)
+        assert k["quelle"] == "iphone" and k["kamera"]["aspect"] == 1.6
+        start = c.mark()
+        c.cmd("i10", "einpassen")
+        assert c.wait_for(lambda h: h.get("reply_to") == "i10", start=start)["ok"] is True
+
         c.cmd("i8", "ansicht", standard="top", projection="orthographic")
         assert c.wait_for(lambda h: h.get("reply_to") == "i8")["ok"] is True
         k = c.wait_for(lambda h: h["type"] == "CAMERA" and h["kamera"]["ortho"])
@@ -179,6 +188,20 @@ def test_state_overtakes_meshes(sock_dir):
         before = later[:later.index("STATE_DELTA")].count("MESH")
         assert before <= 2, f"{before} Netzblöcke vor dem Zustand"
         assert later.count("MESH") > before
+        c.close()
+    finally:
+        sim.stop()
+
+
+def test_repeated_mesh_request_is_served_again(sock_dir):
+    sim = make_sim(sock_dir)
+    try:
+        c = watched(sim)
+        h = c.scene_parts()[0]["hash"]
+        for _ in range(2):
+            c.send({"type": "MESH_REQ", "prio": "zustand", "hashes": [h]})
+        assert c.wait_until(lambda: len([x for x in c.headers("MESH") if x["hash"] == h]) == 2)
+        assert c.mesh_errors == []
         c.close()
     finally:
         sim.stop()
