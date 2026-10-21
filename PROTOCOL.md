@@ -258,3 +258,22 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
 Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+
+Weitere Teile von `CHECK` (Stufe 2):
+
+- `stand`: `{"boden_z", "boden_erklaert", "gruppen": [{"teile", "masse_kg", "schwerpunkt", "stuetzpolygon" (xy),
+  "rand_abstand" (mm, negativ = außerhalb), "kippwinkel" (Grad), "kante", "schwebt" | "befestigt"}]}`. Kontakt heißt
+  Abstand bis 0,5 mm (Spielpassung zählt als Verbindung), „berührt“ bis 0,05 mm.
+- `montage`: `{"vollstaendig", "schritte": [{"nr", "name", "teile", "gruppe", "richtung" (Einführrichtung [x,y,z], null
+  beim Grundteil), "richtung_text" („Grundteil“, „von oben“, „von −X her“ …), "werkzeug"}], "offen", "tests",
+  "abgebrochen"}` in Einbaureihenfolge.
+
+### SCREENSHOT_REQ.ansicht (Analyse)
+
+Optionales Objekt in `SCREENSHOT_REQ` (mit `source: "offscreen"`) für Bilder zur eigenen Analyse des Agenten (MCP
+`ansichten`, `pruefen(bilder=true)`): `name`, `standard` (Standardansicht) oder `richtung` [x,y,z] (Blickrichtung der
+Kamera, Z bleibt oben), `ziel` (Teile) oder `punkt` [x,y,z] mit `radius` (mm) zum Einpassen, `darstellung`
+(`shaded_edges` \| `shaded` \| `wireframe` \| `xray`), `hervorheben` (Teile, rot getönt), `schnittkoerper` (bool, rote
+Schnittkörper der Prüfung). Die App rendert aus einer Kopie der Körper, Kevins Kamera, Darstellung und Auswahl bleiben
+unverändert, und setzt in `SCREENSHOT_RES.camera` das Feld `ansicht: true`. Ältere Apps ignorieren das Feld und liefern
+die Standardansicht aus `view`.

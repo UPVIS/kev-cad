@@ -58,6 +58,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `preis_quelle`, `preis_stand` | wenn Preis | Herkunft, Monat |
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
 | `druckbar` | nein | `true` für Materialien, aus denen 3D-Druckteile entstehen dürfen (PLA, PETG, ABS, ASA, TPU, PA, Harz …) |
+| `nachgiebig` | nein | `true` für weiche Werkstoffe (Schaum, Gummi, TPU, Gurtband): Die Prüfung meldet Überlappungen bis zur halben Dicke nur als „verformt“ (Hinweis) und lässt sie bei der Montage nicht als Hindernis zählen |
 
 ## Lagerteil
 

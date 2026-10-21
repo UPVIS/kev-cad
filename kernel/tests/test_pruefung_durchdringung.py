@@ -221,3 +221,19 @@ def test_wiederholung_aus_dem_zwischenspeicher(env):
     st = res2["pruefung"]["statistik"]
     assert st["paare"]["neu_gerechnet"] == 0
     assert res2["pruefung"]["duration_ms"] < 1000
+
+
+def test_pruefen_und_ansichten_ueber_die_laufzeit(env):
+    rt, app = env["rt"], env["app"]
+    assert rt.model_write(MODELL)["ok"]
+    res = rt.run()
+    pr = rt.pruefen()
+    assert pr["ok"] and pr["run"] == res["run"] and pr["zusammenfassung"] == res["pruefung"]["zusammenfassung"]
+    assert pr["montage"]["schritte"] and pr["stand"]["gruppen"]
+    start = app.mark()
+    bilder = rt.ansichten([{"name": "iso", "standard": "iso", "darstellung": "xray"},
+                           {"name": "schräg", "richtung": [1, 1, -1], "punkt": [4, 0, 0], "radius": 30}], 320, 200)
+    assert bilder["ok"] and [b["name"] for b in bilder["bilder"]] == ["iso", "schräg"]
+    reqs = [h for h in app.since(start) if h["type"] == "SCREENSHOT_REQ"]
+    assert [r["source"] for r in reqs] == ["offscreen", "offscreen"] and reqs[0]["width"] == 320
+    assert reqs[0]["ansicht"]["darstellung"] == "xray" and reqs[1]["ansicht"]["richtung"] == [1, 1, -1]

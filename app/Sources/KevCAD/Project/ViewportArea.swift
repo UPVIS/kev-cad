@@ -74,8 +74,8 @@ struct ViewportArea: View {
                     .frame(maxWidth: 820)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            if let key = pruefKey, state.dismissedPruefung != key {
-                PruefBanner(model: model, state: state) { state.dismissedPruefung = key }
+            if (pruefKey != nil && state.dismissedPruefung != pruefKey) || (state.pruefListeOffen && model.pruefung != nil) {
+                PruefBanner(model: model, state: state) { state.dismissedPruefung = pruefKey }
                     .frame(maxWidth: 820)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -103,6 +103,19 @@ struct ViewportArea: View {
                     Button("Fertig") { model.actions?.setMeasureMode(false) }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if pruefKey == nil, !state.pruefListeOffen, let p = model.pruefung, !p.montageSchritte.isEmpty {
+                Pill(symbol: "checkmark.seal", tint: .green) {
+                    Text("Prüfung in Ordnung")
+                } trailing: {
+                    Button("Montage") {
+                        state.pruefTab = "montage"
+                        withAnimation(.snappy(duration: 0.2)) { state.pruefListeOffen = true }
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }

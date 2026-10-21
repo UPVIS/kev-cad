@@ -113,7 +113,7 @@ def test_material_pflichtfelder():
         assert ID_MATERIAL.match(m["id"]), f"{mid}: id nur Kleinbuchstaben, Ziffern, Bindestrich, Punkt"
         assert isinstance(m["name"], str) and m["name"].strip()
         assert isinstance(m["gruppe"], str) and m["gruppe"].strip()
-        assert isinstance(m["dichte"], (int, float)) and 0.3 <= m["dichte"] <= 9.5, f"{mid}: Dichte in g/cm³"
+        assert isinstance(m["dichte"], (int, float)) and 0.01 <= m["dichte"] <= 9.5, f"{mid}: Dichte in g/cm³"  # Schaum ab 0,02
         assert FARBE.match(m["farbe"]), f"{mid}: farbe als #RRGGBB"
         for feld in ("metallisch", "rauheit"):
             if feld in m:

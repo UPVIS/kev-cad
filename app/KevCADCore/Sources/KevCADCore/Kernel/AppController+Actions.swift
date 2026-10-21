@@ -441,6 +441,10 @@ extension AppController {
     /// SCREENSHOT_REQ beantworten: aktuelle Ansicht (gleiche Kamera, Sichtbarkeit, Schnitt, Hervorhebungen) oder
     /// offscreen aus einer Standardansicht, eingepasst auf die sichtbaren Teile.
     func answerScreenshot(_ s: ScreenshotRequestMessage) {
+        if let a = s.ansicht {  // Prüfung/Analyse: eigene Kamera und Darstellung (AppController+Ansichten.swift)
+            renderAnsicht(s, a)
+            return
+        }
         // Kommt die Anfrage direkt nach view/focus, läuft die Kamerafahrt noch: erst deren Ende abwarten (höchstens
         // 1,5 s, falls das Fenster gerade nicht zeichnet und die Fahrt deshalb nicht weiterläuft).
         if s.source != "offscreen" {

@@ -759,4 +759,8 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    # Prüfung: pruefen, montage_reihenfolge, ansichten (eigene Datei)
+    from .pruef_tools import register_pruef_tools
+
+    register_pruef_tools(t, svc, tool)
     return t
