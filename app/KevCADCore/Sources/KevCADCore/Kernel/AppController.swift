@@ -431,6 +431,7 @@ public final class AppController: AppActions {
             if model.kernelState == .busy { model.kernelState = .ready }
             model.inventarVerstoesse = e.inventarVerstoesse
             updateParts()
+            if model.versionen.vergleich?.aktuell == true { endCompare() }  // Versionen: „aktuell“ hat sich geändert
             if let restore = pendingRestore {
                 applyRestoredView(restore)
                 fitAtRunEnd = false
@@ -481,6 +482,8 @@ public final class AppController: AppActions {
             applyCamera(c)
         case .check(let c):
             applyCheck(c)
+        case .versionen(let v):
+            handleVersionen(v)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -529,6 +532,7 @@ public final class AppController: AppActions {
             model.bom = nil
             model.inventarVerstoesse = []
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
+            resetVersionen()  // Versionen: Liste und Vergleich des alten Projekts verwerfen
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)

@@ -93,11 +93,31 @@ mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Qu
 6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
    Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt. Kevin keine
    Screenshots schicken; Bilder nur zur eigenen Analyse (siehe „Bilder“).
-7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
+7. Meilenstein setzen (gilt immer): nach dem letzten erfolgreichen Lauf der Aufgabe
+   `meilenstein("Kurzer Titel", "Ein, zwei Sätze, was sich geändert hat und warum")`, siehe „Versionen“.
+8. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
 Speichert Kevin model.py selbst und ist Auto-Lauf an, rechnet der Kernel von allein. `run` wartet dann auf diesen Lauf,
 statt doppelt zu rechnen.
+
+## Versionen (Kevin, 21.10.2026, gilt immer)
+
+Kev CAD versioniert wie Onshape oder Fusion: Jeder erfolgreiche Lauf, der eine Projektdatei geändert hat, wird eine
+Version V<n> (alle Projektdateien: model.py, Hilfsmodule, `geometrie/`, `bewegungen.json`, `katalog.json`,
+`kevcad.json`, `zukauf/`; nicht `output/` und `bestand.json`). Kevin sieht sie in der Leiste „Versionen“ mit
+Vorschaubild, Zeit, wer (Kevin oder Agent), Teilen, Masse, Kosten und Prüfstand.
+
+- **Am Ende jeder Aufgabe ein Meilenstein:** `meilenstein(titel, notiz)` mit kurzem deutschem Titel
+  („Stangenhalter mit Gewindeeinsätzen“) und einer Notiz in ein, zwei Sätzen. Erst nach dem letzten erfolgreichen
+  Lauf, nicht auf einen kaputten Stand.
+- `versionen` zeigt die Geschichte; `versionen_vergleichen("V12")` vergleicht mit dem aktuellen Stand (Parameter,
+  Teile, Stückliste, Prüfstand, Code) und zeigt Kevin die alte Geometrie als Geisterkörper im Viewer.
+- `version_wiederherstellen("V12")` nur auf Kevins Wunsch. Es ist nie zerstörend: ungesicherte Änderungen werden
+  vorher eine Version, der Rückweg ist ein weiteres Wiederherstellen.
+- `variante(aktion="anlegen", name="Leichtbau")` für Ideen, die den Hauptstand nicht anfassen sollen; `variante(
+  aktion="wechseln", name="Hauptstand")` zurück. Kein Zusammenführen: Kevin entscheidet, wo es weitergeht.
+- Kein eigenes Git im Projektordner anlegen und `.kevcad/` nicht anfassen; die Versionen verwaltet Kev CAD.
 
 ## Inventar-Regel
 

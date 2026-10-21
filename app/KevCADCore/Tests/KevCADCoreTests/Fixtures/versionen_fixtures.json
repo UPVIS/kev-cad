@@ -1,0 +1,514 @@
+{
+ "versionen": {
+  "type": "VERSIONEN",
+  "seq": 40,
+  "projekt": "/tmp/kevcad-fixture",
+  "verfuegbar": true,
+  "meldung": null,
+  "variante": "v-leicht",
+  "varianten": [
+   {
+    "id": "haupt",
+    "name": "Hauptstand",
+    "aktuell": false,
+    "versionen": 6,
+    "letzte": "2026-10-21T10:50:00",
+    "letzte_nr": 6,
+    "von": null
+   },
+   {
+    "id": "v-leicht",
+    "name": "Leichtbau",
+    "aktuell": true,
+    "versionen": 1,
+    "letzte": "2026-10-21T10:50:00",
+    "letzte_nr": 7,
+    "von": 1
+   }
+  ],
+  "versionen": [
+   {
+    "nr": 7,
+    "commit": "0000007abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792579800,
+    "wer": "agent",
+    "wer_text": "Agent · 3f2a9c",
+    "sitzung": "3f2a9c1b77",
+    "quelle": "lauf",
+    "titel": "Geändert: model.py",
+    "aus": null,
+    "meilenstein": {
+     "titel": "Halter fertig",
+     "notiz": "Bohrungen M6 geprüft",
+     "zeit": "2026-10-21T11:00:00",
+     "wer": "agent"
+    },
+    "kennzahlen": {
+     "teile": 3,
+     "masse_kg": 1.25,
+     "kosten": 12.4,
+     "fehler": 0,
+     "warnungen": 0,
+     "pruefung": ""
+    },
+    "params": {
+     "breite": 140,
+     "hoehe": 80
+    },
+    "pruefung": null,
+    "bild": "/tmp/kevcad-fixture/.kevcad/versionen/bilder/7.png",
+    "aktuell": true,
+    "geerbt": false,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": null,
+    "gruppe": null
+   },
+   {
+    "nr": 6,
+    "commit": "0000006abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792578300,
+    "wer": "kevin",
+    "wer_text": "Kevin",
+    "sitzung": null,
+    "quelle": "wiederherstellen",
+    "titel": "Wiederhergestellt aus V2",
+    "aus": 2,
+    "meilenstein": null,
+    "kennzahlen": {
+     "teile": 3,
+     "masse_kg": 1.25,
+     "kosten": 12.4,
+     "fehler": 0,
+     "warnungen": 0,
+     "pruefung": ""
+    },
+    "params": {
+     "breite": 120
+    },
+    "pruefung": null,
+    "bild": null,
+    "aktuell": false,
+    "geerbt": false,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": null,
+    "gruppe": null
+   },
+   {
+    "nr": 5,
+    "commit": "0000005abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792577700,
+    "wer": "kevin",
+    "wer_text": "Kevin",
+    "sitzung": null,
+    "quelle": "lauf",
+    "titel": "Geändert: model.py",
+    "aus": null,
+    "meilenstein": null,
+    "kennzahlen": {
+     "teile": 3,
+     "masse_kg": 1.25,
+     "kosten": 12.4,
+     "fehler": 0,
+     "warnungen": 0,
+     "pruefung": ""
+    },
+    "params": {
+     "breite": 120
+    },
+    "pruefung": null,
+    "bild": null,
+    "aktuell": false,
+    "geerbt": false,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": null,
+    "gruppe": "g2"
+   },
+   {
+    "nr": 4,
+    "commit": "0000004abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792577500,
+    "wer": "kevin",
+    "wer_text": "Kevin",
+    "sitzung": null,
+    "quelle": "lauf",
+    "titel": "Geändert: model.py",
+    "aus": null,
+    "meilenstein": null,
+    "kennzahlen": {
+     "teile": 3,
+     "masse_kg": 1.25,
+     "kosten": 12.4,
+     "fehler": 0,
+     "warnungen": 0,
+     "pruefung": ""
+    },
+    "params": {
+     "breite": 120
+    },
+    "pruefung": null,
+    "bild": null,
+    "aktuell": false,
+    "geerbt": false,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": null,
+    "gruppe": "g2"
+   },
+   {
+    "nr": 3,
+    "commit": "0000003abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792577300,
+    "wer": "kevin",
+    "wer_text": "Kevin",
+    "sitzung": null,
+    "quelle": "lauf",
+    "titel": "Geändert: model.py",
+    "aus": null,
+    "meilenstein": null,
+    "kennzahlen": null,
+    "params": {
+     "breite": 120
+    },
+    "pruefung": null,
+    "bild": null,
+    "aktuell": false,
+    "geerbt": false,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": "V3 ließ sich nicht neu rechnen: NameError",
+    "gruppe": "g2"
+   },
+   {
+    "nr": 2,
+    "commit": "0000002abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792577100,
+    "wer": "unbekannt",
+    "wer_text": "Auto-Lauf",
+    "sitzung": null,
+    "quelle": "uebernahme",
+    "titel": "Vorgeschichte: model.py Stand 2",
+    "aus": null,
+    "meilenstein": null,
+    "kennzahlen": {
+     "teile": 3,
+     "masse_kg": 1.25,
+     "kosten": 12.4,
+     "fehler": 0,
+     "warnungen": 0,
+     "pruefung": ""
+    },
+    "params": {
+     "breite": 120
+    },
+    "pruefung": null,
+    "bild": null,
+    "aktuell": false,
+    "geerbt": false,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": null,
+    "gruppe": "g2"
+   },
+   {
+    "nr": 1,
+    "commit": "0000001abc",
+    "zeit": "2026-10-21T10:00:00",
+    "ts": 1792576800,
+    "wer": "kevin",
+    "wer_text": "Kevin",
+    "sitzung": null,
+    "quelle": "lauf",
+    "titel": "Erster Stand",
+    "aus": null,
+    "meilenstein": null,
+    "kennzahlen": {
+     "teile": 3,
+     "masse_kg": 1.25,
+     "kosten": 12.4,
+     "fehler": 0,
+     "warnungen": 0,
+     "pruefung": ""
+    },
+    "params": {
+     "breite": 120
+    },
+    "pruefung": null,
+    "bild": null,
+    "aktuell": false,
+    "geerbt": true,
+    "zweig": "haupt",
+    "dateien": [
+     "model.py"
+    ],
+    "nachberechnung": null,
+    "gruppe": null
+   }
+  ],
+  "gruppen": [
+   {
+    "id": "g2",
+    "anzahl": 4,
+    "von": 1792577100,
+    "bis": 1792577700,
+    "neueste": 5,
+    "aelteste": 2,
+    "text": "4 Läufe in 10 Minuten"
+   }
+  ],
+  "anzahl": 7,
+  "meilensteine": 1,
+  "ungesichert": true,
+  "reply_to": "a-12"
+ },
+ "version_vergleich": {
+  "type": "VERSION_VERGLEICH",
+  "seq": 41,
+  "reply_to": "a-13",
+  "a": {
+   "nr": 5,
+   "titel": "Geändert: model.py",
+   "zeit": "2026-10-21T10:15:00",
+   "wer_text": "Kevin",
+   "meilenstein": null,
+   "kennzahlen": {
+    "teile": 3,
+    "masse_kg": 0.003,
+    "kosten": 3.0,
+    "positionen": 2,
+    "fehler": 0,
+    "warnungen": 0,
+    "pruefung": ""
+   },
+   "commit": "0000005abc"
+  },
+  "b": {
+   "nr": null,
+   "titel": "Aktueller Stand",
+   "zeit": null
+  },
+  "aktuell": true,
+  "zusammenfassung": "Teile: 1 geändert, 1 neu, 1 weg · 2 Parameter geändert · Stückliste +1 −1 ~1 · Masse 0,003 → 0,005 kg · Kosten 3 → 6,3 € · Prüfung 0 → 1 Fehler",
+  "params": [
+   {
+    "name": "breite",
+    "alt": 120,
+    "neu": 140,
+    "art": "geaendert"
+   },
+   {
+    "name": "hoehe",
+    "alt": null,
+    "neu": 80,
+    "art": "neu"
+   }
+  ],
+  "teile": {
+   "neu": [
+    "Deckel"
+   ],
+   "weg": [
+    "Schraube"
+   ],
+   "geaendert": [
+    {
+     "name": "Platte",
+     "arten": [
+      "form"
+     ],
+     "dvolumen": 400.0,
+     "dmasse": 1.08
+    }
+   ],
+   "gleich": 1
+  },
+  "stueckliste": {
+   "neu": [
+    {
+     "benennung": "Alu 3",
+     "masse_text": "200 × 100 mm",
+     "anzahl": 1,
+     "material": null,
+     "preis": 4.0,
+     "kg": null,
+     "stock_id": "alu-3",
+     "art": "platte"
+    }
+   ],
+   "weg": [
+    {
+     "benennung": "M6",
+     "masse_text": "M6 × 16",
+     "anzahl": 8,
+     "material": null,
+     "preis": 1.0,
+     "kg": null,
+     "stock_id": "m6",
+     "art": "schraube"
+    }
+   ],
+   "geaendert": [
+    {
+     "benennung": "Flach 40",
+     "masse_text": "140 mm",
+     "anzahl": 1,
+     "material": null,
+     "preis": 2.3,
+     "kg": null,
+     "stock_id": "flach-40",
+     "art": "flach",
+     "alt_anzahl": 1,
+     "neu_anzahl": 1,
+     "alt_masse_text": "120 mm",
+     "alt_preis": 2.0
+    }
+   ],
+   "totals_alt": {
+    "kg": 1.0,
+    "preis": 3.0
+   },
+   "totals_neu": {
+    "kg": 1.2,
+    "preis": 6.3
+   }
+  },
+  "pruefung": {
+   "alt": {
+    "state": "done",
+    "zusammenfassung": "",
+    "zaehler": {
+     "fehler": 0
+    },
+    "befunde": []
+   },
+   "neu": {
+    "state": "done",
+    "zusammenfassung": "1 Durchdringung",
+    "zaehler": {
+     "fehler": 1
+    },
+    "befunde": []
+   }
+  },
+  "kennzahlen": {
+   "alt": {
+    "teile": 3,
+    "masse_kg": 0.003,
+    "kosten": 3.0,
+    "positionen": 2,
+    "fehler": 0,
+    "warnungen": 0,
+    "pruefung": ""
+   },
+   "neu": {
+    "teile": 3,
+    "masse_kg": 0.005,
+    "kosten": 6.3,
+    "positionen": 2,
+    "fehler": 1,
+    "warnungen": 0,
+    "pruefung": "1 Durchdringung"
+   }
+  },
+  "code": {
+   "dateien": [
+    {
+     "pfad": "model.py",
+     "status": "M",
+     "plus": 2,
+     "minus": 1,
+     "binaer": false
+    },
+    {
+     "pfad": "deckel.py",
+     "status": "A",
+     "plus": 4,
+     "minus": 0,
+     "binaer": false
+    }
+   ],
+   "diff": "--- a/model.py\n+++ b/model.py\n@@ -1 +1,2 @@\n-breite = 120\n+breite = 140\n+hoehe = 80\n",
+   "gekuerzt": false,
+   "zeilen": 6
+  },
+  "hinweise": [
+   "V5 aus dem Zwischenspeicher"
+  ],
+  "ms": 37,
+  "geometrie": [
+   {
+    "teil": "Platte",
+    "art": "alt",
+    "vert": 4,
+    "tri": 2,
+    "epts": 2,
+    "edge": 1
+   },
+   {
+    "teil": "Schraube",
+    "art": "weg",
+    "vert": 4,
+    "tri": 2,
+    "epts": 2,
+    "edge": 1
+   }
+  ]
+ },
+ "version_bild_req": {
+  "type": "VERSION_BILD_REQ",
+  "seq": 42,
+  "id": "k-31",
+  "nr": 7,
+  "width": 288,
+  "height": 180,
+  "view": "iso",
+  "teile": [
+   {
+    "teil": "Platte",
+    "farbe": [
+     0.8,
+     0.2,
+     0.1,
+     1.0
+    ],
+    "vert": 4,
+    "tri": 2,
+    "epts": 2,
+    "edge": 1
+   },
+   {
+    "teil": "Klotz",
+    "farbe": [
+     0.2,
+     0.4,
+     0.9,
+     1.0
+    ],
+    "vert": 4,
+    "tri": 2,
+    "epts": 2,
+    "edge": 1
+   }
+  ]
+ }
+}

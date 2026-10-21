@@ -11,7 +11,7 @@ Nachrichten Eltern → Rechenprozess:
 
 | type | Felder |
 |---|---|
-| ``RUN`` | ``run``, ``path`` (model.py), ``code``, ``params``, ``slow_ms``, ``deviation``, ``angular``, ``pruefen`` (Standard true: nach ``RUN_DONE`` prüfen, siehe pruefung/lauf.py) |
+| ``RUN`` | ``run``, ``path`` (model.py), ``code``, ``params``, ``slow_ms``, ``deviation``, ``angular``, ``pruefen`` (Standard true: nach ``RUN_DONE`` prüfen, siehe pruefung/lauf.py), ``schatten`` (Versionen: Lauf ohne Live-Aufbau, Namensraum von ``execute`` bleibt) |
 | ``EXEC`` | ``run``, ``code``, ``project``, ``deviation``, ``angular`` |
 | ``PING`` | ``id`` → ``PONG`` |
 | ``QUIT`` | – |

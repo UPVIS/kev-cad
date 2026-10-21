@@ -671,12 +671,18 @@ class Runner:
         deviation = float(msg.get("deviation") or DEFAULT_DEVIATION)
         angular = float(msg.get("angular") or DEFAULT_ANGULAR)
         project = str(Path(path).parent)
-        self.run_no = run
+        # Versionen: Lauf ohne Live-Aufbau (alte Version für Vergleich und Kennzahlen); Namensraum für execute,
+        # Laufnummer und Prüfung bleiben beim letzten echten Lauf
+        schatten = bool(msg.get("schatten"))
+        if not schatten:
+            self.run_no = run
         state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0,
                                  "bom_parts": {}}
         register = LagerRegister()
         kameras = KameraRegister()
-        strict = self.inventar = bool(msg.get("inventar_regel", True))
+        strict = bool(msg.get("inventar_regel", True))
+        if not schatten:
+            self.inventar = strict
         catalog = None
         try:
             catalog = self._catalog(msg, project)
@@ -725,9 +731,10 @@ class Runner:
             except Exception as exc:  # noqa: BLE001 - darf die Animation nicht verhindern
                 state["warnings"].append(f"Kamerakörper fahren nicht mit: {type(exc).__name__}: {exc}")
             error, anim_names = self._animations(run, state, path, source, erfassung)
-        self.ns = ns
-        self.ns_project = project
-        self.params = dict(state["params"])
+        if not schatten:
+            self.ns = ns
+            self.ns_project = project
+            self.params = dict(state["params"])
         result = {
             "run": run,
             "shown": state["shown"],
@@ -758,7 +765,8 @@ class Runner:
                                                     state["shown"], result["warnings"].append)
             except Exception as exc:  # noqa: BLE001
                 result["warnings"].append(f"Kameras nicht übernommen: {type(exc).__name__}: {exc}")
-            self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
+            if not schatten:
+                self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
         return result
 
     def _animations(self, run: int, state: dict[str, Any], path: str, source: str,

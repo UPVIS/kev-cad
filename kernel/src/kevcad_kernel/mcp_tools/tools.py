@@ -768,4 +768,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
     from .kamera_tools import register_camera_tools
 
     register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
+
+    # Versionen, Meilensteine, Varianten (versionen_tools.py)
+    from .versionen_tools import register_versionen_tools
+
+    register_versionen_tools(tool, t, svc)
     return t

@@ -108,6 +108,15 @@ renders through that camera (format aspect ratio). A camera attached with `.an(p
 during playback, through the camera (key 0) and in the video; its shown body from koerper() follows automatically, \
 rig parts need their own `folge`.
 
+Versions (like Onshape/Fusion)
+- Every successful run that changed a project file is a version V<n> (all project files, not output/). Kevin sees \
+them in the version bar with thumbnail, time, who, parts, mass, cost and check result.
+- At the end of every task, after the last successful run, set a milestone: `meilenstein(titel, notiz)` with a short \
+German title and one or two sentences on what was done.
+- `versionen` lists the history, `versionen_vergleichen(a, b)` shows parameters, parts, bill of materials, check and \
+code diff (and overlays the old geometry in the viewer), `version_wiederherstellen(v)` goes back without losing \
+anything (only when Kevin asks), `variante` creates or switches named variants to try ideas.
+
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \
 (world mm), `visibility` isolates or hides parts, `section` cuts, `view` switches standard views and display style. \

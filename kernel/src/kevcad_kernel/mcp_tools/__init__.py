@@ -45,6 +45,12 @@ TOOL_NAMES: tuple[str, ...] = (
     "kamera_bild",
     "kamera_katalog",
     "kamera_vorschlag_aus_ansicht",
+    # Versionen
+    "versionen",
+    "version_wiederherstellen",
+    "versionen_vergleichen",
+    "meilenstein",
+    "variante",
 )
 
 __all__ = ["INSTRUCTIONS", "SERVER_NAME", "SERVER_TITLE", "TOOL_NAMES", "KevcadTools", "register_tools"]

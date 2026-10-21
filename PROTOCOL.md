@@ -391,3 +391,76 @@ Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
 - `CAMERA_SUGGEST` (Strg+Alt+0) rechnet die Ansicht in die Ruhelage zurück, wenn die Kamera gerade bewegt steht.
 - MCP: `animation_liste` und die Zusammenfassung von `run` nennen je Animation unter `kameras` die Kameras, deren Teil
   sich darin bewegt.
+
+## Versionen
+
+Rein additiv (PLAN-VERSIONEN.md); ältere Gegenseiten ignorieren die neuen Typen. Jede Version ist ein Stand aller
+Projektdateien in einem eigenen Git-Repo (`<projekt>/.kevcad/git`, ohne `output/`, `.kevcad/`, `bestand.json`), mit
+projektweit eindeutiger Nummer `nr` (Anzeige „V12“). Varianten sind Zweige (`haupt` = Hauptstand). Umsetzung:
+`kernel/src/kevcad_kernel/versionen/`. Testdateien: `kernel/tools/make_versionen_fixtures.py` schreibt
+`versionen.frame`, `version_vergleich.frame`, `version_bild_req.frame` und `versionen_fixtures.json` (getrennt von
+`stream.bin`).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `VERSIONEN` | `projekt`, `verfuegbar` (bool; false = Git fehlt), `meldung` (Text oder null), `variante` (aktueller Zweig), `varianten`, `versionen` (neueste zuerst, höchstens 400 plus alle Meilensteine), `gruppen`, `anzahl`, `meilensteine`, `ungesichert` (Dateien weichen vom aktuellen Stand ab), optional `reply_to` – nach dem Öffnen, nach jeder neuen Version, nach Änderungen an Kennzahlen, Prüfstand, Bild, Meilenstein oder Variante und beim Verbinden | – |
+| `VERSION_VERGLEICH` | `a`, `b` (je `nr` (bei b null = aktueller Stand), `titel`, `zeit`, `kennzahlen`), `aktuell`, `zusammenfassung`, `params`, `teile`, `stueckliste`, `pruefung`, `kennzahlen`, `code`, `hinweise`, `ms`, `geometrie` (Netzköpfe), optional `reply_to` | Netze |
+| `VERSION_BILD_REQ` | `id`, `nr`, `width`, `height`, `view` (Standardansicht), `teile` (Netzköpfe mit `teil`, `farbe` sRGB) – die App rendert offscreen nur diese Netze und antwortet mit `SCREENSHOT_RES` (PNG) | Netze |
+
+`versionen[i]`:
+
+```json
+{"nr": 37, "commit": "5905093abc", "zeit": "2026-10-21T23:41:53", "ts": 1792626113, "wer": "agent",
+ "wer_text": "Agent · 3f2a9c", "sitzung": "3f2a9c1b77", "quelle": "lauf", "titel": "Geändert: model.py",
+ "aus": null, "meilenstein": {"titel": "Halter fertig", "notiz": "…", "zeit": "…", "wer": "agent"},
+ "kennzahlen": {"teile": 134, "masse_kg": 12.3, "kosten": 85.2, "positionen": 17, "fehler": 0, "warnungen": 1,
+                "pruefung": "1 Teil schwebt"},
+ "params": {"laenge": 1000}, "pruefung": {"fehler": 0, "warnungen": 1, "pruefung": "…"},
+ "bild": "/…/.kevcad/versionen/bilder/37.png", "aktuell": true, "geerbt": false, "zweig": "haupt",
+ "dateien": ["model.py"], "gruppe": null, "nachberechnung": null}
+```
+
+- `wer`: `kevin` (Speichern im Editor, ⌘R oder Aktion in der App), `agent` (MCP; `sitzung` = MCP-Sitzung), `kevcad`,
+  `unbekannt` (übernommene Stände aus Auto-Läufen). `quelle`: `lauf`, `wiederherstellen` (mit `aus`), `sicherung`
+  (ungesicherte Änderungen vor Wiederherstellen oder Variantenwechsel), `meilenstein`, `uebernahme` (alte
+  `.kevcad/versions/NNNN-model.py`).
+- `kennzahlen` null: noch nicht gerechnet (der Kernel rechnet übernommene Stände im Leerlauf nach); `nachberechnung`
+  nennt dann ggf. den Grund, warum das nicht ging.
+- `geerbt`: Version stammt aus der Variante, von der die aktuelle abzweigt.
+- `gruppe`: Kennung in `gruppen` (`{"id", "anzahl", "neueste", "aelteste", "von", "bis", "text": "12 Läufe in 4
+  Minuten"}`), wenn die Version zu einer dichten Folge automatischer Versionen gehört (mindestens 3, je höchstens
+  5 Minuten auseinander, ohne Meilenstein); die Leiste fasst sie zu einer Zeile zusammen.
+- `varianten[i]`: `{"id" (Zweig), "name", "aktuell", "versionen" (eigene), "letzte", "letzte_nr", "von"}`.
+
+`VERSION_VERGLEICH`: `params` = `[{"name", "alt", "neu", "art": "neu"|"weg"|"geaendert"}]`; `teile` =
+`{"neu": [Namen], "weg": [Namen], "geaendert": [{"name", "arten": ["form"|"lage"|"farbe"|"material"|"lagerteil"],
+"dvolumen", "dmasse", "verschiebung"}], "gleich": n}`; `stueckliste` = `{"neu", "weg", "geaendert", "totals_alt",
+"totals_neu"}` (Zeilen mit `benennung`, `masse_text`, `anzahl`, `preis`; geänderte zusätzlich `alt_anzahl`,
+`neu_anzahl`, `alt_masse_text`, `alt_preis`); `pruefung` = `{"alt", "neu"}` (je `zusammenfassung`, `zaehler`,
+`befunde` oder null); `kennzahlen` = `{"alt", "neu"}`; `code` = `{"dateien": [{"pfad", "status": "A"|"M"|"D",
+"plus", "minus", "binaer"}], "diff" (unified, höchstens 4000 Zeilen), "gekuerzt", "zeilen"}`.
+
+Geisterkörper gibt es nur, wenn `b` der aktuelle Stand ist: `geometrie[i]` = `{"teil", "art": "alt"|"weg", "vert",
+"tri", "epts", "edge"}` – `alt` ist die frühere Form eines geänderten Teils (Form oder Lage), `weg` ein Teil, das es
+nicht mehr gibt. Die App zeigt sie durchscheinend obenauf (alt blau, weg rot), färbt geänderte Teile orange und neue
+grün und beendet den Vergleich, sobald ein neuer Lauf den aktuellen Stand ändert.
+
+Netze (Nutzlast von `VERSION_VERGLEICH` und `VERSION_BILD_REQ`): je Kopf hintereinander positions f32 (`vert` × 3),
+normals f32 (`vert` × 3), triangles u32 (`tri` × 3), edge_points f32 (`epts` × 3), edge_offsets u32 (`edge` + 1;
+Kante k = Punkte `edge_offsets[k] ..< edge_offsets[k+1]`), Weltkoordinaten, little-endian.
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `VERSIONEN_REQ` | `id` | `VERSIONEN` mit `reply_to` |
+| `VERSION_RESTORE` | `id`, `version` („V12“, „12“ oder Meilensteintitel) | `ACK`; danach `RUN_*` und `VERSIONEN` |
+| `VERSION_COMPARE` | `id`, `a`, `b` (null = aktueller Stand) | `VERSION_VERGLEICH` mit `reply_to` oder `ERROR` (kann dauern: alte Stände ohne Zwischenspeicher rechnet der Kernel ohne Live-Aufbau neu) |
+| `VERSION_MILESTONE` | `id`, `version` (null = aktueller Stand), `titel`, `notiz`, `entfernen` (bool) | `ACK` |
+| `VARIANT` | `id`, `aktion` (`anlegen` \| `wechseln` \| `umbenennen`), `name` (bei wechseln und umbenennen Zweig oder Name), `von` (anlegen: Version oder null), `neuer_name` | `ACK`; danach `VERSIONEN`, bei anlegen und wechseln `RUN_*` |
+
+Wiederherstellen ist nie zerstörend: ungesicherte Änderungen werden vorher eine Version (`sicherung`), der
+wiederhergestellte Stand eine neue Version „Wiederhergestellt aus V12“. Läufe, Wiederherstellen, Variantenwechsel und
+Meilensteine laufen im Kernel nacheinander (nie während eines Laufs).

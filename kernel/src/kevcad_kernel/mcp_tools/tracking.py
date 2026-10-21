@@ -72,8 +72,10 @@ class AgentTracker:
     """ASGI-Hülle, die Verbindungsaufbau und -ende von MCP-Clients erkennt und an die Laufzeit meldet."""
 
     def __init__(self, notify: Callable[[bool], None], *, path: str = "/mcp", grace_s: float = 5.0,
-                 idle_s: float = 30 * 60, stateless_s: float = 10 * 60, poll_s: float = 1.0) -> None:
+                 idle_s: float = 30 * 60, stateless_s: float = 10 * 60, poll_s: float = 1.0,
+                 on_session: Callable[[str], None] | None = None) -> None:
         self._notify = notify
+        self._on_session = on_session  # Versionen: Sitzung, die gerade ein Werkzeug aufruft (für „Wer“)
         self._path = path.rstrip("/") or "/"
         self.grace_s = grace_s
         self.idle_s = idle_s
@@ -155,6 +157,11 @@ class AgentTracker:
         session = self._sessions.get(sid) if sid else None
         stateless = sid is None and method == "POST"
 
+        if session is not None and not is_get and self._on_session is not None:
+            try:
+                self._on_session(sid)
+            except Exception:  # Anzeige darf nie eine Anfrage scheitern lassen
+                log.exception("Sitzung nicht gemeldet")
         if session is not None:
             session.last_seen = time.monotonic()
             if is_get:
