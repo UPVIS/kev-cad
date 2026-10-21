@@ -27,22 +27,21 @@ druckbaren Material (PLA, PETG, ABS …). Es kommt kein Material neu dazu, das n
 Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
 nur melden:
 
-- **Keine Durchdringungen:** Zwei Teile dürfen sich berühren, aber nicht ineinander stecken. Prüfen mit `execute`:
+- **Keine Durchdringungen:** Zwei Teile dürfen sich berühren, aber nicht ineinander stecken. Dafür in model.py die
+  gezeigten Formen mitschreiben (`teile[name] = form` direkt vor jedem `show(form, name)`, `teile = {}` oben) und nach
+  dem Lauf mit `execute` prüfen:
 
   ```python
   from itertools import combinations
-  teile = {n: o for n, o in shown.items()} if "shown" in dir() else {}
   for (a, fa), (b, fb) in combinations(teile.items(), 2):
-      if fa.bounding_box().overlaps(fb.bounding_box()):  # nur Paare mit sich überschneidenden Hüllquadern
-          v = (fa & fb).volume
-          if v > 0.001:
-              print(f"Durchdringung {a} ↔ {b}: {v:.3f} mm³")
+      v = (fa & fb).volume if fa.bounding_box().overlaps(fb.bounding_box()) else 0
+      if v > 0.001:
+          print(f"Durchdringung {a} ↔ {b}: {v:.3f} mm³")
   ```
 
-  (Die Namen und Formen kommen aus dem Namensraum von model.py; dort die gezeigten Teile in einem dict sammeln, falls
-  es noch keines gibt.) Gefundene Durchdringungen beheben: Spiel oder Bohrung vorsehen, Teil verschieben, Maß
-  korrigieren. Gewollte Überlappungen (Gewinde in einem Kernloch, Presspassung, nachgiebiger Schaum) nur nach Rückfrage
-  und mit Begründung im Code.
+  Gefundene Durchdringungen beheben: Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren. Gewollte
+  Überlappungen (Gewinde in einem Kernloch, Presspassung, nachgiebiger Schaum) nur nach Rückfrage und mit Begründung
+  im Code.
 - **Nichts schwebt:** Jedes Teil berührt ein anderes Teil oder steht auf dem Boden (z = 0). Mit `measure` den Abstand
   zum Nachbarteil prüfen (0,000 mm = Kontakt).
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
