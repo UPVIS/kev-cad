@@ -116,7 +116,7 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
-256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+256 × 256 × 250 mm (vorne links 18 × 28 mm gesperrt), Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
 Einhausung. Die Druckausrichtung beim Konstruieren
 mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
 (Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
