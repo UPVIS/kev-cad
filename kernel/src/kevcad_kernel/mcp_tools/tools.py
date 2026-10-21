@@ -818,4 +818,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .kamera_tools import register_camera_tools
 
     register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
+
+    # 3D-Druck: Ergebnis der Druckprüfung (druck_tools.py)
+    from .druck_tools import register_druck_tools
+
+    register_druck_tools(t, svc, tool, {"read_only": READ_ONLY})
     return t

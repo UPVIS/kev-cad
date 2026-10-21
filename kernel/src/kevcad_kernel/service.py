@@ -215,6 +215,11 @@ class KernelService(Protocol):
     def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
         """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
+    # 3D-Druck: Ergebnis der Druckprüfung des letzten Laufs (Prüfer „druck“, druck/laufzeit.py)
+    def druckpruefung(self, teil: str | None = None) -> dict[str, Any]:
+        """Alle Druckteile oder eines (Name oder Gruppe): {"ok", "run", "drucker", "teile": [{"name", "material",
+        "zusammenfassung", "ausrichtung", "kennzahlen", "befunde", …}], "materialien", "zaehler", "statistik"}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

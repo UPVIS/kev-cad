@@ -67,6 +67,10 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
         zeilen.append(befund_zeile(b))
     if len(zeigen) > max_befunde:
         zeilen.append(f"… und {len(zeigen) - max_befunde} weitere (pruefen zeigt alle).")
+    if check.get("druck"):  # Druckprüfung: Summen und Ausrichtung (druck/bericht.py)
+        from kevcad_kernel.druck.bericht import druck_zeilen
+
+        zeilen += druck_zeilen(check["druck"])
     if fehler:
         zeilen.append("Gewollte Überlappungen (Presspassung, Schaum) nur nach Rückfrage bei Kevin mit "
                       "erlaubt_ueberlappung(a, b, grund=\"…\") in model.py erklären; Gewindeeingriff erkennt die "

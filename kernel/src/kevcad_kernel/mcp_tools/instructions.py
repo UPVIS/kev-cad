@@ -49,6 +49,15 @@ correct a dimension); never explain them away. A deliberate overlap (press fit, 
 - Kevin sees the affected parts in red and the overlap volume as a red ghost in the viewer.
 - The check covers the rest pose from model.py. Moving states are checked with `kollision_pruefen` (see Animation); \
 an overlap allowed with `erlaubt_ueberlappung` also counts as allowed there.
+- 3D print check (Druckprüfung): every part from `lager.druckteil(...)` is checked on every run for Kevin's Bambu Lab \
+P1P (findings art `druck_*`, ids dr1, dr2 …, with face references Part#f<n>, location and fix). Errors (export \
+refused) only for hard reasons: does not fit the build volume (incl. the blocked area front left), resin printing, \
+material that needs a hardened nozzle. Overhangs, bridges, horizontal holes, thin walls, warping are warnings or \
+hints: fix warnings (teardrop holes, chamfers instead of fillets, walls in line widths), weigh hints. The bed \
+orientation is chosen automatically; `lager.druckteil(form, name, material="petg", ausrichtung="-z")` (or "+x", a \
+planar face index, a vector, `Rot(...)`) fixes it, e.g. when the main load must lie in the layer plane. \
+`druckpruefung` (or `druckpruefung(teil=...)`) shows orientation with reasoning, key figures, all findings and the \
+material settings; tell Kevin the orientation of new print parts.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
