@@ -72,7 +72,7 @@ class _LRU(OrderedDict):
 
 _CACHE: _LRU = _LRU(200)  # je Weg: fertiges Ergebnis
 _PAAR_CACHE: _LRU = _LRU(100_000)  # je Teilepaar und relativer Lage: (Volumen, min, max) oder None
-_GEWINDE_CACHE: _LRU = _LRU(2000)  # je Teilepaar in Ruhelage: Gewindeeingriff oder None
+_GEWINDE_CACHE: _LRU = _LRU(2000)  # je Geometriestand: Gewindeeingriff eines Paars in Ruhelage, Drehgriff ja/nein
 
 
 @dataclass
@@ -368,7 +368,7 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
         lo, hi = _box(f)
         if np.all(lo < whi + rand) and np.all(hi > wlo - rand):
             statisch[n] = f
-    griffraum = bool(bew.freiraum) and _dreht_um_sich(bew, formen)
+    griffraum = bool(bew.freiraum) and _dreht_um_sich(bew, formen, schluessel)
     griff_kand: dict[str, Any] = {}
     if griffraum:  # Griffraum um die Drehachse: Teile im Umkreis des bedienten Teils plus Freiraum
         g_lo, g_hi = _box(formen[bew.teile[0]])
@@ -497,9 +497,10 @@ def _punkte(form: Any) -> np.ndarray:
     return np.array([[v.X, v.Y, v.Z] for v in form.vertices()], dtype=float)
 
 
-def _dreht_um_sich(bew: Bewegung, formen: dict[str, Any]) -> bool:
+def _dreht_um_sich(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str] | None = None) -> bool:
     """Wird das Teil um seine eigene Achse gedreht (Flügelmutter, Knopf), statt wie ein Hebel um eine Achse am Rand?
-    ``bedienung="fluegel"`` immer; Finger und Hand, wenn der Schwerpunkt nahe der Drehachse liegt."""
+    ``bedienung="fluegel"`` immer; Finger und Hand, wenn der Schwerpunkt nahe der Drehachse liegt (je Geometriestand
+    zwischengespeichert, damit ein unveränderter Lauf nichts rechnet)."""
     if bew.art != "drehen" or bew.bedienung not in ("fluegel", "finger", "hand") or bew.griff is not None:
         return False
     if bew.bedienung == "fluegel":
@@ -507,6 +508,18 @@ def _dreht_um_sich(bew: Bewegung, formen: dict[str, Any]) -> bool:
     form = formen.get(bew.teile[0])
     if form is None:
         return False
+    sk = (schluessel or {}).get(bew.teile[0])
+    key = ("um_sich", sk, tuple(np.round(bew.punkt, 4)), tuple(np.round(bew.richtung, 6))) if sk else None
+    if key is not None and key in _GEWINDE_CACHE:
+        return bool(_GEWINDE_CACHE.get(key))
+    out = _schwerpunkt_auf_achse(bew, form)
+    if key is not None:
+        _GEWINDE_CACHE[key] = out
+    return out
+
+
+def _schwerpunkt_auf_achse(bew: Bewegung, form: Any) -> bool:
+    """Liegt der Schwerpunkt näher an der Drehachse als ein Viertel des größten Radius?"""
     try:
         from build123d import CenterOf
 

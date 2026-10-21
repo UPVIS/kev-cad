@@ -323,6 +323,22 @@ def test_bewegungsraum_schraube_im_gewinde():
             assert bew["gewinde"][0]["teile"] == ["Schraube", "Block"]
 
 
+def test_check_motion_schraube_im_gewinde():
+    sys.path.insert(0, str(TOOLS))
+    try:
+        import check_motion as cm
+    finally:
+        sys.path.remove(str(TOOLS))
+    block, schraube = _schraube_im_kernloch()
+    shapes = {"Block": block, "Schraube": schraube}
+    raus = cm.run_motion(shapes, {"teile": ["Schraube"], "art": "schieben", "richtung": [0, 0, 1], "von": 0,
+                                  "bis": 20, "schritte": 4}, 0.001)
+    assert raus["kollisionen"] == [] and raus["gewinde"][0]["teile"] == ["Schraube", "Block"]
+    quer = cm.run_motion(shapes, {"teile": ["Schraube"], "art": "schieben", "richtung": [1, 0, 0], "von": 0,
+                                  "bis": 10, "schritte": 5}, 0.001)
+    assert [c["gegen"] for c in quer["kollisionen"]] == ["Block"] and quer["gewinde"] == []
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # 7. Zwischenspeicher des Bewegungsraums
 
