@@ -33,6 +33,7 @@ from typing import Any
 import kevcad_kernel
 from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
+from kevcad_kernel.bauplan.dienst import BauplanDienst
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
 from kevcad_kernel.kamera import CameraRuntime
@@ -88,9 +89,9 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, BauplanDienst):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
-    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
+    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Phase 6: Bauplan (``BauplanDienst``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -629,6 +630,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
                 self._anim_project_changed()
                 self.cameras_clear(run)
+                self._bauplan_project_changed()
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -836,6 +838,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             self._anim_publish(job, result)
+            self._bauplan_nach_lauf(job.run, result)  # Phase 6: vorhandenen Bauplan im Hintergrund erneuern
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -1024,6 +1027,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                 conn.send({"type": "CONSTRAINTS", **constraints})
             self._anim_on_connect(conn)
             self.cameras_on_connect(conn, self._run_no)
+            self._bauplan_on_connect(conn)
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
@@ -1132,6 +1136,8 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                       "CATALOG_SAVE", "CATALOG_DELETE"):
             self._pool.submit(self._handle_app_request, header)
         elif self._anim_app_message(kind, header):
+            pass
+        elif self._bauplan_app_message(kind, header):
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

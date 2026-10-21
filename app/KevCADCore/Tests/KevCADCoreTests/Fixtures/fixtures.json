@@ -533,5 +533,89 @@
     }
    ]
   }
+ },
+ "bauplan": {
+  "linien_reihenfolge": [
+   "sichtbar",
+   "verdeckt",
+   "mitte",
+   "schnitt",
+   "schraffur",
+   "duenn",
+   "nachbar",
+   "bruch",
+   "neu",
+   "pfeil"
+  ],
+  "feld": [
+   180.0,
+   120.0
+  ],
+  "run": 3,
+  "reply_to": "a-7",
+  "abschnitte": [
+   "material",
+   "zuschnitt",
+   "bearbeiten",
+   "drucken",
+   "montage"
+  ],
+  "schritte_je_abschnitt": [
+   1,
+   1,
+   1,
+   0,
+   2
+  ],
+  "montage_ids": [
+   "m-1g",
+   "m-2"
+  ],
+  "befund": {
+   "id": "bp1",
+   "art": "werkzeugzugang",
+   "schwere": "fehler",
+   "schritt": "m-2"
+  },
+  "bilder": [
+   {
+    "schritt": "m-1g",
+    "anzahl": {
+     "sichtbar": 1,
+     "duenn": 1
+    }
+   },
+   {
+    "schritt": "m-2",
+    "anzahl": {
+     "sichtbar": 1,
+     "neu": 1,
+     "pfeil": 2
+    }
+   }
+  ],
+  "erster_pfeil": [
+   [
+    90.0,
+    110.0
+   ],
+   [
+    90.0,
+    97.0
+   ]
+  ],
+  "payload_bytes": 280,
+  "vorher": 2,
+  "docs": {
+   "schritte": 5,
+   "probleme": 1
+  },
+  "frames": [
+   "bauplan.frame",
+   "docs.frame",
+   "bauplan_req.frame",
+   "bauplan_edit.frame",
+   "bauplan_pruefen.frame"
+  ]
  }
 }

@@ -192,6 +192,17 @@ class KernelService(Protocol):
     def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
         """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
+    # Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Bauplan“; umgesetzt in bauplan/dienst.py)
+    def bauplan(self, neu: bool = False) -> dict[str, Any]:
+        """Bauplan des letzten Laufs, bei Bedarf erzeugt und als <projekt>/dokumente/bauplan.json gespeichert:
+        {"ok", "datei", "bauplan" (Inhalt der Datei mit Prüfung), "zusammenfassung", "zeiten"}"""
+
+    def bauplan_bearbeiten(self, ops: list[dict[str, Any]], von: str = "agent") -> dict[str, Any]:
+        """Operationen wie BAUPLAN_EDIT, danach Simulation: {"ok", "meldungen", "zusammenfassung", "befunde"}"""
+
+    def bauplan_pruefen(self, schritt: str | None = None) -> dict[str, Any]:
+        """Simulation aller Montageschritte oder eines: {"ok", "befunde", "zusammenfassung", "ms", "schritt"}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

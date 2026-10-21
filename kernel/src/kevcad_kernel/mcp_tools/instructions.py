@@ -126,6 +126,13 @@ renders through that camera (format aspect ratio). A camera attached with `.an(p
 during playback, through the camera (key 0) and in the video; its shown body from koerper() follows automatically, \
 rig parts need their own `folge`.
 
+Build plan (Bauplan)
+- `bauplan` generates the step-by-step build instructions from the model (material, cutting, drilling, printing, \
+assembly with sub-assemblies first) and simulates every assembly step (insertion path, tool access, stability, order). \
+Rewrite the step texts with `bauplan_bearbeiten` (op "text") like a short workshop instruction with safety notes; all \
+numbers come from the kernel data, never invent them. Problems are fixed in model.py, not hidden in the text; \
+`bauplan_pruefen` re-runs the simulation.
+
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \
 (world mm), `visibility` isolates or hides parts, `section` cuts, `view` switches standard views and display style. \

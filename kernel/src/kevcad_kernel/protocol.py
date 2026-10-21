@@ -274,3 +274,168 @@ def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]
     if offset != len(payload):
         raise ValueError(f"Nutzlast hat {len(payload)} Byte, erwartet {offset}")
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Protokoll“; Strang P6-B)
+
+# Linienarten der Polylinien-Nutzlast in dieser Reihenfolge (Kopf ``linien_reihenfolge``). Die ersten acht sind die
+# der Zeichnungen (DOKUMENTE.md 1.1), ``neu`` (neue Teile, hervorgehoben) und ``pfeil`` (Einführpfeile) kommen im
+# Bauplan dazu. Die App zeichnet unbekannte Arten dünn durchgezogen.
+LINIEN_REIHENFOLGE = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar", "bruch", "neu",
+                      "pfeil")
+BAUPLAN_FELD = (180.0, 120.0)
+
+
+def pack_linien(gruppen: list[dict[str, list[Any]]], reihenfolge: tuple[str, ...] = LINIEN_REIHENFOLGE) -> bytes:
+    """Polylinien-Nutzlast: je Gruppe (Ansicht, Bild) und Linienart nacheinander ``u32`` Anzahl Polylinien, je
+    Polylinie ``u32`` Punktzahl und ``f32`` x, y paarweise (Blatt-mm)."""
+    teile: list[bytes] = []
+    for g in gruppen:
+        for art in reihenfolge:
+            linien = [np.ascontiguousarray(pl, dtype="<f4").reshape(-1, 2) for pl in g.get(art) or []]
+            linien = [pl for pl in linien if len(pl) >= 2]
+            teile.append(struct.pack("<I", len(linien)))
+            for pl in linien:
+                teile.append(struct.pack("<I", len(pl)))
+                teile.append(pl.tobytes())
+    return b"".join(teile)
+
+
+def unpack_linien(payload: bytes, anzahl: int, reihenfolge: tuple[str, ...] | list[str] = LINIEN_REIHENFOLGE,
+                  offset: int = 0) -> tuple[list[dict[str, list[np.ndarray]]], int]:
+    """Gegenstück zu pack_linien: (Gruppen, Ende in der Nutzlast)."""
+    out = []
+    for _ in range(anzahl):
+        g: dict[str, list[np.ndarray]] = {}
+        for art in reihenfolge:
+            (n,) = struct.unpack_from("<I", payload, offset)
+            offset += 4
+            linien = []
+            for _ in range(n):
+                (k,) = struct.unpack_from("<I", payload, offset)
+                offset += 4
+                linien.append(np.frombuffer(payload, dtype="<f4", count=2 * k, offset=offset).reshape(-1, 2))
+                offset += 8 * k
+            g[art] = linien
+        out.append(g)
+    return out, offset
+
+
+def pack_bauplan(bauplan: dict[str, Any], bilder: list[dict[str, Any]], *, run: int | None = None,
+                 reply_to: str | None = None, stand: dict[str, Any] | None = None,
+                 seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """BAUPLAN: Kopf mit dem Inhalt von bauplan.json (samt Prüfung) und je Schritt ein Strichbild im Feld 180 × 120 mm
+    (``bilder``: ``{schritt, rahmen, massstab, anzahl}``), Nutzlast die Polylinien aller Bilder hintereinander."""
+    kopf_bilder = []
+    gruppen = []
+    for b in bilder:
+        linien = b.get("linien") or {}
+        kopf_bilder.append({"schritt": b.get("schritt"), "rahmen": [float(x) for x in b.get("rahmen") or
+                                                                    [0, 0, *BAUPLAN_FELD]],
+                            "massstab": b.get("massstab"),
+                            "anzahl": {a: len(linien.get(a) or []) for a in LINIEN_REIHENFOLGE if linien.get(a)},
+                            **({"fehler": b["fehler"]} if b.get("fehler") else {})})
+        gruppen.append(linien)
+    header: dict[str, Any] = {"type": "BAUPLAN", "seq": seq, "run": run, "bauplan": bauplan, "bilder": kopf_bilder,
+                              "feld": list(BAUPLAN_FELD), "linien_reihenfolge": list(LINIEN_REIHENFOLGE),
+                              "stand": stand or {}}
+    if reply_to:
+        header["reply_to"] = reply_to
+    return header, pack_linien(gruppen)
+
+
+def unpack_bauplan(header: dict[str, Any], payload: bytes) -> list[dict[str, Any]]:
+    """Gegenstück zu pack_bauplan: die Bilder mit ihren Linien."""
+    reihenfolge = tuple(header.get("linien_reihenfolge") or LINIEN_REIHENFOLGE)
+    bilder = list(header.get("bilder") or [])
+    gruppen, ende = unpack_linien(payload, len(bilder), reihenfolge)
+    if ende != len(payload):
+        raise ValueError(f"Nutzlast von BAUPLAN hat {len(payload)} Byte, erwartet {ende}")
+    return [{**b, "linien": g} for b, g in zip(bilder, gruppen)]
+
+
+def pack_docs(*, run: int | None, blaetter: list[dict[str, Any]] | None = None,
+              bauplan: dict[str, Any] | None = None, seq: int = 0) -> dict[str, Any]:
+    """DOCS (Kernel → App): Blätter der Zeichnungen (P6-Z) und Zusammenfassung des Bauplans
+    ``{abschnitte, schritte, probleme, fehler, hinweise, run}`` oder null, wenn es keinen Bauplan gibt."""
+    return {"type": "DOCS", "seq": seq, "run": run, "blaetter": list(blaetter or []), "bauplan": bauplan}
+
+
+def bauplan_beispiel() -> dict[str, Any]:
+    """Kleiner Bauplan wie in bauplan.json (Grundlage der Testdateien)."""
+    befund = {"id": "bp1", "art": "werkzeugzugang", "teile": ["Halter/Schraube 1", "Halter/Deckel"],
+              "schwere": "fehler", "schritt": "m-2", "ort": [10.0, 0.0, 30.0], "wert": {"volumen": 42.0},
+              "text": "Werkzeug kommt schlecht an Schraube 1 (Innensechskant 5 mm): Deckel im Weg (42 mm³ im "
+                      "Werkzeugraum).",
+              "loesung": "Verbindungsmittel anbringen, bevor Halter/Deckel montiert wird (Schritt teilen)"}
+    return {
+        "version": 1, "titel": "Halter",
+        "abschnitte": [
+            {"art": "material", "titel": "Material", "schritte": [
+                {"id": "m-1", "titel": "Normteile und Kleinteile", "text": "Schrauben abzählen.", "quelle": "auto",
+                 "fest": False, "teile": ["Halter/Schraube 1"], "neu": [], "baugruppe": None,
+                 "verbindungsmittel": [], "werkzeug": [], "bohrbild": [], "zuschnitt": [], "druck": None, "bild": None,
+                 "pruefung": [], "anzahl": 1, "hinweise": [],
+                 "material": [{"benennung": "Zylinderschraube ISO 4762 M6 × 20", "menge": 2, "einheit": "Stück",
+                               "preis": 0.3, "quelle": "kaufen oder Bestand"}]}]},
+            {"art": "zuschnitt", "titel": "Zuschnitt", "schritte": [
+                {"id": "z-1", "titel": "Stange 1: 300 + 300 mm", "text": "Ablängen: 300 + 300 mm, Rest 394 mm.",
+                 "quelle": "auto", "fest": False, "teile": ["Halter/Bein 1", "Halter/Bein 2"], "neu": [],
+                 "baugruppe": None, "verbindungsmittel": [], "werkzeug": ["Metallkreissäge"], "bohrbild": [],
+                 "zuschnitt": [{"stock_id": "vierkantrohr-en10219-40x40x3", "laenge": 300.0, "gehrung": [0, 0],
+                                "anzahl": 2}],
+                 "druck": None, "bild": None, "pruefung": [], "anzahl": 1, "hinweise": []}]},
+            {"art": "bearbeiten", "titel": "Bearbeiten", "schritte": [
+                {"id": "b-1", "titel": "2× Bein: 2 Bohrungen", "text": "Anreißen, körnen, bohren.", "quelle": "auto",
+                 "fest": False, "teile": ["Halter/Bein 1", "Halter/Bein 2"], "neu": [], "baugruppe": None,
+                 "verbindungsmittel": [], "werkzeug": ["Bohrer Ø 6,6", "Körner", "Entgrater"],
+                 "bohrbild": [{"teil": "Halter/Bein 1", "bezug": {"teil": "Halter/Bein 1", "art": "bohrung",
+                                                                  "signatur": {"typ": "kreis",
+                                                                               "mitte": [25.0, 20.0, 0.0],
+                                                                               "richtung": [0, 1, 0], "radius": 3.3,
+                                                                               "laenge": 40.0},
+                                                                  "merkmal": "bohrung:1", "ref": None},
+                               "durchmesser": 6.6, "tiefe": None, "lage_mm": [25.0], "von": "Ende A (links)",
+                               "senkung": None, "gewinde": None, "text": "Ø6,6", "art": "bohrung",
+                               "richtung": [0.0, 1.0, 0.0]}],
+                 "zuschnitt": [], "druck": None, "bild": None, "pruefung": [], "anzahl": 2, "hinweise": []}]},
+            {"art": "drucken", "titel": "Drucken", "schritte": []},
+            {"art": "montage", "titel": "Montage", "schritte": [
+                {"id": "m-1g", "titel": "Bein 1 als Grundteil auflegen", "text": "Bein 1 als Grundteil hinstellen.",
+                 "quelle": "auto", "fest": False, "teile": ["Halter/Bein 1"], "neu": ["Halter/Bein 1"],
+                 "baugruppe": None, "verbindungsmittel": [], "werkzeug": [], "bohrbild": [], "zuschnitt": [],
+                 "druck": None, "pruefung": [], "anzahl": 1, "hinweise": [],
+                 "einbau": [{"name": "Halter/Bein 1", "art": "teil", "teile": ["Halter/Bein 1"],
+                             "haupt": "Halter/Bein 1", "richtung": None, "zuerst": None, "weg": 0.0,
+                             "aufbocken": 0.0, "grundteil": True, "erzwungen": False, "sperrer": []}],
+                 "bild": {"kamera": {"rotation": [0.2798, -0.1159, -0.3647, 0.8805], "pivot": [0.0, 0.0, 150.0],
+                                     "distance": 900.0, "ortho": True},
+                          "ansicht": {"richtung": [0.57735, 0.57735, -0.57735], "oben": [0.40825, 0.40825, 0.8165]},
+                          "explosion": {}, "pfeile": [], "hervorheben": ["Halter/Bein 1"], "kontext": [],
+                          "sichtbarkeit": {}, "quelle": "auto"}},
+                {"id": "m-2", "titel": "Deckel einbauen", "text": "Deckel von oben einsetzen, auf Bein 1 legen. 2 × "
+                 "Zylinderschraube ISO 4762 M6 × 20 ansetzen und anziehen.", "quelle": "agent", "fest": True,
+                 "teile": ["Halter/Deckel", "Halter/Schraube 1"], "neu": ["Halter/Deckel", "Halter/Schraube 1"],
+                 "baugruppe": None,
+                 "verbindungsmittel": [{"id": "schraube-iso4762-m6", "benennung": "Zylinderschraube ISO 4762 M6 × 20",
+                                        "laenge": 20.0, "anzahl": 1, "geschaetzt": False}],
+                 "werkzeug": ["Innensechskant 5 mm"], "bohrbild": [], "zuschnitt": [], "druck": None,
+                 "pruefung": [befund], "anzahl": 1, "hinweise": ["Schraube erst handfest, dann über Kreuz anziehen"],
+                 "einbau": [{"name": "Halter/Deckel", "art": "teil", "teile": ["Halter/Deckel"],
+                             "haupt": "Halter/Deckel", "richtung": [0.0, 0.0, -1.0], "zuerst": None, "weg": 25.0,
+                             "aufbocken": 0.0, "grundteil": False, "erzwungen": False, "sperrer": []}],
+                 "bild": {"kamera": {"rotation": [0.2798, -0.1159, -0.3647, 0.8805], "pivot": [0.0, 0.0, 150.0],
+                                     "distance": 900.0, "ortho": True},
+                          "ansicht": {"richtung": [0.57735, 0.57735, -0.57735], "oben": [0.40825, 0.40825, 0.8165]},
+                          "explosion": {"Halter/Deckel": [0.0, 0.0, 25.0], "Halter/Schraube 1": [0.0, 0.0, 47.5]},
+                          "pfeile": [{"teil": "Halter/Deckel", "richtung": [0.0, 0.0, -1.0],
+                                      "von": [0.0, 0.0, 330.0], "nach": [0.0, 0.0, 305.0]}],
+                          "hervorheben": ["Halter/Deckel", "Halter/Schraube 1"], "kontext": ["Halter/Bein 1"],
+                          "sichtbarkeit": {"Halter/Deckel": 0.97, "Halter/Schraube 1": 0.62}, "quelle": "auto"}}]}],
+        "vorher": [{"a": "m-1g", "b": "m-2", "grund": "Deckel wird an Bein 1 befestigt (schraube)", "quelle": "auto",
+                    "teile": ["Halter/Bein 1", "Halter/Deckel"]},
+                   {"a": "m-1g", "b": "m-2", "grund": "erst das Gestell ausrichten", "quelle": "kevin"}],
+        "umfang": {"ohne": ["Umgebung"]},
+        "stand": {"run": 3, "erzeugt": "2026-10-22T21:00:00", "gesamt_ms": 812.5, "verbinde": True},
+    }
