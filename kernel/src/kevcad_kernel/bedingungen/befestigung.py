@@ -25,7 +25,7 @@ from typing import Any
 import numpy as np
 
 from .arten import Auf, Fest, Gelenk, InBohrung, Verbindung, _perp
-from .geometrie import Bezug, BezugFehler, bohrungen_von, linien_winkel, schraube_daten
+from .geometrie import Bezug, BezugFehler, bohrungen_von, linien_winkel, schraube_daten, verbindungsteil
 from .text import mm
 
 KONTAKT = {"aufliegen": 0.05, "kleben": 0.2}
@@ -94,7 +94,12 @@ def _pruefe_schraube(v: Verbindung, A: Bezug, B: Bezug, mit: list[tuple[Bezug, A
     probleme: list[str] = []
     fa, fb = _form(A), _form(B)
     schrauben, rest = [], []
+    arten: dict[int, str | None] = {}  # id(Form) → Art des Verbindungselements (Lagerteil, sonst Form)
     for bz, form in mit:
+        arten[id(form)] = verbindungsteil(form)
+        if arten[id(form)] not in (None, "schraube"):  # Scheibe, Mutter, Einsatz, Ring: nie ein Schaft
+            rest.append((bz, form))
+            continue
         try:
             schrauben.append((bz, form, schraube_daten(form)))
         except BezugFehler:
@@ -115,7 +120,7 @@ def _pruefe_schraube(v: Verbindung, A: Bezug, B: Bezug, mit: list[tuple[Bezug, A
         for h, teil in ((ha, A.teilname), (hb, B.teilname)):
             if (h.r or 0) * 2 < daten.d - (daten.steigung or 0.1 * daten.d) - 0.4:
                 probleme.append(f"Bohrung in {teil} (Ø {mm(2 * (h.r or 0), 2)}) ist zu klein für "
-                                f"M{daten.d:g}")
+                                f"{daten.bezeichnung}")
         # Kopf liegt auf: Schraube berührt eines der Teile oder eine Scheibe
         kopf_teile = [fa, fb] + [f for _, f in rest]
         if min(_abstand(form, f, 0.05)[0] for f in kopf_teile) > 0.05:
@@ -125,6 +130,8 @@ def _pruefe_schraube(v: Verbindung, A: Bezug, B: Bezug, mit: list[tuple[Bezug, A
         if not gewinde_a and not gewinde_b:
             muttern = []
             for mbz, mform in rest:
+                if arten.get(id(mform)) == "scheibe":  # eine Scheibe hält nichts, auch wenn sie auf der Achse sitzt
+                    continue
                 for h in bohrungen_von(mform) if hasattr(mform, "faces") else []:
                     if h.d is not None and linien_winkel(h.d, achse.d) < 1.0 and \
                             np.linalg.norm(_perp(achse.d) @ (h.p - achse.p)) < 0.5:
@@ -143,31 +150,33 @@ def _pruefe_schraube(v: Verbindung, A: Bezug, B: Bezug, mit: list[tuple[Bezug, A
 
 def befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any],
                         index: Any, beteiligt: dict[str, list[str]], staende: dict[str, dict] | None = None,
-                        boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None
-                        ) -> tuple[list[dict], list[dict], dict[str, dict]]:
-    """(Einträge für die Liste, Befunde, Angaben je Teil: befestigt, verbindungen, am_boden)."""
+                        boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
+                        kulisse: set[str] | None = None) -> tuple[list[dict], list[dict], dict[str, dict]]:
+    """(Einträge für die Liste, Befunde, Angaben je Teil: befestigt, verbindungen, am_boden). ``kulisse``: Namen der
+    Kulissenteile (Umgebung): keine Befestigungspflicht, aber wer darauf steht, ist am Boden."""
     _BOXEN.clear()
     for n, f in formen.items():
         if boxen and n in boxen:
             _BOXEN[id(f)] = boxen[n]
     try:
-        return _befestigung_pruefen(sammlung, aufgeloest, formen, index, beteiligt, staende, boxen)
+        return _befestigung_pruefen(sammlung, aufgeloest, formen, index, beteiligt, staende, boxen,
+                                    {n for n in (kulisse or ()) if n in formen})
     finally:
         _BOXEN.clear()
 
 
 def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any],
                          index: Any, beteiligt: dict[str, list[str]], staende: dict[str, dict] | None,
-                         boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None
+                         boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None, kulisse: set[str]
                          ) -> tuple[list[dict], list[dict], dict[str, dict]]:
     from .arten import Ergebnis
     from .pruefung import _befund, _item, aufloesen, aufloesen_paar
 
     if not beteiligt and not any(isinstance(v, Verbindung) for v in sammlung.bedingungen):
         # Modell ohne jede Bedingung: ein Sammel-Befund, sonst nichts zu rechnen
-        if not formen:
+        namen = [n for n in formen if n not in kulisse]
+        if not namen:
             return [], [], {}
-        namen = list(formen)
         liste = ", ".join(namen[:5]) + (" …" if len(namen) > 5 else "")
         return [], [_befund(pruefung="befestigung", teile=namen, schwere="hinweis",
                             text=f"{len(namen)} Teile ohne Angabe, wie sie befestigt sind ({liste})",
@@ -206,7 +215,8 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
         text = v.beschreibung(A, B)
         for t in teile:
             deklariert.add(t)
-            pflicht.add(t)
+            if t not in kulisse:  # Kulisse: keine Befestigungspflicht, eine Verbindung dorthin zählt trotzdem
+                pflicht.add(t)
             beteiligt.setdefault(t, []).append(v.id)
         probleme: list[str] = []
         ort = None
@@ -278,14 +288,25 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
             if fa is not None and fb is not None and _abstand(fa, fb, 0.5)[0] <= 0.5:
                 verbinden(A.teilname, B.teilname, "fest")
 
-    # Boden: tiefste Ebene der Baugruppe
+    # Boden: tiefste Ebene der Baugruppe (ohne Kulisse); Kulisse selbst und was auf ihr steht, ist am Boden
     if formen:
         boxen = {n: (boxen or {}).get(n) or _bbox(f) for n, f in formen.items()}
-        # Boden: z = 0, wenn dort etwas steht, sonst die tiefste Ebene der Baugruppe
-        z0 = 0.0 if any(abs(b[0][2]) <= BODEN_TOL for b in boxen.values()) else min(b[0][2] for b in boxen.values())
-        for n, (lo, _) in boxen.items():
-            if lo[2] <= z0 + BODEN_TOL:
-                am_boden.add(n)
+        eigene = {n: b for n, b in boxen.items() if n not in kulisse}
+        if eigene:
+            # Boden: z = 0, wenn dort etwas steht, sonst die tiefste Ebene der Baugruppe
+            z0 = 0.0 if any(abs(b[0][2]) <= BODEN_TOL for b in eigene.values()) else \
+                min(b[0][2] for b in eigene.values())
+            for n, (lo, _) in eigene.items():
+                if lo[2] <= z0 + BODEN_TOL:
+                    am_boden.add(n)
+        am_boden |= kulisse
+        for k in kulisse:
+            klo, khi = boxen[k]
+            for n, (lo, hi) in eigene.items():
+                if n in am_boden or np.any(lo > khi + BODEN_TOL) or np.any(hi < klo - BODEN_TOL):
+                    continue
+                if _abstand(formen[n], formen[k], BODEN_TOL)[0] <= BODEN_TOL:
+                    am_boden.add(n)
     erreicht = set()
     stapel = [n for n in am_boden if n in kanten]
     while stapel:
@@ -298,7 +319,7 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
     teile_info: dict[str, dict] = {}
     ohne, schwebend = [], []
     for n in sorted(pflicht):
-        if n not in formen:
+        if n not in formen or n in kulisse:
             continue
         befestigt = bool(kanten[n]) or n in am_boden
         teile_info[n] = {"befestigt": befestigt, "am_boden": n in erreicht,
@@ -320,7 +341,7 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
                                ort=_mitte(formen[schwebend[0]]),
                                loesung="die Gruppe mit verbinde(…) an ein Teil hängen, das am Boden steht (oder auf "
                                        "boden stellen)"))
-    frei_teile = [n for n in formen if n not in pflicht]
+    frei_teile = [n for n in formen if n not in pflicht and n not in kulisse]
     if frei_teile:
         liste = ", ".join(frei_teile[:5]) + (" …" if len(frei_teile) > 5 else "")
         # Kevin, 22.10.2026: Hinweis, solange das Modell kein verbinde(…) nutzt; danach ist jede fehlende Angabe ein

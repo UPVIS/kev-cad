@@ -23,11 +23,14 @@ kleinste Ausdehnung des Schnittkörpers.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+
+_FEHLT = object()  # Marke für „nicht im Zwischenspeicher“ (None ist ein gültiges Ergebnis)
 
 
 @dataclass
@@ -211,12 +214,16 @@ def pruefe_kollisionen(formen: Mapping[str, Any], lagen: Mapping[str, np.ndarray
                        kugeln: Mapping[str, tuple[Sequence[float], float]] | None = None,
                        toleranz: float = 0.05, min_volumen: float = 0.5,
                        sichtbar: Callable[[str, int], bool] | None = None,
-                       zeitlimit_s: float | None = None) -> tuple[list[Befund], dict[str, Any]]:
+                       zeitlimit_s: float | None = None, cache: MutableMapping[tuple, Any] | None = None,
+                       schluessel: Mapping[str, str] | None = None) -> tuple[list[Befund], dict[str, Any]]:
     """Durchdringungen von Teilepaaren an Zeitschritten (siehe Moduldoku).
 
     ``kugeln`` (optional): Name → (Mitte, Radius) einer Hüllkugel in Ruhelage. Dreht sich ein Teil gegenüber dem
     anderen nur um diese Mitte (Kugel, die rollt), und berührt das andere Teil die Kugel nicht, ist das Paar für alle
-    Bilder frei; das spart die teuren exakten Prüfungen."""
+    Bilder frei; das spart die teuren exakten Prüfungen.
+
+    ``cache`` (optional): Zwischenspeicher über Aufrufe hinweg (z. B. über Läufe), Schlüssel aus ``schluessel``
+    (Name → Geometrieschlüssel der Form in Ruhelage, sonst der Name) und der relativen Lage beider Teile."""
     t0 = time.perf_counter()
     zeiten = np.asarray(zeiten, dtype=float)
     frames = np.array(sorted(set(bilder)) if bilder is not None else range(len(zeiten)), dtype=int)
@@ -241,7 +248,9 @@ def pruefe_kollisionen(formen: Mapping[str, Any], lagen: Mapping[str, np.ndarray
     stats = {"paare": len(pairs), "bilder": int(len(frames)), "kandidaten": 0, "kugel_frei": 0, "exakt": 0,
              "zwischenspeicher": 0, "abgebrochen": False}
     befunde: list[Befund] = []
-    cache: dict[tuple, tuple[float, np.ndarray, np.ndarray] | None] = {}
+    if cache is None:
+        cache = {}
+    sk = schluessel or {}
     for a, b in pairs:
         if zeitlimit_s is not None and time.perf_counter() - t0 > zeitlimit_s:
             stats["abgebrochen"] = True
@@ -264,10 +273,11 @@ def pruefe_kollisionen(formen: Mapping[str, Any], lagen: Mapping[str, np.ndarray
                 stats["abgebrochen"] = True
                 break
             k = int(frames[i])
-            key = (a, b, tuple(np.round(rel[i, :3, :].ravel(), 4)))
-            if key in cache:
+            key = (sk.get(a, a), sk.get(b, b), tuple(np.round(rel[i, :3, :].ravel(), 4)))
+            hit = cache.get(key, _FEHLT)
+            if hit is not _FEHLT:
                 stats["zwischenspeicher"] += 1
-                res = cache[key]
+                res = hit
             else:
                 stats["exakt"] += 1
                 res = _common(formen[a], _moved(formen[b], rel[i]))

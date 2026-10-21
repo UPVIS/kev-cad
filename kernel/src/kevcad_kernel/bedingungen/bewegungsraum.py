@@ -4,11 +4,23 @@ Je Gelenk (``drehgelenk``, ``schiebegelenk``, ``zylindergelenk`` mit ``bereich``
 ``<projekt>/bewegungen.json`` (Format wie ``kernel/tools/check_motion.py``) wird das bewegte Teil samt mitbewegten
 Teilen in Schritten über den Bereich gefahren und gegen alle übrigen Teile geprüft: Hüllquader-Vorfilter, dann exaktes
 Schnittvolumen. Berühren ist erlaubt (unter ``min_volumen`` mm³ oder dünner als ``toleranz`` mm). Bedienteile prüfen
-zusätzlich den Freiraum am Griff (Finger, Hand, Werkzeug).
+zusätzlich den Freiraum am Griff (Finger, Hand, Werkzeug): Hebel und Klappen an ihrem Griffpunkt über den ganzen Weg,
+Teile, die um ihre eigene Achse gedreht werden (Flügelmutter, Drehknopf, ``bedienung="fluegel"``), im Griffraum: ein
+Zylinderring um die Drehachse über der Auflage, so weit wie die Flügelspitze plus Freiraum.
+
+Paare, die schon in der Ausgangslage im Gewinde greifen (Schraube in Mutter, Einsatz oder Kernloch), blockieren eine
+Bewegung entlang bzw. um ihre Gewindeachse nicht: die Schraube wird heraus- oder hineingedreht (Helfer
+``pruefung.kollision.im_gewinde`` und ``entlang_gewinde``). Quer zur Achse sperrt das Gewinde weiter.
 
 Die Kollisionsfunktion ist dieselbe wie bei der Animation: ``kevcad_kernel.anim_kollision.pruefe_kollisionen``, sobald
 der Strang Animation zusammengeführt ist; bis dahin eine Fassung mit gleicher Schnittstelle (``_pruefe_kollisionen``).
-Ergebnisse werden je Geometriestand zwischengespeichert, damit ein neuer Lauf ohne Änderung am Gelenk nichts kostet.
+Zwischenspeicher auf zwei Ebenen, beide über Läufe hinweg im Rechenprozess:
+
+- je Weg (Gelenk): Schlüssel aus Geometrieschlüssel und Lage aller beteiligten Teile, Achse, Bereich, Schritte,
+  Freiraum und Bedienung. Ein unveränderter Stand kostet nur das Nachschlagen; ändert sich ein Teil, rechnet nur der
+  Weg neu, an dem es beteiligt ist.
+- je Teilepaar und relativer Lage (``_PAAR_CACHE``): auch was ein abgebrochener (Zeitlimit) oder geänderter Weg schon
+  gerechnet hat, bleibt erhalten; der nächste Lauf setzt dort fort.
 """
 
 from __future__ import annotations
@@ -29,14 +41,38 @@ from .text import grad, mm, vektor
 
 TOLERANZ = 0.05  # mm: dünnere Schnittkörper gelten als Berührung (wie Animation)
 MIN_VOLUMEN = 0.5  # mm³: kleinere Schnittvolumen gelten als Berührung (wie Animation)
+GRIFF_INNEN = 0.5  # Griffraum beginnt bei diesem Anteil des Spitzenradius (innen: Nabe, Bolzen, Gewindestift)
+AUFLAGE_TOL = 0.3  # mm: so nah gilt ein festes Teil als Auflage des bedienten Teils
 
 try:  # gemeinsame Kollisionsfunktion mit der Animation (Strang ANI)
     from kevcad_kernel.anim_kollision import pruefe_kollisionen  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - bis zum Zusammenführen
     pruefe_kollisionen = None  # type: ignore[assignment]
 
-_CACHE: OrderedDict[tuple, dict[str, Any]] = OrderedDict()
-_CACHE_MAX = 200
+
+class _LRU(OrderedDict):
+    """Kleiner LRU-Speicher mit ``get``/``[]=`` (für die Kollisionsfunktion)."""
+
+    def __init__(self, maximum: int) -> None:
+        super().__init__()
+        self.maximum = maximum
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        if key in self:
+            self.move_to_end(key)
+            return self[key]
+        return default
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        super().__setitem__(key, value)
+        self.move_to_end(key)
+        while len(self) > self.maximum:
+            self.popitem(last=False)
+
+
+_CACHE: _LRU = _LRU(200)  # je Weg: fertiges Ergebnis
+_PAAR_CACHE: _LRU = _LRU(100_000)  # je Teilepaar und relativer Lage: (Volumen, min, max) oder None
+_GEWINDE_CACHE: _LRU = _LRU(2000)  # je Teilepaar in Ruhelage: Gewindeeingriff oder None
 
 
 @dataclass
@@ -89,7 +125,8 @@ def _gemeinsam(a: Any, b_moved: Any) -> tuple[float, np.ndarray, np.ndarray] | N
 
 
 def _pruefe_kollisionen(formen, lagen, zeiten, *, bilder=None, paare=None, huellen=None, kugeln=None,  # noqa: ANN001
-                        toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN, sichtbar=None, zeitlimit_s=None):
+                        toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN, sichtbar=None, zeitlimit_s=None, cache=None,
+                        schluessel=None):
     """Gleiche Schnittstelle wie ``anim_kollision.pruefe_kollisionen`` (nur die hier gebrauchten Teile)."""
     from OCP.TopLoc import TopLoc_Location
 
@@ -116,9 +153,16 @@ def _pruefe_kollisionen(formen, lagen, zeiten, *, bilder=None, paare=None, huell
             if np.any(pc.max(axis=0) <= lo + toleranz) or np.any(pc.min(axis=0) >= hi - toleranz):
                 continue
             stats["kandidaten"] += 1
-            stats["exakt"] += 1
-            wb = formen[b].wrapped.Moved(TopLoc_Location(matrix_trsf(rel)))
-            res = _gemeinsam(formen[a], wb)
+            sk = schluessel or {}
+            key = (sk.get(a, a), sk.get(b, b), tuple(np.round(rel[:3, :].ravel(), 4)))
+            if cache is not None and key in cache:
+                res = cache.get(key)
+            else:
+                stats["exakt"] += 1
+                wb = formen[b].wrapped.Moved(TopLoc_Location(matrix_trsf(rel)))
+                res = _gemeinsam(formen[a], wb)
+                if cache is not None:
+                    cache[key] = res
             if res is None:
                 continue
             vol, clo, chi = res
@@ -157,6 +201,7 @@ class Bewegung:
     quelle: str = ""
     zeile: int | None = None
     bedingung: str | None = None
+    achse_teil: str | None = None  # Teil des festen Bezugs (Welle, Gewindestift, Gehäuse)
 
     def lage(self, wert: float) -> np.ndarray:
         if self.art == "drehen":
@@ -218,7 +263,7 @@ def aus_gelenk(g: Gelenk, A: Bezug, B: Bezug, formen: dict[str, Any]) -> Bewegun
     return Bewegung(name=f"{g.art} {A.teilname}", art=art, teile=teile, punkt=B.p.copy(), richtung=B.d.copy(),
                     von=g.bereich[0], bis=g.bereich[1], ist=ist, schritte=g.schritte or 0, ignorieren=ignorieren,
                     freiraum=g.freiraum, bedienung=g.bedienung, griff=griff, quelle="gelenk", zeile=g.zeile,
-                    bedingung=g.id)
+                    bedingung=g.id, achse_teil=B.teilname)
 
 
 def aus_json(projekt: Path, formen: dict[str, Any]) -> tuple[list[Bewegung], list[str]]:
@@ -323,25 +368,53 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
         lo, hi = _box(f)
         if np.all(lo < whi + rand) and np.all(hi > wlo - rand):
             statisch[n] = f
+    griffraum = bool(bew.freiraum) and _dreht_um_sich(bew, formen)
+    griff_kand: dict[str, Any] = {}
+    if griffraum:  # Griffraum um die Drehachse: Teile im Umkreis des bedienten Teils plus Freiraum
+        g_lo, g_hi = _box(formen[bew.teile[0]])
+        for n, f in formen.items():
+            if n in bewegt or n in bew.ignorieren:
+                continue
+            lo, hi = _box(f)
+            if np.all(lo < g_hi + 2 * rand) and np.all(hi > g_lo - 2 * rand):
+                griff_kand[n] = f
+    beteiligt = {**bewegt, **statisch, **griff_kand}
     key = (bew.name, bew.art, tuple(np.round(bew.punkt, 4)), tuple(np.round(bew.richtung, 6)), bew.von, bew.bis,
-           bew.ist, len(werte), bew.freiraum, None if bew.griff is None else tuple(np.round(bew.griff, 3)),
-           tuple(sorted((n, schluessel.get(n, str(id(f)))) for n, f in {**bewegt, **statisch}.items())))
-    if key in _CACHE:
-        _CACHE.move_to_end(key)
-        return {**_CACHE[key], "zwischenspeicher": True}
+           bew.ist, len(werte), bew.freiraum, bew.bedienung, griffraum,
+           None if bew.griff is None else tuple(np.round(bew.griff, 3)),
+           tuple(sorted((n, schluessel.get(n, str(id(f)))) for n, f in beteiligt.items())))
+    hit = _CACHE.get(key)
+    if hit is not None:
+        return {**hit, "zwischenspeicher": True}
     lagen = {n: lagen_liste for n in bewegt}
     paare = [(m, s) for m in bewegt for s in statisch]
     fn = _kollisionsfunktion()
+    sk = {n: schluessel[n] for n in {**bewegt, **statisch} if schluessel.get(n)}
     befunde, stats = fn({**bewegt, **statisch}, lagen, werte, paare=paare, toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN,
-                        zeitlimit_s=zeitlimit_s)
+                        zeitlimit_s=zeitlimit_s, cache=_PAAR_CACHE if sk else None, schluessel=sk)
     kollisionen: dict[tuple[str, str], list[Any]] = {}
     for b in befunde:
         m, s = b.teile if b.teile[0] in bewegt else (b.teile[1], b.teile[0])
         kollisionen.setdefault((m, s), []).append(b)
-    blockiert = {werte[b.bild] for b in befunde}
+    # Paare, die schon in der Ausgangslage im Gewinde greifen: entlang bzw. um die Gewindeachse kein Hindernis
+    gewinde: list[dict[str, Any]] = []
+    i_ist = next((k for k, w in enumerate(werte) if abs(w - bew.ist) < 1e-9), None)
+    for (m, s), bs in list(kollisionen.items()):
+        if i_ist is None or not any(b.bild == i_ist for b in bs):
+            continue
+        eingriff = _gewinde_in_ruhe(m, s, formen, schluessel)
+        if eingriff is not None and eingriff.entlang(bew.richtung, bew.punkt, drehen=bew.art == "drehen"):
+            del kollisionen[(m, s)]
+            gewinde.append({"teile": [m, s], "text": eingriff.text})
+    blockiert = {werte[b.bild] for bs in kollisionen.values() for b in bs}
     # Freiraum am Griff
     eng: dict[str, list[tuple[float, float]]] = {}
-    if bew.freiraum and not stats.get("abgebrochen"):
+    raum: dict[str, Any] | None = None
+    if griffraum and not stats.get("abgebrochen"):
+        raum = _griffraum_pruefen(bew, formen, griff_kand)
+        for n, platz in raum.pop("eng").items():
+            eng[n] = [(w, platz) for w in werte]  # der Griffraum dreht mit: gilt für den ganzen Weg
+    elif bew.freiraum and not stats.get("abgebrochen"):
         from build123d import Vertex
 
         g0 = _griff(bew, formen)
@@ -371,16 +444,155 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
                          "ort": [round(c, 2) for c in max(bs, key=lambda b: b.volumen).ort],
                          "schon_in_ruhe": any(abs(werte[b.bild] - bew.ist) < 1e-9 for b in bs)}
                         for (m, s), bs in sorted(kollisionen.items())],
-        "eng": [{"gegen": n, "bereiche": _bereiche(werte, {w for w, _ in v}), "min_abstand": round(min(d for _, d in v), 2)}
+        "eng": [{"gegen": n, "bereiche": _bereiche(werte, {w for w, _ in v}), "min_abstand": round(min(d for _, d in v), 2),
+                 **({"griffraum": True} if raum is not None else {})}
                 for n, v in sorted(eng.items())],
         "geprueft_ms": round((time.perf_counter() - t0) * 1000, 1), "teilweise": bool(stats.get("abgebrochen")),
         "zwischenspeicher": False, "zeile": bew.zeile,
     }
+    if bew.bedienung:
+        ergebnis["bedienung"] = bew.bedienung
+    if raum is not None:
+        ergebnis["griffraum"] = raum
+    if gewinde:
+        ergebnis["gewinde"] = gewinde
     if not ergebnis["teilweise"]:
         _CACHE[key] = ergebnis
-        if len(_CACHE) > _CACHE_MAX:
-            _CACHE.popitem(last=False)
     return ergebnis
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Gewinde in der Ausgangslage
+
+
+def _gewinde_in_ruhe(m: str, s: str, formen: dict[str, Any], schluessel: dict[str, str]) -> Any:
+    """Gewindeeingriff von m und s in der gezeigten Lage (``pruefung.kollision.im_gewinde``), je Geometriestand
+    zwischengespeichert."""
+    from kevcad_kernel.pruefung.kollision import im_gewinde
+
+    key = (schluessel.get(m) or str(id(formen[m])), schluessel.get(s) or str(id(formen[s])))
+    if key in _GEWINDE_CACHE:
+        return _GEWINDE_CACHE.get(key)
+    try:
+        g = im_gewinde(formen[m], formen[s], name_a=m, name_b=s)
+    except Exception:  # noqa: BLE001 - ohne Erkennung bleibt die Kollision ein Befund
+        g = None
+    _GEWINDE_CACHE[key] = g
+    return g
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Griffraum für Teile, die um ihre eigene Achse gedreht werden (Flügelmutter, Drehknopf)
+
+
+def _punkte(form: Any) -> np.ndarray:
+    """Punkte auf der Oberfläche (Netz, 0,2 mm genau), für Radien und Höhen entlang einer Achse."""
+    try:
+        verts, _ = form.tessellate(0.2)
+        pts = np.array([[v.X, v.Y, v.Z] for v in verts], dtype=float)
+        if len(pts):
+            return pts
+    except Exception:  # noqa: BLE001
+        pass
+    return np.array([[v.X, v.Y, v.Z] for v in form.vertices()], dtype=float)
+
+
+def _dreht_um_sich(bew: Bewegung, formen: dict[str, Any]) -> bool:
+    """Wird das Teil um seine eigene Achse gedreht (Flügelmutter, Knopf), statt wie ein Hebel um eine Achse am Rand?
+    ``bedienung="fluegel"`` immer; Finger und Hand, wenn der Schwerpunkt nahe der Drehachse liegt."""
+    if bew.art != "drehen" or bew.bedienung not in ("fluegel", "finger", "hand") or bew.griff is not None:
+        return False
+    if bew.bedienung == "fluegel":
+        return True
+    form = formen.get(bew.teile[0])
+    if form is None:
+        return False
+    try:
+        from build123d import CenterOf
+
+        c = np.array(list(form.center(CenterOf.MASS)), dtype=float)
+    except Exception:  # noqa: BLE001
+        lo, hi = _box(form)
+        c = (lo + hi) / 2
+    pts = _punkte(form)
+    d = einheit(bew.richtung)
+    off = pts - bew.punkt
+    r = np.linalg.norm(off - np.outer(off @ d, d), axis=1)
+    oc = c - bew.punkt
+    rc = float(np.linalg.norm(oc - d * float(np.dot(oc, d))))
+    return len(r) > 0 and rc <= 0.25 * float(r.max())
+
+
+def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[str, Any]) -> dict[str, Any]:
+    """Griffraum: Zylinderring um die Drehachse, innen ab dem halben Spitzenradius (Nabe, Bolzen), außen bis
+    Flügelspitze plus Freiraum; axial von der Auflage (0,5 mm darüber) bis Oberkante plus Freiraum, also nur auf der
+    Griffseite. Die Auflage ist das Ende des Teils, an dem ein festes Teil anliegt (Scheibe, Platte); liegt an beiden
+    Enden etwas an, nur die Höhe des Teils; liegt nichts an, beide Seiten. Liefert die Maße und je eindringendem Teil
+    den Platz neben der Spitze (``eng``: Name → mm)."""
+    from build123d import Align, Cylinder, Edge, Location, Plane, Pos
+
+    from kevcad_kernel.pruefung.kollision import abstand, schnittmenge, volumen_und_achsen
+
+    form = formen[bew.teile[0]]
+    d = einheit(bew.richtung)
+    p = np.asarray(bew.punkt, dtype=float)
+    pts = _punkte(form)
+    off = pts - p
+    t = off @ d
+    r = np.linalg.norm(off - np.outer(t, d), axis=1)
+    r_spitze = float(r.max())
+    t0, t1 = float(t.min()), float(t.max())
+    frei = float(bew.freiraum or 0.0)
+    g_lo, g_hi = _box(form)
+    seiten: set[int] = set()
+    for n, f in kandidaten.items():
+        lo, hi = _box(f)
+        if np.any(lo > g_hi + AUFLAGE_TOL) or np.any(hi < g_lo - AUFLAGE_TOL):
+            continue
+        try:
+            spalt = float(form.distance_to(f))
+        except Exception:  # noqa: BLE001
+            continue
+        if spalt > AUFLAGE_TOL:
+            continue
+        s = (_ecken(lo, hi) - p) @ d
+        if float(s.max()) <= t0 + AUFLAGE_TOL:
+            seiten.add(-1)  # liegt unter dem Teil (Scheibe, Platte): Griff zur anderen Seite
+        elif float(s.min()) >= t1 - AUFLAGE_TOL:
+            seiten.add(1)
+    if seiten == {-1}:
+        a0, a1, auflage = t0 + 0.5, t1 + frei, "unten"
+    elif seiten == {1}:
+        a0, a1, auflage = t0 - frei, t1 - 0.5, "oben"
+    elif seiten == {-1, 1}:
+        a0, a1, auflage = t0 + 0.5, t1 - 0.5, "beidseitig"
+    else:
+        a0, a1, auflage = t0 - frei, t1 + frei, "keine"
+    r_in, r_out = GRIFF_INNEN * r_spitze, r_spitze + frei
+    hoehe = max(a1 - a0, 0.1)
+    unten = (Align.CENTER, Align.CENTER, Align.MIN)
+    ring = Cylinder(r_out, hoehe, align=unten) - Pos(0, 0, -1) * Cylinder(r_in, hoehe + 2, align=unten)
+    ring = Location(Plane(origin=tuple(map(float, p + d * a0)), z_dir=tuple(map(float, d)))) * ring
+    achse = Edge.make_line(tuple(map(float, p + d * (a0 - 1))), tuple(map(float, p + d * (a1 + 1))))
+    rb = ring.bounding_box()
+    rlo, rhi = np.array([rb.min.X, rb.min.Y, rb.min.Z]), np.array([rb.max.X, rb.max.Y, rb.max.Z])
+    eng: dict[str, float] = {}
+    for n, f in kandidaten.items():
+        lo, hi = _box(f)
+        if np.any(lo > rhi) or np.any(hi < rlo):
+            continue
+        common = schnittmenge(ring.wrapped, f.wrapped)
+        if common is None:
+            continue
+        vol, _, _ = volumen_und_achsen(common)
+        if vol < MIN_VOLUMEN:
+            continue
+        r_min = abstand(achse.wrapped, common)  # kleinster Abstand des eindringenden Teils von der Drehachse
+        if r_min is None:
+            r_min = r_in
+        eng[n] = round(max(0.0, float(r_min) - r_spitze), 2)
+    return {"r_spitze": round(r_spitze, 2), "r_innen": round(r_in, 2), "r_aussen": round(r_out, 2),
+            "von": round(a0, 2), "bis": round(a1, 2), "auflage": auflage, "eng": eng}
 
 
 def _befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -404,7 +616,23 @@ def _befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:
             einheit="mm³", ort=k["ort"], art=erg["art"], bedingung=erg.get("bedingung"), zeile=erg.get("zeile"),
             loesung=(f"Platz schaffen: {k['gegen']} versetzen, aussparen oder kürzen, oder {k['bewegt']} so umbauen, "
                      f"dass es den Weg schafft; den Bereich nur kleiner machen, wenn die Bedienung das erlaubt")))
+    raum = erg.get("griffraum")
     for k in erg.get("eng") or []:
+        if k.get("griffraum") and raum:
+            seite = {"unten": "über der Auflage", "oben": "unter der Auflage", "beidseitig": "zwischen den Auflagen",
+                     "keine": "auf beiden Seiten"}.get(raum["auflage"], "")
+            out.append(_befund(
+                pruefung="bewegungsraum", teile=[erg["teile"][0], k["gegen"]], schwere="fehler",
+                text=f"{erg['name']}: kein Griffraum, {k['gegen']} ragt in den Raum um die Drehachse {seite} "
+                     f"(nur {mm(k['min_abstand'], 1)} neben der Spitze frei, nötig {mm(erg['freiraum'], 0)})",
+                soll=f"Griffraum frei: Ring Ø {mm(2 * raum['r_innen'], 0)} bis Ø {mm(2 * raum['r_aussen'], 0)} um die "
+                     f"Drehachse {seite}", ist=f"{k['gegen']} im Griffraum",
+                wert=k["min_abstand"] - float(erg["freiraum"]), ort=None, art=erg["art"],
+                bedingung=erg.get("bedingung"), zeile=erg.get("zeile"),
+                loesung=f"{k['gegen']} vom Bedienteil wegrücken oder aussparen, das Bedienteil höher setzen "
+                        f"(längerer Stift, Distanzscheibe) oder eine kleinere Flügelmutter bzw. einen Knopf wählen, "
+                        f"damit Daumen und Zeigefinger es fassen können"))
+            continue
         out.append(_befund(
             pruefung="bewegungsraum", teile=[erg["teile"][0], k["gegen"]], schwere="fehler",
             text=f"{erg['name']}: am Griff nur {mm(k['min_abstand'], 1)} Platz zu {k['gegen']} bei {ber(k['bereiche'])}"

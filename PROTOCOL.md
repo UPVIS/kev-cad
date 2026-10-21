@@ -178,9 +178,19 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 "druckteil": {"verfahren": "3d-druck", "material": "petg", "kg": 0.0412, "preis": 1.03}
 ```
 
+### PART_UPSERT.kulisse
+
+Optionales Feld im Kopf, `true`, wenn das Teil Kulisse ist (`show(..., kulisse=True)` oder `lager.kulisse(form)`):
+Umgebung für Bilder und Videos wie ein gekachelter Boden, weder gekauft noch gebaut. Solche Teile haben kein `stock`,
+`druckteil`, `zukauf` und kein `inventar`, stehen nicht in der Stückliste und zählen nicht als Verstoß gegen die
+Inventar-Regel. Ohne eigene Farbe kommen sie hellgrau. Die App darf sie zurückhaltend zeigen; per Konvention liegen sie
+in einer eigenen Gruppe (`Kulisse/…`), die sich wie jede Gruppe ausblenden lässt. Das Ergebnis des Laufs (`RUN_DONE`
+im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
+
 ### Inventar-Regel
 
-- `PART_UPSERT.inventar`: `ok` | `fehlt` (nur gesetzt, wenn die Regel im Projekt an ist und kein Skizzenlauf läuft).
+- `PART_UPSERT.inventar`: `ok` | `fehlt` (nur gesetzt, wenn die Regel im Projekt an ist und kein Skizzenlauf läuft;
+  nie bei Kulisse).
 - `RUN_END.inventar_regel` (bool): ob die Regel in diesem Lauf galt.
 - `RUN_END.inventar_verstoesse`: Liste der Teilnamen, die weder verbaut noch Druckteil sind (leer = alles gut).
 - `SETTINGS.inventar_regel` (App → Kernel, bool): Kevins Projekteinstellung, der Kernel schreibt sie in `kevcad.json`.

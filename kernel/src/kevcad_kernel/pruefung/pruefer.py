@@ -130,18 +130,28 @@ def _nenn(k: Koerper) -> int | None:
     return min(DURCHGANG, key=lambda x: abs(x - float(d)))
 
 
+def _gewinde_von(k: Koerper) -> Any:
+    """Gewinde eines Verbindungselements (metrisch oder Zoll) aus Größe bzw. Nenndurchmesser, sonst None."""
+    from kevcad_kernel import gewinde as gw
+
+    g = gw.aus_text(k.info.get("groesse"))
+    if g is None and k.info.get("d"):
+        g = gw.naechstes(float(k.info["d"]))
+    return g
+
+
 def _loesung_durchdringung(a: Koerper, b: Koerper, p: Paar) -> str:
     from kevcad_kernel.bom import de_num
 
     vb = next((k for k in (a, b) if k.ist_verbindungselement), None)
     if vb is not None:
         andere = b if vb is a else a
-        n = _nenn(vb)
-        if n:
-            return (f"Bohrung für {vb.kurz} in {andere.name} vorsehen: Durchgang Ø {de_num(DURCHGANG[n], 1)} mm "
-                    f"(ISO 273 mittel). Soll {vb.kurz} dort ins Gewinde: Kernloch Ø {de_num(KERNLOCH[n], 1)} mm und "
-                    f"die Überlappung nach Rückfrage bei Kevin erlauben (erlaubt_ueberlappung({vb.kurz!r}, "
-                    f"{andere.kurz!r}, grund=\"Gewinde im Kernloch\")).")
+        g = _gewinde_von(vb)
+        if g is not None:
+            norm = "ISO 273 mittel" if not g.zoll else "free fit"
+            return (f"Bohrung für {vb.kurz} in {andere.name} vorsehen: Durchgang Ø {de_num(g.durchgang, 1)} mm "
+                    f"({norm}). Soll {vb.kurz} dort ins Gewinde ({g.name}): Kernloch Ø {de_num(g.kernloch, 2)} mm, "
+                    "den Gewindeeingriff erkennt Kev CAD dann selbst.")
     klein, gross = (a, b) if a.volumen <= b.volumen else (b, a)
     weg = p.tiefe + SPIEL_VORSCHLAG
     if klein.volumen > 0 and p.volumen >= 0.95 * klein.volumen:

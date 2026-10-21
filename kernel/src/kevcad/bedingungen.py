@@ -15,7 +15,7 @@ wand = param("wand", 2.0, min=1.2)                                          # Gr
 spiel(deckel, gehaeuse, min=0.2)
 ```
 
-Bezüge (``bezug(teil, name_oder_auswahl, auswahl=None, nahe=None, umkehren=False)`` oder als Tupel
+Bezüge (``bezug(teil, name_oder_auswahl, auswahl=None, nahe=None, umkehren=False, richtung=None)`` oder als Tupel
 ``(teil, "unten")``): Standardnamen ``oben``/``unten`` (±Z), ``rechts``/``links`` (±X), ``hinten``/``vorn`` (±Y, vorn =
 −Y wie die Vorderansicht), ``x_min`` … ``z_max``, ``mitte``, ``schwerpunkt``, ``achse`` (größter Zylinder),
 ``achse_x``/``achse_y``/``achse_z``, ``bohrung`` (mit ``nahe=(x, y, z)``), ``teil``; dazu build123d-Auswahlen (Fläche,
@@ -32,7 +32,9 @@ Gelenke (Freiheitsgrade für Animation und Bewegungsraum, Grundlage build123d-Jo
 ``drehgelenk(a, b, winkel=0, bereich=None, versatz=None)``, ``schiebegelenk(a, b, weg=0, bereich=None)``,
 ``zylindergelenk(a, b, winkel=0, weg=0)``, ``kugelgelenk(a, b, drehung=None)``, ``fest(a, b)``. Mit ``bereich`` wird der
 ganze Weg bei jedem Lauf auf Kollision geprüft (``schritte``, ``mitbewegt=[…]``, ``ignorieren=[…]``,
-``bedienung="finger" | "hand" | "werkzeug"`` oder ``freiraum=mm`` am ``griff``). ``gelenk.fuer_animation()`` liefert
+``bedienung="finger" | "hand" | "werkzeug" | "fluegel"`` oder ``freiraum=mm`` am ``griff``; Teile, die um ihre eigene
+Achse gedreht werden, wie Flügelmuttern und Drehknöpfe, prüfen den Griffraum als Zylinder um die Drehachse über der
+Auflage). ``gelenk.fuer_animation()`` liefert
 Art, Achse und Grenzen für ``animation.gelenk``.
 
 Befestigung (Pflicht für jedes Teil): ``verbinde(a, b, art="schraube" | "klemmung" | "steck" | "formschluss" |
@@ -72,7 +74,7 @@ from kevcad_kernel.bedingungen.arten import (
     Winkel,
     Zylindergelenk,
 )
-from kevcad_kernel.bedingungen.geometrie import Bezug, BezugFehler, bohrungen_von
+from kevcad_kernel.bedingungen.geometrie import Bezug, BezugFehler, bohrungen_von, richte_bohrung
 from kevcad_kernel.bedingungen.geometrie import bezug as _bezug
 from kevcad_kernel.bedingungen.geometrie import boden as _boden
 from kevcad_kernel.bedingungen.loeser import platziere
@@ -88,15 +90,21 @@ boden: Bezug = _boden()
 
 
 def bezug(teil: Any, name_oder_auswahl: Any = None, auswahl: Any = None, *, nahe: Any = None,
-          umkehren: bool = False) -> Bezug:
+          umkehren: bool = False, richtung: Any = None) -> Bezug:
     """Benannter Bezug am Teil (siehe Moduldoku): ``bezug(platte, "oben")``, ``bezug(platte, "bohrung",
-    nahe=(40, 0, 0))``, ``bezug(teil, "Auflage", teil.faces().sort_by(Axis.Z)[0])``."""
-    return _bezug(teil, name_oder_auswahl, auswahl, nahe=nahe, umkehren=umkehren)
+    nahe=(40, 0, 0))``, ``bezug(teil, "Auflage", teil.faces().sort_by(Axis.Z)[0])``.
+
+    ``richtung=(1, 0, 0)`` oder ``"+x"`` legt die Richtung einer Achse bzw. Normale fest (Gelenke zählen ``bereich``
+    und ``weg`` entlang der Richtung des festen Bezugs). Ohne Angabe zeigt eine Bohrung aus sich heraus durch ihre
+    Eintrittsöffnung (Sackloch), eine Durchgangsbohrung in die positive Hauptrichtung (+Z, +X oder +Y)."""
+    return _bezug(teil, name_oder_auswahl, auswahl, nahe=nahe, umkehren=umkehren, richtung=richtung)
 
 
 def bohrungen(teil: Any) -> list[Bezug]:
-    """Alle Bohrungen eines Teils als Achsen-Bezüge, sortiert nach Lage (x, y, z)."""
-    return bohrungen_von(teil.part if hasattr(teil, "part") else teil)
+    """Alle Bohrungen eines Teils als Achsen-Bezüge, sortiert nach Lage (x, y, z), gerichtet wie bei
+    ``bezug(teil, "bohrung")``."""
+    form = teil.part if hasattr(teil, "part") else teil
+    return [richte_bohrung(form, b) for b in bohrungen_von(form)]
 
 
 def auf(a: Any, b: Any, abstand: float = 0.0, **kw: Any) -> Auf:
