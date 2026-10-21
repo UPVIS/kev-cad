@@ -482,7 +482,7 @@ private struct MaterialForm: View {
 
 // MARK: - Bausteine
 
-private struct FormTitle: View {
+struct FormTitle: View {
     var title: String
     var symbol: String
     var subtitle: String
@@ -511,7 +511,7 @@ private struct FormTitle: View {
 }
 
 /// Speichern in: eigener Katalog oder Projekt.
-private struct LevelSection: View {
+struct LevelSection: View {
     @ObservedObject var model: AppModel
     @Binding var ebene: CatalogLevel
     var fixed: Bool
@@ -537,7 +537,7 @@ private struct LevelSection: View {
 }
 
 /// Zeile mit Bezeichnung, Eingabe, Einheit, Vorschlägen und Fehlertext.
-private struct FieldRow: View {
+struct FieldRow: View {
     var label: String
     @Binding var text: String
     var unit: String? = nil
@@ -601,7 +601,7 @@ private struct FieldRow: View {
     }
 }
 
-private struct NumberInput: View {
+struct NumberInput: View {
     @Binding var text: String
     var prompt: String
     var width: CGFloat = 70
@@ -614,7 +614,7 @@ private struct NumberInput: View {
     }
 }
 
-private struct IssueText: View {
+struct IssueText: View {
     var text: String
 
     var body: some View {
