@@ -106,6 +106,10 @@ positions (f32, vert × 3), normals (f32, vert × 3), triangles (u32, tri × 3),
 Blöcke zu höchstens 64 KB geteilt. Der Empfänger hängt die Blöcke in der Reihenfolge von `block` aneinander und
 entpackt sie in einem Zug in einen Puffer der Größe `roh_bytes`.
 
+**Wiederholen:** Bleibt ein `MESH_REQ` etwa 10 s unbeantwortet, darf der Empfänger es wiederholen. Kev CAD bedient
+doppelte Anfragen still (schickt die Blöcke erneut, ohne Fehler); der Empfänger verwirft Blöcke eines Netzes, das er
+schon vollständig hat.
+
 **Hash:** SHA-256 über die ungepackten Arrays genau in der Reihenfolge von `kcad-mesh-1`, die ersten 16 Hex-Zeichen.
 Der Empfänger prüft ihn nach dem Entpacken und verwirft das Netz bei Abweichung. Das iPhone behält Netze nach Hash und
 fragt mit `MESH_REQ` nur fehlende an.
@@ -130,7 +134,7 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 
 | Feld | Inhalt |
 |---|---|
-| `kamera` | `rotation` (Quaternion x, y, z, w; Kamera → Welt, Blick −Z der Kamera), `pivot` [x,y,z], `distance`, `fov` (Grad), `ortho` (bool), `ortho_scale` |
+| `kamera` | `rotation` (Quaternion x, y, z, w; Kamera → Welt, Blick −Z der Kamera), `pivot` [x,y,z], `distance`, `fov` (Grad), `ortho` (bool), `ortho_scale`, optional `aspect` (Breite / Höhe der Ansicht am Mac; damit zeigt das iPhone beim Mitfolgen auch im Hochformat genau denselben Ausschnitt) |
 | `auswahl` | `{"run": 3, "refs": […]}` mit Referenzen wie im Kernel-Protokoll (`Teil`, `Teil#f12`) |
 | `verborgen` | Liste Teilnamen |
 | `isoliert` | Liste Teilnamen oder null |
@@ -161,6 +165,7 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 | `fokus` | `refs` | Zoom auf die Teile |
 | `ansicht` | `standard`, `projection` | Standardansicht |
 | `darstellung` | `display` | Darstellungsart |
+| `einpassen` | optional `refs` (ohne: alles) | Kev CAD passt die Kamera selbst ein, mit eigenen Rändern und eigener Projektion (wie Pos1 bzw. „.“ am Mac) |
 
 Alle Befehle außer `kamera` bekommen ein `CMD_RES`. Die Wirkung kommt als `STATE_DELTA` bzw. `CAMERA` mit
 `quelle: "iphone"` an alle zurück. Im Modus „Frei“ schickt das iPhone keine Kamera, alles andere schon.
