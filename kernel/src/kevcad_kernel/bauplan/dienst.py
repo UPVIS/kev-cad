@@ -40,7 +40,7 @@ class BauplanDienst:
 
     # -- Erzeugen --------------------------------------------------------------------------------------------------
 
-    def _bp_eingang(self, warten_s: float = 120.0):
+    def _bp_eingang(self, warten_s: float = 120.0, umfang: dict[str, Any] | None = None):
         from kevcad_kernel.bauplan.eingang import sammle
 
         proj = self._project  # type: ignore[attr-defined]
@@ -55,7 +55,7 @@ class BauplanDienst:
         alt = datei.laden(proj.path)
         return sammle(self.scene.records(), bom=self._bom, bedingungen=self._constraints,  # type: ignore[attr-defined]
                       check=check, katalog=self.catalog, titel=proj.name, run=run,  # type: ignore[attr-defined]
-                      projekt=proj.path, umfang=(alt or {}).get("umfang")), alt
+                      projekt=proj.path, umfang=umfang if umfang is not None else (alt or {}).get("umfang")), alt
 
     def _bp_erzeugen(self, erzwingen: bool = False):
         from kevcad_kernel.bauplan.plan import erzeuge
@@ -117,7 +117,7 @@ class BauplanDienst:
             except BearbeitungsFehler as exc:
                 return {"ok": False, "error": f"Bauplan nicht geändert: {exc}"}
             if neu:  # Umfang oder Reihenfolge-Regel: Gerüst neu mit dem bearbeiteten Plan als Vorlage
-                ein, _ = self._bp_eingang(1.0)
+                ein, _ = self._bp_eingang(1.0, umfang=erg.plan.get("umfang") or {})
                 erg = erzeuge(ein, erg.plan)
             else:
                 bilder_setzen(erg.ein, erg.plan)

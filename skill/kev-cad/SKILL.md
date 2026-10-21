@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), dazu Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“).
 ---
 
 # Kev CAD
@@ -475,6 +475,39 @@ fahrt.folge("Rig", "Rollwagen/Deckel")  # Rig-Zubehör hängt nicht an der Kamer
 
 `export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`, `export(["bom_csv"])` die Stückliste als CSV. STEP für CAD und Fertigung, STL oder 3MF für den
 Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur diese Teile.
+
+## Bauplan
+
+Kev CAD erzeugt aus dem Modell eine Bauanleitung zum Ausdrucken (Kevin, 22.10.2026: „was muss wann gemacht werden,
+was muss wie montiert werden … alle Löcher, die gebohrt werden“). Datei `<projekt>/dokumente/bauplan.json`, in der
+App im Bereich „Dokumente“ mit Strichbild je Schritt; Vertrag in DOKUMENTE.md.
+
+- **Erzeugen:** `bauplan` (bei neuem Lauf rechnet Kev CAD einen vorhandenen Bauplan selbst nach). Fünf Abschnitte:
+  Material (Einkauf, Bestand), Zuschnitt (je Stange mit Gehrung), Bearbeiten (Bohrbild je Teil mit Ø und Lage ab
+  Rohrende bzw. Außenkante, Gewinde, Senkungen; Gewindeeinsätze einschmelzen, Gewindestifte einkleben), Drucken
+  (Material, Ausrichtung als Schätzung, Temperaturen), Montage (Unterbaugruppen aus dem Namensbaum zuerst, dann die
+  Hauptmontage; je Schritt ein Hauptteil mit seinen Verbindungsmitteln, gleiche Schritte als „4×“).
+- **Was Kev CAD weiß, was du schreibst:** Reihenfolge, Einführrichtung, Teile, Verbindungsmittel, Werkzeug, Maße und
+  Lagen kommen aus dem Kernel. Du formulierst danach die Texte mit `bauplan_bearbeiten` (`{"op": "text", "schritt",
+  "titel", "text", "hinweise"}`), knapp wie für eine Werkstatt: Schritt, Handgriff, Werkzeug, worauf achten, dazu
+  Sicherheit (Quetschstellen an beweglichen Teilen, scharfe Kanten nach Sägen und Bohren, heißer Lötkolben,
+  Schutzbrille). Zahlen nur aus den Schrittdaten übernehmen, nie schätzen oder anders runden; fehlt eine, schreiben,
+  was zu messen ist.
+- **Prüfen:** Jeder Montageschritt wird simuliert (`bauplan_pruefen`): Einführweg frei (`einfuehrweg`), Reihenfolge
+  (`reihenfolge`, auch die Regeln „a vor b“), Werkzeugzugang (`werkzeugzugang`: Innensechskant gerade über dem Kopf,
+  Schlüssel um die Mutter, Finger um die Flügelmutter), Standsicherheit der Teilbaugruppe (`standsicherheit`), neue
+  Teile im Bild sichtbar (`verdeckt`, Agrawala: mindestens 50 %). Hinweis „unter die Aufstandsfläche“ heißt: Baugruppe
+  aufbocken oder umdrehen.
+- **Probleme im Modell beheben, nicht im Text verstecken:** Passt ein Teil nicht hinein oder kommt das Werkzeug nicht
+  hin, wird model.py geändert (Spiel, Einführschräge, Schlitz, Teilung, Muttertasche statt Schlüssel, Zugangsbohrung),
+  dann `run`; der Bauplan folgt. Reihenfolge nur ändern (`verschieben`, `{"op": "vorher", "a", "b", "grund"}`), wenn
+  mehrere Folgen gleich gut sind, und dann Kevin fragen.
+- **Erhalten:** Texte von Agent und Kevin und Schritte mit `fest` bleiben bei jedem neuen Lauf (Zuordnung über die id
+  und die Teile). Teile, die nicht zum Aufbau gehören (Umgebung, lose daneben), nimmt Kev CAD selbst heraus; weitere mit
+  `{"op": "umfang", "ohne": ["Umgebung"]}`.
+- **Grenzen:** Montage nur durch Schieben (ein- oder zweistufig), kein Drehen; Eigenteile einer Gruppe, die
+  zusammenhängen (Rollwagen, Fluidkopf, Kamera), gelten als vorhanden und vormontiert; ohne `verbinde` sind Verbindungen
+  und Werkzeug aus Kontakt und Normteilen geschätzt (steht am Schritt). Kevin keine Bilder schicken, die App zeigt sie.
 
 ## Wenn etwas hakt
 

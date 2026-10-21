@@ -275,8 +275,8 @@ def _box(shape: Any) -> tuple[np.ndarray, np.ndarray]:
 
     b = Bnd_Box()
     BRepBndLib.Add_s(shape, b)
-    x0, y0, z0, x1, y1, z1 = b.Get()
-    return np.array([x0, y0, z0]), np.array([x1, y1, z1])
+    lo, hi = b.CornerMin(), b.CornerMax()
+    return np.array([lo.X(), lo.Y(), lo.Z()]), np.array([hi.X(), hi.Y(), hi.Z()])
 
 
 def schnittvolumen(a: Any, b: Any) -> float:

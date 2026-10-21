@@ -39,6 +39,15 @@ def _vec(v: Any) -> np.ndarray | None:
     return None if v is None else np.asarray(v, dtype=float)
 
 
+def schnittvolumen_selbst(form: Any) -> float:
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    g = GProp_GProps()
+    BRepGProp.VolumeProperties_s(form, g)
+    return abs(float(g.Mass()))
+
+
 def montage_schritte(plan: dict[str, Any]) -> list[dict[str, Any]]:
     for a in plan.get("abschnitte") or []:
         if a.get("art") == "montage":
@@ -85,8 +94,8 @@ class Simulation:
         if t is None or t.rolle != "vm" or t.wirt:
             return [], "", None
         vm = t.vm
-        if vm.get("achse") is None:
-            return [], "", None
+        if vm.get("achse") is None or not ws.werkzeug_vm(vm, name):
+            return [], "", None  # Scheiben und Einsätze brauchen kein Werkzeug
         a = np.asarray(vm["achse"], dtype=float)
         mitte = np.asarray(vm.get("mitte") or t.zentrum, dtype=float)
         r, laenge, art = ws.zugang_mass(vm, name)
@@ -107,6 +116,7 @@ class Simulation:
             p0 = mitte + a * (float(tt.min()) + 0.3)  # nur auf Höhe der Mutter (nicht in die Scheibe darunter)
             raum = ring(p0, a, r_innen, max(r, r_innen + 6.0), max(hoehe - 0.6, 1.0))
             wo = mitte
+        self.raum_volumen = schnittvolumen_selbst(raum)
         return raum_frei(raum, self.wp.koerper, montiert, ohne, min_volumen=2.0), art, wo
 
     # -- Lauf ------------------------------------------------------------------------------------------------------
@@ -117,6 +127,10 @@ class Simulation:
         t0 = time.perf_counter()
         schritte = montage_schritte(plan)
         ergebnis: dict[str, list[dict[str, Any]]] = {s["id"]: [] for s in schritte}
+        self.element_von = {t: el for s in schritte for el in s.get("einbau") or [] for t in el.get("teile") or []
+                            if el.get("richtung") is not None}
+        self.grundteile = {t: True for s in schritte for el in s.get("einbau") or [] for t in el.get("teile") or []
+                           if el.get("grundteil") or el.get("richtung") is None}
         montiert: dict[str | None, list[str]] = {}
         von_schritt: dict[str, tuple[int, str]] = {}  # Teil → (Nr, Schritt-id)
         nummer = {s["id"]: i for i, s in enumerate(schritte, 1)}
@@ -177,11 +191,14 @@ class Simulation:
         im_schritt = [q for q in sperr if q not in frueher]
         ort = next((sp.ort for sp in sperr.values() if sp.ort is not None), None)
         tiefe = max(sp.tiefe for sp in sperr.values())
-        if frueher and not im_schritt:
-            # ohne die früher montierten Sperrer frei? Dann ist es die Reihenfolge
+        if frueher and not im_schritt and not any(self.grundteile.get(q) for q in frueher):
+            # ohne die früher montierten Sperrer frei, und kämen die Sperrer danach noch an ihren Platz? Dann ist es
+            # die Reihenfolge (sonst sperren sie sich gegenseitig: Einführweg)
             erst = min(von_schritt[q][0] for q in frueher)
             vorher = [q for q in montiert if von_schritt.get(q, (0, ""))[0] < erst]
-            if not self._sperren(teile, el, vorher):
+            umgekehrt = all(not self._sperren([q], self.element_von[q], teile) for q in frueher
+                            if q in self.element_von)
+            if umgekehrt and not self._sperren(teile, el, vorher):
                 q0 = frueher[0]
                 befunde.append(_b(
                     "reihenfolge", [el.get("haupt") or teile[0], *frueher[:3]], "fehler",
@@ -227,18 +244,39 @@ class Simulation:
             return
         if not stoerer:
             return
+        anteil = sum(v for _, v in stoerer) / max(getattr(self, "raum_volumen", 0.0), 1e-6)
+        # Schwellen (Hausregel, Schätzung): Finger 5 % knapp, 15 % zu eng; Schlüssel 3 %; Innensechskant jedes mm³
+        if art == "finger":
+            if anteil < 0.05:
+                return
+            schwere = "warnung" if anteil >= 0.15 else "hinweis"
+        elif art == "schluessel":
+            if anteil < 0.03:
+                return
+            schwere = "fehler"
+        else:
+            schwere = "fehler"
         werkzeug = ", ".join(ws.werkzeug_vm(t.vm, name)) or "Werkzeug"
         namen = [n for n, _ in stoerer]
         spaeter = [n for n in namen if von_schritt.get(n, (0, ""))[1] == s["id"]]
-        loesung = ("Verbindungsmittel anbringen, bevor " + ", ".join(namen[:2]) + " montiert wird (Schritt teilen)"
-                   if not spaeter else "Zugang schaffen: Aussparung oder Langloch für das Werkzeug, kürzeres "
-                                       "Werkzeug (Kugelkopf-Innensechskant, Ratsche) oder andere Richtung")
-        schwere = "warnung" if art == "finger" else "fehler"
-        befunde.append(_b("werkzeugzugang", [name, *namen[:3]], schwere,
-                          f"Werkzeug kommt schlecht an {name.rsplit('/', 1)[-1]} ({werkzeug}): "
+        r, _, _ = ws.zugang_mass(t.vm, name)
+        if not spaeter:
+            loesung = ("Verbindungsmittel anbringen, bevor " + ", ".join(n.rsplit('/', 1)[-1] for n in namen[:2])
+                       + " montiert wird (Schritt teilen oder verschieben)")
+        elif art == "schluessel":
+            loesung = (f"Freiraum um die Mutter auf Ø {de_num(2 * r, 0)} mm vergrößern, eine Muttertasche (verdrehsicher, "
+                       "ohne Schlüssel) vorsehen oder einen Steckschlüssel mit passendem Außendurchmesser verwenden")
+        elif art == "finger":
+            loesung = f"Freiraum für die Finger um die Mutter schaffen (etwa Ø {de_num(2 * r, 0)} mm)"
+        else:
+            loesung = ("Zugang über dem Kopf schaffen: Bohrung für das Werkzeug, kürzeres Werkzeug "
+                       "(Kugelkopf-Innensechskant, Winkelschlüssel) oder die Schraube von der anderen Seite")
+        kopf = (f"Wenig Platz für {werkzeug} an {name.rsplit('/', 1)[-1]}: " if schwere == "hinweis" else
+                f"Werkzeug kommt schlecht an {name.rsplit('/', 1)[-1]} ({werkzeug}): ")
+        befunde.append(_b("werkzeugzugang", [name, *namen[:3]], schwere, kopf +
                           f"{', '.join(n.rsplit('/', 1)[-1] for n in namen[:3])} im Weg "
-                          f"({de_num(stoerer[0][1], 0)} mm³ im Werkzeugraum).", loesung, s["id"], wo,
-                          {"volumen": stoerer[0][1], "art": art}))
+                          f"({de_num(anteil * 100, 0)} % des Werkzeugraums belegt).", loesung, s["id"], wo,
+                          {"volumen": stoerer[0][1], "anteil": round(anteil, 3), "art": art}))
 
     def _stand(self, s: dict[str, Any], montiert: list[str], befunde: list[dict[str, Any]]) -> None:
         teile = [self.ein.teile[n] for n in montiert if n in self.ein.teile]

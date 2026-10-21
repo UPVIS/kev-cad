@@ -96,7 +96,9 @@ class Bilder:
         """Versatz je neuem Teil: um den Einführweg zurück; Verbindungsmittel auf derselben Achse als Stapel mit
         wachsendem Abstand (Scheibe, dann Mutter weiter draußen; Agrawala 2003)."""
         out: dict[str, list[float]] = {}
-        stapel: list[tuple[np.ndarray, np.ndarray, int]] = []  # (Richtung, Punkt auf der Achse, Anzahl)
+        # Stapel: Teile, die nacheinander auf derselben Achse in dieselbe Richtung kommen (Scheibe und Mutter,
+        # Stellring, Rolle, Stellring), stehen hintereinander statt übereinander: (Richtung, Achspunkt, Weg, Länge)
+        stapel: list[list[Any]] = []
         for el in schritt.get("einbau") or []:
             if el.get("grundteil") or el.get("richtung") is None:
                 continue
@@ -108,18 +110,17 @@ class Bilder:
             hi = np.max([self.ein.teile[t].bmax for t in teile], axis=0)
             eigen = float(abs(np.dot(hi - lo, r)))
             L = float(np.clip(max(float(el.get("weg") or 0.0), 0.8 * eigen, 20.0), 20.0, 300.0))
-            if el.get("art") == "vm":
-                mitte = (lo + hi) / 2
-                k = 0
-                for i, (d, p0, n) in enumerate(stapel):
-                    off = mitte - p0
-                    if float(np.dot(d, r)) > 0.99 and float(np.linalg.norm(off - d * float(np.dot(off, d)))) < 1.0:
-                        k = n
-                        stapel[i] = (d, p0, n + 1)
-                        break
-                else:
-                    stapel.append((r, mitte, 1))
-                L *= 1.0 + 0.9 * k
+            mitte = (lo + hi) / 2
+            quer = max(1.0, 0.25 * float(np.min(hi - lo)))
+            for st in stapel:
+                d, p0, L0, e0 = st
+                off = mitte - p0
+                if float(np.dot(d, r)) > 0.99 and float(np.linalg.norm(off - d * float(np.dot(off, d)))) < quer:
+                    L = max(L, L0 + e0 + 8.0)
+                    st[2], st[3] = L, eigen
+                    break
+            else:
+                stapel.append([r, mitte, L, eigen])
             for t in teile:
                 out[t] = _r(-r * L, 2)
         self.eigen = {t: list(v) for t, v in out.items()}  # eigener Weg je Teil (für die Pfeile)

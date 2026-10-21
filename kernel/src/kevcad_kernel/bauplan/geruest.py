@@ -709,9 +709,22 @@ def _signatur(ein: Eingang, elemente: list[Einbau]) -> tuple:
 
 
 def montage(ein: Eingang, folge: Folge, merk: dict[str, Any]) -> list[dict[str, Any]]:
+    """Vormontagen in der Reihenfolge, in der die Hauptmontage ihre Unterbaugruppen braucht (innere zuerst), dann die
+    Hauptmontage."""
     out: list[dict[str, Any]] = []
-    for name, seq in folge.vormontagen.items():
-        out += _montage_ebene(ein, seq, name, merk)
+    erledigt: set[str] = set()
+
+    def vor(seq: list[Einbau]) -> None:
+        for e in seq:
+            if e.einheit.art == "gruppe" and e.einheit.name in folge.vormontagen and e.einheit.name not in erledigt:
+                erledigt.add(e.einheit.name)
+                vor(folge.vormontagen[e.einheit.name])
+                out.extend(_montage_ebene(ein, folge.vormontagen[e.einheit.name], e.einheit.name, merk))
+
+    vor(folge.haupt)
+    for name, seq in folge.vormontagen.items():  # übrige (sollte es nicht geben)
+        if name not in erledigt:
+            out.extend(_montage_ebene(ein, seq, name, merk))
     out += _montage_ebene(ein, folge.haupt, None, merk)
     return out
 
