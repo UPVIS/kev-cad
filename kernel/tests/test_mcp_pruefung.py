@@ -57,6 +57,15 @@ def test_pruefen_mit_bildern(srv):
     assert any(t.startswith("Bild 1: du1 iso") for t in textteile(res))
 
 
+def test_nahansicht_ohne_schnittkoerper_schattiert():
+    from kevcad_kernel.pruefung.dienst import ansicht_fuer_befund
+
+    a = ansicht_fuer_befund({"id": "sc1", "art": "schwebt", "teile": ["Ring"], "ort": [0, 0, 5], "geometrie": None})
+    assert [x["name"] for x in a] == ["sc1 iso", "sc1 vorn", "sc1 oben"]
+    assert all(x["darstellung"] == "shaded_edges" and x["hervorheben"] == ["Ring"] for x in a)
+    assert ansicht_fuer_befund({"id": "x", "teile": ["A"], "ort": None}) == []
+
+
 def test_montage_reihenfolge(srv):
     server, _ = srv
     call(server.url, "run")

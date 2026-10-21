@@ -185,6 +185,7 @@ final class PruefungTests: XCTestCase {
         let platte = try XCTUnwrap(koerper.first { AppController.teilName(ofBody: $0.id) == "Grundplatte" })
         XCTAssertGreaterThan(bolzen.color.x, bolzen.color.y + 0.3)  // rötlich
         XCTAssertLessThanOrEqual(platte.color.w, 0.3)
+        XCTAssertGreaterThan(bolzen.color.w, platte.color.w + 0.2)  // hervorgehoben bleibt im Röntgenbild besser sichtbar
         let kamera = AppController.ansichtKamera(a, scene: c.scene, aspect: 1.6)
         XCTAssertEqual(simd_dot(kamera.rotation.act(SIMD3<Float>(0, 0, -1)), simd_normalize(SIMD3<Float>(1, 1, -1))),
                        1, accuracy: 1e-5)

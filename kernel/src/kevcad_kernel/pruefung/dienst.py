@@ -28,7 +28,9 @@ def ansicht_fuer_befund(b: dict[str, Any], groesse: float | None = None) -> list
     wert = b.get("wert") or {}
     tiefe = float(wert.get("tiefe") or 0.0)
     radius = max(25.0, 6.0 * tiefe, float(groesse or 0.0))
-    basis = {"punkt": [float(c) for c in ort], "radius": radius, "darstellung": "xray", "schnittkoerper": True,
+    # Röntgen nur, wo es einen Schnittkörper zu sehen gibt (Durchdringung); sonst normal schattiert mit Kanten
+    darstellung = "xray" if b.get("geometrie") is not None else "shaded_edges"
+    basis = {"punkt": [float(c) for c in ort], "radius": radius, "darstellung": darstellung, "schnittkoerper": True,
              "hervorheben": list(b.get("teile") or [])[:4]}
     ansichten = [{**basis, "name": f"{b.get('id')} iso", "standard": "iso"}]
     achse = wert.get("achse")

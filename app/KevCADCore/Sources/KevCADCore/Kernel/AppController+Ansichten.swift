@@ -95,14 +95,19 @@ extension AppController {
                 out.append(b)
                 continue
             }
+            var hervorgehoben = false
             if let name = teilName(ofBody: b.id), hervor.contains(name)
                 || hervor.contains(where: { name.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") })
             {
+                // im Röntgenbild schwächer getönt, damit der rote Schnittkörper davor sichtbar bleibt
                 let c = b.color
-                let rgb = SIMD3(c.x, c.y, c.z) + (SIMD3(analyseRot.x, analyseRot.y, analyseRot.z) - SIMD3(c.x, c.y, c.z)) * 0.7
+                let anteil: Float = roentgen ? 0.6 : 0.85
+                let rgb = SIMD3(c.x, c.y, c.z) + (SIMD3(analyseRot.x, analyseRot.y, analyseRot.z) - SIMD3(c.x, c.y, c.z)) * anteil
                 b.color = SIMD4(rgb, c.w)
+                hervorgehoben = true
             }
-            if roentgen { b.color.w = min(b.color.w, 0.3) }
+            // Röntgen: die übrigen Teile kaum sichtbar, die beteiligten halb durchscheinend
+            if roentgen { b.color.w = min(b.color.w, hervorgehoben ? 0.8 : 0.25) }
             out.append(b)
         }
         return out
