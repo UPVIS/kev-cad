@@ -90,6 +90,7 @@ def test_zahlen_preise_gtin():
     assert ze.preis_aus_text("24,99 €") == (24.99, "EUR") and ze.preis_aus_text("EUR 1.299,00") == (1299.0, "EUR")
     assert ze.preis_aus_text("$12.50") == (12.5, "USD")
     assert ze.gtin_ok("4014688052004") and not ze.gtin_ok("4014688052005") and ze.gtin_ok("4008332778051")
+    assert ze.gtin_ok("4005187052008") and not ze.gtin_ok("4005187052009")  # Beispiel aus KATALOG.md
     assert ze.make_id("Happy People", "77805") == "happy-people-77805"
     assert ze.make_id(None, None, "4014688052004") == "gtin-4014688052004"
     assert ze.eingabe_art("https://x.example/p") == "url" and ze.eingabe_art("4014688052004") == "gtin"

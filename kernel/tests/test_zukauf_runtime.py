@@ -199,6 +199,14 @@ def test_app_neu_und_cad(env):
     assert not (proj / "zukauf" / "happy-people-77805" / "falsch.step").exists()
     reply, _ = request(app, {"type": "ZUKAUF_CAD", "id": "a-4", "teil": "gibtsnicht", "pfad": str(falsch)})
     assert reply["ok"] is False
+    # ungültige EAN (falsche Prüfziffer) wird abgelehnt, wie in der App
+    reply, _ = request(app, {"type": "ZUKAUF_NEU", "id": "a-6", "eingabe": "4005187052009",
+                             "felder": {**felder, "id": "alutec-05200", "mpn": "05200", "gtin": "4005187052009"},
+                             "ebene": "projekt"})
+    assert reply["ok"] is False and "Prüfziffer stimmt nicht" in reply["message"]
+    res = rt.zukauf_anlegen(gtin="4005187052009", felder={"name": "X", "hersteller": "ALUTEC", "mpn": "05200",
+                                                          "masse": {"l": 1, "b": 1, "h": 1}})
+    assert res["ok"] is False and "Prüfziffer" in res["error"]
     # Normteil statt Zukaufteil
     res = rt.zukauf_anlegen(mpn="ISO 4762 M8x40")
     assert res["ok"] and not res["angelegt"] and res["stock_id"] == "schraube-iso4762-m8"
