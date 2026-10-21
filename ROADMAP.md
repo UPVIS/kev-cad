@@ -8,7 +8,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | MVP | Viewer, Kernel, Live-Aufbau, Messen, MCP, Export | [PLAN-MVP.md](PLAN-MVP.md) | fertig, installiert |
 | – | Steuerung wie Blender, Neustart nach Update | – | fertig, installiert (Build 24) |
 | 2 | Lagerteile, Materialien, Stückliste, Zuschnitt, Inventar-Regel | [PLAN-PHASE2.md](PLAN-PHASE2.md) | fertig, installiert (Build 45); im Kugelschieber ist die Inventar-Regel aus, bis Phase 3 die Zukaufteile bringt |
-| 3 | Zukaufteile per Link, Artikelnummer oder EAN, Hersteller-CAD einbetten | [PLAN-PHASE3-ZUKAUF.md](PLAN-PHASE3-ZUKAUF.md) | in Arbeit seit 21.10.2026 abends (Kernel und App parallel, Zweig `phase3`, Verträge stehen) |
+| 3 | Zukaufteile per Link, Artikelnummer oder EAN, Hersteller-CAD einbetten | [PLAN-PHASE3-ZUKAUF.md](PLAN-PHASE3-ZUKAUF.md) | zusammengeführt auf `phase3-int` (Kernel Z-K, App Z-A, mit Prüfung Stufe 1 und Phase 5), Ende-zu-Ende in der Testvariante bestanden; wartet auf Freigabe für `main` |
 | 4 | Foto und Video als Referenz (Object Capture, Foto mit Live-Differenz, Abweichung) | [PLAN-PHASE4-REFERENZ.md](PLAN-PHASE4-REFERENZ.md) | Vorarbeit läuft; `tools/capture` (Video → Netz, Kameras, Maße) ist auf `main`, noch nicht in der App |
 | 5 | Kamerasimulation (Sensor, Objektiv, Blick durch die Kamera, Kamerabild) und Animation (Bewegen, Rollen, Gelenke, Kollision, Video) | [PLAN-PHASE5-KAMERA-ANIMATION.md](PLAN-PHASE5-KAMERA-ANIMATION.md) | beide Stränge fertig, werden auf Zweig `phase5` zusammengeführt und getestet; danach eigene Installationswelle |
 | – | 3D-Druck-Konstruktionsregeln und Druckprüfung | – | in Arbeit (eigener Strang) |

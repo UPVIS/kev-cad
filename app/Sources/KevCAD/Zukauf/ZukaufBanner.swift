@@ -153,7 +153,9 @@ struct ZukaufBanner: View {
             }
         } else if status.zustand == .importiert {
             Pill(symbol: "checkmark.circle.fill", tint: .green) {
-                Text("CAD für \(name) übernommen" + (status.text.map { " · \($0)" } ?? ""))
+                // Der Kernel schreibt „CAD für … übernommen: Datei, n Körper“ schon vollständig (nicht doppelt zeigen)
+                Text(status.text.map { $0.hasPrefix("CAD für") ? $0 : "CAD für \(name) übernommen · \($0)" }
+                     ?? "CAD für \(name) übernommen")
             } trailing: {
                 EmptyView()
             }
