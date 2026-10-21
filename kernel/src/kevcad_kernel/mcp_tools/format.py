@@ -257,6 +257,11 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
     }
     if bom:
         data["bom"] = bom
+    if res.get("animationen"):  # Phase 5
+        from .animation_tools import run_note
+
+        lines.extend(run_note(res))
+        data["animationen"] = res["animationen"]
     violations = list(res.get("inventar_verstoesse") or [])
     if "inventar_regel" in res:
         data["inventar_regel"] = bool(res["inventar_regel"])

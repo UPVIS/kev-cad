@@ -1,0 +1,1322 @@
+{
+  "version": 1,
+  "teile": [
+    {
+      "id": "sony-fx6",
+      "art": "kamera",
+      "name": "Sony FX6 (ILME-FX6V)",
+      "kurzname": "FX6",
+      "hersteller": "Sony",
+      "modell": "ILME-FX6V",
+      "norm": "Sony Cinema Line",
+      "bajonett": "sony-e",
+      "auflagemass": 18.0,
+      "sensor": {
+        "typ": "35-mm-Vollformat, Exmor R CMOS (rückwärtig belichtet)",
+        "megapixel_effektiv": 10.2,
+        "b": 35.7,
+        "h": 18.8
+      },
+      "standard_format": "ff-uhd",
+      "formate": [
+        {
+          "id": "ff-uhd",
+          "name": "Vollformat UHD 3840 × 2160",
+          "modus": "vollformat",
+          "sensor_mm": [
+            35.7,
+            20.1
+          ],
+          "aufloesung": [
+            3840,
+            2160
+          ],
+          "fps_max": 60,
+          "zerstreuungskreis": 0.027,
+          "hinweis": "volle Sensorbreite 35,7 mm, Höhe aus 16:9 abgeleitet; 100/120p nur mit 10 % Ausschnitt (ff-uhd-120)"
+        },
+        {
+          "id": "ff-uhd-120",
+          "name": "Vollformat UHD 100/120p (10 % Ausschnitt)",
+          "modus": "vollformat",
+          "sensor_mm": [
+            32.1,
+            18.1
+          ],
+          "aufloesung": [
+            3840,
+            2160
+          ],
+          "fps_max": 120,
+          "zerstreuungskreis": 0.025,
+          "hinweis": "Sony: 4K 120p „with 10 % image crop“; Fläche als 90 % der Vollformatbreite gerechnet"
+        },
+        {
+          "id": "ff-dci",
+          "name": "Vollformat DCI 4K 4096 × 2160",
+          "modus": "vollformat",
+          "sensor_mm": [
+            35.7,
+            18.8
+          ],
+          "aufloesung": [
+            4096,
+            2160
+          ],
+          "fps_max": 60,
+          "zerstreuungskreis": 0.027,
+          "hinweis": "aktive Fläche 35,7 × 18,8 mm (AbelCine); DCI höchstens 59,94p"
+        },
+        {
+          "id": "ff-hd",
+          "name": "Vollformat HD 1920 × 1080",
+          "modus": "vollformat",
+          "sensor_mm": [
+            35.7,
+            20.1
+          ],
+          "aufloesung": [
+            1920,
+            1080
+          ],
+          "fps_max": 240,
+          "zerstreuungskreis": 0.027,
+          "hinweis": "S&Q 150 bis 240 Bilder/s nur im Vollformat"
+        },
+        {
+          "id": "s35-hd",
+          "name": "Super 35 HD 1920 × 1080 (1,5 × Ausschnitt)",
+          "modus": "super35",
+          "sensor_mm": [
+            23.8,
+            13.4
+          ],
+          "aufloesung": [
+            1920,
+            1080
+          ],
+          "fps_max": 120,
+          "zerstreuungskreis": 0.018,
+          "hinweis": "Im S35-Modus nimmt die FX6 nur HD auf, kein UHD oder DCI; Fläche = Vollformat / 1,5"
+        }
+      ],
+      "gehaeuse": {
+        "b": 114,
+        "h": 116,
+        "t": 153,
+        "achse_hoehe": 74,
+        "achse_seitlich": 5.8,
+        "bajonett_vorstand": 0,
+        "h_mit_griffen": 228,
+        "t_mit_griffen": 258,
+        "akkuschacht": [
+          44,
+          92
+        ],
+        "ring_vorstand": 4
+      },
+      "gewicht": 890,
+      "quellen": [
+        "Sony, Spezifikation ILME-FX6V: 35-mm-Vollformat-CMOS, ca. 10,2 MP effektiv, E-Mount, 114 × 116 × 153 mm (B × H × T, ohne Vorsprünge), 890 g (nur Gehäuse), 4K QFHD bis 120p mit 10 % Ausschnitt",
+        "AbelCine, Sony FX6 (E-Mount): Sensorfläche 35,7 × 18,8 mm, XAVC Intra DCI 4K und QFHD bis 59,94p, HD Super-35-Ausschnitt",
+        "Newsshooter, Sony FX6 Review (11.03.2021): 1,5 × S35-Modus nur HD; UHD 100/120p mit 10 % Ausschnitt; kein DCI über 59,94p",
+        "Film and Digital Times (17.11.2020): E-Mount, Auflagemaß 18 mm, Innendurchmesser 46,1 mm",
+        "Sony FX6 Bedienungsanleitung S. 164 „External Dimensions“ (https://ats.emory.edu/_includes/documents/studios/manuals/Sony%20FX6%20Manual.pdf): Bildachse 74 über der Unterseite, 62,8 von links / 51,2 von rechts (von hinten), 1/4\"-20 bei 33,0 und 3/8\"-16 bei 61,0 hinter der Vorderkante (je 5,5 tief), mit Griff und Handgriff 228 hoch und 258 lang; über Kevins Projektsitzung (21.10.2026)",
+        "Bajonett-Auflage zur Gehäusefront nicht belegt: bündig angenommen (Kevins Projektsitzung, 21.10.2026)"
+      ],
+      "tags": [
+        "fx6",
+        "cinema line",
+        "vollformat",
+        "full frame",
+        "e-mount",
+        "4k"
+      ],
+      "bezugspunkte": {
+        "sensor": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Sensormitte, Ursprung"
+        },
+        "bajonett": {
+          "pos": [
+            18,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage des E-Mount (Auflagemaß 18 mm)"
+        },
+        "front_unten": {
+          "pos": [
+            0,
+            0,
+            -74
+          ],
+          "von": "front",
+          "hinweis": "Vorderkante der Gehäuseunterseite unter der Bildachse"
+        },
+        "stativ_1_4": {
+          "pos": [
+            -33,
+            0,
+            -74
+          ],
+          "von": "front",
+          "richtung": [
+            0,
+            0,
+            -1
+          ],
+          "hinweis": "1/4\"-20, 5,5 tief, 33,0 hinter der Vorderkante; seitlich in der Ebene der Bildachse (5,8 rechts der Gehäusemitte), angenommen (aus Zeichnung abgegriffen)"
+        },
+        "stativ_3_8": {
+          "pos": [
+            -61,
+            0,
+            -74
+          ],
+          "von": "front",
+          "richtung": [
+            0,
+            0,
+            -1
+          ],
+          "hinweis": "3/8\"-16, 5,5 tief, 61,0 hinter der Vorderkante; seitlich in der Ebene der Bildachse (5,8 rechts der Gehäusemitte), angenommen (aus Zeichnung abgegriffen)"
+        },
+        "akkuschacht": {
+          "pos": [
+            -153,
+            5.8,
+            -16
+          ],
+          "von": "front",
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "BP-U-Schacht etwa 44 × 92 (aus Zeichnung abgegriffen, ±3); Lage auf der Rückseite mittig angenommen"
+        }
+      },
+      "hinweis": "Kevin besitzt die FX6. Belegt (Sony-Zeichnung): Gehäusemaße, Gewicht, Bildachse 74 über der Unterseite und 5,8 rechts der Mitte (von hinten), Lage der Stativgewinde in Längsrichtung, Maße mit Griffen. Offen: Lage der Bajonett-Auflage zur Gehäusefront, bündig angenommen (gehaeuse.bajonett_vorstand = 0, E-Mount-Ring 4 mm vorstehend), von Kevin nachzumessen; die Zeichnung zeigt eine Bezugslinie 26,1 mm hinter der vordersten Gehäusekante ohne Angabe ihrer Bedeutung. Bezugspunkte mit \"von\": \"front\" zählen ab der Gehäusefront und wandern mit, wenn bajonett_vorstand geändert wird. Stativgewinde seitlich angenommen (aus Zeichnung abgegriffen).",
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "sony_fx6"
+      }
+    },
+    {
+      "id": "sony-fe-24-105-f4-g-oss",
+      "art": "objektiv",
+      "name": "Sony FE 24–105 mm F4 G OSS",
+      "hersteller": "Sony",
+      "modell": "SEL24105G",
+      "bajonett": "sony-e",
+      "brennweite": [
+        24,
+        105
+      ],
+      "lichtstaerke": 4.0,
+      "blendenart": "f",
+      "blende_max": 22,
+      "naheinstellgrenze": 380,
+      "bildkreis": 43.3,
+      "laenge": 113.3,
+      "frontdurchmesser": 83.4,
+      "filter": 77,
+      "gewicht": 663,
+      "bildstabilisator": true,
+      "quellen": [
+        "Sony, Spezifikation SEL24105G: 24–105 mm, F4–F22, Naheinstellgrenze 0,38 m, Filter 77 mm, Ø 83,4 × 113,3 mm, 663 g",
+        "Bildkreis: Vollformat (Diagonale 43,3 mm), von Sony nicht beziffert"
+      ],
+      "tags": [
+        "zoom",
+        "standardzoom",
+        "fe",
+        "g",
+        "e-mount",
+        "kit"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            113.3,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "sony-fe-16-35-f2.8-gm-ii",
+      "art": "objektiv",
+      "name": "Sony FE 16–35 mm F2.8 GM II",
+      "hersteller": "Sony",
+      "modell": "SEL1635GM2",
+      "bajonett": "sony-e",
+      "brennweite": [
+        16,
+        35
+      ],
+      "lichtstaerke": 2.8,
+      "blendenart": "f",
+      "blende_max": 22,
+      "naheinstellgrenze": 220,
+      "bildkreis": 43.3,
+      "laenge": 111.5,
+      "frontdurchmesser": 87.8,
+      "filter": 82,
+      "gewicht": 547,
+      "quellen": [
+        "Sony, Spezifikation SEL1635GM2: 16–35 mm, F2.8–F22, Naheinstellgrenze 0,22 m über den ganzen Zoombereich, Filter 82 mm, Ø 87,8 × 111,5 mm, 547 g",
+        "Bildkreis: Vollformat (Diagonale 43,3 mm), von Sony nicht beziffert"
+      ],
+      "tags": [
+        "zoom",
+        "weitwinkel",
+        "fe",
+        "gm",
+        "g master",
+        "e-mount"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            111.5,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "sony-fe-50-f1.2-gm",
+      "art": "objektiv",
+      "name": "Sony FE 50 mm F1.2 GM",
+      "hersteller": "Sony",
+      "modell": "SEL50F12GM",
+      "bajonett": "sony-e",
+      "brennweite": 50,
+      "lichtstaerke": 1.2,
+      "blendenart": "f",
+      "blende_max": 16,
+      "naheinstellgrenze": 400,
+      "bildkreis": 43.3,
+      "laenge": 108,
+      "frontdurchmesser": 87,
+      "filter": 72,
+      "gewicht": 778,
+      "quellen": [
+        "Sony, Spezifikation SEL50F12GM: 50 mm, F1.2–F16, Naheinstellgrenze 0,40 m, Filter 72 mm, Ø 87 × 108 mm, 778 g",
+        "Bildkreis: Vollformat (Diagonale 43,3 mm), von Sony nicht beziffert"
+      ],
+      "tags": [
+        "festbrennweite",
+        "normalobjektiv",
+        "fe",
+        "gm",
+        "g master",
+        "e-mount"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            108,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "sigma-ff-hs-24-t1.5-e",
+      "art": "objektiv",
+      "name": "Sigma 24 mm T1,5 FF High Speed Prime (E-Mount)",
+      "hersteller": "Sigma",
+      "modell": "24mm T1.5 FF",
+      "norm": "Sigma Cine FF High Speed Prime Line",
+      "bajonett": "sony-e",
+      "brennweite": 24,
+      "lichtstaerke": 1.5,
+      "blendenart": "t",
+      "blende_max": 16,
+      "naheinstellgrenze": 250,
+      "bildkreis": 43.3,
+      "laenge": 121,
+      "frontdurchmesser": 95,
+      "filter": 82,
+      "gewicht": 1200,
+      "quellen": [
+        "Sigma, 24mm T1.5 FF (FF High Speed Prime Line): T1,5–T16, Naheinstellgrenze 0,25 m, Bildkreis Ø 43,3 mm, Frontdurchmesser 95 mm, Filter M82 × 0,75, Sony E: Länge 121 mm, 1,2 kg"
+      ],
+      "tags": [
+        "cine",
+        "festbrennweite",
+        "high speed",
+        "satz",
+        "e-mount",
+        "weitwinkel"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            121,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "sigma-ff-hs-35-t1.5-e",
+      "art": "objektiv",
+      "name": "Sigma 35 mm T1,5 FF High Speed Prime (E-Mount)",
+      "hersteller": "Sigma",
+      "modell": "35mm T1.5 FF",
+      "norm": "Sigma Cine FF High Speed Prime Line",
+      "bajonett": "sony-e",
+      "brennweite": 35,
+      "lichtstaerke": 1.5,
+      "blendenart": "t",
+      "blende_max": 16,
+      "naheinstellgrenze": 300,
+      "bildkreis": 43.3,
+      "laenge": 121,
+      "frontdurchmesser": 95,
+      "filter": 82,
+      "gewicht": 1200,
+      "quellen": [
+        "Sigma, 35mm T1.5 FF (FF High Speed Prime Line): T1,5–T16, Naheinstellgrenze 0,3 m, Bildkreis Ø 43,3 mm, Frontdurchmesser 95 mm, Filter M82 × 0,75, Bildwinkel Vollformat 54,4°, Sony E: Länge 121 mm, 1,2 kg"
+      ],
+      "tags": [
+        "cine",
+        "festbrennweite",
+        "high speed",
+        "satz",
+        "e-mount"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            121,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "sigma-ff-hs-50-t1.5-e",
+      "art": "objektiv",
+      "name": "Sigma 50 mm T1,5 FF High Speed Prime (E-Mount)",
+      "hersteller": "Sigma",
+      "modell": "50mm T1.5 FF",
+      "norm": "Sigma Cine FF High Speed Prime Line",
+      "bajonett": "sony-e",
+      "brennweite": 50,
+      "lichtstaerke": 1.5,
+      "blendenart": "t",
+      "blende_max": 16,
+      "naheinstellgrenze": 400,
+      "bildkreis": 43.3,
+      "laenge": 128,
+      "frontdurchmesser": 95,
+      "filter": 82,
+      "gewicht": 1400,
+      "quellen": [
+        "Sigma, 50mm T1.5 FF (FF High Speed Prime Line): T1,5–T16, Naheinstellgrenze 0,4 m, Bildkreis Ø 43,3 mm, Frontdurchmesser 95 mm, Filter M82 × 0,75, Sony E: Länge 128 mm, 1,4 kg"
+      ],
+      "tags": [
+        "cine",
+        "festbrennweite",
+        "high speed",
+        "satz",
+        "e-mount",
+        "normalobjektiv"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            128,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "sigma-ff-hs-85-t1.5-e",
+      "art": "objektiv",
+      "name": "Sigma 85 mm T1,5 FF High Speed Prime (E-Mount)",
+      "hersteller": "Sigma",
+      "modell": "85mm T1.5 FF",
+      "norm": "Sigma Cine FF High Speed Prime Line",
+      "bajonett": "sony-e",
+      "brennweite": 85,
+      "lichtstaerke": 1.5,
+      "blendenart": "t",
+      "blende_max": 16,
+      "naheinstellgrenze": 850,
+      "bildkreis": 43.3,
+      "laenge": 152.9,
+      "frontdurchmesser": 95,
+      "filter": 86,
+      "gewicht": 1500,
+      "quellen": [
+        "Sigma, 85mm T1.5 FF (FF High Speed Prime Line): T1,5–T16, Naheinstellgrenze 0,85 m, Abbildungsmaßstab 1:8,5, Bildkreis Ø 43,3 mm, Frontdurchmesser 95 mm, Filter M86 × 1,0, Sony E: Länge 152,9 mm, 1,5 kg"
+      ],
+      "tags": [
+        "cine",
+        "festbrennweite",
+        "high speed",
+        "satz",
+        "e-mount",
+        "tele",
+        "portrait"
+      ],
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            152.9,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel aus dem Startbestand; welche Objektive Kevin besitzt, nennt er noch (EAN)"
+    },
+    {
+      "id": "fujinon-mk-18-55-t2.9-e",
+      "art": "objektiv",
+      "name": "Fujinon MK18-55 mm T2,9 (E-Mount)",
+      "hersteller": "Fujifilm",
+      "modell": "MK18-55mm T2.9",
+      "norm": "Fujinon MK",
+      "bajonett": "sony-e",
+      "brennweite": [
+        18,
+        55
+      ],
+      "lichtstaerke": 2.9,
+      "blendenart": "t",
+      "blende_max": 22,
+      "naheinstellgrenze": 850,
+      "bildkreis": 28.5,
+      "laenge": 206.3,
+      "frontdurchmesser": 85,
+      "gewicht": 980,
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            206.3,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel für eine große Cine-Linse, bis Kevin sein Objektiv (EAN) nennt. Super-35-Bildkreis: an der FX6 nur im Format s35-hd ohne Vignettierung.",
+      "quellen": [
+        "Fujifilm, MK18-55mm T2.9: Bildgröße 24,84 × 13,97 mm (Ø 28,5 mm, Super 35), Naheinstellgrenze 0,85 m ab Sensorebene (Makro 0,38 m), E-Mount",
+        "Länge 206,3 mm, Front-Ø 85 mm, 980 g: Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "cine",
+        "zoom",
+        "super35",
+        "e-mount",
+        "mk"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "fujinon_mk18_55"
+      }
+    },
+    {
+      "id": "sigma-18-35-t2-e",
+      "art": "objektiv",
+      "name": "Sigma 18–35 mm T2 High Speed Zoom (E-Mount)",
+      "hersteller": "Sigma",
+      "modell": "18-35mm T2",
+      "norm": "Sigma Cine High Speed Zoom",
+      "bajonett": "sony-e",
+      "brennweite": [
+        18,
+        35
+      ],
+      "lichtstaerke": 2.0,
+      "blendenart": "t",
+      "blende_max": 16,
+      "naheinstellgrenze": 280,
+      "bildkreis": 28.4,
+      "laenge": 155.5,
+      "frontdurchmesser": 95,
+      "filter": 82,
+      "gewicht": 1510,
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            155.5,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel für eine große Cine-Linse, bis Kevin sein Objektiv (EAN) nennt. Super-35-Bildkreis: an der FX6 nur im Format s35-hd ohne Vignettierung.",
+      "quellen": [
+        "Sigma, 18-35mm T2 (Cine High Speed Zoom): T2–T16, Naheinstellgrenze 0,28 m, Bildkreis Super 35 Ø 28,4 mm, Front-Ø 95 mm, Filter 82 mm, Sony E: Länge 155,5 mm, 1510 g"
+      ],
+      "tags": [
+        "cine",
+        "zoom",
+        "super35",
+        "e-mount",
+        "high speed"
+      ]
+    },
+    {
+      "id": "dzofilm-catta-35-80-t2.9-e",
+      "art": "objektiv",
+      "name": "DZOFilm Catta Zoom 35–80 mm T2,9 (E-Mount)",
+      "hersteller": "DZOFilm",
+      "modell": "Catta Zoom 35-80mm T2.9",
+      "norm": "DZOFilm Catta",
+      "bajonett": "sony-e",
+      "brennweite": [
+        35,
+        80
+      ],
+      "lichtstaerke": 2.9,
+      "blendenart": "t",
+      "blende_max": 22,
+      "naheinstellgrenze": 750,
+      "bildkreis": 43.5,
+      "laenge": 212.4,
+      "frontdurchmesser": 80,
+      "filter": 77,
+      "gewicht": 1532,
+      "bezugspunkte": {
+        "bajonett": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Auflage, Ursprung"
+        },
+        "front": {
+          "pos": [
+            212.4,
+            0,
+            0
+          ],
+          "hinweis": "Frontlinse"
+        }
+      },
+      "hinweis": "Beispiel für eine große Cine-Linse (Vollformat), bis Kevin sein Objektiv (EAN) nennt.",
+      "quellen": [
+        "DZOFilm Catta Zoom 35-80 T2.9 (Händlerangaben Photospecialist, Thomann, Duclos): T2,9–T22, Naheinstellgrenze 0,75 m, Bildkreis Ø 43,5 mm (Vollformat), Filter 77 mm, 1532 g",
+        "Länge 212,4 mm und Front-Ø 80 mm: Kevins Projektsitzung (21.10.2026); einige Händler nennen 214,4 mm"
+      ],
+      "tags": [
+        "cine",
+        "zoom",
+        "vollformat",
+        "e-mount",
+        "catta"
+      ]
+    },
+    {
+      "id": "tilta-es-t20-qrbp",
+      "art": "kamerazubehoer",
+      "name": "Tilta Schnellwechsel-Baseplate für Sony FX6 (ES-T20-QRBP)",
+      "typ": "baseplate",
+      "hersteller": "Tilta",
+      "modell": "ES-T20-QRBP",
+      "gewicht": 435,
+      "ursprung": "Kameraauflage auf der Oberseite am 1/4\"-Gewinde der FX6 (unter der Bildachse), x nach vorn, z oben",
+      "bezugspunkte": {
+        "kamera_1_4": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            0,
+            0,
+            1
+          ],
+          "hinweis": "hier sitzt stativ_1_4 der FX6"
+        },
+        "lws_links": {
+          "pos": [
+            0,
+            30,
+            -11
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Achse der linken 15-mm-Stange, angenommen nach LWS (85 unter der Bildachse = 11 unter dem FX6-Boden), bei Kevin nachmessen"
+        },
+        "lws_rechts": {
+          "pos": [
+            0,
+            -30,
+            -11
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Achse der rechten 15-mm-Stange, angenommen wie lws_links, bei Kevin nachmessen"
+        }
+      },
+      "hinweis": "Kevin besitzt den Tilta-Käfig ES-T20 für die FX6. Gewicht und Ausstattung von Tilta; Höhe der Stangen unter der Bildachse nicht veröffentlicht, nach LWS-Norm angenommen; Längslage der Stangen und Rosetten offen.",
+      "quellen": [
+        "Tilta, Quick Release Baseplate for Sony FX6 (https://eu.tilta.com/products/quick-release-baseplate-for-sony-fx6): ES-T20-QRBP, 435 g, 15-mm-LWS mit 2 Stangen 15 × 150, Rosetten links und rechts"
+      ],
+      "tags": [
+        "tilta",
+        "fx6",
+        "kaefig",
+        "baseplate",
+        "lws",
+        "15mm"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "tilta_es_t20_qrbp"
+      }
+    },
+    {
+      "id": "tilta-es-t20-vmount-typ1",
+      "art": "kamerazubehoer",
+      "name": "Tilta V-Mount-Akkuplatte Typ I für FX6 (aus Advanced Kit ES-T20-B-V)",
+      "typ": "akkuplatte",
+      "hersteller": "Tilta",
+      "modell": "ES-T20-B-V (Akkuplatte Typ I)",
+      "gewicht": 380,
+      "ursprung": "Anlage im BP-U-Schacht der FX6, x in die Kamera (nach vorn); die Platte liegt hinter dem Ursprung (−x)",
+      "bezugspunkte": {
+        "kamera_akkuschacht": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "hinweis": "hier sitzt akkuschacht der FX6"
+        }
+      },
+      "hinweis": "Teil des Tilta Advanced Kit ES-T20-B-V; sitzt im BP-U-Schacht. Gewicht 0,36 bis 0,4 kg (Mittelwert). Kevin besitzt den Tilta-Käfig ES-T20; ob diese Platte dabei ist, bei Kevin klären.",
+      "quellen": [
+        "Tilta, Advanced Kit ES-T20-B-V für Sony FX6, über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "tilta",
+        "fx6",
+        "v-mount",
+        "akkuplatte"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "vmount_platte"
+      }
+    },
+    {
+      "id": "lws-stange-15x150",
+      "art": "kamerazubehoer",
+      "name": "LWS-Stange Ø 15 × 150 mm",
+      "typ": "rod",
+      "masse": {
+        "d": 15,
+        "l": 150
+      },
+      "ursprung": "Stangenachse am hinteren Ende, x entlang der Stange nach vorn",
+      "bezugspunkte": {
+        "hinten": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        },
+        "vorne": {
+          "pos": [
+            150,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        }
+      },
+      "hinweis": "Zwei Stangen 15 × 150 liegen der Tilta-Baseplate bei (Kevin besitzt sie). 15-mm-LWS: Ø 15, 60 Mitte–Mitte, 85 unter der Bildachse, M12-Innengewinde. Gewicht je nach Ausführung (Alu-Rohr oder -Vollstab) offen.",
+      "quellen": [
+        "15-mm-LWS (Lightweight Support), gängige Norm: Ø 15, Abstand 60, 85 unter der Bildachse; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "lws",
+        "15mm",
+        "rods",
+        "stange"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "lws_stange"
+      }
+    },
+    {
+      "id": "lws-stange-15x200",
+      "art": "kamerazubehoer",
+      "name": "LWS-Stange Ø 15 × 200 mm",
+      "typ": "rod",
+      "masse": {
+        "d": 15,
+        "l": 200
+      },
+      "ursprung": "Stangenachse am hinteren Ende, x entlang der Stange nach vorn",
+      "bezugspunkte": {
+        "hinten": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        },
+        "vorne": {
+          "pos": [
+            200,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        }
+      },
+      "hinweis": "Beispiel. 15-mm-LWS: Ø 15, 60 Mitte–Mitte, 85 unter der Bildachse, M12-Innengewinde. Gewicht je nach Ausführung (Alu-Rohr oder -Vollstab) offen.",
+      "quellen": [
+        "15-mm-LWS (Lightweight Support), gängige Norm: Ø 15, Abstand 60, 85 unter der Bildachse; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "lws",
+        "15mm",
+        "rods",
+        "stange"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "lws_stange"
+      }
+    },
+    {
+      "id": "lws-stange-15x250",
+      "art": "kamerazubehoer",
+      "name": "LWS-Stange Ø 15 × 250 mm",
+      "typ": "rod",
+      "masse": {
+        "d": 15,
+        "l": 250
+      },
+      "ursprung": "Stangenachse am hinteren Ende, x entlang der Stange nach vorn",
+      "bezugspunkte": {
+        "hinten": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        },
+        "vorne": {
+          "pos": [
+            250,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        }
+      },
+      "hinweis": "Beispiel. 15-mm-LWS: Ø 15, 60 Mitte–Mitte, 85 unter der Bildachse, M12-Innengewinde. Gewicht je nach Ausführung (Alu-Rohr oder -Vollstab) offen.",
+      "quellen": [
+        "15-mm-LWS (Lightweight Support), gängige Norm: Ø 15, Abstand 60, 85 unter der Bildachse; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "lws",
+        "15mm",
+        "rods",
+        "stange"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "lws_stange"
+      }
+    },
+    {
+      "id": "lws-stange-15x300",
+      "art": "kamerazubehoer",
+      "name": "LWS-Stange Ø 15 × 300 mm",
+      "typ": "rod",
+      "masse": {
+        "d": 15,
+        "l": 300
+      },
+      "ursprung": "Stangenachse am hinteren Ende, x entlang der Stange nach vorn",
+      "bezugspunkte": {
+        "hinten": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        },
+        "vorne": {
+          "pos": [
+            300,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        }
+      },
+      "hinweis": "Beispiel. 15-mm-LWS: Ø 15, 60 Mitte–Mitte, 85 unter der Bildachse, M12-Innengewinde. Gewicht je nach Ausführung (Alu-Rohr oder -Vollstab) offen.",
+      "quellen": [
+        "15-mm-LWS (Lightweight Support), gängige Norm: Ø 15, Abstand 60, 85 unter der Bildachse; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "lws",
+        "15mm",
+        "rods",
+        "stange"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "lws_stange"
+      }
+    },
+    {
+      "id": "lws-stange-15x400",
+      "art": "kamerazubehoer",
+      "name": "LWS-Stange Ø 15 × 400 mm",
+      "typ": "rod",
+      "masse": {
+        "d": 15,
+        "l": 400
+      },
+      "ursprung": "Stangenachse am hinteren Ende, x entlang der Stange nach vorn",
+      "bezugspunkte": {
+        "hinten": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        },
+        "vorne": {
+          "pos": [
+            400,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "M12-Innengewinde"
+        }
+      },
+      "hinweis": "Beispiel. 15-mm-LWS: Ø 15, 60 Mitte–Mitte, 85 unter der Bildachse, M12-Innengewinde. Gewicht je nach Ausführung (Alu-Rohr oder -Vollstab) offen.",
+      "quellen": [
+        "15-mm-LWS (Lightweight Support), gängige Norm: Ø 15, Abstand 60, 85 unter der Bildachse; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "lws",
+        "15mm",
+        "rods",
+        "stange"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "lws_stange"
+      }
+    },
+    {
+      "id": "arri-rosette-31.8",
+      "art": "kamerazubehoer",
+      "name": "ARRI-Rosette Ø 31,8 mm, 60 Zähne, M6",
+      "typ": "rosette",
+      "masse": {
+        "d": 31.8
+      },
+      "ursprung": "Mitte der Verzahnung, x senkrecht aus der Rosette heraus",
+      "bezugspunkte": {
+        "mitte": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "M6-Gewinde"
+        }
+      },
+      "hinweis": "Norm-Schnittstelle (ARRI-Rosette); die Tilta-Baseplate hat links und rechts je eine.",
+      "quellen": [
+        "ARRI-Rosette: Ø 31,8 mm, 60 Zähne, M6; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "rosette",
+        "arri",
+        "griff"
+      ]
+    },
+    {
+      "id": "smallrig-3203-vmount-platte",
+      "art": "kamerazubehoer",
+      "name": "SmallRig V-Mount-Akkuplatte mit Stangenklemme (3203)",
+      "typ": "akkuplatte",
+      "hersteller": "SmallRig",
+      "modell": "3203",
+      "masse": {
+        "h": 168.7,
+        "b": 108,
+        "t": 33
+      },
+      "gewicht": 324,
+      "ursprung": "Mitte der Kameraseite (Stangenklemme), x zur Kamera; die Platte liegt hinter dem Ursprung (−x)",
+      "hinweis": "Beispiel, bis Kevin seine Akkuplatte nennt.",
+      "quellen": [
+        "SmallRig 3203: 168,7 × 108 × 33 mm, 324 g; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "v-mount",
+        "akkuplatte",
+        "smallrig",
+        "15mm"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "vmount_platte"
+      },
+      "bezugspunkte": {
+        "kamera": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "Stangenklemme zur Kamera"
+        },
+        "akku": {
+          "pos": [
+            -33,
+            0,
+            0
+          ],
+          "richtung": [
+            -1,
+            0,
+            0
+          ],
+          "hinweis": "V-Mount-Aufnahme für den Akku"
+        }
+      }
+    },
+    {
+      "id": "idx-duo-c98p",
+      "art": "kamerazubehoer",
+      "name": "IDX DUO-C98P V-Mount-Akku",
+      "typ": "akku",
+      "hersteller": "IDX",
+      "modell": "DUO-C98P",
+      "masse": {
+        "b": 95,
+        "h": 146,
+        "t": 39
+      },
+      "gewicht": 640,
+      "ursprung": "Mitte der V-Mount-Anlage, x zur Akkuplatte; der Akku liegt hinter dem Ursprung (−x)",
+      "hinweis": "Beispiel, bis Kevin seinen Akku nennt.",
+      "quellen": [
+        "IDX DUO-C98P: 95 × 146 × 39 mm, 640 g; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "akku",
+        "v-mount",
+        "idx"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "vmount_akku"
+      },
+      "bezugspunkte": {
+        "anlage": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "V-Mount-Anlage"
+        }
+      }
+    },
+    {
+      "id": "core-swx-neo-150s",
+      "art": "kamerazubehoer",
+      "name": "Core SWX NEO-150S V-Mount-Akku",
+      "typ": "akku",
+      "hersteller": "Core SWX",
+      "modell": "NEO-150S",
+      "masse": {
+        "b": 90,
+        "h": 118,
+        "t": 60.5
+      },
+      "gewicht": 820,
+      "ursprung": "Mitte der V-Mount-Anlage, x zur Akkuplatte; der Akku liegt hinter dem Ursprung (−x)",
+      "hinweis": "Beispiel, bis Kevin seinen Akku nennt.",
+      "quellen": [
+        "Core SWX NEO-150S: 90 × 118 × 60,5 mm, 820 g; über Kevins Projektsitzung (21.10.2026)"
+      ],
+      "tags": [
+        "akku",
+        "v-mount",
+        "core swx"
+      ],
+      "geometrie": {
+        "modul": "kevcad.geometrie.kamerasystem",
+        "funktion": "vmount_akku"
+      },
+      "bezugspunkte": {
+        "anlage": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "richtung": [
+            1,
+            0,
+            0
+          ],
+          "hinweis": "V-Mount-Anlage"
+        }
+      }
+    }
+  ]
+}

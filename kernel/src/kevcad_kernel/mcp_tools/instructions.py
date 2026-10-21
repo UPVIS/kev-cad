@@ -47,6 +47,8 @@ Built-in check (Prüfung, after every run)
 correct a dimension); never explain them away. A deliberate overlap (press fit, foam) only after asking Kevin, with \
 `erlaubt_ueberlappung(a, b, grund="...")` from kevcad in model.py; without a reason it does not count.
 - Kevin sees the affected parts in red and the overlap volume as a red ghost in the viewer.
+- The check covers the rest pose from model.py. Moving states are checked with `kollision_pruefen` (see Animation); \
+an overlap allowed with `erlaubt_ueberlappung` also counts as allowed there.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
@@ -70,11 +72,41 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 - `bom` shows positions, weight, guide prices and the cut list (3 mm saw kerf); `run` mentions the totals. \
 `export(["bom_csv"])` writes the CSV.
 
+Cameras (film set simulation)
+- Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \
+`fx6 = lager.kamera("sony-fx6", objektiv="<lens id>", format="ff-uhd", brennweite=..., blende=..., fokus=..., \
+name="FX6")`, then `fx6.setzen(position, blick_auf=point)` or `fx6.an("<part>", punkt, richtung, \
+bezug="stativ_1_4", lokal=True)` (follows the part; call it after showing the part); `show(fx6.koerper(), "Kamera \
+FX6")` adds body and lens as inventory. Accessories: `lager.kamerazubehoer(id).verbauen(name, \
+an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4")`. Units mm; fokus from the sensor plane. Camera reference \
+points (bezug) are exactly: sensor, bajonett, front_unten, stativ_1_4, stativ_3_8, akkuschacht (built in also auge, \
+front); there are no other spellings.
+- `kamera_liste` / `kamera_info` give angle of view and depth of field, `kamera_ansicht(name)` shows Kevin the view \
+through the camera, `kamera_bild(name, breite)` saves a PNG in output/kameras/ and returns only the path (set \
+bild_zeigen only when needed), `kamera_vorschlag_aus_ansicht` turns Kevin's current view into a setzen(...) line.
+
 References
 - "Halter/Lasche" (part), "Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
 part.faces()/edges()/vertices(). They are valid for one run only: after every run get fresh ones from \
 parts, selection or execute.
 - `selection` returns what Kevin clicked in the viewer. Use it when he says "this", "here", "that hole".
+
+Animation
+- Motion lives in model.py too, after all show() calls: `from kevcad import animation`; \
+`fahrt = animation(dauer=8, fps=30, name="Fahrt")`. Targets are part names or assembly prefixes ("Rollwagen" moves all \
+"Rollwagen/..."). Example (cart rolls 2 m, wheels turn, ball rolls ahead of the pusher): \
+`fahrt.bewege("Rollwagen", nach=(2000, 0, 0), von=1, bis=7, kurve="weich")`, for each wheel \
+`fahrt.rolle("Rollwagen/Lenkrolle 1/Rad", auf="Rollwagen", radius=50, achse="y")`, \
+`fahrt.folge("Kugelschieber", "Rollwagen")`, `fahrt.rolle("Bowlingball", auf="Rollwagen", radius=108.5)`.
+- Tracks: bewege, drehe(achse, winkel), pfad(punkte, ausrichten, spline), rolle (angle = distance / radius), folge, \
+gelenk(art "dreh"/"schub", werte {t: value}, grenzen), sichtbar, ansicht (viewer camera keyframes, mit= follows a part), \
+erlaube(a, b) for wanted contact. Axes are given in the rest pose; seconds, mm, degrees.
+- `run` lists the animations; `animation_abspielen`, `animation_springen(zeit)`, `animation_liste`. \
+`kollision_pruefen(name)` checks every 3rd frame exactly; every penetration must be solved (touching is fine). \
+`animation_video(name, breite=1920)` writes an MP4 to <project>/output/animationen/; with `kamera="FX6"` it \
+renders through that camera (format aspect ratio). A camera attached with `.an(part)` rides along with that part \
+during playback, through the camera (key 0) and in the video; its shown body from koerper() follows automatically, \
+rig parts need their own `folge`.
 
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \

@@ -1,0 +1,236 @@
+{
+ "camera_upsert": {
+  "type": "CAMERA_UPSERT",
+  "seq": 21,
+  "run": 4,
+  "name": "Kamera/FX6",
+  "kurzname": "FX6",
+  "kamera": {
+   "id": "sony-fx6",
+   "name": "Sony FX6 (ILME-FX6V)",
+   "bajonett": "sony-e",
+   "auflagemass": 18.0
+  },
+  "objektiv": {
+   "id": "sigma-ff-hs-35-t1.5-e",
+   "name": "Sigma 35 mm T1,5 FF High Speed Prime (E-Mount)",
+   "brennweite": 35.0,
+   "lichtstaerke": 1.5,
+   "blendenart": "t",
+   "naheinstellgrenze": 300,
+   "bildkreis": 43.3,
+   "laenge": 121,
+   "frontdurchmesser": 95
+  },
+  "format": {
+   "id": "ff-uhd",
+   "name": "Vollformat UHD 3840 × 2160",
+   "modus": "vollformat"
+  },
+  "lage": [
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   0.0,
+   250.0,
+   0.0,
+   235.0,
+   1.0
+  ],
+  "sensor_pos": [
+   250.0,
+   0.0,
+   235.0
+  ],
+  "auge": [
+   285.0,
+   0.0,
+   235.0
+  ],
+  "blick": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "oben": [
+   0.0,
+   0.0,
+   1.0
+  ],
+  "rechts": [
+   0.0,
+   -1.0,
+   0.0
+  ],
+  "sensor_mm": [
+   35.7,
+   20.081
+  ],
+  "aufloesung": [
+   3840,
+   2160
+  ],
+  "seitenverhaeltnis": 1.77778,
+  "brennweite": 35.0,
+  "bildwinkel_h": 54.043,
+  "bildwinkel_v": 32.014,
+  "bildwinkel_d": 60.668,
+  "blende": 2.8,
+  "blendenart": "t",
+  "fokus": 1500.0,
+  "schaerfe_nah": 1375.628,
+  "schaerfe_fern": 1649.097,
+  "hyperfokal": 16238.704,
+  "zerstreuungskreis": 0.027,
+  "teil": "Wagen",
+  "ausblenden": [
+   "Kamera FX6/Objektiv"
+  ],
+  "objektiv_vorne": 139.0,
+  "vignettierung": false,
+  "folgt": "Wagen"
+ },
+ "camera_upsert_b": {
+  "type": "CAMERA_UPSERT",
+  "seq": 22,
+  "run": 4,
+  "name": "Kamera/B",
+  "kurzname": "B",
+  "kamera": {
+   "id": "sony-fx6",
+   "name": "Sony FX6 (ILME-FX6V)",
+   "bajonett": "sony-e",
+   "auflagemass": 18.0
+  },
+  "objektiv": {
+   "id": "sony-fe-24-105-f4-g-oss",
+   "name": "Sony FE 24–105 mm F4 G OSS",
+   "brennweite": [
+    24.0,
+    105.0
+   ],
+   "lichtstaerke": 4.0,
+   "blendenart": "f",
+   "naheinstellgrenze": 380,
+   "bildkreis": 43.3,
+   "laenge": 113.3,
+   "frontdurchmesser": 83.4
+  },
+  "format": {
+   "id": "ff-dci",
+   "name": "Vollformat DCI 4K 4096 × 2160",
+   "modus": "vollformat"
+  },
+  "lage": [
+   -0.375069,
+   -0.923626,
+   -0.078985,
+   0.0,
+   0.365997,
+   -0.225829,
+   0.9028,
+   0.0,
+   -0.851686,
+   0.309704,
+   0.422746,
+   0.0,
+   -1000.0,
+   800.0,
+   1200.0,
+   1.0
+  ],
+  "sensor_pos": [
+   -1000.0,
+   800.0,
+   1200.0
+  ],
+  "auge": [
+   -957.4157,
+   784.5148,
+   1178.8627
+  ],
+  "blick": [
+   0.851686,
+   -0.309704,
+   -0.422746
+  ],
+  "oben": [
+   0.365997,
+   -0.225829,
+   0.9028
+  ],
+  "rechts": [
+   -0.375069,
+   -0.923626,
+   -0.078985
+  ],
+  "sensor_mm": [
+   35.7,
+   18.826
+  ],
+  "aufloesung": [
+   4096,
+   2160
+  ],
+  "seitenverhaeltnis": 1.8963,
+  "brennweite": 50.0,
+  "bildwinkel_h": 39.293,
+  "bildwinkel_v": 21.324,
+  "bildwinkel_d": 43.958,
+  "blende": 4.0,
+  "blendenart": "f",
+  "fokus": null,
+  "schaerfe_nah": 23198.148,
+  "schaerfe_fern": null,
+  "hyperfokal": 23198.148,
+  "zerstreuungskreis": 0.027,
+  "teil": null,
+  "ausblenden": [],
+  "objektiv_vorne": 131.3,
+  "vignettierung": false,
+  "folgt": null
+ },
+ "camera_remove": {
+  "type": "CAMERA_REMOVE",
+  "seq": 23,
+  "run": 5,
+  "name": "Kamera/B"
+ },
+ "view_cmd_camera": {
+  "type": "VIEW_CMD",
+  "seq": 24,
+  "id": "k-7",
+  "cmd": "camera_view",
+  "args": {
+   "name": "Kamera/FX6"
+  }
+ },
+ "view_cmd_camera_off": {
+  "type": "VIEW_CMD",
+  "seq": 25,
+  "id": "k-8",
+  "cmd": "camera_view",
+  "args": {
+   "name": null
+  }
+ },
+ "screenshot_req_camera": {
+  "type": "SCREENSHOT_REQ",
+  "seq": 26,
+  "id": "k-9",
+  "width": 1920,
+  "height": 1080,
+  "source": "camera",
+  "view": null,
+  "hide_overlays": true,
+  "camera": "Kamera/FX6"
+ }
+}
