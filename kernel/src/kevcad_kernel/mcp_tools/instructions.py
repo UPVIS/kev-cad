@@ -34,9 +34,19 @@ released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-
 is refused. Fix the model: search a matching stock item and verbauen it, or make it a druckteil.
 - Only Kevin can switch the rule off for a project (kevcad.json "inventar_regel": false, e.g. for reconstructions \
 from photos). There is no tool for it and you must not change it yourself.
-- 3D printed parts follow the design rules for Kevin's Bambu Lab P2S (see the skill kev-cad, file 3d-druck.md): \
+- 3D printed parts follow the design rules for Kevin's Bambu Lab P1P (open frame, no enclosure: PLA or PETG by default) (see the skill kev-cad, file 3d-druck.md): \
 walls in multiples of the 0.42 mm line width, overhangs up to 45°, teardrop horizontal holes, bed-side chamfer, \
 clearances, inserts and nut traps, layer direction for strength, build volume 256 mm.
+
+Built-in check (Prüfung, after every run)
+- Every run is checked automatically; `run` waits for the result. Parts that interpenetrate (overlap volume above \
+0.001 mm³ and 0.01 mm depth; touching is fine) are findings with a concrete fix each. Fasteners are no exception \
+(washer ↔ washer, head ↔ washer, screw in a through hole). The only automatic exception is real thread engagement \
+(screw in a nut or in a core/tapped hole, same axis, overlap only within the thread depth).
+- Open findings make `run` an error (isError) and export is refused. Fix them in model.py (clearance, hole, move, \
+correct a dimension); never explain them away. A deliberate overlap (press fit, foam) only after asking Kevin, with \
+`erlaubt_ueberlappung(a, b, grund="...")` from kevcad in model.py; without a reason it does not count.
+- Kevin sees the affected parts in red and the overlap volume as a red ghost in the viewer.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
