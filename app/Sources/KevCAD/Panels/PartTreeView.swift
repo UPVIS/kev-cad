@@ -191,7 +191,8 @@ private struct PartRow: View {
             } else if let zukauf = node.part?.zukauf {
                 // Zukaufteil: Wagen für Hersteller-CAD, durchsichtiger Würfel für den Ersatzkörper
                 HStack(spacing: 4) {
-                    if zukauf.isSimplified {
+                    // Der Kernel hängt „(vereinfacht)“ schon an den Namen (KATALOG.md); dann nicht doppelt
+                    if zukauf.isSimplified, !node.name.contains("(vereinfacht)") {
                         Text("vereinfacht")
                             .font(.caption)
                             .foregroundStyle(.orange)

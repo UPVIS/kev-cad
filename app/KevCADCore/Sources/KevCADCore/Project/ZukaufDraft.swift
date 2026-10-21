@@ -369,8 +369,11 @@ public struct ZukaufEntryInfo: Equatable, Sendable {
     /// "ALUTEC 05200" bzw. die Shop-Nummer.
     public var number: String? { mpn ?? shopNr }
 
-    /// "610 × 410 × 128 mm" bzw. "Ø 40 × 120 mm"
+    /// "610 × 410 × 128 mm" bzw. "Ø 40 × 120 mm", bei einer Kugel (nur `d`) "Ø 70 mm" wie im Kernel
     public var masseText: String {
+        if form == .zylinder, let d = masse["d"], masse["l"] == nil, masse["h"] == nil {
+            return "Ø " + KevFormat.compact(d) + " mm"
+        }
         let values = form.keys.compactMap { masse[$0] }
         guard values.count == form.keys.count else { return "–" }
         let text = values.map { KevFormat.compact($0) }.joined(separator: " × ") + " mm"

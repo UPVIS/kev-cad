@@ -214,7 +214,7 @@ public struct ZukaufStatusMessage: Equatable, Sendable {
     public var cadLinks: [CADLink]
     /// Dateiendungen ohne Punkt, klein, z. B. ["step", "stp", "zip"].
     public var erwartet: [String]
-    /// Optional (nicht im Vertrag): Anzeigename, falls der Kernel ihn mitschickt.
+    /// Optional laut Festlegungen in PROTOCOL.md: Anzeigename des Teils.
     public var name: String?
 
     public static let defaultExtensions = ["step", "stp", "zip"]
