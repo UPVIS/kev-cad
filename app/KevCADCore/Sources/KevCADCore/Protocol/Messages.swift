@@ -207,9 +207,11 @@ public struct PartUpsertHeader: Decodable, Sendable {
     public var stock: StockInfo?
     /// Phase 2, Inventar-Regel: "ok" oder "fehlt" (Teil ist weder Lagerteil noch gekennzeichnetes Druckteil).
     public var inventar: String?
+    /// Phase 3: Zukaufteil, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt.
+    public var zukauf: ZukaufPartInfo?
 
     enum CodingKeys: String, CodingKey {
-        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar
+        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar, zukauf
     }
 
     /// Inventar-Regel verletzt.
@@ -248,6 +250,7 @@ public struct PartUpsertHeader: Decodable, Sendable {
         transform = (t?.count == 16) ? t : nil
         stock = (try? c.decodeIfPresent(JSONValue.self, forKey: .stock)).flatMap { StockInfo(json: $0) }
         inventar = try? c.decodeIfPresent(String.self, forKey: .inventar)
+        zukauf = (try? c.decodeIfPresent(JSONValue.self, forKey: .zukauf)).flatMap { ZukaufPartInfo(json: $0) }
     }
 
     /// Lineares RGBA, Vorgabe hellgrau.
@@ -509,6 +512,8 @@ public enum KernelMessage: Sendable {
     case bom(BOMMessage)
     /// Phase 2: Lagerkatalog auf CATALOG_REQ.
     case catalog(CatalogMessage)
+    /// Phase 3: Zustand eines Zukaufteils (angelegt, wartet auf CAD, importiert, Fehler).
+    case zukaufStatus(ZukaufStatusMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -532,6 +537,7 @@ public enum KernelMessage: Sendable {
         case .error: return "ERROR"
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
+        case .zukaufStatus: return "ZUKAUF_STATUS"
         case .unknown(let t, _): return t
         }
     }
@@ -577,6 +583,7 @@ public enum KernelMessage: Sendable {
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
+        case "ZUKAUF_STATUS": return .zukaufStatus(try ZukaufStatusMessage.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

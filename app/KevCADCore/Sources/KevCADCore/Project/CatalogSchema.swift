@@ -173,6 +173,11 @@ public enum CatalogSchema {
             return Art(id: id, title: "3D-Druckteil", plural: "3D-Druckteile", symbol: "printer.fill", fields: [],
                        supply: .piece, profile: "aus druckbarem Material, Kosten aus dem Filamentpreis")
         }
+        if id == "zukaufteil" {
+            // Phase 3: fertig gekaufte Teile mit Hersteller und Nummer (KATALOG.md, Abschnitt Zukaufteil)
+            return Art(id: id, title: "Zukaufteil", plural: "Zukaufteile", symbol: "cart", fields: [], supply: .piece,
+                       profile: "Hersteller-CAD oder Ersatzkörper aus den Shop-Maßen")
+        }
         let title = id.replacingOccurrences(of: "_", with: " ").capitalized
         return Art(id: id, title: title, plural: title, symbol: "shippingbox", fields: [], supply: .bar, profile: "")
     }

@@ -13,6 +13,7 @@ struct InspectorView: View {
             selectionSection
             propertiesSection
             stockSection
+            ZukaufInspectorSection(model: model)
             measurementsSection
             projectSection
         }
