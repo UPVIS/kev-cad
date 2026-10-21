@@ -13,6 +13,19 @@ Version 1 (21.10.2026). Verbindlich für die Dateien unter `kernel/src/kevcad/ka
 Jede Datei ist ein Objekt `{"version": 1, "materialien": [...], "teile": [...]}` (beide Listen optional). Gleiche `id`
 in einer späteren Ebene ersetzt den Eintrag ganz; `"entfernt": true` blendet einen Eintrag aus.
 
+## Inventar-Regel und Freigabe
+
+Gebaut wird nur aus dem Inventar (PLAN-PHASE2.md, P6): Jedes Teil im Modell stammt aus `verbauen()` eines
+freigegebenen Lagerteils oder ist ein ausdrücklich gekennzeichnetes 3D-Druckteil (`lager.druckteil`) aus einem
+freigegebenen Material mit `druckbar: true`. Jeder Eintrag (Material oder Teil) hat dafür optional
+
+| Feld | Werte | Bedeutung |
+|---|---|---|
+| `status` | `frei` (Standard, wenn das Feld fehlt) \| `vorgeschlagen` | Vorschläge von Claude (`stock_define`, `material_define`) sind erst nach Kevins Freigabe im Lagerkatalog verbaubar |
+| `vorgeschlagen_am`, `vorgeschlagen_von` | Datum, `agent` | nur bei Vorschlägen |
+
+Freigeben heißt: die App speichert den Eintrag mit `status: "frei"`; Ablehnen löscht ihn.
+
 ## Material
 
 ```json
@@ -41,6 +54,7 @@ in einer späteren Ebene ersetzt den Eintrag ganz; `"entfernt": true` blendet ei
 | `preis_je_kg` | nein | € netto, Richtwert |
 | `preis_quelle`, `preis_stand` | wenn Preis | Herkunft, Monat |
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
+| `druckbar` | nein | `true` für Materialien, aus denen 3D-Druckteile entstehen dürfen (PLA, PETG, ABS, ASA, TPU, PA, Harz …) |
 
 ## Lagerteil
 
@@ -112,3 +126,8 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
   XY-Ebene ab z = 0; Schrauben wie in bd_warehouse) mit Name, Farbe und Material des Lagerteils.
 - `gehrung=(w_anfang, w_ende)` in Grad um die lokale X-Achse; `laenge` ist das Maß an der längsten Kante.
 - Jede `verbauen`-Zeile erscheint in der Stückliste, auch wenn das Teil später gebohrt oder gekürzt wird.
+- Neue 3D-Druckteile: `lager.druckteil(form, name="Halter/Clip", material="petg", verfahren="3d-druck")` – `form` ist
+  die selbst konstruierte build123d-Form, `material` ein freigegebenes Material mit `druckbar: true`, `verfahren`
+  `3d-druck` oder `harzdruck`. Stücklistenzeile `art: "druckteil"` mit Masse und Filamentkosten.
+- Ist die Inventar-Regel an, ist jedes gezeigte Teil ohne `verbauen`/`druckteil` ein Verstoß (Skizzen aus `execute`
+  ausgenommen).

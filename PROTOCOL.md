@@ -161,6 +161,14 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.teil(...).verbauen(...)` stamm
           "gehrung": [0, 45], "material": "stahl-s235", "kg": 2.98, "preis": 7.06}
 ```
 
+### Inventar-Regel
+
+- `PART_UPSERT.inventar`: `ok` | `fehlt` (fehlt nur, wenn die Regel im Projekt an ist).
+- `RUN_END.inventar_verstoesse`: Liste der Teilnamen, die weder verbaut noch Druckteil sind (leer = alles gut).
+- `SETTINGS.inventar_regel` (App → Kernel, bool): Kevins Projekteinstellung, der Kernel schreibt sie in `kevcad.json`.
+- Katalogeinträge in `CATALOG` tragen `status` (`frei` | `vorgeschlagen`); Freigabe = `CATALOG_SAVE` mit
+  `status: "frei"`, Ablehnen = `CATALOG_DELETE`.
+
 ### Kernel → App
 
 | type | Felder | Nutzlast |
@@ -179,7 +187,10 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.teil(...).verbauen(...)` stamm
 
 - Platten: `laenge` null, `masse_text` z. B. „800 × 600 mm", Fläche über `flaeche_m2`.
 - Schrauben und Kleinteile: `masse_text` z. B. „M8 × 60", Preis je Stück.
-- Eigenteile (`eigenteil: true`): frei modellierte Teile mit Material; `stock_id` null, Masse aus Volumen × Dichte.
+- Druckteile (`art: "druckteil"`): aus `lager.druckteil`, `stock_id` null, Material und Masse aus Volumen × Dichte,
+  Preis über `preis_je_kg` des Materials.
+- Eigenteile (`eigenteil: true`): nur bei abgeschalteter Inventar-Regel; frei modellierte Teile mit Material,
+  `stock_id` null, Masse aus Volumen × Dichte.
 
 `cuts[i]` (Zuschnitt je Stangenware):
 
