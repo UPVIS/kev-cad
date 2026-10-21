@@ -22,6 +22,25 @@ druckbaren Material (PLA, PETG, ABS …). Es kommt kein Material neu dazu, das n
   dahin hältst du dich von Hand daran und nennst in `show()` nur Materialien, die Kevin vorgegeben hat.
 - Ausnahme: Projekte, in denen Kevin die Regel ausdrücklich abschaltet (Nachbauten aus Fotos, Skizzen).
 
+## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
+
+Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
+mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md`):
+
+- **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
+- **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
+- **Waagrechte Bohrungen** als Tropfenform (Spitze nach oben); Bohrungen drucken etwa 0,1–0,2 mm zu klein, Ø vorhalten.
+- **Bettseite** mit Fase 0,4–0,6 mm gegen Elefantenfuß; eine ebene, große Auflagefläche einplanen.
+- **Spiel** je Seite: Presspassung 0,1, Spielpassung 0,2, beweglich/Print-in-Place 0,3–0,5 mm.
+- **Gewinde**: Gewindeeinsätze (Tasche nach Herstellermaß, z. B. M3 Ø 4,0–4,2 mm) oder eingeschlossene Muttern
+  (Sechskant +0,2–0,3 mm, Einführschräge); Kernlöcher für Schrauben direkt ins Teil etwa 0,8 × d.
+- **Gegenbohrungen und Senkungen**, die nach unten zeigen, mit Opferschicht (0,2 mm) drucken, sonst Stütze nötig.
+- **Festigkeit**: Last längs der Schichten führen, nicht quer (Schichtfugen sind die Schwachstelle); Innenkanten
+  verrunden; Schnapphaken in Schichtrichtung legen.
+- **Verzug** bei ABS/ASA/PA: große ebene Flächen und spitze Ecken vermeiden, Ecken verrunden.
+- **Z-Maße** möglichst als Vielfache von 0,2 mm; Schrift mindestens 0,6 mm erhaben, Strich ab 0,8 mm.
+- **Größer als der Bauraum**: teilen, mit Passstiften oder Schwalbenschwanz und ebenen Fügeflächen.
+
 ## Arbeitsablauf
 
 1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl.
