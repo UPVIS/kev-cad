@@ -35,7 +35,8 @@ def overlaps(a, b, tol: float = 1e-6) -> bool:
     return all(amin[i] < bmax[i] - tol and bmin[i] < amax[i] - tol for i in range(3))
 
 
-def check(project: Path, threshold: float) -> dict:
+def load_shapes(project: Path) -> dict[str, Shape]:
+    """Projekt auf einer Kopie in einer eigenen Laufzeit rechnen und die exakten Formen aller gezeigten Teile holen."""
     tmp = Path(tempfile.mkdtemp(prefix="kcint", dir="/tmp"))
     copy = tmp / project.name
     shutil.copytree(project, copy, ignore=shutil.ignore_patterns(".kevcad", "output", "__pycache__"))
@@ -57,7 +58,11 @@ def check(project: Path, threshold: float) -> dict:
     finally:
         rt.close()
         shutil.rmtree(tmp, ignore_errors=True)
+    return shapes
 
+
+def check(project: Path, threshold: float) -> dict:
+    shapes = load_shapes(project)
     t0 = time.perf_counter()
     names = sorted(shapes)
     boxes = {n: shapes[n].bounding_box() for n in names}
