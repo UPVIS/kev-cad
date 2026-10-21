@@ -250,7 +250,9 @@ class FakeKernel:
             self.send({"type": "PART_REMOVE", "run": run, "name": "Hilfsteil"})
             tri = sum(h["counts"]["tri"] for h, _ in self.current.values())
             self.send({"type": "RUN_END", "run": run, "duration_ms": int((time.perf_counter() - t0) * 1000),
-                       "parts": len(self.current), "triangles": tri, "warnings": [], "params": {"breite": 120}})
+                       "parts": len(self.current), "triangles": tri, "warnings": [], "params": {"breite": 120},
+                       "inventar_regel": True, "inventar_verstoesse": []})
+            self.send(self.bom(run))
             self.send({"type": "STATUS", "state": "ready", "message": None})
             log(f"Lauf {run} fertig: {len(self.current)} Teile, {tri} Dreiecke")
         finally:
@@ -325,6 +327,14 @@ class FakeKernel:
             self.send({"type": "MEASURE_RES", "reply_to": header.get("id"), "result": self.measure(header)})
         elif t == "SELECTION":
             log(f"Auswahl (Lauf {header.get('run')}): {header.get('refs')}")
+        elif t == "BOM_REQ":  # Phase 2: Stückliste und Katalog aus den Testdateien
+            self.send({**self.bom(self.run_no), "reply_to": header.get("id")})
+        elif t == "CATALOG_REQ":
+            cat, _ = read_fixture("catalog.frame")
+            self.send({**{k: v for k, v in cat.items() if k != "seq"}, "reply_to": header.get("id")})
+        elif t in ("CATALOG_SAVE", "CATALOG_DELETE"):
+            log(f"{t}: {header.get('kind')} {header.get('entry_id') or (header.get('entry') or {}).get('id')}")
+            self.send({"type": "ACK", "reply_to": header.get("id"), "ok": True, "message": "Ersatz-Kernel: gespeichert"})
         elif t == "EXPORT_REQ":
             base = Path(self.project["path"]) if self.project else self.out
             files = [str(base / "output" / f"model.{f}") for f in header.get("formats", [])]
@@ -349,6 +359,11 @@ class FakeKernel:
                 ev.set()
         else:
             log(f"Unbekannte Nachricht {t}")
+
+    @staticmethod
+    def bom(run: int) -> dict[str, Any]:
+        header, _ = read_fixture("bom.frame")
+        return {**{k: v for k, v in header.items() if k != "seq"}, "run": run}
 
     def measure(self, req: dict[str, Any]) -> dict[str, Any]:
         refs = req.get("refs", [])

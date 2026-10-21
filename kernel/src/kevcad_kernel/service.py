@@ -43,6 +43,10 @@ class RunResult(TypedDict, total=False):
     warnings: list[str]
     params: dict[str, float]
     error: RunError
+    # Phase 2 (additiv): Summen der Stückliste und Inventar-Regel
+    bom: dict[str, Any]  # {"totals", "warnings", "cuts"}
+    inventar_regel: bool
+    inventar_verstoesse: list[str]  # gezeigte Teile ohne verbauen()/druckteil()
 
 
 class MeasureResult(TypedDict, total=False):
@@ -126,13 +130,16 @@ class KernelService(Protocol):
         """Ein Lagerteil mit berechneten Werten: {"ok", "item", "kg_je_m", "querschnitt_mm2", "preis_je_m"}"""
 
     def stock_define(self, entry: dict[str, Any], ebene: str = "eigen") -> dict[str, Any]:
-        """Lagerteil anlegen oder ersetzen (KATALOG.md). Prüft Pflichtfelder und Maße. {"ok", "item", "datei"}"""
+        """Lagerteil anlegen oder ersetzen (KATALOG.md). Prüft Pflichtfelder und Maße. {"ok", "item", "datei"}
+        Inventar-Regel: über MCP immer als Vorschlag (status "vorgeschlagen"), verbaubar erst nach Kevins Freigabe;
+        freigegebene Einträge ersetzt es nicht."""
 
     def material_list(self, query: str = "") -> dict[str, Any]:
         """{"ok", "materials": [Material + "ebene"]}"""
 
     def material_define(self, entry: dict[str, Any], ebene: str = "eigen") -> dict[str, Any]:
-        """Material anlegen oder ersetzen (KATALOG.md). {"ok", "material", "datei"}"""
+        """Material anlegen oder ersetzen (KATALOG.md). {"ok", "material", "datei"}
+        Wie stock_define über MCP immer als Vorschlag."""
 
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""

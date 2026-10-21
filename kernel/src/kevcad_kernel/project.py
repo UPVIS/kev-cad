@@ -21,7 +21,7 @@ from typing import Any
 
 MODEL = "model.py"
 SETTINGS = "kevcad.json"
-DEFAULT_SETTINGS: dict[str, Any] = {"version": 1, "unit": "mm", "precision": "normal"}
+DEFAULT_SETTINGS: dict[str, Any] = {"version": 1, "unit": "mm", "precision": "normal", "inventar_regel": True}
 
 # Genauigkeitsstufen der Tessellierung: (deviation, angular_tolerance); "normal" wie im AP0-Test
 PRECISION_LEVELS: dict[str, tuple[float, float]] = {
@@ -30,58 +30,69 @@ PRECISION_LEVELS: dict[str, tuple[float, float]] = {
     "fein": (0.03, 0.1),
 }
 
-EXAMPLE_MODEL = '''"""Wandhalter für ein Rohr Ø 42,4 mm aus 5-mm-Alublech mit zwei M6-Löchern.
+EXAMPLE_MODEL = '''"""Wandhalter für ein Rohr Ø 42,4 mm: Grundplatte und Lasche aus Flachstahl 40 × 5, Schelle als 3D-Druckteil aus
+PETG, zwei Löcher für M6.
 
-Alle Maße in mm, Z nach oben, die Wand liegt in der Ebene y = 0. Parameter stehen oben, jedes Teil wird mit show()
-und sprechendem Namen gezeigt; "/" im Namen bildet den Baum.
+Alle Teile kommen aus dem Inventar (Inventar-Regel): Lagerteile mit lager.teil(...).verbauen(...), die Schelle mit
+lager.druckteil(...). Maße in mm, Z nach oben, die Wand liegt in der Ebene y = 0. Parameter stehen oben; jedes Teil
+wird mit show() unter demselben Namen wie in verbauen() gezeigt, "/" im Namen bildet den Baum.
 """
 
 from build123d import *
-from kevcad import param, show, step
+from kevcad import lager, param, show, step
 
-rohr_d = param("rohr_d", 42.4)  # Außendurchmesser des Rohrs
-blech = param("blech", 5)  # Blechdicke
-breite = param("breite", 60)  # Breite der Grundplatte
-hoehe = param("hoehe", 120)  # Höhe der Grundplatte
+hoehe = param("hoehe", 120)  # Länge der Grundplatte
 abstand = param("abstand", 70)  # Wand bis Rohrmitte
 loch = param("loch", 6.6)  # Durchgangsloch für M6
 lochabstand = param("lochabstand", 80)  # Abstand der beiden Löcher
-schelle = param("schelle", 30)  # Höhe der Rohrschelle
+schelle_h = param("schelle_h", 30)  # Höhe der Schelle
+wand = param("wand", 4)  # Wandstärke der Schelle
+
+flach = lager.teil("flach", b=40, s=5, material="stahl-s235")  # Lagerteile: erst stock_search, dann lager.teil
+rohr = lager.teil("rohr-en10220-42.4x2.0")
+breite, blech = flach.masse["b"], flach.masse["s"]
+rohr_d = rohr.masse["d"]
 
 step("Grundplatte")
-platte = Box(breite, blech, hoehe, align=(Align.CENTER, Align.MIN, Align.CENTER))
-show(platte, "Halter/Grundplatte", color="#B8BEC4", material="aluminium")
+platte = flach.verbauen(laenge=hoehe, name="Halter/Grundplatte")  # entlang +Z, Breite in X, Dicke in Y
+platte = Pos(0, blech / 2, -hoehe / 2) * platte
+show(platte, "Halter/Grundplatte")
 
 step("Bohrungen")
 for z in (-lochabstand / 2, lochabstand / 2):
     platte -= Pos(0, 0, z) * Rot(90, 0, 0) * Cylinder(loch / 2, 3 * blech)
-show(platte, "Halter/Grundplatte", color="#B8BEC4", material="aluminium")  # gleicher Name: ersetzt das Teil
+show(platte, "Halter/Grundplatte")  # gleicher Name: ersetzt das Teil, die Stückliste bleibt beim Lagerteil
 
-step("Lasche mit Schelle")
-ring_r = rohr_d / 2 + blech
-arm = abstand - ring_r + blech
-lasche = Pos(0, blech + arm / 2, 0) * Box(breite * 0.6, arm, blech)
-lasche += Pos(0, abstand, 0) * Cylinder(ring_r, schelle)
-lasche -= Pos(0, abstand, 0) * Cylinder(rohr_d / 2, schelle + 2)
-show(lasche, "Halter/Lasche", color="#9FB4C7", material="aluminium")
+step("Lasche")
+ring_r = rohr_d / 2 + wand
+arm = abstand - ring_r - blech  # von der Platte bis an die Schelle
+lasche = flach.verbauen(laenge=arm, name="Halter/Lasche")
+show(Pos(0, blech, 0) * Rot(-90, 0, 0) * lasche, "Halter/Lasche")  # waagerecht, von der Wand weg
+
+step("Schelle")
+ring = Pos(0, abstand, 0) * (Cylinder(ring_r, schelle_h) - Cylinder(rohr_d / 2, schelle_h + 2))
+schelle = lager.druckteil(ring, "Halter/Schelle", material="petg")
+show(schelle, "Halter/Schelle")
 
 step("Rohr")
-rohr = Pos(0, abstand, 0) * (Cylinder(rohr_d / 2, 300) - Cylinder(rohr_d / 2 - 2.6, 300))
-show(rohr, "Rohr", color="#8A949C", material="edelstahl")
+stueck = rohr.verbauen(laenge=300, name="Rohr")
+show(Pos(0, abstand, -150) * stueck, "Rohr")
 '''
 
 EMPTY_MODEL = '''"""Neues Modell. Alle Maße in mm, Z nach oben.
 
-Parameter oben mit param(), Bauschritte mit step(), jedes Teil mit show(objekt, "Name").
+Parameter oben mit param(), Bauschritte mit step(), jedes Teil mit show(objekt, "Name"). Inventar-Regel: Teile kommen
+aus dem Lager (stock_search, dann lager.teil(...).verbauen(...)) oder sind 3D-Druckteile (lager.druckteil(...)).
 """
 
 from build123d import *
-from kevcad import param, show, step
+from kevcad import lager, param, show, step
 
-# breite = param("breite", 50)
-# step("Grundkörper")
-# koerper = Box(breite, 30, 10)
-# show(koerper, "Grundkörper", color="#B8BEC4", material="aluminium")
+# laenge = param("laenge", 300)
+# step("Rohr")
+# rohr = lager.teil("rohr-en10220-42.4x2.0")
+# stueck = rohr.verbauen(laenge=laenge, name="Rohr")
+# show(stueck, "Rohr")
 '''
 
 TEMPLATES = {"example": EXAMPLE_MODEL, "empty": EMPTY_MODEL}
@@ -117,8 +128,36 @@ class Project:
     def log_dir(self) -> Path:
         return self.path / ".kevcad" / "log"
 
-    def info(self) -> dict[str, str]:
-        return {"path": str(self.path), "name": self.name, "model": str(self.model)}
+    def info(self) -> dict[str, Any]:
+        return {"path": str(self.path), "name": self.name, "model": str(self.model),
+                "inventar_regel": self.inventar_regel}
+
+    @property
+    def inventar_regel(self) -> bool:
+        """Inventar-Regel (Phase 2): an, solange kevcad.json nicht ausdrücklich "inventar_regel": false sagt."""
+        return self.settings.get("inventar_regel", True) is not False
+
+    def reload_settings(self) -> None:
+        """kevcad.json neu lesen (Kevin oder die App können sie ändern)."""
+        self.settings, warnings = _read_settings(self.path)
+        if warnings:
+            self.warnings = warnings
+
+    def set_setting(self, key: str, value: Any) -> None:
+        """Einen Wert in kevcad.json schreiben; andere Einträge bleiben, wie sie sind."""
+        file = self.path / SETTINGS
+        data: dict[str, Any] = dict(DEFAULT_SETTINGS)
+        if file.exists():
+            try:
+                loaded = json.loads(file.read_text(encoding="utf-8"))
+                data = loaded if isinstance(loaded, dict) else dict(self.settings)
+            except (OSError, json.JSONDecodeError):
+                data = dict(self.settings)
+        data[key] = value
+        tmp = file.with_name(f".{file.name}.tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.replace(file)
+        self.settings[key] = value
 
     @property
     def precision(self) -> tuple[float, float]:

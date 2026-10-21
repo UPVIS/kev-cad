@@ -56,6 +56,47 @@ PARTS = [
 ]
 
 
+MATERIALS = [
+    {"id": "stahl-s235", "name": "Stahl S235", "gruppe": "Stahl", "dichte": 7.85, "farbe": "#8A9099",
+     "preis_je_kg": 2.4, "preis_quelle": "Richtwert", "preis_stand": "2026-10", "aliase": ["stahl"],
+     "ebene": "mitgeliefert"},
+    {"id": "edelstahl-1.4301", "name": "Edelstahl 1.4301", "gruppe": "Edelstahl", "dichte": 7.9, "farbe": "#C9CED3",
+     "ebene": "mitgeliefert"},
+]
+
+STOCK = [
+    {"id": "vierkantrohr-en10219-40x40x3", "art": "vierkantrohr", "name": "Vierkantrohr 40 × 40 × 3",
+     "norm": "DIN EN 10219", "masse": {"a": 40, "s": 3}, "material": "stahl-s235", "kg_je_m": 3.41,
+     "stangenlaenge": 6000, "preis": {"je_m": 8.0, "quelle": "Richtwert", "stand": "2026-10"}, "ebene": "mitgeliefert",
+     "berechnet": {"kg_je_m": 3.41, "querschnitt_mm2": 420.82, "preis_je_m": 8.0, "preis_text": "8,00 €/m"}},
+    {"id": "rohr-en10220-42.4x2.0", "art": "rohr", "name": "Rohr 42,4 × 2,0", "norm": "DIN EN 10220",
+     "masse": {"d": 42.4, "s": 2.0}, "material": "stahl-s235", "kg_je_m": 1.99, "stangenlaenge": 6000,
+     "ebene": "mitgeliefert",
+     "berechnet": {"kg_je_m": 1.99, "querschnitt_mm2": 253.84, "preis_je_m": None, "preis_text": None}},
+]
+
+BOM = {
+    "lines": [
+        {"pos": 1, "art": "vierkantrohr", "stock_id": "vierkantrohr-en10219-40x40x3",
+         "benennung": "Vierkantrohr 40 × 40 × 3", "norm": "DIN EN 10219", "material": "Stahl S235", "laenge": 842.0,
+         "gehrung": [0.0, 0.0], "masse_text": "842 mm", "anzahl": 4, "kg_je": 2.871, "kg": 11.485, "preis_je": 6.74,
+         "preis": 26.94, "teile": ["Gestell/Bein vorn links"], "eigenteil": False},
+        {"pos": 2, "art": "vierkantrohr", "stock_id": "vierkantrohr-en10219-40x40x3",
+         "benennung": "Vierkantrohr 40 × 40 × 3", "norm": "DIN EN 10219", "material": "Stahl S235", "laenge": 800.0,
+         "gehrung": [45.0, 45.0], "masse_text": "800 mm", "anzahl": 2, "kg_je": 2.728, "kg": 5.456, "preis_je": 6.4,
+         "preis": 12.8, "teile": ["Gestell/Rahmen hinten", "Gestell/Rahmen vorn"], "eigenteil": False},
+        {"pos": 3, "art": "eigenteil", "stock_id": None, "benennung": "Halter", "norm": None, "material": "aluminium",
+         "laenge": None, "gehrung": [0.0, 0.0], "masse_text": "60 × 5 × 120 mm", "anzahl": 1, "kg_je": 0.096,
+         "kg": 0.096, "preis_je": None, "preis": None, "teile": ["Halter"], "eigenteil": True},
+    ],
+    "cuts": [{"stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3",
+              "stangenlaenge": 6000, "saegeschnitt": 3, "stangen": [[842, 842, 842, 842, 800, 800]],
+              "verschnitt_prozent": 17.2, "preis_stangen": 48.0}],
+    "totals": {"kg": 17.037, "preis": 39.74, "positionen": 3, "teile": 7, "preis_hinweis": "Richtpreise, Stand 2026-10"},
+    "warnings": ["Halter: Eigenteil ohne Preis (Material „aluminium“ steht nicht im Katalog)"],
+}
+
+
 class FakeService:
     """Implementiert ``KernelService`` mit festen Antworten.
 
@@ -81,6 +122,7 @@ class FakeService:
         self.connected: list[bool] = []
         self.selection_refs = ["Halter/Lasche#f3", "Grundplatte#f0"]
         self.png = PNG  # Bilddaten für screenshot
+        self.violations: list[str] = []  # Inventar-Regel: Teile ohne Lagerteil im nächsten Lauf
 
     # Hilfen -------------------------------------------------------------------------------------------------------
 
@@ -106,7 +148,8 @@ class FakeService:
             last = {"ok": True, "run": self.run_no, "duration_ms": 1234, "parts": PARTS, "steps": ["Grundplatte"],
                     "warnings": [], "params": {"breite": 120.0}}
         return {"project": self.project, "kernel": "ready", "app_connected": self.app_connected, "last_run": last,
-                "selection": {"run": self.run_no, "refs": self.selection_refs}}
+                "selection": {"run": self.run_no, "refs": self.selection_refs},
+                "inventar": {"regel": True, "verstoesse": list(self.violations)}}
 
     def project_open(self, path: str) -> dict[str, Any]:
         self._record("project_open", path)
@@ -141,7 +184,9 @@ class FakeService:
                               "excerpt": "  11 | platte = Box(breite, 80, dicke)\n> 12 | show(platt, \"Grundplatte\")",
                               "traceback": "Traceback ...", "hint": "Tippfehler im Variablennamen?"}}
         return {"ok": True, "run": self.run_no, "duration_ms": 1234, "parts": PARTS, "steps": ["Grundplatte", "Lasche"],
-                "warnings": ["Lasche: Fläche sehr klein"], "params": {"breite": (params or {}).get("breite", 120.0)}}
+                "warnings": ["Lasche: Fläche sehr klein"], "params": {"breite": (params or {}).get("breite", 120.0)},
+                "bom": {"totals": BOM["totals"], "warnings": BOM["warnings"], "cuts": 1},
+                "inventar_regel": True, "inventar_verstoesse": list(self.violations)}
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         self._record("execute", code)
@@ -190,6 +235,55 @@ class FakeService:
     def export(self, formats: list[str], parts: list[str] | None = None) -> dict[str, Any]:
         self._record("export", formats, parts)
         return {"ok": True, "files": [f"{self.project['path']}/output/{self.project['name']}.{f}" for f in formats]}
+
+    # Phase 2 -------------------------------------------------------------------------------------------------------
+
+    def bom(self) -> dict[str, Any]:
+        self._record("bom")
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen."}
+        return {"ok": True, "run": self.run_no, **BOM}
+
+    def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
+        self._record("stock_search", query, art)
+        items = [it for it in STOCK if (art is None or it["art"] == art)
+                 and all(w in (it["id"] + " " + it["name"]).lower().replace(",", ".").replace(" × ", "x")
+                         for w in query.lower().replace(",", ".").split())]
+        return {"ok": True, "items": items, "total": len(items)}
+
+    def stock_get(self, stock_id: str) -> dict[str, Any]:
+        self._record("stock_get", stock_id)
+        for it in STOCK:
+            if it["id"] == stock_id:
+                return {"ok": True, "item": it, "material": MATERIALS[0], **it["berechnet"],
+                        "beispiel": f"teil = lager.teil({stock_id!r})"}
+        return {"ok": False, "error": f"Lagerteil {stock_id!r} gibt es nicht"}
+
+    def stock_define(self, entry: dict[str, Any], ebene: str = "eigen") -> dict[str, Any]:
+        self._record("stock_define", entry, ebene)
+        if not entry.get("material"):
+            return {"ok": False, "error": f"Lagerteil {entry.get('id')!r}: Feld material fehlt\n"
+                                          f"Lagerteil {entry.get('id')!r}: masse.s fehlt (Zahl in mm)"}
+        item = {**entry, "ebene": ebene}
+        return {"ok": True, "item": item, "datei": "/tmp/katalog/eigene.json", "hinweise": [],
+                "kg_je_m": 1.56, "querschnitt_mm2": 199.2, "preis_je_m": 14.5, "preis_text": "14,50 €/m"}
+
+    def material_list(self, query: str = "") -> dict[str, Any]:
+        self._record("material_list", query)
+        mats = [m for m in MATERIALS if query.lower() in (m["id"] + " " + m["name"]).lower()]
+        return {"ok": True, "materials": mats, "total": len(mats)}
+
+    def material_define(self, entry: dict[str, Any], ebene: str = "eigen") -> dict[str, Any]:
+        self._record("material_define", entry, ebene)
+        return {"ok": True, "material": {**entry, "ebene": ebene}, "datei": "/tmp/katalog/eigene.json",
+                "hinweise": ["preis_stand fehlte: 2026-10 eingetragen"]}
+
+    def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
+        self._record("catalog_delete", kind, entry_id, ebene)
+        if entry_id == "gibtsnicht":
+            return {"ok": False, "error": f"Lagerteil {entry_id!r} gibt es nicht."}
+        return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
+                "datei": "/tmp/katalog/eigene.json"}
 
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:

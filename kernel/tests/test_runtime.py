@@ -1,91 +1,26 @@
 """Kernel-Laufzeit mit echtem Rechenprozess und einer Test-App am Unix-Socket (eigene Sockets im Temp-Ordner)."""
 
+import json
 import os
 import random
 import shutil
-import socket
 import tempfile
-import threading
 import time
 from pathlib import Path
 
 import numpy as np
 import pytest
+from app_testutil import PNG, FakeApp, make_runtime
 
-from kevcad_kernel.protocol import FrameReader, encode_frame, unpack_part
+from kevcad_kernel.protocol import unpack_part
 from kevcad_kernel.runtime import KernelRuntime
-
-PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
-
-
-class FakeApp:
-    """Minimale App: verbindet sich, sammelt Rahmen mit Empfangszeit, beantwortet VIEW_CMD und SCREENSHOT_REQ."""
-
-    def __init__(self, path: str, answer: bool = True) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect(path)
-        self.frames: list[tuple[float, dict, bytes]] = []
-        self.cond = threading.Condition()
-        self.answer = answer
-        self.seq = 0
-        self.closed = False
-        threading.Thread(target=self._read, daemon=True).start()
-        self.send({"type": "HELLO_APP", "app_version": "test", "bundle_id": "de.upvis.kevcad.pytest"})
-
-    def send(self, header: dict, payload: bytes = b"") -> None:
-        self.seq += 1
-        self.sock.sendall(encode_frame({**header, "seq": self.seq}, payload))
-
-    def _read(self) -> None:
-        reader = FrameReader()
-        while True:
-            try:
-                data = self.sock.recv(1 << 16)
-            except OSError:
-                break
-            if not data:
-                break
-            for h, p in reader.feed(data):
-                with self.cond:
-                    self.frames.append((time.perf_counter(), h, p))
-                    self.cond.notify_all()
-                if self.answer and h["type"] == "VIEW_CMD":
-                    self.send({"type": "ACK", "reply_to": h["id"], "ok": True, "message": f"{h['cmd']} ok"})
-                elif self.answer and h["type"] == "SCREENSHOT_REQ":
-                    self.send({"type": "SCREENSHOT_RES", "reply_to": h["id"], "ok": True, "width": h["width"],
-                               "height": h["height"], "camera": {"projection": "perspective"}, "mm_per_px": None},
-                              PNG)
-        self.closed = True
-
-    def wait_for(self, pred, timeout: float = 30.0, start: int = 0):
-        deadline = time.monotonic() + timeout
-        with self.cond:
-            while True:
-                for i, (t, h, p) in enumerate(self.frames[start:], start):
-                    if pred(h):
-                        return i, t, h, p
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    raise AssertionError(f"Rahmen nicht angekommen; bisher: {[h['type'] for _, h, _ in self.frames]}")
-                self.cond.wait(left)
-
-    def mark(self) -> int:
-        with self.cond:
-            return len(self.frames)
-
-    def since(self, start: int) -> list[dict]:
-        with self.cond:
-            return [h for _, h, _ in self.frames[start:]]
-
-    def close(self) -> None:
-        self.sock.close()
 
 
 @pytest.fixture(scope="module")
 def env():
     tmp = Path(tempfile.mkdtemp(prefix="kc", dir=tempfile.gettempdir()))
     sock = str(tmp / "k.sock")
-    rt = KernelRuntime(sock, 47999, auto_run=False, run_timeout_s=60)
+    rt = make_runtime(sock)  # Test-Katalog statt der mitgelieferten Daten
     assert rt.wait_worker_ready(240), "Rechenprozess nicht bereit"
     app = FakeApp(sock)
     app.wait_for(lambda h: h["type"] == "HELLO")
@@ -99,11 +34,15 @@ def env():
 _counter = iter(range(1, 10_000))
 
 
-def project(env, code: str | None = None, template: str = "empty") -> Path:
+def project(env, code: str | None = None, template: str = "empty", regel: bool = False) -> Path:
+    """Neues Projekt; die Tests aus der Zeit vor der Inventar-Regel schalten sie ab (wie Kevin für Nachbauten)."""
     path = env["tmp"] / f"P{next(_counter)}"
     start = env["app"].mark()
     res = env["rt"].project_new(str(path), template)
     assert res["ok"], res
+    if not regel:
+        settings = json.loads((path / "kevcad.json").read_text())
+        (path / "kevcad.json").write_text(json.dumps({**settings, "inventar_regel": False}))
     env["app"].wait_for(lambda h: h["type"] == "PROJECT" and h["name"] == path.name, start=start)
     if code is not None:
         assert env["rt"].model_write(code)["ok"]
@@ -135,30 +74,37 @@ def test_hello_and_no_app_errors(env):
 
 def test_example_run_parts_and_frame_order(env):
     rt, app = env["rt"], env["app"]
-    project(env, template="example")
+    project(env, template="example", regel=True)  # die Vorlage hält die Inventar-Regel ein
     start = app.mark()
     res = rt.run()
     assert res["ok"], res.get("error")
     names = [p["name"] for p in res["parts"]]
-    assert names == ["Halter/Grundplatte", "Halter/Lasche", "Rohr"]
+    assert names == ["Halter/Grundplatte", "Halter/Lasche", "Halter/Schelle", "Rohr"]
+    assert res["inventar_regel"] is True and res["inventar_verstoesse"] == []
     platte = res["parts"][0]
-    assert platte["bbox"]["size"] == [60.0, 5.0, 120.0]
-    assert platte["material"] == "aluminium" and abs(platte["mass"] - platte["volume"] * 2.7e-3) < 1e-6
-    assert res["steps"] == ["Grundplatte", "Bohrungen", "Lasche mit Schelle", "Rohr"]
-    assert res["params"]["rohr_d"] == 42.4
+    assert platte["bbox"]["size"] == [40.0, 5.0, 120.0]
+    assert platte["material"] == "Stahl S235" and abs(platte["mass"] - platte["volume"] * 7.85e-3) < 1e-6
+    assert platte["stock"]["id"] == "flach-en10058-40x5" and platte["stock"]["laenge"] == 120
+    assert res["parts"][2]["material"] == "PETG"
+    assert res["steps"] == ["Grundplatte", "Bohrungen", "Lasche", "Schelle", "Rohr"]
+    assert res["params"]["abstand"] == 70
 
-    app.wait_for(lambda h: h["type"] == "RUN_END" and h["run"] == res["run"], start=start)
-    frames = [h for h in app.since(start) if h["type"] != "STATUS"]
+    app.wait_for(lambda h: h["type"] == "BOM" and h["run"] == res["run"], start=start)
+    all_types = [h["type"] for h in app.since(start) if h["type"] != "STATUS"]
+    assert all_types[-2:] == ["RUN_END", "BOM"]  # Phase 2: Stückliste direkt nach RUN_END
+    frames = [h for h in app.since(start) if h["type"] not in ("STATUS", "BOM")]
     types = [h["type"] for h in frames]
     assert types[0] == "RUN_START" and types[-1] == "RUN_END"
     assert types == ["RUN_START", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP",
-                     "PART_UPSERT", "RUN_END"]
+                     "PART_UPSERT", "STEP", "PART_UPSERT", "RUN_END"]
+    assert all(h["inventar"] == "ok" for h in frames if h["type"] == "PART_UPSERT")
     # STEP kommt vor dem Teil, das in diesem Schritt entsteht
     assert frames[1]["text"] == "Grundplatte" and frames[2]["name"] == "Halter/Grundplatte"
     seqs = [h["seq"] for h in app.since(start)]
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
     end = frames[-1]
-    assert end["parts"] == 3 and end["triangles"] == sum(p["triangles"] for p in res["parts"])
+    assert end["parts"] == 4 and end["triangles"] == sum(p["triangles"] for p in res["parts"])
+    assert end["inventar_regel"] is True and end["inventar_verstoesse"] == []
     # Teile lassen sich dekodieren und passen zu den Kopfwerten
     for t, h, p in app.frames[start:]:
         if h["type"] == "PART_UPSERT":
@@ -438,7 +384,7 @@ def test_app_requests_project_and_run(env):
     _, _, ack, _ = app.wait_for(lambda h: h.get("reply_to") == "a-23", start=start)
     assert ack["type"] == "ACK" and ack["ok"] is True
     _, _, end, _ = app.wait_for(lambda h: h["type"] == "RUN_END", start=start)
-    assert end["parts"] == 3
+    assert end["parts"] == 4 and end["inventar_verstoesse"] == []
     rt.wait_idle()
 
 

@@ -21,12 +21,15 @@ import traceback
 import warnings
 import zlib
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from build123d import BuildLine, BuildPart, BuildSketch, Color, Compound, Shape
 
 import kevcad
+from kevcad_kernel.bom import LagerRegister, Piece, ShownPart, build_bom
+from kevcad_kernel.catalog import Catalog, number
 from kevcad_kernel.protocol import pack_part
 from kevcad_kernel.tessellate import (
     DEFAULT_ANGULAR,
@@ -139,6 +142,70 @@ def material_density(fm: Any) -> float | None:
         return float(d) if d is not None else None
     except Exception:  # noqa: BLE001
         return None
+
+
+@dataclass
+class MatInfo:
+    """Aufgelöstes Material eines gezeigten Teils: aus dem Katalog von Kev CAD oder aus build123d."""
+
+    display: str  # Name für PART_UPSERT.material
+    density: float | None = None  # kg/m³
+    color: tuple[float, float, float, float] | None = None  # sRGB
+    entry: dict[str, Any] | None = None  # Katalogmaterial
+    fm: Any = None  # FinishedMaterial aus build123d
+
+
+def catalog_matinfo(entry: dict[str, Any], display: str | None = None) -> MatInfo:
+    from kevcad_kernel.catalog import number
+
+    dichte = number(entry.get("dichte"))
+    color = None
+    try:
+        color = parse_color(entry.get("farbe"))
+    except ValueError:
+        color = None
+    return MatInfo(display=display or entry.get("name") or entry["id"],
+                   density=dichte * 1000.0 if dichte is not None else None, color=color, entry=entry)
+
+
+def _strict_entry(value: str, catalog: Catalog | None) -> tuple[dict[str, Any], str]:
+    entry = kevcad.lager.released_material(value, cat=catalog)
+    display = entry.get("name") if value.strip() == entry["id"] else value.strip()
+    return entry, display
+
+
+def material_info(value: Any, catalog: Catalog | None, strict: bool = False) -> MatInfo | None:
+    """Material aus show() oder vom Teil: zuerst der Katalog (id, Alias, Name), dann build123d (und die deutschen
+    Namen in MATERIAL_ALIASES). Unbekannt → ValueError mit Vorschlägen aus beiden.
+
+    ``strict`` (Inventar-Regel): nur freigegebene Katalogmaterialien, sonst ``kevcad.lager.MaterialError``."""
+    if value is None:
+        return None
+    if strict:
+        if not isinstance(value, str):
+            raise kevcad.lager.MaterialError(f"Material {value!r}: Inventar-Regel – nur Materialien aus dem Katalog "
+                                             "(id oder Alias als Text, siehe material_list)")
+        return catalog_matinfo(*_strict_entry(value, catalog))
+    if isinstance(value, str) and catalog is not None:
+        entry = catalog.find_material(value)
+        if entry is not None:
+            display = entry.get("name") if value.strip() == entry["id"] else value.strip()
+            return catalog_matinfo(entry, display)
+    try:
+        fm, name = resolve_material(value)
+    except ValueError as exc:
+        tips = catalog.material_suggestions(str(value)) if catalog is not None and isinstance(value, str) else []
+        if tips:
+            raise ValueError(f"Material {value!r} unbekannt. Im Katalog: {', '.join(repr(t) for t in tips)}?") from exc
+        raise
+    color = None
+    if getattr(fm, "pbr", None) is not None:
+        try:
+            mc = fm.pbr.interpolate_color()
+            color = tuple(float(x) for x in mc) if mc else None
+        except Exception:  # noqa: BLE001
+            color = None
+    return MatInfo(display=name or "material", density=material_density(fm), color=color, fm=fm)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -264,6 +331,13 @@ def hint_for(exc: BaseException, ns: dict[str, Any] | None = None) -> str:
     """Kurzer Reparaturhinweis für häufige Fehler (leer, wenn keiner passt)."""
     msg = str(exc)
     name = type(exc).__name__
+    if name == "MaterialError":
+        return ("Nur freigegebene Materialien aus dem Katalog (material_list). Fehlt eins: Kevin fragen und erst nach "
+                "seiner Freigabe benutzen; Teile aus dem Lager tragen ihr Material schon.")
+    if name == "LagerError":
+        if "Freigabe" in msg:
+            return "Der Eintrag ist nur vorgeschlagen: Kevin bitten, ihn im Lagerkatalog freizugeben."
+        return "Lagerteile mit stock_search suchen und mit lager.teil(id) holen; Maße wie im Katalog angeben."
     if isinstance(exc, IndentationError):
         return "Einrückung prüfen: Blöcke mit 4 Leerzeichen einrücken, Tabs und Leerzeichen nicht mischen."
     if isinstance(exc, SyntaxError):
@@ -353,11 +427,24 @@ class Runner:
         self.ns_project: str | None = None
         self.run_no = 0
         self.params: dict[str, Any] = {}
+        self.catalog: Catalog | None = None
+        self.inventar = True  # Inventar-Regel des letzten Laufs (gilt auch für execute)
+
+    def _catalog(self, msg: dict[str, Any], project: str | None) -> Catalog:
+        """Katalog mit den Ordnern aus der Laufzeit (Nachricht ``catalog``) und dem Projekt des Laufs."""
+        dirs = msg.get("catalog") or {}
+        if self.catalog is None:
+            self.catalog = Catalog(builtin=dirs.get("builtin"), own=dirs.get("own"), project=project)
+        else:
+            self.catalog.configure(builtin=dirs.get("builtin"), own=dirs.get("own"), project=project)
+        self.catalog.refresh()
+        return self.catalog
 
     # -- Hooks ---------------------------------------------------------------------------------------------------------
 
     def _install(self, *, run: int, overrides: dict[str, Any], slow_ms: int, deviation: float, angular: float,
-                 sketch: bool, state: dict[str, Any]) -> None:
+                 sketch: bool, state: dict[str, Any], catalog: Catalog | None = None,
+                 register: LagerRegister | None = None, strict: bool = False) -> None:
         def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None) -> None:
             if name is None or not str(name).strip():
                 label = getattr(_as_shape(obj), "label", "") or ""
@@ -372,15 +459,19 @@ class Runner:
                     explicit_color = parse_color(color)
                 except ValueError as exc:
                     state["warnings"].append(f"{name}: {exc}")
-            explicit_fm, explicit_mat = None, None
+            explicit = None
             if material is not None:
-                try:
-                    explicit_fm, explicit_mat = resolve_material(material)
-                except ValueError as exc:
-                    state["warnings"].append(f"{name}: {exc}")
+                if strict:
+                    explicit = material_info(material, catalog, strict=True)  # Fehler bricht den Lauf hier ab
+                else:
+                    try:
+                        explicit = material_info(material, catalog)
+                    except ValueError as exc:
+                        state["warnings"].append(f"{name}: {exc}")
             for part_name, shape, is_child in split_parts(obj, name):
-                self._show_part(part_name, shape, is_child, explicit_color, explicit_fm, explicit_mat, run=run,
-                                deviation=deviation, angular=angular, sketch=sketch, state=state)
+                self._show_part(part_name, shape, is_child, explicit_color, explicit, run=run, deviation=deviation,
+                                angular=angular, sketch=sketch, state=state, catalog=catalog, register=register,
+                                strict=strict)
                 if slow_ms > 0:
                     time.sleep(slow_ms / 1000.0)
 
@@ -413,25 +504,48 @@ class Runner:
             state["params"][name] = value
             return value
 
-        kevcad._hooks.update(show=show, step=step, param=param)
+        def lager(piece: Piece, shape: Any) -> None:
+            if register is not None:
+                register.register(piece, shape)
 
-    def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit_fm, explicit_mat, *,
-                   run: int, deviation: float, angular: float, sketch: bool, state: dict[str, Any]) -> None:
+        def warn(text: str) -> None:
+            state["warnings"].append(str(text))
+
+        hooks: dict[str, Any] = {"show": show, "step": step, "param": param, "warn": warn}
+        if catalog is not None:
+            hooks["catalog"] = lambda: catalog
+        if register is not None:
+            hooks["lager"] = lager
+        kevcad._hooks.update(hooks)
+
+    def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
+                   run: int, deviation: float, angular: float, sketch: bool, state: dict[str, Any],
+                   catalog: Catalog | None = None, register: LagerRegister | None = None,
+                   strict: bool = False) -> None:
         if _is_empty(shape):
             state["warnings"].append(f"{name}: leere Form, nicht gezeigt")
             return
-        # Material: bei Unterteilen zuerst das eigene (build123d, auch vom Eltern-Compound geerbt), sonst show(material)
-        own_fm, own_mat = None, None
-        try:
-            own = shape.material
-            if own is not None:
-                own_fm, own_mat = resolve_material(own)
-        except Exception:  # noqa: BLE001
-            own_fm, own_mat = None, None
-        if is_child:
-            fm, mat_name = (own_fm, own_mat) if own_fm is not None else (explicit_fm, explicit_mat)
+        # Lagerteile zu diesem Teil (Name wie in verbauen, sonst Form, sonst label)
+        pieces = register.link(name, shape) if register is not None and not sketch else []
+        piece_mat = None
+        if pieces and catalog is not None and pieces[0].material_id:
+            entry = catalog.material(pieces[0].material_id)
+            piece_mat = catalog_matinfo(entry) if entry is not None else None
+        # Material: bei Unterteilen zuerst das eigene (build123d, auch vom Eltern-Compound geerbt), sonst show(material);
+        # danach das Material des Lagerteils
+        own = None
+        if not strict:  # mit Inventar-Regel zählen nur Katalogmaterialien, nicht die von build123d
+            try:
+                own_fm = shape.material
+                own = material_info(own_fm, catalog) if own_fm is not None else None
+            except Exception:  # noqa: BLE001
+                own = None
+        if pieces:  # verbaute Lagerteile tragen ihr Katalogmaterial (bd_warehouse setzt sonst Baustahl)
+            mat = (None if is_child else explicit) or piece_mat or own
+        elif is_child:
+            mat = own or explicit
         else:
-            fm, mat_name = (explicit_fm, explicit_mat) if explicit_fm is not None else (own_fm, own_mat)
+            mat = explicit or own
         # Farbe: bei Unterteilen zuerst die eigene; sonst show(color) > Teilfarbe > Materialfarbe > Palette
         own_color = None
         try:
@@ -443,12 +557,8 @@ class Runner:
             color = own_color or explicit_color
         else:
             color = explicit_color or own_color
-        if color is None and fm is not None and getattr(fm, "pbr", None) is not None:
-            try:
-                mc = fm.pbr.interpolate_color()
-                color = tuple(float(x) for x in mc) if mc else None
-            except Exception:  # noqa: BLE001
-                color = None
+        if color is None and mat is not None:
+            color = mat.color
         if color is None:
             color = SKETCH_COLOR if sketch else palette_color(name)
         if sketch:
@@ -457,12 +567,30 @@ class Runner:
         brep = serialize_shape(shape.wrapped)
         tess = tessellate_shape(shape, deviation, angular, brep=brep)
         props = dict(tess.props)
-        density = material_density(fm) if fm is not None else None
+        density = mat.density if mat is not None else None
         if density is not None:
             props["mass"] = round(props["volume"] * density * 1e-6, 6)  # mm³ · kg/m³ · 1e-6 = g
         header, payload = pack_part(run=run, name=name, geometry=tess.geometry, color=color, bbox=tess.bbox,
-                                    props=props, material=mat_name if fm is not None else None)
+                                    props=props, material=mat.display if mat is not None else None)
         header.pop("seq", None)
+        if len({p.seq for p in pieces}) == 1:
+            if pieces[0].stock_id:
+                header["stock"] = pieces[0].stock_info()
+            elif pieces[0].art == "druckteil":
+                header["druckteil"] = pieces[0].druck_info()
+        if strict and not sketch:
+            header["inventar"] = "ok" if pieces else "fehlt"
+        if not sketch:
+            entry = mat.entry if mat is not None else None
+            lo, hi = tess.bbox.get("min", [0, 0, 0]), tess.bbox.get("max", [0, 0, 0])
+            state["bom_parts"][name] = ShownPart(
+                name=name, material=mat.display if mat is not None else None,
+                material_id=entry["id"] if entry else None,
+                material_name=(entry.get("name") if entry else (mat.display if mat is not None else None)),
+                preis_je_kg=number(entry.get("preis_je_kg")) if entry else None,
+                preis_stand=entry.get("preis_stand") if entry else None,
+                volume=float(props.get("volume") or 0.0), mass_g=props.get("mass"),
+                size=[round(float(b) - float(a), 3) for a, b in zip(lo, hi)], pieces=[p.seq for p in pieces])
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
@@ -490,7 +618,15 @@ class Runner:
         angular = float(msg.get("angular") or DEFAULT_ANGULAR)
         project = str(Path(path).parent)
         self.run_no = run
-        state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0}
+        state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0,
+                                 "bom_parts": {}}
+        register = LagerRegister()
+        strict = self.inventar = bool(msg.get("inventar_regel", True))
+        catalog = None
+        try:
+            catalog = self._catalog(msg, project)
+        except Exception as exc:  # noqa: BLE001 - ohne Katalog rechnen, aber Bescheid geben
+            state["warnings"].append(f"Katalog nicht geladen: {type(exc).__name__}: {exc}")
         ns: dict[str, Any] = {"__name__": "__main__", "__file__": path, "__builtins__": builtins}
         out = _Capture()
         t0 = time.perf_counter()
@@ -504,7 +640,7 @@ class Runner:
                 os.chdir(project)
             sys.path.insert(0, project)
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
-                          sketch=False, state=state)
+                          sketch=False, state=state, catalog=catalog, register=register, strict=strict)
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
                 warnings.simplefilter("always")
                 try:
@@ -541,6 +677,13 @@ class Runner:
             result["error"] = error
         else:
             result["type"] = "RUN_DONE"
+            parts = [state["bom_parts"][n] for n in state["shown"] if n in state["bom_parts"]]
+            result["inventar_regel"] = strict
+            result["inventar_verstoesse"] = [sp.name for sp in parts if not sp.pieces] if strict else []
+            try:
+                result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
+            except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
+                result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
         return result
 
     # -- execute -------------------------------------------------------------------------------------------------------
@@ -554,11 +697,16 @@ class Runner:
         fresh = self.ns is None or (project is not None and self.ns_project != str(project))
         if fresh:
             self.ns = {"__name__": "__main__", "__builtins__": builtins}
-            exec("from build123d import *\nfrom kevcad import show, step, param", self.ns)  # noqa: S102
+            exec("from build123d import *\nfrom kevcad import show, step, param, lager", self.ns)  # noqa: S102
             self.ns_project = str(project) if project is not None else None
         ns = self.ns
         state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": dict(self.params),
-                                 "tess_ms": 0.0, "cached": 0}
+                                 "tess_ms": 0.0, "cached": 0, "bom_parts": {}}
+        catalog = None
+        try:
+            catalog = self._catalog(msg, str(project) if project else None)
+        except Exception:  # noqa: BLE001
+            catalog = None
         out = _Capture()
         result: dict[str, Any] = {"type": "EXEC_RES", "ok": True, "result": None, "fresh_namespace": fresh}
         old_cwd = os.getcwd()
@@ -566,8 +714,9 @@ class Runner:
             if project:
                 with contextlib.suppress(OSError):
                     os.chdir(str(project))
+            strict = bool(msg.get("inventar_regel", self.inventar))
             self._install(run=run, overrides=self.params, slow_ms=0, deviation=deviation, angular=angular,
-                          sketch=True, state=state)
+                          sketch=True, state=state, catalog=catalog, strict=strict)
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
                 warnings.simplefilter("always")
                 try:

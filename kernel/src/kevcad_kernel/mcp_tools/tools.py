@@ -33,7 +33,10 @@ StandardView = Literal[
 ]
 Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
-ExportFormat = Literal["step", "stl", "3mf", "glb"]
+ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv"]
+StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
+                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe"]
+Ebene = Literal["eigen", "projekt"]
 
 VIEW_NAMES = {
     "top": "oben", "bottom": "unten", "front": "vorne", "back": "hinten", "left": "links", "right": "rechts",
@@ -237,6 +240,14 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             lines.append(f"Auswahl (Lauf {sel.get('run', '?')}): {short_refs(refs, 6)}")
         else:
             lines.append("Auswahl: nichts")
+        inv = res.get("inventar") if isinstance(res.get("inventar"), dict) else None
+        if inv is not None and project:
+            if inv.get("regel", True):
+                bad = inv.get("verstoesse") or []
+                lines.append("Inventar-Regel: an (nur Lagerteile und Druckteile)"
+                             + (f", {fmt.plural(len(bad), 'Verstoß', 'Verstöße')}: {short_refs(bad, 6)}" if bad else ""))
+            else:
+                lines.append("Inventar-Regel: aus (von Kevin für dieses Projekt abgeschaltet)")
         data = dict(res)
         if isinstance(last, dict) and last.get("parts"):
             data["last_run"] = {**last, "parts": [fmt.part_data(p) for p in last["parts"]]}
@@ -577,8 +588,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
     # ------------------------------------------------------------------------------------------------------ Export
 
     @tool("export", "Export",
-          "Export the model into <project>/output/: formats step, stl, 3mf and/or glb. parts limits the export to "
-          "these part names (default: all parts).", ADDITIVE)
+          "Export the model into <project>/output/: formats step, stl, 3mf and/or glb; bom_csv writes the bill of "
+          "materials with cut list as CSV for Numbers/Excel. parts limits the 3D export to these part names "
+          "(default: all parts).", ADDITIVE)
     async def export(
         formats: Annotated[list[ExportFormat], Field(min_length=1, description="File formats to write")],
         parts: Annotated[list[str] | None, Field(description="Part names to export; omit for all")] = None,
@@ -590,6 +602,153 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.error_result(f"Export fehlgeschlagen: {err}", res)
         files = res.get("files") or []
         summary = f"{fmt.plural(len(files), 'Datei', 'Dateien')} exportiert:\n" + "\n".join(f"- {f}" for f in files)
+        for w in res.get("warnings") or []:
+            summary += f"\nHinweis: {w}"
         return fmt.result(summary, res)
+
+    # ----------------------------------------------------------------------------------------- Lager und Stückliste
+
+    @tool("stock_search", "Lagerteile suchen",
+          "Search Kevin's stock catalog (tubes, profiles, flat/round bar, angles, aluminium extrusions, timber, sheets, "
+          "screws, nuts, washers) by text and dimensions, e.g. 'vierkantrohr 40x40x3', 'edelstahl rohr 33,7', "
+          "'multiplex 18', 'm8'. Use the returned id in model.py: lager.teil(id).verbauen(...). art filters by kind.",
+          READ_ONLY)
+    async def stock_search(
+        query: Annotated[str, Field(description="Words and dimensions, e.g. 'rohr 42,4x2' or '40x40'")] = "",
+        art: Annotated[StockArt | None, Field(description="Only this kind of stock")] = None,
+    ) -> CallToolResult:
+        res = await t.work(f"sucht Lagerteile „{query}“" if query else "listet Lagerteile", svc.stock_search,
+                           query, art)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Suche fehlgeschlagen: {err}", res)
+        items = res.get("items") or []
+        total = int(res.get("total", len(items)))
+        what = f"„{query}“" if query else "alles"
+        if art:
+            what += f" (art {art})"
+        if not items:
+            text = (f"Keine Lagerteile für {what}. Andere Wörter oder nur ein Maß versuchen; neue Lagerteile nur auf "
+                    "Kevins Wunsch mit stock_define anlegen.")
+            return fmt.result(text, res)
+        head = f"{fmt.plural(total, 'Lagerteil', 'Lagerteile')} für {what}" + (
+            f", die ersten {len(items)}:" if total > len(items) else ":")
+        text = head + "\n" + fmt.stock_table(items)
+        text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit stock_get."
+        return fmt.result(text, res)
+
+    @tool("stock_get", "Lagerteil",
+          "Details of one stock item by id: dimensions, material and density, cross section area, kg per meter "
+          "(table or computed), bar length, price with source and date, and a usage example for model.py.", READ_ONLY)
+    async def stock_get(
+        id: Annotated[str, Field(description="Stock id from stock_search")],
+    ) -> CallToolResult:
+        res = await t.work(f"liest Lagerteil {id}", svc.stock_get, id)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Lagerteil nicht gefunden: {err}", res)
+        return fmt.result(fmt.stock_detail(res), res)
+
+    @tool("stock_define", "Lagerteil vorschlagen",
+          "Propose a new stock item for Kevin's own catalog (ebene 'eigen') or the project catalog ('projekt'). Only "
+          "when Kevin asks for it. It is stored with status 'vorgeschlagen' and cannot be used in model.py until "
+          "Kevin releases it in the stock catalog window of the app; released entries cannot be changed here. entry "
+          "follows KATALOG.md: id (lowercase, hyphens), art, name (German, '33,7 × 2'), norm, masse (mm), material "
+          "(material id, see material_list), optional kg_je_m, stangenlaenge (mm), platte [b, h], preis {je_m | "
+          "je_m2 | je_stueck, quelle, stand 'YYYY-MM'}, tags. Validated; errors list every problem.", WRITES)
+    async def stock_define(
+        entry: Annotated[dict[str, Any], Field(description="Stock item as in KATALOG.md")],
+        ebene: Annotated[Ebene, Field(description="eigen = Kevin's own catalog, projekt = this project")] = "eigen",
+    ) -> CallToolResult:
+        name = entry.get("id", "?") if isinstance(entry, dict) else "?"
+        res = await t.work(f"legt Lagerteil {name} an", svc.stock_define, entry, ebene)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Lagerteil nicht gespeichert:\n{err}", res)
+        item = res.get("item") or {}
+        where = "eigenen Katalog" if ebene == "eigen" else "Projekt-Katalog"
+        lines = [f"Lagerteil {item.get('id')} ({item.get('name')}) als Vorschlag im {where} gespeichert: "
+                 f"{res.get('datei')}",
+                 "Es wartet auf Kevins Freigabe im Lagerkatalog; bis dahin lässt es sich nicht verbauen. Kevin "
+                 "Bescheid geben."]
+        lines.append(fmt.stock_detail({**res, "beispiel": None}).split("\n", 1)[-1])
+        for note in res.get("hinweise") or []:
+            lines.append(f"Hinweis: {note}")
+        return fmt.result("\n".join(lines), res)
+
+    @tool("material_list", "Materialien",
+          "Materials of the catalog (id, name, group, density g/cm³, price €/kg, color, aliases, level). Use ids or "
+          "aliases for material= in show() and for stock items. query filters by text.", READ_ONLY)
+    async def material_list(
+        query: Annotated[str, Field(description="Filter text, e.g. 'edelstahl' or 'holz'")] = "",
+    ) -> CallToolResult:
+        res = await t.work("liest die Materialien", svc.material_list, query)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Materialien nicht lesbar: {err}", res)
+        mats = res.get("materials") or []
+        if not mats:
+            return fmt.result(f"Keine Materialien für „{query}“." if query else "Der Katalog hat keine Materialien.",
+                              res)
+        text = f"{fmt.plural(len(mats), 'Material', 'Materialien')}:\n{fmt.material_table(mats)}"
+        return fmt.result(text, res)
+
+    @tool("material_define", "Material vorschlagen",
+          "Propose a new material for Kevin's own catalog ('eigen') or the project catalog ('projekt'). Only when "
+          "Kevin asks for it. Stored with status 'vorgeschlagen'; usable only after Kevin releases it in the stock "
+          "catalog window. entry: id, name, gruppe (Stahl, Edelstahl, Aluminium, Holz, Kunststoff, ...), dichte "
+          "g/cm³, farbe sRGB hex, optional metallisch/rauheit 0..1, druckbar (true for 3D printing filament), "
+          "preis_je_kg with preis_quelle and preis_stand 'YYYY-MM', aliase (lowercase).", WRITES)
+    async def material_define(
+        entry: Annotated[dict[str, Any], Field(description="Material as in KATALOG.md")],
+        ebene: Annotated[Ebene, Field(description="eigen = Kevin's own catalog, projekt = this project")] = "eigen",
+    ) -> CallToolResult:
+        name = entry.get("id", "?") if isinstance(entry, dict) else "?"
+        res = await t.work(f"legt Material {name} an", svc.material_define, entry, ebene)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Material nicht gespeichert:\n{err}", res)
+        mat = res.get("material") or {}
+        lines = [f"Material {mat.get('id')} ({mat.get('name')}, {fmt.num(mat.get('dichte'), 3)} g/cm³) als Vorschlag "
+                 f"gespeichert: {res.get('datei')}",
+                 "Es wartet auf Kevins Freigabe im Lagerkatalog; bis dahin lässt es sich nicht benutzen. Kevin "
+                 "Bescheid geben."]
+        for note in res.get("hinweise") or []:
+            lines.append(f"Hinweis: {note}")
+        return fmt.result("\n".join(lines), res)
+
+    @tool("catalog_delete", "Katalogeintrag löschen",
+          "Delete a stock item (kind 'teil') or material ('material') from Kevin's own or the project catalog. Only "
+          "when Kevin asks for it. An entry that comes from a lower level (e.g. the bundled catalog) is hidden with "
+          "\"entfernt\": true instead.", WRITES)
+    async def catalog_delete(
+        kind: Annotated[Literal["teil", "material"], Field(description="teil = stock item, material = material")],
+        id: Annotated[str, Field(description="id of the entry")],
+        ebene: Annotated[Ebene, Field(description="Catalog level to change")] = "eigen",
+    ) -> CallToolResult:
+        res = await t.work(f"löscht {id} aus dem Katalog", svc.catalog_delete, kind, id, ebene)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Nicht gelöscht: {err}", res)
+        return fmt.result(str(res.get("message") or f"{id} gelöscht."), res)
+
+    @tool("bom", "Stückliste",
+          "Bill of materials of the last run: positions (same stock, length and miter merged), weight, prices "
+          "(guide prices with date), cut list per bar stock (first fit decreasing, 3 mm saw kerf, waste %), totals "
+          "and hints (e.g. parts not linked to a stock line). format 'csv' returns the CSV text; export(['bom_csv']) "
+          "writes the file.", READ_ONLY)
+    async def bom(
+        format: Annotated[Literal["text", "csv"], Field(description="text = table, csv = CSV for Numbers/Excel")]
+        = "text",
+    ) -> CallToolResult:
+        res = await t.work("liest die Stückliste", svc.bom)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(err, res)
+        if format == "csv":
+            from kevcad_kernel.bom import to_csv
+
+            return fmt.result(to_csv(res), res, json_block=False)
+        return fmt.result(fmt.bom_text(res), res)
 
     return t
