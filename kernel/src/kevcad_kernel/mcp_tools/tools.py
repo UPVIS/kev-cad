@@ -33,9 +33,9 @@ StandardView = Literal[
 ]
 Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
-ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv"]
+ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
-                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe"]
+                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil"]
 Ebene = Literal["eigen", "projekt"]
 
 VIEW_NAMES = {
@@ -616,7 +616,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     @tool("export", "Export",
           "Export the model into <project>/output/: formats step, stl, 3mf and/or glb; bom_csv writes the bill of "
-          "materials with cut list as CSV for Numbers/Excel. parts limits the 3D export to these part names "
+          "materials with cut list as CSV for Numbers/Excel, einkaufsliste_csv the shopping list. parts limits the 3D export to these part names "
           "(default: all parts).", ADDITIVE)
     async def export(
         formats: Annotated[list[ExportFormat], Field(min_length=1, description="File formats to write")],
@@ -637,8 +637,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     @tool("stock_search", "Lagerteile suchen",
           "Search Kevin's stock catalog (tubes, profiles, flat/round bar, angles, aluminium extrusions, timber, sheets, "
-          "screws, nuts, washers) by text and dimensions, e.g. 'vierkantrohr 40x40x3', 'edelstahl rohr 33,7', "
-          "'multiplex 18', 'm8'. Use the returned id in model.py: lager.teil(id).verbauen(...). art filters by kind.",
+          "screws, nuts, washers, released purchased parts) by text and dimensions, e.g. 'vierkantrohr 40x40x3', "
+          "'edelstahl rohr 33,7', 'multiplex 18', 'm8', 'alutec 05200'. Use the returned id in model.py: "
+          "lager.teil(id).verbauen(...), purchased parts (art zukaufteil) with lager.zukauf(id). art filters by kind.",
           READ_ONLY)
     async def stock_search(
         query: Annotated[str, Field(description="Words and dimensions, e.g. 'rohr 42,4x2' or '40x40'")] = "",
@@ -662,6 +663,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             f", die ersten {len(items)}:" if total > len(items) else ":")
         text = head + "\n" + fmt.stock_table(items)
         text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit stock_get."
+        if any(it.get("art") == "zukaufteil" for it in items):
+            text += " Zukaufteile (art zukaufteil): lager.zukauf(\"<id>\").verbauen(\"Name\")."
         return fmt.result(text, res)
 
     @tool("stock_get", "Lagerteil",
@@ -778,6 +781,15 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    from .bestand_tools import register_bestand_tools  # Bestand je Projekt (BESTAND.md)
+
+    register_bestand_tools(tool, t, svc)
+    # ------------------------------------------------------------------------------------- Zukaufteile (Phase 3)
+
+    from .zukauf_tools import register_zukauf_tools
+
+    register_zukauf_tools(tool, t, svc)
+
     # ------------------------------------------------------------------------------------------- Zwangsbedingungen
 
     @tool("bedingungen", "Bedingungen",
@@ -809,6 +821,16 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .kamera_tools import register_camera_tools
 
     register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
+
+    # 3D-Druck: Ergebnis der Druckprüfung (druck_tools.py)
+    from .druck_tools import register_druck_tools
+
+    register_druck_tools(t, svc, tool, {"read_only": READ_ONLY})
+
+    # Prüfung: pruefen, montage_reihenfolge, ansichten (eigene Datei)
+    from .pruef_tools import register_pruef_tools
+
+    register_pruef_tools(t, svc, tool)
 
     # Phase 6: Bauplan (bauplan_tools.py)
     from .bauplan_tools import register_bauplan_tools

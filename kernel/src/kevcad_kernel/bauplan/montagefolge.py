@@ -78,6 +78,7 @@ class Einbau:
     weg: float = 0.0  # Länge des letzten Abschnitts (mm)
     zuerst: np.ndarray | None = None  # zweistufig: erst in diese Richtung heranführen
     aufbocken: float = 0.0  # mm unter dem Boden (Hinweis „aufbocken oder umdrehen“)
+    mit_vm: list[str] = field(default_factory=list)  # lose vormontierte Verbindungsmittel (Einheiten-Namen)
 
     @property
     def richtung_text(self) -> str:
@@ -450,6 +451,28 @@ class Planer:
                 break
             kandidaten = [i for i in rest_items.values() if i.name != basis.name and i.art != "vm"]
             kandidaten.sort(key=lambda i: (-dist.get(i.name, 0), -self._lage(i)[0], self._lage(i)[1], i.name))
+
+            def haelt_zusammen(i: Einheit) -> bool:
+                """Bleibt ohne i alles Übrige mit dem Grundteil verbunden? Im Einbau heißt das: jedes neue Teil hängt
+                gleich an etwas Montiertem (kein Halter, der in der Luft schwebt, bis die Stange kommt)."""
+                uebrig = {n for n in rest_items if n != i.name and rest_items[n].art != "vm"}
+                if basis.name not in uebrig:
+                    return True
+                gesehen, stapel = {basis.name}, [basis.name]
+                while stapel:
+                    x = stapel.pop()
+                    for y in nachbar.get(x, ()):
+                        if y in uebrig and y not in gesehen:
+                            gesehen.add(y)
+                            stapel.append(y)
+                        elif y in rest_items and rest_items[y].art == "vm" and y != i.name:
+                            for z in nachbar.get(y, ()):  # über Verbindungsmittel hinweg
+                                if z in uebrig and z not in gesehen:
+                                    gesehen.add(z)
+                                    stapel.append(z)
+                return gesehen >= uebrig
+
+            kandidaten.sort(key=lambda i: not haelt_zusammen(i))  # stabil: erst die, die nichts abtrennen
             erfolg = False
             for i in kandidaten:
                 vms = [rest_items[j] for j in nachbar.get(i.name, ()) if j in rest_items and rest_items[j].art == "vm"]
@@ -478,14 +501,34 @@ class Planer:
                             probe_rest.difference_update(v.teile)
                             offen.remove(v)
                             geaendert = True
-                if offen:
-                    continue  # ein Verbindungsmittel steckt fest: das Teil bleibt vorerst
-                d = self.frei(i, probe_rest)
+                d = self.frei(i, probe_rest) if not offen else None
+                if d is not None:
+                    for v, dv in weg_vm:
+                        entferne(v, dv)
+                    entferne(i, d)
+                    erfolg = True
+                    break
+                # Klemme: Verbindungsmittel, die nur dieses Teil halten (Flügelschraube und Scheibe der Klemmbacke),
+                # wandern lose vormontiert mit; so schiebt man die Klemme mit loser Schraube auf die Stange
+                eigene = [v for v in vms if all(j == i.name or (j in rest_items and rest_items[j].art == "vm")
+                                                for j in nachbar.get(v.name, ()) if j in rest_items)]
+                eigene_namen = {v.name for v in eigene}
+                for v in list(eigene):  # dazu Scheiben und Muttern auf diesen Verbindungsmitteln
+                    for j in nachbar.get(v.name, ()):
+                        if j in rest_items and rest_items[j].art == "vm" and j not in eigene_namen:
+                            eigene.append(rest_items[j])
+                            eigene_namen.add(j)
+                if not eigene:
+                    continue
+                mit = Einheit(i.name, list(i.teile) + [t for v in eigene for t in v.teile], i.art, i.haupt, i.gruppe)
+                ohne_eigene = set(rest)
+                d = self.frei(mit, ohne_eigene)
                 if d is None:
                     continue
-                for v, dv in weg_vm:
-                    entferne(v, dv)
-                entferne(i, d)
+                entferne(mit, d)
+                ausbau[-1].mit_vm = sorted(eigene_namen)
+                for v in eigene:
+                    rest_items.pop(v.name, None)
                 erfolg = True
                 break
             if erfolg:

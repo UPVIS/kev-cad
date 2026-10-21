@@ -439,3 +439,62 @@ def bauplan_beispiel() -> dict[str, Any]:
         "umfang": {"ohne": ["Umgebung"]},
         "stand": {"run": 3, "erzeugt": "2026-10-22T21:00:00", "gesamt_ms": 812.5, "verbinde": True},
     }
+# Bestand je Projekt (BESTAND.md): Nachrichten ohne Nutzlast
+
+BESTAND_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    # type: Pflichtfelder (außer type/seq)
+    "BESTAND": ("bestand", "buchungen", "stand"),
+    "BESTAND_REQ": ("id",),
+    "BESTAND_SAVE": ("id",),  # dazu posten_id und posten oder einstellungen
+    "GEBAUT_REQ": ("id", "run"),
+    "BUCHUNG_RUECKGAENGIG": ("id", "buchung"),
+}
+
+
+def pack_bestand(*, bestand: dict[str, Any] | None, buchungen: list[dict[str, Any]], stand: str | None,
+                 datei: str | None = None, fehler: str | None = None, reply_to: str | None = None,
+                 seq: int = 0) -> dict[str, Any]:
+    """Kopf der Nachricht BESTAND: Inhalt der Projektdatei (null ohne Projekt oder bei kaputter Datei, dann mit
+    ``fehler``), die letzten Buchungen (neueste zuerst, je mit ``zusammenfassung`` und ``rueckgaengig_durch``), Stand als
+    ISO-Zeit; ``datei`` (Pfad) und ``fehler`` sind additiv."""
+    header: dict[str, Any] = {"type": "BESTAND", "seq": seq, "bestand": bestand, "buchungen": list(buchungen),
+                              "stand": stand, "datei": datei, "fehler": fehler}
+    if reply_to:
+        header["reply_to"] = reply_to
+    return header
+
+
+def check_bestand_message(header: dict[str, Any]) -> list[str]:
+    """Fehlende Pflichtfelder einer Bestandsnachricht (leer = vollständig); für Tests und den Ersatz-Kernel."""
+    kind = header.get("type")
+    need = BESTAND_NACHRICHTEN.get(str(kind))
+    if need is None:
+        return [f"{kind!r} ist keine Bestandsnachricht"]
+    missing = [k for k in need if k not in header]
+    if kind == "BESTAND_SAVE" and "einstellungen" not in header and not ("posten_id" in header and "posten" in header):
+        missing.append("posten_id und posten oder einstellungen")
+    if kind == "BESTAND" and isinstance(header.get("buchungen"), list):
+        for b in header["buchungen"]:
+            for key in ("id", "zeit", "art", "aenderungen", "zusammenfassung", "rueckgaengig_durch"):
+                if key not in b:
+                    missing.append(f"buchungen[].{key}")
+    return missing
+# Phase 3: Zukaufteile (PROTOCOL.md, Abschnitt „Phase 3“)
+
+ZUKAUF_ZUSTAENDE: tuple[str, ...] = ("angelegt", "wartet_auf_cad", "importiert", "fehler")
+
+
+def zukauf_status(teil_id: str, zustand: str, text: str, *, cad_links: list[dict[str, str]] | None = None,
+                  erwartet: list[str] | None = None, name: str | None = None) -> dict[str, Any]:
+    """Kopf einer ``ZUKAUF_STATUS``-Nachricht (Kernel → App, unaufgefordert, ohne ``reply_to``). ``cad_links`` und
+    ``erwartet`` nur bei ``wartet_auf_cad`` gefüllt; ``name`` ist der Anzeigename des Teils."""
+    if zustand not in ZUKAUF_ZUSTAENDE:
+        raise ValueError(f"zustand {zustand!r} unbekannt (erlaubt: {', '.join(ZUKAUF_ZUSTAENDE)})")
+    wartet = zustand == "wartet_auf_cad"
+    msg: dict[str, Any] = {"type": "ZUKAUF_STATUS", "id": teil_id, "zustand": zustand, "text": text,
+                           "cad_links": [{"titel": str(c["titel"]), "url": str(c["url"])} for c in (cad_links or [])]
+                           if wartet else [],
+                           "erwartet": list(erwartet or []) if wartet else []}
+    if name:
+        msg["name"] = name
+    return msg

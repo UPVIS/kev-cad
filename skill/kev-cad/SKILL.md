@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), dazu Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), dazu Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“).
 ---
 
 # Kev CAD
@@ -21,8 +21,9 @@ Verbesserungen im festen Format (konstruktion.md).
 
 ## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
 
-Nichts darf physikalisch unmöglich sein. Durchdringungen prüft Kev CAD bei jedem Lauf selbst, `run` wartet auf das
-Ergebnis. Alles Weitere vor jeder Fertigmeldung prüfen und beheben, nicht nur melden:
+Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst (Durchdringung, Schweben, Standsicherheit,
+Einbaubarkeit), `run` wartet auf das Ergebnis; `pruefen` zeigt alles samt Stand und Montage. Befunde beheben, nicht nur
+melden:
 
 - **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
   Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
@@ -37,23 +38,54 @@ Ergebnis. Alles Weitere vor jeder Fertigmeldung prüfen und beheben, nicht nur m
 - **Nichts schwebt, alles ist befestigt:** Jedes Teil berührt sein Gegenstück oder steht auf dem Boden, und zu jedem
   Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
   Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
-  montieren. Nie Teile einfach in den Raum setzen. Prüfen (rechnet auf einer Kopie, Exit-Code 1 bei Befunden):
-  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>" --kontakte`
-  meldet Teile ohne Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
-  Mit `bed.verbinde(...)` (Abschnitt „Teile über Bedingungen setzen“) prüft Kev CAD die Befestigung bei jedem Lauf
-  selbst.
-- **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
+  montieren. Nie Teile einfach in den Raum setzen. Mit `bed.verbinde(...)` (Abschnitt „Teile über Bedingungen
+  setzen“) prüft Kev CAD bei jedem Lauf, dass die Befestigung physisch da ist und alles über Verbindungen am Boden
+  hängt. Modelle ganz ohne Bedingungen prüft die eingebaute Prüfung trotzdem auf Schweben: Gruppen ohne Kontakt zum
+  Boden kommen mit Fallweg („fiele 12 mm auf Rahmen“); Spielpassungen bis 0,5 mm zählen als Verbindung, „berührt“
+  heißt bis 0,05 mm. Boden ist der tiefste Punkt oder `boden(z)`. Hängt etwas an Wand oder Decke:
+  `befestigt(teil, grund="an der Wand verschraubt")`, nur nach Rückfrage bei Kevin.
+- **Steht sicher:** Je Gruppe auf dem Boden rechnet die Prüfung Masse (Materialdichte, sonst angenommen 1 g/cm³ mit
+  Hinweis), Schwerpunkt, Standfläche und Kippwinkel. Liegt der Schwerpunkt außerhalb: Fehler; unter 3° Kippwinkel:
+  Warnung. Lösung: Standfläche verbreitern, Schwerpunkt senken, Gegengewicht.
+- **Lässt sich einbauen:** siehe „Montagegerecht konstruieren“.
+- **Nachgiebige Teile** (Material mit `nachgiebig` im Katalog: PE-Schaum, Gummi, TPU) dürfen bis zur halben Dicke
+  zusammengedrückt werden; das ist ein Hinweis („verformt“), kein Fehler.
 - **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
-  muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
-  Teilen bekommt `bewegungen.json` (Teil, drehen oder schieben, Achse über `achse_von`/`punkt`/`richtung`, Bereich),
-  geprüft nach jedem Lauf mit
-  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
-  Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
+  muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Die Quelle sind die **Gelenke in
+  model.py** mit `bereich=…` und `bedienung=…` (Kevin, 22.10.2026); `run` prüft sie bei jedem Lauf (Befunde
+  „Bewegungsraum“ mit freiem Bereich). `<projekt>/bewegungen.json` gilt nur noch für Teile ohne Gelenk. Zum Ausloten
+  weiter Bereiche einmalig `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python
+  tools/check_motion.py "<Projektordner>" --teile … --drehen …`. Reicht der freie Bereich nicht für die Bedienung, wird
   umkonstruiert, nicht der Bereich verkleinert. Hat das Projekt eine Animation, zusätzlich `kollision_pruefen(name)`
   für jede Animation (siehe „Animation“).
-  Gelenke mit `bereich=…` und `bewegungen.json` prüft `run` schon bei jedem Lauf mit (Befunde „Bewegungsraum“).
-- Befestigung (`bed.verbinde`) und Bewegungsraum prüft Kev CAD bei jedem Lauf; Schweben und Standsicherheit bekommt
-  es als Nächstes fest eingebaut, bis dahin mit den beiden Werkzeugen oben prüfen und von Hand daran halten.
+- **Druckteile:** Die Druckprüfung läuft bei jedem Lauf für jedes `lager.druckteil` mit; `druckpruefung` zeigt
+  Ausrichtung, Kennzahlen und alle Hinweise (siehe 3d-druck.md).
+- Befestigung (`bed.verbinde`), Bewegungsraum, Schweben, Standsicherheit und Einbaubarkeit prüft Kev CAD bei jedem
+  Lauf; `pruefen` zeigt das ganze Ergebnis, `montage_reihenfolge` die Einbaufolge.
+
+## Montagegerecht konstruieren (Kevin, 21.10.2026, gilt immer)
+
+Teile nicht irgendwo platzieren, sondern so, dass man sie vernünftig einbauen kann. Die Prüfung zerlegt jedes Modell
+gedanklich (Montage durch Demontage): Ein Teil muss sich auf geradem Weg (±X, ±Y, ±Z, Achsen von Bohrungen und Bolzen,
+erklärte Richtungen) aus dem Rest herausziehen lassen, dann das nächste. Umgekehrt ist das die Montagereihenfolge mit
+Einführrichtung je Teil (`montage_reihenfolge`; Kevin sieht sie im Prüfband unter „Montage“ Schritt für Schritt).
+
+- **Einbaulage mitdenken:** Jedes Teil so konstruieren und platzieren, wie es eingesetzt wird; Reihenfolge und
+  Einführrichtung beim Konstruieren festlegen und im Kommentar nennen.
+- **Schrauben:** nur entlang ihrer Achse einführbar (Durchgangsbohrung bis zum Kopf), und beim Einsetzen braucht das
+  Werkzeug Platz über dem Kopf (Inbus: Ø Kopf + 2 mm, mindestens 30 mm bzw. 5·d lang; Steckschlüssel: Ø 1,6·SW + 4 mm;
+  sonst Gabelschlüssel von der Seite). Fehlt der Platz: Durchgang für das Werkzeug, Schraube von der anderen Seite oder vor dem Hindernis einsetzen.
+- **Spiel vorsehen**, damit Teile ohne Gewalt hineingehen (Druckteile 0,2–0,3 mm je Seite).
+- **Keine eingesperrten Teile:** Ein Teil in einem geschlossenen Gehäuse ist nicht einbaubar; Gehäuse teilen (Deckel),
+  Öffnung vorsehen.
+- **Unlösbares vermeiden:** Bolzen mit zwei Köpfen aus einem Stück, Ringe auf Achsen ohne Ende, Klemmbolzen, deren
+  Kopf und Zunge beide nicht durch die Bohrung passen: lösbar konstruieren (Achse als eigenes Teil, Sicherungsring,
+  Teilung).
+- **Befunde beheben statt wegerklären.** Erklärungen nur, wo sie stimmen, und im Code kommentiert:
+  `montage("Rollwagen/Lenkrolle 1", baugruppe=True)` für Zukaufteile, die fertig montiert geliefert werden;
+  `montage(clip, schnappt=True)` für Schnappverbindungen; `montage(mutter, eingedruckt=True)` für Muttern, die beim
+  Druck eingelegt werden (Druckpause); `montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")` für Richtung,
+  Reihenfolge und Werkzeug eigener Teile.
 
 ## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
 
@@ -116,7 +148,7 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
-256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+256 × 256 × 250 mm (vorne links 18 × 28 mm gesperrt), Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
 Einhausung. Die Druckausrichtung beim Konstruieren
 mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
 (Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
@@ -135,6 +167,20 @@ mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Qu
 - **Verzug** bei ABS/ASA/PA: große ebene Flächen und spitze Ecken vermeiden, Ecken verrunden.
 - **Z-Maße** möglichst als Vielfache von 0,2 mm; Schrift mindestens 0,6 mm erhaben, Strich ab 0,8 mm.
 - **Größer als der Bauraum**: teilen, mit Passstiften oder Schwalbenschwanz und ebenen Fügeflächen.
+
+**Druckprüfung bei jedem Lauf:** Jedes Teil aus `lager.druckteil(...)` prüft der Kernel nach jedem `run` automatisch
+für den P1P (Prüfer „druck“ der gemeinsamen Prüfung, Befunde `druck_*` mit ids `dr1`, `dr2` …, Teil, Fläche
+`Teil#f<n>`, Ort und Abhilfe). **Fehler** (Export gesperrt) nur aus harten Gründen: passt nicht in den Bauraum (samt
+Sperrfläche vorne links), Harzdruck, Material nur mit gehärteter Düse (CF). Überhänge, Brücken, Auskragungen,
+waagrechte Bohrungen, dünne Wände, Verzug sind **Warnungen** (beheben oder Kevin begründen), der Rest **Hinweise**
+(abwägen). `run` nennt Fehler und Warnungen und je Druckteil die gewählte Ausrichtung mit Begründung;
+**`druckpruefung`** (alle Teile) bzw. `druckpruefung(teil="…")` liefert die Einzelheiten: Ausrichtung, Fläche auf
+dem Bett, Kennzahlen (Maße auf dem Bett, Schichten, Stützfläche, Auflage, Volumen), alle Hinweise mit Referenzen und
+die Materialeinstellungen. Die Ausrichtung wählt die Prüfung selbst; muss die Hauptlast in die Schichtebene, mit
+`lager.druckteil(form, name, material="petg", ausrichtung="-z")` vorgeben (`"+x"` usw. = diese Seite aufs Bett,
+ebene Flächennummer, Vektor oder `Rot(...)`, bezogen auf die Form, wie sie an `druckteil` geht). Unveränderte Teile
+kommen aus dem Zwischenspeicher; der Live-Aufbau wartet nie auf die Prüfung. Kevin die Ausrichtung neuer Druckteile
+nennen.
 
 ## Arbeitsablauf
 
@@ -161,7 +207,8 @@ statt doppelt zu rechnen.
 
 Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
 
-- Jedes Teil in `show()` stammt aus `lager.teil(...).verbauen(...)` oder ist ausdrücklich ein 3D-Druckteil:
+- Jedes Teil in `show()` stammt aus `lager.teil(...).verbauen(...)`, aus einem freigegebenen Zukaufteil
+  (`lager.zukauf(...).verbauen(...)`, siehe „Zukaufteile“) oder ist ausdrücklich ein 3D-Druckteil:
   `lager.druckteil(form, "Halter/Schelle", material="petg")`. Druckmaterial muss freigegeben und druckbar sein
   (`material_list` zeigt „druckbar“: PLA, PETG, ABS, ASA, TPU 95A, PA, PA-CF, PC-Filament, PLA-CF, Standardharz);
   `verfahren="3d-druck"` (Standard) oder `"harzdruck"`.
@@ -226,8 +273,11 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
-| `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
+| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch). |
+| `lager.zukauf(id)` → `.verbauen(name)`, `.bezugspunkt(name)` | Zukaufteil mit Hersteller-CAD, Skript oder Ersatzkörper (siehe „Zukaufteile“). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
+| `montage(teil, richtung=, nach=, werkzeug=, baugruppe=, schnappt=, eingedruckt=)` | Einbau erklären, wo die Prüfung es nicht selbst wissen kann (siehe „Montagegerecht konstruieren“). |
+| `befestigt(teil, grund="…")`, `boden(z)` | an Wand/Decke befestigt (nur nach Rückfrage), Bodenebene. |
 | `import kevcad.bedingungen as bed` | Bezüge, Bedingungen, Gelenke, Befestigung, `bed.platziere(teil, …)` (Abschnitt „Teile über Bedingungen setzen“). |
 
 - `color`: Hex wie `"#B8BEC4"`; Lager- und Druckteile haben schon die Farbe ihres Materials.
@@ -260,6 +310,70 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
   5.394 mm, Rest 606 mm“, Sägeschnitt 3 mm, Verschnitt in %), Summen mit Richtpreis-Hinweis, Hinweise (etwa nicht
   zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
+
+## Bestand und Einkauf (Kevin, 21.10.2026)
+
+Jedes Projekt hat seinen eigenen Bestand (`bestand.json` im Projektordner): ganze Stangen und Platten, Reste mit
+Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge. Nichts gilt projektübergreifend.
+
+- Der Zuschnitt nimmt nach jedem Lauf zuerst passende Reste, dann ganze Stangen bzw. Platten aus dem Bestand, dann
+  zu kaufende (optimiert, mit Mindestrest und Sägeblatt). `bom` zeigt je Rest, Stange und Platte die Stücke und die
+  neuen Reste, `bestand_liste` den Bestand, `einkaufsliste` was fehlt (Menge, Preis mit Stand, Link, Summe, CSV).
+- **Bestand nur nach Kevins Angabe eintragen** (`bestand_eintragen`, seine Worte in `grund`), nie schätzen oder
+  erfinden; jede Änderung aus der Antwort an Kevin nennen.
+- **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und
+  Stückgut ab und legt die neuen Reste an. Jede Buchung lässt sich mit `buchung_rueckgaengig` umkehren.
+- **Einkaufsliste im Bericht nennen:** nach dem Bauen eines Modells die Positionen mit Summe aus `einkaufsliste`
+  aufführen, oder ausdrücklich sagen, dass alles aus dem Bestand kommt.
+
+## Zukaufteile
+
+Fertig gekaufte Teile mit Hersteller und Nummer (Schubladenauszug, Scharnier, Rolle, Rollwagen). Sie zählen zum
+Inventar, sobald Kevin sie freigegeben hat. Kameras, Objektive und Kamera-Zubehör: siehe „Kameras“.
+
+```python
+wagen = lager.zukauf("alutec-05200")          # nach id; sonst lager.zukauf(mpn="05200", hersteller="ALUTEC") oder gtin=
+rw = wagen.verbauen("Rollwagen")              # Hersteller-CAD, Skript-Geometrie oder Ersatzkörper
+show(Pos(0, y, 0) * rw, "Rollwagen")          # gleicher Name wie in verbauen
+oben = wagen.bezugspunkt("oben")              # Location im System des verbauten Teils
+show(Pos(0, y, 0) * oben * ball, "Ball")      # auf die Ladefläche gesetzt
+```
+
+- Das verbaute Teil liegt mit seinem **Einbaupunkt** im Ursprung (Standard: Mitte der Unterseite, Z oben).
+  Bezugspunkte (`bezugspunkte` im Katalog) gelten im selben System; Lage daraus ableiten statt Zahlen abzuschreiben.
+- Hersteller-CAD mit Baugruppe erscheint als Baum („Rollwagen/Platte“, „Rollwagen/Rolle_1“). Ohne Modell ist es ein
+  **Ersatzkörper** (Quader oder Zylinder aus den Shop-Maßen), halbtransparent und mit „(vereinfacht)“ im Namen.
+  **Vereinfachte Teile im Bericht an Kevin immer nennen.**
+- Die Prüfung behandelt Zukaufteile wie alle Teile: Hersteller-CAD und Ersatzkörper dürfen nichts durchdringen.
+  Überlappt ein Zukaufteil sein Gegenstück nur, weil das Modell vereinfacht ist (Gewinde als Vollzylinder,
+  Ersatzquader), ist das trotzdem ein Befund: im Modell lösen oder `erlaubt_ueberlappung(…, grund=…)` erst nach
+  Rückfrage bei Kevin.
+- Skript-Geometrie (`cad.quelle: "skript"` mit `datei`/`modul` und `funktion`): `verbauen(name, **kwargs)` reicht
+  Schlüsselwörter an die Funktion weiter.
+
+Ablauf, wenn Kevin einen Link, eine Herstellernummer oder eine EAN nennt:
+
+1. **Seite selbst lesen** (Browser oder WebFetch). Kev CAD lädt keine Shop-Seiten und umgeht keinen Bot-Schutz. Bei
+   einer EAN erst den Artikel suchen.
+2. **Normteil?** „ISO 4762 M6×20“, „DIN 934 M8“: kein Zukaufteil, sondern `stock_search` und `lager.teil(...)`
+   (`zukauf_anlegen` leitet selbst um).
+3. **Anlegen:** HTML an `zukauf_html(url, html)` (wertet JSON-LD, Microdata und Open Graph aus) oder die gelesenen
+   Felder an `zukauf_anlegen(url, felder={name, hersteller, mpn, gtin, preis {je_stueck, waehrung, brutto}, masse {l,
+   b, h} bzw. {d, l}, gewicht, bild})`. Preis immer mit brutto/netto wie im Shop. Kevin Hersteller, Nummer, Preis und
+   Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es im Lagerkatalog
+   freigibt; vorher lässt es sich nicht verbauen.
+4. **CAD suchen:** `cad_suchen(id)`. Mit Kevins TraceParts-Schlüssel kommt das STEP automatisch („powered by
+   TraceParts“ nennen). Sonst liefert es Links (Produktseite, Herstellerportal, TraceParts, 3Dfindit, Websuche):
+   **Kevin bitten, das STEP (oder ein ZIP mit STEP) mit seinem Konto herunterzuladen.** Die App beobachtet derweil
+   `~/Downloads` und fragt ihn selbst.
+5. **Übernehmen:** `cad_uebernehmen(id)` ohne Pfad nimmt die neueste passende Datei aus `~/Downloads` (auch aus ZIP).
+   Zoll, Zentimeter und „Y oben“ werden erkannt und korrigiert (steht im Ergebnis); passt das Hüllmaß nicht zu den
+   Katalogmaßen, wird abgelehnt (falsche Datei? Maße prüfen; `erzwingen=True` nur nach Rückfrage). Die Datei liegt
+   danach in `<projekt>/zukauf/<id>/` (nie im Git, Herstellerbedingungen).
+6. `run`, prüfen wie immer, `bom` zeigt das Teil mit Hersteller, Nummer, Stückpreis mit Datum, Link und CAD-Quelle.
+
+`zukauf_liste` zeigt alle Zukaufteile mit Freigabe und CAD-Stand. Die Summe der Stückliste mischt Richtpreise (netto)
+und Shoppreise (oft brutto); die Stückliste sagt das dazu, so auch an Kevin weitergeben.
 
 ## Kameras
 
@@ -405,9 +519,12 @@ führen (Kevin, 21.10.2026): Durchdringungen und Einbaubarkeit beurteilen, Propo
 Referenzfotos vergleichen. Dann gezielt: wenige Offscreen-Ansichten in kleiner Auflösung in einem Zug (etwa iso, vorn,
 rechts, oben), nicht nach jedem Schritt. Erste Quelle bleiben die Zahlen aus `run`, `parts`, `measure` und der Prüfung.
 
+- `ansichten()` liefert mehrere Offscreen-Ansichten in einem Aufruf (Standard iso, vorn, rechts, oben, 640 × 400),
+  frei wählbare Blickrichtungen (`richtungen=[[1, 1, -1]]`), auf Teile (`ziel`) oder einen Punkt (`punkt`, `radius`)
+  eingepasst, mit Röntgen (`darstellung="xray"`) für verdeckte Teile, rot hervorgehobenen Teilen und den roten
+  Schnittkörpern der Prüfung. Kevins Kamera und Darstellung bleiben unverändert.
+- `pruefen(bilder=True)` zeigt die schlimmsten Befunde aus zwei, drei Richtungen von nah, mit Schnittvolumen.
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
-- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen. Für die Analyse
-  mehrere Ansichten mit kleiner Größe nacheinander anfordern.
 - `mm_per_px` gibt es nur in paralleler Projektion. Maße trotzdem mit `measure` bestätigen.
 
 ## Animation
@@ -523,6 +640,10 @@ App im Bereich „Dokumente“ mit Strichbild je Schritt; Vertrag in DOKUMENTE.m
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
 | Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |
 | Prüfung: 2 Durchdringungen … | Teile stecken ineinander; je Befund die Lösung umsetzen (Spiel, Bohrung, verschieben), `run` |
+| … schwebt: … fiele 12 mm auf … | Teil absenken oder mit dem tragenden Teil verbinden |
+| … kippt / steht knapp | Standfläche verbreitern, Schwerpunkt senken |
+| … lässt sich nicht einbauen / nur als Baugruppe / eingesperrt | umkonstruieren (Reihenfolge, Teilung, Öffnung, lösbare Verbindung); Zukaufteil als Baugruppe erklären |
+| … Werkzeug kommt nicht hin | Freiraum für den Schlüssel schaffen oder Schraube anders setzen |
 | Export verweigert. Prüfung: … | erst die Befunde der Prüfung beheben |
 | Bedingungen: … verletzt (Soll …, Ist …) | Teil nicht von Hand verschieben, sondern mit `bed.platziere` aus den Bedingungen setzen; Lösung im Befund |
 | Widerspruch beim Platzieren | die genannten Bedingungen passen nicht zusammen; eine weglassen oder Werte angleichen |

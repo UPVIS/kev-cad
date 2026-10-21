@@ -18,8 +18,9 @@ from kevcad_kernel.pruefung.koerper import Koerper, koerper_aus_topo
 from kevcad_kernel.pruefung.kollision import PaarCache
 from kevcad_kernel.pruefung.pruefer import Abgebrochen, pruefe
 
-# Prüfungen, die nach jedem Lauf laufen (None = alle registrierten); „bedingungen“ aus bedingungen/anbindung.py
-AKTIV: tuple[str, ...] | None = ("erklaerungen", "durchdringung", "bedingungen")
+# Prüfungen, die nach jedem Lauf laufen (None = alle registrierten: erklaerungen, durchdringung, bedingungen aus
+# bedingungen/anbindung.py, stand, montage)
+AKTIV: tuple[str, ...] | None = None
 
 
 class PruefLauf:
@@ -70,5 +71,14 @@ class PruefLauf:
             header, payload = pack_check(run=run, state="done", ergebnis=erg, geometrie=geo)
             header["statistik"] = {"paare": erg.get("paare"), "zeiten_ms": erg.get("zeiten_ms"),
                                    "zwischenspeicher": len(self.cache), "teile": erg.get("teile")}
+            if erg.get("druck"):  # Druckprüfung: Ausrichtung und Kennzahlen je Druckteil (druck/anbindung.py)
+                header["druck"] = erg["druck"]
         header.pop("seq", None)
         return header, payload
+
+
+# Druckprüfung (Prüfer „druck“, registriert sich beim Import) läuft ebenfalls nach jedem Lauf
+from kevcad_kernel.druck import anbindung as _druck_anbindung  # noqa: E402,F401
+
+if AKTIV is not None and "druck" not in AKTIV:
+    AKTIV = (*AKTIV, "druck")

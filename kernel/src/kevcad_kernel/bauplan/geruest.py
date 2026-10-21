@@ -142,6 +142,8 @@ def material(ein: Eingang) -> list[dict[str, Any]]:
     # Vorhandenes und Hilfsstoffe
     vorhanden = OrderedDict()
     for t in ein.aufbau():
+        if t.kopf.get("zukauf"):
+            continue  # steht bei den Zukaufteilen
         if t.rolle == "zukauf" and t.einheit:
             vorhanden.setdefault(t.einheit, []).append(t.name)
         elif t.rolle == "kauf":
@@ -159,6 +161,26 @@ def material(ein: Eingang) -> list[dict[str, Any]]:
            for v in verb):
         hilf.append({"benennung": "Kleber passend zu den Werkstoffen (Schätzung)", "menge": 1, "einheit": "Tube",
                      "quelle": "Bestand"})
+    zukauf = [line for line in linien if line.get("art") == "zukaufteil"
+              and any(ein.teile.get(t) is not None and ein.teile[t].rolle != "ohne" for t in line.get("teile") or [])]
+
+    def zk_name(line: dict[str, Any]) -> str:
+        b = str(line.get("benennung") or "")
+        h = str(line.get("hersteller") or "")
+        if h and not h.lower().startswith(("normteil", "unbekannt")) and h.lower() not in b.lower():
+            b += f" ({h} {line.get('mpn') or ''})".rstrip()
+        return b
+
+    if zukauf:
+        liste = [{"benennung": zk_name(line), "menge": line.get("anzahl"), "einheit": "Stück",
+                  "preis": line.get("preis"), "quelle": "kaufen", "url": line.get("url"),
+                  "teile": list(line.get("teile") or [])} for line in zukauf]
+        out.append(schritt("material", "zukauf", "Zukaufteile bestellen",
+                           "Zukaufteile beim Händler bestellen (Link und Preis aus dem Katalog, Richtpreise).",
+                           material=liste, teile=[t for line in zukauf for t in line.get("teile") or []]))
+        for line in zukauf:
+            for t in line.get("teile") or []:
+                vorhanden.pop(t, None)
     if vorhanden or hilf:
         liste = [{"benennung": k, "menge": 1, "einheit": "vorhanden", "quelle": "vorhanden", "teile": v}
                  for k, v in vorhanden.items()] + hilf
@@ -430,9 +452,24 @@ def bearbeiten(ein: Eingang, merk: dict[str, Any]) -> list[dict[str, Any]]:
                            bohrbild=bohrbild, werkzeug=werkzeug, hinweise=hinweise))
     # Gewindeeinsätze einschmelzen und Stifte einkleben (je Wirtsteil, gleiche zusammengefasst)
     wirte: OrderedDict[str, list[Any]] = OrderedDict()
+    lager: OrderedDict[str, list[Any]] = OrderedDict()
     for t in ein.aufbau():
         if t.rolle == "einsatz" and t.wirt:
-            wirte.setdefault(t.wirt, []).append(t)
+            (lager if t.vm.get("typ") == "Bearing" else wirte).setdefault(t.wirt, []).append(t)
+    sammel_l: OrderedDict[tuple, list[tuple[str, list[Any]]]] = OrderedDict()
+    for w, ls in lager.items():
+        typen = tuple(sorted(Counter(ws.stueck_name(e.name) for e in ls).items()))
+        sammel_l.setdefault((ws.stueck_name(w), round(ein.teile[w].volumen, -1), typen), []).append((w, ls))
+    for (wname, _, typen), mitglieder in sammel_l.items():
+        n = len(mitglieder)
+        inhalt = ", ".join(f"{k} × {name}" for name, k in typen)
+        teile = [w for w, _ in mitglieder] + [e.name for _, ls in mitglieder for e in ls]
+        out.append(schritt("bearbeiten", "lager|" + "|".join(teile), f"{_anzahl_text(n)}{wname}: Lager einpressen",
+                           f"In {wname} je {inhalt} gerade einpressen, bis es anliegt; nur über den Außenring drücken.",
+                           anzahl=n, teile=teile, neu=[e.name for _, ls in mitglieder for e in ls],
+                           werkzeug=["Schraubstock mit Schonbacken oder Einpresswerkzeug", "passende Nuss als Druckstück"],
+                           hinweise=["Nicht schlagen; Druckteil vorher entgraten, Sitz bei Bedarf leicht nacharbeiten",
+                                     "Lager muss sich danach frei drehen"]))
     sammel: OrderedDict[tuple, list[tuple[str, list[Any]]]] = OrderedDict()
     for w, es in wirte.items():
         wt = ein.teile[w]
@@ -501,9 +538,9 @@ def _einschraubtiefe(ein: Eingang, stift: Any) -> float | None:
 # Drucken
 
 
-SEITEN = {(0, 0, -1): ("−Z (wie modelliert)", [0, 0, 0]), (0, 0, 1): ("+Z", [180, 0, 0]),
-          (1, 0, 0): ("+X", [0, 90, 0]), (-1, 0, 0): ("−X", [0, -90, 0]), (0, 1, 0): ("+Y", [-90, 0, 0]),
-          (0, -1, 0): ("−Y", [90, 0, 0])}
+SEITEN = {(0, 0, -1): ("Seite −Z (wie modelliert)", [0, 0, 0]), (0, 0, 1): ("Seite +Z", [180, 0, 0]),
+          (1, 0, 0): ("Seite +X", [0, 90, 0]), (-1, 0, 0): ("Seite −X", [0, -90, 0]), (0, 1, 0): ("Seite +Y", [-90, 0, 0]),
+          (0, -1, 0): ("Seite −Y", [90, 0, 0])}
 
 
 def ausrichtung(t: Any) -> dict[str, Any]:
@@ -552,7 +589,24 @@ def drucken(ein: Eingang) -> list[dict[str, Any]]:
         mat = str((t.druck or {}).get("material") or "petg")
         info = ws.druck_info(mat)
         a = ausrichtung(t)
+        dp = ((ein.check or {}).get("druck") or {}).get("teile", {}).get(namen[0])  # Druckprüfung (main)
         hinweise = []
+        if dp:  # Ausrichtung, Kennzahlen und Hinweise aus der Druckprüfung statt der eigenen Schätzung
+            ar = dp.get("ausrichtung") or {}
+            kz = dp.get("kennzahlen") or {}
+            a = {"unten": ar.get("text") or a["unten"], "drehung": ar.get("drehung") or a["drehung"],
+                 "auflage_mm2": kz.get("auflageflaeche_mm2", a["auflage_mm2"]),
+                 "hoehe_mm": kz.get("hoehe_mm", a["hoehe_mm"]), "grundriss_mm": a["grundriss_mm"], "geschaetzt": False,
+                 "begruendung": ar.get("begruendung"), "stuetzflaeche_mm2": kz.get("stuetzflaeche_mm2")}
+            mi = (((ein.check or {}).get("druck") or {}).get("materialien") or {}).get(str(dp.get("material"))) or {}
+            hinweise += [str(h) for h in (mi.get("druckhinweise") or [])[:2]]
+            for b in (ein.check or {}).get("befunde") or []:
+                if str(b.get("art", "")).startswith("druck_") and namen[0] in (b.get("teile") or []) \
+                        and b.get("schwere") in ("fehler", "warnung", "hinweis"):
+                    hinweise.append(f"{b.get('text')} → {b.get('loesung')}".strip(" →"))
+            if a.get("stuetzflaeche_mm2"):
+                hinweise.append(f"Stützen nötig: etwa {de_num(a['stuetzflaeche_mm2'], 0)} mm² (laut Druckprüfung)")
+            info = {}
         if info:
             hinweise.append(f"{info.get('name')}: Düse {info.get('duese')} °C, Bett {info.get('bett')} °C"
                             + (f"; {info['hinweis']}" if info.get("hinweis") else ""))
@@ -566,16 +620,20 @@ def drucken(ein: Eingang) -> list[dict[str, Any]]:
                             f"{de_num(ws.BAURAUM[2])} mm): anders legen oder teilen")
         if any(e.rolle == "einsatz" and e.wirt in namen for e in ein.teile.values()):
             hinweise.append("Taschen für Gewindeeinsätze maßhaltig drucken (keine Elefantenfuß-Korrektur dort)")
-        hinweise.append("Ausrichtung ist eine Schätzung (größte ebene Auflage); Druckprüfung im Slicer ansehen")
+        if not dp:
+            hinweise.append("Ausrichtung ist eine Schätzung (größte ebene Auflage); Druckprüfung im Slicer ansehen")
+        elif a.get("begruendung"):
+            hinweise.append(f"Ausrichtung: {a['begruendung']}")
         kg = float((t.druck or {}).get("kg") or t.masse_g / 1000.0)
-        text = (f"{_anzahl_text(n)}{ws.stueck_name(t.name)} drucken, Seite {a['unten']} aufs Bett "
-                f"(Höhe {de_num(a['hoehe_mm'])} mm), je etwa {de_num(kg * 1000, 0)} g {info.get('name', mat)}.")
+        text = (f"{_anzahl_text(n)}{ws.stueck_name(t.name)} drucken, {a['unten']} aufs Bett "
+                f"(Höhe {de_num(a['hoehe_mm'])} mm), je etwa {de_num(kg * 1000, 0)} g "
+                f"{ws.druck_info(mat).get('name', mat.upper())}.")
         out.append(schritt("drucken", "|".join(namen), f"{_anzahl_text(n)}{ws.stueck_name(t.name)}", text,
                            anzahl=n, teile=namen,
                            druck={"teil": namen[0], "material": mat, "ausrichtung": a["drehung"],
                                   "seite": a["unten"], "hoehe_mm": a["hoehe_mm"], "auflage_mm2": a["auflage_mm2"],
                                   "masse_g": round(kg * 1000, 1), "hinweise": list(hinweise),
-                                  "geschaetzt": True},
+                                  "geschaetzt": not dp, "quelle": "druckpruefung" if dp else "schaetzung"},
                            werkzeug=["Bambu Lab P1P", "Spachtel", "Entgrater"], hinweise=hinweise))
     return out
 
@@ -789,6 +847,9 @@ def _montage_ebene(ein: Eingang, seq: list[Einbau], baugruppe: str | None, merk:
         haupt = g[0][0]
         neu = [t for e in alle for t in e.einheit.teile]
         vm_namen = [t for e in alle if e.einheit.art == "vm" for t in e.einheit.teile]
+        lose = [t for e in alle if e.mit_vm for t in e.einheit.teile
+                if ein.teile.get(t) is not None and ein.teile[t].rolle == "vm" and not ein.teile[t].wirt]
+        vm_namen += lose
         kern = [e for e in g[0] if e.einheit.art != "vm"] or [g[0][0]]
         namen_kern = [_bezeichnung(ein, e, n > 1) for e in kern]
         bez = namen_kern[0] if len(namen_kern) == 1 else ", ".join(namen_kern[:-1]) + " und " + namen_kern[-1]
@@ -806,6 +867,13 @@ def _montage_ebene(ein: Eingang, seq: list[Einbau], baugruppe: str | None, merk:
         else:
             verb = "anbringen" if haupt.einheit.art == "vm" else "einbauen"
             titel = f"{_anzahl_text(n)}{bez} {verb}"
+            if haupt.einheit.art == "vm":  # nur Verbindungsmittel: woran?
+                ziel = [m for t in neu for m in ein.nachbarn(t, kontakt=True)
+                        if m in montiert and ein.teile.get(m) is not None and ein.teile[m].rolle not in ("vm", "einsatz")]
+                if ziel:
+                    namen_vm = list(dict.fromkeys(_bezeichnung(ein, e, n > 1) for r in g for e in r))
+                    bez = " und ".join(namen_vm[:2])
+                    titel = f"{_anzahl_text(n)}{bez} an {_name(ziel[0])} anbringen"
             satz, _, _ = _verbindungen_text(ein, set(neu), montiert)
             nacheinander = " nacheinander" if len(kern) > 1 else ""
             text = f"{bez}{nacheinander} {haupt.richtung_text} einsetzen"
@@ -813,7 +881,13 @@ def _montage_ebene(ein: Eingang, seq: list[Einbau], baugruppe: str | None, merk:
                 text += ", " + ", ".join(satz[:3])
             text += "."
         vm = _vm_eintraege(ein, vm_namen)
-        if vm:
+        if lose:
+            lv = _vm_eintraege(ein, lose)
+            text += (" Vorher " + " und ".join(x["benennung"] for x in lv) + " lose in die Klemme drehen; nach dem "
+                     "Ausrichten anziehen.")
+        if vm and haupt.einheit.art == "vm" and not grund:
+            text = text.rstrip(".").replace(" einsetzen", " ansetzen") + " und anziehen."
+        elif vm and not lose:
             je = " je Stelle" if n > 1 else ""
             text += " " + ", ".join(f"{x['anzahl'] // n if n > 1 else x['anzahl']} × {x['benennung']}" for x in vm) + \
                 f"{je} ansetzen und anziehen."
@@ -845,6 +919,7 @@ def _montage_ebene(ein: Eingang, seq: list[Einbau], baugruppe: str | None, merk:
         einbau = []
         for e in alle:
             einbau.append({"name": e.einheit.name, "art": e.einheit.art, "teile": list(e.einheit.teile),
+                           "mit_vm": list(e.mit_vm),
                            "haupt": e.einheit.haupt, "richtung": _r(e.richtung, 4), "zuerst": _r(e.zuerst, 4),
                            "weg": _r(e.weg, 1), "aufbocken": _r(e.aufbocken, 1), "grundteil": e.richtung is None,
                            "erzwungen": e.erzwungen, "sperrer": list(e.sperrer)})

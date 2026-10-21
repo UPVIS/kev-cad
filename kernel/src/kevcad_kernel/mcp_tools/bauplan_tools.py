@@ -66,8 +66,10 @@ def plan_text(plan: dict[str, Any], *, kurz: bool = False, max_schritte: int = 2
                 if s.get("text"):
                     zeilen.append(f"  {s['text']}")
                 if s.get("material"):
-                    zeilen.append("  Material: " + "; ".join(f"{m.get('menge')} × {m.get('benennung')}"
-                                                             for m in s["material"][:12]))
+                    zeilen.append("  Material: " + "; ".join(
+                        f"{fmt.num(m['menge'], 3) if isinstance(m.get('menge'), float) else m.get('menge')} "
+                        f"{'kg ' if 'kg' in str(m.get('einheit')) else '× '}{m.get('benennung')}"
+                        for m in s["material"][:14]))
                 if s.get("werkzeug"):
                     zeilen.append("  Werkzeug: " + ", ".join(s["werkzeug"]))
                 for h in s.get("hinweise") or []:

@@ -16,11 +16,24 @@ struct BOMPanel: View {
             header
             Divider()
             if let bom = model.bom, !bom.lines.isEmpty {
-                let palette = Self.palette(bom)
+                // Mit Bestand färbt der Zuschnitt nach Quelle, nicht nach Position
+                let palette = model.bestandZustand.zuschnitt == nil ? Self.palette(bom) : [:]
                 BOMTable(model: model, bom: bom, palette: palette, selection: $selection)
-                if !bom.cuts.isEmpty {
+                    .frame(minHeight: 96)
+                if let zuschnitt = model.bestandZustand.zuschnitt {
+                    // Bestand: Zuschnitt mit Resten und Einkaufsliste
+                    Divider()
+                    StuecklisteUntenView(model: model, bom: bom, zuschnitt: zuschnitt, selected: selection) { line in
+                        selection = line.pos
+                    }
+                } else if !bom.cuts.isEmpty {
                     Divider()
                     CutPlansView(bom: bom, palette: palette, selected: selection) { line in selection = line.pos }
+                }
+                let zukauf = bom.lines.filter { $0.zukauf != nil }
+                if !zukauf.isEmpty {
+                    Divider()
+                    BOMZukaufList(model: model, lines: zukauf, selected: selection) { line in selection = line.pos }
                 }
                 footer(bom)
             } else {
@@ -52,15 +65,15 @@ struct BOMPanel: View {
     private var header: some View {
         HStack(spacing: 14) {
             HStack(spacing: 7) {
-                Image(systemName: "list.bullet.rectangle")
-                    .foregroundStyle(.secondary)
-                Text("Stückliste")
-                    .font(.headline)
+                UntererBereichReiter()
                 if let bom = model.bom, !bom.lines.isEmpty {
-                    Text("\(KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")) · "
-                        + KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile"))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    let positionen = KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")
+                    ViewThatFits(in: .horizontal) {
+                        Text(positionen + " · " + KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile"))
+                        Text(positionen)
+                    }
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
                 }
             }
             .lineLimit(1)
@@ -69,6 +82,16 @@ struct BOMPanel: View {
                 Total(label: "Gewicht", value: KevFormat.kg(bom.totals.kg))
                 Total(label: "Material", value: bom.totals.preis.map(KevFormat.euro) ?? "–")
                     .help(bom.totals.preisHinweis ?? "Richtpreise")
+                if model.bestandZustand.zuschnitt != nil {
+                    Button {
+                        BestandUI.shared.gebautDialog = true
+                    } label: {
+                        Label("Gebaut …", systemImage: "hammer")
+                    }
+                    .controlSize(.small)
+                    .disabled(model.bestandActions == nil || model.laufAktiv)
+                    .help("Bestand abbuchen: was der Zuschnitt verplant, geht weg; neue Reste kommen dazu")
+                }
                 Button {
                     model.actions?.export(formats: ["bom_csv"])
                 } label: {
@@ -252,7 +275,7 @@ private struct BOMTable: View {
                     .monospacedDigit()
                     .foregroundStyle(line.preis == nil ? .tertiary : .primary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    .help(line.preisJe.map { "je Stück \(KevFormat.euro($0))" } ?? "ohne Preis")
+                    .help(Self.priceHelp(line))
             }
             .width(min: 60, ideal: 80)
         }
@@ -265,6 +288,9 @@ private struct BOMTable: View {
                 if let id = line.stockID {
                     Button("Im Lagerkatalog zeigen") { session.showCatalog(focus: .item(id)) }
                 }
+                if let url = line.zukauf?.url {
+                    Button("Produktseite öffnen") { NSWorkspace.shared.open(url) }
+                }
                 Divider()
                 Button("Zeile kopieren") { copyToPasteboard(Self.text(line)) }
                 Button("Teilenamen kopieren") { copyToPasteboard(line.teile.joined(separator: "\n")) }
@@ -276,12 +302,27 @@ private struct BOMTable: View {
         }
     }
 
-    /// Zeile als Text mit Tabulatoren (für Numbers und Excel).
+    /// Zeile als Text mit Tabulatoren (für Numbers und Excel); Zukaufteile mit Hersteller, Nummer und Link.
     static func text(_ line: BOMLine) -> String {
-        [
+        var cells = [
             "\(line.pos)", line.benennung, line.masseText, KevFormat.gehrung(line.gehrung), line.material ?? "",
             "\(line.anzahl)", line.kg.map(KevFormat.kg) ?? "", line.preis.map(KevFormat.euro) ?? "",
-        ].joined(separator: "\t")
+        ]
+        if let z = line.zukauf {
+            cells += [z.hersteller ?? "", z.mpn ?? "", z.preisStand ?? "", z.url?.absoluteString ?? ""]
+        }
+        return cells.joined(separator: "\t")
+    }
+
+    /// Tooltip der Preisspalte; bei Zukaufteilen mit brutto/netto und Datum.
+    static func priceHelp(_ line: BOMLine) -> String {
+        guard let je = line.preisJe else { return "ohne Preis" }
+        var text = "je Stück \(KevFormat.euro(je))"
+        if let z = line.zukauf {
+            if let b = z.preisBrutto { text += b ? " brutto" : " netto" }
+            if let s = ZukaufDate.display(z.preisStand) { text += ", Stand \(s)" }
+        }
+        return text
     }
 
     private struct NameCell: View {
@@ -310,6 +351,8 @@ private struct BOMTable: View {
                     Badge(text: "Eigenteil", color: .orange)
                 } else if line.druckteil {
                     Badge(text: "3D-Druck", color: .teal)
+                } else if let z = line.zukauf {
+                    CADSourceBadge(simplified: z.vereinfacht, title: z.vereinfacht ? "vereinfacht" : "Zukauf")
                 }
             }
             .help(help)
@@ -323,7 +366,12 @@ private struct BOMTable: View {
             var parts = [line.benennung + (line.norm.map { " · \($0)" } ?? "")]
             if line.eigenteil { parts.append("Eigenteil: frei modelliert, Masse aus Volumen × Dichte") }
             if line.druckteil { parts.append("3D-Druckteil: Masse aus Volumen × Dichte, Kosten aus dem Filamentpreis") }
-            if let id = line.stockID { parts.append("Lagerteil \(id)") }
+            if let z = line.zukauf {
+                parts.append("Zukaufteil \(z.title)" + (z.vereinfacht ? ", vereinfacht (Ersatzkörper)" : ""))
+                if let url = z.url { parts.append(url.absoluteString) }
+            } else if let id = line.stockID {
+                parts.append("Lagerteil \(id)")
+            }
             parts.append(line.teile.prefix(8).joined(separator: ", ") + (line.teile.count > 8 ? " …" : ""))
             return parts.joined(separator: "\n")
         }

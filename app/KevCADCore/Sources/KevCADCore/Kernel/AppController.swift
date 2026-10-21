@@ -69,6 +69,8 @@ public final class AppController: AppActions {
     /// Stilles Nachladen des Katalogs (Vorschläge von Claude): letzter Zeitpunkt, ausgesetzt nach einer Zeitüberschreitung.
     var lastQuietCatalog: Date?
     var quietCatalogOff = false
+    /// Phase 3: Zukaufteile (Downloads-Beobachtung, Rückfragen, Namen), siehe AppController+Zukauf.swift.
+    let zukaufState = ZukaufControllerState()
     /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht).
     var revealFiles: ([URL]) -> Void = { urls in
         guard Bundle.main.bundleURL.pathExtension == "app", !urls.isEmpty,
@@ -366,6 +368,7 @@ public final class AppController: AppActions {
             case .project(let p): applyProject(p)
             case .bom(let b): applyBOM(b)
             case .catalog(let c): applyCatalog(c)
+            case .bestand(let b): applyBestand(b)
             default: break
             }
             return
@@ -481,6 +484,8 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .zukaufStatus(let z):
+            applyZukaufStatus(z)
         case .constraints(let r):
             applyConstraints(r)
         case .animation(let a):
@@ -489,6 +494,8 @@ public final class AppController: AppActions {
             applyCamera(c)
         case .check(let c):
             applyCheck(c)
+        case .bestand(let b):
+            applyBestand(b)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -537,7 +544,9 @@ public final class AppController: AppActions {
             model.bom = nil
             model.constraints = nil
             model.inventarVerstoesse = []
+            resetZukauf()
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
+            bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)
@@ -573,12 +582,14 @@ public final class AppController: AppActions {
                 id: name, color: r.header.colorVector, material: r.header.material, visible: scene.isVisible(name),
                 triangles: r.triangleCount, faces: r.faceCount, edges: r.edgeCount, bboxMin: b.min, bboxMax: b.max,
                 volume: r.header.volume, mass: r.header.mass, run: r.run, stock: r.header.stock,
-                inventarFehlt: r.header.inventarFehlt || model.inventarVerstoesse.contains(name))
+                inventarFehlt: r.header.inventarFehlt || model.inventarVerstoesse.contains(name),
+                zukauf: r.header.zukauf)
         }
         model.triangleCount = scene.triangleCount
         // rot: Inventar-Regel verletzt oder Befund der Prüfung (Durchdringung …)
         let pruefRot = (model.pruefung?.betroffeneTeile ?? []).filter { scene.record($0) != nil }
         scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)).union(pruefRot))
+        scene.setSimplifiedParts(Set(model.parts.filter { $0.zukauf?.isSimplified == true }.map(\.id)))
     }
 
     func sendSettings() {

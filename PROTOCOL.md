@@ -157,6 +157,11 @@ Antwort: `ACK` mit `ok` und optional `message`.
 | `SCREENSHOT_RES` | `reply_to`, `ok`, `width`, `height`, `camera` (Objekt), `mm_per_px` (nur orthographisch, sonst null) | PNG |
 | `ACK` | `reply_to`, `ok`, `message` | – |
 
+## Bestand
+
+Bestand, Zuschnitt mit Resten, Einkaufsliste und die Nachrichten `BESTAND_REQ`, `BESTAND`, `BESTAND_SAVE`,
+`GEBAUT_REQ`, `BUCHUNG_RUECKGAENGIG` sind in [BESTAND.md](BESTAND.md) festgelegt.
+
 ## Phase 2: Lagerteile und Stückliste
 
 Rein additiv; ältere Gegenseiten ignorieren die neuen Felder und Typen.
@@ -234,6 +239,65 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
 
+## Phase 3: Zukaufteile
+
+Rein additiv. Format der Einträge laut KATALOG.md, Abschnitt Zukaufteil.
+
+### PART_UPSERT.zukauf
+
+Optionales Feld im Kopf, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt:
+
+```json
+"zukauf": {"id": "alutec-05200", "hersteller": "ALUTEC", "mpn": "05200", "cad": "hersteller", "preis": 24.99,
+           "url": "https://…"}
+```
+
+`cad`: `hersteller` (eingebettetes Modell), `vereinfacht` (Ersatzkörper), `skript` (Geometrie aus einer Funktion). Bei
+`vereinfacht` zeichnet die App das Teil halbtransparent.
+
+### BOM.lines bei Zukaufteilen
+
+`art: "zukaufteil"`, zusätzlich `hersteller`, `mpn`, `gtin`, `url`, `bild`, `preis_stand`, `preis_brutto` (bool),
+`cad_quelle`, `vereinfacht` (bool).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `ZUKAUF_STATUS` | `id` (Zukaufteil), `zustand`: `angelegt` \| `wartet_auf_cad` \| `importiert` \| `fehler`, `text`, `cad_links` (Liste `{titel, url}` zum Öffnen im Browser, nur bei `wartet_auf_cad`), `erwartet` (Liste Dateiendungen, z. B. `step`, `stp`, `zip`) | – |
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `ZUKAUF_NEU` | `id`, `eingabe` (Link, MPN oder GTIN, wie Kevin sie eingefügt hat), `felder` (Objekt laut KATALOG.md, von Kevin bestätigt), `ebene` (`projekt` \| `eigen`) | `ACK`, danach `ZUKAUF_STATUS` |
+| `DOWNLOAD_SEEN` | `pfad`, `groesse`, `zeit` – neue Datei in `~/Downloads` mit passender Endung, solange ein Zukaufteil `wartet_auf_cad` ist | – |
+| `ZUKAUF_CAD` | `id` (Anfrage), `teil` (Zukaufteil-id), `pfad` – Kevin hat bestätigt: diese Datei ist das CAD | `ACK`, danach `ZUKAUF_STATUS` |
+
+Festlegungen (21.10.2026):
+
+- `DOWNLOAD_SEEN`: `pfad` absolut, `groesse` in Byte (Ganzzahl), `zeit` ISO 8601 mit Zeitzone
+  (`2026-10-21T21:14:03+02:00`). Die App schickt es einmal je neuer, vollständiger Datei (Größe 0,8 s stabil), noch vor
+  der Rückfrage an Kevin.
+- `ZUKAUF_STATUS` kommt unaufgefordert (ohne `reply_to`). Nach dem Verbinden schickt der Kernel für jedes Zukaufteil,
+  das noch `wartet_auf_cad` ist, ein `ZUKAUF_STATUS` (wie `PART_UPSERT`), damit die Downloads-Beobachtung nach einem
+  Neustart weiterläuft. Optional `name` (Anzeigename des Teils).
+- `ZUKAUF_NEU.felder` ist ein vollständiger Katalogeintrag laut KATALOG.md (`id`, `art: "zukaufteil"`,
+  `status: "frei"`, `ersatz` aus den Maßen).
+- `BOM.lines[].stock_id` ist bei Zukaufteilen die Zukaufteil-id.
+
+Ergänzt bei der Zusammenführung (21.10.2026, additiv):
+
+- `ZUKAUF_CAD` mit einer Datei, die nicht passt (Maße, kein STEP im ZIP): `ACK` mit `ok: true` (angenommen), dann
+  `ZUKAUF_STATUS` `fehler` mit dem Grund. Wartete das Teil auf sein CAD, folgt wieder `wartet_auf_cad` mit den Links und
+  dem Grund im `text`, damit die App den Download-Ordner weiter beobachtet. Unbekanntes Teil: `ACK` mit `ok: false`.
+- `PART_UPSERT.name` eines Ersatzkörpers endet auf „ (vereinfacht)“ (KATALOG.md, Zukaufteil); `BOM.lines[].teile`
+  nennt denselben Namen. Erklärungen in model.py (`erlaubt_ueberlappung` …) finden das Teil auch unter dem Namen aus
+  `show()`.
+
+Kev CAD lädt Shop-Seiten nie selbst (PLAN-PHASE3-ZUKAUF.md, Z1): Daten kommen von Claude über MCP oder aus Kevins
+Eingabe im Dialog. CAD-Dateien kommen über die TraceParts-API (mit Kevins Schlüssel) oder aus `~/Downloads`.
+
 ## Prüfung
 
 Rein additiv; ältere Apps ignorieren `CHECK`. Nach jedem erfolgreichen Lauf prüft der Kernel den Stand (im
@@ -262,11 +326,33 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   `geometrie` Index in `geometrie` oder null. Weitere Quellen dürfen eigene Felder ergänzen (etwa `soll`, `ist`).
 - Durchdringung zählt ab 0,001 mm³ Schnittvolumen und 0,01 mm Tiefe; Berühren ist kein Befund. Einzige automatische
   Ausnahme ist echter Gewindeeingriff (Schraube in Mutter oder Kernloch, gleiche Achse, nur im Gewindeband); er steht in
-  `gewinde`. Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
+  `gewinde` (je Eintrag `teile`, `text`, `volumen`, `achse`). In der Montage sperrt ein Gewindeeingriff quer zur Achse,
+  entlang der Achse nicht (herausdrehen). Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
 Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+
+Weitere Teile von `CHECK` (Stufe 2):
+
+- `stand`: `{"boden_z", "boden_erklaert", "gruppen": [{"teile", "masse_kg", "schwerpunkt", "stuetzpolygon" (xy),
+  "rand_abstand" (mm, negativ = außerhalb), "kippwinkel" (Grad), "kante", "schwebt" | "befestigt"}]}`. Kontakt heißt
+  Abstand bis 0,5 mm (Spielpassung zählt als Verbindung), „berührt“ bis 0,05 mm. Befunde `schwebt` gibt es nur bei
+  Modellen ohne Zwangsbedingungen; mit Bedingungen prüft die Befestigung (B9, Prüffunktion „bedingungen“) das Schweben,
+  damit nichts doppelt gemeldet wird. `kippt` und `standsicherheit` kommen immer aus dieser Prüfung.
+- `montage`: `{"vollstaendig", "schritte": [{"nr", "name", "teile", "gruppe", "richtung" (Einführrichtung [x,y,z], null
+  beim Grundteil), "richtung_text" („Grundteil“, „von oben“, „von −X her“ …), "werkzeug"}], "offen", "tests",
+  "abgebrochen"}` in Einbaureihenfolge.
+
+### SCREENSHOT_REQ.ansicht (Analyse)
+
+Optionales Objekt in `SCREENSHOT_REQ` (mit `source: "offscreen"`) für Bilder zur eigenen Analyse des Agenten (MCP
+`ansichten`, `pruefen(bilder=true)`): `name`, `standard` (Standardansicht) oder `richtung` [x,y,z] (Blickrichtung der
+Kamera, Z bleibt oben), `ziel` (Teile) oder `punkt` [x,y,z] mit `radius` (mm) zum Einpassen, `darstellung`
+(`shaded_edges` \| `shaded` \| `wireframe` \| `xray`), `hervorheben` (Teile, rot getönt), `schnittkoerper` (bool, rote
+Schnittkörper der Prüfung). Die App rendert aus einer Kopie der Körper, Kevins Kamera, Darstellung und Auswahl bleiben
+unverändert, und setzt in `SCREENSHOT_RES.camera` das Feld `ansicht: true`. Ältere Apps ignorieren das Feld und liefern
+die Standardansicht aus `view`.
 
 ## Phase 5: Animation
 

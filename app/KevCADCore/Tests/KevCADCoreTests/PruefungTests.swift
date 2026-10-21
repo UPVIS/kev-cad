@@ -1,4 +1,5 @@
 import Foundation
+import OCCTSwiftViewport
 import XCTest
 import simd
 
@@ -107,5 +108,86 @@ final class PruefungTests: XCTestCase {
         XCTAssertEqual(c.model.pruefung?.laeuft, false)
         XCTAssertTrue(c.scene.inventoryWarnings.isEmpty)
         XCTAssertTrue(c.scene.ghostBodies.isEmpty)
+    }
+
+    func testMontageSchritteUndSchrittansicht() throws {
+        let c = AppController(model: AppModel())
+        let events = try FrameReader().feed(Fixtures.data("stream.bin")).map(KernelConnection.decode)
+        c.handle(Array(events.prefix(7)))
+        let header: JSONValue = [
+            "type": "CHECK", "run": 1, "state": "done", "zusammenfassung": "", "befunde": [], "geometrie": [],
+            "montage": [
+                "vollstaendig": true, "offen": [],
+                "schritte": [
+                    ["nr": 1, "name": "Grundplatte", "teile": ["Grundplatte"], "richtung": .null,
+                     "richtung_text": "Grundteil"],
+                    ["nr": 2, "name": "Halter/Bolzen", "teile": ["Halter/Bolzen"], "richtung": [0, 0, -1],
+                     "richtung_text": "von oben", "werkzeug": "Innensechskant 6"],
+                ],
+            ],
+        ]
+        c.handle([.message(try KernelMessage.decode(Frame(header: JSONEncoder().encode(header))))])
+        let schritte = try XCTUnwrap(c.model.pruefung?.montageSchritte)
+        XCTAssertEqual(schritte.map(\.name), ["Grundplatte", "Halter/Bolzen"])
+        XCTAssertEqual(schritte[1].richtung, SIMD3<Float>(0, 0, -1))
+        XCTAssertEqual(schritte[1].werkzeug, "Innensechskant 6")
+        XCTAssertEqual(c.model.pruefung?.bandText, "")  // keine Befunde: kein Band
+        c.zeigeMontageSchritt(1)
+        XCTAssertTrue(c.scene.isVisible("Grundplatte"))
+        XCTAssertFalse(c.scene.isVisible("Halter/Bolzen"))
+        c.zeigeMontageSchritt(2)
+        XCTAssertTrue(c.scene.isVisible("Halter/Bolzen"))
+        XCTAssertEqual(c.model.selection.map(\.ref), ["Halter/Bolzen"])
+        c.zeigeMontageSchritt(nil)
+        XCTAssertTrue(c.scene.isVisible("Halter/Bolzen") && c.scene.isVisible("Grundplatte"))
+    }
+
+    func testAnsichtFelderUndKamera() throws {
+        let req: JSONValue = [
+            "type": "SCREENSHOT_REQ", "id": "k-9", "width": 320, "height": 200, "source": "offscreen", "view": "iso",
+            "hide_overlays": true,
+            "ansicht": ["richtung": [1, 1, -1], "punkt": [4, 0, 0], "radius": 30, "darstellung": "xray",
+                        "hervorheben": ["Halter/Bolzen"], "schnittkoerper": false],
+        ]
+        guard case .screenshotRequest(let s) = try KernelMessage.decode(Frame(header: JSONEncoder().encode(req)))
+        else { return XCTFail() }
+        let a = try XCTUnwrap(s.ansicht)
+        XCTAssertEqual(a["darstellung"]?.stringValue, "xray")
+        // ohne Feld bleibt es nil (ältere Kernel)
+        guard case .screenshotRequest(let alt) = try Fixtures.message("screenshot_req.frame") else { return XCTFail() }
+        XCTAssertNil(alt.ansicht)
+
+        // Blickrichtung → Drehung: die Kamera schaut entlang der Richtung, Z bleibt oben
+        for d in [SIMD3<Float>(1, 1, -1), SIMD3<Float>(0, 1, 0), SIMD3<Float>(-1, 0, 0), SIMD3<Float>(0, 0, -1)] {
+            let r = AppController.rotation(blick: d)
+            let vor = r.act(SIMD3<Float>(0, 0, -1))
+            XCTAssertEqual(simd_dot(vor, simd_normalize(d)), 1, accuracy: 1e-5, "\(d)")
+            if abs(simd_normalize(d).z) < 0.99 { XCTAssertGreaterThan(r.act(SIMD3<Float>(0, 1, 0)).z, 0) }
+        }
+        // gleiche Blickrichtung wie die Standardansichten
+        for name in ["front", "right", "top", "iso"] {
+            let sv = try XCTUnwrap(ViewportCoordinator.standardView(protocolName: name))
+            let vor = sv.rotation.act(SIMD3<Float>(0, 0, -1))
+            let r = AppController.rotation(blick: vor)
+            XCTAssertEqual(simd_dot(r.act(SIMD3<Float>(0, 0, -1)), vor), 1, accuracy: 1e-5, name)
+        }
+
+        // Körper: hervorheben rot, Röntgen durchscheinend, Schnittkörper weg
+        let c = AppController(model: AppModel())
+        let events = try FrameReader().feed(Fixtures.data("stream.bin")).map(KernelConnection.decode)
+        c.handle(Array(events.prefix(7)))
+        let geist = ViewportBody(
+            id: AppController.schnittkoerperPrefix + "0", vertexData: [], indices: [], edges: [],
+            color: AppController.schnittkoerperFarbe, isPickable: false)
+        let koerper = AppController.ansichtKoerper(a, from: c.scene.snapshotBodies() + [geist])
+        XCTAssertFalse(koerper.contains { $0.id == geist.id })
+        let bolzen = try XCTUnwrap(koerper.first { AppController.teilName(ofBody: $0.id) == "Halter/Bolzen" })
+        let platte = try XCTUnwrap(koerper.first { AppController.teilName(ofBody: $0.id) == "Grundplatte" })
+        XCTAssertGreaterThan(bolzen.color.x, bolzen.color.y + 0.3)  // rötlich
+        XCTAssertLessThanOrEqual(platte.color.w, 0.3)
+        XCTAssertGreaterThan(bolzen.color.w, platte.color.w + 0.2)  // hervorgehoben bleibt im Röntgenbild besser sichtbar
+        let kamera = AppController.ansichtKamera(a, scene: c.scene, aspect: 1.6)
+        XCTAssertEqual(simd_dot(kamera.rotation.act(SIMD3<Float>(0, 0, -1)), simd_normalize(SIMD3<Float>(1, 1, -1))),
+                       1, accuracy: 1e-5)
     }
 }

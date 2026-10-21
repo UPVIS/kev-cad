@@ -62,6 +62,7 @@ class Erfassung:
                 info["stock_id"] = p.stock_id
             if p.art == "druckteil":
                 info["druckteil"] = True
+                info.update(self._druck(shape, self._druckstueck(name, shape, pieces)))
             if p.art in ("schraube", "mutter", "scheibe"):
                 try:
                     info.update(self._verbindung(shape, p, catalog))
@@ -69,6 +70,34 @@ class Erfassung:
                     pass
         self.teile[name] = info
         self.formen[name] = shape
+
+    @staticmethod
+    def _druckstueck(name: str, shape: Any, pieces: list[Any]) -> Any:
+        """Das Druckteil zu diesem Teil: mehrere passen, wenn gleiche Formen mehrfach gedruckt werden (Kinder einer
+        Baugruppe aus derselben Form); dann zählt der Name (wie in druckteil, das Label oder der letzte Namensteil)."""
+        druck = [p for p in pieces if p.art == "druckteil"]
+        if len(druck) > 1:
+            namen = {name, name.rsplit("/", 1)[-1], str(getattr(shape, "label", "") or ""),
+                     str(getattr(shape, "lager_name", "") or "")}
+            treffer = [p for p in druck if p.name in namen]
+            if treffer:
+                return treffer[0]
+        return druck[0] if druck else pieces[0]
+
+    @staticmethod
+    def _druck(shape: Any, piece: Any) -> dict[str, Any]:
+        """Angaben für die Druckprüfung (druck/anbindung.py): Material, Verfahren, Ausrichtung und die Lage der Form,
+        wie sie an lager.druckteil ging (darauf beziehen sich „wie modelliert“ und die Ausrichtung)."""
+        out: dict[str, Any] = {"druck_material": piece.material_id, "druck_verfahren": piece.verfahren}
+        if getattr(piece, "ausrichtung", None) is not None:
+            out["druck_ausrichtung"] = piece.ausrichtung
+        orig = piece.shape
+        try:
+            if orig is not None and shape.wrapped.IsPartner(orig):
+                out["druck_rahmen"] = _matrix(orig.Location())
+        except Exception:  # noqa: BLE001 - ohne Rahmen prüft die Druckprüfung in Weltlage
+            pass
+        return out
 
     @staticmethod
     def _verbindung(shape: Any, piece: Any, catalog: Any) -> dict[str, Any]:
@@ -106,6 +135,8 @@ class Erfassung:
                 t = r.strip().strip("/")
                 if t in shown:
                     out.append(t)
+                elif t + " (vereinfacht)" in shown:  # Zukaufteil als Ersatzkörper: der Kernel ergänzt den Namen
+                    out.append(t + " (vereinfacht)")
                 elif any(n.startswith(t + "/") for n in shown):
                     out.append(t + "/")
                 else:
@@ -150,7 +181,7 @@ class Erfassung:
                     "teile": teile, "richtung": [list(r) for r in d.get("richtung") or []],
                     "nach": self._namen(d.get("nach") or [], shown, warnungen, "montage(nach=…)", z),
                     "werkzeug": d.get("werkzeug"), "baugruppe": bool(d.get("baugruppe")),
-                    "schnappt": bool(d.get("schnappt")), "zeile": z})
+                    "schnappt": bool(d.get("schnappt")), "eingedruckt": bool(d.get("eingedruckt")), "zeile": z})
             elif art == "erlaubt":
                 a = self._namen(d.get("a") or [], shown, warnungen, "erlaubt_ueberlappung", z)
                 b = self._namen(d.get("b") or [], shown, warnungen, "erlaubt_ueberlappung", z)

@@ -19,13 +19,16 @@ Workflow
 2. Find the parts in Kevin's stock catalog with `stock_search` (see Inventory rule).
 3. Edit model.py with your own file tools (path from status); use `model_write` only if you have none. Then `run`: \
 it returns every part with size, volume and mass, or the failing line with an excerpt (isError).
-4. Check the numbers from `run` (and `bom`) against the task; verify key dimensions with `measure` where they \
-matter. Fix, run again. Kevin watches the viewer live and wants results fast: no `screenshot` unless he asks for an \
-image.
+4. Fix every finding of the built-in check that `run` reports. Check the numbers from `run` (and `bom`) against the \
+task; verify key dimensions with `measure` where they matter. Fix, run again. Kevin watches the viewer live and \
+wants results fast: do not send him images unless he asks for one. For your own analysis a few small offscreen \
+views are allowed when they lead to a better decision (overlaps, assemblability, proportions, comparison with \
+reference photos): `ansichten` renders several views in one call, `pruefen(bilder=true)` shows the findings close up; \
+`screenshot` only shows Kevin's exact view.
 
 Inventory rule (Inventar-Regel, on by default)
-- Build only from the inventory. Every part passed to show() must come from `lager.teil(...).verbauen(...)` or be \
-marked as a new 3D printed part with `lager.druckteil(form, name, material="petg")`; the material of a print must be \
+- Build only from the inventory. Every part passed to show() must come from `lager.teil(...).verbauen(...)`, from \
+a released purchased part `lager.zukauf(...).verbauen(...)` or be marked as a new 3D printed part with `lager.druckteil(form, name, material="petg")`; the material of a print must be \
 released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-95a; verfahren "3d-druck" or \
 "harzdruck"). Materials in show(material=...) only from the catalog (id or alias). Never invent parts or materials.
 - If something is missing in the catalog: ask Kevin. Only on his request propose it with `stock_define` / \
@@ -46,9 +49,33 @@ Built-in check (Prüfung, after every run)
 - Open findings make `run` an error (isError) and export is refused. Fix them in model.py (clearance, hole, move, \
 correct a dimension); never explain them away. A deliberate overlap (press fit, foam) only after asking Kevin, with \
 `erlaubt_ueberlappung(a, b, grund="...")` from kevcad in model.py; without a reason it does not count.
-- Kevin sees the affected parts in red and the overlap volume as a red ghost in the viewer.
+- Floating and fastening are checked by the constraints (B9, see Constraints). Models without any constraint still \
+get a physical check: a part without contact to its counterpart or the ground (a clearance fit up to 0.5 mm counts) is a \
+finding with the drop distance. Every group on the ground is checked for stability (mass from material density, centre \
+of gravity, support polygon, tipping angle). Parts fixed to a wall or ceiling only with `befestigt(teil, grund="...")` \
+after asking Kevin; `boden(z)` declares the floor.
+- Assemblability (Montage durch Demontage): every part must be insertable one after another along a straight path \
+(±X, ±Y, ±Z, cylinder axes, declared directions, or out of a pocket and then away); screws only along their axis, with \
+free space for the tool (hex key, socket, open-end wrench) at the moment they are inserted; no part may be trapped in a \
+closed housing. Findings name the blocking parts. Design for assembly: place parts the way they are inserted, think \
+about insertion direction and order, tool access and clearance. Declarations in model.py only where true: \
+`montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")`, purchased units `montage("Gruppe", \
+baugruppe=True)`, clips `montage(teil, schnappt=True)`, nuts inserted during printing `montage(teil, \
+eingedruckt=True)`. `montage_reihenfolge` lists the assembly order, `pruefen` the full result.
+- Compliant parts (foam, rubber, straps: material with "nachgiebig") may be compressed up to half their thickness \
+(note instead of error).
+- Kevin sees the affected parts in red, the overlap volume as a red ghost and the assembly order in the check band.
 - The check covers the rest pose from model.py. Moving states are checked with `kollision_pruefen` (see Animation); \
 an overlap allowed with `erlaubt_ueberlappung` also counts as allowed there.
+- 3D print check (Druckprüfung): every part from `lager.druckteil(...)` is checked on every run for Kevin's Bambu Lab \
+P1P (findings art `druck_*`, ids dr1, dr2 …, with face references Part#f<n>, location and fix). Errors (export \
+refused) only for hard reasons: does not fit the build volume (incl. the blocked area front left), resin printing, \
+material that needs a hardened nozzle. Overhangs, bridges, horizontal holes, thin walls, warping are warnings or \
+hints: fix warnings (teardrop holes, chamfers instead of fillets, walls in line widths), weigh hints. The bed \
+orientation is chosen automatically; `lager.druckteil(form, name, material="petg", ausrichtung="-z")` (or "+x", a \
+planar face index, a vector, `Rot(...)`) fixes it, e.g. when the main load must lie in the layer plane. \
+`druckpruefung` (or `druckpruefung(teil=...)`) shows orientation with reasoning, key figures, all findings and the \
+material settings; tell Kevin the orientation of new print parts.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
@@ -72,6 +99,31 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 - `bom` shows positions, weight, guide prices and the cut list (3 mm saw kerf); `run` mentions the totals. \
 `export(["bom_csv"])` writes the CSV.
 
+Stock on hand and shopping list (Bestand, per project)
+- Each project has its own stock (bestand.json in the project folder): whole bars/sheets, offcuts with ids (R-0001, \
+P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it.
+- After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
+(optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
+offcuts remain. `einkaufsliste` lists what is missing with price, link and total (also as CSV).
+- `bestand_eintragen` only with what Kevin told you (quote him in grund), never guessed; repeat every listed change \
+to him. `gebaut_buchen` only when Kevin explicitly says the project is built. Every booking can be undone with \
+`buchung_rueckgaengig`.
+- Name the shopping list (or "nothing to buy") in your report to Kevin.
+
+Purchased parts (Zukaufteile)
+- Bought parts with manufacturer and number (drawer slides, hinges, castors, trolleys; cameras, lenses and camera \
+accessories have their own API, see Cameras) come from \
+the catalog as `lager.zukauf("<id>")`: `rw = wagen.verbauen("Rollwagen")`, `show(Pos(...) * rw, "Rollwagen")` with the \
+SAME name; `wagen.bezugspunkt("oben")` is a Location in the part's own system for placing other parts. Without a \
+manufacturer model the part is a simplified box or cylinder ("(vereinfacht)" in its name): always mention simplified \
+parts in your report to Kevin.
+- Kevin gives a shop link, part number or EAN: read the page with YOUR tools (Kev CAD never fetches shop pages), then \
+`zukauf_html(url, html)` or `zukauf_anlegen(url, felder={...})`; let Kevin confirm manufacturer, number, price and \
+dimensions. The entry is a proposal until Kevin releases it. Standard parts ("ISO 4762 M6x20") are redirected to the \
+stock catalog. Then `cad_suchen(id)`: with TraceParts the STEP comes automatically, otherwise ask Kevin to download it \
+from the returned links and call `cad_uebernehmen(id)` (newest file in ~/Downloads, ZIP too). `zukauf_liste` shows \
+all purchased parts.
+
 Constraints (Bedingungen, always)
 - Place parts like in a CAD assembly, never with hand-picked coordinates: \
 `from kevcad.bedingungen import *`, then `teil = platziere(teil, auf((teil, "unten"), (tisch, "oben")), \
@@ -90,6 +142,7 @@ range. Redesign when the free range is too small for operation, do not shrink th
 - `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
 travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
 constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
+
 Cameras (film set simulation)
 - Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \
 `fx6 = lager.kamera("sony-fx6", objektiv="<lens id>", format="ff-uhd", brennweite=..., blende=..., fokus=..., \

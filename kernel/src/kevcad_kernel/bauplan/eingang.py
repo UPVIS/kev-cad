@@ -36,6 +36,8 @@ KONTAKT_TOL = 0.5  # mm: so nah gilt als Kontakt (Auflage, Spielpassung), wie di
 VM_WORTE = re.compile(r"(schraube|mutter|scheibe|gewindestift|stift|bolzen|niet|dübel|duebel|splint|"
                       r"sicherungsring|federring|gewindestange)", re.IGNORECASE)
 EINSATZ_WORTE = re.compile(r"(gewindeeinsatz|einschmelz|heat.?set)", re.IGNORECASE)
+LAGER_WORTE = re.compile(r"(kugellager|wälzlager|waelzlager|rillenkugel|nadellager|gleitlager|lagerbuchse|"
+                         r"\blager\b)", re.IGNORECASE)
 NENN = re.compile(r"[Mm](\d+(?:[.,]\d+)?)")
 
 
@@ -253,6 +255,14 @@ def _rolle(name: str, kopf: dict[str, Any], katalog: Any,
     kurz = name.rsplit("/", 1)[-1]
     if kopf.get("druckteil"):
         return "druck", "druckteil", None, False
+    zk = kopf.get("zukauf")
+    if zk:  # Zukaufteil (Phase 3): gekauft und fertig; Normteile darunter (Flügelschraube DIN 316) sind Verbindungsmittel
+        text = " ".join(str(zk.get(k) or "") for k in ("id", "mpn", "hersteller")) + " " + kurz
+        if EINSATZ_WORTE.search(text):
+            return "einsatz", "zukaufteil", None, False
+        if VM_WORTE.search(kurz) or VM_WORTE.search(str(zk.get("mpn") or "")):
+            return "vm", "zukaufteil", None, False
+        return "kauf", "zukaufteil", None, False
     stock = kopf.get("stock")
     if stock:
         item = katalog.item(stock.get("id")) if katalog is not None and stock.get("id") else None
@@ -294,9 +304,14 @@ def _vm_angaben(t: BTeil) -> dict[str, Any]:
         out["d"] = float(m.group(1).replace(",", "."))
     if t.stock and t.stock.get("laenge"):
         out["laenge"] = float(t.stock["laenge"])
+    else:
+        ml = re.search(r"[Mm]\d+(?:[.,]\d+)?\s*[x×]\s*(\d+(?:[.,]\d+)?)", t.kurz)
+        if ml:
+            out["laenge"] = float(ml.group(1).replace(",", "."))
     if not out.get("typ"):
         k = t.kurz.lower()
-        out["typ"] = ("WingNut" if "flügel" in k or "fluegel" in k else
+        out["typ"] = ("WingScrew" if ("flügel" in k or "fluegel" in k) and "schraube" in k else
+                      "WingNut" if "flügel" in k or "fluegel" in k else
                       "SetScrew" if "stift" in k or "gewindestange" in k else
                       "CounterSunkScrew" if "senk" in k else
                       "PlainWasher" if "scheibe" in k else
@@ -476,7 +491,26 @@ def _oberste(name: str) -> str:
 def _einheiten(ein: Eingang) -> None:
     """Vorhandene oder gekaufte Einheiten: zusammenhängende Eigenteile (und Kameras) derselben obersten Gruppe; am
     Namen erkannte Verbindungsmittel ohne Lagerteil, die nur Teile der Einheit berühren, gehören dazu."""
-    kandidaten = [t for t in ein.teile.values() if t.rolle in ("eigen", "kauf")]
+    kandidaten = [t for t in ein.teile.values() if t.rolle in ("eigen", "kauf") and not t.kopf.get("zukauf")]
+    nach_id: dict[tuple, list[str]] = {}
+    for t in ein.teile.values():
+        if t.rolle == "kauf" and t.kopf.get("zukauf"):
+            nach_id.setdefault((str(t.kopf["zukauf"].get("id")), _oberste(t.name)), []).append(t.name)
+    for (_, _), namen_z in nach_id.items():  # mehrere Körper eines Zukaufteils, die zusammenhängen
+        rest = set(namen_z)
+        while rest:
+            g, stapel = set(), [rest.pop()]
+            while stapel:
+                x = stapel.pop()
+                g.add(x)
+                for m in ein.kontakte(x) & rest:
+                    rest.discard(m)
+                    stapel.append(m)
+            if len(g) > 1:
+                name = _gemeinsam(sorted(g))
+                for n in g:
+                    ein.teile[n].rolle = "zukauf"
+                    ein.teile[n].einheit = name
     namen = {t.name for t in kandidaten}
     kanten: dict[str, set[str]] = {n: set() for n in namen}
     for v in ein.verbindungen:
@@ -551,6 +585,18 @@ def _wirte(ein: Eingang) -> None:
     for t in ein.teile.values():
         if t.rolle == "einsatz":
             t.wirt = wirt_fuer(t.name, ("druck", "stange", "platte", "kauf", "zukauf", "eigen"))
+    # Wälzlager und Lagerbuchsen werden in ihr Teil eingepresst (Formschluss oder Kontakt, liegt in dessen Hülle)
+    for t in ein.teile.values():
+        if t.rolle != "kauf" or not LAGER_WORTE.search(t.kurz):
+            continue
+        w = wirt_fuer(t.name, ("druck", "stange", "platte", "eigen"))
+        if w is None:
+            continue
+        u = ein.teile[w]
+        if np.all(t.bmin >= u.bmin - 1.0) and np.all(t.bmax <= u.bmax + 1.0):
+            t.rolle = "einsatz"
+            t.wirt = w
+            t.vm = {"typ": "Bearing"}
     # Gewindestift oder Schraube, mit „kleben“ an einen Einsatz (oder ein Teil) verbunden: eingeklebt
     for v in ein.verbindungen:
         if v.quelle != "verbinde" or v.art != "kleben" or v.b is None:

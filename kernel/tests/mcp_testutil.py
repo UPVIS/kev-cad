@@ -24,6 +24,9 @@ EXPECTED_TOOLS = {
     "status", "project_open", "project_new", "run", "model_read", "model_write", "execute", "parts", "view", "focus",
     "visibility", "highlight", "section", "screenshot", "selection", "measure", "annotate", "clear_annotations",
     "export", "stock_search", "stock_get", "stock_define", "material_list", "material_define", "catalog_delete", "bom",
+    "bestand_liste", "bestand_eintragen", "einkaufsliste", "gebaut_buchen", "buchung_rueckgaengig",
+    "zukauf_anlegen", "zukauf_html", "cad_suchen", "cad_uebernehmen", "zukauf_liste",
+    "pruefen", "montage_reihenfolge", "ansichten",
     "bedingungen",
     # Phase 5: Animation
     "animation_liste", "animation_abspielen", "animation_springen", "animation_video", "kollision_pruefen",
@@ -33,6 +36,8 @@ EXPECTED_TOOLS |= {"kamera_liste", "kamera_info", "kamera_ansicht", "kamera_bild
                    "kamera_vorschlag_aus_ansicht"}
 # Phase 6: Bauplan
 EXPECTED_TOOLS |= {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"}
+# 3D-Druck
+EXPECTED_TOOLS |= {"druckpruefung"}
 
 
 def free_port() -> int:

@@ -26,7 +26,7 @@ from kevcad_kernel.optik import OPTIK_ARTEN
 
 SAEGESCHNITT_MM = 3.0
 DEFAULT_STANGENLAENGE_MM = 6000.0
-ART_ORDER = {"stange": 0, "platte": 1, "klein": 2, "druck": 3, "eigen": 4}
+ART_ORDER = {"stange": 0, "platte": 1, "klein": 2, "zukauf": 3, "druck": 4, "eigen": 5}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -125,10 +125,12 @@ class Piece:
     verfahren: str | None = None  # Druckteile: "3d-druck" | "harzdruck"
     volume: float | None = None  # Druckteile: mm³
     size: list[float] | None = None  # Druckteile: Hüllmaß
+    zukauf: dict[str, Any] | None = None  # Zukaufteile: Hersteller, Nummer, CAD-Art usw. (kevcad.zukaufteil)
     token: str | None = None  # Phase 5: Kennung der Form (Attribut lager_token, übersteht Kopien beim Verschieben)
     teile: list[str] = field(default_factory=list)
     shape: Any = field(default=None, repr=False, compare=False)
     solids: list[Any] = field(default_factory=list, repr=False, compare=False)
+    ausrichtung: Any = field(default=None, repr=False, compare=False)  # Druckteile: Lage aufs Bett, None = automatisch
 
     @property
     def group(self) -> str:
@@ -138,6 +140,8 @@ class Piece:
             return "platte"
         if self.art == "druckteil":
             return "druck"
+        if self.art == "zukaufteil":
+            return "zukauf"
         return "klein"
 
     @property
@@ -145,6 +149,8 @@ class Piece:
         return self.stock_id or f"druck:{self.material_id}:{self.verfahren}"
 
     def masse_text(self) -> str:
+        if self.art == "zukaufteil":
+            return str((self.zukauf or {}).get("masse_text") or "")
         if self.art == "druckteil":
             return " × ".join(de_num(v) for v in (self.size or [0, 0, 0])) + " mm"
         if self.art in STANGENWARE:
@@ -178,6 +184,19 @@ class Piece:
         """Feld ``druckteil`` an PART_UPSERT (zusätzlich zum Protokoll)."""
         return {"verfahren": self.verfahren, "material": self.material_id, "kg": _r(self.kg, 4),
                 "preis": _r(self.preis, 2)}
+
+    def zukauf_info(self) -> dict[str, Any]:
+        """Feld ``zukauf`` an PART_UPSERT (PROTOCOL.md, Phase 3)."""
+        z = self.zukauf or {}
+        return {"id": self.stock_id, "hersteller": z.get("hersteller"), "mpn": z.get("mpn"), "cad": z.get("cad"),
+                "preis": _r(self.preis, 2), "url": z.get("url")}
+
+    def zukauf_line(self) -> dict[str, Any]:
+        """Zusätzliche Felder der Stücklistenzeile bei Zukaufteilen (PROTOCOL.md, Phase 3)."""
+        z = self.zukauf or {}
+        return {"hersteller": z.get("hersteller"), "mpn": z.get("mpn"), "gtin": z.get("gtin"), "url": z.get("url"),
+                "bild": z.get("bild"), "preis_stand": self.preis_stand, "preis_brutto": z.get("preis_brutto"),
+                "cad_quelle": z.get("cad_quelle"), "vereinfacht": z.get("cad") == "vereinfacht"}
 
     def stock_info(self) -> dict[str, Any]:
         """Feld ``stock`` an PART_UPSERT."""
@@ -286,6 +305,14 @@ class LagerRegister:
             found = partner or found
         if not found:
             found = [p for p in self.pieces if self._is_partner(p, shape)]
+            if len({p.seq for p in found}) > 1:
+                # Gleiche OCCT-Form in mehreren Stücken (Zukauf-CAD aus dem Zwischenspeicher, Normteile als flache
+                # Kopien): das Kind einer gezeigten Baugruppe gehört zum Stück, dessen Name davor steht
+                # („Wagen B/Rolle_1“ → Stück „Wagen B“)
+                prefixed = [p for p in found if p.name and name.startswith(p.name + "/")]
+                if prefixed:
+                    longest = max(len(p.name) for p in prefixed)
+                    found = [p for p in prefixed if len(p.name) == longest]
         if not found:
             label = str(getattr(shape, "label", "") or "").strip()
             if label:
@@ -367,7 +394,8 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
                 linked.add(seq)
     for p in pieces:
         if p.seq not in linked:
-            what = f"Druckteil „{p.name}“" if p.art == "druckteil" else f"Lagerteil „{p.name}“ ({p.benennung})"
+            what = (f"Druckteil „{p.name}“" if p.art == "druckteil" else
+                    f"{'Zukaufteil' if p.art == 'zukaufteil' else 'Lagerteil'} „{p.name}“ ({p.benennung})")
             warnings.append(f"{what} ist keinem gezeigten Teil zugeordnet: in show() denselben Namen wie in "
                             f"{'druckteil' if p.art == 'druckteil' else 'verbauen'}() verwenden")
 
@@ -382,6 +410,7 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
                                                    else -((kv[1][0].flaeche_m2 or 0.0))))
     lines: list[dict[str, Any]] = []
     stands: set[str] = set()
+    brutto: list[str] = []
     missing_price: list[str] = []
     for _key, grp in order:
         p = grp[0]
@@ -409,13 +438,20 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
         }
         if p.art == "platte":
             line["flaeche_m2"] = _r(p.flaeche_m2, 4)
+            # Zuschnittmaß (bei form= das Hüllrechteck) für den Plattenzuschnitt mit Bestand (BESTAND.md)
+            line["breite"] = _r(round_half(p.breite), 1) if p.breite is not None else None
+            line["tiefe"] = _r(round_half(p.tiefe), 1) if p.tiefe is not None else None
         if p.art == "druckteil":
             line["verfahren"] = p.verfahren
+        if p.art == "zukaufteil":
+            line.update(p.zukauf_line())
+            if preis_je is not None and line.get("preis_brutto") is True:
+                brutto.append(p.benennung)
         lines.append(line)
         if preis_je is None:
             missing_price.append(p.benennung)
         elif p.preis_stand:
-            stands.add(str(p.preis_stand))
+            stands.add(str(p.preis_stand)[:7])
 
     # Eigenteile: gezeigt, mit Material, ohne Lagerteil
     without_material: list[str] = []
@@ -500,7 +536,8 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
         "preis": round(sum(priced), 2) if priced else None,
         "positionen": len(lines),
         "teile": sum(line["anzahl"] for line in lines),
-        "preis_hinweis": _price_note(stands) if priced else None,
+        "preis_hinweis": (_price_note(stands) + ("; Zukaufteile zum Shoppreis brutto" if brutto else "")) if priced
+        else None,
     }
     return {"lines": lines, "cuts": cuts, "totals": totals, "warnings": warnings}
 
@@ -554,6 +591,8 @@ def art_label(line: dict[str, Any]) -> str:
         return "Eigenteil"
     if line.get("art") == "druckteil":
         return "Druckteil" + (" (Harz)" if line.get("verfahren") == "harzdruck" else "")
+    if line.get("art") == "zukaufteil":
+        return "Zukaufteil" + (" (vereinfacht)" if line.get("vereinfacht") else "")
     return ART_NAMEN.get(str(line.get("art")), str(line.get("art")))
 
 
@@ -571,14 +610,21 @@ def to_csv(bom: dict[str, Any], title: str = "") -> str:
     head = ["Stückliste"] + ([title] if title else []) + ([f"Lauf {bom['run']}"] if bom.get("run") else [])
     w.writerow(head)
     w.writerow(["Pos", "Art", "Benennung", "Norm", "Material", "Maße", "Länge (mm)", "Gehrung (°)", "Anzahl",
-                "kg je Stück", "kg", "€ je Stück", "€", "Lagerteil", "Teile"])
+                "kg je Stück", "kg", "€ je Stück", "€", "Lagerteil", "Teile", "Hersteller", "Herstellernummer",
+                "EAN", "Link", "Preisstand", "CAD"])
     for line in bom.get("lines") or []:
         g = line.get("gehrung") or [0, 0]
         w.writerow([line.get("pos"), art_label(line), line.get("benennung"), line.get("norm") or "",
                     line.get("material") or "", line.get("masse_text") or "", num(line.get("laenge"), 1),
                     f"{num(g[0], 1)} / {num(g[1], 1)}" if any(g) else "", line.get("anzahl"),
                     num(line.get("kg_je")), num(line.get("kg")), money(line.get("preis_je")), money(line.get("preis")),
-                    line.get("stock_id") or "", ", ".join(line.get("teile") or [])])
+                    line.get("stock_id") or "", ", ".join(line.get("teile") or [])]
+                   + ([line.get("hersteller") or "", line.get("mpn") or "", line.get("gtin") or "",
+                       line.get("url") or "", (line.get("preis_stand") or "") + (
+                           " brutto" if line.get("preis_brutto") is True else (
+                               " netto" if line.get("preis_brutto") is False else "")),
+                       "vereinfacht" if line.get("vereinfacht") else (line.get("cad_quelle") or "")]
+                      if line.get("art") == "zukaufteil" else []))
     w.writerow([])
     w.writerow(["Zuschnitt"])
     w.writerow(["Lagerteil", "Benennung", "Stange", "Stangenlänge (mm)", "Stücke (mm)", "Summe (mm)", "Rest (mm)",

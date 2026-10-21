@@ -7,7 +7,7 @@ wird mit show() unter demselben Namen wie in verbauen() gezeigt, "/" im Namen bi
 """
 
 from build123d import *
-from kevcad import lager, param, show, step
+from kevcad import befestigt, lager, param, show, step
 
 hoehe = param("hoehe", 120)  # Länge der Grundplatte
 abstand = param("abstand", 70)  # Wand bis Rohrmitte
@@ -45,3 +45,6 @@ show(schelle, "Halter/Schelle")
 step("Rohr")
 stueck = rohr.verbauen(laenge=300, name="Rohr")
 show(Pos(0, abstand, -150) * stueck, "Rohr")
+
+# Der Halter hängt an der Wand: für die Prüfung (Schweben, Standsicherheit) gilt er als befestigt
+befestigt("Halter/Grundplatte", grund="an der Wand verschraubt")

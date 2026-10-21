@@ -110,17 +110,23 @@ class Bilder:
             hi = np.max([self.ein.teile[t].bmax for t in teile], axis=0)
             eigen = float(abs(np.dot(hi - lo, r)))
             L = float(np.clip(max(float(el.get("weg") or 0.0), 0.8 * eigen, 20.0), 20.0, 300.0))
-            mitte = (lo + hi) / 2
-            quer = max(1.0, 0.25 * float(np.min(hi - lo)))
+            # Hüllrechteck quer zur Richtung: überdecken sich zwei Teile darin, stehen sie hintereinander
+            from kevcad_kernel.pruefung.koerper import basis as _basis
+
+            B = _basis(r)[:2]
+            ecken = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]) @ B.T
+            q_lo, q_hi = ecken.min(axis=0), ecken.max(axis=0)
+            ist_vm = el.get("art") == "vm"
             for st in stapel:
-                d, p0, L0, e0 = st
-                off = mitte - p0
-                if float(np.dot(d, r)) > 0.99 and float(np.linalg.norm(off - d * float(np.dot(off, d)))) < quer:
+                d, (s_lo, s_hi), L0, e0, vm0 = st
+                if vm0 == ist_vm and float(np.dot(d, r)) > 0.99 and np.all(q_lo < s_hi - 0.5) \
+                        and np.all(s_lo < q_hi - 0.5):
                     L = max(L, L0 + e0 + 8.0)
+                    st[1] = (np.minimum(s_lo, q_lo), np.maximum(s_hi, q_hi))
                     st[2], st[3] = L, eigen
                     break
             else:
-                stapel.append([r, mitte, L, eigen])
+                stapel.append([r, (q_lo, q_hi), L, eigen, ist_vm])
             for t in teile:
                 out[t] = _r(-r * L, 2)
         self.eigen = {t: list(v) for t, v in out.items()}  # eigener Weg je Teil (für die Pfeile)

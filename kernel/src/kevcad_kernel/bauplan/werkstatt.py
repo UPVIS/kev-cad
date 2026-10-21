@@ -52,7 +52,7 @@ def werkzeug_vm(vm: dict[str, Any], name: str = "") -> list[str]:
     d = nenn(vm)
     norm = _norm_key(vm.get("norm"))
     low = name.lower()
-    if typ == "WingNut" or "flügel" in low or "fluegel" in low or "rändel" in low:
+    if typ in ("WingNut", "WingScrew") or "flügel" in low or "fluegel" in low or "rändel" in low:
         return ["von Hand"]
     if typ == "HeatSetNut" or "einsatz" in low:
         return []

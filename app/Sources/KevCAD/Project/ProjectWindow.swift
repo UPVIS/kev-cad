@@ -27,6 +27,7 @@ struct ProjectWindow: View {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
             SelfTest.runIfRequested(session)
             CatalogSelfTest.runIfRequested(session)
+            ZukaufSelfTest.runIfRequested(session)
             if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
@@ -52,7 +53,7 @@ struct ProjectWindow: View {
                     AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
                     if state.showBOM {
                         PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
-                        BOMPanel(model: model, state: state)
+                        ProjectBottomPanel(model: model, state: state)
                             .frame(height: min(state.bomHeight, max(160, geo.size.height - 260)))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }

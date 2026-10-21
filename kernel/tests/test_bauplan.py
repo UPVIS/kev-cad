@@ -322,7 +322,7 @@ def test_feste_schritte_und_texte_bleiben(env):
 
 
 def test_protokoll_rundlauf(env):
-    rt, app = env["rt"], env["app"]
+    app = env["app"]
     oeffne(env, "Protokoll", STAPEL)
     start = app.mark()
     app.send({"type": "BAUPLAN_REQ", "id": "bp-1"})

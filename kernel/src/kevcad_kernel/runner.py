@@ -239,13 +239,15 @@ def _labeled_children(obj: Any) -> list[Any] | None:
     if isinstance(obj, (list, tuple)):
         kids = [_as_shape(o) for o in obj]
     elif isinstance(obj, Compound):
-        kids = list(obj.children)
-        # Kinder liegen relativ zum Compound: wurde er verschoben (Pos(...) * Baugruppe), die Lage mitnehmen
-        try:
-            if not obj.location.wrapped.IsIdentity():
-                kids = [k.moved(obj.location) if isinstance(k, Shape) else k for k in kids]
-        except Exception:  # noqa: BLE001
-            pass
+        from kevcad_kernel.baum import kinder
+
+        # Pos(...) * baugruppe verschiebt nur die Gesamtform, ``children`` bleiben Kopien an der alten Stelle. Die
+        # Kinder kommen deshalb aus der Topologie der Gesamtform (baum.kinder): an ihrer echten Lage (Location der
+        # Unterform = Lage der Gesamtform · eigene Lage, für Kameras mit an(..., lokal=True)), egal ob verschoben,
+        # gedreht oder mit ``located`` gesetzt, mit Name, Farbe, Material und den Kennungen der Vorlage
+        # (lager_token der Kamera-Körper, zukauf_id …, siehe baum.KENNUNGEN). Eine Lösung für Zukauf-Baugruppen und
+        # Kamera-Körper und Rig-Teile (Phase 5); nicht zusätzlich ``k.moved(obj.location)``, das verschiebt doppelt.
+        kids = kinder(obj)
     else:
         return None
     if kids and all(isinstance(k, Shape) for k in kids) and any(getattr(k, "label", "") for k in kids):
@@ -583,6 +585,12 @@ class Runner:
             return
         # Lagerteile zu diesem Teil (Name wie in verbauen, sonst Form, sonst label)
         pieces = register.link(name, shape) if register is not None and not sketch else []
+        single = pieces[0] if len({p.seq for p in pieces}) == 1 else None
+        if single is not None and single.art == "zukaufteil" and (single.zukauf or {}).get("cad") == "vereinfacht" \
+                and "(vereinfacht)" not in name:
+            name += " (vereinfacht)"  # Ersatzkörper: im Teilebaum erkennbar (KATALOG.md, Zukaufteil)
+        if getattr(shape, "kevcad_grob", False):  # großes Hersteller-CAD: grob tessellieren
+            deviation, angular = deviation * 3.0, angular * 2.0
         piece_mat = None
         if pieces and catalog is not None and pieces[0].material_id:
             entry = catalog.material(pieces[0].material_id)
@@ -629,8 +637,10 @@ class Runner:
         header, payload = pack_part(run=run, name=name, geometry=tess.geometry, color=color, bbox=tess.bbox,
                                     props=props, material=mat.display if mat is not None else None)
         header.pop("seq", None)
-        if len({p.seq for p in pieces}) == 1:
-            if pieces[0].stock_id:
+        if single is not None:
+            if single.art == "zukaufteil":
+                header["zukauf"] = single.zukauf_info()
+            elif pieces[0].stock_id:
                 header["stock"] = pieces[0].stock_info()
             elif pieces[0].art == "druckteil":
                 header["druckteil"] = pieces[0].druck_info()

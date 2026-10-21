@@ -111,10 +111,22 @@ class Simulation:
             raum = zylinder(p0 + k * 0.3, k, r, laenge)
             wo = p0
         else:
-            r_innen = float(rr.max()) + 0.5
-            hoehe = float(tt.max() - tt.min())
-            p0 = mitte + a * (float(tt.min()) + 0.3)  # nur auf Höhe der Mutter (nicht in die Scheibe darunter)
-            raum = ring(p0, a, r_innen, max(r, r_innen + 6.0), max(hoehe - 0.6, 1.0))
+            k = _vec(vm.get("kopf"))
+            if k is not None:  # Schraube (Flügelschraube, Sechskantschraube): nur um den Kopf, nicht um den Schaft
+                d = float(vm.get("d") or 4.0)
+                tk = (pos - mitte) @ k
+                kopf = rr > 0.6 * d
+                t_hi = float(tk.max())
+                t_lo = float(tk[kopf].min()) if kopf.any() else t_hi - d
+                a = k
+                tt = tk
+                lo, hi = t_lo, t_hi
+                r_innen = float(rr[kopf].max() if kopf.any() else rr.max()) + 0.5
+            else:
+                lo, hi = float(tt.min()), float(tt.max())
+                r_innen = float(rr.max()) + 0.5
+            p0 = mitte + a * (lo + 0.3)  # nur auf Höhe von Mutter bzw. Kopf (nicht in die Scheibe darunter)
+            raum = ring(p0, a, r_innen, max(r, r_innen + 6.0), max(hi - lo - 0.6, 1.0))
             wo = mitte
         self.raum_volumen = schnittvolumen_selbst(raum)
         return raum_frei(raum, self.wp.koerper, montiert, ohne, min_volumen=2.0), art, wo
@@ -258,7 +270,8 @@ class Simulation:
             schwere = "fehler"
         werkzeug = ", ".join(ws.werkzeug_vm(t.vm, name)) or "Werkzeug"
         namen = [n for n, _ in stoerer]
-        spaeter = [n for n in namen if von_schritt.get(n, (0, ""))[1] == s["id"]]
+        eigene = self.ein.nachbarn(name, kontakt=True)  # das geklemmte Teil selbst lässt sich nicht später einbauen
+        spaeter = [n for n in namen if von_schritt.get(n, (0, ""))[1] == s["id"] or n in eigene]
         r, _, _ = ws.zugang_mass(t.vm, name)
         if not spaeter:
             loesung = ("Verbindungsmittel anbringen, bevor " + ", ".join(n.rsplit('/', 1)[-1] for n in namen[:2])
@@ -311,7 +324,9 @@ class Simulation:
             if t is None or t.rolle in ("vm", "einsatz") or t.wirt:
                 continue
             nb = self.ein.nachbarn(n, kontakt=True)
-            if not (nb & (alt | set(neue))):
+            kern = {m for m in neue if self.ein.teile.get(m) is not None
+                    and self.ein.teile[m].rolle not in ("vm", "einsatz") and not self.ein.teile[m].wirt}
+            if not (nb & (alt | kern)):
                 lose.append(n)
         if lose:
             befunde.append(_b("standsicherheit", lose[:3], "hinweis",

@@ -37,13 +37,15 @@ final class AppSession: ObservableObject {
     /// Das Fenster Lagerkatalog soll diesen Eintrag bzw. Abschnitt zeigen (wird dort verbraucht).
     @Published var catalogFocus: CatalogFocus?
     @Published var catalogSectionRequest: CatalogSection?
+    /// Phase 3: Auftrag für das Fenster „Zukaufteil hinzufügen …“ (wird dort verbraucht), siehe ZukaufSession.swift.
+    @Published var zukaufRequest: ZukaufDialogRequest?
 
     weak var projectWindow: NSWindow? {
         didSet { keyboard.projectWindow = projectWindow }
     }
     weak var welcomeWindow: NSWindow?
 
-    private var openWindowAction: OpenWindowAction?
+    private(set) var openWindowAction: OpenWindowAction?
     private var dismissWindowAction: DismissWindowAction?
     private var cancellables: Set<AnyCancellable> = []
 

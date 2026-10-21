@@ -34,6 +34,10 @@ ARTEN: tuple[str, ...] = (
     "kamera", "objektiv", "kamerazubehoer",
 )
 STANGENWARE = frozenset(ARTEN[:10])
+# Zukaufteile (Phase 3, kevcad_kernel.zukauf): eigene Felder statt Querschnitt und Material; Kameras, Objektive und
+# Kamera-Zubehör kommen als weitere Sonderformen dazu
+ZUKAUF_ARTEN: tuple[str, ...] = ("zukaufteil",)
+ALLE_ARTEN: tuple[str, ...] = ARTEN + ZUKAUF_ARTEN
 KLEINTEILE = frozenset({"schraube", "mutter", "scheibe"})
 EBENEN: tuple[str, ...] = ("mitgeliefert", "eigen", "projekt")
 WRITABLE = ("eigen", "projekt")
@@ -45,7 +49,7 @@ ART_NAMEN = {
     "rund": "Rundstahl", "vierkant": "Vierkantstahl", "winkel": "Winkel", "u_profil": "U-Profil",
     "nutprofil": "Nutprofil", "holz": "Holz", "platte": "Platte", "schraube": "Schraube", "mutter": "Mutter",
     "scheibe": "Scheibe", "kamera": "Kamera", "objektiv": "Objektiv",
-    "kamerazubehoer": "Kamerazubehör",
+    "kamerazubehoer": "Kamerazubehör", "zukaufteil": "Zukaufteil",
 }
 
 # Zusätzliche Suchwörter je Art (klein, ohne Umlaute)
@@ -241,6 +245,10 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
     ``deep``: Schrauben, Muttern und Scheiben gegen bd_warehouse prüfen (lädt build123d)."""
     if not isinstance(entry, dict):
         return ["Lagerteil muss ein JSON-Objekt sein"]
+    if entry.get("art") in ZUKAUF_ARTEN:
+        from kevcad_kernel.zukauf.eintrag import validate_zukauf
+
+        return validate_zukauf(entry, material_ids)
     errors = _check_id(entry, "Lagerteil")
     who = f"Lagerteil {entry.get('id')!r}" if isinstance(entry.get("id"), str) else "Lagerteil"
     art = entry.get("art")
@@ -302,6 +310,11 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
         tags = entry["tags"]
         if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
             errors.append(f"{who}: tags muss eine Liste von Texten sein")
+    bq = entry.get("bezugsquelle")  # BESTAND.md: Link in der Einkaufsliste
+    if bq is not None and not (isinstance(bq, dict) and isinstance(bq.get("url"), str)
+                               and re.match(r"^https?://\S+$", bq["url"].strip())
+                               and (bq.get("name") is None or isinstance(bq.get("name"), str))):
+        errors.append(f"{who}: bezugsquelle als {{\"url\": \"https://…\", \"name\": \"Händler\"}} angeben")
     errors += _check_status(entry, who)
     return errors
 
@@ -464,6 +477,7 @@ def _haystack(entry: dict[str, Any], material: dict[str, Any] | None) -> str:
     bits = [entry.get("id", ""), entry.get("name", ""), entry.get("norm") or "", entry.get("art", ""),
             ART_NAMEN.get(entry.get("art", ""), ""), ART_SYNONYME.get(entry.get("art", ""), ""),
             " ".join(entry.get("tags") or []), str(entry.get("material", ""))]
+    bits += [str(entry.get(k) or "") for k in ("hersteller", "mpn", "gtin", "shop_nr")]  # Zukaufteile
     if entry.get("art") in OPTIK_ARTEN:
         bits += [str(entry.get(k) or "") for k in ("hersteller", "modell", "kurzname", "bajonett", "typ")]
     masse = entry.get("masse") or {}
@@ -703,7 +717,8 @@ class Catalog:
         for eid, it in items.items():
             if it.get("art") in OPTIK_ARTEN and not it.get("material"):
                 continue
-            if it.get("material") not in mids:
+            optional = it.get("art") in ZUKAUF_ARTEN and it.get("material") is None  # Zukaufteile ohne Material
+            if it.get("material") not in mids and not optional:
                 warnings.append(f"Lagerteil {eid!r}: Material {it.get('material')!r} fehlt im Katalog")
         aliases: dict[str, str] = {}
         for mid, mat in materials.items():

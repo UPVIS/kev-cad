@@ -32,6 +32,19 @@ TOOL_NAMES: tuple[str, ...] = (
     "material_define",
     "catalog_delete",
     "bom",
+    "bestand_liste",
+    "bestand_eintragen",
+    "einkaufsliste",
+    "gebaut_buchen",
+    "buchung_rueckgaengig",
+    "zukauf_anlegen",
+    "zukauf_html",
+    "cad_suchen",
+    "cad_uebernehmen",
+    "zukauf_liste",
+    "pruefen",
+    "montage_reihenfolge",
+    "ansichten",
     "bedingungen",
     # Phase 5: Animation
     "animation_liste",
@@ -50,6 +63,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "bauplan",
     "bauplan_bearbeiten",
     "bauplan_pruefen",
+    # 3D-Druck
+    "druckpruefung",
 )
 
 __all__ = ["INSTRUCTIONS", "SERVER_NAME", "SERVER_TITLE", "TOOL_NAMES", "KevcadTools", "register_tools"]
