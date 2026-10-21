@@ -1,0 +1,32 @@
+# Abhaengigkeiten und Builds
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+*.log
+
+# Von XcodeGen erzeugt
+app/*.xcodeproj/
+
+# Testdaten, die sich jederzeit neu erzeugen lassen
+*.kcad
+spikes/ap0/results/*.png
+!spikes/ap0/results/kueche_viewer.png
+
+# Geheimnisse
+.env
+.env.*
+*.pem
+*.p12
+
+.claude/worktrees/
+.claude/settings.local.json
+app/Generated/
+app/Resources/AppIcon.icns

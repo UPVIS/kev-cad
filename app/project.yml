@@ -1,0 +1,57 @@
+# XcodeGen-Projekt für Kev CAD. Erzeugt app/KevCAD.xcodeproj (nicht im Git), gebaut wird mit ../build.sh.
+name: KevCAD
+options:
+  bundleIdPrefix: de.upvis
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  KevCADCore:
+    path: KevCADCore
+  OCCTSwiftViewport:
+    url: https://github.com/SecondMouseAU/OCCTSwiftViewport.git
+    revision: d9984ad46a9195f8eb91897e6cd4cf2a4e553bd0
+settings:
+  base:
+    KEVCAD_APP_NAME: Kev CAD
+    KEVCAD_BUNDLE_ID: de.upvis.kevcad
+    KEVCAD_REPO: ""
+    KEVCAD_PORT: "47823"
+targets:
+  KevCAD:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/KevCAD
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: KevCADCore
+      - package: OCCTSwiftViewport
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: $(PRODUCT_NAME)
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleIconFile: AppIcon
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        CFBundleDevelopmentRegion: de
+        LSApplicationCategoryType: public.app-category.graphics-design
+        LSMinimumSystemVersion: "15.0"
+        NSHighResolutionCapable: true
+        NSHumanReadableCopyright: "© 2026 Kevin Schwed"
+        KevCADRepo: $(KEVCAD_REPO)
+        KevCADPort: $(KEVCAD_PORT)
+    settings:
+      base:
+        PRODUCT_NAME: $(KEVCAD_APP_NAME)
+        PRODUCT_BUNDLE_IDENTIFIER: $(KEVCAD_BUNDLE_ID)
+        SWIFT_VERSION: "5.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+        GENERATE_INFOPLIST_FILE: NO

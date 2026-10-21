@@ -1,0 +1,30 @@
+[project]
+name = "kevcad-kernel"
+version = "0.1.0"
+description = "Kernel von Kev CAD: build123d-Modelle ausführen, tessellieren, messen und per MCP bedienen"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "build123d==0.13.0",
+    "ocp-tessellate==3.6.3",
+    "mcp>=2.3,<3",
+    "uvicorn>=0.30",
+    "numpy>=2",
+]
+
+[project.scripts]
+kevcad-kernel = "kevcad_kernel.cli:main"
+kevcad-mcp = "kevcad_kernel.bridge:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-timeout"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kevcad_kernel", "src/kevcad"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 180

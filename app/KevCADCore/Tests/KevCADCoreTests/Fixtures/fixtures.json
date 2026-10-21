@@ -1,0 +1,176 @@
+{
+ "protocol": 1,
+ "frames": [
+  {
+   "file": "hello.frame",
+   "type": "HELLO",
+   "payload_bytes": 0
+  },
+  {
+   "file": "project.frame",
+   "type": "PROJECT",
+   "payload_bytes": 0
+  },
+  {
+   "file": "run_start.frame",
+   "type": "RUN_START",
+   "payload_bytes": 0
+  },
+  {
+   "file": "step.frame",
+   "type": "STEP",
+   "payload_bytes": 0
+  },
+  {
+   "file": "part_box.frame",
+   "type": "PART_UPSERT",
+   "payload_bytes": 1204
+  },
+  {
+   "file": "part_cylinder.frame",
+   "type": "PART_UPSERT",
+   "payload_bytes": 11664
+  },
+  {
+   "file": "run_end.frame",
+   "type": "RUN_END",
+   "payload_bytes": 0
+  },
+  {
+   "file": "run_error.frame",
+   "type": "RUN_ERROR",
+   "payload_bytes": 0
+  },
+  {
+   "file": "agent.frame",
+   "type": "AGENT",
+   "payload_bytes": 0
+  },
+  {
+   "file": "view_cmd_focus.frame",
+   "type": "VIEW_CMD",
+   "payload_bytes": 0
+  },
+  {
+   "file": "screenshot_req.frame",
+   "type": "SCREENSHOT_REQ",
+   "payload_bytes": 0
+  },
+  {
+   "file": "measure_res.frame",
+   "type": "MEASURE_RES",
+   "payload_bytes": 0
+  },
+  {
+   "file": "part_remove.frame",
+   "type": "PART_REMOVE",
+   "payload_bytes": 0
+  }
+ ],
+ "parts": {
+  "part_box.frame": {
+   "name": "Grundplatte",
+   "counts": {
+    "vert": 24,
+    "tri": 12,
+    "face": 6,
+    "edge": 12,
+    "epts": 24,
+    "vtx": 8
+   },
+   "payload_bytes": 1204,
+   "first_position": [
+    -5.0,
+    -10.0,
+    -15.0
+   ],
+   "first_triangle": [
+    1,
+    2,
+    0
+   ],
+   "tri_face_last": 5,
+   "face_types": [
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane"
+   ],
+   "edge_types": [
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line"
+   ],
+   "bbox": {
+    "min": [
+     -5.0,
+     -10.0,
+     -15.0
+    ],
+    "max": [
+     5.0,
+     10.0,
+     15.0
+    ]
+   },
+   "volume": 6000.0
+  },
+  "part_cylinder.frame": {
+   "name": "Halter/Bolzen",
+   "counts": {
+    "vert": 254,
+    "tri": 248,
+    "face": 3,
+    "edge": 3,
+    "epts": 130,
+    "vtx": 2
+   },
+   "payload_bytes": 11664,
+   "first_position": [
+    35.0,
+    -0.0,
+    10.0
+   ],
+   "first_triangle": [
+    1,
+    0,
+    64
+   ],
+   "tri_face_last": 2,
+   "face_types": [
+    "cylinder",
+    "plane",
+    "plane"
+   ],
+   "edge_types": [
+    "circle",
+    "line",
+    "circle"
+   ],
+   "bbox": {
+    "min": [
+     25.0,
+     -5.0,
+     -10.0
+    ],
+    "max": [
+     35.0,
+     5.0,
+     10.0
+    ]
+   },
+   "volume": 1570.7963
+  }
+ }
+}
