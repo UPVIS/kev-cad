@@ -161,9 +161,18 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.teil(...).verbauen(...)` stamm
           "gehrung": [0, 45], "material": "stahl-s235", "kg": 2.98, "preis": 7.06}
 ```
 
+### PART_UPSERT.druckteil
+
+Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt `stock`; `verfahren` `3d-druck` | `harzdruck`):
+
+```json
+"druckteil": {"verfahren": "3d-druck", "material": "petg", "kg": 0.0412, "preis": 1.03}
+```
+
 ### Inventar-Regel
 
-- `PART_UPSERT.inventar`: `ok` | `fehlt` (fehlt nur, wenn die Regel im Projekt an ist).
+- `PART_UPSERT.inventar`: `ok` | `fehlt` (nur gesetzt, wenn die Regel im Projekt an ist und kein Skizzenlauf läuft).
+- `RUN_END.inventar_regel` (bool): ob die Regel in diesem Lauf galt.
 - `RUN_END.inventar_verstoesse`: Liste der Teilnamen, die weder verbaut noch Druckteil sind (leer = alles gut).
 - `SETTINGS.inventar_regel` (App → Kernel, bool): Kevins Projekteinstellung, der Kernel schreibt sie in `kevcad.json`.
 - Katalogeinträge in `CATALOG` tragen `status` (`frei` | `vorgeschlagen`); Freigabe = `CATALOG_SAVE` mit
@@ -198,6 +207,9 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.teil(...).verbauen(...)` stamm
 {"stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3", "stangenlaenge": 6000,
  "saegeschnitt": 3, "stangen": [[882, 882, 882, 882, 800, 800], [800, 800]], "verschnitt_prozent": 12.4}
 ```
+
+- `zu_lang` (optional): Stücklängen, die länger als die Stange sind (Sonderlänge oder stoßen, steht auch in `warnings`).
+- `preis_stangen` (optional): Preis der ganzen Stangen in Euro, wenn der Katalog `preis_je_m` kennt.
 
 `totals`: `{"kg": 41.3, "preis": 96.10, "positionen": 7, "teile": 23, "preis_hinweis": "Richtpreise, Stand 2026-10"}`.
 
