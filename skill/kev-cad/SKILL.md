@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt.
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“) und 3D-Druckteilen.
 ---
 
 # Kev CAD
@@ -11,51 +11,80 @@ dort, nie nur per `execute`.
 
 ## Arbeitsablauf
 
-1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl.
+1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl, Inventar-Regel.
 2. Kein Projekt: `project_new("Wandhalter")` oder `project_open("Wandhalter")`. Ein bloßer Name landet in
    `~/Documents/Kev CAD/<Name>`.
-3. model.py mit den eigenen Dateiwerkzeugen schreiben oder ändern (Pfad aus `status`). `model_write` nur, wenn es keine
+3. Teile im Lager suchen: `stock_search("vierkantrohr 40x40x3")`, Materialien mit `material_list` (siehe
+   Inventar-Regel).
+4. model.py mit den eigenen Dateiwerkzeugen schreiben oder ändern (Pfad aus `status`). `model_write` nur, wenn es keine
    Dateiwerkzeuge gibt.
-4. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse. Ein Fehler kommt als isError mit Zeile, Auszug und
-   Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-5. Prüfen: `screenshot` ansehen, Sollmaße mit `measure` nachmessen, Zahlen aus `run` mit der Aufgabe vergleichen.
-6. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, offene Annahmen. Bei Bedarf `focus`, `highlight`,
-   `annotate` nutzen, damit er es im Viewer sieht.
+5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
+   isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
+6. Prüfen: `screenshot` ansehen, Sollmaße mit `measure` nachmessen, Zahlen aus `run` mit der Aufgabe vergleichen,
+   `bom` für Stückliste und Zuschnitt.
+7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
+   `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
 Speichert Kevin model.py selbst und ist Auto-Lauf an, rechnet der Kernel von allein. `run` wartet dann auf diesen Lauf,
 statt doppelt zu rechnen.
+
+## Inventar-Regel
+
+Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
+
+- Jedes Teil in `show()` stammt aus `lager.teil(...).verbauen(...)` oder ist ausdrücklich ein 3D-Druckteil:
+  `lager.druckteil(form, "Halter/Schelle", material="petg")`. Druckmaterial muss freigegeben und druckbar sein
+  (`material_list` zeigt „druckbar“: PLA, PETG, ABS, ASA, TPU 95A, PA, PA-CF, PC-Filament, PLA-CF, Standardharz);
+  `verfahren="3d-druck"` (Standard) oder `"harzdruck"`.
+- Materialien nur aus dem Katalog (id oder Alias), auch bei `show(material=...)`. Unbekannte oder nur vorgeschlagene
+  Materialien brechen den Lauf mit Vorschlägen ab.
+- Nichts erfinden. Fehlt ein Teil oder Material: erst `stock_search` mit anderen Wörtern, dann Kevin fragen. Nur auf
+  seinen Wunsch mit `stock_define` bzw. `material_define` vorschlagen. Ein Vorschlag „wartet auf Kevins Freigabe im
+  Lagerkatalog“ und lässt sich vorher nicht verbauen; Kevin gibt ihn im Lagerkatalog-Fenster frei oder lehnt ab.
+  Freigegebene Einträge ändert nur Kevin.
+- Verstöße: `run` meldet „Inventar-Regel: 2 Teile sind nicht aus dem Inventar: …“ als isError. Die Geometrie ist zu
+  sehen, aber Export (STEP, STL, 3MF, Stückliste) wird verweigert. Passendes Lagerteil verbauen, als Druckteil
+  kennzeichnen oder Kevin bitten, das Lagerteil anzulegen.
+- Abschalten kann nur Kevin, je Projekt (kevcad.json `"inventar_regel": false`, etwa für Nachbauten aus Fotos). Diese
+  Einstellung nie selbst ändern. Ist die Regel aus, gelten auch Materialnamen aus build123d (`aluminum`, `oak`, …) und
+  frei modellierte Teile mit Material erscheinen als „Eigenteil“.
 
 ## Gerüst von model.py
 
 ```python
 from build123d import *
-from kevcad import param, show, step
+from kevcad import lager, param, show, step
 
-# Parameter in mm
-rohr_d = param("rohr_d", 42.4)   # Außendurchmesser des Rohrs
-dicke = param("dicke", 5)        # Blechdicke
-breite = param("breite", 40)
-laenge = param("laenge", 120)
-loch_d = param("loch_d", 6.6)    # Durchgangsbohrung M6, mittel
-spiel = 0.5
+hoehe = param("hoehe", 120)        # Länge der Grundplatte
+abstand = param("abstand", 70)     # Wand bis Rohrmitte
+loch = param("loch", 6.6)          # Durchgangsbohrung M6, mittel
+schelle_h = param("schelle_h", 30)
+wand = param("wand", 4)
+
+flach = lager.teil("flach", b=40, s=5, material="stahl-s235")   # vorher mit stock_search gefunden
+rohr = lager.teil("rohr-en10220-42.4x2.0")
+blech, rohr_d = flach.masse["s"], rohr.masse["d"]
 
 step("Grundplatte")
-platte = Box(laenge, breite, dicke, align=(Align.CENTER, Align.CENTER, Align.MIN))
-platte = fillet(platte.edges().filter_by(Axis.Z), radius=4)   # Ecken runden, bevor gebohrt wird
-show(platte, "Halter/Grundplatte", color="#B8BEC4", material="aluminum")
+platte = Pos(0, blech / 2, -hoehe / 2) * flach.verbauen(laenge=hoehe, name="Halter/Grundplatte")
+show(platte, "Halter/Grundplatte")
 
 step("Bohrungen")
-for x in (-laenge / 2 + 15, laenge / 2 - 15):
-    platte -= Pos(x, 0, -1) * Cylinder(loch_d / 2, dicke + 2, align=(Align.CENTER, Align.CENTER, Align.MIN))
-show(platte, "Halter/Grundplatte")   # gleicher Name: ersetzt, man sieht das Teil wachsen
+for z in (-40, 40):
+    platte -= Pos(0, 0, z) * Rot(90, 0, 0) * Cylinder(loch / 2, 3 * blech)
+show(platte, "Halter/Grundplatte")   # gleicher Name: ersetzt, man sieht das Teil wachsen; bleibt Lagerteil
+
+step("Lasche")
+ring_r = rohr_d / 2 + wand
+lasche = flach.verbauen(laenge=abstand - ring_r - blech, name="Halter/Lasche")
+show(Pos(0, blech, 0) * Rot(-90, 0, 0) * lasche, "Halter/Lasche")   # erst drehen, dann schieben
 
 step("Schelle")
-r_i = rohr_d / 2 + spiel
-mitte_z = 2 * dicke + r_i
-ring = Cylinder(r_i + dicke, breite) - Cylinder(r_i, breite + 2)
-schelle = Pos(0, 0, mitte_z) * Rot(90, 0, 0) * ring              # erst drehen, dann schieben
-schelle -= Pos(0, 0, mitte_z + r_i) * Box(4, breite + 2, 2 * dicke + 2)   # Schlitz oben
-show(schelle, "Halter/Schelle", color="#8FA3B8", material="aluminum")
+ring = Pos(0, abstand, 0) * (Cylinder(ring_r, schelle_h) - Cylinder(rohr_d / 2, schelle_h + 2))
+show(lager.druckteil(ring, "Halter/Schelle", material="petg"), "Halter/Schelle")
+
+step("Rohr")
+show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 ```
 
 ## API von kevcad
@@ -65,13 +94,41 @@ show(schelle, "Halter/Schelle", color="#8FA3B8", material="aluminum")
 | `param(name, wert, min=None, max=None)` | benannter Parameter (mm). Liefert den Vorgabewert oder den Wert aus `run(params={"breite": 140})`. Alle Parameter oben in der Datei. |
 | `step("Bohrungen")` | Bauschritt, erscheint in Kevins Statusleiste. Vor jedem Schritt aufrufen. |
 | `show(obj, name, color=None, material=None)` | zeigt Part, Compound, Sketch, Kanten oder ein Builder-Ergebnis (`bp.part`) sofort an. Gleicher Name ersetzt. `/` im Namen bildet den Baum. |
+| `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
+| `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
+| `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
+| `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
 
-- `color`: Hex wie `"#B8BEC4"`.
-- `material`: Name aus dem Katalog von build123d, damit gibt es Masse in g. Gängige Namen: `aluminum` (nicht
-  „aluminium“), `stainless`, `mild_steel`, `tool_steel`, `brass`, `copper`, `titanium`, `pla`, `petg`, `abs`, `asa`,
-  `nylon`, `pmma`, `pom`, `oak`, `beech`, `birch`, `pine`, `mdf`, `rubber`. Unbekannte Namen meldet der Lauf mit
-  Vorschlägen.
+- `color`: Hex wie `"#B8BEC4"`; Lager- und Druckteile haben schon die Farbe ihres Materials.
+- `material`: id oder Alias aus dem Katalog (`material_list`), z. B. `stahl-s235`, `edelstahl`, `alu`,
+  `multiplex-birke`, `petg`. Lagerteile tragen ihr Material selbst, `material=` ist dort nicht nötig.
 - Langsam aufbauen, wenn Kevin zuschauen soll: `run(slow_ms=400)`.
+
+## Lagerteile verbauen
+
+- Stangenware (Rohr, Vierkant-/Rechteckrohr, Flach-, Rund-, Vierkantstahl, Winkel, U-Profil, Nutprofil, Holz):
+  `teil.verbauen(laenge=842, name="Gestell/Bein vorn links", gehrung=(0, 0))`. Das Teil liegt entlang +Z ab z = 0,
+  der Querschnitt mittig. `laenge` ist das **Zuschnittmaß an der längsten Kante**. `gehrung=(anfang, ende)` in Grad um
+  die lokale X-Achse: positiv lässt die Kante bei +Y lang (Rahmenleiste mit Außenkante bei +Y), negativ die bei -Y.
+  `drehung=90` dreht den Querschnitt vorher um Z (Gehrung über die andere Seite). Querschnitte: Breite b in X,
+  Höhe h bzw. Dicke s in Y; Winkel mit Schenkel a nach +Y und b nach +X; U-Profil nach +X offen.
+- Platten: `platte.verbauen(breite=800, tiefe=600, name="Deckel")` in der XY-Ebene ab z = 0, mittig; oder
+  `form=Rectangle(800, 600) - Circle(40)` (Skizze in XY).
+- Schrauben: `schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")` (bd_warehouse, Kopf auf z = 0, Schaft nach -Z,
+  ohne Gewinde); Muttern und Scheiben ohne `laenge`.
+- **Name in `show()` gleich wie in `verbauen()`.** Dann kennt die Stückliste das gezeigte Teil, auch nach Verschieben,
+  Drehen oder Bohren. Gleiche Teile durchnummerieren: „Schrauben/M8x60 1“ … „8“.
+- Rahmen mit Gehrung: Leiste mit `gehrung=(45, 45)` verbauen, erst um die eigene Achse drehen (lange Kante nach außen),
+  dann hinlegen, dann schieben. Beispiel: `samples/gestell/model.py`.
+- Jede `verbauen`-Zeile steht in der Stückliste, auch wenn das Teil später gebohrt wird. Gleiche Lagerteile mit
+  gleicher Länge und Gehrung werden zusammengefasst.
+
+## Stückliste
+
+- `bom`: Positionen (Anzahl, Maße, Gehrung, Material, kg, €), Zuschnitt je Stangenware („Stange 1: 882 + 882 + … =
+  5.394 mm, Rest 606 mm“, Sägeschnitt 3 mm, Verschnitt in %), Summen mit Richtpreis-Hinweis, Hinweise (etwa nicht
+  zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
+- Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
 
 ## build123d: Kurzreferenz und Fallen
 
@@ -137,7 +194,7 @@ DN 32, 1¼ Zoll).
 - Baugruppen über `/`: „Halter/Grundplatte“, „Halter/Schelle“. Gleiche Teile nummerieren: „Schrauben/M6x20 1“.
 - Ein Teil nach jedem Bauschritt mit demselben Namen erneut zeigen. So sieht Kevin es wachsen.
 - Hilfsgeometrie (Werkzeugkörper, Schnittkörper) nicht zeigen.
-- Material setzen, wo es bekannt ist; die Masse steht dann in `run`, `parts` und `measure`.
+- Lagerteile und Druckteile tragen Material, Farbe und Masse; die Masse steht in `run`, `parts` und `measure`.
 
 ## Referenzen und Auswahl
 
@@ -182,7 +239,7 @@ DN 32, 1¼ Zoll).
 
 ## Export
 
-`export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`. STEP für CAD und Fertigung, STL oder 3MF für den
+`export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`, `export(["bom_csv"])` die Stückliste als CSV. STEP für CAD und Fertigung, STL oder 3MF für den
 Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur diese Teile.
 
 ## Wenn etwas hakt
@@ -193,3 +250,8 @@ Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur die
 | Unbekannte oder veraltete Referenz | nach dem letzten Lauf neu holen (`parts`, `selection`, `execute`) |
 | App nicht verbunden | der Kernel läuft, die App hängt (noch) nicht an ihm; kurz warten, sonst Kevin bitten, Kev CAD zu öffnen |
 | Kev CAD läuft nicht – bitte starten | die Brücke erreicht die App nicht; Kevin bitten, Kev CAD zu starten |
+| Inventar-Regel: … nicht aus dem Inventar | Teil ohne `verbauen`/`druckteil` gezeigt; Lagerteil suchen, Druckteil kennzeichnen oder Kevin fragen |
+| … wartet auf Kevins Freigabe im Lagerkatalog | Vorschlag aus `stock_define`/`material_define`; Kevin gibt ihn im Lagerkatalog frei |
+| Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
+| Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
+| Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |
