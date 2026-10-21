@@ -39,6 +39,7 @@ from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
+from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
@@ -90,9 +91,10 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime):
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
-    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
+    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Prüfung: pruefen, ansichten (``PruefDienst``,
+    pruefung/dienst.py)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,

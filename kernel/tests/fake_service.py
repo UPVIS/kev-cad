@@ -124,6 +124,22 @@ CONSTRAINTS = {
 }
 
 
+PRUEFUNG = {
+    "zusammenfassung": "1 Durchdringung", "zaehler": {"fehler": 1, "warnung": 0, "hinweis": 0},
+    "befunde": [{"id": "du1", "art": "durchdringung", "teile": ["Halter/Lasche", "Halter/Grundplatte"],
+                 "schwere": "fehler", "wert": {"volumen": 12.5, "tiefe": 0.5, "achse": [0, 0, 1]}, "ort": [0, 5, 2],
+                 "text": "Halter/Lasche und Halter/Grundplatte durchdringen sich: 12,5 mm³, Tiefe etwa 0,5 mm.",
+                 "loesung": "Halter/Lasche um 0,7 mm in +Z verschieben (dann 0,2 mm Spiel).", "geometrie": 0}],
+    "montage": {"vollstaendig": True, "offen": [], "tests": 3, "abgebrochen": None, "schritte": [
+        {"nr": 1, "teile": ["Halter/Grundplatte"], "name": "Halter/Grundplatte", "gruppe": False, "richtung": None,
+         "richtung_text": "Grundteil", "werkzeug": None},
+        {"nr": 2, "teile": ["Halter/Lasche"], "name": "Halter/Lasche", "gruppe": False, "richtung": [0, 0, -1],
+         "richtung_text": "von oben", "werkzeug": None}]},
+    "stand": {"boden_z": 0.0, "boden_erklaert": False, "gruppen": [
+        {"teile": ["Halter/Grundplatte", "Halter/Lasche"], "masse_kg": 0.31, "kippwinkel": 24.5}]},
+}
+
+
 class FakeService:
     """Implementiert ``KernelService`` mit festen Antworten.
 
@@ -271,6 +287,22 @@ class FakeService:
         if not self.run_no:
             return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen."}
         return {"ok": True, "run": self.run_no, **BOM}
+
+    # Prüfung -------------------------------------------------------------------------------------------------
+
+    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
+        self._record("pruefen")
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen (geprüft wird nach jedem Lauf)."}
+        return {"ok": True, "run": self.run_no, "state": "done", **PRUEFUNG}
+
+    def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,
+                  timeout_s: float = 20) -> dict[str, Any]:
+        self._record("ansichten", ansichten, width, height)
+        if not self.app_connected:
+            return {"ok": False, "error": "App nicht verbunden"}
+        return {"ok": True, "bilder": [{"name": a.get("name"), "png": self.png, "width": width, "height": height,
+                                        "camera": {"ansicht": True}, "ansicht_umgesetzt": True} for a in ansichten]}
 
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
         self._record("stock_search", query, art)

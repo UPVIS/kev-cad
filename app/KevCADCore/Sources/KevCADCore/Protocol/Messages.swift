@@ -356,9 +356,12 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
     public var hideOverlays: Bool
     /// Phase 5: Bild durch diese Kamera (`Kamera/<name>`, `source` "camera").
     public var camera: String?
+    /// Prüfung/Analyse (additiv): eigene Blickrichtung, Ziel, Darstellung, Hervorhebung, Schnittkörper; siehe
+    /// AppController+Ansichten.swift und PROTOCOL.md Abschnitt „Prüfung“.
+    public var ansicht: JSONValue? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, width, height, source, view, camera
+        case id, width, height, source, view, camera, ansicht
         case hideOverlays = "hide_overlays"
     }
 
@@ -383,6 +386,7 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
         view = try? c.decodeIfPresent(String.self, forKey: .view)
         hideOverlays = (try? c.decodeIfPresent(Bool.self, forKey: .hideOverlays)) ?? false
         camera = try? c.decodeIfPresent(String.self, forKey: .camera)
+        if let v = try? c.decodeIfPresent(JSONValue.self, forKey: .ansicht), !v.isNull { ansicht = v }
     }
 }
 

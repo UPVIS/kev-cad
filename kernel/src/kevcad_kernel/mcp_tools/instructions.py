@@ -19,9 +19,12 @@ Workflow
 2. Find the parts in Kevin's stock catalog with `stock_search` (see Inventory rule).
 3. Edit model.py with your own file tools (path from status); use `model_write` only if you have none. Then `run`: \
 it returns every part with size, volume and mass, or the failing line with an excerpt (isError).
-4. Check the numbers from `run` (and `bom`) against the task; verify key dimensions with `measure` where they \
-matter. Fix, run again. Kevin watches the viewer live and wants results fast: no `screenshot` unless he asks for an \
-image.
+4. Fix every finding of the built-in check that `run` reports. Check the numbers from `run` (and `bom`) against the \
+task; verify key dimensions with `measure` where they matter. Fix, run again. Kevin watches the viewer live and \
+wants results fast: do not send him images unless he asks for one. For your own analysis a few small offscreen \
+views are allowed when they lead to a better decision (overlaps, assemblability, proportions, comparison with \
+reference photos): `ansichten` renders several views in one call, `pruefen(bilder=true)` shows the findings close up; \
+`screenshot` only shows Kevin's exact view.
 
 Inventory rule (Inventar-Regel, on by default)
 - Build only from the inventory. Every part passed to show() must come from `lager.teil(...).verbauen(...)`, from \
@@ -46,7 +49,22 @@ Built-in check (Prüfung, after every run)
 - Open findings make `run` an error (isError) and export is refused. Fix them in model.py (clearance, hole, move, \
 correct a dimension); never explain them away. A deliberate overlap (press fit, foam) only after asking Kevin, with \
 `erlaubt_ueberlappung(a, b, grund="...")` from kevcad in model.py; without a reason it does not count.
-- Kevin sees the affected parts in red and the overlap volume as a red ghost in the viewer.
+- Floating and fastening are checked by the constraints (B9, see Constraints). Models without any constraint still \
+get a physical check: a part without contact to its counterpart or the ground (a clearance fit up to 0.5 mm counts) is a \
+finding with the drop distance. Every group on the ground is checked for stability (mass from material density, centre \
+of gravity, support polygon, tipping angle). Parts fixed to a wall or ceiling only with `befestigt(teil, grund="...")` \
+after asking Kevin; `boden(z)` declares the floor.
+- Assemblability (Montage durch Demontage): every part must be insertable one after another along a straight path \
+(±X, ±Y, ±Z, cylinder axes, declared directions, or out of a pocket and then away); screws only along their axis, with \
+free space for the tool (hex key, socket, open-end wrench) at the moment they are inserted; no part may be trapped in a \
+closed housing. Findings name the blocking parts. Design for assembly: place parts the way they are inserted, think \
+about insertion direction and order, tool access and clearance. Declarations in model.py only where true: \
+`montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")`, purchased units `montage("Gruppe", \
+baugruppe=True)`, clips `montage(teil, schnappt=True)`, nuts inserted during printing `montage(teil, \
+eingedruckt=True)`. `montage_reihenfolge` lists the assembly order, `pruefen` the full result.
+- Compliant parts (foam, rubber, straps: material with "nachgiebig") may be compressed up to half their thickness \
+(note instead of error).
+- Kevin sees the affected parts in red, the overlap volume as a red ghost and the assembly order in the check band.
 - The check covers the rest pose from model.py. Moving states are checked with `kollision_pruefen` (see Animation); \
 an overlap allowed with `erlaubt_ueberlappung` also counts as allowed there.
 - 3D print check (Druckprüfung): every part from `lager.druckteil(...)` is checked on every run for Kevin's Bambu Lab \

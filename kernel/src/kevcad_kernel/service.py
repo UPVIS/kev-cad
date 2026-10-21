@@ -169,6 +169,17 @@ class KernelService(Protocol):
     def zukauf_liste(self, query: str = "") -> dict[str, Any]:
         """{"ok", "items": [Zukaufteil + "ebene", "cad_art", "cad_datei_fehlt", "zustand", "kurz"], "total"}"""
 
+    # Prüfung (additiv, siehe kevcad_kernel/pruefung und PROTOCOL.md Abschnitt „Prüfung“)
+    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
+        """Letztes Prüfergebnis nach einem Lauf (wartet auf eine laufende Prüfung): {"ok", "run", "state",
+        "zusammenfassung", "zaehler", "befunde", "montage", "stand", "gewinde", "erlaubt", …} wie die Nachricht CHECK."""
+
+    def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,
+                  timeout_s: float = 20) -> dict[str, Any]:
+        """Mehrere Offscreen-Bilder in einem Zug, ohne Kevins Kamera zu ändern. Je Ansicht: name, standard oder
+        richtung [x,y,z], ziel (Teile) oder punkt + radius, darstellung, hervorheben, schnittkoerper.
+        {"ok", "bilder": [{"name", "png", "width", "height", "camera", "ansicht_umgesetzt"}]}"""
+
     # Zwangsbedingungen (PLAN-BEDINGUNGEN.md, additiv)
     def constraints(self, part: str | None = None) -> dict[str, Any]:
         """Bericht des letzten erfolgreichen Laufs wie die Nachricht CONSTRAINTS: {"ok", "run", "items", "teile",

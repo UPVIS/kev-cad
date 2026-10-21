@@ -27,7 +27,7 @@ import numpy as np
 from kevcad_kernel.pruefung import befund as bf
 from kevcad_kernel.pruefung.befund import NACHGIEBIG_ANTEIL, SPIEL_VORSCHLAG, befund, mm, punkt, richtung_text
 from kevcad_kernel.pruefung.koerper import Koerper
-from kevcad_kernel.pruefung.kollision import Paar, PaarCache, gewindeeingriff, pruefe_paar
+from kevcad_kernel.pruefung.kollision import Paar, PaarCache, gewinde as gewinde_von, pruefe_paar
 
 
 class Abgebrochen(Exception):
@@ -187,10 +187,11 @@ def pruefe_durchdringungen(ctx: PruefKontext) -> list[dict[str, Any]]:
         grund = ctx.erlaubt(a.name, b.name)
         if grund:
             continue  # erlaubt mit Grund: kein Befund (steht in der Liste „erlaubt“ des Ergebnisses)
-        gewinde = gewindeeingriff(a, b, p.netz[0]) if p.netz is not None else None
+        gewinde = gewinde_von(a, b, p.netz[0]) if p.netz is not None else None
         if gewinde:  # Schraube in Mutter oder Kernloch: die einzige Überlappung, die ohne Erklärung gilt
-            ctx.ergebnis.setdefault("gewinde", []).append({"teile": [a.name, b.name], "text": gewinde,
-                                                            "volumen": round(p.volumen, 3)})
+            ctx.ergebnis.setdefault("gewinde", []).append({"teile": [a.name, b.name], "text": gewinde[0],
+                                                            "volumen": round(p.volumen, 3),
+                                                            "achse": [round(float(c), 6) for c in gewinde[1]]})
             continue
         geo = None
         if p.netz is not None and len(p.netz[2]):
@@ -222,8 +223,10 @@ def pruefe_durchdringungen(ctx: PruefKontext) -> list[dict[str, Any]]:
             f"{a.name} und {b.name} durchdringen sich: {bf.de_num(p.volumen, 1)} mm³, Tiefe etwa {mm(p.tiefe, 2)} "
             f"bei {punkt(p.ort)}.", _loesung_durchdringung(a, b, p), wert=wert, ort=p.ort, geometrie=geo))
     ctx.zeiten["durchdringung"] = (time.perf_counter() - t0) * 1000
+    arten = [p.art for p in ctx.paare.values()]
     ctx.ergebnis["paare"] = {"geprueft": len(ctx.paare), "neu_gerechnet": ctx.cache.neu - neu0,
-                             "kontakte": sum(1 for p in ctx.paare.values() if p.kontakt)}
+                             "kontakte": sum(1 for p in ctx.paare.values() if p.kontakt),
+                             "beruehrt": arten.count("beruehrt"), "spiel": arten.count("spiel")}
     erlaubt = []
     for p in ctx.paare.values():
         if p.durchdringt:
@@ -251,7 +254,7 @@ registriere("erklaerungen", pruefe_erklaerungen)
 registriere("durchdringung", pruefe_durchdringungen)
 
 # Weitere Prüfungen in eigenen Modulen; sie registrieren sich beim Import selbst (Reihenfolge = Ablauf)
-ERWEITERUNGEN: tuple[str, ...] = ()  # Stufe 2: ("kevcad_kernel.pruefung.stand", "kevcad_kernel.pruefung.montage")
+ERWEITERUNGEN: tuple[str, ...] = ("kevcad_kernel.pruefung.stand", "kevcad_kernel.pruefung.montage")
 _geladen = False
 
 
