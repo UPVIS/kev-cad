@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import OCCTSwiftViewport
 import simd
@@ -48,6 +49,11 @@ public final class AppController: AppActions {
     private var animationTimer: Timer?
     var selfTestStarted = false
     private var projectSeenSinceHello = false
+    /// Lokale Ansicht (Taste /): vorherige Sichtbarkeit und Kamera, solange sie aktiv ist.
+    var localView: (hidden: Set<String>, camera: CameraState)?
+    var navCancellables = Set<AnyCancellable>()
+    /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
+    var pendingRestore: SavedSession?
 
     struct PendingRequest {
         var kind: String
@@ -69,6 +75,7 @@ public final class AppController: AppActions {
             self.viewport.bodies = self.scene.renderBodies
         }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
+        installNavigation()
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
         connection.onEvents = { [weak self] events in self?.handle(events) }
@@ -106,6 +113,7 @@ public final class AppController: AppActions {
         }
         connection.open(path: socket)
         armWatchdog()
+        restoreSessionIfRequested()
     }
 
     /// Beendet Kernel und Verbindung.
@@ -151,6 +159,7 @@ public final class AppController: AppActions {
     }
 
     private func shutdownForTermination() {
+        saveSession()
         running = false
         restartWork?.cancel()
         connection.close()
@@ -390,7 +399,10 @@ public final class AppController: AppActions {
                 warnings: e.warnings)
             if model.kernelState == .busy { model.kernelState = .ready }
             updateParts()
-            if fitAtRunEnd {
+            if let restore = pendingRestore {
+                applyRestoredView(restore)
+                fitAtRunEnd = false
+            } else if fitAtRunEnd {
                 viewport.fit(scene.visibleBounds(), animated: true)
                 fitAtRunEnd = false
             }
@@ -529,7 +541,8 @@ public final class AppController: AppActions {
 
     func handleClick(_ pick: PickResult?, modifiers: NSEvent.ModifierFlags) {
         var ref = pick.flatMap { scene.resolve($0) }
-        if modifiers.contains(.option), let r = ref { ref = r.partRef }
+        // Wie Blenders Objektmodus: im Teilemodus wählt ein Klick das ganze Teil; Messen braucht immer Elemente
+        if !model.measureMode, model.selectionMode == .parts, let r = ref { ref = r.partRef }
         if model.measureMode {
             guard let ref else { return }
             measurePending.append(ref)
@@ -604,6 +617,8 @@ public final class AppController: AppActions {
         let item = MeasurementItem(
             refs: r.refs, kind: r.kind, text: r.text, points: r.pointVectors, values: r.values.flattenedNumbers())
         model.measurements.append(item)
+        // Kam dasselbe Maß schon als Anmerkung (measure mit show=True), die Anmerkung ersetzen
+        removeDimensionAnnotations(matching: item.points)
         log(.info, "Messung: \(r.text)")
         refreshOverlay()
     }

@@ -13,6 +13,20 @@ struct KevCADCommands: Commands {
     private var hasProject: Bool { model.project != nil }
     private var inProject: Bool { window != nil && hasProject }
     private var hasSelection: Bool { !model.selection.isEmpty }
+    /// Blender-Befehle des App-Kerns (im Demomodus nicht vorhanden).
+    private var nav: NavigationActions? { model.actions as? NavigationActions }
+
+    private func axisView(_ view: StandardViewName) {
+        if let nav { nav.axisView(view) } else { model.actions?.setStandardView(view) }
+    }
+
+    private func viewSelected() {
+        if let nav { nav.viewSelected() } else { model.fitSelection() }
+    }
+
+    private func viewAll() {
+        if let nav { nav.viewAll() } else { model.actions?.focus(on: model.parts.filter(\.visible).map(\.id)) }
+    }
 
     var body: some Commands {
         // Ablage
@@ -60,31 +74,84 @@ struct KevCADCommands: Commands {
         // Darstellung
         CommandGroup(before: .toolbar) {
             Group {
-                ForEach(StandardViewName.menuOrder, id: \.self) { view in
-                    Button(view.title) { model.actions?.setStandardView(view) }
-                        .keyboardShortcut(view.key, modifiers: [])
+                // Ansicht wie in Blender (Ziffernblock oder Zahlenreihe)
+                ForEach(StandardViewName.menuOrder.filter { $0.blenderKey != nil }, id: \.self) { view in
+                    Button(view.title) { axisView(view) }
+                        .keyboardShortcut(view.blenderKey!.key, modifiers: view.blenderKey!.modifiers)
                 }
-                Menu("Weitere Isometrien") {
-                    ForEach(StandardViewName.extraIsoOrder, id: \.self) { view in
+                Button("Gegenseite") { nav?.viewOpposite() }
+                    .keyboardShortcut("9", modifiers: [])
+                Button(model.orthographic ? "Perspektive" : "Parallelprojektion") { nav?.toggleProjection() }
+                    .keyboardShortcut("5", modifiers: [])
+                Menu("Isometrisch") {
+                    ForEach([StandardViewName.iso] + StandardViewName.extraIsoOrder, id: \.self) { view in
                         Button(view.title) { model.actions?.setStandardView(view) }
-                            .keyboardShortcut(view.key, modifiers: [])
                     }
                 }
+                Menu("Drehen, Schwenken, Zoomen") {
+                    Button("Nach links drehen") { nav?.orbitStep(yaw: -15, pitch: 0) }
+                        .keyboardShortcut("4", modifiers: [])
+                    Button("Nach rechts drehen") { nav?.orbitStep(yaw: 15, pitch: 0) }
+                        .keyboardShortcut("6", modifiers: [])
+                    Button("Nach oben drehen") { nav?.orbitStep(yaw: 0, pitch: -15) }
+                        .keyboardShortcut("8", modifiers: [])
+                    Button("Nach unten drehen") { nav?.orbitStep(yaw: 0, pitch: 15) }
+                        .keyboardShortcut("2", modifiers: [])
+                    Divider()
+                    Button("Nach links schwenken") { nav?.panStep(x: -0.1, y: 0) }
+                        .keyboardShortcut("4", modifiers: .control)
+                    Button("Nach rechts schwenken") { nav?.panStep(x: 0.1, y: 0) }
+                        .keyboardShortcut("6", modifiers: .control)
+                    Button("Nach oben schwenken") { nav?.panStep(x: 0, y: 0.1) }
+                        .keyboardShortcut("8", modifiers: .control)
+                    Button("Nach unten schwenken") { nav?.panStep(x: 0, y: -0.1) }
+                        .keyboardShortcut("2", modifiers: .control)
+                    Divider()
+                    Button("Heranzoomen") { nav?.zoomStep(1) }
+                        .keyboardShortcut("+", modifiers: [])
+                    Button("Herauszoomen") { nav?.zoomStep(-1) }
+                        .keyboardShortcut("-", modifiers: [])
+                    Divider()
+                    Button("Auswahl zentrieren (Punkt)") { viewSelected() }
+                        .keyboardShortcut(".", modifiers: [])
+                    Button("Auswahl zentrieren (F)") { viewSelected() }
+                        .keyboardShortcut("f", modifiers: [])
+                    Button("Alles zeigen (Umschalt-C)") { viewAll() }
+                        .keyboardShortcut("c", modifiers: .shift)
+                }
                 Divider()
-                Button(hasSelection ? "Auswahl einpassen" : "Alles einpassen") { model.fitSelection() }
-                    .keyboardShortcut("f", modifiers: [])
+                Button(hasSelection ? "Auswahl zentrieren" : "Alles zentrieren") { viewSelected() }
+                    .keyboardShortcut(",", modifiers: [])
+                Button("Alles zeigen") { viewAll() }
+                    .keyboardShortcut(.home, modifiers: [])
+                Divider()
+                Button("Alles auswählen") { nav?.selectAll() }
+                    .keyboardShortcut("a", modifiers: [])
                 Button("Auswahl aufheben") { model.clearSelection() }
-                    .keyboardShortcut(.escape, modifiers: [])
+                    .keyboardShortcut("a", modifiers: .option)
                     .disabled(!inProject || !hasSelection)
+                Button("Auswahl umkehren") { nav?.invertSelection() }
+                    .keyboardShortcut("i", modifiers: .control)
+                Toggle("Flächen und Kanten auswählen", isOn: Binding(
+                    get: { model.selectionMode == .elements },
+                    set: { nav?.setSelectionMode($0 ? .elements : .parts) }
+                ))
+                .keyboardShortcut(.tab, modifiers: [])
+                Button("Abbrechen") {
+                    if model.measureMode { model.actions?.setMeasureMode(false) } else { model.clearSelection() }
+                }
+                .keyboardShortcut(.escape, modifiers: [])
                 Divider()
                 Button("Ausblenden") { model.hideSelection() }
                     .keyboardShortcut("h", modifiers: [])
                     .disabled(!inProject || !hasSelection)
-                Button("Isolieren") { model.isolateSelection() }
-                    .keyboardShortcut("i", modifiers: [])
+                Button("Andere ausblenden") { nav?.hideUnselected() }
+                    .keyboardShortcut("h", modifiers: .shift)
                     .disabled(!inProject || !hasSelection)
                 Button("Alles einblenden") { model.actions?.showAll() }
-                    .keyboardShortcut("h", modifiers: [.shift])
+                    .keyboardShortcut("h", modifiers: .option)
+                Button("Lokale Ansicht") { nav?.toggleLocalView() }
+                    .keyboardShortcut("/", modifiers: [])
                 Divider()
                 Picker("Darstellung", selection: Binding(
                     get: { model.displayStyle }, set: { model.actions?.setDisplayStyle($0) }

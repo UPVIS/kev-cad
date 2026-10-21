@@ -224,6 +224,12 @@ final class ControllerTests: XCTestCase {
         func pick(_ object: UInt32, _ prim: UInt32, _ kind: UInt32) -> PickResult? {
             PickResult(rawValue: object | (prim << 16) | (kind << 30), indexMap: map)
         }
+        // Blender-Objektmodus (Standard): ein Klick wählt das ganze Teil
+        XCTAssertEqual(m.selectionMode, .parts)
+        c.handleClick(pick(0, 11, 0), modifiers: [])
+        XCTAssertEqual(m.selection.map(\.ref), ["Grundplatte"])
+        // Tab: Flächen, Kanten und Punkte
+        c.setSelectionMode(.elements)
         c.handleClick(pick(0, 11, 0), modifiers: [])
         XCTAssertEqual(m.selection.map(\.ref), ["Grundplatte#f5"])
         XCTAssertEqual(m.selection.first?.summary, "Fläche 5 · Ebene · 200,0 mm²")
@@ -231,7 +237,8 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(m.selection.map(\.ref), ["Grundplatte#f5", "Halter/Bolzen#e0"])
         c.handleClick(pick(1, 0, 1), modifiers: .shift)
         XCTAssertEqual(m.selection.map(\.ref), ["Grundplatte#f5"])
-        c.handleClick(pick(1, 3, 0), modifiers: .option)
+        c.setSelectionMode(.parts)
+        c.handleClick(pick(1, 3, 0), modifiers: [])
         XCTAssertEqual(m.selection.map(\.ref), ["Halter/Bolzen"])
         XCTAssertEqual(c.viewport.controller.selectedBodyIDs, [cyl])
         c.handleClick(nil, modifiers: [])
@@ -316,6 +323,32 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(r.kind, "distance")
         XCTAssertEqual(r.pointVectors.count, 2)
     }
+    /// Maße des Agenten (measure mit show=True) kommen als Messung und als Anmerkung; Löschen muss beides entfernen.
+    func testAgentMeasurementDisappearsWhenDeleted() throws {
+        let c = try loadedController()
+        let pts: JSONValue = .array([.array([.number(0), .number(0), .number(0)]), .array([.number(20), .number(0), .number(0)])])
+        // Reihenfolge 1: erst Anmerkung, dann Messung
+        _ = c.performViewCommand(ViewCommandMessage(id: "k1", cmd: "annotate", args: .object([
+            "kind": .string("dimension"), "points": pts, "text": .string("Abstand 20,000 mm"), "id": .string("m-1")])))
+        c.addMeasurement(MeasureResult(refs: ["A", "B"], run: 1, kind: "distance", values: .object([:]),
+                                       points: [[0, 0, 0], [20, 0, 0]], text: "Abstand 20,000 mm"))
+        XCTAssertTrue(c.annotations.isEmpty, "Anmerkung wird durch die Messung ersetzt")
+        // Reihenfolge 2: Anmerkung nach der Messung wird nicht doppelt gezeichnet
+        _ = c.performViewCommand(ViewCommandMessage(id: "k2", cmd: "annotate", args: .object([
+            "kind": .string("dimension"), "points": pts, "id": .string("m-2")])))
+        XCTAssertTrue(c.annotations.isEmpty)
+        XCTAssertEqual(c.model.measurements.count, 1)
+        c.removeMeasurement(id: c.model.measurements[0].id)
+        XCTAssertTrue(c.model.measurements.isEmpty)
+        XCTAssertTrue(c.viewport.overlayItems.allSatisfy { if case .dimension = $0 { return false } else { return true } })
+        // Alle löschen entfernt auch freie Maß-Anmerkungen
+        let other: JSONValue = .array([.array([.number(0), .number(0), .number(0)]), .array([.number(0), .number(5), .number(0)])])
+        _ = c.performViewCommand(ViewCommandMessage(id: "k3", cmd: "annotate", args: .object([
+            "kind": .string("dimension"), "points": other])))
+        XCTAssertEqual(c.annotations.count, 1)
+        c.clearMeasurements()
+        XCTAssertTrue(c.annotations.isEmpty)
+    }
 }
 
 @MainActor
@@ -364,4 +397,5 @@ final class ProcessTests: XCTestCase {
         XCTAssertEqual(b.append(Data("c\nde\r\nf".utf8)), ["abc", "de"])
         XCTAssertEqual(b.flush(), "f")
     }
+
 }

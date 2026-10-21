@@ -27,6 +27,33 @@ notify() {
   osascript -e "display notification \"$2\" with title \"$1\"" >/dev/null 2>&1 || true
 }
 
+APP="$HOME/Applications/Tools/Kev CAD.app"
+BUNDLE_ID="de.upvis.kevcad"
+
+app_running() { pgrep -f "$APP/Contents/MacOS/Kev CAD" >/dev/null; }
+
+# Läuft die App, wird sie beendet (sie merkt sich dabei Projekt und Ansicht) und gleich wieder geöffnet; dank
+# relaunch.request öffnet die neue Version dasselbe Projekt mit derselben Kamera.
+relaunch() {
+  if ! app_running; then
+    notify "Kev CAD aktualisiert" "Stand $1 ist installiert."
+    return
+  fi
+  local front
+  front=$(osascript -e 'tell application "System Events" to get bundle identifier of first process whose frontmost is true' 2>/dev/null)
+  touch "$SUPPORT/relaunch.request"
+  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1
+  for _ in $(seq 1 40); do app_running || break; sleep 0.5; done
+  if app_running; then
+    rm -f "$SUPPORT/relaunch.request"
+    notify "Kev CAD aktualisiert" "Stand $1 ist installiert. Bitte Kev CAD neu starten."
+    return
+  fi
+  if [ "$front" = "$BUNDLE_ID" ]; then open "$APP"; else open -g "$APP"; fi
+  echo "$(date '+%H:%M:%S') App neu gestartet (vorher vorne: ${front:-?})" >> "$LOG"
+  notify "Kev CAD aktualisiert" "Stand $1 läuft, dein Projekt ist wieder offen."
+}
+
 # Läuft schon ein Update, nur vormerken; der laufende Durchgang baut danach noch einmal.
 if ! mkdir "$LOCK" 2>/dev/null; then
   # verwaiste Sperre (älter als 30 min) aufräumen
@@ -52,11 +79,7 @@ while :; do
   } >> "$LOG" 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then
-    if pgrep -f "Applications/Tools/Kev CAD.app/Contents/MacOS" >/dev/null; then
-      notify "Kev CAD aktualisiert" "Stand $COMMIT ist installiert. Neu starten, um ihn zu nutzen."
-    else
-      notify "Kev CAD aktualisiert" "Stand $COMMIT ist installiert."
-    fi
+    relaunch "$COMMIT"
   else
     notify "Kev CAD: Update fehlgeschlagen" "Stand $COMMIT, Protokoll: ~/Library/Logs/Kev CAD/update.log"
   fi
