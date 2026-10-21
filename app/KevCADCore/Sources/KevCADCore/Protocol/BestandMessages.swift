@@ -11,12 +11,20 @@ public struct BestandMessage: Sendable {
     /// Die letzten Buchungen, neueste zuerst.
     public var buchungen: [BestandBuchung]
     public var stand: String?
+    /// Pfad der Projektdatei (oder nil) und Fehlertext, wenn bestand.json kaputt ist (BESTAND.md Anhang S-K).
+    public var datei: String?
+    public var fehler: String?
 
-    public init(replyTo: String? = nil, bestand: Bestand?, buchungen: [BestandBuchung] = [], stand: String? = nil) {
+    public init(
+        replyTo: String? = nil, bestand: Bestand?, buchungen: [BestandBuchung] = [], stand: String? = nil,
+        datei: String? = nil, fehler: String? = nil
+    ) {
         self.replyTo = replyTo
         self.bestand = bestand
         self.buchungen = buchungen
         self.stand = stand
+        self.datei = datei
+        self.fehler = fehler
     }
 
     public static func decode(_ header: Data) throws -> BestandMessage {
@@ -26,7 +34,8 @@ public struct BestandMessage: Sendable {
             replyTo: json["reply_to"]?.stringValue,
             bestand: roh.flatMap { $0.objectValue == nil ? nil : Bestand(json: $0) },
             buchungen: (json["buchungen"]?.arrayValue ?? []).compactMap(BestandBuchung.init(json:)),
-            stand: json["stand"]?.lenientString)
+            stand: json["stand"]?.lenientString, datei: json["datei"]?.lenientString,
+            fehler: json["fehler"]?.lenientString)
     }
 }
 

@@ -285,14 +285,16 @@ public enum BestandBearbeitung {
         return .object(p)
     }
 
-    /// Rest anhängen (Stange: `laenge`, Platte: `b` und `h`), mit Kennung und heutigem Datum.
+    /// Rest anhängen (Stange: `laenge`, Platte: `b` und `h`) mit heutigem Datum. Ohne `kennung` vergibt der Kernel
+    /// die nächste freie (er kennt auch die schon verbrauchten aus den Buchungen, BESTAND.md Anhang S-K).
     public static func restHinzu(
-        _ posten: JSONValue, kennung: String, laenge: Double? = nil, b: Double? = nil, h: Double? = nil,
+        _ posten: JSONValue, kennung: String? = nil, laenge: Double? = nil, b: Double? = nil, h: Double? = nil,
         ort: String? = nil, seit: String = BestandText.heute()
     ) -> JSONValue {
         var p = posten.objectValue ?? [:]
         var reste = p["reste"]?.arrayValue ?? []
-        var rest: [String: JSONValue] = ["kennung": .string(kennung), "seit": .string(seit)]
+        var rest: [String: JSONValue] = ["seit": .string(seit)]
+        if let kennung { rest["kennung"] = .string(kennung) }
         if let b, let h {
             rest["b"] = .number(b)
             rest["h"] = .number(h)
@@ -547,6 +549,8 @@ public struct ZuschnittQuelle: Identifiable, Equatable, Sendable {
     public var resteNeu: [ZuschnittFlaeche]
     /// Der Rest ist Verschnitt (unter dem Mindestrest).
     public var verschnitt: Bool
+    /// `verschnitt` kam vom Kernel (sonst entscheidet der Mindestrest der Ansicht).
+    public var verschnittAngegeben: Bool
 
     public var id: Int { index }
     public var istPlatte: Bool { b != nil && h != nil }
@@ -554,7 +558,7 @@ public struct ZuschnittQuelle: Identifiable, Equatable, Sendable {
     public init(
         index: Int, art: ZuschnittQuelleArt, kennung: String? = nil, laenge: Double? = nil, b: Double? = nil,
         h: Double? = nil, stuecke: [Double] = [], flaechen: [ZuschnittFlaeche] = [], restNeu: Double? = nil,
-        resteNeu: [ZuschnittFlaeche] = [], verschnitt: Bool = false
+        resteNeu: [ZuschnittFlaeche] = [], verschnitt: Bool = false, verschnittAngegeben: Bool = false
     ) {
         self.index = index
         self.art = art
@@ -567,6 +571,7 @@ public struct ZuschnittQuelle: Identifiable, Equatable, Sendable {
         self.restNeu = restNeu
         self.resteNeu = resteNeu
         self.verschnitt = verschnitt
+        self.verschnittAngegeben = verschnittAngegeben
     }
 
     init?(json: JSONValue, index: Int) {
@@ -580,7 +585,7 @@ public struct ZuschnittQuelle: Identifiable, Equatable, Sendable {
             stuecke: roh.compactMap { $0.objectValue == nil ? $0.doubleValue : nil },
             flaechen: roh.compactMap(ZuschnittFlaeche.init(json:)),
             restNeu: rest?.doubleValue, resteNeu: rest?.arrayValue?.compactMap(ZuschnittFlaeche.init(json:)) ?? [],
-            verschnitt: json["verschnitt"]?.boolValue ?? false)
+            verschnitt: json["verschnitt"]?.boolValue ?? false, verschnittAngegeben: json["verschnitt"]?.boolValue != nil)
     }
 
     /// „R-0008 · 610 mm“, „Bestand · 1.000 mm“, „kaufen · 2.500 × 1.250 mm“.
@@ -602,7 +607,8 @@ public struct ZuschnittQuelle: Identifiable, Equatable, Sendable {
 
     /// Ob der Rest dieser Stange Verschnitt ist: Angabe des Kernels, sonst unter dem Mindestrest.
     public func restIstVerschnitt(saegeschnitt: Double, mindestrest: Double) -> Bool {
-        verschnitt || restLaenge(saegeschnitt: saegeschnitt) < mindestrest
+        if verschnittAngegeben { return verschnitt }
+        return restLaenge(saegeschnitt: saegeschnitt) < mindestrest
     }
 
     /// Abschnitte der Leiste von links nach rechts (mm): Stücke, Sägeschnitte und am Ende der Rest.
@@ -612,7 +618,7 @@ public struct ZuschnittQuelle: Identifiable, Equatable, Sendable {
         for (i, s) in stuecke.enumerated() {
             out.append(LeistenSegment(art: .stueck, start: pos, laenge: s, index: i))
             pos += s
-            if saegeschnitt > 0 {
+            if saegeschnitt > 0, pos + saegeschnitt <= (laenge ?? .infinity) + 0.01 {
                 out.append(LeistenSegment(art: .schnitt, start: pos, laenge: saegeschnitt, index: i))
                 pos += saegeschnitt
             }
@@ -668,6 +674,10 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
     public var ausBestandGanze: Int
     public var kaufen: Int
     public var verschnittProzent: Double?
+    /// Mindestrest dieses Lagerteils, mit dem der Kernel gerechnet hat.
+    public var mindestrest: Double?
+    /// Platten: Stücke, die größer als die Platte sind.
+    public var zuGross: [ZuschnittFlaeche]
 
     public var id: String { stockID }
 
@@ -675,7 +685,7 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
         stockID: String, benennung: String, istPlatte: Bool = false, platteB: Double? = nil, platteH: Double? = nil,
         stangenlaenge: Double? = nil, saegeschnitt: Double = 3, quellen: [ZuschnittQuelle], neueReste: [Double] = [],
         neueResteFlaechen: [ZuschnittFlaeche] = [], ausBestandReste: Int = 0, ausBestandGanze: Int = 0, kaufen: Int = 0,
-        verschnittProzent: Double? = nil
+        verschnittProzent: Double? = nil, mindestrest: Double? = nil, zuGross: [ZuschnittFlaeche] = []
     ) {
         self.stockID = stockID
         self.benennung = benennung
@@ -691,6 +701,8 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
         self.ausBestandGanze = ausBestandGanze
         self.kaufen = kaufen
         self.verschnittProzent = verschnittProzent
+        self.mindestrest = mindestrest
+        self.zuGross = zuGross
     }
 
     /// Aus `BOM.cuts[i]`; nil ohne `quellen` (älterer Kernel, dann gilt der bisherige Zuschnitt).
@@ -715,7 +727,9 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
             neueResteFlaechen: neu?.compactMap(ZuschnittFlaeche.init(json:)) ?? quellen.flatMap(\.resteNeu),
             ausBestandReste: json["aus_bestand"]?["reste"]?.intValue ?? quellen.filter { $0.art == .rest }.count,
             ausBestandGanze: json["aus_bestand"]?["ganze"]?.intValue ?? quellen.filter { $0.art == .bestand }.count,
-            kaufen: kaufen, verschnittProzent: json["verschnitt_prozent"]?.doubleValue)
+            kaufen: kaufen, verschnittProzent: json["verschnitt_prozent"]?.doubleValue,
+            mindestrest: json["mindestrest"]?.doubleValue,
+            zuGross: json["zu_gross"]?.arrayValue?.compactMap(ZuschnittFlaeche.init(json:)) ?? [])
     }
 
     /// Längste Quelle (gemeinsamer Maßstab aller Leisten dieses Zuschnitts).
@@ -804,7 +818,9 @@ public struct EinkaufsPosition: Identifiable, Equatable, Sendable {
             id: id, benennung: json["benennung"]?.lenientString ?? json["name"]?.lenientString ?? id, menge: menge,
             einheit: json["einheit"]?.lenientString ?? "Stück", preisJe: preisJe,
             preis: json["preis"]?.doubleValue ?? preisJe.map { $0 * menge },
-            link: urlText.flatMap(Self.url), linkName: linkRoh?["name"]?.lenientString ?? json["bezugsquelle"]?["name"]?.lenientString,
+            link: urlText.flatMap(Self.url),
+            linkName: json["link_text"]?.lenientString ?? linkRoh?["name"]?.lenientString
+                ?? json["bezugsquelle"]?["name"]?.lenientString,
             hinweis: json["hinweis"]?.lenientString, stand: json["preis_stand"]?.lenientString ?? json["stand"]?.lenientString)
     }
 
@@ -833,33 +849,46 @@ public struct BOMBestand: Equatable, Sendable {
     public var bestandStand: String?
     /// Es fehlt Material (die Einkaufsliste ist nicht leer).
     public var fehlt: Bool
+    /// Stückgut je Schraubenlänge, Mutter, Scheibe: gebraucht, aus dem Bestand, zu kaufen.
+    public var stueckgut: [StueckgutBedarf]
+    /// Summe der Einkaufsliste vom Kernel (sonst gerechnet) und sein Hinweis zu den Preisen.
+    public var einkaufSumme: Double?
+    public var einkaufHinweis: String?
 
     public init(
         run: Int, zuschnitte: [BestandZuschnitt], einkaufsliste: [EinkaufsPosition], bestandStand: String? = nil,
-        fehlt: Bool? = nil
+        fehlt: Bool? = nil, stueckgut: [StueckgutBedarf] = [], einkaufSumme: Double? = nil, einkaufHinweis: String? = nil
     ) {
         self.run = run
         self.zuschnitte = zuschnitte
         self.einkaufsliste = einkaufsliste
         self.bestandStand = bestandStand
         self.fehlt = fehlt ?? !einkaufsliste.isEmpty
+        self.stueckgut = stueckgut
+        self.einkaufSumme = einkaufSumme
+        self.einkaufHinweis = einkaufHinweis
     }
 
     /// Aus der BOM-Nachricht; nil, wenn der Kernel keine Bestandsfelder schickt.
     public init?(json: JSONValue) {
         let zuschnitte = (json["cuts"]?.arrayValue ?? []).compactMap(BestandZuschnitt.init(json:))
         let liste = json["einkaufsliste"]?.arrayValue
-        guard !zuschnitte.isEmpty || liste != nil || json["bestand_stand"] != nil || json["fehlt"] != nil else {
+        guard !zuschnitte.isEmpty || liste != nil || json["bestand_stand"] != nil || json["fehlt"] != nil
+            || json["stueckgut"] != nil
+        else {
             return nil
         }
         self.init(
             run: json["run"]?.intValue ?? 0, zuschnitte: zuschnitte,
             einkaufsliste: (liste ?? []).enumerated().compactMap { EinkaufsPosition(json: $1, index: $0) },
-            bestandStand: json["bestand_stand"]?.lenientString, fehlt: json["fehlt"]?.boolValue)
+            bestandStand: json["bestand_stand"]?.lenientString, fehlt: json["fehlt"]?.boolValue,
+            stueckgut: (json["stueckgut"]?.arrayValue ?? []).compactMap(StueckgutBedarf.init(json:)),
+            einkaufSumme: json["einkauf_summe"]?.doubleValue, einkaufHinweis: json["einkauf_hinweis"]?.lenientString)
     }
 
-    /// Summe der Einkaufsliste (nil, wenn keine Position einen Preis hat).
+    /// Summe der Einkaufsliste: Angabe des Kernels, sonst gerechnet (nil, wenn keine Position einen Preis hat).
     public var summe: Double? {
+        if let einkaufSumme { return einkaufSumme }
         let preise = einkaufsliste.compactMap(\.preis)
         return preise.isEmpty ? nil : preise.reduce(0, +)
     }
@@ -872,6 +901,43 @@ public struct BOMBestand: Equatable, Sendable {
     /// Etwas aus dem Bestand wird verplant oder es entstehen Reste: „Gebaut“ hat etwas zu buchen.
     public var hatBuchbares: Bool {
         zuschnitte.contains { $0.quellen.contains { $0.art != .kaufen } || $0.hatNeueReste }
+            || stueckgut.contains { $0.ausBestand > 0 }
+    }
+}
+
+/// Stückgut der Stückliste mit Bestand (`BOM.stueckgut`, BESTAND.md Anhang S-K).
+public struct StueckgutBedarf: Identifiable, Equatable, Sendable {
+    public var stockID: String
+    public var benennung: String
+    public var masseText: String
+    public var laenge: Double?
+    public var anzahl: Int
+    public var ausBestand: Int
+    public var kaufen: Int
+
+    public var id: String { stockID + "/" + (laenge.map { KevFormat.input($0) } ?? "-") }
+
+    public init(
+        stockID: String, benennung: String, masseText: String = "", laenge: Double? = nil, anzahl: Int,
+        ausBestand: Int, kaufen: Int
+    ) {
+        self.stockID = stockID
+        self.benennung = benennung
+        self.masseText = masseText
+        self.laenge = laenge
+        self.anzahl = anzahl
+        self.ausBestand = ausBestand
+        self.kaufen = kaufen
+    }
+
+    init?(json: JSONValue) {
+        guard let id = json["stock_id"]?.lenientString else { return nil }
+        let anzahl = json["anzahl"]?.intValue ?? 0
+        let aus = json["aus_bestand"]?.intValue ?? 0
+        self.init(
+            stockID: id, benennung: json["benennung"]?.lenientString ?? id,
+            masseText: json["masse_text"]?.lenientString ?? "", laenge: json["laenge"]?.doubleValue, anzahl: anzahl,
+            ausBestand: aus, kaufen: json["kaufen"]?.intValue ?? max(0, anzahl - aus))
     }
 }
 
@@ -903,6 +969,9 @@ public struct BestandZustand: Equatable, Sendable {
     public var empfangen: Bool
     public var buchungen: [BestandBuchung]
     public var stand: String?
+    /// Pfad der Bestandsdatei des Projekts und Fehlertext, wenn sie nicht lesbar ist (dann ist `bestand` nil).
+    public var datei: String?
+    public var fehler: String?
     /// Bestandsteil der letzten Stückliste (gehört zu `AppModel.bom`).
     public var zuschnitt: BOMBestand?
     public var aktivitaet: BestandAktivitaet

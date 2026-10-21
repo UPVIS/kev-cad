@@ -337,19 +337,27 @@ final class BestandModelTests: XCTestCase {
         let j = e.posten(vorher: p.json, bestand: b)
         let q = BestandPosten(id: p.id, json: j)
         XCTAssertEqual(q.ganzeAnzahl, 4)
-        XCTAssertEqual(q.reste.compactMap(\.kennung), ["R-0007", "R-0008", "R-0009", "R-0010", "R-0011"])
+        // Kennungen der neuen Reste vergibt der Kernel
+        XCTAssertEqual(q.reste.map(\.kennung), ["R-0007", "R-0008", nil, nil, nil])
+        XCTAssertEqual(q.reste.map(\.id), ["R-0007", "R-0008", "#2", "#3", "#4"])
         XCTAssertEqual(q.reste.last?.ort, "Regal 2")
         XCTAssertEqual(e.grund(name: "ALFER-Rohr"), "Erfasst ALFER-Rohr: 2 Stangen à 1.000 mm, 3 Reste (430, 610, 180 mm)")
         // Neuer Posten ohne Bestand
         let neu = BestandPosten(id: "x", json: e.posten(vorher: nil, bestand: nil))
         XCTAssertEqual(neu.ganzeAnzahl, 2)
         XCTAssertEqual(neu.ganzeLaenge, 1000)
-        XCTAssertEqual(neu.reste.first?.kennung, "R-0001")
+        XCTAssertNil(neu.reste.first?.kennung)
+        // Ohne Kernel vergibt die App sie selbst (fortlaufend ab der höchsten)
+        e.kennungenVergeben = true
+        XCTAssertEqual(BestandPosten(id: p.id, json: e.posten(vorher: p.json, bestand: b)).reste.compactMap(\.kennung),
+                       ["R-0007", "R-0008", "R-0009", "R-0010", "R-0011"])
+        XCTAssertEqual(BestandPosten(id: "x", json: e.posten(vorher: nil, bestand: nil)).reste.first?.kennung, "R-0001")
         // Platten und Stückgut
         let r = try XCTUnwrap(BestandText.rechtecke("600 × 400, 300 x 200"))
         e = BestandErfassung(form: .platte, ganze: 1, b: 2500, h: 1250, resteFlaechen: r.map { ZuschnittFlaeche(b: $0.b, h: $0.h) })
         let pl = BestandPosten(id: "p", json: e.posten(vorher: nil, bestand: b))
-        XCTAssertEqual(pl.reste.compactMap(\.kennung), ["P-0004", "P-0005"])
+        XCTAssertEqual(pl.reste.count, 2)
+        XCTAssertEqual(pl.reste.first?.masseText, "600 × 400 mm")
         XCTAssertEqual(pl.ganzeMasseText, "2.500 × 1.250 mm")
         XCTAssertEqual(e.grund(name: "Birke"), "Erfasst Birke: 1 Platte à 2.500 × 1.250 mm, 2 Reste (600 × 400 mm, 300 × 200 mm)")
         e = BestandErfassung(form: .stueckgut, stueck: 20, stueckLaenge: 16)
@@ -589,10 +597,16 @@ final class BestandControllerTests: XCTestCase {
         let ordner = FileManager.default.temporaryDirectory.appendingPathComponent("kevcad-bestand-csv-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: ordner) }
         c.handle([try msg(#"{"type":"PROJECT","path":"\#(ordner.path)","name":"Kugelschieber"}"#)])
-        c.handle([.message(.bom(try BestandBeispiel.bomMessage()))])
+        c.handle([.message(.bom(try BestandBeispiel.bomMessage()))])  // a-1: Katalog still nachladen
         var gezeigt: [URL] = []
         c.revealFiles = { gezeigt = $0 }
-        c.exportEinkaufsliste()
+        // Über den Kernel (EXPORT_REQ einkaufsliste_csv): seine Datei wird gezeigt
+        c.exportEinkaufsliste()  // a-2
+        c.handle([try msg(#"{"type":"EXPORT_RES","reply_to":"a-2","files":["/p/output/Kugelschieber-einkaufsliste.csv"]}"#)])
+        XCTAssertEqual(gezeigt.map(\.path), ["/p/output/Kugelschieber-einkaufsliste.csv"])
+        // Älterer Kernel ohne das Format: die App schreibt die CSV selbst
+        c.exportEinkaufsliste()  // a-3
+        c.handle([try msg(#"{"type":"ERROR","reply_to":"a-3","message":"Unbekanntes Format einkaufsliste_csv"}"#)])
         let datei = ordner.appendingPathComponent("output/Kugelschieber-einkaufsliste.csv")
         XCTAssertEqual(gezeigt.map(\.path), [datei.path])
         let text = try String(contentsOf: datei, encoding: .utf8)

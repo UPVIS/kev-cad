@@ -1,3 +1,4 @@
+import AppKit
 import KevCADCore
 import SwiftUI
 
@@ -15,10 +16,12 @@ struct BestandPanel: View {
 
     private var bestand: Bestand? { model.bestandZustand.bestand }
 
-    /// Posten im Bestand, nach Namen sortiert.
+    /// Posten im Bestand: Stangenware, Platten, Stückgut, darin nach Namen.
     private var posten: [BestandPosten] {
-        (bestand?.posten ?? []).sorted {
-            model.lagerteilName($0.id).localizedStandardCompare(model.lagerteilName($1.id)) == .orderedAscending
+        let rang: [BestandForm: Int] = [.stange: 0, .platte: 1, .stueckgut: 2]
+        return (bestand?.posten ?? []).sorted {
+            if $0.form != $1.form { return rang[$0.form, default: 3] < rang[$1.form, default: 3] }
+            return model.lagerteilName($0.id).localizedStandardCompare(model.lagerteilName($1.id)) == .orderedAscending
         }
     }
 
@@ -43,8 +46,15 @@ struct BestandPanel: View {
         .onAppear {
             if model.catalog == nil { model.catalogActions?.requestCatalog(query: nil, art: nil) }
             if !model.bestandZustand.empfangen { model.bestandActions?.requestBestand() }
-            if ui.auswahl == nil { ui.auswahl = posten.first?.id ?? nichtErfasst.first }
+            waehleErstes()
         }
+        .onChange(of: model.bestandZustand.bestand?.posten.map(\.id)) { _, _ in waehleErstes() }
+    }
+
+    /// Ohne gültige Auswahl das erste Lagerteil zeigen (der Bestand kommt oft erst nach dem Erscheinen).
+    private func waehleErstes() {
+        let ids = posten.map(\.id) + nichtErfasst
+        if ui.auswahl.map({ !ids.contains($0) }) ?? true { ui.auswahl = ids.first }
     }
 
     // MARK: Kopf
@@ -56,6 +66,7 @@ struct BestandPanel: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
+                .help(model.bestandZustand.datei.map { "Bestand dieses Projekts: \($0)" } ?? "")
             if model.bestandZustand.aktivitaet == .saving {
                 ProgressView().controlSize(.small)
                 Text("Wird gebucht …").foregroundStyle(.secondary)
@@ -134,6 +145,19 @@ struct BestandPanel: View {
                 Text("Der Kernel hat noch keinen Bestand geschickt. Ältere Kernel-Versionen kennen den Bestand nicht.")
             } actions: {
                 Button("Erneut anfragen") { model.bestandActions?.requestBestand() }
+            }
+        } else if let fehler = model.bestandZustand.fehler {
+            ContentUnavailableView {
+                Label("bestand.json ist nicht lesbar", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(fehler)
+            } actions: {
+                if let datei = model.bestandZustand.datei {
+                    Button("Im Finder zeigen") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: datei)])
+                    }
+                }
+                Button("Erneut laden") { model.bestandActions?.requestBestand() }
             }
         } else if bestand == nil {
             ContentUnavailableView(

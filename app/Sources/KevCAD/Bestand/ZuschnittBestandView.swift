@@ -27,7 +27,9 @@ struct StuecklisteUntenView: View {
             Divider()
             switch ui.unten {
             case .zuschnitt:
-                ZuschnittListe(model: model, bom: bom, zuschnitte: liste, selected: selected, onSelect: onSelect)
+                ZuschnittListe(
+                    model: model, bom: bom, zuschnitte: liste, stueckgut: zuschnitt.stueckgut, selected: selected,
+                    onSelect: onSelect)
             case .einkauf:
                 EinkaufslisteView(model: model, zuschnitt: zuschnitt)
             }
@@ -43,9 +45,10 @@ struct StuecklisteUntenView: View {
             let inhalt = liste.reduce(CGFloat(0)) { sum, z in
                 sum + 30 + (z.istPlatte ? 150 : CGFloat(max(1, z.quellen.count)) * 24)
             }
-            return 30 + max(60, inhalt) + 12
+            let stueck = zuschnitt.stueckgut.isEmpty ? 0 : 30 + CGFloat(zuschnitt.stueckgut.count) * 20
+            return 30 + max(60, inhalt + stueck) + 12
         case .einkauf:
-            return 30 + 28 + CGFloat(max(2, zuschnitt.einkaufsliste.count)) * 26 + 30
+            return 30 + 30 + CGFloat(max(2, zuschnitt.einkaufsliste.count)) * 34 + 30
         }
     }
 
@@ -145,11 +148,12 @@ private struct ZuschnittListe: View {
     @ObservedObject var model: AppModel
     let bom: BillOfMaterials
     let zuschnitte: [BestandZuschnitt]
+    var stueckgut: [StueckgutBedarf] = []
     let selected: Int?
     var onSelect: (BOMLine) -> Void
 
     var body: some View {
-        if zuschnitte.isEmpty {
+        if zuschnitte.isEmpty && stueckgut.isEmpty {
             Text("Kein Zuschnitt: das Modell verbaut keine Stangenware und keine Platten.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -159,9 +163,12 @@ private struct ZuschnittListe: View {
                     ForEach(zuschnitte) { z in
                         ZuschnittBlock(
                             zuschnitt: z, lines: bom.lines.filter { $0.stockID == z.stockID },
-                            mindestrest: model.bestandZustand.bestand?.mindestrest(z.stockID)
+                            mindestrest: z.mindestrest ?? model.bestandZustand.bestand?.mindestrest(z.stockID)
                                 ?? BestandEinstellungen.standard.mindestrestMM,
                             selected: selected, onSelect: onSelect)
+                    }
+                    if !stueckgut.isEmpty {
+                        StueckgutBlock(model: model, stueckgut: stueckgut)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -184,6 +191,12 @@ private struct ZuschnittBlock: View {
             kopf
             if zuschnitt.istPlatte {
                 PlattenReihe(zuschnitt: zuschnitt, lines: lines, selected: selected, onSelect: onSelect)
+                if !zuschnitt.zuGross.isEmpty {
+                    Label("Größer als die Platte: " + zuschnitt.zuGross.map(\.masseText).joined(separator: ", "),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .symbolRenderingMode(.multicolor)
+                        .font(.callout)
+                }
             } else {
                 ForEach(zuschnitt.quellen) { q in
                     HStack(spacing: 8) {
@@ -388,7 +401,7 @@ private struct PlattenZeichnung: View {
                         }
                     }
                     .frame(width: CGFloat(r.b * skala), height: CGFloat(r.h * skala))
-                    .offset(x: CGFloat(r.x * skala), y: CGFloat(r.y * skala))
+                    .offset(x: CGFloat(r.x * skala), y: CGFloat((h - r.y - r.h) * skala))
                     .help("Neuer Rest \(r.masseText): kommt nach „Gebaut“ mit Kennung in den Bestand")
             }
             ForEach(Array(quelle.flaechenLayout(saegeschnitt: saegeschnitt).enumerated()), id: \.offset) { _, f in
@@ -409,7 +422,7 @@ private struct PlattenZeichnung: View {
                         }
                     }
                     .frame(width: CGFloat(f.b * skala), height: CGFloat(f.h * skala))
-                    .offset(x: CGFloat(f.x * skala), y: CGFloat(f.y * skala))
+                    .offset(x: CGFloat(f.x * skala), y: CGFloat((h - f.y - f.h) * skala))
                     .contentShape(Rectangle())
                     .help((line.map { "Pos. \($0.pos) · " } ?? "") + f.masseText + (f.gedreht ? " · gedreht" : ""))
                     .onTapGesture { if let line { onSelect(line) } }
@@ -455,7 +468,7 @@ struct EinkaufslisteView: View {
                     TableColumn("Einheit") { p in
                         Text(p.einheit).lineLimit(1).help(p.einheit)
                     }
-                    .width(min: 70, ideal: 120)
+                    .width(min: 90, ideal: 130)
                     TableColumn("Benennung") { p in
                         HStack(spacing: 6) {
                             ArtTile(art: model.lagerteilArt(p.id), size: 18, tint: ZuschnittFarbe.kaufen.color)
@@ -463,7 +476,7 @@ struct EinkaufslisteView: View {
                         }
                         .help("\(p.benennung)\nLagerteil \(p.id)")
                     }
-                    .width(min: 150, ideal: 230)
+                    .width(min: 140, ideal: 210)
                     TableColumn("Preis") { p in
                         VStack(alignment: .trailing, spacing: 0) {
                             Text(p.preis.map(KevFormat.euro) ?? "–")
@@ -494,14 +507,14 @@ struct EinkaufslisteView: View {
                             Text("–").foregroundStyle(.tertiary)
                         }
                     }
-                    .width(min: 80, ideal: 140)
+                    .width(min: 80, ideal: 110)
                     TableColumn("Hinweis") { p in
                         Text(p.hinweis ?? "")
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .help(p.hinweis ?? "")
                     }
-                    .width(min: 80, ideal: 220)
+                    .width(min: 100, ideal: 240)
                 }
                 .tableStyle(.inset)
                 .alternatingRowBackgrounds()
@@ -543,7 +556,9 @@ struct EinkaufslisteView: View {
                     .help("Zeitpunkt der Bestandsdatei, nach der die Einkaufsliste gerechnet ist")
             }
             Spacer(minLength: 8)
-            if zuschnitt.ohnePreis > 0 {
+            if let h = zuschnitt.einkaufHinweis, h != model.bom?.totals.preisHinweis {
+                Text(h).foregroundStyle(.secondary).help(h)
+            } else if zuschnitt.ohnePreis > 0 {
                 Text("\(KevFormat.count(zuschnitt.ohnePreis, one: "Position", many: "Positionen")) ohne Preis")
                     .foregroundStyle(.secondary)
             }
@@ -557,5 +572,39 @@ struct EinkaufslisteView: View {
         .padding(.horizontal, 12)
         .frame(height: 28)
         .overlay(alignment: .top) { Divider() }
+    }
+}
+
+/// Stückgut des Modells: gebraucht, aus dem Bestand, zu kaufen (BOM.stueckgut).
+private struct StueckgutBlock: View {
+    @ObservedObject var model: AppModel
+    let stueckgut: [StueckgutBedarf]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "screwdriver").foregroundStyle(.secondary)
+                Text("Stückgut").fontWeight(.semibold)
+            }
+            .font(.callout)
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 3) {
+                ForEach(stueckgut) { s in
+                    GridRow {
+                        Text(s.benennung + (s.laenge != nil && !s.benennung.contains("Länge") ? " · \(s.masseText)" : ""))
+                            .lineLimit(1)
+                        Text("\(KevFormat.integer(s.anzahl)) gebraucht").foregroundStyle(.secondary)
+                        QuellenMarke(art: .bestand, text: "\(KevFormat.integer(s.ausBestand)) aus Bestand")
+                            .opacity(s.ausBestand > 0 ? 1 : 0.4)
+                        if s.kaufen > 0 {
+                            QuellenMarke(art: .kaufen, text: "\(KevFormat.integer(s.kaufen)) kaufen")
+                        } else {
+                            Text("")
+                        }
+                    }
+                    .monospacedDigit()
+                }
+            }
+            .font(.callout)
+        }
     }
 }

@@ -14,7 +14,10 @@ extension AppController: BestandActions {
         z.bestand = message.bestand
         z.buchungen = message.buchungen
         z.stand = message.stand
+        z.datei = message.datei
+        z.fehler = message.fehler
         model.bestandZustand = z
+        if let f = message.fehler { log(.warning, "Bestand: \(f)") }
     }
 
     func applyBOMBestand(_ message: BOMMessage) {
@@ -153,7 +156,26 @@ extension AppController: BestandActions {
         model.bestandZustand = z
     }
 
+    /// Einkaufsliste als CSV: über den Kernel (EXPORT_REQ `einkaufsliste_csv`, dieselbe Datei wie MCP
+    /// `einkaufsliste()`), bei einem älteren Kernel schreibt die App sie selbst.
     public func exportEinkaufsliste() {
+        guard !AppInfo.isDemoMode, model.project != nil, model.bestandZustand.zuschnitt != nil else { return }
+        guard helloReceived else { return exportEinkaufslisteSelbst() }
+        let msg = ExportRequestMessage(id: nextRequestID(), formats: ["einkaufsliste_csv"], parts: nil)
+        request(msg, timeout: 60) { [weak self] result in
+            guard let self else { return }
+            if case .success(.exportResponse(let e)) = result,
+               let csv = e.files.first(where: { $0.lowercased().hasSuffix(".csv") })
+            {
+                self.log(.info, "Einkaufsliste gespeichert: \(csv)")
+                self.revealFiles([URL(fileURLWithPath: csv)])
+            } else {
+                self.exportEinkaufslisteSelbst()
+            }
+        }
+    }
+
+    func exportEinkaufslisteSelbst() {
         guard let project = model.project, let z = model.bestandZustand.zuschnitt else { return }
         let ordner = project.path.appendingPathComponent("output", isDirectory: true)
         let datei = ordner.appendingPathComponent(EinkaufslisteFormat.dateiname(projekt: project.name))

@@ -61,7 +61,7 @@ public struct GebautVorschau: Equatable, Sendable {
             let teil = name(z.stockID) ?? z.benennung
             let einheit = z.istPlatte ? ("ganze Platte", "ganze Platten") : ("ganze Stange", "ganze Stangen")
             let kaufEinheit = z.istPlatte ? ("Platte", "Platten") : ("Stange", "Stangen")
-            let mindestrest = bestand?.mindestrest(z.stockID) ?? BestandEinstellungen.standard.mindestrestMM
+            let mindestrest = z.mindestrest ?? bestand?.mindestrest(z.stockID) ?? BestandEinstellungen.standard.mindestrestMM
             // Reste weg (je Kennung)
             for q in z.quellen where q.art == .rest {
                 v.weg.append(Zeile(
@@ -103,8 +103,15 @@ public struct GebautVorschau: Equatable, Sendable {
                 }
             }
         }
-        // Stückgut aus dem Bestand
-        for posten in bestand?.posten ?? [] where posten.form == .stueckgut {
+        // Stückgut aus dem Bestand: Angabe des Kernels (BOM.stueckgut), sonst aus Stückliste und Bestand gerechnet
+        for s in zuschnitt.stueckgut where s.ausBestand > 0 {
+            let laengeText = s.laenge.map { " · \(KevFormat.length($0))" } ?? ""
+            v.weg.append(Zeile(
+                id: "\(s.id)/stueck", art: .stueckWeg, text: "\(KevFormat.integer(s.ausBestand)) Stück\(laengeText)",
+                teil: name(s.stockID) ?? s.benennung,
+                hinweis: s.kaufen > 0 ? "\(KevFormat.integer(s.anzahl)) gebraucht, \(KevFormat.integer(s.kaufen)) kaufen" : nil))
+        }
+        for posten in bestand?.posten ?? [] where posten.form == .stueckgut && zuschnitt.stueckgut.isEmpty {
             let zeilen = lines.filter { $0.stockID == posten.id }
             guard !zeilen.isEmpty else { continue }
             let teil = name(posten.id) ?? zeilen.first?.benennung ?? posten.id
@@ -159,6 +166,8 @@ public struct BestandErfassung: Equatable, Sendable {
     /// Stückgut, das dazukommt, und seine Länge (Schrauben).
     public var stueck: Int
     public var stueckLaenge: Double?
+    /// Kennungen der neuen Reste selbst vergeben (Standard nein: der Kernel vergibt sie).
+    public var kennungenVergeben = false
 
     public init(
         form: BestandForm, ganze: Int = 0, laenge: Double? = nil, b: Double? = nil, h: Double? = nil,
@@ -198,7 +207,10 @@ public struct BestandErfassung: Equatable, Sendable {
                     p, anzahl: bisher + ganze, laenge: form == .stange ? laenge : nil, b: form == .platte ? b : nil,
                     h: form == .platte ? h : nil, nurWennFehlt: bisher > 0)
             }
-            let kennungen = (bestand ?? .leer).naechsteKennungen(form, anzahl: resteAnzahl)
+            // Kennungen vergibt der Kernel (er kennt auch die schon verbrauchten); `kennungenVergeben` nur ohne Kernel
+            let kennungen: [String?] = kennungenVergeben
+                ? (bestand ?? .leer).naechsteKennungen(form, anzahl: resteAnzahl)
+                : Array(repeating: nil, count: resteAnzahl)
             if form == .stange {
                 for (l, k) in zip(resteLaengen, kennungen) {
                     p = BestandBearbeitung.restHinzu(p, kennung: k, laenge: l, ort: ort)
