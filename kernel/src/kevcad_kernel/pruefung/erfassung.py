@@ -62,7 +62,7 @@ class Erfassung:
                 info["stock_id"] = p.stock_id
             if p.art == "druckteil":
                 info["druckteil"] = True
-                info.update(self._druck(shape, p))
+                info.update(self._druck(shape, self._druckstueck(name, shape, pieces)))
             if p.art in ("schraube", "mutter", "scheibe"):
                 try:
                     info.update(self._verbindung(shape, p, catalog))
@@ -70,6 +70,19 @@ class Erfassung:
                     pass
         self.teile[name] = info
         self.formen[name] = shape
+
+    @staticmethod
+    def _druckstueck(name: str, shape: Any, pieces: list[Any]) -> Any:
+        """Das Druckteil zu diesem Teil: mehrere passen, wenn gleiche Formen mehrfach gedruckt werden (Kinder einer
+        Baugruppe aus derselben Form); dann zählt der Name (wie in druckteil, das Label oder der letzte Namensteil)."""
+        druck = [p for p in pieces if p.art == "druckteil"]
+        if len(druck) > 1:
+            namen = {name, name.rsplit("/", 1)[-1], str(getattr(shape, "label", "") or ""),
+                     str(getattr(shape, "lager_name", "") or "")}
+            treffer = [p for p in druck if p.name in namen]
+            if treffer:
+                return treffer[0]
+        return druck[0] if druck else pieces[0]
 
     @staticmethod
     def _druck(shape: Any, piece: Any) -> dict[str, Any]:
@@ -122,6 +135,8 @@ class Erfassung:
                 t = r.strip().strip("/")
                 if t in shown:
                     out.append(t)
+                elif t + " (vereinfacht)" in shown:  # Zukaufteil als Ersatzkörper: der Kernel ergänzt den Namen
+                    out.append(t + " (vereinfacht)")
                 elif any(n.startswith(t + "/") for n in shown):
                     out.append(t + "/")
                 else:

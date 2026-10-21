@@ -194,6 +194,22 @@ private struct PartRow: View {
                     .font(.system(size: 10.5))
                     .foregroundStyle(.red)
                     .help("Nicht aus dem Inventar: weder verbautes Lagerteil noch gekennzeichnetes 3D-Druckteil")
+            } else if let zukauf = node.part?.zukauf {
+                // Zukaufteil: Wagen für Hersteller-CAD, durchsichtiger Würfel für den Ersatzkörper
+                HStack(spacing: 4) {
+                    // Der Kernel hängt „(vereinfacht)“ schon an den Namen (KATALOG.md); dann nicht doppelt
+                    if zukauf.isSimplified, !node.name.contains("(vereinfacht)") {
+                        Text("vereinfacht")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    Image(systemName: zukauf.isSimplified ? "cube.transparent" : "cart.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(zukauf.isSimplified ? Color.orange : Color.secondary)
+                }
+                .help(zukauf.isSimplified
+                    ? "Zukaufteil \(zukauf.title), vereinfacht: Ersatzkörper aus den Shop-Maßen"
+                    : "Zukaufteil \(zukauf.title) mit Hersteller-CAD")
             } else if let stock = node.part?.stock {
                 // Lagerteil: kleines Symbol statt Materialname (Material und Zuschnitt im Tooltip)
                 Image(systemName: "shippingbox")
@@ -236,6 +252,9 @@ private struct PartRow: View {
         var parts = [node.id]
         if let stock = node.part?.stock {
             parts.append("Lagerteil \(stock.name)" + (stock.laenge.map { " à \(KevFormat.length($0))" } ?? ""))
+        }
+        if let zukauf = node.part?.zukauf {
+            parts.append("Zukaufteil \(zukauf.title)" + (zukauf.isSimplified ? " (vereinfacht)" : ""))
         }
         if let part = node.part, let material = model.materialTitle(for: part) { parts.append(material) }
         parts.append(KevFormat.count(node.triangles, one: "Dreieck", many: "Dreiecke"))

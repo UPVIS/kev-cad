@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“).
 ---
 
 # Kev CAD
@@ -101,6 +101,11 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
   "kleben" | "aufliegen", mit=[schraube, mutter, scheibe])`. Geprüft wird, dass es die Verbindung wirklich gibt
   (Kontakt bzw. Spielpassung bis 0,5 mm; bei Schrauben fluchtende Bohrungen in beiden Teilen, Kopf und Mutter liegen
   auf) und dass alle Teile über Verbindungen am Boden hängen. Gelenke, `in_bohrung` und `auf` von oben zählen mit.
+  Kevin, 22.10.2026: Solange ein Modell kein `verbinde` nutzt, ist fehlende Befestigung nur ein Hinweis; sobald es
+  `verbinde` nutzt, ist jede fehlende Angabe ein Fehler mit Exportsperre. Bei neuen Modellen gleich alles verbinden.
+- **Bewegungen:** Die Gelenke in model.py sind die Quelle dafür, was sich wie bewegt (Bereich, Bedienung,
+  mitbewegte Teile). `<projekt>/bewegungen.json` gilt nur noch für Teile ohne Gelenk; Einträge für Teile mit Gelenk
+  werden übergangen (Kevin, 22.10.2026).
 - **Maße:** `param(name, wert, min=, max=)`, `bed.gleich(a, b)`, `bed.spiel(deckel, gehaeuse, min=0.2)`,
   `bed.min_abstand(a, b, wert)`, `bed.min_wand(teil, 1.2)`.
 - **Prüfen:** `run` meldet Befunde mit Soll, Ist, Zeile und Lösung; `bedingungen` zeigt alle Bedingungen, Freiheitsgrade
@@ -170,7 +175,8 @@ statt doppelt zu rechnen.
 
 Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
 
-- Jedes Teil in `show()` stammt aus `lager.teil(...).verbauen(...)` oder ist ausdrücklich ein 3D-Druckteil:
+- Jedes Teil in `show()` stammt aus `lager.teil(...).verbauen(...)`, aus einem freigegebenen Zukaufteil
+  (`lager.zukauf(...).verbauen(...)`, siehe „Zukaufteile“) oder ist ausdrücklich ein 3D-Druckteil:
   `lager.druckteil(form, "Halter/Schelle", material="petg")`. Druckmaterial muss freigegeben und druckbar sein
   (`material_list` zeigt „druckbar“: PLA, PETG, ABS, ASA, TPU 95A, PA, PA-CF, PC-Filament, PLA-CF, Standardharz);
   `verfahren="3d-druck"` (Standard) oder `"harzdruck"`.
@@ -236,6 +242,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
 | `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch). |
+| `lager.zukauf(id)` → `.verbauen(name)`, `.bezugspunkt(name)` | Zukaufteil mit Hersteller-CAD, Skript oder Ersatzkörper (siehe „Zukaufteile“). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `import kevcad.bedingungen as bed` | Bezüge, Bedingungen, Gelenke, Befestigung, `bed.platziere(teil, …)` (Abschnitt „Teile über Bedingungen setzen“). |
 
@@ -269,6 +276,55 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
   5.394 mm, Rest 606 mm“, Sägeschnitt 3 mm, Verschnitt in %), Summen mit Richtpreis-Hinweis, Hinweise (etwa nicht
   zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
+
+## Zukaufteile
+
+Fertig gekaufte Teile mit Hersteller und Nummer (Schubladenauszug, Scharnier, Rolle, Rollwagen). Sie zählen zum
+Inventar, sobald Kevin sie freigegeben hat. Kameras, Objektive und Kamera-Zubehör: siehe „Kameras“.
+
+```python
+wagen = lager.zukauf("alutec-05200")          # nach id; sonst lager.zukauf(mpn="05200", hersteller="ALUTEC") oder gtin=
+rw = wagen.verbauen("Rollwagen")              # Hersteller-CAD, Skript-Geometrie oder Ersatzkörper
+show(Pos(0, y, 0) * rw, "Rollwagen")          # gleicher Name wie in verbauen
+oben = wagen.bezugspunkt("oben")              # Location im System des verbauten Teils
+show(Pos(0, y, 0) * oben * ball, "Ball")      # auf die Ladefläche gesetzt
+```
+
+- Das verbaute Teil liegt mit seinem **Einbaupunkt** im Ursprung (Standard: Mitte der Unterseite, Z oben).
+  Bezugspunkte (`bezugspunkte` im Katalog) gelten im selben System; Lage daraus ableiten statt Zahlen abzuschreiben.
+- Hersteller-CAD mit Baugruppe erscheint als Baum („Rollwagen/Platte“, „Rollwagen/Rolle_1“). Ohne Modell ist es ein
+  **Ersatzkörper** (Quader oder Zylinder aus den Shop-Maßen), halbtransparent und mit „(vereinfacht)“ im Namen.
+  **Vereinfachte Teile im Bericht an Kevin immer nennen.**
+- Die Prüfung behandelt Zukaufteile wie alle Teile: Hersteller-CAD und Ersatzkörper dürfen nichts durchdringen.
+  Überlappt ein Zukaufteil sein Gegenstück nur, weil das Modell vereinfacht ist (Gewinde als Vollzylinder,
+  Ersatzquader), ist das trotzdem ein Befund: im Modell lösen oder `erlaubt_ueberlappung(…, grund=…)` erst nach
+  Rückfrage bei Kevin.
+- Skript-Geometrie (`cad.quelle: "skript"` mit `datei`/`modul` und `funktion`): `verbauen(name, **kwargs)` reicht
+  Schlüsselwörter an die Funktion weiter.
+
+Ablauf, wenn Kevin einen Link, eine Herstellernummer oder eine EAN nennt:
+
+1. **Seite selbst lesen** (Browser oder WebFetch). Kev CAD lädt keine Shop-Seiten und umgeht keinen Bot-Schutz. Bei
+   einer EAN erst den Artikel suchen.
+2. **Normteil?** „ISO 4762 M6×20“, „DIN 934 M8“: kein Zukaufteil, sondern `stock_search` und `lager.teil(...)`
+   (`zukauf_anlegen` leitet selbst um).
+3. **Anlegen:** HTML an `zukauf_html(url, html)` (wertet JSON-LD, Microdata und Open Graph aus) oder die gelesenen
+   Felder an `zukauf_anlegen(url, felder={name, hersteller, mpn, gtin, preis {je_stueck, waehrung, brutto}, masse {l,
+   b, h} bzw. {d, l}, gewicht, bild})`. Preis immer mit brutto/netto wie im Shop. Kevin Hersteller, Nummer, Preis und
+   Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es im Lagerkatalog
+   freigibt; vorher lässt es sich nicht verbauen.
+4. **CAD suchen:** `cad_suchen(id)`. Mit Kevins TraceParts-Schlüssel kommt das STEP automatisch („powered by
+   TraceParts“ nennen). Sonst liefert es Links (Produktseite, Herstellerportal, TraceParts, 3Dfindit, Websuche):
+   **Kevin bitten, das STEP (oder ein ZIP mit STEP) mit seinem Konto herunterzuladen.** Die App beobachtet derweil
+   `~/Downloads` und fragt ihn selbst.
+5. **Übernehmen:** `cad_uebernehmen(id)` ohne Pfad nimmt die neueste passende Datei aus `~/Downloads` (auch aus ZIP).
+   Zoll, Zentimeter und „Y oben“ werden erkannt und korrigiert (steht im Ergebnis); passt das Hüllmaß nicht zu den
+   Katalogmaßen, wird abgelehnt (falsche Datei? Maße prüfen; `erzwingen=True` nur nach Rückfrage). Die Datei liegt
+   danach in `<projekt>/zukauf/<id>/` (nie im Git, Herstellerbedingungen).
+6. `run`, prüfen wie immer, `bom` zeigt das Teil mit Hersteller, Nummer, Stückpreis mit Datum, Link und CAD-Quelle.
+
+`zukauf_liste` zeigt alle Zukaufteile mit Freigabe und CAD-Stand. Die Summe der Stückliste mischt Richtpreise (netto)
+und Shoppreise (oft brutto); die Stückliste sagt das dazu, so auch an Kevin weitergeben.
 
 ## Kameras
 

@@ -194,6 +194,24 @@ show(Pos(200, 0, 0) * Rot(90, 0, 30) * lager.druckteil(winkel, "Gedreht", materi
     assert [b["art"] for b in druck(check, "Gerade")] == [b["art"] for b in druck(check, "Gedreht")]
 
 
+def test_druckteile_als_kinder_einer_baugruppe(tmp_path):
+    """Baugruppe aus Druckteilen, verschoben und gedreht gezeigt (Kinder über baum.kinder, Phase 3)."""
+    code = HEAD + WINKEL + """
+a = lager.druckteil(winkel, "Links", material="petg", ausrichtung="-z")
+b = lager.druckteil(Pos(60, 0, 0) * winkel, "Rechts", material="petg")
+gruppe = Compound(children=[a, b])
+show(Pos(0, 300, 0) * Rot(0, 0, 90) * gruppe, "Halter")
+"""
+    _, check, _ = laufe(tmp_path, code)
+    teile = check["druck"]["teile"]
+    assert set(teile) == {"Halter/Links", "Halter/Rechts"}
+    li, re = teile["Halter/Links"], teile["Halter/Rechts"]
+    assert li["ausrichtung"]["vorgabe"] == "-z" and li["ausrichtung"]["bezug"] == "druckteil"
+    assert re["ausrichtung"]["automatisch"] and re["kennzahlen"]["schichten"] == li["kennzahlen"]["schichten"] == 150
+    orte = [b["ort"] for b in druck(check) if b["ort"]]
+    assert orte and all(240 <= o[1] <= 420 and -25 <= o[0] <= 1 for o in orte), orte  # in der Welt: gedreht, verschoben
+
+
 def test_ausrichtung_als_vektor(tmp_path):
     code = HEAD + WINKEL + """
 show(lager.druckteil(winkel, "Winkel", material="petg", ausrichtung=(1, 0, 0)), "Winkel")

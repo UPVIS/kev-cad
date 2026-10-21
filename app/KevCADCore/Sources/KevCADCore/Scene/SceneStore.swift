@@ -54,6 +54,9 @@ public final class SceneStore {
     /// Prüfung: rote, durchscheinende Schnittkörper (immer obenauf, nicht anklickbar), siehe AppController+Pruefung.
     public private(set) var ghostBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
+    /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
+    public private(set) var simplifiedParts: Set<String> = []
+    static let simplifiedAlpha: Float = 0.45
     /// Phase 5: Lage je Teil aus der Animation (Ruhelage → aktuelles Bild), zusätzlich zur Basislage; leer = Ruhelage.
     public private(set) var animationTransforms: [String: simd_float4x4] = [:]
     /// Phase 5: von der Animation ausgeblendete Teile (`sichtbar`) und Teile einer Kollision im aktuellen Bild (rot).
@@ -147,6 +150,7 @@ public final class SceneStore {
         selection = []
         highlights = []
         inventoryWarnings = []
+        simplifiedParts = []
         animationTransforms = [:]
         animationHidden = []
         collisionParts = []
@@ -269,6 +273,17 @@ public final class SceneStore {
         publish()
     }
 
+    // MARK: Zukaufteile (Phase 3)
+
+    /// Ersatzkörper halbtransparent zeichnen (ohne Wirkung, wenn gleich).
+    public func setSimplifiedParts(_ names: Set<String>) {
+        guard names != simplifiedParts else { return }
+        let touched = names.symmetricDifference(simplifiedParts)
+        simplifiedParts = names
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
     // MARK: Animation (Phase 5)
 
     /// Lage aller bewegten Teile für ein Bild setzen (nur Matrizen, kein Neuvernetzen), dazu ausgeblendete Teile und
@@ -285,6 +300,8 @@ public final class SceneStore {
         for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
+
+    // MARK: Prüfung
 
     /// Schnittkörper der Prüfung ersetzen (leer = keine).
     public func setGhostBodies(_ bodies: [ViewportBody]) {
@@ -615,6 +632,7 @@ public final class SceneStore {
             rgb = rgb + (s - rgb) * 0.3
         }
         c = SIMD4(rgb, c.w)
+        if simplifiedParts.contains(name) { c.w = min(c.w, Self.simplifiedAlpha) }
         if displayStyle == .xray { c.w = min(c.w, Self.xrayAlpha) }
         return c
     }
@@ -647,7 +665,12 @@ public final class SceneStore {
         for n in order { out.append(contentsOf: partBodies[n] ?? []) }
         bodies = out
         renderBodies = out
-        if displayStyle == .xray { for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) } }
+        if displayStyle == .xray {
+            for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
+        } else if displayStyle != .shaded {
+            // Durchsichtige Körper zeichnet der Viewport ohne Kanten: Ersatzkörper bekommen ihre Kanten extra
+            for n in order where simplifiedParts.contains(n) { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
+        }
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: ghostBodies) }  // Schnittkörper: Ruhelage
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
@@ -691,7 +714,8 @@ public final class SceneStore {
                     b.isVisible = true
                     b.triangleStyles = []
                     out.append(b)
-                    if xray, let e = edgeBodies[name]?.first(where: { $0.id.hasPrefix(b.id + "\u{1F}") }) {
+                    if xray || simplifiedParts.contains(name),
+                       let e = edgeBodies[name]?.first(where: { $0.id.hasPrefix(b.id + "\u{1F}") }) {
                         var edge = e
                         edge.color = Self.srgb(e.color)
                         out.append(edge)
