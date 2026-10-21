@@ -27,6 +27,20 @@ notify() {
   osascript -e "display notification \"$2\" with title \"$1\"" >/dev/null 2>&1 || true
 }
 
+# Gemeinsame Sperre mit VoiceBridge: auf dem 16-GB-Mac höchstens ein xcodebuild zur selben Zeit (der Mac fror am
+# 20.10.2026 unter Speicherdruck ein). Vor dem Bauen warten, bis mindestens 25 % Speicher frei sind (höchstens 10 min).
+BUILD_LOCK="/tmp/vb-xcodebuild.lock"
+wait_for_memory() {
+  local i free
+  for i in $(seq 1 60); do
+    free=$(memory_pressure 2>/dev/null | tail -1 | grep -oE '[0-9]+' | tail -1)
+    [ -z "$free" ] || [ "$free" -ge 25 ] && return 0
+    [ "$i" -eq 1 ] && echo "Warte auf freien Speicher ($free % frei)"
+    sleep 10
+  done
+  return 0
+}
+
 APP="$HOME/Applications/Tools/Kev CAD.app"
 BUNDLE_ID="de.upvis.kevcad"
 
@@ -102,7 +116,8 @@ while :; do
       if ! git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
         git -C "$REPO" worktree add --detach "$SRC" main
       fi
-      git -C "$SRC" checkout -q --detach main && git -C "$SRC" reset -q --hard main && "$SRC/build.sh"
+      git -C "$SRC" checkout -q --detach main && git -C "$SRC" reset -q --hard main && wait_for_memory \
+        && lockf -k "$BUILD_LOCK" "$SRC/build.sh"
     } >> "$LOG" 2>&1
     rc=$?
     if [ $rc -eq 0 ]; then

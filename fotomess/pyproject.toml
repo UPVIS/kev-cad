@@ -1,0 +1,45 @@
+[project]
+name = "fotomess"
+version = "0.1.0"
+description = "Parametrisches build123d-Modell aus wenigen Fotos oder einem Video vermessen (Kev CAD, Phase 4)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "build123d==0.13.0",
+    "numpy>=2",
+    "scipy>=1.13",
+    "opencv-python-headless>=4.10",
+    "moderngl>=5.12",
+    "pillow>=10",
+    "trimesh>=4",
+    "fotocad",
+]
+
+[project.scripts]
+fotomess = "fotomess.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-timeout",
+]
+
+[tool.uv.sources]
+# Kevins bestehendes Verfahren (Repo UPVIS/cad-aus-fotos), nur gelesen: cad_netz (Netz und Ableitungen nach den
+# Maßen), netz_gl (Zeichnen), kamera und masken (Vergleich mit dem bisherigen Verfahren).
+fotocad = { path = "/Users/kevinschwed/Code Experiments/UPVIS/CAD aus Fotos", editable = true }
+
+[tool.uv]
+# fotocad verlangt opencv-python mit Oberfläche; hier genügt (und gilt) opencv-python-headless. Beide zugleich
+# überschreiben sich gegenseitig das Modul cv2.
+override-dependencies = ["opencv-python; sys_platform == 'never'"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fotomess"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 120

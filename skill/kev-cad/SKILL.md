@@ -11,7 +11,8 @@ dort, nie nur per `execute`.
 
 ## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
 
-Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst, `run` wartet auf das Ergebnis.
+Nichts darf physikalisch unmöglich sein. Durchdringungen prüft Kev CAD bei jedem Lauf selbst, `run` wartet auf das
+Ergebnis. Alles Weitere vor jeder Fertigmeldung prüfen und beheben, nicht nur melden:
 
 - **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
   Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
@@ -23,13 +24,45 @@ Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst, `run
   Gewollte Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Grund in model.py:
   `erlaubt_ueberlappung(a, b, grund="Presspassung, mit Kevin abgestimmt")` (`from kevcad import erlaubt_ueberlappung`;
   a und b als Name aus `show()`, Gruppe oder Form). Ohne Grund gilt sie nicht.
-- **Nichts schwebt, steht sicher, Bewegliches frei:** bis Kev CAD das selbst prüft, von Hand mit `measure` und `parts`
-  (Kontakt zum Nachbarteil, Schwerpunkt über der Aufstandsfläche).
+- **Nichts schwebt, alles ist befestigt:** Jedes Teil berührt sein Gegenstück oder steht auf dem Boden, und zu jedem
+  Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
+  Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
+  montieren. Nie Teile einfach in den Raum setzen. Prüfen (rechnet auf einer Kopie, Exit-Code 1 bei Befunden):
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>" --kontakte`
+  meldet Teile ohne Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
+- **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
+- **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
+  muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
+  Teilen bekommt `bewegungen.json` (Teil, drehen oder schieben, Achse über `achse_von`/`punkt`/`richtung`, Bereich),
+  geprüft nach jedem Lauf mit
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
+  Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
+  umkonstruiert, nicht der Bereich verkleinert.
+- Schweben, Befestigung, Standsicherheit und Bewegungsraum bekommt Kev CAD als Nächstes fest eingebaut; bis dahin mit
+  den beiden Werkzeugen oben prüfen und von Hand daran halten.
 
+## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
+
+Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück, nicht an frei gewählten Koordinaten:
+
+- **Lage aus dem Gegenstück ableiten:** Position aus der Bezugsfläche oder Achse des tragenden Teils berechnen (Oberkante,
+  Bohrungsmitte, Bezugspunkt aus dem Katalog), etwa `z_rahmen = rolle.bounding_box().max.Z`, nie dieselbe Zahl zweimal
+  von Hand.
+- **Maße als Beziehungen:** abgeleitete Maße aus Parametern rechnen (`innen = aussen - 2 * wand`), Parameter mit
+  sinnvollen Grenzen versehen und im Code prüfen (`assert wand >= 1.2`).
+- **Verbindungen benennen:** Was auf was sitzt, was konzentrisch ist und welches Spiel gilt, steht als Kommentar oder
+  Prüfzeile im Code, damit es nach Änderungen weiter stimmt.
+- **Gelenke** (Klappe, Rad, Schieber) mit Achse und Weg festlegen; die Prüfung gilt über den ganzen Weg.
+- Kev CAD bekommt dafür feste Bedingungen mit Löser und Prüfung (`PLAN-BEDINGUNGEN.md`); bis dahin gilt diese Regel von
+  Hand.
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
-Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
-mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md`):
+Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
+256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+Einhausung. Die Druckausrichtung beim Konstruieren
+mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
+(Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
+[3d-druck.md](3d-druck.md), vor jedem Druckteil lesen:
 
 - **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
 - **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
@@ -57,8 +90,8 @@ mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
 6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
-   Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt. Kein
-   `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe „Bilder“).
+   Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt. Kevin keine
+   Screenshots schicken; Bilder nur zur eigenen Analyse (siehe „Bilder“).
 7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -271,11 +304,17 @@ DN 32, 1¼ Zoll).
 
 ## Bilder
 
-Screenshots nur, wenn Kevin ausdrücklich ein Bild will. Er sieht den Viewer beim Arbeiten selbst, und jedes Bild hält
-die Generierung auf. Geprüft wird mit den Zahlen aus `run`, `parts` und `measure`.
+Kevin keine Screenshots schicken, außer er will ausdrücklich ein Bild: Er sieht den Viewer beim Arbeiten selbst, und
+jedes Bild hält die Generierung auf.
+
+Zur eigenen Analyse sind Bilder aus mehreren Blickwinkeln ausdrücklich erlaubt, wenn sie zu einer besseren Entscheidung
+führen (Kevin, 21.10.2026): Durchdringungen und Einbaubarkeit beurteilen, Proportionen und Lage prüfen, mit
+Referenzfotos vergleichen. Dann gezielt: wenige Offscreen-Ansichten in kleiner Auflösung in einem Zug (etwa iso, vorn,
+rechts, oben), nicht nach jedem Schritt. Erste Quelle bleiben die Zahlen aus `run`, `parts`, `measure` und der Prüfung.
 
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
-- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen.
+- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen. Für die Analyse
+  mehrere Ansichten mit kleiner Größe nacheinander anfordern.
 - `mm_per_px` gibt es nur in paralleler Projektion. Maße trotzdem mit `measure` bestätigen.
 
 ## Export

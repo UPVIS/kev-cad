@@ -16,6 +16,7 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 | `app/project.yml` | XcodeGen; `app/KevCAD.xcodeproj` wird erzeugt und ist nicht im Git |
 | `skill/kev-cad/` | Modellierleitfaden für den Agenten |
 | `spikes/ap0/` | Viewer- und Kerneltest (abgeschlossen, nur Nachschlagen) |
+| `fotomess/` | Prototyp Phase 4: Modell aus wenigen Fotos oder einem Video vermessen (eigene uv-Umgebung, `STRATEGIE.md`, `BENCHMARK.md`, Tests mit `.venv/bin/python -m pytest`) |
 
 ## Befehle
 
@@ -69,6 +70,9 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
   Tastatureingaben auf dem Hauptbildschirm; falls doch nötig, Mauszeiger und vorderes Programm wiederherstellen.
   Fensterbilder mit `screencapture -l <Fensternummer> -o -x datei.png`.
 - Kernel-Tests nutzen eigene Sockets im Temp-Ordner und eigene Ports (nicht 47823/47824).
+- **Builds nur einzeln:** Der Mac hat 16 GB. Jedes `xcodebuild` (also jedes `./build.sh`) läuft unter der mit VoiceBridge
+  gemeinsamen Sperre: `lockf -k /tmp/vb-xcodebuild.lock ./build.sh --test …`, vorher `memory_pressure | tail -1`
+  prüfen und unter 25 % freiem Speicher warten. Das automatische Update hält sich selbst daran.
 - Der Viewport ist OCCTSwiftViewport, festgenagelt auf Commit `d9984ad`. Auflagen aus AP0: Picking einschalten,
   Körper über 16.000 Dreiecke oder Kantensegmente aufteilen, `preferredFramesPerSecond` selbst auf 120 setzen.
 - ocp-tessellate liefert degenerierte Kanten mit; vor dem Nummerieren herausfiltern (`BRep_Tool.Degenerated_s`).

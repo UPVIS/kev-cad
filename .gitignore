@@ -30,3 +30,6 @@ spikes/ap0/results/*.png
 .claude/settings.local.json
 app/Generated/
 app/Resources/AppIcon.icns
+
+# Aufzeichnungen aus Kevins Projekten bleiben lokal (lassen sich neu erzeugen)
+samples/mirror-recordings/kugelschieber.*
