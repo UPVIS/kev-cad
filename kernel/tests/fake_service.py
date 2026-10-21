@@ -285,6 +285,63 @@ class FakeService:
         return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
                 "datei": "/tmp/katalog/eigene.json"}
 
+    # Phase 3: Zukaufteile ----------------------------------------------------------------------------------------
+
+    def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
+                       felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
+        self._record("zukauf_anlegen", url, mpn, gtin, felder, ebene)
+        text = " ".join(str(x) for x in (mpn, (felder or {}).get("name")) if x)
+        if "ISO 4762" in text:
+            return {"ok": True, "angelegt": False, "normteil": {"art": "schraube", "norm": "iso4762"},
+                    "stock_id": "schraube-iso4762-m6", "beispiel": "schraube = lager.teil('schraube-iso4762-m6')",
+                    "text": "ISO 4762 (Zylinderschraube mit Innensechskant) M6x20 ist ein Normteil und liegt im "
+                            "Lagerkatalog als schraube-iso4762-m6"}
+        if not (felder or {}).get("masse"):
+            return {"ok": False, "error": "Zukaufteil 'alutec-05200': masse fehlt", "zu_pruefen": ["Maße"]}
+        item = {"id": "alutec-05200", "art": "zukaufteil", "name": "ALUTEC Transportroller 05200",
+                "hersteller": "ALUTEC", "mpn": "05200", "masse": felder["masse"], "status": "vorgeschlagen",
+                "ebene": ebene}
+        return {"ok": True, "angelegt": True, "item": item, "datei": "/tmp/Kev CAD/Wandhalter/katalog.json",
+                "hinweise": ["Preis: brutto oder netto ist nicht angegeben"], "zu_pruefen": ["Preis"],
+                "text": "ALUTEC Transportroller 05200 (ALUTEC 05200, 610 × 410 × 128 mm) angelegt (Vorschlag, wartet "
+                        "auf Kevins Freigabe im Lagerkatalog)"}
+
+    def zukauf_html(self, url: str | None, html: str, anlegen: bool = False, ebene: str = "projekt") -> dict[str, Any]:
+        self._record("zukauf_html", url, len(html), anlegen, ebene)
+        felder = {"name": "ALUTEC Transportroller", "hersteller": "ALUTEC", "mpn": "05200", "gtin": "4014688052004"}
+        return {"ok": True, "felder": felder, "quellen": ["json-ld"], "zu_pruefen": ["Preis brutto oder netto"],
+                "hinweise": [], "entwurf": {**felder, "id": "alutec-05200", "masse": {"l": 610, "b": 410, "h": 128},
+                                            "preis": {"je_stueck": 24.99, "stand": "2026-10-21"}}}
+
+    def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
+        self._record("cad_suchen", zukauf_id)
+        links = [{"titel": "Produktseite (CAD-Download oft dort)", "url": "https://shop.example/p/05200"},
+                 {"titel": "TraceParts: ALUTEC 05200", "url": "https://www.traceparts.com/de/search?Keywords=05200"}]
+        return {"ok": True, "zustand": "wartet_auf_cad", "cad_links": links, "erwartet": ["step", "stp", "zip"],
+                "hinweise": ["Kein TraceParts-Schlüssel (TRACEPARTS_API_KEY in secrets.env): CAD halbautomatisch "
+                             "über Links"],
+                "text": "CAD für ALUTEC Transportroller 05200: Kevin lädt die STEP-Datei herunter (Links)"}
+
+    def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
+                        erzwingen: bool = False) -> dict[str, Any]:
+        self._record("cad_uebernehmen", zukauf_id, pfad, minuten, erzwingen)
+        if zukauf_id == "x":
+            return {"ok": False, "error": "Keine neue STEP- oder ZIP-Datei der letzten 30 Minuten"}
+        return {"ok": True, "zustand": "importiert", "item": {"id": zukauf_id, "status": "frei"},
+                "datei": "/tmp/Kev CAD/Wandhalter/zukauf/alutec-05200/05200.step", "koerper": 5, "flaechen": 120,
+                "grob": False, "pruefung": {"skala": 25.4, "korrigiert": [610, 410, 128], "soll": [610, 410, 128]},
+                "hinweise": ["Modell war in Zoll gespeichert"],
+                "text": "CAD für ALUTEC Transportroller 05200 übernommen: 05200.step, 5 Körper"}
+
+    def zukauf_liste(self, query: str = "") -> dict[str, Any]:
+        self._record("zukauf_liste", query)
+        items = [{"id": "alutec-05200", "art": "zukaufteil", "name": "ALUTEC Transportroller 05200",
+                  "hersteller": "ALUTEC", "mpn": "05200", "masse": {"l": 610, "b": 410, "h": 128},
+                  "preis": {"je_stueck": 24.99, "brutto": True}, "ebene": "projekt", "status": "frei",
+                  "cad_art": "vereinfacht", "zustand": "wartet_auf_cad"}]
+        items = [it for it in items if query.lower() in (it["id"] + it["name"]).lower()]
+        return {"ok": True, "items": items, "total": len(items)}
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)

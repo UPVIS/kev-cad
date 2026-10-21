@@ -35,7 +35,7 @@ Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
-                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe"]
+                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil"]
 Ebene = Literal["eigen", "projekt"]
 
 VIEW_NAMES = {
@@ -752,4 +752,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    # ------------------------------------------------------------------------------------- Zukaufteile (Phase 3)
+
+    from .zukauf_tools import register_zukauf_tools
+
+    register_zukauf_tools(tool, t, svc)
     return t
