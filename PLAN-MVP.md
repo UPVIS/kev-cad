@@ -407,7 +407,7 @@ Grob geschätzt sind das sechs bis acht Arbeitssitzungen.
    Stücklistentabelle, Schnitt. PDF und Druck über den macOS-Druckdialog. Dein `massblatt.py` der Outdoorküche dient
    als Vorbild.
 3. **Renderings.** RealityKit offscreen mit Studiolicht und Materialien. Für Schönes weiter Blender mit `bauteile.py`.
-4. **Bambu P2S.**
+4. **Bambu P2S** (Korrektur 21.10.2026: Kevins Drucker ist ein **P1P**, siehe RECHERCHE.md).
    - Slicen mit der Kommandozeile von Bambu Studio, Übergabe an Bambu Studio.
    - Optional Direktdruck im LAN-Modus mit Fortschritt in der App.
    - Druckstart immer erst nach Bestätigung in der App.

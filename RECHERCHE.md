@@ -65,6 +65,9 @@ per Code und baut sich live Stück für Stück auf. Kein vollwertiges CAD mit ei
 
 ### Bambu Lab P2S
 
+> **Korrektur 21.10.2026:** Kevins Drucker ist ein **Bambu Lab P1P** (offen, ohne Gehäuse), nicht der P2S. Bauraum
+> und Düse sind gleich; Ansteuerung (LAN-Modus, MQTT, FTP, Freigaben) und Profile sind für Phase 8 neu zu prüfen.
+
 - Einen „P2P“ gibt es nicht. Gemeint ist der **P2S** (seit Herbst 2025, 256 mm Bauraum).
 - **Ohne Umstellung am Drucker**: Slicen per Kommandozeile von Bambu Studio (P2S-Profile sind installiert) und das fertige
   `.gcode.3mf` an Bambu Studio oder Bambu Connect übergeben. Dort ein Klick auf Drucken. Cloud und Handy-App bleiben.

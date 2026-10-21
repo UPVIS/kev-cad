@@ -54,6 +54,5 @@ bedeutet und kostet.
 
 ## Offen
 
-- Welcher Drucker: In den Plänen steht bisher P2S, in Bambu Studio ist ein P1P eingerichtet. Bauraum (256 mm³) und
-  Düse sind gleich, aber der P1P ist offen (kein Gehäuse), das ändert Empfehlungen für ABS/ASA und die Zeiten. Bitte
-  von Kevin bestätigen; beide Profile sollen wählbar sein.
+- Drucker geklärt (Kevin, 21.10.2026): **Bambu Lab P1P**, offen, ohne Gehäuse. Profil „Bambu Lab P1P 0.4 nozzle“;
+  weitere Drucker sollen später wählbar sein.

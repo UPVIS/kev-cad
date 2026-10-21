@@ -17,7 +17,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | – | Vermessung mit wenigen Bildern, Video-Rekonstruktion (Vorarbeit Phase 4) | PLAN-PHASE4-REFERENZ.md | Video-Rekonstruktion fertig (`tools/capture`, schnell gut 1 min, Maße 1–3 %), Vermessung mit wenigen Bildern in Arbeit |
 | 6 | Datenblätter und Zeichnungen als PDF, Drucken | PLAN-MVP.md Abschnitt 15 | offen |
 | 7 | Renderings | PLAN-MVP.md Abschnitt 15 | offen |
-| 8 | Druck auf dem Bambu Lab P2S | PLAN-MVP.md Abschnitt 15, RECHERCHE.md | offen |
+| 8 | Druck auf dem Bambu Lab P1P (für den P1P neu zu prüfen: LAN-Modus, Profile) | PLAN-MVP.md Abschnitt 15, RECHERCHE.md | offen |
 | später | Live-Druckvorschau: Filament je Sorte, Druckzeit je Platte, Teile je Platte (automatisch angeordnet), empfohlene Einstellungen, Kosten, Hinweise; schnelle Schätzung live, Bambu Studio genau im Hintergrund | [PLAN-DRUCKVORSCHAU.md](PLAN-DRUCKVORSCHAU.md) | geplant |
 | später | Statik, Stabilität und Simulation: Belastungsszenarien, Stabwerk aus Lagerteilen (PyNite), Dynamik mit MuJoCo, Festkörper-FEM (Gmsh, scikit-fem), klare Urteile inkl. „überdimensioniert“ | [PLAN-STATIK.md](PLAN-STATIK.md) | geplant, startet nach Prüfungen, Bedingungen und Animation |
 | – | Live-Ansicht auf dem iPhone in der VoiceBridge-App: Szene live sehen, drehen, ein- und ausblenden, fokussieren, isolieren, mit dem Agenten weiterarbeiten, zwei Richtungen synchron, startet von selbst, sobald ein Agent in Kev CAD arbeitet | [PLAN-IPHONE-LIVE.md](PLAN-IPHONE-LIVE.md), [MIRROR.md](MIRROR.md) | gestartet: Vertrag v1 steht, VoiceBridge baut die iPhone-Ansicht, Kev CAD den Spiegel-Dienst |

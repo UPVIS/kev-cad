@@ -1,9 +1,9 @@
 # 3D-Druckteile konstruieren (Bambu Lab P2S, FDM)
 
-> **Drucker noch zu bestätigen (Stand 21.10.2026):** Dieses Regelwerk ist für den Bambu Lab P2S (geschlossene,
-> nicht beheizte Kammer) geschrieben. In Kevins Bambu Studio ist ein **P1P** eingerichtet: gleicher Bauraum
-> (256³ mm), gleiche Düse, aber **offen, ohne Kammer**. Bis Kevin bestätigt, welcher Drucker es ist: bei Kammerangaben
-> den Wert für „offen“ nehmen, ABS, ASA, PC und PA nur mit Einhausung empfehlen, sonst PLA oder PETG.
+> **Kevins Drucker ist ein Bambu Lab P1P** (am 21.10.2026 bestätigt): gleicher Bauraum (256³ mm) und gleiche Düse
+> wie der P2S, für den dieses Regelwerk zuerst geschrieben wurde, aber **offen, ohne Gehäuse und Kammer**. Die
+> Umstellung auf P1P-Werte läuft. Bis dahin: bei Kammerangaben den Wert für „offen“ nehmen, ABS, ASA, PC und PA nur
+> mit Einhausung empfehlen, sonst PLA oder PETG.
 
 Zusatz zum Skill `kev-cad`. Gilt für jedes neue Druckteil (`lager.druckteil(form, name, material)`). Zuerst nach
 diesen Regeln konstruieren, dann prüfen lassen (`pruefe_druckteil`, Abschnitt 15) und die Hinweise abarbeiten.

@@ -59,7 +59,9 @@ Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück,
 
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
-Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
+Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
+256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+Einhausung. Die Druckausrichtung beim Konstruieren
 mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
 (Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
 [3d-druck.md](3d-druck.md), vor jedem Druckteil lesen:
