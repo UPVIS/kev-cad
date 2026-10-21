@@ -171,7 +171,7 @@ Sensormitte, bei Objektiven die Bajonett-Auflage, bei Zubehör laut `ursprung`.
 | `auflagemass` | ja | Bajonett-Auflage bis Sensorebene in mm (E-Mount 18) |
 | `formate` | ja | Aufnahmeformate: `id`, `name`, `modus`, `sensor_mm` (aktive Fläche [b, h]), `aufloesung` [px, px], optional `fps_max`, `zerstreuungskreis` (mm, sonst Diagonale / 1500), `hinweis`. Die aktive Höhe rechnet der Kernel aus der Breite und dem Seitenverhältnis der Auflösung (quadratische Pixel); weicht die Angabe mehr als 3 % ab, ist der Eintrag ungültig |
 | `standard_format` | nein | `id` des Formats ohne Angabe in model.py |
-| `gehaeuse` | ja | `b`, `h`, `t` (Breite, Höhe, Tiefe ohne Anbauten), `achse_hoehe` (Bildachse über der Unterseite), `achse_seitlich` (Bildachse rechts der Gehäusemitte, von hinten gesehen), `bajonett_vorstand` (Auflage vor der Gehäusefront), `ring_vorstand` (nur Darstellung) |
+| `gehaeuse` | ja | `b`, `h`, `t` (Breite, Höhe, Tiefe ohne Anbauten), `achse_hoehe` (Bildachse über der Unterseite), `achse_seitlich` (Bildachse rechts der Gehäusemitte, von hinten gesehen), `bajonett_vorstand` (Auflage vor der Gehäusefront), `ring_vorstand` (nur Darstellung; der Ring endet an der Auflage, sichtbar ist davon nur der Teil vor der Front, sonst stäke das Objektiv im Ring) |
 | `gewicht` | nein | g, für Stückliste und Schwerpunkt |
 | `schwerpunkt` | nein | [x, y, z] lokal |
 

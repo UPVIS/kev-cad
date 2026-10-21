@@ -337,11 +337,15 @@ def standard_gehaeuse(entry: dict[str, Any]) -> dict[str, Any]:
         body = fillet(body.edges().filter_by(Axis.X), radius=min(6.0, b / 10, h / 10))
     except Exception:  # noqa: BLE001 - Verrundung ist nur Optik
         pass
-    ring_l = float(geh.get("ring_vorstand") or geh.get("bajonett_vorstand") or 0.0)
+    # Der Bajonettring endet an der Auflage (Auflagemaß): seine Vorderseite ist die Fläche, auf der das Objektiv sitzt.
+    # Er steht nur so weit vor der Front, wie die Auflage vorsteht (bajonett_vorstand); ein längerer ring_vorstand
+    # reicht nach hinten ins Gehäuse. Sonst steckte jedes Objektiv im Ring (Befund der Prüfung).
+    flansch = float(entry.get("auflagemass") or 0.0)
+    ring_l = max(float(geh.get("ring_vorstand") or 0.0), float(geh.get("bajonett_vorstand") or 0.0))
     if ring_l > 0:
         base = (Align.CENTER, Align.CENTER, Align.MIN)
         ring = Rot(0, 90, 0) * (Cylinder(30, ring_l + 0.5, align=base) - Cylinder(23.05, ring_l + 2, align=base))
-        body = body + Pos(front - 0.5, 0, 0) * ring
+        body = body + Pos(flansch - ring_l - 0.5, 0, 0) * ring
     body.color = Color("#2B2D30")
     return {"Gehäuse": body}
 

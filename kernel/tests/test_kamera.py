@@ -177,7 +177,10 @@ def test_body_follows_camera_and_accessory_mates_reference_points():
     k = fx6.koerper()
     kids = {c.label: c.bounding_box() for c in k.children}
     geh, obj = kids["Gehäuse"], kids["Objektiv"]
-    assert geh.max.X == pytest.approx(18 + 4)  # Front bündig mit der Auflage, E-Mount-Ring 4 mm davor
+    # Front bündig mit der Auflage; der E-Mount-Ring endet an der Auflage, auf der das Objektiv sitzt
+    assert geh.max.X == pytest.approx(18)
+    teile = {c.label: c for c in k.children}
+    assert (teile["Gehäuse"] & teile["Objektiv"]).volume == pytest.approx(0, abs=1e-3)  # Prüfung: keine Durchdringung
     assert geh.min.Z == pytest.approx(100 - 74) and geh.max.Z == pytest.approx(100 - 74 + 116)
     assert geh.max.Y == pytest.approx(62.8, abs=0.01) and geh.min.Y == pytest.approx(-51.2, abs=0.01)
     assert obj.min.X == pytest.approx(18, abs=0.01) and obj.max.X == pytest.approx(18 + 121, abs=0.01)
@@ -191,6 +194,7 @@ def test_body_follows_camera_and_accessory_mates_reference_points():
                                                                 bezug="hinten")
     bb = stange.bounding_box()
     assert bb.min.X == pytest.approx(-15) and bb.max.X == pytest.approx(135) and bb.size.Y == pytest.approx(15)
+    assert (stange & plate).volume == pytest.approx(0, abs=1e-3)  # Stange steckt in der Bohrung der Baseplate
 
 
 def test_split_parts_keeps_location_of_moved_compound():

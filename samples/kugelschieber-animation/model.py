@@ -156,7 +156,8 @@ felge = Cylinder(rad_d / 2 - 13, rad_b - 4) + Cylinder(15, gabel_innen - 1) - Cy
 rad_lauf = Pos(-nachlauf, 0, achse_z) * Rot(90, 0, 0) * lauf
 rad_felge = Pos(-nachlauf, 0, achse_z) * Rot(90, 0, 0) * felge
 rad = rad_lauf + rad_felge
-feststeller = Pos(-nachlauf - 24 - 18 + 0.5, 0, krone_z) * Box(36, 40, blech, align=boden)  # Pedal hinter der Gabel
+# Pedal hinter dem Kronenende (wie in Kevins Projekt vom 21.10.2026; vorher steckte es 24,5 mm in der Gabelkrone)
+feststeller = Pos(-nachlauf - 48 - 18, 0, krone_z) * Box(36, 40, blech, align=boden)
 feststeller = fillet(feststeller.edges().filter_by(Axis.Z), radius=6)
 schraube = Pos(0, 0, rolle_h) * Cylinder(5.5, rahmen_h, align=boden) + Pos(0, 0, platte_oben) * Cylinder(10, 4, align=boden)
 rollen_lagen = [Pos(x, wagen_y + y, 0) * Rot(0, 0, 180 if x > 0 else 0) for x, y in rollen_pos]

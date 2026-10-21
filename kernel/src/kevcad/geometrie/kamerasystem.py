@@ -26,11 +26,29 @@ def fujinon_mk18_55(eintrag: dict[str, Any]) -> dict[str, Any]:
     return standard_objektiv(eintrag)
 
 
+STANGE_BOHRUNG = 15.2  # 15-mm-Stange mit 0,1 mm Spiel je Seite: die Stange steckt in der Klemmung, nicht im Material
+
+
 def tilta_es_t20_qrbp(eintrag: dict[str, Any]) -> dict[str, Any]:
     """Tilta-Baseplate ES-T20-QRBP, Ursprung Kameraauflage am 1/4"-Gewinde der FX6 (Platzhalter-Quader, solange die
-    Maße fehlen: 160 × 90 × 20 unter der Auflage)."""
+    Maße fehlen: 160 × 90 × 20 unter der Auflage), mit durchgehenden Bohrungen für die 15-mm-Stangen an den
+    Bezugspunkten ``lws_*``."""
+    from build123d import Align, Cylinder, Pos, Rot
+
     entry = dict(eintrag, masse=eintrag.get("masse") or {"t": 160, "b": 90, "h": 20})
-    return standard_zubehoer(entry)
+    formen = standard_zubehoer(entry)
+    name, platte = next(iter(formen.items()))
+    laenge = float(entry["masse"].get("t", 160)) + 20
+    farbe = platte.color
+    for key, pt in (entry.get("bezugspunkte") or {}).items():
+        if not str(key).startswith("lws_") or not isinstance(pt, dict):
+            continue
+        x, y, z = (float(c) for c in pt.get("pos") or (0, 0, 0))
+        bohrung = Pos(x - laenge / 2, y, z) * Rot(0, 90, 0) * Cylinder(
+            STANGE_BOHRUNG / 2, laenge, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        platte = platte - bohrung
+    platte.color = farbe
+    return {name: platte}
 
 
 def lws_stange(eintrag: dict[str, Any]) -> dict[str, Any]:
