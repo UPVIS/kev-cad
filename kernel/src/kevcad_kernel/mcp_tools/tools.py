@@ -33,7 +33,7 @@ StandardView = Literal[
 ]
 Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
-ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv"]
+ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
                    "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe"]
 Ebene = Literal["eigen", "projekt"]
@@ -597,7 +597,7 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
 
     @tool("export", "Export",
           "Export the model into <project>/output/: formats step, stl, 3mf and/or glb; bom_csv writes the bill of "
-          "materials with cut list as CSV for Numbers/Excel. parts limits the 3D export to these part names "
+          "materials with cut list as CSV for Numbers/Excel, einkaufsliste_csv the shopping list. parts limits the 3D export to these part names "
           "(default: all parts).", ADDITIVE)
     async def export(
         formats: Annotated[list[ExportFormat], Field(min_length=1, description="File formats to write")],
@@ -759,4 +759,7 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    from .bestand_tools import register_bestand_tools  # Bestand je Projekt (BESTAND.md)
+
+    register_bestand_tools(tool, t, svc)
     return t

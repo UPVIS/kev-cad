@@ -401,6 +401,9 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
         }
         if p.art == "platte":
             line["flaeche_m2"] = _r(p.flaeche_m2, 4)
+            # Zuschnittmaß (bei form= das Hüllrechteck) für den Plattenzuschnitt mit Bestand (BESTAND.md)
+            line["breite"] = _r(round_half(p.breite), 1) if p.breite is not None else None
+            line["tiefe"] = _r(round_half(p.tiefe), 1) if p.tiefe is not None else None
         if p.art == "druckteil":
             line["verfahren"] = p.verfahren
         lines.append(line)

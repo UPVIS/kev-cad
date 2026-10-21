@@ -210,6 +210,9 @@ def main() -> None:
     import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich
 
     make_pruef_fixtures.main()
+    import make_bestand_fixtures  # Bestand (BESTAND.md): eigene Dateien und Abschnitt "bestand" in fixtures.json
+
+    make_bestand_fixtures.main()
 
 
 if __name__ == "__main__":

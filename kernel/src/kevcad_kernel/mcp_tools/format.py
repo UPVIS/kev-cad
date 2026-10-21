@@ -246,6 +246,17 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.append(f"Stückliste: {bom_totals_line(bom.get('totals') or {})} (Details mit bom)")
         for w in (bom.get("warnings") or [])[:5]:
             lines.append(f"Hinweis Stückliste: {w}")
+        einkauf = bom.get("einkauf") if isinstance(bom.get("einkauf"), dict) else None
+        if einkauf is not None:  # Bestand je Projekt (BESTAND.md)
+            n = int(einkauf.get("positionen") or 0)
+            if n:
+                summe = einkauf.get("summe")
+                from kevcad_kernel.bom import eur
+
+                lines.append(f"Einkaufsliste: {plural(n, 'Position', 'Positionen')}"
+                             + (f", {eur(summe)}" if summe is not None else "") + " (Details mit einkaufsliste)")
+            else:
+                lines.append("Einkaufsliste: nichts zu kaufen, alles aus dem Bestand des Projekts")
     data = {
         "ok": True,
         "run": run_no,
@@ -433,6 +444,12 @@ def bom_text(bom: dict[str, Any]) -> str:
         out.append("")
         out.append(f"Zuschnitt (Sägeschnitt {de_num(cuts[0].get('saegeschnitt', 3))} mm):")
         for cut in cuts:
+            if cut.get("quellen") is not None:  # Zuschnitt mit Bestand: je Rest, Stange bzw. Platte
+                from kevcad_kernel.bestand.text import quellen_zeilen, zuschnitt_kopf
+
+                out.append(zuschnitt_kopf(cut))
+                out += [f"  {t}" for t in quellen_zeilen(cut)]
+                continue
             n = len(cut.get("stangen") or [])
             line = (f"{cut.get('benennung')}: {plural(n, 'Stange', 'Stangen')} à {de_num(cut.get('stangenlaenge'))} "
                     f"mm, Verschnitt {de_num(cut.get('verschnitt_prozent'), 1)} %")
@@ -440,6 +457,11 @@ def bom_text(bom: dict[str, Any]) -> str:
                 line += f", ganze Stangen {money(cut['preis_stangen'])}"
             out.append(line)
             out += [f"  {t}" for t in cut_lines(cut)]
+    if bom.get("einkaufsliste") is not None:
+        from kevcad_kernel.bestand.text import einkauf_text
+
+        out.append("")
+        out.append(einkauf_text({k: v for k, v in bom.items() if k != "run"}))
     warnings = bom.get("warnings") or []
     if warnings:
         out.append("")

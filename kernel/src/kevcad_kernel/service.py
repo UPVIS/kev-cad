@@ -144,6 +144,26 @@ class KernelService(Protocol):
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
 
+    # Bestand je Projekt (BESTAND.md; Umsetzung in kevcad_kernel/bestand/anbindung.py)
+    def bestand_liste(self, stock_id: str | None = None) -> dict[str, Any]:
+        """Bestand und Reste des offenen Projekts: {"ok", "projekt", "datei", "stand", "bestand", "buchungen",
+        "text", "posten" (nur mit stock_id)}"""
+
+    def bestand_eintragen(self, stock_id: str, ganze: Any = None, reste: list[Any] | None = None,
+                          reste_entfernen: list[str] | None = None, stueck: Any = None,
+                          mindestrest_mm: float | None = None, reste_ersetzen: bool = False,
+                          grund: str = "") -> dict[str, Any]:
+        """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}"""
+
+    def einkaufsliste(self) -> dict[str, Any]:
+        """{"ok", "run", "einkaufsliste", "einkauf_summe", "einkauf_hinweis", "fehlt", "stueckgut", "text", "csv"}"""
+
+    def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
+        """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}"""
+
+    def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
+        """{"ok", "buchung" (die Umkehrbuchung), "aenderungen_text"}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

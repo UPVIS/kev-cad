@@ -201,6 +201,21 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
   zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
 
+## Bestand und Einkauf (Kevin, 21.10.2026)
+
+Jedes Projekt hat seinen eigenen Bestand (`bestand.json` im Projektordner): ganze Stangen und Platten, Reste mit
+Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge. Nichts gilt projektübergreifend.
+
+- Der Zuschnitt nimmt nach jedem Lauf zuerst passende Reste, dann ganze Stangen bzw. Platten aus dem Bestand, dann
+  zu kaufende (optimiert, mit Mindestrest und Sägeblatt). `bom` zeigt je Rest, Stange und Platte die Stücke und die
+  neuen Reste, `bestand_liste` den Bestand, `einkaufsliste` was fehlt (Menge, Preis mit Stand, Link, Summe, CSV).
+- **Bestand nur nach Kevins Angabe eintragen** (`bestand_eintragen`, seine Worte in `grund`), nie schätzen oder
+  erfinden; jede Änderung aus der Antwort an Kevin nennen.
+- **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und
+  Stückgut ab und legt die neuen Reste an. Jede Buchung lässt sich mit `buchung_rueckgaengig` umkehren.
+- **Einkaufsliste im Bericht nennen:** nach dem Bauen eines Modells die Positionen mit Summe aus `einkaufsliste`
+  aufführen, oder ausdrücklich sagen, dass alles aus dem Bestand kommt.
+
 ## build123d: Kurzreferenz und Fallen
 
 **Algebra-Modus bevorzugen** (Objekte und Operatoren). Builder (`with BuildPart() as bp:`) nur, wo er klar hilft, etwa
