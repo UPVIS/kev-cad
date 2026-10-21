@@ -49,6 +49,9 @@ public final class SceneStore {
     /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
     public private(set) var inventoryWarnings: Set<String> = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
+    /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
+    public private(set) var simplifiedParts: Set<String> = []
+    static let simplifiedAlpha: Float = 0.45
 
     private var flashStart: [String: CFTimeInterval] = [:]
     private var pulseStart: CFTimeInterval = -10
@@ -134,6 +137,7 @@ public final class SceneStore {
         selection = []
         highlights = []
         inventoryWarnings = []
+        simplifiedParts = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -245,6 +249,17 @@ public final class SceneStore {
         guard names != inventoryWarnings else { return }
         let touched = names.symmetricDifference(inventoryWarnings)
         inventoryWarnings = names
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    // MARK: Zukaufteile (Phase 3)
+
+    /// Ersatzkörper halbtransparent zeichnen (ohne Wirkung, wenn gleich).
+    public func setSimplifiedParts(_ names: Set<String>) {
+        guard names != simplifiedParts else { return }
+        let touched = names.symmetricDifference(simplifiedParts)
+        simplifiedParts = names
         for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
@@ -570,6 +585,7 @@ public final class SceneStore {
             rgb = rgb + (s - rgb) * 0.3
         }
         c = SIMD4(rgb, c.w)
+        if simplifiedParts.contains(name) { c.w = min(c.w, Self.simplifiedAlpha) }
         if displayStyle == .xray { c.w = min(c.w, Self.xrayAlpha) }
         return c
     }
@@ -602,7 +618,12 @@ public final class SceneStore {
         for n in order { out.append(contentsOf: partBodies[n] ?? []) }
         bodies = out
         renderBodies = out
-        if displayStyle == .xray { for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) } }
+        if displayStyle == .xray {
+            for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
+        } else if displayStyle != .shaded {
+            // Durchsichtige Körper zeichnet der Viewport ohne Kanten: Ersatzkörper bekommen ihre Kanten extra
+            for n in order where simplifiedParts.contains(n) { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
+        }
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -645,7 +666,8 @@ public final class SceneStore {
                     b.isVisible = true
                     b.triangleStyles = []
                     out.append(b)
-                    if xray, let e = edgeBodies[name]?.first(where: { $0.id.hasPrefix(b.id + "\u{1F}") }) {
+                    if xray || simplifiedParts.contains(name),
+                       let e = edgeBodies[name]?.first(where: { $0.id.hasPrefix(b.id + "\u{1F}") }) {
                         var edge = e
                         edge.color = Self.srgb(e.color)
                         out.append(edge)
