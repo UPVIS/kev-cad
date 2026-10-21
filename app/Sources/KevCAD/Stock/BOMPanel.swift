@@ -19,6 +19,7 @@ struct BOMPanel: View {
                 // Mit Bestand färbt der Zuschnitt nach Quelle, nicht nach Position
                 let palette = model.bestandZustand.zuschnitt == nil ? Self.palette(bom) : [:]
                 BOMTable(model: model, bom: bom, palette: palette, selection: $selection)
+                    .frame(minHeight: 96)
                 if let zuschnitt = model.bestandZustand.zuschnitt {
                     // Bestand: Zuschnitt mit Resten und Einkaufsliste
                     Divider()
@@ -61,10 +62,13 @@ struct BOMPanel: View {
             HStack(spacing: 7) {
                 UntererBereichReiter()
                 if let bom = model.bom, !bom.lines.isEmpty {
-                    Text("\(KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")) · "
-                        + KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile"))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    let positionen = KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")
+                    ViewThatFits(in: .horizontal) {
+                        Text(positionen + " · " + KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile"))
+                        Text(positionen)
+                    }
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
                 }
             }
             .lineLimit(1)

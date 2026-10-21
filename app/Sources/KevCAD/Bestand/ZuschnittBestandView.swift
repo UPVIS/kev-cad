@@ -32,14 +32,16 @@ struct StuecklisteUntenView: View {
                 EinkaufslisteView(model: model, zuschnitt: zuschnitt)
             }
         }
-        .frame(minHeight: 120, idealHeight: idealHeight(liste), maxHeight: min(idealHeight(liste), 340))
+        .frame(minHeight: 120, idealHeight: idealHeight(liste), maxHeight: min(idealHeight(liste), 360))
+        // Zuschnitt bzw. Einkaufsliste bekommen ihre Höhe zuerst, die Tabelle darüber scrollt
+        .layoutPriority(1)
     }
 
     private func idealHeight(_ liste: [BestandZuschnitt]) -> CGFloat {
         switch ui.unten {
         case .zuschnitt:
             let inhalt = liste.reduce(CGFloat(0)) { sum, z in
-                sum + 30 + (z.istPlatte ? 170 : CGFloat(max(1, z.quellen.count)) * 24)
+                sum + 30 + (z.istPlatte ? 150 : CGFloat(max(1, z.quellen.count)) * 24)
             }
             return 30 + max(60, inhalt) + 12
         case .einkauf:
@@ -332,7 +334,7 @@ private struct PlattenReihe: View {
     let selected: Int?
     var onSelect: (BOMLine) -> Void
 
-    static let box = CGSize(width: 260, height: 132)
+    static let box = CGSize(width: 280, height: 112)
 
     var body: some View {
         let platten = zuschnitt.quellen.map { (b: $0.b ?? zuschnitt.platteB ?? 1, h: $0.h ?? zuschnitt.platteH ?? 1) }
@@ -415,6 +417,7 @@ private struct PlattenZeichnung: View {
         }
         .frame(width: CGFloat(b * skala), height: CGFloat(h * skala), alignment: .topLeading)
         .clipped()
+        .overlay(Rectangle().strokeBorder(farbe, lineWidth: 1.5))
     }
 
     /// Stücklistenzeile eines Plattenstücks (gleiche Maße, auch gedreht).
