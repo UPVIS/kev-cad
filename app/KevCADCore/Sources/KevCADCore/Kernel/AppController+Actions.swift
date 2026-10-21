@@ -408,6 +408,26 @@ extension AppController {
     /// SCREENSHOT_REQ beantworten: aktuelle Ansicht (gleiche Kamera, Sichtbarkeit, Schnitt, Hervorhebungen) oder
     /// offscreen aus einer Standardansicht, eingepasst auf die sichtbaren Teile.
     func answerScreenshot(_ s: ScreenshotRequestMessage) {
+        // Kommt die Anfrage direkt nach view/focus, läuft die Kamerafahrt noch: erst deren Ende abwarten (höchstens
+        // 1,5 s, falls das Fenster gerade nicht zeichnet und die Fahrt deshalb nicht weiterläuft).
+        if s.source != "offscreen" {
+            waitForCameraIdle(until: CACurrentMediaTime() + 1.5) { [weak self] in self?.renderScreenshot(s) }
+        } else {
+            renderScreenshot(s)
+        }
+    }
+
+    private func waitForCameraIdle(until deadline: CFTimeInterval, _ done: @escaping () -> Void) {
+        if !viewport.controller.isAnimating || CACurrentMediaTime() > deadline {
+            done()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            self?.waitForCameraIdle(until: deadline, done)
+        }
+    }
+
+    private func renderScreenshot(_ s: ScreenshotRequestMessage) {
         let w = max(16, min(s.width, 8192)), h = max(16, min(s.height, 8192))
         var camera = viewport.camera
         if s.source == "offscreen", let name = s.view {
