@@ -7,28 +7,19 @@ import SwiftUI
 /// hervorgehobene Kanten. Kamera, Körper und Klicks verwaltet `AppController.viewport`.
 public struct KevViewport: View {
     @ObservedObject private var coordinator: ViewportCoordinator
-    @ObservedObject private var model: AppModel
 
     public init(controller: AppController) {
+        // Nur der Viewport-Zustand wird beobachtet, nicht AppModel (sonst baut jede Protokollzeile die Ansicht neu)
         self._coordinator = ObservedObject(wrappedValue: controller.viewport)
-        self._model = ObservedObject(wrappedValue: controller.model)
     }
 
     public var body: some View {
+        // Hinweise (Messmodus usw.) zeichnet die Oberfläche; `coordinator.hint` liefert den Schritt dafür.
         ZStack(alignment: .top) {
             MetalViewportView(controller: coordinator.controller, bodies: $coordinator.bodies)
                 .background(MTKViewProbe { [weak c = coordinator] view in c?.attach(view) })
             OverlayCanvas(coordinator: coordinator, viewport: coordinator.controller)
                 .allowsHitTesting(false)
-            if let hint = coordinator.hint {
-                Text(hint)
-                    .font(.callout)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.top, 10)
-                    .allowsHitTesting(false)
-            }
         }
     }
 }

@@ -12,7 +12,7 @@ public final class ViewportCoordinator: ObservableObject {
     @Published public var bodies: [ViewportBody] = []
     /// Über dem 3D-Bild zu zeichnen (Weltkoordinaten); die Ansicht projiziert bei jeder Kamerabewegung neu.
     @Published public private(set) var overlayItems: [OverlayPrimitive] = []
-    /// Hinweiszeile oben im Viewport (z. B. im Messmodus).
+    /// Hinweis zum aktuellen Schritt (z. B. „Messen: zweites Element anklicken (Teil#f3)“); die Oberfläche kann ihn zeigen.
     @Published public var hint: String?
 
     /// Ein Klick ohne Ziehen: Treffer (oder nil) und die Sondertasten beim Drücken.
