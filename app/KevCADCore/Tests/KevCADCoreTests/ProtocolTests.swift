@@ -8,7 +8,7 @@ final class ProtocolTests: XCTestCase {
     func testEveryFixtureFrameDecodes() throws {
         let exp = try Fixtures.expected()
         let frames = try XCTUnwrap(exp["frames"]?.arrayValue)
-        XCTAssertEqual(frames.count, 13)
+        XCTAssertEqual(frames.count, 16)
         for f in frames {
             let file = try XCTUnwrap(f["file"]?.stringValue)
             let type = try XCTUnwrap(f["type"]?.stringValue)
@@ -22,7 +22,7 @@ final class ProtocolTests: XCTestCase {
         }
     }
 
-    /// stream.bin am Stück, Byte für Byte und in zufälligen Stücken: immer dieselben 13 Rahmen in Reihenfolge.
+    /// stream.bin am Stück, Byte für Byte und in zufälligen Stücken: immer dieselben 16 Rahmen in Reihenfolge.
     func testStreamWholeBytewiseAndChunked() throws {
         let stream = try Fixtures.data("stream.bin")
         let expectedTypes = try XCTUnwrap(Fixtures.expected()["frames"]?.arrayValue).compactMap { $0["type"]?.stringValue }
@@ -65,7 +65,7 @@ final class ProtocolTests: XCTestCase {
     /// Geometrie der Teile gegen fixtures.json.
     func testPartPayloadsMatchExpectations() throws {
         let parts = try XCTUnwrap(Fixtures.expected()["parts"]?.objectValue)
-        XCTAssertEqual(parts.count, 2)
+        XCTAssertEqual(parts.count, 3)
         for (file, e) in parts {
             let (h, g) = try Fixtures.part(file)
             XCTAssertEqual(h.name, e["name"]?.stringValue, file)

@@ -83,7 +83,7 @@ final class ControllerTests: XCTestCase {
         let c = AppController(model: AppModel())
         let m = c.model
         let events = try streamEvents()
-        XCTAssertEqual(events.count, 13)
+        XCTAssertEqual(events.count, 16)
 
         c.handle([events[0]])  // HELLO
         XCTAssertEqual(m.kernelState, .ready)
@@ -132,6 +132,21 @@ final class ControllerTests: XCTestCase {
         c.handle([events[12]])  // PART_REMOVE
         XCTAssertEqual(m.parts.map(\.id), ["Grundplatte"])
         XCTAssertEqual(c.viewport.bodies.filter { $0.id != SceneStore.depthHelperID }.count, 1)
+
+        // Phase 2: Lagerteil, Stückliste, Katalog
+        c.handle([events[13]])  // PART_UPSERT mit stock
+        let bein = try XCTUnwrap(m.parts.first { $0.id == "Gestell/Bein vorn links" })
+        XCTAssertEqual(bein.stock?.id, "vierkantrohr-en10219-40x40x3")
+        XCTAssertEqual(bein.stock?.laenge, 882)
+        XCTAssertEqual(bein.stock?.gehrung, [0, 45])
+        XCTAssertNil(m.parts.first { $0.id == "Grundplatte" }?.stock)
+        c.handle([events[14]])  // BOM
+        XCTAssertEqual(m.bom?.run, 3)
+        XCTAssertEqual(m.bom?.lines.count, 4)
+        XCTAssertEqual(m.bom?.totals.teile, 14)
+        c.handle([events[15]])  // CATALOG (ohne offene Anfrage)
+        XCTAssertEqual(m.catalog?.items.map(\.id), ["vierkantrohr-en10219-40x40x3", "rohr-edelstahl-33.7x2"])
+        XCTAssertFalse(m.log.contains { $0.text.contains("Unbekannte Nachricht") })
 
         // Neues HELLO (Wiederverbindung): Szene leeren, der Kernel schickt alles neu
         c.handle([events[0]])

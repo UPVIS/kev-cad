@@ -109,7 +109,7 @@ final class ConnectionTests: XCTestCase {
         conn.retryInterval = 0.05
         var events: [IncomingEvent] = []
         let connected = expectation(description: "verbunden")
-        let allMessages = expectation(description: "13 Nachrichten")
+        let allMessages = expectation(description: "16 Nachrichten")
         let disconnected = expectation(description: "getrennt")
         // nach dem Auflegen verbindet sich die App von selbst wieder
         connected.assertForOverFulfill = false
@@ -124,7 +124,7 @@ final class ConnectionTests: XCTestCase {
                 case .disconnected: disconnected.fulfill()
                 case .message, .part:
                     messageCount += 1
-                    if messageCount == 13 { allMessages.fulfill() }
+                    if messageCount == 16 { allMessages.fulfill() }
                 case .invalid(let t, let r): XCTFail("ungültig \(t): \(r)")
                 }
             }
@@ -148,7 +148,8 @@ final class ConnectionTests: XCTestCase {
         XCTAssertEqual(kinds, expected)
         // Teile kommen schon als vorbereitete Körper-Stücke an
         let parts = events.compactMap { e -> PartRecord? in if case .part(let p) = e { return p } else { return nil } }
-        XCTAssertEqual(parts.map(\.name), ["Grundplatte", "Halter/Bolzen"])
+        XCTAssertEqual(parts.map(\.name), ["Grundplatte", "Halter/Bolzen", "Gestell/Bein vorn links"])
+        XCTAssertEqual(parts.last?.header.stock?.id, "vierkantrohr-en10219-40x40x3")
         XCTAssertEqual(parts.first?.chunks.count, 1)
 
         var hello = HelloAppMessage(appVersion: "0.1", bundleID: "test")
