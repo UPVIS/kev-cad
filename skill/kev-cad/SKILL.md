@@ -22,6 +22,34 @@ druckbaren Material (PLA, PETG, ABS …). Es kommt kein Material neu dazu, das n
   dahin hältst du dich von Hand daran und nennst in `show()` nur Materialien, die Kevin vorgegeben hat.
 - Ausnahme: Projekte, in denen Kevin die Regel ausdrücklich abschaltet (Nachbauten aus Fotos, Skizzen).
 
+## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
+
+Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
+nur melden:
+
+- **Keine Durchdringungen:** Zwei Teile dürfen sich berühren, aber nicht ineinander stecken. Prüfen mit `execute`:
+
+  ```python
+  from itertools import combinations
+  teile = {n: o for n, o in shown.items()} if "shown" in dir() else {}
+  for (a, fa), (b, fb) in combinations(teile.items(), 2):
+      if fa.bounding_box().overlaps(fb.bounding_box()):  # nur Paare mit sich überschneidenden Hüllquadern
+          v = (fa & fb).volume
+          if v > 0.001:
+              print(f"Durchdringung {a} ↔ {b}: {v:.3f} mm³")
+  ```
+
+  (Die Namen und Formen kommen aus dem Namensraum von model.py; dort die gezeigten Teile in einem dict sammeln, falls
+  es noch keines gibt.) Gefundene Durchdringungen beheben: Spiel oder Bohrung vorsehen, Teil verschieben, Maß
+  korrigieren. Gewollte Überlappungen (Gewinde in einem Kernloch, Presspassung, nachgiebiger Schaum) nur nach Rückfrage
+  und mit Begründung im Code.
+- **Nichts schwebt:** Jedes Teil berührt ein anderes Teil oder steht auf dem Boden (z = 0). Mit `measure` den Abstand
+  zum Nachbarteil prüfen (0,000 mm = Kontakt).
+- **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
+- **Bewegliches** (Klappen, Räder, Schieber) über den ganzen Weg ohne Kollision.
+- Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
+  daran.
+
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
