@@ -109,7 +109,8 @@ final class ConnectionTests: XCTestCase {
         conn.retryInterval = 0.05
         var events: [IncomingEvent] = []
         let connected = expectation(description: "verbunden")
-        let allMessages = expectation(description: "16 Nachrichten")
+        let total = try XCTUnwrap(Fixtures.expected()["frames"]?.arrayValue).count
+        let allMessages = expectation(description: "\(total) Nachrichten")
         let disconnected = expectation(description: "getrennt")
         // nach dem Auflegen verbindet sich die App von selbst wieder
         connected.assertForOverFulfill = false
@@ -124,7 +125,7 @@ final class ConnectionTests: XCTestCase {
                 case .disconnected: disconnected.fulfill()
                 case .message, .part:
                     messageCount += 1
-                    if messageCount == 16 { allMessages.fulfill() }
+                    if messageCount == total { allMessages.fulfill() }
                 case .invalid(let t, let r): XCTFail("ungültig \(t): \(r)")
                 }
             }

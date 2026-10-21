@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from kevcad_kernel.catalog import ART_NAMEN, KLEINTEILE, STANGENWARE, number
+from kevcad_kernel.optik import OPTIK_ARTEN
 
 SAEGESCHNITT_MM = 3.0
 DEFAULT_STANGENLAENGE_MM = 6000.0
@@ -124,6 +125,7 @@ class Piece:
     verfahren: str | None = None  # Druckteile: "3d-druck" | "harzdruck"
     volume: float | None = None  # Druckteile: mm³
     size: list[float] | None = None  # Druckteile: Hüllmaß
+    token: str | None = None  # Phase 5: Kennung der Form (Attribut lager_token, übersteht Kopien beim Verschieben)
     teile: list[str] = field(default_factory=list)
     shape: Any = field(default=None, repr=False, compare=False)
     solids: list[Any] = field(default_factory=list, repr=False, compare=False)
@@ -152,6 +154,8 @@ class Piece:
             return f"Form {text}" if self.form else text
         if self.art == "schraube":
             return f"{size_label(self.groesse)} × {de_num(self.laenge or 0)}"
+        if self.art in OPTIK_ARTEN:  # Kameras, Objektive, Zubehör: Text aus kevcad.kamera
+            return self.groesse or ""
         return size_label(self.groesse)
 
     def key(self) -> tuple:
@@ -286,6 +290,10 @@ class LagerRegister:
             label = str(getattr(shape, "label", "") or "").strip()
             if label:
                 found = [p for p in self.pieces if p.name == label]
+        if not found:
+            token = getattr(shape, "lager_token", None)
+            if token:
+                found = [p for p in self.pieces if p.token == token]
         self.links[name] = [p.seq for p in found]
         return found
 

@@ -142,6 +142,7 @@ extension AppController {
     func applyExplode(_ factor: Double) {
         scene.setExplode(Float(factor))
         model.explodeFactor = Double(scene.explodeFactor)
+        cameraPoseChanged()  // Kameras an Teilen fahren mit auseinander
         refreshOverlay()
     }
 
@@ -424,6 +425,7 @@ extension AppController {
             return (true, nil)
 
         default:
+            if let r = performCameraCommand(v) { return r }
             return (false, "Unbekannter Befehl \(v.cmd)")
         }
     }
@@ -441,6 +443,7 @@ extension AppController {
     /// SCREENSHOT_REQ beantworten: aktuelle Ansicht (gleiche Kamera, Sichtbarkeit, Schnitt, Hervorhebungen) oder
     /// offscreen aus einer Standardansicht, eingepasst auf die sichtbaren Teile.
     func answerScreenshot(_ s: ScreenshotRequestMessage) {
+        if answerCameraScreenshot(s) { return }  // Phase 5: Bild durch eine Kamera
         // Kommt die Anfrage direkt nach view/focus, läuft die Kamerafahrt noch: erst deren Ende abwarten (höchstens
         // 1,5 s, falls das Fenster gerade nicht zeichnet und die Fahrt deshalb nicht weiterläuft).
         if s.source != "offscreen" {

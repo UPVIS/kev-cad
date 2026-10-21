@@ -56,6 +56,8 @@ public final class AppController: AppActions {
     var pendingRestore: SavedSession?
     /// Spiegel aufs iPhone (MIRROR.md), siehe AppController+Mirror.swift.
     public internal(set) var mirror: MirrorService?
+    /// Phase 5: Animation (Spieler, Video), siehe AppController+Animation.swift.
+    lazy var animationRuntime = AnimationRuntime(player: makeAnimationPlayer())
 
     // Phase 2: Katalog und Stückliste
     /// Suche der letzten Katalog-Anfrage (nach Speichern und Löschen wird damit neu geladen).
@@ -92,8 +94,10 @@ public final class AppController: AppActions {
 
         scene.onChange = { [weak self] in
             guard let self else { return }
-            self.viewport.bodies = self.scene.renderBodies
+            self.viewport.bodies = self.cameraFilteredBodies(self.scene.renderBodies)
         }
+        // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
+        setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         installNavigation()
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
@@ -382,7 +386,9 @@ public final class AppController: AppActions {
             // Der Kernel schickt nach HELLO den vollen Stand (PROJECT, alle Teile). Die Kamera bleibt, wenn schon
             // Teile da waren (Wiederverbinden, Neustart des Kernels).
             let hadParts = !scene.isEmpty
+            animationPlayer.removeAll()  // der Kernel schickt seine Animationen nach dem Anfangsstand neu
             scene.removeAll()
+            clearCameras()
             fitOnFirstPart = !hadParts
             clearSelectionState()
             updateParts()
@@ -432,7 +438,7 @@ public final class AppController: AppActions {
             if let restore = pendingRestore {
                 applyRestoredView(restore)
                 fitAtRunEnd = false
-            } else if fitAtRunEnd {
+            } else if fitAtRunEnd && cameras.activeView == nil {  // Blick durch eine Kamera nicht verstellen
                 viewport.fit(scene.visibleBounds(), animated: true)
                 fitAtRunEnd = false
             }
@@ -475,6 +481,10 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .animation(let a):
+            handleAnimation(a)
+        case .camera(let c):
+            applyCamera(c)
         case .check(let c):
             applyCheck(c)
         case .unknown(let type, _):
@@ -543,7 +553,7 @@ public final class AppController: AppActions {
             viewport.fit(scene.visibleBounds(), animated: false)
             fitOnFirstPart = false
             fitAtRunEnd = true
-        } else if fitAtRunEnd {
+        } else if fitAtRunEnd && cameras.activeView == nil {
             // Erster Lauf eines Projekts: mit jedem neuen Teil nachführen, damit alles im Bild bleibt
             viewport.fit(scene.visibleBounds(), animated: true)
         }
@@ -696,6 +706,7 @@ public final class AppController: AppActions {
             }
         }
         items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: cameraOverlayItems())
         return items
     }
 

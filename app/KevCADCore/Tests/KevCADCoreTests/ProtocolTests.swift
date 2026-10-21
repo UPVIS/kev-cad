@@ -8,7 +8,7 @@ final class ProtocolTests: XCTestCase {
     func testEveryFixtureFrameDecodes() throws {
         let exp = try Fixtures.expected()
         let frames = try XCTUnwrap(exp["frames"]?.arrayValue)
-        XCTAssertEqual(frames.count, 16)
+        XCTAssertEqual(frames.count, 22)  // 16 bis Phase 2, dazu 6 der Animation (Phase 5)
         for f in frames {
             let file = try XCTUnwrap(f["file"]?.stringValue)
             let type = try XCTUnwrap(f["type"]?.stringValue)

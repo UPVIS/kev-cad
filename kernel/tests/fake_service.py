@@ -286,6 +286,45 @@ class FakeService:
         return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
                 "datei": "/tmp/katalog/eigene.json"}
 
+    # Phase 5: Animation ------------------------------------------------------------------------------------------
+
+    ANIM = {"name": "Fahrt", "dauer": 8.0, "fps": 30.0, "bilder": 241, "teile": 12, "kamerafahrt": True, "spuren": 6,
+            "standard": True}
+
+    def animation_list(self) -> dict[str, Any]:
+        self._record("animation_list")
+        return {"ok": True, "animationen": [dict(self.ANIM)], "stand": {"name": "Fahrt", "zeit": 2.5, "spielt": False}}
+
+    def animation_play(self, name: str | None = None, an: bool = True, schleife: bool = False,
+                       geschwindigkeit: float = 1.0, von_vorn: bool = False) -> dict[str, Any]:
+        self._record("animation_play", name, an, schleife, geschwindigkeit, von_vorn)
+        if name not in (None, "Fahrt"):
+            return {"ok": False, "error": f"Animation {name!r} gibt es nicht. Vorhanden: 'Fahrt'"}
+        return {"ok": True, "name": "Fahrt", "an": an, "schleife": schleife, "geschwindigkeit": geschwindigkeit,
+                "dauer": 8.0}
+
+    def animation_seek(self, zeit: float, name: str | None = None) -> dict[str, Any]:
+        self._record("animation_seek", zeit, name)
+        if zeit > 8:
+            return {"ok": False, "error": f"zeit {zeit:g} s liegt außerhalb der Animation 'Fahrt' (0 bis 8 s)"}
+        return {"ok": True, "name": "Fahrt", "zeit": zeit, "bild": int(round(zeit * 30)), "dauer": 8.0}
+
+    def animation_video(self, name: str | None = None, breite: int = 1920, hoehe: int | None = None,
+                        fps: float | None = None, kamera: str | None = None, format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        self._record("animation_video", name, breite, hoehe, fps, kamera, format)
+        if not self.app_connected:
+            return {"ok": False, "error": "App nicht verbunden"}
+        return {"ok": True, "name": "Fahrt", "path": f"{self.project['path']}/output/animationen/Fahrt.mp4",
+                "width": breite, "height": breite * 9 // 16, "fps": fps or 30.0, "bilder": 241, "format": format,
+                "ms": 12000}
+
+    def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
+        self._record("collision_check", name, schritt)
+        return {"ok": True, "name": "Fahrt", "run": self.run_no, "kollisionen": [
+            {"teile": ["Bowlingball", "Pfosten"], "von": 5.1, "bis": 5.6, "zeit": 5.4, "bild": 162, "tiefe": 12.5,
+             "volumen": 830.0, "ort": [1500.0, -340.0, 100.0], "bilder": [153, 156, 159, 162, 165, 168]}],
+                "geprueft": {"paare": 40, "geprueft_bilder": 81, "schritt": schritt, "ms": 640.0}}
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)

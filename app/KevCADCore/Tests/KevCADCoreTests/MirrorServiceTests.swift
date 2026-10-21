@@ -273,6 +273,26 @@ final class MirrorServiceTests: XCTestCase {
         XCTAssertTrue(waitUntil { c.receiver.state?.lauf.run == 1 || c.receiver.state?.lauf.run == 2 })
     }
 
+    /// Abspielen der Zeitleiste: animierte Lagen gehen vorerst nicht hinaus, das iPhone zeigt die Ruhelage.
+    func testAnimationPoseIsNotMirrored() throws {
+        let c = try watchingClient()
+        _ = waitUntil(0.2) { false }
+        let start = c.frames.count
+        var m = matrix_identity_float4x4
+        m.columns.3 = SIMD4(0, 0, 50, 1)
+        for k in 0..<10 {
+            m.columns.3.z = Float(10 * k)
+            controller.scene.setAnimationPose(["Grundplatte": m], hidden: ["Halter/Bolzen"], collision: ["Grundplatte"])
+            _ = waitUntil(0.03) { false }
+        }
+        controller.scene.setAnimationPose([:])
+        _ = waitUntil(0.2) { false }
+        let types = c.headers(from: start).compactMap { $0["type"]?.stringValue }
+        XCTAssertFalse(types.contains("PART"), "\(types)")
+        XCTAssertFalse(types.contains("STATE_DELTA"), "\(types)")
+        XCTAssertEqual(c.receiver.state?.verborgen, [])
+    }
+
     /// Messung: Kugelschieber (112 Teile, 132.000 Dreiecke) über den Socket bis zum vollen Stand; Hauptthread-Zeit des
     /// Dienstes beim Live-Aufbau und bei einer Kamerafahrt. Braucht samples/mirror-recordings/kugelschieber.kcadrec
     /// (nicht im Git) oder KEVCAD_KUGELSCHIEBER.

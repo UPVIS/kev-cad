@@ -1,7 +1,7 @@
 import AppKit
 
-/// Sorgt dafür, dass einbuchstabige Tastenkürzel (1 bis 0, F, H, I, M, S, E, Umschalt-H, Esc) nicht feuern, solange
-/// ein Textfeld den Fokus hat.
+/// Sorgt dafür, dass einbuchstabige Tastenkürzel (1 bis 0, F, H, I, M, S, E, Umschalt-H, Esc, Leertaste, Pfeile) nicht
+/// feuern, solange ein Textfeld den Fokus hat; die Pfeiltasten der Animation auch nicht in Listen (Teilebaum, Stückliste).
 ///
 /// Menüpunkte mit Tastenkürzel ohne Befehlstaste fangen sonst Tastendrücke ab, bevor sie das Textfeld erreichen
 /// (AppKit prüft Tastenkürzel vor der normalen Tastenverarbeitung). Der lokale Ereignismonitor läuft noch davor:
@@ -11,7 +11,10 @@ final class KeyboardGuard {
     /// Tasten, die als einbuchstabige Kürzel belegt sind (ohne Befehls-, Control- und Wahltaste).
     static let plainShortcutKeys: Set<String> = [
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "f", "h", "i", "m", "s", "e",
+        " ", arrowLeft, arrowRight,  // Phase 5: Animation (Leertaste, Pfeil links/rechts)
     ]
+    static let arrowLeft = String(UnicodeScalar(UInt16(NSLeftArrowFunctionKey))!)
+    static let arrowRight = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)
     static let escapeKeyCode: UInt16 = 53
 
     weak var projectWindow: NSWindow?
@@ -42,7 +45,14 @@ final class KeyboardGuard {
 
     /// Entscheidet, ob ein Tastendruck am Menü vorbei direkt ans Textfeld gehen soll.
     static func shouldBypassMenu(event: NSEvent, responder: NSResponder?, isProjectWindow: Bool) -> Bool {
-        guard event.type == .keyDown, isTextInput(responder) else { return false }
+        guard event.type == .keyDown else { return false }
+        if !isTextInput(responder) {
+            // Pfeiltasten gehören in Listen und Tabellen der Liste, nicht der Zeitleiste
+            guard responder is NSTableView, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  let key = event.charactersIgnoringModifiers, key == arrowLeft || key == arrowRight
+            else { return false }
+            return true
+        }
         if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty { return false }
         if event.keyCode == escapeKeyCode {
             // Esc leert sonst die Auswahl; in Sheets bleibt Esc beim Abbrechen-Knopf.
