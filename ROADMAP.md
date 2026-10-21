@@ -8,13 +8,13 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | MVP | Viewer, Kernel, Live-Aufbau, Messen, MCP, Export | [PLAN-MVP.md](PLAN-MVP.md) | fertig, installiert |
 | – | Steuerung wie Blender, Neustart nach Update | – | fertig, installiert (Build 24) |
 | 2 | Lagerteile, Materialien, Stückliste, Zuschnitt, Inventar-Regel | [PLAN-PHASE2.md](PLAN-PHASE2.md) | fertig, installiert (Build 45); im Kugelschieber ist die Inventar-Regel aus, bis Phase 3 die Zukaufteile bringt |
-| 3 | Zukaufteile per Link, Artikelnummer oder EAN, Hersteller-CAD einbetten | [PLAN-PHASE3-ZUKAUF.md](PLAN-PHASE3-ZUKAUF.md) | geplant, kann jetzt starten (parallel zu Phase 4) |
-| 4 | Foto und Video als Referenz (Object Capture, Foto mit Live-Differenz, Abweichung) | [PLAN-PHASE4-REFERENZ.md](PLAN-PHASE4-REFERENZ.md) | geplant, startet nach Phase 2 parallel zu Phase 3 |
+| 3 | Zukaufteile per Link, Artikelnummer oder EAN, Hersteller-CAD einbetten | [PLAN-PHASE3-ZUKAUF.md](PLAN-PHASE3-ZUKAUF.md) | in Arbeit seit 21.10.2026 abends (Kernel und App parallel, Zweig `phase3`, Verträge stehen) |
+| 4 | Foto und Video als Referenz (Object Capture, Foto mit Live-Differenz, Abweichung) | [PLAN-PHASE4-REFERENZ.md](PLAN-PHASE4-REFERENZ.md) | Vorarbeit läuft; `tools/capture` (Video → Netz, Kameras, Maße) ist auf `main`, noch nicht in der App |
 | 5 | Kamerasimulation (Sensor, Objektiv, Blick durch die Kamera, Kamerabild) und Animation (Bewegen, Rollen, Gelenke, Kollision, Video) | [PLAN-PHASE5-KAMERA-ANIMATION.md](PLAN-PHASE5-KAMERA-ANIMATION.md) | in Arbeit (zwei Stränge parallel, auf Basis von `phase2`) |
 | – | 3D-Druck-Konstruktionsregeln und Druckprüfung | – | in Arbeit (eigener Strang) |
 | – | Zwangsbedingungen wie in CAD-Programmen: auf, konzentrisch, bündig, Abstand, Winkel, Gelenke mit Freiheitsgraden, Maß- und Parameterbedingungen, Löser und Prüfung | [PLAN-BEDINGUNGEN.md](PLAN-BEDINGUNGEN.md) | in Arbeit (eigener Strang) |
 | – | Prüfung jeder Konstruktion: Durchdringung, Schweben, Standsicherheit, Einbaubarkeit (Montagereihenfolge, Werkzeugzugang), Mehrfachansichten zur Bildanalyse | – | in Arbeit (eigener Strang auf Basis von `phase2`) |
-| – | Vermessung mit wenigen Bildern, Video-Rekonstruktion (Vorarbeit Phase 4) | PLAN-PHASE4-REFERENZ.md | in Arbeit (zwei Stränge) |
+| – | Vermessung mit wenigen Bildern, Video-Rekonstruktion (Vorarbeit Phase 4) | PLAN-PHASE4-REFERENZ.md | Video-Rekonstruktion fertig (`tools/capture`, schnell gut 1 min, Maße 1–3 %), Vermessung mit wenigen Bildern in Arbeit |
 | 6 | Datenblätter und Zeichnungen als PDF, Drucken | PLAN-MVP.md Abschnitt 15 | offen |
 | 7 | Renderings | PLAN-MVP.md Abschnitt 15 | offen |
 | 8 | Druck auf dem Bambu Lab P2S | PLAN-MVP.md Abschnitt 15, RECHERCHE.md | offen |
