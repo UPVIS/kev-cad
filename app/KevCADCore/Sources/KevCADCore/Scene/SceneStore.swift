@@ -51,6 +51,8 @@ public final class SceneStore {
     public private(set) var dimBelowRun: Int?
     /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
     public private(set) var inventoryWarnings: Set<String> = []
+    /// Prüfung: rote, durchscheinende Schnittkörper (immer obenauf, nicht anklickbar), siehe AppController+Pruefung.
+    public private(set) var ghostBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
 
     private var flashStart: [String: CFTimeInterval] = [:]
@@ -139,6 +141,7 @@ public final class SceneStore {
         selection = []
         highlights = []
         inventoryWarnings = []
+        ghostBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -254,6 +257,12 @@ public final class SceneStore {
         let touched = names.symmetricDifference(inventoryWarnings)
         inventoryWarnings = names
         for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Schnittkörper der Prüfung ersetzen (leer = keine).
+    public func setGhostBodies(_ bodies: [ViewportBody]) {
+        ghostBodies = bodies
         publish()
     }
 
@@ -611,6 +620,7 @@ public final class SceneStore {
         bodies = out
         renderBodies = out
         if displayStyle == .xray { for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) } }
+        renderBodies.append(contentsOf: ghostBodies)
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -706,6 +716,11 @@ public final class SceneStore {
                             color: xray ? Self.srgb(Self.xrayEdgeColor(colorLinear)) : SIMD4(0.15, 0.15, 0.15, 1)))
                 }
             }
+        }
+        for g in ghostBodies where g.isVisible {  // der Offscreen-Renderer erwartet sRGB-Farben
+            var b = g
+            b.color = Self.srgb(g.color)
+            out.append(b)
         }
         if let helper = depthHelper() { out.append(helper) }
         return out

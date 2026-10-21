@@ -267,6 +267,13 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
                              + (f", {fmt.plural(len(bad), 'Verstoß', 'Verstöße')}: {short_refs(bad, 6)}" if bad else ""))
             else:
                 lines.append("Inventar-Regel: aus (von Kevin für dieses Projekt abgeschaltet)")
+        pr = res.get("pruefung") if isinstance(res.get("pruefung"), dict) else None
+        if pr is not None and project:
+            if pr.get("laeuft"):
+                lines.append(f"Prüfung: läuft für Lauf {pr['laeuft']}")
+            elif pr.get("state") == "done":
+                lines.append(f"Prüfung (Lauf {pr.get('run', '?')}): "
+                             + (pr.get("zusammenfassung") or "in Ordnung, keine Befunde"))
         data = dict(res)
         if isinstance(last, dict) and last.get("parts"):
             data["last_run"] = {**last, "parts": [fmt.part_data(p) for p in last["parts"]]}

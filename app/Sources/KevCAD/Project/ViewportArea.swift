@@ -19,6 +19,15 @@ struct ViewportArea: View {
             .animation(.snappy(duration: 0.25), value: model.measureMode)
             .animation(.snappy(duration: 0.25), value: model.isRunning)
             .animation(.snappy(duration: 0.25), value: inventoryKey)
+            .animation(.snappy(duration: 0.25), value: pruefKey)
+    }
+
+    // MARK: Prüfung
+
+    /// Kennung der offenen Befunde (Durchdringungen …); weggeklickt bleibt das Band aus, bis sie sich ändern.
+    private var pruefKey: String? {
+        guard let p = model.pruefung, !p.bandText.isEmpty else { return nil }
+        return p.schluessel
     }
 
     // MARK: Inventar-Regel
@@ -62,6 +71,11 @@ struct ViewportArea: View {
             }
             if let key = inventoryKey, state.dismissedInventory != key {
                 InventoryBanner(model: model) { state.dismissedInventory = key }
+                    .frame(maxWidth: 820)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let key = pruefKey, state.dismissedPruefung != key {
+                PruefBanner(model: model, state: state) { state.dismissedPruefung = key }
                     .frame(maxWidth: 820)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }

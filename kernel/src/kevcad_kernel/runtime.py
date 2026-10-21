@@ -35,6 +35,7 @@ from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
+from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
@@ -111,6 +112,9 @@ class KernelRuntime:
         self._last_result: dict[str, Any] | None = None
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
+        self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
+        self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
+        self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
         self.catalog = Catalog(own=own_dir(socket_path))
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
@@ -154,6 +158,7 @@ class KernelRuntime:
                 "agent": dict(self._agent),
                 "inventar": {"regel": self._project.inventar_regel if self._project else True,
                              "verstoesse": list(self._violations)},
+                "pruefung": self._pruef.kurz(),
             }
 
     def project_open(self, path: str, reply_to: str | None = None) -> dict[str, Any]:
@@ -208,7 +213,12 @@ class KernelRuntime:
         if isinstance(job, dict):
             return job
         job.done.wait()
-        return job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
+        result = job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
+        if result.get("ok") and job.run:
+            check = fuer_ergebnis(self._pruef.warte(job.run, self.pruef_warten_s))
+            if check is not None:
+                result = {**result, "pruefung": check}
+        return result
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         with self._lock:
@@ -314,6 +324,13 @@ class KernelRuntime:
         if violations and locked:
             return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
                     "inventar_verstoesse": violations}
+        if locked:
+            from kevcad_kernel.pruefung.text import export_sperre
+
+            offen, laeuft = self._pruef.offen(warten_s=60.0)
+            sperre = export_sperre(offen, laeuft)
+            if sperre:
+                return {"ok": False, "error": sperre, "befunde": offen}
         want_csv = any(f.lower().lstrip(".") in ("bom_csv", "csv") for f in formats)
         formats = [f for f in formats if f.lower().lstrip(".") not in ("bom_csv", "csv")]
         csv_files: list[str] = []
@@ -563,6 +580,7 @@ class KernelRuntime:
                 self._bom = None
                 self._violations = []
                 self._selection = {"run": None, "refs": []}
+                self._pruef.reset()
             run = self._run_no
         self.catalog.set_project(proj.path)
         if not same:
@@ -764,6 +782,18 @@ class KernelRuntime:
                     with self._lock:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
+                # Prüfung: läuft sie noch, „running“ melden; ist sie schon fertig (schneller als RUN_END), das Ergebnis
+                self._run_end_run = job.run
+                if self._pruef.erwarte(job.run):
+                    from kevcad_kernel.protocol import pack_check
+
+                    laeuft, _ = pack_check(run=job.run, state="running")
+                    laeuft.pop("seq", None)
+                    self._send_app(laeuft)
+                else:
+                    fertig, fertig_payload = self._pruef.fuer_lauf(job.run)
+                    if fertig is not None:
+                        self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
@@ -859,6 +889,13 @@ class KernelRuntime:
 
     def _on_worker_message(self, gen: int, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
+        if kind == "CHECK_DONE":  # kommt nach RUN_DONE, wenn der Lauf schon abgeschlossen ist
+            app_len = int(header.get("app_len", 0))
+            check = dict(header.get("app") or {})
+            with self._app_lock:  # erst nach RUN_END dieses Laufs an die App (sonst schickt es _run_job)
+                if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
+                    self._send_app({**check, "type": "CHECK"}, payload[:app_len])
+            return
         if kind == "READY":
             self._log(f"[kernel] Rechenprozess bereit (pid {header.get('pid')}, Import {header.get('import_s')} s)")
             return
@@ -891,6 +928,7 @@ class KernelRuntime:
         if self._closed:
             return
         self._log(f"[kernel] Rechenprozess {gen} beendet (Exitcode {code})")
+        self._pruef.abbrechen("Rechenprozess beendet")
         job = self._current
         if job is not None and job.generation == gen and not job.finished.is_set():
             job.final = {"type": "CRASH", "code": code, "stderr": self._worker.stderr_tail(25)}
@@ -928,6 +966,9 @@ class KernelRuntime:
                 bom = self._bom
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            check, check_payload = self._pruef.letztes()
+            if check is not None:
+                conn.send(check, check_payload)
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")

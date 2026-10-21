@@ -11,26 +11,25 @@ dort, nie nur per `execute`.
 
 ## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
 
-Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
-nur melden:
+Nichts darf physikalisch unmöglich sein. Durchdringungen prüft Kev CAD bei jedem Lauf selbst, `run` wartet auf das
+Ergebnis. Alles Weitere vor jeder Fertigmeldung prüfen und beheben, nicht nur melden:
 
-- **Keine Durchdringungen, auch nicht bei Schrauben, Muttern und Scheiben:** Zwei Teile dürfen sich berühren, aber nicht
-  ineinander stecken. Nach jedem Lauf prüfen, bis Kev CAD das selbst bei jedem Lauf tut (rechnet auf einer Kopie, die
-  laufende App bleibt unberührt; Exit-Code 1 bei Befunden):
-
-  ```bash
-  cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>"
-  ```
-
-  Jede gemeldete Durchdringung beheben, bevor du fertig meldest: Spiel oder Bohrung vorsehen, Teil auf die
-  Anlagefläche des Gegenstücks setzen, Scheiben und Muttern um ihre Dicke stapeln, Maß korrigieren. Einzige Ausnahme
-  ohne Rückfrage ist echter Gewindeeingriff (Schraube in Mutter oder Gewindeloch, gleiche Achse). Andere gewollte
-  Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Begründung im Code.
+- **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
+  Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
+  Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
+  Gewindeeingriff (Schraube in Mutter oder Kern-/Gewindeloch, gleiche Achse, nur im Gewindeband).
+- Befunde kommen als isError mit Ort, Volumen, Tiefe und einer Lösung je Befund. Kevin sieht die Teile rot und das
+  Schnittvolumen als roten Körper; Export ist gesperrt, bis alles behoben ist.
+- **Beheben, nicht wegerklären:** Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren, dann wieder `run`.
+  Gewollte Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Grund in model.py:
+  `erlaubt_ueberlappung(a, b, grund="Presspassung, mit Kevin abgestimmt")` (`from kevcad import erlaubt_ueberlappung`;
+  a und b als Name aus `show()`, Gruppe oder Form). Ohne Grund gilt sie nicht.
 - **Nichts schwebt, alles ist befestigt:** Jedes Teil berührt sein Gegenstück oder steht auf dem Boden, und zu jedem
   Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
   Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
-  montieren. Nie Teile einfach in den Raum setzen. Prüfen: dasselbe Werkzeug mit `--kontakte` meldet Teile ohne
-  Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
+  montieren. Nie Teile einfach in den Raum setzen. Prüfen (rechnet auf einer Kopie, Exit-Code 1 bei Befunden):
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>" --kontakte`
+  meldet Teile ohne Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
 - **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
   muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
@@ -39,8 +38,8 @@ nur melden:
   `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
   Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
   umkonstruiert, nicht der Bereich verkleinert.
-- Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
-  daran.
+- Schweben, Befestigung, Standsicherheit und Bewegungsraum bekommt Kev CAD als Nächstes fest eingebaut; bis dahin mit
+  den beiden Werkzeugen oben prüfen und von Hand daran halten.
 
 ## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
 
@@ -56,7 +55,6 @@ Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück,
 - **Gelenke** (Klappe, Rad, Schieber) mit Achse und Weg festlegen; die Prüfung gilt über den ganzen Weg.
 - Kev CAD bekommt dafür feste Bedingungen mit Löser und Prüfung (`PLAN-BEDINGUNGEN.md`); bis dahin gilt diese Regel von
   Hand.
-
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
@@ -91,9 +89,9 @@ mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Qu
    Dateiwerkzeuge gibt.
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-6. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für
-   Stückliste und Zuschnitt, dazu der Abschnitt „Prüfen vor dem Fertigmelden“. Kevin keine Screenshots schicken;
-   Bilder nur zur eigenen Analyse (siehe „Bilder“).
+6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
+   Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt. Kevin keine
+   Screenshots schicken; Bilder nur zur eigenen Analyse (siehe „Bilder“).
 7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -170,6 +168,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
 | `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
+| `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 
 - `color`: Hex wie `"#B8BEC4"`; Lager- und Druckteile haben schon die Farbe ihres Materials.
 - `material`: id oder Alias aus dem Katalog (`material_list`), z. B. `stahl-s235`, `edelstahl`, `alu`,
@@ -336,3 +335,5 @@ Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur die
 | Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
 | Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |
+| Prüfung: 2 Durchdringungen … | Teile stecken ineinander; je Befund die Lösung umsetzen (Spiel, Bohrung, verschieben), `run` |
+| Export verweigert. Prüfung: … | erst die Befunde der Prüfung beheben |

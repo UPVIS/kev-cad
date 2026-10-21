@@ -90,9 +90,9 @@ def test_example_run_parts_and_frame_order(env):
     assert res["params"]["abstand"] == 70
 
     app.wait_for(lambda h: h["type"] == "BOM" and h["run"] == res["run"], start=start)
-    all_types = [h["type"] for h in app.since(start) if h["type"] != "STATUS"]
+    all_types = [h["type"] for h in app.since(start) if h["type"] not in ("STATUS", "CHECK")]  # CHECK: Prüfung folgt
     assert all_types[-2:] == ["RUN_END", "BOM"]  # Phase 2: Stückliste direkt nach RUN_END
-    frames = [h for h in app.since(start) if h["type"] not in ("STATUS", "BOM")]
+    frames = [h for h in app.since(start) if h["type"] not in ("STATUS", "BOM", "CHECK")]
     types = [h["type"] for h in frames]
     assert types[0] == "RUN_START" and types[-1] == "RUN_END"
     assert types == ["RUN_START", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP",
