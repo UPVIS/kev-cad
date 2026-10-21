@@ -175,6 +175,33 @@ show(Pos(1000, 0, 0) * rw, "Rollwagen")
     assert line["cad_quelle"] == "skript"
 
 
+def test_baugruppe_verschoben_gedreht_verschachtelt(tmp_path):
+    """Runner ohne Zukaufteil: Kinder einer verschachtelten Baugruppe folgen Pos/Rot und ``located`` (baum.kinder).
+    Maßstab für die Zusammenführung mit Phase 5, die denselben Fehler anders behebt."""
+    proj = make_project(tmp_path, [])
+    code = """from build123d import *
+from kevcad import show
+a = Box(10, 10, 10)
+a.label = "A"
+b = Pos(20, 0, 0) * Box(10, 10, 10)
+b.label = "B"
+g = Compound(children=[b], label="G")
+bg = Compound(children=[a, g], label="BG")
+show(Pos(100, 0, 0) * Rot(0, 0, 90) * bg, "Gedreht")
+c = Compound(children=[Box(4, 4, 4)], label="C")
+c.children[0].label = "Klotz"
+c2 = c.located(Location((0, 50, 0)))
+show(c2, "Gesetzt")
+"""
+    res, parts = run_model(proj, code, regel=False)
+    assert res["type"] == "RUN_DONE", res.get("error")
+    assert sorted(parts) == ["Gedreht/A", "Gedreht/G/B", "Gesetzt/Klotz"]
+    a, b = parts["Gedreht/A"]["bbox"], parts["Gedreht/G/B"]["bbox"]
+    assert a["min"] == pytest.approx([95, -5, -5], abs=1e-6) and a["max"] == pytest.approx([105, 5, 5], abs=1e-6)
+    assert b["min"] == pytest.approx([95, 15, -5], abs=1e-6)  # (20, 0, 0) um 90° gedreht, dann +100 in X
+    assert parts["Gesetzt/Klotz"]["bbox"]["min"] == pytest.approx([-2, 48, -2], abs=1e-6)
+
+
 def test_skript_kwargs_nur_bei_skript(cat):
     with pytest.raises(lager.LagerError, match="nur bei Skript-Geometrie"):
         lager.zukauf("alutec-05200").verbauen("W", hoehe=3)

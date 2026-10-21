@@ -238,7 +238,11 @@ def _labeled_children(obj: Any) -> list[Any] | None:
     elif isinstance(obj, Compound):
         from kevcad_kernel.baum import kinder
 
-        kids = kinder(obj)  # an der Lage der Gesamtform (Pos(...) * baugruppe verschiebt children nicht mit)
+        # Pos(...) * baugruppe verschiebt nur die Gesamtform, ``children`` bleiben Kopien an der alten Stelle. Die
+        # Kinder kommen deshalb aus der Topologie der Gesamtform (baum.kinder, Phase 3 Z-K), egal ob verschoben,
+        # gedreht oder mit ``located`` gesetzt. Nicht zusätzlich ``k.moved(obj.location)`` anwenden (so behebt es
+        # Phase 5): beides zusammen verschiebt doppelt.
+        kids = kinder(obj)
     else:
         return None
     if kids and all(isinstance(k, Shape) for k in kids) and any(getattr(k, "label", "") for k in kids):
