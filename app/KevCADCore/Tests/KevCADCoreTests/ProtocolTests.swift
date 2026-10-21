@@ -143,6 +143,12 @@ final class ProtocolTests: XCTestCase {
         XCTAssertTrue(er.message.contains("Boxx"))
         XCTAssertTrue(er.excerpt.contains("7 | platte = Boxx"))
         XCTAssertEqual(er.traceback, "File model.py, line 7")
+        XCTAssertNil(er.hint)
+        let withHint = Frame(
+            header: Data(#"{"type":"RUN_ERROR","run":3,"message":"x","line":null,"excerpt":"","hint":"Klammer fehlt"}"#.utf8))
+        guard case .runError(let eh) = try KernelMessage.decode(withHint) else { return XCTFail() }
+        XCTAssertEqual(eh.hint, "Klammer fehlt")
+        XCTAssertNil(eh.line)
 
         guard case .agent(let ag) = try Fixtures.message("agent.frame") else { return XCTFail() }
         XCTAssertTrue(ag.connected)

@@ -30,6 +30,14 @@ final class ControllerTests: XCTestCase {
         return c
     }
 
+    func testKernelLogLevels() {
+        XCTAssertEqual(AppController.kernelLogLevel("2026-10-21 20:03:25,706 INFO uvicorn.error: Started"), .info)
+        XCTAssertEqual(AppController.kernelLogLevel("2026-10-21 20:03:25,706 WARNING kevcad: langsam"), .warning)
+        XCTAssertEqual(AppController.kernelLogLevel("2026-10-21 20:03:25,706 ERROR kevcad: kaputt"), .error)
+        XCTAssertEqual(AppController.kernelLogLevel("Traceback (most recent call last):"), .error)
+        XCTAssertEqual(AppController.kernelLogLevel("[kernel] Rechenprozess bereit"), .info)
+    }
+
     func testKernelCommandResolution() {
         let none = KernelProcess.command(socket: "/x y/kernel.sock", port: 47824, environment: [:], executable: nil)
         guard case .failure(let e1) = none else { return XCTFail() }
@@ -128,6 +136,12 @@ final class ControllerTests: XCTestCase {
         // Neues HELLO (Wiederverbindung): Szene leeren, der Kernel schickt alles neu
         c.handle([events[0]])
         XCTAssertTrue(m.parts.isEmpty)
+        XCTAssertEqual(c.scene.latestRun, 0)
+        // Kommt danach kein PROJECT (Kernel neu gestartet), öffnet die App das Projekt wieder
+        RunLoop.main.run(until: Date().addingTimeInterval(1.3))
+        XCTAssertTrue(m.log.contains { $0.text.contains("wird wieder geöffnet") })
+        XCTAssertEqual(AppController.exitText(-9), "Signal 9")
+        XCTAssertEqual(AppController.exitText(1), "Code 1")
     }
 
     func testViewCommands() throws {
@@ -145,6 +159,14 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(m.parts.filter(\.visible).map(\.id), ["Grundplatte"])
         XCTAssertTrue(run("visibility", ["mode": "show_all", "refs": nil]).0)
         XCTAssertEqual(m.parts.filter(\.visible).count, 2)
+        // Baugruppe „Halter“ steht für alle Teile darunter (wie beim Kernel)
+        XCTAssertTrue(run("visibility", ["mode": "hide", "refs": ["Halter"]]).0)
+        XCTAssertEqual(m.parts.filter(\.visible).map(\.id), ["Grundplatte"])
+        let partly = run("visibility", ["mode": "show", "refs": ["Halter", "Fehlt"]])
+        XCTAssertTrue(partly.0)
+        XCTAssertEqual(partly.1, "Nicht gefunden: Fehlt")
+        XCTAssertEqual(m.parts.filter(\.visible).count, 2)
+        XCTAssertTrue(run("focus", ["refs": ["Halter"], "animate": false]).0)
 
         let hl = run("highlight", ["refs": ["Grundplatte#f5", "Halter/Bolzen#e0"], "color": [0, 0.8, 0, 1], "label": "Hier", "clear": true])
         XCTAssertTrue(hl.0)
@@ -262,6 +284,12 @@ final class ControllerTests: XCTestCase {
         XCTAssertTrue(c.model.log.contains { $0.text.contains("Lauf nicht gestartet") })
         c.export(formats: ["step"])
         XCTAssertTrue(c.model.log.contains { $0.text.contains("Export fehlgeschlagen") })
+        c.handle([.message(try Fixtures.message("measure_res.frame"))])
+        XCTAssertEqual(c.model.measurements.count, 1)
+        let remover = try XCTUnwrap(c.model.actions as? MeasurementRemoving)
+        remover.removeMeasurement(id: c.model.measurements[0].id)
+        XCTAssertTrue(c.model.measurements.isEmpty)
+        XCTAssertFalse(c.viewport.overlayItems.contains { if case .dimension = $0 { return true } else { return false } })
         c.clearMeasurements()
         XCTAssertTrue(c.model.measurements.isEmpty)
         // Projekt öffnen vor dem HELLO wird nachgeholt

@@ -30,7 +30,7 @@ public enum KernelLaunchError: Error, Equatable, CustomStringConvertible {
 @MainActor
 public final class KernelProcess {
     public var onOutput: ((String, Bool) -> Void)?  // Zeile, ist stderr
-    public var onExit: ((Int32, Bool) -> Void)?  // Code, erwartet (von stop())
+    public var onExit: ((Int32, Bool) -> Void)?  // Code (negativ: Signal), erwartet (von stop())
 
     private var process: Process?
     private var expectedExit = false
@@ -117,7 +117,8 @@ public final class KernelProcess {
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.consume(d, stderr: true) } }
         }
         p.terminationHandler = { [weak self] proc in
-            let code = proc.terminationStatus
+            // Signal als negativer Code, damit das Protokoll „Signal 9“ statt „Code 9“ zeigen kann
+            let code = proc.terminationReason == .uncaughtSignal ? -proc.terminationStatus : proc.terminationStatus
             // Kurz warten, damit die letzten Ausgaben vor der Meldung des Endes ankommen; die Leser beenden sich
             // selbst am Ende des Datenstroms
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {

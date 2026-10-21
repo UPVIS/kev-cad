@@ -288,6 +288,15 @@ class FakeKernel:
         self.view("explode", {"factor": 0})
         self.screenshot("bild_oben_offscreen", source="offscreen", view="top", width=1000, height=800,
                         hide_overlays=False)
+        self.view("view", {"standard": "front", "projection": "orthographic", "display": "xray", "fit": True})
+        time.sleep(0.6)
+        self.screenshot("bild_vorn_roentgen", width=1000, height=700)
+        self.view("view", {"standard": "iso_back_left", "projection": "perspective", "display": "wireframe",
+                           "fit": True})
+        time.sleep(0.6)
+        self.screenshot("bild_hinten_links_drahtgitter", width=1000, height=700, hide_overlays=True)
+        self.view("view", {"standard": "iso", "projection": "perspective", "display": "shaded_edges", "fit": True})
+        time.sleep(0.6)
         self.view("visibility", {"mode": "hide", "refs": ["Kugel"]})
         time.sleep(0.4)
         self.view("visibility", {"mode": "show_all", "refs": None})

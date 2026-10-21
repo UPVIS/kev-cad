@@ -149,6 +149,14 @@ public struct PartRecord: Sendable {
                     text += " r " + GermanFormat.mm(r)
                     values["radius"] = r
                 }
+                if let r2 = f.r2 {
+                    text += " / " + GermanFormat.mm(r2)
+                    values["radius2"] = r2
+                }
+                if let ang = f.ang {
+                    text += " · Halbwinkel " + GermanFormat.degrees(ang)
+                    values["half_angle"] = ang
+                }
                 if let a = f.a {
                     text += " · " + GermanFormat.mm2(a)
                     values["area"] = a
@@ -165,6 +173,10 @@ public struct PartRecord: Sendable {
                 if let r = e.r {
                     text += " r " + GermanFormat.mm(r)
                     values["radius"] = r
+                }
+                if let r2 = e.r2 {
+                    text += " / " + GermanFormat.mm(r2)
+                    values["radius2"] = r2
                 }
                 if let l = e.l {
                     text += " · " + GermanFormat.mm(l)

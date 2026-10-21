@@ -4,14 +4,14 @@ import MetalKit
 import OCCTSwiftViewport
 import simd
 
-// Selbsttest für Live-Tests ohne simulierte Maus (nur Testvariante, Umgebungsvariable KEVCAD_SELFTEST=1):
+// Selbsttest für Live-Tests ohne simulierte Maus (nur Testvariante, Umgebungsvariable KEVCAD_SELFTEST=core):
 // Nach dem ersten Lauf wird geprüft, ob ein Klick im MTKView landet (Überlagerungen dürfen ihn nicht abfangen),
 // dann wird über die GPU in der Mitte jedes Teils gepickt, der Treffer zurückgerechnet und wie ein Klick
 // verarbeitet (Auswahl, Umschalt-Klick, Messen über den Kernel). Alles steht im Protokoll (stderr).
 
 extension AppController {
     func scheduleSelfTestIfRequested() {
-        guard AppInfo.isTestVariant, ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "1",
+        guard AppInfo.isTestVariant, ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "core",
             !selfTestStarted
         else { return }
         selfTestStarted = true
@@ -108,7 +108,17 @@ extension AppController {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.log(.info, "Selbsttest: Messungen \(self.model.measurements.map(\.text))")
-                    self.log(.info, "Selbsttest fertig")
+                    self.log(.info, "Selbsttest: Kernel neu starten")
+                    self.restartKernel()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                        MainActor.assumeIsolated {
+                            self.log(
+                                .info,
+                                "Selbsttest: nach Neustart Kernel \(self.model.kernelState), \(self.model.parts.count) Teile, Projekt \(self.model.project?.name ?? "-")"
+                            )
+                            self.log(.info, "Selbsttest fertig")
+                        }
+                    }
                 }
             }
         }

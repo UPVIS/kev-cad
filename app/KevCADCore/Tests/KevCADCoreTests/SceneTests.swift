@@ -175,6 +175,49 @@ final class SceneTests: XCTestCase {
         XCTAssertEqual(ElementRef.face("A", 1).partRef, .part("A"))
     }
 
+    /// Der Kernel schickt Farben als sRGB (wie in model.py); der Viewport rechnet linear.
+    func testColorsAreConvertedToLinear() throws {
+        XCTAssertEqual(SceneStore.linear(SIMD4(1, 0, 0.5, 0.3)).x, 1, accuracy: 1e-6)
+        XCTAssertEqual(SceneStore.linear(SIMD4(1, 0, 0.5, 0.3)).z, 0.2140, accuracy: 1e-3)
+        XCTAssertEqual(SceneStore.linear(SIMD4(1, 0, 0.5, 0.3)).w, 0.3)
+        let scene = SceneStore()
+        scene.upsert(try Fixtures.record("part_box.frame"), flash: false)
+        let c = try XCTUnwrap(scene.bodies.first).color
+        XCTAssertEqual(c.x, 0.4770, accuracy: 1e-3)  // sRGB 0,72
+        XCTAssertEqual(c.w, 1)
+        // Röntgen: halbtransparent, dazu eigene Kantenkörper (der Viewport zeichnet durchsichtige Körper ohne Kanten)
+        scene.setDisplayStyle(.xray)
+        let edges = scene.renderBodies.filter { $0.id.hasSuffix("\u{1F}k") }
+        XCTAssertEqual(edges.count, 1)
+        XCTAssertFalse(edges[0].isPickable)
+        XCTAssertEqual(edges[0].edges.count, 12)
+        XCTAssertTrue(scene.snapshotBodies().contains { $0.indices.isEmpty && !$0.edges.isEmpty })
+        scene.setDisplayStyle(.shadedEdges)
+        XCTAssertFalse(scene.renderBodies.contains { $0.id.hasSuffix("\u{1F}k") })
+    }
+
+    func testSrgbRoundTrip() {
+        for v: Float in [0, 0.002, 0.04, 0.2, 0.5, 0.72, 1] {
+            let back = SceneStore.srgb(SceneStore.linear(SIMD4(v, v, v, 1)))
+            XCTAssertEqual(back.x, v, accuracy: 1e-4)
+        }
+    }
+
+    func testConeAndTorusValues() throws {
+        var rec = try Fixtures.record("part_cylinder.frame")
+        rec.header.faces[0] = FaceInfo(t: "cone", a: 50, r: 5, ang: 30)
+        rec.header.faces[1] = FaceInfo(t: "torus", a: 80, r: 10, r2: 2)
+        let cone = rec.selectionItem(for: .face("Halter/Bolzen", 0))
+        XCTAssertEqual(cone.summary, "Fläche 0 · Kegel r 5,000 mm · Halbwinkel 30,00° · 50,0 mm²")
+        XCTAssertEqual(cone.values["half_angle"], 30)
+        let torus = rec.selectionItem(for: .face("Halter/Bolzen", 1))
+        XCTAssertEqual(torus.summary, "Fläche 1 · Torus r 10,000 mm / 2,000 mm · 80,0 mm²")
+        let json = #"{"t":"cone","a":1,"r":2,"ang":12.5,"r2":3,"neu":true}"#
+        let f = try JSONDecoder().decode(FaceInfo.self, from: Data(json.utf8))
+        XCTAssertEqual(f.ang, 12.5)
+        XCTAssertEqual(f.r2, 3)
+    }
+
     func testGermanNumbers() {
         XCTAssertEqual(GermanFormat.number(200, decimals: 1), "200,0")
         XCTAssertEqual(GermanFormat.number(6000, decimals: 1), "6.000,0")
@@ -290,9 +333,10 @@ final class SceneTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(scene.bodies.first).color.x, base.x, accuracy: 1e-5)
         scene.upsert(try Fixtures.record("part_cylinder.frame"), flash: false)  // Lauf 1, also abgedunkelt
         let cyl = try XCTUnwrap(scene.bodies.last)
-        XCTAssertLessThan(cyl.color.x, 0.85)
+        let cylLinear = SceneStore.linear(SIMD4(0.85, 0.55, 0.2, 1)).x
+        XCTAssertLessThan(cyl.color.x, cylLinear - 0.1)
         scene.endRun(2)
-        XCTAssertEqual(try XCTUnwrap(scene.bodies.last).color.x, 0.85, accuracy: 1e-5)
+        XCTAssertEqual(try XCTUnwrap(scene.bodies.last).color.x, cylLinear, accuracy: 1e-5)
         scene.remove("Halter/Bolzen")
         XCTAssertEqual(scene.order, ["Grundplatte"])
         XCTAssertEqual(scene.bodies.count, 1)
@@ -303,10 +347,11 @@ final class SceneTests: XCTestCase {
         scene.upsert(try Fixtures.record("part_box.frame"), now: 100)
         XCTAssertTrue(scene.isAnimating(now: 100.1))
         scene.tick(now: 100.1)
+        let base = SceneStore.linear(SIMD4(0.72, 0.75, 0.79, 1))
         let flashing = try XCTUnwrap(scene.bodies.first).color
-        XCTAssertGreaterThan(flashing.x, 0.72)
+        XCTAssertGreaterThan(flashing.x, base.x + 0.1)
         scene.tick(now: 101)
-        XCTAssertEqual(try XCTUnwrap(scene.bodies.first).color.x, 0.72, accuracy: 1e-5)
+        XCTAssertEqual(try XCTUnwrap(scene.bodies.first).color.x, base.x, accuracy: 1e-5)
         XCTAssertFalse(scene.isAnimating(now: 101))
     }
 

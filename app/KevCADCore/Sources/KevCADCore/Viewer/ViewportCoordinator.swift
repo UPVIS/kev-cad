@@ -60,6 +60,9 @@ public final class ViewportCoordinator: ObservableObject {
         l.ambientSkyColor = mid
         l.ambientGroundColor = mid
         l.shadowsEnabled = false
+        // Der Viewport kodiert sein Ergebnis nicht nach sRGB; mit linearen Farben wirkt alles dunkler als in model.py.
+        // Etwas mehr Belichtung gleicht das für typische Grau- und Pastelltöne aus.
+        l.exposure = 1.35
         return l
     }
 

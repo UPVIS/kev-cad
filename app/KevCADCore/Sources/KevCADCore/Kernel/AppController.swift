@@ -47,6 +47,7 @@ public final class AppController: AppActions {
     var highlightLabels: [Int: String] = [:]
     private var animationTimer: Timer?
     var selfTestStarted = false
+    private var projectSeenSinceHello = false
 
     struct PendingRequest {
         var kind: String
@@ -120,7 +121,7 @@ public final class AppController: AppActions {
         connectWatchdog?.cancel()
         connectWatchdog = nil
         connection.close()
-        process.stop()
+        process.stopNow(timeout: 1.5)
         failAllPending("Verbindung zum Kernel beendet")
         connected = false
         helloReceived = false
@@ -160,11 +161,14 @@ public final class AppController: AppActions {
         connectWatchdog?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.running, !self.helloReceived else { return }
-            self.log(.warning, "Kernel antwortet nach 15 s noch nicht (Protokoll prüfen)")
+            self.log(.warning, "Kernel meldet sich nach 30 s noch nicht (startet er noch? Protokoll prüfen)")
         }
         connectWatchdog = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: work)
     }
+
+    /// Negative Codes stehen für ein Signal (siehe KernelProcess).
+    static func exitText(_ code: Int32) -> String { code < 0 ? "Signal \(-code)" : "Code \(code)" }
 
     private func processExited(code: Int32, expected: Bool) {
         guard !expected, running else { return }
@@ -176,13 +180,13 @@ public final class AppController: AppActions {
         if crashTimes.count >= 5 {
             running = false
             connection.close()
-            model.kernelState = .failed("Kernel stürzt wiederholt ab (Code \(code)), Protokoll prüfen")
+            model.kernelState = .failed("Kernel stürzt wiederholt ab (\(Self.exitText(code))), Protokoll prüfen")
             log(.error, "Kernel stürzt wiederholt ab, kein weiterer Neustart")
             return
         }
         let delay = min(10, pow(2, Double(crashTimes.count - 1)))
         model.kernelState = .starting
-        log(.warning, "Kernel beendet (Code \(code)), Neustart in \(Int(delay)) s")
+        log(.warning, "Kernel beendet (\(Self.exitText(code))), Neustart in \(Int(delay)) s")
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.running else { return }
             do {
@@ -207,16 +211,21 @@ public final class AppController: AppActions {
     }
 
     private func logKernelOutput(_ line: String, stderr: Bool) {
-        let lower = line.lowercased()
-        let level: LogLine.Level
-        if lower.contains("traceback") || lower.contains("error") || lower.contains("fehler") || lower.contains("exception") {
-            level = .error
-        } else if lower.contains("warn") {
-            level = .warning
-        } else {
-            level = .info
+        log(Self.kernelLogLevel(line), "Kernel: \(line)")
+    }
+
+    /// Stufe einer Kernel-Zeile: Python-Logging („… INFO name: …“) zuerst, sonst nach Stichworten.
+    static func kernelLogLevel(_ line: String) -> LogLine.Level {
+        for (tag, level) in [(" CRITICAL ", LogLine.Level.error), (" ERROR ", .error), (" WARNING ", .warning),
+                             (" INFO ", .info), (" DEBUG ", .info)] where line.contains(tag) {
+            return level
         }
-        log(level, "Kernel: \(line)")
+        let lower = line.lowercased()
+        if lower.hasPrefix("traceback") || lower.contains("error:") || lower.contains("exception") || lower.contains("fehler") {
+            return .error
+        }
+        if lower.contains("warn") { return .warning }
+        return .info
     }
 
     /// Sendet eine Nachricht; `false`, wenn keine Verbindung besteht.
@@ -334,14 +343,20 @@ public final class AppController: AppActions {
                 .info,
                 "Kernel bereit: Version \(h.kernelVersion ?? "?"), build123d \(h.build123d ?? "?"), MCP-Port \(h.mcpPort.map(String.init) ?? "?")"
             )
-            // Der Kernel schickt nach HELLO den vollen Stand (PROJECT, alle Teile)
+            // Der Kernel schickt nach HELLO den vollen Stand (PROJECT, alle Teile). Die Kamera bleibt, wenn schon
+            // Teile da waren (Wiederverbinden, Neustart des Kernels).
+            let hadParts = !scene.isEmpty
             scene.removeAll()
-            fitOnFirstPart = true
+            fitOnFirstPart = !hadParts
             clearSelectionState()
             updateParts()
+            refreshOverlay()
+            projectSeenSinceHello = false
             if let q = queuedProjectRequest {
                 queuedProjectRequest = nil
                 q()
+            } else if let open = model.project {
+                reopenProjectIfKernelForgotIt(open)
             }
         case .status(let s):
             switch s.state {
@@ -385,7 +400,9 @@ public final class AppController: AppActions {
             for w in e.warnings { log(.warning, w) }
         case .runError(let e):
             scene.endRun(e.run)
-            model.run = .failed(run: e.run, message: e.message, line: e.line, excerpt: e.excerpt)
+            // Den Reparaturhinweis des Kernels an die Meldung hängen (RunState hat kein eigenes Feld dafür)
+            let message = e.hint.map { e.message + "\nHinweis: " + $0 } ?? e.message
+            model.run = .failed(run: e.run, message: message, line: e.line, excerpt: e.excerpt)
             if model.kernelState == .busy { model.kernelState = .ready }
             fitAtRunEnd = false
             log(.error, "Lauf \(e.run) fehlgeschlagen" + (e.line.map { " (Zeile \($0))" } ?? "") + ": \(e.message)")
@@ -412,7 +429,32 @@ public final class AppController: AppActions {
         }
     }
 
+    /// Ein neu gestarteter Kernel kennt das offene Projekt nicht mehr: schickt er kurz nach HELLO kein PROJECT,
+    /// öffnet die App es wieder (und rechnet bei Auto-Lauf neu).
+    private func reopenProjectIfKernelForgotIt(_ project: ProjectInfo) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.helloReceived, !self.projectSeenSinceHello, self.model.project == project else {
+                    return
+                }
+                self.log(.info, "Kernel kennt das Projekt nicht mehr, es wird wieder geöffnet")
+                let msg = ProjectOpenMessage(id: self.nextRequestID(), path: project.path.path)
+                self.request(msg, timeout: 60) { result in
+                    switch result {
+                    case .success(.project):
+                        if self.model.autoRun && self.scene.isEmpty { self.runModel() }
+                    case .success(let m):
+                        self.log(.warning, "Projekt wieder öffnen: unerwartete Antwort \(m.typeName)")
+                    case .failure(let e):
+                        self.log(.error, "Projekt wieder öffnen fehlgeschlagen: \(e.message)")
+                    }
+                }
+            }
+        }
+    }
+
     private func applyProject(_ p: ProjectMessage) {
+        projectSeenSinceHello = true
         let url = URL(fileURLWithPath: p.path, isDirectory: true)
         let modelFile = p.model.map { URL(fileURLWithPath: $0) } ?? url.appendingPathComponent("model.py")
         let info = ProjectInfo(path: url, name: p.name ?? url.lastPathComponent, modelFile: modelFile)

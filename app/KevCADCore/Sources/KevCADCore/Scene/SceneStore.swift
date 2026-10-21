@@ -3,12 +3,16 @@ import OCCTSwiftViewport
 import QuartzCore
 import simd
 
-/// Hervorhebung durch den Agenten (VIEW_CMD `highlight`).
+/// Hervorhebung durch den Agenten (VIEW_CMD `highlight`). `color` ist linear, so wie der Kernel sie schickt
+/// (mcp_tools.parse_color rechnet Hex und Namen von sRGB in linear um).
 public struct SceneHighlight: Sendable {
     public var id: Int
     public var refs: [ElementRef]
     public var color: SIMD4<Float>
     public var label: String?
+
+    /// Farbe für die 2D-Überlagerung (CoreGraphics arbeitet in sRGB).
+    public var overlayColor: SIMD4<Float> { SceneStore.srgb(color) }
 }
 
 /// Die Szene: Teile nach Namen, ihr Zustand (Sichtbarkeit, Auswahl, Hervorhebung, Explosion, Darstellung) und die
@@ -22,7 +26,7 @@ public final class SceneStore {
     static let flashColor = SIMD3<Float>(1.00, 0.80, 0.25)
     static let flashDuration: CFTimeInterval = 0.6
     static let pulseDuration: CFTimeInterval = 0.9
-    static let xrayAlpha: Float = 0.28
+    static let xrayAlpha: Float = 0.4
     static let dimFactor: Float = 0.6
 
     // MARK: Inhalt
@@ -52,6 +56,8 @@ public final class SceneStore {
     // MARK: Körper
 
     private var partBodies: [String: [ViewportBody]] = [:]
+    /// Reine Kantenkörper je Teil für die Röntgendarstellung (durchsichtige Körper zeichnet der Viewport ohne Kanten).
+    private var edgeBodies: [String: [ViewportBody]] = [:]
     private var styleSignature: [String: Int] = [:]
     private var bodyOwner: [String: (part: String, chunk: Int)] = [:]
     public private(set) var bodies: [ViewportBody] = []
@@ -102,6 +108,7 @@ public final class SceneStore {
         order.removeAll { $0 == name }
         for b in partBodies[name] ?? [] { bodyOwner.removeValue(forKey: b.id) }
         partBodies.removeValue(forKey: name)
+        edgeBodies.removeValue(forKey: name)
         styleSignature.removeValue(forKey: name)
         flashStart.removeValue(forKey: name)
         hidden.remove(name)
@@ -116,6 +123,7 @@ public final class SceneStore {
         order = []
         parts = [:]
         partBodies = [:]
+        edgeBodies = [:]
         styleSignature = [:]
         bodyOwner = [:]
         flashStart = [:]
@@ -124,6 +132,7 @@ public final class SceneStore {
         highlights = []
         dimBelowRun = nil
         assemblyCenter = .zero
+        latestRun = 0
         publish()
     }
 
@@ -131,6 +140,26 @@ public final class SceneStore {
 
     /// Prüft eine Referenz gegen die Szene.
     public func isValid(_ ref: ElementRef) -> Bool { parts[ref.part]?.contains(ref) ?? false }
+
+    /// Baugruppen auflösen: ein Teilname ohne eigenes Teil steht für alle Teile darunter („Halter“ → „Halter/…“),
+    /// wie beim Kernel. Ergebnis: gültige Referenzen und die Texte, die nichts getroffen haben.
+    public func expand(_ refs: [ElementRef]) -> (known: [ElementRef], unknown: [String]) {
+        var known: [ElementRef] = []
+        var unknown: [String] = []
+        var seen = Set<ElementRef>()
+        for r in refs {
+            var hits: [ElementRef] = []
+            if isValid(r) {
+                hits = [r]
+            } else if r.kind == .part, parts[r.part] == nil {
+                let prefix = r.part.hasSuffix("/") ? r.part : r.part + "/"
+                hits = order.filter { $0.hasPrefix(prefix) }.map { ElementRef.part($0) }
+            }
+            if hits.isEmpty { unknown.append(r.string) }
+            for h in hits where seen.insert(h).inserted { known.append(h) }
+        }
+        return (known, unknown)
+    }
 
     // MARK: Lauf
 
@@ -385,7 +414,7 @@ public final class SceneStore {
                 break
             }
         }
-        for h in highlights { for r in h.refs { add(r, h.color) } }
+        for h in highlights { for r in h.refs { add(r, h.overlayColor) } }
         for r in selection { add(r, Self.selectionLineColor) }
         return out
     }
@@ -470,22 +499,46 @@ public final class SceneStore {
                 ViewportBody(
                     id: id, vertexData: chunk.vertexData, indices: chunk.indices, edges: chunk.edges,
                     faceIndices: chunk.triFace, edgeIndices: chunk.segEdge, vertices: chunk.points,
-                    triangleStyles: styles, color: rec.header.colorVector, roughness: 0.55,
+                    triangleStyles: styles, color: Self.linear(rec.header.colorVector), roughness: 0.55,
                     metallic: Self.metallic(rec.header.material)))
         }
         partBodies[name] = list
+        edgeBodies[name] = rec.chunks.filter { !$0.edges.isEmpty }.map { chunk in
+            ViewportBody(
+                id: Self.bodyID(part: name, chunk: chunk.index) + "\u{1F}k", vertexData: [], indices: [],
+                edges: chunk.edges, color: SIMD4(0.2, 0.2, 0.2, 1), isPickable: false)
+        }
     }
 
-    static func metallic(_ material: String?) -> Float {
-        guard let m = material?.lowercased() else { return 0 }
-        let metals = ["alu", "stahl", "steel", "edelstahl", "stainless", "messing", "brass", "kupfer", "copper", "iron", "eisen", "titan"]
-        return metals.contains { m.contains($0) } ? 0.35 : 0
+    /// sRGB (wie in model.py und im Protokoll vom Kernel) → linear für den Viewport. Alpha bleibt.
+    nonisolated public static func linear(_ c: SIMD4<Float>) -> SIMD4<Float> {
+        func f(_ v: Float) -> Float {
+            let x = min(max(v, 0), 1)
+            return x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4)
+        }
+        return SIMD4(f(c.x), f(c.y), f(c.z), c.w)
     }
+
+    /// linear → sRGB (für die Überlagerung). Alpha bleibt.
+    nonisolated public static func srgb(_ c: SIMD4<Float>) -> SIMD4<Float> {
+        func f(_ v: Float) -> Float {
+            let x = min(max(v, 0), 1)
+            return x <= 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1 / 2.4) - 0.055
+        }
+        return SIMD4(f(c.x), f(c.y), f(c.z), c.w)
+    }
+
+    /// Kantenfarbe in der Röntgendarstellung: dunklere Teilfarbe, deckend.
+    static func xrayEdgeColor(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x * 0.35, c.y * 0.35, c.z * 0.35, 1) }
+
+    /// Ohne Umgebungsbild wirken metallische Flächen im Viewport fast schwarz; Teile bleiben deshalb matt, die
+    /// Farbe aus model.py trägt das Material.
+    static func metallic(_ material: String?) -> Float { 0 }
 
     /// Farbe eines Teils mit allen Zuständen (Röntgen, Abdunkeln, Aufleuchten, Hervorhebung, Auswahl).
     func displayColor(_ name: String, now: CFTimeInterval, includeFlash: Bool = true) -> SIMD4<Float> {
         guard let rec = parts[name] else { return .zero }
-        var c = rec.header.colorVector
+        var c = Self.linear(rec.header.colorVector)
         var rgb = SIMD3(c.x, c.y, c.z)
         if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor }
         if includeFlash, let t0 = flashStart[name] {
@@ -516,6 +569,15 @@ public final class SceneStore {
             list[i].transform = transform
         }
         partBodies[name] = list
+        if var edges = edgeBodies[name] {
+            let ec = Self.xrayEdgeColor(color)
+            for i in edges.indices {
+                edges[i].color = ec
+                edges[i].isVisible = visible
+                edges[i].transform = transform
+            }
+            edgeBodies[name] = edges
+        }
     }
 
     private func publish() {
@@ -524,6 +586,7 @@ public final class SceneStore {
         for n in order { out.append(contentsOf: partBodies[n] ?? []) }
         bodies = out
         renderBodies = out
+        if displayStyle == .xray { for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) } }
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -553,9 +616,12 @@ public final class SceneStore {
         let now = CACurrentMediaTime()
         for name in order where !hidden.contains(name) {
             guard let rec = parts[name], let live = partBodies[name] else { continue }
-            let color = displayColor(name, now: now, includeFlash: false)
+            // Der OffscreenRenderer hat weder Belichtung noch Tonwertkurve; sRGB-Farben sehen dort so aus wie im Viewport
+            let colorLinear = displayColor(name, now: now, includeFlash: false)
+            let color = Self.srgb(colorLinear)
             let styles = faceStyles(for: name)
             let m = worldTransform(name)
+            let xray = displayStyle == .xray
             for (ci, chunk) in rec.chunks.enumerated() {
                 if clip == nil && styles.isEmpty, ci < live.count {
                     var b = live[ci]
@@ -563,6 +629,11 @@ public final class SceneStore {
                     b.isVisible = true
                     b.triangleStyles = []
                     out.append(b)
+                    if xray, let e = edgeBodies[name]?.first(where: { $0.id.hasPrefix(b.id + "\u{1F}") }) {
+                        var edge = e
+                        edge.color = Self.srgb(e.color)
+                        out.append(edge)
+                    }
                     continue
                 }
                 // Dreiecke nach Farbe gruppieren und in Weltkoordinaten bringen
@@ -592,23 +663,23 @@ public final class SceneStore {
                     let soup = clip.map { SectionClipper.clipTriangles(soup0, plane: $0) } ?? soup0
                     var c = color
                     if let key {
-                        let base = SIMD3(color.x, color.y, color.z)
+                        let base = SIMD3(colorLinear.x, colorLinear.y, colorLinear.z)
                         let rgb = base + (SIMD3(key.x, key.y, key.z) - base) * key.w
-                        c = SIMD4(rgb, color.w)
+                        c = Self.srgb(SIMD4(rgb, colorLinear.w))
                     }
                     out.append(
                         ViewportBody(
                             id: "snap\u{1F}\(name)\u{1F}\(ci)\u{1F}\(key.map { "\($0)" } ?? "-")",
                             vertexData: soup, indices: (0..<UInt32(soup.count / 6)).map { $0 },
-                            edges: first ? edges : [], color: c, roughness: 0.55,
+                            edges: first && !xray ? edges : [], color: c, roughness: 0.55,
                             metallic: Self.metallic(rec.header.material)))
                     first = false
                 }
-                if first && !edges.isEmpty {
+                if (first || xray) && !edges.isEmpty {
                     out.append(
                         ViewportBody(
                             id: "snap\u{1F}\(name)\u{1F}\(ci)\u{1F}e", vertexData: [], indices: [], edges: edges,
-                            color: SIMD4(0.15, 0.15, 0.15, 1)))
+                            color: xray ? Self.srgb(Self.xrayEdgeColor(colorLinear)) : SIMD4(0.15, 0.15, 0.15, 1)))
                 }
             }
         }

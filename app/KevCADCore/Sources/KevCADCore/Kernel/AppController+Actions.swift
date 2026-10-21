@@ -72,13 +72,13 @@ extension AppController {
     // MARK: Sichtbarkeit
 
     public func setVisibility(_ partIDs: [String], visible: Bool) {
-        scene.setVisible(partIDs, visible)
+        scene.setVisible(partNames(partIDs), visible)
         updateParts()
         refreshOverlay()
     }
 
     public func isolate(_ partIDs: [String]) {
-        scene.isolate(partIDs)
+        scene.isolate(partNames(partIDs))
         updateParts()
         refreshOverlay()
     }
@@ -91,8 +91,13 @@ extension AppController {
 
     // MARK: Kamera
 
+    /// Teil- oder Baugruppennamen → Teilnamen.
+    private func partNames(_ ids: [String]) -> [String] {
+        scene.expand(ids.compactMap(ElementRef.init).map(\.partRef)).known.map(\.part)
+    }
+
     public func focus(on refs: [String]) {
-        let parsed = refs.compactMap(ElementRef.init)
+        let parsed = scene.expand(refs.compactMap(ElementRef.init)).known
         guard let b = scene.worldBounds(of: parsed) else {
             log(.warning, "Einpassen: nichts gefunden für \(refs.joined(separator: ", "))")
             return
@@ -232,6 +237,14 @@ extension AppController {
     }
 }
 
+// Ergänzung der Oberfläche (AP4, MeasurementRemoving in AppModel.swift): eine einzelne Messung löschen.
+extension AppController: MeasurementRemoving {
+    public func removeMeasurement(id: UUID) {
+        model.measurements.removeAll { $0.id == id }
+        refreshOverlay()
+    }
+}
+
 // MARK: - Ansichtsbefehle und Bilder für den Kernel
 
 extension AppController {
@@ -266,18 +279,17 @@ extension AppController {
             return (true, nil)
 
         case "focus":
-            let list = refs()
-            let known = list.filter(scene.isValid)
+            let (known, missing) = scene.expand(refs())
             guard let b = scene.worldBounds(of: known) else {
-                return (false, "Unbekannte Referenz: \(list.map(\.string).joined(separator: ", "))")
+                return (false, "Unbekannte Referenz: \(missing.joined(separator: ", "))")
             }
             viewport.fit(b, animated: a["animate"]?.boolValue ?? true)
-            return (true, known.count < list.count ? "Nicht gefunden: \(unknown(list))" : nil)
+            return (true, missing.isEmpty ? nil : "Nicht gefunden: \(missing.joined(separator: ", "))")
 
         case "visibility":
             let mode = a["mode"]?.stringValue ?? "show"
-            let names = Array(Set(refs().map(\.part)))
-            let known = names.filter { scene.record($0) != nil }
+            let (hits, missing) = scene.expand(refs().map(\.partRef))
+            let known = hits.map(\.part)
             switch mode {
             case "show": scene.setVisible(known, true)
             case "hide": scene.setVisible(known, false)
@@ -289,8 +301,8 @@ extension AppController {
             }
             updateParts()
             refreshOverlay()
-            if mode != "show_all" && known.count < names.count {
-                return (!known.isEmpty, "Nicht gefunden: \(names.filter { scene.record($0) == nil }.joined(separator: ", "))")
+            if mode != "show_all" && !missing.isEmpty {
+                return (!known.isEmpty, "Nicht gefunden: \(missing.joined(separator: ", "))")
             }
             return (true, nil)
 
@@ -311,18 +323,18 @@ extension AppController {
                 annotations.removeAll { highlightLabels.values.contains($0.id) }
                 highlightLabels = [:]
             }
-            let known = list.filter(scene.isValid)
+            let (known, missing) = scene.expand(list)
             let color = a["color"]?.vector4
             let h = scene.addHighlight(refs: known, color: color, label: a["label"]?.stringValue, clear: clear)
             if let label = h.label, !label.isEmpty, let first = known.first, let p = scene.worldAnchor(of: first) {
                 let id = "hl-\(h.id)"
-                annotations.append((id, .label(point: p, text: label, color: h.color)))
+                annotations.append((id, .label(point: p, text: label, color: h.overlayColor)))
                 highlightLabels[h.id] = id
             }
             refreshOverlay()
             startAnimationTimerIfNeeded()
-            if known.isEmpty { return (false, "Unbekannte Referenz: \(unknown(list))") }
-            return (true, known.count < list.count ? "Nicht gefunden: \(unknown(list))" : nil)
+            if known.isEmpty { return (false, "Unbekannte Referenz: \(missing.joined(separator: ", "))") }
+            return (true, missing.isEmpty ? nil : "Nicht gefunden: \(missing.joined(separator: ", "))")
 
         case "section":
             let enabled = a["enabled"]?.boolValue ?? true
@@ -381,10 +393,6 @@ extension AppController {
         default:
             return (false, "Unbekannter Befehl \(v.cmd)")
         }
-    }
-
-    private func unknown(_ refs: [ElementRef]) -> String {
-        refs.filter { !scene.isValid($0) }.map(\.string).joined(separator: ", ")
     }
 
     static func displayStyle(protocolName: String) -> DisplayStyle? {

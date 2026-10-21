@@ -100,14 +100,23 @@ public struct FaceInfo: Codable, Equatable, Sendable {
     public var c: [Double]?
     public var ax: [Double]?
     public var r: Double?
+    /// Zweiter Radius (Torus: Rohrradius)
+    public var r2: Double?
+    /// Halbwinkel in Grad (Kegel)
+    public var ang: Double?
 
-    public init(t: String, a: Double? = nil, n: [Double]? = nil, c: [Double]? = nil, ax: [Double]? = nil, r: Double? = nil) {
+    public init(
+        t: String, a: Double? = nil, n: [Double]? = nil, c: [Double]? = nil, ax: [Double]? = nil, r: Double? = nil,
+        r2: Double? = nil, ang: Double? = nil
+    ) {
         self.t = t
         self.a = a
         self.n = n
         self.c = c
         self.ax = ax
         self.r = r
+        self.r2 = r2
+        self.ang = ang
     }
 
     public init(from decoder: Decoder) throws {
@@ -118,6 +127,8 @@ public struct FaceInfo: Codable, Equatable, Sendable {
         c = try? k.decodeIfPresent([Double].self, forKey: .c)
         ax = try? k.decodeIfPresent([Double].self, forKey: .ax)
         r = try? k.decodeIfPresent(Double.self, forKey: .r)
+        r2 = try? k.decodeIfPresent(Double.self, forKey: .r2)
+        ang = try? k.decodeIfPresent(Double.self, forKey: .ang)
     }
 }
 
@@ -128,6 +139,8 @@ public struct EdgeInfo: Codable, Equatable, Sendable {
     public var r: Double?
     public var c: [Double]?
     public var ax: [Double]?
+    /// Zweiter Radius (Ellipse)
+    public var r2: Double?
 
     public init(t: String, l: Double? = nil, r: Double? = nil, c: [Double]? = nil, ax: [Double]? = nil) {
         self.t = t
@@ -144,6 +157,7 @@ public struct EdgeInfo: Codable, Equatable, Sendable {
         r = try? k.decodeIfPresent(Double.self, forKey: .r)
         c = try? k.decodeIfPresent([Double].self, forKey: .c)
         ax = try? k.decodeIfPresent([Double].self, forKey: .ax)
+        r2 = try? k.decodeIfPresent(Double.self, forKey: .r2)
     }
 }
 
@@ -269,8 +283,10 @@ public struct RunErrorMessage: Decodable, Sendable {
     public var line: Int?
     public var excerpt: String
     public var traceback: String?
+    /// Kurzer Reparaturhinweis des Kernels, falls bekannt
+    public var hint: String?
 
-    enum CodingKeys: String, CodingKey { case run, message, line, excerpt, traceback }
+    enum CodingKeys: String, CodingKey { case run, message, line, excerpt, traceback, hint }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -279,6 +295,7 @@ public struct RunErrorMessage: Decodable, Sendable {
         line = try? c.decodeIfPresent(Int.self, forKey: .line)
         excerpt = (try? c.decodeIfPresent(String.self, forKey: .excerpt)) ?? ""
         traceback = try? c.decodeIfPresent(String.self, forKey: .traceback)
+        hint = try? c.decodeIfPresent(String.self, forKey: .hint)
     }
 }
 

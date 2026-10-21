@@ -113,26 +113,36 @@ public enum OverlayPainter {
                 labels.append((CGPoint(x: s.x + 8 * scale, y: s.y - 14 * scale), text, color))
             }
         }
-        for (p, text, color) in labels { drawLabel(text, at: p, color: color, in: ctx, scale: scale) }
+        // Beschriftungen nicht übereinander: eine verdeckte rutscht nach unten
+        var placed: [CGRect] = []
+        for (p, text, color) in labels {
+            placed.append(drawLabel(text, at: p, color: color, in: ctx, scale: scale, avoid: placed))
+        }
         ctx.restoreGState()
     }
 
     /// Beschriftung mit hellem Kasten, mittig um `p`.
-    static func drawLabel(_ text: String, at p: CGPoint, color: SIMD4<Float>, in ctx: CGContext, scale: CGFloat) {
+    @discardableResult
+    static func drawLabel(
+        _ text: String, at p: CGPoint, color: SIMD4<Float>, in ctx: CGContext, scale: CGFloat, avoid: [CGRect] = []
+    ) -> CGRect {
         let font = CTFontCreateUIFontForLanguage(.system, 12 * scale, nil)
             ?? CTFontCreateWithName("Helvetica" as CFString, 12 * scale, nil)
         let attrs: [CFString: Any] = [
             kCTFontAttributeName: font,
             kCTForegroundColorAttributeName: CGColor(srgbRed: 0.1, green: 0.1, blue: 0.12, alpha: 1),
         ]
-        guard let attributed = CFAttributedStringCreate(nil, text as CFString, attrs as CFDictionary) else { return }
+        guard let attributed = CFAttributedStringCreate(nil, text as CFString, attrs as CFDictionary) else { return .null }
         let line = CTLineCreateWithAttributedString(attributed)
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
         let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
         let padX = 6 * scale, padY = 3 * scale
-        let box = CGRect(
+        var box = CGRect(
             x: p.x - width / 2 - padX, y: p.y - (ascent + descent) / 2 - padY, width: width + 2 * padX,
             height: ascent + descent + 2 * padY)
+        for _ in 0..<8 where avoid.contains(where: { $0.intersects(box) }) {
+            box.origin.y += box.height + 3 * scale
+        }
         let path = CGPath(roundedRect: box, cornerWidth: 4 * scale, cornerHeight: 4 * scale, transform: nil)
         ctx.addPath(path)
         ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.92))
@@ -147,6 +157,7 @@ public enum OverlayPainter {
         ctx.textPosition = CGPoint(x: box.minX + padX, y: box.minY + padY + ascent)
         CTLineDraw(line, ctx)
         ctx.restoreGState()
+        return box
     }
 
     static func cg(_ c: SIMD4<Float>) -> CGColor {
