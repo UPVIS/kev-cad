@@ -70,5 +70,14 @@ class PruefLauf:
             header, payload = pack_check(run=run, state="done", ergebnis=erg, geometrie=geo)
             header["statistik"] = {"paare": erg.get("paare"), "zeiten_ms": erg.get("zeiten_ms"),
                                    "zwischenspeicher": len(self.cache), "teile": erg.get("teile")}
+            if erg.get("druck"):  # Druckprüfung: Ausrichtung und Kennzahlen je Druckteil (druck/anbindung.py)
+                header["druck"] = erg["druck"]
         header.pop("seq", None)
         return header, payload
+
+
+# Druckprüfung (Prüfer „druck“, registriert sich beim Import) läuft ebenfalls nach jedem Lauf
+from kevcad_kernel.druck import anbindung as _druck_anbindung  # noqa: E402,F401
+
+if AKTIV is not None and "druck" not in AKTIV:
+    AKTIV = (*AKTIV, "druck")

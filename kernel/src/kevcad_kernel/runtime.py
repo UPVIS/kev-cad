@@ -35,6 +35,7 @@ from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
+from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
@@ -88,7 +89,7 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
     (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
 

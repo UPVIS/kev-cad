@@ -62,6 +62,7 @@ class Erfassung:
                 info["stock_id"] = p.stock_id
             if p.art == "druckteil":
                 info["druckteil"] = True
+                info.update(self._druck(shape, p))
             if p.art in ("schraube", "mutter", "scheibe"):
                 try:
                     info.update(self._verbindung(shape, p, catalog))
@@ -69,6 +70,21 @@ class Erfassung:
                     pass
         self.teile[name] = info
         self.formen[name] = shape
+
+    @staticmethod
+    def _druck(shape: Any, piece: Any) -> dict[str, Any]:
+        """Angaben für die Druckprüfung (druck/anbindung.py): Material, Verfahren, Ausrichtung und die Lage der Form,
+        wie sie an lager.druckteil ging (darauf beziehen sich „wie modelliert“ und die Ausrichtung)."""
+        out: dict[str, Any] = {"druck_material": piece.material_id, "druck_verfahren": piece.verfahren}
+        if getattr(piece, "ausrichtung", None) is not None:
+            out["druck_ausrichtung"] = piece.ausrichtung
+        orig = piece.shape
+        try:
+            if orig is not None and shape.wrapped.IsPartner(orig):
+                out["druck_rahmen"] = _matrix(orig.Location())
+        except Exception:  # noqa: BLE001 - ohne Rahmen prüft die Druckprüfung in Weltlage
+            pass
+        return out
 
     @staticmethod
     def _verbindung(shape: Any, piece: Any, catalog: Any) -> dict[str, Any]:

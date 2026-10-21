@@ -131,6 +131,20 @@ mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Qu
 - **Z-Maße** möglichst als Vielfache von 0,2 mm; Schrift mindestens 0,6 mm erhaben, Strich ab 0,8 mm.
 - **Größer als der Bauraum**: teilen, mit Passstiften oder Schwalbenschwanz und ebenen Fügeflächen.
 
+**Druckprüfung bei jedem Lauf:** Jedes Teil aus `lager.druckteil(...)` prüft der Kernel nach jedem `run` automatisch
+für den P1P (Prüfer „druck“ der gemeinsamen Prüfung, Befunde `druck_*` mit ids `dr1`, `dr2` …, Teil, Fläche
+`Teil#f<n>`, Ort und Abhilfe). **Fehler** (Export gesperrt) nur aus harten Gründen: passt nicht in den Bauraum (samt
+Sperrfläche vorne links), Harzdruck, Material nur mit gehärteter Düse (CF). Überhänge, Brücken, Auskragungen,
+waagrechte Bohrungen, dünne Wände, Verzug sind **Warnungen** (beheben oder Kevin begründen), der Rest **Hinweise**
+(abwägen). `run` nennt Fehler und Warnungen und je Druckteil die gewählte Ausrichtung mit Begründung;
+**`druckpruefung`** (alle Teile) bzw. `druckpruefung(teil="…")` liefert die Einzelheiten: Ausrichtung, Fläche auf
+dem Bett, Kennzahlen (Maße auf dem Bett, Schichten, Stützfläche, Auflage, Volumen), alle Hinweise mit Referenzen und
+die Materialeinstellungen. Die Ausrichtung wählt die Prüfung selbst; muss die Hauptlast in die Schichtebene, mit
+`lager.druckteil(form, name, material="petg", ausrichtung="-z")` vorgeben (`"+x"` usw. = diese Seite aufs Bett,
+ebene Flächennummer, Vektor oder `Rot(...)`, bezogen auf die Form, wie sie an `druckteil` geht). Unveränderte Teile
+kommen aus dem Zwischenspeicher; der Live-Aufbau wartet nie auf die Prüfung. Kevin die Ausrichtung neuer Druckteile
+nennen.
+
 ## Arbeitsablauf
 
 1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl, Inventar-Regel.
@@ -221,7 +235,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
-| `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
+| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `import kevcad.bedingungen as bed` | Bezüge, Bedingungen, Gelenke, Befestigung, `bed.platziere(teil, …)` (Abschnitt „Teile über Bedingungen setzen“). |
 

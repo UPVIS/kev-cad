@@ -1040,10 +1040,12 @@ def _begruendung(beste: dict, modell: dict, netz: Netz, mat: Material, liegt_auf
             teile.append(f"{beste['waagrechte_bohrungen']} Bohrung(en) liegen waagrecht")
     if not beste["passt"]:
         teile.append("passt in keiner Lage in den Bauraum")
-    satz = "; ".join(teile) + "."
-    satz += (f" Festigkeit: quer zu den Schichten hält {mat.name} nur etwa {_z(mat.z_festigkeit * 100, 0)} % – "
-             "Hauptlasten (Zug, Biegung, Haken) in die Schichtebene legen, sonst Ausrichtung vorgeben.")
-    return satz
+    return "; ".join(teile) + ". " + _festigkeit(mat)
+
+
+def _festigkeit(mat: Material) -> str:
+    return (f"Festigkeit: quer zu den Schichten hält {mat.name} nur etwa {_z(mat.z_festigkeit * 100, 0)} % – "
+            "Hauptlasten (Zug, Biegung, Haken) in die Schichtebene legen, sonst Ausrichtung vorgeben.")
 
 
 def _pruefe_material(c: _Ctx) -> None:
@@ -1052,17 +1054,19 @@ def _pruefe_material(c: _Ctx) -> None:
     if not mat.fdm:
         c.hinweise.append(_hinweis(
             "material", "fehler", f"{mat.name}: kein Harzdrucker vorhanden, der {dr.name} druckt nur FDM",
-            "als FDM-Druckteil aus PLA oder PETG konstruieren und prüfen"))
+            "als FDM-Druckteil aus PLA oder PETG konstruieren und prüfen", grund="harzdruck"))
         return
     if mat.einhausung and not dr.geschlossen:
         c.hinweise.append(_hinweis(
             "material", "warnung", f"{mat.name} auf dem offenen {dr.name}: Bambu rät ohne geschlossenen Bauraum ab "
             "(Verzug, Lagentrennung, Risse)",
-            "PLA oder PETG nehmen; sonst nur mit Einhausung (P1P Enclosure Kit oder Druckbox) und Brim drucken"))
+            "PLA oder PETG nehmen; sonst nur mit Einhausung (P1P Enclosure Kit oder Druckbox) und Brim drucken",
+            grund="einhausung"))
     if mat.gehaertete_duese and not dr.duese_gehaertet:
         c.hinweise.append(_hinweis(
             "material", "warnung", f"{mat.name} ist abrasiv und braucht eine gehärtete Düse (HRC 40); der {dr.name} "
-            f"hat ab Werk {dr.duese_material}", "PLA bzw. PETG ohne Faser nehmen oder ein gehärtetes Hotend nachrüsten"))
+            f"hat ab Werk {dr.duese_material}", "PLA bzw. PETG ohne Faser nehmen oder ein gehärtetes Hotend nachrüsten",
+            grund="gehaertete_duese"))
 
 
 def _druckhinweise(mat: Material, dr: Drucker) -> list[str]:
@@ -1195,6 +1199,7 @@ def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, 
             "liegt_auf": liegt_auf,
             "automatisch": automatisch,
             "begruendung": _begruendung(beste, modell, netz, mat, liegt_auf),
+            "festigkeit": _festigkeit(mat),                 # letzter Satz der Begründung, je Material gleich
             "kandidaten": [kand(b) for b in sortiert[:5]],
         },
         "hinweise": c.hinweise,

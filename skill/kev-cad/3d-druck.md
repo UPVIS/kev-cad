@@ -435,6 +435,11 @@ halter -= [Pos(x, 0, 16) * einsatz_tasche("M3") for x in (-13, 13)]      # zwei 
 
 ## 15 Prüfung im Kernel
 
+Läuft bei jedem `run` automatisch für jedes `lager.druckteil(...)` (Prüfer „druck“, Befunde `druck_<art>`);
+`druckpruefung` zeigt das Ergebnis, `lager.druckteil(..., ausrichtung="-z")` gibt die Lage vor. Im Lauf sind nur
+Bauraum, Harzdruck und CF ohne gehärtete Düse Fehler (Export gesperrt), eine zu kleine Bohrung ist dort eine Warnung.
+Von Hand, etwa in `execute`:
+
 ```python
 from kevcad_kernel.druck import pruefe_druckteil, als_warnungen
 ergebnis = pruefe_druckteil(halter, material="petg")           # ausrichtung=None: automatisch

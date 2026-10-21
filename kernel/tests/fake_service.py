@@ -358,6 +358,44 @@ class FakeService:
              "volumen": 830.0, "ort": [1500.0, -340.0, 100.0], "bilder": [153, 156, 159, 162, 165, 168]}],
                 "geprueft": {"paare": 40, "geprueft_bilder": 81, "schritt": schritt, "ms": 640.0}}
 
+    # 3D-Druck ------------------------------------------------------------------------------------------------------
+
+    DRUCK_CHECK = {
+        "run": 3, "state": "done",
+        "befunde": [
+            {"id": "dr1", "art": "druck_ueberhang", "teile": ["Halter/Clip (Druck)"], "schwere": "warnung",
+             "text": "Halter/Clip (Druck): Überhang 70° an Fläche #f4 bei (1; 2; 3).",
+             "loesung": "Fase 45° statt Rundung.", "ort": [1.0, 2.0, 3.0],
+             "wert": {"pruefung": "druck", "druckart": "ueberhang", "flaechen": [4], "refs": ["Halter/Clip (Druck)#f4"]},
+             "geometrie": None},
+        ],
+        "druck": {
+            "drucker": "Bambu Lab P1P", "neu_geprueft": 1, "aus_zwischenspeicher": 0, "dauer_ms": 85.0,
+            "teile": {"Halter/Clip (Druck)": {
+                "material": "petg", "material_name": "PETG", "ok": True,
+                "zaehler": {"fehler": 0, "warnung": 1, "hinweis": 0},
+                "zusammenfassung": "1 Warnung (PETG, Bambu Lab P1P)",
+                "ausrichtung": {"text": "−Z-Seite unten", "unten": [0, 0, -1], "drehung": [0, 0, 0],
+                                "liegt_auf": "Halter/Clip (Druck)#f0", "automatisch": True, "vorgabe": None,
+                                "begruendung": "Wie modelliert liegt das Teil am besten; Stützfläche ca. 12 mm².",
+                                "bezug": "druckteil"},
+                "kennzahlen": {"abmessungen_mm": [20.0, 10.0, 8.0], "schichten": 40, "stuetzflaeche_mm2": 12.0,
+                               "auflageflaeche_mm2": 200.0, "volumen_cm3": 1.2, "masse_voll_g": 1.5,
+                               "bauraum_ausnutzung_prozent": 7.8},
+                "zwischenspeicher": False, "ms": 85.0}},
+            "materialien": {"petg": {"name": "PETG", "druckhinweise": ["PETG: Düse 240–260 °C, Bett 70–80 °C."],
+                                     "festigkeit": "Festigkeit: quer zu den Schichten hält PETG nur etwa 50 %."}},
+        },
+    }
+
+    def druckpruefung(self, teil: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.druck.bericht import druck_auszug
+
+        self._record("druckpruefung", teil)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
+        return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)

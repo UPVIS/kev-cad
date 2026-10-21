@@ -129,6 +129,7 @@ class Piece:
     teile: list[str] = field(default_factory=list)
     shape: Any = field(default=None, repr=False, compare=False)
     solids: list[Any] = field(default_factory=list, repr=False, compare=False)
+    ausrichtung: Any = field(default=None, repr=False, compare=False)  # Druckteile: Lage aufs Bett, None = automatisch
 
     @property
     def group(self) -> str:
