@@ -173,6 +173,9 @@ public final class AppModel: ObservableObject {
     /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
     @Published public var selectionMode: SelectionMode = .parts
     @Published public var orthographic = false
+    /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
+    @Published public var pruefung: PruefErgebnis?
+    @Published public var schnittkoerperSichtbar = true
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

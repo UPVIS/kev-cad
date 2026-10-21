@@ -207,6 +207,9 @@ def main() -> None:
     (ZIEL / "stream.bin").write_bytes(b"".join(d for _, d in frames))
     (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
     print(f"{len(frames)} Rahmen nach {ZIEL}")
+    import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich
+
+    make_pruef_fixtures.main()
 
 
 if __name__ == "__main__":
