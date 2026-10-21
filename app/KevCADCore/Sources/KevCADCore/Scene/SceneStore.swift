@@ -48,6 +48,8 @@ public final class SceneStore {
     public private(set) var dimBelowRun: Int?
     /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
     public private(set) var inventoryWarnings: Set<String> = []
+    /// Prüfung: rote, durchscheinende Schnittkörper (immer obenauf, nicht anklickbar), siehe AppController+Pruefung.
+    public private(set) var ghostBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 5: Lage je Teil aus der Animation (Ruhelage → aktuelles Bild), zusätzlich zur Basislage; leer = Ruhelage.
     public private(set) var animationTransforms: [String: simd_float4x4] = [:]
@@ -143,6 +145,7 @@ public final class SceneStore {
         animationTransforms = [:]
         animationHidden = []
         collisionParts = []
+        ghostBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -272,6 +275,12 @@ public final class SceneStore {
         animationHidden = hidden
         collisionParts = collision
         for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Schnittkörper der Prüfung ersetzen (leer = keine).
+    public func setGhostBodies(_ bodies: [ViewportBody]) {
+        ghostBodies = bodies
         publish()
     }
 
@@ -631,6 +640,7 @@ public final class SceneStore {
         bodies = out
         renderBodies = out
         if displayStyle == .xray { for n in order { renderBodies.append(contentsOf: edgeBodies[n] ?? []) } }
+        if animationTransforms.isEmpty { renderBodies.append(contentsOf: ghostBodies) }  // Schnittkörper: Ruhelage
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -726,6 +736,12 @@ public final class SceneStore {
                             color: xray ? Self.srgb(Self.xrayEdgeColor(colorLinear)) : SIMD4(0.15, 0.15, 0.15, 1)))
                 }
             }
+        }
+        // Schnittkörper der Prüfung gelten für die Ruhelage, in einem Bild der Animation stehen sie nicht
+        for g in ghostBodies where g.isVisible && animationTransforms.isEmpty {  // der Offscreen-Renderer erwartet sRGB
+            var b = g
+            b.color = Self.srgb(g.color)
+            out.append(b)
         }
         if let helper = depthHelper() { out.append(helper) }
         return out

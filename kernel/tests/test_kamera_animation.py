@@ -132,3 +132,31 @@ def test_video_through_named_camera(rt_app):
     finally:
         stop.set()
         t.join(2)
+
+
+# --------------------------------------------------------------------------------------------- Prüfung und Animation
+
+ERLAUBT_MODEL = '''
+from build123d import *
+from kevcad import animation, erlaubt_ueberlappung, show
+show(Box(100, 100, 100), "Block")
+show(Pos(300, 0, 0) * Box(100, 100, 100), "Schieber/Platte")
+show(Pos(300, 0, 80) * Box(20, 20, 20), "Schieber/Griff")
+erlaubt_ueberlappung("Block", "Schieber", grund="Schaumstoff gibt nach")
+erlaubt_ueberlappung("Block", "Schieber/Platte")  # ohne Grund: gilt nicht
+fahrt = animation(dauer=1, fps=4, name="Fahrt")
+fahrt.bewege("Schieber", nach=(-250, 0, 0), von=0, bis=1)
+'''
+
+
+def test_pruef_allowance_counts_in_animation(tmp_path):
+    """Eine in der Prüfung erlaubte Überlappung (erlaubt_ueberlappung mit Grund) zählt in der Animation nicht als
+    Kollision: sie steht wie anim.erlaube im Kopf der Animation."""
+    (tmp_path / "model.py").write_text(ERLAUBT_MODEL, encoding="utf-8")
+    out: list[tuple[dict, bytes]] = []
+    res = Runner(lambda h, p: out.append((h, p))).run({"run": 1, "path": str(tmp_path / "model.py"),
+                                                       "inventar_regel": False})
+    assert res["type"] == "RUN_DONE", res.get("error")
+    head = next(h for h, _ in out if h.get("type") == "ANIM")
+    # nur die Erlaubnis mit Grund; Gruppe „Schieber“ = alle Teile darunter
+    assert head["erlaubt"] == [[["Block"], ["Schieber/Platte", "Schieber/Griff"]]]

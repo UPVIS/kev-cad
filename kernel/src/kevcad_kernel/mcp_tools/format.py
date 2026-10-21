@@ -266,6 +266,18 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
     if "inventar_regel" in res:
         data["inventar_regel"] = bool(res["inventar_regel"])
         data["inventar_verstoesse"] = violations
+    # Prüfung (Durchdringungen …): Befunde mit Lösung; offene Fehler machen den Lauf zum Fehler
+    pruef_offen = False
+    if isinstance(res.get("pruefung"), dict):
+        from kevcad_kernel.pruefung.text import pruef_text
+
+        data["pruefung"] = res["pruefung"]
+        text, pruef_offen = pruef_text(res["pruefung"])
+        if text:
+            if pruef_offen:
+                lines.insert(0, text)
+            else:
+                lines.append(text)
     if violations:
         from kevcad_kernel.bom import inventory_text
 
@@ -273,7 +285,7 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.insert(1, "Die Geometrie ist im Viewer zu sehen; Export und Stückliste gelten erst, wenn alles aus dem "
                         "Inventar kommt.")
         return "\n".join(lines), data, True
-    return "\n".join(lines), data, False
+    return "\n".join(lines), data, pruef_offen
 
 
 def measure_line(m: dict[str, Any]) -> str:

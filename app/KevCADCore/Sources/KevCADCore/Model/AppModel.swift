@@ -178,6 +178,9 @@ public final class AppModel: ObservableObject {
     public let animation = AnimationModel()
     /// Phase 5 (KAM, additiv): Kameras aus model.py und der Blick durch eine Kamera (Aktionen: `CameraActions`).
     public let cameras = CameraStore()
+    /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
+    @Published public var pruefung: PruefErgebnis?
+    @Published public var schnittkoerperSichtbar = true
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

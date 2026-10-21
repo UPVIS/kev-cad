@@ -425,6 +425,25 @@ class _Capture(io.StringIO):
         return len(s)
 
 
+def _pruef_erlaubt(erfassung: Any, shown: list[str]) -> list[tuple[list[str], list[str]]]:
+    """Gewollte Überlappungen aus ``erlaubt_ueberlappung(a, b, grund=…)`` als Teilpaare für die Animation (dieselbe
+    Auflösung wie in der Prüfung: Name, Gruppe „X/“ = alle Teile darunter; ohne Grund gilt sie nicht)."""
+    if erfassung is None:
+        return []
+    try:
+        eintraege = erfassung.ergebnis(shown)["erklaerungen"]["erlaubt"]
+    except Exception:  # noqa: BLE001 - die Animation läuft auch ohne
+        return []
+
+    def teile(namen: list[str]) -> list[str]:
+        out: list[str] = []
+        for n in namen:
+            out += [s for s in shown if s.startswith(n)] if n.endswith("/") else [n]
+        return out
+
+    return [(teile(e["a"]), teile(e["b"])) for e in eintraege if e.get("a") and e.get("b")]
+
+
 class Runner:
     """Zustand des Rechenprozesses: Namensraum des letzten Laufs, Parameter, Laufnummer."""
 
@@ -436,6 +455,9 @@ class Runner:
         self.params: dict[str, Any] = {}
         self.catalog: Catalog | None = None
         self.inventar = True  # Inventar-Regel des letzten Laufs (gilt auch für execute)
+        self._erfassung = None  # Prüfung: Angaben je Teil und Erklärungen aus model.py (nur während eines Laufs)
+        self._zu_pruefen: tuple[int, Any, list[str]] | None = None  # (Lauf, Erfassung, gezeigte Teile)
+        self._pruef_lauf = None  # pruefung.lauf.PruefLauf mit Zwischenspeicher über Läufe hinweg
 
     def _catalog(self, msg: dict[str, Any], project: str | None) -> Catalog:
         """Katalog mit den Ordnern aus der Laufzeit (Nachricht ``catalog``) und dem Projekt des Laufs."""
@@ -539,6 +561,8 @@ class Runner:
         if kameras is not None:
             hooks["kamera"] = lambda cam: kameras.register(cam, warn)
             hooks["teil_location"] = lambda name: state.get("locations", {}).get(name)
+        if self._erfassung is not None and not sketch:
+            hooks["pruefung"] = self._erfassung.melde
         kevcad._hooks.update(hooks)
 
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
@@ -619,6 +643,8 @@ class Runner:
                                                     list(tess.bbox.get("max", [0, 0, 0])))
             state.setdefault("locations", {})[name] = location_of(shape)
             state.setdefault("tokens", {})[name] = getattr(shape, "lager_token", None)
+        if self._erfassung is not None and not sketch:
+            self._erfassung.teil(name, shape, mat, pieces, catalog, tess=tess, props=props)
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
@@ -663,6 +689,9 @@ class Runner:
         # Tracebacks sollen den ausgeführten Code zeigen, nicht einen inzwischen geänderten Dateistand
         linecache.cache[path] = (len(source), None, source.splitlines(True), path)
         error = None
+        from kevcad_kernel.pruefung.erfassung import Erfassung
+
+        erfassung = self._erfassung = Erfassung()
         try:
             _purge_user_modules()
             with contextlib.suppress(OSError):
@@ -685,6 +714,7 @@ class Runner:
                 state["warnings"].append(f"{w.category.__name__}: {w.message}")
         finally:
             self._uninstall()
+            self._erfassung = None
             sys.path[:] = old_path
             with contextlib.suppress(OSError):
                 os.chdir(old_cwd)
@@ -694,7 +724,7 @@ class Runner:
                 kameras.koerper_folgen(state["animations"], state["shown"], state.get("tokens", {}))
             except Exception as exc:  # noqa: BLE001 - darf die Animation nicht verhindern
                 state["warnings"].append(f"Kamerakörper fahren nicht mit: {type(exc).__name__}: {exc}")
-            error, anim_names = self._animations(run, state, path, source)
+            error, anim_names = self._animations(run, state, path, source, erfassung)
         self.ns = ns
         self.ns_project = project
         self.params = dict(state["params"])
@@ -728,12 +758,14 @@ class Runner:
                                                     state["shown"], result["warnings"].append)
             except Exception as exc:  # noqa: BLE001
                 result["warnings"].append(f"Kameras nicht übernommen: {type(exc).__name__}: {exc}")
+            self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
         return result
 
-    def _animations(self, run: int, state: dict[str, Any], path: str,
-                    source: str) -> tuple[dict[str, Any] | None, list[str]]:
+    def _animations(self, run: int, state: dict[str, Any], path: str, source: str,
+                    erfassung: Any = None) -> tuple[dict[str, Any] | None, list[str]]:
         """Phase 5: Animationen gegen die gezeigten Teile auswerten und als ``ANIM`` schicken. Ein Fehler (unbekanntes
-        Teil, Kreis bei folge …) bricht den Lauf mit der Zeile der Spur ab."""
+        Teil, Kreis bei folge …) bricht den Lauf mit der Zeile der Spur ab. Gewollte Überlappungen aus
+        ``erlaubt_ueberlappung`` (Prüfung) gelten in der Kollisionsprüfung der Animation wie ``anim.erlaube``."""
         from kevcad.bewegung import AnimationError
         from kevcad_kernel.animation import evaluate_all, worker_message
 
@@ -750,11 +782,30 @@ class Runner:
         except Exception as exc:  # noqa: BLE001 - Auswertung darf den Lauf nicht abstürzen lassen
             return {"message": f"Animation nicht ausgewertet: {type(exc).__name__}: {exc}", "line": None,
                     "excerpt": "", "traceback": traceback.format_exc(limit=6), "hint": ""}, []
+        erlaubt = _pruef_erlaubt(erfassung, state["shown"])
         for a in results:
             state["warnings"].extend(a.warnungen)
+            a.erlaubt.extend(erlaubt)
             head, payload = worker_message(a, run)
             self.emit(head, payload)
         return None, [a.name for a in results]
+
+    # -- Prüfung -------------------------------------------------------------------------------------------------------
+
+    def pruefe(self, run: int, abbrechen: Callable[[], None] | None = None) -> tuple[dict[str, Any], bytes]:
+        """Prüft den Stand des Laufs ``run`` (Durchdringungen …), siehe kevcad_kernel/pruefung/lauf.py. Liefert Kopf
+        und Nutzlast der Nachricht CHECK."""
+        from kevcad_kernel.pruefung.lauf import PruefLauf
+        from kevcad_kernel.protocol import pack_check
+
+        daten = self._zu_pruefen
+        if daten is None or daten[0] != run:
+            header, payload = pack_check(run=run, state="failed", message="Kein erfolgreicher Lauf zum Prüfen")
+            header.pop("seq", None)
+            return header, payload
+        if self._pruef_lauf is None:
+            self._pruef_lauf = PruefLauf()
+        return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen)
 
     # -- execute -------------------------------------------------------------------------------------------------------
 

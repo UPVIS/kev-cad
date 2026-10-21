@@ -479,6 +479,8 @@ public final class AppController: AppActions {
             handleAnimation(a)
         case .camera(let c):
             applyCamera(c)
+        case .check(let c):
+            applyCheck(c)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -526,6 +528,7 @@ public final class AppController: AppActions {
             model.run = .idle
             model.bom = nil
             model.inventarVerstoesse = []
+            model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)
@@ -564,7 +567,9 @@ public final class AppController: AppActions {
                 inventarFehlt: r.header.inventarFehlt || model.inventarVerstoesse.contains(name))
         }
         model.triangleCount = scene.triangleCount
-        scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)))
+        // rot: Inventar-Regel verletzt oder Befund der Prüfung (Durchdringung …)
+        let pruefRot = (model.pruefung?.betroffeneTeile ?? []).filter { scene.record($0) != nil }
+        scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)).union(pruefRot))
     }
 
     func sendSettings() {

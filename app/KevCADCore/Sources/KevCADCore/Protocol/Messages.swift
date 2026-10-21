@@ -519,6 +519,8 @@ public enum KernelMessage: Sendable {
     case animation(AnimationMessage)
     /// Phase 5: CAMERA_UPSERT und CAMERA_REMOVE.
     case camera(CameraMessage)
+    /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
+    case check(CheckMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -544,6 +546,7 @@ public enum KernelMessage: Sendable {
         case .catalog: return "CATALOG"
         case .animation(let a): return a.typeName
         case .camera(let c): return c.typeName
+        case .check: return "CHECK"
         case .unknown(let t, _): return t
         }
     }
@@ -592,6 +595,7 @@ public enum KernelMessage: Sendable {
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
         case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
         case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
+        case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

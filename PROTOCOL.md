@@ -225,6 +225,40 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
 
+## Prüfung
+
+Rein additiv; ältere Apps ignorieren `CHECK`. Nach jedem erfolgreichen Lauf prüft der Kernel den Stand (im
+Rechenprozess, direkt nach `RUN_DONE`, siehe `kernel/src/kevcad_kernel/pruefung/`): zuerst Durchdringungen; weitere
+Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) liefern Befunde im selben Format.
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `CHECK` | `run`, `state` (`running` \| `done` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand` | Schnittkörper |
+
+- Nach `RUN_END` kommt sofort `CHECK` mit `state: "running"` und leeren Listen, das Ergebnis folgt als zweites `CHECK`.
+  `cancelled`: ein neuerer Lauf kam dazwischen (dessen `CHECK` folgt). Beim Verbinden schickt der Kernel das letzte
+  fertige `CHECK` mit.
+- Befund:
+
+```json
+{"id": "du1", "art": "durchdringung", "teile": ["Halter/Block A", "Halter/Block B"], "schwere": "fehler",
+ "wert": {"volumen": 200.0, "tiefe": 2.0, "achse": [-1, 0, 0]}, "ort": [4.0, 0.0, 0.0],
+ "text": "Halter/Block A und Halter/Block B durchdringen sich: 200 mm³, Tiefe etwa 2 mm bei (4; 0; 0).",
+ "loesung": "Halter/Block A um 2,2 mm in −X verschieben (dann 0,2 mm Spiel) …", "geometrie": 0}
+```
+
+  `schwere`: `fehler` (Lauf gilt als fehlerhaft, Export gesperrt), `warnung`, `hinweis`. `ort` in mm oder null,
+  `geometrie` Index in `geometrie` oder null. Weitere Quellen dürfen eigene Felder ergänzen (etwa `soll`, `ist`).
+- Durchdringung zählt ab 0,001 mm³ Schnittvolumen und 0,01 mm Tiefe; Berühren ist kein Befund. Einzige automatische
+  Ausnahme ist echter Gewindeeingriff (Schraube in Mutter oder Kernloch, gleiche Achse, nur im Gewindeband); er steht in
+  `gewinde`. Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
+- Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
+  u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
+
+Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+
 ## Phase 5: Animation
 
 Rein additiv (Strang ANI, PLAN-PHASE5-KAMERA-ANIMATION.md A1–A4); ältere Gegenseiten ignorieren die neuen Typen.
@@ -261,7 +295,9 @@ Nutzlast von `ANIM_DEF`:
 
 `zeit`/`bild`: stärkste Durchdringung; `tiefe` (mm): kleinste Ausdehnung des Schnittkörpers (Näherung der
 Eindringtiefe); `volumen` mm³; `ort` Mitte des Schnittkörpers in Weltkoordinaten. Berührungen (Volumen unter 0,5 mm³ oder
-Dicke unter 0,05 mm) und Paare aus `anim.erlaube(...)` zählen nicht.
+Dicke unter 0,05 mm), Paare aus `anim.erlaube(...)` und aus `erlaubt_ueberlappung(a, b, grund=…)` der Prüfung zählen
+nicht. Die Schnittkörper aus `CHECK` gelten für die Ruhelage; die App zeigt sie nur, solange keine Animation eine Lage
+setzt (auch nicht in Kamerabildern und Videos aus einem Bild der Animation).
 
 ### App → Kernel
 
