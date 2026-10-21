@@ -66,7 +66,7 @@ class PartRecord:
         bb = self.bbox
         size = [round(b - a, 6) for a, b in zip(bb.get("min", [0, 0, 0]), bb.get("max", [0, 0, 0]))]
         c = self.counts
-        return {
+        out = {
             "name": self.name,
             "bbox": {"min": bb.get("min"), "max": bb.get("max"), "size": size},
             "volume": self.props.get("volume", 0.0),
@@ -80,6 +80,10 @@ class PartRecord:
             "visible": self.visible,
             "run": self.run,
         }
+        for key in ("stock", "druckteil", "inventar"):  # Phase 2: Lagerteil, Druckteil, Inventar-Regel
+            if self.header.get(key):
+                out[key] = self.header[key]
+        return out
 
     # -- Form (erst bei Bedarf) ----------------------------------------------------------------------------------------
 

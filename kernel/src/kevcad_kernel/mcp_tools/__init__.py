@@ -25,6 +25,13 @@ TOOL_NAMES: tuple[str, ...] = (
     "annotate",
     "clear_annotations",
     "export",
+    "stock_search",
+    "stock_get",
+    "stock_define",
+    "material_list",
+    "material_define",
+    "catalog_delete",
+    "bom",
 )
 
 __all__ = ["INSTRUCTIONS", "SERVER_NAME", "SERVER_TITLE", "TOOL_NAMES", "KevcadTools", "register_tools"]

@@ -62,7 +62,7 @@ def test_tool_list_complete_with_schemas(srv):
     assert schema["measure"]["required"] == ["refs"]
     assert set(schema["annotate"]["required"]) == {"kind", "points"}
     assert schema["export"]["required"] == ["formats"]
-    assert schema["export"]["properties"]["formats"]["items"]["enum"] == ["step", "stl", "3mf", "glb"]
+    assert schema["export"]["properties"]["formats"]["items"]["enum"] == ["step", "stl", "3mf", "glb", "bom_csv"]
     assert schema["screenshot"]["properties"]["width"]["default"] == 1280
     assert schema["screenshot"]["properties"]["height"]["default"] == 800
     assert schema["measure"]["properties"]["show"]["default"] is True

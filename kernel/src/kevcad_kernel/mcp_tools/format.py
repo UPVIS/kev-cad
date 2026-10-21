@@ -148,6 +148,20 @@ def part_line(part: dict[str, Any]) -> str:
         bits.append(f"{num(part['mass'], 1)} g")
     if part.get("material"):
         bits.append(str(part["material"]))
+    stock = part.get("stock")
+    if isinstance(stock, dict) and stock.get("id"):
+        text = f"Lagerteil {stock['id']}"
+        if isinstance(stock.get("laenge"), (int, float)):
+            text += f" {num(stock['laenge'], 1)} mm"
+        g = stock.get("gehrung") or []
+        if any(isinstance(v, (int, float)) and v for v in g):
+            text += f" Gehrung {num(g[0], 1)}°/{num(g[1], 1)}°"
+        bits.append(text)
+    druck = part.get("druckteil")
+    if isinstance(druck, dict):
+        bits.append("Druckteil" + (" (Harz)" if druck.get("verfahren") == "harzdruck" else ""))
+    if part.get("inventar") == "fehlt":
+        bits.append("NICHT AUS DEM INVENTAR")
     if part.get("visible") is False:
         bits.append("ausgeblendet")
     return f"- {part.get('name', '?')}: " + " · ".join(bits)
@@ -161,7 +175,7 @@ def part_data(part: dict[str, Any]) -> dict[str, Any]:
         out["size"] = [round(v, 4) for v in size]
     if part.get("bbox"):
         out["bbox"] = {k: part["bbox"][k] for k in ("min", "max") if k in part["bbox"]}
-    for key in ("volume", "area", "mass", "material", "faces", "edges"):
+    for key in ("volume", "area", "mass", "material", "faces", "edges", "stock", "druckteil", "inventar"):
         if part.get(key) is not None:
             out[key] = part[key]
     return out
@@ -227,6 +241,11 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.append("Parameter: " + ", ".join(f"{k}={num(v)}" for k, v in params.items()))
     for w in warnings:
         lines.append(f"Warnung: {w}")
+    bom = res.get("bom") if isinstance(res.get("bom"), dict) else None
+    if bom:
+        lines.append(f"Stückliste: {bom_totals_line(bom.get('totals') or {})} (Details mit bom)")
+        for w in (bom.get("warnings") or [])[:5]:
+            lines.append(f"Hinweis Stückliste: {w}")
     data = {
         "ok": True,
         "run": run_no,
@@ -236,6 +255,19 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         "warnings": warnings,
         "params": params,
     }
+    if bom:
+        data["bom"] = bom
+    violations = list(res.get("inventar_verstoesse") or [])
+    if "inventar_regel" in res:
+        data["inventar_regel"] = bool(res["inventar_regel"])
+        data["inventar_verstoesse"] = violations
+    if violations:
+        from kevcad_kernel.bom import inventory_text
+
+        lines.insert(0, inventory_text(violations))
+        lines.insert(1, "Die Geometrie ist im Viewer zu sehen; Export und Stückliste gelten erst, wenn alles aus dem "
+                        "Inventar kommt.")
+        return "\n".join(lines), data, True
     return "\n".join(lines), data, False
 
 
@@ -263,3 +295,141 @@ def camera_text(camera: dict[str, Any] | None) -> str:
         else:
             bits.append(f"{key} {value}")
     return "Kamera: " + ", ".join(bits)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 2: Lagerteile, Materialien, Stückliste
+
+
+def table(rows: list[list[str]], right: set[int] | None = None) -> str:
+    """Ausgerichtete Texttabelle; erste Zeile ist der Kopf. ``right``: rechtsbündige Spalten."""
+    right = right or set()
+    widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    out = []
+    for n, row in enumerate(rows):
+        cells = [c.rjust(widths[i]) if i in right else c.ljust(widths[i]) for i, c in enumerate(row)]
+        out.append("  ".join(cells).rstrip())
+        if n == 0:
+            out.append("  ".join("-" * w for w in widths))
+    return "\n".join(out)
+
+
+def money(value: Any) -> str:
+    from kevcad_kernel.bom import eur
+
+    return eur(value if isinstance(value, (int, float)) else None)
+
+
+def masse_short(item: dict[str, Any]) -> str:
+    masse = item.get("masse") or {}
+    return ", ".join(f"{k} {num(v, 2) if isinstance(v, (int, float)) else v}" for k, v in masse.items())
+
+
+def status_text(entry: dict[str, Any]) -> str:
+    return "wartet auf Freigabe" if entry.get("status") == "vorgeschlagen" else "frei"
+
+
+def stock_table(items: list[dict[str, Any]]) -> str:
+    rows = [["id", "Name", "Norm", "Material", "kg/m", "Preis", "Ebene", "Status"]]
+    for it in items:
+        calc = it.get("berechnet") or {}
+        kgm = calc.get("kg_je_m", it.get("kg_je_m"))
+        rows.append([str(it.get("id", "?")), str(it.get("name", "")), str(it.get("norm") or ""),
+                     str(it.get("material", "")), num(kgm, 2) if isinstance(kgm, (int, float)) else "",
+                     str(calc.get("preis_text") or ""), str(it.get("ebene", "")), status_text(it)])
+    return table(rows, right={4})
+
+
+def stock_detail(res: dict[str, Any]) -> str:
+    it = res.get("item") or {}
+    mat = res.get("material") or {}
+    lines = [f"{it.get('name', '?')} ({it.get('id', '?')}), Ebene {it.get('ebene', '?')}"
+             + (", vorgeschlagen – wartet auf Kevins Freigabe im Lagerkatalog" if it.get("status") == "vorgeschlagen"
+                else "")]
+    lines.append(f"Art {it.get('art', '?')}" + (f", Norm {it['norm']}" if it.get("norm") else "")
+                 + f", Maße: {masse_short(it)}")
+    lines.append(f"Material: {mat.get('name') or it.get('material', '?')}"
+                 + (f" ({num(mat['dichte'], 3)} g/cm³)" if isinstance(mat.get("dichte"), (int, float)) else ""))
+    bits = []
+    if isinstance(res.get("querschnitt_mm2"), (int, float)):
+        bits.append(f"Querschnitt {num(res['querschnitt_mm2'], 1)} mm²")
+    if isinstance(res.get("kg_je_m"), (int, float)):
+        source = "Tabelle" if it.get("kg_je_m") is not None else "berechnet"
+        bits.append(f"{num(res['kg_je_m'], 3)} kg/m ({source})")
+    if it.get("stangenlaenge"):
+        bits.append(f"Stange {num(it['stangenlaenge'], 0)} mm")
+    if it.get("platte"):
+        bits.append("Format " + " × ".join(num(v, 0) for v in it["platte"]) + " mm")
+    if bits:
+        lines.append(", ".join(bits))
+    preis = it.get("preis") or {}
+    if res.get("preis_text"):
+        src = ", ".join(str(preis[k]) for k in ("quelle", "stand") if preis.get(k))
+        lines.append(f"Preis: {res['preis_text']}" + (f" ({src})" if src else ""))
+    if it.get("tags"):
+        lines.append("Tags: " + ", ".join(it["tags"]))
+    if res.get("beispiel"):
+        lines.append("In model.py:\n" + str(res["beispiel"]))
+    return "\n".join(lines)
+
+
+def material_table(mats: list[dict[str, Any]]) -> str:
+    rows = [["id", "Name", "Gruppe", "g/cm³", "€/kg", "druckbar", "Aliase", "Ebene", "Status"]]
+    for m in mats:
+        pkg = m.get("preis_je_kg")
+        rows.append([str(m.get("id", "?")), str(m.get("name", "")), str(m.get("gruppe", "")),
+                     num(m.get("dichte"), 3), num(pkg, 2) if isinstance(pkg, (int, float)) else "",
+                     "ja" if m.get("druckbar") is True else "", ", ".join(m.get("aliase") or []),
+                     str(m.get("ebene", "")), status_text(m)])
+    return table(rows, right={3, 4})
+
+
+def bom_totals_line(totals: dict[str, Any]) -> str:
+    from kevcad_kernel.bom import de_num, eur
+
+    text = (f"{plural(int(totals.get('positionen', 0)), 'Position', 'Positionen')}, "
+            f"{plural(int(totals.get('teile', 0)), 'Teil', 'Teile')}, {de_num(totals.get('kg') or 0, 2)} kg")
+    if totals.get("preis") is not None:
+        text += f", {eur(totals['preis'])}"
+        if totals.get("preis_hinweis"):
+            text += f" ({totals['preis_hinweis']})"
+    return text
+
+
+def bom_text(bom: dict[str, Any]) -> str:
+    """Stückliste als ausgerichtete Tabelle, darunter Zuschnitt und Hinweise."""
+    from kevcad_kernel.bom import cut_lines, de_fixed, de_num, gehrung_text
+
+    lines_ = bom.get("lines") or []
+    head = f"Stückliste (Lauf {bom.get('run', '?')}): {bom_totals_line(bom.get('totals') or {})}"
+    if not lines_:
+        out = [head, "Keine Positionen: Lagerteile mit lager.teil(...).verbauen(...) bauen oder Teile mit material= "
+                     "zeigen."]
+    else:
+        rows = [["Pos", "Anz", "Benennung", "Maße", "Gehrung", "Material", "kg", "€"]]
+        for ln in lines_:
+            g = gehrung_text(ln.get("gehrung")) if not ln.get("eigenteil") else ""
+            name = str(ln.get("benennung", "")) + (" (Eigenteil)" if ln.get("eigenteil") else "") + (
+                " (Druckteil)" if ln.get("art") == "druckteil" else "")
+            rows.append([str(ln.get("pos", "")), str(ln.get("anzahl", "")), name, str(ln.get("masse_text", "")), g,
+                         str(ln.get("material") or ""),
+                         de_num(ln["kg"], 2) if isinstance(ln.get("kg"), (int, float)) else "–",
+                         de_fixed(ln["preis"]) if isinstance(ln.get("preis"), (int, float)) else "–"])
+        out = [head, "", table(rows, right={0, 1, 6, 7})]
+    cuts = bom.get("cuts") or []
+    if cuts:
+        out.append("")
+        out.append(f"Zuschnitt (Sägeschnitt {de_num(cuts[0].get('saegeschnitt', 3))} mm):")
+        for cut in cuts:
+            n = len(cut.get("stangen") or [])
+            line = (f"{cut.get('benennung')}: {plural(n, 'Stange', 'Stangen')} à {de_num(cut.get('stangenlaenge'))} "
+                    f"mm, Verschnitt {de_num(cut.get('verschnitt_prozent'), 1)} %")
+            if cut.get("preis_stangen") is not None:
+                line += f", ganze Stangen {money(cut['preis_stangen'])}"
+            out.append(line)
+            out += [f"  {t}" for t in cut_lines(cut)]
+    warnings = bom.get("warnings") or []
+    if warnings:
+        out.append("")
+        out += [f"Hinweis: {w}" for w in warnings]
+    return "\n".join(out)

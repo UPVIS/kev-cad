@@ -32,6 +32,8 @@ from typing import Any
 
 import kevcad_kernel
 from kevcad_kernel.app_link import AppConnection, AppLink
+from kevcad_kernel.bom import inventory_text
+from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
@@ -107,6 +109,9 @@ class KernelRuntime:
         self._agent: dict[str, Any] = {"connected": False, "activity": None}
         self._selection: dict[str, Any] = {"run": None, "refs": []}
         self._last_result: dict[str, Any] | None = None
+        self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
+        self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
+        self.catalog = Catalog(own=own_dir(socket_path))
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
         self._state: tuple[str, str] = ("busy", "Rechenprozess startet")
@@ -147,6 +152,8 @@ class KernelRuntime:
                 "worker": {"alive": self._worker.alive, "ready": self._worker.ready,
                            "pid": self._worker.info.get("pid"), "restarts": max(0, self._worker.generation - 1)},
                 "agent": dict(self._agent),
+                "inventar": {"regel": self._project.inventar_regel if self._project else True,
+                             "verstoesse": list(self._violations)},
             }
 
     def project_open(self, path: str, reply_to: str | None = None) -> dict[str, Any]:
@@ -300,6 +307,28 @@ class KernelRuntime:
             return {"ok": False, "error": NO_PROJECT}
         from kevcad_kernel.export import ExportError, export_records
 
+        formats = [str(f) for f in (formats or [])]
+        with self._lock:
+            violations = list(self._violations)
+        locked = [f for f in formats if f.lower().lstrip(".") in ("step", "stp", "stl", "3mf", "bom_csv", "csv")]
+        if violations and locked:
+            return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
+                    "inventar_verstoesse": violations}
+        want_csv = any(f.lower().lstrip(".") in ("bom_csv", "csv") for f in formats)
+        formats = [f for f in formats if f.lower().lstrip(".") not in ("bom_csv", "csv")]
+        csv_files: list[str] = []
+        csv_notes: list[str] = []
+        if want_csv:
+            res = self._export_bom_csv(proj)
+            if res.get("ok"):
+                csv_files.append(res["file"])
+            else:
+                csv_notes.append(res["error"])
+            if not formats:
+                out: dict[str, Any] = {"ok": bool(csv_files), "files": csv_files}
+                if csv_notes:
+                    out["error"] = "; ".join(csv_notes)
+                return out
         try:
             if parts:
                 records = self.scene.select(list(parts))
@@ -313,12 +342,141 @@ class KernelRuntime:
             return {"ok": False, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": f"Export fehlgeschlagen: {type(exc).__name__}: {exc}"}
-        out: dict[str, Any] = {"ok": bool(files), "files": files}
+        files = files + csv_files
+        notes = notes + csv_notes
+        out = {"ok": bool(files), "files": files}
         if notes:
             out["warnings"] = notes
         if not files:
             out["error"] = "; ".join(notes) or "Keine Datei geschrieben"
         return out
+
+    def _export_bom_csv(self, proj: Project) -> dict[str, Any]:
+        from kevcad_kernel.bom import to_csv
+        from kevcad_kernel.export import safe_name
+
+        with self._lock:
+            bom = self._bom
+        if bom is None:
+            return {"ok": False, "error": "Stückliste: noch kein erfolgreicher Lauf"}
+        path = (proj.output_dir / f"{safe_name(proj.name)}-stueckliste.csv").resolve()
+        try:
+            proj.output_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(to_csv(bom, proj.name), encoding="utf-8-sig", newline="")
+        except OSError as exc:
+            return {"ok": False, "error": f"Stückliste nicht geschrieben: {exc}"}
+        return {"ok": True, "file": str(path)}
+
+    # =================================================================================================================
+    # KernelService: Phase 2 (Lagerteile, Materialien, Stückliste)
+    # =================================================================================================================
+
+    def bom(self) -> dict[str, Any]:
+        with self._lock:
+            bom = self._bom
+        if bom is None:
+            return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen (Lagerteile mit "
+                                          "lager.teil(...).verbauen(...) oder Teile mit material= zeigen)."}
+        return {"ok": True, **bom}
+
+    def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
+        if art is not None and art not in ARTEN:
+            return {"ok": False, "error": f"art {art!r} unbekannt (erlaubt: {', '.join(ARTEN)})"}
+        try:
+            items, total = self.catalog.search(query or "", art=art or None, limit=max(1, int(limit or 30)))
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"Katalog nicht lesbar: {type(exc).__name__}: {exc}"}
+        out = {"ok": True, "items": [self._with_values(it) for it in items], "total": total}
+        if self.catalog.warnings:
+            out["warnings"] = list(self.catalog.warnings)
+        return out
+
+    def stock_get(self, stock_id: str) -> dict[str, Any]:
+        it = self.catalog.item(str(stock_id or "").strip())
+        if it is None:
+            hits, _ = self.catalog.search(str(stock_id or ""), limit=5)
+            import difflib
+
+            close = difflib.get_close_matches(str(stock_id), self.catalog.item_ids(), n=3, cutoff=0.6)
+            tips = list(dict.fromkeys(close + [h["id"] for h in hits]))[:5]
+            return {"ok": False, "error": f"Lagerteil {stock_id!r} gibt es nicht"
+                                          + (f"; meinten Sie {', '.join(repr(t) for t in tips)}?" if tips else ".")}
+        values = self._values(it)
+        mat = self.catalog.material(it.get("material", ""))
+        return {"ok": True, "item": it, "material": mat, **values, "beispiel": _usage_example(it)}
+
+    def stock_define(self, entry: dict[str, Any], ebene: str = "eigen", *, proposal: bool = True) -> dict[str, Any]:
+        """Über MCP immer ein Vorschlag (status "vorgeschlagen"), den Kevin im Lagerkatalog freigibt. Die App
+        (Kevin) speichert mit ``proposal=False``."""
+        try:
+            saved, path, notes = self.catalog.save("teil", entry, ebene, proposal=proposal)
+        except CatalogError as exc:
+            return {"ok": False, "error": str(exc)}
+        values = self._values(saved)
+        notes += _plausibility(saved, values, self.catalog.material(saved.get("material", "")))
+        return {"ok": True, "item": saved, "datei": str(path), "hinweise": notes, **values}
+
+    def material_list(self, query: str = "") -> dict[str, Any]:
+        mats = self.catalog.search_materials(query or "")
+        out = {"ok": True, "materials": mats, "total": len(mats)}
+        if self.catalog.warnings:
+            out["warnings"] = list(self.catalog.warnings)
+        return out
+
+    def material_define(self, entry: dict[str, Any], ebene: str = "eigen", *, proposal: bool = True) -> dict[str, Any]:
+        """Wie stock_define: über MCP ein Vorschlag, aus der App (``proposal=False``) direkt gespeichert."""
+        try:
+            saved, path, notes = self.catalog.save("material", entry, ebene, proposal=proposal)
+        except CatalogError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "material": saved, "datei": str(path), "hinweise": notes}
+
+    def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
+        try:
+            path, message = self.catalog.delete(kind, str(entry_id or "").strip(), ebene)
+        except CatalogError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "message": message, "datei": str(path)}
+
+    def catalog_message(self, query: str | None = None, art: str | None = None) -> dict[str, Any]:
+        """Inhalt der Nachricht CATALOG (ohne type/reply_to)."""
+        if query or art:
+            items, _ = self.catalog.search(query or "", art=art or None, limit=None)
+        else:
+            items = self.catalog.items()
+        return {"materials": self.catalog.materials(), "items": items, "arten": list(ARTEN)}
+
+    def _values(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Berechnete Werte eines Lagerteils: kg_je_m, querschnitt_mm2, preis_je_m, preis_text."""
+        from kevcad_kernel.profiles import flaeche_mm2, kg_je_m
+
+        mat = self.catalog.material(item.get("material", ""))
+        out: dict[str, Any] = {"kg_je_m": None, "querschnitt_mm2": None, "preis_je_m": None, "preis_text": None}
+        try:
+            if item.get("art") in STANGENWARE:
+                out["querschnitt_mm2"] = round(flaeche_mm2(item["art"], item.get("masse") or {}), 2)
+                kgm = kg_je_m(item, mat)
+                out["kg_je_m"] = round(kgm, 3) if kgm is not None else None
+        except (KeyError, TypeError, ValueError):
+            pass
+        preis = item.get("preis") if isinstance(item.get("preis"), dict) else {}
+        from kevcad_kernel.bom import de_fixed
+
+        if preis.get("je_m") is not None:
+            out["preis_je_m"] = preis["je_m"]
+            out["preis_text"] = f"{de_fixed(float(preis['je_m']))} €/m"
+        elif preis.get("je_m2") is not None:
+            out["preis_text"] = f"{de_fixed(float(preis['je_m2']))} €/m²"
+        elif preis.get("je_stueck") is not None:
+            out["preis_text"] = f"{de_fixed(float(preis['je_stueck']))} €/Stück"
+        elif mat and mat.get("preis_je_kg") is not None:
+            out["preis_text"] = f"{de_fixed(float(mat['preis_je_kg']))} €/kg (Material)"
+            if out["kg_je_m"] is not None:
+                out["preis_je_m"] = round(out["kg_je_m"] * float(mat["preis_je_kg"]), 2)
+        return out
+
+    def _with_values(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {**item, "berechnet": self._values(item)}
 
     def set_agent_activity(self, text: str | None) -> None:
         with self._lock:
@@ -395,8 +553,11 @@ class KernelRuntime:
             if not same:
                 self._last_hash = None
                 self._last_result = None
+                self._bom = None
+                self._violations = []
                 self._selection = {"run": None, "refs": []}
             run = self._run_no
+        self.catalog.set_project(proj.path)
         if not same:
             with self._jobs_cond:
                 cur = self._current
@@ -528,7 +689,8 @@ class KernelRuntime:
                         "slow_ms": job.slow_ms})
         sent = self._worker.send({"type": "RUN", "run": job.run, "path": job.path, "code": job.code,
                                   "params": job.params, "slow_ms": job.slow_ms, "deviation": deviation,
-                                  "angular": angular})
+                                  "angular": angular, "catalog": self._catalog_dirs(),
+                                  "inventar_regel": self._inventory_rule(reload=True)})
         finished = sent and job.finished.wait(job.timeout_s)
         duration_ms = int(round((time.perf_counter() - job.started) * 1000))
         final = job.final or {}
@@ -582,9 +744,19 @@ class KernelRuntime:
                         self.scene.remove(rec.name)
                         self._send_app({"type": "PART_REMOVE", "run": job.run, "name": rec.name})
                 records = self.scene.records()
+                violations = list(final.get("inventar_verstoesse") or [])
+                with self._lock:
+                    self._violations = violations
                 self._send_app({"type": "RUN_END", "run": job.run, "duration_ms": duration_ms, "parts": len(records),
                                 "triangles": sum(r.counts.get("tri", 0) for r in records),
-                                "warnings": final.get("warnings") or [], "params": final.get("params") or {}})
+                                "warnings": final.get("warnings") or [], "params": final.get("params") or {},
+                                "inventar_regel": bool(final.get("inventar_regel", False)),
+                                "inventar_verstoesse": violations})
+                if isinstance(final.get("bom"), dict):
+                    bom = {"run": job.run, **final["bom"]}
+                    with self._lock:
+                        self._bom = bom
+                    self._send_app({"type": "BOM", **bom})
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
@@ -618,6 +790,13 @@ class KernelRuntime:
         if "cached" in final:
             result["cached_parts"] = final.get("cached", 0)
             result["tess_ms"] = final.get("tess_ms", 0.0)
+        if "inventar_regel" in final:
+            result["inventar_regel"] = bool(final["inventar_regel"])
+            result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
+        bom = final.get("bom")
+        if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
+            result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],
+                             "cuts": len(bom.get("cuts") or [])}
         if error is not None:
             result["error"] = error
         return result
@@ -647,7 +826,8 @@ class KernelRuntime:
         job.generation = self._worker.generation
         self._set_state("busy", "execute")
         sent = self._worker.send({"type": "EXEC", "run": job.run, "code": job.code, "project": job.path or None,
-                                  "deviation": deviation, "angular": angular})
+                                  "deviation": deviation, "angular": angular, "catalog": self._catalog_dirs(),
+                                  "inventar_regel": self._inventory_rule()})
         finished = sent and job.finished.wait(job.timeout_s)
         final = job.final or {}
         if not finished or final.get("type") != "EXEC_RES":
@@ -737,6 +917,10 @@ class KernelRuntime:
             conn.send({"type": "STATUS", "state": state, "message": message})
             for rec in self.scene.records():
                 conn.send(rec.header, rec.payload)
+            with self._lock:
+                bom = self._bom
+            if bom is not None:
+                conn.send({"type": "BOM", **bom})
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -826,9 +1010,18 @@ class KernelRuntime:
         elif kind == "SETTINGS":
             was = bool(self._settings.get("auto_run"))
             self.configure(auto_run=header.get("auto_run"), slow_ms=header.get("slow_ms"))
+            if isinstance(header.get("inventar_regel"), bool):
+                self._pool.submit(self.set_inventory_rule, header["inventar_regel"])
             if not was and self._settings.get("auto_run"):
                 self._pool.submit(self._auto_check)
-        elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ"):
+        elif kind == "BOM_REQ":
+            from kevcad_kernel.bom import empty_bom
+
+            with self._lock:
+                bom = self._bom or {"run": 0, **empty_bom()}
+            self._send_app({"type": "BOM", "reply_to": header.get("id"), **bom})
+        elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
+                      "CATALOG_SAVE", "CATALOG_DELETE"):
             self._pool.submit(self._handle_app_request, header)
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
@@ -867,8 +1060,74 @@ class KernelRuntime:
                     self._send_app({"type": "EXPORT_RES", "reply_to": rid, "files": res["files"]})
                 else:
                     self._send_app({"type": "ERROR", "reply_to": rid, "message": res.get("error", "Export fehlgeschlagen")})
+            elif kind == "CATALOG_REQ":
+                art = header.get("art") or None
+                if art is not None and art not in ARTEN:
+                    self._send_app({"type": "ERROR", "reply_to": rid, "message": f"art {art!r} unbekannt"})
+                else:
+                    self._send_app({"type": "CATALOG", "reply_to": rid,
+                                    **self.catalog_message(header.get("query") or None, art)})
+            elif kind in ("CATALOG_SAVE", "CATALOG_DELETE"):
+                ebene = header.get("ebene") or "eigen"
+                if kind == "CATALOG_SAVE":
+                    entry = header.get("entry")
+                    if str(header.get("kind")) == "material":  # Kevin speichert, was die App schickt (Freigabe)
+                        res = self.material_define(entry, ebene, proposal=False)  # type: ignore[arg-type]
+                    elif str(header.get("kind")) == "teil":
+                        res = self.stock_define(entry, ebene, proposal=False)  # type: ignore[arg-type]
+                    else:
+                        res = {"ok": False, "error": f"kind {header.get('kind')!r} unbekannt (teil oder material)"}
+                    message = "; ".join(res.get("hinweise") or []) if res.get("ok") else res.get("error", "")
+                else:
+                    res = self.catalog_delete(str(header.get("kind") or ""), str(header.get("entry_id") or ""), ebene)
+                    message = res.get("message", "") if res.get("ok") else res.get("error", "")
+                self._send_app({"type": "ACK", "reply_to": rid, "ok": bool(res.get("ok")), "message": message})
+                if res.get("ok"):
+                    self._rerun_after_catalog_change()
         except Exception as exc:  # noqa: BLE001
             self._send_app({"type": "ERROR", "reply_to": rid, "message": f"{type(exc).__name__}: {exc}"})
+
+    def _inventory_rule(self, reload: bool = False) -> bool:
+        """Inventar-Regel des offenen Projekts (kevcad.json, Standard an). ``reload`` liest die Datei neu."""
+        proj = self._project
+        if proj is None:
+            return True
+        if reload:
+            proj.reload_settings()
+        return proj.inventar_regel
+
+    def set_inventory_rule(self, enabled: bool) -> dict[str, Any]:
+        """Nur für die App (SETTINGS.inventar_regel): schreibt die Regel in kevcad.json des offenen Projekts und rechnet
+        mit Auto-Lauf neu. Bewusst kein MCP-Werkzeug: abschalten darf nur Kevin."""
+        proj = self._project
+        if proj is None:
+            return {"ok": False, "error": NO_PROJECT}
+        if proj.inventar_regel == bool(enabled) and "inventar_regel" in proj.settings:
+            return {"ok": True, "inventar_regel": proj.inventar_regel}
+        try:
+            proj.set_setting("inventar_regel", bool(enabled))
+        except OSError as exc:
+            self._log(f"[kernel] kevcad.json nicht schreibbar: {exc}")
+            return {"ok": False, "error": f"kevcad.json nicht schreibbar: {exc}"}
+        self._log(f"[kernel] Inventar-Regel {'an' if enabled else 'aus'} für {proj.name}")
+        self._send_app({"type": "PROJECT", **proj.info()})
+        with self._lock:
+            ok = bool(self._settings.get("auto_run"))
+        if ok:
+            self._submit_run(None, 0, self.run_timeout_s, source="auto")
+        return {"ok": True, "inventar_regel": bool(enabled)}
+
+    def _catalog_dirs(self) -> dict[str, str | None]:
+        d = self.catalog.dirs
+        return {"builtin": d["builtin"], "own": d["own"]}
+
+    def _rerun_after_catalog_change(self) -> None:
+        """Kevin hat in der App einen Katalogeintrag geändert: mit Auto-Lauf neu rechnen, damit die Stückliste die
+        neuen Preise und Gewichte zeigt."""
+        with self._lock:
+            ok = bool(self._settings.get("auto_run")) and self._project is not None and self._bom is not None
+        if ok:
+            self._submit_run(None, 0, self.run_timeout_s, source="auto")
 
     # =================================================================================================================
     # Auto-Lauf
@@ -926,6 +1185,36 @@ class KernelRuntime:
             import kevcad_kernel.measure  # noqa: F401
         except Exception as exc:  # noqa: BLE001
             self._log(f"[kernel] Vorladen fehlgeschlagen: {exc!r}")
+
+
+def _usage_example(item: dict[str, Any]) -> str:
+    """Aufruf für model.py zu einem Lagerteil."""
+    art = item.get("art")
+    head = f"teil = lager.teil({item['id']!r})\n"
+    if art in STANGENWARE:
+        return head + 'stueck = teil.verbauen(laenge=800, name="Gruppe/Teil", gehrung=(0, 0))\nshow(stueck, "Gruppe/Teil")'
+    if art == "platte":
+        return head + 'stueck = teil.verbauen(breite=800, tiefe=600, name="Platte")\nshow(stueck, "Platte")'
+    if art == "schraube":
+        return head + 'stueck = teil.verbauen(laenge=40, name="Schrauben/1")\nshow(stueck, "Schrauben/1")'
+    return head + 'stueck = teil.verbauen(name="Kleinteile/1")\nshow(stueck, "Kleinteile/1")'
+
+
+def _plausibility(item: dict[str, Any], values: dict[str, Any], material: dict[str, Any] | None) -> list[str]:
+    """Hinweis, wenn ein angegebenes kg_je_m stark vom berechneten Querschnitt abweicht (Tippfehler?)."""
+    from kevcad_kernel.bom import de_num
+    from kevcad_kernel.catalog import number
+
+    table = number(item.get("kg_je_m"))
+    area = values.get("querschnitt_mm2")
+    dichte = number((material or {}).get("dichte"))
+    if table is None or not area or dichte is None or item.get("art") == "nutprofil":
+        return []
+    calc = area * dichte / 1000.0
+    if abs(table - calc) / calc <= 0.15:
+        return []
+    return [f"kg_je_m {de_num(table, 3)} weicht stark vom Querschnitt ab (berechnet {de_num(calc, 3)} kg/m aus "
+            f"{de_num(area, 1)} mm²): Maße und Gewicht prüfen"]
 
 
 def _line_from_crash(stderr: str, model_path: str) -> int | None:

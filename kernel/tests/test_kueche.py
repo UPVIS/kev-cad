@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from test_runtime import FakeApp
+from app_testutil import FakeApp
 
 from kevcad_kernel.runtime import KernelRuntime
 
@@ -50,6 +50,8 @@ def test_kueche_performance(record_property):
         app = FakeApp(sock)
         app.wait_for(lambda h: h["type"] == "HELLO")
         assert rt.project_new(str(tmp / "Kueche"), "empty")["ok"]
+        # Nachbau aus Fotos: Kevin schaltet die Inventar-Regel für solche Projekte ab
+        (tmp / "Kueche" / "kevcad.json").write_text('{"version": 1, "inventar_regel": false}')
         assert rt.model_write(MODEL)["ok"]
 
         start = app.mark()
