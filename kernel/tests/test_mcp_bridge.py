@@ -6,6 +6,7 @@ import base64
 import os
 import shlex
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -141,6 +142,39 @@ def test_bridge_starts_app_and_reconnects(tmp_path):
     assert "Projekt Gestartet" in texts(r["second"])[0]
     assert r["pids"][0] != r["pids"][1]
     assert counter.read_text().count("x") == 2  # einmal beim Start, einmal nach dem Wegfall
+
+
+def _start_fake_kernel(port: int, pidfile: Path, project: str) -> None:
+    subprocess.Popen([sys.executable, str(FAKE_KERNEL), "--port", str(port), "--pidfile", str(pidfile),
+                      "--project", project], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert wait_for(lambda: port_open(port), 15), f"Ersatz-Kernel {project} startet nicht"
+
+
+def test_bridge_reconnects_after_kernel_restart(tmp_path):
+    # Kernel startet zwischen zwei Aufrufen neu (App neu gestartet): Der neue Kernel kennt die alte Sitzung nicht und
+    # antwortet mit 404 „Session not found“. Die Brücke muss neu verbinden, ohne die App zu starten.
+    port = free_port()
+    pidfile = tmp_path / "pid"
+    counter = tmp_path / "starts"
+    launch = f"echo x >> {shlex.quote(str(counter))}; exit 7"
+
+    async def go(c):
+        out = {"first": await c.call_tool("status", {})}
+        _kill_pidfile(pidfile)
+        assert wait_for(lambda: not port_open(port), 5)
+        _start_fake_kernel(port, pidfile, "Zweiter")
+        out["second"] = await c.call_tool("status", {})
+        return out
+
+    _start_fake_kernel(port, pidfile, "Erster")
+    try:
+        r = anyio.run(lambda: _with(bridge_params(port, KEVCAD_LAUNCH_CMD=launch, KEVCAD_START_TIMEOUT="10"), go))
+    finally:
+        _kill_pidfile(pidfile)
+    assert not r["first"].is_error and "Projekt Erster" in texts(r["first"])[0]
+    assert not r["second"].is_error, texts(r["second"])
+    assert "Projekt Zweiter" in texts(r["second"])[0]
+    assert not counter.exists()  # App nie gestartet, der Kernel lief ja
 
 
 def test_bridge_lazy_start_opens_app_on_first_call(tmp_path):
