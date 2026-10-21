@@ -15,20 +15,22 @@ public final class ViewportCoordinator: ObservableObject {
     /// Hinweis zum aktuellen Schritt (z. B. „Messen: zweites Element anklicken (Teil#f3)“); die Oberfläche kann ihn zeigen.
     @Published public var hint: String?
 
-    /// Ein Klick ohne Ziehen: Treffer (oder nil) und die Sondertasten beim Drücken.
+    /// Ein Klick ohne Ziehen (linke Maustaste): Treffer (oder nil) und die Sondertasten.
     public var onClick: ((PickResult?, NSEvent.ModifierFlags) -> Void)?
+    /// Rahmenauswahl (linke Maustaste ziehen): alle Treffer im Rahmen und die Sondertasten.
+    public var onBoxSelect: (([PickResult], NSEvent.ModifierFlags) -> Void)?
+    /// Kontextmenü (rechte Maustaste).
+    public var onContextMenu: (() -> NSMenu?)?
+    /// Taste des Ziffernblocks im Viewport (Tastencode, Sondertasten); true = verarbeitet.
+    public var onNumpadKey: ((UInt16, NSEvent.ModifierFlags) -> Bool)?
 
     public private(set) weak var mtkView: MTKView?
-    private var monitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
-    // Klick oder Ziehen?
-    private var armed = false
-    private var downLocation = CGPoint.zero
-    private var downModifiers: NSEvent.ModifierFlags = []
-    private var dragged = false
-    private var released = false
-    private var arrived: PickResult?? = .none
+    /// Größe des Viewports in Punkten (von der Eingabeebene gemeldet), für Schwenken und Strahlen.
+    var viewSize: CGSize = CGSize(width: 1200, height: 800)
+    /// Die aktuelle Parallelprojektion stammt von einer Achsansicht und endet beim Drehen (Blender „Auto Perspective“).
+    var autoOrtho = false
 
     public init() {
         var cfg = ViewportConfiguration.cad
@@ -37,7 +39,9 @@ public final class ViewportCoordinator: ObservableObject {
         // Raster und Achsen des Pakets liegen in der XZ-Ebene (Y oben) und passen nicht zu Z oben
         cfg.showGrid = false
         cfg.showAxes = false
-        cfg.showOrientationGnomon = true
+        // Statt Würfel und Gnomon des Pakets zeichnet die App Blenders Achsen-Gizmo (BlenderNavigation.swift)
+        cfg.showViewCube = false
+        cfg.showOrientationGnomon = false
         cfg.showScaleBar = true
         cfg.scaleBarUnitLabel = "mm"
         cfg.minDistance = 0.01
@@ -45,7 +49,6 @@ public final class ViewportCoordinator: ObservableObject {
         cfg.initialCameraState = StandardView.isometricFrontRight.cameraState(distance: 400)
         cfg.lightingConfiguration = Self.zUpLighting
         controller = ViewportController(configuration: cfg)
-        controller.onPick = { [weak self] result in self?.pickArrived(result) }
     }
 
     /// Dreipunktlicht des Pakets, umgestellt auf Z oben: Hauptlicht von vorn rechts oben, Fülllicht von links,
@@ -68,64 +71,12 @@ public final class ViewportCoordinator: ObservableObject {
 
     // MARK: Anbindung an das MTKView
 
-    /// Vom Suchhelfer in der Ansicht aufgerufen, sobald das MTKView des Pakets existiert.
+    /// Vom Suchhelfer in der Ansicht aufgerufen, sobald das MTKView des Pakets existiert. Maus und Trackpad nimmt die
+    /// Eingabeebene darüber entgegen (BlenderNavigation.swift); das MTKView zeichnet nur.
     func attach(_ view: MTKView) {
         // Auflage aus AP0: das Paket stellt fest 60 Bilder/s ein; für ProMotion 120
         view.preferredFramesPerSecond = 120
-        guard mtkView !== view else { return }
         mtkView = view
-        if monitor == nil {
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) {
-                [weak self] event in
-                MainActor.assumeIsolated { self?.track(event) }
-                return event
-            }
-        }
-    }
-
-    private func track(_ event: NSEvent) {
-        guard let view = mtkView, let window = view.window, event.window === window else { return }
-        switch event.type {
-        case .leftMouseDown:
-            // Nur, wenn der Klick wirklich im MTKView landet (nicht auf dem Würfel oder anderen Überlagerungen)
-            guard let content = window.contentView else { return }
-            let point = content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
-            guard content.hitTest(point) === view else {
-                armed = false
-                return
-            }
-            armed = true
-            downLocation = event.locationInWindow
-            downModifiers = event.modifierFlags
-            dragged = false
-            released = false
-            arrived = .none
-        case .leftMouseDragged:
-            guard armed else { return }
-            let p = event.locationInWindow
-            if hypot(p.x - downLocation.x, p.y - downLocation.y) > 4 { dragged = true }
-        case .leftMouseUp:
-            guard armed else { return }
-            released = true
-            if dragged {
-                armed = false
-            } else if case .some(let r) = arrived {
-                commit(r)
-            }
-        default:
-            break
-        }
-    }
-
-    private func pickArrived(_ result: PickResult?) {
-        guard armed else { return }
-        arrived = .some(result)
-        if released && !dragged { commit(result) }
-    }
-
-    private func commit(_ result: PickResult?) {
-        armed = false
-        onClick?(result, downModifiers)
     }
 
     // MARK: Überlagerung

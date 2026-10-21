@@ -9,6 +9,38 @@ Ein Modell ist `model.py` im Projektordner (build123d, Millimeter, Z nach oben).
 `show()` erscheint sofort im Viewer, Kevin sieht beim Bauen zu. Die Datei ist die Quelle der Wahrheit: Änderungen immer
 dort, nie nur per `execute`.
 
+## Inventar-Regel (Kevin, 21.10.2026, gilt immer)
+
+Gebaut wird nur aus dem Inventar. Jedes Teil im Modell ist ein Lagerteil bzw. Halbzeug, das Kevin definiert hat
+(Rohr, Profil, Platte, Holz, Schraube, später Zukaufteile), oder ausdrücklich ein **neues 3D-Druckteil** aus einem
+druckbaren Material (PLA, PETG, ABS …). Es kommt kein Material neu dazu, das nicht vorher ausdrücklich definiert ist.
+
+- Fehlt ein Teil oder Material: **nicht erfinden**, sondern Kevin fragen und es erst nach seiner Freigabe verwenden.
+  Was du anlegst, ist nur ein Vorschlag, bis Kevin ihn freigibt.
+- Eigene Konstruktionen nur als Druckteil kennzeichnen, nie als freies Teil mit beliebigem Material.
+- Mit Phase 2 prüft Kev CAD das selbst (Lagerkatalog, `lager.teil(...).verbauen(...)`, `lager.druckteil(...)`); bis
+  dahin hältst du dich von Hand daran und nennst in `show()` nur Materialien, die Kevin vorgegeben hat.
+- Ausnahme: Projekte, in denen Kevin die Regel ausdrücklich abschaltet (Nachbauten aus Fotos, Skizzen).
+
+## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
+
+Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
+mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md`):
+
+- **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
+- **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
+- **Waagrechte Bohrungen** als Tropfenform (Spitze nach oben); Bohrungen drucken etwa 0,1–0,2 mm zu klein, Ø vorhalten.
+- **Bettseite** mit Fase 0,4–0,6 mm gegen Elefantenfuß; eine ebene, große Auflagefläche einplanen.
+- **Spiel** je Seite: Presspassung 0,1, Spielpassung 0,2, beweglich/Print-in-Place 0,3–0,5 mm.
+- **Gewinde**: Gewindeeinsätze (Tasche nach Herstellermaß, z. B. M3 Ø 4,0–4,2 mm) oder eingeschlossene Muttern
+  (Sechskant +0,2–0,3 mm, Einführschräge); Kernlöcher für Schrauben direkt ins Teil etwa 0,8 × d.
+- **Gegenbohrungen und Senkungen**, die nach unten zeigen, mit Opferschicht (0,2 mm) drucken, sonst Stütze nötig.
+- **Festigkeit**: Last längs der Schichten führen, nicht quer (Schichtfugen sind die Schwachstelle); Innenkanten
+  verrunden; Schnapphaken in Schichtrichtung legen.
+- **Verzug** bei ABS/ASA/PA: große ebene Flächen und spitze Ecken vermeiden, Ecken verrunden.
+- **Z-Maße** möglichst als Vielfache von 0,2 mm; Schrift mindestens 0,6 mm erhaben, Strich ab 0,8 mm.
+- **Größer als der Bauraum**: teilen, mit Passstiften oder Schwalbenschwanz und ebenen Fügeflächen.
+
 ## Arbeitsablauf
 
 1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl.
@@ -18,7 +50,8 @@ dort, nie nur per `execute`.
    Dateiwerkzeuge gibt.
 4. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse. Ein Fehler kommt als isError mit Zeile, Auszug und
    Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-5. Prüfen: `screenshot` ansehen, Sollmaße mit `measure` nachmessen, Zahlen aus `run` mit der Aufgabe vergleichen.
+5. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen. Kein
+   `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe „Bilder“).
 6. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, offene Annahmen. Bei Bedarf `focus`, `highlight`,
    `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -172,9 +205,12 @@ DN 32, 1¼ Zoll).
 | `view(standard="front", projection="orthographic", fit=True)` | Standardansicht, Darstellung (`xray`, `wireframe`), `explode=0.6` |
 
 „Zoom auf die Lasche und zeig sie von der Seite“: `view(standard="right", projection="orthographic")`, dann
-`focus(["Halter/Lasche"])`, dann `screenshot()`.
+`focus(["Halter/Lasche"])`. Kevin sieht das Ergebnis selbst im Viewer.
 
 ## Bilder
+
+Screenshots nur, wenn Kevin ausdrücklich ein Bild will. Er sieht den Viewer beim Arbeiten selbst, und jedes Bild hält
+die Generierung auf. Geprüft wird mit den Zahlen aus `run`, `parts` und `measure`.
 
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
 - `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen.

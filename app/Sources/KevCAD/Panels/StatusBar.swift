@@ -13,6 +13,8 @@ struct StatusBar: View {
             separator
             run
             Spacer(minLength: 16)
+            navigation
+            separator
             agent
             separator
             counts
@@ -23,6 +25,17 @@ struct StatusBar: View {
         .frame(height: 28)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+    }
+
+    /// Blender-Steuerung: was ein Klick auswählt (Tab) und die Projektion (5).
+    private var navigation: some View {
+        HStack(spacing: 6) {
+            Text(model.selectionMode == .parts ? "Teile" : "Flächen · Kanten")
+            Text("·").foregroundStyle(.tertiary)
+            Text(model.orthographic ? "Parallel" : "Perspektive")
+        }
+        .foregroundStyle(.secondary)
+        .help("Tab: Teile oder Flächen und Kanten auswählen · 5: Perspektive oder Parallel")
     }
 
     private var separator: some View {

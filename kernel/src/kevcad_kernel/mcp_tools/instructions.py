@@ -18,7 +18,8 @@ Workflow
 ~/Documents/Kev CAD/<name>).
 2. Edit model.py with your own file tools (path from status); use `model_write` only if you have none. Then `run`: \
 it returns every part with size, volume and mass, or the failing line with an excerpt (isError).
-3. After bigger changes look at a `screenshot` and verify key dimensions with `measure`. Fix, run again.
+3. Check the numbers from `run` against the task; verify key dimensions with `measure` where they matter. Fix, run \
+again. Kevin watches the viewer live and wants results fast: no `screenshot` unless he asks for an image.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import show, step, param`.
