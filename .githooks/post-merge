@@ -3,5 +3,6 @@
 [ "${KEVCAD_NO_AUTOUPDATE:-0}" = "1" ] && exit 0
 [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "main" ] || exit 0
 root=$(git rev-parse --show-toplevel)
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
 nohup "$root/tools/auto-update.sh" >/dev/null 2>&1 &
 exit 0
