@@ -237,6 +237,21 @@ def test_fluegelmutter_auf_platte_hat_griffraum(bedienung):
     assert bew["eng"] == [] and bew["kollisionen"] == [] and not befunde(b, "bewegungsraum"), b["befunde"]
 
 
+def test_fluegelschraube_im_gewinde_mit_griffraum():
+    """Flügelschraube DIN 316 M4 mit Scheibe auf einer Platte, der Schaft greift im Kernloch (Gewinde): Drehen um die
+    eigene Achse stößt nicht am Gewinde an (ohne ignorieren=…), der Griffraum liegt nur um die Flügel über der Scheibe."""
+    platte = Box(80, 80, 10, align=OBEN) - Cylinder(1.65, 40)  # Kernloch M4
+    schraube = Pos(0, 0, 0.8) * fluegelmutter() + Pos(0, 0, -9) * Cylinder(2, 11, align=UNTEN)
+    with sammeln() as s:
+        drehgelenk(bezug(schraube, "achse"), bezug(platte, "bohrung"), bereich=(0, 180), schritte=12,
+                   bedienung="fluegel")
+        b = pruefen(s, {"Platte": platte, "Scheibe": scheibe(4.3, 9, 0.8), "Flügelschraube": schraube})
+    (bew,) = b["bewegungen"]
+    assert bew["kollisionen"] == [] and bew["gewinde"][0]["teile"] == ["Flügelschraube", "Platte"]
+    assert bew["griffraum"]["auflage"] == "unten" and bew["griffraum"]["von"] > 0.8 and bew["eng"] == []
+    assert not befunde(b, "bewegungsraum", "fehler")
+
+
 def test_fluegelmutter_mit_wand_daneben():
     f = _fluegel_formen(wand=True)
     with sammeln() as s:
@@ -382,6 +397,30 @@ def test_bewegungsraum_zwischenspeicher_ueber_laeufe():
     assert neu == {"Klappe": False, "Klotz": True}
 
 
+def test_bewegungsraum_zwischenspeicher_kennt_mitbewegt():
+    """KevCup, 22.10.2026: Kommt ein Teil nur zusätzlich in „mitbewegt“, ist das ein anderer Weg. Früher blieb der
+    Zwischenspeicher gültig (gleiche Teile insgesamt) und meldete Kollisionen innerhalb der bewegten Gruppe."""
+    br._CACHE.clear()
+    formen = _klappen_modell()
+    # Bolzen steckt quer durch das Ende der Klappe: fährt er nicht mit, stößt die Klappe sofort an ihn
+    formen["Bolzen"] = Pos(-15, 0, 15) * Cylinder(1.5, 12)
+    formen["Klappe"] = formen["Klappe"] - Pos(-15, 0, 15) * Cylinder(1.6, 12)
+    sk = {n: f"m-{n}" for n in formen}
+
+    def lauf(mitbewegt):
+        with sammeln() as s:
+            drehgelenk(bezug(formen["Klappe"], "bohrung", nahe=(-50, 0, 15)), bezug(formen["Lager"], "achse"),
+                       bereich=(-20, 20), schritte=8, mitbewegt=mitbewegt)
+            return pruefen(s, formen, schluessel=sk)["bewegungen"][0]
+
+    b1 = lauf([])
+    assert "Bolzen" in [k["gegen"] for k in b1["kollisionen"]]
+    b2 = lauf(["Bolzen"])
+    assert not b2["zwischenspeicher"] and "Bolzen" not in [k["gegen"] for k in b2["kollisionen"]]
+    assert b2["teile"] == ["Klappe", "Bolzen"]
+    assert lauf(["Bolzen"])["zwischenspeicher"]  # gleicher Stand: wieder aus dem Zwischenspeicher
+
+
 def test_bewegungsraum_setzt_nach_zeitlimit_fort():
     br._CACHE.clear()
     br._PAAR_CACHE.clear()
@@ -438,6 +477,67 @@ def test_kulisse_in_standsicherheit_und_montage():
     erg2, _ = pruefe(ks2, {}, {"pruefungen": alle})
     assert not [b for b in erg2["befunde"] if b["art"] == "kippt"]
     assert any("Kulisse/Tisch" in s["teile"] for s in erg2["montage"]["schritte"])
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# KevCup, 22.10.2026: gelieferte und erklärte Baugruppen in der Einbauprüfung
+
+
+def _rolle(x: float) -> dict:
+    """Lenkrolle bei x: Gabel mit fester Achse, Rad darauf zwischen den Schenkeln (einzeln nicht ausbaubar)."""
+    gabel = (Pos(x, 12, 30) * Box(30, 4, 40, align=UNTEN) + Pos(x, -12, 30) * Box(30, 4, 40, align=UNTEN)
+             + Pos(x, 0, 70) * Box(30, 28, 4, align=UNTEN) + Pos(x, 0, 50) * Rot(90, 0, 0) * Cylinder(3, 24))
+    rad = Pos(x, 0, 50) * Rot(90, 0, 0) * (Cylinder(20, 16) - Cylinder(3.2, 20))
+    return {"gabel": gabel, "rad": rad}
+
+
+def _wagen_koerper(zukauf: bool = False) -> list:
+    ks = []
+    for i, x in enumerate((0, 100), 1):
+        r = _rolle(x)
+        info = {"art": "zukaufteil", "lager": True, "zukauf": "1:Wagen"} if zukauf else {}
+        ks.append(koerper_aus_form(f"Wagen/Rolle {i}/Gabel", r["gabel"], info=dict(info)))
+        ks.append(koerper_aus_form(f"Wagen/Rolle {i}/Rad", r["rad"], info=dict(info)))
+    ks.append(koerper_aus_form("Wagen/Rahmen", Pos(50, 0, 74) * Box(160, 40, 5, align=UNTEN),
+                               info={"art": "zukaufteil", "lager": True, "zukauf": "1:Wagen"} if zukauf else {}))
+    return ks
+
+
+def test_zukaufteil_kommt_als_baugruppe():
+    mont = ("erklaerungen", "durchdringung", "stand", "montage")
+    erg, _ = pruefe(_wagen_koerper(), {}, {"pruefungen": mont})
+    nb = [b for b in erg["befunde"] if b["art"] == "nur_baugruppe"]
+    assert nb, erg["befunde"]  # selbst gebaut: Gabel und Rad nur zusammen
+    erg, _ = pruefe(_wagen_koerper(zukauf=True), {}, {"pruefungen": mont})
+    assert not [b for b in erg["befunde"] if b["schwere"] == "fehler"], erg["befunde"]
+    (schritt,) = erg["montage"]["schritte"]  # der ganze Wagen ist eine gelieferte Einheit
+    assert schritt["gruppe"] and len(schritt["teile"]) == 5 and schritt["name"] == "Wagen"
+
+
+def test_erklaerte_baugruppen_bleiben_eine_ebene_hoeher_ein_koerper():
+    from kevcad_kernel.pruefung.montage import Einheit, Planer
+
+    ks = {k.name: k for k in _wagen_koerper()}
+    erkl = [{"teile": ["Wagen/Rolle 1/"], "baugruppe": True, "richtung": [], "nach": []},
+            {"teile": ["Wagen/Rolle 2/"], "baugruppe": True, "richtung": [], "nach": []}]
+    planer = Planer(ks, erklaerungen=erkl)
+    planer._gruppen_befund(Einheit("Wagen", list(ks), [np.array([0.0, 0.0, 1.0])], gruppe=True))
+    assert planer.befunde == []  # Rolle 1 und 2 sind je ein Körper; früher: Gabel und Rad einzeln gegeneinander
+    ohne = Planer(ks, erklaerungen=[])
+    ohne._gruppen_befund(Einheit("Wagen", list(ks), [np.array([0.0, 0.0, 1.0])], gruppe=True))
+    (b,) = ohne.befunde
+    assert b["text"].startswith("Rolle 1–2: Gabel, Rad lassen sich einzeln nicht einbauen"), b["text"]
+    assert "Rolle 1/Gabel" in b["text"]  # Hindernisse mit eindeutigem Kurznamen
+
+
+def test_teile_text_fasst_zusammen():
+    from kevcad_kernel.pruefung.montage import teile_text
+
+    namen = [f"Rollwagen/Lenkrolle {i}/{t}" for i in (1, 2, 3, 4) for t in ("Gabel", "Rad", "Felge")]
+    assert teile_text(namen) == "Lenkrolle 1–4: Gabel, Rad, Felge"
+    assert teile_text(["A/Rolle 1/Gabel", "A/Rolle 3/Gabel", "A/Deckel"]) == "Rolle 1, 3: Gabel; Deckel"
+    assert teile_text(["Halter/Klemme", "Halter/Bolzen"]) == "Klemme, Bolzen"
+    assert teile_text(["Rollwagen/Lenkrolle 1/Gabel"]) == "Rollwagen/Lenkrolle 1/Gabel"
 
 
 MODELL_KULISSE = """from build123d import *

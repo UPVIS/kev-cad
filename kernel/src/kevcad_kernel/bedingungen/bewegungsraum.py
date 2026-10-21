@@ -378,11 +378,16 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
             lo, hi = _box(f)
             if np.all(lo < g_hi + 2 * rand) and np.all(hi > g_lo - 2 * rand):
                 griff_kand[n] = f
-    beteiligt = {**bewegt, **statisch, **griff_kand}
+    def stand(teile: dict[str, Any]) -> tuple:
+        return tuple(sorted((n, schluessel.get(n) or str(id(f))) for n, f in teile.items()))
+
+    # Schlüssel: alles, was das Ergebnis beeinflusst. Bewegte, feste und ignorierte Teile getrennt: Wandert ein Teil
+    # nur von „fest“ nach „mitbewegt“, ist es ein anderer Weg (KevCup, 22.10.2026: sonst veraltete Kollisionen
+    # zwischen Teilen derselben Gruppe)
     key = (bew.name, bew.art, tuple(np.round(bew.punkt, 4)), tuple(np.round(bew.richtung, 6)), bew.von, bew.bis,
-           bew.ist, len(werte), bew.freiraum, bew.bedienung, griffraum,
-           None if bew.griff is None else tuple(np.round(bew.griff, 3)),
-           tuple(sorted((n, schluessel.get(n, str(id(f)))) for n, f in beteiligt.items())))
+           bew.ist, tuple(round(float(w), 6) for w in werte), bew.freiraum, bew.bedienung, griffraum,
+           None if bew.griff is None else tuple(np.round(bew.griff, 3)), bew.achse_teil, TOLERANZ, MIN_VOLUMEN,
+           GRIFF_INNEN, AUFLAGE_TOL, stand(bewegt), stand(statisch), tuple(sorted(bew.ignorieren)), stand(griff_kand))
     hit = _CACHE.get(key)
     if hit is not None:
         return {**hit, "zwischenspeicher": True}
@@ -538,10 +543,11 @@ def _schwerpunkt_auf_achse(bew: Bewegung, form: Any) -> bool:
 
 def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[str, Any]) -> dict[str, Any]:
     """Griffraum: Zylinderring um die Drehachse, innen ab dem halben Spitzenradius (Nabe, Bolzen), außen bis
-    Flügelspitze plus Freiraum; axial von der Auflage (0,5 mm darüber) bis Oberkante plus Freiraum, also nur auf der
-    Griffseite. Die Auflage ist das Ende des Teils, an dem ein festes Teil anliegt (Scheibe, Platte); liegt an beiden
-    Enden etwas an, nur die Höhe des Teils; liegt nichts an, beide Seiten. Liefert die Maße und je eindringendem Teil
-    den Platz neben der Spitze (``eng``: Name → mm)."""
+    Flügelspitze plus Freiraum; axial über dem Griff (dem Bereich, in dem das Teil über die Nabe hinausragt: Flügel,
+    Kopf), von der Auflage (0,5 mm darüber) bis Oberkante plus Freiraum, also nur auf der Griffseite. Die Auflage ist
+    die Seite des Griffs, an der ein festes Teil anliegt (Scheibe, Platte, Backe); liegt auf beiden Seiten etwas an, nur
+    die Höhe des Griffs, ebenso wenn nichts anliegt. Liefert die Maße und je eindringendem Teil den Platz neben der
+    Spitze (``eng``: Name → mm)."""
     from build123d import Align, Cylinder, Edge, Location, Plane, Pos
 
     from kevcad_kernel.pruefung.kollision import abstand, schnittmenge, volumen_und_achsen
@@ -554,7 +560,11 @@ def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[s
     t = off @ d
     r = np.linalg.norm(off - np.outer(t, d), axis=1)
     r_spitze = float(r.max())
-    t0, t1 = float(t.min()), float(t.max())
+    r_in, r_out = GRIFF_INNEN * r_spitze, r_spitze + float(bew.freiraum or 0.0)
+    # Griff: der Bereich entlang der Achse, in dem das Teil über die Nabe hinausragt (Flügel, Kopf); der Schaft einer
+    # Flügelschraube steckt in Backe und Einsatz und gehört nicht dazu
+    kopf = t[r >= r_in - 1e-6]
+    t0, t1 = (float(kopf.min()), float(kopf.max())) if len(kopf) else (float(t.min()), float(t.max()))
     frei = float(bew.freiraum or 0.0)
     g_lo, g_hi = _box(form)
     seiten: set[int] = set()
@@ -570,7 +580,7 @@ def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[s
             continue
         s = (_ecken(lo, hi) - p) @ d
         if float(s.max()) <= t0 + AUFLAGE_TOL:
-            seiten.add(-1)  # liegt unter dem Teil (Scheibe, Platte): Griff zur anderen Seite
+            seiten.add(-1)  # liegt unter dem Griff (Scheibe, Platte, Backe): Griff zur anderen Seite
         elif float(s.min()) >= t1 - AUFLAGE_TOL:
             seiten.add(1)
     if seiten == {-1}:
@@ -580,8 +590,7 @@ def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[s
     elif seiten == {-1, 1}:
         a0, a1, auflage = t0 + 0.5, t1 - 0.5, "beidseitig"
     else:
-        a0, a1, auflage = t0 - frei, t1 + frei, "keine"
-    r_in, r_out = GRIFF_INNEN * r_spitze, r_spitze + frei
+        a0, a1, auflage = t0, t1, "keine"
     hoehe = max(a1 - a0, 0.1)
     unten = (Align.CENTER, Align.CENTER, Align.MIN)
     ring = Cylinder(r_out, hoehe, align=unten) - Pos(0, 0, -1) * Cylinder(r_in, hoehe + 2, align=unten)
@@ -633,7 +642,7 @@ def _befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:
     for k in erg.get("eng") or []:
         if k.get("griffraum") and raum:
             seite = {"unten": "über der Auflage", "oben": "unter der Auflage", "beidseitig": "zwischen den Auflagen",
-                     "keine": "auf beiden Seiten"}.get(raum["auflage"], "")
+                     "keine": "neben dem Griff"}.get(raum["auflage"], "")
             out.append(_befund(
                 pruefung="bewegungsraum", teile=[erg["teile"][0], k["gegen"]], schwere="fehler",
                 text=f"{erg['name']}: kein Griffraum, {k['gegen']} ragt in den Raum um die Drehachse {seite} "

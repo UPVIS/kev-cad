@@ -62,6 +62,9 @@ class Erfassung:
             info["art"] = p.art
             if p.stock_id:
                 info["stock_id"] = p.stock_id
+            if p.art == "zukaufteil" and len({x.seq for x in pieces}) == 1:
+                # Zukauf-Instanz: alle Teile derselben Stücklistenzeile kommen fertig montiert (Einbauprüfung)
+                info["zukauf"] = f"{p.seq}:{p.name}"
             if p.art == "druckteil":
                 info["druckteil"] = True
                 info.update(self._druck(shape, self._druckstueck(name, shape, pieces)))
