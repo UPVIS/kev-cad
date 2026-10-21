@@ -243,15 +243,19 @@ extension CatalogMaterial {
 public struct BOMMessage: Sendable {
     public var replyTo: String?
     public var bom: BillOfMaterials
+    /// Bestand (BESTAND.md): Zuschnitt mit Quellen, Einkaufsliste; nil, wenn der Kernel nichts dazu schickt.
+    public var bestand: BOMBestand?
 
-    public init(replyTo: String? = nil, bom: BillOfMaterials) {
+    public init(replyTo: String? = nil, bom: BillOfMaterials, bestand: BOMBestand? = nil) {
         self.replyTo = replyTo
         self.bom = bom
+        self.bestand = bestand
     }
 
     public static func decode(_ header: Data) throws -> BOMMessage {
         let json = try JSONDecoder().decode(JSONValue.self, from: header)
-        return BOMMessage(replyTo: json["reply_to"]?.stringValue, bom: BillOfMaterials(json: json))
+        return BOMMessage(
+            replyTo: json["reply_to"]?.stringValue, bom: BillOfMaterials(json: json), bestand: BOMBestand(json: json))
     }
 }
 

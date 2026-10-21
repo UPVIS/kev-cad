@@ -60,6 +60,42 @@ public struct PruefGeometrie: Equatable, Sendable {
     }
 }
 
+/// Ein Schritt der Montagereihenfolge (CHECK.montage.schritte): Teil oder Baugruppe mit Einführrichtung.
+public struct MontageSchritt: Identifiable, Equatable, Sendable {
+    public var nr: Int
+    public var name: String
+    public var teile: [String]
+    public var gruppe: Bool
+    /// „Grundteil“, „von oben“, „von −X her“ …
+    public var richtungText: String
+    public var richtung: SIMD3<Float>?
+    public var werkzeug: String?
+
+    public var id: Int { nr }
+
+    public init(
+        nr: Int, name: String, teile: [String], gruppe: Bool = false, richtungText: String,
+        richtung: SIMD3<Float>? = nil, werkzeug: String? = nil
+    ) {
+        self.nr = nr
+        self.name = name
+        self.teile = teile
+        self.gruppe = gruppe
+        self.richtungText = richtungText
+        self.richtung = richtung
+        self.werkzeug = werkzeug
+    }
+
+    public init?(json: JSONValue) {
+        guard let nr = json["nr"]?.intValue else { return nil }
+        let teile = json["teile"]?.stringList ?? []
+        self.init(
+            nr: nr, name: json["name"]?.stringValue ?? teile.first ?? "Schritt \(nr)", teile: teile,
+            gruppe: json["gruppe"]?.boolValue ?? false, richtungText: json["richtung_text"]?.stringValue ?? "",
+            richtung: json["richtung"]?.vector3, werkzeug: json["werkzeug"]?.stringValue)
+    }
+}
+
 public struct PruefErgebnis: Equatable, Sendable {
     public enum Zustand: String, Sendable {
         case running, done, cancelled, failed
@@ -118,6 +154,14 @@ public struct PruefErgebnis: Equatable, Sendable {
         return n == 0 ? "" : KevFormat.count(n, one: "Befund", many: "Befunde")
     }
 
+    /// Montagereihenfolge (Einbau), leer ohne Montageprüfung.
+    public var montageSchritte: [MontageSchritt] {
+        (montage?["schritte"]?.arrayValue ?? []).compactMap(MontageSchritt.init(json:))
+    }
+
+    /// Teile, die sich nicht einbauen lassen (CHECK.montage.offen).
+    public var montageOffen: [String] { montage?["offen"]?.stringList ?? [] }
+
     /// Kennung für „Band weggeklickt, bis sich die Befunde ändern“.
     public var schluessel: String {
         befunde.filter { $0.schwere != .hinweis }.map { "\($0.art):\($0.teile.joined(separator: "+"))" }
@@ -133,4 +177,7 @@ public protocol PruefActions: AnyObject {
     func zeigeBefund(_ befund: PruefBefund)
     /// Rote Schnittkörper im Viewer ein- oder ausblenden (AppModel.schnittkoerperSichtbar).
     func setSchnittkoerperSichtbar(_ sichtbar: Bool)
+    /// Montage Schritt für Schritt: nur die Teile der Schritte 1 … `schritt` zeigen, die des letzten ausgewählt;
+    /// nil zeigt wieder alles.
+    func zeigeMontageSchritt(_ schritt: Int?)
 }

@@ -22,7 +22,8 @@ from typing import Any
 from kevcad_kernel.bom import de_num
 
 # Toleranzen (mm)
-BERUEHR_TOL = 0.5  # Abstand bis hierhin gilt als Kontakt (Auflage, Führung mit Spiel)
+BERUEHR_TOL = 0.5  # Abstand bis hierhin gilt als Verbindung (Auflage, Führung mit Spiel)
+BERUEHRT_TOL = 0.05  # bis hierhin „berührt“, darüber bis BERUEHR_TOL „Spielpassung“
 BODEN_TOL = 0.5  # so nah am Boden gilt als aufliegend
 TIEFE_MIN = 0.01  # Durchdringungen ab dieser Tiefe …
 VOLUMEN_MIN = 0.001  # … und diesem Volumen (mm³) zählen; Berühren ist kein Befund

@@ -310,6 +310,11 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
         tags = entry["tags"]
         if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
             errors.append(f"{who}: tags muss eine Liste von Texten sein")
+    bq = entry.get("bezugsquelle")  # BESTAND.md: Link in der Einkaufsliste
+    if bq is not None and not (isinstance(bq, dict) and isinstance(bq.get("url"), str)
+                               and re.match(r"^https?://\S+$", bq["url"].strip())
+                               and (bq.get("name") is None or isinstance(bq.get("name"), str))):
+        errors.append(f"{who}: bezugsquelle als {{\"url\": \"https://…\", \"name\": \"Händler\"}} angeben")
     errors += _check_status(entry, who)
     return errors
 

@@ -146,6 +146,25 @@ class KernelService(Protocol):
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
 
+    # Bestand je Projekt (BESTAND.md; Umsetzung in kevcad_kernel/bestand/anbindung.py)
+    def bestand_liste(self, stock_id: str | None = None) -> dict[str, Any]:
+        """Bestand und Reste des offenen Projekts: {"ok", "projekt", "datei", "stand", "bestand", "buchungen",
+        "text", "posten" (nur mit stock_id)}"""
+
+    def bestand_eintragen(self, stock_id: str, ganze: Any = None, reste: list[Any] | None = None,
+                          reste_entfernen: list[str] | None = None, stueck: Any = None,
+                          mindestrest_mm: float | None = None, reste_ersetzen: bool = False,
+                          grund: str = "") -> dict[str, Any]:
+        """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}"""
+
+    def einkaufsliste(self) -> dict[str, Any]:
+        """{"ok", "run", "einkaufsliste", "einkauf_summe", "einkauf_hinweis", "fehlt", "stueckgut", "text", "csv"}"""
+
+    def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
+        """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}"""
+
+    def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
+        """{"ok", "buchung" (die Umkehrbuchung), "aenderungen_text"}"""
     # Phase 3: Zukaufteile (KATALOG.md „Zukaufteil“, PROTOCOL.md „Phase 3“, kevcad_kernel.zukauf.dienst)
     def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
                        felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
@@ -168,6 +187,17 @@ class KernelService(Protocol):
 
     def zukauf_liste(self, query: str = "") -> dict[str, Any]:
         """{"ok", "items": [Zukaufteil + "ebene", "cad_art", "cad_datei_fehlt", "zustand", "kurz"], "total"}"""
+
+    # Prüfung (additiv, siehe kevcad_kernel/pruefung und PROTOCOL.md Abschnitt „Prüfung“)
+    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
+        """Letztes Prüfergebnis nach einem Lauf (wartet auf eine laufende Prüfung): {"ok", "run", "state",
+        "zusammenfassung", "zaehler", "befunde", "montage", "stand", "gewinde", "erlaubt", …} wie die Nachricht CHECK."""
+
+    def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,
+                  timeout_s: float = 20) -> dict[str, Any]:
+        """Mehrere Offscreen-Bilder in einem Zug, ohne Kevins Kamera zu ändern. Je Ansicht: name, standard oder
+        richtung [x,y,z], ziel (Teile) oder punkt + radius, darstellung, hervorheben, schnittkoerper.
+        {"ok", "bilder": [{"name", "png", "width", "height", "camera", "ansicht_umgesetzt"}]}"""
 
     # Zwangsbedingungen (PLAN-BEDINGUNGEN.md, additiv)
     def constraints(self, part: str | None = None) -> dict[str, Any]:

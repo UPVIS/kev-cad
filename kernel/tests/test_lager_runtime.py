@@ -91,7 +91,7 @@ def test_gestell_bom_after_run_end(p2):
         for key in ("laenge", "gehrung", "anzahl", "kg_je", "preis_je", "teile", "eigenteil", "masse_text"):
             assert type(mine[key]) is type(ref_line[key]) or mine[key] is None, key
     assert set(ref["cuts"][0]) <= set(bom["cuts"][0]) and set(ref["totals"]) <= set(bom["totals"])
-    (cut,) = bom["cuts"]
+    (cut,) = [c for c in bom["cuts"] if c.get("art") != "platte"]  # Platten: Zuschnitt mit Bestand (BESTAND.md)
     assert cut["stangen"] == [[842, 842, 842, 842, 800, 800, 600], [600]] and cut["saegeschnitt"] == 3
     # Fassade und BOM_REQ liefern dieselbe Liste
     assert rt.bom() == {"ok": True, **{k: v for k, v in bom.items() if k not in ("type", "seq")}}
@@ -165,7 +165,7 @@ def test_catalog_messages_and_release(p2):
 
 def test_inventory_rule_export_and_settings(p2):
     rt, app = p2["rt"], p2["app"]
-    path = new_project(p2, HEAD + "show(Pos(60, 0, 0) * Box(10, 10, 10), 'Klotz')\n"
+    path = new_project(p2, HEAD + "show(Pos(60, 0, 5) * Box(10, 10, 10), 'Klotz')\n"
                                   "show(lager.teil('flach-en10058-40x5').verbauen(laenge=100, name='F'), 'F')\n")
     start = app.mark()
     res = rt.run()
@@ -243,7 +243,8 @@ def test_mcp_tools_against_runtime(p2):
     assert r["run"].is_error and run.startswith("Inventar-Regel: 1 Teil ist nicht aus dem Inventar: Hilfsklotz")
     assert "Stückliste: 5 Positionen, 17 Teile" in run
     bom = texts(r["bom"])[0]
-    assert "Zuschnitt (Sägeschnitt 3 mm):" in bom and "Stange 1: 842 + 842 + 842 + 842 + 800 + 800 + 600" in bom
+    assert "Zuschnitt (Sägeschnitt 3 mm):" in bom
+    assert "kaufen Stange 1 (6.000 mm): 842 + 842 + 842 + 842 + 800 + 800 + 600; neuer Rest" in bom
     assert texts(r["csv"])[0].startswith("Stückliste;")
     define = texts(r["define"])[0]
     assert not r["define"].is_error and "als Vorschlag" in define and "wartet auf Kevins Freigabe im Lagerkatalog" in define

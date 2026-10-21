@@ -653,5 +653,255 @@
     }
    ]
   }
+ },
+ "bestand": {
+  "frames": [
+   {
+    "file": "bestand.frame",
+    "type": "BESTAND",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_leer.frame",
+    "type": "BESTAND",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bom_bestand.frame",
+    "type": "BOM",
+    "payload_bytes": 0
+   },
+   {
+    "file": "ack_gebaut.frame",
+    "type": "ACK",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_req.frame",
+    "type": "BESTAND_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_save.frame",
+    "type": "BESTAND_SAVE",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_save_einstellungen.frame",
+    "type": "BESTAND_SAVE",
+    "payload_bytes": 0
+   },
+   {
+    "file": "gebaut_req.frame",
+    "type": "GEBAUT_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "buchung_rueckgaengig.frame",
+    "type": "BUCHUNG_RUECKGAENGIG",
+    "payload_bytes": 0
+   }
+  ],
+  "bestand": {
+   "posten": [
+    "mutter-din315-m4",
+    "platte-multiplex-birke-18",
+    "rohr-alfer-12x1",
+    "schraube-iso7380-m6"
+   ],
+   "reste_rohr": [
+    "R-0001",
+    "R-0002",
+    "R-0003"
+   ],
+   "buchungen": [
+    "B-0002",
+    "B-0001"
+   ],
+   "zusammenfassung_erste": "Mindestrest 120 mm → 100 mm",
+   "stand": "2026-10-21T21:45:00"
+  },
+  "bom": {
+   "run": 5,
+   "rohr": {
+    "quellen": [
+     {
+      "art": "rest",
+      "kennung": "R-0001",
+      "laenge": 430,
+      "stuecke": [
+       120,
+       60
+      ],
+      "rest_neu": 244,
+      "verschnitt": false
+     },
+     {
+      "art": "rest",
+      "kennung": "R-0002",
+      "laenge": 610,
+      "stuecke": [
+       175,
+       120,
+       120,
+       120,
+       60
+      ],
+      "rest_neu": 0,
+      "verschnitt": false
+     },
+     {
+      "art": "rest",
+      "kennung": "R-0003",
+      "laenge": 180,
+      "stuecke": [
+       175
+      ],
+      "rest_neu": 2,
+      "verschnitt": true
+     },
+     {
+      "art": "bestand",
+      "kennung": null,
+      "laenge": 1000,
+      "stuecke": [
+       1000
+      ],
+      "rest_neu": 0,
+      "verschnitt": false
+     },
+     {
+      "art": "bestand",
+      "kennung": null,
+      "laenge": 1000,
+      "stuecke": [
+       1000
+      ],
+      "rest_neu": 0,
+      "verschnitt": false
+     },
+     {
+      "art": "kaufen",
+      "kennung": null,
+      "laenge": 1000,
+      "stuecke": [
+       1000
+      ],
+      "rest_neu": 0,
+      "verschnitt": false
+     }
+    ],
+    "neue_reste": [
+     244
+    ],
+    "aus_bestand": {
+     "reste": 3,
+     "ganze": 2
+    },
+    "kaufen": 1,
+    "stangen": [
+     [
+      1000.0
+     ],
+     [
+      1000.0
+     ],
+     [
+      1000.0
+     ],
+     [
+      175.0,
+      175.0,
+      120.0,
+      120.0,
+      120.0,
+      120.0,
+      60.0,
+      60.0
+     ]
+    ]
+   },
+   "platte": {
+    "platte": {
+     "b": 2500,
+     "h": 1250
+    },
+    "quellen": 2,
+    "stuecke": 3,
+    "erste_quelle": {
+     "art": "rest",
+     "kennung": "P-0001",
+     "b": 600,
+     "h": 400
+    },
+    "erstes_stueck": {
+     "b": 550,
+     "h": 380,
+     "x": 0,
+     "y": 0,
+     "gedreht": false
+    },
+    "neue_reste": [
+     {
+      "b": 1697,
+      "h": 1250
+     },
+     {
+      "b": 800,
+      "h": 264
+     },
+     {
+      "b": 247,
+      "h": 380
+     }
+    ],
+    "kaufen": 0
+   },
+   "einkaufsliste": [
+    {
+     "id": "rohr-alfer-12x1",
+     "menge": 1,
+     "einheit": "Stange 1.000 mm",
+     "preis_je": 3.9,
+     "preis": 3.9,
+     "link": "https://www.alfer.com/"
+    },
+    {
+     "id": "schraube-iso7380-m6",
+     "menge": 4,
+     "einheit": "Stück",
+     "preis_je": 0.09,
+     "preis": 0.36,
+     "link": null
+    },
+    {
+     "id": "mutter-din315-m4",
+     "menge": 4,
+     "einheit": "Stück",
+     "preis_je": 0.12,
+     "preis": 0.48,
+     "link": null
+    }
+   ],
+   "einkauf_summe": 4.74,
+   "fehlt": true,
+   "bestand_stand": "2026-10-21T21:45:00",
+   "stueckgut": [
+    {
+     "stock_id": "schraube-iso7380-m6",
+     "laenge": 20,
+     "anzahl": 16,
+     "aus_bestand": 12,
+     "kaufen": 4
+    },
+    {
+     "stock_id": "mutter-din315-m4",
+     "laenge": null,
+     "anzahl": 14,
+     "aus_bestand": 10,
+     "kaufen": 4
+    }
+   ]
+  }
  }
 }

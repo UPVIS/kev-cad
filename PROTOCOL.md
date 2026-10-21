@@ -157,6 +157,11 @@ Antwort: `ACK` mit `ok` und optional `message`.
 | `SCREENSHOT_RES` | `reply_to`, `ok`, `width`, `height`, `camera` (Objekt), `mm_per_px` (nur orthographisch, sonst null) | PNG |
 | `ACK` | `reply_to`, `ok`, `message` | – |
 
+## Bestand
+
+Bestand, Zuschnitt mit Resten, Einkaufsliste und die Nachrichten `BESTAND_REQ`, `BESTAND`, `BESTAND_SAVE`,
+`GEBAUT_REQ`, `BUCHUNG_RUECKGAENGIG` sind in [BESTAND.md](BESTAND.md) festgelegt.
+
 ## Phase 2: Lagerteile und Stückliste
 
 Rein additiv; ältere Gegenseiten ignorieren die neuen Felder und Typen.
@@ -321,11 +326,33 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   `geometrie` Index in `geometrie` oder null. Weitere Quellen dürfen eigene Felder ergänzen (etwa `soll`, `ist`).
 - Durchdringung zählt ab 0,001 mm³ Schnittvolumen und 0,01 mm Tiefe; Berühren ist kein Befund. Einzige automatische
   Ausnahme ist echter Gewindeeingriff (Schraube in Mutter oder Kernloch, gleiche Achse, nur im Gewindeband); er steht in
-  `gewinde`. Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
+  `gewinde` (je Eintrag `teile`, `text`, `volumen`, `achse`). In der Montage sperrt ein Gewindeeingriff quer zur Achse,
+  entlang der Achse nicht (herausdrehen). Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
 Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+
+Weitere Teile von `CHECK` (Stufe 2):
+
+- `stand`: `{"boden_z", "boden_erklaert", "gruppen": [{"teile", "masse_kg", "schwerpunkt", "stuetzpolygon" (xy),
+  "rand_abstand" (mm, negativ = außerhalb), "kippwinkel" (Grad), "kante", "schwebt" | "befestigt"}]}`. Kontakt heißt
+  Abstand bis 0,5 mm (Spielpassung zählt als Verbindung), „berührt“ bis 0,05 mm. Befunde `schwebt` gibt es nur bei
+  Modellen ohne Zwangsbedingungen; mit Bedingungen prüft die Befestigung (B9, Prüffunktion „bedingungen“) das Schweben,
+  damit nichts doppelt gemeldet wird. `kippt` und `standsicherheit` kommen immer aus dieser Prüfung.
+- `montage`: `{"vollstaendig", "schritte": [{"nr", "name", "teile", "gruppe", "richtung" (Einführrichtung [x,y,z], null
+  beim Grundteil), "richtung_text" („Grundteil“, „von oben“, „von −X her“ …), "werkzeug"}], "offen", "tests",
+  "abgebrochen"}` in Einbaureihenfolge.
+
+### SCREENSHOT_REQ.ansicht (Analyse)
+
+Optionales Objekt in `SCREENSHOT_REQ` (mit `source: "offscreen"`) für Bilder zur eigenen Analyse des Agenten (MCP
+`ansichten`, `pruefen(bilder=true)`): `name`, `standard` (Standardansicht) oder `richtung` [x,y,z] (Blickrichtung der
+Kamera, Z bleibt oben), `ziel` (Teile) oder `punkt` [x,y,z] mit `radius` (mm) zum Einpassen, `darstellung`
+(`shaded_edges` \| `shaded` \| `wireframe` \| `xray`), `hervorheben` (Teile, rot getönt), `schnittkoerper` (bool, rote
+Schnittkörper der Prüfung). Die App rendert aus einer Kopie der Körper, Kevins Kamera, Darstellung und Auswahl bleiben
+unverändert, und setzt in `SCREENSHOT_RES.camera` das Feld `ansicht: true`. Ältere Apps ignorieren das Feld und liefern
+die Standardansicht aus `view`.
 
 ## Phase 5: Animation
 
