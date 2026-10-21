@@ -230,6 +230,7 @@ public final class AnimationPlayer {
     public func tick() {
         guard model.playing, let clip = current, !suspended else { return }
         var t = timeStart + (now() - wallStart) * model.speed
+        var ended = false
         if t >= clip.duration {
             if model.loop, clip.duration > 0 {
                 t = t.truncatingRemainder(dividingBy: clip.duration)
@@ -239,13 +240,14 @@ public final class AnimationPlayer {
                 t = clip.duration
                 model.playing = false
                 stopTimer()
-                onStateChange?()
+                ended = true
             }
         }
         model.time = t
         let k = clip.frame(at: t)
         if k != model.frame { model.frame = k }
         applyPose()
+        if ended { onStateChange?() }  // erst jetzt: der gemeldete Stand trägt das letzte Bild, nicht das davor
     }
 
     // MARK: Lage

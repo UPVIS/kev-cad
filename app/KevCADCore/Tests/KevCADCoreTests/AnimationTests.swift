@@ -171,8 +171,12 @@ final class AnimationTests: XCTestCase {
         player.now = { clock }
         var poses: [[String: simd_float4x4]] = []
         var states = 0
+        var reported: [(time: Double, playing: Bool)] = []
         player.onPose = { t, _, _, _ in poses.append(t) }
-        player.onStateChange = { states += 1 }
+        player.onStateChange = {
+            states += 1
+            reported.append((model.time, model.playing))
+        }
         player.define(try clip())
         XCTAssertEqual(model.entries.map(\.name), ["Fahrt"])
         XCTAssertEqual(model.selected, "Fahrt")
@@ -188,6 +192,9 @@ final class AnimationTests: XCTestCase {
         player.tick()
         XCTAssertEqual(model.time, 1)
         XCTAssertFalse(model.playing)
+        // der Stand am Ende (ANIM_STATE an den Kernel) trägt das letzte Bild, nicht das davor
+        XCTAssertEqual(reported.last?.time, 1)
+        XCTAssertEqual(reported.last?.playing, false)
 
         player.setLoop(true)
         player.setSpeed(2)
