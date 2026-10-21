@@ -506,6 +506,35 @@ show(klotz, "Klotz")
     assert any("Minimum" in w for w in res["warnings"])  # wie bisher
 
 
+def test_gelenk_fuer_animation(tmp_path):
+    """Achse und Grenzen des Gelenks passen zu animation.gelenk (Werte ab der Ruhelage aus model.py)."""
+    rahmen, achse, klappe = _klappe()
+    g = drehgelenk((klappe, "bohrung"), (achse, "achse"), winkel=10, bereich=(0, 90), weg_pruefen=False)
+    platziere(klappe, g)
+    a = g.fuer_animation()
+    assert a["art"] == "dreh" and a["grenzen"] == (-10.0, 80.0)
+    assert np.allclose(a["achse"][0], (-50, 0, 15)) and abs(abs(a["achse"][1][1]) - 1) < 1e-9
+    verschoben = g.fuer_animation(lage=Pos(0, 100, 0))
+    assert np.allclose(verschoben["achse"][0], (-50, 100, 15))
+    code = """from build123d import *
+from kevcad import animation, show
+import kevcad.bedingungen as bed
+
+unten = (Align.CENTER, Align.CENTER, Align.MIN)
+achse = Pos(-50, 0, 15) * Rot(90, 0, 0) * Cylinder(3, 20)
+klappe = Pos(-27, 0, 15) * Box(36, 18, 2) + Pos(-50, 0, 15) * Rot(90, 0, 0) * (Cylinder(5, 18) - Cylinder(3.2, 20))
+g = bed.drehgelenk((klappe, "bohrung"), (achse, "achse"), bereich=(0, 90), weg_pruefen=False)
+klappe = bed.platziere(klappe, g)
+show(achse, "Achse")
+show(klappe, "Klappe")
+anim = animation(2, name="Auf")
+anim.gelenk("Klappe", **g.fuer_animation(), werte={0: 0, 2: 60})
+"""
+    res = _lauf(tmp_path, code)
+    assert res["type"] == "RUN_DONE", res.get("error")
+    assert res.get("animations") == ["Auf"]
+
+
 def test_lauf_ohne_bedingungen_kostet_nichts(tmp_path):
     code = "from build123d import *\nfrom kevcad import show\nfor i in range(30):\n" \
            "    show(Pos(i * 20, 0, 0) * Box(10, 10, 10), f'Teil {i}')\n"

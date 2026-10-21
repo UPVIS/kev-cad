@@ -904,17 +904,31 @@ class Gelenk(Bedingung):
     def grenzen(self) -> tuple[float, float] | None:
         return self.bereich
 
-    def fuer_animation(self) -> dict[str, Any]:
-        """Achse und Grenzen für ``animation.gelenk(name, **gelenk.fuer_animation(), werte=...)`` (Strang ANI):
-        ``{"art": "dreh" | "schub", "achse": ((x, y, z), (dx, dy, dz)), "grenzen": (min, max) | None}``. Die Achse
-        gilt in der Lage, in der die Bezüge genommen wurden (nach der Prüfung: in der gezeigten Lage)."""
+    def fuer_animation(self, lage: Any = None) -> dict[str, Any]:
+        """Achse und Grenzen für ``anim.gelenk(name, **gelenk.fuer_animation(), werte={0: 0, 2: 90})`` (Strang ANI):
+        ``{"art": "dreh" | "schub", "achse": ((x, y, z), (dx, dy, dz)), "grenzen": (min, max) | None}``.
+
+        Die Werte der Animation zählen ab der Ruhelage aus model.py, also ab dem Gelenkwert, mit dem platziert wurde
+        (``winkel`` bzw. ``weg``); die Grenzen sind darum um diesen Wert verschoben. Die Achse gilt in der Lage, in der
+        die Bezüge genommen wurden; wird das feste Teil danach noch verschoben gezeigt (``show(rig * teil)``),
+        dieselbe Lage als ``lage`` übergeben."""
         if self.achse_welt is not None:
             p, d = self.achse_welt
         else:
             p, d = self.b.p, self.b.d if self.b.d is not None else np.array([0.0, 0.0, 1.0])
+        if lage is not None:
+            from .geometrie import trsf_matrix
+
+            M = trsf_matrix(lage.wrapped.Transformation()) if hasattr(lage, "wrapped") \
+                else np.asarray(lage, dtype=float)
+            p, d = M[:3, :3] @ p + M[:3, 3], M[:3, :3] @ d
+        grenzen = None
+        if self.bereich is not None:
+            w = self.wert()
+            grenzen = (self.bereich[0] - w, self.bereich[1] - w)
         return {"art": self.anim_art or "dreh", "achse": (tuple(round(float(c), 6) for c in p),
                                                           tuple(round(float(c), 9) for c in d)),
-                "grenzen": self.bereich}
+                "grenzen": grenzen}
 
     def wert(self) -> float:
         return 0.0
