@@ -14,21 +14,18 @@ dort, nie nur per `execute`.
 Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
 nur melden:
 
-- **Keine Durchdringungen:** Zwei Teile dürfen sich berühren, aber nicht ineinander stecken. Dafür in model.py die
-  gezeigten Formen mitschreiben (`teile[name] = form` direkt vor jedem `show(form, name)`, `teile = {}` oben) und nach
-  dem Lauf mit `execute` prüfen:
+- **Keine Durchdringungen, auch nicht bei Schrauben, Muttern und Scheiben:** Zwei Teile dürfen sich berühren, aber nicht
+  ineinander stecken. Nach jedem Lauf prüfen, bis Kev CAD das selbst bei jedem Lauf tut (rechnet auf einer Kopie, die
+  laufende App bleibt unberührt; Exit-Code 1 bei Befunden):
 
-  ```python
-  from itertools import combinations
-  for (a, fa), (b, fb) in combinations(teile.items(), 2):
-      v = (fa & fb).volume if fa.bounding_box().overlaps(fb.bounding_box()) else 0
-      if v > 0.001:
-          print(f"Durchdringung {a} ↔ {b}: {v:.3f} mm³")
+  ```bash
+  cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>"
   ```
 
-  Gefundene Durchdringungen beheben: Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren. Gewollte
-  Überlappungen (Gewinde in einem Kernloch, Presspassung, nachgiebiger Schaum) nur nach Rückfrage und mit Begründung
-  im Code.
+  Jede gemeldete Durchdringung beheben, bevor du fertig meldest: Spiel oder Bohrung vorsehen, Teil auf die
+  Anlagefläche des Gegenstücks setzen, Scheiben und Muttern um ihre Dicke stapeln, Maß korrigieren. Einzige Ausnahme
+  ohne Rückfrage ist echter Gewindeeingriff (Schraube in Mutter oder Gewindeloch, gleiche Achse). Andere gewollte
+  Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Begründung im Code.
 - **Nichts schwebt:** Jedes Teil berührt ein anderes Teil oder steht auf dem Boden (z = 0). Mit `measure` den Abstand
   zum Nachbarteil prüfen (0,000 mm = Kontakt).
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
