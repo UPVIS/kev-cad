@@ -79,6 +79,35 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(py.y, c.y)
     }
 
+    /// Die Nahebene des Viewports liegt am Hüllquader; ohne Hilfskörper fehlte in der Draufsicht die Deckfläche.
+    func testTopViewShowsTopFace() throws {
+        let renderer = ScreenshotRenderer()
+        let s = SceneStore()
+        s.upsert(try Fixtures.record("part_box.frame"), flash: false)
+        s.addHighlight(refs: [.face("Grundplatte", 5)], color: SIMD4(0, 1, 0, 1), label: nil, clear: true, now: -100)
+        let bounds = try XCTUnwrap(s.visibleBounds())
+        for view in [StandardView.top, .isometricFrontRight] {
+            let cam = ViewportCoordinator.fitted(view.cameraState(), to: bounds, aspect: 1)
+            guard let r = renderer.render(bodies: s.snapshotBodies(), camera: cam, width: 200, height: 200, displayMode: .shaded)
+            else { throw XCTSkip("Kein Metal-Gerät für den OffscreenRenderer") }
+            // Pixel der Deckfläche: Mitte des Hüllquaders oben
+            let p = try XCTUnwrap(OverlayProjector(camera: cam, size: CGSize(width: 200, height: 200)).project(SIMD3(0, 0, 15)))
+            let rgba = pixel(r.image, x: Int(p.x), y: Int(p.y))
+            XCTAssertGreaterThan(Int(rgba.1), Int(rgba.0) + 40, "\(view): Deckfläche grün sichtbar, Pixel \(rgba)")
+        }
+    }
+
+    private func pixel(_ image: CGImage, x: Int, y: Int) -> (UInt8, UInt8, UInt8) {
+        let w = image.width, h = image.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(
+            data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let i = (y * w + x) * 4
+        return (px[i], px[i + 1], px[i + 2])
+    }
+
     func testCameraJSON() {
         let cam = StandardView.front.cameraState(distance: 100, orthographicScale: 80)
         let j = ViewportCoordinator.cameraJSON(cam, height: 800)

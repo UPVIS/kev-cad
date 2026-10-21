@@ -95,7 +95,12 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(m.parts[0].volume, 6000)
         XCTAssertEqual(m.parts[1].bboxMin, SIMD3(25, -5, -10))
         XCTAssertEqual(m.triangleCount, 260)
-        XCTAssertEqual(c.viewport.bodies.count, 2)
+        XCTAssertEqual(c.viewport.bodies.filter { $0.id != SceneStore.depthHelperID }.count, 2)
+        // Hilfskörper für den Tiefenbereich: unsichtbar, nicht anklickbar, größer als die Szene
+        let helper = try XCTUnwrap(c.viewport.bodies.first { $0.id == SceneStore.depthHelperID })
+        XCTAssertFalse(helper.isPickable)
+        XCTAssertTrue(helper.indices.isEmpty && helper.edges.isEmpty)
+        XCTAssertLessThan(try XCTUnwrap(helper.boundingBox).min.x, -5)
         c.handle([events[6]])  // RUN_END
         XCTAssertEqual(m.run, .finished(run: 1, durationMs: 412, parts: 2, warnings: []))
         XCTAssertEqual(m.kernelState, .ready)
@@ -118,7 +123,7 @@ final class ControllerTests: XCTestCase {
         XCTAssertTrue(c.viewport.overlayItems.contains { if case .dimension = $0 { return true } else { return false } })
         c.handle([events[12]])  // PART_REMOVE
         XCTAssertEqual(m.parts.map(\.id), ["Grundplatte"])
-        XCTAssertEqual(c.viewport.bodies.count, 1)
+        XCTAssertEqual(c.viewport.bodies.filter { $0.id != SceneStore.depthHelperID }.count, 1)
 
         // Neues HELLO (Wiederverbindung): Szene leeren, der Kernel schickt alles neu
         c.handle([events[0]])

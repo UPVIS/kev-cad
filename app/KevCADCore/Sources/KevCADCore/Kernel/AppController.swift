@@ -46,6 +46,7 @@ public final class AppController: AppActions {
     var annotations: [(id: String, item: OverlayPrimitive)] = []
     var highlightLabels: [Int: String] = [:]
     private var animationTimer: Timer?
+    var selfTestStarted = false
 
     struct PendingRequest {
         var kind: String
@@ -64,7 +65,7 @@ public final class AppController: AppActions {
 
         scene.onChange = { [weak self] in
             guard let self else { return }
-            self.viewport.bodies = self.scene.bodies
+            self.viewport.bodies = self.scene.renderBodies
         }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
@@ -82,6 +83,7 @@ public final class AppController: AppActions {
     /// Startet den Kernel-Server und verbindet sich mit ihm.
     public func start() {
         stopInternal(clearState: false)
+        installSignalHandlers()
         running = true
         if AppInfo.isDemoMode {
             startDemo()
@@ -129,6 +131,23 @@ public final class AppController: AppActions {
     }
 
     func resetCrashCounter() { crashTimes = [] }
+
+    private static var signalSources: [DispatchSourceSignal] = []
+
+    /// Auch bei SIGTERM/SIGINT/SIGHUP (z. B. `pkill`) den Kernel mitbeenden; nur in der gebauten App, nicht in Tests.
+    private func installSignalHandlers() {
+        guard Self.signalSources.isEmpty, Bundle.main.bundleURL.pathExtension == "app" else { return }
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            src.setEventHandler { [weak self] in
+                MainActor.assumeIsolated { self?.shutdownForTermination() }
+                exit(0)
+            }
+            src.resume()
+            Self.signalSources.append(src)
+        }
+    }
 
     private func shutdownForTermination() {
         running = false
@@ -183,6 +202,8 @@ public final class AppController: AppActions {
 
     func log(_ level: LogLine.Level, _ text: String) {
         model.append(LogLine(level: level, text: text))
+        // Testvariante: zusätzlich auf stderr (mit `open --stderr` für Tests ohne Oberfläche lesbar)
+        if AppInfo.isTestVariant { FileHandle.standardError.write(Data("[\(level.rawValue)] \(text)\n".utf8)) }
     }
 
     private func logKernelOutput(_ line: String, stderr: Bool) {
@@ -195,7 +216,7 @@ public final class AppController: AppActions {
         } else {
             level = .info
         }
-        model.append(LogLine(level: level, text: "Kernel: \(line)"))
+        log(level, "Kernel: \(line)")
     }
 
     /// Sendet eine Nachricht; `false`, wenn keine Verbindung besteht.
@@ -360,6 +381,7 @@ public final class AppController: AppActions {
             }
             fitOnFirstPart = false
             log(.info, "Lauf \(e.run) fertig: \(scene.order.count) Teile, \(model.triangleCount) Dreiecke, \(e.durationMs) ms")
+            scheduleSelfTestIfRequested()
             for w in e.warnings { log(.warning, w) }
         case .runError(let e):
             scene.endRun(e.run)
@@ -417,6 +439,9 @@ public final class AppController: AppActions {
             viewport.fit(scene.visibleBounds(), animated: false)
             fitOnFirstPart = false
             fitAtRunEnd = true
+        } else if fitAtRunEnd {
+            // Erster Lauf eines Projekts: mit jedem neuen Teil nachführen, damit alles im Bild bleibt
+            viewport.fit(scene.visibleBounds(), animated: true)
         }
         refreshOverlay()
         startAnimationTimerIfNeeded()

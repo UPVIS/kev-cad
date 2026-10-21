@@ -43,8 +43,24 @@ public final class ViewportCoordinator: ObservableObject {
         cfg.minDistance = 0.01
         cfg.maxDistance = 1_000_000
         cfg.initialCameraState = StandardView.isometricFrontRight.cameraState(distance: 400)
+        cfg.lightingConfiguration = Self.zUpLighting
         controller = ViewportController(configuration: cfg)
         controller.onPick = { [weak self] result in self?.pickArrived(result) }
+    }
+
+    /// Dreipunktlicht des Pakets, umgestellt auf Z oben: Hauptlicht von vorn rechts oben, Fülllicht von links,
+    /// Gegenlicht von hinten. Das Umgebungslicht des Pakets unterscheidet oben/unten über Y, deshalb hier gleichmäßig.
+    /// Schatten aus: Sie helfen beim Lesen von CAD-Teilen wenig und kosten Schärfe.
+    public static var zUpLighting: LightingConfiguration {
+        var l = LightingConfiguration.threePoint
+        l.keyLight.direction = simd_normalize(SIMD3<Float>(-0.35, 0.55, -0.75))
+        l.fillLight.direction = simd_normalize(SIMD3<Float>(0.65, 0.35, -0.45))
+        l.backLight.direction = simd_normalize(SIMD3<Float>(0.1, -0.75, 0.45))
+        let mid = (l.ambientSkyColor + l.ambientGroundColor) * 0.5
+        l.ambientSkyColor = mid
+        l.ambientGroundColor = mid
+        l.shadowsEnabled = false
+        return l
     }
 
     // MARK: Anbindung an das MTKView

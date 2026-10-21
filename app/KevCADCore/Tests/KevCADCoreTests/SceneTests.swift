@@ -324,13 +324,13 @@ final class SceneTests: XCTestCase {
         let overlay = scene.elementOverlay()
         XCTAssertEqual(overlay.count, 2)  // Kante und Punkt
         // Bild: hervorgehobene Fläche als eigener Körper eingefärbt
-        let snap = scene.snapshotBodies()
+        let snap = scene.snapshotBodies().filter { $0.id != SceneStore.depthHelperID }
         XCTAssertEqual(snap.count, 2)
         XCTAssertTrue(snap.allSatisfy { $0.triangleStyles.isEmpty })
         XCTAssertEqual(snap.reduce(0) { $0 + $1.indices.count / 3 }, 248)
         scene.clearHighlights()
         XCTAssertTrue(try XCTUnwrap(scene.bodies.first).triangleStyles.isEmpty)
-        XCTAssertEqual(scene.snapshotBodies().count, 1)
+        XCTAssertEqual(scene.snapshotBodies().filter { $0.id != SceneStore.depthHelperID }.count, 1)
     }
 
     func testSectionClipping() throws {

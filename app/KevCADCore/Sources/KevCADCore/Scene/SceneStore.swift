@@ -55,6 +55,9 @@ public final class SceneStore {
     private var styleSignature: [String: Int] = [:]
     private var bodyOwner: [String: (part: String, chunk: Int)] = [:]
     public private(set) var bodies: [ViewportBody] = []
+    /// `bodies` plus unsichtbarer Hilfskörper für den Tiefenbereich (das geht an den Viewport).
+    public private(set) var renderBodies: [ViewportBody] = []
+    public static let depthHelperID = "\u{1F}tiefe"
 
     /// Wird nach jeder Änderung an `bodies` aufgerufen.
     public var onChange: (() -> Void)?
@@ -370,10 +373,13 @@ public final class SceneStore {
             switch ref.kind {
             case .edge:
                 let poly = rec.geometry.edgePolyline(ref.index).map(w)
-                if poly.count >= 2 { out.append(.polyline(points: poly, color: color, width: 3)) }
+                let pieces = section.map { SectionClipper.clipPolylines([poly], plane: $0) } ?? [poly]
+                for p in pieces where p.count >= 2 { out.append(.polyline(points: p, color: color, width: 3)) }
             case .vertex:
                 if ref.index < rec.vertexCount {
-                    out.append(.dot(point: w(rec.geometry.brepVertex(ref.index)), color: color, radius: 5))
+                    let p = w(rec.geometry.brepVertex(ref.index))
+                    if let s = section, simd_dot(s.normal, p) + s.distance < 0 { break }
+                    out.append(.dot(point: p, color: color, radius: 5))
                 }
             case .face, .part:
                 break
@@ -517,7 +523,24 @@ public final class SceneStore {
         out.reserveCapacity(bodies.count + 4)
         for n in order { out.append(contentsOf: partBodies[n] ?? []) }
         bodies = out
+        renderBodies = out
+        if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
+    }
+
+    /// Der Viewport legt die Nahebene genau an den Hüllquader der Szene (Abstand zur nächsten Ecke). Flächen, die
+    /// dort liegen (Deckfläche in der Draufsicht) oder Ecken schräg am Bildrand werden dadurch abgeschnitten. Ein
+    /// unsichtbarer, nicht anklickbarer Körper mit größerem Hüllquader schiebt die Nahebene nach vorn.
+    func depthHelper() -> ViewportBody? {
+        guard let b = visibleBounds() else { return nil }
+        let pad = SIMD3<Float>(repeating: max(b.diagonalLength, 10))
+        let lo = b.min - pad, hi = b.max + pad
+        let corners = (0..<8).map { i in
+            SIMD3<Float>(i & 1 == 0 ? lo.x : hi.x, i & 2 == 0 ? lo.y : hi.y, i & 4 == 0 ? lo.z : hi.z)
+        }
+        return ViewportBody(
+            id: Self.depthHelperID, vertexData: [], indices: [], edges: [], vertices: corners, color: .zero,
+            isPickable: false)
     }
 
     // MARK: Bilder
@@ -589,6 +612,7 @@ public final class SceneStore {
                 }
             }
         }
+        if let helper = depthHelper() { out.append(helper) }
         return out
     }
 }
