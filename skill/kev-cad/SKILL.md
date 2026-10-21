@@ -30,7 +30,8 @@ nur melden:
   Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
   Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
   montieren. Nie Teile einfach in den Raum setzen. Prüfen: dasselbe Werkzeug mit `--kontakte` meldet Teile ohne
-  Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
+  Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung). Mit
+  `bed.verbinde(...)` (Abschnitt „Teile über Bedingungen setzen“) prüft Kev CAD die Befestigung bei jedem Lauf selbst.
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
 - **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
   muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
@@ -38,24 +39,63 @@ nur melden:
   geprüft nach jedem Lauf mit
   `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
   Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
-  umkonstruiert, nicht der Bereich verkleinert.
+  umkonstruiert, nicht der Bereich verkleinert. Gelenke mit `bereich=…` und `bewegungen.json` prüft `run` inzwischen
+  bei jedem Lauf mit (Befunde „Bewegungsraum“ in `run` und `bedingungen`).
 - Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
   daran.
 
 ## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
 
-Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück, nicht an frei gewählten Koordinaten:
+Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück, nicht an frei gewählten Koordinaten.
+Feste Regel neben Prüfungen, Druckregeln und Inventar-Regel: **Teile werden mit `platziere` gesetzt, jedes Teil ist mit
+`verbinde` befestigt, Bewegliches ist ein Gelenk mit Bereich.** Kev CAD prüft alle Bedingungen nach jedem Lauf gegen
+die echte Geometrie; verletzte sind Befunde wie eine Durchdringung (`run` isError, rot im Viewer, Export gesperrt).
 
-- **Lage aus dem Gegenstück ableiten:** Position aus der Bezugsfläche oder Achse des tragenden Teils berechnen (Oberkante,
-  Bohrungsmitte, Bezugspunkt aus dem Katalog), etwa `z_rahmen = rolle.bounding_box().max.Z`, nie dieselbe Zahl zweimal
-  von Hand.
-- **Maße als Beziehungen:** abgeleitete Maße aus Parametern rechnen (`innen = aussen - 2 * wand`), Parameter mit
-  sinnvollen Grenzen versehen und im Code prüfen (`assert wand >= 1.2`).
-- **Verbindungen benennen:** Was auf was sitzt, was konzentrisch ist und welches Spiel gilt, steht als Kommentar oder
-  Prüfzeile im Code, damit es nach Änderungen weiter stimmt.
-- **Gelenke** (Klappe, Rad, Schieber) mit Achse und Weg festlegen; die Prüfung gilt über den ganzen Weg.
-- Kev CAD bekommt dafür feste Bedingungen mit Löser und Prüfung (`PLAN-BEDINGUNGEN.md`); bis dahin gilt diese Regel von
-  Hand.
+```python
+import kevcad.bedingungen as bed   # als Modul: kollidiert nicht mit eigenen Namen wie spiel, winkel, boden
+
+platte = Box(200, 120, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)) - Pos(60, 0, 5) * Cylinder(4.5, 20)
+show(platte, "Halter/Platte")
+klotz = Box(40, 30, 20)                                    # im eigenen System bauen, dann setzen
+klotz = bed.platziere(klotz,
+                      bed.auf((klotz, "unten"), (platte, "oben")),            # Fläche auf Fläche
+                      bed.mittig((klotz, "mitte"), (platte, "mitte"), "xy"),   # mittig in X und Y
+                      bed.parallel((klotz, "vorn"), (platte, "vorn")))        # nicht verdreht
+show(klotz, "Halter/Klotz")
+schraube = lager.teil("schraube-iso4762-m8").verbauen(laenge=25, name="Halter/Schraube")
+schraube = bed.platziere(schraube, bed.in_bohrung(schraube, bed.bezug(platte, "bohrung", nahe=(60, 0, 0))))
+show(schraube, "Halter/Schraube")
+bed.verbinde(klotz, platte, art="kleben")                 # Befestigung (Pflicht für jedes Teil)
+bed.verbinde(platte, bed.boden, art="aufliegen")
+wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein Befund mit Soll, Ist und Lösung
+```
+
+- **Bezüge** über Namen, nie über Flächennummern: als Tupel `(teil, "unten")` oder `bed.bezug(teil, …)` mit
+  `oben`/`unten` (±Z), `rechts`/`links` (±X), `hinten`/`vorn` (±Y, vorn = −Y), `mitte`, `schwerpunkt`, `achse`
+  (größter Zylinder), `achse_x/y/z`, `bohrung` (mit `nahe=(x, y, z)`), `teil`; eigene Auswahl
+  `bed.bezug(teil, "Auflage", teil.faces().sort_by(Axis.Z)[0])` oder `lambda t: …`, dazu `Plane`, `Axis`, `Location`
+  und Bezugspunkte aus dem Katalog; Teile auch über ihren Namen aus `show()` (`bed.verbinde("Gestell/Bein 1", …)`).
+  `bed.boden` ist die Ebene z = 0. **Der erste Bezug gehört zum Teil, das sich anpasst** (bei `platziere` das bewegte).
+- **Montage:** `auf` (Flächen gegenüber, `abstand=` für Luft), `buendig`, `konzentrisch`, `parallel`, `senkrecht`,
+  `abstand(a, b, wert)`, `winkel(a, b, grad)`, `tangential` (Zylinder/Kugel an Ebene oder Zylinder), `mittig(…, "xy")`,
+  `in_bohrung(schraube, bohrung, gewinde=False)` (konzentrisch, Kopf liegt auf, Durchmesser ISO 273 bzw. Kernloch und
+  Länge geprüft). Teile im eigenen System bauen, mit `bed.platziere(teil, …)` setzen, danach erst bohren ist erlaubt
+  (die Prüfung findet das Teil wieder); was danach noch verschoben wird, verschiebt seine Bezüge mit.
+- **Gelenke** (Grundlage build123d-Joints, Freiheitsgrade für Animation und Prüfung): `drehgelenk(achse_bewegt,
+  achse_fest, winkel=0, bereich=(min, max))`, `schiebegelenk(…, weg=0, bereich=…)`, `zylindergelenk`, `kugelgelenk`,
+  `fest`. Mit `bereich` prüft jeder Lauf den ganzen Weg auf Kollision (`mitbewegt=[…]` für Teile, die mitfahren,
+  `ignorieren=[…]`); Bedienteile mit `bedienung="finger" | "hand" | "werkzeug"` oder `freiraum=mm` am `griff`.
+  `gelenk.fuer_animation()` liefert Art, Achse und Grenzen für `animation.gelenk`.
+- **Befestigung (B9):** jedes Teil `bed.verbinde(a, b, art="schraube" | "klemmung" | "steck" | "formschluss" |
+  "kleben" | "aufliegen", mit=[schraube, mutter, scheibe])`. Geprüft wird, dass es die Verbindung wirklich gibt
+  (Kontakt bzw. Spielpassung bis 0,5 mm; bei Schrauben fluchtende Bohrungen in beiden Teilen, Kopf und Mutter liegen
+  auf) und dass alle Teile über Verbindungen am Boden hängen. Gelenke, `in_bohrung` und `auf` von oben zählen mit.
+- **Maße:** `param(name, wert, min=, max=)`, `bed.gleich(a, b)`, `bed.spiel(deckel, gehaeuse, min=0.2)`,
+  `bed.min_abstand(a, b, wert)`, `bed.min_wand(teil, 1.2)`.
+- **Prüfen:** `run` meldet Befunde mit Soll, Ist, Zeile und Lösung; `bedingungen` zeigt alle Bedingungen, Freiheitsgrade
+  je Teil (unterbestimmt = Hinweis), Widersprüche (Fehler mit den beteiligten Bedingungen), Befestigung und
+  Bewegungsraum (`bedingungen(part="…", alle=true)` für ein Teil). Jeden Fehler beheben, bevor du fertig meldest; die
+  Lösung steht im Befund. Beispiel mit Kevins Kugelschieber: `samples/kugelschieber-bedingungen/model.py`.
 
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
@@ -88,7 +128,8 @@ mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
 6. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für
-   Stückliste und Zuschnitt, dazu der Abschnitt „Prüfen vor dem Fertigmelden“. Kevin keine Screenshots schicken;
+   Stückliste und Zuschnitt, `bedingungen` für Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum, dazu der
+   Abschnitt „Prüfen vor dem Fertigmelden“. Kevin keine Screenshots schicken;
    Bilder nur zur eigenen Analyse (siehe „Bilder“).
 7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
@@ -166,6 +207,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
 | `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
+| `import kevcad.bedingungen as bed` | Bezüge, Bedingungen, Gelenke, Befestigung, `bed.platziere(teil, …)` (Abschnitt „Teile über Bedingungen setzen“). |
 
 - `color`: Hex wie `"#B8BEC4"`; Lager- und Druckteile haben schon die Farbe ihres Materials.
 - `material`: id oder Alias aus dem Katalog (`material_list`), z. B. `stahl-s235`, `edelstahl`, `alu`,
@@ -331,4 +373,10 @@ Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur die
 | … wartet auf Kevins Freigabe im Lagerkatalog | Vorschlag aus `stock_define`/`material_define`; Kevin gibt ihn im Lagerkatalog frei |
 | Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
-| Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |
+| Export verweigert | erst die Verstöße gegen die Inventar-Regel bzw. die Fehler der Bedingungen beheben |
+| Bedingungen: … verletzt (Soll …, Ist …) | Teil nicht von Hand verschieben, sondern mit `bed.platziere` aus den Bedingungen setzen; Lösung im Befund |
+| Widerspruch beim Platzieren | die genannten Bedingungen passen nicht zusammen; eine weglassen oder Werte angleichen |
+| … ist unterbestimmt (Hinweis) | freie Freiheitsgrade: weitere Bedingung (konzentrisch, mittig, parallel, abstand) |
+| … nicht befestigt / Nicht am Boden | `bed.verbinde(teil, gegenstück, art=…)` angeben und die Befestigung konstruieren |
+| Bewegungsraum: stößt bei … an … | Platz schaffen oder umkonstruieren; den Bereich nur verkleinern, wenn die Bedienung das erlaubt |
+| … nicht geprüft: Teil … nicht gefunden | Bezug nach der letzten Änderung nehmen oder das Teil über seinen Namen angeben |

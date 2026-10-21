@@ -47,6 +47,8 @@ class RunResult(TypedDict, total=False):
     bom: dict[str, Any]  # {"totals", "warnings", "cuts"}
     inventar_regel: bool
     inventar_verstoesse: list[str]  # gezeigte Teile ohne verbauen()/druckteil()
+    # Zwangsbedingungen (additiv): Kurzfassung des Berichts, vollständig über constraints()
+    bedingungen: dict[str, Any]  # {"summe", "befunde", "befunde_gesamt", "pruef_ms", "loese_ms", ...}
 
 
 class MeasureResult(TypedDict, total=False):
@@ -143,6 +145,11 @@ class KernelService(Protocol):
 
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
+
+    # Zwangsbedingungen (PLAN-BEDINGUNGEN.md, additiv)
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        """Bericht des letzten erfolgreichen Laufs wie die Nachricht CONSTRAINTS: {"ok", "run", "items", "teile",
+        "befunde", "bewegungen", "summe", "pruef_ms", "loese_ms"}; mit ``part`` zusätzlich "teil"."""
 
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...

@@ -261,6 +261,16 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
     if "inventar_regel" in res:
         data["inventar_regel"] = bool(res["inventar_regel"])
         data["inventar_verstoesse"] = violations
+    constraint_failed = False
+    if isinstance(res.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
+        from kevcad_kernel.bedingungen.bericht import run_zeilen
+
+        data["bedingungen"] = res["bedingungen"]
+        extra, constraint_failed = run_zeilen(res["bedingungen"])
+        if constraint_failed:
+            lines[1:1] = extra  # gleich unter die Kopfzeile: der Agent soll es zuerst sehen
+        else:
+            lines.extend(extra)
     if violations:
         from kevcad_kernel.bom import inventory_text
 
@@ -268,7 +278,9 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.insert(1, "Die Geometrie ist im Viewer zu sehen; Export und Stückliste gelten erst, wenn alles aus dem "
                         "Inventar kommt.")
         return "\n".join(lines), data, True
-    return "\n".join(lines), data, False
+    if constraint_failed:
+        lines.append("Befunde der Bedingungen beheben (Lösung steht dabei); der Export bleibt bis dahin gesperrt.")
+    return "\n".join(lines), data, constraint_failed
 
 
 def measure_line(m: dict[str, Any]) -> str:

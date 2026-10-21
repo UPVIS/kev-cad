@@ -224,7 +224,9 @@ class Bezug:
         return self.quelle is None and self.per_name is None
 
     def anzeigename(self) -> str:
-        owner = self.teilname or self.label or ("Welt" if self.welt else "Teil")
+        if self.welt:
+            return self.name or self.label or "Welt"
+        owner = self.teilname or self.label or "Teil"
         if self.art == "teil":
             return owner
         return f"{owner}.{self.name}" if self.name else owner
