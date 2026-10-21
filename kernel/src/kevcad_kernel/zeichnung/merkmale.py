@@ -266,6 +266,7 @@ def erkenne(form: Any, info: dict[str, Any] | None = None, *, name: str = "", sy
     stange = _stange(ctx)
     if stange is not None:
         liste.append(stange)
+        liste += _stirnseiten(ctx)
     bohrungen, langloecher = _bohrungen(ctx)
     liste += bohrungen
     liste += langloecher
@@ -348,6 +349,32 @@ def _stange(ctx: _Ctx) -> Merkmal | None:
         text += f", Gehrung {zahl(gehrung[0], 1)}° / {zahl(gehrung[1], 1)}°"
     return Merkmal("stange", "stange", {"typ": "linie", "mitte": g / 2, "richtung": np.array([1.0, 0.0, 0.0]),
                                         "radius": None, "laenge": laenge}, werte, text, flaechen)
+
+
+def _stirnseiten(ctx: _Ctx) -> list[Merkmal]:
+    """Stirnflächen an Ende A (x = 0) und Ende B (x = L): größte ebene Fläche je Ende, mit echter Normale (Gehrung)."""
+    g = ctx.sys.groesse
+    out = []
+    for ende, s in (("a", -1.0), ("b", 1.0)):
+        best = None
+        for f in ctx.top.flaechen:
+            if f.typ != "ebene" or f.n is None:
+                continue
+            n = ctx.ld(f.n)
+            if n[0] * s < 0.2:
+                continue
+            lo, hi = _lokal_box(ctx, f)
+            if (s < 0 and lo[0] > 0.5 * g[0]) or (s > 0 and hi[0] < 0.5 * g[0]):
+                continue
+            if best is None or f.flaeche > best[0].flaeche:
+                best = (f, n)
+        if best is None:
+            continue
+        f, n = best
+        w = math.degrees(math.acos(min(1.0, abs(float(n[0])))))
+        sig = {"typ": "ebene", "mitte": ctx.lp(f.punkt), "richtung": n, "radius": None, "laenge": None}
+        out.append(Merkmal(f"ende:{ende}", "stirnseite", sig, {"gehrung": w, "ende": ende}, "", [f.index]))
+    return out
 
 
 def _lage_ab_ende(stange: Merkmal, merkmale: list[Merkmal]) -> None:
@@ -611,10 +638,10 @@ def _bohrung_text(art: str, w: dict[str, Any], anzahl: int = 1) -> str:
         t += f" × {zahl(w['tiefe'], 1)} tief"
     if w.get("gegenbohrung"):
         g = w["gegenbohrung"]
-        t += f", Zylindersenkung Ø{zahl(g['d'])} × {zahl(g['tiefe'], 1)} tief"
+        t += f", Senkung Ø{zahl(g['d'])} × {zahl(g['tiefe'], 1)} tief"
     if w.get("senkung"):
         s = w["senkung"]
-        t += f", Kegelsenkung {zahl(s['winkel'], 0)}° Ø{zahl(s['d'])}"
+        t += f", Senkung {zahl(s['winkel'], 0)}° Ø{zahl(s['d'])}"
     if art == "einsatztasche" and w.get("einsatz"):
         t += f" (Einsatz {w['einsatz']})"
     return t
