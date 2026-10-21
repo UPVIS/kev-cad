@@ -188,7 +188,14 @@ Zeitpunkt des Diktats fest.
 Liegen in `mirror-fixtures/` im Kev-CAD-Repo, je Datei ein Rahmen, erzeugt aus einem echten Lauf:
 `hello_kc.bin`, `agents.bin`, `scene.bin`, `part_upsert.bin`, `mesh_block_1.bin` und `mesh_block_last.bin` (ein Teil
 über zwei Blöcke), `state.bin`, `state_delta_auswahl.bin`, `state_delta_sichtbarkeit.bin`, `camera.bin`,
-`cmd_kamera.bin`, `cmd_auswahl.bin`, `cmd_res.bin`.
+`cmd_kamera.bin`, `cmd_auswahl.bin`, `cmd_res.bin`; dazu `hello_vb.bin`, `watch.bin`, `unwatch.bin`,
+`part_remove.bin`, `mesh_req.bin`, `state_delta_alle_zeigen.bin` (isoliert ausdrücklich null), `cmd_sichtbarkeit.bin`,
+`cmd_res_fehler.bin` und `fixtures.json` mit den erwarteten Werten. Erzeugt byte-gleich von
+`kernel/tools/make_mirror_fixtures.py`; Szene, Zustand und Befehle aus `gestell.kcadrec`, das Netz über zwei Blöcke aus
+`samples/drehknopf` (6.680 Dreiecke, gepackt 86 KB).
+
+Weil `STATE_DELTA` Vorrang vor `PART` hat, kann das Delta zum Laufende vor dem letzten `PART` ankommen. Das ist
+vertragsgemäß; Empfänger dürfen sich nicht auf die Reihenfolge zwischen den Vorrangklassen verlassen.
 
 Aufgezeichnete Kernel-Läufe in den Rahmen des Kernel-Protokolls liegen in `samples/mirror-recordings/` (siehe dortige
 README).
