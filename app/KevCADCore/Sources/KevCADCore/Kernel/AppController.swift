@@ -473,6 +473,8 @@ public final class AppController: AppActions {
             applyCatalog(c)
         case .zukaufStatus(let z):
             applyZukaufStatus(z)
+        case .check(let c):
+            applyCheck(c)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -521,6 +523,7 @@ public final class AppController: AppActions {
             model.bom = nil
             model.inventarVerstoesse = []
             resetZukauf()
+            model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)
@@ -560,7 +563,9 @@ public final class AppController: AppActions {
                 zukauf: r.header.zukauf)
         }
         model.triangleCount = scene.triangleCount
-        scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)))
+        // rot: Inventar-Regel verletzt oder Befund der Prüfung (Durchdringung …)
+        let pruefRot = (model.pruefung?.betroffeneTeile ?? []).filter { scene.record($0) != nil }
+        scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)).union(pruefRot))
         scene.setSimplifiedParts(Set(model.parts.filter { $0.zukauf?.isSimplified == true }.map(\.id)))
     }
 

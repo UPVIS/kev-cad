@@ -13,7 +13,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | 5 | Kamerasimulation (Sensor, Objektiv, Blick durch die Kamera, Kamerabild) und Animation (Bewegen, Rollen, Gelenke, Kollision, Video) | [PLAN-PHASE5-KAMERA-ANIMATION.md](PLAN-PHASE5-KAMERA-ANIMATION.md) | beide Stränge fertig, werden auf Zweig `phase5` zusammengeführt und getestet; danach eigene Installationswelle |
 | – | 3D-Druck-Konstruktionsregeln und Druckprüfung | – | in Arbeit (eigener Strang) |
 | – | Zwangsbedingungen wie in CAD-Programmen: auf, konzentrisch, bündig, Abstand, Winkel, Gelenke mit Freiheitsgraden, Maß- und Parameterbedingungen, Löser und Prüfung | [PLAN-BEDINGUNGEN.md](PLAN-BEDINGUNGEN.md) | in Arbeit (eigener Strang) |
-| – | Prüfung jeder Konstruktion: Durchdringung, Schweben, Standsicherheit, Einbaubarkeit (Montagereihenfolge, Werkzeugzugang), Mehrfachansichten zur Bildanalyse | – | in Arbeit (eigener Strang auf Basis von `phase2`) |
+| – | Prüfung jeder Konstruktion: Durchdringung, Schweben, Standsicherheit, Einbaubarkeit (Montagereihenfolge, Werkzeugzugang), Mehrfachansichten zur Bildanalyse | – | Stufe 1 (Durchdringung bei jedem Lauf, rote Teile, Exportsperre) installiert in Build 73; Stufe 2 in Arbeit |
 | – | Vermessung mit wenigen Bildern, Video-Rekonstruktion (Vorarbeit Phase 4) | PLAN-PHASE4-REFERENZ.md | beide fertig und auf `main`, noch nicht in der App: Video-Rekonstruktion `tools/capture` (gut 1 min, Maße 1–3 %), Vermessung mit wenigen Bildern `fotomess/` (1–3 Bilder unter 5 s, 22 Fotos in 22 s, rund 40- bis 70-mal schneller als fotocad) |
 | 6 | Datenblätter und Zeichnungen als PDF, Drucken | PLAN-MVP.md Abschnitt 15 | offen |
 | 7 | Renderings | PLAN-MVP.md Abschnitt 15 | offen |

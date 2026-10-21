@@ -431,6 +431,9 @@ class Runner:
         self.params: dict[str, Any] = {}
         self.catalog: Catalog | None = None
         self.inventar = True  # Inventar-Regel des letzten Laufs (gilt auch für execute)
+        self._erfassung = None  # Prüfung: Angaben je Teil und Erklärungen aus model.py (nur während eines Laufs)
+        self._zu_pruefen: tuple[int, Any, list[str]] | None = None  # (Lauf, Erfassung, gezeigte Teile)
+        self._pruef_lauf = None  # pruefung.lauf.PruefLauf mit Zwischenspeicher über Läufe hinweg
 
     def _catalog(self, msg: dict[str, Any], project: str | None) -> Catalog:
         """Katalog mit den Ordnern aus der Laufzeit (Nachricht ``catalog``) und dem Projekt des Laufs."""
@@ -518,6 +521,8 @@ class Runner:
             hooks["catalog"] = lambda: catalog
         if register is not None:
             hooks["lager"] = lager
+        if self._erfassung is not None and not sketch:
+            hooks["pruefung"] = self._erfassung.melde
         kevcad._hooks.update(hooks)
 
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
@@ -601,6 +606,8 @@ class Runner:
                 preis_stand=entry.get("preis_stand") if entry else None,
                 volume=float(props.get("volume") or 0.0), mass_g=props.get("mass"),
                 size=[round(float(b) - float(a), 3) for a, b in zip(lo, hi)], pieces=[p.seq for p in pieces])
+        if self._erfassung is not None and not sketch:
+            self._erfassung.teil(name, shape, mat, pieces, catalog, tess=tess, props=props)
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
@@ -644,6 +651,9 @@ class Runner:
         # Tracebacks sollen den ausgeführten Code zeigen, nicht einen inzwischen geänderten Dateistand
         linecache.cache[path] = (len(source), None, source.splitlines(True), path)
         error = None
+        from kevcad_kernel.pruefung.erfassung import Erfassung
+
+        erfassung = self._erfassung = Erfassung()
         try:
             _purge_user_modules()
             with contextlib.suppress(OSError):
@@ -665,6 +675,7 @@ class Runner:
                 state["warnings"].append(f"{w.category.__name__}: {w.message}")
         finally:
             self._uninstall()
+            self._erfassung = None
             sys.path[:] = old_path
             with contextlib.suppress(OSError):
                 os.chdir(old_cwd)
@@ -694,7 +705,25 @@ class Runner:
                 result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
                 result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
+            self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
         return result
+
+    # -- Prüfung -------------------------------------------------------------------------------------------------------
+
+    def pruefe(self, run: int, abbrechen: Callable[[], None] | None = None) -> tuple[dict[str, Any], bytes]:
+        """Prüft den Stand des Laufs ``run`` (Durchdringungen …), siehe kevcad_kernel/pruefung/lauf.py. Liefert Kopf
+        und Nutzlast der Nachricht CHECK."""
+        from kevcad_kernel.pruefung.lauf import PruefLauf
+        from kevcad_kernel.protocol import pack_check
+
+        daten = self._zu_pruefen
+        if daten is None or daten[0] != run:
+            header, payload = pack_check(run=run, state="failed", message="Kein erfolgreicher Lauf zum Prüfen")
+            header.pop("seq", None)
+            return header, payload
+        if self._pruef_lauf is None:
+            self._pruef_lauf = PruefLauf()
+        return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen)
 
     # -- execute -------------------------------------------------------------------------------------------------------
 

@@ -14,6 +14,9 @@ final class ProjectWindowState: ObservableObject {
     @Published var dismissedErrorRun: Int?
     /// Band „Nicht aus dem Inventar“ für diese Verstöße weggeklickt.
     @Published var dismissedInventory: String?
+    /// Band der Prüfung (Durchdringungen …) für diese Befunde weggeklickt; Liste der Befunde aufgeklappt.
+    @Published var dismissedPruefung: String?
+    @Published var pruefListeOffen = false
 
     // Schnitt: AppModel kennt nur `sectionEnabled`, Achse und Lage hält die Oberfläche.
     @Published var sectionAxis = "z"

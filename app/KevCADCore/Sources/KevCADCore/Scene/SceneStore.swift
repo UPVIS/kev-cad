@@ -48,6 +48,8 @@ public final class SceneStore {
     public private(set) var dimBelowRun: Int?
     /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
     public private(set) var inventoryWarnings: Set<String> = []
+    /// Prüfung: rote, durchscheinende Schnittkörper (immer obenauf, nicht anklickbar), siehe AppController+Pruefung.
+    public private(set) var ghostBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -138,6 +140,7 @@ public final class SceneStore {
         highlights = []
         inventoryWarnings = []
         simplifiedParts = []
+        ghostBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -261,6 +264,14 @@ public final class SceneStore {
         let touched = names.symmetricDifference(simplifiedParts)
         simplifiedParts = names
         for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    // MARK: Prüfung
+
+    /// Schnittkörper der Prüfung ersetzen (leer = keine).
+    public func setGhostBodies(_ bodies: [ViewportBody]) {
+        ghostBodies = bodies
         publish()
     }
 
@@ -624,6 +635,7 @@ public final class SceneStore {
             // Durchsichtige Körper zeichnet der Viewport ohne Kanten: Ersatzkörper bekommen ihre Kanten extra
             for n in order where simplifiedParts.contains(n) { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
         }
+        renderBodies.append(contentsOf: ghostBodies)
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -720,6 +732,11 @@ public final class SceneStore {
                             color: xray ? Self.srgb(Self.xrayEdgeColor(colorLinear)) : SIMD4(0.15, 0.15, 0.15, 1)))
                 }
             }
+        }
+        for g in ghostBodies where g.isVisible {  // der Offscreen-Renderer erwartet sRGB-Farben
+            var b = g
+            b.color = Self.srgb(g.color)
+            out.append(b)
         }
         if let helper = depthHelper() { out.append(helper) }
         return out

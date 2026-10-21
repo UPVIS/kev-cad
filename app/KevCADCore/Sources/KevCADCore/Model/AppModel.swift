@@ -183,6 +183,9 @@ public final class AppModel: ObservableObject {
     @Published public var downloadOffer: DownloadOffer?
     @Published public var zukaufActivity: ZukaufActivity = .idle
     @Published public var watchedDownloads: URL?
+    /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
+    @Published public var pruefung: PruefErgebnis?
+    @Published public var schnittkoerperSichtbar = true
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

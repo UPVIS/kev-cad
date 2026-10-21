@@ -97,6 +97,10 @@ def run_motion(shapes: dict, spec: dict, threshold: float) -> dict:
                     hits.setdefault((mn, sn), []).append((value, vol))
     befunde = []
     step_size = (bis - von) / steps
+    # Ruhelage = gezeichnete Lage (Wert 0), sofern sie im Bereich liegt; sonst der Startwert
+    rest = 0.0 if min(von, bis) <= 0.0 <= max(von, bis) else von
+    if all(abs(von + (bis - von) * k / steps - rest) > 1e-9 for k in range(steps + 1)):
+        rest = von
     for (mn, sn), values in sorted(hits.items()):
         ranges: list[list[float]] = []
         for value, _ in values:
@@ -107,7 +111,7 @@ def run_motion(shapes: dict, spec: dict, threshold: float) -> dict:
         worst = max(values, key=lambda v: v[1])
         befunde.append({"bewegt": mn, "gegen": sn, "bereiche": [[round(a, 2), round(b, 2)] for a, b in ranges],
                         "max_volumen_mm3": round(worst[1], 3), "bei": round(worst[0], 2),
-                        "schon_in_ruhe": values[0][0] == von})
+                        "schon_in_ruhe": any(abs(v - rest) < 1e-9 for v, _ in values)})
     blocked = sorted((a, b) for c in befunde for a, b in c["bereiche"])
     frei: list[list[float]] = []
     cursor = von

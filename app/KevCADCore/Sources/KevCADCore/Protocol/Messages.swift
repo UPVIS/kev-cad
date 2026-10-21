@@ -514,6 +514,8 @@ public enum KernelMessage: Sendable {
     case catalog(CatalogMessage)
     /// Phase 3: Zustand eines Zukaufteils (angelegt, wartet auf CAD, importiert, Fehler).
     case zukaufStatus(ZukaufStatusMessage)
+    /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
+    case check(CheckMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -538,6 +540,7 @@ public enum KernelMessage: Sendable {
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
         case .zukaufStatus: return "ZUKAUF_STATUS"
+        case .check: return "CHECK"
         case .unknown(let t, _): return t
         }
     }
@@ -584,6 +587,7 @@ public enum KernelMessage: Sendable {
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
         case "ZUKAUF_STATUS": return .zukaufStatus(try ZukaufStatusMessage.decode(h))
+        case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

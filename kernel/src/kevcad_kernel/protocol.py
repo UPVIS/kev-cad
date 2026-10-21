@@ -136,6 +136,59 @@ def pack_part(
     return header, payload
 
 
+def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
+               geometrie: list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None = None, message: str | None = None,
+               seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """Baut Kopf und Nutzlast von CHECK (Prüfergebnis, PROTOCOL.md Abschnitt „Prüfung“). ``geometrie``: je
+    Schnittkörper (Punkte (n, 3), Normalen (n, 3), Dreiecke (m, 3)); die Nutzlast reiht sie hintereinander."""
+    erg = dict(ergebnis or {})
+    teile: list[bytes] = []
+    geo_kopf = []
+    for i, (pos, nrm, tri) in enumerate(geometrie or []):
+        p = np.ascontiguousarray(pos, dtype="<f4").reshape(-1, 3)
+        n = np.ascontiguousarray(nrm, dtype="<f4").reshape(-1, 3)
+        t = np.ascontiguousarray(tri, dtype="<u4").reshape(-1, 3)
+        if len(n) != len(p):
+            raise ValueError(f"Schnittkörper {i}: {len(p)} Punkte, aber {len(n)} Normalen")
+        befund_id = next((b.get("id") for b in erg.get("befunde") or [] if b.get("geometrie") == i), None)
+        geo_kopf.append({"befund": befund_id, "vert": int(len(p)), "tri": int(len(t))})
+        teile += [p.tobytes(), n.tobytes(), t.tobytes()]
+    header: dict[str, Any] = {
+        "type": "CHECK",
+        "seq": seq,
+        "run": run,
+        "state": state,
+        "duration_ms": erg.get("dauer_ms"),
+        "message": message,
+        "zusammenfassung": erg.get("zusammenfassung") or "",
+        "zaehler": erg.get("zaehler") or {"fehler": 0, "warnung": 0, "hinweis": 0},
+        "befunde": list(erg.get("befunde") or []),
+        "geometrie": geo_kopf,
+    }
+    for key in ("montage", "stand", "gewinde", "erlaubt"):
+        if key in erg:
+            header[key] = erg[key]
+    return header, b"".join(teile)
+
+
+def unpack_check(header: dict[str, Any], payload: bytes) -> list[dict[str, np.ndarray]]:
+    """Gegenstück zu pack_check: die Schnittkörper aus der Nutzlast."""
+    out = []
+    offset = 0
+    for g in header.get("geometrie") or []:
+        nv, nt = int(g["vert"]), int(g["tri"])
+        pos = np.frombuffer(payload, dtype="<f4", count=nv * 3, offset=offset).reshape(-1, 3)
+        offset += nv * 12
+        nrm = np.frombuffer(payload, dtype="<f4", count=nv * 3, offset=offset).reshape(-1, 3)
+        offset += nv * 12
+        tri = np.frombuffer(payload, dtype="<u4", count=nt * 3, offset=offset).reshape(-1, 3)
+        offset += nt * 12
+        out.append({"positions": pos, "normals": nrm, "triangles": tri})
+    if offset != len(payload):
+        raise ValueError(f"Nutzlast von CHECK hat {len(payload)} Byte, erwartet {offset}")
+    return out
+
+
 def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]:
     """Gegenstück zu pack_part (für Tests und Werkzeuge)."""
     counts = header["counts"]
