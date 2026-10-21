@@ -54,6 +54,8 @@ public final class AppController: AppActions {
     var navCancellables = Set<AnyCancellable>()
     /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
     var pendingRestore: SavedSession?
+    /// Phase 5: Animation (Spieler, Video), siehe AppController+Animation.swift.
+    lazy var animationRuntime = AnimationRuntime(player: makeAnimationPlayer())
 
     // Phase 2: Katalog und Stückliste
     /// Suche der letzten Katalog-Anfrage (nach Speichern und Löschen wird damit neu geladen).
@@ -378,6 +380,7 @@ public final class AppController: AppActions {
             // Der Kernel schickt nach HELLO den vollen Stand (PROJECT, alle Teile). Die Kamera bleibt, wenn schon
             // Teile da waren (Wiederverbinden, Neustart des Kernels).
             let hadParts = !scene.isEmpty
+            animationPlayer.removeAll()  // der Kernel schickt seine Animationen nach dem Anfangsstand neu
             scene.removeAll()
             fitOnFirstPart = !hadParts
             clearSelectionState()
@@ -469,6 +472,8 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .animation(let a):
+            handleAnimation(a)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

@@ -511,7 +511,19 @@ class Runner:
         def warn(text: str) -> None:
             state["warnings"].append(str(text))
 
+        def animation(anim: Any) -> None:  # Phase 5: Animationen sammeln, ausgewertet wird nach dem Lauf
+            anims = state.setdefault("animations", [])
+            names = {a.name for a in anims}
+            if anim.name is None:
+                anim.name = "Animation" if "Animation" not in names else next(
+                    f"Animation {i}" for i in range(2, 1000) if f"Animation {i}" not in names)
+            elif anim.name in names:
+                raise ValueError(f"Animation {anim.name!r} gibt es schon; jede Animation braucht einen eigenen Namen")
+            anims.append(anim)
+
         hooks: dict[str, Any] = {"show": show, "step": step, "param": param, "warn": warn}
+        if not sketch:
+            hooks["animation"] = animation
         if catalog is not None:
             hooks["catalog"] = lambda: catalog
         if register is not None:
@@ -591,6 +603,9 @@ class Runner:
                 preis_stand=entry.get("preis_stand") if entry else None,
                 volume=float(props.get("volume") or 0.0), mass_g=props.get("mass"),
                 size=[round(float(b) - float(a), 3) for a, b in zip(lo, hi)], pieces=[p.seq for p in pieces])
+        if not sketch:
+            state.setdefault("bboxes", {})[name] = (list(tess.bbox.get("min", [0, 0, 0])),
+                                                    list(tess.bbox.get("max", [0, 0, 0])))
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
@@ -658,6 +673,9 @@ class Runner:
             sys.path[:] = old_path
             with contextlib.suppress(OSError):
                 os.chdir(old_cwd)
+        anim_names: list[str] = []
+        if error is None and state.get("animations"):
+            error, anim_names = self._animations(run, state, path, source)
         self.ns = ns
         self.ns_project = project
         self.params = dict(state["params"])
@@ -672,6 +690,8 @@ class Runner:
             "tess_ms": round(state["tess_ms"], 1),
             "cached": state["cached"],
         }
+        if anim_names:
+            result["animations"] = anim_names
         if error is not None:
             result["type"] = "RUN_FAILED"
             result["error"] = error
@@ -685,6 +705,32 @@ class Runner:
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
                 result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
         return result
+
+    def _animations(self, run: int, state: dict[str, Any], path: str,
+                    source: str) -> tuple[dict[str, Any] | None, list[str]]:
+        """Phase 5: Animationen gegen die gezeigten Teile auswerten und als ``ANIM`` schicken. Ein Fehler (unbekanntes
+        Teil, Kreis bei folge …) bricht den Lauf mit der Zeile der Spur ab."""
+        from kevcad.bewegung import AnimationError
+        from kevcad_kernel.animation import evaluate_all, worker_message
+
+        try:
+            results = evaluate_all(state["animations"], state["shown"], state.get("bboxes", {}))
+        except AnimationError as exc:
+            line = exc.line if exc.filename in (None, path) else None
+            where = f"model.py, Zeile {line}" if line else (f"{Path(exc.filename).name}, Zeile {exc.line}"
+                                                           if exc.filename and exc.line else "model.py")
+            return {"message": f"AnimationError: {exc}", "line": line, "excerpt": excerpt(source, line),
+                    "traceback": f"{where}\nAnimationError: {exc}",
+                    "hint": "Teilnamen wie in show() angeben (Baugruppe = Präfix vor \"/\"); Zeiten zwischen 0 und "
+                            "dauer."}, []
+        except Exception as exc:  # noqa: BLE001 - Auswertung darf den Lauf nicht abstürzen lassen
+            return {"message": f"Animation nicht ausgewertet: {type(exc).__name__}: {exc}", "line": None,
+                    "excerpt": "", "traceback": traceback.format_exc(limit=6), "hint": ""}, []
+        for a in results:
+            state["warnings"].extend(a.warnungen)
+            head, payload = worker_message(a, run)
+            self.emit(head, payload)
+        return None, [a.name for a in results]
 
     # -- execute -------------------------------------------------------------------------------------------------------
 

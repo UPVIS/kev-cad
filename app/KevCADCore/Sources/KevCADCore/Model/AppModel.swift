@@ -173,6 +173,9 @@ public final class AppModel: ObservableObject {
     /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
     @Published public var selectionMode: SelectionMode = .parts
     @Published public var orthographic = false
+    /// Phase 5 (additiv): Animation (Zeitleiste) als eigenes Objekt, damit das Abspielen nicht das ganze Fenster neu
+    /// zeichnet; Aktionen über `actions as? AnimationActions`.
+    public let animation = AnimationModel()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

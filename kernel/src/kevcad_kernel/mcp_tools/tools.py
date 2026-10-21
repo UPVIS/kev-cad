@@ -752,4 +752,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    # Phase 5: Animation (eigene Datei, damit parallele Stränge nicht in dieselben Zeilen schreiben)
+    from .animation_tools import register_animation_tools
+
+    register_animation_tools(tool, t, svc)
+
     return t

@@ -66,6 +66,20 @@ part.faces()/edges()/vertices(). They are valid for one run only: after every ru
 parts, selection or execute.
 - `selection` returns what Kevin clicked in the viewer. Use it when he says "this", "here", "that hole".
 
+Animation
+- Motion lives in model.py too, after all show() calls: `from kevcad import animation`; \
+`fahrt = animation(dauer=8, fps=30, name="Fahrt")`. Targets are part names or assembly prefixes ("Rollwagen" moves all \
+"Rollwagen/..."). Example (cart rolls 2 m, wheels turn, ball rolls ahead of the pusher): \
+`fahrt.bewege("Rollwagen", nach=(2000, 0, 0), von=1, bis=7, kurve="weich")`, for each wheel \
+`fahrt.rolle("Rollwagen/Lenkrolle 1/Rad", auf="Rollwagen", radius=50, achse="y")`, \
+`fahrt.folge("Kugelschieber", "Rollwagen")`, `fahrt.rolle("Bowlingball", auf="Rollwagen", radius=108.5)`.
+- Tracks: bewege, drehe(achse, winkel), pfad(punkte, ausrichten, spline), rolle (angle = distance / radius), folge, \
+gelenk(art "dreh"/"schub", werte {t: value}, grenzen), sichtbar, ansicht (viewer camera keyframes, mit= follows a part), \
+erlaube(a, b) for wanted contact. Axes are given in the rest pose; seconds, mm, degrees.
+- `run` lists the animations; `animation_abspielen`, `animation_springen(zeit)`, `animation_liste`. \
+`kollision_pruefen(name)` checks every 3rd frame exactly; every penetration must be solved (touching is fine). \
+`animation_video(name, breite=1920)` writes an MP4 to <project>/output/animationen/.
+
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \
 (world mm), `visibility` isolates or hides parts, `section` cuts, `view` switches standard views and display style. \
