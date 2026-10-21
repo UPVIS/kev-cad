@@ -70,7 +70,8 @@ verworfen und protokolliert, nicht beantwortet.
   alles Bisherige als überholt (Zustand, `rev`, offene Befehle); der volle Stand kommt neu. Netze nach Hash bleiben
   gültig.
 - **Sitzungen:** `agents` ist eine Liste
-  `{"session_id": "…", "aktiv": true, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "baut Rollwagen"}`. Kev CAD ist
+  `{"session_id": "…", "aktiv": true, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "baut Rollwagen"}`, optional
+  `zuletzt` (ISO-Zeitpunkt des letzten verändernden Aufrufs). Kev CAD ist
   **eine** Szene; mehrere Claude-Sitzungen können sie bedienen. `aktiv` hat genau die Sitzung mit dem letzten
   verändernden Werkzeugaufruf (run, view, focus …) der letzten 10 Minuten, alle anderen stehen mit `aktiv: false` in
   der Liste. VoiceBridge zeigt die CAD-Ansicht im Chat jeder gelisteten Sitzung, die aktive zuerst. `session_id` ist
@@ -105,6 +106,10 @@ positions (f32, vert × 3), normals (f32, vert × 3), triangles (u32, tri × 3),
 Blöcke zu höchstens 64 KB geteilt. Der Empfänger hängt die Blöcke in der Reihenfolge von `block` aneinander und
 entpackt sie in einem Zug in einen Puffer der Größe `roh_bytes`.
 
+**Wiederholen:** Bleibt ein `MESH_REQ` etwa 10 s unbeantwortet, darf der Empfänger es wiederholen. Kev CAD bedient
+doppelte Anfragen still (schickt die Blöcke erneut, ohne Fehler); der Empfänger verwirft Blöcke eines Netzes, das er
+schon vollständig hat.
+
 **Hash:** SHA-256 über die ungepackten Arrays genau in der Reihenfolge von `kcad-mesh-1`, die ersten 16 Hex-Zeichen.
 Der Empfänger prüft ihn nach dem Entpacken und verwirft das Netz bei Abweichung. Das iPhone behält Netze nach Hash und
 fragt mit `MESH_REQ` nur fehlende an.
@@ -129,11 +134,11 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 
 | Feld | Inhalt |
 |---|---|
-| `kamera` | `rotation` (Quaternion x, y, z, w; Kamera → Welt, Blick −Z der Kamera), `pivot` [x,y,z], `distance`, `fov` (Grad), `ortho` (bool), `ortho_scale` |
+| `kamera` | `rotation` (Quaternion x, y, z, w; Kamera → Welt, Blick −Z der Kamera), `pivot` [x,y,z], `distance`, `fov` (Grad), `ortho` (bool), `ortho_scale`, optional `aspect` (Breite / Höhe der Ansicht am Mac; damit zeigt das iPhone beim Mitfolgen auch im Hochformat genau denselben Ausschnitt) |
 | `auswahl` | `{"run": 3, "refs": […]}` mit Referenzen wie im Kernel-Protokoll (`Teil`, `Teil#f12`) |
 | `verborgen` | Liste Teilnamen |
 | `isoliert` | Liste Teilnamen oder null |
-| `hervorgehoben` | Liste `{refs, color, label}` |
+| `hervorgehoben` | Liste `{refs, color, label}`, `color` RGBA 0…1 in **sRGB** wie bei den Teilen |
 | `darstellung` | `shaded_edges` \| `shaded` \| `wireframe` \| `xray` |
 | `schnitt` | null oder `{axis` bzw. `normal`, `offset}` |
 | `masse` | Liste `{id, kind, points, text}`, `points` in Weltkoordinaten (mm) |
@@ -160,6 +165,7 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 | `fokus` | `refs` | Zoom auf die Teile |
 | `ansicht` | `standard`, `projection` | Standardansicht |
 | `darstellung` | `display` | Darstellungsart |
+| `einpassen` | optional `refs` (ohne: alles) | Kev CAD passt die Kamera selbst ein, mit eigenen Rändern und eigener Projektion (wie Pos1 bzw. „.“ am Mac) |
 
 Alle Befehle außer `kamera` bekommen ein `CMD_RES`. Die Wirkung kommt als `STATE_DELTA` bzw. `CAMERA` mit
 `quelle: "iphone"` an alle zurück. Im Modus „Frei“ schickt das iPhone keine Kamera, alles andere schon.
@@ -187,7 +193,14 @@ Zeitpunkt des Diktats fest.
 Liegen in `mirror-fixtures/` im Kev-CAD-Repo, je Datei ein Rahmen, erzeugt aus einem echten Lauf:
 `hello_kc.bin`, `agents.bin`, `scene.bin`, `part_upsert.bin`, `mesh_block_1.bin` und `mesh_block_last.bin` (ein Teil
 über zwei Blöcke), `state.bin`, `state_delta_auswahl.bin`, `state_delta_sichtbarkeit.bin`, `camera.bin`,
-`cmd_kamera.bin`, `cmd_auswahl.bin`, `cmd_res.bin`.
+`cmd_kamera.bin`, `cmd_auswahl.bin`, `cmd_res.bin`; dazu `hello_vb.bin`, `watch.bin`, `unwatch.bin`,
+`part_remove.bin`, `mesh_req.bin`, `state_delta_alle_zeigen.bin` (isoliert ausdrücklich null), `cmd_sichtbarkeit.bin`,
+`cmd_res_fehler.bin` und `fixtures.json` mit den erwarteten Werten. Erzeugt byte-gleich von
+`kernel/tools/make_mirror_fixtures.py`; Szene, Zustand und Befehle aus `gestell.kcadrec`, das Netz über zwei Blöcke aus
+`samples/drehknopf` (6.680 Dreiecke, gepackt 86 KB).
+
+Weil `STATE_DELTA` Vorrang vor `PART` hat, kann das Delta zum Laufende vor dem letzten `PART` ankommen. Das ist
+vertragsgemäß; Empfänger dürfen sich nicht auf die Reihenfolge zwischen den Vorrangklassen verlassen.
 
 Aufgezeichnete Kernel-Läufe in den Rahmen des Kernel-Protokolls liegen in `samples/mirror-recordings/` (siehe dortige
 README).

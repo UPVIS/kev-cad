@@ -14,32 +14,57 @@ dort, nie nur per `execute`.
 Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
 nur melden:
 
-- **Keine Durchdringungen:** Zwei Teile dürfen sich berühren, aber nicht ineinander stecken. Dafür in model.py die
-  gezeigten Formen mitschreiben (`teile[name] = form` direkt vor jedem `show(form, name)`, `teile = {}` oben) und nach
-  dem Lauf mit `execute` prüfen:
+- **Keine Durchdringungen, auch nicht bei Schrauben, Muttern und Scheiben:** Zwei Teile dürfen sich berühren, aber nicht
+  ineinander stecken. Nach jedem Lauf prüfen, bis Kev CAD das selbst bei jedem Lauf tut (rechnet auf einer Kopie, die
+  laufende App bleibt unberührt; Exit-Code 1 bei Befunden):
 
-  ```python
-  from itertools import combinations
-  for (a, fa), (b, fb) in combinations(teile.items(), 2):
-      v = (fa & fb).volume if fa.bounding_box().overlaps(fb.bounding_box()) else 0
-      if v > 0.001:
-          print(f"Durchdringung {a} ↔ {b}: {v:.3f} mm³")
+  ```bash
+  cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>"
   ```
 
-  Gefundene Durchdringungen beheben: Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren. Gewollte
-  Überlappungen (Gewinde in einem Kernloch, Presspassung, nachgiebiger Schaum) nur nach Rückfrage und mit Begründung
-  im Code.
-- **Nichts schwebt:** Jedes Teil berührt ein anderes Teil oder steht auf dem Boden (z = 0). Mit `measure` den Abstand
-  zum Nachbarteil prüfen (0,000 mm = Kontakt).
+  Jede gemeldete Durchdringung beheben, bevor du fertig meldest: Spiel oder Bohrung vorsehen, Teil auf die
+  Anlagefläche des Gegenstücks setzen, Scheiben und Muttern um ihre Dicke stapeln, Maß korrigieren. Einzige Ausnahme
+  ohne Rückfrage ist echter Gewindeeingriff (Schraube in Mutter oder Gewindeloch, gleiche Achse). Andere gewollte
+  Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Begründung im Code.
+- **Nichts schwebt, alles ist befestigt:** Jedes Teil berührt sein Gegenstück oder steht auf dem Boden, und zu jedem
+  Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
+  Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
+  montieren. Nie Teile einfach in den Raum setzen. Prüfen: dasselbe Werkzeug mit `--kontakte` meldet Teile ohne
+  Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
-- **Bewegliches** (Klappen, Räder, Schieber) über den ganzen Weg ohne Kollision.
+- **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
+  muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
+  Teilen bekommt `bewegungen.json` (Teil, drehen oder schieben, Achse über `achse_von`/`punkt`/`richtung`, Bereich),
+  geprüft nach jedem Lauf mit
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
+  Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
+  umkonstruiert, nicht der Bereich verkleinert.
 - Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
   daran.
 
+## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
+
+Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück, nicht an frei gewählten Koordinaten:
+
+- **Lage aus dem Gegenstück ableiten:** Position aus der Bezugsfläche oder Achse des tragenden Teils berechnen (Oberkante,
+  Bohrungsmitte, Bezugspunkt aus dem Katalog), etwa `z_rahmen = rolle.bounding_box().max.Z`, nie dieselbe Zahl zweimal
+  von Hand.
+- **Maße als Beziehungen:** abgeleitete Maße aus Parametern rechnen (`innen = aussen - 2 * wand`), Parameter mit
+  sinnvollen Grenzen versehen und im Code prüfen (`assert wand >= 1.2`).
+- **Verbindungen benennen:** Was auf was sitzt, was konzentrisch ist und welches Spiel gilt, steht als Kommentar oder
+  Prüfzeile im Code, damit es nach Änderungen weiter stimmt.
+- **Gelenke** (Klappe, Rad, Schieber) mit Achse und Weg festlegen; die Prüfung gilt über den ganzen Weg.
+- Kev CAD bekommt dafür feste Bedingungen mit Löser und Prüfung (`PLAN-BEDINGUNGEN.md`); bis dahin gilt diese Regel von
+  Hand.
+
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
-Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
-mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md`):
+Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
+256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+Einhausung. Die Druckausrichtung beim Konstruieren
+mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
+(Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
+[3d-druck.md](3d-druck.md), vor jedem Druckteil lesen:
 
 - **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
 - **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
