@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Baut "Kev CAD.app" und legt sie in ~/Applications/Tools ab (Tools-Stapel im Dock).
 #
-#   ./build.sh              bauen und installieren
+#   ./build.sh              bauen und installieren: App nach ~/Applications/Tools, Kernel und Skill als eigene Kopie nach
+#                           ~/Library/Application Support/de.upvis.kevcad/install (die installierte App hängt damit
+#                           nicht am Arbeitsstand des Repos). Automatisch nach jedem neuen Stand auf main, siehe
+#                           tools/auto-update.sh und .githooks/
 #   ./build.sh --no-install nur bauen (build/Kev CAD.app)
 #   ./build.sh --test [zusatz]
 #                           Testvariante "Kev CAD Test" (mit Zusatz z. B. "Kev CAD Test ui") mit eigener Bundle-ID,
@@ -24,7 +27,14 @@ if [ "$MODE" = "--test" ]; then
   PORT=$((47824 + $(printf '%s' "$SUFFIX" | cksum | cut -d' ' -f1) % 100 * (${#SUFFIX} > 0)))
 fi
 INSTALL_DIR="$HOME/Applications/Tools"
+INSTALL_ROOT="$HOME/Library/Application Support/de.upvis.kevcad/install"
 BUILD="$REPO/build"
+INSTALLING=0
+[ -z "$MODE" ] && INSTALLING=1
+APP_REPO="$REPO"
+BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] && COMMIT="$COMMIT+"
 
 echo "==> Kernel-Umgebung"
 command -v uv >/dev/null || { echo "uv fehlt (https://docs.astral.sh/uv/)"; exit 1; }
@@ -59,6 +69,17 @@ if [ ! -f "$ICNS" ] || [ app/icon.svg -nt "$ICNS" ]; then
   rm -rf "$ICONSET"
 fi
 
+if [ "$INSTALLING" = 1 ]; then
+  echo "==> Kernel und Skill installieren nach $INSTALL_ROOT"
+  mkdir -p "$INSTALL_ROOT"
+  rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
+    kernel/ "$INSTALL_ROOT/kernel/"
+  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev)
+  rsync -a --delete skill/ "$INSTALL_ROOT/skill/"
+  printf '%s %s %s\n' "$COMMIT" "$BUILD_NUMBER" "$(date '+%Y-%m-%d %H:%M')" > "$INSTALL_ROOT/VERSION"
+  APP_REPO="$INSTALL_ROOT"
+fi
+
 echo "==> Xcode-Projekt erzeugen"
 command -v xcodegen >/dev/null || { echo "xcodegen fehlt (brew install xcodegen)"; exit 1; }
 xcodegen generate --spec app/project.yml --quiet
@@ -68,7 +89,8 @@ mkdir -p "$BUILD"
 LOG="$BUILD/xcodebuild.log"
 if ! xcodebuild -project app/KevCAD.xcodeproj -scheme KevCAD -configuration Release \
   -destination "platform=macOS,arch=arm64" -derivedDataPath "$BUILD/DerivedData" \
-  KEVCAD_APP_NAME="$APP_NAME" KEVCAD_BUNDLE_ID="$BUNDLE_ID" KEVCAD_REPO="$REPO" KEVCAD_PORT="$PORT" \
+  KEVCAD_APP_NAME="$APP_NAME" KEVCAD_BUNDLE_ID="$BUNDLE_ID" KEVCAD_REPO="$APP_REPO" KEVCAD_PORT="$PORT" \
+  KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" \
   build -quiet > "$LOG" 2>&1; then
   grep -E "error:|\*\* BUILD FAILED" "$LOG" | grep -v "^Failed frontend" | head -30
   echo "Build fehlgeschlagen, vollständiges Protokoll: $LOG"
@@ -81,6 +103,11 @@ rm -rf "$BUILD/$APP_NAME.app"
 cp -R "$SRC" "$BUILD/$APP_NAME.app"
 APP="$BUILD/$APP_NAME.app"
 codesign --force --deep --sign - --timestamp=none "$APP" >/dev/null 2>&1
+# Build-Kopien bei Launch Services abmelden, sonst startet `open -b de.upvis.kevcad` womöglich eine davon statt der
+# installierten App.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -u "$SRC" >/dev/null 2>&1 || true
+"$LSREGISTER" -u "$APP" >/dev/null 2>&1 || true
 
 if [ "$MODE" = "--no-install" ] || [ "$MODE" = "--test" ]; then
   echo "==> Fertig (nicht installiert): $APP (Bundle-ID $BUNDLE_ID, MCP-Port $PORT)"
@@ -93,8 +120,7 @@ rm -rf "$INSTALL_DIR/$APP_NAME.app"
 cp -R "$APP" "$INSTALL_DIR/"
 # Ohne das Zurücksetzen zeigt der Finder häufig noch das alte Symbol.
 touch "$INSTALL_DIR/$APP_NAME.app"
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f "$INSTALL_DIR/$APP_NAME.app" >/dev/null 2>&1 || true
+"$LSREGISTER" -f "$INSTALL_DIR/$APP_NAME.app" >/dev/null 2>&1 || true
 
-echo "==> Fertig: $INSTALL_DIR/$APP_NAME.app"
+echo "==> Fertig: $INSTALL_DIR/$APP_NAME.app (Build $BUILD_NUMBER, $COMMIT)"
 du -sh "$INSTALL_DIR/$APP_NAME.app"

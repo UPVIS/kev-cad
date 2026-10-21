@@ -13,6 +13,15 @@ struct KevCADApp: App {
     @StateObject private var session = AppSession()
 
     init() {
+        // Nur eine Instanz je Variante: läuft schon eine (Tools-Stapel, Start durch die Claude-Brücke), diese nach vorn
+        // holen und selbst gleich wieder beenden. Zwei Instanzen würden sich Socket und MCP-Port streitig machen.
+        let me = NSRunningApplication.current
+        if let other = NSRunningApplication.runningApplications(withBundleIdentifier: AppInfo.bundleID)
+            .first(where: { $0.processIdentifier != me.processIdentifier && !$0.isTerminated })
+        {
+            other.activate()
+            exit(0)
+        }
         // Fenster stellt die App selbst her (aus dem AppModel), nicht die macOS-Fensterwiederherstellung. Ohne diese
         // Vorgabe merkt sich macOS nach einem Start ohne Fenster „keine Fenster“ und öffnet beim nächsten Start nichts,
         // trotz restorationBehavior(.disabled).

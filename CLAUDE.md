@@ -28,6 +28,18 @@ cd kernel && uv sync       # Kernel-Umgebung
 cd kernel && .venv/bin/python tools/make_fixtures.py   # Protokoll-Testdateien neu erzeugen
 ```
 
+## Installation und automatische Updates
+
+- `main` ist der stabile Stand, den Kevin benutzt. Jeder neue Stand auf `main` (Commit, Merge, Pull) startet über
+  `.githooks/post-commit` bzw. `post-merge` im Hintergrund `tools/auto-update.sh`: Es baut aus einer sauberen
+  Arbeitskopie von main (`~/Library/Application Support/de.upvis.kevcad/build-src`) und installiert
+  `Kev CAD.app` nach `~/Applications/Tools` (Tools-Stapel im Dock), Kernel und Skill nach
+  `~/Library/Application Support/de.upvis.kevcad/install`. Protokoll: `~/Library/Logs/Kev CAD/update.log`.
+- Die installierte App, der MCP-Server `kevcad` und der Skill `kev-cad` nutzen nur diese installierte Kopie, nie den
+  Arbeitsstand des Repos. Entwicklung daher auf Zweigen bzw. in Arbeitskopien und erst fertig nach `main`.
+- Hooks sind aktiv über `git config core.hooksPath .githooks` (nach einem frischen Klon einmal setzen).
+- Eine Instanz je Variante: ein zweiter Start holt die laufende App nach vorn und beendet sich.
+
 ## Schnittstellen (Verträge)
 
 - `PROTOCOL.md` + `kernel/src/kevcad_kernel/protocol.py` + Testdateien in

@@ -17,6 +17,8 @@ settings:
     KEVCAD_BUNDLE_ID: de.upvis.kevcad
     KEVCAD_REPO: ""
     KEVCAD_PORT: "47823"
+    KEVCAD_BUILD: "1"
+    KEVCAD_COMMIT: ""
 targets:
   KevCAD:
     type: application
@@ -35,7 +37,8 @@ targets:
         CFBundleName: $(PRODUCT_NAME)
         CFBundleIconFile: AppIcon
         CFBundleShortVersionString: "0.1"
-        CFBundleVersion: "1"
+        CFBundleVersion: $(KEVCAD_BUILD)
+        KevCADCommit: $(KEVCAD_COMMIT)
         CFBundleDevelopmentRegion: de
         LSApplicationCategoryType: public.app-category.graphics-design
         LSMinimumSystemVersion: "15.0"

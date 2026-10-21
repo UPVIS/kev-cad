@@ -11,7 +11,8 @@ Umgebungsvariablen:
 |---|---|---|
 | ``KEVCAD_PORT`` | 47823 | Port des Kernel-Servers |
 | ``KEVCAD_BUNDLE_ID`` | de.upvis.kevcad | App, die bei Bedarf gestartet wird |
-| ``KEVCAD_LAUNCH_CMD`` | – | eigener Startbefehl (Shell) statt ``open -g -b``; für Tests |
+| ``KEVCAD_APP_PATH`` | ~/Applications/Tools/Kev CAD.app | App, die gestartet wird (nur bei der Standard-Bundle-ID; per Pfad, weil ``open -b`` sonst eine Build-Kopie erwischen kann) |
+| ``KEVCAD_LAUNCH_CMD`` | – | eigener Startbefehl (Shell) statt ``open -g``; für Tests |
 | ``KEVCAD_START_TIMEOUT`` | 45 | Sekunden, die auf den Kernel-Server gewartet wird |
 | ``KEVCAD_LIST_WAIT`` | 10 | so lange wartet ``tools/list`` auf die App, danach kommt die eingebaute Liste |
 | ``KEVCAD_LAUNCH_ON_START`` | 1 | 0 = App nicht schon beim Start der Brücke öffnen, erst beim ersten Werkzeugaufruf |
@@ -56,6 +57,7 @@ log = logging.getLogger("kevcad_kernel.bridge")
 
 DEFAULT_PORT = 47823
 DEFAULT_BUNDLE_ID = "de.upvis.kevcad"
+DEFAULT_APP_PATH = os.path.expanduser("~/Applications/Tools/Kev CAD.app")
 HOST = "127.0.0.1"
 MAX_EVENT_BYTES = 256 * 1024 * 1024
 
@@ -67,6 +69,7 @@ class BridgeConfig:
     port: int = DEFAULT_PORT
     bundle_id: str = DEFAULT_BUNDLE_ID
     launch_cmd: str | None = None
+    app_path: str | None = None
     start_timeout: float = 45.0
     list_wait: float = 10.0
     launch_on_start: bool = True
@@ -87,6 +90,8 @@ class BridgeConfig:
             port=int(number("KEVCAD_PORT", DEFAULT_PORT)),
             bundle_id=env.get("KEVCAD_BUNDLE_ID") or DEFAULT_BUNDLE_ID,
             launch_cmd=env.get("KEVCAD_LAUNCH_CMD") or None,
+            app_path=env.get("KEVCAD_APP_PATH")
+            or (DEFAULT_APP_PATH if (env.get("KEVCAD_BUNDLE_ID") or DEFAULT_BUNDLE_ID) == DEFAULT_BUNDLE_ID else None),
             start_timeout=number("KEVCAD_START_TIMEOUT", 45.0),
             list_wait=number("KEVCAD_LIST_WAIT", 10.0),
             launch_on_start=env.get("KEVCAD_LAUNCH_ON_START", "1").strip().lower() not in ("0", "false", "nein", "no"),
@@ -100,6 +105,8 @@ class BridgeConfig:
     def launch_argv(self) -> list[str]:
         if self.launch_cmd:
             return ["/bin/sh", "-c", self.launch_cmd]
+        if self.app_path and os.path.isdir(self.app_path):
+            return ["open", "-g", self.app_path]
         return ["open", "-g", "-b", self.bundle_id]
 
 
