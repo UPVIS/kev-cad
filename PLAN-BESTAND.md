@@ -31,7 +31,7 @@ Bauen bucht Kevin mit einem Klick ab; die neuen Reste kommen von selbst in den B
 | S4 | **Mindestrestlänge:** Reste unter einer einstellbaren Länge (Standard 100 mm, je Lagerteil änderbar) gelten als Verschnitt und kommen nicht in den Bestand | Sonst füllt sich der Bestand mit Abfall |
 | S5 | **Platten 2D:** Zuschnitt aus Plattenresten und ganzen Platten mit Guillotine-Schnitten (Kreissäge), Sägeblattbreite berücksichtigt | Wie Kevin tatsächlich schneidet |
 | S6 | **Einkaufsliste:** Fehlmenge je Position, aufgerundet auf Kaufeinheiten (Stange, Platte, Packung, Spule), Preis mit Stand aus dem Katalog, Link aus dem Zukaufteil bzw. einer `bezugsquelle` am Lagerteil; Summe; Export als CSV und als Text | „Was muss ich nachkaufen“ ohne Rechnen |
-| S7 | **Reservieren und Abbuchen:** Ein Projekt reserviert, was sein Zuschnitt verplant; „Gebaut“ bucht ab und legt neue Reste an; jede Buchung im Protokoll und rückgängig machbar | Bestand bleibt ehrlich, auch bei mehreren Projekten |
+| S7 | **Bestand je Projekt und Abbuchen:** jedes Projekt hat seinen eigenen Bestand (`<projekt>/bestand.json`), keine Reservierungen zwischen Projekten; „Gebaut“ bucht ab und legt neue Reste an; jede Buchung im Protokoll und rückgängig machbar | Kevin, 21.10.2026: individuell nur für das jeweilige Projekt |
 | S8 | **Eingabe:** Fenster „Bestand“ (im Lagerkatalog) mit schnellem Erfassen („+1 Stange“, „Rest 430 mm“); über MCP darf Claude Bestand nur nach Kevins Angabe eintragen und nennt jede Änderung; später Erfassen per EAN-Scan auf dem iPhone | Schnell, nachvollziehbar, nichts wird erfunden |
 | S9 | **Optional streng:** je Projekt „nur aus Bestand bauen“, dann ist eine Fehlmenge ein Hinweis bzw. Befund statt nur eine Zeile auf der Einkaufsliste | Für Projekte, bei denen nichts gekauft werden soll |
 
@@ -39,7 +39,7 @@ Bauen bucht Kevin mit einem Klick ab; die neuen Reste kommen von selbst in den B
 
 | Paket | Inhalt |
 |---|---|
-| S-K | `bestand.json` mit Format und Prüfung, Zuschnitt mit Resten (1D und Platten), Einkaufsliste, Reservierung, Buchungen mit Protokoll und Rückgängig, Erweiterung von BOM und Protokoll (additiv), MCP `bestand_liste`, `bestand_eintragen`, `einkaufsliste`, `gebaut_buchen` |
+| S-K | `bestand.json` mit Format und Prüfung, Zuschnitt mit Resten (1D und Platten), Einkaufsliste, Buchungen mit Protokoll und Rückgängig, Erweiterung von BOM und Protokoll (additiv), MCP `bestand_liste`, `bestand_eintragen`, `einkaufsliste`, `gebaut_buchen` |
 | S-A | Fenster „Bestand“ mit schnellem Erfassen, Zuschnittansicht (Rest und Stange farbig, neue Reste markiert), Einkaufsliste mit Export und Teilen, Dialog „Gebaut“ mit Vorschau der Buchung |
 
 ## Zu beachten
