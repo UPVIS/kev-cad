@@ -26,10 +26,19 @@ nur melden:
   Anlagefläche des Gegenstücks setzen, Scheiben und Muttern um ihre Dicke stapeln, Maß korrigieren. Einzige Ausnahme
   ohne Rückfrage ist echter Gewindeeingriff (Schraube in Mutter oder Gewindeloch, gleiche Achse). Andere gewollte
   Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Begründung im Code.
-- **Nichts schwebt:** Jedes Teil berührt ein anderes Teil oder steht auf dem Boden (z = 0). Mit `measure` den Abstand
-  zum Nachbarteil prüfen (0,000 mm = Kontakt).
+- **Nichts schwebt, alles ist befestigt:** Jedes Teil berührt sein Gegenstück oder steht auf dem Boden, und zu jedem
+  Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
+  Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
+  montieren. Nie Teile einfach in den Raum setzen. Prüfen: dasselbe Werkzeug mit `--kontakte` meldet Teile ohne
+  Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
-- **Bewegliches** (Klappen, Räder, Schieber) über den ganzen Weg ohne Kollision.
+- **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
+  muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
+  Teilen bekommt `bewegungen.json` (Teil, drehen oder schieben, Achse über `achse_von`/`punkt`/`richtung`, Bereich),
+  geprüft nach jedem Lauf mit
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
+  Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
+  umkonstruiert, nicht der Bereich verkleinert.
 - Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
   daran.
 
