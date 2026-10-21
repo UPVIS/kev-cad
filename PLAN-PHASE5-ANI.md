@@ -38,7 +38,7 @@ Animationen „Fahrt“ und „Verstellen“).
 | N11 | **Schnell ohne Abstriche**: Hüllquader je Bild vektorisiert; drehsymmetrische Teile, die sich nur um ihre Achse drehen (Rad, Rolle), zählen als starr (geprüft per Schnittvolumen mit sich selbst gedreht, Achse über den Schwerpunkt nachgeführt); dreht sich ein Teil nur um seine Mitte (rollende Kugel) und liegt das andere außerhalb seiner Hüllkugel, ist das Paar frei; gleiche relative Lagen nur einmal exakt | Kugelschieber „Fahrt“ 0,6–0,8 s statt 7 s, „Verstellen“ 1,2–3 s |
 | N12 | **Eindringtiefe** = kleinste Ausdehnung des Schnittkörpers (Näherung), dazu Volumen und Ort | ehrlich benannt, ohne teure Abstandsrechnung |
 | N13 | **Video (A4)** in der App: OffscreenRenderer je Bild, RGBA roh an ffmpeg (libx264 CRF 18 yuv420p bzw. prores_ks Profil 2, 10 Bit 4:2:2), Bild für Bild auf dem Hauptthread mit eigener Schreibwarteschlange; Ziel `<projekt>/output/animationen/<name>.mp4`, erst unter Hilfsnamen, dann umbenannt | App bleibt bedienbar, Fortschritt in Zeitleiste und Statusleiste; 1920 × 1080 × 241 Bilder in 9 s |
-| N14 | **Kamera** für Videos: Parameter `kamera` ist da; `AppController.setAnimationCameraResolver` nimmt vom Strang KAM eine Funktion (Name, Zeit) → Kamera; bis dahin Viewer-Kamera bzw. Kamerafahrt aus `anim.ansicht` mit Hinweis | parallele Arbeit ohne gemeinsame Dateien |
+| N14 | **Kamera** für Videos: Parameter `kamera`; `AppController.setAnimationCameraResolver` nimmt vom Strang KAM eine Funktion (Name, Zeit) → Kamera (seit dem Zusammenführen angeschlossen, siehe unten); ohne Kamera Viewer-Kamera bzw. Kamerafahrt aus `anim.ansicht` | parallele Arbeit ohne gemeinsame Dateien |
 | N15 | **Tasten wie in Blender** über ein eigenes Menü „Animation“: Leertaste, ←/→, Umschalt+←/→; KeyboardGuard schickt sie an Textfelder und die Pfeile an Listen (Teilebaum, Stückliste) | Textfelder und Listen bleiben bedienbar |
 
 ## Schnittstellen für das Zusammenführen
@@ -59,8 +59,21 @@ Drehung), `bewegte_paare` (ohne starr verbundene und erlaubte Paare), Hüllkugel
 Axis, werte={zeit: wert} oder [(zeit, wert), …], grenzen=(min, max) mit None für offen, eltern=None, kurve="weich")`.
 Auswertung in `animation._Eval.track_matrix` (Art `gelenk`) und `joint_values`.
 
+## Zusammenspiel mit den Kameras (Zweig `phase5`, 21.10.2026)
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| Z1 | **Kamera folgt einem Teil** (`CAMERA_UPSERT.folgt`: Teil aus `an()`, sonst das eigene Gehäuse aus `koerper()`): die App bewegt sie starr mit dessen Lage relativ zur Ruhelage (Animation · Explosion), `AppController.posedCamera` | eine Rechnung für Pyramide, Taste 0, Kamerabild und Video; der Kernel muss nichts nachschicken |
+| Z2 | **Taste 0 bleibt beim Abspielen aktiv** und hat Vorrang vor der Kamerafahrt aus `anim.ansicht`; jedes Bild führt die Ansicht nach (`cameraPoseChanged`) | „durch die FX6 auf dem fahrenden Wagen schauen“ |
+| Z3 | **Video durch eine Kamera**: `animation_video(kamera="FX6")` → `ANIM_VIDEO_REQ.kamera = "Kamera/FX6"`, Höhe aus dem Seitenverhältnis des Formats, Datei `<Animation>_<Kamera>.mp4`; die App blendet wie bei Taste 0 das eigene Objektiv und Teile vor dem Augpunkt aus. Menü und Zeitleiste nehmen beim Blick durch eine Kamera diese | gleiche Bilder wie in der Kameraansicht |
+| Z4 | **Körper fährt mit**: der Kernel ergänzt für jede Kamera mit `an(teil)` und gezeigtem `koerper()` in jeder Animation `folge(Körper, teil)`, außer eine Spur bewegt den Körper schon | sonst bliebe die FX6 stehen, während ihr Bild mitfährt |
+| Z5 | **Vorschläge in der Ruhelage**: Strg+Alt+0 rechnet die Ansicht mit der Gegenbewegung des Teils zurück | model.py kennt nur die Ruhelage |
+
 ## Offen
 
-- Messen und Referenzen beziehen sich weiter auf die Ruhelage aus model.py, auch wenn Teile animiert stehen.
-- Benannte Kameras (KAM) für Video und Kamerafahrt anbinden (`setAnimationCameraResolver`, `kamera`-Parameter).
+- Messen und Referenzen beziehen sich weiter auf die Ruhelage aus model.py, auch wenn Teile animiert stehen; ebenso
+  `kamera_info` (Werte der Ruhelage).
+- Rig-Zubehör an `fx6.bezugspunkt(...)` hängt nicht an der Kamera und braucht eine eigene Spur (`folge`).
+- Eine eigene Kamerafahrt für benannte Kameras (Brennweite oder Fokus über die Zeit) gibt es nicht; die Kamera bewegt
+  sich nur mit ihrem Teil.
 - Kollisionen nur auf Abruf; für sehr lange Animationen gilt ein Zeitlimit von 120 s (Meldung `abgebrochen`).

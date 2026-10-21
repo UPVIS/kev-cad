@@ -34,9 +34,10 @@ released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-
 is refused. Fix the model: search a matching stock item and verbauen it, or make it a druckteil.
 - Only Kevin can switch the rule off for a project (kevcad.json "inventar_regel": false, e.g. for reconstructions \
 from photos). There is no tool for it and you must not change it yourself.
-- 3D printed parts follow the design rules for Kevin's Bambu Lab P2S (see the skill kev-cad, file 3d-druck.md): \
-walls in multiples of the 0.42 mm line width, overhangs up to 45°, teardrop horizontal holes, bed-side chamfer, \
-clearances, inserts and nut traps, layer direction for strength, build volume 256 mm.
+- 3D printed parts follow the design rules for Kevin's printer, a Bambu Lab P1P (open frame, no enclosure; see the \
+skill kev-cad, file 3d-druck.md): walls in multiples of the 0.42 mm line width, overhangs up to 45°, teardrop \
+horizontal holes, bed-side chamfer, clearances, inserts and nut traps, layer direction for strength, build volume \
+256 mm; PLA or PETG by default, ABS/ASA/PC/PA only with an enclosure.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
@@ -66,7 +67,9 @@ Cameras (film set simulation)
 name="FX6")`, then `fx6.setzen(position, blick_auf=point)` or `fx6.an("<part>", punkt, richtung, \
 bezug="stativ_1_4", lokal=True)` (follows the part; call it after showing the part); `show(fx6.koerper(), "Kamera \
 FX6")` adds body and lens as inventory. Accessories: `lager.kamerazubehoer(id).verbauen(name, \
-an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4")`. Units mm; fokus from the sensor plane.
+an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4")`. Units mm; fokus from the sensor plane. Camera reference \
+points (bezug) are exactly: sensor, bajonett, front_unten, stativ_1_4, stativ_3_8, akkuschacht (built in also auge, \
+front); there are no other spellings.
 - `kamera_liste` / `kamera_info` give angle of view and depth of field, `kamera_ansicht(name)` shows Kevin the view \
 through the camera, `kamera_bild(name, breite)` saves a PNG in output/kameras/ and returns only the path (set \
 bild_zeigen only when needed), `kamera_vorschlag_aus_ansicht` turns Kevin's current view into a setzen(...) line.
@@ -89,7 +92,10 @@ gelenk(art "dreh"/"schub", werte {t: value}, grenzen), sichtbar, ansicht (viewer
 erlaube(a, b) for wanted contact. Axes are given in the rest pose; seconds, mm, degrees.
 - `run` lists the animations; `animation_abspielen`, `animation_springen(zeit)`, `animation_liste`. \
 `kollision_pruefen(name)` checks every 3rd frame exactly; every penetration must be solved (touching is fine). \
-`animation_video(name, breite=1920)` writes an MP4 to <project>/output/animationen/.
+`animation_video(name, breite=1920)` writes an MP4 to <project>/output/animationen/; with `kamera="FX6"` it \
+renders through that camera (format aspect ratio). A camera attached with `.an(part)` rides along with that part \
+during playback, through the camera (key 0) and in the video; its shown body from koerper() follows automatically, \
+rig parts need their own `folge`.
 
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \
