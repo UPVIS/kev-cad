@@ -450,8 +450,8 @@ class Planer:
                         einheiten.remove(e)
                         erg.schritte.append(Schritt(e, d2, runde, weg=(d1, weg)))
                     continue
-                # gibt es freie Teile, nur Vormontagen aus zwei Teilen versuchen (sonst entstünden große Gruppen, nur
-                # damit die Reihenfolge schöner wird); steckt alles, auch Baugruppen
+                # gibt es freie Teile, nur Vormontagen aus zwei Teilen und kleine Baugruppen versuchen (sonst entstünden
+                # große Gruppen, nur damit die Reihenfolge schöner wird); steckt alles, auch große
                 neu = (self._loesen(einheiten, stecken, letzte_sperren, erg, runde, nur_paare=bool(frei))
                        if stecken else None)
                 if neu is not None:
@@ -590,14 +590,14 @@ class Planer:
             gesehen.add(schluessel)
             vol = sum(self.k[n].volumen for x in mit for n in x.teile)
             kandidaten.append((0, vol, "", mit))
-        # 3. Baugruppen aus dem Namensbaum, kleinste zuerst
-        for n in ([] if nur_paare else stecken_teile):
+        # 3. Baugruppen aus dem Namensbaum, kleinste zuerst (gibt es freie Teile, nur kleine)
+        for n in stecken_teile:
             teile = n.split("/")
             for i in range(len(teile) - 1, 0, -1):
                 pre = "/".join(teile[:i])
                 mit = [x for x in stecken if any(t == pre or t.startswith(pre + "/") for t in x.teile)]
                 schluessel = tuple(sorted(x.name for x in mit))
-                if len(mit) < 2 or schluessel in gesehen:
+                if len(mit) < 2 or schluessel in gesehen or (nur_paare and sum(len(x.teile) for x in mit) > 6):
                     continue
                 gesehen.add(schluessel)
                 kandidaten.append((1, sum(len(x.teile) for x in mit), pre, mit))

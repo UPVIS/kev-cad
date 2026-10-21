@@ -27,7 +27,7 @@ from kevcad_kernel.pruefung.befund import (
 )
 from kevcad_kernel.pruefung.koerper import Koerper
 from kevcad_kernel.pruefung.pruefer import PruefKontext, registriere
-from kevcad_kernel.pruefung.raster import luecke
+from kevcad_kernel.pruefung.raster import freier_weg, luecke
 
 Z = np.array([0.0, 0.0, 1.0])
 
@@ -198,7 +198,7 @@ def pruefe_stand(koerper: list[Koerper], kontakte: list[tuple[str, str]], befest
             info_gruppen.append(eintrag)
             continue
         if not auf:
-            out.befunde.append(_schwebt(g_sorted, by, bz, erklaert))
+            out.befunde.append(_schwebt(g_sorted, by, bz, erklaert, cache))
             eintrag["schwebt"] = True
             info_gruppen.append(eintrag)
             continue
@@ -260,7 +260,26 @@ def _gruppen_name(namen: list[str]) -> str:
     return f"Die Gruppe aus {namen[0]} und {len(namen) - 1} weiteren Teilen"
 
 
-def _schwebt(gruppe: list[str], by: dict[str, Koerper], bz: float, erklaert: bool) -> dict[str, Any]:
+def _fallweg(c: Koerper, q: Koerper, cache: dict | None) -> float | None:
+    """Fallweg von c auf q: erst über das Tiefenraster (schnell), und liegt q auch über c (Bund oben und unten,
+    Ring auf einem Bolzen), exakt mit Strahlen gegen beide B-Reps."""
+    from kevcad_kernel.pruefung.kollision import _rel_schluessel
+
+    key = ("fall", c.form, q.form, _rel_schluessel(c.lage, q.lage))
+    if cache is not None and key in cache:
+        return cache[key]
+    d = luecke(c, q, -Z)
+    if q.bmax[2] > c.bmin[2] + 1e-6:  # q reicht über die Unterkante von c: Raster sieht nur Pixel ganz unter c
+        exakt = freier_weg(c, q, -Z)
+        if exakt is not None and (d is None or exakt < d):
+            d = exakt
+    if cache is not None:
+        cache[key] = d
+    return d
+
+
+def _schwebt(gruppe: list[str], by: dict[str, Koerper], bz: float, erklaert: bool,
+             cache: dict | None = None) -> dict[str, Any]:
     """Befund für eine schwebende Gruppe: wie weit sie fallen würde und worauf."""
     tief = min(gruppe, key=lambda n: by[n].bmin[2])
     fall_boden = float(by[tief].bmin[2]) - bz
@@ -274,7 +293,7 @@ def _schwebt(gruppe: list[str], by: dict[str, Koerper], bz: float, erklaert: boo
                                                  - np.maximum(c.bmin[:2], q.bmin[:2]) <= 0):
                 continue
             try:
-                d = luecke(c, q, -Z)
+                d = _fallweg(c, q, cache)
             except Exception:  # noqa: BLE001
                 d = None
             if d is not None and d < fall:
