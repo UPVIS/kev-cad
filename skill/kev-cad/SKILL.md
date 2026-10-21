@@ -88,8 +88,11 @@ Einführrichtung je Teil (`montage_reihenfolge`; Kevin sieht sie im Prüfband un
 - **Unlösbares vermeiden:** Bolzen mit zwei Köpfen aus einem Stück, Ringe auf Achsen ohne Ende, Klemmbolzen, deren
   Kopf und Zunge beide nicht durch die Bohrung passen: lösbar konstruieren (Achse als eigenes Teil, Sicherungsring,
   Teilung).
+- **Zukaufteile** kommen fertig montiert: Alle gezeigten Teile derselben Zukauf-Instanz (eine Stücklistenzeile, etwa
+  Rahmen und Lenkrollen aus `lager.zukauf("alutec-05200").verbauen("Rollwagen")`) sind automatisch eine Baugruppe.
+  Erklärte und gelieferte Baugruppen zählen auch in der übergeordneten Gruppe als ein Körper.
 - **Befunde beheben statt wegerklären.** Erklärungen nur, wo sie stimmen, und im Code kommentiert:
-  `montage("Rollwagen/Lenkrolle 1", baugruppe=True)` für Zukaufteile, die fertig montiert geliefert werden;
+  `montage("Rollwagen/Lenkrolle 1", baugruppe=True)` für Teile, die fertig montiert geliefert werden;
   `montage(clip, schnappt=True)` für Schnappverbindungen; `montage(mutter, eingedruckt=True)` für Muttern, die beim
   Druck eingelegt werden (Druckpause); `montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")` für Richtung,
   Reihenfolge und Werkzeug eigener Teile.
