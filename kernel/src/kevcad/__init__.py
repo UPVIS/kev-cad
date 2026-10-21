@@ -16,6 +16,7 @@ Vorgabewert, ``show`` und ``step`` werden ignoriert.
 - ``param(name, default, min=None, max=None)``: benannter Parameter in mm; Vorgabe oder Wert aus ``run(params=...)``.
 - ``lager``: Lagerteile aus dem Katalog verbauen (``lager.teil(...).verbauen(...)``) und 3D-Druckteile kennzeichnen
   (``lager.druckteil(...)``), siehe ``kevcad.lager``. Mit Inventar-Regel muss jedes gezeigte Teil daher stammen.
+  Kameras mit Objektiv und Format: ``lager.kamera(...)``, Rig-Zubehör: ``lager.kamerazubehoer(...)`` (``kevcad.kamera``).
 - ``animation(dauer, fps, name)``: Animation mit Spuren auf gezeigten Teilen (bewege, drehe, pfad, rolle, folge,
   gelenk, sichtbar, ansicht), siehe ``kevcad.bewegung``.
 """

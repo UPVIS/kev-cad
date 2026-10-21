@@ -30,6 +30,7 @@ from build123d import BuildLine, BuildPart, BuildSketch, Color, Compound, Shape
 import kevcad
 from kevcad_kernel.bom import LagerRegister, Piece, ShownPart, build_bom
 from kevcad_kernel.catalog import Catalog, number
+from kevcad_kernel.kamera import KameraRegister, location_of
 from kevcad_kernel.protocol import pack_part
 from kevcad_kernel.tessellate import (
     DEFAULT_ANGULAR,
@@ -237,6 +238,12 @@ def _labeled_children(obj: Any) -> list[Any] | None:
         kids = [_as_shape(o) for o in obj]
     elif isinstance(obj, Compound):
         kids = list(obj.children)
+        # Kinder liegen relativ zum Compound: wurde er verschoben (Pos(...) * Baugruppe), die Lage mitnehmen
+        try:
+            if not obj.location.wrapped.IsIdentity():
+                kids = [k.moved(obj.location) if isinstance(k, Shape) else k for k in kids]
+        except Exception:  # noqa: BLE001
+            pass
     else:
         return None
     if kids and all(isinstance(k, Shape) for k in kids) and any(getattr(k, "label", "") for k in kids):
@@ -444,7 +451,8 @@ class Runner:
 
     def _install(self, *, run: int, overrides: dict[str, Any], slow_ms: int, deviation: float, angular: float,
                  sketch: bool, state: dict[str, Any], catalog: Catalog | None = None,
-                 register: LagerRegister | None = None, strict: bool = False) -> None:
+                 register: LagerRegister | None = None, strict: bool = False,
+                 kameras: KameraRegister | None = None) -> None:
         def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None) -> None:
             if name is None or not str(name).strip():
                 label = getattr(_as_shape(obj), "label", "") or ""
@@ -528,6 +536,9 @@ class Runner:
             hooks["catalog"] = lambda: catalog
         if register is not None:
             hooks["lager"] = lager
+        if kameras is not None:
+            hooks["kamera"] = lambda cam: kameras.register(cam, warn)
+            hooks["teil_location"] = lambda name: state.get("locations", {}).get(name)
         kevcad._hooks.update(hooks)
 
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
@@ -603,9 +614,11 @@ class Runner:
                 preis_stand=entry.get("preis_stand") if entry else None,
                 volume=float(props.get("volume") or 0.0), mass_g=props.get("mass"),
                 size=[round(float(b) - float(a), 3) for a, b in zip(lo, hi)], pieces=[p.seq for p in pieces])
-        if not sketch:
+        if not sketch:  # Animation: Hüllquader; Kameras: Location (an(..., lokal=True)) und lager_token
             state.setdefault("bboxes", {})[name] = (list(tess.bbox.get("min", [0, 0, 0])),
                                                     list(tess.bbox.get("max", [0, 0, 0])))
+            state.setdefault("locations", {})[name] = location_of(shape)
+            state.setdefault("tokens", {})[name] = getattr(shape, "lager_token", None)
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
@@ -636,6 +649,7 @@ class Runner:
         state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0,
                                  "bom_parts": {}}
         register = LagerRegister()
+        kameras = KameraRegister()
         strict = self.inventar = bool(msg.get("inventar_regel", True))
         catalog = None
         try:
@@ -655,7 +669,8 @@ class Runner:
                 os.chdir(project)
             sys.path.insert(0, project)
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
-                          sketch=False, state=state, catalog=catalog, register=register, strict=strict)
+                          sketch=False, state=state, catalog=catalog, register=register, strict=strict,
+                          kameras=kameras)
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
                 warnings.simplefilter("always")
                 try:
@@ -704,6 +719,11 @@ class Runner:
                 result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
                 result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
+            try:  # Phase 5: Kameras (CAMERA_UPSERT nach dem Lauf)
+                result["cameras"] = kameras.resolve(state.get("locations", {}), state.get("tokens", {}),
+                                                    state["shown"], result["warnings"].append)
+            except Exception as exc:  # noqa: BLE001
+                result["warnings"].append(f"Kameras nicht übernommen: {type(exc).__name__}: {exc}")
         return result
 
     def _animations(self, run: int, state: dict[str, Any], path: str,

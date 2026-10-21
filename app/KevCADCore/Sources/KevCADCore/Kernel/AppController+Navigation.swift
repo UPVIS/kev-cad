@@ -140,6 +140,8 @@ extension AppController: NavigationActions {
         case 78: zoomStep(-1)  // -
         case 75: toggleLocalView()  // /
         case 115: viewAll()  // Pos1
+        case 82:  // 0: durch die Kamera schauen, Strg+Alt+0: Kamera auf die Ansicht (wie Blender)
+            if ctrl && flags.contains(.option) { setActiveCameraToView() } else { toggleCameraView() }
         default: return false
         }
         return true

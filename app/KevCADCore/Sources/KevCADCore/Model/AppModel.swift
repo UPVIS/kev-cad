@@ -176,6 +176,8 @@ public final class AppModel: ObservableObject {
     /// Phase 5 (additiv): Animation (Zeitleiste) als eigenes Objekt, damit das Abspielen nicht das ganze Fenster neu
     /// zeichnet; Aktionen über `actions as? AnimationActions`.
     public let animation = AnimationModel()
+    /// Phase 5 (KAM, additiv): Kameras aus model.py und der Blick durch eine Kamera (Aktionen: `CameraActions`).
+    public let cameras = CameraStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

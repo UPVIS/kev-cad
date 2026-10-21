@@ -164,6 +164,26 @@ class KernelService(Protocol):
     def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
         """Kollisionen an jedem ``schritt``-ten Bild. {"ok", "name", "kollisionen": [{"teile", "von", "bis", "zeit",
         "bild", "tiefe", "volumen", "ort"}], "geprueft": {…}}"""
+    # Phase 5: Kameras (PROTOCOL.md „Phase 5: Kameras“, Umsetzung in kevcad_kernel.kamera.CameraRuntime)
+    def cameras(self) -> dict[str, Any]:
+        """Kameras des letzten Laufs: {"ok", "cameras": [CAMERA_UPSERT-Kopf + "vorschlag" (oder None)]}"""
+
+    def camera_info(self, name: str) -> dict[str, Any]:
+        """Eine Kamera (Name „FX6“ oder „Kamera/FX6“): {"ok", "camera", "vorschlag", "vorschlag_code"?}"""
+
+    def camera_view(self, name: str | None, timeout_s: float = 10) -> dict[str, Any]:
+        """Durch die Kamera schauen (VIEW_CMD camera_view), None = zurück zur freien Ansicht. {"ok", "message"?}"""
+
+    def camera_image(self, name: str, width: int = 1920, save: bool = True, return_png: bool = False,
+                     overlays: bool = False, timeout_s: float = 60) -> dict[str, Any]:
+        """Bild durch die Kamera (Höhe aus dem Seitenverhältnis des Formats), gespeichert unter
+        <projekt>/output/kameras/. {"ok", "file", "width", "height", "camera", "kamera", "png"? (nur mit return_png)}"""
+
+    def camera_catalog(self, query: str = "", art: str | None = None, limit: int = 40) -> dict[str, Any]:
+        """Kameras, Objektive und Kamerazubehör aus dem Katalog: {"ok", "items", "total"}"""
+
+    def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
+        """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...

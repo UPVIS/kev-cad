@@ -71,7 +71,9 @@ def _laden() -> dict[str, dict]:
 
 DATEN = _laden()
 MATERIALIEN = [m for d in DATEN.values() for m in d.get("materialien", [])]
-TEILE = [t for d in DATEN.values() for t in d.get("teile", [])]
+# Kameras, Objektive und Kamerazubehör (kameras.json) haben eigene Felder und eigene Tests (test_kamera.py)
+OPTIK = {"kamera", "objektiv", "kamerazubehoer"}
+TEILE = [t for d in DATEN.values() for t in d.get("teile", []) if t.get("art") not in OPTIK]
 MAT = {m["id"]: m for m in MATERIALIEN}
 
 

@@ -29,6 +29,7 @@ struct PartTreeView: View {
                     }
                 }
             }
+            CameraTreeSection(store: model.cameras, actions: model.cameraActions)  // Phase 5: Kameras
         }
         .listStyle(.sidebar)
         .contextMenu(forSelectionType: String.self) { ids in
