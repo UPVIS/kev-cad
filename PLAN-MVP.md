@@ -1,8 +1,8 @@
 # Kev CAD · Umsetzungsplan MVP
 
 Stand: 21.10.2026. Grundlage ist die Recherche in [RECHERCHE.md](RECHERCHE.md). Die Annahmen über fremden Code
-(build123d-mcp, OCCTSwiftViewport, ocp-tessellate) sind am Quellcode geprüft. **AP0 ist erledigt und bestanden**
-(Ergebnis in Abschnitt 12, Testcode und Messwerte in `spikes/ap0/`).
+(build123d-mcp, OCCTSwiftViewport, ocp-tessellate) sind am Quellcode geprüft. **AP0 bis AP7 sind erledigt**: AP0 im
+Abschnitt 12, die Abnahme und die offenen Punkte im Abschnitt 17.
 
 ## 1. Was das MVP kann
 
@@ -308,13 +308,13 @@ abgelegt. Zurückholen und Vergleichen kommen nach dem MVP.
 | AP | Inhalt | Ergebnis und Prüfung | Größe |
 |---|---|---|---|
 | **AP0** (erledigt) | **Viewer- und Kerneltest.** Erstens ocp-tessellate mit build123d 0.13 an der Outdoorküche: Zeit, Dreiecke, Flächenreihenfolge. Zweitens Mini-App mit OCCTSwiftViewport lädt das Ergebnis. | Messwerte gegen die Schwellen in Abschnitt 13. **Entscheidung:** OCCTSwiftViewport oder Rückfall RealityKit | S |
-| AP1 | Grundgerüst: Git, `project.yml`, `build.sh`, Kernel-Paket mit uv, `CLAUDE.md`, README | Leeres Fenster startet aus `~/Applications/Tools`, Kernel startet von Hand | S |
-| AP2 | Kernel: Rechenprozess, `model.py`-API, Tessellierung, Frames, Socket, `PROTOCOL.md` | pytest: Würfel und Zylinder kommen richtig an, Absturz und Zeitlimit führen zu Neustart | M |
-| AP3 | App-Kern: Supervisor, Decoder, Szene, Viewport, Live-Aufbau, Teilebaum, Statusleiste, Fehlerband | Beispiel „Wandhalter“ baut sich Teil für Teil auf, ein Syntaxfehler zeigt die Zeile | M |
-| AP4 | Projekte: Willkommensfenster, neu, öffnen, zuletzt, Auto-Lauf, Export | Projekt anlegen, speichern, neu öffnen; STEP, STL und 3MF öffnen in Bambu Studio | S |
-| AP5 | Auswahl und Messen: Picking zu Referenzen, Inspektor, exakte Messung, Overlays | Bekannte Maße am Testkörper stimmen auf 0,001 mm, Winkel auf 0,01° | M |
-| AP6 | MCP: alle Werkzeuge aus Abschnitt 8, Viewer-Befehle, Bild, stdio-Brücke, Skill, Registrierung | Ein Testskript fährt alle Werkzeuge über einen echten MCP-Client ab; Claude Code sieht sie nach Neustart | M |
-| AP7 | Abnahme: Ablauf aus Abschnitt 1 mit Claude, Leistungstest Outdoorküche, Fehler beheben, Doku | Ablauf läuft durch, Messwerte erfüllt, README beschreibt Installation und Bedienung | S |
+| AP1 (erledigt) | Grundgerüst: Git, `project.yml`, `build.sh`, Kernel-Paket mit uv, `CLAUDE.md`, README | Leeres Fenster startet aus `~/Applications/Tools`, Kernel startet von Hand | S |
+| AP2 (erledigt) | Kernel: Rechenprozess, `model.py`-API, Tessellierung, Frames, Socket, `PROTOCOL.md` | pytest: Würfel und Zylinder kommen richtig an, Absturz und Zeitlimit führen zu Neustart | M |
+| AP3 (erledigt) | App-Kern: Supervisor, Decoder, Szene, Viewport, Live-Aufbau, Teilebaum, Statusleiste, Fehlerband | Beispiel „Wandhalter“ baut sich Teil für Teil auf, ein Syntaxfehler zeigt die Zeile | M |
+| AP4 (erledigt) | Projekte: Willkommensfenster, neu, öffnen, zuletzt, Auto-Lauf, Export | Projekt anlegen, speichern, neu öffnen; STEP, STL und 3MF öffnen in Bambu Studio | S |
+| AP5 (erledigt) | Auswahl und Messen: Picking zu Referenzen, Inspektor, exakte Messung, Overlays | Bekannte Maße am Testkörper stimmen auf 0,001 mm, Winkel auf 0,01° | M |
+| AP6 (erledigt) | MCP: alle Werkzeuge aus Abschnitt 8, Viewer-Befehle, Bild, stdio-Brücke, Skill, Registrierung | Ein Testskript fährt alle Werkzeuge über einen echten MCP-Client ab; Claude Code sieht sie nach Neustart | M |
+| AP7 (erledigt) | Abnahme: Ablauf aus Abschnitt 1 mit Claude, Leistungstest Outdoorküche, Fehler beheben, Doku | Ablauf läuft durch, Messwerte erfüllt, README beschreibt Installation und Bedienung | S |
 
 ### Ergebnis AP0 (21.10.2026)
 
@@ -421,3 +421,36 @@ Grob geschätzt sind das sechs bis acht Arbeitssitzungen.
 | Privates GitHub-Repo `UPVIS/kev-cad` anlegen? | ja, privat |
 | Projekte unter `~/Documents/Kev CAD/`? | ja |
 | App-Name „Kev CAD“, Bundle-ID `de.upvis.kevcad`? | ja |
+
+## 17. Abnahme (21.10.2026)
+
+Die vier Stränge AP2/AP5 (Kernel-Laufzeit), AP6 (MCP und Brücke), AP3/AP5 (App-Kern) und AP4 (Oberfläche) liefen
+parallel in eigenen Arbeitskopien und sind in `main` zusammengeführt.
+
+| Prüfung | Ergebnis |
+|---|---|
+| Kernel-Tests (pytest, ohne den langsamen Küchentest) | 81 grün |
+| KevCADCore-Tests (swift test) | 77 grün |
+| Ablauf über MCP gegen die laufende App (Testvariante) | Projekt anlegen, Lauf (Wandhalter, 3 Teile, 140 ms), Ansichten, Fokus, Hervorheben mit Beschriftung, Messen mit Einblendung (50,389 mm), Schnitt, Bilder, Export STEP/STL/3MF – alles ohne Fehler |
+| Bilder für den Agenten | 50–120 ms, nach einem Ansichtswechsel ~450 ms (wartet auf das Ende der Kamerafahrt); Vorderansicht parallel mit 0,449 mm je Pixel |
+| Küche in der echten App | 59 Teile mit Baugruppenbaum, Lauf 5,5 s (davon 4 s Modellbau in `kueche.py`), erneuter Lauf aus dem Zwischenspeicher |
+| Brücke `kevcad-mcp` (stdio) gegen die laufende App | 19 Werkzeuge, status und screenshot gehen durch |
+| Bei der Abnahme behoben | Bild direkt nach einem Ansichtswechsel zeigte die Kamera mitten in der Fahrt |
+
+Eingerichtet: `Kev CAD.app` in `~/Applications/Tools`, MCP-Server `kevcad` in Claude Code (Benutzerebene,
+`KEVCAD_LAUNCH_ON_START=0`: die App startet erst beim ersten Werkzeugaufruf), Skill `kev-cad` als Verweis in
+`~/.claude/skills`.
+
+### Offene Punkte
+
+- **Von Hand prüfen:** echte Mausklicks, Tastenkürzel und Dialoge (Neues Projekt, Öffnen). Eine im Hintergrund gestartete
+  Testvariante bekommt keinen Fokus, deshalb nicht automatisch getestet.
+- **Bildrate in der echten App** mit der Küche nicht gemessen; der Viewport-Test aus AP0 gilt (60 fps am 60-Hz-Monitor),
+  die App setzt 120 Bilder/s.
+- **Kaltstart:** In einer frischen Umgebung braucht der erste Start des Kernels wegen der Bytecode-Übersetzung bis zu
+  45 s, danach etwa 4 s bis der Rechenprozess bereit ist (Socket sofort).
+- **Schnitt ohne Deckfläche:** Geschnittene Körper sind innen hohl dargestellt.
+- **Farbwirkung:** Der Viewport kodiert nicht nach sRGB; die App gleicht mit etwas mehr Belichtung aus. Einmal ansehen.
+- **Wünsche der Oberfläche an den App-Kern:** Schnittachse und -lage im Modell, Aktion „Projekt schließen“,
+  Exportergebnis im Modell (für „Im Finder zeigen“).
+- **Nicht gebaut:** Instanzen (`transform`), Vorschaubild je Version.
