@@ -25,7 +25,12 @@ EXPECTED_TOOLS = {
     "visibility", "highlight", "section", "screenshot", "selection", "measure", "annotate", "clear_annotations",
     "export", "stock_search", "stock_get", "stock_define", "material_list", "material_define", "catalog_delete", "bom",
     "zukauf_anlegen", "zukauf_html", "cad_suchen", "cad_uebernehmen", "zukauf_liste",
+    # Phase 5: Animation
+    "animation_liste", "animation_abspielen", "animation_springen", "animation_video", "kollision_pruefen",
 }
+# Phase 5: Kameras
+EXPECTED_TOOLS |= {"kamera_liste", "kamera_info", "kamera_ansicht", "kamera_bild", "kamera_katalog",
+                   "kamera_vorschlag_aus_ansicht"}
 
 
 def free_port() -> int:

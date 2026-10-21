@@ -767,4 +767,14 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
     from .zukauf_tools import register_zukauf_tools
 
     register_zukauf_tools(tool, t, svc)
+
+    # Phase 5: Animation (eigene Datei, damit parallele Stränge nicht in dieselben Zeilen schreiben)
+    from .animation_tools import register_animation_tools
+
+    register_animation_tools(tool, t, svc)
+
+    # Phase 5: Kameras (kamera_tools.py)
+    from .kamera_tools import register_camera_tools
+
+    register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
     return t

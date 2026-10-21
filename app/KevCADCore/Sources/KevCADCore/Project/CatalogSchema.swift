@@ -178,6 +178,20 @@ public enum CatalogSchema {
             return Art(id: id, title: "Zukaufteil", plural: "Zukaufteile", symbol: "cart", fields: [], supply: .piece,
                        profile: "Hersteller-CAD oder Ersatzkörper aus den Shop-Maßen")
         }
+        // Phase 5 (KAM): Kameras, Objektive und Zubehör haben eigene Felder (KATALOG.md), keine Maßfelder im Formular
+        switch id {
+        case "kamera":
+            return Art(id: id, title: "Kamera", plural: "Kameras", symbol: "video", fields: [], supply: .piece,
+                       profile: "Gehäuse mit Sensorformaten (lager.kamera)")
+        case "objektiv":
+            return Art(id: id, title: "Objektiv", plural: "Objektive", symbol: "camera.aperture", fields: [],
+                       supply: .piece, profile: "Brennweite, Lichtstärke, Bildkreis (lager.kamera objektiv=)")
+        case "kamerazubehoer":
+            return Art(id: id, title: "Kamerazubehör", plural: "Kamerazubehör", symbol: "camera.metering.matrix",
+                       fields: [], supply: .piece, profile: "Rig-Teile mit Bezugspunkten (lager.kamerazubehoer)")
+        default:
+            break
+        }
         let title = id.replacingOccurrences(of: "_", with: " ").capitalized
         return Art(id: id, title: title, plural: title, symbol: "shippingbox", fields: [], supply: .bar, profile: "")
     }

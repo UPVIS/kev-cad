@@ -369,19 +369,24 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
     public var source: String
     public var view: String?
     public var hideOverlays: Bool
+    /// Phase 5: Bild durch diese Kamera (`Kamera/<name>`, `source` "camera").
+    public var camera: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, width, height, source, view
+        case id, width, height, source, view, camera
         case hideOverlays = "hide_overlays"
     }
 
-    public init(id: String, width: Int, height: Int, source: String, view: String?, hideOverlays: Bool) {
+    public init(
+        id: String, width: Int, height: Int, source: String, view: String?, hideOverlays: Bool, camera: String? = nil
+    ) {
         self.id = id
         self.width = width
         self.height = height
         self.source = source
         self.view = view
         self.hideOverlays = hideOverlays
+        self.camera = camera
     }
 
     public init(from decoder: Decoder) throws {
@@ -392,6 +397,7 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
         source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? "current"
         view = try? c.decodeIfPresent(String.self, forKey: .view)
         hideOverlays = (try? c.decodeIfPresent(Bool.self, forKey: .hideOverlays)) ?? false
+        camera = try? c.decodeIfPresent(String.self, forKey: .camera)
     }
 }
 
@@ -514,6 +520,10 @@ public enum KernelMessage: Sendable {
     case catalog(CatalogMessage)
     /// Phase 3: Zustand eines Zukaufteils (angelegt, wartet auf CAD, importiert, Fehler).
     case zukaufStatus(ZukaufStatusMessage)
+    /// Phase 5: Animation (ANIM_DEF, ANIM_REMOVE, ANIM_COLLISIONS, ANIM_PLAY, ANIM_SEEK, ANIM_VIDEO_REQ).
+    case animation(AnimationMessage)
+    /// Phase 5: CAMERA_UPSERT und CAMERA_REMOVE.
+    case camera(CameraMessage)
     /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
     case check(CheckMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
@@ -540,6 +550,8 @@ public enum KernelMessage: Sendable {
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
         case .zukaufStatus: return "ZUKAUF_STATUS"
+        case .animation(let a): return a.typeName
+        case .camera(let c): return c.typeName
         case .check: return "CHECK"
         case .unknown(let t, _): return t
         }
@@ -555,6 +567,7 @@ public enum KernelMessage: Sendable {
         case .error(let m): return m.replyTo
         case .bom(let m): return m.replyTo
         case .catalog(let m): return m.replyTo
+        case .animation(let m): return m.replyTo
         default: return nil
         }
     }
@@ -587,6 +600,8 @@ public enum KernelMessage: Sendable {
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
         case "ZUKAUF_STATUS": return .zukaufStatus(try ZukaufStatusMessage.decode(h))
+        case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
+        case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null

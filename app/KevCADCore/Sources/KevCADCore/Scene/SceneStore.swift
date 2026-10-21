@@ -54,6 +54,12 @@ public final class SceneStore {
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
     static let simplifiedAlpha: Float = 0.45
+    /// Phase 5: Lage je Teil aus der Animation (Ruhelage → aktuelles Bild), zusätzlich zur Basislage; leer = Ruhelage.
+    public private(set) var animationTransforms: [String: simd_float4x4] = [:]
+    /// Phase 5: von der Animation ausgeblendete Teile (`sichtbar`) und Teile einer Kollision im aktuellen Bild (rot).
+    public private(set) var animationHidden: Set<String> = []
+    public private(set) var collisionParts: Set<String> = []
+    static let collisionColor = SIMD3<Float>(0.95, 0.04, 0.04)
 
     private var flashStart: [String: CFTimeInterval] = [:]
     private var pulseStart: CFTimeInterval = -10
@@ -140,6 +146,9 @@ public final class SceneStore {
         highlights = []
         inventoryWarnings = []
         simplifiedParts = []
+        animationTransforms = [:]
+        animationHidden = []
+        collisionParts = []
         ghostBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
@@ -267,6 +276,23 @@ public final class SceneStore {
         publish()
     }
 
+    // MARK: Animation (Phase 5)
+
+    /// Lage aller bewegten Teile für ein Bild setzen (nur Matrizen, kein Neuvernetzen), dazu ausgeblendete Teile und
+    /// das Kollisionspaar. Leere Werte = Ruhelage.
+    public func setAnimationPose(
+        _ transforms: [String: simd_float4x4], hidden: Set<String> = [], collision: Set<String> = []
+    ) {
+        var touched = Set(transforms.keys).union(animationTransforms.keys)
+        touched.formUnion(hidden.symmetricDifference(animationHidden))
+        touched.formUnion(collision.symmetricDifference(collisionParts))
+        animationTransforms = transforms
+        animationHidden = hidden
+        collisionParts = collision
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
     // MARK: Prüfung
 
     /// Schnittkörper der Prüfung ersetzen (leer = keine).
@@ -370,7 +396,8 @@ public final class SceneStore {
     /// Lage eines Teils in der Welt (Basislage aus dem Kernel, dazu die Explosion).
     public func worldTransform(_ name: String) -> simd_float4x4 {
         guard let rec = parts[name] else { return matrix_identity_float4x4 }
-        let base = rec.header.transformMatrix
+        var base = rec.header.transformMatrix
+        if let anim = animationTransforms[name] { base = anim * base }
         guard explodeFactor != 0 else { return base }
         let c = Self.transformBox(rec.localMin, rec.localMax, base).center
         let offset = (c - assemblyCenter) * explodeFactor
@@ -583,6 +610,7 @@ public final class SceneStore {
         var rgb = SIMD3(c.x, c.y, c.z)
         if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor }
         if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
+        if collisionParts.contains(name) { rgb = rgb + (Self.collisionColor - rgb) * 0.8 }
         if includeFlash, let t0 = flashStart[name] {
             let k = Float(max(0, 1 - (now - t0) / Self.flashDuration))
             rgb = rgb + (Self.flashColor - rgb) * (0.7 * k)
@@ -604,7 +632,7 @@ public final class SceneStore {
     private func applyProps(_ name: String, now: CFTimeInterval = CACurrentMediaTime()) {
         guard var list = partBodies[name] else { return }
         let color = displayColor(name, now: now)
-        let visible = !hidden.contains(name)
+        let visible = !hidden.contains(name) && !animationHidden.contains(name)
         let transform = worldTransform(name)
         for i in list.indices {
             list[i].color = color
@@ -635,7 +663,7 @@ public final class SceneStore {
             // Durchsichtige Körper zeichnet der Viewport ohne Kanten: Ersatzkörper bekommen ihre Kanten extra
             for n in order where simplifiedParts.contains(n) { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
         }
-        renderBodies.append(contentsOf: ghostBodies)
+        if animationTransforms.isEmpty { renderBodies.append(contentsOf: ghostBodies) }  // Schnittkörper: Ruhelage
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -663,7 +691,7 @@ public final class SceneStore {
         let clip = applySection ? section : nil
         var out: [ViewportBody] = []
         let now = CACurrentMediaTime()
-        for name in order where !hidden.contains(name) {
+        for name in order where !hidden.contains(name) && !animationHidden.contains(name) {
             guard let rec = parts[name], let live = partBodies[name] else { continue }
             // Der OffscreenRenderer hat weder Belichtung noch Tonwertkurve; sRGB-Farben sehen dort so aus wie im Viewport
             let colorLinear = displayColor(name, now: now, includeFlash: false)
@@ -733,7 +761,8 @@ public final class SceneStore {
                 }
             }
         }
-        for g in ghostBodies where g.isVisible {  // der Offscreen-Renderer erwartet sRGB-Farben
+        // Schnittkörper der Prüfung gelten für die Ruhelage, in einem Bild der Animation stehen sie nicht
+        for g in ghostBodies where g.isVisible && animationTransforms.isEmpty {  // der Offscreen-Renderer erwartet sRGB
             var b = g
             b.color = Self.srgb(g.color)
             out.append(b)

@@ -1,7 +1,10 @@
 """Benannte Bezugspunkte und Einbaupunkte (KATALOG.md): prüfen und als build123d-``Location`` bauen.
 
-Gemeinsam für Zukaufteile (``lager.zukauf(...).bezugspunkt(name)``) und für Kameras, Objektive und Kamera-Zubehör
-(``art`` ``kamera``, ``objektiv``, ``kamerazubehoer``), die dasselbe Format benutzen.
+Für Zukaufteile (``lager.zukauf(...).bezugspunkt(name)``). Kameras, Objektive und Kamera-Zubehör (Phase 5,
+``kevcad/kamera.py``: ``_local_point``, ``Kamera.bezugspunkt``, ``Zubehoer.bezugspunkt``; Prüfung in
+``kevcad_kernel/optik.py``) schreiben ``pos`` gleich, deuten den Rest aber anders: dort gelten die Achsen der Kamera bzw.
+des Teils (``richtung`` ist nur Angabe, ``von: "front"`` verschiebt x), hier ist ``richtung`` die Z-Achse der Location.
+Eine gemeinsame Umsetzung würde das Setzen von Rig-Teilen ändern und ist deshalb nicht zusammengelegt.
 
 Ein Punkt ist ``{"pos": [x, y, z], "richtung": [x, y, z], "hinweis": "..."}`` in mm im lokalen System des Teils:
 

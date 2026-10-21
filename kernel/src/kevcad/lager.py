@@ -54,7 +54,8 @@ from kevcad_kernel.catalog import (
     number,
 )
 
-__all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN", "zukauf"]
+__all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN", "zukauf",
+           "kamera", "kamerazubehoer"]
 
 MAX_GEHRUNG = 80.0
 VERFAHREN = ("3d-druck", "harzdruck")
@@ -181,6 +182,9 @@ class Lagerteil:
         from kevcad_kernel.bom import Piece, piece_values
 
         label = str(name).strip().strip("/").replace("#", "-") if name is not None and str(name).strip() else self.name
+        if self.art in ("kamera", "objektiv", "kamerazubehoer"):
+            raise LagerError(f"{self.name}: Kameras und Objektive mit lager.kamera(...), Zubehör mit "
+                             "lager.kamerazubehoer(...).verbauen(...) einsetzen")
         if self.material is None:
             raise LagerError(f"{self.name}: Material {self.material_id!r} fehlt im Katalog (Kevin bitten, es anzulegen)")
         if not is_free(self.eintrag):
@@ -486,3 +490,7 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck"):
                   size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)])
     _register(piece, shape)
     return shape
+
+
+# Phase 5: Kameras, Objektive und Kamerazubehör (kevcad.kamera)
+from kevcad.kamera import kamera, kamerazubehoer  # noqa: E402

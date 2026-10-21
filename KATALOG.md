@@ -137,7 +137,9 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
 
 ## Zukaufteil (Phase 3)
 
-Fertig gekaufte Teile mit Hersteller und Nummer (Beispielwerte unten erfunden, EAN mit gültiger Prüfziffer): Schubladenauszug, Scharnier, Rolle, Rollwagen, Kamera-Zubehör. Sie
+Fertig gekaufte Teile mit Hersteller und Nummer (Beispielwerte unten erfunden, EAN mit gültiger Prüfziffer):
+Schubladenauszug, Scharnier, Rolle, Rollwagen (Kameras, Objektive und Kamera-Zubehör: Abschnitt „Kameras und
+Objektive“). Sie
 liegen in der Projekt-Ebene (`<projekt>/katalog.json`) oder, wenn Kevin sie in mehreren Projekten nutzt, im eigenen
 Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist nicht weitergegeben werden).
 
@@ -178,7 +180,7 @@ Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist
 | `cad` | nein | `quelle` (`traceparts` \| `hersteller` \| `download` \| `bd_warehouse` \| `skript` \| `keins`), `datei` (relativ zum Ordner der Katalogdatei) oder bei `skript` `modul`/`datei` plus `funktion` wie bei den Kameras, bei `bd_warehouse` `klasse` (Modul.Klasse, z. B. `bearing.SingleRowDeepGrooveBallBearing`) und `parameter` (Objekt mit den Argumenten, z. B. `{"size": "M8-22-7", "bearing_type": "SKT"}`), `lizenz`, `stand`, optional `traceparts_id` |
 | `ersatz` | nein | `form` (`quader` \| `zylinder`) und `masse`, beim Zylinder optional `achse` (`x` \| `y` \| `z`, Standard `z`; liegende Zylinder liegen auf z = 0); gilt, solange kein CAD da ist. Im Viewer halbtransparent, im Namen „(vereinfacht)“ |
 | `einbaupunkt` | nein | Punkt (siehe unten) **im System der Quelle** (Hersteller-CAD, Skript, Ersatzkörper): wird beim Verbauen zum Ursprung, seine `richtung` zur +Z-Achse. Ohne Angabe: Mitte der Unterseite des Hüllquaders, Z oben |
-| `bezugspunkte` | nein | benannte Punkte (siehe unten) **im System des verbauten Teils**, also nach dem Einbaupunkt, damit `Pos(...) * teil.bezugspunkt("oben")` zum gezeigten Teil passt; Format wie bei Kameras und Kamera-Zubehör |
+| `bezugspunkte` | nein | benannte Punkte (siehe unten) **im System des verbauten Teils**, also nach dem Einbaupunkt, damit `Pos(...) * teil.bezugspunkt("oben")` zum gezeigten Teil passt; `pos` wie bei Kameras und Kamera-Zubehör (deren Bezugspunkte gelten im System der Kamera, Achsen wie die Kamera) |
 
 Ein Punkt (Einbau- und Bezugspunkte) ist
 `{"pos": [x, y, z], "richtung": [x, y, z], "x_richtung": [x, y, z], "hinweis": "…"}` in mm: `pos` ist der Ursprung, `richtung` die lokale Z-Achse (Standard `[0, 0, 1]`, etwa Blickrichtung eines Bajonetts oder
@@ -209,3 +211,101 @@ Stücklistenzeile `art: "zukaufteil"` mit Hersteller, Nummer, Stückpreis mit Da
 - CSV (`bom_csv`): Zeilen von Zukaufteilen haben die Art „Zukaufteil“ bzw. „Zukaufteil (vereinfacht)“ und die
   Zusatzspalten Hersteller, Herstellernummer, EAN, Link, Preisstand (Datum mit „brutto“ bzw. „netto“) und CAD
   (Quelle bzw. „vereinfacht“); bei anderen Zeilen bleiben sie leer.
+
+## Kameras und Objektive
+
+Phase 5 (Strang KAM), additiv: drei weitere Arten in `teile`, geprüft in `kernel/src/kevcad_kernel/optik.py`. Sie haben
+eigene Felder statt `masse`/`material` (beide freiwillig), werden nicht mit `verbauen`, sondern mit `lager.kamera(...)`
+und `lager.kamerazubehoer(...)` eingesetzt und stehen dann als Inventar in der Stückliste (Gewicht aus `gewicht`, Preis
+aus `preis.je_stueck`). Mitgeliefert: `kernel/src/kevcad/katalog/kameras.json`. Kevins eigene Objektive (per EAN)
+kommen wie andere Zukaufteile in den eigenen Katalog (über MCP `stock_define` als Vorschlag).
+
+Lokale Koordinaten aller Einträge: x Blickrichtung bzw. nach vorn, y links, z oben, mm. Ursprung bei Kameras die
+Sensormitte, bei Objektiven die Bajonett-Auflage, bei Zubehör laut `ursprung`.
+
+### Kamera (`art: "kamera"`)
+
+```json
+{
+  "id": "sony-fx6", "art": "kamera", "name": "Sony FX6 (ILME-FX6V)", "kurzname": "FX6",
+  "hersteller": "Sony", "modell": "ILME-FX6V", "bajonett": "sony-e", "auflagemass": 18.0,
+  "standard_format": "ff-uhd",
+  "formate": [{"id": "ff-uhd", "name": "Vollformat UHD 3840 × 2160", "modus": "vollformat",
+               "sensor_mm": [35.7, 20.1], "aufloesung": [3840, 2160], "fps_max": 60, "zerstreuungskreis": 0.027}],
+  "gehaeuse": {"b": 114, "h": 116, "t": 153, "achse_hoehe": 74, "achse_seitlich": 5.8, "bajonett_vorstand": 0,
+               "ring_vorstand": 4},
+  "gewicht": 890,
+  "bezugspunkte": {"stativ_1_4": {"pos": [-33, 0, -74], "von": "front", "richtung": [0, 0, -1], "hinweis": "…"}},
+  "geometrie": {"modul": "kevcad.geometrie.kamerasystem", "funktion": "sony_fx6"},
+  "hinweis": "…", "quellen": ["…"], "tags": ["fx6"]
+}
+```
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `hersteller`, `modell`, `bajonett` | ja | `bajonett` als Kennung (`sony-e`, `pl`, `ef` …); Objektive brauchen dasselbe |
+| `kurzname` | nein | Standardname der Kamera in model.py („FX6“) |
+| `auflagemass` | ja | Bajonett-Auflage bis Sensorebene in mm (E-Mount 18) |
+| `formate` | ja | Aufnahmeformate: `id`, `name`, `modus`, `sensor_mm` (aktive Fläche [b, h]), `aufloesung` [px, px], optional `fps_max`, `zerstreuungskreis` (mm, sonst Diagonale / 1500), `hinweis`. Die aktive Höhe rechnet der Kernel aus der Breite und dem Seitenverhältnis der Auflösung (quadratische Pixel); weicht die Angabe mehr als 3 % ab, ist der Eintrag ungültig |
+| `standard_format` | nein | `id` des Formats ohne Angabe in model.py |
+| `gehaeuse` | ja | `b`, `h`, `t` (Breite, Höhe, Tiefe ohne Anbauten), `achse_hoehe` (Bildachse über der Unterseite), `achse_seitlich` (Bildachse rechts der Gehäusemitte, von hinten gesehen), `bajonett_vorstand` (Auflage vor der Gehäusefront), `ring_vorstand` (nur Darstellung; der Ring endet an der Auflage, sichtbar ist davon nur der Teil vor der Front, sonst stäke das Objektiv im Ring) |
+| `gewicht` | nein | g, für Stückliste und Schwerpunkt |
+| `schwerpunkt` | nein | [x, y, z] lokal |
+
+### Objektiv (`art: "objektiv"`)
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `hersteller`, `bajonett` | ja | wie bei der Kamera |
+| `brennweite` | ja | mm; Festbrennweite als Zahl, Zoom als [kurz, lang] |
+| `lichtstaerke` | ja | kleinste Blendenzahl bzw. T-Wert |
+| `blendenart` | nein | `f` (Standard) oder `t` (Cine) |
+| `blende_max` | nein | größte Blendenzahl (z. B. 22) |
+| `naheinstellgrenze` | ja | mm ab Sensorebene |
+| `bildkreis` | ja | mm; kleiner als die Formatdiagonale → Warnung „vignettiert“ |
+| `laenge`, `frontdurchmesser` | ja | mm, Länge ab Bajonett-Auflage |
+| `filter`, `gewicht`, `bildstabilisator` | nein | mm, g, bool |
+
+### Kamerazubehör (`art: "kamerazubehoer"`)
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `typ` | ja | `kaefig`, `baseplate`, `rod`, `rosette`, `akkuplatte`, `akku`, `griff`, `monitor`, `sonstiges` |
+| `masse` | nein | `b`, `h`, `t` oder `d`, `l` in mm (vereinfachte Form, wenn `geometrie` fehlt) |
+| `gewicht`, `schwerpunkt` | nein | g, [x, y, z] lokal |
+| `ursprung` | nein | Text: wo der lokale Ursprung liegt und wohin x zeigt |
+
+### Gemeinsame Felder
+
+| Feld | Bedeutung |
+|---|---|
+| `bezugspunkte` | {name: {`pos` [x, y, z], `richtung` [x, y, z] (nur Information), `von`: `"front"` (nur Kameras: x ab der Gehäusefront, wandert mit `bajonett_vorstand`), `hinweis`}}. Namen aus Kleinbuchstaben, Ziffern und `_`. Kameras haben dazu immer `sensor`, `bajonett`, `auge` (Projektionszentrum) und `front` (Frontlinse) |
+| `geometrie` | {`modul`: importierbares Modul, z. B. `kevcad.geometrie.kamerasystem`, oder `datei`: `.py` relativ zur Katalogdatei, `funktion`}. Die Funktion `f(eintrag: dict) -> Shape \| dict[str, Shape]` liefert die Form in lokalen Koordinaten, ein dict ergibt Unterteile. Ohne `geometrie` zeichnet Kev CAD Quader bzw. Zylinder aus den Maßen |
+| `hinweis` | Text: was belegt, was angenommen ist, was Kevin besitzt |
+| `quellen` | Liste von Texten (Hersteller, Händler, Messung) |
+
+### API in model.py
+
+```python
+from kevcad import lager, show
+
+fx6 = lager.kamera("sony-fx6", objektiv="sigma-ff-hs-35-t1.5-e", format="ff-uhd", blende=2.8, fokus=1500, name="FX6")
+fx6.setzen((0, -400, 180), blick_auf=(800, 0, 108))               # Sensormitte, Blick auf einen Punkt
+fx6.setzen(platte.bezugspunkt("kamera_1_4"), bezug="stativ_1_4")    # eine Location gibt auch die Ausrichtung vor
+fx6.an("Rollwagen/Deckel", punkt=(150, 0, 40), richtung=(1, 0, 0), bezug="stativ_1_4", lokal=True)  # folgt dem Teil
+fx6.einstellen(brennweite=50, blende=4, fokus="unendlich", format="dci")
+show(fx6.koerper(), "Kamera FX6")       # Gehäuse und Objektiv, Inventar
+fx6.bildwinkel_h, fx6.bildwinkel_v, fx6.schaerfe_nah, fx6.schaerfe_fern, fx6.hyperfokal, fx6.bezugspunkt("bajonett")
+
+platte = lager.kamerazubehoer("tilta-es-t20-qrbp")
+show(platte.verbauen("Rig/Baseplate", an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4"), "Rig/Baseplate")
+```
+
+- `setzen`/`an`: `bezug` ist ein Bezugspunkt der Kamera, der an `position`/`punkt` liegt; Blick über `blick_auf` oder
+  `richtung`, oben ist Welt-Z, `roll` in Grad (positiv im Uhrzeigersinn aus Sicht des Kameramanns).
+- `an(teil, …, lokal=True)`: Angaben in den Koordinaten des gezeigten Teils (seiner Location); `an` nach dem `show` des
+  Teils aufrufen. Die Kamera trägt das Teil als Eltern-Teil (`teil` in CAMERA_UPSERT) und folgt ihm.
+- `verbauen(name, an=Location, bezug="punkt", drehung=(rx, ry, rz))`: setzt den eigenen Bezugspunkt auf `an` (gleiche
+  Achsen) und meldet die Stücklistenzeile; `bezugspunkt(name)` liefert danach die Weltlage.
+- Bildwinkel `2 · atan(Seite / (2 f))` (Fokus unendlich), Schärfentiefe mit `H = f² / (N c) + f`, Nahpunkt
+  `s (H − f) / (H + s − 2 f)`, Fernpunkt `s (H − f) / (H − s)`; `s` ab Sensorebene, bei Cine-Objektiven der T-Wert als `N`.

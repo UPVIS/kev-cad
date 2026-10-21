@@ -183,6 +183,11 @@ public final class AppModel: ObservableObject {
     @Published public var downloadOffer: DownloadOffer?
     @Published public var zukaufActivity: ZukaufActivity = .idle
     @Published public var watchedDownloads: URL?
+    /// Phase 5 (additiv): Animation (Zeitleiste) als eigenes Objekt, damit das Abspielen nicht das ganze Fenster neu
+    /// zeichnet; Aktionen über `actions as? AnimationActions`.
+    public let animation = AnimationModel()
+    /// Phase 5 (KAM, additiv): Kameras aus model.py und der Blick durch eine Kamera (Aktionen: `CameraActions`).
+    public let cameras = CameraStore()
     /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
     @Published public var pruefung: PruefErgebnis?
     @Published public var schnittkoerperSichtbar = true

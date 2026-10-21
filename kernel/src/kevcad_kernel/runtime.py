@@ -31,9 +31,11 @@ from pathlib import Path
 from typing import Any
 
 import kevcad_kernel
+from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
+from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.protocol import PROTOCOL_VERSION
@@ -80,14 +82,16 @@ class Job:
     steps: list[str] = field(default_factory=list)
     started: float = 0.0
     cancelled: str | None = None  # Grund, wenn der Lauf nicht mehr zählt (anderes Projekt geöffnet)
+    animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
 
     @property
     def key(self) -> tuple[str, str, str]:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime:
-    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App."""
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
+    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
+    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -612,6 +616,8 @@ class KernelRuntime:
             if not same:
                 for rec in self.scene.clear():
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
+                self._anim_project_changed()
+                self.cameras_clear(run)
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -787,6 +793,7 @@ class KernelRuntime:
                         self.scene.remove(rec.name)
                         self._send_app({"type": "PART_REMOVE", "run": job.run, "name": rec.name})
                 records = self.scene.records()
+                self.cameras_after_run(job.run, final.get("cameras"))  # Phase 5: Kameras vor RUN_END
                 violations = list(final.get("inventar_verstoesse") or [])
                 with self._lock:
                     self._violations = violations
@@ -813,6 +820,7 @@ class KernelRuntime:
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            self._anim_publish(job, result)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -845,6 +853,10 @@ class KernelRuntime:
         if "cached" in final:
             result["cached_parts"] = final.get("cached", 0)
             result["tess_ms"] = final.get("tess_ms", 0.0)
+        if final.get("cameras"):
+            from kevcad_kernel.kamera import camera_line
+
+            result["kameras"] = [camera_line(c) for c in final["cameras"]]
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
@@ -938,6 +950,9 @@ class KernelRuntime:
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+        elif kind == "ANIM":
+            if header.get("run") == job.run:
+                job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
@@ -984,6 +999,8 @@ class KernelRuntime:
                 bom = self._bom
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            self._anim_on_connect(conn)
+            self.cameras_on_connect(conn, self._run_no)
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
@@ -1061,7 +1078,7 @@ class KernelRuntime:
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1072,6 +1089,8 @@ class KernelRuntime:
         if kind == "HELLO_APP":
             conn.info = {k: header.get(k) for k in ("app_version", "bundle_id")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+        elif kind == "CAMERA_SUGGEST":
+            self.camera_suggest_from_app(header)
         elif kind == "SELECTION":
             with self._lock:
                 self._selection = {"run": header.get("run"), "refs": list(header.get("refs") or [])}
@@ -1093,6 +1112,8 @@ class KernelRuntime:
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE", "ZUKAUF_NEU", "ZUKAUF_CAD"):
             self._pool.submit(self._handle_app_request, header)
+        elif self._anim_app_message(kind, header):
+            pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
 

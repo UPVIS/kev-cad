@@ -13,6 +13,9 @@ from __future__ import annotations
 from typing import Any
 
 VORLAGE = "_kevcad_vorlage"
+# Eigene Attribute an Formen, die beim Nachbauen der Kinder mitgehen: grobe Tessellierung (Zukauf-CAD), Kennung der
+# Kamera-Körper für Stückliste und Kameras (Phase 5), Zukaufteil und Lagername (Phase 3)
+KENNUNGEN = ("kevcad_grob", "lager_token", "zukauf_id", "lager_name")
 
 
 def teilformen(wrapped: Any) -> list[Any]:
@@ -49,7 +52,7 @@ def _copy_attrs(src: Any, dst: Any) -> None:
             dst.material = mat
     except Exception:  # noqa: BLE001
         pass
-    for attr in ("kevcad_grob",):
+    for attr in KENNUNGEN:
         if hasattr(src, attr):
             setattr(dst, attr, getattr(src, attr))
 
