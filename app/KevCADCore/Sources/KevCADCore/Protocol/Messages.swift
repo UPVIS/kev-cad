@@ -173,24 +173,6 @@ public struct EdgeInfo: Codable, Equatable, Sendable {
     }
 }
 
-public struct BBox: Codable, Equatable, Sendable {
-    public var min: [Double]
-    public var max: [Double]
-
-    public init(min: [Double], max: [Double]) {
-        self.min = min
-        self.max = max
-    }
-
-    public var minVector: SIMD3<Float>? {
-        min.count >= 3 ? SIMD3(Float(min[0]), Float(min[1]), Float(min[2])) : nil
-    }
-
-    public var maxVector: SIMD3<Float>? {
-        max.count >= 3 ? SIMD3(Float(max[0]), Float(max[1]), Float(max[2])) : nil
-    }
-}
-
 /// Kopf von PART_UPSERT.
 public struct PartUpsertHeader: Decodable, Sendable {
     public var run: Int
@@ -328,13 +310,16 @@ public struct RunErrorMessage: Decodable, Sendable {
 public struct AgentMessage: Decodable, Sendable {
     public var connected: Bool
     public var activity: String?
+    /// Claude-Sitzungen, die Kev CAD bedienen (additiv, für den Spiegel; leer bei älteren Kerneln).
+    public var sessions: [MirrorAgent]
 
-    enum CodingKeys: String, CodingKey { case connected, activity }
+    enum CodingKeys: String, CodingKey { case connected, activity, sessions }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         connected = (try? c.decodeIfPresent(Bool.self, forKey: .connected)) ?? false
         activity = try? c.decodeIfPresent(String.self, forKey: .activity)
+        sessions = (try? c.decodeIfPresent([MirrorAgent].self, forKey: .sessions)) ?? []
     }
 }
 

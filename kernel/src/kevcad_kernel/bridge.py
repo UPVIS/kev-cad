@@ -17,6 +17,7 @@ Umgebungsvariablen:
 | ``KEVCAD_LIST_WAIT`` | 10 | so lange wartet ``tools/list`` auf die App, danach kommt die eingebaute Liste |
 | ``KEVCAD_LAUNCH_ON_START`` | 1 | 0 = App nicht schon beim Start der Brücke öffnen, erst beim ersten Werkzeugaufruf |
 | ``KEVCAD_BRIDGE_DEBUG`` | – | 1 = ausführliches Protokoll auf stderr |
+| ``CLAUDE_CODE_SESSION_ID`` | – | von Claude Code gesetzt; geht bei jeder Anfrage im Kopf ``x-claude-code-session-id`` an den Kernel (Sitzungen für den Spiegel, MIRROR.md) |
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
     CONNECTION_CLOSED,
@@ -60,6 +62,7 @@ DEFAULT_BUNDLE_ID = "de.upvis.kevcad"
 DEFAULT_APP_PATH = os.path.expanduser("~/Applications/Tools/Kev CAD.app")
 HOST = "127.0.0.1"
 MAX_EVENT_BYTES = 256 * 1024 * 1024
+SESSION_HEADER = "x-claude-code-session-id"
 
 T = TypeVar("T")
 
@@ -74,6 +77,7 @@ class BridgeConfig:
     list_wait: float = 10.0
     launch_on_start: bool = True
     host: str = HOST
+    session_id: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> BridgeConfig:
@@ -95,7 +99,13 @@ class BridgeConfig:
             start_timeout=number("KEVCAD_START_TIMEOUT", 45.0),
             list_wait=number("KEVCAD_LIST_WAIT", 10.0),
             launch_on_start=env.get("KEVCAD_LAUNCH_ON_START", "1").strip().lower() not in ("0", "false", "nein", "no"),
+            session_id=(env.get("CLAUDE_CODE_SESSION_ID") or "").strip() or None,
         )
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Kopfzeilen für jede Anfrage an den Kernel."""
+        return {SESSION_HEADER: self.session_id} if self.session_id else {}
 
     @property
     def url(self) -> str:
@@ -298,13 +308,16 @@ class Upstream:
         """Hält eine MCP-Sitzung offen, bis ``close`` gesetzt wird oder die Verbindung abbricht."""
         try:
             # Bilder reisen als ein SSE-Ereignis; die Vorgabe des Pakets (1 MiB) wäre für große Screenshots zu knapp
-            transport = streamable_http_client(self.cfg.url, max_sse_event_size=MAX_EVENT_BYTES)
-            client = Client(transport, mode="legacy", cache=None,
-                            client_info=Implementation(name="kevcad-mcp", version=kevcad_kernel.__version__))
-            async with client:
-                conn.client = client
-                conn.ready.set()
-                await conn.close.wait()
+            # Eigener HTTP-Client nur für die Kopfzeile mit der Sitzungskennung; Zeitlimits wie die Vorgabe des Pakets
+            http = create_mcp_http_client(headers=self.cfg.headers)
+            async with http:
+                transport = streamable_http_client(self.cfg.url, http_client=http, max_sse_event_size=MAX_EVENT_BYTES)
+                client = Client(transport, mode="legacy", cache=None,
+                                client_info=Implementation(name="kevcad-mcp", version=kevcad_kernel.__version__))
+                async with client:
+                    conn.client = client
+                    conn.ready.set()
+                    await conn.close.wait()
         except Exception as exc:
             conn.error = exc
             if conn.ready.is_set():
@@ -373,6 +386,9 @@ class _OfflineService:
         pass
 
     def set_agent_connected(self, connected: bool) -> None:
+        pass
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
         pass
 
     def __getattr__(self, name: str) -> Any:

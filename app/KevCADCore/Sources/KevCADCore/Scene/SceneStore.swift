@@ -39,6 +39,9 @@ public final class SceneStore {
     // MARK: Zustand
 
     public private(set) var hidden: Set<String> = []
+    /// Teile, die zuletzt mit `isolate` allein gezeigt wurden; nil, sobald die Sichtbarkeit anders geändert wird
+    /// (für den Spiegel: `isoliert`).
+    public private(set) var isolated: [String]?
     public private(set) var displayStyle: DisplayStyle = .shadedEdges
     public private(set) var explodeFactor: Float = 0
     public private(set) var section: ClipPlane?
@@ -123,6 +126,7 @@ public final class SceneStore {
         styleSignature.removeValue(forKey: name)
         flashStart.removeValue(forKey: name)
         hidden.remove(name)
+        isolated?.removeAll { $0 == name }
         selection.removeAll { $0.part == name }
         for i in highlights.indices { highlights[i].refs.removeAll { $0.part == name } }
         highlights.removeAll { $0.refs.isEmpty }
@@ -139,6 +143,7 @@ public final class SceneStore {
         bodyOwner = [:]
         flashStart = [:]
         hidden = []
+        isolated = nil
         selection = []
         highlights = []
         inventoryWarnings = []
@@ -198,6 +203,7 @@ public final class SceneStore {
     public func isVisible(_ name: String) -> Bool { !hidden.contains(name) }
 
     public func setVisible(_ names: [String], _ visible: Bool) {
+        isolated = nil
         for n in names {
             if visible { hidden.remove(n) } else if parts[n] != nil { hidden.insert(n) }
             applyProps(n)
@@ -209,12 +215,14 @@ public final class SceneStore {
     public func isolate(_ names: [String]) {
         let keep = Set(names)
         hidden = Set(order.filter { !keep.contains($0) })
+        isolated = order.filter { keep.contains($0) }
         for n in order { applyProps(n) }
         publish()
     }
 
     public func showAll() {
         hidden = []
+        isolated = nil
         for n in order { applyProps(n) }
         publish()
     }

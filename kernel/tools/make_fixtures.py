@@ -140,7 +140,12 @@ def main() -> None:
     add("run_error", {"type": "RUN_ERROR", "seq": 8, "run": 2, "message": "NameError: name 'Boxx' is not defined",
                       "line": 7, "excerpt": "6 | step('Grundplatte')\n7 | platte = Boxx(10, 20, 30)",
                       "traceback": "File model.py, line 7"})
-    add("agent", {"type": "AGENT", "seq": 9, "connected": True, "activity": "misst Abstand Lasche ↔ Grundplatte"})
+    add("agent", {"type": "AGENT", "seq": 9, "connected": True, "activity": "misst Abstand Lasche ↔ Grundplatte",
+                  "sessions": [{"session_id": "6b1f2c3d-0000-4000-8000-00000000000a", "aktiv": True,
+                                "seit": "2026-10-21T21:50:00Z", "taetigkeit": "misst Abstand Lasche ↔ Grundplatte",
+                                "zuletzt": "2026-10-21T22:05:12Z"},
+                               {"session_id": "6b1f2c3d-0000-4000-8000-00000000000b", "aktiv": False,
+                                "seit": "2026-10-21T21:58:30Z", "taetigkeit": None}]})
     add("view_cmd_focus", {"type": "VIEW_CMD", "seq": 10, "id": "k-1", "cmd": "focus",
                            "args": {"refs": ["Halter/Bolzen"], "animate": True}})
     add("screenshot_req", {"type": "SCREENSHOT_REQ", "seq": 11, "id": "k-2", "width": 1280, "height": 800,

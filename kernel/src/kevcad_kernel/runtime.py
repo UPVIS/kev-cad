@@ -111,7 +111,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
         self.scene = Scene()
         self._project: Project | None = None
         self._settings: dict[str, Any] = {"auto_run": bool(auto_run), "slow_ms": 0}
-        self._agent: dict[str, Any] = {"connected": False, "activity": None}
+        self._agent: dict[str, Any] = {"connected": False, "activity": None, "sessions": []}
         self._selection: dict[str, Any] = {"run": None, "refs": []}
         self._last_result: dict[str, Any] | None = None
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
@@ -510,6 +510,13 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
             self._agent["connected"] = bool(connected)
             if not connected:
                 self._agent["activity"] = None
+                self._agent["sessions"] = []
+            msg = {"type": "AGENT", **self._agent}
+        self._send_app(msg)
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        with self._lock:
+            self._agent["sessions"] = [dict(s) for s in sessions]
             msg = {"type": "AGENT", **self._agent}
         self._send_app(msg)
 

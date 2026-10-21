@@ -191,6 +191,11 @@ class KernelService(Protocol):
 
     def set_agent_connected(self, connected: bool) -> None: ...
 
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        """Claude-Sitzungen, die Kev CAD bedienen (MIRROR.md, „Sitzungen“): je ``session_id``, ``aktiv``, ``seit``,
+        ``taetigkeit``, optional ``zuletzt``; geht an die App im Rahmen AGENT als ``sessions``. Optional: der
+        MCP-Server ruft es nur, wenn der Dienst es anbietet."""
+
     def close(self) -> None: ...
 
 

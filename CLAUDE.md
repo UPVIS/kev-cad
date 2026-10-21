@@ -11,7 +11,9 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 | Ordner | Inhalt |
 |---|---|
 | `kernel/` | Python 3.12 mit uv: build123d 0.13, ocp-tessellate, MCP. Paket `kevcad_kernel` (Server, Laufzeit, MCP) und `kevcad` (API für model.py) |
-| `app/KevCADCore/` | Swift-Paket ohne Oberfläche: Protokoll, Kernel-Verbindung, Szene, Viewport, Modell. Mit `swift test` testbar |
+| `app/KevCADCore/` | Swift-Paket ohne Oberfläche: Protokoll, Kernel-Verbindung, Szene, Viewport, Modell, Spiegel-Dienst (`Mirror/`). Mit `swift test` testbar |
+| `app/KevCADCore/Sources/KevCADWire/` | plattformneutral (macOS, iOS) für den Spiegel aufs iPhone ([MIRROR.md](MIRROR.md)): Rahmen, Geometrie, Körperteilung, Netzformat, Spiegel-Nachrichten. VoiceBridge bindet es über `Package.swift` im Wurzelordner ein; KevCADCore reicht es weiter |
+| `mirror-fixtures/` | Testdateien des Spiegels für Kev CAD und VoiceBridge |
 | `app/Sources/KevCAD/` | SwiftUI-App: Fenster, Leisten, Projekte, Menüs |
 | `app/project.yml` | XcodeGen; `app/KevCAD.xcodeproj` wird erzeugt und ist nicht im Git |
 | `skill/kev-cad/` | Modellierleitfaden für den Agenten |
@@ -27,6 +29,8 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 ./build.sh --core-tests    # swift test (KevCADCore) und pytest (Kernel)
 cd kernel && uv sync       # Kernel-Umgebung
 cd kernel && .venv/bin/python tools/make_fixtures.py   # Protokoll-Testdateien neu erzeugen
+cd kernel && .venv/bin/python tools/make_mirror_fixtures.py   # Testdateien des Spiegels neu erzeugen
+cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # Spiegel-Socket ohne App
 ```
 
 ## Installation und automatische Updates
