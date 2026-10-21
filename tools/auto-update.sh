@@ -10,7 +10,7 @@
 # Abschalten: KEVCAD_NO_AUTOUPDATE=1 beim Commit setzen oder `git config core.hooksPath ""`.
 set -uo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && git rev-parse --path-format=absolute --git-common-dir | xargs dirname)"
+REPO="$(dirname "$(cd "$(dirname "$0")/.." && git rev-parse --path-format=absolute --git-common-dir)")"
 SUPPORT="$HOME/Library/Application Support/de.upvis.kevcad"
 SRC="$SUPPORT/build-src"
 LOGDIR="$HOME/Library/Logs/Kev CAD"
