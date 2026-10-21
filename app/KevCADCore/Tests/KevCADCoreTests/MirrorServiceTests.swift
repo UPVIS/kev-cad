@@ -209,6 +209,15 @@ final class MirrorServiceTests: XCTestCase {
         try c.send(MirrorCommand.sichtbarkeit(id: "i3", mode: "show_all"))
         XCTAssertTrue(waitUntil { c.receiver.state?.isoliert == nil && c.receiver.state?.verborgen == [] })
 
+        // Prüfbefunde (Prüfung Stufe 1) gehen als befunde mit
+        controller.model.pruefung = PruefErgebnis(
+            run: 1, zustand: .done,
+            befunde: [PruefBefund(id: "b1", art: "durchdringung", teile: ["Grundplatte", "Halter/Bolzen"],
+                                  schwere: .fehler, text: "Bolzen steckt 2 mm in der Grundplatte",
+                                  ort: SIMD3(30, 0, 10))])
+        XCTAssertTrue(waitUntil { c.receiver.state?.befunde.first?.schwere == "fehler" })
+        XCTAssertEqual(c.receiver.state?.befunde.first?.ort, .array([30, 0, 10]))
+
         try c.send(MirrorCommand.darstellung(id: "i4", display: "xray"))
         XCTAssertTrue(waitUntil { c.receiver.state?.darstellung == "xray" })
         XCTAssertEqual(controller.model.displayStyle, .xray)

@@ -483,7 +483,11 @@ public final class MirrorService {
             }
         }
         s.masse = masse
-        s.befunde = []
+        s.befunde = (c.model.pruefung?.befunde ?? []).map { b in
+            MirrorFinding(
+                art: b.art, teile: b.teile, schwere: b.schwere.rawValue,
+                ort: b.ort.map { JSONValue.array(Self.point($0).map(JSONValue.number)) }, text: b.text)
+        }
         switch c.model.run {
         case .idle: s.lauf = MirrorRunState(run: scene.latestRun, laeuft: false)
         case .running(let run, let step, _): s.lauf = MirrorRunState(run: run, laeuft: true, schritt: step)
