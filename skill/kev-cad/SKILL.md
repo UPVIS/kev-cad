@@ -9,6 +9,23 @@ Ein Modell ist `model.py` im Projektordner (build123d, Millimeter, Z nach oben).
 `show()` erscheint sofort im Viewer, Kevin sieht beim Bauen zu. Die Datei ist die Quelle der Wahrheit: Änderungen immer
 dort, nie nur per `execute`.
 
+## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
+
+Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst, `run` wartet auf das Ergebnis.
+
+- **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
+  Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
+  Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
+  Gewindeeingriff (Schraube in Mutter oder Kern-/Gewindeloch, gleiche Achse, nur im Gewindeband).
+- Befunde kommen als isError mit Ort, Volumen, Tiefe und einer Lösung je Befund. Kevin sieht die Teile rot und das
+  Schnittvolumen als roten Körper; Export ist gesperrt, bis alles behoben ist.
+- **Beheben, nicht wegerklären:** Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren, dann wieder `run`.
+  Gewollte Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Grund in model.py:
+  `erlaubt_ueberlappung(a, b, grund="Presspassung, mit Kevin abgestimmt")` (`from kevcad import erlaubt_ueberlappung`;
+  a und b als Name aus `show()`, Gruppe oder Form). Ohne Grund gilt sie nicht.
+- **Nichts schwebt, steht sicher, Bewegliches frei:** bis Kev CAD das selbst prüft, von Hand mit `measure` und `parts`
+  (Kontakt zum Nachbarteil, Schwerpunkt über der Aufstandsfläche).
+
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
@@ -39,9 +56,9 @@ mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md
    Dateiwerkzeuge gibt.
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-6. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für
-   Stückliste und Zuschnitt. Kein `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe
-   „Bilder“).
+6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
+   Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt. Kein
+   `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe „Bilder“).
 7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -118,6 +135,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
 | `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
+| `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 
 - `color`: Hex wie `"#B8BEC4"`; Lager- und Druckteile haben schon die Farbe ihres Materials.
 - `material`: id oder Alias aus dem Katalog (`material_list`), z. B. `stahl-s235`, `edelstahl`, `alu`,
@@ -278,3 +296,5 @@ Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur die
 | Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
 | Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |
+| Prüfung: 2 Durchdringungen … | Teile stecken ineinander; je Befund die Lösung umsetzen (Spiel, Bohrung, verschieben), `run` |
+| Export verweigert. Prüfung: … | erst die Befunde der Prüfung beheben |

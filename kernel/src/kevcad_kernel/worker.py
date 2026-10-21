@@ -11,7 +11,7 @@ Nachrichten Eltern → Rechenprozess:
 
 | type | Felder |
 |---|---|
-| ``RUN`` | ``run``, ``path`` (model.py), ``code``, ``params``, ``slow_ms``, ``deviation``, ``angular`` |
+| ``RUN`` | ``run``, ``path`` (model.py), ``code``, ``params``, ``slow_ms``, ``deviation``, ``angular``, ``pruefen`` (Standard true: nach ``RUN_DONE`` prüfen, siehe pruefung/lauf.py) |
 | ``EXEC`` | ``run``, ``code``, ``project``, ``deviation``, ``angular`` |
 | ``PING`` | ``id`` → ``PONG`` |
 | ``QUIT`` | – |
@@ -24,6 +24,7 @@ Rechenprozess → Eltern:
 | ``STEP`` | ``run``, ``index``, ``text`` | – |
 | ``PART`` | ``run``, ``name``, ``key`` (Formschlüssel), ``cached``, ``tess_ms``, ``density``, ``app`` (Kopf des PART_UPSERT ohne seq), ``app_len`` | Nutzlast des PART_UPSERT, danach BRep-Binärform |
 | ``RUN_DONE`` / ``RUN_FAILED`` | ``run``, ``shown``, ``steps``, ``warnings``, ``params``, ``stdout``, ``duration_ms``, ``error`` (nur FAILED) | – |
+| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist | Nutzlast von CHECK |
 | ``EXEC_RES`` | ``ok``, ``result``, ``stdout``, ``shown``, ``warnings``, ``error``/``line``/``excerpt``/``hint`` | – |
 """
 
@@ -93,18 +94,53 @@ def main() -> int:
           "python": sys.version.split()[0], "import_s": round(time.perf_counter() - t0, 2)})
 
     reader = FrameReader()
-    while True:
-        try:
+    wartend: collections.deque = collections.deque()  # während der Prüfung angekommene Aufträge
+    ende = False
+
+    def neuer_auftrag() -> None:
+        """Für die Prüfung nach einem Lauf: neue Rahmen einsammeln; ein neuer Lauf (oder QUIT) bricht sie ab."""
+        nonlocal ende
+        import select
+
+        while select.select([0], [], [], 0)[0]:
             data = os.read(0, 1 << 16)
-        except InterruptedError:
-            continue
-        if not data:
+            if not data:
+                ende = True
+                break
+            wartend.extend(reader.feed(data))
+        if ende or any(h.get("type") in ("RUN", "QUIT") for h, _ in wartend):
+            from kevcad_kernel.pruefung.pruefer import Abgebrochen
+
+            raise Abgebrochen("neuer Lauf")
+
+    while True:
+        if wartend:
+            frames = list(wartend)
+            wartend.clear()
+        elif ende:
             return 0
-        for header, _payload in reader.feed(data):
+        else:
+            try:
+                data = os.read(0, 1 << 16)
+            except InterruptedError:
+                continue
+            if not data:
+                return 0
+            frames = reader.feed(data)
+        for header, _payload in frames:
             kind = header.get("type")
             try:
                 if kind == "RUN":
-                    emit(runner.run(header))
+                    result = runner.run(header)
+                    emit(result)
+                    if result.get("type") == "RUN_DONE" and header.get("pruefen", True):
+                        try:
+                            check, nutz = runner.pruefe(int(header["run"]), abbrechen=neuer_auftrag)
+                        except Exception as exc:  # noqa: BLE001 - der Lauf ist schon gemeldet
+                            check, nutz = {"type": "CHECK", "run": header["run"], "state": "failed",
+                                           "message": f"Prüfung fehlgeschlagen: {type(exc).__name__}: {exc}",
+                                           "befunde": [], "geometrie": []}, b""
+                        emit({"type": "CHECK_DONE", "run": header["run"], "app": check, "app_len": len(nutz)}, nutz)
                 elif kind == "EXEC":
                     emit(runner.execute(header))
                 elif kind == "PING":
