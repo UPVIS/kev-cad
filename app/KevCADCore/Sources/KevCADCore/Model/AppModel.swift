@@ -187,3 +187,11 @@ public protocol AppActions: AnyObject {
     func saveScreenshot()
     func restartKernel()
 }
+
+/// Ergänzung der Oberfläche (AP4), rein additiv: eine einzelne Messung löschen. AppActions kennt nur
+/// `clearMeasurements()`. Der App-Kern kann dieses Protokoll übernehmen (oder die Methode in AppActions aufnehmen);
+/// bis dahin blendet die Oberfläche den Löschknopf je Messung aus, wenn `AppModel.actions` es nicht anbietet.
+@MainActor
+public protocol MeasurementRemoving: AnyObject {
+    func removeMeasurement(id: UUID)
+}
