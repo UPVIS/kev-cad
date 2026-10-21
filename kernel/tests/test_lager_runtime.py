@@ -164,7 +164,7 @@ def test_catalog_messages_and_release(p2):
 
 def test_inventory_rule_export_and_settings(p2):
     rt, app = p2["rt"], p2["app"]
-    path = new_project(p2, HEAD + "show(Pos(60, 0, 0) * Box(10, 10, 10), 'Klotz')\n"
+    path = new_project(p2, HEAD + "show(Pos(60, 0, 5) * Box(10, 10, 10), 'Klotz')\n"
                                   "show(lager.teil('flach-en10058-40x5').verbauen(laenge=100, name='F'), 'F')\n")
     start = app.mark()
     res = rt.run()

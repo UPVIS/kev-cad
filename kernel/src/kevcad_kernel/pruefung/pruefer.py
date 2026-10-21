@@ -222,8 +222,10 @@ def pruefe_durchdringungen(ctx: PruefKontext) -> list[dict[str, Any]]:
             f"{a.name} und {b.name} durchdringen sich: {bf.de_num(p.volumen, 1)} mm³, Tiefe etwa {mm(p.tiefe, 2)} "
             f"bei {punkt(p.ort)}.", _loesung_durchdringung(a, b, p), wert=wert, ort=p.ort, geometrie=geo))
     ctx.zeiten["durchdringung"] = (time.perf_counter() - t0) * 1000
+    arten = [p.art for p in ctx.paare.values()]
     ctx.ergebnis["paare"] = {"geprueft": len(ctx.paare), "neu_gerechnet": ctx.cache.neu - neu0,
-                             "kontakte": sum(1 for p in ctx.paare.values() if p.kontakt)}
+                             "kontakte": sum(1 for p in ctx.paare.values() if p.kontakt),
+                             "beruehrt": arten.count("beruehrt"), "spiel": arten.count("spiel")}
     erlaubt = []
     for p in ctx.paare.values():
         if p.durchdringt:
@@ -251,7 +253,7 @@ registriere("erklaerungen", pruefe_erklaerungen)
 registriere("durchdringung", pruefe_durchdringungen)
 
 # Weitere Prüfungen in eigenen Modulen; sie registrieren sich beim Import selbst (Reihenfolge = Ablauf)
-ERWEITERUNGEN: tuple[str, ...] = ()  # Stufe 2: ("kevcad_kernel.pruefung.stand", "kevcad_kernel.pruefung.montage")
+ERWEITERUNGEN: tuple[str, ...] = ("kevcad_kernel.pruefung.stand", "kevcad_kernel.pruefung.montage")
 _geladen = False
 
 

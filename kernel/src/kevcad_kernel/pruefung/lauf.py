@@ -19,7 +19,7 @@ from kevcad_kernel.pruefung.kollision import PaarCache
 from kevcad_kernel.pruefung.pruefer import Abgebrochen, pruefe
 
 # Prüfungen, die nach jedem Lauf laufen (None = alle registrierten)
-AKTIV: tuple[str, ...] | None = ("erklaerungen", "durchdringung")
+AKTIV: tuple[str, ...] | None = None
 
 
 class PruefLauf:
