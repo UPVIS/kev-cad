@@ -16,6 +16,7 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 | `app/project.yml` | XcodeGen; `app/KevCAD.xcodeproj` wird erzeugt und ist nicht im Git |
 | `skill/kev-cad/` | Modellierleitfaden für den Agenten |
 | `spikes/ap0/` | Viewer- und Kerneltest (abgeschlossen, nur Nachschlagen) |
+| `fotomess/` | Prototyp Phase 4: Modell aus wenigen Fotos oder einem Video vermessen (eigene uv-Umgebung, `STRATEGIE.md`, `BENCHMARK.md`, Tests mit `.venv/bin/python -m pytest`) |
 
 ## Befehle
 

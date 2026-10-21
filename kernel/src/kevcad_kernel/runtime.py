@@ -31,10 +31,13 @@ from pathlib import Path
 from typing import Any
 
 import kevcad_kernel
+from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
+from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
+from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
@@ -78,14 +81,16 @@ class Job:
     steps: list[str] = field(default_factory=list)
     started: float = 0.0
     cancelled: str | None = None  # Grund, wenn der Lauf nicht mehr zählt (anderes Projekt geöffnet)
+    animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
 
     @property
     def key(self) -> tuple[str, str, str]:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime:
-    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App."""
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
+    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
+    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -112,6 +117,9 @@ class KernelRuntime:
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
         self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
+        self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
+        self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
+        self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
         self.catalog = Catalog(own=own_dir(socket_path))
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
@@ -156,6 +164,7 @@ class KernelRuntime:
                 "inventar": {"regel": self._project.inventar_regel if self._project else True,
                              "verstoesse": list(self._violations)},
                 "bedingungen": dict((self._constraints or {}).get("summe") or {}),
+                "pruefung": self._pruef.kurz(),
             }
 
     def project_open(self, path: str, reply_to: str | None = None) -> dict[str, Any]:
@@ -210,7 +219,12 @@ class KernelRuntime:
         if isinstance(job, dict):
             return job
         job.done.wait()
-        return job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
+        result = job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
+        if result.get("ok") and job.run:
+            check = fuer_ergebnis(self._pruef.warte(job.run, self.pruef_warten_s))
+            if check is not None:
+                result = {**result, "pruefung": check}
+        return result
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         with self._lock:
@@ -317,15 +331,13 @@ class KernelRuntime:
         if violations and locked:
             return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
                     "inventar_verstoesse": violations}
-        from kevcad_kernel.bedingungen import exportsperre
+        if locked:
+            from kevcad_kernel.pruefung.text import export_sperre
 
-        sperre = exportsperre(constraints)
-        if sperre and locked:  # verletzte Bedingungen sperren den Export wie Durchdringungen (B6)
-            from kevcad_kernel.bedingungen.bericht import befund_zeile
-
-            text = "; ".join(befund_zeile(b) for b in sperre[:3]) + (" …" if len(sperre) > 3 else "")
-            return {"ok": False, "error": f"Export verweigert: {len(sperre)} Befunde der Bedingungen. {text}",
-                    "bedingungen_befunde": sperre}
+            offen, laeuft = self._pruef.offen(warten_s=60.0)
+            sperre = export_sperre(offen, laeuft)
+            if sperre:
+                return {"ok": False, "error": sperre, "befunde": offen}
         want_csv = any(f.lower().lstrip(".") in ("bom_csv", "csv") for f in formats)
         formats = [f for f in formats if f.lower().lstrip(".") not in ("bom_csv", "csv")]
         csv_files: list[str] = []
@@ -390,6 +402,13 @@ class KernelRuntime:
         if rep is None:
             return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
         out = {"ok": True, **rep}
+        # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören
+        check, _ = self._pruef.letztes()
+        if check is not None and check.get("run") == rep.get("run"):
+            weg = [{**b, "pruefung": "bewegungsraum"} for b in check.get("befunde") or []
+                   if b.get("art") == "bewegungsraum"]
+            if weg:
+                out["befunde"] = list(out.get("befunde") or []) + weg
         if part:
             names = self.scene.names()
             if part not in names and not any(n.startswith(part.rstrip("/") + "/") for n in names):
@@ -585,6 +604,7 @@ class KernelRuntime:
                 self._violations = []
                 self._constraints = None
                 self._selection = {"run": None, "refs": []}
+                self._pruef.reset()
             run = self._run_no
         self.catalog.set_project(proj.path)
         if not same:
@@ -600,6 +620,8 @@ class KernelRuntime:
             if not same:
                 for rec in self.scene.clear():
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
+                self._anim_project_changed()
+                self.cameras_clear(run)
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -773,6 +795,7 @@ class KernelRuntime:
                         self.scene.remove(rec.name)
                         self._send_app({"type": "PART_REMOVE", "run": job.run, "name": rec.name})
                 records = self.scene.records()
+                self.cameras_after_run(job.run, final.get("cameras"))  # Phase 5: Kameras vor RUN_END
                 violations = list(final.get("inventar_verstoesse") or [])
                 with self._lock:
                     self._violations = violations
@@ -792,7 +815,20 @@ class KernelRuntime:
                     with self._lock:
                         self._constraints = report
                     self._send_app({"type": "CONSTRAINTS", **report})
+                # Prüfung: läuft sie noch, „running“ melden; ist sie schon fertig (schneller als RUN_END), das Ergebnis
+                self._run_end_run = job.run
+                if self._pruef.erwarte(job.run):
+                    from kevcad_kernel.protocol import pack_check
+
+                    laeuft, _ = pack_check(run=job.run, state="running")
+                    laeuft.pop("seq", None)
+                    self._send_app(laeuft)
+                else:
+                    fertig, fertig_payload = self._pruef.fuer_lauf(job.run)
+                    if fertig is not None:
+                        self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            self._anim_publish(job, result)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -825,6 +861,10 @@ class KernelRuntime:
         if "cached" in final:
             result["cached_parts"] = final.get("cached", 0)
             result["tess_ms"] = final.get("tess_ms", 0.0)
+        if final.get("cameras"):
+            from kevcad_kernel.kamera import camera_line
+
+            result["kameras"] = [camera_line(c) for c in final["cameras"]]
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
@@ -892,6 +932,13 @@ class KernelRuntime:
 
     def _on_worker_message(self, gen: int, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
+        if kind == "CHECK_DONE":  # kommt nach RUN_DONE, wenn der Lauf schon abgeschlossen ist
+            app_len = int(header.get("app_len", 0))
+            check = dict(header.get("app") or {})
+            with self._app_lock:  # erst nach RUN_END dieses Laufs an die App (sonst schickt es _run_job)
+                if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
+                    self._send_app({**check, "type": "CHECK"}, payload[:app_len])
+            return
         if kind == "READY":
             self._log(f"[kernel] Rechenprozess bereit (pid {header.get('pid')}, Import {header.get('import_s')} s)")
             return
@@ -916,6 +963,9 @@ class KernelRuntime:
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+        elif kind == "ANIM":
+            if header.get("run") == job.run:
+                job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
@@ -924,6 +974,7 @@ class KernelRuntime:
         if self._closed:
             return
         self._log(f"[kernel] Rechenprozess {gen} beendet (Exitcode {code})")
+        self._pruef.abbrechen("Rechenprozess beendet")
         job = self._current
         if job is not None and job.generation == gen and not job.finished.is_set():
             job.final = {"type": "CRASH", "code": code, "stderr": self._worker.stderr_tail(25)}
@@ -964,6 +1015,11 @@ class KernelRuntime:
                 conn.send({"type": "BOM", **bom})
             if constraints is not None:
                 conn.send({"type": "CONSTRAINTS", **constraints})
+            self._anim_on_connect(conn)
+            self.cameras_on_connect(conn, self._run_no)
+            check, check_payload = self._pruef.letztes()
+            if check is not None:
+                conn.send(check, check_payload)
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -1036,7 +1092,7 @@ class KernelRuntime:
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1047,6 +1103,8 @@ class KernelRuntime:
         if kind == "HELLO_APP":
             conn.info = {k: header.get(k) for k in ("app_version", "bundle_id")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+        elif kind == "CAMERA_SUGGEST":
+            self.camera_suggest_from_app(header)
         elif kind == "SELECTION":
             with self._lock:
                 self._selection = {"run": header.get("run"), "refs": list(header.get("refs") or [])}
@@ -1066,6 +1124,8 @@ class KernelRuntime:
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE"):
             self._pool.submit(self._handle_app_request, header)
+        elif self._anim_app_message(kind, header):
+            pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
 

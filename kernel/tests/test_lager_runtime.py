@@ -73,7 +73,7 @@ def test_gestell_bom_after_run_end(p2):
     assert res["inventar_verstoesse"] == [] and res["bom"]["totals"]["positionen"] == 5
     _, _, bom, _ = app.wait_for(lambda h: h["type"] == "BOM" and h.get("run") == res["run"], start=start)
     app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h.get("run") == res["run"], start=start)
-    types = [h["type"] for h in app.since(start) if h["type"] not in ("STATUS",)]
+    types = [h["type"] for h in app.since(start) if h["type"] not in ("STATUS", "CHECK")]
     assert types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # CONSTRAINTS: Zwangsbedingungen, additiv
     parts = [h for h in app.since(start) if h["type"] == "PART_UPSERT"]
     bein = next(h for h in parts if h["name"] == "Gestell/Bein vorn links")
@@ -165,7 +165,7 @@ def test_catalog_messages_and_release(p2):
 
 def test_inventory_rule_export_and_settings(p2):
     rt, app = p2["rt"], p2["app"]
-    path = new_project(p2, HEAD + "show(Box(10, 10, 10), 'Klotz')\n"
+    path = new_project(p2, HEAD + "show(Pos(60, 0, 0) * Box(10, 10, 10), 'Klotz')\n"
                                   "show(lager.teil('flach-en10058-40x5').verbauen(laenge=100, name='F'), 'F')\n")
     start = app.mark()
     res = rt.run()

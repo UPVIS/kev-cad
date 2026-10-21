@@ -55,6 +55,7 @@ class Sammlung:
     grenzen: list[ParamGrenze] = field(default_factory=list)
     params: dict[str, Any] = field(default_factory=dict)
     gezeigt: dict[str, Any] = field(default_factory=dict)  # Name → Form oder (Form, Vernetzung), vom Lauf gefüllt
+    aufgeloest: dict[str, Any] = field(default_factory=dict)  # Bedingung → (A, B) in der gezeigten Lage (Prüfung)
 
     def gezeigte_form(self, name: str) -> Any:
         """Zuletzt gezeigte Form unter diesem Namen (für Bezüge über den Namen) oder None."""

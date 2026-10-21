@@ -257,16 +257,36 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
     }
     if bom:
         data["bom"] = bom
+    if res.get("animationen"):  # Phase 5
+        from .animation_tools import run_note
+
+        lines.extend(run_note(res))
+        data["animationen"] = res["animationen"]
     violations = list(res.get("inventar_verstoesse") or [])
     if "inventar_regel" in res:
         data["inventar_regel"] = bool(res["inventar_regel"])
         data["inventar_verstoesse"] = violations
+    # Prüfung (Durchdringungen …): Befunde mit Lösung; offene Fehler machen den Lauf zum Fehler
+    pruef_offen = False
+    if isinstance(res.get("pruefung"), dict):
+        from kevcad_kernel.pruefung.text import pruef_text
+
+        data["pruefung"] = res["pruefung"]
+        text, pruef_offen = pruef_text(res["pruefung"])
+        if text:
+            if pruef_offen:
+                lines.insert(0, text)
+            else:
+                lines.append(text)
     constraint_failed = False
     if isinstance(res.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
         from kevcad_kernel.bedingungen.bericht import run_zeilen
 
         data["bedingungen"] = res["bedingungen"]
-        extra, constraint_failed = run_zeilen(res["bedingungen"])
+        # Mit fertigem Prüfergebnis stehen die Befunde der Bedingungen schon dort (gemeinsame Prüfung): nur die Summe
+        mit_pruefung = isinstance(res.get("pruefung"), dict) and res["pruefung"].get("state") == "done"
+        extra, constraint_failed = run_zeilen(res["bedingungen"], befunde=not mit_pruefung)
+        constraint_failed = constraint_failed and not mit_pruefung
         if constraint_failed:
             lines[1:1] = extra  # gleich unter die Kopfzeile: der Agent soll es zuerst sehen
         else:
@@ -278,9 +298,7 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.insert(1, "Die Geometrie ist im Viewer zu sehen; Export und Stückliste gelten erst, wenn alles aus dem "
                         "Inventar kommt.")
         return "\n".join(lines), data, True
-    if constraint_failed:
-        lines.append("Befunde der Bedingungen beheben (Lösung steht dabei); der Export bleibt bis dahin gesperrt.")
-    return "\n".join(lines), data, constraint_failed
+    return "\n".join(lines), data, pruef_offen or constraint_failed
 
 
 def measure_line(m: dict[str, Any]) -> str:

@@ -79,7 +79,7 @@ def test_constraints_nach_run_end_und_exportsperre(env):
     assert set(CONSTRAINT_FINDING_FIELDS) <= set(befund)
     assert "Luft 2 mm" in befund["ist"]
     out = rt.export(["stl"])
-    assert not out["ok"] and "Export verweigert" in out["error"] and out["bedingungen_befunde"]
+    assert not out["ok"] and "Export verweigert" in out["error"] and any(b["art"] == "bedingung" for b in out["befunde"])
     second = FakeApp(env["sock"])
     try:
         second.wait_for(lambda h: h["type"] == "AGENT")
@@ -137,3 +137,38 @@ def test_mcp_werkzeug_bedingungen(env):
     assert alle.is_error and "Klotz.unten auf Tisch.oben" in text and "verletzt" in text and "Befunde:" in text
     assert "Klotz: bestimmt" in texts(teil)[0]
     assert falsch.is_error
+
+
+KLAPPE = """from build123d import *
+from kevcad import show
+import kevcad.bedingungen as bed
+
+unten = (Align.CENTER, Align.CENTER, Align.MIN)
+rahmen = Box(100, 20, 10, align=unten) + Pos(-30, 0, 40) * Box(4, 20, 20, align=unten)
+achse = Pos(-50, 0, 15) * Rot(90, 0, 0) * Cylinder(3, 20)
+klappe = Pos(-27, 0, 15) * Box(36, 18, 2) + Pos(-50, 0, 15) * Rot(90, 0, 0) * (Cylinder(5, 18) - Cylinder(3.2, 20))
+klappe = bed.platziere(klappe, bed.drehgelenk((klappe, "bohrung"), (achse, "achse"), bereich=(-60, 90)))
+show(rahmen, "Rahmen")
+show(achse, "Achse")
+show(klappe, "Klappe")
+"""
+
+
+def test_bewegungsraum_ueber_die_pruefung(env):
+    """Bewegungsraum (B8) läuft in der gemeinsamen Prüfung nach RUN_END: Befund in CHECK, Export gesperrt."""
+    rt = env["rt"]
+    assert rt.model_write(KLAPPE)["ok"]
+    try:
+        res = rt.run()
+        assert res["ok"], res.get("error")
+        pr = res["pruefung"]
+        assert pr["state"] == "done"
+        weg = [b for b in pr["befunde"] if b["art"] == "bewegungsraum"]
+        assert weg and weg[0]["schwere"] == "fehler" and weg[0]["teile"] == ["Klappe", "Rahmen"]
+        assert "frei" in weg[0]["text"] and weg[0]["loesung"]
+        assert "Bewegungsweg blockiert" in pr["zusammenfassung"]
+        rep = rt.constraints()
+        assert any(b["pruefung"] == "bewegungsraum" for b in rep["befunde"])
+        assert not rt.export(["stl"])["ok"]
+    finally:
+        assert rt.model_write(MODELL)["ok"]

@@ -442,11 +442,11 @@ def test_nicht_befestigt_und_nicht_am_boden():
     assert any(t.startswith("Nicht am Boden") and "A" in t and "B" in t for t in texte)
 
 
-def test_modell_ohne_bedingungen_nur_warnung():
+def test_modell_ohne_bedingungen_nur_hinweis():
     with sammeln() as s:
         b = pruefen(s, {"A": Box(1, 1, 1), "B": Pos(5, 0, 0) * Box(1, 1, 1)})
     (f,) = b["befunde"]
-    assert f["pruefung"] == "befestigung" and f["schwere"] == "warnung" and f["teile"] == ["A", "B"]
+    assert f["pruefung"] == "befestigung" and f["schwere"] == "hinweis" and f["teile"] == ["A", "B"]
     assert b["summe"]["fehler"] == 0 and b["pruef_ms"] < 50
 
 

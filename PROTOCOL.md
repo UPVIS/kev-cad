@@ -225,12 +225,185 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
 
+## Prüfung
+
+Rein additiv; ältere Apps ignorieren `CHECK`. Nach jedem erfolgreichen Lauf prüft der Kernel den Stand (im
+Rechenprozess, direkt nach `RUN_DONE`, siehe `kernel/src/kevcad_kernel/pruefung/`): zuerst Durchdringungen; weitere
+Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) liefern Befunde im selben Format.
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `CHECK` | `run`, `state` (`running` \| `done` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand` | Schnittkörper |
+
+- Nach `RUN_END` kommt sofort `CHECK` mit `state: "running"` und leeren Listen, das Ergebnis folgt als zweites `CHECK`.
+  `cancelled`: ein neuerer Lauf kam dazwischen (dessen `CHECK` folgt). Beim Verbinden schickt der Kernel das letzte
+  fertige `CHECK` mit.
+- Befund:
+
+```json
+{"id": "du1", "art": "durchdringung", "teile": ["Halter/Block A", "Halter/Block B"], "schwere": "fehler",
+ "wert": {"volumen": 200.0, "tiefe": 2.0, "achse": [-1, 0, 0]}, "ort": [4.0, 0.0, 0.0],
+ "text": "Halter/Block A und Halter/Block B durchdringen sich: 200 mm³, Tiefe etwa 2 mm bei (4; 0; 0).",
+ "loesung": "Halter/Block A um 2,2 mm in −X verschieben (dann 0,2 mm Spiel) …", "geometrie": 0}
+```
+
+  `schwere`: `fehler` (Lauf gilt als fehlerhaft, Export gesperrt), `warnung`, `hinweis`. `ort` in mm oder null,
+  `geometrie` Index in `geometrie` oder null. Weitere Quellen dürfen eigene Felder ergänzen (etwa `soll`, `ist`).
+- Durchdringung zählt ab 0,001 mm³ Schnittvolumen und 0,01 mm Tiefe; Berühren ist kein Befund. Einzige automatische
+  Ausnahme ist echter Gewindeeingriff (Schraube in Mutter oder Kernloch, gleiche Achse, nur im Gewindeband); er steht in
+  `gewinde`. Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
+- Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
+  u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
+
+Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+
+## Phase 5: Animation
+
+Rein additiv (Strang ANI, PLAN-PHASE5-KAMERA-ANIMATION.md A1–A4); ältere Gegenseiten ignorieren die neuen Typen.
+Animationen entstehen in model.py (`animation(...)`, siehe `kernel/src/kevcad/bewegung.py`); der Kernel wertet sie nach
+dem Lauf aus (`kevcad_kernel/animation.py`) und schickt sie nach `RUN_END` und `BOM`. Beim Verbinden kommen alle
+Animationen des letzten Laufs nach `BOM` mit. `RUN_END`-Ergebnisse für MCP tragen `animationen` (Zusammenfassung).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `ANIM_DEF` | `run`, `name`, `dauer` (s), `fps`, `bilder` (N = round(dauer · fps) + 1, Bild k bei min(k / fps, dauer)), `teile` (P bewegte Teile), `kamera` (bool, Kamerafahrt dabei), `sichtbar` (Liste `{"teile": [...], "zeiten": [[t, an], ...]}`), `standard` (bool, erste Animation des Laufs), `warnungen`, `spuren` | float32 LE: N × P × 12, dann bei `kamera` N × 7 |
+| `ANIM_REMOVE` | `name` | – |
+| `ANIM_COLLISIONS` | `name`, `run`, `kollisionen` (siehe unten), `geprueft` (`paare`, `bilder`, `schritt`, `geprueft_bilder`, `exakt`, `symmetrisch`, `ms`, …), optional `reply_to` | – |
+| `ANIM_PLAY` | `id`, `name`, `an` (bool), `schleife`, `geschwindigkeit` (1 = Echtzeit), `von_vorn` | App antwortet `ACK` |
+| `ANIM_SEEK` | `id`, `name`, `zeit` (s; hält an) | App antwortet `ACK` |
+| `ANIM_VIDEO_REQ` | `id`, `name`, `width`, `height`, `fps`, `kamera` (null = Viewer-Kamera bzw. Kamerafahrt, sonst „Kamera/<name>“ aus CAMERA_UPSERT), `format` (`mp4` = H.264 \| `prores` = ProRes 422), `path` (absolute Zieldatei, `<projekt>/output/animationen/<name>.mp4`, mit Kamera `<name>_<kamera>.mp4`) | App antwortet `ANIM_VIDEO_RES` |
+
+Nutzlast von `ANIM_DEF`:
+
+- Matrizen: je Bild, je Teil (Reihenfolge `teile`) 12 Werte = die oberen drei Zeilen der 4 × 4-Lage **spaltenweise**
+  (`m00 m10 m20  m01 m11 m21  m02 m12 m22  m03 m13 m23`, wie `transform` an PART_UPSERT). Die Lage bildet die Ruhelage
+  aus model.py auf die Lage im Bild ab (Welt = Lage · Punkte des Teils). Teile ohne Eintrag stehen still.
+- Kamerafahrt (nur bei `kamera: true`): je Bild `Lage x y z`, `Ziel x y z`, `Bildwinkel` (vertikal, Grad; 0 = unverändert).
+- Sichtbarkeit: ein Teil in `sichtbar` gilt zur Zeit t nach dem letzten Eintrag mit Zeit ≤ t; vor dem ersten Eintrag gilt
+  das Gegenteil des ersten. Teile ohne Eintrag bleiben, wie sie sind.
+
+`kollisionen[i]` (je Teilpaar und zusammenhängender Zeitspanne der geprüften Bilder):
+
+```json
+{"teile": ["Bowlingball", "Pfosten"], "von": 5.1, "bis": 5.6, "zeit": 5.4, "bild": 162, "tiefe": 12.5,
+ "volumen": 830.0, "ort": [1500.0, -340.0, 100.0], "bilder": [153, 156, 159, 162, 165, 168]}
+```
+
+`zeit`/`bild`: stärkste Durchdringung; `tiefe` (mm): kleinste Ausdehnung des Schnittkörpers (Näherung der
+Eindringtiefe); `volumen` mm³; `ort` Mitte des Schnittkörpers in Weltkoordinaten. Berührungen (Volumen unter 0,5 mm³ oder
+Dicke unter 0,05 mm), Paare aus `anim.erlaube(...)` und aus `erlaubt_ueberlappung(a, b, grund=…)` der Prüfung zählen
+nicht. Die Schnittkörper aus `CHECK` gelten für die Ruhelage; die App zeigt sie nur, solange keine Animation eine Lage
+setzt (auch nicht in Kamerabildern und Videos aus einem Bild der Animation).
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `ANIM_STATE` | `name`, `zeit`, `bild`, `spielt`, `schleife`, `geschwindigkeit` (bei Abspielen, Anhalten, Springen, nicht je Bild) | – |
+| `ANIM_COLLISIONS_REQ` | `id`, `name`, `schritt` (jedes n-te Bild, Vorgabe 3) | `ANIM_COLLISIONS` mit `reply_to` |
+| `ANIM_VIDEO_RES` | `reply_to`, `ok`, `path`, `frames`, `ms`, `message`, `kamera` (`Viewer`, `Kamerafahrt` oder der Kameraname) | – |
+
+## Phase 5: Kameras
+
+Rein additiv (Strang KAM); ältere Gegenseiten ignorieren die neuen Typen und Felder. Kameras entstehen in model.py mit
+`lager.kamera(...)` (KATALOG.md, „Kameras und Objektive“) und heißen im Protokoll `Kamera/<name>`. Testdateien:
+`kernel/tools/make_camera_fixtures.py` schreibt `camera_*.frame`, `view_cmd_camera*.frame`, `screenshot_req_camera.frame`
+und `camera_fixtures.json` nach `app/KevCADCore/Tests/KevCADCoreTests/Fixtures/` (getrennt von `stream.bin`).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `CAMERA_UPSERT` | siehe unten; nach jedem erfolgreichen Lauf für neue und geänderte Kameras (vor `RUN_END`) und beim Verbinden für alle | – |
+| `CAMERA_REMOVE` | `run`, `name` – Kamera gibt es im neuen Lauf nicht mehr oder ein anderes Projekt ist offen | – |
+
+```json
+{
+  "type": "CAMERA_UPSERT", "seq": 21, "run": 4, "name": "Kamera/FX6", "kurzname": "FX6",
+  "kamera": {"id": "sony-fx6", "name": "Sony FX6 (ILME-FX6V)", "bajonett": "sony-e", "auflagemass": 18.0},
+  "objektiv": {"id": "sigma-ff-hs-35-t1.5-e", "name": "Sigma 35 mm T1,5 FF High Speed Prime (E-Mount)",
+               "brennweite": 35, "lichtstaerke": 1.5, "blendenart": "t", "naheinstellgrenze": 300, "bildkreis": 43.3,
+               "laenge": 121, "frontdurchmesser": 95},
+  "format": {"id": "ff-uhd", "name": "Vollformat UHD 3840 × 2160", "modus": "vollformat"},
+  "lage": [0, -1, 0, 0,  0, 0, 1, 0,  -1, 0, 0, 0,  250, 0, 235, 1],
+  "sensor_pos": [250, 0, 235], "auge": [285, 0, 235], "blick": [1, 0, 0], "oben": [0, 0, 1], "rechts": [0, -1, 0],
+  "sensor_mm": [35.7, 20.081], "aufloesung": [3840, 2160], "seitenverhaeltnis": 1.77778,
+  "brennweite": 35.0, "bildwinkel_h": 54.043, "bildwinkel_v": 32.014, "bildwinkel_d": 60.668,
+  "blende": 2.8, "blendenart": "t", "fokus": 1500.0, "schaerfe_nah": 1375.628, "schaerfe_fern": 1649.097,
+  "hyperfokal": 16238.704, "zerstreuungskreis": 0.027,
+  "teil": "Wagen", "folgt": "Wagen", "ausblenden": ["Kamera FX6/Objektiv"], "objektiv_vorne": 139.0,
+  "vignettierung": false
+}
+```
+
+- `lage`: 4 × 4-Matrix spaltenweise; Spalten rechts, oben, hinten (= −`blick`), Sensormitte. Die Kamera blickt entlang
+  ihrer lokalen −Z-Achse, oben ist +Y (wie OpenGL und Blender). `sensor_pos`, `blick`, `oben`, `rechts` stehen zusätzlich
+  einzeln da.
+- `auge`: Projektionszentrum für Ansicht und Kamerabild, Sensormitte plus Brennweite in Blickrichtung.
+- Bildwinkel in Grad aus `sensor_mm` (aktive Fläche des Formats; Höhe = Breite × Pixelhöhe / Pixelbreite) und
+  `brennweite` bei Fokus unendlich. Die Ansicht durch
+  die Kamera und das Kamerabild benutzen `bildwinkel_v` als vertikalen Öffnungswinkel und `seitenverhaeltnis`
+  (= `aufloesung`).
+- `fokus`, `schaerfe_nah`, `schaerfe_fern`, `hyperfokal` in mm ab Sensorebene; `null` heißt unendlich.
+- `teil`: gezeigtes Teil, an dem die Kamera hängt (`an(...)`), sonst `null`.
+- `folgt`: gezeigtes Teil, dessen Bewegung die Kamera in der App mitmacht: das Teil aus `an(...)` (bei einer Baugruppe
+  ihr erstes gezeigtes Teil), sonst das gezeigte Gehäuse aus `koerper()`, sonst `null` (steht fest). Ohne das Feld
+  (ältere Kernel) gilt `teil`. Siehe „Kameras und Animation“.
+- `ausblenden`: gezeigte Teile des eigenen Objektivs aus `koerper()`; die App blendet sie (und jedes Teil, dessen
+  Hüllquader die Strecke vom Augpunkt bis `objektiv_vorne` vor der Sensorebene schneidet) beim Blick durch die
+  Kamera aus.
+- `vignettierung`: Bildkreis des Objektivs kleiner als die Diagonale des Formats.
+
+### VIEW_CMD (zusätzlich)
+
+| cmd | args | Antwort |
+|---|---|---|
+| `camera_view` | `name` (`Kamera/<name>`) oder `null` = zurück zur freien Ansicht | `ACK` |
+| `camera_suggest` | `name` | App schickt `CAMERA_SUGGEST`, danach `ACK` |
+
+### SCREENSHOT_REQ (zusätzlich)
+
+`source: "camera"` mit `camera` (Name): Bild genau durch diese Kamera (Augpunkt, Blick, `bildwinkel_v`), `width` und
+`height` passend zum Seitenverhältnis des Formats (der Kernel rechnet die Höhe aus). Ausgeblendet wie in der
+Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera_info`, `kamera_vorschlag_aus_ansicht`) |
+
+### Kameras und Animation
+
+- Kameras kommen in der Ruhelage aus model.py. Die App bewegt jede Kamera starr mit der Lage ihres Teils `folgt`
+  relativ zu dessen Ruhelage (Animation aus `ANIM_DEF`, dazu die Explosion): Pyramide, Blick durch die Kamera (Taste 0;
+  er bleibt beim Abspielen aktiv und hat Vorrang vor einer Kamerafahrt), Kamerabild (`SCREENSHOT_REQ` mit `camera`)
+  und Video (`ANIM_VIDEO_REQ.kamera`) zeigen die Kamera in der aktuellen bzw. der Lage des Bildes.
+- Im Video durch eine Kamera blendet die App wie in der Kameraansicht ihr Objektiv (`ausblenden`) und Teile vor dem
+  Augpunkt aus; der Kernel rechnet die Höhe aus dem Seitenverhältnis des Formats (`aufloesung`).
+- Der Kernel lässt den gezeigten Körper (`koerper()`) einer Kamera mit `an(teil)` in jeder Animation mit diesem Teil
+  fahren (`folge`), außer eine Spur bewegt den Körper dort schon. Rig-Zubehör hängt nicht an der Kamera und braucht
+  eine eigene Spur.
+- `CAMERA_SUGGEST` (Strg+Alt+0) rechnet die Ansicht in die Ruhelage zurück, wenn die Kamera gerade bewegt steht.
+- MCP: `animation_liste` und die Zusammenfassung von `run` nennen je Animation unter `kameras` die Kameras, deren Teil
+  sich darin bewegt.
+
 ## Zwangsbedingungen (CONSTRAINTS)
 
 Rein additiv (PLAN-BEDINGUNGEN.md); ältere Apps ignorieren den Typ. Der Kernel schickt den Bericht nach jedem
 erfolgreichen Lauf direkt nach `RUN_END` und `BOM`, beim Verbinden der App nach `BOM`. Referenz:
 `kevcad_kernel/bedingungen` (Bericht aus `pruefen`, Beispiel `protocol.constraints_example()`), Testdatei
 `constraints.frame` (eigene Datei, nicht in `stream.bin`).
+
+Zusammenspiel mit der Prüfung: Alle Befunde der Bedingungen gehen zusätzlich als Prüffunktion „bedingungen“ in das
+gemeinsame Ergebnis `CHECK` (Arten `bedingung`, `befestigung`, `bewegungsraum`, mit den Zusatzfeldern `soll` und
+`ist`); dort sperren Befunde mit Schwere `fehler` den Export. Den Bewegungsraum (Gelenke mit Bereich,
+`bewegungen.json`) rechnet nur die Prüfung nach `RUN_END`, weil er Sekunden dauern kann; im Lauf bleibt `bewegungen` in
+`CONSTRAINTS` deshalb leer, die Ergebnisse stehen als Befunde in `CHECK`.
 
 ### Kernel → App
 
@@ -287,7 +460,7 @@ ohne Gelenke und ohne die unkritische Drehung runder Verbindungen um ihre eigene
 `befunde[i]`: gemeinsames Befundformat der Prüfungen mit `art: "bedingung"`, `pruefung` (`bedingung` | `parameter` |
 `widerspruch` | `freiheitsgrade` | `bewegungsraum` | `befestigung`), `teile`, `schwere` (`fehler` | `warnung` |
 `hinweis`), `text`, `soll`, `ist`, `wert`, `einheit`, `ort` ([x, y, z] oder null), `loesung`, `bedingung` (id),
-`unterart`, `zeile`. Befunde mit `schwere: "fehler"` sperren den Export wie Verstöße gegen die Inventar-Regel.
+`unterart`, `zeile`. Befunde mit `schwere: "fehler"` sperren den Export (über die Prüfung, siehe oben).
 
 `summe`: `gesamt`, `erfuellt`, `verletzt`, `ungeprueft`, `fehler`, `warnungen`, `hinweise`, `bewegungen`.
 `pruef_ms`: Dauer der Prüfung im Rechenprozess, `loese_ms`: Summe der Zeit in `platziere`.

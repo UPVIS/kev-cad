@@ -384,7 +384,7 @@ def _befunde_aus(c: Bedingung, text: str, teile: list[str], erg: Ergebnis) -> li
 def pruefen(sammlung: Sammlung, formen: dict[str, Any], *, netze: dict[str, Any] | None = None,
             schluessel: dict[str, str] | None = None, projekt: str | Path | None = None,
             boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
-            zeitlimit_s: float = 5.0) -> dict[str, Any]:
+            zeitlimit_s: float = 5.0, bewegungsraum: bool = True) -> dict[str, Any]:
     """Prüft alle Bedingungen des Laufs gegen die gezeigten Formen (Name → build123d-Form) und liefert den Bericht.
     ``netze``: Name → (Punkte, Dreiecke, Normalen) für min_wand; ``schluessel``: Name → Geometrieschlüssel (für den
     Zwischenspeicher des Bewegungsraums); ``boxen``: Name → Hüllquader (spart das Neuberechnen)."""
@@ -517,13 +517,16 @@ def pruefen(sammlung: Sammlung, formen: dict[str, Any], *, netze: dict[str, Any]
     if index is not None:
         _deklarierte_freiheit(sammlung, aufgeloest, teile_info)
 
-    # Bewegungsraum (B8)
-    rest_s = max(0.0, zeitlimit_s - (time.perf_counter() - t0))
-    from .bewegungsraum import bewegungen_pruefen
+    # Bewegungsraum (B8): im Lauf über die Prüfung nach RUN_DONE (anbindung.py), sonst gleich hier
+    sammlung.aufgeloest = aufgeloest
+    bewegungen: list[dict[str, Any]] = []
+    if bewegungsraum:
+        rest_s = max(0.0, zeitlimit_s - (time.perf_counter() - t0))
+        from .bewegungsraum import bewegungen_pruefen
 
-    bewegungen, bew_befunde = bewegungen_pruefen(sammlung, aufgeloest, formen, schluessel=schluessel or {},
-                                                 projekt=projekt, zeitlimit_s=rest_s, boxen=boxen)
-    befunde.extend(bew_befunde)
+        bewegungen, bew_befunde = bewegungen_pruefen(sammlung, aufgeloest, formen, schluessel=schluessel or {},
+                                                     projekt=projekt, zeitlimit_s=rest_s, boxen=boxen)
+        befunde.extend(bew_befunde)
 
     # Befestigung (B9)
     from .befestigung import befestigung_pruefen

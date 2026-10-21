@@ -81,6 +81,13 @@ struct KevCADCommands: Commands {
                 }
                 Button("Gegenseite") { nav?.viewOpposite() }
                     .keyboardShortcut("9", modifiers: [])
+                // Phase 5: Kameras wie in Blender (Ziffernblock oder Zahlenreihe 0)
+                Button("Durch Kamera schauen (an/aus)") {
+                    model.cameraActions?.toggleCameraView()
+                }
+                .keyboardShortcut("0", modifiers: [])
+                Button("Aktive Kamera auf Ansicht setzen") { model.cameraActions?.setActiveCameraToView() }
+                    .keyboardShortcut("0", modifiers: [.control, .option])
                 Button(model.orthographic ? "Perspektive" : "Parallelprojektion") { nav?.toggleProjection() }
                     .keyboardShortcut("5", modifiers: [])
                 Menu("Isometrisch") {

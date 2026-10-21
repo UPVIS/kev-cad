@@ -13,8 +13,8 @@ Außerdem gelten als Verbindung: Gelenke (Teile berühren sich oder haben Spiel 
 Teil mit der Bohrung, wenn sie sitzt), ``auf`` mit nach oben zeigender Auflage (Aufliegen) und ``fest`` mit Kontakt.
 Am Boden hängen Teile, die die tiefste Ebene der Baugruppe berühren, und Teile mit ``verbinde(teil, boden)``.
 
-Pflichtig sind Teile, die an einer Bedingung beteiligt sind. Teile ganz ohne Bedingungen sammelt ein Hinweis-Befund
-(Warnung), damit bestehende Modelle nicht auf einen Schlag gesperrt sind (Entscheidung offen, siehe Bericht).
+Pflichtig sind Teile, die an einer Bedingung beteiligt sind. Teile ganz ohne Bedingungen sammelt ein Befund mit
+Schwere „hinweis“, damit bestehende Modelle nicht auf einen Schlag gesperrt sind (Entscheidung offen, siehe Bericht).
 """
 
 from __future__ import annotations
@@ -168,11 +168,12 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
             return [], [], {}
         namen = list(formen)
         liste = ", ".join(namen[:5]) + (" …" if len(namen) > 5 else "")
-        return [], [_befund(pruefung="befestigung", teile=namen, schwere="warnung",
+        return [], [_befund(pruefung="befestigung", teile=namen, schwere="hinweis",
                             text=f"{len(namen)} Teile ohne Angabe, wie sie befestigt sind ({liste})",
                             soll="jedes Teil mit verbinde(…) oder einer Montagebedingung", ist="keine Angabe",
                             loesung="zu jedem Teil die Befestigung konstruieren und mit verbinde(teil, gegenstück, "
-                                    "art=…) angeben (Schraube, Klemmung, Steck, Formschluss, Kleben, Aufliegen)")], {}
+                                    "art=…) angeben (Schraube, Klemmung, Steck, Formschluss, Kleben, Aufliegen)",
+                            art="ohne_angabe")], {}
     items: list[dict] = []
     befunde: list[dict] = []
     kanten: dict[str, set[str]] = {n: set() for n in formen}
@@ -321,11 +322,12 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
     frei_teile = [n for n in formen if n not in pflicht]
     if frei_teile:
         liste = ", ".join(frei_teile[:5]) + (" …" if len(frei_teile) > 5 else "")
-        befunde.append(_befund(pruefung="befestigung", teile=frei_teile, schwere="warnung",
+        befunde.append(_befund(pruefung="befestigung", teile=frei_teile, schwere="hinweis",
                                text=f"{len(frei_teile)} Teile ohne Angabe, wie sie befestigt sind ({liste})",
                                soll="jedes Teil mit verbinde(…) oder einer Montagebedingung", ist="keine Angabe",
                                loesung="zu jedem Teil die Befestigung konstruieren und mit verbinde(teil, gegenstück, "
-                                       "art=…) angeben (Schraube, Klemmung, Steck, Formschluss, Kleben, Aufliegen)"))
+                                       "art=…) angeben (Schraube, Klemmung, Steck, Formschluss, Kleben, Aufliegen)",
+                               art="ohne_angabe"))
     return items, befunde, teile_info
 
 

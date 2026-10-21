@@ -150,6 +150,47 @@ class KernelService(Protocol):
     def constraints(self, part: str | None = None) -> dict[str, Any]:
         """Bericht des letzten erfolgreichen Laufs wie die Nachricht CONSTRAINTS: {"ok", "run", "items", "teile",
         "befunde", "bewegungen", "summe", "pruef_ms", "loese_ms"}; mit ``part`` zusätzlich "teil"."""
+    # Phase 5: Animation (siehe PROTOCOL.md, Abschnitt „Phase 5: Animation“; umgesetzt in anim_runtime.py)
+    def animation_list(self) -> dict[str, Any]:
+        """{"ok", "animationen": [{"name", "dauer", "fps", "bilder", "teile", "kamerafahrt", "spuren", "standard",
+        "warnungen"?, "kollisionen"?}], "stand": {"name", "zeit", "bild", "spielt", …} | None}"""
+
+    def animation_play(self, name: str | None = None, an: bool = True, schleife: bool = False,
+                       geschwindigkeit: float = 1.0, von_vorn: bool = False) -> dict[str, Any]:
+        """Abspielen oder anhalten in der App. {"ok", "name", "an", "schleife", "dauer"}"""
+
+    def animation_seek(self, zeit: float, name: str | None = None) -> dict[str, Any]:
+        """Zur Zeit springen (s). {"ok", "name", "zeit", "bild"}"""
+
+    def animation_video(self, name: str | None = None, breite: int = 1920, hoehe: int | None = None,
+                        fps: float | None = None, kamera: str | None = None, format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        """Video aus der App nach <projekt>/output/animationen/. {"ok", "path", "width", "height", "fps", "bilder",
+        "ms", "kamera"}; ``kamera`` None = Viewer-Kamera bzw. Kamerafahrt aus anim.ansicht, sonst eine Kamera aus
+        model.py (Kurzname oder „Kamera/<name>“), Höhe dann aus dem Seitenverhältnis ihres Formats."""
+
+    def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
+        """Kollisionen an jedem ``schritt``-ten Bild. {"ok", "name", "kollisionen": [{"teile", "von", "bis", "zeit",
+        "bild", "tiefe", "volumen", "ort"}], "geprueft": {…}}"""
+    # Phase 5: Kameras (PROTOCOL.md „Phase 5: Kameras“, Umsetzung in kevcad_kernel.kamera.CameraRuntime)
+    def cameras(self) -> dict[str, Any]:
+        """Kameras des letzten Laufs: {"ok", "cameras": [CAMERA_UPSERT-Kopf + "vorschlag" (oder None)]}"""
+
+    def camera_info(self, name: str) -> dict[str, Any]:
+        """Eine Kamera (Name „FX6“ oder „Kamera/FX6“): {"ok", "camera", "vorschlag", "vorschlag_code"?}"""
+
+    def camera_view(self, name: str | None, timeout_s: float = 10) -> dict[str, Any]:
+        """Durch die Kamera schauen (VIEW_CMD camera_view), None = zurück zur freien Ansicht. {"ok", "message"?}"""
+
+    def camera_image(self, name: str, width: int = 1920, save: bool = True, return_png: bool = False,
+                     overlays: bool = False, timeout_s: float = 60) -> dict[str, Any]:
+        """Bild durch die Kamera (Höhe aus dem Seitenverhältnis des Formats), gespeichert unter
+        <projekt>/output/kameras/. {"ok", "file", "width", "height", "camera", "kamera", "png"? (nur mit return_png)}"""
+
+    def camera_catalog(self, query: str = "", art: str | None = None, limit: int = 40) -> dict[str, Any]:
+        """Kameras, Objektive und Kamerazubehör aus dem Katalog: {"ok", "items", "total"}"""
+
+    def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
+        """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...

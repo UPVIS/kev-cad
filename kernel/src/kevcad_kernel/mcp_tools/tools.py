@@ -248,6 +248,13 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
                              + (f", {fmt.plural(len(bad), 'Verstoß', 'Verstöße')}: {short_refs(bad, 6)}" if bad else ""))
             else:
                 lines.append("Inventar-Regel: aus (von Kevin für dieses Projekt abgeschaltet)")
+        pr = res.get("pruefung") if isinstance(res.get("pruefung"), dict) else None
+        if pr is not None and project:
+            if pr.get("laeuft"):
+                lines.append(f"Prüfung: läuft für Lauf {pr['laeuft']}")
+            elif pr.get("state") == "done":
+                lines.append(f"Prüfung (Lauf {pr.get('run', '?')}): "
+                             + (pr.get("zusammenfassung") or "in Ordnung, keine Befunde"))
         data = dict(res)
         if isinstance(last, dict) and last.get("parts"):
             data["last_run"] = {**last, "parts": [fmt.part_data(p) for p in last["parts"]]}
@@ -774,4 +781,13 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
         data = {k: v for k, v in res.items() if k != "ok"}
         return fmt.result(bericht_text(res, teil=part, alle=alle), data, error=fehler_anzahl(res) > 0)
 
+    # Phase 5: Animation (eigene Datei, damit parallele Stränge nicht in dieselben Zeilen schreiben)
+    from .animation_tools import register_animation_tools
+
+    register_animation_tools(tool, t, svc)
+
+    # Phase 5: Kameras (kamera_tools.py)
+    from .kamera_tools import register_camera_tools
+
+    register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
     return t

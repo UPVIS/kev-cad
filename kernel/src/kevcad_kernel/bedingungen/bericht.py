@@ -70,12 +70,16 @@ def summen_zeile(s: dict[str, Any], ms: Any = None) -> str:
     return text
 
 
-def run_zeilen(kurz: dict[str, Any] | None) -> tuple[list[str], bool]:
-    """Zeilen für die Zusammenfassung von ``run`` und ob Fehler dabei sind (dann isError)."""
+def run_zeilen(kurz: dict[str, Any] | None, befunde: bool = True) -> tuple[list[str], bool]:
+    """Zeilen für die Zusammenfassung von ``run`` und ob Fehler dabei sind (dann isError). ``befunde=False``: nur die
+    Summe (die Befunde stehen dann im Ergebnis der gemeinsamen Prüfung)."""
     if not kurz:
         return [], False
     s = kurz.get("summe") or {}
-    zeilen = ["Bedingungen: " + summen_zeile(s, kurz.get("pruef_ms"))]
+    zeilen = ["Bedingungen: " + summen_zeile(s, kurz.get("pruef_ms"))
+              + ("" if befunde or not s.get("fehler") else f", {s['fehler']} Fehler (siehe Prüfung)")]
+    if not befunde:
+        return zeilen, int(s.get("fehler") or 0) > 0
     befunde = kurz.get("befunde") or []
     for b in befunde:
         if b.get("schwere") in ("fehler", "warnung"):

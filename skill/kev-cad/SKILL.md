@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“) und 3D-Druckteilen.
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“).
 ---
 
 # Kev CAD
@@ -11,27 +11,27 @@ dort, nie nur per `execute`.
 
 ## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
 
-Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
-nur melden:
+Nichts darf physikalisch unmöglich sein. Durchdringungen prüft Kev CAD bei jedem Lauf selbst, `run` wartet auf das
+Ergebnis. Alles Weitere vor jeder Fertigmeldung prüfen und beheben, nicht nur melden:
 
-- **Keine Durchdringungen, auch nicht bei Schrauben, Muttern und Scheiben:** Zwei Teile dürfen sich berühren, aber nicht
-  ineinander stecken. Nach jedem Lauf prüfen, bis Kev CAD das selbst bei jedem Lauf tut (rechnet auf einer Kopie, die
-  laufende App bleibt unberührt; Exit-Code 1 bei Befunden):
-
-  ```bash
-  cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>"
-  ```
-
-  Jede gemeldete Durchdringung beheben, bevor du fertig meldest: Spiel oder Bohrung vorsehen, Teil auf die
-  Anlagefläche des Gegenstücks setzen, Scheiben und Muttern um ihre Dicke stapeln, Maß korrigieren. Einzige Ausnahme
-  ohne Rückfrage ist echter Gewindeeingriff (Schraube in Mutter oder Gewindeloch, gleiche Achse). Andere gewollte
-  Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Begründung im Code.
+- **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
+  Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
+  Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
+  Gewindeeingriff (Schraube in Mutter oder Kern-/Gewindeloch, gleiche Achse, nur im Gewindeband).
+- Befunde kommen als isError mit Ort, Volumen, Tiefe und einer Lösung je Befund. Kevin sieht die Teile rot und das
+  Schnittvolumen als roten Körper; Export ist gesperrt, bis alles behoben ist.
+- **Beheben, nicht wegerklären:** Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren, dann wieder `run`.
+  Gewollte Überlappungen (Presspassung, nachgiebiger Schaum) nur nach Rückfrage bei Kevin und mit Grund in model.py:
+  `erlaubt_ueberlappung(a, b, grund="Presspassung, mit Kevin abgestimmt")` (`from kevcad import erlaubt_ueberlappung`;
+  a und b als Name aus `show()`, Gruppe oder Form). Ohne Grund gilt sie nicht.
 - **Nichts schwebt, alles ist befestigt:** Jedes Teil berührt sein Gegenstück oder steht auf dem Boden, und zu jedem
   Teil ist konstruiert, **wie es befestigt ist** (Schraube mit Bohrung und Gewinde bzw. Mutter, Klemmung, Steckverbindung,
   Formschluss, Kleben oder nur Aufliegen). Die Befestigung steht als Kommentar am Teil und lässt sich mit Werkzeug
-  montieren. Nie Teile einfach in den Raum setzen. Prüfen: dasselbe Werkzeug mit `--kontakte` meldet Teile ohne
-  Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung). Mit
-  `bed.verbinde(...)` (Abschnitt „Teile über Bedingungen setzen“) prüft Kev CAD die Befestigung bei jedem Lauf selbst.
+  montieren. Nie Teile einfach in den Raum setzen. Prüfen (rechnet auf einer Kopie, Exit-Code 1 bei Befunden):
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py "<Projektordner>" --kontakte`
+  meldet Teile ohne Kontakt und Gruppen ohne Verbindung zum Boden (Spielpassungen bis 0,5 mm zählen als Verbindung).
+  Mit `bed.verbinde(...)` (Abschnitt „Teile über Bedingungen setzen“) prüft Kev CAD die Befestigung bei jedem Lauf
+  selbst.
 - **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
 - **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
   muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Jedes Projekt mit beweglichen
@@ -39,10 +39,11 @@ nur melden:
   geprüft nach jedem Lauf mit
   `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_motion.py "<Projektordner>"`.
   Das Werkzeug nennt Kollisionen und den freien Bereich. Reicht der freie Bereich nicht für die Bedienung, wird
-  umkonstruiert, nicht der Bereich verkleinert. Gelenke mit `bereich=…` und `bewegungen.json` prüft `run` inzwischen
-  bei jedem Lauf mit (Befunde „Bewegungsraum“ in `run` und `bedingungen`).
-- Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
-  daran.
+  umkonstruiert, nicht der Bereich verkleinert. Hat das Projekt eine Animation, zusätzlich `kollision_pruefen(name)`
+  für jede Animation (siehe „Animation“).
+  Gelenke mit `bereich=…` und `bewegungen.json` prüft `run` schon bei jedem Lauf mit (Befunde „Bewegungsraum“).
+- Befestigung (`bed.verbinde`) und Bewegungsraum prüft Kev CAD bei jedem Lauf; Schweben und Standsicherheit bekommt
+  es als Nächstes fest eingebaut, bis dahin mit den beiden Werkzeugen oben prüfen und von Hand daran halten.
 
 ## Teile über Bedingungen setzen (Kevin, 21.10.2026, gilt immer)
 
@@ -99,8 +100,12 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
 
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
-Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
-mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md`):
+Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
+256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+Einhausung. Die Druckausrichtung beim Konstruieren
+mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
+(Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
+[3d-druck.md](3d-druck.md), vor jedem Druckteil lesen:
 
 - **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
 - **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
@@ -127,10 +132,10 @@ mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md
    Dateiwerkzeuge gibt.
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-6. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für
-   Stückliste und Zuschnitt, `bedingungen` für Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum, dazu der
-   Abschnitt „Prüfen vor dem Fertigmelden“. Kevin keine Screenshots schicken;
-   Bilder nur zur eigenen Analyse (siehe „Bilder“).
+6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
+   Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt, `bedingungen` für
+   Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum. Kevin keine
+   Screenshots schicken; Bilder nur zur eigenen Analyse (siehe „Bilder“).
 7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -207,6 +212,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
 | `lager.druckteil(form, name, material, verfahren="3d-druck")` | selbst konstruiertes Druckteil; Material druckbar. |
+| `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `import kevcad.bedingungen as bed` | Bezüge, Bedingungen, Gelenke, Befestigung, `bed.platziere(teil, …)` (Abschnitt „Teile über Bedingungen setzen“). |
 
 - `color`: Hex wie `"#B8BEC4"`; Lager- und Druckteile haben schon die Farbe ihres Materials.
@@ -239,6 +245,39 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
   5.394 mm, Rest 606 mm“, Sägeschnitt 3 mm, Verschnitt in %), Summen mit Richtpreis-Hinweis, Hinweise (etwa nicht
   zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
+
+## Kameras
+
+Kameras wie am Set: Gehäuse, Objektiv und Aufnahmeformat aus dem Katalog (`kamera_katalog`), gesetzt in model.py.
+Beispiel: `samples/kamerawagen/model.py`; Felder in KATALOG.md, Abschnitt „Kameras und Objektive“.
+
+```python
+fx6 = lager.kamera("sony-fx6", objektiv="sigma-ff-hs-35-t1.5-e", format="ff-uhd", blende=2.8, fokus=1500,
+                   name="FX6")                              # format: ff-uhd, ff-dci, ff-hd, ff-uhd-120, s35-hd
+fx6.setzen((0, -400, 180), blick_auf=(800, 0, 108))         # Sensormitte, Blick auf einen Punkt (Fokus = Abstand)
+fx6.an("Rollwagen/Deckel", punkt=(150, 0, 40), richtung=(1, 0, 0), bezug="stativ_1_4", lokal=True)  # folgt dem Teil
+show(fx6.koerper(), "Kamera FX6")                           # Gehäuse und Objektiv, zählt als Inventar
+platte = lager.kamerazubehoer("tilta-es-t20-qrbp")          # Rig-Teile mit Bezugspunkten
+show(platte.verbauen("Rig/Baseplate", an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4"), "Rig/Baseplate")
+```
+
+- `bezug` ist ein Bezugspunkt der Kamera, der an der angegebenen Stelle liegt. Gültig sind genau diese Namen:
+  `sensor`, `bajonett`, `front_unten`, `stativ_1_4`, `stativ_3_8`, `akkuschacht`, dazu eingebaut `auge` und `front`
+  (`fx6.bezugspunkte()` listet sie). Andere Schreibweisen wie `gewinde_14` oder `gewinde_38` gibt es nicht.
+  `richtung` oder `blick_auf` geben den Blick, `roll` kippt (Grad). Brennweite bei Zooms innerhalb des Bereichs,
+  Blende nicht offener als die Lichtstärke (Fehler mit Erklärung), `fokus` in mm ab Sensorebene oder `"unendlich"`.
+  Der Lauf meldet Bildwinkel, Schärfe von–bis und Warnungen (Naheinstellgrenze, Vignettierung bei Super-35-Objektiven
+  an Vollformat).
+- `an(teil, …, lokal=True)` nach dem `show` des Teils aufrufen; die Kamera wandert dann mit dem Teil, auch in
+  Animationen (siehe „Kamera und Animation“). An ein Teil hängen, nicht an eine Baugruppe. Kamera setzen, nicht
+  `Pos(...) * fx6.koerper()` verschieben.
+- Werkzeuge: `kamera_liste`, `kamera_info(name)` (alle Werte), `kamera_ansicht(name)` bzw. `"aus"` (Viewer schaut
+  durch die Kamera, mit Formatrahmen und Sicherheitsbereichen), `kamera_bild(name, breite)` speichert ein PNG unter
+  output/kameras/ und nennt nur den Pfad (Bild nur mit `bild_zeigen=true`, wenn Kevin es hier sehen will),
+  `kamera_vorschlag_aus_ansicht(name)` liefert die setzen-Zeile für Kevins aktuelle Ansicht (in der App Strg+Alt+0).
+- Kevin: Taste 0 schaut durch die gewählte Kamera, noch einmal 0 zurück; Kameras stehen im Teilebaum unter „Kameras“.
+- Kevins Kamera ist die FX6 (Tilta-Käfig ES-T20). Objektive, Akkus und Platten im Katalog sind Beispiele, bis Kevin
+  seine nennt; fehlt etwas, fragen und erst auf seinen Wunsch per `stock_define` vorschlagen.
 
 ## build123d: Kurzreferenz und Fallen
 
@@ -356,6 +395,67 @@ rechts, oben), nicht nach jedem Schritt. Erste Quelle bleiben die Zahlen aus `ru
   mehrere Ansichten mit kleiner Größe nacheinander anfordern.
 - `mm_per_px` gibt es nur in paralleler Projektion. Maße trotzdem mit `measure` bestätigen.
 
+## Animation
+
+Bewegungen gehören wie die Geometrie in `model.py`: `from kevcad import animation`, am Ende nach allen `show()`.
+Ziele sind Teilnamen oder Baugruppenpräfixe („Rollwagen“ bewegt alle „Rollwagen/…“). Zeiten in s, Längen in mm,
+Winkel in Grad. Der Kernel rechnet daraus je Bild die Lage jedes Teils, die App spielt flüssig ab (Zeitleiste unter dem
+Viewport, Leertaste, Pfeiltasten, Umschalt+Pfeil für Anfang und Ende).
+
+```python
+fahrt = animation(dauer=8, fps=30, name="Fahrt")          # mehrere Animationen je Projekt mit eigenem Namen
+fahrt.bewege("Rollwagen", nach=(2000, 0, 0), von=1, bis=7, kurve="weich")
+for i in range(1, 5):                                     # Räder drehen mit: Winkel = Strecke / Radius
+    fahrt.rolle(f"Rollwagen/Lenkrolle {i}/Rad", auf="Rollwagen", radius=50, achse="y")
+fahrt.folge("Kugelschieber", "Rollwagen")                 # fährt starr mit
+fahrt.rolle("Bowlingball", auf="Rollwagen", radius=108.5) # rollt frei vor dem Schieber
+fahrt.ansicht(0, lage=(-900, -1800, 700), ziel=(300, -340, 150), mit="Rollwagen/Rahmen")  # Kamerafahrt
+```
+
+| Spur | Wirkung |
+|---|---|
+| `bewege(name, nach=(dx,dy,dz), von, bis, kurve)` | verschieben; `kurve` `"linear"`, `"weich"`, `"ein"`, `"aus"` |
+| `drehe(name, achse, winkel, von, bis, kurve)` | drehen; `achse=((x,y,z),(dx,dy,dz))`, `Axis`, Richtung oder `"x"/"y"/"z"` durch die Teilmitte |
+| `pfad(name, punkte, von, bis, ausrichten=False, spline=False)` | entlang Polylinie oder Spline, gleichmäßig nach Bogenlänge |
+| `rolle(name, auf, radius, achse=None)` | Rollbedingung; mit Achse wie ein Rad, ohne frei wie eine Kugel |
+| `folge(name, eltern)` | Kind folgt allen Bewegungen des Elternteils |
+| `gelenk(name, art="dreh"/"schub", achse, werte={t: wert}, grenzen=(min, max), eltern)` | Gelenkwinkel/-weg über die Zeit, an den Grenzen begrenzt (Warnung) |
+| `sichtbar(name, an, zeit)` / `ansicht(zeit, lage, ziel, bildwinkel, mit)` / `erlaube(a, b)` | ein-/ausblenden, Kamerafahrt, gewollte Berührung |
+
+Drehachsen gelten in der Ruhelage (Koordinaten wie in model.py); Drehungen wirken vor Verschiebungen, beides vor der
+Bewegung des Elternteils. Ein unbekanntes Teil oder eine Zeit außerhalb der Dauer bricht den Lauf mit Zeile ab.
+
+- `kollision_pruefen(name)` prüft jedes 3. Bild exakt (OCCT-Schnittvolumen, Berühren ist erlaubt) und meldet Zeit,
+  Teilpaar, Eindringtiefe und Volumen; die App markiert sie auf der Zeitleiste und färbt das Paar rot. **Jede
+  Durchdringung muss gelöst werden**, gewollte Anlage mit `erlaube` oder Luft im Modell. Eine Überlappung, die die
+  eingebaute Prüfung über `erlaubt_ueberlappung(a, b, grund=…)` zulässt, gilt auch in der Animation als erlaubt. Die
+  eingebaute Prüfung nach jedem Lauf sieht nur die Ruhelage; ihre roten Schnittkörper blendet die App beim Abspielen
+  aus.
+- `animation_abspielen(name, an=True, schleife=False)`, `animation_springen(zeit)`, `animation_liste()`.
+- `animation_video(name, breite=1920)` schreibt ein H.264-MP4 (oder `format="prores"`) nach
+  `<Projekt>/output/animationen/` aus der Viewer-Sicht bzw. der Kamerafahrt.
+
+### Kamera und Animation
+
+Eine Kamera mit `an(teil)` fährt mit ihrem Teil: beim Abspielen (Pyramide), beim Blick durch die Kamera (Taste 0
+bleibt beim Abspielen aktiv) und im Video. Eine frei gesetzte Kamera mit gezeigtem `koerper()` folgt ihrem Gehäuse.
+
+```python
+fx6 = lager.kamera("sony-fx6", objektiv="sigma-ff-hs-35-t1.5-e", format="ff-uhd", name="FX6")
+fx6.an("Rollwagen/Deckel", punkt=(150, 0, 40), richtung=(1, 0, 0), bezug="stativ_1_4", lokal=True)
+show(fx6.koerper(), "Kamera FX6")      # fährt in jeder Animation von selbst mit dem Deckel mit
+fahrt = animation(dauer=8, fps=30, name="Fahrt")
+fahrt.bewege("Rollwagen", nach=(2000, 0, 0), von=1, bis=7, kurve="weich")
+fahrt.folge("Rig", "Rollwagen/Deckel")  # Rig-Zubehör hängt nicht an der Kamera: eigene Spur
+```
+
+- `animation_video("Fahrt", kamera="FX6")` rendert durch die Kamera (Bildwinkel der Kamera, Seitenverhältnis ihres
+  Formats, eigenes Objektiv ausgeblendet) nach `output/animationen/Fahrt_FX6.mp4`. `animation_liste` und `run` nennen
+  je Animation die Kameras, die mitfahren.
+- Kevin: Taste 0, dann Leertaste; das Video aus Menü oder Zeitleiste entsteht beim Blick durch eine Kamera aus ihrer
+  Sicht.
+- Den Körper bewegt der Kernel nur, wenn keine eigene Spur ihn bewegt; Werte von `kamera_info` gelten für die Ruhelage.
+
 ## Export
 
 `export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`, `export(["bom_csv"])` die Stückliste als CSV. STEP für CAD und Fertigung, STL oder 3MF für den
@@ -373,7 +473,9 @@ Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur die
 | … wartet auf Kevins Freigabe im Lagerkatalog | Vorschlag aus `stock_define`/`material_define`; Kevin gibt ihn im Lagerkatalog frei |
 | Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
-| Export verweigert | erst die Verstöße gegen die Inventar-Regel bzw. die Fehler der Bedingungen beheben |
+| Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |
+| Prüfung: 2 Durchdringungen … | Teile stecken ineinander; je Befund die Lösung umsetzen (Spiel, Bohrung, verschieben), `run` |
+| Export verweigert. Prüfung: … | erst die Befunde der Prüfung beheben |
 | Bedingungen: … verletzt (Soll …, Ist …) | Teil nicht von Hand verschieben, sondern mit `bed.platziere` aus den Bedingungen setzen; Lösung im Befund |
 | Widerspruch beim Platzieren | die genannten Bedingungen passen nicht zusammen; eine weglassen oder Werte angleichen |
 | … ist unterbestimmt (Hinweis) | freie Freiheitsgrade: weitere Bedingung (konzentrisch, mittig, parallel, abstand) |
