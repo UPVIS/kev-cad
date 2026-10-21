@@ -68,7 +68,8 @@ struct BestandErfassenSheet: View {
         let t = CatalogSearch.tokens(suche)
         let imModell = Set(model.bom?.lines.compactMap(\.stockID) ?? [])
         return CatalogSearch.sorted(catalog.items)
-            .filter { !$0.vorgeschlagen && CatalogSearch.matches($0, tokens: t, material: catalog.material($0.material)) }
+            // erste Stufe: nur Stangenware, Platten und Stückgut (Zukaufteile und Kameras folgen später)
+            .filter { !$0.vorgeschlagen && CatalogSchema.art($0.art).isKnown && CatalogSearch.matches($0, tokens: t, material: catalog.material($0.material)) }
             .sorted { imModell.contains($0.id) && !imModell.contains($1.id) }
     }
 

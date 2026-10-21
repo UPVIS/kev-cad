@@ -31,16 +31,19 @@ from pathlib import Path
 from typing import Any
 
 import kevcad_kernel
+from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bestand.anbindung import ANFRAGEN as BESTAND_ANFRAGEN
 from kevcad_kernel.bestand.anbindung import BestandAnbindung
 from kevcad_kernel.bom import inventory_text
-from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
+from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
+from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
+from kevcad_kernel.zukauf.dienst import ZukaufDienst
 
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
@@ -81,14 +84,16 @@ class Job:
     steps: list[str] = field(default_factory=list)
     started: float = 0.0
     cancelled: str | None = None  # Grund, wenn der Lauf nicht mehr zählt (anderes Projekt geöffnet)
+    animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
 
     @property
     def key(self) -> tuple[str, str, str]:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(BestandAnbindung):
-    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py."""
+class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime):
+    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
+    Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -109,15 +114,17 @@ class KernelRuntime(BestandAnbindung):
         self.scene = Scene()
         self._project: Project | None = None
         self._settings: dict[str, Any] = {"auto_run": bool(auto_run), "slow_ms": 0}
-        self._agent: dict[str, Any] = {"connected": False, "activity": None}
+        self._agent: dict[str, Any] = {"connected": False, "activity": None, "sessions": []}
         self._selection: dict[str, Any] = {"run": None, "refs": []}
         self._last_result: dict[str, Any] | None = None
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
+        self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
         self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
         self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
         self.catalog = Catalog(own=own_dir(socket_path))
+        self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
         self._state: tuple[str, str] = ("busy", "Rechenprozess startet")
@@ -161,6 +168,7 @@ class KernelRuntime(BestandAnbindung):
                 "agent": dict(self._agent),
                 "inventar": {"regel": self._project.inventar_regel if self._project else True,
                              "verstoesse": list(self._violations)},
+                "bedingungen": dict((self._constraints or {}).get("summe") or {}),
                 "pruefung": self._pruef.kurz(),
             }
 
@@ -323,6 +331,7 @@ class KernelRuntime(BestandAnbindung):
         formats = [str(f) for f in (formats or [])]
         with self._lock:
             violations = list(self._violations)
+            constraints = self._constraints
         locked = [f for f in formats if f.lower().lstrip(".") in ("step", "stp", "stl", "3mf", "bom_csv", "csv")]
         if violations and locked:
             return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
@@ -403,6 +412,29 @@ class KernelRuntime(BestandAnbindung):
     # KernelService: Phase 2 (Lagerteile, Materialien, Stückliste)
     # =================================================================================================================
 
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        """Bericht der Bedingungen des letzten erfolgreichen Laufs (wie die Nachricht CONSTRAINTS)."""
+        with self._lock:
+            rep = self._constraints
+        if rep is None:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        out = {"ok": True, **rep}
+        # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören
+        check, _ = self._pruef.letztes()
+        if check is not None and check.get("run") == rep.get("run"):
+            weg = [{**b, "pruefung": "bewegungsraum"} for b in check.get("befunde") or []
+                   if b.get("art") == "bewegungsraum"]
+            if weg:
+                out["befunde"] = list(out.get("befunde") or []) + weg
+        if part:
+            names = self.scene.names()
+            if part not in names and not any(n.startswith(part.rstrip("/") + "/") for n in names):
+                from kevcad_kernel.refs import unknown_part_message
+
+                return {"ok": False, "error": unknown_part_message(part, names)}
+            out["teil"] = part
+        return out
+
     def bom(self) -> dict[str, Any]:
         with self._lock:
             bom = self._bom
@@ -412,8 +444,8 @@ class KernelRuntime(BestandAnbindung):
         return {"ok": True, **bom}
 
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
-        if art is not None and art not in ARTEN:
-            return {"ok": False, "error": f"art {art!r} unbekannt (erlaubt: {', '.join(ARTEN)})"}
+        if art is not None and art not in ALLE_ARTEN:
+            return {"ok": False, "error": f"art {art!r} unbekannt (erlaubt: {', '.join(ALLE_ARTEN)})"}
         try:
             items, total = self.catalog.search(query or "", art=art or None, limit=max(1, int(limit or 30)))
         except Exception as exc:  # noqa: BLE001
@@ -476,7 +508,28 @@ class KernelRuntime(BestandAnbindung):
             items, _ = self.catalog.search(query or "", art=art or None, limit=None)
         else:
             items = self.catalog.items()
-        return {"materials": self.catalog.materials(), "items": items, "arten": list(ARTEN)}
+        return {"materials": self.catalog.materials(), "items": items, "arten": list(ALLE_ARTEN)}
+
+    # =================================================================================================================
+    # KernelService: Phase 3 (Zukaufteile, kevcad_kernel.zukauf.dienst)
+    # =================================================================================================================
+
+    def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
+                       felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
+        return self.zukauf.anlegen(url=url, mpn=mpn, gtin=gtin, felder=felder, ebene=ebene, proposal=True)
+
+    def zukauf_html(self, url: str | None, html: str, anlegen: bool = False, ebene: str = "projekt") -> dict[str, Any]:
+        return self.zukauf.html(url, html, anlegen=anlegen, ebene=ebene)
+
+    def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
+        return self.zukauf.suchen(zukauf_id)
+
+    def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
+                        erzwingen: bool = False) -> dict[str, Any]:
+        return self.zukauf.uebernehmen(zukauf_id, pfad, minuten=minuten, erzwingen=erzwingen)
+
+    def zukauf_liste(self, query: str = "") -> dict[str, Any]:
+        return self.zukauf.liste(query)
 
     def _values(self, item: dict[str, Any]) -> dict[str, Any]:
         """Berechnete Werte eines Lagerteils: kg_je_m, querschnitt_mm2, preis_je_m, preis_text."""
@@ -521,6 +574,13 @@ class KernelRuntime(BestandAnbindung):
             self._agent["connected"] = bool(connected)
             if not connected:
                 self._agent["activity"] = None
+                self._agent["sessions"] = []
+            msg = {"type": "AGENT", **self._agent}
+        self._send_app(msg)
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        with self._lock:
+            self._agent["sessions"] = [dict(s) for s in sessions]
             msg = {"type": "AGENT", **self._agent}
         self._send_app(msg)
 
@@ -587,6 +647,7 @@ class KernelRuntime(BestandAnbindung):
                 self._last_result = None
                 self._bom = None
                 self._violations = []
+                self._constraints = None
                 self._selection = {"run": None, "refs": []}
                 self._pruef.reset()
             run = self._run_no
@@ -604,11 +665,15 @@ class KernelRuntime(BestandAnbindung):
             if not same:
                 for rec in self.scene.clear():
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
+                self._anim_project_changed()
+                self.cameras_clear(run)
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
             self._send_app(msg)
             self._bestand_projekt(same)  # BESTAND nach jedem Projektwechsel
+            for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
+                self._send_app(status)
         if self._settings.get("auto_run") and (not same or self._last_result is None):
             self._submit_run(None, int(self._settings.get("slow_ms") or 0), self.run_timeout_s, source="auto")
 
@@ -616,7 +681,10 @@ class KernelRuntime(BestandAnbindung):
     # Läufe intern
     # =================================================================================================================
 
-    def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str):
+    def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str,
+                    katalog_neu: bool = False):
+        """Lauf einreihen. ``katalog_neu``: der Katalog hat sich geändert (CAD übernommen, Eintrag gesichert); ein schon
+        laufender Lauf mit gleichem Dateistand hat den alten Katalog gelesen und zählt dann nicht."""
         proj = self._project
         if proj is None:
             return {"ok": False, "error": NO_PROJECT}
@@ -630,7 +698,8 @@ class KernelRuntime(BestandAnbindung):
         with self._jobs_cond:
             # Gleicher Dateistand mit gleichen Parametern läuft schon oder wartet: auf dessen Ergebnis warten
             cur = self._current
-            if cur is not None and cur.key == job.key and cur.path == job.path and not cur.done.is_set():
+            if cur is not None and cur.key == job.key and cur.path == job.path and not cur.done.is_set() \
+                    and not katalog_neu:
                 return cur
             for pending in self._jobs:
                 if pending.key == job.key and pending.path == job.path:
@@ -778,6 +847,7 @@ class KernelRuntime(BestandAnbindung):
                         self.scene.remove(rec.name)
                         self._send_app({"type": "PART_REMOVE", "run": job.run, "name": rec.name})
                 records = self.scene.records()
+                self.cameras_after_run(job.run, final.get("cameras"))  # Phase 5: Kameras vor RUN_END
                 violations = list(final.get("inventar_verstoesse") or [])
                 with self._lock:
                     self._violations = violations
@@ -791,6 +861,12 @@ class KernelRuntime(BestandAnbindung):
                     with self._lock:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
+                if isinstance(final.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
+                    report = {"run": job.run, **final["bedingungen"]}
+                    report.pop("fehler", None)
+                    with self._lock:
+                        self._constraints = report
+                    self._send_app({"type": "CONSTRAINTS", **report})
                 # Prüfung: läuft sie noch, „running“ melden; ist sie schon fertig (schneller als RUN_END), das Ergebnis
                 self._run_end_run = job.run
                 if self._pruef.erwarte(job.run):
@@ -804,6 +880,7 @@ class KernelRuntime(BestandAnbindung):
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            self._anim_publish(job, result)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -836,6 +913,10 @@ class KernelRuntime(BestandAnbindung):
         if "cached" in final:
             result["cached_parts"] = final.get("cached", 0)
             result["tess_ms"] = final.get("tess_ms", 0.0)
+        if final.get("cameras"):
+            from kevcad_kernel.kamera import camera_line
+
+            result["kameras"] = [camera_line(c) for c in final["cameras"]]
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
@@ -848,6 +929,11 @@ class KernelRuntime(BestandAnbindung):
             if ok and full is not None and full.get("run") == job.run and full.get("einkaufsliste") is not None:
                 result["bom"]["einkauf"] = {"positionen": len(full["einkaufsliste"]),
                                             "summe": full.get("einkauf_summe"), "hinweis": full.get("einkauf_hinweis")}
+        rep = final.get("bedingungen")
+        if isinstance(rep, dict):
+            from kevcad_kernel.bedingungen.bericht import kurzbericht
+
+            result["bedingungen"] = kurzbericht(rep)
         if error is not None:
             result["error"] = error
         return result
@@ -934,6 +1020,9 @@ class KernelRuntime(BestandAnbindung):
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+        elif kind == "ANIM":
+            if header.get("run") == job.run:
+                job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
@@ -978,13 +1067,20 @@ class KernelRuntime(BestandAnbindung):
                 conn.send(rec.header, rec.payload)
             with self._lock:
                 bom = self._bom
+                constraints = self._constraints
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
             conn.send(self._bestand_nachricht())  # Bestand des offenen Projekts (null ohne Projekt)
+            if constraints is not None:
+                conn.send({"type": "CONSTRAINTS", **constraints})
+            self._anim_on_connect(conn)
+            self.cameras_on_connect(conn, self._run_no)
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
             conn.send({"type": "AGENT", **agent})
+            for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
+                conn.send(status)
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
 
@@ -1056,7 +1152,7 @@ class KernelRuntime(BestandAnbindung):
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1067,6 +1163,8 @@ class KernelRuntime(BestandAnbindung):
         if kind == "HELLO_APP":
             conn.info = {k: header.get(k) for k in ("app_version", "bundle_id")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+        elif kind == "CAMERA_SUGGEST":
+            self.camera_suggest_from_app(header)
         elif kind == "SELECTION":
             with self._lock:
                 self._selection = {"run": header.get("run"), "refs": list(header.get("refs") or [])}
@@ -1083,11 +1181,15 @@ class KernelRuntime(BestandAnbindung):
             with self._lock:
                 bom = self._bom or {"run": 0, **empty_bom()}
             self._send_app({"type": "BOM", "reply_to": header.get("id"), **bom})
+        elif kind == "DOWNLOAD_SEEN":
+            self.zukauf.app_download_seen(header)
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
-                      "CATALOG_SAVE", "CATALOG_DELETE"):
+                      "CATALOG_SAVE", "CATALOG_DELETE", "ZUKAUF_NEU", "ZUKAUF_CAD"):
             self._pool.submit(self._handle_app_request, header)
         elif kind in BESTAND_ANFRAGEN:
             self._pool.submit(self._bestand_anfrage_sicher, header)
+        elif self._anim_app_message(kind, header):
+            pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
 
@@ -1125,9 +1227,21 @@ class KernelRuntime(BestandAnbindung):
                     self._send_app({"type": "EXPORT_RES", "reply_to": rid, "files": res["files"]})
                 else:
                     self._send_app({"type": "ERROR", "reply_to": rid, "message": res.get("error", "Export fehlgeschlagen")})
+            elif kind == "ZUKAUF_NEU":  # Kevin hat im Dialog bestätigt: sofort frei; ACK, danach ZUKAUF_STATUS
+                self.zukauf.app_neu(header, lambda ok, message: self._send_app(
+                    {"type": "ACK", "reply_to": rid, "ok": ok, "message": message}))
+            elif kind == "ZUKAUF_CAD":
+                teil = str(header.get("teil") or "")
+                entry = self.catalog.item(teil)
+                if entry is None or entry.get("art") not in ZUKAUF_ARTEN:
+                    self._send_app({"type": "ACK", "reply_to": rid, "ok": False,
+                                    "message": f"Zukaufteil {teil!r} gibt es nicht"})
+                else:
+                    self._send_app({"type": "ACK", "reply_to": rid, "ok": True, "message": "CAD wird übernommen"})
+                    self.zukauf.app_cad(header)
             elif kind == "CATALOG_REQ":
                 art = header.get("art") or None
-                if art is not None and art not in ARTEN:
+                if art is not None and art not in ALLE_ARTEN:
                     self._send_app({"type": "ERROR", "reply_to": rid, "message": f"art {art!r} unbekannt"})
                 else:
                     self._send_app({"type": "CATALOG", "reply_to": rid,
@@ -1194,11 +1308,12 @@ class KernelRuntime(BestandAnbindung):
 
     def _rerun_after_catalog_change(self) -> None:
         """Kevin hat in der App einen Katalogeintrag geändert: mit Auto-Lauf neu rechnen, damit die Stückliste die
-        neuen Preise und Gewichte zeigt."""
+        neuen Preise und Gewichte zeigt. Läuft gerade ein Lauf mit demselben Dateistand, hat er noch den alten Katalog
+        gelesen: dann folgt ein weiterer (sonst ginge etwa ein zweites übernommenes CAD verloren)."""
         with self._lock:
             ok = bool(self._settings.get("auto_run")) and self._project is not None and self._bom is not None
         if ok:
-            self._submit_run(None, 0, self.run_timeout_s, source="auto")
+            self._submit_run(None, 0, self.run_timeout_s, source="auto", katalog_neu=True)
 
     # =================================================================================================================
     # Auto-Lauf
@@ -1268,6 +1383,9 @@ class KernelRuntime(BestandAnbindung):
 def _usage_example(item: dict[str, Any]) -> str:
     """Aufruf für model.py zu einem Lagerteil."""
     art = item.get("art")
+    if art in ZUKAUF_ARTEN:
+        return (f"teil = lager.zukauf({item['id']!r})\nstueck = teil.verbauen(\"{item.get('name') or 'Teil'}\")\n"
+                f"show(stueck, \"{item.get('name') or 'Teil'}\")")
     head = f"teil = lager.teil({item['id']!r})\n"
     if art in STANGENWARE:
         return head + 'stueck = teil.verbauen(laenge=800, name="Gruppe/Teil", gehrung=(0, 0))\nshow(stueck, "Gruppe/Teil")'

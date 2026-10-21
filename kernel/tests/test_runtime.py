@@ -90,10 +90,10 @@ def test_example_run_parts_and_frame_order(env):
     assert res["steps"] == ["Grundplatte", "Bohrungen", "Lasche", "Schelle", "Rohr"]
     assert res["params"]["abstand"] == 70
 
-    app.wait_for(lambda h: h["type"] == "BOM" and h["run"] == res["run"], start=start)
+    app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h["run"] == res["run"], start=start)
     all_types = [h["type"] for h in app.since(start) if h["type"] not in ("STATUS", "CHECK")]  # CHECK: Prüfung folgt
-    assert all_types[-2:] == ["RUN_END", "BOM"]  # Phase 2: Stückliste direkt nach RUN_END
-    frames = [h for h in app.since(start) if h["type"] not in ("STATUS", "BOM", "CHECK")]
+    assert all_types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # Stückliste, dann Bedingungen direkt nach RUN_END
+    frames = [h for h in app.since(start) if h["type"] not in ("STATUS", "BOM", "CONSTRAINTS", "CHECK")]
     types = [h["type"] for h in frames]
     assert types[0] == "RUN_START" and types[-1] == "RUN_END"
     assert types == ["RUN_START", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP",
@@ -395,6 +395,8 @@ def test_reconnect_gets_snapshot(env):
     assert rt.run()["ok"]
     rt.set_agent_connected(True)
     rt.set_agent_activity("misst Abstand Lasche ↔ Grundplatte")
+    sessions = [{"session_id": "s-1", "aktiv": True, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "misst"}]
+    rt.set_agent_sessions(sessions)
     second = FakeApp(env["sock"])  # ersetzt die erste Verbindung
     try:
         second.wait_for(lambda h: h["type"] == "AGENT")
@@ -403,6 +405,7 @@ def test_reconnect_gets_snapshot(env):
         assert [h["name"] for h in second.since(0) if h["type"] == "PART_UPSERT"] == ["A", "B"]
         agent = [h for h in second.since(0) if h["type"] == "AGENT"][-1]
         assert agent["connected"] is True and agent["activity"].startswith("misst")
+        assert agent["sessions"] == sessions
         deadline = time.monotonic() + 5
         while not env["app"].closed and time.monotonic() < deadline:
             time.sleep(0.02)
@@ -410,7 +413,8 @@ def test_reconnect_gets_snapshot(env):
     finally:
         rt.set_agent_connected(False)
     env["app"] = second  # folgende Tests benutzen die neue Verbindung
-    second.wait_for(lambda h: h["type"] == "AGENT" and h["connected"] is False)
+    _, _, gone, _ = second.wait_for(lambda h: h["type"] == "AGENT" and h["connected"] is False)
+    assert gone["sessions"] == []
 
 
 def test_auto_run_on_save(env):

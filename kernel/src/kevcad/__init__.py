@@ -16,6 +16,9 @@ Vorgabewert, ``show`` und ``step`` werden ignoriert.
 - ``param(name, default, min=None, max=None)``: benannter Parameter in mm; Vorgabe oder Wert aus ``run(params=...)``.
 - ``lager``: Lagerteile aus dem Katalog verbauen (``lager.teil(...).verbauen(...)``) und 3D-Druckteile kennzeichnen
   (``lager.druckteil(...)``), siehe ``kevcad.lager``. Mit Inventar-Regel muss jedes gezeigte Teil daher stammen.
+  Kameras mit Objektiv und Format: ``lager.kamera(...)``, Rig-Zubehör: ``lager.kamerazubehoer(...)`` (``kevcad.kamera``).
+- ``animation(dauer, fps, name)``: Animation mit Spuren auf gezeigten Teilen (bewege, drehe, pfad, rolle, folge,
+  gelenk, sichtbar, ansicht), siehe ``kevcad.bewegung``.
 - ``montage``, ``erlaubt_ueberlappung``, ``befestigt``, ``boden``: Erklärungen für die eingebaute Prüfung
   (Einbaurichtung, Baugruppe, gewollte Überlappung mit Grund, Befestigung, Bodenebene), siehe ``kevcad.pruefung``.
 """
@@ -24,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["show", "step", "param", "lager"]
+__all__ = ["show", "step", "param", "lager", "animation"]
 
 _hooks: dict[str, Any] = {}
 
@@ -54,6 +57,7 @@ def param(name: str, default: float, min: float | None = None, max: float | None
 
 
 from kevcad import lager  # noqa: E402 - braucht _hooks
+from kevcad.bewegung import animation  # noqa: E402 - braucht _hooks
 from kevcad.pruefung import befestigt, boden, erlaubt_ueberlappung, montage  # noqa: E402 - Erklärungen für die Prüfung
 
 __all__ += ["montage", "erlaubt_ueberlappung", "befestigt", "boden"]

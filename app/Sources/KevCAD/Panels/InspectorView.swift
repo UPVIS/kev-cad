@@ -10,9 +10,12 @@ struct InspectorView: View {
 
     var body: some View {
         Form {
+            CameraInspectorSection(store: model.cameras, actions: model.cameraActions)  // Phase 5: Kameras
             selectionSection
             propertiesSection
             stockSection
+            ZukaufInspectorSection(model: model)
+            ConstraintsSection(model: model)
             measurementsSection
             projectSection
         }

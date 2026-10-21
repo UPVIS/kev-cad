@@ -173,24 +173,6 @@ public struct EdgeInfo: Codable, Equatable, Sendable {
     }
 }
 
-public struct BBox: Codable, Equatable, Sendable {
-    public var min: [Double]
-    public var max: [Double]
-
-    public init(min: [Double], max: [Double]) {
-        self.min = min
-        self.max = max
-    }
-
-    public var minVector: SIMD3<Float>? {
-        min.count >= 3 ? SIMD3(Float(min[0]), Float(min[1]), Float(min[2])) : nil
-    }
-
-    public var maxVector: SIMD3<Float>? {
-        max.count >= 3 ? SIMD3(Float(max[0]), Float(max[1]), Float(max[2])) : nil
-    }
-}
-
 /// Kopf von PART_UPSERT.
 public struct PartUpsertHeader: Decodable, Sendable {
     public var run: Int
@@ -207,9 +189,11 @@ public struct PartUpsertHeader: Decodable, Sendable {
     public var stock: StockInfo?
     /// Phase 2, Inventar-Regel: "ok" oder "fehlt" (Teil ist weder Lagerteil noch gekennzeichnetes Druckteil).
     public var inventar: String?
+    /// Phase 3: Zukaufteil, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt.
+    public var zukauf: ZukaufPartInfo?
 
     enum CodingKeys: String, CodingKey {
-        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar
+        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar, zukauf
     }
 
     /// Inventar-Regel verletzt.
@@ -248,6 +232,7 @@ public struct PartUpsertHeader: Decodable, Sendable {
         transform = (t?.count == 16) ? t : nil
         stock = (try? c.decodeIfPresent(JSONValue.self, forKey: .stock)).flatMap { StockInfo(json: $0) }
         inventar = try? c.decodeIfPresent(String.self, forKey: .inventar)
+        zukauf = (try? c.decodeIfPresent(JSONValue.self, forKey: .zukauf)).flatMap { ZukaufPartInfo(json: $0) }
     }
 
     /// Lineares RGBA, Vorgabe hellgrau.
@@ -328,13 +313,16 @@ public struct RunErrorMessage: Decodable, Sendable {
 public struct AgentMessage: Decodable, Sendable {
     public var connected: Bool
     public var activity: String?
+    /// Claude-Sitzungen, die Kev CAD bedienen (additiv, für den Spiegel; leer bei älteren Kerneln).
+    public var sessions: [MirrorAgent]
 
-    enum CodingKeys: String, CodingKey { case connected, activity }
+    enum CodingKeys: String, CodingKey { case connected, activity, sessions }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         connected = (try? c.decodeIfPresent(Bool.self, forKey: .connected)) ?? false
         activity = try? c.decodeIfPresent(String.self, forKey: .activity)
+        sessions = (try? c.decodeIfPresent([MirrorAgent].self, forKey: .sessions)) ?? []
     }
 }
 
@@ -366,19 +354,24 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
     public var source: String
     public var view: String?
     public var hideOverlays: Bool
+    /// Phase 5: Bild durch diese Kamera (`Kamera/<name>`, `source` "camera").
+    public var camera: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, width, height, source, view
+        case id, width, height, source, view, camera
         case hideOverlays = "hide_overlays"
     }
 
-    public init(id: String, width: Int, height: Int, source: String, view: String?, hideOverlays: Bool) {
+    public init(
+        id: String, width: Int, height: Int, source: String, view: String?, hideOverlays: Bool, camera: String? = nil
+    ) {
         self.id = id
         self.width = width
         self.height = height
         self.source = source
         self.view = view
         self.hideOverlays = hideOverlays
+        self.camera = camera
     }
 
     public init(from decoder: Decoder) throws {
@@ -389,6 +382,7 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
         source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? "current"
         view = try? c.decodeIfPresent(String.self, forKey: .view)
         hideOverlays = (try? c.decodeIfPresent(Bool.self, forKey: .hideOverlays)) ?? false
+        camera = try? c.decodeIfPresent(String.self, forKey: .camera)
     }
 }
 
@@ -512,6 +506,14 @@ public enum KernelMessage: Sendable {
     case bom(BOMMessage)
     /// Phase 2: Lagerkatalog auf CATALOG_REQ.
     case catalog(CatalogMessage)
+    /// Phase 3: Zustand eines Zukaufteils (angelegt, wartet auf CAD, importiert, Fehler).
+    case zukaufStatus(ZukaufStatusMessage)
+    /// Zwangsbedingungen: Bericht nach RUN_END (PROTOCOL.md Abschnitt „Zwangsbedingungen“).
+    case constraints(ConstraintReport)
+    /// Phase 5: Animation (ANIM_DEF, ANIM_REMOVE, ANIM_COLLISIONS, ANIM_PLAY, ANIM_SEEK, ANIM_VIDEO_REQ).
+    case animation(AnimationMessage)
+    /// Phase 5: CAMERA_UPSERT und CAMERA_REMOVE.
+    case camera(CameraMessage)
     /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
     case check(CheckMessage)
     /// Bestand des offenen Projekts mit Buchungen (BESTAND.md).
@@ -539,6 +541,10 @@ public enum KernelMessage: Sendable {
         case .error: return "ERROR"
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
+        case .zukaufStatus: return "ZUKAUF_STATUS"
+        case .constraints: return "CONSTRAINTS"
+        case .animation(let a): return a.typeName
+        case .camera(let c): return c.typeName
         case .check: return "CHECK"
         case .bestand: return "BESTAND"
         case .unknown(let t, _): return t
@@ -556,6 +562,7 @@ public enum KernelMessage: Sendable {
         case .bom(let m): return m.replyTo
         case .catalog(let m): return m.replyTo
         case .bestand(let m): return m.replyTo
+        case .animation(let m): return m.replyTo
         default: return nil
         }
     }
@@ -587,6 +594,10 @@ public enum KernelMessage: Sendable {
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
+        case "ZUKAUF_STATUS": return .zukaufStatus(try ZukaufStatusMessage.decode(h))
+        case "CONSTRAINTS": return .constraints(try ConstraintsMessage.decode(h).report)
+        case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
+        case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
         case "BESTAND": return .bestand(try BestandMessage.decode(h))
         default:

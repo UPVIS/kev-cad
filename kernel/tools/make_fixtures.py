@@ -15,12 +15,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from build123d import Box, Cylinder, GeomType, Pos
+from build123d import Align, Box, Cylinder, GeomType, Pos
 from OCP.BRep import BRep_Tool
 from ocp_tessellate.ocp_utils.topology import get_edges
 from ocp_tessellate.tessellator import compute_quality, tessellate
 
-from kevcad_kernel.protocol import PartGeometry, encode_frame, pack_part
+from kevcad_kernel.protocol import PartGeometry, encode_frame, pack_part, zukauf_status
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
 
@@ -140,7 +140,12 @@ def main() -> None:
     add("run_error", {"type": "RUN_ERROR", "seq": 8, "run": 2, "message": "NameError: name 'Boxx' is not defined",
                       "line": 7, "excerpt": "6 | step('Grundplatte')\n7 | platte = Boxx(10, 20, 30)",
                       "traceback": "File model.py, line 7"})
-    add("agent", {"type": "AGENT", "seq": 9, "connected": True, "activity": "misst Abstand Lasche ↔ Grundplatte"})
+    add("agent", {"type": "AGENT", "seq": 9, "connected": True, "activity": "misst Abstand Lasche ↔ Grundplatte",
+                  "sessions": [{"session_id": "6b1f2c3d-0000-4000-8000-00000000000a", "aktiv": True,
+                                "seit": "2026-10-21T21:50:00Z", "taetigkeit": "misst Abstand Lasche ↔ Grundplatte",
+                                "zuletzt": "2026-10-21T22:05:12Z"},
+                               {"session_id": "6b1f2c3d-0000-4000-8000-00000000000b", "aktiv": False,
+                                "seit": "2026-10-21T21:58:30Z", "taetigkeit": None}]})
     add("view_cmd_focus", {"type": "VIEW_CMD", "seq": 10, "id": "k-1", "cmd": "focus",
                            "args": {"refs": ["Halter/Bolzen"], "animate": True}})
     add("screenshot_req", {"type": "SCREENSHOT_REQ", "seq": 11, "id": "k-2", "width": 1280, "height": 800,
@@ -202,9 +207,112 @@ def main() -> None:
                                "norm": "ISO 1127", "masse": {"d": 33.7, "s": 2.0}, "material": "edelstahl-1.4301",
                                "preis": {"je_m": 14.5, "quelle": "Kevin", "stand": "2026-10"}, "ebene": "eigen"}]})
 
-    for name, data in frames:
+    # Phase 3: Zukaufteile (PROTOCOL.md Abschnitt "Phase 3"). Eigene Dateien und Abschnitt "phase3" in fixtures.json,
+    # nicht in stream.bin (dort bleiben die 16 Rahmen, auf die sich die App-Tests verlassen)
+    phase3: dict = {"frames": [], "parts": {}}
+
+    def add3(name: str, header: dict, payload: bytes = b"", richtung: str = "kernel") -> None:
+        frames3.append((name, encode_frame(header, payload)))
+        phase3["frames"].append({"file": f"{name}.frame", "type": header["type"], "payload_bytes": len(payload),
+                                 "richtung": richtung})
+
+    frames3: list[tuple[str, bytes]] = []
+    zukauf = {"id": "alutec-05200", "hersteller": "ALUTEC", "mpn": "05200", "cad": "vereinfacht", "preis": 24.99,
+              "url": "https://www.beispiel-shop.de/p/alutec-05200"}
+    wagen = Box(610, 410, 128, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    data, exp = part_frame(17, 4, "Rollwagen (vereinfacht)", wagen, (0.682, 0.706, 0.729, 1.0))
+    header_len = int.from_bytes(data[:4], "little")
+    head = json.loads(data[4:4 + header_len])
+    head["zukauf"] = zukauf
+    head["inventar"] = "ok"
+    payload = data[8 + header_len:]
+    exp["zukauf"] = zukauf
+    add3("part_zukauf", head, payload)
+    phase3["parts"]["part_zukauf.frame"] = exp
+    links = [{"titel": "Produktseite (CAD-Download oft dort)", "url": "https://www.beispiel-shop.de/p/alutec-05200"},
+             {"titel": "TraceParts: ALUTEC 05200", "url": "https://www.traceparts.com/de/search?Keywords=ALUTEC+05200"}]
+    add3("zukauf_status_wartet", zukauf_status("alutec-05200", "wartet_auf_cad",
+                                               "CAD für ALUTEC Transportroller 05200: Kevin lädt die STEP-Datei herunter "
+                                               "(Links), Kev CAD übernimmt sie aus dem Download-Ordner",
+                                               cad_links=links, erwartet=["step", "stp", "zip"],
+                                               name="ALUTEC Transportroller 05200") | {"seq": 18})
+    add3("zukauf_status_importiert", zukauf_status("alutec-05200", "importiert",
+                                                   "CAD für ALUTEC Transportroller 05200 übernommen: 05200.stp, 5 Körper",
+                                                   name="ALUTEC Transportroller 05200") | {"seq": 19})
+    add3("bom_zukauf", {"type": "BOM", "seq": 20, "run": 4, "lines": [
+        {"pos": 1, "art": "zukaufteil", "stock_id": "alutec-05200", "benennung": "ALUTEC Transportroller 05200",
+         "norm": None, "material": None, "laenge": None, "gehrung": [0.0, 0.0], "masse_text": "610 × 410 × 128 mm",
+         "anzahl": 1, "kg_je": 1.8, "kg": 1.8, "preis_je": 24.99, "preis": 24.99, "teile": ["Rollwagen (vereinfacht)"],
+         "eigenteil": False, "hersteller": "ALUTEC", "mpn": "05200", "gtin": "4005187052008",
+         "url": "https://www.beispiel-shop.de/p/alutec-05200", "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
+         "preis_stand": "2026-10-21", "preis_brutto": True, "cad_quelle": "keins", "vereinfacht": True}],
+        "cuts": [], "totals": {"kg": 1.8, "preis": 24.99, "positionen": 1, "teile": 1,
+                               "preis_hinweis": "Richtpreise, Stand 2026-10; Zukaufteile zum Shoppreis brutto"},
+        "warnings": []})
+    eintrag = {"id": "alutec-05200", "art": "zukaufteil", "name": "ALUTEC Transportroller 05200", "hersteller": "ALUTEC",
+               "mpn": "05200", "gtin": "4005187052008", "url": "https://www.beispiel-shop.de/p/alutec-05200",
+               "preis": {"je_stueck": 24.99, "waehrung": "EUR", "brutto": True, "stand": "2026-10-21",
+                         "quelle": "https://www.beispiel-shop.de/p/alutec-05200"},
+               "masse": {"l": 610, "b": 410, "h": 128}, "gewicht": 1800,
+               "cad": {"quelle": "keins"}, "ersatz": {"form": "quader", "masse": {"l": 610, "b": 410, "h": 128}},
+               "bezugspunkte": {"oben": {"pos": [0, 0, 128], "richtung": [0, 0, 1], "hinweis": "Ladefläche"}},
+               "status": "frei"}
+    add3("catalog_zukauf", {"type": "CATALOG", "seq": 21, "reply_to": "a-10",
+                            "arten": ["rohr", "vierkantrohr", "platte", "zukaufteil"], "materials": [],
+                            "items": [{**eintrag, "ebene": "projekt"}]})
+    add3("zukauf_neu", {"type": "ZUKAUF_NEU", "seq": 5, "id": "a-11",
+                        "eingabe": "https://www.beispiel-shop.de/p/alutec-05200", "felder": eintrag, "ebene": "projekt"},
+         richtung="app")
+    add3("download_seen", {"type": "DOWNLOAD_SEEN", "seq": 6,
+                           "pfad": "/Users/test/Downloads/ALUTEC_05200_CAD.zip", "groesse": 24641,
+                           "zeit": "2026-10-21T21:14:03+02:00"}, richtung="app")
+    add3("zukauf_cad", {"type": "ZUKAUF_CAD", "seq": 7, "id": "a-12", "teil": "alutec-05200",
+                        "pfad": "/Users/test/Downloads/ALUTEC_05200_CAD.zip"}, richtung="app")
+    expected["phase3"] = phase3
+
+
+    # Phase 5: Animation (PROTOCOL.md Abschnitt "Phase 5: Animation")
+    from kevcad.bewegung import Animation
+    from kevcad_kernel.animation import evaluate_all, pack_anim_def
+
+    anim = Animation(1, 4, "Fahrt")
+    anim.bewege("Wagen", nach=(314.159265, 0, 0), von=0, bis=1)
+    anim.rolle("Wagen/Rad", auf="Wagen", radius=50, achse="y")
+    anim.sichtbar("Wagen/Rad", an=False, zeit=0.75)
+    anim.ansicht(0, lage=(0, -1000, 500), ziel=(0, 0, 0), kurve="linear")
+    anim.ansicht(1, lage=(1000, -1000, 500), ziel=(314, 0, 0), bildwinkel=40, kurve="linear")
+    order = ["Wagen/Platte", "Wagen/Rad", "Boden"]
+    bboxes = {"Wagen/Platte": ([-300, -200, 100], [300, 200, 120]), "Wagen/Rad": ([-50, -16, 0], [50, 16, 100]),
+              "Boden": ([-1000, -1000, -10], [1000, 1000, 0])}
+    (ausw,) = evaluate_all([anim], order, bboxes)
+    head, payload = pack_anim_def(ausw, 4)
+    add("anim_def", {**head, "seq": 17}, payload)
+    expected["animations"] = {"anim_def.frame": {
+        "name": "Fahrt", "bilder": ausw.frames, "teile": ausw.teile, "dauer": 1.0, "fps": 4.0,
+        "matrices": {f"{k}/{j}": [[round(float(v), 5) for v in row] for row in ausw.matrices[k, j]]
+                     for k in (0, 2, 4) for j in range(len(ausw.teile))},
+        "kamera": [[round(float(v), 4) for v in ausw.kamera[k]] for k in range(ausw.frames)],
+        "sichtbar": ausw.sichtbar}}
+    add("anim_collisions", {"type": "ANIM_COLLISIONS", "seq": 18, "name": "Fahrt", "run": 4, "reply_to": "a-12",
+                            "kollisionen": [{"teile": ["Wagen/Rad", "Boden"], "von": 0.25, "bis": 0.5, "zeit": 0.5,
+                                             "bild": 2, "tiefe": 1.5, "volumen": 230.4, "ort": [157.1, 0.0, -0.7],
+                                             "bilder": [1, 2]}],
+                            "geprueft": {"paare": 2, "bilder": 5, "schritt": 1, "geprueft_bilder": 5, "ms": 12.5}})
+    add("anim_remove", {"type": "ANIM_REMOVE", "seq": 19, "name": "Alt"})
+    add("anim_play", {"type": "ANIM_PLAY", "seq": 20, "id": "k-7", "name": "Fahrt", "an": True, "schleife": True,
+                      "geschwindigkeit": 0.5, "von_vorn": False})
+    add("anim_seek", {"type": "ANIM_SEEK", "seq": 21, "id": "k-8", "name": "Fahrt", "zeit": 0.5})
+    add("anim_video_req", {"type": "ANIM_VIDEO_REQ", "seq": 22, "id": "k-9", "name": "Fahrt", "width": 640,
+                           "height": 360, "fps": 4.0, "kamera": None, "format": "mp4",
+                           "path": "/Users/test/Documents/Kev CAD/Wagen/output/animationen/Fahrt.mp4"})
+
+    for name, data in frames + frames3:
         (ZIEL / f"{name}.frame").write_bytes(data)
     (ZIEL / "stream.bin").write_bytes(b"".join(d for _, d in frames))
+    # Zwangsbedingungen (PROTOCOL.md, Abschnitt Zwangsbedingungen): eigene Datei, nicht im Strom
+    from kevcad_kernel.protocol import constraints_example
+
+    (ZIEL / "constraints.frame").write_bytes(encode_frame({**constraints_example(), "seq": 17}))
     (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
     print(f"{len(frames)} Rahmen nach {ZIEL}")
     import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich

@@ -7,6 +7,7 @@ Echte Läufe zum Testen ohne laufende Kev-CAD-App, für VoiceBridge (M2/M3) und 
 |---|---|
 | `gestell.kcadrec` | Kernel-Rahmen, wie die App sie bekommt: `samples/gestell`, 17 Teile, 27.148 Dreiecke, 1,1 MB |
 | `gestell.kcadmirror` | daraus Spiegel-Rahmen Version 1: Handschlag, Szene, alle Netze in Blöcken, Zustand, Drehteller mit 90 Kamerastände, Auswahl, Hervorhebung, Ausblenden, Isolieren, Röntgen, neuer Lauf, Befehle; 0,3 MB |
+| `drehknopf.kcadrec` | `samples/drehknopf`, ein Teil mit 6.680 Dreiecken, 0,34 MB; das Netz ist gepackt 86 KB groß und reist in zwei Blöcken (Quelle für `mesh_block_1.bin` und `mesh_block_last.bin` in `mirror-fixtures/`) |
 | `kugelschieber.kcadrec` | Kevins Kugelschieber (Rollwagen, FX6, Ball), 112 Teile, 131.950 Dreiecke, 6,0 MB; nicht im Git |
 | `kugelschieber.kcadmirror` | dasselbe als Spiegel-Rahmen, Szene über drei Seiten, 119 Netzblöcke, 1,3 MB; nicht im Git |
 
@@ -30,3 +31,16 @@ Neu erzeugen (im Ordner `kernel/`):
 
 `record_session.py` arbeitet auf einer Kopie des Projekts; das Original bleibt unberührt. `--slow-ms 200` zeichnet in
 Zeitlupe auf, damit der Aufbau Teil für Teil gut zu sehen ist.
+
+Testdateien des Spiegels (`mirror-fixtures/`, je Datei ein Rahmen, dazu `fixtures.json` mit den erwarteten Werten) neu
+erzeugen, byte-gleich bei jedem Lauf:
+
+```bash
+.venv/bin/python tools/make_mirror_fixtures.py
+```
+
+Simulator für VoiceBridge (Spiegel-Socket ohne App, siehe Kopf von `tools/mirror_sim.py`):
+
+```bash
+.venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock
+```

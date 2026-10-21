@@ -47,6 +47,8 @@ class RunResult(TypedDict, total=False):
     bom: dict[str, Any]  # {"totals", "warnings", "cuts"}
     inventar_regel: bool
     inventar_verstoesse: list[str]  # gezeigte Teile ohne verbauen()/druckteil()
+    # Zwangsbedingungen (additiv): Kurzfassung des Berichts, vollständig über constraints()
+    bedingungen: dict[str, Any]  # {"summe", "befunde", "befunde_gesamt", "pruef_ms", "loese_ms", ...}
 
 
 class MeasureResult(TypedDict, total=False):
@@ -163,11 +165,84 @@ class KernelService(Protocol):
 
     def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
         """{"ok", "buchung" (die Umkehrbuchung), "aenderungen_text"}"""
+    # Phase 3: Zukaufteile (KATALOG.md „Zukaufteil“, PROTOCOL.md „Phase 3“, kevcad_kernel.zukauf.dienst)
+    def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
+                       felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
+        """Zukaufteil aus Feldern anlegen, über MCP immer als Vorschlag. {"ok", "angelegt": bool, "item", "datei",
+        "zu_pruefen", "hinweise", "text"}; Normteile: {"ok", "angelegt": False, "normteil", "stock_id", "beispiel",
+        "vorschlag", "text"}; schon vorhanden: {"ok", "angelegt": False, "vorhanden", "text"}."""
+
+    def zukauf_html(self, url: str | None, html: str, anlegen: bool = False, ebene: str = "projekt") -> dict[str, Any]:
+        """Mitgeliefertes HTML auswerten. {"ok", "felder", "entwurf", "quellen", "zu_pruefen", "hinweise",
+        "angelegt"?: Ergebnis von zukauf_anlegen, "normteil"?}"""
+
+    def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
+        """TraceParts (mit Schlüssel bis zum Import) oder Links. {"ok", "zustand": "importiert"|"wartet_auf_cad",
+        "cad_links", "erwartet", "hinweise", "text", "powered_by"?}"""
+
+    def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
+                        erzwingen: bool = False) -> dict[str, Any]:
+        """CAD-Datei (ohne Pfad: neueste passende aus ~/Downloads, auch ZIP) prüfen und übernehmen. {"ok", "zustand",
+        "item", "datei", "pruefung", "koerper", "flaechen", "grob", "hinweise", "text"}"""
+
+    def zukauf_liste(self, query: str = "") -> dict[str, Any]:
+        """{"ok", "items": [Zukaufteil + "ebene", "cad_art", "cad_datei_fehlt", "zustand", "kurz"], "total"}"""
+
+    # Zwangsbedingungen (PLAN-BEDINGUNGEN.md, additiv)
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        """Bericht des letzten erfolgreichen Laufs wie die Nachricht CONSTRAINTS: {"ok", "run", "items", "teile",
+        "befunde", "bewegungen", "summe", "pruef_ms", "loese_ms"}; mit ``part`` zusätzlich "teil"."""
+    # Phase 5: Animation (siehe PROTOCOL.md, Abschnitt „Phase 5: Animation“; umgesetzt in anim_runtime.py)
+    def animation_list(self) -> dict[str, Any]:
+        """{"ok", "animationen": [{"name", "dauer", "fps", "bilder", "teile", "kamerafahrt", "spuren", "standard",
+        "warnungen"?, "kollisionen"?}], "stand": {"name", "zeit", "bild", "spielt", …} | None}"""
+
+    def animation_play(self, name: str | None = None, an: bool = True, schleife: bool = False,
+                       geschwindigkeit: float = 1.0, von_vorn: bool = False) -> dict[str, Any]:
+        """Abspielen oder anhalten in der App. {"ok", "name", "an", "schleife", "dauer"}"""
+
+    def animation_seek(self, zeit: float, name: str | None = None) -> dict[str, Any]:
+        """Zur Zeit springen (s). {"ok", "name", "zeit", "bild"}"""
+
+    def animation_video(self, name: str | None = None, breite: int = 1920, hoehe: int | None = None,
+                        fps: float | None = None, kamera: str | None = None, format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        """Video aus der App nach <projekt>/output/animationen/. {"ok", "path", "width", "height", "fps", "bilder",
+        "ms", "kamera"}; ``kamera`` None = Viewer-Kamera bzw. Kamerafahrt aus anim.ansicht, sonst eine Kamera aus
+        model.py (Kurzname oder „Kamera/<name>“), Höhe dann aus dem Seitenverhältnis ihres Formats."""
+
+    def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
+        """Kollisionen an jedem ``schritt``-ten Bild. {"ok", "name", "kollisionen": [{"teile", "von", "bis", "zeit",
+        "bild", "tiefe", "volumen", "ort"}], "geprueft": {…}}"""
+    # Phase 5: Kameras (PROTOCOL.md „Phase 5: Kameras“, Umsetzung in kevcad_kernel.kamera.CameraRuntime)
+    def cameras(self) -> dict[str, Any]:
+        """Kameras des letzten Laufs: {"ok", "cameras": [CAMERA_UPSERT-Kopf + "vorschlag" (oder None)]}"""
+
+    def camera_info(self, name: str) -> dict[str, Any]:
+        """Eine Kamera (Name „FX6“ oder „Kamera/FX6“): {"ok", "camera", "vorschlag", "vorschlag_code"?}"""
+
+    def camera_view(self, name: str | None, timeout_s: float = 10) -> dict[str, Any]:
+        """Durch die Kamera schauen (VIEW_CMD camera_view), None = zurück zur freien Ansicht. {"ok", "message"?}"""
+
+    def camera_image(self, name: str, width: int = 1920, save: bool = True, return_png: bool = False,
+                     overlays: bool = False, timeout_s: float = 60) -> dict[str, Any]:
+        """Bild durch die Kamera (Höhe aus dem Seitenverhältnis des Formats), gespeichert unter
+        <projekt>/output/kameras/. {"ok", "file", "width", "height", "camera", "kamera", "png"? (nur mit return_png)}"""
+
+    def camera_catalog(self, query: str = "", art: str | None = None, limit: int = 40) -> dict[str, Any]:
+        """Kameras, Objektive und Kamerazubehör aus dem Katalog: {"ok", "items", "total"}"""
+
+    def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
+        """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 
     def set_agent_connected(self, connected: bool) -> None: ...
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        """Claude-Sitzungen, die Kev CAD bedienen (MIRROR.md, „Sitzungen“): je ``session_id``, ``aktiv``, ``seit``,
+        ``taetigkeit``, optional ``zuletzt``; geht an die App im Rahmen AGENT als ``sessions``. Optional: der
+        MCP-Server ruft es nur, wenn der Dienst es anbietet."""
 
     def close(self) -> None: ...
 

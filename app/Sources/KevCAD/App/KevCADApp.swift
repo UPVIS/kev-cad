@@ -47,6 +47,8 @@ struct KevCADApp: App {
             DemoCommands(session: session)
             StockCommands(session: session, model: session.model)
             BestandCommands(model: session.model)
+            ZukaufCommands(session: session, model: session.model)
+            AnimationCommands(model: session.model, animation: session.model.animation)
         }
 
         Window("Kev CAD", id: WindowID.project) {
@@ -76,5 +78,14 @@ struct KevCADApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .keyboardShortcut("k", modifiers: [.command, .shift])
+
+        // Phase 3: Zukaufteil hinzufügen (Ablage-Menü, Lagerkatalog)
+        Window("Zukaufteil hinzufügen", id: WindowID.zukauf) {
+            ZukaufDialogWindow(model: session.model)
+                .environmentObject(session)
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
 }

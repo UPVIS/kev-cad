@@ -80,6 +80,36 @@
    "file": "catalog.frame",
    "type": "CATALOG",
    "payload_bytes": 0
+  },
+  {
+   "file": "anim_def.frame",
+   "type": "ANIM_DEF",
+   "payload_bytes": 620
+  },
+  {
+   "file": "anim_collisions.frame",
+   "type": "ANIM_COLLISIONS",
+   "payload_bytes": 0
+  },
+  {
+   "file": "anim_remove.frame",
+   "type": "ANIM_REMOVE",
+   "payload_bytes": 0
+  },
+  {
+   "file": "anim_play.frame",
+   "type": "ANIM_PLAY",
+   "payload_bytes": 0
+  },
+  {
+   "file": "anim_seek.frame",
+   "type": "ANIM_SEEK",
+   "payload_bytes": 0
+  },
+  {
+   "file": "anim_video_req.frame",
+   "type": "ANIM_VIDEO_REQ",
+   "payload_bytes": 0
   }
  ],
  "parts": {
@@ -272,6 +302,356 @@
     "kg": 2.98,
     "preis": 7.06
    }
+  }
+ },
+ "phase3": {
+  "frames": [
+   {
+    "file": "part_zukauf.frame",
+    "type": "PART_UPSERT",
+    "payload_bytes": 1204,
+    "richtung": "kernel"
+   },
+   {
+    "file": "zukauf_status_wartet.frame",
+    "type": "ZUKAUF_STATUS",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "zukauf_status_importiert.frame",
+    "type": "ZUKAUF_STATUS",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "bom_zukauf.frame",
+    "type": "BOM",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "catalog_zukauf.frame",
+    "type": "CATALOG",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "zukauf_neu.frame",
+    "type": "ZUKAUF_NEU",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "download_seen.frame",
+    "type": "DOWNLOAD_SEEN",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "zukauf_cad.frame",
+    "type": "ZUKAUF_CAD",
+    "payload_bytes": 0,
+    "richtung": "app"
+   }
+  ],
+  "parts": {
+   "part_zukauf.frame": {
+    "name": "Rollwagen (vereinfacht)",
+    "counts": {
+     "vert": 24,
+     "tri": 12,
+     "face": 6,
+     "edge": 12,
+     "epts": 24,
+     "vtx": 8
+    },
+    "payload_bytes": 1204,
+    "first_position": [
+     -305.0,
+     -205.0,
+     0.0
+    ],
+    "first_triangle": [
+     1,
+     2,
+     0
+    ],
+    "tri_face_last": 5,
+    "face_types": [
+     "plane",
+     "plane",
+     "plane",
+     "plane",
+     "plane",
+     "plane"
+    ],
+    "edge_types": [
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line",
+     "line"
+    ],
+    "bbox": {
+     "min": [
+      -305.0,
+      -205.0,
+      0.0
+     ],
+     "max": [
+      305.0,
+      205.0,
+      128.0
+     ]
+    },
+    "volume": 32012800.0,
+    "zukauf": {
+     "id": "alutec-05200",
+     "hersteller": "ALUTEC",
+     "mpn": "05200",
+     "cad": "vereinfacht",
+     "preis": 24.99,
+     "url": "https://www.beispiel-shop.de/p/alutec-05200"
+    }
+   }
+  }
+ },
+ "animations": {
+  "anim_def.frame": {
+   "name": "Fahrt",
+   "bilder": 5,
+   "teile": [
+    "Wagen/Platte",
+    "Wagen/Rad"
+   ],
+   "dauer": 1.0,
+   "fps": 4.0,
+   "matrices": {
+    "0/0": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "0/1": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "2/0": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      157.07963
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "2/1": [
+     [
+      -1.0,
+      0.0,
+      0.0,
+      157.07963
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      -0.0,
+      0.0,
+      -1.0,
+      100.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "4/0": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      314.15927
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "4/1": [
+     [
+      1.0,
+      0.0,
+      -0.0,
+      314.15927
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ]
+   },
+   "kamera": [
+    [
+     0.0,
+     -1000.0,
+     500.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     250.0,
+     -1000.0,
+     500.0,
+     78.5,
+     0.0,
+     0.0,
+     40.0
+    ],
+    [
+     500.0,
+     -1000.0,
+     500.0,
+     157.0,
+     0.0,
+     0.0,
+     40.0
+    ],
+    [
+     750.0,
+     -1000.0,
+     500.0,
+     235.5,
+     0.0,
+     0.0,
+     40.0
+    ],
+    [
+     1000.0,
+     -1000.0,
+     500.0,
+     314.0,
+     0.0,
+     0.0,
+     40.0
+    ]
+   ],
+   "sichtbar": [
+    {
+     "teile": [
+      "Wagen/Rad"
+     ],
+     "zeiten": [
+      [
+       0.75,
+       false
+      ]
+     ]
+    }
+   ]
   }
  },
  "bestand": {

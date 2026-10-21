@@ -26,6 +26,14 @@ Die App hängt `serve --socket <pfad> --port <port>` an. Ablauf:
   GEBAUT_REQ mit ``buchung``), danach BESTAND und BOM. EXPORT_REQ kennt ``einkaufsliste_csv``.
 - Mit --demo-view schickt er nach dem Lauf Ansichtsbefehle (VIEW_CMD) und Bildanfragen (SCREENSHOT_REQ) und
   speichert die Bilder der App als PNG (Vorgabe: <repo>/build/fake_kernel/).
+- Phase 3 mit --zukauf: ein verbautes Zukaufteil „Rollwagen (vereinfacht)“ (PART_UPSERT ``zukauf``, erst
+  ``cad: "vereinfacht"``, Name wie beim echten Kernel), Stücklistenzeile ``art: "zukaufteil"`` wie bom_zukauf.frame,
+  zwei Zukaufteile im Katalog (eins frei, eins von Claude vorgeschlagen). ZUKAUF_NEU legt das Teil im Katalog an (ACK,
+  Ablehnung als ACK ok false), dann folgen ZUKAUF_STATUS ``angelegt`` und ``wartet_auf_cad`` mit ``cad_links``.
+  DOWNLOAD_SEEN wird nach ``<out>/downloads.jsonl`` geschrieben. ZUKAUF_CAD antwortet mit ACK und ZUKAUF_STATUS
+  ``importiert``; für den Rollwagen rechnet er danach mit ``cad: "hersteller"`` neu (Teil heißt dann „Rollwagen“).
+  Eine leere oder fehlende Datei ergibt ``fehler`` und, wenn das Teil wartete, wieder ``wartet_auf_cad``. Nach dem
+  Verbinden schickt er ZUKAUF_STATUS (mit ``name``) für jedes Teil, das noch auf CAD wartet.
 """
 
 from __future__ import annotations
@@ -119,7 +127,7 @@ def sphere_part(radius: float = 15.0, center=(-40.0, 0.0, 0.0), nlat: int = 110,
 class Parts:
     """Die Teile des Ersatzlaufs als (Name, Schritt, Kopf ohne seq/run, Nutzlast)."""
 
-    def __init__(self, lager: bool = False) -> None:
+    def __init__(self, lager: bool = False, zukauf: bool = False) -> None:
         self.items: list[tuple[str, str, dict[str, Any], bytes]] = []
         box_h, box_p = read_fixture("part_box.frame")
         cyl_h, cyl_p = read_fixture("part_cylinder.frame")
@@ -149,6 +157,14 @@ class Parts:
         for _, _, h, _ in self.items:
             if h["name"] == "Kugel":
                 h["material"] = "petg-schwarz"
+        if zukauf:
+            # Zukaufteil: die Grundplatte als Ersatzkörper, per transform hinter die anderen Teile gerückt
+            zk_h = dict(box_h)
+            zk_h["name"] = "Rollwagen"
+            zk_h["color"] = [0.55, 0.62, 0.72, 1.0]
+            zk_h["material"] = None
+            zk_h["transform"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 45, 0, 1]
+            self.items.append(("Rollwagen", "Zukaufteil verbauen", zk_h, box_p))
         if lager:
             # Lagerteil aus der Testdatei, per transform neben die anderen Teile gerückt (spaltenweise Matrix)
             st_h, st_p = read_fixture("part_stock.frame")
@@ -245,14 +261,42 @@ class BestandErsatz:
         return _Ersatz()
 
 
+ROLLWAGEN_URL ="https://www.beispiel-shop.de/p/alutec-05200"
+
+
+def zukauf_catalog() -> list[dict[str, Any]]:
+    """Phase 3: ein freigegebenes Zukaufteil im Projekt und ein Vorschlag von Claude (KATALOG.md, Zukaufteil)."""
+    return [
+        {"id": "alutec-05200", "art": "zukaufteil", "name": "ALUTEC Transportroller 05200", "hersteller": "ALUTEC",
+         "mpn": "05200", "gtin": "4005187052008", "url": ROLLWAGEN_URL,
+         "preis": {"je_stueck": 24.99, "waehrung": "EUR", "brutto": True, "stand": "2026-10-21",
+                   "quelle": ROLLWAGEN_URL},
+         "masse": {"l": 610, "b": 410, "h": 128}, "gewicht": 1800,
+         "ersatz": {"form": "quader", "masse": {"l": 610, "b": 410, "h": 128}},
+         "einbaupunkt": {"pos": [0, 0, 0], "richtung": [0, 0, 1], "hinweis": "Mitte der Aufstandsfläche"},
+         "status": "frei", "ebene": "projekt"},
+        {"id": "hettich-9258946", "art": "zukaufteil", "name": "Hettich Quadro V6 Vollauszug 500 mm",
+         "hersteller": "Hettich", "mpn": "9258946", "url": "https://www.beispiel-shop.de/p/hettich-9258946",
+         "preis": {"je_stueck": 18.4, "waehrung": "EUR", "brutto": True, "stand": "2026-10-21"},
+         "masse": {"l": 500, "b": 43, "h": 45}, "ersatz": {"form": "quader", "masse": {"l": 500, "b": 43, "h": 45}},
+         "status": "vorgeschlagen", "vorgeschlagen_von": "agent", "vorgeschlagen_am": "2026-10-21",
+         "ebene": "projekt"},
+    ]
+
+
 class FakeKernel:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.out = Path(args.out).expanduser().resolve()
         self.out.mkdir(parents=True, exist_ok=True)
-        self.parts = Parts(lager=args.lager)
+        self.parts = Parts(lager=args.lager, zukauf=args.zukauf)
         self.inventar_regel = True
         self.catalog = initial_catalog()
+        # Phase 3: Zukaufteile
+        self.rollwagen_cad = "vereinfacht"
+        self.waiting: dict[str, dict[str, Any]] = {}  # Zukaufteil-id → letzter ZUKAUF_STATUS (wartet_auf_cad)
+        if args.zukauf:
+            self.catalog["items"] += zukauf_catalog()
         self.last_bom: dict[str, Any] | None = None
         self.conn: socket.socket | None = None
         self.send_lock = threading.Lock()
@@ -352,6 +396,15 @@ class FakeKernel:
                 h = dict(header)
                 h["run"] = run
                 h["inventar"] = "fehlt" if name in self.violations() else "ok"
+                if name == "Rollwagen":
+                    h["zukauf"] = {"id": "alutec-05200", "hersteller": "ALUTEC", "mpn": "05200",
+                                   "cad": self.rollwagen_cad, "preis": 24.99, "url": ROLLWAGEN_URL}
+                    # wie der echte Kernel: Ersatzkörper heißen „… (vereinfacht)“; der andere Name verschwindet
+                    name = self.rollwagen_name()
+                    h["name"] = name
+                    for alt in ("Rollwagen", "Rollwagen (vereinfacht)"):
+                        if alt != name and self.current.pop(alt, None) is not None:
+                            self.send({"type": "PART_REMOVE", "run": run, "name": alt})
                 self.current[name] = (h, payload)
                 self.send(h, payload)
             time.sleep(pause)
@@ -477,6 +530,14 @@ class FakeKernel:
             self.catalog_save(header)
         elif t == "CATALOG_DELETE":
             self.catalog_delete(header)
+        elif t == "ZUKAUF_NEU":
+            self.zukauf_neu(header)
+        elif t == "DOWNLOAD_SEEN":
+            with (self.out / "downloads.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({k: header.get(k) for k in ("pfad", "groesse", "zeit")}, ensure_ascii=False) + "\n")
+            log(f"DOWNLOAD_SEEN {header.get('pfad')} ({header.get('groesse')} Byte, {header.get('zeit')})")
+        elif t == "ZUKAUF_CAD":
+            self.zukauf_cad(header)
         elif t == "SCREENSHOT_RES":
             rid = header.get("reply_to", "")
             name = self.shot_names.pop(rid, f"bild_{rid}")
@@ -548,14 +609,28 @@ class FakeKernel:
                               "laenge": None, "gehrung": [0, 0], "masse_text": "10 × 20 × 30 mm", "anzahl": 1,
                               "kg_je": 0.016, "kg": 0.016, "preis_je": 0.12, "preis": 0.12, "teile": ["Grundplatte"],
                               "eigenteil": True})
+        if names & {"Rollwagen", "Rollwagen (vereinfacht)"}:
+            # Zeile wie bom_zukauf.frame des echten Kernels
+            simple = self.rollwagen_cad == "vereinfacht"
+            lines.append({"art": "zukaufteil", "stock_id": "alutec-05200", "benennung": "ALUTEC Transportroller 05200",
+                          "norm": None, "material": None, "laenge": None, "gehrung": [0, 0],
+                          "masse_text": "610 × 410 × 128 mm", "anzahl": 1, "kg_je": 1.8, "kg": 1.8, "preis_je": 24.99,
+                          "preis": 24.99, "teile": [self.rollwagen_name()], "eigenteil": False, "hersteller": "ALUTEC",
+                          "mpn": "05200", "gtin": "4005187052008", "url": ROLLWAGEN_URL,
+                          "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
+                          "preis_stand": "2026-10-21", "preis_brutto": True,
+                          "cad_quelle": "keins" if simple else "download", "vereinfacht": simple})
         for i, line in enumerate(lines, start=1):
             line["pos"] = i
         kg = round(sum(line["kg"] or 0 for line in lines), 3)
         preis = round(sum(line["preis"] or 0 for line in lines), 2)
+        hinweis = "Richtpreise, Stand 2026-10"
+        if any(line["art"] == "zukaufteil" for line in lines):
+            hinweis += "; Zukaufteile zum Shoppreis brutto"
         return {"run": run, "lines": lines, "cuts": cuts, "warnings": warnings,
                 "totals": {"kg": kg, "preis": preis, "positionen": len(lines),
                            "teile": sum(line["anzahl"] for line in lines),
-                           "preis_hinweis": "Richtpreise, Stand 2026-10 (Ersatz-Kernel)"}}
+                           "preis_hinweis": hinweis + " (Ersatz-Kernel)"}}
 
     def write_bom_csv(self, base: Path) -> Path:
         bom = self.last_bom or self.bom(self.run_no)
@@ -624,6 +699,85 @@ class FakeKernel:
         with (self.out / "katalog-aenderungen.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps({"aktion": what, "kind": kind, "entry": entry}, ensure_ascii=False) + "\n")
 
+    # Phase 3: Zukaufteile -------------------------------------------------------------------------------------
+
+    def zukauf_status(self, teil: str, zustand: str, text: str | None = None, **extra: Any) -> None:
+        name = next((e.get("name") for e in self.catalog["items"] if e.get("id") == teil), teil)
+        msg = {"type": "ZUKAUF_STATUS", "id": teil, "zustand": zustand, "text": text, "name": name, **extra}
+        if zustand == "wartet_auf_cad":
+            self.waiting[teil] = msg
+        else:
+            self.waiting.pop(teil, None)
+        self.send(msg)
+        log(f"ZUKAUF_STATUS {teil}: {zustand}")
+
+    def rollwagen_name(self) -> str:
+        return "Rollwagen (vereinfacht)" if self.rollwagen_cad == "vereinfacht" else "Rollwagen"
+
+    def zukauf_neu(self, header: dict[str, Any]) -> None:
+        # Antworten wie der echte Kernel (zukauf/dienst.py): Ablehnung als ACK ok false, nicht als ERROR
+        rid = header.get("id")
+        felder = dict(header.get("felder") or {})
+        ebene = header.get("ebene")
+        teil = felder.get("id")
+        if not teil or felder.get("art") != "zukaufteil":
+            self.send({"type": "ACK", "reply_to": rid, "ok": False, "message": "felder braucht id und art zukaufteil"})
+            return
+        if ebene not in ("eigen", "projekt"):
+            self.send({"type": "ACK", "reply_to": rid, "ok": False,
+                       "message": f"Ebene {ebene!r} geht nicht (projekt oder eigen)"})
+            return
+        felder["ebene"] = ebene
+        felder.setdefault("status", "frei")
+        self.catalog["items"] = [e for e in self.catalog["items"] if e.get("id") != teil] + [felder]
+        self.note_change("zukauf_neu", "teil", {**felder, "eingabe": header.get("eingabe")})
+        datei = "eigene.json" if ebene == "eigen" else "katalog.json im Projekt"
+        self.send({"type": "ACK", "reply_to": rid, "ok": True, "message": f"{datei} (Ersatz-Kernel)"})
+
+        def later() -> None:
+            time.sleep(0.4)
+            self.zukauf_status(teil, "angelegt", "Im Katalog gespeichert, CAD wird gesucht (Ersatz-Kernel)")
+            time.sleep(0.8)
+            mpn = felder.get("mpn") or felder.get("shop_nr") or teil
+            self.zukauf_status(
+                teil, "wartet_auf_cad", "Kein Modell bei TraceParts, bitte beim Hersteller herunterladen",
+                cad_links=[{"titel": f"{felder.get('hersteller') or 'Hersteller'}-Portal",
+                            "url": f"https://www.example.com/cad?mpn={mpn}"},
+                           {"titel": "PARTcommunity", "url": f"https://www.example.org/partcommunity?q={mpn}"}],
+                erwartet=["step", "stp", "zip"])
+
+        threading.Thread(target=later, daemon=True).start()
+
+    def zukauf_cad(self, header: dict[str, Any]) -> None:
+        rid, teil, pfad = header.get("id"), header.get("teil"), header.get("pfad") or ""
+        entry = next((e for e in self.catalog["items"] if e.get("id") == teil), None)
+        if entry is None:
+            self.send({"type": "ACK", "reply_to": rid, "ok": False, "message": f"Zukaufteil {teil!r} gibt es nicht"})
+            return
+        self.send({"type": "ACK", "reply_to": rid, "ok": True, "message": "CAD wird übernommen"})
+        if not os.path.isfile(pfad) or os.path.getsize(pfad) == 0:
+            # wie der echte Kernel: fehler, und wartete das Teil, wieder wartet_auf_cad (App beobachtet weiter)
+            warte = self.waiting.get(teil)
+            grund = f"Datei {Path(pfad).name} fehlt oder ist leer"
+            self.zukauf_status(teil, "fehler", grund)
+            if warte is not None:
+                self.zukauf_status(teil, "wartet_auf_cad", f"{Path(pfad).name} nicht übernommen: {grund}. Bitte die "
+                                   "passende STEP-Datei herunterladen.", cad_links=warte.get("cad_links") or [],
+                                   erwartet=["step", "stp", "zip"])
+            return
+        entry["cad"] = {"quelle": "download", "datei": f"zukauf/{teil}/{Path(pfad).name}",
+                        "lizenz": "Herstellerbedingungen", "stand": time.strftime("%Y-%m-%d")}
+        self.note_change("zukauf_cad", "teil", {"id": teil, "pfad": pfad})
+
+        def later() -> None:
+            time.sleep(0.6)
+            self.zukauf_status(teil, "importiert", "STEP geprüft, Maße passen zum Shop (Ersatz-Kernel)")
+            if teil == "alutec-05200":
+                self.rollwagen_cad = "hersteller"
+                self.start_run()
+
+        threading.Thread(target=later, daemon=True).start()
+
     def measure(self, req: dict[str, Any]) -> dict[str, Any]:
         refs = req.get("refs", [])
         points = []
@@ -687,6 +841,8 @@ class FakeKernel:
                 self.first_connection = False
                 self.open_project(str(self.out / "Ersatzprojekt"))
                 self.start_run()
+            for status in list(self.waiting.values()):
+                self.send(status)
             reader = FrameReader()
             try:
                 while True:
@@ -712,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lager", action="store_true", help="zusätzlich ein Lagerteil (Vierkantrohr) verbauen")
     parser.add_argument("--bestand", action="store_true",
                         help="Bestand je Projekt mit dem Beispiel Kugelschieber (BESTAND.md)")
+    parser.add_argument("--zukauf", action="store_true", help="Phase 3: Zukaufteil verbauen, ZUKAUF_* beantworten")
     args, rest = parser.parse_known_args(argv)
     extra = [a for a in rest if a != "serve"]
     if extra:

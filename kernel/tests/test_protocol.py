@@ -45,3 +45,31 @@ def test_fixtures_decode():
             assert arrays["tri_face"][-1] == exp["tri_face_last"]
             assert len(header["faces"]) == header["counts"]["face"]
             assert len(header["edges"]) == header["counts"]["edge"]
+
+
+def test_fixtures_phase3():
+    """Zukaufteile: eigene Testdateien (nicht in stream.bin), Felder wie in PROTOCOL.md Abschnitt „Phase 3“."""
+    from kevcad_kernel.protocol import ZUKAUF_ZUSTAENDE
+
+    phase3 = json.loads((FIXTURES / "fixtures.json").read_text())["phase3"]
+    seen = {}
+    for info in phase3["frames"]:
+        (header, payload), = FrameReader().feed((FIXTURES / info["file"]).read_bytes())
+        assert header["type"] == info["type"] and len(payload) == info["payload_bytes"]
+        seen[info["file"]] = header
+        if header["type"] == "PART_UPSERT":
+            exp = phase3["parts"][info["file"]]
+            assert unpack_part(header, payload)["positions"].shape == (exp["counts"]["vert"], 3)
+            assert header["zukauf"] == exp["zukauf"] and set(header["zukauf"]) == {"id", "hersteller", "mpn", "cad",
+                                                                                    "preis", "url"}
+        if header["type"] == "ZUKAUF_STATUS":
+            assert header["zustand"] in ZUKAUF_ZUSTAENDE and "reply_to" not in header
+            assert set(header) >= {"id", "zustand", "text", "cad_links", "erwartet"}
+    wartet = seen["zukauf_status_wartet.frame"]
+    assert wartet["erwartet"] == ["step", "stp", "zip"] and wartet["cad_links"][0].keys() == {"titel", "url"}
+    line = seen["bom_zukauf.frame"]["lines"][0]
+    assert line["art"] == "zukaufteil" and line["stock_id"] == "alutec-05200"
+    assert {"hersteller", "mpn", "gtin", "url", "bild", "preis_stand", "preis_brutto", "cad_quelle",
+            "vereinfacht"} <= set(line)
+    assert seen["zukauf_neu.frame"]["felder"]["status"] == "frei"
+    assert isinstance(seen["download_seen.frame"]["groesse"], int)

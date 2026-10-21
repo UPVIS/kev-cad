@@ -1,7 +1,8 @@
 # Kev CAD · Phase 3: Zukaufteile per Link oder Nummer
 
-Stand: 21.10.2026. Baut auf Phase 2 auf (Katalog, `lager.teil(...).verbauen(...)`, Stückliste). Start, sobald Phase 2
-auf `main` ist. Grundlage ist die Recherche vom 21.10.2026 (Abschnitt „Fundstücke“ unten).
+Stand: 21.10.2026 (Zusammenführung auf `phase3-int`: Kernel Z-K und App Z-A mit Prüfung Stufe 1 und Phase 5,
+Ende-zu-Ende mit echtem Kernel bestanden). Baut auf Phase 2 auf (Katalog, `lager.teil(...).verbauen(...)`, Stückliste). Gestartet am
+21.10.2026 abends auf Zweig `phase3`; Verträge in KATALOG.md (Abschnitt Zukaufteil) und PROTOCOL.md (Phase 3). Grundlage ist die Recherche vom 21.10.2026 (Abschnitt „Fundstücke“ unten).
 
 ## Ziel
 

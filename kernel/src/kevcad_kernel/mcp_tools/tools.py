@@ -24,7 +24,7 @@ from pydantic import Field
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
-from .tracking import ActivityTracker
+from .tracking import ActivityTracker, SessionBoard, claude_session
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
-                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe"]
+                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil"]
 Ebene = Literal["eigen", "projekt"]
 
 VIEW_NAMES = {
@@ -141,21 +141,27 @@ def short_refs(refs: list[str], limit: int = 3) -> str:
 class KevcadTools:
     """Bindet die Werkzeuge an einen ``KernelService``."""
 
-    def __init__(self, service: KernelService) -> None:
+    def __init__(self, service: KernelService, board: SessionBoard | None = None) -> None:
         self.service = service
         self.activity = ActivityTracker(service.set_agent_activity)
+        # Sitzungen (MIRROR.md): ohne eigene Tafel meldet eine neue direkt an den Dienst, falls er das kann
+        self.board = board if board is not None else SessionBoard(getattr(service, "set_agent_sessions", None))
         self._annotation_ids = itertools.count(1)
 
     async def work(self, activity: str | None, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Führt einen blockierenden Service-Aufruf im Worker-Thread aus und zeigt dabei die Tätigkeit in der App."""
 
+        session = claude_session.get()
+
         def job() -> Any:
             token = self.activity.begin(activity) if activity else None
+            session_token = self.board.activity_begin(session, activity) if activity else None
             try:
                 return fn(*args, **kwargs)
             finally:
                 if token is not None:
                     self.activity.end(token)
+                self.board.activity_end(session_token)
 
         return await anyio.to_thread.run_sync(job, abandon_on_cancel=True)
 
@@ -187,14 +193,27 @@ def _guard(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaita
     return wrapper
 
 
-def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
-    """Registriert alle Werkzeuge am Server und liefert das Werkzeug-Objekt (für Tests)."""
-    t = KevcadTools(service)
+def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, *,
+             mutating: bool) -> Callable[..., Awaitable[CallToolResult]]:
+    """Meldet jeden Aufruf mit der Claude-Sitzung der Anfrage an die Sitzungstafel."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> CallToolResult:
+        board.tool_called(claude_session.get(), mutating)
+        return await fn(*args, **kwargs)
+
+    return wrapper
+
+
+def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard | None = None) -> KevcadTools:
+    """Registriert alle Werkzeuge am Server und liefert das Werkzeug-Objekt (für Tests). ``board`` führt die
+    Claude-Sitzungen; jeder Aufruf eines nicht nur lesenden Werkzeugs zählt als verändernd."""
+    t = KevcadTools(service, board)
     svc = service
 
     def tool(name: str, title: str, description: str, annotations: ToolAnnotations) -> Callable[..., Any]:
         def deco(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaitable[CallToolResult]]:
-            wrapped = _guard(fn)
+            wrapped = _tracked(_guard(fn), t.board, mutating=not annotations.read_only_hint)
             mcp.add_tool(wrapped, name=name, title=title, description=description, annotations=annotations,
                          structured_output=False)
             return wrapped
@@ -618,8 +637,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
 
     @tool("stock_search", "Lagerteile suchen",
           "Search Kevin's stock catalog (tubes, profiles, flat/round bar, angles, aluminium extrusions, timber, sheets, "
-          "screws, nuts, washers) by text and dimensions, e.g. 'vierkantrohr 40x40x3', 'edelstahl rohr 33,7', "
-          "'multiplex 18', 'm8'. Use the returned id in model.py: lager.teil(id).verbauen(...). art filters by kind.",
+          "screws, nuts, washers, released purchased parts) by text and dimensions, e.g. 'vierkantrohr 40x40x3', "
+          "'edelstahl rohr 33,7', 'multiplex 18', 'm8', 'alutec 05200'. Use the returned id in model.py: "
+          "lager.teil(id).verbauen(...), purchased parts (art zukaufteil) with lager.zukauf(id). art filters by kind.",
           READ_ONLY)
     async def stock_search(
         query: Annotated[str, Field(description="Words and dimensions, e.g. 'rohr 42,4x2' or '40x40'")] = "",
@@ -643,6 +663,8 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             f", die ersten {len(items)}:" if total > len(items) else ":")
         text = head + "\n" + fmt.stock_table(items)
         text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit stock_get."
+        if any(it.get("art") == "zukaufteil" for it in items):
+            text += " Zukaufteile (art zukaufteil): lager.zukauf(\"<id>\").verbauen(\"Name\")."
         return fmt.result(text, res)
 
     @tool("stock_get", "Lagerteil",
@@ -762,4 +784,41 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
     from .bestand_tools import register_bestand_tools  # Bestand je Projekt (BESTAND.md)
 
     register_bestand_tools(tool, t, svc)
+    # ------------------------------------------------------------------------------------- Zukaufteile (Phase 3)
+
+    from .zukauf_tools import register_zukauf_tools
+
+    register_zukauf_tools(tool, t, svc)
+
+    # ------------------------------------------------------------------------------------------- Zwangsbedingungen
+
+    @tool("bedingungen", "Bedingungen",
+          "Constraints of the last run (kevcad.bedingungen in model.py): every constraint with state (erfüllt / "
+          "verletzt / nicht geprüft), target and actual value, model.py line and a concrete fix; degrees of freedom "
+          "per part (free motions, joints), fastening per part (B9: verbinde, contact, connected to the floor), "
+          "range of motion of every joint with a range (B8: blocking part, free range) and all findings in the "
+          "shared format of the checks. Without arguments: summary, violated constraints and findings; part: only "
+          "this part (or assembly prefix) with all its constraints; alle=true lists every constraint.", READ_ONLY)
+    async def bedingungen(
+        part: Annotated[str | None, Field(description="Part name or assembly prefix, e.g. 'Rollwagen/Rahmen'")] = None,
+        alle: Annotated[bool, Field(description="List every constraint, also the satisfied ones")] = False,
+    ) -> CallToolResult:
+        res = await t.work("prüft die Bedingungen", svc.constraints, part)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(err, res)
+        from kevcad_kernel.bedingungen.bericht import bericht_text, fehler_anzahl
+
+        data = {k: v for k, v in res.items() if k != "ok"}
+        return fmt.result(bericht_text(res, teil=part, alle=alle), data, error=fehler_anzahl(res) > 0)
+
+    # Phase 5: Animation (eigene Datei, damit parallele Stränge nicht in dieselben Zeilen schreiben)
+    from .animation_tools import register_animation_tools
+
+    register_animation_tools(tool, t, svc)
+
+    # Phase 5: Kameras (kamera_tools.py)
+    from .kamera_tools import register_camera_tools
+
+    register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
     return t

@@ -12,6 +12,7 @@ struct StatusBar: View {
             kernel
             separator
             run
+            AnimationStatusItem(clock: model.animation.clock)  // Phase 5: Fortschritt der Videoausgabe
             Spacer(minLength: 16)
             navigation
             separator

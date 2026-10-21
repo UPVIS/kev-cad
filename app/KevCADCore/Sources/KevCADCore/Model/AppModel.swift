@@ -46,13 +46,16 @@ public struct PartNode: Identifiable, Equatable, Sendable {
     /// Phase 2 (A1, additiv): Inventar-Regel verletzt (PART_UPSERT `inventar: "fehlt"` oder in
     /// RUN_END `inventar_verstoesse`): weder verbautes Lagerteil noch gekennzeichnetes 3D-Druckteil.
     public var inventarFehlt: Bool
+    /// Phase 3 (Z-A, additiv): gesetzt, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt.
+    public var zukauf: ZukaufPartInfo?
 
     public var name: String { path.last ?? id }
 
     public init(
         id: String, color: SIMD4<Float>, material: String? = nil, visible: Bool = true, triangles: Int = 0,
         faces: Int = 0, edges: Int = 0, bboxMin: SIMD3<Float> = .zero, bboxMax: SIMD3<Float> = .zero,
-        volume: Double? = nil, mass: Double? = nil, run: Int = 0, stock: StockInfo? = nil, inventarFehlt: Bool = false
+        volume: Double? = nil, mass: Double? = nil, run: Int = 0, stock: StockInfo? = nil, inventarFehlt: Bool = false,
+        zukauf: ZukaufPartInfo? = nil
     ) {
         self.id = id
         self.path = id.split(separator: "/").map(String.init)
@@ -69,6 +72,7 @@ public struct PartNode: Identifiable, Equatable, Sendable {
         self.run = run
         self.stock = stock
         self.inventarFehlt = inventarFehlt
+        self.zukauf = zukauf
     }
 }
 
@@ -173,6 +177,21 @@ public final class AppModel: ObservableObject {
     /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
     @Published public var selectionMode: SelectionMode = .parts
     @Published public var orthographic = false
+    /// Phase 3 (Z-A, additiv): Zukaufteile, siehe AppModel+Zukauf.swift. Letzter ZUKAUF_STATUS je Zukaufteil, die
+    /// offene Rückfrage zu einer neuen Datei in Downloads, der Stand des Dialogs und der beobachtete Ordner.
+    @Published public var zukaufStatus: [ZukaufStatus] = []
+    @Published public var downloadOffer: DownloadOffer?
+    @Published public var zukaufActivity: ZukaufActivity = .idle
+    @Published public var watchedDownloads: URL?
+    /// Zwangsbedingungen (additiv, PLAN-BEDINGUNGEN.md): Bericht des letzten Laufs (CONSTRAINTS) und ob die Symbole
+    /// am Teil im Viewport stehen (umschalten über ConstraintActions).
+    @Published public var constraints: ConstraintReport?
+    @Published public var showConstraintSymbols = true
+    /// Phase 5 (additiv): Animation (Zeitleiste) als eigenes Objekt, damit das Abspielen nicht das ganze Fenster neu
+    /// zeichnet; Aktionen über `actions as? AnimationActions`.
+    public let animation = AnimationModel()
+    /// Phase 5 (KAM, additiv): Kameras aus model.py und der Blick durch eine Kamera (Aktionen: `CameraActions`).
+    public let cameras = CameraStore()
     /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
     @Published public var pruefung: PruefErgebnis?
     @Published public var schnittkoerperSichtbar = true
@@ -264,13 +283,16 @@ public struct BOMLine: Identifiable, Equatable, Sendable {
     public var preis: Double?
     public var teile: [String]
     public var eigenteil: Bool
+    /// Phase 3 (Z-A, additiv): Hersteller, Nummer, Link, Bild, Preisstand und CAD-Quelle bei `art: "zukaufteil"`.
+    public var zukauf: ZukaufBOMInfo?
 
     public var id: Int { pos }
 
     public init(
         pos: Int, art: String, stockID: String?, benennung: String, norm: String? = nil, material: String? = nil,
         laenge: Double? = nil, gehrung: [Double] = [0, 0], masseText: String, anzahl: Int, kgJe: Double? = nil,
-        kg: Double? = nil, preisJe: Double? = nil, preis: Double? = nil, teile: [String] = [], eigenteil: Bool = false
+        kg: Double? = nil, preisJe: Double? = nil, preis: Double? = nil, teile: [String] = [], eigenteil: Bool = false,
+        zukauf: ZukaufBOMInfo? = nil
     ) {
         self.pos = pos
         self.art = art
@@ -288,6 +310,7 @@ public struct BOMLine: Identifiable, Equatable, Sendable {
         self.preis = preis
         self.teile = teile
         self.eigenteil = eigenteil
+        self.zukauf = zukauf
     }
 }
 
@@ -464,6 +487,15 @@ public protocol CatalogActions: AnyObject {
 @MainActor
 public protocol InventoryActions: AnyObject {
     func setInventarRegel(_ on: Bool)
+}
+
+/// Zwangsbedingungen (additiv): Symbole ein- und ausblenden, eine Bedingung im Viewer zeigen. Implementiert vom
+/// App-Kern; die Oberfläche ruft sie über `model.actions as? ConstraintActions` auf.
+@MainActor
+public protocol ConstraintActions: AnyObject {
+    func setConstraintSymbolsVisible(_ on: Bool)
+    /// Beteiligte Teile auswählen und einpassen, die Bedingung hervorheben.
+    func showConstraint(_ id: String)
 }
 
 // MARK: - Blender-Steuerung
