@@ -22,7 +22,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | 8 | Druck auf dem Bambu Lab P1P (für den P1P neu zu prüfen: LAN-Modus, Profile) | PLAN-MVP.md Abschnitt 15, RECHERCHE.md | offen |
 | später | Live-Druckvorschau: Filament je Sorte, Druckzeit je Platte, Teile je Platte (automatisch angeordnet), empfohlene Einstellungen, Kosten, Hinweise; schnelle Schätzung live, Bambu Studio genau im Hintergrund | [PLAN-DRUCKVORSCHAU.md](PLAN-DRUCKVORSCHAU.md) | geplant |
 | später | Statik, Stabilität und Simulation: Belastungsszenarien, Stabwerk aus Lagerteilen (PyNite), Dynamik mit MuJoCo, Festkörper-FEM (Gmsh, scikit-fem), klare Urteile inkl. „überdimensioniert“ | [PLAN-STATIK.md](PLAN-STATIK.md) | geplant, startet nach Prüfungen, Bedingungen und Animation |
-| – | Live-Ansicht auf dem iPhone in der VoiceBridge-App: Szene live sehen, drehen, ein- und ausblenden, fokussieren, isolieren, mit dem Agenten weiterarbeiten, zwei Richtungen synchron, startet von selbst, sobald ein Agent in Kev CAD arbeitet | [PLAN-IPHONE-LIVE.md](PLAN-IPHONE-LIVE.md), [MIRROR.md](MIRROR.md) | gestartet: Vertrag v1 steht, VoiceBridge baut die iPhone-Ansicht, Kev CAD den Spiegel-Dienst |
+| – | Live-Ansicht auf dem iPhone in der VoiceBridge-App: Szene live sehen, drehen, ein- und ausblenden, fokussieren, isolieren, mit dem Agenten weiterarbeiten, zwei Richtungen synchron, startet von selbst, sobald ein Agent in Kev CAD arbeitet | [PLAN-IPHONE-LIVE.md](PLAN-IPHONE-LIVE.md), [MIRROR.md](MIRROR.md) | Spiegel-Dienst in Kev CAD installiert (Build 104), iPhone-Ansicht bei VoiceBridge fertig; die Übertragung (VoiceBridge) fehlt noch |
 
 ## Offene Zuarbeit von Kevin
 
