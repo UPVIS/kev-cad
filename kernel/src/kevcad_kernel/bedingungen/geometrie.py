@@ -593,16 +593,23 @@ def _aus_auswahl(teil: Any, auswahl: Any, name: str, nahe: Any) -> Bezug:
 
 
 def bezug(teil: Any, name_oder_auswahl: Any = None, auswahl: Any = None, *, nahe: Any = None,
-          umkehren: bool = False) -> Bezug:
+          umkehren: bool = False, richtung: Any = None) -> Bezug:
     """Bezug am Teil, siehe Moduldoku. ``bezug(teil, "unten")``, ``bezug(teil, "Auflage", fläche)``,
-    ``bezug(teil, fläche)``, ``bezug(platte, "bohrung", nahe=(40, 0, 0))``; ``umkehren`` dreht Normale bzw. Richtung."""
+    ``bezug(teil, fläche)``, ``bezug(platte, "bohrung", nahe=(40, 0, 0))``; ``umkehren`` dreht Normale bzw. Richtung,
+    ``richtung=(1, 0, 0)`` oder ``"+x"`` legt sie fest (die Richtung des Bezugs zeigt dann in diese Richtung; Gelenke
+    zählen ihren Bereich entlang der Richtung des festen Bezugs)."""
+    return _ausrichten(_bezug(teil, name_oder_auswahl, auswahl, nahe=nahe, umkehren=umkehren, richtung=richtung),
+                       richtung)
+
+
+def _bezug(teil: Any, name_oder_auswahl: Any, auswahl: Any, *, nahe: Any, umkehren: bool, richtung: Any) -> Bezug:
     if isinstance(teil, Bezug):
         b = replace(teil)
         if umkehren:
             b = _umgekehrt(b)
         return b
     if isinstance(teil, str):
-        return _per_name(teil, name_oder_auswahl, auswahl, nahe, umkehren)
+        return _per_name(teil, name_oder_auswahl, auswahl, nahe, umkehren, richtung)
     from build123d import Axis, Location, Plane, Vector
 
     form = als_form(teil)
@@ -629,7 +636,8 @@ def bezug(teil: Any, name_oder_auswahl: Any = None, auswahl: Any = None, *, nahe
     return _umgekehrt(b) if umkehren else b
 
 
-def _per_name(name: str, name_oder_auswahl: Any, auswahl: Any, nahe: Any, umkehren: bool) -> Bezug:
+def _per_name(name: str, name_oder_auswahl: Any, auswahl: Any, nahe: Any, umkehren: bool,
+              richtung: Any = None) -> Bezug:
     """Bezug an einem Teil über seinen Namen aus show(): schon gezeigt → sofort an dieser Form, sonst bei der Prüfung
     an der gezeigten Form ausgewertet (Standardnamen und ganzes Teil)."""
     from .sammlung import aktive
@@ -638,9 +646,9 @@ def _per_name(name: str, name_oder_auswahl: Any, auswahl: Any, nahe: Any, umkehr
     s = aktive()
     form = s.gezeigte_form(teilname) if s is not None else None
     if form is not None:
-        b = bezug(form, name_oder_auswahl, auswahl, nahe=nahe, umkehren=umkehren)
+        b = bezug(form, name_oder_auswahl, auswahl, nahe=nahe, umkehren=umkehren, richtung=richtung)
         b.teilname = teilname
-        b.per_name, b.auswahl_args = teilname, (name_oder_auswahl, auswahl, nahe, umkehren)
+        b.per_name, b.auswahl_args = teilname, (name_oder_auswahl, auswahl, nahe, umkehren, richtung)
         return b
     wahl = name_oder_auswahl.lower() if isinstance(name_oder_auswahl, str) and auswahl is None else None
     if name_oder_auswahl is None or wahl == "teil":
@@ -654,15 +662,80 @@ def _per_name(name: str, name_oder_auswahl: Any, auswahl: Any, nahe: Any, umkehr
     else:
         raise BezugFehler(f"Teil {teilname!r} ist (noch) nicht gezeigt: Bezug mit eigener Auswahl erst nach "
                           "show() nehmen oder die Form selbst übergeben")
-    d = np.array([0.0, 0.0, 1.0]) if art in ("ebene", "achse") else None
+    d = None
+    if art in ("ebene", "achse"):  # Platzhalter bis zur Prüfung; mit richtung= schon richtig orientiert
+        d = _richtung_vektor(richtung) if richtung is not None else np.array([0.0, 0.0, 1.0])
     return Bezug(art, np.zeros(3), d, form="name", name=wahl if wahl not in (None, "teil") else "", label=teilname,
-                 per_name=teilname, auswahl_args=(name_oder_auswahl, auswahl, nahe, umkehren))
+                 per_name=teilname, auswahl_args=(name_oder_auswahl, auswahl, nahe, umkehren, richtung))
 
 
 def _umgekehrt(b: Bezug) -> Bezug:
     if b.d is None:
         return b
     return replace(b, d=-b.d, t=None if b.t is None else (-b.t[1], -b.t[0]))
+
+
+_ACHS_RICHTUNG = {"x": 0, "y": 1, "z": 2}
+
+
+def _richtung_vektor(richtung: Any) -> np.ndarray:
+    """(dx, dy, dz), Vector oder Text "+x", "-y", "z" → Einheitsvektor."""
+    if isinstance(richtung, str):
+        t = richtung.strip().lower().replace("−", "-")
+        vz = -1.0 if t.startswith("-") else 1.0
+        t = t.lstrip("+-")
+        if t not in _ACHS_RICHTUNG:
+            raise BezugFehler(f"richtung {richtung!r}: erlaubt sind \"+x\", \"-x\", \"+y\", \"-y\", \"+z\", "
+                              "\"-z\" oder ein Vektor (dx, dy, dz)")
+        d = np.zeros(3)
+        d[_ACHS_RICHTUNG[t]] = vz
+        return d
+    try:
+        return einheit(v3(richtung))
+    except Exception as exc:  # noqa: BLE001
+        raise BezugFehler(f"richtung {richtung!r}: kein Vektor ({exc})") from exc
+
+
+def _ausrichten(b: Bezug, richtung: Any) -> Bezug:
+    """Richtung des Bezugs so drehen, dass sie mit ``richtung`` zeigt (None: unverändert)."""
+    if richtung is None:
+        return b
+    r = _richtung_vektor(richtung)
+    if b.d is None:
+        raise BezugFehler(f"richtung=… geht nur bei Achsen und Ebenen, nicht bei {b.art} {b.anzeigename()}")
+    c = float(np.dot(b.d, r))
+    if abs(c) < 1e-6:
+        raise BezugFehler(f"richtung {_punkt_text(r)} steht senkrecht auf {b.anzeigename()} (Richtung "
+                          f"{_punkt_text(b.d)}); eine Richtung längs der Achse bzw. Normale angeben")
+    return _umgekehrt(b) if c < 0 else b
+
+
+def _hauptrichtung_positiv(d: np.ndarray) -> bool:
+    """Zeigt d in die positive Hauptrichtung (größte Komponente positiv; gleich groß: Z vor X vor Y)?"""
+    a = np.abs(d)
+    k = max((2, 0, 1), key=lambda i: (round(float(a[i]), 6), i == 2, i == 0))
+    return float(d[k]) > 0
+
+
+def richte_bohrung(form: Any, b: Bezug) -> Bezug:
+    """Eindeutige Richtung einer Bohrung: aus der Bohrung heraus, durch die Eintrittsöffnung. Ein Sackloch hat nur eine
+    Öffnung, die Richtung zeigt dort hinaus. Eine Durchgangsbohrung (beide Enden offen) zeigt in die positive
+    Hauptrichtung (+Z, +X oder +Y, also zur oberen bzw. zur Öffnung auf der Plusseite). ``richtung=`` am Bezug geht
+    vor."""
+    if b.d is None or b.t is None or form is None:
+        return b
+    offen = []
+    for ende in (1, -1):
+        p, n = bohrung_ende(form, b, ende)
+        try:
+            frei = not punkt_im_koerper(form, p + n * 0.3)
+        except Exception:  # noqa: BLE001
+            frei = True
+        if frei:
+            offen.append(ende)
+    if len(offen) == 1:
+        return b if offen[0] > 0 else _umgekehrt(b)
+    return b if _hauptrichtung_positiv(b.d) else _umgekehrt(b)
 
 
 def _standard(form: Any, name: str, nahe: Any) -> Bezug:
@@ -691,12 +764,12 @@ def _standard(form: Any, name: str, nahe: Any) -> Bezug:
         if not alle:
             raise BezugFehler("Bezug bohrung: das Teil hat keine Bohrung (nach innen gewölbte Zylinderfläche)")
         if len(alle) == 1:
-            return alle[0]
+            return richte_bohrung(form, alle[0])
         if nahe is None:
             lagen = "; ".join(f"{b.name} bei {_punkt_text(b.p)}" for b in alle[:6])
             raise BezugFehler(f"Bezug bohrung: {len(alle)} Bohrungen ({lagen}{' …' if len(alle) > 6 else ''}); mit "
                               "nahe=(x, y, z) eine wählen")
-        return _naechste(alle, nahe)
+        return richte_bohrung(form, _naechste(alle, nahe))
     if name == "teil":
         return Bezug("teil", (v3(bb.min) + v3(bb.max)) / 2, form="teil", name="", **_quelle(form))
     import difflib
@@ -736,15 +809,100 @@ class SchraubenDaten:
     laenge: float  # Schaftlänge
     steigung: float | None
     kopf: Bezug  # Auflage des Kopfes (Ebene durch p, Normale zur Spitze)
+    gewinde: Any = None  # kevcad_kernel.gewinde.Gewinde (metrisch oder Zoll), wenn erkannt
+
+    @property
+    def bezeichnung(self) -> str:
+        """„M6“, „3/8"-16 UNC“ … für Texte."""
+        from kevcad_kernel.gewinde import bezeichnung
+
+        return bezeichnung(self.d, self.gewinde)
+
+
+# Art eines Verbindungselements → Text für Meldungen
+VERBINDUNGSTEIL_TEXT = {"schraube": "eine Schraube", "mutter": "eine Mutter", "scheibe": "eine Scheibe",
+                        "einsatz": "ein Gewindeeinsatz", "ring": "ein Ring mit Bohrung (Mutter, Einsatz oder Hülse)"}
+EINSATZ_WORTE = ("heatset", "insert", "einsatz", "rampa")  # typ oder Name eines Lagerteils der Art „mutter“
+
+
+def _ring(form: Any) -> tuple[float, float] | None:
+    """(Außendurchmesser, Länge), wenn die Form ein Ring ist: ihr längster Außenzylinder hat eine koaxiale
+    Innenbohrung, die mindestens die halbe Länge mitläuft (Scheibe, Mutter, Gewindeeinsatz, Hülse). Ein Schaft hat
+    das nie; eine Vertiefung im Schraubenkopf liegt neben dem Schaft und zählt nicht."""
+    from build123d import GeomType
+
+    aussen, innen = [], []
+    for f in form.faces():
+        if f.geom_type != GeomType.CYLINDER:
+            continue
+        info = _flaeche_daten(f)
+        (innen if info.get("innen") else aussen).append(info)
+    if not aussen or not innen:
+        return None
+    a = max(aussen, key=lambda i: (round(i["t"][1] - i["t"][0], 3), -i["r"]))
+    d, p0 = a["d"], a["p0"]
+    lo, hi = a["t"]
+    laenge = hi - lo
+    if laenge <= 1e-6:
+        return None
+    for i in innen:
+        if abs(float(np.dot(i["d"], d))) < 1 - 1e-6 or (i["r"] or 0) >= (a["r"] or 0):
+            continue
+        off = i["p0"] - p0
+        if np.linalg.norm(off - d * float(np.dot(off, d))) > EPS:
+            continue
+        s = float(np.dot(i["d"], d))
+        base = float(np.dot(off, d))
+        i0, i1 = sorted((base + s * i["t"][0], base + s * i["t"][1]))
+        if min(hi, i1) - max(lo, i0) >= 0.5 * laenge - 1e-6:
+            return 2 * float(a["r"]), laenge
+    return None
+
+
+def verbindungsteil(teil: Any) -> str | None:
+    """Art eines Verbindungselements: "schraube", "mutter", "scheibe", "einsatz" (Gewindeeinsatz) oder "ring"
+    (Mutter, Einsatz oder Hülse ohne Lagerteil); None, wenn es nicht feststeht (dann gilt ein Teil mit Schaft als
+    Schraube).
+
+    Zuerst das Lagerteil (``form.lagerteil``: ``art`` und ``masse["typ"]``, z. B. art "mutter" mit typ "HeatSetNut"
+    = Einsatz). Ohne Lagerteil die Form: Ein Ring (Außenzylinder mit koaxialer Innenbohrung über mindestens die halbe
+    Länge) ist nie ein Schaft, sondern eine Scheibe (Länge höchstens ein Drittel des Außendurchmessers) oder ein Ring."""
+    form = als_form(teil)
+    if form is None:
+        return None
+    lt = getattr(form, "lagerteil", None)
+    art = str(getattr(lt, "art", "") or "") if lt is not None else ""
+    if art in ("schraube", "scheibe"):
+        return art
+    if art == "mutter":
+        typ = str((getattr(lt, "masse", None) or {}).get("typ") or "")
+        text = " ".join([typ, str(getattr(lt, "id", "") or ""), str(getattr(lt, "name", "") or "")]).lower()
+        return "einsatz" if any(w in text.replace("-", "").replace(" ", "") for w in EINSATZ_WORTE) else "mutter"
+    try:
+        ring = _ring(form)
+    except Exception:  # noqa: BLE001 - unlesbare Form: nicht entscheiden
+        ring = None
+    if ring is not None:
+        aussen_d, laenge = ring
+        return "scheibe" if laenge <= aussen_d / 3 else "ring"
+    return None
 
 
 def schraube_daten(teil: Any) -> SchraubenDaten:
-    """Achse, Nenndurchmesser, Schaftlänge und Kopfauflage einer Schraube (Lagerteil oder selbst modelliert)."""
+    """Achse, Nenndurchmesser, Schaftlänge und Kopfauflage einer Schraube (Lagerteil oder selbst modelliert).
+    Scheiben, Muttern, Einsätze und Ringe sind keine Schrauben (``verbindungsteil``): BezugFehler. Das Gewinde
+    (metrisch oder Zoll) kommt aus der Größe des Lagerteils, sonst aus dem Schaftdurchmesser."""
     from build123d import GeomType
+
+    from kevcad_kernel.gewinde import aus_text, naechstes
 
     form = als_form(teil)
     if form is None:
         raise BezugFehler("in_bohrung: die Schraube muss ein Teil sein (z. B. schraube.verbauen(...))")
+    art = verbindungsteil(form)
+    if art is not None and art != "schraube":
+        label = str(getattr(form, "label", "") or "") or "das Teil"
+        raise BezugFehler(f"in_bohrung: {label} ist {VERBINDUNGSTEIL_TEXT[art]}, keine Schraube")
     zyl = []
     for f in form.faces():
         if f.geom_type != GeomType.CYLINDER:
@@ -769,14 +927,9 @@ def schraube_daten(teil: Any) -> SchraubenDaten:
     nenn, steig = None, None
     lt = getattr(form, "lagerteil", None)
     groesse = str(getattr(lt, "masse", {}).get("groesse", "")) if lt is not None else ""
-    if groesse.upper().startswith("M"):
-        try:
-            teile = groesse[1:].split("-")
-            nenn = float(teile[0].replace(",", "."))
-            if len(teile) > 1:
-                steig = float(teile[1].replace(",", "."))
-        except ValueError:
-            nenn = None
+    gew = aus_text(groesse)  # "M8", "M8-1.25", "1/4-20", "3/8\"-16 UNC" …
+    if gew is not None:
+        nenn, steig = gew.d, gew.steigung
     r_schaft = nenn / 2 + 0.05 if nenn else float(info["r"]) + EPS
     schaft = [k for k in koaxial if k[0] <= r_schaft]
     if not schaft:
@@ -784,6 +937,9 @@ def schraube_daten(teil: Any) -> SchraubenDaten:
     lo, hi = min(k[1] for k in schaft), max(k[2] for k in schaft)
     if nenn is None:
         nenn = 2 * max(k[0] for k in schaft)
+        gew = naechstes(nenn)  # selbst modelliert: Gewinde am Schaftdurchmesser erkennen (metrisch oder Zoll)
+        if gew is not None:
+            steig = gew.steigung
     # Kopf: Seite, auf der die Form über den Schaft hinausragt
     pts = np.array([v3(v) for v in form.vertices()])
     proj = (pts - p0) @ d_dir
@@ -813,7 +969,7 @@ def schraube_daten(teil: Any) -> SchraubenDaten:
     laenge = spitze - start
     achse = Bezug("achse", p_kopf, tip, x=info["x"], r=nenn / 2, t=(0.0, laenge), form="schaft", name="Schaft", **q)
     kopf = Bezug("ebene", p_kopf, tip, form="kopf", name="Kopfauflage", **q)
-    return SchraubenDaten(achse=achse, d=nenn, laenge=laenge, steigung=steig, kopf=kopf)
+    return SchraubenDaten(achse=achse, d=nenn, laenge=laenge, steigung=steig, kopf=kopf, gewinde=gew)
 
 
 def bohrung_ende(teil_form: Any, bohrung: Bezug, ende: int) -> tuple[np.ndarray, np.ndarray]:

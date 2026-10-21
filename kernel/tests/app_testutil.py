@@ -53,6 +53,9 @@ class FakeApp:
                     self.send({"type": "SCREENSHOT_RES", "reply_to": h["id"], "ok": True, "width": h["width"],
                                "height": h["height"], "camera": {"projection": "perspective"}, "mm_per_px": None},
                               PNG)
+                elif self.answer and h["type"] == "VERSION_BILD_REQ":  # Versionen: Vorschaubild
+                    self.send({"type": "SCREENSHOT_RES", "reply_to": h["id"], "ok": True, "width": h["width"],
+                               "height": h["height"], "camera": {}, "mm_per_px": None}, PNG)
         self.closed = True
 
     def wait_for(self, pred, timeout: float = 30.0, start: int = 0):

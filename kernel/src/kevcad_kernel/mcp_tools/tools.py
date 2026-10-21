@@ -827,6 +827,11 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     register_druck_tools(t, svc, tool, {"read_only": READ_ONLY})
 
+    # Versionen, Meilensteine, Varianten (versionen_tools.py)
+    from .versionen_tools import register_versionen_tools
+
+    register_versionen_tools(tool, t, svc)
+
     # Prüfung: pruefen, montage_reihenfolge, ansichten (eigene Datei)
     from .pruef_tools import register_pruef_tools
 

@@ -168,6 +168,17 @@ def masse_von(k: Koerper) -> tuple[float, bool]:
 def pruefe_stand(koerper: list[Koerper], kontakte: list[tuple[str, str]], befestigt: dict[str, str],
                  boden_z: float | None = None, cache: dict | None = None) -> StandErgebnis:
     out = StandErgebnis()
+    alle = {k.name: k for k in koerper}
+    # Kulisse (Boden, Tisch als Umgebung): gehört zu keiner Gruppe; wer auf ihr liegt, steht auf dem Boden, mit der
+    # Auflage in seiner eigenen Unterkante
+    kulisse = {n for n, k in alle.items() if k.kulisse}
+    auf_kulisse: dict[str, float] = {}
+    for a, b in kontakte:
+        for k_name, t_name in ((a, b), (b, a)):
+            if k_name in kulisse and t_name in alle and t_name not in kulisse and \
+                    alle[k_name].bmax[2] <= alle[t_name].bmin[2] + BODEN_TOL:
+                auf_kulisse[t_name] = float(alle[t_name].bmin[2])
+    koerper = [k for k in koerper if not k.kulisse]
     if not koerper:
         return out
     by = {k.name: k for k in koerper}
@@ -179,7 +190,7 @@ def pruefe_stand(koerper: list[Koerper], kontakte: list[tuple[str, str]], befest
             uf.union(a, b)
     gruppen = sorted(uf.gruppen(), key=lambda g: (-len(g), sorted(g)[0]))
     out.gruppen = gruppen
-    am_boden = {n for n, k in by.items() if k.bmin[2] <= bz + BODEN_TOL}
+    am_boden = {n for n, k in by.items() if k.bmin[2] <= bz + BODEN_TOL} | set(auf_kulisse)
     annahmen: list[str] = []
     info_gruppen = []
     for g in gruppen:
@@ -198,14 +209,14 @@ def pruefe_stand(koerper: list[Koerper], kontakte: list[tuple[str, str]], befest
             info_gruppen.append(eintrag)
             continue
         if not auf:
-            out.befunde.append(_schwebt(g_sorted, by, bz, erklaert, cache))
+            out.befunde.append(_schwebt(g_sorted, alle, bz, erklaert, cache))
             eintrag["schwebt"] = True
             info_gruppen.append(eintrag)
             continue
-        pts = np.vstack([bodenkontakte(by[n], bz, cache) for n in auf] + [np.zeros((0, 2))])
+        pts = np.vstack([bodenkontakte(by[n], auf_kulisse.get(n, bz), cache) for n in auf] + [np.zeros((0, 2))])
         poly = huelle(pts) if len(pts) else np.zeros((0, 2))
         rand, kante = rand_abstand(sp[:2], poly)
-        h = max(float(sp[2]) - bz, 1e-6)
+        h = max(float(sp[2]) - min(auf_kulisse.get(n, bz) for n in auf), 1e-6)
         winkel = math.degrees(math.atan2(rand, h))
         eintrag.update(stuetzpolygon=[[round(float(x), 2), round(float(y), 2)] for x, y in poly],
                        rand_abstand=round(rand, 2), kippwinkel=round(winkel, 2))
@@ -242,6 +253,9 @@ def pruefe_stand(koerper: list[Koerper], kontakte: list[tuple[str, str]], befest
             "Material aus dem Katalog angeben (show(..., material=...) oder Lagerteil verbauen), dann stimmen "
             "Masse, Schwerpunkt und Kippwinkel."))
     out.info = {"boden_z": round(bz, 3), "boden_erklaert": erklaert, "gruppen": info_gruppen}
+    if kulisse:
+        out.info["kulisse"] = sorted(kulisse)
+        out.info["auf_kulisse"] = sorted(auf_kulisse)
     return out
 
 

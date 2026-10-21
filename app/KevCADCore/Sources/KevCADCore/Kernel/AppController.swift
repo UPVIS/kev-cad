@@ -438,6 +438,7 @@ public final class AppController: AppActions {
             if model.kernelState == .busy { model.kernelState = .ready }
             model.inventarVerstoesse = e.inventarVerstoesse
             updateParts()
+            if model.versionen.vergleich?.aktuell == true { endCompare() }  // Versionen: „aktuell“ hat sich geändert
             if let restore = pendingRestore {
                 applyRestoredView(restore)
                 fitAtRunEnd = false
@@ -494,6 +495,8 @@ public final class AppController: AppActions {
             applyCamera(c)
         case .check(let c):
             applyCheck(c)
+        case .versionen(let v):
+            handleVersionen(v)
         case .bestand(let b):
             applyBestand(b)
         case .unknown(let type, _):
@@ -546,6 +549,7 @@ public final class AppController: AppActions {
             model.inventarVerstoesse = []
             resetZukauf()
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
+            resetVersionen()  // Versionen: Liste und Vergleich des alten Projekts verwerfen
             bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info

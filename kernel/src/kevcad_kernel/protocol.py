@@ -336,3 +336,53 @@ def zukauf_status(teil_id: str, zustand: str, text: str, *, cad_links: list[dict
     if name:
         msg["name"] = name
     return msg
+
+
+# Versionen (PROTOCOL.md, Abschnitt „Versionen“): Netze für Geisterkörper (VERSION_VERGLEICH) und Vorschaubilder
+# (VERSION_BILD_REQ). Je Eintrag hintereinander: positions f32 (vert × 3), normals f32 (vert × 3), triangles u32
+# (tri × 3), edge_points f32 (epts × 3), edge_offsets u32 (edge + 1). Weltkoordinaten.
+
+NETZ_ARRAYS: tuple[tuple[str, str, str, int], ...] = (
+    ("positions", "<f4", "vert", 3),
+    ("normals", "<f4", "vert", 3),
+    ("triangles", "<u4", "tri", 3),
+    ("edge_points", "<f4", "epts", 3),
+    ("edge_offsets", "<u4", "edge", 1),
+)
+
+
+def pack_netze(eintraege: list[tuple[dict[str, Any], dict[str, np.ndarray]]]) -> tuple[list[dict[str, Any]], bytes]:
+    """(Kopf je Netz, Nutzlast). Der Kopf ist der übergebene plus ``vert``, ``tri``, ``epts``, ``edge``."""
+    koepfe: list[dict[str, Any]] = []
+    teile: list[bytes] = []
+    for meta, n in eintraege:
+        pos = np.ascontiguousarray(n["positions"], dtype="<f4").reshape(-1, 3)
+        nrm = np.ascontiguousarray(n["normals"], dtype="<f4").reshape(-1, 3)
+        tri = np.ascontiguousarray(n["triangles"], dtype="<u4").reshape(-1, 3)
+        ept = np.ascontiguousarray(n.get("edge_points", np.zeros((0, 3))), dtype="<f4").reshape(-1, 3)
+        eof = np.ascontiguousarray(n.get("edge_offsets", np.zeros(1)), dtype="<u4").reshape(-1)
+        if len(eof) == 0:
+            eof = np.zeros(1, dtype="<u4")
+        if len(nrm) != len(pos):
+            raise ValueError(f"{meta}: {len(pos)} Punkte, aber {len(nrm)} Normalen")
+        koepfe.append({**meta, "vert": int(len(pos)), "tri": int(len(tri)), "epts": int(len(ept)),
+                       "edge": int(len(eof) - 1)})
+        teile += [pos.tobytes(), nrm.tobytes(), tri.tobytes(), ept.tobytes(), eof.tobytes()]
+    return koepfe, b"".join(teile)
+
+
+def unpack_netze(koepfe: list[dict[str, Any]], payload: bytes) -> list[dict[str, np.ndarray]]:
+    """Gegenstück zu pack_netze."""
+    out = []
+    offset = 0
+    for k in koepfe:
+        n: dict[str, np.ndarray] = {}
+        for name, dtype, key, per in NETZ_ARRAYS:
+            count = (int(k[key]) + 1 if name == "edge_offsets" else int(k[key])) * per
+            arr = np.frombuffer(payload, dtype=dtype, count=count, offset=offset)
+            offset += count * 4
+            n[name] = arr.reshape(-1, per) if per == 3 else arr
+        out.append(n)
+    if offset != len(payload):
+        raise ValueError(f"Nutzlast der Netze hat {len(payload)} Byte, erwartet {offset}")
+    return out

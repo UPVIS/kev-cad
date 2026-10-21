@@ -250,6 +250,31 @@ class KernelService(Protocol):
         """Alle Druckteile oder eines (Name oder Gruppe): {"ok", "run", "drucker", "teile": [{"name", "material",
         "zusammenfassung", "ausrichtung", "kennzahlen", "befunde", …}], "materialien", "zaehler", "statistik"}"""
 
+    # Versionen (PLAN-VERSIONEN.md, PROTOCOL.md „Versionen“; umgesetzt in kevcad_kernel.versionen.laufzeit)
+    def versionen(self, limit: int | None = 50, variante: str | None = None) -> dict[str, Any]:
+        """{"ok", "verfuegbar", "meldung", "variante", "varianten", "versionen" (neueste zuerst, siehe VERSIONEN),
+        "gruppen", "anzahl", "meilensteine", "ungesichert"}"""
+
+    def version_wiederherstellen(self, version: str, *, wer: str = "agent", warten: bool = True,
+                                 timeout_s: float = 300) -> dict[str, Any]:
+        """Dateien auf den Stand der Version, neue Version „Wiederhergestellt aus …“, neu rechnen.
+        {"ok", "version", "aus", "gesichert", "unveraendert", "titel", "lauf" {"ok", "teile", "pruefung"}, "ms"}"""
+
+    def versionen_vergleichen(self, a: str, b: str | None = None, *, zeigen: bool = True,
+                              timeout_s: float = 300) -> dict[str, Any]:
+        """{"ok", "a", "b", "aktuell", "zusammenfassung", "params", "teile", "stueckliste", "pruefung", "kennzahlen",
+        "code" {"dateien", "diff", "gekuerzt"}, "geister", "hinweise", "ms"}; mit ``zeigen`` auch in der App."""
+
+    def meilenstein(self, titel: str, notiz: str = "", version: str | None = None, *, wer: str = "agent",
+                    entfernen: bool = False) -> dict[str, Any]:
+        """{"ok", "version", "titel", "notiz", "warnung"?}"""
+
+    def variante(self, aktion: str = "liste", name: str | None = None, von: str | None = None,
+                 neuer_name: str | None = None, *, wer: str = "agent", warten: bool = True,
+                 timeout_s: float = 300) -> dict[str, Any]:
+        """aktion liste | anlegen | wechseln | umbenennen. {"ok", "aktion", "variante", "name", "von"?, "gesichert"?,
+        "lauf"?, "varianten"}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

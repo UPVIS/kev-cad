@@ -195,6 +195,8 @@ public final class AppModel: ObservableObject {
     /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
     @Published public var pruefung: PruefErgebnis?
     @Published public var schnittkoerperSichtbar = true
+    /// Versionen (additiv): Versionsleiste, Meilensteine, Vergleich, Varianten (Aktionen: `versionenActions`).
+    public let versionen = VersionenStore()
     /// Bestand (additiv, BESTAND.md): Bestand des Projekts, Buchungen, Zuschnitt mit Resten und Einkaufsliste.
     @Published public var bestandZustand = BestandZustand()
 

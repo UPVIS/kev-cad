@@ -53,7 +53,8 @@ def pruefe_bedingungen(sammlung: Sammlung, state: dict[str, Any], projekt: str |
     try:
         # Bewegungsraum erst in der Prüfung nach RUN_DONE (anbindung.py), damit RUN_END nicht wartet
         bericht = json_tauglich(pruefen(sammlung, formen, netze=netze, schluessel=schluessel, projekt=projekt,
-                                        boxen=boxen, zeitlimit_s=ZEITLIMIT_S, bewegungsraum=False))
+                                        boxen=boxen, zeitlimit_s=ZEITLIMIT_S, bewegungsraum=False,
+                                        kulisse=set(state.get("kulisse") or ())))
         anbindung.merke(sammlung, formen, schluessel, boxen, projekt, bericht)
         return bericht
     except Exception as exc:  # noqa: BLE001

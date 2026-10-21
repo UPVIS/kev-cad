@@ -520,6 +520,8 @@ public enum KernelMessage: Sendable {
     case camera(CameraMessage)
     /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
     case check(CheckMessage)
+    /// Versionen (PROTOCOL.md Abschnitt „Versionen“): VERSIONEN, VERSION_VERGLEICH, VERSION_BILD_REQ.
+    case versionen(VersionMessage)
     /// Bestand des offenen Projekts mit Buchungen (BESTAND.md).
     case bestand(BestandMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
@@ -550,6 +552,7 @@ public enum KernelMessage: Sendable {
         case .animation(let a): return a.typeName
         case .camera(let c): return c.typeName
         case .check: return "CHECK"
+        case .versionen(let v): return v.typeName
         case .bestand: return "BESTAND"
         case .unknown(let t, _): return t
         }
@@ -567,6 +570,7 @@ public enum KernelMessage: Sendable {
         case .catalog(let m): return m.replyTo
         case .bestand(let m): return m.replyTo
         case .animation(let m): return m.replyTo
+        case .versionen(let m): return m.replyTo
         default: return nil
         }
     }
@@ -604,6 +608,7 @@ public enum KernelMessage: Sendable {
         case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
         case "BESTAND": return .bestand(try BestandMessage.decode(h))
+        case let t where VersionMessage.types.contains(t): return .versionen(try VersionMessage.decode(type: t, frame: frame))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

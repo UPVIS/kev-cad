@@ -102,6 +102,12 @@ class Koerper:
         return self.info.get("art")
 
     @property
+    def kulisse(self) -> bool:
+        """Umgebung (``show(..., kulisse=True)``, ``lager.kulisse``): zählt als Boden bzw. Auflage und bei der
+        Durchdringung, nicht bei Einbaubarkeit, Befestigung, Druck und Stückliste."""
+        return bool(self.info.get("kulisse"))
+
+    @property
     def ist_verbindungselement(self) -> bool:
         return self.art in ("schraube", "mutter", "scheibe")
 

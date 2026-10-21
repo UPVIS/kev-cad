@@ -540,6 +540,60 @@ class FakeService:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
         return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
 
+    # Versionen ----------------------------------------------------------------------------------------------------
+
+    VERSIONEN = [
+        {"nr": 3, "zeit": "2026-10-21T14:32:10", "ts": 1792586000, "wer": "agent", "wer_text": "Agent · 3f2a9c",
+         "quelle": "lauf", "titel": "Geändert: model.py", "aktuell": True, "gruppe": None,
+         "meilenstein": {"titel": "Halter fertig", "notiz": "Bohrungen M6"},
+         "kennzahlen": {"teile": 4, "masse_kg": 1.25, "kosten": 12.4, "fehler": 0}, "params": {"hoehe": 140}},
+        {"nr": 2, "zeit": "2026-10-21T14:20:00", "ts": 1792585200, "wer": "kevin", "wer_text": "Kevin",
+         "quelle": "lauf", "titel": "Geändert: model.py", "aktuell": False, "gruppe": None, "meilenstein": None,
+         "kennzahlen": {"teile": 3, "masse_kg": 1.1}, "params": {"hoehe": 120}},
+    ]
+
+    def versionen(self, limit: int | None = 50, variante: str | None = None) -> dict[str, Any]:
+        self._record("versionen", limit, variante)
+        return {"ok": True, "verfuegbar": True, "variante": "haupt", "anzahl": 2, "meilensteine": 1,
+                "ungesichert": False, "gruppen": [],
+                "varianten": [{"id": "haupt", "name": "Hauptstand", "aktuell": True, "versionen": 2}],
+                "versionen": [dict(v) for v in self.VERSIONEN]}
+
+    def version_wiederherstellen(self, version: str, **kw: Any) -> dict[str, Any]:
+        self._record("version_wiederherstellen", version)
+        if str(version).lstrip("Vv") not in ("1", "2", "3"):
+            return {"ok": False, "error": f"Version {version!r} gibt es nicht (zuletzt: V1, V2, V3)."}
+        return {"ok": True, "version": 4, "aus": int(str(version).lstrip("Vv")), "gesichert": None,
+                "unveraendert": False, "titel": f"Wiederhergestellt aus {version}",
+                "lauf": {"ok": True, "teile": 3, "pruefung": {"zusammenfassung": ""}}, "ms": 900}
+
+    def versionen_vergleichen(self, a: str, b: str | None = None, *, zeigen: bool = True,
+                              **kw: Any) -> dict[str, Any]:
+        self._record("versionen_vergleichen", a, b, zeigen)
+        return {"ok": True, "a": {"nr": 2, "titel": "Geändert: model.py"}, "b": {"nr": None, "titel": "Aktueller Stand"},
+                "aktuell": b is None, "zusammenfassung": "Teile: 1 geändert",
+                "params": [{"name": "hoehe", "alt": 120, "neu": 140, "art": "geaendert"}],
+                "teile": {"neu": ["Deckel"], "weg": [], "geaendert": [{"name": "Grundplatte", "arten": ["form"],
+                                                                       "dvolumen": 1200.0}], "gleich": 2},
+                "stueckliste": {"neu": [], "weg": [], "geaendert": []},
+                "pruefung": {"alt": None, "neu": None}, "kennzahlen": {"alt": {}, "neu": {}},
+                "code": {"dateien": [{"pfad": "model.py", "status": "M", "plus": 1, "minus": 1}],
+                         "diff": "-hoehe = param(\"hoehe\", 120)\n+hoehe = param(\"hoehe\", 140)\n",
+                         "gekuerzt": False, "zeilen": 2},
+                "geister": [{"teil": "Grundplatte", "art": "alt"}], "hinweise": [], "ms": 40}
+
+    def meilenstein(self, titel: str, notiz: str = "", version: str | None = None, **kw: Any) -> dict[str, Any]:
+        self._record("meilenstein", titel, notiz, version)
+        return {"ok": True, "version": 3, "titel": titel, "notiz": notiz}
+
+    def variante(self, aktion: str = "liste", name: str | None = None, von: str | None = None,
+                 neuer_name: str | None = None, **kw: Any) -> dict[str, Any]:
+        self._record("variante", aktion, name, von, neuer_name)
+        varianten = [{"id": "haupt", "name": "Hauptstand", "aktuell": aktion == "liste", "versionen": 3}]
+        if aktion != "liste":
+            varianten.append({"id": "v-leicht", "name": name, "aktuell": True, "versionen": 0})
+        return {"ok": True, "aktion": aktion, "variante": "v-leicht", "name": name, "von": 2, "varianten": varianten}
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)

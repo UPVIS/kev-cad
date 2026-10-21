@@ -360,6 +360,24 @@ class Planer:
                             q = b if a == n else a
                             self.schnappt.setdefault(n, set()).add(q)
                             self.schnappt.setdefault(q, set()).add(n)
+        # Teile desselben Zukaufteils (eine Stücklistenzeile, etwa Rahmen und Lenkrollen eines Rollwagens) kommen fertig
+        # montiert: eine Einheit, als wäre montage([...], baugruppe=True) erklärt (KevCup, 22.10.2026)
+        zukauf: dict[str, list[str]] = {}
+        for n in frei:
+            z = self.k[n].info.get("zukauf")
+            if z:
+                zukauf.setdefault(str(z), []).append(n)
+        for z, mitglieder in zukauf.items():
+            if len(mitglieder) < 2:
+                continue
+            for n in mitglieder:
+                frei.remove(n)
+            richt = [r for n in mitglieder for r in (spec.get(n) or {}).get("richtung", [])]
+            r, erk = self.richtungen_fuer(mitglieder, richt or None)
+            gname = _gemeinsame_gruppe(mitglieder) or z.split(":", 1)[-1]
+            out.append(Einheit(gname, mitglieder, r, erklaert=erk, gruppe=True, erklaerte_gruppe=True))
+            for n in mitglieder:
+                self.nach.setdefault(n, set()).update((spec.get(n) or {}).get("nach") or set())
         # beim Druck eingelegte Teile reisen mit dem Teil, das sie umschließt (größter Kontaktpartner)
         mit: dict[str, list[str]] = {}
         for e in self.erklaerungen:
@@ -642,10 +660,18 @@ class Planer:
         return [x for x in einheiten if x not in mit] + [g]
 
     def _gruppen_befund(self, g: Einheit) -> None:
-        """Welche Teile der Gruppe lassen sich einzeln nicht einbauen? (Zerlegung nur innerhalb der Gruppe)"""
+        """Welche Teile der Gruppe lassen sich einzeln nicht einbauen? (Zerlegung nur innerhalb der Gruppe; erklärte
+        und gelieferte Baugruppen darin bleiben je ein Körper, KevCup, 22.10.2026)"""
+        gset = set(g.teile)
+        innen_erkl = []
+        for e in self.erklaerungen:
+            if e.get("baugruppe"):
+                drin = {n for n in g.teile if passt(n, e.get("teile") or [])}
+                if not drin or drin >= gset:  # die Gruppe selbst: auflösen, um ihr Inneres zu prüfen
+                    continue
+            innen_erkl.append(e)
         innen = Planer({n: self.k[n] for n in g.teile}, ausschluss=self.ausschluss, nachgiebig=self.nachgiebig,
-                       kontakte=self.kontakte, cache=self.cache,
-                       erklaerungen=[e for e in self.erklaerungen if not e.get("baugruppe")],
+                       kontakte=self.kontakte, cache=self.cache, erklaerungen=innen_erkl,
                        zeitlimit_s=max(1.0, self.ende - time.monotonic()), abbrechen=self._abbrechen)
         einh = innen.einheiten()
         innen.nach = {n: v & set(g.teile) for n, v in self.nach.items() if n in g.teile}
@@ -670,14 +696,17 @@ class Planer:
         if not stecken:
             return
         name = g.name
-        liste = ", ".join(n.rsplit("/", 1)[-1] for n in stecken[:5]) + (" …" if len(stecken) > 5 else "")
+        basis = _gemeinsame_gruppe(g.teile)
+        # Namen eindeutig (relativ zur gemeinsamen Gruppe), gleiche Teile nummerierter Gruppen zusammengefasst
+        liste = teile_text([e.name for e in einh])
         details = []
-        for n in stecken[:3]:
+        for e in einh[:3]:
             nach_q: dict[str, list[str]] = {}
-            for rtext, q in (sperren.get(n) or {}).items():
-                nach_q.setdefault(q.rsplit("/", 1)[-1], []).append(rtext)
+            for rtext, q in (sperren.get(e.name) or {}).items():
+                nach_q.setdefault(_relativ(q, basis), []).append(rtext)
             if nach_q:
-                details.append(f"{n.rsplit('/', 1)[-1]}: " + "; ".join(f"{q} {', '.join(r)}" for q, r in nach_q.items()))
+                details.append(f"{_relativ(e.name, basis)}: "
+                               + "; ".join(f"{q} {', '.join(r)}" for q, r in nach_q.items()))
         hindernisse = details
         alle_frei = all(not self.k[n].info.get("lager") for n in g.teile)
         loesung = (f"Ist {name} ein Zukaufteil (fertig montiert geliefert), als Baugruppe erklären: "
@@ -735,6 +764,63 @@ class Planer:
                               "Mit pruefen erneut prüfen; bei sehr vielen Teilen Baugruppen erklären "
                               "(montage(\"Gruppe\", baugruppe=True))."))
         return out
+
+
+def _relativ(name: str, basis: str | None) -> str:
+    """Name relativ zur gemeinsamen Gruppe („Rollwagen/Lenkrolle 1/Gabel“ in „Rollwagen“ → „Lenkrolle 1/Gabel“)."""
+    if basis and name.startswith(basis + "/"):
+        return name[len(basis) + 1:]
+    return name
+
+
+def _nummern(nrs: list[int]) -> str:
+    """[1, 2, 3, 4] → „1–4“, [1, 3] → „1, 3“, [1, 2, 4] → „1–2, 4“."""
+    nrs = sorted(set(nrs))
+    stuecke, start = [], nrs[0]
+    for a, b in zip(nrs, nrs[1:] + [None]):
+        if b is None or b != a + 1:
+            stuecke.append(str(start) if start == a else f"{start}–{a}")
+            if b is not None:
+                start = b
+    return ", ".join(stuecke)
+
+
+def teile_text(namen: list[str], grenze: int = 8) -> str:
+    """Teilenamen für Befundtexte: relativ zur gemeinsamen Gruppe und damit eindeutig; gleiche Teile nummerierter
+    Untergruppen zusammengefasst („Lenkrolle 1–4: Gabel, Rad, Felge“), doppelte Namen nur einmal."""
+    import re
+
+    namen = list(dict.fromkeys(namen))
+    if len(namen) <= 1:
+        return namen[0] if namen else ""
+    basis = _gemeinsame_gruppe(namen)
+    stamm_nr: dict[str, dict[int, list[str]]] = {}
+    reihenfolge: list[tuple[str, str]] = []
+    for n in namen:
+        r = _relativ(n, basis)
+        eltern, _, blatt = r.rpartition("/")
+        m = re.fullmatch(r"(.*?)\s*(\d+)", eltern) if eltern else None
+        if m and blatt:
+            stamm = m.group(1)
+            if stamm not in stamm_nr:
+                reihenfolge.append(("stamm", stamm))
+            stamm_nr.setdefault(stamm, {}).setdefault(int(m.group(2)), [])
+            if blatt not in stamm_nr[stamm][int(m.group(2))]:
+                stamm_nr[stamm][int(m.group(2))].append(blatt)
+        else:
+            reihenfolge.append(("einzeln", r))
+    stuecke: list[str] = []
+    for art, wert in reihenfolge:
+        if art == "einzeln":
+            stuecke.append(wert)
+            continue
+        je_blaetter: dict[tuple[str, ...], list[int]] = {}
+        for nr, blaetter in stamm_nr[wert].items():
+            je_blaetter.setdefault(tuple(blaetter), []).append(nr)
+        for blaetter, nrs in je_blaetter.items():
+            stuecke.append(f"{wert} {_nummern(nrs)}: {', '.join(blaetter)}")
+    trenner = "; " if stamm_nr else ", "  # mit zusammengefassten Gruppen (die selbst Kommas enthalten) Semikolon
+    return trenner.join(stuecke[:grenze]) + (" …" if len(stuecke) > grenze else "")
 
 
 def _gemeinsame_gruppe(namen: list[str]) -> str | None:
@@ -810,10 +896,14 @@ def pruefe_montage(ctx: PruefKontext) -> list[dict[str, Any]]:
     if not ctx.optionen.get("montage", True):
         return []
     t0 = time.perf_counter()
-    bz = (ctx.ergebnis.get("stand") or {}).get("boden_z")
-    boden = set(ctx.befestigt())
+    stand = ctx.ergebnis.get("stand") or {}
+    bz = stand.get("boden_z")
+    # Kulisse (Umgebung) wird nicht eingebaut und steht keinem Weg im Weg; wer auf ihr steht, beginnt am Boden
+    koerper = {n: k for n, k in ctx.koerper.items() if not k.kulisse}
+    kontakte = [(a, b) for a, b in ctx.kontakte if a in koerper and b in koerper]
+    boden = set(ctx.befestigt()) | (set(stand.get("auf_kulisse") or ()) & set(koerper))
     if bz is not None:
-        boden |= {n for n, k in ctx.koerper.items() if float(k.bmin[2]) <= float(bz) + BODEN_TOL}
+        boden |= {n for n, k in koerper.items() if float(k.bmin[2]) <= float(bz) + BODEN_TOL}
     ausschluss = ctx.ausschluss() | _erlaubte_paare(ctx)
     gewinde = {frozenset(g["teile"]): np.asarray(g["achse"], dtype=np.float64)
                for g in ctx.ergebnis.get("gewinde") or [] if g.get("achse") is not None}
@@ -825,8 +915,8 @@ def pruefe_montage(ctx: PruefKontext) -> list[dict[str, Any]]:
         ctx.ergebnis["montage"] = {**montage, "tests": 0, "aus_zwischenspeicher": True}
         ctx.zeiten["montage"] = (time.perf_counter() - t0) * 1000
         return befunde
-    planer = Planer(ctx.koerper, ausschluss=ausschluss, nachgiebig=ctx.nachgiebig,
-                    erklaerungen=ctx.erklaerungen.get("montage") or [], kontakte=ctx.kontakte, cache=ctx.cache,
+    planer = Planer(koerper, ausschluss=ausschluss, nachgiebig=ctx.nachgiebig,
+                    erklaerungen=ctx.erklaerungen.get("montage") or [], kontakte=kontakte, cache=ctx.cache,
                     zeitlimit_s=float(ctx.optionen.get("zeitlimit_s") or 60), abbrechen=ctx.abbrechen,
                     boden=boden or None, gewinde=gewinde)
     erg = planer.plane()
@@ -835,10 +925,10 @@ def pruefe_montage(ctx: PruefKontext) -> list[dict[str, Any]]:
     erklaert_wz = {}
     for e in ctx.erklaerungen.get("montage") or []:
         if e.get("werkzeug"):
-            for n in ctx.koerper:
+            for n in koerper:
                 if passt(n, e.get("teile") or []):
                     erklaert_wz[n] = str(e["werkzeug"])
-    wz_befunde, wz_texte = werkzeug_befunde(ctx.koerper, erg, erklaert_wz)
+    wz_befunde, wz_texte = werkzeug_befunde(koerper, erg, erklaert_wz)
     ctx.zeiten["werkzeug"] = (time.perf_counter() - t1) * 1000
     schritte = erg.einbau()
     for s in schritte:
@@ -862,9 +952,10 @@ def _plan_signatur(ctx: PruefKontext, ausschluss: set[frozenset[str]], boden: se
     import hashlib
     import json
 
+    felder = ("art", "achse", "ursprung", "typ", "nachgiebig", "kulisse")
     teile = sorted((n, k.form, np.round(k.lage[:3, :4], 4).ravel().tolist(),
-                    json.dumps({x: k.info.get(x) for x in ("art", "achse", "ursprung", "typ", "nachgiebig")},
-                               sort_keys=True, default=str)) for n, k in ctx.koerper.items())
+                    json.dumps({x: k.info.get(x) for x in felder}, sort_keys=True, default=str))
+                   for n, k in ctx.koerper.items())
     roh = json.dumps([teile, ctx.erklaerungen.get("montage") or [], sorted(sorted(p) for p in ausschluss),
                       sorted(boden), sorted(sorted(p) for p in ctx.kontakte),
                       sorted([sorted(k), np.round(v, 4).tolist()] for k, v in gewinde.items())],

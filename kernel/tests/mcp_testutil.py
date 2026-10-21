@@ -36,6 +36,8 @@ EXPECTED_TOOLS |= {"kamera_liste", "kamera_info", "kamera_ansicht", "kamera_bild
                    "kamera_vorschlag_aus_ansicht"}
 # 3D-Druck
 EXPECTED_TOOLS |= {"druckpruefung"}
+# Versionen
+EXPECTED_TOOLS |= {"versionen", "version_wiederherstellen", "versionen_vergleichen", "meilenstein", "variante"}
 
 
 def free_port() -> int:

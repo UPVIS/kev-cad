@@ -91,9 +91,11 @@ def test_example_run_parts_and_frame_order(env):
     assert res["params"]["abstand"] == 70
 
     app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h["run"] == res["run"], start=start)
-    all_types = [h["type"] for h in app.since(start) if h["type"] not in ("STATUS", "CHECK")]  # CHECK: Prüfung folgt
+    all_types = [h["type"] for h in app.since(start)  # CHECK: Prüfung folgt; Versionen kommen im Hintergrund
+                 if h["type"] not in ("STATUS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ")]
     assert all_types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # Stückliste, dann Bedingungen direkt nach RUN_END
-    frames = [h for h in app.since(start) if h["type"] not in ("STATUS", "BOM", "CONSTRAINTS", "CHECK")]
+    frames = [h for h in app.since(start)
+              if h["type"] not in ("STATUS", "BOM", "CONSTRAINTS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ")]
     types = [h["type"] for h in frames]
     assert types[0] == "RUN_START" and types[-1] == "RUN_END"
     assert types == ["RUN_START", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP",
@@ -114,9 +116,9 @@ def test_example_run_parts_and_frame_order(env):
             assert len(h["faces"]) == h["counts"]["face"] and len(h["edges"]) == h["counts"]["edge"]
             assert arrays["tri_face"].max() == h["counts"]["face"] - 1
             assert np.all(arrays["positions"].min(axis=0) >= np.array(h["bbox"]["min"]) - 0.01)
-    # Version abgelegt
-    versions = sorted((Path(rt.status()["project"]["path"]) / ".kevcad/versions").glob("*-model.py"))
-    assert [v.name for v in versions] == ["0001-model.py"]
+    # Version abgelegt (seit PLAN-VERSIONEN im Versionsarchiv statt als .kevcad/versions/NNNN-model.py)
+    vs = rt.versionen()["versionen"]
+    assert [v["nr"] for v in vs] == [1] and vs[0]["titel"] == "Erster Stand"
 
 
 def test_show_arrives_before_script_finishes(env):

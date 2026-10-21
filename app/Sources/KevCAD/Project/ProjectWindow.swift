@@ -6,6 +6,7 @@ struct ProjectWindow: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
     @StateObject private var state = ProjectWindowState()
+    @StateObject private var versionen = VersionenZustand()
     @State private var columns = NavigationSplitViewVisibility.all
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -21,6 +22,7 @@ struct ProjectWindow: View {
         .frame(minWidth: 960, minHeight: 600)
         .background(WindowHook(placement: .large) { session.projectWindow = $0 })
         .focusedSceneObject(state)
+        .focusedSceneObject(versionen)
         .navigationTitle(model.project?.name ?? "Kev CAD")
         .navigationSubtitle(model.project.map { KevFormat.abbreviatedPath($0.path.deletingLastPathComponent().path) } ?? "")
         .onAppear {
@@ -47,19 +49,31 @@ struct ProjectWindow: View {
             PartTreeView(model: model, state: state)
                 .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 400)
         } detail: {
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    ViewportArea(model: model, state: state)
-                    AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
-                    if state.showBOM {
-                        PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
-                        ProjectBottomPanel(model: model, state: state)
-                            .frame(height: min(state.bomHeight, max(160, geo.size.height - 260)))
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+            HStack(spacing: 0) {
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        ViewportArea(model: model, state: state)
+                            .overlay(alignment: .bottomLeading) {  // Versionen: laufender Vergleich
+                                VergleichKarte(model: model, store: model.versionen, zustand: versionen)
+                                    .padding(14)
+                            }
+                        AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
+                        if state.showBOM {
+                            PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
+                            ProjectBottomPanel(model: model, state: state)
+                                .frame(height: min(state.bomHeight, max(160, geo.size.height - 260)))
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                        StatusBar(model: model)
                     }
-                    StatusBar(model: model)
+                }
+                if versionen.zeigeLeiste {  // Versionen: Leiste rechts neben dem Viewport
+                    Divider()
+                    VersionenLeiste(model: model, store: model.versionen, zustand: versionen)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            .modifier(VersionenBlaetter(model: model, zustand: versionen))
         }
         .inspector(isPresented: $state.showInspector) {
             InspectorView(model: model)
@@ -67,6 +81,18 @@ struct ProjectWindow: View {
         }
         .toolbar {
             ProjectToolbar(model: model, state: state, session: session)
+            ToolbarItem(placement: .navigation) {  // Versionen: Variantenmenü in der Titelleiste
+                VariantenMenu(model: model, store: model.versionen, zustand: versionen)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Toggle(isOn: Binding(
+                    get: { versionen.zeigeLeiste },
+                    set: { on in withAnimation(.snappy(duration: 0.2)) { versionen.zeigeLeiste = on } }
+                )) {
+                    Label("Versionen", systemImage: "clock.arrow.circlepath")
+                }
+                .help("Versionsleiste ein- oder ausblenden (⌥⌘V)")
+            }
         }
     }
 }
