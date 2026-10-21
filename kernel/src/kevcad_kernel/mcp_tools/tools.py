@@ -778,6 +778,28 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    # ------------------------------------------------------------------------------------------- Zwangsbedingungen
+
+    @tool("bedingungen", "Bedingungen",
+          "Constraints of the last run (kevcad.bedingungen in model.py): every constraint with state (erfüllt / "
+          "verletzt / nicht geprüft), target and actual value, model.py line and a concrete fix; degrees of freedom "
+          "per part (free motions, joints), fastening per part (B9: verbinde, contact, connected to the floor), "
+          "range of motion of every joint with a range (B8: blocking part, free range) and all findings in the "
+          "shared format of the checks. Without arguments: summary, violated constraints and findings; part: only "
+          "this part (or assembly prefix) with all its constraints; alle=true lists every constraint.", READ_ONLY)
+    async def bedingungen(
+        part: Annotated[str | None, Field(description="Part name or assembly prefix, e.g. 'Rollwagen/Rahmen'")] = None,
+        alle: Annotated[bool, Field(description="List every constraint, also the satisfied ones")] = False,
+    ) -> CallToolResult:
+        res = await t.work("prüft die Bedingungen", svc.constraints, part)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(err, res)
+        from kevcad_kernel.bedingungen.bericht import bericht_text, fehler_anzahl
+
+        data = {k: v for k, v in res.items() if k != "ok"}
+        return fmt.result(bericht_text(res, teil=part, alle=alle), data, error=fehler_anzahl(res) > 0)
+
     # Phase 5: Animation (eigene Datei, damit parallele Stränge nicht in dieselben Zeilen schreiben)
     from .animation_tools import register_animation_tools
 

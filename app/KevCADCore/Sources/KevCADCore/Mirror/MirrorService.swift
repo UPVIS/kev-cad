@@ -478,7 +478,7 @@ public final class MirrorService {
                 masse.append(MirrorMeasure(id: id, kind: "arrow", points: [Self.point(a), Self.point(b)], text: text ?? ""))
             case .label(let p, let text, _):
                 masse.append(MirrorMeasure(id: id, kind: "label", points: [Self.point(p)], text: text))
-            case .polyline, .dot:
+            case .polyline, .dot, .badge:  // Symbole der Bedingungen kommen nicht aus annotate
                 break
             }
         }

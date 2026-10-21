@@ -481,6 +481,8 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .constraints(let r):
+            applyConstraints(r)
         case .animation(let a):
             handleAnimation(a)
         case .camera(let c):
@@ -533,6 +535,7 @@ public final class AppController: AppActions {
             refreshOverlay()
             model.run = .idle
             model.bom = nil
+            model.constraints = nil
             model.inventarVerstoesse = []
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             log(.info, "Projekt \(info.name) geöffnet")
@@ -706,6 +709,7 @@ public final class AppController: AppActions {
             }
         }
         items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
         items.append(contentsOf: cameraOverlayItems())
         return items
     }

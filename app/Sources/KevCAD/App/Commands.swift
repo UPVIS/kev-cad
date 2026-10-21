@@ -175,6 +175,12 @@ struct KevCADCommands: Commands {
                     get: { model.explodeFactor > 0 }, set: { _ in window?.toggleExplode(model) }
                 ))
                 .keyboardShortcut("e", modifiers: [])
+                Toggle("Bedingungen am Teil", isOn: Binding(
+                    get: { model.showConstraintSymbols },
+                    set: { model.constraintActions?.setConstraintSymbolsVisible($0) }
+                ))
+                .keyboardShortcut("b", modifiers: [.command, .option])
+                .disabled(model.constraintActions == nil)
             }
             .disabled(!inProject)
             Divider()

@@ -116,6 +116,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
         self._last_result: dict[str, Any] | None = None
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
+        self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
         self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
         self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
@@ -162,6 +163,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                 "agent": dict(self._agent),
                 "inventar": {"regel": self._project.inventar_regel if self._project else True,
                              "verstoesse": list(self._violations)},
+                "bedingungen": dict((self._constraints or {}).get("summe") or {}),
                 "pruefung": self._pruef.kurz(),
             }
 
@@ -324,6 +326,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
         formats = [str(f) for f in (formats or [])]
         with self._lock:
             violations = list(self._violations)
+            constraints = self._constraints
         locked = [f for f in formats if f.lower().lstrip(".") in ("step", "stp", "stl", "3mf", "bom_csv", "csv")]
         if violations and locked:
             return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
@@ -391,6 +394,29 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
     # =================================================================================================================
     # KernelService: Phase 2 (Lagerteile, Materialien, Stückliste)
     # =================================================================================================================
+
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        """Bericht der Bedingungen des letzten erfolgreichen Laufs (wie die Nachricht CONSTRAINTS)."""
+        with self._lock:
+            rep = self._constraints
+        if rep is None:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        out = {"ok": True, **rep}
+        # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören
+        check, _ = self._pruef.letztes()
+        if check is not None and check.get("run") == rep.get("run"):
+            weg = [{**b, "pruefung": "bewegungsraum"} for b in check.get("befunde") or []
+                   if b.get("art") == "bewegungsraum"]
+            if weg:
+                out["befunde"] = list(out.get("befunde") or []) + weg
+        if part:
+            names = self.scene.names()
+            if part not in names and not any(n.startswith(part.rstrip("/") + "/") for n in names):
+                from kevcad_kernel.refs import unknown_part_message
+
+                return {"ok": False, "error": unknown_part_message(part, names)}
+            out["teil"] = part
+        return out
 
     def bom(self) -> dict[str, Any]:
         with self._lock:
@@ -583,6 +609,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                 self._last_result = None
                 self._bom = None
                 self._violations = []
+                self._constraints = None
                 self._selection = {"run": None, "refs": []}
                 self._pruef.reset()
             run = self._run_no
@@ -789,6 +816,12 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                     with self._lock:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
+                if isinstance(final.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
+                    report = {"run": job.run, **final["bedingungen"]}
+                    report.pop("fehler", None)
+                    with self._lock:
+                        self._constraints = report
+                    self._send_app({"type": "CONSTRAINTS", **report})
                 # Prüfung: läuft sie noch, „running“ melden; ist sie schon fertig (schneller als RUN_END), das Ergebnis
                 self._run_end_run = job.run
                 if self._pruef.erwarte(job.run):
@@ -846,6 +879,11 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
         if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
             result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],
                              "cuts": len(bom.get("cuts") or [])}
+        rep = final.get("bedingungen")
+        if isinstance(rep, dict):
+            from kevcad_kernel.bedingungen.bericht import kurzbericht
+
+            result["bedingungen"] = kurzbericht(rep)
         if error is not None:
             result["error"] = error
         return result
@@ -979,8 +1017,11 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                 conn.send(rec.header, rec.payload)
             with self._lock:
                 bom = self._bom
+                constraints = self._constraints
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            if constraints is not None:
+                conn.send({"type": "CONSTRAINTS", **constraints})
             self._anim_on_connect(conn)
             self.cameras_on_connect(conn, self._run_no)
             check, check_payload = self._pruef.letztes()

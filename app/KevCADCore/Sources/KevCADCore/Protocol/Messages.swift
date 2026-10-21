@@ -500,6 +500,8 @@ public enum KernelMessage: Sendable {
     case bom(BOMMessage)
     /// Phase 2: Lagerkatalog auf CATALOG_REQ.
     case catalog(CatalogMessage)
+    /// Zwangsbedingungen: Bericht nach RUN_END (PROTOCOL.md Abschnitt „Zwangsbedingungen“).
+    case constraints(ConstraintReport)
     /// Phase 5: Animation (ANIM_DEF, ANIM_REMOVE, ANIM_COLLISIONS, ANIM_PLAY, ANIM_SEEK, ANIM_VIDEO_REQ).
     case animation(AnimationMessage)
     /// Phase 5: CAMERA_UPSERT und CAMERA_REMOVE.
@@ -529,6 +531,7 @@ public enum KernelMessage: Sendable {
         case .error: return "ERROR"
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
+        case .constraints: return "CONSTRAINTS"
         case .animation(let a): return a.typeName
         case .camera(let c): return c.typeName
         case .check: return "CHECK"
@@ -578,6 +581,7 @@ public enum KernelMessage: Sendable {
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
+        case "CONSTRAINTS": return .constraints(try ConstraintsMessage.decode(h).report)
         case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
         case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))

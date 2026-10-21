@@ -96,6 +96,33 @@ BOM = {
     "warnings": ["Halter: Eigenteil ohne Preis (Material „aluminium“ steht nicht im Katalog)"],
 }
 
+# Bericht der Bedingungen wie die Nachricht CONSTRAINTS (PLAN-BEDINGUNGEN.md)
+CONSTRAINTS = {
+    "items": [
+        {"id": "b1", "art": "auf", "gruppe": "montage", "symbol": "auf", "text": "Halter/Lasche.unten auf Grundplatte.oben",
+         "teile": ["Halter/Lasche", "Grundplatte"], "stand": "verletzt", "soll": "Abstand 0 mm, Flächen gegenüber",
+         "ist": "Abstand 2 mm (Luft 2 mm)", "abweichung": 2.0, "einheit": "mm", "punkte": [[0, 0, 12], [0, 0, 10]],
+         "zeile": 14, "datei": "model.py", "schwere": "fehler",
+         "loesung": "Halter/Lasche um 2 mm entlang −Z verschieben"},
+        {"id": "b2", "art": "konzentrisch", "gruppe": "montage", "symbol": "konzentrisch",
+         "text": "Halter/Bolzen.achse konzentrisch zu Halter/Lasche.Bohrung Ø6,6", "teile": ["Halter/Bolzen", "Halter/Lasche"],
+         "stand": "erfuellt", "soll": "Achsen deckungsgleich", "ist": "Versatz 0 mm", "abweichung": 0.0, "einheit": "mm",
+         "punkte": [[30, 0, 10], [30, 0, 10]], "zeile": 16, "datei": "model.py", "loesung": None},
+    ],
+    "teile": [{"name": "Halter/Lasche", "platziert": True, "frei": 0, "freiheitsgrade": [], "gelenke": [],
+               "stand": "bestimmt", "bedingungen": ["b1", "b2"], "befestigt": True, "am_boden": True,
+               "verbindungen": ["aufliegen"]}],
+    "bewegungen": [],
+    "befunde": [{"art": "bedingung", "pruefung": "bedingung", "teile": ["Halter/Lasche", "Grundplatte"],
+                 "schwere": "fehler", "text": "Halter/Lasche.unten auf Grundplatte.oben: Abstand 2 mm (Luft 2 mm)",
+                 "soll": "Abstand 0 mm, Flächen gegenüber", "ist": "Abstand 2 mm (Luft 2 mm)", "wert": 2.0,
+                 "einheit": "mm", "ort": [0, 0, 12], "loesung": "Halter/Lasche um 2 mm entlang −Z verschieben",
+                 "bedingung": "b1", "unterart": "auf", "zeile": 14}],
+    "summe": {"gesamt": 2, "erfuellt": 1, "verletzt": 1, "ungeprueft": 0, "fehler": 1, "warnungen": 0, "hinweise": 0,
+              "bewegungen": 0},
+    "loese_ms": 1.2, "pruef_ms": 3.4,
+}
+
 
 class FakeService:
     """Implementiert ``KernelService`` mit festen Antworten.
@@ -278,6 +305,12 @@ class FakeService:
         self._record("material_define", entry, ebene)
         return {"ok": True, "material": {**entry, "ebene": ebene}, "datei": "/tmp/katalog/eigene.json",
                 "hinweise": ["preis_stand fehlte: 2026-10 eingetragen"]}
+
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        self._record("constraints", part)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        return {"ok": True, "run": self.run_no, **CONSTRAINTS}
 
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         self._record("catalog_delete", kind, entry_id, ebene)

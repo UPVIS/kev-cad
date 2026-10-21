@@ -400,3 +400,76 @@ Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
 - `CAMERA_SUGGEST` (Strg+Alt+0) rechnet die Ansicht in die Ruhelage zurück, wenn die Kamera gerade bewegt steht.
 - MCP: `animation_liste` und die Zusammenfassung von `run` nennen je Animation unter `kameras` die Kameras, deren Teil
   sich darin bewegt.
+
+## Zwangsbedingungen (CONSTRAINTS)
+
+Rein additiv (PLAN-BEDINGUNGEN.md); ältere Apps ignorieren den Typ. Der Kernel schickt den Bericht nach jedem
+erfolgreichen Lauf direkt nach `RUN_END` und `BOM`, beim Verbinden der App nach `BOM`. Referenz:
+`kevcad_kernel/bedingungen` (Bericht aus `pruefen`, Beispiel `protocol.constraints_example()`), Testdatei
+`constraints.frame` (eigene Datei, nicht in `stream.bin`).
+
+Zusammenspiel mit der Prüfung: Alle Befunde der Bedingungen gehen zusätzlich als Prüffunktion „bedingungen“ in das
+gemeinsame Ergebnis `CHECK` (Arten `bedingung`, `befestigung`, `bewegungsraum`, mit den Zusatzfeldern `soll` und
+`ist`); dort sperren Befunde mit Schwere `fehler` den Export. Den Bewegungsraum (Gelenke mit Bereich,
+`bewegungen.json`) rechnet nur die Prüfung nach `RUN_END`, weil er Sekunden dauern kann; im Lauf bleibt `bewegungen` in
+`CONSTRAINTS` deshalb leer, die Ergebnisse stehen als Befunde in `CHECK`.
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `CONSTRAINTS` | `run`, `items`, `teile`, `bewegungen`, `befunde`, `summe`, `pruef_ms`, `loese_ms` | – |
+
+`items[i]` (eine Bedingung, auch Parametergrenzen und Verbindungen):
+
+```json
+{"id": "b3", "art": "auf", "gruppe": "montage", "symbol": "auf",
+ "text": "Rollwagen/Rahmen.unten auf Rollwagen/Lenkrolle 1/Gabel.oben",
+ "teile": ["Rollwagen/Rahmen", "Rollwagen/Lenkrolle 1/Gabel"], "stand": "verletzt", "schwere": "fehler",
+ "soll": "Abstand 0 mm, Flächen gegenüber", "ist": "Abstand 2 mm (Luft 2 mm)", "abweichung": 2.0, "einheit": "mm",
+ "punkte": [[255.0, -335.0, 122.0], [255.0, -335.0, 120.0]], "zeile": 57, "datei": "model.py",
+ "loesung": "Rollwagen/Rahmen um 2 mm entlang −Z verschieben", "hinweis": null}
+```
+
+- `art`: `auf`, `buendig`, `konzentrisch`, `parallel`, `senkrecht`, `abstand`, `winkel`, `tangential`, `mittig`,
+  `in_bohrung`, `drehgelenk`, `schiebegelenk`, `zylindergelenk`, `kugelgelenk`, `fest`, `verbinde`, `gleich`, `spiel`,
+  `min_abstand`, `min_wand`, `param` (id `p:<name>`). `symbol` wählt das Zeichen in der App (gleich `art`).
+- `gruppe`: `montage` | `gelenk` | `mass` | `befestigung`; `stand`: `erfuellt` | `verletzt` | `ungeprueft`;
+  `schwere` nur bei `verletzt`: `fehler` | `warnung`.
+- `punkte`: bis zu zwei Anzeigepunkte in Weltkoordinaten (mm): der erste am Teil, das sich anpasst (dort sitzt das
+  Symbol), der zweite am Gegenstück (bei verletzten Bedingungen zeigt die App die Strecke dazwischen).
+- Gelenke zusätzlich: `gelenk` (`revolute` | `linear` | `cylindrical` | `ball` | `rigid`), `wert`, `wert_einheit`
+  (`°` | `mm`), `bereich` [min, max] (fehlt ohne Bereich), `achse` {`p`, `d`} in der gezeigten Lage, `anim_art`
+  (`dreh` | `schub`, für die Animation). `in_bohrung`: `schraube` {`d`, `laenge`}, `gewinde`. `verbinde`:
+  `verbindung` (`schraube` | `klemmung` | `steck` | `formschluss` | `kleben` | `aufliegen`).
+
+`teile[i]` (Teile mit Bedingungen):
+
+```json
+{"name": "Rollwagen/Rahmen", "platziert": true, "frei": 0, "stand": "bestimmt", "bedingungen": ["b3", "b4", "b5"],
+ "freiheitsgrade": [{"art": "drehung", "richtung": [0, 0, 1], "punkt": [0, -335, 120], "text": "Drehung um Z durch …",
+                     "gelenk": false, "unkritisch": false}],
+ "gelenke": [], "befestigt": true, "am_boden": true, "verbindungen": ["aufliegen"], "verletzt": 0}
+```
+
+`stand`: `bestimmt` | `unterbestimmt` | `widerspruch` | `bezug` (nur Gegenstück); `frei` zählt freie Freiheitsgrade
+ohne Gelenke und ohne die unkritische Drehung runder Verbindungen um ihre eigene Achse.
+
+`bewegungen[i]` (Bewegungsraum: Gelenke mit Bereich und `<projekt>/bewegungen.json`):
+
+```json
+{"name": "drehgelenk …/Spannhebel", "art": "drehen", "quelle": "gelenk", "bedingung": "b7", "teile": ["…/Spannhebel"],
+ "punkt": [0.0, 0.0, 0.0], "richtung": [0.0, 1.0, 0.0], "von": -90, "bis": 90, "ist": 0, "schritte": 18,
+ "frei": [[-20, 10]], "frei_um_ist": [-20, 10], "freiraum": 15,
+ "kollisionen": [{"gegen": "…/Spannbolzen", "bewegt": "…/Spannhebel", "bereiche": [[-90, -25]], "max_volumen": 12.3,
+                  "bei": -40, "ort": [0.0, 0.0, 0.0], "schon_in_ruhe": false}],
+ "eng": [{"gegen": "…", "bereiche": [[20, 40]], "min_abstand": 6.2}], "geprueft_ms": 850.0, "teilweise": false}
+```
+
+`befunde[i]`: gemeinsames Befundformat der Prüfungen mit `art: "bedingung"`, `pruefung` (`bedingung` | `parameter` |
+`widerspruch` | `freiheitsgrade` | `bewegungsraum` | `befestigung`), `teile`, `schwere` (`fehler` | `warnung` |
+`hinweis`), `text`, `soll`, `ist`, `wert`, `einheit`, `ort` ([x, y, z] oder null), `loesung`, `bedingung` (id),
+`unterart`, `zeile`. Befunde mit `schwere: "fehler"` sperren den Export (über die Prüfung, siehe oben).
+
+`summe`: `gesamt`, `erfuellt`, `verletzt`, `ungeprueft`, `fehler`, `warnungen`, `hinweise`, `bewegungen`.
+`pruef_ms`: Dauer der Prüfung im Rechenprozess, `loese_ms`: Summe der Zeit in `platziere`.
