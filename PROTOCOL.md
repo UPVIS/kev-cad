@@ -147,3 +147,57 @@ Antwort: `ACK` mit `ok` und optional `message`.
 | `EXPORT_REQ` | `id`, `formats` (`step`, `stl`, `3mf`, `glb`), `parts` (Liste oder null) | `EXPORT_RES` |
 | `SCREENSHOT_RES` | `reply_to`, `ok`, `width`, `height`, `camera` (Objekt), `mm_per_px` (nur orthographisch, sonst null) | PNG |
 | `ACK` | `reply_to`, `ok`, `message` | – |
+
+## Phase 2: Lagerteile und Stückliste
+
+Rein additiv; ältere Gegenseiten ignorieren die neuen Felder und Typen.
+
+### PART_UPSERT.stock
+
+Optionales Feld im Kopf, wenn das Teil aus `lager.teil(...).verbauen(...)` stammt:
+
+```json
+"stock": {"id": "vierkantrohr-en10219-40x40x3", "name": "Vierkantrohr 40 × 40 × 3", "laenge": 882.0,
+          "gehrung": [0, 45], "material": "stahl-s235", "kg": 2.98, "preis": 7.06}
+```
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `BOM` | `run`, `lines`, `cuts`, `totals`, `warnings` – nach jedem `RUN_END` und auf `BOM_REQ` | – |
+| `CATALOG` | `reply_to`, `materials` (Liste Material laut KATALOG.md), `items` (Liste Lagerteil laut KATALOG.md, je mit `ebene`: `mitgeliefert` \| `eigen` \| `projekt`), `arten` (Liste der `art`-Werte) | – |
+
+`lines[i]`:
+
+```json
+{"pos": 1, "art": "vierkantrohr", "stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3",
+ "norm": "DIN EN 10219", "material": "Stahl S235", "laenge": 882.0, "gehrung": [0, 0], "masse_text": "882 mm",
+ "anzahl": 4, "kg_je": 2.98, "kg": 11.92, "preis_je": 7.06, "preis": 28.24, "teile": ["Gestell/Bein vorn links", "…"],
+ "eigenteil": false}
+```
+
+- Platten: `laenge` null, `masse_text` z. B. „800 × 600 mm", Fläche über `flaeche_m2`.
+- Schrauben und Kleinteile: `masse_text` z. B. „M8 × 60", Preis je Stück.
+- Eigenteile (`eigenteil: true`): frei modellierte Teile mit Material; `stock_id` null, Masse aus Volumen × Dichte.
+
+`cuts[i]` (Zuschnitt je Stangenware):
+
+```json
+{"stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3", "stangenlaenge": 6000,
+ "saegeschnitt": 3, "stangen": [[882, 882, 882, 882, 800, 800], [800, 800]], "verschnitt_prozent": 12.4}
+```
+
+`totals`: `{"kg": 41.3, "preis": 96.10, "positionen": 7, "teile": 23, "preis_hinweis": "Richtpreise, Stand 2026-10"}`.
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `BOM_REQ` | `id` | `BOM` mit `reply_to` |
+| `CATALOG_REQ` | `id`, `query` (Text oder null), `art` (oder null) | `CATALOG` |
+| `CATALOG_SAVE` | `id`, `kind` (`teil` \| `material`), `entry` (Objekt laut KATALOG.md), `ebene` (`eigen` \| `projekt`) | `ACK` (danach neues `CATALOG` nur auf Anfrage) |
+| `CATALOG_DELETE` | `id`, `kind`, `entry_id`, `ebene` | `ACK` |
+
+`EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
+mit BOM für Excel).

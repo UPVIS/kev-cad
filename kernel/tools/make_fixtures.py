@@ -151,6 +151,57 @@ def main() -> None:
         "points": [[5.0, 0.0, 15.0], [25.0, 0.0, 15.0]], "text": "Abstand 20,000 mm (dx 20,000)"}})
     add("part_remove", {"type": "PART_REMOVE", "seq": 13, "run": 2, "name": "Halter/Bolzen"})
 
+    # Phase 2: Lagerteil, Stückliste, Katalog (PROTOCOL.md Abschnitt "Phase 2")
+    from build123d import Rectangle, extrude
+    rohr = extrude(Rectangle(40, 40) - Rectangle(34, 34), amount=882)
+    data, exp = part_frame(14, 3, "Gestell/Bein vorn links", rohr, (0.54, 0.56, 0.6, 1.0))
+    header_len = int.from_bytes(data[:4], "little")
+    head = json.loads(data[4:4 + header_len])
+    head["stock"] = {"id": "vierkantrohr-en10219-40x40x3", "name": "Vierkantrohr 40 × 40 × 3", "laenge": 882.0,
+                     "gehrung": [0, 45], "material": "stahl-s235", "kg": 2.98, "preis": 7.06}
+    payload = data[8 + header_len:]
+    data = encode_frame(head, payload)
+    exp["stock"] = head["stock"]
+    frames.append(("part_stock", data))
+    expected["frames"].append({"file": "part_stock.frame", "type": "PART_UPSERT", "payload_bytes": len(payload)})
+    expected["parts"]["part_stock.frame"] = exp
+
+    add("bom", {"type": "BOM", "seq": 15, "run": 3, "lines": [
+        {"pos": 1, "art": "vierkantrohr", "stock_id": "vierkantrohr-en10219-40x40x3",
+         "benennung": "Vierkantrohr 40 × 40 × 3", "norm": "DIN EN 10219", "material": "Stahl S235", "laenge": 882.0,
+         "gehrung": [0, 45], "masse_text": "882 mm", "anzahl": 4, "kg_je": 2.98, "kg": 11.92, "preis_je": 7.06,
+         "preis": 28.24, "teile": ["Gestell/Bein vorn links", "Gestell/Bein vorn rechts", "Gestell/Bein hinten links",
+                                   "Gestell/Bein hinten rechts"], "eigenteil": False},
+        {"pos": 2, "art": "platte", "stock_id": "platte-multiplex-birke-18", "benennung": "Multiplex Birke 18 mm",
+         "norm": None, "material": "Multiplex Birke", "laenge": None, "gehrung": [0, 0], "masse_text": "800 × 600 mm",
+         "flaeche_m2": 0.48, "anzahl": 1, "kg_je": 5.9, "kg": 5.9, "preis_je": 21.6, "preis": 21.6,
+         "teile": ["Deckel"], "eigenteil": False},
+        {"pos": 3, "art": "schraube", "stock_id": "schraube-iso4762-m8", "benennung": "Zylinderschraube ISO 4762",
+         "norm": "ISO 4762", "material": "Stahl 8.8 verzinkt", "laenge": 60.0, "gehrung": [0, 0],
+         "masse_text": "M8 × 60", "anzahl": 8, "kg_je": 0.031, "kg": 0.248, "preis_je": 0.32, "preis": 2.56,
+         "teile": [f"Schrauben/M8x60 {i}" for i in range(1, 9)], "eigenteil": False},
+        {"pos": 4, "art": "eigenteil", "stock_id": None, "benennung": "Halter", "norm": None, "material": "Aluminium",
+         "laenge": None, "gehrung": [0, 0], "masse_text": "60 × 5 × 120 mm", "anzahl": 1, "kg_je": 0.096,
+         "kg": 0.096, "preis_je": None, "preis": None, "teile": ["Halter"], "eigenteil": True}],
+        "cuts": [{"stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3",
+                  "stangenlaenge": 6000, "saegeschnitt": 3, "stangen": [[882, 882, 882, 882, 800, 800]],
+                  "verschnitt_prozent": 13.6}],
+        "totals": {"kg": 18.16, "preis": 52.4, "positionen": 4, "teile": 14,
+                   "preis_hinweis": "Richtpreise, Stand 2026-10"},
+        "warnings": ["Halter: kein Lagerteil, Masse aus Volumen × Dichte"]})
+    add("catalog", {"type": "CATALOG", "seq": 16, "reply_to": "a-9", "arten": ["rohr", "vierkantrohr", "platte"],
+                    "materials": [{"id": "stahl-s235", "name": "Stahl S235", "gruppe": "Stahl", "dichte": 7.85,
+                                   "farbe": "#8A9099", "preis_je_kg": 2.4, "preis_quelle": "Richtwert",
+                                   "preis_stand": "2026-10", "ebene": "mitgeliefert"}],
+                    "items": [{"id": "vierkantrohr-en10219-40x40x3", "art": "vierkantrohr",
+                               "name": "Vierkantrohr 40 × 40 × 3", "norm": "DIN EN 10219",
+                               "masse": {"a": 40, "s": 3}, "material": "stahl-s235", "kg_je_m": 3.41,
+                               "stangenlaenge": 6000, "preis": {"je_m": 8.0, "quelle": "Richtwert", "stand": "2026-10"},
+                               "tags": ["quadrat"], "ebene": "mitgeliefert"},
+                              {"id": "rohr-edelstahl-33.7x2", "art": "rohr", "name": "Edelstahlrohr 33,7 × 2",
+                               "norm": "ISO 1127", "masse": {"d": 33.7, "s": 2.0}, "material": "edelstahl-1.4301",
+                               "preis": {"je_m": 14.5, "quelle": "Kevin", "stand": "2026-10"}, "ebene": "eigen"}]})
+
     for name, data in frames:
         (ZIEL / f"{name}.frame").write_bytes(data)
     (ZIEL / "stream.bin").write_bytes(b"".join(d for _, d in frames))

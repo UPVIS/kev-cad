@@ -65,6 +65,21 @@
    "file": "part_remove.frame",
    "type": "PART_REMOVE",
    "payload_bytes": 0
+  },
+  {
+   "file": "part_stock.frame",
+   "type": "PART_UPSERT",
+   "payload_bytes": 2532
+  },
+  {
+   "file": "bom.frame",
+   "type": "BOM",
+   "payload_bytes": 0
+  },
+  {
+   "file": "catalog.frame",
+   "type": "CATALOG",
+   "payload_bytes": 0
   }
  ],
  "parts": {
@@ -171,6 +186,92 @@
     ]
    },
    "volume": 1570.7963
+  },
+  "part_stock.frame": {
+   "name": "Gestell/Bein vorn links",
+   "counts": {
+    "vert": 48,
+    "tri": 32,
+    "face": 10,
+    "edge": 24,
+    "epts": 48,
+    "vtx": 16
+   },
+   "payload_bytes": 2532,
+   "first_position": [
+    -20.0,
+    -20.0,
+    0.0
+   ],
+   "first_triangle": [
+    3,
+    0,
+    1
+   ],
+   "tri_face_last": 9,
+   "face_types": [
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane",
+    "plane"
+   ],
+   "edge_types": [
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line",
+    "line"
+   ],
+   "bbox": {
+    "min": [
+     -20.0,
+     -20.0,
+     0.0
+    ],
+    "max": [
+     20.0,
+     20.0,
+     882.0
+    ]
+   },
+   "volume": 391608.0,
+   "stock": {
+    "id": "vierkantrohr-en10219-40x40x3",
+    "name": "Vierkantrohr 40 × 40 × 3",
+    "laenge": 882.0,
+    "gehrung": [
+     0,
+     45
+    ],
+    "material": "stahl-s235",
+    "kg": 2.98,
+    "preis": 7.06
+   }
   }
  }
 }

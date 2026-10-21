@@ -115,6 +115,28 @@ class KernelService(Protocol):
     def export(self, formats: list[str], parts: list[str] | None = None) -> dict[str, Any]:
         """{"ok", "files": [...]} in <projekt>/output/"""
 
+    # Phase 2: Lagerteile, Materialien, Stückliste (siehe KATALOG.md und PROTOCOL.md, Abschnitt Phase 2)
+    def bom(self) -> dict[str, Any]:
+        """Stückliste des letzten Laufs: {"ok", "run", "lines", "cuts", "totals", "warnings"} wie die BOM-Nachricht."""
+
+    def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
+        """Lagerteile suchen (alle drei Ebenen): {"ok", "items": [Lagerteil + "ebene"], "total"}"""
+
+    def stock_get(self, stock_id: str) -> dict[str, Any]:
+        """Ein Lagerteil mit berechneten Werten: {"ok", "item", "kg_je_m", "querschnitt_mm2", "preis_je_m"}"""
+
+    def stock_define(self, entry: dict[str, Any], ebene: str = "eigen") -> dict[str, Any]:
+        """Lagerteil anlegen oder ersetzen (KATALOG.md). Prüft Pflichtfelder und Maße. {"ok", "item", "datei"}"""
+
+    def material_list(self, query: str = "") -> dict[str, Any]:
+        """{"ok", "materials": [Material + "ebene"]}"""
+
+    def material_define(self, entry: dict[str, Any], ebene: str = "eigen") -> dict[str, Any]:
+        """Material anlegen oder ersetzen (KATALOG.md). {"ok", "material", "datei"}"""
+
+    def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
+        """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

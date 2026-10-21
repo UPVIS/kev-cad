@@ -134,8 +134,13 @@ def _never_sent(exc: BaseException | None) -> bool:
 
 
 def _session_gone(exc: MCPError) -> bool:
-    """404 auf eine alte Sitzung (Kernel neu gestartet): die Anfrage wurde nicht ausgeführt."""
-    return exc.code == INVALID_REQUEST and "session terminated" in exc.message.lower()
+    """404 auf eine alte Sitzung (Kernel neu gestartet): die Anfrage wurde nicht ausgeführt.
+
+    Der Kernel-Server schickt dazu einen JSON-RPC-Fehler „Session not found“, den der Client unverändert weitergibt;
+    „Session terminated“ setzt der Client nur ein, wenn die 404-Antwort keinen solchen Fehler enthält.
+    """
+    message = exc.message.lower()
+    return exc.code == INVALID_REQUEST and ("session not found" in message or "session terminated" in message)
 
 
 def error_result(text: str) -> CallToolResult:
@@ -155,7 +160,8 @@ class _Connection:
 
     @property
     def alive(self) -> bool:
-        return self.client is not None and not self.dead.is_set()
+        # Eine verworfene Verbindung (close gesetzt) lebt noch, bis ihre Task endet; wiederverwenden darf sie niemand
+        return self.client is not None and not self.dead.is_set() and not self.close.is_set()
 
 
 @dataclass(eq=False)
