@@ -55,12 +55,21 @@ Auto-Lauf: Der Kernel beobachtet `model.py` des offenen Projekts selbst und star
 | `PART_REMOVE` | `run`, `name` | – |
 | `RUN_END` | `run`, `duration_ms`, `parts` (Anzahl), `triangles`, `warnings` (Liste Text), `params` (alle `param()`-Werte) | – |
 | `RUN_ERROR` | `run`, `message`, `line` (oder null), `excerpt` (Codezeilen um den Fehler), `traceback` (gekürzt), `hint` (Reparaturhinweis oder null) | – |
-| `AGENT` | `connected` (bool), `activity` (Text oder null, z. B. „misst Abstand Lasche ↔ Grundplatte") | – |
+| `AGENT` | `connected` (bool), `activity` (Text oder null, z. B. „misst Abstand Lasche ↔ Grundplatte"), `sessions` (Liste der Claude-Sitzungen, siehe unten) | – |
 | `VIEW_CMD` | `id`, `cmd`, `args` – siehe unten; App antwortet `ACK` | – |
 | `SCREENSHOT_REQ` | `id`, `width`, `height`, `source`: `current` \| `offscreen`, `view` (nur offscreen: Standardansicht oder null), `hide_overlays` | – |
 | `MEASURE_RES` | `reply_to`, `result` (siehe Messen) | – |
 | `EXPORT_RES` | `reply_to`, `files` (Liste absoluter Pfade) | – |
 | `ACK` | `reply_to`, `ok`, `message` | – |
+
+### AGENT.sessions
+
+Additiv, für den Spiegel aufs iPhone ([MIRROR.md](MIRROR.md), „Sitzungen“): je Claude-Sitzung, die Kev CAD bedient,
+`{"session_id", "aktiv", "seit", "taetigkeit", "zuletzt"}` (`zuletzt` optional), die aktive zuerst. `session_id` ist die
+`CLAUDE_CODE_SESSION_ID` der MCP-Brücke `kevcad-mcp`; sie schickt sie bei jeder Anfrage im HTTP-Kopf
+`x-claude-code-session-id`. Aktiv ist genau die Sitzung mit dem letzten verändernden Werkzeugaufruf (alles außer nur
+lesenden Werkzeugen) der letzten 10 Minuten; `taetigkeit` ist die laufende bzw. zuletzt gezeigte Tätigkeit; eine
+Sitzung fällt aus der Liste, sobald ihre MCP-Verbindung endet. Der Kernel schickt AGENT bei jeder Änderung neu.
 
 ### PART_UPSERT
 

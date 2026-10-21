@@ -310,13 +310,16 @@ public struct RunErrorMessage: Decodable, Sendable {
 public struct AgentMessage: Decodable, Sendable {
     public var connected: Bool
     public var activity: String?
+    /// Claude-Sitzungen, die Kev CAD bedienen (additiv, für den Spiegel; leer bei älteren Kerneln).
+    public var sessions: [MirrorAgent]
 
-    enum CodingKeys: String, CodingKey { case connected, activity }
+    enum CodingKeys: String, CodingKey { case connected, activity, sessions }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         connected = (try? c.decodeIfPresent(Bool.self, forKey: .connected)) ?? false
         activity = try? c.decodeIfPresent(String.self, forKey: .activity)
+        sessions = (try? c.decodeIfPresent([MirrorAgent].self, forKey: .sessions)) ?? []
     }
 }
 

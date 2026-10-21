@@ -24,7 +24,7 @@ from pydantic import Field
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
-from .tracking import ActivityTracker
+from .tracking import ActivityTracker, SessionBoard, claude_session
 
 log = logging.getLogger(__name__)
 
@@ -141,21 +141,27 @@ def short_refs(refs: list[str], limit: int = 3) -> str:
 class KevcadTools:
     """Bindet die Werkzeuge an einen ``KernelService``."""
 
-    def __init__(self, service: KernelService) -> None:
+    def __init__(self, service: KernelService, board: SessionBoard | None = None) -> None:
         self.service = service
         self.activity = ActivityTracker(service.set_agent_activity)
+        # Sitzungen (MIRROR.md): ohne eigene Tafel meldet eine neue direkt an den Dienst, falls er das kann
+        self.board = board if board is not None else SessionBoard(getattr(service, "set_agent_sessions", None))
         self._annotation_ids = itertools.count(1)
 
     async def work(self, activity: str | None, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Führt einen blockierenden Service-Aufruf im Worker-Thread aus und zeigt dabei die Tätigkeit in der App."""
 
+        session = claude_session.get()
+
         def job() -> Any:
             token = self.activity.begin(activity) if activity else None
+            session_token = self.board.activity_begin(session, activity) if activity else None
             try:
                 return fn(*args, **kwargs)
             finally:
                 if token is not None:
                     self.activity.end(token)
+                self.board.activity_end(session_token)
 
         return await anyio.to_thread.run_sync(job, abandon_on_cancel=True)
 
@@ -187,14 +193,27 @@ def _guard(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaita
     return wrapper
 
 
-def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
-    """Registriert alle Werkzeuge am Server und liefert das Werkzeug-Objekt (für Tests)."""
-    t = KevcadTools(service)
+def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, *,
+             mutating: bool) -> Callable[..., Awaitable[CallToolResult]]:
+    """Meldet jeden Aufruf mit der Claude-Sitzung der Anfrage an die Sitzungstafel."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> CallToolResult:
+        board.tool_called(claude_session.get(), mutating)
+        return await fn(*args, **kwargs)
+
+    return wrapper
+
+
+def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard | None = None) -> KevcadTools:
+    """Registriert alle Werkzeuge am Server und liefert das Werkzeug-Objekt (für Tests). ``board`` führt die
+    Claude-Sitzungen; jeder Aufruf eines nicht nur lesenden Werkzeugs zählt als verändernd."""
+    t = KevcadTools(service, board)
     svc = service
 
     def tool(name: str, title: str, description: str, annotations: ToolAnnotations) -> Callable[..., Any]:
         def deco(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaitable[CallToolResult]]:
-            wrapped = _guard(fn)
+            wrapped = _tracked(_guard(fn), t.board, mutating=not annotations.read_only_hint)
             mcp.add_tool(wrapped, name=name, title=title, description=description, annotations=annotations,
                          structured_output=False)
             return wrapped

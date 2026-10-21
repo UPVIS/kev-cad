@@ -103,6 +103,8 @@ def test_live_build_in_kernel_order(sock_dir):
         sim.build()
         c.wait_for(lambda h: h["type"] == "STATE_DELTA" and "lauf" in h and not h["lauf"]["laeuft"], start=start)
         recorded = [h["name"] for h, _ in sim.frames if h["type"] == "PART_UPSERT"]
+        # Das Ende des Laufs (zustand) darf die letzten Teile (szene) überholen
+        assert c.wait_until(lambda: len(c.headers("PART")) == len(recorded))
         assert [h["name"] for h in c.headers("PART")] == recorded
         deltas = c.headers("STATE_DELTA")
         assert deltas[0]["lauf"]["laeuft"] is True and deltas[0]["auswahl"] == {"run": 1, "refs": []}
