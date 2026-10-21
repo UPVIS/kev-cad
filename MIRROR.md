@@ -70,7 +70,8 @@ verworfen und protokolliert, nicht beantwortet.
   alles Bisherige als überholt (Zustand, `rev`, offene Befehle); der volle Stand kommt neu. Netze nach Hash bleiben
   gültig.
 - **Sitzungen:** `agents` ist eine Liste
-  `{"session_id": "…", "aktiv": true, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "baut Rollwagen"}`. Kev CAD ist
+  `{"session_id": "…", "aktiv": true, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "baut Rollwagen"}`, optional
+  `zuletzt` (ISO-Zeitpunkt des letzten verändernden Aufrufs). Kev CAD ist
   **eine** Szene; mehrere Claude-Sitzungen können sie bedienen. `aktiv` hat genau die Sitzung mit dem letzten
   verändernden Werkzeugaufruf (run, view, focus …) der letzten 10 Minuten, alle anderen stehen mit `aktiv: false` in
   der Liste. VoiceBridge zeigt die CAD-Ansicht im Chat jeder gelisteten Sitzung, die aktive zuerst. `session_id` ist
@@ -133,7 +134,7 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 | `auswahl` | `{"run": 3, "refs": […]}` mit Referenzen wie im Kernel-Protokoll (`Teil`, `Teil#f12`) |
 | `verborgen` | Liste Teilnamen |
 | `isoliert` | Liste Teilnamen oder null |
-| `hervorgehoben` | Liste `{refs, color, label}` |
+| `hervorgehoben` | Liste `{refs, color, label}`, `color` RGBA 0…1 in **sRGB** wie bei den Teilen |
 | `darstellung` | `shaded_edges` \| `shaded` \| `wireframe` \| `xray` |
 | `schnitt` | null oder `{axis` bzw. `normal`, `offset}` |
 | `masse` | Liste `{id, kind, points, text}`, `points` in Weltkoordinaten (mm) |
