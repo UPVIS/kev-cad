@@ -224,3 +224,53 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
+
+## Phase 3: Zukaufteile
+
+Rein additiv. Format der Einträge laut KATALOG.md, Abschnitt Zukaufteil.
+
+### PART_UPSERT.zukauf
+
+Optionales Feld im Kopf, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt:
+
+```json
+"zukauf": {"id": "alutec-05200", "hersteller": "ALUTEC", "mpn": "05200", "cad": "hersteller", "preis": 24.99,
+           "url": "https://…"}
+```
+
+`cad`: `hersteller` (eingebettetes Modell), `vereinfacht` (Ersatzkörper), `skript` (Geometrie aus einer Funktion). Bei
+`vereinfacht` zeichnet die App das Teil halbtransparent.
+
+### BOM.lines bei Zukaufteilen
+
+`art: "zukaufteil"`, zusätzlich `hersteller`, `mpn`, `gtin`, `url`, `bild`, `preis_stand`, `preis_brutto` (bool),
+`cad_quelle`, `vereinfacht` (bool).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `ZUKAUF_STATUS` | `id` (Zukaufteil), `zustand`: `angelegt` \| `wartet_auf_cad` \| `importiert` \| `fehler`, `text`, `cad_links` (Liste `{titel, url}` zum Öffnen im Browser, nur bei `wartet_auf_cad`), `erwartet` (Liste Dateiendungen, z. B. `step`, `stp`, `zip`) | – |
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `ZUKAUF_NEU` | `id`, `eingabe` (Link, MPN oder GTIN, wie Kevin sie eingefügt hat), `felder` (Objekt laut KATALOG.md, von Kevin bestätigt), `ebene` (`projekt` \| `eigen`) | `ACK`, danach `ZUKAUF_STATUS` |
+| `DOWNLOAD_SEEN` | `pfad`, `groesse`, `zeit` – neue Datei in `~/Downloads` mit passender Endung, solange ein Zukaufteil `wartet_auf_cad` ist | – |
+| `ZUKAUF_CAD` | `id` (Anfrage), `teil` (Zukaufteil-id), `pfad` – Kevin hat bestätigt: diese Datei ist das CAD | `ACK`, danach `ZUKAUF_STATUS` |
+
+Festlegungen (21.10.2026):
+
+- `DOWNLOAD_SEEN`: `pfad` absolut, `groesse` in Byte (Ganzzahl), `zeit` ISO 8601 mit Zeitzone
+  (`2026-10-21T21:14:03+02:00`). Die App schickt es einmal je neuer, vollständiger Datei (Größe 0,8 s stabil), noch vor
+  der Rückfrage an Kevin.
+- `ZUKAUF_STATUS` kommt unaufgefordert (ohne `reply_to`). Nach dem Verbinden schickt der Kernel für jedes Zukaufteil,
+  das noch `wartet_auf_cad` ist, ein `ZUKAUF_STATUS` (wie `PART_UPSERT`), damit die Downloads-Beobachtung nach einem
+  Neustart weiterläuft. Optional `name` (Anzeigename des Teils).
+- `ZUKAUF_NEU.felder` ist ein vollständiger Katalogeintrag laut KATALOG.md (`id`, `art: "zukaufteil"`,
+  `status: "frei"`, `ersatz` aus den Maßen).
+- `BOM.lines[].stock_id` ist bei Zukaufteilen die Zukaufteil-id.
+
+Kev CAD lädt Shop-Seiten nie selbst (PLAN-PHASE3-ZUKAUF.md, Z1): Daten kommen von Claude über MCP oder aus Kevins
+Eingabe im Dialog. CAD-Dateien kommen über die TraceParts-API (mit Kevins Schlüssel) oder aus `~/Downloads`.
