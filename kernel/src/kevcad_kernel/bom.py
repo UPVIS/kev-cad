@@ -304,6 +304,14 @@ class LagerRegister:
             found = partner or found
         if not found:
             found = [p for p in self.pieces if self._is_partner(p, shape)]
+            if len({p.seq for p in found}) > 1:
+                # Gleiche OCCT-Form in mehreren Stücken (Zukauf-CAD aus dem Zwischenspeicher, Normteile als flache
+                # Kopien): das Kind einer gezeigten Baugruppe gehört zum Stück, dessen Name davor steht
+                # („Wagen B/Rolle_1“ → Stück „Wagen B“)
+                prefixed = [p for p in found if p.name and name.startswith(p.name + "/")]
+                if prefixed:
+                    longest = max(len(p.name) for p in prefixed)
+                    found = [p for p in prefixed if len(p.name) == longest]
         if not found:
             label = str(getattr(shape, "label", "") or "").strip()
             if label:

@@ -284,6 +284,41 @@ show(wagen.bezugspunkt("oben") * wagen.verbauen("Rollwagen 2"), "Rollwagen 2")  
     assert (proj / "zukauf" / "alutec-05200" / "w.brep").is_file()  # Zwischenspeicher im Projekt
 
 
+def test_hersteller_cad_und_normteil_zwischenspeicher(tmp_path):
+    """Zukauf-Import (Zwischenspeicher _memo, gemeinsame OCCT-Formen) und Normteile aus profiles.fastener (flache
+    Kopien) im selben Modell, zwei Läufe: jedes Stück eigene Lage und Stücklistenzeile, Vorlagen unverändert."""
+    from kevcad_kernel import profiles
+
+    proj = make_project(tmp_path, [{**WAGEN, "cad": {"quelle": "download", "datei": "zukauf/alutec-05200/w.step"}}])
+    (proj / "zukauf" / "alutec-05200").mkdir(parents=True)
+    step_wagen(proj / "zukauf" / "alutec-05200" / "w.step")
+    code = HEAD + """
+wagen = lager.zukauf("alutec-05200")
+show(wagen.verbauen("Wagen A"), "Wagen A")
+show(Pos(1000, 0, 0) * wagen.verbauen("Wagen B"), "Wagen B")
+schraube = lager.teil("schraube-iso4762-m8")
+for i in range(3):
+    show(Pos(-200 + 200 * i, 0, 400) * schraube.verbauen(laenge=40, name=f"Schrauben/M8x40 {i + 1}"),
+         f"Schrauben/M8x40 {i + 1}")
+"""
+    for lauf in (1, 2):
+        res, parts = run_model(proj, code)
+        assert res["type"] == "RUN_DONE", res.get("error")
+        assert parts["Wagen A/Platte"]["bbox"]["min"][0] == pytest.approx(-305, abs=0.01)
+        assert parts["Wagen B/Platte"]["bbox"]["min"][0] == pytest.approx(695, abs=0.01), lauf
+        xs = sorted(round(parts[f"Schrauben/M8x40 {i}"]["bbox"]["min"][0]) for i in (1, 2, 3))
+        assert xs[1] - xs[0] == 200 and xs[2] - xs[1] == 200, (lauf, xs)
+        lines = {ln["stock_id"]: ln for ln in res["bom"]["lines"]}
+        assert lines["alutec-05200"]["anzahl"] == 2 and lines["alutec-05200"]["vereinfacht"] is False
+        assert lines["schraube-iso4762-m8"]["anzahl"] == 3, lines["schraube-iso4762-m8"]
+        assert parts["Wagen B/Rolle_1"]["zukauf"]["id"] == "alutec-05200"  # Kind des zweiten Stücks, eindeutig
+        teile = lines["alutec-05200"]["teile"]
+        assert len(teile) == 10 and teile.count("Wagen B/Rolle_1") == 1, teile
+    for vorlage in profiles._FASTENER_CACHE.values():  # Namen und Lage der Vorlagen bleiben unberührt
+        assert not str(getattr(vorlage, "label", "") or "").startswith("Schrauben/")
+        assert vorlage.location.wrapped.IsIdentity()
+
+
 def test_cad_datei_fehlt_ersatz(tmp_path):
     proj = make_project(tmp_path, [{**WAGEN, "cad": {"quelle": "download", "datei": "zukauf/x/fehlt.step"}}])
     res, parts = run_model(proj, HEAD + 'show(lager.zukauf("alutec-05200").verbauen("W"), "W")\n')
