@@ -17,7 +17,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | 6 | Datenblätter und Zeichnungen als PDF, Drucken | PLAN-MVP.md Abschnitt 15 | offen |
 | 7 | Renderings | PLAN-MVP.md Abschnitt 15 | offen |
 | 8 | Druck auf dem Bambu Lab P2S | PLAN-MVP.md Abschnitt 15, RECHERCHE.md | offen |
-| später | Live-Ansicht auf dem iPhone in der VoiceBridge-App: Szene live sehen, drehen, ein- und ausblenden, fokussieren, isolieren, mit dem Agenten weiterarbeiten, zwei Richtungen synchron, startet von selbst, sobald ein Agent in Kev CAD arbeitet | wird geplant | niedrige Priorität (Kevin, 21.10.2026) |
+| später | Live-Ansicht auf dem iPhone in der VoiceBridge-App: Szene live sehen, drehen, ein- und ausblenden, fokussieren, isolieren, mit dem Agenten weiterarbeiten, zwei Richtungen synchron, startet von selbst, sobald ein Agent in Kev CAD arbeitet | [PLAN-IPHONE-LIVE.md](PLAN-IPHONE-LIVE.md) | niedrige Priorität (Kevin, 21.10.2026) |
 
 ## Offene Zuarbeit von Kevin
 
