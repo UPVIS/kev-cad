@@ -1,7 +1,16 @@
 # Kev CAD · Live-Ansicht auf dem iPhone (VoiceBridge)
 
-Stand: 21.10.2026 (Kevins Wunsch vom selben Tag). Priorität niedrig, startet nach den laufenden Phasen. Gemeinsames
-Vorhaben von Kev CAD und VoiceBridge (`~/Code Experiments/VoiceBridge`, Repo `UPVIS/voicebridge`).
+Stand: 21.10.2026. Gemeinsames Vorhaben von Kev CAD und VoiceBridge (`~/Code Experiments/VoiceBridge`, Repo
+`UPVIS/voicebridge`). Kevin hat es am selben Abend gestartet („Es müsste eine 3D-Darstellung sein, kein Videofeed, das
+ist wichtig“). Damit ist L1 ausdrücklich bestätigt.
+
+| Paket | Zuständig | Stand |
+|---|---|---|
+| M0 Vertrag | Kev CAD | [MIRROR.md](MIRROR.md) Version 1, mit VoiceBridge abgestimmt; Aufzeichnungen in `samples/mirror-recordings/` |
+| M1 Spiegel-Dienst | Kev CAD | gestartet (eigener Strang): plattformneutrales Ziel für Protokoll und Szene zuerst, dann Dienst, Simulator, Testdateien |
+| M2 Transport | VoiceBridge-Sitzung | beginnt, sobald `mirror_sim.py` läuft |
+| M3 iPhone-Ansicht | VoiceBridge-Sitzung | gestartet |
+| M4, M5 | gemeinsam | danach |
 
 ## Ziel
 
@@ -47,7 +56,7 @@ umgekehrt. Der Modus steht von selbst bereit, sobald ein Agent in Kev CAD arbeit
 | L5 | **Bedienung wie am Mac, für Finger übersetzt:** ein Finger dreht (Drehteller um Z wie in Blender), zwei verschieben, Pinch zoomt, Doppeltipp fokussiert, langes Drücken öffnet das Teilemenü, Ansichtswürfel für vorn, oben, rechts, iso | Gleiches Gefühl wie am Mac, kein Einrasten |
 | L6 | **Auswahl als Kontext für den Agenten:** Diktat oder Text aus der CAD-Ansicht trägt die aktuelle Auswahl mit („Auswahl: Rollwagen/Lenkrolle 1“); da die Auswahl auch am Mac ankommt, sieht der Agent sie zusätzlich in `status` | Kevin muss Teile nicht beim Namen nennen |
 | L7 | **Unterwegs über iCloud:** Netze als CKAsset, Zustand als kleiner Datensatz in einem eigenen Bereich (wie `AgentsLive`), nur während das iPhone hinsieht | Bedienbar mit einigen Sekunden Verzug, ohne eigenen Server (in VoiceBridge am 29.09.2026 so entschieden) |
-| L8 | **Gemeinsamer Vertrag** `MIRROR.md` im Kev-CAD-Repo (Nachrichten, Felder, Versionen); beide Projekte testen gegen dieselben Testdateien | Zwei Repos, zwei Agenten, ein Vertrag |
+| L8 | **Gemeinsamer Vertrag** [MIRROR.md](MIRROR.md) im Kev-CAD-Repo (Nachrichten, Felder, Versionen, Epoche, Vorrang, Vertrauensgrenze); beide Projekte testen gegen dieselben Testdateien | Zwei Repos, zwei Agenten, ein Vertrag |
 
 ## Arbeitspakete
 
@@ -65,6 +74,10 @@ den Vertrag; Änderungen am Vertrag nur gemeinsam.
 
 ## Zu beachten
 
+- Auf dem iPhone nur bei Bedarf rendern (Gesten, Kamerafahrten, Zustandswechsel), im Leerlauf keine Rechenzeit, Pause
+  im Hintergrund und bei „Bewegung reduzieren“. Die CAD-Ansicht hat einen eigenen Zustand und löst keine Neuberechnung
+  des Chat-Feeds aus. Netze außerhalb des Bildes bei Speicherwarnung verwerfen, Plattenspeicher mit Obergrenze und LRU
+  (etwa 200–300 MB). Eine Messung wie der Rollmesser von VoiceBridge für Gesten (Vorgaben von VoiceBridge).
 - VoiceBridge hat strenge Regeln für Kopplung und Verschlüsselung; der Spiegel-Dienst nimmt nur lokale Verbindungen an
   (Socket mit Dateirechten nur für Kevin), nichts lauscht im Netz.
 - Auf dem MacBook mit 16 GB nur ein `xcodebuild` gleichzeitig (Notiz aus VoiceBridge vom 20.10.2026).
