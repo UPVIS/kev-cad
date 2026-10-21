@@ -137,7 +137,7 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
 
 ## Zukaufteil (Phase 3)
 
-Fertig gekaufte Teile mit Hersteller und Nummer: Schubladenauszug, Scharnier, Rolle, Rollwagen, Kamera-Zubehör. Sie
+Fertig gekaufte Teile mit Hersteller und Nummer (Beispielwerte unten erfunden, EAN mit gültiger Prüfziffer): Schubladenauszug, Scharnier, Rolle, Rollwagen, Kamera-Zubehör. Sie
 liegen in der Projekt-Ebene (`<projekt>/katalog.json`) oder, wenn Kevin sie in mehreren Projekten nutzt, im eigenen
 Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist nicht weitergegeben werden).
 
@@ -148,7 +148,7 @@ Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist
   "name": "ALUTEC Transportroller 05200",
   "hersteller": "ALUTEC",
   "mpn": "05200",
-  "gtin": "4005187052009",
+  "gtin": "4005187052008",
   "url": "https://www.beispiel-shop.de/p/alutec-05200",
   "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
   "preis": {"je_stueck": 24.99, "waehrung": "EUR", "brutto": true, "stand": "2026-10-21",
