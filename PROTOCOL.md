@@ -10,7 +10,8 @@ Version 1 (21.10.2026). Verbindlich für `kernel/src/kevcad_kernel/protocol.py` 
 
 - Unix-Socket. Der **Kernel-Server lauscht**, die App verbindet sich. Pfad: `AppInfo.kernelSocket`
   (`~/Library/Application Support/<bundle-id>/kernel.sock`), dem Kernel als `--socket` übergeben.
-- Eine Verbindung, beide Richtungen. Verbindet sich die App neu, schickt der Kernel `HELLO`, `PROJECT` (falls offen) und
+- Eine Verbindung, beide Richtungen. Sobald die App sich verbindet (nicht erst nach `HELLO_APP`), schickt der Kernel
+  `HELLO`, `PROJECT` (falls offen), `STATUS`, `AGENT` und
   ein `PART_UPSERT` für jedes aktuelle Teil, damit die App den vollen Stand hat.
 - Einheiten: Millimeter, Grad für Winkel. Koordinatensystem rechtshändig, **Z nach oben** (wie build123d).
 
@@ -53,7 +54,7 @@ Auto-Lauf: Der Kernel beobachtet `model.py` des offenen Projekts selbst und star
 | `PART_UPSERT` | siehe unten | Geometrie |
 | `PART_REMOVE` | `run`, `name` | – |
 | `RUN_END` | `run`, `duration_ms`, `parts` (Anzahl), `triangles`, `warnings` (Liste Text), `params` (alle `param()`-Werte) | – |
-| `RUN_ERROR` | `run`, `message`, `line` (oder null), `excerpt` (Codezeilen um den Fehler), `traceback` (gekürzt) | – |
+| `RUN_ERROR` | `run`, `message`, `line` (oder null), `excerpt` (Codezeilen um den Fehler), `traceback` (gekürzt), `hint` (Reparaturhinweis oder null) | – |
 | `AGENT` | `connected` (bool), `activity` (Text oder null, z. B. „misst Abstand Lasche ↔ Grundplatte") | – |
 | `VIEW_CMD` | `id`, `cmd`, `args` – siehe unten; App antwortet `ACK` | – |
 | `SCREENSHOT_REQ` | `id`, `width`, `height`, `source`: `current` \| `offscreen`, `view` (nur offscreen: Standardansicht oder null), `hide_overlays` | – |
@@ -80,10 +81,11 @@ Kopf:
 }
 ```
 
-- `color` lineares RGBA 0…1. `material` und `props.mass` nur, wenn ein Material gesetzt ist (Masse in g).
+- `color` RGBA 0…1 so, wie in model.py angegeben, also **sRGB**; die App rechnet für den Viewport in linear um.
+  `material` ist der Name aus model.py (z. B. „aluminium“); `props.mass` nur, wenn das Material bekannt ist (Masse in g).
 - `faces[i]`: `t` ∈ `plane`, `cylinder`, `cone`, `sphere`, `torus`, `bspline`, `other`; `a` Flächeninhalt mm².
   Je nach Typ zusätzlich `n` (Normale, Ebene), `c` (Punkt auf der Ebene oder Mittelpunkt), `ax` (Achsrichtung),
-  `r` (Radius).
+  `r` (Radius), `r2` (zweiter Radius bei Torus und Ellipse), `ang` (Halbwinkel beim Kegel).
 - `edges[i]`: `t` ∈ `line`, `circle`, `ellipse`, `bspline`, `other`; `l` Länge mm; bei Kreisen `r`, `c`, `ax`.
 - `transform`: null (Punkte sind Weltkoordinaten). Reserviert für Instanzen: 16 Zahlen, spaltenweise.
 
