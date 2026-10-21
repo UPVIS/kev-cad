@@ -7,14 +7,17 @@ extension Notification.Name {
     static let zukaufSelfTestSubmit = Notification.Name("KevCADZukaufSelfTestSubmit")
 }
 
-/// Selbsttest Zukaufteile in der Testvariante mit dem Ersatz-Kernel (`fake_kernel.py --zukauf`):
-/// `KEVCAD_SELFTEST=zukauf`, `KEVCAD_DOWNLOADS_DIR=<Temp-Ordner>` (nie das echte Downloads),
+/// Selbsttest Zukaufteile in der Testvariante, mit dem Ersatz-Kernel (`fake_kernel.py --zukauf`) oder dem echten
+/// Kernel: `KEVCAD_SELFTEST=zukauf`, `KEVCAD_DOWNLOADS_DIR=<Temp-Ordner>` (nie das echte Downloads),
 /// optional `KEVCAD_SELFTEST_PAUSE=<s>` für Fensterbilder (an jeder Stelle „BILD <name> <Fenster>“ auf stderr).
+/// Mit dem echten Kernel: Projekt mit einem verbauten Zukaufteil (Ersatzkörper) und einem Vorschlag von Claude öffnen
+/// (MCP), dazu echte STEP-Dateien `KEVCAD_SELFTEST_STEP` (igus WJRM-01-10, Zylinder Ø 19 × 29) und
+/// `KEVCAD_SELFTEST_STEP_WAGEN` (CAD für das verbaute Zukaufteil); ohne sie schreibt der Test Platzhalter-Dateien.
 ///
 /// Prüft: Zukaufteil im Teilebaum (vereinfacht, halbtransparent), Stückliste mit Hersteller und Link, Lagerkatalog mit
-/// Zukaufteilen und Vorschlag, Dialog → ZUKAUF_NEU → wartet auf CAD (Beobachtung im Temp-Ordner), neue Datei →
-/// Rückfrage → ZUKAUF_CAD → importiert, CAD-Datei für den Rollwagen → neu gerechnet mit Hersteller-CAD.
-/// Ergebnis im Protokoll und in `<Datenordner>/selftest-zukauf.txt`.
+/// Zukaufteilen und Vorschlag, Freigabe des Vorschlags, Dialog → ZUKAUF_NEU → wartet auf CAD (Beobachtung im
+/// Temp-Ordner), neue Datei → Rückfrage → ZUKAUF_CAD → importiert, CAD-Datei für das verbaute Teil → neu gerechnet mit
+/// Hersteller-CAD. Ergebnis im Protokoll und in `<Datenordner>/selftest-zukauf.txt`.
 @MainActor
 enum ZukaufSelfTest {
     private static var started = false
@@ -67,9 +70,10 @@ enum ZukaufSelfTest {
         check(isTemp, "Downloads-Ordner ist ein Temp-Ordner: \(downloads.path)")
         guard isTemp else { return finish(lines, passed) }
 
-        // 1. Verbautes Zukaufteil: Teilebaum, Viewer, Stückliste
-        check(await wait(30) { model.bom != nil && !model.isRunning && model.parts.contains { $0.zukauf != nil } },
+        // 1. Verbautes Zukaufteil: Teilebaum, Viewer, Stückliste (der echte Kernel braucht beim ersten Lauf länger)
+        check(await wait(120) { model.bom != nil && !model.isRunning && model.parts.contains { $0.zukauf != nil } },
               "Lauf mit Zukaufteil fertig")
+        let wagenID = model.parts.first(where: { $0.zukauf != nil })?.zukauf?.id ?? "alutec-05200"
         if let wagen = model.parts.first(where: { $0.zukauf != nil }) {
             check(wagen.zukauf?.isSimplified == true, "\(wagen.id): vereinfacht (\(wagen.zukauf?.title ?? "?"))")
             check(session.controller?.scene.simplifiedParts.contains(wagen.id) == true, "Ersatzkörper halbtransparent")
@@ -77,16 +81,25 @@ enum ZukaufSelfTest {
             model.actions?.select([wagen.id])
         }
         let line = model.bom?.lines.first { $0.art == "zukaufteil" }
-        check(line?.zukauf?.hersteller == "ALUTEC" && line?.zukauf?.url != nil && line?.zukauf?.vereinfacht == true,
-              "Stücklistenzeile Zukaufteil: \(line?.benennung ?? "fehlt"), \(line?.preisJe.map(KevFormat.euro) ?? "-")")
+        check(line?.zukauf?.hersteller != nil && line?.zukauf?.mpn != nil && line?.preisJe != nil
+              && line?.zukauf?.url != nil && line?.zukauf?.vereinfacht == true,
+              "Stücklistenzeile Zukaufteil: \(line?.benennung ?? "fehlt"), \(line?.zukauf?.title ?? "-"), "
+              + "\(line?.preisJe.map(KevFormat.euro) ?? "-"), \(line?.zukauf?.url?.host ?? "kein Link")")
         await shot("projekt-vereinfacht", window: model.project?.name ?? "Kev CAD")
 
-        // 2. Lagerkatalog: Zukaufteile als eigene Gruppe, Vorschlag von Claude
-        session.showCatalog(focus: .item("alutec-05200"))
+        // 2. Lagerkatalog: Zukaufteile als eigene Gruppe, Vorschlag von Claude, Freigabe wie mit „Freigeben“
+        session.showCatalog(focus: .item(wagenID))
         check(await wait(10) { model.catalog?.items.contains { $0.isZukauf } == true }, "Zukaufteile im Lagerkatalog")
         let suggestion = model.catalog?.items.first { $0.isZukauf && $0.vorgeschlagen }
         check(suggestion != nil, "Vorschlag von Claude: \(suggestion?.name ?? "fehlt")")
         await shot("katalog-zukauf", window: "Lagerkatalog")
+        if let suggestion {
+            model.catalogActions?.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(suggestion.json),
+                                                   ebene: suggestion.ebene.isEditable ? suggestion.ebene : .eigen)
+            check(await wait(10) { model.catalog?.item(suggestion.id)?.vorgeschlagen == false },
+                  "Vorschlag freigegeben: \(suggestion.id)")
+            await shot("katalog-freigegeben", window: "Lagerkatalog")
+        }
 
         // 3. Dialog: Eingabe (Link eines Teils, das schon im Katalog steht), dann Felder bestätigen, Hinzufügen
         session.showZukaufDialog(.new(input: "https://www.beispiel-shop.de/p/alutec-05200"))
@@ -108,38 +121,47 @@ enum ZukaufSelfTest {
         try? await Task.sleep(for: .milliseconds(800))
         await shot("dialog-felder", window: "Zukaufteil hinzufügen")
         NotificationCenter.default.post(name: .zukaufSelfTestSubmit, object: nil)
-        check(await wait(5) { model.zukaufActivity == .accepted(id: draft.id, message: "katalog.json im Projekt (Ersatz-Kernel)") },
-              "ZUKAUF_NEU angenommen: \(model.zukaufActivity)")
-        check(await wait(5) { model.zukaufStatus(for: draft.id)?.isWaiting == true }, "wartet auf CAD")
-        check(model.zukaufStatus(for: draft.id)?.cadLinks.count == 2, "CAD-Links: \(model.zukaufStatus(for: draft.id)?.cadLinks.map(\.titel) ?? [])")
+        check(await wait(10) {
+            if case .accepted(let id, _) = model.zukaufActivity { return id == draft.id } else { return false }
+        }, "ZUKAUF_NEU angenommen: \(model.zukaufActivity)")
+        check(await wait(20) { model.zukaufStatus(for: draft.id)?.isWaiting == true }, "wartet auf CAD")
+        check(model.zukaufStatus(for: draft.id)?.cadLinks.isEmpty == false,
+              "CAD-Links: \(model.zukaufStatus(for: draft.id)?.cadLinks.map(\.titel) ?? [])")
         check(model.watchedDownloads?.standardizedFileURL == downloads.standardizedFileURL,
               "Beobachtung läuft: \(model.watchedDownloads?.path ?? "aus")")
         await shot("dialog-wartet", window: "Zukaufteil hinzufügen")
 
         // 4. Neue Datei in Downloads (in zwei Stücken geschrieben) → Rückfrage → übernehmen
+        let env = ProcessInfo.processInfo.environment
+        func stepData(_ key: String) -> Data {
+            if let path = env[key], let data = FileManager.default.contents(atPath: path), !data.isEmpty { return data }
+            return Data(String(repeating: "ISO-10303-21;\n", count: 6000).utf8)
+        }
         let file = downloads.appendingPathComponent("WJRM-01-10.step")
-        let chunk = Data(String(repeating: "ISO-10303-21;\n", count: 3000).utf8)
-        try? chunk.write(to: file)
+        let content = stepData("KEVCAD_SELFTEST_STEP")
+        let half = content.count / 2
+        try? content.prefix(half).write(to: file)
         try? await Task.sleep(for: .milliseconds(300))
         if let h = try? FileHandle(forWritingTo: file) {
             h.seekToEndOfFile()
-            h.write(chunk)
+            h.write(content.suffix(from: half))
             try? h.close()
         }
         check(await wait(8) { model.downloadOffer?.fileName == file.lastPathComponent }, "Rückfrage zu \(file.lastPathComponent)")
-        check(model.downloadOffer?.size == Int64(chunk.count * 2), "erst gemeldet, als die Datei fertig war")
+        check(model.downloadOffer?.size == Int64(content.count), "erst gemeldet, als die Datei fertig war")
         session.dismissZukaufWindow()
         await shot("rueckfrage", window: model.project?.name ?? "Kev CAD")
         if let teil = model.downloadOffer?.candidates.first { actions.acceptDownload(for: teil) }
-        check(await wait(5) { model.zukaufStatus(for: draft.id)?.zustand == .importiert }, "importiert")
+        check(await wait(30) { model.zukaufStatus(for: draft.id)?.zustand == .importiert },
+              "importiert: \(model.zukaufStatus(for: draft.id)?.text ?? "-")")
         check(await wait(3) { model.watchedDownloads == nil }, "Beobachtung beendet, sobald nichts mehr wartet")
 
-        // 5. CAD für den Rollwagen selbst gewählt → neu gerechnet mit Hersteller-CAD
-        let wagenFile = downloads.appendingPathComponent("05200.stp")
-        try? chunk.write(to: wagenFile)
-        actions.assignCAD(file: wagenFile, to: "alutec-05200")
-        check(await wait(15) { model.parts.first { $0.zukauf?.id == "alutec-05200" }?.zukauf?.cad == .hersteller },
-              "Rollwagen mit Hersteller-CAD neu gerechnet")
+        // 5. CAD für das verbaute Zukaufteil selbst gewählt → neu gerechnet mit Hersteller-CAD
+        let wagenFile = downloads.appendingPathComponent("\(wagenID).stp")
+        try? stepData("KEVCAD_SELFTEST_STEP_WAGEN").write(to: wagenFile)
+        actions.assignCAD(file: wagenFile, to: wagenID)
+        check(await wait(60) { model.parts.first { $0.zukauf?.id == wagenID }?.zukauf?.cad == .hersteller && !model.isRunning },
+              "\(wagenID) mit Hersteller-CAD neu gerechnet: \(model.parts.filter { $0.zukauf?.id == wagenID }.map(\.id))")
         check(session.controller?.scene.simplifiedParts.isEmpty == true, "kein Ersatzkörper mehr")
         check(await wait(5) { model.bom?.lines.first { $0.art == "zukaufteil" }?.zukauf?.vereinfacht == false },
               "Stückliste: CAD-Quelle \(model.bom?.lines.first { $0.art == "zukaufteil" }?.zukauf?.cadTitle ?? "?")")
