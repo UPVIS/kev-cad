@@ -120,6 +120,7 @@ class FakeService:
         self.closed = False
         self.activity: list[str | None] = []
         self.connected: list[bool] = []
+        self.sessions: list[list[dict[str, Any]]] = []  # jede gemeldete Sitzungsliste
         self.selection_refs = ["Halter/Lasche#f3", "Grundplatte#f0"]
         self.png = PNG  # Bilddaten für screenshot
         self.violations: list[str] = []  # Inventar-Regel: Teile ohne Lagerteil im nächsten Lauf
@@ -388,6 +389,10 @@ class FakeService:
     def set_agent_connected(self, connected: bool) -> None:
         with self.lock:
             self.connected.append(connected)
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        with self.lock:
+            self.sessions.append([dict(s) for s in sessions])
 
     def close(self) -> None:
         self._record("close")

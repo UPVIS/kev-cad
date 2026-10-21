@@ -54,6 +54,8 @@ public final class AppController: AppActions {
     var navCancellables = Set<AnyCancellable>()
     /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
     var pendingRestore: SavedSession?
+    /// Spiegel aufs iPhone (MIRROR.md), siehe AppController+Mirror.swift.
+    public internal(set) var mirror: MirrorService?
     /// Phase 5: Animation (Spieler, Video), siehe AppController+Animation.swift.
     lazy var animationRuntime = AnimationRuntime(player: makeAnimationPlayer())
 
@@ -116,6 +118,7 @@ public final class AppController: AppActions {
     public func start() {
         stopInternal(clearState: false)
         installSignalHandlers()
+        startMirror()
         running = true
         if AppInfo.isDemoMode {
             startDemo()
@@ -184,6 +187,7 @@ public final class AppController: AppActions {
 
     private func shutdownForTermination() {
         saveSession()
+        mirror?.stop()
         running = false
         restartWork?.cancel()
         connection.close()
@@ -458,7 +462,9 @@ public final class AppController: AppActions {
         case .agent(let a):
             model.agentConnected = a.connected
             model.agentActivity = a.connected ? a.activity : nil
+            mirror?.updateAgents(a.sessions)
         case .viewCommand(let v):
+            mirror?.noteAgentCommand()
             let (ok, message) = performViewCommand(v)
             if !ok { log(.warning, "Ansichtsbefehl \(v.cmd): \(message ?? "fehlgeschlagen")") }
             send(AckOutMessage(replyTo: v.id, ok: ok, message: message))
