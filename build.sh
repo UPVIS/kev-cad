@@ -39,6 +39,7 @@ if [ "$MODE" = "--core-tests" ]; then
 fi
 
 echo "==> Icon"
+mkdir -p app/Resources
 ICNS="app/Resources/AppIcon.icns"
 if [ ! -f "$ICNS" ] || [ app/icon.svg -nt "$ICNS" ]; then
   ICONSET="$BUILD/AppIcon.iconset"
