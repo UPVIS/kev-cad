@@ -611,8 +611,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
 
     @tool("stock_search", "Lagerteile suchen",
           "Search Kevin's stock catalog (tubes, profiles, flat/round bar, angles, aluminium extrusions, timber, sheets, "
-          "screws, nuts, washers) by text and dimensions, e.g. 'vierkantrohr 40x40x3', 'edelstahl rohr 33,7', "
-          "'multiplex 18', 'm8'. Use the returned id in model.py: lager.teil(id).verbauen(...). art filters by kind.",
+          "screws, nuts, washers, released purchased parts) by text and dimensions, e.g. 'vierkantrohr 40x40x3', "
+          "'edelstahl rohr 33,7', 'multiplex 18', 'm8', 'alutec 05200'. Use the returned id in model.py: "
+          "lager.teil(id).verbauen(...), purchased parts (art zukaufteil) with lager.zukauf(id). art filters by kind.",
           READ_ONLY)
     async def stock_search(
         query: Annotated[str, Field(description="Words and dimensions, e.g. 'rohr 42,4x2' or '40x40'")] = "",
@@ -636,6 +637,8 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             f", die ersten {len(items)}:" if total > len(items) else ":")
         text = head + "\n" + fmt.stock_table(items)
         text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit stock_get."
+        if any(it.get("art") == "zukaufteil" for it in items):
+            text += " Zukaufteile (art zukaufteil): lager.zukauf(\"<id>\").verbauen(\"Name\")."
         return fmt.result(text, res)
 
     @tool("stock_get", "Lagerteil",
