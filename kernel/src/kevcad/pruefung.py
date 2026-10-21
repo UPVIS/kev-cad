@@ -11,6 +11,7 @@ montage(mutter, nach=[schraube, platte])          # erst nach Schraube und Platt
 montage(bolzen, werkzeug="inbus 6")               # Werkzeug für ein eigenes Verbindungsteil
 montage("Rollwagen/Lenkrolle 1", baugruppe=True)   # Zukaufteil, wird fertig montiert eingesetzt
 montage(clip, richtung="+z", schnappt=True)        # Schnappverbindung, biegt sich beim Aufstecken auf
+montage(mutter, eingedruckt=True)                 # beim 3D-Druck eingelegt (Druckpause), steckt im Druckteil
 erlaubt_ueberlappung(schraube, platte, grund="Gewinde im Kernloch")   # gewollte Überlappung
 befestigt(halter, grund="an der Wand verschraubt")  # hängt nicht am Boden, sondern an der Umgebung
 boden(0)                                           # Bodenebene (sonst: tiefster Punkt des Modells)
@@ -96,14 +97,16 @@ def _liste(x: Any) -> list[Any]:
 
 
 def montage(teil: Any, richtung: Any = None, nach: Any = None, werkzeug: str | None = None,
-            baugruppe: bool = False, schnappt: bool = False) -> None:
+            baugruppe: bool = False, schnappt: bool = False, eingedruckt: bool = False) -> None:
     """Wie ein Teil (oder eine Baugruppe) eingebaut wird: Einbaurichtung, Teile, die vorher drin sein müssen,
     Werkzeug, ``baugruppe=True`` für Zukaufteile, die fertig montiert eingesetzt werden, ``schnappt=True`` für
-    Schnappverbindungen (Clip, Rasthaken), die sich beim Einsetzen über die berührten Teile biegen."""
+    Schnappverbindungen (Clip, Rasthaken), die sich beim Einsetzen über die berührten Teile biegen,
+    ``eingedruckt=True`` für Teile, die beim 3D-Druck eingelegt werden (Mutter in geschlossener Tasche, Druckpause)."""
     if werkzeug is not None and not isinstance(werkzeug, str):
         raise ValueError("montage: werkzeug als Text angeben, z. B. \"inbus 6\", \"torx t30\", \"gabel 13\"")
     _melde("montage", {"teile": _liste(teil), "richtung": _richtungen(richtung), "nach": _liste(nach),
-                       "werkzeug": werkzeug, "baugruppe": bool(baugruppe), "schnappt": bool(schnappt)})
+                       "werkzeug": werkzeug, "baugruppe": bool(baugruppe), "schnappt": bool(schnappt),
+                       "eingedruckt": bool(eingedruckt)})
 
 
 def erlaubt_ueberlappung(a: Any, b: Any, grund: str | None = None) -> None:

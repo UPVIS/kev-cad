@@ -403,6 +403,27 @@ def test_kulisse_ist_boden_und_braucht_keine_befestigung():
     assert "Kulisse/Tisch" in texte and "Nicht am Boden" in texte
 
 
+def test_kulisse_in_standsicherheit_und_montage():
+    """Ein Winkel auf einem Tisch (Kulisse) kippt: Der Tisch gehört nicht zur Gruppe, er ist der Boden. Ohne
+    Kennzeichnung bildeten Tisch und Winkel eine Gruppe mit riesiger Standfläche, und der Tisch wäre ein Einbauschritt."""
+    tisch = Box(400, 400, 50, align=UNTEN)
+    winkel = Pos(0, 0, 50) * Box(10, 10, 5, align=UNTEN) + Pos(40, 0, 55) * Box(80, 10, 5, align=UNTEN)
+    klotz = Pos(-100, 0, 50) * Box(40, 40, 20, align=UNTEN)
+    alle = ("erklaerungen", "durchdringung", "stand", "montage")
+    ks = [koerper_aus_form("Kulisse/Tisch", tisch, info={"kulisse": True}), koerper_aus_form("Winkel", winkel),
+          koerper_aus_form("Klotz", klotz)]
+    erg, _ = pruefe(ks, {}, {"pruefungen": alle})
+    assert [b["teile"] for b in erg["befunde"] if b["art"] == "kippt"] == [["Winkel"]]
+    assert not [b for b in erg["befunde"] if b["art"] == "schwebt"]
+    assert erg["stand"]["auf_kulisse"] == ["Klotz", "Winkel"] and erg["stand"]["kulisse"] == ["Kulisse/Tisch"]
+    assert not any("Kulisse/Tisch" in s["teile"] for s in erg["montage"]["schritte"])
+    ks2 = [koerper_aus_form("Kulisse/Tisch", tisch), koerper_aus_form("Winkel", winkel),
+           koerper_aus_form("Klotz", klotz)]
+    erg2, _ = pruefe(ks2, {}, {"pruefungen": alle})
+    assert not [b for b in erg2["befunde"] if b["art"] == "kippt"]
+    assert any("Kulisse/Tisch" in s["teile"] for s in erg2["montage"]["schritte"])
+
+
 MODELL_KULISSE = """from build123d import *
 from kevcad import show, lager
 

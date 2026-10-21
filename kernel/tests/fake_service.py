@@ -124,6 +124,28 @@ CONSTRAINTS = {
 }
 
 
+PRUEFUNG = {
+    "zusammenfassung": "1 Durchdringung", "zaehler": {"fehler": 1, "warnung": 0, "hinweis": 0},
+    "befunde": [{"id": "du1", "art": "durchdringung", "teile": ["Halter/Lasche", "Halter/Grundplatte"],
+                 "schwere": "fehler", "wert": {"volumen": 12.5, "tiefe": 0.5, "achse": [0, 0, 1]}, "ort": [0, 5, 2],
+                 "text": "Halter/Lasche und Halter/Grundplatte durchdringen sich: 12,5 mm³, Tiefe etwa 0,5 mm.",
+                 "loesung": "Halter/Lasche um 0,7 mm in +Z verschieben (dann 0,2 mm Spiel).", "geometrie": 0}],
+    "montage": {"vollstaendig": True, "offen": [], "tests": 3, "abgebrochen": None, "schritte": [
+        {"nr": 1, "teile": ["Halter/Grundplatte"], "name": "Halter/Grundplatte", "gruppe": False, "richtung": None,
+         "richtung_text": "Grundteil", "werkzeug": None},
+        {"nr": 2, "teile": ["Halter/Lasche"], "name": "Halter/Lasche", "gruppe": False, "richtung": [0, 0, -1],
+         "richtung_text": "von oben", "werkzeug": None}]},
+    "stand": {"boden_z": 0.0, "boden_erklaert": False, "gruppen": [
+        {"teile": ["Halter/Grundplatte", "Halter/Lasche"], "masse_kg": 0.31, "kippwinkel": 24.5}]},
+}
+BESTAND = {"version": 1, "einstellungen": {"mindestrest_mm": 100, "saegeblatt_mm": 3},
+           "posten": {"rohr-alfer-12x1": {"ganze": {"anzahl": 2, "laenge": 1000},
+                                          "reste": [{"kennung": "R-0001", "laenge": 430, "ort": None,
+                                                     "seit": "2026-10-21"}]}}}
+EINKAUF = [{"id": "rohr-alfer-12x1", "benennung": "ALFER-Rundrohr 12 × 1", "menge": 1, "einheit": "Stange 1.000 mm",
+            "preis_je": 3.9, "preis": 3.9, "link": None, "hinweis": None}]
+
+
 class FakeService:
     """Implementiert ``KernelService`` mit festen Antworten.
 
@@ -272,6 +294,22 @@ class FakeService:
             return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen."}
         return {"ok": True, "run": self.run_no, **BOM}
 
+    # Prüfung -------------------------------------------------------------------------------------------------
+
+    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
+        self._record("pruefen")
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen (geprüft wird nach jedem Lauf)."}
+        return {"ok": True, "run": self.run_no, "state": "done", **PRUEFUNG}
+
+    def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,
+                  timeout_s: float = 20) -> dict[str, Any]:
+        self._record("ansichten", ansichten, width, height)
+        if not self.app_connected:
+            return {"ok": False, "error": "App nicht verbunden"}
+        return {"ok": True, "bilder": [{"name": a.get("name"), "png": self.png, "width": width, "height": height,
+                                        "camera": {"ansicht": True}, "ansicht_umgesetzt": True} for a in ansichten]}
+
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
         self._record("stock_search", query, art)
         items = [it for it in STOCK if (art is None or it["art"] == art)
@@ -318,6 +356,55 @@ class FakeService:
             return {"ok": False, "error": f"Lagerteil {entry_id!r} gibt es nicht."}
         return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
                 "datei": "/tmp/katalog/eigene.json"}
+
+    # Bestand je Projekt ------------------------------------------------------------------------------------------
+
+    def bestand_liste(self, stock_id: str | None = None) -> dict[str, Any]:
+        self._record("bestand_liste", stock_id)
+        return {"ok": True, "projekt": self.project["name"], "datei": f"{self.project['path']}/bestand.json",
+                "stand": "2026-10-21T22:10:00", "bestand": BESTAND, "buchungen": [],
+                "text": f"Bestand im Projekt „{self.project['name']}“:\n- ALFER-Rundrohr 12 × 1 (rohr-alfer-12x1): "
+                        "2 ganze Stangen à 1000 mm; Reste: R-0001 430 mm"}
+
+    def bestand_eintragen(self, stock_id: str, ganze: Any = None, reste: list[Any] | None = None,
+                          reste_entfernen: list[str] | None = None, stueck: Any = None,
+                          mindestrest_mm: float | None = None, reste_ersetzen: bool = False,
+                          grund: str = "") -> dict[str, Any]:
+        self._record("bestand_eintragen", stock_id, ganze, reste, reste_entfernen, stueck, mindestrest_mm,
+                     reste_ersetzen, grund)
+        if stock_id == "gibtsnicht":
+            return {"ok": False, "error": "Lagerteil 'gibtsnicht' gibt es im Katalog nicht"}
+        lines = []
+        if ganze is not None:
+            lines.append(f"ALFER-Rundrohr 12 × 1 ({stock_id}): {ganze} ganze Stangen à 1000 mm dazu")
+        for i, r in enumerate(reste or [], 1):
+            lines.append(f"ALFER-Rundrohr 12 × 1 ({stock_id}): Rest R-{i:04d} ({r:g} mm) dazu")
+        return {"ok": True, "buchung": {"id": "B-0001", "art": "eintrag", "zusammenfassung": "…"},
+                "aenderungen_text": lines, "posten": {}}
+
+    def einkaufsliste(self) -> dict[str, Any]:
+        self._record("einkaufsliste")
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen."}
+        return {"ok": True, "run": self.run_no, "einkaufsliste": EINKAUF, "einkauf_summe": 3.9, "fehlt": True,
+                "text": "Einkaufsliste: 1 Position\n- 1 × Stange 1.000 mm ALFER-Rundrohr 12 × 1, 3,90 € je Einheit = "
+                        "3,90 €\nSumme: 3,90 €",
+                "csv": f"{self.project['path']}/output/{self.project['name']}-einkaufsliste.csv"}
+
+    def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
+        self._record("gebaut_buchen", grund)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Stückliste: erst rechnen (run), dann „gebaut“ buchen."}
+        return {"ok": True, "buchung": {"id": "B-0002", "art": "gebaut",
+                                        "zusammenfassung": "2 Reste weg, 1 Rest neu (R-0004 144 mm)"},
+                "aenderungen_text": ["ALFER-Rundrohr 12 × 1 (rohr-alfer-12x1): Rest R-0002 (610 mm) weg"]}
+
+    def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
+        self._record("buchung_rueckgaengig", buchung)
+        if buchung != "B-0002":
+            return {"ok": False, "error": f"Buchung {buchung!r} gibt es nicht"}
+        return {"ok": True, "buchung": {"id": "B-0003", "art": "rueckgaengig", "zusammenfassung": "1 Rest neu"},
+                "aenderungen_text": ["ALFER-Rundrohr 12 × 1 (rohr-alfer-12x1): Rest R-0002 (610 mm) dazu"]}
 
     # Phase 3: Zukaufteile ----------------------------------------------------------------------------------------
 

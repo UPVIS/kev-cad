@@ -356,9 +356,12 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
     public var hideOverlays: Bool
     /// Phase 5: Bild durch diese Kamera (`Kamera/<name>`, `source` "camera").
     public var camera: String?
+    /// Prüfung/Analyse (additiv): eigene Blickrichtung, Ziel, Darstellung, Hervorhebung, Schnittkörper; siehe
+    /// AppController+Ansichten.swift und PROTOCOL.md Abschnitt „Prüfung“.
+    public var ansicht: JSONValue? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, width, height, source, view, camera
+        case id, width, height, source, view, camera, ansicht
         case hideOverlays = "hide_overlays"
     }
 
@@ -383,6 +386,7 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
         view = try? c.decodeIfPresent(String.self, forKey: .view)
         hideOverlays = (try? c.decodeIfPresent(Bool.self, forKey: .hideOverlays)) ?? false
         camera = try? c.decodeIfPresent(String.self, forKey: .camera)
+        if let v = try? c.decodeIfPresent(JSONValue.self, forKey: .ansicht), !v.isNull { ansicht = v }
     }
 }
 
@@ -451,9 +455,11 @@ public struct AckMessage: Decodable, Sendable {
     public var replyTo: String?
     public var ok: Bool
     public var message: String?
+    /// Bestand: id der Buchung (ACK auf GEBAUT_REQ).
+    public var buchung: String?
 
     enum CodingKeys: String, CodingKey {
-        case ok, message
+        case ok, message, buchung
         case replyTo = "reply_to"
     }
 
@@ -462,6 +468,7 @@ public struct AckMessage: Decodable, Sendable {
         replyTo = try? c.decodeIfPresent(String.self, forKey: .replyTo)
         ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
         message = try? c.decodeIfPresent(String.self, forKey: .message)
+        buchung = try? c.decodeIfPresent(String.self, forKey: .buchung)
     }
 }
 
@@ -513,6 +520,8 @@ public enum KernelMessage: Sendable {
     case camera(CameraMessage)
     /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
     case check(CheckMessage)
+    /// Bestand des offenen Projekts mit Buchungen (BESTAND.md).
+    case bestand(BestandMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -541,6 +550,7 @@ public enum KernelMessage: Sendable {
         case .animation(let a): return a.typeName
         case .camera(let c): return c.typeName
         case .check: return "CHECK"
+        case .bestand: return "BESTAND"
         case .unknown(let t, _): return t
         }
     }
@@ -555,6 +565,7 @@ public enum KernelMessage: Sendable {
         case .error(let m): return m.replyTo
         case .bom(let m): return m.replyTo
         case .catalog(let m): return m.replyTo
+        case .bestand(let m): return m.replyTo
         case .animation(let m): return m.replyTo
         default: return nil
         }
@@ -592,6 +603,7 @@ public enum KernelMessage: Sendable {
         case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
         case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
+        case "BESTAND": return .bestand(try BestandMessage.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

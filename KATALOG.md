@@ -58,6 +58,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `preis_quelle`, `preis_stand` | wenn Preis | Herkunft, Monat |
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
 | `druckbar` | nein | `true` für Materialien, aus denen 3D-Druckteile entstehen dürfen (PLA, PETG, ABS, ASA, TPU, PA, Harz …) |
+| `nachgiebig` | nein | `true` für weiche Werkstoffe (Schaum, Gummi, TPU, Gurtband): Die Prüfung meldet Überlappungen bis zur halben Dicke nur als „verformt“ (Hinweis) und lässt sie bei der Montage nicht als Hindernis zählen |
 
 ## Lagerteil
 
@@ -88,6 +89,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `stangenlaenge` | nein | Standardlänge für den Zuschnitt (mm); Platten: `platte: [b, h]` statt dessen |
 | `preis` | nein | `je_m` (Stangenware), `je_m2` (Platten), `je_stueck` (Schrauben, Kleinteile) plus `quelle`, `stand` |
 | `tags` | nein | Suchbegriffe |
+| `bezugsquelle` | nein | `{"url", "name"}`: wo Kevin das Teil nachkauft; erscheint als Link in der Einkaufsliste (BESTAND.md) |
 
 ### Arten und ihre Maße
 

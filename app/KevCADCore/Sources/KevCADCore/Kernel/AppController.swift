@@ -368,6 +368,7 @@ public final class AppController: AppActions {
             case .project(let p): applyProject(p)
             case .bom(let b): applyBOM(b)
             case .catalog(let c): applyCatalog(c)
+            case .bestand(let b): applyBestand(b)
             default: break
             }
             return
@@ -493,6 +494,8 @@ public final class AppController: AppActions {
             applyCamera(c)
         case .check(let c):
             applyCheck(c)
+        case .bestand(let b):
+            applyBestand(b)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -543,6 +546,7 @@ public final class AppController: AppActions {
             model.inventarVerstoesse = []
             resetZukauf()
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
+            bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)

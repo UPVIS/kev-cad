@@ -136,6 +136,17 @@ class Koerper:
             self._proj[key] = p
         return p
 
+    def strahl_alle(self, start: np.ndarray, d: np.ndarray) -> list[float]:
+        """Alle Schnittparameter t der Geraden start + t·d mit der Oberfläche, aufsteigend."""
+        from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
+
+        self.strahl(start, d)  # legt den Schnittrechner an
+        it = self._strahl
+        it.Perform(gp_Lin(gp_Pnt(*map(float, start)), gp_Dir(*map(float, d))), -1e12, 1e12)
+        if not it.IsDone():
+            return []
+        return sorted(it.WParameter(i + 1) for i in range(it.NbPnt()))
+
     def strahl(self, start: np.ndarray, d: np.ndarray) -> tuple[float, float] | None:
         """Exakte Schnittpunkte der Geraden start + t·d mit der Oberfläche: (kleinstes t, größtes t) oder None."""
         from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
@@ -178,6 +189,22 @@ class Koerper:
         if not len(self.pos):
             return np.zeros((0, 3))
         return self.pos[self.pos[:, 2] <= z]
+
+    def verschoben(self, v: np.ndarray) -> Koerper:
+        """Kopie, um v verschoben (für zweistufige Ausbauwege): Netz, Hüllquader, Lage und B-Rep wandern mit."""
+        from OCP.gp import gp_Trsf, gp_Vec
+        from OCP.TopLoc import TopLoc_Location
+
+        v = np.asarray(v, dtype=np.float64)
+        tr = gp_Trsf()
+        tr.SetTranslation(gp_Vec(*map(float, v)))
+        lage = self.lage.copy()
+        lage[:3, 3] += v
+        return Koerper(
+            name=self.name, key=f"{self.key}@{np.round(v, 4).tolist()}", shape=self.shape.Moved(TopLoc_Location(tr)),
+            pos=self.pos + v, tri=self.tri, bmin=self.bmin + v, bmax=self.bmax + v, volumen=self.volumen,
+            zentrum=self.zentrum + v, masse_g=self.masse_g, info=self.info, flaechen=self.flaechen, form=self.form,
+            lage=lage)
 
     def zylinder_achsen(self, limit: int = 3) -> list[np.ndarray]:
         """Achsen der größten Zylinderflächen (für Einführrichtungen von Bolzen, Rohren, Bohrungen)."""

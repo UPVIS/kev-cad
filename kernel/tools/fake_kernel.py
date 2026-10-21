@@ -18,6 +18,12 @@ Die App hängt `serve --socket <pfad> --port <port>` an. Ablauf:
   allen drei Ebenen und zwei Vorschlägen von Claude (``status: "vorgeschlagen"``); CATALOG_SAVE und CATALOG_DELETE
   ändern ihn im Speicher und schreiben jede Änderung nach ``<out>/katalog-aenderungen.jsonl``. EXPORT_REQ mit
   ``bom_csv`` schreibt eine echte CSV-Datei. Mit --lager kommt ein Lagerteil (Vierkantrohr aus part_stock.frame) dazu.
+- Mit --bestand (BESTAND.md) führt er den Bestand je Projekt wie der echte Kernel (dieselbe Logik aus
+  kevcad_kernel/bestand): ``<out>/<projekt>/bestand.json`` (beim ersten Öffnen mit dem Beispiel Kugelschieber aus
+  bestand_beispiel.py gefüllt), BESTAND nach dem Verbinden und nach jedem Projektwechsel, die Stückliste des
+  Kugelschiebers mit Zuschnitt aus Resten, Bestand und Kauf (Stangen und Platten), Stückgut und Einkaufsliste;
+  BESTAND_REQ, BESTAND_SAVE (Posten oder Einstellungen), GEBAUT_REQ und BUCHUNG_RUECKGAENGIG antworten mit ACK (bei
+  GEBAUT_REQ mit ``buchung``), danach BESTAND und BOM. EXPORT_REQ kennt ``einkaufsliste_csv``.
 - Mit --demo-view schickt er nach dem Lauf Ansichtsbefehle (VIEW_CMD) und Bildanfragen (SCREENSHOT_REQ) und
   speichert die Bilder der App als PNG (Vorgabe: <repo>/build/fake_kernel/).
 - Phase 3 mit --zukauf: ein verbautes Zukaufteil „Rollwagen (vereinfacht)“ (PART_UPSERT ``zukauf``, erst
@@ -215,7 +221,47 @@ def initial_catalog() -> dict[str, list[dict[str, Any]]]:
     return {"materials": materials, "items": items}
 
 
-ROLLWAGEN_URL = "https://www.beispiel-shop.de/p/alutec-05200"
+class BestandErsatz:
+    """Bestand je Projekt mit der echten Logik (kevcad_kernel.bestand.anbindung), angebunden an den Ersatz-Kernel."""
+
+    def __new__(cls, fk: "FakeKernel"):
+        from types import SimpleNamespace
+
+        from bestand_beispiel import Katalog
+
+        from kevcad_kernel.bestand.anbindung import BestandAnbindung
+
+        class _Ersatz(BestandAnbindung):
+            def __init__(self) -> None:
+                self._lock = threading.RLock()
+                self._project = None
+                self._bom = None
+                self.catalog = Katalog()
+                self._bestand_init()
+
+            def _send_app(self, header: dict[str, Any], payload: bytes = b"") -> bool:
+                fk.send(header, payload)
+                return True
+
+            def _log(self, text: str) -> None:
+                log(text.replace("[kernel] ", ""))
+
+            def projekt(self, path: str) -> None:
+                p = Path(path)
+                self._project = SimpleNamespace(path=p, name=p.name, output_dir=p / "output")
+                p.mkdir(parents=True, exist_ok=True)
+                datei = self._bestand_datei()
+                if datei is not None and not datei.existiert:
+                    from bestand_beispiel import BESTAND
+
+                    datei.schreiben(BESTAND)
+                    log(f"Bestand mit dem Beispiel angelegt: {datei.pfad}")
+                self._bestand_projekt(same=False)
+
+        return _Ersatz()
+
+
+ROLLWAGEN_URL ="https://www.beispiel-shop.de/p/alutec-05200"
 
 
 def zukauf_catalog() -> list[dict[str, Any]]:
@@ -266,6 +312,7 @@ class FakeKernel:
         self.first_connection = True
         self.demo_started = False
         self.req = 0
+        self.bestand = BestandErsatz(self) if getattr(args, "bestand", False) else None
 
     # Senden ---------------------------------------------------------------------------------------------------------
 
@@ -324,6 +371,8 @@ class FakeKernel:
             msg["reply_to"] = reply_to
         self.current.clear()
         self.send(msg)
+        if self.bestand is not None:
+            self.bestand.projekt(str(p))
 
     def start_run(self, slow_ms: int | None = None) -> None:
         if not self.running.acquire(blocking=False):
@@ -366,6 +415,11 @@ class FakeKernel:
                        "parts": len(self.current), "triangles": tri, "warnings": [], "params": {"breite": 120},
                        "inventar_verstoesse": self.violations()})
             self.last_bom = self.bom(run)
+            if self.bestand is not None:
+                from bestand_beispiel import basis_bom
+
+                self.last_bom = self.bestand._bestand_bom(basis_bom(run=run))
+                self.bestand._bom = self.last_bom
             self.send({"type": "BOM", **self.last_bom})
             self.send({"type": "STATUS", "state": "ready", "message": None})
             log(f"Lauf {run} fertig: {len(self.current)} Teile, {tri} Dreiecke")
@@ -449,12 +503,24 @@ class FakeKernel:
             base = Path(self.project["path"]) if self.project else self.out
             files = []
             for f in header.get("formats", []):
-                if f == "bom_csv":
+                if f == "einkaufsliste_csv" and self.bestand is not None and self.bestand._project is not None:
+                    res = self.bestand._bestand_export_csv(self.bestand._project)
+                    if res.get("ok"):
+                        files.append(res["file"])
+                elif f == "bom_csv":
                     files.append(str(self.write_bom_csv(base)))
                 else:
                     files.append(str(base / "output" / f"model.{f}"))
             self.send({"type": "EXPORT_RES", "reply_to": header.get("id"), "files": files})
+        elif t in ("BESTAND_REQ", "BESTAND_SAVE", "GEBAUT_REQ", "BUCHUNG_RUECKGAENGIG"):
+            if self.bestand is None:
+                self.send({"type": "ERROR", "reply_to": header.get("id"),
+                           "message": "Ersatz-Kernel ohne --bestand: kein Bestand"})
+            else:
+                threading.Thread(target=self._bestand_anfrage, args=(header,), daemon=True).start()
         elif t == "BOM_REQ":
+            if self.bestand is not None and self.bestand._bom is not None:
+                self.last_bom = self.bestand._bom
             bom = self.last_bom or self.bom(self.run_no)
             self.send({"type": "BOM", "reply_to": header.get("id"), **bom})
         elif t == "CATALOG_REQ":
@@ -492,6 +558,16 @@ class FakeKernel:
                 ev.set()
         else:
             log(f"Unbekannte Nachricht {t}")
+
+    def _bestand_anfrage(self, header: dict[str, Any]) -> None:
+        assert self.bestand is not None
+        try:
+            self.bestand._bestand_anfrage(header)
+            if self.bestand._bom is not None:
+                self.last_bom = self.bestand._bom
+            log(f"{header.get('type')}: erledigt")
+        except Exception as exc:  # noqa: BLE001
+            self.send({"type": "ERROR", "reply_to": header.get("id"), "message": f"{type(exc).__name__}: {exc}"})
 
     # Phase 2: Stückliste, Katalog ------------------------------------------------------------------------------
 
@@ -759,6 +835,8 @@ class FakeKernel:
                 self.send({"type": "PROJECT", **self.project})
                 for h, p in self.current.values():
                     self.send(h, p)
+            if self.bestand is not None:
+                self.send(self.bestand._bestand_nachricht())
             if self.first_connection:
                 self.first_connection = False
                 self.open_project(str(self.out / "Ersatzprojekt"))
@@ -788,6 +866,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(REPO / "build" / "fake_kernel"), help="Ordner für die Bilder")
     parser.add_argument("--pause", type=float, default=0.35, help="Pause je Schritt eines Laufs in s")
     parser.add_argument("--lager", action="store_true", help="zusätzlich ein Lagerteil (Vierkantrohr) verbauen")
+    parser.add_argument("--bestand", action="store_true",
+                        help="Bestand je Projekt mit dem Beispiel Kugelschieber (BESTAND.md)")
     parser.add_argument("--zukauf", action="store_true", help="Phase 3: Zukaufteil verbauen, ZUKAUF_* beantworten")
     args, rest = parser.parse_known_args(argv)
     extra = [a for a in rest if a != "serve"]

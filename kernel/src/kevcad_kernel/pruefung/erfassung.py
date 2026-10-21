@@ -184,7 +184,7 @@ class Erfassung:
                     "teile": teile, "richtung": [list(r) for r in d.get("richtung") or []],
                     "nach": self._namen(d.get("nach") or [], shown, warnungen, "montage(nach=…)", z),
                     "werkzeug": d.get("werkzeug"), "baugruppe": bool(d.get("baugruppe")),
-                    "schnappt": bool(d.get("schnappt")), "zeile": z})
+                    "schnappt": bool(d.get("schnappt")), "eingedruckt": bool(d.get("eingedruckt")), "zeile": z})
             elif art == "erlaubt":
                 a = self._namen(d.get("a") or [], shown, warnungen, "erlaubt_ueberlappung", z)
                 b = self._namen(d.get("b") or [], shown, warnungen, "erlaubt_ueberlappung", z)

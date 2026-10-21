@@ -96,4 +96,19 @@ extension AppController: PruefActions {
         model.schnittkoerperSichtbar = sichtbar
         updateSchnittkoerper()
     }
+
+    public func zeigeMontageSchritt(_ schritt: Int?) {
+        guard let schritt, let p = model.pruefung else {
+            showAll()
+            return
+        }
+        let alle = p.montageSchritte
+        guard !alle.isEmpty else { return }
+        let k = max(1, min(schritt, alle.count))
+        let bekannt = { (n: String) in self.scene.record(n) != nil }
+        let bisher = alle.prefix(k).flatMap(\.teile).filter(bekannt)
+        isolate(bisher)
+        let aktuell = alle[k - 1].teile.filter(bekannt)
+        if !aktuell.isEmpty { select(aktuell) }
+    }
 }

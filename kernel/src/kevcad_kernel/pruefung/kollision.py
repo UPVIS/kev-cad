@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from kevcad_kernel import gewinde as _gw
-from kevcad_kernel.pruefung.befund import BERUEHR_TOL, TIEFE_MIN, VOLUMEN_MIN
+from kevcad_kernel.pruefung.befund import BERUEHR_TOL, BERUEHRT_TOL, TIEFE_MIN, VOLUMEN_MIN
 from kevcad_kernel.pruefung.koerper import Koerper, form_schluessel, lage_von
 
 
@@ -40,6 +40,15 @@ class Paar:
     @property
     def kontakt(self) -> bool:
         return self.abstand is not None and self.abstand <= BERUEHR_TOL
+
+    @property
+    def art(self) -> str | None:
+        """„durchdringt“, „beruehrt“ (bis 0,05 mm), „spiel“ (Spielpassung bis 0,5 mm) oder None (weiter weg)."""
+        if self.durchdringt:
+            return "durchdringt"
+        if not self.kontakt:
+            return None
+        return "beruehrt" if (self.abstand or 0.0) <= BERUEHRT_TOL else "spiel"
 
     @property
     def durchdringt(self) -> bool:
