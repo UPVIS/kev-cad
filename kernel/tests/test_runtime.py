@@ -394,6 +394,8 @@ def test_reconnect_gets_snapshot(env):
     assert rt.run()["ok"]
     rt.set_agent_connected(True)
     rt.set_agent_activity("misst Abstand Lasche ↔ Grundplatte")
+    sessions = [{"session_id": "s-1", "aktiv": True, "seit": "2026-10-21T21:50:00Z", "taetigkeit": "misst"}]
+    rt.set_agent_sessions(sessions)
     second = FakeApp(env["sock"])  # ersetzt die erste Verbindung
     try:
         second.wait_for(lambda h: h["type"] == "AGENT")
@@ -402,6 +404,7 @@ def test_reconnect_gets_snapshot(env):
         assert [h["name"] for h in second.since(0) if h["type"] == "PART_UPSERT"] == ["A", "B"]
         agent = [h for h in second.since(0) if h["type"] == "AGENT"][-1]
         assert agent["connected"] is True and agent["activity"].startswith("misst")
+        assert agent["sessions"] == sessions
         deadline = time.monotonic() + 5
         while not env["app"].closed and time.monotonic() < deadline:
             time.sleep(0.02)
@@ -409,7 +412,8 @@ def test_reconnect_gets_snapshot(env):
     finally:
         rt.set_agent_connected(False)
     env["app"] = second  # folgende Tests benutzen die neue Verbindung
-    second.wait_for(lambda h: h["type"] == "AGENT" and h["connected"] is False)
+    _, _, gone, _ = second.wait_for(lambda h: h["type"] == "AGENT" and h["connected"] is False)
+    assert gone["sessions"] == []
 
 
 def test_auto_run_on_save(env):
