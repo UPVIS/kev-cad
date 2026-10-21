@@ -86,6 +86,25 @@ stock catalog. Then `cad_suchen(id)`: with TraceParts the STEP comes automatical
 from the returned links and call `cad_uebernehmen(id)` (newest file in ~/Downloads, ZIP too). `zukauf_liste` shows \
 all purchased parts.
 
+Constraints (Bedingungen, always)
+- Place parts like in a CAD assembly, never with hand-picked coordinates: \
+`from kevcad.bedingungen import *`, then `teil = platziere(teil, auf((teil, "unten"), (tisch, "oben")), \
+konzentrisch((teil, "bohrung", {"nahe": (x, y, z)}), (welle, "achse")))`. References are named \
+(`bezug(teil, "oben" | "unten" | "links" | "rechts" | "vorn" | "hinten" | "achse" | "bohrung" | "mitte", nahe=...)` \
+or a build123d selection, never face numbers); the first reference belongs to the part that adapts. Also: buendig, \
+parallel, senkrecht, abstand, winkel, tangential, mittig, in_bohrung(schraube, bohrung) (concentric, head seated, \
+diameter and length checked), joints drehgelenk / schiebegelenk / zylindergelenk / kugelgelenk / fest, dimension \
+constraints param(name, value, min=, max=), gleich, spiel, min_abstand, min_wand.
+- Every part is fastened (B9): `verbinde(a, b, art="schraube"|"klemmung"|"steck"|"formschluss"|"kleben"|"aufliegen", \
+mit=[screw, nut])`; the check verifies the connection physically exists (contact or clearance ≤ 0.5 mm, aligned holes \
+in both parts, head and nut seated) and that every part hangs on the floor through connections.
+- Every joint with a range (`bereich=(min, max)`) is checked over its whole travel on every run (B8): collisions with \
+all non-moving parts, finger or tool clearance with `bedienung="finger"`; findings name the blocking part and the free \
+range. Redesign when the free range is too small for operation, do not shrink the range.
+- `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
+travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
+constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
+
 Cameras (film set simulation)
 - Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \
 `fx6 = lager.kamera("sony-fx6", objektiv="<lens id>", format="ff-uhd", brennweite=..., blende=..., fokus=..., \
@@ -100,7 +119,7 @@ through the camera, `kamera_bild(name, breite)` saves a PNG in output/kameras/ a
 bild_zeigen only when needed), `kamera_vorschlag_aus_ansicht` turns Kevin's current view into a setzen(...) line.
 
 References
-- "Halter/Lasche" (part), "Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
+- "Halter/Lasche" (part),"Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
 part.faces()/edges()/vertices(). They are valid for one run only: after every run get fresh ones from \
 parts, selection or execute.
 - `selection` returns what Kevin clicked in the viewer. Use it when he says "this", "here", "that hole".

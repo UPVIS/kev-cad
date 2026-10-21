@@ -309,6 +309,10 @@ def main() -> None:
     for name, data in frames + frames3:
         (ZIEL / f"{name}.frame").write_bytes(data)
     (ZIEL / "stream.bin").write_bytes(b"".join(d for _, d in frames))
+    # Zwangsbedingungen (PROTOCOL.md, Abschnitt Zwangsbedingungen): eigene Datei, nicht im Strom
+    from kevcad_kernel.protocol import constraints_example
+
+    (ZIEL / "constraints.frame").write_bytes(encode_frame({**constraints_example(), "seq": 17}))
     (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
     print(f"{len(frames)} Rahmen nach {ZIEL}")
     import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich

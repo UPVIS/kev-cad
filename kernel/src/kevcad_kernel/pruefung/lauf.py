@@ -18,8 +18,8 @@ from kevcad_kernel.pruefung.koerper import Koerper, koerper_aus_topo
 from kevcad_kernel.pruefung.kollision import PaarCache
 from kevcad_kernel.pruefung.pruefer import Abgebrochen, pruefe
 
-# Prüfungen, die nach jedem Lauf laufen (None = alle registrierten)
-AKTIV: tuple[str, ...] | None = ("erklaerungen", "durchdringung")
+# Prüfungen, die nach jedem Lauf laufen (None = alle registrierten); „bedingungen“ aus bedingungen/anbindung.py
+AKTIV: tuple[str, ...] | None = ("erklaerungen", "durchdringung", "bedingungen")
 
 
 class PruefLauf:

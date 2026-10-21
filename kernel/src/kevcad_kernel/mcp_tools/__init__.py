@@ -37,6 +37,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "cad_suchen",
     "cad_uebernehmen",
     "zukauf_liste",
+    "bedingungen",
     # Phase 5: Animation
     "animation_liste",
     "animation_abspielen",

@@ -15,6 +15,7 @@ struct InspectorView: View {
             propertiesSection
             stockSection
             ZukaufInspectorSection(model: model)
+            ConstraintsSection(model: model)
             measurementsSection
             projectSection
         }
