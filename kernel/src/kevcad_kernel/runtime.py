@@ -41,6 +41,7 @@ from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
+from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
@@ -88,9 +89,9 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, ZeichnungRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
-    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``)."""
+    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Phase 6: Zeichnungen (``ZeichnungRuntimeMixin``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -128,6 +129,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
         self._ids = itertools.count(1)
         self._annotations = itertools.count(1)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
+        self._zeichnung_init()  # Phase 6: Zeichnungen
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
@@ -629,6 +631,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
                 self._anim_project_changed()
                 self.cameras_clear(run)
+                self._zeichnung_projekt()
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -836,6 +839,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             self._anim_publish(job, result)
+            self._zeichnung_nach_lauf(job.run)  # Phase 6: Blätter neu rechnen, danach DOCS
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -1027,6 +1031,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
+            self._zeichnung_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -1132,6 +1137,8 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
                       "CATALOG_SAVE", "CATALOG_DELETE"):
             self._pool.submit(self._handle_app_request, header)
         elif self._anim_app_message(kind, header):
+            pass
+        elif self._zeichnung_app_message(kind, header):
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
