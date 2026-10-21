@@ -260,5 +260,17 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.zukauf(...).verbauen(...)` sta
 | `DOWNLOAD_SEEN` | `pfad`, `groesse`, `zeit` – neue Datei in `~/Downloads` mit passender Endung, solange ein Zukaufteil `wartet_auf_cad` ist | – |
 | `ZUKAUF_CAD` | `id` (Anfrage), `teil` (Zukaufteil-id), `pfad` – Kevin hat bestätigt: diese Datei ist das CAD | `ACK`, danach `ZUKAUF_STATUS` |
 
+Festlegungen (21.10.2026):
+
+- `DOWNLOAD_SEEN`: `pfad` absolut, `groesse` in Byte (Ganzzahl), `zeit` ISO 8601 mit Zeitzone
+  (`2026-10-21T21:14:03+02:00`). Die App schickt es einmal je neuer, vollständiger Datei (Größe 0,8 s stabil), noch vor
+  der Rückfrage an Kevin.
+- `ZUKAUF_STATUS` kommt unaufgefordert (ohne `reply_to`). Nach dem Verbinden schickt der Kernel für jedes Zukaufteil,
+  das noch `wartet_auf_cad` ist, ein `ZUKAUF_STATUS` (wie `PART_UPSERT`), damit die Downloads-Beobachtung nach einem
+  Neustart weiterläuft. Optional `name` (Anzeigename des Teils).
+- `ZUKAUF_NEU.felder` ist ein vollständiger Katalogeintrag laut KATALOG.md (`id`, `art: "zukaufteil"`,
+  `status: "frei"`, `ersatz` aus den Maßen).
+- `BOM.lines[].stock_id` ist bei Zukaufteilen die Zukaufteil-id.
+
 Kev CAD lädt Shop-Seiten nie selbst (PLAN-PHASE3-ZUKAUF.md, Z1): Daten kommen von Claude über MCP oder aus Kevins
 Eingabe im Dialog. CAD-Dateien kommen über die TraceParts-API (mit Kevins Schlüssel) oder aus `~/Downloads`.
