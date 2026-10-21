@@ -324,5 +324,6 @@ def test_pruefung_mit_zukaufteil(env):
     erlaubt = 'erlaubt_ueberlappung("Nudel", "Klemme", grund="Test: Klemme sitzt auf Schaum")\n'
     assert rt.model_write(code + erlaubt)["ok"]
     res2 = rt.run()
-    assert res2["ok"] and res2["pruefung"]["befunde"] == [], res2["pruefung"]["befunde"]
+    # die erlaubte Überlappung zählt nicht mehr; Standsicherheit und Annahmen der Stufe 2 betreffen das Testmodell
+    assert res2["ok"] and not [b for b in res2["pruefung"]["befunde"] if b["art"] == "durchdringung" or b["schwere"] == "fehler"], res2["pruefung"]["befunde"]
     assert len(res2["pruefung"]["erlaubt"]) == 1

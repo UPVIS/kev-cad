@@ -82,7 +82,7 @@ def test_registriert_nach_durchdringung():
     assert "druck" in namen and namen.index("druck") > namen.index("durchdringung")
     from kevcad_kernel.pruefung import lauf
 
-    assert "druck" in lauf.AKTIV
+    assert lauf.AKTIV is None or "druck" in lauf.AKTIV  # None: alle registrierten Prüfer laufen
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -115,7 +115,8 @@ show(lager.teil("platte", s=18, material="multiplex-birke").verbauen(breite=100,
     # wie modelliert quer gelegt: waagrechte Bohrung und Auskragung sind Warnungen, kein Fehler
     arten_quer = {b["art"]: b["schwere"] for b in druck(check, "Halter/Quer")}
     assert arten_quer.get("druck_waagrechte_bohrung") == "warnung" and arten_quer.get("druck_kragarm") == "warnung"
-    assert not offen(check["befunde"])
+    # nur die Druckprüfung zählt hier; Schweben und Kippen des frei stehenden Testmodells meldet die Prüfung Stufe 2
+    assert not offen([b for b in check["befunde"] if b["art"].startswith("druck_")])
     # Punkte in Weltkoordinaten (Pos(1000, …) im Modell)
     orte = [b["ort"] for b in druck(check, "Halter/Winkel") if b["ort"]]
     assert orte and all(990 <= o[0] <= 1045 for o in orte)
@@ -125,7 +126,8 @@ show(lager.teil("platte", s=18, material="multiplex-birke").verbauen(breite=100,
     assert pr["druck"]["festigkeit"]["petg"].startswith("Festigkeit:")
     assert all(b["schwere"] != "hinweis" for b in pr["befunde"] if b["wert"].get("pruefung") == "druck")
     assert pr["druck"]["hinweise_nur_in_druckpruefung"] == sum(1 for b in alle if b["schwere"] == "hinweis") > 0
-    text, _, failed = run_summary({"ok": True, "run": 1, "parts": [], "pruefung": pr})
+    nur_druck = {**pr, "befunde": [b for b in pr["befunde"] if b["art"].startswith("druck_")]}  # Stufe 2 ausblenden
+    text, _, failed = run_summary({"ok": True, "run": 1, "parts": [], "pruefung": nur_druck})
     assert not failed and "Druckprüfung (Bambu Lab P1P): 2 Druckteile, 0 Fehler" in text
     assert "- Ausrichtung Halter/Quer: −Z-Seite unten (vorgegeben: -z)." in text
     json.dumps(check, allow_nan=False)
@@ -141,7 +143,7 @@ show(Pos(600, 0, 0) * lager.druckteil(Box(20, 20, 5) - Cylinder(0.4, 10), "Clip 
 show(Pos(700, 0, 0) * lager.druckteil(Box(20, 20, 5), "Clip ASA", material="asa"), "Clip ASA")
 """
     _, check, _ = laufe(tmp_path, code)
-    fehler = {(b["teile"][0], b["art"]) for b in offen(check["befunde"])}
+    fehler = {(b["teile"][0], b["art"]) for b in offen(check["befunde"]) if b["art"].startswith("druck_")}
     assert fehler == {("Platte gross", "druck_bauraum"), ("Clip CF", "druck_material"), ("Clip Harz", "druck_material")}
     bau = next(b for b in druck(check, "Platte gross") if b["art"] == "druck_bauraum")
     assert "passt nicht in den Bauraum" in bau["text"] and bau["loesung"].startswith("Teilen")
