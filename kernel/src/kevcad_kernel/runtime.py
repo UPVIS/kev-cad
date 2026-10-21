@@ -33,11 +33,12 @@ from typing import Any
 import kevcad_kernel
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
-from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
+from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
+from kevcad_kernel.zukauf.dienst import ZukaufDienst
 
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
@@ -112,6 +113,7 @@ class KernelRuntime:
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
         self.catalog = Catalog(own=own_dir(socket_path))
+        self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
         self._state: tuple[str, str] = ("busy", "Rechenprozess startet")
@@ -380,8 +382,8 @@ class KernelRuntime:
         return {"ok": True, **bom}
 
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
-        if art is not None and art not in ARTEN:
-            return {"ok": False, "error": f"art {art!r} unbekannt (erlaubt: {', '.join(ARTEN)})"}
+        if art is not None and art not in ALLE_ARTEN:
+            return {"ok": False, "error": f"art {art!r} unbekannt (erlaubt: {', '.join(ALLE_ARTEN)})"}
         try:
             items, total = self.catalog.search(query or "", art=art or None, limit=max(1, int(limit or 30)))
         except Exception as exc:  # noqa: BLE001
@@ -444,7 +446,28 @@ class KernelRuntime:
             items, _ = self.catalog.search(query or "", art=art or None, limit=None)
         else:
             items = self.catalog.items()
-        return {"materials": self.catalog.materials(), "items": items, "arten": list(ARTEN)}
+        return {"materials": self.catalog.materials(), "items": items, "arten": list(ALLE_ARTEN)}
+
+    # =================================================================================================================
+    # KernelService: Phase 3 (Zukaufteile, kevcad_kernel.zukauf.dienst)
+    # =================================================================================================================
+
+    def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
+                       felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
+        return self.zukauf.anlegen(url=url, mpn=mpn, gtin=gtin, felder=felder, ebene=ebene, proposal=True)
+
+    def zukauf_html(self, url: str | None, html: str, anlegen: bool = False, ebene: str = "projekt") -> dict[str, Any]:
+        return self.zukauf.html(url, html, anlegen=anlegen, ebene=ebene)
+
+    def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
+        return self.zukauf.suchen(zukauf_id)
+
+    def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
+                        erzwingen: bool = False) -> dict[str, Any]:
+        return self.zukauf.uebernehmen(zukauf_id, pfad, minuten=minuten, erzwingen=erzwingen)
+
+    def zukauf_liste(self, query: str = "") -> dict[str, Any]:
+        return self.zukauf.liste(query)
 
     def _values(self, item: dict[str, Any]) -> dict[str, Any]:
         """Berechnete Werte eines Lagerteils: kg_je_m, querschnitt_mm2, preis_je_m, preis_text."""
@@ -575,6 +598,8 @@ class KernelRuntime:
             if reply_to:
                 msg["reply_to"] = reply_to
             self._send_app(msg)
+            for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
+                self._send_app(status)
         if self._settings.get("auto_run") and (not same or self._last_result is None):
             self._submit_run(None, int(self._settings.get("slow_ms") or 0), self.run_timeout_s, source="auto")
 
@@ -922,6 +947,8 @@ class KernelRuntime:
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
             conn.send({"type": "AGENT", **agent})
+            for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
+                conn.send(status)
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
 
@@ -1020,8 +1047,10 @@ class KernelRuntime:
             with self._lock:
                 bom = self._bom or {"run": 0, **empty_bom()}
             self._send_app({"type": "BOM", "reply_to": header.get("id"), **bom})
+        elif kind == "DOWNLOAD_SEEN":
+            self.zukauf.app_download_seen(header)
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
-                      "CATALOG_SAVE", "CATALOG_DELETE"):
+                      "CATALOG_SAVE", "CATALOG_DELETE", "ZUKAUF_NEU", "ZUKAUF_CAD"):
             self._pool.submit(self._handle_app_request, header)
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
@@ -1060,9 +1089,21 @@ class KernelRuntime:
                     self._send_app({"type": "EXPORT_RES", "reply_to": rid, "files": res["files"]})
                 else:
                     self._send_app({"type": "ERROR", "reply_to": rid, "message": res.get("error", "Export fehlgeschlagen")})
+            elif kind == "ZUKAUF_NEU":  # Kevin hat im Dialog bestätigt: sofort frei; ACK, danach ZUKAUF_STATUS
+                self.zukauf.app_neu(header, lambda ok, message: self._send_app(
+                    {"type": "ACK", "reply_to": rid, "ok": ok, "message": message}))
+            elif kind == "ZUKAUF_CAD":
+                teil = str(header.get("teil") or "")
+                entry = self.catalog.item(teil)
+                if entry is None or entry.get("art") not in ZUKAUF_ARTEN:
+                    self._send_app({"type": "ACK", "reply_to": rid, "ok": False,
+                                    "message": f"Zukaufteil {teil!r} gibt es nicht"})
+                else:
+                    self._send_app({"type": "ACK", "reply_to": rid, "ok": True, "message": "CAD wird übernommen"})
+                    self.zukauf.app_cad(header)
             elif kind == "CATALOG_REQ":
                 art = header.get("art") or None
-                if art is not None and art not in ARTEN:
+                if art is not None and art not in ALLE_ARTEN:
                     self._send_app({"type": "ERROR", "reply_to": rid, "message": f"art {art!r} unbekannt"})
                 else:
                     self._send_app({"type": "CATALOG", "reply_to": rid,
@@ -1190,6 +1231,9 @@ class KernelRuntime:
 def _usage_example(item: dict[str, Any]) -> str:
     """Aufruf für model.py zu einem Lagerteil."""
     art = item.get("art")
+    if art in ZUKAUF_ARTEN:
+        return (f"teil = lager.zukauf({item['id']!r})\nstueck = teil.verbauen(\"{item.get('name') or 'Teil'}\")\n"
+                f"show(stueck, \"{item.get('name') or 'Teil'}\")")
     head = f"teil = lager.teil({item['id']!r})\n"
     if art in STANGENWARE:
         return head + 'stueck = teil.verbauen(laenge=800, name="Gruppe/Teil", gehrung=(0, 0))\nshow(stueck, "Gruppe/Teil")'

@@ -35,7 +35,7 @@ Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
-                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe"]
+                   "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil"]
 Ebene = Literal["eigen", "projekt"]
 
 VIEW_NAMES = {
@@ -611,8 +611,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
 
     @tool("stock_search", "Lagerteile suchen",
           "Search Kevin's stock catalog (tubes, profiles, flat/round bar, angles, aluminium extrusions, timber, sheets, "
-          "screws, nuts, washers) by text and dimensions, e.g. 'vierkantrohr 40x40x3', 'edelstahl rohr 33,7', "
-          "'multiplex 18', 'm8'. Use the returned id in model.py: lager.teil(id).verbauen(...). art filters by kind.",
+          "screws, nuts, washers, released purchased parts) by text and dimensions, e.g. 'vierkantrohr 40x40x3', "
+          "'edelstahl rohr 33,7', 'multiplex 18', 'm8', 'alutec 05200'. Use the returned id in model.py: "
+          "lager.teil(id).verbauen(...), purchased parts (art zukaufteil) with lager.zukauf(id). art filters by kind.",
           READ_ONLY)
     async def stock_search(
         query: Annotated[str, Field(description="Words and dimensions, e.g. 'rohr 42,4x2' or '40x40'")] = "",
@@ -636,6 +637,8 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             f", die ersten {len(items)}:" if total > len(items) else ":")
         text = head + "\n" + fmt.stock_table(items)
         text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit stock_get."
+        if any(it.get("art") == "zukaufteil" for it in items):
+            text += " Zukaufteile (art zukaufteil): lager.zukauf(\"<id>\").verbauen(\"Name\")."
         return fmt.result(text, res)
 
     @tool("stock_get", "Lagerteil",
@@ -752,4 +755,9 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    # ------------------------------------------------------------------------------------- Zukaufteile (Phase 3)
+
+    from .zukauf_tools import register_zukauf_tools
+
+    register_zukauf_tools(tool, t, svc)
     return t

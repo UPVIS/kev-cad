@@ -32,6 +32,11 @@ TOOL_NAMES: tuple[str, ...] = (
     "material_define",
     "catalog_delete",
     "bom",
+    "zukauf_anlegen",
+    "zukauf_html",
+    "cad_suchen",
+    "cad_uebernehmen",
+    "zukauf_liste",
 )
 
 __all__ = ["INSTRUCTIONS", "SERVER_NAME", "SERVER_TITLE", "TOOL_NAMES", "KevcadTools", "register_tools"]

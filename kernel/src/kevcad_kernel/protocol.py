@@ -149,3 +149,25 @@ def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]
     if offset != len(payload):
         raise ValueError(f"Nutzlast hat {len(payload)} Byte, erwartet {offset}")
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 3: Zukaufteile (PROTOCOL.md, Abschnitt „Phase 3“)
+
+ZUKAUF_ZUSTAENDE: tuple[str, ...] = ("angelegt", "wartet_auf_cad", "importiert", "fehler")
+
+
+def zukauf_status(teil_id: str, zustand: str, text: str, *, cad_links: list[dict[str, str]] | None = None,
+                  erwartet: list[str] | None = None, name: str | None = None) -> dict[str, Any]:
+    """Kopf einer ``ZUKAUF_STATUS``-Nachricht (Kernel → App, unaufgefordert, ohne ``reply_to``). ``cad_links`` und
+    ``erwartet`` nur bei ``wartet_auf_cad`` gefüllt; ``name`` ist der Anzeigename des Teils."""
+    if zustand not in ZUKAUF_ZUSTAENDE:
+        raise ValueError(f"zustand {zustand!r} unbekannt (erlaubt: {', '.join(ZUKAUF_ZUSTAENDE)})")
+    wartet = zustand == "wartet_auf_cad"
+    msg: dict[str, Any] = {"type": "ZUKAUF_STATUS", "id": teil_id, "zustand": zustand, "text": text,
+                           "cad_links": [{"titel": str(c["titel"]), "url": str(c["url"])} for c in (cad_links or [])]
+                           if wartet else [],
+                           "erwartet": list(erwartet or []) if wartet else []}
+    if name:
+        msg["name"] = name
+    return msg

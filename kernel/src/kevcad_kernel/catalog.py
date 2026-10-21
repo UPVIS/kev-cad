@@ -30,6 +30,10 @@ ARTEN: tuple[str, ...] = (
     "platte", "schraube", "mutter", "scheibe",
 )
 STANGENWARE = frozenset(ARTEN[:10])
+# Zukaufteile (Phase 3, kevcad_kernel.zukauf): eigene Felder statt Querschnitt und Material; Kameras, Objektive und
+# Kamera-Zubehör kommen als weitere Sonderformen dazu
+ZUKAUF_ARTEN: tuple[str, ...] = ("zukaufteil",)
+ALLE_ARTEN: tuple[str, ...] = ARTEN + ZUKAUF_ARTEN
 KLEINTEILE = frozenset({"schraube", "mutter", "scheibe"})
 EBENEN: tuple[str, ...] = ("mitgeliefert", "eigen", "projekt")
 WRITABLE = ("eigen", "projekt")
@@ -40,7 +44,7 @@ ART_NAMEN = {
     "rohr": "Rohr", "vierkantrohr": "Vierkantrohr", "rechteckrohr": "Rechteckrohr", "flach": "Flachstahl",
     "rund": "Rundstahl", "vierkant": "Vierkantstahl", "winkel": "Winkel", "u_profil": "U-Profil",
     "nutprofil": "Nutprofil", "holz": "Holz", "platte": "Platte", "schraube": "Schraube", "mutter": "Mutter",
-    "scheibe": "Scheibe",
+    "scheibe": "Scheibe", "zukaufteil": "Zukaufteil",
 }
 
 # Zusätzliche Suchwörter je Art (klein, ohne Umlaute)
@@ -232,6 +236,10 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
     ``deep``: Schrauben, Muttern und Scheiben gegen bd_warehouse prüfen (lädt build123d)."""
     if not isinstance(entry, dict):
         return ["Lagerteil muss ein JSON-Objekt sein"]
+    if entry.get("art") in ZUKAUF_ARTEN:
+        from kevcad_kernel.zukauf.eintrag import validate_zukauf
+
+        return validate_zukauf(entry, material_ids)
     errors = _check_id(entry, "Lagerteil")
     who = f"Lagerteil {entry.get('id')!r}" if isinstance(entry.get("id"), str) else "Lagerteil"
     art = entry.get("art")
@@ -450,6 +458,7 @@ def _haystack(entry: dict[str, Any], material: dict[str, Any] | None) -> str:
     bits = [entry.get("id", ""), entry.get("name", ""), entry.get("norm") or "", entry.get("art", ""),
             ART_NAMEN.get(entry.get("art", ""), ""), ART_SYNONYME.get(entry.get("art", ""), ""),
             " ".join(entry.get("tags") or []), str(entry.get("material", ""))]
+    bits += [str(entry.get(k) or "") for k in ("hersteller", "mpn", "gtin", "shop_nr")]  # Zukaufteile
     masse = entry.get("masse") or {}
     for key in TEXT_MASSE:
         if masse.get(key):
@@ -685,7 +694,8 @@ class Catalog:
                     source[(kind, eid)] = (ebene, path)
         mids = set(materials)
         for eid, it in items.items():
-            if it.get("material") not in mids:
+            optional = it.get("art") in ZUKAUF_ARTEN and it.get("material") is None  # Zukaufteile ohne Material
+            if it.get("material") not in mids and not optional:
                 warnings.append(f"Lagerteil {eid!r}: Material {it.get('material')!r} fehlt im Katalog")
         aliases: dict[str, str] = {}
         for mid, mat in materials.items():

@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn>=0.30",
     "numpy>=2",
     "bd-warehouse>=0.4,<0.5",
+    "extruct>=0.18",
 ]
 
 [project.scripts]
