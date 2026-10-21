@@ -136,6 +136,80 @@ def pack_part(
     return header, payload
 
 
+CONSTRAINT_ITEM_FIELDS = ("id", "art", "gruppe", "symbol", "text", "teile", "stand", "soll", "ist", "abweichung",
+                          "einheit", "punkte", "zeile", "datei", "loesung")
+CONSTRAINT_FINDING_FIELDS = ("art", "pruefung", "teile", "schwere", "text", "soll", "ist", "wert", "einheit", "ort",
+                             "loesung", "bedingung", "unterart", "zeile")
+
+
+def constraints_example(run: int = 3) -> dict[str, Any]:
+    """Beispiel der Nachricht CONSTRAINTS (PROTOCOL.md, Abschnitt Zwangsbedingungen); Grundlage der Testdatei."""
+    return {
+        "type": "CONSTRAINTS", "run": run,
+        "items": [
+            {"id": "b1", "art": "auf", "gruppe": "montage", "symbol": "auf",
+             "text": "Rollwagen/Rahmen.unten auf Rollwagen/Lenkrolle 1/Gabel.oben",
+             "teile": ["Rollwagen/Rahmen", "Rollwagen/Lenkrolle 1/Gabel"], "stand": "erfuellt",
+             "soll": "Abstand 0 mm, Flächen gegenüber", "ist": "Abstand 0 mm", "abweichung": 0.0, "einheit": "mm",
+             "punkte": [[255.0, -335.0, 120.0], [255.0, -335.0, 120.0]], "zeile": 57, "datei": "model.py",
+             "loesung": None},
+            {"id": "b2", "art": "in_bohrung", "gruppe": "montage", "symbol": "in_bohrung",
+             "text": "Schraube in Platte.Bohrung Ø6", "teile": ["Schraube", "Platte"], "stand": "verletzt",
+             "schwere": "fehler", "soll": "Durchgang ≥ Ø 8 mm für M8 (mittel Ø 9 mm)", "ist": "Ø 6 mm",
+             "abweichung": -2.0, "einheit": "mm", "punkte": [[10.0, 0.0, 10.0], [10.0, 0.0, 5.0]], "zeile": 61,
+             "datei": "model.py", "loesung": "Bohrung auf Ø 9 mm vergrößern (ISO 273 mittel) oder kleinere Schraube (M5)",
+             "schraube": {"d": 8.0, "laenge": 30.0}, "gewinde": False},
+            {"id": "b3", "art": "drehgelenk", "gruppe": "gelenk", "symbol": "drehgelenk",
+             "text": "Klappe.Bohrung Ø6,4 dreht um Achse.achse", "teile": ["Klappe", "Achse"], "stand": "erfuellt",
+             "soll": "Achsen deckungsgleich, Winkel 0°", "ist": "Versatz 0 mm", "abweichung": 0.0, "einheit": "mm",
+             "punkte": [[-50.0, 0.0, 15.0]], "zeile": 70, "datei": "model.py", "loesung": None,
+             "gelenk": "revolute", "wert": 0.0, "wert_einheit": "°", "bereich": [-60.0, 90.0],
+             "achse": {"p": [-50.0, 0.0, 15.0], "d": [0.0, -1.0, 0.0]}, "anim_art": "dreh"},
+            {"id": "p:wand", "art": "param", "gruppe": "mass", "symbol": "param", "text": "Parameter wand", "teile": [],
+             "stand": "verletzt", "schwere": "fehler", "soll": "≥ 1,2", "ist": "0,8", "abweichung": -0.4, "einheit": "",
+             "punkte": [], "zeile": 5, "datei": "model.py", "loesung": "wand mindestens 1,2 wählen (Grenze in Zeile 5)"},
+        ],
+        "teile": [
+            {"name": "Rollwagen/Rahmen", "platziert": True, "frei": 0, "stand": "bestimmt", "bedingungen": ["b1"],
+             "freiheitsgrade": [], "gelenke": [], "befestigt": True, "am_boden": True, "verbindungen": ["aufliegen"]},
+            {"name": "Klappe", "platziert": True, "frei": 1, "stand": "unterbestimmt", "bedingungen": ["b3"],
+             "freiheitsgrade": [{"art": "drehung", "richtung": [0.0, 1.0, 0.0], "punkt": [-50.0, 0.0, 15.0],
+                                 "text": "Drehung um Y durch (−50; 0; 15)", "gelenk": True, "unkritisch": False},
+                                {"art": "verschiebung", "richtung": [1.0, 0.0, 0.0], "text": "Verschiebung entlang X",
+                                 "gelenk": False, "unkritisch": False}],
+             "gelenke": ["Drehung um Y durch (−50; 0; 15)"], "befestigt": True, "am_boden": False,
+             "verbindungen": ["drehgelenk"], "verletzt": 0},
+        ],
+        "bewegungen": [
+            {"name": "drehgelenk Klappe", "art": "drehen", "quelle": "gelenk", "bedingung": "b3", "teile": ["Klappe"],
+             "punkt": [-50.0, 0.0, 15.0], "richtung": [0.0, -1.0, 0.0], "von": -60.0, "bis": 90.0, "ist": 0.0,
+             "schritte": 15, "frei": [[-10.0, 40.0]], "frei_um_ist": [-10.0, 40.0], "freiraum": 15.0,
+             "kollisionen": [{"gegen": "Rahmen", "bewegt": "Klappe", "bereiche": [[-60.0, -20.0], [50.0, 60.0]],
+                              "max_volumen": 841.7, "bei": -40.0, "ort": [-26.6, 0.0, 6.5], "schon_in_ruhe": False}],
+             "eng": [], "geprueft_ms": 110.5, "teilweise": False},
+        ],
+        "befunde": [
+            {"art": "bedingung", "pruefung": "bedingung", "teile": ["Schraube", "Platte"], "schwere": "fehler",
+             "text": "Schraube in Platte.Bohrung Ø6: Ø 6 mm", "soll": "Durchgang ≥ Ø 8 mm für M8 (mittel Ø 9 mm)",
+             "ist": "Ø 6 mm", "wert": -2.0, "einheit": "mm", "ort": [10.0, 0.0, 5.0],
+             "loesung": "Bohrung auf Ø 9 mm vergrößern (ISO 273 mittel) oder kleinere Schraube (M5)",
+             "bedingung": "b2", "unterart": "in_bohrung", "zeile": 61},
+            {"art": "bedingung", "pruefung": "bewegungsraum", "teile": ["Klappe", "Rahmen"], "schwere": "fehler",
+             "text": "drehgelenk Klappe: stößt bei -60° … -20°, 50° … 60° an Rahmen; frei -10° … 40°",
+             "soll": "frei von -60° bis 90°", "ist": "Kollision bei -60° … -20°, 50° … 60°, frei -10° … 40°",
+             "wert": 841.7, "einheit": "mm³", "ort": [-26.6, 0.0, 6.5], "loesung": "Platz schaffen: …",
+             "bedingung": "b3", "unterart": "drehen", "zeile": 70},
+            {"art": "bedingung", "pruefung": "freiheitsgrade", "teile": ["Klappe"], "schwere": "hinweis",
+             "text": "Klappe ist unterbestimmt: 1 Freiheitsgrad frei (Verschiebung entlang X)", "soll": "",
+             "ist": "1 frei", "wert": 1.0, "einheit": "", "ort": None, "loesung": "Lage entlang X festlegen",
+             "bedingung": None, "unterart": None, "zeile": 70},
+        ],
+        "summe": {"gesamt": 4, "erfuellt": 2, "verletzt": 2, "ungeprueft": 0, "fehler": 3, "warnungen": 0,
+                  "hinweise": 1, "bewegungen": 1},
+        "pruef_ms": 14.2, "loese_ms": 3.1,
+    }
+
+
 def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]:
     """Gegenstück zu pack_part (für Tests und Werkzeuge)."""
     counts = header["counts"]

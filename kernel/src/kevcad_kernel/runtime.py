@@ -111,6 +111,7 @@ class KernelRuntime:
         self._last_result: dict[str, Any] | None = None
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
+        self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
         self.catalog = Catalog(own=own_dir(socket_path))
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
@@ -154,6 +155,7 @@ class KernelRuntime:
                 "agent": dict(self._agent),
                 "inventar": {"regel": self._project.inventar_regel if self._project else True,
                              "verstoesse": list(self._violations)},
+                "bedingungen": dict((self._constraints or {}).get("summe") or {}),
             }
 
     def project_open(self, path: str, reply_to: str | None = None) -> dict[str, Any]:
@@ -310,10 +312,20 @@ class KernelRuntime:
         formats = [str(f) for f in (formats or [])]
         with self._lock:
             violations = list(self._violations)
+            constraints = self._constraints
         locked = [f for f in formats if f.lower().lstrip(".") in ("step", "stp", "stl", "3mf", "bom_csv", "csv")]
         if violations and locked:
             return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
                     "inventar_verstoesse": violations}
+        from kevcad_kernel.bedingungen import exportsperre
+
+        sperre = exportsperre(constraints)
+        if sperre and locked:  # verletzte Bedingungen sperren den Export wie Durchdringungen (B6)
+            from kevcad_kernel.bedingungen.bericht import befund_zeile
+
+            text = "; ".join(befund_zeile(b) for b in sperre[:3]) + (" …" if len(sperre) > 3 else "")
+            return {"ok": False, "error": f"Export verweigert: {len(sperre)} Befunde der Bedingungen. {text}",
+                    "bedingungen_befunde": sperre}
         want_csv = any(f.lower().lstrip(".") in ("bom_csv", "csv") for f in formats)
         formats = [f for f in formats if f.lower().lstrip(".") not in ("bom_csv", "csv")]
         csv_files: list[str] = []
@@ -370,6 +382,22 @@ class KernelRuntime:
     # =================================================================================================================
     # KernelService: Phase 2 (Lagerteile, Materialien, Stückliste)
     # =================================================================================================================
+
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        """Bericht der Bedingungen des letzten erfolgreichen Laufs (wie die Nachricht CONSTRAINTS)."""
+        with self._lock:
+            rep = self._constraints
+        if rep is None:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        out = {"ok": True, **rep}
+        if part:
+            names = self.scene.names()
+            if part not in names and not any(n.startswith(part.rstrip("/") + "/") for n in names):
+                from kevcad_kernel.refs import unknown_part_message
+
+                return {"ok": False, "error": unknown_part_message(part, names)}
+            out["teil"] = part
+        return out
 
     def bom(self) -> dict[str, Any]:
         with self._lock:
@@ -555,6 +583,7 @@ class KernelRuntime:
                 self._last_result = None
                 self._bom = None
                 self._violations = []
+                self._constraints = None
                 self._selection = {"run": None, "refs": []}
             run = self._run_no
         self.catalog.set_project(proj.path)
@@ -757,6 +786,12 @@ class KernelRuntime:
                     with self._lock:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
+                if isinstance(final.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
+                    report = {"run": job.run, **final["bedingungen"]}
+                    report.pop("fehler", None)
+                    with self._lock:
+                        self._constraints = report
+                    self._send_app({"type": "CONSTRAINTS", **report})
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
@@ -797,6 +832,11 @@ class KernelRuntime:
         if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
             result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],
                              "cuts": len(bom.get("cuts") or [])}
+        rep = final.get("bedingungen")
+        if isinstance(rep, dict):
+            from kevcad_kernel.bedingungen.bericht import kurzbericht
+
+            result["bedingungen"] = kurzbericht(rep)
         if error is not None:
             result["error"] = error
         return result
@@ -919,8 +959,11 @@ class KernelRuntime:
                 conn.send(rec.header, rec.payload)
             with self._lock:
                 bom = self._bom
+                constraints = self._constraints
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            if constraints is not None:
+                conn.send({"type": "CONSTRAINTS", **constraints})
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")

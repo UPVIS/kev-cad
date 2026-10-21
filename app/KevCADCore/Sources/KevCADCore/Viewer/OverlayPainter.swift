@@ -16,6 +16,8 @@ public enum OverlayPrimitive: Sendable {
     case dimension(a: SIMD3<Float>, b: SIMD3<Float>, text: String, color: SIMD4<Float>)
     case arrow(from: SIMD3<Float>, to: SIMD3<Float>, text: String?, color: SIMD4<Float>)
     case label(point: SIMD3<Float>, text: String, color: SIMD4<Float>)
+    /// Kleines Symbol am Punkt (Zwangsbedingung wie in CAD-Programmen): `filled` = verletzt (gefüllt, weiße Schrift).
+    case badge(point: SIMD3<Float>, text: String, color: SIMD4<Float>, filled: Bool)
 }
 
 /// Welt → Bildpunkte (Ursprung oben links, y nach unten), passend zur Kamera des Viewports.
@@ -50,10 +52,14 @@ public enum OverlayPainter {
         ctx.saveGState()
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        // Linien zuerst, Beschriftungen obenauf
+        // Linien zuerst, Symbole und Beschriftungen obenauf
         var labels: [(CGPoint, String, SIMD4<Float>)] = []
+        var badges: [(CGPoint, String, SIMD4<Float>, Bool)] = []
         for item in items {
             switch item {
+            case .badge(let p, let text, let color, let filled):
+                guard let s = projector.project(p) else { continue }
+                badges.append((s, text, color, filled))
             case .polyline(let pts, let color, let width):
                 let ps = pts.compactMap(projector.project)
                 guard ps.count >= 2 else { continue }
@@ -113,6 +119,11 @@ public enum OverlayPainter {
                 labels.append((CGPoint(x: s.x + 8 * scale, y: s.y - 14 * scale), text, color))
             }
         }
+        // Symbole nebeneinander, wenn mehrere am selben Punkt sitzen
+        var used: [CGRect] = []
+        for (p, text, color, filled) in badges {
+            used.append(drawBadge(text, at: p, color: color, filled: filled, in: ctx, scale: scale, avoid: used))
+        }
         // Beschriftungen nicht übereinander: eine verdeckte rutscht nach unten
         var placed: [CGRect] = []
         for (p, text, color) in labels {
@@ -155,6 +166,47 @@ public enum OverlayPainter {
         // y zeigt nach unten: Text spiegeln, damit er aufrecht steht
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         ctx.textPosition = CGPoint(x: box.minX + padX, y: box.minY + padY + ascent)
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
+        return box
+    }
+
+    /// Symbol einer Bedingung: abgerundetes Quadrat neben dem Punkt, Zeichen in der Mitte.
+    @discardableResult
+    static func drawBadge(
+        _ text: String, at p: CGPoint, color: SIMD4<Float>, filled: Bool, in ctx: CGContext, scale: CGFloat,
+        avoid: [CGRect] = []
+    ) -> CGRect {
+        let size = 18 * scale
+        var box = CGRect(x: p.x + 4 * scale, y: p.y - size - 4 * scale, width: size, height: size)
+        for _ in 0..<6 where avoid.contains(where: { $0.intersects(box) }) {
+            box.origin.x += size + 2 * scale
+        }
+        let path = CGPath(roundedRect: box, cornerWidth: 4 * scale, cornerHeight: 4 * scale, transform: nil)
+        ctx.addPath(path)
+        ctx.setFillColor(filled ? cg(color) : CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.92))
+        ctx.fillPath()
+        ctx.addPath(path)
+        ctx.setStrokeColor(cg(color))
+        ctx.setLineWidth(1.2 * scale)
+        ctx.strokePath()
+        // Fähnchen zum Punkt
+        ctx.setStrokeColor(cg(color))
+        ctx.setLineWidth(1 * scale)
+        ctx.move(to: p)
+        ctx.addLine(to: CGPoint(x: box.minX, y: box.maxY))
+        ctx.strokePath()
+        let font = CTFontCreateUIFontForLanguage(.system, 11 * scale, nil)
+            ?? CTFontCreateWithName("Helvetica" as CFString, 11 * scale, nil)
+        let ink = filled ? CGColor(gray: 1, alpha: 1) : cg(color)
+        let attrs: [CFString: Any] = [kCTFontAttributeName: font, kCTForegroundColorAttributeName: ink]
+        guard let attributed = CFAttributedStringCreate(nil, text as CFString, attrs as CFDictionary) else { return box }
+        let line = CTLineCreateWithAttributedString(attributed)
+        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+        ctx.saveGState()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        ctx.textPosition = CGPoint(x: box.midX - width / 2, y: box.midY + (ascent - descent) / 2)
         CTLineDraw(line, ctx)
         ctx.restoreGState()
         return box

@@ -72,8 +72,9 @@ def test_gestell_bom_after_run_end(p2):
     assert res["ok"], res.get("error")
     assert res["inventar_verstoesse"] == [] and res["bom"]["totals"]["positionen"] == 5
     _, _, bom, _ = app.wait_for(lambda h: h["type"] == "BOM" and h.get("run") == res["run"], start=start)
+    app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h.get("run") == res["run"], start=start)
     types = [h["type"] for h in app.since(start) if h["type"] not in ("STATUS",)]
-    assert types[-2:] == ["RUN_END", "BOM"]
+    assert types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # CONSTRAINTS: Zwangsbedingungen, additiv
     parts = [h for h in app.since(start) if h["type"] == "PART_UPSERT"]
     bein = next(h for h in parts if h["name"] == "Gestell/Bein vorn links")
     assert bein["stock"] == {"id": "vierkantrohr-en10219-40x40x3", "name": "Vierkantrohr 40 × 40 × 3", "laenge": 842.0,

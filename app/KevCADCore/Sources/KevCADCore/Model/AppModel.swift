@@ -173,6 +173,10 @@ public final class AppModel: ObservableObject {
     /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
     @Published public var selectionMode: SelectionMode = .parts
     @Published public var orthographic = false
+    /// Zwangsbedingungen (additiv, PLAN-BEDINGUNGEN.md): Bericht des letzten Laufs (CONSTRAINTS) und ob die Symbole
+    /// am Teil im Viewport stehen (umschalten über ConstraintActions).
+    @Published public var constraints: ConstraintReport?
+    @Published public var showConstraintSymbols = true
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?
@@ -459,6 +463,15 @@ public protocol CatalogActions: AnyObject {
 @MainActor
 public protocol InventoryActions: AnyObject {
     func setInventarRegel(_ on: Bool)
+}
+
+/// Zwangsbedingungen (additiv): Symbole ein- und ausblenden, eine Bedingung im Viewer zeigen. Implementiert vom
+/// App-Kern; die Oberfläche ruft sie über `model.actions as? ConstraintActions` auf.
+@MainActor
+public protocol ConstraintActions: AnyObject {
+    func setConstraintSymbolsVisible(_ on: Bool)
+    /// Beteiligte Teile auswählen und einpassen, die Bedingung hervorheben.
+    func showConstraint(_ id: String)
 }
 
 // MARK: - Blender-Steuerung

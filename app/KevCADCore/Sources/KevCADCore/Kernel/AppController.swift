@@ -469,6 +469,8 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .constraints(let r):
+            applyConstraints(r)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -515,6 +517,7 @@ public final class AppController: AppActions {
             refreshOverlay()
             model.run = .idle
             model.bom = nil
+            model.constraints = nil
             model.inventarVerstoesse = []
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
@@ -685,6 +688,7 @@ public final class AppController: AppActions {
             }
         }
         items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
         return items
     }
 
