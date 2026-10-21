@@ -26,6 +26,9 @@ freigegebenen Material mit `druckbar: true`. Jeder Eintrag (Material oder Teil) 
 
 Freigeben heißt: die App speichert den Eintrag mit `status: "frei"`; Ablehnen löscht ihn.
 
+Der mitgelieferte Normkatalog (Rohre, Profile, Schrauben, Platten …) zählt als Inventar (Kevin, 21.10.2026): seine
+Einträge haben kein `status`-Feld und sind damit freigegeben.
+
 ## Material
 
 ```json
