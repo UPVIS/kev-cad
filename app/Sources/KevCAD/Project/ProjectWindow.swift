@@ -51,7 +51,7 @@ struct ProjectWindow: View {
                     ViewportArea(model: model, state: state)
                     if state.showBOM {
                         PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
-                        BOMPanel(model: model, state: state)
+                        ProjectBottomPanel(model: model, state: state)
                             .frame(height: min(state.bomHeight, max(160, geo.size.height - 260)))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }

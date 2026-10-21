@@ -46,6 +46,7 @@ struct KevCADApp: App {
             InspectorCommands()
             DemoCommands(session: session)
             StockCommands(session: session, model: session.model)
+            BestandCommands(model: session.model)
         }
 
         Window("Kev CAD", id: WindowID.project) {

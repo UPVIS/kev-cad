@@ -51,6 +51,7 @@ extension AppController: CatalogActions {
     func applyBOM(_ message: BOMMessage) {
         let bom = message.bom
         model.bom = bom
+        applyBOMBestand(message)
         // Nach jedem Lauf: hat Claude dabei Lagerteile oder Materialien vorgeschlagen?
         refreshCatalogQuietly()
         let price = bom.totals.preis.map { " · \(KevFormat.number($0, digits: 2)) €" } ?? ""

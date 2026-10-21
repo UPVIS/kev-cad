@@ -176,6 +176,8 @@ public final class AppModel: ObservableObject {
     /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
     @Published public var pruefung: PruefErgebnis?
     @Published public var schnittkoerperSichtbar = true
+    /// Bestand (additiv, BESTAND.md): Bestand des Projekts, Buchungen, Zuschnitt mit Resten und Einkaufsliste.
+    @Published public var bestandZustand = BestandZustand()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

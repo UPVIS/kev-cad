@@ -16,9 +16,16 @@ struct BOMPanel: View {
             header
             Divider()
             if let bom = model.bom, !bom.lines.isEmpty {
-                let palette = Self.palette(bom)
+                // Mit Bestand färbt der Zuschnitt nach Quelle, nicht nach Position
+                let palette = model.bestandZustand.zuschnitt == nil ? Self.palette(bom) : [:]
                 BOMTable(model: model, bom: bom, palette: palette, selection: $selection)
-                if !bom.cuts.isEmpty {
+                if let zuschnitt = model.bestandZustand.zuschnitt {
+                    // Bestand: Zuschnitt mit Resten und Einkaufsliste
+                    Divider()
+                    StuecklisteUntenView(model: model, bom: bom, zuschnitt: zuschnitt, selected: selection) { line in
+                        selection = line.pos
+                    }
+                } else if !bom.cuts.isEmpty {
                     Divider()
                     CutPlansView(bom: bom, palette: palette, selected: selection) { line in selection = line.pos }
                 }
@@ -52,10 +59,7 @@ struct BOMPanel: View {
     private var header: some View {
         HStack(spacing: 14) {
             HStack(spacing: 7) {
-                Image(systemName: "list.bullet.rectangle")
-                    .foregroundStyle(.secondary)
-                Text("Stückliste")
-                    .font(.headline)
+                UntererBereichReiter()
                 if let bom = model.bom, !bom.lines.isEmpty {
                     Text("\(KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")) · "
                         + KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile"))
@@ -69,6 +73,16 @@ struct BOMPanel: View {
                 Total(label: "Gewicht", value: KevFormat.kg(bom.totals.kg))
                 Total(label: "Material", value: bom.totals.preis.map(KevFormat.euro) ?? "–")
                     .help(bom.totals.preisHinweis ?? "Richtpreise")
+                if model.bestandZustand.zuschnitt != nil {
+                    Button {
+                        BestandUI.shared.gebautDialog = true
+                    } label: {
+                        Label("Gebaut …", systemImage: "hammer")
+                    }
+                    .controlSize(.small)
+                    .disabled(model.bestandActions == nil || model.laufAktiv)
+                    .help("Bestand abbuchen: was der Zuschnitt verplant, geht weg; neue Reste kommen dazu")
+                }
                 Button {
                     model.actions?.export(formats: ["bom_csv"])
                 } label: {

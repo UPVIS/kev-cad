@@ -457,9 +457,11 @@ public struct AckMessage: Decodable, Sendable {
     public var replyTo: String?
     public var ok: Bool
     public var message: String?
+    /// Bestand: id der Buchung (ACK auf GEBAUT_REQ).
+    public var buchung: String?
 
     enum CodingKeys: String, CodingKey {
-        case ok, message
+        case ok, message, buchung
         case replyTo = "reply_to"
     }
 
@@ -468,6 +470,7 @@ public struct AckMessage: Decodable, Sendable {
         replyTo = try? c.decodeIfPresent(String.self, forKey: .replyTo)
         ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
         message = try? c.decodeIfPresent(String.self, forKey: .message)
+        buchung = try? c.decodeIfPresent(String.self, forKey: .buchung)
     }
 }
 
@@ -511,6 +514,8 @@ public enum KernelMessage: Sendable {
     case catalog(CatalogMessage)
     /// Prüfung: Befunde nach jedem Lauf (zuerst `state: "running"`, dann das Ergebnis).
     case check(CheckMessage)
+    /// Bestand des offenen Projekts mit Buchungen (BESTAND.md).
+    case bestand(BestandMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -535,6 +540,7 @@ public enum KernelMessage: Sendable {
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
         case .check: return "CHECK"
+        case .bestand: return "BESTAND"
         case .unknown(let t, _): return t
         }
     }
@@ -549,6 +555,7 @@ public enum KernelMessage: Sendable {
         case .error(let m): return m.replyTo
         case .bom(let m): return m.replyTo
         case .catalog(let m): return m.replyTo
+        case .bestand(let m): return m.replyTo
         default: return nil
         }
     }
@@ -581,6 +588,7 @@ public enum KernelMessage: Sendable {
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
+        case "BESTAND": return .bestand(try BestandMessage.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)
