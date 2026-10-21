@@ -10,6 +10,13 @@ enum WindowID {
     static let welcome = "welcome"
     static let project = "project"
     static let log = "log"
+    static let catalog = "catalog"
+}
+
+/// Eintrag, den das Fenster Lagerkatalog beim Öffnen auswählen soll.
+enum CatalogFocus: Hashable {
+    case item(String)
+    case material(String)
 }
 
 /// Zentrale der Oberfläche: hält AppModel, App-Kern bzw. Demo, „Zuletzt geöffnet“ und steuert, welches Fenster offen ist.
@@ -27,6 +34,9 @@ final class AppSession: ObservableObject {
 
     /// Willkommensfenster soll das Formular „Neues Projekt“ zeigen.
     @Published var newProjectRequested = false
+    /// Das Fenster Lagerkatalog soll diesen Eintrag bzw. Abschnitt zeigen (wird dort verbraucht).
+    @Published var catalogFocus: CatalogFocus?
+    @Published var catalogSectionRequest: CatalogSection?
 
     weak var projectWindow: NSWindow? {
         didSet { keyboard.projectWindow = projectWindow }
@@ -87,6 +97,16 @@ final class AppSession: ObservableObject {
         if demo?.config.openLog == true { showLog() }
         guard model.project != nil else { return false }
         showProjectWindow()
+        if let config = demo?.config, config.start == .catalog {
+            // Nach dem Projektfenster öffnen, damit der Lagerkatalog vorne liegt
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                if config.catalogEntry == "vorschlaege" {
+                    self?.showCatalog(focus: .item("winkel-alu-30x30x3"), section: .suggestions)
+                } else {
+                    self?.showCatalog(focus: config.catalogEntry.map { CatalogFocus.item($0) })
+                }
+            }
+        }
         return true
     }
 
@@ -110,6 +130,13 @@ final class AppSession: ObservableObject {
 
     func showLog() {
         openWindowAction?(id: WindowID.log)
+    }
+
+    /// Fenster Lagerkatalog öffnen, auf Wunsch mit einem Eintrag ausgewählt oder einem Abschnitt (Vorschläge).
+    func showCatalog(focus: CatalogFocus? = nil, section: CatalogSection? = nil) {
+        if let focus { catalogFocus = focus }
+        if let section { catalogSectionRequest = section }
+        openWindowAction?(id: WindowID.catalog)
     }
 
     private func projectChanged(_ project: ProjectInfo?) {

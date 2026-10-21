@@ -45,6 +45,7 @@ struct KevCADApp: App {
             SidebarCommands()
             InspectorCommands()
             DemoCommands(session: session)
+            StockCommands(session: session, model: session.model)
         }
 
         Window("Kev CAD", id: WindowID.project) {
@@ -64,5 +65,15 @@ struct KevCADApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .keyboardShortcut("l", modifiers: [.command, .option])
+
+        // Phase 2: Lagerkatalog (Fenster > Lagerkatalog, ⇧⌘K)
+        Window("Lagerkatalog", id: WindowID.catalog) {
+            CatalogWindow(model: session.model)
+                .environmentObject(session)
+        }
+        .defaultSize(width: 1140, height: 720)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .keyboardShortcut("k", modifiers: [.command, .shift])
     }
 }

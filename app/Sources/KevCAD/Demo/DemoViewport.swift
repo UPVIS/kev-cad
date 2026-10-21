@@ -130,8 +130,11 @@ private struct DemoScene {
                 }
             }
             if polygons.isEmpty { continue }
+            // Inventar-Regel verletzt: rot eingefärbt wie im echten Viewport
+            let warn = SIMD4<Float>(0.85, 0.05, 0.03, part.color.w)
+            let color = part.inventarFehlt ? part.color + (warn - part.color) * 0.55 : part.color
             world.append(WorldPart(
-                id: part.id, polygons: polygons, color: part.color, selected: selected.contains(part.id),
+                id: part.id, polygons: polygons, color: color, selected: selected.contains(part.id),
                 dimmed: runningRun.map { part.run < $0 } ?? false, center: partCenter + shift))
         }
 

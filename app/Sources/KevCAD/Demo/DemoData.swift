@@ -15,9 +15,13 @@ import simd
 /// - Nur bei festen Zuständen: `KEVCAD_DEMO_SECTION=1` (Schnitt in Z durch die Mitte), `KEVCAD_DEMO_EXPLODE=0.5`,
 ///   `KEVCAD_DEMO_MEASURE=1` (Messmodus an).
 /// - `KEVCAD_APPEARANCE=light` oder `dark` erzwingt das Erscheinungsbild (gilt auch ohne Demomodus).
+/// - Phase 2: `KEVCAD_DEMO_STATE=bom` (Gestell mit Stückliste, fester Zustand), `catalog` (dazu das Fenster
+///   Lagerkatalog), `inventar` (Gestell mit einem Teil, das nicht aus dem Inventar stammt, und Vorschlägen von Claude).
+///   `KEVCAD_DEMO_CATALOG=vorschlaege` zeigt im Lagerkatalog den Abschnitt „Vorschläge von Claude“. `KEVCAD_DEMO_BOM_LINE=2` wählt eine Stücklistenzeile aus, `KEVCAD_DEMO_CATALOG=<id>` einen
+///   Katalogeintrag, `KEVCAD_DEMO_FORM=teil|material` öffnet das Formular „Neues Lagerteil“ bzw. „Neues Material“.
 struct DemoConfiguration {
     enum Start: String {
-        case welcome, live, running, finished, error
+        case welcome, live, running, finished, error, bom, catalog, inventar
     }
 
     var start: Start = .welcome
@@ -27,8 +31,13 @@ struct DemoConfiguration {
     var section = false
     var explode: Double?
     var measureMode = false
+    var bomLine: Int?
+    var catalogEntry: String?
+    var form: String?
 
-    var isFrozen: Bool { start == .running || start == .finished || start == .error }
+    var isFrozen: Bool { [.running, .finished, .error, .bom, .catalog, .inventar].contains(start) }
+    /// Feste Zustände mit dem Gestell (Phase 2) statt dem Wandhalter.
+    var usesGestell: Bool { start == .bom || start == .catalog || start == .inventar }
 
     static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) -> DemoConfiguration {
         var config = DemoConfiguration()
@@ -39,6 +48,9 @@ struct DemoConfiguration {
         config.section = env["KEVCAD_DEMO_SECTION"] == "1"
         config.explode = env["KEVCAD_DEMO_EXPLODE"].flatMap(Double.init)
         config.measureMode = env["KEVCAD_DEMO_MEASURE"] == "1"
+        config.bomLine = env["KEVCAD_DEMO_BOM_LINE"].flatMap { Int($0) } ?? (config.start == .bom ? 2 : nil)
+        config.catalogEntry = env["KEVCAD_DEMO_CATALOG"] ?? (config.start == .catalog ? "rohr-edelstahl-33.7x2" : nil)
+        config.form = env["KEVCAD_DEMO_FORM"]?.lowercased()
         return config
     }
 }
@@ -75,20 +87,16 @@ enum DemoData {
         var faces: Int
         var edges: Int
         var shape: [DemoPrimitive]
+        /// Phase 2: Lagerteil (Gestell).
+        var stock: StockInfo? = nil
 
-        var density: Double {
-            switch material {
-            case "aluminium": return 2.70
-            case "stahl": return 7.85
-            default: return 0
-            }
-        }
+        var density: Double { DemoData.density(material) }
 
         func node(run: Int) -> PartNode {
             PartNode(
                 id: id, color: DemoData.linear(color, alpha: alpha), material: material, visible: true,
                 triangles: triangles, faces: faces, edges: edges, bboxMin: min, bboxMax: max, volume: volume,
-                mass: material == nil ? nil : (volume / 1000 * density * 10).rounded() / 10, run: run)
+                mass: material == nil ? nil : (volume / 1000 * density * 10).rounded() / 10, run: run, stock: stock)
         }
     }
 
@@ -137,7 +145,7 @@ enum DemoData {
     static var partIDs: [String] { specs.map(\.id) }
 
     static func shape(for id: String) -> [DemoPrimitive]? {
-        specs.first { $0.id == id }?.shape
+        (specs + gestellSpecs).first { $0.id == id }?.shape
     }
 
     static func parts(run: Int) -> [PartNode] { specs.map { $0.node(run: run) } }
@@ -184,7 +192,7 @@ enum DemoData {
         var values: [String: Double] = [:]
         if let volume = part?.volume { values["volume"] = volume }
         if let mass = part?.mass { values["mass"] = mass }
-        let material = part?.material?.capitalized ?? "ohne Material"
+        let material = part?.material.map { demoCatalog.material($0)?.name ?? $0.capitalized } ?? "ohne Material"
         return SelectionItem(ref: ref, run: run, summary: "Teil \(part?.name ?? ref) · \(material)", values: values)
     }
 
@@ -233,6 +241,7 @@ enum DemoData {
             ("Outdoorküche Beelonia", -86400 * 3),
             ("Regalwinkel", -86400 - 3600 * 5),
             ("Wandhalter", -3600 * 2),
+            ("Gestell", -60 * 20),
         ]
         for (name, offset) in entries {
             recents.note(base.appendingPathComponent(name, isDirectory: true), date: now.addingTimeInterval(offset))

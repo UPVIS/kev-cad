@@ -183,8 +183,19 @@ private struct PartRow: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(.quaternary))
-            } else if let material = node.part?.material {
-                Text(material.capitalized)
+            } else if node.part?.inventarFehlt == true {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.red)
+                    .help("Nicht aus dem Inventar: weder verbautes Lagerteil noch gekennzeichnetes 3D-Druckteil")
+            } else if let stock = node.part?.stock {
+                // Lagerteil: kleines Symbol statt Materialname (Material und Zuschnitt im Tooltip)
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .help("Lagerteil: \(stock.name)" + (stock.laenge.map { " · \(KevFormat.length($0))" } ?? ""))
+            } else if let part = node.part, let material = model.materialTitle(for: part) {
+                Text(material)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -217,7 +228,10 @@ private struct PartRow: View {
                 + KevFormat.count(node.triangles, one: "Dreieck", many: "Dreiecke")
         }
         var parts = [node.id]
-        if let material = node.part?.material { parts.append(material) }
+        if let stock = node.part?.stock {
+            parts.append("Lagerteil \(stock.name)" + (stock.laenge.map { " à \(KevFormat.length($0))" } ?? ""))
+        }
+        if let part = node.part, let material = model.materialTitle(for: part) { parts.append(material) }
         parts.append(KevFormat.count(node.triangles, one: "Dreieck", many: "Dreiecke"))
         return parts.joined(separator: " · ")
     }

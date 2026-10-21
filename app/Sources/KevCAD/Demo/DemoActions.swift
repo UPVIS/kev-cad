@@ -24,6 +24,12 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
     private var kernelTask: Task<Void, Never>?
     private var pendingMeasureRef: String?
     private var filledExamples = false
+    /// Beispielprojekt: Wandhalter (MVP) oder Gestell mit Lagerteilen (Phase 2).
+    private(set) var scenario: DemoScenario = .wandhalter
+    /// Lagerkatalog der Demo; Speichern und Löschen ändern ihn nur im Speicher.
+    private var demoCatalog = Catalog(json: DemoData.catalogJSON)
+    /// Inventar-Regel je Beispielprojekt: Gestell an, Wandhalter (Nachbau aus dem MVP) aus.
+    private var inventoryRules: [DemoScenario: Bool] = [.gestell: true, .wandhalter: false]
 
     init(model: AppModel, config: DemoConfiguration) {
         self.model = model
@@ -45,7 +51,7 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
             bootKernel(delay: 0.4)
             startAgentCycle()
             openProject(at: DemoData.projectFolder)
-        case .running, .finished, .error:
+        case .running, .finished, .error, .bom, .catalog, .inventar:
             model.kernelState = .ready
             log("Kernel bereit (build123d 0.13, Demo)")
             model.agentActivity = "misst Abstand Bohrung ↔ Plattenrand"
@@ -55,11 +61,27 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
 
     /// Fester Zustand für Fensterbilder: Projekt mit Lauf 3, dazu Lauf 4 je nach Zustand.
     private func loadFrozenProject() {
-        model.project = ProjectLocator.projectInfo(for: DemoData.projectFolder)
-        log("Projekt geöffnet: \(KevFormat.abbreviatedPath(DemoData.projectFolder.path))")
+        scenario = config.usesGestell ? .gestell : .wandhalter
+        model.project = ProjectLocator.projectInfo(for: scenario.folder)
+        log("Projekt geöffnet: \(KevFormat.abbreviatedPath(scenario.folder.path))")
         runNumber = 3
-        model.parts = DemoData.parts(run: 3)
+        model.inventarRegel = inventoryRules[scenario] ?? true
+        model.parts = scenario.specs.map { $0.node(run: 3) }
+        if config.start == .inventar { model.parts.append(DemoData.violationSpec.node(run: 3)) }
         updateTriangles()
+        if scenario == .gestell {
+            model.agentActivity = config.start == .inventar
+                ? "schlägt Alu-Winkel 30 × 30 × 3 vor" : "sucht Lagerteile: vierkantrohr 40"
+            model.run = .finished(run: 3, durationMs: 1240, parts: model.parts.count, warnings: [])
+            log("Lauf 3 fertig in 1,2 s · \(model.parts.count) Teile")
+            updateBOM()
+            if config.start == .catalog || config.start == .inventar { model.catalog = demoCatalog }
+            // Zeile für Fensterbilder auswählen, ohne die Kamera zu bewegen (das ganze Gestell bleibt im Bild)
+            if let pos = config.bomLine, let line = model.bom?.lines.first(where: { $0.pos == pos }) {
+                select(line.teile)
+            }
+            return
+        }
         fillExamples()
         switch config.start {
         case .running:
@@ -120,7 +142,11 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
     func openProject(at url: URL) {
         calls.append("openProject")
         runTask?.cancel()
+        scenario = DemoScenario.forFolder(url)
         model.project = ProjectLocator.projectInfo(for: url)
+        model.inventarRegel = inventoryRules[scenario] ?? true
+        model.inventarVerstoesse = []
+        model.bom = nil
         model.parts = []
         model.selection = []
         model.measurements = []
@@ -152,6 +178,7 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
     func closeProject() {
         runTask?.cancel()
         model.project = nil
+        model.bom = nil
         model.parts = []
         model.selection = []
         model.measurements = []
@@ -176,7 +203,7 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
         model.kernelState = .busy
         model.run = .running(run: run, step: nil, stepIndex: 0)
         log("Lauf \(run) gestartet\(model.slowMotion ? " (Zeitlupe)" : "")")
-        for (index, step) in DemoData.steps.enumerated() {
+        for (index, step) in scenario.steps.enumerated() {
             model.run = .running(run: run, step: step.title, stepIndex: index + 1)
             log("Schritt \(index + 1) · \(step.title)")
             try? await Task.sleep(for: .milliseconds(model.slowMotion ? 1500 : 650))
@@ -184,15 +211,39 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
             for spec in step.parts { upsert(spec.node(run: run)) }
             updateTriangles()
         }
-        let shown = Set(DemoData.partIDs)
+        let shown = Set(scenario.specs.map(\.id))
         model.parts.removeAll { !shown.contains($0.id) }
         let duration = Int(Date().timeIntervalSince(started) * 1000)
-        model.run = .finished(run: run, durationMs: duration, parts: model.parts.count, warnings: DemoData.warnings)
+        model.run = .finished(run: run, durationMs: duration, parts: model.parts.count, warnings: scenario.warnings)
         model.kernelState = .ready
         updateTriangles()
         log("Lauf \(run) fertig in \(KevFormat.duration(ms: duration)) · \(model.parts.count) Teile")
-        log("Warnung: \(DemoData.warnings[0])", .warning)
-        if !filledExamples { fillExamples() }
+        for warning in scenario.warnings { log("Warnung: \(warning)", .warning) }
+        updateBOM()
+        if !filledExamples && scenario == .wandhalter { fillExamples() }
+    }
+
+    /// Stückliste und Inventar-Prüfung wie vom Kernel nach RUN_END.
+    private func updateBOM() {
+        updateInventory()
+        model.bom = DemoData.bom(
+            for: model.parts, run: runNumber, catalog: demoCatalog, inventoryRule: model.inventarRegel)
+        if let bom = model.bom {
+            log("Stückliste zu Lauf \(bom.run): \(bom.lines.count) Positionen, \(bom.totals.teile) Teile")
+        }
+    }
+
+    /// Inventar-Regel: Teile ohne Lagerteil, die nicht aus druckbarem Material sind, verletzen sie.
+    private func updateInventory() {
+        var names: [String] = []
+        for i in model.parts.indices {
+            let p = model.parts[i]
+            let fehlt = model.inventarRegel && p.stock == nil && demoCatalog.material(p.material ?? "")?.druckbar != true
+            model.parts[i].inventarFehlt = fehlt
+            if fehlt { names.append(p.id) }
+        }
+        model.inventarVerstoesse = names
+        if !names.isEmpty { log("Nicht aus dem Inventar: \(names.joined(separator: ", "))", .warning) }
     }
 
     private func upsert(_ part: PartNode) {
@@ -393,5 +444,113 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
 
     private func log(_ text: String, _ level: LogLine.Level = .info) {
         model.append(LogLine(level: level, text: text))
+    }
+}
+
+// MARK: - Phase 2: Stückliste und Lagerkatalog
+
+extension DemoActions: CatalogActions {
+    func requestBOM() {
+        calls.append("requestBOM")
+        guard model.project != nil else { return }
+        updateBOM()
+    }
+
+    func requestCatalog(query: String?, art: String?) {
+        calls.append("requestCatalog")
+        if model.catalog == nil {
+            model.catalogActivity = .loading
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self else { return }
+                self.model.catalog = self.demoCatalog
+                self.model.catalogActivity = .idle
+                self.log("Lagerkatalog geladen (Demo): \(self.demoCatalog.items.count) Lagerteile, "
+                    + "\(self.demoCatalog.materials.count) Materialien")
+            }
+        } else {
+            model.catalog = demoCatalog
+        }
+    }
+
+    func saveCatalogEntry(kind: String, json: Data, ebene: CatalogLevel) {
+        calls.append("saveCatalogEntry(\(kind))")
+        guard var entry = try? JSONDecoder().decode(JSONValue.self, from: json), case .object(var object) = entry,
+              let id = object["id"]?.stringValue
+        else {
+            model.catalogActivity = .failed("Der Eintrag ist kein gültiges JSON-Objekt.")
+            return
+        }
+        model.catalogActivity = .saving
+        object["ebene"] = .string(ebene.rawValue)
+        entry = .object(object)
+        // Katalog als JSON neu zusammensetzen: gleicher Weg wie beim Kernel (spätere Ebene ersetzt die frühere)
+        var materials = demoCatalog.materials.map(\.entryWithLevel)
+        var items = demoCatalog.items.map(\.entryWithLevel)
+        if kind == "material" {
+            materials.removeAll { $0["id"]?.stringValue == id }
+            materials.append(entry)
+        } else {
+            items.removeAll { $0["id"]?.stringValue == id }
+            items.append(entry)
+        }
+        demoCatalog = Catalog(json: [
+            "materials": .array(materials), "items": .array(items), "arten": .array(demoCatalog.arten.map { .string($0) }),
+        ])
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self else { return }
+            self.model.catalog = self.demoCatalog
+            self.model.catalogActivity = .saved(id: id, message: "Demo: nur im Speicher")
+            self.log("Katalog: \(id) gespeichert (\(ebene.title), Demo)")
+        }
+    }
+
+    func deleteCatalogEntry(kind: String, id: String, ebene: CatalogLevel) {
+        calls.append("deleteCatalogEntry(\(kind))")
+        let materials = demoCatalog.materials.filter { !(kind == "material" && $0.id == id) }
+        let items = demoCatalog.items.filter { !(kind != "material" && $0.id == id) }
+        demoCatalog = Catalog(materials: materials, items: items, arten: demoCatalog.arten)
+        model.catalog = demoCatalog
+        model.catalogActivity = .deleted(id: id)
+        log("Katalog: \(id) gelöscht (\(ebene.title), Demo)")
+    }
+
+    func showBOMLine(_ line: BOMLine) {
+        calls.append("showBOMLine(\(line.pos))")
+        let ids = Set(line.teile)
+        for index in model.parts.indices where ids.contains(model.parts[index].id) { model.parts[index].visible = true }
+        select(line.teile.filter { id in model.parts.contains { $0.id == id } })
+        focus(on: line.teile)
+    }
+
+    func relaunchForUpdate() {}
+}
+
+extension DemoActions: InventoryActions {
+    func setInventarRegel(_ on: Bool) {
+        calls.append("setInventarRegel(\(on))")
+        inventoryRules[scenario] = on
+        model.inventarRegel = on
+        log("Inventar-Regel \(on ? "an" : "aus")")
+        guard model.project != nil, !model.parts.isEmpty else { return }
+        updateBOM()
+    }
+}
+
+extension CatalogItem {
+    /// Roh-JSON mit Ebene (wie es der Kernel schickt), für den Demokatalog.
+    var entryWithLevel: JSONValue {
+        guard case .object(var o) = entry else { return entry }
+        o["ebene"] = .string(ebene.rawValue)
+        return .object(o)
+    }
+}
+
+extension CatalogMaterial {
+    var entryWithLevel: JSONValue {
+        guard case .object(var o) = entry else { return entry }
+        o["ebene"] = .string(ebene.rawValue)
+        return .object(o)
     }
 }

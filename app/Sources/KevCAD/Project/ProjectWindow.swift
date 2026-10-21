@@ -26,7 +26,19 @@ struct ProjectWindow: View {
         .onAppear {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
             SelfTest.runIfRequested(session)
+            CatalogSelfTest.runIfRequested(session)
+            if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
         }
+        .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
+    }
+
+    /// Verbaut das Modell zum ersten Mal Lagerteile, öffnet sich die Stückliste einmal von selbst.
+    private func autoShowBOM() {
+        guard !state.showBOM, !state.bomAutoShown, let bom = model.bom,
+              bom.lines.contains(where: { !$0.eigenteil })
+        else { return }
+        state.bomAutoShown = true
+        withAnimation(.snappy(duration: 0.25)) { state.showBOM = true }
     }
 
     private var content: some View {
@@ -34,9 +46,17 @@ struct ProjectWindow: View {
             PartTreeView(model: model, state: state)
                 .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 400)
         } detail: {
-            VStack(spacing: 0) {
-                ViewportArea(model: model, state: state)
-                StatusBar(model: model)
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    ViewportArea(model: model, state: state)
+                    if state.showBOM {
+                        PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
+                        BOMPanel(model: model, state: state)
+                            .frame(height: min(state.bomHeight, max(160, geo.size.height - 260)))
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    StatusBar(model: model)
+                }
             }
         }
         .inspector(isPresented: $state.showInspector) {
@@ -171,6 +191,13 @@ struct ProjectToolbar: ToolbarContent {
             }
             .disabled(model.parts.isEmpty)
             .help("Klick: STEP, STL und 3MF nach output/ (⇧⌘E); Pfeil: einzelnes Format")
+
+            Toggle(isOn: Binding(
+                get: { state.showBOM }, set: { on in withAnimation(.snappy(duration: 0.2)) { state.showBOM = on } }
+            )) {
+                Label("Stückliste", systemImage: "list.bullet.rectangle")
+            }
+            .help("Stückliste mit Zuschnitt, Gewicht und Kosten ein- oder ausblenden (⇧⌘B)")
 
             Button {
                 state.showInspector.toggle()
