@@ -18,7 +18,8 @@ dort, nie nur per `execute`.
    Dateiwerkzeuge gibt.
 4. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse. Ein Fehler kommt als isError mit Zeile, Auszug und
    Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-5. Prüfen: `screenshot` ansehen, Sollmaße mit `measure` nachmessen, Zahlen aus `run` mit der Aufgabe vergleichen.
+5. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen. Kein
+   `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe „Bilder“).
 6. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, offene Annahmen. Bei Bedarf `focus`, `highlight`,
    `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -172,9 +173,12 @@ DN 32, 1¼ Zoll).
 | `view(standard="front", projection="orthographic", fit=True)` | Standardansicht, Darstellung (`xray`, `wireframe`), `explode=0.6` |
 
 „Zoom auf die Lasche und zeig sie von der Seite“: `view(standard="right", projection="orthographic")`, dann
-`focus(["Halter/Lasche"])`, dann `screenshot()`.
+`focus(["Halter/Lasche"])`. Kevin sieht das Ergebnis selbst im Viewer.
 
 ## Bilder
+
+Screenshots nur, wenn Kevin ausdrücklich ein Bild will. Er sieht den Viewer beim Arbeiten selbst, und jedes Bild hält
+die Generierung auf. Geprüft wird mit den Zahlen aus `run`, `parts` und `measure`.
 
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
 - `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen.

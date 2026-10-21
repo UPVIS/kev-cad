@@ -471,9 +471,10 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
                                 f"Schnitt {where} bei {fmt.num(offset)} mm.")
 
     @tool("screenshot", "Bild",
-          "PNG image of the viewer. source 'current' shows exactly what Kevin sees; 'offscreen' renders a standard "
-          "view without moving his camera (pass view). Also returns camera data and mm per pixel (orthographic "
-          "only). Keep the default size unless you need fine detail.", READ_ONLY)
+          "PNG image of the viewer. Only when Kevin asks for an image: he watches the viewer himself, and checking "
+          "your work goes faster with run, parts and measure. source 'current' shows exactly what Kevin sees; "
+          "'offscreen' renders a standard view without moving his camera (pass view). Also returns camera data and "
+          "mm per pixel (orthographic only). Keep the default size unless you need fine detail.", READ_ONLY)
     async def screenshot(
         width: Annotated[int, Field(ge=64, le=4096, description="Image width in px")] = 1280,
         height: Annotated[int, Field(ge=64, le=4096, description="Image height in px")] = 800,
