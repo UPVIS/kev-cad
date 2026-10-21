@@ -276,6 +276,32 @@ def test_mcp_ueber_echten_server(env):
     assert "Normteil" in texts(r["norm"])[0] and "lager.teil('schraube-iso4762-m8')" in texts(r["norm"])[0]
 
 
+def test_katalogaenderung_waehrend_eines_laufs(env):
+    """Zweites übernommenes CAD, während der Lauf nach dem ersten noch rechnet: Der laufende Lauf hat den alten Katalog
+    gelesen, also muss ein neuer folgen (vorher wurde die Anfrage mit dem laufenden Lauf gleichen Stands zusammengelegt
+    und das zweite CAD erschien erst beim nächsten Speichern)."""
+    import hashlib
+
+    from kevcad_kernel.runtime import Job
+
+    rt = env["rt"]
+    proj = new_project(env)
+    code = (proj / "model.py").read_text(encoding="utf-8")
+    laufend = Job(kind="run", code=code, source="auto", timeout_s=60, path=str(rt._project.model),
+                  file_hash=hashlib.sha1(code.encode("utf-8")).hexdigest()[:12])
+    with rt._jobs_cond:
+        alt, rt._current = rt._current, laufend
+    try:
+        assert rt._submit_run(None, 0, 60, source="auto") is laufend  # gleicher Stand: zusammengelegt
+        neu = rt._submit_run(None, 0, 60, source="auto", katalog_neu=True)
+        assert neu is not laufend and neu.key == laufend.key
+    finally:
+        with rt._jobs_cond:
+            if rt._current is laufend:
+                rt._current = alt
+    assert neu.done.wait(60)
+
+
 def test_pruefung_mit_zukaufteil(env):
     """Zusammenführung mit der Kollisionsprüfung: Ersatzkörper werden wie alle Teile geprüft; erlaubt_ueberlappung
     findet das Teil auch unter dem Namen aus show() (ohne „(vereinfacht)“)."""

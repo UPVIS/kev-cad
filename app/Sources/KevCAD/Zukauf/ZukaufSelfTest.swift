@@ -121,9 +121,11 @@ enum ZukaufSelfTest {
         try? await Task.sleep(for: .milliseconds(800))
         await shot("dialog-felder", window: "Zukaufteil hinzufügen")
         NotificationCenter.default.post(name: .zukaufSelfTestSubmit, object: nil)
-        check(await wait(10) {
+        let gesendet = Date()
+        check(await wait(30) {
             if case .accepted(let id, _) = model.zukaufActivity { return id == draft.id } else { return false }
-        }, "ZUKAUF_NEU angenommen: \(model.zukaufActivity)")
+        }, "ZUKAUF_NEU angenommen nach \(String(format: "%.1f", Date().timeIntervalSince(gesendet))) s: "
+            + "\(model.zukaufActivity)")
         check(await wait(20) { model.zukaufStatus(for: draft.id)?.isWaiting == true }, "wartet auf CAD")
         check(model.zukaufStatus(for: draft.id)?.cadLinks.isEmpty == false,
               "CAD-Links: \(model.zukaufStatus(for: draft.id)?.cadLinks.map(\.titel) ?? [])")

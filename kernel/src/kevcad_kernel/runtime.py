@@ -638,7 +638,10 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
     # Läufe intern
     # =================================================================================================================
 
-    def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str):
+    def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str,
+                    katalog_neu: bool = False):
+        """Lauf einreihen. ``katalog_neu``: der Katalog hat sich geändert (CAD übernommen, Eintrag gesichert); ein schon
+        laufender Lauf mit gleichem Dateistand hat den alten Katalog gelesen und zählt dann nicht."""
         proj = self._project
         if proj is None:
             return {"ok": False, "error": NO_PROJECT}
@@ -652,7 +655,8 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
         with self._jobs_cond:
             # Gleicher Dateistand mit gleichen Parametern läuft schon oder wartet: auf dessen Ergebnis warten
             cur = self._current
-            if cur is not None and cur.key == job.key and cur.path == job.path and not cur.done.is_set():
+            if cur is not None and cur.key == job.key and cur.path == job.path and not cur.done.is_set() \
+                    and not katalog_neu:
                 return cur
             for pending in self._jobs:
                 if pending.key == job.key and pending.path == job.path:
@@ -1233,11 +1237,12 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime):
 
     def _rerun_after_catalog_change(self) -> None:
         """Kevin hat in der App einen Katalogeintrag geändert: mit Auto-Lauf neu rechnen, damit die Stückliste die
-        neuen Preise und Gewichte zeigt."""
+        neuen Preise und Gewichte zeigt. Läuft gerade ein Lauf mit demselben Dateistand, hat er noch den alten Katalog
+        gelesen: dann folgt ein weiterer (sonst ginge etwa ein zweites übernommenes CAD verloren)."""
         with self._lock:
             ok = bool(self._settings.get("auto_run")) and self._project is not None and self._bom is not None
         if ok:
-            self._submit_run(None, 0, self.run_timeout_s, source="auto")
+            self._submit_run(None, 0, self.run_timeout_s, source="auto", katalog_neu=True)
 
     # =================================================================================================================
     # Auto-Lauf
