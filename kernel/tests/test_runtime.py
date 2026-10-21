@@ -43,7 +43,8 @@ def project(env, code: str | None = None, template: str = "empty", regel: bool =
     if not regel:
         settings = json.loads((path / "kevcad.json").read_text())
         (path / "kevcad.json").write_text(json.dumps({**settings, "inventar_regel": False}))
-    env["app"].wait_for(lambda h: h["type"] == "PROJECT" and h["name"] == path.name, start=start)
+    i, _, _, _ = env["app"].wait_for(lambda h: h["type"] == "PROJECT" and h["name"] == path.name, start=start)
+    env["app"].wait_for(lambda h: h["type"] == "BESTAND", start=i + 1)  # Bestand je Projekt folgt dem Wechsel
     if code is not None:
         assert env["rt"].model_write(code)["ok"]
     return path

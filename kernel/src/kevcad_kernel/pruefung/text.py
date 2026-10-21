@@ -71,8 +71,64 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
         from kevcad_kernel.druck.bericht import druck_zeilen
 
         zeilen += druck_zeilen(check["druck"])
-    if fehler:
+    arten = {b.get("art") for b in fehler}
+    if "durchdringung" in arten:
         zeilen.append("Gewollte Überlappungen (Presspassung, Schaum) nur nach Rückfrage bei Kevin mit "
                       "erlaubt_ueberlappung(a, b, grund=\"…\") in model.py erklären; Gewindeeingriff erkennt die "
                       "Prüfung selbst.")
+    if arten & {"nicht_einbaubar", "nur_baugruppe", "eingesperrt", "einfuehren", "werkzeug"}:
+        zeilen.append("Einbaubarkeit: Teile so konstruieren, dass sie sich nacheinander einsetzen lassen. Erklärungen "
+                      "nur, wo sie stimmen: Zukaufteil montage(\"Gruppe\", baugruppe=True), Clip montage(teil, "
+                      "schnappt=True), beim Druck eingelegte Mutter montage(teil, eingedruckt=True); "
+                      "montage_reihenfolge zeigt die Reihenfolge.")
     return "\n".join(zeilen), bool(fehler)
+
+
+def montage_text(check: dict[str, Any] | None, max_schritte: int = 200) -> str:
+    """Montagereihenfolge als Liste: „3. Deckel – von oben (Innensechskant 6)“."""
+    m = (check or {}).get("montage")
+    if not isinstance(m, dict):
+        return "Keine Montagereihenfolge: die Prüfung lief ohne Montage (oder es gab noch keinen Lauf)."
+    schritte = list(m.get("schritte") or [])
+    zeilen = [f"Montagereihenfolge, {len(schritte)} Schritte" + (" (vollständig):" if m.get("vollstaendig") else ":")]
+    for s in schritte[:max_schritte]:
+        teile = s.get("teile") or []
+        extra = ""
+        if s.get("gruppe") and len(teile) > 1:
+            namen = ", ".join(t.rsplit("/", 1)[-1] for t in teile[:4]) + (" …" if len(teile) > 4 else "")
+            extra = f" [{len(teile)} Teile: {namen}]"
+        wz = f" ({s['werkzeug']})" if s.get("werkzeug") else ""
+        zeilen.append(f"{s.get('nr')}. {s.get('name')} – {s.get('richtung_text')}{wz}{extra}")
+    if len(schritte) > max_schritte:
+        zeilen.append(f"… und {len(schritte) - max_schritte} weitere")
+    if m.get("offen"):
+        zeilen.append("Nicht einbaubar: " + ", ".join(m["offen"][:12]) + (" …" if len(m["offen"]) > 12 else ""))
+    if m.get("abgebrochen"):
+        zeilen.append(f"Abgebrochen: {m['abgebrochen']}")
+    return "\n".join(zeilen)
+
+
+def stand_text(check: dict[str, Any] | None) -> str:
+    """Kurz: Gruppen auf dem Boden mit Masse und Kippwinkel."""
+    from kevcad_kernel.bom import de_num
+
+    st = (check or {}).get("stand")
+    if not isinstance(st, dict):
+        return ""
+    zeilen = []
+    for g in st.get("gruppen") or []:
+        teile = g.get("teile") or []
+        name = teile[0] if len(teile) == 1 else f"{teile[0].split('/')[0]} und weitere ({len(teile)} Teile)"
+        if g.get("befestigt"):
+            zustand = "befestigt"
+        elif g.get("schwebt"):
+            zustand = "schwebt"
+        elif g.get("kippwinkel") is not None:
+            zustand = f"Kippwinkel {de_num(g['kippwinkel'], 1)}°"
+        else:
+            zustand = ""
+        zeilen.append(f"- {name}: {de_num(g.get('masse_kg') or 0, 2)} kg, {zustand}")
+    if not zeilen:
+        return ""
+    rest = f"\n… und {len(zeilen) - 12} weitere Gruppen" if len(zeilen) > 12 else ""
+    return f"Stand (Boden z = {de_num(st.get('boden_z') or 0, 1)}):\n" + "\n".join(zeilen[:12]) + rest

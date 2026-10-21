@@ -197,6 +197,8 @@ public final class AppModel: ObservableObject {
     @Published public var schnittkoerperSichtbar = true
     /// Versionen (additiv): Versionsleiste, Meilensteine, Vergleich, Varianten (Aktionen: `versionenActions`).
     public let versionen = VersionenStore()
+    /// Bestand (additiv, BESTAND.md): Bestand des Projekts, Buchungen, Zuschnitt mit Resten und Einkaufsliste.
+    @Published public var bestandZustand = BestandZustand()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

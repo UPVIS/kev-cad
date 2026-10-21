@@ -17,6 +17,9 @@ final class ProjectWindowState: ObservableObject {
     /// Band der Prüfung (Durchdringungen …) für diese Befunde weggeklickt; Liste der Befunde aufgeklappt.
     @Published var dismissedPruefung: String?
     @Published var pruefListeOffen = false
+    /// Reiter im Prüfband ("befunde" oder "montage") und der Montageschritt, der gerade gezeigt wird (nil = alles).
+    @Published var pruefTab = "befunde"
+    @Published var montageSchritt: Int?
 
     // Schnitt: AppModel kennt nur `sectionEnabled`, Achse und Lage hält die Oberfläche.
     @Published var sectionAxis = "z"

@@ -18,10 +18,11 @@ from kevcad_kernel.versionen.git import git_verfuegbar
 
 pytestmark = pytest.mark.skipif(not git_verfuegbar()[0], reason="git fehlt")
 
+# Testmodelle stehen physikalisch korrekt (Prüfung Stufe 2: nichts schwebt, nichts kippt)
 HEAD = "from build123d import *\nfrom kevcad import show, step, param\n"
-CODE1 = HEAD + 'b = param("b", 20)\nshow(Box(b, 10, 5), "Platte")\nshow(Pos(0, 0, 10) * Box(5, 5, 5), "Klotz")\n'
-CODE2 = HEAD + ('b = param("b", 40)\nshow(Box(b, 10, 5), "Platte")\nshow(Pos(0, 0, 10) * Box(5, 5, 5), "Klotz")\n'
-                'show(Pos(30, 0, 0) * Cylinder(3, 8), "Stift")\n')
+CODE1 = HEAD + 'b = param("b", 20)\nshow(Box(b, 10, 5), "Platte")\nshow(Pos(0, 0, 5) * Box(5, 5, 5), "Klotz")\n'
+CODE2 = HEAD + ('b = param("b", 40)\nshow(Box(b, 10, 5), "Platte")\nshow(Pos(0, 0, 5) * Box(5, 5, 5), "Klotz")\n'
+                'show(Pos(30, 0, 1.5) * Cylinder(3, 8), "Stift")\n')
 
 
 @pytest.fixture(scope="module")

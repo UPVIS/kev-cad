@@ -368,6 +368,7 @@ public final class AppController: AppActions {
             case .project(let p): applyProject(p)
             case .bom(let b): applyBOM(b)
             case .catalog(let c): applyCatalog(c)
+            case .bestand(let b): applyBestand(b)
             default: break
             }
             return
@@ -496,6 +497,8 @@ public final class AppController: AppActions {
             applyCheck(c)
         case .versionen(let v):
             handleVersionen(v)
+        case .bestand(let b):
+            applyBestand(b)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -547,6 +550,7 @@ public final class AppController: AppActions {
             resetZukauf()
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             resetVersionen()  // Versionen: Liste und Vergleich des alten Projekts verwerfen
+            bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)

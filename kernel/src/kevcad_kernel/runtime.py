@@ -33,12 +33,15 @@ from typing import Any
 import kevcad_kernel
 from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
+from kevcad_kernel.bestand.anbindung import ANFRAGEN as BESTAND_ANFRAGEN
+from kevcad_kernel.bestand.anbindung import BestandAnbindung
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
 from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
+from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.versionen.laufzeit import VersionenRuntimeMixin
@@ -93,9 +96,11 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, VersionenRuntimeMixin):
-    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
-    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Versionen (``VersionenRuntimeMixin``)."""
+class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst,
+                    VersionenRuntimeMixin):
+    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
+    Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
+    Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Versionen (``VersionenRuntimeMixin``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -136,6 +141,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
         self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
+        self._bestand_init()
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
         self._link.start()
@@ -346,9 +352,21 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
             if sperre:
                 return {"ok": False, "error": sperre, "befunde": offen}
         want_csv = any(f.lower().lstrip(".") in ("bom_csv", "csv") for f in formats)
-        formats = [f for f in formats if f.lower().lstrip(".") not in ("bom_csv", "csv")]
+        want_einkauf = any(f.lower().lstrip(".") == "einkaufsliste_csv" for f in formats)
+        formats = [f for f in formats if f.lower().lstrip(".") not in ("bom_csv", "csv", "einkaufsliste_csv")]
         csv_files: list[str] = []
         csv_notes: list[str] = []
+        if want_einkauf:  # Einkaufsliste (BESTAND.md), ohne Sperre: sie beschreibt nur, was fehlt
+            res = self._bestand_export_csv(proj)
+            if res.get("ok"):
+                csv_files.append(res["file"])
+            else:
+                csv_notes.append(res["error"])
+            if not formats and not want_csv:
+                out_e: dict[str, Any] = {"ok": bool(csv_files), "files": csv_files}
+                if csv_notes:
+                    out_e["error"] = "; ".join(csv_notes)
+                return out_e
         if want_csv:
             res = self._export_bom_csv(proj)
             if res.get("ok"):
@@ -663,6 +681,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
             if reply_to:
                 msg["reply_to"] = reply_to
             self._send_app(msg)
+            self._bestand_projekt(same)  # BESTAND nach jedem Projektwechsel
             for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
                 self._send_app(status)
         self._versionen_projekt(proj, same)  # Versionen: Repo anlegen, alte Stände übernehmen
@@ -860,7 +879,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
                                 "inventar_regel": bool(final.get("inventar_regel", False)),
                                 "inventar_verstoesse": violations})
                 if isinstance(final.get("bom"), dict):
-                    bom = {"run": job.run, **final["bom"]}
+                    bom = self._bestand_bom({"run": job.run, **final["bom"]})  # Zuschnitt mit Bestand, Einkauf
                     with self._lock:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
@@ -922,6 +941,11 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
         if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
             result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],
                              "cuts": len(bom.get("cuts") or [])}
+            with self._lock:
+                full = self._bom
+            if ok and full is not None and full.get("run") == job.run and full.get("einkaufsliste") is not None:
+                result["bom"]["einkauf"] = {"positionen": len(full["einkaufsliste"]),
+                                            "summe": full.get("einkauf_summe"), "hinweis": full.get("einkauf_hinweis")}
         rep = final.get("bedingungen")
         if isinstance(rep, dict):
             from kevcad_kernel.bedingungen.bericht import kurzbericht
@@ -1067,6 +1091,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
                 constraints = self._constraints
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            conn.send(self._bestand_nachricht())  # Bestand des offenen Projekts (null ohne Projekt)
             if constraints is not None:
                 conn.send({"type": "CONSTRAINTS", **constraints})
             self._anim_on_connect(conn)
@@ -1184,6 +1209,8 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE", "ZUKAUF_NEU", "ZUKAUF_CAD"):
             self._pool.submit(self._handle_app_request, header)
+        elif kind in BESTAND_ANFRAGEN:
+            self._pool.submit(self._bestand_anfrage_sicher, header)
         elif self._anim_app_message(kind, header):
             pass
         elif self._versionen_app_message(kind, header):
@@ -1264,6 +1291,12 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
         except Exception as exc:  # noqa: BLE001
             self._send_app({"type": "ERROR", "reply_to": rid, "message": f"{type(exc).__name__}: {exc}"})
 
+    def _bestand_anfrage_sicher(self, header: dict[str, Any]) -> None:
+        try:
+            self._bestand_anfrage(header)
+        except Exception as exc:  # noqa: BLE001
+            self._send_app({"type": "ERROR", "reply_to": header.get("id"), "message": f"{type(exc).__name__}: {exc}"})
+
     def _inventory_rule(self, reload: bool = False) -> bool:
         """Inventar-Regel des offenen Projekts (kevcad.json, Standard an). ``reload`` liest die Datei neu."""
         proj = self._project
@@ -1334,6 +1367,10 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
             if proj is None:
                 watched, last_sig, changed_at = None, None, None
                 continue
+            try:
+                self._bestand_pruefen()  # bestand.json von außen geändert?
+            except Exception as exc:  # noqa: BLE001
+                self._log(f"[kernel] Bestand prüfen: {exc!r}")
             path = proj.model
             try:
                 st = path.stat()
@@ -1361,6 +1398,9 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, DruckRuntime, Versione
         try:
             import kevcad_kernel.export  # noqa: F401
             import kevcad_kernel.measure  # noqa: F401
+            from kevcad_kernel.bestand import vorladen
+
+            vorladen()  # scipy für den Zuschnitt mit Bestand
         except Exception as exc:  # noqa: BLE001
             self._log(f"[kernel] Vorladen fehlgeschlagen: {exc!r}")
 
