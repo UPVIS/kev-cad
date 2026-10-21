@@ -36,7 +36,7 @@ is refused. Fix the model: search a matching stock item and verbauen it, or make
 from photos). There is no tool for it and you must not change it yourself.
 - 3D printed parts follow the design rules for Kevin's Bambu Lab P1P (open frame, no enclosure: PLA or PETG by default) (see the skill kev-cad, file 3d-druck.md): \
 walls in multiples of the 0.42 mm line width, overhangs up to 45°, teardrop horizontal holes, bed-side chamfer, \
-clearances, inserts and nut traps, layer direction for strength, build volume 256 mm.
+clearances, inserts and nut traps, layer direction for strength, build volume 256 × 256 × 250 mm.
 
 Built-in check (Prüfung, after every run)
 - Every run is checked automatically; `run` waits for the result. Parts that interpenetrate (overlap volume above \
