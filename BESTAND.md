@@ -124,3 +124,39 @@ Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` vo
 - Stückliste: Zuschnittansicht zeigt je Stange bzw. Platte die Stücke, farbig nach Quelle (Rest, Bestand, kaufen),
   neue Reste markiert, Verschnitt grau; darunter die Einkaufsliste mit Summe, Export als CSV und „Kopieren“ als Text.
 - Dialog „Gebaut …“ mit Vorschau der Buchung (was weg, was neu) und Bestätigung.
+
+## Ergänzungen des Kernels (S-K, additiv und optional)
+
+Was der Kernel über den Vertrag hinaus liefert; ältere Gegenseiten ignorieren es. Umsetzung in
+`kernel/src/kevcad_kernel/bestand/`, Testdateien aus `kernel/tools/make_bestand_fixtures.py` (Abschnitt `bestand` in
+`fixtures.json`), Ersatz-Kernel mit `fake_kernel.py --bestand`.
+
+- **BESTAND:** `datei` (Pfad der Projektdatei oder null), `fehler` (Text, wenn bestand.json kaputt ist; `bestand` ist
+  dann null). Ohne Bestandsdatei, aber mit Projekt: leerer Bestand mit Standard-Einstellungen, `stand` null.
+- **Buchungen:** `aenderungen[i]` mit `op` (`posten` mit `vorher`/`nachher`, `einstellungen`, `ganze` mit `delta`,
+  `rest_weg`, `rest_neu` mit `rest`, `stueck` mit `laenge` und `delta`); Umkehrbuchungen tragen `bezug` (id der
+  umgekehrten Buchung), Gebaut-Buchungen `run` und `sitzung` (Kernelstart; derselbe Lauf wird nur einmal als gebaut
+  gebucht). Ids `B-0001` fortlaufend je Projekt.
+- **BESTAND_SAVE:** Reste ohne `kennung` bekommen eine neue, `seit` ist sonst heute. Ohne Änderung: `ACK` mit `ok` und
+  `message` „keine Änderung“, ohne `buchung`, danach nichts. ACK auf BESTAND_SAVE und BUCHUNG_RUECKGAENGIG trägt wie
+  bei GEBAUT_REQ `buchung`, wenn gebucht wurde.
+- **BOM.lines** (Platten): `breite`, `tiefe` (Zuschnittmaß, bei `form=` das Hüllrechteck).
+- **BOM.cuts:** Stangen tragen `art: "stange"`; jeder Cut mit Bestand trägt `mindestrest`. `quellen[i].verschnitt` ist
+  immer da: true nur bei 0 < `rest_neu` < Mindestrest. Weicht `einstellungen.saegeblatt_mm` von 3 ab, sind auch die
+  bisherigen Felder (`saegeschnitt`, `stangen`, `verschnitt_prozent`, `preis_stangen`) mit dieser Schnittbreite
+  gerechnet. Platten: `platte` ist null ohne Standardformat im Katalog (dann wird je Stück ein Zuschnitt gekauft),
+  `neue_reste` als Liste `{b, h}`, `verschnitt_prozent` ohne die neuen Reste, optional `zu_gross` (Liste `{b, h}`).
+  In `stuecke` sind `b` und `h` die Lage auf der Platte (b entlang x); `gedreht` heißt: gegenüber `breite` × `tiefe`
+  der Zeile um 90° gedreht. Platten haben ihren Ursprung links unten, Stücke liegen ohne Randschnitt an der Kante.
+- **BOM.stueckgut:** je Schraube (nach Länge), Mutter, Scheibe `{stock_id, benennung, masse_text, laenge, anzahl,
+  aus_bestand, kaufen}`. Bestandszeilen ohne `laenge` passen zu jeder Schraubenlänge.
+- **BOM:** `einkauf_summe` (€ oder null), `einkauf_hinweis` (Richtpreise mit Stand, Positionen ohne Preis).
+  `einkaufsliste[i]` zusätzlich `link_text` (Name der Bezugsquelle) und `preis_stand`; `einheit` auch
+  „Sonderlänge 1.200 mm“ (Stück länger als die Stange) und „Zuschnitt 800 × 600 mm“.
+- **EXPORT_REQ:** Format `einkaufsliste_csv` (Semikolon, deutsche Zahlen, UTF-8 mit BOM) nach
+  `<projekt>/output/<name>-einkaufsliste.csv`, ohne Export-Sperre.
+- **MCP:** `bestand_eintragen` zusätzlich mit `reste_entfernen`, `reste_ersetzen` und `mindestrest_mm`; `grund` ist
+  Pflicht (Kevins Worte), ebenso bei `gebaut_buchen`. `run` nennt die Einkaufsliste in einer Zeile.
+- **Zuschnitt:** 1D-Näherung wie oben, danach `scipy.optimize.milp` (200 ms, nur wenn besser nach derselben Bewertung:
+  wenig kaufen, wenig Verschnitt, wenige Reste danach, Reste vor ganzen Stangen). Platten: Guillotine mit freien
+  Rechtecken, 27 Varianten (Sortierung, Wahl, Schnittrichtung) im Zeitlimit, die beste gilt.

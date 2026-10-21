@@ -202,3 +202,46 @@ def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]
     if offset != len(payload):
         raise ValueError(f"Nutzlast hat {len(payload)} Byte, erwartet {offset}")
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Bestand je Projekt (BESTAND.md): Nachrichten ohne Nutzlast
+
+BESTAND_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    # type: Pflichtfelder (außer type/seq)
+    "BESTAND": ("bestand", "buchungen", "stand"),
+    "BESTAND_REQ": ("id",),
+    "BESTAND_SAVE": ("id",),  # dazu posten_id und posten oder einstellungen
+    "GEBAUT_REQ": ("id", "run"),
+    "BUCHUNG_RUECKGAENGIG": ("id", "buchung"),
+}
+
+
+def pack_bestand(*, bestand: dict[str, Any] | None, buchungen: list[dict[str, Any]], stand: str | None,
+                 datei: str | None = None, fehler: str | None = None, reply_to: str | None = None,
+                 seq: int = 0) -> dict[str, Any]:
+    """Kopf der Nachricht BESTAND: Inhalt der Projektdatei (null ohne Projekt oder bei kaputter Datei, dann mit
+    ``fehler``), die letzten Buchungen (neueste zuerst, je mit ``zusammenfassung`` und ``rueckgaengig_durch``), Stand als
+    ISO-Zeit; ``datei`` (Pfad) und ``fehler`` sind additiv."""
+    header: dict[str, Any] = {"type": "BESTAND", "seq": seq, "bestand": bestand, "buchungen": list(buchungen),
+                              "stand": stand, "datei": datei, "fehler": fehler}
+    if reply_to:
+        header["reply_to"] = reply_to
+    return header
+
+
+def check_bestand_message(header: dict[str, Any]) -> list[str]:
+    """Fehlende Pflichtfelder einer Bestandsnachricht (leer = vollständig); für Tests und den Ersatz-Kernel."""
+    kind = header.get("type")
+    need = BESTAND_NACHRICHTEN.get(str(kind))
+    if need is None:
+        return [f"{kind!r} ist keine Bestandsnachricht"]
+    missing = [k for k in need if k not in header]
+    if kind == "BESTAND_SAVE" and "einstellungen" not in header and not ("posten_id" in header and "posten" in header):
+        missing.append("posten_id und posten oder einstellungen")
+    if kind == "BESTAND" and isinstance(header.get("buchungen"), list):
+        for b in header["buchungen"]:
+            for key in ("id", "zeit", "art", "aenderungen", "zusammenfassung", "rueckgaengig_durch"):
+                if key not in b:
+                    missing.append(f"buchungen[].{key}")
+    return missing
