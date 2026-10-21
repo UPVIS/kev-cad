@@ -1,12 +1,12 @@
 # kevcad_kernel.druck · Druckprüfung für 3D-Druckteile
 
-Prüft eine build123d-Form auf Druckbarkeit mit dem Bambu Lab P2S (FDM, Düse 0,4 mm, Schicht 0,2 mm) und schlägt eine
-Ausrichtung vor. Regeln und Quellen: [skill/kev-cad/3d-druck.md](../../../../skill/kev-cad/3d-druck.md).
+Prüft eine build123d-Form auf Druckbarkeit mit Kevins Bambu Lab P1P (FDM, offen, Edelstahldüse 0,4 mm, Schicht 0,2 mm)
+und schlägt eine Ausrichtung vor. Regeln und Quellen: [skill/kev-cad/3d-druck.md](../../../../skill/kev-cad/3d-druck.md).
 Nur numpy, build123d und OCP; keine weiteren Abhängigkeiten.
 
 | Datei | Inhalt |
 |---|---|
-| `regeln.py` | Druckerprofil `P2S`, `MATERIALIEN` (ids wie im Kev-CAD-Katalog), Schwellen, Tabellen (Gewindeeinsätze, Muttern, Kernlöcher, Passungen, Schnapphaken) mit Quellen-Schlüsseln (`QUELLEN`) |
+| `regeln.py` | Druckerprofil `P1P` (aus den installierten Bambu-Studio-Profilen), `MATERIALIEN` (ids wie im Kev-CAD-Katalog), Schwellen, Tabellen (Gewindeeinsätze, Muttern, Kernlöcher, Passungen, Schnapphaken) mit Quellen-Schlüsseln (`QUELLEN`) |
 | `netz.py` | vernetzt eine **Kopie** der Form (die Originalform bleibt ohne Dreiecke), Flächeninfos (Ebene, Zylinder mit Achse/Radius/Bogen/hohl), Kanten, Nachbarschaft, Punkt-in-Körper |
 | `pruefung.py` | `pruefe_druckteil(...)`, `als_warnungen(...)` |
 
@@ -15,9 +15,9 @@ Nur numpy, build123d und OCP; keine weiteren Abhängigkeiten.
 ```python
 from kevcad_kernel.druck import pruefe_druckteil, als_warnungen
 
-e = pruefe_druckteil(form, material="petg", ausrichtung=None)   # drucker=P2S
+e = pruefe_druckteil(form, material="petg", ausrichtung=None)   # drucker=P1P
 e["ok"]                     # False, sobald ein Fehler dabei ist (z. B. passt nicht in den Bauraum)
-e["zusammenfassung"]        # "1 Warnung, 2 Hinweise (PETG, Bambu Lab P2S)"
+e["zusammenfassung"]        # "1 Warnung, 2 Hinweise (PETG, Bambu Lab P1P)"
 e["ausrichtung"]            # unten, drehung (Rot(*drehung) * form legt es so aufs Bett), liegt_auf, automatisch,
                             # begruendung (deutscher Satz), kandidaten (die 5 besten Lagen mit Kennzahlen)
 e["hinweise"]               # [{art, schwere, text, befund, abhilfe, flaeche, flaechen, punkt, werte}], Fehler zuerst
@@ -33,7 +33,9 @@ als_warnungen(e)            # ["Druck Warnung: … [#f6]", …] nur Fehler und W
   Modellkoordinaten – passend zum Viewer, auch wenn die Prüfung das Teil gedreht hat.
 - Das Ergebnis ist reines JSON (`json.dumps(e, allow_nan=False)` geht).
 - `material`: id oder Alias (`material("nylon")` → `pa`); unbekannt → `ValueError` mit Vorschlägen.
-  `harz-standard` wird nur grob geprüft (kein Harzdrucker im Profil).
+  `harz-standard` ergibt einen Fehler (kein Harzdrucker). ABS, ASA, PC und PA warnen auf dem offenen P1P (nur mit
+  Einhausung), CF-Filamente ohne gehärtete Düse (`Drucker(geschlossen=True, duese_gehaertet=True)` nach Umbau).
+  Alias `"Amazon Basics PLA"` → `pla` (Kevins Filament, Temperaturen in `druckhinweise`).
 
 ## Einbindung (macht Kevin bzw. der Kernel-Strang)
 
@@ -83,12 +85,12 @@ gleiche Flächennummern wie die Referenzen). Vorschlag für `mcp_tools/tools.py`
 
 ```python
 @tool("druckpruefung", "Druckprüfung",
-      "Prüft ein Teil auf 3D-Druckbarkeit (Bambu P2S): Ausrichtung, Überhänge, Brücken, Wände, Bohrungen, Bauraum …",
+      "Prüft ein Teil auf 3D-Druckbarkeit (Bambu P1P): Ausrichtung, Überhänge, Brücken, Wände, Bohrungen, Bauraum …",
       ToolAnnotations(readOnlyHint=True))
 async def druckpruefung(teil: str, material: str | None = None, ausrichtung: str | int | None = None,
                         zeigen: bool = True) -> CallToolResult:
     rec = service.part(teil)                                      # PartRecord des letzten Laufs
-    mat = material or rec.druckmaterial or rec.material or "petg"  # druckteil-Material bevorzugen
+    mat = material or rec.druckmaterial or rec.material or "pla"   # druckteil-Material, sonst Kevins PLA
     erg = await tools.work("Druckprüfung", pruefe_druckteil, rec.shape, mat, ausrichtung)
     if zeigen:   # vorhandene Werkzeuge wiederverwenden
         farbe = {"fehler": "red", "warnung": "orange", "hinweis": "yellow"}
@@ -108,6 +110,8 @@ async def druckpruefung(teil: str, material: str | None = None, ausrichtung: str
 
 ## Wie die Prüfung arbeitet
 
+- **Bauraum:** 256 × 256 × 250 mm aus dem P1P-Maschinenprofil, Sperrbereich 18 × 28 mm vorne links muss frei
+  bleiben (Teil rechts daneben oder dahinter), 5 mm Rand für Brim; Drehungen um Z in 1°-Schritten.
 - **Netz:** BRepMesh auf einer Kopie, Ablenkung diag/1000 (0,01–0,1 mm), 0,3 rad. Auflage zählt nur auf ebenen Flächen.
 - **Ausrichtung:** sechs Achsrichtungen und die Normalen der acht größten ebenen Flächen. Bewertet (kleiner ist besser):
   Stützfläche (projiziert, kurze Brücken ≤ 10 mm ausgenommen) + 0,6 · fehlende Auflage + 0,25 · Höhe

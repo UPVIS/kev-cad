@@ -1,4 +1,4 @@
-"""Konstruktionsregeln für 3D-Druckteile als Daten: Druckerprofil Bambu Lab P2S, Materialwerte, Tabellen.
+"""Konstruktionsregeln für 3D-Druckteile als Daten: Druckerprofil Bambu Lab P1P, Materialwerte, Tabellen.
 
 Die Zahlen und ihre Herkunft stehen ausführlich in ``skill/kev-cad/3d-druck.md``. Jede Angabe trägt hier einen
 Quellen-Schlüssel aus ``QUELLEN``; ``EW`` heißt Erfahrungswert (Größenordnung aus der Praxis, nicht belegt) und ist
@@ -11,17 +11,27 @@ Studio gibt die Stützenschwelle vom Waagrechten an (30° bei 0,2 mm Schicht = 6
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Quellen
 # ---------------------------------------------------------------------------------------------------------------------
 
 QUELLEN: dict[str, str] = {
-    "B-FAQ": "Bambu Lab Wiki, P2S FAQ – https://wiki.bambulab.com/en/p2s/manual/p2s-faq",
-    "BS-P": "Bambu Studio, Prozessprofile P2S (0.20mm Standard @BBL P2S) – "
+    "B-P1P": "Bambu Lab, P1P Technical Specifications (Datenblatt) – "
+             "https://public-cdn.bambulab.com/store/bambulab-P1P-tech-specs.pdf",
+    "B-Kit": "Bambu Lab Wiki, P1P Enclosure Kit – https://wiki.bambulab.com/en/p1/manual/p1p-to-p1s",
+    "B-AMS": "Bambu Lab Store, AMS 2 Pro (X1/P1: Buffer/Hub, Kupplung, Kabel; bis 4 AMS) – "
+             "https://us.store.bambulab.com/products/ams-2-pro",
+    "BS-M": "Bambu Studio, Maschinenprofil „Bambu Lab P1P 0.4 nozzle“ (installiert unter ~/Library/Application "
+            "Support/BambuStudio/system/BBL/machine, gleich im Repo) – "
             "https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL",
-    "BS-F": "Bambu Studio, Filamentprofile P2S – https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL",
+    "BS-P": "Bambu Studio, Prozessprofil „0.20mm Standard @BBL P1P“ (installiert, gleich im Repo) – "
+            "https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL",
+    "BS-F": "Bambu Studio, Filamentprofile „@BBL P1P“ (system/BBL/filament/P1P) – "
+            "https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL/filament/P1P",
+    "KEV-PLA": "Kevins Bambu-Studio-Filament „Amazon Basics PLA“ (erbt Bambu PLA Basic @BBL P1P; Düse 205 °C, "
+               "max. 210, Bett 47 °C)",
     "BS-Cut": "Bambu Studio, Schnittwerkzeug (GLGizmoAdvancedCut) – https://github.com/bambulab/BambuStudio/tree/master/src",
     "BS-Flow": "Bambu Studio, Flow.cpp (Linienabstand) – "
                "https://github.com/bambulab/BambuStudio/blob/master/src/libslic3r/Flow.cpp",
@@ -29,7 +39,8 @@ QUELLEN: dict[str, str] = {
     "B-Shr": "Bambu Lab Wiki, 3D Prints Shrinkage – https://wiki.bambulab.com/en/knowledge-sharing/3d-prints-shrinkage",
     "B-XY": "Bambu Lab Wiki, XY Hole/Contour Compensation – "
             "https://wiki.bambulab.com/en/software/bambu-studio/xy-hole-contour-compensation",
-    "B-Fil": "Bambu Lab Wiki, Filament Guide – https://wiki.bambulab.com/en/general/filament-guide-material-table",
+    "B-Fil": "Bambu Lab Wiki, Filament Guide (offene Drucker wie P1P: ABS/ASA/PC/PA „Not Recommended“) – "
+             "https://wiki.bambulab.com/en/general/filament-guide-material-table",
     "B-TPU": "Bambu Lab Wiki, TPU Printing Guide – https://wiki.bambulab.com/en/knowledge-sharing/tpu-printing-guide",
     "B-PT": "Bambu Lab Wiki, Prime Tower – https://wiki.bambulab.com/en/software/bambu-studio/parameter/prime-tower",
     "B-Waste": "Bambu Lab Wiki, Reduce Waste – "
@@ -68,7 +79,6 @@ QUELLEN: dict[str, str] = {
     "CK-Kammer": "CNC Kitchen, Does a heated chamber make your prints stronger? – "
                  "https://www.cnckitchen.com/blog/does-a-heated-chamber-make-your-3d-prints-stronger",
     "CK-Grad": "CNC Kitchen, Gradient infill – https://www.cnckitchen.com/blog/gradient-infill-for-3d-prints",
-    "CK-P2S": "CNC Kitchen, Bambu Lab P2S review – https://www.cnckitchen.com/blog/bambu-lab-p2s-review",
     "BOSL": "BOSL2 shapes3d (Tropfenform 45°) – https://github.com/BelfrySCAD/BOSL2/wiki/shapes3d.scad",
     "BAY": "Bayer MaterialScience, Snap-Fit Joints for Plastics – "
            "https://cdn.sparkfun.com/assets/home_page_posts/1/4/1/0/Plastic_Snap_fit_design.pdf",
@@ -90,31 +100,35 @@ QUELLEN: dict[str, str] = {
 
 @dataclass(frozen=True)
 class Drucker:
-    """Druckerprofil. Standardwerte: Bambu Lab P2S mit 0,4-mm-Düse und Profil „0.20mm Standard“."""
+    """Druckerprofil. Standardwerte: Kevins Bambu Lab P1P mit 0,4-mm-Düse und Profil „0.20mm Standard @BBL P1P“."""
 
-    name: str = "Bambu Lab P2S"
-    bauraum: tuple[float, float, float] = (256.0, 256.0, 256.0)  # B-FAQ
+    name: str = "Bambu Lab P1P"
+    bauraum: tuple[float, float, float] = (256.0, 256.0, 250.0)  # BS-M: 256 × 256, Druckhöhe 250 (Datenblatt: 256³)
+    sperrflaeche: tuple[float, float] = (18.0, 28.0)  # BS-M bed_exclude_area: vorne links (x 0–18, y 0–28) frei halten
     rand: float = 5.0                  # Platz für Brim (Standard 5 mm, BS-P) bzw. Sicherheitsabstand
     duese: float = 0.4
+    duese_material: str = "Edelstahl"  # B-P1P, BS-M (stainless_steel)
+    duese_gehaertet: bool = False      # CF/GF-Filamente brauchen HRC 40 (BS-F) – gehärtetes Hotend ist Zubehör
     linienbreite: float = 0.42         # Außenwand, BS-P
     linienbreite_innen: float = 0.45   # Innenwand und Füllung, BS-P
     erste_schicht_breite: float = 0.50  # BS-P
     schichthoehe: float = 0.20         # BS-P
     erste_schicht: float = 0.20        # BS-P
-    schicht_min: float = 0.08          # BS-P (Maschinenprofil)
-    schicht_max: float = 0.28          # BS-P
-    waende: int = 2                    # Standard im Profil, BS-P
+    schicht_min: float = 0.08          # BS-M
+    schicht_max: float = 0.28          # BS-M
+    waende: int = 2                    # Standard im Profil, BS-P („0.20mm Strength“: 6 Wände, 25 %)
     deckschichten: int = 5             # oben (mind. 1,0 mm), BS-P
     bodenschichten: int = 3            # BS-P
     elefantenfuss_kompensation: float = 0.15  # BS-P
     stuetzen_schwelle: float = 30.0    # vom Waagrechten, Profil 0,20 mm (BS-P)
     brim: float = 5.0                  # BS-P
-    duese_max: float = 300.0           # °C, B-FAQ
-    bett_max: float = 110.0            # °C, B-FAQ
-    kammer_aktiv: bool = False         # geschlossen, nicht aktiv beheizt (B-FAQ)
-    kammer_passiv: float = 50.0        # °C bei Bett 100–110 °C (CNC Kitchen P2S-Test: 50–54 °C)
-    prime_tower_breite: float = 35.0   # BS-P
-    ams: tuple[str, ...] = ("AMS 2 Pro", "AMS HT", "AMS (1. Generation, mit Buffer-Adapter)")  # B-FAQ
+    duese_max: float = 300.0           # °C, B-P1P
+    bett_max: float = 100.0            # °C, B-P1P
+    geschlossen: bool = False          # offener Rahmen, keine Kammer (B-P1P); Einhausung als Kit (B-Kit)
+    zusatzluefter: bool = False        # Zusatz-Bauteillüfter optional (B-P1P, BS-M auxiliary_fan = 0)
+    prime_tower_breite: float = 35.0   # BS-P, nur mit AMS
+    ams: str = ("Zubehör: AMS, AMS 2 Pro (mit Upgrade-Kit) oder AMS HT, bis 4 Einheiten; ohne AMS Farbwechsel "
+                "von Hand per Pause")  # B-AMS
 
     @property
     def linienabstand_innen(self) -> float:
@@ -137,7 +151,7 @@ class Drucker:
         return 90.0 - self.stuetzen_schwelle
 
 
-P2S = Drucker()
+P1P = Drucker()
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Materialien
@@ -159,16 +173,18 @@ class Material:
     kragarm_max: float = 1.0            # mm waagrecht frei auskragend ohne Stütze (EW, ca. 2 Bahnen)
     wand_empfohlen: float = 1.2         # mm, 3 Bahnen (H-Info, X, HR)
     schwund: float = 0.3                # % linear (Richtwert)
-    verzug: int = 0                     # 0 kaum, 1 gering, 2 mittel, 3 stark
-    verzug_laenge: float | None = None  # mm Auflagelänge, ab der Verzug zu erwarten ist (EW)
+    verzug: int = 0                     # 0 kaum, 1 gering, 2 mittel, 3 stark (offener Bauraum)
+    verzug_laenge: float | None = None  # mm Auflagelänge, ab der offen Verzug zu erwarten ist (EW)
     schnapp_dehnung: float | None = 1.5  # % zulässig bei einmaligem Fügen (EW aus BAY, siehe 3d-druck.md)
     filmscharnier: str = "nein"         # "ja", "bedingt", "nein"
-    z_festigkeit: float = 0.5           # Zugfestigkeit quer zu den Schichten / in der Ebene
+    z_festigkeit: float = 0.5           # Zugfestigkeit quer zu den Schichten / in der Ebene, offen gedruckt
+    einhausung: bool = False            # braucht einen geschlossenen Bauraum (B-Fil: offen „Not Recommended“)
+    gehaertete_duese: bool = False      # abrasiv (CF/GF), Profil verlangt HRC 40 (BS-F)
     duese_temp: str = ""
     bett_temp: str = ""
     kammer: str = ""
     trocknen: str = ""
-    ams: str = "ja"
+    ams: str = "ja, falls ein AMS vorhanden ist"
     hinweise: tuple[str, ...] = ()
     quellen: tuple[str, ...] = ()
 
@@ -177,91 +193,100 @@ class Material:
         return self.verfahren == "3d-druck"
 
 
+_OFFEN = "offen (P1P ohne Gehäuse)"
+_NUR_GESCHLOSSEN = ("nur mit Einhausung (P1P Enclosure Kit oder Druckbox), Bett 10 min vorheizen; offen rät Bambu "
+                    "ab – sonst PLA oder PETG nehmen")
+
 MATERIALIEN: dict[str, Material] = {m.id: m for m in (
     Material(
-        "pla", "PLA", 1.24, ("pla", "polylactid", "polylactide"),
+        "pla", "PLA", 1.24, ("pla", "polylactid", "polylactide", "amazon basics pla"),
         ueberhang_max=60.0, bruecke_max=30.0, schwund=0.3, verzug=0,
         schnapp_dehnung=1.5, filmscharnier="nein", z_festigkeit=0.5,
-        duese_temp="220 °C (190–240)", bett_temp="55 °C (35–65)", kammer="Deckel/Tür ab Bett 45 °C öffnen",
-        trocknen="55 °C 8 h", ams="ja",
-        hinweise=("weich ab ca. 55 °C – nicht für Auto, Sonne, Heizungsnähe",
+        duese_temp="205 °C (Kevins „Amazon Basics PLA“, max. 210; Bambu PLA Basic 220, 190–240)",
+        bett_temp="47 °C (Amazon Basics PLA; Bambu-Profil 65 °C Texturplatte, 35 °C Cool Plate)",
+        kammer=_OFFEN + " – ideal für PLA", trocknen="55 °C 8 h",
+        hinweise=("Kevins Standardfilament: Amazon Basics PLA (Bambu-Studio-Profil, erbt Bambu PLA Basic @BBL P1P)",
+                  "weich ab ca. 55 °C – nicht für Auto, Sonne, Heizungsnähe",
                   "spröde: Schnapphaken und Filmscharniere ungeeignet"),
-        quellen=("BS-F", "B-Fil", "CK-45", "MH", "H-Snap"),
+        quellen=("KEV-PLA", "BS-F", "B-P1P", "B-Fil", "CK-45", "MH", "H-Snap"),
     ),
     Material(
         "pla-cf", "PLA-CF (PLA mit Kohlefaser)", 1.26, ("pla-cf", "pla cf", "carbon pla"),
         ueberhang_max=55.0, bruecke_max=25.0, schwund=0.2, verzug=0,
-        schnapp_dehnung=1.0, filmscharnier="nein", z_festigkeit=0.45,
-        duese_temp="230 °C (210–250)", bett_temp="55 °C", kammer="wie PLA", trocknen="55 °C 8 h", ams="ja",
-        hinweise=("steif, aber spröde; braucht gehärtete Düse (P2S: Serie)",),
-        quellen=("BS-F", "B-FAQ", "B-Shr"),
+        schnapp_dehnung=1.0, filmscharnier="nein", z_festigkeit=0.45, gehaertete_duese=True,
+        duese_temp="230 °C (210–250)", bett_temp="65 °C Texturplatte", kammer=_OFFEN, trocknen="55 °C 8 h",
+        hinweise=("braucht gehärtete Düse (Profil HRC 40); der P1P hat ab Werk Edelstahl – gehärtetes Hotend "
+                  "nachrüsten, sonst PLA ohne Faser", "steif, aber spröde"),
+        quellen=("BS-F", "B-P1P", "B-Fil", "B-Shr"),
     ),
     Material(
         "petg", "PETG", 1.27, ("petg", "pet-g"),
-        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.4, verzug=1, verzug_laenge=200.0,
+        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.4, verzug=1, verzug_laenge=180.0,
         schnapp_dehnung=2.5, filmscharnier="bedingt", z_festigkeit=0.4,
-        duese_temp="250 °C (230–270)", bett_temp="70 °C (60–80)",
-        kammer="geschlossen drucken (Lagenhaftung); bei Hitzestau Deckel leicht anheben", trocknen="65 °C 12 h",
-        ams="ja",
+        duese_temp="255 °C (220–270)", bett_temp="80 °C Texturplatte (70 °C Engineering-Platte)",
+        kammer=_OFFEN + "; Bambu empfiehlt geschlossen, weil kühle Umgebung die Lagenhaftung senkt – Zugluft "
+                        "vermeiden", trocknen="65 °C 12 h",
         hinweise=("Brücken und Überhänge etwas schlechter als PLA (P-PETG)",
-                  "zäh, gut für Schnapphaken und Clips; Filmscharnier nur für wenige Zyklen"),
+                  "zäh, gut für Schnapphaken und Clips; Filmscharnier nur für wenige Zyklen",
+                  "offen gedruckt eher etwas schwächer quer zu den Schichten (B-Fil)"),
         quellen=("BS-F", "B-Fil", "P-PETG", "CK-45"),
     ),
     Material(
         "abs", "ABS", 1.04, ("abs", "acrylnitril-butadien-styrol"),
-        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.7, verzug=3, verzug_laenge=80.0,
-        schnapp_dehnung=2.0, filmscharnier="nein", z_festigkeit=0.6,
-        duese_temp="270 °C (240–280)", bett_temp="90 °C (90–100)",
-        kammer="Tür zu, Bett 10 min vorheizen (P2S heizt die Kammer nicht aktiv, passiv ca. 50 °C)",
-        trocknen="80 °C 8 h (nicht im AMS 2 Pro)", ams="ja",
-        hinweise=("Verzug und Lagentrennung: große Flächen und spitze Ecken vermeiden, Brim/Mouse Ears",
+        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.7, verzug=3, verzug_laenge=50.0,
+        schnapp_dehnung=2.0, filmscharnier="nein", z_festigkeit=0.54, einhausung=True,
+        duese_temp="270 °C (240–280)", bett_temp="100 °C Texturplatte (90 °C Engineering-Platte)",
+        kammer=_NUR_GESCHLOSSEN, trocknen="80 °C 8 h",
+        hinweise=("auf dem offenen P1P: Verzug, Lagentrennung, Risse – Bambu rät ab (B-Fil)",
                   "Prusa nennt für FDM bis 1–2 % Schwund"),
-        quellen=("BS-F", "B-Fil", "P-ABS", "RJG", "CK-Kammer"),
+        quellen=("BS-F", "B-Fil", "B-P1P", "P-ABS", "RJG", "CK-Kammer"),
     ),
     Material(
         "asa", "ASA", 1.07, ("asa", "acrylester-styrol-acrylnitril"),
-        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.6, verzug=2, verzug_laenge=100.0,
-        schnapp_dehnung=2.0, filmscharnier="nein", z_festigkeit=0.4,
-        duese_temp="270 °C (240–280)", bett_temp="100 °C (90–100)", kammer="Tür zu, vorheizen",
-        trocknen="80 °C 8 h", ams="ja",
-        hinweise=("UV-beständig, für draußen; verzieht weniger als ABS (P-ASA)",),
+        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.6, verzug=3, verzug_laenge=60.0,
+        schnapp_dehnung=2.0, filmscharnier="nein", z_festigkeit=0.38, einhausung=True,
+        duese_temp="260 °C (240–280)", bett_temp="100 °C Texturplatte", kammer=_NUR_GESCHLOSSEN,
+        trocknen="80 °C 8 h",
+        hinweise=("UV-beständig, für draußen; verzieht weniger als ABS (P-ASA), offen aber trotzdem nicht empfohlen",),
         quellen=("BS-F", "B-Fil", "P-ASA", "RJG", "CK-45"),
     ),
     Material(
         "pc-filament", "PC (Filament)", 1.20, ("pc filament", "polycarbonat filament", "pc-filament"),
-        ueberhang_max=50.0, bruecke_max=15.0, schwund=0.8, verzug=3, verzug_laenge=80.0,
-        schnapp_dehnung=3.0, filmscharnier="nein", z_festigkeit=0.68,
-        duese_temp="280 °C (260–290)", bett_temp="100 °C (100–120)", kammer="Tür zu, vorheizen",
-        trocknen="80 °C 8 h (Pflicht)", ams="ja",
+        ueberhang_max=50.0, bruecke_max=15.0, schwund=0.8, verzug=3, verzug_laenge=40.0,
+        schnapp_dehnung=3.0, filmscharnier="nein", z_festigkeit=0.65, einhausung=True,
+        duese_temp="280 °C (260–290)", bett_temp="100 °C (P1P-Maximum; Bambu empfiehlt 100–120 °C)",
+        kammer=_NUR_GESCHLOSSEN, trocknen="80 °C 8 h (Pflicht)",
         hinweise=("starker Verzug: runde Kanten verziehen weniger, nicht über das ganze Bett, weniger Füllung (P-PC)",),
-        quellen=("BS-F", "B-Fil", "P-PC", "RJG", "CK-45", "BAY"),
+        quellen=("BS-F", "B-Fil", "B-P1P", "P-PC", "RJG", "CK-Kammer", "BAY"),
     ),
     Material(
         "pa", "PA (Nylon)", 1.14, ("pa", "nylon", "polyamid", "pa6", "pa12", "copa"),
-        ueberhang_max=50.0, bruecke_max=15.0, schwund=1.2, verzug=3, verzug_laenge=80.0,
-        schnapp_dehnung=4.0, filmscharnier="ja", z_festigkeit=0.6,
-        duese_temp="260–290 °C", bett_temp="100 °C (90–110), Klebestift", kammer="Tür zu, vorheizen",
-        trocknen="80 °C 8–12 h (Pflicht, nimmt bis 10 % Wasser auf)", ams="ja (AMS HT, trocken)",
+        ueberhang_max=50.0, bruecke_max=15.0, schwund=1.2, verzug=3, verzug_laenge=50.0,
+        schnapp_dehnung=4.0, filmscharnier="ja", z_festigkeit=0.5, einhausung=True,
+        duese_temp="260 °C (240–280)", bett_temp="100 °C Texturplatte, Klebestift", kammer=_NUR_GESCHLOSSEN,
+        trocknen="80 °C 8–12 h (Pflicht, nimmt bis 10 % Wasser auf)", ams="ja (trocken, am besten AMS HT)",
         hinweise=("zäh: beste Wahl für Schnapphaken und Filmscharniere", "Maße ändern sich mit der Feuchte"),
-        quellen=("B-Fil", "P-PA", "H-LH", "MH", "RJG"),
+        quellen=("BS-F", "B-Fil", "P-PA", "H-LH", "MH", "RJG"),
     ),
     Material(
         "pa-cf", "PA-CF (Nylon mit Kohlefaser)", 1.20, ("pa-cf", "pa cf", "nylon cf", "pa6-cf", "pa12-cf",
                                                        "carbon nylon"),
-        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.3, verzug=1, verzug_laenge=150.0,
-        schnapp_dehnung=1.5, filmscharnier="nein", z_festigkeit=0.5,
-        duese_temp="275 °C (260–300)", bett_temp="100 °C, Klebestift", kammer="Tür zu, vorheizen",
-        trocknen="80 °C 8–12 h (Pflicht)", ams="ja (AMS HT, trocken)",
-        hinweise=("steif und formstabil, CF-Typen verziehen deutlich weniger (P-PA)",),
-        quellen=("BS-F", "B-Fil", "P-PA"),
+        ueberhang_max=55.0, bruecke_max=20.0, schwund=0.3, verzug=2, verzug_laenge=100.0,
+        schnapp_dehnung=1.5, filmscharnier="nein", z_festigkeit=0.5, einhausung=True, gehaertete_duese=True,
+        duese_temp="290 °C (260–300)", bett_temp="100 °C, Klebestift", kammer=_NUR_GESCHLOSSEN,
+        trocknen="80 °C 8–12 h (Pflicht)", ams="nur Bambu PA-CF/PAHT-CF, trocken (B-Fil)",
+        hinweise=("braucht gehärtete Düse (HRC 40) und Einhausung – auf dem P1P ab Werk beides nicht vorhanden",
+                  "CF-Typen verziehen deutlich weniger als reines PA (P-PA)"),
+        quellen=("BS-F", "B-Fil", "B-P1P", "P-PA"),
     ),
     Material(
         "tpu-95a", "TPU 95A (flexibel)", 1.21, ("tpu", "tpu 95a", "flex", "flexibel", "filaflex"),
         ueberhang_max=45.0, bruecke_gut=5.0, bruecke_max=8.0, kragarm_max=0.5, wand_empfohlen=1.2,
         schwund=0.3, verzug=0, schnapp_dehnung=None, filmscharnier="ja", z_festigkeit=0.8,
-        duese_temp="230 °C (200–250)", bett_temp="35 °C (30–45)", kammer="offen",
+        duese_temp="230 °C (200–250)", bett_temp="45 °C Texturplatte (30 °C Cool Plate)", kammer=_OFFEN,
         trocknen="70 °C 8 h (Pflicht), Lagerung unter 20 % rF",
-        ams="nein – nicht im AMS 2 Pro; nur AMS HT (eigener TPU-Ausgang) oder externe Spule",
+        ams="nein – nicht über AMS oder AMS 2 Pro; nur AMS HT (TPU-Ausgang) oder externe Spule (beim P1P ohne AMS "
+            "der Normalfall)",
         hinweise=("Brücken und Überhänge sehr schlecht (P-Flex): Teil so legen, dass nichts überhängt",
                   "langsam: max. 3,6 mm³/s (ca. 40 mm/s); Flow-Dynamics-Kalibrierung aus",
                   "Passungen eher mit mehr Spiel (0,3–0,5 mm), Material gibt nach"),
@@ -273,9 +298,8 @@ MATERIALIEN: dict[str, Material] = {m.id: m for m in (
         verfahren="harzdruck", ueberhang_max=60.0, bruecke_gut=5.0, bruecke_max=10.0, wand_empfohlen=1.0,
         schwund=0.5, verzug=0, schnapp_dehnung=1.0, filmscharnier="nein", z_festigkeit=0.9,
         ams="–",
-        hinweise=("nicht auf dem P2S druckbar; Prüfung nur grob (Wandstärke, Überhang), Bauraum unbekannt",
-                  "Hohlkörper brauchen Ablauflöcher (Ø ≥ 3 mm), sonst Saugnapf- und Platzgefahr"),
-        quellen=("EW",),
+        hinweise=("kein Harzdrucker vorhanden: Kevins Drucker ist ein Bambu Lab P1P (FDM)",),
+        quellen=("B-P1P",),
     ),
 )}
 

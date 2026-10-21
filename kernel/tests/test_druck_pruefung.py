@@ -30,7 +30,7 @@ from OCP.TopoDS import TopoDS
 
 from kevcad_kernel.druck import (
     MATERIALIEN,
-    P2S,
+    P1P,
     SCHWEREN,
     als_warnungen,
     einsatz,
@@ -145,7 +145,7 @@ def test_winkel_60_grad_ueberhang():
 
 def test_winkel_60_bei_pla_noch_ohne_stuetze():
     r = pruefe_druckteil(winkel_60(), "pla", ausrichtung="-z")
-    assert "ueberhang" not in arten(r)   # PLA auf dem P2S: bis 60° (Stützenschwelle 30° vom Waagrechten)
+    assert "ueberhang" not in arten(r)   # PLA auf dem P1P: bis 60° (Stützenschwelle 30° vom Waagrechten)
 
 
 def test_winkel_automatisch_ohne_stuetze():
@@ -315,10 +315,32 @@ def test_duenne_waagrechte_platte():
     assert h["schwere"] == "warnung" and "1 Schicht" in h["befund"]
 
 
-def test_harzdruck_nur_grob():
+def test_kein_harzdruck():
     r = pruefe_druckteil(Box(20, 20, 10, align=UNTEN), "harz")
-    assert r["material"] == "harz-standard" and "verfahren" in arten(r)
+    assert r["material"] == "harz-standard" and not r["ok"]
+    assert finde(r, "material")["schwere"] == "fehler" and "P1P" in finde(r, "material")["befund"]
     assert "elefantenfuss" not in arten(r) and r["kennzahlen"]["bauraum_ausnutzung_prozent"] is None
+
+
+def test_material_passt_zum_offenen_p1p():
+    teil = gutes_teil()
+    for mat in ("pla", "petg", "tpu"):
+        assert "material" not in arten(pruefe_druckteil(teil, mat))
+    for mat in ("abs", "asa", "pc-filament", "pa"):
+        h = finde(pruefe_druckteil(teil, mat), "material")
+        assert h["schwere"] == "warnung" and "Einhausung" in h["abhilfe"] and "PLA oder PETG" in h["abhilfe"]
+    duese = [h for h in pruefe_druckteil(teil, "pla-cf")["hinweise"] if h["art"] == "material"]
+    assert len(duese) == 1 and "gehärtete Düse" in duese[0]["befund"]
+    assert len([h for h in pruefe_druckteil(teil, "pa-cf")["hinweise"] if h["art"] == "material"]) == 2
+
+
+def test_sperrbereich_und_druckhoehe():
+    # 250 × 240 passt auf 256 × 256, aber nicht neben den Sperrbereich 18 × 28 vorne links
+    r = pruefe_druckteil(Box(250, 240, 10, align=UNTEN), "pla", "-z")
+    assert finde(r, "bauraum")["schwere"] == "fehler" and "gesperrt" in finde(r, "bauraum")["befund"]
+    assert pruefe_druckteil(Box(236, 240, 10, align=UNTEN), "pla", "-z")["ok"]       # rechts daneben frei
+    r2 = pruefe_druckteil(Box(40, 40, 253, align=UNTEN), "pla", "-z")
+    assert finde(r2, "bauraum")["schwere"] == "fehler" and "zu hoch" in finde(r2, "bauraum")["befund"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -387,10 +409,13 @@ def test_originalform_bleibt_unvernetzt():
 
 
 def test_regeltabellen():
-    assert P2S.bauraum == (256.0, 256.0, 256.0) and P2S.linienbreite == 0.42
-    assert P2S.wandstaerke(2) == pytest.approx(0.827, abs=0.005)
-    assert P2S.wandstaerke(3) == pytest.approx(1.234, abs=0.005)
-    assert P2S.z_mass(2.5) in (2.4, 2.6) and P2S.ueberhang_grenze == 60
+    assert P1P.bauraum == (256.0, 256.0, 250.0) and P1P.sperrflaeche == (18.0, 28.0)
+    assert P1P.linienbreite == 0.42 and P1P.bett_max == 100 and not P1P.geschlossen and not P1P.duese_gehaertet
+    assert P1P.wandstaerke(2) == pytest.approx(0.827, abs=0.005)
+    assert P1P.wandstaerke(3) == pytest.approx(1.234, abs=0.005)
+    assert P1P.z_mass(2.5) in (2.4, 2.6) and P1P.ueberhang_grenze == 60
+    assert material("Amazon Basics PLA").id == "pla" and "205" in material("pla").duese_temp
+    assert {m.id for m in MATERIALIEN.values() if m.einhausung} == {"abs", "asa", "pc-filament", "pa", "pa-cf"}
     e = einsatz("M3")
     assert e["bohrung"] == 4.0 and e["tiefe"] == pytest.approx(6.7)
     assert einsatz("M4", hersteller="cnc-kitchen")["bohrung"] == 5.7

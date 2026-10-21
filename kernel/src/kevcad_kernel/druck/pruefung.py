@@ -1,4 +1,4 @@
-"""Automatische Druckprüfung für 3D-Druckteile (FDM auf dem Bambu Lab P2S).
+"""Automatische Druckprüfung für 3D-Druckteile (FDM auf dem Bambu Lab P1P).
 
 ``pruefe_druckteil(form, material="petg", ausrichtung=None)`` legt das Teil (auf Wunsch automatisch) aufs Bett und
 prüft Bauraum, Auflage, Überhänge, Brücken, freie Unterseiten, Gegenbohrungen zur Bettseite, waagrechte und kleine
@@ -20,7 +20,7 @@ import numpy as np
 from kevcad_kernel.druck.netz import Netz, baue_netz
 from kevcad_kernel.druck.regeln import (
     FESTIGKEIT,
-    P2S,
+    P1P,
     Drucker,
     Material,
     Schwellen,
@@ -230,9 +230,15 @@ def _bauraum(netz: Netz, lage: _Lage, drucker: Drucker, schritt: float = 1.0) ->
     r = drucker.rand
     z_ok = lage.hoehe <= bz + 1e-6
 
-    def passt(rand):   # je Winkel, beide Bettlagen (Breite auf X oder auf Y)
-        gx, gy = bx - 2 * rand + 1e-6, by - 2 * rand + 1e-6
-        return z_ok & (((du <= gx) & (dv <= gy)) | ((du <= gy) & (dv <= gx)))
+    sx, sy = drucker.sperrflaeche
+
+    def passt(rand):   # je Winkel, beide Bettlagen (Breite auf X oder auf Y), Sperrbereich in einer Ecke frei
+        ok = np.zeros_like(du, dtype=bool)
+        for w_, h_ in ((du, dv), (dv, du)):
+            innen = (w_ <= bx - 2 * rand + 1e-6) & (h_ <= by - 2 * rand + 1e-6)
+            frei = (w_ <= bx - sx - 2 * rand + 1e-6) | (h_ <= by - sy - 2 * rand + 1e-6)
+            ok |= innen & frei
+        return z_ok & ok
 
     ok, ok_rand = passt(0.0), passt(r)
     if ok_rand.any():
@@ -419,7 +425,9 @@ def _pruefe_bauraum(c: _Ctx, alle: list[dict] | None) -> dict:
             abhilfe = f"anders legen ({_richtung_text(anders[0]['unten'])} passt) oder {abhilfe}"
         c.hinweise.append(_hinweis(
             "bauraum", "fehler", f"Teil {mass} passt nicht in den Bauraum {raum} des {c.dr.name}"
-            + ("" if br["z_ok"] else " (zu hoch)") + ", auch nicht diagonal", abhilfe,
+            + ("" if br["z_ok"] else " (zu hoch)") + ", auch nicht diagonal"
+            + (f" (vorne links {_z(c.dr.sperrflaeche[0], 0)} × {_z(c.dr.sperrflaeche[1], 0)} mm gesperrt)"
+               if any(c.dr.sperrflaeche) and br["z_ok"] else ""), abhilfe,
             punkt=c.netz.V[np.argmax(c.lage.hV)], x=br["x"], y=br["y"], z=br["z"]))
     elif not br["passt_gerade"]:
         c.hinweise.append(_hinweis(
@@ -429,7 +437,7 @@ def _pruefe_bauraum(c: _Ctx, alle: list[dict] | None) -> dict:
     elif not br["passt_gerade_rand"]:
         c.hinweise.append(_hinweis(
             "bauraum", "warnung", f"Teil {mass} füllt den Bauraum fast ganz ({_z(c.dr.rand, 0)} mm Rand fehlen)",
-            "kein Platz für Brim (5 mm) und Prime Tower (35 mm, AMS) – etwas kleiner konstruieren oder teilen"))
+            "kein Platz für Brim (5 mm) und, mit AMS, Prime Tower (35 mm) – etwas kleiner konstruieren oder teilen"))
     return br
 
 
@@ -824,8 +832,9 @@ def _pruefe_verzug(c: _Ctx) -> None:
     a, b, _ = _rechteck_2d(P[:, :2])
     fl = max(lage.bett_flaechen, key=lambda f: netz.infos[f].flaeche) if lage.bett_flaechen else None
     abhilfe = (f"Ecken mit R ≥ {_z(c.sw.verzug_eckradius, 0)} mm runden, Mouse Ears (Scheiben Ø 10–15 mm, 0,4 mm "
-               "hoch) oder Brim 5–10 mm, Bett 10 min vorheizen und Tür zu (P2S heizt die Kammer nicht aktiv); "
-               "große Flächen in Rippen auflösen")
+               "hoch) oder Brim 5–10 mm, große Flächen in Rippen auflösen"
+               + ("; der Bauraum ist offen: Zugluft vermeiden, Bett vorheizen, für ABS/ASA/PC/PA Einhausung"
+                  if not c.dr.geschlossen else "; Bett 10 min vorheizen, Tür zu"))
     if a > mat.verzug_laenge:
         c.hinweise.append(_hinweis(
             "verzug", "warnung" if mat.verzug >= 2 else "hinweis",
@@ -1037,6 +1046,25 @@ def _begruendung(beste: dict, modell: dict, netz: Netz, mat: Material, liegt_auf
     return satz
 
 
+def _pruefe_material(c: _Ctx) -> None:
+    """Passt das Material zum Drucker? (Harzdruck, Einhausung, gehärtete Düse)"""
+    mat, dr = c.mat, c.dr
+    if not mat.fdm:
+        c.hinweise.append(_hinweis(
+            "material", "fehler", f"{mat.name}: kein Harzdrucker vorhanden, der {dr.name} druckt nur FDM",
+            "als FDM-Druckteil aus PLA oder PETG konstruieren und prüfen"))
+        return
+    if mat.einhausung and not dr.geschlossen:
+        c.hinweise.append(_hinweis(
+            "material", "warnung", f"{mat.name} auf dem offenen {dr.name}: Bambu rät ohne geschlossenen Bauraum ab "
+            "(Verzug, Lagentrennung, Risse)",
+            "PLA oder PETG nehmen; sonst nur mit Einhausung (P1P Enclosure Kit oder Druckbox) und Brim drucken"))
+    if mat.gehaertete_duese and not dr.duese_gehaertet:
+        c.hinweise.append(_hinweis(
+            "material", "warnung", f"{mat.name} ist abrasiv und braucht eine gehärtete Düse (HRC 40); der {dr.name} "
+            f"hat ab Werk {dr.duese_material}", "PLA bzw. PETG ohne Faser nehmen oder ein gehärtetes Hotend nachrüsten"))
+
+
 def _druckhinweise(mat: Material, dr: Drucker) -> list[str]:
     out = []
     if mat.fdm:
@@ -1050,10 +1078,15 @@ def _druckhinweise(mat: Material, dr: Drucker) -> list[str]:
         out.append(f"Standardprofil {dr.name}: {dr.waende} Wände, {dr.deckschichten} Deck-/{dr.bodenschichten} "
                    f"Bodenschichten, Linienbreite {_z(dr.linienbreite, 2)} mm, Schicht {_z(dr.schichthoehe, 2)} mm, "
                    f"Elefantenfuß-Ausgleich {_z(dr.elefantenfuss_kompensation, 2)} mm.")
+        bx, by, bz = dr.bauraum
+        out.append(f"{dr.name}: {'geschlossen' if dr.geschlossen else 'offener Bauraum ohne Kammer'}, Bett bis "
+                   f"{_z(dr.bett_max, 0)} °C, Düse {dr.duese_material} bis {_z(dr.duese_max, 0)} °C, Druckraum "
+                   f"{_z(bx, 0)} × {_z(by, 0)} × {_z(bz, 0)} mm (vorne links {_z(dr.sperrflaeche[0], 0)} × "
+                   f"{_z(dr.sperrflaeche[1], 0)} mm frei lassen); Mehrfarbe: {dr.ams}.")
     return out
 
 
-def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, drucker: Drucker = P2S) -> dict:
+def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, drucker: Drucker = P1P) -> dict:
     """Prüft ein 3D-Druckteil auf Druckbarkeit und gibt Ausrichtung, Hinweise und Kennzahlen zurück.
 
     ``form``: build123d-Form (Part, Solid, Compound), ``BuildPart`` oder Liste davon.
@@ -1102,10 +1135,7 @@ def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, 
 
     t_pruef = time.perf_counter()
     br = _pruefe_bauraum(c, sortiert if automatisch else None) if mat.fdm else None
-    if not mat.fdm:
-        c.hinweise.append(_hinweis("verfahren", "hinweis", f"{mat.name} ist Harzdruck: der {drucker.name} kann das "
-                                   "nicht drucken, FDM-Regeln (Brücken, Elefantenfuß, Verzug) entfallen",
-                                   "Harzdrucker-Profil fehlt im Inventar; Wandstärke und Überhänge sind grob geprüft"))
+    _pruefe_material(c)
     _pruefe_auflage(c)
     _pruefe_bohrungen(c)
     _pruefe_stifte(c)
