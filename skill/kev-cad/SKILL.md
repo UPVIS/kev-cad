@@ -9,6 +9,19 @@ Ein Modell ist `model.py` im Projektordner (build123d, Millimeter, Z nach oben).
 `show()` erscheint sofort im Viewer, Kevin sieht beim Bauen zu. Die Datei ist die Quelle der Wahrheit: Änderungen immer
 dort, nie nur per `execute`.
 
+## Inventar-Regel (Kevin, 21.10.2026, gilt immer)
+
+Gebaut wird nur aus dem Inventar. Jedes Teil im Modell ist ein Lagerteil bzw. Halbzeug, das Kevin definiert hat
+(Rohr, Profil, Platte, Holz, Schraube, später Zukaufteile), oder ausdrücklich ein **neues 3D-Druckteil** aus einem
+druckbaren Material (PLA, PETG, ABS …). Es kommt kein Material neu dazu, das nicht vorher ausdrücklich definiert ist.
+
+- Fehlt ein Teil oder Material: **nicht erfinden**, sondern Kevin fragen und es erst nach seiner Freigabe verwenden.
+  Was du anlegst, ist nur ein Vorschlag, bis Kevin ihn freigibt.
+- Eigene Konstruktionen nur als Druckteil kennzeichnen, nie als freies Teil mit beliebigem Material.
+- Mit Phase 2 prüft Kev CAD das selbst (Lagerkatalog, `lager.teil(...).verbauen(...)`, `lager.druckteil(...)`); bis
+  dahin hältst du dich von Hand daran und nennst in `show()` nur Materialien, die Kevin vorgegeben hat.
+- Ausnahme: Projekte, in denen Kevin die Regel ausdrücklich abschaltet (Nachbauten aus Fotos, Skizzen).
+
 ## Arbeitsablauf
 
 1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl.
