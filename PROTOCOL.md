@@ -212,3 +212,70 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.teil(...).verbauen(...)` stamm
 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
+
+## Phase 5: Kameras
+
+Rein additiv (Strang KAM); ältere Gegenseiten ignorieren die neuen Typen und Felder. Kameras entstehen in model.py mit
+`lager.kamera(...)` (KATALOG.md, „Kameras und Objektive“) und heißen im Protokoll `Kamera/<name>`. Testdateien:
+`kernel/tools/make_camera_fixtures.py` schreibt `camera_*.frame`, `view_cmd_camera*.frame`, `screenshot_req_camera.frame`
+und `camera_fixtures.json` nach `app/KevCADCore/Tests/KevCADCoreTests/Fixtures/` (getrennt von `stream.bin`).
+
+### Kernel → App
+
+| type | Felder | Nutzlast |
+|---|---|---|
+| `CAMERA_UPSERT` | siehe unten; nach jedem erfolgreichen Lauf für neue und geänderte Kameras (vor `RUN_END`) und beim Verbinden für alle | – |
+| `CAMERA_REMOVE` | `run`, `name` – Kamera gibt es im neuen Lauf nicht mehr oder ein anderes Projekt ist offen | – |
+
+```json
+{
+  "type": "CAMERA_UPSERT", "seq": 21, "run": 4, "name": "Kamera/FX6", "kurzname": "FX6",
+  "kamera": {"id": "sony-fx6", "name": "Sony FX6 (ILME-FX6V)", "bajonett": "sony-e", "auflagemass": 18.0},
+  "objektiv": {"id": "sigma-ff-hs-35-t1.5-e", "name": "Sigma 35 mm T1,5 FF High Speed Prime (E-Mount)",
+               "brennweite": 35, "lichtstaerke": 1.5, "blendenart": "t", "naheinstellgrenze": 300, "bildkreis": 43.3,
+               "laenge": 121, "frontdurchmesser": 95},
+  "format": {"id": "ff-uhd", "name": "Vollformat UHD 3840 × 2160", "modus": "vollformat"},
+  "lage": [0, -1, 0, 0,  0, 0, 1, 0,  -1, 0, 0, 0,  250, 0, 235, 1],
+  "sensor_pos": [250, 0, 235], "auge": [285, 0, 235], "blick": [1, 0, 0], "oben": [0, 0, 1], "rechts": [0, -1, 0],
+  "sensor_mm": [35.7, 20.081], "aufloesung": [3840, 2160], "seitenverhaeltnis": 1.77778,
+  "brennweite": 35.0, "bildwinkel_h": 54.043, "bildwinkel_v": 32.014, "bildwinkel_d": 60.668,
+  "blende": 2.8, "blendenart": "t", "fokus": 1500.0, "schaerfe_nah": 1375.628, "schaerfe_fern": 1649.097,
+  "hyperfokal": 16238.704, "zerstreuungskreis": 0.027,
+  "teil": "Wagen", "ausblenden": ["Kamera FX6/Objektiv"], "objektiv_vorne": 139.0, "vignettierung": false
+}
+```
+
+- `lage`: 4 × 4-Matrix spaltenweise; Spalten rechts, oben, hinten (= −`blick`), Sensormitte. Die Kamera blickt entlang
+  ihrer lokalen −Z-Achse, oben ist +Y (wie OpenGL und Blender). `sensor_pos`, `blick`, `oben`, `rechts` stehen zusätzlich
+  einzeln da.
+- `auge`: Projektionszentrum für Ansicht und Kamerabild, Sensormitte plus Brennweite in Blickrichtung.
+- Bildwinkel in Grad aus `sensor_mm` (aktive Fläche des Formats; Höhe = Breite × Pixelhöhe / Pixelbreite) und
+  `brennweite` bei Fokus unendlich. Die Ansicht durch
+  die Kamera und das Kamerabild benutzen `bildwinkel_v` als vertikalen Öffnungswinkel und `seitenverhaeltnis`
+  (= `aufloesung`).
+- `fokus`, `schaerfe_nah`, `schaerfe_fern`, `hyperfokal` in mm ab Sensorebene; `null` heißt unendlich.
+- `teil`: gezeigtes Teil, an dem die Kamera hängt (`an(...)`), sonst `null`. Bewegt die App das Teil (Explosion,
+  später Animation), folgt die Kamera seiner Matrix.
+- `ausblenden`: gezeigte Teile des eigenen Objektivs aus `koerper()`; die App blendet sie (und jedes Teil, dessen
+  Hüllquader die Strecke vom Augpunkt bis `objektiv_vorne` vor der Sensorebene schneidet) beim Blick durch die
+  Kamera aus.
+- `vignettierung`: Bildkreis des Objektivs kleiner als die Diagonale des Formats.
+
+### VIEW_CMD (zusätzlich)
+
+| cmd | args | Antwort |
+|---|---|---|
+| `camera_view` | `name` (`Kamera/<name>`) oder `null` = zurück zur freien Ansicht | `ACK` |
+| `camera_suggest` | `name` | App schickt `CAMERA_SUGGEST`, danach `ACK` |
+
+### SCREENSHOT_REQ (zusätzlich)
+
+`source: "camera"` mit `camera` (Name): Bild genau durch diese Kamera (Augpunkt, Blick, `bildwinkel_v`), `width` und
+`height` passend zum Seitenverhältnis des Formats (der Kernel rechnet die Höhe aus). Ausgeblendet wie in der
+Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
+
+### App → Kernel
+
+| type | Felder | Antwort |
+|---|---|---|
+| `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera_info`, `kamera_vorschlag_aus_ansicht`) |

@@ -7,10 +7,15 @@ import SwiftUI
 /// hervorgehobene Kanten. Kamera, Körper und Klicks verwaltet `AppController.viewport`.
 public struct KevViewport: View {
     @ObservedObject private var coordinator: ViewportCoordinator
+    /// Phase 5: Kameras (Rahmen beim Blick durch eine Kamera)
+    private let cameras: CameraStore
+    private let onCameraResize: (CGSize) -> Void
 
     public init(controller: AppController) {
         // Nur der Viewport-Zustand wird beobachtet, nicht AppModel (sonst baut jede Protokollzeile die Ansicht neu)
         self._coordinator = ObservedObject(wrappedValue: controller.viewport)
+        self.cameras = controller.model.cameras
+        self.onCameraResize = { [weak controller] size in controller?.cameraViewportResized(size) }
     }
 
     public var body: some View {
@@ -22,6 +27,7 @@ public struct KevViewport: View {
             NavigationInputLayer(coordinator: coordinator)
             OverlayCanvas(coordinator: coordinator, viewport: coordinator.controller)
                 .allowsHitTesting(false)
+            CameraFrameOverlay(store: cameras, onResize: onCameraResize)
             AxisGizmo(viewport: coordinator.controller, coordinator: coordinator)
                 .padding(.top, 10)
                 .padding(.trailing, 12)

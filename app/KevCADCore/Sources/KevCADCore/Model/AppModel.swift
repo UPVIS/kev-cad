@@ -173,6 +173,8 @@ public final class AppModel: ObservableObject {
     /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
     @Published public var selectionMode: SelectionMode = .parts
     @Published public var orthographic = false
+    /// Phase 5 (KAM, additiv): Kameras aus model.py und der Blick durch eine Kamera (Aktionen: `CameraActions`).
+    public let cameras = CameraStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

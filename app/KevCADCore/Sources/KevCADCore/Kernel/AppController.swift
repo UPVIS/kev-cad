@@ -90,7 +90,7 @@ public final class AppController: AppActions {
 
         scene.onChange = { [weak self] in
             guard let self else { return }
-            self.viewport.bodies = self.scene.renderBodies
+            self.viewport.bodies = self.cameraFilteredBodies(self.scene.renderBodies)
         }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         installNavigation()
@@ -379,6 +379,7 @@ public final class AppController: AppActions {
             // Teile da waren (Wiederverbinden, Neustart des Kernels).
             let hadParts = !scene.isEmpty
             scene.removeAll()
+            clearCameras()
             fitOnFirstPart = !hadParts
             clearSelectionState()
             updateParts()
@@ -428,7 +429,7 @@ public final class AppController: AppActions {
             if let restore = pendingRestore {
                 applyRestoredView(restore)
                 fitAtRunEnd = false
-            } else if fitAtRunEnd {
+            } else if fitAtRunEnd && cameras.activeView == nil {  // Blick durch eine Kamera nicht verstellen
                 viewport.fit(scene.visibleBounds(), animated: true)
                 fitAtRunEnd = false
             }
@@ -469,6 +470,8 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .camera(let c):
+            applyCamera(c)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -534,7 +537,7 @@ public final class AppController: AppActions {
             viewport.fit(scene.visibleBounds(), animated: false)
             fitOnFirstPart = false
             fitAtRunEnd = true
-        } else if fitAtRunEnd {
+        } else if fitAtRunEnd && cameras.activeView == nil {
             // Erster Lauf eines Projekts: mit jedem neuen Teil nachführen, damit alles im Bild bleibt
             viewport.fit(scene.visibleBounds(), animated: true)
         }
@@ -685,6 +688,7 @@ public final class AppController: AppActions {
             }
         }
         items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: cameraOverlayItems())
         return items
     }
 

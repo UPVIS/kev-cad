@@ -366,19 +366,24 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
     public var source: String
     public var view: String?
     public var hideOverlays: Bool
+    /// Phase 5: Bild durch diese Kamera (`Kamera/<name>`, `source` "camera").
+    public var camera: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, width, height, source, view
+        case id, width, height, source, view, camera
         case hideOverlays = "hide_overlays"
     }
 
-    public init(id: String, width: Int, height: Int, source: String, view: String?, hideOverlays: Bool) {
+    public init(
+        id: String, width: Int, height: Int, source: String, view: String?, hideOverlays: Bool, camera: String? = nil
+    ) {
         self.id = id
         self.width = width
         self.height = height
         self.source = source
         self.view = view
         self.hideOverlays = hideOverlays
+        self.camera = camera
     }
 
     public init(from decoder: Decoder) throws {
@@ -389,6 +394,7 @@ public struct ScreenshotRequestMessage: Decodable, Sendable {
         source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? "current"
         view = try? c.decodeIfPresent(String.self, forKey: .view)
         hideOverlays = (try? c.decodeIfPresent(Bool.self, forKey: .hideOverlays)) ?? false
+        camera = try? c.decodeIfPresent(String.self, forKey: .camera)
     }
 }
 
@@ -509,6 +515,8 @@ public enum KernelMessage: Sendable {
     case bom(BOMMessage)
     /// Phase 2: Lagerkatalog auf CATALOG_REQ.
     case catalog(CatalogMessage)
+    /// Phase 5: CAMERA_UPSERT und CAMERA_REMOVE.
+    case camera(CameraMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -532,6 +540,7 @@ public enum KernelMessage: Sendable {
         case .error: return "ERROR"
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
+        case .camera(let c): return c.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -577,6 +586,7 @@ public enum KernelMessage: Sendable {
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
+        case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

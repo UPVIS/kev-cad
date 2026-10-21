@@ -752,4 +752,8 @@ def register_tools(mcp: MCPServer, service: KernelService) -> KevcadTools:
             return fmt.result(to_csv(res), res, json_block=False)
         return fmt.result(fmt.bom_text(res), res)
 
+    # Phase 5: Kameras (kamera_tools.py)
+    from .kamera_tools import register_camera_tools
+
+    register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
     return t

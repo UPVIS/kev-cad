@@ -34,6 +34,7 @@ import kevcad_kernel
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
+from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
@@ -84,8 +85,8 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime:
-    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App."""
+class KernelRuntime(CameraRuntime):
+    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Kameras (Phase 5): ``CameraRuntime``."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -571,6 +572,7 @@ class KernelRuntime:
             if not same:
                 for rec in self.scene.clear():
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
+                self.cameras_clear(run)
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -744,6 +746,7 @@ class KernelRuntime:
                         self.scene.remove(rec.name)
                         self._send_app({"type": "PART_REMOVE", "run": job.run, "name": rec.name})
                 records = self.scene.records()
+                self.cameras_after_run(job.run, final.get("cameras"))  # Phase 5: Kameras vor RUN_END
                 violations = list(final.get("inventar_verstoesse") or [])
                 with self._lock:
                     self._violations = violations
@@ -790,6 +793,10 @@ class KernelRuntime:
         if "cached" in final:
             result["cached_parts"] = final.get("cached", 0)
             result["tess_ms"] = final.get("tess_ms", 0.0)
+        if final.get("cameras"):
+            from kevcad_kernel.kamera import camera_line
+
+            result["kameras"] = [camera_line(c) for c in final["cameras"]]
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
@@ -921,6 +928,7 @@ class KernelRuntime:
                 bom = self._bom
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            self.cameras_on_connect(conn, self._run_no)
             conn.send({"type": "AGENT", **agent})
             self._link.activate(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -1004,6 +1012,8 @@ class KernelRuntime:
         if kind == "HELLO_APP":
             conn.info = {k: header.get(k) for k in ("app_version", "bundle_id")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+        elif kind == "CAMERA_SUGGEST":
+            self.camera_suggest_from_app(header)
         elif kind == "SELECTION":
             with self._lock:
                 self._selection = {"run": header.get("run"), "refs": list(header.get("refs") or [])}

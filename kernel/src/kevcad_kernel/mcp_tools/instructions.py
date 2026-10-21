@@ -60,6 +60,17 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 - `bom` shows positions, weight, guide prices and the cut list (3 mm saw kerf); `run` mentions the totals. \
 `export(["bom_csv"])` writes the CSV.
 
+Cameras (film set simulation)
+- Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \
+`fx6 = lager.kamera("sony-fx6", objektiv="<lens id>", format="ff-uhd", brennweite=..., blende=..., fokus=..., \
+name="FX6")`, then `fx6.setzen(position, blick_auf=point)` or `fx6.an("<part>", punkt, richtung, \
+bezug="stativ_1_4", lokal=True)` (follows the part; call it after showing the part); `show(fx6.koerper(), "Kamera \
+FX6")` adds body and lens as inventory. Accessories: `lager.kamerazubehoer(id).verbauen(name, \
+an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4")`. Units mm; fokus from the sensor plane.
+- `kamera_liste` / `kamera_info` give angle of view and depth of field, `kamera_ansicht(name)` shows Kevin the view \
+through the camera, `kamera_bild(name, breite)` saves a PNG in output/kameras/ and returns only the path (set \
+bild_zeigen only when needed), `kamera_vorschlag_aus_ansicht` turns Kevin's current view into a setzen(...) line.
+
 References
 - "Halter/Lasche" (part), "Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
 part.faces()/edges()/vertices(). They are valid for one run only: after every run get fresh ones from \
