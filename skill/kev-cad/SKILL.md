@@ -9,6 +9,33 @@ Ein Modell ist `model.py` im Projektordner (build123d, Millimeter, Z nach oben).
 `show()` erscheint sofort im Viewer, Kevin sieht beim Bauen zu. Die Datei ist die Quelle der Wahrheit: Änderungen immer
 dort, nie nur per `execute`.
 
+## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
+
+Nichts darf physikalisch unmöglich sein. Nach jedem Lauf und vor jeder Fertigmeldung prüfen und Fehler beheben, nicht
+nur melden:
+
+- **Keine Durchdringungen:** Zwei Teile dürfen sich berühren, aber nicht ineinander stecken. Dafür in model.py die
+  gezeigten Formen mitschreiben (`teile[name] = form` direkt vor jedem `show(form, name)`, `teile = {}` oben) und nach
+  dem Lauf mit `execute` prüfen:
+
+  ```python
+  from itertools import combinations
+  for (a, fa), (b, fb) in combinations(teile.items(), 2):
+      v = (fa & fb).volume if fa.bounding_box().overlaps(fb.bounding_box()) else 0
+      if v > 0.001:
+          print(f"Durchdringung {a} ↔ {b}: {v:.3f} mm³")
+  ```
+
+  Gefundene Durchdringungen beheben: Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren. Gewollte
+  Überlappungen (Gewinde in einem Kernloch, Presspassung, nachgiebiger Schaum) nur nach Rückfrage und mit Begründung
+  im Code.
+- **Nichts schwebt:** Jedes Teil berührt ein anderes Teil oder steht auf dem Boden (z = 0). Mit `measure` den Abstand
+  zum Nachbarteil prüfen (0,000 mm = Kontakt).
+- **Steht sicher:** Der Schwerpunkt der Baugruppe liegt über der Aufstandsfläche (`parts` liefert Masse und Lage).
+- **Bewegliches** (Klappen, Räder, Schieber) über den ganzen Weg ohne Kollision.
+- Kev CAD bekommt diese Prüfungen fest eingebaut (Fehler im Lauf, rote Markierung); bis dahin hältst du dich von Hand
+  daran.
+
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
@@ -40,8 +67,8 @@ mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
 6. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für
-   Stückliste und Zuschnitt. Kein `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe
-   „Bilder“).
+   Stückliste und Zuschnitt, dazu der Abschnitt „Prüfen vor dem Fertigmelden“. Kevin keine Screenshots schicken;
+   Bilder nur zur eigenen Analyse (siehe „Bilder“).
 7. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen. Bei Bedarf `focus`,
    `highlight`, `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -253,11 +280,17 @@ DN 32, 1¼ Zoll).
 
 ## Bilder
 
-Screenshots nur, wenn Kevin ausdrücklich ein Bild will. Er sieht den Viewer beim Arbeiten selbst, und jedes Bild hält
-die Generierung auf. Geprüft wird mit den Zahlen aus `run`, `parts` und `measure`.
+Kevin keine Screenshots schicken, außer er will ausdrücklich ein Bild: Er sieht den Viewer beim Arbeiten selbst, und
+jedes Bild hält die Generierung auf.
+
+Zur eigenen Analyse sind Bilder aus mehreren Blickwinkeln ausdrücklich erlaubt, wenn sie zu einer besseren Entscheidung
+führen (Kevin, 21.10.2026): Durchdringungen und Einbaubarkeit beurteilen, Proportionen und Lage prüfen, mit
+Referenzfotos vergleichen. Dann gezielt: wenige Offscreen-Ansichten in kleiner Auflösung in einem Zug (etwa iso, vorn,
+rechts, oben), nicht nach jedem Schritt. Erste Quelle bleiben die Zahlen aus `run`, `parts`, `measure` und der Prüfung.
 
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
-- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen.
+- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen. Für die Analyse
+  mehrere Ansichten mit kleiner Größe nacheinander anfordern.
 - `mm_per_px` gibt es nur in paralleler Projektion. Maße trotzdem mit `measure` bestätigen.
 
 ## Export
