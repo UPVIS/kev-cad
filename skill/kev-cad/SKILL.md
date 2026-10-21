@@ -9,6 +9,16 @@ Ein Modell ist `model.py` im Projektordner (build123d, Millimeter, Z nach oben).
 `show()` erscheint sofort im Viewer, Kevin sieht beim Bauen zu. Die Datei ist die Quelle der Wahrheit: Änderungen immer
 dort, nie nur per `execute`.
 
+## Konstruktionsregeln (Kevin, 21.10.2026, gilt immer)
+
+Jedes Design folgt den 15 Regeln in [konstruktion.md](konstruktion.md), vor der ersten Zeile Geometrie lesen.
+Optimiert wird für Einzelstücke und kleine Stückzahlen; notwendige Funktionen, Schnittstellen und Sicherheit bleiben
+erhalten. Kurz: Anforderungen vor Geometrie (fehlende Angaben erfragen, Annahmen kennzeichnen), Wirkprinzip
+hinterfragen, Weglassen vor Optimieren, Gesamtaufwand bewerten, Standardteile vor Sonderteilen, Druckorientierung
+früh, Kräfte führen statt Material häufen, Montage und Wartung mitkonstruieren, nichts als geprüft behaupten, was
+nicht nachgewiesen ist. Auf „prüfe das Design kritisch“ folgt das Design-Review mit den fünf wichtigsten
+Verbesserungen im festen Format (konstruktion.md).
+
 ## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
 
 Nichts darf physikalisch unmöglich sein. Durchdringungen prüft Kev CAD bei jedem Lauf selbst, `run` wartet auf das
