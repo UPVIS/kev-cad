@@ -96,6 +96,33 @@ BOM = {
     "warnings": ["Halter: Eigenteil ohne Preis (Material „aluminium“ steht nicht im Katalog)"],
 }
 
+# Bericht der Bedingungen wie die Nachricht CONSTRAINTS (PLAN-BEDINGUNGEN.md)
+CONSTRAINTS = {
+    "items": [
+        {"id": "b1", "art": "auf", "gruppe": "montage", "symbol": "auf", "text": "Halter/Lasche.unten auf Grundplatte.oben",
+         "teile": ["Halter/Lasche", "Grundplatte"], "stand": "verletzt", "soll": "Abstand 0 mm, Flächen gegenüber",
+         "ist": "Abstand 2 mm (Luft 2 mm)", "abweichung": 2.0, "einheit": "mm", "punkte": [[0, 0, 12], [0, 0, 10]],
+         "zeile": 14, "datei": "model.py", "schwere": "fehler",
+         "loesung": "Halter/Lasche um 2 mm entlang −Z verschieben"},
+        {"id": "b2", "art": "konzentrisch", "gruppe": "montage", "symbol": "konzentrisch",
+         "text": "Halter/Bolzen.achse konzentrisch zu Halter/Lasche.Bohrung Ø6,6", "teile": ["Halter/Bolzen", "Halter/Lasche"],
+         "stand": "erfuellt", "soll": "Achsen deckungsgleich", "ist": "Versatz 0 mm", "abweichung": 0.0, "einheit": "mm",
+         "punkte": [[30, 0, 10], [30, 0, 10]], "zeile": 16, "datei": "model.py", "loesung": None},
+    ],
+    "teile": [{"name": "Halter/Lasche", "platziert": True, "frei": 0, "freiheitsgrade": [], "gelenke": [],
+               "stand": "bestimmt", "bedingungen": ["b1", "b2"], "befestigt": True, "am_boden": True,
+               "verbindungen": ["aufliegen"]}],
+    "bewegungen": [],
+    "befunde": [{"art": "bedingung", "pruefung": "bedingung", "teile": ["Halter/Lasche", "Grundplatte"],
+                 "schwere": "fehler", "text": "Halter/Lasche.unten auf Grundplatte.oben: Abstand 2 mm (Luft 2 mm)",
+                 "soll": "Abstand 0 mm, Flächen gegenüber", "ist": "Abstand 2 mm (Luft 2 mm)", "wert": 2.0,
+                 "einheit": "mm", "ort": [0, 0, 12], "loesung": "Halter/Lasche um 2 mm entlang −Z verschieben",
+                 "bedingung": "b1", "unterart": "auf", "zeile": 14}],
+    "summe": {"gesamt": 2, "erfuellt": 1, "verletzt": 1, "ungeprueft": 0, "fehler": 1, "warnungen": 0, "hinweise": 0,
+              "bewegungen": 0},
+    "loese_ms": 1.2, "pruef_ms": 3.4,
+}
+
 
 class FakeService:
     """Implementiert ``KernelService`` mit festen Antworten.
@@ -120,6 +147,7 @@ class FakeService:
         self.closed = False
         self.activity: list[str | None] = []
         self.connected: list[bool] = []
+        self.sessions: list[list[dict[str, Any]]] = []  # jede gemeldete Sitzungsliste
         self.selection_refs = ["Halter/Lasche#f3", "Grundplatte#f0"]
         self.png = PNG  # Bilddaten für screenshot
         self.violations: list[str] = []  # Inventar-Regel: Teile ohne Lagerteil im nächsten Lauf
@@ -278,12 +306,75 @@ class FakeService:
         return {"ok": True, "material": {**entry, "ebene": ebene}, "datei": "/tmp/katalog/eigene.json",
                 "hinweise": ["preis_stand fehlte: 2026-10 eingetragen"]}
 
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        self._record("constraints", part)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        return {"ok": True, "run": self.run_no, **CONSTRAINTS}
+
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         self._record("catalog_delete", kind, entry_id, ebene)
         if entry_id == "gibtsnicht":
             return {"ok": False, "error": f"Lagerteil {entry_id!r} gibt es nicht."}
         return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
                 "datei": "/tmp/katalog/eigene.json"}
+
+    # Phase 3: Zukaufteile ----------------------------------------------------------------------------------------
+
+    def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
+                       felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
+        self._record("zukauf_anlegen", url, mpn, gtin, felder, ebene)
+        text = " ".join(str(x) for x in (mpn, (felder or {}).get("name")) if x)
+        if "ISO 4762" in text:
+            return {"ok": True, "angelegt": False, "normteil": {"art": "schraube", "norm": "iso4762"},
+                    "stock_id": "schraube-iso4762-m6", "beispiel": "schraube = lager.teil('schraube-iso4762-m6')",
+                    "text": "ISO 4762 (Zylinderschraube mit Innensechskant) M6x20 ist ein Normteil und liegt im "
+                            "Lagerkatalog als schraube-iso4762-m6"}
+        if not (felder or {}).get("masse"):
+            return {"ok": False, "error": "Zukaufteil 'alutec-05200': masse fehlt", "zu_pruefen": ["Maße"]}
+        item = {"id": "alutec-05200", "art": "zukaufteil", "name": "ALUTEC Transportroller 05200",
+                "hersteller": "ALUTEC", "mpn": "05200", "masse": felder["masse"], "status": "vorgeschlagen",
+                "ebene": ebene}
+        return {"ok": True, "angelegt": True, "item": item, "datei": "/tmp/Kev CAD/Wandhalter/katalog.json",
+                "hinweise": ["Preis: brutto oder netto ist nicht angegeben"], "zu_pruefen": ["Preis"],
+                "text": "ALUTEC Transportroller 05200 (ALUTEC 05200, 610 × 410 × 128 mm) angelegt (Vorschlag, wartet "
+                        "auf Kevins Freigabe im Lagerkatalog)"}
+
+    def zukauf_html(self, url: str | None, html: str, anlegen: bool = False, ebene: str = "projekt") -> dict[str, Any]:
+        self._record("zukauf_html", url, len(html), anlegen, ebene)
+        felder = {"name": "ALUTEC Transportroller", "hersteller": "ALUTEC", "mpn": "05200", "gtin": "4014688052004"}
+        return {"ok": True, "felder": felder, "quellen": ["json-ld"], "zu_pruefen": ["Preis brutto oder netto"],
+                "hinweise": [], "entwurf": {**felder, "id": "alutec-05200", "masse": {"l": 610, "b": 410, "h": 128},
+                                            "preis": {"je_stueck": 24.99, "stand": "2026-10-21"}}}
+
+    def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
+        self._record("cad_suchen", zukauf_id)
+        links = [{"titel": "Produktseite (CAD-Download oft dort)", "url": "https://shop.example/p/05200"},
+                 {"titel": "TraceParts: ALUTEC 05200", "url": "https://www.traceparts.com/de/search?Keywords=05200"}]
+        return {"ok": True, "zustand": "wartet_auf_cad", "cad_links": links, "erwartet": ["step", "stp", "zip"],
+                "hinweise": ["Kein TraceParts-Schlüssel (TRACEPARTS_API_KEY in secrets.env): CAD halbautomatisch "
+                             "über Links"],
+                "text": "CAD für ALUTEC Transportroller 05200: Kevin lädt die STEP-Datei herunter (Links)"}
+
+    def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
+                        erzwingen: bool = False) -> dict[str, Any]:
+        self._record("cad_uebernehmen", zukauf_id, pfad, minuten, erzwingen)
+        if zukauf_id == "x":
+            return {"ok": False, "error": "Keine neue STEP- oder ZIP-Datei der letzten 30 Minuten"}
+        return {"ok": True, "zustand": "importiert", "item": {"id": zukauf_id, "status": "frei"},
+                "datei": "/tmp/Kev CAD/Wandhalter/zukauf/alutec-05200/05200.step", "koerper": 5, "flaechen": 120,
+                "grob": False, "pruefung": {"skala": 25.4, "korrigiert": [610, 410, 128], "soll": [610, 410, 128]},
+                "hinweise": ["Modell war in Zoll gespeichert"],
+                "text": "CAD für ALUTEC Transportroller 05200 übernommen: 05200.step, 5 Körper"}
+
+    def zukauf_liste(self, query: str = "") -> dict[str, Any]:
+        self._record("zukauf_liste", query)
+        items = [{"id": "alutec-05200", "art": "zukaufteil", "name": "ALUTEC Transportroller 05200",
+                  "hersteller": "ALUTEC", "mpn": "05200", "masse": {"l": 610, "b": 410, "h": 128},
+                  "preis": {"je_stueck": 24.99, "brutto": True}, "ebene": "projekt", "status": "frei",
+                  "cad_art": "vereinfacht", "zustand": "wartet_auf_cad"}]
+        items = [it for it in items if query.lower() in (it["id"] + it["name"]).lower()]
+        return {"ok": True, "items": items, "total": len(items)}
 
     # Phase 5: Animation ------------------------------------------------------------------------------------------
 
@@ -323,6 +414,44 @@ class FakeService:
             {"teile": ["Bowlingball", "Pfosten"], "von": 5.1, "bis": 5.6, "zeit": 5.4, "bild": 162, "tiefe": 12.5,
              "volumen": 830.0, "ort": [1500.0, -340.0, 100.0], "bilder": [153, 156, 159, 162, 165, 168]}],
                 "geprueft": {"paare": 40, "geprueft_bilder": 81, "schritt": schritt, "ms": 640.0}}
+
+    # 3D-Druck ------------------------------------------------------------------------------------------------------
+
+    DRUCK_CHECK = {
+        "run": 3, "state": "done",
+        "befunde": [
+            {"id": "dr1", "art": "druck_ueberhang", "teile": ["Halter/Clip (Druck)"], "schwere": "warnung",
+             "text": "Halter/Clip (Druck): Überhang 70° an Fläche #f4 bei (1; 2; 3).",
+             "loesung": "Fase 45° statt Rundung.", "ort": [1.0, 2.0, 3.0],
+             "wert": {"pruefung": "druck", "druckart": "ueberhang", "flaechen": [4], "refs": ["Halter/Clip (Druck)#f4"]},
+             "geometrie": None},
+        ],
+        "druck": {
+            "drucker": "Bambu Lab P1P", "neu_geprueft": 1, "aus_zwischenspeicher": 0, "dauer_ms": 85.0,
+            "teile": {"Halter/Clip (Druck)": {
+                "material": "petg", "material_name": "PETG", "ok": True,
+                "zaehler": {"fehler": 0, "warnung": 1, "hinweis": 0},
+                "zusammenfassung": "1 Warnung (PETG, Bambu Lab P1P)",
+                "ausrichtung": {"text": "−Z-Seite unten", "unten": [0, 0, -1], "drehung": [0, 0, 0],
+                                "liegt_auf": "Halter/Clip (Druck)#f0", "automatisch": True, "vorgabe": None,
+                                "begruendung": "Wie modelliert liegt das Teil am besten; Stützfläche ca. 12 mm².",
+                                "bezug": "druckteil"},
+                "kennzahlen": {"abmessungen_mm": [20.0, 10.0, 8.0], "schichten": 40, "stuetzflaeche_mm2": 12.0,
+                               "auflageflaeche_mm2": 200.0, "volumen_cm3": 1.2, "masse_voll_g": 1.5,
+                               "bauraum_ausnutzung_prozent": 7.8},
+                "zwischenspeicher": False, "ms": 85.0}},
+            "materialien": {"petg": {"name": "PETG", "druckhinweise": ["PETG: Düse 240–260 °C, Bett 70–80 °C."],
+                                     "festigkeit": "Festigkeit: quer zu den Schichten hält PETG nur etwa 50 %."}},
+        },
+    }
+
+    def druckpruefung(self, teil: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.druck.bericht import druck_auszug
+
+        self._record("druckpruefung", teil)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
+        return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
 
     # Versionen ----------------------------------------------------------------------------------------------------
 
@@ -385,6 +514,10 @@ class FakeService:
     def set_agent_connected(self, connected: bool) -> None:
         with self.lock:
             self.connected.append(connected)
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        with self.lock:
+            self.sessions.append([dict(s) for s in sessions])
 
     def close(self) -> None:
         self._record("close")

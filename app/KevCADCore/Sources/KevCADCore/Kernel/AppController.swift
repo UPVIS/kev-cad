@@ -54,6 +54,8 @@ public final class AppController: AppActions {
     var navCancellables = Set<AnyCancellable>()
     /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
     var pendingRestore: SavedSession?
+    /// Spiegel aufs iPhone (MIRROR.md), siehe AppController+Mirror.swift.
+    public internal(set) var mirror: MirrorService?
     /// Phase 5: Animation (Spieler, Video), siehe AppController+Animation.swift.
     lazy var animationRuntime = AnimationRuntime(player: makeAnimationPlayer())
 
@@ -67,6 +69,8 @@ public final class AppController: AppActions {
     /// Stilles Nachladen des Katalogs (Vorschläge von Claude): letzter Zeitpunkt, ausgesetzt nach einer Zeitüberschreitung.
     var lastQuietCatalog: Date?
     var quietCatalogOff = false
+    /// Phase 3: Zukaufteile (Downloads-Beobachtung, Rückfragen, Namen), siehe AppController+Zukauf.swift.
+    let zukaufState = ZukaufControllerState()
     /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht).
     var revealFiles: ([URL]) -> Void = { urls in
         guard Bundle.main.bundleURL.pathExtension == "app", !urls.isEmpty,
@@ -114,6 +118,7 @@ public final class AppController: AppActions {
     public func start() {
         stopInternal(clearState: false)
         installSignalHandlers()
+        startMirror()
         running = true
         if AppInfo.isDemoMode {
             startDemo()
@@ -182,6 +187,7 @@ public final class AppController: AppActions {
 
     private func shutdownForTermination() {
         saveSession()
+        mirror?.stop()
         running = false
         restartWork?.cancel()
         connection.close()
@@ -457,7 +463,9 @@ public final class AppController: AppActions {
         case .agent(let a):
             model.agentConnected = a.connected
             model.agentActivity = a.connected ? a.activity : nil
+            mirror?.updateAgents(a.sessions)
         case .viewCommand(let v):
+            mirror?.noteAgentCommand()
             let (ok, message) = performViewCommand(v)
             if !ok { log(.warning, "Ansichtsbefehl \(v.cmd): \(message ?? "fehlgeschlagen")") }
             send(AckOutMessage(replyTo: v.id, ok: ok, message: message))
@@ -476,6 +484,10 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .zukaufStatus(let z):
+            applyZukaufStatus(z)
+        case .constraints(let r):
+            applyConstraints(r)
         case .animation(let a):
             handleAnimation(a)
         case .camera(let c):
@@ -530,7 +542,9 @@ public final class AppController: AppActions {
             refreshOverlay()
             model.run = .idle
             model.bom = nil
+            model.constraints = nil
             model.inventarVerstoesse = []
+            resetZukauf()
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             resetVersionen()  // Versionen: Liste und Vergleich des alten Projekts verwerfen
             log(.info, "Projekt \(info.name) geöffnet")
@@ -568,12 +582,14 @@ public final class AppController: AppActions {
                 id: name, color: r.header.colorVector, material: r.header.material, visible: scene.isVisible(name),
                 triangles: r.triangleCount, faces: r.faceCount, edges: r.edgeCount, bboxMin: b.min, bboxMax: b.max,
                 volume: r.header.volume, mass: r.header.mass, run: r.run, stock: r.header.stock,
-                inventarFehlt: r.header.inventarFehlt || model.inventarVerstoesse.contains(name))
+                inventarFehlt: r.header.inventarFehlt || model.inventarVerstoesse.contains(name),
+                zukauf: r.header.zukauf)
         }
         model.triangleCount = scene.triangleCount
         // rot: Inventar-Regel verletzt oder Befund der Prüfung (Durchdringung …)
         let pruefRot = (model.pruefung?.betroffeneTeile ?? []).filter { scene.record($0) != nil }
         scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)).union(pruefRot))
+        scene.setSimplifiedParts(Set(model.parts.filter { $0.zukauf?.isSimplified == true }.map(\.id)))
     }
 
     func sendSettings() {
@@ -704,6 +720,7 @@ public final class AppController: AppActions {
             }
         }
         items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
         items.append(contentsOf: cameraOverlayItems())
         return items
     }

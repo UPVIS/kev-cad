@@ -28,6 +28,8 @@ from typing import Any
 from build123d import BuildLine, BuildPart, BuildSketch, Color, Compound, Shape
 
 import kevcad
+from kevcad_kernel.bedingungen.lauf import pruefe_bedingungen
+from kevcad_kernel.bedingungen.sammlung import Sammlung
 from kevcad_kernel.bom import LagerRegister, Piece, ShownPart, build_bom
 from kevcad_kernel.catalog import Catalog, number
 from kevcad_kernel.kamera import KameraRegister, location_of
@@ -237,13 +239,15 @@ def _labeled_children(obj: Any) -> list[Any] | None:
     if isinstance(obj, (list, tuple)):
         kids = [_as_shape(o) for o in obj]
     elif isinstance(obj, Compound):
-        kids = list(obj.children)
-        # Kinder liegen relativ zum Compound: wurde er verschoben (Pos(...) * Baugruppe), die Lage mitnehmen
-        try:
-            if not obj.location.wrapped.IsIdentity():
-                kids = [k.moved(obj.location) if isinstance(k, Shape) else k for k in kids]
-        except Exception:  # noqa: BLE001
-            pass
+        from kevcad_kernel.baum import kinder
+
+        # Pos(...) * baugruppe verschiebt nur die Gesamtform, ``children`` bleiben Kopien an der alten Stelle. Die
+        # Kinder kommen deshalb aus der Topologie der Gesamtform (baum.kinder): an ihrer echten Lage (Location der
+        # Unterform = Lage der Gesamtform · eigene Lage, für Kameras mit an(..., lokal=True)), egal ob verschoben,
+        # gedreht oder mit ``located`` gesetzt, mit Name, Farbe, Material und den Kennungen der Vorlage
+        # (lager_token der Kamera-Körper, zukauf_id …, siehe baum.KENNUNGEN). Eine Lösung für Zukauf-Baugruppen und
+        # Kamera-Körper und Rig-Teile (Phase 5); nicht zusätzlich ``k.moved(obj.location)``, das verschiebt doppelt.
+        kids = kinder(obj)
     else:
         return None
     if kids and all(isinstance(k, Shape) for k in kids) and any(getattr(k, "label", "") for k in kids):
@@ -474,7 +478,7 @@ class Runner:
     def _install(self, *, run: int, overrides: dict[str, Any], slow_ms: int, deviation: float, angular: float,
                  sketch: bool, state: dict[str, Any], catalog: Catalog | None = None,
                  register: LagerRegister | None = None, strict: bool = False,
-                 kameras: KameraRegister | None = None) -> None:
+                 kameras: KameraRegister | None = None, sammlung: Any = None) -> None:
         def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None) -> None:
             if name is None or not str(name).strip():
                 label = getattr(_as_shape(obj), "label", "") or ""
@@ -532,6 +536,11 @@ class Runner:
                 if max is not None and value > max:
                     state["warnings"].append(f"param {name} = {value} liegt über dem Maximum {max}")
             state["params"][name] = value
+            if sammlung is not None:  # Grenzen als Maßbedingung (Verstoß = Befund, PLAN-BEDINGUNGEN.md)
+                from kevcad_kernel.bedingungen.sammlung import aufrufstelle
+
+                datei, zeile = aufrufstelle()
+                sammlung.param_grenze(name, value, min, max, datei, zeile)
             return value
 
         def lager(piece: Piece, shape: Any) -> None:
@@ -563,6 +572,8 @@ class Runner:
             hooks["teil_location"] = lambda name: state.get("locations", {}).get(name)
         if self._erfassung is not None and not sketch:
             hooks["pruefung"] = self._erfassung.melde
+        if sammlung is not None:
+            hooks["bedingungen"] = sammlung
         kevcad._hooks.update(hooks)
 
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
@@ -574,6 +585,12 @@ class Runner:
             return
         # Lagerteile zu diesem Teil (Name wie in verbauen, sonst Form, sonst label)
         pieces = register.link(name, shape) if register is not None and not sketch else []
+        single = pieces[0] if len({p.seq for p in pieces}) == 1 else None
+        if single is not None and single.art == "zukaufteil" and (single.zukauf or {}).get("cad") == "vereinfacht" \
+                and "(vereinfacht)" not in name:
+            name += " (vereinfacht)"  # Ersatzkörper: im Teilebaum erkennbar (KATALOG.md, Zukaufteil)
+        if getattr(shape, "kevcad_grob", False):  # großes Hersteller-CAD: grob tessellieren
+            deviation, angular = deviation * 3.0, angular * 2.0
         piece_mat = None
         if pieces and catalog is not None and pieces[0].material_id:
             entry = catalog.material(pieces[0].material_id)
@@ -620,8 +637,10 @@ class Runner:
         header, payload = pack_part(run=run, name=name, geometry=tess.geometry, color=color, bbox=tess.bbox,
                                     props=props, material=mat.display if mat is not None else None)
         header.pop("seq", None)
-        if len({p.seq for p in pieces}) == 1:
-            if pieces[0].stock_id:
+        if single is not None:
+            if single.art == "zukaufteil":
+                header["zukauf"] = single.zukauf_info()
+            elif pieces[0].stock_id:
                 header["stock"] = pieces[0].stock_info()
             elif pieces[0].art == "druckteil":
                 header["druckteil"] = pieces[0].druck_info()
@@ -648,6 +667,8 @@ class Runner:
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
+        if "formen" in state and not sketch:  # für die Prüfung der Bedingungen nach dem Lauf
+            state["formen"][name] = (shape, tess)
         state["tess_ms"] += tess.tess_ms
         state["cached"] += int(tess.cached)
         self.emit({"type": "PART", "run": run, "name": name, "key": tess.key, "cached": tess.cached,
@@ -677,9 +698,10 @@ class Runner:
         if not schatten:
             self.run_no = run
         state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0,
-                                 "bom_parts": {}}
+                                 "bom_parts": {}, "formen": {}}
         register = LagerRegister()
         kameras = KameraRegister()
+        sammlung = Sammlung(gezeigt=state["formen"])  # Bezüge über den Namen finden schon gezeigte Teile
         strict = bool(msg.get("inventar_regel", True))
         if not schatten:
             self.inventar = strict
@@ -705,7 +727,7 @@ class Runner:
             sys.path.insert(0, project)
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
                           sketch=False, state=state, catalog=catalog, register=register, strict=strict,
-                          kameras=kameras)
+                          kameras=kameras, sammlung=sammlung)
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
                 warnings.simplefilter("always")
                 try:
@@ -767,6 +789,9 @@ class Runner:
                 result["warnings"].append(f"Kameras nicht übernommen: {type(exc).__name__}: {exc}")
             if not schatten:
                 self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
+            bericht = pruefe_bedingungen(sammlung, state, project)
+            if bericht is not None:
+                result["bedingungen"] = bericht
         return result
 
     def _animations(self, run: int, state: dict[str, Any], path: str, source: str,

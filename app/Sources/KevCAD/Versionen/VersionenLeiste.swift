@@ -26,6 +26,8 @@ struct VersionenLeiste: View {
                 } else {
                     liste(s)
                 }
+            } else if actions == nil {
+                hinweis(symbol: "clock.arrow.circlepath", text: "Im Demomodus gibt es keine Versionen.")
             } else {
                 VStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -196,10 +198,9 @@ struct VersionenLeiste: View {
             Label("Mit aktuellem Stand vergleichen", systemImage: "square.split.2x1")
         }
         .disabled(v.aktuell)
-        if let aktuell = store.stand?.aktuelleVersion, let a = store.vergleich?.a.nr, a != v.nr, !v.aktuell {
+        if let a = store.vergleich?.a.nr, a != v.nr, !v.aktuell {
             Button("Mit V\(a) vergleichen (ohne Geisterkörper)") {
-                model.versionenActions?.compareVersion(min(a, v.nr), with: max(a, v.nr))
-                _ = aktuell
+                actions?.compareVersion(min(a, v.nr), with: max(a, v.nr))
             }
         }
         Divider()

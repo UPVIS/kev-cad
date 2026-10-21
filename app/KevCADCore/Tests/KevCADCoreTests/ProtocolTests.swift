@@ -153,6 +153,14 @@ final class ProtocolTests: XCTestCase {
         guard case .agent(let ag) = try Fixtures.message("agent.frame") else { return XCTFail() }
         XCTAssertTrue(ag.connected)
         XCTAssertEqual(ag.activity, "misst Abstand Lasche ↔ Grundplatte")
+        XCTAssertEqual(ag.sessions.map(\.aktiv), [true, false])
+        XCTAssertEqual(ag.sessions.first?.sessionID, "6b1f2c3d-0000-4000-8000-00000000000a")
+        XCTAssertEqual(ag.sessions.first?.zuletzt, "2026-10-21T22:05:12Z")
+        XCTAssertNil(ag.sessions.last?.taetigkeit)
+        // Ältere Kernel ohne sessions
+        let old = Frame(header: Data(#"{"type":"AGENT","connected":true,"activity":null}"#.utf8))
+        guard case .agent(let oldAgent) = try KernelMessage.decode(old) else { return XCTFail() }
+        XCTAssertEqual(oldAgent.sessions, [])
 
         guard case .viewCommand(let vc) = try Fixtures.message("view_cmd_focus.frame") else { return XCTFail() }
         XCTAssertEqual(vc.id, "k-1")

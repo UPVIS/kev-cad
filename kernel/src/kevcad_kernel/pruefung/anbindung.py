@@ -132,4 +132,9 @@ def fuer_ergebnis(check: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
     out = {k: check.get(k) for k in ("state", "message", "zusammenfassung", "zaehler", "befunde", "duration_ms",
                                      "gewinde", "erlaubt", "statistik") if check.get(k) is not None}
+    if check.get("druck"):  # Druckprüfung: Ausrichtung je Druckteil, ihre Hinweise nur über druckpruefung
+        from kevcad_kernel.druck.bericht import druck_kurz, ohne_druckhinweise
+
+        out["befunde"], n = ohne_druckhinweise(out.get("befunde") or [])
+        out["druck"] = {**druck_kurz(check["druck"]), "hinweise_nur_in_druckpruefung": n}
     return out

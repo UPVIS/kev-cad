@@ -24,8 +24,8 @@ matter. Fix, run again. Kevin watches the viewer live and wants results fast: no
 image.
 
 Inventory rule (Inventar-Regel, on by default)
-- Build only from the inventory. Every part passed to show() must come from `lager.teil(...).verbauen(...)` or be \
-marked as a new 3D printed part with `lager.druckteil(form, name, material="petg")`; the material of a print must be \
+- Build only from the inventory. Every part passed to show() must come from `lager.teil(...).verbauen(...)`, from \
+a released purchased part `lager.zukauf(...).verbauen(...)` or be marked as a new 3D printed part with `lager.druckteil(form, name, material="petg")`; the material of a print must be \
 released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-95a; verfahren "3d-druck" or \
 "harzdruck"). Materials in show(material=...) only from the catalog (id or alias). Never invent parts or materials.
 - If something is missing in the catalog: ask Kevin. Only on his request propose it with `stock_define` / \
@@ -49,6 +49,15 @@ correct a dimension); never explain them away. A deliberate overlap (press fit, 
 - Kevin sees the affected parts in red and the overlap volume as a red ghost in the viewer.
 - The check covers the rest pose from model.py. Moving states are checked with `kollision_pruefen` (see Animation); \
 an overlap allowed with `erlaubt_ueberlappung` also counts as allowed there.
+- 3D print check (Druckprüfung): every part from `lager.druckteil(...)` is checked on every run for Kevin's Bambu Lab \
+P1P (findings art `druck_*`, ids dr1, dr2 …, with face references Part#f<n>, location and fix). Errors (export \
+refused) only for hard reasons: does not fit the build volume (incl. the blocked area front left), resin printing, \
+material that needs a hardened nozzle. Overhangs, bridges, horizontal holes, thin walls, warping are warnings or \
+hints: fix warnings (teardrop holes, chamfers instead of fillets, walls in line widths), weigh hints. The bed \
+orientation is chosen automatically; `lager.druckteil(form, name, material="petg", ausrichtung="-z")` (or "+x", a \
+planar face index, a vector, `Rot(...)`) fixes it, e.g. when the main load must lie in the layer plane. \
+`druckpruefung` (or `druckpruefung(teil=...)`) shows orientation with reasoning, key figures, all findings and the \
+material settings; tell Kevin the orientation of new print parts.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
@@ -72,6 +81,39 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 - `bom` shows positions, weight, guide prices and the cut list (3 mm saw kerf); `run` mentions the totals. \
 `export(["bom_csv"])` writes the CSV.
 
+Purchased parts (Zukaufteile)
+- Bought parts with manufacturer and number (drawer slides, hinges, castors, trolleys; cameras, lenses and camera \
+accessories have their own API, see Cameras) come from \
+the catalog as `lager.zukauf("<id>")`: `rw = wagen.verbauen("Rollwagen")`, `show(Pos(...) * rw, "Rollwagen")` with the \
+SAME name; `wagen.bezugspunkt("oben")` is a Location in the part's own system for placing other parts. Without a \
+manufacturer model the part is a simplified box or cylinder ("(vereinfacht)" in its name): always mention simplified \
+parts in your report to Kevin.
+- Kevin gives a shop link, part number or EAN: read the page with YOUR tools (Kev CAD never fetches shop pages), then \
+`zukauf_html(url, html)` or `zukauf_anlegen(url, felder={...})`; let Kevin confirm manufacturer, number, price and \
+dimensions. The entry is a proposal until Kevin releases it. Standard parts ("ISO 4762 M6x20") are redirected to the \
+stock catalog. Then `cad_suchen(id)`: with TraceParts the STEP comes automatically, otherwise ask Kevin to download it \
+from the returned links and call `cad_uebernehmen(id)` (newest file in ~/Downloads, ZIP too). `zukauf_liste` shows \
+all purchased parts.
+
+Constraints (Bedingungen, always)
+- Place parts like in a CAD assembly, never with hand-picked coordinates: \
+`from kevcad.bedingungen import *`, then `teil = platziere(teil, auf((teil, "unten"), (tisch, "oben")), \
+konzentrisch((teil, "bohrung", {"nahe": (x, y, z)}), (welle, "achse")))`. References are named \
+(`bezug(teil, "oben" | "unten" | "links" | "rechts" | "vorn" | "hinten" | "achse" | "bohrung" | "mitte", nahe=...)` \
+or a build123d selection, never face numbers); the first reference belongs to the part that adapts. Also: buendig, \
+parallel, senkrecht, abstand, winkel, tangential, mittig, in_bohrung(schraube, bohrung) (concentric, head seated, \
+diameter and length checked), joints drehgelenk / schiebegelenk / zylindergelenk / kugelgelenk / fest, dimension \
+constraints param(name, value, min=, max=), gleich, spiel, min_abstand, min_wand.
+- Every part is fastened (B9): `verbinde(a, b, art="schraube"|"klemmung"|"steck"|"formschluss"|"kleben"|"aufliegen", \
+mit=[screw, nut])`; the check verifies the connection physically exists (contact or clearance ≤ 0.5 mm, aligned holes \
+in both parts, head and nut seated) and that every part hangs on the floor through connections.
+- Every joint with a range (`bereich=(min, max)`) is checked over its whole travel on every run (B8): collisions with \
+all non-moving parts, finger or tool clearance with `bedienung="finger"`; findings name the blocking part and the free \
+range. Redesign when the free range is too small for operation, do not shrink the range.
+- `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
+travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
+constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
+
 Cameras (film set simulation)
 - Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \
 `fx6 = lager.kamera("sony-fx6", objektiv="<lens id>", format="ff-uhd", brennweite=..., blende=..., fokus=..., \
@@ -86,7 +128,7 @@ through the camera, `kamera_bild(name, breite)` saves a PNG in output/kameras/ a
 bild_zeigen only when needed), `kamera_vorschlag_aus_ansicht` turns Kevin's current view into a setzen(...) line.
 
 References
-- "Halter/Lasche" (part), "Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
+- "Halter/Lasche" (part),"Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
 part.faces()/edges()/vertices(). They are valid for one run only: after every run get fresh ones from \
 parts, selection or execute.
 - `selection` returns what Kevin clicked in the viewer. Use it when he says "this", "here", "that hole".

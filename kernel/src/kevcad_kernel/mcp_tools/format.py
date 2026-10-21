@@ -278,6 +278,19 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
                 lines.insert(0, text)
             else:
                 lines.append(text)
+    constraint_failed = False
+    if isinstance(res.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
+        from kevcad_kernel.bedingungen.bericht import run_zeilen
+
+        data["bedingungen"] = res["bedingungen"]
+        # Mit fertigem Prüfergebnis stehen die Befunde der Bedingungen schon dort (gemeinsame Prüfung): nur die Summe
+        mit_pruefung = isinstance(res.get("pruefung"), dict) and res["pruefung"].get("state") == "done"
+        extra, constraint_failed = run_zeilen(res["bedingungen"], befunde=not mit_pruefung)
+        constraint_failed = constraint_failed and not mit_pruefung
+        if constraint_failed:
+            lines[1:1] = extra  # gleich unter die Kopfzeile: der Agent soll es zuerst sehen
+        else:
+            lines.extend(extra)
     if violations:
         from kevcad_kernel.bom import inventory_text
 
@@ -285,7 +298,7 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.insert(1, "Die Geometrie ist im Viewer zu sehen; Export und Stückliste gelten erst, wenn alles aus dem "
                         "Inventar kommt.")
         return "\n".join(lines), data, True
-    return "\n".join(lines), data, pruef_offen
+    return "\n".join(lines), data, pruef_offen or constraint_failed
 
 
 def measure_line(m: dict[str, Any]) -> str:
@@ -427,7 +440,9 @@ def bom_text(bom: dict[str, Any]) -> str:
         for ln in lines_:
             g = gehrung_text(ln.get("gehrung")) if not ln.get("eigenteil") else ""
             name = str(ln.get("benennung", "")) + (" (Eigenteil)" if ln.get("eigenteil") else "") + (
-                " (Druckteil)" if ln.get("art") == "druckteil" else "")
+                " (Druckteil)" if ln.get("art") == "druckteil" else "") + (
+                (" (Zukaufteil, vereinfacht)" if ln.get("vereinfacht") else " (Zukaufteil)")
+                if ln.get("art") == "zukaufteil" else "")
             rows.append([str(ln.get("pos", "")), str(ln.get("anzahl", "")), name, str(ln.get("masse_text", "")), g,
                          str(ln.get("material") or ""),
                          de_num(ln["kg"], 2) if isinstance(ln.get("kg"), (int, float)) else "–",

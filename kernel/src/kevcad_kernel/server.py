@@ -23,7 +23,7 @@ from mcp.server.mcpserver import MCPServer
 
 import kevcad_kernel
 from kevcad_kernel.mcp_tools import INSTRUCTIONS, SERVER_NAME, SERVER_TITLE, register_tools
-from kevcad_kernel.mcp_tools.tracking import AgentTracker
+from kevcad_kernel.mcp_tools.tracking import AgentTracker, SessionBoard
 from kevcad_kernel.service import KernelService, create_service
 
 log = logging.getLogger("kevcad_kernel.server")
@@ -32,8 +32,8 @@ HOST = "127.0.0.1"
 MCP_PATH = "/mcp"
 
 
-def build_server(service: KernelService) -> MCPServer:
-    """MCP-Server „kevcad“ mit allen Werkzeugen, gebunden an ``service``."""
+def build_server(service: KernelService, board: SessionBoard | None = None) -> MCPServer:
+    """MCP-Server „kevcad“ mit allen Werkzeugen, gebunden an ``service`` (``board``: Claude-Sitzungen)."""
     mcp: MCPServer = MCPServer(
         SERVER_NAME,
         title=SERVER_TITLE,
@@ -42,7 +42,7 @@ def build_server(service: KernelService) -> MCPServer:
         log_level="WARNING",
         subscriptions=False,
     )
-    register_tools(mcp, service)
+    register_tools(mcp, service, board)
     return mcp
 
 
@@ -65,9 +65,10 @@ class KevcadHTTPServer:
                  log_level: str = "warning", tracker_options: dict[str, Any] | None = None) -> None:
         self.service = service
         self.host = host
-        self.mcp = build_server(service)
-        self.tracker = AgentTracker(service.set_agent_connected, path=MCP_PATH,
-                                    on_session=getattr(service, "set_agent_session", None),
+        # Claude-Sitzungen (MIRROR.md): Werkzeuge melden Aufrufe, der Tracker meldet, welche noch verbunden sind
+        self.board = SessionBoard(getattr(service, "set_agent_sessions", None))
+        self.mcp = build_server(service, self.board)
+        self.tracker = AgentTracker(service.set_agent_connected, path=MCP_PATH, board=self.board,
                                     **(tracker_options or {}))
         # JSON-Antworten statt SSE: Werkzeugergebnisse kommen als ein Stück. So stoßen große Bilder nicht an
         # Größengrenzen für SSE-Ereignisse in Clients (das Python-Paket erlaubt dort nur 1 MiB).

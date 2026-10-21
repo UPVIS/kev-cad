@@ -85,7 +85,9 @@ struct CatalogWindow: View {
 
     private var subtitle: String {
         guard let c = model.catalog else { return "" }
-        return "\(KevFormat.count(c.items.count, one: "Lagerteil", many: "Lagerteile")) · "
+        let zukauf = c.items.filter(\.isZukauf).count
+        return "\(KevFormat.count(c.items.count - zukauf, one: "Lagerteil", many: "Lagerteile")) · "
+            + (zukauf > 0 ? "\(KevFormat.count(zukauf, one: "Zukaufteil", many: "Zukaufteile")) · " : "")
             + KevFormat.count(c.materials.count, one: "Material", many: "Materialien")
     }
 
@@ -115,7 +117,11 @@ struct CatalogWindow: View {
     private func detail(_ catalog: Catalog) -> some View {
         switch selection {
         case .item(let id)?:
-            if let item = catalog.item(id) {
+            if let item = catalog.item(id), item.isZukauf {
+                ZukaufCatalogDetail(model: model, item: item, onDelete: { deleting = .item(id) },
+                                    onApprove: { approve(.item(id)) })
+                    .id(id)
+            } else if let item = catalog.item(id) {
                 CatalogItemDetail(
                     model: model, item: item, catalog: catalog, onEdit: { edit(.item(id)) }, onCopy: { copy(.item(id)) },
                     onDelete: { deleting = .item(id) }, onApprove: { approve(.item(id)) })
@@ -193,10 +199,18 @@ struct CatalogWindow: View {
             Menu {
                 Button("Neues Lagerteil …") { newItem() }
                 Button("Neues Material …") { newMaterial() }
+                Divider()
+                Button("Zukaufteil hinzufügen …") { session.showZukaufDialog() }
             } label: {
                 Label("Neu", systemImage: "plus")
             } primaryAction: {
-                if section?.showsMaterials == true { newMaterial() } else { newItem() }
+                if section?.showsMaterials == true {
+                    newMaterial()
+                } else if section == .art(ZukaufDraft.art) {
+                    session.showZukaufDialog()
+                } else {
+                    newItem()
+                }
             }
             .help("Neues Lagerteil oder Material im eigenen Katalog anlegen")
             .disabled(model.catalog == nil)
@@ -275,6 +289,7 @@ struct CatalogWindow: View {
         switch entry {
         case .item(let id):
             guard let item = catalog.item(id), item.ebene.isEditable else { return }
+            if item.isZukauf { return session.showZukaufDialog(for: item, mode: item.vorgeschlagen ? .confirm : .edit) }
             form = CatalogFormRequest(mode: .edit, draft: .item(CatalogItemDraft(entry: item.entry)), ebene: item.ebene)
         case .material(let id):
             guard let m = catalog.material(id), m.ebene.isEditable else { return }
@@ -287,6 +302,12 @@ struct CatalogWindow: View {
         switch entry {
         case .item(let id):
             guard let item = catalog.item(id) else { return }
+            if item.isZukauf {
+                var draft = ZukaufDraft(entry: item.entry)
+                draft.id = ""
+                draft.extra.removeValue(forKey: "cad")
+                return session.showZukaufDialog(ZukaufDialogRequest(mode: .new, draft: draft, ebene: .eigen, startWithFields: true))
+            }
             form = CatalogFormRequest(mode: .copy, draft: .item(CatalogItemDraft(entry: item.entry)), ebene: .eigen)
         case .material(let id):
             guard let m = catalog.material(id) else { return }
@@ -424,7 +445,8 @@ private struct CatalogSidebar: View {
     private var materials: [CatalogMaterial] { catalog.materials.filter { level == nil || $0.ebene == level } }
 
     private var arten: [String] {
-        let present = Set(catalog.items.map(\.art))
+        // Zukaufteile stehen in einem eigenen Abschnitt
+        let present = Set(catalog.items.map(\.art)).subtracting([ZukaufDraft.art])
         let ordered = (catalog.arten + catalog.items.map(\.art)).filter(present.contains)
         var seen = Set<String>()
         return ordered.filter { seen.insert($0).inserted }.sorted {
@@ -458,12 +480,17 @@ private struct CatalogSidebar: View {
                 }
             }
             Section("Lagerteile") {
-                row("Alle Lagerteile", symbol: "square.stack.3d.up", count: items.count).tag(CatalogSection.allItems)
+                row("Alle Lagerteile", symbol: "square.stack.3d.up", count: items.filter { !$0.isZukauf }.count)
+                    .tag(CatalogSection.allItems)
                 ForEach(arten, id: \.self) { art in
                     row(CatalogSchema.art(art).plural, symbol: CatalogSchema.art(art).symbol,
                         count: items.filter { $0.art == art }.count)
                         .tag(CatalogSection.art(art))
                 }
+            }
+            Section("Zukaufteile") {
+                row("Alle Zukaufteile", symbol: "cart", count: items.filter(\.isZukauf).count)
+                    .tag(CatalogSection.art(ZukaufDraft.art))
             }
             Section("Materialien") {
                 row("Alle Materialien", symbol: "paintpalette", count: materials.count).tag(CatalogSection.allMaterials)
@@ -509,6 +536,7 @@ private struct CatalogList: View {
         return CatalogSearch.sorted(catalog.items).filter { item in
             if let level, item.ebene != level { return false }
             if case .art(let art) = section, item.art != art { return false }
+            if section == .allItems, item.isZukauf { return false }
             if section == .suggestions, !item.vorgeschlagen { return false }
             return CatalogSearch.matches(item, tokens: t, material: catalog.material(item.material))
         }
@@ -532,9 +560,22 @@ private struct CatalogList: View {
         let materials = materialsShown || suggestions ? self.materials : []
         List(selection: $selection) {
             if suggestions {
-                if !items.isEmpty {
+                let zukauf = items.filter(\.isZukauf)
+                if !zukauf.isEmpty {
+                    Section("Zukaufteile") {
+                        ForEach(zukauf) { item in
+                            SuggestionRow(onApprove: { onApprove(.item(item.id)) }, onReject: { onDelete(.item(item.id)) }) {
+                                ZukaufItemRow(model: model, item: item)
+                            }
+                            .tag(CatalogFocus.item(item.id))
+                            .contextMenu { menu(.item(item.id), editable: item.ebene.isEditable, id: item.id, suggested: true) }
+                        }
+                    }
+                }
+                let stock = items.filter { !$0.isZukauf }
+                if !stock.isEmpty {
                     Section("Lagerteile") {
-                        ForEach(items) { item in
+                        ForEach(stock) { item in
                             SuggestionRow(onApprove: { onApprove(.item(item.id)) }, onReject: { onDelete(.item(item.id)) }) {
                                 ItemRow(item: item, material: catalog.material(item.material))
                             }
@@ -561,7 +602,13 @@ private struct CatalogList: View {
                 }
             } else {
                 ForEach(items) { item in
-                    ItemRow(item: item, material: catalog.material(item.material))
+                    Group {
+                        if item.isZukauf {
+                            ZukaufItemRow(model: model, item: item)
+                        } else {
+                            ItemRow(item: item, material: catalog.material(item.material))
+                        }
+                    }
                         .tag(CatalogFocus.item(item.id))
                         .contextMenu { menu(.item(item.id), editable: item.ebene.isEditable, id: item.id, suggested: item.vorgeschlagen) }
                 }
@@ -585,7 +632,9 @@ private struct CatalogList: View {
                     ContentUnavailableView(
                         level.map { "Keine Einträge in „\($0.title)“" } ?? "Keine Einträge",
                         systemImage: materialsShown ? "paintpalette" : "shippingbox",
-                        description: Text("Mit + legst du ein neues \(materialsShown ? "Material" : "Lagerteil") an."))
+                        description: Text(section == .art(ZukaufDraft.art)
+                            ? "Mit + fügst du ein Zukaufteil per Shop-Link, Herstellernummer oder EAN hinzu."
+                            : "Mit + legst du ein neues \(materialsShown ? "Material" : "Lagerteil") an."))
                 }
             }
         }

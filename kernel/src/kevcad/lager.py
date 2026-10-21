@@ -22,8 +22,12 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
 - Schrauben, Muttern und Scheiben kommen aus bd_warehouse (Schraubenkopf auf z = 0, Schaft nach -Z), ohne Gewinde
   (``simple=False`` für Gewinde).
 - Jedes ``verbauen`` erscheint in der Stückliste, auch wenn das Teil danach gebohrt oder gekürzt wird.
+- Zukaufteile (Phase 3): ``lager.zukauf("alutec-05200").verbauen("Rollwagen")`` mit Hersteller-CAD, Skript-Geometrie
+  oder Ersatzkörper, ``.bezugspunkt("oben")`` als Location (siehe ``kevcad.zukaufteil``).
 - Selbst konstruierte Teile, die gedruckt werden: ``lager.druckteil(form, "Halter/Schelle", material="petg")``. Das
-  Material muss freigegeben sein und im Katalog ``"druckbar": true`` haben.
+  Material muss freigegeben sein und im Katalog ``"druckbar": true`` haben. Die Druckprüfung (Bambu Lab P1P) läuft
+  nach jedem Lauf mit; ``ausrichtung="-z"`` (oder ``"+x"``, Flächennummer, Vektor, ``Rot(...)``) gibt die Lage aufs
+  Bett vor, ohne Angabe wählt die Prüfung sie selbst.
 - Inventar-Regel (Standard, abschaltbar nur von Kevin in kevcad.json): Jedes gezeigte Teil stammt aus ``verbauen``
   oder ``druckteil``; Materialien nur aus dem Katalog. Vorgeschlagene Einträge (von stock_define/material_define)
   lassen sich erst nach Kevins Freigabe verbauen.
@@ -52,7 +56,7 @@ from kevcad_kernel.catalog import (
     number,
 )
 
-__all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN",
+__all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN", "zukauf",
            "kamera", "kamerazubehoer"]
 
 MAX_GEHRUNG = 80.0
@@ -330,6 +334,8 @@ def teil(auswahl: str, /, *, material: str | None = None, **masse: Any) -> Lager
     key = auswahl.strip()
     if not masse and material is None:
         it = cat.item(key)
+        if it is not None and it.get("art") not in ARTEN:  # Zukaufteil (Phase 3)
+            raise LagerError(f"{key!r} ist ein Zukaufteil ({it.get('name')}): lager.zukauf({key!r}).verbauen(name)")
         if it is not None:
             return _released(cat, it)
     art = key.lower()
@@ -412,17 +418,79 @@ def suche(text: str = "", art: str | None = None, limit: int = 30) -> list[Lager
     """Lagerteile nach Text und Maßen ("vierkantrohr 40x40x3", "edelstahl rohr 33,7", "m8")."""
     cat = katalog()
     hits, _ = cat.search(text, art=art, limit=limit)
-    return [Lagerteil(h, cat.material(h.get("material", ""))) for h in hits]
+    out: list[Any] = []
+    for h in hits:
+        if h.get("art") in ARTEN:
+            out.append(Lagerteil(h, cat.material(h.get("material", ""))))
+        else:  # Zukaufteil
+            from kevcad.zukaufteil import Zukaufteil
+
+            out.append(Zukaufteil(h, cat))
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Zukaufteile (Phase 3)
+
+
+def zukauf(auswahl: str | None = None, /, *, mpn: str | None = None, hersteller: str | None = None,
+           gtin: str | None = None):
+    """Zukaufteil aus dem Katalog nach id (``zukauf("alutec-05200")``), Herstellernummer
+    (``zukauf(mpn="05200", hersteller="ALUTEC")``) oder EAN (``zukauf(gtin="4014688052004")``). ``verbauen(name)``
+    liefert Hersteller-CAD, Skript-Geometrie oder Ersatzkörper; ``bezugspunkt(name)`` eine Location. Siehe
+    ``kevcad.zukaufteil``."""
+    from kevcad.zukaufteil import finden
+
+    return finden(auswahl, mpn=mpn, hersteller=hersteller, gtin=gtin)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Druckteile (Eigenfertigung)
 
 
-def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck"):
+AUSRICHTUNGEN = ("-z", "+z", "z", "-x", "+x", "x", "-y", "+y", "y", "modell", "wie modelliert")
+
+
+def _pruefe_ausrichtung(ausrichtung: Any, shape: Any, name: str) -> Any:
+    """Vorgabe für die Druckprüfung früh prüfen, damit der Fehler auf die Zeile in model.py zeigt."""
+    if ausrichtung is None:
+        return None
+    hilfe = (" Erlaubt: None (automatisch), \"-z\" (wie modelliert), \"+z\", \"+x\", \"-x\", \"+y\", \"-y\" (diese "
+             "Seite liegt auf dem Bett), eine Flächennummer (ebene Fläche aufs Bett), ein Richtungsvektor (x, y, z) "
+             "oder Rot(...)/Location (so gedreht wird gedruckt).")
+    if isinstance(ausrichtung, str):
+        if ausrichtung.strip().lower().replace("−", "-") not in AUSRICHTUNGEN:
+            raise LagerError(f"druckteil {name!r}: Ausrichtung {ausrichtung!r} unbekannt." + hilfe)
+        return ausrichtung
+    if isinstance(ausrichtung, bool):
+        raise LagerError(f"druckteil {name!r}: Ausrichtung {ausrichtung!r} ist keine Ausrichtung." + hilfe)
+    if isinstance(ausrichtung, int):
+        faces = shape.faces()
+        if not 0 <= ausrichtung < len(faces):
+            raise LagerError(f"druckteil {name!r}: Fläche {ausrichtung} gibt es nicht (0 bis {len(faces) - 1}).")
+        if faces[ausrichtung].geom_type.name != "PLANE":
+            raise LagerError(f"druckteil {name!r}: Fläche {ausrichtung} ist nicht eben und kann nicht aufs Bett.")
+        return ausrichtung
+    if callable(getattr(getattr(ausrichtung, "wrapped", None), "Transformation", None)):
+        return ausrichtung  # Location oder Rot(...)
+    try:
+        v = [float(c) for c in ausrichtung]
+    except (TypeError, ValueError):
+        v = []
+    if len(v) != 3 or not all(math.isfinite(c) for c in v) or math.hypot(*v) < 1e-9:
+        raise LagerError(f"druckteil {name!r}: Ausrichtung {ausrichtung!r} ist keine Richtung." + hilfe)
+    return tuple(v)
+
+
+def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", ausrichtung: Any = None):
     """Selbst konstruiertes Teil, das gedruckt wird: registriert es für die Stückliste (Masse aus Volumen × Dichte,
     Kosten über preis_je_kg) und gibt es mit Name, Farbe und Material zurück. ``material`` muss freigegeben und
-    druckbar sein; ``verfahren`` "3d-druck" oder "harzdruck"."""
+    druckbar sein; ``verfahren`` "3d-druck" oder "harzdruck".
+
+    Nach jedem Lauf prüft die Druckprüfung das Teil für Kevins Bambu Lab P1P (Prüfer „druck“, Einzelheiten mit dem
+    MCP-Werkzeug ``druckpruefung``). ``ausrichtung``: None = automatisch die beste Lage aufs Bett; "-z" = wie
+    modelliert, "+x" usw. = diese Seite aufs Bett, Flächennummer, Richtungsvektor oder ``Rot(...)``. Die Angabe gilt
+    in den Koordinaten der übergebenen Form (vor dem Verschieben in die Baugruppe)."""
     from build123d import BuildPart, Color, Shape
 
     from kevcad_kernel.bom import Piece
@@ -440,6 +508,7 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck"):
     volume = float(shape.volume)
     if volume <= 1e-9:
         raise LagerError(f"druckteil {name!r}: form hat kein Volumen (erst mit extrude() zum Körper machen)")
+    ausrichtung = _pruefe_ausrichtung(ausrichtung, shape, name)
     mat = released_material(material, druckbar=True)
     label = name.strip().strip("/").replace("#", "-")
     shape.label = label
@@ -460,7 +529,8 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck"):
                   material_name=mat.get("name") or mat["id"], ebene=mat.get("ebene", "mitgeliefert"), kg=kg,
                   preis=kg * pkg if pkg is not None else None, preis_stand=mat.get("preis_stand"),
                   preis_quelle=mat.get("preis_quelle"), verfahren=verfahren, volume=volume,
-                  size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)])
+                  size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)],
+                  ausrichtung=ausrichtung)
     _register(piece, shape)
     return shape
 

@@ -12,15 +12,24 @@ MCP-Client verbunden ist (``set_agent_connected``). Er nutzt nur das, was das Pr
   binnen ``grace_s`` wieder, gilt die Sitzung als beendet. Sitzungen ganz ohne GET-Strom enden nach ``idle_s``.
 - Zustandslose Anfragen (Protokoll 2026-07-28 ohne Sitzung): verbunden, solange die letzte Anfrage weniger als
   ``stateless_s`` zurückliegt.
+
+``SessionBoard`` führt die Claude-Sitzungen, die Kev CAD bedienen (MIRROR.md, „Sitzungen“). Die Brücke ``kevcad-mcp``
+schickt ihre ``CLAUDE_CODE_SESSION_ID`` bei jeder Anfrage im Kopf ``x-claude-code-session-id``; ``AgentTracker`` legt
+sie für die Dauer der Anfrage in die Kontextvariable ``claude_session`` (die Werkzeuge laufen im Kontext der Anfrage)
+und weiß, welche Sitzungen noch verbunden sind. Je Sitzung zählen der letzte verändernde Werkzeugaufruf (alles außer
+nur lesenden Werkzeugen) und die Tätigkeit; aktiv ist genau die Sitzung mit dem letzten verändernden Aufruf der
+letzten 10 Minuten.
 """
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import anyio
@@ -28,6 +37,117 @@ import anyio
 log = logging.getLogger(__name__)
 
 SESSION_HEADER = b"mcp-session-id"
+CLAUDE_SESSION_HEADER = b"x-claude-code-session-id"
+ACTIVE_WINDOW_S = 10 * 60
+
+# Claude-Sitzung der laufenden Anfrage (aus dem Kopf der Brücke), sonst None
+claude_session: contextvars.ContextVar[str | None] = contextvars.ContextVar("kevcad_claude_session", default=None)
+
+
+def _iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@dataclass
+class _ClaudeSession:
+    first_seen: float  # Wanduhr
+    last_mutation: float | None = None  # monotonic
+    last_mutation_wall: float | None = None
+    activity: str | None = None
+
+
+class SessionBoard:
+    """Claude-Sitzungen mit Tätigkeit und letztem verändernden Aufruf; meldet die Liste bei jeder Änderung.
+
+    ``push`` bekommt die Liste wie ``agents`` in MIRROR.md: ``session_id``, ``aktiv``, ``seit``, ``taetigkeit`` und
+    optional ``zuletzt``; die aktive Sitzung steht vorn. Threadsicher.
+    """
+
+    def __init__(self, push: Callable[[list[dict[str, Any]]], None] | None = None, *,
+                 active_window_s: float = ACTIVE_WINDOW_S, clock: Callable[[], float] = time.monotonic,
+                 wall: Callable[[], float] = time.time) -> None:
+        self._push = push
+        self.active_window_s = active_window_s
+        self._clock = clock
+        self._wall = wall
+        self._lock = threading.RLock()
+        self._sessions: dict[str, _ClaudeSession] = {}
+        self._running: dict[int, tuple[str, str]] = {}  # Token → (Sitzung, Tätigkeit)
+        self._next = 0
+        self._pushed: list[dict[str, Any]] | None = None
+
+    def seen(self, session: str) -> None:
+        with self._lock:
+            if session not in self._sessions:
+                self._sessions[session] = _ClaudeSession(first_seen=self._wall())
+
+    def tool_called(self, session: str | None, mutating: bool) -> None:
+        """Vor jedem Werkzeugaufruf: Sitzung merken, verändernde Aufrufe zählen für ``aktiv``."""
+        if not session:
+            return
+        with self._lock:
+            self.seen(session)
+            if mutating:
+                s = self._sessions[session]
+                s.last_mutation = self._clock()
+                s.last_mutation_wall = self._wall()
+        self.refresh()
+
+    def activity_begin(self, session: str | None, text: str) -> int | None:
+        if not session:
+            return None
+        with self._lock:
+            self.seen(session)
+            self._next += 1
+            self._running[self._next] = (session, text)
+            self._sessions[session].activity = text
+            token = self._next
+        self.refresh()
+        return token
+
+    def activity_end(self, token: int | None) -> None:
+        """Die Tätigkeit bleibt als „zuletzt getan“ stehen, bis die Sitzung etwas Neues beginnt."""
+        if token is None:
+            return
+        with self._lock:
+            self._running.pop(token, None)
+
+    def set_alive(self, alive: set[str]) -> None:
+        """Vom Tracker: welche Sitzungen noch eine Verbindung haben; die anderen fallen aus der Liste."""
+        with self._lock:
+            for sid in [sid for sid in self._sessions if sid not in alive]:
+                del self._sessions[sid]
+        self.refresh()
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            now = self._clock()
+            recent = [(s.last_mutation, sid) for sid, s in self._sessions.items()
+                      if s.last_mutation is not None and now - s.last_mutation < self.active_window_s]
+            active = max(recent)[1] if recent else None
+            out = []
+            for sid, s in self._sessions.items():
+                d: dict[str, Any] = {"session_id": sid, "aktiv": sid == active, "seit": _iso(s.first_seen),
+                                     "taetigkeit": s.activity}
+                if s.last_mutation_wall is not None:
+                    d["zuletzt"] = _iso(s.last_mutation_wall)
+                out.append(d)
+            out.sort(key=lambda d: (not d["aktiv"], d["seit"], d["session_id"]))
+            return out
+
+    def refresh(self) -> None:
+        """Liste neu bilden und nur bei einer Änderung melden (auch das Ende von „aktiv“ nach 10 Minuten)."""
+        with self._lock:
+            snap = self.snapshot()
+            if snap == self._pushed:
+                return
+            self._pushed = snap
+            push = self._push
+        if push is not None:
+            try:
+                push(snap)
+            except Exception:  # Anzeige darf nie ein Werkzeug scheitern lassen
+                log.exception("set_agent_sessions fehlgeschlagen")
 
 
 class ActivityTracker:
@@ -73,9 +193,11 @@ class AgentTracker:
 
     def __init__(self, notify: Callable[[bool], None], *, path: str = "/mcp", grace_s: float = 5.0,
                  idle_s: float = 30 * 60, stateless_s: float = 10 * 60, poll_s: float = 1.0,
-                 on_session: Callable[[str], None] | None = None) -> None:
+                 board: SessionBoard | None = None) -> None:
         self._notify = notify
-        self._on_session = on_session  # Versionen: Sitzung, die gerade ein Werkzeug aufruft (für „Wer“)
+        self.board = board
+        self._claude_of: dict[str, str] = {}  # MCP-Sitzung → Claude-Sitzung
+        self._claude_stateless: dict[str, float] = {}  # Claude-Sitzung ohne MCP-Sitzung → zuletzt gesehen
         self._path = path.rstrip("/") or "/"
         self.grace_s = grace_s
         self.idle_s = idle_s
@@ -114,12 +236,22 @@ class AgentTracker:
         for sid in [sid for sid, s in self._sessions.items() if not self._alive(s, now)]:
             log.info("MCP-Sitzung %s beendet (keine Verbindung mehr)", sid[:8])
             del self._sessions[sid]
+            self._claude_of.pop(sid, None)
+        for cid in [cid for cid, seen in self._claude_stateless.items() if now - seen >= self.stateless_s]:
+            del self._claude_stateless[cid]
+
+    def alive_claude_sessions(self) -> set[str]:
+        """Claude-Sitzungen, deren MCP-Sitzung (bzw. zustandslose Anfragen) noch leben."""
+        alive = {cid for sid, cid in self._claude_of.items() if sid in self._sessions}
+        return alive | set(self._claude_stateless)
 
     async def _push(self) -> None:
         if self._push_lock is None:
             self._push_lock = anyio.Lock()
         async with self._push_lock:
             self._expire()
+            if self.board is not None:
+                self.board.set_alive(self.alive_claude_sessions())
             value = self.connected
             if value == self._pushed:
                 return
@@ -153,15 +285,18 @@ class AgentTracker:
         headers = dict(scope.get("headers") or [])
         sid_raw = headers.get(SESSION_HEADER)
         sid = sid_raw.decode("latin-1") if sid_raw else None
+        claude_raw = headers.get(CLAUDE_SESSION_HEADER)
+        claude = claude_raw.decode("latin-1").strip()[:128] if claude_raw else None
+        token = claude_session.set(claude or None)
+        if claude:
+            if sid:
+                self._claude_of[sid] = claude
+            elif method == "POST":
+                self._claude_stateless[claude] = time.monotonic()
         is_get = method == "GET"
         session = self._sessions.get(sid) if sid else None
         stateless = sid is None and method == "POST"
 
-        if session is not None and not is_get and self._on_session is not None:
-            try:
-                self._on_session(sid)
-            except Exception:  # Anzeige darf nie eine Anfrage scheitern lassen
-                log.exception("Sitzung nicht gemeldet")
         if session is not None:
             session.last_seen = time.monotonic()
             if is_get:
@@ -184,6 +319,7 @@ class AgentTracker:
         try:
             await app(scope, receive, watch_send)
         finally:
+            claude_session.reset(token)
             now = time.monotonic()
             if session is not None:
                 session.last_seen = now
@@ -198,10 +334,14 @@ class AgentTracker:
             if sid is None and new_sid and code is not None and code < 400 and new_sid not in self._sessions:
                 # Antwort auf initialize: neue Sitzung
                 self._sessions[new_sid] = _Session(last_seen=now)
+                if claude:
+                    self._claude_of[new_sid] = claude
+                    self._claude_stateless.pop(claude, None)
                 log.info("MCP-Sitzung %s geöffnet", new_sid[:8])
             elif stateless and code is not None and code < 400:
                 self._stateless_seen = now
             if sid is not None and (method == "DELETE" or code == 404):
+                self._claude_of.pop(sid, None)
                 if self._sessions.pop(sid, None) is not None:
                     log.info("MCP-Sitzung %s beendet", sid[:8])
             with anyio.CancelScope(shield=True):

@@ -61,7 +61,6 @@ class VersionenRuntimeMixin:
         self._ver_pruef: dict[int, dict[str, Any]] = {}  # CHECK, der vor der Version ankam
         self._ver_aktuell: dict[str, Any] = {}  # Parameter und Stückliste des letzten erfolgreichen Laufs
         self._ver_letztes_bild = 0.0
-        self._ver_sitzung: str | None = None
         self._agent_seen = 0.0
         self._ver_aktiv = time.monotonic()  # letzter Lauf von Kevin oder dem Agenten
         self._ver_schatten = itertools.count(1)
@@ -76,11 +75,21 @@ class VersionenRuntimeMixin:
         if rechner is not None:
             rechner.stop()
 
-    def set_agent_session(self, sitzung: str | None) -> None:
-        """Vom MCP-Server: Kennung der MCP-Sitzung, die gerade ein Werkzeug aufruft (für „Wer“ einer Version)."""
+    def _versionen_sitzung(self) -> str | None:
+        """Claude-Sitzung für „Wer“: die des laufenden Werkzeugaufrufs (Kopf der Brücke, MIRROR.md „Sitzungen“),
+        sonst die aktive Sitzung aus der Liste der verbundenen Agenten."""
+        try:
+            from kevcad_kernel.mcp_tools.tracking import claude_session
+
+            sitzung = claude_session.get()
+        except Exception:  # noqa: BLE001 - ohne MCP-Teil (Tests) keine Sitzung
+            sitzung = None
         if sitzung:
-            self._ver_sitzung = str(sitzung)
-        self._agent_seen = time.monotonic()
+            return str(sitzung)
+        for s in self._agent.get("sessions") or []:
+            if s.get("aktiv") and s.get("session_id"):
+                return str(s["session_id"])
+        return None
 
     # =================================================================================================================
     # Projekt
@@ -132,11 +141,11 @@ class VersionenRuntimeMixin:
     def _versionen_wer(self, job: Any) -> tuple[str, str | None]:
         src = getattr(job, "source", "")
         if src == "agent":
-            return "agent", self._ver_sitzung
+            return "agent", self._versionen_sitzung()
         if src == "app":
             return "kevin", None
         agent = bool(self._agent.get("connected")) and time.monotonic() - self._agent_seen < AGENT_AKTIV_S
-        return ("agent", self._ver_sitzung) if agent else ("kevin", None)
+        return ("agent", self._versionen_sitzung()) if agent else ("kevin", None)
 
     def _versionen_nach_lauf(self, job: Any, result: dict[str, Any]) -> None:
         """Im Auftragsfaden nach einem erfolgreichen Lauf: Version anlegen (bei Änderung) oder die aktuelle
@@ -595,7 +604,7 @@ class VersionenRuntimeMixin:
         archiv = self._archiv_oder_fehler()
         if isinstance(archiv, dict):
             return archiv
-        sitzung = self._ver_sitzung if wer == "agent" else None
+        sitzung = self._versionen_sitzung() if wer == "agent" else None
         t0 = time.perf_counter()
 
         def aufgabe() -> dict[str, Any]:
@@ -626,7 +635,7 @@ class VersionenRuntimeMixin:
         archiv = self._archiv_oder_fehler()
         if isinstance(archiv, dict):
             return archiv
-        sitzung = self._ver_sitzung if wer == "agent" else None
+        sitzung = self._versionen_sitzung() if wer == "agent" else None
 
         def aufgabe() -> Any:
             try:
@@ -673,7 +682,7 @@ class VersionenRuntimeMixin:
         archiv = self._archiv_oder_fehler()
         if isinstance(archiv, dict):
             return archiv
-        sitzung = self._ver_sitzung if wer == "agent" else None
+        sitzung = self._versionen_sitzung() if wer == "agent" else None
         if aktion == "liste":
             return {"ok": True, "varianten": archiv.varianten()}
         if aktion not in ("anlegen", "wechseln", "umbenennen"):

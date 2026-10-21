@@ -32,6 +32,12 @@ TOOL_NAMES: tuple[str, ...] = (
     "material_define",
     "catalog_delete",
     "bom",
+    "zukauf_anlegen",
+    "zukauf_html",
+    "cad_suchen",
+    "cad_uebernehmen",
+    "zukauf_liste",
+    "bedingungen",
     # Phase 5: Animation
     "animation_liste",
     "animation_abspielen",
@@ -45,6 +51,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "kamera_bild",
     "kamera_katalog",
     "kamera_vorschlag_aus_ansicht",
+    # 3D-Druck
+    "druckpruefung",
     # Versionen
     "versionen",
     "version_wiederherstellen",
