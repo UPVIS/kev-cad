@@ -77,8 +77,9 @@ mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md
    Dateiwerkzeuge gibt.
 4. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse. Ein Fehler kommt als isError mit Zeile, Auszug und
    Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
-5. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen. Kein
-   `screenshot`: Kevin sieht den Viewer live und will das Ergebnis schnell (siehe „Bilder“).
+5. Prüfen: Zahlen aus `run` mit der Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, dazu der
+   Abschnitt „Prüfen vor dem Fertigmelden“. Kevin keine Screenshots schicken; Bilder nur zur eigenen Analyse (siehe
+   „Bilder“).
 6. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, offene Annahmen. Bei Bedarf `focus`, `highlight`,
    `annotate` nutzen, damit er es im Viewer sieht.
 
@@ -236,11 +237,17 @@ DN 32, 1¼ Zoll).
 
 ## Bilder
 
-Screenshots nur, wenn Kevin ausdrücklich ein Bild will. Er sieht den Viewer beim Arbeiten selbst, und jedes Bild hält
-die Generierung auf. Geprüft wird mit den Zahlen aus `run`, `parts` und `measure`.
+Kevin keine Screenshots schicken, außer er will ausdrücklich ein Bild: Er sieht den Viewer beim Arbeiten selbst, und
+jedes Bild hält die Generierung auf.
+
+Zur eigenen Analyse sind Bilder aus mehreren Blickwinkeln ausdrücklich erlaubt, wenn sie zu einer besseren Entscheidung
+führen (Kevin, 21.10.2026): Durchdringungen und Einbaubarkeit beurteilen, Proportionen und Lage prüfen, mit
+Referenzfotos vergleichen. Dann gezielt: wenige Offscreen-Ansichten in kleiner Auflösung in einem Zug (etwa iso, vorn,
+rechts, oben), nicht nach jedem Schritt. Erste Quelle bleiben die Zahlen aus `run`, `parts`, `measure` und der Prüfung.
 
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
-- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen.
+- `screenshot(view="iso")` rendert offscreen eine andere Ansicht, ohne Kevins Kamera zu bewegen. Für die Analyse
+  mehrere Ansichten mit kleiner Größe nacheinander anfordern.
 - `mm_per_px` gibt es nur in paralleler Projektion. Maße trotzdem mit `measure` bestätigen.
 
 ## Export
