@@ -272,6 +272,15 @@ Festlegungen (21.10.2026):
   `status: "frei"`, `ersatz` aus den Maßen).
 - `BOM.lines[].stock_id` ist bei Zukaufteilen die Zukaufteil-id.
 
+Ergänzt bei der Zusammenführung (21.10.2026, additiv):
+
+- `ZUKAUF_CAD` mit einer Datei, die nicht passt (Maße, kein STEP im ZIP): `ACK` mit `ok: true` (angenommen), dann
+  `ZUKAUF_STATUS` `fehler` mit dem Grund. Wartete das Teil auf sein CAD, folgt wieder `wartet_auf_cad` mit den Links und
+  dem Grund im `text`, damit die App den Download-Ordner weiter beobachtet. Unbekanntes Teil: `ACK` mit `ok: false`.
+- `PART_UPSERT.name` eines Ersatzkörpers endet auf „ (vereinfacht)“ (KATALOG.md, Zukaufteil); `BOM.lines[].teile`
+  nennt denselben Namen. Erklärungen in model.py (`erlaubt_ueberlappung` …) finden das Teil auch unter dem Namen aus
+  `show()`.
+
 Kev CAD lädt Shop-Seiten nie selbst (PLAN-PHASE3-ZUKAUF.md, Z1): Daten kommen von Claude über MCP oder aus Kevins
 Eingabe im Dialog. CAD-Dateien kommen über die TraceParts-API (mit Kevins Schlüssel) oder aus `~/Downloads`.
 

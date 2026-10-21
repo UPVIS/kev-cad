@@ -115,6 +115,18 @@ class ZukaufDienst:
         self.rt._send_app(msg)
         return msg
 
+    def _abgelehnt(self, entry: dict[str, Any], datei: Path, grund: str) -> None:
+        """Datei passt nicht: ``fehler`` mit dem Grund. Wartete das Teil auf sein CAD (Rückfrage in der App), folgt
+        wieder ``wartet_auf_cad`` mit den Links, damit die App den Download-Ordner weiter beobachtet und Kevin die
+        richtige Datei holen kann (Zusammenführung Phase 3: die App hört bei ``fehler`` auf zu beobachten)."""
+        zid = entry["id"]
+        vorher = (self._status_load().get(zid) or {})
+        self._status(zid, "fehler", grund, name=entry.get("name"))
+        if vorher.get("zustand") == "wartet_auf_cad" and ze.cad_art(entry) == "vereinfacht":
+            text = f"{datei.name} nicht übernommen: {grund}. Bitte die passende STEP-Datei herunterladen."
+            self._status(zid, "wartet_auf_cad", text, cad_links=vorher.get("cad_links") or tp.cad_links(entry),
+                         name=entry.get("name"))
+
     def offene_status(self) -> list[dict[str, Any]]:
         """ZUKAUF_STATUS für alle Zukaufteile des Projekts, die noch auf ihr CAD warten (nach dem Verbinden)."""
         out = []
@@ -288,7 +300,7 @@ class ZukaufDienst:
         try:
             step, hinweise = dl.uebernehmen(datei, ziel, entry)
         except dl.DownloadFehler as exc:
-            self._status(entry["id"], "fehler", str(exc), name=entry.get("name"))
+            self._abgelehnt(entry, Path(datei), str(exc))
             return {"ok": False, "error": str(exc), "datei": str(datei)}
         from kevcad_kernel.zukauf import cad as zc
 
@@ -303,7 +315,7 @@ class ZukaufDienst:
                     step.unlink()
                 except OSError:
                     pass
-            self._status(entry["id"], "fehler", str(exc), name=entry.get("name"))
+            self._abgelehnt(entry, Path(datei), str(exc))
             return {"ok": False, "error": str(exc), "datei": str(datei)}
         rel = os.path.relpath(step, base)
         cad = {"quelle": quelle, "datei": rel, "lizenz": lizenz or "Herstellerbedingungen (nicht weitergeben)",

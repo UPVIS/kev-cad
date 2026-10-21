@@ -20,11 +20,13 @@ Die App hängt `serve --socket <pfad> --port <port>` an. Ablauf:
   ``bom_csv`` schreibt eine echte CSV-Datei. Mit --lager kommt ein Lagerteil (Vierkantrohr aus part_stock.frame) dazu.
 - Mit --demo-view schickt er nach dem Lauf Ansichtsbefehle (VIEW_CMD) und Bildanfragen (SCREENSHOT_REQ) und
   speichert die Bilder der App als PNG (Vorgabe: <repo>/build/fake_kernel/).
-- Phase 3 mit --zukauf: ein verbautes Zukaufteil „Rollwagen“ (PART_UPSERT ``zukauf``, erst ``cad: "vereinfacht"``),
-  Stücklistenzeile ``art: "zukaufteil"``, zwei Zukaufteile im Katalog (eins frei, eins von Claude vorgeschlagen).
-  ZUKAUF_NEU legt das Teil im Katalog an (ACK), dann folgen ZUKAUF_STATUS ``angelegt`` und ``wartet_auf_cad`` mit
-  ``cad_links``. DOWNLOAD_SEEN wird nach ``<out>/downloads.jsonl`` geschrieben. ZUKAUF_CAD antwortet mit ACK und
-  ZUKAUF_STATUS ``importiert``; für den Rollwagen rechnet er danach mit ``cad: "hersteller"`` neu. Nach dem
+- Phase 3 mit --zukauf: ein verbautes Zukaufteil „Rollwagen (vereinfacht)“ (PART_UPSERT ``zukauf``, erst
+  ``cad: "vereinfacht"``, Name wie beim echten Kernel), Stücklistenzeile ``art: "zukaufteil"`` wie bom_zukauf.frame,
+  zwei Zukaufteile im Katalog (eins frei, eins von Claude vorgeschlagen). ZUKAUF_NEU legt das Teil im Katalog an (ACK,
+  Ablehnung als ACK ok false), dann folgen ZUKAUF_STATUS ``angelegt`` und ``wartet_auf_cad`` mit ``cad_links``.
+  DOWNLOAD_SEEN wird nach ``<out>/downloads.jsonl`` geschrieben. ZUKAUF_CAD antwortet mit ACK und ZUKAUF_STATUS
+  ``importiert``; für den Rollwagen rechnet er danach mit ``cad: "hersteller"`` neu (Teil heißt dann „Rollwagen“).
+  Eine leere oder fehlende Datei ergibt ``fehler`` und, wenn das Teil wartete, wieder ``wartet_auf_cad``. Nach dem
   Verbinden schickt er ZUKAUF_STATUS (mit ``name``) für jedes Teil, das noch auf CAD wartet.
 """
 
@@ -348,6 +350,12 @@ class FakeKernel:
                 if name == "Rollwagen":
                     h["zukauf"] = {"id": "alutec-05200", "hersteller": "ALUTEC", "mpn": "05200",
                                    "cad": self.rollwagen_cad, "preis": 24.99, "url": ROLLWAGEN_URL}
+                    # wie der echte Kernel: Ersatzkörper heißen „… (vereinfacht)“; der andere Name verschwindet
+                    name = self.rollwagen_name()
+                    h["name"] = name
+                    for alt in ("Rollwagen", "Rollwagen (vereinfacht)"):
+                        if alt != name and self.current.pop(alt, None) is not None:
+                            self.send({"type": "PART_REMOVE", "run": run, "name": alt})
                 self.current[name] = (h, payload)
                 self.send(h, payload)
             time.sleep(pause)
@@ -525,23 +533,28 @@ class FakeKernel:
                               "laenge": None, "gehrung": [0, 0], "masse_text": "10 × 20 × 30 mm", "anzahl": 1,
                               "kg_je": 0.016, "kg": 0.016, "preis_je": 0.12, "preis": 0.12, "teile": ["Grundplatte"],
                               "eigenteil": True})
-        if "Rollwagen" in names:
+        if names & {"Rollwagen", "Rollwagen (vereinfacht)"}:
+            # Zeile wie bom_zukauf.frame des echten Kernels
             simple = self.rollwagen_cad == "vereinfacht"
             lines.append({"art": "zukaufteil", "stock_id": "alutec-05200", "benennung": "ALUTEC Transportroller 05200",
-                          "material": "Polypropylen", "laenge": None, "gehrung": [0, 0],
+                          "norm": None, "material": None, "laenge": None, "gehrung": [0, 0],
                           "masse_text": "610 × 410 × 128 mm", "anzahl": 1, "kg_je": 1.8, "kg": 1.8, "preis_je": 24.99,
-                          "preis": 24.99, "teile": ["Rollwagen"], "eigenteil": False, "hersteller": "ALUTEC",
-                          "mpn": "05200", "gtin": "4005187052008", "url": ROLLWAGEN_URL, "bild": None,
+                          "preis": 24.99, "teile": [self.rollwagen_name()], "eigenteil": False, "hersteller": "ALUTEC",
+                          "mpn": "05200", "gtin": "4005187052008", "url": ROLLWAGEN_URL,
+                          "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
                           "preis_stand": "2026-10-21", "preis_brutto": True,
                           "cad_quelle": "keins" if simple else "download", "vereinfacht": simple})
         for i, line in enumerate(lines, start=1):
             line["pos"] = i
         kg = round(sum(line["kg"] or 0 for line in lines), 3)
         preis = round(sum(line["preis"] or 0 for line in lines), 2)
+        hinweis = "Richtpreise, Stand 2026-10"
+        if any(line["art"] == "zukaufteil" for line in lines):
+            hinweis += "; Zukaufteile zum Shoppreis brutto"
         return {"run": run, "lines": lines, "cuts": cuts, "warnings": warnings,
                 "totals": {"kg": kg, "preis": preis, "positionen": len(lines),
                            "teile": sum(line["anzahl"] for line in lines),
-                           "preis_hinweis": "Richtpreise, Stand 2026-10 (Ersatz-Kernel)"}}
+                           "preis_hinweis": hinweis + " (Ersatz-Kernel)"}}
 
     def write_bom_csv(self, base: Path) -> Path:
         bom = self.last_bom or self.bom(self.run_no)
@@ -622,16 +635,21 @@ class FakeKernel:
         self.send(msg)
         log(f"ZUKAUF_STATUS {teil}: {zustand}")
 
+    def rollwagen_name(self) -> str:
+        return "Rollwagen (vereinfacht)" if self.rollwagen_cad == "vereinfacht" else "Rollwagen"
+
     def zukauf_neu(self, header: dict[str, Any]) -> None:
+        # Antworten wie der echte Kernel (zukauf/dienst.py): Ablehnung als ACK ok false, nicht als ERROR
         rid = header.get("id")
         felder = dict(header.get("felder") or {})
         ebene = header.get("ebene")
         teil = felder.get("id")
         if not teil or felder.get("art") != "zukaufteil":
-            self.send({"type": "ERROR", "reply_to": rid, "message": "felder braucht id und art zukaufteil"})
+            self.send({"type": "ACK", "reply_to": rid, "ok": False, "message": "felder braucht id und art zukaufteil"})
             return
         if ebene not in ("eigen", "projekt"):
-            self.send({"type": "ERROR", "reply_to": rid, "message": "Nur in den eigenen oder den Projektkatalog"})
+            self.send({"type": "ACK", "reply_to": rid, "ok": False,
+                       "message": f"Ebene {ebene!r} geht nicht (projekt oder eigen)"})
             return
         felder["ebene"] = ebene
         felder.setdefault("status", "frei")
@@ -658,12 +676,19 @@ class FakeKernel:
         rid, teil, pfad = header.get("id"), header.get("teil"), header.get("pfad") or ""
         entry = next((e for e in self.catalog["items"] if e.get("id") == teil), None)
         if entry is None:
-            self.send({"type": "ERROR", "reply_to": rid, "message": f"Zukaufteil {teil} gibt es nicht"})
+            self.send({"type": "ACK", "reply_to": rid, "ok": False, "message": f"Zukaufteil {teil!r} gibt es nicht"})
             return
-        if not os.path.isfile(pfad):
-            self.send({"type": "ERROR", "reply_to": rid, "message": f"Datei nicht gefunden: {pfad}"})
+        self.send({"type": "ACK", "reply_to": rid, "ok": True, "message": "CAD wird übernommen"})
+        if not os.path.isfile(pfad) or os.path.getsize(pfad) == 0:
+            # wie der echte Kernel: fehler, und wartete das Teil, wieder wartet_auf_cad (App beobachtet weiter)
+            warte = self.waiting.get(teil)
+            grund = f"Datei {Path(pfad).name} fehlt oder ist leer"
+            self.zukauf_status(teil, "fehler", grund)
+            if warte is not None:
+                self.zukauf_status(teil, "wartet_auf_cad", f"{Path(pfad).name} nicht übernommen: {grund}. Bitte die "
+                                   "passende STEP-Datei herunterladen.", cad_links=warte.get("cad_links") or [],
+                                   erwartet=["step", "stp", "zip"])
             return
-        self.send({"type": "ACK", "reply_to": rid, "ok": True, "message": "STEP wird importiert (Ersatz-Kernel)"})
         entry["cad"] = {"quelle": "download", "datei": f"zukauf/{teil}/{Path(pfad).name}",
                         "lizenz": "Herstellerbedingungen", "stand": time.strftime("%Y-%m-%d")}
         self.note_change("zukauf_cad", "teil", {"id": teil, "pfad": pfad})

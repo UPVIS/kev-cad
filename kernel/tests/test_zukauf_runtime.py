@@ -196,6 +196,11 @@ def test_app_neu_und_cad(env):
     _, _, st, _ = app.wait_for(lambda h: h["type"] == "ZUKAUF_STATUS" and h["zustand"] in ("fehler", "importiert"),
                                start=start)
     assert st["zustand"] == "fehler" and "passt nicht" in st["text"]
+    # Das Teil wartete auf sein CAD: danach wieder wartet_auf_cad (mit Links), damit die App weiter beobachtet
+    _, _, st2, _ = app.wait_for(lambda h: h["type"] == "ZUKAUF_STATUS" and h["zustand"] == "wartet_auf_cad",
+                                start=start)
+    assert st2["text"].startswith("falsch.step nicht übernommen:") and st2["cad_links"]
+    assert [s["zustand"] for s in rt.zukauf.offene_status()] == ["wartet_auf_cad"]
     assert not (proj / "zukauf" / "happy-people-77805" / "falsch.step").exists()
     reply, _ = request(app, {"type": "ZUKAUF_CAD", "id": "a-4", "teil": "gibtsnicht", "pfad": str(falsch)})
     assert reply["ok"] is False
@@ -269,3 +274,29 @@ def test_mcp_ueber_echten_server(env):
     assert "Links zum Herunterladen" in texts(r["suchen"])[0] and "cad_uebernehmen" in texts(r["suchen"])[0]
     assert r["leer"].is_error and "Keine neue STEP- oder ZIP-Datei der letzten 5 Minuten" in texts(r["leer"])[0]
     assert "Normteil" in texts(r["norm"])[0] and "lager.teil('schraube-iso4762-m8')" in texts(r["norm"])[0]
+
+
+def test_pruefung_mit_zukaufteil(env):
+    """Zusammenführung mit der Kollisionsprüfung: Ersatzkörper werden wie alle Teile geprüft; erlaubt_ueberlappung
+    findet das Teil auch unter dem Namen aus show() (ohne „(vereinfacht)“)."""
+    rt = env["rt"]
+    code = ("from build123d import *\nfrom kevcad import lager, show, erlaubt_ueberlappung\n"
+            "nudel = lager.zukauf(\"happy-people-77805\")\n"
+            "show(nudel.verbauen(\"Nudel\"), \"Nudel\")\n"
+            "klemme = lager.druckteil(Pos(0, 30, 50) * Box(20, 20, 20), \"Klemme\", material=\"petg\")\n"
+            "show(klemme, \"Klemme\")\n")
+    new_project(env, code)
+    felder = {"id": "happy-people-77805", "art": "zukaufteil", "name": "Schwimmnudel", "hersteller": "Happy People",
+              "mpn": "77805", "status": "frei", "masse": {"d": 70, "l": 1600},
+              "ersatz": {"form": "zylinder", "masse": {"d": 70, "l": 1600}}}
+    assert rt.zukauf.anlegen(felder=felder, proposal=False, status_senden=False)["ok"]
+    res = rt.run()
+    assert res["ok"], res
+    assert res["inventar_verstoesse"] == []
+    (b,) = [b for b in res["pruefung"]["befunde"] if b["art"] == "durchdringung"]
+    assert sorted(b["teile"]) == ["Klemme", "Nudel (vereinfacht)"]
+    erlaubt = 'erlaubt_ueberlappung("Nudel", "Klemme", grund="Test: Klemme sitzt auf Schaum")\n'
+    assert rt.model_write(code + erlaubt)["ok"]
+    res2 = rt.run()
+    assert res2["ok"] and res2["pruefung"]["befunde"] == [], res2["pruefung"]["befunde"]
+    assert len(res2["pruefung"]["erlaubt"]) == 1

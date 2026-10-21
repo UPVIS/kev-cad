@@ -221,6 +221,10 @@ show(Pos(0, y, 0) * oben * ball, "Ball")      # auf die Ladefläche gesetzt
 - Hersteller-CAD mit Baugruppe erscheint als Baum („Rollwagen/Platte“, „Rollwagen/Rolle_1“). Ohne Modell ist es ein
   **Ersatzkörper** (Quader oder Zylinder aus den Shop-Maßen), halbtransparent und mit „(vereinfacht)“ im Namen.
   **Vereinfachte Teile im Bericht an Kevin immer nennen.**
+- Die Prüfung behandelt Zukaufteile wie alle Teile: Hersteller-CAD und Ersatzkörper dürfen nichts durchdringen.
+  Überlappt ein Zukaufteil sein Gegenstück nur, weil das Modell vereinfacht ist (Gewinde als Vollzylinder,
+  Ersatzquader), ist das trotzdem ein Befund: im Modell lösen oder `erlaubt_ueberlappung(…, grund=…)` erst nach
+  Rückfrage bei Kevin.
 - Skript-Geometrie (`cad.quelle: "skript"` mit `datei`/`modul` und `funktion`): `verbauen(name, **kwargs)` reicht
   Schlüsselwörter an die Funktion weiter.
 
