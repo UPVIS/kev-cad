@@ -6,7 +6,8 @@ Stand: 21.10.2026 (Kevins Wunsch vom selben Tag). Baut auf Phase 2 (Lagerkatalog
 
 ## Ziel
 
-Kev CAD weiß, was Kevin tatsächlich auf Lager hat: ganze Stangen, Reste mit ihrer Länge, Platten und Plattenreste,
+Kev CAD weiß je Projekt, was Kevin für dieses Projekt tatsächlich da hat (Kevin: individuell nur für das jeweilige
+Projekt, nicht projektübergreifend): ganze Stangen, Reste mit ihrer Länge, Platten und Plattenreste,
 Schrauben und Kleinteile, Zukaufteile, Filament. Der Zuschnitt nimmt zuerst passende Reste, dann ganze Stangen, und
 Kev CAD sagt klar, was für das aktuelle Projekt nachgekauft werden muss, mit Menge, Preis und Bezugsquelle. Nach dem
 Bauen bucht Kevin mit einem Klick ab; die neuen Reste kommen von selbst in den Bestand.
@@ -19,7 +20,6 @@ Bauen bucht Kevin mit einem Klick ab; die neuen Reste kommen von selbst in den B
 3. Darunter steht die Einkaufsliste: „1 Stange ALFER-Rohr 12 × 1 (1 m), 4 Flügelmuttern M4, 120 g PETG“, mit Preis,
    Link und Gesamtsumme; exportierbar als CSV oder Text zum Weiterleiten.
 4. „Gebaut“ bucht alles ab, legt die neuen Reste an und lässt sich rückgängig machen.
-5. Arbeiten zwei Projekte mit demselben Material, sieht Kevin, was reserviert ist und wo es knapp wird.
 
 ## Entscheidungen (Vorschlag)
 

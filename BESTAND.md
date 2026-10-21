@@ -1,13 +1,16 @@
 # Kev CAD · Bestand (Vertrag)
 
-Version 1 (21.10.2026). Verbindlich für die Bestandsführung aus [PLAN-BESTAND.md](PLAN-BESTAND.md), erste Stufe:
+Version 1 (21.10.2026), geändert am selben Abend: **Bestand je Projekt** (Kevin: „Ich brauche das nicht über Projekte
+hinweg, sondern individuell nur für das jeweilige Projekt.“). Verbindlich für die Bestandsführung aus [PLAN-BESTAND.md](PLAN-BESTAND.md), erste Stufe:
 Stangenware, Platten, Stückgut. Zukaufteile und Filament folgen. Änderungen nur gemeinsam: dieses Dokument,
 `protocol.py`, Testdateien und Swift-Decoder im selben Commit (wie PROTOCOL.md).
 
 ## Datei
 
-`~/Library/Application Support/<bundle-id>/bestand.json` (Testvarianten haben ihre eigene; Tests setzen
-`KEVCAD_BESTAND_FILE`). Ein Bestand für alle Projekte. Schlüssel sind Katalog-ids aus KATALOG.md.
+`<projekt>/bestand.json`, **ein Bestand je Projekt**: das Material, das Kevin für genau dieses Projekt hat. Es gibt
+keinen projektübergreifenden Bestand und keine Reservierungen zwischen Projekten. Tests setzen `KEVCAD_BESTAND_FILE`.
+Schlüssel sind Katalog-ids aus KATALOG.md. Die Datei gehört nicht zu den Versionen des Modells (Wiederherstellen einer
+Konstruktion ändert den Bestand nicht).
 
 ```json
 {
@@ -40,7 +43,7 @@ Stangenware, Platten, Stückgut. Zukaufteile und Filament folgen. Änderungen nu
 | `mindestrest_mm` | je Posten, überschreibt die Einstellung; kürzere Reste sind Verschnitt und kommen nicht in den Bestand |
 | `einstellungen.saegeblatt_mm` | Schnittbreite für Stangen und Platten (Standard 3) |
 
-Daneben `bestand-buchungen.jsonl`: eine Zeile je Buchung `{"id", "zeit", "art": "eintrag" | "gebaut" | "korrektur" |
+Daneben `<projekt>/.kevcad/bestand-buchungen.jsonl`: eine Zeile je Buchung `{"id", "zeit", "art": "eintrag" | "gebaut" | "korrektur" |
 "rueckgaengig", "projekt", "aenderungen": [...], "von": "kevin" | "agent", "grund"}`. Jede Buchung ist umkehrbar
 (`rueckgaengig` mit Verweis auf die `id`).
 
@@ -52,6 +55,9 @@ Der Kernel plant nach jedem Lauf je Stangenware und Platte:
 2. Zuerst in den kleinsten passenden Rest, dann in ganze Stangen bzw. Platten aus dem Bestand, dann in neu zu kaufende.
 3. Verbessern (scipy `milp` mit Zeitlimit 200 ms, sonst bleibt die Näherung): wenig neue Stangen bzw. Platten, wenig
    Verschnitt, lieber wenige lange Reste.
+
+Platten in `BOM.cuts`: `art: "platte"` am Cut und `platte: {"b", "h"}` statt `stangenlaenge`/`stangen`; `quellen[i]` mit
+`b`, `h`, `stuecke: [{"b", "h", "x", "y", "gedreht"}]`, `rest_neu: [{"b", "h", "x", "y"}]` (x, y für die Zeichnung).
 4. Platten mit Guillotine-Schnitten, Sägeblattbreite berücksichtigt.
 
 Erweiterung von `BOM.cuts[i]` (additiv, PROTOCOL.md Phase 2):
@@ -67,9 +73,6 @@ Erweiterung von `BOM.cuts[i]` (additiv, PROTOCOL.md Phase 2):
  "aus_bestand": {"reste": 1, "ganze": 1}, "kaufen": 1}
 ```
 
-Platten: `quellen[i]` mit `b`, `h` statt `laenge`, `stuecke` als Liste `{"b", "h", "x", "y", "gedreht"}`, `rest_neu` als
-Liste von Rechtecken.
-
 Neu in `BOM`: `einkaufsliste`, `bestand_stand` (Zeitpunkt der Bestandsdatei), `fehlt` (bool).
 
 ```json
@@ -77,37 +80,35 @@ Neu in `BOM`: `einkaufsliste`, `bestand_stand` (Zeitpunkt der Bestandsdatei), `f
   {"id": "rohr-alfer-12x1", "benennung": "ALFER-Rundrohr 12 × 1", "menge": 1, "einheit": "Stange 1000 mm",
    "preis_je": 3.9, "preis": 3.9, "link": null, "hinweis": null},
   {"id": "mutter-din315-m4", "benennung": "Flügelmutter DIN 315 M4", "menge": 4, "einheit": "Stück",
-   "preis_je": 0.12, "preis": 0.48, "link": null, "hinweis": "Bestand 30, davon 26 in Projekt „Regal“ verplant"}
+   "preis_je": 0.12, "preis": 0.48, "link": null, "hinweis": "Bestand im Projekt: 10, gebraucht: 14"}
 ]
 ```
 
 Kaufeinheiten: Stange, Platte, Stück (später Packung). Preis aus dem Katalog mit Stand; `link` aus einer optionalen
 `bezugsquelle` am Katalogeintrag (`{"url", "name"}`, additiv in KATALOG.md).
 
-## Reservieren und Buchen
+## Buchen
 
-- **Reservierung:** Jedes Projekt reserviert, was sein letzter Zuschnitt aus dem Bestand verplant (Reste nach
-  Kennung, ganze Stangen und Stückgut nach Menge), gespeichert in `<projekt>/.kevcad/reservierung.json`. Die
-  Planung eines Projekts zieht die Reservierungen anderer Projekte ab und nennt sie im `hinweis`.
-- **„Gebaut“:** bucht die Reservierung des aktuellen Projekts ab: verplante Reste und ganze Stangen weg, `neue_reste`
-  (ab Mindestrest) mit neuen Kennungen dazu, Stückgut abziehen. Nur auf Kevins ausdrücklichen Wunsch (App-Dialog oder
-  seine Anweisung an Claude).
+- Der Zuschnitt eines Projekts verplant nur dessen eigenen Bestand; es gibt nichts zu reservieren.
+- **„Gebaut“:** bucht ab, was der aktuelle Zuschnitt aus dem Projektbestand verplant: verplante Reste und ganze Stangen
+  weg, `neue_reste` (ab Mindestrest) mit neuen Kennungen dazu, Stückgut abziehen. Nur auf Kevins ausdrücklichen Wunsch
+  (App-Dialog oder seine Anweisung an Claude).
 
 ## Protokoll (additiv)
 
 | type | Richtung | Felder | Antwort |
 |---|---|---|---|
 | `BESTAND_REQ` | App → Kernel | `id` | `BESTAND` |
-| `BESTAND` | Kernel → App | `reply_to` (optional), `bestand` (Inhalt der Datei), `reserviert` (je id: Projekt und Menge), `stand` | – |
-| `BESTAND_SAVE` | App → Kernel | `id`, `posten_id`, `posten` (ganzer Posten wie in der Datei oder null zum Entfernen), `grund` | `ACK`, danach `BESTAND` und neue `BOM` |
-| `GEBAUT_REQ` | App → Kernel | `id`, `run` | `ACK` mit Buchungs-id, danach `BESTAND` und `BOM` |
+| `BESTAND` | Kernel → App | `reply_to` (optional), `bestand` (Inhalt der Projektdatei oder null ohne Projekt), `buchungen` (die letzten 50 Buchungen, neueste zuerst, je Zeile wie in der Datei plus `zusammenfassung` als Text und `rueckgaengig_durch` mit der id der Umkehrbuchung oder null), `stand` (ISO-Zeit) | – |
+| `BESTAND_SAVE` | App → Kernel | `id`, entweder `posten_id` und `posten` (ganzer Posten wie in der Datei oder null zum Entfernen) oder `einstellungen` (ganzes Objekt), `grund` | `ACK`, danach `BESTAND` und neue `BOM` |
+| `GEBAUT_REQ` | App → Kernel | `id`, `run` | `ACK` mit `buchung` (id) und `message` (Kurztext), danach `BESTAND` und `BOM` |
 | `BUCHUNG_RUECKGAENGIG` | App → Kernel | `id`, `buchung` | `ACK`, danach `BESTAND` und `BOM` |
 
-Nach dem Verbinden schickt der Kernel `BESTAND` von selbst (wie `CATALOG` auf Anfrage, hier immer).
+Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` von selbst.
 
 ## MCP
 
-- `bestand_liste(id=None)` – Bestand, Reste, Reservierungen.
+- `bestand_liste(id=None)` – Bestand und Reste des offenen Projekts.
 - `bestand_eintragen(id, ganze=…, reste=…, stueck=…, grund)` – nur nach Kevins Angabe; die Antwort nennt jede Änderung.
 - `einkaufsliste()` – Fehlmengen des aktuellen Projekts mit Preis und Summe, als Text und CSV-Pfad.
 - `gebaut_buchen()` – nur wenn Kevin ausdrücklich sagt, dass das Projekt gebaut ist; nennt, was abgebucht wird und
@@ -116,9 +117,10 @@ Nach dem Verbinden schickt der Kernel `BESTAND` von selbst (wie `CATALOG` auf An
 
 ## App
 
-- Fenster „Bestand“ als eigener Bereich im Lagerkatalog (⇧⌘K): je Lagerteil ganze Stangen bzw. Platten, Reste mit
-  Kennung, Länge und Ort, Stückgut; schnelles Erfassen („+1 Stange“, „Rest …“, „−1“), Bearbeiten, Entfernen,
-  Reservierungen je Projekt sichtbar, Buchungsprotokoll mit „Rückgängig“.
+- Bereich „Bestand“ im **Projektfenster** (neben der Stückliste, nicht im Lagerkatalog): je Lagerteil ganze Stangen
+  bzw. Platten, Reste mit Kennung, Länge und Ort, Stückgut; schnelles Erfassen („+1 Stange“, „Rest …“, „−1“),
+  Bearbeiten, Entfernen, Einstellungen (Mindestrest, Sägeblatt), Buchungsprotokoll mit „Rückgängig“. Lagerteile zum
+  Erfassen kommen aus dem Katalog.
 - Stückliste: Zuschnittansicht zeigt je Stange bzw. Platte die Stücke, farbig nach Quelle (Rest, Bestand, kaufen),
   neue Reste markiert, Verschnitt grau; darunter die Einkaufsliste mit Summe, Export als CSV und „Kopieren“ als Text.
 - Dialog „Gebaut …“ mit Vorschau der Buchung (was weg, was neu) und Bestätigung.
