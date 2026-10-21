@@ -173,6 +173,15 @@ public final class AppModel: ObservableObject {
     /// Blender-Steuerung: Teile (Objektmodus) oder Flächen/Kanten/Punkte (Tab schaltet um), Projektion für Anzeigen.
     @Published public var selectionMode: SelectionMode = .parts
     @Published public var orthographic = false
+    /// Zwangsbedingungen (additiv, PLAN-BEDINGUNGEN.md): Bericht des letzten Laufs (CONSTRAINTS) und ob die Symbole
+    /// am Teil im Viewport stehen (umschalten über ConstraintActions).
+    @Published public var constraints: ConstraintReport?
+    @Published public var showConstraintSymbols = true
+    /// Phase 5 (additiv): Animation (Zeitleiste) als eigenes Objekt, damit das Abspielen nicht das ganze Fenster neu
+    /// zeichnet; Aktionen über `actions as? AnimationActions`.
+    public let animation = AnimationModel()
+    /// Phase 5 (KAM, additiv): Kameras aus model.py und der Blick durch eine Kamera (Aktionen: `CameraActions`).
+    public let cameras = CameraStore()
     /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
     @Published public var pruefung: PruefErgebnis?
     @Published public var schnittkoerperSichtbar = true
@@ -462,6 +471,15 @@ public protocol CatalogActions: AnyObject {
 @MainActor
 public protocol InventoryActions: AnyObject {
     func setInventarRegel(_ on: Bool)
+}
+
+/// Zwangsbedingungen (additiv): Symbole ein- und ausblenden, eine Bedingung im Viewer zeigen. Implementiert vom
+/// App-Kern; die Oberfläche ruft sie über `model.actions as? ConstraintActions` auf.
+@MainActor
+public protocol ConstraintActions: AnyObject {
+    func setConstraintSymbolsVisible(_ on: Bool)
+    /// Beteiligte Teile auswählen und einpassen, die Bedingung hervorheben.
+    func showConstraint(_ id: String)
 }
 
 // MARK: - Blender-Steuerung

@@ -29,6 +29,7 @@ struct PartTreeView: View {
                     }
                 }
             }
+            CameraTreeSection(store: model.cameras, actions: model.cameraActions)  // Phase 5: Kameras
         }
         .listStyle(.sidebar)
         .contextMenu(forSelectionType: String.self) { ids in
@@ -183,6 +184,11 @@ private struct PartRow: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(.quaternary))
+            } else if let id = node.part?.id, model.constraints?.partsWithErrors.contains(id) == true {
+                Image(systemName: "exclamationmark.octagon.fill")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.red)
+                    .help("Bedingung verletzt oder nicht befestigt: Details im Inspektor unter Bedingungen")
             } else if node.part?.inventarFehlt == true {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10.5))

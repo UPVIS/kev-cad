@@ -7,9 +7,9 @@ ist wichtig“). Damit ist L1 ausdrücklich bestätigt.
 | Paket | Zuständig | Stand |
 |---|---|---|
 | M0 Vertrag | Kev CAD | [MIRROR.md](MIRROR.md) Version 1, mit VoiceBridge abgestimmt; Aufzeichnungen in `samples/mirror-recordings/` |
-| M1 Spiegel-Dienst | Kev CAD | gestartet (eigener Strang): plattformneutrales Ziel für Protokoll und Szene zuerst, dann Dienst, Simulator, Testdateien |
-| M2 Transport | VoiceBridge-Sitzung | beginnt, sobald `mirror_sim.py` läuft |
-| M3 iPhone-Ansicht | VoiceBridge-Sitzung | gestartet |
+| M1 Spiegel-Dienst | Kev CAD | fertig und installiert: KevCADWire (macOS/iOS, Wurzelpaket), Spiegel-Dienst in der App, Sitzungskennung der Agenten, `mirror_sim.py`, `mirror-fixtures/`; Kugelschieber voller Stand in 78 ms |
+| M2 Transport | VoiceBridge-Sitzung | in Arbeit (Socket, Hülle `cad` mit Vorrang, danach CloudKit) |
+| M3 iPhone-Ansicht | VoiceBridge-Sitzung | fertig (KevCADWire, 59 Bilder/s mit 112 Teilen, 0 im Leerlauf) |
 | M4, M5 | gemeinsam | danach |
 
 ## Ziel

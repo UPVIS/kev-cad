@@ -41,6 +41,25 @@ def test_schwebendes_teil():
     assert sorted(g["teile"]) == ["Klotz", "Platte"] and g["kippwinkel"] > 30
 
 
+def test_schweben_meldet_bei_bedingungen_die_befestigung(monkeypatch):
+    from types import SimpleNamespace
+
+    from kevcad_kernel.bedingungen import anbindung
+
+    platte = k("Platte", Pos(0, 0, 5) * Box(100, 100, 10))
+    klotz = k("Klotz", Pos(0, 0, 30) * Box(20, 20, 20))
+    # Modell mit Zwangsbedingungen: kein eigener Befund „schwebt“ (das meldet die Befestigung B9), Stand bleibt
+    stand = anbindung.Stand(sammlung=SimpleNamespace(bedingungen=["b1"]), formen={"Platte": None, "Klotz": None})
+    monkeypatch.setattr(anbindung, "STAND", stand)
+    erg, _ = pruefe([platte, klotz], optionen={"pruefungen": ("durchdringung", "stand")})
+    assert "schwebt" not in arten(erg)
+    assert any(g.get("schwebt") for g in erg["stand"]["gruppen"])
+    # ohne Bedingungen meldet die Prüfung das Schweben selbst
+    monkeypatch.setattr(anbindung, "STAND", anbindung.Stand())
+    erg2, _ = pruefe([platte, klotz], optionen={"pruefungen": ("durchdringung", "stand")})
+    assert "schwebt" in arten(erg2)
+
+
 def test_spielpassung_zaehlt_als_verbindung():
     platte = k("Platte", Pos(0, 0, 5) * Box(100, 100, 10))
     klotz = k("Klotz", Pos(0, 0, 20.3) * Box(20, 20, 20))  # 0,3 mm Luft: Spielpassung, nicht schwebend

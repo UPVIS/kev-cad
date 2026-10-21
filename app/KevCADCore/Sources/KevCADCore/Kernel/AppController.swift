@@ -54,6 +54,10 @@ public final class AppController: AppActions {
     var navCancellables = Set<AnyCancellable>()
     /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
     var pendingRestore: SavedSession?
+    /// Spiegel aufs iPhone (MIRROR.md), siehe AppController+Mirror.swift.
+    public internal(set) var mirror: MirrorService?
+    /// Phase 5: Animation (Spieler, Video), siehe AppController+Animation.swift.
+    lazy var animationRuntime = AnimationRuntime(player: makeAnimationPlayer())
 
     // Phase 2: Katalog und Stückliste
     /// Suche der letzten Katalog-Anfrage (nach Speichern und Löschen wird damit neu geladen).
@@ -90,8 +94,10 @@ public final class AppController: AppActions {
 
         scene.onChange = { [weak self] in
             guard let self else { return }
-            self.viewport.bodies = self.scene.renderBodies
+            self.viewport.bodies = self.cameraFilteredBodies(self.scene.renderBodies)
         }
+        // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
+        setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         installNavigation()
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
@@ -110,6 +116,7 @@ public final class AppController: AppActions {
     public func start() {
         stopInternal(clearState: false)
         installSignalHandlers()
+        startMirror()
         running = true
         if AppInfo.isDemoMode {
             startDemo()
@@ -178,6 +185,7 @@ public final class AppController: AppActions {
 
     private func shutdownForTermination() {
         saveSession()
+        mirror?.stop()
         running = false
         restartWork?.cancel()
         connection.close()
@@ -378,7 +386,9 @@ public final class AppController: AppActions {
             // Der Kernel schickt nach HELLO den vollen Stand (PROJECT, alle Teile). Die Kamera bleibt, wenn schon
             // Teile da waren (Wiederverbinden, Neustart des Kernels).
             let hadParts = !scene.isEmpty
+            animationPlayer.removeAll()  // der Kernel schickt seine Animationen nach dem Anfangsstand neu
             scene.removeAll()
+            clearCameras()
             fitOnFirstPart = !hadParts
             clearSelectionState()
             updateParts()
@@ -428,7 +438,7 @@ public final class AppController: AppActions {
             if let restore = pendingRestore {
                 applyRestoredView(restore)
                 fitAtRunEnd = false
-            } else if fitAtRunEnd {
+            } else if fitAtRunEnd && cameras.activeView == nil {  // Blick durch eine Kamera nicht verstellen
                 viewport.fit(scene.visibleBounds(), animated: true)
                 fitAtRunEnd = false
             }
@@ -450,7 +460,9 @@ public final class AppController: AppActions {
         case .agent(let a):
             model.agentConnected = a.connected
             model.agentActivity = a.connected ? a.activity : nil
+            mirror?.updateAgents(a.sessions)
         case .viewCommand(let v):
+            mirror?.noteAgentCommand()
             let (ok, message) = performViewCommand(v)
             if !ok { log(.warning, "Ansichtsbefehl \(v.cmd): \(message ?? "fehlgeschlagen")") }
             send(AckOutMessage(replyTo: v.id, ok: ok, message: message))
@@ -469,6 +481,12 @@ public final class AppController: AppActions {
             applyBOM(b)
         case .catalog(let c):
             applyCatalog(c)
+        case .constraints(let r):
+            applyConstraints(r)
+        case .animation(let a):
+            handleAnimation(a)
+        case .camera(let c):
+            applyCamera(c)
         case .check(let c):
             applyCheck(c)
         case .unknown(let type, _):
@@ -517,6 +535,7 @@ public final class AppController: AppActions {
             refreshOverlay()
             model.run = .idle
             model.bom = nil
+            model.constraints = nil
             model.inventarVerstoesse = []
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             log(.info, "Projekt \(info.name) geöffnet")
@@ -537,7 +556,7 @@ public final class AppController: AppActions {
             viewport.fit(scene.visibleBounds(), animated: false)
             fitOnFirstPart = false
             fitAtRunEnd = true
-        } else if fitAtRunEnd {
+        } else if fitAtRunEnd && cameras.activeView == nil {
             // Erster Lauf eines Projekts: mit jedem neuen Teil nachführen, damit alles im Bild bleibt
             viewport.fit(scene.visibleBounds(), animated: true)
         }
@@ -690,6 +709,8 @@ public final class AppController: AppActions {
             }
         }
         items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
+        items.append(contentsOf: cameraOverlayItems())
         return items
     }
 

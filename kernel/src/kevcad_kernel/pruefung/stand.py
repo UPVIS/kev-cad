@@ -322,7 +322,26 @@ def pruefe_standsicherheit(ctx: PruefKontext) -> list[dict[str, Any]]:
     erg = pruefe_stand(list(ctx.koerper.values()), ctx.kontakte, ctx.befestigt(), bz, ctx.stand_cache)
     ctx.ergebnis["stand"] = erg.info
     ctx.zeiten["stand"] = (time.perf_counter() - t0) * 1000
+    if _bedingungen_pruefen_schweben(ctx):
+        # Modell mit Zwangsbedingungen: Schweben und Befestigung meldet die Prüffunktion „bedingungen“ (B9); hier nur
+        # Standsicherheit, damit nichts doppelt kommt. Die Gruppen in „stand“ tragen „schwebt“ weiterhin.
+        return [b for b in erg.befunde if b["art"] != "schwebt"]
     return erg.befunde
+
+
+def _bedingungen_pruefen_schweben(ctx: PruefKontext) -> bool:
+    """Nutzt das Modell Zwangsbedingungen (kevcad.bedingungen) und gehört deren Stand zu diesem Lauf?"""
+    if ctx.optionen.get("schweben_immer"):
+        return False
+    try:
+        from kevcad_kernel.bedingungen import anbindung
+    except Exception:  # noqa: BLE001
+        return False
+    st = anbindung.STAND
+    if st.sammlung is None or not getattr(st.sammlung, "bedingungen", None):
+        return False
+    namen = set(ctx.koerper)
+    return bool(namen) and namen <= set(st.formen) | {n for n in namen if n.startswith("Skizze/")}
 
 
 registriere("stand", pruefe_standsicherheit)

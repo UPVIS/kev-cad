@@ -31,9 +31,11 @@ from pathlib import Path
 from typing import Any
 
 import kevcad_kernel
+from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ARTEN, STANGENWARE, Catalog, CatalogError, own_dir
+from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
@@ -80,14 +82,17 @@ class Job:
     steps: list[str] = field(default_factory=list)
     started: float = 0.0
     cancelled: str | None = None  # Grund, wenn der Lauf nicht mehr zählt (anderes Projekt geöffnet)
+    animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
 
     @property
     def key(self) -> tuple[str, str, str]:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/dienst.py)
-    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App."""
+class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, PruefDienst):
+    """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Phase 5: Animation
+    (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Prüfung: pruefen, ansichten (``PruefDienst``,
+    pruefung/dienst.py)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -108,11 +113,12 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
         self.scene = Scene()
         self._project: Project | None = None
         self._settings: dict[str, Any] = {"auto_run": bool(auto_run), "slow_ms": 0}
-        self._agent: dict[str, Any] = {"connected": False, "activity": None}
+        self._agent: dict[str, Any] = {"connected": False, "activity": None, "sessions": []}
         self._selection: dict[str, Any] = {"run": None, "refs": []}
         self._last_result: dict[str, Any] | None = None
         self._bom: dict[str, Any] | None = None  # Stückliste des letzten erfolgreichen Laufs (wie die Nachricht BOM)
         self._violations: list[str] = []  # Inventar-Regel: Teile des letzten erfolgreichen Laufs ohne Lager/Druck
+        self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
         self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
         self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
@@ -159,6 +165,7 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                 "agent": dict(self._agent),
                 "inventar": {"regel": self._project.inventar_regel if self._project else True,
                              "verstoesse": list(self._violations)},
+                "bedingungen": dict((self._constraints or {}).get("summe") or {}),
                 "pruefung": self._pruef.kurz(),
             }
 
@@ -321,6 +328,7 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
         formats = [str(f) for f in (formats or [])]
         with self._lock:
             violations = list(self._violations)
+            constraints = self._constraints
         locked = [f for f in formats if f.lower().lstrip(".") in ("step", "stp", "stl", "3mf", "bom_csv", "csv")]
         if violations and locked:
             return {"ok": False, "error": "Export verweigert. " + inventory_text(violations),
@@ -388,6 +396,29 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
     # =================================================================================================================
     # KernelService: Phase 2 (Lagerteile, Materialien, Stückliste)
     # =================================================================================================================
+
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        """Bericht der Bedingungen des letzten erfolgreichen Laufs (wie die Nachricht CONSTRAINTS)."""
+        with self._lock:
+            rep = self._constraints
+        if rep is None:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        out = {"ok": True, **rep}
+        # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören
+        check, _ = self._pruef.letztes()
+        if check is not None and check.get("run") == rep.get("run"):
+            weg = [{**b, "pruefung": "bewegungsraum"} for b in check.get("befunde") or []
+                   if b.get("art") == "bewegungsraum"]
+            if weg:
+                out["befunde"] = list(out.get("befunde") or []) + weg
+        if part:
+            names = self.scene.names()
+            if part not in names and not any(n.startswith(part.rstrip("/") + "/") for n in names):
+                from kevcad_kernel.refs import unknown_part_message
+
+                return {"ok": False, "error": unknown_part_message(part, names)}
+            out["teil"] = part
+        return out
 
     def bom(self) -> dict[str, Any]:
         with self._lock:
@@ -507,6 +538,13 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
             self._agent["connected"] = bool(connected)
             if not connected:
                 self._agent["activity"] = None
+                self._agent["sessions"] = []
+            msg = {"type": "AGENT", **self._agent}
+        self._send_app(msg)
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        with self._lock:
+            self._agent["sessions"] = [dict(s) for s in sessions]
             msg = {"type": "AGENT", **self._agent}
         self._send_app(msg)
 
@@ -573,6 +611,7 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                 self._last_result = None
                 self._bom = None
                 self._violations = []
+                self._constraints = None
                 self._selection = {"run": None, "refs": []}
                 self._pruef.reset()
             run = self._run_no
@@ -590,6 +629,8 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
             if not same:
                 for rec in self.scene.clear():
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
+                self._anim_project_changed()
+                self.cameras_clear(run)
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -763,6 +804,7 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                         self.scene.remove(rec.name)
                         self._send_app({"type": "PART_REMOVE", "run": job.run, "name": rec.name})
                 records = self.scene.records()
+                self.cameras_after_run(job.run, final.get("cameras"))  # Phase 5: Kameras vor RUN_END
                 violations = list(final.get("inventar_verstoesse") or [])
                 with self._lock:
                     self._violations = violations
@@ -776,6 +818,12 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                     with self._lock:
                         self._bom = bom
                     self._send_app({"type": "BOM", **bom})
+                if isinstance(final.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
+                    report = {"run": job.run, **final["bedingungen"]}
+                    report.pop("fehler", None)
+                    with self._lock:
+                        self._constraints = report
+                    self._send_app({"type": "CONSTRAINTS", **report})
                 # Prüfung: läuft sie noch, „running“ melden; ist sie schon fertig (schneller als RUN_END), das Ergebnis
                 self._run_end_run = job.run
                 if self._pruef.erwarte(job.run):
@@ -789,6 +837,7 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            self._anim_publish(job, result)
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -821,6 +870,10 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
         if "cached" in final:
             result["cached_parts"] = final.get("cached", 0)
             result["tess_ms"] = final.get("tess_ms", 0.0)
+        if final.get("cameras"):
+            from kevcad_kernel.kamera import camera_line
+
+            result["kameras"] = [camera_line(c) for c in final["cameras"]]
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
@@ -828,6 +881,11 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
         if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
             result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],
                              "cuts": len(bom.get("cuts") or [])}
+        rep = final.get("bedingungen")
+        if isinstance(rep, dict):
+            from kevcad_kernel.bedingungen.bericht import kurzbericht
+
+            result["bedingungen"] = kurzbericht(rep)
         if error is not None:
             result["error"] = error
         return result
@@ -914,6 +972,9 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+        elif kind == "ANIM":
+            if header.get("run") == job.run:
+                job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
@@ -958,8 +1019,13 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
                 conn.send(rec.header, rec.payload)
             with self._lock:
                 bom = self._bom
+                constraints = self._constraints
             if bom is not None:
                 conn.send({"type": "BOM", **bom})
+            if constraints is not None:
+                conn.send({"type": "CONSTRAINTS", **constraints})
+            self._anim_on_connect(conn)
+            self.cameras_on_connect(conn, self._run_no)
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
@@ -1035,7 +1101,7 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1046,6 +1112,8 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
         if kind == "HELLO_APP":
             conn.info = {k: header.get(k) for k in ("app_version", "bundle_id")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+        elif kind == "CAMERA_SUGGEST":
+            self.camera_suggest_from_app(header)
         elif kind == "SELECTION":
             with self._lock:
                 self._selection = {"run": header.get("run"), "refs": list(header.get("refs") or [])}
@@ -1065,6 +1133,8 @@ class KernelRuntime(PruefDienst):  # PruefDienst: pruefen, ansichten (pruefung/d
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE"):
             self._pool.submit(self._handle_app_request, header)
+        elif self._anim_app_message(kind, header):
+            pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
 

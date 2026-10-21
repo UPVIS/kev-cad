@@ -83,7 +83,7 @@ final class ControllerTests: XCTestCase {
         let c = AppController(model: AppModel())
         let m = c.model
         let events = try streamEvents()
-        XCTAssertEqual(events.count, 16)
+        XCTAssertEqual(events.count, 22)
 
         c.handle([events[0]])  // HELLO
         XCTAssertEqual(m.kernelState, .ready)

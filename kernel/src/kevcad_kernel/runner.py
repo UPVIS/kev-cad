@@ -28,8 +28,11 @@ from typing import Any
 from build123d import BuildLine, BuildPart, BuildSketch, Color, Compound, Shape
 
 import kevcad
+from kevcad_kernel.bedingungen.lauf import pruefe_bedingungen
+from kevcad_kernel.bedingungen.sammlung import Sammlung
 from kevcad_kernel.bom import LagerRegister, Piece, ShownPart, build_bom
 from kevcad_kernel.catalog import Catalog, number
+from kevcad_kernel.kamera import KameraRegister, location_of
 from kevcad_kernel.protocol import pack_part
 from kevcad_kernel.tessellate import (
     DEFAULT_ANGULAR,
@@ -237,6 +240,12 @@ def _labeled_children(obj: Any) -> list[Any] | None:
         kids = [_as_shape(o) for o in obj]
     elif isinstance(obj, Compound):
         kids = list(obj.children)
+        # Kinder liegen relativ zum Compound: wurde er verschoben (Pos(...) * Baugruppe), die Lage mitnehmen
+        try:
+            if not obj.location.wrapped.IsIdentity():
+                kids = [k.moved(obj.location) if isinstance(k, Shape) else k for k in kids]
+        except Exception:  # noqa: BLE001
+            pass
     else:
         return None
     if kids and all(isinstance(k, Shape) for k in kids) and any(getattr(k, "label", "") for k in kids):
@@ -418,6 +427,25 @@ class _Capture(io.StringIO):
         return len(s)
 
 
+def _pruef_erlaubt(erfassung: Any, shown: list[str]) -> list[tuple[list[str], list[str]]]:
+    """Gewollte Überlappungen aus ``erlaubt_ueberlappung(a, b, grund=…)`` als Teilpaare für die Animation (dieselbe
+    Auflösung wie in der Prüfung: Name, Gruppe „X/“ = alle Teile darunter; ohne Grund gilt sie nicht)."""
+    if erfassung is None:
+        return []
+    try:
+        eintraege = erfassung.ergebnis(shown)["erklaerungen"]["erlaubt"]
+    except Exception:  # noqa: BLE001 - die Animation läuft auch ohne
+        return []
+
+    def teile(namen: list[str]) -> list[str]:
+        out: list[str] = []
+        for n in namen:
+            out += [s for s in shown if s.startswith(n)] if n.endswith("/") else [n]
+        return out
+
+    return [(teile(e["a"]), teile(e["b"])) for e in eintraege if e.get("a") and e.get("b")]
+
+
 class Runner:
     """Zustand des Rechenprozesses: Namensraum des letzten Laufs, Parameter, Laufnummer."""
 
@@ -447,7 +475,8 @@ class Runner:
 
     def _install(self, *, run: int, overrides: dict[str, Any], slow_ms: int, deviation: float, angular: float,
                  sketch: bool, state: dict[str, Any], catalog: Catalog | None = None,
-                 register: LagerRegister | None = None, strict: bool = False) -> None:
+                 register: LagerRegister | None = None, strict: bool = False,
+                 kameras: KameraRegister | None = None, sammlung: Any = None) -> None:
         def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None) -> None:
             if name is None or not str(name).strip():
                 label = getattr(_as_shape(obj), "label", "") or ""
@@ -505,6 +534,11 @@ class Runner:
                 if max is not None and value > max:
                     state["warnings"].append(f"param {name} = {value} liegt über dem Maximum {max}")
             state["params"][name] = value
+            if sammlung is not None:  # Grenzen als Maßbedingung (Verstoß = Befund, PLAN-BEDINGUNGEN.md)
+                from kevcad_kernel.bedingungen.sammlung import aufrufstelle
+
+                datei, zeile = aufrufstelle()
+                sammlung.param_grenze(name, value, min, max, datei, zeile)
             return value
 
         def lager(piece: Piece, shape: Any) -> None:
@@ -514,13 +548,30 @@ class Runner:
         def warn(text: str) -> None:
             state["warnings"].append(str(text))
 
+        def animation(anim: Any) -> None:  # Phase 5: Animationen sammeln, ausgewertet wird nach dem Lauf
+            anims = state.setdefault("animations", [])
+            names = {a.name for a in anims}
+            if anim.name is None:
+                anim.name = "Animation" if "Animation" not in names else next(
+                    f"Animation {i}" for i in range(2, 1000) if f"Animation {i}" not in names)
+            elif anim.name in names:
+                raise ValueError(f"Animation {anim.name!r} gibt es schon; jede Animation braucht einen eigenen Namen")
+            anims.append(anim)
+
         hooks: dict[str, Any] = {"show": show, "step": step, "param": param, "warn": warn}
+        if not sketch:
+            hooks["animation"] = animation
         if catalog is not None:
             hooks["catalog"] = lambda: catalog
         if register is not None:
             hooks["lager"] = lager
+        if kameras is not None:
+            hooks["kamera"] = lambda cam: kameras.register(cam, warn)
+            hooks["teil_location"] = lambda name: state.get("locations", {}).get(name)
         if self._erfassung is not None and not sketch:
             hooks["pruefung"] = self._erfassung.melde
+        if sammlung is not None:
+            hooks["bedingungen"] = sammlung
         kevcad._hooks.update(hooks)
 
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
@@ -596,11 +647,18 @@ class Runner:
                 preis_stand=entry.get("preis_stand") if entry else None,
                 volume=float(props.get("volume") or 0.0), mass_g=props.get("mass"),
                 size=[round(float(b) - float(a), 3) for a, b in zip(lo, hi)], pieces=[p.seq for p in pieces])
+        if not sketch:  # Animation: Hüllquader; Kameras: Location (an(..., lokal=True)) und lager_token
+            state.setdefault("bboxes", {})[name] = (list(tess.bbox.get("min", [0, 0, 0])),
+                                                    list(tess.bbox.get("max", [0, 0, 0])))
+            state.setdefault("locations", {})[name] = location_of(shape)
+            state.setdefault("tokens", {})[name] = getattr(shape, "lager_token", None)
         if self._erfassung is not None and not sketch:
             self._erfassung.teil(name, shape, mat, pieces, catalog, tess=tess, props=props)
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
+        if "formen" in state and not sketch:  # für die Prüfung der Bedingungen nach dem Lauf
+            state["formen"][name] = (shape, tess)
         state["tess_ms"] += tess.tess_ms
         state["cached"] += int(tess.cached)
         self.emit({"type": "PART", "run": run, "name": name, "key": tess.key, "cached": tess.cached,
@@ -626,8 +684,10 @@ class Runner:
         project = str(Path(path).parent)
         self.run_no = run
         state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0,
-                                 "bom_parts": {}}
+                                 "bom_parts": {}, "formen": {}}
         register = LagerRegister()
+        kameras = KameraRegister()
+        sammlung = Sammlung(gezeigt=state["formen"])  # Bezüge über den Namen finden schon gezeigte Teile
         strict = self.inventar = bool(msg.get("inventar_regel", True))
         catalog = None
         try:
@@ -650,7 +710,8 @@ class Runner:
                 os.chdir(project)
             sys.path.insert(0, project)
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
-                          sketch=False, state=state, catalog=catalog, register=register, strict=strict)
+                          sketch=False, state=state, catalog=catalog, register=register, strict=strict,
+                          kameras=kameras, sammlung=sammlung)
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
                 warnings.simplefilter("always")
                 try:
@@ -669,6 +730,13 @@ class Runner:
             sys.path[:] = old_path
             with contextlib.suppress(OSError):
                 os.chdir(old_cwd)
+        anim_names: list[str] = []
+        if error is None and state.get("animations"):
+            try:  # Körper von Kameras an Teilen fahren mit ihrem Teil (Zusammenspiel Kamera und Animation)
+                kameras.koerper_folgen(state["animations"], state["shown"], state.get("tokens", {}))
+            except Exception as exc:  # noqa: BLE001 - darf die Animation nicht verhindern
+                state["warnings"].append(f"Kamerakörper fahren nicht mit: {type(exc).__name__}: {exc}")
+            error, anim_names = self._animations(run, state, path, source, erfassung)
         self.ns = ns
         self.ns_project = project
         self.params = dict(state["params"])
@@ -683,6 +751,8 @@ class Runner:
             "tess_ms": round(state["tess_ms"], 1),
             "cached": state["cached"],
         }
+        if anim_names:
+            result["animations"] = anim_names
         if error is not None:
             result["type"] = "RUN_FAILED"
             result["error"] = error
@@ -695,8 +765,45 @@ class Runner:
                 result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
                 result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
+            try:  # Phase 5: Kameras (CAMERA_UPSERT nach dem Lauf)
+                result["cameras"] = kameras.resolve(state.get("locations", {}), state.get("tokens", {}),
+                                                    state["shown"], result["warnings"].append)
+            except Exception as exc:  # noqa: BLE001
+                result["warnings"].append(f"Kameras nicht übernommen: {type(exc).__name__}: {exc}")
             self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
+            bericht = pruefe_bedingungen(sammlung, state, project)
+            if bericht is not None:
+                result["bedingungen"] = bericht
         return result
+
+    def _animations(self, run: int, state: dict[str, Any], path: str, source: str,
+                    erfassung: Any = None) -> tuple[dict[str, Any] | None, list[str]]:
+        """Phase 5: Animationen gegen die gezeigten Teile auswerten und als ``ANIM`` schicken. Ein Fehler (unbekanntes
+        Teil, Kreis bei folge …) bricht den Lauf mit der Zeile der Spur ab. Gewollte Überlappungen aus
+        ``erlaubt_ueberlappung`` (Prüfung) gelten in der Kollisionsprüfung der Animation wie ``anim.erlaube``."""
+        from kevcad.bewegung import AnimationError
+        from kevcad_kernel.animation import evaluate_all, worker_message
+
+        try:
+            results = evaluate_all(state["animations"], state["shown"], state.get("bboxes", {}))
+        except AnimationError as exc:
+            line = exc.line if exc.filename in (None, path) else None
+            where = f"model.py, Zeile {line}" if line else (f"{Path(exc.filename).name}, Zeile {exc.line}"
+                                                           if exc.filename and exc.line else "model.py")
+            return {"message": f"AnimationError: {exc}", "line": line, "excerpt": excerpt(source, line),
+                    "traceback": f"{where}\nAnimationError: {exc}",
+                    "hint": "Teilnamen wie in show() angeben (Baugruppe = Präfix vor \"/\"); Zeiten zwischen 0 und "
+                            "dauer."}, []
+        except Exception as exc:  # noqa: BLE001 - Auswertung darf den Lauf nicht abstürzen lassen
+            return {"message": f"Animation nicht ausgewertet: {type(exc).__name__}: {exc}", "line": None,
+                    "excerpt": "", "traceback": traceback.format_exc(limit=6), "hint": ""}, []
+        erlaubt = _pruef_erlaubt(erfassung, state["shown"])
+        for a in results:
+            state["warnings"].extend(a.warnungen)
+            a.erlaubt.extend(erlaubt)
+            head, payload = worker_message(a, run)
+            self.emit(head, payload)
+        return None, [a.name for a in results]
 
     # -- Prüfung -------------------------------------------------------------------------------------------------------
 

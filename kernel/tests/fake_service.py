@@ -96,6 +96,33 @@ BOM = {
     "warnings": ["Halter: Eigenteil ohne Preis (Material „aluminium“ steht nicht im Katalog)"],
 }
 
+# Bericht der Bedingungen wie die Nachricht CONSTRAINTS (PLAN-BEDINGUNGEN.md)
+CONSTRAINTS = {
+    "items": [
+        {"id": "b1", "art": "auf", "gruppe": "montage", "symbol": "auf", "text": "Halter/Lasche.unten auf Grundplatte.oben",
+         "teile": ["Halter/Lasche", "Grundplatte"], "stand": "verletzt", "soll": "Abstand 0 mm, Flächen gegenüber",
+         "ist": "Abstand 2 mm (Luft 2 mm)", "abweichung": 2.0, "einheit": "mm", "punkte": [[0, 0, 12], [0, 0, 10]],
+         "zeile": 14, "datei": "model.py", "schwere": "fehler",
+         "loesung": "Halter/Lasche um 2 mm entlang −Z verschieben"},
+        {"id": "b2", "art": "konzentrisch", "gruppe": "montage", "symbol": "konzentrisch",
+         "text": "Halter/Bolzen.achse konzentrisch zu Halter/Lasche.Bohrung Ø6,6", "teile": ["Halter/Bolzen", "Halter/Lasche"],
+         "stand": "erfuellt", "soll": "Achsen deckungsgleich", "ist": "Versatz 0 mm", "abweichung": 0.0, "einheit": "mm",
+         "punkte": [[30, 0, 10], [30, 0, 10]], "zeile": 16, "datei": "model.py", "loesung": None},
+    ],
+    "teile": [{"name": "Halter/Lasche", "platziert": True, "frei": 0, "freiheitsgrade": [], "gelenke": [],
+               "stand": "bestimmt", "bedingungen": ["b1", "b2"], "befestigt": True, "am_boden": True,
+               "verbindungen": ["aufliegen"]}],
+    "bewegungen": [],
+    "befunde": [{"art": "bedingung", "pruefung": "bedingung", "teile": ["Halter/Lasche", "Grundplatte"],
+                 "schwere": "fehler", "text": "Halter/Lasche.unten auf Grundplatte.oben: Abstand 2 mm (Luft 2 mm)",
+                 "soll": "Abstand 0 mm, Flächen gegenüber", "ist": "Abstand 2 mm (Luft 2 mm)", "wert": 2.0,
+                 "einheit": "mm", "ort": [0, 0, 12], "loesung": "Halter/Lasche um 2 mm entlang −Z verschieben",
+                 "bedingung": "b1", "unterart": "auf", "zeile": 14}],
+    "summe": {"gesamt": 2, "erfuellt": 1, "verletzt": 1, "ungeprueft": 0, "fehler": 1, "warnungen": 0, "hinweise": 0,
+              "bewegungen": 0},
+    "loese_ms": 1.2, "pruef_ms": 3.4,
+}
+
 
 PRUEFUNG = {
     "zusammenfassung": "1 Durchdringung", "zaehler": {"fehler": 1, "warnung": 0, "hinweis": 0},
@@ -136,6 +163,7 @@ class FakeService:
         self.closed = False
         self.activity: list[str | None] = []
         self.connected: list[bool] = []
+        self.sessions: list[list[dict[str, Any]]] = []  # jede gemeldete Sitzungsliste
         self.selection_refs = ["Halter/Lasche#f3", "Grundplatte#f0"]
         self.png = PNG  # Bilddaten für screenshot
         self.violations: list[str] = []  # Inventar-Regel: Teile ohne Lagerteil im nächsten Lauf
@@ -310,12 +338,57 @@ class FakeService:
         return {"ok": True, "material": {**entry, "ebene": ebene}, "datei": "/tmp/katalog/eigene.json",
                 "hinweise": ["preis_stand fehlte: 2026-10 eingetragen"]}
 
+    def constraints(self, part: str | None = None) -> dict[str, Any]:
+        self._record("constraints", part)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
+        return {"ok": True, "run": self.run_no, **CONSTRAINTS}
+
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         self._record("catalog_delete", kind, entry_id, ebene)
         if entry_id == "gibtsnicht":
             return {"ok": False, "error": f"Lagerteil {entry_id!r} gibt es nicht."}
         return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
                 "datei": "/tmp/katalog/eigene.json"}
+
+    # Phase 5: Animation ------------------------------------------------------------------------------------------
+
+    ANIM = {"name": "Fahrt", "dauer": 8.0, "fps": 30.0, "bilder": 241, "teile": 12, "kamerafahrt": True, "spuren": 6,
+            "standard": True}
+
+    def animation_list(self) -> dict[str, Any]:
+        self._record("animation_list")
+        return {"ok": True, "animationen": [dict(self.ANIM)], "stand": {"name": "Fahrt", "zeit": 2.5, "spielt": False}}
+
+    def animation_play(self, name: str | None = None, an: bool = True, schleife: bool = False,
+                       geschwindigkeit: float = 1.0, von_vorn: bool = False) -> dict[str, Any]:
+        self._record("animation_play", name, an, schleife, geschwindigkeit, von_vorn)
+        if name not in (None, "Fahrt"):
+            return {"ok": False, "error": f"Animation {name!r} gibt es nicht. Vorhanden: 'Fahrt'"}
+        return {"ok": True, "name": "Fahrt", "an": an, "schleife": schleife, "geschwindigkeit": geschwindigkeit,
+                "dauer": 8.0}
+
+    def animation_seek(self, zeit: float, name: str | None = None) -> dict[str, Any]:
+        self._record("animation_seek", zeit, name)
+        if zeit > 8:
+            return {"ok": False, "error": f"zeit {zeit:g} s liegt außerhalb der Animation 'Fahrt' (0 bis 8 s)"}
+        return {"ok": True, "name": "Fahrt", "zeit": zeit, "bild": int(round(zeit * 30)), "dauer": 8.0}
+
+    def animation_video(self, name: str | None = None, breite: int = 1920, hoehe: int | None = None,
+                        fps: float | None = None, kamera: str | None = None, format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        self._record("animation_video", name, breite, hoehe, fps, kamera, format)
+        if not self.app_connected:
+            return {"ok": False, "error": "App nicht verbunden"}
+        return {"ok": True, "name": "Fahrt", "path": f"{self.project['path']}/output/animationen/Fahrt.mp4",
+                "width": breite, "height": breite * 9 // 16, "fps": fps or 30.0, "bilder": 241, "format": format,
+                "ms": 12000}
+
+    def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
+        self._record("collision_check", name, schritt)
+        return {"ok": True, "name": "Fahrt", "run": self.run_no, "kollisionen": [
+            {"teile": ["Bowlingball", "Pfosten"], "von": 5.1, "bis": 5.6, "zeit": 5.4, "bild": 162, "tiefe": 12.5,
+             "volumen": 830.0, "ort": [1500.0, -340.0, 100.0], "bilder": [153, 156, 159, 162, 165, 168]}],
+                "geprueft": {"paare": 40, "geprueft_bilder": 81, "schritt": schritt, "ms": 640.0}}
 
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
@@ -324,6 +397,10 @@ class FakeService:
     def set_agent_connected(self, connected: bool) -> None:
         with self.lock:
             self.connected.append(connected)
+
+    def set_agent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        with self.lock:
+            self.sessions.append([dict(s) for s in sessions])
 
     def close(self) -> None:
         self._record("close")

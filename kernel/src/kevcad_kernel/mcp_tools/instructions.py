@@ -49,22 +49,24 @@ Built-in check (Prüfung, after every run)
 - Open findings make `run` an error (isError) and export is refused. Fix them in model.py (clearance, hole, move, \
 correct a dimension); never explain them away. A deliberate overlap (press fit, foam) only after asking Kevin, with \
 `erlaubt_ueberlappung(a, b, grund="...")` from kevcad in model.py; without a reason it does not count.
-- Nothing floats: every part touches its counterpart or the ground (a clearance fit up to 0.5 mm counts as a \
-connection; touching means up to 0.05 mm). Groups without a path to the ground are findings with the drop distance. \
-Each group on the ground is checked for stability (mass from material density, centre of gravity, support polygon, \
-tipping angle). Parts fixed to a wall or ceiling only with `befestigt(teil, grund="...")` after asking Kevin; \
-`boden(z)` declares the floor.
+- Floating and fastening are checked by the constraints (B9, see Constraints). Models without any constraint still \
+get a physical check: a part without contact to its counterpart or the ground (a clearance fit up to 0.5 mm counts) is a \
+finding with the drop distance. Every group on the ground is checked for stability (mass from material density, centre \
+of gravity, support polygon, tipping angle). Parts fixed to a wall or ceiling only with `befestigt(teil, grund="...")` \
+after asking Kevin; `boden(z)` declares the floor.
 - Assemblability (Montage durch Demontage): every part must be insertable one after another along a straight path \
-(±X, ±Y, ±Z, cylinder axes, declared directions); screws only along their axis, with free space for the tool \
-(hex key, socket, open-end wrench) at the moment they are inserted; no part may be trapped in a closed housing. \
-Findings name the blocking parts. Design for assembly: place parts the way they are inserted, think about \
-insertion direction and order, tool access and clearance. Declarations in model.py only where true: \
+(±X, ±Y, ±Z, cylinder axes, declared directions, or out of a pocket and then away); screws only along their axis, with \
+free space for the tool (hex key, socket, open-end wrench) at the moment they are inserted; no part may be trapped in a \
+closed housing. Findings name the blocking parts. Design for assembly: place parts the way they are inserted, think \
+about insertion direction and order, tool access and clearance. Declarations in model.py only where true: \
 `montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")`, purchased units `montage("Gruppe", \
 baugruppe=True)`, clips `montage(teil, schnappt=True)`, nuts inserted during printing `montage(teil, \
 eingedruckt=True)`. `montage_reihenfolge` lists the assembly order, `pruefen` the full result.
 - Compliant parts (foam, rubber, straps: material with "nachgiebig") may be compressed up to half their thickness \
 (note instead of error).
 - Kevin sees the affected parts in red, the overlap volume as a red ghost and the assembly order in the check band.
+- The check covers the rest pose from model.py. Moving states are checked with `kollision_pruefen` (see Animation); \
+an overlap allowed with `erlaubt_ueberlappung` also counts as allowed there.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
@@ -88,11 +90,59 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 - `bom` shows positions, weight, guide prices and the cut list (3 mm saw kerf); `run` mentions the totals. \
 `export(["bom_csv"])` writes the CSV.
 
+Constraints (Bedingungen, always)
+- Place parts like in a CAD assembly, never with hand-picked coordinates: \
+`from kevcad.bedingungen import *`, then `teil = platziere(teil, auf((teil, "unten"), (tisch, "oben")), \
+konzentrisch((teil, "bohrung", {"nahe": (x, y, z)}), (welle, "achse")))`. References are named \
+(`bezug(teil, "oben" | "unten" | "links" | "rechts" | "vorn" | "hinten" | "achse" | "bohrung" | "mitte", nahe=...)` \
+or a build123d selection, never face numbers); the first reference belongs to the part that adapts. Also: buendig, \
+parallel, senkrecht, abstand, winkel, tangential, mittig, in_bohrung(schraube, bohrung) (concentric, head seated, \
+diameter and length checked), joints drehgelenk / schiebegelenk / zylindergelenk / kugelgelenk / fest, dimension \
+constraints param(name, value, min=, max=), gleich, spiel, min_abstand, min_wand.
+- Every part is fastened (B9): `verbinde(a, b, art="schraube"|"klemmung"|"steck"|"formschluss"|"kleben"|"aufliegen", \
+mit=[screw, nut])`; the check verifies the connection physically exists (contact or clearance ≤ 0.5 mm, aligned holes \
+in both parts, head and nut seated) and that every part hangs on the floor through connections.
+- Every joint with a range (`bereich=(min, max)`) is checked over its whole travel on every run (B8): collisions with \
+all non-moving parts, finger or tool clearance with `bedienung="finger"`; findings name the blocking part and the free \
+range. Redesign when the free range is too small for operation, do not shrink the range.
+- `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
+travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
+constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
+Cameras (film set simulation)
+- Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \
+`fx6 = lager.kamera("sony-fx6", objektiv="<lens id>", format="ff-uhd", brennweite=..., blende=..., fokus=..., \
+name="FX6")`, then `fx6.setzen(position, blick_auf=point)` or `fx6.an("<part>", punkt, richtung, \
+bezug="stativ_1_4", lokal=True)` (follows the part; call it after showing the part); `show(fx6.koerper(), "Kamera \
+FX6")` adds body and lens as inventory. Accessories: `lager.kamerazubehoer(id).verbauen(name, \
+an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4")`. Units mm; fokus from the sensor plane. Camera reference \
+points (bezug) are exactly: sensor, bajonett, front_unten, stativ_1_4, stativ_3_8, akkuschacht (built in also auge, \
+front); there are no other spellings.
+- `kamera_liste` / `kamera_info` give angle of view and depth of field, `kamera_ansicht(name)` shows Kevin the view \
+through the camera, `kamera_bild(name, breite)` saves a PNG in output/kameras/ and returns only the path (set \
+bild_zeigen only when needed), `kamera_vorschlag_aus_ansicht` turns Kevin's current view into a setzen(...) line.
+
 References
-- "Halter/Lasche" (part), "Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
+- "Halter/Lasche" (part),"Halter/Lasche#f3" (face), "#e2" (edge), "#v1" (vertex); indices follow \
 part.faces()/edges()/vertices(). They are valid for one run only: after every run get fresh ones from \
 parts, selection or execute.
 - `selection` returns what Kevin clicked in the viewer. Use it when he says "this", "here", "that hole".
+
+Animation
+- Motion lives in model.py too, after all show() calls: `from kevcad import animation`; \
+`fahrt = animation(dauer=8, fps=30, name="Fahrt")`. Targets are part names or assembly prefixes ("Rollwagen" moves all \
+"Rollwagen/..."). Example (cart rolls 2 m, wheels turn, ball rolls ahead of the pusher): \
+`fahrt.bewege("Rollwagen", nach=(2000, 0, 0), von=1, bis=7, kurve="weich")`, for each wheel \
+`fahrt.rolle("Rollwagen/Lenkrolle 1/Rad", auf="Rollwagen", radius=50, achse="y")`, \
+`fahrt.folge("Kugelschieber", "Rollwagen")`, `fahrt.rolle("Bowlingball", auf="Rollwagen", radius=108.5)`.
+- Tracks: bewege, drehe(achse, winkel), pfad(punkte, ausrichten, spline), rolle (angle = distance / radius), folge, \
+gelenk(art "dreh"/"schub", werte {t: value}, grenzen), sichtbar, ansicht (viewer camera keyframes, mit= follows a part), \
+erlaube(a, b) for wanted contact. Axes are given in the rest pose; seconds, mm, degrees.
+- `run` lists the animations; `animation_abspielen`, `animation_springen(zeit)`, `animation_liste`. \
+`kollision_pruefen(name)` checks every 3rd frame exactly; every penetration must be solved (touching is fine). \
+`animation_video(name, breite=1920)` writes an MP4 to <project>/output/animationen/; with `kamera="FX6"` it \
+renders through that camera (format aspect ratio). A camera attached with `.an(part)` rides along with that part \
+during playback, through the camera (key 0) and in the video; its shown body from koerper() follows automatically, \
+rig parts need their own `folge`.
 
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \

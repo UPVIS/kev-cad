@@ -140,7 +140,12 @@ def main() -> None:
     add("run_error", {"type": "RUN_ERROR", "seq": 8, "run": 2, "message": "NameError: name 'Boxx' is not defined",
                       "line": 7, "excerpt": "6 | step('Grundplatte')\n7 | platte = Boxx(10, 20, 30)",
                       "traceback": "File model.py, line 7"})
-    add("agent", {"type": "AGENT", "seq": 9, "connected": True, "activity": "misst Abstand Lasche ↔ Grundplatte"})
+    add("agent", {"type": "AGENT", "seq": 9, "connected": True, "activity": "misst Abstand Lasche ↔ Grundplatte",
+                  "sessions": [{"session_id": "6b1f2c3d-0000-4000-8000-00000000000a", "aktiv": True,
+                                "seit": "2026-10-21T21:50:00Z", "taetigkeit": "misst Abstand Lasche ↔ Grundplatte",
+                                "zuletzt": "2026-10-21T22:05:12Z"},
+                               {"session_id": "6b1f2c3d-0000-4000-8000-00000000000b", "aktiv": False,
+                                "seit": "2026-10-21T21:58:30Z", "taetigkeit": None}]})
     add("view_cmd_focus", {"type": "VIEW_CMD", "seq": 10, "id": "k-1", "cmd": "focus",
                            "args": {"refs": ["Halter/Bolzen"], "animate": True}})
     add("screenshot_req", {"type": "SCREENSHOT_REQ", "seq": 11, "id": "k-2", "width": 1280, "height": 800,
@@ -202,9 +207,48 @@ def main() -> None:
                                "norm": "ISO 1127", "masse": {"d": 33.7, "s": 2.0}, "material": "edelstahl-1.4301",
                                "preis": {"je_m": 14.5, "quelle": "Kevin", "stand": "2026-10"}, "ebene": "eigen"}]})
 
+    # Phase 5: Animation (PROTOCOL.md Abschnitt "Phase 5: Animation")
+    from kevcad.bewegung import Animation
+    from kevcad_kernel.animation import evaluate_all, pack_anim_def
+
+    anim = Animation(1, 4, "Fahrt")
+    anim.bewege("Wagen", nach=(314.159265, 0, 0), von=0, bis=1)
+    anim.rolle("Wagen/Rad", auf="Wagen", radius=50, achse="y")
+    anim.sichtbar("Wagen/Rad", an=False, zeit=0.75)
+    anim.ansicht(0, lage=(0, -1000, 500), ziel=(0, 0, 0), kurve="linear")
+    anim.ansicht(1, lage=(1000, -1000, 500), ziel=(314, 0, 0), bildwinkel=40, kurve="linear")
+    order = ["Wagen/Platte", "Wagen/Rad", "Boden"]
+    bboxes = {"Wagen/Platte": ([-300, -200, 100], [300, 200, 120]), "Wagen/Rad": ([-50, -16, 0], [50, 16, 100]),
+              "Boden": ([-1000, -1000, -10], [1000, 1000, 0])}
+    (ausw,) = evaluate_all([anim], order, bboxes)
+    head, payload = pack_anim_def(ausw, 4)
+    add("anim_def", {**head, "seq": 17}, payload)
+    expected["animations"] = {"anim_def.frame": {
+        "name": "Fahrt", "bilder": ausw.frames, "teile": ausw.teile, "dauer": 1.0, "fps": 4.0,
+        "matrices": {f"{k}/{j}": [[round(float(v), 5) for v in row] for row in ausw.matrices[k, j]]
+                     for k in (0, 2, 4) for j in range(len(ausw.teile))},
+        "kamera": [[round(float(v), 4) for v in ausw.kamera[k]] for k in range(ausw.frames)],
+        "sichtbar": ausw.sichtbar}}
+    add("anim_collisions", {"type": "ANIM_COLLISIONS", "seq": 18, "name": "Fahrt", "run": 4, "reply_to": "a-12",
+                            "kollisionen": [{"teile": ["Wagen/Rad", "Boden"], "von": 0.25, "bis": 0.5, "zeit": 0.5,
+                                             "bild": 2, "tiefe": 1.5, "volumen": 230.4, "ort": [157.1, 0.0, -0.7],
+                                             "bilder": [1, 2]}],
+                            "geprueft": {"paare": 2, "bilder": 5, "schritt": 1, "geprueft_bilder": 5, "ms": 12.5}})
+    add("anim_remove", {"type": "ANIM_REMOVE", "seq": 19, "name": "Alt"})
+    add("anim_play", {"type": "ANIM_PLAY", "seq": 20, "id": "k-7", "name": "Fahrt", "an": True, "schleife": True,
+                      "geschwindigkeit": 0.5, "von_vorn": False})
+    add("anim_seek", {"type": "ANIM_SEEK", "seq": 21, "id": "k-8", "name": "Fahrt", "zeit": 0.5})
+    add("anim_video_req", {"type": "ANIM_VIDEO_REQ", "seq": 22, "id": "k-9", "name": "Fahrt", "width": 640,
+                           "height": 360, "fps": 4.0, "kamera": None, "format": "mp4",
+                           "path": "/Users/test/Documents/Kev CAD/Wagen/output/animationen/Fahrt.mp4"})
+
     for name, data in frames:
         (ZIEL / f"{name}.frame").write_bytes(data)
     (ZIEL / "stream.bin").write_bytes(b"".join(d for _, d in frames))
+    # Zwangsbedingungen (PROTOCOL.md, Abschnitt Zwangsbedingungen): eigene Datei, nicht im Strom
+    from kevcad_kernel.protocol import constraints_example
+
+    (ZIEL / "constraints.frame").write_bytes(encode_frame({**constraints_example(), "seq": 17}))
     (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
     print(f"{len(frames)} Rahmen nach {ZIEL}")
     import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich

@@ -25,9 +25,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from kevcad_kernel.optik import OPTIK_ARTEN, validate_optik
+
 ARTEN: tuple[str, ...] = (
     "rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil", "nutprofil", "holz",
     "platte", "schraube", "mutter", "scheibe",
+    # Phase 5 (KAM): Kameras und Objektive (KATALOG.md, Abschnitt „Kameras und Objektive“), geprüft in optik.py
+    "kamera", "objektiv", "kamerazubehoer",
 )
 STANGENWARE = frozenset(ARTEN[:10])
 KLEINTEILE = frozenset({"schraube", "mutter", "scheibe"})
@@ -40,7 +44,8 @@ ART_NAMEN = {
     "rohr": "Rohr", "vierkantrohr": "Vierkantrohr", "rechteckrohr": "Rechteckrohr", "flach": "Flachstahl",
     "rund": "Rundstahl", "vierkant": "Vierkantstahl", "winkel": "Winkel", "u_profil": "U-Profil",
     "nutprofil": "Nutprofil", "holz": "Holz", "platte": "Platte", "schraube": "Schraube", "mutter": "Mutter",
-    "scheibe": "Scheibe",
+    "scheibe": "Scheibe", "kamera": "Kamera", "objektiv": "Objektiv",
+    "kamerazubehoer": "Kamerazubehör",
 }
 
 # Zusätzliche Suchwörter je Art (klein, ohne Umlaute)
@@ -59,6 +64,9 @@ ART_SYNONYME = {
     "schraube": "schrauben",
     "mutter": "muttern",
     "scheibe": "scheiben unterlegscheibe",
+    "kamera": "kameras camera cine filmkamera body gehaeuse sensor",
+    "objektiv": "objektive linse lens optik festbrennweite zoom cine-objektiv",
+    "kamerazubehoer": "zubehoer rig kaefig cage baseplate rods lws stange rosette akku v-mount platte",
 }
 
 REQUIRED_MASSE: dict[str, tuple[str, ...]] = {
@@ -66,6 +74,7 @@ REQUIRED_MASSE: dict[str, tuple[str, ...]] = {
     "rund": ("d",), "vierkant": ("a",), "winkel": ("a", "b", "s"), "u_profil": ("h", "b", "s", "t"),
     "nutprofil": ("raster", "nut"), "holz": ("b", "h"), "platte": ("s",),
     "schraube": ("typ", "norm", "groesse"), "mutter": ("typ", "norm", "groesse"), "scheibe": ("typ", "norm", "groesse"),
+    "kamera": (), "objektiv": (), "kamerazubehoer": (),  # Kameras und Objektive haben eigene Felder statt masse (optik.py)
 }
 OPTIONAL_MASSE: dict[str, tuple[str, ...]] = {
     "vierkantrohr": ("r",), "rechteckrohr": ("r",), "winkel": ("r",), "nutprofil": ("variante", "a", "b"),
@@ -243,8 +252,11 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
         errors.append(f"{who}: Feld name fehlt (Anzeige mit deutschem Komma und „×“, z. B. \"Rohr 42,4 × 2,0\")")
     if entry.get("norm") is not None and not isinstance(entry.get("norm"), str):
         errors.append(f"{who}: norm muss Text sein")
+    optik = art in OPTIK_ARTEN  # Kameras und Objektive: eigene Felder, Material und masse sind freiwillig
     mat = entry.get("material")
-    if not isinstance(mat, str) or not mat.strip():
+    if optik and mat is None:
+        pass
+    elif not isinstance(mat, str) or not mat.strip():
         errors.append(f"{who}: Feld material fehlt (id eines Materials, z. B. \"stahl-s235\")")
     elif material_ids is not None and mat not in material_ids:
         close = difflib.get_close_matches(mat, sorted(material_ids), n=3, cutoff=0.5)
@@ -252,7 +264,9 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
                       + (f"; meinten Sie {', '.join(repr(c) for c in close)}?" if close
                          else " (erst mit material_define anlegen)"))
     masse = entry.get("masse")
-    if not isinstance(masse, dict):
+    if optik:
+        errors.extend(validate_optik(entry))
+    elif not isinstance(masse, dict):
         errors.append(f"{who}: masse fehlt (Objekt mit den Maßen in mm, z. B. {{\"d\": 42.4, \"s\": 2.0}})")
     elif art in ARTEN:
         errors.extend(_validate_masse(who, art, masse, deep))
@@ -450,6 +464,8 @@ def _haystack(entry: dict[str, Any], material: dict[str, Any] | None) -> str:
     bits = [entry.get("id", ""), entry.get("name", ""), entry.get("norm") or "", entry.get("art", ""),
             ART_NAMEN.get(entry.get("art", ""), ""), ART_SYNONYME.get(entry.get("art", ""), ""),
             " ".join(entry.get("tags") or []), str(entry.get("material", ""))]
+    if entry.get("art") in OPTIK_ARTEN:
+        bits += [str(entry.get(k) or "") for k in ("hersteller", "modell", "kurzname", "bajonett", "typ")]
     masse = entry.get("masse") or {}
     for key in TEXT_MASSE:
         if masse.get(key):
@@ -685,6 +701,8 @@ class Catalog:
                     source[(kind, eid)] = (ebene, path)
         mids = set(materials)
         for eid, it in items.items():
+            if it.get("art") in OPTIK_ARTEN and not it.get("material"):
+                continue
             if it.get("material") not in mids:
                 warnings.append(f"Lagerteil {eid!r}: Material {it.get('material')!r} fehlt im Katalog")
         aliases: dict[str, str] = {}
