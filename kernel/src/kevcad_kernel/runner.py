@@ -28,6 +28,8 @@ from typing import Any
 from build123d import BuildLine, BuildPart, BuildSketch, Color, Compound, Shape
 
 import kevcad
+from kevcad_kernel.bedingungen.lauf import pruefe_bedingungen
+from kevcad_kernel.bedingungen.sammlung import Sammlung
 from kevcad_kernel.bom import LagerRegister, Piece, ShownPart, build_bom
 from kevcad_kernel.catalog import Catalog, number
 from kevcad_kernel.protocol import pack_part
@@ -444,7 +446,7 @@ class Runner:
 
     def _install(self, *, run: int, overrides: dict[str, Any], slow_ms: int, deviation: float, angular: float,
                  sketch: bool, state: dict[str, Any], catalog: Catalog | None = None,
-                 register: LagerRegister | None = None, strict: bool = False) -> None:
+                 register: LagerRegister | None = None, strict: bool = False, sammlung: Any = None) -> None:
         def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None) -> None:
             if name is None or not str(name).strip():
                 label = getattr(_as_shape(obj), "label", "") or ""
@@ -502,6 +504,11 @@ class Runner:
                 if max is not None and value > max:
                     state["warnings"].append(f"param {name} = {value} liegt über dem Maximum {max}")
             state["params"][name] = value
+            if sammlung is not None:  # Grenzen als Maßbedingung (Verstoß = Befund, PLAN-BEDINGUNGEN.md)
+                from kevcad_kernel.bedingungen.sammlung import aufrufstelle
+
+                datei, zeile = aufrufstelle()
+                sammlung.param_grenze(name, value, min, max, datei, zeile)
             return value
 
         def lager(piece: Piece, shape: Any) -> None:
@@ -516,6 +523,8 @@ class Runner:
             hooks["catalog"] = lambda: catalog
         if register is not None:
             hooks["lager"] = lager
+        if sammlung is not None:
+            hooks["bedingungen"] = sammlung
         kevcad._hooks.update(hooks)
 
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
@@ -594,6 +603,8 @@ class Runner:
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
+        if "formen" in state and not sketch:  # für die Prüfung der Bedingungen nach dem Lauf
+            state["formen"][name] = (shape, tess)
         state["tess_ms"] += tess.tess_ms
         state["cached"] += int(tess.cached)
         self.emit({"type": "PART", "run": run, "name": name, "key": tess.key, "cached": tess.cached,
@@ -619,8 +630,9 @@ class Runner:
         project = str(Path(path).parent)
         self.run_no = run
         state: dict[str, Any] = {"shown": [], "steps": [], "warnings": [], "params": {}, "tess_ms": 0.0, "cached": 0,
-                                 "bom_parts": {}}
+                                 "bom_parts": {}, "formen": {}}
         register = LagerRegister()
+        sammlung = Sammlung(gezeigt=state["formen"])  # Bezüge über den Namen finden schon gezeigte Teile
         strict = self.inventar = bool(msg.get("inventar_regel", True))
         catalog = None
         try:
@@ -640,7 +652,8 @@ class Runner:
                 os.chdir(project)
             sys.path.insert(0, project)
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
-                          sketch=False, state=state, catalog=catalog, register=register, strict=strict)
+                          sketch=False, state=state, catalog=catalog, register=register, strict=strict,
+                          sammlung=sammlung)
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
                 warnings.simplefilter("always")
                 try:
@@ -684,6 +697,9 @@ class Runner:
                 result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
                 result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
+            bericht = pruefe_bedingungen(sammlung, state, project)
+            if bericht is not None:
+                result["bedingungen"] = bericht
         return result
 
     # -- execute -------------------------------------------------------------------------------------------------------
