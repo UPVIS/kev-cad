@@ -51,6 +51,15 @@ def test_spielpassung_zaehlt_als_verbindung():
     assert erg2["paare"]["beruehrt"] == 1
 
 
+def test_knapp_stehender_turm_warnt():
+    fuss = k("Fuss", Pos(0, 0, 0.5) * Box(20, 20, 1))
+    turm = k("Turm", Pos(11, 0, 51) * Box(4, 4, 100))  # steht 1 mm auf dem Fuß, Schwerpunkt knapp vor dem Rand
+    erg, _ = pruefe([fuss, turm])
+    (b,) = [b for b in erg["befunde"] if b["art"] == "standsicherheit"]
+    assert b["schwere"] == "warnung" and "steht knapp" in b["text"] and "°" in b["text"]
+    assert 0 < erg["stand"]["gruppen"][0]["kippwinkel"] < 3
+
+
 def test_kippender_turm():
     fuss = k("Fuss", Pos(0, 0, 1) * Box(20, 20, 2))
     ausleger = k("Ausleger", Pos(95, 0, 7) * Box(200, 10, 10), material="stahl")  # weit über den Fuß hinaus
@@ -123,6 +132,36 @@ def test_eingedruckte_mutter():
     erg2, _ = pruefe([block, mutter], erkl)
     assert arten(erg2) == []
     assert schritte(erg2) == [("Halter mit Mutter", "Grundteil")]
+
+
+def test_einsatz_in_tasche_zur_innenseite_zweistufig():
+    # Kanal (oben geschlossen, an den Enden in Y offen); in der rechten Wand eine Tasche zur Kanalmitte hin
+    kanal = Pos(0, 0, 15) * (Box(60, 30, 30) - Box(40, 40, 20)) - Pos(23, 0, 15) * Cylinder(3.2, 6.4, rotation=(0, 90, 0))
+    einsatz = k("Einsatz", Pos(23, 0, 15) * Cylinder(3, 6, rotation=(0, 90, 0)))  # x 20 … 26, Taschenboden bei 26,2
+    erg, _ = pruefe([k("Kanal", kanal), einsatz])
+    assert arten(erg) == [] and erg["montage"]["vollstaendig"]
+    (s,) = [x for x in erg["montage"]["schritte"] if x["name"] == "Einsatz"]
+    assert s["richtung_text"].startswith("von ") and ", dann " in s["richtung_text"] and "+X" in s["richtung_text"]
+    assert s["weg"]["dann"] == [1.0, 0.0, 0.0]
+
+
+def test_gewinde_sperrt_quer_aber_nicht_entlang_der_achse():
+    from kevcad_kernel.pruefung.montage import Planer
+
+    # Sockel mit seitlich offener Mutternfalle; Schraube M6 von oben, Mutter mit Kernloch Ø 5 (Gewindeeingriff)
+    sockel = k("Sockel", Pos(0, 0, 10) * Box(40, 40, 20) - Pos(-6.9, 0, 10) * Box(26.4, 10.4, 8)
+               - Pos(0, 0, 17) * Cylinder(3.2, 6.2))
+    schraube = k("Schraube", Pos(0, 0, 15.5) * Cylinder(3, 17) + Pos(0, 0, 22) * Cylinder(5, 4))
+    mutter = k("Mutter", Pos(0, 0, 8.5) * (Box(10, 10, 5) - Cylinder(2.5, 6)))
+    erg, _ = pruefe([sockel, schraube, mutter])
+    assert arten(erg) == [] and len(erg["gewinde"]) == 1 and erg["montage"]["vollstaendig"]
+    assert np.allclose(np.abs(erg["gewinde"][0]["achse"]), [0, 0, 1])
+    namen = [n for n, _ in schritte(erg)]
+    assert namen.index("Mutter") < namen.index("Schraube")
+    ks = {x.name: x for x in (sockel, schraube, mutter)}
+    pl = Planer(ks, gewinde={frozenset(("Schraube", "Mutter")): np.array([0.0, 0.0, 1.0])})
+    assert pl.sperrt("Mutter", "Schraube", np.array([-1.0, 0.0, 0.0]))  # quer: die Schraube steckt in der Mutter
+    assert not pl.sperrt("Mutter", "Schraube", np.array([0.0, 0.0, -1.0]))  # entlang der Achse: abschrauben
 
 
 def test_schnappverbindung():

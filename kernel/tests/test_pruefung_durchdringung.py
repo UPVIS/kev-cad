@@ -13,7 +13,7 @@ from build123d import Box, Cylinder, Pos, Rot
 
 from kevcad_kernel.protocol import encode_frame, FrameReader, pack_check, unpack_check
 from kevcad_kernel.pruefung.koerper import koerper_aus_form
-from kevcad_kernel.pruefung.kollision import PaarCache, durchdringung, gewindeeingriff, pruefe_paar
+from kevcad_kernel.pruefung.kollision import PaarCache, durchdringung, pruefe_paar
 from kevcad_kernel.pruefung.pruefer import pruefe
 
 

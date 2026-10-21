@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from kevcad_kernel.bom import de_num
 from kevcad_kernel.pruefung.befund import (
     BODEN_TOL,
     DICHTE_ANNAHME,

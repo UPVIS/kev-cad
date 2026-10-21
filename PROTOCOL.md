@@ -253,7 +253,8 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   `geometrie` Index in `geometrie` oder null. Weitere Quellen dürfen eigene Felder ergänzen (etwa `soll`, `ist`).
 - Durchdringung zählt ab 0,001 mm³ Schnittvolumen und 0,01 mm Tiefe; Berühren ist kein Befund. Einzige automatische
   Ausnahme ist echter Gewindeeingriff (Schraube in Mutter oder Kernloch, gleiche Achse, nur im Gewindeband); er steht in
-  `gewinde`. Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
+  `gewinde` (je Eintrag `teile`, `text`, `volumen`, `achse`). In der Montage sperrt ein Gewindeeingriff quer zur Achse,
+  entlang der Achse nicht (herausdrehen). Gewollte Überlappungen erklärt model.py mit `erlaubt_ueberlappung(a, b, grund=…)` (steht in `erlaubt`).
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 

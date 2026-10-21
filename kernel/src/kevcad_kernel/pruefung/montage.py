@@ -15,6 +15,7 @@ Richtungen), bis alles zerlegt ist. Umgekehrt ist das die Montagereihenfolge mit
 
 from __future__ import annotations
 
+import copy
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -49,9 +50,10 @@ class Schritt:
     """Ein Ausbauschritt (umgekehrt: Einbau)."""
 
     einheit: Einheit
-    richtung: np.ndarray  # Ausbaurichtung
+    richtung: np.ndarray  # Ausbaurichtung (beim zweistufigen Weg die zweite)
     runde: int
     automatisch_gruppe: bool = False
+    weg: tuple[np.ndarray, float] | None = None  # zweistufig: erst um s entlang d1, dann entlang richtung
 
 
 @dataclass
@@ -66,17 +68,25 @@ class MontageErgebnis:
     def einbau(self) -> list[dict[str, Any]]:
         """Montagereihenfolge (Einbau) für Protokoll und Text."""
         out = []
+        from kevcad_kernel.bom import de_num
+
         for nr, s in enumerate(reversed(self.schritte), 1):
             ein = -s.richtung
             erstes = nr == 1
-            out.append({
+            text = "Grundteil" if erstes else einfuehr_text(ein)
+            eintrag: dict[str, Any] = {
                 "nr": nr,
                 "teile": list(s.einheit.teile),
                 "name": s.einheit.name,
                 "gruppe": s.einheit.gruppe,
                 "richtung": None if erstes else [round(float(c), 4) for c in ein],
-                "richtung_text": "Grundteil" if erstes else einfuehr_text(ein),
-            })
+                "richtung_text": text,
+            }
+            if s.weg is not None and not erstes:  # Einbau: erst entlang −richtung, dann um s entlang −d1
+                d1, weg = s.weg
+                eintrag["richtung_text"] = f"{text}, dann {de_num(weg, 1)} mm {richtung_text(-d1)}"
+                eintrag["weg"] = {"dann": [round(float(c), 4) for c in -d1], "mm": round(float(weg), 2)}
+            out.append(eintrag)
         return out
 
 
@@ -85,10 +95,12 @@ class Planer:
                  nachgiebig: set[str] | None = None, erklaerungen: list[dict[str, Any]] | None = None,
                  kontakte: list[tuple[str, str]] | None = None, cache: PaarCache | None = None,
                  zeitlimit_s: float = ZEITLIMIT_S, abbrechen: Callable[[], None] | None = None,
-                 boden: set[str] | None = None) -> None:
+                 boden: set[str] | None = None, gewinde: dict[frozenset[str], np.ndarray] | None = None) -> None:
         self.k = koerper
         self.reihenfolge = list(koerper)
-        self.ausschluss = ausschluss or set()
+        # Gewindeeingriffe (Schraube in Mutter oder Einsatz): entlang der Achse frei (Schrauben), quer gesperrt
+        self.gewinde = {k: einheit(v) for k, v in (gewinde or {}).items()}
+        self.ausschluss = (ausschluss or set()) - set(self.gewinde)
         self.nachgiebig = nachgiebig or set()
         self.erklaerungen = erklaerungen or []
         self.kontakte = kontakte or []
@@ -103,6 +115,8 @@ class Planer:
         self._dirs: dict[tuple, tuple] = {}
         self._rel: dict[tuple[str, str], tuple] = {}
         self.schnappt: dict[str, set[str]] = {}  # Teil → Teile, über die es beim Einbau schnappt
+        # (Teil, mögliche Hindernisse): zweistufiger Weg bei diesem Stand schon vergeblich gesucht
+        self._zwei_fehl: set[tuple[str, frozenset[str]]] = set()
         # Boden für die Reihenfolge: Teile, die auf dem Boden stehen oder befestigt sind
         self.boden: set[str] = set(boden or ())
         if not self.boden and koerper:
@@ -128,6 +142,8 @@ class Planer:
             return False
         if q in self.schnappt.get(p, ()):  # schnappt über q (montage(..., schnappt=True))
             return False
+        if self._entlang_gewinde(p, q, d):
+            return False
         kp, kq = self.k[p], self.k[q]
         # Vorfilter: q muss in der Bildebene überlappen und vor dem hintersten Punkt von p liegen
         umin, umax, wmin, wmax = self._richtung(d)
@@ -148,6 +164,107 @@ class Planer:
             hit = bool(blockiert(kp, kq, d).blockiert)
             self.cache.put(ck, hit)
         return hit
+
+    def _entlang_gewinde(self, p: str, q: str, d: np.ndarray) -> bool:
+        """Greifen p und q ineinander (Gewinde) und geht d entlang der Gewindeachse? Dann herausdrehen, nicht sperren."""
+        ax = self.gewinde.get(frozenset((p, q)))
+        return ax is not None and abs(float(np.dot(ax, d))) > 0.996
+
+    def _sperrt_k(self, p: str, kp: Koerper, q: str, d: np.ndarray) -> bool:
+        """Wie sperrt, aber für einen (verschobenen) Körper kp statt self.k[p]."""
+        if frozenset((p, q)) in self.ausschluss or q in self.nachgiebig or q in self.schnappt.get(p, ()):
+            return False
+        if self._entlang_gewinde(p, q, d):
+            return False
+        kq = self.k[q]
+        R = basis(d)
+        key = richtung_schluessel(R[2])
+        Pp, Pq = kp.projektion(R, key), kq.projektion(R, key)
+        if Pq.w_max <= Pp.w_min + 0.02 or np.any(np.minimum(Pp.uv_max, Pq.uv_max)
+                                                  - np.maximum(Pp.uv_min, Pq.uv_min) <= 0):
+            return False
+        ck = ("sperre", kp.form, kq.form, _rel_schluessel(kp.lage, kq.lage), richtung_schluessel(d @ kp.lage[:3, :3]))
+        hit = self.cache.get(ck)
+        if hit is None:
+            self._pruefe_zeit()
+            self.tests += 1
+            hit = bool(blockiert(kp, kq, d).blockiert)
+            self.cache.put(ck, hit)
+        return hit
+
+    def zwei_schritte(self, e: Einheit, rest: list[str]) -> tuple[np.ndarray, float, np.ndarray] | None:
+        """Zweistufiger Ausbau eines Einzelteils: erst ein Stück entlang d1 (aus einer Tasche heraus, die zur
+        Innenseite desselben Teils zeigt, etwa ein Gewindeeinsatz), dann entlang d2 ins Freie. (d1, Weg, d2) oder None."""
+        from kevcad_kernel.pruefung.raster import freier_weg
+
+        if len(e.teile) != 1 or e.erklaert:
+            return None
+        p = e.teile[0]
+        kp = self.k[p]
+        if kp.art == "schraube":
+            return None  # Schrauben nur entlang ihrer Achse
+        for d1 in ACHSEN:
+            hindernisse = [q for q in self.kandidaten([p], rest, d1)
+                           if frozenset((p, q)) not in self.ausschluss and q not in self.nachgiebig
+                           and not self._entlang_gewinde(p, q, d1)]
+            if any(frozenset((p, q)) in self.gewinde for q in rest if not self._entlang_gewinde(p, q, d1)):
+                continue  # quer zu einem eingreifenden Gewinde geht es nicht
+            # nächstes Hindernis: nach Abstand der Hüllen sortiert, weiter entfernte erst gar nicht exakt rechnen
+            _, _, wmin, wmax = self._richtung(d1)
+            i = self._idx[p]
+            frei = np.inf
+            for q in sorted(hindernisse, key=lambda q: wmin[self._idx[q]]):
+                if wmin[self._idx[q]] - wmax[i] >= frei:
+                    break
+                x = self._weg(p, q, d1, freier_weg)
+                if x is not None:
+                    frei = min(frei, x)
+                    if frei < 1.0:
+                        break
+            if not np.isfinite(frei) or frei < 1.0:  # ohne gefundenes Hindernis nicht raten
+                continue
+            ausdehnung = float(np.ptp(kp.pos @ d1)) if len(kp.pos) else 0.0
+            wege = {min(frei - 0.1, ausdehnung + 1.0)}
+            if np.isfinite(frei):
+                wege |= {frei / 2, frei - 0.1}
+            for weg in sorted(wege):
+                if weg < 0.9 or not np.isfinite(weg):
+                    continue
+                kv = kp.verschoben(d1 * weg)
+                for d2 in ACHSEN:
+                    if abs(float(np.dot(d2, d1))) > 0.5:
+                        continue
+                    R = basis(d2)
+                    key = richtung_schluessel(R[2])
+                    Pv = kv.projektion(R, key)
+                    umin, umax, wmin, wmax = self._richtung(d2)
+                    blockiert_von = None
+                    for q in rest:
+                        j = self._idx[q]
+                        if wmax[j] <= Pv.w_min + 0.02 or np.any(np.minimum(Pv.uv_max, umax[j])
+                                                                 - np.maximum(Pv.uv_min, umin[j]) <= 0):
+                            continue
+                        if self._sperrt_k(p, kv, q, d2):
+                            blockiert_von = q
+                            break
+                    if blockiert_von is None:
+                        return d1, float(weg), d2
+        return None
+
+    def _weg(self, p: str, q: str, d: np.ndarray, freier_weg: Callable) -> float | None:
+        """Freier Weg von p entlang d bis q (zwischengespeichert nach Form und relativer Lage)."""
+        kp, kq = self.k[p], self.k[q]
+        rel = self._rel.get((p, q))
+        if rel is None:
+            rel = self._rel[(p, q)] = _rel_schluessel(kp.lage, kq.lage)
+        ck = ("weg", kp.form, kq.form, rel, richtung_schluessel(d @ kp.lage[:3, :3]))
+        hit = self.cache.get(ck)
+        if hit is None:
+            self._pruefe_zeit()
+            x = freier_weg(kp, kq, d)
+            hit = (x,)
+            self.cache.put(ck, hit)
+        return hit[0]
 
     def _richtung(self, d: np.ndarray) -> tuple:
         """Hüllrechtecke und Tiefen aller Teile in Richtung d (zwischengespeichert)."""
@@ -302,16 +419,37 @@ class Planer:
                         frei.append((e, d))
                     else:
                         letzte_sperren[e.name] = sp
+                # Einzelteile, die in einem anderen Teil stecken (Einsatz in einer Tasche, Mutter in einer Falle): früh
+                # zweistufig herausholen, dann kommen sie in der Montage nach ihrem Träger
+                wege: dict[int, tuple[np.ndarray, float]] = {}
+                for e in einheiten:
+                    if e.name not in letzte_sperren or not self._steckt_in_teil(e, uebrig):
+                        continue
+                    w = self._zwei_versuch(e, uebrig)
+                    if w is not None:
+                        frei.append((e, w[2]))
+                        wege[id(e)] = (w[0], w[1])
                 auswahl = self._auswahl(frei, uebrig) if frei else []
                 if auswahl:
                     for e, d in auswahl:
                         einheiten.remove(e)
-                        erg.schritte.append(Schritt(e, d, runde))
+                        erg.schritte.append(Schritt(e, d, runde, weg=wege.get(id(e))))
                     continue
                 # Was steckt, zusammenlegen (eingesperrte Teile, Vormontagen, Baugruppen); erst wenn das nichts bringt,
                 # freie Teile auch dann herausnehmen, wenn der Rest dadurch nicht mehr getragen ist
                 freie = {id(e) for e, _ in frei}
                 stecken = [e for e in einheiten if id(e) not in freie]
+                # steckt alles: zweistufige Wege für die übrigen Einzelteile
+                zwei = []
+                for e in ([] if frei else sorted(stecken, key=lambda e: self.k[e.teile[0]].volumen)):
+                    w = self._zwei_versuch(e, uebrig)
+                    if w is not None:
+                        zwei.append((e, w))
+                if zwei:
+                    for e, (d1, weg, d2) in zwei:
+                        einheiten.remove(e)
+                        erg.schritte.append(Schritt(e, d2, runde, weg=(d1, weg)))
+                    continue
                 # gibt es freie Teile, nur Vormontagen aus zwei Teilen versuchen (sonst entstünden große Gruppen, nur
                 # damit die Reihenfolge schöner wird); steckt alles, auch Baugruppen
                 neu = (self._loesen(einheiten, stecken, letzte_sperren, erg, runde, nur_paare=bool(frei))
@@ -320,10 +458,9 @@ class Planer:
                     einheiten = neu
                     continue
                 if frei:
-                    oben = [(e, d) for e, d in frei if d[2] > 0.999]
-                    for e, d in (oben or frei):
-                        einheiten.remove(e)
-                        erg.schritte.append(Schritt(e, d, runde))
+                    e, d = self._rueckfall(frei, uebrig)
+                    einheiten.remove(e)
+                    erg.schritte.append(Schritt(e, d, runde, weg=wege.get(id(e))))
                     continue
                 erg.offen = list(einheiten)
                 erg.sperren = letzte_sperren
@@ -334,6 +471,30 @@ class Planer:
         erg.tests = self.tests
         erg.befunde = self.befunde + self._offen_befunde(erg)
         return erg
+
+    def _steckt_in_teil(self, e: Einheit, uebrig: set[str]) -> bool:
+        """Liegt das Einzelteil ganz in der Hülle eines berührten Teils (Einsatz in einer Tasche)?"""
+        if len(e.teile) != 1:
+            return False
+        p = e.teile[0]
+        kp = self.k[p]
+        return any(q in uebrig and np.all(kp.bmin >= self.k[q].bmin - 0.5) and np.all(kp.bmax <= self.k[q].bmax + 0.5)
+                   for q in self._nachbarn.get(p, ()))
+
+    def _zwei_versuch(self, e: Einheit, uebrig: set[str]) -> tuple[np.ndarray, float, np.ndarray] | None:
+        """Zweistufiger Ausbau mit Zwischenspeicher: neu gesucht wird erst, wenn sich die möglichen Hindernisse
+        (Teile, die in einer Achsrichtung im Weg liegen könnten) geändert haben."""
+        if len(e.teile) != 1 or e.erklaert or not self._reihenfolge_ok(e, uebrig):
+            return None
+        rest = [n for n in self.reihenfolge if n in uebrig and n not in e.teile]
+        umgebung = frozenset(q for d in ACHSEN for q in self.kandidaten(e.teile, rest, d))
+        merk = (e.name, umgebung)
+        if merk in self._zwei_fehl:
+            return None
+        w = self.zwei_schritte(e, rest)
+        if w is None:
+            self._zwei_fehl.add(merk)
+        return w
 
     def _erreichbar(self, rest: set[str]) -> set[str]:
         start = [n for n in rest if n in self.boden]
@@ -346,14 +507,19 @@ class Planer:
                     start.append(m)
         return seen
 
-    def _getragen(self, rest: set[str]) -> bool:
-        """Bleibt nach dem Ausbau alles getragen, was im fertigen Modell getragen ist (Kontaktweg zum Boden)?"""
+    def _getragen_jetzt(self, uebrig: set[str]) -> set[str]:
+        """Was im aktuellen Stand getragen ist (Kontaktweg zum Boden) und es im fertigen Modell auch war."""
+        return self._erreichbar(uebrig) & self._getragen0
+
+    def _verlust(self, rest: set[str], jetzt: set[str]) -> int:
+        """Wie viele jetzt getragene Teile nach dem Ausbau nicht mehr getragen wären."""
         seen = self._erreichbar(rest)
-        return all(n in seen for n in rest if n in self._getragen0)
+        return sum(1 for n in rest if n in jetzt and n not in seen)
 
     def _auswahl(self, frei: list[tuple[Einheit, np.ndarray]], uebrig: set[str]) -> list[tuple[Einheit, np.ndarray]]:
         """Welche freien Einheiten in dieser Runde herauskommen: bevorzugt nach oben (Einbau von unten nach oben) und
-        so, dass der Rest getragen bleibt (eingebaut wird nur auf schon Getragenes). Geht das nicht, alle freien."""
+        so, dass getragen bleibt, was jetzt getragen ist (eingebaut wird nur auf schon Getragenes)."""
+        jetzt = self._getragen_jetzt(uebrig)
         oben = [(e, d) for e, d in frei if d[2] > 0.999]
         for kandidaten in (oben, frei):
             if not kandidaten:
@@ -362,12 +528,19 @@ class Planer:
             gewaehlt = []
             for e, d in kandidaten:
                 rest = aktuell - set(e.teile)
-                if self._getragen(rest):
+                if not self._verlust(rest, jetzt - set(e.teile)):
                     gewaehlt.append((e, d))
                     aktuell = rest
             if gewaehlt:
                 return gewaehlt
         return []
+
+    def _rueckfall(self, frei: list[tuple[Einheit, np.ndarray]], uebrig: set[str]) -> tuple[Einheit, np.ndarray]:
+        """Nichts lässt sich herausnehmen, ohne dass anderes den Halt verliert: die freie Einheit, die am wenigsten
+        Getragenes kostet, bevorzugt nach oben und weit oben liegend."""
+        jetzt = self._getragen_jetzt(uebrig)
+        return min(frei, key=lambda x: (self._verlust(uebrig - set(x[0].teile), jetzt - set(x[0].teile)),
+                                        x[1][2] <= 0.999, self._prio(x[0])))
 
     def _prio(self, e: Einheit) -> tuple:
         # oben liegende Teile zuerst (Ausbau von oben nach unten), dann Reihenfolge im Modell
@@ -401,7 +574,8 @@ class Planer:
                         "vor dem Schließen einsetzen und den Deckel lösbar verbinden.",
                         ort=(kp.bmin + kp.bmax) / 2))
                     huelle = next(x for x in einheiten if q in x.teile)
-                    return self._zusammen(einheiten, [e, huelle], automatisch=True, melden=False)
+                    return self._zusammen(einheiten, [huelle, e], name=f"{huelle.name} mit {kp.kurz}",
+                                          automatisch=True, melden=False)
         # 2. Paare, die sich berühren (Vormontage: Klemme mit ihrem Bolzen), kleinste zuerst
         kandidaten: list[tuple[int, float, str, list[Einheit]]] = []
         gesehen: set[tuple[str, ...]] = set()
@@ -513,11 +687,15 @@ class Planer:
             loesung = ("Lösbar konstruieren: Achse oder Bolzen als eigenes Teil, Teilung, Öffnung oder Spiel vorsehen, "
                        f"damit sich jedes Teil einzeln einsetzen lässt; nur wenn {name} fertig montiert geliefert "
                        f"wird: montage(\"{name}\", baugruppe=True).")
+        gruppe = _gemeinsame_gruppe(g.teile)
+        if gruppe and gruppe != name:
+            loesung = loesung.replace(f'montage("{name}", baugruppe=True)', f'montage("{gruppe}", baugruppe=True)')
         k0 = self.k[stecken[0]]
         self.befunde.append(befund(
             "nur_baugruppe", stecken, "fehler",
-            f"{liste} {'lässt' if len(stecken) == 1 else 'lassen'} sich einzeln nicht einbauen, nur zusammen als "
-            f"{name}" + (f". Blockiert – {' | '.join(hindernisse)}" if hindernisse else "") + ".",
+            f"{liste} {'lässt' if len(stecken) == 1 else 'lassen'} sich einzeln nicht einbauen, nur zusammen"
+            + (f" (in {gruppe})" if gruppe else f" als {name}")
+            + (f". Blockiert – {' | '.join(hindernisse)}" if hindernisse else "") + ".",
             loesung, wert={"gruppe": name, "teile_gruppe": len(g.teile), "sperren": sperren},
             ort=(k0.bmin + k0.bmax) / 2))
 
@@ -557,6 +735,19 @@ class Planer:
                               "Mit pruefen erneut prüfen; bei sehr vielen Teilen Baugruppen erklären "
                               "(montage(\"Gruppe\", baugruppe=True))."))
         return out
+
+
+def _gemeinsame_gruppe(namen: list[str]) -> str | None:
+    """Längster gemeinsamer Gruppenname im Namensbaum („Rollwagen/Lenkrolle 1“) oder None."""
+    teile = [n.split("/")[:-1] for n in namen]
+    if not teile or not all(teile):
+        return None
+    out = []
+    for stuecke in zip(*teile):
+        if len(set(stuecke)) != 1:
+            break
+        out.append(stuecke[0])
+    return "/".join(out) or None
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -623,10 +814,21 @@ def pruefe_montage(ctx: PruefKontext) -> list[dict[str, Any]]:
     boden = set(ctx.befestigt())
     if bz is not None:
         boden |= {n for n, k in ctx.koerper.items() if float(k.bmin[2]) <= float(bz) + BODEN_TOL}
-    planer = Planer(ctx.koerper, ausschluss=ctx.ausschluss() | _erlaubte_paare(ctx), nachgiebig=ctx.nachgiebig,
+    ausschluss = ctx.ausschluss() | _erlaubte_paare(ctx)
+    gewinde = {frozenset(g["teile"]): np.asarray(g["achse"], dtype=np.float64)
+               for g in ctx.ergebnis.get("gewinde") or [] if g.get("achse") is not None}
+    # Gleicher Stand wie zuletzt (Formen, Lagen, Erklärungen, Kontakte): ganzen Plan aus dem Zwischenspeicher
+    plan_key = ("plan", _plan_signatur(ctx, ausschluss, boden, gewinde))
+    alt = ctx.cache.get(plan_key)
+    if alt is not None:
+        befunde, montage = copy.deepcopy(alt)
+        ctx.ergebnis["montage"] = {**montage, "tests": 0, "aus_zwischenspeicher": True}
+        ctx.zeiten["montage"] = (time.perf_counter() - t0) * 1000
+        return befunde
+    planer = Planer(ctx.koerper, ausschluss=ausschluss, nachgiebig=ctx.nachgiebig,
                     erklaerungen=ctx.erklaerungen.get("montage") or [], kontakte=ctx.kontakte, cache=ctx.cache,
                     zeitlimit_s=float(ctx.optionen.get("zeitlimit_s") or 60), abbrechen=ctx.abbrechen,
-                    boden=boden or None)
+                    boden=boden or None, gewinde=gewinde)
     erg = planer.plane()
     ctx.zeiten["montage"] = (time.perf_counter() - t0) * 1000
     t1 = time.perf_counter()
@@ -649,7 +851,25 @@ def pruefe_montage(ctx: PruefKontext) -> list[dict[str, Any]]:
         "tests": erg.tests,
         "abgebrochen": erg.abgebrochen,
     }
-    return erg.befunde + wz_befunde
+    befunde = erg.befunde + wz_befunde
+    if not erg.abgebrochen:
+        ctx.cache.put(plan_key, copy.deepcopy((befunde, ctx.ergebnis["montage"])))
+    return befunde
+
+
+def _plan_signatur(ctx: PruefKontext, ausschluss: set[frozenset[str]], boden: set[str],
+                   gewinde: dict[frozenset[str], np.ndarray]) -> str:
+    import hashlib
+    import json
+
+    teile = sorted((n, k.form, np.round(k.lage[:3, :4], 4).ravel().tolist(),
+                    json.dumps({x: k.info.get(x) for x in ("art", "achse", "ursprung", "typ", "nachgiebig")},
+                               sort_keys=True, default=str)) for n, k in ctx.koerper.items())
+    roh = json.dumps([teile, ctx.erklaerungen.get("montage") or [], sorted(sorted(p) for p in ausschluss),
+                      sorted(boden), sorted(sorted(p) for p in ctx.kontakte),
+                      sorted([sorted(k), np.round(v, 4).tolist()] for k, v in gewinde.items())],
+                     sort_keys=True, default=str)
+    return hashlib.sha1(roh.encode("utf-8")).hexdigest()
 
 
 def _erlaubte_paare(ctx: PruefKontext) -> set[frozenset[str]]:

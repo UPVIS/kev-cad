@@ -27,7 +27,7 @@ import numpy as np
 from kevcad_kernel.pruefung import befund as bf
 from kevcad_kernel.pruefung.befund import NACHGIEBIG_ANTEIL, SPIEL_VORSCHLAG, befund, mm, punkt, richtung_text
 from kevcad_kernel.pruefung.koerper import Koerper
-from kevcad_kernel.pruefung.kollision import Paar, PaarCache, gewindeeingriff, pruefe_paar
+from kevcad_kernel.pruefung.kollision import Paar, PaarCache, gewinde as gewinde_von, pruefe_paar
 
 
 class Abgebrochen(Exception):
@@ -187,10 +187,11 @@ def pruefe_durchdringungen(ctx: PruefKontext) -> list[dict[str, Any]]:
         grund = ctx.erlaubt(a.name, b.name)
         if grund:
             continue  # erlaubt mit Grund: kein Befund (steht in der Liste „erlaubt“ des Ergebnisses)
-        gewinde = gewindeeingriff(a, b, p.netz[0]) if p.netz is not None else None
+        gewinde = gewinde_von(a, b, p.netz[0]) if p.netz is not None else None
         if gewinde:  # Schraube in Mutter oder Kernloch: die einzige Überlappung, die ohne Erklärung gilt
-            ctx.ergebnis.setdefault("gewinde", []).append({"teile": [a.name, b.name], "text": gewinde,
-                                                            "volumen": round(p.volumen, 3)})
+            ctx.ergebnis.setdefault("gewinde", []).append({"teile": [a.name, b.name], "text": gewinde[0],
+                                                            "volumen": round(p.volumen, 3),
+                                                            "achse": [round(float(c), 6) for c in gewinde[1]]})
             continue
         geo = None
         if p.netz is not None and len(p.netz[2]):

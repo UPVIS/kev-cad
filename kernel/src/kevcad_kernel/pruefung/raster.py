@@ -203,6 +203,43 @@ def blockiert(p: Koerper, q: Koerper, d: np.ndarray, tol: float = TOL) -> Sperre
     return Sperre(False, n, exakt=True)
 
 
+def _intervalle(ts: list[float], eps: float = 1e-6) -> list[tuple[float, float]]:
+    """Schnittparameter eines Strahls mit einem geschlossenen Körper → Materialintervalle (Eintritt, Austritt)."""
+    t: list[float] = []
+    for x in ts:
+        if not t or x - t[-1] > eps:
+            t.append(x)
+    return [(t[i], t[i + 1]) for i in range(0, len(t) - 1, 2)]
+
+
+def freier_weg(p: Koerper, q: Koerper, d: np.ndarray, n: int = 14, tol: float = TOL) -> float | None:
+    """Wie weit kann p entlang d rücken, bevor es q berührt? Exakt mit Strahlen gegen beide B-Reps an bis zu n × n
+    Stellen im Umriss von p: je Strahl die Materialabschnitte beider Teile, also auch bei Hohlkörpern und Taschen, die
+    zur Innenseite desselben Teils zeigen. None, wenn q nirgends vor p liegt."""
+    R = basis(d)
+    key = richtung_schluessel(R[2])
+    Pp, Pq = p.projektion(R, key), q.projektion(R, key)
+    box = _ueberlappung(Pp, Pq)
+    if box is None or Pq.w_max <= Pp.w_min:
+        return None
+    lo, hi = box
+    h = max(float(max(hi - lo)) / n, 1e-3)
+    g = Gitter(float(lo[0]), float(lo[1]), h, n, n)
+    belegt = rastern(Pp.uvw, p.tri, g, "max")
+    best = None
+    for i, j in zip(*np.nonzero(np.isfinite(belegt))):
+        u, v = g.mitte(i, j)
+        start = u * R[0] + v * R[1]
+        ip = _intervalle(p.strahl_alle(start, R[2]))
+        iq = _intervalle(q.strahl_alle(start, R[2]))
+        for a, b in ip:
+            for c, e in iq:
+                if c >= b - tol:  # q liegt vor diesem Abschnitt von p
+                    w = max(0.0, c - b)
+                    best = w if best is None else min(best, w)
+    return best
+
+
 def luecke(c: Koerper, q: Koerper, d: np.ndarray, tol: float = TOL) -> float | None:
     """Wie weit kann c entlang d rücken, bis es an q stößt? None, wenn q nicht im Weg liegt (Näherung: je Pixel die
     vordere Fläche von q, die ganz vor c liegt)."""

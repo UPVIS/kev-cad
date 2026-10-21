@@ -288,6 +288,12 @@ def gewindeeingriff(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> str | No
     Nenndurchmesser (Schraube, Gewindestange, Bolzen), und die Schnittmenge liegt ringsum diese Achse ganz im Band
     zwischen Kern- und Außendurchmesser (nur im Gewindebereich, radial nicht tiefer als die Gewindetiefe). Das trifft
     Schraube in Mutter und Schraube im Kern- oder Gewindeloch. Liefert eine Beschreibung oder None."""
+    g = gewinde(a, b, netz_punkte)
+    return g[0] if g else None
+
+
+def gewinde(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> tuple[str, np.ndarray] | None:
+    """Wie gewindeeingriff, dazu die Gewindeachse (Einheitsvektor): (Beschreibung, Achse) oder None."""
     if not len(netz_punkte):
         return None
     pts = np.asarray(netz_punkte, dtype=np.float64)
@@ -316,7 +322,7 @@ def gewindeeingriff(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> str | No
             # bloße Presspassung eines Rohrs oder Bolzens mit metrischem Durchmesser)
             if r.max() <= r_aussen + 0.02 and r_aussen - tiefe - 0.02 <= r.min() <= r_aussen - 0.5 * tiefe:
                 return (f"Gewindeeingriff M{nenn:g}: {s.kurz} in {andere.kurz} (radial "
-                        f"{r_aussen - r.min():.2f} von {tiefe:.2f} mm Gewindetiefe)")
+                        f"{r_aussen - r.min():.2f} von {tiefe:.2f} mm Gewindetiefe)"), ax
     return None
 
 
