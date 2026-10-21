@@ -157,6 +157,11 @@ Antwort: `ACK` mit `ok` und optional `message`.
 | `SCREENSHOT_RES` | `reply_to`, `ok`, `width`, `height`, `camera` (Objekt), `mm_per_px` (nur orthographisch, sonst null) | PNG |
 | `ACK` | `reply_to`, `ok`, `message` | – |
 
+## Bestand
+
+Bestand, Zuschnitt mit Resten, Einkaufsliste und die Nachrichten `BESTAND_REQ`, `BESTAND`, `BESTAND_SAVE`,
+`GEBAUT_REQ`, `BUCHUNG_RUECKGAENGIG` sind in [BESTAND.md](BESTAND.md) festgelegt.
+
 ## Phase 2: Lagerteile und Stückliste
 
 Rein additiv; ältere Gegenseiten ignorieren die neuen Felder und Typen.

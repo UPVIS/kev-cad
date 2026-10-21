@@ -89,6 +89,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `stangenlaenge` | nein | Standardlänge für den Zuschnitt (mm); Platten: `platte: [b, h]` statt dessen |
 | `preis` | nein | `je_m` (Stangenware), `je_m2` (Platten), `je_stueck` (Schrauben, Kleinteile) plus `quelle`, `stand` |
 | `tags` | nein | Suchbegriffe |
+| `bezugsquelle` | nein | `{"url", "name"}`: wo Kevin das Teil nachkauft; erscheint als Link in der Einkaufsliste (BESTAND.md) |
 
 ### Arten und ihre Maße
 

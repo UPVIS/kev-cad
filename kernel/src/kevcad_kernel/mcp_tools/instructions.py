@@ -99,6 +99,17 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 - `bom` shows positions, weight, guide prices and the cut list (3 mm saw kerf); `run` mentions the totals. \
 `export(["bom_csv"])` writes the CSV.
 
+Stock on hand and shopping list (Bestand, per project)
+- Each project has its own stock (bestand.json in the project folder): whole bars/sheets, offcuts with ids (R-0001, \
+P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it.
+- After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
+(optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
+offcuts remain. `einkaufsliste` lists what is missing with price, link and total (also as CSV).
+- `bestand_eintragen` only with what Kevin told you (quote him in grund), never guessed; repeat every listed change \
+to him. `gebaut_buchen` only when Kevin explicitly says the project is built. Every booking can be undone with \
+`buchung_rueckgaengig`.
+- Name the shopping list (or "nothing to buy") in your report to Kevin.
+
 Purchased parts (Zukaufteile)
 - Bought parts with manufacturer and number (drawer slides, hinges, castors, trolleys; cameras, lenses and camera \
 accessories have their own API, see Cameras) come from \
