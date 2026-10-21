@@ -172,13 +172,19 @@ Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist
 | `gtin` | nein | EAN/GTIN, 8 bis 14 Ziffern |
 | `url`, `bild` | nein | Produktseite und Bild |
 | `preis` | nein | `je_stueck`, `waehrung`, `brutto` (bool, wie im Shop angegeben), `stand` (Datum), `quelle` |
-| `masse` | ja | Hüllmaße in mm (`l`, `b`, `h` bzw. `d`, `l`); Grundlage für den Ersatzkörper und die Prüfung des Imports |
+| `masse` | ja | Hüllmaße in mm: `l`, `b`, `h` (Quader) bzw. `d` mit `l` oder `h` (rund); nur `d` steht für eine Kugel (Hüllmaß d × d × d). Grundlage für den Ersatzkörper und die Prüfung des Imports |
 | `gewicht` | nein | g; sonst aus Volumen × Dichte des Materials |
 | `material` | nein | `id` eines Materials, für Farbe und Masse |
-| `cad` | nein | `quelle` (`traceparts` \| `hersteller` \| `download` \| `bd_warehouse` \| `skript` \| `keins`), `datei` (relativ zum Ordner der Katalogdatei) oder bei `skript` `modul`/`datei` plus `funktion` wie bei den Kameras, `lizenz`, `stand`, optional `traceparts_id` |
-| `ersatz` | nein | `form` (`quader` \| `zylinder`) und `masse`; gilt, solange kein CAD da ist. Im Viewer halbtransparent, im Namen „(vereinfacht)“ |
-| `einbaupunkt` | nein | Ursprung und Ausrichtung des Teils in seinen lokalen Koordinaten (Standard: Mitte der Unterseite, Z oben) |
-| `bezugspunkte` | nein | benannte Punkte mit `pos`, `richtung`, `hinweis` im lokalen System, wie bei Kameras und Kamera-Zubehör |
+| `cad` | nein | `quelle` (`traceparts` \| `hersteller` \| `download` \| `bd_warehouse` \| `skript` \| `keins`), `datei` (relativ zum Ordner der Katalogdatei) oder bei `skript` `modul`/`datei` plus `funktion` wie bei den Kameras, bei `bd_warehouse` `klasse` (Modul.Klasse, z. B. `bearing.SingleRowDeepGrooveBallBearing`) und `parameter` (Objekt mit den Argumenten, z. B. `{"size": "M8-22-7", "bearing_type": "SKT"}`), `lizenz`, `stand`, optional `traceparts_id` |
+| `ersatz` | nein | `form` (`quader` \| `zylinder`) und `masse`, beim Zylinder optional `achse` (`x` \| `y` \| `z`, Standard `z`; liegende Zylinder liegen auf z = 0); gilt, solange kein CAD da ist. Im Viewer halbtransparent, im Namen „(vereinfacht)“ |
+| `einbaupunkt` | nein | Punkt (siehe unten) **im System der Quelle** (Hersteller-CAD, Skript, Ersatzkörper): wird beim Verbauen zum Ursprung, seine `richtung` zur +Z-Achse. Ohne Angabe: Mitte der Unterseite des Hüllquaders, Z oben |
+| `bezugspunkte` | nein | benannte Punkte (siehe unten) **im System des verbauten Teils**, also nach dem Einbaupunkt, damit `Pos(...) * teil.bezugspunkt("oben")` zum gezeigten Teil passt; Format wie bei Kameras und Kamera-Zubehör |
+
+Ein Punkt (Einbau- und Bezugspunkte) ist
+`{"pos": [x, y, z], "richtung": [x, y, z], "x_richtung": [x, y, z], "hinweis": "…"}` in mm: `pos` ist der Ursprung, `richtung` die lokale Z-Achse (Standard `[0, 0, 1]`, etwa Blickrichtung eines Bajonetts oder
+Normale einer Auflagefläche), `x_richtung` (optional, nicht parallel zu `richtung`) legt die Verdrehung um `richtung`
+fest; ohne sie gilt die X-Achse, die build123d für `Plane(z_dir=richtung)` wählt (bei `richtung` = Z ist das +X).
+Andere Felder sind bei Zukaufteilen nicht erlaubt (Prüfung und Location: `kevcad_kernel/bezugspunkte.py`).
 
 Inventar-Regel: Ein Zukaufteil aus dem Dialog „Zukaufteil hinzufügen …“ in der App legt Kevin selbst an, es ist sofort
 `frei`. Legt Claude es über MCP an, ist es `vorgeschlagen`, bis Kevin es im Lagerkatalog freigibt. Kameras, Objektive und
@@ -195,3 +201,11 @@ oben = wagen.bezugspunkt("oben")                           # Location für das P
 ```
 
 Stücklistenzeile `art: "zukaufteil"` mit Hersteller, Nummer, Stückpreis mit Datum, Link und CAD-Quelle.
+
+- `CATALOG.arten` (PROTOCOL.md) enthält `zukaufteil`; `stock_search` findet freigegebene Zukaufteile (art `zukaufteil`),
+  verbaut werden sie mit `lager.zukauf(id)`, nicht mit `lager.teil`.
+- Preise: Zukaufteile gehen mit dem Shoppreis in die Summe. Ist einer davon brutto, ergänzt `totals.preis_hinweis`
+  „Zukaufteile zum Shoppreis brutto“ (z. B. „Richtpreise, Stand 2026-10; Zukaufteile zum Shoppreis brutto“).
+- CSV (`bom_csv`): Zeilen von Zukaufteilen haben die Art „Zukaufteil“ bzw. „Zukaufteil (vereinfacht)“ und die
+  Zusatzspalten Hersteller, Herstellernummer, EAN, Link, Preisstand (Datum mit „brutto“ bzw. „netto“) und CAD
+  (Quelle bzw. „vereinfacht“); bei anderen Zeilen bleiben sie leer.
