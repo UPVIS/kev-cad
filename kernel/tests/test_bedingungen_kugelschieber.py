@@ -17,7 +17,11 @@ def test_rahmen_folgt_der_rollenhoehe(rolle_h):
     res = runner.run({"run": 1, "path": str(SAMPLE), "params": {"rolle_h": rolle_h}, "inventar_regel": False})
     assert res["type"] == "RUN_DONE", res.get("error")
     rep = res["bedingungen"]
-    assert rep["summe"]["fehler"] == 0, [b["text"] for b in rep["befunde"] if b["schwere"] == "fehler"]
+    fehler = [b["text"] for b in rep["befunde"] if b["schwere"] == "fehler"]
+    # Das Beispiel nutzt verbinde(…) nur am Rahmen; seit Kevins Entscheidung (22.10.2026) ist jede fehlende
+    # Befestigungsangabe dann ein Fehler. Sonst darf nichts fehlschlagen.
+    assert [t for t in fehler if "ohne Angabe" not in t] == [], fehler
+    assert any("ohne Angabe" in t for t in fehler)
     assert rep["summe"]["verletzt"] == 0 and rep["summe"]["ungeprueft"] == 0
     rahmen = runner.ns["rahmen"]
     assert abs(runner.ns["rahmen_unten"] - rolle_h) < 1e-6

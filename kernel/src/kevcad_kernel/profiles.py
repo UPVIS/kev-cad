@@ -20,6 +20,7 @@ ein Richtwert typischer Aluprofile (leicht 0,34 · Raster², schwer 0,45 · Rast
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any
 
@@ -261,8 +262,27 @@ def _subclasses(base) -> dict[str, Any]:
     return out
 
 
+# Normteile aus bd_warehouse sind teuer zu bauen (Gewindeeinsätze mit Rändel etwa 0,7 s je Stück) und in einem Modell
+# oft vielfach gleich; der Rechenprozess hält sie zwischen den Läufen und gibt flache Kopien aus (eigene Namen, Farben,
+# Joints, gemeinsame OCCT-Form, die sich nicht ändert).
+_FASTENER_CACHE: dict[tuple, Any] = {}
+_FASTENER_CACHE_MAX = 256
+
+
 def fastener(art: str, masse: dict[str, Any], laenge: float | None = None, simple: bool = True):
     """Schraube (mit Länge), Mutter oder Scheibe als build123d-Part, so ausgerichtet wie in bd_warehouse."""
+    key = (art, str(masse["typ"]), str(masse["groesse"]), str(masse["norm"]),
+           None if laenge is None else round(float(laenge), 6), bool(simple))
+    hit = _FASTENER_CACHE.get(key)
+    if hit is None:
+        hit = _build_fastener(art, masse, laenge, simple)
+        if len(_FASTENER_CACHE) >= _FASTENER_CACHE_MAX:
+            _FASTENER_CACHE.pop(next(iter(_FASTENER_CACHE)))
+        _FASTENER_CACHE[key] = hit
+    return copy.copy(hit)
+
+
+def _build_fastener(art: str, masse: dict[str, Any], laenge: float | None, simple: bool):
     cls = fastener_class(art, str(masse["typ"]))
     size, norm = str(masse["groesse"]), str(masse["norm"])
     if art == "schraube":
