@@ -1,13 +1,15 @@
-"""Durchdringungen in einem Projekt finden (Behelf, bis die Prüfung im Kernel bei jedem Lauf mitläuft).
+"""Durchdringungen in einem Projekt finden, mit derselben Prüfung wie bei jedem Lauf.
 
 Rechnet das Projekt auf einer Kopie in einer eigenen Kernel-Laufzeit (das Original und die laufende App bleiben
-unberührt), nimmt die exakten Formen aller gezeigten Teile und prüft jedes Paar: Vorfilter über die Hüllquader, dann
-das Schnittvolumen mit OCCT. Berühren ist erlaubt; gemeldet wird jedes Paar mit Schnittvolumen über der Schwelle, mit
-Volumen, Ausdehnung und Mittelpunkt der Überlappung.
+unberührt) und nimmt das Ergebnis der eingebauten Prüfung (``kevcad_kernel.pruefung``): dieselbe Kollisionsfunktion,
+dieselben Schwellen (Schnittvolumen über 0,001 mm³ und Tiefe über 0,01 mm, Berühren ist erlaubt), derselbe
+Gewindeeingriff (Schraube in Mutter, Einsatz oder Kernloch, metrisch und UNC/UNF) und dieselben Erklärungen aus
+model.py (``erlaubt_ueberlappung``). Das Werkzeug meldet also genau, was auch ``run`` meldet, nur ohne App.
 
 Mit `--kontakte` zusätzlich der Kontaktgraph: Teile ohne jeden Kontakt und Gruppen ohne Verbindung zum Boden (schweben).
+Mit `--gewinde` die erkannten Gewindeeingriffe und erlaubten Überlappungen einzeln.
 
-Aufruf:  .venv/bin/python tools/check_interference.py <Projektordner> [--kontakte] [--schwelle 0.001] [--json]
+Aufruf:  .venv/bin/python tools/check_interference.py <Projektordner> [--kontakte] [--gewinde] [--json]
 Exit-Code 1, wenn es Durchdringungen oder schwebende Teile gibt.
 """
 
@@ -20,6 +22,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -29,7 +32,7 @@ from app_testutil import FakeApp  # noqa: E402
 from build123d import Shape  # noqa: E402
 from kevcad_kernel.runtime import KernelRuntime  # noqa: E402
 
-KLEINTEIL = ("schraube", "scheibe", "mutter", "bolzen", "stift", "niete", "m3", "m4", "m5", "m6", "m8", "m10", "m12")
+PRUEF_WARTEN_S = 900.0  # so lange wird auf die Prüfung nach dem Lauf gewartet
 
 
 def overlaps(a, b, tol: float = 1e-6) -> bool:
@@ -37,13 +40,15 @@ def overlaps(a, b, tol: float = 1e-6) -> bool:
     return all(amin[i] < bmax[i] - tol and bmin[i] < amax[i] - tol for i in range(3))
 
 
-def load_shapes(project: Path) -> dict[str, Shape]:
-    """Projekt auf einer Kopie in einer eigenen Laufzeit rechnen und die exakten Formen aller gezeigten Teile holen."""
+def load_project(project: Path) -> tuple[dict[str, Shape], dict[str, Any]]:
+    """Projekt auf einer Kopie in einer eigenen Laufzeit rechnen: (exakte Formen aller gezeigten Teile, Ergebnis der
+    eingebauten Prüfung wie im Ergebnis von ``run``)."""
     tmp = Path(tempfile.mkdtemp(prefix="kcint", dir="/tmp"))
     copy = tmp / project.name
     shutil.copytree(project, copy, ignore=shutil.ignore_patterns(".kevcad", "output", "__pycache__"))
     sock = str(tmp / "k.sock")
     rt = KernelRuntime(sock, 0, auto_run=False, run_timeout_s=300)
+    rt.pruef_warten_s = PRUEF_WARTEN_S
     try:
         if not rt.wait_worker_ready(240):
             raise RuntimeError("Rechenprozess nicht bereit")
@@ -56,11 +61,17 @@ def load_shapes(project: Path) -> dict[str, Shape]:
             raise RuntimeError(f"Lauf fehlgeschlagen: {res.get('error')}")
         records = rt.scene.records()
         shapes = {r.name: Shape.cast(r.shape) if not isinstance(r.shape, Shape) else r.shape for r in records}
+        pruefung = dict(res.get("pruefung") or {})
         app.close()
     finally:
         rt.close()
         shutil.rmtree(tmp, ignore_errors=True)
-    return shapes
+    return shapes, pruefung
+
+
+def load_shapes(project: Path) -> dict[str, Shape]:
+    """Nur die Formen (für check_motion.py)."""
+    return load_project(project)[0]
 
 
 def near(a, b, tol: float) -> bool:
@@ -80,7 +91,7 @@ def contacts(shapes: dict, boxes: dict, tol: float, intersecting: set) -> dict:
         for b in names[i + 1:]:
             if not near(boxes[a], boxes[b], tol):
                 continue
-            if (a, b) in intersecting or shapes[a].distance_to(shapes[b]) <= tol:
+            if (a, b) in intersecting or (b, a) in intersecting or shapes[a].distance_to(shapes[b]) <= tol:
                 graph[a].add(b)
                 graph[b].add(a)
     seen: set = set()
@@ -103,31 +114,35 @@ def contacts(shapes: dict, boxes: dict, tol: float, intersecting: set) -> dict:
             "schwebende_gruppen": floating}
 
 
-def check(project: Path, threshold: float, kontakt_tol: float | None = None) -> dict:
-    shapes = load_shapes(project)
+def auswerten(pruefung: dict[str, Any]) -> dict[str, Any]:
+    """Durchdringungen, nachgiebige Verformungen, Gewindeeingriffe und erlaubte Überlappungen aus dem Ergebnis der
+    eingebauten Prüfung (``run``-Ergebnis, Feld ``pruefung``)."""
+    if pruefung.get("state") != "done":
+        raise RuntimeError(f"Prüfung nicht fertig ({pruefung.get('state')}): {pruefung.get('message') or ''}")
+
+    def eintrag(b: dict[str, Any]) -> dict[str, Any]:
+        w = b.get("wert") or {}
+        return {"teile": list(b["teile"][:2]), "volumen_mm3": w.get("volumen"), "tiefe_mm": w.get("tiefe"),
+                "ort": b.get("ort"), "schwere": b.get("schwere"), "text": b.get("text"), "loesung": b.get("loesung")}
+
+    befunde = pruefung.get("befunde") or []
+    durch = sorted((eintrag(b) for b in befunde if b.get("art") == "durchdringung"),
+                   key=lambda f: -(f["volumen_mm3"] or 0.0))
+    verformt = [eintrag(b) for b in befunde if b.get("art") == "verformt"]
+    stat = pruefung.get("statistik") or {}
+    return {"teile": stat.get("teile"), "paare_geprueft": (stat.get("paare") or {}).get("geprueft"),
+            "durchdringungen": durch, "verformt": verformt, "gewinde": list(pruefung.get("gewinde") or []),
+            "erlaubt": list(pruefung.get("erlaubt") or []), "zusammenfassung": pruefung.get("zusammenfassung") or "",
+            "pruef_ms": pruefung.get("duration_ms")}
+
+
+def check(project: Path, kontakt_tol: float | None = None) -> dict:
     t0 = time.perf_counter()
-    names = sorted(shapes)
-    boxes = {n: shapes[n].bounding_box() for n in names}
-    befunde = []
-    candidates = 0
-    for i, a in enumerate(names):
-        for b in names[i + 1:]:
-            if not overlaps(boxes[a], boxes[b]):
-                continue
-            candidates += 1
-            common = shapes[a] & shapes[b]
-            vol = common.volume if common is not None else 0.0
-            if vol > threshold:
-                bb = common.bounding_box()
-                klein = any(k in (a + " " + b).lower() for k in KLEINTEIL)
-                befunde.append({"teile": [a, b], "volumen_mm3": round(vol, 4),
-                                "ausdehnung_mm": [round(bb.size.X, 3), round(bb.size.Y, 3), round(bb.size.Z, 3)],
-                                "mitte": [round(bb.center().X, 2), round(bb.center().Y, 2), round(bb.center().Z, 2)],
-                                "verbindungselement": klein})
-    befunde.sort(key=lambda f: -f["volumen_mm3"])
-    out = {"teile": len(names), "paare_geprueft": candidates, "durchdringungen": befunde}
+    shapes, pruefung = load_project(project)
+    out = auswerten(pruefung)
     if kontakt_tol is not None:
-        out["kontakte"] = contacts(shapes, boxes, kontakt_tol, {tuple(f["teile"]) for f in befunde})
+        boxes = {n: shapes[n].bounding_box() for n in shapes}
+        out["kontakte"] = contacts(shapes, boxes, kontakt_tol, {tuple(f["teile"]) for f in out["durchdringungen"]})
     out["dauer_s"] = round(time.perf_counter() - t0, 2)
     return out
 
@@ -135,21 +150,30 @@ def check(project: Path, threshold: float, kontakt_tol: float | None = None) -> 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("project", type=Path)
-    ap.add_argument("--schwelle", type=float, default=0.001, help="kleinstes gemeldetes Schnittvolumen in mm³")
     ap.add_argument("--kontakte", nargs="?", const=0.5, type=float, metavar="TOL",
                     help="zusätzlich Kontaktgraph: Teile ohne Kontakt und schwebende Gruppen (Toleranz mm, Standard 0,5: Spielpassungen zählen als Verbindung)")
+    ap.add_argument("--gewinde", action="store_true", help="Gewindeeingriffe und erlaubte Überlappungen einzeln zeigen")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
-    out = check(args.project.resolve(), args.schwelle, args.kontakte)
+    out = check(args.project.resolve(), args.kontakte)
     if args.json:
         print(json.dumps(out, ensure_ascii=False, indent=1))
     else:
-        print(f"{out['teile']} Teile, {out['paare_geprueft']} Paare mit überlappenden Hüllquadern, "
-              f"{len(out['durchdringungen'])} Durchdringungen ({out['dauer_s']} s)")
+        print(f"{out['teile']} Teile, {out['paare_geprueft']} Paare mit Kontakt oder Überlappung, "
+              f"{len(out['durchdringungen'])} Durchdringungen, {len(out['gewinde'])} Gewindeeingriffe, "
+              f"{len(out['erlaubt'])} erlaubte Überlappungen (eingebaute Prüfung, {out['dauer_s']} s)")
         for f in out["durchdringungen"]:
             a, b = f["teile"]
-            sx, sy, sz = f["ausdehnung_mm"]
-            print(f"- {a} ↔ {b}: {f['volumen_mm3']:.3f} mm³, Ausdehnung {sx} × {sy} × {sz} mm, Mitte {f['mitte']}")
+            print(f"- {a} ↔ {b}: {f['volumen_mm3']} mm³, Tiefe {f['tiefe_mm']} mm, bei {f['ort']}")
+            if f.get("loesung"):
+                print(f"  Lösung: {f['loesung']}")
+        for f in out["verformt"]:
+            print(f"- nachgiebig ({f['schwere']}): {f['text']}")
+        if args.gewinde:
+            for g in out["gewinde"]:
+                print(f"- Gewinde: {g.get('text')}")
+            for e in out["erlaubt"]:
+                print(f"- erlaubt: {' ↔ '.join(e.get('teile') or [])} ({e.get('grund')})")
         k = out.get("kontakte")
         if k is not None:
             print(f"Boden bei z = {k['boden_z']} mm, {len(k['auf_dem_boden'])} Teile stehen darauf")

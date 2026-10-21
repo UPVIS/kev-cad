@@ -101,6 +101,18 @@ def run_motion(shapes: dict, spec: dict, threshold: float) -> dict:
     rest = 0.0 if min(von, bis) <= 0.0 <= max(von, bis) else von
     if all(abs(von + (bis - von) * k / steps - rest) > 1e-9 for k in range(steps + 1)):
         rest = von
+    # Paare, die schon in der Ausgangslage im Gewinde greifen, blockieren eine Bewegung entlang bzw. um die
+    # Gewindeachse nicht (herausdrehen), wie die Prüfung des Bewegungsraums bei jedem Lauf
+    from kevcad_kernel.pruefung.kollision import im_gewinde
+
+    gewinde = []
+    for (mn, sn), values in list(hits.items()):
+        if not any(abs(v - rest) < 1e-9 for v, _ in values):
+            continue
+        g = im_gewinde(moving[mn], static[sn], name_a=mn, name_b=sn)
+        if g is not None and g.entlang(list(direction), list(pivot), drehen=art == "drehen"):
+            del hits[(mn, sn)]
+            gewinde.append({"teile": [mn, sn], "text": g.text})
     for (mn, sn), values in sorted(hits.items()):
         ranges: list[list[float]] = []
         for value, _ in values:
@@ -123,7 +135,8 @@ def run_motion(shapes: dict, spec: dict, threshold: float) -> dict:
         frei.append([round(cursor, 2), round(bis, 2)])
     return {"name": spec.get("name") or ", ".join(teile), "art": art, "frei": frei, "punkt": [round(v, 3) for v in pivot],
             "richtung": [round(v, 4) for v in direction], "von": von, "bis": bis, "schritte": steps,
-            "bewegte_teile": len(moving), "dauer_s": round(time.perf_counter() - t0, 2), "kollisionen": befunde}
+            "bewegte_teile": len(moving), "dauer_s": round(time.perf_counter() - t0, 2), "kollisionen": befunde,
+            "gewinde": gewinde}
 
 
 def main() -> int:
@@ -176,6 +189,8 @@ def main() -> int:
                 ruhe = " (schon in Ruhelage)" if c["schon_in_ruhe"] else ""
                 print(f"- {c['bewegt']} ↔ {c['gegen']}: bei {ber}, max. {c['max_volumen_mm3']:.3f} mm³ "
                       f"bei {c['bei']:g}{unit}{ruhe}")
+            for g in r.get("gewinde") or []:
+                print(f"- kein Hindernis, greift im Gewinde und dreht heraus: {g['text']}")
     return 1 if any(r["kollisionen"] for r in results) else 0
 
 

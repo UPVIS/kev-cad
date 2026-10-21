@@ -48,6 +48,7 @@ Emit = Callable[[dict[str, Any], bytes], None]
 
 SKETCH_PREFIX = "Skizze/"
 SKETCH_COLOR = (0.35, 0.66, 0.90, 0.5)
+KULISSE_COLOR = (0.80, 0.79, 0.76, 1.0)  # Kulisse ohne eigene Farbe: zurückhaltendes Hellgrau
 MAX_STDOUT = 20_000
 MAX_WARNINGS = 30
 
@@ -479,7 +480,10 @@ class Runner:
                  sketch: bool, state: dict[str, Any], catalog: Catalog | None = None,
                  register: LagerRegister | None = None, strict: bool = False,
                  kameras: KameraRegister | None = None, sammlung: Any = None) -> None:
-        def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None) -> None:
+        def show(obj: Any, name: str | None = None, color: Any = None, material: Any = None,
+                 kulisse: bool = False) -> None:
+            # Kulisse (show(..., kulisse=True) oder lager.kulisse): Umgebung ohne Stückliste und Inventar-Regel
+            kulisse = bool(kulisse) or bool(getattr(_as_shape(obj), "kevcad_kulisse", False))
             if name is None or not str(name).strip():
                 label = getattr(_as_shape(obj), "label", "") or ""
                 name = label or f"Teil {len(state['shown']) + 1}"
@@ -495,7 +499,7 @@ class Runner:
                     state["warnings"].append(f"{name}: {exc}")
             explicit = None
             if material is not None:
-                if strict:
+                if strict and not kulisse:
                     explicit = material_info(material, catalog, strict=True)  # Fehler bricht den Lauf hier ab
                 else:
                     try:
@@ -505,7 +509,7 @@ class Runner:
             for part_name, shape, is_child in split_parts(obj, name):
                 self._show_part(part_name, shape, is_child, explicit_color, explicit, run=run, deviation=deviation,
                                 angular=angular, sketch=sketch, state=state, catalog=catalog, register=register,
-                                strict=strict)
+                                strict=strict, kulisse=kulisse or bool(getattr(shape, "kevcad_kulisse", False)))
                 if slow_ms > 0:
                     time.sleep(slow_ms / 1000.0)
 
@@ -579,12 +583,13 @@ class Runner:
     def _show_part(self, name: str, shape: Shape, is_child: bool, explicit_color, explicit: MatInfo | None, *,
                    run: int, deviation: float, angular: float, sketch: bool, state: dict[str, Any],
                    catalog: Catalog | None = None, register: LagerRegister | None = None,
-                   strict: bool = False) -> None:
+                   strict: bool = False, kulisse: bool = False) -> None:
         if _is_empty(shape):
             state["warnings"].append(f"{name}: leere Form, nicht gezeigt")
             return
-        # Lagerteile zu diesem Teil (Name wie in verbauen, sonst Form, sonst label)
-        pieces = register.link(name, shape) if register is not None and not sketch else []
+        kulisse = kulisse and not sketch
+        # Lagerteile zu diesem Teil (Name wie in verbauen, sonst Form, sonst label); Kulisse hat keine
+        pieces = register.link(name, shape) if register is not None and not sketch and not kulisse else []
         single = pieces[0] if len({p.seq for p in pieces}) == 1 else None
         if single is not None and single.art == "zukaufteil" and (single.zukauf or {}).get("cad") == "vereinfacht" \
                 and "(vereinfacht)" not in name:
@@ -598,7 +603,7 @@ class Runner:
         # Material: bei Unterteilen zuerst das eigene (build123d, auch vom Eltern-Compound geerbt), sonst show(material);
         # danach das Material des Lagerteils
         own = None
-        if not strict:  # mit Inventar-Regel zählen nur Katalogmaterialien, nicht die von build123d
+        if not strict or kulisse:  # mit Inventar-Regel zählen nur Katalogmaterialien (außer bei der Kulisse)
             try:
                 own_fm = shape.material
                 own = material_info(own_fm, catalog) if own_fm is not None else None
@@ -624,7 +629,7 @@ class Runner:
         if color is None and mat is not None:
             color = mat.color
         if color is None:
-            color = SKETCH_COLOR if sketch else palette_color(name)
+            color = SKETCH_COLOR if sketch else KULISSE_COLOR if kulisse else palette_color(name)
         if sketch:
             color = (color[0], color[1], color[2], 0.5)
 
@@ -644,9 +649,14 @@ class Runner:
                 header["stock"] = pieces[0].stock_info()
             elif pieces[0].art == "druckteil":
                 header["druckteil"] = pieces[0].druck_info()
-        if strict and not sketch:
+        if kulisse:  # Umgebung: keine Stückliste, keine Inventar-Regel (PROTOCOL.md, PART_UPSERT.kulisse)
+            header["kulisse"] = True
+            state.setdefault("kulisse", set()).add(name)
+        elif name in state.get("kulisse", ()):
+            state["kulisse"].discard(name)
+        if strict and not sketch and not kulisse:
             header["inventar"] = "ok" if pieces else "fehlt"
-        if not sketch:
+        if not sketch and not kulisse:
             entry = mat.entry if mat is not None else None
             lo, hi = tess.bbox.get("min", [0, 0, 0]), tess.bbox.get("max", [0, 0, 0])
             state["bom_parts"][name] = ShownPart(
@@ -663,7 +673,7 @@ class Runner:
             state.setdefault("locations", {})[name] = location_of(shape)
             state.setdefault("tokens", {})[name] = getattr(shape, "lager_token", None)
         if self._erfassung is not None and not sketch:
-            self._erfassung.teil(name, shape, mat, pieces, catalog, tess=tess, props=props)
+            self._erfassung.teil(name, shape, mat, pieces, catalog, tess=tess, props=props, kulisse=kulisse)
         if name in state["shown"]:
             state["shown"].remove(name)
         state["shown"].append(name)
@@ -778,6 +788,8 @@ class Runner:
             parts = [state["bom_parts"][n] for n in state["shown"] if n in state["bom_parts"]]
             result["inventar_regel"] = strict
             result["inventar_verstoesse"] = [sp.name for sp in parts if not sp.pieces] if strict else []
+            if state.get("kulisse"):  # Umgebung, weder Stückliste noch Inventar-Regel
+                result["kulisse"] = [n for n in state["shown"] if n in state["kulisse"]]
             try:
                 result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen

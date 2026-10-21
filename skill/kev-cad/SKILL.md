@@ -28,7 +28,12 @@ melden:
 - **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
   Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
   Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
-  Gewindeeingriff (Schraube in Mutter oder Kern-/Gewindeloch, gleiche Achse, nur im Gewindeband).
+  Gewindeeingriff (Schraube in Mutter, Einsatz oder Kern-/Gewindeloch, gleiche Achse, nur im Gewindeband), metrisch
+  und Zoll (UNC/UNF, etwa 1/4"-20 und 3/8"-16 an Kameras und Stativen). Innengewinde dafür als Kernloch modellieren
+  (M4 3,3, M6 5,0, 1/4"-20 5,1, 3/8"-16 7,94; Tabelle unten). Ohne App:
+  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py
+  "<Projektordner>" [--kontakte] [--gewinde]` rechnet eine Kopie mit genau dieser Prüfung (gleiche Schwellen,
+  Gewindeeingriff, `erlaubt_ueberlappung`).
 - Befunde kommen als isError mit Ort, Volumen, Tiefe und einer Lösung je Befund. Kevin sieht die Teile rot und das
   Schnittvolumen als roten Körper; Export ist gesperrt, bis alles behoben ist.
 - **Beheben, nicht wegerklären:** Spiel oder Bohrung vorsehen, Teil verschieben, Maß korrigieren, dann wieder `run`.
@@ -53,7 +58,9 @@ melden:
 - **Bewegungsraum:** Alles, was man bedient oder was sich bewegt (Hebel, Klappen, Griffe, Schlitten, Räder, Lenkrollen),
   muss seinen ganzen Weg ohne Kollision schaffen, mit Platz für Finger und Werkzeug. Die Quelle sind die **Gelenke in
   model.py** mit `bereich=…` und `bedienung=…` (Kevin, 22.10.2026); `run` prüft sie bei jedem Lauf (Befunde
-  „Bewegungsraum“ mit freiem Bereich). `<projekt>/bewegungen.json` gilt nur noch für Teile ohne Gelenk. Zum Ausloten
+  „Bewegungsraum“ mit freiem Bereich). Was schon in der Ausgangslage im Gewinde greift, sperrt den Weg entlang bzw. um
+  die Gewindeachse nicht (herausdrehen), quer dazu schon. Ein unveränderter Stand kommt aus dem Zwischenspeicher, bei
+  Änderungen rechnen nur die betroffenen Gelenke neu. `<projekt>/bewegungen.json` gilt nur noch für Teile ohne Gelenk. Zum Ausloten
   weiter Bereiche einmalig `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python
   tools/check_motion.py "<Projektordner>" --teile … --drehen …`. Reicht der freie Bereich nicht für die Bedienung, wird
   umkonstruiert, nicht der Bereich verkleinert. Hat das Projekt eine Animation, zusätzlich `kollision_pruefen(name)`
@@ -81,8 +88,11 @@ Einführrichtung je Teil (`montage_reihenfolge`; Kevin sieht sie im Prüfband un
 - **Unlösbares vermeiden:** Bolzen mit zwei Köpfen aus einem Stück, Ringe auf Achsen ohne Ende, Klemmbolzen, deren
   Kopf und Zunge beide nicht durch die Bohrung passen: lösbar konstruieren (Achse als eigenes Teil, Sicherungsring,
   Teilung).
+- **Zukaufteile** kommen fertig montiert: Alle gezeigten Teile derselben Zukauf-Instanz (eine Stücklistenzeile, etwa
+  Rahmen und Lenkrollen aus `lager.zukauf("alutec-05200").verbauen("Rollwagen")`) sind automatisch eine Baugruppe.
+  Erklärte und gelieferte Baugruppen zählen auch in der übergeordneten Gruppe als ein Körper.
 - **Befunde beheben statt wegerklären.** Erklärungen nur, wo sie stimmen, und im Code kommentiert:
-  `montage("Rollwagen/Lenkrolle 1", baugruppe=True)` für Zukaufteile, die fertig montiert geliefert werden;
+  `montage("Rollwagen/Lenkrolle 1", baugruppe=True)` für Teile, die fertig montiert geliefert werden;
   `montage(clip, schnappt=True)` für Schnappverbindungen; `montage(mutter, eingedruckt=True)` für Muttern, die beim
   Druck eingelegt werden (Druckpause); `montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")` für Richtung,
   Reihenfolge und Werkzeug eigener Teile.
@@ -115,7 +125,11 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
 
 - **Bezüge** über Namen, nie über Flächennummern: als Tupel `(teil, "unten")` oder `bed.bezug(teil, …)` mit
   `oben`/`unten` (±Z), `rechts`/`links` (±X), `hinten`/`vorn` (±Y, vorn = −Y), `mitte`, `schwerpunkt`, `achse`
-  (größter Zylinder), `achse_x/y/z`, `bohrung` (mit `nahe=(x, y, z)`), `teil`; eigene Auswahl
+  (größter Zylinder), `achse_x/y/z`, `bohrung` (mit `nahe=(x, y, z)`), `teil`; **Richtung einer Bohrung:** aus dem
+  Loch heraus durch seine Öffnung (Sackloch), bei Durchgangsbohrungen in die positive Hauptrichtung (+Z, +X, +Y);
+  `richtung="-x"` oder `(dx, dy, dz)` legt sie bei jedem Bezug mit Achse oder Normale fest, z. B.
+  `bed.bezug(halter, "bohrung", nahe=p, richtung="+x")`. Gelenke zählen `bereich` und `weg` entlang der Richtung des
+  **festen** (zweiten) Bezugs, also dort `richtung=` setzen, wenn + in eine bestimmte Richtung zeigen soll; eigene Auswahl
   `bed.bezug(teil, "Auflage", teil.faces().sort_by(Axis.Z)[0])` oder `lambda t: …`, dazu `Plane`, `Axis`, `Location`
   und Bezugspunkte aus dem Katalog; Teile auch über ihren Namen aus `show()` (`bed.verbinde("Gestell/Bein 1", …)`).
   `bed.boden` ist die Ebene z = 0. **Der erste Bezug gehört zum Teil, das sich anpasst** (bei `platziere` das bewegte).
@@ -127,12 +141,21 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
 - **Gelenke** (Grundlage build123d-Joints, Freiheitsgrade für Animation und Prüfung): `drehgelenk(achse_bewegt,
   achse_fest, winkel=0, bereich=(min, max))`, `schiebegelenk(…, weg=0, bereich=…)`, `zylindergelenk`, `kugelgelenk`,
   `fest`. Mit `bereich` prüft jeder Lauf den ganzen Weg auf Kollision (`mitbewegt=[…]` für Teile, die mitfahren,
-  `ignorieren=[…]`); Bedienteile mit `bedienung="finger" | "hand" | "werkzeug"` oder `freiraum=mm` am `griff`.
+  `ignorieren=[…]`); Bedienteile mit `bedienung="finger" | "hand" | "werkzeug" | "fluegel"` oder `freiraum=mm` am
+  `griff`. Hebel und Klappen prüfen den Freiraum am Griffpunkt über den Weg (finger 15, hand 25, werkzeug 10 mm). Teile,
+  die um ihre eigene Achse gedreht werden (Flügelmutter, Flügelschraube, Drehknopf: `bedienung="fluegel"`, 10 mm; bei
+  `"finger"`/`"hand"` ohne `griff` automatisch, wenn der Schwerpunkt auf der Drehachse liegt), prüfen den **Griffraum**:
+  einen Ring um die Drehachse über der Auflage, bis Flügelspitze plus Freiraum, also nur auf der Griffseite. Beispiel:
+  `bed.drehgelenk(achse("Flügelmutter M4"), achse("Gewindestift M4x30"), bereich=(0, 180), bedienung="fluegel")`.
   `gelenk.fuer_animation()` liefert Art, Achse und Grenzen für `animation.gelenk`.
 - **Befestigung (B9):** jedes Teil `bed.verbinde(a, b, art="schraube" | "klemmung" | "steck" | "formschluss" |
   "kleben" | "aufliegen", mit=[schraube, mutter, scheibe])`. Geprüft wird, dass es die Verbindung wirklich gibt
   (Kontakt bzw. Spielpassung bis 0,5 mm; bei Schrauben fluchtende Bohrungen in beiden Teilen, Kopf und Mutter liegen
   auf) und dass alle Teile über Verbindungen am Boden hängen. Gelenke, `in_bohrung` und `auf` von oben zählen mit.
+  In `mit=[…]` ordnet die Prüfung Schraube, Mutter, Scheibe und Gewindeeinsatz nach dem Lagerteil (`art`, `typ`) zu,
+  sonst nach der Form: ein Ring mit Innenbohrung ist nie eine Schraube. Selbst gebaute Normteile deshalb mit
+  `form.lagerteil = lager.teil("…")` kennzeichnen, wenn es sie im Katalog gibt. Zollgewinde (`1/4-20`, `3/8"-16 UNC`)
+  gelten wie metrische.
   Kevin, 22.10.2026: Solange ein Modell kein `verbinde` nutzt, ist fehlende Befestigung nur ein Hinweis; sobald es
   `verbinde` nutzt, ist jede fehlende Angabe ein Fehler mit Exportsperre. Bei neuen Modellen gleich alles verbinden.
 - **Bewegungen:** Die Gelenke in model.py sind die Quelle dafür, was sich wie bewegt (Bereich, Bedienung,
@@ -241,6 +264,13 @@ Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
 - Verstöße: `run` meldet „Inventar-Regel: 2 Teile sind nicht aus dem Inventar: …“ als isError. Die Geometrie ist zu
   sehen, aber Export (STEP, STL, 3MF, Stückliste) wird verweigert. Passendes Lagerteil verbauen, als Druckteil
   kennzeichnen oder Kevin bitten, das Lagerteil anzulegen.
+- **Kulisse** (Kevin, 22.10.2026): Umgebung nur für Bilder und Videos, die weder gekauft noch gebaut wird (gekachelter
+  Boden, Wand, Tisch, Straße): `show(form, "Kulisse/Boden", color="#D9D6CF", kulisse=True)` oder
+  `show(lager.kulisse(form, "Kulisse/Wand"), "Kulisse/Wand")`. Ausgenommen von Stückliste, Inventar-Regel (Material
+  frei), Druckprüfung, Befestigung (`verbinde`) und Einbaubarkeit; weiter erfasst bei der Durchdringung (nichts steckt
+  im Boden) und als Auflage: was auf einer Kulisse steht, steht auf dem Boden (Schweben, Standsicherheit). Namen unter
+  „Kulisse/“, dann lässt sich die Gruppe im Viewer ausblenden; ohne Farbe kommt sie hellgrau. **Nur für Umgebung, nie
+  für echte Teile des Entwurfs.**
 - Abschalten kann nur Kevin, je Projekt (kevcad.json `"inventar_regel": false`, etwa für Nachbauten aus Fotos). Diese
   Einstellung nie selbst ändern. Ist die Regel aus, gelten auch Materialnamen aus build123d (`aluminum`, `oak`, …) und
   frei modellierte Teile mit Material erscheinen als „Eigenteil“.
@@ -289,7 +319,8 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 |---|---|
 | `param(name, wert, min=None, max=None)` | benannter Parameter (mm). Liefert den Vorgabewert oder den Wert aus `run(params={"breite": 140})`. Alle Parameter oben in der Datei. |
 | `step("Bohrungen")` | Bauschritt, erscheint in Kevins Statusleiste. Vor jedem Schritt aufrufen. |
-| `show(obj, name, color=None, material=None)` | zeigt Part, Compound, Sketch, Kanten oder ein Builder-Ergebnis (`bp.part`) sofort an. Gleicher Name ersetzt. `/` im Namen bildet den Baum. |
+| `show(obj, name, color=None, material=None, kulisse=False)` | zeigt Part, Compound, Sketch, Kanten oder ein Builder-Ergebnis (`bp.part`) sofort an. Gleicher Name ersetzt. `/` im Namen bildet den Baum. `kulisse=True`: Umgebung (siehe „Inventar-Regel“, Kulisse). |
+| `lager.kulisse(form, name=None)` | kennzeichnet eine Form als Kulisse (gleich wie `show(..., kulisse=True)`). |
 | `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
@@ -482,6 +513,17 @@ für Bohrungen auf einer Fläche. Ergebnis eines Builders ist `bp.part`, nicht `
 | M6 | 6,6 | 5,0 | 11 × 6,4 | 13,4 |
 | M8 | 9,0 | 6,8 | 15 × 8,6 | 17,9 |
 | M10 | 11,0 | 8,5 | 18 × 10,6 | 22,4 |
+
+Zollgewinde (ASME B1.1; Kernloch 75 % und Durchgang „free fit“ der üblichen Bohrtabelle), Größe im Lagerteil z. B.
+`"1/4-20"`, `"3/8-16 UNC"`, `"#10-24"`:
+
+| Gewinde | Nenn-Ø | Steigung | Kernloch | Durchgang |
+|---|---|---|---|---|
+| #10-24 UNC | 4,83 | 1,06 | 3,8 | 5,1 |
+| 1/4"-20 UNC (Kamera, Stativ) | 6,35 | 1,27 | 5,1 | 6,8 |
+| 5/16"-18 UNC | 7,94 | 1,41 | 6,5 | 8,4 |
+| 3/8"-16 UNC (Stativkopf) | 9,53 | 1,59 | 7,9 | 10,1 |
+| 1/2"-13 UNC | 12,7 | 1,95 | 10,7 | 13,5 |
 
 Für den 3D-Druck Löcher 0,2 bis 0,3 mm größer und Passungen mit Spiel. Rohrmaße sind Außendurchmesser (42,4 mm =
 DN 32, 1¼ Zoll).

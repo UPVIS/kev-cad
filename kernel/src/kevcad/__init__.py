@@ -12,6 +12,7 @@ Vorgabewert, ``show`` und ``step`` werden ignoriert.
   kennt der Kernel Dichte, Masse, Farbe und Preis. Mit Inventar-Regel (Standard) nur freigegebene Katalogmaterialien,
   sonst bricht der Lauf ab. Ist die Regel im Projekt abgeschaltet, gelten auch Namen aus build123d ("aluminum",
   "stainless", "oak", ...) oder deutsch ("aluminium", "edelstahl", "messing", "eiche", ...).
+  ``kulisse=True``: Umgebung (Boden, Wand) nur für Darstellung und Videos, siehe ``lager.kulisse``.
 - ``step(text)``: Bauschritt, erscheint in der Statusleiste der App.
 - ``param(name, default, min=None, max=None)``: benannter Parameter in mm; Vorgabe oder Wert aus ``run(params=...)``.
 - ``lager``: Lagerteile aus dem Katalog verbauen (``lager.teil(...).verbauen(...)``) und 3D-Druckteile kennzeichnen
@@ -32,12 +33,17 @@ __all__ = ["show", "step", "param", "lager", "animation"]
 _hooks: dict[str, Any] = {}
 
 
-def show(obj: Any, name: str | None = None, color: str | tuple | None = None, material: str | None = None) -> Any:
+def show(obj: Any, name: str | None = None, color: str | tuple | None = None, material: str | None = None,
+         kulisse: bool = False) -> Any:
     """Zeigt ``obj`` sofort im Viewer an. Ein Teil mit gleichem Namen wird ersetzt; ``/`` im Namen bildet den Baum.
-    Gibt ``obj`` unverändert zurück."""
+    ``kulisse=True`` (oder eine Form aus ``lager.kulisse``): Umgebung für Bilder und Videos (Boden, Wand, Tisch), weder
+    gekauft noch gebaut, siehe ``kevcad.lager.kulisse``. Gibt ``obj`` unverändert zurück."""
     hook = _hooks.get("show")
     if hook is not None:
-        hook(obj, name, color=color, material=material)
+        if kulisse:
+            hook(obj, name, color=color, material=material, kulisse=True)
+        else:
+            hook(obj, name, color=color, material=material)
     return obj
 
 

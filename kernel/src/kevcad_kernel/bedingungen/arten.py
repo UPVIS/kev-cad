@@ -773,7 +773,10 @@ class InBohrung(Bedingung):
         S, K, E = self._abgeleitet(A, B)
         d_nenn, laenge = self.schraube.d, self.schraube.laenge
         r_b = float(B.r or 0)
-        mx = f"M{zahl(d_nenn, 1)}"
+        mx = self.schraube.bezeichnung  # „M6“ oder „3/8"-16 UNC“
+        gew = self.schraube.gewinde if self.schraube.gewinde is not None and \
+            abs(self.schraube.gewinde.d - d_nenn) < 0.05 else None
+        norm = "free fit" if gew is not None and gew.zoll else "ISO 273 mittel"
         befunde: list[Ergebnis] = []
         punkte = [K.p, E.p]
         # Lage
@@ -798,7 +801,7 @@ class InBohrung(Bedingung):
         d_bohr = 2 * r_b
         steig = self.schraube.steigung or REGEL_STEIGUNG.get(round(d_nenn, 1)) or REGEL_STEIGUNG.get(int(d_nenn))
         if self.gewinde:
-            kern = d_nenn - (steig or 0.1 * d_nenn)
+            kern = gew.kernloch if gew is not None else d_nenn - (steig or 0.1 * d_nenn)
             if d_bohr > d_nenn - 0.05:
                 befunde.append(Ergebnis("verletzt", f"Kernloch Ø {mm(kern, 2)} für {mx}", f"Ø {mm(d_bohr, 2)}",
                                         d_bohr - kern, "mm", ort=B.p, punkte=[B.p],
@@ -809,17 +812,18 @@ class InBohrung(Bedingung):
                                         d_bohr - kern, "mm", ort=B.p, punkte=[B.p], schwere="warnung",
                                         loesung=f"Kernloch auf Ø {mm(kern, 2)} aufbohren"))
         else:
-            mittel = DURCHGANG_MITTEL.get(round(d_nenn, 1), DURCHGANG_MITTEL.get(int(d_nenn), d_nenn * 1.1))
+            mittel = gew.durchgang if gew is not None else \
+                DURCHGANG_MITTEL.get(round(d_nenn, 1), DURCHGANG_MITTEL.get(int(d_nenn), d_nenn * 1.1))
             if d_bohr < d_nenn - 0.01:
                 kleiner = max((k for k in DURCHGANG_MITTEL if DURCHGANG_MITTEL[k] <= d_bohr + 1e-9), default=None)
                 tipp = f" oder kleinere Schraube (M{zahl(kleiner)})" if kleiner else ""
                 befunde.append(Ergebnis("verletzt", f"Durchgang ≥ Ø {mm(d_nenn, 2)} für {mx} (mittel Ø {mm(mittel, 2)})",
                                         f"Ø {mm(d_bohr, 2)}", d_bohr - d_nenn, "mm", ort=B.p, punkte=[B.p],
-                                        loesung=f"Bohrung auf Ø {mm(mittel, 2)} vergrößern (ISO 273 mittel){tipp}"))
+                                        loesung=f"Bohrung auf Ø {mm(mittel, 2)} vergrößern ({norm}){tipp}"))
             elif d_bohr < d_nenn + 0.1:
                 befunde.append(Ergebnis("verletzt", f"Durchgang Ø {mm(mittel, 2)} für {mx}", f"Ø {mm(d_bohr, 2)} "
                                         f"(ohne Spiel)", d_bohr - d_nenn, "mm", ort=B.p, punkte=[B.p], schwere="warnung",
-                                        loesung=f"Bohrung auf Ø {mm(mittel, 2)} (ISO 273 mittel) vergrößern"))
+                                        loesung=f"Bohrung auf Ø {mm(mittel, 2)} ({norm}) vergrößern"))
         # Länge
         assert B.t is not None
         tiefe = float(B.t[1] - B.t[0])
@@ -858,14 +862,18 @@ class InBohrung(Bedingung):
         return haupt
 
     def info(self) -> dict[str, Any]:
-        return {"schraube": {"d": self.schraube.d, "laenge": round(self.schraube.laenge, 3)}, "gewinde": self.gewinde}
+        return {"schraube": {"d": self.schraube.d, "laenge": round(self.schraube.laenge, 3),
+                             "bezeichnung": self.schraube.bezeichnung}, "gewinde": self.gewinde}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Gelenke (auf Basis der build123d-Joints, siehe als_joints)
 
 
-FREIRAUM = {"finger": 15.0, "hand": 25.0, "werkzeug": 10.0}
+# Freiraum je Bedienart (mm). Hebel und Klappen: Abstand am Griffpunkt über den ganzen Weg. Teile, die um ihre eigene
+# Achse gedreht werden (Flügelmutter, Knopf; "fluegel" immer, "finger"/"hand" bei Schwerpunkt auf der Achse): Griffraum
+# als Ring um die Drehachse über der Auflage, radial Spitze plus Freiraum, axial Oberkante plus Freiraum.
+FREIRAUM = {"finger": 15.0, "hand": 25.0, "werkzeug": 10.0, "fluegel": 10.0}
 
 
 class Gelenk(Bedingung):
@@ -873,7 +881,10 @@ class Gelenk(Bedingung):
     (``schritte``, Kollision gegen alle nicht mitbewegten Teile); ``mitbewegt`` sind Teile, die mit dem bewegten Teil
     fest verbunden sind (Schrauben, Griff); ``ignorieren`` Teile, die nicht stören (z. B. ein Polster).
     Bedienteile: ``bedienung="finger" | "hand" | "werkzeug"`` oder ``freiraum=mm`` verlangt am ``griff`` (Punkt oder
-    Bezug am bewegten Teil, sonst der Punkt am weitesten von der Achse) über den ganzen Weg so viel Platz."""
+    Bezug am bewegten Teil, sonst der Punkt am weitesten von der Achse) über den ganzen Weg so viel Platz. Teile, die
+    um ihre eigene Achse gedreht werden (Flügelmutter, Flügelschraube, Knopf: ``bedienung="fluegel"``, bei
+    ``"finger"``/``"hand"`` ohne ``griff``, wenn der Schwerpunkt auf der Drehachse liegt), prüfen stattdessen den
+    Griffraum: einen Ring um die Drehachse über der Auflage, bis Spitze plus Freiraum."""
 
     gruppe = "gelenk"
     joint_art = ""

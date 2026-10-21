@@ -248,9 +248,9 @@ def aufloesen(index: TeilIndex, b: Bezug, gegen: np.ndarray | None = None) -> tu
             return Aufgeloest(b, False, f"Teil {b.per_name!r} ist nicht gezeigt"), None
         from .geometrie import bezug as neu
 
-        args = b.auswahl_args or (None, None, None, False)
+        args = tuple(b.auswahl_args or ()) + (None, None, None, False, None)[len(b.auswahl_args or ()):]
         try:
-            out = neu(form, args[0], args[1], nahe=args[2], umkehren=args[3])
+            out = neu(form, args[0], args[1], nahe=args[2], umkehren=args[3], richtung=args[4])
         except Exception as exc:  # noqa: BLE001
             return Aufgeloest(b, False, f"Bezug an {b.per_name}: {exc}"), None
         return Aufgeloest(_szene_form(out, b.per_name, form), True), np.eye(4)
@@ -384,10 +384,11 @@ def _befunde_aus(c: Bedingung, text: str, teile: list[str], erg: Ergebnis) -> li
 def pruefen(sammlung: Sammlung, formen: dict[str, Any], *, netze: dict[str, Any] | None = None,
             schluessel: dict[str, str] | None = None, projekt: str | Path | None = None,
             boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
-            zeitlimit_s: float = 5.0, bewegungsraum: bool = True) -> dict[str, Any]:
+            zeitlimit_s: float = 5.0, bewegungsraum: bool = True, kulisse: set[str] | None = None) -> dict[str, Any]:
     """Prüft alle Bedingungen des Laufs gegen die gezeigten Formen (Name → build123d-Form) und liefert den Bericht.
     ``netze``: Name → (Punkte, Dreiecke, Normalen) für min_wand; ``schluessel``: Name → Geometrieschlüssel (für den
-    Zwischenspeicher des Bewegungsraums); ``boxen``: Name → Hüllquader (spart das Neuberechnen)."""
+    Zwischenspeicher des Bewegungsraums); ``boxen``: Name → Hüllquader (spart das Neuberechnen); ``kulisse``: Namen
+    der Kulissenteile (Umgebung: keine Befestigungspflicht, zählen aber als Boden)."""
     t0 = time.perf_counter()
     formen = {n: f for n, f in formen.items() if not n.startswith("Skizze/")}
     index = TeilIndex(formen, boxen) if (sammlung.bedingungen or sammlung.platzierungen) else None
@@ -532,7 +533,7 @@ def pruefen(sammlung: Sammlung, formen: dict[str, Any], *, netze: dict[str, Any]
     from .befestigung import befestigung_pruefen
 
     bef_items, bef_befunde, bef_teile = befestigung_pruefen(sammlung, aufgeloest, formen, index, beteiligt,
-                                                            {i["id"]: i for i in items}, boxen)
+                                                            {i["id"]: i for i in items}, boxen, kulisse=kulisse)
     items.extend(bef_items)
     befunde.extend(bef_befunde)
 

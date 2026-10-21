@@ -937,6 +937,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
+        if final.get("kulisse"):  # Umgebung (show(..., kulisse=True)): ohne Stückliste und Inventar-Regel
+            result["kulisse"] = list(final["kulisse"])
         bom = final.get("bom")
         if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
             result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],

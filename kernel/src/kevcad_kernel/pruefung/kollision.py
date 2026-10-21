@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from kevcad_kernel import gewinde as _gw
 from kevcad_kernel.pruefung.befund import BERUEHR_TOL, BERUEHRT_TOL, TIEFE_MIN, VOLUMEN_MIN
 from kevcad_kernel.pruefung.koerper import Koerper, form_schluessel, lage_von
 
@@ -271,59 +272,157 @@ def _rechne_paar(p: Koerper, q: Koerper, ext: np.ndarray, mit_netz: bool) -> dic
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Gewindeeingriff: die einzige Überlappung, die ohne Erklärung erlaubt ist
+#
+# Gewindemaße (metrisch und UNC/UNF) stehen in kevcad_kernel/gewinde.py.
 
-# Regelgewinde: Nenndurchmesser → Steigung (ISO 261)
-STEIGUNG = {2: 0.4, 2.5: 0.45, 3: 0.5, 4: 0.7, 5: 0.8, 6: 1.0, 8: 1.25, 10: 1.5, 12: 1.75, 14: 2.0, 16: 2.0,
-            20: 2.5, 24: 3.0}
+STEIGUNG = {d: g.steigung for d, g in _gw.METRISCH.items()}  # Regelgewinde ISO 261 (für ältere Aufrufer)
 
 
 def gewindetiefe(d: float, steigung: float | None = None) -> float:
     """Radiale Tiefe des Gewindes (Außendurchmesser bis Kerndurchmesser), ISO 68: (d − d3)/2 ≈ 0,6134·P."""
-    p = steigung or STEIGUNG[min(STEIGUNG, key=lambda x: abs(x - d))]
-    return 0.6134 * p
+    if steigung:
+        return _gw.TIEFE_FAKTOR * steigung
+    g = _gw.naechstes(d, float("inf"))
+    return g.tiefe if g is not None else _gw.TIEFE_FAKTOR * 0.15 * d
 
 
-def gewindeeingriff(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> str | None:
-    """Ist die Überlappung von a und b ein Gewindeeingriff? Eins der Teile hat einen Zylinder mit metrischem
-    Nenndurchmesser (Schraube, Gewindestange, Bolzen), und die Schnittmenge liegt ringsum diese Achse ganz im Band
-    zwischen Kern- und Außendurchmesser (nur im Gewindebereich, radial nicht tiefer als die Gewindetiefe). Das trifft
-    Schraube in Mutter und Schraube im Kern- oder Gewindeloch. Liefert eine Beschreibung oder None."""
-    g = gewinde(a, b, netz_punkte)
-    return g[0] if g else None
+@dataclass
+class Gewindeeingriff:
+    """Ein erkannter Gewindeeingriff: welches Gewinde, wo die Achse liegt und wer Außen- bzw. Innengewinde hat."""
+
+    text: str
+    gewinde: _gw.Gewinde
+    achse: np.ndarray  # Einheitsvektor der Gewindeachse (Welt)
+    punkt: np.ndarray  # Punkt auf der Achse (Welt)
+    aussen: str  # Teil mit dem Außengewinde (Schraube, Gewindestift, Gewindestange)
+    innen: str  # Gegenstück (Mutter, Einsatz, Kern- oder Gewindeloch)
+    radial: float  # radiale Überdeckung in mm
+
+    def entlang(self, richtung: Any, punkt: Any = None, drehen: bool = False, winkel_grad: float = 1.0,
+                versatz: float = 0.1) -> bool:
+        """Folgt eine Bewegung dem Gewinde (herein- oder herausdrehen)? Schieben: Richtung parallel zur Achse.
+        Drehen: Drehachse (``punkt``, ``richtung``) fällt mit der Gewindeachse zusammen."""
+        d = np.asarray(richtung, dtype=np.float64).reshape(3)
+        n = float(np.linalg.norm(d))
+        if n < 1e-12:
+            return False
+        d = d / n
+        if abs(float(np.dot(d, self.achse))) < np.cos(np.radians(winkel_grad)):
+            return False
+        if not drehen:
+            return True
+        if punkt is None:
+            return False
+        off = np.asarray(punkt, dtype=np.float64).reshape(3) - self.punkt
+        quer = off - self.achse * float(np.dot(off, self.achse))
+        return float(np.linalg.norm(quer)) <= versatz
+
+    def kurz(self) -> dict[str, Any]:
+        return {"gewinde": self.gewinde.name, "achse": [round(float(c), 6) for c in self.achse],
+                "punkt": [round(float(c), 4) for c in self.punkt], "aussen": self.aussen, "innen": self.innen}
 
 
-def gewinde(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> tuple[str, np.ndarray] | None:
-    """Wie gewindeeingriff, dazu die Gewindeachse (Einheitsvektor): (Beschreibung, Achse) oder None."""
-    if not len(netz_punkte):
+def _zylinder_mit_gewinde(flaechen: list[dict[str, Any]], groesse: Any) -> list[tuple[dict[str, Any], _gw.Gewinde]]:
+    """Zylinderflächen, deren Durchmesser ein Gewinde-Nenndurchmesser ist (± 0,3 mm), mit dem Gewinde dazu. Eine
+    Größe aus dem Lagerteil (``groesse``, z. B. "M8-1.25" oder "3/8-16") geht vor."""
+    vorgabe = _gw.aus_text(groesse) if groesse else None
+    out = []
+    for f in flaechen:
+        if f.get("t") != "cylinder" or not f.get("r") or not f.get("ax") or f.get("c") is None:
+            continue
+        d = 2 * float(f["r"])
+        g = vorgabe if vorgabe is not None and abs(vorgabe.d - d) <= 0.3 else _gw.naechstes(d)
+        if g is not None:
+            out.append((f, g))
+    return out
+
+
+def _eingriff(seiten: tuple[tuple[list, Any, str], tuple[list, Any, str]],
+              netz_punkte: np.ndarray) -> Gewindeeingriff | None:
+    """Kern der Erkennung. ``seiten``: je Teil (Flächen wie in PART_UPSERT, Größe aus dem Lagerteil, Name)."""
+    if netz_punkte is None or not len(netz_punkte):
         return None
-    pts = np.asarray(netz_punkte, dtype=np.float64)
-    for s, andere in ((a, b), (b, a)):
-        for f in s.flaechen:
-            if f.get("t") != "cylinder" or not f.get("r") or not f.get("ax") or f.get("c") is None:
-                continue
+    pts = np.asarray(netz_punkte, dtype=np.float64).reshape(-1, 3)
+    for (flaechen, groesse, name), (_, _, anderer) in (seiten, seiten[::-1]):
+        for f, g in _zylinder_mit_gewinde(flaechen, groesse):
             r_aussen = float(f["r"])
-            d = 2 * r_aussen
-            nenn = min(STEIGUNG, key=lambda x: abs(x - d))
-            if abs(nenn - d) > 0.3:
-                continue
-            steigung = None
-            import re
-
-            m = re.match(r"[Mm]\d+(?:\.\d+)?-(\d+(?:\.\d+)?)", str(s.info.get("groesse") or ""))
-            if m:
-                steigung = float(m.group(1))
-            tiefe = gewindetiefe(nenn, steigung)
+            tiefe = g.tiefe
             ax = np.asarray(f["ax"], dtype=np.float64)
-            ax /= np.linalg.norm(ax)
-            rel = pts - np.asarray(f["c"], dtype=np.float64)
+            ax = ax / np.linalg.norm(ax)
+            c = np.asarray(f["c"], dtype=np.float64)
+            rel = pts - c
             t = rel @ ax
             r = np.linalg.norm(rel - np.outer(t, ax), axis=1)
             # ganz im Gewindeband und mindestens die halbe Gewindetiefe tief (Kernloch bzw. Muttergewinde, keine
-            # bloße Presspassung eines Rohrs oder Bolzens mit metrischem Durchmesser)
+            # bloße Presspassung eines Rohrs oder Bolzens mit Gewinde-Nenndurchmesser)
             if r.max() <= r_aussen + 0.02 and r_aussen - tiefe - 0.02 <= r.min() <= r_aussen - 0.5 * tiefe:
-                return (f"Gewindeeingriff M{nenn:g}: {s.kurz} in {andere.kurz} (radial "
-                        f"{r_aussen - r.min():.2f} von {tiefe:.2f} mm Gewindetiefe)"), ax
+                kurz_s, kurz_a = name.rsplit("/", 1)[-1], anderer.rsplit("/", 1)[-1]
+                text = (f"Gewindeeingriff {g.name}: {kurz_s} in {kurz_a} (radial "
+                        f"{r_aussen - r.min():.2f} von {tiefe:.2f} mm Gewindetiefe)")
+                return Gewindeeingriff(text, g, ax, c, name, anderer, float(r_aussen - r.min()))
     return None
+
+
+def gewinde_daten(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> Gewindeeingriff | None:
+    """Ist die Überlappung von a und b ein Gewindeeingriff? Eins der Teile hat einen Zylinder mit Gewinde-
+    Nenndurchmesser (metrisch, UNC oder UNF: Schraube, Gewindestift, Gewindestange, Bolzen), und die Schnittmenge
+    (``netz_punkte``) liegt ringsum diese Achse ganz im Band zwischen Kern- und Außendurchmesser (nur im
+    Gewindebereich, radial nicht tiefer als die Gewindetiefe). Das trifft Schraube in Mutter und Schraube im Kern- oder
+    Gewindeloch."""
+    return _eingriff(((a.flaechen, a.info.get("groesse"), a.name), (b.flaechen, b.info.get("groesse"), b.name)),
+                     netz_punkte)
+
+
+def gewinde(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> tuple[str, np.ndarray] | None:
+    """Wie ``gewinde_daten``, nur (Beschreibung, Gewindeachse) oder None."""
+    g = gewinde_daten(a, b, netz_punkte)
+    return (g.text, g.achse) if g else None
+
+
+def gewindeeingriff(a: Koerper, b: Koerper, netz_punkte: np.ndarray) -> str | None:
+    """Wie ``gewinde_daten``, nur die Beschreibung oder None."""
+    g = gewinde_daten(a, b, netz_punkte)
+    return g.text if g else None
+
+
+def _form_seite(form: Any, name: str | None, groesse: Any) -> tuple[list[dict[str, Any]], Any, str]:
+    """(Zylinderflächen, Größe, Name) einer build123d-Form für die Gewindeerkennung."""
+    from build123d import GeomType, Shape
+
+    from kevcad_kernel.tessellate import face_info
+
+    shape = form if isinstance(form, Shape) else Shape.cast(form)
+    flaechen = [face_info(f) for f in shape.faces() if f.geom_type == GeomType.CYLINDER]
+    if groesse is None:
+        lt = getattr(form, "lagerteil", None)
+        groesse = (getattr(lt, "masse", None) or {}).get("groesse") if lt is not None else None
+    return flaechen, groesse, name or str(getattr(form, "label", "") or "Teil")
+
+
+def im_gewinde(a: Any, b: Any, *, name_a: str | None = None, name_b: str | None = None, groesse_a: Any = None,
+               groesse_b: Any = None) -> Gewindeeingriff | None:
+    """Greifen die Formen a und b in ihrer jetzigen Lage im Gewinde ineinander (Schraube in Mutter, Einsatz oder
+    Kernloch)? Für Prüfungen, die nur build123d-Formen haben (Bewegungsraum, Montage): rechnet die Schnittmenge
+    selbst. Die Größe kommt aus ``groesse_*`` oder dem Lagerteil der Form (``form.lagerteil``). None, wenn sich die
+    Formen nicht überlappen oder die Überlappung kein Gewindeeingriff ist."""
+    ta, tb = getattr(a, "wrapped", a), getattr(b, "wrapped", b)
+    common = schnittmenge(ta, tb)
+    if common is None:
+        return None
+    vol, _, _ = volumen_und_achsen(common)
+    if vol <= VOLUMEN_MIN:
+        return None
+    pts, _, _ = vernetzen(common, 0.05)
+    if not len(pts):
+        return None
+    return _eingriff((_form_seite(a, name_a, groesse_a), _form_seite(b, name_b, groesse_b)), pts)
+
+
+def entlang_gewinde(eingriff: Gewindeeingriff | None, richtung: Any, punkt: Any = None, drehen: bool = False) -> bool:
+    """Hilfe für Bewegungs- und Montageprüfungen: Ein Paar, das schon in der Ausgangslage im Gewinde greift, blockiert
+    eine Bewegung entlang bzw. um seine Gewindeachse nicht (die Schraube wird heraus- oder hineingedreht). Quer dazu
+    sperrt es weiter. False ohne Eingriff."""
+    return eingriff is not None and eingriff.entlang(richtung, punkt, drehen)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
