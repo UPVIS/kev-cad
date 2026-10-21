@@ -440,7 +440,9 @@ def bom_text(bom: dict[str, Any]) -> str:
         for ln in lines_:
             g = gehrung_text(ln.get("gehrung")) if not ln.get("eigenteil") else ""
             name = str(ln.get("benennung", "")) + (" (Eigenteil)" if ln.get("eigenteil") else "") + (
-                " (Druckteil)" if ln.get("art") == "druckteil" else "")
+                " (Druckteil)" if ln.get("art") == "druckteil" else "") + (
+                (" (Zukaufteil, vereinfacht)" if ln.get("vereinfacht") else " (Zukaufteil)")
+                if ln.get("art") == "zukaufteil" else "")
             rows.append([str(ln.get("pos", "")), str(ln.get("anzahl", "")), name, str(ln.get("masse_text", "")), g,
                          str(ln.get("material") or ""),
                          de_num(ln["kg"], 2) if isinstance(ln.get("kg"), (int, float)) else "–",

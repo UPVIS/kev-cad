@@ -19,6 +19,7 @@ struct ViewportArea: View {
             .animation(.snappy(duration: 0.25), value: model.measureMode)
             .animation(.snappy(duration: 0.25), value: model.isRunning)
             .animation(.snappy(duration: 0.25), value: inventoryKey)
+            .animation(.snappy(duration: 0.25), value: model.downloadOffer)
             .animation(.snappy(duration: 0.25), value: pruefKey)
     }
 
@@ -69,6 +70,7 @@ struct ViewportArea: View {
                 .frame(maxWidth: 760)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+            ZukaufBanner(model: model)
             if let key = inventoryKey, state.dismissedInventory != key {
                 InventoryBanner(model: model) { state.dismissedInventory = key }
                     .frame(maxWidth: 820)

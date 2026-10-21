@@ -173,6 +173,11 @@ public enum CatalogSchema {
             return Art(id: id, title: "3D-Druckteil", plural: "3D-Druckteile", symbol: "printer.fill", fields: [],
                        supply: .piece, profile: "aus druckbarem Material, Kosten aus dem Filamentpreis")
         }
+        if id == "zukaufteil" {
+            // Phase 3: fertig gekaufte Teile mit Hersteller und Nummer (KATALOG.md, Abschnitt Zukaufteil)
+            return Art(id: id, title: "Zukaufteil", plural: "Zukaufteile", symbol: "cart", fields: [], supply: .piece,
+                       profile: "Hersteller-CAD oder Ersatzkörper aus den Shop-Maßen")
+        }
         // Phase 5 (KAM): Kameras, Objektive und Zubehör haben eigene Felder (KATALOG.md), keine Maßfelder im Formular
         switch id {
         case "kamera":

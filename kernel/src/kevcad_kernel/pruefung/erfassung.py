@@ -106,6 +106,8 @@ class Erfassung:
                 t = r.strip().strip("/")
                 if t in shown:
                     out.append(t)
+                elif t + " (vereinfacht)" in shown:  # Zukaufteil als Ersatzkörper: der Kernel ergänzt den Namen
+                    out.append(t + " (vereinfacht)")
                 elif any(n.startswith(t + "/") for n in shown):
                     out.append(t + "/")
                 else:

@@ -189,9 +189,11 @@ public struct PartUpsertHeader: Decodable, Sendable {
     public var stock: StockInfo?
     /// Phase 2, Inventar-Regel: "ok" oder "fehlt" (Teil ist weder Lagerteil noch gekennzeichnetes Druckteil).
     public var inventar: String?
+    /// Phase 3: Zukaufteil, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt.
+    public var zukauf: ZukaufPartInfo?
 
     enum CodingKeys: String, CodingKey {
-        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar
+        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar, zukauf
     }
 
     /// Inventar-Regel verletzt.
@@ -230,6 +232,7 @@ public struct PartUpsertHeader: Decodable, Sendable {
         transform = (t?.count == 16) ? t : nil
         stock = (try? c.decodeIfPresent(JSONValue.self, forKey: .stock)).flatMap { StockInfo(json: $0) }
         inventar = try? c.decodeIfPresent(String.self, forKey: .inventar)
+        zukauf = (try? c.decodeIfPresent(JSONValue.self, forKey: .zukauf)).flatMap { ZukaufPartInfo(json: $0) }
     }
 
     /// Lineares RGBA, Vorgabe hellgrau.
@@ -500,6 +503,8 @@ public enum KernelMessage: Sendable {
     case bom(BOMMessage)
     /// Phase 2: Lagerkatalog auf CATALOG_REQ.
     case catalog(CatalogMessage)
+    /// Phase 3: Zustand eines Zukaufteils (angelegt, wartet auf CAD, importiert, Fehler).
+    case zukaufStatus(ZukaufStatusMessage)
     /// Zwangsbedingungen: Bericht nach RUN_END (PROTOCOL.md Abschnitt „Zwangsbedingungen“).
     case constraints(ConstraintReport)
     /// Phase 5: Animation (ANIM_DEF, ANIM_REMOVE, ANIM_COLLISIONS, ANIM_PLAY, ANIM_SEEK, ANIM_VIDEO_REQ).
@@ -531,6 +536,7 @@ public enum KernelMessage: Sendable {
         case .error: return "ERROR"
         case .bom: return "BOM"
         case .catalog: return "CATALOG"
+        case .zukaufStatus: return "ZUKAUF_STATUS"
         case .constraints: return "CONSTRAINTS"
         case .animation(let a): return a.typeName
         case .camera(let c): return c.typeName
@@ -581,6 +587,7 @@ public enum KernelMessage: Sendable {
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
         case "BOM": return .bom(try BOMMessage.decode(h))
         case "CATALOG": return .catalog(try CatalogMessage.decode(h))
+        case "ZUKAUF_STATUS": return .zukaufStatus(try ZukaufStatusMessage.decode(h))
         case "CONSTRAINTS": return .constraints(try ConstraintsMessage.decode(h).report)
         case let t where AnimationMessage.types.contains(t): return .animation(try AnimationMessage.decode(type: t, frame: frame))
         case "CAMERA_UPSERT", "CAMERA_REMOVE": return .camera(try CameraMessage.decode(h, type: env.type))

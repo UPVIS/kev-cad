@@ -22,6 +22,8 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
 - Schrauben, Muttern und Scheiben kommen aus bd_warehouse (Schraubenkopf auf z = 0, Schaft nach -Z), ohne Gewinde
   (``simple=False`` für Gewinde).
 - Jedes ``verbauen`` erscheint in der Stückliste, auch wenn das Teil danach gebohrt oder gekürzt wird.
+- Zukaufteile (Phase 3): ``lager.zukauf("alutec-05200").verbauen("Rollwagen")`` mit Hersteller-CAD, Skript-Geometrie
+  oder Ersatzkörper, ``.bezugspunkt("oben")`` als Location (siehe ``kevcad.zukaufteil``).
 - Selbst konstruierte Teile, die gedruckt werden: ``lager.druckteil(form, "Halter/Schelle", material="petg")``. Das
   Material muss freigegeben sein und im Katalog ``"druckbar": true`` haben.
 - Inventar-Regel (Standard, abschaltbar nur von Kevin in kevcad.json): Jedes gezeigte Teil stammt aus ``verbauen``
@@ -52,7 +54,7 @@ from kevcad_kernel.catalog import (
     number,
 )
 
-__all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN",
+__all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN", "zukauf",
            "kamera", "kamerazubehoer"]
 
 MAX_GEHRUNG = 80.0
@@ -330,6 +332,8 @@ def teil(auswahl: str, /, *, material: str | None = None, **masse: Any) -> Lager
     key = auswahl.strip()
     if not masse and material is None:
         it = cat.item(key)
+        if it is not None and it.get("art") not in ARTEN:  # Zukaufteil (Phase 3)
+            raise LagerError(f"{key!r} ist ein Zukaufteil ({it.get('name')}): lager.zukauf({key!r}).verbauen(name)")
         if it is not None:
             return _released(cat, it)
     art = key.lower()
@@ -412,7 +416,30 @@ def suche(text: str = "", art: str | None = None, limit: int = 30) -> list[Lager
     """Lagerteile nach Text und Maßen ("vierkantrohr 40x40x3", "edelstahl rohr 33,7", "m8")."""
     cat = katalog()
     hits, _ = cat.search(text, art=art, limit=limit)
-    return [Lagerteil(h, cat.material(h.get("material", ""))) for h in hits]
+    out: list[Any] = []
+    for h in hits:
+        if h.get("art") in ARTEN:
+            out.append(Lagerteil(h, cat.material(h.get("material", ""))))
+        else:  # Zukaufteil
+            from kevcad.zukaufteil import Zukaufteil
+
+            out.append(Zukaufteil(h, cat))
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Zukaufteile (Phase 3)
+
+
+def zukauf(auswahl: str | None = None, /, *, mpn: str | None = None, hersteller: str | None = None,
+           gtin: str | None = None):
+    """Zukaufteil aus dem Katalog nach id (``zukauf("alutec-05200")``), Herstellernummer
+    (``zukauf(mpn="05200", hersteller="ALUTEC")``) oder EAN (``zukauf(gtin="4014688052004")``). ``verbauen(name)``
+    liefert Hersteller-CAD, Skript-Geometrie oder Ersatzkörper; ``bezugspunkt(name)`` eine Location. Siehe
+    ``kevcad.zukaufteil``."""
+    from kevcad.zukaufteil import finden
+
+    return finden(auswahl, mpn=mpn, hersteller=hersteller, gtin=gtin)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

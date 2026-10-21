@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "status", "project_open", "project_new", "run", "model_read", "model_write", "execute", "parts", "view", "focus",
     "visibility", "highlight", "section", "screenshot", "selection", "measure", "annotate", "clear_annotations",
     "export", "stock_search", "stock_get", "stock_define", "material_list", "material_define", "catalog_delete", "bom",
+    "zukauf_anlegen", "zukauf_html", "cad_suchen", "cad_uebernehmen", "zukauf_liste",
     "bedingungen",
     # Phase 5: Animation
     "animation_liste", "animation_abspielen", "animation_springen", "animation_video", "kollision_pruefen",

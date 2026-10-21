@@ -135,6 +135,83 @@ s1 = schraube.verbauen(laenge=60, name="Schrauben/M8x60 1")
 - Ist die Inventar-Regel an, ist jedes gezeigte Teil ohne `verbauen`/`druckteil` ein Verstoß (Skizzen aus `execute`
   ausgenommen).
 
+## Zukaufteil (Phase 3)
+
+Fertig gekaufte Teile mit Hersteller und Nummer (Beispielwerte unten erfunden, EAN mit gültiger Prüfziffer):
+Schubladenauszug, Scharnier, Rolle, Rollwagen (Kameras, Objektive und Kamera-Zubehör: Abschnitt „Kameras und
+Objektive“). Sie
+liegen in der Projekt-Ebene (`<projekt>/katalog.json`) oder, wenn Kevin sie in mehreren Projekten nutzt, im eigenen
+Katalog; nie im mitgelieferten Katalog und nie im Git (Hersteller-CAD darf meist nicht weitergegeben werden).
+
+```json
+{
+  "id": "alutec-05200",
+  "art": "zukaufteil",
+  "name": "ALUTEC Transportroller 05200",
+  "hersteller": "ALUTEC",
+  "mpn": "05200",
+  "gtin": "4005187052008",
+  "url": "https://www.beispiel-shop.de/p/alutec-05200",
+  "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
+  "preis": {"je_stueck": 24.99, "waehrung": "EUR", "brutto": true, "stand": "2026-10-21",
+            "quelle": "https://www.beispiel-shop.de/p/alutec-05200"},
+  "masse": {"l": 610, "b": 410, "h": 128},
+  "gewicht": 1800,
+  "material": "polypropylen",
+  "cad": {"quelle": "download", "datei": "zukauf/alutec-05200/05200.step", "lizenz": "Herstellerbedingungen",
+          "stand": "2026-10-21"},
+  "ersatz": {"form": "quader", "masse": {"l": 610, "b": 410, "h": 128}},
+  "einbaupunkt": {"pos": [0, 0, 0], "richtung": [0, 0, 1], "hinweis": "Mitte der Aufstandsfläche, Z nach oben"},
+  "bezugspunkte": {"oben": {"pos": [0, 0, 128], "richtung": [0, 0, 1], "hinweis": "Ladefläche"}},
+  "status": "vorgeschlagen",
+  "hinweis": "Maße aus dem Shop, Höhe gemessen"
+}
+```
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `hersteller`, `mpn` | ja (außer bei reinen Shop-Artikeln ohne MPN, dann `shop_nr`) | Hersteller und Herstellernummer |
+| `gtin` | nein | EAN/GTIN, 8 bis 14 Ziffern |
+| `url`, `bild` | nein | Produktseite und Bild |
+| `preis` | nein | `je_stueck`, `waehrung`, `brutto` (bool, wie im Shop angegeben), `stand` (Datum), `quelle` |
+| `masse` | ja | Hüllmaße in mm: `l`, `b`, `h` (Quader) bzw. `d` mit `l` oder `h` (rund); nur `d` steht für eine Kugel (Hüllmaß d × d × d). Grundlage für den Ersatzkörper und die Prüfung des Imports |
+| `gewicht` | nein | g; sonst aus Volumen × Dichte des Materials |
+| `material` | nein | `id` eines Materials, für Farbe und Masse |
+| `cad` | nein | `quelle` (`traceparts` \| `hersteller` \| `download` \| `bd_warehouse` \| `skript` \| `keins`), `datei` (relativ zum Ordner der Katalogdatei) oder bei `skript` `modul`/`datei` plus `funktion` wie bei den Kameras, bei `bd_warehouse` `klasse` (Modul.Klasse, z. B. `bearing.SingleRowDeepGrooveBallBearing`) und `parameter` (Objekt mit den Argumenten, z. B. `{"size": "M8-22-7", "bearing_type": "SKT"}`), `lizenz`, `stand`, optional `traceparts_id` |
+| `ersatz` | nein | `form` (`quader` \| `zylinder`) und `masse`, beim Zylinder optional `achse` (`x` \| `y` \| `z`, Standard `z`; liegende Zylinder liegen auf z = 0); gilt, solange kein CAD da ist. Im Viewer halbtransparent, im Namen „(vereinfacht)“ |
+| `einbaupunkt` | nein | Punkt (siehe unten) **im System der Quelle** (Hersteller-CAD, Skript, Ersatzkörper): wird beim Verbauen zum Ursprung, seine `richtung` zur +Z-Achse. Ohne Angabe: Mitte der Unterseite des Hüllquaders, Z oben |
+| `bezugspunkte` | nein | benannte Punkte (siehe unten) **im System des verbauten Teils**, also nach dem Einbaupunkt, damit `Pos(...) * teil.bezugspunkt("oben")` zum gezeigten Teil passt; `pos` wie bei Kameras und Kamera-Zubehör (deren Bezugspunkte gelten im System der Kamera, Achsen wie die Kamera) |
+
+Ein Punkt (Einbau- und Bezugspunkte) ist
+`{"pos": [x, y, z], "richtung": [x, y, z], "x_richtung": [x, y, z], "hinweis": "…"}` in mm: `pos` ist der Ursprung, `richtung` die lokale Z-Achse (Standard `[0, 0, 1]`, etwa Blickrichtung eines Bajonetts oder
+Normale einer Auflagefläche), `x_richtung` (optional, nicht parallel zu `richtung`) legt die Verdrehung um `richtung`
+fest; ohne sie gilt die X-Achse, die build123d für `Plane(z_dir=richtung)` wählt (bei `richtung` = Z ist das +X).
+Andere Felder sind bei Zukaufteilen nicht erlaubt (Prüfung und Location: `kevcad_kernel/bezugspunkte.py`).
+
+Inventar-Regel: Ein Zukaufteil aus dem Dialog „Zukaufteil hinzufügen …“ in der App legt Kevin selbst an, es ist sofort
+`frei`. Legt Claude es über MCP an, ist es `vorgeschlagen`, bis Kevin es im Lagerkatalog freigibt. Kameras, Objektive und
+Kamera-Zubehör (`art` `kamera`, `objektiv`, `kamerazubehoer`) sind Sonderformen von Zukaufteilen mit eigenen Feldern
+und folgen denselben Regeln.
+
+In model.py:
+
+```python
+wagen = lager.zukauf("alutec-05200")                       # nach id, sonst lager.zukauf(mpn="05200", hersteller="ALUTEC")
+rw = wagen.verbauen("Rollwagen")                           # Part am Einbaupunkt; Hersteller-CAD oder Ersatzkörper
+show(Pos(0, 0, 0) * rw, "Rollwagen")
+oben = wagen.bezugspunkt("oben")                           # Location für das Platzieren anderer Teile
+```
+
+Stücklistenzeile `art: "zukaufteil"` mit Hersteller, Nummer, Stückpreis mit Datum, Link und CAD-Quelle.
+
+- `CATALOG.arten` (PROTOCOL.md) enthält `zukaufteil`; `stock_search` findet freigegebene Zukaufteile (art `zukaufteil`),
+  verbaut werden sie mit `lager.zukauf(id)`, nicht mit `lager.teil`.
+- Preise: Zukaufteile gehen mit dem Shoppreis in die Summe. Ist einer davon brutto, ergänzt `totals.preis_hinweis`
+  „Zukaufteile zum Shoppreis brutto“ (z. B. „Richtpreise, Stand 2026-10; Zukaufteile zum Shoppreis brutto“).
+- CSV (`bom_csv`): Zeilen von Zukaufteilen haben die Art „Zukaufteil“ bzw. „Zukaufteil (vereinfacht)“ und die
+  Zusatzspalten Hersteller, Herstellernummer, EAN, Link, Preisstand (Datum mit „brutto“ bzw. „netto“) und CAD
+  (Quelle bzw. „vereinfacht“); bei anderen Zeilen bleiben sie leer.
+
 ## Kameras und Objektive
 
 Phase 5 (Strang KAM), additiv: drei weitere Arten in `teile`, geprüft in `kernel/src/kevcad_kernel/optik.py`. Sie haben

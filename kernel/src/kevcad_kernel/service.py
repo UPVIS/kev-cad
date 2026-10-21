@@ -146,6 +146,29 @@ class KernelService(Protocol):
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
 
+    # Phase 3: Zukaufteile (KATALOG.md „Zukaufteil“, PROTOCOL.md „Phase 3“, kevcad_kernel.zukauf.dienst)
+    def zukauf_anlegen(self, url: str | None = None, mpn: str | None = None, gtin: str | None = None,
+                       felder: dict[str, Any] | None = None, ebene: str = "projekt") -> dict[str, Any]:
+        """Zukaufteil aus Feldern anlegen, über MCP immer als Vorschlag. {"ok", "angelegt": bool, "item", "datei",
+        "zu_pruefen", "hinweise", "text"}; Normteile: {"ok", "angelegt": False, "normteil", "stock_id", "beispiel",
+        "vorschlag", "text"}; schon vorhanden: {"ok", "angelegt": False, "vorhanden", "text"}."""
+
+    def zukauf_html(self, url: str | None, html: str, anlegen: bool = False, ebene: str = "projekt") -> dict[str, Any]:
+        """Mitgeliefertes HTML auswerten. {"ok", "felder", "entwurf", "quellen", "zu_pruefen", "hinweise",
+        "angelegt"?: Ergebnis von zukauf_anlegen, "normteil"?}"""
+
+    def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
+        """TraceParts (mit Schlüssel bis zum Import) oder Links. {"ok", "zustand": "importiert"|"wartet_auf_cad",
+        "cad_links", "erwartet", "hinweise", "text", "powered_by"?}"""
+
+    def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
+                        erzwingen: bool = False) -> dict[str, Any]:
+        """CAD-Datei (ohne Pfad: neueste passende aus ~/Downloads, auch ZIP) prüfen und übernehmen. {"ok", "zustand",
+        "item", "datei", "pruefung", "koerper", "flaechen", "grob", "hinweise", "text"}"""
+
+    def zukauf_liste(self, query: str = "") -> dict[str, Any]:
+        """{"ok", "items": [Zukaufteil + "ebene", "cad_art", "cad_datei_fehlt", "zustand", "kurz"], "total"}"""
+
     # Zwangsbedingungen (PLAN-BEDINGUNGEN.md, additiv)
     def constraints(self, part: str | None = None) -> dict[str, Any]:
         """Bericht des letzten erfolgreichen Laufs wie die Nachricht CONSTRAINTS: {"ok", "run", "items", "teile",
