@@ -14,7 +14,8 @@ Teil mit der Bohrung, wenn sie sitzt), ``auf`` mit nach oben zeigender Auflage (
 Am Boden hängen Teile, die die tiefste Ebene der Baugruppe berühren, und Teile mit ``verbinde(teil, boden)``.
 
 Pflichtig sind Teile, die an einer Bedingung beteiligt sind. Teile ganz ohne Bedingungen sammelt ein Befund mit
-Schwere „hinweis“, damit bestehende Modelle nicht auf einen Schlag gesperrt sind (Entscheidung offen, siehe Bericht).
+Schwere „hinweis“, solange das Modell kein verbinde(…) nutzt, damit bestehende Modelle nicht auf einen Schlag gesperrt
+sind; sobald es verbinde(…) nutzt, ist jede fehlende Angabe ein Fehler (Kevin, 22.10.2026).
 """
 
 from __future__ import annotations
@@ -322,7 +323,10 @@ def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug
     frei_teile = [n for n in formen if n not in pflicht]
     if frei_teile:
         liste = ", ".join(frei_teile[:5]) + (" …" if len(frei_teile) > 5 else "")
-        befunde.append(_befund(pruefung="befestigung", teile=frei_teile, schwere="hinweis",
+        # Kevin, 22.10.2026: Hinweis, solange das Modell kein verbinde(…) nutzt; danach ist jede fehlende Angabe ein
+        # Fehler (Exportsperre), damit ein umgestelltes Modell vollständig bleibt.
+        schwere = "fehler" if any(isinstance(v, Verbindung) for v in sammlung.bedingungen) else "hinweis"
+        befunde.append(_befund(pruefung="befestigung", teile=frei_teile, schwere=schwere,
                                text=f"{len(frei_teile)} Teile ohne Angabe, wie sie befestigt sind ({liste})",
                                soll="jedes Teil mit verbinde(…) oder einer Montagebedingung", ist="keine Angabe",
                                loesung="zu jedem Teil die Befestigung konstruieren und mit verbinde(teil, gegenstück, "

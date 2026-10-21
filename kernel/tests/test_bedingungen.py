@@ -450,6 +450,21 @@ def test_modell_ohne_bedingungen_nur_hinweis():
     assert b["summe"]["fehler"] == 0 and b["pruef_ms"] < 50
 
 
+def test_ohne_angabe_wird_fehler_sobald_verbinde_genutzt():
+    """Kevin, 22.10.2026: fehlende Befestigung ist ein Hinweis, bis das Modell verbinde(…) nutzt, danach ein Fehler."""
+    tisch = Box(100, 60, 20, align=UNTEN)
+    frei = Pos(30, 0, 20) * Box(10, 10, 10, align=UNTEN)
+    with sammeln() as s:
+        verbinde(tisch, boden, art="aufliegen")
+        b = pruefen(s, {"Tisch": tisch, "Frei": frei})
+    (f,) = [f for f in befunde(b, "befestigung") if "ohne Angabe" in f["text"]]
+    assert f["schwere"] == "fehler" and f["teile"] == ["Frei"]
+    with sammeln() as s:  # nur Montagebedingungen, kein verbinde: weiter nur Hinweis
+        auf((frei, "unten"), (tisch, "oben"))
+        b = pruefen(s, {"Tisch": tisch, "Frei": frei})
+    assert not [f for f in befunde(b, "befestigung", "fehler") if "ohne Angabe" in f["text"]]
+
+
 def test_fest_und_bericht_json():
     with sammeln() as s:
         grund = Box(50, 50, 10, align=UNTEN)

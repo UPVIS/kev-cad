@@ -101,6 +101,11 @@ wand = param("wand", 2.0, min=1.2)                        # Grenzen: 0,8 ist ein
   "kleben" | "aufliegen", mit=[schraube, mutter, scheibe])`. Geprüft wird, dass es die Verbindung wirklich gibt
   (Kontakt bzw. Spielpassung bis 0,5 mm; bei Schrauben fluchtende Bohrungen in beiden Teilen, Kopf und Mutter liegen
   auf) und dass alle Teile über Verbindungen am Boden hängen. Gelenke, `in_bohrung` und `auf` von oben zählen mit.
+  Kevin, 22.10.2026: Solange ein Modell kein `verbinde` nutzt, ist fehlende Befestigung nur ein Hinweis; sobald es
+  `verbinde` nutzt, ist jede fehlende Angabe ein Fehler mit Exportsperre. Bei neuen Modellen gleich alles verbinden.
+- **Bewegungen:** Die Gelenke in model.py sind die Quelle dafür, was sich wie bewegt (Bereich, Bedienung,
+  mitbewegte Teile). `<projekt>/bewegungen.json` gilt nur noch für Teile ohne Gelenk; Einträge für Teile mit Gelenk
+  werden übergangen (Kevin, 22.10.2026).
 - **Maße:** `param(name, wert, min=, max=)`, `bed.gleich(a, b)`, `bed.spiel(deckel, gehaeuse, min=0.2)`,
   `bed.min_abstand(a, b, wert)`, `bed.min_wand(teil, 1.2)`.
 - **Prüfen:** `run` meldet Befunde mit Soll, Ist, Zeile und Lösung; `bedingungen` zeigt alle Bedingungen, Freiheitsgrade
