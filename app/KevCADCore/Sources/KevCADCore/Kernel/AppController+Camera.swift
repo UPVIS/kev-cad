@@ -7,6 +7,10 @@ import simd
 // Phase 5, Strang KAM: Kameras im App-Kern. Nachrichten (CAMERA_UPSERT/REMOVE), Pyramiden im Viewport, Blick durch die
 // Kamera (Taste 0) mit exaktem Bildwinkel, Strg+Alt+0 als Vorschlag an Kernel und Agent, Kamerabilder (Oberfläche und
 // SCREENSHOT_REQ mit `camera`), VIEW_CMD `camera_view` und `camera_suggest`.
+//
+// Zusammenspiel mit der Animation: Kameras kommen in der Ruhelage aus model.py. Folgt eine Kamera einem Teil
+// (`folgt`, sonst `teil`), bewegt die App sie mit dessen Lage relativ zur Ruhelage (Animation und Explosion):
+// `posedCamera`. Pyramide, Blick durch die Kamera, Kamerabild und Video benutzen immer die bewegte Kamera.
 
 extension AppController: CameraActions {
     var cameras: CameraStore { model.cameras }
@@ -18,7 +22,7 @@ extension AppController: CameraActions {
         case .upsert(let c):
             cameras.upsert(c)
             if cameras.activeView == c.name {
-                applyCameraView(c, animated: false)
+                applyCameraView(posedCamera(c), animated: false)
                 viewport.bodies = cameraFilteredBodies(scene.renderBodies)
             }
         case .remove(let name):
@@ -34,17 +38,74 @@ extension AppController: CameraActions {
         cameras.removeAll()
     }
 
-    /// Pyramiden aller Kameras außer der, durch die gerade geschaut wird.
+    /// Pyramiden aller Kameras außer der, durch die gerade geschaut wird (in der aktuellen Lage ihres Teils).
     func cameraOverlayItems() -> [OverlayPrimitive] {
         cameras.cameras.filter { $0.name != cameras.activeView }.flatMap {
-            CameraViewMath.overlay($0, selected: $0.name == cameras.selected)
+            CameraViewMath.overlay(posedCamera($0), selected: $0.name == cameras.selected)
         }
     }
 
     /// Körper für den Viewport: beim Blick durch eine Kamera ohne ihr eigenes Objektiv und ohne Teile vor dem Augpunkt.
     func cameraFilteredBodies(_ bodies: [ViewportBody]) -> [ViewportBody] {
         guard let name = cameras.activeView, let c = cameras.camera(name) else { return bodies }
-        return CameraViewMath.filter(bodies, hiding: hiddenForCamera(c))
+        return CameraViewMath.filter(bodies, hiding: hiddenForCamera(posedCamera(c)))
+    }
+
+    // MARK: Kamera folgt ihrem Teil (Animation, Explosion)
+
+    /// Teil, dem die Kamera folgt, wie es in der Szene steht (bei einer Baugruppe ihr erstes Teil).
+    func followedPart(_ c: CameraInfo) -> String? {
+        guard let name = c.folgt ?? c.teil, !name.isEmpty else { return nil }
+        if scene.record(name) != nil { return name }
+        return scene.order.first { $0.hasPrefix(name + "/") }
+    }
+
+    /// Bewegung des gefolgten Teils gegenüber seiner Ruhelage (Animation · Explosion); nil = steht in Ruhe.
+    func cameraMotion(_ c: CameraInfo) -> simd_float4x4? {
+        guard let part = followedPart(c), let rec = scene.record(part) else { return nil }
+        let m = scene.worldTransform(part) * rec.header.transformMatrix.inverse
+        let d = m - matrix_identity_float4x4
+        let columns = [d.columns.0, d.columns.1, d.columns.2, d.columns.3]
+        let deviation = columns.map { simd_reduce_max(simd_abs($0)) }.max() ?? 0
+        return deviation < 1e-5 ? nil : m
+    }
+
+    /// Kamera in der aktuellen Lage ihres Teils.
+    func posedCamera(_ c: CameraInfo) -> CameraInfo {
+        guard let m = cameraMotion(c) else { return c }
+        return c.transformed(by: m)
+    }
+
+    /// Lage der Teile hat sich geändert (Bild der Animation, Explosion): Blick durch die Kamera nachführen.
+    func cameraPoseChanged() {
+        guard let name = cameras.activeView, let c = cameras.camera(name) else { return }
+        applyCameraView(posedCamera(c), animated: false)
+    }
+
+    /// Kamerazustand für ein Bild der Animation (Video): die benannte Kamera in der Lage, die die Szene gerade hat
+    /// (der Videoexport setzt die Lage des Bildes, bevor er nach der Kamera fragt). nil = Kamera unbekannt.
+    func animationCameraState(_ name: String) -> CameraState? {
+        guard let c = cameras.camera(name) else { return nil }
+        return CameraViewMath.state(for: posedCamera(c))
+    }
+
+    /// Körper für ein Videobild durch die Kamera: ohne ihr Objektiv und ohne Teile vor dem Augpunkt.
+    func animationCameraBodies(_ name: String, _ bodies: [ViewportBody]) -> [ViewportBody] {
+        guard let c = cameras.camera(name) else { return bodies }
+        return CameraViewMath.filter(bodies, hiding: hiddenForCamera(posedCamera(c)))
+    }
+
+    /// Vorschlag aus einer Ansicht, zurückgerechnet in die Ruhelage (model.py kennt nur die), falls die Kamera gerade
+    /// mit ihrem Teil bewegt steht.
+    func restSuggestion(from s: CameraState, for c: CameraInfo) -> CameraSuggestMessage {
+        var auge = s.position, blick = s.viewDirection, oben = s.upVector
+        if let inv = cameraMotion(c)?.inverse {
+            let a = inv * SIMD4(auge, 1), b = inv * SIMD4(blick, 0), o = inv * SIMD4(oben, 0)
+            auge = SIMD3(a.x, a.y, a.z)
+            blick = SIMD3(b.x, b.y, b.z)
+            oben = SIMD3(o.x, o.y, o.z)
+        }
+        return CameraViewMath.suggestion(auge: auge, blick: blick, oben: oben, for: c)
     }
 
     func hiddenForCamera(_ c: CameraInfo) -> Set<String> {
@@ -67,7 +128,7 @@ extension AppController: CameraActions {
         if cameras.activeView == nil { cameras.savedViewport = viewport.camera }
         cameras.activeView = c.name
         cameras.selected = c.name
-        applyCameraView(c, animated: true)
+        applyCameraView(posedCamera(c), animated: true)
         viewport.bodies = cameraFilteredBodies(scene.renderBodies)
         refreshOverlay()
         log(.info, "Blick durch \(c.displayName): \(c.formatName), \(c.brennweiteText), \(c.blendeText), Fokus \(c.fokusText)")
@@ -126,7 +187,7 @@ extension AppController: CameraActions {
         guard size.width > 1, size.height > 1 else { return }
         viewport.viewSize = size
         guard let name = cameras.activeView, let c = cameras.camera(name) else { return }
-        applyCameraView(c, animated: false)
+        applyCameraView(posedCamera(c), animated: false)
     }
 
     public func toggleCameraView() {
@@ -147,7 +208,7 @@ extension AppController: CameraActions {
             return
         }
         let base = cameras.activeView == nil ? viewport.camera : (cameras.savedViewport ?? viewport.camera)
-        let msg = CameraViewMath.suggestion(from: base, for: c)
+        let msg = restSuggestion(from: base, for: c)
         send(msg)
         let moved = c.moved(auge: msg.auge, blick: msg.blick, oben: msg.oben)
         cameras.upsert(moved)
@@ -162,7 +223,8 @@ extension AppController: CameraActions {
 
     // MARK: Kamerabilder
 
-    func renderThroughCamera(_ c: CameraInfo, width: Int, height: Int, overlays: Bool) -> ScreenshotRenderer.Result? {
+    func renderThroughCamera(_ camera: CameraInfo, width: Int, height: Int, overlays: Bool) -> ScreenshotRenderer.Result? {
+        let c = posedCamera(camera)
         let state = CameraViewMath.state(for: c)
         let bodies = CameraViewMath.filter(scene.snapshotBodies(), hiding: hiddenForCamera(c))
         return screenshots.render(
@@ -260,7 +322,7 @@ extension AppController: CameraActions {
             // Läuft noch eine Kamerafahrt (view, focus direkt davor), erst ihr Ende abwarten (höchstens 1,5 s)
             whenCameraIdle(until: CACurrentMediaTime() + 1.5) { [weak self] in
                 guard let self else { return }
-                self.send(CameraViewMath.suggestion(from: self.viewport.camera, for: c))
+                self.send(self.restSuggestion(from: self.viewport.camera, for: c))
             }
             return (true, "Vorschlag aus der aktuellen Ansicht")
         default:

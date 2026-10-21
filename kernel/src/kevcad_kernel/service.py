@@ -159,7 +159,8 @@ class KernelService(Protocol):
     def animation_video(self, name: str | None = None, breite: int = 1920, hoehe: int | None = None,
                         fps: float | None = None, kamera: str | None = None, format: str = "mp4") -> dict[str, Any]:  # noqa: A002
         """Video aus der App nach <projekt>/output/animationen/. {"ok", "path", "width", "height", "fps", "bilder",
-        "ms"}; ``kamera`` vorerst nur None (Viewer-Kamera bzw. Kamerafahrt aus anim.ansicht)."""
+        "ms", "kamera"}; ``kamera`` None = Viewer-Kamera bzw. Kamerafahrt aus anim.ansicht, sonst eine Kamera aus
+        model.py (Kurzname oder „Kamera/<name>“), Höhe dann aus dem Seitenverhältnis ihres Formats."""
 
     def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
         """Kollisionen an jedem ``schritt``-ten Bild. {"ok", "name", "kollisionen": [{"teile", "von", "bis", "zeit",

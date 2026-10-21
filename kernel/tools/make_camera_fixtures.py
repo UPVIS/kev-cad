@@ -26,11 +26,12 @@ def main() -> None:
     fx6.setzen((250, 0, 235), richtung=(1, 0, 0))
     a = {"type": "CAMERA_UPSERT", "seq": 21, "run": 4, **fx6.nachricht()}
     a["teil"] = "Wagen"
+    a["folgt"] = "Wagen"  # Zusammenspiel mit der Animation: die Kamera fährt mit diesem Teil
     a["ausblenden"] = ["Kamera FX6/Objektiv"]
     b_cam = lager.kamera("sony-fx6", objektiv="sony-fe-24-105-f4-g-oss", format="dci", brennweite=50,
                          fokus="unendlich", name="B")
     b_cam.setzen((-1000, 800, 1200), blick_auf=(1200, 0, 108), roll=5)
-    b = {"type": "CAMERA_UPSERT", "seq": 22, "run": 4, **b_cam.nachricht()}
+    b = {"type": "CAMERA_UPSERT", "seq": 22, "run": 4, **b_cam.nachricht(), "folgt": None}
     frames = {
         "camera_upsert": a,
         "camera_upsert_b": b,

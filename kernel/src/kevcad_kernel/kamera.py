@@ -60,8 +60,49 @@ class KameraRegister:
                 for name in shown:
                     if tokens.get(name) == lens_token and name not in cam.ausblenden:
                         cam.ausblenden.append(name)
-            out.append(cam.nachricht())
+            head = cam.nachricht()
+            head["folgt"] = folge_teil(cam, shown, tokens)
+            out.append(head)
         return out
+
+    def koerper_folgen(self, anims: list[Any], shown: list[str], tokens: dict[str, str | None]) -> None:
+        """Animation (Zusammenspiel KAM/ANI): Hängt eine Kamera mit ``an(teil)`` an einem gezeigten Teil, fährt ihr
+        gezeigter Körper aus ``koerper()`` in jeder Animation mit diesem Teil mit (``folge``), außer eine Spur bewegt
+        den Körper dort schon selbst. Die optische Kamera folgt dem Teil in der App ohnehin (``folgt``)."""
+        motion = ("bewege", "drehe", "pfad", "rolle", "folge", "gelenk")
+        for cam in self.kameras.values():
+            teil = _shown_part(cam.teil, shown)
+            body_tokens = {t for t in cam._tokens.values() if t}
+            if teil is None or not body_tokens:
+                continue
+            body = [n for n in shown if tokens.get(n) in body_tokens and n != teil]
+            if not body:
+                continue
+            for anim in anims:
+                ziele = [s.ziel for s in anim.spuren if s.art in motion and s.ziel]
+                if any(n == z or n.startswith(z + "/") for n in body for z in ziele):
+                    continue  # Körper wird in dieser Animation schon bewegt
+                for n in body:
+                    anim.folge(n, teil)
+
+
+def _shown_part(name: str | None, shown: list[str]) -> str | None:
+    """Gezeigtes Teil zu einem Namen aus ``an()``: das Teil selbst, bei einer Baugruppe ihr erstes gezeigtes Teil."""
+    if not name:
+        return None
+    if name in shown:
+        return name
+    return next((n for n in shown if n.startswith(name + "/")), None)
+
+
+def folge_teil(cam: Any, shown: list[str], tokens: dict[str, str | None]) -> str | None:
+    """Teil, dessen Lage die Kamera in der App mitmacht (Animation, Explosion): das Teil aus ``an()``, sonst das
+    gezeigte Gehäuse aus ``koerper()``, sonst None (Kamera steht fest)."""
+    teil = _shown_part(cam.teil, shown)
+    if teil is not None:
+        return teil
+    body = cam._tokens.get("gehaeuse")
+    return next((n for n in shown if body and tokens.get(n) == body), None)
 
 
 def location_of(shape: Any) -> list[list[float]] | None:

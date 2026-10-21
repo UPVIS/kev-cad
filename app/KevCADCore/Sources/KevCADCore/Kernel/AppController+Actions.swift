@@ -142,6 +142,7 @@ extension AppController {
     func applyExplode(_ factor: Double) {
         scene.setExplode(Float(factor))
         model.explodeFactor = Double(scene.explodeFactor)
+        cameraPoseChanged()  // Kameras an Teilen fahren mit auseinander
         refreshOverlay()
     }
 

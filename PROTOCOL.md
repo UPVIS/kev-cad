@@ -241,7 +241,7 @@ Animationen des letzten Laufs nach `BOM` mit. `RUN_END`-Ergebnisse für MCP trag
 | `ANIM_COLLISIONS` | `name`, `run`, `kollisionen` (siehe unten), `geprueft` (`paare`, `bilder`, `schritt`, `geprueft_bilder`, `exakt`, `symmetrisch`, `ms`, …), optional `reply_to` | – |
 | `ANIM_PLAY` | `id`, `name`, `an` (bool), `schleife`, `geschwindigkeit` (1 = Echtzeit), `von_vorn` | App antwortet `ACK` |
 | `ANIM_SEEK` | `id`, `name`, `zeit` (s; hält an) | App antwortet `ACK` |
-| `ANIM_VIDEO_REQ` | `id`, `name`, `width`, `height`, `fps`, `kamera` (null = Viewer-Kamera bzw. Kamerafahrt; reserviert für „Kamera/<name>“), `format` (`mp4` = H.264 \| `prores` = ProRes 422), `path` (absolute Zieldatei, `<projekt>/output/animationen/<name>.mp4`) | App antwortet `ANIM_VIDEO_RES` |
+| `ANIM_VIDEO_REQ` | `id`, `name`, `width`, `height`, `fps`, `kamera` (null = Viewer-Kamera bzw. Kamerafahrt, sonst „Kamera/<name>“ aus CAMERA_UPSERT), `format` (`mp4` = H.264 \| `prores` = ProRes 422), `path` (absolute Zieldatei, `<projekt>/output/animationen/<name>.mp4`, mit Kamera `<name>_<kamera>.mp4`) | App antwortet `ANIM_VIDEO_RES` |
 
 Nutzlast von `ANIM_DEF`:
 
@@ -269,7 +269,7 @@ Dicke unter 0,05 mm) und Paare aus `anim.erlaube(...)` zählen nicht.
 |---|---|---|
 | `ANIM_STATE` | `name`, `zeit`, `bild`, `spielt`, `schleife`, `geschwindigkeit` (bei Abspielen, Anhalten, Springen, nicht je Bild) | – |
 | `ANIM_COLLISIONS_REQ` | `id`, `name`, `schritt` (jedes n-te Bild, Vorgabe 3) | `ANIM_COLLISIONS` mit `reply_to` |
-| `ANIM_VIDEO_RES` | `reply_to`, `ok`, `path`, `frames`, `ms`, `message`, `kamera` | – |
+| `ANIM_VIDEO_RES` | `reply_to`, `ok`, `path`, `frames`, `ms`, `message`, `kamera` (`Viewer`, `Kamerafahrt` oder der Kameraname) | – |
 
 ## Phase 5: Kameras
 
@@ -299,7 +299,8 @@ und `camera_fixtures.json` nach `app/KevCADCore/Tests/KevCADCoreTests/Fixtures/`
   "brennweite": 35.0, "bildwinkel_h": 54.043, "bildwinkel_v": 32.014, "bildwinkel_d": 60.668,
   "blende": 2.8, "blendenart": "t", "fokus": 1500.0, "schaerfe_nah": 1375.628, "schaerfe_fern": 1649.097,
   "hyperfokal": 16238.704, "zerstreuungskreis": 0.027,
-  "teil": "Wagen", "ausblenden": ["Kamera FX6/Objektiv"], "objektiv_vorne": 139.0, "vignettierung": false
+  "teil": "Wagen", "folgt": "Wagen", "ausblenden": ["Kamera FX6/Objektiv"], "objektiv_vorne": 139.0,
+  "vignettierung": false
 }
 ```
 
@@ -312,8 +313,10 @@ und `camera_fixtures.json` nach `app/KevCADCore/Tests/KevCADCoreTests/Fixtures/`
   die Kamera und das Kamerabild benutzen `bildwinkel_v` als vertikalen Öffnungswinkel und `seitenverhaeltnis`
   (= `aufloesung`).
 - `fokus`, `schaerfe_nah`, `schaerfe_fern`, `hyperfokal` in mm ab Sensorebene; `null` heißt unendlich.
-- `teil`: gezeigtes Teil, an dem die Kamera hängt (`an(...)`), sonst `null`. Bewegt die App das Teil (Explosion,
-  später Animation), folgt die Kamera seiner Matrix.
+- `teil`: gezeigtes Teil, an dem die Kamera hängt (`an(...)`), sonst `null`.
+- `folgt`: gezeigtes Teil, dessen Bewegung die Kamera in der App mitmacht: das Teil aus `an(...)` (bei einer Baugruppe
+  ihr erstes gezeigtes Teil), sonst das gezeigte Gehäuse aus `koerper()`, sonst `null` (steht fest). Ohne das Feld
+  (ältere Kernel) gilt `teil`. Siehe „Kameras und Animation“.
 - `ausblenden`: gezeigte Teile des eigenen Objektivs aus `koerper()`; die App blendet sie (und jedes Teil, dessen
   Hüllquader die Strecke vom Augpunkt bis `objektiv_vorne` vor der Sensorebene schneidet) beim Blick durch die
   Kamera aus.
@@ -337,3 +340,18 @@ Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
 | type | Felder | Antwort |
 |---|---|---|
 | `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera_info`, `kamera_vorschlag_aus_ansicht`) |
+
+### Kameras und Animation
+
+- Kameras kommen in der Ruhelage aus model.py. Die App bewegt jede Kamera starr mit der Lage ihres Teils `folgt`
+  relativ zu dessen Ruhelage (Animation aus `ANIM_DEF`, dazu die Explosion): Pyramide, Blick durch die Kamera (Taste 0;
+  er bleibt beim Abspielen aktiv und hat Vorrang vor einer Kamerafahrt), Kamerabild (`SCREENSHOT_REQ` mit `camera`)
+  und Video (`ANIM_VIDEO_REQ.kamera`) zeigen die Kamera in der aktuellen bzw. der Lage des Bildes.
+- Im Video durch eine Kamera blendet die App wie in der Kameraansicht ihr Objektiv (`ausblenden`) und Teile vor dem
+  Augpunkt aus; der Kernel rechnet die Höhe aus dem Seitenverhältnis des Formats (`aufloesung`).
+- Der Kernel lässt den gezeigten Körper (`koerper()`) einer Kamera mit `an(teil)` in jeder Animation mit diesem Teil
+  fahren (`folge`), außer eine Spur bewegt den Körper dort schon. Rig-Zubehör hängt nicht an der Kamera und braucht
+  eine eigene Spur.
+- `CAMERA_SUGGEST` (Strg+Alt+0) rechnet die Ansicht in die Ruhelage zurück, wenn die Kamera gerade bewegt steht.
+- MCP: `animation_liste` und die Zusammenfassung von `run` nennen je Animation unter `kameras` die Kameras, deren Teil
+  sich darin bewegt.

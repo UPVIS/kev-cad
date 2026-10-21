@@ -94,6 +94,8 @@ public final class AppController: AppActions {
             guard let self else { return }
             self.viewport.bodies = self.cameraFilteredBodies(self.scene.renderBodies)
         }
+        // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
+        setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         installNavigation()
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }

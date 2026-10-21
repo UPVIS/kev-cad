@@ -690,6 +690,10 @@ class Runner:
                 os.chdir(old_cwd)
         anim_names: list[str] = []
         if error is None and state.get("animations"):
+            try:  # Körper von Kameras an Teilen fahren mit ihrem Teil (Zusammenspiel Kamera und Animation)
+                kameras.koerper_folgen(state["animations"], state["shown"], state.get("tokens", {}))
+            except Exception as exc:  # noqa: BLE001 - darf die Animation nicht verhindern
+                state["warnings"].append(f"Kamerakörper fahren nicht mit: {type(exc).__name__}: {exc}")
             error, anim_names = self._animations(run, state, path, source)
         self.ns = ns
         self.ns_project = project

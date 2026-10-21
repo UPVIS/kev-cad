@@ -159,14 +159,20 @@ public enum CameraViewMath {
     /// Lage der Kamera aus dem Viewport: Augpunkt = Kameraposition des Viewports, Blick und Oben wie dort; Roll in Grad
     /// gegenüber einer waagrechten Kamera (positiv im Uhrzeigersinn von hinten, wie `roll` in model.py).
     public static func suggestion(from s: CameraState, for c: CameraInfo) -> CameraSuggestMessage {
-        let blick = simd_normalize(s.viewDirection)
-        let oben = simd_normalize(s.upVector)
+        suggestion(auge: s.position, blick: s.viewDirection, oben: s.upVector, for: c)
+    }
+
+    /// Vorschlag aus Augpunkt, Blick und Oben (Weltkoordinaten der Ruhelage).
+    public static func suggestion(
+        auge: SIMD3<Float>, blick viewDirection: SIMD3<Float>, oben upVector: SIMD3<Float>, for c: CameraInfo
+    ) -> CameraSuggestMessage {
+        let blick = simd_normalize(viewDirection)
+        let oben = simd_normalize(upVector)
         let rechts = simd_normalize(simd_cross(blick, oben))
         let ref: SIMD3<Float> = abs(blick.z) < 0.999 ? SIMD3(0, 0, 1) : SIMD3(0, 1, 0)
         let r0 = simd_normalize(simd_cross(blick, ref))
         let o0 = simd_cross(r0, blick)
         let roll = Double(atan2(simd_dot(oben, r0), simd_dot(oben, o0))) * 180 / .pi
-        let auge = s.position
         return CameraSuggestMessage(
             name: c.name, sensorPos: auge - blick * Float(c.brennweite), auge: auge, blick: blick, oben: oben,
             rechts: rechts, roll: roll)

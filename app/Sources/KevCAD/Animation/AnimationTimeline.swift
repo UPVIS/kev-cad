@@ -219,7 +219,8 @@ struct AnimationVideoButton: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Video nach output/animationen/ (Klick: MP4 1920 × 1080)")
+            .help("Video nach output/animationen/ (Klick: MP4 1920 × 1080; beim Blick durch eine Kamera aus ihrer Sicht "
+                + "im Seitenverhältnis ihres Formats)")
         }
     }
 

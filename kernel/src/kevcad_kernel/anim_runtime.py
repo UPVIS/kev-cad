@@ -53,11 +53,17 @@ class StoredAnimation:
     def fps(self) -> float:
         return float(self.header.get("fps") or 30.0)
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self, kameras: dict[str, str | None] | None = None) -> dict[str, Any]:
+        """Zusammenfassung für MCP; ``kameras``: Kamera (Kurzname) → Teil, dem sie folgt (``folgt`` aus
+        CAMERA_UPSERT). Kameras an bewegten Teilen stehen unter ``kameras`` (sie fahren in der App mit)."""
         out = {"name": self.name, "dauer": self.dauer, "fps": self.fps, "bilder": self.frames,
                "teile": len(self.teile), "kamerafahrt": bool(self.header.get("kamera")),
                "spuren": self.header.get("spuren", 0), "standard": bool(self.header.get("standard")),
                "auswertung_ms": round(self.eval_ms, 1)}
+        moved = set(self.teile)
+        mit = [k for k, teil in (kameras or {}).items() if teil and teil in moved]
+        if mit:
+            out["kameras"] = mit
         if self.header.get("warnungen"):
             out["warnungen"] = list(self.header["warnungen"])
         if self.kollisionen is not None:
@@ -178,7 +184,8 @@ class AnimationRuntimeMixin:
                 if a.kollisionen is not None:
                     self._send_app({"type": "ANIM_COLLISIONS", **a.kollisionen})  # type: ignore[attr-defined]
         if new:
-            result["animationen"] = [a.summary() for a in new]
+            cams = self._anim_cameras()
+            result["animationen"] = [a.summary(cams) for a in new]
 
     def _anim_project_changed(self) -> None:
         for name in self.anim_hub.clear():
@@ -210,11 +217,23 @@ class AnimationRuntimeMixin:
 
     # -- KernelService (Phase 5) ---------------------------------------------------------------------------------------
 
+    def _anim_cameras(self) -> dict[str, str | None]:
+        """Kameras des letzten Laufs (Strang KAM): Kurzname → Teil, dem die Kamera folgt."""
+        get = getattr(self, "cameras", None)
+        if get is None:
+            return {}
+        try:
+            cams = get().get("cameras") or []
+        except Exception:  # noqa: BLE001
+            return {}
+        return {str(c.get("kurzname") or c.get("name")): c.get("folgt") or c.get("teil") for c in cams}
+
     def animation_list(self) -> dict[str, Any]:
         anims = self.anim_hub.all()
         with self.anim_hub.lock:
             state = dict(self.anim_hub.app_state)
-        out: dict[str, Any] = {"ok": True, "animationen": [a.summary() for a in anims], "stand": state or None}
+        cams = self._anim_cameras()
+        out: dict[str, Any] = {"ok": True, "animationen": [a.summary(cams) for a in anims], "stand": state or None}
         if not anims:
             out["hinweis"] = NO_ANIMATION
         return out
@@ -273,7 +292,20 @@ class AnimationRuntimeMixin:
         if not self._link.connected:  # type: ignore[attr-defined]
             return {"ok": False, "error": APP_NOT_CONNECTED}
         w = max(64, min(int(breite), 7680)) // 2 * 2
-        h = (int(hoehe) if hoehe else round(w * 9 / 16)) // 2 * 2
+        aspect = 16 / 9
+        cam_name = None
+        if kamera is not None and str(kamera).strip():  # benannte Kamera (Strang KAM): Seitenverhältnis des Formats
+            find = getattr(self, "_camera_name", None)
+            cam_name = find(str(kamera)) if find is not None else None
+            if cam_name is None:
+                unknown = getattr(self, "_unknown_camera", None)
+                return unknown(str(kamera)) if unknown is not None else {
+                    "ok": False, "error": f"Kamera {kamera!r} gibt es nicht"}
+            head = (self.camera_info(cam_name) or {}).get("camera") or {}  # type: ignore[attr-defined]
+            res = head.get("aufloesung") or [16, 9]
+            if res[0] and res[1]:
+                aspect = float(res[0]) / float(res[1])
+        h = max(16, (int(hoehe) if hoehe else round(w / aspect)) // 2 * 2)
         rate = float(fps) if fps else a.fps
         if not 1 <= rate <= 120:
             return {"ok": False, "error": f"fps {rate:g} liegt außerhalb von 1 bis 120"}
@@ -284,10 +316,11 @@ class AnimationRuntimeMixin:
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             return {"ok": False, "error": f"Ordner {out_dir} nicht anlegbar: {exc}"}
-        path = (out_dir / f"{safe_name(a.name)}.{'mov' if fmt == 'prores' else 'mp4'}").resolve()
+        stem = safe_name(a.name) + (f"_{safe_name(cam_name.removeprefix('Kamera/'))}" if cam_name else "")
+        path = (out_dir / f"{stem}.{'mov' if fmt == 'prores' else 'mp4'}").resolve()
         frames = int(round(a.dauer * rate)) + 1
         timeout = 60.0 + frames * max(0.4, w * h / 1920 / 1080 * 0.6)
-        req = {"type": "ANIM_VIDEO_REQ", "name": a.name, "width": w, "height": h, "fps": rate, "kamera": kamera,
+        req = {"type": "ANIM_VIDEO_REQ", "name": a.name, "width": w, "height": h, "fps": rate, "kamera": cam_name,
                "format": fmt, "path": str(path)}
         t0 = time.perf_counter()
         reply, _, error = self._request(req, timeout)  # type: ignore[attr-defined]

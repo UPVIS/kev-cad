@@ -21,7 +21,7 @@ Alle Maße in mm, Z nach oben. Längsachsen entlang X, Schieberichtung +X.
 import math
 
 from build123d import *
-from kevcad import animation, param, show, step
+from kevcad import animation, lager, param, show, step
 
 aussen_d = param("aussen_d", 12)
 wand = param("wand", 1)
@@ -303,7 +303,7 @@ def schraege_x(y: float) -> float:
     return oeff_l / 2 - oeff_fase_x + (oeff_b / 2 - abs(y)) / oeff_fase_y * oeff_fase_x
 
 
-linie = 0.42  # Linienbreite der 0,4-mm-Düse (Bambu Lab P2S): Wände in Vielfachen davon
+linie = 0.42  # Linienbreite der 0,4-mm-Düse (Bambu Lab P1P): Wände in Vielfachen davon
 
 
 def tropfen(r: float, l: float, achse: str) -> Part:
@@ -605,6 +605,15 @@ for name, teil in fx6.items():
     show(kamera * teil, f"Kamera FX6/{name}", color=farben_fx6[name])
 kameraplatte = Pos(wagen_l / 2 - objektiv_platz, wagen_y, deckel_oben) * Box(fx6_t, fx6_b, kameraplatte_h, align=vorne)
 show(kameraplatte, "Kamera FX6/Kameraplatte (Druck)", color="#F28C28", material="petg")
+
+# Optische Kamera (Phase 5, Kameras): die FX6 aus dem Katalog mit einem 35-mm-Objektiv, Bajonett-Auflage an der Front
+# des Bajonettrings, Blick nach vorn, Fokus auf die Ballrückseite. Sie hängt am Body und fährt deshalb in der
+# Animation mit (Taste 0 und animation_video(kamera="FX6") zeigen ihr Bild). Das Platzhalter-Objektiv blendet die App
+# beim Blick durch die Kamera aus.
+fx6_kamera = lager.kamera("sony-fx6", objektiv="sigma-ff-hs-35-t1.5-e", format="ff-uhd", blende=2.8, name="FX6")
+bajonett_welt = kamera.position + Vector(8, 0, bildachse_z)
+fx6_kamera.an("Kamera FX6/Body", punkt=bajonett_welt, richtung=(1, 0, 0), bezug="bajonett")
+fx6_kamera.einstellen(fokus=bx - r_ball - fx6_kamera.position[0])
 
 
 # ---------------------------------------------------------------------------------------------------------------------

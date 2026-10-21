@@ -43,6 +43,9 @@ public struct CameraInfo: Identifiable, Equatable, Sendable {
     public var zerstreuungskreis: Double
     /// Gezeigtes Teil, an dem die Kamera hängt
     public var teil: String?
+    /// Gezeigtes Teil, dessen Bewegung (Animation, Explosion) die Kamera mitmacht: `teil`, sonst das eigene Gehäuse
+    /// aus `koerper()`; nil = Kamera steht fest. Ältere Kernel schicken es nicht, dann gilt `teil`.
+    public var folgt: String?
     /// Beim Blick durch die Kamera auszublenden (eigenes Objektiv)
     public var ausblenden: [String]
     /// Sensorebene bis Frontlinse in mm
@@ -103,9 +106,31 @@ public struct CameraInfo: Identifiable, Equatable, Sendable {
         hyperfokal = json["hyperfokal"]?.doubleValue
         zerstreuungskreis = json["zerstreuungskreis"]?.doubleValue ?? 0.03
         teil = json["teil"]?.stringValue
+        folgt = json["folgt"]?.stringValue ?? json["teil"]?.stringValue
         ausblenden = json["ausblenden"]?.stringList ?? []
         objektivVorne = json["objektiv_vorne"]?.doubleValue ?? 18 + f
         vignettierung = json["vignettierung"]?.boolValue ?? false
+    }
+
+    /// Dieselbe Kamera, starr mit `m` bewegt (Lage des Teils, dem sie folgt, relativ zu seiner Ruhelage).
+    public func transformed(by m: simd_float4x4) -> CameraInfo {
+        func point(_ v: SIMD3<Float>) -> SIMD3<Float> {
+            let r = m * SIMD4(v, 1)
+            return SIMD3(r.x, r.y, r.z)
+        }
+        func direction(_ v: SIMD3<Float>) -> SIMD3<Float> {
+            let r = m * SIMD4(v, 0)
+            let d = SIMD3(r.x, r.y, r.z)
+            let len = simd_length(d)
+            return len > 1e-9 ? d / len : v
+        }
+        var c = self
+        c.sensorPos = point(sensorPos)
+        c.auge = point(auge)
+        c.blick = direction(blick)
+        c.oben = direction(oben)
+        c.rechts = direction(rechts)
+        return c
     }
 
     /// Neue Lage (Vorschlag aus der Ansicht): Augpunkt, Blick und Oben; die Sensormitte liegt eine Brennweite dahinter.

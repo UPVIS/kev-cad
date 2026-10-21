@@ -35,8 +35,12 @@ extension AppController: AnimationActions {
         player.onPose = { [weak self] transforms, hidden, collision, camera in
             guard let self else { return }
             self.scene.setAnimationPose(transforms, hidden: hidden, collision: collision)
-            if let camera { self.applyAnimationCamera(camera) }
-            self.refreshOverlay()
+            if self.cameras.activeView != nil {
+                self.cameraPoseChanged()  // Blick durch eine Kamera (Taste 0) hat Vorrang vor der Kamerafahrt
+            } else if let camera {
+                self.applyAnimationCamera(camera)
+            }
+            self.refreshOverlay()  // Pyramiden fahren mit ihren Teilen
         }
         player.onStateChange = { [weak self] in self?.sendAnimationState() }
         player.pivotOf = { [weak self] name in
@@ -165,11 +169,16 @@ extension AppController: AnimationActions {
     public func exportAnimationVideo(width: Int, format: String) {
         guard let clip = animationPlayer.current, let project = model.project else { return }
         let ext = format == "prores" ? "mov" : "mp4"
+        // Beim Blick durch eine Kamera (Taste 0) entsteht das Video aus ihrer Sicht, im Seitenverhältnis ihres Formats
+        let cam = cameras.activeView.flatMap { cameras.camera($0) }
+        let suffix = cam.map { "_\(Self.safeFileName($0.displayName))" } ?? ""
         let url = project.path.appendingPathComponent("output/animationen", isDirectory: true)
-            .appendingPathComponent("\(Self.safeFileName(clip.name)).\(ext)")
-        let height = Int((Double(width) * 9 / 16).rounded()) / 2 * 2
-        renderVideo(clip: clip, width: width, height: height, fps: clip.fps, format: format, camera: nil, output: url) {
-            [weak self] result in
+            .appendingPathComponent("\(Self.safeFileName(clip.name))\(suffix).\(ext)")
+        let aspect = cam.map { max($0.seitenverhaeltnis, 0.1) } ?? 16.0 / 9.0
+        let height = Int((Double(width) / aspect).rounded()) / 2 * 2
+        renderVideo(
+            clip: clip, width: width, height: height, fps: clip.fps, format: format, camera: cam?.name, output: url
+        ) { [weak self] result in
             guard let self else { return }
             if case .success(let out) = result { self.revealFiles([URL(fileURLWithPath: out.path)]) }
         }
@@ -228,7 +237,7 @@ extension AppController: AnimationActions {
             if animationCamera(named: camera, at: 0) != nil {
                 cameraLabel = camera
             } else {
-                note = "Kamera „\(camera)“ gibt es noch nicht als Objekt; Video aus der \(cameraLabel == "Viewer" ? "Viewer-Kamera" : "Kamerafahrt")"
+                note = "Kamera „\(camera)“ gibt es in der App nicht; Video aus der \(cameraLabel == "Viewer" ? "Viewer-Kamera" : "Kamerafahrt")"
             }
         }
         animationRuntime.lastVideoNote = note
@@ -252,7 +261,10 @@ extension AppController: AnimationActions {
                 guard let self else { return [] }
                 self.scene.setAnimationPose(
                     clip.pose(at: t, pivots: player.pivotsFor(clip)), hidden: clip.hiddenParts(at: t), collision: [])
-                return self.scene.snapshotBodies()
+                let bodies = self.scene.snapshotBodies()
+                // Durch eine benannte Kamera: ihr Objektiv und Teile vor dem Augpunkt ausblenden (wie bei Taste 0)
+                if let named { return self.animationCameraBodies(named, bodies) }
+                return bodies
             },
             displayMode: scene.viewportDisplayMode, lighting: viewport.controller.lightingConfiguration)
         videoExporter.export(job, progress: { done, total in

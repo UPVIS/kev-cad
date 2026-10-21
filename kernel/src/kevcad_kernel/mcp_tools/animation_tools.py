@@ -29,6 +29,8 @@ def anim_line(a: dict[str, Any]) -> str:
             f"{fmt.plural(int(a.get('teile', 0)), 'bewegtes Teil', 'bewegte Teile')}")
     if a.get("kamerafahrt"):
         text += ", mit Kamerafahrt"
+    if a.get("kameras"):
+        text += ", " + ", ".join(f"Kamera {k}" for k in a["kameras"]) + " fährt mit"
     if a.get("kollisionen") is not None:
         n = int(a["kollisionen"])
         text += ", " + ("keine Kollision" if n == 0 else fmt.plural(n, "Kollision", "Kollisionen"))
@@ -117,15 +119,17 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
 
     @tool("animation_video", "Animation als Video",
           "Render an animation as video into <project>/output/animationen/ (H.264 MP4, or ProRes 422 .mov with "
-          "format='prores'), frame by frame offscreen from the viewer camera (or the camera move from anim.ansicht). "
-          "breite in px (height 16:9), fps defaults to the animation's. kamera is reserved for named cameras "
-          "('Kamera/<name>'); for now the viewer camera is used. Returns the file path. Takes a while for long "
+          "format='prores'), frame by frame offscreen. Without kamera: from the viewer camera (or the camera move "
+          "from anim.ansicht), 16:9. With kamera (name from kamera_liste, e.g. 'FX6'): through that camera with its "
+          "angle of view and the aspect ratio of its format; a camera attached with .an(part) rides along with the "
+          "animated part. breite in px, fps defaults to the animation's. Returns the file path. Takes a while for long "
           "animations; progress shows in the app.", ADDITIVE)
     async def animation_video(
         name: Annotated[str | None, Field(description="Animation name; omit for the current/first one")] = None,
         breite: Annotated[int, Field(ge=64, le=7680, description="Video width in px")] = 1920,
         fps: Annotated[float | None, Field(ge=1, le=120, description="Frame rate; default from the animation")] = None,
-        kamera: Annotated[str | None, Field(description="Camera name (reserved); omit for the viewer camera")] = None,
+        kamera: Annotated[str | None, Field(description="Camera name from kamera_liste (e.g. 'FX6'); omit for the "
+                                                        "viewer camera")] = None,
         format: Annotated[Literal["mp4", "prores"], Field(description="mp4 = H.264, prores = ProRes 422")] = "mp4",  # noqa: A002
     ) -> CallToolResult:
         res = await t.work("rendert ein Video der Animation", svc.animation_video, name, breite, None, fps, kamera,

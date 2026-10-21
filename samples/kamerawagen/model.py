@@ -6,12 +6,15 @@ dazu eine zweite Kamera für die Totale. Beispiel für Kameras in Kev CAD (Phase
   Wagen verschoben (param wagen_x), wandert die Kamera mit.
 - fx6.koerper() zeigt Gehäuse und Objektiv aus den Katalogmaßen und steht als Inventar in der Stückliste.
 - In der App: Taste 0 schaut durch die gewählte Kamera, Strg+Alt+0 schlägt die aktuelle Ansicht als neue Lage vor.
+- Animation „Fahrt“: der Wagen rollt 1,2 m, die FX6 fährt mit (Bild, Pyramide, Körper), das Rig über folge, der Ball
+  rollt voraus. Taste 0 und Leertaste zeigen die Fahrt durch die FX6, animation_video("Fahrt", kamera="FX6") macht
+  daraus ein Video.
 
 Wagen und Ball sind vereinfachte Nachbauten (Inventar-Regel in kevcad.json aus). Maße in mm, Z oben, Fahrtrichtung +X.
 """
 
 from build123d import *
-from kevcad import lager, param, show, step
+from kevcad import animation, lager, param, show, step
 
 wagen_x = param("wagen_x", 0)  # Lage des Wagens entlang X
 wagen_h = param("wagen_h", 150)  # Oberkante Rahmen
@@ -55,3 +58,11 @@ step("Totale")
 totale = lager.kamera("sony-fx6", objektiv="sony-fe-24-105-f4-g-oss", brennweite=brennweite, format="dci",
                       blende=5.6, name="Totale")
 totale.setzen((wagen_x - 1400, -1600, 1500), blick_auf=(ball_x - 300, 0, 200))
+
+step("Animation")
+fahrt = animation(dauer=4, fps=30, name="Fahrt")
+fahrt.bewege("Rollwagen", nach=(1200, 0, 0), von=0.5, bis=3.5, kurve="weich")
+for i in range(1, 5):  # Rollen drehen sich passend zur Strecke (Winkel = Strecke / Radius)
+    fahrt.rolle(f"Rollwagen/Rolle {i}", auf="Rollwagen", radius=50, achse="y")
+fahrt.folge("Rig", "Rollwagen/Deckel")  # Rig-Zubehör hängt nicht an der Kamera; der Körper der FX6 fährt von selbst mit
+fahrt.rolle("Bowlingball", auf="Rollwagen", radius=r_ball)  # rollt im gleichen Abstand voraus

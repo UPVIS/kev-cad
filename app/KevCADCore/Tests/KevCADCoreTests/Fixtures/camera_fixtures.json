@@ -95,7 +95,8 @@
    "Kamera FX6/Objektiv"
   ],
   "objektiv_vorne": 139.0,
-  "vignettierung": false
+  "vignettierung": false,
+  "folgt": "Wagen"
  },
  "camera_upsert_b": {
   "type": "CAMERA_UPSERT",
@@ -194,7 +195,8 @@
   "teil": null,
   "ausblenden": [],
   "objektiv_vorne": 131.3,
-  "vignettierung": false
+  "vignettierung": false,
+  "folgt": null
  },
  "camera_remove": {
   "type": "CAMERA_REMOVE",
