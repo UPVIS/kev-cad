@@ -229,8 +229,10 @@ class BauplanDienst:
         if proj is None or not result.get("ok"):
             return
         if not datei.pfad(proj.path).exists():
-            self._bp()["docs"] = None
-            self._bp_docs_senden()
+            st = self._bp()
+            if st.get("docs") is not None:  # nur melden, wenn der Bauplan verschwunden ist; sonst bleibt alles still
+                st["docs"] = None
+                self._bp_docs_senden()
             return
 
         def arbeit() -> None:
