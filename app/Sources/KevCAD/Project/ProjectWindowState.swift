@@ -12,6 +12,8 @@ final class ProjectWindowState: ObservableObject {
     @Published var searchText = ""
     /// Fehlerband für diesen Lauf weggeklickt.
     @Published var dismissedErrorRun: Int?
+    /// Band „Nicht aus dem Inventar“ für diese Verstöße weggeklickt.
+    @Published var dismissedInventory: String?
 
     // Schnitt: AppModel kennt nur `sectionEnabled`, Achse und Lage hält die Oberfläche.
     @Published var sectionAxis = "z"
@@ -19,6 +21,23 @@ final class ProjectWindowState: ObservableObject {
 
     /// Letzter Explosionswert, damit E wieder dorthin springt.
     var lastExplode: Double = 0.6
+
+    // MARK: Stückliste (Phase 2)
+
+    /// Bereich „Stückliste“ unter dem Viewport; bleibt über Neustarts hinweg so, wie er zuletzt war.
+    @Published var showBOM = UserDefaults.standard.bool(forKey: "showBOM") {
+        didSet { UserDefaults.standard.set(showBOM, forKey: "showBOM") }
+    }
+    @Published var bomHeight: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: "bomHeight")
+        return stored >= 160 ? stored : 390
+    }() {
+        didSet { UserDefaults.standard.set(Double(bomHeight), forKey: "bomHeight") }
+    }
+    /// Die Stückliste hat sich in diesem Fenster schon einmal von selbst geöffnet (nur beim ersten Mal).
+    var bomAutoShown = false
+
+    static let bomHeightRange: ClosedRange<CGFloat> = 160...720
 
     // MARK: Schnitt
 

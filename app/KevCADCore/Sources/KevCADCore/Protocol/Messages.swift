@@ -57,10 +57,22 @@ public struct ProjectMessage: Decodable, Sendable {
     public var name: String?
     public var model: String?
     public var replyTo: String?
+    /// Phase 2: Inventar-Regel des Projekts, falls der Kernel sie mitschickt.
+    public var inventarRegel: Bool?
 
     enum CodingKeys: String, CodingKey {
         case path, name, model
         case replyTo = "reply_to"
+        case inventarRegel = "inventar_regel"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        name = try? c.decodeIfPresent(String.self, forKey: .name)
+        model = try? c.decodeIfPresent(String.self, forKey: .model)
+        replyTo = try? c.decodeIfPresent(String.self, forKey: .replyTo)
+        inventarRegel = try? c.decodeIfPresent(Bool.self, forKey: .inventarRegel)
     }
 }
 
@@ -191,15 +203,22 @@ public struct PartUpsertHeader: Decodable, Sendable {
     public var faces: [FaceInfo]
     public var edges: [EdgeInfo]
     public var transform: [Float]?
+    /// Phase 2: Lagerteil, wenn das Teil aus `lager.teil(...).verbauen(...)` stammt.
+    public var stock: StockInfo?
+    /// Phase 2, Inventar-Regel: "ok" oder "fehlt" (Teil ist weder Lagerteil noch gekennzeichnetes Druckteil).
+    public var inventar: String?
 
     enum CodingKeys: String, CodingKey {
-        case run, name, color, material, bbox, props, counts, faces, edges, transform
+        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar
     }
+
+    /// Inventar-Regel verletzt.
+    public var inventarFehlt: Bool { inventar == "fehlt" }
 
     public init(
         run: Int, name: String, color: [Float]? = nil, material: String? = nil, bbox: BBox? = nil,
         props: JSONValue? = nil, counts: PartCounts, faces: [FaceInfo] = [], edges: [EdgeInfo] = [],
-        transform: [Float]? = nil
+        transform: [Float]? = nil, stock: StockInfo? = nil
     ) {
         self.run = run
         self.name = name
@@ -211,6 +230,7 @@ public struct PartUpsertHeader: Decodable, Sendable {
         self.faces = faces
         self.edges = edges
         self.transform = transform
+        self.stock = stock
     }
 
     public init(from decoder: Decoder) throws {
@@ -226,6 +246,8 @@ public struct PartUpsertHeader: Decodable, Sendable {
         edges = (try? c.decodeIfPresent([EdgeInfo].self, forKey: .edges)) ?? []
         let t = try? c.decodeIfPresent([Float].self, forKey: .transform)
         transform = (t?.count == 16) ? t : nil
+        stock = (try? c.decodeIfPresent(JSONValue.self, forKey: .stock)).flatMap { StockInfo(json: $0) }
+        inventar = try? c.decodeIfPresent(String.self, forKey: .inventar)
     }
 
     /// Lineares RGBA, Vorgabe hellgrau.
@@ -260,10 +282,13 @@ public struct RunEndMessage: Decodable, Sendable {
     public var triangles: Int
     public var warnings: [String]
     public var params: JSONValue?
+    /// Phase 2, Inventar-Regel: Teile, die weder Lagerteil noch gekennzeichnetes Druckteil sind.
+    public var inventarVerstoesse: [String]
 
     enum CodingKeys: String, CodingKey {
         case run, parts, triangles, warnings, params
         case durationMs = "duration_ms"
+        case inventarVerstoesse = "inventar_verstoesse"
     }
 
     public init(from decoder: Decoder) throws {
@@ -274,6 +299,7 @@ public struct RunEndMessage: Decodable, Sendable {
         triangles = (try? c.decodeIfPresent(Int.self, forKey: .triangles)) ?? 0
         warnings = (try? c.decodeIfPresent([String].self, forKey: .warnings)) ?? []
         params = try? c.decodeIfPresent(JSONValue.self, forKey: .params)
+        inventarVerstoesse = (try? c.decodeIfPresent([String].self, forKey: .inventarVerstoesse)) ?? []
     }
 }
 
@@ -479,6 +505,10 @@ public enum KernelMessage: Sendable {
     case exportResponse(ExportResponseMessage)
     case ack(AckMessage)
     case error(ErrorMessage)
+    /// Phase 2: Stückliste nach RUN_END oder auf BOM_REQ.
+    case bom(BOMMessage)
+    /// Phase 2: Lagerkatalog auf CATALOG_REQ.
+    case catalog(CatalogMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -500,6 +530,8 @@ public enum KernelMessage: Sendable {
         case .exportResponse: return "EXPORT_RES"
         case .ack: return "ACK"
         case .error: return "ERROR"
+        case .bom: return "BOM"
+        case .catalog: return "CATALOG"
         case .unknown(let t, _): return t
         }
     }
@@ -512,6 +544,8 @@ public enum KernelMessage: Sendable {
         case .exportResponse(let m): return m.replyTo
         case .ack(let m): return m.replyTo
         case .error(let m): return m.replyTo
+        case .bom(let m): return m.replyTo
+        case .catalog(let m): return m.replyTo
         default: return nil
         }
     }
@@ -541,6 +575,8 @@ public enum KernelMessage: Sendable {
         case "EXPORT_RES": return .exportResponse(try dec.decode(ExportResponseMessage.self, from: h))
         case "ACK": return .ack(try dec.decode(AckMessage.self, from: h))
         case "ERROR": return .error(try dec.decode(ErrorMessage.self, from: h))
+        case "BOM": return .bom(try BOMMessage.decode(h))
+        case "CATALOG": return .catalog(try CatalogMessage.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

@@ -193,6 +193,11 @@ extension AppController {
             switch result {
             case .success(.exportResponse(let e)):
                 self.log(.info, "Export fertig: " + (e.files.isEmpty ? "keine Dateien" : e.files.joined(separator: ", ")))
+                // Stückliste: die CSV-Datei gleich im Finder zeigen (öffnet von dort in Numbers oder Excel)
+                if formats.contains("bom_csv") {
+                    let csv = e.files.filter { $0.lowercased().hasSuffix(".csv") }
+                    self.revealFiles((csv.isEmpty ? e.files : csv).map { URL(fileURLWithPath: $0) })
+                }
             case .success(let m):
                 self.log(.warning, "Export: unerwartete Antwort \(m.typeName)")
             case .failure(let e):

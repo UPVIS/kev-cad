@@ -43,13 +43,16 @@ public struct PartNode: Identifiable, Equatable, Sendable {
     public var run: Int
     /// Phase 2: gesetzt, wenn das Teil aus `lager.teil(...).verbauen(...)` stammt.
     public var stock: StockInfo?
+    /// Phase 2 (A1, additiv): Inventar-Regel verletzt (PART_UPSERT `inventar: "fehlt"` oder in
+    /// RUN_END `inventar_verstoesse`): weder verbautes Lagerteil noch gekennzeichnetes 3D-Druckteil.
+    public var inventarFehlt: Bool
 
     public var name: String { path.last ?? id }
 
     public init(
         id: String, color: SIMD4<Float>, material: String? = nil, visible: Bool = true, triangles: Int = 0,
         faces: Int = 0, edges: Int = 0, bboxMin: SIMD3<Float> = .zero, bboxMax: SIMD3<Float> = .zero,
-        volume: Double? = nil, mass: Double? = nil, run: Int = 0, stock: StockInfo? = nil
+        volume: Double? = nil, mass: Double? = nil, run: Int = 0, stock: StockInfo? = nil, inventarFehlt: Bool = false
     ) {
         self.id = id
         self.path = id.split(separator: "/").map(String.init)
@@ -65,6 +68,7 @@ public struct PartNode: Identifiable, Equatable, Sendable {
         self.mass = mass
         self.run = run
         self.stock = stock
+        self.inventarFehlt = inventarFehlt
     }
 }
 
@@ -160,6 +164,12 @@ public final class AppModel: ObservableObject {
     @Published public var catalog: Catalog?
     /// Neue Version im Tools-Stapel installiert, die laufende App ist älter: Text für den Hinweis, sonst nil.
     @Published public var updateAvailable: String?
+    /// Phase 2 (A1, additiv): Stand der letzten Katalog-Anfrage (Laden, Speichern, Löschen) für die Oberfläche.
+    @Published public var catalogActivity: CatalogActivity = .idle
+    /// Phase 2 (A1, additiv): Inventar-Regel des offenen Projekts (Standard an; nur Kevin schaltet sie in der App um,
+    /// SETTINGS `inventar_regel`) und die Teile, die sie im letzten Lauf verletzen (RUN_END `inventar_verstoesse`).
+    @Published public var inventarRegel = true
+    @Published public var inventarVerstoesse: [String] = []
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?
@@ -344,10 +354,14 @@ public struct CatalogMaterial: Identifiable, Equatable, Sendable {
     public var ebene: CatalogLevel
     /// Der vollständige Eintrag als JSON (zum Bearbeiten und Zurückschicken mit CATALOG_SAVE).
     public var json: Data
+    /// Phase 2 (A1, additiv): `status: "vorgeschlagen"` (von Claude angelegt, wartet auf Freigabe).
+    public var vorgeschlagen: Bool
+    /// Phase 2 (A1, additiv): Filament für 3D-Druckteile (`druckbar: true`).
+    public var druckbar: Bool
 
     public init(
         id: String, name: String, gruppe: String, dichte: Double, farbe: String, preisJeKg: Double? = nil,
-        ebene: CatalogLevel, json: Data = Data()
+        ebene: CatalogLevel, json: Data = Data(), vorgeschlagen: Bool = false, druckbar: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -357,6 +371,8 @@ public struct CatalogMaterial: Identifiable, Equatable, Sendable {
         self.preisJeKg = preisJeKg
         self.ebene = ebene
         self.json = json
+        self.vorgeschlagen = vorgeschlagen
+        self.druckbar = druckbar
     }
 }
 
@@ -373,10 +389,13 @@ public struct CatalogItem: Identifiable, Equatable, Sendable {
     public var tags: [String]
     public var ebene: CatalogLevel
     public var json: Data
+    /// Phase 2 (A1, additiv): `status: "vorgeschlagen"` (von Claude angelegt, wartet auf Freigabe).
+    public var vorgeschlagen: Bool
 
     public init(
         id: String, art: String, name: String, norm: String? = nil, masse: [String: Double] = [:], material: String,
-        kgJeM: Double? = nil, preisText: String? = nil, tags: [String] = [], ebene: CatalogLevel, json: Data = Data()
+        kgJeM: Double? = nil, preisText: String? = nil, tags: [String] = [], ebene: CatalogLevel, json: Data = Data(),
+        vorgeschlagen: Bool = false
     ) {
         self.id = id
         self.art = art
@@ -389,7 +408,21 @@ public struct CatalogItem: Identifiable, Equatable, Sendable {
         self.tags = tags
         self.ebene = ebene
         self.json = json
+        self.vorgeschlagen = vorgeschlagen
     }
+}
+
+/// Phase 2 (A1, additiv): Was gerade mit dem Katalog passiert. `saved`/`deleted` bleiben stehen, bis die nächste
+/// Katalog-Aktion beginnt (die Oberfläche schließt daran z. B. das Formular und wählt den Eintrag aus).
+public enum CatalogActivity: Equatable, Sendable {
+    case idle
+    /// CATALOG_REQ läuft (nur beim ersten Laden; Nachladen nach dem Speichern zeigt keinen Ladezustand).
+    case loading
+    case saving
+    case saved(id: String, message: String?)
+    case deleted(id: String)
+    /// Laden, Speichern oder Löschen gescheitert (Fehlertext des Kernels oder Zeitüberschreitung).
+    case failed(String)
 }
 
 public struct Catalog: Equatable, Sendable {
@@ -417,4 +450,10 @@ public protocol CatalogActions: AnyObject {
     func showBOMLine(_ line: BOMLine)
     /// Beendet die App und startet die installierte Version neu.
     func relaunchForUpdate()
+}
+
+/// Phase 2 (A1, additiv): Inventar-Regel des Projekts umschalten (nur aus der App, nicht über MCP).
+@MainActor
+public protocol InventoryActions: AnyObject {
+    func setInventarRegel(_ on: Bool)
 }

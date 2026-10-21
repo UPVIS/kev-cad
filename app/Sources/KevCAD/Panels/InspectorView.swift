@@ -5,13 +5,16 @@ import simd
 
 /// Inspektor rechts: Auswahl mit Werten, Teileigenschaften, Liste der Messungen.
 struct InspectorView: View {
+    @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
 
     var body: some View {
         Form {
             selectionSection
             propertiesSection
+            stockSection
             measurementsSection
+            projectSection
         }
         .formStyle(.grouped)
     }
@@ -68,7 +71,7 @@ struct InspectorView: View {
                 PropertyRow("Hüllmaße", KevFormat.dimensions(min: part.bboxMin, max: part.bboxMax))
                 PropertyRow("Volumen", part.volume.map { KevFormat.volume(mm3: $0) } ?? "–")
                 PropertyRow("Masse", part.mass.map { KevFormat.mass(grams: $0) } ?? "– (ohne Material)")
-                PropertyRow("Material", part.material?.capitalized ?? "–")
+                PropertyRow("Material", model.materialTitle(for: part) ?? "–")
                 PropertyRow("Dreiecke", KevFormat.integer(part.triangles))
                 PropertyRow("Flächen · Kanten", "\(KevFormat.integer(part.faces)) · \(KevFormat.integer(part.edges))")
                 if !part.visible {
@@ -93,6 +96,97 @@ struct InspectorView: View {
                     PropertyRow("Volumen", Self.sum(group.map(\.volume)).map { KevFormat.volume(mm3: $0) } ?? "–")
                     PropertyRow("Masse", Self.massText(group))
                     PropertyRow("Dreiecke", KevFormat.integer(group.reduce(0) { $0 + $1.triangles }))
+                }
+            }
+        }
+    }
+
+    // MARK: Projekt (Phase 2: Inventar-Regel)
+
+    @ViewBuilder
+    private var projectSection: some View {
+        if model.project != nil {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { model.inventarRegel }, set: { model.inventoryActions?.setInventarRegel($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Inventar-Regel")
+                        Text(model.inventarRegel
+                            ? "Nur Lagerteile und gekennzeichnete 3D-Druckteile, Materialien aus dem Katalog"
+                            : "Aus: frei modellierte Teile erscheinen als Eigenteile")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .disabled(model.inventoryActions == nil)
+            } header: {
+                Text("Projekt")
+            } footer: {
+                Text("Aus nur für Nachbauten und Skizzen. Claude kann die Regel nicht umschalten.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: Lagerteil (Phase 2)
+
+    @ViewBuilder
+    private var stockSection: some View {
+        let parts = selectedParts
+        if parts.count == 1, let part = parts.first, part.inventarFehlt {
+            Section {
+                Label {
+                    Text("Weder verbautes Lagerteil noch gekennzeichnetes 3D-Druckteil. Claude soll ein passendes "
+                        + "Lagerteil verbauen oder vorschlagen.")
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                }
+                Button {
+                    session.showCatalog(section: (model.catalog?.suggestionCount ?? 0) > 0 ? .suggestions : nil)
+                } label: {
+                    Label("Lagerkatalog öffnen", systemImage: "books.vertical")
+                }
+                .controlSize(.small)
+            } header: {
+                Text("Nicht aus dem Inventar")
+            }
+        }
+        if parts.count == 1, let part = parts.first, let stock = part.stock {
+            Section {
+                PropertyRow("Lagerteil", stock.name)
+                if let laenge = stock.laenge { PropertyRow("Zuschnitt", KevFormat.length(laenge)) }
+                let miter = KevFormat.gehrung(stock.gehrung)
+                PropertyRow("Gehrung", miter == "–" ? "gerade" : miter)
+                PropertyRow("Material", model.materialName(stock.material) ?? "–")
+                PropertyRow("Gewicht", stock.kg.map(KevFormat.kg) ?? "–")
+                PropertyRow("Preis", stock.preis.map { "\(KevFormat.euro($0)) (Richtpreis)" } ?? "–")
+                Button {
+                    session.showCatalog(focus: .item(stock.id))
+                } label: {
+                    Label("Im Lagerkatalog zeigen", systemImage: "books.vertical")
+                }
+                .controlSize(.small)
+                .disabled(stock.id.isEmpty)
+            } header: {
+                HStack(spacing: 6) {
+                    Image(systemName: "shippingbox").foregroundStyle(.secondary)
+                    Text("Lagerteil")
+                }
+            } footer: {
+                if let line = model.bomLine(for: part.id) {
+                    Text("Stückliste Pos. \(line.pos): \(KevFormat.count(line.anzahl, one: "Stück", many: "Stück")) "
+                        + "\(line.masseText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(stock.id)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
         }

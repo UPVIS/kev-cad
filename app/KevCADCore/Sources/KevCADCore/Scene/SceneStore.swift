@@ -46,6 +46,9 @@ public final class SceneStore {
     public private(set) var highlights: [SceneHighlight] = []
     /// Während eines Laufs: Teile mit kleinerer Laufnummer werden abgedunkelt.
     public private(set) var dimBelowRun: Int?
+    /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
+    public private(set) var inventoryWarnings: Set<String> = []
+    static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
 
     private var flashStart: [String: CFTimeInterval] = [:]
     private var pulseStart: CFTimeInterval = -10
@@ -130,6 +133,7 @@ public final class SceneStore {
         hidden = []
         selection = []
         highlights = []
+        inventoryWarnings = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -232,6 +236,17 @@ public final class SceneStore {
         } else {
             section = nil
         }
+    }
+
+    // MARK: Inventar-Regel
+
+    /// Teile, die weder Lagerteil noch gekennzeichnetes Druckteil sind, rot einfärben (ohne Wirkung, wenn gleich).
+    public func setInventoryWarnings(_ names: Set<String>) {
+        guard names != inventoryWarnings else { return }
+        let touched = names.symmetricDifference(inventoryWarnings)
+        inventoryWarnings = names
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
     }
 
     // MARK: Auswahl und Hervorhebung
@@ -541,6 +556,7 @@ public final class SceneStore {
         var c = Self.linear(rec.header.colorVector)
         var rgb = SIMD3(c.x, c.y, c.z)
         if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor }
+        if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
         if includeFlash, let t0 = flashStart[name] {
             let k = Float(max(0, 1 - (now - t0) / Self.flashDuration))
             rgb = rgb + (Self.flashColor - rgb) * (0.7 * k)

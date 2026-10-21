@@ -49,6 +49,24 @@ public final class AppController: AppActions {
     var selfTestStarted = false
     private var projectSeenSinceHello = false
 
+    // Phase 2: Katalog und Stückliste
+    /// Suche der letzten Katalog-Anfrage (nach Speichern und Löschen wird damit neu geladen).
+    var catalogQuery: (query: String?, art: String?) = (nil, nil)
+    /// Der Katalog wurde schon einmal angefordert: nach einem Projektwechsel neu laden (Projekt-Ebene).
+    var catalogWanted = false
+    /// BOM_REQ ohne Antwort schon gemeldet (ältere Kernel kennen Phase 2 nicht).
+    var bomSilenceLogged = false
+    /// Stilles Nachladen des Katalogs (Vorschläge von Claude): letzter Zeitpunkt, ausgesetzt nach einer Zeitüberschreitung.
+    var lastQuietCatalog: Date?
+    var quietCatalogOff = false
+    /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht).
+    var revealFiles: ([URL]) -> Void = { urls in
+        guard Bundle.main.bundleURL.pathExtension == "app", !urls.isEmpty,
+              ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == nil
+        else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
     struct PendingRequest {
         var kind: String
         var completion: (Result<KernelMessage, RequestError>) -> Void
@@ -326,8 +344,13 @@ public final class AppController: AppActions {
 
     func handle(_ message: KernelMessage) {
         if resolvePending(message) {
-            // PROJECT als Antwort pflegt trotzdem das Modell
-            if case .project(let p) = message { applyProject(p) }
+            // PROJECT, BOM und CATALOG als Antwort pflegen trotzdem das Modell
+            switch message {
+            case .project(let p): applyProject(p)
+            case .bom(let b): applyBOM(b)
+            case .catalog(let c): applyCatalog(c)
+            default: break
+            }
             return
         }
         switch message {
@@ -358,6 +381,8 @@ public final class AppController: AppActions {
             } else if let open = model.project {
                 reopenProjectIfKernelForgotIt(open)
             }
+            requestBOMAfterConnect()
+            quietCatalogOff = false
         case .status(let s):
             switch s.state {
             case "ready": model.kernelState = .ready
@@ -389,6 +414,7 @@ public final class AppController: AppActions {
                 run: e.run, durationMs: e.durationMs, parts: e.parts > 0 ? e.parts : scene.order.count,
                 warnings: e.warnings)
             if model.kernelState == .busy { model.kernelState = .ready }
+            model.inventarVerstoesse = e.inventarVerstoesse
             updateParts()
             if fitAtRunEnd {
                 viewport.fit(scene.visibleBounds(), animated: true)
@@ -398,6 +424,9 @@ public final class AppController: AppActions {
             log(.info, "Lauf \(e.run) fertig: \(scene.order.count) Teile, \(model.triangleCount) Dreiecke, \(e.durationMs) ms")
             scheduleSelfTestIfRequested()
             for w in e.warnings { log(.warning, w) }
+            if !e.inventarVerstoesse.isEmpty {
+                log(.warning, "Nicht aus dem Inventar: " + e.inventarVerstoesse.joined(separator: ", "))
+            }
         case .runError(let e):
             scene.endRun(e.run)
             // Den Reparaturhinweis des Kernels an die Meldung hängen (RunState hat kein eigenes Feld dafür)
@@ -424,6 +453,10 @@ public final class AppController: AppActions {
             if !a.ok { log(.warning, "Kernel: \(a.message ?? "abgelehnt")") }
         case .error(let e):
             log(.error, "Kernel: \(e.message)")
+        case .bom(let b):
+            applyBOM(b)
+        case .catalog(let c):
+            applyCatalog(c)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -469,9 +502,17 @@ public final class AppController: AppActions {
             updateParts()
             refreshOverlay()
             model.run = .idle
+            model.bom = nil
+            model.inventarVerstoesse = []
             log(.info, "Projekt \(info.name) geöffnet")
+            model.project = info
+            adoptInventarRegel(p, project: url)
+            // Der Katalog hat eine Projekt-Ebene: war er schon geladen, für das neue Projekt neu holen
+            if catalogWanted { reloadCatalog() }
+            return
         }
         model.project = info
+        if p.inventarRegel != nil { adoptInventarRegel(p, project: url) }
     }
 
     private func handlePart(_ record: PartRecord) {
@@ -497,13 +538,16 @@ public final class AppController: AppActions {
             return PartNode(
                 id: name, color: r.header.colorVector, material: r.header.material, visible: scene.isVisible(name),
                 triangles: r.triangleCount, faces: r.faceCount, edges: r.edgeCount, bboxMin: b.min, bboxMax: b.max,
-                volume: r.header.volume, mass: r.header.mass, run: r.run)
+                volume: r.header.volume, mass: r.header.mass, run: r.run, stock: r.header.stock,
+                inventarFehlt: r.header.inventarFehlt || model.inventarVerstoesse.contains(name))
         }
         model.triangleCount = scene.triangleCount
+        scene.setInventoryWarnings(Set(model.parts.filter(\.inventarFehlt).map(\.id)))
     }
 
     func sendSettings() {
-        send(SettingsMessage(autoRun: model.autoRun, slowMs: model.slowMotion ? Self.slowMotionMs : 0))
+        send(SettingsMessage(
+            autoRun: model.autoRun, slowMs: model.slowMotion ? Self.slowMotionMs : 0, inventarRegel: model.inventarRegel))
     }
 
     // MARK: Animation

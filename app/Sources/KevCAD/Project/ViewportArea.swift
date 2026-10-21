@@ -18,6 +18,15 @@ struct ViewportArea: View {
             .animation(.snappy(duration: 0.25), value: model.agentActivity)
             .animation(.snappy(duration: 0.25), value: model.measureMode)
             .animation(.snappy(duration: 0.25), value: model.isRunning)
+            .animation(.snappy(duration: 0.25), value: inventoryKey)
+    }
+
+    // MARK: Inventar-Regel
+
+    /// Kennung der aktuellen Verstöße; weggeklickt bleibt das Band aus, bis sie sich ändern.
+    private var inventoryKey: String? {
+        let names = model.inventoryViolations
+        return names.isEmpty ? nil : names.joined(separator: "|")
     }
 
     @ViewBuilder
@@ -50,6 +59,11 @@ struct ViewportArea: View {
                 )
                 .frame(maxWidth: 760)
                 .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let key = inventoryKey, state.dismissedInventory != key {
+                InventoryBanner(model: model) { state.dismissedInventory = key }
+                    .frame(maxWidth: 820)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             if case .running(let run, let step, let index) = model.run {
                 RunPill(run: run, text: StatusBar.stepText(step: step, index: index), slow: model.slowMotion)

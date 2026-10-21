@@ -181,16 +181,20 @@ public struct SettingsMessage: OutgoingMessage {
     public var seq = 0
     public var autoRun: Bool
     public var slowMs: Int
+    /// Phase 2: Inventar-Regel des offenen Projekts (nil = nicht mitschicken).
+    public var inventarRegel: Bool?
 
-    public init(autoRun: Bool, slowMs: Int) {
+    public init(autoRun: Bool, slowMs: Int, inventarRegel: Bool? = nil) {
         self.autoRun = autoRun
         self.slowMs = slowMs
+        self.inventarRegel = inventarRegel
     }
 
     enum CodingKeys: String, CodingKey {
         case type, seq
         case autoRun = "auto_run"
         case slowMs = "slow_ms"
+        case inventarRegel = "inventar_regel"
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -199,6 +203,7 @@ public struct SettingsMessage: OutgoingMessage {
         try c.encode(seq, forKey: .seq)
         try c.encode(autoRun, forKey: .autoRun)
         try c.encode(slowMs, forKey: .slowMs)
+        try c.encodeIfPresent(inventarRegel, forKey: .inventarRegel)
     }
 }
 

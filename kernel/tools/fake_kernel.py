@@ -12,6 +12,12 @@ Die App hängt `serve --socket <pfad> --port <port>` an. Ablauf:
   kleinen Pausen (Teile aus den Protokoll-Testdateien, dazu eine fein vernetzte Kugel mit über 16.000 Dreiecken und
   ein Hilfsteil, das am Ende per PART_REMOVE verschwindet), RUN_END.
 - RUN_REQ spielt den Lauf erneut ab, MEASURE_REQ bekommt Beispielwerte, EXPORT_REQ erfundene Pfade.
+- Phase 2: nach RUN_END eine Stückliste (BOM, auch auf BOM_REQ) mit Zuschnitt, einem 3D-Druckteil (die Kugel aus
+  PETG) und, solange die Inventar-Regel an ist (SETTINGS ``inventar_regel``), einem Verstoß (Grundplatte:
+  PART_UPSERT ``inventar: "fehlt"``, RUN_END ``inventar_verstoesse``). CATALOG_REQ liefert einen kleinen Katalog mit
+  allen drei Ebenen und zwei Vorschlägen von Claude (``status: "vorgeschlagen"``); CATALOG_SAVE und CATALOG_DELETE
+  ändern ihn im Speicher und schreiben jede Änderung nach ``<out>/katalog-aenderungen.jsonl``. EXPORT_REQ mit
+  ``bom_csv`` schreibt eine echte CSV-Datei. Mit --lager kommt ein Lagerteil (Vierkantrohr aus part_stock.frame) dazu.
 - Mit --demo-view schickt er nach dem Lauf Ansichtsbefehle (VIEW_CMD) und Bildanfragen (SCREENSHOT_REQ) und
   speichert die Bilder der App als PNG (Vorgabe: <repo>/build/fake_kernel/).
 """
@@ -107,7 +113,7 @@ def sphere_part(radius: float = 15.0, center=(-40.0, 0.0, 0.0), nlat: int = 110,
 class Parts:
     """Die Teile des Ersatzlaufs als (Name, Schritt, Kopf ohne seq/run, Nutzlast)."""
 
-    def __init__(self) -> None:
+    def __init__(self, lager: bool = False) -> None:
         self.items: list[tuple[str, str, dict[str, Any], bytes]] = []
         box_h, box_p = read_fixture("part_box.frame")
         cyl_h, cyl_p = read_fixture("part_cylinder.frame")
@@ -133,6 +139,17 @@ class Parts:
                                  props={"volume": 6000.0, "area": 2200.0, "center": [0, 30, 0]})
         self.items.append(("Hilfsteil", "Hilfsteil", aux_h, aux_p))
 
+        # Phase 2: die Kugel ist ein 3D-Druckteil aus PETG
+        for _, _, h, _ in self.items:
+            if h["name"] == "Kugel":
+                h["material"] = "petg-schwarz"
+        if lager:
+            # Lagerteil aus der Testdatei, per transform neben die anderen Teile gerückt (spaltenweise Matrix)
+            st_h, st_p = read_fixture("part_stock.frame")
+            st_h = dict(st_h)
+            st_h["transform"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -90, 0, -15, 1]
+            self.items.insert(2, ("Gestell/Bein vorn links", "Lagerteil verbauen", st_h, st_p))
+
     def header(self, name: str) -> dict[str, Any] | None:
         for n, _, h, _ in self.items:
             if n == name:
@@ -144,12 +161,53 @@ class Parts:
 # Server
 
 
+def initial_catalog() -> dict[str, list[dict[str, Any]]]:
+    """Kleiner Katalog nach KATALOG.md: alle drei Ebenen, zwei Vorschläge von Claude, ein Filament."""
+    def preis(unit: str, v: float, quelle: str = "Richtwert") -> dict[str, Any]:
+        return {unit: v, "quelle": quelle, "stand": "2026-10"}
+
+    materials = [
+        {"id": "stahl-s235", "name": "Stahl S235", "gruppe": "Stahl", "dichte": 7.85, "farbe": "#8A9099",
+         "preis_je_kg": 2.4, "preis_quelle": "Richtwert", "preis_stand": "2026-10", "aliase": ["stahl"],
+         "ebene": "mitgeliefert"},
+        {"id": "aluminium-6060", "name": "Aluminium EN AW-6060", "gruppe": "Aluminium", "dichte": 2.7,
+         "farbe": "#C9CDD2", "preis_je_kg": 7.5, "preis_quelle": "Richtwert", "preis_stand": "2026-10",
+         "ebene": "mitgeliefert"},
+        {"id": "petg-schwarz", "name": "PETG schwarz", "gruppe": "Kunststoff", "dichte": 1.27, "farbe": "#34373B",
+         "druckbar": True, "preis_je_kg": 24, "preis_quelle": "Filament", "preis_stand": "2026-10", "ebene": "eigen",
+         "status": "frei"},
+        {"id": "pla-grau", "name": "PLA grau", "gruppe": "Kunststoff", "dichte": 1.24, "farbe": "#8E9196",
+         "druckbar": True, "preis_je_kg": 20, "preis_quelle": "Claude", "preis_stand": "2026-10", "ebene": "eigen",
+         "status": "vorgeschlagen"},
+    ]
+    items = [
+        {"id": "vierkantrohr-en10219-40x40x3", "art": "vierkantrohr", "name": "Vierkantrohr 40 × 40 × 3",
+         "norm": "DIN EN 10219", "masse": {"a": 40, "s": 3}, "material": "stahl-s235", "kg_je_m": 3.41,
+         "stangenlaenge": 6000, "preis": preis("je_m", 8.0), "tags": ["quadrat"], "ebene": "mitgeliefert"},
+        {"id": "rund-en10060-10", "art": "rund", "name": "Rundstahl Ø 10", "norm": "DIN EN 10060",
+         "masse": {"d": 10}, "material": "stahl-s235", "kg_je_m": 0.617, "stangenlaenge": 6000,
+         "preis": preis("je_m", 1.5), "ebene": "mitgeliefert"},
+        {"id": "rohr-edelstahl-33.7x2", "art": "rohr", "name": "Edelstahlrohr 33,7 × 2", "norm": "ISO 1127",
+         "masse": {"d": 33.7, "s": 2.0}, "material": "stahl-s235", "preis": preis("je_m", 14.5, "Kevin"),
+         "ebene": "eigen", "status": "frei"},
+        {"id": "winkel-alu-30x30x3", "art": "winkel", "name": "Alu-Winkel 30 × 30 × 3", "masse": {"a": 30, "b": 30, "s": 3},
+         "material": "aluminium-6060", "kg_je_m": 0.47, "stangenlaenge": 3000, "preis": preis("je_m", 6.9, "Claude"),
+         "ebene": "eigen", "status": "vorgeschlagen"},
+        {"id": "platte-siebdruck-21", "art": "platte", "name": "Siebdruckplatte 21 mm", "masse": {"s": 21},
+         "material": "aluminium-6060", "platte": [2500, 1250], "preis": preis("je_m2", 39), "ebene": "projekt"},
+    ]
+    return {"materials": materials, "items": items}
+
+
 class FakeKernel:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.out = Path(args.out).expanduser().resolve()
         self.out.mkdir(parents=True, exist_ok=True)
-        self.parts = Parts()
+        self.parts = Parts(lager=args.lager)
+        self.inventar_regel = True
+        self.catalog = initial_catalog()
+        self.last_bom: dict[str, Any] | None = None
         self.conn: socket.socket | None = None
         self.send_lock = threading.Lock()
         self.seq = 0
@@ -215,7 +273,8 @@ class FakeKernel:
 
     def open_project(self, path: str, reply_to: str | None = None) -> None:
         p = Path(path)
-        self.project = {"path": str(p), "name": p.name, "model": str(p / "model.py")}
+        self.project = {"path": str(p), "name": p.name, "model": str(p / "model.py"),
+                        "inventar_regel": self.inventar_regel}
         msg = {"type": "PROJECT", **self.project}
         if reply_to:
             msg["reply_to"] = reply_to
@@ -243,6 +302,7 @@ class FakeKernel:
                 time.sleep(pause)
                 h = dict(header)
                 h["run"] = run
+                h["inventar"] = "fehlt" if name in self.violations() else "ok"
                 self.current[name] = (h, payload)
                 self.send(h, payload)
             time.sleep(pause)
@@ -250,7 +310,10 @@ class FakeKernel:
             self.send({"type": "PART_REMOVE", "run": run, "name": "Hilfsteil"})
             tri = sum(h["counts"]["tri"] for h, _ in self.current.values())
             self.send({"type": "RUN_END", "run": run, "duration_ms": int((time.perf_counter() - t0) * 1000),
-                       "parts": len(self.current), "triangles": tri, "warnings": [], "params": {"breite": 120}})
+                       "parts": len(self.current), "triangles": tri, "warnings": [], "params": {"breite": 120},
+                       "inventar_verstoesse": self.violations()})
+            self.last_bom = self.bom(run)
+            self.send({"type": "BOM", **self.last_bom})
             self.send({"type": "STATUS", "state": "ready", "message": None})
             log(f"Lauf {run} fertig: {len(self.current)} Teile, {tri} Dreiecke")
         finally:
@@ -313,7 +376,11 @@ class FakeKernel:
             log(f"App verbunden: {header.get('bundle_id')} {header.get('app_version')}")
         elif t == "SETTINGS":
             self.settings.update({k: header[k] for k in ("auto_run", "slow_ms") if k in header})
-            log(f"Einstellungen: {self.settings}")
+            if isinstance(header.get("inventar_regel"), bool):
+                self.inventar_regel = header["inventar_regel"]
+                if self.project:
+                    self.project["inventar_regel"] = self.inventar_regel
+            log(f"Einstellungen: {self.settings}, Inventar-Regel {'an' if self.inventar_regel else 'aus'}")
         elif t in ("PROJECT_OPEN", "PROJECT_NEW"):
             self.open_project(header["path"], reply_to=header.get("id"))
             if self.settings.get("auto_run", True):
@@ -327,8 +394,23 @@ class FakeKernel:
             log(f"Auswahl (Lauf {header.get('run')}): {header.get('refs')}")
         elif t == "EXPORT_REQ":
             base = Path(self.project["path"]) if self.project else self.out
-            files = [str(base / "output" / f"model.{f}") for f in header.get("formats", [])]
+            files = []
+            for f in header.get("formats", []):
+                if f == "bom_csv":
+                    files.append(str(self.write_bom_csv(base)))
+                else:
+                    files.append(str(base / "output" / f"model.{f}"))
             self.send({"type": "EXPORT_RES", "reply_to": header.get("id"), "files": files})
+        elif t == "BOM_REQ":
+            bom = self.last_bom or self.bom(self.run_no)
+            self.send({"type": "BOM", "reply_to": header.get("id"), **bom})
+        elif t == "CATALOG_REQ":
+            self.send({"type": "CATALOG", "reply_to": header.get("id"),
+                       **self.catalog_view(header.get("query"), header.get("art"))})
+        elif t == "CATALOG_SAVE":
+            self.catalog_save(header)
+        elif t == "CATALOG_DELETE":
+            self.catalog_delete(header)
         elif t == "SCREENSHOT_RES":
             rid = header.get("reply_to", "")
             name = self.shot_names.pop(rid, f"bild_{rid}")
@@ -349,6 +431,122 @@ class FakeKernel:
                 ev.set()
         else:
             log(f"Unbekannte Nachricht {t}")
+
+    # Phase 2: Stückliste, Katalog ------------------------------------------------------------------------------
+
+    def violations(self) -> list[str]:
+        """Teile, die die Inventar-Regel verletzen: hier immer die frei modellierte Grundplatte."""
+        return ["Grundplatte"] if self.inventar_regel else []
+
+    def bom(self, run: int) -> dict[str, Any]:
+        names = set(self.current) or {n for n, _, _, _ in self.parts.items if n != "Hilfsteil"}
+        lines: list[dict[str, Any]] = []
+        cuts: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        if "Gestell/Bein vorn links" in names:
+            lines.append({"art": "vierkantrohr", "stock_id": "vierkantrohr-en10219-40x40x3",
+                          "benennung": "Vierkantrohr 40 × 40 × 3", "norm": "DIN EN 10219", "material": "Stahl S235",
+                          "laenge": 882.0, "gehrung": [0, 45], "masse_text": "882 mm", "anzahl": 1, "kg_je": 2.98,
+                          "kg": 2.98, "preis_je": 7.06, "preis": 7.06, "teile": ["Gestell/Bein vorn links"],
+                          "eigenteil": False})
+            cuts.append({"stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3",
+                         "stangenlaenge": 6000, "saegeschnitt": 3, "stangen": [[882]], "verschnitt_prozent": 85.3})
+        if "Halter/Bolzen" in names:
+            lines.append({"art": "rund", "stock_id": "rund-en10060-10", "benennung": "Rundstahl Ø 10",
+                          "norm": "DIN EN 10060", "material": "Stahl S235", "laenge": 20.0, "gehrung": [0, 0],
+                          "masse_text": "20 mm", "anzahl": 1, "kg_je": 0.012, "kg": 0.012, "preis_je": 0.03,
+                          "preis": 0.03, "teile": ["Halter/Bolzen"], "eigenteil": False})
+            cuts.append({"stock_id": "rund-en10060-10", "benennung": "Rundstahl Ø 10", "stangenlaenge": 6000,
+                         "saegeschnitt": 3, "stangen": [[20]], "verschnitt_prozent": 99.6})
+        if "Kugel" in names:
+            kg = round(4 / 3 * math.pi * 15 ** 3 / 1e6 * 1.27, 3)
+            lines.append({"art": "druckteil", "stock_id": None, "benennung": "Kugel", "material": "PETG schwarz",
+                          "laenge": None, "gehrung": [0, 0], "masse_text": "Ø 30 mm", "anzahl": 1, "kg_je": kg,
+                          "kg": kg, "preis_je": round(kg * 24, 2), "preis": round(kg * 24, 2), "teile": ["Kugel"],
+                          "eigenteil": False})
+        if "Grundplatte" in names:
+            if self.inventar_regel:
+                warnings.append("Grundplatte: nicht aus dem Inventar (weder Lagerteil noch 3D-Druckteil)")
+            else:
+                lines.append({"art": "eigenteil", "stock_id": None, "benennung": "Grundplatte", "material": "Aluminium",
+                              "laenge": None, "gehrung": [0, 0], "masse_text": "10 × 20 × 30 mm", "anzahl": 1,
+                              "kg_je": 0.016, "kg": 0.016, "preis_je": 0.12, "preis": 0.12, "teile": ["Grundplatte"],
+                              "eigenteil": True})
+        for i, line in enumerate(lines, start=1):
+            line["pos"] = i
+        kg = round(sum(line["kg"] or 0 for line in lines), 3)
+        preis = round(sum(line["preis"] or 0 for line in lines), 2)
+        return {"run": run, "lines": lines, "cuts": cuts, "warnings": warnings,
+                "totals": {"kg": kg, "preis": preis, "positionen": len(lines),
+                           "teile": sum(line["anzahl"] for line in lines),
+                           "preis_hinweis": "Richtpreise, Stand 2026-10 (Ersatz-Kernel)"}}
+
+    def write_bom_csv(self, base: Path) -> Path:
+        bom = self.last_bom or self.bom(self.run_no)
+        out = base / "output"
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{base.name}-stueckliste.csv"
+        rows = ["Pos;Benennung;Maß;Gehrung;Material;Anzahl;Gewicht kg;Preis €"]
+        for line in bom["lines"]:
+            g = line.get("gehrung") or [0, 0]
+            rows.append(";".join([str(line["pos"]), line["benennung"], line["masse_text"],
+                                  "" if g == [0, 0] else f"{g[0]}° / {g[1]}°", line.get("material") or "",
+                                  str(line["anzahl"]), de(line.get("kg") or 0, 3), de(line.get("preis") or 0, 2)]))
+        path.write_text("\ufeff" + "\n".join(rows) + "\n", encoding="utf-8")
+        log(f"Stückliste als CSV: {path}")
+        return path
+
+    def catalog_view(self, query: str | None, art: str | None) -> dict[str, Any]:
+        q = (query or "").lower().split()
+
+        def hit(entry: dict[str, Any]) -> bool:
+            text = json.dumps(entry, ensure_ascii=False).lower()
+            return all(w in text for w in q)
+
+        items = [e for e in self.catalog["items"] if (not art or e.get("art") == art) and hit(e)]
+        materials = [m for m in self.catalog["materials"] if hit(m)]
+        arten = sorted({e.get("art") for e in self.catalog["items"]})
+        return {"materials": materials, "items": items, "arten": arten}
+
+    def catalog_save(self, header: dict[str, Any]) -> None:
+        rid = header.get("id")
+        kind = header.get("kind")
+        entry = dict(header.get("entry") or {})
+        ebene = header.get("ebene")
+        need = ["id", "art", "name", "masse", "material"] if kind == "teil" else ["id", "name", "gruppe", "dichte", "farbe"]
+        missing = [k for k in need if entry.get(k) in (None, "", {})]
+        if kind not in ("teil", "material"):
+            self.send({"type": "ERROR", "reply_to": rid, "message": f"Unbekannte Art {kind!r}"})
+        elif ebene not in ("eigen", "projekt"):
+            self.send({"type": "ERROR", "reply_to": rid, "message": "Nur in den eigenen oder den Projektkatalog"})
+        elif missing:
+            self.send({"type": "ERROR", "reply_to": rid, "message": "Pflichtfelder fehlen: " + ", ".join(missing)})
+        else:
+            entry["ebene"] = ebene
+            entry.setdefault("status", "frei")
+            key = "items" if kind == "teil" else "materials"
+            self.catalog[key] = [e for e in self.catalog[key] if e.get("id") != entry["id"]] + [entry]
+            self.note_change("gespeichert", kind, entry)
+            datei = "eigene.json" if ebene == "eigen" else "katalog.json im Projekt"
+            self.send({"type": "ACK", "reply_to": rid, "ok": True, "message": f"{datei} (Ersatz-Kernel)"})
+            log(f"Katalog: {entry['id']} gespeichert ({ebene}, status {entry.get('status')})")
+
+    def catalog_delete(self, header: dict[str, Any]) -> None:
+        rid = header.get("id")
+        key = "items" if header.get("kind") == "teil" else "materials"
+        eid, ebene = header.get("entry_id"), header.get("ebene")
+        before = len(self.catalog[key])
+        self.catalog[key] = [e for e in self.catalog[key] if not (e.get("id") == eid and e.get("ebene") == ebene)]
+        if len(self.catalog[key]) == before:
+            self.send({"type": "ERROR", "reply_to": rid, "message": f"{eid} gibt es in der Ebene {ebene} nicht"})
+            return
+        self.note_change("gelöscht", header.get("kind"), {"id": eid, "ebene": ebene})
+        self.send({"type": "ACK", "reply_to": rid, "ok": True, "message": None})
+        log(f"Katalog: {eid} gelöscht ({ebene})")
+
+    def note_change(self, what: str, kind: Any, entry: dict[str, Any]) -> None:
+        with (self.out / "katalog-aenderungen.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"aktion": what, "kind": kind, "entry": entry}, ensure_ascii=False) + "\n")
 
     def measure(self, req: dict[str, Any]) -> dict[str, Any]:
         refs = req.get("refs", [])
@@ -433,6 +631,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--demo-view", action="store_true", help="nach dem Lauf Ansichtsbefehle und Bilder abspielen")
     parser.add_argument("--out", default=str(REPO / "build" / "fake_kernel"), help="Ordner für die Bilder")
     parser.add_argument("--pause", type=float, default=0.35, help="Pause je Schritt eines Laufs in s")
+    parser.add_argument("--lager", action="store_true", help="zusätzlich ein Lagerteil (Vierkantrohr) verbauen")
     args, rest = parser.parse_known_args(argv)
     extra = [a for a in rest if a != "serve"]
     if extra:
