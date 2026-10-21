@@ -150,6 +150,36 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
   zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
 
+## Kameras
+
+Kameras wie am Set: Gehäuse, Objektiv und Aufnahmeformat aus dem Katalog (`kamera_katalog`), gesetzt in model.py.
+Beispiel: `samples/kamerawagen/model.py`; Felder in KATALOG.md, Abschnitt „Kameras und Objektive“.
+
+```python
+fx6 = lager.kamera("sony-fx6", objektiv="sigma-ff-hs-35-t1.5-e", format="ff-uhd", blende=2.8, fokus=1500,
+                   name="FX6")                              # format: ff-uhd, ff-dci, ff-hd, ff-uhd-120, s35-hd
+fx6.setzen((0, -400, 180), blick_auf=(800, 0, 108))         # Sensormitte, Blick auf einen Punkt (Fokus = Abstand)
+fx6.an("Rollwagen/Deckel", punkt=(150, 0, 40), richtung=(1, 0, 0), bezug="stativ_1_4", lokal=True)  # folgt dem Teil
+show(fx6.koerper(), "Kamera FX6")                           # Gehäuse und Objektiv, zählt als Inventar
+platte = lager.kamerazubehoer("tilta-es-t20-qrbp")          # Rig-Teile mit Bezugspunkten
+show(platte.verbauen("Rig/Baseplate", an=fx6.bezugspunkt("stativ_1_4"), bezug="kamera_1_4"), "Rig/Baseplate")
+```
+
+- `bezug` ist ein Bezugspunkt der Kamera (`sensor`, `bajonett`, `stativ_1_4`, `stativ_3_8`, `akkuschacht` …), der an
+  der angegebenen Stelle liegt; `richtung` oder `blick_auf` geben den Blick, `roll` kippt (Grad). Brennweite bei Zooms
+  innerhalb des Bereichs, Blende nicht offener als die Lichtstärke (Fehler mit Erklärung), `fokus` in mm ab
+  Sensorebene oder `"unendlich"`. Der Lauf meldet Bildwinkel, Schärfe von–bis und Warnungen (Naheinstellgrenze,
+  Vignettierung bei Super-35-Objektiven an Vollformat).
+- `an(teil, …, lokal=True)` nach dem `show` des Teils aufrufen; die Kamera wandert dann mit dem Teil (auch später in
+  Animationen). Kamera setzen, nicht `Pos(...) * fx6.koerper()` verschieben.
+- Werkzeuge: `kamera_liste`, `kamera_info(name)` (alle Werte), `kamera_ansicht(name)` bzw. `"aus"` (Viewer schaut
+  durch die Kamera, mit Formatrahmen und Sicherheitsbereichen), `kamera_bild(name, breite)` speichert ein PNG unter
+  output/kameras/ und nennt nur den Pfad (Bild nur mit `bild_zeigen=true`, wenn Kevin es hier sehen will),
+  `kamera_vorschlag_aus_ansicht(name)` liefert die setzen-Zeile für Kevins aktuelle Ansicht (in der App Strg+Alt+0).
+- Kevin: Taste 0 schaut durch die gewählte Kamera, noch einmal 0 zurück; Kameras stehen im Teilebaum unter „Kameras“.
+- Kevins Kamera ist die FX6 (Tilta-Käfig ES-T20). Objektive, Akkus und Platten im Katalog sind Beispiele, bis Kevin
+  seine nennt; fehlt etwas, fragen und erst auf seinen Wunsch per `stock_define` vorschlagen.
+
 ## build123d: Kurzreferenz und Fallen
 
 **Algebra-Modus bevorzugen** (Objekte und Operatoren). Builder (`with BuildPart() as bp:`) nur, wo er klar hilft, etwa
