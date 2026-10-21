@@ -27,6 +27,7 @@ from kevcad_kernel.zeichnung import dokument as dok
 from kevcad_kernel.zeichnung.ansichten import NAMEN, RASTER, Blick, blick
 from kevcad_kernel.zeichnung.bemassung import ansichten_planen, auto_masse, auto_masse_gruppe
 from kevcad_kernel.zeichnung.geo2d import Belegung, Rechteck, clip_bereiche, rechteck_von, textbox, textbreite
+from kevcad_kernel.zeichnung.hausregeln import Hausregeln, aktiv, setze, zuruecksetzen
 from kevcad_kernel.zeichnung.merkmale import Merkmale, zahl
 from kevcad_kernel.zeichnung.projektion import LINIENARTEN, Projektion, mittellinien, projiziere
 from kevcad_kernel.zeichnung.szene import Szene, Teil, gruppen_merkmale
@@ -36,6 +37,8 @@ LINIEN_REIHENFOLGE = LINIENARTEN
 ABSTAND_ANSICHTEN = 8.0  # mindestens zwischen den Platzbedarfen benachbarter Ansichten
 RAND_ANSICHT = 4.0  # Platz um eine Ansicht ohne Maße
 LUECKE_BRUCH = 8.0  # Blatt-mm für eine Unterbrechung
+EXAKT_BUDGET_S = 1.5
+FORMAT_RANG = {"A4": 0, "A3": 1, "A2": 2, "A1": 3, "A0": 4}  # Zeitbudget der exakten Verdeckungsrechnung je Einzelteil-Ansicht
 
 
 @dataclass
@@ -152,7 +155,7 @@ class _Ansicht:
                     pts = np.stack([wellen, ys], axis=1)
                     mapped = self.blatt(np.stack([np.full_like(ys, x), ys], axis=1))
                     mapped[:, 0] += (wellen - x) * self.s
-                    out["duenn"].append(mapped)
+                    out["bruch"].append(mapped)
                     _ = pts
         return out
 
@@ -162,7 +165,18 @@ class _Ansicht:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def rechne(blatt_in: dict[str, Any], szene: Szene, *, stand_extra: str = "") -> Ergebnis:
+def rechne(blatt_in: dict[str, Any], szene: Szene, *, stand_extra: str = "",
+           regeln: Hausregeln | None = None) -> Ergebnis:
+    """Blatt rechnen (Modulbeschreibung). ``regeln``: Hausregeln des Projekts (sonst Standard)."""
+    token = setze(regeln) if regeln is not None else None
+    try:
+        return _rechne(blatt_in, szene, stand_extra)
+    finally:
+        if token is not None:
+            zuruecksetzen(token)
+
+
+def _rechne(blatt_in: dict[str, Any], szene: Szene, stand_extra: str) -> Ergebnis:
     t0 = time.perf_counter()
     blatt = dok.normalisiere(json.loads(json.dumps(blatt_in, default=_json_default)))
     vorher = json.dumps(dok.zum_speichern(blatt), sort_keys=True, ensure_ascii=False, default=_json_default)
@@ -233,6 +247,10 @@ def rechne(blatt_in: dict[str, Any], szene: Szene, *, stand_extra: str = "") -> 
     deko = _dekoration(blatt, ansichten, szene, teile, art, lage, beleg, system)
     kopf, nutzlast = _ausgabe(blatt, ansichten, grafiken, deko, lage, szene, teile, stand_extra)
     kopf["hinweise"] = hinweise + lage.get("hinweise", [])
+    from kevcad_kernel.zeichnung.pruefung import pruefe
+
+    kopf["pruefung"] = pruefe(blatt, hauptmerk if art == "teil" else None, ansichten, grafiken, deko.texte,
+                              lage.get("flaeche"))
     nachher = json.dumps(dok.zum_speichern(blatt), sort_keys=True, ensure_ascii=False, default=_json_default)
     ms = (time.perf_counter() - t0) * 1000.0
     kopf["ms"] = round(ms, 1)
@@ -249,6 +267,16 @@ def _json_default(o: Any) -> Any:
     if isinstance(o, np.bool_):
         return bool(o)
     raise TypeError(type(o).__name__)
+
+
+def kurznamen(namen: list[str]) -> list[str]:
+    """Kürzeste eindeutige Namensenden: „Lenkrolle 1/Lenksperre (Druck)“ statt viermal „Lenksperre (Druck)“."""
+    teile = [n.split("/") for n in namen]
+    for k in range(1, max(len(t) for t in teile) + 1):
+        kurz = ["/".join(t[-k:]) for t in teile]
+        if len(set(kurz)) == len(kurz):
+            return kurz
+    return list(namen)
 
 
 def _umgebung(name: str) -> bool:
@@ -324,8 +352,9 @@ def _projektionen(blatt: dict[str, Any], teile: list[Teil], system: Teilsystem, 
             continue
         b = blick(e["art"])
         verdeckt = bool(e.get("verdeckt", einzel)) and einzel and b.orthogonal
+        # Einzelteile: exakt mit Zeitbudget im Hilfsprozess, sonst Netz (DOKUMENTE.md 1.1); Zusammenbau: Netz
         p = projiziere(formen, b, verdeckt=verdeckt, glatt=einzel, mittel=False, je_teil=not einzel,
-                       schluessel=schluessel)
+                       schluessel=schluessel, exakt=EXAKT_BUDGET_S if einzel else False)
         out[e["id"]] = _Ansicht(e, b, p, titel=e.get("titel"))
     # Schnitte und Einzelheiten
     from kevcad_kernel.zeichnung.schnitt import einzelheit, schnittansicht
@@ -357,8 +386,12 @@ def _mittellinien(v: _Ansicht, teile: list[Teil], system: Teilsystem) -> None:
 
 
 def _auto_zusammenfuehren(blatt: dict[str, Any], neu: list[dict[str, Any]]) -> None:
+    from kevcad_kernel.zeichnung.bearbeiten import passt_unterdrueckt
+
     alt = blatt["masse"]
-    weg = set(blatt["auto"].get("unterdrueckt") or [])
+    unterdrueckt = list(blatt.get("unterdrueckt") or [])
+    neu = [n for n in neu if not any(passt_unterdrueckt(u, n) for u in unterdrueckt)]
+    weg: set[str] = set()
     alt_auto = {m["schluessel"]: m for m in alt if m.get("quelle") == "auto" and m.get("schluessel")}
     ids = {m.get("id") for m in alt if m.get("id")}
     erg: list[dict[str, Any]] = []
@@ -593,13 +626,13 @@ def _packen(arbeit: list[_Arbeit], ansichten: dict[str, _Ansicht], system: Teils
         hi = max(float(p[k]) for p in pts)
         if a.form == "kette":
             texte = [zahl(_wert_linear(a.els[0], e, v, system, richtung)) for e in a.els[1:]]
-            tiefe = max((textbreite(t, bl.TEXT_H) for t in texte), default=5.0) + 3.0
+            tiefe = max((textbreite(t, aktiv().schrifthoehe) for t in texte), default=5.0) + 3.0
         else:
             wert = _wert_linear(a.els[0], a.els[1], v, system, richtung)
             text = _masstext(a.m, wert, "Ø" if a.m["art"] == "durchmesser" else "")
-            tw = textbreite(text, bl.TEXT_H)
-            if hi - lo < 2 * dr.PFEIL_L + tw + 2.0:
-                hi += dr.PFEIL_L + tw + 6.0  # Zahl außen
+            tw = textbreite(text, aktiv().schrifthoehe)
+            if hi - lo < 2 * aktiv().pfeil_laenge + tw + 2.0:
+                hi += aktiv().pfeil_laenge + tw + 6.0  # Zahl außen
             tiefe = 0.0
         prio = int(a.m.get("_prio") or (100 if str(a.m.get("schluessel", "")).startswith("huelle") else 50))
         gruppen.setdefault((v.id, seite), []).append((a, lo - 1.5, hi + 1.5, tiefe, str(prio)))
@@ -624,10 +657,10 @@ def _packen(arbeit: list[_Arbeit], ansichten: dict[str, _Ansicht], system: Teils
                 a.m["_reihe"] = len(reihen) - 1
         # Abstand je Reihe
         abst = []
-        d = dr.ERSTE_LINIE
+        d = aktiv().erste
         for t in range(len(reihen)):
             abst.append(d)
-            d += dr.LINIEN_ABSTAND + (reihen_tiefe[t] if t < len(reihen_tiefe) else 0.0)
+            d += aktiv().weitere + (reihen_tiefe[t] if t < len(reihen_tiefe) else 0.0)
         for a, lo, hi, tiefe, _ in frei:
             t = a.m["_reihe"]
             off = abst[t]
@@ -642,13 +675,13 @@ def _packen(arbeit: list[_Arbeit], ansichten: dict[str, _Ansicht], system: Teils
             else:
                 a.versatz = (r.x1 + off) - float(p1[0])
             a.m["_relativ"] = off
-        rand = (abst[-1] + bl.TEXT_H + 2.5 + (reihen_tiefe[-1] if reihen_tiefe else 0.0)) if reihen else 0.0
+        rand = (abst[-1] + aktiv().schrifthoehe + 2.5 + (reihen_tiefe[-1] if reihen_tiefe else 0.0)) if reihen else 0.0
         for a, lo, hi, tiefe, _ in fest:
             richtung = a.m["_richtung"]
             p1 = _anker(a.els[0], v, system, richtung, seite)
             pos = float(p1[1] if richtung == "x" else p1[0]) + float(a.versatz or 0.0)
             ausserhalb = {"unten": r.y0 - pos, "oben": pos - r.y1, "links": r.x0 - pos, "rechts": pos - r.x1}[seite]
-            rand = max(rand, ausserhalb + bl.TEXT_H + 2.5)
+            rand = max(rand, ausserhalb + aktiv().schrifthoehe + 2.5)
         bedarf[vid][seite] = max(bedarf[vid][seite], rand)
     return bedarf
 
@@ -734,9 +767,13 @@ def _anordnen(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: lis
             # gleicher Maßstab: die Ausrichtung, die zum Seitenverhältnis der Ansichten passt (lange Teile quer)
             beste = max(a4, key=lambda x: (x[2], (x[1] == "quer") == x[3]["breiter"]))
             if groessere:
-                g = max(groessere, key=lambda x: x[2])
+                # A3 statt A4, wenn das Teil auf A4 klein würde (größte Abmessung unter 80 mm auf dem Blatt) oder
+                # kleine Merkmale unlesbar (unter 1,5 mm) und A3 einen größeren Maßstab erlaubt
+                g = min((x for x in groessere if x[2] > beste[2] + 1e-9), key=lambda x: FORMAT_RANG[x[0]],
+                        default=None)
                 kleinst = _kleinstes_merkmal(merk)
-                if g[2] >= 2 * beste[2] - 1e-9 and kleinst is not None and kleinst * beste[2] < 1.5:
+                gross = float(np.max(merk.groesse)) if merk is not None and len(merk.groesse) else 100.0
+                if g is not None and (gross * beste[2] < 80.0 or (kleinst is not None and kleinst * beste[2] < 1.5)):
                     beste = g
         else:
             beste = max(groessere, key=lambda x: x[2]) if groessere else None
@@ -798,8 +835,7 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     if blatt["schriftfeld"].get("notiz"):
         zeilen_ag = [str(blatt["schriftfeld"]["notiz"])] + zeilen_ag
     if art == "teil" and teile and len(szene.gleiche_teile(teile[0].name)) > 1 and not blatt["schriftfeld"].get("notiz"):
-        zeilen_ag = ["gilt für: " + ", ".join(n.rsplit("/", 1)[-1] for n in szene.gleiche_teile(teile[0].name))] \
-            + zeilen_ag
+        zeilen_ag = ["gilt für: " + ", ".join(kurznamen(szene.gleiche_teile(teile[0].name)))] + zeilen_ag
     r_ag = bl.allgemeinangaben_rechteck(W, H, zeilen_ag)
     if r_ag is not None:
         reserviert.append(r_ag.erweitert(1.0))
@@ -829,12 +865,17 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     hinweis_platz: dict[str, float] = {}
     for a in arbeit:
         if a.form == "hinweis" and a.v is not None:
-            tw = max(textbreite(t, bl.TEXT_H) for t in _hinweistext(a, system))
+            tw = max(textbreite(t, aktiv().schrifthoehe) for t in _hinweistext(a, system))
+            w, h = a.v.groesse
+            if min(w, h) >= 2.2 * (tw + 10.0):
+                continue  # große Ansicht: die Angabe findet innen Platz
             hinweis_platz[a.v.id] = max(hinweis_platz.get(a.v.id, 0.0), tw + 14.0)
     raster = [v for v in ansichten.values() if v.art in RASTER and not v.e.get("fest")]
     frei = [v for v in ansichten.values() if v not in raster]
 
     def platz(v: _Ansicht) -> tuple[float, float, float, float]:
+        if stueckliste and v.art.startswith("iso"):
+            return (26.0, 26.0, 26.0, 26.0)  # Ring für die Positionsnummern
         b = bedarf.get(v.id, {})
         hp = hinweis_platz.get(v.id, 0.0)
         # Hinweislinien: Platz für den längsten Text rechts neben der Ansicht (außerhalb der Maßreihen), damit Angaben
@@ -1199,7 +1240,7 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
     if art == "teil" and teile:
         gleich = szene.gleiche_teile(teile[0].name)
         if len(gleich) > 1 and not sf.get("notiz"):
-            sf["notiz"] = "gilt für: " + ", ".join(n.rsplit("/", 1)[-1] for n in gleich)
+            sf["notiz"] = "gilt für: " + ", ".join(kurznamen(gleich))
     g.dazu(bl.schriftfeld(W, H, sf, blatt["massstab"], f"{blatt['format']} {blatt['ausrichtung']}"))
     zeilen = list(blatt.get("allgemein") or [])
     if sf.get("notiz"):
@@ -1225,8 +1266,8 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
         if titel:
             r = v.rahmen
             tb_y = r.y1 + 4.0
-            g.text(titel, (r.x0 + r.x1) / 2, tb_y, bl.TEXT_H, "mitte", art="ansicht")
-            beleg.rechteck(textbox(titel, ((r.x0 + r.x1) / 2, tb_y), bl.TEXT_H), "text")
+            g.text(titel, (r.x0 + r.x1) / 2, tb_y, aktiv().schrifthoehe, "mitte", art="ansicht")
+            beleg.rechteck(textbox(titel, ((r.x0 + r.x1) / 2, tb_y), aktiv().schrifthoehe), "text")
     # Schnittverlauf und Einzelheiten in der Ausgangsansicht beschriften
     for v in ansichten.values():
         for sv in v.e.get("_schnittverlauf") or []:
@@ -1240,16 +1281,18 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
                 spitze = ende + pf * 6.0
                 g.linie("duenn", tuple(ende), tuple(spitze))
                 g.flaechen.append(np.array(dr.pfeil(spitze, pf)["polygon"]))
-                lage = spitze + pf * 2.0 + np.array([0.0, -bl.TEXT_H / 2])
-                g.text(str(sv["name"]), float(lage[0]), float(lage[1]), bl.TEXT_H + 1.5, "mitte", art="schnitt")
+                lage = spitze + pf * 2.0 + np.array([0.0, -aktiv().schrifthoehe / 2])
+                g.text(str(sv["name"]), float(lage[0]), float(lage[1]), aktiv().schrifthoehe + 1.5, "mitte", art="schnitt")
         for mk in v.e.get("_einzelheit_marke") or []:
             c = v.blatt(np.asarray(mk["mitte"]))
             r = float(mk["radius"]) * v.s
-            g.text(str(mk["name"]), float(c[0] + r * 0.75 + 2), float(c[1] + r * 0.75 + 1), bl.TEXT_H + 1.5,
+            g.text(str(mk["name"]), float(c[0] + r * 0.75 + 2), float(c[1] + r * 0.75 + 1), aktiv().schrifthoehe + 1.5,
                    "links", art="einzelheit")
     # Positionsnummern im Zusammenbau (ISO 6433)
     if art in ("zusammenbau", "baugruppe") and szene.bom:
-        _positionsnummern(g, ansichten, szene, teile, beleg)
+        fehlen = _positionsnummern(g, ansichten, szene, teile, beleg)
+        if fehlen:
+            lage.setdefault("hinweise", []).append("Positionsnummern ohne Platz: " + ", ".join(str(x) for x in fehlen))
     # Notizen
     for n in blatt.get("notizen") or []:
         lage_n = n.get("lage") or [30, 30]
@@ -1261,10 +1304,10 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
 
 
 def _positionsnummern(g: bl.Grafik, ansichten: dict[str, _Ansicht], szene: Szene, teile: list[Teil],
-                      beleg: Belegung) -> None:
+                      beleg: Belegung) -> list[Any]:
     iso = next((v for v in ansichten.values() if v.art.startswith("iso")), None)
     if iso is None or not iso.proj.teile:
-        return
+        return []
     namen = {t.name for t in teile}
     rahmen = iso.rahmen
     mitte = np.array(rahmen.mitte)
@@ -1285,34 +1328,52 @@ def _positionsnummern(g: bl.Grafik, ansichten: dict[str, _Ansicht], szene: Szene
         punkt = iso.blatt(pl[len(pl) // 2] if len(pl) > 2 else (pl[0] + pl[-1]) / 2)
         ziele.append((ln.get("pos"), punkt, n))
     if not ziele:
-        return
-    # Nummern auf einem Ring um die Ansicht, nach Winkel sortiert (Hinweislinien kreuzen sich nicht)
-    rx = rahmen.breite / 2 + 12.0
-    ry = rahmen.hoehe / 2 + 12.0
+        return []
+    # Nummern um die Ansicht, nach Winkel sortiert; je Nummer die günstigste freie Lage (kurze Hinweislinie, nah am
+    # eigenen Winkel, keine Kreuzung mit schon gesetzten Hinweislinien, innerhalb der Zeichenfläche)
     ziele.sort(key=lambda z: math.atan2(z[1][1] - mitte[1], z[1][0] - mitte[0]))
-    n = len(ziele)
-    winkel = [math.atan2(z[1][1] - mitte[1], z[1][0] - mitte[0]) for z in ziele]
-    # gleichmäßig verteilen, aber nah am eigenen Winkel
-    verteilt = []
-    for i, w in enumerate(winkel):
-        gleich = winkel[0] + 2 * math.pi * i / n
-        verteilt.append(0.5 * w + 0.5 * gleich if n > 6 else w)
+    gesetzt: list[tuple[np.ndarray, np.ndarray]] = []  # (Kreismitte, Spitze)
     belegt: list[Rechteck] = []
-    for (pos, punkt, _name), w in zip(ziele, verteilt):
-        for extra in (0.0, 6.0, 12.0, 18.0, 24.0):
-            for dw in (0.0, 0.08, -0.08, 0.16, -0.16, 0.25, -0.25):
-                ww = w + dw
-                c = mitte + np.array([math.cos(ww) * (rx + extra), math.sin(ww) * (ry + extra)])
-                r = Rechteck(c[0] - 4.5, c[1] - 4.5, c[0] + 4.5, c[1] + 4.5)
-                if any(r.schneidet(b) for b in belegt) or not beleg.frei(r, ohne=("geo",)):
+    nicht_gesetzt = []
+    for pos, punkt, _name in ziele:
+        p = np.asarray(punkt, dtype=float)
+        w0 = math.atan2(p[1] - mitte[1], p[0] - mitte[0])
+        beste = None
+        for abstand in (10.0, 16.0, 22.0, 30.0, 40.0, 52.0):
+            for dw in (0.0, 0.15, -0.15, 0.3, -0.3, 0.5, -0.5, 0.8, -0.8, 1.2, -1.2):
+                ww = w0 + dw
+                # Strahl aus der Ansichtsmitte: Punkt knapp außerhalb des Rahmens plus Abstand
+                d = np.array([math.cos(ww), math.sin(ww)])
+                tx = (rahmen.breite / 2) / abs(d[0]) if abs(d[0]) > 1e-9 else 1e9
+                ty = (rahmen.hoehe / 2) / abs(d[1]) if abs(d[1]) > 1e-9 else 1e9
+                c = mitte + d * (min(tx, ty) + abstand)
+                r = Rechteck(c[0] - 4.8, c[1] - 4.8, c[0] + 4.8, c[1] + 4.8)
+                if any(r.schneidet(b, 1.0) for b in belegt) or not beleg.frei(r, ohne=("geo", "verdeckt")):
                     continue
+                kreuzt = sum(1 for c2, p2 in gesetzt if _schneiden(c, p, c2, p2))
+                kosten = float(np.linalg.norm(c - p)) + 25.0 * abs(dw) + 60.0 * kreuzt
+                if beste is None or kosten < beste[0]:
+                    beste = (kosten, c, r)
+            if beste is not None and beste[0] < abstand + 40:
                 break
-            else:
-                continue
-            break
+        if beste is None:
+            nicht_gesetzt.append(pos)
+            continue
+        _, c, r = beste
         belegt.append(r)
+        gesetzt.append((c, p))
         beleg.rechteck(r, "text")
-        bl.positionsnummer(g, pos, (float(c[0]), float(c[1])), (float(punkt[0]), float(punkt[1])))
+        bl.positionsnummer(g, pos, (float(c[0]), float(c[1])), (float(p[0]), float(p[1])))
+    return nicht_gesetzt
+
+
+def _schneiden(a1: np.ndarray, a2: np.ndarray, b1: np.ndarray, b2: np.ndarray) -> bool:
+    def kreuz(o: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
+        return float((a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]))
+
+    d1, d2 = kreuz(b1, b2, a1), kreuz(b1, b2, a2)
+    d3, d4 = kreuz(a1, a2, b1), kreuz(a1, a2, b2)
+    return (d1 * d2 < 0) and (d3 * d4 < 0)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1321,44 +1382,18 @@ def _positionsnummern(g: bl.Grafik, ansichten: dict[str, _Ansicht], szene: Szene
 
 
 def nutzlast(gruppen: list[dict[str, list[np.ndarray]]]) -> tuple[bytes, list[dict[str, int]]]:
-    """Polylinien-Nutzlast (DOKUMENTE.md): je Gruppe, je Linienart in LINIEN_REIHENFOLGE: u32 Anzahl, je Polylinie u32
-    Punktzahl und f32 x, y paarweise."""
-    teile: list[bytes] = []
-    zaehler = []
-    for linien in gruppen:
-        z = {}
-        for art in LINIEN_REIHENFOLGE:
-            ls = [np.asarray(pl, dtype="<f4").reshape(-1, 2) for pl in (linien.get(art) or []) if len(pl) >= 2]
-            z[art] = len(ls)
-            teile.append(struct.pack("<I", len(ls)))
-            for pl in ls:
-                teile.append(struct.pack("<I", len(pl)))
-                teile.append(np.ascontiguousarray(pl, dtype="<f4").tobytes())
-        zaehler.append(z)
-    return b"".join(teile), zaehler
+    """Polylinien-Nutzlast (Referenz: protocol.pack_polylinien)."""
+    from kevcad_kernel.protocol import pack_polylinien
+
+    return pack_polylinien(gruppen)
 
 
 def lies_nutzlast(kopf: dict[str, Any], daten: bytes) -> list[dict[str, list[np.ndarray]]]:
-    """Gegenstück zu ``nutzlast`` (Tests, Bild)."""
-    reihenfolge = kopf.get("linien_reihenfolge") or list(LINIEN_REIHENFOLGE)
-    out = []
-    off = 0
-    for _g in kopf.get("geometrie") or []:
-        linien: dict[str, list[np.ndarray]] = {}
-        for art in reihenfolge:
-            (n,) = struct.unpack_from("<I", daten, off)
-            off += 4
-            ls = []
-            for _ in range(n):
-                (k,) = struct.unpack_from("<I", daten, off)
-                off += 4
-                ls.append(np.frombuffer(daten, dtype="<f4", count=2 * k, offset=off).reshape(-1, 2).astype(float))
-                off += 8 * k
-            linien[art] = ls
-        out.append(linien)
-    if off != len(daten):
-        raise ValueError(f"Nutzlast von DRAWING hat {len(daten)} Byte, gelesen {off}")
-    return out
+    """Gegenstück zu ``nutzlast`` (protocol.unpack_polylinien), als float64."""
+    from kevcad_kernel.protocol import unpack_polylinien
+
+    return [{k: [np.asarray(pl, dtype=float) for pl in v] for k, v in g.items()}
+            for g in unpack_polylinien(kopf, daten)]
 
 
 def _ausgabe(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], grafiken: list[tuple[dict[str, Any], Any]],

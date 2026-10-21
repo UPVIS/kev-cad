@@ -188,3 +188,41 @@ Element) } …], "versatz"}`, `{"op": "ansicht_neu", "art", "lage"}`, `{"op": "a
   eingebettet, Schraffur als Clip-Pfad mit Linien (kein Muster), A4 und A3 gemischt in einer PDF-Datei.
 - **Drucken** immer mit `.pageScaleNone` (sonst verkleinert macOS ein A4-Blatt auf 97,18 % und der Maßstab stimmt
   nicht mehr), je Blattformat ein eigener Druckauftrag; bei gemischten Formaten ein Hinweis im Dialog.
+
+
+## Anhang: Zeichnungsnachrichten im Einzelnen (P6-Z, rein additiv)
+
+Umsetzung im Kernel: `kevcad_kernel/zeichnung/` (Referenz `protocol.pack_drawing`, `pack_polylinien`,
+`unpack_polylinien`, `docs_message`). Testdateien: `drawing.frame`, `drawing_tube.frame`, `docs.frame`,
+`drawing_req.frame`, `drawing_edit.frame` und Abschnitt `dokumente` in `fixtures.json` (`kernel/tools/make_doc_fixtures.py`).
+
+**DRAWING** (Kopf), zusätzlich zu den Feldern oben:
+
+| Feld | Inhalt |
+|---|---|
+| `blattgroesse` | [Breite, Höhe] in mm |
+| `geometrie[i]` | `{id, art, rahmen, massstab, titel, linien}`; `linien` = Anzahl Polylinien je Linienart; der letzte Eintrag `id: "blatt"` trägt Rahmen, Mittenmarken, Schriftfeld, Tabellen und Positionsnummern (`sichtbar` breit, `duenn` schmal) |
+| `masse[i]` | wie oben, dazu `text_hoehe` (Versalhöhe), `einheit` (`mm` bzw. `°`), `box` [x0, y0, x1, y1] des Textes, `texte` (steigende Bemaßung: je Lage `{text, lage, hoehe, winkel, anker, wert}`), `ansicht`, `art`, `quelle`, `fest`, `verwaist`. `text_lage` ist die Mitte der Textgrundlinie, `text_winkel` in Grad gegen den Uhrzeigersinn. `pfeile[i]`: `{spitze, richtung, art (voll, punkt, ursprung), laenge, breite, polygon}` |
+| `texte` | Texte des Blatts (Schriftfeld, Tabellen, Ansichtstitel, Positionsnummern, Notizen, allgemeine Angaben): `{text, lage, hoehe, winkel, anker (links, mitte, rechts), art}`, `lage` auf der Grundlinie |
+| `gefuellt` | gefüllte Polygone (Pfeile am Schnittverlauf) |
+| `pruefung` | Befunde der Blattprüfung `{art: "bemassung", pruefung (fehlend, ueberbemasst, ausserhalb, ueberlappung, doppelt, verwaist), schwere, text, masse, merkmal}` |
+| `hinweise`, `stand`, `run` | Hinweise zur Anordnung; Stand (Hash aus Blatt und Formschlüsseln, ändert sich mit jeder Änderung); Lauf |
+
+**Blattdatei**, zusätzliche Felder: `allgemein` (allgemeine Angaben, von Kev CAD gepflegt), `schriftfeld_fest`
+(Felder, die Kevin gesetzt hat), `auto.massstab` und `auto.format` (Kev CAD wählt selbst, bis Kevin setzt),
+`ansichten[i].fest` (verschoben, bleibt stehen), `.optional` (darf bei Platzmangel entfallen, Isometrie), `.titel`;
+`masse[i].schluessel` (automatische Maße: wiedererkennen über Läufe), `.seite` (unten, oben, links, rechts),
+`.text_versatz` (Lage der Zahl nach `mass_verschieben`), `.anker` (letzte Ansatzpunkte relativ zur Ansicht, damit ein
+verwaistes Maß an seiner Stelle bleibt); Bezüge mit `element` (`lo0`, `hi0` … Grenze einer Tasche je Achse).
+`unterdrueckt[i]` trägt zusätzlich `schluessel`. Merkmal-Kennungen: `huelle`, `seite:x-` … `seite:z+`, `stange`,
+`ende:a`, `ende:b`, `bohrung:n`, `einsatztasche:n`, `muttertasche:n`, `langloch:n`, `lochbild:n`, `tasche:n`,
+`absatz:n`, `fase:n`, `radius:n`.
+
+**DRAWING_EDIT**, zusätzliche Operationen: `{"op": "format", "wert": "A3", "ausrichtung"}` (schaltet die
+Formatwahl ab), `{"op": "mass_aendern", "id", "text", "toleranz", "fest"}` (Text mit `<>` für den Messwert).
+`mass_neu.bezuege` nimmt neben Klicks auch Merkmal-Bezüge `{"merkmal": "bohrung:2", "teil"?}` (MCP).
+`ACK` auf `DRAWING_EDIT` trägt `ergebnisse` (je Operation `{op, ok, id?, fehler?}`); danach folgt `DRAWING` ohne
+`reply_to`. **DOCS_REQ** (App → Kernel, `id`): rechnet alle Blätter und antwortet mit `DOCS` (`reply_to`). `DOCS.blaetter[i]`
+trägt zusätzlich `ausrichtung`, `massstab`, `masse`, `stand`, `hinweise`, `pruefung` (Anzahl).
+
+Einzelteilblätter rechnen die Verdeckung exakt im Hilfsprozess mit 1,5 s Budget je Ansicht, sonst auf dem Netz.

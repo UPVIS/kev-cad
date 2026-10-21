@@ -25,13 +25,10 @@ STIL = {
     "schnitt": 'stroke="#000" stroke-width="0.5" stroke-dasharray="6,1,0.5,1"',
     "schraffur": 'stroke="#000" stroke-width="0.18"',
     "duenn": 'stroke="#000" stroke-width="0.25"',
+    "nachbar": 'stroke="#000" stroke-width="0.25" stroke-dasharray="6,1,0.5,1,0.5,1"',
+    "bruch": 'stroke="#000" stroke-width="0.25"',
 }
 VERSAL = 0.72  # Versalhöhe / Schriftgröße bei Helvetica
-
-
-def _pfad(pl: np.ndarray, H: float) -> str:
-    pts = " ".join(f"{x:.3f},{H - y:.3f}" for x, y in pl)
-    return f"M{pts.replace(' ', ' L', 1) if False else pts}"
 
 
 def _polyline(pl: Any, H: float, stil: str, farbe: str | None = None) -> str:
@@ -44,8 +41,8 @@ def _polyline(pl: Any, H: float, stil: str, farbe: str | None = None) -> str:
 def _text(text: str, x: float, y: float, h: float, winkel: float, anker: str, H: float, farbe: str = "#000") -> str:
     a = {"links": "start", "mitte": "middle", "rechts": "end"}.get(anker, "middle")
     groesse = h / VERSAL
-    return (f'<text transform="translate({x:.3f},{H - y:.3f}) rotate({-winkel:.3f})" font-family="Helvetica, Arial, '
-            f'sans-serif" font-size="{groesse:.3f}" text-anchor="{a}" fill="{farbe}">{escape(str(text))}</text>')
+    return (f'<text transform="translate({x:.3f},{H - y:.3f}) rotate({-winkel:.3f})" font-family="osifont, Helvetica, '
+            f'Arial, sans-serif" font-size="{groesse:.3f}" text-anchor="{a}" fill="{farbe}">{escape(str(text))}</text>')
 
 
 def svg(kopf: dict[str, Any], nutzlast: bytes) -> str:

@@ -809,4 +809,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .kamera_tools import register_camera_tools
 
     register_camera_tools(t, svc, tool, {"read_only": READ_ONLY, "viewer": VIEWER, "additive": ADDITIVE})
+
+    # Phase 6: Zeichnungen (zeichnung_tools.py)
+    from .zeichnung_tools import register_zeichnung_tools
+
+    register_zeichnung_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE, "writes": WRITES})
     return t

@@ -194,7 +194,20 @@ def auto_masse(merk: Merkmale, teil: str, ansichten: list[dict[str, Any]]) -> tu
     _fasen_radien(k)
     for a in ansichten:
         a["_symmetrie"] = [r for vid, r in k.symmetrien if vid == a.get("id")]
-    return k.masse, k.allgemein
+    # jedes Maß einmal: Maße weglassen, die einen Kreis im Bemaßungsgraphen schließen (RECHERCHE-PHASE6.md 2.5)
+    from kevcad_kernel.zeichnung.pruefung import ohne_ueberbemassung
+
+    sym: set[int] = set()
+    if merk.system.art == "stange":
+        sym |= {1, 2}
+    for vid, r in k.symmetrien:
+        b = k.blicke.get(vid)
+        if b is not None:
+            v = np.asarray(b.oben if r == "x" else b.rechts, dtype=float)
+            sym.add(int(np.argmax(np.abs(v))))
+    for m in k.masse:  # Messrichtung für die Prüfung
+        m.setdefault("_richtung", m.get("richtung"))
+    return ohne_ueberbemassung(k.masse, merk, k.blicke, sym), k.allgemein
 
 
 def _huellmasse(k: _Kontext) -> None:
@@ -218,11 +231,16 @@ def _huellmasse(k: _Kontext) -> None:
             seite = "unten" if richtung == "x" else "rechts"
             k.mass(f"huelle:{'xyz'[i]}", "linear", vid, [k.seite(i, -1), k.seite(i, 1)], richtung, 100, seite=seite)
     if sysart == "platte":
-        k.allgemein.append(f"Plattendicke {zahl(k.g[1])} mm")
+        k.allgemein.append(f"t = {zahl(k.g[1])} (Plattendicke)")
     if sysart == "stange":
         st = k.merk.get("stange")
         if st is not None and st.werte.get("profil"):
             k.allgemein.append(f"Halbzeug: {st.werte['profil']}")
+    info = k.merk.info or {}
+    if info.get("druckteil"):
+        k.allgemein.append("Nicht bemaßte Maße nach 3D-Modell")
+    elif sysart in ("stange", "platte") and info.get("lager_art") != "holz":
+        k.allgemein.append("Werkstückkanten ISO 13715 −0,3 (entgratet)")
 
 
 def _stange(k: _Kontext) -> None:
@@ -284,8 +302,9 @@ def _punkte_je_achse(k: _Kontext, vid: str, merkmale: list[Merkmal]) -> None:
             continue
         mitte_ok = all(abs(w[0] - W / 2) < TOL for w in einzig)
         quer = stange and i != 0  # Stangenware quer zur Achse: Lage zur Stangenachse
-        symmetrisch = (not stange or quer) and _symmetrisch([w[0] for w in einzig], W)
-        if mitte_ok and (not stange or quer) and not teilungen:
+        platte = k.merk.system.art == "platte"  # Zuschnitt: alle Lagen ab der Ecke unten links, keine Symmetrie
+        symmetrisch = (not stange or quer) and not platte and _symmetrisch([w[0] for w in einzig], W)
+        if mitte_ok and (not stange or quer) and not platte and not teilungen:
             k.symmetrie(vid, richtung)
             continue  # alles auf der Mittellinie: Lage durch die Symmetrie bestimmt
         if symmetrisch and not teilungen:
@@ -297,7 +316,7 @@ def _punkte_je_achse(k: _Kontext, vid: str, merkmale: list[Merkmal]) -> None:
             continue
         db = k.seite(datum[0], datum[1])
         seite = ("oben" if richtung == "x" else "links")
-        if len(einzig) >= 4:
+        if len(einzig) >= (3 if platte else 4):  # Zuschnitt: steigende Bemaßung ab drei Lagen
             k.mass(f"kette:{vid}:{richtung}", "bezugskette", vid, [db] + [k.bezug(w[1]) for w in einzig], richtung,
                    30, seite=seite)
         else:
@@ -376,18 +395,34 @@ def _bohrungen(k: _Kontext) -> None:
 
 
 def _taschen(k: _Kontext) -> None:
+    """Taschen: Tiefe, Umriss, Lage. Absätze: Höhe ab der Gegenseite, aber jede Höhe nur einmal (Regel 2: jedes Maß
+    einmal; zwei Stufen auf gleicher Höhe oder symmetrisch gleich weit von beiden Seiten brauchen nur ein Maß) und nur
+    für Absätze, deren Boden mindestens 2 % der Seitenfläche ausmacht (kleinere Stufen regelt die Angabe „nach
+    3D-Modell“ bzw. die Allgemeintoleranz)."""
+    belegt: set[tuple[str, str, float]] = set()
     for m in k.merk.von_art("tasche", "absatz"):
         i = int(m.werte["achse"])
         s = int(m.werte["seite"])
         n = np.zeros(3)
         n[i] = 1.0
+        if m.art == "absatz":
+            a, b = [j for j in range(3) if j != i]
+            ausd = m.werte.get("ausdehnung") or [0, 0]
+            if float(ausd[0]) * float(ausd[1]) < 0.02 * float(k.g[a]) * float(k.g[b]):
+                continue
         # Tiefe bzw. Höhe in einer Ansicht, in der der Boden als Kante erscheint
         vid = k.ansicht_seitlich(n)
         if vid is not None:
+            richtung = _richtung_fuer(k, vid, i)
+            wert = float(m.werte.get("tiefe") if m.art == "tasche" else m.werte.get("hoehe") or 0.0)
+            schluessel = (vid, richtung, round(wert, 1))
+            if schluessel in belegt or any(abs(wert - w) < 0.3 and (v, r) == (vid, richtung) for v, r, w in belegt):
+                continue
+            belegt.add(schluessel)
             if m.art == "tasche":
-                k.mass(f"tiefe:{m.id}", "linear", vid, [k.seite(i, s), k.bezug(m.id)], _richtung_fuer(k, vid, i), 40)
+                k.mass(f"tiefe:{m.id}", "linear", vid, [k.seite(i, s), k.bezug(m.id)], richtung, 40)
             else:
-                k.mass(f"hoehe:{m.id}", "linear", vid, [k.seite(i, -s), k.bezug(m.id)], _richtung_fuer(k, vid, i), 40)
+                k.mass(f"hoehe:{m.id}", "linear", vid, [k.seite(i, -s), k.bezug(m.id)], richtung, 40)
         if m.art != "tasche":
             continue
         # Umriss und Lage in der Ansicht auf den Boden

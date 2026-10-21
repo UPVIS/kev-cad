@@ -36,6 +36,11 @@ class ZeichnungRuntimeMixin:
         self._z_docs: dict[str, Any] | None = None
         self._z_stand_run = 0
 
+    def _zeichnung_schliessen(self) -> None:
+        from kevcad_kernel.zeichnung.projektion import EXAKT
+
+        EXAKT.schliessen()
+
     def _zeichnung_projekt(self) -> None:
         with self._z_lock:
             self._z_cache.clear()
@@ -94,10 +99,15 @@ class ZeichnungRuntimeMixin:
     # -- Rechnen -------------------------------------------------------------------------------------------------------
 
     def _z_rechne(self, blatt: dict[str, Any], szene: Any, speichern: bool = True) -> Any:
+        from kevcad_kernel.zeichnung.hausregeln import laden
         from kevcad_kernel.zeichnung.zeichner import rechne
 
+        proj = self._project
+        regeln, fehler = laden(proj.path if proj is not None else None)
         with self._occ_lock:
-            erg = rechne(blatt, szene)
+            erg = rechne(blatt, szene, regeln=regeln)
+        if fehler:
+            erg.hinweise.append(fehler)
         ordner = self._z_ordner()
         if speichern and ordner is not None:
             try:
@@ -141,7 +151,8 @@ class ZeichnungRuntimeMixin:
                              "ausrichtung": b["ausrichtung"], "massstab": b["massstab"],
                              "verwaiste_masse": sum(1 for m in b["masse"] if m.get("verwaist")),
                              "masse": len(b["masse"]), "stand": erg.kopf.get("stand"),
-                             "hinweise": list(erg.hinweise or [])})
+                             "hinweise": list(erg.hinweise or []),
+                             "pruefung": len(erg.kopf.get("pruefung") or [])})
         bauplan = None
         hook = getattr(self, "_bauplan_docs", None)  # Strang P6-B
         if callable(hook):
@@ -394,4 +405,4 @@ def _zusammenfassung(erg: Any, neu: bool) -> dict[str, Any]:
             "ansichten": [{"id": a["id"], "art": a["art"]} for a in b["ansichten"]],
             "masse": masse, "verwaist": [m["id"] for m in b["masse"] if m.get("verwaist")],
             "allgemein": list(b.get("allgemein") or []), "hinweise": list(erg.hinweise or []),
-            "ms": round(erg.ms, 1)}
+            "pruefung": list(erg.kopf.get("pruefung") or []), "ms": round(erg.ms, 1)}

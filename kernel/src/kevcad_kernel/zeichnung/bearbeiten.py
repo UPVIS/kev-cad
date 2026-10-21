@@ -13,7 +13,8 @@ MCP (``von: agent``).
 | ``notiz`` | ``text``, ``lage``, ``zeiger`` | |
 | ``notiz_loeschen`` | ``id`` | |
 | ``schriftfeld`` | ``feld``, ``wert`` | Kevins Wert bleibt (Kev CAD überschreibt ihn nicht mehr) |
-| ``auto`` | ``ansichten``, ``masse`` | automatische Ansichten bzw. Maße an oder aus |
+| ``auto`` | ``ansichten``, ``masse``, ``zuruecksetzen`` | automatische Ansichten bzw. Maße an oder aus; ``zuruecksetzen`` hebt alle Unterdrückungen auf und setzt automatische Maße neu |
+| ``unterdrueckung_aufheben`` | ``index`` | Eintrag in ``unterdrueckt`` entfernen (das Maß kommt beim nächsten Rechnen wieder) |
 | ``format`` (zusätzlich) | ``wert`` (A4 …), ``ausrichtung`` | schaltet die automatische Formatwahl ab |
 | ``mass_aendern`` (zusätzlich) | ``id``, ``text``, ``toleranz``, ``fest`` | Text („<>“ = Messwert) oder Toleranz eines Maßes |
 """
@@ -31,7 +32,7 @@ from kevcad_kernel.zeichnung.blatt import MASSSTAEBE, massstab_faktor, massstab_
 from kevcad_kernel.zeichnung.merkmale import Merkmale
 
 OPS = ("mass_verschieben", "mass_loeschen", "mass_neu", "ansicht_neu", "ansicht_verschieben", "ansicht_loeschen",
-       "massstab", "notiz", "notiz_loeschen", "schriftfeld", "auto", "format", "mass_aendern")
+       "massstab", "notiz", "notiz_loeschen", "schriftfeld", "auto", "unterdrueckung_aufheben", "format", "mass_aendern")
 
 
 class OpFehler(ValueError):
@@ -115,11 +116,32 @@ def _mass_verschieben(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any)
 def _mass_loeschen(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict[str, Any]:
     m = _mass(b, op.get("id"))
     b["masse"] = [x for x in b["masse"] if x is not m]
-    if m.get("quelle") == "auto" and m.get("schluessel"):
-        weg = b["auto"].setdefault("unterdrueckt", [])
-        if m["schluessel"] not in weg:
-            weg.append(m["schluessel"])
+    if m.get("quelle") == "auto":
+        unterdruecke(b, m)
     return {"id": m["id"]}
+
+
+def unterdruecke(b: dict[str, Any], m: dict[str, Any]) -> None:
+    """Automatisches Maß in ``unterdrueckt`` eintragen (Vertrag 1.1: Art, Ansicht, Bezüge; dazu der Schlüssel)."""
+    eintrag = {"art": m.get("art"), "ansicht": m.get("ansicht"), "bezuege": list(m.get("bezuege") or []),
+               "schluessel": m.get("schluessel")}
+    if not any(passt_unterdrueckt(u, m) for u in b["unterdrueckt"]):
+        b["unterdrueckt"].append(eintrag)
+
+
+def _bezug_schluessel(x: dict[str, Any]) -> tuple[Any, ...]:
+    return (x.get("teil") or "", x.get("merkmal") or x.get("ref") or "", x.get("element") or "")
+
+
+def passt_unterdrueckt(u: dict[str, Any], m: dict[str, Any]) -> bool:
+    """Gehört das Maß ``m`` zu einer Unterdrückung ``u``? Gleicher Schlüssel oder gleiche Art mit denselben Bezügen."""
+    if u.get("schluessel") and m.get("schluessel"):
+        return u["schluessel"] == m["schluessel"]
+    if u.get("art") != m.get("art"):
+        return False
+    a = sorted(_bezug_schluessel(x) for x in u.get("bezuege") or [])
+    b = sorted(_bezug_schluessel(x) for x in m.get("bezuege") or [])
+    return a == b
 
 
 def _mass_aendern(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict[str, Any]:
@@ -346,9 +368,6 @@ def _ansicht_loeschen(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any)
     a = _ansicht(b, op.get("id"))
     b["ansichten"] = [x for x in b["ansichten"] if x is not a]
     weg = [m for m in b["masse"] if m.get("ansicht") == a["id"]]
-    for m in weg:
-        if m.get("quelle") == "auto" and m.get("schluessel"):
-            b["auto"].setdefault("unterdrueckt", []).append(m["schluessel"])
     b["masse"] = [m for m in b["masse"] if m.get("ansicht") != a["id"]]
     if b["auto"].get("ansichten") and not b["ansichten"]:
         b["auto"]["ansichten"] = False  # sonst plant Kev CAD die gelöschten Ansichten neu
@@ -433,4 +452,21 @@ def _auto(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict[str
             b["auto"][k] = bool(op[k])
             if k == "masse" and not op[k]:
                 b["masse"] = [m for m in b["masse"] if m.get("quelle") != "auto" or m.get("fest")]
+    if op.get("zuruecksetzen"):
+        # alle Unterdrückungen aufheben und die automatischen Maße neu setzen lassen (Kevins und Agent-Maße bleiben)
+        n = len(b["unterdrueckt"])
+        b["unterdrueckt"] = []
+        b["masse"] = [m for m in b["masse"] if m.get("quelle") != "auto"]
+        if op.get("ansichten") is not False and b["auto"].get("ansichten"):
+            b["ansichten"] = [a for a in b["ansichten"] if a.get("fest")]
+        return {"auto": {k: b["auto"][k] for k in ("ansichten", "masse")}, "aufgehoben": n}
     return {"auto": {k: b["auto"][k] for k in ("ansichten", "masse")}}
+
+
+def _unterdrueckung_aufheben(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict[str, Any]:
+    i = op.get("index")
+    if not isinstance(i, int) or not 0 <= i < len(b["unterdrueckt"]):
+        raise OpFehler(f"index {i!r} ungültig (0 bis {len(b['unterdrueckt']) - 1})" if b["unterdrueckt"]
+                       else "es gibt keine Unterdrückung")
+    eintrag = b["unterdrueckt"].pop(i)
+    return {"index": i, "art": eintrag.get("art")}

@@ -564,6 +564,7 @@ class KernelRuntime(AnimationRuntimeMixin, CameraRuntime, ZeichnungRuntimeMixin)
             cur.final = {"type": "CLOSED"}
             cur.finished.set()
         self._worker.stop(timeout=1.0)
+        self._zeichnung_schliessen()
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)

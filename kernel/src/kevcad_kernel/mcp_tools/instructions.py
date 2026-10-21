@@ -126,6 +126,19 @@ renders through that camera (format aspect ratio). A camera attached with `.an(p
 during playback, through the camera (key 0) and in the video; its shown body from koerper() follows automatically, \
 rig parts need their own `folge`.
 
+Technical drawings (Zeichnungen)
+- `zeichnung_erstellen()` creates workshop drawings for every manufactured part (bar stock, plates, 3D prints; one \
+sheet per bill-of-materials position) plus the assembly sheet with item balloons and parts list; `teile=[...]` for \
+single parts, `art="baugruppe"` for a sub-assembly. Views, scale (ISO 5455), format and dimensions (ISO 129-1: holes \
+with Ø/thread/counterbore and position from the datum edge or bar end, hole patterns "4× Ø6,6", slots, pockets, \
+chamfers, radii, bar length and miters) are chosen automatically; sheets live in <project>/dokumente/zeichnungen/ and \
+keep Kevin's edits on every run (dimensions hang on features, orphaned ones are marked).
+- Then check each sheet yourself with `zeichnung_bild(blatt)` (never send these images to Kevin, he sees the sheet in \
+the app) and fix missing, doubled or misplaced dimensions with `zeichnung_bearbeiten(blatt, ops)`: mass_neu with \
+feature references (`{"merkmal": "bohrung:2"}`, `{"merkmal": "seite:x-"}`), mass_loeschen, mass_verschieben, \
+mass_aendern, ansicht_neu (also schnitt/einzelheit), massstab, format, notiz, schriftfeld. Results list the checks of \
+each sheet (missing size or position, over-dimensioning, overlaps, orphaned dimensions).
+
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \
 (world mm), `visibility` isolates or hides parts, `section` cuts, `view` switches standard views and display style. \

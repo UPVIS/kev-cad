@@ -249,11 +249,18 @@ def main() -> None:
     from kevcad_kernel.protocol import constraints_example
 
     (ZIEL / "constraints.frame").write_bytes(encode_frame({**constraints_example(), "seq": 17}))
+    alt = ZIEL / "fixtures.json"
+    if alt.exists():  # Abschnitte anderer Generatoren (dokumente: make_doc_fixtures.py) bleiben erhalten
+        for k, v in json.loads(alt.read_text()).items():
+            expected.setdefault(k, v)
     (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
     print(f"{len(frames)} Rahmen nach {ZIEL}")
     import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich
 
     make_pruef_fixtures.main()
+    import make_doc_fixtures  # Zeichnungen (DRAWING, DOCS …): eigene Dateien und Abschnitt dokumente
+
+    make_doc_fixtures.main()
 
 
 if __name__ == "__main__":

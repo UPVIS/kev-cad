@@ -152,7 +152,10 @@ def schraffur_linien(v: Any) -> list[np.ndarray]:
             continue
         blatt_ringe = [v.blatt(r) for r in ringe]
         groesse = max(max(float(np.ptp(r[:, 0])), float(np.ptp(r[:, 1]))) for r in blatt_ringe)
-        abstand = 1.5 if groesse < 15 else 2.5 if groesse < 60 else 4.0
+        from kevcad_kernel.zeichnung.hausregeln import aktiv
+
+        basis = aktiv().schraffurabstand
+        abstand = basis * (0.6 if groesse < 15 else 1.0 if groesse < 60 else 1.6)
         winkel = (45.0, 135.0, 60.0, 120.0)[i % 4]
         abstand *= (1.0, 1.0, 1.3, 1.3)[i % 4]
         out += schraffur(blatt_ringe, winkel, abstand)

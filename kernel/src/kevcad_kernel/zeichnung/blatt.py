@@ -26,7 +26,7 @@ RAND = 10.0
 MASSSTAEBE = ("50:1", "20:1", "10:1", "5:1", "2:1", "1:1", "1:2", "1:5", "1:10", "1:20", "1:50", "1:100", "1:200",
               "1:500", "1:1000")
 SCHRIFTFELD_B = 180.0  # ISO 7200: höchstens 180 mm breit
-SCHRIFTFELD_H = 40.0
+SCHRIFTFELD_H = 39.0
 TEXT_H = 3.5  # Versalhöhe Maßzahlen und Schriftfeldwerte (ISO 3098, Reihe 2,5 · 3,5 · 5 · 7)
 TEXT_KLEIN = 2.5
 TEXT_LABEL = 1.8
@@ -102,7 +102,9 @@ def rahmen(breite: float, hoehe: float) -> Grafik:
     z = zeichenflaeche(breite, hoehe)
     g.rechteck("sichtbar", z.x0, z.y0, z.x1, z.y1)
     mx, my = (z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2
-    for a, b in (((mx, 0), (mx, z.y0 + 5)), ((mx, hoehe), (mx, z.y1 - 5)), ((0, my), (z.x0 + 5, my)),
+    sf = schriftfeld_rechteck(breite, hoehe)
+    unten = z.y0 if sf.x0 <= mx <= sf.x1 else z.y0 + 5  # nicht ins Schriftfeld
+    for a, b in (((mx, 0), (mx, unten)), ((mx, hoehe), (mx, z.y1 - 5)), ((0, my), (z.x0 + 5, my)),
                  ((breite, my), (z.x1 - 5, my))):
         g.linie("sichtbar", a, b)
     return g
@@ -142,53 +144,81 @@ def projektionssymbol(g: Grafik, cx: float, cy: float, h: float = 5.0) -> None:
 
 
 def schriftfeld(breite: float, hoehe: float, werte: dict[str, Any], massstab: str, fmt: str) -> Grafik:
-    """Schriftfeld nach ISO 7200 rechts unten: Benennung, Zeichnungsnummer, Werkstoff, Halbzeug, Masse, Maßstab,
-    Allgemeintoleranz, Projektionsmethode, Stückzahl, Format, Projekt, Version, Datum, gezeichnet, Blatt."""
+    """Schriftfeld nach ISO 7200 (180 mm breit, unten rechts) mit den acht Pflichtfeldern Eigentümer, Sachnummer
+    (Zeichnungsnummer), Ausgabedatum, Blattnummer, Titel (Benennung), Freigebender, Ersteller, Dokumentart; dazu
+    Werkstoff, Halbzeug, Masse, Maßstab mit dem Symbol der Projektionsmethode 1 daneben, Allgemeintoleranz, Stückzahl,
+    Format, Projekt und Version bzw. Meilenstein."""
     g = Grafik()
     r = schriftfeld_rechteck(breite, hoehe)
     x0, y0, x1 = r.x0, r.y0, r.x1
-    zeilen = [12.0, 10.0, 9.0, 9.0]  # von oben
+    zeilen = [12.0, 9.0, 9.0, 9.0]  # von oben
     ys = [y0 + SCHRIFTFELD_H]
     for h in zeilen:
         ys.append(ys[-1] - h)
     g.rechteck("sichtbar", x0, y0, x1, y0 + SCHRIFTFELD_H)
     for y in ys[1:-1]:
         g.linie("duenn", (x0, y), (x1, y))
-    # Zeile 1: Benennung | Zeichnungsnummer
-    sp = [x0, x0 + 120, x1]
-    g.linie("duenn", (sp[1], ys[0]), (sp[1], ys[1]))
-    _zelle(g, sp[0], ys[1], sp[1], ys[0], "Benennung", werte.get("benennung"), TEXT_TITEL)
-    _zelle(g, sp[1], ys[1], sp[2], ys[0], "Zeichnungsnummer", werte.get("zeichnungsnummer"))
-    # Zeile 2: Werkstoff | Halbzeug | Masse | Maßstab
-    sp = [x0, x0 + 55, x0 + 110, x0 + 145, x1]
-    for x in sp[1:-1]:
-        g.linie("duenn", (x, ys[1]), (x, ys[2]))
+
+    def zeile(i: int, breiten: list[float], zellen: list[tuple[str, Any, float]]) -> list[float]:
+        xs = [x0]
+        for w in breiten:
+            xs.append(xs[-1] + w)
+        for x in xs[1:-1]:
+            g.linie("duenn", (x, ys[i]), (x, ys[i + 1]))
+        for (label, wert, h), a, b in zip(zellen, xs[:-1], xs[1:]):
+            if label:
+                _zelle(g, a, ys[i + 1], b, ys[i], label, wert, h)
+        return xs
+
+    blatt_text = f"{werte.get('blatt_nr') or 1}/{werte.get('blatt_anzahl') or 1}"
+    zeile(0, [100, 50, 30], [("Benennung", werte.get("benennung"), TEXT_TITEL),
+                             ("Sachnummer", werte.get("zeichnungsnummer"), TEXT_H),
+                             ("Blatt", blatt_text, TEXT_H)])
     masse = werte.get("masse_g")
     masse_text = None
     if isinstance(masse, (int, float)):
         masse_text = (f"{masse / 1000:.3f} kg" if masse >= 1000 else f"{masse:.1f} g").replace(".", ",")
-    _zelle(g, sp[0], ys[2], sp[1], ys[1], "Werkstoff", werte.get("werkstoff"))
-    _zelle(g, sp[1], ys[2], sp[2], ys[1], "Halbzeug", werte.get("halbzeug"))
-    _zelle(g, sp[2], ys[2], sp[3], ys[1], "Masse", masse_text)
-    _zelle(g, sp[3], ys[2], sp[4], ys[1], "Maßstab", massstab)
-    # Zeile 3: Allgemeintoleranz | Projektion | Stückzahl | Format
-    for x in sp[1:-1]:
-        g.linie("duenn", (x, ys[2]), (x, ys[3]))
-    _zelle(g, sp[0], ys[3], sp[1], ys[2], "Allgemeintoleranz", werte.get("allgemeintoleranz"))
-    g.text("Projektionsmethode 1", sp[1] + 1.2, ys[2] - 1.2 - TEXT_LABEL, TEXT_LABEL, art="schriftfeld_label")
-    projektionssymbol(g, (sp[1] + sp[2]) / 2 + 6, ys[3] + 3.2, 4.0)
-    _zelle(g, sp[2], ys[3], sp[3], ys[2], "Stückzahl", werte.get("stueckzahl"))
-    _zelle(g, sp[3], ys[3], sp[4], ys[2], "Format", fmt)
-    # Zeile 4: Projekt | Version | Datum | gezeichnet | Blatt
-    sp = [x0, x0 + 55, x0 + 90, x0 + 118, x0 + 152, x1]
-    for x in sp[1:-1]:
-        g.linie("duenn", (x, ys[3]), (x, ys[4]))
-    _zelle(g, sp[0], ys[4], sp[1], ys[3], "Projekt", werte.get("projekt"), TEXT_KLEIN)
-    _zelle(g, sp[1], ys[4], sp[2], ys[3], "Version", werte.get("version"), TEXT_KLEIN)
-    _zelle(g, sp[2], ys[4], sp[3], ys[3], "Datum", werte.get("datum"), TEXT_KLEIN)
-    _zelle(g, sp[3], ys[4], sp[4], ys[3], "gezeichnet", werte.get("gezeichnet"), TEXT_KLEIN)
-    _zelle(g, sp[4], ys[4], sp[5], ys[3], "Blatt", werte.get("blatt") or "1/1", TEXT_KLEIN)
+    xs = zeile(1, [45, 45, 30, 30, 30], [("Werkstoff", werte.get("werkstoff"), TEXT_KLEIN + 0.5),
+                                         ("Halbzeug", werte.get("halbzeug"), TEXT_KLEIN + 0.5),
+                                         ("Masse", masse_text, TEXT_KLEIN + 0.5),
+                                         ("Maßstab", massstab, TEXT_H), ("", None, TEXT_H)])
+    g.text("Projektionsmethode 1", xs[4] + 1.2, ys[1] - 1.2 - TEXT_LABEL, TEXT_LABEL, art="schriftfeld_label")
+    projektionssymbol(g, (xs[4] + xs[5]) / 2 - 1.0, ys[2] + 3.0, 3.6)
+    zeile(2, [40, 22, 28, 45, 45], [("Allgemeintoleranz", werte.get("allgemeintoleranz"), TEXT_KLEIN + 0.5),
+                                    ("Stückzahl", werte.get("stueckzahl"), TEXT_KLEIN + 0.5),
+                                    ("Format", fmt, TEXT_KLEIN + 0.5),
+                                    ("Dokumentart", werte.get("dokumentart"), TEXT_KLEIN + 0.5),
+                                    ("Version", werte.get("version"), TEXT_KLEIN + 0.5)])
+    zeile(3, [45, 40, 30, 35, 30], [("Projekt", werte.get("projekt"), TEXT_KLEIN),
+                                    ("Eigentümer", werte.get("eigentuemer"), TEXT_KLEIN),
+                                    ("Erstellt", werte.get("gezeichnet"), TEXT_KLEIN),
+                                    ("Freigegeben", werte.get("freigegeben"), TEXT_KLEIN),
+                                    ("Ausgabedatum", werte.get("datum"), TEXT_KLEIN)])
     return g
+
+
+def umbrechen(zeilen: list[str], breite: float, hoehe: float = TEXT_KLEIN) -> list[str]:
+    """Zeilen an Kommas bzw. Leerzeichen umbrechen, damit sie in ``breite`` mm passen."""
+    out: list[str] = []
+    for z in zeilen:
+        if textbreite(z, hoehe) <= breite:
+            out.append(z)
+            continue
+        teile = z.split(", ")
+        trenn = ", "
+        if len(teile) == 1:
+            teile, trenn = z.split(" "), " "
+        akt = ""
+        for t in teile:
+            probe = (akt + trenn + t) if akt else t
+            if akt and textbreite(probe, hoehe) > breite:
+                out.append(akt + trenn.rstrip())
+                akt = "  " + t
+            else:
+                akt = probe
+        if akt:
+            out.append(akt)
+    return out
 
 
 def allgemeinangaben_rechteck(breite: float, hoehe: float, zeilen: list[str]) -> Rechteck | None:
@@ -198,10 +228,15 @@ def allgemeinangaben_rechteck(breite: float, hoehe: float, zeilen: list[str]) ->
         return None
     z = zeichenflaeche(breite, hoehe)
     r = schriftfeld_rechteck(breite, hoehe)
+    links = r.x0 - z.x0 - 8.0
+    if links >= 70.0 and len(umbrechen(zeilen, links)) * TEXT_KLEIN * 1.8 + 3.0 <= SCHRIFTFELD_H:
+        zeilen = umbrechen(zeilen, links)
+    else:
+        zeilen = umbrechen(zeilen, SCHRIFTFELD_B - 2.0)
     h = len(zeilen) * TEXT_KLEIN * 1.8 + 3.0
     w = max(textbreite(t, TEXT_KLEIN) for t in zeilen) + 4.0
     if r.x0 - z.x0 >= max(70.0, w + 6.0) and h <= SCHRIFTFELD_H:
-        return Rechteck(r.x0 - w - 4.0, z.y0, r.x0, z.y0 + h + 1.0)
+        return Rechteck(z.x0 + 2.0, z.y0, z.x0 + 2.0 + w + 2.0, z.y0 + h + 1.0)  # unten links, frei von der Mittenmarke
     return Rechteck(r.x0, r.y1, r.x1, r.y1 + h)
 
 
@@ -211,6 +246,7 @@ def allgemeinangaben(breite: float, hoehe: float, zeilen: list[str]) -> tuple[Gr
     r = allgemeinangaben_rechteck(breite, hoehe, zeilen)
     if r is None:
         return g, None
+    zeilen = umbrechen(zeilen, r.breite - 2.0)
     y = r.y0 + 2.0
     for text in reversed(zeilen):
         g.text(text, r.x0 + 1.0, y, TEXT_KLEIN, art="allgemein")
@@ -258,8 +294,10 @@ def tabelle(x0: float, y0: float, spalten: list[Spalte], zeilen: list[list[Any]]
         for s, wert in zip(spalten, zeile):
             text = "" if wert is None else str(wert)
             hh = TEXT_KLEIN
-            while hh > 1.6 and textbreite(text, hh) > s.breite - 2.0:
+            while hh > 2.0 and textbreite(text, hh) > s.breite - 2.0:
                 hh = round(hh - 0.2, 2)
+            while len(text) > 3 and textbreite(text, hh) > s.breite - 2.0:
+                text = text[:-2].rstrip(" ,;/") + "…"
             if s.anker == "rechts":
                 g.text(text, x + s.breite - 1.2, y - zeilenhoehe + 1.6, hh, "rechts", art="tabelle")
             elif s.anker == "mitte":
@@ -277,8 +315,8 @@ def tabelle(x0: float, y0: float, spalten: list[Spalte], zeilen: list[list[Any]]
     return g, Rechteck(x0, y0, x0 + breite, y1)
 
 
-STUECKLISTE_SPALTEN = [Spalte("Pos.", 10, "mitte"), Spalte("Menge", 12, "mitte"), Spalte("Benennung", 62),
-                       Spalte("Abmessung / Norm", 42), Spalte("Werkstoff", 34), Spalte("Masse", 20, "rechts")]
+STUECKLISTE_SPALTEN = [Spalte("Pos.", 10, "mitte"), Spalte("Menge", 12, "mitte"), Spalte("Benennung", 56),
+                       Spalte("Abmessung / Norm", 44), Spalte("Werkstoff", 40), Spalte("Masse", 18, "rechts")]
 
 
 def stueckliste_zeilen(bom: dict[str, Any], positionen: list[int] | None = None) -> list[list[Any]]:
@@ -293,8 +331,10 @@ def stueckliste_zeilen(bom: dict[str, Any], positionen: list[int] | None = None)
         norm = ln.get("norm")
         if norm and norm not in abm:
             abm = f"{abm}, {norm}" if abm else norm
-        out.append([ln.get("pos"), ln.get("anzahl"), ln.get("benennung") or "", abm, ln.get("material") or "",
-                    masse])
+        benennung = str(ln.get("benennung") or "")
+        if "/" in benennung:  # Druck- und Eigenteile heißen wie das Teil: letzter Teil des Namens genügt
+            benennung = benennung.rsplit("/", 1)[-1]
+        out.append([ln.get("pos"), ln.get("anzahl"), benennung, abm, ln.get("material") or "", masse])
     return out
 
 

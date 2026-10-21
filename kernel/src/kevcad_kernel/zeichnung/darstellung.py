@@ -21,16 +21,21 @@ from typing import Any
 
 import numpy as np
 
-from kevcad_kernel.zeichnung.blatt import TEXT_H
 from kevcad_kernel.zeichnung.geo2d import Rechteck, textbox, textbreite
+from kevcad_kernel.zeichnung.hausregeln import aktiv
 
-PFEIL_L = 3.0
-PFEIL_B = 1.0  # halbe Breite ≈ L · tan(15°) · 1,25
 LUECKE = 1.0
 UEBERSTAND = 2.0
 TEXT_ABSTAND = 0.9  # Maßzahl über der Maßlinie
-ERSTE_LINIE = 9.0  # Abstand erste Maßlinie vom Körper
-LINIEN_ABSTAND = 7.0  # Abstand weiterer Maßlinien
+TEXT_H = 3.5  # Vorgabe; maßgeblich ist die Schrifthöhe der Hausregeln
+
+
+def pfeil_laenge() -> float:
+    return aktiv().pfeil_laenge
+
+
+def schrift() -> float:
+    return aktiv().schrifthoehe
 
 
 @dataclass
@@ -41,7 +46,7 @@ class MassGrafik:
     text: str = ""
     text_lage: tuple[float, float] = (0.0, 0.0)
     text_winkel: float = 0.0
-    text_hoehe: float = TEXT_H
+    text_hoehe: float = 3.5
     wert: float | None = None
     einheit: str = "mm"
     box: Rechteck | None = None
@@ -76,10 +81,14 @@ def pfeil(spitze: np.ndarray, richtung: np.ndarray, art: str = "voll") -> dict[s
         t = np.linspace(0, 2 * math.pi, 17)
         poly = np.stack([s[0] + 1.2 * np.cos(t), s[1] + 1.2 * np.sin(t)], axis=1)
     else:
-        poly = np.array([s, s - d * PFEIL_L + n * PFEIL_B, s - d * PFEIL_L - n * PFEIL_B, s])
+        hr = aktiv()
+        L, B = hr.pfeil_laenge, hr.pfeil_halbbreite
+        poly = np.array([s, s - d * L + n * B, s - d * L - n * B, s])
+    hr = aktiv()
     return {"spitze": [round(float(s[0]), 3), round(float(s[1]), 3)],
-            "richtung": [round(float(d[0]), 5), round(float(d[1]), 5)], "art": art, "laenge": PFEIL_L,
-            "breite": 2 * PFEIL_B, "polygon": [[round(float(x), 3), round(float(y), 3)] for x, y in poly]}
+            "richtung": [round(float(d[0]), 5), round(float(d[1]), 5)], "art": art, "laenge": hr.pfeil_laenge,
+            "breite": round(2 * hr.pfeil_halbbreite, 4), "polygon": [[round(float(x), 3), round(float(y), 3)]
+                                                                    for x, y in poly]}
 
 
 def _einheit(v: np.ndarray) -> np.ndarray:
@@ -88,10 +97,12 @@ def _einheit(v: np.ndarray) -> np.ndarray:
 
 
 def linear(mid: str, p1: np.ndarray, p2: np.ndarray, richtung: str, versatz: float, text: str,
-           wert: float | None, text_versatz: float | None = None, hoehe: float = TEXT_H) -> MassGrafik:
+           wert: float | None, text_versatz: float | None = None, hoehe: float | None = None) -> MassGrafik:
     """Lineares Maß zwischen p1 und p2 (Blatt-mm). ``richtung`` x (waagrecht), y (senkrecht) oder frei (parallel
     zu p1→p2). ``versatz``: Abstand der Maßlinie von p1 senkrecht zur Messrichtung (positiv: +y bzw. +x bzw. links
     von p1→p2). ``text_versatz``: Lage der Zahl entlang der Maßlinie ab ihrer Mitte (None = mittig/automatisch)."""
+    hoehe = hoehe or schrift()
+    PFEIL_L = pfeil_laenge()
     p1 = np.asarray(p1, dtype=float)
     p2 = np.asarray(p2, dtype=float)
     if richtung == "x":
@@ -147,8 +158,9 @@ def linear(mid: str, p1: np.ndarray, p2: np.ndarray, richtung: str, versatz: flo
 
 
 def kette(mid: str, ursprung: np.ndarray, punkte: list[np.ndarray], texte: list[str], richtung: str, versatz: float,
-          werte: list[float], hoehe: float = TEXT_H) -> MassGrafik:
+          werte: list[float], hoehe: float | None = None) -> MassGrafik:
     """Steigende Bemaßung: eine Maßlinie ab dem Ursprung, Pfeile an jeder Lage, Zahlen an den Hilfslinien."""
+    hoehe = hoehe or schrift()
     o = np.asarray(ursprung, dtype=float)
     u = np.array([1.0, 0.0]) if richtung == "x" else np.array([0.0, 1.0])
     n = np.array([0.0, 1.0]) if richtung == "x" else np.array([1.0, 0.0])
@@ -195,10 +207,11 @@ def kette(mid: str, ursprung: np.ndarray, punkte: list[np.ndarray], texte: list[
 
 
 def hinweis(mid: str, ziel: np.ndarray, richtung_zum_ziel: np.ndarray | None, text_lage: np.ndarray, text: str,
-            wert: float | None, hoehe: float = TEXT_H, pfeil_art: str = "voll", zweiter: list[str] | None = None) \
+            wert: float | None, hoehe: float | None = None, pfeil_art: str = "voll", zweiter: list[str] | None = None) \
         -> MassGrafik:
     """Hinweislinie mit Pfeil am Ziel (Kreis, Bogen, Fase) und waagrechter Bezugslinie unter dem Text.
     ``text_lage``: Anfang der Bezugslinie (Knick); der Text steht über der Bezugslinie, weg vom Ziel."""
+    hoehe = hoehe or schrift()
     z = np.asarray(ziel, dtype=float)
     k = np.asarray(text_lage, dtype=float)
     g = MassGrafik(mid, text=text, wert=wert, text_hoehe=hoehe)
@@ -221,8 +234,9 @@ def hinweis(mid: str, ziel: np.ndarray, richtung_zum_ziel: np.ndarray | None, te
 
 
 def winkel(mid: str, scheitel: np.ndarray, d1: np.ndarray, d2: np.ndarray, radius: float, text: str, wert: float,
-           hoehe: float = TEXT_H) -> MassGrafik:
+           hoehe: float | None = None) -> MassGrafik:
     """Winkelmaß: Bogen um den Scheitel zwischen den Richtungen d1 und d2 (Blatt), Pfeile an den Enden."""
+    hoehe = hoehe or schrift()
     c = np.asarray(scheitel, dtype=float)
     a1 = math.atan2(d1[1], d1[0])
     a2 = math.atan2(d2[1], d2[0])
@@ -247,8 +261,9 @@ def winkel(mid: str, scheitel: np.ndarray, d1: np.ndarray, d2: np.ndarray, radiu
     return g
 
 
-def textmass(mid: str, lage: tuple[float, float], text: str, hoehe: float = TEXT_H) -> MassGrafik:
+def textmass(mid: str, lage: tuple[float, float], text: str, hoehe: float | None = None) -> MassGrafik:
     """Reine Angabe ohne Linien (z. B. „t = 5“)."""
+    hoehe = hoehe or schrift()
     g = MassGrafik(mid, text=text, text_lage=lage, text_hoehe=hoehe)
     g.box = textbox(text, lage, hoehe, 0.0, "mitte")
     return g

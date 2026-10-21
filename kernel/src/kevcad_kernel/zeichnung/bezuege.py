@@ -35,6 +35,7 @@ GRUPPEN = {  # Merkmal-Arten, die sich gegenseitig ersetzen dürfen
     "einsatztasche": ("bohrung", "einsatztasche"),
     "tasche": ("tasche", "absatz"),
     "absatz": ("tasche", "absatz"),
+    "ende": ("stirnseite",),  # Kennung ende:a/ende:b, Art stirnseite
 }
 
 

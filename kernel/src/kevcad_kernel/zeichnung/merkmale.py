@@ -643,7 +643,7 @@ def _bohrung_text(art: str, w: dict[str, Any], anzahl: int = 1) -> str:
         s = w["senkung"]
         t += f", Senkung {zahl(s['winkel'], 0)}° Ø{zahl(s['d'])}"
     if art == "einsatztasche" and w.get("einsatz"):
-        t += f" (Einsatz {w['einsatz']})"
+        t += f", Einsatz {w['einsatz']}"
     return t
 
 
@@ -1021,7 +1021,13 @@ def _fasen(ctx: _Ctx) -> list[Merkmal]:
                 continue
             lang = max(gerade, key=lambda e: e.length)
             laenge = float(lang.length)
-            breite = f.flaeche / laenge if laenge > 0 else 0.0
+            # Breite: größter Abstand der Eckpunkte von der längsten Kante (Trapez an Ecken: Fläche/Länge wäre zu klein)
+            a0 = np.array([lang.start_point().X, lang.start_point().Y, lang.start_point().Z])
+            a1 = np.array([lang.end_point().X, lang.end_point().Y, lang.end_point().Z])
+            ad = (a1 - a0) / (np.linalg.norm(a1 - a0) or 1.0)
+            ecken = np.array([[v.X, v.Y, v.Z] for v in (x.center() for x in f.form.vertices())])
+            rel = ecken - a0
+            breite = float(np.max(np.linalg.norm(rel - np.outer(rel @ ad, ad), axis=1))) if len(ecken) else 0.0
             if breite <= 0 or breite > 0.35 * laenge or breite > 12:
                 continue
             tv = lang.tangent_at(0.5)
@@ -1037,6 +1043,8 @@ def _fasen(ctx: _Ctx) -> list[Merkmal]:
                 continue
             a = breite * abs(float(np.dot(f.n, n1)))
             b = breite * abs(float(np.dot(f.n, n2)))
+            if max(a, b) > 3.5 or not 0.55 <= (min(a, b) / max(a, b, 1e-9)) <= 1.0001:
+                continue  # Schräge oder Schwalbenschwanz, keine Fase (Verhältnis 0,55 ≈ 30°/60°)
             roh.append((a, b, laenge, f, n))
         elif f.typ == "kegel" and f.halbwinkel is not None and 20 <= f.halbwinkel <= 70:
             laenge_achse = f.t[1] - f.t[0]
@@ -1062,6 +1070,14 @@ def _fasen(ctx: _Ctx) -> list[Merkmal]:
         text_einzel = f"{zahl(lo)} × 45°" if gleich else f"{zahl(lo)} × {zahl(hi)}"
         n = len(flist)
         text = (f"{n}× " if n > 1 else "") + "Fase " + text_einzel
+        # Vertreter: zuerst eine Fase, die in der Vorderansicht als Kante erscheint (Normale ohne y-Anteil), dann
+        # Draufsicht (ohne z-Anteil), dann Seitenansicht; so steht die Angabe dort, wo es die Ansicht sicher gibt
+        def rang(e: Any) -> tuple:
+            nn = np.asarray(e[1], dtype=float)
+            return (0 if abs(nn[1]) < 1e-6 else 1 if abs(nn[2]) < 1e-6 else 2,
+                    *(round(float(v), 3) for v in ctx.lp(e[0].mitte)))
+
+        flist.sort(key=rang)
         f0, n0, _ = flist[0]
         sig = {"typ": "ebene", "mitte": ctx.lp(f0.mitte), "richtung": n0, "radius": None, "laenge": lo}
         werte = {"a": lo, "b": hi, "winkel": winkel, "n": n, "gleich": gleich, "text_einzel": text_einzel,

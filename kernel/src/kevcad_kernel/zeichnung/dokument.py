@@ -11,7 +11,8 @@ Zusätzliche, optionale Felder (rein additiv, ältere Leser ignorieren sie):
 - ``ansichten[i].fest``: Kevin hat die Ansicht verschoben, die Anordnung lässt sie stehen; ``ansichten[i].optional``:
   darf bei Platzmangel entfallen (Isometrie); ``ansichten[i].titel``: Beschriftung (z. B. „A–A“).
 - ``auto.massstab``, ``auto.format``: Kev CAD wählt Maßstab bzw. Format selbst (bis Kevin sie setzt);
-  ``auto.unterdrueckt``: Schlüssel gelöschter automatischer Maße (kommen nicht wieder).
+  ``unterdrueckt`` (Vertrag 1.1): gelöschte automatische Maße mit Art, Ansicht, Bezügen und ``schluessel``; die
+  automatische Bemaßung legt sie nicht neu an.
 - ``allgemein``: allgemeine Angaben über dem Schriftfeld (z. B. „Plattendicke 5 mm“), von Kev CAD gepflegt.
 """
 
@@ -32,7 +33,9 @@ ANSICHT_ARTEN = ("vorn", "hinten", "oben", "unten", "links", "rechts", "iso", "i
 MASS_ARTEN = ("linear", "durchmesser", "radius", "winkel", "fase", "bohrung", "gewinde", "bezugskette", "koordinaten",
               "merkmal")
 SCHRIFTFELD = ("benennung", "zeichnungsnummer", "werkstoff", "halbzeug", "masse_g", "allgemeintoleranz", "projekt",
-               "version", "datum", "gezeichnet", "notiz", "stueckzahl", "blatt")
+               "version", "datum", "gezeichnet", "notiz", "stueckzahl", "dokumentart", "blatt_nr", "blatt_anzahl",
+               "eigentuemer", "freigegeben")
+EIGENTUEMER = "Kevin Schwed"
 
 
 class BlattFehler(ValueError):
@@ -60,7 +63,8 @@ def neu(blatt_id: str, titel: str, art: str, teile: list[str], *, fmt: str | Non
         "schriftfeld": {"benennung": titel, "datum": _dt.date.today().isoformat(), "gezeichnet": "Kev CAD",
                         "allgemeintoleranz": "ISO 2768-m"},
         "ansichten": [], "masse": [], "notizen": [], "tabellen": [],
-        "auto": {"ansichten": True, "masse": True, "massstab": True, "format": fmt is None, "unterdrueckt": []},
+        "unterdrueckt": [],
+        "auto": {"ansichten": True, "masse": True, "massstab": True, "format": fmt is None},
     })
 
 
@@ -87,21 +91,30 @@ def normalisiere(blatt: dict[str, Any]) -> dict[str, Any]:
     b["inhalt"] = inhalt
     sf = dict(b.get("schriftfeld") or {})
     for k in ("benennung", "zeichnungsnummer", "werkstoff", "halbzeug", "masse_g", "allgemeintoleranz", "projekt",
-              "version", "datum", "gezeichnet", "notiz"):
+              "version", "datum", "gezeichnet", "notiz", "dokumentart", "blatt_nr", "blatt_anzahl", "eigentuemer",
+              "freigegeben"):
         sf.setdefault(k, None)
     if sf.get("gezeichnet") is None:
         sf["gezeichnet"] = "Kev CAD"
     if sf.get("allgemeintoleranz") is None:
         sf["allgemeintoleranz"] = "ISO 2768-m"
+    if sf.get("eigentuemer") is None:
+        sf["eigentuemer"] = EIGENTUEMER
+    if sf.get("blatt_nr") is None:
+        sf["blatt_nr"] = 1
+    if sf.get("blatt_anzahl") is None:
+        sf["blatt_anzahl"] = 1
+    if sf.get("dokumentart") is None:
+        sf["dokumentart"] = "Fertigungszeichnung" if inhalt["art"] == "teil" else "Zusammenbauzeichnung"
     b["schriftfeld"] = sf
-    for liste in ("ansichten", "masse", "notizen", "tabellen", "allgemein"):
+    for liste in ("ansichten", "masse", "notizen", "tabellen", "allgemein", "unterdrueckt"):
         b[liste] = list(b.get(liste) or [])
     auto = dict(b.get("auto") or {})
     auto.setdefault("ansichten", True)
     auto.setdefault("masse", True)
     auto.setdefault("massstab", True)
     auto.setdefault("format", True)
-    auto["unterdrueckt"] = list(auto.get("unterdrueckt") or [])
+    auto.pop("unterdrueckt", None)
     b["auto"] = auto
     benutzt = {a.get("id") for a in b["ansichten"] if a.get("id")}
     for a in b["ansichten"]:
@@ -136,10 +149,11 @@ def normalisiere(blatt: dict[str, Any]) -> dict[str, Any]:
 
 
 def naechste(prefix: str, vorhandene: set[Any]) -> str:
-    i = 1
-    while f"{prefix}{i}" in vorhandene:
-        i += 1
-    return f"{prefix}{i}"
+    """Nächste freie Kennung hinter der größten vorhandenen (gelöschte Kennungen werden nicht wiederverwendet, damit
+    die App ein neues Maß nicht mit einem gelöschten verwechselt)."""
+    zahlen = [int(str(v)[len(prefix):]) for v in vorhandene
+              if isinstance(v, str) and v.startswith(prefix) and str(v)[len(prefix):].isdigit()]
+    return f"{prefix}{max(zahlen, default=0) + 1}"
 
 
 def zum_speichern(blatt: dict[str, Any]) -> dict[str, Any]:

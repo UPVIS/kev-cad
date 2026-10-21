@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“) und technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“).
 ---
 
 # Kev CAD
@@ -470,6 +470,37 @@ fahrt.folge("Rig", "Rollwagen/Deckel")  # Rig-Zubehör hängt nicht an der Kamer
 - Kevin: Taste 0, dann Leertaste; das Video aus Menü oder Zeitleiste entsteht beim Blick durch eine Kamera aus ihrer
   Sicht.
 - Den Körper bewegt der Kernel nur, wenn keine eigene Spur ihn bewegt; Werte von `kamera_info` gelten für die Ruhelage.
+
+## Technische Zeichnungen
+
+Werkstattzeichnungen nach ISO 128/129-1 (Projektionsmethode 1, Schriftfeld ISO 7200, Allgemeintoleranz ISO 2768-m)
+entstehen aus dem Modell; die Maße hängen an erkannten Merkmalen (Bohrung, Lochbild, Langloch, Tasche, Fase, Radius,
+Stange mit Gehrung, Einsatz- und Muttertasche) und überleben Änderungen am Modell. Blätter liegen unter
+`<Projekt>/dokumente/zeichnungen/<id>.json`, Kevin sieht und bearbeitet sie in der App (Bereich „Dokumente“).
+
+Ablauf:
+
+1. `zeichnung_erstellen()` nach einem fehlerfreien `run`: je Stücklistenposition eines gefertigten Teils (Rohre und
+   Profile, Platten, Druckteile) ein Blatt, dazu der Zusammenbau mit Positionsnummern und Stückliste. Einzelne Teile
+   mit `teile=["Gestell/Bein vorn links"]`, eine Baugruppe mit `art="baugruppe"`. Normteile und Zukaufteile bekommen
+   keine Zeichnung. Vorhandene Blätter behalten Kevins Änderungen und werden nur neu gerechnet.
+2. Jedes Blatt selbst prüfen: `zeichnung_bild(blatt)` (nur zur eigenen Prüfung, **Kevin keine Bilder schicken**) und
+   die Prüfung im Ergebnis lesen (fehlendes Größen- oder Lagemaß, Überbemaßung, Überlappung, verwaiste Maße). Frage:
+   Kann eine Werkstatt das Teil allein mit diesem Blatt fertigen?
+3. Fehlende oder falsche Maße mit `zeichnung_bearbeiten(blatt, ops)` korrigieren, Bezüge über Merkmal-Kennungen aus
+   dem Ergebnis von `zeichnung_erstellen`:
+   - `{"op": "mass_neu", "art": "linear", "ansicht": "v1", "bezuege": [{"merkmal": "seite:x-"}, {"merkmal": "bohrung:2"}], "richtung": "x"}`
+   - `{"op": "mass_loeschen", "id": "m7"}` (automatische Maße bleiben dann weg), `{"op": "mass_aendern", "id": "m3", "toleranz": "H7"}`
+   - `{"op": "ansicht_neu", "art": "schnitt", "schnitt": {"von": "v1", "ebene": {"punkt": [x, y, z], "normale": [0, 1, 0]}}}`
+     für Innenmerkmale; `{"op": "massstab", "wert": "1:2"}`, `{"op": "format", "wert": "A3"}`, `{"op": "notiz", "text": "Grat entfernen", "lage": [30, 30]}`.
+4. Kevin kurz berichten: welche Blätter, Format und Maßstab, was von Hand ergänzt wurde, offene Punkte.
+
+Regeln der automatischen Bemaßung: Vorlage je Teiletyp (Rohr: eine Ansicht längs, Länge, Gehrung, Bohrungen ab dem
+Rohrende; Platte: eine Ansicht, Dicke als Angabe, Lagen ab der Ecke unten links; Druckteil: Hüll- und Funktionsmaße,
+sonst „nach 3D-Modell“), jedes Maß einmal, Lochbilder als „n× Ø“, symmetrische Lagen zur Mittellinie, ab vier Lagen
+steigende Bemaßung, Hüllmaße außen. Gewinde und Einsatztaschen erkennt Kev CAD nur mit Gegenstück im Modell (Schraube,
+Gewindestift, Gewindeeinsatz auf derselben Achse); fehlt es, steht nur der Durchmesser da. Abweichende Hausregeln
+(Maßlinienabstand, Schraffur, Pfeil, Schrift) in `dokumente/hausregeln.json`.
 
 ## Export
 

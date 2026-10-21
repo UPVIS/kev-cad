@@ -274,3 +274,79 @@ def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]
     if offset != len(payload):
         raise ValueError(f"Nutzlast hat {len(payload)} Byte, erwartet {offset}")
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 6: Dokumente (DOKUMENTE.md, Protokoll) – Zeichnungen
+# ---------------------------------------------------------------------------------------------------------------------
+
+LINIEN_REIHENFOLGE: tuple[str, ...] = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar",
+                                       "bruch")
+
+
+def pack_polylinien(gruppen: list[dict[str, list[Any]]],
+                    reihenfolge: tuple[str, ...] = LINIEN_REIHENFOLGE) -> tuple[bytes, list[dict[str, int]]]:
+    """Polylinien-Nutzlast (DOKUMENTE.md): je Gruppe (Ansicht), je Linienart in ``reihenfolge``: u32 Anzahl
+    Polylinien, je Polylinie u32 Punktzahl und f32 x, y paarweise (little-endian). Liefert Nutzlast und je Gruppe die
+    Anzahl Polylinien je Linienart (für ``geometrie[i].linien``)."""
+    teile: list[bytes] = []
+    zaehler: list[dict[str, int]] = []
+    for linien in gruppen:
+        z: dict[str, int] = {}
+        for art in reihenfolge:
+            ls = [np.asarray(pl, dtype="<f4").reshape(-1, 2) for pl in (linien.get(art) or []) if len(pl) >= 2]
+            z[art] = len(ls)
+            teile.append(struct.pack("<I", len(ls)))
+            for pl in ls:
+                teile.append(struct.pack("<I", len(pl)))
+                teile.append(np.ascontiguousarray(pl, dtype="<f4").tobytes())
+        zaehler.append(z)
+    return b"".join(teile), zaehler
+
+
+def unpack_polylinien(header: dict[str, Any], payload: bytes, feld: str = "geometrie") -> list[dict[str, Any]]:
+    """Gegenstück zu pack_polylinien: je Eintrag von ``header[feld]`` ein Wörterbuch Linienart → Liste (n, 2)."""
+    reihenfolge = header.get("linien_reihenfolge") or list(LINIEN_REIHENFOLGE)
+    out = []
+    off = 0
+    for _ in header.get(feld) or []:
+        linien: dict[str, Any] = {}
+        for art in reihenfolge:
+            (n,) = struct.unpack_from("<I", payload, off)
+            off += 4
+            ls = []
+            for _k in range(n):
+                (k,) = struct.unpack_from("<I", payload, off)
+                off += 4
+                ls.append(np.frombuffer(payload, dtype="<f4", count=2 * k, offset=off).reshape(-1, 2))
+                off += 8 * k
+            linien[art] = ls
+        out.append(linien)
+    if off != len(payload):
+        raise ValueError(f"Polylinien-Nutzlast hat {len(payload)} Byte, gelesen {off}")
+    return out
+
+
+def pack_drawing(kopf: dict[str, Any], gruppen: list[dict[str, list[Any]]], *, reply_to: str | None = None,
+                 seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """Nachricht DRAWING: ``kopf`` enthält ``blatt``, ``geometrie`` (je Ansicht und zuletzt ``blatt`` für Rahmen und
+    Schriftfeld; je Eintrag ``id``, ``art``, ``rahmen``), ``masse``, ``texte``, ``stand`` …; ``gruppen`` die Linien in
+    derselben Reihenfolge wie ``geometrie``. Setzt ``linien`` (Anzahl je Linienart) und ``linien_reihenfolge``."""
+    payload, zaehler = pack_polylinien(gruppen)
+    geo = [dict(g) for g in kopf.get("geometrie") or []]
+    if len(geo) != len(gruppen):
+        raise ValueError(f"DRAWING: {len(geo)} Einträge in geometrie, aber {len(gruppen)} Liniengruppen")
+    for g, z in zip(geo, zaehler):
+        g["linien"] = z
+    header = {"type": "DRAWING", "seq": seq, **{k: v for k, v in kopf.items() if k not in ("type", "seq")},
+              "geometrie": geo, "linien_reihenfolge": list(LINIEN_REIHENFOLGE)}
+    if reply_to is not None:
+        header["reply_to"] = reply_to
+    return header, payload
+
+
+def docs_message(run: int, blaetter: list[dict[str, Any]], bauplan: dict[str, Any] | None = None,
+                 seq: int = 0) -> dict[str, Any]:
+    """Nachricht DOCS: Übersicht der Blätter (``id``, ``titel``, ``inhalt``, ``format``, ``verwaiste_masse``, dazu
+    ``ausrichtung``, ``massstab``, ``masse``, ``stand``, ``hinweise``, ``pruefung``) und Zusammenfassung des Bauplans."""
+    return {"type": "DOCS", "seq": seq, "run": run, "blaetter": blaetter, "bauplan": bauplan}
