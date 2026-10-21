@@ -451,7 +451,13 @@ def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
     hinweise: list[str] = []
     if projekt is not None:
         aus, hinweise = aus_json(Path(projekt), formen)
-        liste.extend(aus)
+        # Gelenke in model.py sind die Quelle (Kevin, 22.10.2026); bewegungen.json gilt nur für Teile ohne Gelenk
+        mit_gelenk = {t for b in liste for t in b.teile}
+        doppelt = [b.name for b in aus if any(t in mit_gelenk for t in b.teile)]
+        liste.extend(b for b in aus if not any(t in mit_gelenk for t in b.teile))
+        if doppelt:
+            hinweise.append(f"bewegungen.json: {len(doppelt)} Einträge übergangen, weil die Teile ein Gelenk in model.py "
+                            f"haben ({', '.join(doppelt[:3])}{' …' if len(doppelt) > 3 else ''})")
     ergebnisse, befunde = [], []
     for bew in liste:
         rest = zeitlimit_s - (time.perf_counter() - t0)
