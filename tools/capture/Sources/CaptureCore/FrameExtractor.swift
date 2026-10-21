@@ -32,7 +32,7 @@ public struct ExtractionResult: Codable {
 }
 
 public struct ExtractionOptions: Sendable {
-    public var count = 80
+    public var count = 60
     /// Lange Kante der gespeicherten Bilder in Pixeln; 0 = Originalgröße
     public var longEdge = 1920
     public var jpegQuality = 0.92

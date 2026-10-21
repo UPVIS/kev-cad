@@ -58,6 +58,26 @@ im Viewer**, gegen die Claude das parametrische Modell baut und prüft:
 | **R-K Kernel** | Referenzobjekte, Maßstab, Messen auf Netzen, Ebenen/Zylinder (pyRANSAC-3D, Apache), Abweichung Modell ↔ Referenz, Anbindung `fotocad` für Foto-Kameras, Gemini-Videobeschreibung, MCP-Werkzeuge, Skill |
 | **R-A App** | Referenz-Ebene, Fotomodus mit Differenz, Maßstab-Werkzeug, Fortschritt |
 
+### Ergebnis R-C (21.10.2026)
+
+`tools/capture/` (`kevcad-capture`, Details, Zeiten und Maße in [tools/capture/README.md](tools/capture/README.md)).
+Entscheidungen beim Bau:
+
+- **AVFoundation statt ffmpeg** (R2 angepasst): Der Hardware-Decoder liefert die Bilder direkt in Zielgröße, die
+  Schärfe (Laplace-Varianz, vImage) wird in dieser Größe gemessen; je Zeitfenster gewinnt das schärfste Bild. 1084
+  4K-Bilder in 6 s. ffmpeg ist nicht nötig.
+- **Posen in zwei Konventionen** (`poses.json`): RealityKit-`camera_to_world` und OpenCV-`R`, `t` mit `K` je Bild
+  (ab macOS 26 aus `Pose.intrinsics`), roh und im Kev-CAD-System (mm, Z oben, Boden z = 0). Per Rückprojektion des
+  Netzes in die Bilder geprüft.
+- **Boden per RANSAC, Objekt am Blickpunkt der Kameras:** Object Capture lässt trotz Maskierung Boden und Umgebung
+  im Netz, wenn der Hintergrund unruhig ist; umgekehrt entfernt es den Boden manchmal ganz. Eine waagrechte Ebene
+  gilt nur als Boden, wenn fast nichts darunter liegt; sonst Auflage auf den untersten Punkten.
+- **Gegenstand nicht bewegen:** Wird er während der Aufnahme umgedreht, rekonstruiert Object Capture die Szene
+  (Boden), nicht den Gegenstand; die Bilder vor dem Umdrehen passen nicht zum Netz. Abschnitte mit `--von`/`--bis`
+  getrennt rechnen.
+- **Standard „schnell“** (60 Bilder, 1920 px, reduced, ~1 min); „genau“ (120, 2880, medium) kostet gut das Dreifache
+  und bringt Details, aber keine besseren Hauptmaße.
+
 ## Was Kevin beitragen muss
 
 - **Ein Probevideo:** ein matter Gegenstand (Holzkiste, Werkzeug, Kunststoffgehäuse), langsam einmal rundherum und

@@ -11,7 +11,7 @@ Aufruf:
   kevcad-capture nachbearbeitung <ordner> [Optionen]         Boden, Ausrichtung, Maßstab, Bericht neu
 
 Bilder:
-  --bilder N            Anzahl Bilder (Standard 80, sinnvoll 60–150)
+  --bilder N            Anzahl Bilder (Standard 60, sinnvoll 60–150)
   --kante PX            lange Kante der Bilder (Standard 1920; 0 = Original)
   --brennweite35 MM     35-mm-äquivalente Brennweite in die EXIF-Daten schreiben (nur wenn bekannt)
   --von S, --bis S      nur diesen Abschnitt des Videos verwenden (Sekunden)
@@ -66,7 +66,7 @@ func parse() throws -> Args {
         switch arg {
         case "-h", "--hilfe", "--help": print(usage); exit(0)
         case "--aus", "-o": a.out = URL(fileURLWithPath: try value(arg)).standardizedFileURL
-        case "--bilder": a.extraction.count = Int(try value(arg)) ?? 80
+        case "--bilder": a.extraction.count = Int(try value(arg)) ?? 60
         case "--kante": a.extraction.longEdge = Int(try value(arg)) ?? 1920
         case "--brennweite35": a.extraction.focal35mm = Double(try value(arg))
         case "--von": a.extraction.start = Double(try value(arg).replacingOccurrences(of: ",", with: ".")) ?? 0

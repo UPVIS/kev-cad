@@ -1,5 +1,4 @@
 import Foundation
-import ModelIO
 import simd
 
 public struct KnownMeasure {
@@ -287,7 +286,12 @@ public final class PostProcessor {
         log.emit("file", ["kind": "mesh_mm", "path": layout.meshMM.path])
 
         if options.writeUSDZ {
-            if Self.writeUSDZ(obj: layout.meshMM, to: layout.usdzMM, textures: extra, dir: layout.root) {
+            var diffuse: String? = nil
+            if let mtl = mtlSrc, let text = try? String(contentsOf: layout.rawOBJDir.appendingPathComponent(mtl), encoding: .utf8) {
+                diffuse = text.split(separator: "\n").first { $0.hasPrefix("map_Kd ") }
+                    .map { String($0.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
+            }
+            if Self.writeUSDZ(mesh: mesh, transform: mAll, keep: objFace, texture: diffuse, dir: layout.root, to: layout.usdzMM) {
                 log.emit("file", ["kind": "usdz_mm", "path": layout.usdzMM.path])
             } else {
                 log.warn("netz_mm.usdz nicht geschrieben (usdzip fehlt oder Fehler); netz_mm.obj ist vollständig")
@@ -555,28 +559,87 @@ public final class PostProcessor {
         return simd_double4x4(columns: (SIMD4(r.columns.0, 0), SIMD4(r.columns.1, 0), SIMD4(r.columns.2, 0), SIMD4(0, 0, 0, 1)))
     }
 
-    /// netz_mm.obj → USDC (ModelIO) → USDZ (usdzip). false, wenn etwas fehlt.
-    static func writeUSDZ(obj: URL, to usdz: URL, textures: [String], dir: URL) -> Bool {
-        let usdzip = URL(fileURLWithPath: "/usr/bin/usdzip")
-        guard FileManager.default.isExecutableFile(atPath: usdzip.path), MDLAsset.canExportFileExtension("usdc") else { return false }
-        let asset = MDLAsset(url: obj)
-        asset.loadTextures()
+    /// USDZ im mm-System (metersPerUnit 0,001, Z oben) mit Farbtextur: eigenes USDA aus den behaltenen Dreiecken,
+    /// mit `usdcat` nach USDC, mit `usdzip` gepackt. false, wenn ein Werkzeug fehlt oder etwas schiefgeht.
+    static func writeUSDZ(mesh: OBJMesh, transform m: simd_double4x4, keep: [Bool], texture: String?, dir: URL,
+                          to usdz: URL) -> Bool {
+        let usdzip = "/usr/bin/usdzip", usdcat = "/usr/bin/usdcat"
+        guard FileManager.default.isExecutableFile(atPath: usdzip) else { return false }
+        var remap = [Int32](repeating: -1, count: mesh.positions.count)
+        var points: [SIMD3<Double>] = []
+        var idx: [Int32] = [], st: [SIMD2<Float>] = []
+        let hasUV = texture != nil && mesh.faceUVs.count == mesh.faces.count && !mesh.uvs.isEmpty
+        for (i, f) in mesh.faces.enumerated() where i < keep.count && keep[i] {
+            for (k, v) in [f.x, f.y, f.z].enumerated() {
+                if remap[Int(v)] < 0 {
+                    remap[Int(v)] = Int32(points.count)
+                    points.append((m * SIMD4(mesh.positions[Int(v)], 1)).xyz)
+                }
+                idx.append(remap[Int(v)])
+                if hasUV {
+                    let t = mesh.faceUVs[i][k]
+                    st.append(t >= 0 && Int(t) < mesh.uvs.count ? mesh.uvs[Int(t)] : .zero)
+                }
+            }
+        }
+        guard !points.isEmpty else { return false }
+        let lo = points.reduce(SIMD3(repeating: Double.infinity)) { simd_min($0, $1) }
+        let hi = points.reduce(SIMD3(repeating: -Double.infinity)) { simd_max($0, $1) }
+        var t = "#usda 1.0\n(\n    defaultPrim = \"Referenz\"\n    metersPerUnit = 0.001\n    upAxis = \"Z\"\n"
+        t += "    doc = \"kevcad-capture: Referenznetz in mm, Z oben, Boden z = 0\"\n)\n\n"
+        t += "def Xform \"Referenz\" (\n    kind = \"component\"\n)\n{\n"
+        t += "    def Mesh \"Netz\" (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n    {\n"
+        t += String(format: "        float3[] extent = [(%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f)]\n", lo.x, lo.y, lo.z, hi.x, hi.y, hi.z)
+        t += "        int[] faceVertexCounts = [" + Array(repeating: "3", count: idx.count / 3).joined(separator: ", ") + "]\n"
+        t += "        int[] faceVertexIndices = [" + idx.map { String($0) }.joined(separator: ", ") + "]\n"
+        t += "        point3f[] points = [" + points.map { String(format: "(%.3f, %.3f, %.3f)", $0.x, $0.y, $0.z) }.joined(separator: ", ") + "]\n"
+        if hasUV {
+            t += "        texCoord2f[] primvars:st = [" + st.map { String(format: "(%.5f, %.5f)", $0.x, $0.y) }.joined(separator: ", ") + "] (\n            interpolation = \"faceVarying\"\n        )\n"
+        }
+        t += "        uniform token subdivisionScheme = \"none\"\n        rel material:binding = </Referenz/Material>\n    }\n\n"
+        t += "    def Material \"Material\"\n    {\n        token outputs:surface.connect = </Referenz/Material/Oberflaeche.outputs:surface>\n\n"
+        t += "        def Shader \"Oberflaeche\"\n        {\n            uniform token info:id = \"UsdPreviewSurface\"\n"
+        if hasUV, let tex = texture {
+            t += "            color3f inputs:diffuseColor.connect = </Referenz/Material/Farbe.outputs:rgb>\n"
+            t += "            float inputs:roughness = 0.8\n            token outputs:surface\n        }\n\n"
+            t += "        def Shader \"Koordinaten\"\n        {\n            uniform token info:id = \"UsdPrimvarReader_float2\"\n            string inputs:varname = \"st\"\n            float2 outputs:result\n        }\n\n"
+            t += "        def Shader \"Farbe\"\n        {\n            uniform token info:id = \"UsdUVTexture\"\n            asset inputs:file = @\(tex)@\n"
+            t += "            float2 inputs:st.connect = </Referenz/Material/Koordinaten.outputs:result>\n            float3 outputs:rgb\n        }\n"
+        } else {
+            t += "            color3f inputs:diffuseColor = (0.6, 0.62, 0.66)\n            float inputs:roughness = 0.8\n            token outputs:surface\n        }\n"
+        }
+        t += "    }\n}\n"
+        let usda = dir.appendingPathComponent("netz_mm.usda")
         let usdc = dir.appendingPathComponent("netz_mm.usdc")
-        do {
-            try asset.export(to: usdc)
-            let p = Process()
-            p.executableURL = usdzip
-            p.currentDirectoryURL = dir
-            p.arguments = [usdz.lastPathComponent, "netz_mm.usdc"] + textures
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError = FileHandle.nullDevice
-            try p.run()
-            p.waitUntilExit()
+        defer {
+            try? FileManager.default.removeItem(at: usda)
             try? FileManager.default.removeItem(at: usdc)
-            return p.terminationStatus == 0 && FileManager.default.fileExists(atPath: usdz.path)
+        }
+        do {
+            try t.write(to: usda, atomically: true, encoding: .utf8)
+            var root = "netz_mm.usda"
+            if FileManager.default.isExecutableFile(atPath: usdcat),
+               run(usdcat, ["-o", usdc.path, usda.path], in: dir), FileManager.default.fileExists(atPath: usdc.path) {
+                root = "netz_mm.usdc"
+            }
+            try? FileManager.default.removeItem(at: usdz)
+            let ok = run(usdzip, [usdz.lastPathComponent, root] + (hasUV ? [texture!] : []), in: dir)
+            return ok && FileManager.default.fileExists(atPath: usdz.path)
         } catch {
             return false
         }
+    }
+
+    static func run(_ exe: String, _ args: [String], in dir: URL) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: exe)
+        p.currentDirectoryURL = dir
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
     }
 
     // MARK: Kontrollbilder
@@ -586,18 +649,13 @@ public final class PostProcessor {
         let blender = ProcessInfo.processInfo.environment["KEVCAD_BLENDER"] ?? "/Applications/Blender.app/Contents/MacOS/Blender"
         guard FileManager.default.isExecutableFile(atPath: blender), let script = scriptURL("kontrollbilder.py") else { return [] }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: blender)
-        p.arguments = ["-b", "--factory-startup", "--python", script.path, "--", mesh.path, dir.path, prefix]
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return [] }
-        p.waitUntilExit()
+        guard run(blender, ["-b", "--factory-startup", "--python", script.path, "--", mesh.path, dir.path, prefix], in: dir)
+        else { return [] }
         return ["vorne", "seite", "oben", "schraeg"].map { dir.appendingPathComponent("\(prefix)_\($0).png").path }
             .filter { FileManager.default.fileExists(atPath: $0) }
     }
 
-    /// Hilfsskripte: $KEVCAD_CAPTURE_SCRIPTS, neben dem Programm, oder im Quellbaum (tools/capture/scripts).
+    /// Hilfsskripte: $KEVCAD_CAPTURE_SCRIPTS, neben dem Programm, oder in einem `scripts/` darüber (Quellbaum).
     static func scriptURL(_ name: String) -> URL? {
         var dirs: [URL] = []
         if let e = ProcessInfo.processInfo.environment["KEVCAD_CAPTURE_SCRIPTS"] { dirs.append(URL(fileURLWithPath: e)) }

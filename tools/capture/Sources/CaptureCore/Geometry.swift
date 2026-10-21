@@ -6,6 +6,8 @@ import simd
 public final class OBJMesh {
     public var positions: [SIMD3<Double>] = []
     public var faces: [SIMD3<Int32>] = []          // Ecken (0-basiert), Polygone als Fächer zerlegt
+    public var uvs: [SIMD2<Float>] = []
+    public var faceUVs: [SIMD3<Int32>] = []        // Texturkoordinaten je Dreiecksecke (−1 = keine)
     var lines: [Substring] = []
     var vertexLine: [Int] = []                      // Zeilennummer je Ecke
     var normalLine: [Int] = []
@@ -22,21 +24,31 @@ public final class OBJMesh {
                 guard p.count >= 4, let x = Double(p[1]), let y = Double(p[2]), let z = Double(p[3]) else { continue }
                 positions.append(SIMD3(x, y, z))
                 vertexLine.append(li)
+            } else if line.hasPrefix("vt ") {
+                let p = line.split(separator: " ")
+                if p.count >= 3, let u = Float(p[1]), let v = Float(p[2]) { uvs.append(SIMD2(u, v)) }
             } else if line.hasPrefix("vn ") {
                 normalLine.append(li)
             } else if line.hasPrefix("f ") {
                 let p = line.split(separator: " ").dropFirst()
                 var idx: [Int32] = []
+                var tix: [Int32] = []
                 idx.reserveCapacity(4)
                 for tok in p {
-                    let first = tok.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).first ?? tok
-                    if var i = Int32(first) {
+                    let parts = tok.split(separator: "/", omittingEmptySubsequences: false)
+                    if var i = Int32(parts.first ?? tok) {
                         if i < 0 { i = Int32(positions.count) + i + 1 }
                         idx.append(i - 1)
+                        var t: Int32 = 0
+                        if parts.count > 1, let tv = Int32(parts[1]) { t = tv < 0 ? Int32(uvs.count) + tv + 1 : tv }
+                        tix.append(t - 1)
                     }
                 }
                 if idx.count >= 3 {
-                    for k in 1..<(idx.count - 1) { faces.append(SIMD3(idx[0], idx[k], idx[k + 1])) }
+                    for k in 1..<(idx.count - 1) {
+                        faces.append(SIMD3(idx[0], idx[k], idx[k + 1]))
+                        faceUVs.append(SIMD3(tix[0], tix[k], tix[k + 1]))
+                    }
                 }
             }
         }
