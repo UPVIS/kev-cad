@@ -1,7 +1,8 @@
 # Kev CAD · Bestandsführung mit Resten und Einkaufsliste
 
 Stand: 21.10.2026 (Kevins Wunsch vom selben Tag). Baut auf Phase 2 (Lagerkatalog, Stückliste, Zuschnitt) und Phase 3
-(Zukaufteile) auf.
+(Zukaufteile) auf. Gestartet am selben Abend auf Zweig `bestand`, erste Stufe Stangen, Platten, Stückgut; Vertrag in
+[BESTAND.md](BESTAND.md).
 
 ## Ziel
 
