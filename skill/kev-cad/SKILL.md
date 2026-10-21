@@ -60,7 +60,9 @@ Wie in CAD-Programmen hängt jedes Teil über Bedingungen an seinem Gegenstück,
 ## 3D-Druckteile konstruieren (Kevin, 21.10.2026, immer beachten)
 
 Drucker: Bambu Lab P2S, Bauraum 256 × 256 × 256 mm, Düse 0,4 mm, Schicht 0,2 mm. Die Druckausrichtung beim Konstruieren
-mitdenken und im Bericht nennen. Kurzfassung (ausführlich folgt in `3d-druck.md`):
+mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
+(Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
+[3d-druck.md](3d-druck.md), vor jedem Druckteil lesen:
 
 - **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
 - **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
