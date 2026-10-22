@@ -6,7 +6,9 @@ Ein **Fall** ist ein Teil in einem Szenario. Quelle sind die Bauteil-Nachweise d
   Last „am Schwerpunkt“ des Kragträgers), Lager an den tragenden Nachbarn;
 - **Lager eines Stabs** (das Stabwerk liegt im Teil auf): alle Lagerkräfte und -momente der Stäbe auf dieses Teil aus
   S1, eingeleitet über die Kontaktfläche zum jeweiligen Stab, Lager an den übrigen Nachbarn. Hängt das Teil nur an
-  Stäben (Verbinder zwischen Rohren), ist der Stab mit der größten Kraft das Lager (Gleichgewicht);
+  Stäben, ist der Stab mit der größten Kraft das Lager (Gleichgewicht);
+- **Verbinder zwischen Stäben** (im Stabwerk starr, ohne eigene Last): Kraft und Moment jedes Stabs am Anschluss aus
+  S1 (Endkräfte des starren Glieds), über die Kontaktfläche zum Stab; Lager wie oben;
 - **Kontaktkräfte eines Ablaufs** (S2) auf Wunsch: die größte Kontaktkraft auf das Teil, am Kontaktpunkt, allein
   (statt der ruhenden Ersatzlasten des Szenarios).
 
@@ -148,6 +150,34 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
                                     "punkt": list(b["lastpunkt"]) if b.get("punkt_gegeben") else None,
                                     "quelle": "Last aus dem Szenario"})
                 f["lager"] = sorted(set(f["lager"] or []) | set(b.get("nachbarn") or []))
+        # Verbinder zwischen Stäben (S1, im Stabwerk starr): Kraft und Moment jedes Stabs am Anschluss; gehalten von
+        # Nachbarn außerhalb der Stäbe (ohne Schrauben), sonst vom Stab mit der größten Kraft (``schreibe``)
+        schon = {b["teil"] for b in bauteile}
+        je_teil: dict[str, list[dict[str, Any]]] = {}
+        for v in e.get("verbinder") or []:
+            if v["teil"] in schon or (teile_filter is not None and v["teil"] not in teile_filter):
+                continue
+            je_teil.setdefault(v["teil"], []).append(v)
+        for teil, vs in je_teil.items():
+            kraft = max(float(np.linalg.norm(v["kraft"])) for v in vs)
+            t = m.teile.get(teil)
+            if t is None or kraft < 0.5:
+                continue
+            f = fall(name, teil, sz.ziel_fuer(t.druckteil), None)
+            if f is None:
+                continue
+            for v in vs:
+                f["lasten"].append({"kraft": list(v["kraft"]), "moment": list(v["moment"]), "punkt": list(v["punkt"]),
+                                    "kontakt_mit": v["stab"], "quelle": f"Verbinder: Kraft von {v['stab']}"})
+            # Ein Verbinder hängt nur an Stäben (sonst wäre er geerdet): Lager ist der Stab mit der größten Kraft;
+            # Nachbarn derselben Gruppe (Rolle, Schrauben) tragen nichts von außen
+            f["lager"] = None
+            f["verbinder_n"] = kraft
+            rest = np.sum([v["kraft"] for v in vs], axis=0) + np.asarray(sz.feld) * t.masse_kg
+            if float(np.linalg.norm(rest)) > 0.1 * kraft + 0.5:
+                f.setdefault("hinweise", []).append(
+                    f"Verbinder aus mehreren Teilen: {_r(float(np.linalg.norm(rest)), 1)} N gehen über die übrigen "
+                    "Teile der Gruppe und landen hier im Lager")
     # zusätzliche Lasten (Kontaktkräfte aus einem Ablauf)
     for l in wunsch.get("lasten") or []:
         teil = l["teil"]
@@ -168,10 +198,12 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
         s0 = f.get("s0") or {}
         f["ausnutzung_s0"] = (f["ziel"] / s0["sicherheit"]) if s0.get("sicherheit") else 0.0
     # Reihenfolge: am stärksten ausgelastete Teile zuerst; Grenze je Auftrag
-    beste: dict[str, float] = {}
+    # (Verbinder ohne Kragträger-Nachweis nach der Kraft, die durch sie geht, hinter den nachgewiesenen Teilen)
+    beste: dict[str, tuple[float, float]] = {}
     for f in liste:
-        beste[f["teil"]] = max(beste.get(f["teil"], 0.0), f["ausnutzung_s0"])
-    reihenfolge = sorted(beste, key=lambda n: -beste[n])
+        alt = beste.get(f["teil"], (0.0, 0.0))
+        beste[f["teil"]] = (max(alt[0], f["ausnutzung_s0"]), max(alt[1], f.get("verbinder_n") or 0.0))
+    reihenfolge = sorted(beste, key=lambda n: (-beste[n][0], -beste[n][1]))
     grenze = MAX_TEILE_AUTO if wunsch.get("auto") else MAX_TEILE
     erlaubt = set(reihenfolge[:grenze])
     return sorted((f for f in liste if f["teil"] in erlaubt),

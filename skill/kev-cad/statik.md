@@ -116,8 +116,10 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
 - **Lager** sind die Kontaktflächen zu den tragenden Nachbarn (dieselben wie beim Kragträger: Wand, Platte, Rohr;
   Schrauben nur, wenn sonst nichts trägt), fest eingespannt. **Lasten**: `st.last` am Teil (mit `punkt=` auf einer
   Fläche um den Punkt verteilt, ohne Punkt gleichmäßig über das Volumen), die Lagerkräfte der Stäbe (über die Bohrung
-  bzw. Kontaktfläche zum Stab), immer das Eigengewicht; mit `festigkeit(…, ablauf=True)` die größte Kontaktkraft aus
-  dem Ablauf des Szenarios (Ball an der Fangrolle).
+  bzw. Kontaktfläche zum Stab), bei **Verbindern zwischen Stäben** (im Stabwerk starr, etwa Schlitten oder
+  Eckverbinder) Kraft und Moment jedes Stabs am Anschluss, gehalten vom Stab mit der größten Kraft; immer das
+  Eigengewicht; mit `festigkeit(…, ablauf=True)` alle Kontaktkräfte auf das Teil im Bild mit der größten Summe aus dem
+  Ablauf des Szenarios (Ball an der Fangrolle, Boden), zurückgerechnet in die Ruhelage.
 - **Druckteile**: steifer und fester in der Schicht; quer dazu `e_modul_z` und `quer_zur_schicht` aus dem Katalog. Das
   Schichtkriterium (Zug und Schub in der Schichtfuge gegen q · Festigkeit) gilt neben von Mises, Ziel 4 statisch. Das
   Urteil `festkoerper` ersetzt den Kragträger und nennt die **Sicherheit in jeder Drucklage** (`ausrichtung="-z"`,

@@ -356,6 +356,91 @@ def test_lager_eines_stabs_ueber_die_kontaktflaeche(tmp_path):
         assert r["sicherheit"] > 4
 
 
+ECKE = '''
+from build123d import *
+from kevcad import lager, show, befestigt
+from kevcad.bedingungen import verbinde
+import kevcad.statik as st
+
+rohr = lager.teil("rohr-en10220-21.3x2.0")
+show(rohr.verbauen(laenge=500, name="Pfosten"), "Pfosten")
+befestigt("Pfosten", grund="an der Wand verschraubt")
+form = (Pos(0, 0, 505) * Box(40, 40, 70) - Pos(0, 0, 485) * Cylinder(10.65, 30)
+        - Pos(5, 0, 520) * Rot(0, 90, 0) * Cylinder(10.65, 30))
+show(lager.druckteil(form, "Eckverbinder (Druck)", material="petg", ausrichtung="-z"), "Eckverbinder (Druck)",
+     material="petg")
+show(Pos(-10, 0, 520) * Rot(0, 90, 0) * rohr.verbauen(laenge=300, name="Arm"), "Arm")
+verbinde("Pfosten", "Eckverbinder (Druck)", art="steck")
+verbinde("Arm", "Eckverbinder (Druck)", art="steck")
+st.szenario("Last am Arm")
+st.last("Arm", kraft=(0, 0, -50), punkt=(285, 0, 520))
+'''
+
+
+def test_verbinder_zwischen_staeben(tmp_path):
+    """Gedruckter Eckverbinder zwischen Pfosten und Arm (im Stabwerk starr): Kraft und Moment des Arms aus S1 gehen
+    über die Bohrung in den Verbinder, gehalten vom Pfosten (stärkster Stab); Gleichgewicht der Verbinderkräfte mit dem
+    Gewicht des Verbinders."""
+    _, check, _ = laufe(tmp_path, ECKE, strikt=False)
+    e = next(e for e in check["statik"]["szenarien"] if e["name"] == "Last am Arm")
+    v = {x["stab"]: x for x in e.get("verbinder") or [] if x["teil"] == "Eckverbinder (Druck)"}
+    assert set(v) == {"Pfosten", "Arm"}, e.get("verbinder")
+    from kevcad_kernel.statik import anbindung
+
+    t = anbindung.LETZTER.modell.teile["Eckverbinder (Druck)"]
+    g = np.array([0, 0, -9.81]) * t.masse_kg
+    summe = np.sum([x["kraft"] for x in v.values()], axis=0)
+    assert np.allclose(summe + g, 0, atol=0.05)  # Starrkörper im Gleichgewicht
+    arm = anbindung.LETZTER.modell.teile["Arm"]
+    assert v["Arm"]["kraft"][2] == pytest.approx(-(50 + arm.masse_kg * 9.81), rel=0.01)
+    a, out, _ = _auftrag_und_prozess(tmp_path, {"auto": True})
+    r = next(f for f in out["faelle"] if f["teil"] == "Eckverbinder (Druck)")
+    assert r["stand"] == "done", r
+    assert r["lager"] == ["Pfosten"] and r["lager_aus_last"] == "Pfosten"
+    assert [l["kontakt_mit"] for l in r["lasten"]] == ["Arm"] and r["lastflaechen_mm2"][0] > 300
+    assert r["gleichgewicht_n"] < 1e-6 and r["sicherheit"] > 0
+    print(f"Eckverbinder: Sicherheit {r['sicherheit']}, {r['kriterium']}, Last {r['kraft_n']} N, "
+          f"Moment {v['Arm']['moment']} Nmm, {r['netz']}")
+
+
+def test_kontaktkraefte_aus_dem_ablauf_in_der_ruhelage():
+    """Kontaktkräfte eines Ablaufs (S2): Bild mit der größten Summe, alle Kontakte des Teils in diesem Bild, Punkt und
+    Kraft über die Lage des Teils im Bild zurück in die Ruhelage (der Wagen ist schon gefahren); Mehrteil-Körper und
+    Boden zählen nicht als Teil."""
+    from types import SimpleNamespace
+
+    from kevcad_kernel.statik.festkoerper.laufzeit import FestkoerperRuntime
+
+    def lage(dx: float, drehung: bool = False) -> np.ndarray:
+        M = np.eye(4)
+        if drehung:  # 90° um z
+            M[:3, :3] = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
+        M[0, 3] = dx
+        return M
+
+    pfeile = [
+        [{"punkt": [310.0, 0, 20], "kraft": [-30.0, 0, 0], "paar": ["Rolle", "Ball"]}],
+        [{"punkt": [400.0, 0, 20], "kraft": [-80.0, 0, -10], "paar": ["Ball", "Rolle"]},
+         {"punkt": [401.0, 0, 0], "kraft": [0.0, 0, 40], "paar": ["Boden", "Rolle"]},
+         {"punkt": [0.0, 0, 0], "kraft": [0.0, 0, 500], "paar": ["Boden", "Wagen (12 Teile)"]}],
+    ]
+    anim = SimpleNamespace(teile=["Rolle"], matrices=np.stack([lage(300.0)[None], lage(390.0, True)[None]]))
+    rt = FestkoerperRuntime()
+    rt.anim_hub = SimpleNamespace(get=lambda n: anim if n == "Ablauf: Bremsen" else None)
+    voll = {"szenarien": [{"name": "Bremsen", "ablauf": {"stand": "done", "animation": "Ablauf: Bremsen",
+                                                          "pfeile": pfeile}}]}
+    alle, _ = rt._fk_ablauf_lasten(voll, None, "Bremsen")
+    assert {l["teil"] for l in alle} == {"Rolle", "Ball"}  # einzelne Teile, nicht der Wagen und nicht der Boden
+    lasten, hinweise = rt._fk_ablauf_lasten(voll, "Rolle", "Bremsen")
+    assert not hinweise and {l["teil"] for l in lasten} == {"Rolle"}
+    assert [l["bild"] for l in lasten] == [1, 1]  # Bild 1: 81 + 40 N
+    ball = next(l for l in lasten if l["kontakt_mit"] == "Ball")
+    boden = next(l for l in lasten if l["kontakt_mit"] is None)
+    # Ruhelage: Punkt = Rᵀ (p − t), Kraft = Rᵀ F (90° um z zurückgedreht)
+    assert np.allclose(ball["punkt"], [0, -10, 20]) and np.allclose(ball["kraft"], [0, 80, -10])
+    assert np.allclose(boden["punkt"], [0, -11, 0]) and np.allclose(boden["kraft"], [0, 0, 40])
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Protokoll und Urteile
 

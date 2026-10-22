@@ -52,7 +52,8 @@ def _kandidaten(voll: dict[str, Any] | None, nur: str | None = None) -> list[str
             continue
         if not _hat_last(e):
             continue
-        if any(b.get("sicherheit") is not None for b in e.get("bauteile") or []):
+        if any(b.get("sicherheit") is not None for b in e.get("bauteile") or []) or any(
+                float(np.linalg.norm(v.get("kraft") or (0, 0, 0))) >= 0.5 for v in e.get("verbinder") or []):
             out.append(e["name"])
     return out
 
@@ -444,20 +445,35 @@ class FestkoerperRuntime:
                 "ms": {"gesamt": round((time.perf_counter() - t0) * 1000, 1), "vorbereiten": res["job"].get("ms"),
                        "prozess": res["out"].get("prozess_ms")}, "gezeigt": bool(zeigen)}
 
-    @staticmethod
-    def _fk_ablauf_lasten(voll: dict[str, Any], teil: str | None, szenario: str | None
+    def _fk_ablauf_lasten(self, voll: dict[str, Any], teil: str | None, szenario: str | None
                           ) -> tuple[list[dict[str, Any]], list[str]]:
-        """Größte Kontaktkraft je Teil aus dem Ablauf (S2) eines Szenarios: Kraft auf das Teil am Kontaktpunkt."""
+        """Kontaktkräfte je Teil aus dem Ablauf (S2) eines Szenarios, im Bild mit der größten Summe: Kraft auf das Teil
+        am Kontaktpunkt. Der Wagen ist in diesem Bild schon gefahren: Punkt und Kraft kommen über die Lage des Teils im
+        Bild (Animation „Ablauf: …“) zurück in die Ruhelage, für die das Netz gilt."""
         lasten: list[dict[str, Any]] = []
         hinweise: list[str] = []
+        hub = getattr(self, "anim_hub", None)
         for e in voll.get("szenarien") or []:
             if szenario is not None and e.get("name") != szenario:
                 continue
             ab = e.get("ablauf")
             if not isinstance(ab, dict) or ab.get("stand") != "done":
                 continue
-            beste: dict[str, tuple[float, dict[str, Any]]] = {}
-            for bild in ab.get("pfeile") or []:
+            anim = hub.get(ab.get("animation")) if hub is not None and ab.get("animation") else None
+            spalte = {n: i for i, n in enumerate(anim.teile)} if anim is not None else {}
+
+            def in_ruhelage(name: str, k: int, punkt: Any, kraft: np.ndarray) -> tuple[list[float], list[float]]:
+                i = spalte.get(name)
+                if anim is None or i is None or k >= len(anim.matrices):
+                    return [float(c) for c in punkt], kraft.tolist()
+                M = np.asarray(anim.matrices[k, i], dtype=float)
+                R, t = M[:3, :3], M[:3, 3]
+                return (R.T @ (np.asarray(punkt, float) - t)).tolist(), (R.T @ kraft).tolist()
+            # je Bild alle Kontakte auf das Teil (ein Körper aus einem Teil; Gelenke sind keine Kontakte, also alles
+            # äußere Last); maßgebend ist das Bild mit der größten Summe der Beträge
+            beste: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+            for k, bild in enumerate(ab.get("pfeile") or []):
+                je: dict[str, list[dict[str, Any]]] = {}
                 for p in bild:
                     paar = p.get("paar") or []
                     F = np.asarray(p.get("kraft") or (0, 0, 0), float)
@@ -466,16 +482,20 @@ class FestkoerperRuntime:
                             continue
                         if name == "Boden" or "(" in name and "Teile)" in name:
                             continue
-                        f = F if i == 1 else -F
+                        f = F if i == 1 else -F  # die Kraft wirkt auf den zweiten Körper des Paars
                         anderer = paar[1 - i] if len(paar) == 2 else None
-                        b = float(np.linalg.norm(f))
-                        if b > beste.get(name, (0.0, {}))[0]:
-                            beste[name] = (b, {"szenario": e["name"], "teil": name, "kraft": f.tolist(),
-                                               "punkt": list(p["punkt"]), "kontakt_mit": anderer,
-                                               "quelle": f"größte Kontaktkraft im Ablauf ({anderer})"})
-            for name, (b, l) in beste.items():
+                        punkt, kraft = in_ruhelage(name, k, p["punkt"], f)
+                        je.setdefault(name, []).append(
+                            {"szenario": e["name"], "teil": name, "kraft": kraft, "punkt": punkt, "bild": k,
+                             "kontakt_mit": None if anderer == "Boden" else anderer,
+                             "quelle": f"Kontaktkraft im Ablauf ({anderer})"})
+                for name, ls in je.items():
+                    s = sum(float(np.linalg.norm(x["kraft"])) for x in ls)
+                    if s > beste.get(name, (0.0, []))[0]:
+                        beste[name] = (s, ls)
+            for name, (b, ls) in beste.items():
                 if b >= 1.0:
-                    lasten.append(l)
+                    lasten += [x for x in ls if float(np.linalg.norm(x["kraft"])) >= 0.5]
             if not beste:
                 hinweise.append(f"Im Ablauf von {e['name']!r} trifft keine Kontaktkraft"
                                 + (f" das Teil {teil!r}" if teil else " ein einzelnes Teil"))
