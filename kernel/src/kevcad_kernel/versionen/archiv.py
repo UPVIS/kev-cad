@@ -364,11 +364,14 @@ class Versionsarchiv:
         return [p for p in self.git.text("diff", "--cached", "--name-only", "--no-renames", "HEAD").splitlines() if p]
 
     def nach_lauf(self, *, wer: str, sitzung: str | None = None, lauf: int | None = None,
-                  nachtrag: tuple[int, str] | None = None) -> tuple[Version | None, bool]:
+                  nachtrag: tuple[int, str] | None = None,
+                  wer_dokumente: str | None = None) -> tuple[Version | None, bool]:
         """Nach einem erfolgreichen Lauf: Änderung → neue Version; sonst gilt der Lauf für die aktuelle Version.
         ``nachtrag`` (Nummer, Commit): Version, die die Hintergrundrechnung ihres Laufs noch aufnimmt; betrifft die
         Änderung nur ``dokumente/`` und ist diese Version noch die Spitze, entsteht keine neue (die Blätter und der
-        Bauplan werden in sie nachgetragen, ``dokumente_nachtragen``). Rückgabe: (Version, neu)."""
+        Bauplan werden in sie nachgetragen, ``dokumente_nachtragen``). ``wer_dokumente``: wer eine neue Version führt,
+        die nur ``dokumente/`` ändert (``"kevcad"`` für von Kev CAD selbst angelegte Dokumente). Rückgabe:
+        (Version, neu)."""
         if not self.verfuegbar:
             return None, False
         with self.lock:
@@ -378,6 +381,8 @@ class Versionsarchiv:
                         and self.nachtrag_moeglich(*nachtrag) is not None:
                     return self.aktuelle(), False
                 titel = "Erster Stand" if self.git.head() is None else dateien_titel(dateien)
+                if wer_dokumente and self.git.head() is not None and dateien and all(ist_dokument(p) for p in dateien):
+                    wer, sitzung = wer_dokumente, None
                 v = self._neue_version(titel, wer=wer, sitzung=sitzung, quelle="lauf", lauf=lauf)
                 v.dateien = dateien
                 return v, True
