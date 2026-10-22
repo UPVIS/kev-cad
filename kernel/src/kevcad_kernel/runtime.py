@@ -1093,14 +1093,17 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             app_len = int(header.get("app_len", 0))
             check = dict(header.get("app") or {})
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
+            # Druckvorschau: Geometrie je Druckteil aus der Prüfung, und zwar bevor fertig() das wartende run weckt;
+            # sonst fragt ein Aufrufer direkt nach run (PRINT_JOB_REQ, druckvorschau) eine Vorschau ohne Eingang ab,
+            # während die Versionen hier noch schreiben (Wettlauf, sichtbar seit die Statik die Prüfung verlängert)
+            self._druckvorschau_pruefung(check)
             with self._app_lock:  # erst nach RUN_END dieses Laufs an die App (sonst schickt es _run_job)
                 if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
                     self._send_app({**check, "type": "CHECK"}, payload[:app_len])
-                if statik is not None:
-                    self._statik_senden()  # STATICS
             self._versionen_pruefung(check)  # Versionen: Prüfstand an die Version des Laufs
             self._gedruckt_check(check)  # gedruckte Teile: neue Formen in gedruckt.json festschreiben
-            self._druckvorschau_pruefung(check)  # Druckvorschau: Geometrie je Druckteil aus der Prüfung
+            if statik is not None:
+                self._statik_senden()  # Statik: STATICS (nach allem anderen, es eilt nicht)
             return
         if kind == "READY":
             self._log(f"[kernel] Rechenprozess bereit (pid {header.get('pid')}, Import {header.get('import_s')} s)")

@@ -71,6 +71,9 @@ class StatikRuntime:
         if run >= SCHATTEN_RUN_BASIS:
             return None
         with self._lock:  # type: ignore[attr-defined]
+            if self._statik_run == run and self._statik_voll is not None:
+                # zweites CHECK desselben Laufs (teilweise → done): gleiche Statik, Szenarien des Agenten behalten
+                return None
             self._statik_voll, self._statik_run, self._statik_aktiv = voll, run, None
         return voll
 
