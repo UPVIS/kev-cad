@@ -10,6 +10,20 @@
 #                           Testvariante "Kev CAD Test" (mit Zusatz z. B. "Kev CAD Test ui") mit eigener Bundle-ID,
 #                           eigenem Datenordner und Port; wird nicht installiert, Fenster öffnet auf dem zweiten Monitor
 #   ./build.sh --core-tests nur die Tests von KevCADCore (swift test) und vom Kernel (pytest)
+#
+# Für den Bau auf dem Mac mini (tools/fern.sh):
+#   ./build.sh --bundle     Installationsbau ohne Installation: Paket build/bundle/ mit App, Kernel, Skill und VERSION
+#   ./build.sh --install-bundle ORDNER
+#                           ein solches Paket hier installieren (Kernel-Umgebung, Signatur, Tools-Stapel), ohne zu bauen
+#   ./build.sh --icon       nur das App-Symbol erzeugen (braucht rsvg-convert, das dem Mini fehlt)
+#
+# Umgebung (nur für tools/fern.sh und Proben, sonst leer lassen):
+#   KEVCAD_APP_REPO         Ordner mit kernel/.venv, den die App zur Laufzeit nimmt (Info.plist KevCADRepo); Vorgabe
+#                           der Installationsordner bzw. bei --test/--no-install dieses Repo
+#   KEVCAD_BUILD_NUMBER, KEVCAD_COMMIT_ID
+#                           Buildnummer und Stand, wenn kein .git da ist (auf dem Mini)
+#   KEVCAD_INSTALL_DIR, KEVCAD_INSTALL_ROOT
+#                           andere Ziele der Installation (Probe von tools/auto-update.sh)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -26,15 +40,96 @@ if [ "$MODE" = "--test" ]; then
   # je Testvariante ein eigener Port, damit mehrere nebeneinander laufen können
   PORT=$((47824 + $(printf '%s' "$SUFFIX" | cksum | cut -d' ' -f1) % 100 * (${#SUFFIX} > 0)))
 fi
-INSTALL_DIR="$HOME/Applications/Tools"
-INSTALL_ROOT="$HOME/Library/Application Support/de.upvis.kevcad/install"
+INSTALL_DIR="${KEVCAD_INSTALL_DIR:-$HOME/Applications/Tools}"
+INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 BUILD="$REPO/build"
-INSTALLING=0
-[ -z "$MODE" ] && INSTALLING=1
-APP_REPO="$REPO"
-BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
-COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
-[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] && COMMIT="$COMMIT+"
+BUNDLE="$BUILD/bundle"
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+case "$MODE" in
+  ""|--no-install|--test|--core-tests|--bundle|--install-bundle|--icon) ;;
+  *) echo "Unbekannter Modus: $MODE (siehe Kopf von build.sh)"; exit 2 ;;
+esac
+
+# Installiert ein Paket aus build.sh --bundle: Kernel und Skill als eigene Kopie nach INSTALL_ROOT (mit eigener
+# Python-Umgebung, die immer hier entsteht, weil sie absolute Pfade enthält), die App ad hoc signiert in den Tools-Stapel.
+install_bundle() {
+  local src="$1"
+  for f in "$APP_NAME.app" kernel skill VERSION; do
+    [ -e "$src/$f" ] || { echo "Paket unvollständig, $f fehlt in $src"; exit 1; }
+  done
+  echo "==> Kernel und Skill installieren nach $INSTALL_ROOT"
+  mkdir -p "$INSTALL_ROOT"
+  rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
+    "$src/kernel/" "$INSTALL_ROOT/kernel/"
+  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev)
+  rsync -a --delete "$src/skill/" "$INSTALL_ROOT/skill/"
+  cp "$src/VERSION" "$INSTALL_ROOT/VERSION"
+
+  echo "==> Installiere nach $INSTALL_DIR"
+  # Hier signieren: Ein Paket vom Mac mini kommt per rsync, und die Signatur soll zu genau diesen Dateien passen.
+  codesign --force --deep --sign - --timestamp=none "$src/$APP_NAME.app" >/dev/null 2>&1
+  codesign --verify --deep "$src/$APP_NAME.app" || { echo "Signatur der App im Paket ungültig"; exit 1; }
+  "$LSREGISTER" -u "$src/$APP_NAME.app" >/dev/null 2>&1 || true
+  mkdir -p "$INSTALL_DIR"
+  rm -rf "$INSTALL_DIR/$APP_NAME.app"
+  cp -R "$src/$APP_NAME.app" "$INSTALL_DIR/"
+  # Ohne das Zurücksetzen zeigt der Finder häufig noch das alte Symbol.
+  touch "$INSTALL_DIR/$APP_NAME.app"
+  if [ -n "${KEVCAD_INSTALL_DIR:-}" ]; then
+    # Probe in einem anderen Ordner: nicht bei Launch Services anmelden, sonst startet `open -b de.upvis.kevcad` womöglich
+    # diese Kopie statt Kevins App.
+    "$LSREGISTER" -u "$INSTALL_DIR/$APP_NAME.app" >/dev/null 2>&1 || true
+  else
+    "$LSREGISTER" -f "$INSTALL_DIR/$APP_NAME.app" >/dev/null 2>&1 || true
+  fi
+  echo "==> Fertig: $INSTALL_DIR/$APP_NAME.app (Stand, Build, Bauzeit: $(cat "$INSTALL_ROOT/VERSION"))"
+  du -sh "$INSTALL_DIR/$APP_NAME.app"
+}
+
+if [ "$MODE" = "--install-bundle" ]; then
+  [ -n "${2:-}" ] || { echo "Aufruf: ./build.sh --install-bundle ORDNER"; exit 2; }
+  install_bundle "$(cd "$2" && pwd)"
+  exit 0
+fi
+
+render_icon() {
+  local icns="app/Resources/AppIcon.icns" iconset="$BUILD/AppIcon.iconset"
+  mkdir -p app/Resources
+  [ ! -f "$icns" ] || [ app/icon.svg -nt "$icns" ] || return 0
+  if ! command -v rsvg-convert >/dev/null; then
+    # Auf dem Mac mini fehlt rsvg-convert; tools/fern.sh erzeugt das Symbol vorher auf dem MacBook und spiegelt es mit.
+    [ -f "$icns" ] && { echo "rsvg-convert fehlt, nehme das vorhandene Symbol"; return 0; }
+    echo "rsvg-convert fehlt (brew install librsvg)"; exit 1
+  fi
+  rm -rf "$iconset" && mkdir -p "$iconset"
+  render() { rsvg-convert -w "$1" -h "$1" app/icon.svg -o "$iconset/$2"; }
+  render 16 icon_16x16.png
+  render 32 icon_16x16@2x.png
+  render 32 icon_32x32.png
+  render 64 icon_32x32@2x.png
+  render 128 icon_128x128.png
+  render 256 icon_128x128@2x.png
+  render 256 icon_256x256.png
+  render 512 icon_256x256@2x.png
+  render 512 icon_512x512.png
+  render 1024 icon_512x512@2x.png
+  iconutil -c icns "$iconset" -o "$icns"
+  rm -rf "$iconset"
+}
+
+if [ "$MODE" = "--icon" ]; then
+  render_icon
+  exit 0
+fi
+
+BUILD_NUMBER=${KEVCAD_BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}
+if [ -n "${KEVCAD_COMMIT_ID+x}" ]; then
+  COMMIT="$KEVCAD_COMMIT_ID"
+else
+  COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+  [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] && COMMIT="$COMMIT+"
+fi
 
 echo "==> Kernel-Umgebung"
 command -v uv >/dev/null || { echo "uv fehlt (https://docs.astral.sh/uv/)"; exit 1; }
@@ -49,35 +144,13 @@ if [ "$MODE" = "--core-tests" ]; then
 fi
 
 echo "==> Icon"
-mkdir -p app/Resources
-ICNS="app/Resources/AppIcon.icns"
-if [ ! -f "$ICNS" ] || [ app/icon.svg -nt "$ICNS" ]; then
-  ICONSET="$BUILD/AppIcon.iconset"
-  rm -rf "$ICONSET" && mkdir -p "$ICONSET"
-  render() { rsvg-convert -w "$1" -h "$1" app/icon.svg -o "$ICONSET/$2"; }
-  render 16 icon_16x16.png
-  render 32 icon_16x16@2x.png
-  render 32 icon_32x32.png
-  render 64 icon_32x32@2x.png
-  render 128 icon_128x128.png
-  render 256 icon_128x128@2x.png
-  render 256 icon_256x256.png
-  render 512 icon_256x256@2x.png
-  render 512 icon_512x512.png
-  render 1024 icon_512x512@2x.png
-  iconutil -c icns "$ICONSET" -o "$ICNS"
-  rm -rf "$ICONSET"
-fi
+render_icon
 
-if [ "$INSTALLING" = 1 ]; then
-  echo "==> Kernel und Skill installieren nach $INSTALL_ROOT"
-  mkdir -p "$INSTALL_ROOT"
-  rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
-    kernel/ "$INSTALL_ROOT/kernel/"
-  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev)
-  rsync -a --delete skill/ "$INSTALL_ROOT/skill/"
-  printf '%s %s %s\n' "$COMMIT" "$BUILD_NUMBER" "$(date '+%Y-%m-%d %H:%M')" > "$INSTALL_ROOT/VERSION"
-  APP_REPO="$INSTALL_ROOT"
+# Welchen Kernel die App zur Laufzeit startet: die installierte Kopie oder (Test, nur bauen) dieses Repo.
+if [ -z "$MODE" ] || [ "$MODE" = "--bundle" ]; then
+  APP_REPO="${KEVCAD_APP_REPO:-$INSTALL_ROOT}"
+else
+  APP_REPO="${KEVCAD_APP_REPO:-$REPO}"
 fi
 
 echo "==> Xcode-Projekt erzeugen"
@@ -105,7 +178,6 @@ APP="$BUILD/$APP_NAME.app"
 codesign --force --deep --sign - --timestamp=none "$APP" >/dev/null 2>&1
 # Build-Kopien bei Launch Services abmelden, sonst startet `open -b de.upvis.kevcad` womöglich eine davon statt der
 # installierten App.
-LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 "$LSREGISTER" -u "$SRC" >/dev/null 2>&1 || true
 "$LSREGISTER" -u "$APP" >/dev/null 2>&1 || true
 
@@ -114,13 +186,19 @@ if [ "$MODE" = "--no-install" ] || [ "$MODE" = "--test" ]; then
   exit 0
 fi
 
-echo "==> Installiere nach $INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
-rm -rf "$INSTALL_DIR/$APP_NAME.app"
-cp -R "$APP" "$INSTALL_DIR/"
-# Ohne das Zurücksetzen zeigt der Finder häufig noch das alte Symbol.
-touch "$INSTALL_DIR/$APP_NAME.app"
-"$LSREGISTER" -f "$INSTALL_DIR/$APP_NAME.app" >/dev/null 2>&1 || true
+# Paket aus App, Kernel, Skill und VERSION: dasselbe, ob es hier installiert wird oder vom Mac mini kommt.
+echo "==> Paket $BUNDLE"
+rm -rf "$BUNDLE" && mkdir -p "$BUNDLE"
+cp -R "$APP" "$BUNDLE/"
+"$LSREGISTER" -u "$BUNDLE/$APP_NAME.app" >/dev/null 2>&1 || true
+rsync -a --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
+  kernel/ "$BUNDLE/kernel/"
+rsync -a skill/ "$BUNDLE/skill/"
+printf '%s %s %s\n' "$COMMIT" "$BUILD_NUMBER" "$(date '+%Y-%m-%d %H:%M')" > "$BUNDLE/VERSION"
 
-echo "==> Fertig: $INSTALL_DIR/$APP_NAME.app (Build $BUILD_NUMBER, $COMMIT)"
-du -sh "$INSTALL_DIR/$APP_NAME.app"
+if [ "$MODE" = "--bundle" ]; then
+  echo "==> Fertig (Paket, nicht installiert): $BUNDLE (Build $BUILD_NUMBER, $COMMIT, KevCADRepo $APP_REPO)"
+  exit 0
+fi
+
+install_bundle "$BUNDLE"
