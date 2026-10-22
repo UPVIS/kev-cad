@@ -1,7 +1,7 @@
 """Zwischenspeicher je Version für Vergleich und Vorschaubild (PLAN-VERSIONEN.md, V4 und V6).
 
 - ``daten/<nr>.json``: Teile (Name, Formschlüssel, Volumen, Masse, Lage, Farbe, Material, Lagerteil), Stückliste,
-  Parameter und Prüfstand des Laufs, der die Version zuletzt gerechnet hat.
+  Parameter, Prüfstand und Schritte des Laufs, der die Version zuletzt gerechnet hat (ohne überschriebene Parameter).
 - ``geometrie/<hash>.kvg``: Netz eines Teils je Formschlüssel (Punkte, Normalen, Dreiecke, Kanten), zlib-gepackt.
   Gleiche Teile in vielen Versionen liegen nur einmal da. Größe begrenzt (älteste zuerst weg); fehlt ein Netz, rechnet
   der Kernel die Version neu (Lauf ohne Live-Aufbau).
@@ -107,10 +107,15 @@ def stueckliste_daten(bom: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def daten_aus_teilen(teile: list[tuple[str, str, dict[str, Any]]], *, bom: dict[str, Any] | None,
-                     params: dict[str, Any] | None, pruefung: dict[str, Any] | None = None) -> dict[str, Any]:
+                     params: dict[str, Any] | None, pruefung: dict[str, Any] | None = None,
+                     schritte: list[str] | None = None) -> dict[str, Any]:
+    """``schritte``: Texte der step()-Aufrufe des Laufs (für den Titel der Version; ältere Daten haben sie nicht)."""
     liste = [teil_daten(n, k, h) for n, k, h in teile]
-    return {"format": 1, "teile": liste, "stueckliste": stueckliste_daten(bom), "params": dict(params or {}),
-            "pruefung": pruef_daten(pruefung), "kennzahlen": kennzahlen(liste, bom, pruefung)}
+    out = {"format": 1, "teile": liste, "stueckliste": stueckliste_daten(bom), "params": dict(params or {}),
+           "pruefung": pruef_daten(pruefung), "kennzahlen": kennzahlen(liste, bom, pruefung)}
+    if schritte is not None:
+        out["schritte"] = [str(x) for x in schritte]
+    return out
 
 
 def netz(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]:

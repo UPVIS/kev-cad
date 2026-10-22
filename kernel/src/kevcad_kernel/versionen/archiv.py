@@ -15,6 +15,13 @@ Jede Version ist ein Commit. Die Nachricht trägt die unveränderlichen Angaben 
 (``Kevcad-Nr``, ``Kevcad-Wer``, ``Kevcad-Sitzung``, ``Kevcad-Quelle``, ``Kevcad-Zweig``, ``Kevcad-Aus``, ``Kevcad-Lauf``);
 die Nummer ist projektweit eindeutig und bleibt auch beim Aufräumen gleich. Varianten sind Zweige, der Hauptstand
 heißt ``haupt``.
+
+Titel (PLAN-VERSIONEN.md, „Titel“): Die erste Zeile der Commit-Nachricht ist nur der Grundtitel beim Anlegen
+(„Übernommener Stand“, „Geändert: model.py“, „Gesichert vor …“) und wird nie umgeschrieben. Was die Leiste zeigt,
+steht in ``index.json`` je Version: ``titel_auto`` (aus dem Vergleich mit der Vorgängerversion, titel.py, mit
+``titel_regel``, ``titel_basis``, ``titel_gegen``), ``titel_agent`` (``run(titel=…)``) und der Meilenstein (Kevin oder
+Agent). Vorrang in ``version_dict``: Agent vor Automatik vor Grundtitel; den Meilenstein zeigt die App darüber.
+Kevins Meilensteine überschreibt nur Kevin selbst (oder der Agent auf Kevins ausdrücklichen Wunsch, ``ersetzen``).
 """
 
 from __future__ import annotations
@@ -31,6 +38,8 @@ from pathlib import Path
 from typing import Any
 
 from kevcad_kernel.versionen.git import HAUPT, GitFehler, GitRepo, git_verfuegbar
+from kevcad_kernel.versionen.titel import REGEL as TITEL_REGEL
+from kevcad_kernel.versionen.titel import auto_titel, dateien_titel
 
 HAUPT_NAME = "Hauptstand"
 AUTOMATISCH = ("lauf", "uebernahme", "sicherung")  # werden nach 30 Tagen ausgedünnt
@@ -40,10 +49,22 @@ WER_TEXT = {"kevin": "Kevin", "agent": "Agent", "kevcad": "Kev CAD", "unbekannt"
 QUELLE_TEXT = {"lauf": "Lauf", "wiederherstellen": "Wiederhergestellt", "sicherung": "Sicherung",
                "uebernahme": "Vorgeschichte", "meilenstein": "Meilenstein", "variante": "Variante"}
 _TRAILER = re.compile(r"^Kevcad-([A-Za-z]+):\s?(.*)$")
+UEBERNOMMEN = "Übernommener Stand"
+MAX_TEXT_BYTES = 2_000_000  # größere Dateien vergleicht der Titel nur nach Namen
 
 
 class VersionsFehler(ValueError):
     """Bedienfehler (unbekannte Version, Variante gibt es schon …); Text geht an Kevin und den Agenten."""
+
+
+class KevinsMeilenstein(VersionsFehler):
+    """Die Version trägt einen Meilenstein, den Kevin vergeben hat; nur Kevin ändert ihn (oder der Agent mit
+    ``ersetzen`` auf Kevins Wunsch)."""
+
+    def __init__(self, version: "Version", meilenstein: dict[str, Any]) -> None:
+        super().__init__(f"V{version.nr} trägt Kevins Meilenstein „{meilenstein.get('titel', '')}“; er bleibt.")
+        self.version = version
+        self.meilenstein = meilenstein
 
 
 @dataclass
@@ -119,14 +140,6 @@ def slug(name: str) -> str:
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     text = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-").lower()
     return text[:40] or "variante"
-
-
-def dateien_titel(dateien: list[str]) -> str:
-    if not dateien:
-        return "Ohne Dateiänderung"
-    namen = dateien[:3]
-    rest = len(dateien) - len(namen)
-    return "Geändert: " + ", ".join(namen) + (f" und {rest} weitere" if rest > 0 else "")
 
 
 def gruppiere(versionen: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -236,7 +249,7 @@ class Versionsarchiv:
             ts = max(ts, vorher_ts)
             vorher_ts = ts
             wer = {"agent": "agent", "app": "kevin"}.get(quelle or "", "unbekannt")
-            text = nachricht("Übernommener Stand", nr=nr, wer=wer, quelle="uebernahme",
+            text = nachricht(UEBERNOMMEN, nr=nr, wer=wer, quelle="uebernahme",
                              zweig=HAUPT).encode("utf-8")
             strom += f"commit refs/heads/{HAUPT}\nmark :{i + 1}\n".encode()
             strom += f"author Kev CAD <kevcad@localhost> {ts} +0000\n".encode()
@@ -325,12 +338,13 @@ class Versionsarchiv:
                       aus: int | None = None, datum: int | None = None) -> Version:
         nr = self._naechste
         zweig = self.git.zweig()
+        vorher = self.git.head()
         text = nachricht(titel, nr=nr, wer=wer, sitzung=sitzung, quelle=quelle, zweig=zweig, lauf=lauf, aus=aus)
         sha = self.git.commit(text, datum=datum)
         self._naechste = nr + 1
         self._liste_cache.clear()
         return Version(nr=nr, commit=sha, ts=int(datum or time.time()), wer=wer, sitzung=sitzung, quelle=quelle,
-                       titel=titel, zweig=zweig, aus=aus, lauf=lauf)
+                       titel=titel, zweig=zweig, aus=aus, lauf=lauf, eltern=vorher)
 
     def _vormerken(self) -> bool:
         """Änderungen vormerken; True, wenn der vorgemerkte Stand von HEAD abweicht (oder noch nichts da ist)."""
@@ -496,17 +510,40 @@ class Versionsarchiv:
                     "versionen": out, "gruppen": gruppen, "anzahl": len(versionen),
                     "meilensteine": sum(1 for v in out if v.get("meilenstein"))}
 
+    def titel_von(self, v: Version) -> tuple[str, str | None, str]:
+        """Angezeigter Titel, Zusatzzeile und woher der Titel stammt (``agent``, ``auto``, ``fest``, ``offen``).
+
+        - Wiederhergestellt, gesichert: fester Titel, die Automatik als Zusatz.
+        - Titel vom Agenten (``run(titel=…)``): vor der Automatik, die als Zusatz darunter steht.
+        - Übernommene Stände: der automatische Titel, sobald berechnet, mit „Übernommener Stand“ als Zusatz; bis dahin
+          „Übernommener Stand“ (``offen``).
+        Meilensteine (Kevin oder Agent) zeigt die App über allem; sie stehen in ``meilenstein``."""
+        m = self.meta.get("versionen", {}).get(str(v.nr), {}) or {}
+        auto = (m.get("titel_auto") or "").strip() or None
+        agent = (m.get("titel_agent") or "").strip() or None
+        if v.quelle == "wiederherstellen" and v.aus is not None:
+            ms = (self.meta.get("versionen", {}).get(str(v.aus), {}) or {}).get("meilenstein") or {}
+            return f"Wiederhergestellt aus V{v.aus}" + (f" „{ms['titel']}“" if ms.get("titel") else ""), auto, "fest"
+        if v.quelle in ("sicherung", "meilenstein"):
+            grund = re.sub(r" \([^()]*\)$", "", v.titel) if auto else v.titel
+            if agent:
+                return agent, auto or grund, "agent"
+            return grund, auto, "fest"
+        if agent:
+            return agent, auto, "agent"
+        if auto:
+            return auto, UEBERNOMMEN if v.quelle == "uebernahme" else None, "auto"
+        return v.titel, None, "offen" if v.quelle in ("uebernahme", "lauf") and v.titel != "Erster Stand" else "fest"
+
     def version_dict(self, v: Version, *, aktuell: bool = False, zweig: str | None = None) -> dict[str, Any]:
         m = self.meta.get("versionen", {}).get(str(v.nr), {})
         bild = m.get("bild")
         bild_pfad = str(self.ordner / bild) if bild and (self.ordner / bild).is_file() else None
-        titel = v.titel
-        if v.quelle == "wiederherstellen" and v.aus is not None:
-            ms = (self.meta.get("versionen", {}).get(str(v.aus), {}) or {}).get("meilenstein") or {}
-            titel = f"Wiederhergestellt aus V{v.aus}" + (f" „{ms['titel']}“" if ms.get("titel") else "")
+        titel, zusatz, titel_quelle = self.titel_von(v)
         return {
             "nr": v.nr, "commit": v.commit[:10], "zeit": zeit_text(v.ts), "ts": v.ts, "wer": v.wer,
             "wer_text": v.wer_text, "sitzung": v.sitzung, "quelle": v.quelle, "titel": titel, "aus": v.aus,
+            "zusatz": zusatz, "titel_quelle": titel_quelle, "titel_auto": m.get("titel_auto"),
             "meilenstein": m.get("meilenstein"), "kennzahlen": m.get("kennzahlen"), "params": m.get("params") or {},
             "pruefung": m.get("pruefung"), "bild": bild_pfad, "aktuell": aktuell,
             "geerbt": zweig is not None and v.zweig != zweig, "zweig": v.zweig, "dateien": v.dateien[:20],
@@ -514,11 +551,80 @@ class Versionsarchiv:
         }
 
     # =================================================================================================================
+    # Automatische Titel (titel.py)
+    # =================================================================================================================
+
+    def version_von_commit(self, sha: str | None, zweig: str | None = None) -> Version | None:
+        if not sha:
+            return None
+        with self.lock:
+            for w in self.versionen(zweig):
+                if w.commit == sha:
+                    return w
+            for w in self.alle_versionen().values():
+                if w.commit == sha:
+                    return w
+        return None
+
+    def _text(self, commit: str, pfad: str) -> str | None:
+        data = self.git.datei(commit, pfad)
+        if data is None or len(data) > MAX_TEXT_BYTES:
+            return None
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    def aenderungen(self, a: Version, b: Version) -> list[dict[str, Any]]:
+        """Geänderte Dateien von ``a`` nach ``b`` mit altem und neuem Inhalt (Text; None = fehlt, binär, zu groß)."""
+        with self.lock:
+            zahlen = self.git.diff_zahlen(a.commit, b.commit)
+            out = []
+            for d in zahlen:
+                e: dict[str, Any] = {"pfad": d["pfad"], "status": d["status"], "alt": None, "neu": None,
+                                     "binaer": bool(d.get("binaer"))}
+                if not e["binaer"]:
+                    if d["status"] != "A":
+                        e["alt"] = self._text(a.commit, d["pfad"])
+                    if d["status"] != "D":
+                        e["neu"] = self._text(b.commit, d["pfad"])
+                    if (d["status"] != "A" and e["alt"] is None) or (d["status"] != "D" and e["neu"] is None):
+                        e["binaer"] = True
+                out.append(e)
+            return out
+
+    def titel_veraltet(self, v: Version, vor: Version | None, *, daten_da: bool) -> bool:
+        """Muss der automatische Titel (neu) berechnet werden? Fehlt, ältere Regeln, anderer Vorgänger (nach dem
+        Ausdünnen) oder bisher nur aus dem Code, obwohl jetzt beide Stände Daten haben (``daten_da``)."""
+        m = self.meta.get("versionen", {}).get(str(v.nr), {}) or {}
+        if not m.get("titel_auto") or m.get("titel_regel") != TITEL_REGEL:
+            return True
+        if m.get("titel_gegen") != (vor.nr if vor else None):
+            return True
+        return m.get("titel_basis") != "daten" and daten_da
+
+    def titel_berechnen(self, v: Version, vor: Version | None, alt: dict[str, Any] | None,
+                        neu: dict[str, Any] | None) -> dict[str, Any]:
+        """Automatischen Titel aus dem Vergleich mit ``vor`` berechnen und in den Metadaten ablegen (nie in Git; den
+        Meilenstein und den Titel des Agenten berührt das nicht)."""
+        aend = self.aenderungen(vor, v) if vor is not None else []
+        res = auto_titel(aend, alt, neu, erster=vor is None)
+        self.aktualisiere(v.nr, titel_auto=res["titel"] or None, titel_regel=TITEL_REGEL, titel_basis=res["basis"],
+                          titel_gegen=vor.nr if vor else None)
+        return res
+
+    def titel_agent(self, nr: int, titel: str) -> None:
+        self.aktualisiere(nr, titel_agent=" ".join((titel or "").split())[:160] or None)
+
+    # =================================================================================================================
     # Meilensteine (V3)
     # =================================================================================================================
 
-    def meilenstein(self, ref: Any, titel: str, notiz: str = "", *, wer: str, sitzung: str | None = None) -> Version:
-        """Version benennen; ``ref`` None = aktueller Stand (ungesicherte Änderungen werden vorher eine Version)."""
+    def meilenstein(self, ref: Any, titel: str, notiz: str = "", *, wer: str, sitzung: str | None = None,
+                    ersetzen: bool = False) -> Version:
+        """Version benennen; ``ref`` None = aktueller Stand (ungesicherte Änderungen werden vorher eine Version).
+        Einen Meilenstein, den Kevin vergeben hat, ändert nur Kevin: sonst ``KevinsMeilenstein`` (außer mit
+        ``ersetzen``, wenn Kevin es ausdrücklich will)."""
         titel = (titel or "").strip()
         if not titel:
             raise VersionsFehler("Ein Meilenstein braucht einen Titel.")
@@ -530,6 +636,9 @@ class Versionsarchiv:
                     raise VersionsFehler("Noch keine Version im Projekt.")
             else:
                 v = self.finde(ref)
+            alt = (self.meta.get("versionen", {}).get(str(v.nr), {}) or {}).get("meilenstein") or {}
+            if alt and alt.get("wer") == "kevin" and wer != "kevin" and not ersetzen:
+                raise KevinsMeilenstein(v, alt)
             self.aktualisiere(v.nr, meilenstein={"titel": titel, "notiz": (notiz or "").strip(),
                                                  "zeit": zeit_text(time.time()), "wer": wer, "sitzung": sitzung})
             return v
@@ -750,5 +859,5 @@ def _fi_pfad(pfad: str) -> str:
     return pfad
 
 
-__all__ = ["HAUPT", "HAUPT_NAME", "GitFehler", "Version", "VersionsFehler", "Versionsarchiv", "gruppiere",
-           "lies_nachricht", "nachricht", "zeit_text"]
+__all__ = ["HAUPT", "HAUPT_NAME", "UEBERNOMMEN", "GitFehler", "KevinsMeilenstein", "Version", "VersionsFehler",
+           "Versionsarchiv", "dateien_titel", "gruppiere", "lies_nachricht", "nachricht", "zeit_text"]

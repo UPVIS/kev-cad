@@ -189,8 +189,12 @@ rig parts need their own `folge`.
 Versions (like Onshape/Fusion)
 - Every successful run that changed a project file is a version V<n> (all project files, not output/). Kevin sees \
 them in the version bar with thumbnail, time, who, parts, mass, cost and check result.
+- Each version gets an automatic title from what changed. For larger changes pass `run(titel=...)` with a short \
+German description in Kevin's words ("Laufrollen auf Kugellager umgestellt"); it becomes the version's title, the \
+automatic one stays below it.
 - At the end of every task, after the last successful run, set a milestone: `meilenstein(titel, notiz)` with a short \
-German title and one or two sentences on what was done.
+German title and one or two sentences on what was done. A milestone Kevin named himself stays (ersetzen=true only on \
+his explicit request).
 - `versionen` lists the history, `versionen_vergleichen(a, b)` shows parameters, parts, bill of materials, check and \
 code diff (and overlays the old geometry in the viewer), `version_wiederherstellen(v)` goes back without losing \
 anything (only when Kevin asks), `variante` creates or switches named variants to try ideas.
