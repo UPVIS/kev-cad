@@ -62,7 +62,7 @@ DEFAULT_BUNDLE_ID = "de.upvis.kevcad"
 DEFAULT_APP_PATH = os.path.expanduser("~/Applications/Tools/Kev CAD.app")
 HOST = "127.0.0.1"
 MAX_EVENT_BYTES = 256 * 1024 * 1024
-LESEZEIT_S = 960.0  # Sekunden; über der längsten Wartezeit eines Werkzeugs (900 s)
+LESEZEIT_S = 1900.0  # Sekunden; über der längsten Wartezeit eines Werkzeugs (render warten_s bis 1800 s)
 SESSION_HEADER = "x-claude-code-session-id"
 
 T = TypeVar("T")
@@ -310,8 +310,8 @@ class Upstream:
         try:
             # Bilder reisen als ein SSE-Ereignis; die Vorgabe des Pakets (1 MiB) wäre für große Screenshots zu knapp
             # Eigener HTTP-Client für die Kopfzeile mit der Sitzungskennung. Lesezeit über der längsten erlaubten
-            # Wartezeit (run timeout_s, freigabe_anfragen warten_s: bis 900 s); die Vorgabe des Pakets (300 s) riss
-            # lange Aufrufe ab (KevCup, 22.10.2026).
+            # Wartezeit (run timeout_s und freigabe_anfragen bis 900 s, render bis 1800 s); die Vorgabe des Pakets
+            # (300 s) riss lange Aufrufe ab (KevCup, 22.10.2026).
             http = create_mcp_http_client(headers=self.cfg.headers,
                                           timeout=httpx2.Timeout(30.0, read=LESEZEIT_S))
             async with http:
