@@ -724,6 +724,20 @@ App im Bereich „Dokumente“ mit Strichbild je Schritt; Vertrag in DOKUMENTE.m
 - **Grenzen:** Montage nur durch Schieben (ein- oder zweistufig), kein Drehen; Eigenteile einer Gruppe, die
   zusammenhängen (Rollwagen, Fluidkopf, Kamera), gelten als vorhanden und vormontiert; ohne `verbinde` sind Verbindungen
   und Werkzeug aus Kontakt und Normteilen geschätzt (steht am Schritt). Kevin keine Bilder schicken, die App zeigt sie.
+- **Durchspielen:** Kevin spielt den Aufbau in der App Schritt für Schritt im 3D-Bereich durch (nur montierte Teile,
+  neue fahren entlang der Einführrichtung ein). Das ist seine Ansicht; du prüfst mit `bauplan_pruefen`.
+
+## Dokumente als PDF
+
+`dokument_export(bausteine, ziel=None, drucken=False)` lässt die App ein PDF bauen, dieselben Seiten wie im Dialog
+„Dokumente exportieren …“ (⇧⌘E): `deckblatt`, `stueckliste`, `teileliste`, `einkaufsliste`, `zuschnitt`,
+`zeichnungen`, `bauplan`, in der angegebenen Reihenfolge; leer oder `"alle"` = alles. Objekte wie
+`{"art": "stueckliste", "spalten": ["pos", "bild", "benennung", "masse", "anzahl"]}` oder
+`{"art": "zeichnungen", "auswahl": ["<blatt-id>", …]}` wählen Spalten bzw. Blätter; `"vorlage:<Name>"` nimmt eine
+Vorlage, die Kevin im Dialog gesichert hat; `{"format": "A3", "ausrichtung": "quer"}` setzt das Papier der Listen und
+des Bauplans (Zeichnungen behalten ihr Blattformat). Ohne `ziel` landet das PDF in `<projekt>/output/<Projekt>-dokumente.pdf`.
+`drucken=true` öffnet den Druckdialog in der App, **nur wenn Kevin ausdrücklich drucken will**. Vorher `bauplan` und
+`zeichnung_erstellen`, damit die Bausteine Inhalt haben; die Antwort nennt Seiten je Baustein, Formate und Hinweise.
 
 ## Wenn etwas hakt
 

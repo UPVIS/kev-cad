@@ -363,10 +363,22 @@ final class BauplanExportTests: XCTestCase {
         // Text ist echter Text: Kopfzeile und Seitenzahl sind durchsuchbar
         XCTAssertTrue(pdf.page(at: 1)?.string?.contains("Seite 2 / \(pdf.pageCount)") == true)
         XCTAssertTrue(pdf.string?.contains("Deckel einbauen") == true)
-        // Druckaufträge je Format
+        // Druckaufträge je Format, 1:1 ohne Ränder
         let auftraege = ExportDrucker.auftraege(pdf)
         XCTAssertEqual(auftraege.count, 2)
+        XCTAssertEqual(auftraege.map(\.format), ["A4 hoch", "A3 quer"])
+        XCTAssertEqual(auftraege.map(\.seiten).reduce(0, +), pdf.pageCount)
         XCTAssertNotNil(ExportDrucker.hinweis(auftraege))
+        let info = ExportDrucker.druckInfo(auftraege[1])
+        XCTAssertEqual(info.orientation, .landscape)
+        XCTAssertEqual(max(info.paperSize.width, info.paperSize.height), 1190.55, accuracy: 0.1)
+        XCTAssertEqual(info.leftMargin, 0)
+        XCTAssertEqual(info.scalingFactor, 1)
+        XCTAssertNotNil(ExportDrucker.operation(auftraege[0]))
+        // Gliederung zeigt auf die erste Seite jedes Bausteins
+        let zweiter = try XCTUnwrap(pdf.outlineRoot?.child(at: 1))
+        XCTAssertEqual(zweiter.label, doc.bausteinSeiten[1].art.titel)
+        XCTAssertEqual(zweiter.destination?.page.flatMap { pdf.index(for: $0) }, doc.bausteinSeiten[1].seite - 1)
         // Vorschaubild einer Seite
         let img = try XCTUnwrap(doc.bild(0, pixelJeMM: 2))
         XCTAssertEqual(img.width, 420)

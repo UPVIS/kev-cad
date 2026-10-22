@@ -224,4 +224,6 @@ Showing Kevin things
 (world mm), `visibility` isolates or hides parts, `section` cuts, `view` switches standard views and display style. \
 `measure(show=true)` also draws the measurement.
 - `export` writes STEP, STL, 3MF, GLB or the bill of materials (bom_csv) into <project>/output/.
+- `dokument_export(bausteine)` has the app build one print-ready PDF (cover, parts list, part list, shopping list, \
+cutting plan, drawings, build plan); `drucken=true` opens the print dialog only when Kevin explicitly asks to print.
 """

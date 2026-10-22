@@ -51,6 +51,28 @@ public final class ExportDrucker: NSObject {
             + "Jeder Auftrag druckt 1:1 ohne Skalierung."
     }
 
+    /// Druckeinstellungen eines Auftrags: Papier so groß wie die Seiten, ohne Ränder, Maßstab 1.
+    public static func druckInfo(_ a: ExportDruckauftrag) -> NSPrintInfo {
+        let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
+        info.orientation = a.groessePt.width > a.groessePt.height ? .landscape : .portrait
+        info.paperSize = a.groessePt
+        info.topMargin = 0
+        info.bottomMargin = 0
+        info.leftMargin = 0
+        info.rightMargin = 0
+        info.horizontalPagination = .clip
+        info.verticalPagination = .clip
+        info.isHorizontallyCentered = true
+        info.isVerticallyCentered = true
+        info.scalingFactor = 1
+        return info
+    }
+
+    /// Druckoperation eines Auftrags, immer `.pageScaleNone` (1:1).
+    public static func operation(_ a: ExportDruckauftrag, info: NSPrintInfo? = nil) -> NSPrintOperation? {
+        a.dokument.printOperation(for: info ?? druckInfo(a), scalingMode: .pageScaleNone, autoRotate: false)
+    }
+
     /// Öffnet den Druckdialog für jeden Auftrag nacheinander (als Blatt am Fenster, sonst modal). `fertig` bekommt
     /// die Zahl der gedruckten Aufträge.
     public static func drucke(_ pdf: PDFDocument, titel: String, fenster: NSWindow?, fertig: ((Int) -> Void)? = nil) {
@@ -70,16 +92,7 @@ public final class ExportDrucker: NSObject {
             return
         }
         let a = offen.removeFirst()
-        let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
-        info.orientation = a.groessePt.width > a.groessePt.height ? .landscape : .portrait
-        info.paperSize = a.groessePt
-        info.topMargin = 0
-        info.bottomMargin = 0
-        info.leftMargin = 0
-        info.rightMargin = 0
-        info.isHorizontallyCentered = true
-        info.isVerticallyCentered = true
-        guard let op = a.dokument.printOperation(for: info, scalingMode: .pageScaleNone, autoRotate: false) else {
+        guard let op = Self.operation(a) else {
             naechster()
             return
         }
