@@ -407,7 +407,6 @@ public final class AppController: AppActions {
                 reopenProjectIfKernelForgotIt(open)
             }
             requestBOMAfterConnect()
-            druckNachVerbinden()  // Druckvorschau des offenen Projekts (AppController+Druck.swift)
             quietCatalogOff = false
         case .status(let s):
             switch s.state {
@@ -573,7 +572,6 @@ public final class AppController: AppActions {
             adoptInventarRegel(p, project: url)
             // Der Katalog hat eine Projekt-Ebene: war er schon geladen, für das neue Projekt neu holen
             if catalogWanted { reloadCatalog() }
-            druckNachVerbinden()
             return
         }
         model.project = info

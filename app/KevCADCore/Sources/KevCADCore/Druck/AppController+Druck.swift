@@ -34,13 +34,9 @@ extension AppController: DruckActions {
         model.druck.leeren()
     }
 
-    /// Nach HELLO bzw. PROJECT: die Vorschau des offenen Projekts holen (still, ältere Kernel kennen sie nicht).
-    func druckNachVerbinden() {
-        guard !AppInfo.isDemoMode, helloReceived, model.project != nil else { return }
-        druckvorschauAnfordern()
-    }
-
     // MARK: DruckActions
+    // Der Kernel schickt PRINT_PREVIEW beim Verbinden und nach jedem Lauf von selbst; PRINT_PREVIEW_REQ nur, wenn die
+    // Ansicht ohne Vorschau erscheint oder Kevin neu holen will.
 
     public func druckvorschauAnfordern() {
         guard !AppInfo.isDemoMode, helloReceived else { return }
@@ -61,7 +57,9 @@ extension AppController: DruckActions {
         }
     }
 
-    public func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?) {
+    public func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?,
+                                zuruecksetzen: Bool)
+    {
         guard !AppInfo.isDemoMode else { return }
         guard helloReceived else {
             model.druck.setzeFehler("Der Kernel ist nicht verbunden, die Einstellung wurde nicht gesendet.")
@@ -69,8 +67,10 @@ extension AppController: DruckActions {
         }
         model.druck.setzeFehler(nil)
         model.druck.markiere(ziel)
-        let msg = DruckEinstellenNachricht(id: nextRequestID(), ziel: ziel, einstellungen: einstellungen, zweck: zweck)
-        let was = Self.druckBeschreibung(einstellungen: einstellungen, zweck: zweck)
+        let msg = DruckEinstellenNachricht(id: nextRequestID(), ziel: ziel, einstellungen: einstellungen, zweck: zweck,
+                                           zuruecksetzen: zuruecksetzen, von: "kevin")
+        let was = zuruecksetzen ? "alle Vorgaben zurückgesetzt"
+            : Self.druckBeschreibung(einstellungen: einstellungen, zweck: zweck)
         request(msg, timeout: Self.druckTimeout) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -119,7 +119,7 @@ extension AppController: DruckActions {
         return t.isEmpty ? "Einstellungen gesendet" : t.joined(separator: ", ")
     }
 
-    public func druckExportieren(platten: [Int], nach ziel: URL) {
+    public func druckExportieren(platten: [Int], nach ziel: URL?) {
         guard !AppInfo.isDemoMode else { return }
         if case .laeuft = model.druck.export { return }
         guard helloReceived else {
@@ -129,7 +129,7 @@ extension AppController: DruckActions {
         let id = nextRequestID()
         model.druck.exportID = id
         model.druck.setzeExport(.laeuft(ziel: ziel))
-        let msg = DruckExportNachricht(id: id, platten: platten, ziel: ziel.path)
+        let msg = DruckExportNachricht(id: id, platten: platten, ziel: ziel?.path)
         request(msg, timeout: Self.druckTimeout) { [weak self] result in
             guard let self else { return }
             switch result {

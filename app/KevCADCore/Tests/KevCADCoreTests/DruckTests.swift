@@ -188,7 +188,12 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(s["einstellungen"]?["fuellung"]?.doubleValue, 0.3)
         XCTAssertEqual(s["einstellungen"]?["brim"], .null)  // zurücksetzen
         XCTAssertNil(s["zweck"])  // unverändert: Schlüssel fehlt
-        XCTAssertEqual(s["von"]?.stringValue, "kevin")
+        XCTAssertNil(s["von"])
+        XCTAssertNil(s["zuruecksetzen"])
+        let sv = try kopf(DruckEinstellenNachricht(id: "a-2", ziel: .gruppe("g3"), zuruecksetzen: true, von: "kevin"))
+        XCTAssertEqual(sv["von"]?.stringValue, "kevin")
+        XCTAssertEqual(sv["zuruecksetzen"]?.boolValue, true)
+        XCTAssertNil(sv["einstellungen"])
 
         let z = try kopf(DruckEinstellenNachricht(id: "a-3", ziel: .teil("Halter/Lasche"), zweck: "tragend"))
         XCTAssertEqual(z["teil"]?.stringValue, "Halter/Lasche")
@@ -204,18 +209,21 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(e["ziel"]?.stringValue, "/tmp/K/output/K-platten.3mf")
         XCTAssertEqual(try kopf(DruckExportNachricht(id: "a-6", platten: [2], ziel: "/x.3mf"))["platten"]?.arrayValue?
             .compactMap(\.intValue), [2])
+        XCTAssertEqual(try kopf(DruckExportNachricht(id: "a-7", platten: [], ziel: nil))["ziel"], .null)
     }
 
     /// Zurücksetzen: Schlüssel als null, Zweck getrennt.
     @MainActor
     func testZuruecksetzen() {
         final class Aufnahme: DruckActions {
-            var gesendet: [(DruckZiel, [String: JSONValue]?, JSONValue?)] = []
+            var gesendet: [(DruckZiel, [String: JSONValue]?, JSONValue?, Bool)] = []
             func druckvorschauAnfordern() {}
-            func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?) {
-                gesendet.append((ziel, einstellungen, zweck))
+            func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?,
+                                 zuruecksetzen: Bool)
+            {
+                gesendet.append((ziel, einstellungen, zweck, zuruecksetzen))
             }
-            func druckExportieren(platten: [Int], nach ziel: URL) {}
+            func druckExportieren(platten: [Int], nach ziel: URL?) {}
             func druckInBambuStudioOeffnen(_ datei: URL) {}
             func druckTeileWaehlen(_ teile: [String], einpassen: Bool) {}
         }
@@ -224,8 +232,14 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(a.gesendet.first?.0, .gruppe("g3"))
         XCTAssertEqual(a.gesendet.first?.1, ["waende": .null])
         XCTAssertEqual(a.gesendet.first?.2, .null)
+        XCTAssertEqual(a.gesendet.first?.3, false)
         a.druckZuruecksetzen(.gruppe("g3"), schluessel: ["fuellung"])
         XCTAssertNil(a.gesendet.last?.2)
+        a.druckZuruecksetzen(.teil("T"), schluessel: [])  // alles: zuruecksetzen
+        XCTAssertEqual(a.gesendet.last?.3, true)
+        XCTAssertNil(a.gesendet.last?.1)
+        a.druckEinstellen(.gruppe("g1"), einstellungen: ["waende": 5], zweck: nil)
+        XCTAssertEqual(a.gesendet.last?.3, false)
         XCTAssertEqual(AppController.druckBeschreibung(einstellungen: ["waende": 4, "fuellung": 0.25, "brim": .null],
                                                        zweck: "tragend"),
                        "Zweck Tragend, Brim zurückgesetzt, Füllung 25 %, Wände 4")
@@ -259,7 +273,8 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(DruckFormat.schicht(0.16), "0,16 mm")
         XCTAssertEqual(DruckFormat.zweck("aussen"), "Außen")
         XCTAssertEqual(DruckFormat.muster("gyroid"), "Gyroid")
-        XCTAssertEqual(DruckFormat.muster("zig-zag"), "Geradlinig")
+        XCTAssertEqual(DruckFormat.muster("zigzag"), "Zickzack")
+        XCTAssertEqual(DruckFormat.muster("rectilinear"), "Geradlinig")
         XCTAssertEqual(DruckFormat.stuetzen("tree(auto)"), "Baum")
         let e = DruckEinstellungen(waende: 4, fuellung: 0.25, muster: "gyroid", stuetzen: "baum", brim: true)
         XCTAssertEqual(DruckFormat.kurz(e), "4 Wände · 25 % Gyroid · Baumstützen · Brim")
@@ -348,7 +363,7 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(zeit.zeile, "Druckzeit 17 h 2 min → 19 h 4 min (+12 %)")
         XCTAssertEqual(a.kurz, "Druckzeit +12 %, Filament ±0 %, Kosten ±0 %")
         XCTAssertEqual(a.urteil, "Die Schätzung lag etwas daneben")
-        XCTAssertEqual(a.teile.first?.name, "Stangenhalter (Druck)")
+        XCTAssertEqual(Set(a.teile.map(\.name)), ["Stangenhalter (Druck)", "Schlitten (Druck)"])
         XCTAssertEqual(a.teile.first?.relativ ?? 0, 0.12, accuracy: 1e-9)
         // gleicher Lauf, noch einmal Slicer: kein neuer Vergleich, der Hinweis bleibt
         store.uebernehmen(try Self.vorschau(stand: "slicer", zeitFaktor: 1.12))

@@ -85,7 +85,7 @@ public final class DruckStore: ObservableObject {
 /// 3MF-Export der Platten.
 public enum DruckExportZustand: Equatable, Sendable {
     case bereit
-    case laeuft(ziel: URL)
+    case laeuft(ziel: URL?)
     case fertig(DruckExportErgebnis)
     case fehler(String)
 }
@@ -168,10 +168,11 @@ public struct DruckAenderung: Equatable, Sendable, Identifiable {
 public protocol DruckActions: AnyObject {
     /// PRINT_PREVIEW_REQ: die aktuelle Vorschau holen.
     func druckvorschauAnfordern()
-    /// PRINT_SETTINGS von Kevin: Teilmenge der Einstellungen (`.null` setzt einen Wert zurück) und bzw. oder der Zweck.
-    func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?)
-    /// PRINT_EXPORT_REQ: Platten (leer = alle) als 3MF nach `ziel`.
-    func druckExportieren(platten: [Int], nach ziel: URL)
+    /// PRINT_SETTINGS von Kevin: Teilmenge der Einstellungen (`.null` setzt einen Wert zurück) und bzw. oder der Zweck;
+    /// `zuruecksetzen` nimmt alle Vorgaben des Teils bzw. der Gruppe zurück.
+    func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?, zuruecksetzen: Bool)
+    /// PRINT_EXPORT_REQ: Platten (leer = alle) als 3MF nach `ziel` (nil = `<projekt>/output/<projekt>-druck.3mf`).
+    func druckExportieren(platten: [Int], nach ziel: URL?)
     /// Die exportierte Datei in Bambu Studio öffnen (nur auf Klick).
     func druckInBambuStudioOeffnen(_ datei: URL)
     /// Teile im 3D-Bereich und im Teilebaum auswählen, auf Wunsch einpassen.
@@ -179,12 +180,20 @@ public protocol DruckActions: AnyObject {
 }
 
 extension DruckActions {
-    /// Kevins Vorgaben zurücknehmen: die genannten Schlüssel (leer = alle gesetzten der Gruppe).
+    public func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?) {
+        druckEinstellen(ziel, einstellungen: einstellungen, zweck: zweck, zuruecksetzen: false)
+    }
+
+    /// Kevins Vorgaben zurücknehmen: die genannten Schlüssel (`null` je Wert), leer = alle (`zuruecksetzen`).
     public func druckZuruecksetzen(_ ziel: DruckZiel, schluessel: [String]) {
+        guard !schluessel.isEmpty else {
+            druckEinstellen(ziel, einstellungen: nil, zweck: nil, zuruecksetzen: true)
+            return
+        }
         let ohneZweck = schluessel.filter { $0 != "zweck" }
         var e: [String: JSONValue]?
         if !ohneZweck.isEmpty { e = Dictionary(uniqueKeysWithValues: ohneZweck.map { ($0, JSONValue.null) }) }
-        druckEinstellen(ziel, einstellungen: e, zweck: schluessel.contains("zweck") ? .null : nil)
+        druckEinstellen(ziel, einstellungen: e, zweck: schluessel.contains("zweck") ? .null : nil, zuruecksetzen: false)
     }
 }
 

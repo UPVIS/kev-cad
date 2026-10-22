@@ -65,7 +65,7 @@ public enum ExportDruckSeiten {
         if !ohne.isEmpty, !d.platten.isEmpty {
             bloecke += [.abstand(5), ExportBauer.zwischentitel("Ohne Platte", "nicht angeordnet")]
             let p = DruckPlatte(nr: 0, teile: ohne.flatMap { g in
-                (0..<g.anzahl).map { DruckPlattenTeil(name: g.teile.first ?? g.name, gruppe: g.gruppe, x: 0, y: 0) }
+                (0..<g.anzahl).map { _ in DruckPlattenTeil(name: g.teile.first ?? g.name, gruppe: g.gruppe, x: 0, y: 0) }
             })
             bloecke.append(.tabelle(teileTabelle(p, d, spalten: spalten, nummern: nummern)))
         }
@@ -74,7 +74,7 @@ public enum ExportDruckSeiten {
         if !alle.isEmpty {
             bloecke += [.abstand(5), .marke("Hinweise"), ExportBauer.zwischentitel("Hinweise", "für einen gelungenen Druck")]
             for (h, gruppen) in alle {
-                let namen = gruppen.compactMap { g in d.gruppe(g).map { "\(nummern[g].map { "\($0) " } ?? "")\($0.kurzname)" } }
+                let namen = gruppen.compactMap { g in d.gruppe(g).map { gr in (nummern[g].map { "\($0) " } ?? "") + gr.kurzname } }
                 bloecke.append(hinweisBlock(h, betrifft: namen))
             }
         }
@@ -274,7 +274,7 @@ public enum ExportDruckSeiten {
         l.text("VORN", x: pr.midX, y: pr.maxY + 3, .mittel(5.5), farbe: ExportStil.grau, .mitte, laufweite: 0.3)
     }
 
-    static func hinweisBlock(_ h: DruckHinweis, betrifft: [String]) -> ExportBlock {
+    static func hinweisBlock(_ h: DruckpraxisHinweis, betrifft: [String]) -> ExportBlock {
         let text = h.text + (betrifft.isEmpty ? "" : "  (" + betrifft.joined(separator: ", ") + ")")
         let breite: CGFloat = 165
         let hoehe = ExportSatz(text, breite: breite, schrift: .normal(8.5)).hoehe + 2.2

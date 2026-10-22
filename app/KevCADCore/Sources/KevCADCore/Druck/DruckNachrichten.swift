@@ -43,6 +43,10 @@ public struct DruckExportErgebnis: Equatable, Sendable {
     public var pfad: URL?
     public var platten: [Int]
     public var fehler: String?
+    /// Additiv: Hinweise, Dauer und ob die Datei zur Kontrolle in Bambu Studio geladen wurde.
+    public var hinweise: [String] = []
+    public var ms: Double?
+    public var geprueft: Bool?
 
     public init(replyTo: String? = nil, ok: Bool, pfad: URL? = nil, platten: [Int] = [], fehler: String? = nil) {
         self.replyTo = replyTo
@@ -59,6 +63,9 @@ public struct DruckExportErgebnis: Equatable, Sendable {
             replyTo: j["reply_to"]?.lenientString, ok: j["ok"]?.boolValue ?? (j["fehler"]?.lenientString == nil),
             pfad: j["pfad"]?.lenientString.map { URL(fileURLWithPath: $0) }, platten: platten,
             fehler: j["fehler"]?.lenientString)
+        hinweise = (j["hinweise"]?.arrayValue ?? []).compactMap { $0.lenientString ?? $0["text"]?.lenientString }
+        ms = j["ms"]?.doubleValue
+        geprueft = j["geprueft"]?.boolValue
     }
 }
 
@@ -105,19 +112,23 @@ public struct DruckEinstellenNachricht: OutgoingRequest {
     public var einstellungen: [String: JSONValue]?
     /// nil: Zweck unverändert; `.null`: zurücksetzen; sonst `.string(zweck)`.
     public var zweck: JSONValue?
-    public var von: String
+    /// Alle Vorgaben des Teils bzw. der Gruppe zurücknehmen.
+    public var zuruecksetzen: Bool
+    /// „kevin“ (Vorgabe aus der App) oder „agent“; nil lässt das Feld weg (der Kernel nimmt dann Kevin an).
+    public var von: String?
 
     public init(id: String, ziel: DruckZiel, einstellungen: [String: JSONValue]? = nil, zweck: JSONValue? = nil,
-                von: String = "kevin")
+                zuruecksetzen: Bool = false, von: String? = nil)
     {
         self.id = id
         self.ziel = ziel
         self.einstellungen = einstellungen
         self.zweck = zweck
+        self.zuruecksetzen = zuruecksetzen
         self.von = von
     }
 
-    enum CodingKeys: String, CodingKey { case type, seq, id, gruppe, teil, einstellungen, zweck, von }
+    enum CodingKeys: String, CodingKey { case type, seq, id, gruppe, teil, einstellungen, zweck, von, zuruecksetzen }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -130,19 +141,21 @@ public struct DruckEinstellenNachricht: OutgoingRequest {
         }
         if let einstellungen { try c.encode(einstellungen, forKey: .einstellungen) }
         if let zweck { try c.encode(zweck, forKey: .zweck) }
-        try c.encode(von, forKey: .von)
+        if let von { try c.encode(von, forKey: .von) }
+        if zuruecksetzen { try c.encode(true, forKey: .zuruecksetzen) }
     }
 }
 
-/// PRINT_EXPORT_REQ: die angeordneten Platten als 3MF für Bambu Studio (leere Liste = alle).
+/// PRINT_EXPORT_REQ: die angeordneten Platten als 3MF für Bambu Studio (leere Liste = alle; `ziel` nil =
+/// `<projekt>/output/<projekt>-druck.3mf`).
 public struct DruckExportNachricht: OutgoingRequest {
     public static let type = "PRINT_EXPORT_REQ"
     public var seq = 0
     public var id: String
     public var platten: [Int]
-    public var ziel: String
+    public var ziel: String?
 
-    public init(id: String, platten: [Int], ziel: String) {
+    public init(id: String, platten: [Int], ziel: String?) {
         self.id = id
         self.platten = platten
         self.ziel = ziel
@@ -156,6 +169,6 @@ public struct DruckExportNachricht: OutgoingRequest {
         try c.encode(seq, forKey: .seq)
         try c.encode(id, forKey: .id)
         try c.encode(platten, forKey: .platten)
-        try c.encode(ziel, forKey: .ziel)
+        if let ziel { try c.encode(ziel, forKey: .ziel) } else { try c.encodeNil(forKey: .ziel) }
     }
 }

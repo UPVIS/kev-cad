@@ -32,7 +32,7 @@ public enum DruckStand: String, Equatable, Sendable, CaseIterable {
 }
 
 /// Ein Hinweis aus der Druckpraxis (Trocknen, Verzug, Brim, Stützen, AMS, Düse, Erfolgsrisiko).
-public struct DruckHinweis: Equatable, Hashable, Sendable, Identifiable {
+public struct DruckpraxisHinweis: Equatable, Hashable, Sendable, Identifiable {
     public enum Schwere: String, Equatable, Hashable, Sendable, Comparable, CaseIterable {
         case hinweis, warnung, fehler
 
@@ -79,8 +79,8 @@ public struct DruckHinweis: Equatable, Hashable, Sendable, Identifiable {
         self.init(schwere: schwere, text: text, art: json["art"]?.lenientString)
     }
 
-    static func liste(_ json: JSONValue?) -> [DruckHinweis] {
-        (json?.arrayValue ?? []).compactMap(DruckHinweis.init(json:))
+    static func liste(_ json: JSONValue?) -> [DruckpraxisHinweis] {
+        (json?.arrayValue ?? []).compactMap(DruckpraxisHinweis.init(json:))
     }
 }
 
@@ -88,7 +88,7 @@ public struct DruckHinweis: Equatable, Hashable, Sendable, Identifiable {
 public enum DruckAmpel: Int, Equatable, Sendable, Comparable {
     case gruen, gelb, rot
 
-    public init(_ hinweise: [DruckHinweis]) {
+    public init(_ hinweise: [DruckpraxisHinweis]) {
         switch hinweise.map(\.schwere).max() {
         case .fehler?: self = .rot
         case .warnung?: self = .gelb
@@ -156,11 +156,15 @@ public struct DruckSumme: Equatable, Sendable {
     public var kosten: Double?
     public var kostenFilament: Double?
     public var kostenStrom: Double?
+    /// Aufschlag fürs Erfolgsrisiko (additiv, `kosten_teile.risiko`).
+    public var kostenRisiko: Double?
     public var material: [DruckMaterialSumme]
 
     public init(platten: Int = 0, zeitS: Double = 0, zeitMitWechselS: Double? = nil, kosten: Double? = nil,
-                kostenFilament: Double? = nil, kostenStrom: Double? = nil, material: [DruckMaterialSumme] = [])
+                kostenFilament: Double? = nil, kostenStrom: Double? = nil, kostenRisiko: Double? = nil,
+                material: [DruckMaterialSumme] = [])
     {
+        self.kostenRisiko = kostenRisiko
         self.platten = platten
         self.zeitS = zeitS
         self.zeitMitWechselS = zeitMitWechselS ?? zeitS
@@ -176,7 +180,7 @@ public struct DruckSumme: Equatable, Sendable {
         self.init(
             platten: j["platten"]?.intValue ?? 0, zeitS: zeit, zeitMitWechselS: j["zeit_mit_wechsel_s"]?.doubleValue,
             kosten: j["kosten"]?.doubleValue, kostenFilament: j["kosten_teile"]?["filament"]?.doubleValue,
-            kostenStrom: j["kosten_teile"]?["strom"]?.doubleValue,
+            kostenStrom: j["kosten_teile"]?["strom"]?.doubleValue, kostenRisiko: j["kosten_teile"]?["risiko"]?.doubleValue,
             material: (j["material"]?.arrayValue ?? []).compactMap { DruckMaterialSumme(json: $0, stand: stand) })
     }
 
@@ -202,12 +206,15 @@ public struct DruckPlattenTeil: Equatable, Sendable, Identifiable {
     public var umriss: [SIMD2<Double>]
     /// Laufende Nummer auf der Platte (für eindeutige ids bei gleichen Namen).
     public var index: Int
+    /// Stück über die im Modell gezeigten hinaus (`name` bleibt das gezeigte Teil), additiv.
+    public var ersatz: Bool
 
     public var id: String { "\(index)|\(name)" }
 
     public init(name: String, gruppe: String? = nil, x: Double, y: Double, drehung: Double = 0,
-                umriss: [SIMD2<Double>] = [], index: Int = 0)
+                umriss: [SIMD2<Double>] = [], index: Int = 0, ersatz: Bool = false)
     {
+        self.ersatz = ersatz
         self.name = name
         self.gruppe = gruppe
         self.x = x
@@ -226,12 +233,13 @@ public struct DruckPlattenTeil: Equatable, Sendable, Identifiable {
         }
         self.init(name: name, gruppe: json["gruppe"]?.lenientString, x: json["x"]?.doubleValue ?? 0,
                   y: json["y"]?.doubleValue ?? 0, drehung: json["drehung"]?.doubleValue ?? 0, umriss: punkte,
-                  index: index)
+                  index: index, ersatz: json["ersatz"]?.boolValue ?? false)
     }
 
-    /// Umriss in Plattenkoordinaten. Der Vertrag lässt offen, ob der Kernel den Umriss schon auf der Platte schickt
-    /// oder um den Teilursprung: Liegt der Schwerpunkt der Punkte nahe 0, während (x, y) weit davon liegt, gilt er als
-    /// örtlich und wird um `drehung` gedreht und nach (x, y) geschoben. Ohne Umriss: kleines Quadrat um (x, y).
+    /// Umriss in Plattenkoordinaten. Laut Vertrag ist `umriss` die konvexe Hülle, absolut auf der Platte, und (x, y)
+    /// die Mitte des Hüllrechtecks. Zur Sicherheit: Liegt der Schwerpunkt der Punkte nahe 0, während (x, y) weit davon
+    /// liegt, gilt er als örtlich und wird um `drehung` gedreht und nach (x, y) geschoben. Ohne Umriss: kleines
+    /// Quadrat um (x, y).
     public var plattenUmriss: [SIMD2<Double>] {
         guard umriss.count >= 3 else {
             let r = 4.0
@@ -264,6 +272,10 @@ public struct DruckPlatte: Equatable, Sendable, Identifiable {
     public var teile: [DruckPlattenTeil]
     /// Belegte Fläche, 0…1.
     public var auslastung: Double?
+    /// Additiv: „schnell“ (Kernel) oder „slicer“ (Bambu Studio hat angeordnet), Kosten und höchstes Teil.
+    public var anordnung: String?
+    public var kosten: Double?
+    public var hoeheMM: Double?
 
     public var id: Int { nr }
 
@@ -285,7 +297,13 @@ public struct DruckPlatte: Equatable, Sendable, Identifiable {
             nr: json["nr"]?.intValue ?? index + 1, zeitS: json["zeit_s"]?.doubleValue ?? 0,
             material: (json["material"]?.arrayValue ?? []).compactMap { DruckMaterialSumme(json: $0, stand: stand) },
             stand: stand, teile: teile, auslastung: json["auslastung"]?.doubleValue)
+        anordnung = json["anordnung"]?.lenientString
+        kosten = json["kosten"]?.doubleValue
+        hoeheMM = json["hoehe_mm"]?.doubleValue
     }
+
+    /// Hat Bambu Studio die Platte angeordnet?
+    public var vomSlicerAngeordnet: Bool { anordnung == "slicer" }
 
     public var gramm: Double { material.reduce(0) { $0 + $1.g } }
 
@@ -380,10 +398,18 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
     public var abweichung: Double?
     public var einstellungen: DruckEinstellungen
     public var begruendung: [String]
-    public var hinweise: [DruckHinweis]
+    public var hinweise: [DruckpraxisHinweis]
     /// Werte, die Kevin bzw. Claude festgelegt haben (Schlüssel wie in `einstellungen`, dazu `zweck`). Additiv zum
     /// Vertrag: `vorgaben` als `{schlüssel: "kevin"}` oder Liste der Schlüssel (dann von Kevin).
     public var vorgaben: [String: DruckQuelle]
+    /// Je Stück (additiv `je_stueck`); sonst die Werte aller Stück geteilt durch `anzahl`.
+    public var jeStueck: DruckJeStueck?
+    /// Bambu-Studio-Profile (additiv `profil`): Prozess und Filament.
+    public var profilProzess: String?
+    public var profilFilament: String?
+    /// Fehldruck-Wahrscheinlichkeit 0…1 und Stützmaterial aller Stück in g (additiv).
+    public var risiko: Double?
+    public var stuetzenG: Double?
 
     public var id: String { gruppe }
 
@@ -391,7 +417,7 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
                 zweck: String? = nil, zweckGeschaetzt: Bool = false, g: Double = 0, m: Double? = nil,
                 zeitS: Double = 0, kosten: Double? = nil, stand: DruckStand = .schaetzung, abweichung: Double? = nil,
                 einstellungen: DruckEinstellungen = DruckEinstellungen(json: nil), begruendung: [String] = [],
-                hinweise: [DruckHinweis] = [], vorgaben: [String: DruckQuelle] = [:])
+                hinweise: [DruckpraxisHinweis] = [], vorgaben: [String: DruckQuelle] = [:])
     {
         self.gruppe = gruppe
         self.name = name
@@ -416,7 +442,9 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
         let teile = json["teile"]?.stringList ?? []
         guard let id = json["gruppe"]?.lenientString ?? json["name"]?.lenientString ?? teile.first else { return nil }
         var vorgaben: [String: DruckQuelle] = [:]
-        for key in ["vorgaben", "von", "gesetzt"] {
+        // `fest` (Vertrag): Liste der fest vorgegebenen Einstellungen, dazu „zweck“; `fest_von`/`vorgaben` (falls der
+        // Kernel unterscheidet) als {schlüssel: "kevin" | "agent"}. Ohne Angabe gilt eine feste Vorgabe als Kevins.
+        for key in ["fest", "vorgaben", "fest_von", "von", "gesetzt"] {
             guard let v = json[key] else { continue }
             if let o = v.objectValue {
                 for (k, q) in o {
@@ -441,7 +469,15 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
             kosten: json["kosten"]?.doubleValue, stand: DruckStand(json: json["stand"]),
             abweichung: json["abweichung"]?.doubleValue, einstellungen: DruckEinstellungen(json: json["einstellungen"]),
             begruendung: json["begruendung"]?.stringList ?? json["begruendung"]?.lenientString.map { [$0] } ?? [],
-            hinweise: DruckHinweis.liste(json["hinweise"]), vorgaben: vorgaben)
+            hinweise: DruckpraxisHinweis.liste(json["hinweise"]), vorgaben: vorgaben)
+        if let j = json["je_stueck"], let g = j["g"]?.doubleValue {
+            jeStueck = DruckJeStueck(g: g, m: j["m"]?.doubleValue,
+                                     zeitS: j["zeit_s"]?.doubleValue ?? zeitS / Double(max(1, self.anzahl)))
+        }
+        profilProzess = json["profil"]?["prozess"]?.lenientString
+        profilFilament = json["profil"]?["filament"]?.lenientString
+        risiko = json["risiko"]?.doubleValue
+        stuetzenG = json["stuetzen_g"]?.doubleValue
     }
 
     public var ampel: DruckAmpel { DruckAmpel(hinweise) }
@@ -449,8 +485,9 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
     /// Kurzer Name ohne Baugruppe („Kugelschieber/Stangenhalter (Druck)“ → „Stangenhalter (Druck)“).
     public var kurzname: String { name.split(separator: "/").last.map(String.init) ?? name }
 
-    /// Gramm je Stück.
-    public var grammJe: Double { g / Double(max(1, anzahl)) }
+    /// Gramm und Druckzeit je Stück.
+    public var grammJe: Double { jeStueck?.g ?? g / Double(max(1, anzahl)) }
+    public var zeitJeS: Double { jeStueck?.zeitS ?? zeitS / Double(max(1, anzahl)) }
 
     public func quelle(_ schluessel: String) -> DruckQuelle? { vorgaben[schluessel] }
 
@@ -468,6 +505,9 @@ public struct DruckSlicer: Equatable, Sendable {
     public var fertig: Int
     public var gesamt: Int
     public var meldung: String?
+    /// Fassung von Bambu Studio und Rechenzeit (additiv).
+    public var version: String?
+    public var ms: Double?
 
     public init(zustand: Zustand = .aus, fertig: Int = 0, gesamt: Int = 0, meldung: String? = nil) {
         self.zustand = zustand
@@ -485,6 +525,8 @@ public struct DruckSlicer: Equatable, Sendable {
             zustand: j["zustand"]?.stringValue.map { Zustand(rawValue: $0.lowercased()) ?? .unbekannt } ?? .aus,
             fertig: j["fertig"]?.intValue ?? 0, gesamt: j["gesamt"]?.intValue ?? 0,
             meldung: j["meldung"]?.lenientString)
+        version = j["version"]?.lenientString
+        ms = j["ms"]?.doubleValue
     }
 
     /// Fortschritt 0…1, nil ohne bekannte Gesamtzahl.
@@ -550,13 +592,18 @@ public struct Druckvorschau: Equatable, Sendable {
     public var summe: DruckSumme
     public var platten: [DruckPlatte]
     public var teile: [DruckGruppe]
-    public var hinweise: [DruckHinweis]
+    public var hinweise: [DruckpraxisHinweis]
     public var slicer: DruckSlicer
     public var bett: DruckBett
+    /// Benutzte Projekt-Einstellungen (additiv `einstellungen`), Lauf mit Reglerwerten (nichts gespeichert, kein
+    /// Slicer) und Rechenzeit der Schätzung in ms.
+    public var projekt: DruckProjektEinstellungen?
+    public var regler: Bool
+    public var ms: Double?
 
     public init(run: Int = 0, stand: DruckStand = .schaetzung, drucker: String = "Bambu Lab P1P 0.4",
                 summe: DruckSumme = DruckSumme(), platten: [DruckPlatte] = [], teile: [DruckGruppe] = [],
-                hinweise: [DruckHinweis] = [], slicer: DruckSlicer = DruckSlicer(), bett: DruckBett = .p1p)
+                hinweise: [DruckpraxisHinweis] = [], slicer: DruckSlicer = DruckSlicer(), bett: DruckBett = .p1p)
     {
         self.run = run
         self.stand = stand
@@ -567,6 +614,9 @@ public struct Druckvorschau: Equatable, Sendable {
         self.hinweise = hinweise
         self.slicer = slicer
         self.bett = bett
+        projekt = nil
+        regler = false
+        ms = nil
     }
 
     /// Aus dem Kopf von PRINT_PREVIEW (oder einem Objekt `druckvorschau` darin, wie es MCP liefert).
@@ -580,8 +630,16 @@ public struct Druckvorschau: Equatable, Sendable {
             run: j["run"]?.intValue ?? 0, stand: stand, drucker: j["drucker"]?.lenientString ?? "Bambu Lab P1P 0.4",
             summe: summe, platten: platten,
             teile: (j["teile"]?.arrayValue ?? []).enumerated().compactMap { DruckGruppe(json: $1, index: $0) },
-            hinweise: DruckHinweis.liste(j["hinweise"]), slicer: DruckSlicer(json: j["slicer"]),
+            hinweise: DruckpraxisHinweis.liste(j["hinweise"]), slicer: DruckSlicer(json: j["slicer"]),
             bett: DruckBett(json: j["bett"]))
+        projekt = j["einstellungen"].flatMap { $0.objectValue == nil ? nil : DruckProjektEinstellungen(json: $0) }
+        regler = j["regler"]?.boolValue ?? false
+        ms = j["ms"]?.doubleValue
+        // Filamentprofil je Material aus den Gruppen, wenn die Summe keins nennt
+        for i in self.summe.material.indices where self.summe.material[i].filament == nil {
+            let m = self.summe.material[i].material
+            self.summe.material[i].filament = self.teile.first { $0.material == m }?.profilFilament
+        }
     }
 
     public func gruppe(_ id: String) -> DruckGruppe? { teile.first { $0.gruppe == id } }
@@ -601,8 +659,8 @@ public struct Druckvorschau: Equatable, Sendable {
     public var ampel: DruckAmpel { DruckAmpel(hinweise + teile.flatMap(\.hinweise)) }
 
     /// Alle Hinweise nach Schwere (Fehler zuerst), Doppelte zusammengefasst.
-    public var alleHinweise: [(hinweis: DruckHinweis, gruppen: [String])] {
-        var reihenfolge: [DruckHinweis] = []
+    public var alleHinweise: [(hinweis: DruckpraxisHinweis, gruppen: [String])] {
+        var reihenfolge: [DruckpraxisHinweis] = []
         var gruppen: [String: [String]] = [:]
         for h in hinweise where gruppen[h.id] == nil {
             reihenfolge.append(h)
@@ -627,4 +685,34 @@ public struct Druckvorschau: Equatable, Sendable {
 
     /// Leere Vorschau (Lauf ohne Druckteile).
     public var istLeer: Bool { teile.isEmpty && platten.isEmpty }
+}
+
+/// Werte je Stück einer Gruppe (`je_stueck`).
+public struct DruckJeStueck: Equatable, Sendable {
+    public var g: Double
+    public var m: Double?
+    public var zeitS: Double
+
+    public init(g: Double, m: Double? = nil, zeitS: Double) {
+        self.g = g
+        self.m = m
+        self.zeitS = zeitS
+    }
+}
+
+/// Benutzte Projekt-Einstellungen der Druckvorschau (`kevcad.json` unter `druck`, additiv im Ergebnis).
+public struct DruckProjektEinstellungen: Equatable, Sendable {
+    public var drucker: String?
+    public var strompreisKwh: Double?
+    public var leistungW: Double?
+    public var plattenwechselS: Double?
+    public var slicer: Bool?
+
+    public init(json: JSONValue) {
+        drucker = json["drucker"]?.lenientString
+        strompreisKwh = json["strompreis_kwh"]?.doubleValue
+        leistungW = json["leistung_w"]?.doubleValue
+        plattenwechselS = json["plattenwechsel_s"]?.doubleValue
+        slicer = json["slicer"]?.boolValue
+    }
 }

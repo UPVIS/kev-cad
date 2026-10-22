@@ -89,7 +89,7 @@ public enum DruckFormat {
 
     /// Füllmuster, die das Panel anbietet (Schlüssel wie in Bambu Studio).
     public static let muster = ["gyroid", "grid", "cubic", "honeycomb", "triangles", "crosshatch", "lightning",
-                                "rectilinear", "concentric"]
+                                "rectilinear", "zigzag", "line", "concentric"]
 
     public static func muster(_ m: String?) -> String {
         switch m?.lowercased() {
@@ -102,7 +102,8 @@ public enum DruckFormat {
         case "tri-hexagon": return "Dreieck-Sechseck"
         case "crosshatch": return "Kreuzschraffur"
         case "lightning": return "Blitz"
-        case "rectilinear", "zig-zag", "alignedrectilinear": return "Geradlinig"
+        case "rectilinear", "alignedrectilinear": return "Geradlinig"
+        case "zigzag", "zig-zag": return "Zickzack"
         case "line": return "Linien"
         case "concentric": return "Konzentrisch"
         case "hilbertcurve": return "Hilbert-Kurve"
