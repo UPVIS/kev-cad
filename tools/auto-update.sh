@@ -70,27 +70,81 @@ BUNDLE_ID="de.upvis.kevcad"
 
 app_running() { pgrep -f "$APP/Contents/MacOS/Kev CAD" >/dev/null; }
 
+# Startzeit des laufenden Prozesses (Sekunden seit 1970), leer, wenn die App nicht läuft.
+app_started() {
+  local pid
+  pid=$(pgrep -f "$APP/Contents/MacOS/Kev CAD" | head -1)
+  [ -n "$pid" ] || return 0
+  LC_ALL=C date -j -f "%a %b %d %T %Y" "$(LC_ALL=C ps -o lstart= -p "$pid" | sed 's/  */ /g; s/^ //')" +%s 2>/dev/null
+}
+
+# Einmal beenden und wieder öffnen; 0 bei Erfolg (oder wenn die App nicht läuft), 1 wenn sie das Beenden ablehnt
+# (etwa mit einem offenen Blatt: osascript meldet dann -128). Die Fehlermeldung steht danach in QUIT_ERR.
+QUIT_ERR=""
+relaunch_once() {
+  app_running || return 0
+  local front
+  front=$(osascript -e 'tell application "System Events" to get bundle identifier of first process whose frontmost is true' 2>/dev/null)
+  touch "$SUPPORT/relaunch.request"
+  QUIT_ERR=$(osascript -e "tell application id \"$BUNDLE_ID\" to quit" 2>&1 >/dev/null)
+  for _ in $(seq 1 40); do app_running || break; sleep 0.5; done
+  if app_running; then
+    rm -f "$SUPPORT/relaunch.request"
+    return 1
+  fi
+  if [ "$front" = "$BUNDLE_ID" ]; then open "$APP"; else open -g "$APP"; fi
+  echo "$(date '+%H:%M:%S') App neu gestartet (vorher vorne: ${front:-?})" >> "$LOG"
+  return 0
+}
+
 # Läuft die App, wird sie beendet (sie merkt sich dabei Projekt und Ansicht) und gleich wieder geöffnet; dank
-# relaunch.request öffnet die neue Version dasselbe Projekt mit derselben Kamera.
+# relaunch.request öffnet die neue Version dasselbe Projekt mit derselben Kamera. Lehnt sie das Beenden ab (am
+# 22.10.2026 blieb so Build 338 laufen, während 361 und 362 schon installiert waren), steht das im Protokoll, und
+# ein eigener Hintergrundlauf (--neustart) versucht es alle 2 Minuten wieder, bis die neue Version läuft.
 relaunch() {
   if ! app_running; then
     notify "Kev CAD aktualisiert" "Stand $1 ist installiert."
     return
   fi
-  local front
-  front=$(osascript -e 'tell application "System Events" to get bundle identifier of first process whose frontmost is true' 2>/dev/null)
-  touch "$SUPPORT/relaunch.request"
-  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1
-  for _ in $(seq 1 40); do app_running || break; sleep 0.5; done
-  if app_running; then
-    rm -f "$SUPPORT/relaunch.request"
-    notify "Kev CAD aktualisiert" "Stand $1 ist installiert. Bitte Kev CAD neu starten."
+  [ -n "$PROBE" ] && return
+  if relaunch_once; then
+    notify "Kev CAD aktualisiert" "Stand $1 läuft, dein Projekt ist wieder offen."
     return
   fi
-  if [ "$front" = "$BUNDLE_ID" ]; then open "$APP"; else open -g "$APP"; fi
-  echo "$(date '+%H:%M:%S') App neu gestartet (vorher vorne: ${front:-?})" >> "$LOG"
-  notify "Kev CAD aktualisiert" "Stand $1 läuft, dein Projekt ist wieder offen."
+  echo "$(date '+%H:%M:%S') Neustart abgelehnt (${QUIT_ERR:-ohne Meldung}), vermutlich offenes Blatt oder Dialog;" \
+    "neuer Versuch alle 2 Minuten" >> "$LOG"
+  notify "Kev CAD aktualisiert" "Stand $1 ist installiert. Neustart, sobald kein Dialog mehr offen ist."
+  nohup "$0" --neustart "$1" >/dev/null 2>&1 &
 }
+
+# Hintergrundlauf nach abgelehntem Neustart: bis die installierte Version läuft (Prozess jünger als die
+# Installation), die App beendet ist oder 3 Stunden vergangen sind. Höchstens ein solcher Lauf zur selben Zeit.
+if [ "${1:-}" = "--neustart" ]; then
+  stand="${2:-?}"
+  pidfile="$SUPPORT/neustart.pid"
+  if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then exit 0; fi
+  echo $$ > "$pidfile"
+  trap 'rm -f "$pidfile"' EXIT
+  for _ in $(seq 1 90); do
+    sleep 120
+    if ! app_running; then
+      echo "$(date '+%H:%M:%S') App beendet; der nächste Start nimmt Stand $stand" >> "$LOG"
+      exit 0
+    fi
+    installed=$(stat -f %m "$APP/Contents/Info.plist" 2>/dev/null || echo 0)
+    started=$(app_started)
+    if [ -n "$started" ] && [ "$started" -gt "$installed" ]; then
+      exit 0  # Kevin hat selbst neu gestartet
+    fi
+    if relaunch_once; then
+      notify "Kev CAD aktualisiert" "Stand $stand läuft, dein Projekt ist wieder offen."
+      exit 0
+    fi
+  done
+  echo "$(date '+%H:%M:%S') Neustart nach 3 Stunden aufgegeben; Stand $stand läuft erst nach dem nächsten Start" >> "$LOG"
+  notify "Kev CAD aktualisiert" "Stand $stand ist installiert. Bitte Kev CAD neu starten."
+  exit 0
+fi
 
 # Bauen und installieren: auf dem Mac mini über tools/fern.sh release (Rückfall auf ./build.sh hier unter der Sperre
 # macht fern.sh selbst), bei einem Stand ohne fern.sh wie bisher direkt hier.
