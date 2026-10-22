@@ -85,6 +85,18 @@ public enum CameraViewMath {
     public static let activeColor = SIMD4<Float>(0.95, 0.52, 0.1, 1)
     public static let dofColor = SIMD4<Float>(0.2, 0.55, 0.85, 0.7)
 
+    /// Ist die Kamera mit ihrem Teil ausgeblendet? `teil`: gezeigtes Teil, dem sie folgt (nil = steht frei, nie
+    /// verborgen); `gruppe`: Name aus model.py (Teil oder Baugruppe). Eine Baugruppe gilt als verborgen, wenn alle
+    /// ihre Teile verborgen sind, ein Teil, wenn es selbst verborgen ist.
+    public static func verborgen(teil: String?, gruppe: String?, order: [String], hidden: Set<String>) -> Bool {
+        guard let teil else { return false }
+        if let g = gruppe, !g.isEmpty, g != teil {
+            let glieder = order.filter { $0.hasPrefix(g + "/") }
+            if !glieder.isEmpty { return glieder.allSatisfy { hidden.contains($0) } }
+        }
+        return hidden.contains(teil)
+    }
+
     /// Pyramide vom Augpunkt bis zur Fokusebene, Dreieck über der Oberkante (wo oben ist), Namen und die Grenzen der
     /// Schärfentiefe als dünne Rahmen.
     public static func overlay(_ c: CameraInfo, selected: Bool) -> [OverlayPrimitive] {
