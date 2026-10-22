@@ -23,9 +23,9 @@ struct ConstraintsSection: View {
                         .monospacedDigit()
                         .foregroundStyle(report.hasErrors ? .red : .secondary)
                     Spacer()
-                    if let actions = model.constraintActions {
+                    if model.constraintActions != nil {
                         Button {
-                            actions.setConstraintSymbolsVisible(!model.showConstraintSymbols)
+                            BedingungenSchalter.umschalten(model)
                         } label: {
                             Image(systemName: model.showConstraintSymbols ? "eye" : "eye.slash")
                         }
