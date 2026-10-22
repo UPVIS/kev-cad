@@ -33,7 +33,8 @@ public struct CheckMessage: Sendable {
             hinweise: z?["hinweis"]?.intValue ?? befunde.filter { $0.schwere == .hinweis }.count,
             befunde: befunde, geometrie: geo,
             montage: json["montage"].flatMap { $0.isNull ? nil : $0 },
-            stand: json["stand"].flatMap { $0.isNull ? nil : $0 })
+            stand: json["stand"].flatMap { $0.isNull ? nil : $0 },
+            imHintergrund: json["im_hintergrund"]?.stringList ?? [])
         return CheckMessage(ergebnis: ergebnis)
     }
 
