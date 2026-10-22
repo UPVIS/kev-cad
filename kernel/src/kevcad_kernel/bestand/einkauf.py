@@ -9,7 +9,9 @@ dieselben, Text und CSV byteweise gleich dem, was die App teilt (Testdatei ``mat
 Gruppen in fester Reihenfolge:
 
 1. **Lagerware** – ``BOM.einkaufsliste``: Fehlmengen nach Abzug des Projektbestands in Kaufeinheiten (Stange, Platte,
-   Stück, Sonderlänge, Zuschnitt), Normteile zum Kaufen eingeschlossen;
+   Stück, Sonderlänge, Zuschnitt), Normteile zum Kaufen eingeschlossen; dahinter (Strang „Bestand Stufe 2“) Filament-
+   Spulen, wenn das Projekt Filament führt (``BOM.filament_bestand``): Bedarf aus der Druckvorschau desselben Laufs
+   minus Bestand, auf ganze Spulen aufgerundet (``filament_kauf``, in der App ``FilamentBestand.kauf``);
 2. **Zukaufteile** – je Stücklistenzeile eines Zukaufteils (auch Kamera, Objektiv, Kamerazubehör) mit Preis und Link
    aus dem Katalog; seit dem Strang „Feinschliff 2“ nach Abzug des Projektbestands (``BOM.zukauf_bestand``): ganz aus
    dem Bestand gedeckte Zeilen entfallen, teilweise gedeckte tragen nur die Fehlmenge (Hinweis „Bestand im Projekt: 1,
@@ -295,6 +297,56 @@ def filament(bom: dict[str, Any], druckvorschau: dict[str, Any] | None = None,
     return out
 
 
+def filament_bestand(bom: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
+    """``BOM.filament_bestand`` wie ``FilamentBestand(json:)`` je Material (None: das Projekt führt kein Filament)."""
+    roh = bom.get("filament_bestand")
+    if not isinstance(roh, list):
+        return None
+    out: dict[str, dict[str, Any]] = {}
+    for f in roh:
+        mid = _text(f.get("material")) if isinstance(f, dict) else None
+        if mid is None or mid in out:
+            continue
+        g = _num(f.get("spule_g"))
+        out[mid] = {"material": mid, "name": _text(f.get("name")) or mid.upper(), "gramm": _num(f.get("gramm")) or 0.0,
+                    "spulen": max(0, _int(f.get("spulen")) or 0), "spule_g": g if g is not None and g > 0 else 1000.0,
+                    "preis_je": _num(f.get("preis_je_spule")), "preis_stand": _text(f.get("preis_stand"))}
+    return out
+
+
+def filament_kauf(fil: list[dict[str, Any]], fb: dict[str, dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Spulen zum Kaufen (Gruppe Lagerware) wie ``FilamentBestand.kauf``: je Werkstoff der Druckvorschau desselben Laufs
+    Bedarf minus Bestand, auf ganze Spulen aufgerundet; nichts, wenn der Bestand reicht oder die Zahlen nur aus der
+    Stückliste kommen."""
+    out: list[dict[str, Any]] = []
+    if fb is None:
+        return out
+    for f in fil:
+        if f.get("quelle") != "druckvorschau" or not f.get("material"):
+            continue
+        b = fb.get(str(f["material"]))
+        if b is None:
+            continue
+        fehl = f["gramm"] - b["gramm"]
+        if fehl <= 1e-6:
+            continue
+        n = math.ceil(fehl / b["spule_g"] - 1e-9)
+        if n <= 0:
+            continue
+        if b["spulen"] > 0:
+            hinweis = (f"Bedarf {masse_g(f['gramm'])}, Bestand im Projekt: {masse_g(b['gramm'])} "
+                       f"({anzahl(b['spulen'], 'Spule', 'Spulen')})")
+        else:
+            hinweis = f"Bedarf {masse_g(f['gramm'])}, kein Filament im Bestand des Projekts"
+        preis_je = b["preis_je"]
+        out.append({"gruppe": LAGERWARE, "id": str(f["material"]), "benennung": f"Filament {f['werkstoff']}",
+                    "menge": float(n), "einheit": f"Spule {kompakt(b['spule_g'], 1)} g", "preis_je": preis_je,
+                    "preis": preis_je * n if preis_je is not None else None, "link": None, "link_text": None,
+                    "hinweis": hinweis, "preis_stand": b["preis_stand"], "pos": None,
+                    "bedarf_g": f["gramm"], "bestand_g": b["gramm"]})
+    return out
+
+
 def _summe(werte: list[float | None]) -> float | None:
     w = [x for x in werte if x is not None]
     if not w:
@@ -308,7 +360,11 @@ def _summe(werte: list[float | None]) -> float | None:
 def zusammenstellen(bom: dict[str, Any], druckvorschau: dict[str, Any] | None = None,
                     katalog: Any = None) -> dict[str, Any]:
     """Die ganze Einkaufsliste wie ``MaterialDaten``: Zeilen je Gruppe, Normteile, Filament und Summen."""
-    lager = [_position(e, i) for i, e in enumerate(bom.get("einkaufsliste") or []) if isinstance(e, dict)]
+    lager_bom = [_position(e, i) for i, e in enumerate(bom.get("einkaufsliste") or []) if isinstance(e, dict)]
+    fil = filament(bom, druckvorschau, katalog)
+    fb = filament_bestand(bom)
+    fkauf = filament_kauf(fil, fb)
+    lager = lager_bom + fkauf
     zukauf = []
     zb_liste = _zukauf_bestand(bom)
     benutzt: set[int] = set()
@@ -326,14 +382,23 @@ def zusammenstellen(bom: dict[str, Any], druckvorschau: dict[str, Any] | None = 
                 if z is not None:
                     zukauf.append(z)
     normteile = [n for n in (_normteil(s) for s in bom.get("stueckgut") or [] if isinstance(s, dict)) if n]
-    fil = filament(bom, druckvorschau, katalog)
-    summe_lager = _num(bom.get("einkauf_summe"))
-    if summe_lager is None:
-        summe_lager = _summe([z["preis"] for z in lager])
+    basis = _num(bom.get("einkauf_summe"))
+    if basis is None:
+        basis = _summe([z["preis"] for z in lager_bom])
+    summe_lager = _summe([basis] + [z["preis"] for z in fkauf])  # wie einkaufLagerSumme der App
     summe_zukauf = _summe([z["preis"] for z in zukauf])
     zeilen = lager + zukauf
+    # Filament, das der Bestand deckt (nur Information, wie zukauf_aus_bestand)
+    fil_bestand = []
+    for f in fil:
+        b = (fb or {}).get(str(f.get("material"))) if f.get("quelle") == "druckvorschau" else None
+        if b is not None and b["gramm"] > 0:
+            fil_bestand.append({"material": b["material"], "werkstoff": f["werkstoff"], "bedarf_g": f["gramm"],
+                                "bestand_g": b["gramm"], "spulen": b["spulen"],
+                                "reicht": f["gramm"] - b["gramm"] <= 1e-6})
     return {"zeilen": zeilen, "lager": lager, "zukauf": zukauf, "zukauf_aus_bestand": aus_bestand,
-            "normteile": normteile, "filament": fil,
+            "normteile": normteile, "filament": fil, "filament_kauf": fkauf, "filament_bestand": fb,
+            "filament_aus_bestand": fil_bestand,
             "positionen": len(zeilen), "summe_lager": summe_lager, "summe_zukauf": summe_zukauf,
             "summe": _summe([summe_lager, summe_zukauf]),
             "ohne_preis": sum(1 for z in zeilen if z["preis"] is None),

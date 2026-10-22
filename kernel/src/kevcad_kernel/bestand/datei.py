@@ -15,6 +15,13 @@
 | ``rest_weg`` | ``posten``, ``rest`` (ganzes Objekt) | Rest verbraucht |
 | ``rest_neu`` | ``posten``, ``rest`` | Rest entstanden (neue Kennung) |
 | ``stueck`` | ``posten``, ``laenge`` (oder null), ``delta`` | Stückgut zu- oder abbuchen |
+| ``spule`` | ``kennung``, ``vorher``, ``nachher`` (Spule oder null) | Filamentspule anlegen, ändern, entfernen |
+| ``spule_gramm`` | ``kennung``, ``material``, ``delta`` (g) | Filament einer Spule ab- oder zubuchen |
+| ``filament_fuehren`` | ``vorher``, ``nachher`` (bool) | Filament im Projekt führen (Liste ``filament`` anlegen) |
+
+Filament (Strang „Bestand Stufe 2“, 22.10.2026, additiv): Liste ``filament`` neben ``posten``, je Spule
+``{"kennung": "S-0001", "material": "petg", "gramm": 640, "gramm_voll": 1000, "name", "hersteller", "farbe", "ort",
+"seit"}``. Fehlt die Liste, führt das Projekt kein Filament (die Einkaufsliste nennt dann keine Spulen).
 
 Importiert nichts Schweres; läuft im Elternprozess der Laufzeit und im Ersatz-Kernel.
 """
@@ -40,11 +47,14 @@ VERSION = 1
 STANDARD_MINDESTREST_MM = 100.0
 STANDARD_SAEGEBLATT_MM = 3.0
 MELDUNG_BUCHUNGEN = 50  # so viele Buchungen gehen mit BESTAND an die App
-ARTEN = ("eintrag", "gebaut", "korrektur", "rueckgaengig")
+ARTEN = ("eintrag", "gebaut", "korrektur", "rueckgaengig", "gedruckt")  # gedruckt: Filament abgebucht (Stufe 2)
 VON = ("kevin", "agent")
 
 POSTEN_FELDER = ("ganze", "reste", "stueck", "mindestrest_mm")
+SPULE_FELDER = ("kennung", "material", "gramm", "gramm_voll", "name", "hersteller", "farbe", "ort", "seit")
+SPULE_STANDARD_G = 1000.0  # Kaufspule, wenn der Katalog keine spule_g nennt
 _KENNUNG_RE = re.compile(r"^([RP])-(\d{1,9})$")
+_SPULE_RE = re.compile(r"^S-(\d{1,9})$")
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _DATUM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _LOCKS: dict[str, threading.RLock] = {}
@@ -255,9 +265,12 @@ def pruefe(data: Any, katalog: Katalog | None = None) -> list[str]:
     errors: list[str] = []
     if data.get("version", VERSION) != VERSION:
         errors.append(f"version {data.get('version')!r} unbekannt (erwartet {VERSION})")
-    bad = [k for k in data if k not in ("version", "einstellungen", "posten")]
+    bad = [k for k in data if k not in ("version", "einstellungen", "posten", "filament")]
     if bad:
-        errors.append(f"bestand.json kennt nur version, einstellungen und posten (nicht {', '.join(map(str, bad))})")
+        errors.append(f"bestand.json kennt nur version, einstellungen, posten und filament (nicht "
+                      f"{', '.join(map(str, bad))})")
+    if data.get("filament") is not None:
+        errors += pruefe_filament(data["filament"])
     e = data.get("einstellungen")
     if e is not None:
         if not isinstance(e, dict):
@@ -285,6 +298,72 @@ def pruefe(data: Any, katalog: Katalog | None = None) -> list[str]:
     return errors
 
 
+def pruefe_spule(who: str, spule: Any) -> list[str]:
+    """Fehler einer Filamentspule (leer = gültig)."""
+    if not isinstance(spule, dict):
+        return [f"{who}: muss ein Objekt sein, z. B. {{\"kennung\": \"S-0001\", \"material\": \"petg\", \"gramm\": 640}}"]
+    errors: list[str] = []
+    bad = [k for k in spule if k not in SPULE_FELDER]
+    if bad:
+        errors.append(f"{who}: kennt nur {', '.join(SPULE_FELDER)} (nicht {', '.join(map(str, bad))})")
+    k = spule.get("kennung")
+    if not (isinstance(k, str) and _SPULE_RE.match(k)):
+        errors.append(f"{who}: kennung fehlt oder hat nicht die Form S-0001")
+    mat = spule.get("material")
+    if not (isinstance(mat, str) and _ID_RE.match(mat)):
+        errors.append(f"{who}: material fehlt (Material-id aus dem Katalog, z. B. \"petg\")")
+    g = _pos(spule.get("gramm"), f"{who}.gramm", errors, null_ok=True)
+    voll = None
+    if spule.get("gramm_voll") is not None:
+        voll = _pos(spule["gramm_voll"], f"{who}.gramm_voll", errors)
+    if g is not None and voll is not None and voll > 0 and g > 1.5 * voll:
+        errors.append(f"{who}: gramm {mm(g)} g ist mehr als anderthalb volle Spulen ({mm(voll)} g); Tippfehler?")
+    for key in ("name", "hersteller", "farbe", "ort"):
+        if spule.get(key) is not None and not isinstance(spule.get(key), str):
+            errors.append(f"{who}: {key} muss Text sein")
+    if spule.get("seit") is not None and not (isinstance(spule["seit"], str) and _DATUM_RE.match(spule["seit"])):
+        errors.append(f"{who}: seit als Datum \"JJJJ-MM-TT\" angeben")
+    return errors
+
+
+def pruefe_filament(liste: Any) -> list[str]:
+    """Fehler der Liste ``filament`` (leer = gültig): Spulen mit eindeutiger Kennung."""
+    if not isinstance(liste, list):
+        return ["filament muss eine Liste von Spulen sein, z. B. [{\"kennung\": \"S-0001\", \"material\": \"petg\", "
+                "\"gramm\": 640, \"gramm_voll\": 1000}]"]
+    errors: list[str] = []
+    seen: set[str] = set()
+    for i, spule in enumerate(liste):
+        errors += pruefe_spule(f"filament[{i}]", spule)
+        k = spule.get("kennung") if isinstance(spule, dict) else None
+        if isinstance(k, str):
+            if k in seen:
+                errors.append(f"Spule {k} steht doppelt; Kennungen sind im ganzen Bestand eindeutig")
+            seen.add(k)
+    return errors
+
+
+def spulen(data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Filamentspulen des Bestands (leer, wenn das Projekt kein Filament führt)."""
+    liste = (data or {}).get("filament")
+    return [s for s in liste if isinstance(s, dict)] if isinstance(liste, list) else []
+
+
+def fuehrt_filament(data: dict[str, Any] | None) -> bool:
+    """Führt das Projekt Filament (Liste ``filament`` vorhanden, auch leer)?"""
+    return isinstance((data or {}).get("filament"), list)
+
+
+def gramm_text(x: Any) -> str:
+    """Gramm für Texte: 640 → "640 g", 548.25 → "548,3 g"."""
+    return f"{mm(x)} g"
+
+
+def spule_nr(k: Any) -> int:
+    m = _SPULE_RE.match(k) if isinstance(k, str) else None
+    return int(m.group(1)) if m else 0
+
+
 def pruefe_einstellungen(e: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     bad = [k for k in e if k not in ("mindestrest_mm", "saegeblatt_mm")]
@@ -309,21 +388,25 @@ def _kennung_nr(k: Any, prefix: str) -> int:
 
 
 def hoechste_kennungen(data: dict[str, Any] | None, buchungen: list[dict[str, Any]] = ()) -> dict[str, int]:
-    """Höchste vergebene Nummer je Präfix (R, P) aus Bestand und Buchungen (verbrauchte Reste zählen mit, damit keine
-    Kennung zweimal vorkommt)."""
-    best = {"R": 0, "P": 0}
+    """Höchste vergebene Nummer je Präfix (R, P, S für Spulen) aus Bestand und Buchungen (verbrauchte Reste und leere
+    Spulen zählen mit, damit keine Kennung zweimal vorkommt)."""
+    best = {"R": 0, "P": 0, "S": 0}
 
     def see(rest: Any) -> None:
         if isinstance(rest, dict):
-            for p in best:
+            for p in ("R", "P"):
                 best[p] = max(best[p], _kennung_nr(rest.get("kennung"), p))
 
     for p in ((data or {}).get("posten") or {}).values():
         for rest in (p or {}).get("reste") or []:
             see(rest)
+    for sp in spulen(data):
+        best["S"] = max(best["S"], spule_nr(sp.get("kennung")))
     for b in buchungen:
         for op in b.get("aenderungen") or []:
             see(op.get("rest"))
+            if str(op.get("op", "")).startswith("spule"):
+                best["S"] = max(best["S"], spule_nr(op.get("kennung")))
             for side in ("vorher", "nachher"):
                 for rest in ((op.get(side) or {}).get("reste") or []) if isinstance(op.get(side), dict) else []:
                     see(rest)
@@ -340,6 +423,11 @@ class Kennungen:
         p = "P" if platte else "R"
         self._n[p] = self._n.get(p, 0) + 1
         return f"{p}-{self._n[p]:04d}"
+
+    def spule(self) -> str:
+        """Nächste Spulenkennung: S-0001, S-0002 …"""
+        self._n["S"] = self._n.get("S", 0) + 1
+        return f"S-{self._n['S']:04d}"
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -426,6 +514,41 @@ def anwenden(data: dict[str, Any], op: dict[str, Any]) -> None:
             raise BestandError(f"Posten {pid!r}: nur noch {row.get('anzahl')} Stück{_len_text(laenge)} im Bestand, "
                                f"{-delta} gebraucht")
         row["anzahl"] = neu
+    elif art == "spule":
+        liste = data.get("filament")
+        if not isinstance(liste, list):
+            liste = data["filament"] = []
+        k = op.get("kennung")
+        idx = next((i for i, sp in enumerate(liste) if isinstance(sp, dict) and sp.get("kennung") == k), None)
+        aktuell = liste[idx] if idx is not None else None
+        if op.get("pruefen_vorher", True) and _norm(aktuell) != _norm(op.get("vorher")):
+            raise BestandError(f"Spule {k} wurde inzwischen geändert; erst die neueren Buchungen rückgängig machen")
+        if op.get("nachher") is None:
+            if idx is not None:
+                liste.pop(idx)
+        elif idx is None:
+            liste.append(copy.deepcopy(op["nachher"]))
+        else:
+            liste[idx] = copy.deepcopy(op["nachher"])
+        liste.sort(key=lambda sp: spule_nr(sp.get("kennung")) if isinstance(sp, dict) else 0)
+    elif art == "filament_fuehren":
+        if op.get("nachher"):
+            if not isinstance(data.get("filament"), list):
+                data["filament"] = []
+        elif spulen(data):
+            raise BestandError("Filament lässt sich nicht abschalten, solange Spulen im Bestand sind")
+        else:
+            data.pop("filament", None)
+    elif art == "spule_gramm":
+        k = op.get("kennung")
+        sp = next((x for x in spulen(data) if x.get("kennung") == k), None)
+        if sp is None:
+            raise BestandError(f"Spule {k} ist nicht mehr im Bestand")
+        neu_g = float(number(sp.get("gramm")) or 0) + float(op.get("delta") or 0)
+        if neu_g < -0.05:
+            raise BestandError(f"Spule {k}: nur noch {gramm_text(sp.get('gramm') or 0)}, "
+                               f"{gramm_text(-float(op.get('delta') or 0))} gebraucht")
+        sp["gramm"] = zahl(max(0.0, neu_g))
     else:
         raise BestandError(f"Änderung {art!r} unbekannt")
 
@@ -434,10 +557,12 @@ def umkehren(op: dict[str, Any]) -> dict[str, Any]:
     """Gegenstück einer Änderung."""
     art = op.get("op")
     out = copy.deepcopy(op)
-    if art in ("posten", "einstellungen"):
+    if art in ("posten", "einstellungen", "spule", "filament_fuehren"):
         out["vorher"], out["nachher"] = op.get("nachher"), op.get("vorher")
     elif art in ("ganze", "stueck"):
         out["delta"] = -int(op.get("delta") or 0)
+    elif art == "spule_gramm":
+        out["delta"] = zahl(-float(op.get("delta") or 0))
     elif art == "rest_weg":
         out["op"] = "rest_neu"
     elif art == "rest_neu":
@@ -532,6 +657,7 @@ def zusammenfassung(aenderungen: list[dict[str, Any]]) -> str:
         details = ", ".join(_rest_text(op.get("rest") or {}).replace(" (", " ").rstrip(")") for op in neu[:4])
         more = " …" if len(neu) > 4 else ""
         parts.append(f"{_plural(len(neu), 'Rest', 'Reste')} neu ({details}{more})")
+    parts += _spulen_zusammenfassung(ops)
     for op in ops:
         if op.get("op") == "mindestrest":
             parts.append(f"Mindestrest {op.get('posten')}: {_mm_or(op.get('vorher'))} → {_mm_or(op.get('nachher'))}")
@@ -547,13 +673,105 @@ def _mm_or(v: Any) -> str:
     return "Standard" if v is None else f"{mm(v)} mm"
 
 
-def aenderungen_text(aenderungen: list[dict[str, Any]], benennung: Callable[[str], str] | None = None) -> list[str]:
+def _spule_leer(sp: Any) -> bool:
+    return isinstance(sp, dict) and float(number(sp.get("gramm")) or 0) <= 0.05
+
+
+def _spulen_zusammenfassung(ops: list[dict[str, Any]]) -> list[str]:
+    """„548,2 g Filament verbraucht, 1 Spule leer, 1 Spule neu (S-0004 452 g)“."""
+    parts: list[str] = []
+    deltas = [float(op.get("delta") or 0) for op in ops if op.get("op") == "spule_gramm"]
+    weg_g = -sum(d for d in deltas if d < 0)
+    dazu_g = sum(d for d in deltas if d > 0)
+    if weg_g > 0:
+        parts.append(f"{gramm_text(weg_g)} Filament verbraucht")
+    if dazu_g > 0:
+        parts.append(f"{gramm_text(dazu_g)} Filament zurück")
+    sp = [op for op in ops if op.get("op") == "spule"]
+    leer = [op for op in sp if op.get("nachher") is None and _spule_leer(op.get("vorher"))]
+    weg = [op for op in sp if op.get("nachher") is None and op.get("vorher") is not None and op not in leer]
+    neu = [op for op in sp if op.get("vorher") is None and op.get("nachher") is not None]
+    geaendert = [op for op in sp if op.get("vorher") is not None and op.get("nachher") is not None]
+    if leer:
+        parts.append(_plural(len(leer), "Spule", "Spulen") + " leer")
+    if weg:
+        parts.append(_plural(len(weg), "Spule", "Spulen") + " weg (" + ", ".join(str(op.get("kennung"))
+                                                                              for op in weg) + ")")
+    if neu:
+        parts.append(_plural(len(neu), "Spule", "Spulen") + " neu (" + ", ".join(
+            f"{op.get('kennung')} {gramm_text((op.get('nachher') or {}).get('gramm') or 0)}" for op in neu[:4])
+            + (" …" if len(neu) > 4 else "") + ")")
+    for op in geaendert:
+        v, n = op.get("vorher") or {}, op.get("nachher") or {}
+        if number(v.get("gramm")) != number(n.get("gramm")):
+            parts.append(f"Spule {op.get('kennung')}: {gramm_text(v.get('gramm') or 0)} → "
+                         f"{gramm_text(n.get('gramm') or 0)}")
+        else:
+            parts.append(f"Spule {op.get('kennung')} geändert")
+    for op in ops:
+        if op.get("op") == "filament_fuehren":
+            parts.append("Filament wird geführt" if op.get("nachher") else "Filament wird nicht mehr geführt")
+    return parts
+
+
+def spule_text(sp: dict[str, Any]) -> str:
+    """„S-0001 Bambu PETG Basic schwarz, 640 von 1.000 g, Regal 3“."""
+    teile = [str(sp.get("kennung"))]
+    bez = sp.get("name") or " ".join(str(x) for x in (sp.get("hersteller"), sp.get("farbe")) if x)
+    if bez:
+        teile[0] += f" {bez}"
+    g = gramm_text(sp.get("gramm") or 0)
+    if sp.get("gramm_voll"):
+        g = f"{mm(sp.get('gramm') or 0)} von {gramm_text(sp['gramm_voll'])}"
+    teile.append(g)
+    if sp.get("ort"):
+        teile.append(str(sp["ort"]))
+    return ", ".join(teile)
+
+
+def _spulen_zeilen(op: dict[str, Any], material_name: Callable[[str], str]) -> list[str]:
+    art = op.get("op")
+    k = op.get("kennung")
+    if art == "spule_gramm":
+        mat = material_name(str(op.get("material") or ""))
+        d = float(op.get("delta") or 0)
+        return [f"Filament {mat}: {gramm_text(abs(d))} von Spule {k} {'verbraucht' if d < 0 else 'zurückgebucht'}"]
+    v, n = op.get("vorher"), op.get("nachher")
+    mat = material_name(str((n or v or {}).get("material") or ""))
+    if v is None and n is not None:
+        return [f"Filament {mat}: Spule {spule_text(n)} dazu"]
+    if n is None and v is not None:
+        return [f"Filament {mat}: Spule {k} {'leer, entfernt' if _spule_leer(v) else 'weg'}"]
+    if v is None or n is None:
+        return []
+    aend = []
+    if number(v.get("gramm")) != number(n.get("gramm")):
+        aend.append(f"{gramm_text(v.get('gramm') or 0)} → {gramm_text(n.get('gramm') or 0)}")
+    for key, label in (("gramm_voll", "volle Spule"), ("name", "Name"), ("hersteller", "Hersteller"),
+                       ("farbe", "Farbe"), ("ort", "Ort"), ("material", "Material")):
+        if v.get(key) != n.get(key):
+            alt = v.get(key) if v.get(key) is not None else "–"
+            neu = n.get(key) if n.get(key) is not None else "–"
+            aend.append(f"{label} {alt} → {neu}")
+    return [f"Filament {mat}: Spule {k} " + (", ".join(aend) if aend else "unverändert")]
+
+
+def aenderungen_text(aenderungen: list[dict[str, Any]], benennung: Callable[[str], str] | None = None,
+                     material_name: Callable[[str], str] | None = None) -> list[str]:
     """Jede Änderung als eigene Zeile (für die Antwort an Kevin)."""
     name = benennung or (lambda pid: pid)
+    mat_name = material_name or (lambda mid: mid)
     lines: list[str] = []
     for op in _fein(aenderungen):
         art = op.get("op")
         pid = str(op.get("posten") or "")
+        if art in ("spule", "spule_gramm"):
+            lines += _spulen_zeilen(op, mat_name)
+            continue
+        if art == "filament_fuehren":
+            lines.append("Filament: wird in diesem Projekt geführt (Spulen, Einkauf, Abbuchen)" if op.get("nachher")
+                         else "Filament: wird in diesem Projekt nicht mehr geführt")
+            continue
         if art == "ganze":
             what = "ganze Platte" if ist_platte(op) else "ganze Stange"
             whats = "ganze Platten" if ist_platte(op) else "ganze Stangen"

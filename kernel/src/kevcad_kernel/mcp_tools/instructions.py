@@ -133,7 +133,9 @@ Stock on hand and shopping list (Bestand, per project)
 - Each project has its own stock (bestand.json in the project folder): whole bars/sheets, offcuts with ids (R-0001, \
 P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it. Purchased parts, cameras, \
 lenses and camera accessories are piece goods: `bestand_eintragen(id, stueck=1, grund=...)`; parts Kevin has leave \
-the shopping list.
+the shopping list. Filament spools (S-0001) per material and colour: `bestand_eintragen(material="petg", gramm=640, \
+spule="Bambu PETG Basic schwarz", grund=...)`; once a project tracks filament, the shopping list adds whole spools for \
+what the print preview needs beyond the stock, and `gedruckt_buchen` (only when Kevin says he printed) books it off.
 - After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
 (optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
 offcuts remain. `einkaufsliste` returns exactly the list Kevin sees and shares in the app: stock items and bought \

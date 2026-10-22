@@ -10,7 +10,9 @@ Strang „Material im Kernel angleichen“ (22.10.2026): bom_material.frame (Kug
 Zukaufteilen, Kamerazubehör und Druckteilen, geplant mit Bestand), print_material.frame (Druckvorschau desselben Laufs)
 und der Abschnitt ``material``: Einkaufsliste als Text und CSV genau so, wie der Kernel sie über MCP und Export liefert,
 mit und ohne Druckvorschau, Summen und Verschnitt (Definition 2). Der Swift-Test ``MaterialKernelGleichTests`` rechnet
-dieselben Werte mit ``MaterialDaten`` und vergleicht byteweise.
+dieselben Werte mit ``MaterialDaten`` und vergleicht byteweise. Seit Strang „Bestand Stufe 2“ führt das Beispiel
+Filament (PETG-Spule mit 120 g, zu wenig: eine Spule kaufen; PLA-Spule mit 310 g reicht), Felder ``filament_bestand``
+und ``filament_kauf``.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bestand_beispiel import BESTAND, BUCHUNGEN, Katalog, basis_bom, material_bom  # noqa: E402
+from bestand_beispiel import BESTAND, BUCHUNGEN, FILAMENT_BESTAND, Katalog, basis_bom, material_bom  # noqa: E402
 
 from kevcad_kernel.bestand import einkauf as ek  # noqa: E402
 from kevcad_kernel.bestand.datei import zusammenfassung  # noqa: E402
@@ -67,6 +69,7 @@ def material_nachrichten() -> tuple[dict, dict]:
     """BOM des Kugelschiebers mit allem (Lauf 5, mit Bestand geplant) und die Druckvorschau desselben Laufs."""
     best = copy.deepcopy(BESTAND)
     best["posten"].update(copy.deepcopy(MATERIAL_ZUKAUF_BESTAND))
+    best["filament"] = copy.deepcopy(FILAMENT_BESTAND)  # Strang „Bestand Stufe 2“: PETG fehlt, PLA reicht
     planung = plane(material_bom(run=5), best, Katalog(), stand=STAND)
     vorschau = pack_print_preview(druckvorschau_beispiel(run=5), seq=36)
     assert not check_druck_message(vorschau), check_druck_message(vorschau)
@@ -90,6 +93,11 @@ def material_erwartet(bom: dict, vorschau: dict) -> dict:
         "filament": [{k: f[k] for k in ("werkstoff", "teile", "gramm", "preis", "stand")} for f in mit["filament"]],
         "filament_ohne_druck": [{k: f[k] for k in ("werkstoff", "teile", "gramm", "preis")}
                                 for f in ohne["filament"]],
+        # Strang „Bestand Stufe 2“: Spulen zum Kaufen (Lagerware) nur gegen die Druckvorschau desselben Laufs
+        "filament_bestand": bom.get("filament_bestand"),
+        "filament_kauf": [{k: z[k] for k in ("id", "benennung", "menge", "einheit", "preis_je", "preis", "hinweis",
+                                             "preis_stand")} for z in mit["filament_kauf"]],
+        "filament_kauf_ohne_druck": [z["id"] for z in ohne["filament_kauf"]],
         "verschnitt": {c["stock_id"]: c["verschnitt_prozent"] for c in bom["cuts"]},
         "verschnitt_definition": sorted({c.get("verschnitt_definition") for c in bom["cuts"]}),
         "verschnitt_gesamt": bom["verschnitt"],

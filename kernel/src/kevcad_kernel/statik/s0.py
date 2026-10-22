@@ -10,11 +10,16 @@ für jedes Szenario mit dessen Beschleunigungsfeld und Lasten weiter:
 - **Lose Teile** (``verbinde(…, art="aufliegen")`` ohne weitere feste Verbindung): rutschen sie auf ihrer Auflage?
 - **Schrauben** (``verbinde(…, art="schraube", mit=[…])``): Kraft je Schraube aus allem, was an der Verbindung hängt
   (grob, ohne Vorspannung), gegen Streckgrenze × Spannungsquerschnitt.
+- **Gewindeeinsätze** (Strang „Bestand Stufe 2“): Steckt in ``mit`` ein Gewindeeinsatz (Name mit „Gewindeeinsatz“,
+  „Einschmelz…“ oder „Heat-Set“) und ist eine Seite ein Druckteil, trägt der Einsatz die Zugkraft der Schraube. Sie
+  wird gegen die Auszugkraft aus dem Katalog (``einsatz_auszug``, Größe und Druckmaterial) gestellt; ohne belegten Wert
+  bleibt der Einsatz unbewertet und die Statik sagt es.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 import numpy as np
@@ -26,6 +31,33 @@ from kevcad_kernel.statik.werkstoff import G, reibwert, spannungsquerschnitt
 RICHTUNGEN = {"+X": (1, 0), "−X": (-1, 0), "+Y": (0, 1), "−Y": (0, -1)}
 MU_ANNAHME = 0.3
 RP_ANNAHME = 240.0  # Schraube ohne Werkstoff: Festigkeitsklasse 4.6 (DIN EN ISO 898-1) angenommen
+EINSATZ_WORTE = re.compile(r"(gewindeeinsatz|einschmelz|heat.?set)", re.IGNORECASE)  # wie bauplan/eingang.py
+
+
+def einsatz_nachweis(m: StatikModell, katalog: Any, mit: list[str], druck: list[str], d: float,
+                     kraft_axial: float) -> dict[str, Any] | None:
+    """Gewindeeinsatz einer Schraubverbindung mit Druckteil: Auszugkraft aus dem Katalog gegen die Zugkraft je Schraube.
+    None ohne Einsatz in ``mit`` oder ohne Druckteil; sonst ``{"teil", "druckteil", "groesse", "material",
+    "auszug_n", "sicherheit", "quelle", "einsatz", "bedingungen", "geschaetzt"}`` (``auszug_n`` None: nicht belegt)."""
+    einsatz = next((n for n in mit if n in m.teile and EINSATZ_WORTE.search(n.rsplit("/", 1)[-1])), None)
+    if einsatz is None or not druck:
+        return None
+    teil = m.teile[druck[0]]  # Druckteil, in dem der Einsatz sitzt
+    groesse = f"M{d:g}"
+    mat = teil.material_id or (teil.werkstoff.id if teil.werkstoff is not None else None)
+    eintrag = None
+    if katalog is not None and mat and hasattr(katalog, "einsatz_auszug"):
+        try:
+            eintrag = katalog.einsatz_auszug(groesse, mat)
+        except Exception:  # noqa: BLE001 - ohne Katalog kein Nachweis
+            eintrag = None
+    auszug = float(eintrag["kraft_n"]) if eintrag else None
+    sf = None
+    if auszug is not None and kraft_axial > 1e-9:
+        sf = round(auszug / kraft_axial, 2)
+    return {"teil": einsatz, "druckteil": druck[0], "groesse": groesse, "material": mat, "auszug_n": auszug,
+            "sicherheit": sf, "quelle": (eintrag or {}).get("quelle"), "einsatz": (eintrag or {}).get("einsatz"),
+            "bedingungen": (eintrag or {}).get("bedingungen"), "geschaetzt": bool((eintrag or {}).get("geschaetzt"))}
 
 
 def _kraefte_auf(m: StatikModell, sz: Szenario, teile: set[str]) -> list[tuple[np.ndarray, np.ndarray]]:
@@ -248,7 +280,8 @@ def _geerdet(m: StatikModell, teile: set[str]) -> bool:
     return False
 
 
-def schrauben(m: StatikModell, sz: Szenario, koerper: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def schrauben(m: StatikModell, sz: Szenario, koerper: dict[str, Any] | None = None,
+              katalog: Any = None) -> list[dict[str, Any]]:
     out = []
     for v in m.verbindungen:
         if v["art"] != "schraube" or v["b"] in (None, "boden"):
@@ -296,12 +329,16 @@ def schrauben(m: StatikModell, sz: Szenario, koerper: dict[str, Any] | None = No
         rp = float(w.streckgrenze) if w is not None and w.streckgrenze else RP_ANNAHME
         u = math.sqrt((F_ax / (rp * As)) ** 2 + (F_q / (0.6 * rp * As)) ** 2)
         druck = [n for n in (a, b) if m.teile[n].druckteil]
-        out.append({"verbindung": f"{a} an {b}", "teile": [a, b] + schr[:2], "schrauben": n_s,
-                    "gewinde": f"M{d:g}", "kraft_axial": round(F_ax, 1), "kraft_quer": round(F_q, 1),
-                    "ausnutzung": round(u, 4), "sicherheit": None if u < 1e-12 else round(1 / u, 2),
-                    "rp": rp, "rp_angenommen": w is None or not w.streckgrenze, "traegt": traeger,
-                    "haengt": sorted(haengt)[:4], "haengt_masse_kg": round(sum(m.teile[n].masse_kg for n in haengt), 3),
-                    "druckteil": druck, "zeile": v.get("zeile")})
+        zeile = {"verbindung": f"{a} an {b}", "teile": [a, b] + schr[:2], "schrauben": n_s,
+                 "gewinde": f"M{d:g}", "kraft_axial": round(F_ax, 1), "kraft_quer": round(F_q, 1),
+                 "ausnutzung": round(u, 4), "sicherheit": None if u < 1e-12 else round(1 / u, 2),
+                 "rp": rp, "rp_angenommen": w is None or not w.streckgrenze, "traegt": traeger,
+                 "haengt": sorted(haengt)[:4], "haengt_masse_kg": round(sum(m.teile[n].masse_kg for n in haengt), 3),
+                 "druckteil": druck, "zeile": v.get("zeile")}
+        e = einsatz_nachweis(m, katalog, list(v["mit"]), druck, d, F_ax)
+        if e is not None:
+            zeile["einsatz"] = e
+        out.append(zeile)
     return out
 
 
@@ -364,7 +401,7 @@ def traeger(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
 def rechne(m: StatikModell, sz: Szenario, katalog: Any, rollen: bool, koerper: dict[str, Any] | None = None,
            traeger_auch: bool = False) -> dict[str, Any]:
     out = {"kippen": kippen(m, sz), "rutschen": rutschen(m, sz, katalog, rollen),
-           "lose": lose_teile(m, sz, katalog), "schrauben": schrauben(m, sz, koerper)}
+           "lose": lose_teile(m, sz, katalog), "schrauben": schrauben(m, sz, koerper, katalog)}
     if traeger_auch:
         out["traeger"] = traeger(m, sz)
     return out

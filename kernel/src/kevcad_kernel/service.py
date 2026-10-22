@@ -163,20 +163,34 @@ class KernelService(Protocol):
         """Bestand und Reste des offenen Projekts: {"ok", "projekt", "datei", "stand", "bestand", "buchungen",
         "text", "posten" (nur mit stock_id)}"""
 
-    def bestand_eintragen(self, stock_id: str, ganze: Any = None, reste: list[Any] | None = None,
+    def bestand_eintragen(self, stock_id: str | None = None, ganze: Any = None, reste: list[Any] | None = None,
                           reste_entfernen: list[str] | None = None, stueck: Any = None,
                           mindestrest_mm: float | None = None, reste_ersetzen: bool = False,
-                          grund: str = "") -> dict[str, Any]:
-        """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}"""
+                          grund: str = "", *, material: str | None = None, gramm: float | None = None,
+                          gramm_voll: float | None = None, spule: str | None = None, farbe: str | None = None,
+                          hersteller: str | None = None, anzahl: int | None = None, kennung: str | None = None,
+                          ort: str | None = None, spulen_entfernen: list[str] | None = None) -> dict[str, Any]:
+        """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}.
+        Strang „Bestand Stufe 2“ (additiv): Filament statt ``stock_id`` mit ``material`` (neue Spulen: ``gramm``,
+        ``spule`` als Name, ``gramm_voll``, ``farbe``, ``hersteller``, ``ort``, ``anzahl``; 0 = Filament führen ohne
+        Spule), ``kennung`` (Spule ändern) oder ``spulen_entfernen``; dann statt ``posten`` die ``spulen``."""
 
     def einkaufsliste(self) -> dict[str, Any]:
         """Einkaufsliste wie in der App (bestand/einkauf.py): {"ok", "run", "lagerware", "zukauf", "normteile",
         "filament", "positionen", "summe" (Lagerware + Zukaufteile), "summe_lager", "summe_zukauf", "ohne_preis",
         "text", "csv"} und die Felder der Stückliste ("einkaufsliste", "einkauf_summe" nur Lagerware,
-        "einkauf_hinweis", "bestand_stand", "fehlt", "stueckgut")."""
+        "einkauf_hinweis", "bestand_stand", "fehlt", "stueckgut"); additiv "filament_kauf" (Spulen unter Lagerware),
+        "filament_aus_bestand", "filament_bestand"."""
 
     def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
-        """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}"""
+        """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}; führt das Projekt Filament,
+        auch das Filament der noch nicht gebuchten Druckplatten ("filament", "filament_text")."""
+
+    def gedruckt_buchen(self, grund: str = "", platten: list[int] | None = None, spule: str | None = None,
+                        run: int | None = None) -> dict[str, Any]:
+        """Strang „Bestand Stufe 2“ (additiv), nur auf Kevins ausdrücklichen Wunsch: Filament der Druckvorschau
+        abbuchen (alle noch nicht gebuchten Platten oder ``platten``; ``spule`` zuerst). {"ok", "buchung",
+        "aenderungen_text", "filament", "filament_text", "platten"}"""
 
     def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
         """{"ok", "buchung" (die Umkehrbuchung), "aenderungen_text"}"""

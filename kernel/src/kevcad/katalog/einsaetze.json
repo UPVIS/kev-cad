@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "einsatz_auszug": [
+    {"groesse": "M3", "material": "pla", "kraft_n": 1400, "art": "mittelwert",
+     "einsatz": "CNC Kitchen M3 × 5,7 (Messing, Heat-Set)",
+     "quelle": "CNC Kitchen, „Are Our Heat-Set Insert Datasheets Wrong?“, 28.03.2026 (https://www.cnckitchen.com/blog/are-our-heat-set-insert-datasheets-wrong): „around 1400 N“ in PLA bei kleinen Löchern, 3 Proben je Lochdurchmesser",
+     "bedingungen": "PolySonic PLA, 240 °C eingeschmolzen, viele Wände und hohe Füllung; bei 4,2 mm CAD-Loch (wie Kev CAD zeichnet) laut Quelle etwa 90 % davon",
+     "weitere": [{"kraft_n": 1776, "einsatz": "ruthex M3",
+                  "quelle": "CNC Kitchen, „Threaded Inserts for 3D Prints – Cheap VS Expensive“, 07.12.2019: 181 kg in Prusament PLA, Loch 4,0 mm, 100 % Füllung"}],
+     "stand": "2026-10"},
+    {"groesse": "M3", "material": "petg", "kraft_n": 1167, "art": "mittelwert",
+     "einsatz": "ruthex M3 (Messing, Heat-Set)",
+     "quelle": "CNC Kitchen, „Helicoils, Threaded Insets and Embedded Nuts in 3D Prints“, 30.05.2020 (https://www.cnckitchen.com/blog/helicoils-threaded-insets-and-embedded-nuts-in-3d-prints-strength-amp-strength-assessment): 119 kg, Mittel aus 3 Proben",
+     "bedingungen": "4 Wände, 100 % Füllung; Lochmaß nicht genannt; Durchdrehen bei 3 Nm",
+     "stand": "2026-10"},
+    {"groesse": "M6", "material": "pla", "kraft_n": 4350, "art": "mittelwert", "geschaetzt": true,
+     "einsatz": "SPIROL INS 19L (Industrie-Einsatz für Thermoplaste, nicht ruthex)",
+     "quelle": "SPIROL White Paper „How to Select a Threaded Insert for Your 3D Printed Assembly“ (K. Ionkin, Stand 04/2026), Fig. 10 (https://www.spirol.com/assets/files/inserts-for-3d-printed-assemblies-us.pdf)",
+     "bedingungen": "aus dem Diagramm abgelesen (etwa ±5 %); 55 % Füllung, 5 Wandlinien, Schicht 0,16 mm; Probenzahl und Lochmaß nicht genannt; mit 1 statt 11 Wandlinien bis Faktor 4 weniger",
+     "stand": "2026-10"},
+    {"groesse": "M6", "material": "petg", "kraft_n": 3700, "art": "mittelwert", "geschaetzt": true,
+     "einsatz": "SPIROL INS 19L (Industrie-Einsatz für Thermoplaste, nicht ruthex)",
+     "quelle": "SPIROL White Paper „How to Select a Threaded Insert for Your 3D Printed Assembly“ (K. Ionkin, Stand 04/2026), Fig. 10 (https://www.spirol.com/assets/files/inserts-for-3d-printed-assemblies-us.pdf)",
+     "bedingungen": "aus dem Diagramm abgelesen (etwa ±5 %); 55 % Füllung, 5 Wandlinien, Schicht 0,16 mm; Probenzahl und Lochmaß nicht genannt",
+     "stand": "2026-10"}
+  ]
+}

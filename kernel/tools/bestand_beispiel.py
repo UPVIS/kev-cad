@@ -55,8 +55,16 @@ class Katalog:
         return copy.deepcopy(it) if it else None
 
     def material(self, mid: str) -> dict[str, Any] | None:
-        m = MATERIALIEN.get(mid)
+        m = MATERIALIEN.get(mid) or FILAMENT.get(mid)
         return copy.deepcopy(m) if m else None
+
+    def find_material(self, name: str, include_proposed: bool = False) -> dict[str, Any] | None:
+        """Nach id oder Name (Groß- und Kleinschreibung egal), wie ``Catalog.find_material``."""
+        key = str(name or "").strip().lower()
+        for m in list(MATERIALIEN.values()) + list(FILAMENT.values()):
+            if key in (m["id"], m["name"].lower()):
+                return copy.deepcopy(m)
+        return None
 
     def item_ids(self) -> list[str]:
         return list(self.teile)
@@ -112,8 +120,17 @@ def basis_bom(run: int = 5, stuecke: list[tuple[str, str, Any, int]] | None = No
 ZUKAUF = {"hersteller": "ALUTEC", "mpn": "05200", "gtin": "4005187052008",
           "url": "https://www.beispiel-shop.de/p/alutec-05200", "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
           "masse_text": "610 × 410 × 128 mm", "preis_brutto": True, "cad": "vereinfacht", "cad_quelle": "keins"}
-FILAMENT = {"petg": {"id": "petg", "name": "PETG", "dichte": 1.27, "preis_je_kg": 17.0, "preis_stand": "2026-10"},
-            "pla": {"id": "pla", "name": "PLA", "dichte": 1.24, "preis_je_kg": 17.0, "preis_stand": "2026-10"}}
+FILAMENT = {"petg": {"id": "petg", "name": "PETG", "gruppe": "Kunststoff", "dichte": 1.27, "preis_je_kg": 17.0,
+                     "preis_stand": "2026-10", "druckbar": True},
+            "pla": {"id": "pla", "name": "PLA", "gruppe": "Kunststoff", "dichte": 1.24, "preis_je_kg": 17.0,
+                    "preis_stand": "2026-10", "druckbar": True}}
+# Filament im Bestand (Strang „Bestand Stufe 2“): PETG reicht nicht (eine Spule kaufen), PLA reicht
+FILAMENT_BESTAND: list[dict[str, Any]] = [
+    {"kennung": "S-0001", "material": "petg", "gramm": 120, "gramm_voll": 1000, "name": "Bambu PETG Basic schwarz",
+     "hersteller": "Bambu Lab", "farbe": "schwarz", "ort": "Regal 3", "seit": "2026-10-22"},
+    {"kennung": "S-0002", "material": "pla", "gramm": 310, "gramm_voll": 1000, "name": "Amazon Basics PLA weiß",
+     "hersteller": "Amazon Basics", "farbe": "weiß", "ort": None, "seit": "2026-10-22"},
+]
 # (Name, Material, Volumen mm³, Hüllmaß)
 DRUCKTEILE = [
     *[(f"Kugelschieber/Stangenhalter {o} (Druck)", "petg", 9200.0, [40.0, 24.0, 18.0])
