@@ -396,7 +396,9 @@ Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge
   und Preis aus dem Katalog), Summe dieser beiden, dann „Normteile abzählen“ (gebraucht, aus Bestand, kaufen) und
   „Filament für Druckteile“ (aus der Druckvorschau, sonst Volumen × Dichte; nicht in der Summe).
 - **Bestand nur nach Kevins Angabe eintragen** (`bestand_eintragen`, seine Worte in `grund`), nie schätzen oder
-  erfinden; jede Änderung aus der Antwort an Kevin nennen.
+  erfinden; jede Änderung aus der Antwort an Kevin nennen. Zukaufteile, Kameras, Objektive und Kamerazubehör sind
+  Stückgut: `bestand_eintragen("blackmagic-pocket-6k-pro", stueck=1, grund=…)`; was Kevin hat, fällt aus der
+  Einkaufsliste („Zukaufteile aus dem Bestand“).
 - **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und
   Stückgut ab und legt die neuen Reste an. Jede Buchung lässt sich mit `buchung_rueckgaengig` umkehren.
 - **Einkaufsliste im Bericht nennen:** nach dem Bauen eines Modells die Positionen mit Summe aus `einkaufsliste`
