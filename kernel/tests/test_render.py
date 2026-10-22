@@ -296,6 +296,29 @@ def test_render_schnell_rundlauf(laufzeit):
         app.close()
 
 
+def test_render_schichtlinien_nach_druckrichtung(laufzeit):
+    """Druckteile bekommen die Aufbaurichtung aus der Druckprüfung des letzten Laufs (CHECK.druck, ``oben_welt``) als
+    ``druck_oben``; Blender legt dafür ein eigenes Material an (Schichtlinien quer dazu statt quer zu Z)."""
+    rt, tmp = laufzeit
+    assert rt.project_new(str(tmp / "Halter"), "empty")["ok"]
+    app = RenderApp(str(tmp / "k.sock"))
+    try:
+        verbunden(rt, app)
+        mit_teil(rt)
+        rt._pruef.fertig({"type": "CHECK", "run": 1, "state": "done", "befunde": [],
+                          "druck": {"teile": {"Platte": {"ausrichtung": {"text": "liegt auf -x",
+                                                                        "oben_welt": [1.0, 0.0, 0.0]}}}}}, b"")
+        res = rt.render(szene="studio", groesse="vorschau")
+        assert res["ok"], res
+        t = app.anfragen[-1]["teile"][0]
+        assert t["oberflaeche"] == "schichten" and t["druck_oben"] == [1.0, 0.0, 0.0]
+        assert check_render_message(app.anfragen[-1]) == []
+        ohne = {k: v for k, v in t.items() if k != "druck_oben"}
+        assert schluessel(t) != schluessel(ohne)
+    finally:
+        app.close()
+
+
 def test_render_fehler_der_app(laufzeit):
     rt, tmp = laufzeit
     assert rt.project_new(str(tmp / "Halter"), "empty")["ok"]
@@ -351,6 +374,8 @@ def test_render_foto_mit_ersatz_blender(laufzeit, monkeypatch):
         assert Path(fertig["pfad"]).is_file() and fertig["samples"] == 16 and fertig["teile"] == 1
         req = [a for a in app.anfragen if a["type"] == "RENDER_SCENE_REQ"][-1]
         assert check_render_message(req) == [] and req["width"] == 640
+        # die Meldung „fertig“ an die App kann unter Last kurz nach der Antwort des Auftrags ankommen
+        app.wait_for(lambda h: h["type"] == "RENDER_STATUS" and h["zustand"] == "fertig", start=start, timeout=10)
         status = [h for h in app.since(start) if h["type"] == "RENDER_STATUS"]
         assert status[-1]["zustand"] == "fertig" and any(s["text"].startswith("Probe") for s in status)
         # Arbeitsordner aufgeräumt

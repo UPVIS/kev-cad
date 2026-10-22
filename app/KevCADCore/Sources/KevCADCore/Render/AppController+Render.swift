@@ -89,13 +89,20 @@ extension AppController: RenderActions {
         let warPausiert = ansicht?.isPaused ?? false
         ansicht?.isPaused = true
         defer { ansicht?.isPaused = warPausiert }
-        let e: PBRRenderer.Ergebnis
+        var e: PBRRenderer.Ergebnis
         do {
             e = try await pbr.render(teile: teile, kamera: kamera, szene: a.szene, width: a.width, height: a.height)
-        } catch PBRRenderer.Fehler.zeitueberschreitung {
-            // Einmal mit neuem Renderer wiederholen (der alte ist verworfen)
-            log(.warning, "Rendering \(a.auftrag): RealityKit antwortete nicht, zweiter Versuch mit neuem Renderer")
-            e = try await pbr.render(teile: teile, kamera: kamera, szene: a.szene, width: a.width, height: a.height)
+        } catch let f as PBRRenderer.Fehler where f.istZeitueberschreitung {
+            // Einmal mit neuem Renderer wiederholen (der alte ist verworfen); der Befund steht im Protokoll
+            log(.warning, "Rendering \(a.auftrag): \(f.errorDescription ?? "Zeitüberschreitung"); zweiter Versuch mit "
+                + "neuem Renderer")
+            do {
+                e = try await pbr.render(teile: teile, kamera: kamera, szene: a.szene, width: a.width, height: a.height)
+            } catch let f2 as PBRRenderer.Fehler where f2.istZeitueberschreitung {
+                log(.error, "Rendering \(a.auftrag): auch der zweite Versuch kam nicht zurück: \(f2.errorDescription ?? "")")
+                throw f2
+            }
+            e.phasen["wiederholt"] = 1
         }
         return (e.png, e.bild, kamera, e.phasen)
     }
@@ -164,8 +171,14 @@ extension AppController: RenderActions {
         }
         switch ansicht {
         case "aktuell":
-            var s = viewport.camera
-            if s.isOrthographic { s = ViewportCoordinator.withProjection(s, orthographic: false) }
+            let s = viewport.camera
+            if s.isOrthographic {
+                // Parallele Ansicht: echt orthografisch mit derselben sichtbaren Höhe; das Auge so weit zurück, dass
+                // alles vor der Kamera liegt (sonst schnitte die Nahebene das Modell an)
+                return Self.orthoKamera(blick: s.viewDirection, ziel: s.pivot, oben: s.upVector,
+                                        hoehe: s.orthographicScale, fovGrad: max(5, min(s.fieldOfView, 120)),
+                                        bounds: scene.worldBounds(of: sichtbar.map { ElementRef.part($0) }) ?? b)
+            }
             return PBRRenderer.Kamera(position: s.position, ziel: s.pivot, oben: s.upVector,
                                       fovGrad: max(5, min(s.fieldOfView, 120)))
         case "produkt":
@@ -181,6 +194,19 @@ extension AppController: RenderActions {
             let s = sv.cameraState(distance: 1000)
             return Self.eingepasst(blick: s.viewDirection, oben: s.upVector, fov: 26, bounds: b, aspekt: aspekt)
         }
+    }
+
+    /// Orthografische Kamera (sichtbare Höhe `hoehe` mm) mit Blick auf `ziel`; das Auge liegt außerhalb der Hüllkugel
+    /// von `bounds`, damit nichts vor der Nahebene liegt.
+    nonisolated static func orthoKamera(blick: SIMD3<Float>, ziel: SIMD3<Float>, oben: SIMD3<Float>, hoehe: Float,
+                                        fovGrad: Float, bounds b: BoundingBox) -> PBRRenderer.Kamera {
+        let v = simd_normalize(blick)
+        // Abstand längs der Blickrichtung bis hinter die Hüllkugel (vom Ziel aus gemessen)
+        let r = max(b.diagonalLength / 2, 1)
+        let zurMitte = simd_dot(b.center - ziel, -v)
+        let abstand = max(zurMitte + r * 1.5, r * 1.5, 10)
+        return PBRRenderer.Kamera(position: ziel - v * abstand, ziel: ziel, oben: oben, fovGrad: fovGrad,
+                                  orthoHoehe: max(hoehe, 0.01))
     }
 
     /// Perspektivische Kamera mit Blickrichtung `blick`, die die Hüllkugel der Teile ganz zeigt.

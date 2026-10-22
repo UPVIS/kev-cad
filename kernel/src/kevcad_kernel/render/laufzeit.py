@@ -107,11 +107,29 @@ class RenderRuntime:
                     st["auftraege"].pop(alt, None)
         return job, None
 
+    def _render_druck_oben(self) -> dict[str, list[float]]:
+        """Aufbaurichtung je Druckteil (Welt, Ruhelage) aus der Druckprüfung des letzten Laufs: Schichtlinien liegen
+        quer dazu, nicht quer zur Z-Achse des Modells (Druckvorschau und Druckprüfung nutzen dieselbe Ausrichtung)."""
+        pruef = getattr(self, "_pruef", None)
+        if pruef is None:
+            return {}
+        check, _ = pruef.letztes()
+        teile = ((check or {}).get("druck") or {}).get("teile") or {}
+        out = {}
+        for name, t in teile.items():
+            oben = ((t or {}).get("ausrichtung") or {}).get("oben_welt")
+            if isinstance(oben, list) and len(oben) == 3:
+                out[name] = [float(c) for c in oben]
+        return out
+
     def _render_materialien(self) -> list[dict[str, Any]]:
         out = []
+        oben = self._render_druck_oben()
         for rec in self.scene.records():  # type: ignore[attr-defined]
             mat = self.catalog.find_material(rec.material) if rec.material else None  # type: ignore[attr-defined]
             pbr = part_pbr(rec.header, mat)
+            if pbr.get("oberflaeche") == "schichten" and rec.name in oben:
+                pbr["druck_oben"] = oben[rec.name]  # Schichtlinien quer zur Druckrichtung (additiv)
             out.append({"name": rec.name, **pbr, "kulisse": bool(rec.header.get("kulisse"))})
         return out
 

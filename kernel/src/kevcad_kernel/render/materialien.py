@@ -162,4 +162,7 @@ def schluessel(pbr: dict[str, Any]) -> str:
     """Gleiche Darstellung, gleicher Schlüssel (Blender legt je Schlüssel ein Material an)."""
     farbe = ",".join(f"{c:.3f}" for c in pbr.get("basisfarbe", [0, 0, 0]))
     zahlen = ",".join(f"{float(pbr.get(k, 0) or 0):.3f}" for k in ZAHLEN)
-    return f"{pbr.get('oberflaeche')}|{farbe}|{zahlen}"
+    out = f"{pbr.get('oberflaeche')}|{farbe}|{zahlen}"
+    if pbr.get("druck_oben"):  # Schichtlinien quer zur Druckrichtung des Teils
+        out += "|" + ",".join(f"{float(c):.3f}" for c in pbr["druck_oben"])
+    return out
