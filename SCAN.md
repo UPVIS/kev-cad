@@ -70,6 +70,47 @@ Bildfrequenz von Video, Tiefe und Lage: 10 Hz (jedes sechste ARFrame); die App d
 Box in Weltkoordinaten (Meter, achsparallel bis auf die Drehung um y). Ohne `objekt.json` schätzt die Mac-Seite
 Objekt und Boden selbst (Ebene am Boden, größte Gruppe darüber).
 
+### Ergänzungen der App (22.10.2026, additiv)
+
+So schreibt Kev Scan 1.0 die Dateien; alles hier ist Präzisierung oder Zusatz, nichts davon ist für den Empfänger Pflicht.
+
+- **ZIP:** oberste Ebene im ZIP ist der Ordner `<name>.kevscan/` (gepackt mit `NSFileCoordinator`, Deflate). Der
+  Empfänger nimmt am besten beides an, mit und ohne diesen Ordner.
+- **Zeitbezug:** `timestamp` in `odometry.csv` und `zeit` in `fotos.json` sind Sekunden seit dem ersten Videobild
+  (Bild 0 hat 0,0), dieselbe Uhr wie `ARFrame.timestamp`. `meta.json` nennt das als `"zeit_bezug": "erstes_videobild"`.
+  Die Zeitstempel im Video (`rgb.mp4`) sind dieselben Werte; die Bildfolge ist also nicht streng gleichmäßig.
+- **Bildauswahl:** ein Videobild wird genommen, wenn seit dem letzten mindestens 0,095 s vergangen sind und es eine
+  `sceneDepth` hat; nur dann entstehen Videobild, Tiefe, Konfidenz und Zeile in `odometry.csv` (gleiche Nummer k).
+- **`odometry.csv`:** Quaternion normiert, `qw >= 0`; Zahlen mit sechs Nachkommastellen, getrennt durch Komma und
+  Leerzeichen (wie Stray Scanner).
+- **`camera_matrix.csv`:** Kameramatrix des ersten Videobilds, `fx,0,cx` / `0,fy,cy` / `0,0,1`, ohne Leerzeichen.
+  ARKit nutzt Autofokus, die Brennweite schwankt dadurch leicht; je Foto steht die eigene Matrix in `fotos.json`.
+- **`rgb.mp4`:** HEVC (Rückfall H.264), Bitrate etwa 16 Mbit/s, ein Schlüsselbild je zehn Bilder, ohne Drehung.
+- **`meta.json`, zusätzliche Felder:**
+  `id` (UUID des Scans, bleibt beim Umbenennen gleich), `dauer_s` (Zeit des letzten Videobilds), `zeit_bezug`,
+  `videoformat` (`breite`, `hoehe`, `fps`, `kamera` als AVCaptureDevice-Typ, `hochaufloesend_empfohlen`) und
+  `auto_foto` (`aktiv`, `winkel_grad`, `abstand_m`). `video.codec` ist `hevc` oder `h264`. `fotos.breite/hoehe` sind die
+  des ersten Fotos (0 ohne Fotos). Die App schreibt `meta.json` als letzte Datei; ein Ordner ohne `meta.json` ist eine
+  abgebrochene Aufnahme.
+- **`fotos.json`, zusätzliche Felder je Foto:** `tiefe_quelle` = `"foto"` (Tiefe gehört zum hochaufgelösten Bild
+  selbst) oder `"videobild"` (das Foto kam ohne `sceneDepth`, genommen ist die Tiefe des letzten Videobilds, Lage dann
+  leicht verschieden); `ausloeser` = `"hand"` oder `"auto"`. `tracking` ist `normal`, `nicht_verfuegbar` oder
+  `eingeschraenkt_start|_bewegung|_merkmale|_neuortung`. `belichtung_s` und `iso` stammen aus den EXIF-Daten des Bilds
+  (`ARFrame.exifData`), ohne EXIF aus `ARCamera.exposureDuration`; fehlen beide, fehlt das Feld. `tiefe` und
+  `konfidenz` fehlen, wenn es gar keine Tiefe gab. Die Kameramatrix `k` ist auf die tatsächliche Pixelgröße des Fotos
+  umgerechnet.
+- **Automatische Fotos:** während der Aufnahme, sobald sich das iPhone seit dem letzten Foto um `winkel_grad` gedreht
+  (Vorgabe 15°) oder um `abstand_m` bewegt hat (Vorgabe 0,25 m), höchstens eins je 0,8 s und nur bei Tracking `normal`.
+  Das erste Foto entsteht gleich zu Beginn.
+- **`objekt.json`:** `groesse` = [Breite entlang der gedrehten x-Achse, Höhe entlang y, Tiefe entlang der gedrehten
+  z-Achse]; `drehung_y_grad` dreht um +y (rechtshändig, von oben gesehen gegen den Uhrzeigersinn). Die Grundfläche der
+  Box liegt auf `boden.punkt`, `mitte` ist eine halbe Höhe darüber. `boden.normale` ist die Normale der getroffenen
+  ARKit-Ebene (horizontal, also nahe [0, 1, 0]).
+- **`vorschau.jpg`:** anders als alle anderen Bilder aufrecht (Hochformat, um 90° gedreht), 512 px lange Seite, aus
+  dem Videobild bei etwa 0,5 s. Nur zur Anzeige.
+- **Auf dem iPhone:** Scans liegen in den Dokumenten der App (in der Dateien-App unter „Auf meinem iPhone > Kev Scan“
+  sichtbar, auch im Finder per Kabel). Der Sendestatus steht nur in der App, nicht im Scan.
+
 ## Übertragung iPhone → Mac
 
 - Der Kernel von Kev CAD bietet, solange die App läuft, einen Empfänger an: HTTP auf einem freien Port, angemeldet per
@@ -90,3 +131,19 @@ Objekt und Boden selbst (Ebene am Boden, größte Gruppe darüber).
 3. Verschmelzen mit den ARKit-Lagen (TSDF), Beschnitt auf Box bzw. über dem Boden, Netz und Punktwolke.
 4. Umrechnen in Kev-CAD-Koordinaten und als Referenz anlegen: Netz, Kameras (bekannt aus ARKit) und Tiefenbilder für
    fotomess, das damit die Maße des Modells einpasst (Tiefe als zusätzliche Bedingung).
+
+## App bauen und installieren
+
+Quellen in `ios/KevScan/` (XcodeGen `project.yml`, SwiftUI, ARKit, RealityKit, iOS 18 oder neuer, nur iPhone,
+Hochformat). Gebaut wird nur für das Gerät; ein Simulator-Build ist für ARKit wertlos.
+
+```bash
+tools/kevscan.sh bauen          # Release für iOS, signiert (Team 2GX7UC98J6), Ergebnis build/KevScan.app
+tools/kevscan.sh installieren   # per devicectl auf das iPhone (entsperrt, gleiches WLAN oder Kabel)
+tools/kevscan.sh alles          # beides
+tools/kevscan.sh starten        # App auf dem iPhone starten
+tools/kevscan.sh geraet         # geraet.json der App holen: Videoformate laut ARKit, gemessene Fotogröße
+```
+
+Das Skript baut unter der mit VoiceBridge gemeinsamen Sperre `/tmp/vb-xcodebuild.lock`, wartet auf 25 % freien
+Speicher und löscht die DerivedData in `/tmp/kevscan-build` nach dem Bau.
