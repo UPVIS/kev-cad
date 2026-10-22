@@ -120,11 +120,15 @@ def material(ein: Eingang) -> list[dict[str, Any]]:
                           "menge": line.get("anzahl"), "einheit": "Stück", "preis": line.get("preis"),
                           "quelle": "kaufen oder Bestand", "id": line.get("stock_id")})
             teile += list(line.get("teile") or [])
-    ohne_lager = Counter(ws.stueck_name(t.name) for t in ein.aufbau() if t.rolle in ("vm", "einsatz") and not t.stock)
-    for name, n in ohne_lager.items():
+    # Kleinteile ohne Lagerteil, die auch kein Zukaufteil sind: Zukaufteile (Flügelschraube DIN 316, Rillenkugellager,
+    # Senkschraube aus dem Shop) stehen mit voller Benennung nur unter „Zukaufteile bestellen“
+    zukauf_teile = {t for line in linien if line.get("art") == "zukaufteil" for t in line.get("teile") or []}
+    ohne = [t for t in ein.aufbau() if t.rolle in ("vm", "einsatz") and not t.stock and not t.kopf.get("zukauf")
+            and t.name not in zukauf_teile]
+    for name, n in Counter(ws.stueck_name(t.name) for t in ohne).items():
         klein.append({"benennung": f"{name} (nicht im Katalog)", "menge": n, "einheit": "Stück", "preis": None,
                       "quelle": "kaufen"})
-    teile += [t.name for t in ein.aufbau() if t.rolle in ("vm", "einsatz") and not t.stock]
+    teile += [t.name for t in ohne]
     if klein:
         out.append(schritt("material", "kleinteile", "Normteile und Kleinteile",
                            "Schrauben, Muttern, Scheiben und Einsätze abzählen.", material=klein, teile=teile))

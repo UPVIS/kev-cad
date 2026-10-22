@@ -189,6 +189,36 @@ def test_wege_stift_in_bohrung_und_deckel():
     assert not wp.sperrer("Stift", (1, 0, 0), versatz=(0, 0, 60))  # zweistufig: erst hoch, dann zur Seite
 
 
+def test_material_zukaufteile_nur_einmal():
+    """Zukaufteile (Flügelschraube DIN 316, Rillenkugellager) stehen nur unter „Zukaufteile bestellen“ mit voller
+    Benennung, nicht zusätzlich als „(nicht im Katalog)“ bei den Normteilen; Kleinteile ohne Katalog und ohne Zukauf
+    bleiben dort."""
+    from kevcad_kernel.bauplan.eingang import BTeil, Eingang
+    from kevcad_kernel.bauplan.geruest import material
+
+    def teil(name: str, rolle: str, kopf: dict) -> BTeil:
+        return BTeil(name=name, rolle=rolle, koerper=None, kopf=kopf)  # type: ignore[arg-type]
+
+    zk = {"id": "fluegelschraube-din316-m4x12", "mpn": "DIN 316 M4x12"}
+    teile = {t.name: t for t in (
+        teil("Halter/Flügelschraube M4x12 1", "vm", {"zukauf": zk}),
+        teil("Halter/Flügelschraube M4x12 2", "vm", {"zukauf": zk}),
+        teil("Halter/Rillenkugellager 61801", "einsatz", {"zukauf": {"id": "rillenkugellager-61801-2rs"}}),
+        teil("Halter/Stift M3 1", "vm", {}),
+    )}
+    bom = {"lines": [{"art": "zukaufteil", "benennung": "Flügelschraube DIN 316 M4 × 12, Stahl verzinkt",
+                      "anzahl": 2, "teile": ["Halter/Flügelschraube M4x12 1", "Halter/Flügelschraube M4x12 2"]},
+                     {"art": "zukaufteil", "benennung": "Rillenkugellager 61801-2RS (12 × 21 × 5 mm)", "anzahl": 1,
+                      "teile": ["Halter/Rillenkugellager 61801"]}]}
+    ein = Eingang(titel="T", run=1, projekt=None, teile=teile, bom=bom,
+                  bedingungen=None, check=None, verbindungen=[], gewinde=[], erlaubt=set(), durchdringend=set(),
+                  hat_verbinde=False)
+    out = {s["titel"]: [m["benennung"] for m in s["material"]] for s in material(ein)}
+    assert out["Zukaufteile bestellen"] == ["Flügelschraube DIN 316 M4 × 12, Stahl verzinkt",
+                                            "Rillenkugellager 61801-2RS (12 × 21 × 5 mm)"]
+    assert out["Normteile und Kleinteile"] == ["Stift M3 (nicht im Katalog)"]
+
+
 def test_standsicherheit_kippt_und_steht():
     class T:
         def __init__(self, lo, hi, m):
