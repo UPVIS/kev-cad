@@ -29,7 +29,8 @@ final class MaterialKernelGleichTests: XCTestCase {
 
     private func daten(mitDruck: Bool = true) throws -> MaterialDaten {
         let m = try bom()
-        return MaterialDaten(bom: m.bom, bestand: m.bestand, druckvorschau: mitDruck ? try druck() : nil)
+        let v: Druckvorschau? = try mitDruck ? druck() : nil
+        return MaterialDaten(bom: m.bom, bestand: m.bestand, druckvorschau: v)
     }
 
     /// Zwei Beträge, wie beide Seiten sie zeigen (auf Cent gerundet).
