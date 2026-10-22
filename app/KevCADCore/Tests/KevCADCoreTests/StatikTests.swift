@@ -67,6 +67,44 @@ final class StatikTests: XCTestCase {
         XCTAssertTrue(idx.allSatisfy { Int($0) < vd.count / 6 })
     }
 
+    /// Nachbesserung (T32): Lasten mit Angriffspunkt, Kraftpaar mit Gegenseite; im Viewer Pfeile zum Angriffspunkt, das
+    /// Paar als zwei gegeneinander gerichtete Pfeile in eigener Farbe.
+    func testLastenUndKraftpaar() throws {
+        guard case .statik(let e) = try Fixtures.message("statics.frame") else { return XCTFail("kein STATICS") }
+        let soll = try erwartet("statics")
+        let sz = try XCTUnwrap(e.szenario("Aufstützen 30 kg"))
+        let sollLasten = soll["szenarien"]?.arrayValue?.first { $0["name"]?.stringValue == sz.name }?["lasten"]?
+            .arrayValue ?? []
+        XCTAssertEqual(sz.lasten.count, sollLasten.count)
+        XCTAssertEqual(sz.lasten.map(\.paar), sollLasten.map { $0["paar"]?.boolValue ?? false })
+        let paar = try XCTUnwrap(sz.lasten.first { $0.paar })
+        XCTAssertEqual(paar.gegen, ["Ball"])
+        XCTAssertEqual(paar.teile, ["Rahmen/Rohr"])
+        XCTAssertEqual(paar.kraft, SIMD3<Float>(100, 0, 0))
+        XCTAssertEqual(paar.punkt, SIMD3<Float>(500, 0, 30))
+        XCTAssertTrue(try XCTUnwrap(e.szenario("Eigengewicht")).lasten.isEmpty)
+        // Viewer: eine äußere Last ein Pfeil, das Paar zwei (beide enden am Angriffspunkt, entgegengesetzt)
+        let pf = StatikGeometrie.lastpfeile(sz.lasten)
+        XCTAssertEqual(pf.count, 3)
+        XCTAssertTrue(pf.allSatisfy { !$0.isPickable && $0.id.hasPrefix(StatikGeometrie.praefix) })
+        let violett = PartBodies.linear(StatikGeometrie.paarFarbe)
+        let paarKoerper = pf.filter { $0.color == violett }
+        XCTAssertEqual(paarKoerper.count, 2)
+        func ecken(_ b: ViewportBody) -> [SIMD3<Float>] {
+            stride(from: 0, to: b.vertexData.count, by: 6).map {
+                SIMD3<Float>(b.vertexData[$0], b.vertexData[$0 + 1], b.vertexData[$0 + 2])
+            }
+        }
+        for b in paarKoerper {
+            XCTAssertLessThan(ecken(b).map { simd_distance($0, paar.punkt) }.min() ?? 99, 1e-3)  // Spitze am Punkt
+        }
+        // Kraft auf das Rohr kommt von −x, die Gegenkraft von +x
+        let xs = paarKoerper.map { ecken($0).map(\.x).reduce(0, +) / Float(ecken($0).count) }.sorted()
+        XCTAssertLessThan(xs[0], paar.punkt.x)
+        XCTAssertGreaterThan(xs[1], paar.punkt.x)
+        XCTAssertTrue(StatikGeometrie.lastpfeile([]).isEmpty)
+    }
+
     /// Stufe 2: Szenario mit Ablauf (statics_ablauf.frame): Kennzahlen, Verlauf, Kontaktpfeile als Körper.
     func testAblaufAusTestdatei() throws {
         guard case .statik(let e) = try Fixtures.message("statics_ablauf.frame") else { return XCTFail("kein STATICS") }
@@ -166,5 +204,10 @@ final class StatikTests: XCTestCase {
         XCTAssertEqual(s.szenario?.name, "Eigengewicht")
         XCTAssertTrue(s.farbverlauf && s.verformung)
         XCTAssertEqual(c.scene.statikBodies.count, 3)
+        // Szenario mit Lasten: dazu je Last ein Pfeil, das Kraftpaar mit zwei Pfeilen
+        c.waehleStatikSzenario("Aufstützen 30 kg")
+        XCTAssertEqual(c.scene.statikBodies.filter { $0.id.hasPrefix(StatikGeometrie.praefix + "l") }.count, 3)
+        c.setStatikFarbverlauf(false)
+        XCTAssertFalse(c.scene.statikBodies.contains { $0.id.hasPrefix(StatikGeometrie.praefix + "l") })
     }
 }

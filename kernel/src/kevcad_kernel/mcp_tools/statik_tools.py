@@ -25,8 +25,9 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
           "scenario a traffic light (gruen/gelb/rot) with safety factor against the target (static 2, dynamic 3, 3D "
           "printed parts x2), deflection, buckling load factor, tipping reserve per direction, sliding reserve (friction "
           "from the catalog), rough screw loads and the frame (bars from stock tubes/profiles via PyNite: stresses, "
-          "deflection, support forces). Scenarios come from model.py (import kevcad.statik as st; st.szenario(...), "
-          "st.last(teil, kraft=(fx, fy, fz) in N or kg=..., punkt=...)) plus defaults (Eigengewicht, Nutzlast from a "
+          "deflection, support forces, forces per connection of rigid connectors). Scenarios come from model.py "
+          "(import kevcad.statik as st; st.szenario(...), st.last(teil, kraft=(fx, fy, fz) in N or kg=..., punkt=...,"
+          " gegen=other part for an internal force pair)) plus defaults (Eigengewicht, Nutzlast from a "
           "param in kg, Bremsen on wheels). Also suggests lighter or stronger stock items ONLY from the inventory, and "
           "for printed parts loaded across the layers 'drehen oder verstärken'. Without szenario: all scenarios; with "
           "szenario: details (bars, supports, tipping per direction) and the viewer shows its utilization gradient. "
@@ -58,7 +59,10 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
         name: Annotated[str, Field(description="Scenario name, e.g. 'Aufstützen 30 kg'")],
         lasten: Annotated[list[dict[str, Any]] | None, Field(
             description="Loads: [{'teil': 'Kugelschieber/Querstange vorn (Rohr 3)', 'kg': 30}] or "
-                        "[{'teil': 'Halter', 'kraft': [0, 0, -50], 'punkt': [120, 0, 40]}]")] = None,
+                        "[{'teil': 'Halter', 'kraft': [0, 0, -50], 'punkt': [120, 0, 40]}]. Internal force between "
+                        "two parts of the design (e.g. the ball pressing on the catch roller): add "
+                        "'gegen': 'Bowlingball' - the reaction -kraft acts on that part at the same point; the pair "
+                        "cancels for tipping, sliding and lifting of the whole, but loads both parts")] = None,
         beschleunigung: Annotated[list[float] | None, Field(description="[ax, ay, az] in m/s²")] = None,
         neigung: Annotated[float | None, Field(description="Floor tilt in degrees")] = None,
         richtung: Annotated[str | None, Field(description="Downhill direction for neigung: '+x', '-y', …")] = None,
