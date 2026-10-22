@@ -231,3 +231,16 @@ def test_bridge_config_from_env():
     assert BridgeConfig.from_env({"KEVCAD_LAUNCH_CMD": "true"}).launch_argv == ["/bin/sh", "-c", "true"]
     assert default.launch_on_start is True
     assert BridgeConfig.from_env({"KEVCAD_LAUNCH_ON_START": "0"}).launch_on_start is False
+
+
+def test_bridge_read_timeout_covers_longest_tool_wait():
+    """Die Brücke darf lange Aufrufe nicht vor dem Werkzeug abbrechen (KevCup, freigabe_anfragen mit warten_s 600)."""
+    import re
+
+    from kevcad_kernel import bridge
+    from kevcad_kernel.mcp_tools import tools
+
+    quellen = Path(tools.__file__).parent.glob("*.py")
+    grenzen = [float(m) for q in quellen for m in re.findall(r"(?:warten_s|timeout_s)\b.*?le=(\d+(?:\.\d+)?)", q.read_text())]
+    grenzen.append(tools.RUN_TIMEOUT_MAX_S)
+    assert grenzen and bridge.LESEZEIT_S > max(grenzen) + 30
