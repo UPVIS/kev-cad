@@ -57,9 +57,17 @@ def bom_nachricht(seq: int) -> dict:
 MATERIAL_STAND = "22.10.2026"
 
 
+# Zukaufteile im Bestand (Strang „Feinschliff 2“): ein Transportroller von zweien (Fehlmenge mit Hinweis), die Kamera
+# ganz (entfällt auf der Einkaufsliste); die Schnellwechselplatte ohne Link bleibt zu kaufen
+MATERIAL_ZUKAUF_BESTAND = {"alutec-05200": {"stueck": [{"anzahl": 1}]},
+                           "blackmagic-pocket-6k-pro": {"stueck": [{"anzahl": 1}]}}
+
+
 def material_nachrichten() -> tuple[dict, dict]:
     """BOM des Kugelschiebers mit allem (Lauf 5, mit Bestand geplant) und die Druckvorschau desselben Laufs."""
-    planung = plane(material_bom(run=5), BESTAND, Katalog(), stand=STAND)
+    best = copy.deepcopy(BESTAND)
+    best["posten"].update(copy.deepcopy(MATERIAL_ZUKAUF_BESTAND))
+    planung = plane(material_bom(run=5), best, Katalog(), stand=STAND)
     vorschau = pack_print_preview(druckvorschau_beispiel(run=5), seq=36)
     assert not check_druck_message(vorschau), check_druck_message(vorschau)
     return {"type": "BOM", "seq": 35, **planung.bom}, vorschau
@@ -78,6 +86,7 @@ def material_erwartet(bom: dict, vorschau: dict) -> dict:
         "positionen": mit["positionen"], "lager": len(mit["lager"]), "zukauf": len(mit["zukauf"]),
         "summe": mit["summe"], "summe_lager": mit["summe_lager"], "summe_zukauf": mit["summe_zukauf"],
         "ohne_preis": mit["ohne_preis"], "normteile": len(mit["normteile"]),
+        "zukauf_aus_bestand": [z["stock_id"] for z in mit["zukauf_aus_bestand"]],
         "filament": [{k: f[k] for k in ("werkstoff", "teile", "gramm", "preis", "stand")} for f in mit["filament"]],
         "filament_ohne_druck": [{k: f[k] for k in ("werkstoff", "teile", "gramm", "preis")}
                                 for f in ohne["filament"]],

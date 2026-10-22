@@ -48,6 +48,8 @@ EXPECTED_TOOLS |= {"versionen", "version_wiederherstellen", "versionen_vergleich
 EXPECTED_TOOLS |= {"dokument_export"}
 # Phase 8: Drucken
 EXPECTED_TOOLS |= {"drucker_status", "drucken"}
+# Strang „Feinschliff 2“: Freigabe im Projektfenster
+EXPECTED_TOOLS |= {"freigabe_anfragen"}
 
 
 def free_port() -> int:

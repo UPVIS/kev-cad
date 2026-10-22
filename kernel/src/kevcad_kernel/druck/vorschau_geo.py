@@ -111,6 +111,49 @@ def vereinfachen(huelle: np.ndarray, n: int = MAX_UMRISS) -> np.ndarray:
     return np.array(p)
 
 
+def schleifen_je_hoehe(P: np.ndarray, tri: np.ndarray, hoehen: np.ndarray) -> list[int]:
+    """Zahl der geschlossenen Umrisse (Außenkontur und jedes Loch) im waagrechten Schnitt je Höhe (Strang „Feinschliff
+    2“, Punkt 5): Jeder Umriss ist eine eigene Wandschleife je Schicht; viele kleine Löcher machen den Druck langsamer,
+    als die Wandfläche allein sagt. Gezählt über die Dreiecke, die die Ebene schneiden: zwei geschnittene Kanten je
+    Dreieck verbinden sich zu Ketten, jede zusammenhängende Kette ist ein Umriss."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    # Das Netz hat je Fläche eigene Knoten: gleiche Punkte zusammenlegen, sonst zählte jede Seitenfläche als Umriss
+    punkte, neu = np.unique(np.round(np.asarray(P, dtype=np.float64), 4), axis=0, return_inverse=True)
+    tri = neu.reshape(-1)[np.asarray(tri, dtype=np.int64)]
+    z = punkte[:, 2]
+    zt = z[tri]
+    out: list[int] = []
+    n_p = len(punkte)
+    for h0 in hoehen:
+        h = float(h0) + 1.37e-4  # nicht genau auf einer Knotenhöhe schneiden
+        unten = zt < h
+        quer = unten.any(axis=1) & ~unten.all(axis=1)
+        if not quer.any():
+            out.append(0)
+            continue
+        t = tri[quer]
+        u = unten[quer]
+        kanten = []
+        for i, j in ((0, 1), (1, 2), (2, 0)):
+            geschnitten = u[:, i] != u[:, j]
+            a, b = np.minimum(t[:, i], t[:, j]), np.maximum(t[:, i], t[:, j])
+            kanten.append(np.where(geschnitten, a.astype(np.int64) * n_p + b, -1))
+        k = np.stack(kanten, axis=1)
+        paare = np.sort(k, axis=1)[:, 1:]  # je Dreieck die zwei geschnittenen Kanten (die dritte ist -1)
+        if (paare < 0).any():
+            paare = paare[(paare >= 0).all(axis=1)]
+        if len(paare) == 0:
+            out.append(0)
+            continue
+        ids, inv = np.unique(paare.ravel(), return_inverse=True)
+        inv = inv.reshape(-1, 2)
+        m = coo_matrix((np.ones(len(inv)), (inv[:, 0], inv[:, 1])), shape=(len(ids), len(ids)))
+        out.append(int(connected_components(m, directed=False)[0]))
+    return out
+
+
 def _form_geometrie(pos: np.ndarray, tri: np.ndarray, B0: np.ndarray, ueberhang_max: float,
                     erste_schicht: float) -> dict[str, Any]:
     """Kennzahlen eines Teils aus dem Netz in Formkoordinaten (``pos`` schon ohne Lage, ``B0`` = Form → Druck)."""
@@ -166,8 +209,18 @@ def _form_geometrie(pos: np.ndarray, tri: np.ndarray, B0: np.ndarray, ueberhang_
     else:
         seite_band = np.zeros(baender)
         waag_band = np.zeros(baender)
+    # Umrisse je Höhenband (Mitte des Bands): Außenkontur und Löcher, je eine Wandschleife (Punkt 5)
+    try:
+        schleifen = schleifen_je_hoehe(P, tri, (np.arange(baender) + 0.5) * hoehe / baender) if hoehe > 1e-6 \
+            else [0] * baender
+    except Exception:  # noqa: BLE001 - ohne Zählung rechnet die Schätzung wie bisher (eine Schleife je Schicht)
+        schleifen = []
     umriss = vereinfachen(huelle)
+    from kevcad_kernel.druck.signatur import mit_deckung
+
+    sig, deckung = mit_deckung(P, tri, [float(x) for x in (hi - lo).tolist() + [hoehe]])
     return {
+        "signatur": sig, "_deckung": deckung,
         "B": B, "versatz": versatz, "drehung_z": round(dreh, 4),
         "groesse": [round(float(x), 3) for x in (hi - lo).tolist() + [hoehe]],
         "umriss": [[round(float(x), 3), round(float(y), 3)] for x, y in umriss],
@@ -178,10 +231,12 @@ def _form_geometrie(pos: np.ndarray, tri: np.ndarray, B0: np.ndarray, ueberhang_
         "ueberhang_flaeche": round(ueberhang_flaeche, 2), "ueberhang_hoehe": round(ueberhang_hoehe, 3),
         "seite_baender": [round(float(x), 2) for x in seite_band],
         "waag_baender": [round(float(x), 2) for x in waag_band],
+        "schleifen_baender": [int(x) for x in schleifen],
     }
 
 
-def geometrie(k: Any, teil: dict[str, Any], formen: dict[str, Any] | None = None) -> dict[str, Any]:
+def geometrie(k: Any, teil: dict[str, Any], formen: dict[str, Any] | None = None,
+              deckung: dict[str, Any] | None = None) -> dict[str, Any]:
     """Druckvorschau-Geometrie eines Körpers (``pruefung.koerper.Koerper``) mit dem Ergebnis der Druckprüfung
     (``ergebnis["druck"]["teile"][name]``). Mit ``formen`` stehen die Kennzahlen der Form einmal je Form dort
     (Schlüssel ``fid``), im Ergebnis nur Lage und Angaben des Teils; ohne ``formen`` alles im Ergebnis."""
@@ -215,7 +270,9 @@ def geometrie(k: Any, teil: dict[str, Any], formen: dict[str, Any] | None = None
     A = form["B"] @ L3.T   # Welt (ohne Verschiebung) → Druck
     kz = teil.get("kennzahlen") or {}
     fid = hashlib.sha1(repr(schluessel).encode()).hexdigest()[:12]
-    kennzahlen = {k_: v for k_, v in form.items() if k_ not in ("B", "versatz")}
+    kennzahlen = {k_: v for k_, v in form.items() if k_ not in ("B", "versatz", "_deckung")}
+    if deckung is not None and form.get("_deckung") is not None:
+        deckung.setdefault(fid, form["_deckung"])
     kennzahlen["form_matrix"] = [[round(float(x), 9) + 0.0 for x in row] for row in form["B"]]
     kennzahlen["form"] = k.form
     if formen is not None:
@@ -232,6 +289,7 @@ def geometrie(k: Any, teil: dict[str, Any], formen: dict[str, Any] | None = None
         "stueck": int(k.info.get("druck_stueck") or 0),
         "zweck": k.info.get("druck_zweck"),
         "anzahl": k.info.get("druck_anzahl"),
+        "gedruckt": bool(k.info.get("druck_gedruckt")),
         "stuetzflaeche": float(kz.get("stuetzflaeche_mm2") or 0.0),
         "auflage_pruefung": float(kz.get("auflageflaeche_mm2") or 0.0),
         "ausrichtung_text": a.get("text"),
@@ -250,19 +308,64 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     geo: dict[str, Any] = {}
     formen: dict[str, Any] = {}
     fehler: dict[str, str] = {}
+    deckung: dict[str, Any] = {}
     for name, teil in (druck.get("teile") or {}).items():
         k = ctx.koerper.get(name)
         if k is None:
             continue
         ctx.abbrechen()
         try:
-            geo[name] = geometrie(k, teil, formen)
+            geo[name] = geometrie(k, teil, formen, deckung)
         except Exception as exc:  # noqa: BLE001 - ein Teil darf die Vorschau der übrigen nicht verhindern
             fehler[name] = f"{type(exc).__name__}: {exc}"
+    try:
+        gleichteile(formen, deckung, ctx.abbrechen)
+    except Exception as exc:  # noqa: BLE001 - ohne Gleichteile gruppiert die Vorschau nach der Signatur
+        fehler["(gleichteile)"] = f"{type(exc).__name__}: {exc}"
     ms = (time.perf_counter() - t0) * 1000
     ctx.zeiten["druckvorschau"] = ms
     druck["vorschau"] = {"teile": geo, "formen": formen, "fehler": fehler, "ms": round(ms, 1)}
     return []
+
+
+_KLASSEN_SPEICHER: OrderedDict[tuple[str, str], str | None] = OrderedDict()
+
+
+def gleichteile(formen: dict[str, Any], deckung: dict[str, Any], abbrechen: Any = None) -> None:
+    """Gleiche Teile über Formschlüssel hinweg (Strang „Feinschliff 2“, Punkt 3): Formen mit gleicher Signatur werden
+    genau verglichen (``signatur.deckung``); je Form steht danach ``gleichteil: {"fid", "gespiegelt"}`` mit der ersten
+    Form ihrer Klasse. Drehsymmetrische Formen (Achsen nicht fest) gelten bei gleicher Signatur als gleich."""
+    from kevcad_kernel.druck import signatur as sg
+
+    vertreter: list[str] = []
+    for fid, f in formen.items():
+        if abbrechen is not None:
+            abbrechen()
+        sig = f.get("signatur")
+        f["gleichteil"] = {"fid": fid, "gespiegelt": False}
+        if not isinstance(sig, dict):
+            continue
+        for rep in vertreter:
+            s_rep = formen[rep].get("signatur")
+            if not sg.gleich_skalar(s_rep, sig):
+                continue
+            if sig.get("e") or s_rep.get("e") or fid not in deckung or rep not in deckung:
+                urteil: str | None = "gleich"
+            else:
+                key = (rep, fid)
+                if key in _KLASSEN_SPEICHER:
+                    urteil = _KLASSEN_SPEICHER[key]
+                    _KLASSEN_SPEICHER.move_to_end(key)
+                else:
+                    urteil = sg.deckung(deckung[rep], deckung[fid])
+                    _KLASSEN_SPEICHER[key] = urteil
+                    while len(_KLASSEN_SPEICHER) > ZWISCHENSPEICHER_MAX:
+                        _KLASSEN_SPEICHER.popitem(last=False)
+            if urteil is not None:
+                f["gleichteil"] = {"fid": rep, "gespiegelt": urteil == "gespiegelt"}
+                break
+        if f["gleichteil"]["fid"] == fid:
+            vertreter.append(fid)
 
 
 def teil_mit_form(vorschau: dict[str, Any], name: str) -> dict[str, Any] | None:

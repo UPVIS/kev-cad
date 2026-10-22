@@ -16,6 +16,8 @@ extension AppModel {
 struct InventoryBanner: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
+    /// Strang „Feinschliff 2“: öffnet den Freigabedialog im Projektfenster (sonst den Lagerkatalog).
+    var vorschlaegeZeigen: (() -> Void)? = nil
     var dismiss: () -> Void
 
     var body: some View {
@@ -49,8 +51,10 @@ struct InventoryBanner: View {
                     model.actions?.focus(on: known)
                 }
                 if suggestions > 0 {
-                    Button("Vorschläge prüfen (\(suggestions))") { session.showCatalog(section: .suggestions) }
-                        .buttonStyle(.borderedProminent)
+                    Button("Vorschläge freigeben (\(suggestions))") {
+                        if let vorschlaegeZeigen { vorschlaegeZeigen() } else { session.showCatalog(section: .suggestions) }
+                    }
+                    .buttonStyle(.borderedProminent)
                 } else {
                     Button("Lagerkatalog") { session.showCatalog() }
                 }
@@ -65,7 +69,7 @@ struct InventoryBanner: View {
                 .help("Band ausblenden, bis sich die Verstöße ändern")
             }
             Text("Gebaut wird nur aus dem Lagerkatalog. Bitte Claude, passende Lagerteile zu verbauen oder neue "
-                + "vorzuschlagen, die du im Lagerkatalog freigibst. Für Nachbauten und Skizzen lässt sich die "
+                + "vorzuschlagen, die du hier freigibst. Für Nachbauten und Skizzen lässt sich die "
                 + "Inventar-Regel im Inspektor unter „Projekt“ ausschalten.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

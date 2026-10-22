@@ -557,6 +557,46 @@ def check_bestand_message(header: dict[str, Any]) -> list[str]:
                 if key not in b:
                     missing.append(f"buchungen[].{key}")
     return missing
+
+
+# Freigabe im Projektfenster (Strang „Feinschliff 2“, PROTOCOL.md Abschnitt „Freigabe im Projektfenster“, additiv)
+
+FREIGABE_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    "FREIGABE_ANFRAGE": ("id", "anfrage", "eintraege", "grund"),  # Kernel → App, Antwort ACK
+    "FREIGABE_GESCHLOSSEN": ("anfrage", "freigegeben", "abgelehnt", "offen"),  # App → Kernel, ohne Antwort
+}
+
+
+def check_freigabe_message(header: dict[str, Any]) -> list[str]:
+    """Fehlende oder falsche Felder einer Freigabe-Nachricht (leer = gültig)."""
+    kind = header.get("type")
+    need = FREIGABE_NACHRICHTEN.get(str(kind))
+    if need is None:
+        return [f"{kind!r} ist keine Freigabe-Nachricht"]
+    out = [k for k in need if k not in header]
+    if kind == "FREIGABE_ANFRAGE":
+        for i, e in enumerate(header.get("eintraege") or []):
+            if not isinstance(e, dict) or not e.get("id") or e.get("kind") not in ("teil", "material"):
+                out.append(f"eintraege[{i}]: id und kind (teil oder material) nötig")
+    else:
+        for k in ("freigegeben", "abgelehnt", "offen"):
+            if k in header and not isinstance(header[k], list):
+                out.append(f"{k} muss eine Liste sein")
+    return out
+
+
+def freigabe_beispiel() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Beispiel für Testdateien: Anfrage (Kernel → App) und Meldung beim Schließen (App → Kernel)."""
+    anfrage = {"type": "FREIGABE_ANFRAGE", "id": "k-7", "anfrage": "F-0001", "grund": "Für die Lenksperren am Kugelschieber",
+               "eintraege": [{"id": "rohr-alfer-16x1", "kind": "teil", "name": "ALFER-Rundrohr 16 × 1", "art": "rohr",
+                              "ebene": "eigen"},
+                             {"id": "petg-cf", "kind": "material", "name": "PETG-CF", "art": "material",
+                              "ebene": "eigen"}]}
+    geschlossen = {"type": "FREIGABE_GESCHLOSSEN", "anfrage": "F-0001", "freigegeben": ["rohr-alfer-16x1"],
+                   "abgelehnt": [], "offen": ["petg-cf"]}
+    return anfrage, geschlossen
+
+
 # Phase 3: Zukaufteile (PROTOCOL.md, Abschnitt „Phase 3“)
 
 ZUKAUF_ZUSTAENDE: tuple[str, ...] = ("angelegt", "wartet_auf_cad", "importiert", "fehler")

@@ -83,6 +83,13 @@ final class MaterialKernelGleichTests: XCTestCase {
         XCTAssertTrue(d.stueckgut.contains { $0.ausBestand > 0 && $0.kaufen > 0 })
         XCTAssertTrue(d.zukaufEinkauf.contains { $0.position.link != nil })
         XCTAssertTrue(d.zukaufEinkauf.contains { $0.position.link == nil })
+        // Zukaufteile im Bestand (Strang „Feinschliff 2“): ganz gedeckt entfällt, teilweise mit Fehlmenge und Hinweis
+        XCTAssertEqual(d.zukaufAusBestand.map(\.stockID),
+                       try XCTUnwrap(e["zukauf_aus_bestand"]?.arrayValue).compactMap(\.stringValue))
+        XCTAssertTrue(d.zukaufAusBestand.contains { $0.kaufen == 0 })
+        XCTAssertFalse(d.zukaufEinkauf.contains { $0.position.id == "blackmagic-pocket-6k-pro" })
+        XCTAssertTrue(d.zukaufEinkauf.contains { $0.position.hinweis?.hasSuffix("Bestand im Projekt: 1, gebraucht: 2") == true })
+        XCTAssertEqual(d.position(enthaelt: "Kamera/Blackmagic Pocket 6K Pro")?.versorgung, [.bestand])
         // Filament: aus der Druckvorschau (mit Ersatzteilen), sonst aus der Stückliste
         func vergleiche(_ liste: [MaterialFilament], _ soll: [JSONValue]) {
             XCTAssertEqual(liste.map(\.werkstoff), soll.compactMap { $0["werkstoff"]?.stringValue })

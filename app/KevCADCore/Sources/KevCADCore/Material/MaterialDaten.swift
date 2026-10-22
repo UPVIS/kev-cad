@@ -67,6 +67,8 @@ public enum MaterialGruppe: Int, CaseIterable, Comparable, Identifiable, Sendabl
 /// woher ihr Material kommt (Bestand, Rest, Kaufen), dazu die Zuschnittfarben für neue Reste und Verschnitt.
 public enum MaterialKennzeichen: String, CaseIterable, Sendable {
     case kaufen, bestand, rest, zukauf, druckteil, eigenteil, restNeu, verschnitt
+    /// Strang „Feinschliff 2“: Druckteil schon gedruckt (vorhanden, nicht mehr zu drucken).
+    case gedruckt
 
     public var titel: String {
         switch self {
@@ -78,6 +80,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .eigenteil: return "Eigenteil"
         case .restNeu: return "Neuer Rest"
         case .verschnitt: return "Verschnitt"
+        case .gedruckt: return "Gedruckt"
         }
     }
 
@@ -91,6 +94,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .eigenteil: return "hammer"
         case .restNeu: return "plus.square.dashed"
         case .verschnitt: return "scissors"
+        case .gedruckt: return "checkmark.circle.fill"
         }
     }
 
@@ -105,6 +109,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .eigenteil: return "Eigenteil: frei modelliert, Masse aus Volumen × Dichte"
         case .restNeu: return "Neuer Rest ab Mindestrest: kommt nach „Gebaut“ mit Kennung in den Bestand"
         case .verschnitt: return "Verschnitt: Sägeschnitte und Reste unter dem Mindestrest"
+        case .gedruckt: return "Schon gedruckt und vorhanden: kein Filament, nicht in der Druckvorschau, kein Druckschritt"
         }
     }
 
@@ -119,6 +124,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .zukauf: return (0.46, 0.36, 0.86)  // violett
         case .druckteil: return (0.10, 0.60, 0.62)  // petrol
         case .eigenteil: return (0.80, 0.45, 0.12)  // ocker
+        case .gedruckt: return (0.20, 0.64, 0.33)  // grün wie vorhanden
         }
     }
 
@@ -139,24 +145,40 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
     public var gruppe: MaterialGruppe
     /// Zukauf, Druckteil oder Eigenteil (Lagerteile: nil).
     public var herkunft: MaterialKennzeichen?
-    /// Woher das Material kommt: Bestand, Rest, Kaufen (leer ohne Bestandsangaben oder bei Zukauf-, Druck-, Eigenteilen).
+    /// Woher das Material kommt: Bestand, Rest, Kaufen (leer ohne Bestandsangaben oder bei Druck- und Eigenteilen;
+    /// Zukaufteile: Bestand und Kaufen, seit dem Strang „Feinschliff 2“).
     public var versorgung: [MaterialKennzeichen]
     /// Werkstoff als Anzeigename (Katalog, sonst Angabe der Stückliste).
     public var werkstoff: String?
     /// Link zur Bezugsquelle: Shop des Zukaufteils bzw. Bezugsquelle aus der Einkaufsliste.
     public var link: URL?
+    /// Strang „Feinschliff 2“: Filament dieser Position aus der Druckvorschau desselben Laufs (Druckteile; Wände,
+    /// Füllung und Stützen statt Vollkörper), nil ohne Vorschau.
+    public var filament: DruckFilamentWert? = nil
 
     public var id: Int { line.pos }
     public var pos: Int { line.pos }
     public var anzahl: Int { line.anzahl }
-    public var kg: Double? { line.kg }
-    public var preis: Double? { line.preis }
+    /// Gewicht: bei Druckteilen das Filament aus der Druckvorschau, wenn vorhanden, sonst Vollkörper × Dichte.
+    public var kg: Double? { filament.map { $0.gramm / 1000 } ?? line.kg }
+    /// Kosten: bei Druckteilen die Filamentkosten aus der Druckvorschau, wenn vorhanden.
+    public var preis: Double? { filament.flatMap(\.kosten) ?? line.preis }
+    /// Gewicht des Vollkörpers (Volumen × Dichte) laut Stückliste.
+    public var vollkoerperKg: Double? { line.kg }
+
+    /// „Filament 39,0 g (gedruckt, Schätzung) · Vollkörper 104,7 g“; nil ohne Filament.
+    public var gewichtText: String? {
+        guard let f = filament else { return nil }
+        var t = "Filament \(KevFormat.mass(grams: f.gramm)) (gedruckt, \(f.stand.titel))"
+        if let v = line.kg { t += " · Vollkörper \(KevFormat.kg(v))" }
+        return t
+    }
     public var teile: [String] { line.teile }
     public var stockID: String? { line.stockID }
 
     /// Alle Kennzeichen zum Anzeigen: Herkunft, sonst die Versorgung.
     public var kennzeichen: [MaterialKennzeichen] {
-        if let herkunft { return [herkunft] }
+        if let herkunft { return [herkunft] + versorgung }  // Zukauf aus dem Bestand, gedruckte Druckteile
         return versorgung
     }
 
@@ -211,8 +233,39 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
 
 // MARK: - Einkauf
 
+/// Filament einer Stücklistenposition aus der Druckvorschau (Summe ihrer Teile, je Teil der Anteil seiner Gruppe).
+public struct DruckFilamentWert: Equatable, Sendable {
+    public var gramm: Double
+    public var kosten: Double?
+    public var stand: DruckStand
+
+    public init(gramm: Double, kosten: Double? = nil, stand: DruckStand = .schaetzung) {
+        self.gramm = gramm
+        self.kosten = kosten
+        self.stand = stand
+    }
+
+    /// Aus der Vorschau desselben Laufs: je Teil der Zeile das Stück seiner Gruppe (`je_stueck.g`, sonst g / Anzahl),
+    /// Kosten anteilig; nil, wenn kein Teil der Zeile in der Vorschau steht.
+    public static func aus(_ v: Druckvorschau, teile: [String]) -> DruckFilamentWert? {
+        var g = 0.0
+        var kosten: Double?
+        var staende = Set<DruckStand>()
+        for teil in teile {
+            guard let grp = v.gruppe(vonTeil: teil) else { continue }
+            let n = Double(max(grp.anzahl, 1))
+            g += grp.jeStueck?.g ?? grp.g / n
+            if let k = grp.kosten { kosten = (kosten ?? 0) + k / n }
+            staende.insert(grp.stand)
+        }
+        guard !staende.isEmpty else { return nil }
+        let stand: DruckStand = staende.count == 1 ? staende.first! : .gemischt
+        return DruckFilamentWert(gramm: g, kosten: kosten, stand: stand)
+    }
+}
+
 /// Zeile der Einkaufsliste: Lagerware aus dem Abgleich mit dem Bestand (Kernel) oder ein Zukaufteil aus der Stückliste
-/// (Zukaufteile führt der Bestand noch nicht, sie stehen immer auf der Liste).
+/// (seit dem Strang „Feinschliff 2“ nach Abzug des Projektbestands, `BOM.zukauf_bestand`).
 public struct MaterialEinkauf: Identifiable, Equatable, Sendable {
     public enum Art: String, Sendable { case lager, zukauf }
 
@@ -289,6 +342,8 @@ public struct MaterialKennzahlen: Equatable, Sendable {
     public var verschnittPlatten: Double?
     /// Druck-, Zukauf- und Eigenteile.
     public var druckteile = 0
+    /// Davon schon gedruckt (Strang „Feinschliff 2“): zählen nicht zu Gramm und Preis.
+    public var gedruckt = 0
     public var druckGramm = 0.0
     public var druckPreis: Double?
     /// Aus der Druckvorschau (additiv, DRUCKVORSCHAU.md): Druckzeit mit Plattenwechseln, Platten, Stand; Gramm und Preis
@@ -406,6 +461,10 @@ public struct MaterialDaten: Equatable, Sendable {
     public var mindestreste: [String: Double]
     public var stueckgut: [StueckgutBedarf]
     public var einkauf: [MaterialEinkauf]
+    /// Zukaufteile, die ganz oder teilweise aus dem Bestand des Projekts kommen (Stückliste in ihrer Reihenfolge).
+    public var zukaufAusBestand: [ZukaufBestand]
+    /// Der Kernel gleicht Zukaufteile mit dem Bestand ab (`BOM.zukauf_bestand`); sonst stehen sie ganz auf der Liste.
+    public var zukaufAbgeglichen: Bool
     public var filament: [MaterialFilament]
     public var kennzahlen: MaterialKennzahlen
     public var warnungen: [String]
@@ -434,31 +493,46 @@ public struct MaterialDaten: Equatable, Sendable {
         mindestreste = mindest
 
         let lines = bom?.lines ?? []
+        let vorschau = druckvorschau.flatMap { $0.run == (bom?.run ?? 0) && !$0.istLeer ? $0 : nil }
         positionen = lines.map { line in
-            Self.position(line, zuschnitt: bestand, stueckgut: bestand?.stueckgut ?? [], katalog: katalog)
+            var p = Self.position(line, zuschnitt: bestand, stueckgut: bestand?.stueckgut ?? [], katalog: katalog)
+            // Strang „Feinschliff 2“: Druckteile mit dem Filament der Vorschau desselben Laufs statt des Vollkörpers
+            if let vorschau, p.herkunft == .druckteil, !line.gedruckt {
+                p.filament = DruckFilamentWert.aus(vorschau, teile: line.teile)
+            }
+            return p
         }
 
-        // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste
+        // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste nach Abzug des Projektbestands
         var einkauf = (bestand?.einkaufsliste ?? []).map { MaterialEinkauf(art: .lager, position: $0, pos: nil) }
+        var benutzt = Set<Int>()
+        var ausBestand: [ZukaufBestand] = []
         for p in positionen where p.herkunft == .zukauf {
             let z = p.line.zukauf
             let hinweis = [z?.title.isEmpty == false ? z?.title : nil, z?.gtin.map { "EAN \($0)" }]
                 .compactMap { $0 }.joined(separator: " · ")
-            einkauf.append(MaterialEinkauf(
-                art: .zukauf,
-                position: EinkaufsPosition(
-                    id: p.stockID ?? "pos-\(p.pos)", benennung: p.line.benennung, menge: Double(p.anzahl),
-                    einheit: "Stück", preisJe: p.line.preisJe, preis: p.line.preis, link: z?.url,
-                    linkName: z?.url?.host?.replacingOccurrences(of: "www.", with: ""),
-                    hinweis: hinweis.isEmpty ? nil : hinweis, stand: z?.preisStand),
-                pos: p.pos))
+            var position = EinkaufsPosition(
+                id: p.stockID ?? "pos-\(p.pos)", benennung: p.line.benennung, menge: Double(p.anzahl),
+                einheit: "Stück", preisJe: p.line.preisJe, preis: p.line.preis, link: z?.url,
+                linkName: z?.url?.host?.replacingOccurrences(of: "www.", with: ""),
+                hinweis: hinweis.isEmpty ? nil : hinweis, stand: z?.preisStand)
+            if let liste = bestand?.zukaufBestand,
+               let zb = BOMBestand.zukaufBestand(stockID: p.stockID, pos: p.pos, in: liste, benutzt: &benutzt),
+               zb.ausBestand > 0 {
+                ausBestand.append(zb)
+                guard let mitBestand = Self.zukaufMitBestand(position, zb) else { continue }
+                position = mitBestand
+            }
+            einkauf.append(MaterialEinkauf(art: .zukauf, position: position, pos: p.pos))
         }
         self.einkauf = einkauf
+        zukaufAusBestand = ausBestand
+        zukaufAbgeglichen = bestand?.zukaufBestand != nil
 
         // Filament je Werkstoff: aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste
         var filament: [String: MaterialFilament] = [:]
         var reihenfolge: [String] = []
-        for p in positionen where p.herkunft == .druckteil {
+        for p in positionen where p.herkunft == .druckteil && !p.line.gedruckt {
             let w = p.werkstoff ?? "Filament"
             if filament[w] == nil {
                 filament[w] = MaterialFilament(werkstoff: w, teile: 0, gramm: 0, preis: nil)
@@ -478,6 +552,11 @@ public struct MaterialDaten: Equatable, Sendable {
             k.kg = bom.totals.kg
             k.preis = bom.totals.preis
             k.preisHinweis = bom.totals.preisHinweis
+            // Druckteile mit Filament aus der Druckvorschau: Gewicht und Kosten wie in der Stückliste
+            for p in positionen where p.filament != nil {
+                k.kg += (p.kg ?? 0) - (p.vollkoerperKg ?? 0)
+                if let neu = p.preis, k.preis != nil { k.preis! += neu - (p.line.preis ?? 0) }
+            }
         }
         k.mitBestand = bestand != nil
         let lager = einkauf.filter { $0.art == .lager }.map(\.position)
@@ -507,9 +586,11 @@ public struct MaterialDaten: Equatable, Sendable {
         k.verschnittStangen = stangenGesamt > 0 ? stangenVerschnitt / stangenGesamt * 100 : nil
         k.verschnittPlatten = plattenGesamt > 0 ? plattenVerschnitt / plattenGesamt * 100 : nil
         let druck = positionen.filter { $0.herkunft == .druckteil }
+        let zuDrucken = druck.filter { !$0.line.gedruckt }  // schon gedruckte brauchen kein Filament mehr
         k.druckteile = druck.reduce(0) { $0 + $1.anzahl }
-        k.druckGramm = druck.compactMap(\.kg).reduce(0, +) * 1000
-        k.druckPreis = Self.summe(druck.map(\.preis))
+        k.gedruckt = druck.filter(\.line.gedruckt).reduce(0) { $0 + $1.anzahl }
+        k.druckGramm = zuDrucken.compactMap(\.kg).reduce(0, +) * 1000
+        k.druckPreis = Self.summe(zuDrucken.map(\.preis))
         k.zukaufteile = positionen.filter { $0.herkunft == .zukauf }.reduce(0) { $0 + $1.anzahl }
         k.eigenteile = positionen.filter { $0.herkunft == .eigenteil }.reduce(0) { $0 + $1.anzahl }
         k.wartetAufCAD = wartetAufCAD
@@ -520,6 +601,25 @@ public struct MaterialDaten: Equatable, Sendable {
     }
 
     static func summe(_ liste: [EinkaufsPosition]) -> Double? { summe(liste.map(\.preis)) }
+
+    /// Zukauf-Zeile nach Abzug des Projektbestands (wie `_mit_bestand` in `bestand/einkauf.py`): ganz gedeckt → nil,
+    /// sonst die Fehlmenge mit anteiligem Preis und dem Hinweis „Bestand im Projekt: 1, gebraucht: 2“.
+    static func zukaufMitBestand(_ p: EinkaufsPosition, _ zb: ZukaufBestand) -> EinkaufsPosition? {
+        guard zb.ausBestand > 0 else { return p }
+        guard zb.kaufen > 0 else { return nil }
+        var out = p
+        out.menge = Double(zb.kaufen)
+        if let je = p.preisJe {
+            out.preis = je * Double(zb.kaufen)
+        } else if let preis = p.preis, zb.anzahl > 0 {
+            out.preis = preis * Double(zb.kaufen) / Double(zb.anzahl)
+        } else {
+            out.preis = nil
+        }
+        let bestand = "Bestand im Projekt: \(zb.ausBestand), gebraucht: \(zb.anzahl)"
+        out.hinweis = p.hinweis.map { "\($0) · \(bestand)" } ?? bestand
+        return out
+    }
 
     static func summe(_ werte: [Double?]) -> Double? {
         let w = werte.compactMap { $0 }
@@ -541,6 +641,15 @@ public struct MaterialDaten: Equatable, Sendable {
         var versorgung: [MaterialKennzeichen] = []
         if herkunft == nil, let z = zuschnitt, let sid = line.stockID {
             versorgung = Self.versorgung(line, stockID: sid, zuschnitt: z, stueckgut: stueckgut)
+        } else if herkunft == .druckteil, line.gedruckt {
+            versorgung = [.gedruckt]  // Strang „Feinschliff 2“: schon gedruckt
+        } else if herkunft == .zukauf, let liste = zuschnitt?.zukaufBestand {
+            // Zukaufteile führt der Bestand als Stückgut (Strang „Feinschliff 2“)
+            var benutzt = Set<Int>()
+            if let zb = BOMBestand.zukaufBestand(stockID: line.stockID, pos: line.pos, in: liste, benutzt: &benutzt) {
+                versorgung = [zb.ausBestand > 0 ? MaterialKennzeichen.bestand : nil, zb.kaufen > 0 ? .kaufen : nil]
+                    .compactMap { $0 }
+            }
         }
         let werkstoff = line.material.map { m in katalog?.material(m)?.name ?? m }
         var link = line.zukauf?.url

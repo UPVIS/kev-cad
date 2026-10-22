@@ -105,7 +105,8 @@ struct MaterialUebersichtAnsicht: View {
             }
             KennzahlKachel(titel: "Druckteile", symbol: "printer.fill", wert: KevFormat.integer(k.druckteile),
                            unter: k.druckteile == 0 ? "keine"
-                               : KevFormat.mass(grams: k.druckGramm) + " Filament" + (k.druckPreis.map { " · " + KevFormat.euro($0) } ?? ""),
+                               : KevFormat.mass(grams: k.druckGramm) + " Filament" + (k.druckPreis.map { " · " + KevFormat.euro($0) } ?? "")
+                                   + (k.gedruckt > 0 ? " · \(k.gedruckt) gedruckt" : ""),
                            farbe: MaterialKennzeichen.druckteil.color) {
                 material.zeige(.druck)
             }

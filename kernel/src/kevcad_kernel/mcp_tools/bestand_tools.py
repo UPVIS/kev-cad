@@ -31,8 +31,8 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
     @tool("bestand_liste", "Bestand",
           "Stock on hand for the OPEN PROJECT only (each project has its own bestand.json, nothing is shared between "
           "projects): whole bars or sheets, offcuts (Reste) with id (R-0001 bars, P-0001 sheets), length or size and "
-          "location, piece goods (screws by length), settings (minimum offcut, saw kerf) and the latest bookings. "
-          "id limits it to one stock item.", READ_ONLY)
+          "location, piece goods (screws by length, purchased parts), settings (minimum offcut, saw kerf) and the "
+          "latest bookings. id limits it to one stock item.", READ_ONLY)
     async def bestand_liste(
         id: Annotated[str | None, Field(description="Stock id from the catalog; omit for everything")] = None,
     ) -> CallToolResult:
@@ -48,7 +48,8 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "laenge} or {anzahl, b, h} for a non-standard size). reste: offcuts to ADD, bars as lengths in mm (e.g. "
           "[430, 610, 180]) or {laenge, ort}, sheets as [b, h] or {b, h, ort}; each gets a new id. reste_entfernen: "
           "offcut ids to remove. reste_ersetzen=true replaces all offcuts of this item by reste. stueck: piece goods "
-          "(screws, nuts, washers): count, or [{laenge, anzahl}] for screws per length (sets the count per length). "
+          "(screws, nuts, washers, and purchased parts: zukaufteil, kamera, objektiv, kamerazubehoer): count, or "
+          "[{laenge, anzahl}] for screws per length (sets the count per length). "
           "mindestrest_mm: shorter offcuts count as waste for this item. grund: Kevin's statement. Every change is "
           "booked (undo with buchung_rueckgaengig) and listed in the answer; repeat that list to Kevin.", WRITES)
     async def bestand_eintragen(
@@ -62,7 +63,8 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         reste_entfernen: Annotated[list[str] | None, Field(description="Offcut ids to remove, e.g. ['R-0003']")]
         = None,
         stueck: Annotated[int | list[dict[str, Any]] | None,
-                          Field(description="Piece goods: count, or [{laenge, anzahl}] for screws")] = None,
+                          Field(description="Piece goods (also purchased parts, cameras, lenses): count, "
+                                            "or [{laenge, anzahl}] for screws")] = None,
         mindestrest_mm: Annotated[float | None, Field(description="Minimum useful offcut for this item (mm)")] = None,
         reste_ersetzen: Annotated[bool, Field(description="Replace all offcuts of this item by reste")] = False,
     ) -> CallToolResult:
@@ -81,7 +83,7 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "Shopping list of the current project after the last run, exactly as Kevin sees and shares it in the app "
           "(Material, Einkaufsliste): Lagerware (what is missing after using offcuts first, then whole stock of "
           "this project, rounded up to purchase units, standard parts to buy included), Zukaufteile (bought parts "
-          "with shop link and price from the catalog), the total of both, then Normteile abzählen (needed, from "
+          "with shop link and price from the catalog, minus what the project stock holds), the total of both, then Normteile abzählen (needed, from "
           "stock, to buy) and Filament für Druckteile (from the print preview of the same run, else volume x "
           "density). Also writes <project>/output/<name>-einkaufsliste.csv (same bytes as the app's CSV). Mention "
           "the shopping list (or that nothing is missing) in your report to Kevin.", ADDITIVE)
@@ -91,6 +93,10 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         if err:
             return fmt.error_result(err, res)
         text = str(res.get("text") or "")
+        aus = res.get("zukauf_aus_bestand") or []
+        if aus:
+            text += "\nZukaufteile aus dem Bestand: " + ", ".join(
+                f"{z.get('benennung')} ({z.get('aus_bestand')} von {z.get('anzahl')})" for z in aus)
         if res.get("einkauf_hinweis"):
             text += f"\nPreise Lagerware: {res['einkauf_hinweis']}"
         if res.get("csv"):

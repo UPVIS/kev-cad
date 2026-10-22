@@ -35,6 +35,20 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
   (`funktion`), markiert als Schätzung.
 - Gleiche Teile erkennt der Kernel über Form und Material (gleicher Formschlüssel); `anzahl` nur, wenn ein Teil
   öfter gedruckt wird, als es im Modell steht (Ersatzteile).
+- Präzisierung (Strang „Feinschliff 2“, 22.10.2026, additiv): Gleiche Form heißt **gleiche Form in Druckausrichtung,
+  unabhängig von der Lage im Modell**. Teile, die einzeln in Weltlage gebaut sind (die vier Lenksperren und vier
+  Stangenhalter des Kugelschiebers), haben je einen eigenen Formschlüssel und bildeten bisher je eine Gruppe. Der
+  Prüfer „druckvorschau“ rechnet je Form eine Signatur (`druck/signatur.py`: Volumen, Oberfläche, Hauptmomente,
+  Hüllmaße und Flächenhistogramm der Normalen in Druckausrichtung, dazu dritte und vierte Momente im Hauptachsensystem)
+  und vergleicht Formen mit gleicher Signatur genau (Punkte der Oberfläche im Hauptachsensystem aufeinandergelegt, je
+  Vorzeichenwechsel der Achsen; höchstens 0,4 % der Punkte weiter als 1,8 mm bzw. 2,5 Punktabstände). Passt nur eine
+  Spiegelung, ist das Teil ein Spiegelbild und bildet eine eigene Gruppe „… (gespiegelt)“; symmetrische Teile passen
+  auch gedreht und bleiben in einer Gruppe. Drehsymmetrische Formen (Hauptmomente fast gleich) gelten bei gleicher
+  Signatur als gleich. Im CHECK additiv `druck.vorschau.formen[fid].signatur` und `.gleichteil: {"fid", "gespiegelt"}`
+  (erste Form der Klasse); in der Vorschau additiv `teile[].gespiegelt_von` (Gruppen-id des Originals). Gruppennamen
+  ohne gemeinsamen Anfang zählen die Teile auf („Schieberolle und Fangrolle (Druck)“). Ohne Signatur (älterer
+  Rechenprozess) gilt der bisherige Schlüssel. Am Kugelschieber (Variante B): 5 Gruppen statt 15, Lenksperre ×4,
+  Stangenhalter ×4 (deckungsgleich, nicht gespiegelt).
 
 ## Ergebnis (`druckvorschau`)
 
@@ -92,6 +106,28 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 - `hinweise[].art`: `trocknen`, `verzug`, `material`, `brim`, `stuetzen`, `ams`, `duese`, `risiko`, `bauraum`,
   `auflage`, `festigkeit`, `slicer`, `platte`.
 
+## Gedruckt (Strang „Feinschliff 2“, 22.10.2026, additiv)
+
+`lager.druckteil(…, gedruckt=True)` kennzeichnet ein Teil, das Kevin schon gedruckt hat (Vorbild: das eigene
+`GEDRUCKT`-Dict mit Formprüfung in Variante B des Kugelschiebers, das damit ersetzt werden kann).
+
+- **Ausgeschlossen:** nicht in `teile`, `platten`, `summe` der Druckvorschau, nicht im Druckexport (3MF), keine
+  Befunde der Druckprüfung mehr (`druck.teile[name].gedruckt: true`), kein Filament in der Einkaufsliste (auch nicht
+  aus der Stückliste), kein Bauplanschritt „Drucken“. Stattdessen additiv `druckvorschau.gedruckt: [{"name",
+  "material", "form": "gleich" | "geaendert" | "neu" | "neu_drucken", "unterschiede": [...], "seit"}]`; sind alle
+  Druckteile gedruckt, ist die Vorschau leer mit `slicer.meldung` „Alle Druckteile sind schon gedruckt.“.
+- **Stückliste:** eigene Zeile mit `gedruckt: true` (gedruckte und zu druckende gleiche Teile getrennt),
+  `PART_UPSERT.druckteil.gedruckt: true`. Die App zeigt das Kennzeichen „Gedruckt“ in Stückliste und Material und ein
+  Häkchen am Druck-Symbol im Teilebaum; die Druckansicht nennt sie als „Gedruckt, vorhanden“.
+- **Form festschreiben:** Beim ersten Lauf mit `gedruckt=True` schreibt der Kernel die Signatur der Form
+  (`druck/signatur.py`) mit Hüllmaßen, Volumen, Material und Datum nach `<projekt>/gedruckt.json` (Projektdatei, damit
+  in den Versionen). Der Prüfer `gedruckt` (nach „druckvorschau“) vergleicht bei jedem Lauf: Volumen ±0,2 %,
+  Oberfläche ±0,3 %, Hauptmomente, Maße ±0,1 mm, Spiegelbild. Weicht die Form ab: Befund `gedruckt_geaendert`
+  (Warnung, kein Fehler), z. B. „Fangrolle ist als gedruckt markiert, die Form hat sich geändert (Volumen +3,0 %).“,
+  Lösung „Neu drucken … oder die Änderung zurücknehmen“. Heraus: einen Lauf lang `gedruckt=True, neu_drucken=True`
+  (schreibt die neue Form fest) oder den Eintrag in gedruckt.json löschen. `neu_drucken` ohne `gedruckt` bricht den
+  Lauf ab. Umsetzung `kernel/src/kevcad_kernel/druck/gedruckt.py`; CHECK additiv `druck.gedruckt` (Stand je Teil).
+
 ## Ablauf im Kernel
 
 1. Nach jedem erfolgreichen Lauf mit Druckteilen: Schätzung (V1/V2) und schnelles Anordnen (V3), Ziel unter 1 s am
@@ -105,6 +141,11 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
    abgleich.json` nachführen (V2).
 4. Ohne Bambu Studio (z. B. Mac mini): nur Schätzung, `slicer.zustand: "aus"` mit Meldung; Tests überspringen den
    Slicer-Teil.
+5. Löcher und Bohrungen (Strang „Feinschliff 2“, additiv): Der Prüfer „druckvorschau“ zählt je Höhenband die Umrisse
+   im waagrechten Schnitt (Außenkontur und jedes Loch, CHECK `druck.vorschau.formen[fid].schleifen_baender`); die
+   Schätzung rechnet je Schicht und weiterer Wandschleife 0,40 s für Naht, Rückzug und Leerweg (`Modell.s_loch`). Am
+   Abgleich von V-K (88 Slicer-Läufe): Lochscheibe mit 12 Löchern vorher 17 bis 26 % zu tief, jetzt −8,5 bis +1,0 %;
+   Zeit im Mittel aller Teile 4,9 % statt 6,3 %, Material unverändert 3,3 %.
 
 ## Protokoll (additiv)
 
@@ -165,6 +206,14 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
 - Einstellungen je Teil bzw. Gruppe ändern (Zweck, Wände, Füllung, Muster, Stützen, Brim) → `PRINT_SETTINGS`.
 - **„Platten als 3MF …“** → `PRINT_EXPORT_REQ`; danach „In Bambu Studio öffnen“.
 - Bericht „Druck“ im Export-Dialog von Phase 6 (Baustein `druck`): Tabelle je Platte und Teil mit Einstellungen.
+- **Filament statt Vollkörper** (Strang „Feinschliff 2“, 22.10.2026): Stückliste, Material und Inspektor nannten bei
+  Druckteilen „Gewicht“ den Vollkörper (Lenksperre 104,7 g), die Druckvorschau das Filament (39 g bei 20 % Füllung).
+  Jetzt einheitlich: Liegt die Vorschau desselben Laufs vor, gelten für Druckteile Filament und Filamentkosten (je
+  Teil das Stück seiner Gruppe, `je_stueck.g`, Kosten anteilig), bezeichnet als „Filament 39,1 g (gedruckt,
+  Schätzung | Bambu Studio) · Vollkörper 104,7 g“ (Inspektor im 3D-Bereich und im Material, Tooltip in der
+  Stückliste, Gruppenkopf „Filament, Bambu Studio“); Summen von Gewicht und Kosten folgen. Ohne Vorschau desselben
+  Laufs bleibt Vollkörper × Dichte. App `DruckFilamentWert` (Material/MaterialDaten.swift); Kernel MCP `bom` additiv
+  `druck_filament` je Position (`druck/vorschau.filament_je_zeile`) und im Text eine Zeile je Druckteil.
 
 ## Drucken (Phase 8)
 

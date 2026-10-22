@@ -154,3 +154,14 @@ from kevcad_kernel.druck import vorschau_geo as _druck_vorschau_geo  # noqa: E40
 
 if AKTIV is not None and "druckvorschau" not in AKTIV:
     AKTIV = (*AKTIV, "druckvorschau")
+
+# Bereits gedruckte Teile: Form gegen gedruckt.json (Strang „Feinschliff 2“, druck/gedruckt.py). Fest nach der
+# Druckvorschau einreihen (die Reihenfolge der Importe anderer Module darf das nicht verschieben)
+from kevcad_kernel.druck import gedruckt as _druck_gedruckt  # noqa: E402
+from kevcad_kernel.pruefung.pruefer import registriere as _registriere  # noqa: E402
+
+_registriere("druckvorschau", _druck_vorschau_geo.pruefe, nach="druck")
+_registriere("gedruckt", _druck_gedruckt.pruefe, nach="druckvorschau")
+
+if AKTIV is not None and "gedruckt" not in AKTIV:
+    AKTIV = (*AKTIV, "gedruckt")

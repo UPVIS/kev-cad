@@ -156,7 +156,10 @@ extension AppController: CatalogActions {
             saveFailed("Freigabe von „\(check.id)“ nicht wirksam: Nach dem Speichern fehlt \(what) im Katalog.")
             return
         }
-        guard found.suggested else { return }
+        guard found.suggested else {
+            freigabeBestaetigt(check.id)  // Freigabe im Projektfenster: nächster Eintrag
+            return
+        }
         let reason = found.ebene != check.ebene
             ? " Ein Vorschlag gleicher ID in der Ebene „\(found.ebene.title)“ überdeckt ihn; dort freigeben oder löschen."
             : ""
@@ -244,9 +247,10 @@ extension AppController: CatalogActions {
         }
     }
 
-    private func saveFailed(_ text: String) {
+    func saveFailed(_ text: String) {
         model.catalogActivity = .failed(text)
         log(.warning, "Lagerkatalog: \(text)")
+        freigabeGescheitert(text)  // Freigabe im Projektfenster: anhalten, Fehler bleibt stehen
     }
 
     /// Katalog im Hintergrund nachladen, damit Vorschläge von Claude auch ohne offenes Katalogfenster auffallen.

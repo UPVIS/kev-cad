@@ -250,7 +250,8 @@ def test_mcp_tools_against_runtime(p2):
     assert "kaufen Stange 1 (6.000 mm): 842 + 842 + 842 + 842 + 800 + 800 + 600; neuer Rest" in bom
     assert texts(r["csv"])[0].startswith("Stückliste;")
     define = texts(r["define"])[0]
-    assert not r["define"].is_error and "als Vorschlag" in define and "wartet auf Kevins Freigabe im Lagerkatalog" in define
+    assert not r["define"].is_error and "als Vorschlag" in define and "wartet auf Kevins Freigabe" in define
+    assert "freigabe_anfragen" in define
     assert "petg" in texts(r["mats"])[0] and "ja" in texts(r["mats"])[0]
     assert not r["delete"].is_error
     assert r["export"].is_error and "Export verweigert" in texts(r["export"])[0]

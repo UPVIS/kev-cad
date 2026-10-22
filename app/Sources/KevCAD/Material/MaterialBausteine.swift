@@ -86,6 +86,11 @@ extension MaterialPosition {
     /// Art für das Symbol (Eigenteile mit Hammer).
     var symbolArt: String { herkunft == .eigenteil ? "eigenteil" : line.art }
 
+    /// Hilfe zur Gewichtszelle: bei Druckteilen „Filament 39,0 g (gedruckt, Schätzung) · Vollkörper 104,7 g“.
+    var gewichtHilfe: String {
+        gewichtText ?? line.kgJe.map { "je Stück \(KevFormat.kg($0))" } ?? ""
+    }
+
     /// Farbe des Symbols: Kennzeichen der Herkunft, sonst neutral.
     var symbolFarbe: Color { herkunft?.color ?? .secondary }
 }
@@ -205,6 +210,11 @@ extension MaterialPosition {
 
     /// Tooltip der Preisspalte; bei Zukaufteilen mit brutto/netto und Datum.
     var preisHilfe: String {
+        if let f = filament, let k = f.kosten {  // Druckteile: Filamentkosten aus der Druckvorschau
+            var t = "Filament \(KevFormat.euro(k)) (Druckvorschau, \(f.stand.titel))"
+            if let v = line.preis { t += " · Vollkörper × Filamentpreis \(KevFormat.euro(v))" }
+            return t
+        }
         guard let je = line.preisJe else { return "ohne Preis" }
         var text = "je Stück \(KevFormat.euro(je))"
         if let z = line.zukauf {

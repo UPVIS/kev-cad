@@ -140,7 +140,7 @@ Was Claude über MCP liest, ist das, was Kevin im Bereich „Material“ sieht u
 | Gruppe | Inhalt | in der Summe |
 |---|---|---|
 | Lagerware | `BOM.einkaufsliste`: Fehlmengen nach Abzug des Projektbestands in Kaufeinheiten, Normteile zum Kaufen eingeschlossen | ja |
-| Zukaufteile | je Stücklistenzeile eines Zukaufteils (auch `kamera`, `objektiv`, `kamerazubehoer`) die ganze Anzahl, Preis und Link aus der Zeile (Katalog), Hinweis „Hersteller · Nummer · EAN …“; der Bestand führt sie noch nicht | ja |
+| Zukaufteile | je Stücklistenzeile eines Zukaufteils (auch `kamera`, `objektiv`, `kamerazubehoer`) die ganze Anzahl, Preis und Link aus der Zeile (Katalog), Hinweis „Hersteller · Nummer · EAN …“; seit „Feinschliff 2“ nach Abzug des Projektbestands (Abschnitt „Zukaufteile im Bestand“) | ja |
 | Normteile abzählen | `BOM.stueckgut`: „16 gebraucht, 12 aus Bestand, 4 kaufen“ | nein |
 | Filament für Druckteile | je Material aus der Druckvorschau desselben Laufs (`summe.material`, Teile aus `teile[].anzahl`, mit Ersatzteilen), sonst aus den Druckteilen der Stückliste (Volumen × Dichte) | nein |
 
@@ -165,6 +165,28 @@ Was Claude über MCP liest, ist das, was Kevin im Bereich „Material“ sieht u
   `material`, `teile`, `gramm`, `preis`, `quelle` `druckvorschau` | `stueckliste`, `stand`), `positionen`, `summe`,
   `summe_lager`, `summe_zukauf`, `ohne_preis`; die bisherigen Felder der Stückliste bleiben (`einkauf_summe` ist nur
   Lagerware). `bom` zeigt denselben Text (`einkauf_text`), `run` die Kennzeile („5 Positionen, ≈ 84,62 €“).
+
+## Zukaufteile im Bestand (Strang „Feinschliff 2“, 22.10.2026)
+
+Zukaufteile, Kameras, Objektive und Kamerazubehör (`zukaufteil`, `kamera`, `objektiv`, `kamerazubehoer`) sind
+**Stückgut** wie Schrauben, Muttern und Scheiben: `stueck: [{"anzahl": 1}]` ohne Länge. Gemeldet aus dem Einsatz an
+Variante B: `bestand_eintragen` wies sie mit `stueck` („wird in ganzen und Resten geführt“) und mit `ganze` („ist
+Stückgut“) gleichermaßen ab, weil `stueck` nur für Schrauben, Muttern und Scheiben galt; die Zukaufteile blieben auf der
+Einkaufsliste. Kernel: `catalog.STUECKGUT` (Kleinteile plus `STUECKGUT_ZUKAUF`); Stangenware und Platten bleiben bei
+`ganze`/`reste`. App: Erfassen und „Nicht erfasst“ im Bereich Bestand bieten diese Arten an (`CatalogSchema.Art.imBestand`).
+
+- **BOM.zukauf_bestand** (additiv): je Stücklistenzeile eines Zukaufteils `{stock_id, pos, benennung, anzahl,
+  aus_bestand, kaufen}`, in Stücklistenreihenfolge, der Bestand je Lagerteil der Reihe nach verteilt. Fehlt das Feld
+  (älterer Kernel), stehen Zukaufteile wie bisher ganz auf der Einkaufsliste.
+- **Einkaufsliste**, Gruppe „Zukaufteile“ (Kernel `einkauf.py`, App `MaterialDaten`, Text und CSV byteweise gleich):
+  ganz aus dem Bestand gedeckte Zeilen entfallen; teilweise gedeckte tragen die Fehlmenge, den Preis `preis_je ×
+  kaufen` (ohne `preis_je`: `preis × kaufen / anzahl`) und den Hinweis „… · Bestand im Projekt: 1, gebraucht: 2“. Der
+  Abgleich einer Zeile nimmt den Eintrag mit gleicher `stock_id` und `pos`, sonst den ersten freien mit gleicher
+  `stock_id`. Zukaufteile kommen nicht unter Lagerware, nicht in `stueckgut` und nicht in `fehlt`.
+- MCP `einkaufsliste()` zusätzlich `zukauf_aus_bestand` (je Zeile mit Bestand: `stock_id`, `benennung`, `anzahl`,
+  `aus_bestand`, `kaufen`) und `zukauf_bestand`; der Text nennt „Zukaufteile aus dem Bestand: …“. Die App zeigt sie
+  als Kachel „Zukaufteile aus Bestand“ unter der Einkaufsliste und in der Stückliste als Herkunft „Bestand“/„Kaufen“.
+- **Gebaut** zieht die aus dem Bestand verplanten Zukaufteile ab wie anderes Stückgut (`op: "stueck"` ohne Länge).
 
 ## Verschnitt (Definition 2, 22.10.2026)
 

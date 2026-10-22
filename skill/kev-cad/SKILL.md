@@ -274,9 +274,13 @@ Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
 - Materialien nur aus dem Katalog (id oder Alias), auch bei `show(material=...)`. Unbekannte oder nur vorgeschlagene
   Materialien brechen den Lauf mit Vorschlägen ab.
 - Nichts erfinden. Fehlt ein Teil oder Material: erst `stock_search` mit anderen Wörtern, dann Kevin fragen. Nur auf
-  seinen Wunsch mit `stock_define` bzw. `material_define` vorschlagen. Ein Vorschlag „wartet auf Kevins Freigabe im
-  Lagerkatalog“ und lässt sich vorher nicht verbauen; Kevin gibt ihn im Lagerkatalog-Fenster frei oder lehnt ab.
-  Freigegebene Einträge ändert nur Kevin.
+  seinen Wunsch mit `stock_define` bzw. `material_define` vorschlagen. Ein Vorschlag wartet auf Kevins Freigabe und
+  lässt sich vorher nicht verbauen. **Freigabe anfragen:** `freigabe_anfragen(["id", …], grund="wofür")` öffnet im
+  Projektfenster den Dialog „Vorschläge freigeben“ (Daten, Link, „Freigeben“ je Eintrag und für alle), wartet auf
+  Kevins Klick (Standard 120 s) und meldet, was freigegeben, abgelehnt oder offen ist. Nie „bitte im Lagerkatalog
+  freigeben“ schreiben. Schreibt Kevin im Chat „freigegeben“, ist damit nichts freigegeben: dann ebenfalls
+  `freigabe_anfragen` aufrufen, er klickt nur noch. Das Werkzeug gibt nie selbst frei. Freigegebene Einträge ändert
+  nur Kevin.
 - Verstöße: `run` meldet „Inventar-Regel: 2 Teile sind nicht aus dem Inventar: …“ als isError. Die Geometrie ist zu
   sehen, aber Export (STEP, STL, 3MF, Stückliste) wird verweigert. Passendes Lagerteil verbauen, als Druckteil
   kennzeichnen oder Kevin bitten, das Lagerteil anzulegen.
@@ -340,7 +344,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
-| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch); `zweck` (zier, funktion, tragend, bewegt, aussen) bestimmt die Empfehlungen der Druckvorschau, `anzahl` nur für zusätzliche Stück. |
+| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None, gedruckt=False, neu_drucken=False)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch); `zweck` (zier, funktion, tragend, bewegt, aussen) bestimmt die Empfehlungen der Druckvorschau, `anzahl` nur für zusätzliche Stück; `gedruckt=True` für schon gedruckte Teile (Form in gedruckt.json festgeschrieben, Änderung = Warnung `gedruckt_geaendert`, `neu_drucken=True` einen Lauf lang schreibt die neue Form fest). |
 | `lager.zukauf(id)` → `.verbauen(name)`, `.bezugspunkt(name)` | Zukaufteil mit Hersteller-CAD, Skript oder Ersatzkörper (siehe „Zukaufteile“). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `montage(teil, richtung=, nach=, werkzeug=, baugruppe=, schnappt=, eingedruckt=)` | Einbau erklären, wo die Prüfung es nicht selbst wissen kann (siehe „Montagegerecht konstruieren“). |
@@ -392,7 +396,9 @@ Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge
   und Preis aus dem Katalog), Summe dieser beiden, dann „Normteile abzählen“ (gebraucht, aus Bestand, kaufen) und
   „Filament für Druckteile“ (aus der Druckvorschau, sonst Volumen × Dichte; nicht in der Summe).
 - **Bestand nur nach Kevins Angabe eintragen** (`bestand_eintragen`, seine Worte in `grund`), nie schätzen oder
-  erfinden; jede Änderung aus der Antwort an Kevin nennen.
+  erfinden; jede Änderung aus der Antwort an Kevin nennen. Zukaufteile, Kameras, Objektive und Kamerazubehör sind
+  Stückgut: `bestand_eintragen("blackmagic-pocket-6k-pro", stueck=1, grund=…)`; was Kevin hat, fällt aus der
+  Einkaufsliste („Zukaufteile aus dem Bestand“).
 - **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und
   Stückgut ab und legt die neuen Reste an. Jede Buchung lässt sich mit `buchung_rueckgaengig` umkehren.
 - **Einkaufsliste im Bericht nennen:** nach dem Bauen eines Modells die Positionen mit Summe aus `einkaufsliste`
@@ -432,8 +438,8 @@ Ablauf, wenn Kevin einen Link, eine Herstellernummer oder eine EAN nennt:
 3. **Anlegen:** HTML an `zukauf_html(url, html)` (wertet JSON-LD, Microdata und Open Graph aus) oder die gelesenen
    Felder an `zukauf_anlegen(url, felder={name, hersteller, mpn, gtin, preis {je_stueck, waehrung, brutto}, masse {l,
    b, h} bzw. {d, l}, gewicht, bild})`. Preis immer mit brutto/netto wie im Shop. Kevin Hersteller, Nummer, Preis und
-   Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es im Lagerkatalog
-   freigibt; vorher lässt es sich nicht verbauen.
+   Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es freigibt
+   (`freigabe_anfragen([id], grund)` öffnet den Dialog im Projektfenster); vorher lässt es sich nicht verbauen.
 4. **CAD suchen:** `cad_suchen(id)`. Mit Kevins TraceParts-Schlüssel kommt das STEP automatisch („powered by
    TraceParts“ nennen). Sonst liefert es Links (Produktseite, Herstellerportal, TraceParts, 3Dfindit, Websuche):
    **Kevin bitten, das STEP (oder ein ZIP mit STEP) mit seinem Konto herunterzuladen.** Die App beobachtet derweil
@@ -776,7 +782,7 @@ des Bauplans (Zeichnungen behalten ihr Blattformat). Ohne `ziel` landet das PDF 
 | App nicht verbunden | der Kernel läuft, die App hängt (noch) nicht an ihm; kurz warten, sonst Kevin bitten, Kev CAD zu öffnen |
 | Kev CAD läuft nicht – bitte starten | die Brücke erreicht die App nicht; Kevin bitten, Kev CAD zu starten |
 | Inventar-Regel: … nicht aus dem Inventar | Teil ohne `verbauen`/`druckteil` gezeigt; Lagerteil suchen, Druckteil kennzeichnen oder Kevin fragen |
-| … wartet auf Kevins Freigabe im Lagerkatalog | Vorschlag aus `stock_define`/`material_define`; Kevin gibt ihn im Lagerkatalog frei |
+| … wartet auf Kevins Freigabe | Vorschlag aus `stock_define`/`material_define`/`zukauf_anlegen`; `freigabe_anfragen([id], grund)` öffnet den Dialog im Projektfenster |
 | Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
 | Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |

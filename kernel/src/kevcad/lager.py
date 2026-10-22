@@ -502,7 +502,8 @@ def _pruefe_zweck_anzahl(zweck: Any, anzahl: Any, name: str) -> tuple[str | None
 
 
 def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", ausrichtung: Any = None,
-              zweck: str | None = None, anzahl: int | None = None):
+              zweck: str | None = None, anzahl: int | None = None, gedruckt: bool = False,
+              neu_drucken: bool = False):
     """Selbst konstruiertes Teil, das gedruckt wird: registriert es für die Stückliste (Masse aus Volumen × Dichte,
     Kosten über preis_je_kg) und gibt es mit Name, Farbe und Material zurück. ``material`` muss freigegeben und
     druckbar sein; ``verfahren`` "3d-druck" oder "harzdruck".
@@ -514,12 +515,22 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
 
     Druckvorschau (DRUCKVORSCHAU.md): ``zweck`` "zier" | "funktion" | "tragend" | "bewegt" | "aussen" bestimmt die
     empfohlenen Einstellungen (Wände, Füllung, Schicht …); ohne Angabe gilt "funktion" als Schätzung. ``anzahl``: wie
-    oft dieses Teil insgesamt gedruckt wird, wenn das mehr ist, als es im Modell gezeigt wird (Ersatzteile)."""
+    oft dieses Teil insgesamt gedruckt wird, wenn das mehr ist, als es im Modell gezeigt wird (Ersatzteile).
+
+    ``gedruckt=True``: Kevin hat das Teil schon gedruckt. Es bleibt in Modell und Stückliste („gedruckt“), fällt aber
+    aus Druckvorschau, Druckexport, Filament und dem Bauplanschritt „Drucken“ heraus. Der erste Lauf schreibt seine Form
+    fest (``<projekt>/gedruckt.json``); ändert sie sich später, warnt die Prüfung (``gedruckt_geaendert``). Gewollte
+    Änderung: einen Lauf lang ``neu_drucken=True`` dazu (schreibt die neue Form fest), dann wieder weglassen."""
     from build123d import BuildPart, Color, Shape
 
     from kevcad_kernel.bom import Piece
 
     zweck, anzahl = _pruefe_zweck_anzahl(zweck, anzahl, str(name))
+    if not isinstance(gedruckt, bool) or not isinstance(neu_drucken, bool):
+        raise LagerError(f"druckteil {name!r}: gedruckt und neu_drucken sind True oder False")
+    if neu_drucken and not gedruckt:
+        raise LagerError(f"druckteil {name!r}: neu_drucken=True nur zusammen mit gedruckt=True (schreibt die neue "
+                         "Form des gedruckten Teils fest)")
     if verfahren not in VERFAHREN:
         raise LagerError(f"Verfahren {verfahren!r} ist nicht erlaubt (erlaubt: {', '.join(VERFAHREN)}). Andere "
                          "Fertigung nur mit Lagerteilen aus dem Katalog.")
@@ -555,7 +566,7 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
                   preis=kg * pkg if pkg is not None else None, preis_stand=mat.get("preis_stand"),
                   preis_quelle=mat.get("preis_quelle"), verfahren=verfahren, volume=volume,
                   size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)],
-                  ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl)
+                  ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl, gedruckt=gedruckt, neu_drucken=neu_drucken)
     _register(piece, shape)
     return shape
 

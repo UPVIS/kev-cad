@@ -537,6 +537,8 @@ public enum KernelMessage: Sendable {
     case druck(DruckNachricht)
     /// Drucken, Phase 8 (additiv, DRUCKVORSCHAU.md „Drucken (Phase 8)“): PRINTER_STATUS, PRINT_JOB_RES, PRINT_JOB_ASK.
     case drucker(DruckerNachricht)
+    /// Freigabe im Projektfenster (additiv, Strang „Feinschliff 2“): FREIGABE_ANFRAGE, Antwort ACK.
+    case freigabe(FreigabeAnfrage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -572,6 +574,7 @@ public enum KernelMessage: Sendable {
         case .dokumentExport: return "DOC_EXPORT_REQ"
         case .druck(let d): return d.typeName
         case .drucker(let d): return d.typeName
+        case .freigabe: return "FREIGABE_ANFRAGE"
         case .unknown(let t, _): return t
         }
     }
@@ -638,6 +641,7 @@ public enum KernelMessage: Sendable {
         case let t where DruckNachricht.types.contains(t): return .druck(try DruckNachricht.decode(type: t, header: h))
         case let t where DruckerNachricht.types.contains(t):
             return .drucker(try DruckerNachricht.decode(type: t, header: h))
+        case "FREIGABE_ANFRAGE": return .freigabe(try FreigabeAnfrage.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

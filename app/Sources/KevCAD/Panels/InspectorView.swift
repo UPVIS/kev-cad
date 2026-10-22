@@ -74,7 +74,14 @@ struct InspectorView: View {
                 PropertyRow("Name", part.id)
                 PropertyRow("Hüllmaße", KevFormat.dimensions(min: part.bboxMin, max: part.bboxMax))
                 PropertyRow("Volumen", part.volume.map { KevFormat.volume(mm3: $0) } ?? "–")
-                PropertyRow("Masse", part.mass.map { KevFormat.mass(grams: $0) } ?? "– (ohne Material)")
+                if let f = model.druckFilament(teil: part.id) {
+                    // Strang „Feinschliff 2“: Druckteile mit Filament (gedruckt) und Vollkörper, gleich benannt wie im
+                    // Bereich „Material“
+                    PropertyRow("Filament", "\(KevFormat.mass(grams: f.gramm)) (gedruckt, \(f.stand.titel))")
+                    PropertyRow("Vollkörper", part.mass.map { KevFormat.mass(grams: $0) } ?? "–")
+                } else {
+                    PropertyRow("Masse", part.mass.map { KevFormat.mass(grams: $0) } ?? "– (ohne Material)")
+                }
                 PropertyRow("Material", model.materialTitle(for: part) ?? "–")
                 PropertyRow("Dreiecke", KevFormat.integer(part.triangles))
                 PropertyRow("Flächen · Kanten", "\(KevFormat.integer(part.faces)) · \(KevFormat.integer(part.edges))")
@@ -406,4 +413,15 @@ private struct MeasurementRow: View {
 private func copy(_ text: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
+}
+
+extension AppModel {
+    /// Filament eines Druckteils aus der Druckvorschau desselben Laufs (je Stück seiner Gruppe); nil ohne Vorschau,
+    /// für andere Teile und für schon gedruckte.
+    func druckFilament(teil: String) -> DruckFilamentWert? {
+        guard let v = druck.vorschau, let bom, v.run == bom.run,
+              let line = bom.lines.first(where: { $0.teile.contains(teil) }), line.druckteil, !line.gedruckt
+        else { return nil }
+        return DruckFilamentWert.aus(v, teile: [teil])
+    }
 }

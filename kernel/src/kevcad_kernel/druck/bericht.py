@@ -48,6 +48,8 @@ def druck_kurz(druck: dict[str, Any]) -> dict[str, Any]:
         teile[name] = {"zusammenfassung": t.get("zusammenfassung"),
                        "ausrichtung": {k: a.get(k) for k in ("text", "liegt_auf", "automatisch", "vorgabe",
                                                              "begruendung", "drehung")}}
+        if t.get("gedruckt"):
+            teile[name]["gedruckt"] = True
     return {"drucker": druck.get("drucker"), "teile": teile, "zaehler": _summen(druck),
             "festigkeit": {m: v.get("festigkeit") for m, v in (druck.get("materialien") or {}).items()},
             "neu_geprueft": druck.get("neu_geprueft"), "aus_zwischenspeicher": druck.get("aus_zwischenspeicher"),
@@ -76,8 +78,13 @@ def druck_zeilen(druck: dict[str, Any] | None) -> list[str]:
     neu, alt = int(druck.get("neu_geprueft") or 0), int(druck.get("aus_zwischenspeicher") or 0)
     kopf += f" ({neu} neu geprüft, {alt} aus dem Zwischenspeicher, {_num(druck.get('dauer_ms'), 0)} ms)."
     zeilen = [kopf]
+    gedruckt = [n for n, t in teile.items() if t.get("gedruckt")]
+    if gedruckt:
+        zeilen.append(f"Gedruckt, vorhanden (nicht mehr geprüft): {', '.join(gedruckt)}.")
     if len(teile) <= MAX_TEILE_IM_LAUF:
         for name, t in teile.items():
+            if t.get("gedruckt"):
+                continue
             a = t.get("ausrichtung") or {}
             art = "automatisch" if a.get("automatisch") else f"vorgegeben: {a.get('vorgabe')}"
             zeilen.append(f"- Ausrichtung {name}: {a.get('text')} ({art}). {a.get('begruendung') or ''}".rstrip())

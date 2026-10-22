@@ -348,7 +348,8 @@ def hint_for(exc: BaseException, ns: dict[str, Any] | None = None) -> str:
                 "seiner Freigabe benutzen; Teile aus dem Lager tragen ihr Material schon.")
     if name == "LagerError":
         if "Freigabe" in msg:
-            return "Der Eintrag ist nur vorgeschlagen: Kevin bitten, ihn im Lagerkatalog freizugeben."
+            return ("Der Eintrag ist nur vorgeschlagen und von Kevin freizugeben: mit freigabe_anfragen([id], grund) "
+                    "den Freigabedialog im Projektfenster öffnen; Kevin gibt ihn dort mit einem Klick frei.")
         return "Lagerteile mit stock_search suchen und mit lager.teil(id) holen; Maße wie im Katalog angeben."
     if isinstance(exc, IndentationError):
         return "Einrückung prüfen: Blöcke mit 4 Leerzeichen einrücken, Tabs und Leerzeichen nicht mischen."
@@ -702,6 +703,8 @@ class Runner:
         deviation = float(msg.get("deviation") or DEFAULT_DEVIATION)
         angular = float(msg.get("angular") or DEFAULT_ANGULAR)
         project = str(Path(path).parent)
+        if not msg.get("schatten"):
+            self._projekt_pfad = project  # Prüfung „gedruckt“ liest <projekt>/gedruckt.json
         # Versionen: Lauf ohne Live-Aufbau (alte Version für Vergleich und Kennzahlen); Namensraum für execute,
         # Laufnummer und Prüfung bleiben beim letzten echten Lauf
         schatten = bool(msg.get("schatten"))
@@ -853,7 +856,8 @@ class Runner:
             return header, payload
         if self._pruef_lauf is None:
             self._pruef_lauf = PruefLauf()
-        return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen)
+        return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen,
+                                       optionen={"projekt": getattr(self, "_projekt_pfad", None)})
 
     def fertig_rechnen(self, run: int, abbrechen: Callable[[], None] | None = None
                        ) -> tuple[dict[str, Any], bytes] | None:

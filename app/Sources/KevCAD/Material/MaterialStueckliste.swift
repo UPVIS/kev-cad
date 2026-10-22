@@ -230,7 +230,7 @@ struct StuecklisteGrossTabelle: View {
         .customizationID("anzahl")
         TableColumn(MaterialText.Spalte.gewicht, value: \.kgWert) { p in
             ZahlZelle(text: p.kg.map(KevFormat.kg) ?? "–")
-                .help(p.line.kgJe.map { "je Stück \(KevFormat.kg($0))" } ?? "")
+                .help(p.gewichtHilfe)
         }
         .width(min: 58, ideal: 74)
         .customizationID("gewicht")
@@ -319,6 +319,14 @@ struct GruppenKopf: View {
                 + KevFormat.count(s.teile, one: "Teil", many: "Teile"))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
+            // Strang „Feinschliff 2“: Druckteile mit Filament aus der Druckvorschau (statt Vollkörper)
+            if let stand = positionen.compactMap(\.filament).first?.stand {
+                Text("Filament, \(stand.titel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("Gewicht und Kosten der Druckteile: Filament aus der Druckvorschau (Wände, Füllung, Stützen); "
+                        + "der Vollkörper steht im Tooltip und im Inspektor")
+            }
             if s.kg > 0 { Text(KevFormat.kg(s.kg)).foregroundStyle(.secondary) }
             if let p = s.preis { Text(KevFormat.euro(p)).fontWeight(.medium) }
         }
@@ -411,7 +419,7 @@ struct StuecklisteKompaktTabelle: View {
         if mitGewicht {
             TableColumn(MaterialText.Spalte.gewicht) { (p: MaterialPosition) in
                 ZahlZelle(text: p.kg.map(KevFormat.kg) ?? "–")
-                    .help(p.line.kgJe.map { "je Stück \(KevFormat.kg($0))" } ?? "")
+                    .help(p.gewichtHilfe)
             }
             .width(min: 58, ideal: 70)
         }

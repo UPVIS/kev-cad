@@ -366,6 +366,15 @@ class FakeService:
         return {"ok": True, "message": f"Lagerteil {entry_id!r} aus eigene.json gelöscht.",
                 "datei": "/tmp/katalog/eigene.json"}
 
+    def freigabe_anfragen(self, ids: list[str], grund: str = "", warten_s: float | None = None) -> dict[str, Any]:
+        self._record("freigabe_anfragen", ids, grund, warten_s)
+        if "gibtsnicht" in ids:
+            return {"ok": False, "error": "'gibtsnicht' gibt es im Katalog nicht"}
+        frei = [i for i in ids if i != "rohr-offen"]
+        offen = [i for i in ids if i == "rohr-offen"]
+        return {"ok": True, "anfrage": "F-0001", "freigegeben": frei, "abgelehnt": [], "offen": offen,
+                "schon_frei": [], "dialog": "geschlossen" if offen else "entschieden", "gewartet_s": 3.2}
+
     # Bestand je Projekt ------------------------------------------------------------------------------------------
 
     def bestand_liste(self, stock_id: str | None = None) -> dict[str, Any]:

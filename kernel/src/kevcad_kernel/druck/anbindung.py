@@ -388,7 +388,8 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
             q = R.T @ np.asarray(p, dtype=np.float64)
             return (M[:3, :3] @ q + M[:3, 3]).tolist()
 
-        if k.info.get("druck_verfahren") == "harzdruck":
+        gedruckt = bool(k.info.get("druck_gedruckt"))  # schon gedruckt: keine Druckbefunde mehr (Feinschliff 2)
+        if k.info.get("druck_verfahren") == "harzdruck" and not gedruckt:
             out.append(befund(PRAEFIX + "material", [name], "fehler",
                               f"{name}: Verfahren Harzdruck, aber es gibt keinen Harzdrucker (Bambu Lab P1P druckt "
                               "nur FDM).", "Als FDM-Druckteil (verfahren=\"3d-druck\", PLA oder PETG) konstruieren.",
@@ -423,9 +424,13 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
         bef = _befunde(name, erg, welt)
         if any((b.get("wert") or {}).get("druckart") == "schichtraster" for b in bef):
             bef = _abdruecke_buendeln(ctx, name, k, bef, _hoehe_von(k, erg, R))
+        if gedruckt:
+            bef = []
         out += bef
         teile[name] = _teil_info(name, erg, bef, vorgabe, "druckteil" if rahmen is not None else "welt",
                                  aus_speicher, ms)
+        if gedruckt:
+            teile[name]["gedruckt"] = True
         mid = str(erg.get("material"))
         if mid not in materialien:
             materialien[mid] = {"name": erg.get("material_name"), "druckhinweise": list(erg.get("druckhinweise") or []),

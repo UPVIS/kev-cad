@@ -76,6 +76,10 @@ public enum CatalogSchema {
         }
 
         public var isKnown: Bool { CatalogSchema.arten.contains { $0.id == id } }
+
+        /// Führt der Bestand eines Projekts: alle Lagerarten aus KATALOG.md und, als Stückgut, Zukaufteile, Kameras,
+        /// Objektive und Kamerazubehör (Strang „Feinschliff 2“).
+        public var imBestand: Bool { isKnown || CatalogSchema.zukaufArten.contains(id) }
     }
 
     static let screwTypes = [
@@ -83,6 +87,9 @@ public enum CatalogSchema {
     ]
     static let nutTypes = ["HexNut", "DomedCapNut", "SquareNut", "HeatSetNut"]
     static let washerTypes = ["PlainWasher", "ChamferedWasher", "CheeseHeadWasher"]
+
+    /// Arten, die als Zukauf gelten (Einkaufsliste „Zukaufteile“) und im Bestand Stückgut sind.
+    public static let zukaufArten: Set<String> = ["zukaufteil", "kamera", "objektiv", "kamerazubehoer"]
 
     /// Alle Arten aus KATALOG.md in fester Reihenfolge.
     public static let arten: [Art] = [

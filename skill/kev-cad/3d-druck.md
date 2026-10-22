@@ -483,8 +483,15 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   25 % Gyroid, Last längs der Schichten · `bewegt` 4 Wände, 30 % Gyroid, 0,16 mm · `aussen` 4 Wände, 6 Decken, 25 %
   Gyroid (PLA warnt). Ohne `zweck` gilt `funktion` als Schätzung. Stützen und Brim folgen aus der Druckprüfung
   (Stützfläche, Auflage, schlanke Teile, Verzug).
-- **Anzahl:** gleiche Teile erkennt der Kernel selbst (gleiche Form und Material); `anzahl=` nur für zusätzliche
+- **Anzahl:** gleiche Teile erkennt der Kernel selbst (gleiche Form in Druckausrichtung und Material, auch wenn sie
+  einzeln in Weltlage gebaut sind; Spiegelbilder als eigene Gruppe „(gespiegelt)“); `anzahl=` nur für zusätzliche
   Stück (Ersatzteile), etwa `anzahl=6` bei vier gezeigten Rollen.
+- **Schon gedruckt:** `lager.druckteil(form, name, material="petg", gedruckt=True)`, sobald Kevin sagt, dass er das
+  Teil gedruckt hat. Es bleibt in Modell und Stückliste („Gedruckt“), fällt aber aus Druckvorschau, Druckexport,
+  Filament und dem Bauplanschritt „Drucken“. Der erste Lauf schreibt die Form in `gedruckt.json` fest; ändert ein
+  späterer Lauf sie, meldet die Prüfung `gedruckt_geaendert` (Warnung). Dann Kevin fragen: neu drucken (einen Lauf
+  lang `neu_drucken=True`, danach weglassen) oder die Änderung zurücknehmen. Ersetzt eigene `GEDRUCKT`-Dicts mit
+  Formprüfung im Modell.
 - **Was die Vorschau sagt:** Kevin in einem Satz nennen, was neu dazukommt (z. B. „2 Platten PETG, 6 h 40 min,
   4,80 €; die Lenksperre braucht Stützen“). Warnungen der Vorschau (Stützen, Verzug, Trocknen) wie Hinweise der
   Druckprüfung behandeln: wenn möglich konstruktiv lösen (Fase statt Überhang, größere Auflage).

@@ -152,6 +152,12 @@ class KernelService(Protocol):
     def catalog_delete(self, kind: str, entry_id: str, ebene: str = "eigen") -> dict[str, Any]:
         """Eintrag aus dem eigenen oder Projekt-Katalog löschen. {"ok"}"""
 
+    def freigabe_anfragen(self, ids: list[str], grund: str = "", warten_s: float | None = None) -> dict[str, Any]:
+        """Strang „Feinschliff 2“ (additiv, kevcad_kernel/freigabe.py): Dialog „Vorschläge freigeben“ im
+        Projektfenster öffnen und auf Kevins Entscheidung warten (höchstens ``warten_s``, Standard 120 s). Gibt nichts
+        selbst frei. {"ok", "anfrage", "freigegeben", "abgelehnt", "offen", "schon_frei", "dialog": "entschieden" |
+        "geschlossen" | "offen" | "nicht_noetig"}"""
+
     # Bestand je Projekt (BESTAND.md; Umsetzung in kevcad_kernel/bestand/anbindung.py)
     def bestand_liste(self, stock_id: str | None = None) -> dict[str, Any]:
         """Bestand und Reste des offenen Projekts: {"ok", "projekt", "datei", "stand", "bestand", "buchungen",

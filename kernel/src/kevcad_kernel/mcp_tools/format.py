@@ -391,7 +391,7 @@ def stock_detail(res: dict[str, Any]) -> str:
     it = res.get("item") or {}
     mat = res.get("material") or {}
     lines = [f"{it.get('name', '?')} ({it.get('id', '?')}), Ebene {it.get('ebene', '?')}"
-             + (", vorgeschlagen – wartet auf Kevins Freigabe im Lagerkatalog" if it.get("status") == "vorgeschlagen"
+             + (", vorgeschlagen – wartet auf Kevins Freigabe (freigabe_anfragen)" if it.get("status") == "vorgeschlagen"
                 else "")]
     lines.append(f"Art {it.get('art', '?')}" + (f", Norm {it['norm']}" if it.get("norm") else "")
                  + f", Maße: {masse_short(it)}")
@@ -458,7 +458,7 @@ def bom_text(bom: dict[str, Any]) -> str:
         for ln in lines_:
             g = gehrung_text(ln.get("gehrung")) if not ln.get("eigenteil") else ""
             name = str(ln.get("benennung", "")) + (" (Eigenteil)" if ln.get("eigenteil") else "") + (
-                " (Druckteil)" if ln.get("art") == "druckteil" else "") + (
+                (" (Druckteil, gedruckt)" if ln.get("gedruckt") else " (Druckteil)") if ln.get("art") == "druckteil" else "") + (
                 (" (Zukaufteil, vereinfacht)" if ln.get("vereinfacht") else " (Zukaufteil)")
                 if ln.get("art") == "zukaufteil" else "")
             rows.append([str(ln.get("pos", "")), str(ln.get("anzahl", "")), name, str(ln.get("masse_text", "")), g,
@@ -466,6 +466,19 @@ def bom_text(bom: dict[str, Any]) -> str:
                          de_num(ln["kg"], 2) if isinstance(ln.get("kg"), (int, float)) else "–",
                          de_fixed(ln["preis"]) if isinstance(ln.get("preis"), (int, float)) else "–"])
         out = [head, "", table(rows, right={0, 1, 6, 7})]
+    fil = bom.get("druck_filament") or {}
+    if fil:  # Strang „Feinschliff 2“: Filament (gedruckt) statt Vollkörper, gleich benannt wie in der App
+        stand_text = {"schaetzung": "Schätzung", "slicer": "Bambu Studio", "gemischt": "Teils Bambu Studio"}
+        out.append("")
+        out.append("Druckteile, Filament aus der Druckvorschau (die Tabelle zeigt Vollkörper × Dichte):")
+        for ln in lines_:
+            f = fil.get(str(ln.get("pos")))
+            if not f:
+                continue
+            out.append(f"- Pos. {ln.get('pos')} {ln.get('benennung')} ×{ln.get('anzahl')}: Filament "
+                       f"{de_num(f['g'], 1)} g (gedruckt, {stand_text.get(f.get('stand'), 'Schätzung')})"
+                       + (f", {de_fixed(f['kosten'])} €" if f.get("kosten") is not None else "")
+                       + f" · Vollkörper {de_num(f.get('vollkoerper_g') or 0, 1)} g")
     cuts = bom.get("cuts") or []
     if cuts:
         out.append("")

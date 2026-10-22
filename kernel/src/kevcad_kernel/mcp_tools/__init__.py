@@ -31,6 +31,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "material_list",
     "material_define",
     "catalog_delete",
+    "freigabe_anfragen",
     "bom",
     "bestand_liste",
     "bestand_eintragen",

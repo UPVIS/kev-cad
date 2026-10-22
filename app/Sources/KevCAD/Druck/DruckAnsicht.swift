@@ -26,6 +26,7 @@ struct DruckAnsicht: View {
             kopf
             Divider()
             baender
+            if let v = druck.vorschau, !v.gedruckt.isEmpty { gedrucktLeiste(v) }
             inhalt
         }
         .background(Color(nsColor: .controlBackgroundColor))
@@ -35,6 +36,29 @@ struct DruckAnsicht: View {
         }
         .onChange(of: druck.vorschau) { _, v in ui.pruefe(v) }
         .onChange(of: model.selectedPartIDs) { _, ids in ui.folge(auswahl: ids, vorschau: druck.vorschau) }
+    }
+
+    /// Strang „Feinschliff 2“: schon gedruckte Teile (nicht in Platten und Summe), Formänderungen hervorgehoben.
+    private func gedrucktLeiste(_ v: Druckvorschau) -> some View {
+        let geaendert = v.gedruckt.filter(\.geaendert)
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(MaterialKennzeichen.gedruckt.color)
+            Text("Gedruckt, vorhanden: " + v.gedruckt.map { $0.name.split(separator: "/").last.map(String.init) ?? $0.name }
+                .joined(separator: ", "))
+                .lineLimit(2)
+            if !geaendert.isEmpty {
+                Text("· Form geändert: " + geaendert.map { ($0.name.split(separator: "/").last.map(String.init) ?? $0.name)
+                    + " (" + $0.unterschiede.joined(separator: ", ") + ")" }.joined(separator: "; "))
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .help("lager.druckteil(…, gedruckt=True): nicht in Platten, Summe und Filament; die Form ist in gedruckt.json "
+            + "festgeschrieben")
     }
 
     // MARK: Kopf
@@ -216,7 +240,13 @@ struct DruckAnsicht: View {
 
     @ViewBuilder
     private var leer: some View {
-        if let v = druck.vorschau, v.istLeer {
+        if let v = druck.vorschau, v.istLeer, !v.gedruckt.isEmpty {
+            ContentUnavailableView {
+                Label("Alle Druckteile sind schon gedruckt", systemImage: "checkmark.circle")
+            } description: {
+                Text("Nichts mehr zu drucken; die Teile stehen oben als „gedruckt, vorhanden“.")
+            }
+        } else if let v = druck.vorschau, v.istLeer {
             ContentUnavailableView {
                 Label("Keine Druckteile im Modell", systemImage: "printer")
             } description: {

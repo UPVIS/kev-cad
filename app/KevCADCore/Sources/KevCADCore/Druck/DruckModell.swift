@@ -605,6 +605,8 @@ public struct Druckvorschau: Equatable, Sendable {
     public var projekt: DruckProjektEinstellungen?
     public var regler: Bool
     public var ms: Double?
+    /// Strang „Feinschliff 2“ (additiv `gedruckt`): schon gedruckte Teile (vorhanden, nicht in Platten und Summe).
+    public var gedruckt: [DruckGedruckt] = []
 
     public init(run: Int = 0, stand: DruckStand = .schaetzung, drucker: String = "Bambu Lab P1P 0.4",
                 summe: DruckSumme = DruckSumme(), platten: [DruckPlatte] = [], teile: [DruckGruppe] = [],
@@ -640,6 +642,7 @@ public struct Druckvorschau: Equatable, Sendable {
         projekt = j["einstellungen"].flatMap { $0.objectValue == nil ? nil : DruckProjektEinstellungen(json: $0) }
         regler = j["regler"]?.boolValue ?? false
         ms = j["ms"]?.doubleValue
+        gedruckt = (j["gedruckt"]?.arrayValue ?? []).compactMap(DruckGedruckt.init(json:))
         // Filamentprofil je Material aus den Gruppen, wenn die Summe keins nennt
         for i in self.summe.material.indices where self.summe.material[i].filament == nil {
             let m = self.summe.material[i].material
@@ -690,6 +693,31 @@ public struct Druckvorschau: Equatable, Sendable {
 
     /// Leere Vorschau (Lauf ohne Druckteile).
     public var istLeer: Bool { teile.isEmpty && platten.isEmpty }
+}
+
+/// Schon gedrucktes Teil (`druckvorschau.gedruckt[]`, Strang „Feinschliff 2“): Name, Material und ob die Form noch zur
+/// festgeschriebenen passt (`form`: gleich, geaendert, neu, neu_drucken).
+public struct DruckGedruckt: Identifiable, Equatable, Sendable {
+    public var name: String
+    public var material: String?
+    public var form: String
+    public var unterschiede: [String]
+
+    public var id: String { name }
+    public var geaendert: Bool { form == "geaendert" }
+
+    public init(name: String, material: String? = nil, form: String = "gleich", unterschiede: [String] = []) {
+        self.name = name
+        self.material = material
+        self.form = form
+        self.unterschiede = unterschiede
+    }
+
+    init?(json: JSONValue) {
+        guard let name = json["name"]?.lenientString else { return nil }
+        self.init(name: name, material: json["material"]?.lenientString, form: json["form"]?.lenientString ?? "gleich",
+                  unterschiede: json["unterschiede"]?.stringList ?? [])
+    }
 }
 
 /// Werte je Stück einer Gruppe (`je_stueck`).

@@ -22,7 +22,7 @@ import threading
 import time
 from typing import Any
 
-from kevcad_kernel.catalog import KLEINTEILE, STANGENWARE, number
+from kevcad_kernel.catalog import STANGENWARE, STUECKGUT, number
 
 from .datei import (
     MELDUNG_BUCHUNGEN,
@@ -400,8 +400,10 @@ class BestandAnbindung:
                     row = {"laenge": r}
                 neu.append(row)
         if stueck is not None:
-            if art not in KLEINTEILE:
+            if art in STANGENWARE or platte:
                 return {"ok": False, "error": f"{item.get('name')} wird in ganzen und Resten geführt, nicht als stueck"}
+            if art not in STUECKGUT:
+                return {"ok": False, "error": f"{item.get('name')} ({art}) führt der Bestand nicht"}
             rows = stueck if isinstance(stueck, list) else [{"anzahl": stueck}]
             cur = list(posten.get("stueck") or [])
             for row in rows:
@@ -467,8 +469,9 @@ class BestandAnbindung:
         assert e is not None
         out: dict[str, Any] = {"ok": True, "run": bom.get("run"),
                                **{k: bom.get(k) for k in ("einkaufsliste", "einkauf_summe", "einkauf_hinweis",
-                                                          "bestand_stand", "fehlt", "stueckgut")},
-                               "lagerware": e["lager"], "zukauf": e["zukauf"], "normteile": e["normteile"],
+                                                          "bestand_stand", "fehlt", "stueckgut", "zukauf_bestand")},
+                               "lagerware": e["lager"], "zukauf": e["zukauf"],
+                               "zukauf_aus_bestand": e["zukauf_aus_bestand"], "normteile": e["normteile"],
                                "filament": e["filament"], "positionen": e["positionen"], "summe": e["summe"],
                                "summe_lager": e["summe_lager"], "summe_zukauf": e["summe_zukauf"],
                                "ohne_preis": e["ohne_preis"],

@@ -102,6 +102,10 @@ class Erfassung:
             out["druck_zweck"] = piece.zweck
         if getattr(piece, "anzahl", None):
             out["druck_anzahl"] = int(piece.anzahl)
+        if getattr(piece, "gedruckt", False):  # schon gedruckt (druck/gedruckt.py)
+            out["druck_gedruckt"] = True
+            if getattr(piece, "neu_drucken", False):
+                out["druck_neu_drucken"] = True
         orig = piece.shape
         try:
             if orig is not None and shape.wrapped.IsPartner(orig):

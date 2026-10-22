@@ -70,6 +70,7 @@ extension BOMLine {
             masseText: masseText, anzahl: json["anzahl"]?.intValue ?? max(1, teile.count),
             kgJe: json["kg_je"]?.doubleValue, kg: json["kg"]?.doubleValue, preisJe: json["preis_je"]?.doubleValue,
             preis: json["preis"]?.doubleValue, teile: teile, eigenteil: eigenteil, zukauf: ZukaufBOMInfo(json: json))
+        gedruckt = json["gedruckt"]?.boolValue ?? false
     }
 }
 

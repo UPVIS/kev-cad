@@ -183,6 +183,9 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 "druckteil": {"verfahren": "3d-druck", "material": "petg", "kg": 0.0412, "preis": 1.03}
 ```
 
+Additiv (Strang „Feinschliff 2“): `"gedruckt": true`, wenn das Teil schon gedruckt ist (`lager.druckteil(…,
+gedruckt=True)`); dann trägt auch die Stücklistenzeile `BOM.lines[i].gedruckt: true` (DRUCKVORSCHAU.md, „Gedruckt“).
+
 ### PART_UPSERT.kulisse
 
 Optionales Feld im Kopf, `true`, wenn das Teil Kulisse ist (`show(..., kulisse=True)` oder `lager.kulisse(form)`):
@@ -252,6 +255,25 @@ im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
 
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
+
+### Freigabe im Projektfenster (Strang „Feinschliff 2“, 22.10.2026)
+
+Rein additiv. Vorschläge von Claude gibt Kevin jetzt auch direkt im Projektfenster frei: Band „3 Vorschläge warten auf
+Freigabe“ und Dialog „Vorschläge freigeben“ (Vorschau der Daten, Link, „Freigeben“ je Eintrag und für alle). Freigeben
+bleibt `CATALOG_SAVE` mit `status: "frei"` wie im Lagerkatalog, einer nach dem anderen und erst nach der Bestätigung im
+neu geladenen Katalog; Fehler bleiben im Dialog stehen. MCP `freigabe_anfragen(ids, grund, warten_s)` öffnet den Dialog
+und gibt selbst nichts frei; es wartet (Standard 120 s, höchstens 900 s), bis Kevin alles entschieden oder den Dialog
+geschlossen hat, und liest das Ergebnis aus dem Katalog (frei, nicht mehr vorhanden = abgelehnt, weiter vorgeschlagen =
+offen). Umsetzung: `kernel/src/kevcad_kernel/freigabe.py`, App `Model/Freigabe.swift` und
+`Kernel/AppController+Freigabe.swift`; Testdateien `freigabe_*.frame` (`kernel/tools/make_freigabe_fixtures.py`).
+
+| type | Richtung | Felder | Antwort |
+|---|---|---|---|
+| `FREIGABE_ANFRAGE` | Kernel → App | `id`, `anfrage` („F-0001“), `eintraege` (je `id`, `kind` `teil` \| `material`, `name`, `art`, `ebene`), `grund` (Text oder null) | `ACK` (Dialog offen) |
+| `FREIGABE_GESCHLOSSEN` | App → Kernel | `anfrage`, `freigegeben`, `abgelehnt`, `offen` (Listen der ids) | – |
+
+Eine neue Anfrage ersetzt eine offene (die App meldet die alte als geschlossen). Ältere Apps antworten nicht mit `ACK`;
+`freigabe_anfragen` meldet dann nach 10 s „Dialog nicht geöffnet“.
 
 ## Phase 3: Zukaufteile
 
