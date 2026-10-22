@@ -143,7 +143,7 @@ struct DruckAnsicht: View {
     /// Filament nichts; der Dialog zeigt je Material Kevins Filamente, vorausgewählt das angenommene der Vorschau).
     private func exportieren(_ platten: [Int], _ v: Druckvorschau) {
         let panel = NSSavePanel()
-        let auswahl = FilamentAuswahl(v, platten: platten)
+        let auswahl = ExportFilamentAuswahl(v, platten: platten)
         if let ansicht = auswahl.ansicht {
             panel.accessoryView = ansicht
         }
@@ -858,7 +858,7 @@ struct DruckExportDateiZeile: View {
 /// Filament je Material im Sichern-Dialog des 3MF-Exports (Strang „Druckexport 2“): je Material eine Auswahl aus
 /// Kevins Filamentliste (`druckvorschau.filamente`), vorausgewählt das Filament, mit dem die Vorschau rechnet.
 @MainActor
-final class FilamentAuswahl {
+final class ExportFilamentAuswahl {
     private var auswahl: [(material: String, knopf: NSPopUpButton, liste: [DruckFilament])] = []
     private(set) var ansicht: NSView?
 
