@@ -35,6 +35,20 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
   (`funktion`), markiert als Schätzung.
 - Gleiche Teile erkennt der Kernel über Form und Material (gleicher Formschlüssel); `anzahl` nur, wenn ein Teil
   öfter gedruckt wird, als es im Modell steht (Ersatzteile).
+- Präzisierung (Strang „Feinschliff 2“, 22.10.2026, additiv): Gleiche Form heißt **gleiche Form in Druckausrichtung,
+  unabhängig von der Lage im Modell**. Teile, die einzeln in Weltlage gebaut sind (die vier Lenksperren und vier
+  Stangenhalter des Kugelschiebers), haben je einen eigenen Formschlüssel und bildeten bisher je eine Gruppe. Der
+  Prüfer „druckvorschau“ rechnet je Form eine Signatur (`druck/signatur.py`: Volumen, Oberfläche, Hauptmomente,
+  Hüllmaße und Flächenhistogramm der Normalen in Druckausrichtung, dazu dritte und vierte Momente im Hauptachsensystem)
+  und vergleicht Formen mit gleicher Signatur genau (Punkte der Oberfläche im Hauptachsensystem aufeinandergelegt, je
+  Vorzeichenwechsel der Achsen; höchstens 0,4 % der Punkte weiter als 1,8 mm bzw. 2,5 Punktabstände). Passt nur eine
+  Spiegelung, ist das Teil ein Spiegelbild und bildet eine eigene Gruppe „… (gespiegelt)“; symmetrische Teile passen
+  auch gedreht und bleiben in einer Gruppe. Drehsymmetrische Formen (Hauptmomente fast gleich) gelten bei gleicher
+  Signatur als gleich. Im CHECK additiv `druck.vorschau.formen[fid].signatur` und `.gleichteil: {"fid", "gespiegelt"}`
+  (erste Form der Klasse); in der Vorschau additiv `teile[].gespiegelt_von` (Gruppen-id des Originals). Gruppennamen
+  ohne gemeinsamen Anfang zählen die Teile auf („Schieberolle und Fangrolle (Druck)“). Ohne Signatur (älterer
+  Rechenprozess) gilt der bisherige Schlüssel. Am Kugelschieber (Variante B): 5 Gruppen statt 15, Lenksperre ×4,
+  Stangenhalter ×4 (deckungsgleich, nicht gespiegelt).
 
 ## Ergebnis (`druckvorschau`)
 

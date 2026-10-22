@@ -16,6 +16,7 @@ from typing import Any, Callable
 from kevcad_kernel.druck import anordnen as ao
 from kevcad_kernel.druck import empfehlung as em
 from kevcad_kernel.druck import schaetzung as sz
+from kevcad_kernel.druck import signatur as sg
 from kevcad_kernel.druck import slicer as sl
 from kevcad_kernel.druck.vorgaben import von_je_schluessel
 from kevcad_kernel.druck.vorschau_geo import teil_mit_form
@@ -65,6 +66,8 @@ class Gruppe:
     filament: str | None
     schluessel: str
     vorgaben: dict[str, Any] = field(default_factory=dict)
+    # Spiegelbild einer anderen Gruppe (id), erkannt an der Signatur (Strang „Feinschliff 2“); sonst None
+    gespiegelt_von: str | None = None
     pruefung: dict[str, Any] = field(default_factory=dict)
     stuetz_flaechen: list[str] = field(default_factory=list)
     fest_von: dict[str, str] = field(default_factory=dict)
@@ -101,6 +104,15 @@ def _gruppen_name(namen: list[str]) -> str:
         if len(set(teil)) != 1 or len(anfang) + len(ende) >= min(len(w) for w in worte):
             break
         ende.insert(0, teil[0])
+    if not anfang:  # nichts Gemeinsames vorn (Schieberolle, Fangrolle): die Namen aufzählen statt nur „(Druck)“
+        koepfe = list(dict.fromkeys(" ".join(w[:len(w) - len(ende)]) for w in worte))
+        erste = list(dict.fromkeys(w[0] for w in worte if len(w) > len(ende)))
+        if 1 < len(erste) < len(koepfe):  # „Schieberschlitten links/rechts, Fängerschlitten …“ → nur die Arten
+            koepfe = erste
+        if len(koepfe) > 1:
+            liste = (", ".join(koepfe[:-1]) + " und " + koepfe[-1]) if len(koepfe) <= 3 else \
+                f"{koepfe[0]}, {koepfe[1]} u. a."
+            return (liste + " " + " ".join(ende)).strip()
     name = " ".join(anfang + ende).strip()
     return name or letzte[0]
 
@@ -124,11 +136,15 @@ def _filament(projekt: dict[str, Any], material: str) -> str | None:
 def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict[str, Any],
             projekt: dict[str, Any]) -> tuple[list[Gruppe], list[str]]:
     """Gruppen gleicher Teile (Form samt Druckausrichtung, Material, Zweck, Vorgaben) in der Reihenfolge des ersten
-    Auftretens; dazu die Namen ohne Vorschau-Geometrie."""
+    Auftretens; dazu die Namen ohne Vorschau-Geometrie. Gleiche Form heißt seit dem Strang „Feinschliff 2“: dieselbe
+    Gleichteil-Klasse aus dem Rechenprozess (``vorschau_geo.gleichteile``: gleiche Signatur in Druckausrichtung, dann
+    genau verglichen), sonst gleiche Signatur (``signatur.vergleich``); unabhängig von der Lage im Modell.
+    Spiegelbilder bilden eine eigene Gruppe „(gespiegelt)“, außer die Form ist symmetrisch. Ohne Signatur (ältere
+    Prüfergebnisse) wie bisher Formschlüssel und Hüllmaß in Druckausrichtung."""
     vorschau = druck.get("vorschau") or {}
     teile_info = druck.get("teile") or {}
     vt = vorgaben.get("teile") if isinstance(vorgaben.get("teile"), dict) else {}
-    roh: dict[tuple, dict[str, Any]] = {}
+    roh: dict[Any, dict[str, Any]] = {}
     ohne: list[str] = list((vorschau.get("fehler") or {}).keys())
     for name in teile_info:
         geo = teil_mit_form(vorschau, name)
@@ -143,10 +159,32 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         # gleiche Teile in verschiedener Einbaulage (gedreht, andere Rahmenlage) eine Gruppe bleiben
         lage_bett = tuple(round(float(x), 1) for x in (geo.get("groesse") or [])) + \
             (round(float(geo.get("auflage") or 0.0)),)
-        key = (geo.get("form"), lage_bett, geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
+        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
+        sig = geo.get("signatur") if isinstance(geo.get("signatur"), dict) else None
+        key: Any = (geo.get("form"), lage_bett, *basis)
+        gespiegelt_von = None
+        gt = geo.get("gleichteil") if isinstance(geo.get("gleichteil"), dict) else None
+        if gt is not None:  # genau verglichen im Rechenprozess (vorschau_geo.gleichteile)
+            gesp = bool(gt.get("gespiegelt"))
+            key = ("gleichteil", gt.get("fid"), gesp, *basis)
+            if gesp and ("gleichteil", gt.get("fid"), False, *basis) in roh:
+                gespiegelt_von = ("gleichteil", gt.get("fid"), False, *basis)
+        elif sig is not None:
+            key = None
+            for k_, kand in roh.items():
+                if kand["basis"] != basis or kand["sig"] is None:
+                    continue
+                gleich, gespiegelt = sg.vergleich(kand["sig"], sig)
+                if gleich and not gespiegelt:
+                    key = k_
+                    break
+                if gleich and gespiegelt and gespiegelt_von is None:
+                    gespiegelt_von = k_
+            if key is None:
+                key = ("sig", len(roh))
         g = roh.setdefault(key, {"namen": [], "stuecke": {}, "geo": geo, "zweck": zweck, "vorgaben": e_vorgabe,
                                  "zweck_fest": bool(v.get("zweck")), "pruefung": teile_info.get(name) or {},
-                                 "von": {}})
+                                 "von": {}, "basis": basis, "sig": sig, "gespiegelt_von": gespiegelt_von})
         for k_, w_ in von_je_schluessel(v).items():
             g["von"].setdefault(k_, w_)
         g["namen"].append(name)
@@ -162,6 +200,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
             n = b["teile"][0]
             stuetz.setdefault(n, []).extend(f"{n}#f{f}" for f in w.get("flaechen") or [])
     version = sl.version() or "-"
+    ids = {k_: f"g{i}" for i, k_ in enumerate(roh, start=1)}
     for i, g in enumerate(roh.values(), start=1):
         geo = g["geo"]
         mat = str(geo.get("material") or "pla")
@@ -174,12 +213,14 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         e_slicer = {k: v for k, v in emp["einstellungen"].items() if k != "ausrichtung"}
         schl = sl.schluessel(SCHLUESSEL_VERSION, geo.get("form"), geo.get("form_matrix"), e_slicer, prozess,
                              filament, projekt.get("drucker"), version, projekt.get("platte"))
-        out.append(Gruppe(id=f"g{i}", name=_gruppen_name(g["namen"]), teile=g["namen"], anzahl=anzahl, material=mat,
+        name_g = _gruppen_name(g["namen"]) + (" (gespiegelt)" if g["gespiegelt_von"] is not None else "")
+        out.append(Gruppe(id=f"g{i}", name=name_g, teile=g["namen"], anzahl=anzahl, material=mat,
                           zweck=emp["zweck"], zweck_geschaetzt=emp["zweck_geschaetzt"], geo=geo,
                           einstellungen=emp["einstellungen"], fest=fest, begruendung=emp["begruendung"],
                           prozess=prozess, filament=filament, schluessel=schl, vorgaben=g["vorgaben"],
                           pruefung=g["pruefung"], stuetz_flaechen=sorted(set(stuetz.get(g["namen"][0], []))),
-                          fest_von=fest_von))
+                          fest_von=fest_von,
+                          gespiegelt_von=ids.get(g["gespiegelt_von"]) if g["gespiegelt_von"] is not None else None))
     return out, ohne
 
 
@@ -273,6 +314,7 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "einstellungen": dict(g.einstellungen), "fest": list(g.fest), "fest_von": dict(g.fest_von),
             "profil": {"prozess": g.prozess, "filament": g.filament}, "risiko": r,
             "begruendung": list(g.begruendung), "hinweise": hw,
+            **({"gespiegelt_von": g.gespiegelt_von} if g.gespiegelt_von else {}),
         })
     # Platten: je Material genau (Slicer) oder schnell
     nach_id = {g.id: g for g in gr}
