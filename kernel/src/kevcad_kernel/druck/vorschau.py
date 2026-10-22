@@ -28,7 +28,7 @@ DRUCKER_NAME = "Bambu Lab P1P 0.4"
 STANDARD = {"drucker": DRUCKER_ID, "strompreis_kwh": 0.32, "leistung_w": 150.0, "plattenwechsel_s": 120,
             "slicer": True, "platte": sl.PLATTE_STANDARD}
 STUETZ_ARTEN = ("ueberhang", "freie_unterseite", "kragarm", "bruecke")
-SCHLUESSEL_VERSION = "v2"  # v2 (22.10.2026): Profile mit include (P1P-Start-G-Code), Filament-Presets
+SCHLUESSEL_VERSION = "v3"  # v2 (22.10.2026): Profile mit include (P1P-Start-G-Code), Filament-Presets; v3: Modifier
 
 
 def projekt_einstellungen(settings: dict[str, Any] | None, spulen: list[dict[str, Any]] | None = None,
@@ -84,11 +84,19 @@ class Gruppe:
     filament_wahl: dict[str, Any] = field(default_factory=dict)
     # Paket B: Begründung je Einstellung (druck/druckfertig.py)
     begruendung_je: dict[str, str] = field(default_factory=dict)
+    # Strang „Rest Druck“: Modifier um Gewindeeinsätze und Kernlöcher (druckfertig._modifier), Druckkoordinaten
+    modifier: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def filament_slicer(self) -> Any:
         """Für die Slicer-Funktionen: das Preset des Filaments, sonst der Profilname."""
         return self.filament_wahl.get("preset") or self.filament
+
+
+def modifier_kurz(m: dict[str, Any]) -> dict[str, Any]:
+    """Modifier für Vorschau und Export (ohne Lage): Art, Größe, Name, Maße und Einstellungen."""
+    return {k: m.get(k) for k in ("art", "groesse", "hersteller", "name", "d", "radius", "laenge", "wand_mm",
+                                  "einstellungen")}
 
 
 def auf_platten(gr: list[Gruppe]) -> list[Gruppe]:
@@ -238,7 +246,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         filament = wahlen[mat].profil
         e_slicer = {k: v for k, v in emp["einstellungen"].items() if k != "ausrichtung"}
         schl = sl.schluessel(SCHLUESSEL_VERSION, geo.get("form"), geo.get("form_matrix"), e_slicer, prozess,
-                             filament, wahlen[mat].preset, projekt.get("drucker"), version, projekt.get("platte"))
+                             filament, wahlen[mat].preset, projekt.get("drucker"), version, projekt.get("platte"),
+                             emp.get("modifier") or [])
         name_g = _gruppen_name(g["namen"]) + (" (gespiegelt)" if g["gespiegelt_von"] is not None else "") + \
             (" (später)" if g["spaeter"] else "")
         out.append(Gruppe(id=f"g{i}", name=name_g, teile=g["namen"], anzahl=anzahl, material=mat,
@@ -248,6 +257,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
                           pruefung=g["pruefung"], stuetz_flaechen=sorted(set(stuetz.get(g["namen"][0], []))),
                           fest_von=fest_von, spaeter=bool(g["spaeter"]), filament_wahl=wahlen[mat].als_dict(),
                           begruendung_je=dict(emp.get("begruendung_je") or {}),
+                          modifier=list(emp.get("modifier") or []),
                           gespiegelt_von=ids.get(g["gespiegelt_von"]) if g["gespiegelt_von"] is not None else None))
     return out, ohne
 
@@ -351,6 +361,8 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "begruendung": list(g.begruendung), "begruendung_je": dict(g.begruendung_je), "hinweise": hw,
             **({"gespiegelt_von": g.gespiegelt_von} if g.gespiegelt_von else {}),
             **({"spaeter": True} if g.spaeter else {}),
+            # additiv (Strang „Rest Druck“): Modifier um Gewindeeinsätze und Kernlöcher
+            **({"modifier": [modifier_kurz(m) for m in g.modifier]} if g.modifier else {}),
         })
     # Platten: je Material genau (Slicer) oder schnell; Gruppen „später drucken“ stehen nur in der Liste
     nach_id = {g.id: g for g in gr}

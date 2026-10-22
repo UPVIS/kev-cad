@@ -249,10 +249,42 @@ sich unterscheiden, so dass alles komplett druckfertig voreingestellt ist.“ Um
 | `loch_kompensation_mm`, `kontur_kompensation_mm` | `xy_hole_compensation`, `xy_contour_compensation` | 0: die Zugabe steckt im Modell |
 | `elefantenfuss_mm` | `elefant_foot_compensation` | 0,15 mm wie das P1P-Profil |
 
-Dazu: Bohrungen mindestens 3 Wände; Gewindeeinsätze (Bohrung wie `GEWINDEEINSAETZE`) Wände nach der Mindestwand des
-Herstellers (4 bis 6) und Füllung mindestens 30 %; Kernlöcher für Schrauben 4 Wände. Die Druckprüfung liefert dazu je
+Dazu: Bohrungen mindestens 3 Wände; Gewindeeinsätze (Bohrung wie `GEWINDEEINSAETZE`) und Kernlöcher für Schrauben
+seit dem Strang „Rest Druck“ je ein Modifier (unten); nur ohne Lage der Bohrung wie bisher Wände nach der Mindestwand des
+Herstellers (4 bis 6) und Füllung mindestens 30 %, Kernlöcher 4 Wände. Die Druckprüfung liefert dazu je
 Teil `kennzahlen.bohrungen` (`d`, `waagrecht`). `teile[].begruendung_je` (additiv): je Schlüssel ein Satz; die
 Abweichungen vom Zweck stehen zusätzlich in `teile[].begruendung`. Kevins feste Vorgaben gehen vor.
+
+**Modifier um Gewindeeinsätze und Kernlöcher (Strang „Rest Druck“, 22.10.2026, additiv):** Statt die Wände des ganzen
+Objekts zu erhöhen, bekommt jede erkannte Einsatzbohrung (Ø wie `GEWINDEEINSAETZE`, bis M6) und jedes Kernloch für
+selbstschneidende Schrauben (`druckfertig.KERNLOCH`) im Bambu-Projekt einen Modifier: ein Zylinder koaxial zur Bohrung,
+Radius = Bohrung/2 + Mindestwand des Herstellers (Kernloch: Tubus 2 · d) + eine Bahn, längs der Achse die Bohrung und je
+Ende die Mindestwand (Material unter dem Einsatz), begrenzt auf 0 ≤ z ≤ Teilhöhe; darin Wände nach der Mindestwand
+(`ceil(Wand / 0,42)`, **ohne** die frühere Obergrenze von 6) und 100 % Füllung. Das übrige Objekt behält Wände und Füllung
+seines Zwecks (Bohrungen weiter mindestens 3 Wände). Waagrechte Bohrungen und Passungen (Rohre, Wellen) bekommen keinen
+Modifier.
+
+- Lage: Die Druckprüfung liefert je Bohrung additiv `kennzahlen.bohrungen[].achse`, `.mitte`, `.laenge` (Koordinaten der
+  geprüften Form); der Prüfer „druckvorschau“ rechnet sie in Druckkoordinaten um (`vorschau_geo.bohrungen_druck`, im
+  CHECK additiv `druck.vorschau.formen[fid].bohrungen`). Ohne Lage (ältere Prüfergebnisse) gilt die bisherige Regel
+  (Wände des ganzen Objekts, höchstens 6, Füllung ≥ 30 %), die Begründung sagt „ohne Modifier“.
+- Vorschau und Export additiv: `teile[].modifier` und `objekte_einstellungen[].modifier` je `{"art": "einsatz" |
+  "kernloch", "groesse", "hersteller", "name", "d", "radius", "laenge", "wand_mm", "einstellungen": {"waende",
+  "fuellung"}}`; `teile[].begruendung_je.modifier` nennt sie („Modifier um die Bohrungen statt mehr Wände für das ganze
+  Objekt: 1 × Gewindeeinsatz M3 (ruthex, Bohrung Ø 4,0, Mindestwand 1,6 mm): Zylinder Ø 11 × 10 mm mit 4 Wänden und
+  100 % Füllung. Das übrige Teil behält 3 Wände und 20 % Füllung.“), ebenso `teile[].begruendung`; je Datei additiv
+  `dateien[].modifier` (Anzahl). Der Schlüssel der Gruppe enthält die Modifier (Zwischenspeicher `v3`).
+- Im 3MF: Montageliste mit einem Eintrag `"subtype": "modifier_part"` und demselben `assemble_index` wie das Teil
+  (Bambu Studio 2.07 liest `normal_part`, `modifier_part`, `negative_part`, `support_enforcer`, `support_blocker`; ein
+  unbekannter Wert macht stillschweigend ein Volumenteil daraus), `print_params` `wall_loops` und
+  `sparse_infill_density`; gedreht wie das Teil. In `Metadata/model_settings.config` steht er als `<part
+  subtype="modifier_part">` mit dem Namen „Gewindeeinsatz M3 (Modifier)“ (`slicer.objekte_benennen`). Auch die
+  Slicer-Läufe der Vorschau (`slice_teil`, Platten) rechnen mit den Modifiern; diese Gruppen führen den Abgleich der
+  Schätzung nicht nach. Ohne Bambu Studio (`dreimf.py`, ohne Einstellungen je Teil) keine Modifier.
+- Geprüft am 22.10.2026 mit Bambu Studio 2.07.01.62 (`test_druck_modifier.py`): Block 30 × 30 × 12 mm mit M3-Sackloch,
+  `--slice 0`: im Ring 3,4 bis 3,95 mm um die Bohrung (außerhalb der 3 Wände des Objekts) in den Schichten 6,2 bis
+  10,6 mm 41,4 mm Filament mit Modifier gegen 4,5 mm ohne (20 % Gyroid); Bambu Studio legt im G-Code auch um den
+  Rand des Modifiers Wände. Im G-Code steht das Objekt 2 mm in Y neben der Matrix des 3MF (beide Fälle gleich).
 
 Prüfung vor der Ausgabe: `druck_export` slict jedes geschriebene Bambu-Projekt mit `--slice 0` (`slicer.pruefe_slicen`)
 und wertet die Warnungen aus. Ergebnis und `PRINT_EXPORT_RES` additiv: `druckfertig` (true nur, wenn Bambu Studio jede

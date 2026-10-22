@@ -275,6 +275,9 @@ def geometrie(k: Any, teil: dict[str, Any], formen: dict[str, Any] | None = None
         deckung.setdefault(fid, form["_deckung"])
     kennzahlen["form_matrix"] = [[round(float(x), 9) + 0.0 for x in row] for row in form["B"]]
     kennzahlen["form"] = k.form
+    bohr = bohrungen_druck(kz.get("bohrungen") or [], form["B"], R, form["versatz"])
+    if bohr:  # additiv (Strang „Rest Druck“): Bohrungen in Druckkoordinaten für die Modifier um Gewindeeinsätze
+        kennzahlen["bohrungen"] = bohr
     if formen is not None:
         formen.setdefault(fid, kennzahlen)
         out: dict[str, Any] = {"fid": fid}
@@ -367,6 +370,29 @@ def gleichteile(formen: dict[str, Any], deckung: dict[str, Any], abbrechen: Any 
                 break
         if f["gleichteil"]["fid"] == fid:
             vertreter.append(fid)
+
+
+def bohrungen_druck(bohrungen: list[Any], B: np.ndarray, R: np.ndarray, versatz: Any) -> list[dict[str, Any]]:
+    """Bohrungen der Druckprüfung (``kennzahlen.bohrungen``, Koordinaten der geprüften Form ``q = R · p_form``) in
+    Druckkoordinaten der Vorschau (``p_druck = B · p_form − versatz``): Ø, Achse, Mitte, Länge. Ohne Lage (ältere
+    Prüfergebnisse) fällt die Bohrung weg."""
+    out = []
+    v = np.asarray(versatz, dtype=np.float64)
+    for b in bohrungen:
+        if not isinstance(b, dict) or b.get("mitte") is None or b.get("achse") is None:
+            continue
+        a = B @ (R.T @ np.asarray(b["achse"], dtype=np.float64))
+        m = B @ (R.T @ np.asarray(b["mitte"], dtype=np.float64)) - v
+        n = float(np.linalg.norm(a))
+        if n < 1e-9:
+            continue
+        a = a / n
+        if a[2] < 0:  # Achse nach oben zeigen lassen (eindeutig)
+            a = -a
+        out.append({"d": round(float(b.get("d") or 0.0), 3), "waagrecht": bool(b.get("waagrecht")),
+                    "achse": [round(float(x), 6) + 0.0 for x in a], "mitte": [round(float(x), 4) + 0.0 for x in m],
+                    "laenge": round(float(b.get("laenge") or 0.0), 3)})
+    return out
 
 
 def teil_mit_form(vorschau: dict[str, Any], name: str) -> dict[str, Any] | None:

@@ -13,8 +13,11 @@ Satz je Objekt aus Geometrie (Vorschau-Geometrie und Druckprüfung), Zweck, Mate
    kommen aus dem Preset des Filaments.
 3. Passungen: Bohrungen bekommen mindestens 3 Wände; X-Y-Loch- und Konturkompensation ausdrücklich 0, denn die
    Zugabe (Spieltabelle, Tropfenbohrung) steckt schon im Modell.
-4. Gewindeeinsätze (Bohrung wie in ``GEWINDEEINSAETZE``): Wände nach der Mindestwand des Herstellers (höchstens 6),
-   Füllung mindestens 30 %. Kernlöcher für Schrauben direkt ins Teil: 4 Wände.
+4. Gewindeeinsätze (Bohrung wie in ``GEWINDEEINSAETZE``) und Kernlöcher für Schrauben direkt ins Teil: je ein
+   Modifier um die Bohrung (Strang „Rest Druck“, 22.10.2026), ein Zylinder mit Wänden nach der Mindestwand des
+   Herstellers bzw. dem Tubus 2 · d und 100 % Füllung; das übrige Objekt behält Wände und Füllung. Nur ohne Lage der
+   Bohrung (ältere Prüfergebnisse) wie bisher: Wände des ganzen Objekts nach der Mindestwand (höchstens 6), Füllung
+   mindestens 30 %, Kernlöcher 4 Wände.
 5. Optik: Naht hinten bei Zier- und Außenteilen, sonst ausgerichtet (Bambu-Standard); Bügeln nur bei Zierteilen mit
    ebener Oberseite; Oberseite monoton; Elefantenfuß-Kompensation wie im P1P-Profil (0,15 mm).
 6. Festigkeit: Ausrichtung aus der Druckprüfung, Wände und Füllung nach Zweck (``empfehlung``).
@@ -66,12 +69,93 @@ def einsatz_fuer(d: float, toleranz: float = 0.06) -> tuple[str, str, dict[str, 
 
 
 KERNLOCH = {2.5: "M3", 2.2: "M2.5", 3.4: "M4"}  # selbstschneidend direkt ins Teil (regeln, B-BT), senkrecht
+NENNMASS = {"M2": 2.0, "M2.5": 2.5, "M3": 3.0, "M4": 4.0, "M5": 5.0, "M6": 6.0}
+TUBUS_FAKTOR = 2.0   # Tubus-Ø 2 · d um ein Kernloch (B-BT, 3d-druck.md Abschnitt 7)
+MODIFIER_RAND_MM = LINIE_MM  # eine Bahn über die Mindestwand hinaus: Übergang zum übrigen Teil
+MODIFIER_FUELLUNG = 1.0      # 100 % im Modifier: der Einsatz bzw. das Gewinde sitzt in vollem Material
+
+
+def kernloch_fuer(d: float, toleranz: float = 0.06) -> str | None:
+    """Schraubengröße eines Kernlochs für selbstschneidende Schrauben (``KERNLOCH``), sonst None."""
+    return next((g for k, g in KERNLOCH.items() if abs(d - k) <= toleranz), None)
+
+
+def _modifier(b: dict[str, Any], art: str, groesse: str, hersteller: str | None, wand: float,
+              hoehe: float) -> dict[str, Any] | None:
+    """Ein Zylinder-Modifier um eine Bohrung in Druckkoordinaten (Auflage bei z = 0, Mitte des Hüllrechtecks bei
+    x = y = 0): Radius = Bohrung/2 + Mindestwand + eine Bahn, längs der Achse die Bohrung und je Ende die Mindestwand
+    (Material unter dem Einsatz), begrenzt auf 0 ≤ z ≤ Teilhöhe. Wände nach der Mindestwand ohne Obergrenze, 100 %
+    Füllung."""
+    import numpy as np
+
+    d = float(b.get("d") or 0.0)
+    a = np.asarray(b.get("achse") or [0, 0, 1], dtype=np.float64)
+    m = np.asarray(b.get("mitte"), dtype=np.float64)
+    if np.linalg.norm(a) < 1e-9 or d <= 0:
+        return None
+    a = a / np.linalg.norm(a)
+    if a[2] < 0:
+        a = -a
+    r = d / 2 + wand + MODIFIER_RAND_MM
+    halb = float(b.get("laenge") or 0.0) / 2
+    s0, s1 = -halb - wand, halb + wand
+    if a[2] > 1e-6:  # nicht unter das Bett, nicht über das Teil hinaus
+        quer = r * math.sqrt(max(0.0, 1.0 - float(a[2]) ** 2))
+        s0 = max(s0, (quer - float(m[2])) / float(a[2]))
+        s1 = min(s1, (hoehe - quer - float(m[2])) / float(a[2]))
+    if s1 - s0 < 0.4:
+        return None
+    unten, oben = m + a * s0, m + a * s1
+    waende = max(2, math.ceil(wand / LINIE_MM - 1e-6))
+    name = (f"Gewindeeinsatz {groesse} (Modifier)" if art == "einsatz" else f"Kernloch {groesse} (Modifier)")
+    return {"art": art, "groesse": groesse, "hersteller": hersteller, "name": name, "d": round(d, 3),
+            "radius": round(r, 3), "wand_mm": round(wand, 3), "laenge": round(s1 - s0, 3),
+            "unten": [round(float(x), 4) + 0.0 for x in unten], "oben": [round(float(x), 4) + 0.0 for x in oben],
+            "achse": [round(float(x), 6) + 0.0 for x in a],
+            "einstellungen": {"waende": waende, "fuellung": MODIFIER_FUELLUNG}}
+
+
+def _modifier_liste(einsaetze: list[tuple], kernloecher: list[tuple], hoehe: float, e: dict[str, Any],
+                    begr_je: dict[str, str]) -> list[dict[str, Any]]:
+    """Modifier je erkanntem Einsatz und Kernloch (Strang „Rest Druck“) mit Begründung; die Wände und die Füllung
+    des ganzen Objekts bleiben, wie Zweck und Bohrungen sie verlangen."""
+    out: list[dict[str, Any]] = []
+    for d, (herst, groesse, eintrag), b in einsaetze:
+        m = _modifier(b, "einsatz", groesse, herst, float(eintrag["wand_min"] or 0.0), hoehe)
+        if m is not None:
+            out.append(m)
+    for d, groesse, b in kernloecher:
+        wand = max(LINIE_MM * 2, (TUBUS_FAKTOR * NENNMASS.get(groesse, d) - d) / 2)
+        m = _modifier(b, "kernloch", groesse, None, wand, hoehe)
+        if m is not None:
+            out.append(m)
+    if not out:
+        return out
+    arten: dict[str, list[dict[str, Any]]] = {}
+    for m in out:
+        arten.setdefault(f"{m['art']}:{m['groesse']}:{m['einstellungen']['waende']}", []).append(m)
+    teile = []
+    for liste in arten.values():
+        m = liste[0]
+        was = (f"Gewindeeinsatz {m['groesse']} ({m['hersteller']}, Bohrung Ø {_z(m['d'], 2)}, Mindestwand "
+               f"{_z(m['wand_mm'], 1)} mm)" if m["art"] == "einsatz" else
+               f"Kernloch {m['groesse']} (Ø {_z(m['d'], 1)}, Tubus Ø {_z(2 * (m['d'] / 2 + m['wand_mm']), 1)} für "
+               "das Gewinde der Schraube, B-BT)")
+        teile.append(f"{len(liste)} × {was}: Zylinder Ø {_z(2 * m['radius'], 1)} × {_z(m['laenge'], 1)} mm mit "
+                     f"{m['einstellungen']['waende']} Wänden und {_z(m['einstellungen']['fuellung'] * 100, 0)} % "
+                     "Füllung")
+    begr_je["modifier"] = ("Modifier um die Bohrungen statt mehr Wände für das ganze Objekt: " + "; ".join(teile)
+                           + f". Das übrige Teil behält {e.get('waende')} Wände und "
+                           f"{_z(float(e.get('fuellung') or 0) * 100, 0)} % Füllung.")
+    return out
 
 
 def ergaenze(e: dict[str, Any], begr_je: dict[str, str], geo: dict[str, Any], material: str, zweck: str,
-             pruefung: dict[str, Any] | None = None) -> None:
+             pruefung: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Ergänzt ``e`` (Einstellungen aus ``empfehle``) um die Einstellungen der Liste oben und schreibt je Schlüssel
-    eine Begründung nach ``begr_je``. ``geo``: Vorschau-Geometrie der Form, ``pruefung``: Teil aus ``druck.teile``."""
+    eine Begründung nach ``begr_je``. ``geo``: Vorschau-Geometrie der Form, ``pruefung``: Teil aus ``druck.teile``.
+    Liefert die Modifier um Gewindeeinsätze und Kernlöcher (``modifier_liste``; leer ohne Lage der Bohrungen)."""
+    modifier: list[dict[str, Any]] = []
     mat = MATERIALIEN.get(material)
     gr = geo.get("groesse") or [0, 0, 0]
     hoehe = float(gr[2]) if len(gr) > 2 else 0.0
@@ -125,38 +209,47 @@ def ergaenze(e: dict[str, Any], begr_je: dict[str, str], geo: dict[str, Any], ma
                               + (f", {mat.name} verzieht sich kaum" if mat is not None else ""))
 
     # 3. Passungen und 4. Einsätze, Schrauben
+    # Mit Lage der Bohrungen (Druckkoordinaten aus vorschau_geo, Strang „Rest Druck“) bekommt jeder Einsatz und jedes
+    # Kernloch einen Modifier; ohne Lage (ältere Prüfergebnisse) wie bisher mehr Wände für das ganze Objekt.
+    geo_bohr = [b for b in (geo.get("bohrungen") or []) if isinstance(b, dict) and b.get("mitte") is not None]
+    mit_lage = bool(geo_bohr)
     einsaetze = []
     kernloecher = []
-    for b in bohrungen:
+    for b in geo_bohr if mit_lage else bohrungen:
         d = float(b.get("d") or 0)
         if b.get("waagrecht"):
             continue
         ein = einsatz_fuer(d)
         if ein is not None:
-            einsaetze.append((d, ein))
-        elif any(abs(d - k) <= 0.06 for k in KERNLOCH):
-            kernloecher.append(d)
+            einsaetze.append((d, ein, b))
+        else:
+            k = kernloch_fuer(d)
+            if k is not None:
+                kernloecher.append((d, k, b))
     waende = int(e.get("waende") or 2)
     if bohrungen and waende < 3:
         e["waende"] = 3
         begr_je["waende"] = (f"3 Wände (1,26 mm) statt {waende}: {len(bohrungen)} Bohrung"
                              f"{'en' if len(bohrungen) != 1 else ''} mit Passung, die Bohrungswand soll aus "
                              "Perimetern bestehen")
-    if einsaetze:
-        wand = max(float(ein[2]["wand_min"] or 0) for _, ein in einsaetze)
+    if mit_lage and (einsaetze or kernloecher):
+        modifier += _modifier_liste(einsaetze, kernloecher, hoehe, e, begr_je)
+    elif einsaetze:
+        wand = max(float(ein[2]["wand_min"] or 0) for _, ein, _b in einsaetze)
         noetig = min(6, max(4, math.ceil(wand / LINIE_MM - 1e-6)))
         if int(e.get("waende") or 0) < noetig:
             e["waende"] = noetig
-        d0, (herst, groesse, _) = einsaetze[0]
+        d0, (herst, groesse, _), _b = einsaetze[0]
         begr_je["waende"] = (f"{e['waende']} Wände: Gewindeeinsatz {groesse} ({herst}, Bohrung Ø {_z(d0, 2)}) braucht "
-                             f"{_z(wand, 1)} mm Wand ringsum (Herstellerangabe)"
-                             + ("; höchstens 6 Wände je Objekt, mehr nur mit Modifier" if wand / LINIE_MM > 6 else ""))
+                             f"{_z(wand, 1)} mm Wand ringsum (Herstellerangabe); Lage der Bohrung unbekannt, deshalb "
+                             "ohne Modifier für das ganze Objekt"
+                             + ("; höchstens 6 Wände je Objekt" if wand / LINIE_MM > 6 else ""))
         if float(e.get("fuellung") or 0) < 0.3:
             e["fuellung"] = 0.3
             begr_je["fuellung"] = "30 % Füllung: der Einsatz braucht Material unter und neben sich"
     elif kernloecher and int(e.get("waende") or 0) < 4:
         e["waende"] = 4
-        begr_je["waende"] = (f"4 Wände: Kernloch Ø {_z(kernloecher[0], 1)} für eine Schraube direkt ins Teil, das "
+        begr_je["waende"] = (f"4 Wände: Kernloch Ø {_z(kernloecher[0][0], 1)} für eine Schraube direkt ins Teil, das "
                              "Gewinde schneidet in die Wände (B-BT)")
     e["loch_kompensation_mm"] = 0.0
     e["kontur_kompensation_mm"] = 0.0
@@ -189,3 +282,4 @@ def ergaenze(e: dict[str, Any], begr_je: dict[str, str], geo: dict[str, Any], ma
     # 7. Tempo und Kühlung
     begr_je.setdefault("tempo", "Tempo und Kühlung aus dem Preset des Filaments; dessen Mindestschichtzeit bremst kleine "
                                 "Querschnitte selbst")
+    return modifier

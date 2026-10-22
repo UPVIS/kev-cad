@@ -547,7 +547,9 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   Schicht, Wände, Decken, Böden, Füllung, Muster, Stützen (nur wo nötig, Baum nur von der Platte, PETG mit 0,25 mm
   Abstand), Brim mit Breite (3/5/8 mm; schmale hohe Stege ab Höhe > 8 × Breite), Naht (hinten bei Zier- und
   Außenteilen), Bügeln (nur Zierteile mit ebener Oberseite), Lochkompensation 0 (Zugabe im Modell), Wände um
-  Bohrungen (≥ 3) und Gewindeeinsätze (nach Mindestwand, Füllung ≥ 30 %), jede Einstellung mit Begründung
+  Bohrungen (≥ 3), um jeden Gewindeeinsatz und jedes Kernloch einen Modifier (Zylinder mit Wänden nach der
+  Mindestwand bzw. dem Tubus 2 · d und 100 % Füllung, ohne Obergrenze; das übrige Teil behält seine Wände), jede
+  Einstellung mit Begründung
   (`teile[].begruendung_je`, `objekte_einstellungen`). Vor der Ausgabe slict Bambu Studio die Datei; nur ohne Warnung
   ist sie `druckfertig`. **Der Agent stellt nichts von Hand nach**; Abweichungen nur auf Kevins Wunsch mit
   `druck_einstellen` (gehen vor). Meldet der Export „NICHT druckfertig“, das Modell oder die Ausrichtung korrigieren.

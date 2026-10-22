@@ -167,6 +167,21 @@ def _rundungen(netz: Netz) -> list[_Rund]:
     return gruppen
 
 
+def _bohrung_kennzahl(netz: Netz, g: _Rund, lage: "_Lage") -> dict:
+    """Kennzahl einer Bohrung: Ø, waagrecht in Druckausrichtung, dazu Achse, Mitte (auf der Achse, in der Mitte der
+    Länge) und Länge in den Koordinaten der geprüften Form (Strang „Rest Druck“: Modifier um Einsätze)."""
+    out = {"d": round(g.d, 3), "waagrecht": bool(abs(float((g.achse @ lage.R.T)[2])) < 0.5)}
+    mask = np.isin(netz.tri_face, g.flaechen)
+    if mask.any():
+        pts = netz.V[netz.T[mask]].reshape(-1, 3)
+        proj = pts @ g.achse
+        s0, s1 = float(proj.min()), float(proj.max())
+        basis = g.punkt - g.achse * float(g.punkt @ g.achse)
+        mitte = basis + g.achse * (s0 + s1) / 2
+        out.update({"achse": _p(g.achse), "mitte": _p(mitte), "laenge": round(s1 - s0, 3)})
+    return out
+
+
 def _umfang(netz: Netz, f: int) -> float:
     return sum(k.laenge for k in netz.kanten if f in k.flaechen)
 
@@ -1172,9 +1187,10 @@ def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, 
                                        if br else None),
         "volumen_cm3": round(volumen / 1000, 3),
         "masse_voll_g": round(volumen / 1000 * mat.dichte, 1),
-        # Paket B (druck/druckfertig.py): Bohrungen mit Ø und Lage in Druckausrichtung (Wände, Einsätze)
-        "bohrungen": [{"d": round(g.d, 3), "waagrecht": bool(abs(float((g.achse @ lage.R.T)[2])) < 0.5)}
-                      for g in rund if g.hohl and g.winkel >= 300][:40],
+        # Paket B (druck/druckfertig.py): Bohrungen mit Ø und Lage in Druckausrichtung (Wände, Einsätze); additiv
+        # (Strang „Rest Druck“) Achse, Mitte und Länge in den Koordinaten der geprüften Form für die Modifier um
+        # Gewindeeinsätze und Kernlöcher (vorschau_geo rechnet sie in Druckkoordinaten um)
+        "bohrungen": [_bohrung_kennzahl(netz, g, lage) for g in rund if g.hohl and g.winkel >= 300][:40],
         "dreiecke": int(len(netz.T)),
         "stichproben_wand": int(len(st.t)),
         "laufzeit_ms": round((time.perf_counter() - t0) * 1000, 1),

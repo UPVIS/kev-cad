@@ -164,8 +164,13 @@ def test_typische_teile_je_objekt_eingestellt(env):
         e["Überhang"]["stuetzen"] == "baum")
     assert e["Überhang"]["stuetzen_abstand_mm"] == 0.25
     assert e["Klemme"]["waende"] >= 4 and e["Klemme"]["stuetzen"] == "keine"
-    assert (e["Einsatzhalter"]["waende"], e["Einsatzhalter"]["fuellung"]) == (4, 0.3)
-    assert "Gewindeeinsatz M3" in t["Einsatzhalter"]["begruendung_je"]["waende"]
+    # Strang „Rest Druck“: der Einsatz bekommt einen Modifier, das Objekt behält Wände und Füllung seines Zwecks
+    assert (e["Einsatzhalter"]["waende"], e["Einsatzhalter"]["fuellung"]) == (3, 0.2)
+    mods = t["Einsatzhalter"]["modifier"]
+    assert [(m["art"], m["groesse"], m["einstellungen"]) for m in mods] == [
+        ("einsatz", "M3", {"waende": 4, "fuellung": 1.0})]
+    assert "Gewindeeinsatz M3" in t["Einsatzhalter"]["begruendung_je"]["modifier"]
+    assert all("modifier" not in g for n, g in t.items() if n != "Einsatzhalter")
     assert e["Steg"]["brim"] and e["Steg"]["brim_mm"] == 5.0
     assert (e["Blende"]["naht"], e["Blende"]["buegeln"]) == ("hinten", True)
     assert all(e[n]["naht"] == "ausgerichtet" and not e[n]["buegeln"] for n in e if n != "Blende")
@@ -187,15 +192,27 @@ def test_typische_teile_je_objekt_eingestellt(env):
         cfg = ET.fromstring(z.read("Metadata/model_settings.config"))
         ps = json.loads(z.read("Metadata/project_settings.config"))
     je: dict[str, dict[str, str]] = {}
+    modifier: dict[str, list[dict[str, str]]] = {}
     for o in cfg.findall("object"):
         name = next(m.get("value") for m in o.findall("metadata") if m.get("key") == "name")
         werte = {m.get("key"): m.get("value") for m in o.findall("metadata") if m.get("key") != "name"}
         for p in o.findall("part"):
-            werte.update({m.get("key"): m.get("value") for m in p.findall("metadata")})
+            pw = {m.get("key"): m.get("value") for m in p.findall("metadata")}
+            if p.get("subtype") == "modifier_part":
+                modifier.setdefault(name.split("/")[-1], []).append(pw)
+            else:
+                werte.update(pw)
         je[name.split("/")[-1]] = werte
     assert je["Blende"]["seam_position"] == "back" and je["Blende"]["ironing_type"] == "top"
     assert je["Klemme"]["seam_position"] == "aligned" and je["Klemme"]["ironing_type"] == "no ironing"
-    assert je["Einsatzhalter"]["wall_loops"] == "4" and je["Einsatzhalter"]["sparse_infill_density"] == "30%"
+    assert je["Einsatzhalter"]["wall_loops"] == "3" and je["Einsatzhalter"]["sparse_infill_density"] == "20%"
+    # der Modifier um den Einsatz, mittig wie die Bohrung im Einsatzhalter
+    assert list(modifier) == ["Einsatzhalter"]
+    mw = modifier["Einsatzhalter"][0]
+    assert (mw["name"], mw["wall_loops"], mw["sparse_infill_density"]) == ("Gewindeeinsatz M3 (Modifier)", "4", "100%")
+    m_mod = [float(x) for x in mw["matrix"].split()]
+    m_teil = [float(x) for x in je["Einsatzhalter"]["matrix"].split()]
+    assert (m_mod[3], m_mod[7]) == pytest.approx((m_teil[3], m_teil[7]), abs=0.05)
     assert je["Steg"]["brim_type"] == "outer_only" and je["Steg"]["brim_width"] == "5"
     assert je["Überhang"]["enable_support"] == "1" and je["Überhang"]["support_top_z_distance"] == "0.25"
     assert all(w["xy_hole_compensation"] == "0" for w in je.values())

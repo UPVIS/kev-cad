@@ -325,9 +325,31 @@ class DruckvorschauRuntime:
         if geo is None or rec is None:
             raise sl.SlicerFehler(f"{g.teile[0]}: Teil nicht in der Szene")
         with self._occ_lock:  # type: ignore[attr-defined]
-            sl.stl_in_druckausrichtung(rec.shape, geo, fest)
+            info = sl.stl_in_druckausrichtung(rec.shape, geo, fest)
+        try:  # Verschiebung des feinen Netzes in z: gilt auch für die Modifier (Strang „Rest Druck“)
+            (ordner / "teil.json").write_text(json.dumps({"z_korrektur": info.get("z_korrektur", 0.0)}),
+                                              encoding="utf-8")
+        except OSError:
+            pass
         shutil.copyfile(fest, stl)
         return stl
+
+    @staticmethod
+    def _dv_modifier(g: vs.Gruppe, ordner: Path, ziel: Path | None = None) -> list[sl.ModifierTeil]:
+        """Modifier der Gruppe (Gewindeeinsätze, Kernlöcher) als STL in den Koordinaten des Teil-STL im Ordner der
+        Gruppe; mit ``ziel`` dorthin kopiert (Arbeitsordner eines Exports)."""
+        if not g.modifier:
+            return []
+        try:
+            dz = float(json.loads((ordner / "teil.json").read_text(encoding="utf-8")).get("z_korrektur") or 0.0)
+        except (OSError, ValueError):
+            dz = 0.0
+        out = []
+        for i, m in enumerate(g.modifier, start=1):
+            p = sl.schreibe_modifier_stl(m, (ziel or ordner) / f"{g.id}-modifier-{i}.stl", dz)
+            out.append(sl.ModifierTeil(stl=p, einstellungen=dict(m.get("einstellungen") or {}),
+                                       name=str(m.get("name") or "Modifier")))
+        return out
 
     def _dv_slicen(self, eingang: dict[str, Any], abbruch: threading.Event) -> None:
         druck = eingang.get("druck") or {}
@@ -358,8 +380,11 @@ class DruckvorschauRuntime:
                 stl = self._dv_stl(g, druck, ordner)
                 e = {k: v for k, v in g.einstellungen.items() if k != "ausrichtung"}
                 t1 = time.perf_counter()
-                res = sl.slice_teil(stl, e, g.filament_slicer, arbeit, abbruch, drucker, platte)
+                res = sl.slice_teil(stl, e, g.filament_slicer, arbeit, abbruch, drucker, platte,
+                                    modifier=self._dv_modifier(g, ordner, arbeit))
                 res["slicer_s"] = round(time.perf_counter() - t1, 2)
+                if g.modifier:
+                    res["modifier"] = len(g.modifier)
             except (sl.SlicerFehler, OSError) as exc:
                 self._log(f"[druck] Slicer {g.name}: {exc}")
                 with self._dv_lock:
@@ -380,10 +405,11 @@ class DruckvorschauRuntime:
             res["gruppe"] = g.name
             res["stand"] = time.strftime("%Y-%m-%dT%H:%M:%S")
             try:
-                neu = sz.abgleich_nachfuehren(drucker, g.prozess, g.material, est["roh"],
-                                              {"zeit_s": zeit_sl, "volumen_cm3": res["volumen_cm3"]})
-                res["abgleich"] = neu
-                abgleich_daten = sz.lies_abgleich()
+                if not g.modifier:  # Modifier kennt die Schätzung nicht: diese Gruppen lernen nicht mit
+                    neu = sz.abgleich_nachfuehren(drucker, g.prozess, g.material, est["roh"],
+                                                  {"zeit_s": zeit_sl, "volumen_cm3": res["volumen_cm3"]})
+                    res["abgleich"] = neu
+                    abgleich_daten = sz.lies_abgleich()
                 self._dv_ergebnis_datei(g.schluessel).write_text(json.dumps(res, ensure_ascii=False, indent=1),
                                                                  encoding="utf-8")
             except OSError as exc:
@@ -431,6 +457,7 @@ class DruckvorschauRuntime:
                 ziel = arbeit / f"{gid}.stl"
                 shutil.copyfile(p, ziel)
                 lokal[gid] = ziel
+            mods = {g.id: self._dv_modifier(g, sl.cache_ordner() / g.schluessel, arbeit) for g in gm}
             if akey not in stand.anordnung:
                 abstand = 6.0 + (10.0 if any(g.einstellungen.get("brim") for g in gm) else 0.0)
                 platten = sl.anordnen([(lokal[g.id], g.anzahl) for g in gm], arbeit / "anordnen", abbruch,
@@ -458,7 +485,8 @@ class DruckvorschauRuntime:
                 objekte = [sl.PlattenObjekt(stl=lokal[l_.stueck.gruppe], x=l_.x, y=l_.y, drehung=l_.drehung,
                                             einstellungen={k: v for k, v in nach_id[l_.stueck.gruppe].einstellungen
                                                            .items() if k != "ausrichtung"},
-                                            name=l_.stueck.name) for l_ in p.lagen if l_.stueck.gruppe in lokal]
+                                            name=l_.stueck.name, modifier=mods.get(l_.stueck.gruppe, []))
+                           for l_ in p.lagen if l_.stueck.gruppe in lokal]
                 if len(objekte) != len(p.lagen):
                     continue
                 self._dv_pruefe_abbruch(abbruch)
@@ -768,6 +796,7 @@ class DruckvorschauRuntime:
         hinweise += ausw.hinweise
         try:
             stls: dict[str, Path] = {}
+            mods: dict[str, list[sl.ModifierTeil]] = {}
             for _, _, p in ausw.platten:
                 for l_ in p.lagen:
                     g = nach_id[l_.stueck.gruppe]
@@ -778,6 +807,7 @@ class DruckvorschauRuntime:
                         ziel_stl = arbeit / f"{g.id}.stl"
                         shutil.copyfile(stls[g.id], ziel_stl)
                         stls[g.id] = ziel_stl
+                        mods[g.id] = self._dv_modifier(g, ordner, arbeit)
             dateien: list[dict[str, Any]] = []
             geprueft = sl.verfuegbar()
             drucker = str(projekt.get("drucker") or vs.DRUCKER_ID)
@@ -790,7 +820,8 @@ class DruckvorschauRuntime:
                 listen = [[sl.PlattenObjekt(stl=stls[l_.stueck.gruppe], x=l_.x, y=l_.y, drehung=l_.drehung,
                                             einstellungen={k: x for k, x in nach_id[l_.stueck.gruppe]
                                                            .einstellungen.items() if k != "ausrichtung"},
-                                            name=l_.stueck.name) for l_ in p.lagen] for _, p in sel]
+                                            name=l_.stueck.name, modifier=mods.get(l_.stueck.gruppe, []))
+                           for l_ in p.lagen] for _, p in sel]
                 pnamen = [f"Platte {nr}" for nr in nr_mat]  # Nummern wie in der Druckvorschau
                 ziel_m = pfad if len(materialien) == 1 else pfad.with_name(f"{pfad.stem}-{mat}{pfad.suffix}")
                 gm = [g for g in vs.auf_platten(gr) if g.material == mat]
@@ -808,7 +839,9 @@ class DruckvorschauRuntime:
                     hinweise.append(f"{mat.upper()}: in Bambu Studio geprüft, {len(nr_mat)} Platte"
                                     + ("n" if len(nr_mat) != 1 else "") + f", {res['objekte']} Teile, Profile "
                                     f"„{sl.MASCHINE}“, „{sl.prozess_name(float(e0.get('schicht_mm') or 0.2))}“, "
-                                    f"„{filament_n}“, Platte „{platte}“ und Einstellungen je Teil.")
+                                    f"„{filament_n}“, Platte „{platte}“ und Einstellungen je Teil"
+                                    + (f", {res['modifier']} Modifier um Gewindeeinsätze und Kernlöcher"
+                                       if res.get("modifier") else "") + ".")
                     # Paket B: vor der Ausgabe so slicen, wie Kevin es öffnet, und die Warnungen auswerten
                     pr_ = sl.pruefe_slicen(ziel_m, arbeit / f"pruef-{mat}")
                     pruefungen.append(pr_)
@@ -831,6 +864,7 @@ class DruckvorschauRuntime:
                                         f"von {len(res.get('namen') or [])}); Bambu Studio zeigt sonst „assemble_…“.")
                     dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament_n, "platten": nr_mat,
                                     "objekte": list(res.get("namen") or []), **herkunft,
+                                    "modifier": int(res.get("modifier") or 0),
                                     "pruefung": {k: pr_[k] for k in ("ok", "warnungen", "platten", "fehler")}})
                 else:
                     # Ohne Bambu Studio: ein 3MF je Platte (Teile in ihrer Lage); Bambu Studio liest Platten nur aus
@@ -896,7 +930,9 @@ class DruckvorschauRuntime:
                               + "; dessen Mindestschichtzeit bremst kleine Querschnitte selbst")
             out.append({"gruppe": g.id, "name": g.name, "teile": [n for n in g.teile if n in ausw.teile],
                         "einstellungen": {k: v for k, v in g.einstellungen.items()}, "fest": list(g.fest),
-                        "begruendung_je": b})
+                        "begruendung_je": b,
+                        # additiv (Strang „Rest Druck“): Modifier um Gewindeeinsätze und Kernlöcher
+                        **({"modifier": [vs.modifier_kurz(m) for m in g.modifier]} if g.modifier else {})})
         return out
 
     def _dv_material_druckbar(self, mid: str) -> bool:

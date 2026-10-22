@@ -61,7 +61,8 @@ def empfehle(geo: dict[str, Any], material: str, zweck: str | None, vorgaben: di
 
     ``geo``: Kennzahlen der Form (vorschau_geo), ``pruefung``: Teil aus ``druck.teile`` der Druckprüfung,
     ``vorgaben``: feste Werte aus druck.json (Teilmenge der Einstellungen). Rückgabe {"einstellungen", "begruendung",
-    "fest", "zweck", "zweck_geschaetzt"}."""
+    "fest", "zweck", "zweck_geschaetzt", "begruendung_je", "modifier"} (``modifier``: Zylinder um Gewindeeinsätze und
+    Kernlöcher, ``druckfertig._modifier``)."""
     vorgaben = dict(vorgaben or {})
     geschaetzt = zweck is None
     z = zweck if zweck in ZWECKE else ZWECK_STANDARD
@@ -123,7 +124,9 @@ def empfehle(geo: dict[str, Any], material: str, zweck: str | None, vorgaben: di
     # Paket B: vollständiger, begründeter Satz je Objekt (druck/druckfertig.py)
     begr_je: dict[str, str] = {}
     vorher = dict(e)
-    df.ergaenze(e, begr_je, geo, material, z, pruefung)
+    modifier = df.ergaenze(e, begr_je, geo, material, z, pruefung)
+    if modifier and begr_je.get("modifier"):  # Strang „Rest Druck“: Modifier um Einsätze und Kernlöcher
+        begr.append(begr_je["modifier"])
     for k in ("waende", "fuellung"):  # Anhebungen für Bohrungen und Einsätze auch in der Liste der Gründe
         if e.get(k) != vorher.get(k) and begr_je.get(k):
             begr.append(begr_je[k])
@@ -151,7 +154,7 @@ def empfehle(geo: dict[str, Any], material: str, zweck: str | None, vorgaben: di
     if fest:
         begr.append("Fest vorgegeben: " + ", ".join(_feld_text(k, e[k]) for k in fest))
     return {"einstellungen": e, "begruendung": begr, "fest": fest, "zweck": z, "zweck_geschaetzt": geschaetzt,
-            "begruendung_je": begr_je}
+            "begruendung_je": begr_je, "modifier": modifier}
 
 
 # Begründungen, die von einer festen Vorgabe abhängen (Schlüssel der Vorgabe → abhängige Begründungen)

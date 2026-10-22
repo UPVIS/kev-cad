@@ -553,13 +553,48 @@ def stl_in_druckausrichtung(shape: Any, geo: dict[str, Any], pfad: Path, toleran
     t = np.asarray(geo["t"], dtype=np.float64)
     v = np.asarray(geo["versatz"], dtype=np.float64)
     Q = (P - t) @ A.T - v
-    Q[:, 2] -= float(Q[:, 2].min())  # das feine Netz liegt genau auf dem Bett
+    dz = float(Q[:, 2].min())
+    Q[:, 2] -= dz  # das feine Netz liegt genau auf dem Bett (dieselbe Verschiebung gilt für die Modifier)
     if abs(np.linalg.det(A) + 1) < 1e-6:  # gespiegelt: Umlaufsinn umkehren
         T = T[:, [0, 2, 1]]
     schreibe_stl(pfad, Q, T, name=str(geo.get("form") or "kevcad")[:60])
     lo, hi = Q.min(axis=0), Q.max(axis=0)
     return {"groesse": [round(float(x), 3) for x in hi - lo], "min": [round(float(x), 3) for x in lo],
-            "dreiecke": int(len(T))}
+            "dreiecke": int(len(T)), "z_korrektur": round(-dz, 6)}
+
+
+def zylinder_netz(unten: Any, oben: Any, radius: float, n: int = 48) -> tuple[np.ndarray, np.ndarray]:
+    """Geschlossener Zylinder (Punkte, Dreiecke nach außen) von ``unten`` nach ``oben`` mit ``radius``."""
+    a = np.asarray(unten, dtype=np.float64)
+    b = np.asarray(oben, dtype=np.float64)
+    ax = b - a
+    lang = float(np.linalg.norm(ax))
+    if lang < 1e-9 or radius <= 0:
+        raise SlicerFehler("Modifier ohne Länge oder Radius")
+    ax = ax / lang
+    hilf = np.array([1.0, 0.0, 0.0]) if abs(ax[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = np.cross(ax, hilf)
+    u /= np.linalg.norm(u)
+    v = np.cross(ax, u)
+    w = np.linspace(0.0, 2 * math.pi, n, endpoint=False)
+    ring = radius * (np.cos(w)[:, None] * u + np.sin(w)[:, None] * v)
+    P = np.vstack([a + ring, b + ring, a, b])
+    cu, co = 2 * n, 2 * n + 1
+    T = []
+    for i in range(n):
+        j = (i + 1) % n
+        T += [(i, j, n + j), (i, n + j, n + i), (cu, j, i), (co, n + i, n + j)]
+    return P, np.asarray(T, dtype=np.int64)
+
+
+def schreibe_modifier_stl(m: dict[str, Any], pfad: Path, z_korrektur: float = 0.0) -> Path:
+    """STL eines Modifiers (``druckfertig._modifier``) in den Koordinaten des Teil-STL (``stl_in_druckausrichtung``:
+    dieselbe Verschiebung in z)."""
+    dz = np.array([0.0, 0.0, float(z_korrektur)])
+    P, T = zylinder_netz(np.asarray(m["unten"], dtype=np.float64) + dz, np.asarray(m["oben"], dtype=np.float64) + dz,
+                         float(m["radius"]))
+    schreibe_stl(pfad, P, T, name=str(m.get("name") or "modifier")[:60])
+    return pfad
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -691,10 +726,16 @@ def _platten_ergebnis(res: dict[str, Any], dichten: list[float]) -> list[dict[st
 
 def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: Filament, ordner: Path,
                abbruch: threading.Event | None = None, drucker: str = "p1p-0.4",
-               platte: str | None = None) -> dict[str, Any]:
-    """Ein Teil (STL in Druckausrichtung) slicen: ``zeit_s``, ``volumen_cm3``, ``m``, ``merkmale`` …"""
+               platte: str | None = None, modifier: list[ModifierTeil] | None = None) -> dict[str, Any]:
+    """Ein Teil (STL in Druckausrichtung) slicen: ``zeit_s``, ``volumen_cm3``, ``m``, ``merkmale`` … Mit ``modifier``
+    (Strang „Rest Druck“) über eine Montageliste, das Teil in der Mitte der Platte samt seinen Modifiern."""
     pr = schreibe_profile(ordner, einstellungen, [filament], drucker, platte)
-    res = ausfuehren([*_profil_args(pr), "--slice", "0", str(stl)], ordner, abbruch)
+    if modifier:
+        liste = montageliste([[PlattenObjekt(stl=stl, x=128.0, y=128.0, drehung=0.0, einstellungen=einstellungen,
+                                             name=stl.stem, modifier=list(modifier))]], ordner)
+        res = ausfuehren([*_profil_args(pr), "--load-assemble-list", str(liste), "--slice", "0"], ordner, abbruch)
+    else:
+        res = ausfuehren([*_profil_args(pr), "--slice", "0", str(stl)], ordner, abbruch)
     platten = _platten_ergebnis(res, pr.dichten)
     for g in ordner.glob("*.gcode"):
         g.unlink(missing_ok=True)
@@ -806,6 +847,15 @@ class PlattenObjekt:
     filament: int = 1    # Nummer des Filaments (1 …)
     einstellungen: dict[str, Any] = field(default_factory=dict)
     name: str = ""
+    # Strang „Rest Druck“: Modifier um Gewindeeinsätze und Kernlöcher, STL in den Koordinaten von ``stl``
+    modifier: list["ModifierTeil"] = field(default_factory=list)
+
+
+@dataclass
+class ModifierTeil:
+    stl: Path            # Zylinder in den Koordinaten des Teil-STL
+    einstellungen: dict[str, Any] = field(default_factory=dict)   # waende, fuellung
+    name: str = "Modifier"
 
 
 NAME_MAX = 60  # Zeichen; länger wird die Objektliste von Bambu Studio unübersichtlich
@@ -845,9 +895,10 @@ def objekt_namen(objekte: list[PlattenObjekt]) -> list[str]:
 _OBJEKT_BLOCK = re.compile(r'<object id="\d+">.*?</object>', re.S)
 _ASSEMBLE_NAME = re.compile(r'<metadata key="name" value="assemble_(\d+)"\s*/>')
 _TEIL_NAME = re.compile(r'(<part id="\d+"[^>]*>\s*<metadata key="name" value=)"[^"]*"')
+_MODIFIER_NAME = re.compile(r'(<part id="\d+" subtype="modifier_part">\s*<metadata key="name" value=)"[^"]*"')
 
 
-def objekte_benennen(pfad_3mf: Path, namen: list[str]) -> int:
+def objekte_benennen(pfad_3mf: Path, namen: list[str], modifier_namen: list[list[str]] | None = None) -> int:
     """Teilnamen in ein von Bambu Studio geschriebenes 3MF setzen (nach ``--load-assemble-list``).
 
     Bambu Studio nennt die Objekte einer Montageliste „assemble_<n>“ (n = ``assemble_index``, hier die laufende
@@ -880,6 +931,18 @@ def objekte_benennen(pfad_3mf: Path, namen: list[str]) -> int:
         neu = '"' + escape(namen[k - 1], {'"': "&quot;"}) + '"'
         block = block[:a.start()] + f'<metadata key="name" value={neu}/>' + block[a.end():]
         block = _TEIL_NAME.sub(lambda t: t.group(1) + neu, block, count=1)
+        mn = (modifier_namen[k - 1] if modifier_namen and k - 1 < len(modifier_namen) else None) or []
+        if mn:  # Modifier (Strang „Rest Druck“) in der Reihenfolge der Montageliste
+            nummer = [0]
+
+            def mod_name(t: re.Match) -> str:
+                i = nummer[0]
+                nummer[0] += 1
+                if i >= len(mn):
+                    return t.group(0)
+                return t.group(1) + '"' + escape(mn[i], {'"': "&quot;"}) + '"'
+
+            block = _MODIFIER_NAME.sub(mod_name, block)
         gezaehlt[0] += 1
         return block
 
@@ -908,6 +971,7 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
             nr += 1
             pfad = o.stl
             dx = dy = 0.0
+            mitte_main = np.zeros(3)
             g = round(float(o.drehung) % 360.0, 3)
             if g not in (0.0, 360.0):
                 key = (str(o.stl), g)
@@ -918,6 +982,7 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
                     gedreht[key] = p
                 pfad = gedreht[key]
                 dx, dy = float(mitte[0]), float(mitte[1])
+                mitte_main = np.asarray(mitte, dtype=np.float64)
             eintrag: dict[str, Any] = {"path": str(pfad), "count": 1, "filaments": [int(o.filament)],
                                        "assemble_index": [nr], "pos_x": [round(o.x + dx, 4)],
                                        "pos_y": [round(o.y + dy, 4)], "pos_z": [0]}
@@ -925,6 +990,21 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
             if pp:
                 eintrag["print_params"] = pp
             eintraege.append(eintrag)
+            # Modifier (Strang „Rest Druck“): Teil desselben Objekts (gleicher assemble_index), Typ modifier_part;
+            # Bambu Studio behält die Lage des STL und verschiebt um pos, wie beim Teil (geprüft mit 2.07.01.62)
+            for k, mt in enumerate(o.modifier, start=1):
+                mpfad = mt.stl
+                if g not in (0.0, 360.0):  # dieselbe Drehung und Verschiebung wie das Teil (drehe_stl)
+                    mpfad = ordner / f"{mt.stl.stem}_o{nr}_d{str(g).replace('.', '_')}.stl"
+                    w_ = math.radians(g)
+                    c_, s_ = math.cos(w_), math.sin(w_)
+                    Rm = np.array([[c_, -s_, 0], [s_, c_, 0], [0, 0, 1.0]])
+                    pm = lies_stl(mt.stl).reshape(-1, 3) @ Rm.T - mitte_main
+                    schreibe_stl_dreiecke(mpfad, pm.reshape(-1, 3, 3))
+                eintraege.append({"path": str(mpfad), "count": 1, "filaments": [int(o.filament)],
+                                  "subtype": "modifier_part", "assemble_index": [nr],
+                                  "pos_x": [round(o.x + dx, 4)], "pos_y": [round(o.y + dy, 4)], "pos_z": [0],
+                                  "print_params": prozess_einstellungen(mt.einstellungen)})
         pname = platten_namen[i - 1] if platten_namen and i <= len(platten_namen) else f"Platte {i}"
         liste["plates"].append({"plate_name": pname, "need_arrange": False, "objects": eintraege})
     pfad = ordner / "montageliste.json"
@@ -1015,12 +1095,15 @@ def export_3mf(platten: list[list[PlattenObjekt]], filament: Filament, ziel: Pat
     erzeugt = ordner / name
     if not erzeugt.exists():
         raise SlicerFehler("Bambu Studio hat kein 3MF geschrieben")
-    namen = objekt_namen([o for liste_ in platten for o in liste_])
-    benannt = objekte_benennen(erzeugt, namen)
+    alle = [o for liste_ in platten for o in liste_]
+    namen = objekt_namen(alle)
+    benannt = objekte_benennen(erzeugt, namen, [[mt.name for mt in o.modifier] for o in alle])
     objekte = pruefe_3mf(erzeugt, ordner / "pruefung", abbruch)
     ziel.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(erzeugt, ziel)
-    return {"pfad": str(ziel), "objekte": objekte, "geprueft": True, "namen": namen, "benannt": benannt}
+    modifier = sum(len(o.modifier) for o in alle)
+    return {"pfad": str(ziel), "objekte": objekte, "geprueft": True, "namen": namen, "benannt": benannt,
+            "modifier": modifier}
 
 
 def pruefe_3mf(pfad: Path, ordner: Path, abbruch: threading.Event | None = None) -> int:
