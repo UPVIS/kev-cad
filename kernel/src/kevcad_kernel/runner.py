@@ -856,8 +856,10 @@ class Runner:
             return header, payload
         if self._pruef_lauf is None:
             self._pruef_lauf = PruefLauf()
+        # Statik (statik/anbindung.py): Katalog (Werkstoffe, Reibwerte, leichtere Lagerteile) und Parameter des Laufs
         return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen,
-                                       optionen={"projekt": getattr(self, "_projekt_pfad", None)})
+                                       optionen={"projekt": getattr(self, "_projekt_pfad", None),
+                                                 "katalog": self.catalog, "params": dict(self.params)})
 
     def fertig_rechnen(self, run: int, abbrechen: Callable[[], None] | None = None
                        ) -> tuple[dict[str, Any], bytes] | None:

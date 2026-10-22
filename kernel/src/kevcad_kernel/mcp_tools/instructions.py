@@ -91,6 +91,16 @@ without it "funktion" is assumed) and `anzahl=` only for extra copies (spares). 
 is a warning `gedruckt_geaendert`; `neu_drucken=True` for one run locks a new shape). `druckvorschau` reads it (estimate \
 first, Bambu Studio results follow in the background), `druck_einstellen` fixes settings only on Kevin's request, \
 `druck_export` writes the plates as 3MF for Bambu Studio.
+- Statics (Statik): after every run Kev CAD computes load scenarios: Eigengewicht, Bremsen on wheels, a Nutzlast from \
+a param in kg, and Kevin's own from model.py (`import kevcad.statik as st`, `st.szenario("Aufstützen", ...)`, \
+`st.last(teil, kg=30)` or `kraft=(fx, fy, fz)` in N with `punkt=`, `beschleunigung=` m/s², `neigung=`, `stoss=`). \
+Frames from stock tubes and profiles are computed as bars (PyNite), printed or other parts with a load as cantilevers \
+(printed: across the layers only a fraction of the strength). Each scenario gets a traffic light against the target \
+(static 2, dynamic 3, printed parts x2; deflection span/200), tipping and sliding reserve. Red and yellow results are \
+findings `statik_*` (warnings and hints, export is not blocked). `statik` reads the result, `szenario_rechnen` answers \
+"does it hold if ..." in under a second without a new run and shows it in the viewer. Lighter or stronger \
+alternatives come only from the inventory. Always mention the simplifications and that it is no substitute for a \
+structural engineer for safety-relevant things.
 
 Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
 explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \

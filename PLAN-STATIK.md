@@ -67,3 +67,28 @@ gilt immer: erst die schnelle Stufe, die genaue nur auf Nachfrage oder im Hinter
   MB.
 - Abhängigkeit von Prüfungen (Kontaktgraph, Schwerpunkt), Zwangsbedingungen (Gelenke, Verbindungen) und Animation
   (Zeitleiste, Video): erst nach deren Übernahme starten.
+
+## Stand Stufe 1 (T-A, T-B; Zweig `statik`, 22.10.2026)
+
+Umgesetzt in `kernel/src/kevcad_kernel/statik/` (Übersicht im Docstring von `__init__.py`), API `kevcad.statik`,
+MCP `statik` und `szenario_rechnen` (`mcp_tools/statik_tools.py`), Nachricht `STATICS` (PROTOCOL.md, Abschnitt
+„Statik“), Materialdaten `mechanik` und `reibwerte.json` (KATALOG.md, Abschnitt „Mechanik“), App: Abschnitt „Statik“ im
+Inspektor, Farbverlauf und Verformung im Viewer (`KevCADCore/Statik/`), Skill `skill/kev-cad/statik.md`.
+
+Entscheidungen, die beim Bauen dazukamen:
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| T8 | S0 und S1 laufen beide nach jedem Lauf als letzter Prüfer (Stabwerk unter 100 ms bei üblichen Gestellen, PyNite wird beim Start des Rechenprozesses vorgeladen); Szenarien auf Anfrage rechnet der Rechenprozess mit dem Modell des letzten Laufs (`statik/dienst.py`) | Kevin sieht die Ampel nach jedem Lauf; Fragen „hält das, wenn …“ ohne neuen Lauf in unter einer Sekunde |
+| T9 | Ampel über die Ausnutzung a = Ziel / Sicherheit: bis 1 grün, bis 2 gelb, darüber rot; Kippen und Rutschen über die Reserve (rot unter 1, gelb unter 1,5); Durchbiegung je Feld (L/200) bzw. Kragarm (2 L/200) gegen die Sehne bzw. die starre Fortsetzung, damit starre Bewegungen nicht zählen | Eine Rechenvorschrift für alle Urteile, Farbverlauf direkt aus derselben Zahl |
+| T10 | Rote und gelbe Urteile sind Befunde `statik_*` als Warnung bzw. Hinweis; sie sperren den Export nicht | Vereinfachte Modelle (T7) sollen beraten, nicht blockieren |
+| T11 | Verbinder (Druckteile, Platten, Zukaufteile) sind im Stabwerk starr, Gelenke sitzen in kurzen Gelenkgliedern quer zum Stab; Anschlüsse an Teile, die auf dem Boden stehen, sind feste Lager; Steck und Spiel gelten als fest | Robust ohne Volumen-FEM; die Verbinder selbst prüft der Kragträger-Nachweis, sobald eine Last auf ihnen liegt |
+| T12 | Leichtere oder stärkere Lagerteile nur aus dem Inventar und nur desselben Werkstoffs; geschätzt über Widerstandsmoment, Fläche und Steifigkeit, die aussichtsreichsten mit dem ganzen Stabwerk nachgerechnet | Inventar-Regel; Fügen und Optik bleiben gleich; schnell |
+| T13 | Kugeln und Walzen, die frei rollen, nehmen nicht an Kippen und Rutschen teil (das zeigt S2) | Sonst hieße es „Ball kippt“ |
+
+Naht für S2 und S3: `statik.NAHT` nennt die Stufen; beide setzen auf `modell.StatikModell` (Teile mit Masse und
+Schwerpunkt, Starrkörper, Anschlüsse mit Gelenkart und Achse, Lager) und `szenario.Szenario` (Beschleunigungsfeld,
+Lasten) auf und liefern Urteile im Format von `bewertung.urteil`, die `rechnen.rechne_alles` wie S0/S1 in Ampel,
+Befunde und `STATICS` übernimmt. Offen für S2: Ablauf (Bremsen aus 1 m/s, springt der Ball aus dem Schieber) als
+Animation, Kontaktkräfte, CoACD-Kollisionsformen. Offen für S3: Volumen-FEM für Druckteile und Verbinder (statt
+Kragträger und starrer Verbinder), von Mises als Farbverlauf auf dem Netz.

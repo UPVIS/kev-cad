@@ -215,6 +215,8 @@ public final class AppModel: ObservableObject {
     /// Phase 4 (additiv): Referenzen aus Video und Fotos – Liste, Netze, Fotos mit Kamera, Messergebnis, Fotoansicht
     /// (Aktionen: `actions as? ReferenzActions`).
     public let referenzen = ReferenzStore()
+    /// Statik (additiv, PLAN-STATIK.md): Szenarien mit Ampel, Farbverlauf und Verformung (Aktionen: `StatikActions`).
+    public let statik = StatikStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

@@ -558,6 +558,40 @@ class FakeService:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
         return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
 
+    # Statik Stufe 1 ------------------------------------------------------------------------------------------------
+
+    def statik(self, szenario: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel
+        from kevcad_kernel.statik.laufzeit import _szenario_auszug
+
+        self._record("statik", szenario)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Statik: erst run aufrufen."}
+        b = statik_beispiel()
+        base = {"ok": True, "run": self.run_no, "aktiv": b["aktiv"], "grenzen": b["grenzen"],
+                "vereinfachungen": b["vereinfachungen"], "modell": b["modell"], "ms": b["ms"],
+                "ueberdimensioniert": []}
+        if szenario:
+            e = next((x for x in b["szenarien"] if x["name"] == szenario), None)
+            if e is None:
+                return {"ok": False, "error": f"Szenario {szenario!r} gibt es nicht"}
+            return {**base, "szenario": _szenario_auszug(e)}
+        return {**base, "szenarien": [_szenario_auszug(e, detail=False) for e in b["szenarien"]]}
+
+    def szenario_rechnen(self, name: str, beschleunigung: Any = None, neigung: float | None = None,
+                         richtung: Any = None, lasten: list[dict[str, Any]] | None = None, stoss: float | None = None,
+                         ziel: float | None = None, beschreibung: str | None = None, zeigen: bool = True
+                         ) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel
+        from kevcad_kernel.statik.laufzeit import _szenario_auszug
+
+        self._record("szenario_rechnen", name, lasten)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Statikmodell: erst run aufrufen."}
+        e = dict(statik_beispiel()["szenarien"][1], name=name)
+        return {"ok": True, "run": self.run_no, "szenario": _szenario_auszug(e), "gezeigt": zeigen, "ms": 120.0,
+                "grenzen": statik_beispiel()["grenzen"], "vereinfachungen": []}
+
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 
     def drucker_status(self) -> dict[str, Any]:

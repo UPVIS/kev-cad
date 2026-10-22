@@ -88,6 +88,9 @@ TOOL_NAMES: tuple[str, ...] = (
     "referenz_fotos",
     "referenz_vermessen",
     "referenz_fotoansicht",
+    # Statik Stufe 1
+    "statik",
+    "szenario_rechnen",
 )
 
 __all__ = ["INSTRUCTIONS", "SERVER_NAME", "SERVER_TITLE", "TOOL_NAMES", "KevcadTools", "register_tools"]

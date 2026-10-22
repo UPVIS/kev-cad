@@ -22,6 +22,7 @@ struct InspectorView: View {
             if let state {  // Phase 4: Referenzen aus Video und Fotos
                 ReferenzInspectorSection(model: model, store: model.referenzen, state: state)
             }
+            StatikAbschnitt(store: model.statik, actions: model.statikActions)  // Statik Stufe 1
             measurementsSection
             projectSection
         }

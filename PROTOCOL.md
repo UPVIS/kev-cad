@@ -759,3 +759,50 @@ Kamera hinter dem Modell (Deckkraft, Differenz rot = nur Foto, blau = nur Modell
 `groesse`} des eingepassten Modells mit allen Teilen, `grundkoerper` {`teil`, `min`, `max`, `groesse`} das Teil mit dem
 größten Hüllvolumen, `teile` je Teil. `empfehlungen[i]`: `art` (`nachmessen` \| `aufnahme` \| `unsicher` \|
 `verworfen`), `text` (deutsch, für den Hinweis in der App), dazu `mass`, `anteil` (Restvarianz), `azimut`, `hoehe`.
+
+## Statik
+
+Rein additiv (PLAN-STATIK.md, Strang „Statik Stufe 1“); ältere Apps ignorieren den Typ. Der Prüfer „statik“ rechnet
+nach jedem Lauf im Rechenprozess (zuletzt, nach Stand, Montage und Druck): S0 (Kippen je Richtung, Rutschen, lose
+Teile, Schrauben grob, Bauteile mit Last als Kragträger) und S1 (Stabwerk mit PyNite). Das volle Ergebnis kommt im
+CHECK-Kopf als Feld `statik` zur Laufzeit; sie nimmt es dort heraus, merkt es und schickt es als `STATICS`. Im `CHECK`
+an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `aktiv`, `szenarien` je mit `name`, `art`,
+`quelle`, `ampel`, `ziel`, `text`, `kennzahlen`, `beschreibung`, `ms`). Rote und gelbe Urteile sind zusätzlich Befunde
+`statik_*` im `CHECK` (Warnung bzw. Hinweis; die Statik sperrt den Export nicht). Packen und Prüfen in `protocol.py`
+(`pack_statics`, `statik_kurz`, `check_statics_message`, Beispiel `statik_beispiel`), Testdateien `statics.frame`,
+`statics_eigengewicht.frame`, `statics_failed.frame` und `statics.json` aus `tools/make_statik_fixtures.py`.
+
+| type | Richtung | Felder | Nutzlast |
+|---|---|---|---|
+| `STATICS` | Kernel → App | `run`, `stand` (`done` \| `failed`), `aktiv` (Szenario, das die App anbietet), `zeigen` (bool: der Agent will `aktiv` im Viewer sehen, Farbverlauf und Verformung an), `meldung`, `szenarien`, `ueberdimensioniert`, `grenzen`, `vereinfachungen`, `modell`, `ms`, `reply_to` optional; nach jeder Prüfung, nach `szenario_rechnen`, nach `statik(szenario)` und beim Verbinden | – |
+
+`szenarien[i]`:
+
+```json
+{"name": "Aufstützen 30 kg", "art": "statisch", "quelle": "modell", "ampel": "rot", "ziel": 2.0,
+ "text": "Aufstützen 30 kg: rot – Rahmen/Rohr hält nicht (Sicherheit 0,2)", "beschreibung": "30 kg vorn auf dem Rohr",
+ "kennzahlen": {"sicherheit": 0.2, "knicken": null, "kippreserve": 0.8, "rutschreserve": null, "durchbiegung_mm": 61.0,
+                "durchbiegung_grenze_mm": 5.0, "verformung_max_mm": 61.0},
+ "urteile": [{"art": "festigkeit", "teil": "Rahmen/Rohr", "ampel": "rot", "text": "…", "loesung": "…",
+              "sicherheit": 0.2, "ziel": 2.0, "ausnutzung": 10.0, "ort": [0, 0, 30]}],
+ "teile": [{"name": "Rahmen/Rohr", "ausnutzung": 10.0, "ampel": "rot", "verformung_mm": 61.0, "sicherheit": 0.2}],
+ "staebe": [{"name": "Rahmen/Rohr", "punkte": [[0, 0, 30], [250, 0, 30], [500, 0, 30]], "ausnutzung": [10.0, 5.0, 0.0],
+             "verschiebung": [[0, 0, 0], [0, 0, -22], [0, 0, -61]], "radius": 6.0, "sicherheit": 0.2, "ampel": "rot"}],
+ "auflager": [{"stab": "…", "teil": "…", "punkt": [x, y, z], "kraft": [N], "moment": [Nmm], "art": "fest"}],
+ "ueberhoehung": 1.0,
+ "kippen": [{"name": "Der Aufbau um Rahmen (3 Teile)", "reserve": 9.6, "richtung_text": "+X", "teile": ["…"],
+             "je_richtung": {"+X": {"kippwinkel": 31.0, "a_kipp": 5.9}}}]}
+```
+
+- `ampel`: `gruen` | `gelb` | `rot` | `grau` (nicht gerechnet). **Ausnutzung** = Zielsicherheit / vorhandene
+  Sicherheit: bis 1 grün, bis 2 gelb, darüber rot (T5; Ziel statisch 2, dynamisch 3, Druckteile das Doppelte).
+- `urteile[i].art`: `festigkeit`, `knicken`, `durchbiegung`, `kippen`, `rutschen`, `schraube`, `bauteil`,
+  `ueberdimensioniert`, `stabwerk`; dazu optional `reserve`, `durchbiegung`, `grenze`, `schichtfaktor`,
+  `quer_zur_schicht`, `alternative` (`stock_id`, `name`, `ersparnis_kg`, `ersparnis_eur`, `sicherheit` …).
+- `teile`: Ausnutzung je Teil (Stäbe und Bauteile mit Nachweis); die App färbt die Teile damit (grün → gelb → rot).
+- `staebe`: je Stab Stationen entlang der Achse (Welt, mm) mit Ausnutzung und Verschiebung (mm); `punkte`,
+  `ausnutzung` und `verschiebung` sind gleich lang (mindestens 2). Die App zeichnet daraus den Farbverlauf und die
+  Verformung, um `ueberhoehung` vergrößert, als Geist.
+- `kippen[i].je_richtung`: Neigung in Grad bzw. waagrechte Beschleunigung in m/s², bei der die Gruppe kippt.
+
+App → Kernel: nichts. Die App wählt Szenarien selbst; neue Szenarien rechnet der Agent mit MCP `szenario_rechnen`.

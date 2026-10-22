@@ -95,7 +95,9 @@ def test_datei_format(pfad):
     daten = json.loads(pfad.read_text(encoding="utf-8"))
     assert isinstance(daten, dict)
     assert daten.get("version") == 1
-    assert set(daten) <= {"version", "materialien", "teile"}, f"unbekannte Schlüssel: {set(daten)}"
+    # Statik (KATALOG.md, Abschnitt „Mechanik“): Reibwerte je Paarung und Reibgruppen, additiv
+    assert set(daten) <= {"version", "materialien", "teile", "reibwerte", "reibgruppen"}, \
+        f"unbekannte Schlüssel: {set(daten)}"
     for key in ("materialien", "teile"):
         assert isinstance(daten.get(key, []), list)
 
