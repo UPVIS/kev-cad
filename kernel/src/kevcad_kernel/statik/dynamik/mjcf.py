@@ -33,7 +33,8 @@ def _v(v: Any) -> str:
 
 
 def schwerkraft(neigung_grad: float = 0.0, richtung: Any = (1.0, 0.0, 0.0)) -> np.ndarray:
-    """Schwerkraft im System des Bodens: bei Neigung zeigt sie schräg in die Abwärtsrichtung (Boden bleibt waagrecht)."""
+    """Schwerkraft im System des Bodens: bei Neigung zeigt sie schräg in die Abwärtsrichtung (der Boden bleibt
+    waagrecht)."""
     t = np.radians(float(neigung_grad or 0.0))
     h = np.asarray(richtung, float).copy()
     h[2] = 0.0
@@ -178,7 +179,8 @@ def baue_xml(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *, a
                              f'{kpar}/>')
     for n, mu in zip(meta["boden_paare"], meta["boden_mu"]):
         # Füße des geschobenen Körpers gleiten reibungsfrei: die Führung greift ebenfalls am Boden an und übernimmt
-        # die Reibung (Kippen unverändert; ohne das hüpfen gleitende Füße mit weichen Kontakten). Räder rollen mit Reibung.
+        # die Reibung (Kippen unverändert; ohne das hüpfen gleitende Füße mit weichen Kontakten). Räder rollen mit
+        # Reibung.
         dim = ' condim="1"' if an is not None and meta["kollision"][n]["koerper"] == an else ""
         for g in teil_geoms.get(n, []):
             paare.append(f'<pair geom1="boden" geom2="{g}" friction="{_f(mu)} {_f(mu)} 0.001 0.0001 0.0001" '

@@ -101,6 +101,28 @@ def rechne_szenario(meta: dict[str, Any], formen: dict[str, Any], sz: dict[str, 
     suche_info: dict[str, Any] = {}
     t1 = time.perf_counter()
     brems_arg = sz.get("bremsen")
+    if sz.get("suche", True) and mo.zuordnung.get("antrieb") and sz.get("bahn") and a > 0:
+        # Sollbahn aus einer Animation: dieselbe Fahrt schneller abspielen (Zeit / τ): Beschleunigungen × f, Tempo ×
+        # √f. Gesucht wird f, ab dem der Aufbau abhebt bzw. die Ladung herausspringt (mit Ladung, wie animiert).
+        bahn = sz["bahn"]
+        zt, weg = np.asarray(bahn["zeiten"], float), np.asarray(bahn["weg_m"], float)
+
+        def schneller(f: float) -> ab.Profil:
+            return ab.profil_aus_bahn(zt / math.sqrt(f), weg)
+
+        krit = {"kippen_f": lambda b: b.abheben_max > ab.ABHEBEN_MM}
+        for kid in mo.ladung:
+            krit[f"ladung_f:{kid}"] = (lambda k: (lambda b: ab.ladung_verloren(b, k)))(kid)
+        erg, info = ab.grenzen(mo, schneller, krit, lo=1.0, hi=400.0)
+        suche_info["animation"] = info
+        for k, e in erg.items():
+            f = e.get("wert")
+            if k == "kippen_f":
+                suche["kippen_a"] = {**e, "wert": None if f is None else f * a}
+                suche["kippen_v"] = {**e, "wert": None if f is None else v * math.sqrt(f)}
+            else:
+                suche["ladung_v:" + k.split(":", 1)[1]] = {**e, "wert": None if f is None else v * math.sqrt(f),
+                                                           "ab": v * math.sqrt(e["ab"]) if e.get("ab") else None}
     if sz.get("suche", True) and mo.zuordnung.get("antrieb") and not sz.get("bahn"):
         # 1) Verzögerung, ab der der Aufbau abhebt, bei dieser Geschwindigkeit (mit Ladung)
         if v > 0:
@@ -131,7 +153,7 @@ def rechne_szenario(meta: dict[str, Any], formen: dict[str, Any], sz: dict[str, 
             suche_info["ohne_ladung"] = info
     t_suche = (time.perf_counter() - t1) * 1000
     tb = ab.teilbaum(meta, mo.zuordnung["antrieb"]) if mo.zuordnung.get("antrieb") else set()
-    sz_eff = {"v": v, "a": a}
+    sz_eff = {"v": v, "a": a, "bahn": bool(sz.get("bahn"))}
     urteile, kz = ut.bewerte(sz_eff, meta, mo, auf, suche, hand, _mu_rad(meta, tb))
     ampel = ut.schlechteste([u["ampel"] for u in urteile] + ["gruen"])
     # Verlauf (je Bild) und Kontaktpfeile

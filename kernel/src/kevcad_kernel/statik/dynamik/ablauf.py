@@ -192,7 +192,8 @@ def baue_modell(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *
 def fusspunkte(meta: dict[str, Any], tb: set[str], formen: dict[str, list[dict[str, Any]]] | None = None,
                an: str | None = None) -> list[dict[str, Any]]:
     """Punkte, auf denen der geschobene Teilbaum steht (Weltkoordinaten der Ruhelage, mm): Radachsen (drehende Kinder)
-    und je Teil am Boden der tiefste Punkt seiner Kollisionsform (Füße, Kufen), aber nur am geschobenen Körper selbst."""
+    und je Teil am Boden die Ecken der Aufstandsfläche seiner Kollisionsform (Füße, Kufen), nur am geschobenen
+    Körper selbst."""
     K = {k["id"]: k for k in meta["koerper"]}
     out = []
     for kid in sorted(tb):

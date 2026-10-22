@@ -236,6 +236,23 @@ def test_ablauf_prozess_urteile_und_suche(wagen, tmp_path):
     assert abl["text"].startswith("Bremsen aus 1 m/s: rot – Wagen kippt nach vorn")
 
 
+def test_ablauf_mit_sollbahn_aus_animation(wagen):
+    """Sollbahn wie eine Animation (weich, 1,5 m in 3 s); die Suche spielt sie schneller ab (Beschleunigung × f)."""
+    meta, felder, formen = wagen
+    t = np.arange(0, 3.0 + 1e-9, 1 / 30)
+    u = t / 3.0
+    weg = 1.5 * u * u * (3 - 2 * u)
+    abl, f = prozess.rechne_szenario(meta, formen, {"name": "Fahrt", "bahn": {"name": "Fahrt", "zeiten": t.tolist(),
+                                                                              "weg_m": weg.tolist()}})
+    kz = abl["kennzahlen"]
+    assert abl["stand"] == "done" and kz["geschwindigkeit"] == pytest.approx(0.75, rel=0.02)
+    assert kz["verzoegerung"] == pytest.approx(1.0, rel=0.05)  # 6 · s / T² für die weiche Kurve
+    assert kz["abheben_max_mm"] < ab.ABHEBEN_MM and kz["kippreserve"] > 1.5
+    assert kz["a_abheben"] is not None and kz["v_abheben"] > 0.75
+    assert abl["urteile"][0]["ampel"] == "gruen" and "Wagen kippt nicht" in abl["urteile"][0]["text"]
+    assert abl["ms"]["varianten"] >= 8 and f["lagen"].shape[0] == abl["bilder"]
+
+
 def test_szenario_ablauf_aus_modell_und_agent():
     s = szenario_aus({"name": "Bremsen", "geschwindigkeit": 1, "bremsen": "abrupt"})
     assert s.ablauf["verzoegerung"] == pytest.approx(10.0) and s.dynamisch
@@ -312,6 +329,13 @@ def test_laufzeit_ablauf_aus_modell_und_dynamik(env):
     _, _, st2, _ = app.wait_for(lambda h: h["type"] == "STATICS" and h.get("aktiv") == "Sanft", start=start,
                                 timeout=10)
     assert st2["zeigen"] and any(x["name"] == "Sanft" and x["ablauf"]["stand"] == "done" for x in st2["szenarien"])
+    # der Ablauf aus model.py bleibt, auch nach einem weiteren Szenario auf Anfrage
+    assert any(x["name"] == "Bremsen aus 1 m/s" and (x.get("ablauf") or {}).get("stand") == "done"
+               for x in st2["szenarien"])
+    assert rt.szenario_rechnen("Stehen", lasten=[{"teil": "Wagen/Turm", "kg": 1}])["ok"]
+    ueb = rt.statik()
+    assert {e["name"]: e["ampel"] for e in ueb["szenarien"]}["Bremsen aus 1 m/s"] == "rot"
+    assert rt.statik("Bremsen aus 1 m/s")["szenario"]["ablauf"]["stand"] == "done"
     assert not rt.dynamik("Ohne Tempo")["ok"]
     # Nächster Lauf: alte Abläufe verschwinden aus der Zeitleiste
     start = app.mark()

@@ -165,7 +165,8 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
         if k:
             zeilen.append(f"Kippen: hebt bei dieser Bremsart ab {z(k.get('v_abheben'), 2)} m/s ab; bei "
                           f"{z(geschwindigkeit, 2)} m/s ab {z(k.get('a_abheben'), 2)} m/s² Verzögerung. Ohne Ladung "
-                          f"{z(k.get('a_abheben_ohne_ladung'), 2)} m/s², Handrechnung {z(k.get('a_kipp_hand'), 2)} m/s².")
+                          f"{z(k.get('a_abheben_ohne_ladung'), 2)} m/s², Handrechnung "
+                          f"{z(k.get('a_kipp_hand'), 2)} m/s².")
         text = "\n".join(zeilen) + "\n" + ablauf_text(res.get("ablauf") or {})
         if res.get("grenzen"):
             text += "\nGrenzen: " + " ".join(res["grenzen"])

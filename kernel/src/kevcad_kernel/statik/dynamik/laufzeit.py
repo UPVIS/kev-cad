@@ -214,6 +214,18 @@ class DynamikRuntime:
         self._statik_senden(zeigen=zeigen)  # type: ignore[attr-defined]
         return neu
 
+    @staticmethod
+    def _dyn_behalten(alt: dict[str, Any] | None, neu: dict[str, Any], ausser: str | None = None) -> dict[str, Any]:
+        """Neues Statik-Ergebnis aus dem Rechenprozess (Szenario auf Anfrage): Szenarien mit fertigem oder laufendem
+        Ablauf übernimmt es aus dem bisherigen Ergebnis der Laufzeit (außer dem gerade gerechneten ``ausser``)."""
+        if not alt:
+            return neu
+        mit = {e.get("name"): e for e in alt.get("szenarien") or [] if isinstance(e.get("ablauf"), dict)}
+        if not mit:
+            return neu
+        szen = [mit.get(e.get("name"), e) if e.get("name") != ausser else e for e in neu.get("szenarien") or []]
+        return {**neu, "szenarien": szen}
+
     # -- Nach jedem Lauf: Abläufe aus model.py im Hintergrund ----------------------------------------------------------
 
     def _dynamik_nach_lauf(self, voll: dict[str, Any] | None) -> None:
@@ -324,8 +336,8 @@ class DynamikRuntime:
         t_szene = (time.perf_counter() - t0) * 1000
         with self._lock:  # type: ignore[attr-defined]
             run = self._statik_run  # type: ignore[attr-defined]
-            self._statik_voll = {k: v for k, v in erg.items() if not k.startswith("szene")  # type: ignore[attr-defined]
-                                 and k not in ("antrieb", "dienst_ms")}
+            neu = {k: v for k, v in erg.items() if not k.startswith("szene") and k not in ("antrieb", "dienst_ms")}
+            self._statik_voll = self._dyn_behalten(self._statik_voll, neu, name)  # type: ignore[attr-defined]
         try:
             out, felder = self._dyn_prozess(erg["szene_datei"], [auftrag], timeout_s=timeout_s)
         except RuntimeError as exc:

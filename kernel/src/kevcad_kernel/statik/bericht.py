@@ -117,7 +117,9 @@ def ablauf_text(ab: dict[str, Any], urteile: bool = True) -> str:
     if kz.get("a_abheben") is not None:
         kipp.append(f"hebt ab {z(kz['a_abheben'], 2)} m/s² ab (Kippreserve {z(kz.get('kippreserve'), 2)})")
     if kz.get("v_abheben") is not None:
-        kipp.append(f"bei dieser Bremsart ab {z(kz['v_abheben'], 2)} m/s")
+        animiert = str(an.get("bremsen") or "").startswith("wie die Animation")
+        kipp.append(f"bei dieser Fahrt ab {z(kz['v_abheben'], 2)} m/s Höchstgeschwindigkeit" if animiert
+                    else f"bei dieser Bremsart ab {z(kz['v_abheben'], 2)} m/s")
     z_.append("  Kippen: " + ", ".join(kipp))
     h = ab.get("handrechnung") or {}
     if h and kz.get("a_abheben_ohne_ladung") is not None:
@@ -133,7 +135,9 @@ def ablauf_text(ab: dict[str, Any], urteile: bool = True) -> str:
                   f"{z(L.get('versatz_max_mm'), 0)} mm, hebt {z(L.get('hebt_max_mm'), 0)} mm{grenze}")
     if kz.get("rutschgrenze") is not None:
         z_.append(f"  Rutschgrenze (blockierte Räder): {z(kz['rutschgrenze'], 1)} m/s² (μ = {z(kz.get('mu_rad'), 2)}), "
-                  f"Rutschreserve {z(kz.get('rutschreserve'), 2)}")
+                  f"Rutschreserve {z(kz.get('rutschreserve'), 2)}"
+                  + (f", Rutschweg {z(kz['rutschweg_mm'], 0)} mm über den Bremsweg von "
+                     f"{z(kz.get('bremsweg_mm'), 0)} mm hinaus" if kz.get("rutschweg_mm") else ""))
     if kz.get("kontaktkraefte"):
         z_.append("  Größte Kontaktkräfte: " + "; ".join(f"{k['paar'][0]} ↔ {k['paar'][1]} {z(k['max_n'], 0)} N"
                                                         for k in kz["kontaktkraefte"][:5]))

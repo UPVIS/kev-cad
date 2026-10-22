@@ -120,7 +120,8 @@ def bewerte(sz: dict[str, Any], meta: dict[str, Any], mo: Any, auf: Any, suche: 
         if a_ab is not None and math.isfinite(a_ab):
             text += f" Hebt schon ab {z(a_ab, 1)} m/s² ab (Kippreserve {z(reserve, 2)})."
         if v_kipp:
-            text += f" Bei dieser Bremsart ab {z(v_kipp, 2)} m/s."
+            text += (f" Bei dieser Fahrt ab {z(v_kipp, 2)} m/s Höchstgeschwindigkeit." if sz.get("bahn")
+                     else f" Bei dieser Bremsart ab {z(v_kipp, 2)} m/s.")
         loesung = ("Sanfter bremsen oder langsamer schieben, Schwerpunkt senken (Kamera tiefer), Achsabstand nach vorn "
                    "vergrößern oder die Last vorn (Ball, Fangrolle) näher an die Vorderachse.")
     else:
@@ -169,7 +170,8 @@ def bewerte(sz: dict[str, Any], meta: dict[str, Any], mo: Any, auf: Any, suche: 
             if L["hebt"] > 1.0:
                 text += f", steigt {z(L['hebt'], 0)} mm hoch"
             if v_grenze is not None and math.isfinite(v_grenze):
-                text += f"; springt bei dieser Bremsart ab {z(v_grenze, 2)} m/s heraus"
+                text += (f"; springt bei dieser Fahrt ab {z(v_grenze, 2)} m/s Höchstgeschwindigkeit heraus"
+                         if sz.get("bahn") else f"; springt bei dieser Bremsart ab {z(v_grenze, 2)} m/s heraus")
             elif vg.get("nie_bis_hi"):
                 text += f"; bleibt bis mindestens {z(vg.get('ab'), 1)} m/s"
             text += "."
@@ -183,11 +185,19 @@ def bewerte(sz: dict[str, Any], meta: dict[str, Any], mo: Any, auf: Any, suche: 
     if mu_rad is not None and a > 0:
         a_r = mu_rad * G
         r = a_r / a
-        kz.update({"mu_rad": round(mu_rad, 2), "rutschgrenze": round(a_r, 2), "rutschreserve": round(r, 2)})
+        # Rutschweg: mit blockierten Rädern bremst er nur mit μ·g; Bremsweg v²/(2 a) statt v²/(2 a_Szenario)
+        bremsweg = v * v / (2 * a)
+        bremsweg_rutsch = v * v / (2 * min(a, a_r))
+        kz.update({"mu_rad": round(mu_rad, 2), "rutschgrenze": round(a_r, 2), "rutschreserve": round(r, 2),
+                   "bremsweg_mm": round(bremsweg * 1000, 1), "bremsweg_rutschend_mm": round(bremsweg_rutsch * 1000, 1),
+                   "rutschweg_mm": round(max(0.0, bremsweg_rutsch - bremsweg) * 1000, 1)})
         amp = "gruen" if r >= ZIEL else "gelb"
         if amp == "gelb":
             text = (f"Mit blockierten Rädern rutscht {kurz_an} ab {z(a_r, 1)} m/s² (μ = {z(mu_rad, 2)}); "
                     f"{z(a, 1)} m/s² bremst nur, wer festhält.")
+            if r < 1 and v > 0:
+                text += (f" Aus {z(v, 2)} m/s rutscht er {z(bremsweg_rutsch * 1000, 0)} mm statt "
+                         f"{z(bremsweg * 1000, 0)} mm ({z((bremsweg_rutsch - bremsweg) * 1000, 0)} mm weiter).")
         else:
             text = f"Rutschgrenze {z(a_r, 1)} m/s² (μ = {z(mu_rad, 2)}), Reserve {z(r, 2)}."
         ur.append(urteil("dyn_rutschen", None, amp, text, "" if amp == "gruen" else

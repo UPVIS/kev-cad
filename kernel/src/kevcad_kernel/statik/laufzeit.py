@@ -173,7 +173,9 @@ class StatikRuntime:
             return {"ok": False, "error": erg.get("meldung") or "Statik nicht gerechnet"}
         with self._lock:  # type: ignore[attr-defined]
             run = self._statik_run
-            self._statik_voll = erg
+            # Stufe 2: fertige Abläufe anderer Szenarien behalten (das Ergebnis des Rechenprozesses kennt sie nicht)
+            behalten = getattr(self, "_dyn_behalten", None)
+            self._statik_voll = behalten(self._statik_voll, erg, name) if behalten else erg
             self._statik_aktiv = name if zeigen else None
         gezeigt = self._statik_senden(zeigen=bool(zeigen)) and bool(zeigen)
         e = next((x for x in erg.get("szenarien") or [] if x.get("name") == name), None)
