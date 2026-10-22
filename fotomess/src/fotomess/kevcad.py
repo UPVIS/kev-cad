@@ -18,8 +18,8 @@ Kontrollbilder. Auftrag:
 ```
 
 Scan vom iPhone (Kev Scan, ``fotomess.scan``): dazu ``"scan": {"kameras": ".../capture/kameras.json", "netz": …,
-"namen": [...]}``, ``"maske": "scan"`` (Umriss des Scan-Netzes), optional ``"tiefe_gewicht"`` (1,0; 0 = ohne
-Tiefenbedingung), ``"kamera_sigma_mm"`` (15), ``"kamera_sigma_grad"`` (1,5), ``"scan_durchgaenge"`` (2). Kameras und
+"namen": [...]}``, ``"maske": "scan"`` (Umriss des Scan-Netzes), optional ``"tiefe_gewicht"`` (0,3; 0 = ohne
+Tiefenbedingung), ``"kamera_sigma_mm"`` (5), ``"kamera_sigma_grad"`` (0,5), ``"scan_durchgaenge"`` (2). Kameras und
 Brennweite kommen dann aus ARKit, ein bekanntes Maß ist nicht nötig; messung.json bekommt ``"scan"`` mit der Lage
 Scan -> Modell (A, b), den Tiefenresten und wie weit die Kameras nachgeführt wurden.
 
@@ -461,9 +461,9 @@ def vermessen_kevcad(auftrag):
     if scan is not None:
         einst.f_sigma_log = None
         einst.roll_sigma_grad = None
-        einst.tiefe_gewicht = float(auftrag.get("tiefe_gewicht", 1.0))
-        einst.kamera_sigma_mm = float(auftrag.get("kamera_sigma_mm") or 15.0)
-        einst.kamera_sigma_grad = float(auftrag.get("kamera_sigma_grad") or 1.5)
+        einst.tiefe_gewicht = float(auftrag.get("tiefe_gewicht", 0.3))
+        einst.kamera_sigma_mm = float(auftrag.get("kamera_sigma_mm") or 5.0)
+        einst.kamera_sigma_grad = float(auftrag.get("kamera_sigma_grad") or 0.5)
         einst.umriss_gegen_kanten = bool(auftrag.get("umriss_gegen_kanten", True))
     vorg = {k: tuple(v) for k, v in (auftrag.get("vorgaben") or {}).items() if k in frei}
     grenzen = {k: tuple(v) for k, v in (auftrag.get("grenzen") or {}).items() if k in frei}
@@ -480,8 +480,11 @@ def vermessen_kevcad(auftrag):
     for _ in range(int(auftrag.get("scan_durchgaenge", 2)) - 1 if scan is not None else 0):
         # Lage des Scans am eingepassten Modell nachführen, Kameras neu ansetzen, noch einmal einpassen
         fortschritt("einpassen", 0.5, "Scan am eingepassten Modell nachführen, zweiter Durchgang")
-        V1 = netz.ecken(np.array([erg.theta[k] for k in netz.parameter]))
-        scan_lage = S.anlegen(scan.punkte, V1, netz.tris, start=scan_lage)
+        # gemeinsame Bewegung aller Kameras (Drehung um Z, Verschiebung) gehört zur Lage des Scans, nicht zu den
+        # einzelnen Kameras: sonst bindet die weiche Bindung jede Kamera an eine falsch angelegte Startlage
+        fit = {b.name: k for b, k in zip([a.bild for a in erg.ausgleich.ansichten], erg.kameras)}
+        scan_lage = S.lage_aus_kameras(scan_lage, [(b.kamera_start, fit[b.name]) for b in B
+                                                   if getattr(b, "kamera_start", None) is not None and b.name in fit])
         scan.setze(B, scan_lage)
         E = [eingabe(i, b) for i, b in enumerate(B)]
         erg = vermessen({"m": netz}, E, dict(erg.theta), frei, vorgaben=vorg, einst=einst, plaene=pl, kandidaten=4,

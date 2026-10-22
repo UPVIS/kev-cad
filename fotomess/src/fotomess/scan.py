@@ -243,8 +243,31 @@ def anlegen(P_scan: np.ndarray, V: np.ndarray, T: np.ndarray, start: dict | None
     return beste
 
 
+def lage_aus_kameras(lage: dict, paare: list) -> dict:
+    """Lage nachführen um die gemeinsame Bewegung der Kameras: paare (Startkamera, eingepasste Kamera) im
+    Modellsystem; Drehung um Z (2D-Kabsch der Zentren, mit den Blickrichtungen) und Verschiebung. Rückgabe die neue
+    Lage (X_modell = A' X_scan + b') mit ``rest_mm`` (Rest der Zentren je Kamera danach, Median)."""
+    if len(paare) < 2:
+        return lage
+    C0 = np.array([k0.zentrum for k0, _ in paare])
+    C1 = np.array([k1.zentrum for _, k1 in paare])
+    D0 = np.array([k0.R[2] for k0, _ in paare])
+    D1 = np.array([k1.R[2] for _, k1 in paare])
+    m0, m1 = C0.mean(0), C1.mean(0)
+    abstand = float(np.linalg.norm(C0 - m0, axis=1).mean() or 300.0)
+    P = np.concatenate([(C0 - m0)[:, :2], D0[:, :2] * abstand])
+    Q = np.concatenate([(C1 - m1)[:, :2], D1[:, :2] * abstand])
+    H = P.T @ Q
+    Rz = _rz(math.atan2(H[0, 1] - H[1, 0], H[0, 0] + H[1, 1]))
+    d = m1 - Rz @ m0
+    rest = C1 - (C0 @ Rz.T + d)
+    A, b = np.asarray(lage["A"], float), np.asarray(lage["b"], float)
+    return {**lage, "A": Rz @ A, "b": Rz @ b + d, "kameras_rest_mm": round(float(np.median(np.linalg.norm(rest, axis=1))),
+                                                                           2)}
+
+
 def lage_json(lage: dict, bilder: int) -> dict:
     A = np.asarray(lage["A"], float)
     return {"A": A.tolist(), "b": np.asarray(lage["b"], float).tolist(), "rest_mm": lage.get("rest_mm"),
             "anteil": lage.get("anteil"), "drehung_z": round(math.degrees(math.atan2(A[1, 0], A[0, 0])), 2),
-            "bilder": int(bilder)}
+            "bilder": int(bilder), "kameras_rest_mm": lage.get("kameras_rest_mm")}
