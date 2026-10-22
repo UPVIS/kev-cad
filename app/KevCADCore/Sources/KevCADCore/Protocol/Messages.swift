@@ -457,9 +457,11 @@ public struct AckMessage: Decodable, Sendable {
     public var message: String?
     /// Bestand: id der Buchung (ACK auf GEBAUT_REQ).
     public var buchung: String?
+    /// Phase 6 (additiv): Ergebnis je Operation bei DRAWING_EDIT (`{op, ok, id?, fehler?}`), sonst leer.
+    public var ergebnisse: [JSONValue] = []
 
     enum CodingKeys: String, CodingKey {
-        case ok, message, buchung
+        case ok, message, buchung, ergebnisse
         case replyTo = "reply_to"
     }
 
@@ -469,6 +471,7 @@ public struct AckMessage: Decodable, Sendable {
         ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
         message = try? c.decodeIfPresent(String.self, forKey: .message)
         buchung = try? c.decodeIfPresent(String.self, forKey: .buchung)
+        ergebnisse = (try? c.decodeIfPresent([JSONValue].self, forKey: .ergebnisse)) ?? []
     }
 }
 
@@ -524,6 +527,8 @@ public enum KernelMessage: Sendable {
     case versionen(VersionMessage)
     /// Bestand des offenen Projekts mit Buchungen (BESTAND.md).
     case bestand(BestandMessage)
+    /// Phase 6 (additiv): Zeichnungen, DOCS und DRAWING (DOKUMENTE.md).
+    case dokumente(DokumenteMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -554,6 +559,7 @@ public enum KernelMessage: Sendable {
         case .check: return "CHECK"
         case .versionen(let v): return v.typeName
         case .bestand: return "BESTAND"
+        case .dokumente(let d): return d.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -571,6 +577,7 @@ public enum KernelMessage: Sendable {
         case .bestand(let m): return m.replyTo
         case .animation(let m): return m.replyTo
         case .versionen(let m): return m.replyTo
+        case .dokumente(let m): return m.replyTo
         default: return nil
         }
     }
@@ -609,6 +616,8 @@ public enum KernelMessage: Sendable {
         case "CHECK": return .check(try CheckMessage.decode(h, payload: frame.payload))
         case "BESTAND": return .bestand(try BestandMessage.decode(h))
         case let t where VersionMessage.types.contains(t): return .versionen(try VersionMessage.decode(type: t, frame: frame))
+        case let t where DokumenteMessage.types.contains(t):
+            return .dokumente(try DokumenteMessage.decode(type: t, frame: frame))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

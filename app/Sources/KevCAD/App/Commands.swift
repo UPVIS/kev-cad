@@ -11,7 +11,8 @@ struct KevCADCommands: Commands {
     @FocusedObject private var window: ProjectWindowState?
 
     private var hasProject: Bool { model.project != nil }
-    private var inProject: Bool { window != nil && hasProject }
+    /// Projektfenster vorne und 3D-Bereich sichtbar (im Bereich „Dokumente“ gelten dessen Kürzel, siehe DokumenteCommands).
+    private var inProject: Bool { window != nil && hasProject && window?.bereich != .dokumente }
     private var hasSelection: Bool { !model.selection.isEmpty }
     /// Blender-Befehle des App-Kerns (im Demomodus nicht vorhanden).
     private var nav: NavigationActions? { model.actions as? NavigationActions }

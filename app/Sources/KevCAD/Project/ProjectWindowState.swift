@@ -28,6 +28,12 @@ final class ProjectWindowState: ObservableObject {
     /// Letzter Explosionswert, damit E wieder dorthin springt.
     var lastExplode: Double = 0.6
 
+    /// Phase 6: 3D-Bereich oder Bereich „Dokumente“ (Zeichnungen, Bauplan, Berichte). Im Bereich Dokumente sind die
+    /// einbuchstabigen Kürzel des 3D-Bereichs aus (siehe KevCADCommands).
+    @Published var bereich: ProjektBereich = .modell
+    /// Zustand des Bereichs Dokumente in diesem Fenster (für Teilebaum: „Zeichnung anlegen“).
+    weak var dokumenteZustand: DokumenteZustand?
+
     // MARK: Stückliste (Phase 2)
 
     /// Bereich „Stückliste“ unter dem Viewport; bleibt über Neustarts hinweg so, wie er zuletzt war.

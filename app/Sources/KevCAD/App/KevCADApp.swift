@@ -50,6 +50,7 @@ struct KevCADApp: App {
             ZukaufCommands(session: session, model: session.model)
             AnimationCommands(model: session.model, animation: session.model.animation)
             VersionenCommands(model: session.model, store: session.model.versionen)
+            DokumenteCommands(model: session.model)  // Phase 6: Bereich Dokumente, PDF, Drucken
         }
 
         Window("Kev CAD", id: WindowID.project) {

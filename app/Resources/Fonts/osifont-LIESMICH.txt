@@ -1,0 +1,10 @@
+osifont (ISO 3098) für die technischen Zeichnungen von Kev CAD
+
+Datei:    osifont-lgpl3fe.ttf (unverändert, Fassung aus FreeCAD, TechDraw/Resources/fonts)
+Herkunft: https://github.com/hikikomori82/osifont/
+Lizenz:   GNU LGPL Version 3 mit GPL-Font-Ausnahme (siehe osifont.license und osifont-LGPL-3.0.txt).
+          Die Font-Ausnahme erlaubt, die Schrift in Dokumente (PDF) einzubetten, ohne dass diese unter die Lizenz
+          fallen.
+
+Kev CAD lädt die Schrift zur Laufzeit direkt aus dieser Datei (BlattSchrift.swift) und bettet im PDF nur die
+verwendeten Zeichen ein.
