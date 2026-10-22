@@ -71,10 +71,19 @@ def video_meta(pfad):
     return json.loads(erg.stdout.strip().splitlines()[-1])
 
 
-def farbe(bild, h_bereich=(95, 130), s_min=70, v_min=25):
-    """HSV-Bereich (OpenCV: H 0..180) -> bool-Maske, kleine Lücken geschlossen."""
+def farbbereich(bild, h_bereich, s_min, v_min):
+    """HSV-Bereich (OpenCV: H 0..180) -> bool-Maske ohne Glättung. Ein Bereich mit Anfang über dem Ende läuft über
+    0 hinweg (Rot: (168, 4) heißt H >= 168 oder H <= 4)."""
     hsv = cv2.cvtColor(bild, cv2.COLOR_BGR2HSV)
-    m = (hsv[..., 0] >= h_bereich[0]) & (hsv[..., 0] <= h_bereich[1]) & (hsv[..., 1] >= s_min) & (hsv[..., 2] >= v_min)
+    h = hsv[..., 0]
+    lo, hi = h_bereich
+    im_bereich = ((h >= lo) & (h <= hi)) if lo <= hi else ((h >= lo) | (h <= hi))
+    return im_bereich & (hsv[..., 1] >= s_min) & (hsv[..., 2] >= v_min)
+
+
+def farbe(bild, h_bereich=(95, 130), s_min=70, v_min=25):
+    """HSV-Bereich (OpenCV: H 0..180, über 0 hinweg wie bei farbbereich) -> bool-Maske, kleine Lücken geschlossen."""
+    m = farbbereich(bild, h_bereich, s_min, v_min)
     m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     return m > 0
@@ -105,12 +114,34 @@ def instanz_waehlen(instanzen, hinweis=None):
     return instanzen[int(np.argmax(werte))]
 
 
-def kombiniert(bild, vision_maske, farb_maske, band=8):
+def kombiniert(bild, vision_maske, farb_maske, band=8, ausschluss=None, umkreis=None, schliessen=0,
+               loch_anteil=0.002, innen=None, aussen_oeffnen=0):
     """Weiche Maske (0..1): Farbe mit genauen Rändern, Vision für nicht farbige Teile; Vision-Ränder dicht an der
-    Farbe nur, wenn der Pixel nicht wie der Untergrund aussieht."""
+    Farbe nur, wenn der Pixel nicht wie der Untergrund aussieht.
+
+    ausschluss: HSV-Bereich (h_bereich, s_min, v_min) einer Unterlage, die Vision mit zum Vordergrund zählt (Holzscheibe
+    unter der Scarlett): solche Pixel zählen nur über die Farbe. umkreis: Vision-Pixel ohne Objektfarbe nur bis zu
+    diesem Abstand (Pixel) von der Farbmaske (Blenden und Knöpfe sitzen am roten Gehäuse, die Unterlage reicht weiter).
+    schliessen: Lücken bis zu dieser Breite (Pixel) schließen (Beschriftung und Spiegelungen auf schwarzen Blenden);
+    loch_anteil: Löcher bis zu diesem Anteil der Bildfläche füllen (Gegenstände ohne echte Durchbrüche: größer).
+    innen: bool-Maske, in der Vision ohne Farbprüfung gilt (konvexe Hülle eines Gehäuses, das schwarze Blenden
+    einfasst; in den Blenden spiegelt sich die Unterlage). ausschluss, umkreis und die Untergrundprüfung gelten dann
+    nur außerhalb. aussen_oeffnen: dort zusätzlich schmale Reste unter dieser Breite (Pixel) entfernen."""
     v = vision_maske > 0.5
     if farb_maske is None or not farb_maske.any():
         return vision_maske.astype(np.float32)
+    drin = np.zeros(v.shape, bool) if innen is None else innen.astype(bool)
+    va = v & ~drin
+    if ausschluss is not None:
+        va &= ~farbbereich(bild, *ausschluss)
+    if umkreis:
+        k = 2 * int(umkreis) + 1
+        va &= cv2.dilate(farb_maske.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))) > 0
+    if aussen_oeffnen:
+        k = 2 * int(aussen_oeffnen) + 1
+        va = cv2.morphologyEx(va.astype(np.uint8), cv2.MORPH_OPEN,
+                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))) > 0
+    v = va | (v & drin)
     f = farb_maske & cv2.dilate(v.astype(np.uint8), np.ones((15, 15), np.uint8)).astype(bool)
     nah = cv2.dilate(f.astype(np.uint8), np.ones((2 * band + 1, 2 * band + 1), np.uint8)).astype(bool) & ~f
     # Untergrund: Farbe der Pixel knapp außerhalb von Vision
@@ -123,9 +154,39 @@ def kombiniert(bild, vision_maske, farb_maske, band=8):
         boden = (np.abs(lab - mu) / sd).max(axis=2) < 2.5
     else:
         boden = np.zeros(v.shape, bool)
-    rest = v & ~f & ~(nah & boden)
+    rest = v & ~f & ~(nah & boden & ~drin)
     m = f | rest
     m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
-    m = kleine_loecher_fuellen(m, 0.002)
+    if schliessen:
+        k = 2 * int(schliessen) + 1
+        m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_CLOSE,
+                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))) > 0
+    m = kleine_loecher_fuellen(m, loch_anteil)
+    if innen is not None and drin.any():
+        # nur Teile, die am Innenbereich hängen (vereinzelte Reste der Unterlage fallen weg)
+        zahl, lab = cv2.connectedComponents(m.astype(np.uint8))
+        behalten = np.unique(lab[drin & m])
+        m = np.isin(lab, behalten[behalten > 0])
     weich = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 0.6)
     return weich
+
+
+def gehaeuse_optionen(farb_maske, breite, ausschluss=None, umkreis_anteil=0.12):
+    """Optionen für kombiniert bei einem farbigen Gehäuse, das andersfarbige Blenden rundum einfasst (Scarlett 2i2:
+    rotes Rohr, schwarze Blenden, Knöpfe): Innenbereich = konvexe Hülle der größeren Farbflächen (kleine wie rote
+    Kabel im Hintergrund zählen nicht), außerhalb nur Vision-Pixel bis umkreis_anteil der Gehäusegröße entfernt
+    (Knöpfe), ohne die Farbe der Unterlage und ohne schmale Reste. breite: Bildbreite in Pixeln."""
+    zahl, lab, stat, _ = cv2.connectedComponentsWithStats(farb_maske.astype(np.uint8))
+    if zahl <= 1:
+        return dict(ausschluss=ausschluss, umkreis=umkreis_anteil * breite * 0.2)
+    flaeche = stat[1:, cv2.CC_STAT_AREA]
+    gross = 1 + np.flatnonzero(flaeche >= 0.02 * flaeche.max())
+    ys, xs = np.nonzero(np.isin(lab, gross))
+    huelle = cv2.convexHull(np.stack([xs, ys], 1).astype(np.int32))
+    innen = np.zeros(farb_maske.shape, np.uint8)
+    cv2.fillConvexPoly(innen, huelle, 1)
+    innen = cv2.erode(innen, np.ones((5, 5), np.uint8)) > 0
+    groesse = float(max(xs.max() - xs.min(), ys.max() - ys.min()))
+    return dict(ausschluss=ausschluss, umkreis=umkreis_anteil * groesse, innen=innen,
+                aussen_oeffnen=max(3, round(0.0025 * breite)), schliessen=max(3, round(0.003 * breite)),
+                loch_anteil=0.05)

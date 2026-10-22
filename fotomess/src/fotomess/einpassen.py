@@ -126,6 +126,7 @@ class Ausgleich:
             frei_spalte = np.array([self.frei.index(k) if k in self.frei else -1 for k in n.parameter], int)
             self.netz_spalten[name] = (idx_global, frei_spalte)
         self.zeichner = {name: fuer_netz(n) for name, n in netze.items()}
+        self.zeichner_farbe = {}
         self.proben = [None] * len(self.ansichten)
         self.zeiten = dict(sichtbarkeit=0.0, auswertung=0.0, loesen=0.0, bildstufen=0.0)
         self.verlauf = []
@@ -561,6 +562,39 @@ class Ausgleich:
         f = st.weich >= 0.5
         g = np.ones_like(f) if st.ignorieren is None else ~st.ignorieren
         return float((m & f & g).sum() / max(((m | f) & g).sum(), 1))
+
+    def iou_farbe(self, i, plan, z=None):
+        """Überdeckung der sichtbaren Farbteile des Modells (netz.farb_tris, z. B. das rote Gehäuse ohne die
+        schwarzen Blenden) mit der Farbmaske des Bildes (bild.farbmaske); nan, wenn eins davon fehlt. Trennt Lagen
+        mit gleicher Silhouette (Kasten um 90 Grad gedreht: Stirnseite rot, Vorderseite schwarz)."""
+        z = z or self.z
+        a = self.ansichten[i]
+        netz = self.netze[a.netz]
+        farb_tris = getattr(netz, "farb_tris", None)
+        fm = getattr(a.bild, "farbmaske", None)
+        if farb_tris is None or fm is None or not np.any(farb_tris):
+            return float("nan")
+        st = a.bild.stufe(plan.breite)
+        V = netz.ecken(self._theta_netz(z, a.netz), z.winkel[i])
+        zr = self.zeichner[a.netz]
+        zr.setze(V)
+        voll = zr.tiefe(z.kameras[i], st.s, (st.breite, st.hoehe))
+        if a.netz not in self.zeichner_farbe:
+            from .gl import Zeichner
+            self.zeichner_farbe[a.netz] = Zeichner(netz.V0, netz.tris[farb_tris])
+        zf = self.zeichner_farbe[a.netz]
+        zf.setze(V)
+        teil = zf.tiefe(z.kameras[i], st.s, (st.breite, st.hoehe))
+        sichtbar = (teil > 0) & (np.abs(teil - voll) <= np.maximum(voll, 1.0) * self.e.tiefe_toleranz + 0.5)
+        import cv2
+        f = cv2.resize(np.asarray(fm, np.float32), (st.breite, st.hoehe), interpolation=cv2.INTER_AREA) >= 0.5
+        return float((sichtbar & f).sum() / max((sichtbar | f).sum(), 1))
+
+    def guete(self, i, plan, z=None):
+        """Gütemaß für die Wahl unter Startkandidaten: Silhouetten-IoU, dazu die Farbteil-IoU, wenn vorhanden."""
+        q = self.iou(i, plan, z)
+        qf = self.iou_farbe(i, plan, z)
+        return q + qf if np.isfinite(qf) else q
 
     # ------------------------------------------------------------------ Kennzahlen
     def bericht(self, plan):

@@ -38,6 +38,7 @@ class Eingabe:
     kamera: object = None                      # bekannte Startkamera (überspringt die Grobsuche)
     paare: tuple | None = None                 # (Höhe, Roll)-Paare der Grobsuche statt hoehen x rolls
     winkel_raster: dict = field(default_factory=dict)   # Gelenk -> Werte, nach der Kamerasuche einzeln abgetastet
+    zwillinge: tuple = ()                      # (Q, c): Objekt um c gedreht sieht fast gleich aus (Kasten vorn/hinten)
 
 
 @dataclass
@@ -58,8 +59,22 @@ def standard_plaene(breite, grob=370):
                  Stufenplan(b3, sigma=1.5, tor=6, abstand=3.0, aussen=3, innen=4)])
 
 
-def kameras_finden(netze, eingaben, theta, einst=None, plaene=None, kandidaten=2, protokoll=print):
-    """Startkameras und Gelenkwinkel je Bild; Rückgabe: Liste von Ansicht und Zeiten."""
+def zwilling(kam, Q, c):
+    """Kamera, die das Modell so sieht wie kam das um c mit Q gedrehte Modell: R' = R Q, t' = t + R (c - Q c)."""
+    Q, c = np.asarray(Q, float), np.asarray(c, float)
+    return kam.kopie(R=kam.R @ Q, t=kam.t + kam.R @ (c - Q @ c))
+
+
+def kameras_finden(netze, eingaben, theta, einst=None, plaene=None, kandidaten=2, protokoll=print, gleichstand=None):
+    """Startkameras und Gelenkwinkel je Bild; Rückgabe: Liste von Ansicht und Zeiten.
+
+    Fast symmetrische Gegenstände (Eingabe.zwillinge, z. B. Kasten um 180 Grad gedreht, nur die Knöpfe vorn
+    unterscheiden die Lagen): je Startlage kommt die gedrehte als eigener Kandidat dazu, beide werden gleich
+    eingepasst. Kandidaten, deren Güte (Silhouette plus Farbteile) bis `gleichstand` an die beste heranreicht,
+    vergleicht danach die feinere Stufe der Kamerasuche, in der kleine Anbauten (Knöpfe) sichtbar sind (Standard:
+    0,02 mit Zwillingen, sonst 0 = Wahl wie bisher allein nach der Güte)."""
+    if gleichstand is None:
+        gleichstand = 0.02 if any(e.zwillinge for e in eingaben) else 0.0
     t0 = time.perf_counter()
     zeiten = {}
     einst = einst or Einstellungen()
@@ -78,6 +93,7 @@ def kameras_finden(netze, eingaben, theta, einst=None, plaene=None, kandidaten=2
         winkel_listen = []
         for g in range(0 if w0 is None else len(w0)):
             winkel_listen.append(e.winkel_starts.get(g, [w0[g]]))
+        starts = starts + [zwilling(k, Q, c) for k in starts for Q, c in e.zwillinge]
         for kam in starts:
             for kombi in (itertools.product(*winkel_listen) if winkel_listen else [()]):
                 w = None if w0 is None else np.array(kombi if kombi else w0, float)
@@ -90,15 +106,24 @@ def kameras_finden(netze, eingaben, theta, einst=None, plaene=None, kandidaten=2
     A = Ausgleich(netze, kand_ans, theta, frei=[], einstellungen=einst, f_start=f_start, protokoll=None)
     plaene = plaene or standard_plaene(eingaben[0].bild.breite_arbeit)
     A.loese_einzeln(plaene.kandidaten)
+    # je Bild gewinnt die beste Güte (Silhouette, dazu Farbteile, falls Netz und Bild sie haben); fast gleich gute
+    # Kandidaten entscheidet die feinere Stufe
+    plan_k = plaene.kandidaten[-1]
+    guete = [A.guete(i, plan_k) for i in range(len(herkunft))]
+    beste = {}
+    for i, h in enumerate(herkunft):
+        beste[h] = max(beste.get(h, -math.inf), guete[i])
     wahl = {}
     for i, h in enumerate(herkunft):
-        q = A.iou(i, plaene.kandidaten[-1])
-        if h not in wahl or q > wahl[h][0]:
-            wahl[h] = (q, i)
+        if guete[i] < beste[h] - gleichstand:
+            continue
+        g = A.guete(i, plaene.kameras[-1]) if gleichstand > 0 else guete[i]
+        if h not in wahl or g > wahl[h][2]:
+            wahl[h] = (guete[i], i, g)
     zeiten["kandidaten"] = time.perf_counter() - t1
     out = []
     for j, e in enumerate(eingaben):
-        q, i = wahl[j]
+        q, i, _ = wahl[j]
         kam = A.z.kameras[i]
         out.append(Ansicht(bild=e.bild, netz=e.netz, kamera=kam, winkel=None if A.z.winkel[i] is None else A.z.winkel[i].copy(),
                            winkel_frei=e.winkel_frei, f_gruppe=e.f_gruppe))
