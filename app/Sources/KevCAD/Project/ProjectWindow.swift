@@ -30,6 +30,7 @@ struct ProjectWindow: View {
             SelfTest.runIfRequested(session)
             CatalogSelfTest.runIfRequested(session)
             ZukaufSelfTest.runIfRequested(session)
+            DokumenteSelfTest.runIfRequested(session)  // Phase 6, P6-A2
             if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
@@ -57,6 +58,7 @@ struct ProjectWindow: View {
                                 VergleichKarte(model: model, store: model.versionen, zustand: versionen)
                                     .padding(14)
                             }
+                            .overlay(alignment: .bottom) { DurchspielenLeiste(model: model) }  // Phase 6, P6-A2
                         AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
                         if state.showBOM {
                             PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
@@ -218,7 +220,7 @@ struct ProjectToolbar: ToolbarContent {
                 actions?.export(formats: ExportFormat.standard.map(\.rawValue))
             }
             .disabled(model.parts.isEmpty)
-            .help("Klick: STEP, STL und 3MF nach output/ (⇧⌘E); Pfeil: einzelnes Format")
+            .help("Klick: STEP, STL und 3MF nach output/ (⌥⇧⌘E); Pfeil: einzelnes Format")
 
             Toggle(isOn: Binding(
                 get: { state.showBOM }, set: { on in withAnimation(.snappy(duration: 0.2)) { state.showBOM = on } }

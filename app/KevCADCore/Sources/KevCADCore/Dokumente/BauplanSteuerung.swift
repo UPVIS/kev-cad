@@ -295,4 +295,13 @@ extension AppController: BauplanActions {
         }
         refreshOverlay()
     }
+
+    /// Bild der aktuellen 3D-Ansicht über den Offscreen-Renderer (mit der Lage des Durchspielens), für Selbsttests und
+    /// Belegbilder; nicht für Kevin.
+    public func bauplanAnsichtsBild(hoehe: Int = 900) -> CGImage? {
+        let w = Int(Float(hoehe) * viewport.aspectRatio)
+        return screenshots.render(bodies: scene.snapshotBodies(), camera: viewport.camera, width: w, height: hoehe,
+                                  displayMode: scene.viewportDisplayMode,
+                                  lighting: viewport.controller.lightingConfiguration)?.image
+    }
 }

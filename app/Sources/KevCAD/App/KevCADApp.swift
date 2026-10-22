@@ -50,6 +50,8 @@ struct KevCADApp: App {
             ZukaufCommands(session: session, model: session.model)
             AnimationCommands(model: session.model, animation: session.model.animation)
             VersionenCommands(model: session.model, store: session.model.versionen)
+            // Phase 6, P6-A2: Dokumente exportieren (⇧⌘E), Bauplan und Berichte, Durchspielen
+            DokumenteExportCommands(session: session, model: session.model, bauplan: session.model.bauplan)
         }
 
         Window("Kev CAD", id: WindowID.project) {
