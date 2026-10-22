@@ -177,7 +177,10 @@ Summe Verschnitt / Summe verplant · 100, auf 0,1 gerundet wie die App. Kernel `
 - `BOM.cuts[i].verschnitt_prozent` trägt (additiv) den neuen Wert, dazu `verschnitt_definition: "2"`. Mit Bestand über
   die Quellen gerechnet (`quellen[i].verschnitt` entscheidet über den Rest, sonst der Mindestrest), ohne Quellen über
   `stangen` mit dem Standard-Mindestrest 100 mm. Fehlt `verschnitt_definition` (älterer Kernel), meinte das Feld bei
-  Stangen alles außer den Stücken; die App rechnet dann selbst.
+  Stangen alles außer den Stücken; die App rechnet dann selbst. Gewählt statt eines neuen Felds, weil es für die App
+  robuster ist: Jede Stelle, die `verschnitt_prozent` schon liest (`CutPlan`, `BestandZuschnitt`, Stücklisten-CSV, MCP),
+  zeigt ohne Änderung die Zahl des Bereichs „Material“, und es gibt keine zweite Zahl mit anderer Bedeutung; die Kennung
+  sagt der App, ob sie dem Wert trauen kann (`BestandZuschnitt.verschnittWieApp`).
 - `BOM.verschnitt` (additiv): `{"definition": "2", "stangen": 0.6 | null, "platten": 1.2 | null}`, über alle Zuschnitte
   wie die Kennzahl „Verschnitt“ der App (Summen, nicht Mittelwert der Prozente).
 - Gilt für BOM bzw. Zuschnitt im Protokoll, MCP `bom` (Zeile „Verschnitt gesamt“, je Zuschnitt „Verschnitt 0,6 %“),
