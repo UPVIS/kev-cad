@@ -34,10 +34,16 @@ EXPECTED_TOOLS = {
 # Phase 5: Kameras
 EXPECTED_TOOLS |= {"kamera_liste", "kamera_info", "kamera_ansicht", "kamera_bild", "kamera_katalog",
                    "kamera_vorschlag_aus_ansicht"}
+# Phase 6: Bauplan
+EXPECTED_TOOLS |= {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"}
 # 3D-Druck
 EXPECTED_TOOLS |= {"druckpruefung"}
+# Phase 6: Zeichnungen
+EXPECTED_TOOLS |= {"zeichnungen", "zeichnung_erstellen", "zeichnung_bearbeiten", "zeichnung_bild"}
 # Versionen
 EXPECTED_TOOLS |= {"versionen", "version_wiederherstellen", "versionen_vergleichen", "meilenstein", "variante"}
+# Phase 6: Dokumente exportieren (P6-A2)
+EXPECTED_TOOLS |= {"dokument_export"}
 
 
 def free_port() -> int:

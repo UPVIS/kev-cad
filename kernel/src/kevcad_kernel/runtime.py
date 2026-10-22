@@ -33,8 +33,10 @@ from typing import Any
 import kevcad_kernel
 from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
+from kevcad_kernel.bauplan.dienst import BauplanDienst
 from kevcad_kernel.bestand.anbindung import ANFRAGEN as BESTAND_ANFRAGEN
 from kevcad_kernel.bestand.anbindung import BestandAnbindung
+from kevcad_kernel.dokument_export import DokumentExportDienst
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
 from kevcad_kernel.druck.laufzeit import DruckRuntime
@@ -47,6 +49,7 @@ from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.versionen.laufzeit import VersionenRuntimeMixin
 from kevcad_kernel.worker import WorkerClient
 from kevcad_kernel.zukauf.dienst import ZukaufDienst
+from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
@@ -96,11 +99,13 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst,
-                    VersionenRuntimeMixin):
+class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
+                    ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
-    Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Versionen (``VersionenRuntimeMixin``)."""
+    Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
+    Zeichnungen (``ZeichnungRuntimeMixin``); Versionen (``VersionenRuntimeMixin``); Dokumente exportieren
+    (``DokumentExportDienst``, dokument_export.py)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -134,11 +139,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
+        self._regler: dict[str, Any] = {}  # überschriebene Parameter des letzten erfolgreichen Laufs (Reglerstand)
         self._state: tuple[str, str] = ("busy", "Rechenprozess startet")
         self._pending: dict[str, dict[str, Any]] = {}
         self._ids = itertools.count(1)
         self._annotations = itertools.count(1)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
+        self._zeichnung_init()  # Phase 6: Zeichnungen
         self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
@@ -612,6 +619,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             cur.final = {"type": "CLOSED"}
             cur.finished.set()
         self._worker.stop(timeout=1.0)
+        self._zeichnung_schliessen()
         self._versionen_schliessen()  # Versionen: Hintergrund-Rechenprozess der Nachberechnung
         self._fail_pending("Kernel wird beendet")
         self._link.close()
@@ -661,6 +669,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self._bom = None
                 self._violations = []
                 self._constraints = None
+                self._regler = {}
                 self._selection = {"run": None, "refs": []}
                 self._pruef.reset()
             run = self._run_no
@@ -680,6 +689,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     self._send_app({"type": "PART_REMOVE", "run": run, "name": rec.name})
                 self._anim_project_changed()
                 self.cameras_clear(run)
+                self._bauplan_project_changed()
+                self._zeichnung_projekt()
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -694,6 +705,23 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
     # Läufe intern
     # =================================================================================================================
+
+    def _reglerstand(self) -> dict[str, Any]:
+        """Überschriebene Parameter des letzten erfolgreichen Laufs (Regler der App, ``run(params=…)``); leer, wenn die
+        Szene den Stand der Dateien zeigt."""
+        with self._lock:
+            return dict(self._regler)
+
+    def _regler_sperre(self, was: str = "Blätter und Bauplan") -> str | None:
+        """Meldung, wenn die Szene einen Reglerstand zeigt: Dann bearbeiten Kevin und der Agent keine Dokumente (sie
+        bezögen sich auf Maße, die es in model.py nicht gibt, und die Versionen erfassten den Reglerstand)."""
+        regler = self._reglerstand()
+        if not regler:
+            return None
+        werte = ", ".join(f"{k} = {v:g}" if isinstance(v, (int, float)) else f"{k} = {v}" for k, v in regler.items())
+        return (f"Das Modell zeigt gerade einen Reglerstand ({werte}). {was} werden dazu nur gezeigt, nicht "
+                "gespeichert; bearbeiten geht erst nach einem Lauf ohne überschriebene Parameter (Regler zurück, "
+                "run ohne params).")
 
     def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str,
                     katalog_neu: bool = False):
@@ -905,8 +933,16 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            with self._lock:
+                self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
             self._anim_publish(job, result)
+            # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
+            # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
             self._versionen_nach_lauf(job, result)  # Versionen: neue Version bei Änderung (ohne Git: save_version)
+            speichern = not job.params
+            hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
+                           self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, danach DOCS
+            self._versionen_dokumente_nach_lauf(job, hintergrund)
         else:  # RUN_FAILED
             error = dict(final.get("error") or {"message": "Unbekannter Fehler"})
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error.get("message", ""),
@@ -1101,9 +1137,11 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 conn.send({"type": "CONSTRAINTS", **constraints})
             self._anim_on_connect(conn)
             self.cameras_on_connect(conn, self._run_no)
+            self._bauplan_on_connect(conn)
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
+            self._zeichnung_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
             for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
                 conn.send(status)
@@ -1180,7 +1218,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES", "DOC_EXPORT_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1217,6 +1255,10 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif kind in BESTAND_ANFRAGEN:
             self._pool.submit(self._bestand_anfrage_sicher, header)
         elif self._anim_app_message(kind, header):
+            pass
+        elif self._bauplan_app_message(kind, header):
+            pass
+        elif self._zeichnung_app_message(kind, header):
             pass
         elif self._versionen_app_message(kind, header):
             pass

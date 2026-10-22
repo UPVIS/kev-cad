@@ -277,6 +277,236 @@ def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Phase 6: Dokumente (DOKUMENTE.md, Protokoll) – Zeichnungen
+# ---------------------------------------------------------------------------------------------------------------------
+
+LINIEN_REIHENFOLGE: tuple[str, ...] = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar",
+                                       "bruch")
+
+
+def pack_polylinien(gruppen: list[dict[str, list[Any]]],
+                    reihenfolge: tuple[str, ...] = LINIEN_REIHENFOLGE) -> tuple[bytes, list[dict[str, int]]]:
+    """Polylinien-Nutzlast (DOKUMENTE.md): je Gruppe (Ansicht), je Linienart in ``reihenfolge``: u32 Anzahl
+    Polylinien, je Polylinie u32 Punktzahl und f32 x, y paarweise (little-endian). Liefert Nutzlast und je Gruppe die
+    Anzahl Polylinien je Linienart (für ``geometrie[i].linien``)."""
+    teile: list[bytes] = []
+    zaehler: list[dict[str, int]] = []
+    for linien in gruppen:
+        z: dict[str, int] = {}
+        for art in reihenfolge:
+            ls = [np.asarray(pl, dtype="<f4").reshape(-1, 2) for pl in (linien.get(art) or []) if len(pl) >= 2]
+            z[art] = len(ls)
+            teile.append(struct.pack("<I", len(ls)))
+            for pl in ls:
+                teile.append(struct.pack("<I", len(pl)))
+                teile.append(np.ascontiguousarray(pl, dtype="<f4").tobytes())
+        zaehler.append(z)
+    return b"".join(teile), zaehler
+
+
+def unpack_polylinien(header: dict[str, Any], payload: bytes, feld: str = "geometrie") -> list[dict[str, Any]]:
+    """Gegenstück zu pack_polylinien: je Eintrag von ``header[feld]`` ein Wörterbuch Linienart → Liste (n, 2)."""
+    reihenfolge = header.get("linien_reihenfolge") or list(LINIEN_REIHENFOLGE)
+    out = []
+    off = 0
+    for _ in header.get(feld) or []:
+        linien: dict[str, Any] = {}
+        for art in reihenfolge:
+            (n,) = struct.unpack_from("<I", payload, off)
+            off += 4
+            ls = []
+            for _k in range(n):
+                (k,) = struct.unpack_from("<I", payload, off)
+                off += 4
+                ls.append(np.frombuffer(payload, dtype="<f4", count=2 * k, offset=off).reshape(-1, 2))
+                off += 8 * k
+            linien[art] = ls
+        out.append(linien)
+    if off != len(payload):
+        raise ValueError(f"Polylinien-Nutzlast hat {len(payload)} Byte, gelesen {off}")
+    return out
+
+
+def pack_drawing(kopf: dict[str, Any], gruppen: list[dict[str, list[Any]]], *, reply_to: str | None = None,
+                 seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """Nachricht DRAWING: ``kopf`` enthält ``blatt``, ``geometrie`` (je Ansicht und zuletzt ``blatt`` für Rahmen und
+    Schriftfeld; je Eintrag ``id``, ``art``, ``rahmen``), ``masse``, ``texte``, ``stand`` …; ``gruppen`` die Linien in
+    derselben Reihenfolge wie ``geometrie``. Setzt ``linien`` (Anzahl je Linienart) und ``linien_reihenfolge``."""
+    payload, zaehler = pack_polylinien(gruppen)
+    geo = [dict(g) for g in kopf.get("geometrie") or []]
+    if len(geo) != len(gruppen):
+        raise ValueError(f"DRAWING: {len(geo)} Einträge in geometrie, aber {len(gruppen)} Liniengruppen")
+    for g, z in zip(geo, zaehler):
+        g["linien"] = z
+    header = {"type": "DRAWING", "seq": seq, **{k: v for k, v in kopf.items() if k not in ("type", "seq")},
+              "geometrie": geo, "linien_reihenfolge": list(LINIEN_REIHENFOLGE)}
+    if reply_to is not None:
+        header["reply_to"] = reply_to
+    return header, payload
+
+
+def docs_message(run: int, blaetter: list[dict[str, Any]], bauplan: dict[str, Any] | None = None,
+                 seq: int = 0) -> dict[str, Any]:
+    """Nachricht DOCS: Übersicht der Blätter (``id``, ``titel``, ``inhalt``, ``format``, ``verwaiste_masse``, dazu
+    ``ausrichtung``, ``massstab``, ``masse``, ``stand``, ``hinweise``, ``pruefung``) und Zusammenfassung des Bauplans."""
+    return {"type": "DOCS", "seq": seq, "run": run, "blaetter": blaetter, "bauplan": bauplan}
+
+
+def drawing_create_message(rid: str, art: str = "teil", teile: list[str] | None = None, fmt: str | None = None,
+                           seq: int = 0) -> dict[str, Any]:
+    """Nachricht DRAWING_CREATE (App → Kernel, DOKUMENTE.md 1.2): Blätter anlegen wie ``zeichnung_erstellen``.
+    ``teile`` weggelassen: alle gefertigten Teile und der Zusammenbau; ``format`` z. B. „A3 quer“. Antwort: ACK, danach
+    DOCS mit ``reply_to``."""
+    msg: dict[str, Any] = {"type": "DRAWING_CREATE", "seq": seq, "id": rid, "art": art}
+    if teile:
+        msg["teile"] = list(teile)
+    if fmt:
+        msg["format"] = fmt
+    return msg
+
+
+# Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Protokoll“; Strang P6-B)
+
+# Linienarten der Strichbilder im Bauplan: die acht der Zeichnungen, dazu ``neu`` (neue Teile des Schritts,
+# hervorgehoben) und ``pfeil`` (Einführpfeile). Die App zeichnet unbekannte Arten dünn durchgezogen.
+BAUPLAN_LINIEN: tuple[str, ...] = (*LINIEN_REIHENFOLGE, "neu", "pfeil")
+BAUPLAN_FELD = (180.0, 120.0)
+
+
+def pack_bauplan(bauplan: dict[str, Any], bilder: list[dict[str, Any]], *, run: int | None = None,
+                 reply_to: str | None = None, stand: dict[str, Any] | None = None,
+                 seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """BAUPLAN: Kopf mit dem Inhalt von bauplan.json (samt Prüfung) und je Schritt ein Strichbild im Feld 180 × 120 mm
+    wie ``geometrie`` einer Ansicht (``bilder``: ``{schritt, rahmen, massstab, linien}``, ``linien`` = Anzahl je
+    Linienart), Nutzlast die Polylinien aller Bilder hintereinander (pack_polylinien mit ``BAUPLAN_LINIEN``)."""
+    payload, zaehler = pack_polylinien([b.get("linien") or {} for b in bilder], BAUPLAN_LINIEN)
+    kopf_bilder = []
+    for b, z in zip(bilder, zaehler):
+        kopf_bilder.append({"schritt": b.get("schritt"),
+                            "rahmen": [float(x) for x in b.get("rahmen") or [0, 0, *BAUPLAN_FELD]],
+                            "massstab": b.get("massstab"), "linien": z,
+                            **({"fehler": b["fehler"]} if b.get("fehler") else {})})
+    header: dict[str, Any] = {"type": "BAUPLAN", "seq": seq, "run": run, "bauplan": bauplan, "bilder": kopf_bilder,
+                              "feld": list(BAUPLAN_FELD), "linien_reihenfolge": list(BAUPLAN_LINIEN),
+                              "stand": stand or {}}
+    if reply_to:
+        header["reply_to"] = reply_to
+    return header, payload
+
+
+def unpack_bauplan(header: dict[str, Any], payload: bytes) -> list[dict[str, Any]]:
+    """Gegenstück zu pack_bauplan: die Bilder mit ihren Linien (Linienart → Liste (n, 2)) statt der Anzahlen."""
+    gruppen = unpack_polylinien(header, payload, feld="bilder")
+    return [{**b, "linien": g} for b, g in zip(header.get("bilder") or [], gruppen)]
+
+
+def bauplan_beispiel() -> dict[str, Any]:
+    """Kleiner Bauplan wie in bauplan.json (Grundlage der Testdateien)."""
+    befund = {"id": "bp1", "art": "werkzeugzugang", "teile": ["Halter/Schraube 1", "Halter/Deckel"],
+              "schwere": "fehler", "schritt": "m-2", "ort": [10.0, 0.0, 30.0], "wert": {"volumen": 42.0},
+              "text": "Werkzeug kommt schlecht an Schraube 1 (Innensechskant 5 mm): Deckel im Weg (42 mm³ im "
+                      "Werkzeugraum).",
+              "loesung": "Verbindungsmittel anbringen, bevor Halter/Deckel montiert wird (Schritt teilen)"}
+    return {
+        "version": 1, "titel": "Halter",
+        "abschnitte": [
+            {"art": "material", "titel": "Material", "schritte": [
+                {"id": "m-1", "titel": "Normteile und Kleinteile", "text": "Schrauben abzählen.", "quelle": "auto",
+                 "fest": False, "teile": ["Halter/Schraube 1"], "neu": [], "baugruppe": None,
+                 "verbindungsmittel": [], "werkzeug": [], "bohrbild": [], "zuschnitt": [], "druck": None, "bild": None,
+                 "pruefung": [], "anzahl": 1, "hinweise": [],
+                 "material": [{"benennung": "Zylinderschraube ISO 4762 M6 × 20", "menge": 2, "einheit": "Stück",
+                               "preis": 0.3, "quelle": "kaufen oder Bestand"}]}]},
+            {"art": "zuschnitt", "titel": "Zuschnitt", "schritte": [
+                {"id": "z-1", "titel": "Stange 1: 300 + 300 mm", "text": "Ablängen: 300 + 300 mm, Rest 394 mm.",
+                 "quelle": "auto", "fest": False, "teile": ["Halter/Bein 1", "Halter/Bein 2"], "neu": [],
+                 "baugruppe": None, "verbindungsmittel": [], "werkzeug": ["Metallkreissäge"], "bohrbild": [],
+                 "zuschnitt": [{"stock_id": "vierkantrohr-en10219-40x40x3", "laenge": 300.0, "gehrung": [0, 0],
+                                "anzahl": 2}],
+                 "druck": None, "bild": None, "pruefung": [], "anzahl": 1, "hinweise": []}]},
+            {"art": "bearbeiten", "titel": "Bearbeiten", "schritte": [
+                {"id": "b-1", "titel": "2× Bein: 2 Bohrungen", "text": "Anreißen, körnen, bohren.", "quelle": "auto",
+                 "fest": False, "teile": ["Halter/Bein 1", "Halter/Bein 2"], "neu": [], "baugruppe": None,
+                 "verbindungsmittel": [], "werkzeug": ["Bohrer Ø 6,6", "Körner", "Entgrater"],
+                 "bohrbild": [{"teil": "Halter/Bein 1", "bezug": {"teil": "Halter/Bein 1", "art": "bohrung",
+                                                                  "signatur": {"typ": "kreis",
+                                                                               "mitte": [25.0, 20.0, 0.0],
+                                                                               "richtung": [0, 1, 0], "radius": 3.3,
+                                                                               "laenge": 40.0},
+                                                                  "merkmal": "bohrung:1", "ref": None},
+                               "durchmesser": 6.6, "tiefe": None, "lage_mm": [25.0], "von": "Ende A (links)",
+                               "senkung": None, "gewinde": None, "text": "Ø6,6", "art": "bohrung",
+                               "richtung": [0.0, 1.0, 0.0]}],
+                 "zuschnitt": [], "druck": None, "bild": None, "pruefung": [], "anzahl": 2, "hinweise": []}]},
+            {"art": "drucken", "titel": "Drucken", "schritte": []},
+            {"art": "montage", "titel": "Montage", "schritte": [
+                {"id": "m-1g", "titel": "Bein 1 als Grundteil auflegen", "text": "Bein 1 als Grundteil hinstellen.",
+                 "quelle": "auto", "fest": False, "teile": ["Halter/Bein 1"], "neu": ["Halter/Bein 1"],
+                 "baugruppe": None, "verbindungsmittel": [], "werkzeug": [], "bohrbild": [], "zuschnitt": [],
+                 "druck": None, "pruefung": [], "anzahl": 1, "hinweise": [],
+                 "einbau": [{"name": "Halter/Bein 1", "art": "teil", "teile": ["Halter/Bein 1"],
+                             "haupt": "Halter/Bein 1", "richtung": None, "zuerst": None, "weg": 0.0,
+                             "aufbocken": 0.0, "grundteil": True, "erzwungen": False, "sperrer": []}],
+                 "bild": {"kamera": {"rotation": [0.2798, -0.1159, -0.3647, 0.8805], "pivot": [0.0, 0.0, 150.0],
+                                     "distance": 900.0, "ortho": True},
+                          "ansicht": {"richtung": [0.57735, 0.57735, -0.57735], "oben": [0.40825, 0.40825, 0.8165]},
+                          "explosion": {}, "pfeile": [], "hervorheben": ["Halter/Bein 1"], "kontext": [],
+                          "sichtbarkeit": {}, "quelle": "auto"}},
+                {"id": "m-2", "titel": "Deckel einbauen", "text": "Deckel von oben einsetzen, auf Bein 1 legen. 2 × "
+                 "Zylinderschraube ISO 4762 M6 × 20 ansetzen und anziehen.", "quelle": "agent", "fest": True,
+                 "teile": ["Halter/Deckel", "Halter/Schraube 1"], "neu": ["Halter/Deckel", "Halter/Schraube 1"],
+                 "baugruppe": None,
+                 "verbindungsmittel": [{"id": "schraube-iso4762-m6", "benennung": "Zylinderschraube ISO 4762 M6 × 20",
+                                        "laenge": 20.0, "anzahl": 1, "geschaetzt": False}],
+                 "werkzeug": ["Innensechskant 5 mm"], "bohrbild": [], "zuschnitt": [], "druck": None,
+                 "pruefung": [befund], "anzahl": 1, "hinweise": ["Schraube erst handfest, dann über Kreuz anziehen"],
+                 "einbau": [{"name": "Halter/Deckel", "art": "teil", "teile": ["Halter/Deckel"],
+                             "haupt": "Halter/Deckel", "richtung": [0.0, 0.0, -1.0], "zuerst": None, "weg": 25.0,
+                             "aufbocken": 0.0, "grundteil": False, "erzwungen": False, "sperrer": []}],
+                 "bild": {"kamera": {"rotation": [0.2798, -0.1159, -0.3647, 0.8805], "pivot": [0.0, 0.0, 150.0],
+                                     "distance": 900.0, "ortho": True},
+                          "ansicht": {"richtung": [0.57735, 0.57735, -0.57735], "oben": [0.40825, 0.40825, 0.8165]},
+                          "explosion": {"Halter/Deckel": [0.0, 0.0, 25.0], "Halter/Schraube 1": [0.0, 0.0, 47.5]},
+                          "pfeile": [{"teil": "Halter/Deckel", "richtung": [0.0, 0.0, -1.0],
+                                      "von": [0.0, 0.0, 330.0], "nach": [0.0, 0.0, 305.0]}],
+                          "hervorheben": ["Halter/Deckel", "Halter/Schraube 1"], "kontext": ["Halter/Bein 1"],
+                          "sichtbarkeit": {"Halter/Deckel": 0.97, "Halter/Schraube 1": 0.62}, "quelle": "auto"}}]}],
+        "vorher": [{"a": "m-1g", "b": "m-2", "grund": "Deckel wird an Bein 1 befestigt (schraube)", "quelle": "auto",
+                    "teile": ["Halter/Bein 1", "Halter/Deckel"]},
+                   {"a": "m-1g", "b": "m-2", "grund": "erst das Gestell ausrichten", "quelle": "kevin"}],
+        "umfang": {"ohne": ["Umgebung"]},
+        "stand": {"run": 3, "erzeugt": "2026-10-22T21:00:00", "gesamt_ms": 812.5, "verbinde": True},
+    }
+
+
+# Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; Strang P6-A2). Das PDF baut die App.
+
+DOC_EXPORT_BAUSTEINE: tuple[str, ...] = ("deckblatt", "stueckliste", "teileliste", "einkaufsliste", "zuschnitt",
+                                         "zeichnungen", "bauplan")
+
+
+def doc_export_req(bausteine: list[dict[str, Any]], *, ziel: str | None, drucken: bool = False,
+                   format: str | None = None, ausrichtung: str | None = None,  # noqa: A002
+                   vorlage: str | None = None, id: str | None = None, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    """Kopf von DOC_EXPORT_REQ (Kernel → App): ``bausteine`` je ``{art, spalten?, auswahl?}`` in der gewünschten
+    Reihenfolge, ``ziel`` (absoluter Pfad der .pdf oder None nur zum Drucken), ``drucken``, Papier der Berichtsseiten
+    (``format`` A4/A3, ``ausrichtung`` hoch/quer, None = Vorgabe der App), ``vorlage`` (Name einer Vorlage der App)."""
+    h: dict[str, Any] = {"type": "DOC_EXPORT_REQ", "seq": seq, "bausteine": [dict(b) for b in bausteine],
+                         "ziel": ziel, "drucken": bool(drucken), "format": format, "ausrichtung": ausrichtung,
+                         "vorlage": vorlage}
+    if id is not None:
+        h["id"] = id
+    return h
+
+
+def check_doc_export_res(header: dict[str, Any]) -> list[str]:
+    """Fehlende Pflichtfelder von DOC_EXPORT_RES (App → Kernel): ``reply_to``, ``ok``, ``pfad``, ``seiten``, ``fehler``
+    (additiv: ``bausteine`` je ``{art, seiten}``, ``formate``, ``gedruckt``, ``hinweise``, ``ms``)."""
+    if header.get("type") != "DOC_EXPORT_RES":
+        return [f"{header.get('type')!r} ist nicht DOC_EXPORT_RES"]
+    return [k for k in ("reply_to", "ok", "pfad", "seiten", "fehler") if k not in header]
+
+
 # Bestand je Projekt (BESTAND.md): Nachrichten ohne Nutzlast
 
 BESTAND_NACHRICHTEN: dict[str, tuple[str, ...]] = {

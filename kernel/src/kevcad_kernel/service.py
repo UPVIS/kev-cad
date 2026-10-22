@@ -250,11 +250,44 @@ class KernelService(Protocol):
     def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
         """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
+    # Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Bauplan“; umgesetzt in bauplan/dienst.py)
+    def bauplan(self, neu: bool = False) -> dict[str, Any]:
+        """Bauplan des letzten Laufs, bei Bedarf erzeugt und als <projekt>/dokumente/bauplan.json gespeichert:
+        {"ok", "datei", "bauplan" (Inhalt der Datei mit Prüfung), "zusammenfassung", "zeiten"}"""
+
+    def bauplan_bearbeiten(self, ops: list[dict[str, Any]], von: str = "agent") -> dict[str, Any]:
+        """Operationen wie BAUPLAN_EDIT, danach Simulation: {"ok", "meldungen", "zusammenfassung", "befunde"}"""
+
+    def bauplan_pruefen(self, schritt: str | None = None) -> dict[str, Any]:
+        """Simulation aller Montageschritte oder eines: {"ok", "befunde", "zusammenfassung", "ms", "schritt"}"""
+
     # 3D-Druck: Ergebnis der Druckprüfung des letzten Laufs (Prüfer „druck“, druck/laufzeit.py)
     def druckpruefung(self, teil: str | None = None) -> dict[str, Any]:
         """Alle Druckteile oder eines (Name oder Gruppe): {"ok", "run", "drucker", "teile": [{"name", "material",
         "zusammenfassung", "ausrichtung", "kennzahlen", "befunde", …}], "materialien", "zaehler", "statistik"}"""
 
+    # Phase 6: Zeichnungen (DOKUMENTE.md; Umsetzung in kevcad_kernel.zeichnung.laufzeit.ZeichnungRuntimeMixin)
+    def drawings(self) -> dict[str, Any]:
+        """Blätter des Projekts: {"ok", "ordner", "blaetter": [{"id", "titel", "inhalt", "format", "ausrichtung",
+        "massstab", "ansichten", "masse", "verwaiste_masse" (ids), "eigene_masse", "pfad", "hinweise"}]}"""
+
+    def drawing_create(self, teile: list[str] | None = None, art: str = "teil", format: str | None = None) \
+            -> dict[str, Any]:  # noqa: A002
+        """Blätter anlegen bzw. neu rechnen. Ohne teile: je Stücklistenposition eines gefertigten Teils ein Blatt und
+        der Zusammenbau. {"ok", "ordner", "blaetter": [Zusammenfassung je Blatt mit "masse", "pruefung", "hinweise"]}"""
+
+    def drawing_edit(self, blatt: str, ops: list[dict[str, Any]], von: str = "agent") -> dict[str, Any]:
+        """Operationen wie DRAWING_EDIT. {"ok", "ergebnisse": [{"op", "ok", "id"?, "fehler"?}], "blatt": Zusammenfassung}"""
+
+    def drawing_image(self, blatt: str, breite: int = 1800) -> dict[str, Any]:
+        """Blatt als PNG (Kernel, aus den Vektoren): {"ok", "png", "breite", "hoehe", "blatt": Zusammenfassung}"""
+
+    # Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; umgesetzt in dokument_export.py, P6-A2)
+    def dokument_export(self, bausteine: Any = None, ziel: str | None = None, drucken: bool = False,
+                        timeout_s: float = 600.0) -> dict[str, Any]:
+        """Die App baut das PDF aus den Bausteinen (Deckblatt, Stückliste, Teileliste, Einkaufsliste, Zuschnitt,
+        Zeichnungen, Bauplan); ``drucken`` öffnet den Druckdialog. {"ok", "pfad", "seiten", "bausteine" (je {art,
+        seiten}), "formate", "gedruckt", "hinweise", "ms", "angefragt", "vorlage"}"""
     # Versionen (PLAN-VERSIONEN.md, PROTOCOL.md „Versionen“; umgesetzt in kevcad_kernel.versionen.laufzeit)
     def versionen(self, limit: int | None = 50, variante: str | None = None) -> dict[str, Any]:
         """{"ok", "verfuegbar", "meldung", "variante", "varianten", "versionen" (neueste zuerst, siehe VERSIONEN),

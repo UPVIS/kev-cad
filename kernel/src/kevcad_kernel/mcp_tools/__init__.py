@@ -59,8 +59,19 @@ TOOL_NAMES: tuple[str, ...] = (
     "kamera_bild",
     "kamera_katalog",
     "kamera_vorschlag_aus_ansicht",
+    # Phase 6: Bauplan
+    "bauplan",
+    "bauplan_bearbeiten",
+    "bauplan_pruefen",
     # 3D-Druck
     "druckpruefung",
+    # Phase 6: Zeichnungen
+    "zeichnungen",
+    "zeichnung_erstellen",
+    "zeichnung_bearbeiten",
+    "zeichnung_bild",
+    # Phase 6: Dokumente exportieren
+    "dokument_export",
     # Versionen
     "versionen",
     "version_wiederherstellen",

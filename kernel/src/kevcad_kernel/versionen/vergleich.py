@@ -9,6 +9,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from kevcad_kernel.versionen.dokumente import zusammenfassung as dok_zusammenfassung
+
 LAGE_TOL = 1e-3  # mm
 REL_TOL = 1e-6
 
@@ -201,6 +203,8 @@ def zusammenfassung(v: dict[str, Any]) -> str:
     fa, fb = (pa.get("zaehler") or {}).get("fehler"), (pb.get("zaehler") or {}).get("fehler")
     if fa is not None and fb is not None and fa != fb:
         bits.append(f"Prüfung {fa} → {fb} Fehler")
+    if v.get("dokumente"):  # Blätter und Bauplan (dokumente.py), eine eigene Gruppe neben Teilen und Code
+        bits.append(dok_zusammenfassung(v["dokumente"]))
     return " · ".join(bits)
 
 
@@ -245,4 +249,6 @@ def text(v: dict[str, Any], *, max_teile: int = 25) -> str:
         zb = (pb or {}).get("zusammenfassung") or ("in Ordnung" if pb else "unbekannt")
         if za != zb:
             zeilen.append(f"- Prüfung: {za} → {zb}")
+    for e in v.get("dokumente") or []:
+        zeilen.append(f"- Dokument: {e['text']}")
     return "\n".join(zeilen)

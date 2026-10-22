@@ -11,7 +11,8 @@ struct KevCADCommands: Commands {
     @FocusedObject private var window: ProjectWindowState?
 
     private var hasProject: Bool { model.project != nil }
-    private var inProject: Bool { window != nil && hasProject }
+    /// Projektfenster vorne und 3D-Bereich sichtbar (im Bereich „Dokumente“ gelten dessen Kürzel, siehe DokumenteCommands).
+    private var inProject: Bool { window != nil && hasProject && window?.bereich != .dokumente }
     private var hasSelection: Bool { !model.selection.isEmpty }
     /// Blender-Befehle des App-Kerns (im Demomodus nicht vorhanden).
     private var nav: NavigationActions? { model.actions as? NavigationActions }
@@ -58,8 +59,9 @@ struct KevCADCommands: Commands {
         }
         CommandGroup(replacing: .importExport) {
             Menu("Exportieren") {
+                // ⇧⌘E öffnet seit Phase 6 „Dokumente exportieren …“ (DokumenteExportCommands)
                 Button("STEP, STL und 3MF") { model.actions?.export(formats: ExportFormat.standard.map(\.rawValue)) }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .keyboardShortcut("e", modifiers: [.command, .shift, .option])
                 Divider()
                 ForEach(ExportFormat.allCases) { format in
                     Button("Nur \(format.title)") { model.actions?.export(formats: [format.rawValue]) }

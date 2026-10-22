@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“).
 ---
 
 # Kev CAD
@@ -656,10 +656,88 @@ fahrt.folge("Rig", "Rollwagen/Deckel")  # Rig-Zubehör hängt nicht an der Kamer
   Sicht.
 - Den Körper bewegt der Kernel nur, wenn keine eigene Spur ihn bewegt; Werte von `kamera_info` gelten für die Ruhelage.
 
+## Technische Zeichnungen
+
+Werkstattzeichnungen nach ISO 128/129-1 (Projektionsmethode 1, Schriftfeld ISO 7200, Allgemeintoleranz ISO 2768-m)
+entstehen aus dem Modell; die Maße hängen an erkannten Merkmalen (Bohrung, Lochbild, Langloch, Tasche, Fase, Radius,
+Stange mit Gehrung, Einsatz- und Muttertasche) und überleben Änderungen am Modell. Blätter liegen unter
+`<Projekt>/dokumente/zeichnungen/<id>.json`, Kevin sieht und bearbeitet sie in der App (Bereich „Dokumente“).
+
+Ablauf:
+
+1. `zeichnung_erstellen()` nach einem fehlerfreien `run`: je Stücklistenposition eines gefertigten Teils (Rohre und
+   Profile, Platten, Druckteile) ein Blatt, dazu der Zusammenbau mit Positionsnummern und Stückliste. Einzelne Teile
+   mit `teile=["Gestell/Bein vorn links"]`, eine Baugruppe mit `art="baugruppe"`. Normteile und Zukaufteile bekommen
+   keine Zeichnung. Vorhandene Blätter behalten Kevins Änderungen und werden nur neu gerechnet.
+2. Jedes Blatt selbst prüfen: `zeichnung_bild(blatt)` (nur zur eigenen Prüfung, **Kevin keine Bilder schicken**) und
+   die Prüfung im Ergebnis lesen (fehlendes Größen- oder Lagemaß, Überbemaßung, Überlappung, verwaiste Maße). Frage:
+   Kann eine Werkstatt das Teil allein mit diesem Blatt fertigen?
+3. Fehlende oder falsche Maße mit `zeichnung_bearbeiten(blatt, ops)` korrigieren, Bezüge über Merkmal-Kennungen aus
+   dem Ergebnis von `zeichnung_erstellen`:
+   - `{"op": "mass_neu", "art": "linear", "ansicht": "v1", "bezuege": [{"merkmal": "seite:x-"}, {"merkmal": "bohrung:2"}], "richtung": "x"}`
+   - `{"op": "mass_loeschen", "id": "m7"}` (automatische Maße bleiben dann weg), `{"op": "mass_aendern", "id": "m3", "toleranz": "H7"}`
+   - `{"op": "ansicht_neu", "art": "schnitt", "schnitt": {"von": "v1", "ebene": {"punkt": [x, y, z], "normale": [0, 1, 0]}}}`
+     für Innenmerkmale; `{"op": "massstab", "wert": "1:2"}`, `{"op": "format", "wert": "A3"}`, `{"op": "notiz", "text": "Grat entfernen", "lage": [30, 30]}`.
+4. Kevin kurz berichten: welche Blätter, Format und Maßstab, was von Hand ergänzt wurde, offene Punkte.
+
+Regeln der automatischen Bemaßung: Vorlage je Teiletyp (Rohr: eine Ansicht längs, Länge, Gehrung, Bohrungen ab dem
+Rohrende; Platte: eine Ansicht, Dicke als Angabe, Lagen ab der Ecke unten links; Druckteil: Hüll- und Funktionsmaße,
+sonst „nach 3D-Modell“), jedes Maß einmal, Lochbilder als „n× Ø“, symmetrische Lagen zur Mittellinie, ab vier Lagen
+steigende Bemaßung, Hüllmaße außen. Gewinde und Einsatztaschen erkennt Kev CAD nur mit Gegenstück im Modell (Schraube,
+Gewindestift, Gewindeeinsatz auf derselben Achse); fehlt es, steht nur der Durchmesser da. Abweichende Hausregeln
+(Maßlinienabstand, Schraffur, Pfeil, Schrift) in `dokumente/hausregeln.json`.
+
 ## Export
 
 `export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`, `export(["bom_csv"])` die Stückliste als CSV. STEP für CAD und Fertigung, STL oder 3MF für den
 Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur diese Teile.
+
+## Bauplan
+
+Kev CAD erzeugt aus dem Modell eine Bauanleitung zum Ausdrucken (Kevin, 22.10.2026: „was muss wann gemacht werden,
+was muss wie montiert werden … alle Löcher, die gebohrt werden“). Datei `<projekt>/dokumente/bauplan.json`, in der
+App im Bereich „Dokumente“ mit Strichbild je Schritt; Vertrag in DOKUMENTE.md.
+
+- **Erzeugen:** `bauplan` (bei neuem Lauf rechnet Kev CAD einen vorhandenen Bauplan selbst nach). Fünf Abschnitte:
+  Material (Einkauf, Bestand), Zuschnitt (je Stange mit Gehrung), Bearbeiten (Bohrbild je Teil mit Ø und Lage ab
+  Rohrende bzw. Außenkante, Gewinde, Senkungen; Gewindeeinsätze einschmelzen, Gewindestifte einkleben), Drucken
+  (Material, Ausrichtung als Schätzung, Temperaturen), Montage (Unterbaugruppen aus dem Namensbaum zuerst, dann die
+  Hauptmontage; je Schritt ein Hauptteil mit seinen Verbindungsmitteln, gleiche Schritte als „4×“).
+- **Was Kev CAD weiß, was du schreibst:** Reihenfolge, Einführrichtung, Teile, Verbindungsmittel, Werkzeug, Maße und
+  Lagen kommen aus dem Kernel. Du formulierst danach die Texte mit `bauplan_bearbeiten` (`{"op": "text", "schritt",
+  "titel", "text", "hinweise"}`), knapp wie für eine Werkstatt: Schritt, Handgriff, Werkzeug, worauf achten, dazu
+  Sicherheit (Quetschstellen an beweglichen Teilen, scharfe Kanten nach Sägen und Bohren, heißer Lötkolben,
+  Schutzbrille). Zahlen nur aus den Schrittdaten übernehmen, nie schätzen oder anders runden; fehlt eine, schreiben,
+  was zu messen ist.
+- **Prüfen:** Jeder Montageschritt wird simuliert (`bauplan_pruefen`): Einführweg frei (`einfuehrweg`), Reihenfolge
+  (`reihenfolge`, auch die Regeln „a vor b“), Werkzeugzugang (`werkzeugzugang`: Innensechskant gerade über dem Kopf,
+  Schlüssel um die Mutter, Finger um die Flügelmutter), Standsicherheit der Teilbaugruppe (`standsicherheit`), neue
+  Teile im Bild sichtbar (`verdeckt`, Agrawala: mindestens 50 %). Hinweis „unter die Aufstandsfläche“ heißt: Baugruppe
+  aufbocken oder umdrehen.
+- **Probleme im Modell beheben, nicht im Text verstecken:** Passt ein Teil nicht hinein oder kommt das Werkzeug nicht
+  hin, wird model.py geändert (Spiel, Einführschräge, Schlitz, Teilung, Muttertasche statt Schlüssel, Zugangsbohrung),
+  dann `run`; der Bauplan folgt. Reihenfolge nur ändern (`verschieben`, `{"op": "vorher", "a", "b", "grund"}`), wenn
+  mehrere Folgen gleich gut sind, und dann Kevin fragen.
+- **Erhalten:** Texte von Agent und Kevin und Schritte mit `fest` bleiben bei jedem neuen Lauf (Zuordnung über die id
+  und die Teile). Teile, die nicht zum Aufbau gehören (Umgebung, lose daneben), nimmt Kev CAD selbst heraus; weitere mit
+  `{"op": "umfang", "ohne": ["Umgebung"]}`.
+- **Grenzen:** Montage nur durch Schieben (ein- oder zweistufig), kein Drehen; Eigenteile einer Gruppe, die
+  zusammenhängen (Rollwagen, Fluidkopf, Kamera), gelten als vorhanden und vormontiert; ohne `verbinde` sind Verbindungen
+  und Werkzeug aus Kontakt und Normteilen geschätzt (steht am Schritt). Kevin keine Bilder schicken, die App zeigt sie.
+- **Durchspielen:** Kevin spielt den Aufbau in der App Schritt für Schritt im 3D-Bereich durch (nur montierte Teile,
+  neue fahren entlang der Einführrichtung ein). Das ist seine Ansicht; du prüfst mit `bauplan_pruefen`.
+
+## Dokumente als PDF
+
+`dokument_export(bausteine, ziel=None, drucken=False)` lässt die App ein PDF bauen, dieselben Seiten wie im Dialog
+„Dokumente exportieren …“ (⇧⌘E): `deckblatt`, `stueckliste`, `teileliste`, `einkaufsliste`, `zuschnitt`,
+`zeichnungen`, `bauplan`, in der angegebenen Reihenfolge; leer oder `"alle"` = alles. Objekte wie
+`{"art": "stueckliste", "spalten": ["pos", "bild", "benennung", "masse", "anzahl"]}` oder
+`{"art": "zeichnungen", "auswahl": ["<blatt-id>", …]}` wählen Spalten bzw. Blätter; `"vorlage:<Name>"` nimmt eine
+Vorlage, die Kevin im Dialog gesichert hat; `{"format": "A3", "ausrichtung": "quer"}` setzt das Papier der Listen und
+des Bauplans (Zeichnungen behalten ihr Blattformat). Ohne `ziel` landet das PDF in `<projekt>/output/<Projekt>-dokumente.pdf`.
+`drucken=true` öffnet den Druckdialog in der App, **nur wenn Kevin ausdrücklich drucken will**. Vorher `bauplan` und
+`zeichnung_erstellen`, damit die Bausteine Inhalt haben; die Antwort nennt Seiten je Baustein, Formate und Hinweise.
 
 ## Wenn etwas hakt
 

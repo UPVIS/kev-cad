@@ -501,6 +501,13 @@ public final class AppController: AppActions {
             handleVersionen(v)
         case .bestand(let b):
             applyBestand(b)
+        case .dokumente(let d):  // Phase 6: Zeichnungen (AppController+Dokumente.swift)
+            handleDokumente(d)
+            bauplanNachDocs(d)  // Phase 6, P6-A2: geänderten Bauplan neu holen (BauplanSteuerung.swift)
+        case .bauplan(let b):  // Phase 6, P6-A2: Bauplan (BauplanSteuerung.swift)
+            handleBauplan(b)
+        case .dokumentExport(let a):  // Phase 6, P6-A2: PDF für den Kernel (ExportSteuerung.swift)
+            handleDokumentExport(a)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -552,6 +559,9 @@ public final class AppController: AppActions {
             resetZukauf()
             model.pruefung = nil  // Prüfung: neues Projekt, neues Ergebnis (scene.removeAll leert die Schnittkörper)
             resetVersionen()  // Versionen: Liste und Vergleich des alten Projekts verwerfen
+            resetDokumente()  // Phase 6: Blätter des alten Projekts verwerfen
+            resetBauplan()  // Phase 6, P6-A2: Bauplan und Durchspielen des alten Projekts verwerfen
+            resetExport()
             bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info

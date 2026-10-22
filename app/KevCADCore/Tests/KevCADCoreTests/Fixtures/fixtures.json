@@ -903,5 +903,313 @@
     }
    ]
   }
+ },
+ "bauplan": {
+  "linien_reihenfolge": [
+   "sichtbar",
+   "verdeckt",
+   "mitte",
+   "schnitt",
+   "schraffur",
+   "duenn",
+   "nachbar",
+   "bruch",
+   "neu",
+   "pfeil"
+  ],
+  "feld": [
+   180.0,
+   120.0
+  ],
+  "run": 3,
+  "reply_to": "a-7",
+  "abschnitte": [
+   "material",
+   "zuschnitt",
+   "bearbeiten",
+   "drucken",
+   "montage"
+  ],
+  "schritte_je_abschnitt": [
+   1,
+   1,
+   1,
+   0,
+   2
+  ],
+  "montage_ids": [
+   "m-1g",
+   "m-2"
+  ],
+  "befund": {
+   "id": "bp1",
+   "art": "werkzeugzugang",
+   "schwere": "fehler",
+   "schritt": "m-2"
+  },
+  "bilder": [
+   {
+    "schritt": "m-1g",
+    "linien": {
+     "sichtbar": 1,
+     "verdeckt": 0,
+     "mitte": 0,
+     "schnitt": 0,
+     "schraffur": 0,
+     "duenn": 1,
+     "nachbar": 0,
+     "bruch": 0,
+     "neu": 0,
+     "pfeil": 0
+    }
+   },
+   {
+    "schritt": "m-2",
+    "linien": {
+     "sichtbar": 1,
+     "verdeckt": 0,
+     "mitte": 0,
+     "schnitt": 0,
+     "schraffur": 0,
+     "duenn": 0,
+     "nachbar": 0,
+     "bruch": 0,
+     "neu": 1,
+     "pfeil": 2
+    }
+   }
+  ],
+  "erster_pfeil": [
+   [
+    90.0,
+    110.0
+   ],
+   [
+    90.0,
+    97.0
+   ]
+  ],
+  "payload_bytes": 280,
+  "vorher": 2,
+  "docs": {
+   "schritte": 5,
+   "probleme": 1
+  },
+  "frames": [
+   "bauplan.frame",
+   "docs_bauplan.frame",
+   "bauplan_req.frame",
+   "bauplan_edit.frame",
+   "bauplan_pruefen.frame"
+  ]
+ },
+ "dokumente": {
+  "drawing": {
+   "reply_to": "a-11",
+   "blatt_id": "platte",
+   "format": "A4",
+   "ausrichtung": "quer",
+   "massstab": "1:1",
+   "blattgroesse": [
+    297.0,
+    210.0
+   ],
+   "linien_reihenfolge": [
+    "sichtbar",
+    "verdeckt",
+    "mitte",
+    "schnitt",
+    "schraffur",
+    "duenn",
+    "nachbar",
+    "bruch"
+   ],
+   "geometrie": [
+    {
+     "id": "v1",
+     "art": "vorn",
+     "linien": {
+      "sichtbar": 6,
+      "verdeckt": 0,
+      "mitte": 10,
+      "schnitt": 0,
+      "schraffur": 0,
+      "duenn": 0,
+      "nachbar": 0,
+      "bruch": 0
+     }
+    },
+    {
+     "id": "blatt",
+     "art": "blatt",
+     "linien": {
+      "sichtbar": 9,
+      "verdeckt": 0,
+      "mitte": 3,
+      "schnitt": 0,
+      "schraffur": 0,
+      "duenn": 18,
+      "nachbar": 0,
+      "bruch": 0
+     }
+    }
+   ],
+   "payload_bytes": 2936,
+   "erster_punkt": [
+    73.88,
+    89.23
+   ],
+   "masse": 6,
+   "erstes_mass": {
+    "id": "m1",
+    "text": "200",
+    "wert": 200.0,
+    "text_winkel": 0.0
+   },
+   "masstexte": [
+    "0",
+    "0",
+    "100",
+    "200",
+    "4× Ø6,6",
+    "Ø8"
+   ],
+   "texte": 36,
+   "gefuellt": 0
+  },
+  "drawing_tube": {
+   "blatt_id": "rohr",
+   "bruch": 2,
+   "masstexte": [
+    "1000",
+    "2× Ø4,2",
+    "30",
+    "970"
+   ],
+   "payload_bytes": 4544
+  },
+  "docs": {
+   "run": 7,
+   "blaetter": [
+    "platte",
+    "rohr"
+   ]
+  },
+  "drawing_edit": {
+   "ops": [
+    "mass_verschieben",
+    "mass_verschieben",
+    "mass_loeschen",
+    "mass_neu",
+    "ansicht_neu",
+    "ansicht_verschieben",
+    "ansicht_loeschen",
+    "massstab",
+    "notiz",
+    "notiz_loeschen",
+    "schriftfeld",
+    "auto",
+    "unterdrueckung_aufheben"
+   ]
+  },
+  "drawing_create": {
+   "id": "a-13",
+   "art": "teil",
+   "teile": [
+    "Halter/Platte"
+   ],
+   "format": "A3 quer"
+  }
+ },
+ "export": {
+  "bausteine": [
+   "deckblatt",
+   "stueckliste",
+   "teileliste",
+   "einkaufsliste",
+   "zuschnitt",
+   "zeichnungen",
+   "bauplan"
+  ],
+  "req": {
+   "type": "DOC_EXPORT_REQ",
+   "seq": 40,
+   "bausteine": [
+    {
+     "art": "deckblatt"
+    },
+    {
+     "art": "stueckliste",
+     "spalten": [
+      "pos",
+      "bild",
+      "benennung",
+      "anzahl",
+      "masse"
+     ]
+    },
+    {
+     "art": "zeichnungen",
+     "auswahl": [
+      "seitenstange-links",
+      "zusammenbau"
+     ]
+    },
+    {
+     "art": "bauplan"
+    }
+   ],
+   "ziel": "/tmp/Halter/output/Halter-dokumente.pdf",
+   "drucken": false,
+   "format": "A4",
+   "ausrichtung": "hoch",
+   "vorlage": null,
+   "id": "k-12"
+  },
+  "res": {
+   "type": "DOC_EXPORT_RES",
+   "seq": 9,
+   "reply_to": "k-12",
+   "ok": true,
+   "pfad": "/tmp/Halter/output/Halter-dokumente.pdf",
+   "seiten": 14,
+   "fehler": null,
+   "bausteine": [
+    {
+     "art": "deckblatt",
+     "seiten": 1
+    },
+    {
+     "art": "stueckliste",
+     "seiten": 2
+    },
+    {
+     "art": "zeichnungen",
+     "seiten": 2
+    },
+    {
+     "art": "bauplan",
+     "seiten": 9
+    }
+   ],
+   "formate": {
+    "A4 hoch": 13,
+    "A3 quer": 1
+   },
+   "gedruckt": null,
+   "hinweise": [],
+   "ms": 1830,
+   "phasen": {
+    "bauplan_ms": 0,
+    "blaetter_ms": 410,
+    "bilder_ms": 760,
+    "seiten_ms": 95,
+    "pdf_ms": 520
+   }
+  },
+  "frames": [
+   "doc_export_req.frame",
+   "doc_export_res.frame"
+  ]
  }
 }

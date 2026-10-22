@@ -132,8 +132,17 @@ def test_vergleich_mit_lauf_ohne_live_aufbau(env):
     p = projekt(env, CODE1)
     assert rt.run()["ok"]
     assert warte(lambda: (p / ".kevcad" / "versionen" / "daten" / "1.json").is_file())
-    shutil.rmtree(p / ".kevcad" / "versionen" / "daten")  # Zwischenspeicher weg: alte Version muss neu rechnen
-    shutil.rmtree(p / ".kevcad" / "versionen" / "geometrie")
+    # Zwischenspeicher weg: alte Version muss neu rechnen. Die Hintergrundrechnung kann noch schreiben, darum so lange
+    # löschen, bis beide Ordner zweimal hintereinander fehlen.
+    weg = 0
+    for _ in range(40):
+        for ordner in ("daten", "geometrie"):
+            shutil.rmtree(p / ".kevcad" / "versionen" / ordner, ignore_errors=True)
+        time.sleep(0.25)
+        fehlen = not any((p / ".kevcad" / "versionen" / o).exists() for o in ("daten", "geometrie"))
+        weg = weg + 1 if fehlen else 0
+        if weg >= 2:
+            break
     (p / "model.py").write_text(CODE2)
     assert rt.run()["ok"]
     assert rt.execute("b")["result"] == "40"
