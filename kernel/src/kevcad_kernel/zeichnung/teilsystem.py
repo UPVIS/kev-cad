@@ -15,7 +15,7 @@ Regeln (begründet):
   Querbohrungen, damit sie als Kreise mit ihrer Lage ab dem Rohrende erscheinen; ohne Bohrungen die flachere Seite.
 - Platten: y = Dickenrichtung, x = längere Kante.
 - Sonst: z bleibt die Welt-Hochachse (Druckteile und Eigenteile so, wie sie konstruiert sind); vorn ist die waagrechte
-  Richtung, aus der die meisten Bohrungen und Taschen als wahre Gestalt zu sehen sind, bei Gleichstand die breitere.
+  Richtung, aus der die meisten Bohrungen als Kreise zu sehen sind, bei Gleichstand die breitere Seite.
 """
 
 from __future__ import annotations
@@ -151,22 +151,6 @@ def _bohrachsen(top: Topologie) -> list[np.ndarray]:
         else:
             out.append((f.achse, f.punkt))
     return [d for d, _ in out]
-
-
-def _boeden(top: Topologie) -> list[np.ndarray]:
-    """Normalen von Taschenböden und Absätzen (ebene Flächen, die nicht auf dem Hüllquader liegen)."""
-    out = []
-    for f in top.flaechen:
-        if f.typ != "ebene" or f.n is None:
-            continue
-        n = _rund_auf_weltachse(f.n)
-        i = int(np.argmax(np.abs(n)))
-        if abs(n[i]) < 1 - 1e-6:
-            continue
-        rand = top.hi[i] if n[i] > 0 else top.lo[i]
-        if abs(float(f.punkt[i]) - rand) > 0.05:
-            out.append(n)
-    return out
 
 
 def teilsystem(form: Any, info: dict[str, Any] | None = None, top: Topologie | None = None) -> Teilsystem:

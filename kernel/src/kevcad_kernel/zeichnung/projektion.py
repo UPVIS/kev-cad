@@ -500,7 +500,7 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
             return Projektion(hit.blick, hit.linien, hit.teile, hit.rahmen, hit.ms, hit.exakt, True)
     t0 = time.perf_counter()
     groesse = _groesse(liste)
-    tol_netz = min(max(groesse * 0.0004, 0.005), 0.1)
+    tol_netz = min(max(groesse * 0.0004, 0.005), 0.5)  # 0,04 % der Größe: auf dem Blatt immer unter 0,05 mm
     proj = Projektion(b, exakt=exakt is True)
     if liste:
         teile = None

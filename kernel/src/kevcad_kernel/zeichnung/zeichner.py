@@ -588,6 +588,11 @@ def _richtung_auto(m: dict[str, Any], els: list[bz.Element], v: _Ansicht, system
 
 
 def _seite_waehlen(a: _Arbeit, system: Teilsystem, richtung: str) -> str:
+    if a.versatz is not None and (a.m.get("fest") or a.m.get("quelle") != "auto"):
+        # gesetzte Lage (Kevin, Agent): die Seite folgt dem Vorzeichen des Versatzes
+        if richtung == "x":
+            return "oben" if a.versatz > 0 else "unten"
+        return "rechts" if a.versatz > 0 else "links"
     if a.seite in ("unten", "oben", "links", "rechts"):
         s = a.seite
         if richtung == "x" and s in ("links", "rechts"):

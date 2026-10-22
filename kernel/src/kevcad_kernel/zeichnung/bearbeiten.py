@@ -170,7 +170,7 @@ def _mass_neu(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict
             if vid_r is None:
                 raise OpFehler(f"Punkt {r['punkt']} liegt in keiner Ansicht")
             vid = vid or vid_r
-            bezuege.append(klick(erg, vid_r, _punkt(r["punkt"], "punkt"), art))
+            bezuege.append(klick(erg, vid_r, _punkt(r["punkt"], "punkt"), art, op.get("richtung")))
         else:
             bezuege.append(_bezug_aus_angabe(r, b, erg))
     if vid is None:
@@ -239,7 +239,8 @@ def _ansicht_fuer(b: dict[str, Any], erg: Any, bezuege: list[dict[str, Any]]) ->
     return None
 
 
-def klick(erg: Any, vid: str, punkt: list[float], art: str | None = None) -> dict[str, Any]:
+def klick(erg: Any, vid: str, punkt: list[float], art: str | None = None, richtung: str | None = None) \
+        -> dict[str, Any]:
     """Nächstes Element unter einem Klick (Blatt-mm) in der Ansicht ``vid``: Merkmale bevorzugt (Bohrung, Seite,
     Stirnseite, Fase, Radius), sonst Kante oder Punkt des Teils. Liefert einen Bezug."""
     v = erg.ansichten.get(vid)
@@ -274,11 +275,18 @@ def klick(erg: Any, vid: str, punkt: list[float], art: str | None = None) -> dic
             d = _abstand_element(p, el, v, system)
             if d is not None:
                 vorrang = 0 if m.art in ("bohrung", "einsatztasche", "radius", "fase", "muttertasche", "langloch") else 1
+                if richtung in ("x", "y") and _parallel_zur_messrichtung(el, v, system, richtung):
+                    vorrang = 3  # Kante liegt längs der Messrichtung: für dieses Maß kein sinnvoller Ansatz (Ecke)
                 kandidaten.append((d, vorrang, bz.aus_merkmal(name, m)))
         for k in mm.kanten:
             q = v.blatt3(system.lokal(mm.system.welt(k.punkte)))
             d = _abstand_polylinie(p, q)
-            kandidaten.append((d + 0.3, 2, bz.aus_kante(name, k)))
+            vorrang = 2
+            if richtung in ("x", "y") and len(q) >= 2:
+                dq = q[-1] - q[0]
+                if float(np.linalg.norm(dq)) > 1e-6 and abs(dq[1 if richtung == "x" else 0]) < 1e-6:
+                    vorrang = 3
+            kandidaten.append((d + 0.3, vorrang, bz.aus_kante(name, k)))
         for i, pt in enumerate(mm.punkte):
             q = v.blatt3(system.lokal(mm.system.welt(pt)))
             kandidaten.append((float(np.linalg.norm(q - p)) - 0.5, 1, bz.aus_punkt(name, pt, i)))
@@ -290,6 +298,15 @@ def klick(erg: Any, vid: str, punkt: list[float], art: str | None = None) -> dic
     if nah[0][0] > 8.0:
         raise OpFehler(f"kein Element näher als 8 mm am Klick (nächstes {nah[0][0]:.1f} mm)")
     return nah[0][2]
+
+
+def _parallel_zur_messrichtung(el: bz.Element, v: Any, system: Any, richtung: str) -> bool:
+    """Ebene, die als Kante längs der Messrichtung erscheint (die Deckfläche eines Rohrs für ein waagrechtes Maß)."""
+    if el.typ != "ebene" or el.ecken is None:
+        return False
+    q = v.blatt3(system.lokal(np.asarray(el.ecken)))
+    quer = 1 if richtung == "x" else 0
+    return float(np.ptp(q[:, quer])) < 0.05 and float(np.ptp(q[:, 1 - quer])) > 0.05
 
 
 def _abstand_polylinie(p: np.ndarray, q: np.ndarray) -> float:
