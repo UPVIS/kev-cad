@@ -1469,10 +1469,13 @@ def render_beispiele() -> list[tuple[str, dict[str, Any]]]:
     teile = [
         {"name": "Rahmen/Rohr", "basisfarbe": [0.827, 0.839, 0.851], "metallisch": 1.0, "rauheit": 0.42,
          "oberflaeche": "eloxiert", "klarlack": 0.35, "klarlack_rauheit": 0.25, "anisotropie": 0.0,
-         "durchsichtig": 0.0, "material": "alu-6060", "quelle": "katalog"},
+         "durchsichtig": 0.0, "material": "alu-6060", "quelle": "katalog", "kulisse": False},
         {"name": "Rahmen/Halter (Druck)", "basisfarbe": [0.85, 0.2, 0.15], "metallisch": 0.0, "rauheit": 0.5,
          "oberflaeche": "schichten", "klarlack": 0.0, "klarlack_rauheit": 0.1, "anisotropie": 0.0,
-         "durchsichtig": 0.0, "schichthoehe": 0.2, "material": "pla", "quelle": "teilfarbe"},
+         "durchsichtig": 0.0, "schichthoehe": 0.2, "material": "pla", "quelle": "teilfarbe", "kulisse": False},
+        {"name": "Kulisse/Boden", "basisfarbe": [0.9, 0.9, 0.9], "metallisch": 0.0, "rauheit": 0.5,
+         "oberflaeche": "glatt", "klarlack": 0.0, "klarlack_rauheit": 0.1, "anisotropie": 0.0, "durchsichtig": 0.0,
+         "material": None, "quelle": "ohne_material", "kulisse": True},
     ]
     kamera = {"projection": "perspective", "position": [420.0, -510.0, 360.0], "target": [0.0, 0.0, 40.0],
               "up": [0.0, 0.0, 1.0], "fov_deg": 26.0, "ortho_height_mm": None, "name": None}
@@ -1497,7 +1500,8 @@ def render_beispiele() -> list[tuple[str, dict[str, Any]]]:
                         "width": 1920, "height": 1080, "ms": 840, "kamera": kamera, "message": None,
                         "phasen": {"netze_ms": 120, "umgebung_ms": 310, "rendern_ms": 330, "png_ms": 80}}),
         ("render_scene_req", {"type": "RENDER_SCENE_REQ", "seq": 33, "id": "k-82", "auftrag": "R-9",
-                              "ansicht": "iso", "kamera": None, "width": 2400, "height": 1600}),
+                              "ansicht": "iso", "kamera": None, "width": 2400, "height": 1600,
+                              "kulisse": ["Kulisse/Boden"]}),
         ("render_scene", {"type": "RENDER_SCENE", "seq": 6, "reply_to": "k-82", "ok": True, "kamera": kamera,
                           "teile": [{"name": "Rahmen/Rohr", "matrix": None},
                                     {"name": "Rahmen/Halter (Druck)",

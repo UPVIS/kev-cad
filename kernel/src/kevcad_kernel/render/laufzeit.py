@@ -112,7 +112,7 @@ class RenderRuntime:
         for rec in self.scene.records():  # type: ignore[attr-defined]
             mat = self.catalog.find_material(rec.material) if rec.material else None  # type: ignore[attr-defined]
             pbr = part_pbr(rec.header, mat)
-            out.append({"name": rec.name, **pbr})
+            out.append({"name": rec.name, **pbr, "kulisse": bool(rec.header.get("kulisse"))})
         return out
 
     def _render_melden(self, job: dict[str, Any], zustand: str | None = None, *, fortschritt: float | None = None,
@@ -158,7 +158,8 @@ class RenderRuntime:
         req = {"type": "RENDER_REQ", "auftrag": job["auftrag"], "szene": job["szene"], "ansicht": job["ansicht"],
                "kamera": job["kamera"], "width": w, "height": h, "teile": self._render_materialien(),
                "path": job["pfad"], "vorschau": job["vorschau"]}
-        reply, _, error = self._request(req, 30.0 + w * h / 1e6 * 6)  # type: ignore[attr-defined]
+        # großzügig: bei großen Modellen zeichnet die App nebenher den Viewport, das erste Bild übersetzt Shader
+        reply, _, error = self._request(req, 60.0 + w * h / 1e6 * 10)  # type: ignore[attr-defined]
         if error:
             self._render_fehler(job, error)
             return
@@ -204,7 +205,8 @@ class RenderRuntime:
             self._render_melden(job, "laeuft", fortschritt=0.01, text="Szene aus der App holen")
             reply, _, error = self._request(  # type: ignore[attr-defined]
                 {"type": "RENDER_SCENE_REQ", "auftrag": job["auftrag"], "ansicht": job["ansicht"],
-                 "kamera": job["kamera"], "width": job["width"], "height": job["height"]}, 30.0)
+                 "kamera": job["kamera"], "width": job["width"], "height": job["height"],
+                 "kulisse": [r.name for r in self.scene.records() if r.header.get("kulisse")]}, 30.0)  # type: ignore[attr-defined]
             if error or not reply.get("ok"):
                 self._render_fehler(job, error or str(reply.get("message") or "App lieferte keine Szene"))
                 return
@@ -215,6 +217,8 @@ class RenderRuntime:
                 rec = self.scene.get(str(t.get("name")))  # type: ignore[attr-defined]
                 if rec is None or not rec.payload:
                     continue
+                if job["szene"].get("transparent") and (rec.header.get("kulisse") or rec.name.startswith("Kulisse/")):
+                    continue  # freigestellt: nur das Produkt
                 teile.append({"name": rec.name, "header": rec.header, "payload": rec.payload,
                               "matrix": t.get("matrix"), "pbr": materialien.get(rec.name) or part_pbr(rec.header, None)})
             if not teile:

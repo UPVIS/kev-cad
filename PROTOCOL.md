@@ -822,7 +822,7 @@ jeden Auftrag „R-n“: schnell rendert die App (RealityKit), Foto rendert Blen
 | `RENDER_CANCEL` | App → Kernel | `id`, `auftrag` | `ACK` |
 | `RENDER_REQ` | Kernel → App | `id`, `auftrag`, `szene` (Objekt, unten), `ansicht`, `kamera`, `width`, `height`, `teile` (Darstellung je Teil, unten), `path` (absolute Zieldatei .png), `vorschau` | `RENDER_RES` |
 | `RENDER_RES` | App → Kernel | `reply_to`, `ok`, `path`, `width`, `height`, `ms`, `kamera` (wie bei `RENDER_SCENE`), `message` (oder null), `phasen` (ms je Phase: `netze_ms`, `umgebung_ms`, `szene_ms`, `rendern_ms`, `png_ms`) | – |
-| `RENDER_SCENE_REQ` | Kernel → App | `id`, `auftrag`, `ansicht`, `kamera`, `width`, `height` | `RENDER_SCENE` |
+| `RENDER_SCENE_REQ` | Kernel → App | `id`, `auftrag`, `ansicht`, `kamera`, `width`, `height`, `kulisse` (Namen der Kulisse-Teile) | `RENDER_SCENE` |
 | `RENDER_SCENE` | App → Kernel | `reply_to`, `ok`, `kamera` {`projection` (immer `perspective`), `position`, `target`, `up`, `fov_deg` (vertikal), `ortho_height_mm` (null), `name` (Kamera oder null)} in mm mit Z oben, `teile` (sichtbare Teile `{name, matrix}`; `matrix` 16 Zahlen spaltenweise = Lage gegenüber PART_UPSERT, null = Ruhelage), `message` | – |
 | `RENDER_STATUS` | Kernel → App | `auftrag`, `zustand` (`wartet` \| `laeuft` \| `fertig` \| `fehler` \| `abgebrochen`), `qualitaet`, `szene` (Name), `fortschritt` (0…1), `text`, `pfad` (nur bei `fertig`), `width`, `height`, `ms`, `von` (`agent` \| `app`), `vorschau`, `fehler` | – |
 
@@ -832,8 +832,10 @@ jeden Auftrag „R-n“: schnell rendert die App (RealityKit), Foto rendert Blen
 
 `RENDER_REQ.teile[i]` (KATALOG.md „Rendering“, `render/materialien.py`): `name`, `basisfarbe` [r, g, b] sRGB 0…1,
 `metallisch`, `rauheit`, `oberflaeche`, `klarlack`, `klarlack_rauheit`, `anisotropie`, `durchsichtig`, optional
-`schichthoehe`, `material`, `quelle` (`katalog` \| `abgeleitet` \| `teilfarbe` \| `ohne_material`). Teile ohne Eintrag
-rendert die App mit ihrer Farbe, matt.
+`schichthoehe`, `material`, `quelle` (`katalog` \| `abgeleitet` \| `teilfarbe` \| `ohne_material`), `kulisse` (bool).
+Teile ohne Eintrag rendert die App mit ihrer Farbe, matt. Kulisse-Teile (PART_UPSERT.kulisse, Gruppe `Kulisse/`)
+sind im Bild, zählen aber nicht für den Ausschnitt von `produkt` und den Standardansichten; bei durchsichtigem
+Hintergrund (Freisteller) bleiben sie weg.
 
 Szene wie im Viewer: sichtbare Teile (ausgeblendete und in der Animation verborgene nicht), Lage mit Explosion und
 Animation, bei einer Kamera ohne ihr Objektiv und Teile vor dem Augpunkt. Schnitt, Hervorhebungen, Röntgen und Maße

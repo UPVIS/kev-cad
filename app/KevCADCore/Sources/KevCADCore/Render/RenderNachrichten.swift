@@ -76,11 +76,13 @@ public struct RenderPBR: Equatable, Sendable {
     /// mm, nur bei `schichten`
     public var schichthoehe: Float
     public var material: String?
+    /// Kulisse (Boden, Wand): im Bild, aber nicht für den Ausschnitt
+    public var kulisse: Bool
 
     public init(
         name: String, basisfarbe: SIMD3<Float>, metallisch: Float = 0, rauheit: Float = 0.5,
         oberflaeche: String = "glatt", klarlack: Float = 0, klarlackRauheit: Float = 0.1, anisotropie: Float = 0,
-        durchsichtig: Float = 0, schichthoehe: Float = 0.2, material: String? = nil
+        durchsichtig: Float = 0, schichthoehe: Float = 0.2, material: String? = nil, kulisse: Bool = false
     ) {
         self.name = name
         self.basisfarbe = basisfarbe
@@ -93,6 +95,7 @@ public struct RenderPBR: Equatable, Sendable {
         self.durchsichtig = durchsichtig
         self.schichthoehe = schichthoehe
         self.material = material
+        self.kulisse = kulisse
     }
 
     init(json j: JSONValue) {
@@ -107,6 +110,7 @@ public struct RenderPBR: Equatable, Sendable {
         durchsichtig = Float(j["durchsichtig"]?.doubleValue ?? 0)
         schichthoehe = Float(j["schichthoehe"]?.doubleValue ?? 0.2)
         material = j["material"]?.lenientString
+        kulisse = j["kulisse"]?.boolValue ?? false
     }
 }
 
@@ -124,6 +128,8 @@ public struct RenderAuftrag: Equatable, Sendable {
     public var teile: [RenderPBR]
     public var path: String
     public var vorschau: Bool
+    /// Wann die App die Anfrage gelesen hat (Wartezeit bis zum Start, nur für die Phasen)
+    public var empfangen = Date()
 
     public init(
         id: String, auftrag: String, szene: RenderSzene, ansicht: String = "aktuell", kamera: String? = nil,
@@ -163,6 +169,8 @@ public struct RenderSzeneAnfrage: Equatable, Sendable {
     public var kamera: String?
     public var width: Int
     public var height: Int
+    /// Kulisse-Teile (zählen nicht für den Ausschnitt)
+    public var kulisse: [String]
 
     init(json j: JSONValue) {
         id = j["id"]?.lenientString ?? ""
@@ -171,6 +179,7 @@ public struct RenderSzeneAnfrage: Equatable, Sendable {
         kamera = j["kamera"]?.lenientString
         width = max(16, min(j["width"]?.intValue ?? 1920, 8192))
         height = max(16, min(j["height"]?.intValue ?? 1080, 8192))
+        kulisse = j["kulisse"]?.stringList ?? []
     }
 }
 
@@ -470,7 +479,7 @@ public final class RenderStore: ObservableObject {
     @Published public var groesse = "hd"
     @Published public var qualitaet = "schnell"
     @Published public var hintergrund: String? = nil
-    @Published public var ansicht = "aktuell"
+    @Published public var ansicht = "produkt"
     @Published public var kamera: String? = nil
     /// Laufende und fertige Aufträge (neueste zuerst)
     @Published public private(set) var auftraege: [RenderStatus] = []

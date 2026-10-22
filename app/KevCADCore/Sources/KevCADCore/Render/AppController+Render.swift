@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MetalKit
 import OCCTSwiftViewport
 import simd
 
@@ -45,6 +46,7 @@ extension AppController: RenderActions {
 
     func renderAuftrag(_ a: RenderAuftrag) async {
         let t0 = Date()
+        let alter = Date().timeIntervalSince(a.empfangen)
         do {
             let ergebnis = try await renderBild(a)
             let url = URL(fileURLWithPath: a.path)
@@ -54,8 +56,10 @@ extension AppController: RenderActions {
             if !a.vorschau {
                 log(.info, "Rendering \(a.auftrag) (\(a.szene.titel), \(a.width) × \(a.height)) in \(ms) ms: \(url.path)")
             }
+            var phasen = ergebnis.phasen
+            if alter > 0.05 { phasen["start_ms"] = Int(alter * 1000) }
             send(RenderResponseMessage(replyTo: a.id, ok: true, path: url.path, width: a.width, height: a.height,
-                                       ms: ms, kamera: ergebnis.kamera.json, phasen: ergebnis.phasen))
+                                       ms: ms, kamera: ergebnis.kamera.json, phasen: phasen))
         } catch {
             let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             log(.error, "Rendering \(a.auftrag) fehlgeschlagen: \(text)")
@@ -67,21 +71,40 @@ extension AppController: RenderActions {
     /// Bild für einen Auftrag: Teile, Kamera und Szene wie im Viewer, Materialien vom Kernel.
     func renderBild(_ a: RenderAuftrag) async throws -> (png: Data, bild: CGImage, kamera: PBRRenderer.Kamera,
                                                          phasen: [String: Int]) {
-        guard let kamera = renderKamera(ansicht: a.ansicht, kamera: a.kamera, breite: a.width, hoehe: a.height) else {
+        let kulisse = Set(a.teile.filter(\.kulisse).map(\.name))
+        guard let kamera = renderKamera(ansicht: a.ansicht, kamera: a.kamera, breite: a.width, hoehe: a.height,
+                                        kulisse: kulisse) else {
             throw PBRRenderer.Fehler.rendern(a.kamera.map { "Kamera \($0) gibt es in der App nicht" }
                                              ?? "Keine sichtbaren Teile")
         }
         if !a.teile.isEmpty { letzteRenderMaterialien = a.teile }
         let materialien = Dictionary(a.teile.map { ($0.name, $0) }, uniquingKeysWith: { x, _ in x })
-        let teile = renderTeile(materialien: materialien, kamera: a.kamera)
-        let e = try await pbr.render(teile: teile, kamera: kamera, szene: a.szene, width: a.width, height: a.height)
+        // Freigestellt: nur das Produkt, ohne Kulisse (Boden, Wand)
+        let teile = renderTeile(materialien: materialien, kamera: a.kamera).filter {
+            !a.szene.transparent || !(kulisse.contains($0.name) || $0.name.hasPrefix("Kulisse/"))
+        }
+        // Der Viewport zeichnet sonst mit bis zu 120 Bildern/s weiter und belegt Hauptfaden und GPU; für die
+        // Dauer des Bildes anhalten (Kevin sieht höchstens ein kurzes Stehenbleiben)
+        let ansicht = viewport.mtkView
+        let warPausiert = ansicht?.isPaused ?? false
+        ansicht?.isPaused = true
+        defer { ansicht?.isPaused = warPausiert }
+        let e: PBRRenderer.Ergebnis
+        do {
+            e = try await pbr.render(teile: teile, kamera: kamera, szene: a.szene, width: a.width, height: a.height)
+        } catch PBRRenderer.Fehler.zeitueberschreitung {
+            // Einmal mit neuem Renderer wiederholen (der alte ist verworfen)
+            log(.warning, "Rendering \(a.auftrag): RealityKit antwortete nicht, zweiter Versuch mit neuem Renderer")
+            e = try await pbr.render(teile: teile, kamera: kamera, szene: a.szene, width: a.width, height: a.height)
+        }
         return (e.png, e.bild, kamera, e.phasen)
     }
 
     // MARK: RENDER_SCENE_REQ (Foto über Blender)
 
     func renderSzeneAntworten(_ a: RenderSzeneAnfrage) {
-        guard let kamera = renderKamera(ansicht: a.ansicht, kamera: a.kamera, breite: a.width, hoehe: a.height) else {
+        guard let kamera = renderKamera(ansicht: a.ansicht, kamera: a.kamera, breite: a.width, hoehe: a.height,
+                                        kulisse: Set(a.kulisse)) else {
             send(RenderSceneMessage(replyTo: a.id, ok: false,
                                     message: a.kamera.map { "Kamera \($0) gibt es in der App nicht" }
                                         ?? "Keine sichtbaren Teile"))
@@ -124,8 +147,10 @@ extension AppController: RenderActions {
     }
 
     /// Kamera für ein Rendering (mm, Z oben, perspektivisch): aktuelle Ansicht, Produktansicht, Standardansicht oder
-    /// eine Kamera aus model.py (posiert wie im Viewer).
-    func renderKamera(ansicht: String, kamera name: String?, breite: Int, hoehe: Int) -> PBRRenderer.Kamera? {
+    /// eine Kamera aus model.py (posiert wie im Viewer). Eingepasst wird auf das Produkt: Kulisse (Boden, Wand, vom
+    /// Kernel gemeldet oder in der Gruppe „Kulisse/“) bleibt im Bild, zählt aber nicht für den Ausschnitt.
+    func renderKamera(ansicht: String, kamera name: String?, breite: Int, hoehe: Int,
+                      kulisse: Set<String> = []) -> PBRRenderer.Kamera? {
         let aspekt = Float(breite) / Float(max(hoehe, 1))
         if let name {
             guard let c = cameras.camera(name) else { return nil }
@@ -133,7 +158,10 @@ extension AppController: RenderActions {
             return PBRRenderer.Kamera(position: s.position, ziel: s.pivot, oben: s.upVector, fovGrad: s.fieldOfView)
         }
         let sichtbar = renderSichtbar(kamera: nil)
-        guard let b = scene.worldBounds(of: sichtbar.map { ElementRef.part($0) }) else { return nil }
+        let produkt = sichtbar.filter { !kulisse.contains($0) && !$0.hasPrefix("Kulisse/") }
+        guard let b = scene.worldBounds(of: (produkt.isEmpty ? sichtbar : produkt).map { ElementRef.part($0) }) else {
+            return nil
+        }
         switch ansicht {
         case "aktuell":
             var s = viewport.camera

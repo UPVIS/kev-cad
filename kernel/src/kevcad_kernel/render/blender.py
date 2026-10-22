@@ -100,7 +100,7 @@ def szene_schreiben(ordner: Path, *, teile: list[dict[str, Any]], kamera: dict[s
         lo = np.minimum(lo, welt.min(axis=0))
         hi = np.maximum(hi, welt.max(axis=0))
         key = schluessel(t["pbr"])
-        materialien[key] = {k: v for k, v in t["pbr"].items() if k not in ("material", "quelle")}
+        materialien[key] = {k: v for k, v in t["pbr"].items() if k not in ("material", "quelle", "kulisse", "name")}
         eintraege.append({"name": t["name"], "netz": i, "matrix": t.get("matrix"), "material": key})
         dreiecke += len(tri)
     if not eintraege:

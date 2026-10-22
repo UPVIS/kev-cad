@@ -39,7 +39,8 @@ final class RenderTests: XCTestCase {
         XCTAssertEqual(a.width, 1920)
         XCTAssertEqual(a.height, 1080)
         XCTAssertFalse(a.vorschau)
-        XCTAssertEqual(a.teile.map(\.name), ["Rahmen/Rohr", "Rahmen/Halter (Druck)"])
+        XCTAssertEqual(a.teile.map(\.name), ["Rahmen/Rohr", "Rahmen/Halter (Druck)", "Kulisse/Boden"])
+        XCTAssertEqual(a.teile.map(\.kulisse), [false, false, true])
         let rohr = a.teile[0]
         XCTAssertEqual(rohr.oberflaeche, "eloxiert")
         XCTAssertEqual(rohr.metallisch, 1)
@@ -66,6 +67,7 @@ final class RenderTests: XCTestCase {
         XCTAssertEqual(s.id, "k-82")
         XCTAssertEqual(s.ansicht, "iso")
         XCTAssertEqual(s.width, 2400)
+        XCTAssertEqual(s.kulisse, ["Kulisse/Boden"])
         guard case .render(.status(let l)) = try Fixtures.message("render_status_laeuft.frame") else { return XCTFail() }
         XCTAssertEqual(l.zustand, .laeuft)
         XCTAssertEqual(l.fortschritt, 0.42, accuracy: 1e-9)
@@ -138,7 +140,8 @@ final class RenderTests: XCTestCase {
         // Seitenfläche (Normale Y): u = x, v = z → Schichtlinien quer zu Z
         XCTAssertEqual(PBRRenderer.quaderUV(SIMD3(10, 5, 3), SIMD3(0, 1, 0), laengs: 0), SIMD2(10, 3))
         // Deckfläche: v = 0 (keine Schichtlinien oben)
-        XCTAssertEqual(PBRRenderer.quaderUV(SIMD3(10, 5, 3), SIMD3(0, 0, 1), laengs: 0).y, 0)
+        XCTAssertEqual(PBRRenderer.quaderUV(SIMD3(10, 5, 3), SIMD3(0, 0, 1), laengs: 0, deckeFlach: true).y, 0)
+        XCTAssertEqual(PBRRenderer.quaderUV(SIMD3(10, 5, 3), SIMD3(0, 0, 1), laengs: 0).y, 5)  // Holz: Maserung oben
         // Teil längs Y: auf der Deckfläche wird y zu u (Faser längs)
         XCTAssertEqual(PBRRenderer.quaderUV(SIMD3(10, 5, 3), SIMD3(0, 0, 1), laengs: 1).x, 5)
         let g = Self.quader(SIMD3(0, 0, 0), SIMD3(20, 200, 10))

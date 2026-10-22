@@ -65,7 +65,8 @@
         "anisotropie": 0.0,
         "durchsichtig": 0.0,
         "material": "alu-6060",
-        "quelle": "katalog"
+        "quelle": "katalog",
+        "kulisse": false
       },
       {
         "name": "Rahmen/Halter (Druck)",
@@ -83,7 +84,26 @@
         "durchsichtig": 0.0,
         "schichthoehe": 0.2,
         "material": "pla",
-        "quelle": "teilfarbe"
+        "quelle": "teilfarbe",
+        "kulisse": false
+      },
+      {
+        "name": "Kulisse/Boden",
+        "basisfarbe": [
+          0.9,
+          0.9,
+          0.9
+        ],
+        "metallisch": 0.0,
+        "rauheit": 0.5,
+        "oberflaeche": "glatt",
+        "klarlack": 0.0,
+        "klarlack_rauheit": 0.1,
+        "anisotropie": 0.0,
+        "durchsichtig": 0.0,
+        "material": null,
+        "quelle": "ohne_material",
+        "kulisse": true
       }
     ],
     "path": "/Users/kevin/Documents/Kev CAD/Halter/output/renders/Halter_studio_schnell.png",
@@ -124,7 +144,8 @@
         "anisotropie": 0.0,
         "durchsichtig": 0.0,
         "material": "alu-6060",
-        "quelle": "katalog"
+        "quelle": "katalog",
+        "kulisse": false
       }
     ],
     "path": "/tmp/vorschau-schnell.png",
@@ -174,7 +195,10 @@
     "ansicht": "iso",
     "kamera": null,
     "width": 2400,
-    "height": 1600
+    "height": 1600,
+    "kulisse": [
+      "Kulisse/Boden"
+    ]
   },
   "render_scene": {
     "type": "RENDER_SCENE",

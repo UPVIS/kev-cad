@@ -74,9 +74,12 @@ Kennzeichnung: **belegt** (am SDK, am Quelltext oder durch eigene Messung auf di
 - Blender liefert acht HDRIs in `datafiles/studiolights/world/` mit: **„All HDRIs are licensed as CC0.“**, erstellt
   von Greg Zaal (Poly Haven), Quellen je Bild in `license.txt` (z. B. Courtyard: polyhaven.com/a/courtyard, Interior:
   polyhaven.com/a/hotel_room). **belegt** (Datei auf diesem Mac, nichts heruntergeladen)
-- Mitgeliefert werden zwei davon, als Radiance-HDR umgewandelt (1024 × 512): `innenraum.hdr` (Interior) für
-  „Werkstatt“ und `hof.hdr` (Courtyard) für „Draußen“, mit `LIZENZ.md` und Quelle. Das Studio ist eine selbst
-  erzeugte Umgebung (Softboxen auf neutralem Grau), ohne fremde Lizenz.
+- Mitgeliefert werden drei davon, als Radiance-HDR umgewandelt (1024 × 512), mit `LIZENZ.md` und Quelle:
+  `halle.hdr` (Studio-Halle mit Lampen, studio_small_01) für „Werkstatt“, `garten.hdr` (ninomaru_teien) für
+  „Draußen“, `innenraum.hdr` (hotel_room) für „Wohnraum“. „Courtyard“ fiel durch (ein Carport mit Hund im Bild). Das
+  Studio ist eine selbst erzeugte Umgebung (Softboxen auf neutralem Grau), ohne fremde Lizenz.
+- Die 1K-Bilder sind als Hintergrund grob; beide Wege zeigen den Hintergrund deshalb leicht unscharf (Blender:
+  Richtung der Kamerastrahlen verrauscht, RealityKit: verkleinerte, weichgezeichnete Umgebung).
 - Eine echte Werkstatt-HDRI (z. B. Poly Haven, CC0) wäre schöner. Laden erst nach Kevins Freigabe; Kevin kann jede
   eigene `.hdr` über `umgebung=` oder den Ordner `~/Library/Application Support/de.upvis.kevcad/umgebungen/` nutzen.
 
@@ -91,7 +94,7 @@ Kennzeichnung: **belegt** (am SDK, am Quelltext oder durch eigene Messung auf di
 | R5 | **Farbe aus model.py hat Vorrang**, wenn sie von der Katalogfarbe des Materials abweicht (farbiges PLA, eloxiert schwarz) | So bleibt das Bild bei Kevins Farbwahl; Glanz und Metall kommen weiter aus dem Material |
 | R6 | **Oberflächen prozedural:** Blender mit Knoten (Rauschen, Wellen, Voronoi), RealityKit mit kleinen erzeugten Texturen über Quaderprojektion (Normalen für Schichten und Bürstung, Farbe für Holz) | Keine Texturdateien, keine Lizenzfragen, Netze ohne UV reichen |
 | R7 | **Schatten in RealityKit über drei Durchgänge** (siehe Recherche), weichgezeichnet | Einziger Weg zu einem Schatten auf einem einheitlichen oder durchsichtigen Hintergrund |
-| R8 | **Szenen:** `studio` (heller Hintergrund, weicher Schatten, eigene Softbox-Umgebung), `werkstatt` (Innenraum-HDRI), `draussen` (Hof-HDRI), `freigestellt` (Studio-Licht, durchsichtiger Hintergrund, Schatten als halbdurchsichtiges Schwarz) | Kevins Liste; HDRIs CC0 aus Blender |
+| R8 | **Szenen:** `studio` (heller Hintergrund, weicher Schatten, eigene Softbox-Umgebung), `werkstatt` (Halle mit Lampen, HDRI), `draussen` (Garten, HDRI), `wohnraum` (Innenraum, HDRI), `freigestellt` (Studio-Licht, durchsichtiger Hintergrund, Schatten als halbdurchsichtiges Schwarz, ohne Kulisse) | Kevins Liste; HDRIs CC0 aus Blender |
 | R9 | **Kamera:** aktuelle Ansicht (Vorgabe), Standardansicht, `produkt` (3/4-Ansicht leicht von oben, perspektivisch, eingepasst) oder eine Kamera aus Phase 5 (posiert wie im Viewer) | Kevin bestimmt den Ausschnitt im Viewer, der Agent kann ohne Viewer eine gute Ansicht wählen |
 | R10 | **Blender nur einzeln, mit `nice` und Zeitlimit**, Fortschritt aus der Ausgabe von Cycles (`Sample n/m`), Arbeitsdateien werden nach dem Lauf gelöscht | 16 GB, zwei weitere Stränge, Platte knapp |
 | R11 | **MCP `render` wartet bei „schnell“, bei „foto“ nicht** (Auftrag läuft im Hintergrund, `render(auftrag="R-3")` fragt den Stand ab, `warten_s` wartet höchstens so lange) | Ein Foto dauert Minuten; der Agent soll weiterarbeiten können |
@@ -115,12 +118,54 @@ Dialog „Rendern …“ ──RENDER_START──▶ Kernel ◀── MCP render
 
 1. Plan (diese Datei), Recherche mit Probe. **erledigt**
 2. Katalog: `render` für alle mitgelieferten Materialien, KATALOG.md, Ableitung im Kernel (`render/materialien.py`).
+   **erledigt**
 3. Kernel: `render/` (Szenen, Größen, Ansichten, Blender-Szene, Blender-Skript, Laufzeit), MCP `render`,
-   Protokoll mit Testdateien (`tools/make_render_fixtures.py`), Tests.
+   Protokoll mit Testdateien (`tools/make_render_fixtures.py`), Tests. **erledigt**
 4. App-Kern: `Render/` (Nachrichten, RealityKit-Renderer, Umgebungen, Steuerung), Tests gegen die Testdateien.
+   **erledigt**
 5. Oberfläche: Dialog „Rendern …“ mit Vorschau, Fortschritt, Finder und Teilen; Baustein „Produktbild“.
-6. Nachweis am Kugelschieber (Kopie): Studio schnell und Foto, Sekunden je Bild und Speicher.
+   **erledigt**, Selbsttest `KEVCAD_SELFTEST=render`
+6. Nachweis am Kugelschieber (Kopie): Studio schnell und Foto, Sekunden je Bild und Speicher. **erledigt**
 
-## Nachweis
+## Abnahme (22.10.2026, Testvariante „Kev CAD Test r7“, MacBook M2 Pro, 16 GB)
 
-Siehe Abschnitt „Abnahme“ unten (wird mit den Messwerten gefüllt).
+Kugelschieber Variante B (Kopie, 134 Teile, 150 464 Dreiecke, davon zwei Kulisse-Böden 21 × 6 m), Studio,
+Produktansicht, über MCP `render` gegen die laufende Testvariante:
+
+| Auftrag | Größe | Zeit | Phasen |
+|---|---|---|---|
+| schnell, erstes Bild nach dem Start | 960 × 540 | 2,2 s | Netze 0,52 s, Umgebung 0,29 s, Rendern 0,15 s, PNG 0,05 s |
+| schnell, Studio | 1920 × 1080 | 0,7 s | Netze (Zwischenspeicher) 0,21 s, Rendern 0,17 s, PNG 0,11 s |
+| schnell, Studio | 3840 × 2160 | 1,4 s | Rendern 0,32 s, PNG 0,54 s |
+| schnell, Freigestellt | 1920 × 1080 | 0,9 s | |
+| schnell, Draußen | 1920 × 1080 | 1,1 s | Umgebung (HDR laden) 0,22 s |
+| schnell, Werkstatt | 1920 × 1080 | 2,3 s | |
+| Foto (Blender Cycles, GPU) | 1920 × 1080 | 32,6 s | Szene schreiben 0,02 s, Blender 32,4 s, 160 Proben mit Rauschgrenze und Entrauschen |
+
+Dazu Foto freigestellt 960 × 540: 15 s (132 Teile, ohne Kulisse). Die Zeiten oben stammen aus einem Lauf bei
+mäßiger Last. Unter Volllast (Lastmittel um 70 durch parallele Stränge mit Xcode und iOS-Simulator) lief eine Reihe
+von zehn schnellen Aufträgen (Kamera aus model.py, Produkt, iso, vorn, aktuell, Wohnraum, Freigestellt, oben, 4K)
+vollständig durch, brauchte aber 7 bis 36 s je Bild; der größte Teil war Warten auf den Hauptfaden (Phase `start`).
+Deshalb hält die App den Viewport während eines Bildes an, jedes RealityKit-Bild hat eine Frist von 12 s (danach
+neuer Renderer und ein zweiter Versuch), und der Kernel wartet bei „schnell“ 60 s plus 10 s je Megapixel.
+
+Selbsttest des Dialogs (`KEVCAD_SELFTEST=render`, ohne Maus und Tastatur): Vorschau Studio, Wechsel auf Freigestellt
+und Instagram hochkant, Rendern, PNG 1080 × 1350 mit Alpha, „letztes Bild“ im Dialog – bestanden.
+
+Speicher (höchste RSS während aller Aufträge): App 568 MB, Blender 1 748 MB. Bei den Probeszenen meldete
+`/usr/bin/time` für Blender rund 5 GB „peak memory footprint“ (einschließlich GPU-Speicher und Shader-Übersetzung);
+deshalb läuft nur ein Foto-Auftrag zur Zeit, und unter 20 % freiem Speicher wartet er bis zu 2 min.
+
+Tests: Kernel 889 grün, 1 übersprungen (echter Blender-Lauf, mit `KEVCAD_BLENDER_TEST=1` grün); `test_render.py`
+16 Fälle. KevCADCore: `RenderTests` (8) und die Export-Tests grün.
+
+### Offene Punkte
+
+- **Schatten im Schnellbild** sind weicher und schwächer als im Foto (RealityKit hat keine Flächenlichter und keine
+  Umgebungsverdeckung); bei Kulisse-Böden fällt der Schatten direkt aus RealityKit auf den Boden.
+- **Werkstatt** ist vorerst eine dunkle Studiohalle; eine echte Werkstatt-HDRI braucht Kevins Freigabe zum Laden.
+- **Schichtlinien** liegen quer zur Welt-Z-Achse des Modells, nicht zur Druckausrichtung des Teils.
+- **Parallele Projektion** wird beim Rendern perspektivisch (gleicher Ausschnitt am Drehpunkt).
+- **Von Hand prüfen:** Dialog mit echten Klicks (Teilen-Menü, Finder), Fokus und Tastenkürzel ⌥⌘R.
+- **Selten meldet RealityKit ein Bild nicht fertig** (zweimal beobachtet, Ursache offen); abgefangen über Frist und
+  neuen Renderer. Der Viewport zeichnet bei großen Modellen dauernd und belegt den Hauptfaden (unabhängig von Phase 7).
