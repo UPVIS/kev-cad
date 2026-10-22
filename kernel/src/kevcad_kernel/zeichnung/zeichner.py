@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import struct
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,9 +23,9 @@ from kevcad_kernel.zeichnung import bezuege as bz
 from kevcad_kernel.zeichnung import blatt as bl
 from kevcad_kernel.zeichnung import darstellung as dr
 from kevcad_kernel.zeichnung import dokument as dok
-from kevcad_kernel.zeichnung.ansichten import NAMEN, RASTER, Blick, blick
+from kevcad_kernel.zeichnung.ansichten import RASTER, Blick, blick
 from kevcad_kernel.zeichnung.bemassung import ansichten_planen, auto_masse, auto_masse_gruppe
-from kevcad_kernel.zeichnung.geo2d import Belegung, Rechteck, clip_bereiche, rechteck_von, textbox, textbreite
+from kevcad_kernel.zeichnung.geo2d import Belegung, Rechteck, clip_bereiche, textbox, textbreite
 from kevcad_kernel.zeichnung.hausregeln import Hausregeln, aktiv, setze, zuruecksetzen
 from kevcad_kernel.zeichnung.merkmale import Merkmale, zahl
 from kevcad_kernel.zeichnung.projektion import LINIENARTEN, Projektion, mittellinien, projiziere
@@ -71,6 +70,7 @@ class _Ansicht:
     mitte_linien: list[np.ndarray] = field(default_factory=list)  # Modell-2D, nach der Maßstabswahl
     zusatz: dict[str, list[np.ndarray]] = field(default_factory=dict)  # Modell-2D je Linienart (Schnittverlauf …)
     schraffur_ringe: list[list[np.ndarray]] = field(default_factory=list)  # Schnittflächen je Teil (Modell-2D)
+    geschnitten: dict[str, Any] = field(default_factory=dict)  # Schnitt: verbleibende Körper je Teil
 
     @property
     def id(self) -> str:
@@ -214,8 +214,12 @@ def _rechne(blatt_in: dict[str, Any], szene: Szene, stand_extra: str) -> Ergebni
     _schriftfeld_fuellen(blatt, szene, teile, art)
     # Ansichten
     if blatt["auto"]["ansichten"] and not blatt["ansichten"]:
-        plan = ansichten_planen(merkmale[teile[0].name], "teil") if art == "teil" and teile and \
-            teile[0].name in merkmale else ansichten_planen(gruppe or merkmale.get(""), art) if teile else []
+        if art == "teil" and teile and teile[0].name in merkmale:
+            from kevcad_kernel.zeichnung.merkmale import _Klassifizierer
+
+            plan = ansichten_planen(merkmale[teile[0].name], "teil", _Klassifizierer(teile[0].form.wrapped).innen)
+        else:
+            plan = ansichten_planen(gruppe or merkmale.get(""), art) if teile else []
         blatt["ansichten"] = plan
     ansichten = _projektionen(blatt, teile, system, art)
     # Maße
@@ -373,6 +377,11 @@ def _projektionen(blatt: dict[str, Any], teile: list[Teil], system: Teilsystem, 
 
 
 def _mittellinien(v: _Ansicht, teile: list[Teil], system: Teilsystem) -> None:
+    geschnitten = getattr(v, "geschnitten", None)
+    if v.art == "schnitt" and geschnitten and v.e.get("mittellinien", True):
+        formen = [(n, f.wrapped) for n, f in geschnitten.items()]
+        v.mitte_linien = mittellinien(formen, v.blick, ueberstand=2.5 / v.s)
+        return
     if not v.e.get("mittellinien", True) or not v.blick.orthogonal or v.art in ("schnitt", "einzelheit"):
         v.mitte_linien = []
         return
@@ -392,7 +401,6 @@ def _auto_zusammenfuehren(blatt: dict[str, Any], neu: list[dict[str, Any]]) -> N
     unterdrueckt = list(blatt.get("unterdrueckt") or [])
     neu = [n for n in neu if not any(passt_unterdrueckt(u, n) for u in unterdrueckt)]
     weg: set[str] = set()
-    alt_auto = {m["schluessel"]: m for m in alt if m.get("quelle") == "auto" and m.get("schluessel")}
     ids = {m.get("id") for m in alt if m.get("id")}
     erg: list[dict[str, Any]] = []
     neu_nach = {n["schluessel"]: n for n in neu if n["schluessel"] not in weg}
@@ -522,7 +530,7 @@ def _vorbereiten(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], merkmale
         elif a == "winkel":
             form = "winkel"
         elif a == "koordinaten":
-            form = "text"
+            form = "koordinaten"
         else:
             form = "hinweis"
         if form == "linear" and len(els) < 2:
@@ -588,6 +596,11 @@ def _richtung_auto(m: dict[str, Any], els: list[bz.Element], v: _Ansicht, system
 
 
 def _seite_waehlen(a: _Arbeit, system: Teilsystem, richtung: str) -> str:
+    if a.versatz is not None and (a.m.get("fest") or a.m.get("quelle") != "auto"):
+        # gesetzte Lage (Kevin, Agent): die Seite folgt dem Vorzeichen des Versatzes
+        if richtung == "x":
+            return "oben" if a.versatz > 0 else "unten"
+        return "rechts" if a.versatz > 0 else "links"
     if a.seite in ("unten", "oben", "links", "rechts"):
         s = a.seite
         if richtung == "x" and s in ("links", "rechts"):
@@ -824,6 +837,26 @@ def _kleinstes_merkmal(merk: Merkmale | None) -> float | None:
     return min(werte) if werte else None
 
 
+def _tabelle_rechts(breite: float, hoehe: float, unten: float, sf: Rechteck, z: Rechteck) -> Rechteck:
+    """Tabelle rechtsbündig über dem Schriftfeld; reicht sie über die halbe Höhe, rückt sie um 5,5 mm nach links,
+    damit die rechte Mittenmarke (5 mm in die Zeichenfläche, ISO 5457) frei bleibt."""
+    x1 = sf.x1
+    if unten < (z.y0 + z.y1) / 2 < unten + hoehe:
+        x1 -= 5.5
+    return Rechteck(x1 - breite, unten, x1, unten + hoehe)
+
+
+def _bohrungen_titel(a: _Arbeit, ansichten: dict[str, _Ansicht]) -> str:
+    """Titel der Bohrungstabelle; die Ansicht wird nur genannt, wenn mehrere Ansichten Bohrungen als Kreis zeigen."""
+    basis = "Bohrungen (X, Y ab Ecke unten links)"
+    v = a.v
+    if v is None or len([x for x in ansichten.values() if x.blick.orthogonal]) <= 1:
+        return basis
+    name = v.titel or {"vorn": "Vorderansicht", "oben": "Draufsicht", "links": "Seitenansicht von links",
+                       "rechts": "Seitenansicht von rechts", "unten": "Untersicht", "hinten": "Rückansicht"}.get(v.art)
+    return f"{basis}, {name}" if name else basis
+
+
 def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list[_Arbeit], merk: Merkmale | None,
              system: Teilsystem, art: str, szene: Szene, teile: list[Teil], fmt: str, ausr: str, s: float,
              stueckliste: bool, erzwingen: bool = False) -> dict[str, Any] | None:
@@ -848,10 +881,21 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
         if oben_rand + hoehe > z.y1:
             if not erzwingen:
                 return None
-        r = Rechteck(sf.x1 - sum(sp.breite for sp in bl.STUECKLISTE_SPALTEN), oben_rand, sf.x1, oben_rand + hoehe)
+        r = _tabelle_rechts(sum(sp.breite for sp in bl.STUECKLISTE_SPALTEN), hoehe, oben_rand, sf, z)
         reserviert.append(r.erweitert(1.0))
         tabellen.append({"art": "stueckliste", "rechteck": r, "zeilen": zeilen})
     # Bohrungstabelle bei vielen Bohrungen (Einzelteile)
+    for a in arbeit:
+        if a.form == "koordinaten" and a.v is not None:
+            zeilen_b = koordinaten_zeilen(a, system)
+            hoehe_b = (len(zeilen_b) + 2) * 5.5
+            r = _tabelle_rechts(sum(sp.breite for sp in bl.BOHRUNGEN_SPALTEN), hoehe_b, oben_rand, sf, z)
+            if r.y1 > z.y1 and not erzwingen:
+                return None
+            reserviert.append(r.erweitert(1.0))
+            tabellen.append({"art": "bohrungen", "rechteck": r, "zeilen": zeilen_b,
+                             "titel": _bohrungen_titel(a, ansichten)})
+            oben_rand = r.y1 + 2.0
     # Ansichten: Maßstab setzen, Brüche, Platzbedarf je Seite
     lagen: dict[str, tuple[tuple[float, float], float]] = {}
     brueche: dict[str, list[tuple[float, float]]] = {}
@@ -870,7 +914,7 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
             if min(w, h) >= 2.2 * (tw + 10.0):
                 continue  # große Ansicht: die Angabe findet innen Platz
             hinweis_platz[a.v.id] = max(hinweis_platz.get(a.v.id, 0.0), tw + 14.0)
-    raster = [v for v in ansichten.values() if v.art in RASTER and not v.e.get("fest")]
+    raster = [v for v in ansichten.values() if _raster_art(v) in RASTER and not v.e.get("fest")]
     frei = [v for v in ansichten.values() if v not in raster]
 
     def platz(v: _Ansicht) -> tuple[float, float, float, float]:
@@ -888,7 +932,7 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     spalten: dict[int, list[_Ansicht]] = {}
     zeilen_: dict[int, list[_Ansicht]] = {}
     for v in raster:
-        c, r_ = RASTER[v.art]
+        c, r_ = RASTER[_raster_art(v)]
         spalten.setdefault(c, []).append(v)
         zeilen_.setdefault(r_, []).append(v)
     sp_geo = {}
@@ -913,7 +957,7 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     block_h = y - ABSTAND_ANSICHTEN if zeilen_ else 0.0
     blocks: list[tuple[str, Rechteck, dict[str, tuple[float, float]]]] = []
     if raster:
-        rel = {v.id: (sp_geo[RASTER[v.art][0]], ze_geo[RASTER[v.art][1]]) for v in raster}
+        rel = {v.id: (sp_geo[RASTER[_raster_art(v)][0]], ze_geo[RASTER[_raster_art(v)][1]]) for v in raster}
         blocks.append(("raster", Rechteck(0, -block_h, block_w, 0), rel))
     belegt = list(reserviert)
     platzierte: dict[str, tuple[float, float]] = {}
@@ -974,6 +1018,13 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     return {"lagen": lagen, "reserviert": reserviert, "tabellen": tabellen, "brueche": brueche,
             "weggelassen": weggelassen, "fuellung": gesamt / (flaeche.breite * flaeche.hoehe), "breiter": breiter,
             "flaeche": flaeche}
+
+
+def _raster_art(v: _Ansicht) -> str:
+    """Platz im Raster der Projektionsmethode 1: ein Schnitt in Blickrichtung einer Grundansicht steht an deren Stelle."""
+    if v.art == "schnitt":
+        return str((v.e.get("schnitt") or {}).get("blick") or "")
+    return v.art
 
 
 def _eigener_faktor(v: _Ansicht, s: float) -> float:
@@ -1092,6 +1143,11 @@ def _masse_zeichnen(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbei
         if g is not None:
             a.grafik = g
             _belege(beleg, g)
+    # 3b. Koordinatenbemaßung: Kennzeichen an den Bohrungen (Tabelle steht im Blatt, siehe _dekoration)
+    for a in arbeit:
+        if a.form == "koordinaten" and a.v is not None and a.v.id in ansichten:
+            a.grafik = _koordinaten_grafik(a, system)
+            _belege(beleg, a.grafik)
     # 4. verwaiste Maße an der letzten bekannten Stelle
     for a in arbeit:
         if a.form == "verwaist":
@@ -1110,6 +1166,42 @@ def _masse_zeichnen(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbei
     for a in arbeit:
         out.append((a.m, a.grafik))
     return out
+
+
+def koordinaten_zeilen(a: _Arbeit, system: Teilsystem) -> list[list[Any]]:
+    """Zeilen der Bohrungstabelle: Zeichen, X, Y (ab Ecke unten links der Ansicht, Messwerte aus dem Modell), Angabe.
+    Gleiche Bohrungen bekommen denselben Buchstaben (A1, A2 …)."""
+    v = a.v
+    assert v is not None
+    ux = _richtung3(v, "x", system)
+    uy = _richtung3(v, "y", system)
+    ox, oy = a.els[0], a.els[1]
+    zeilen = []
+    buchstaben: dict[str, str] = {}
+    zaehler: dict[str, int] = {}
+    for el in a.els[2:]:
+        text = el.merkmal.text if el.merkmal is not None else "Ø" + zahl(2 * (el.r or 0))
+        b = buchstaben.setdefault(text, "ABCDEFGHJKLMNPRSTUVWXYZ"[min(len(buchstaben), 22)])
+        zaehler[b] = zaehler.get(b, 0) + 1
+        x = abs(float((el.p - ox.p) @ ux))
+        y = abs(float((el.p - oy.p) @ uy))
+        zeilen.append([f"{b}{zaehler[b]}", zahl(x), zahl(y), text])
+    return zeilen
+
+
+def _koordinaten_grafik(a: _Arbeit, system: Teilsystem) -> dr.MassGrafik:
+    v = a.v
+    assert v is not None
+    zeilen = koordinaten_zeilen(a, system)
+    g = dr.MassGrafik(a.m["id"], text="", wert=None)
+    h = 2.5
+    for el, z in zip(a.els[2:], zeilen):
+        c = v.blatt3(system.lokal(el.p))
+        r = float(el.r or 0.0) * v.s
+        lage = (float(c[0] + r * 0.7 + 0.8), float(c[1] + r * 0.7 + 0.8))
+        g.weitere_texte.append({"text": z[0], "lage": [round(lage[0], 3), round(lage[1], 3)], "hoehe": h,
+                                "winkel": 0.0, "anker": "links"})
+    return g
 
 
 def _belege(beleg: Belegung, g: dr.MassGrafik) -> None:
@@ -1253,6 +1345,10 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
             r = t["rechteck"]
             tg, _ = bl.tabelle(r.x0, r.y0, bl.STUECKLISTE_SPALTEN, t["zeilen"])
             g.dazu(tg)
+        elif t["art"] == "bohrungen":
+            r = t["rechteck"]
+            tg, _ = bl.tabelle(r.x0, r.y0, bl.BOHRUNGEN_SPALTEN, t["zeilen"], titel=t.get("titel"))
+            g.dazu(tg)
     # Ansichtstitel: Schnitte, Einzelheiten, eigener Maßstab
     s_blatt = bl.massstab_faktor(blatt["massstab"])
     for v in ansichten.values():
@@ -1276,8 +1372,10 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
             pf = pf / (np.linalg.norm(pf) or 1.0)
             u = (b - a) / (np.linalg.norm(b - a) or 1.0)
             for p, s_ in ((a, -1.0), (b, 1.0)):
-                ende = p + u * s_ * 0.0
-                g.linie("sichtbar", tuple(ende - u * s_ * 6.0), tuple(ende))
+                # Schnittverlauf (ISO 128-44): breite Enden 4 mm über den Umriss hinaus und 1 mm hinein, Pfeile in
+                # Blickrichtung am äußeren Ende; Maße stehen erst ab 10 mm, die Kennbuchstaben bleiben also frei
+                ende = p + u * s_ * 4.0
+                g.linie("sichtbar", tuple(ende), tuple(p - u * s_ * 1.0))
                 spitze = ende + pf * 6.0
                 g.linie("duenn", tuple(ende), tuple(spitze))
                 g.flaechen.append(np.array(dr.pfeil(spitze, pf)["polygon"]))

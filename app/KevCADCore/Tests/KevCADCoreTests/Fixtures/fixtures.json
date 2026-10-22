@@ -1029,7 +1029,7 @@
      "id": "v1",
      "art": "vorn",
      "linien": {
-      "sichtbar": 7,
+      "sichtbar": 6,
       "verdeckt": 0,
       "mitte": 10,
       "schnitt": 0,
@@ -1054,7 +1054,7 @@
      }
     }
    ],
-   "payload_bytes": 2660,
+   "payload_bytes": 2936,
    "erster_punkt": [
     73.88,
     89.23
@@ -1086,7 +1086,7 @@
     "30",
     "970"
    ],
-   "payload_bytes": 11500
+   "payload_bytes": 4544
   },
   "docs": {
    "run": 7,

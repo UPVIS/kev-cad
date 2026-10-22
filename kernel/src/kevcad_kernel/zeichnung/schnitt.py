@@ -106,7 +106,14 @@ def schnittansicht(e: dict[str, Any], formen: dict[str, Any], schluessel: dict[s
     normale = np.asarray(ebene.get("normale") or [0, 1, 0], dtype=float)
     normale = normale / (np.linalg.norm(normale) or 1.0)
     oben = (0, 1, 0) if abs(normale[2]) > 0.9 else (0, 0, 1)
-    b = aus_richtung(normale, oben, "schnitt")
+    if sp.get("blick"):
+        from kevcad_kernel.zeichnung.ansichten import blick as _blick
+
+        g = _blick(sp["blick"])
+        b = aus_richtung(g.d, g.oben, "schnitt") if abs(float(np.dot(g.d, normale))) > 1 - 1e-6 else \
+            aus_richtung(normale, oben, "schnitt")
+    else:
+        b = aus_richtung(normale, oben, "schnitt")
     geschnitten: dict[str, Any] = {}
     ringe_je_teil: list[list[np.ndarray]] = []
     for name, f in formen.items():
@@ -124,6 +131,7 @@ def schnittansicht(e: dict[str, Any], formen: dict[str, Any], schluessel: dict[s
                                for n in geschnitten})
     v = _Ansicht(e, b, p, titel=e.get("titel"))
     v.schraffur_ringe = ringe_je_teil
+    v.geschnitten = geschnitten
     # Schnittverlauf in der Ausgangsansicht (Modell-2D der Ausgangsansicht)
     von = ansichten.get(sp.get("von"))
     if von is not None:
@@ -135,8 +143,10 @@ def schnittansicht(e: dict[str, Any], formen: dict[str, Any], schluessel: dict[s
             c2 = bv.projiziere(punkt)
             u2 = bv.projiziere(u)
             u2 = u2 / (np.linalg.norm(u2) or 1.0)
-            halb = 0.5 * math.hypot(x1 - x0, y1 - y0) + 3
-            a, bb = c2 - u2 * halb, c2 + u2 * halb
+            # Spur genau über den Umriss der Ausgangsansicht; der Überstand kommt in Blatt-mm beim Zeichnen dazu
+            ecken = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=float)
+            t = (ecken - c2[:2]) @ u2[:2]
+            a, bb = c2 + u2 * float(t.min()), c2 + u2 * float(t.max())
             von.zusatz.setdefault("schnitt", []).append(np.array([a, bb]))
             von.e["_schnittverlauf"] = von.e.get("_schnittverlauf", []) + [
                 {"name": sp.get("name", "A"), "a": a.tolist(), "b": bb.tolist(),
