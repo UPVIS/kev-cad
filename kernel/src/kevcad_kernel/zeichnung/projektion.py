@@ -197,45 +197,87 @@ def _kanten(compound: Any, toleranz: float) -> list[Polylinie]:
     return out
 
 
+def _strecken(compound: Any, toleranz: float) -> np.ndarray:
+    """Kanten als Streckenfeld (n, 2, 2) ohne Umweg über einzelne Felder: das Netz liefert Tausende gerader Stücke,
+    die nur ihre Endpunkte brauchen (Kurven werden wie in ``kante_polylinie`` unterteilt)."""
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepAdaptor import BRepAdaptor_Curve
+    from OCP.GeomAbs import GeomAbs_CurveType
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    werte: list[float] = []
+    kurven: list[np.ndarray] = []
+    if compound is None or compound.IsNull():
+        return np.zeros((0, 2, 2))
+    gerade = GeomAbs_CurveType.GeomAbs_Line
+    exp = TopExp_Explorer(compound, TopAbs_EDGE)
+    while exp.More():
+        e = TopoDS.Edge(exp.Current())
+        exp.Next()
+        if BRep_Tool.Degenerated_s(e):
+            continue
+        try:
+            c = BRepAdaptor_Curve(e)
+        except Exception:  # noqa: BLE001
+            continue
+        if c.GetType() == gerade:
+            p, q = c.Value(c.FirstParameter()), c.Value(c.LastParameter())
+            werte += (p.X(), p.Y(), q.X(), q.Y())
+        else:
+            pl = kante_polylinie(e, toleranz)
+            if pl is not None:
+                kurven.append(np.stack([pl[:-1], pl[1:]], axis=1))
+    S = np.asarray(werte, dtype=float).reshape(-1, 2, 2)
+    if kurven:
+        S = np.concatenate([S, *kurven])
+    return S
+
+
 def verbinde(linien: list[Polylinie], tol: float = 1e-6) -> list[Polylinie]:
     """Polylinien mit gemeinsamen Endpunkten zu längeren Zügen verbinden (weniger Daten, durchgehende Strichmuster)."""
     if len(linien) < 2:
         return list(linien)
     rest = [np.asarray(pl, dtype=float) for pl in linien]
     scale = 1.0 / max(tol, 1e-12)
-
-    def k(p: np.ndarray) -> tuple[int, int]:
-        return (int(round(p[0] * scale)), int(round(p[1] * scale)))
-
+    E = np.array([(pl[0], pl[-1]) for pl in rest], dtype=float)
+    K = np.round(E * scale).astype(np.int64).tolist()
+    ka = [tuple(x[0]) for x in K]
+    ke = [tuple(x[1]) for x in K]
     enden: dict[tuple[int, int], list[int]] = {}
-    for i, pl in enumerate(rest):
-        enden.setdefault(k(pl[0]), []).append(i)
-        enden.setdefault(k(pl[-1]), []).append(i)
+    for i in range(len(rest)):
+        enden.setdefault(ka[i], []).append(i)
+        enden.setdefault(ke[i], []).append(i)
     benutzt = [False] * len(rest)
     out: list[Polylinie] = []
     for i in range(len(rest)):
         if benutzt[i]:
             continue
         benutzt[i] = True
-        zug = [p for p in rest[i]]
+        vorn: list[np.ndarray] = []
+        hinten: list[np.ndarray] = []
         for richtung in (1, 0):  # erst am Ende verlängern, dann am Anfang
+            p = ke[i] if richtung else ka[i]
             while True:
-                p = zug[-1] if richtung else zug[0]
-                kand = [j for j in enden.get(k(p), []) if not benutzt[j]]
-                if len(enden.get(k(p), [])) > 2 or not kand:  # Verzweigung: hier nicht verbinden
+                an = enden.get(p, [])
+                if len(an) > 2:  # Verzweigung: hier nicht verbinden
+                    break
+                kand = [j for j in an if not benutzt[j]]
+                if not kand:
                     break
                 j = kand[0]
                 benutzt[j] = True
-                pl = rest[j]
-                if k(pl[0]) == k(p):
-                    seg = list(pl[1:])
+                if ka[j] == p:
+                    seg, p = rest[j][1:], ke[j]
                 else:
-                    seg = list(pl[::-1][1:])
+                    seg, p = rest[j][::-1][1:], ka[j]
                 if richtung:
-                    zug += seg
+                    hinten.append(seg)
                 else:
-                    zug = seg[::-1] + zug
-        out.append(np.asarray(zug, dtype=float))
+                    vorn.append(seg[::-1])
+        teile = vorn[::-1] + [rest[i]] + hinten
+        out.append(np.concatenate(teile) if len(teile) > 1 else rest[i])
     return out
 
 
@@ -413,10 +455,15 @@ def vereinfache(pl: Polylinie, tol: float) -> Polylinie:
 def _strecken_vereinen(linien: list[Polylinie], tol: float) -> list[Polylinie]:
     """Polylinien in Strecken zerlegen, doppelte entfernen und kollineare, sich überlappende oder berührende Strecken
     zu einer vereinen (das Netz liefert Kanten in vielen kurzen und mehrfach übereinanderliegenden Stücken)."""
-    segs = [np.stack([pl[:-1], pl[1:]], axis=1) for pl in linien if len(pl) >= 2]
-    if not segs:
+    if isinstance(linien, np.ndarray):
+        S = linien.reshape(-1, 2, 2)
+    else:
+        segs = [np.stack([pl[:-1], pl[1:]], axis=1) for pl in linien if len(pl) >= 2]
+        if not segs:
+            return []
+        S = np.concatenate(segs)
+    if len(S) == 0:
         return []
-    S = np.concatenate(segs)
     d = S[:, 1] - S[:, 0]
     L = np.hypot(d[:, 0], d[:, 1])
     S, d, L = S[L > tol * 0.1], d[L > tol * 0.1], L[L > tol * 0.1]
@@ -434,32 +481,32 @@ def _strecken_vereinen(linien: list[Polylinie], tol: float) -> list[Polylinie]:
     t0 = np.einsum("ij,ij->i", a, u)
     t1 = np.einsum("ij,ij->i", b, u)
     order = np.lexsort((t0, abst, winkel))
-    out: list[Polylinie] = []
-    i = 0
+    w, o, s0, s1 = winkel[order], abst[order], t0[order], t1[order]
     N = len(order)
-    while i < N:
-        j = i
-        w0, o0 = winkel[order[i]], abst[order[i]]
-        while j < N and winkel[order[j]] == w0 and abst[order[j]] == o0:
-            j += 1
-        idx = order[i:j]
-        uu = u[idx[0]]
-        nn = n[idx[0]]
-        off = float(np.mean(np.einsum("ij,j->i", a[idx], nn)))
-        lo, hi = None, None
-        for k in idx:
-            s0, s1 = float(t0[k]), float(t1[k])
-            if lo is None:
-                lo, hi = s0, s1
-            elif s0 <= hi + tol:
-                hi = max(hi, s1)
-            else:
-                out.append(np.array([uu * lo + nn * off, uu * hi + nn * off]))
-                lo, hi = s0, s1
-        if lo is not None:
-            out.append(np.array([uu * lo + nn * off, uu * hi + nn * off]))
-        i = j
-    return out
+    # Gruppen: gleiche Richtung und gleiche Gerade, darin nach Anfang sortiert
+    neu_g = np.ones(N, dtype=bool)
+    neu_g[1:] = (w[1:] != w[:-1]) | (o[1:] != o[:-1])
+    gid = np.cumsum(neu_g) - 1
+    g_anf = np.flatnonzero(neu_g)
+    # laufendes Maximum der Enden je Gruppe (Gruppen um je eine Spannweite versetzt, damit ein Durchlauf reicht);
+    # eine neue Strecke beginnt, wo der Anfang mehr als tol hinter dem bisher erreichten Ende liegt
+    s_min = float(s1.min())
+    breite = float(s1.max()) - s_min + 1.0 + 2.0 * tol
+    lauf = np.maximum.accumulate(s1 - s_min + gid * breite) - gid * breite + s_min
+    neu_l = neu_g.copy()
+    neu_l[1:] |= s0[1:] > lauf[:-1] + tol
+    l_anf = np.flatnonzero(neu_l)
+    lo = s0[l_anf]
+    hi = np.maximum.reduceat(s1, l_anf)
+    # Lage der Geraden: Mittel der Abstände in der Gruppe, Richtung der ersten Strecke der Gruppe
+    uo, no = u[order], n[order]
+    abstand = np.einsum("ij,ij->i", a[order], no)
+    off_g = np.add.reduceat(abstand, g_anf) / np.diff(np.append(g_anf, N))
+    g = gid[l_anf]
+    uu, nn, off = uo[g_anf][g], no[g_anf][g], off_g[g]
+    P0 = uu * lo[:, None] + nn * off[:, None]
+    P1 = uu * hi[:, None] + nn * off[:, None]
+    return list(np.stack([P0, P1], axis=1))
 
 
 def _zusammenfassen(linien: list[Polylinie], tol: float, netz: bool = False) -> list[Polylinie]:
@@ -500,7 +547,7 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
             return Projektion(hit.blick, hit.linien, hit.teile, hit.rahmen, hit.ms, hit.exakt, True)
     t0 = time.perf_counter()
     groesse = _groesse(liste)
-    tol_netz = min(max(groesse * 0.0004, 0.005), 0.5)  # 0,04 % der Größe: auf dem Blatt immer unter 0,05 mm
+    tol_netz = netzfeinheit(groesse)
     proj = Projektion(b, exakt=exakt is True)
     if liste:
         teile = None
@@ -514,6 +561,11 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
         if teile is None:
             teile = _hlr(liste, b, verdeckt=verdeckt, glatt=glatt, toleranz=toleranz, exakt=exakt is True,
                          je_teil=je_teil, netz=tol_netz)
+        if not proj.exakt:  # Netz: Stücke zuerst vereinen (aus Tausenden kurzer Strecken werden wenige), je Teil einmal
+            for d in teile.values():
+                for art in ("sichtbar", "verdeckt", "duenn"):
+                    ls = d.get(art)
+                    d[art] = _strecken_vereinen(ls, tol_netz * 0.5) if ls is not None and len(ls) else []
         if je_teil:
             proj.teile = teile
             for d in teile.values():
@@ -524,11 +576,6 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
         if mittel:
             proj.linien["mitte"] = mittellinien(liste, b, ueberstand)
     tol_vereinfachen = 1e-4 if proj.exakt else tol_netz * 0.5
-    if not proj.exakt:  # Netz: Stücke zuerst vereinen (aus Tausenden kurzer Strecken werden wenige)
-        for d in [proj.linien, *proj.teile.values()]:
-            for art in ("sichtbar", "verdeckt", "duenn"):
-                if d.get(art):
-                    d[art] = _strecken_vereinen(d[art], tol_vereinfachen)
     if proj.linien["verdeckt"]:
         g2 = max(1.0, *(abs(v) for v in _rahmen(proj.linien["sichtbar"])))
         tol_deck = max(1e-4 * g2, 0.0 if proj.exakt else tol_netz * 1.5)
@@ -562,19 +609,38 @@ def _vernetzte_kopie(shape: Any, netz: float) -> Any:
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
 
-    key = (hash(shape), round(netz, 6))
+    from OCP.TopLoc import TopLoc_Location
+
+    # Schlüssel ist die Geometrie ohne Lage: verschobene Teile (Explosion im Bauplan, Lagen im Zusammenbau) teilen
+    # sich das Netz, die Lage kommt nach dem Vernetzen wieder dazu
+    basis = shape.Located(TopLoc_Location())
+    key = (hash(basis), round(netz, 6))
     with _NETZE_LOCK:
         hit = _NETZE.get(key)
-        if hit is not None and hit[0].IsSame(shape) and hit[0].Location().IsEqual(shape.Location()):
+        if hit is not None and hit[0].IsSame(basis):
             _NETZE.move_to_end(key)
-            return hit[1]
-    kopie = BRepBuilderAPI_Copy(shape, True, False).Shape()
-    BRepMesh_IncrementalMesh(kopie, netz, False, 0.1, True)
+            return hit[1].Located(shape.Location())
+    kopie = BRepBuilderAPI_Copy(basis, True, False).Shape()
+    BRepMesh_IncrementalMesh(kopie, netz, False, NETZ_WINKEL, True)
     with _NETZE_LOCK:
-        _NETZE[key] = (shape, kopie)  # die Originalform festhalten, damit ihr Hash nicht neu vergeben wird
+        _NETZE[key] = (basis, kopie)  # die Originalform festhalten, damit ihr Hash nicht neu vergeben wird
         while len(_NETZE) > 600:
             _NETZE.popitem(last=False)
-    return kopie
+    return kopie.Located(shape.Location())
+
+
+NETZ_STUFEN = (0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5)
+# Winkel je Netzsegment: 20° (18 Stücke je Vollkreis) als Untergrenze für kleine Radien. Größere Radien teilt ohnehin
+# die Netzabweichung feiner, die Abweichung bleibt also immer unter ``netz``. 0,1 rad ergab bei Baugruppen mit vielen
+# kleinen Bohrungen und Schrauben das Vierfache an Dreiecken und Verdeckungsrechnung ohne sichtbaren Gewinn.
+NETZ_WINKEL = 0.35
+
+
+def netzfeinheit(groesse: float) -> float:
+    """Netzabweichung: 0,04 % der Größe (auf dem Blatt immer unter 0,05 mm), abgerundet auf eine feste Stufe, damit
+    Aufrufe mit etwas anderer Teileauswahl (Bauplanschritte) dieselben Netze nutzen."""
+    roh = min(max(groesse * 0.0004, NETZ_STUFEN[0]), NETZ_STUFEN[-1])
+    return max(st for st in NETZ_STUFEN if st <= roh + 1e-12)
 
 
 def _groesse(liste: list[tuple[str, Any]]) -> float:
@@ -593,7 +659,7 @@ def _groesse(liste: list[tuple[str, Any]]) -> float:
 def _hlr(liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool, toleranz: float, exakt: bool,
          je_teil: bool, netz: float = 0.05) -> dict[str, dict[str, list[Polylinie]]]:
     """Verdeckungsrechnung im aufrufenden Prozess: exakt (HLRBRep_Algo) oder auf dem Netz (HLRBRep_PolyAlgo mit
-    Netzabweichung ``netz`` mm und 0,1 rad Winkel, damit Kreise auf dem Blatt rund wirken)."""
+    Netzabweichung ``netz`` mm und höchstens ``NETZ_WINKEL`` je Segment)."""
     from OCP.HLRAlgo import HLRAlgo_Projector
 
     projector = HLRAlgo_Projector(_ax2(b))
@@ -622,13 +688,23 @@ def _hlr(liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool,
         h = HLRBRep_PolyHLRToShape()
         h.Update(algo)
 
-    def sammle(*args: Any) -> dict[str, list[Polylinie]]:
-        d: dict[str, list[Polylinie]] = {a: [] for a in LINIENARTEN}
-        d["sichtbar"] = _kanten(h.VCompound(*args), toleranz) + _kanten(h.OutLineVCompound(*args), toleranz)
+    def sammle(*args: Any) -> dict[str, Any]:
+        d: dict[str, Any] = {a: [] for a in LINIENARTEN}
+        if exakt:
+            d["sichtbar"] = _kanten(h.VCompound(*args), toleranz) + _kanten(h.OutLineVCompound(*args), toleranz)
+            if verdeckt:
+                d["verdeckt"] = _kanten(h.HCompound(*args), toleranz) + _kanten(h.OutLineHCompound(*args), toleranz)
+            if glatt:
+                d["duenn"] = _kanten(h.Rg1LineVCompound(*args), toleranz)
+            return d
+        # Netz: Streckenfelder (n, 2, 2), projiziere() vereint sie zu Strecken und Zügen
+        d["sichtbar"] = np.concatenate([_strecken(h.VCompound(*args), toleranz),
+                                        _strecken(h.OutLineVCompound(*args), toleranz)])
         if verdeckt:
-            d["verdeckt"] = _kanten(h.HCompound(*args), toleranz) + _kanten(h.OutLineHCompound(*args), toleranz)
+            d["verdeckt"] = np.concatenate([_strecken(h.HCompound(*args), toleranz),
+                                            _strecken(h.OutLineHCompound(*args), toleranz)])
         if glatt:
-            d["duenn"] = _kanten(h.Rg1LineVCompound(*args), toleranz)
+            d["duenn"] = _strecken(h.Rg1LineVCompound(*args), toleranz)
         return d
 
     if not je_teil:
