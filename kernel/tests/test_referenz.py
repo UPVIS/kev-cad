@@ -412,6 +412,29 @@ def test_ablauf_video_vermessen_anlegen_uebernehmen(umgebung):
     app.close()
 
 
+def test_app_hinzufuegen_und_vermessen(umgebung):
+    """Kevin zieht das Video auf das Fenster (REF_ADD) und klickt „Vermessen“ (REF_MEASURE_REQ)."""
+    rt, sock, projekt, video, _ = umgebung
+    app = FakeApp(sock, answer=False)
+    start = app.mark()
+    app.send({"type": "REF_ADD", "id": "a-1", "pfade": [str(video)], "name": None, "masz": {"laenge": 100},
+              "auflage": False, "von": None, "bis": None, "einstellung": "schnell"})
+    _, _, ack, _ = app.wait_for(lambda h: h["type"] == "ACK" and h.get("reply_to") == "a-1", start=start)
+    assert ack["ok"] and "Object Capture läuft" in ack["message"], ack
+    app.wait_for(lambda h: h["type"] == "REF_UPSERT", start=start)
+    start = app.mark()
+    app.send({"type": "REF_MEASURE_REQ", "id": "a-2", "referenz": "IMG_TEST", "frei": ["tiefe"],
+              "bekannt": {"breite": 100}, "bilder": 4})
+    _, _, ack, _ = app.wait_for(lambda h: h["type"] == "ACK" and h.get("reply_to") == "a-2", start=start)
+    assert ack["ok"]
+    _, _, erg, _ = app.wait_for(lambda h: h["type"] == "REF_RESULT", start=start, timeout=60)
+    assert [m["name"] for m in erg["masse"]] == ["tiefe"]
+    _, _, liste, _ = app.wait_for(lambda h: h["type"] == "REF_LIST" and h["referenzen"]
+                                  and h["referenzen"][0]["zustand"] == "fertig", start=start)
+    assert liste["referenzen"][0]["messung"] and liste["referenzen"][0]["netz"]
+    app.close()
+
+
 def test_fotos_und_fehler(umgebung, tmp_path):
     rt, sock, projekt, video, _ = umgebung
     assert "gibt es nicht" in rt.referenz_video(str(tmp_path / "fehlt.mov"))["error"]
