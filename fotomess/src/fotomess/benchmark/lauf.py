@@ -310,19 +310,31 @@ def tabelle_scarlett():
 
     def abw(ist, s):
         return f"{ist - s:+.1f} mm ({(ist - s) / s * 100:+.1f} %)"
-    z.append("| Bilder (genutzt) | Laufzeit | f (px) | Gehäuse T × H | Gesamttiefe (mit Knöpfen) | kanten_r | knopf_h / gross_h | "
-             "Tiefe 117 gegen Gesamttiefe | Höhe 47,5 gegen Gehäuse + Füße |")
+    z.append("| Verfahren | Bilder (genutzt) | Laufzeit | f (px) | Gesamttiefe mit Knöpfen (Soll 117) | Höhe (Soll 47,5) | "
+             "Gehäusetiefe ohne Knöpfe | Überstand Knöpfe (Gain / Output) | kanten_r |")
     z.append("|---|---|---|---|---|---|---|---|---|")
     for n in (1, 2, 3, 5, 8):
         d = _lade(f"scarlett_{n}")
         if not d:
             continue
         th, sg, g = d["theta"], d["sigma"], d["gesamt"]
-        z.append(f"| {n} ({len(d['bilder'])}) | {d['zeiten']['gesamt']:.1f} s | {d['f_px']:.0f} | "
-                 f"{th['tiefe']:.1f} ± {sg['tiefe']:.1f} × {th['hoehe']:.1f} ± {sg['hoehe']:.1f} | {g['tiefe']:.1f} | "
-                 f"{th['kanten_r']:.1f} ± {sg['kanten_r']:.1f} | {th['knopf_h']:.1f} ± {sg['knopf_h']:.1f} / "
-                 f"{th['gross_h']:.1f} ± {sg['gross_h']:.1f} | {abw(g['tiefe'], soll['tiefe'])} | "
-                 f"{abw(g['hoehe'], soll['hoehe'])} |")
+        z.append(f"| fotomess | {n} ({len(d['bilder'])}) | {d['zeiten']['gesamt']:.1f} s | {d['f_px']:.0f} | "
+                 f"{g['tiefe']:.1f} ({abw(g['tiefe'], soll['tiefe'])}) | {th['hoehe']:.1f} ± {sg['hoehe']:.1f} "
+                 f"({abw(th['hoehe'], soll['hoehe'])}) | {th['tiefe']:.1f} ± {sg['tiefe']:.1f} | "
+                 f"{th['knopf_h']:.1f} ± {sg['knopf_h']:.1f} / {th['gross_h']:.1f} ± {sg['gross_h']:.1f} | "
+                 f"{th['kanten_r']:.1f} ± {sg['kanten_r']:.1f} |")
+    for lauf in ("scarlett_ganz", "scarlett_genau", "scarlett_umlauf", "scarlett_nah"):
+        p = WURZEL / "build" / "capture" / lauf / "bericht.json"
+        if not p.exists():
+            continue
+        b = json.loads(p.read_text())
+        r, h, gk = b["rekonstruktion"], b["huellmass_mm"], b["grundkoerper_mm"]
+        tz = r["times"]
+        gesamt = tz["reconstruction_s"] + tz.get("extraction_s", 0) + b["nachbearbeitung_s"]
+        oben = b.get("oberkante_mm") or float("nan")
+        z.append(f"| Object Capture {lauf.removeprefix('scarlett_')} | {r['images']} ({r['posed']}) | {gesamt:.0f} s | "
+                 f"– | {h['breite']:.1f} ({abw(h['breite'], soll['tiefe'])}) | {oben:.1f} ({abw(oben, soll['hoehe'])}); "
+                 f"Hülle {h['hoehe']:.1f} | {gk['breite']:.1f} (Deckelschicht) | {h['breite'] - gk['breite']:.1f} | – |")
     z.append("")
     for key in SC_PRUEF:
         for n in (5, 8):
@@ -333,24 +345,10 @@ def tabelle_scarlett():
             fest = ", ".join(f"{k} = {v}" for k, v in d["fest"].items())
             z.append(f"- Prüflauf {n} Bilder ({len(d['bilder'])} genutzt), fest {fest}: Breite **{th['breite']:.1f} ± "
                      f"{sg['breite']:.1f} mm** (Soll 180, {abw(th['breite'], 180.0)}), Tiefe {th['tiefe']:.1f}, Höhe "
-                     f"{th['hoehe']:.1f}, {d['zeiten']['gesamt']:.1f} s")
+                     f"{th['hoehe']:.1f}, kanten_r {th['kanten_r']:.1f}, mittlere IoU {np.mean(d['iou_kameras']):.3f} "
+                     f"(ohne Prüfmaß {np.mean((_lade(f'scarlett_{n}') or d)['iou_kameras']):.3f}), "
+                     f"{d['zeiten']['gesamt']:.1f} s")
     z.append("")
-    z.append("Object Capture (`kevcad-capture … --auflage --masz laenge=180`):\n")
-    z.append("| Lauf | Bilder (ausgerichtet) | Object Capture | gesamt | Hülle L × B × H | obere Fläche | "
-             "Deckelschicht L × B | B gegen 117 | H gegen 47,5 |")
-    z.append("|---|---|---|---|---|---|---|---|---|")
-    for lauf in ("scarlett_ganz", "scarlett_genau", "scarlett_umlauf", "scarlett_nah"):
-        p = WURZEL / "build" / "capture" / lauf / "bericht.json"
-        if not p.exists():
-            continue
-        b = json.loads(p.read_text())
-        r = b["rekonstruktion"]
-        h, g = b["huellmass_mm"], b["grundkoerper_mm"]
-        tz = r["times"]
-        gesamt = tz["reconstruction_s"] + tz.get("extraction_s", 0) + b["nachbearbeitung_s"]
-        z.append(f"| {lauf} | {r['images']} ({r['posed']}) | {tz['reconstruction_s']:.0f} s | {gesamt:.0f} s | "
-                 f"{h['laenge']:.1f} × {h['breite']:.1f} × {h['hoehe']:.1f} | {b.get('oberkante_mm') or float('nan'):.1f} | "
-                 f"{g['laenge']:.1f} × {g['breite']:.1f} | {abw(h['breite'], 117.0)} | {abw(h['hoehe'], 47.5)} |")
     return "\n".join(z)
 
 

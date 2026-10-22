@@ -17,7 +17,7 @@ Video ──AVAssetReader (Hardware-Decoder, direkt auf Zielgröße)──► La
 
 ```bash
 swift build -c release --package-path tools/capture     # → tools/capture/.build/release/kevcad-capture
-swift test --package-path tools/capture                 # Auswahl, Schärfe, RANSAC, Rechteck, Kreis, Schicht
+swift test --package-path tools/capture                 # Auswahl, Schärfe, RANSAC, Rechteck, Kreis, Schicht, Auflage
 ```
 
 macOS 15 oder neuer, Apple Silicon. Brennweiten je Kamera (`Pose.intrinsics`) und Verzeichnung gibt die API erst ab
@@ -56,6 +56,7 @@ kevcad-capture nachbearbeitung <ordner> --masz grund_breite=410     # ~1 s, z. B
 | `--masz NAME=MM` | bekanntes Maß, setzt den Maßstab: `laenge` (längste waagrechte Ausdehnung), `breite`, `hoehe`, `grund_laenge`, `grund_breite` |
 | `--pruef NAME=MM` | Prüfmaß, wird mit Abweichung in mm und % berichtet (Namen wie `--masz`, dazu `rad`) |
 | `--ohne-boden-schnitt` | Boden finden und ausrichten, aber nicht abschneiden |
+| `--auflage` | Gegenstand liegt auf einer Unterlage, die mit im Netz ist (Holzscheibe, Tisch, Kiste): oberste große waagrechte Ebene unter ihm wird Auflage (z = 0), alles darunter fällt weg, Höhen zählen ab dort. Bericht unter `auflage`; mit `KEVCAD_CAPTURE_DEBUG=1` stehen die geprüften Ebenen im Protokoll |
 | `--kontrollbilder ORDNER` | Kontrollbilder mit Blender (`/Applications/Blender.app` oder `$KEVCAD_BLENDER`) |
 | `--kopie ORDNER` | `poses.json` mit Bildern sofort nach der Ausrichtung, alle Ergebnisse am Ende zusätzlich dorthin |
 | `--behalte-checkpoint` | Zwischenstände von Object Capture behalten (sonst gelöscht, ~300 MB je Lauf) |
@@ -174,6 +175,52 @@ Einstellung, sondern die Aufnahme (siehe Tipps): ruhiger Hintergrund, Gegenstand
 Kontrollbilder der Läufe: `build/capture/kontrolle/<lauf>_{vorne,seite,oben,schraeg}.png` (nicht im Git).
 Ergebnisse für den Vergleich durch andere Agenten: `~/Library/Caches/de.upvis.kevcad.testdaten/rollwagen/`
 (Lauf „genau“, kopfüber; `poses.json` mit Bildpfaden dorthin).
+
+## Messung an der Scarlett 2i2 (22.10.2026)
+
+Testvideo `IMG_5186.MOV`: iPhone 15 Pro Max, 4K quer, 30 fps, 39,7 s. Focusrite Scarlett 2i2 (4. Gen.), rotes mattes
+Aluminium, schwarze Blenden, liegt auf einer Holzscheibe auf Fliesen und wird nicht bewegt (die Kamera geht herum,
+21 bis 28 s Nahaufnahmen der Vorderseite). Hersteller 180 × 117 × 47,5 mm. Aufruf jeweils
+`--auflage --masz laenge=180 --pruef breite=117 --pruef hoehe=47.5`. Vergleich mit fotomess in
+[fotomess/BENCHMARK.md](../../fotomess/BENCHMARK.md), Abschnitt „Scarlett 2i2“.
+
+| Lauf | Bilder (ausgerichtet) | Object Capture | gesamt | Hülle L × B × H | obere Fläche über Auflage | Deckelschicht L × B (ohne Knöpfe) |
+|---|---|---|---|---|---|---|
+| schnell, ganzes Video | 60 (42) | 40 s | 45 s | 180 × 117,3 × 48,4 | 47,5 | 174,0 × 102,1 |
+| genau (120 × 2880, medium) | 120 (109) | 375 s¹ | 394 s¹ | 180 × 118,3 × 49,2 | 46,7 | 174,7 × 102,6 |
+| schnell, 0–21 s | 60 (60) | 332 s¹ | 338 s¹ | 180 × 116,5 × 47,9 | 46,9 | 174,2 × 101,9 |
+| schnell, 21–39,7 s | 60 (60) | 234 s¹ | 239 s¹ | 180 × 116,7 × 48,7 | 47,0 | 174,2 × 102,5 |
+
+¹ Speicher während dieser Läufe durch andere Agenten auf 13 bis 24 % frei gedrückt, 5- bis 8-mal langsamer als
+sonst; nicht vergleichbar.
+
+Lesart:
+
+- **Ohne `--auflage` unbrauchbar:** Die Objektmaskierung nimmt die Holzscheibe mit und entfernt den Boden; der
+  Maßstab kam dann aus der Scheibe (Hülle 180 × 149 × 58). Mit `--auflage` ist das Gerät sauber freigestellt.
+- **Prüfmaße:** Tiefe mit Knöpfen 116,5 bis 118,3 (Soll 117: −0,4 bis +1,1 %), Höhe Auflage bis Deckel 46,7 bis
+  47,5 (Soll 47,5: −1,7 bis 0 %; das robuste Hüllmaß 47,9 bis 49,2 nimmt Unebenheiten am Deckel mit). Die
+  Deckelschicht (dichteste Schicht oben, dort gibt es keine Knöpfe) misst das Gehäuse ohne Knöpfe: 101,9 bis
+  102,6 mm, die Knöpfe stehen also 14 bis 16 mm vor. Die Länge der Deckelschicht (174) ist um die gerundeten
+  Längskanten kürzer als die Breite.
+- **Ausrichtung:** Im ganzen Video fallen 18 von 60 Bildern heraus (Rückseite und flache Ansichten bei 5,7 bis
+  20,9 s, viel Bewegungsunschärfe); getrennt gerechnet richtet Object Capture alle 60 Bilder jedes Abschnitts aus.
+  Die Maße sind trotzdem gleich gut.
+- **Brennweite:** 3202 bis 3260 px auf 3840 px (Metadaten 2796 px, wie am Rollwagen 12 bis 13 % zu kurz).
+- **Erste Fassung der Auflagesuche:** Sie nahm die oberste gültige Ebene und verlangte die Ebene unter dem Blickpunkt
+  der Kameras. In den Abschnitten gewann dann eine kleine schräge Scheinebene durch Netzreste (12° gekippt, 452
+  Punkte) bzw. die Scheibe fiel heraus, weil der Blickpunkt bei Draufsichten und Nahaufnahmen unter ihr lag.
+  Jetzt zählen nur Ebenen mit mindestens 30 % des größten Randes außerhalb des Gegenstands, und der Blickpunkt wird
+  nur waagrecht geprüft (über dem, was auf der Ebene steht).
+- **Schnitthöhe:** Die Toleranz kommt weiter aus der Größe des ganzen Netzes (mit Scheibe), geschnitten wird 2,6 bis
+  5,7 mm über der Auflage. Die Maße stört das nicht (Höhen zählen ab der Ebene, waagrechte Maße erst über dem
+  Bodenrand), das Netz verliert aber den untersten Streifen. Eine Toleranz aus der Streuung der Auflagepunkte wäre
+  der nächste Schritt.
+- Die Rad-Heuristik meldet bei Gegenständen ohne Räder Unsinnskreise mit `plausibel: false` und `gefunden: false`.
+
+Kontrollbilder: `build/capture/kontrolle/scarlett_{ganz,genau,umlauf,nah}_{vorne,seite,oben,schraeg}.png`
+(nicht im Git). Netze und Bilder der Läufe sind wegen der vollen Systemplatte gelöscht, Berichte und `poses.json`
+liegen unter `build/capture/scarlett_*/`.
 
 ## Grenzen
 
