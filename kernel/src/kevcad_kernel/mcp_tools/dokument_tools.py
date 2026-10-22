@@ -67,7 +67,8 @@ def register_dokument_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
     async def dokument_export(
         bausteine: Annotated[list[Any] | None, Field(
             description="Building blocks in order: names (deckblatt, stueckliste, teileliste, einkaufsliste, "
-                        "zuschnitt, zeichnungen, bauplan) or objects {art, spalten, auswahl}; empty = all")] = None,
+                        "zuschnitt, druck, zeichnungen, bauplan) or objects {art, spalten, auswahl}; empty = all; druck "
+                        "= 3D printing: plates, parts with settings, filament, time, cost")] = None,
         ziel: Annotated[str | None, Field(description="Target .pdf path; empty = <project>/output/<name>-dokumente.pdf")]
         = None,
         drucken: Annotated[bool, Field(description="Open the print dialog. Only if Kevin explicitly asked to print.")]
