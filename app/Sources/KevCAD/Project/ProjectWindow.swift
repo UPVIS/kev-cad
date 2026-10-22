@@ -32,6 +32,7 @@ struct ProjectWindow: View {
         .navigationSubtitle(untertitel)
         .onAppear {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
+            BedingungenSchalter.wiederherstellen(model)
             dokumenteVerbinden()
             DokumenteSelfTest.runIfRequested(session, state: state, zustand: dokumente)
             SelfTest.runIfRequested(session)
@@ -317,6 +318,15 @@ struct ProjectToolbar: ToolbarContent {
                 Label("Messen", systemImage: "ruler")
             }
             .help("Messen: Elemente anklicken (M)")
+
+            Toggle(isOn: Binding(
+                get: { model.showConstraintSymbols }, set: { BedingungenSchalter.setzen(model, $0) }
+            )) {
+                Label("Bedingungen", systemImage: "link")
+            }
+            .disabled(model.constraintActions == nil)
+            .help(model.showConstraintSymbols
+                  ? "Bedingungen am Teil ausblenden (⌥⌘B)" : "Bedingungen am Teil zeigen (⌥⌘B)")
 
             Button {
                 state.showExplode.toggle()

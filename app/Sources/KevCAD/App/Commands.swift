@@ -179,7 +179,7 @@ struct KevCADCommands: Commands {
                 .keyboardShortcut("e", modifiers: [])
                 Toggle("Bedingungen am Teil", isOn: Binding(
                     get: { model.showConstraintSymbols },
-                    set: { model.constraintActions?.setConstraintSymbolsVisible($0) }
+                    set: { BedingungenSchalter.setzen(model, $0) }
                 ))
                 .keyboardShortcut("b", modifiers: [.command, .option])
                 .disabled(model.constraintActions == nil)

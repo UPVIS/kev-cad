@@ -1,6 +1,6 @@
 # fotomess · Benchmark
 
-Stand: 21.10.2026, Mac M2 Pro (16 GB), ein Prozess, GPU über moderngl. Erzeugt mit
+Stand: 21.10.2026 (Scarlett 2i2: 22.10.2026), Mac M2 Pro (16 GB), ein Prozess, GPU über moderngl. Erzeugt mit
 `.venv/bin/python -m fotomess.benchmark.lauf …` (siehe dort), Rohdaten als JSON unter `build/fotomess/benchmark/`,
 Kontrollbilder unter `build/fotomess/kontrolle/` (beides nicht im Git). Laufzeiten ohne den einmaligen Modellaufbau
 (Netz mit Ableitungen: Küche rund 2 min für drei Bauformen, Rollwagen rund 30 s, danach zwischengespeichert) und ohne
@@ -134,8 +134,119 @@ verbleibenden 3 bis 6 % zeigen sich als Maßstab 1,03 bis 1,08 der Kamerazentren
 kommt, dass Object Capture seinen Maßstab aus einer Hüllkante von 610 mm nimmt). Mit 7 Bildern stimmen Drehung
 (0,8°) und Ort (14 mm) gut überein.
 
+## Scarlett 2i2 (Video, echte Umgebung, Holzscheibe)
+
+Stand 22.10.2026. Video IMG_5186.MOV (iPhone 15 Pro Max, 4K quer, 30 fps, 39,7 s), Focusrite Scarlett 2i2
+(4. Generation): rotes, mattes Aluminiumrohr, vorn und hinten schwarze Blenden, liegt auf einer Holzscheibe auf
+Fliesen. Anders als angekündigt wird das Gerät im Video nicht bewegt, nur die Kamera geht herum: 0 bis 21 s
+Umlauf mit Rückseite und flachen Ansichten, 21 bis 28 s Nahaufnahmen der Vorderseite, 28 bis 40 s steil von oben
+und schräg. Unterseite und Hochkantlage kommen nicht vor; Object Capture kann deshalb das ganze Video nutzen.
+
+Hersteller: 180 × 117 × 47,5 mm (Breite × Tiefe × Höhe); offen, ob Tiefe und Höhe Knöpfe und Füße einschließen.
+Fest ist nur die Breite 180 (das Rohr hat seitlich keine Anbauten). Messmodell `modelle/scarlett.py`: Rohr mit
+gerundeten Kanten entlang der Tiefe (`kanten_r`; die Kanten an Vorder- und Rückseite sind scharf), Blenden 0,5 mm
+vertieft mit 3 mm rotem Rand, vorn zwei Gain-Knöpfe und der Kopfhörerknopf (Überstand `knopf_h`), der Output-Knopf
+(`gross_h`), die Kopfhörerbuchse (fest 10 mm); Lage und Durchmesser der Knöpfe aus dem Object-Capture-Netz. Vier Füße
+1,5 mm, fest: Die Unterseite ist nie zu sehen, die Füße sind aus den Bildern nicht messbar. Gemessen werden `tiefe`
+(Rohr ohne Knöpfe), `hoehe` (Rohr ohne Füße), `kanten_r`, `knopf_h`, `gross_h`.
+
+Masken: Rot über die Farbe (H 168 bis 4, läuft über 0), Blenden und Knöpfe über Apple Vision. Vision zählt die
+Holzscheibe mit; deshalb gilt Vision ohne Farbprüfung nur in der konvexen Hülle des roten Rohrs (es fasst die
+Blenden ein, in denen sich das Holz spiegelt), außerhalb nur nahe am Rohr, ohne Holzfarbe und nur Teile, die am
+Gehäuse hängen (`masken.gehaeuse_optionen`). Brennweite gemeinsam, Vorgabe 2796 px (Metadaten 24 mm, Sigma 15 %).
+Bildwahl automatisch (Schärfe, Kameraweg, Gerät ganz im Bild): 1 = 3,7 s; 2 = dazu 38,0 s; 3 = dazu 14,8 s;
+5 = 3,7 / 10,5 / 18,5 / 30,2 / 38,0 s; 8 = 3,7 / 9,0 / 14,8 / 18,5 / 25,2 / 30,2 / 32,8 / 38,0 s.
+
+Object Capture zum Vergleich: `kevcad-capture lauf … --auflage --masz laenge=180` (siehe
+[tools/capture/README.md](../tools/capture/README.md)). Gesamttiefe = Hüllmaß quer (mit Knöpfen), Gehäusetiefe =
+Deckelschicht (dichteste waagrechte Schicht oben, 42 bis 48 mm über der Auflage, dort gibt es keine Knöpfe), Höhe =
+obere waagrechte Fläche über der Auflage, also mit Füßen (das robuste Hüllmaß, 99,9 %, steht daneben; es nimmt
+Unebenheiten des Netzes am Deckel mit). „ganz“: ganzes Video, 60 × 1920 px, reduced; „genau“: 120 × 2880 px, medium;
+„umlauf“: 0 bis 21 s; „nah“: 21 bis 39,7 s.
+
+| Verfahren | Bilder (genutzt) | Laufzeit | f (px) | Gesamttiefe mit Knöpfen (Soll 117) | Höhe (Soll 47,5) | Gehäusetiefe ohne Knöpfe | Überstand Knöpfe (Gain / Output) | kanten_r |
+|---|---|---|---|---|---|---|---|---|
+| fotomess | 1 (1) | 2.1 s | 3432 | 122.1 (+5.1 mm, +4.3 %) | 48.9 ± 1.1 (+1.4 mm, +2.9 %) | 107.8 ± 3.1 | 14.0 ± 1.3 / 14.3 ± 1.5 | 3.2 ± 2.5 |
+| fotomess | 2 (2) | 1.2 s | 3379 | 118.7 (+1.7 mm, +1.5 %) | 50.7 ± 0.7 (+3.2 mm, +6.7 %) | 105.4 ± 1.1 | 13.3 ± 1.1 / 13.2 ± 1.0 | 5.8 ± 1.1 |
+| fotomess | 3 (3) | 2.5 s | 3597 | 121.5 (+4.5 mm, +3.8 %) | 48.5 ± 0.8 (+1.0 mm, +2.1 %) | 107.3 ± 5.2 | 14.0 ± 4.3 / 14.2 ± 14.9 | 4.4 ± 2.1 |
+| fotomess | 5 (5) | 3.5 s | 3260 | 123.3 (+6.3 mm, +5.4 %) | 47.4 ± 1.8 (−0.1 mm, −0.1 %) | 104.5 ± 1.6 | 11.2 ± 1.8 / 18.7 ± 6.2 | 4.0 ± 1.0 |
+| fotomess | 8 (8) | 6.0 s | 3123 | 120.8 (+3.8 mm, +3.2 %) | 46.9 ± 0.6 (−0.6 mm, −1.2 %) | 105.2 ± 2.0 | 12.6 ± 1.5 / 15.5 ± 1.7 | 4.0 ± 1.7 |
+| Object Capture ganz | 60 (42) | 45 s | 3226 | 117.3 (+0.3 mm, +0.3 %) | 47.5 (±0.0 mm); Hülle 48.4 | 102.1 | 15.2 | – |
+| Object Capture genau | 120 (109) | 394 s¹ | 3232 | 118.3 (+1.3 mm, +1.1 %) | 46.7 (−0.8 mm, −1.7 %); Hülle 49.2 | 102.6 | 15.7 | – |
+| Object Capture umlauf | 60 (60) | 338 s¹ | 3202 | 116.5 (−0.5 mm, −0.4 %) | 46.9 (−0.6 mm, −1.3 %); Hülle 47.9 | 101.9 | 14.6 | – |
+| Object Capture nah | 60 (60) | 239 s¹ | 3260 | 116.7 (−0.3 mm, −0.3 %) | 47.0 (−0.5 mm, −1.1 %); Hülle 48.7 | 102.5 | 14.2 | – |
+
+Höhe: fotomess = Rohr ohne Füße, Object Capture = Auflage bis Deckel (mit Füßen). Überstand bei Object Capture =
+Gesamttiefe minus Deckelschicht (der weiteste Knopf). f bei Object Capture: Median der Kameras, auf 3840 px
+umgerechnet. ¹ Speicher während dieser Läufe durch andere Agenten auf 13 bis 24 % frei gedrückt: 5- bis
+8-mal langsamer als „ganz“ (40 s Rekonstruktion) bzw. als „genau“ am Rollwagen (209 s); nicht vergleichbar.
+
+Laufzeiten fotomess außerdem: Bildbewertung 23 s (238 Bilder, 6 je Sekunde, 640 px), Holen der 4K-Bilder mit Vision
+und Masken rund 6 s je Bild (8 Bilder 50 s, unter Last 95 s), Modellaufbau einmalig rund 1 min (6 Varianten,
+zwischengespeichert), Unsicherheit mit Jackknife 0,1 bis 3 s.
+
+Prüfläufe (Breite frei, dafür ein anderes Maß fest):
+
+- Höhe 47,5 fest (Herstellerhöhe als Rohrhöhe gelesen): Breite **177,6 ± 1,7 mm** (5 Bilder, −1,3 %) bzw.
+  **178,4 ± 1,6 mm** (8 Bilder, −0,9 %), innerhalb einer Sigma; mittlere Überdeckung 0,933 bzw. 0,936 gegen 0,940
+  ohne Prüfmaß.
+- Tiefe 117 fest (Herstellertiefe als Rohr ohne Knöpfe gelesen): Breite 179,9 ± 3,3 bzw. 179,6 ± 4,7 mm, aber die
+  Passung wird deutlich schlechter: mittlere Überdeckung 0,908 bzw. 0,926 statt 0,940, in den Draufsichten 0,885 und
+  0,913 statt 0,93 und 0,97, der Kantenradius fällt auf 0,6 bis 0,9 mm. Breite und Tiefe sind über diese Bilder schwach gekoppelt (die
+  Breite hängt an den Vorderansichten über die Höhe); eine falsche Tiefe zeigt sich hier in der Überdeckung, nicht im
+  Prüfmaß Breite.
+
+### Befund: Was steckt in 117 und 47,5?
+
+- **Tiefe 117 schließt die Knöpfe ein.** Beide Verfahren messen das Rohr ohne Knöpfe 102 bis 105 mm tief, die Knöpfe
+  stehen 14 bis 16 mm vor (Object Capture 14,2 bis 15,7; fotomess mit 8 Bildern 12,6 Gain, 15,5 Output). Rohr plus
+  Knöpfe: Object Capture 116,5 bis 118,3, fotomess 118,7 bis 123,3. Läse man 117 als Rohrtiefe, lägen beide Verfahren
+  10 bis 13 % daneben, und der Prüflauf mit 117 fest passt sichtbar schlechter.
+- **Höhe 47,5 passt zur Rohrhöhe; ob die Füße mit drin sind, entscheidet das Video nicht.** Object Capture misst
+  Auflage bis Deckel 46,7 bis 47,5 mm (mit Füßen), fotomess das Rohr allein 46,9 ± 0,6 mm (8 Bilder). Der Unterschied
+  ist 0 ± 1 mm: Entweder sind die Füße höchstens etwa 1 mm hoch, oder 47,5 schließt sie ein und das Rohr ist rund
+  46,5 mm hoch. Die Unterseite ist im Video nie zu sehen.
+- **Restfehler bei der Lesart „117 mit Knöpfen, 47,5 Rohr“:** Object Capture Gesamttiefe −0,4 bis +1,1 %, Höhe −1,7
+  bis 0 %; fotomess mit 8 Bildern Gesamttiefe +3,2 %, Höhe −1,2 %, mit 5 Bildern +5,4 % und −0,1 %. Offen bleibt die
+  Rohrtiefe: fotomess 104,5 bis 105,4 (2, 5, 8 Bilder), Object Capture 101,9 bis 102,6 (Deckelschicht; Vorder- und
+  Rückfläche liegen im Netz 102 bis 104 mm auseinander). Eins der beiden liegt hier 2 bis 3 % daneben. fotomess ist
+  bei 1 bis 3 Bildern unruhig (Höhe 48,5 bis 50,7, Rohrtiefe bis 107,8), ab 5 Bildern stabiler; die Videobilder
+  sind fast alle bewegungsunscharf, am schärfsten die Draufsichten.
+- **Brennweite:** fotomess 3123 bis 3597 px (8 Bilder 3123), Object Capture 3202 bis 3260 px; die Metadaten (2796 px) sind wie am
+  Rollwagen 12 bis 13 % zu kurz. Mit f fest auf 3232 px ändern sich Rohrtiefe und Höhe um weniger als 1 mm
+  (Diagnoselauf), die Brennweite erklärt den Unterschied zu Object Capture also nicht.
+
+### Empfehlung: von Hand nachmessen
+
+- `unsicherheit.nachmessen` (8 Bilder): zuerst der Überstand des Output-Knopfs (`gross_h`, Gesamtvarianz auf 59 %),
+  dann Kantenradius und Rohrtiefe; bei 1 bis 3 Bildern steht die Rohrtiefe vorn. Zusatzaufnahme: schräg über die
+  vordere rechte Ecke (Azimut 315°, 30° hoch), bei 8 Bildern nur noch 4 % Gewinn.
+- Für die offene Frage mit dem Messschieber: (1) **Rohrtiefe ohne Knöpfe** an der Oberkante des roten Rohrs,
+  Vorderkante bis Hinterkante (gemessen 102 bis 105; entscheidet zwischen den Verfahren), (2) **Gesamttiefe**
+  Rückseite bis Vorderfläche des Output-Knopfs (prüft 117), (3) **Rohrhöhe** an der Seite und **Gesamthöhe** auf
+  einer ebenen Platte (Differenz = Füße, prüft 47,5).
+
+### Was an fotomess dafür ergänzt wurde
+
+- **Farbteile** (`Ausgleich.iou_farbe`, `netz.farb_tris`, `bild.farbmaske`): Die sichtbaren roten Flächen des Modells
+  werden mit der Rotmaske verglichen und gehen in die Wahl der Startlage ein. Ohne sie fiel in der flachen Ansicht
+  (18,5 s) die um 90° gedrehte Lage hinein (rote Stirnseite und schwarze Vorderseite vertauscht, gleiche Silhouette).
+- **Zwillingslagen** (`Eingabe.zwillinge`): Vorn und hinten sehen gleich aus, nur die Knöpfe unterscheiden sie. Zu
+  jeder Startlage wird die um 180° gedrehte gleich eingepasst; fast gleich gute Kandidaten vergleicht die feinere
+  Stufe. Ohne sie lagen in einem von fünf Bildern die Knöpfe hinten (38,0 s); eine zuerst versuchte Entscheidung
+  über die mittleren Kantenkosten war schlechter (zwei von fünf falsch) und ist verworfen. Ohne Zwillinge bleibt die
+  Wahl wie bisher (Küche und Rollwagen unverändert).
+- **Masken mit Unterlage** (`masken.farbbereich`, `kombiniert(ausschluss, umkreis, innen, aussen_oeffnen,
+  schliessen, loch_anteil)`, `gehaeuse_optionen`), dazu dieselben Optionen in der Kommandozeile (`farbe_hsv` über 0,
+  `ausschluss_hsv`, `gehaeuse`, `farbteile`, `zwillinge`). Probe über `fotomess vermessen` mit 5 Bildern: Rohrtiefe
+  103,9 ± 0,9, Höhe 47,6 ± 1,4 mm in 5,4 s.
+- Grenzen: Die Knöpfe fehlen in Seitenansichten teils in der Maske (dunkel vor dunklem Boden außerhalb der Hülle, teils
+  als Holzfarbe ausgeschlossen); nur 33 bis 90 % der Kantenpunkte finden einen Partner (Unschärfe, Blendenkanten);
+  Bildholen und Masken in 4K kosten rund 6 s je Bild und sollten auf der Arbeitsgröße laufen.
+
 ## Kontrollbilder
 
 `build/fotomess/kontrolle/`: `kueche_<n>_<foto>.jpg` (erste drei Fotos je Teilmenge), `rollwagen_<n>_<bild>.jpg`
-(alle genutzten Bilder je Lauf), `rollwagen_pruef_8_*.jpg`, `objectcapture_<n>_*.jpg`. Grün: Umriss gegen die Maske,
+(alle genutzten Bilder je Lauf), `rollwagen_pruef_8_*.jpg`, `objectcapture_<n>_*.jpg`, `scarlett_<n>_<bild>.jpg`,
+`scarlett_pruef_<maß>_<n>_<bild>.jpg`; Object Capture der Scarlett unter `build/capture/kontrolle/`. Grün: Umriss gegen die Maske,
 gelb: innere Kanten gegen Bildkanten, rot: ohne Partner im Bild, blau: Rand der Bildmaske.
