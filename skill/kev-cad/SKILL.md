@@ -66,7 +66,9 @@ melden:
   umkonstruiert, nicht der Bereich verkleinert. Hat das Projekt eine Animation, zusätzlich `kollision_pruefen(name)`
   für jede Animation (siehe „Animation“).
 - **Druckteile:** Die Druckprüfung läuft bei jedem Lauf für jedes `lager.druckteil` mit; `druckpruefung` zeigt
-  Ausrichtung, Kennzahlen und alle Hinweise (siehe 3d-druck.md).
+  Ausrichtung, Kennzahlen und alle Hinweise (siehe 3d-druck.md). Jedem Druckteil seinen Zweck geben
+  (`lager.druckteil(…, zweck="tragend")`: zier, funktion, tragend, bewegt, aussen); `druckvorschau` sagt danach
+  Filament, Zeit, Platten, Kosten und empfohlene Einstellungen (3d-druck.md, Abschnitt 16).
 - Befestigung (`bed.verbinde`), Bewegungsraum, Schweben, Standsicherheit und Einbaubarkeit prüft Kev CAD bei jedem
   Lauf; `pruefen` zeigt das ganze Ergebnis, `montage_reihenfolge` die Einbaufolge.
 
@@ -330,7 +332,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
-| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch). |
+| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch); `zweck` (zier, funktion, tragend, bewegt, aussen) bestimmt die Empfehlungen der Druckvorschau, `anzahl` nur für zusätzliche Stück. |
 | `lager.zukauf(id)` → `.verbauen(name)`, `.bezugspunkt(name)` | Zukaufteil mit Hersteller-CAD, Skript oder Ersatzkörper (siehe „Zukaufteile“). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `montage(teil, richtung=, nach=, werkzeug=, baugruppe=, schnappt=, eingedruckt=)` | Einbau erklären, wo die Prüfung es nicht selbst wissen kann (siehe „Montagegerecht konstruieren“). |

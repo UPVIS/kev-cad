@@ -41,6 +41,29 @@ def test_profile_aufgeloest():
     assert sl.version()
 
 
+def test_selbst_geschriebenes_3mf_laedt_in_bambu_studio(tmp_path, monkeypatch):
+    """Rückfall ohne Bambu Studio: das eigene 3MF (eine Platte) lädt und slict in Bambu Studio mit allen Teilen."""
+    import numpy as np
+
+    from kevcad_kernel.druck.dreimf import schreibe_3mf
+
+    monkeypatch.setenv("KEVCAD_DRUCK_CACHE", str(tmp_path / "cache"))
+    stl = tmp_path / "klotz.stl"
+    P = np.array([[x, y, z] for z in (0, 10) for y in (-10, 10) for x in (-15, 15)], dtype=float)
+    T = np.array([[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7],
+                  [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]])
+    sl.schreibe_stl(stl, P, T)
+    liste = [sl.PlattenObjekt(stl, 60, 60, 0, name="A"), sl.PlattenObjekt(stl, 160, 60, 90, name="B")]
+    r = schreibe_3mf(tmp_path / "eigen.3mf", [liste])
+    assert r["objekte"] == 2
+    assert sl.pruefe_3mf(tmp_path / "eigen.3mf", tmp_path / "info") == 2
+    pr = sl.schreibe_profile(tmp_path / "s", {"schicht_mm": 0.2}, ["Bambu PETG Basic @BBL X1C"])
+    res = sl.ausfuehren([*sl._profil_args(pr), "--slice", "0", str(tmp_path / "eigen.3mf")], tmp_path / "s")
+    for g in (tmp_path / "s").glob("*.gcode"):
+        g.unlink()
+    assert [o["name"] for o in res["sliced_plates"][0]["objects"]] == ["A", "B"]
+
+
 @pytest.fixture(scope="module")
 def env():
     alt = {k: os.environ.get(k) for k in ("KEVCAD_DRUCK_CACHE", "KEVCAD_DRUCK_ABGLEICH")}

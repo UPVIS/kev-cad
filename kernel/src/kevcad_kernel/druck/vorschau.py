@@ -132,7 +132,11 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         v = vt.get(name) if isinstance(vt.get(name), dict) else {}
         zweck = v.get("zweck") or geo.get("zweck")
         e_vorgabe = {k: x for k, x in (v.get("einstellungen") or {}).items() if x is not None}
-        key = (geo.get("fid"), geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
+        # gleiche Form (ohne Lage) in gleicher Lage auf dem Bett: Hüllmaß in Druckausrichtung statt der Drehungen, damit
+        # gleiche Teile in verschiedener Einbaulage (gedreht, andere Rahmenlage) eine Gruppe bleiben
+        lage_bett = tuple(round(float(x), 1) for x in (geo.get("groesse") or [])) + \
+            (round(float(geo.get("auflage") or 0.0)),)
+        key = (geo.get("form"), lage_bett, geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
         g = roh.setdefault(key, {"namen": [], "stuecke": {}, "geo": geo, "zweck": zweck, "vorgaben": e_vorgabe,
                                  "zweck_fest": bool(v.get("zweck")), "pruefung": teile_info.get(name) or {},
                                  "von": {}})

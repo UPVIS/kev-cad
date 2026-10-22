@@ -648,12 +648,20 @@ class DruckvorschauRuntime:
                                     f"„{sl.MASCHINE}“, „{sl.prozess_name(float(e0.get('schicht_mm') or 0.2))}“, "
                                     f"„{filament}“ und Einstellungen je Teil.")
                 else:
+                    # Ohne Bambu Studio: ein 3MF je Platte (Teile in ihrer Lage); Bambu Studio liest Platten nur aus
+                    # eigenen Projekten, ein fremdes 3MF legt es ganz auf eine Platte
                     from kevcad_kernel.druck.dreimf import schreibe_3mf
 
                     geprueft = False
-                    res = schreibe_3mf(ziel_m, listen, titel=f"Kev CAD · {proj.name}")
-                    hinweise.append(f"{mat.upper()}: ohne Bambu Studio geschrieben, Platten und Teile ohne Profile; "
-                                    "Drucker, Prozess und Filament beim Öffnen in Bambu Studio wählen.")
+                    for nr, liste in zip(nr_mat, listen):
+                        ziel_p = ziel_m if len(nr_mat) == 1 else \
+                            ziel_m.with_name(f"{ziel_m.stem}-platte{nr}{ziel_m.suffix}")
+                        schreibe_3mf(ziel_p, [liste], titel=f"Kev CAD · {proj.name} · Platte {nr}")
+                        dateien.append({"pfad": str(ziel_p), "material": mat, "filament": filament, "platten": [nr]})
+                    hinweise.append(f"{mat.upper()}: ohne Bambu Studio geschrieben (je Platte eine Datei, Teile in "
+                                    "ihrer Lage, ohne Profile); Drucker, Prozess und Filament beim Öffnen in Bambu "
+                                    "Studio wählen.")
+                    continue
                 dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament, "platten": nr_mat})
         except (sl.SlicerFehler, OSError) as exc:
             return {"ok": False, "error": f"3MF nicht geschrieben: {exc}", "platten": []}

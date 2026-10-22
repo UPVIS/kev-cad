@@ -466,6 +466,32 @@ Höhe, Schichten, Abmessungen, Bauraum-Ausnutzung, Masse voll, Laufzeit) und `dr
 | `elefantenfuss`, `rundung_unten` | scharfe Unterkanten, Rundungen an der Bettkante |
 | `verzug`, `verzug_ecken` | lange Auflage und spitze Ecken bei ABS, ASA, PC, PA (PETG ab 200 mm) |
 | `schichtraster` | waagrechte Flächen außerhalb des 0,2-mm-Rasters |
+| `schichtraster_abdruck` | wie `schichtraster`, aber Flächen einer Aussparung um ein Lager- oder Zukaufteil (alle Ecken ≤ 1,5 mm daran): ein Hinweis je fremdem Teil, unkritisch, Passung prüfen |
+
+## 16 Druckvorschau
+
+Nach jedem Lauf zeigt Kev CAD neben der Stückliste, was die Druckteile im Druck bedeuten (Panel „Druck“, MCP
+`druckvorschau`): je Material Gramm, Meter und Euro, Druckzeit je Platte und gesamt (mit Plattenwechsel), Platten mit
+der Anordnung (gleiche Teile zusammen, ein Material je Platte, Sperrzone vorn links frei), Kosten mit Strom und
+Risikoaufschlag, je Gruppe gleicher Teile die empfohlenen Einstellungen mit Begründung und die Hinweise aus der
+Druckpraxis (Trocknen, Verzug, Brim, Stützen-Nacharbeit, AMS-Spülmenge, Düsenverschleiß bei CF, Erfolgsrisiko).
+Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nach (`stand`: `schaetzung`, `slicer`,
+`gemischt`; `abweichung` zeigt, wie weit die Schätzung daneben lag; die Schätzung lernt daraus).
+
+- **Zweck setzen:** `lager.druckteil(form, name, material="petg", zweck="tragend")`. Daraus folgen die Empfehlungen
+  (Abschnitte 3, 5, 13): `zier` 2 Wände, 15 % Grid, 0,16 mm · `funktion` 3 Wände, 20 % Gyroid · `tragend` 4 Wände,
+  25 % Gyroid, Last längs der Schichten · `bewegt` 4 Wände, 30 % Gyroid, 0,16 mm · `aussen` 4 Wände, 6 Decken, 25 %
+  Gyroid (PLA warnt). Ohne `zweck` gilt `funktion` als Schätzung. Stützen und Brim folgen aus der Druckprüfung
+  (Stützfläche, Auflage, schlanke Teile, Verzug).
+- **Anzahl:** gleiche Teile erkennt der Kernel selbst (gleiche Form und Material); `anzahl=` nur für zusätzliche
+  Stück (Ersatzteile), etwa `anzahl=6` bei vier gezeigten Rollen.
+- **Was die Vorschau sagt:** Kevin in einem Satz nennen, was neu dazukommt (z. B. „2 Platten PETG, 6 h 40 min,
+  4,80 €; die Lenksperre braucht Stützen“). Warnungen der Vorschau (Stützen, Verzug, Trocknen) wie Hinweise der
+  Druckprüfung behandeln: wenn möglich konstruktiv lösen (Fase statt Überhang, größere Auflage).
+- **Einstellungen festlegen:** nur auf Kevins Wunsch `druck_einstellen(teil, einstellungen={…}, zweck=…)`; gespeichert
+  in `<projekt>/druck.json` (gehört zu den Versionen), in der App mit „von Kevin“ bzw. „vom Agenten“.
+- **3MF:** `druck_export(ziel=None, platten=None)` schreibt die Platten als Bambu-Studio-Projekt mit Profilen und
+  Einstellungen je Teil (je Material eine Datei); gedruckt wird nichts.
 
 ## Quellen
 
