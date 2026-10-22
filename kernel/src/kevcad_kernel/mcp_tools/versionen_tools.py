@@ -40,7 +40,10 @@ def kennzahlen_text(k: dict[str, Any] | None) -> str:
 
 def version_zeile(v: dict[str, Any]) -> str:
     ms = v.get("meilenstein") or {}
-    titel = f"★ {ms['titel']}" if ms.get("titel") else v.get("titel") or ""
+    if ms.get("titel"):
+        titel = f"★ {ms['titel']}"
+    else:
+        titel = (v.get("titel") or "") + (f" – {v['zusatz']}" if v.get("zusatz") else "")
     text = f"- V{v.get('nr')} · {_zeit(v)} · {v.get('wer_text') or v.get('wer')} · {titel} · " \
            f"{kennzahlen_text(v.get('kennzahlen'))}"
     if v.get("aktuell"):
@@ -82,6 +85,8 @@ def liste_text(res: dict[str, Any], limit: int) -> str:
 
 def _kompakt(v: dict[str, Any]) -> dict[str, Any]:
     out = {k: v.get(k) for k in ("nr", "zeit", "wer", "wer_text", "titel", "quelle", "aktuell", "gruppe", "aus")}
+    if v.get("zusatz"):
+        out["zusatz"] = v["zusatz"]
     if v.get("meilenstein"):
         out["meilenstein"] = {k: v["meilenstein"].get(k) for k in ("titel", "notiz")}
     if v.get("kennzahlen"):
@@ -193,17 +198,25 @@ def register_versionen_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
     @tool("meilenstein", "Meilenstein setzen",
           "Mark a version as a named milestone with a short note (default: the current state; unsaved changes "
           "become a version first). Rule: at the end of every task, after the last successful run, set a milestone "
-          "with a short German title and a note describing what was done, so Kevin finds the state again.",
-          ADDITIVE)
+          "with a short German title and a note describing what was done, so Kevin finds the state again. A "
+          "milestone Kevin named himself is kept (your title then becomes the version's title below it), unless "
+          "Kevin explicitly asks you to rename it (ersetzen=true).", ADDITIVE)
     async def meilenstein(
         titel: Annotated[str, Field(description="Short German title, e.g. 'Stangenhalter mit Gewindeeinsätzen'")],
         notiz: Annotated[str, Field(description="One or two sentences: what changed and why")] = "",
         version: Annotated[str | None, Field(description="Version to mark; omit for the current state")] = None,
+        ersetzen: Annotated[bool, Field(description="Replace a milestone Kevin named himself; only when Kevin "
+                                                    "explicitly asks for it")] = False,
     ) -> CallToolResult:
-        res = await t.work("setzt einen Meilenstein", svc.meilenstein, titel, notiz, version)
+        if ersetzen:
+            res = await t.work("setzt einen Meilenstein", svc.meilenstein, titel, notiz, version, ersetzen=True)
+        else:
+            res = await t.work("setzt einen Meilenstein", svc.meilenstein, titel, notiz, version)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Meilenstein nicht gesetzt: {err}", res)
+        if res.get("geschuetzt"):
+            return fmt.result(str(res.get("hinweis") or f"V{res.get('version')} behält Kevins Meilenstein."), res)
         text = f"Meilenstein „{titel}“ an V{res.get('version')} gesetzt."
         if res.get("warnung"):
             text += f"\nAchtung: {res['warnung']}"

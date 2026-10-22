@@ -233,3 +233,68 @@ def test_uebernahme_und_nachberechnung_im_hintergrund(env):
     assert any(h["type"] == "VERSION_BILD_REQ" and h["nr"] == 1 for h in app.since(start))
     assert rt.execute("b")["result"] == "40"  # der Rechenprozess der Laufzeit blieb unberührt
     assert warte(lambda: rt._ver_rechner is None, 30)  # Hintergrundprozess wieder beendet
+    # Titel: sobald beide Stände Kennzahlen haben, aus dem Inhalt (vorher aus dem Code), „Übernommener Stand“ als
+    # Zusatz; die Git-Geschichte bleibt, wie sie ist
+    assert warte(lambda: rt.versionen()["versionen"][0]["titel"] == "b 20 → 40 · + Stift", 30)
+    vs = rt.versionen()["versionen"]
+    assert vs[0]["zusatz"] == "Übernommener Stand" and vs[0]["titel_quelle"] == "auto"
+    assert vs[1]["titel"] == "Erster Stand"
+    assert rt._archiv.git.text("log", "--all", "--format=%s").split() == ["Übernommener", "Stand"] * 2
+    msg = versionen_nachricht(env, start, lambda h: h["versionen"][0]["titel"] == "b 20 → 40 · + Stift")
+    assert msg["versionen"][0]["zusatz"] == "Übernommener Stand"
+
+
+def test_titel_automatisch_vom_agenten_und_kevins_meilenstein(env):
+    """Automatischer Titel aus dem Inhalt, run(titel=…) mit Vorrang (der automatische als Zusatz), Läufe mit
+    überschriebenen Parametern ändern die Version nicht, Kevins Meilenstein überschreibt der Agent nicht."""
+    rt, app = env["rt"], env["app"]
+    p = projekt(env, CODE1)
+    res = rt.run()
+    assert res["version"]["titel"] == "Erster Stand"
+    (p / "model.py").write_text(CODE2)
+    res = rt.run(titel="  Stift ergänzt,   Platte breiter ")
+    assert res["ok"] and res["version"]["neu"] and res["version"]["nr"] == 2
+    assert res["version"]["titel"] == "Stift ergänzt, Platte breiter"
+    assert res["version"]["titel_auto"] == "b 20 → 40 · + Stift"
+    v = rt.versionen()["versionen"][0]
+    assert (v["titel"], v["zusatz"], v["titel_quelle"]) == ("Stift ergänzt, Platte breiter", "b 20 → 40 · + Stift",
+                                                            "agent")
+    # ohne Änderung: kein neuer Titel für einen Stand, der schon einen hat
+    res = rt.run(titel="Noch einmal")
+    assert not res["version"]["neu"] and "Titel nicht vergeben" in res["version"]["hinweis"]
+    assert rt.versionen()["versionen"][0]["titel"] == "Stift ergänzt, Platte breiter"
+    # Kevin speichert, der Auto-Lauf legt die Version an; danach beschreibt der Agent sie
+    rt._agent["connected"] = False
+    (p / "model.py").write_text(CODE2.replace("Cylinder(3, 8)", "Cylinder(4, 8)"))
+    job = rt._submit_run(None, 0, 60, source="auto")
+    job.done.wait(60)
+    assert job.result["version"]["nr"] == 3 and job.result["version"]["titel"] == "Stift geändert"
+    res = rt.run(titel="Stift dicker")
+    assert res["version"]["nr"] == 3 and not res["version"]["neu"] and "hinweis" not in res["version"]
+    v = rt.versionen()["versionen"][0]
+    assert (v["titel"], v["zusatz"]) == ("Stift dicker", "Stift geändert")
+    # nur ein Kommentar: ohne Wirkung
+    (p / "model.py").write_text(CODE2.replace("Cylinder(3, 8)", "Cylinder(4, 8)") + "# Stift aus Messing\n")
+    assert rt.run()["version"]["titel"] == "Code aufgeräumt (ohne Wirkung)"
+    # überschriebene Parameter: die Version behält die Kennzahlen und Parameter ihrer Dateien
+    res = rt.run(params={"b": 30})
+    assert res["ok"] and res["version"] == {**res["version"], "nr": 4, "neu": False}
+    assert rt.versionen()["versionen"][0]["params"] == {"b": 40}
+    assert rt.run()["ok"]  # zurück auf den Dateistand
+    # Kevin benennt die Version in der App; der Meilenstein des Agenten am Ende der Aufgabe überschreibt das nicht
+    start = app.mark()
+    app.send({"type": "VERSION_MILESTONE", "id": "t-1", "version": None, "titel": "Kevins Prototyp", "notiz": ""})
+    assert app.wait_for(lambda h: h.get("reply_to") == "t-1", start=start)[2]["ok"]
+    res = rt.meilenstein("Messingstift dokumentiert", "Kommentar ergänzt")
+    assert res["ok"] and res["geschuetzt"] and res["version"] == 4 and res["titel"] == "Kevins Prototyp"
+    assert "Kevins Meilenstein" in res["hinweis"]
+    v = rt.versionen()["versionen"][0]
+    assert v["meilenstein"]["titel"] == "Kevins Prototyp" and v["meilenstein"]["wer"] == "kevin"
+    assert v["titel"] == "Messingstift dokumentiert"  # die Beschreibung des Agenten steht darunter
+    # die Automatik ändert daran nichts, auch nicht beim Nachziehen
+    rt._titel_nachziehen(rt._archiv)
+    assert rt.versionen()["versionen"][0]["meilenstein"]["titel"] == "Kevins Prototyp"
+    # nur auf Kevins ausdrücklichen Wunsch
+    res = rt.meilenstein("Prototyp mit Messingstift", ersetzen=True)
+    assert res["ok"] and not res.get("geschuetzt")
+    assert rt.versionen()["versionen"][0]["meilenstein"]["titel"] == "Prototyp mit Messingstift"

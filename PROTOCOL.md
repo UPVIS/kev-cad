@@ -591,14 +591,23 @@ projektweit eindeutiger Nummer `nr` (Anzeige „V12“). Varianten sind Zweige (
 
 ```json
 {"nr": 37, "commit": "5905093abc", "zeit": "2026-10-21T23:41:53", "ts": 1792626113, "wer": "agent",
- "wer_text": "Agent · 3f2a9c", "sitzung": "3f2a9c1b77", "quelle": "lauf", "titel": "Geändert: model.py",
+ "wer_text": "Agent · 3f2a9c", "sitzung": "3f2a9c1b77", "quelle": "lauf", "titel": "Halter mit Flügelschrauben",
  "aus": null, "meilenstein": {"titel": "Halter fertig", "notiz": "…", "zeit": "…", "wer": "agent"},
  "kennzahlen": {"teile": 134, "masse_kg": 12.3, "kosten": 85.2, "positionen": 17, "fehler": 0, "warnungen": 1,
                 "pruefung": "1 Teil schwebt"},
  "params": {"laenge": 1000}, "pruefung": {"fehler": 0, "warnungen": 1, "pruefung": "…"},
  "bild": "/…/.kevcad/versionen/bilder/37.png", "aktuell": true, "geerbt": false, "zweig": "haupt",
- "dateien": ["model.py"], "gruppe": null, "nachberechnung": null}
+ "dateien": ["model.py"], "gruppe": null, "nachberechnung": null,
+ "zusatz": "breite 120 → 140 · + Flügelschraube M4 (4×)", "titel_quelle": "agent",
+ "titel_auto": "breite 120 → 140 · + Flügelschraube M4 (4×)"}
 ```
+
+- `titel`: anzuzeigender Titel (unter einem Meilenstein); Vorrang Titel vom Agenten (`run(titel=…)`), dann der
+  automatische aus dem Vergleich mit der Vorgängerversion (PLAN-VERSIONEN.md „Titel“), sonst der Grundtitel beim
+  Anlegen („Übernommener Stand“, „Erster Stand“). Wiederhergestellt und gesichert: fester Titel. Additiv seit dem Zweig
+  `versionstitel`: `zusatz` (zweite Zeile oder null: der automatische Titel unter dem des Agenten oder unter einem
+  festen, „Übernommener Stand“ unter dem automatischen eines übernommenen Stands), `titel_quelle` (`agent`, `auto`,
+  `fest`, `offen` = noch nicht berechnet), `titel_auto` (der automatische Titel oder null).
 
 - `wer`: `kevin` (Speichern im Editor, ⌘R oder Aktion in der App), `agent` (MCP; `sitzung` = Claude-Sitzung aus dem Kopf der Brücke, sonst die aktive Sitzung), `kevcad`,
   `unbekannt` (übernommene Stände aus Auto-Läufen). `quelle`: `lauf`, `wiederherstellen` (mit `aus`), `sicherung`

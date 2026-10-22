@@ -268,6 +268,17 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
     }
     if bom:
         data["bom"] = bom
+    version = res.get("version") if isinstance(res.get("version"), dict) else None
+    if version:  # Versionen: Titel der neuen Version (Agent vor Automatik)
+        data["version"] = version
+        if (version.get("neu") or version.get("titel_vergeben")) and version.get("titel"):
+            zeile = f"Version V{version.get('nr')}: {version['titel']}"
+            auto = version.get("titel_auto")
+            if auto and auto != version["titel"]:
+                zeile += f" (automatisch: {auto})"
+            lines.append(zeile)
+        if version.get("hinweis"):
+            lines.append(f"Version: {version['hinweis']}")
     if res.get("animationen"):  # Phase 5
         from .animation_tools import run_note
 

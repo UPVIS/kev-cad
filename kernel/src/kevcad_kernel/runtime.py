@@ -227,7 +227,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # KernelService: Lauf
     # =================================================================================================================
 
-    def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120) -> dict[str, Any]:
+    def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
+            titel: str | None = None) -> dict[str, Any]:
         job = self._submit_run(params, slow_ms, timeout_s, source="agent")
         if isinstance(job, dict):
             return job
@@ -237,6 +238,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             check = fuer_ergebnis(self._pruef.warte(job.run, self.pruef_warten_s))
             if check is not None:
                 result = {**result, "pruefung": check}
+        if titel:  # Versionen: Titel des Agenten für die Version dieses Laufs (versionen/laufzeit.py)
+            result = self._versionen_agent_titel(result, titel)
         return result
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:

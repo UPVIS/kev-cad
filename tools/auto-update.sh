@@ -6,24 +6,48 @@
 # (~/Library/Application Support/de.upvis.kevcad/build-src), damit halbfertige Änderungen im Repo nie installiert
 # werden. Mehrere Auslöser hintereinander werden zu einem Lauf zusammengefasst.
 #
+# Gebaut wird auf dem Mac mini, wenn er erreichbar ist (tools/fern.sh release: Paket dort bauen, hier installieren),
+# sonst hier wie bisher mit ./build.sh unter der gemeinsamen Sperre. Installieren, Neustart und Wiederherstellen laufen
+# immer hier.
+#
 # Von Hand:  tools/auto-update.sh          Protokoll: ~/Library/Logs/Kev CAD/update.log
 # Abschalten: KEVCAD_NO_AUTOUPDATE=1 beim Commit setzen oder `git config core.hooksPath ""`.
+# Probe ohne Kevins App: KEVCAD_UPDATE_PROBE=<Ordner> (Arbeitskopie, Installation, Protokoll und Sperren dort, keine
+# Mitteilungen, kein Neustart) und KEVCAD_UPDATE_REF=<Zweig> (Vorgabe main). Der Ordner muss neu oder leer sein; danach
+# `git worktree remove --force <Ordner>/support/build-src`.
 set -uo pipefail
 # Git setzt in Hooks GIT_INDEX_FILE und Co.; die stören die Befehle in der eigenen Arbeitskopie.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 
 REPO="$(dirname "$(cd "$(dirname "$0")/.." && git rev-parse --path-format=absolute --git-common-dir)")"
-SUPPORT="$HOME/Library/Application Support/de.upvis.kevcad"
+REF="${KEVCAD_UPDATE_REF:-main}"
+PROBE="${KEVCAD_UPDATE_PROBE:-}"
+if [ -n "$PROBE" ]; then
+  mkdir -p "$PROBE"
+  PROBE="$(cd "$PROBE" && pwd)"
+  SUPPORT="$PROBE/support"
+  LOGDIR="$PROBE/logs"
+  export KEVCAD_INSTALL_DIR="$PROBE/Tools"
+else
+  SUPPORT="$HOME/Library/Application Support/de.upvis.kevcad"
+  LOGDIR="$HOME/Library/Logs/Kev CAD"
+fi
+export KEVCAD_INSTALL_ROOT="$SUPPORT/install"
 SRC="$SUPPORT/build-src"
-LOGDIR="$HOME/Library/Logs/Kev CAD"
 LOG="$LOGDIR/update.log"
 LOCK="$SUPPORT/update.lock"
 PENDING="$SUPPORT/update.pending"
 export PATH="/opt/homebrew/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+# Fester Name auf dem Mac mini: Der Installationsbau findet dort seinen warmen Bauplatz wieder.
+export KEVCAD_FERN_ID="${KEVCAD_FERN_ID:-release}"
 
 mkdir -p "$SUPPORT" "$LOGDIR"
 
 notify() {
+  if [ -n "$PROBE" ]; then
+    echo "$(date '+%H:%M:%S') Mitteilung (Probe, nicht gezeigt): $1: $2" >> "$LOG"
+    return
+  fi
   osascript -e "display notification \"$2\" with title \"$1\"" >/dev/null 2>&1 || true
 }
 
@@ -41,7 +65,7 @@ wait_for_memory() {
   return 0
 }
 
-APP="$HOME/Applications/Tools/Kev CAD.app"
+APP="${KEVCAD_INSTALL_DIR:-$HOME/Applications/Tools}/Kev CAD.app"
 BUNDLE_ID="de.upvis.kevcad"
 
 app_running() { pgrep -f "$APP/Contents/MacOS/Kev CAD" >/dev/null; }
@@ -68,6 +92,16 @@ relaunch() {
   notify "Kev CAD aktualisiert" "Stand $1 läuft, dein Projekt ist wieder offen."
 }
 
+# Bauen und installieren: auf dem Mac mini über tools/fern.sh release (Rückfall auf ./build.sh hier unter der Sperre
+# macht fern.sh selbst), bei einem Stand ohne fern.sh wie bisher direkt hier.
+build_and_install() {
+  if [ -x "$SRC/tools/fern.sh" ]; then
+    "$SRC/tools/fern.sh" release
+  else
+    wait_for_memory && lockf -k "$BUILD_LOCK" "$SRC/build.sh"
+  fi
+}
+
 # Läuft schon ein Update, nur vormerken; der laufende Durchgang baut danach noch einmal.
 if ! mkdir "$LOCK" 2>/dev/null; then
   # verwaiste Sperre (älter als 30 min) aufräumen
@@ -86,7 +120,7 @@ change_kind() {
   local old changed
   old=$(cut -d' ' -f1 "$SUPPORT/install/VERSION" 2>/dev/null | tr -d '+')
   [ -n "$old" ] && git -C "$REPO" cat-file -e "$old^{commit}" 2>/dev/null || { echo full; return; }
-  changed=$(git -C "$REPO" diff --name-only "$old" main)
+  changed=$(git -C "$REPO" diff --name-only "$old" "$REF")
   if echo "$changed" | grep -qE '^(app/|build\.sh$)'; then echo full
   elif echo "$changed" | grep -qE '^kernel/(src/|pyproject\.toml$|uv\.lock$)'; then echo full
   elif echo "$changed" | grep -qE '^skill/'; then echo skill
@@ -96,28 +130,27 @@ change_kind() {
 
 while :; do
   rm -f "$PENDING"
-  COMMIT=$(git -C "$REPO" rev-parse --short main)
+  COMMIT=$(git -C "$REPO" rev-parse --short "$REF")
   KIND=$(change_kind)
   if [ "$KIND" = "none" ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') main $COMMIT: nur Doku/Tests geändert, kein Update nötig" >> "$LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $REF $COMMIT: nur Doku/Tests geändert, kein Update nötig" >> "$LOG"
   elif [ "$KIND" = "skill" ]; then
     {
-      echo "$(date '+%Y-%m-%d %H:%M:%S') main $COMMIT: nur der Skill geändert, kopiere ihn"
+      echo "$(date '+%Y-%m-%d %H:%M:%S') $REF $COMMIT: nur der Skill geändert, kopiere ihn"
       if ! git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
-        git -C "$REPO" worktree add --detach "$SRC" main
+        git -C "$REPO" worktree add --detach "$SRC" "$REF"
       fi
-      git -C "$SRC" checkout -q --detach main && git -C "$SRC" reset -q --hard main \
+      git -C "$SRC" checkout -q --detach "$REF" && git -C "$SRC" reset -q --hard "$REF" \
         && rsync -a --delete "$SRC/skill/" "$SUPPORT/install/skill/"
     } >> "$LOG" 2>&1
   else
     {
       echo
-      echo "=== $(date '+%Y-%m-%d %H:%M:%S') Update auf main $COMMIT"
+      echo "=== $(date '+%Y-%m-%d %H:%M:%S') Update auf $REF $COMMIT"
       if ! git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
-        git -C "$REPO" worktree add --detach "$SRC" main
+        git -C "$REPO" worktree add --detach "$SRC" "$REF"
       fi
-      git -C "$SRC" checkout -q --detach main && git -C "$SRC" reset -q --hard main && wait_for_memory \
-        && lockf -k "$BUILD_LOCK" "$SRC/build.sh"
+      git -C "$SRC" checkout -q --detach "$REF" && git -C "$SRC" reset -q --hard "$REF" && build_and_install
     } >> "$LOG" 2>&1
     rc=$?
     if [ $rc -eq 0 ]; then

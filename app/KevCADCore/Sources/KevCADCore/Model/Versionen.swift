@@ -57,6 +57,8 @@ public struct VersionEintrag: Identifiable, Equatable, Sendable {
     /// lauf | wiederherstellen | sicherung | uebernahme | meilenstein
     public var quelle: String
     public var titel: String
+    /// Zweite Zeile: automatischer Titel unter einem Agententitel bzw. „Übernommener Stand“ (oder nil).
+    public var zusatz: String?
     public var aus: Int?
     public var meilenstein: VersionMeilenstein?
     public var kennzahlen: VersionKennzahlen?
@@ -77,7 +79,7 @@ public struct VersionEintrag: Identifiable, Equatable, Sendable {
         titel: String = "", aus: Int? = nil, meilenstein: VersionMeilenstein? = nil,
         kennzahlen: VersionKennzahlen? = nil, params: [String: Double] = [:], bild: URL? = nil,
         aktuell: Bool = false, geerbt: Bool = false, dateien: [String] = [], gruppe: String? = nil,
-        nachberechnung: String? = nil
+        nachberechnung: String? = nil, zusatz: String? = nil
     ) {
         self.nr = nr
         self.commit = commit
@@ -96,6 +98,7 @@ public struct VersionEintrag: Identifiable, Equatable, Sendable {
         self.dateien = dateien
         self.gruppe = gruppe
         self.nachberechnung = nachberechnung
+        self.zusatz = zusatz
     }
 
     /// Text für die Zeile: Meilensteintitel, sonst der Titel der Version.

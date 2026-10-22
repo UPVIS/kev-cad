@@ -48,6 +48,26 @@ def test_wiederherstellen_meilenstein_variante(srv):
     assert fake.calls_of("variante")[-1] == (("anlegen", "Leicht", "V2", None), {})
 
 
+def test_run_mit_titel_und_geschuetzter_meilenstein(srv):
+    server, fake = srv
+    res = call(server.url, "run", {"titel": " Laufrollen auf Kugellager umgestellt "})
+    assert res.is_error is False
+    text = texts(res)[0]
+    assert "Version V4: Laufrollen auf Kugellager umgestellt (automatisch: breite 120 → 140)" in text
+    assert res.structured_content["version"]["titel"] == "Laufrollen auf Kugellager umgestellt"
+    assert fake.calls_of("run") == [((None, 0), {"titel": "Laufrollen auf Kugellager umgestellt"})]
+    # ohne Titel bleibt der Aufruf wie bisher
+    call(server.url, "run", {})
+    assert fake.calls_of("run")[-1] == ((None, 0), {})
+    # Kevins Meilenstein bleibt; ersetzen nur auf seinen Wunsch
+    res = call(server.url, "meilenstein", {"titel": "Agent fertig", "version": "V3"})
+    assert res.is_error is False and "Kevins Meilenstein „Halter fertig“" in texts(res)[0]
+    assert "gesetzt" not in texts(res)[0]
+    res = call(server.url, "meilenstein", {"titel": "Agent fertig", "version": "V3", "ersetzen": True})
+    assert "Meilenstein „Agent fertig“ an V3 gesetzt." in texts(res)[0]
+    assert fake.calls_of("meilenstein")[-1] == (("Agent fertig", "", "V3"), {"ersetzen": True})
+
+
 def test_vergleichen_mit_code(srv):
     server, fake = srv
     res = call(server.url, "versionen_vergleichen", {"a": "V2", "code_zeilen": 5})
