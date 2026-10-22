@@ -151,6 +151,17 @@ Maße, Notizen und Bauplan-Schritte zeigen auf Geometrie über einen **Bezug** m
 Änderungen über MCP (`zeichnung_erstellen`, `zeichnung_bearbeiten`, `bauplan_bearbeiten`) schickt der Kernel der App
 sofort: `DOCS` und für jedes geänderte Blatt `DRAWING` bzw. `BAUPLAN` (Version 1.2), nicht erst nach dem nächsten Lauf.
 
+**Reglerstand:** Zeigt die Szene einen Lauf mit überschriebenen Parametern (Regler, `run(params=…)`), rechnet der
+Kernel Blätter und Bauplan dazu und zeigt sie, speichert sie aber nicht. Bearbeiten, Anlegen und Neurechnen
+(`DRAWING_EDIT`, `DRAWING_CREATE`, `BAUPLAN_EDIT`, die MCP-Werkzeuge dazu) lehnt er dann mit `ACK` `ok: false` und
+einer Meldung ab („Das Modell zeigt gerade einen Reglerstand (breite = 280) …“); nach einem Lauf ohne überschriebene
+Parameter geht es wieder.
+
+**Format und Maßstab automatisch:** das kleinste Format, auf dem Ansichten, Maße und Tabellen mit Abstand passen (A4
+vor A3 vor A2), dort der größte Normmaßstab; eine Größe mehr nur, wenn das Teil sonst klein würde und dort ein größerer
+Maßstab passt. Feste Ansichten (`fest: true`) wandern beim Formatwechsel anteilig mit und bleiben im Zeichenfeld;
+überdeckten sie dort Schriftfeld oder Tabellen, bleibt ein größeres Format, und das Blatt bekommt einen Hinweis.
+
 Polylinien-Nutzlast: je Linienart nacheinander `u32 Anzahl Polylinien`, je Polylinie `u32 Punktzahl` und `f32 x, y`
 paarweise; Reihenfolge der Linienarten wie im Kopf `linien_reihenfolge`. Maße und Texte im JSON-Kopf.
 
