@@ -220,7 +220,8 @@ nennen.
 
 Nach jedem Lauf rechnet Kev CAD Lastszenarien: Eigengewicht, auf Rollen das Bremsen, eine Nutzlast aus einem
 Parameter in kg und Kevins eigene aus model.py (`import kevcad.statik as st`, `st.szenario("…")`,
-`st.last(teil, kg=30)` oder `kraft=(fx, fy, fz)` mit `punkt=`). Rahmen aus Lagerteilen rechnet es als Stabwerk
+`st.last(teil, kg=30)` oder `kraft=(fx, fy, fz)` mit `punkt=`; drückt ein Teil gegen ein anderes, als Kraftpaar mit
+`gegen="Teil"`, sonst kippt oder rutscht das Ganze scheinbar). Rahmen aus Lagerteilen rechnet es als Stabwerk
 (Spannung, Durchbiegung, Knicken), belastete Halter und Druckteile als Kragträger (quer zur Schicht nur ein Teil der
 Festigkeit), dazu Kippen je Richtung, Rutschen und Schraubenlast. Jedes Szenario bekommt eine Ampel gegen das Ziel
 (statisch 2, dynamisch 3, Druckteile das Doppelte); rot und gelb sind Befunde `statik_*` (sperren den Export nicht).
