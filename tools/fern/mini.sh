@@ -154,6 +154,8 @@ finish() {
   done
   [ -n "$TICKET" ] && rm -f "$TICKET"
   rm -f "$RUNNING/$JOB_ID"
+  # Ohne Erfolg gibt es nichts abzuholen (fern.sh ist dann im Rückfall oder schon weg).
+  [ "$rc" = 0 ] || rm -rf "$RESULTS/$JOB_ID"
   # Der Schnappschuss wird die Grundlage des nächsten Abgleichs dieses Kürzels (fern.sh: rsync --link-dest).
   # Unter der Vergabesperre, weil zwei Aufträge desselben Kürzels zugleich enden können.
   if [ -d "$SNAP" ]; then
