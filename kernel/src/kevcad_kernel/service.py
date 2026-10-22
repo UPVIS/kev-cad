@@ -441,6 +441,19 @@ class KernelService(Protocol):
         "ueberlagern" | "differenz", ``deckkraft`` des Modells; ``aus`` schließt sie. Mit ``bild`` das Bild dazu.
         {"ok", "message", "png"?, "width"?, "height"?, "ueberdeckung"?, "foto"?}"""
 
+    # Scan mit dem iPhone (additiv; SCAN.md, PLAN-SCAN.md, umgesetzt in kevcad_kernel/scan/laufzeit.py)
+    def scans(self) -> dict[str, Any]:
+        """Empfangene Scans (neueste zuerst) mit Zustand und Referenzen, dazu der Empfänger. {"ok", "ordner",
+        "scans": [{"id", "name", "ordner", "empfangen", "erstellt", "geraet", "fotos", "videobilder", "objekt",
+        "groesse_mb", "vorschau", "referenzen", "zustand"}], "empfaenger" {"laeuft", "port", "name", "dienst",
+        "empfangen"}, "kevscan"}"""
+
+    def scan_importieren(self, scan: str | None = None, name: str | None = None, schnell: bool = False,
+                         warten_s: float = 0.0) -> dict[str, Any]:
+        """Scan (Kennung, Name, „letzter“ oder Pfad eines Ordners/ZIPs) im Hintergrund auswerten (kevscan, eigener
+        Prozess) und als Referenz ``<projekt>/referenzen/<name>/`` (art "scan") anlegen. {"ok", "name", "ordner",
+        "scan", "zustand", "einstellung", "befehl", "referenz"? und "bericht"? (mit warten_s)}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

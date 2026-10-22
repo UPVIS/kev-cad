@@ -80,7 +80,8 @@ class ReferenzRuntimeMixin:
             liste.append(e)
         return {"ok": True, "projekt": str(proj.path), "referenzen": liste,
                 "werkzeuge": {"kevcad_capture": str(ablage.capture_programm() or "") or None,
-                              "fotomess": str(ablage.fotomess_ordner() or "") or None}}
+                              "fotomess": str(ablage.fotomess_ordner() or "") or None,
+                              "kevscan": _kevscan_ordner()}}
 
     def referenz_video(self, pfad: str, name: str | None = None, masz: dict[str, float] | None = None,
                        auflage: bool = False, von: float | None = None, bis: float | None = None,
@@ -301,7 +302,12 @@ class ReferenzRuntimeMixin:
                 msg += f" (model.py Zeile {var['line']})"
             raise ReferenzFehler(msg)
         melde(0.12, f"Messmodell: {len(var.get('teile') or [])} Teile, {len(var.get('frei') or [])} freie Maße")
-        if meta.get("art") == "video":
+        if meta.get("art") == "scan":
+            # Scan: bekannte Kameras (ARKit), Tiefe (PromptDA) und Masken aus der Auswertung (scan/vermessen.py)
+            from kevcad_kernel.scan import vermessen as scan_vermessen
+
+            q = scan_vermessen.quelle(ordner, max(1, min(int(bilder or 8), 24)))
+        elif meta.get("art") == "video":
             q: dict[str, Any] = {"video": meta["quelle"]}
             if von is not None:
                 q["von"] = float(von)
@@ -459,6 +465,14 @@ class ReferenzRuntimeMixin:
         posen_datei = ablage.ordner(projekt, n) / ablage.CAPTURE / "poses.json"
         obj = ablage.ordner(projekt, n) / ablage.CAPTURE / "netz_mm.obj"
         meta.pop("lage", None)
+        if meta.get("art") == "scan":
+            # Scan: fotomess legt den Scan selbst an das Modell (messung["scan"]["lage"])
+            from kevcad_kernel.scan.vermessen import lage_aus_messung
+
+            lage = lage_aus_messung(messung) if obj.is_file() else None
+            if lage is not None:
+                meta["lage"] = lage
+            return
         if meta.get("art") != "video" or not posen_datei.is_file() or not obj.is_file():
             return
         posen = netz.lies_posen(posen_datei)
@@ -605,7 +619,8 @@ class ReferenzRuntimeMixin:
         from kevcad_kernel.protocol import pack_ref_netz
 
         kopf, nutz = pack_ref_netz(name=n, positions=m["positions"], normals=m["normals"], triangles=m["triangles"],
-                                   lage=_lage_kurz(lage))
+                                   lage=_lage_kurz(lage),
+                                   quelle="kevscan" if meta.get("art") == "scan" else "object_capture")
         kopf.pop("seq", None)
         self._ref_netz_cache[str(obj)] = (schl, kopf, nutz)
         return kopf, nutz
@@ -781,6 +796,12 @@ def _zwillings_start(messung: dict[str, Any], lage: dict[str, Any], varianten_da
                 gedreht += 1
         start[b["name"]] = k
     return start if gedreht else None
+
+
+def _kevscan_ordner() -> str | None:
+    from kevcad_kernel.scan.ablage import kevscan_ordner
+
+    return str(kevscan_ordner() or "") or None
 
 
 def bekannte_masse_ok(bekannt: Any) -> dict[str, float]:

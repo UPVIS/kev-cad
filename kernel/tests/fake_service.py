@@ -819,6 +819,28 @@ class FakeService:
                if k not in ("type", "seq")}
         return {"ok": True, **erg, "kontrollbilder": ["/tmp/r/messung/kontrolle/a.jpg"]}
 
+    # Scan mit dem iPhone
+    def scans(self) -> dict[str, Any]:
+        self._record("scans")
+        return {"ok": True, "ordner": "/tmp/Scans", "kevscan": "/x/scan",
+                "empfaenger": {"laeuft": True, "port": 50123, "name": "MacBook", "dienst": "_kevscan._tcp"},
+                "scans": [{"id": "2026-10-22_211000_Quader", "name": "Quader", "ordner": "/tmp/Scans/x", "fotos": 10,
+                           "videobilder": 30, "groesse_mb": 41.2, "objekt": False, "geraet": "iPhone16,2",
+                           "empfangen": "2026-10-22T21:10:00", "referenzen": [], "zustand": "neu"}]}
+
+    def scan_importieren(self, scan: str | None = None, name: str | None = None, schnell: bool = False,
+                         warten_s: float = 0.0) -> dict[str, Any]:
+        self._record("scan_importieren", scan, name, schnell, warten_s)
+        out = {"ok": True, "name": name or "Quader", "ordner": "/tmp/p/referenzen/Quader", "scan": scan or "x",
+               "zustand": "rechnet", "einstellung": "schnell" if schnell else "genau", "befehl": "kevscan auswerten"}
+        if warten_s:
+            out.update(zustand="fertig", referenz={"name": out["name"], "zustand": "fertig"},
+                       bericht={"huellmass_mm": {"laenge": 200.4, "breite": 100.8, "hoehe": 50.2},
+                                "bilder": {"fotos": 10, "video": 30}, "tiefe": {"verfahren": "promptda",
+                                                                                "modell": "large", "geraet": "mps"},
+                                "zeiten": {"gesamt": 95.0, "tiefe_je_bild": 1.9, "tsdf": 3.1}})
+        return out
+
     def referenz_fotoansicht(self, name: str | None = None, foto: Any = None, satz: str | None = None,
                              modus: str | None = None, deckkraft: float | None = None, aus: bool = False,
                              bild: bool = False, breite: int = 1280) -> dict[str, Any]:

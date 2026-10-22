@@ -942,6 +942,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .referenz_tools import register_referenz_tools
 
     register_referenz_tools(tool, t, svc)
+    # Scan mit dem iPhone (scan_tools.py, SCAN.md, PLAN-SCAN.md)
+    from .scan_tools import register_scan_tools
+
+    register_scan_tools(tool, t, svc)
     # Statik Stufe 1: statik, szenario_rechnen (statik_tools.py, PLAN-STATIK.md)
     from .statik_tools import register_statik_tools
 

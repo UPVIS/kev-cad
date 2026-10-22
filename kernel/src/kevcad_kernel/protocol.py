@@ -1127,7 +1127,7 @@ REF_NACHRICHTEN: dict[str, tuple[str, ...]] = {
     "REF_APPLY": ("id", "referenz", "werte"),
 }
 REF_ZUSTAENDE: tuple[str, ...] = ("leer", "rechnet", "fertig", "fehler")
-REF_ARTEN: tuple[str, ...] = ("video", "fotos")
+REF_ARTEN: tuple[str, ...] = ("video", "fotos", "scan")  # "scan": Kev Scan (SCAN.md), additiv
 REF_SAETZE: tuple[str, ...] = ("messung", "capture")
 REF_LISTE_FELDER: tuple[str, ...] = ("name", "art", "quelle", "zustand", "laeuft", "fortschritt", "text", "meldung",
                                      "netz", "fotos", "messung", "erstellt")

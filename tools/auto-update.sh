@@ -186,7 +186,7 @@ change_kind() {
   changed=$(git -C "$REPO" diff --name-only "$old" "$REF")
   if echo "$changed" | grep -qE '^(app/|build\.sh$)'; then echo full
   elif echo "$changed" | grep -qE '^kernel/(src/|pyproject\.toml$|uv\.lock$)'; then echo full
-  elif echo "$changed" | grep -qE '^(tools/capture/(Sources|scripts)/|tools/capture/Package\.swift$|fotomess/(src/|swift/|pyproject\.toml$|uv\.lock$))'; then echo full
+  elif echo "$changed" | grep -qE '^(tools/capture/(Sources|scripts)/|tools/capture/Package\.swift$|fotomess/(src/|swift/|pyproject\.toml$|uv\.lock$)|scan/(src/|pyproject\.toml$|uv\.lock$))'; then echo full
   elif echo "$changed" | grep -qE '^skill/'; then echo skill
   else echo none
   fi
