@@ -17,6 +17,7 @@ MCP (``von: agent``).
 | ``unterdrueckung_aufheben`` | ``index`` | Eintrag in ``unterdrueckt`` entfernen (das Maß kommt beim nächsten Rechnen wieder) |
 | ``format`` (zusätzlich) | ``wert`` (A4 …), ``ausrichtung`` | schaltet die automatische Formatwahl ab |
 | ``mass_aendern`` (zusätzlich) | ``id``, ``text``, ``toleranz``, ``fest`` | Text („<>“ = Messwert) oder Toleranz eines Maßes |
+| ``schnitt_umkehren`` (1.3) | ``id`` | Blickrichtung eines Schnitts umkehren (die andere Hälfte bleibt stehen) |
 """
 
 from __future__ import annotations
@@ -32,7 +33,8 @@ from kevcad_kernel.zeichnung.blatt import MASSSTAEBE, lage_umrechnen, massstab_f
 from kevcad_kernel.zeichnung.merkmale import Merkmale
 
 OPS = ("mass_verschieben", "mass_loeschen", "mass_neu", "ansicht_neu", "ansicht_verschieben", "ansicht_loeschen",
-       "massstab", "notiz", "notiz_loeschen", "schriftfeld", "auto", "unterdrueckung_aufheben", "format", "mass_aendern")
+       "massstab", "notiz", "notiz_loeschen", "schriftfeld", "auto", "unterdrueckung_aufheben", "format", "mass_aendern",
+       "schnitt_umkehren")
 
 
 class OpFehler(ValueError):
@@ -352,7 +354,7 @@ def _ansicht_neu(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> d
         sp = dict(op.get("schnitt") or {})
         if not sp.get("ebene") and sp.get("linie") is not None:  # in der App gezogen: Linie in Blatt-mm
             linie = sp.pop("linie")
-            sp.update(schnitt_aus_linie(erg, sp.get("von"), linie))
+            sp.update(schnitt_aus_linie(erg, sp.get("von"), linie, bool(sp.pop("umkehren", False))))
         if not sp.get("ebene"):
             raise OpFehler("Schnitt braucht schnitt.ebene {punkt, normale} und schnitt.von")
         sp.setdefault("name", _naechster_buchstabe(b))
@@ -402,10 +404,11 @@ def blatt_zu_modell(v: Any, p: Any) -> np.ndarray:
     return np.array([x, cy + (p[1] - v.mitte[1]) / v.s])
 
 
-def schnitt_aus_linie(erg: Any, von: Any, linie: Any) -> dict[str, Any]:
+def schnitt_aus_linie(erg: Any, von: Any, linie: Any, umkehren: bool = False) -> dict[str, Any]:
     """Schnittebene aus einer in der App gezogenen Linie (zwei Punkte in Blatt-mm): Die Ebene enthält die Linie und die
     Blickrichtung der Ansicht. Blickrichtung des Schnitts zur größeren Hälfte der Ansicht (der kleinere Teil vor der
-    Ebene fällt weg); geht die Linie durch die Mitte, nach links der Zeichenrichtung."""
+    Ebene fällt weg); geht die Linie durch die Mitte, nach links der Zeichenrichtung. ``umkehren``: die andere Seite
+    (in der App ⌥ beim Ziehen)."""
     if not isinstance(linie, (list, tuple)) or len(linie) != 2:
         raise OpFehler("schnitt.linie: zwei Punkte [[x, y], [x, y]] in Blatt-mm")
     a, b = _punkt(linie[0], "schnitt.linie"), _punkt(linie[1], "schnitt.linie")
@@ -421,6 +424,8 @@ def schnitt_aus_linie(erg: Any, von: Any, linie: Any) -> dict[str, Any]:
     zur_mitte = np.array([(x0 + x1) / 2, (y0 + y1) / 2]) - a2
     seite = float(np.dot(zur_mitte, n2))
     if abs(seite) > 0.02 * max(x1 - x0, y1 - y0, 1.0) and seite < 0:
+        n2 = -n2
+    if umkehren:
         n2 = -n2
     rechts, oben = np.asarray(v.blick.rechts, dtype=float), np.asarray(v.blick.oben, dtype=float)
     punkt = a2[0] * rechts + a2[1] * oben
@@ -461,6 +466,19 @@ def _ansicht_verschieben(b: dict[str, Any], op: dict[str, Any], von: str, erg: A
     a = _ansicht(b, op.get("id"))
     a["lage"] = _punkt(op.get("lage"), "lage")
     a["fest"] = True
+    return {"id": a["id"]}
+
+
+def _schnitt_umkehren(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict[str, Any]:
+    """Blickrichtung eines Schnitts umkehren: Normale der Ebene umdrehen (Pfeile am Schnittverlauf zeigen dann zur
+    anderen Seite, die Schnittansicht zeigt die andere Hälfte)."""
+    a = _ansicht(b, op.get("id"))
+    ebene = ((a.get("schnitt") or {}).get("ebene") or {}) if a.get("art") == "schnitt" else {}
+    n = ebene.get("normale")
+    if not isinstance(n, (list, tuple)) or len(n) != 3:
+        raise OpFehler(f"Ansicht {a.get('id')!r} ist kein Schnitt (nur Schnitte haben eine Blickrichtung)")
+    ebene["normale"] = [(-float(c)) + 0.0 for c in n]
+    a["schnitt"].pop("blick", None)  # eine feste Blickrichtung gehörte zur alten Seite
     return {"id": a["id"]}
 
 

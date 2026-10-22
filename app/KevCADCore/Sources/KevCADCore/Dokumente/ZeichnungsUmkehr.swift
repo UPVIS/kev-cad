@@ -47,6 +47,8 @@ public enum ZeichnungsUmkehr {
         case .massAendern(let id, _, _, _):
             guard let m = b.mass(id) else { return nil }
             return [.massAendern(id: id, text: m.text ?? "", toleranz: m.toleranz ?? "", fest: m.fest)]
+        case .schnittUmkehren(let id):
+            return [.schnittUmkehren(id: id)]  // zweimal umgekehrt ist wie vorher
         case .ansichtNeu, .schnittNeu, .einzelheitNeu:
             guard let id = ergebnis?.id else { return nil }
             return [.ansichtLoeschen(id: id)]

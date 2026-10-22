@@ -95,6 +95,14 @@ struct BlattInspektor: View {
                     if z.blatt.ansicht(id)?.fest == true {
                         LabeledContent("Lage", value: "von dir gesetzt")
                     }
+                    if g.art == "schnitt" {
+                        Button {
+                            bearbeite([.schnittUmkehren(id: id)], z)
+                        } label: {
+                            Label("Blickrichtung umkehren", systemImage: "arrow.left.arrow.right")
+                        }
+                        .help("Der Schnitt zeigt dann die andere Hälfte; die Pfeile am Schnittverlauf drehen sich mit")
+                    }
                     Button("Ansicht löschen …", role: .destructive) { zustand.ansichtLoeschen = id }
                 }
             }

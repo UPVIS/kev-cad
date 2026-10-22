@@ -705,6 +705,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             let seite = (g.rahmen.midX - a.x) * n.dx + (g.rahmen.midY - a.y) * n.dy
             if abs(seite) > 0.02 * max(g.rahmen.width, g.rahmen.height), seite < 0 { n = CGVector(dx: -n.dx, dy: -n.dy) }
         }
+        if Self.schnittUmgekehrt { n = CGVector(dx: -n.dx, dy: -n.dy) }  // ⌥: zur anderen Seite blicken
         ctx.setStrokeColor(farbe)
         ctx.setLineWidth(max(0.25, 1.2 * px))
         ctx.setLineDash(phase: 0, lengths: [6, 1.5, 0.6, 1.5])
@@ -741,6 +742,9 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         }
     }
 
+    /// ⌥ beim Ziehen des Schnitts: Blick zur anderen Seite als vorgeschlagen.
+    static var schnittUmgekehrt: Bool { NSEvent.modifierFlags.contains(.option) }
+
     /// Zweiter Punkt der Schnittlinie; fast waagrecht oder senkrecht (unter 4°) oder mit Umschalt rastet sie ein.
     private func schnittPunkt(_ a: CGPoint, _ m: CGPoint) -> CGPoint {
         let dx = m.x - a.x, dy = m.y - a.y
@@ -773,7 +777,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             needsDisplay = true
             return
         }
-        bearbeite([.schnittNeu(von: vid, linie: [a, b])])
+        bearbeite([.schnittNeu(von: vid, linie: [a, b], umkehren: Self.schnittUmgekehrt)])
         zustand?.setzeWerkzeug(.auswahl)
     }
 
@@ -1202,8 +1206,9 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         case .ansicht(let art): text = "\(ZeichnungText.ansichtArt(art)): Stelle auf dem Blatt anklicken"
         case .schnitt:
             text = schnittStart == nil
-                ? "Schnitt: Linie durch eine Ansicht ziehen oder Anfang und Ende anklicken (⇧ waagrecht/senkrecht)"
-                : "Schnitt: Ende der Linie anklicken (Esc bricht ab)"
+                ? "Schnitt: Linie durch eine Ansicht ziehen oder Anfang und Ende anklicken (⇧ waagrecht/senkrecht, "
+                    + "⌥ Blick zur anderen Seite)"
+                : "Schnitt: Ende der Linie anklicken (⌥ Blick zur anderen Seite, Esc bricht ab)"
         case .einzelheit: text = "Einzelheit: auf die Stelle drücken und den Kreis aufziehen"
         }
         if zustand?.anzeige.hinweis != text {
@@ -1241,6 +1246,11 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     }
 
     // MARK: Tastatur
+
+    override func flagsChanged(with event: NSEvent) {
+        if werkzeug == .schnitt, schnittStart != nil { needsDisplay = true }  // ⌥ dreht die Pfeile der Vorschau
+        super.flagsChanged(with: event)
+    }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
@@ -1362,6 +1372,12 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             menu.addItem(BlattMenuePunkt("Notiz löschen") { [weak self] in self?.loeschen() })
         case .ansicht(let id)?:
             let art = z.gruppe(id)?.art ?? ""
+            if art == "schnitt" {
+                menu.addItem(BlattMenuePunkt("Blickrichtung umkehren") { [weak self] in
+                    self?.bearbeite([.schnittUmkehren(id: id)])
+                })
+                menu.addItem(.separator())
+            }
             menu.addItem(BlattMenuePunkt("\(ZeichnungText.ansichtArt(art)) löschen …") { [weak self] in self?.loeschen() })
         case nil:
             if let s = schriftfeldTreffer(p, z) {

@@ -224,6 +224,26 @@ final class DokumenteTests: XCTestCase {
         XCTAssertEqual(b.fehlerText, "kein Element")
     }
 
+    /// Schnitt und Einzelheit aus der App (Vertrag 1.3): gezogene Linie bzw. Kreis in Blatt-mm, Blickrichtung umkehren.
+    func testSchnittUndEinzelheitEncoder() throws {
+        let s = ZeichnungsOp.schnittNeu(von: "v1", linie: [CGPoint(x: 10, y: 20), CGPoint(x: 90, y: 20)], umkehren: true)
+        XCTAssertEqual(s.json, ["op": "ansicht_neu", "art": "schnitt",
+                                "schnitt": ["von": "v1", "linie": [[10, 20], [90, 20]], "umkehren": true]])
+        XCTAssertNil(ZeichnungsOp.schnittNeu(von: nil, linie: [.zero, CGPoint(x: 1, y: 0)]).json["schnitt"]?["umkehren"])
+        XCTAssertEqual(ZeichnungsOp.einzelheitNeu(von: "v2", mitte: CGPoint(x: 50, y: 40), radius: 7.5).json,
+                       ["op": "ansicht_neu", "art": "einzelheit",
+                        "einzelheit": ["von": "v2", "kreis": ["mitte": [50, 40], "radius": 7.5]]])
+        XCTAssertEqual(ZeichnungsOp.schnittUmkehren(id: "v4").json, ["op": "schnitt_umkehren", "id": "v4"])
+        XCTAssertEqual(s.titel, "Schnitt anlegen")
+        // Rückgängig: neue Ansicht mit der Kennung aus dem ACK löschen; Umkehren kehrt sich selbst um
+        let (z, _) = try zeichnung("drawing.frame")
+        let neu = ZeichnungsBearbeitung(ok: true, ergebnisse: [["op": "ansicht_neu", "ok": true, "id": "v7"]])
+        XCTAssertEqual(ZeichnungsUmkehr.gegen([s], vorher: z, bearbeitung: neu), [.ansichtLoeschen(id: "v7")])
+        let um = ZeichnungsBearbeitung(ok: true, ergebnisse: [["op": "schnitt_umkehren", "ok": true, "id": "v4"]])
+        XCTAssertEqual(ZeichnungsUmkehr.gegen([.schnittUmkehren(id: "v4")], vorher: z, bearbeitung: um),
+                       [.schnittUmkehren(id: "v4")])
+    }
+
     // MARK: Rückgängig
 
     func testUmkehr() throws {

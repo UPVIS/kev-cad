@@ -189,7 +189,9 @@ die gezogene Linie `schnitt.linie: [[x, y], [x, y]]` (Blatt-mm) und optional `sc
 Ansicht unter der Mitte der Linie und legt die Ebene durch Linie und Blickrichtung, Blick zur größeren Hälfte der
 Ansicht (geht die Linie durch die Mitte: links der Zeichenrichtung). Mit `art: "einzelheit"` statt `mitte`/`radius`
 der aufgezogene Kreis `einzelheit.kreis: {"mitte": [x, y], "radius": r}` (Blatt-mm); ohne `faktor` wählt der Kernel 2,
-4, 5 oder 10 (Einzelheit etwa 60 mm). Nur in Vorder-, Seiten- und Draufsichten.
+4, 5 oder 10 (Einzelheit etwa 60 mm). Nur in Vorder-, Seiten- und Draufsichten. `schnitt.umkehren: true` nimmt die andere Seite als
+die vorgeschlagene (in der App ⌥ beim Ziehen). `{"op": "schnitt_umkehren", "id"}` dreht die Blickrichtung eines
+bestehenden Schnitts um (Normale umgekehrt, eine feste `schnitt.blick` entfällt); zweimal angewandt ist es wie vorher.
 
 `BAUPLAN_EDIT.ops`: `{"op": "text", "schritt", "titel", "text"}`, `{"op": "fest", "schritt", "wert"}`,
 `{"op": "verschieben", "schritt", "nach"}`, `{"op": "zusammenfassen" | "teilen", …}`, `{"op": "bild", "schritt", "kamera" | "explosion" | "pfeile"}`.

@@ -187,6 +187,24 @@ def test_schnitt_und_einzelheit_aus_der_app(env):
     geo = {g["id"]: g for g in blatt["geometrie"]}
     assert geo[schnitt["id"]]["linien"].get("schraffur", 0) > 0  # geschnitten und schraffiert
     assert sum(geo[einzel["id"]]["linien"].values()) > 0
+    # Blickrichtung umkehren (Kontextmenü der App): Normale gedreht, die andere Hälfte geschnitten
+    res = rt.drawing_edit("platte", [{"op": "schnitt_umkehren", "id": schnitt["id"]}], "kevin")
+    assert res["ok"] and res["ergebnisse"][0]["ok"], res
+    blatt = rt.drawing("platte")["kopf"]
+    gedreht = next(a for a in blatt["blatt"]["ansichten"] if a["id"] == schnitt["id"])["schnitt"]["ebene"]["normale"]
+    assert gedreht == pytest.approx([-c for c in ebene["normale"]], abs=1e-9)
+    assert next(g for g in blatt["geometrie"] if g["id"] == schnitt["id"])["linien"].get("schraffur", 0) > 0
+    res = rt.drawing_edit("platte", [{"op": "schnitt_umkehren", "id": "v1"}], "kevin")
+    assert not res["ergebnisse"][0]["ok"] and "kein Schnitt" in res["ergebnisse"][0]["fehler"]
+    # gleich beim Ziehen umgekehrt (⌥): dieselbe Linie, Normale entgegen
+    res = rt.drawing_edit("platte", [{"op": "ansicht_neu", "art": "schnitt",
+                                      "schnitt": {"linie": [[x0 - 6, ym + 1.0], [x1 + 6, ym + 1.0]], "umkehren": True}}],
+                          "kevin")
+    zweiter = res["ergebnisse"][0]["id"]
+    blatt = rt.drawing("platte")["kopf"]
+    n2 = next(a for a in blatt["blatt"]["ansichten"] if a["id"] == zweiter)["schnitt"]
+    assert n2["ebene"]["normale"] == pytest.approx([-c for c in ebene["normale"]], abs=1e-6) and "umkehren" not in n2
+    assert rt.drawing_edit("platte", [{"op": "ansicht_loeschen", "id": zweiter}], "kevin")["ok"]
     # ohne Ansicht unter dem Punkt: verständlicher Fehler
     res = rt.drawing_edit("platte", [{"op": "ansicht_neu", "art": "einzelheit",
                                       "einzelheit": {"kreis": {"mitte": [2.0, 2.0], "radius": 5.0}}}], "kevin")

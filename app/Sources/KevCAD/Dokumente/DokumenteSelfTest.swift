@@ -449,18 +449,39 @@ enum DokumenteSelfTest {
             // 8b. Schnitt (Linie ziehen) und Einzelheit (Kreis aufziehen) über die echte Leinwand, dann rückgängig
             if let v = z.ansichten.first(where: { ["vorn", "oben", "links", "rechts", "hinten", "unten"].contains($0.art) }) {
                 let anzahl = z.ansichten.count
+                let vorher = Set(z.ansichten.map(\.id))
                 zustand.setzeWerkzeug(.schnitt)
                 try? await Task.sleep(for: .milliseconds(150))
                 stand = z.stand
                 let y = v.rahmen.midY + v.rahmen.height * 0.07
                 await ziehe(CGPoint(x: v.rahmen.minX - 6, y: y), nach: CGPoint(x: v.rahmen.maxX + 6, y: y + 0.4))
                 z = await neuerStand(id, alt: stand) ?? z
-                let schnitt = z.ansichten.first { $0.art == "schnitt" }
+                let schnitt = z.ansichten.first { $0.art == "schnitt" && !vorher.contains($0.id) }  // der neue
                 check(z.ansichten.count == anzahl + 1 && schnitt != nil,
                       "Schnitt gezogen: \(anzahl) → \(z.ansichten.count) Ansichten"
                       + (schnitt.map { ", Schraffur \($0.linien["schraffur"]?.count ?? 0)" } ?? ""))
                 check(zustand.werkzeug == .auswahl, "nach dem Schnitt wieder Auswählen")
                 await pruefpunkt("schnitt-neu")
+                // Blickrichtung umkehren (Kontextmenü, Inspektor), dann rückgängig
+                if let s = schnitt {
+                    func normale(_ z: Zeichnung) -> [Double] {
+                        (z.blatt.json["ansichten"]?.arrayValue ?? []).first { $0["id"]?.stringValue == s.id }?["schnitt"]?[
+                            "ebene"]?["normale"]?.doubles ?? []
+                    }
+                    let n0 = normale(z)
+                    stand = z.stand
+                    zustand.bearbeiter.ausfuehren([.schnittUmkehren(id: s.id)], blatt: id)
+                    z = await neuerStand(id, alt: stand) ?? z
+                    let n1 = normale(z)
+                    check(n0.count == 3 && n1.count == 3 && zip(n0, n1).allSatisfy { abs($0 + $1) < 1e-6 },
+                          "Blickrichtung des Schnitts umgekehrt: \(n0) → \(n1)")
+                    await pruefpunkt("schnitt-umgekehrt")
+                    stand = z.stand
+                    rueckgaengig()
+                    z = await neuerStand(id, alt: stand) ?? z
+                    check(n0.count == 3 && zip(n0, normale(z)).allSatisfy { abs($0 - $1) < 1e-6 },
+                          "Rückgängig: Blickrichtung wie vorher")
+                }
                 // Einzelheit: Kreis um eine Ecke der Ausgangsansicht (der Schnitt kann Format und Lage geändert haben)
                 zustand.setzeWerkzeug(.einzelheit)
                 try? await Task.sleep(for: .milliseconds(150))
@@ -469,7 +490,7 @@ enum DokumenteSelfTest {
                 let c = CGPoint(x: w.rahmen.minX + w.rahmen.width * 0.2, y: w.rahmen.minY + w.rahmen.height * 0.3)
                 await ziehe(c, nach: CGPoint(x: c.x + 7, y: c.y))
                 z = await neuerStand(id, alt: stand) ?? z
-                let einzel = z.ansichten.first { $0.art == "einzelheit" }
+                let einzel = z.ansichten.first { $0.art == "einzelheit" && !vorher.contains($0.id) }
                 check(einzel != nil, "Einzelheit aufgezogen: \(z.ansichten.count) Ansichten")
                 await pruefpunkt("einzelheit-neu")
                 for _ in 0..<2 {
