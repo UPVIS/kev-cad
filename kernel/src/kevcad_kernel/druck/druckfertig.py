@@ -83,7 +83,7 @@ def ergaenze(e: dict[str, Any], begr_je: dict[str, str], geo: dict[str, Any], ma
         e["stuetzen"] = "keine"
         begr_je.setdefault("stuetzen", "keine Stützen: die Druckprüfung findet keine Überhänge über der Grenze")
         e["stuetzen_nur_platte"] = False
-        begr_je["stuetzen_nur_platte"] = "ohne Stützen ohne Bedeutung"
+        begr_je["stuetzen_nur_platte"] = "entfällt: das Teil braucht keine Stützen"
     else:
         flaeche = float(geo.get("stuetzflaeche") or 0.0)
         begr_je.setdefault("stuetzen", f"{'Baumstützen' if e['stuetzen'] == 'baum' else 'normale Stützen'}: ca. "

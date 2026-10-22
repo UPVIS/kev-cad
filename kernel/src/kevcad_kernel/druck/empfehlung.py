@@ -138,10 +138,24 @@ def empfehle(geo: dict[str, Any], material: str, zweck: str | None, vorgaben: di
             e[k] = v
             fest.append(k)
             begr_je[k] = "fest vorgegeben (druck.json): " + _feld_text(k, v)
+    # Begründungen, die zur festen Vorgabe nicht mehr passen, als Empfehlung kennzeichnen (sonst stünde etwa
+    # „kein Brim: …“ neben „fest vorgegeben: Brim an“)
+    for k in fest:
+        for r in VERWANDT.get(k, ()):
+            if r in begr_je and r not in fest:
+                begr_je[r] = "ohne Vorgabe wäre die Empfehlung: " + begr_je[r]
+    if "brim" in fest and e.get("brim") and not e.get("brim_mm"):
+        e["brim_mm"] = df.BRIM_MM["schlank"]
+        begr_je["brim_mm"] = (f"Brim {_z(e['brim_mm'], 0)} mm, weil Brim fest vorgegeben ist; "
+                              + begr_je.get("brim_mm", ""))
     if fest:
         begr.append("Fest vorgegeben: " + ", ".join(_feld_text(k, e[k]) for k in fest))
     return {"einstellungen": e, "begruendung": begr, "fest": fest, "zweck": z, "zweck_geschaetzt": geschaetzt,
             "begruendung_je": begr_je}
+
+
+# Begründungen, die von einer festen Vorgabe abhängen (Schlüssel der Vorgabe → abhängige Begründungen)
+VERWANDT: dict[str, tuple[str, ...]] = {"brim": ("brim_mm",), "stuetzen": ("stuetzen_nur_platte", "stuetzen_abstand_mm")}
 
 
 def _feld_text(k: str, v: Any) -> str:
