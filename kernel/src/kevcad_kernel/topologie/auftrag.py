@@ -51,10 +51,11 @@ def teil_finden(st: Any, teil: str | None, form: str | None = None) -> tuple[str
     """Teilname im letzten Lauf zu ``teil`` (Name, Gruppe mit genau einem Druckteil) oder ``form`` (Formschlüssel aus
     model.py). Rückgabe (Name, Fehlertext)."""
     m = st.modell
-    if form:
-        treffer = [n for n, k in st.koerper.items() if getattr(k, "form", None) == form]
-        if teil and teil in treffer:
-            return teil, None
+    if form and not (teil and teil in m.teile):
+        from kevcad_kernel.topologie import form_signatur
+
+        treffer = [n for n, t in m.teile.items() if t.druckteil and n in st.koerper
+                   and form_signatur(st.koerper[n].shape) == form]
         if len(treffer) >= 1:
             return sorted(treffer)[0], None
     if not teil:
@@ -207,13 +208,17 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
     brep = os.path.join(ordner, "teil.brep")
     lage = np.asarray(k.lage, dtype=float).reshape(4, 4)
     volumen, bmin, bmax = float(k.volumen), np.asarray(k.bmin, float), np.asarray(k.bmax, float)
+    from kevcad_kernel.topologie import form_signatur
+
     if wunsch.get("form_brep"):
         # Bauraum ist das Ausgangsteil aus model.py (der Lauf zeigt vielleicht schon ein optimiertes Ergebnis)
         welt = _form_in_welt(wunsch["form_brep"], lage)
         volumen, bmin, bmax = _masse(welt)
         BRepTools.Write_s(welt, brep)
+        form = form_signatur(welt)
     else:
         BRepTools.Write_s(k.shape, brep)
+        form = form_signatur(k.shape)
     lo, hi = bmin - RAND_MM, bmax + RAND_MM
     nachbarn: dict[str, dict[str, Any]] = {}
     brauche: set[str] = set()
@@ -259,7 +264,7 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
     einst = dict(wunsch.get("einstellungen") or {})
     oben = None if t.druck_oben is None else [float(c) for c in t.druck_oben]
     lastfall = {"v": VERSION, "teil": None if wunsch.get("form_brep") else k.key,
-                "form": wunsch.get("form") or getattr(k, "form", None), "w": w, "oben": _r(oben),
+                "form": form, "w": w, "oben": _r(oben),
                 "masse": round(float(t.masse_kg), 6),
                 "faelle": [{"szenario": f["szenario"], "lager": [(x, nachbarn.get(x, {}).get("schluessel"),
                                                                   nachbarn.get(x, {}).get("tol")) for x in f["lager"]],
@@ -271,7 +276,7 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
                                           "schutz": [s["schluessel"] for s in schutz]},
                                          sort_keys=True, default=str).encode()).hexdigest()[:20]
     masse = float(t.masse_kg) * volumen / max(float(k.volumen), 1e-9)
-    auftrag = {"version": VERSION, "teil": name, "form": wunsch.get("form") or getattr(k, "form", None), "brep": brep,
+    auftrag = {"version": VERSION, "teil": name, "form": form, "brep": brep,
                "lage": lage.tolist(), "druck_rahmen": None if k.info.get("druck_rahmen") is None else
                np.asarray(k.info["druck_rahmen"], dtype=float).tolist(), "oben": oben,
                "volumen": volumen, "masse_kg": masse, "werkstoff": w,

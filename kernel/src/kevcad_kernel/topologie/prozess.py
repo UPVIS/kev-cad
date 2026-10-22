@@ -37,8 +37,8 @@ from kevcad_kernel.topologie import GRENZEN, LINIENBREITE, VERSION, einstellunge
 VOXEL = 60_000
 VOXEL_FEIN = 180_000
 LAST_RADIUS = (0.1, 3.0, 25.0)  # wie der Festkörper: Anteil der Teilgröße, mindestens, höchstens (mm)
-ZIEL_DREIECKE = 8_000
-ZIEL_DREIECKE_FEIN = 16_000
+ZIEL_DREIECKE = 6_000
+ZIEL_DREIECKE_FEIN = 12_000
 ZEIT_S = 150.0  # Zeitgrenze der Iterationen
 BILD_S = 1.0  # Zwischenstand der Dichte höchstens so oft
 
@@ -212,6 +212,7 @@ class Aufbau:
         self.nachbarn = {x: dict(nb) for x, nb in (A.get("nachbarn") or {}).items()}
         self._nahe: dict[str, np.ndarray] = {}
         self.akt_idx = np.flatnonzero(self.aktiv.reshape(-1))
+        self.bohrungen: list[dict[str, Any]] = []  # Welt, für das genaue Nachschneiden am Ende
         self.mitten = G.mitten(self.akt_idx)
         self.ms = {"gitter": round((time.perf_counter() - t0) * 1000, 1)}
 
@@ -321,10 +322,14 @@ class Aufbau:
         if e["bohrungen"] or e["einsaetze"]:
             for b in raster.bohrungen(self.shape, max_radius=max(30.0, 0.3 * self.groesse)):
                 d = 2 * b.radius
+                enden = np.stack([b.punkt + b.achse * (b.t0 - 0.6), b.punkt + b.achse * (b.t1 + 0.6)])
+                innen_enden = self.innen_punkte(enden)
+                self.bohrungen.append({"punkt": b.punkt.tolist(), "achse": b.achse.tolist(), "radius": b.radius,
+                                       "t0": b.t0, "t1": b.t1, "offen0": not bool(innen_enden[0]),
+                                       "offen1": not bool(innen_enden[1])})
                 einsatz = None
                 # Gewindeeinsätze sitzen in Sacklöchern: ein Ende der Bohrung liegt im Material
-                enden = np.stack([b.punkt + b.achse * (b.t0 - 0.6), b.punkt + b.achse * (b.t1 + 0.6)])
-                sack = bool(self.innen_punkte(enden).any())
+                sack = bool(innen_enden.any())
                 for groesse, m in (GEWINDEEINSAETZE["ruthex"].items() if sack else ()):
                     if abs(d - float(m["bohrung"])) <= 0.25 or abs(d - float(m["bohrung"]) - 0.2) <= 0.15:
                         einsatz = (groesse, float(m["wand_min"]))
@@ -501,7 +506,7 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
     from kevcad_kernel.statik.festkoerper import werkstoff as wk
     from kevcad_kernel.topologie import nachrechnen as nr
     from kevcad_kernel.topologie import oberflaeche as ob
-    from kevcad_kernel.topologie.ergebnis import schreibe_brep, solid_aus_netz
+    from kevcad_kernel.topologie.ergebnis import bohrungen_schneiden, schreibe_brep, solid_aus_netz
     from kevcad_kernel.topologie.mehrgitter import hex8_ke
     from kevcad_kernel.topologie.simp import Optimierer, Ueberhangfilter
 
@@ -693,6 +698,12 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
     Li = np.linalg.inv(L)
     p_teil = pw @ Li[:3, :3].T + Li[:3, 3]
     solid = solid_aus_netz(p_teil, d)
+    # Bohrungen genau nachschneiden (Teilkoordinaten): Einsätze und Schrauben passen wie im Ausgangsteil
+    bohr_teil = [{**b, "punkt": (Li[:3, :3] @ np.asarray(b["punkt"]) + Li[:3, 3]).tolist(),
+                  "achse": (Li[:3, :3] @ np.asarray(b["achse"])).tolist()} for b in B.bohrungen]
+    solid, geschnitten = bohrungen_schneiden(solid, bohr_teil)
+    if B.bohrungen and geschnitten == 0:
+        B.hinweise.append("Bohrungen nicht genau nachgeschnitten: sie sind so genau wie das Netz")
     brep = ordner / "ergebnis.brep"
     schreibe_brep(solid, brep)
     netz_datei = _npz(ordner / "ergebnis.npz", punkte=pw.astype(np.float32), dreiecke=d.astype(np.uint32),
@@ -739,9 +750,9 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
 
         from kevcad_kernel.druck.pruefung import pruefe_druckteil
 
-        welt = solid_aus_netz(pw, d)
-        unten = tuple(float(c) for c in -B.R[2])
-        erg = pruefe_druckteil(Solid(welt), material, ausrichtung=unten)
+        # der gespeicherte Körper (Teilkoordinaten, Bohrungen nachgeschnitten), Drucklage in Teilkoordinaten
+        unten = tuple(float(c) for c in Li[:3, :3] @ -B.R[2])
+        erg = pruefe_druckteil(Solid(solid), material, ausrichtung=unten)
         pruef = {"zusammenfassung": erg["zusammenfassung"], "ok": erg["ok"],
                  "hinweise": [{k: h.get(k) for k in ("art", "schwere", "text")} for h in erg["hinweise"]][:12],
                  "kennzahlen": {k: erg["kennzahlen"].get(k) for k in ("stuetzflaeche_mm2", "hoehe_mm")}}
@@ -786,7 +797,8 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
                    "nachher": [{k: v for k, v in x.items()} for x in nachher]},
         "druckpruefung": pruef,
         "netz": {"dreiecke": int(len(d)), "dreiecke_roh": int(roh), "punkte": int(len(pw)), "offen": int(offen),
-                 "flaeche_mm2": round(fl, 1), "decken_gekippt": gekippt},
+                 "flaeche_mm2": round(fl, 1), "decken_gekippt": gekippt,
+                 "bohrungen_geschnitten": geschnitten},
         "dateien": {"brep": str(brep), "netz": netz_datei, "schutz": schutz_datei,
                     "vorher": [x.get("feld") for x in vorher], "nachher": [x.get("feld") for x in nachher]},
         "hinweise": B.hinweise, "grenzen": list(GRENZEN), "ms": ms,

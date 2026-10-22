@@ -196,6 +196,27 @@ def test_marching_cubes_geschlossen():
     assert ob.offene_kanten(d) == 0 and ob.volumen(p, d) > 0  # auch mehrdeutige Fälle geschlossen und außen
 
 
+def test_netzkoerper_als_brep_weich_und_ohne_netzkanten():
+    """Körper aus dem Netz (B-Rep mit Dreiecksflächen): gültig, Volumen wie das Netz; im Viewer weich schattiert und
+    nur mit scharfen Kanten (die Kanten zwischen fast ebenen Nachbarn bleiben leer, ihre Nummern bleiben)."""
+    from build123d import Shape
+
+    from kevcad_kernel.tessellate import tessellate_shape
+    from kevcad_kernel.topologie.ergebnis import solid_aus_netz
+
+    x = np.linspace(-1.3, 1.3, 30) * 20
+    X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
+    p, d = ob.marching_cubes(np.sqrt(X ** 2 + Y ** 2 + Z ** 2) - 20.0, x[1] - x[0], (x[0],) * 3)
+    s = Shape.cast(solid_aus_netz(p, d))
+    assert s.is_valid and abs(s.volume - ob.volumen(p, d)) < 1e-6 * abs(ob.volumen(p, d))
+    g = tessellate_shape(s, cache=None).geometry
+    assert len(g.edge_offsets) - 1 == len(s.edges())
+    assert (np.diff(g.edge_offsets) > 0).sum() < 0.05 * len(s.edges())  # Kugel: keine scharfen Kanten
+    n = g.normals / np.linalg.norm(g.normals, axis=1, keepdims=True)
+    r = g.positions / np.linalg.norm(g.positions, axis=1, keepdims=True)
+    assert np.mean(np.einsum("ij,ij->i", n, r)) > 0.999  # weich: Normale fast radial, nicht je Dreieck
+
+
 def test_innen_und_bohrungen():
     from build123d import Align, Box, Cylinder, Pos, Rot
 
@@ -265,10 +286,15 @@ def test_prozess_winkelhalter(tmp_path, monkeypatch):
     assert 55 <= kz["ersparnis"]["volumen_prozent"] <= 61, kz["ersparnis"]
     assert sum(1 for z in e["schutz"]["zonen"] if z["art"] == "Bohrung") == 5  # vier Schraubenlöcher und der Bolzen
     assert e["netz"]["offen"] == 0 and e["netz"]["dreiecke"] <= 12_000
+    assert e["netz"]["bohrungen_geschnitten"] == 5  # Bohrungen genau nachgeschnitten (Zylinderflächen)
     from build123d import Shape
 
     s = Shape.cast(lies_brep(e["dateien"]["brep"]))
     assert abs(s.volume - kz["nachher"]["volumen_mm3"]) < 0.01 * kz["nachher"]["volumen_mm3"]
+    from build123d import GeomType
+
+    zyl = [f for f in s.faces() if f.geom_type == GeomType.CYLINDER]
+    assert sorted({round(f.radius, 2) for f in zyl}) == [2.75, 6.0]
     v, n = e["faelle"]["vorher"][0], e["faelle"]["nachher"][0]
     assert v["sicherheit"] and n["sicherheit"]
     assert abs(n["lastflaechen_mm2"][0] / v["lastflaechen_mm2"][0] - 1) < 0.35  # gleiche Lastfläche (Bolzenloch)

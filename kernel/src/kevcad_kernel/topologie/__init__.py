@@ -73,3 +73,41 @@ def modell_schluessel(form: str | None, teil: str, szenario: str | None, einst: 
     d = {"v": VERSION, "form": form, "teil": teil if not form else None, "szenario": szenario,
          "einst": einstellungen(**einst), "schutz": sorted(schutz or [])}
     return hashlib.sha1(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()[:20]
+
+
+def form_signatur(shape) -> str:
+    """Schlüssel einer Form unabhängig von ihrer Lage und davon, ob sie schon vernetzt ist: Volumen, Fläche,
+    Schwerpunkt, Trägheit und Anzahl der Flächen und Kanten in den Koordinaten der Form, auf sieben Stellen gerundet.
+    (Die Binärform und die Toleranzen ändern sich beim Vernetzen; model.py sieht die Form vorher, die Prüfung danach.)"""
+    import hashlib
+
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopLoc import TopLoc_Location
+
+    s = getattr(shape, "wrapped", shape).Located(TopLoc_Location())
+    v = GProp_GProps()
+    BRepGProp.VolumeProperties_s(s, v)
+    a = GProp_GProps()
+    BRepGProp.SurfaceProperties_s(s, a)
+    c = v.CentreOfMass()
+    m = v.MatrixOfInertia()
+
+    def zahl(ex_typ) -> int:
+        n = 0
+        ex = TopExp_Explorer(s, ex_typ)
+        while ex.More():
+            n += 1
+            ex.Next()
+        return n
+
+    V = abs(v.Mass())
+    L = max(V ** (1.0 / 3.0), 1e-9)
+    # auf die Größe bezogen gerundet: Werte nahe null (Schwerpunkt auf der Achse) dürfen nicht am Vorzeichen hängen
+    werte = [V / L ** 3, a.Mass() / L ** 2, c.X() / L, c.Y() / L, c.Z() / L,
+             *[m.Value(i, j) / (V * L * L) for i in (1, 2, 3) for j in (1, 2, 3)]]
+    text = f"{V:.6e};" + ";".join(f"{round(x, 6) + 0.0:.6f}" for x in werte) + \
+        f";{zahl(TopAbs_FACE)};{zahl(TopAbs_EDGE)}"
+    return hashlib.sha1(text.encode()).hexdigest()[:24]

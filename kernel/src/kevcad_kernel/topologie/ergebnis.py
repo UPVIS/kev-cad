@@ -44,6 +44,16 @@ def pfade(projekt: str | Path, teil: str, schluessel: str) -> dict[str, Path]:
     return {"brep": basis.with_suffix(".brep"), "json": basis.with_suffix(".json")}
 
 
+def finde(projekt: str | Path, teil: str, schluessel: str) -> dict[str, Path]:
+    """Pfade eines Ergebnisses: vorhandene Datei mit diesem Schlüssel (der Teilname im Dateinamen ist nur zum Lesen,
+    model.py und Laufzeit nennen das Teil vielleicht verschieden), sonst die Pfade für ``teil``."""
+    ordner = Path(projekt) / ORDNER
+    if ordner.is_dir():
+        for b in sorted(ordner.glob(f"*-{schluessel[:12]}.brep")):
+            return {"brep": b, "json": b.with_suffix(".json")}
+    return pfade(projekt, teil, schluessel)
+
+
 def solid_aus_netz(punkte: np.ndarray, dreiecke: np.ndarray) -> Any:
     """TopoDS_Solid aus einem geschlossenen, nach außen orientierten Dreiecksnetz."""
     from OCP.BRep import BRep_Builder
@@ -85,6 +95,66 @@ def solid_aus_netz(punkte: np.ndarray, dreiecke: np.ndarray) -> Any:
     if props.Mass() < 0:
         solid.Reverse()
     return solid
+
+
+def bohrungen_schneiden(solid: Any, bohrungen: list[dict[str, Any]], verlaengern: float = 2.0) -> tuple[Any, int]:
+    """Bohrungen genau nachschneiden: Das Netz liegt in einer Bohrung als Vieleck innerhalb des Kreises (Sehnen), ein
+    Einsatz oder eine Schraube darin durchdränge den Körper, und die Befestigungsprüfung fände keine Zylinderfläche.
+    Ein Zylinder je Bohrung (``punkt``, ``achse``, ``radius``, ``t0``, ``t1``, offene Enden ``offen0``/``offen1`` um
+    ``verlaengern`` länger) wird abgezogen; die Bohrung ist danach wieder eine echte Zylinderfläche. Rückgabe: Körper,
+    Zahl der geschnittenen Bohrungen (0 und der alte Körper, wenn der Schnitt nicht sauber gelingt)."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+    from OCP.GProp import GProp_GProps
+    try:  # OCP 8: Sammlungen in OCP.collections
+        from OCP.collections import List_TopoDS_Shape as TopTools_ListOfShape
+    except ImportError:  # OCP 7
+        from OCP.TopTools import TopTools_ListOfShape
+
+    if not bohrungen:
+        return solid, 0
+    werkzeuge = TopTools_ListOfShape()
+    n = 0
+    for b in bohrungen:
+        d = np.asarray(b["achse"], float)
+        d = d / float(np.linalg.norm(d))
+        t0 = float(b["t0"]) - (verlaengern if b.get("offen0", True) else 0.0)
+        t1 = float(b["t1"]) + (verlaengern if b.get("offen1", True) else 0.0)
+        p0 = np.asarray(b["punkt"], float) + d * t0
+        if t1 - t0 <= 1e-6 or float(b["radius"]) <= 1e-6:
+            continue
+        cyl = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(*map(float, p0)), gp_Dir(*map(float, d))), float(b["radius"]),
+                                       t1 - t0).Shape()
+        werkzeuge.Append(cyl)
+        n += 1
+    if n == 0:
+        return solid, 0
+
+    def volumen(x: Any) -> float:
+        g = GProp_GProps()
+        BRepGProp.VolumeProperties_s(x, g)
+        return float(g.Mass())
+
+    try:
+        args = TopTools_ListOfShape()
+        args.Append(solid)
+        op = BRepAlgoAPI_Cut()
+        op.SetArguments(args)
+        op.SetTools(werkzeuge)
+        op.SetRunParallel(True)
+        op.Build()
+        if not op.IsDone():
+            return solid, 0
+        neu = op.Shape()
+        v0, v1 = volumen(solid), volumen(neu)
+        if not BRepCheck_Analyzer(neu).IsValid() or not (0.9 * v0 <= v1 <= v0 + 1e-6):
+            return solid, 0
+        return neu, n
+    except Exception:  # noqa: BLE001 - dann eben das Netz
+        return solid, 0
 
 
 def schreibe_brep(shape: Any, pfad: str | Path) -> None:

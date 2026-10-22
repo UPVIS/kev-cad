@@ -95,18 +95,17 @@ def optimieren(teil: Any, szenario: str | None = None, behalten: float = 0.4, sc
     if piece is None:
         raise LagerError("topologie.optimieren: nur Druckteile aus lager.druckteil(…) lassen sich optimieren (das "
                          "Ergebnis vor dem Verschieben übergeben, also vor Pos(…) * teil)")
-    from kevcad_kernel.pruefung.koerper import form_schluessel
-    from kevcad_kernel.topologie import einstellungen, modell_schluessel
-    from kevcad_kernel.topologie.ergebnis import aufruf_schreiben, lies_brep, lies_json, pfade
+    from kevcad_kernel.topologie import einstellungen, form_signatur, modell_schluessel
+    from kevcad_kernel.topologie.ergebnis import aufruf_schreiben, finde, lies_brep, lies_json
 
     einst = einstellungen(behalten=behalten, ueberhang=ueberhang, fein=fein, steg=steg, bett=bett,
                           bohrungen=bohrungen, einsaetze=einsaetze, kontakt=kontakt, iterationen=iterationen)
     sl = _schutz_liste(schutz)
     name = piece.name
-    form = form_schluessel(teil.wrapped)
+    form = form_signatur(teil.wrapped)
     schluessel = modell_schluessel(form, name, szenario, einst, [s["hash"] for s in sl])
     projekt = Path.cwd()
-    pf = pfade(projekt, name, schluessel)
+    pf = finde(projekt, name, schluessel)
     vorhanden = pf["brep"].exists()
     try:
         aufruf_schreiben(projekt, {"schluessel": schluessel, "teil": name, "form": form, "szenario": szenario,

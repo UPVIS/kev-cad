@@ -244,7 +244,7 @@ class TopologieRuntime:
                 ) -> dict[str, Any]:
         """Ein Auftrag von Anfang bis Ende (im Hintergrund oder wartend). Rückgabe: Stand."""
         from kevcad_kernel.topologie import einstellungen, modell_schluessel
-        from kevcad_kernel.topologie.ergebnis import lies_json, pfade, schreibe_json
+        from kevcad_kernel.topologie.ergebnis import finde, lies_json, schreibe_json
 
         z = self._tp
         projekt = self._tp_projekt()
@@ -271,7 +271,7 @@ class TopologieRuntime:
             schutz_h = [s.get("hash") or s.get("schluessel") for s in wunsch.get("schutz") or []]
             mk = wunsch.get("modell_schluessel") or modell_schluessel(form, teil, wunsch.get("szenario"), einst,
                                                                      [h for h in schutz_h if h])
-            pf = pfade(projekt, teil, mk)
+            pf = finde(projekt, teil, mk)
             self._tp_status(teil=teil, szenario=job["szenarien"][0] if job.get("szenarien") else None,
                             modell_schluessel=mk, lastfall=job["lastfall"], hinweise=job.get("hinweise") or [])
             alt = lies_json(pf["json"]) if pf["json"].exists() and pf["brep"].exists() else None
@@ -448,14 +448,14 @@ class TopologieRuntime:
         projekt = self._tp_projekt()
         if projekt is None:
             return
-        from kevcad_kernel.topologie.ergebnis import aufrufe, pfade
+        from kevcad_kernel.topologie.ergebnis import aufrufe, finde
 
         run = int(check.get("run") or 0)
         beginn = self._tp["lauf_beginn"].get(run)
         if beginn is None:
             return
         offen = [a for a in aufrufe(projekt, seit=beginn - 1.0)
-                 if a.get("automatisch", True) and not pfade(projekt, a["teil"], a["schluessel"])["brep"].exists()]
+                 if a.get("automatisch", True) and not finde(projekt, a["teil"], a["schluessel"])["brep"].exists()]
         z = self._tp
         if not offen or z.get("laeuft") is not None:
             return
