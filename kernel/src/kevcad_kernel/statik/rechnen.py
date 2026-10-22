@@ -2,7 +2,11 @@
 
 Ergebnis (JSON-tauglich, Feld ``statik`` im CHECK-Kopf und Inhalt der Nachricht STATICS, PROTOCOL.md):
 ``{"stand", "aktiv", "szenarien": [{"name", "ampel", "ziel", "urteile", "kennzahlen", "teile", "staebe", "auflager",
-"ueberhoehung", "text", …}], "ueberdimensioniert", "modell", "grenzen", "vereinfachungen", "ms"}``.
+"lasten", "verbinder", "bauteile", "ueberhoehung", "text", …}], "ueberdimensioniert", "modell", "grenzen",
+"vereinfachungen", "ms"}``.
+
+Bauteile mit Kragträger-Nachweis (S0): Teile mit eigener Last (beide Seiten eines Kraftpaars, T32), Lagerteile des
+Stabwerks (Lagerkraft aus S1) und Verbinder zwischen Stäben (Kräfte je Anschluss aus S1, T31).
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from kevcad_kernel.statik import bauteil as bt
 from kevcad_kernel.statik import bewertung as bw
 from kevcad_kernel.statik import s0 as stufe0
 from kevcad_kernel.statik.modell import StatikModell, auf_rollen
-from kevcad_kernel.statik.szenario import Szenario
+from kevcad_kernel.statik.szenario import Szenario, angriffe
 
 UEBERHOEHUNG_ANTEIL = 0.04  # größte Verschiebung erscheint als 4 % der Modellgröße
 
@@ -55,23 +59,29 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
         bauteile = []
         if koerper:
             for last in sz.kraefte():
-                ziele = [n for t in last.teile for n in m.aufloesen(t)]
-                for n in ziele:
+                for n, F, p, gegenseite in angriffe(m, last):  # Kraftpaar: beide Seiten (T32)
                     t_ = m.teile.get(n)
                     if t_ is None or n in m.staebe or t_.verbindungselement:
                         continue
+                    # beim Kraftpaar trägt die andere Seite nicht (von ihr kommt die Kraft), auch wenn sie berührt
+                    andere = {x for t in (last.teile if gegenseite else last.gegen) for x in m.aufloesen(t)}
                     try:
-                        b = bt.pruefe_last(m, sz, koerper, n, last.kraft / len(ziele), last.punkt)
+                        b = bt.pruefe_last(m, sz, koerper, n, F, p, ohne=andere)
                     except Exception as exc:  # noqa: BLE001 - ein Teil darf die anderen nicht verhindern
                         b = {"teil": n, "sicherheit": None,
                              "text": f"{n}: Schnitt nicht gerechnet ({type(exc).__name__})"}
-                    if b is None:
-                        continue
+                    if b is None or (gegenseite and b.get("sicherheit") is None):
+                        continue  # Gegenstück ohne Festigkeitswerte (Ball, Zukaufteil): kein graues Urteil
+                    if last.paar:
+                        b["kraftpaar"] = {"gegen": list(last.teile if gegenseite else last.gegen),
+                                          "gegenkraft": bool(gegenseite)}
                     if b.get("sicherheit") is not None and (b["sicherheit"] < b["ziel"] or b.get("quer_zur_schicht")):
                         b["vorschlag"] = bt.vorschlag_druck(m, koerper, b)
                     bauteile.append(b)
             bauteile += _lagerteile(m, sz, s1erg.get(sz.name), koerper, {b["teil"] for b in bauteile})
+            bauteile += _verbinderteile(m, sz, s1erg.get(sz.name), koerper, {b["teil"] for b in bauteile})
         e = bw.bewerte(sz, s0, s1erg.get(sz.name), bauteile, m)
+        e["lasten"] = lasten_anzeige(m, sz)  # Lasten mit Angriffspunkt für den Viewer, Kraftpaare als Paar (T32)
         r1v = s1erg.get(sz.name)
         if r1v is not None and getattr(r1v, "ok", False) and getattr(r1v, "verbinder", None):
             e["verbinder"] = list(r1v.verbinder)  # Stufe 3: Kräfte der Stäbe auf Verbinder
@@ -190,6 +200,81 @@ def _lagerteile(m: StatikModell, sz: Szenario, r1: Any, koerper: dict[str, Any],
         if b["sicherheit"] < b["ziel"]:
             b["vorschlag"] = bt.vorschlag_druck(m, koerper, b)
     return list(beste.values())
+
+
+VERBINDER_MIN_N = 0.5  # kleinere Kräfte eines Stabs auf einen Verbinder zählen nicht
+
+
+def verbinder_lager(vs: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Verbinder zwischen Stäben (im Stabwerk starr, T11): ``(Lager, Lasten)``. Gehalten wird der Verbinder vom Stab
+    mit der größten Kraft, die Kräfte und Momente der übrigen Stäbe aus S1 sind seine Lasten. Bei zwei Stäben ist das
+    dasselbe Gleichgewicht wie umgekehrt (bis auf das Eigengewicht des Verbinders)."""
+    lager = max(vs, key=lambda v: float(np.linalg.norm(v["kraft"])))
+    return lager, [v for v in vs if v is not lager]
+
+
+def _verbinderteile(m: StatikModell, sz: Szenario, r1: Any, koerper: dict[str, Any], schon: set[str]
+                    ) -> list[dict[str, Any]]:
+    """Verbinder zwischen Stäben (Schlitten, Eckverbinder) als Kragträger nachweisen (T31): Die Kräfte je Anschluss
+    kommen aus dem Stabwerk (S1, statisch unbestimmt nach Steifigkeit verteilt), eingespannt ist der Verbinder an der
+    Berührung mit dem Stab, der ihn hält (``verbinder_lager``), belastet von den übrigen Stäben am Anschlusspunkt
+    (Resultierende mit Moment, wenn es mehrere sind)."""
+    if r1 is None or not getattr(r1, "ok", False) or not getattr(r1, "verbinder", None):
+        return []
+    je_teil: dict[str, list[dict[str, Any]]] = {}
+    for v in r1.verbinder:
+        je_teil.setdefault(v["teil"], []).append(v)
+    out = []
+    for teil, vs in je_teil.items():
+        t = m.teile.get(teil)
+        if t is None or teil in m.staebe or t.verbindungselement or t.werkstoff is None or teil in schon:
+            continue
+        if len(vs) < 2 or max(float(np.linalg.norm(v["kraft"])) for v in vs) < VERBINDER_MIN_N:
+            continue
+        lager, lasten = verbinder_lager(vs)
+        gross = max(lasten, key=lambda v: float(np.linalg.norm(v["kraft"])))
+        P = np.asarray(gross["punkt"], dtype=float)
+        F = np.sum([np.asarray(v["kraft"], dtype=float) for v in lasten], axis=0)
+        M = np.sum([np.asarray(v["moment"], dtype=float) + np.cross(np.asarray(v["punkt"], dtype=float) - P,
+                                                                    np.asarray(v["kraft"], dtype=float))
+                    for v in lasten], axis=0)
+        # Einspannung nur an der Berührung mit dem haltenden Stab: Rolle, Schrauben und die übrigen Stäbe tragen nichts
+        nachbarn = {e["b"] if e["a"] == teil else e["a"] for e in m.kanten.values() if teil in (e["a"], e["b"])}
+        try:
+            b = bt.pruefe_last(m, sz, koerper, teil, F, P, moment=M, ohne=nachbarn - {lager["stab"]})
+        except Exception:  # noqa: BLE001 - ein Verbinder darf die anderen nicht verhindern
+            continue
+        if b is None or b.get("sicherheit") is None:
+            continue
+        b["aus_verbinder"] = lager["stab"]
+        b["verbinder"] = [{"stab": v["stab"], "kraft": v["kraft"], "moment": v["moment"], "punkt": v["punkt"],
+                           "lager": v is lager} for v in vs]
+        if b["sicherheit"] < b["ziel"] or b.get("quer_zur_schicht"):
+            b["vorschlag"] = bt.vorschlag_druck(m, koerper, b)
+        out.append(b)
+    return out
+
+
+def lasten_anzeige(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
+    """Lasten eines Szenarios für den Viewer und das Ergebnis: je Last Teile, Kraft (Stoßfaktor eingerechnet) und
+    Angriffspunkt (angegeben, sonst Mitte der Teile bzw. der Stabachse); Kraftpaare mit ``gegen`` und ``paar``."""
+    out = []
+    for last in sz.kraefte():
+        ziele = [n for t in last.teile for n in m.aufloesen(t)]
+        if not ziele:
+            continue
+        if last.punkt is not None:
+            p = np.asarray(last.punkt, dtype=float)
+        else:
+            pts = [(m.staebe[n].p0 + m.staebe[n].p1) / 2 if n in m.staebe else m.teile[n].schwerpunkt for n in ziele]
+            p = np.mean(pts, axis=0)
+        e = {"teile": list(last.teile), "kraft": [round(float(c), 2) for c in last.kraft],
+             "punkt": [round(float(c), 1) for c in p], "kg": last.kg, "zeile": last.zeile}
+        if last.paar:
+            e["gegen"] = list(last.gegen)
+            e["paar"] = True
+        out.append(e)
+    return out
 
 
 def befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:

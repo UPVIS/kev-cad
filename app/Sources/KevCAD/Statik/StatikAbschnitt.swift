@@ -190,6 +190,9 @@ private struct SzenarioDetail: View {
                 if sz.ueberhoehung > 1.05 { zeile("Überhöhung", "\(KevFormat.number(Double(sz.ueberhoehung), digits: 0))-fach") }
             }
             .font(.caption)
+            ForEach(Array(sz.lasten.enumerated()), id: \.offset) { _, l in
+                LastZeile(last: l)
+            }
             ForEach(sz.auffaellig) { u in
                 Button {
                     actions?.zeigeStatikUrteil(u)
@@ -242,6 +245,35 @@ private struct SzenarioDetail: View {
             Text(a).foregroundStyle(.secondary)
             Text(b).monospacedDigit()
         }
+    }
+}
+
+/// Eine Last des Szenarios; ein Kraftpaar (innere Kraft) mit beiden Seiten und dem Hinweis, dass es beim Kippen und
+/// Rutschen nicht zählt. Farben wie die Pfeile im Viewer (Last blau, Kraftpaar violett).
+private struct LastZeile: View {
+    var last: StatikLast
+
+    private func kurz(_ namen: [String]) -> String {
+        namen.map { $0.split(separator: "/").last.map(String.init) ?? $0 }.joined(separator: ", ")
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: last.paar ? "arrow.right.and.line.vertical.and.arrow.left" : "arrow.down.to.line")
+                .foregroundStyle(last.paar ? Color.purple : Color.blue)
+            if last.paar {
+                Text("Kraftpaar \(KevFormat.number(Double(last.betrag), digits: 0)) N: \(kurz(last.teile)) ↔ "
+                    + kurz(last.gegen))
+            } else {
+                Text("\(KevFormat.number(Double(last.betrag), digits: 0)) N auf \(kurz(last.teile))")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help(last.paar
+            ? "Innere Kraft: \(kurz(last.teile)) und \(kurz(last.gegen)) drücken am selben Punkt gegeneinander. "
+                + "Beim Kippen, Rutschen und Abheben des Ganzen heben sich beide auf; jede Seite belastet ihre Teile."
+            : "Äußere Last auf \(kurz(last.teile))")
     }
 }
 

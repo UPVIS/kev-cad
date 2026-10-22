@@ -143,23 +143,53 @@ public enum StatikGeometrie {
         for (i, p) in bild.enumerated() {
             let f = simd_length(p.kraft)
             guard f > 0.02 * kraftMax else { continue }
-            let l = max(12, laengeMax * f / kraftMax)
-            let d = p.kraft / f
-            let spitze = min(l * 0.35, 30)
-            let r = max(2.2, min(5, l * 0.03))
-            let anfang = p.punkt - d * l
-            let hals = p.punkt - d * spitze
-            var (vd, idx) = rohr([anfang, hals], radius: r)
-            let (kd, kidx) = kegel(basis: hals, spitze: p.punkt, radius: r * 2.4)
-            let off = UInt32(vd.count / 6)
-            vd += kd
-            idx += kidx.map { $0 + off }
             out.append(
-                ViewportBody(
-                    id: "\(praefix)k\(i)", vertexData: vd, indices: idx, edges: [], color: farbe, roughness: 0.4,
-                    isPickable: false))
+                pfeil(id: "\(praefix)k\(i)", punkt: p.punkt, kraft: p.kraft, laenge: max(12, laengeMax * f / kraftMax),
+                      farbe: farbe))
         }
         return out
+    }
+
+    /// Farben der Lastpfeile (sRGB): äußere Last blau, Kraftpaar violett.
+    static let lastFarbe = SIMD4<Float>(0.16, 0.42, 0.92, 1)
+    static let paarFarbe = SIMD4<Float>(0.62, 0.26, 0.86, 1)
+
+    /// Lasten des Szenarios als Pfeile zum Angriffspunkt, Länge proportional zur Kraft (die größte wird `laengeMax` mm
+    /// lang). Ein Kraftpaar (innere Kraft) erscheint als zwei gegeneinander gerichtete Pfeile in eigener Farbe, die sich
+    /// am Angriffspunkt treffen: Kraft auf `teile`, Gegenkraft auf `gegen`.
+    public static func lastpfeile(_ lasten: [StatikLast], laengeMax: Float = 160) -> [ViewportBody] {
+        let fMax = lasten.map(\.betrag).max() ?? 0
+        guard fMax > 0 else { return [] }
+        let last = PartBodies.linear(lastFarbe)
+        let paar = PartBodies.linear(paarFarbe)
+        var out: [ViewportBody] = []
+        for (i, l) in lasten.enumerated() where l.betrag > 0.02 * fMax {
+            let laenge = max(30, laengeMax * l.betrag / fMax)
+            out.append(pfeil(id: "\(praefix)l\(i)", punkt: l.punkt, kraft: l.kraft, laenge: laenge,
+                             farbe: l.paar ? paar : last))
+            if l.paar {
+                out.append(pfeil(id: "\(praefix)l\(i)g", punkt: l.punkt, kraft: -l.kraft, laenge: laenge, farbe: paar))
+            }
+        }
+        return out
+    }
+
+    /// Ein Pfeil (Schaft und Spitze) in Kraftrichtung, der am Angriffspunkt endet.
+    static func pfeil(id: String, punkt: SIMD3<Float>, kraft: SIMD3<Float>, laenge l: Float, farbe: SIMD4<Float>)
+        -> ViewportBody
+    {
+        let d = kraft / max(simd_length(kraft), 1e-9)
+        let spitze = min(l * 0.35, 30)
+        let r = max(2.2, min(5, l * 0.03))
+        let anfang = punkt - d * l
+        let hals = punkt - d * spitze
+        var (vd, idx) = rohr([anfang, hals], radius: r)
+        let (kd, kidx) = kegel(basis: hals, spitze: punkt, radius: r * 2.4)
+        let off = UInt32(vd.count / 6)
+        vd += kd
+        idx += kidx.map { $0 + off }
+        return ViewportBody(
+            id: id, vertexData: vd, indices: idx, edges: [], color: farbe, roughness: 0.4, isPickable: false)
     }
 
     /// Kegel (Pfeilspitze) von der Basis zur Spitze.

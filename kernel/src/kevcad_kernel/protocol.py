@@ -1270,6 +1270,7 @@ STATIK_AMPELN = ("gruen", "gelb", "rot", "grau")
 STATIK_STAENDE = ("done", "failed")
 STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit", "ziel", "reserve", "ausnutzung", "ort",
                         "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative", "kurz")
+STATIK_LAST_FELDER = ("teile", "kraft", "punkt", "kg", "zeile", "gegen", "paar")  # Feld ``lasten`` je Szenario (T32)
 STATIK_ABLAUF_STAENDE = ("done", "laeuft", "failed")  # Stufe 2 (Ablauf): Feld ``ablauf`` je Szenario
 STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_max", "rutschgrenze", "rutschreserve",
                       "geschwindigkeit", "verzoegerung")
@@ -1325,6 +1326,9 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     out["teile"] = list(e.get("teile") or [])
     out["staebe"] = list(e.get("staebe") or [])
     out["auflager"] = list(e.get("auflager") or [])
+    # additiv (Nachbesserung, T32): Lasten mit Angriffspunkt; Kraftpaare mit `gegen` und `paar` (Gegenkraft −kraft am
+    # selben Punkt auf `gegen`)
+    out["lasten"] = [{k: l[k] for k in STATIK_LAST_FELDER if k in l} for l in e.get("lasten") or []]
     out["ueberhoehung"] = e.get("ueberhoehung") or 1.0
     kippen = (e.get("s0") or {}).get("kippen") if e.get("s0") is not None else e.get("kippen")
     out["kippen"] = [{k: g.get(k) for k in ("name", "reserve", "richtung_text", "je_richtung", "teile")}
@@ -1387,6 +1391,13 @@ def check_statics_message(header: dict[str, Any]) -> list[str]:
             if n < 2 or len(s.get("ausnutzung") or []) != n or len(s.get("verschiebung") or []) != n:
                 err.append(f"{wo}: Stab {s.get('name')!r}: punkte, ausnutzung und verschiebung brauchen gleich viele "
                            "Einträge (mindestens 2)")
+        for j, l in enumerate(e.get("lasten") or []):
+            for k in ("kraft", "punkt"):
+                v = l.get(k)
+                if not isinstance(v, list) or len(v) != 3 or not all(isinstance(c, (int, float)) for c in v):
+                    err.append(f"{wo}.lasten[{j}].{k}: drei Zahlen erwartet")
+            if l.get("paar") and not l.get("gegen"):
+                err.append(f"{wo}.lasten[{j}]: Kraftpaar ohne gegen")
         ab = e.get("ablauf")
         if ab is not None:
             if ab.get("stand") not in STATIK_ABLAUF_STAENDE:
@@ -1462,7 +1473,11 @@ def statik_beispiel() -> dict[str, Any]:
              "staebe": [{"name": "Rahmen/Rohr", "punkte": punkte, "ausnutzung": [10.0, 5.0, 0.0],
                          "verschiebung": [[0, 0, 0], [0, 0, -22.0], [0, 0, -61.0]], "radius": 6.0, "sicherheit": 0.2,
                          "ampel": "rot"}],
-             "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []}},
+             "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []},
+             "lasten": [{"teile": ["Rahmen/Rohr"], "kraft": [0.0, 0.0, -294.3], "punkt": [250.0, 0.0, 30.0],
+                         "kg": 30.0, "zeile": 12},
+                        {"teile": ["Rahmen/Rohr"], "kraft": [100.0, 0.0, 0.0], "punkt": [500.0, 0.0, 30.0],
+                         "kg": None, "zeile": 13, "gegen": ["Ball"], "paar": True}]},
         ],
         "ueberdimensioniert": [],
         "grenzen": ["Vereinfacht gerechnet: Stäbe als Balken, linear-elastisch, kleine Verformungen, keine "

@@ -11,7 +11,9 @@
 - **Anschlüsse** eines Stabs an einen anderen Stab, einen Starrkörper oder den Boden. Art aus den Zwangsbedingungen
   (Gelenk vor ``verbinde`` vor Berührung): fest (Schraube, Klemmung, Kleben, Formschluss,
   Steck, Berührung und Spiel: ein Rohr in einer Bohrung trägt über die Stecklänge auch Momente), gelenkig (Aufliegen),
-  Drehgelenk, Schiebegelenk, Zylindergelenk.
+  Drehgelenk, Schiebegelenk, Zylindergelenk. Gelenke mit ``bereich`` sind Einstellungen (Schlitten mit Klemme,
+  Stange im Halter, Kopf): im Betrieb festgestellt, also fest (wie in Stufe 2, T15); frei sind nur Gelenke ohne
+  ``bereich`` (Laufrolle auf der Achse).
 - Starrkörper mit nur einem Anschluss an einen Stab sind **Anbauteile**: Ihr Gewicht und ihre Lasten gehen an diesen
   Anschluss.
 
@@ -397,6 +399,7 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
         if a in alle and b in alle:
             e = kante(a, b)
             e["gelenk"], e["achse"] = g["art"], g["achse"]
+            e["festgestellt"] = g.get("bereich") is not None  # Einstellgelenk: im Betrieb geklemmt (T15, T30)
 
     # Starrkörper -----------------------------------------------------------------------------------------------------
     nicht = [n for n in m.teile if n not in m.staebe]
@@ -494,6 +497,10 @@ RANG = {"dreh": 5, "schiebe": 5, "zylinder": 5, "fest": 3, "gelenkig": 1}
 
 def _art(e: dict[str, Any]) -> tuple[str, str]:
     if e.get("gelenk"):
+        if e.get("festgestellt") and e["gelenk"] != "fest":
+            # Gelenk mit Bereich: Einstellung, die im Betrieb geklemmt ist (Schlitten, Stange im Halter). Frei
+            # gerechnet liefe die ganze Kraft längs der Führung über das andere Gegenstück (T30).
+            return "fest", f"Gelenk ({e['gelenk']}) mit Bereich: festgestellt"
         return e["gelenk"], f"Gelenk ({e['gelenk']})"
     v = e.get("verbinde")
     if v:

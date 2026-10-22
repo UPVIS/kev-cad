@@ -7,6 +7,9 @@ für jedes Szenario mit dessen Beschleunigungsfeld und Lasten weiter:
   (≥ 1 steht). Dazu je Richtung der Kippwinkel (Neigung, bei der es kippt) und die Beschleunigung, bei der es kippt.
 - **Rutschen**: waagrechte Kraft / senkrechte Kraft am Boden gegen den Reibwert aus dem Katalog (Material der
   Bodenteile gegen den Untergrund, Standard Beton). Auf Rollen gilt das nur gebremst.
+- **Kraftpaare** (innere Kräfte zwischen zwei Teilen, ``st.last(…, gegen=…)``, T32) zählen beim Kippen, Rutschen und
+  Abheben des Ganzen nicht (Kraft und Gegenkraft heben sich auf); bei losen Teilen und Schrauben wirkt jede Seite auf
+  ihre Teile.
 - **Lose Teile** (``verbinde(…, art="aufliegen")`` ohne weitere feste Verbindung): rutschen sie auf ihrer Auflage?
 - **Schrauben** (``verbinde(…, art="schraube", mit=[…])``): Kraft je Schraube aus allem, was an der Verbindung hängt
   (grob, ohne Vorspannung), gegen Streckgrenze × Spannungsquerschnitt.
@@ -25,7 +28,7 @@ from typing import Any
 import numpy as np
 
 from kevcad_kernel.statik.modell import BODEN_TOL, StatikModell
-from kevcad_kernel.statik.szenario import Szenario
+from kevcad_kernel.statik.szenario import Szenario, angriffe
 from kevcad_kernel.statik.werkstoff import G, reibwert, spannungsquerschnitt
 
 RICHTUNGEN = {"+X": (1, 0), "−X": (-1, 0), "+Y": (0, 1), "−Y": (0, -1)}
@@ -60,18 +63,18 @@ def einsatz_nachweis(m: StatikModell, katalog: Any, mit: list[str], druck: list[
             "bedingungen": (eintrag or {}).get("bedingungen"), "geschaetzt": bool((eintrag or {}).get("geschaetzt"))}
 
 
-def _kraefte_auf(m: StatikModell, sz: Szenario, teile: set[str]) -> list[tuple[np.ndarray, np.ndarray]]:
-    """(Kraft N, Angriffspunkt mm) für Gewicht und Trägheit der Teile und die Lasten auf ihnen."""
+def _kraefte_auf(m: StatikModell, sz: Szenario, teile: set[str], innere: bool = True
+                 ) -> list[tuple[np.ndarray, np.ndarray]]:
+    """(Kraft N, Angriffspunkt mm) für Gewicht und Trägheit der Teile und die Lasten auf ihnen. ``innere=False``:
+    ohne Kraftpaare (Kippen, Rutschen und Abheben des Ganzen: innere Kräfte heben sich auf, T32); sonst wirkt jede
+    Seite eines Paars auf ihre Teile (lose Teile, Schrauben)."""
     f = sz.feld
     out = [(m.teile[n].masse_kg * f, m.teile[n].schwerpunkt) for n in teile if n in m.teile]
     for last in sz.kraefte():
-        ziele = [n for t in last.teile for n in m.aufloesen(t)]
-        if not ziele:
-            continue
-        for n in ziele:
+        for n, F, p, _ in angriffe(m, last, innere):
             if n in teile:
-                p = last.punkt if last.punkt is not None else m.teile[n].schwerpunkt
-                out.append((last.kraft / len(ziele), np.asarray(p, dtype=float)))
+                p = p if p is not None else m.teile[n].schwerpunkt
+                out.append((F, np.asarray(p, dtype=float)))
     return out
 
 
@@ -103,7 +106,7 @@ def kippen(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
         teile = set(g.get("teile") or [])
         if teile and teile <= m.rollend:
             continue  # rollt frei (Kugel): Kippen und Rutschen gelten nicht, das Rollen zeigt erst S2
-        kr = _kraefte_auf(m, sz, teile)
+        kr = _kraefte_auf(m, sz, teile, innere=False)
         if not kr:
             continue
         F_ges = sum(F for F, _ in kr)
@@ -175,7 +178,7 @@ def rutschen(m: StatikModell, sz: Szenario, katalog: Any, rollen: bool) -> list[
         teile = set(g.get("teile") or [])
         if g.get("befestigt") or g.get("schwebt") or not teile or teile <= m.rollend:
             continue
-        kr = _kraefte_auf(m, sz, teile)
+        kr = _kraefte_auf(m, sz, teile, innere=False)
         R = sum((F for F, _ in kr), np.zeros(3))
         N = -float(R[2])
         H = float(np.linalg.norm(R[:2]))
@@ -358,11 +361,11 @@ def traeger(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
         q = float(np.linalg.norm(q_vec - ax * float(np.dot(q_vec, ax))))  # N/mm quer
         lasten = []
         for last in sz.kraefte():
-            ziele = [n for t in last.teile for n in m.aufloesen(t)]
-            if s.name in ziele:
-                F = last.kraft / len(ziele)
+            for n, F, p, _ in angriffe(m, last):
+                if n != s.name:
+                    continue
                 Fq = float(np.linalg.norm(F - ax * float(np.dot(F, ax))))
-                lasten.append((s.t_von(last.punkt) if last.punkt is not None else L / 2, Fq))
+                lasten.append((s.t_von(p) if p is not None else L / 2, Fq))
         a, b = ts[0], ts[-1]
         E, I = float(s.werkstoff.E), min(s.q.I_lang, s.q.I_quer)
         W = min(s.q.W_lang, s.q.W_quer)

@@ -9,11 +9,13 @@ Aus dem Statikmodell entsteht ein räumliches Stabwerk:
 - ein Gelenk sitzt in einem kurzen Gelenkglied (10 mm, quer zum Stab, lokale z-Achse längs des Stabs) mit Freigaben:
   gelenkig = beide Biegedrehungen frei (die Verdrehung um die Stabachse bleibt gekoppelt, sonst wäre der Stab drehbar),
   Drehgelenk = Drehung um die nächste der drei Achsen frei, Schiebegelenk längs des Stabs = Hülse (Verschiebung längs
-  und beide Biegedrehungen frei);
+  und beide Biegedrehungen frei); Gelenke mit ``bereich`` sind festgestellt und kommen hier als feste Anschlüsse an
+  (``modell._art``, T30);
 - Anschlüsse an geerdete Starrkörper und den Boden sind feste Lager (hinter dem Gelenkglied).
 
 Lastfälle: je Szenario Eigengewicht der Stäbe als Streckenlast im Beschleunigungsfeld, Starrkörper und Anbauteile mit
-ihrer Masse, Einzellasten (Stoßfaktor eingerechnet). Ergebnis je Szenario: Verschiebung und Ausnutzung an jedem
+ihrer Masse, Einzellasten (Stoßfaktor eingerechnet; ein Kraftpaar wirkt mit Kraft und Gegenkraft auf seine beiden
+Seiten, eine Seite auf einem geerdeten Teil trägt der Boden). Ergebnis je Szenario: Verschiebung und Ausnutzung an jedem
 Stabknoten, Sicherheit je Stab (von Mises, Holz mit Interaktion), Durchbiegung, Auflagerkräfte, Knicken als
 Lastfaktor aus dem linearen Eigenwertproblem (K + λ·Kg) φ = 0. Linear-elastisch, kleine Verformungen (T7).
 """
@@ -28,7 +30,7 @@ from typing import Any
 import numpy as np
 
 from kevcad_kernel.statik.modell import Anschluss, Stab, StatikModell
-from kevcad_kernel.statik.szenario import Szenario
+from kevcad_kernel.statik.szenario import Szenario, angriffe
 from kevcad_kernel.statik.werkstoff import Querschnitt, Werkstoff
 
 GLIEDER_MIN = 8  # Glieder je Stab mindestens
@@ -64,7 +66,8 @@ class S1Ergebnis:
     knick_stab: str | None = None
     auflager: list[dict[str, Any]] = field(default_factory=list)
     koerper_kraefte: dict[str, list[float]] = field(default_factory=dict)  # Starrkörper: Summe der Gliedkräfte
-    # Stufe 3: Kräfte der Stäbe auf Verbinder (Starrkörper zwischen Stäben), je Anschluss am Stab
+    # Stufe 3: Kräfte der Stäbe auf Verbinder (Starrkörper zwischen Stäben), je Anschluss am Stab; statisch unbestimmt
+    # nach Steifigkeit verteilt, Grundlage für Kragträger (rechnen._verbinderteile) und Festkörper der Verbinder (T31)
     verbinder: list[dict[str, Any]] = field(default_factory=list)
     meldung: str = ""
     ms: float = 0.0
@@ -153,12 +156,10 @@ class _Aufbau:
         lastpunkte: dict[str, list[float]] = {}
         for sz in szenarien:
             for last in sz.lasten:
-                for teil in last.teile:
-                    for n in m.aufloesen(teil):
-                        s = m.staebe.get(n)
-                        if s is not None:
-                            lastpunkte.setdefault(n, []).append(
-                                s.t_von(last.punkt) if last.punkt is not None else s.laenge / 2)
+                for n, _, p, _ in angriffe(m, last):  # beide Seiten eines Kraftpaars
+                    s = m.staebe.get(n)
+                    if s is not None:
+                        lastpunkte.setdefault(n, []).append(s.t_von(p) if p is not None else s.laenge / 2)
         for s in staebe:
             q, w = self.q_w(s)
             fe.add_material(f"W:{s.name}", float(w.E), float(w.schub), float(w.nu if w.nu is not None else 0.3), 0.0)
@@ -323,21 +324,18 @@ class _Aufbau:
                 continue
             kraefte.setdefault(kid, []).append((k.masse_kg * f, np.asarray(k.schwerpunkt, dtype=float)))
         for last in sz.kraefte():
-            teile = [n for t in last.teile for n in m.aufloesen(t)]
-            if not teile:
-                continue
-            anteil = last.kraft / len(teile)
-            for n in teile:
+            # Kraftpaar (T32): jede Seite auf ihre Teile; landet eine Seite auf einem geerdeten Teil, trägt der Boden
+            for n, anteil, punkt, _ in angriffe(m, last):
                 s = m.staebe.get(n)
                 if s is not None:
-                    t = s.t_von(last.punkt) if last.punkt is not None else s.laenge / 2
+                    t = s.t_von(punkt) if punkt is not None else s.laenge / 2
                     kn = self.station(n, t)
-                    self._knotenlast(kn, anteil, last.punkt, case)
+                    self._knotenlast(kn, anteil, punkt, case)
                     continue
                 kid = m.teil_koerper.get(n)
                 if kid is None or m.koerper[kid].geerdet:
                     continue
-                p = last.punkt if last.punkt is not None else m.teile[n].schwerpunkt
+                p = punkt if punkt is not None else m.teile[n].schwerpunkt
                 kraefte.setdefault(kid, []).append((anteil, np.asarray(p, dtype=float)))
         for kid, liste in kraefte.items():
             if kid in self.k_knoten:

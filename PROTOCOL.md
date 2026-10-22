@@ -789,6 +789,9 @@ an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `a
  "staebe": [{"name": "Rahmen/Rohr", "punkte": [[0, 0, 30], [250, 0, 30], [500, 0, 30]], "ausnutzung": [10.0, 5.0, 0.0],
              "verschiebung": [[0, 0, 0], [0, 0, -22], [0, 0, -61]], "radius": 6.0, "sicherheit": 0.2, "ampel": "rot"}],
  "auflager": [{"stab": "…", "teil": "…", "punkt": [x, y, z], "kraft": [N], "moment": [Nmm], "art": "fest"}],
+ "lasten": [{"teile": ["Rahmen/Rohr"], "kraft": [0, 0, -294.3], "punkt": [250, 0, 30], "kg": 30, "zeile": 12},
+            {"teile": ["Rahmen/Rohr"], "kraft": [100, 0, 0], "punkt": [500, 0, 30], "kg": null, "zeile": 13,
+             "gegen": ["Ball"], "paar": true}],
  "ueberhoehung": 1.0,
  "kippen": [{"name": "Der Aufbau um Rahmen (3 Teile)", "reserve": 9.6, "richtung_text": "+X", "teile": ["…"],
              "je_richtung": {"+X": {"kippwinkel": 31.0, "a_kipp": 5.9}}}]}
@@ -804,6 +807,12 @@ an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `a
   `ausnutzung` und `verschiebung` sind gleich lang (mindestens 2). Die App zeichnet daraus den Farbverlauf und die
   Verformung, um `ueberhoehung` vergrößert, als Geist.
 - `kippen[i].je_richtung`: Neigung in Grad bzw. waagrechte Beschleunigung in m/s², bei der die Gruppe kippt.
+- `lasten` (additiv, Nachbesserung „statik-nach“, T32): die Einzellasten des Szenarios mit Kraft (N, Stoßfaktor
+  eingerechnet) und Angriffspunkt (Welt, mm; ohne Angabe in model.py die Mitte der Teile bzw. der Stabachse). Ein
+  **Kraftpaar** (innere Kraft, `st.last(…, gegen=…)` oder `st.kraftpaar(a, b, …)`) hat `gegen` (Teile der Gegenseite)
+  und `paar: true`: auf `teile` wirkt `kraft`, auf `gegen` am selben Punkt `−kraft`. Die App zeichnet Lasten als Pfeile
+  zum Angriffspunkt, ein Kraftpaar als zwei gegeneinander gerichtete Pfeile in eigener Farbe. Ältere Apps ignorieren
+  das Feld.
 
 App → Kernel: nur `STATICS_CANCEL` (Stufe 3, siehe „Festkörper“). Die App wählt Szenarien selbst; neue Szenarien rechnet
 der Agent mit MCP `szenario_rechnen`.
