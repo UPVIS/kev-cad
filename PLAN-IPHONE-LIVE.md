@@ -8,10 +8,10 @@ ist wichtig“). Damit ist L1 ausdrücklich bestätigt.
 |---|---|---|
 | M0 Vertrag | Kev CAD | [MIRROR.md](MIRROR.md) Version 1, mit VoiceBridge abgestimmt; Aufzeichnungen in `samples/mirror-recordings/` |
 | M1 Spiegel-Dienst | Kev CAD | fertig und installiert: KevCADWire (macOS/iOS, Wurzelpaket), Spiegel-Dienst in der App, Sitzungskennung der Agenten, `mirror_sim.py`, `mirror-fixtures/`; Kugelschieber voller Stand in 78 ms |
-| M2 Transport | VoiceBridge-Sitzung | in Arbeit (Socket, Hülle `cad` mit Vorrang, danach CloudKit) |
-| M3 iPhone-Ansicht | VoiceBridge-Sitzung | fertig (KevCADWire, 59 Bilder/s mit 112 Teilen, 0 im Leerlauf) |
+| M2 Transport | VoiceBridge-Sitzung | WLAN fertig und installiert (21.10.2026, VoiceBridge 0bfcc4a): mirror.sock, Hülle `cad` mit Vorrang an gekoppelte iPhones, WATCH-Miete solange die Ansicht offen ist. Unterwegs über CloudKit (Zone `KevCadLive`, Miete, Netzblöcke, signierte Befehle) gebaut und am Mac geprüft, unterwegs noch nie ausprobiert. Echttest auf Kevins iPhone steht aus (WLAN und unterwegs) |
+| M3 iPhone-Ansicht | VoiceBridge-Sitzung | fertig und installiert (KevCADWire, 59 Bilder/s mit 112 Teilen, 0 im Leerlauf). Einstieg: Chat einer Sitzung öffnen, die in Kev CAD arbeitet, Pille „CAD“ neben ihrem Chip (seit 22.10.2026 sichtbar). Noch offen: `kamera.aspect` und `CMD einpassen` (spätere v1-Ergänzungen) |
 | M4, M5 | gemeinsam | danach |
-| Freigabe vom iPhone | Kev CAD und VoiceBridge-Sitzung „Live Control App Modernisierung“ | Kev-CAD-Seite fertig (MIRROR.md 1.1, 22.10.2026): FREIGABE, CMD `freigabe`, FREIGABE_ENDE, Prüfung der Gegenstelle über Signatur; VoiceBridge in Arbeit |
+| Freigabe vom iPhone | Kev CAD und VoiceBridge-Sitzung „Live Control App Modernisierung“ | Kev-CAD-Seite fertig (MIRROR.md 1.1, 22.10.2026): FREIGABE, CMD `freigabe`, FREIGABE_ENDE, Prüfung der Gegenstelle über Signatur; VoiceBridge-Seite fertig (22.10.2026, gepinnt auf KevCADWire 4e040ef, cadcheck 140 Prüfungen), Installation auf Mac und iPhone läuft; Echttest mit F-0005 (Kevins Wahl) |
 
 ## Ziel
 
