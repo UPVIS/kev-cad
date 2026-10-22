@@ -21,6 +21,7 @@ struct ViewportArea: View {
             .animation(.snappy(duration: 0.25), value: inventoryKey)
             .animation(.snappy(duration: 0.25), value: model.downloadOffer)
             .animation(.snappy(duration: 0.25), value: pruefKey)
+            .animation(.snappy(duration: 0.25), value: model.vorschlagSchluessel)
     }
 
     // MARK: Prüfung
@@ -72,8 +73,14 @@ struct ViewportArea: View {
             }
             ZukaufBanner(model: model)
             if let key = inventoryKey, state.dismissedInventory != key {
-                InventoryBanner(model: model) { state.dismissedInventory = key }
-                    .frame(maxWidth: 820)
+                InventoryBanner(model: model, vorschlaegeZeigen: { state.freigabeOffen = true }) {
+                    state.dismissedInventory = key
+                }
+                .frame(maxWidth: 820)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let key = model.vorschlagSchluessel, state.dismissedFreigabe != key {
+                // Strang „Feinschliff 2“: Vorschläge von Claude direkt hier freigeben (das Inventarband hat den Knopf)
+                FreigabeBand(model: model, oeffnen: { state.freigabeOffen = true }) { state.dismissedFreigabe = key }
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             if (pruefKey != nil && state.dismissedPruefung != pruefKey) || (state.pruefListeOffen && model.pruefung != nil) {

@@ -199,6 +199,9 @@ public final class AppModel: ObservableObject {
     public let versionen = VersionenStore()
     /// Bestand (additiv, BESTAND.md): Bestand des Projekts, Buchungen, Zuschnitt mit Resten und Einkaufsliste.
     @Published public var bestandZustand = BestandZustand()
+    /// Freigabe im Projektfenster (additiv, Strang „Feinschliff 2“): Anfrage von Claude, laufende Freigaben, Fehler
+    /// (Aktionen: `FreigabeActions`).
+    @Published public var freigabe = FreigabeZustand()
     /// Phase 6 (additiv, DOKUMENTE.md): Zeichnungsblätter (Übersicht, gerechnete Blätter; Aktionen: `dokumenteActions`).
     public let dokumente = DokumenteStore()
     /// Phase 6 (additiv, P6-A2): Bauplan mit Strichbildern und Durchspielen (Aktionen: `bauplanActions`).

@@ -32,7 +32,10 @@ a released purchased part `lager.zukauf(...).verbauen(...)` or be marked as a ne
 released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-95a; verfahren "3d-druck" or \
 "harzdruck"). Materials in show(material=...) only from the catalog (id or alias). Never invent parts or materials.
 - If something is missing in the catalog: ask Kevin. Only on his request propose it with `stock_define` / \
-`material_define`; a proposal waits for Kevin's release in the stock catalog window and cannot be used before that.
+`material_define`; a proposal waits for Kevin's release and cannot be used before that. Ask for it with \
+`freigabe_anfragen(ids, grund)`: it opens the dialog "Vorschläge freigeben" in the project window, waits for Kevin's \
+click and returns what he released. A "freigegeben" from Kevin in the chat releases nothing; call \
+`freigabe_anfragen` then too, never tell him to open the stock catalog.
 - `run` reports parts outside the inventory as isError ("Inventar-Regel: …"); the geometry is still shown, but export \
 is refused. Fix the model: search a matching stock item and verbauen it, or make it a druckteil.
 - Only Kevin can switch the rule off for a project (kevcad.json "inventar_regel": false, e.g. for reconstructions \

@@ -348,7 +348,8 @@ def hint_for(exc: BaseException, ns: dict[str, Any] | None = None) -> str:
                 "seiner Freigabe benutzen; Teile aus dem Lager tragen ihr Material schon.")
     if name == "LagerError":
         if "Freigabe" in msg:
-            return "Der Eintrag ist nur vorgeschlagen: Kevin bitten, ihn im Lagerkatalog freizugeben."
+            return ("Der Eintrag ist nur vorgeschlagen und von Kevin freizugeben: mit freigabe_anfragen([id], grund) "
+                    "den Freigabedialog im Projektfenster öffnen; Kevin gibt ihn dort mit einem Klick frei.")
         return "Lagerteile mit stock_search suchen und mit lager.teil(id) holen; Maße wie im Katalog angeben."
     if isinstance(exc, IndentationError):
         return "Einrückung prüfen: Blöcke mit 4 Leerzeichen einrücken, Tabs und Leerzeichen nicht mischen."

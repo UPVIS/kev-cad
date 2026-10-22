@@ -721,7 +721,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     @tool("stock_define", "Lagerteil vorschlagen",
           "Propose a new stock item for Kevin's own catalog (ebene 'eigen') or the project catalog ('projekt'). Only "
           "when Kevin asks for it. It is stored with status 'vorgeschlagen' and cannot be used in model.py until "
-          "Kevin releases it in the stock catalog window of the app; released entries cannot be changed here. entry "
+          "Kevin releases it (ask with freigabe_anfragen); released entries cannot be changed here. entry "
           "follows KATALOG.md: id (lowercase, hyphens), art, name (German, '33,7 × 2'), norm, masse (mm), material "
           "(material id, see material_list), optional kg_je_m, stangenlaenge (mm), platte [b, h], preis {je_m | "
           "je_m2 | je_stueck, quelle, stand 'YYYY-MM'}, tags. Validated; errors list every problem.", WRITES)
@@ -738,8 +738,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         where = "eigenen Katalog" if ebene == "eigen" else "Projekt-Katalog"
         lines = [f"Lagerteil {item.get('id')} ({item.get('name')}) als Vorschlag im {where} gespeichert: "
                  f"{res.get('datei')}",
-                 "Es wartet auf Kevins Freigabe im Lagerkatalog; bis dahin lässt es sich nicht verbauen. Kevin "
-                 "Bescheid geben."]
+                 "Es wartet auf Kevins Freigabe; bis dahin lässt es sich nicht verbauen. Mit "
+                 f"freigabe_anfragen([\"{item.get('id')}\"], grund) öffnest du den Dialog im Projektfenster."]
         lines.append(fmt.stock_detail({**res, "beispiel": None}).split("\n", 1)[-1])
         for note in res.get("hinweise") or []:
             lines.append(f"Hinweis: {note}")
@@ -764,8 +764,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     @tool("material_define", "Material vorschlagen",
           "Propose a new material for Kevin's own catalog ('eigen') or the project catalog ('projekt'). Only when "
-          "Kevin asks for it. Stored with status 'vorgeschlagen'; usable only after Kevin releases it in the stock "
-          "catalog window. entry: id, name, gruppe (Stahl, Edelstahl, Aluminium, Holz, Kunststoff, ...), dichte "
+          "Kevin asks for it. Stored with status 'vorgeschlagen'; usable only after Kevin releases it (ask with "
+          "freigabe_anfragen). entry: id, name, gruppe (Stahl, Edelstahl, Aluminium, Holz, Kunststoff, ...), dichte "
           "g/cm³, farbe sRGB hex, optional metallisch/rauheit 0..1, druckbar (true for 3D printing filament), "
           "preis_je_kg with preis_quelle and preis_stand 'YYYY-MM', aliase (lowercase).", WRITES)
     async def material_define(
@@ -780,8 +780,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         mat = res.get("material") or {}
         lines = [f"Material {mat.get('id')} ({mat.get('name')}, {fmt.num(mat.get('dichte'), 3)} g/cm³) als Vorschlag "
                  f"gespeichert: {res.get('datei')}",
-                 "Es wartet auf Kevins Freigabe im Lagerkatalog; bis dahin lässt es sich nicht benutzen. Kevin "
-                 "Bescheid geben."]
+                 "Es wartet auf Kevins Freigabe; bis dahin lässt es sich nicht benutzen. Mit "
+                 f"freigabe_anfragen([\"{mat.get('id')}\"], grund) öffnest du den Dialog im Projektfenster."]
         for note in res.get("hinweise") or []:
             lines.append(f"Hinweis: {note}")
         return fmt.result("\n".join(lines), res)
@@ -800,6 +800,44 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         if err:
             return fmt.error_result(f"Nicht gelöscht: {err}", res)
         return fmt.result(str(res.get("message") or f"{id} gelöscht."), res)
+
+    @tool("freigabe_anfragen", "Freigabe anfragen",
+          "Ask Kevin to release proposals (stock items, materials, purchased parts from stock_define, material_define, "
+          "zukauf_anlegen) right in the project window: opens the dialog 'Vorschläge freigeben' with a preview of the "
+          "data, the link and a 'Freigeben' button per entry and for all. Use it instead of telling Kevin to open the "
+          "stock catalog, and whenever Kevin says in the chat that something is released ('freigegeben'): a chat "
+          "answer releases nothing, only his click does. This tool never releases anything itself. It waits up to "
+          "warten_s (default 120 s) until Kevin decided or closed the dialog and returns what is released, rejected "
+          "and still open. grund: one short sentence why the parts are needed.", ADDITIVE)
+    async def freigabe_anfragen(
+        ids: Annotated[list[str], Field(min_length=1, description="ids of the proposals to release")],
+        grund: Annotated[str, Field(description="Why they are needed (shown to Kevin in the dialog)")] = "",
+        warten_s: Annotated[float | None, Field(ge=0, le=900, description="Seconds to wait for Kevin (default 120)")]
+        = None,
+    ) -> CallToolResult:
+        res = await t.work("fragt Kevin nach der Freigabe", svc.freigabe_anfragen, list(ids), grund, warten_s)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Freigabe nicht angefragt: {err}", res)
+        frei, ab, offen = res.get("freigegeben") or [], res.get("abgelehnt") or [], res.get("offen") or []
+        lines: list[str] = []
+        if res.get("dialog") == "nicht_noetig":
+            lines.append("Nichts anzufragen: " + ", ".join(res.get("schon_frei") or []) + " ist schon freigegeben.")
+            return fmt.result("\n".join(lines), res)
+        lines.append(f"Freigabe {res.get('anfrage')}: Kevin hat "
+                     + (f"freigegeben: {', '.join(frei)}" if frei else "noch nichts freigegeben") + ".")
+        if ab:
+            lines.append(f"Abgelehnt (aus dem Katalog entfernt): {', '.join(ab)}.")
+        if offen:
+            wie = ("Kevin hat den Dialog geschlossen" if res.get("dialog") == "geschlossen"
+                   else f"der Dialog ist nach {fmt.num(res.get('gewartet_s'), 0)} s noch offen")
+            lines.append(f"Offen: {', '.join(offen)} ({wie}). Nicht verbauen, bis Kevin freigibt; später erneut "
+                         "freigabe_anfragen oder stock_get.")
+        if res.get("schon_frei"):
+            lines.append(f"Schon vorher frei: {', '.join(res['schon_frei'])}.")
+        if frei:
+            lines.append("Freigegebene Einträge sind sofort verbaubar; jetzt run.")
+        return fmt.result("\n".join(lines), res)
 
     @tool("bom", "Stückliste",
           "Bill of materials of the last run: positions (same stock, length and miter merged), weight, prices "

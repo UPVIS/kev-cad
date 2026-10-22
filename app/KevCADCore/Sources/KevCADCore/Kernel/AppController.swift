@@ -515,6 +515,8 @@ public final class AppController: AppActions {
             handleDruck(d)
         case .drucker(let d):  // Phase 8: Drucken (AppController+Drucker.swift)
             handleDrucker(d)
+        case .freigabe(let a):  // Freigabe im Projektfenster (AppController+Freigabe.swift)
+            handleFreigabeAnfrage(a)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

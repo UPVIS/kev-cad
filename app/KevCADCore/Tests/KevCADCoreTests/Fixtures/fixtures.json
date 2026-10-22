@@ -1774,5 +1774,52 @@
    "platten": 1.2
   },
   "run_zeile": "Einkaufsliste: 5 Positionen, ≈ 59,63 € (Details mit einkaufsliste)"
+ },
+ "freigabe": {
+  "frames": [
+   {
+    "file": "freigabe_anfrage.frame",
+    "type": "FREIGABE_ANFRAGE",
+    "payload_bytes": 0
+   },
+   {
+    "file": "freigabe_geschlossen.frame",
+    "type": "FREIGABE_GESCHLOSSEN",
+    "payload_bytes": 0
+   }
+  ],
+  "anfrage": {
+   "type": "FREIGABE_ANFRAGE",
+   "id": "k-7",
+   "anfrage": "F-0001",
+   "grund": "Für die Lenksperren am Kugelschieber",
+   "eintraege": [
+    {
+     "id": "rohr-alfer-16x1",
+     "kind": "teil",
+     "name": "ALFER-Rundrohr 16 × 1",
+     "art": "rohr",
+     "ebene": "eigen"
+    },
+    {
+     "id": "petg-cf",
+     "kind": "material",
+     "name": "PETG-CF",
+     "art": "material",
+     "ebene": "eigen"
+    }
+   ]
+  },
+  "geschlossen": {
+   "type": "FREIGABE_GESCHLOSSEN",
+   "anfrage": "F-0001",
+   "freigegeben": [
+    "rohr-alfer-16x1"
+   ],
+   "abgelehnt": [],
+   "offen": [
+    "petg-cf"
+   ]
+  }
  }
 }

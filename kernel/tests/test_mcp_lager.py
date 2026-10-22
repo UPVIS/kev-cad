@@ -51,7 +51,8 @@ def test_stock_tools_text(srv):
     res = call(server.url, "stock_define", {"entry": {"id": "rohr-x", "art": "rohr", "name": "Rohr", "masse": {"d": 30},
                                                        "material": "stahl-s235"}})
     text = texts(res)[0]
-    assert "als Vorschlag im eigenen Katalog" in text and "wartet auf Kevins Freigabe im Lagerkatalog" in text
+    assert "als Vorschlag im eigenen Katalog" in text and "wartet auf Kevins Freigabe" in text
+    assert "freigabe_anfragen" in text
     res = call(server.url, "stock_define", {"entry": {"id": "rohr-y", "art": "rohr"}, "ebene": "projekt"})
     assert res.is_error is True and "masse.s fehlt" in texts(res)[0]
     assert fake.calls_of("stock_define")[1][0][1] == "projekt"

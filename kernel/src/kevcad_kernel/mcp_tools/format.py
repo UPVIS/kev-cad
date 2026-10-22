@@ -391,7 +391,7 @@ def stock_detail(res: dict[str, Any]) -> str:
     it = res.get("item") or {}
     mat = res.get("material") or {}
     lines = [f"{it.get('name', '?')} ({it.get('id', '?')}), Ebene {it.get('ebene', '?')}"
-             + (", vorgeschlagen – wartet auf Kevins Freigabe im Lagerkatalog" if it.get("status") == "vorgeschlagen"
+             + (", vorgeschlagen – wartet auf Kevins Freigabe (freigabe_anfragen)" if it.get("status") == "vorgeschlagen"
                 else "")]
     lines.append(f"Art {it.get('art', '?')}" + (f", Norm {it['norm']}" if it.get("norm") else "")
                  + f", Maße: {masse_short(it)}")

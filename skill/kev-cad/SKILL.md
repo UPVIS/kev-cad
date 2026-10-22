@@ -274,9 +274,13 @@ Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
 - Materialien nur aus dem Katalog (id oder Alias), auch bei `show(material=...)`. Unbekannte oder nur vorgeschlagene
   Materialien brechen den Lauf mit Vorschlägen ab.
 - Nichts erfinden. Fehlt ein Teil oder Material: erst `stock_search` mit anderen Wörtern, dann Kevin fragen. Nur auf
-  seinen Wunsch mit `stock_define` bzw. `material_define` vorschlagen. Ein Vorschlag „wartet auf Kevins Freigabe im
-  Lagerkatalog“ und lässt sich vorher nicht verbauen; Kevin gibt ihn im Lagerkatalog-Fenster frei oder lehnt ab.
-  Freigegebene Einträge ändert nur Kevin.
+  seinen Wunsch mit `stock_define` bzw. `material_define` vorschlagen. Ein Vorschlag wartet auf Kevins Freigabe und
+  lässt sich vorher nicht verbauen. **Freigabe anfragen:** `freigabe_anfragen(["id", …], grund="wofür")` öffnet im
+  Projektfenster den Dialog „Vorschläge freigeben“ (Daten, Link, „Freigeben“ je Eintrag und für alle), wartet auf
+  Kevins Klick (Standard 120 s) und meldet, was freigegeben, abgelehnt oder offen ist. Nie „bitte im Lagerkatalog
+  freigeben“ schreiben. Schreibt Kevin im Chat „freigegeben“, ist damit nichts freigegeben: dann ebenfalls
+  `freigabe_anfragen` aufrufen, er klickt nur noch. Das Werkzeug gibt nie selbst frei. Freigegebene Einträge ändert
+  nur Kevin.
 - Verstöße: `run` meldet „Inventar-Regel: 2 Teile sind nicht aus dem Inventar: …“ als isError. Die Geometrie ist zu
   sehen, aber Export (STEP, STL, 3MF, Stückliste) wird verweigert. Passendes Lagerteil verbauen, als Druckteil
   kennzeichnen oder Kevin bitten, das Lagerteil anzulegen.
@@ -432,8 +436,8 @@ Ablauf, wenn Kevin einen Link, eine Herstellernummer oder eine EAN nennt:
 3. **Anlegen:** HTML an `zukauf_html(url, html)` (wertet JSON-LD, Microdata und Open Graph aus) oder die gelesenen
    Felder an `zukauf_anlegen(url, felder={name, hersteller, mpn, gtin, preis {je_stueck, waehrung, brutto}, masse {l,
    b, h} bzw. {d, l}, gewicht, bild})`. Preis immer mit brutto/netto wie im Shop. Kevin Hersteller, Nummer, Preis und
-   Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es im Lagerkatalog
-   freigibt; vorher lässt es sich nicht verbauen.
+   Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es freigibt
+   (`freigabe_anfragen([id], grund)` öffnet den Dialog im Projektfenster); vorher lässt es sich nicht verbauen.
 4. **CAD suchen:** `cad_suchen(id)`. Mit Kevins TraceParts-Schlüssel kommt das STEP automatisch („powered by
    TraceParts“ nennen). Sonst liefert es Links (Produktseite, Herstellerportal, TraceParts, 3Dfindit, Websuche):
    **Kevin bitten, das STEP (oder ein ZIP mit STEP) mit seinem Konto herunterzuladen.** Die App beobachtet derweil
@@ -776,7 +780,7 @@ des Bauplans (Zeichnungen behalten ihr Blattformat). Ohne `ziel` landet das PDF 
 | App nicht verbunden | der Kernel läuft, die App hängt (noch) nicht an ihm; kurz warten, sonst Kevin bitten, Kev CAD zu öffnen |
 | Kev CAD läuft nicht – bitte starten | die Brücke erreicht die App nicht; Kevin bitten, Kev CAD zu starten |
 | Inventar-Regel: … nicht aus dem Inventar | Teil ohne `verbauen`/`druckteil` gezeigt; Lagerteil suchen, Druckteil kennzeichnen oder Kevin fragen |
-| … wartet auf Kevins Freigabe im Lagerkatalog | Vorschlag aus `stock_define`/`material_define`; Kevin gibt ihn im Lagerkatalog frei |
+| … wartet auf Kevins Freigabe | Vorschlag aus `stock_define`/`material_define`/`zukauf_anlegen`; `freigabe_anfragen([id], grund)` öffnet den Dialog im Projektfenster |
 | Material '…' gibt es im Katalog nicht | nur Katalogmaterialien (`material_list`); fehlt eins, Kevin fragen |
 | Lagerteil „…“ ist keinem gezeigten Teil zugeordnet | Name in `show()` anders als in `verbauen()`; gleich benennen |
 | Export verweigert | erst die Verstöße gegen die Inventar-Regel beheben |

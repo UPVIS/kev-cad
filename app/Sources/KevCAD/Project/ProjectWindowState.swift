@@ -17,6 +17,9 @@ final class ProjectWindowState: ObservableObject {
     /// Band der Prüfung (Durchdringungen …) für diese Befunde weggeklickt; Liste der Befunde aufgeklappt.
     @Published var dismissedPruefung: String?
     @Published var pruefListeOffen = false
+    /// Freigabe im Projektfenster (Strang „Feinschliff 2“): Dialog offen; Band für diese Vorschläge weggeklickt.
+    @Published var freigabeOffen = false
+    @Published var dismissedFreigabe: String?
     /// Reiter im Prüfband ("befunde" oder "montage") und der Montageschritt, der gerade gezeigt wird (nil = alles).
     @Published var pruefTab = "befunde"
     @Published var montageSchritt: Int?

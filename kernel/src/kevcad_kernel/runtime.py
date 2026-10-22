@@ -42,6 +42,7 @@ from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog
 from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.drucker.laufzeit import DruckerRuntimeMixin  # Phase 8: Drucken auf dem P1P
 from kevcad_kernel.druck.vorschau_laufzeit import DruckvorschauRuntime
+from kevcad_kernel.freigabe import FreigabeAnbindung
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
@@ -103,7 +104,7 @@ class Job:
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
-                    DruckerRuntimeMixin):
+                    DruckerRuntimeMixin, FreigabeAnbindung):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -153,6 +154,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
+        self._freigabe_init()  # Freigabe im Projektfenster (freigabe.py)
         self._drucker_init()  # Phase 8: Drucken (drucker/laufzeit.py)
         self._druckvorschau_init()  # Druckvorschau (DRUCKVORSCHAU.md)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
@@ -507,7 +509,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         return {"ok": True, "item": it, "material": mat, **values, "beispiel": _usage_example(it)}
 
     def stock_define(self, entry: dict[str, Any], ebene: str = "eigen", *, proposal: bool = True) -> dict[str, Any]:
-        """Über MCP immer ein Vorschlag (status "vorgeschlagen"), den Kevin im Lagerkatalog freigibt. Die App
+        """Über MCP immer ein Vorschlag (status "vorgeschlagen"), den Kevin freigibt (Lagerkatalog oder Dialog im
+        Projektfenster, ``freigabe_anfragen``). Die App
         (Kevin) speichert mit ``proposal=False``."""
         try:
             saved, path, notes = self.catalog.save("teil", entry, ebene, proposal=proposal)
@@ -1284,6 +1287,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._pool.submit(self._handle_app_request, header)
         elif kind in BESTAND_ANFRAGEN:
             self._pool.submit(self._bestand_anfrage_sicher, header)
+        elif self._freigabe_app_message(kind, header):  # FREIGABE_GESCHLOSSEN
+            pass
         elif self._anim_app_message(kind, header):
             pass
         elif self._bauplan_app_message(kind, header):
@@ -1368,6 +1373,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     message = res.get("message", "") if res.get("ok") else res.get("error", "")
                 self._send_app({"type": "ACK", "reply_to": rid, "ok": bool(res.get("ok")), "message": message})
                 if res.get("ok"):
+                    self._freigabe_katalog_geaendert()  # wartende freigabe_anfragen prüfen neu
                     self._rerun_after_catalog_change()
         except Exception as exc:  # noqa: BLE001
             self._send_app({"type": "ERROR", "reply_to": rid, "message": f"{type(exc).__name__}: {exc}"})

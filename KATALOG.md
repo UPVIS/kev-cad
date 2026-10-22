@@ -24,7 +24,10 @@ freigegebenen Material mit `druckbar: true`. Jeder Eintrag (Material oder Teil) 
 | `status` | `frei` (Standard, wenn das Feld fehlt) \| `vorgeschlagen` | Vorschläge von Claude (`stock_define`, `material_define`) sind erst nach Kevins Freigabe im Lagerkatalog verbaubar |
 | `vorgeschlagen_am`, `vorgeschlagen_von` | Datum, `agent` | nur bei Vorschlägen |
 
-Freigeben heißt: die App speichert den Eintrag mit `status: "frei"`; Ablehnen löscht ihn.
+Freigeben heißt: die App speichert den Eintrag mit `status: "frei"`; Ablehnen löscht ihn. Seit dem Strang
+„Feinschliff 2“ (22.10.2026) geht das auch direkt im Projektfenster (Band und Dialog „Vorschläge freigeben“); Claude
+öffnet den Dialog mit `freigabe_anfragen(ids, grund)` und gibt selbst nie frei (PROTOCOL.md, Abschnitt „Freigabe im
+Projektfenster“).
 
 Der mitgelieferte Normkatalog (Rohre, Profile, Schrauben, Platten …) zählt als Inventar (Kevin, 21.10.2026): seine
 Einträge haben kein `status`-Feld und sind damit freigegeben.

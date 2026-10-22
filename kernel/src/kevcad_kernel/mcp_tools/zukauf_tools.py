@@ -62,7 +62,7 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "bild, preis {je_stueck, waehrung, brutto, stand}, masse {l, b, h} or {d, l} in mm, gewicht in g, material, "
           "einbaupunkt, bezugspunkte) – or pass the page HTML to zukauf_html instead. Standard parts like 'ISO 4762 "
           "M6x20' are redirected to the stock catalog (no purchased part). The entry is a proposal (status "
-          "'vorgeschlagen') until Kevin releases it in the stock catalog; ebene 'projekt' (default) or 'eigen' for "
+          "'vorgeschlagen') until Kevin releases it (freigabe_anfragen); ebene 'projekt' (default) or 'eigen' for "
           "parts used in many projects. Without CAD it appears as a simplified box/cylinder; next call cad_suchen.",
           WRITES)
     async def zukauf_anlegen(
@@ -94,8 +94,8 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         item = res.get("item") or {}
         lines = [res.get("text") or f"{item.get('id')} angelegt", f"Datei: {res.get('datei')}"]
         if item.get("status") == "vorgeschlagen":
-            lines.append("Es wartet auf Kevins Freigabe im Lagerkatalog; bis dahin lässt es sich nicht verbauen. "
-                         "Kevin Bescheid geben.")
+            lines.append("Es wartet auf Kevins Freigabe; bis dahin lässt es sich nicht verbauen. Mit "
+                         f"freigabe_anfragen([\"{item.get('id')}\"], grund) öffnest du den Dialog im Projektfenster.")
         if res.get("zu_pruefen"):
             lines.append("Von Kevin bestätigen lassen: " + ", ".join(res["zu_pruefen"]))
         for note in res.get("hinweise") or []:
@@ -208,7 +208,8 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         lines.append(f"Datei: {res.get('datei')}")
         item = res.get("item") or {}
         if item.get("status") == "vorgeschlagen":
-            lines.append("Das Teil wartet noch auf Kevins Freigabe im Lagerkatalog.")
+            lines.append("Das Teil wartet noch auf Kevins Freigabe (freigabe_anfragen öffnet den Dialog im "
+                         "Projektfenster).")
         lines.append("Jetzt run aufrufen; das Teil erscheint mit dem Hersteller-Modell.")
         return fmt.result("\n".join(lines), res)
 

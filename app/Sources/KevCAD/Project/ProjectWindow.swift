@@ -151,9 +151,17 @@ struct ProjectWindow: View {
                 }
             }
             .overlay(alignment: .top) {  // Bestand: Hinweis nach „Gebaut“ bzw. „Rückgängig“, mit „Rückgängig“
-                BuchungsBand(model: model)
-                    .padding(.top, 10)
-                    .padding(.horizontal, 12)
+                VStack(spacing: 8) {
+                    BuchungsBand(model: model)
+                    // Freigabe (Strang „Feinschliff 2“): im 3D-Bereich zeigt es der Viewport
+                    if state.bereich != .modell, let key = model.vorschlagSchluessel, state.dismissedFreigabe != key {
+                        FreigabeBand(model: model, oeffnen: { state.freigabeOffen = true }) {
+                            state.dismissedFreigabe = key
+                        }
+                    }
+                }
+                .padding(.top, 10)
+                .padding(.horizontal, 12)
             }
             // Die Mitte nimmt genau ihre Spaltenbreite: Ist ein Inhalt (Bauplan, Berichte) im Mindestmaß breiter, drückt
             // er nicht das ganze Fenster über den Rand (Seitenleiste links und Inspektor rechts abgeschnitten)
@@ -195,6 +203,7 @@ struct ProjectWindow: View {
             }
         }
         .modifier(BestandDialoge(model: model))  // Gebaut, Erfassen, Band nach einer Buchung: in allen Bereichen
+        .modifier(FreigabeDialogModifier(model: model, state: state))  // Vorschläge freigeben (Feinschliff 2)
         .environment(\.materialNavigation, navigation)
     }
 
