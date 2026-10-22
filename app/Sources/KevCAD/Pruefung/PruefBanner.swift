@@ -18,17 +18,20 @@ struct PruefBanner: View {
         let befunde = (p?.befunde ?? []).filter { $0.schwere != .hinweis }
         let fehler = befunde.contains { $0.schwere == .fehler }
         let farbe: Color = fehler ? .red : befunde.isEmpty ? .green : .orange
+        let offen = p?.wirdFertigGerechnet == true  // Bewegungsraum rechnet noch: nicht „in Ordnung“ melden
+        let kopf = befunde.isEmpty ? (offen ? "bisher in Ordnung" : "in Ordnung") : (p?.bandText ?? "")
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
                 Image(systemName: befunde.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .font(.title3)
                     .foregroundStyle(farbe)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Prüfung: " + (befunde.isEmpty ? "in Ordnung" : (p?.bandText ?? "")))
+                    Text("Prüfung: " + kopf)
                         .font(.headline)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(untertitel(fehler: fehler, leer: befunde.isEmpty, laeuft: p?.laeuft ?? false))
+                    Text(untertitel(fehler: fehler, leer: befunde.isEmpty, laeuft: p?.laeuft ?? false,
+                                    hintergrund: p?.hintergrundText ?? ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -99,7 +102,8 @@ struct PruefBanner: View {
         }
     }
 
-    private func untertitel(fehler: Bool, leer: Bool, laeuft: Bool) -> String {
+    private func untertitel(fehler: Bool, leer: Bool, laeuft: Bool, hintergrund: String = "") -> String {
+        if leer, !hintergrund.isEmpty { return hintergrund }  // noch nicht „in Ordnung“: der Bewegungsraum fehlt
         var t =
             leer
             ? "Keine Durchdringung, nichts schwebt, alles lässt sich einbauen."
@@ -107,6 +111,7 @@ struct PruefBanner: View {
                 ? "Betroffene Teile sind rot markiert, Export ist gesperrt. Claude behebt die Befunde in model.py."
                 : "Hinweise der Prüfung; betroffene Teile sind markiert."
         if laeuft { t += " Neue Prüfung läuft …" }
+        if !hintergrund.isEmpty { t += " " + hintergrund }
         return t
     }
 }

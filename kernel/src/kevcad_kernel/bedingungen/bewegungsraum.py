@@ -126,7 +126,7 @@ def _gemeinsam(a: Any, b_moved: Any) -> tuple[float, np.ndarray, np.ndarray] | N
 
 def _pruefe_kollisionen(formen, lagen, zeiten, *, bilder=None, paare=None, huellen=None, kugeln=None,  # noqa: ANN001
                         toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN, sichtbar=None, zeitlimit_s=None, cache=None,
-                        schluessel=None):
+                        schluessel=None, abbrechen=None):
     """Gleiche Schnittstelle wie ``anim_kollision.pruefe_kollisionen`` (nur die hier gebrauchten Teile)."""
     from OCP.TopLoc import TopLoc_Location
 
@@ -158,6 +158,8 @@ def _pruefe_kollisionen(formen, lagen, zeiten, *, bilder=None, paare=None, huell
             if cache is not None and key in cache:
                 res = cache.get(key)
             else:
+                if abbrechen is not None:
+                    abbrechen()
                 stats["exakt"] += 1
                 wb = formen[b].wrapped.Moved(TopLoc_Location(matrix_trsf(rel)))
                 res = _gemeinsam(formen[a], wb)
@@ -351,7 +353,7 @@ def _frei(werte: list[float], blockiert: set[float]) -> list[list[float]]:
 
 
 def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str],
-                    zeitlimit_s: float | None) -> dict[str, Any]:
+                    zeitlimit_s: float | None, abbrechen: Any = None) -> dict[str, Any]:
     t0 = time.perf_counter()
     werte = bew.werte()
     lagen_liste = np.array([bew.lage(w) for w in werte])
@@ -396,7 +398,8 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
     fn = _kollisionsfunktion()
     sk = {n: schluessel[n] for n in {**bewegt, **statisch} if schluessel.get(n)}
     befunde, stats = fn({**bewegt, **statisch}, lagen, werte, paare=paare, toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN,
-                        zeitlimit_s=zeitlimit_s, cache=_PAAR_CACHE if sk else None, schluessel=sk)
+                        zeitlimit_s=zeitlimit_s, cache=_PAAR_CACHE if sk else None, schluessel=sk,
+                        abbrechen=abbrechen)
     kollisionen: dict[tuple[str, str], list[Any]] = {}
     for b in befunde:
         m, s = b.teile if b.teile[0] in bewegt else (b.teile[1], b.teile[0])
@@ -427,6 +430,8 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
             if zeitlimit_s is not None and time.perf_counter() - t0 > zeitlimit_s:
                 stats["abgebrochen"] = True
                 break
+            if abbrechen is not None:
+                abbrechen()
             M = lagen_liste[k]
             g = M[:3, :3] @ g0 + M[:3, 3]
             for n, f in statisch.items():
@@ -617,7 +622,7 @@ def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[s
             "von": round(a0, 2), "bis": round(a1, 2), "auflage": auflage, "eng": eng}
 
 
-def _befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:
+def _befunde(erg: dict[str, Any], hintergrund: bool = False) -> list[dict[str, Any]]:
     from .pruefung import _befund
 
     e = "°" if erg["art"] == "drehen" else " mm"
@@ -664,32 +669,43 @@ def _befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:
             zeile=erg.get("zeile"),
             loesung=f"Griff verlängern oder {k['gegen']} vom Griff wegrücken, damit Finger oder Werkzeug Platz haben"))
     if erg["teilweise"]:
-        out.append(_befund(pruefung="bewegungsraum", teile=erg["teile"][:1], schwere="hinweis",
-                           text=f"{erg['name']}: Weg nur teilweise geprüft (Zeitlimit)", art=erg["art"],
-                           bedingung=erg.get("bedingung"),
-                           loesung="schritte=… verkleinern oder einzeln mit tools/check_motion.py prüfen"))
+        if hintergrund:
+            out.append(_befund(pruefung="bewegungsraum", teile=erg["teile"][:1], schwere="hinweis",
+                               text=f"{erg['name']}: Weg erst teilweise geprüft (Zeitlimit des Laufs), wird im "
+                                    "Hintergrund fertig gerechnet", art=erg["art"], bedingung=erg.get("bedingung"),
+                               loesung="pruefen(warten=true) bzw. bedingungen() zeigt den Endstand"))
+        else:
+            out.append(_befund(pruefung="bewegungsraum", teile=erg["teile"][:1], schwere="hinweis",
+                               text=f"{erg['name']}: Weg nur teilweise geprüft (Zeitlimit)", art=erg["art"],
+                               bedingung=erg.get("bedingung"),
+                               loesung="schritte=… verkleinern oder einzeln mit tools/check_motion.py prüfen"))
     _ = e, vektor
     return out
 
 
 def bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any], *,
-                       schluessel: dict[str, str], projekt: str | Path | None, zeitlimit_s: float,
-                       boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None
-                       ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+                       schluessel: dict[str, str], projekt: str | Path | None, zeitlimit_s: float | None,
+                       boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None, abbrechen: Any = None,
+                       offen: list[str] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Alle Wege prüfen: (Ergebnisse je Weg, Befunde). ``zeitlimit_s`` None: ohne Zeitlimit (Fertigrechnen im
+    Hintergrund). ``abbrechen`` wird vor jeder exakten Rechnung aufgerufen und darf mit einer Ausnahme unterbrechen
+    (was gerechnet ist, bleibt im Zwischenspeicher). ``offen``: Liste, in die die Namen der Wege kommen, die das
+    Zeitlimit nicht ganz geschafft haben; mit ihr sagen die Hinweise „wird im Hintergrund fertig gerechnet“."""
     _BOXEN.clear()
     for n, f in formen.items():
         if boxen and n in boxen:
             _BOXEN[id(f)] = boxen[n]
     try:
         return _bewegungen_pruefen(sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt,
-                                   zeitlimit_s=zeitlimit_s)
+                                   zeitlimit_s=zeitlimit_s, abbrechen=abbrechen, offen=offen)
     finally:
         _BOXEN.clear()
 
 
 def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any], *,
-                        schluessel: dict[str, str], projekt: str | Path | None,
-                        zeitlimit_s: float) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+                        schluessel: dict[str, str], projekt: str | Path | None, zeitlimit_s: float | None,
+                        abbrechen: Any = None, offen: list[str] | None = None
+                        ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     t0 = time.perf_counter()
     liste: list[Bewegung] = []
     for c in sammlung.bedingungen:
@@ -709,18 +725,29 @@ def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
             hinweise.append(f"bewegungen.json: {len(doppelt)} Einträge übergangen, weil die Teile ein Gelenk in model.py "
                             f"haben ({', '.join(doppelt[:3])}{' …' if len(doppelt) > 3 else ''})")
     ergebnisse, befunde = [], []
+    hintergrund = offen is not None
     for bew in liste:
-        rest = zeitlimit_s - (time.perf_counter() - t0)
-        if rest <= 0:
+        rest = None if zeitlimit_s is None else zeitlimit_s - (time.perf_counter() - t0)
+        if rest is not None and rest <= 0:
             from .pruefung import _befund
 
-            befunde.append(_befund(pruefung="bewegungsraum", teile=bew.teile[:1], schwere="hinweis",
-                                   text=f"{bew.name}: nicht geprüft (Zeitlimit des Laufs erreicht)",
-                                   loesung="einzeln mit tools/check_motion.py prüfen", bedingung=bew.bedingung))
+            if hintergrund:
+                offen.append(bew.name)  # type: ignore[union-attr]
+                befunde.append(_befund(pruefung="bewegungsraum", teile=bew.teile[:1], schwere="hinweis",
+                                       text=f"{bew.name}: noch nicht geprüft (Zeitlimit des Laufs), wird im "
+                                            "Hintergrund fertig gerechnet",
+                                       loesung="pruefen(warten=true) bzw. bedingungen() zeigt den Endstand",
+                                       bedingung=bew.bedingung))
+            else:
+                befunde.append(_befund(pruefung="bewegungsraum", teile=bew.teile[:1], schwere="hinweis",
+                                       text=f"{bew.name}: nicht geprüft (Zeitlimit des Laufs erreicht)",
+                                       loesung="einzeln mit tools/check_motion.py prüfen", bedingung=bew.bedingung))
             continue
-        erg = pruefe_bewegung(bew, formen, schluessel, rest)
+        erg = pruefe_bewegung(bew, formen, schluessel, rest, abbrechen)
         ergebnisse.append(erg)
-        befunde.extend(_befunde(erg))
+        if erg["teilweise"] and hintergrund:
+            offen.append(bew.name)  # type: ignore[union-attr]
+        befunde.extend(_befunde(erg, hintergrund))
     for h in hinweise:
         from .pruefung import _befund
 

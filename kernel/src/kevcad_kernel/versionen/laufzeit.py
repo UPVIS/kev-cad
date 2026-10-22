@@ -292,7 +292,7 @@ class VersionenRuntimeMixin:
 
     def _versionen_pruefung(self, check: dict[str, Any]) -> None:
         """CHECK_DONE: Prüfstand an die Version des Laufs hängen (oder merken, bis sie da ist)."""
-        if check.get("state") not in ("done", "failed"):
+        if check.get("state") not in ("done", "failed", "teilweise"):  # teilweise: done folgt und ersetzt es
             return
         run = int(check.get("run") or 0)
         archiv = self._archiv

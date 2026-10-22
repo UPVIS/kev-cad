@@ -52,18 +52,21 @@ def ansicht_fuer_befund(b: dict[str, Any], groesse: float | None = None) -> list
 class PruefDienst:
     """Mischklasse für KernelRuntime."""
 
-    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
-        """Letztes Prüfergebnis (wartet auf eine laufende Prüfung): CHECK-Kopf ohne type/seq."""
+    def pruefen(self, warten_s: float = 120.0, endstand: bool = False) -> dict[str, Any]:
+        """Letztes Prüfergebnis (wartet auf eine laufende Prüfung): CHECK-Kopf ohne type/seq. ``endstand``: auch
+        auf das Fertigrechnen im Hintergrund warten (Zustand „teilweise“ → „done“), höchstens ``warten_s``."""
         stand = self._pruef  # type: ignore[attr-defined]
-        laufend = stand.erwartet
+        laufend = stand.erwartet if stand.erwartet is not None else (stand.hintergrund if endstand else None)
         if laufend is not None:
-            stand.warte(laufend, warten_s)
+            stand.warte(laufend, warten_s, endstand=endstand)
         check, _ = stand.letztes()
         if check is None:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen (geprüft wird nach jedem Lauf)."}
         out = {"ok": True, **{k: v for k, v in check.items() if k not in ("type", "seq")}}
         if stand.erwartet is not None:
             out["laeuft"] = stand.erwartet
+        if stand.hintergrund is not None:
+            out["hintergrund"] = stand.hintergrund
         return out
 
     def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,

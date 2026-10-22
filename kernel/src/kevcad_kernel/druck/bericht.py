@@ -112,7 +112,7 @@ def druck_auszug(check: dict[str, Any] | None, teil: str | None = None,
     state = check.get("state")
     if state == "failed":
         return {"ok": False, "error": f"Prüfung fehlgeschlagen: {check.get('message') or 'ohne Meldung'}"}
-    if state not in (None, "done"):
+    if state not in (None, "done", "teilweise"):  # teilweise: nur der Bewegungsraum rechnet noch
         return {"ok": False, "error": f"Prüfung {state}: erst run aufrufen und das Ergebnis abwarten."}
     druck = check.get("druck") or {}
     alle = druck.get("teile") or {}
