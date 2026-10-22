@@ -1,6 +1,6 @@
 # Kev CAD · Phase 4: Foto und Video als Referenz
 
-Stand: 21.10.2026. Läuft parallel zu Phase 3, sobald Phase 2 auf `main` ist. Baut auf dem Verfahren „CAD aus Fotos“
+Stand: 22.10.2026 abends (Rest von Phase 4: Abweichung, Maßstab, Scan in der App; davor 21.10.2026). Läuft parallel zu Phase 3, sobald Phase 2 auf `main` ist. Baut auf dem Verfahren „CAD aus Fotos“
 (Repo UPVIS/cad-aus-fotos, Paket `fotocad`) und der Recherche vom 21.10.2026 auf (Abschnitt „Fundstücke“).
 
 ## Ziel
@@ -120,8 +120,50 @@ Capture 102,5). Object Capture war in zwei von vier gleichen Läufen unbrauchbar
 Wiederholung fängt das ab.
 
 Offen: Zwillingslage in Bildern ohne Object-Capture-Kamera (dort 14,8 s gedreht, der Kernel nennt sie),
-`REF_DEVIATION`/`referenz_abweichung` und `referenz_massstab`, Punktwolke, Gemini-Videobeschreibung, Fotos ohne
-Video als Quelle von Startkameras, Versionstitel für geänderte Referenzdateien („Code in bericht.json“).
+~~`REF_DEVIATION`/`referenz_abweichung` und `referenz_massstab`~~ (erledigt, siehe unten), Punktwolke,
+Gemini-Videobeschreibung, Fotos ohne Video als Quelle von Startkameras, Versionstitel für geänderte Referenzdateien
+(„Code in bericht.json“).
+
+### Ergebnis „Rest von Phase 4“ (22.10.2026 abends, Zweig `rest-referenz`)
+
+Abweichung als Farbkarte, Maßstab nachträglich und der Scan vom iPhone in der App. Protokoll additiv (PROTOCOL.md,
+„Abweichung, Maßstab, Scans in der App“): `REF_DEVIATION`, `REF_SCALE`, `SCAN_LIST`, `SCAN_IMPORT`, dazu in `REF_LIST`
+die Felder `abweichung`, `massstab`, `phase` und `VIEW_CMD referenz_abweichung`.
+
+- **Abweichung** (`referenz/abweichung.py`, Laufzeit `referenz/laufzeit_rest.py`): Abstand Punkt ↔ Netz exakt zum
+  nächsten Dreieck (Kandidaten über einen k-d-Baum aus Flächenproben, Ericson), mit Vorzeichen über die Außennormale
+  (**positiv = der Gegenstand ragt über das Modell hinaus, das Modell ist zu klein**). Je Teil auf der fein
+  unterteilten Oberfläche des Modells (Kanten 1 bis 3 mm, alle Teile zusammen höchstens 250 000 Dreiecke) und je Punkt
+  des Referenznetzes zum Modell. Nicht abgedeckt (grau) ist, was weiter als die Grenze weg liegt (6 % der Diagonale, 10
+  bis 60 mm) oder nur schräg daneben (über 60° zur Normale): die Unterseite eines Scans, Bodenreste. Kennzahlen je Teil:
+  Mittel, 95 %, größte mit Ort, Versatz, abgedeckter Anteil, nach Fläche gewichtet. Ein eigener Faden rechnet nach jedem
+  Lauf, nach neuem Netz, neuer Lage und neuem Maßstab; unveränderte Teile kommen aus dem Zwischenspeicher und werden
+  nicht noch einmal geschickt. MCP `referenz_abweichung(name, teile, zeigen, auf, skala_mm, grenze_mm)`, Kurzfassung in
+  `referenzen`.
+- **App:** Schalter „Abweichung“ mit „Modell | Netz“ je Referenz im Inspektor, darunter die Teile mit der größten
+  Abweichung; Legende unten rechts im Viewport (elf Bänder von blau über grün nach rot, ± Spanne in mm wählbar, grau
+  ohne Referenz). Auf dem Modell ersetzt die Farbkarte das Teil (wie das Festkörper-Feld der Statik) und das Netz
+  derselben Referenz tritt zurück; auf dem Netz färbt sie das Referenznetz.
+- **Maßstab** (`referenz/massstab.py`): `referenz_massstab(mm, name, punkte | kante)` und „Maßstab …“ im Inspektor
+  (zwei Punkte am Netz anklicken, das Modell lässt Klicks durch, oder ein Maß der Hülle bzw. ein gemessenes param).
+  Skaliert um den Ursprung (Boden bleibt z = 0): OBJ, PLY, `poses.json`, `kameras.json`, `bericht.json`,
+  `referenz.json`; die Vermessung nur bei einem gemessenen param. Scans sind metrisch und werden abgelehnt.
+- **Scan in der App:** Band „Neuer Scan empfangen: <Name>“ mit „Scan übernehmen“ (Genau, im Menü Schnell) und
+  Ausblenden, Liste „Scans vom iPhone“ unter „Referenzen“, die laufende Auswertung als „Scan wird ausgewertet …“ mit
+  Phase (Einlesen, Bilder wählen, Tiefe (PromptDA), Verschmelzen (TSDF) …) und Prozent.
+
+Nachweis in der Testvariante „Kev CAD Test rr“ über MCP und Selbsttest (Projekt mit einer Schachtel als Modell,
+Kevins echter Scan vom 22.10.2026 21:38 als Kopie):
+
+| Schritt | Ergebnis |
+|---|---|
+| Abweichung im Kernel, Scan mit 225 268 Dreiecken, ein Teil (49 152 Dreiecke nach dem Unterteilen) | 1,2 s beim ersten Mal, danach aus dem Zwischenspeicher |
+| Farbkarte auf dem Netz in der App (225 792 Dreiecke in Bänder geschnitten) | 0,7 s im Debug-Bau (Test), danach zwischengespeichert |
+| `scan_importieren(schnell)` aus der App-Ablage | gut 2 min, Anzeige „Scan wird ausgewertet … 13 %, Tiefe (PromptDA) · PromptDA small laden“ |
+| `referenz_vermessen` (Länge, Breite, Höhe frei, 10 Bilder) | 55 s, 189,7 ± 2,9 × 124,9 ± 13,4 × 298,6 ± 3,5 mm, Netz am Modell angelegt (1,2° um Z) |
+| Abweichung mit dem geratenen Modell 200 × 150 × 300 mm | Mittel 8,3 mm, 95 % 20 mm, größte 23,8 mm, Versatz −6,9 mm (Modell zu groß) |
+| Abweichung nach dem Übernehmen der gemessenen Maße | Mittel 5,3 mm, 95 % 15,9 mm, größte 23,7 mm (oben an den aufgeklappten Laschen), Versatz −0,6 mm |
+| Maßstab per Selbsttest (zwei GPU-Klicks auf das Netz durch das Modell hindurch) | 301,68 mm am Netz → 200 mm, Faktor 0,6629, sechs Dateien skaliert; zurück mit `kante="laenge"` (136,4 → 205,8 mm, gesamt 1,0000) |
 
 ## Was Kevin beitragen muss
 

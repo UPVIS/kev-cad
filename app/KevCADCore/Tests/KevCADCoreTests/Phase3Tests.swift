@@ -100,7 +100,7 @@ final class Phase3ProtocolTests: XCTestCase {
         XCTAssertEqual(s.text, raw["text"]?.stringValue)
         XCTAssertEqual(s.erwartet, ["step", "stp", "zip"])
         XCTAssertEqual(s.name, "ALUTEC Transportroller 05200", "name ist laut Festlegungen optional erlaubt")
-        XCTAssertEqual(s.cadLinks.map(\.titel), ["Produktseite (CAD-Download oft dort)", "TraceParts: ALUTEC 05200"])
+        XCTAssertEqual(s.cadLinks.map(\.titel), ["Produktseite (CAD-Download oft dort)", "3Dfindit (CADENAS/PARTcommunity): ALUTEC 05200"])
         XCTAssertEqual(s.cadLinks.map(\.url.absoluteString),
                        raw["cad_links"]?.arrayValue?.compactMap { $0["url"]?.stringValue })
         XCTAssertNil(KernelMessage.zukaufStatus(s).replyTo, "ZUKAUF_STATUS kommt immer als Ereignis")
@@ -186,7 +186,7 @@ final class Phase3ProtocolTests: XCTestCase {
         XCTAssertFalse(tandem.vereinfacht)
         XCTAssertNil(tandem.url, "nur http(s)")
         XCTAssertNil(tandem.preisBrutto)
-        XCTAssertEqual(tandem.cadTitle, "Hersteller-CAD (TraceParts)")
+        XCTAssertEqual(tandem.cadTitle, "Hersteller-CAD", "ältere Einträge mit TraceParts zeigen keinen Anbieter")
         XCTAssertNil(t.bom.lines[1].zukauf)
         XCTAssertEqual(ZukaufDate.display("2026-10-21"), "21.10.2026")
         XCTAssertEqual(ZukaufDate.display("2026-10"), "10/2026")
@@ -553,7 +553,7 @@ final class Phase3ControllerTests: XCTestCase {
         XCTAssertEqual(m.waitingForCAD.map(\.id), ["alutec-05200"])
         XCTAssertEqual(m.zukaufStatus.first?.name, "ALUTEC Transportroller 05200")
         XCTAssertEqual(m.zukaufStatus.first?.cadLinks.map(\.titel),
-                       ["Produktseite (CAD-Download oft dort)", "TraceParts: ALUTEC 05200"])
+                       ["Produktseite (CAD-Download oft dort)", "3Dfindit (CADENAS/PARTcommunity): ALUTEC 05200"])
         XCTAssertEqual(m.zukaufStatus.first?.erwartet, ["step", "stp", "zip"])
         XCTAssertEqual(m.watchedDownloads, dir, "Beobachtung läuft nur im Temp-Ordner")
         XCTAssertEqual(c.zukaufState.watcher?.extensions, ["step", "stp", "zip"])

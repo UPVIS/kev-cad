@@ -130,8 +130,8 @@ public struct ZukaufBOMInfo: Equatable, Sendable {
     public var cadTitle: String {
         if vereinfacht { return "vereinfacht (Ersatzkörper)" }
         switch cadQuelle?.lowercased() {
-        case "traceparts": return "Hersteller-CAD (TraceParts)"
-        case "hersteller", "download": return "Hersteller-CAD"
+        // "traceparts" nur bei älteren Einträgen (TraceParts ist seit dem 22.10.2026 stillgelegt)
+        case "hersteller", "download", "traceparts": return "Hersteller-CAD"
         case "bd_warehouse": return "Normteil (bd_warehouse)"
         case "skript": return "Skript"
         case nil, "": return "–"

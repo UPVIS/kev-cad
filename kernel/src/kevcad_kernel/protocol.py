@@ -1261,6 +1261,25 @@ def check_ref_message(header: dict[str, Any]) -> list[str]:
                 out.append(f"zustand {r.get('zustand')!r} unbekannt")
             if r.get("art") not in REF_ARTEN:
                 out.append(f"art {r.get('art')!r} unbekannt")
+            abw = r.get("abweichung")  # additiv (22.10.2026): Kurzfassung der Abweichung
+            if isinstance(abw, dict) and abw.get("stand") not in REF_ABW_STAENDE:
+                out.append(f"abweichung.stand {abw.get('stand')!r} unbekannt")
+    elif typ == "REF_DEVIATION":
+        if header["auf"] not in REF_ABW_RICHTUNGEN:
+            out.append(f"auf {header['auf']!r} unbekannt")
+        if header["auf"] == "modell" and not header.get("teil"):
+            out.append("REF_DEVIATION auf dem Modell braucht teil")
+    elif typ == "REF_SCALE":
+        punkte = header.get("punkte")
+        if punkte is None and not header.get("kante"):
+            out.append("REF_SCALE braucht punkte oder kante")
+        if punkte is not None and (len(punkte) != 2 or any(len(q) != 3 for q in punkte)):
+            out.append("REF_SCALE.punkte: zwei Punkte mit je drei Zahlen")
+    elif typ == "SCAN_LIST":
+        for s in header["scans"]:
+            out += _fehlend(s, SCAN_FELDER, "scans[]")
+            if s.get("zustand") not in SCAN_ZUSTAENDE:
+                out.append(f"scans[].zustand {s.get('zustand')!r} unbekannt")
     elif typ == "REF_PHOTOS":
         if header["satz"] not in REF_SAETZE:
             out.append(f"satz {header['satz']!r} unbekannt")
@@ -1330,6 +1349,151 @@ def referenz_beispiele() -> list[tuple[str, dict[str, Any], bytes]]:
                              "frei": ["tiefe", "hoehe"], "bekannt": {"breite": 180.0}, "bilder": 8}, b""),
         ("ref_apply", {"type": "REF_APPLY", "seq": 3, "id": "a-3", "referenz": "IMG_5186",
                        "werte": {"tiefe": 103.4, "hoehe": 46.4}}, b""),
+    ] + referenz_beispiele_rest()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 4, Rest (22.10.2026, additiv): Abweichung als Farbkarte (REF_DEVIATION), Maßstab nachträglich (REF_SCALE),
+# Scans in der App (SCAN_LIST, SCAN_IMPORT). PROTOCOL.md „Phase 4: Referenzen“, Abschnitte „Abweichung“, „Maßstab“,
+# „Scans in der App“.
+# ---------------------------------------------------------------------------------------------------------------------
+
+REF_NACHRICHTEN.update({
+    "REF_DEVIATION": ("referenz", "run", "auf", "teil", "feld", "punkte", "dreiecke"),  # Kernel → App
+    "REF_SCALE": ("id", "referenz", "mm"),  # App → Kernel
+    "SCAN_LIST": ("scans", "empfaenger"),  # Kernel → App
+    "SCAN_IMPORT": ("id",),  # App → Kernel
+})
+REF_ABW_RICHTUNGEN: tuple[str, ...] = ("modell", "referenz")
+REF_ABW_STAENDE: tuple[str, ...] = ("done", "laeuft", "failed")
+REF_ABW_KENNZAHLEN: tuple[str, ...] = ("mittel_mm", "max_mm", "p95_mm", "versatz_mm", "abgedeckt")
+REF_MASSSTAB_KANTEN: tuple[str, ...] = ("laenge", "breite", "hoehe", "grund_laenge", "grund_breite")
+SCAN_FELDER: tuple[str, ...] = ("id", "name", "empfangen", "fotos", "videobilder", "zustand")
+SCAN_ZUSTAENDE: tuple[str, ...] = ("neu", "uebernommen")
+REF_ABW_ARRAYS: tuple[tuple[str, str, int], ...] = (("punkte", "<f4", 3), ("dreiecke", "<u4", 3), ("werte", "<f4", 1))
+
+
+def pack_ref_abweichung(*, referenz: str, run: int, auf: str, teil: str | None, feld: str, punkte: np.ndarray,
+                        dreiecke: np.ndarray, werte: np.ndarray, grenze_mm: float | None = None,
+                        kennzahlen: dict[str, Any] | None = None, seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """REF_DEVIATION: Netz (Modellteil oder Referenznetz, Weltkoordinaten in mm) mit dem Abstand je Punkt in mm,
+    positiv = die Referenz liegt außerhalb des Modells, NaN = keine Referenz in der Nähe. Nutzlast: Punkte f32
+    (n × 3), Dreiecke u32 (m × 3), Werte f32 (n), little-endian, ohne Lücken."""
+    p = np.ascontiguousarray(punkte, dtype="<f4").reshape(-1, 3)
+    t = np.ascontiguousarray(dreiecke, dtype="<u4").reshape(-1, 3)
+    w = np.ascontiguousarray(werte, dtype="<f4").reshape(-1)
+    if len(w) != len(p):
+        raise ValueError(f"REF_DEVIATION: {len(p)} Punkte, aber {len(w)} Werte")
+    if len(t) and int(t.max()) >= len(p):
+        raise ValueError("REF_DEVIATION: Dreiecke verweisen auf Punkte, die es nicht gibt")
+    if auf not in REF_ABW_RICHTUNGEN:
+        raise ValueError(f"REF_DEVIATION: auf {auf!r} unbekannt")
+    header = {"type": "REF_DEVIATION", "seq": seq, "referenz": referenz, "run": int(run), "auf": auf, "teil": teil,
+              "feld": feld, "punkte": int(len(p)), "dreiecke": int(len(t)),
+              "grenze_mm": None if grenze_mm is None else round(float(grenze_mm), 2),
+              "kennzahlen": kennzahlen or {}}
+    return header, p.tobytes() + t.tobytes() + w.tobytes()
+
+
+def unpack_ref_abweichung(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]:
+    n, m = int(header["punkte"]), int(header["dreiecke"])
+    out: dict[str, np.ndarray] = {}
+    pos = 0
+    for name, typ, breite in REF_ABW_ARRAYS:
+        k = (m if name == "dreiecke" else n) * breite
+        a = np.frombuffer(payload, dtype=typ, count=k, offset=pos)
+        pos += a.nbytes
+        out[name] = a.reshape(-1, breite) if breite > 1 else a
+    if pos != len(payload):
+        raise ValueError(f"REF_DEVIATION: Nutzlast {len(payload)} Byte, erwartet {pos}")
+    return out
+
+
+def check_ref_abweichung(header: dict[str, Any], payload: bytes) -> list[str]:
+    """Fehler einer REF_DEVIATION-Nachricht mit Nutzlast (leer = gültig)."""
+    err = check_ref_message(header)
+    if err:
+        return err
+    try:
+        f = unpack_ref_abweichung(header, payload)
+    except Exception as exc:  # noqa: BLE001
+        return [str(exc)]
+    if len(f["dreiecke"]) and int(f["dreiecke"].max()) >= int(header["punkte"]):
+        err.append("REF_DEVIATION: Dreieck zeigt auf einen Punkt, den es nicht gibt")
+    return err
+
+
+def abweichung_kurz(stand: str, **felder: Any) -> dict[str, Any]:
+    """``REF_LIST.referenzen[i].abweichung``: Stand, Lauf, Grenze, Spanne der Legende, Kennzahlen je Teil und für das
+    Referenznetz mit dem Schlüssel ``feld`` der zugehörigen REF_DEVIATION."""
+    return {"stand": stand, **felder}
+
+
+def referenz_beispiele_rest() -> list[tuple[str, dict[str, Any], bytes]]:
+    """Beispiele für Abweichung, Maßstab und Scans (Dateinamen ``ref_deviation*``, ``ref_scale*``, ``scan_*``)."""
+    # Teil „Kiste/Korpus“ 100 × 60 × 40 als Quader (8 Punkte, 12 Dreiecke), Referenz rechts 1 mm außerhalb,
+    # links 2 mm innerhalb, unten keine Referenz (NaN)
+    p = np.array([[x, y, z] for z in (0.0, 40.0) for y in (-30.0, 30.0) for x in (-50.0, 50.0)], dtype=np.float32)
+    tri = np.array([[0, 2, 3], [0, 3, 1], [4, 5, 7], [4, 7, 6], [0, 1, 5], [0, 5, 4], [2, 6, 7], [2, 7, 3],
+                    [0, 4, 6], [0, 6, 2], [1, 3, 7], [1, 7, 5]], dtype=np.uint32)
+    werte = np.where(p[:, 0] > 0, 1.0, -2.0).astype(np.float32)
+    werte[p[:, 2] < 1] = np.nan
+    kz = {"mittel_mm": 1.5, "max_mm": 2.0, "p95_mm": 2.0, "versatz_mm": -0.5, "abgedeckt": 0.8, "punkte": 8,
+          "ort_max": [-50.0, -30.0, 40.0]}
+    modell, nutz_m = pack_ref_abweichung(referenz="IMG_5186", run=7, auf="modell", teil="Kiste/Korpus",
+                                         feld="a1b2c3d4e5f6a7b8c9d0", punkte=p, dreiecke=tri, werte=werte,
+                                         grenze_mm=10.0, kennzahlen=kz, seq=6)
+    rp = np.array([[-49, -31, 1], [51, -31, 1], [51, 31, 1], [-49, 31, 1], [0, 0, 41]], dtype=np.float32)
+    rt = np.array([[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]], dtype=np.uint32)
+    rw = np.array([1.0, 1.0, 1.0, 1.0, 0.5], dtype=np.float32)
+    ref, nutz_r = pack_ref_abweichung(referenz="IMG_5186", run=7, auf="referenz", teil=None,
+                                      feld="f0e1d2c3b4a596877869", punkte=rp, dreiecke=rt, werte=rw, grenze_mm=10.0,
+                                      kennzahlen={"mittel_mm": 0.9, "max_mm": 1.0, "p95_mm": 1.0, "versatz_mm": 0.9,
+                                                  "abgedeckt": 1.0, "punkte": 5, "ort_max": [51.0, 31.0, 1.0]},
+                                      seq=7)
+    liste = {"type": "REF_LIST", "seq": 8, "referenzen": [
+        {"name": "IMG_5186", "art": "video", "quelle": "/Volumes/Aufnahmen/IMG_5186.MOV", "zustand": "fertig",
+         "laeuft": None, "fortschritt": None, "text": None, "meldung": None, "netz": True, "fotos": 8,
+         "messung": True, "erstellt": "2026-10-22T14:03:11", "capture": None,
+         "lage": {"drehung_z": 180.0, "verschiebung": [0.0, -1.2, 0.0], "rest_mm": 6.3, "paare": 8},
+         "massstab": {"faktor": 1.0125, "mm": 180.0, "ist_mm": 177.78, "quelle": "punkte",
+                      "stand": "2026-10-22T22:10:00"},
+         "abweichung": abweichung_kurz("done", run=7, grenze_mm=10.0, skala_mm=2.0, skala_fest=False,
+                                       angelegt=True, ms=840.0, meldung=None,
+                                       teile=[{"teil": "Kiste/Korpus", "feld": modell["feld"], **kz}],
+                                       referenz={"feld": ref["feld"], **ref["kennzahlen"]})},
+        {"name": "Scan Packung", "art": "scan", "quelle": "/Users/test/Documents/Kev CAD/Scans/2026-10-22_213800_Scan",
+         "zustand": "rechnet", "laeuft": "capture", "fortschritt": 0.42, "text": "Scan: Tiefe 12 von 101",
+         "phase": "Tiefe (PromptDA)", "meldung": None, "netz": False, "fotos": 0, "messung": False,
+         "erstellt": "2026-10-22T21:40:00", "capture": None, "lage": None, "abweichung": None}]}
+    scale_punkte = {"type": "REF_SCALE", "seq": 4, "id": "a-4", "referenz": "IMG_5186",
+                    "punkte": [[-88.9, -50.4, 0.0], [88.9, -50.4, 0.0]], "kante": None, "mm": 180.0}
+    scale_kante = {"type": "REF_SCALE", "seq": 5, "id": "a-5", "referenz": "IMG_5186", "punkte": None,
+                   "kante": "laenge", "mm": 180.0}
+    scan_liste = {"type": "SCAN_LIST", "seq": 9, "ordner": "/Users/test/Documents/Kev CAD/Scans",
+                  "neu": "2026-10-22_213800_Scan 22.10.",
+                  "empfaenger": {"laeuft": True, "port": 50123, "name": "MacBook Pro", "dienst": "_kevscan._tcp"},
+                  "scans": [
+                      {"id": "2026-10-22_213800_Scan 22.10.", "name": "Scan 22.10. 21.38",
+                       "empfangen": "2026-10-22T21:40:12", "erstellt": "2026-10-22T21:38:00+02:00",
+                       "geraet": "iPhone16,1", "fotos": 61, "videobilder": 779, "objekt": True, "groesse_mb": 433.9,
+                       "vorschau": "/Users/test/Documents/Kev CAD/Scans/2026-10-22_213800_Scan 22.10./vorschau.jpg",
+                       "zustand": "neu", "referenzen": []},
+                      {"id": "2026-10-21_101500_Rollwagen", "name": "Rollwagen", "empfangen": "2026-10-21T10:15:40",
+                       "erstellt": None, "geraet": "iPhone16,1", "fotos": 12, "videobilder": 240, "objekt": False,
+                       "groesse_mb": 120.5, "vorschau": None, "zustand": "uebernommen",
+                       "referenzen": [{"projekt": "/Users/test/Documents/Kev CAD/Rollwagen", "name": "Rollwagen",
+                                       "stand": "2026-10-21T10:20:00", "schnell": True}]}]}
+    scan_import = {"type": "SCAN_IMPORT", "seq": 6, "id": "a-6", "scan": "2026-10-22_213800_Scan 22.10.",
+                   "name": None, "schnell": False}
+    return [
+        ("ref_deviation_modell", modell, nutz_m),
+        ("ref_deviation_referenz", ref, nutz_r),
+        ("ref_list_abweichung", liste, b""),
+        ("ref_scale_punkte", scale_punkte, b""),
+        ("ref_scale_kante", scale_kante, b""),
+        ("scan_list", scan_liste, b""),
+        ("scan_import", scan_import, b""),
     ]
 # Statik (PLAN-STATIK.md, Stufe 1): STATICS (Kernel → App), siehe PROTOCOL.md Abschnitt „Statik“
 
@@ -1337,6 +1501,7 @@ STATIK_AMPELN = ("gruen", "gelb", "rot", "grau")
 STATIK_STAENDE = ("done", "failed")
 STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit", "ziel", "reserve", "ausnutzung", "ort",
                         "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative", "kurz")
+STATIK_LAST_FELDER = ("teile", "kraft", "punkt", "kg", "zeile", "gegen", "paar")  # Feld ``lasten`` je Szenario (T32)
 STATIK_ABLAUF_STAENDE = ("done", "laeuft", "failed")  # Stufe 2 (Ablauf): Feld ``ablauf`` je Szenario
 STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_max", "rutschgrenze", "rutschreserve",
                       "geschwindigkeit", "verzoegerung")
@@ -1392,6 +1557,9 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     out["teile"] = list(e.get("teile") or [])
     out["staebe"] = list(e.get("staebe") or [])
     out["auflager"] = list(e.get("auflager") or [])
+    # additiv (Nachbesserung, T32): Lasten mit Angriffspunkt; Kraftpaare mit `gegen` und `paar` (Gegenkraft −kraft am
+    # selben Punkt auf `gegen`)
+    out["lasten"] = [{k: l[k] for k in STATIK_LAST_FELDER if k in l} for l in e.get("lasten") or []]
     out["ueberhoehung"] = e.get("ueberhoehung") or 1.0
     kippen = (e.get("s0") or {}).get("kippen") if e.get("s0") is not None else e.get("kippen")
     out["kippen"] = [{k: g.get(k) for k in ("name", "reserve", "richtung_text", "je_richtung", "teile")}
@@ -1454,6 +1622,13 @@ def check_statics_message(header: dict[str, Any]) -> list[str]:
             if n < 2 or len(s.get("ausnutzung") or []) != n or len(s.get("verschiebung") or []) != n:
                 err.append(f"{wo}: Stab {s.get('name')!r}: punkte, ausnutzung und verschiebung brauchen gleich viele "
                            "Einträge (mindestens 2)")
+        for j, l in enumerate(e.get("lasten") or []):
+            for k in ("kraft", "punkt"):
+                v = l.get(k)
+                if not isinstance(v, list) or len(v) != 3 or not all(isinstance(c, (int, float)) for c in v):
+                    err.append(f"{wo}.lasten[{j}].{k}: drei Zahlen erwartet")
+            if l.get("paar") and not l.get("gegen"):
+                err.append(f"{wo}.lasten[{j}]: Kraftpaar ohne gegen")
         ab = e.get("ablauf")
         if ab is not None:
             if ab.get("stand") not in STATIK_ABLAUF_STAENDE:
@@ -1529,7 +1704,11 @@ def statik_beispiel() -> dict[str, Any]:
              "staebe": [{"name": "Rahmen/Rohr", "punkte": punkte, "ausnutzung": [10.0, 5.0, 0.0],
                          "verschiebung": [[0, 0, 0], [0, 0, -22.0], [0, 0, -61.0]], "radius": 6.0, "sicherheit": 0.2,
                          "ampel": "rot"}],
-             "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []}},
+             "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []},
+             "lasten": [{"teile": ["Rahmen/Rohr"], "kraft": [0.0, 0.0, -294.3], "punkt": [250.0, 0.0, 30.0],
+                         "kg": 30.0, "zeile": 12},
+                        {"teile": ["Rahmen/Rohr"], "kraft": [100.0, 0.0, 0.0], "punkt": [500.0, 0.0, 30.0],
+                         "kg": None, "zeile": 13, "gegen": ["Ball"], "paar": True}]},
         ],
         "ueberdimensioniert": [],
         "grenzen": ["Vereinfacht gerechnet: Stäbe als Balken, linear-elastisch, kleine Verformungen, keine "

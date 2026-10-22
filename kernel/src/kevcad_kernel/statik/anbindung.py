@@ -114,7 +114,7 @@ def rechne_auftrag(auftrag: dict[str, Any]) -> dict[str, Any]:
                                              "Lauf mit)."}
     if auftrag.get("szenario"):
         neu = sc.szenario_aus(auftrag["szenario"], "agent")
-        unbekannt = [t for l in neu.lasten for t in l.teile if not st.modell.aufloesen(t)]
+        unbekannt = [t for l in neu.lasten for t in l.teile + l.gegen if not st.modell.aufloesen(t)]
         if unbekannt:
             import difflib
 

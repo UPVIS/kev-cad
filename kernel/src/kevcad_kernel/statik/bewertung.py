@@ -28,7 +28,8 @@ ZIEL_RUTSCHEN = 1.5
 RANG = {"rot": 3, "gelb": 2, "gruen": 1, "grau": 0}
 GRENZEN = [
     "Vereinfacht gerechnet: Stäbe als Balken, linear-elastisch, kleine Verformungen, keine Plastizität.",
-    "Verbinder (Druckteile, Platten, Zukaufteile) gelten im Stabwerk als starr; Schweißnähte und Schrauben "
+    "Verbinder (Druckteile, Platten, Zukaufteile) gelten im Stabwerk als starr, ihre Kräfte je Anschluss kommen aus "
+    "dem Stabwerk; Gelenke mit Bereich (Einstellungen mit Klemme) gelten als festgestellt; Schweißnähte und Schrauben "
     "vereinfacht, Schrauben ohne Vorspannung und ohne Gewindeauszug im Kunststoff.",
     "Werkstoffwerte und Reibwerte sind Richtwerte aus dem Katalog (Norm-Mindestwerte bzw. Datenblatt); Druckteile mit "
     "voller Füllung gerechnet.",
@@ -158,11 +159,21 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
         schicht = (f", quer zur Schicht (nur {z(b['schichtfaktor'] * 100, 0)} % der Festigkeit)"
                    if b.get("quer_zur_schicht") else "")
         lager = f" als Lager von {b['aus_lager']}" if b.get("aus_lager") else ""
+        if b.get("aus_verbinder"):  # T31: Kräfte je Anschluss aus dem Stabwerk
+            lasten = [v for v in b.get("verbinder") or [] if not v.get("lager")]
+            von = ", ".join(f"{v['stab'].rsplit('/', 1)[-1]} {z(float(np.linalg.norm(v['kraft'])), 0)} N"
+                            for v in lasten)
+            lager = (f" als Verbinder (gehalten von {b['aus_verbinder'].rsplit('/', 1)[-1]}, belastet von {von} aus "
+                     "dem Stabwerk)")
+        if b.get("kraftpaar"):
+            kp = b["kraftpaar"]
+            lager += (f" ({'Gegenkraft' if kp.get('gegenkraft') else 'Kraft'} des Kraftpaars mit "
+                      f"{', '.join(g.rsplit('/', 1)[-1] for g in kp.get('gegen') or [])})")
         text = (f"{b['teil']}{lager} {'hält nicht' if amp == 'rot' else ('hält knapp' if amp == 'gelb' else 'hält')}"
                 f": Sicherheit {_sf(sf)} (Ziel {z(zb, 0)}{', Druckteil' if b.get('druckteil') else ''}), "
                 f"{z(b['spannung'], 1)} N/mm² an der Einspannung (Hebel {z(b['hebel_mm'], 0)} mm){schicht}.")
         loesung = b.get("vorschlag") or ""
-        if amp != "gruen" or (b.get("quer_zur_schicht") and not b.get("aus_lager")):
+        if amp != "gruen" or (b.get("quer_zur_schicht") and not b.get("aus_lager") and not b.get("aus_verbinder")):
             ur.append(urteil("bauteil", b["teil"], amp, text, loesung, sicherheit=sf, ziel=zb, ausnutzung=round(a, 3),
                              schichtfaktor=b.get("schichtfaktor"), quer_zur_schicht=b.get("quer_zur_schicht"),
                              ort=b.get("einspannung")))

@@ -10,6 +10,11 @@ st.szenario("Aufstützen", beschreibung="Kevin stützt sich mit 30 kg auf den Ra
 st.last("Kugelschieber/Querstange vorn (Rohr 3)", kg=30)                 # senkrecht nach unten, Mitte des Teils
 st.last(halter, kraft=(0, 0, -50), punkt=(120, 0, 40))                   # Kraft in N an einem Punkt (mm, Welt)
 
+st.szenario("Ball drückt 100 N auf den Fänger")                           # innere Kraft zwischen zwei Teilen:
+st.last("Kugelschieber/Querstange vorn (Rohr 3)", kraft=(100, 0, 0),     # Kraft auf die Querstange,
+        punkt=(700, 0, 60), gegen="Bowlingball")                          # Gegenkraft auf den Ball
+st.kraftpaar("Kugelschieber/Querstange vorn (Rohr 3)", "Bowlingball", kraft=(100, 0, 0))  # dasselbe
+
 st.szenario("Bremsen", beschleunigung=(-3, 0, 0))                         # m/s² des ganzen Gegenstands
 st.szenario("Schräge", neigung=10, richtung="+y")                         # Boden 10° geneigt, abwärts nach +Y
 st.szenario("Anstoßen", stoss=2)                                          # Stoßfaktor auf die Lasten des Szenarios
@@ -24,6 +29,9 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eige
 
 - ``szenario`` legt ein Szenario an (oder ergänzt das gleichnamige); ``last``, ``stoss``, ``neigung`` ohne
   ``szenario=`` gehören zum zuletzt angelegten. Lasten ganz ohne Szenario landen im Szenario „Nutzlast“.
+- **Kraftpaar** (innere Kraft, ``last(…, gegen=…)`` oder ``kraftpaar(a, b, kraft)``): Die Kraft wirkt auf ``a``, die
+  Gegenkraft am selben Punkt auf ``b`` (etwa der Ball gegen die Fangrolle). Beim Kippen, Rutschen und Abheben des
+  Ganzen heben sich beide auf; Stabwerk, Bauteile und Festkörper bekommen jede Seite auf ihre Teile.
 - Teile als Name aus ``show()``, als Gruppe ("Kugelschieber/") oder als gezeigte Form. Kraft in N als (fx, fy, fz),
   ``kg=`` für Gewichtskraft senkrecht nach unten. ``punkt`` in mm (Welt); ohne Punkt die Mitte (Stab: Mitte der
   Achse).
@@ -45,7 +53,8 @@ import math
 import sys
 from typing import Any
 
-__all__ = ["szenario", "last", "neigung", "beschleunigung", "stoss", "untergrund", "ziel", "Szenario"]
+__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel",
+           "Szenario"]
 
 G = 9.81
 _stand: dict[str, Any] = {"hook": None, "aktuell": None}
@@ -101,8 +110,14 @@ class Szenario:
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def last(self, teil: Any, kraft: Any = None, punkt: Any = None, kg: float | None = None) -> Szenario:
-        last(teil, kraft=kraft, punkt=punkt, kg=kg, szenario=self.name)
+    def last(self, teil: Any, kraft: Any = None, punkt: Any = None, kg: float | None = None,
+             gegen: Any = None) -> Szenario:
+        last(teil, kraft=kraft, punkt=punkt, kg=kg, szenario=self.name, gegen=gegen)
+        return self
+
+    def kraftpaar(self, teil: Any, gegen: Any, kraft: Any = None, punkt: Any = None,
+                  kg: float | None = None) -> Szenario:
+        kraftpaar(teil, gegen, kraft=kraft, punkt=punkt, kg=kg, szenario=self.name)
         return self
 
     def stoss(self, teil: Any = None, kraft: Any = None, faktor: float = 2.0, **kw: Any) -> Szenario:
@@ -151,17 +166,33 @@ def szenario(name: str, beschleunigung: Any = None, neigung: float | None = None
     return Szenario(name.strip())
 
 
-def last(teil: Any, kraft: Any = None, punkt: Any = None, kg: float | None = None, szenario: str | None = None) -> None:
+def last(teil: Any, kraft: Any = None, punkt: Any = None, kg: float | None = None, szenario: str | None = None,
+         gegen: Any = None) -> None:
     """Last auf ein Teil (oder eine Gruppe): ``kraft`` in N als (fx, fy, fz) oder ``kg`` (senkrecht nach unten),
-    ``punkt`` in mm (Welt)."""
+    ``punkt`` in mm (Welt). Mit ``gegen`` (Teil, Gruppe oder Form) ist es ein Kraftpaar: die Gegenkraft wirkt am selben
+    Punkt auf ``gegen`` (innere Kraft, etwa der Ball gegen die Fangrolle; zählt nicht beim Kippen und Rutschen)."""
     if kraft is None and kg is None:
         raise ValueError("statik.last: kraft=(fx, fy, fz) in N oder kg=… angeben")
     k = _vec(kraft, "kraft") if kraft is not None else [0.0, 0.0, -float(kg) * G]
     if any(not math.isfinite(c) for c in k):
         raise ValueError("statik.last: kraft enthält ungültige Zahlen")
     _hook()
-    _melde({"was": "last", "teile": _teile(teil), "kraft": k, "punkt": _vec(punkt, "punkt"),
-            "kg": float(kg) if kg is not None else None, "szenario": szenario or _stand["aktuell"]})
+    d = {"was": "last", "teile": _teile(teil), "kraft": k, "punkt": _vec(punkt, "punkt"),
+         "kg": float(kg) if kg is not None else None, "szenario": szenario or _stand["aktuell"]}
+    if gegen is not None:
+        if not _teile(gegen):
+            raise ValueError("statik.last: gegen= braucht ein Teil (Name aus show(), Gruppe oder Form)")
+        d["gegen"] = _teile(gegen)
+    _melde(d)
+
+
+def kraftpaar(teil: Any, gegen: Any, kraft: Any = None, punkt: Any = None, kg: float | None = None,
+              szenario: str | None = None) -> None:
+    """Innere Kraft zwischen zwei Teilen der Konstruktion: ``kraft`` (N) auf ``teil``, die Gegenkraft am selben
+    ``punkt`` auf ``gegen``. Gleich wie ``last(teil, kraft, punkt, gegen=gegen)``."""
+    if gegen is None:
+        raise ValueError("statik.kraftpaar: gegen= (das Teil, das die Gegenkraft aufnimmt) angeben")
+    last(teil, kraft=kraft, punkt=punkt, kg=kg, szenario=szenario, gegen=gegen)
 
 
 def neigung(grad: float, richtung: Any = "+x", szenario: str | None = None) -> None:

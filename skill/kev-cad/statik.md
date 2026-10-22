@@ -10,7 +10,7 @@ Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, 
 |---|---|---|
 | S0, jeder Lauf | Schwerpunkt, Kippen je Kante der Standfläche (Reserve = Standmoment / Kippmoment) und je Richtung (Kippwinkel, Beschleunigung, bei der es kippt), Rutschen über den Reibwert gegen den Boden, lose aufliegende Teile, Schraubenlast grob | Standsicherheit in jedem Szenario |
 | S0, jeder Lauf | Bauteil mit Last als Kragträger: Schnitte durch das echte Teil zwischen Einspannung und Lastpunkt, Biegung, Längskraft, Torsion | Halter, Konsolen, Druckteile |
-| S1, jeder Lauf | Stabwerk mit PyNite: Rohre und Profile aus dem Lager als Stäbe (Querschnitt aus dem Katalog), Verbinder starr, Gelenke aus den Zwangsbedingungen; Spannung, Durchbiegung, Knicken (Eigenwerte), Auflagerkräfte | Rahmen, Gestelle, Tische, Rigs |
+| S1, jeder Lauf | Stabwerk mit PyNite: Rohre und Profile aus dem Lager als Stäbe (Querschnitt aus dem Katalog), Verbinder starr (ihre Kräfte je Anschluss gehen in Kragträger und Festkörper), Gelenke aus den Zwangsbedingungen (mit `bereich` festgestellt); Spannung, Durchbiegung, Knicken (Eigenwerte), Auflagerkräfte | Rahmen, Gestelle, Tische, Rigs |
 | S2, auf Anfrage und für Abläufe aus model.py nach jedem Lauf | Ablauf mit MuJoCo (Starrkörper, Gelenke, Kontakt, Reibung) im eigenen Prozess: Kippen und Abheben, Ladung (Ball) bleibt oder springt heraus, Grenzgeschwindigkeit, Rutschgrenze, Kontaktkräfte | Schieben, Bremsen, Anprall, Fahrt einer Animation |
 | S3, nach jedem Lauf im Hintergrund (Teile mit Last) und auf Anfrage | Festkörper-FEM im eigenen Prozess (Gmsh, Tetraeder zweiter Ordnung, scikit-fem, pyamg): Spannung (von Mises, bei Druckteilen die Schichtfuge), Sicherheit, Verformung, Sicherheit in den anderen Drucklagen; Farbverlauf auf dem Netz im Viewer | Druckteile, Halter, Platten, Verbinder statt Kragträger |
 
@@ -35,6 +35,21 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                            # eigen
 
 - `last`, `stoss`, `neigung` ohne `szenario=` gehören zum zuletzt angelegten Szenario; Lasten ganz ohne Szenario landen
   in „Nutzlast“. Teile als Name aus `show()`, als Gruppe ("Kugelschieber/") oder als Form.
+- **Innere Kräfte als Kraftpaar**: Drückt ein Teil der Konstruktion gegen ein anderes (der Ball gegen die Fangrolle,
+  ein Spanner gegen sein Widerlager), nie als äußere `st.last` rechnen, sonst „rutscht“ oder „kippt“ das Ganze
+  scheinbar. Stattdessen:
+
+  ```python
+  st.szenario("Ball drückt 100 N auf den Fänger")
+  st.last("Kugelschieber/Querstange vorn (Rohr 3)", kraft=(100, 0, 0), punkt=(708, -344, 28), gegen="Bowlingball")
+  st.kraftpaar("Kugelschieber/Querstange vorn (Rohr 3)", "Bowlingball", kraft=(100, 0, 0))   # dasselbe
+  ```
+
+  Die Kraft wirkt auf das Teil, die Gegenkraft am selben Punkt auf `gegen`. Beim Kippen, Rutschen und Abheben des
+  Ganzen heben sich beide auf; Stabwerk, Kragträger und Festkörper bekommen jede Seite auf ihre Teile (ein geerdetes
+  Gegenstück wie der Ball auf dem Boden trägt seine Seite selbst). Im Ergebnis steht die Last mit `gegen` und
+  `paar`, im Viewer als zwei gegeneinander gerichtete violette Pfeile (äußere Lasten blau). In `szenario_rechnen`:
+  `lasten=[{"teil": "…", "kraft": [100, 0, 0], "gegen": "Bowlingball"}]`.
 - **Lastpunkt angeben**, wo er nicht die Mitte des Teils ist (Haken, Konsole): `punkt=(x, y, z)`. Bei Halter-Teilen
   rechnet Kev CAD den Hebel von der Einspannung (Berührung mit dem Gegenstück) bis zu diesem Punkt.
 - Von selbst rechnet Kev CAD: „Eigengewicht“; auf Rollen „Bremsen“ (−3 m/s² in X, dynamisch); eine Nutzlast aus einem
@@ -117,7 +132,8 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
   Schrauben nur, wenn sonst nichts trägt), fest eingespannt. **Lasten**: `st.last` am Teil (mit `punkt=` auf einer
   Fläche um den Punkt verteilt, ohne Punkt gleichmäßig über das Volumen), die Lagerkräfte der Stäbe (über die Bohrung
   bzw. Kontaktfläche zum Stab), bei **Verbindern zwischen Stäben** (im Stabwerk starr, etwa Schlitten oder
-  Eckverbinder) Kraft und Moment jedes Stabs am Anschluss, gehalten vom Stab mit der größten Kraft; immer das
+  Eckverbinder) Kraft und Moment jedes Stabs am Anschluss aus dem Stabwerk (nach Steifigkeit verteilt), gehalten vom
+  Stab mit der größten Kraft; beide Seiten eines Kraftpaars auf ihren Teilen; immer das
   Eigengewicht; mit `festigkeit(…, ablauf=True)` alle Kontaktkräfte auf das Teil im Bild mit der größten Summe aus dem
   Ablauf des Szenarios (Ball an der Fangrolle, Boden), zurückgerechnet in die Ruhelage.
 - **Druckteile**: steifer und fester in der Schicht; quer dazu `e_modul_z` und `quer_zur_schicht` aus dem Katalog. Das
@@ -144,6 +160,12 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
   M3 1“) und in `verbinde(…, art="schraube", mit=[Schraube, Einsatz])` nennen. Dann stellt S0 die Zugkraft je Schraube
   gegen die Auszugkraft aus dem Katalog (`einsatz_auszug`: M3 und M6 in PLA und PETG belegt, M4 und M5 nicht), Ziel 4.
 - Verbindungen über `verbinde` und Gelenke (Teile über Bedingungen setzen): Schraube, Klemmung, Steck, Formschluss,
-  Kleben gelten als fest, Aufliegen als gelenkig; Dreh- und Schiebegelenke geben die Freiheit frei. Ohne Bedingung
-  zählen Berührung (fest) und Spiel (gesteckt, fest).
+  Kleben gelten als fest, Aufliegen als gelenkig. **Gelenke mit `bereich`** sind Einstellungen (Schlitten mit
+  Sterngriff, Stange im Halter, Kopf) und gelten wie im Ablauf als festgestellt, also fest; nur Gelenke ohne `bereich`
+  geben die Freiheit frei (Laufrolle auf der Achse, Schiebegelenk als Hülse). Ohne Bedingung zählen Berührung (fest)
+  und Spiel (gesteckt, fest).
+- **Verbinder zwischen Stäben** (Schlitten, Eckverbinder, im Stabwerk starr): Die Kraft je Anschluss kommt aus dem
+  Stabwerk, statisch unbestimmt nach Steifigkeit verteilt (zwei gleiche Schlitten an einer Querstange: je die Hälfte).
+  Damit weist Kev CAD jeden Verbinder als Kragträger nach (gehalten vom Stab mit der größten Kraft) und rechnet ihn als
+  Festkörper; `statik(szenario=…)` nennt die Kräfte je Verbinder und Stab.
 - Stäbe nur aus `lager.teil(…).verbauen(…)` (Stangenware). Selbst gezeichnete Rohre sind Bauteile, keine Stäbe.

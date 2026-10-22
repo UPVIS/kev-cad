@@ -231,6 +231,11 @@ class Erfassung:
                     e["teile"] = self._namen(d.get("teile") or [], shown, warnungen, f"statik.{d.get('was')}", z)
                     if not e["teile"]:
                         continue
+                if d.get("gegen"):  # Kraftpaar: Gegenstück wie die Teile auflösen; ohne Gegenstück keine Last
+                    e["gegen"] = self._namen(d.get("gegen") or [], shown, warnungen,
+                                             f"statik.{d.get('was')}(gegen=…)", z)
+                    if not e["gegen"]:
+                        continue
                 ab = d.get("ablauf")
                 if isinstance(ab, dict) and ab.get("antrieb") is not None and not isinstance(ab["antrieb"], str):
                     namen = self._namen([ab["antrieb"]], shown, warnungen, "statik.szenario(antrieb=…)", z)

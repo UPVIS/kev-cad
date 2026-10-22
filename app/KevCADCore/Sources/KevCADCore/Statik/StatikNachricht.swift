@@ -114,6 +114,35 @@ public struct StatikStab: Equatable, Sendable {
     }
 }
 
+/// Eine Last des Szenarios mit Angriffspunkt (Welt, mm) und Kraft (N). Ein Kraftpaar (innere Kraft zwischen zwei Teilen,
+/// `st.last(…, gegen=…)`) hat `gegen`: dort wirkt am selben Punkt die Gegenkraft −kraft (PROTOCOL.md „Statik“, `lasten`).
+public struct StatikLast: Equatable, Sendable {
+    public var teile: [String]
+    public var gegen: [String]
+    public var kraft: SIMD3<Float>
+    public var punkt: SIMD3<Float>
+    public var kg: Double?
+
+    public var paar: Bool { !gegen.isEmpty }
+    /// Betrag der Kraft in N.
+    public var betrag: Float { simd_length(kraft) }
+
+    public init(teile: [String], gegen: [String] = [], kraft: SIMD3<Float>, punkt: SIMD3<Float>, kg: Double? = nil) {
+        self.teile = teile
+        self.gegen = gegen
+        self.kraft = kraft
+        self.punkt = punkt
+        self.kg = kg
+    }
+
+    init?(json j: JSONValue) {
+        guard let kraft = j["kraft"]?.vector3, let punkt = j["punkt"]?.vector3 else { return nil }
+        self.init(
+            teile: j["teile"]?.stringList ?? [], gegen: j["gegen"]?.stringList ?? [], kraft: kraft, punkt: punkt,
+            kg: j["kg"]?.doubleValue)
+    }
+}
+
 public struct StatikKennzahlen: Equatable, Sendable {
     public var sicherheit: Double?
     public var knicken: Double?
@@ -287,6 +316,8 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
     public var staebe: [StatikStab]
     public var ueberhoehung: Float
     public var kippen: [StatikKippen]
+    /// Lasten mit Angriffspunkt, Kraftpaare mit Gegenseite (additiv; ältere Kernel schicken keine).
+    public var lasten: [StatikLast]
     /// Stufe 2: Ablauf (nur bei Szenarien mit Geschwindigkeit, Bremsen oder Animation).
     public var ablauf: StatikAblauf?
     /// Stufe 3: Festkörper-FEM der Teile mit Last (läuft im Hintergrund nach dem Lauf oder auf Anfrage).
@@ -308,6 +339,7 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
         staebe = (j["staebe"]?.arrayValue ?? []).map(StatikStab.init(json:))
         ueberhoehung = Float(j["ueberhoehung"]?.doubleValue ?? 1)
         kippen = (j["kippen"]?.arrayValue ?? []).map(StatikKippen.init(json:))
+        lasten = (j["lasten"]?.arrayValue ?? []).compactMap(StatikLast.init(json:))
         ablauf = j["ablauf"].flatMap { $0.objectValue == nil ? nil : StatikAblauf(json: $0) }
         festkoerper = j["festkoerper"].flatMap { $0.objectValue == nil ? nil : StatikFestkoerper(json: $0) }
     }

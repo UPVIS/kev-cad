@@ -51,7 +51,8 @@ EXPECTED_TOOLS |= {"drucker_status", "drucken"}
 # Strang „Feinschliff 2“: Freigabe im Projektfenster
 EXPECTED_TOOLS |= {"freigabe_anfragen"}
 # Phase 4: Referenzen
-EXPECTED_TOOLS |= {"referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen", "referenz_fotoansicht"}
+EXPECTED_TOOLS |= {"referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen", "referenz_fotoansicht",
+                   "referenz_abweichung", "referenz_massstab"}
 # Statik Stufe 1 (PLAN-STATIK.md)
 EXPECTED_TOOLS |= {"statik", "szenario_rechnen"}
 # Statik Stufe 2 (Ablauf mit MuJoCo)

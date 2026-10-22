@@ -331,7 +331,12 @@ final class NavigationInputView: NSView {
         switch mode {
         case .pendingSelect(_, let flags):
             coordinator?.pickPoint(p, in: self) { [weak self] result in
-                self?.coordinator?.onClick?(result, flags)
+                guard let self, let c = self.coordinator else { return }
+                if let punkt = c.onClickPunkt {
+                    let welt = result.flatMap { c.surfacePoint(of: $0, at: p, in: self) }
+                    if punkt(result, welt, flags) { return }
+                }
+                c.onClick?(result, flags)
             }
         case .boxSelect(let start, let flags):
             boxLayer.isHidden = true

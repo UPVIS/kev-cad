@@ -26,6 +26,8 @@ final class ProjectWindowState: ObservableObject {
     /// Phase 4: Dateien für den Dialog „Referenz hinzufügen“ (Drag and Drop, +) und die Referenz für „Vermessen“.
     @Published var referenzDateien: [URL]?
     @Published var referenzVermessen: String?
+    /// Rest von Phase 4: Referenz für den Dialog „Maßstab …“.
+    @Published var referenzMassstab: String?
 
     // Schnitt: AppModel kennt nur `sectionEnabled`, Achse und Lage hält die Oberfläche.
     @Published var sectionAxis = "z"

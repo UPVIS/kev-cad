@@ -54,6 +54,9 @@ def main() -> None:
             "szenarien": [{"name": e["name"], "ampel": e["ampel"], "urteile": len(e["urteile"]),
                            "teile": [t["name"] for t in e["teile"]], "staebe": [s["name"] for s in e["staebe"]],
                            "sicherheit": e["kennzahlen"].get("sicherheit"), "ueberhoehung": e["ueberhoehung"],
+                           # Nachbesserung (T32): Lasten mit Angriffspunkt, Kraftpaare mit gegen
+                           "lasten": [{"teile": l["teile"], "gegen": l.get("gegen") or [], "paar": bool(l.get("paar")),
+                                       "kraft": l["kraft"], "punkt": l["punkt"]} for l in e.get("lasten") or []],
                            **({"ablauf": {"stand": e["ablauf"]["stand"], "animation": e["ablauf"]["animation"],
                                           "bilder": e["ablauf"]["bilder"],
                                           "kippreserve": e["ablauf"]["kennzahlen"].get("kippreserve"),

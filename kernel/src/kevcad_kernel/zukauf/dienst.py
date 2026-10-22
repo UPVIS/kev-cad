@@ -4,7 +4,8 @@
   ein Vorschlag (``status: "vorgeschlagen"``), aus der App (``ZUKAUF_NEU``) sofort ``frei``. Normteile werden auf den
   Lagerkatalog umgeleitet.
 - ``html``: mitgeliefertes HTML auswerten (``shopdaten``), auf Wunsch gleich anlegen.
-- ``suchen``: TraceParts (mit Kevins Schlüssel automatisch bis zum Import), sonst Links → ``wartet_auf_cad``.
+- ``suchen``: Links zu Herstellerportalen und freien Quellen → ``wartet_auf_cad`` (Kevin lädt herunter; eine
+  automatische CAD-Quelle gibt es nicht, die TraceParts-API ist seit dem 22.10.2026 stillgelegt).
 - ``uebernehmen``: Datei (oder neueste passende aus ``~/Downloads``, auch ZIP) prüfen, in den Zukauf-Ordner legen,
   in den Katalog eintragen.
 - ``liste``: alle Zukaufteile mit Freigabe und CAD-Stand.
@@ -18,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ from kevcad_kernel.catalog import WRITABLE, ZUKAUF_ARTEN, CatalogError, is_free
 from kevcad_kernel.protocol import zukauf_status
 from kevcad_kernel.zukauf import downloads as dl
 from kevcad_kernel.zukauf import eintrag as ze
-from kevcad_kernel.zukauf import traceparts as tp
+from kevcad_kernel.zukauf import quellen
 
 STATUS_DATEI = "zukauf-status.json"
 MAX_SEEN = 30
@@ -39,8 +39,6 @@ class ZukaufDienst:
         self.rt = rt
         self._lock = threading.RLock()
         self._seen: list[dict[str, Any]] = []  # DOWNLOAD_SEEN der App, neueste zuletzt
-        self.traceparts_transport = None  # für Tests: Attrappe statt echter Abrufe
-        self.traceparts_sleep = time.sleep
 
     # =================================================================================================================
     # Hilfen
@@ -124,7 +122,7 @@ class ZukaufDienst:
         self._status(zid, "fehler", grund, name=entry.get("name"))
         if vorher.get("zustand") == "wartet_auf_cad" and ze.cad_art(entry) == "vereinfacht":
             text = f"{datei.name} nicht übernommen: {grund}. Bitte die passende STEP-Datei herunterladen."
-            self._status(zid, "wartet_auf_cad", text, cad_links=vorher.get("cad_links") or tp.cad_links(entry),
+            self._status(zid, "wartet_auf_cad", text, cad_links=vorher.get("cad_links") or quellen.cad_links(entry),
                          name=entry.get("name"))
 
     def offene_status(self) -> list[dict[str, Any]]:
@@ -137,7 +135,7 @@ class ZukaufDienst:
             if entry is None or entry.get("art") not in ZUKAUF_ARTEN or ze.cad_art(entry) != "vereinfacht":
                 continue
             out.append(zukauf_status(zid, "wartet_auf_cad", str(st.get("text") or ""),
-                                     cad_links=st.get("cad_links") or tp.cad_links(entry),
+                                     cad_links=st.get("cad_links") or quellen.cad_links(entry),
                                      erwartet=list(ze.CAD_ENDUNGEN), name=entry.get("name")))
         return out
 
@@ -231,7 +229,7 @@ class ZukaufDienst:
     # =================================================================================================================
     # CAD suchen und übernehmen
 
-    def suchen(self, zid: str, *, automatisch: bool = True) -> dict[str, Any]:
+    def suchen(self, zid: str) -> dict[str, Any]:
         entry, err = self._entry(zid)
         if entry is None:
             return {"ok": False, "error": err}
@@ -242,35 +240,12 @@ class ZukaufDienst:
                 return {"ok": True, "zustand": "importiert", "cad": ze.cad_art(entry),
                         "text": f"{entry.get('name')} hat schon CAD ({cad.get('quelle')}"
                                 + (f": {datei}" if datei else "") + ")"}
-        hinweise: list[str] = []
-        z, grund = tp.zugang()
-        if z is not None and automatisch and entry.get("mpn") and entry.get("hersteller"):
-            client = tp.TraceParts(z, self.traceparts_transport, sleep=self.traceparts_sleep)
-            try:
-                got = client.holen(str(entry["mpn"]), str(entry["hersteller"]), self._base_dir(entry) / "zukauf" /
-                                   entry["id"] / "traceparts", entry["id"])
-            except tp.TracePartsFehler as exc:
-                got = None
-                hinweise.append(str(exc))
-            if got and got.get("datei"):
-                res = self.uebernehmen(entry["id"], got["datei"], quelle="traceparts",
-                                       lizenz=f"TraceParts-Nutzungsbedingungen ({tp.POWERED})",
-                                       extra={"traceparts_id": (got.get("teil") or {}).get("partFamilyCode")})
-                res["powered_by"] = tp.POWERED
-                res["traceparts_aufrufe"] = client.aufrufe
-                return res
-            if got and got.get("gefunden") and not got.get("format"):
-                hinweise.append("TraceParts kennt das Teil, bietet aber kein STEP mit direktem Download")
-            elif got is not None and not got.get("gefunden"):
-                hinweise.append(f"TraceParts kennt {entry['hersteller']} {entry['mpn']} nicht")
-        elif grund:
-            hinweise.append(grund)
-        links = tp.cad_links(entry)
+        links = quellen.cad_links(entry)
         text = (f"CAD für {entry.get('name')}: Kevin lädt die STEP-Datei herunter (Links), Kev CAD übernimmt sie aus "
                 "dem Download-Ordner")
         self._status(entry["id"], "wartet_auf_cad", text, cad_links=links, name=entry.get("name"))
         return {"ok": True, "zustand": "wartet_auf_cad", "cad_links": links, "erwartet": list(ze.CAD_ENDUNGEN),
-                "hinweise": hinweise, "text": text}
+                "hinweise": [], "text": text}
 
     def uebernehmen(self, zid: str, pfad: str | None = None, *, minuten: float = dl.STANDARD_MINUTEN,
                     erzwingen: bool = False, quelle: str = "download", lizenz: str | None = None,
@@ -362,8 +337,8 @@ class ZukaufDienst:
 
     def app_neu(self, header: dict[str, Any], ack: Any = None) -> dict[str, Any]:
         """ZUKAUF_NEU: Kevins bestätigter Eintrag, sofort ``frei``. ``ack(ok, text)`` geht vor dem ZUKAUF_STATUS
-        hinaus (PROTOCOL.md: ``ACK``, danach ``ZUKAUF_STATUS``); ohne CAD sucht der Kernel danach gleich (TraceParts
-        bzw. Links → ``wartet_auf_cad``)."""
+        hinaus (PROTOCOL.md: ``ACK``, danach ``ZUKAUF_STATUS``); ohne CAD sucht der Kernel danach gleich (Links →
+        ``wartet_auf_cad``)."""
         felder = dict(header.get("felder") or {})
         eingabe = header.get("eingabe")
         kind = ze.eingabe_art(eingabe)
