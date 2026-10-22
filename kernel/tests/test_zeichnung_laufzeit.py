@@ -123,8 +123,9 @@ def test_neuzuordnung_nach_lauf(env):
     if not any(m.get("quelle") == "kevin" for b in [rt.drawing("rohr")] for m in b["kopf"]["blatt"]["masse"]):
         test_app_anfrage_und_bearbeitung(env)
     start = app.mark()
-    assert rt.run(params={"laenge": 600})["ok"]
-    _, _, docs, _ = app.wait_for(lambda h: h["type"] == "DOCS", start=start, timeout=60)
+    lauf = rt.run(params={"laenge": 600})
+    assert lauf["ok"]
+    _, _, docs, _ = app.wait_for(lambda h: h["type"] == "DOCS" and h.get("run") == lauf["run"], start=start, timeout=60)
     rohr = next(b for b in docs["blaetter"] if b["id"] == "rohr")
     assert rohr["verwaiste_masse"] == 0
     res = rt.drawing("rohr")
@@ -137,8 +138,9 @@ def test_neuzuordnung_nach_lauf(env):
     rt.drawing_edit("rohr", [{"op": "mass_neu", "art": "linear", "richtung": "x", "ansicht": "v1",
                               "bezuege": [{"merkmal": "seite:x-"}, {"merkmal": "bohrung:3"}]}], "kevin")
     start = app.mark()
-    assert rt.run(params={"laenge": 600, "loecher": 1})["ok"]
-    _, _, docs, _ = app.wait_for(lambda h: h["type"] == "DOCS", start=start, timeout=60)
+    lauf = rt.run(params={"laenge": 600, "loecher": 1})
+    assert lauf["ok"]
+    _, _, docs, _ = app.wait_for(lambda h: h["type"] == "DOCS" and h.get("run") == lauf["run"], start=start, timeout=60)
     rohr = next(b for b in docs["blaetter"] if b["id"] == "rohr")
     assert rohr["verwaiste_masse"] == 1
     assert rt.run(params={"laenge": 500, "loecher": 3})["ok"]

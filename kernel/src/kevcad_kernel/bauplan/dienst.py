@@ -146,7 +146,8 @@ class BauplanDienst:
                 pruefe(erg)
             st.update(erg=erg)
             self._bp_speichern(erg)
-        self._bp_senden(None)
+        self._bp_senden(None)  # Vertrag 1.2: Änderungen (auch über MCP) erreichen die App sofort, BAUPLAN und DOCS
+        self._bp_docs_senden()
         befunde = [b for _, s in datei.alle_schritte(erg.plan) for b in s.get("pruefung") or []]
         return {"ok": True, "meldungen": meldungen, "zusammenfassung": datei.zusammenfassung(erg.plan),
                 "befunde": befunde}

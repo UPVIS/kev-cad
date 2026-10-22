@@ -56,6 +56,8 @@ def _anzahl_text(n: int) -> str:
 def _r(v: Any, n: int = 3) -> Any:
     if v is None:
         return None
+    if isinstance(v, dict):  # Signaturen der Bohrbild-Bezüge (sonst blieben ndarrays im Plan, BAUPLAN scheiterte)
+        return {k: _r(x, n) for k, x in v.items()}
     if isinstance(v, (list, tuple, np.ndarray)):
         return [_r(x, n) for x in v]
     if isinstance(v, (bool, np.bool_)):
