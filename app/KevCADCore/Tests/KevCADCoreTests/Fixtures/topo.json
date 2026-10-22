@@ -1,0 +1,62 @@
+{
+ "topo": {
+  "run": 12,
+  "stand": "done",
+  "auftrag": 3,
+  "teil": "Halter",
+  "fortschritt": 1.0,
+  "iteration": 25,
+  "verlauf": 2,
+  "behalten": 0.42,
+  "ersparnis": 58.2,
+  "sicherheit_nachher": 5.4,
+  "ampel_nachher": "gruen",
+  "datei": "topologie/Halter-1a2b3c4d5e6f.brep",
+  "zonen": 2
+ },
+ "topo_laeuft": {
+  "run": 12,
+  "stand": "laeuft",
+  "auftrag": 3,
+  "teil": "Halter",
+  "fortschritt": 0.41,
+  "iteration": 12,
+  "verlauf": 2,
+  "behalten": 0.42,
+  "ersparnis": null,
+  "sicherheit_nachher": null,
+  "ampel_nachher": null,
+  "datei": null,
+  "zonen": 0
+ },
+ "topo_feld_nachher": {
+  "art": "nachher",
+  "punkte": 8,
+  "dreiecke": 12,
+  "werte": "ausnutzung",
+  "auftrag": 3,
+  "teil": "Halter",
+  "iteration": null,
+  "bytes": 400
+ },
+ "topo_feld_dichte": {
+  "art": "dichte",
+  "punkte": 8,
+  "dreiecke": 12,
+  "werte": null,
+  "auftrag": 3,
+  "teil": "Halter",
+  "iteration": 12,
+  "bytes": 240
+ },
+ "topo_feld_schutz": {
+  "art": "schutz",
+  "punkte": 8,
+  "dreiecke": 12,
+  "werte": null,
+  "auftrag": 3,
+  "teil": "Halter",
+  "iteration": null,
+  "bytes": 240
+ }
+}

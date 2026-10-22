@@ -903,6 +903,40 @@ ein Feld `festkoerper`:
 - Packen und Prüfen: `pack_statics_feld`, `unpack_statics_feld`, `check_statics_feld`, Beispiel `statik_beispiel_feld`,
   Testdatei `statics_feld.frame`.
 
+## Topologie
+
+Rein additiv (PLAN-TOPOLOGIE.md, 23.10.2026); ältere Gegenseiten ignorieren die Typen. Der Kernel optimiert ein
+Druckteil in einem eigenen Prozess (`topologie/`) und meldet den Stand als `TOPO` (laufend höchstens alle 0,3 s) und
+die Netze dazu als `TOPO_FIELD`. Es gibt immer nur einen Auftrag (`auftrag`, laufende Nummer); ein neuer ersetzt den
+alten. Packen und Prüfen in `protocol.py` (`pack_topo`, `check_topo_message`, `pack_topo_feld`, `unpack_topo_feld`,
+`check_topo_feld`, `check_topo_app`, Beispiele `topo_beispiel`, `topo_beispiel_feld`), Testdateien `topo.frame`,
+`topo_laeuft.frame`, `topo_feld_nachher.frame`, `topo_feld_dichte.frame`, `topo_feld_schutz.frame` und `topo.json` aus
+`tools/make_topologie_fixtures.py`.
+
+| type | Richtung | Felder | Nutzlast |
+|---|---|---|---|
+| `TOPO` | Kernel → App | `run`, `stand` (`laeuft` \| `done` \| `failed` \| `abgebrochen`), `auftrag`, `teil`, `szenario`, `einstellungen` (`behalten`, `ueberhang`, `fein`, `steg`, `bett`, `bohrungen`, `einsaetze`, `kontakt`, `iterationen`), `fortschritt` (0…1), `phase` (`vorbereiten`, `vorher`, `optimieren`, `oberflaeche`, `koerper`, `nachher`, `druck`, `fertig`), `text`, `text_lang`, `iteration`, `max_iter`, `verlauf`, `voxel`, `h_mm`, `kennzahlen`, `schutz`, `netz`, `gitter`, `druckpruefung`, `hinweise`, `grenzen`, `meldung`, `ergebnis`, `quelle` (`modell` \| `agent` \| `app`), `modell_schluessel`, `behalten_wirksam`, `optimierung`, `ms`, `berechnet`; während der Rechnung und am Ende, beim Verbinden der letzte Stand | – |
+| `TOPO_FIELD` | Kernel → App | `art` (`dichte` \| `schutz` \| `koerper` \| `vorher` \| `nachher`), `auftrag`, `teil`, `iteration` (bei `dichte`), `werte` (`"ausnutzung"` bei vorher/nachher, sonst null), `sicherheit`, `ziel`, `spannung_max`, `verformung_max_mm`, `ueberhoehung`, `punkte` (n), `dreiecke` (m); Dichte etwa jede Sekunde der Rechnung, die übrigen am Ende und beim Verbinden | n × 3 float32 Punkte (Welt, mm), m × 3 uint32 Dreiecke (nach außen); mit `werte` dazu n float32 Ausnutzung, n float32 von Mises (N/mm²), n × 3 float32 Verschiebung (mm) wie `STATICS_FIELD`; little-endian, ohne Lücken |
+| `TOPO_START` | App → Kernel | `seq`, `teil`, `szenario` (fehlt = das mit der größten Ausnutzung), `behalten`, `ueberhang`, `fein` (optional `steg`, `bett`) | – (danach `TOPO`) |
+| `TOPO_CANCEL` | App → Kernel | `seq`; beendet den laufenden Auftrag (danach `TOPO` mit `stand: "abgebrochen"`) | – |
+| `TOPO_APPLY` | App → Kernel | `seq`; übernimmt das Ergebnis als neue Variante (Versionen) und trägt `topologie.optimieren(…)` in model.py ein | – (danach `VERSIONEN`, `RUN_START` …) |
+
+- `verlauf[i]`: `i` (Iteration ab 1), `c` (Nachgiebigkeit in N·mm), `volumen` (Anteil des Bauraums), `grau` (Anteil der
+  Zwischenwerte); die App zeigt `c` relativ zur ersten Iteration.
+- `kennzahlen`: `vorher` und `nachher` je mit `volumen_mm3`, `masse_g`, `filament_g`, `druckzeit_min` (Schätzung wie die
+  Druckvorschau, Einstellungen „tragend“), `ueberhang_mm2`, `steg_min_mm` (nur nachher), aus der Festkörper-FEM
+  `sicherheit`, `ziel`, `ampel`, `ausnutzung`, `spannung_max`, `verformung_max_mm`, `kriterium`, `ort`; `ersparnis` mit
+  `volumen_prozent`, `masse_g`, `filament_g`, `druckzeit_min`.
+- `schutz`: `anteil` (geschützter Anteil des Bauraums) und `zonen[i]` mit `art` (`Bohrung`, `Gewindeeinsatz M4`,
+  `Lastfläche`, `Klemmfläche zu …`, `Bettfläche`, `Schutz aus model.py (…)`), dazu `d`, `ring_mm`, `haut_mm`, `tiefe`,
+  `elemente`.
+- `ergebnis`: `datei` (relativ zum Projekt, `topologie/<teil>-<schlüssel>.brep`), `schluessel` (Modellschlüssel, wie
+  model.py ihn berechnet), `im_modell` (model.py lädt dieses Ergebnis schon), `aus_projekt` (nicht neu gerechnet),
+  `variante` (nach `TOPO_APPLY`).
+- Die App zeigt während `laeuft` die Dichte (`dichte`) halbdurchsichtig über dem blass gezeigten Teil, danach wahlweise
+  „Vorher“ bzw. „Nachher“ als Bänder der Ausnutzung (wie `STATICS_FIELD`, das Teil ist dann ausgeblendet) und auf Wunsch
+  die Schutzzonen (`schutz`). Felder eines anderen `auftrag` verwirft sie.
+
 ## Phase 7: Renderings
 
 Rein additiv (22.10.2026, PLAN-PHASE7-RENDERINGS.md); ältere Gegenseiten ignorieren die neuen Typen. Der Kernel steuert
