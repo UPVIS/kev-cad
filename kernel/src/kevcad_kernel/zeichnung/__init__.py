@@ -33,10 +33,23 @@ Bausteine (von unten nach oben):
 
 from __future__ import annotations
 
-from kevcad_kernel.zeichnung.ansichten import BLICKE, Blick, blick
-from kevcad_kernel.zeichnung.merkmale import Merkmal, Merkmale, erkenne
-from kevcad_kernel.zeichnung.projektion import LINIENARTEN, Projektion, projiziere
-from kevcad_kernel.zeichnung.teilsystem import Teilsystem, teilsystem
+from typing import Any
 
-__all__ = ["BLICKE", "Blick", "blick", "LINIENARTEN", "Projektion", "projiziere", "Merkmal", "Merkmale", "erkenne",
-           "Teilsystem", "teilsystem"]
+# Schwere Module (build123d, OCP) erst bei Bedarf laden: die Laufzeit bindet ``laufzeit`` beim Start ein
+_OEFFENTLICH = {
+    "BLICKE": "ansichten", "Blick": "ansichten", "blick": "ansichten",
+    "LINIENARTEN": "projektion", "Projektion": "projektion", "projiziere": "projektion",
+    "Merkmal": "merkmale", "Merkmale": "merkmale", "erkenne": "merkmale",
+    "Teilsystem": "teilsystem",
+}
+
+__all__ = list(_OEFFENTLICH)
+
+
+def __getattr__(name: str) -> Any:
+    modul = _OEFFENTLICH.get(name)
+    if modul is None:
+        raise AttributeError(name)
+    import importlib
+
+    return getattr(importlib.import_module(f"{__name__}.{modul}"), name)

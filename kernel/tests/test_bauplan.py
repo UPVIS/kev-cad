@@ -431,8 +431,8 @@ def test_testdateien_der_app():
     assert len(rahmen) == 1
     h, p = rahmen[0]
     assert h["type"] == "BAUPLAN" and h["reply_to"] == erwartet["reply_to"] and len(p) == erwartet["payload_bytes"]
+    assert [{"schritt": b["schritt"], "linien": b["linien"]} for b in h["bilder"]] == erwartet["bilder"]
     bilder = unpack_bauplan(h, p)
-    assert [{"schritt": b["schritt"], "anzahl": b["anzahl"]} for b in bilder] == erwartet["bilder"]
     assert [[round(float(x), 3) for x in q] for q in bilder[1]["linien"]["pfeil"][0]] == erwartet["erster_pfeil"]
     for name in erwartet["frames"]:
         (kopf, _), = FrameReader().feed((FIXTURES / name).read_bytes())

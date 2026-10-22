@@ -266,6 +266,7 @@ def erkenne(form: Any, info: dict[str, Any] | None = None, *, name: str = "", sy
     stange = _stange(ctx)
     if stange is not None:
         liste.append(stange)
+        liste += _stirnseiten(ctx)
     bohrungen, langloecher = _bohrungen(ctx)
     liste += bohrungen
     liste += langloecher
@@ -348,6 +349,32 @@ def _stange(ctx: _Ctx) -> Merkmal | None:
         text += f", Gehrung {zahl(gehrung[0], 1)}° / {zahl(gehrung[1], 1)}°"
     return Merkmal("stange", "stange", {"typ": "linie", "mitte": g / 2, "richtung": np.array([1.0, 0.0, 0.0]),
                                         "radius": None, "laenge": laenge}, werte, text, flaechen)
+
+
+def _stirnseiten(ctx: _Ctx) -> list[Merkmal]:
+    """Stirnflächen an Ende A (x = 0) und Ende B (x = L): größte ebene Fläche je Ende, mit echter Normale (Gehrung)."""
+    g = ctx.sys.groesse
+    out = []
+    for ende, s in (("a", -1.0), ("b", 1.0)):
+        best = None
+        for f in ctx.top.flaechen:
+            if f.typ != "ebene" or f.n is None:
+                continue
+            n = ctx.ld(f.n)
+            if n[0] * s < 0.2:
+                continue
+            lo, hi = _lokal_box(ctx, f)
+            if (s < 0 and lo[0] > 0.5 * g[0]) or (s > 0 and hi[0] < 0.5 * g[0]):
+                continue
+            if best is None or f.flaeche > best[0].flaeche:
+                best = (f, n)
+        if best is None:
+            continue
+        f, n = best
+        w = math.degrees(math.acos(min(1.0, abs(float(n[0])))))
+        sig = {"typ": "ebene", "mitte": ctx.lp(f.punkt), "richtung": n, "radius": None, "laenge": None}
+        out.append(Merkmal(f"ende:{ende}", "stirnseite", sig, {"gehrung": w, "ende": ende}, "", [f.index]))
+    return out
 
 
 def _lage_ab_ende(stange: Merkmal, merkmale: list[Merkmal]) -> None:
@@ -611,12 +638,12 @@ def _bohrung_text(art: str, w: dict[str, Any], anzahl: int = 1) -> str:
         t += f" × {zahl(w['tiefe'], 1)} tief"
     if w.get("gegenbohrung"):
         g = w["gegenbohrung"]
-        t += f", Zylindersenkung Ø{zahl(g['d'])} × {zahl(g['tiefe'], 1)} tief"
+        t += f", Senkung Ø{zahl(g['d'])} × {zahl(g['tiefe'], 1)} tief"
     if w.get("senkung"):
         s = w["senkung"]
-        t += f", Kegelsenkung {zahl(s['winkel'], 0)}° Ø{zahl(s['d'])}"
+        t += f", Senkung {zahl(s['winkel'], 0)}° Ø{zahl(s['d'])}"
     if art == "einsatztasche" and w.get("einsatz"):
-        t += f" (Einsatz {w['einsatz']})"
+        t += f", Einsatz {w['einsatz']}"
     return t
 
 
@@ -994,7 +1021,13 @@ def _fasen(ctx: _Ctx) -> list[Merkmal]:
                 continue
             lang = max(gerade, key=lambda e: e.length)
             laenge = float(lang.length)
-            breite = f.flaeche / laenge if laenge > 0 else 0.0
+            # Breite: größter Abstand der Eckpunkte von der längsten Kante (Trapez an Ecken: Fläche/Länge wäre zu klein)
+            a0 = np.array([lang.start_point().X, lang.start_point().Y, lang.start_point().Z])
+            a1 = np.array([lang.end_point().X, lang.end_point().Y, lang.end_point().Z])
+            ad = (a1 - a0) / (np.linalg.norm(a1 - a0) or 1.0)
+            ecken = np.array([[v.X, v.Y, v.Z] for v in (x.center() for x in f.form.vertices())])
+            rel = ecken - a0
+            breite = float(np.max(np.linalg.norm(rel - np.outer(rel @ ad, ad), axis=1))) if len(ecken) else 0.0
             if breite <= 0 or breite > 0.35 * laenge or breite > 12:
                 continue
             tv = lang.tangent_at(0.5)
@@ -1010,6 +1043,8 @@ def _fasen(ctx: _Ctx) -> list[Merkmal]:
                 continue
             a = breite * abs(float(np.dot(f.n, n1)))
             b = breite * abs(float(np.dot(f.n, n2)))
+            if max(a, b) > 3.5 or not 0.55 <= (min(a, b) / max(a, b, 1e-9)) <= 1.0001:
+                continue  # Schräge oder Schwalbenschwanz, keine Fase (Verhältnis 0,55 ≈ 30°/60°)
             roh.append((a, b, laenge, f, n))
         elif f.typ == "kegel" and f.halbwinkel is not None and 20 <= f.halbwinkel <= 70:
             laenge_achse = f.t[1] - f.t[0]
@@ -1035,6 +1070,14 @@ def _fasen(ctx: _Ctx) -> list[Merkmal]:
         text_einzel = f"{zahl(lo)} × 45°" if gleich else f"{zahl(lo)} × {zahl(hi)}"
         n = len(flist)
         text = (f"{n}× " if n > 1 else "") + "Fase " + text_einzel
+        # Vertreter: zuerst eine Fase, die in der Vorderansicht als Kante erscheint (Normale ohne y-Anteil), dann
+        # Draufsicht (ohne z-Anteil), dann Seitenansicht; so steht die Angabe dort, wo es die Ansicht sicher gibt
+        def rang(e: Any) -> tuple:
+            nn = np.asarray(e[1], dtype=float)
+            return (0 if abs(nn[1]) < 1e-6 else 1 if abs(nn[2]) < 1e-6 else 2,
+                    *(round(float(v), 3) for v in ctx.lp(e[0].mitte)))
+
+        flist.sort(key=rang)
         f0, n0, _ = flist[0]
         sig = {"typ": "ebene", "mitte": ctx.lp(f0.mitte), "richtung": n0, "radius": None, "laenge": lo}
         werte = {"a": lo, "b": hi, "winkel": winkel, "n": n, "gleich": gleich, "text_einzel": text_einzel,

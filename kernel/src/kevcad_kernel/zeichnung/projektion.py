@@ -15,9 +15,11 @@ Ursprung ist der Welt- bzw. Teilursprung. Linienarten (ISO 128-20): ``sichtbar``
 Umrisse), ``verdeckt`` (schmale Strichlinie), ``mitte`` (schmale Strichpunktlinie: Achsen, Mittelkreuze), ``duenn``
 (schmale Volllinie: Lichtkanten an Rundungen), ``schnitt`` und ``schraffur`` (aus schnitt.py, hier leer).
 
-Rechenweg: OCCT Hidden Line Removal exakt auf der B-Rep (HLRBRep_Algo), ab ``POLY_AB_FLAECHEN`` Flächen auf dem Netz
-(HLRBRep_PolyAlgo; Kevin hat dafür keine sichtbare Einbuße bei Zusammenbauten). Ergebnisse liegen in einem
-Zwischenspeicher je Formschlüssel, Ansicht und Optionen.
+Rechenweg (DOKUMENTE.md 1.1): Verdeckung auf dem Netz (HLRBRep_PolyAlgo), die vielen kurzen Netzstücke werden zu
+Zügen verbunden und vereinfacht; auf Wunsch exakt (HLRBRep_Algo) in einem eigenen Prozess mit Zeitbudget
+(``hlr_prozess.py``). Ergebnisse liegen in einem Zwischenspeicher je Formschlüssel, Ansicht und Optionen. Linienarten
+zusätzlich ``nachbar`` (Strich-Zweipunkt: Nachbarteile, Endlagen) und ``bruch`` (Freihand: Bruchkanten verkürzter
+Ansichten).
 """
 
 from __future__ import annotations
@@ -34,8 +36,7 @@ import numpy as np
 
 from kevcad_kernel.zeichnung.ansichten import Blick, blick
 
-LINIENARTEN = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn")
-POLY_AB_FLAECHEN = 60000  # ab so vielen Flächen insgesamt rechnet die Verdeckung auf dem Netz
+LINIENARTEN = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar", "bruch")
 CACHE_GROESSE = 768
 
 Polylinie = np.ndarray  # (n, 2)
@@ -382,26 +383,104 @@ def _rahmen(linien: list[Polylinie]) -> tuple[float, float, float, float]:
     return (float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]))
 
 
-def _anzahl_flaechen(formen: list[tuple[str, Any]]) -> int:
-    from OCP.TopAbs import TopAbs_FACE
-    from OCP.TopExp import TopExp_Explorer
+def vereinfache(pl: Polylinie, tol: float) -> Polylinie:
+    """Douglas-Peucker: kollineare Zwischenpunkte entfernen (das Netz liefert Geraden in vielen kurzen Stücken)."""
+    if len(pl) <= 2:
+        return pl
+    behalten = np.zeros(len(pl), dtype=bool)
+    behalten[0] = behalten[-1] = True
+    stapel = [(0, len(pl) - 1)]
+    while stapel:
+        i, j = stapel.pop()
+        if j <= i + 1:
+            continue
+        a, b = pl[i], pl[j]
+        ab = b - a
+        n = float(np.hypot(ab[0], ab[1]))
+        seg = pl[i + 1:j]
+        if n < 1e-12:
+            d = np.hypot(seg[:, 0] - a[0], seg[:, 1] - a[1])
+        else:
+            d = np.abs((seg[:, 0] - a[0]) * ab[1] - (seg[:, 1] - a[1]) * ab[0]) / n
+        k = int(np.argmax(d))
+        if float(d[k]) > tol:
+            m = i + 1 + k
+            behalten[m] = True
+            stapel += [(i, m), (m, j)]
+    return pl[behalten]
 
-    n = 0
-    for _, s in formen:
-        exp = TopExp_Explorer(s, TopAbs_FACE)
-        while exp.More():
-            n += 1
-            exp.Next()
-    return n
+
+def _strecken_vereinen(linien: list[Polylinie], tol: float) -> list[Polylinie]:
+    """Polylinien in Strecken zerlegen, doppelte entfernen und kollineare, sich überlappende oder berührende Strecken
+    zu einer vereinen (das Netz liefert Kanten in vielen kurzen und mehrfach übereinanderliegenden Stücken)."""
+    segs = [np.stack([pl[:-1], pl[1:]], axis=1) for pl in linien if len(pl) >= 2]
+    if not segs:
+        return []
+    S = np.concatenate(segs)
+    d = S[:, 1] - S[:, 0]
+    L = np.hypot(d[:, 0], d[:, 1])
+    S, d, L = S[L > tol * 0.1], d[L > tol * 0.1], L[L > tol * 0.1]
+    if len(S) == 0:
+        return []
+    u = d / L[:, None]
+    # Richtung eindeutig (Winkel in [0, π)), Abstand der Geraden vom Ursprung
+    flip = (u[:, 0] < -1e-12) | ((np.abs(u[:, 0]) <= 1e-12) & (u[:, 1] < 0))
+    u[flip] *= -1
+    a = np.where(flip[:, None], S[:, 1], S[:, 0])
+    b = np.where(flip[:, None], S[:, 0], S[:, 1])
+    winkel = np.round(np.arctan2(u[:, 1], u[:, 0]) / 1e-3).astype(np.int64)
+    n = np.stack([-u[:, 1], u[:, 0]], axis=1)
+    abst = np.round(np.einsum("ij,ij->i", a, n) / max(tol, 1e-9)).astype(np.int64)
+    t0 = np.einsum("ij,ij->i", a, u)
+    t1 = np.einsum("ij,ij->i", b, u)
+    order = np.lexsort((t0, abst, winkel))
+    out: list[Polylinie] = []
+    i = 0
+    N = len(order)
+    while i < N:
+        j = i
+        w0, o0 = winkel[order[i]], abst[order[i]]
+        while j < N and winkel[order[j]] == w0 and abst[order[j]] == o0:
+            j += 1
+        idx = order[i:j]
+        uu = u[idx[0]]
+        nn = n[idx[0]]
+        off = float(np.mean(np.einsum("ij,j->i", a[idx], nn)))
+        lo, hi = None, None
+        for k in idx:
+            s0, s1 = float(t0[k]), float(t1[k])
+            if lo is None:
+                lo, hi = s0, s1
+            elif s0 <= hi + tol:
+                hi = max(hi, s1)
+            else:
+                out.append(np.array([uu * lo + nn * off, uu * hi + nn * off]))
+                lo, hi = s0, s1
+        if lo is not None:
+            out.append(np.array([uu * lo + nn * off, uu * hi + nn * off]))
+        i = j
+    return out
+
+
+def _zusammenfassen(linien: list[Polylinie], tol: float, netz: bool = False) -> list[Polylinie]:
+    if netz:
+        linien = _strecken_vereinen(linien, tol)
+    return [vereinfache(pl, tol) for pl in verbinde(linien, max(tol * 0.5, 1e-6))]
 
 
 def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, glatt: bool = True,
                mittel: bool = True, ueberstand: float = 3.0, toleranz: float = 0.02, je_teil: bool = False,
-               exakt: bool | None = None, schluessel: str | dict[str, str] | None = None,
+               exakt: bool | float = False, schluessel: str | dict[str, str] | None = None,
                cache: _Cache | None = CACHE) -> Projektion:
     """Formen in der Ansicht ``ansicht`` projizieren (Modulbeschreibung). ``glatt``: Lichtkanten (tangentiale
     Übergänge, etwa am Rand einer Rundung) als ``duenn``. ``mittel``: Mittellinien. ``schluessel``: Formschlüssel
-    (ein Text für alle oder je Name), sonst aus der BRep gerechnet. ``exakt``: None wählt nach Größe."""
+    (ein Text für alle oder je Name), sonst aus der BRep gerechnet.
+
+    ``exakt`` (DOKUMENTE.md 1.1, „Verdeckungsrechnung“): ``False`` (Vorgabe) rechnet auf dem Netz (HLRBRep_PolyAlgo,
+    Segmente zusammengefasst); eine Zahl > 0 rechnet zusätzlich exakt (HLRBRep_Algo) in einem eigenen Prozess mit
+    diesem Zeitbudget in Sekunden und nimmt das exakte Ergebnis nur, wenn es rechtzeitig fertig ist (die exakte
+    Rechnung kann bei achsparallelen Ansichten verschmolzener Zylinder Minuten brauchen, unabhängig von der
+    Flächenzahl). ``True`` rechnet exakt im aufrufenden Prozess ohne Budget (nur für Tests und bekannte Fälle)."""
     b = blick(ansicht)
     liste = _formen(formen)
     if isinstance(schluessel, dict):
@@ -411,36 +490,61 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
     else:
         keys = [form_schluessel(s) for _, s in liste] if cache is not None else []
     key = None
+    budget = float(exakt) if (not isinstance(exakt, bool) and exakt) else 0.0
     if cache is not None:
-        opts = f"{int(verdeckt)}{int(glatt)}{int(mittel)}{ueberstand:g}{toleranz:g}{int(je_teil)}{exakt}"
+        opts = f"{int(verdeckt)}{int(glatt)}{int(mittel)}{ueberstand:g}{toleranz:g}{int(je_teil)}{exakt is True}"
         names = "|".join(n for n, _ in liste) if je_teil else ""
         key = hashlib.sha1(("|".join(keys) + b.schluessel + opts + names).encode()).hexdigest()
         hit = cache.get(key)
-        if hit is not None:
-            out = Projektion(hit.blick, hit.linien, hit.teile, hit.rahmen, hit.ms, hit.exakt, True)
-            return out
+        if hit is not None and (hit.exakt or not budget or key in _ZU_LANGSAM):
+            return Projektion(hit.blick, hit.linien, hit.teile, hit.rahmen, hit.ms, hit.exakt, True)
     t0 = time.perf_counter()
-    if exakt is None:
-        exakt = _anzahl_flaechen(liste) < POLY_AB_FLAECHEN
-    proj = Projektion(b, exakt=bool(exakt))
+    groesse = _groesse(liste)
+    tol_netz = min(max(groesse * 0.0004, 0.005), 0.1)
+    proj = Projektion(b, exakt=exakt is True)
     if liste:
-        teile = _hlr(liste, b, verdeckt=verdeckt, glatt=glatt, toleranz=toleranz, exakt=bool(exakt), je_teil=je_teil)
+        teile = None
+        if budget > 0 and key is not None and key not in _ZU_LANGSAM:
+            teile = EXAKT.rechne(liste, b, verdeckt=verdeckt, glatt=glatt, toleranz=toleranz, je_teil=je_teil,
+                                 budget=budget)
+            if teile is None:
+                _ZU_LANGSAM.add(key)
+            else:
+                proj.exakt = True
+        if teile is None:
+            teile = _hlr(liste, b, verdeckt=verdeckt, glatt=glatt, toleranz=toleranz, exakt=exakt is True,
+                         je_teil=je_teil, netz=tol_netz)
         if je_teil:
             proj.teile = teile
             for d in teile.values():
                 for art, ls in d.items():
-                    proj.linien[art] += ls
+                    proj.linien.setdefault(art, []).extend(ls)
         else:
             proj.linien.update(teile["*"])
         if mittel:
             proj.linien["mitte"] = mittellinien(liste, b, ueberstand)
+    tol_vereinfachen = 1e-4 if proj.exakt else tol_netz * 0.5
+    if not proj.exakt:  # Netz: Stücke zuerst vereinen (aus Tausenden kurzer Strecken werden wenige)
+        for d in [proj.linien, *proj.teile.values()]:
+            for art in ("sichtbar", "verdeckt", "duenn"):
+                if d.get(art):
+                    d[art] = _strecken_vereinen(d[art], tol_vereinfachen)
     if proj.linien["verdeckt"]:
-        groesse = max(1.0, *(abs(v) for v in _rahmen(proj.linien["sichtbar"])))
-        proj.linien["verdeckt"] = ohne_ueberdeckte(proj.linien["verdeckt"], proj.linien["sichtbar"], 1e-4 * groesse)
+        g2 = max(1.0, *(abs(v) for v in _rahmen(proj.linien["sichtbar"])))
+        tol_deck = max(1e-4 * g2, 0.0 if proj.exakt else tol_netz * 1.5)
+        proj.linien["verdeckt"] = ohne_ueberdeckte(proj.linien["verdeckt"], proj.linien["sichtbar"], tol_deck)
         for d in proj.teile.values():
-            d["verdeckt"] = ohne_ueberdeckte(d.get("verdeckt") or [], proj.linien["sichtbar"], 1e-4 * groesse)
+            d["verdeckt"] = ohne_ueberdeckte(d.get("verdeckt") or [], proj.linien["sichtbar"], tol_deck)
+    netz = not proj.exakt
+    for d in proj.teile.values():
+        for art in ("sichtbar", "verdeckt", "duenn"):
+            if d.get(art):
+                d[art] = _zusammenfassen(d[art], tol_vereinfachen)
     for art in ("sichtbar", "verdeckt", "duenn"):
-        proj.linien[art] = verbinde(proj.linien[art])
+        if proj.teile:
+            proj.linien[art] = [pl for d in proj.teile.values() for pl in d.get(art) or []]
+        else:
+            proj.linien[art] = _zusammenfassen(proj.linien[art], tol_vereinfachen)
     proj.rahmen = _rahmen(proj.linien["sichtbar"] or proj.linien["verdeckt"])
     proj.ms = (time.perf_counter() - t0) * 1000.0
     if cache is not None and key is not None:
@@ -448,8 +552,49 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
     return proj
 
 
+_ZU_LANGSAM: set[str] = set()  # Schlüssel, bei denen die exakte Rechnung das Budget überschritt (nicht wiederholen)
+_NETZE: OrderedDict[tuple[int, float], tuple[Any, Any]] = OrderedDict()
+_NETZE_LOCK = threading.Lock()
+
+
+def _vernetzte_kopie(shape: Any, netz: float) -> Any:
+    """Vernetzte Kopie der Form (die Form des Aufrufers bleibt unberührt: Vernetzen ändert Merker in der BRep und damit
+    Formschlüssel); je Form und Netzfeinheit zwischengespeichert, solange die Form lebt."""
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+
+    key = (hash(shape), round(netz, 6))
+    with _NETZE_LOCK:
+        hit = _NETZE.get(key)
+        if hit is not None and hit[0].IsSame(shape) and hit[0].Location().IsEqual(shape.Location()):
+            _NETZE.move_to_end(key)
+            return hit[1]
+    kopie = BRepBuilderAPI_Copy(shape, True, False).Shape()
+    BRepMesh_IncrementalMesh(kopie, netz, False, 0.1, True)
+    with _NETZE_LOCK:
+        _NETZE[key] = (shape, kopie)  # die Originalform festhalten, damit ihr Hash nicht neu vergeben wird
+        while len(_NETZE) > 600:
+            _NETZE.popitem(last=False)
+    return kopie
+
+
+def _groesse(liste: list[tuple[str, Any]]) -> float:
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    box = Bnd_Box()
+    for _, s in liste:
+        BRepBndLib.Add_s(s, box, False)
+    if box.IsVoid():
+        return 100.0
+    a, b = box.CornerMin(), box.CornerMax()
+    return max(b.X() - a.X(), b.Y() - a.Y(), b.Z() - a.Z(), 1e-3)
+
+
 def _hlr(liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool, toleranz: float, exakt: bool,
-         je_teil: bool) -> dict[str, dict[str, list[Polylinie]]]:
+         je_teil: bool, netz: float = 0.05) -> dict[str, dict[str, list[Polylinie]]]:
+    """Verdeckungsrechnung im aufrufenden Prozess: exakt (HLRBRep_Algo) oder auf dem Netz (HLRBRep_PolyAlgo mit
+    Netzabweichung ``netz`` mm und 0,1 rad Winkel, damit Kreise auf dem Blatt rund wirken)."""
     from OCP.HLRAlgo import HLRAlgo_Projector
 
     projector = HLRAlgo_Projector(_ax2(b))
@@ -468,9 +613,12 @@ def _hlr(liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool,
         from OCP.HLRBRep import HLRBRep_PolyAlgo, HLRBRep_PolyHLRToShape
 
         algo = HLRBRep_PolyAlgo()
-        for _, s in liste:
-            BRepMesh_IncrementalMesh(s, max(toleranz * 5, 0.05), False, 0.3, True)
-            algo.Load(s)
+        kopien = []
+        for name, s in liste:
+            k = _vernetzte_kopie(s, netz)
+            kopien.append((name, k))
+            algo.Load(k)
+        liste = kopien
         algo.Projector(projector)
         algo.Update()
         h = HLRBRep_PolyHLRToShape()
@@ -488,3 +636,161 @@ def _hlr(liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool,
     if not je_teil:
         return {"*": sammle()}
     return {name: sammle(s) for name, s in liste}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Exakte Rechnung in einem eigenen Prozess (Zeitbudget, Abbruch durch Beenden)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+class _ExaktProzess:
+    """Hält einen Hilfsprozess (``python -m kevcad_kernel.zeichnung.hlr_prozess``) für exakte Verdeckungsrechnungen.
+    Überschreitet eine Rechnung ihr Budget, wird der Prozess beendet (OCP kann nicht abbrechen) und beim nächsten
+    Bedarf neu gestartet."""
+
+    START_S = 30.0
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._proc: Any = None
+        self._antworten: Any = None
+        self._ids = 0
+        self.statistik = {"exakt": 0, "zu_langsam": 0, "fehler": 0}
+
+    def _start(self) -> bool:
+        import os
+        import queue
+        import subprocess
+        import sys
+
+        from kevcad_kernel.protocol import FrameReader
+
+        env = dict(os.environ)
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        self._proc = subprocess.Popen([sys.executable, "-m", "kevcad_kernel.zeichnung.hlr_prozess"],
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                      bufsize=0, env=env, close_fds=True)
+        self._antworten = queue.Queue()
+        proc, q = self._proc, self._antworten
+
+        def lesen() -> None:
+            reader = FrameReader()
+            while True:
+                try:
+                    data = os.read(proc.stdout.fileno(), 1 << 20)
+                except (OSError, ValueError):
+                    break
+                if not data:
+                    break
+                for kopf, nutz in reader.feed(data):
+                    q.put((kopf, nutz))
+            q.put(({"type": "ENDE"}, b""))
+
+        threading.Thread(target=lesen, name="kevcad-hlr-exakt", daemon=True).start()
+        try:
+            kopf, _ = q.get(timeout=self.START_S)
+        except Exception:  # noqa: BLE001
+            self._stopp()
+            return False
+        return kopf.get("type") == "BEREIT"
+
+    def _stopp(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.kill()
+                self._proc.wait(2)
+            except Exception:  # noqa: BLE001
+                pass
+        self._proc = None
+
+    def rechne(self, liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool, toleranz: float,
+               je_teil: bool, budget: float) -> dict[str, dict[str, list[Polylinie]]] | None:
+        import queue
+
+        from kevcad_kernel.protocol import encode_frame
+        from kevcad_kernel.tessellate import serialize_shape
+
+        with self._lock:
+            if self._proc is None or self._proc.poll() is not None:
+                if not self._start():
+                    self.statistik["fehler"] += 1
+                    return None
+            self._ids += 1
+            rid = self._ids
+            breps = [serialize_shape(s) for _, s in liste]
+            kopf = {"type": "HLR", "id": rid, "blick": b.als_dict(), "verdeckt": verdeckt, "glatt": glatt,
+                    "toleranz": toleranz, "je_teil": je_teil,
+                    "teile": [{"name": n, "len": len(x)} for (n, _), x in zip(liste, breps)]}
+            try:
+                self._proc.stdin.write(encode_frame(kopf, b"".join(breps)))
+                self._proc.stdin.flush()
+            except (OSError, ValueError):
+                self._stopp()
+                self.statistik["fehler"] += 1
+                return None
+            ende = time.monotonic() + budget
+            while True:
+                rest = ende - time.monotonic()
+                if rest <= 0:
+                    self._stopp()
+                    self.statistik["zu_langsam"] += 1
+                    return None
+                try:
+                    antwort, nutz = self._antworten.get(timeout=rest)
+                except queue.Empty:
+                    continue
+                if antwort.get("type") == "ENDE":
+                    self._proc = None
+                    self.statistik["fehler"] += 1
+                    return None
+                if antwort.get("id") != rid:
+                    continue
+                if not antwort.get("ok"):
+                    self.statistik["fehler"] += 1
+                    return None
+                self.statistik["exakt"] += 1
+                return lies_linien(antwort, nutz)
+
+    def schliessen(self) -> None:
+        with self._lock:
+            self._stopp()
+
+
+def lies_linien(kopf: dict[str, Any], daten: bytes) -> dict[str, dict[str, list[Polylinie]]]:
+    """Antwort des Hilfsprozesses: je Teil, je Linienart u32 Anzahl, je Polylinie u32 Punktzahl und f64 x, y."""
+    import struct
+
+    out: dict[str, dict[str, list[Polylinie]]] = {}
+    off = 0
+    for name in kopf.get("teile") or []:
+        d: dict[str, list[Polylinie]] = {a: [] for a in LINIENARTEN}
+        for art in kopf.get("arten") or LINIENARTEN:
+            (n,) = struct.unpack_from("<I", daten, off)
+            off += 4
+            for _ in range(n):
+                (k,) = struct.unpack_from("<I", daten, off)
+                off += 4
+                d.setdefault(art, []).append(
+                    np.frombuffer(daten, dtype="<f8", count=2 * k, offset=off).reshape(-1, 2).copy())
+                off += 16 * k
+        out[name] = d
+    return out
+
+
+def schreibe_linien(teile: dict[str, dict[str, list[Polylinie]]]) -> tuple[list[str], bytes]:
+    import struct
+
+    namen = list(teile)
+    blobs = []
+    for name in namen:
+        for art in LINIENARTEN:
+            ls = teile[name].get(art) or []
+            blobs.append(struct.pack("<I", len(ls)))
+            for pl in ls:
+                arr = np.ascontiguousarray(pl, dtype="<f8").reshape(-1, 2)
+                blobs.append(struct.pack("<I", len(arr)))
+                blobs.append(arr.tobytes())
+    return namen, b"".join(blobs)
+
+
+EXAKT = _ExaktProzess()

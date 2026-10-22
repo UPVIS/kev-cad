@@ -65,6 +65,11 @@ TOOL_NAMES: tuple[str, ...] = (
     "bauplan_pruefen",
     # 3D-Druck
     "druckpruefung",
+    # Phase 6: Zeichnungen
+    "zeichnungen",
+    "zeichnung_erstellen",
+    "zeichnung_bearbeiten",
+    "zeichnung_bild",
 )
 
 __all__ = ["INSTRUCTIONS", "SERVER_NAME", "SERVER_TITLE", "TOOL_NAMES", "KevcadTools", "register_tools"]

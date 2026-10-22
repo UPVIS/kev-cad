@@ -950,15 +950,30 @@
   "bilder": [
    {
     "schritt": "m-1g",
-    "anzahl": {
+    "linien": {
      "sichtbar": 1,
-     "duenn": 1
+     "verdeckt": 0,
+     "mitte": 0,
+     "schnitt": 0,
+     "schraffur": 0,
+     "duenn": 1,
+     "nachbar": 0,
+     "bruch": 0,
+     "neu": 0,
+     "pfeil": 0
     }
    },
    {
     "schritt": "m-2",
-    "anzahl": {
+    "linien": {
      "sichtbar": 1,
+     "verdeckt": 0,
+     "mitte": 0,
+     "schnitt": 0,
+     "schraffur": 0,
+     "duenn": 0,
+     "nachbar": 0,
+     "bruch": 0,
      "neu": 1,
      "pfeil": 2
     }
@@ -982,10 +997,120 @@
   },
   "frames": [
    "bauplan.frame",
-   "docs.frame",
+   "docs_bauplan.frame",
    "bauplan_req.frame",
    "bauplan_edit.frame",
    "bauplan_pruefen.frame"
   ]
+ },
+ "dokumente": {
+  "drawing": {
+   "reply_to": "a-11",
+   "blatt_id": "platte",
+   "format": "A4",
+   "ausrichtung": "quer",
+   "massstab": "1:1",
+   "blattgroesse": [
+    297.0,
+    210.0
+   ],
+   "linien_reihenfolge": [
+    "sichtbar",
+    "verdeckt",
+    "mitte",
+    "schnitt",
+    "schraffur",
+    "duenn",
+    "nachbar",
+    "bruch"
+   ],
+   "geometrie": [
+    {
+     "id": "v1",
+     "art": "vorn",
+     "linien": {
+      "sichtbar": 7,
+      "verdeckt": 0,
+      "mitte": 10,
+      "schnitt": 0,
+      "schraffur": 0,
+      "duenn": 0,
+      "nachbar": 0,
+      "bruch": 0
+     }
+    },
+    {
+     "id": "blatt",
+     "art": "blatt",
+     "linien": {
+      "sichtbar": 9,
+      "verdeckt": 0,
+      "mitte": 3,
+      "schnitt": 0,
+      "schraffur": 0,
+      "duenn": 18,
+      "nachbar": 0,
+      "bruch": 0
+     }
+    }
+   ],
+   "payload_bytes": 2660,
+   "erster_punkt": [
+    73.88,
+    89.23
+   ],
+   "masse": 6,
+   "erstes_mass": {
+    "id": "m1",
+    "text": "200",
+    "wert": 200.0,
+    "text_winkel": 0.0
+   },
+   "masstexte": [
+    "0",
+    "0",
+    "100",
+    "200",
+    "4× Ø6,6",
+    "Ø8"
+   ],
+   "texte": 36,
+   "gefuellt": 0
+  },
+  "drawing_tube": {
+   "blatt_id": "rohr",
+   "bruch": 2,
+   "masstexte": [
+    "1000",
+    "2× Ø4,2",
+    "30",
+    "970"
+   ],
+   "payload_bytes": 11500
+  },
+  "docs": {
+   "run": 7,
+   "blaetter": [
+    "platte",
+    "rohr"
+   ]
+  },
+  "drawing_edit": {
+   "ops": [
+    "mass_verschieben",
+    "mass_verschieben",
+    "mass_loeschen",
+    "mass_neu",
+    "ansicht_neu",
+    "ansicht_verschieben",
+    "ansicht_loeschen",
+    "massstab",
+    "notiz",
+    "notiz_loeschen",
+    "schriftfeld",
+    "auto",
+    "unterdrueckung_aufheben"
+   ]
+  }
  }
 }

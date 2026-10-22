@@ -255,10 +255,27 @@ class KernelService(Protocol):
 
     def bauplan_pruefen(self, schritt: str | None = None) -> dict[str, Any]:
         """Simulation aller Montageschritte oder eines: {"ok", "befunde", "zusammenfassung", "ms", "schritt"}"""
+
     # 3D-Druck: Ergebnis der Druckprüfung des letzten Laufs (Prüfer „druck“, druck/laufzeit.py)
     def druckpruefung(self, teil: str | None = None) -> dict[str, Any]:
         """Alle Druckteile oder eines (Name oder Gruppe): {"ok", "run", "drucker", "teile": [{"name", "material",
         "zusammenfassung", "ausrichtung", "kennzahlen", "befunde", …}], "materialien", "zaehler", "statistik"}"""
+
+    # Phase 6: Zeichnungen (DOKUMENTE.md; Umsetzung in kevcad_kernel.zeichnung.laufzeit.ZeichnungRuntimeMixin)
+    def drawings(self) -> dict[str, Any]:
+        """Blätter des Projekts: {"ok", "ordner", "blaetter": [{"id", "titel", "inhalt", "format", "ausrichtung",
+        "massstab", "ansichten", "masse", "verwaiste_masse" (ids), "eigene_masse", "pfad", "hinweise"}]}"""
+
+    def drawing_create(self, teile: list[str] | None = None, art: str = "teil", format: str | None = None) \
+            -> dict[str, Any]:  # noqa: A002
+        """Blätter anlegen bzw. neu rechnen. Ohne teile: je Stücklistenposition eines gefertigten Teils ein Blatt und
+        der Zusammenbau. {"ok", "ordner", "blaetter": [Zusammenfassung je Blatt mit "masse", "pruefung", "hinweise"]}"""
+
+    def drawing_edit(self, blatt: str, ops: list[dict[str, Any]], von: str = "agent") -> dict[str, Any]:
+        """Operationen wie DRAWING_EDIT. {"ok", "ergebnisse": [{"op", "ok", "id"?, "fehler"?}], "blatt": Zusammenfassung}"""
+
+    def drawing_image(self, blatt: str, breite: int = 1800) -> dict[str, Any]:
+        """Blatt als PNG (Kernel, aus den Vektoren): {"ok", "png", "breite", "hoehe", "blatt": Zusammenfassung}"""
 
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...

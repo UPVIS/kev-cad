@@ -225,14 +225,13 @@ def teilsystem(form: Any, info: dict[str, Any] | None = None, top: Topologie | N
         iz = int(np.argmax(np.abs(basis @ zw)))
         z = basis[iz] * (1.0 if float(np.dot(basis[iz], zw)) >= 0 else -1.0)
         quer = [basis[i] for i in range(3) if i != iz]
-        boeden = _boeden(top)
         kandidaten = []
         for q in quer:
             for s in (1.0, -1.0):
                 y = q * s
                 x = np.cross(y, z)
                 # Merkmale, die aus dieser Richtung als wahre Gestalt zu sehen sind (von vorn, Blick entlang +y)
-                punkte = zaehle(y, bohr) + sum(1 for b in boeden if float(np.dot(b, -y)) > 1 - 1e-4)
+                punkte = zaehle(y, bohr)  # Bohrungen als Kreise; Wände von Taschen zählen nicht (wären Rauschen)
                 breite = float(abs(ext @ np.abs(basis @ x)))
                 vorzug = 1 if float(np.dot(y, [0, 1, 0])) > 1 - 1e-6 else 0  # Gleichstand: wie im Modell von vorn
                 kandidaten.append((punkte, breite, vorzug, x, y))

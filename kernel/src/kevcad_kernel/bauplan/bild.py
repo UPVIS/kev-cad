@@ -8,7 +8,7 @@ Die Parameter (``bild`` im Schritt, DOKUMENTE.md) entstehen bei jedem Lauf:
   wie die App (blickt entlang lokal −Z, oben +Y), orthographisch.
 - **Ausschnitt:** kleine neue Teile in einer großen Baugruppe: nur die Umgebung (Hüllquader der neuen Teile mit Rand).
 
-Das Strichbild rechnet die Projektion von P6-Z (``zeichnung.projiziere``, HLR) und legt es in ein Feld 180 × 120 mm:
+Das Strichbild rechnet die Projektion von P6-Z (``zeichnung.projiziere``, auf dem Netz) und legt es in ein Feld 180 × 120 mm:
 Linienarten ``sichtbar`` (montierte Teile), ``neu`` (neue Teile), ``duenn`` (Lichtkanten), ``pfeil`` (Einführpfeile).
 """
 
@@ -375,8 +375,8 @@ def strichbild(ein: Eingang, schritt: dict[str, Any], schluessel: dict[str, str]
     linien: dict[str, list[np.ndarray]] = {a: [] for a in LINIEN_BAUPLAN}
     if not formen:
         return {"schritt": schritt.get("id"), "rahmen": [0, 0, feld[0], feld[1]], "massstab": 1.0, "linien": linien}
-    # immer auf dem Netz (HLRBRep_PolyAlgo): exakt kann schon bei wenigen Flächen Minuten dauern (RECHERCHE-PHASE6 3.2)
-    p = projiziere(formen, ansicht, verdeckt=False, mittel=False, je_teil=True, exakt=False,
+    # auf dem Netz (Vorgabe von projiziere, HLRBRep_PolyAlgo): exakt kann schon bei wenigen Flächen Minuten dauern
+    p = projiziere(formen, ansicht, verdeckt=False, mittel=False, je_teil=True,
                    schluessel={n: keys[n] for n in formen if keys.get(n)} or None)
     for name, d in p.teile.items():
         art = "neu" if name in neu else "sichtbar"

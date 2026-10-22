@@ -540,6 +540,37 @@ class FakeService:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
         return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
 
+    # Phase 6: Zeichnungen -------------------------------------------------------------------------------------------
+
+    BLATT = {"id": "seitenstange", "ok": True, "neu": True, "titel": "Seitenstange", "inhalt": {"art": "teil",
+             "teile": ["Gestell/Seitenstange"]}, "format": "A4 quer", "massstab": "1:1",
+             "ansichten": [{"id": "v1", "art": "vorn"}],
+             "masse": [{"id": "m1", "art": "linear", "ansicht": "v1", "text": "1000", "wert": 1000.0, "quelle": "auto",
+                        "verwaist": False, "bezuege": ["seite:x-", "seite:x+"]},
+                       {"id": "m2", "art": "bohrung", "ansicht": "v1", "text": "3× Ø4,2", "wert": None,
+                        "quelle": "auto", "verwaist": False, "bezuege": ["bohrung:1"]}],
+             "verwaist": [], "allgemein": ["Halbzeug: Alurohr 12 × 1,0"], "hinweise": [], "pruefung": [], "ms": 80.0}
+
+    def drawings(self) -> dict[str, Any]:
+        self._record("drawings")
+        return {"ok": True, "ordner": "/tmp/p/dokumente/zeichnungen", "blaetter": [dict(self.BLATT)]}
+
+    def drawing_create(self, teile: list[str] | None = None, art: str = "teil", format: str | None = None) \
+            -> dict[str, Any]:  # noqa: A002
+        self._record("drawing_create", teile, art, format)
+        return {"ok": True, "ordner": "/tmp/p/dokumente/zeichnungen", "blaetter": [dict(self.BLATT)]}
+
+    def drawing_edit(self, blatt: str, ops: list[dict[str, Any]], von: str = "agent") -> dict[str, Any]:
+        self._record("drawing_edit", blatt, ops, von)
+        if blatt != "seitenstange":
+            return {"ok": False, "error": f"Blatt {blatt!r} gibt es nicht"}
+        return {"ok": True, "ergebnisse": [{"op": o.get("op"), "ok": True, "id": "m3"} for o in ops],
+                "blatt": dict(self.BLATT)}
+
+    def drawing_image(self, blatt: str, breite: int = 1800) -> dict[str, Any]:
+        self._record("drawing_image", blatt, breite)
+        return {"ok": True, "png": PNG, "breite": breite, "hoehe": int(breite * 210 / 297), "blatt": dict(self.BLATT)}
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)

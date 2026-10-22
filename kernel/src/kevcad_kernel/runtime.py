@@ -47,6 +47,7 @@ from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.worker import WorkerClient
 from kevcad_kernel.zukauf.dienst import ZukaufDienst
+from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
@@ -94,10 +95,12 @@ class Job:
         return self.kind, self.file_hash, _params_key(self.params)
 
 
-class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst):
+class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
+                    ZeichnungRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
-    Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``)."""
+    Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
+    Zeichnungen (``ZeichnungRuntimeMixin``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -136,6 +139,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._ids = itertools.count(1)
         self._annotations = itertools.count(1)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
+        self._zeichnung_init()  # Phase 6: Zeichnungen
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
@@ -604,6 +608,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             cur.final = {"type": "CLOSED"}
             cur.finished.set()
         self._worker.stop(timeout=1.0)
+        self._zeichnung_schliessen()
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -672,6 +677,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self._anim_project_changed()
                 self.cameras_clear(run)
                 self._bauplan_project_changed()
+                self._zeichnung_projekt()
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -887,6 +893,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             self._anim_publish(job, result)
             self._bauplan_nach_lauf(job.run, result)  # Phase 6: vorhandenen Bauplan im Hintergrund erneuern
+            self._zeichnung_nach_lauf(job.run)  # Phase 6: Blätter neu rechnen, danach DOCS
             proj = self._project
             if proj is not None and str(proj.model) == job.path:
                 try:
@@ -1085,6 +1092,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
+            self._zeichnung_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
             for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
                 conn.send(status)
@@ -1198,6 +1206,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._anim_app_message(kind, header):
             pass
         elif self._bauplan_app_message(kind, header):
+            pass
+        elif self._zeichnung_app_message(kind, header):
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

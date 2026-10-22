@@ -277,89 +277,114 @@ def unpack_part(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Phase 6: Dokumente (DOKUMENTE.md, Protokoll) – Zeichnungen
+# ---------------------------------------------------------------------------------------------------------------------
+
+LINIEN_REIHENFOLGE: tuple[str, ...] = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar",
+                                       "bruch")
+
+
+def pack_polylinien(gruppen: list[dict[str, list[Any]]],
+                    reihenfolge: tuple[str, ...] = LINIEN_REIHENFOLGE) -> tuple[bytes, list[dict[str, int]]]:
+    """Polylinien-Nutzlast (DOKUMENTE.md): je Gruppe (Ansicht), je Linienart in ``reihenfolge``: u32 Anzahl
+    Polylinien, je Polylinie u32 Punktzahl und f32 x, y paarweise (little-endian). Liefert Nutzlast und je Gruppe die
+    Anzahl Polylinien je Linienart (für ``geometrie[i].linien``)."""
+    teile: list[bytes] = []
+    zaehler: list[dict[str, int]] = []
+    for linien in gruppen:
+        z: dict[str, int] = {}
+        for art in reihenfolge:
+            ls = [np.asarray(pl, dtype="<f4").reshape(-1, 2) for pl in (linien.get(art) or []) if len(pl) >= 2]
+            z[art] = len(ls)
+            teile.append(struct.pack("<I", len(ls)))
+            for pl in ls:
+                teile.append(struct.pack("<I", len(pl)))
+                teile.append(np.ascontiguousarray(pl, dtype="<f4").tobytes())
+        zaehler.append(z)
+    return b"".join(teile), zaehler
+
+
+def unpack_polylinien(header: dict[str, Any], payload: bytes, feld: str = "geometrie") -> list[dict[str, Any]]:
+    """Gegenstück zu pack_polylinien: je Eintrag von ``header[feld]`` ein Wörterbuch Linienart → Liste (n, 2)."""
+    reihenfolge = header.get("linien_reihenfolge") or list(LINIEN_REIHENFOLGE)
+    out = []
+    off = 0
+    for _ in header.get(feld) or []:
+        linien: dict[str, Any] = {}
+        for art in reihenfolge:
+            (n,) = struct.unpack_from("<I", payload, off)
+            off += 4
+            ls = []
+            for _k in range(n):
+                (k,) = struct.unpack_from("<I", payload, off)
+                off += 4
+                ls.append(np.frombuffer(payload, dtype="<f4", count=2 * k, offset=off).reshape(-1, 2))
+                off += 8 * k
+            linien[art] = ls
+        out.append(linien)
+    if off != len(payload):
+        raise ValueError(f"Polylinien-Nutzlast hat {len(payload)} Byte, gelesen {off}")
+    return out
+
+
+def pack_drawing(kopf: dict[str, Any], gruppen: list[dict[str, list[Any]]], *, reply_to: str | None = None,
+                 seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """Nachricht DRAWING: ``kopf`` enthält ``blatt``, ``geometrie`` (je Ansicht und zuletzt ``blatt`` für Rahmen und
+    Schriftfeld; je Eintrag ``id``, ``art``, ``rahmen``), ``masse``, ``texte``, ``stand`` …; ``gruppen`` die Linien in
+    derselben Reihenfolge wie ``geometrie``. Setzt ``linien`` (Anzahl je Linienart) und ``linien_reihenfolge``."""
+    payload, zaehler = pack_polylinien(gruppen)
+    geo = [dict(g) for g in kopf.get("geometrie") or []]
+    if len(geo) != len(gruppen):
+        raise ValueError(f"DRAWING: {len(geo)} Einträge in geometrie, aber {len(gruppen)} Liniengruppen")
+    for g, z in zip(geo, zaehler):
+        g["linien"] = z
+    header = {"type": "DRAWING", "seq": seq, **{k: v for k, v in kopf.items() if k not in ("type", "seq")},
+              "geometrie": geo, "linien_reihenfolge": list(LINIEN_REIHENFOLGE)}
+    if reply_to is not None:
+        header["reply_to"] = reply_to
+    return header, payload
+
+
+def docs_message(run: int, blaetter: list[dict[str, Any]], bauplan: dict[str, Any] | None = None,
+                 seq: int = 0) -> dict[str, Any]:
+    """Nachricht DOCS: Übersicht der Blätter (``id``, ``titel``, ``inhalt``, ``format``, ``verwaiste_masse``, dazu
+    ``ausrichtung``, ``massstab``, ``masse``, ``stand``, ``hinweise``, ``pruefung``) und Zusammenfassung des Bauplans."""
+    return {"type": "DOCS", "seq": seq, "run": run, "blaetter": blaetter, "bauplan": bauplan}
+
+
 # Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Protokoll“; Strang P6-B)
 
-# Linienarten der Polylinien-Nutzlast in dieser Reihenfolge (Kopf ``linien_reihenfolge``). Die ersten acht sind die
-# der Zeichnungen (DOKUMENTE.md 1.1), ``neu`` (neue Teile, hervorgehoben) und ``pfeil`` (Einführpfeile) kommen im
-# Bauplan dazu. Die App zeichnet unbekannte Arten dünn durchgezogen.
-LINIEN_REIHENFOLGE = ("sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar", "bruch", "neu",
-                      "pfeil")
+# Linienarten der Strichbilder im Bauplan: die acht der Zeichnungen, dazu ``neu`` (neue Teile des Schritts,
+# hervorgehoben) und ``pfeil`` (Einführpfeile). Die App zeichnet unbekannte Arten dünn durchgezogen.
+BAUPLAN_LINIEN: tuple[str, ...] = (*LINIEN_REIHENFOLGE, "neu", "pfeil")
 BAUPLAN_FELD = (180.0, 120.0)
-
-
-def pack_linien(gruppen: list[dict[str, list[Any]]], reihenfolge: tuple[str, ...] = LINIEN_REIHENFOLGE) -> bytes:
-    """Polylinien-Nutzlast: je Gruppe (Ansicht, Bild) und Linienart nacheinander ``u32`` Anzahl Polylinien, je
-    Polylinie ``u32`` Punktzahl und ``f32`` x, y paarweise (Blatt-mm)."""
-    teile: list[bytes] = []
-    for g in gruppen:
-        for art in reihenfolge:
-            linien = [np.ascontiguousarray(pl, dtype="<f4").reshape(-1, 2) for pl in g.get(art) or []]
-            linien = [pl for pl in linien if len(pl) >= 2]
-            teile.append(struct.pack("<I", len(linien)))
-            for pl in linien:
-                teile.append(struct.pack("<I", len(pl)))
-                teile.append(pl.tobytes())
-    return b"".join(teile)
-
-
-def unpack_linien(payload: bytes, anzahl: int, reihenfolge: tuple[str, ...] | list[str] = LINIEN_REIHENFOLGE,
-                  offset: int = 0) -> tuple[list[dict[str, list[np.ndarray]]], int]:
-    """Gegenstück zu pack_linien: (Gruppen, Ende in der Nutzlast)."""
-    out = []
-    for _ in range(anzahl):
-        g: dict[str, list[np.ndarray]] = {}
-        for art in reihenfolge:
-            (n,) = struct.unpack_from("<I", payload, offset)
-            offset += 4
-            linien = []
-            for _ in range(n):
-                (k,) = struct.unpack_from("<I", payload, offset)
-                offset += 4
-                linien.append(np.frombuffer(payload, dtype="<f4", count=2 * k, offset=offset).reshape(-1, 2))
-                offset += 8 * k
-            g[art] = linien
-        out.append(g)
-    return out, offset
 
 
 def pack_bauplan(bauplan: dict[str, Any], bilder: list[dict[str, Any]], *, run: int | None = None,
                  reply_to: str | None = None, stand: dict[str, Any] | None = None,
                  seq: int = 0) -> tuple[dict[str, Any], bytes]:
     """BAUPLAN: Kopf mit dem Inhalt von bauplan.json (samt Prüfung) und je Schritt ein Strichbild im Feld 180 × 120 mm
-    (``bilder``: ``{schritt, rahmen, massstab, anzahl}``), Nutzlast die Polylinien aller Bilder hintereinander."""
+    wie ``geometrie`` einer Ansicht (``bilder``: ``{schritt, rahmen, massstab, linien}``, ``linien`` = Anzahl je
+    Linienart), Nutzlast die Polylinien aller Bilder hintereinander (pack_polylinien mit ``BAUPLAN_LINIEN``)."""
+    payload, zaehler = pack_polylinien([b.get("linien") or {} for b in bilder], BAUPLAN_LINIEN)
     kopf_bilder = []
-    gruppen = []
-    for b in bilder:
-        linien = b.get("linien") or {}
-        kopf_bilder.append({"schritt": b.get("schritt"), "rahmen": [float(x) for x in b.get("rahmen") or
-                                                                    [0, 0, *BAUPLAN_FELD]],
-                            "massstab": b.get("massstab"),
-                            "anzahl": {a: len(linien.get(a) or []) for a in LINIEN_REIHENFOLGE if linien.get(a)},
+    for b, z in zip(bilder, zaehler):
+        kopf_bilder.append({"schritt": b.get("schritt"),
+                            "rahmen": [float(x) for x in b.get("rahmen") or [0, 0, *BAUPLAN_FELD]],
+                            "massstab": b.get("massstab"), "linien": z,
                             **({"fehler": b["fehler"]} if b.get("fehler") else {})})
-        gruppen.append(linien)
     header: dict[str, Any] = {"type": "BAUPLAN", "seq": seq, "run": run, "bauplan": bauplan, "bilder": kopf_bilder,
-                              "feld": list(BAUPLAN_FELD), "linien_reihenfolge": list(LINIEN_REIHENFOLGE),
+                              "feld": list(BAUPLAN_FELD), "linien_reihenfolge": list(BAUPLAN_LINIEN),
                               "stand": stand or {}}
     if reply_to:
         header["reply_to"] = reply_to
-    return header, pack_linien(gruppen)
+    return header, payload
 
 
 def unpack_bauplan(header: dict[str, Any], payload: bytes) -> list[dict[str, Any]]:
-    """Gegenstück zu pack_bauplan: die Bilder mit ihren Linien."""
-    reihenfolge = tuple(header.get("linien_reihenfolge") or LINIEN_REIHENFOLGE)
-    bilder = list(header.get("bilder") or [])
-    gruppen, ende = unpack_linien(payload, len(bilder), reihenfolge)
-    if ende != len(payload):
-        raise ValueError(f"Nutzlast von BAUPLAN hat {len(payload)} Byte, erwartet {ende}")
-    return [{**b, "linien": g} for b, g in zip(bilder, gruppen)]
-
-
-def pack_docs(*, run: int | None, blaetter: list[dict[str, Any]] | None = None,
-              bauplan: dict[str, Any] | None = None, seq: int = 0) -> dict[str, Any]:
-    """DOCS (Kernel → App): Blätter der Zeichnungen (P6-Z) und Zusammenfassung des Bauplans
-    ``{abschnitte, schritte, probleme, fehler, hinweise, run}`` oder null, wenn es keinen Bauplan gibt."""
-    return {"type": "DOCS", "seq": seq, "run": run, "blaetter": list(blaetter or []), "bauplan": bauplan}
+    """Gegenstück zu pack_bauplan: die Bilder mit ihren Linien (Linienart → Liste (n, 2)) statt der Anzahlen."""
+    gruppen = unpack_polylinien(header, payload, feld="bilder")
+    return [{**b, "linien": g} for b, g in zip(header.get("bilder") or [], gruppen)]
 
 
 def bauplan_beispiel() -> dict[str, Any]:
@@ -439,6 +464,8 @@ def bauplan_beispiel() -> dict[str, Any]:
         "umfang": {"ohne": ["Umgebung"]},
         "stand": {"run": 3, "erzeugt": "2026-10-22T21:00:00", "gesamt_ms": 812.5, "verbinde": True},
     }
+
+
 # Bestand je Projekt (BESTAND.md): Nachrichten ohne Nutzlast
 
 BESTAND_NACHRICHTEN: dict[str, tuple[str, ...]] = {

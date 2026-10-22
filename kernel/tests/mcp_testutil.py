@@ -38,6 +38,8 @@ EXPECTED_TOOLS |= {"kamera_liste", "kamera_info", "kamera_ansicht", "kamera_bild
 EXPECTED_TOOLS |= {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"}
 # 3D-Druck
 EXPECTED_TOOLS |= {"druckpruefung"}
+# Phase 6: Zeichnungen
+EXPECTED_TOOLS |= {"zeichnungen", "zeichnung_erstellen", "zeichnung_bearbeiten", "zeichnung_bild"}
 
 
 def free_port() -> int:

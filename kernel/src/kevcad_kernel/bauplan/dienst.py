@@ -13,6 +13,7 @@ eigenen Sperre; ein neuerer Lauf verwirft ein veraltetes Ergebnis.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from typing import Any
@@ -182,20 +183,33 @@ class BauplanDienst:
         header.pop("seq", None)
         self._send_app(header, payload)  # type: ignore[attr-defined]
 
-    def _bp_docs_senden(self) -> None:
-        from kevcad_kernel.protocol import pack_docs
-
+    def _bauplan_docs(self) -> dict[str, Any] | None:
+        """Zusammenfassung des Bauplans für DOCS (auch für die Zeichnungen, zeichnung/laufzeit.py); ohne Sperre, damit
+        ein laufender Bauplan die Blätter nicht aufhält."""
         st = self._bp()
-        blaetter = []
-        quelle = getattr(self, "_docs_blaetter", None)
-        if callable(quelle):
-            try:
-                blaetter = list(quelle() or [])
-            except Exception:  # noqa: BLE001
-                blaetter = []
-        msg = pack_docs(run=self._bp_run(), blaetter=blaetter, bauplan=st.get("docs"))
+        if st.get("docs") is None and st.get("erg") is None:
+            proj = self._project  # type: ignore[attr-defined]
+            if proj is not None and datei.pfad(proj.path).exists():
+                st["docs"] = datei.zusammenfassung(datei.laden(proj.path))
+        return st.get("docs")
+
+    def _bp_docs(self) -> dict[str, Any]:
+        """Eine DOCS-Nachricht für beide Stränge: Blätter aus dem letzten DOCS der Zeichnungen, Bauplan von hier.
+        Das gemerkte DOCS der Zeichnungen bekommt den neuen Bauplan mit, damit die nächste Verbindung ihn sieht."""
+        from kevcad_kernel.protocol import docs_message
+
+        bauplan = self._bauplan_docs()
+        sperre = getattr(self, "_z_lock", None)
+        with sperre if sperre is not None else contextlib.nullcontext():
+            z = getattr(self, "_z_docs", None)
+            if z is not None:
+                self._z_docs = {**z, "bauplan": bauplan}
+        msg = docs_message(self._bp_run(), list((z or {}).get("blaetter") or []), bauplan)
         msg.pop("seq", None)
-        self._send_app(msg)  # type: ignore[attr-defined]
+        return msg
+
+    def _bp_docs_senden(self) -> None:
+        self._send_app(self._bp_docs())  # type: ignore[attr-defined]
 
     def _bauplan_app_message(self, kind: str | None, header: dict[str, Any]) -> bool:
         if kind not in ("BAUPLAN_REQ", "BAUPLAN_EDIT", "BAUPLAN_PRUEFEN"):
@@ -247,16 +261,10 @@ class BauplanDienst:
         self._pool.submit(arbeit)  # type: ignore[attr-defined]
 
     def _bauplan_on_connect(self, conn: Any) -> None:
-        from kevcad_kernel.protocol import pack_docs
-
-        st = self._bp()
-        if st.get("docs") is None:
-            proj = self._project  # type: ignore[attr-defined]
-            if proj is not None:
-                st["docs"] = datei.zusammenfassung(datei.laden(proj.path))
-        msg = pack_docs(run=self._bp_run(), blaetter=[], bauplan=st.get("docs"))
-        msg.pop("seq", None)
-        conn.send(msg)
+        if getattr(self, "_z_docs", None) is not None:
+            return  # die Zeichnungen schicken ihr DOCS, der Bauplan steckt darin (_bp_docs)
+        if self._bauplan_docs() is not None:
+            conn.send(self._bp_docs())
 
     def _bauplan_project_changed(self) -> None:
         st = self._bp()
