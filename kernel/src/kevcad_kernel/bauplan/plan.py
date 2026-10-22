@@ -58,18 +58,27 @@ def wegpruefer(ein: Eingang) -> WegPruefer:
 
 
 def bilder_setzen(ein: Eingang, plan: dict[str, Any]) -> None:
-    """Bildparameter je Schritt (Montage mit Explosion und Kamera; sonst das Teil allein)."""
+    """Bildparameter je Schritt (Montage mit Explosion und Kamera; Einsätze, Lager und Stifte mit ihrem aufnehmenden
+    Teil als Bezug; sonst das Teil allein)."""
     b = Bilder(ein)
     montiert: dict[Any, list[str]] = {}
+    eingebracht: set[str] = set()  # Einsätze und Lager aus früheren Bearbeiten-Schritten (Bezug für Stifte)
     for a in plan.get("abschnitte") or []:
         for s in a.get("schritte") or []:
             alt = s.get("bild") or {}
+            neu: dict[str, Any] | None = None
             if a.get("art") == "montage":
                 ebene = s.get("baugruppe")
                 vorher = list(montiert.get(ebene, []))
                 neu = b.parameter(s, vorher)
                 montiert.setdefault(ebene, []).extend(t for t in s.get("neu") or [] if t in ein.teile)
-            else:
+            elif a.get("art") == "bearbeiten" and s.get("neu"):
+                try:
+                    neu = b.einbringen(s, eingebracht)
+                except Exception:  # noqa: BLE001 - ein Bild darf den Bauplan nicht verhindern
+                    neu = None
+                eingebracht.update(t for t in s.get("neu") or [] if t in ein.teile)
+            if neu is None and a.get("art") != "montage":
                 teile = [t for t in s.get("teile") or [] if t in ein.teile][:1]
                 if not teile or a.get("art") == "material":
                     s["bild"] = alt or None

@@ -119,6 +119,21 @@ mu = mutter.verbauen(name="Mutter")
 show(Pos(30, 0, 52.2 - mu.bounding_box().min.Z) * mu, "Mutter")
 '''
 
+# Zwei Blöcke nebeneinander mit je zwei Gewindeeinsätzen: einer von oben in eine Tasche mit Durchgangsbohrung darunter, einer von
+# rechts in eine Seitentasche (ohne Inventar-Regel: die Einsätze erkennt der Bauplan am Namen)
+EINSAETZE = '''from build123d import *
+from kevcad import lager, show
+unten = (Align.CENTER, Align.CENTER, Align.MIN)
+for i, y in enumerate((0, 30), 1):
+    block = Pos(0, y, 0) * Box(40, 30, 30, align=unten)
+    block -= Pos(0, y, 22) * Cylinder(2.8, 8.01, align=unten)
+    block -= Pos(0, y, 0) * Cylinder(2.25, 30, align=unten)
+    block -= Pos(12.01, y, 12) * Rot(0, 90, 0) * Cylinder(2.8, 8.01, align=unten)
+    show(lager.druckteil(block, f"Halter {i}/Block", material="petg"), f"Halter {i}/Block")
+    show(Pos(0, y, 22) * Cylinder(2.8, 8, align=unten), f"Halter {i}/Gewindeeinsatz M4 oben")
+    show(Pos(12, y, 12) * Rot(0, 90, 0) * Cylinder(2.8, 8, align=unten), f"Halter {i}/Gewindeeinsatz M4 seitlich")
+'''
+
 
 @pytest.fixture(scope="module")
 def env():
@@ -260,6 +275,34 @@ def test_kaefig_einfuehrweg_blockiert(env):
     assert {s["druck"]["material"] for s in dr} == {"petg"} and all(s["druck"]["seite"] for s in dr)
 
 
+def test_bild_einsaetze_mit_bezug(env):
+    """Bearbeiten „Gewindeeinsätze einschmelzen“: das Bild zeigt den ersten Block als Bezug (Linienart kontext) mit
+    seinen eigenen Einsätzen, hervorgehoben und entlang ihrer Einführrichtung (in die Tasche) abgerückt, mit Pfeilen."""
+    rt = env["rt"]
+    oeffne(env, "Einsaetze", EINSAETZE, inventar=False)
+    plan = rt.bauplan()["bauplan"]
+    s = next(s for s in schritte(plan, "bearbeiten") if "einschmelzen" in s["titel"])
+    assert s["anzahl"] == 2 and len(s["neu"]) == 4
+    bild = s["bild"]
+    assert bild["kontext"] == ["Halter 1/Block"] and bild["kontext_linie"] == "kontext"
+    assert sorted(bild["hervorheben"]) == ["Halter 1/Gewindeeinsatz M4 oben", "Halter 1/Gewindeeinsatz M4 seitlich"]
+    oben = bild["explosion"]["Halter 1/Gewindeeinsatz M4 oben"]
+    seite = bild["explosion"]["Halter 1/Gewindeeinsatz M4 seitlich"]
+    assert oben[2] >= 20 and abs(oben[0]) < 1e-6 and seite[0] >= 20 and abs(seite[2]) < 1e-6  # aus der Tasche heraus
+    richtungen = {p["teil"]: p["richtung"] for p in bild["pfeile"]}
+    assert richtungen["Halter 1/Gewindeeinsatz M4 oben"] == pytest.approx([0, 0, -1], abs=1e-3)
+    assert richtungen["Halter 1/Gewindeeinsatz M4 seitlich"] == pytest.approx([-1, 0, 0], abs=1e-3)
+    # Blick auf die Eintrittsseiten: von oben und von rechts
+    auge = -np.asarray(bild["ansicht"]["richtung"])
+    assert auge[0] > 0 and auge[2] > 0
+    # Strichbild: Bezug grau, nur die zwei Einsätze des ersten Blocks orange, zwei Pfeile mit Spitze
+    b = rt.bauplan_bilder([s["id"]])["bilder"][0]
+    assert b["linien"]["kontext"] and b["linien"]["neu"] and not b["linien"]["sichtbar"]
+    assert len(b["linien"]["pfeil"]) == 4
+    xs = np.concatenate(b["linien"]["neu"])[:, 0]
+    assert xs.min() >= 0 and xs.max() <= 180
+
+
 def test_stapel_reihenfolge_nach_verschieben(env):
     rt = env["rt"]
     oeffne(env, "Stapel", STAPEL)
@@ -329,7 +372,7 @@ def test_protokoll_rundlauf(env):
     _, _, h, p = app.wait_for(lambda h: h["type"] == "BAUPLAN" and h.get("reply_to") == "bp-1", timeout=120,
                               start=start)
     bilder = unpack_bauplan(h, p)
-    assert h["linien_reihenfolge"][-2:] == ["neu", "pfeil"] and h["feld"] == [180.0, 120.0]
+    assert h["linien_reihenfolge"][-3:] == ["neu", "pfeil", "kontext"] and h["feld"] == [180.0, 120.0]
     ids = [s["id"] for _, s in datei.alle_schritte(h["bauplan"]) if s.get("bild")]
     assert [b["schritt"] for b in bilder] == ids
     mont = [b for b in bilder if b["schritt"].startswith("m-")]

@@ -1,6 +1,6 @@
 # Kev CAD · Dokumente (Vertrag Phase 6)
 
-Version 1.2 (22.10.2026; 1.1: Ergänzungen aus [RECHERCHE-PHASE6.md](RECHERCHE-PHASE6.md) Abschnitt 7; 1.2: `DRAWING_CREATE`, Änderungen des Agenten erreichen die App). Verbindlich für Zeichnungen, Bauplan und Berichte aus
+Version 1.3 (22.10.2026; 1.1: Ergänzungen aus [RECHERCHE-PHASE6.md](RECHERCHE-PHASE6.md) Abschnitt 7; 1.2: `DRAWING_CREATE`, Änderungen des Agenten erreichen die App; 1.3: Schrittbilder beim Bearbeiten mit Bezug, Linienart `kontext`). Verbindlich für Zeichnungen, Bauplan und Berichte aus
 [PLAN-PHASE6-DOKUMENTE.md](PLAN-PHASE6-DOKUMENTE.md). Änderungen nur gemeinsam: dieses Dokument, `protocol.py`,
 Testdateien und Swift-Decoder im selben Commit (wie PROTOCOL.md). Einheiten auf dem Blatt: mm, Ursprung links unten,
 y nach oben. Modellkoordinaten wie überall: mm, Z oben.
@@ -124,6 +124,13 @@ Maße, Notizen und Bauplan-Schritte zeigen auf Geometrie über einen **Bezug** m
 
 - `bild.sichtbarkeit` (Version 1.1): gemessener sichtbarer Anteil jedes neuen Teils im Schrittbild (0 bis 1). Unter
   der Hausregel-Schwelle meldet die Prüfung einen Befund `verdeckt` mit Vorschlag für eine andere Blickrichtung.
+- **Bearbeiten mit Bezug** (Version 1.3): Schritte, die Teile in ein anderes bringen (Gewindeeinsätze einschmelzen,
+  Lager einpressen, Stifte einkleben), zeigen das aufnehmende Teil als Bezug: `bild.kontext` (das erste aufnehmende
+  Teil, bei Stiften dazu seine schon eingebrachten Einsätze), `bild.kontext_linie: "kontext"` (diese Teile im
+  Strichbild als Linienart `kontext`, dünn und grau), `bild.vertreter` (bei „4 ×“ steht dieses Teil für alle),
+  `bild.hervorheben` (nur seine neuen Teile), `bild.explosion` und `bild.pfeile` entlang der Einführrichtung (aus der
+  Tasche bzw. dem Sitz heraus; Pfeile mit `luecke: true` stehen zwischen abgerücktem Teil und Sitz), Blick auf die
+  Eintrittsseite. Das Strichbild hebt `bild.hervorheben` hervor (sonst `neu`).
 - `vorher` (Version 1.1): Reihenfolgen „a vor b“. Der Kernel leitet sie aus Bedingungen und Demontage ab
   (`quelle: "auto"`); eingetragene von Agent oder Kevin bleiben erhalten. Ein Verstoß ist ein Befund `reihenfolge`.
 
@@ -167,7 +174,8 @@ paarweise; Reihenfolge der Linienarten wie im Kopf `linien_reihenfolge`. Maße u
 
 Linienarten (Version 1.1, additiv): zusätzlich `nachbar` (Strich-Zweipunkt dünn, ISO 128 05.1: Nachbarteile,
 Endlagen von Gelenken) und `bruch` (Freihand dünn: Bruchkanten verkürzter Ansichten langer Rohre). Die App zeichnet
-unbekannte Linienarten dünn durchgezogen, statt abzubrechen.
+unbekannte Linienarten dünn durchgezogen, statt abzubrechen. Strichbilder des Bauplans (Version 1.3): nach `neu` und
+`pfeil` zusätzlich `kontext` (aufnehmendes Teil beim Bearbeiten, dünn und grau).
 
 `DRAWING_EDIT.ops`: `{"op": "mass_verschieben", "id", "versatz" | "text_lage"}`, `{"op": "mass_loeschen", "id"}`,
 `{"op": "mass_neu", "art", "ansicht", "bezuege": [{ "ansicht", "punkt": [x, y] (Blatt-mm, der Kernel sucht das nächste

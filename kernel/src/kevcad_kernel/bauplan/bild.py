@@ -9,7 +9,8 @@ Die Parameter (``bild`` im Schritt, DOKUMENTE.md) entstehen bei jedem Lauf:
 - **Ausschnitt:** kleine neue Teile in einer großen Baugruppe: nur die Umgebung (Hüllquader der neuen Teile mit Rand).
 
 Das Strichbild rechnet die Projektion von P6-Z (``zeichnung.projiziere``, auf dem Netz) und legt es in ein Feld 180 × 120 mm:
-Linienarten ``sichtbar`` (montierte Teile), ``neu`` (neue Teile), ``duenn`` (Lichtkanten), ``pfeil`` (Einführpfeile).
+Linienarten ``sichtbar`` (montierte Teile), ``neu`` (neue Teile), ``duenn`` (Lichtkanten), ``pfeil`` (Einführpfeile),
+``kontext`` (aufnehmendes Teil beim Bearbeiten: Einsätze einschmelzen, Lager einpressen, Stifte einkleben).
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ FELD = (180.0, 120.0)
 RAND = 6.0  # mm im Feld
 ISO = [np.array(v, dtype=float) / math.sqrt(3) for v in
        ((-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1), (-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1))]
-LINIEN_BAUPLAN = ("sichtbar", "neu", "duenn", "pfeil")
+LINIEN_BAUPLAN = ("sichtbar", "neu", "duenn", "pfeil", "kontext")
 # Sichtbarkeit (Agrawala 2003, RECHERCHE-PHASE6 4.1): neue Teile, bisheriger Stand, Kamerawechsel
 SICHT_NEU, SICHT_ALT, SICHT_WECHSEL = 0.50, 0.10, 0.35
 
@@ -160,8 +161,10 @@ class Bilder:
                 out[el.get("haupt") or teile[0]] = teile
         return out
 
-    def parameter(self, schritt: dict[str, Any], vorher: list[str]) -> dict[str, Any]:
-        """Kamera, Explosion, Pfeile, Hervorhebung und Ausschnitt eines Montageschritts."""
+    def parameter(self, schritt: dict[str, Any], vorher: list[str], eintritt: bool = False) -> dict[str, Any]:
+        """Kamera, Explosion, Pfeile, Hervorhebung und Ausschnitt eines Montageschritts. ``eintritt``: die Blickrichtung
+        soll die Seite zeigen, von der die neuen Teile kommen (Öffnung der Tasche, Sitz des Lagers), und der Blick des
+        vorigen Schritts gilt nicht als Vorzug."""
         neu = [t for t in schritt.get("neu") or [] if t in self.ein.teile]
         vorher = [t for t in vorher if t in self.ein.teile]
         expl = self.explosion(schritt)
@@ -213,10 +216,12 @@ class Bilder:
                                               for p in pfeile]))
             if auge[2] > 0:
                 score += 0.05
+            if eintritt and pfeile:  # Blick auf die Eintrittsseite: Auge auf der Seite, von der das Teil kommt
+                score += 1.0 * float(np.mean([float(np.dot(auge, p["richtung"])) < -0.1 for p in pfeile]))
             gut = min(werte) >= SICHT_NEU and (alt_anteil >= SICHT_ALT or not kontext)
             kandidaten.append((gut, score, auge, je_teil, alt_anteil))
         wahl = None
-        if self._vorher is not None:
+        if self._vorher is not None and not eintritt:
             for k in kandidaten:
                 if float(np.dot(k[2], self._vorher)) > 0.99 and min(list(k[3].values()) or [1.0]) >= SICHT_WECHSEL:
                     wahl = k
@@ -245,6 +250,116 @@ class Bilder:
                 "ausschnitt": {"min": _r(lo, 1), "max": _r(hi, 1)},
                 "sichtbarkeit": {t: round(v, 2) for t, v in sicht.items()},
                 "sichtbarkeit_bisher": round(alt_anteil, 2), "besser": vorschlag, "quelle": "auto"}
+
+    def einbringen(self, schritt: dict[str, Any], bisher: set[str]) -> dict[str, Any] | None:
+        """Bild eines Bearbeiten-Schritts, der Teile in ein anderes bringt (Gewindeeinsätze einschmelzen, Lager
+        einpressen, Stifte einkleben): das aufnehmende Teil als Bezug (Linienart ``kontext``, dünn und grau), dazu die
+        schon eingebrachten Teile; die neuen Teile hervorgehoben, um ihren Einführweg zurückversetzt, mit Pfeil in
+        Einführrichtung. Bei „4 ×“ zeigt das Bild das erste aufnehmende Teil stellvertretend für alle.
+        ``bisher``: Teile, die frühere Bearbeiten-Schritte schon eingebracht haben. None ohne passende Teile."""
+        from kevcad_kernel.bauplan.eingang import montage_wirt
+
+        neu = [t for t in schritt.get("neu") or [] if t in self.ein.teile]
+        if not neu:
+            return None
+        basis_ = montage_wirt(self.ein, neu[0])
+        if basis_ == neu[0] or basis_ not in self.ein.teile:
+            return None
+        eigene = [t for t in neu if montage_wirt(self.ein, t) == basis_]
+        kontext = [basis_] + [n for n in bisher if n in self.ein.teile and n not in eigene
+                              and montage_wirt(self.ein, n) == basis_]
+        einbau = []
+        for t in eigene:
+            d, weg = self.einfuehrung(t)
+            if d is None:
+                continue
+            einbau.append({"teile": [t], "haupt": t, "richtung": _r(d, 5), "weg": round(weg, 1), "art": "einsatz"})
+        if not einbau:
+            return None
+        bild = self.parameter({"neu": eigene, "einbau": einbau}, kontext, eintritt=True)
+        # Bezug immer ganz zeigen (auch wenn die neuen Teile klein sind) und den Ausschnitt darauf legen
+        bild["kontext"] = kontext
+        teile = [self.ein.teile[t] for t in kontext + eigene]
+        punkte = [u.bmin for u in teile] + [u.bmax for u in teile]
+        for t in eigene:
+            off = np.asarray(bild["explosion"].get(t, [0, 0, 0]), dtype=float)
+            punkte += [self.ein.teile[t].bmin + off, self.ein.teile[t].bmax + off]
+        bild["ausschnitt"] = {"min": _r(np.min(punkte, axis=0), 1), "max": _r(np.max(punkte, axis=0), 1)}
+        # Pfeile in der Lücke zwischen abgerücktem Teil und seinem Sitz (wie in einer Montageanleitung), nicht durch
+        # das Teil hindurch
+        pfeile = []
+        for el in einbau:
+            t = el["haupt"]
+            d = np.asarray(el["richtung"], dtype=float)
+            u = self.ein.teile[t]
+            mitte = u.zentrum
+            ecken = np.array([[x, y, z] for x in (u.bmin[0], u.bmax[0]) for y in (u.bmin[1], u.bmax[1])
+                              for z in (u.bmin[2], u.bmax[2])])
+            halb = float(np.max(np.abs((ecken - mitte) @ d)))
+            off = np.asarray(bild["explosion"].get(t, [0, 0, 0]), dtype=float)
+            L = float(np.linalg.norm(off))
+            luecke = L - 2 * halb
+            if luecke > 6.0:
+                von, nach = mitte - d * (L - halb - 1.5), mitte - d * (halb + 1.5)
+            else:  # zu wenig Platz: Pfeil hinter dem abgerückten Teil, auf seinen Sitz gerichtet
+                von, nach = mitte - d * (L + halb + 14.0), mitte - d * (L + halb + 2.0)
+            pfeile.append({"teil": t, "richtung": _r(d, 4), "von": _r(von, 1), "nach": _r(nach, 1),
+                           "luecke": True})
+        bild["pfeile"] = pfeile
+        bild["kontext_linie"] = "kontext"
+        bild["vertreter"] = basis_
+        return bild
+
+    def einfuehrung(self, name: str) -> tuple[np.ndarray | None, float]:
+        """Einführrichtung (Einheitsvektor, Richtung der Bewegung beim Einbringen) und Weg eines Einsatzes, Lagers
+        oder Stifts in sein aufnehmendes Teil. Die Achse kommt aus den Zylinderflächen; die Seite ist die, nach der das
+        Teil sein Gegenstück am wenigsten durchdringen müsste (Strahlen wie der Einführweg der Simulation: wo der
+        Grund der Tasche liegt, sperrt das Gegenstück viele Bildpunkte, zur Öffnung hin keine). Bei Gleichstand von
+        der Seite, an der das Gegenstück näher an der Oberfläche endet, sonst von oben."""
+        from kevcad_kernel.bauplan.eingang import vm_achse
+        from kevcad_kernel.bauplan.wege import WegPruefer
+
+        t = self.ein.teile[name]
+        w = self.ein.teile.get(t.wirt or "")
+        a = t.vm.get("achse")
+        if a is not None:
+            a = np.asarray(a, dtype=float)
+        else:
+            va = vm_achse(t.koerper)
+            if va is None:
+                return None, 0.0
+            a = va[0]
+        a = a / (np.linalg.norm(a) or 1.0)
+        ecken = np.array([[x, y, z] for x in (t.bmin[0], t.bmax[0]) for y in (t.bmin[1], t.bmax[1])
+                          for z in (t.bmin[2], t.bmax[2])])
+        laenge = float(np.ptp(ecken @ a))
+        quer = ecken - np.outer(ecken @ a, a)
+        durchmesser = float(max(np.ptp(quer[:, i]) for i in range(3)))
+        # so weit zurück, dass zwischen Teil und Sitz Platz für den Pfeil bleibt und sich ein flaches Lager in der
+        # Schrägansicht nicht mit seinem Sitz überdeckt
+        weg = max(20.0, laenge + 14.0, 1.4 * durchmesser)
+        if w is None:
+            return (-a if a[2] >= 0 else a), weg
+        wp = WegPruefer({name: t.koerper, w.name: w.koerper})
+        wertung = {}
+        for s in (1.0, -1.0):
+            try:
+                sp = wp.paar(name, w.name, s * a)  # Ausbau entlang s·a
+            except Exception:  # noqa: BLE001 - Strahlen dürfen das Bild nicht verhindern
+                sp = None
+            wertung[s] = 0 if sp is None else int(sp.pixel)
+        if wertung[1.0] != wertung[-1.0]:
+            aus = a if wertung[1.0] < wertung[-1.0] else -a
+        else:
+            we = np.array([[x, y, z] for x in (w.bmin[0], w.bmax[0]) for y in (w.bmin[1], w.bmax[1])
+                           for z in (w.bmin[2], w.bmax[2])]) @ a
+            te = ecken @ a
+            oben, unten = float(we.max() - te.max()), float(te.min() - we.min())
+            if abs(oben - unten) > 0.5:
+                aus = a if oben < unten else -a
+            else:
+                aus = a if a[2] >= 0 else -a
+        return -aus, weg
 
     def _sicht(self, einheiten: dict[str, list[str]], kontext: list[str], expl: dict[str, list[float]],
                auge: np.ndarray) -> tuple[dict[str, float], float]:
@@ -359,8 +474,10 @@ def strichbild(ein: Eingang, schritt: dict[str, Any], schluessel: dict[str, str]
 
     bild = schritt.get("bild") or {}
     expl = bild.get("explosion") or {}
-    neu = [t for t in schritt.get("neu") or bild.get("hervorheben") or [] if t in ein.teile]
+    # hervorgehoben ist, was das Bild nennt (bei „4 ×“ nur die Teile des stellvertretenden Bezugs), sonst die neuen
+    neu = [t for t in bild.get("hervorheben") or schritt.get("neu") or [] if t in ein.teile]
     kontext = [t for t in bild.get("kontext") or [] if t in ein.teile and t not in neu]
+    kontext_art = str(bild.get("kontext_linie") or "sichtbar")
     formen: dict[str, Any] = {}
     keys: dict[str, str] = {}
     for t in kontext + neu:
@@ -379,7 +496,8 @@ def strichbild(ein: Eingang, schritt: dict[str, Any], schluessel: dict[str, str]
     p = projiziere(formen, ansicht, verdeckt=False, mittel=False, je_teil=True,
                    schluessel={n: keys[n] for n in formen if keys.get(n)} or None)
     for name, d in p.teile.items():
-        art = "neu" if name in neu else "sichtbar"
+        art = "neu" if name in neu else kontext_art
+        linien.setdefault(art, [])
         linien[art] += list(d.get("sichtbar") or [])
         linien["duenn"] += list(d.get("duenn") or [])
     for pf in bild.get("pfeile") or []:  # nur für den Ausschnitt; gezeichnet wird nach dem Maßstab

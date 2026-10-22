@@ -915,7 +915,8 @@
    "nachbar",
    "bruch",
    "neu",
-   "pfeil"
+   "pfeil",
+   "kontext"
   ],
   "feld": [
    180.0,
@@ -960,7 +961,8 @@
      "nachbar": 0,
      "bruch": 0,
      "neu": 0,
-     "pfeil": 0
+     "pfeil": 0,
+     "kontext": 0
     }
    },
    {
@@ -975,7 +977,8 @@
      "nachbar": 0,
      "bruch": 0,
      "neu": 1,
-     "pfeil": 2
+     "pfeil": 2,
+     "kontext": 0
     }
    }
   ],
@@ -989,7 +992,7 @@
     97.0
    ]
   ],
-  "payload_bytes": 280,
+  "payload_bytes": 288,
   "vorher": 2,
   "docs": {
    "schritte": 5,

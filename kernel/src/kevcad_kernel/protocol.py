@@ -369,7 +369,8 @@ def drawing_create_message(rid: str, art: str = "teil", teile: list[str] | None 
 
 # Linienarten der Strichbilder im Bauplan: die acht der Zeichnungen, dazu ``neu`` (neue Teile des Schritts,
 # hervorgehoben) und ``pfeil`` (Einführpfeile). Die App zeichnet unbekannte Arten dünn durchgezogen.
-BAUPLAN_LINIEN: tuple[str, ...] = (*LINIEN_REIHENFOLGE, "neu", "pfeil")
+# „kontext“ (Version 1.3): aufnehmendes Teil beim Bearbeiten, dünn und grau
+BAUPLAN_LINIEN: tuple[str, ...] = (*LINIEN_REIHENFOLGE, "neu", "pfeil", "kontext")
 BAUPLAN_FELD = (180.0, 120.0)
 
 
