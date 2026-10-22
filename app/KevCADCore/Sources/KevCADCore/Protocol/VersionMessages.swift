@@ -117,7 +117,8 @@ public enum VersionMessage: Sendable {
             kennzahlen: v["kennzahlen"].flatMap(kennzahlen), params: params,
             bild: v["bild"]?.stringValue.map { URL(fileURLWithPath: $0) }, aktuell: v["aktuell"]?.boolValue ?? false,
             geerbt: v["geerbt"]?.boolValue ?? false, dateien: v["dateien"]?.stringList ?? [],
-            gruppe: v["gruppe"]?.stringValue, nachberechnung: v["nachberechnung"]?.stringValue)
+            gruppe: v["gruppe"]?.stringValue, nachberechnung: v["nachberechnung"]?.stringValue,
+            zusatz: v["zusatz"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     static func kennzahlen(_ k: JSONValue) -> VersionKennzahlen? {

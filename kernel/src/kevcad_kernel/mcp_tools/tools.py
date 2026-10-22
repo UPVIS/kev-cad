@@ -343,14 +343,22 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
           "Execute model.py of the open project; parts stream live into the viewer. Returns every part with bounding "
           "box size, volume (mm³) and mass (g), the steps, warnings and param() values. On failure (isError) the "
           "line, a code excerpt and a hint. params overrides param() values for this run; slow_ms > 0 pauses after "
-          "each step()/show() so Kevin can watch the build (e.g. 400).", ADDITIVE)
+          "each step()/show() so Kevin can watch the build (e.g. 400). A run that changed a project file becomes a "
+          "version; titel names it in Kevin's words (give one for larger changes).", ADDITIVE)
     async def run(
         params: Annotated[dict[str, float] | None,
                           Field(description="Overrides for param() values by name, e.g. {\"breite\": 140}")] = None,
         slow_ms: Annotated[int, Field(ge=0, le=10000, description="Slow motion pause in ms per step, 0 = off")] = 0,
+        titel: Annotated[str | None, Field(max_length=160, description=(
+            "Short German description of this change in Kevin's words, e.g. 'Laufrollen auf Kugellager umgestellt'. "
+            "Becomes the title of the new version; the automatic title (what changed) stays below it. Give one for "
+            "larger changes, omit it for small fixes."))] = None,
     ) -> CallToolResult:
         activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
-        res = await t.work(activity, svc.run, params, slow_ms)
+        if titel and titel.strip():
+            res = await t.work(activity, svc.run, params, slow_ms, titel=titel.strip())
+        else:
+            res = await t.work(activity, svc.run, params, slow_ms)
         summary, data, failed = fmt.run_summary(res)
         return fmt.result(summary, data, error=failed)
 

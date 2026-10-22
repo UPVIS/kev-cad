@@ -61,7 +61,8 @@ class HintergrundRechner:
 
     def rechne(self, *, run: int, path: str, code: str, inventar_regel: bool, deviation: float, angular: float,
                catalog: dict[str, Any], timeout_s: float = 300.0) -> dict[str, Any]:
-        """Wie ``_schatten_job`` der Laufzeit: {"ok", "teile", "bom", "params", "ms"} oder {"ok": False, "error"}."""
+        """Wie ``_schatten_job`` der Laufzeit: {"ok", "teile", "bom", "params", "steps", "ms"} oder {"ok": False,
+        "error"}."""
         with self._lock:
             t0 = time.perf_counter()
             if not self._bereit():
@@ -87,7 +88,7 @@ class HintergrundRechner:
             teile = sorted((t for n, t in letzte.items() if n in reihen and not n.startswith("Skizze/")),
                            key=lambda t: reihen[t[0]])
             return {"ok": True, "teile": teile, "bom": final.get("bom"), "params": dict(final.get("params") or {}),
-                    "ms": ms}
+                    "steps": list(final.get("steps") or []), "ms": ms}
 
     def stop(self) -> None:
         self._worker.stop(timeout=1.0)  # ein laufender Auftrag endet dabei mit „abgestürzt“

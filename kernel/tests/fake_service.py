@@ -224,8 +224,12 @@ class FakeService:
         self.code = code
         return {"ok": True, "path": self.project["model"], "bytes": len(code.encode())}
 
-    def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120) -> dict[str, Any]:
-        self._record("run", params, slow_ms)
+    def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
+            titel: str | None = None) -> dict[str, Any]:
+        if titel is not None:
+            self._record("run", params, slow_ms, titel=titel)
+        else:
+            self._record("run", params, slow_ms)
         self.run_no += 1
         if self.fail_run:
             return {"ok": False, "run": self.run_no, "duration_ms": 12, "parts": [], "steps": ["Grundplatte"],
@@ -233,10 +237,13 @@ class FakeService:
                     "error": {"message": "NameError: name 'platt' is not defined", "line": 12,
                               "excerpt": "  11 | platte = Box(breite, 80, dicke)\n> 12 | show(platt, \"Grundplatte\")",
                               "traceback": "Traceback ...", "hint": "Tippfehler im Variablennamen?"}}
-        return {"ok": True, "run": self.run_no, "duration_ms": 1234, "parts": PARTS, "steps": ["Grundplatte", "Lasche"],
-                "warnings": ["Lasche: Fläche sehr klein"], "params": {"breite": (params or {}).get("breite", 120.0)},
-                "bom": {"totals": BOM["totals"], "warnings": BOM["warnings"], "cuts": 1},
-                "inventar_regel": True, "inventar_verstoesse": list(self.violations)}
+        res = {"ok": True, "run": self.run_no, "duration_ms": 1234, "parts": PARTS, "steps": ["Grundplatte", "Lasche"],
+               "warnings": ["Lasche: Fläche sehr klein"], "params": {"breite": (params or {}).get("breite", 120.0)},
+               "bom": {"totals": BOM["totals"], "warnings": BOM["warnings"], "cuts": 1},
+               "inventar_regel": True, "inventar_verstoesse": list(self.violations)}
+        if titel is not None:  # Versionen: Titel des Agenten, der automatische als Zusatz
+            res["version"] = {"nr": 4, "neu": True, "ms": 12.0, "titel": titel, "titel_auto": "breite 120 → 140"}
+        return res
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         self._record("execute", code)
@@ -613,7 +620,11 @@ class FakeService:
                 "geister": [{"teil": "Grundplatte", "art": "alt"}], "hinweise": [], "ms": 40}
 
     def meilenstein(self, titel: str, notiz: str = "", version: str | None = None, **kw: Any) -> dict[str, Any]:
-        self._record("meilenstein", titel, notiz, version)
+        self._record("meilenstein", titel, notiz, version, **kw)
+        if version == "V3" and not kw.get("ersetzen"):  # V3 trägt Kevins Meilenstein (VERSIONEN oben)
+            return {"ok": True, "version": 3, "titel": "Halter fertig", "notiz": "Bohrungen M6", "entfernt": False,
+                    "geschuetzt": True, "hinweis": "V3 trägt Kevins Meilenstein „Halter fertig“; er bleibt "
+                                                   f"unverändert. „{titel}“ steht als Titel der Version darunter."}
         return {"ok": True, "version": 3, "titel": titel, "notiz": notiz}
 
     def variante(self, aktion: str = "liste", name: str | None = None, von: str | None = None,

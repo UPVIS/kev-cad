@@ -33,6 +33,10 @@ struct CatalogWindow: View {
     @State private var form: CatalogFormRequest?
     @State private var deleting: CatalogFocus?
     @State private var dismissedError: String?
+    /// Freigaben aus diesem Fenster, die der Katalog noch nicht als frei zeigt.
+    @State private var approving: Set<CatalogFocus> = []
+    /// Gescheiterte Freigabe: als Hinweisfenster, damit sie nicht übersehen wird.
+    @State private var approvalError: String?
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -71,15 +75,34 @@ struct CatalogWindow: View {
             load(force: false)
             consumeFocus()
             openDemoFormIfRequested()
+            FreigabeSelfTest.runIfRequested(session)
+        }
+        .alert("Freigabe fehlgeschlagen", isPresented: Binding(
+            get: { approvalError != nil }, set: { if !$0 { approvalError = nil } })
+        ) {
+            Button("OK", role: .cancel) { dismissedError = approvalError }
+            Button("Protokoll zeigen") {
+                dismissedError = approvalError
+                session.showLog()
+            }
+        } message: {
+            Text((approvalError ?? "") + "\n\nDer Eintrag ist weiter ein Vorschlag und lässt sich nicht verbauen.")
         }
         .onChange(of: session.catalogFocus) { consumeFocus() }
         .onChange(of: session.catalogSectionRequest) { consumeFocus() }
-        .onChange(of: model.catalog) { consumeFocus() }
+        .onChange(of: model.catalog) {
+            consumeFocus()
+            approving = approving.filter { isSuggestion($0) }
+        }
         .onChange(of: model.kernelState) { _, state in
             if state == .ready, model.catalog == nil { load(force: false) }
         }
         .onChange(of: model.catalogActivity) { _, activity in
             if case .deleted(let id) = activity, selection == .item(id) || selection == .material(id) { selection = nil }
+            if case .failed(let text) = activity, !approving.isEmpty {
+                approving.removeAll()
+                approvalError = text
+            }
         }
     }
 
@@ -331,20 +354,47 @@ struct CatalogWindow: View {
         }
     }
 
-    /// Vorschlag freigeben: derselbe Eintrag mit `status: "frei"` (CATALOG_SAVE).
+    /// Vorschlag freigeben: derselbe Eintrag mit `status: "frei"` (CATALOG_SAVE). Scheitert die Freigabe, an welcher
+    /// Stelle auch immer, erscheint ein Hinweisfenster; still bleibt nichts liegen.
     private func approve(_ entry: CatalogFocus) {
-        guard let catalog = model.catalog else { return }
         dismissedError = nil
+        guard let catalog = model.catalog else {
+            approvalError = "Der Lagerkatalog ist nicht geladen, die Freigabe wurde nicht gesendet."
+            return
+        }
+        guard let actions = model.catalogActions else {
+            approvalError = "Freigeben geht gerade nicht: Es ist kein Kernel verbunden."
+            return
+        }
+        let json: Data, kind: String, ebene: CatalogLevel
         switch entry {
         case .item(let id):
-            guard let item = catalog.item(id) else { return }
-            model.catalogActions?.saveCatalogEntry(
-                kind: "teil", json: Catalog.approvedJSON(item.json), ebene: item.ebene.isEditable ? item.ebene : .eigen)
+            guard let item = catalog.item(id) else {
+                approvalError = missing(id)
+                return
+            }
+            (json, kind, ebene) = (item.json, "teil", item.ebene)
         case .material(let id):
-            guard let m = catalog.material(id) else { return }
-            model.catalogActions?.saveCatalogEntry(
-                kind: "material", json: Catalog.approvedJSON(m.json), ebene: m.ebene.isEditable ? m.ebene : .eigen)
+            guard let m = catalog.material(id) else {
+                approvalError = missing(id)
+                return
+            }
+            (json, kind, ebene) = (m.json, "material", m.ebene)
         }
+        approving.insert(entry)
+        actions.saveCatalogEntry(kind: kind, json: Catalog.approvedJSON(json), ebene: ebene.isEditable ? ebene : .eigen)
+        // Rückmeldung abwarten (der App-Kern meldet nach 15 s ohne Antwort selbst einen Fehler); bleibt trotzdem alles
+        // still, wenigstens hier melden
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(25))
+            guard approving.contains(entry), isSuggestion(entry), approvalError == nil else { return }
+            approving.remove(entry)
+            approvalError = "Keine Rückmeldung vom Kernel: Der Eintrag ist nach 25 s weiter ein Vorschlag."
+        }
+    }
+
+    private func missing(_ id: String) -> String {
+        "„\(id)“ steht nicht mehr im Katalog (inzwischen geändert oder entfernt). Katalog neu laden und erneut versuchen."
     }
 
     private func delete(_ entry: CatalogFocus) {

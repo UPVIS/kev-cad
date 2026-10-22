@@ -262,10 +262,18 @@ struct VersionZeileView: View {
                         .font(v.meilenstein != nil ? .callout.weight(.semibold) : .callout)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .help([v.anzeigeTitel, v.zusatz].compactMap { $0 }.joined(separator: "\n"))
                     Spacer(minLength: 2)
                     Text("V\(v.nr)")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
+                }
+                if let zusatz = v.zusatz {  // automatischer Titel unter dem Agententitel, „Übernommener Stand“
+                    Text(zusatz)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 HStack(spacing: 4) {
                     Image(systemName: VersionenText.werSymbol(v.wer)).font(.caption2)

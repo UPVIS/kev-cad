@@ -250,7 +250,7 @@ final class Phase2ControllerTests: XCTestCase {
         // Abgelehnt: ERROR mit Meldung
         c.saveCatalogEntry(kind: "teil", json: draft.json(), ebene: .eigen)  // a-4
         c.handle([try message(#"{"type":"ERROR","reply_to":"a-4","message":"masse.d fehlt"}"#)])
-        XCTAssertEqual(m.catalogActivity, .failed("masse.d fehlt"))
+        XCTAssertEqual(m.catalogActivity, .failed("„rohr-edelstahl-33.7x2“ nicht gespeichert: masse.d fehlt"))
         c.saveCatalogEntry(kind: "teil", json: draft.json(), ebene: .mitgeliefert)
         if case .failed = m.catalogActivity {} else { XCTFail("mitgeliefert darf nicht gespeichert werden") }
         c.saveCatalogEntry(kind: "teil", json: Data("[1]".utf8), ebene: .eigen)
@@ -263,6 +263,88 @@ final class Phase2ControllerTests: XCTestCase {
         c.deleteCatalogEntry(kind: "teil", id: "x", ebene: .eigen)  // a-7 (a-6 war das Nachladen)
         c.handle([try message(#"{"type":"ACK","reply_to":"a-7","ok":false,"message":"nicht gefunden"}"#)])
         XCTAssertEqual(m.catalogActivity, .failed("nicht gefunden"))
+    }
+
+    /// Vorschläge freigeben (Kevin, 22.10.2026: sieben Freigaben ohne Wirkung und ohne Meldung). Eine gescheiterte
+    /// Freigabe bleibt sichtbar, auch wenn danach still nachgeladen wird; eine gespeicherte Freigabe, die der Katalog
+    /// nicht als frei zeigt, ist ein Fehler.
+    func testApprovalFailuresStayVisible() throws {
+        let c = try connectedController()
+        let m = c.model
+        let entries: [JSONValue] = [
+            ["id": "bowlingball-usbc", "art": "zukaufteil", "name": "Bowlingball", "hersteller": "unbekannt",
+             "mpn": "unbekannt", "masse": ["d": 217], "status": "vorgeschlagen", "ebene": "eigen"],
+            ["id": "blackmagic-pocket-6k-pro", "art": "kamera", "name": "Pocket 6K Pro", "bajonett": "canon-ef",
+             "sensor": ["typ": "Super 35", "b": 23.1, "h": 12.99], "status": "vorgeschlagen", "ebene": "eigen"],
+            ["id": "sigma-18-35", "art": "objektiv", "name": "Sigma 18-35", "brennweite": [18, 35],
+             "status": "vorgeschlagen", "ebene": "projekt"],
+        ]
+        /// CATALOG als Antwort auf `replyTo`; `freed` frei, `shadow` steht (weiter vorgeschlagen) in der Ebene projekt.
+        func catalog(_ replyTo: String, freed: Set<String> = [], shadow: String? = nil) throws -> IncomingEvent {
+            let items: [JSONValue] = entries.map { entry in
+                guard case .object(var o) = entry, let id = o["id"]?.stringValue else { return entry }
+                if freed.contains(id) { o["status"] = "frei" }
+                if id == shadow { o["ebene"] = "projekt" }
+                return .object(o)
+            }
+            let head: JSONValue = ["type": "CATALOG", "reply_to": .string(replyTo), "materials": [], "items": .array(items)]
+            return .message(try KernelMessage.decode(Frame(header: try JSONEncoder().encode(head))))
+        }
+        c.requestCatalog(query: nil, art: nil)  // a-1
+        c.handle([try catalog("a-1")])
+        XCTAssertEqual(m.catalog?.suggestionCount, 3)
+
+        // 1. Kernel lehnt ab: Meldung bleibt, auch wenn danach (still, nach einer Stückliste) nachgeladen wird
+        let kamera = try XCTUnwrap(m.catalog?.item("blackmagic-pocket-6k-pro"))
+        c.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(kamera.json), ebene: .eigen)  // a-2
+        c.handle([try message(#"{"type":"ACK","reply_to":"a-2","ok":false,"message":"sensor.b fehlt"}"#)])
+        let refused = "„blackmagic-pocket-6k-pro“ nicht freigegeben: sensor.b fehlt"
+        XCTAssertEqual(m.catalogActivity, .failed(refused))
+        c.handle([try catalog("a-77")])
+        XCTAssertEqual(m.catalogActivity, .failed(refused), "Nachladen löscht die Meldung nicht mehr")
+
+        // 2. Gespeichert, aber das Nachladen zeigt den Eintrag weiter als Vorschlag: nicht wirksam
+        c.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(kamera.json), ebene: .eigen)  // a-3
+        XCTAssertEqual(m.catalogActivity, .saving)
+        c.handle([try message(#"{"type":"ACK","reply_to":"a-3","ok":true,"message":""}"#)])  // lädt nach: a-4
+        XCTAssertEqual(m.catalogActivity, .saved(id: "blackmagic-pocket-6k-pro", message: nil))
+        c.handle([try catalog("a-50")])  // altes stilles Nachladen, vor dem Speichern gestellt: kein Fehlalarm
+        XCTAssertEqual(m.catalogActivity, .saved(id: "blackmagic-pocket-6k-pro", message: nil))
+        c.handle([try catalog("a-4", shadow: "blackmagic-pocket-6k-pro")])
+        guard case .failed(let text) = m.catalogActivity else { return XCTFail("\(m.catalogActivity)") }
+        XCTAssertTrue(text.contains("nicht wirksam") && text.contains("Ebene „Projekt“"), text)
+
+        // 3. Gespeichert und frei: kein Fehler
+        let kugel = try XCTUnwrap(m.catalog?.item("bowlingball-usbc"))
+        c.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(kugel.json), ebene: .eigen)  // a-5
+        c.handle([try message(#"{"type":"ACK","reply_to":"a-5","ok":true}"#)])  // a-6
+        c.handle([try catalog("a-6", freed: ["bowlingball-usbc"])])
+        XCTAssertEqual(m.catalogActivity, .saved(id: "bowlingball-usbc", message: nil))
+        XCTAssertEqual(m.catalog?.item("bowlingball-usbc")?.vorgeschlagen, false)
+
+        // 4. Keine Antwort: Meldung mit Grund
+        let saved = AppController.catalogTimeout
+        AppController.catalogTimeout = 0.2
+        defer { AppController.catalogTimeout = saved }
+        let objektiv = try XCTUnwrap(m.catalog?.item("sigma-18-35"))
+        c.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(objektiv.json), ebene: objektiv.ebene)  // a-7
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        guard case .failed(let timeout) = m.catalogActivity else { return XCTFail("\(m.catalogActivity)") }
+        XCTAssertTrue(timeout.hasPrefix("„sigma-18-35“ nicht freigegeben: Der Kernel hat nicht geantwortet"), timeout)
+
+        // 4b. Gespeichert, aber das Nachladen bleibt aus: nicht bestätigt (statt ewig „wird gespeichert“)
+        c.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(objektiv.json), ebene: objektiv.ebene)  // a-8
+        c.handle([try message(#"{"type":"ACK","reply_to":"a-8","ok":true}"#)])  // lädt nach: a-9, keine Antwort
+        XCTAssertEqual(m.catalogActivity, .saved(id: "sigma-18-35", message: nil))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        guard case .failed(let unconfirmed) = m.catalogActivity else { return XCTFail("\(m.catalogActivity)") }
+        XCTAssertTrue(unconfirmed.contains("nicht bestätigt"), unconfirmed)
+
+        // 5. Ohne Kernel: sofort eine Meldung
+        c.handle([.disconnected("weg")])
+        c.saveCatalogEntry(kind: "teil", json: Catalog.approvedJSON(objektiv.json), ebene: objektiv.ebene)
+        guard case .failed(let off) = m.catalogActivity else { return XCTFail("\(m.catalogActivity)") }
+        XCTAssertTrue(off.contains("nicht verbunden"), off)
     }
 
     func testCatalogWithoutKernelAndTimeout() throws {
