@@ -38,6 +38,11 @@ def szenario_text(e: dict[str, Any], detail: bool = False) -> str:
         zeilen.append(f"  - [{AMPEL.get(u['ampel'], u['ampel'])}] {u['text']}")
         if u.get("loesung"):
             zeilen.append(f"    Lösung: {u['loesung']}")
+    ab = e.get("ablauf")
+    if isinstance(ab, dict) and ab.get("stand") != "done":
+        zeilen.append("  " + ablauf_text(ab))
+    elif isinstance(ab, dict) and detail:
+        zeilen += ablauf_text(ab, urteile=False).split("\n")[1:]
     if detail:
         for k in e.get("kippen") or []:
             jr = k.get("je_richtung") or {}
@@ -88,3 +93,61 @@ def lauf_zeile(kurz: dict[str, Any] | None) -> str | None:
             kz.get("sicherheit") is not None else ""
         teile.append(f"{e.get('name')} {AMPEL.get(e.get('ampel'), e.get('ampel'))}{extra}")
     return "Statik: " + " · ".join(teile)
+
+
+def ablauf_text(ab: dict[str, Any], urteile: bool = True) -> str:
+    """Text für MCP ``dynamik``: Urteil, Antrieb, Kippen mit Handrechnung, Ladung, Rutschen, Kräfte, Rechenzeit."""
+    if not ab:
+        return ""
+    if ab.get("stand") == "laeuft":
+        return "Ablauf wird gerechnet (eigener Prozess)."
+    if ab.get("stand") != "done":
+        return f"Ablauf nicht gerechnet: {ab.get('meldung') or '?'}"
+    kz = ab.get("kennzahlen") or {}
+    an = ab.get("antrieb") or {}
+    z_ = [ab.get("text") or ""]
+    for u in (ab.get("urteile") or []) if urteile else []:
+        z_.append(f"  - [{AMPEL.get(u['ampel'], u['ampel'])}] {u['text']}")
+        if u.get("loesung") and u["ampel"] != "gruen":
+            z_.append(f"    Lösung: {u['loesung']}")
+    z_.append(f"  Antrieb: {an.get('koerper')}, {z(an.get('geschwindigkeit'), 2)} m/s, bremsen {an.get('bremsen')} "
+              f"({z(an.get('verzoegerung'), 1)} m/s²), Führung am "
+              f"{'Boden' if an.get('angriff') in (None, 'boden') else an.get('angriff')}")
+    kipp = [f"größter Kippwinkel {z(kz.get('kippwinkel_max'), 2)}°", f"Abheben {z(kz.get('abheben_max_mm'), 1)} mm"]
+    if kz.get("a_abheben") is not None:
+        kipp.append(f"hebt ab {z(kz['a_abheben'], 2)} m/s² ab (Kippreserve {z(kz.get('kippreserve'), 2)})")
+    if kz.get("v_abheben") is not None:
+        animiert = str(an.get("bremsen") or "").startswith("wie die Animation")
+        kipp.append(f"bei dieser Fahrt ab {z(kz['v_abheben'], 2)} m/s Höchstgeschwindigkeit" if animiert
+                    else f"bei dieser Bremsart ab {z(kz['v_abheben'], 2)} m/s")
+    z_.append("  Kippen: " + ", ".join(kipp))
+    h = ab.get("handrechnung") or {}
+    if h and kz.get("a_abheben_ohne_ladung") is not None:
+        ohne = kz.get("a_abheben_ohne_ladung")
+        abw = (f", Abweichung {z(100 * (ohne - h['a_kipp']) / h['a_kipp'], 1)} %" if ohne and h.get("a_kipp")
+               else "")
+        z_.append(f"  Plausibilität: Handrechnung {h.get('text')}; Simulation ohne Ladung hebt ab "
+                  f"{z(ohne, 2)} m/s² ab{abw}")
+    for L in kz.get("ladung") or []:
+        grenze = (f", springt ab {z(L['v_grenze'], 2)} m/s heraus" if L.get("v_grenze") is not None else
+                  (f", bleibt bis mindestens {z(L.get('v_grenze_bis'), 1)} m/s" if L.get("v_grenze_nie") else ""))
+        z_.append(f"  {L['name']}: {'bleibt' if L.get('bleibt') else 'springt heraus'}, Versatz "
+                  f"{z(L.get('versatz_max_mm'), 0)} mm, hebt {z(L.get('hebt_max_mm'), 0)} mm{grenze}")
+    if kz.get("rutschgrenze") is not None:
+        z_.append(f"  Rutschgrenze (blockierte Räder): {z(kz['rutschgrenze'], 1)} m/s² (μ = {z(kz.get('mu_rad'), 2)}), "
+                  f"Rutschreserve {z(kz.get('rutschreserve'), 2)}"
+                  + (f", Rutschweg {z(kz['rutschweg_mm'], 0)} mm über den Bremsweg von "
+                     f"{z(kz.get('bremsweg_mm'), 0)} mm hinaus" if kz.get("rutschweg_mm") else ""))
+    if kz.get("kontaktkraefte"):
+        z_.append("  Größte Kontaktkräfte: " + "; ".join(f"{k['paar'][0]} ↔ {k['paar'][1]} {z(k['max_n'], 0)} N"
+                                                        for k in kz["kontaktkraefte"][:5]))
+    ms = ab.get("ms") or {}
+    if ms:
+        schritte = (f", {ms['schritte']} Schritte à {z(ms.get('zeitschritt_ms'), 1)} ms" if ms.get("schritte")
+                    else "")
+        z_.append(f"  Rechenzeit: Ablauf {z(ms.get('ablauf'), 0)} ms ({z(ab.get('dauer'), 2)} s simuliert{schritte})"
+                  + (f", Suche {ms.get('varianten')} Varianten in {z(ms.get('suche'), 0)} ms" if ms.get("varianten")
+                     else ""))
+    if ab.get("animation"):
+        z_.append(f"  Zeitleiste: Animation „{ab['animation']}“ ({ab.get('bilder')} Bilder, {z(ab.get('fps'), 0)} fps)")
+    return "\n".join(z_)

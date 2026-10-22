@@ -163,6 +163,116 @@ public struct StatikKippen: Equatable, Sendable {
     }
 }
 
+/// Ablauf (Stufe 2, Dynamik mit MuJoCo) eines Szenarios: Stand, Ampel, Kennzahlen, Verlauf je Bild und
+/// Kontaktpfeile; abgespielt wird er als Animation `animation` (ANIM_DEF) in der Zeitleiste.
+public struct StatikAblauf: Equatable, Sendable {
+    public struct Ladung: Equatable, Sendable {
+        public var name: String
+        public var versatzMm: Double?
+        public var hebtMm: Double?
+        public var bleibt: Bool
+        public var vGrenze: Double?
+    }
+
+    /// Kontaktkraft in einem Bild: Angriffspunkt (Welt, mm) und Kraft (N), Paar der Körper.
+    public struct Pfeil: Equatable, Sendable {
+        public var punkt: SIMD3<Float>
+        public var kraft: SIMD3<Float>
+        public var paar: [String]
+    }
+
+    public var stand: String
+    public var ampel: StatikAmpel
+    public var text: String
+    public var animation: String?
+    public var meldung: String?
+    public var dauer: Double?
+    public var fps: Double
+    public var bilder: Int
+    public var geschwindigkeit: Double?
+    public var verzoegerung: Double?
+    public var bremsen: String?
+    public var kippreserve: Double?
+    public var aAbheben: Double?
+    public var aAbhebenOhneLadung: Double?
+    public var aKippHand: Double?
+    public var vAbheben: Double?
+    public var abhebenMaxMm: Double?
+    public var kippwinkelMax: Double?
+    public var rutschgrenze: Double?
+    public var rutschreserve: Double?
+    public var setztAuf: String?
+    public var ladung: [Ladung]
+    public var handrechnung: String?
+    public var zeit: [Double]
+    public var kipp: [Double]
+    public var abheben: [Double]
+    public var pfeile: [[Pfeil]]
+    public var msAblauf: Double?
+    public var msSuche: Double?
+    public var varianten: Int?
+
+    public var laeuft: Bool { stand == "laeuft" }
+    public var fertig: Bool { stand == "done" }
+
+    init(json j: JSONValue) {
+        stand = j["stand"]?.stringValue ?? "done"
+        ampel = StatikAmpel(rawValue: j["ampel"]?.stringValue ?? "") ?? .grau
+        text = j["text"]?.stringValue ?? ""
+        animation = j["animation"]?.stringValue
+        meldung = j["meldung"]?.stringValue
+        dauer = j["dauer"]?.doubleValue
+        fps = j["fps"]?.doubleValue ?? 50
+        bilder = j["bilder"]?.intValue ?? 0
+        let an = j["antrieb"]
+        geschwindigkeit = an?["geschwindigkeit"]?.doubleValue
+        verzoegerung = an?["verzoegerung"]?.doubleValue
+        bremsen = an?["bremsen"]?.stringValue
+        let k = j["kennzahlen"]
+        kippreserve = k?["kippreserve"]?.doubleValue
+        aAbheben = k?["a_abheben"]?.doubleValue
+        aAbhebenOhneLadung = k?["a_abheben_ohne_ladung"]?.doubleValue
+        aKippHand = k?["a_kipp_hand"]?.doubleValue
+        vAbheben = k?["v_abheben"]?.doubleValue
+        abhebenMaxMm = k?["abheben_max_mm"]?.doubleValue
+        kippwinkelMax = k?["kippwinkel_max"]?.doubleValue
+        rutschgrenze = k?["rutschgrenze"]?.doubleValue
+        rutschreserve = k?["rutschreserve"]?.doubleValue
+        setztAuf = k?["setzt_auf"]?.stringValue
+        ladung = (k?["ladung"]?.arrayValue ?? []).map {
+            Ladung(
+                name: $0["name"]?.stringValue ?? "", versatzMm: $0["versatz_max_mm"]?.doubleValue,
+                hebtMm: $0["hebt_max_mm"]?.doubleValue, bleibt: $0["bleibt"]?.boolValue ?? true,
+                vGrenze: $0["v_grenze"]?.doubleValue)
+        }
+        handrechnung = j["handrechnung"]?["text"]?.stringValue
+        let v = j["verlauf"]
+        zeit = v?["zeit"]?.doubles ?? []
+        kipp = v?["kipp"]?.doubles ?? []
+        abheben = v?["abheben"]?.doubles ?? []
+        pfeile = (j["pfeile"]?.arrayValue ?? []).map { bild in
+            (bild.arrayValue ?? []).compactMap { p in
+                guard let punkt = p["punkt"]?.vector3, let kraft = p["kraft"]?.vector3 else { return nil }
+                return Pfeil(punkt: punkt, kraft: kraft, paar: p["paar"]?.stringList ?? [])
+            }
+        }
+        msAblauf = j["ms"]?["ablauf"]?.doubleValue
+        msSuche = j["ms"]?["suche"]?.doubleValue
+        varianten = j["ms"]?["varianten"]?.intValue
+    }
+
+    /// Bild zur Zeit t (wie ANIM_DEF: Bild k bei k / fps).
+    public func bild(zur t: Double) -> Int {
+        guard bilder > 0 else { return 0 }
+        return min(max(Int((t * fps).rounded()), 0), bilder - 1)
+    }
+
+    /// Größte Kontaktkraft über alle Bilder (N), für den Maßstab der Pfeile.
+    public var kraftMax: Float {
+        pfeile.flatMap { $0 }.map { simd_length($0.kraft) }.max() ?? 0
+    }
+}
+
 public struct StatikSzenario: Identifiable, Equatable, Sendable {
     public var name: String
     public var art: String
@@ -177,6 +287,8 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
     public var staebe: [StatikStab]
     public var ueberhoehung: Float
     public var kippen: [StatikKippen]
+    /// Stufe 2: Ablauf (nur bei Szenarien mit Geschwindigkeit, Bremsen oder Animation).
+    public var ablauf: StatikAblauf?
 
     public var id: String { name }
 
@@ -194,6 +306,7 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
         staebe = (j["staebe"]?.arrayValue ?? []).map(StatikStab.init(json:))
         ueberhoehung = Float(j["ueberhoehung"]?.doubleValue ?? 1)
         kippen = (j["kippen"]?.arrayValue ?? []).map(StatikKippen.init(json:))
+        ablauf = j["ablauf"].flatMap { $0.objectValue == nil ? nil : StatikAblauf(json: $0) }
     }
 
     /// Urteile, die etwas zu sagen haben (rot, gelb, überdimensioniert, nicht gerechnet).

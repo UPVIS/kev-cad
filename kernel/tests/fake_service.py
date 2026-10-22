@@ -384,12 +384,16 @@ class FakeService:
                 "text": f"Bestand im Projekt „{self.project['name']}“:\n- ALFER-Rundrohr 12 × 1 (rohr-alfer-12x1): "
                         "2 ganze Stangen à 1000 mm; Reste: R-0001 430 mm"}
 
-    def bestand_eintragen(self, stock_id: str, ganze: Any = None, reste: list[Any] | None = None,
+    def bestand_eintragen(self, stock_id: str | None = None, ganze: Any = None, reste: list[Any] | None = None,
                           reste_entfernen: list[str] | None = None, stueck: Any = None,
                           mindestrest_mm: float | None = None, reste_ersetzen: bool = False,
-                          grund: str = "") -> dict[str, Any]:
+                          grund: str = "", **filament: Any) -> dict[str, Any]:
         self._record("bestand_eintragen", stock_id, ganze, reste, reste_entfernen, stueck, mindestrest_mm,
-                     reste_ersetzen, grund)
+                     reste_ersetzen, grund, **{k: v for k, v in filament.items() if v is not None})
+        if filament.get("material"):
+            return {"ok": True, "buchung": {"id": "B-0001", "art": "eintrag", "zusammenfassung": "1 Spule neu"},
+                    "aenderungen_text": [f"Filament PETG: Spule S-0001 {filament.get('spule') or ''}, "
+                                         f"{filament.get('gramm')} von 1.000 g dazu"], "spulen": []}
         if stock_id == "gibtsnicht":
             return {"ok": False, "error": "Lagerteil 'gibtsnicht' gibt es im Katalog nicht"}
         lines = []
@@ -416,6 +420,16 @@ class FakeService:
         return {"ok": True, "buchung": {"id": "B-0002", "art": "gebaut",
                                         "zusammenfassung": "2 Reste weg, 1 Rest neu (R-0004 144 mm)"},
                 "aenderungen_text": ["ALFER-Rundrohr 12 × 1 (rohr-alfer-12x1): Rest R-0002 (610 mm) weg"]}
+
+    def gedruckt_buchen(self, grund: str = "", platten: list[int] | None = None, spule: str | None = None,
+                        run: int | None = None) -> dict[str, Any]:
+        self._record("gedruckt_buchen", grund, platten, spule)
+        if not self.run_no:
+            return {"ok": False, "error": "Keine Druckvorschau: erst rechnen (run), dann „gedruckt“ buchen."}
+        return {"ok": True, "buchung": {"id": "B-0004", "art": "gedruckt",
+                                        "zusammenfassung": "188,8 g Filament verbraucht"},
+                "platten": platten or [1, 2], "filament_text": ["PETG: 188,8 g, davon 188,8 g aus S-0001"],
+                "aenderungen_text": ["Filament PETG: 188,8 g von Spule S-0001 verbraucht"]}
 
     def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
         self._record("buchung_rueckgaengig", buchung)
@@ -591,6 +605,34 @@ class FakeService:
         e = dict(statik_beispiel()["szenarien"][1], name=name)
         return {"ok": True, "run": self.run_no, "szenario": _szenario_auszug(e), "gezeigt": zeigen, "ms": 120.0,
                 "grenzen": statik_beispiel()["grenzen"], "vereinfachungen": []}
+
+    # Statik Stufe 2 -------------------------------------------------------------------------------------------------
+
+    def dynamik(self, name: str, geschwindigkeit: float | None = None, bremsen: Any = None, dauer: float | None = None,
+                neigung: float | None = None, richtung: Any = None, stoss: float | None = None,
+                animation: str | None = None, antrieb: str | None = None, angriff: Any = None,
+                fahrtrichtung: Any = None, lasten: list[dict[str, Any]] | None = None, suche: bool = True,
+                zeigen: bool = True, beschreibung: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel_ablauf
+        from kevcad_kernel.statik.laufzeit import _szenario_auszug
+
+        self._record("dynamik", name, geschwindigkeit, bremsen)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Statikmodell: erst run aufrufen."}
+        b = statik_beispiel_ablauf()
+        e = dict(b["szenarien"][2], name=name)
+        return {"ok": True, "run": self.run_no, "szenario": _szenario_auszug(e), "ablauf": e["ablauf"],
+                "animation": e["ablauf"]["animation"], "gezeigt": zeigen, "befunde": [],
+                "grenzen": b["grenzen"], "vereinfachungen": [], "ms": {"gesamt": 1800.0, "prozess": 1500.0}}
+
+    def dynamik_grenze(self, ohne: str = "beides", bremsen: Any = "abrupt", geschwindigkeit: float = 1.0,
+                       name: str | None = None) -> dict[str, Any]:
+        res = self.dynamik(name or "Grenze", geschwindigkeit=geschwindigkeit, bremsen=bremsen)
+        if not res.get("ok"):
+            return res
+        return {**res, "grenzen_suche": {"ladung": [{"name": "Bowlingball", "v_grenze": 1.12}],
+                                         "kippen": {"v_abheben": 0.29, "a_abheben": 2.46, "a_kipp_hand": 14.1,
+                                                    "a_abheben_ohne_ladung": 13.92}}}
 
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 

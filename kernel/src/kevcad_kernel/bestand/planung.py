@@ -13,9 +13,13 @@ Bestand des Projekts und gibt eine erweiterte Kopie zurück. Die bisherigen Feld
 - ``stueckgut``: je Schraube, Mutter, Scheibe gebraucht, aus dem Bestand, zu kaufen;
 - ``zukauf_bestand``: je Stücklistenzeile eines Zukaufteils (auch Kamera, Objektiv, Kamerazubehör) gebraucht, aus dem
   Bestand, zu kaufen (die Einkaufsliste führt nur ``kaufen``);
-- ``einkaufsliste``, ``einkauf_summe``, ``einkauf_hinweis``, ``bestand_stand``, ``fehlt``.
+- ``einkaufsliste``, ``einkauf_summe``, ``einkauf_hinweis``, ``bestand_stand``, ``fehlt``;
+- ``filament_bestand`` (Strang „Bestand Stufe 2“, nur wenn das Projekt Filament führt): je Material Gramm im Bestand,
+  Spulengröße und Preis je Spule (``filament.bom_bestand``). Die Spulen zum Kaufen rechnet die Einkaufsliste mit der
+  Druckvorschau desselben Laufs (``einkauf.filament_kauf``, in der App ``FilamentBestand.kauf``); ``einkaufsliste``,
+  ``einkauf_summe`` und ``fehlt`` bleiben ohne Filament, weil die Druckvorschau erst nach der Stückliste kommt.
 
-Ohne Bestandsdatei ist alles zu kaufen. Druckteile und Eigenteile stehen (noch) nicht auf der Einkaufsliste.
+Ohne Bestandsdatei ist alles zu kaufen. Eigenteile stehen nicht auf der Einkaufsliste.
 """
 
 from __future__ import annotations
@@ -35,7 +39,8 @@ from kevcad_kernel.bom import (
 )
 from kevcad_kernel.catalog import KLEINTEILE, STANGENWARE, STUECKGUT_ZUKAUF, number
 
-from .datei import einstellungen, mindestrest, zahl
+from .datei import einstellungen, fuehrt_filament, mindestrest, zahl
+from .filament import bom_bestand as filament_bom_bestand
 from .zuschnitt import ZEITLIMIT_S, plane_1d, plane_2d, platzierungen
 
 
@@ -389,6 +394,11 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
                 "einkaufsliste": einkauf,
                 "einkauf_summe": round(sum(priced), 2) if priced else None, "einkauf_hinweis": note,
                 "bestand_stand": stand if not fehler else None, "fehlt": bool(einkauf)})
+    # Filament (Strang „Bestand Stufe 2“): nur wenn das Projekt Filament führt
+    if not fehler and fuehrt_filament(bestand):
+        out["filament_bestand"] = filament_bom_bestand(bestand, lines, katalog)
+    else:
+        out.pop("filament_bestand", None)
     return Planung(out, verbrauch, statistik)
 
 

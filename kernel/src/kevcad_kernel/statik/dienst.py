@@ -19,7 +19,10 @@ def auftrag(auftrag_json: str) -> str:
 
     t0 = time.perf_counter()
     try:
-        erg = rechne_auftrag(json.loads(auftrag_json))
+        a = json.loads(auftrag_json)
+        erg = rechne_auftrag(a) if (a.get("szenario") or a.get("neu") or not a.get("szene")) else {"stand": "done"}
+        if a.get("szene") is not None and erg.get("stand") == "done":
+            erg.update(szene_schreiben(a["szene"]))
     except ValueError as exc:
         erg = {"stand": "failed", "meldung": str(exc)}
     except Exception as exc:  # noqa: BLE001 - als Meldung zurück, nicht als Absturz des Auftrags
@@ -32,6 +35,22 @@ def auftrag(auftrag_json: str) -> str:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(erg, f, ensure_ascii=False)
     return pfad
+
+
+def szene_schreiben(auftrag: dict) -> dict:
+    """Szene für den Ablauf (S2) aus dem Modell des letzten Laufs als Datei (``statik/dynamik/szene.py``); die
+    Laufzeit gibt sie an den Ablauf-Prozess weiter und löscht sie danach."""
+    from kevcad_kernel.statik.anbindung import LETZTER
+    from kevcad_kernel.statik.dynamik.szene import baue, schreibe
+
+    if LETZTER.modell is None:
+        raise ValueError("Noch kein Statikmodell: erst run aufrufen.")
+    meta, felder = baue(LETZTER, {**auftrag, "run": LETZTER.run})
+    fd, pfad = tempfile.mkstemp(prefix="kevcad-szene-", suffix=".npz")
+    os.close(fd)
+    schreibe(meta, felder, pfad)
+    return {"szene_datei": pfad, "szene_run": LETZTER.run, "szene_ms": meta.get("ms"),
+            "szene_koerper": len(meta["koerper"]), "antrieb": meta.get("antrieb")}
 
 
 def aufwaermen() -> None:

@@ -2,7 +2,8 @@
 fehlgeschlagen, dazu statics.json mit den erwarteten Werten für den Swift-Decoder.
 
 Aufruf (im Ordner kernel):  .venv/bin/python tools/make_statik_fixtures.py
-Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/statics*.frame und statics.json. Eigene Dateien, damit stream.bin
+Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/statics*.frame und statics.json (seit Stufe 2 auch
+statics_ablauf.frame mit einem Ablauf). Eigene Dateien, damit stream.bin
 und fixtures.json unverändert bleiben.
 """
 
@@ -14,7 +15,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from kevcad_kernel.protocol import check_statics_message, encode_frame, pack_statics, statik_beispiel  # noqa: E402
+from kevcad_kernel.protocol import (  # noqa: E402
+    check_statics_message,
+    encode_frame,
+    pack_statics,
+    statik_beispiel,
+    statik_beispiel_ablauf,
+)
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
 
@@ -28,6 +35,8 @@ def main() -> None:
                                               seq=72)),
         ("statics_failed", pack_statics({"stand": "failed", "meldung": "Noch kein Statikmodell: erst run aufrufen.",
                                          "szenarien": []}, run=8, seq=73)),
+        # Stufe 2: Szenario mit Ablauf (MuJoCo), Verlauf und Kontaktpfeilen
+        ("statics_ablauf", pack_statics(statik_beispiel_ablauf(), run=9, zeigen=True, seq=74)),
     ]
     erwartet = {}
     for name, head in frames:
@@ -38,7 +47,13 @@ def main() -> None:
             "run": head["run"], "stand": head["stand"], "aktiv": head["aktiv"], "zeigen": head["zeigen"],
             "szenarien": [{"name": e["name"], "ampel": e["ampel"], "urteile": len(e["urteile"]),
                            "teile": [t["name"] for t in e["teile"]], "staebe": [s["name"] for s in e["staebe"]],
-                           "sicherheit": e["kennzahlen"].get("sicherheit"), "ueberhoehung": e["ueberhoehung"]}
+                           "sicherheit": e["kennzahlen"].get("sicherheit"), "ueberhoehung": e["ueberhoehung"],
+                           **({"ablauf": {"stand": e["ablauf"]["stand"], "animation": e["ablauf"]["animation"],
+                                          "bilder": e["ablauf"]["bilder"],
+                                          "kippreserve": e["ablauf"]["kennzahlen"].get("kippreserve"),
+                                          "pfeile": [len(b) for b in e["ablauf"]["pfeile"]],
+                                          "ladung": [x["name"] for x in e["ablauf"]["kennzahlen"].get("ladung") or []]}}
+                              if e.get("ablauf") else {})}
                           for e in head["szenarien"]],
             "grenzen": len(head["grenzen"]),
         }

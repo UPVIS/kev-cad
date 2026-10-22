@@ -1,4 +1,4 @@
-# Statik in Kev CAD (Stufe 1)
+# Statik in Kev CAD (Stufe 1 und 2)
 
 Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, und ob sie unnötig schwer ist
 (PLAN-STATIK.md, Strang „Statik Stufe 1“). Das Ergebnis steht im Laufergebnis (eine Zeile „Statik: …“), ausführlich
@@ -11,7 +11,8 @@ Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, 
 | S0, jeder Lauf | Schwerpunkt, Kippen je Kante der Standfläche (Reserve = Standmoment / Kippmoment) und je Richtung (Kippwinkel, Beschleunigung, bei der es kippt), Rutschen über den Reibwert gegen den Boden, lose aufliegende Teile, Schraubenlast grob | Standsicherheit in jedem Szenario |
 | S0, jeder Lauf | Bauteil mit Last als Kragträger: Schnitte durch das echte Teil zwischen Einspannung und Lastpunkt, Biegung, Längskraft, Torsion | Halter, Konsolen, Druckteile |
 | S1, jeder Lauf | Stabwerk mit PyNite: Rohre und Profile aus dem Lager als Stäbe (Querschnitt aus dem Katalog), Verbinder starr, Gelenke aus den Zwangsbedingungen; Spannung, Durchbiegung, Knicken (Eigenwerte), Auflagerkräfte | Rahmen, Gestelle, Tische, Rigs |
-| später | S2 MuJoCo (Dynamik, Ball springt, Rig kippt im Ablauf), S3 Volumen-FEM (Gmsh, scikit-fem) | nicht in Stufe 1 |
+| S2, auf Anfrage und für Abläufe aus model.py nach jedem Lauf | Ablauf mit MuJoCo (Starrkörper, Gelenke, Kontakt, Reibung) im eigenen Prozess: Kippen und Abheben, Ladung (Ball) bleibt oder springt heraus, Grenzgeschwindigkeit, Rutschgrenze, Kontaktkräfte | Schieben, Bremsen, Anprall, Fahrt einer Animation |
+| später | S3 Volumen-FEM (Gmsh, scikit-fem) | nicht in Stufe 1 und 2 |
 
 ## Szenarien in model.py
 
@@ -67,10 +68,52 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                            # eigen
   (Balken, linear-elastisch, Verbinder starr, Schrauben ohne Vorspannung, Werkstoffwerte Richtwerte), kein Ersatz für
   einen Statiker bei sicherheitsrelevanten Dingen (Personen, Lasten über Kopf, Fahrzeuge).
 
+## Ablauf (Stufe 2, Dynamik)
+
+„Was passiert, wenn ich mit 1 m/s schiebe und abrupt bremse?“ rechnet Kev CAD als Ablauf über der Zeit: MuJoCo mit
+Starrkörpern, in einem eigenen Prozess (nie im Rechenprozess von model.py), in ein bis wenigen Sekunden samt Suche nach
+den Grenzen.
+
+```python
+st.szenario("Bremsen aus 1 m/s", geschwindigkeit=1, bremsen="abrupt")      # rechnet nach jedem Lauf im Hintergrund
+st.szenario("Vollbremsung", geschwindigkeit=1.5, bremsen=6)                # Verzögerung in m/s²
+st.szenario("Kante", geschwindigkeit=0.5, bremsen="anprall")               # Stillstand in 0,02 s (gegen ein Hindernis)
+st.szenario("Fahrt", animation="Fahrt")                                    # Sollbahn aus der Animation „Fahrt“
+st.szenario("Rampe", geschwindigkeit=0.5, neigung=5, richtung="+x")        # auf geneigtem Boden
+```
+
+- **Szene aus dem Modell**: Teile, die fest verbunden sind (`verbinde` mit Schraube, Klemmung, Steck, Formschluss,
+  Kleben; Gelenke mit `bereich` gelten als festgestellt), sind ein Körper. Frei laufen Gelenke ohne `bereich`
+  (Laufrolle auf der Querstange) und Räder (Achse aus `anim.rolle(…, achse=…)`, sonst Teile mit Rad/Rolle im Namen
+  auf dem Boden). `verbinde(ball, boden, art="aufliegen")` lässt den Ball frei liegen; liegt ein Teil frei auf einem
+  anderen und klemmt nichts es ein, ist es Ladung. Masse und Trägheit aus der Geometrie, Reibung aus `reibwerte.json`.
+- **Antrieb**: Der schwerste Körper auf Rädern (oder `antrieb=`) folgt der Sollbahn: fährt mit `geschwindigkeit`,
+  bremst nach 0,3 s mit `bremsen` (Zahl in m/s², `"abrupt"` = Stillstand in 0,1 s, `"anprall"` = in 0,02 s). Die
+  Führung greift am Boden an (wie blockierte Räder, ungünstigster Fall fürs Kippen nach vorn), sonst ist er frei:
+  er kann kippen, abheben, ausweichen.
+- **Urteile** (Befunde `statik_dyn_*`): `dyn_kippen` mit Kippreserve = Verzögerung, ab der er hinten abhebt (über 2 mm)
+  / Verzögerung im Szenario (rot unter 1, gelb unter 1,5), „fällt zurück“ oder „kippt um“ und was aufsetzt;
+  `dyn_ladung` (der Ball bleibt, bleibt knapp oder springt heraus, mit der Geschwindigkeit, ab der er herausspringt);
+  `dyn_rutschen` (mit blockierten Rädern rutscht er ab μ · g). Dazu die **Handrechnung** a = g · b / h gegen die
+  Simulation ohne Ladung bei anhaltender Verzögerung (Plausibilität, typisch innerhalb weniger Prozent).
+- **Werkzeuge**: `dynamik(name, geschwindigkeit, bremsen, …)` und `dynamik_grenze(ohne="ball"|"kippen"|"beides",
+  bremsen="abrupt")`; `szenario_rechnen(…, dynamik=True)` ist dasselbe. Kevin sieht den Ablauf im Statik-Abschnitt
+  („Ablauf zeigen“) und als Animation „Ablauf: <Name>“ in der Zeitleiste (`animation_abspielen`), mit Kontaktkräften als
+  Pfeilen.
+- **Grenzen, immer dazusagen**: Starrkörper (keine Verformung, kein Federn der Rohre), Stöße ohne Rückprall, Reibung
+  nach Coulomb mit einem Wert je Paarung (fehlt die Paarung im Katalog: 0,3 angenommen), Räder ohne Lagerreibung,
+  angenommene Massen (Teile ohne Material: 1 g/cm³). Die Grenzgeschwindigkeit hängt stark an Reibwert und Masse der
+  Ladung; „abrupt“ ist eine Annahme (0,1 s).
+
 ## Was die Statik braucht
 
 - Materialien mit `mechanik` im Katalog (KATALOG.md, Abschnitt „Mechanik“). Ohne Werte: „nicht nachgewiesen“, nie
-  Werte erfinden; fehlt etwas, Kevin fragen und ggf. mit `material_define` vorschlagen (Quelle angeben).
+  Werte erfinden; fehlt etwas, Kevin fragen und ggf. mit `material_define` vorschlagen (Quelle angeben). Seit
+  22.10.2026 haben auch Multiplex, MDF, Spanplatte, Messing, Kupfer und alle Druckmaterialien außer Harz Werte (PA
+  vorsichtig nass); Stahl auf Beton haftet mit 0,2.
+- Gewindeeinsätze in Druckteilen: den Einsatz als Teil zeigen (Name mit „Gewindeeinsatz“, z. B. „Halter/Gewindeeinsatz
+  M3 1“) und in `verbinde(…, art="schraube", mit=[Schraube, Einsatz])` nennen. Dann stellt S0 die Zugkraft je Schraube
+  gegen die Auszugkraft aus dem Katalog (`einsatz_auszug`: M3 und M6 in PLA und PETG belegt, M4 und M5 nicht), Ziel 4.
 - Verbindungen über `verbinde` und Gelenke (Teile über Bedingungen setzen): Schraube, Klemmung, Steck, Formschluss,
   Kleben gelten als fest, Aufliegen als gelenkig; Dreh- und Schiebegelenke geben die Freiheit frei. Ohne Bedingung
   zählen Berührung (fest) und Spiel (gesteckt, fest).

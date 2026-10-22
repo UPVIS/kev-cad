@@ -86,9 +86,52 @@ Entscheidungen, die beim Bauen dazukamen:
 | T12 | Leichtere oder stärkere Lagerteile nur aus dem Inventar und nur desselben Werkstoffs; geschätzt über Widerstandsmoment, Fläche und Steifigkeit, die aussichtsreichsten mit dem ganzen Stabwerk nachgerechnet | Inventar-Regel; Fügen und Optik bleiben gleich; schnell |
 | T13 | Kugeln und Walzen, die frei rollen, nehmen nicht an Kippen und Rutschen teil (das zeigt S2) | Sonst hieße es „Ball kippt“ |
 
+Werkstoffdaten (T6, Strang „Bestand Stufe 2“, 22.10.2026): Mechanik für Multiplex Birke, MDF, Spanplatte P2, Messing,
+Kupfer und die Druckmaterialien ABS, ASA, TPU 95A, PC, PA (nass), PA-CF, PLA-CF; Reibwert Stahl auf Beton 0,2 (statt
+der Annahme 0,3); Auszugkraft von Gewindeeinsätzen (`einsatz_auszug`, M3 und M6 in PLA und PETG) als Nachweis in S0
+(Schraubenlast im Druckteil, Ziel 4, `statik/s0.einsatz_nachweis`, Urteil in `bewertung`). Werte, Quellen und Lücken
+in KATALOG.md. Offen: M4 und M5 (keine belegten Auszugkräfte), Siebdruckplatte, Querkontraktion der Buntmetalle,
+feuchte Werte für PA-CF, Einfluss von Wänden und Füllung auf den Einsatz.
+
 Naht für S2 und S3: `statik.NAHT` nennt die Stufen; beide setzen auf `modell.StatikModell` (Teile mit Masse und
 Schwerpunkt, Starrkörper, Anschlüsse mit Gelenkart und Achse, Lager) und `szenario.Szenario` (Beschleunigungsfeld,
 Lasten) auf und liefern Urteile im Format von `bewertung.urteil`, die `rechnen.rechne_alles` wie S0/S1 in Ampel,
 Befunde und `STATICS` übernimmt. Offen für S2: Ablauf (Bremsen aus 1 m/s, springt der Ball aus dem Schieber) als
 Animation, Kontaktkräfte, CoACD-Kollisionsformen. Offen für S3: Volumen-FEM für Druckteile und Verbinder (statt
 Kragträger und starrer Verbinder), von Mises als Farbverlauf auf dem Netz.
+
+## Stand Stufe 2 (T-C; Zweig `statik2`, 22.10.2026)
+
+Umgesetzt in `kernel/src/kevcad_kernel/statik/dynamik/` (Übersicht im Docstring von `__init__.py`), API
+`st.szenario(…, geschwindigkeit=, bremsen=, dauer=, animation=, antrieb=, angriff=, fahrtrichtung=)` (additiv), MCP
+`dynamik`, `dynamik_grenze`, `szenario_rechnen(…, dynamik=True)`, STATICS mit Feld `ablauf` je Szenario (PROTOCOL.md,
+„Ablauf (Stufe 2)“), Animation „Ablauf: <Name>“ über das vorhandene ANIM_DEF, App: Ablauf im Statik-Abschnitt, „Ablauf
+zeigen“, Kontaktkräfte als Pfeile. MuJoCo 3.16 (Apache-2.0) und CoACD 1.0 (MIT) per `uv add`.
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| T14 | Der Rechenprozess baut nur die Szene (Datei, unter einer Sekunde); MuJoCo und CoACD laufen in einem eigenen Prozess (`python -m kevcad_kernel.statik.dynamik.prozess`), immer nur einer zugleich, Varianten mit `mujoco.rollout` auf höchstens 4 Fäden | model.py bleibt ungestört, ein abstürzender Ablauf reißt nichts mit, der Mac bleibt bedienbar |
+| T15 | Starrkörper: fest sind `verbinde` mit Schraube, Klemmung, Steck, Formschluss, Kleben samt `mit`; Gelenke mit `bereich` gelten als festgestellt (Klemmen, Kopf); frei laufen Gelenke ohne `bereich` und Räder (Achse aus `anim.rolle(…, achse=…)`, sonst Rad/Rolle im Namen und Zylinderachse); `aufliegen` verbindet nicht, außer andere Teile klemmen das Teil ein; Teile ohne jede Bedingung hängen wie in Stufe 1 an dem, was sie berühren | Fest verschraubte Baugruppen werden ein Körper (Kugelschieber: 132 Teile → 8 Körper), Einstellgelenke sind im Betrieb geklemmt |
+| T16 | Kollisionsformen je Teil: Kugel (Grundform), Drehteil (Stapel aus Kegelstümpfen, die Einschnürung bleibt), Zylinder für Laufflächen von Rädern, sonst konvexe Hülle; CoACD nur, wo eine Mulde zählt (Punkte eines Nachbarkörpers in der Hülle, ohne das Teil zu berühren), zwischengespeichert je Formschlüssel unter `~/Library/Caches/de.upvis.kevcad/dynamik/coacd` | Gegen den Boden ist die Hülle exakt; die Hülle der Laufrolle wäre an der Einschnürung 5,8 mm zu dick, der Ball läge falsch |
+| T17 | Antrieb: der schwerste Körper auf Rädern (oder `antrieb=`) folgt einer Sollbahn (fahren mit `geschwindigkeit`, nach 0,3 s bremsen; `"abrupt"` = Stillstand in 0,1 s, `"anprall"` = 0,02 s; oder die Bahn einer Animation), geführt von einem Regler mit Vorsteuerung am Boden unter dem Schwerpunkt, quer, senkrecht und in der Drehung frei; Füße des geschobenen Körpers gleiten reibungsfrei | Ungünstigster Fall fürs Kippen nach vorn (wie blockierte Räder), deckt sich mit der Handrechnung a = g·b/h; ohne Vorsteuerung schwingt der Regler über (6 % zu früh), ohne reibungsfreie Füße hüpfen gleitende Füße auf den weichen Kontakten |
+| T18 | Urteile `dyn_kippen` (Kippreserve = Verzögerung, ab der er hinten über 2 mm abhebt, durch die Verzögerung im Szenario), `dyn_ladung` (Versatz über die halbe Größe oder am Ende über ein Fünftel: springt heraus), `dyn_rutschen` (μ·g mit blockierten Rädern); Grenzen über eine k-fache Teilung mit Rollouts (8 Werte, dann je Kriterium 4, drei Runden); Plausibilität: Simulation ohne Ladung bei anhaltender Verzögerung gegen g·b/h | Gleiche Ampel wie Stufe 1 (Reserve 1 und 1,5), Zahlen statt Ja/Nein, Kontrolle gegen eine Handrechnung bei jedem Ablauf |
+| T19 | Ergebnis als gewöhnliche Animation (ANIM_DEF „Ablauf: <Name>“, Bilder genau auf k/fps); im Szenario weichen Kippen und Rutschen aus S0 den Urteilen des Ablaufs, die Festigkeit rechnen S0/S1 mit der größten Verzögerung als ruhender Last | Kein neues Protokoll zum Abspielen, Video und Kamera wie bei jeder Animation |
+| T20 | Abläufe aus model.py rechnet die Laufzeit nach jedem Lauf im Hintergrund (STATICS erst „läuft“, dann „done“); Ergebnisse eines überholten Laufs verfallen | Kevin sieht den Ablauf ohne Nachfrage, der Lauf wartet nie darauf |
+
+Nachweis am Kugelschieber (Kopie von „Kugelschieber Variante B“, 22.10.2026): Bremsen aus 1 m/s, abrupt (10 m/s²):
+der Wagen hebt hinten 16 bis 17 mm ab (1,7°) und fällt zurück, die Fangrolle setzt auf dem Boden auf; er hebt schon ab
+2,5 m/s² ab (Kippreserve 0,25), weil der Ball beim Bremsen auf die tief liegende Fangrolle drückt, bei abruptem Bremsen
+schon ab 0,29 m/s. Der Ball bleibt knapp im Schieber (steigt 30 mm an der Fangrolle hoch) und springt ab 1,12 m/s
+heraus. Handrechnung ohne Ball a = g·b/h = 9,81 · 169 / 118 = 14,1 m/s², Simulation ohne Ball 13,9 m/s² (−1,3 %).
+Rutschgrenze mit blockierten Rädern 5,9 m/s² (EPDM auf Beton, μ = 0,6).
+
+Offen für S3 und später:
+
+- S3 wie geplant (Gmsh, scikit-fem), dazu die Kontaktkräfte aus S2 als Lastfall für S1/S3 (Ball an der Fangrolle
+  rund 100 N auf Schlitten und Querstange).
+- Rückprall je Materialpaarung (Stöße sind vollplastisch), Rollwiderstand, Lagerreibung der Laufrollen, federnde Stäbe
+  (die Seitenstangen federn in Wirklichkeit).
+- Befunde `statik_dyn_*` stehen in STATICS und im Ergebnis von `dynamik`, noch nicht in der Prüfung (CHECK) des Laufs.
+- Massen aus dem Katalog statt angenommen (Bowlingball 5,3 kg bei 1 g/cm³ statt 6 bis 7,3 kg, Kamera); die
+  Grenzgeschwindigkeit des Balls hängt stark an Masse und Reibwert Ball/Boden (angenommen 0,3).
+- Kontaktpfeile auch im Video; Schieben am Griff als eigene Bremsart neben `angriff=` (Höhe in mm).

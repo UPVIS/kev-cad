@@ -806,3 +806,42 @@ an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `a
 - `kippen[i].je_richtung`: Neigung in Grad bzw. waagrechte Beschleunigung in m/s², bei der die Gruppe kippt.
 
 App → Kernel: nichts. Die App wählt Szenarien selbst; neue Szenarien rechnet der Agent mit MCP `szenario_rechnen`.
+
+### Ablauf (Stufe 2, additiv)
+
+Szenarien mit Geschwindigkeit, Bremsen oder Animation (`st.szenario(…, geschwindigkeit=1, bremsen="abrupt")`, MCP
+`dynamik`) rechnet der Kernel zusätzlich als Ablauf mit MuJoCo in einem eigenen Prozess (`statik/dynamik/`). Abläufe aus
+model.py kommen nach jedem Lauf im Hintergrund: erst `STATICS` mit `ablauf.stand: "laeuft"`, einige Sekunden später
+erneut mit `"done"` (oder `"failed"` mit `meldung`). Das Szenario trägt dann die Urteile des Ablaufs (`dyn_kippen`,
+`dyn_ladung`, `dyn_rutschen`; Kippen und Rutschen der Stufe S0 entfallen) und ein Feld `ablauf`:
+
+```json
+{"stand": "done", "ampel": "rot", "text": "Bremsen aus 1 m/s: rot – Rollwagen kippt nach vorn (hebt 17 mm ab), …",
+ "animation": "Ablauf: Bremsen aus 1 m/s", "dauer": 1.6, "fps": 50.0, "bilder": 81, "meldung": null,
+ "antrieb": {"koerper": "Rollwagen mit …", "geschwindigkeit": 1.0, "verzoegerung": 10.0,
+             "bremsen": "abrupt (Stillstand in 0,1 s)", "angriff": "boden"},
+ "kennzahlen": {"kippreserve": 0.25, "a_abheben": 2.46, "abheben_max_mm": 16.6, "kippwinkel_max": 1.68,
+                "a_kipp_hand": 14.1, "a_abheben_ohne_ladung": 13.92, "v_abheben": 0.29, "rutschgrenze": 5.89,
+                "rutschreserve": 0.59, "setzt_auf": "Fangrolle",
+                "ladung": [{"name": "Bowlingball", "versatz_max_mm": 46.4, "hebt_max_mm": 30.5, "bleibt": true,
+                            "v_grenze": 1.12}], "kontaktkraefte": [{"paar": ["…", "…"], "max_n": 97.9}]},
+ "handrechnung": {"b_mm": 169.3, "h_mm": 117.8, "a_kipp": 14.1, "text": "a = g · b / h = …"},
+ "verlauf": {"zeit": [], "kipp": [], "abheben": [], "weg": [], "fuehrung": [],
+             "ladung": {"Bowlingball": {"laengs": [], "hebt": []}}, "kraefte": {"A ↔ B": []}},
+ "pfeile": [[{"punkt": [x, y, z], "kraft": [fx, fy, fz], "paar": ["A", "B"]}]],
+ "ms": {"ablauf": 97.0, "suche": 1250.0, "varianten": 56, "gesamt": 1470.0}}
+```
+
+- `verlauf` und `pfeile` haben je Bild einen Eintrag (`bilder`, Bild k bei k / `fps`); `pfeile` sind die größten
+  Kontaktkräfte des Bilds (N, Welt; die Kraft wirkt auf den zweiten Körper des Paars), die App zeichnet sie, solange die
+  Zeitleiste die Animation `animation` zeigt. Urteile tragen zusätzlich `kurz` (Kurztext für die Liste).
+- `kennzahlen.kippreserve` = Verzögerung, ab der der geschobene Körper hinten abhebt (über 2 mm) / Verzögerung im
+  Szenario; `a_kipp_hand` die Handrechnung g · b / h, `a_abheben_ohne_ladung` die Simulation ohne Ladung bei anhaltender
+  Verzögerung (Plausibilität); `ladung[i].v_grenze` die Geschwindigkeit, ab der die Ladung bei dieser Bremsart
+  herausspringt.
+- Den Ablauf spielt die vorhandene Zeitleiste ab: Der Kernel schickt die Lagen als gewöhnliches `ANIM_DEF` mit dem Namen
+  `ablauf.animation` (zusätzliches Feld `ablauf: true`, alle Teile der bewegten Körper). Der nächste Lauf entfernt es
+  wie jede Animation (`ANIM_REMOVE`). Kurzfassung im `CHECK`: `ablauf` mit `stand`, `ampel`, `text`, `animation` und
+  den wichtigsten `kennzahlen`.
+- Packen und Prüfen wie oben (`check_statics_message` prüft `ablauf`), Beispiel `statik_beispiel_ablauf`, Testdatei
+  `statics_ablauf.frame` aus `tools/make_statik_fixtures.py`.

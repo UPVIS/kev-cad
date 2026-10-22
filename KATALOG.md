@@ -63,6 +63,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `preis_quelle`, `preis_stand` | wenn Preis | Herkunft, Monat |
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
 | `druckbar` | nein | `true` für Materialien, aus denen 3D-Druckteile entstehen dürfen (PLA, PETG, ABS, ASA, TPU, PA, Harz …) |
+| `spule_g` | nein | Druckmaterialien: g Filament je Kaufspule für die Einkaufsliste (BESTAND.md, „Filament“); ohne Angabe 1000 |
 | `nachgiebig` | nein | `true` für weiche Werkstoffe (Schaum, Gummi, TPU, Gurtband): Die Prüfung meldet Überlappungen bis zur halben Dicke nur als „verformt“ (Hinweis) und lässt sie bei der Montage nicht als Hindernis zählen |
 | `mechanik` | nein | Werkstoffkennwerte für die Statik (Abschnitt „Mechanik“); ohne sie rechnet die Statik das Teil nicht nach und sagt es |
 | `hinweis` | nein | Text (z. B. wofür das Material gedacht ist) |
@@ -95,9 +96,66 @@ Mitgeliefert mit Mechanik (Stand 2026-10): Stahl S235, S355 (DIN EN 10025-2), St
 Edelstahl 1.4301 und 1.4404 (DIN EN 10088-2), Aluminium EN AW-6060 T66 (DIN EN 755-2) und EN AW-5754 O/H111
 (DIN EN 485-2), Gusseisen EN-GJL-250 (DIN EN 1561), Nadelholz als C24 und Buche/Eiche als D30 (DIN EN 338:2016),
 OSB/3 (DIN EN 12369-1), PLA (Bambu Lab PLA Basic TDS V2.0), PETG (Bambu Lab PETG HF TDS V1.0), Schrauben 8.8 (DIN EN
-ISO 898-1) und A2-70 (DIN EN ISO 3506-1). Ohne Mechanik bleiben Messing, Kupfer, Multiplex, Siebdruckplatte, MDF,
-Spanplatte, die übrigen Druckmaterialien und die Kunststoffe; neu ist das Material `beton` (Boden, Dichte nach DIN EN
-1991-1-1) als Untergrund.
+ISO 898-1) und A2-70 (DIN EN ISO 3506-1); neu ist das Material `beton` (Boden, Dichte nach DIN EN 1991-1-1) als
+Untergrund.
+
+Ergänzt im Strang „Bestand Stufe 2“ (22.10.2026, Stand 2026-10, jede Quelle im Eintrag):
+
+| Material | Werte (N/mm²) | Quelle | Annahme |
+|---|---|---|---|
+| Multiplex Birke | E 10 335, f_m,k 45,9, f_t,k 40,8, f_c,k 30,3 | Latvijas Finieris (Riga Ply), Leistungserklärung LF-CPR/CE-DoP-01 (rev. 27.07.2026) und Plywood Handbook 2017, Tab. 4.5/4.6/4.9 (EN 789) | 18 mm, längs der Deckfurniere; quer f_m,k 38,9, E 7665 |
+| MDF | E 2200, Biegung 20 | DIN EN 622-5:2010-03, Tab. 3, Typ MDF, über 12 bis 19 mm (Anforderung, in Datenblättern Kaindl, Swiss Krono) | für Typ MDF gibt es keine charakteristischen Werte nach EN 12369-1 |
+| Spanplatte P2 | E 1600, Biegung 11 | DIN EN 312:2010-12, P2, über 13 bis 20 mm (Anforderung, Datenblätter Pfleiderer, Kastamonu, Egger) | P2 steht nicht in EN 12369-1 |
+| Messing CuZn39Pb3 | E 96 000, Rp0,2 220, Rm 430 | Wieland Z32/Z33 (08.19), DIN EN 12164, Zustand R430, Ø 2 bis 60 mm | ν nicht belegt (Statik 0,3) |
+| Kupfer Cu-ETP | E 110 000, Rp0,2 150, Rm 250 | Deutsches Kupferinstitut, Datenblatt Cu-ETP (2005), Rohr DIN EN 13600, R250 | halbhart; weich nur Obergrenze der Dehngrenze |
+| ABS | E 2200 / 1960, Zug 33 / 28 | Bambu Lab ABS TDS V3.0 | quer zur Schicht 0,54 (Druckregeln) |
+| ASA | E 2450 / 2120, Zug 37 / 31 | Bambu Lab ASA TDS V3.0 | 0,38 |
+| TPU 95A | E 9,8 / 7,4, Zug 27,3 / 22,3 | Bambu Lab TPU 95A HF TDS V1.0 | 0,8; linear nur grob |
+| PC (Filament) | E 2110 / 1450, Zug 62 / 56 | Bambu Lab PC TDS V2.0 (trocken) | 0,65 |
+| PA (Nylon) | E 724 / 660, Zug 34,3 / 13,7 | Polymaker PolyMide CoPA TDS V5.5 (06.01.2026), **nass** | Bambu hat kein ungefülltes PA; trocken mehr als doppelt so fest |
+| PA-CF | E 3860 / 2180, Zug 92 / 47 | Bambu Lab PAHT-CF TDS V3.0 (trocken) | nur trockene Werte belegt; PA6-CF fester |
+| PLA-CF | E 2790 / 2160, Zug 38 / 26 | Bambu Lab PLA-CF TDS V2.0 | 0,45 |
+
+Druckmaterialien: Werte X-Y / Z (Schicht) bei 100 % Füllung, ISO 527; `quer_zur_schicht` wie `z_festigkeit` der
+Druckregeln (`druck/regeln.py`). Ohne Mechanik bleiben Siebdruckplatte, Harz, PMMA, Polycarbonat (Halbzeug), POM,
+EPDM und PE-Schaum. Hinweis: Bambu Lab führt für PLA Basic inzwischen TDS V3.0 mit niedrigeren Werten (E 2580 / 2060,
+Zug 35 / 31); der Eintrag `pla` nennt weiter V2.0 und ist nicht geändert.
+
+### Gewindeeinsätze (Auszugkraft)
+
+Eine Katalogdatei darf die Liste `einsatz_auszug` haben (mitgeliefert: `einsaetze.json`, Strang „Bestand Stufe 2“):
+axiale Auszugkraft eines Heat-Set-Einsatzes je Gewindegröße und Druckmaterial. Die Statik (S0, Schraubenlast) stellt
+die Zugkraft je Schraube dagegen, sobald in `verbinde(…, art="schraube", mit=[…])` ein Einsatz steckt (Name mit
+„Gewindeeinsatz“, „Einschmelz…“ oder „Heat-Set“) und eine Seite ein Druckteil ist; Ziel wie bei Druckteilen (statisch
+4). Ohne belegten Wert bleibt der Einsatz grau („nicht belegt“). Eine spätere Ebene ersetzt dieselbe Größe und
+dasselbe Material, z. B. mit einem eigenen Versuch.
+
+```json
+{"groesse": "M3", "material": "petg", "kraft_n": 1167, "art": "mittelwert", "einsatz": "ruthex M3",
+ "quelle": "CNC Kitchen, 30.05.2020 …", "bedingungen": "4 Wände, 100 % Füllung …", "geschaetzt": false,
+ "stand": "2026-10"}
+```
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `groesse` | ja | Gewinde, „M3“ |
+| `material` | ja | Material-id des Druckteils (`pla`, `petg` …) |
+| `kraft_n` | ja | Auszugkraft in N (Mittelwert aus dem Versuch; Mindestwerte nennt kein Hersteller) |
+| `quelle` | ja | Versuch oder Datenblatt mit Datum |
+| `einsatz`, `bedingungen`, `art`, `weitere`, `stand` | nein | welcher Einsatz, Druckbedingungen, weitere Messwerte |
+| `geschaetzt` | nein | `true` für abgelesene oder unsichere Werte; das Urteil sagt es |
+
+Mitgeliefert (Stand 2026-10): M3 in PLA 1400 N (CNC Kitchen, 28.03.2026, eigene M3 × 5,7; ruthex 2019: 1776 N), M3 in
+PETG 1167 N (CNC Kitchen, 30.05.2020, ruthex M3, 4 Wände, 100 % Füllung), M6 in PLA 4350 N und in PETG 3700 N (SPIROL
+White Paper 04/2026, INS 19L, aus dem Diagramm abgelesen, 55 % Füllung, 5 Wände; geschätzt). **Lücken:** M4 und M5 in
+PLA und PETG (nur Versuche mit unklarer Größe bzw. aus Videos ohne schriftliche Zahl); ruthex selbst nennt keine
+Auszugkräfte. Die Werte hängen stark von Wänden und Füllung um den Einsatz ab (SPIROL: Faktor bis 4).
+
+### Reibwert Stahl auf Beton
+
+`reibwerte.json`: Stahl auf Mineralisch (Beton) `haft` 0,2, Spanne 0,2 bis 0,4 (Möhler/Herröder, Universität
+Karlsruhe 1978, Vorschlag für DIN 4421, S. 28; passt zu DIN EN 1993-1-8:2005, 6.2.2 (6), C_f,d = 0,20). Gilt über die
+Reibgruppen auch für Edelstahl; vorher rechnete die Statik hier mit der Annahme 0,3.
 
 ### Reibwerte
 

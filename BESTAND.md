@@ -2,7 +2,8 @@
 
 Version 1 (21.10.2026), geändert am selben Abend: **Bestand je Projekt** (Kevin: „Ich brauche das nicht über Projekte
 hinweg, sondern individuell nur für das jeweilige Projekt.“). Verbindlich für die Bestandsführung aus [PLAN-BESTAND.md](PLAN-BESTAND.md), erste Stufe:
-Stangenware, Platten, Stückgut. Zukaufteile und Filament folgen. Änderungen nur gemeinsam: dieses Dokument,
+Stangenware, Platten, Stückgut. Zukaufteile kamen mit „Feinschliff 2“, Filament mit „Bestand Stufe 2“ (Abschnitt
+„Filament“). Änderungen nur gemeinsam: dieses Dokument,
 `protocol.py`, Testdateien und Swift-Decoder im selben Commit (wie PROTOCOL.md).
 
 ## Datei
@@ -110,6 +111,8 @@ Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` vo
 
 - `bestand_liste(id=None)` – Bestand und Reste des offenen Projekts.
 - `bestand_eintragen(id, ganze=…, reste=…, stueck=…, grund)` – nur nach Kevins Angabe; die Antwort nennt jede Änderung.
+  Filament mit `material=…, gramm=…, spule=…` statt `id` (Abschnitt „Filament“).
+- `gedruckt_buchen(grund, platten=None, spule=None)` – Filament der Druckvorschau abbuchen (Abschnitt „Filament“).
 - `einkaufsliste()` – die Einkaufsliste genau wie in der App (Abschnitt „Einkaufsliste wie in der App“): Text, CSV-Pfad,
   Gruppen und Summen.
 - `gebaut_buchen()` – nur wenn Kevin ausdrücklich sagt, dass das Projekt gebaut ist; nennt, was abgebucht wird und
@@ -187,6 +190,69 @@ Einkaufsliste. Kernel: `catalog.STUECKGUT` (Kleinteile plus `STUECKGUT_ZUKAUF`);
   `aus_bestand`, `kaufen`) und `zukauf_bestand`; der Text nennt „Zukaufteile aus dem Bestand: …“. Die App zeigt sie
   als Kachel „Zukaufteile aus Bestand“ unter der Einkaufsliste und in der Stückliste als Herkunft „Bestand“/„Kaufen“.
 - **Gebaut** zieht die aus dem Bestand verplanten Zukaufteile ab wie anderes Stückgut (`op: "stueck"` ohne Länge).
+
+## Filament (Strang „Bestand Stufe 2“, 22.10.2026)
+
+PLAN-BESTAND.md S2: Filament = Gramm je Spule, Material und Farbe. Additiv; ältere Gegenseiten ignorieren alles.
+Umsetzung `kernel/src/kevcad_kernel/bestand/filament.py` (Planung, Abbuchen), `datei.py` (Datei, Änderungen),
+`einkauf.py` (Einkaufsliste), App `FilamentBestand` in `Material/MaterialDaten.swift`.
+
+**Datei:** Liste `filament` neben `posten` in `bestand.json`. Fehlt sie, führt das Projekt kein Filament: Einkaufsliste,
+„Gebaut“ und Texte wie bisher.
+
+```json
+"filament": [
+  {"kennung": "S-0001", "material": "petg", "gramm": 120, "gramm_voll": 1000, "name": "Bambu PETG Basic schwarz",
+   "hersteller": "Bambu Lab", "farbe": "schwarz", "ort": "Regal 3", "seit": "2026-10-22"}
+]
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `kennung` | `S-0001`, fortlaufend über den ganzen Bestand (wie R-/P-Kennungen, auch über verbrauchte Spulen hinweg) |
+| `material` | Material-id aus dem Katalog, druckbar (`petg`, `pla`, `tpu-95a` …) |
+| `gramm` | Filament übrig (g, ≥ 0) |
+| `gramm_voll` | Netto einer vollen Spule (g); Standard `spule_g` des Materials, sonst 1000 |
+| `name`, `hersteller`, `farbe`, `ort`, `seit` | optional; `name` wie Kevin die Spule nennt („Bambu PETG Basic schwarz“) |
+
+**Buchungen:** neue Änderungen `spule` (`kennung`, `vorher`, `nachher`: ganze Spule oder null), `spule_gramm`
+(`kennung`, `material`, `delta` in g) und `filament_fuehren` (`vorher`, `nachher`: bool, legt die leere Liste an);
+alle umkehrbar. Neue Buchungsart `gedruckt`. Gedruckt- und Gebaut-Buchungen mit Filament tragen zusätzlich `platten`
+(Nummern der Druckvorschau), `filament` (g je Material) und `filament_ganz` (die ganze Vorschau gebucht).
+
+**BOM.filament_bestand** (nur wenn das Projekt Filament führt): je Material der zu druckenden Druckteile (Reihenfolge
+der Stückliste), dann je weiterem Material der Spulen `{material, name, gramm, spulen, kennungen, spule_g,
+preis_je_spule, preis_stand}`; `spule_g` aus dem Katalog (Material-Feld `spule_g`, KATALOG.md), sonst 1000;
+`preis_je_spule` = `preis_je_kg` × `spule_g` / 1000 auf Cent. `einkaufsliste`, `einkauf_summe` und `fehlt` der BOM
+bleiben ohne Filament: Die Druckvorschau kommt erst nach der Stückliste.
+
+**Einkaufsliste** (Kernel `einkauf.filament_kauf`, App `FilamentBestand.kauf`, Text und CSV byteweise gleich): je
+Werkstoff der Druckvorschau desselben Laufs mit Eintrag in `filament_bestand`: Fehlmenge = Bedarf − Gramm im Bestand
+(alle Farben); ist sie größer 0, eine Zeile unter **Lagerware** hinter den Zeilen der Stückliste: Menge = Fehlmenge /
+`spule_g` aufgerundet, `id` = Material-id, Benennung „Filament PETG“, Einheit „Spule 1.000 g“, Preis je Spule, Hinweis
+„Bedarf 188,8 g, Bestand im Projekt: 120,0 g (1 Spule)“ bzw. „…, kein Filament im Bestand des Projekts“, Preisstand
+des Materials. Diese Zeilen zählen zur Summe (Lagerware = `einkauf_summe` + Spulen). Ohne Druckvorschau desselben
+Laufs keine Spulenzeilen (die Gruppe „Filament für Druckteile“ nennt weiter die Gramm aus der Stückliste). MCP
+`einkaufsliste()` zusätzlich `filament_kauf`, `filament_aus_bestand` (je Werkstoff Bedarf, Bestand, `reicht`) und
+`filament_bestand`; der Text nennt „Filament aus dem Bestand: PLA (24,6 g von 310,0 g)“.
+
+**Abbuchen:** „Gedruckt“ (`gedruckt_buchen(grund, platten=None, spule=None)`, nur auf Kevins Wunsch) und „Gebaut“
+buchen das Filament der Druckvorschau desselben Laufs ab: je Platte höchstens einmal je Lauf und Kernelsitzung
+(„Gebaut“ nimmt die noch nicht gebuchten Platten; sind alle gebucht, kein Filament). Reihenfolge der Spulen eines
+Materials: die genannte `spule`, dann angebrochene mit dem wenigsten Filament, dann volle (nach Kennung). Eine
+leer gedruckte Spule wird entfernt („leer, entfernt“). Reicht der Bestand nicht, gilt der Rest als von gekauften Spulen
+(`spule_g`) gedruckt; was von der letzten übrig bleibt (ab 0,5 g), kommt als neue Spule ohne Name dazu, wie neue Reste
+aus gekauften Stangen. Die Druckvorschau kennt keine Farben, deshalb gelten Bedarf und Bestand je Material.
+
+**MCP `bestand_eintragen`** (additiv, `id` jetzt optional): Filament statt `id` mit `material` und `gramm` (übrig;
+ohne: volle Spule), `spule` (Name), `gramm_voll`, `farbe`, `hersteller`, `ort`, `anzahl` (gleiche Spulen; `0` heißt
+„Projekt führt Filament, keins da“); `kennung` mit neuen Werten ändert eine Spule; `spulen_entfernen`. `bestand_liste`
+zeigt die Spulen je Material (`id` auch Material-id oder Spulenkennung).
+
+**App:** liest `filament` in `bestand.json` nicht (der Bereich „Bestand“ zeigt keine Spulen), rechnet aber die
+Spulenzeilen der Einkaufsliste selbst (`BOMBestand.filamentBestand`, `FilamentBestand.kauf`) und zählt sie zur Summe.
+Geprüft über die Testdatei `material` (PETG 120 g für 188,8 g: eine Spule; PLA 310 g für 24,6 g: reicht) in
+`MaterialKernelGleichTests.testFilamentSpulenWieDerKernel`.
 
 ## Verschnitt (Definition 2, 22.10.2026)
 

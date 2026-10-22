@@ -24,7 +24,7 @@ EXPECTED_TOOLS = {
     "status", "project_open", "project_new", "run", "model_read", "model_write", "execute", "parts", "view", "focus",
     "visibility", "highlight", "section", "screenshot", "selection", "measure", "annotate", "clear_annotations",
     "export", "stock_search", "stock_get", "stock_define", "material_list", "material_define", "catalog_delete", "bom",
-    "bestand_liste", "bestand_eintragen", "einkaufsliste", "gebaut_buchen", "buchung_rueckgaengig",
+    "bestand_liste", "bestand_eintragen", "einkaufsliste", "gebaut_buchen", "gedruckt_buchen", "buchung_rueckgaengig",
     "zukauf_anlegen", "zukauf_html", "cad_suchen", "cad_uebernehmen", "zukauf_liste",
     "pruefen", "montage_reihenfolge", "ansichten",
     "bedingungen",
@@ -54,6 +54,8 @@ EXPECTED_TOOLS |= {"freigabe_anfragen"}
 EXPECTED_TOOLS |= {"referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen", "referenz_fotoansicht"}
 # Statik Stufe 1 (PLAN-STATIK.md)
 EXPECTED_TOOLS |= {"statik", "szenario_rechnen"}
+# Statik Stufe 2 (Ablauf mit MuJoCo)
+EXPECTED_TOOLS |= {"dynamik", "dynamik_grenze"}
 
 
 def free_port() -> int:

@@ -29,6 +29,10 @@ ARTEN = {
     "statik_ueberdimensioniert": ("überdimensioniert", "überdimensioniert"),
     "statik_stabwerk": ("Statik: Stabwerk nicht gerechnet", "Statik: Stabwerk nicht gerechnet"),
     "statik_szenario": ("Statik: Szenario ungültig", "Statik: Szenarien ungültig"),
+    # Stufe 2 (Ablauf, statik/dynamik): aus dem Ergebnis von dynamik() und den Abläufen aus model.py
+    "statik_dyn_kippen": ("Ablauf: kippt", "Ablauf: kippen"),
+    "statik_dyn_ladung": ("Ablauf: Ladung springt heraus", "Ablauf: Ladung springt heraus"),
+    "statik_dyn_rutschen": ("Ablauf: rutscht", "Ablauf: rutschen"),
 }
 for _art, _text in ARTEN.items():
     bf.ART_TEXT.setdefault(_art, _text)
@@ -42,6 +46,8 @@ class Letzter:
     katalog: Any = None
     ergebnis: dict[str, Any] | None = None
     namen: set[str] = field(default_factory=set)
+    befestigt: dict[str, str] = field(default_factory=dict)  # für S2: an der Umgebung befestigte Teile
+    run: int | None = None
 
 
 LETZTER = Letzter()
@@ -70,8 +76,9 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     for e in ereignisse:
         if e.get("was") == "untergrund":
             untergrund = e.get("material")
+    befestigt = ctx.befestigt()
     m = md.baue(ctx.koerper, ctx.paare, ctx.erklaerungen, ctx.ergebnis.get("stand") or {}, ctx.ergebnis.get("druck"),
-                katalog, ctx.befestigt(), untergrund)
+                katalog, befestigt, untergrund)
     if not m.teile:
         return []
     ctx.abbrechen()
@@ -79,7 +86,8 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     erg = rechne_alles(m, szen, katalog, ctx.koerper)
     ctx.abbrechen()
     global LETZTER
-    LETZTER = Letzter(m, szen, dict(ctx.koerper), katalog, erg, set(ctx.koerper))
+    LETZTER = Letzter(m, szen, dict(ctx.koerper), katalog, erg, set(ctx.koerper), befestigt,
+                      ctx.optionen.get("run"))
     ctx.ergebnis["statik"] = erg
     ctx.zeiten["statik"] = (time.perf_counter() - t0) * 1000
     out = befunde(erg)

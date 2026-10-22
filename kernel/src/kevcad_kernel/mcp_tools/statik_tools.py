@@ -14,7 +14,7 @@ from pydantic import Field
 
 from . import format as fmt
 
-STATIK_TOOL_NAMES: tuple[str, ...] = ("statik", "szenario_rechnen")
+STATIK_TOOL_NAMES: tuple[str, ...] = ("statik", "szenario_rechnen", "dynamik", "dynamik_grenze")
 
 
 def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotations: dict[str, Any]) -> None:
@@ -67,7 +67,18 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
         = None,
         beschreibung: Annotated[str | None, Field(description="Short description in Kevin's words")] = None,
         zeigen: Annotated[bool, Field(description="Show the scenario in the viewer")] = True,
+        dynamik: Annotated[bool, Field(description="Also simulate the motion over time (S2, MuJoCo): needs "
+                                                   "geschwindigkeit; same as the tool dynamik")] = False,
+        geschwindigkeit: Annotated[float | None, Field(description="S2: pushing speed in m/s")] = None,
+        bremsen: Annotated[float | str | None, Field(description="S2: deceleration in m/s² or 'abrupt' (stop in "
+                                                                 "0.1 s) or 'anprall' (0.02 s)")] = None,
+        dauer: Annotated[float | None, Field(description="S2: simulated time in s (default: until 1.2 s after the "
+                                                         "stop)")] = None,
     ) -> CallToolResult:
+        if dynamik or geschwindigkeit is not None or bremsen is not None:
+            res = await t.work("rechnet einen Ablauf", svc.dynamik, name, geschwindigkeit, bremsen, dauer, neigung,
+                               richtung, stoss, None, None, None, None, lasten, True, zeigen, beschreibung)
+            return _dynamik_ergebnis(res)
         res = await t.work("rechnet ein Szenario", svc.szenario_rechnen, name, beschleunigung, neigung, richtung,
                            lasten, stoss, ziel, beschreibung, zeigen)
         err = fmt.service_error(res)
@@ -84,3 +95,101 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
             text += "\nGrenzen: " + " ".join(res["grenzen"])
         data = {k: v for k, v in res.items() if k != "ok"}
         return fmt.result(text, data)
+
+    @tool("dynamik", "Ablauf simulieren",
+          "Simulate a motion over time (statics stage S2, rigid bodies with MuJoCo in a separate process, a few "
+          "seconds): 'what happens if I push at 1 m/s and brake abruptly?'. Built from the last run: bodies from "
+          "parts fixed together (verbinde with screws, clamps …; joints with a range count as locked), free joints "
+          "(joints without bereich, e.g. rollers on an axle), wheels rolling about the axle from the animation, loose "
+          "bodies like a ball resting on the floor (verbinde … aufliegen). The pushed body follows the speed profile "
+          "(guided at floor level, worst case for tipping forward) and may tip, lift and slide; friction per material "
+          "pair from the catalog. Result: traffic light and numbers (tipping reserve = deceleration at which it "
+          "lifts / scenario deceleration, lift in mm, tilt angle, ball displacement and rise, speed limit at which "
+          "the ball jumps out, sliding limit with locked wheels mu*g, contact forces, hand check a = g*b/h), shown "
+          "in the app's statics section and as animation 'Ablauf: <name>' in the timeline (animation_abspielen). "
+          "geschwindigkeit in m/s, bremsen in m/s² or 'abrupt' (stop in 0.1 s) or 'anprall' (0.02 s); or "
+          "animation='Fahrt' to take the speed profile from an animation. Always state the limits: rigid bodies, "
+          "simplified friction, no deformation.", annotations["additive"])
+    async def dynamik(
+        name: Annotated[str, Field(description="Scenario name, e.g. 'Bremsen aus 1 m/s'")],
+        geschwindigkeit: Annotated[float | None, Field(description="Pushing speed in m/s, e.g. 1")] = None,
+        bremsen: Annotated[float | str | None, Field(description="Deceleration in m/s², 'abrupt' or 'anprall'; "
+                                                                 "omit for constant speed")] = None,
+        dauer: Annotated[float | None, Field(description="Simulated time in s")] = None,
+        neigung: Annotated[float | None, Field(description="Floor tilt in degrees")] = None,
+        richtung: Annotated[str | None, Field(description="Downhill direction for neigung: '+x', '-y'")] = None,
+        stoss: Annotated[float | None, Field(description="Factor on the deceleration")] = None,
+        animation: Annotated[str | None, Field(description="Take the speed profile from this animation")] = None,
+        antrieb: Annotated[str | None, Field(description="Pushed part or group (default: heaviest body on "
+                                                         "wheels)")] = None,
+        angriff: Annotated[float | str | None, Field(description="Where the push/brake force acts: 'boden' "
+                                                                 "(default) or height in mm above the floor")] = None,
+        fahrtrichtung: Annotated[str | None, Field(description="Travel direction, default '+x'")] = None,
+        suche: Annotated[bool, Field(description="Search the limits (speed at which the ball jumps out, deceleration "
+                                                 "at which it lifts) with parallel rollouts")] = True,
+        zeigen: Annotated[bool, Field(description="Show in the app (statics section and timeline)")] = True,
+        beschreibung: Annotated[str | None, Field(description="Short description in Kevin's words")] = None,
+    ) -> CallToolResult:
+        res = await t.work("rechnet einen Ablauf", svc.dynamik, name, geschwindigkeit, bremsen, dauer, neigung,
+                           richtung, stoss, animation, antrieb, angriff, fahrtrichtung, None, suche, zeigen,
+                           beschreibung)
+        return _dynamik_ergebnis(res)
+
+    @tool("dynamik_grenze", "Grenzgeschwindigkeit",
+          "'How fast may I push without the ball jumping out / the rig tipping?': searches the speed limit with "
+          "parallel rollouts (MuJoCo, separate process) for a braking style (bremsen: 'abrupt' = stop in 0.1 s, "
+          "'anprall', or m/s²), plus the deceleration at which the pushed body lifts and the hand check a = g*b/h. "
+          "ohne: 'ball' (cargo jumps out), 'kippen' (rig lifts) or 'beides'. Shows the run at geschwindigkeit as "
+          "animation like dynamik.", annotations["additive"])
+    async def dynamik_grenze(
+        ohne: Annotated[str, Field(description="'ball', 'kippen' or 'beides'")] = "beides",
+        bremsen: Annotated[float | str, Field(description="Braking style: 'abrupt', 'anprall' or m/s²")] = "abrupt",
+        geschwindigkeit: Annotated[float, Field(description="Speed for the shown run in m/s")] = 1.0,
+        name: Annotated[str | None, Field(description="Scenario name")] = None,
+    ) -> CallToolResult:
+        res = await t.work("sucht die Grenzgeschwindigkeit", svc.dynamik_grenze, ohne, bremsen, geschwindigkeit, name)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Grenze nicht gesucht: {err}", res)
+        from kevcad_kernel.statik.bericht import ablauf_text
+        from kevcad_kernel.statik.bewertung import z
+
+        g = res.get("grenzen_suche") or {}
+        zeilen = []
+        for L in g.get("ladung") or []:
+            if L.get("v_grenze") is not None:
+                zeilen.append(f"{L['name']}: bleibt bis {z(L['v_grenze'], 2)} m/s im Schieber (bremsen {bremsen}).")
+            elif L.get("nie_bis") is not None:
+                zeilen.append(f"{L['name']}: bleibt bis mindestens {z(L['nie_bis'], 1)} m/s (bremsen {bremsen}).")
+        k = g.get("kippen") or {}
+        if k:
+            zeilen.append(f"Kippen: hebt bei dieser Bremsart ab {z(k.get('v_abheben'), 2)} m/s ab; bei "
+                          f"{z(geschwindigkeit, 2)} m/s ab {z(k.get('a_abheben'), 2)} m/s² Verzögerung. Ohne Ladung "
+                          f"{z(k.get('a_abheben_ohne_ladung'), 2)} m/s², Handrechnung "
+                          f"{z(k.get('a_kipp_hand'), 2)} m/s².")
+        text = "\n".join(zeilen) + "\n" + ablauf_text(res.get("ablauf") or {})
+        if res.get("grenzen"):
+            text += "\nGrenzen: " + " ".join(res["grenzen"])
+        return fmt.result(text, {k_: v for k_, v in res.items() if k_ != "ok"})
+
+
+def _dynamik_ergebnis(res: dict[str, Any]) -> CallToolResult:
+    err = fmt.service_error(res)
+    if err:
+        return fmt.error_result(f"Ablauf nicht gerechnet: {err}", res)
+    from kevcad_kernel.statik.bericht import ablauf_text, szenario_text
+
+    text = ablauf_text(res.get("ablauf") or {})
+    e = res.get("szenario") or {}
+    rest = [u for u in e.get("urteile") or [] if not str(u.get("art", "")).startswith("dyn_")
+            and u.get("ampel") in ("rot", "gelb")]
+    if rest:
+        text += "\nRuhende Ersatzlast (größte Verzögerung):\n" + szenario_text({**e, "urteile": rest, "kennzahlen": {}})
+    ms = res.get("ms") or {}
+    text += (f"\n(gesamt {ms.get('gesamt')} ms: Szene und Statik {ms.get('szene_und_statik')} ms, Ablauf-Prozess "
+             f"{ms.get('prozess')} ms" + (", in der Zeitleiste gezeigt)" if res.get("gezeigt") else ")"))
+    if res.get("vereinfachungen"):
+        text += "\nAnnahmen: " + "; ".join(res["vereinfachungen"][:6])
+    if res.get("grenzen"):
+        text += "\nGrenzen: " + " ".join(res["grenzen"])
+    return fmt.result(text, {k: v for k, v in res.items() if k != "ok"})

@@ -163,20 +163,34 @@ class KernelService(Protocol):
         """Bestand und Reste des offenen Projekts: {"ok", "projekt", "datei", "stand", "bestand", "buchungen",
         "text", "posten" (nur mit stock_id)}"""
 
-    def bestand_eintragen(self, stock_id: str, ganze: Any = None, reste: list[Any] | None = None,
+    def bestand_eintragen(self, stock_id: str | None = None, ganze: Any = None, reste: list[Any] | None = None,
                           reste_entfernen: list[str] | None = None, stueck: Any = None,
                           mindestrest_mm: float | None = None, reste_ersetzen: bool = False,
-                          grund: str = "") -> dict[str, Any]:
-        """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}"""
+                          grund: str = "", *, material: str | None = None, gramm: float | None = None,
+                          gramm_voll: float | None = None, spule: str | None = None, farbe: str | None = None,
+                          hersteller: str | None = None, anzahl: int | None = None, kennung: str | None = None,
+                          ort: str | None = None, spulen_entfernen: list[str] | None = None) -> dict[str, Any]:
+        """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}.
+        Strang „Bestand Stufe 2“ (additiv): Filament statt ``stock_id`` mit ``material`` (neue Spulen: ``gramm``,
+        ``spule`` als Name, ``gramm_voll``, ``farbe``, ``hersteller``, ``ort``, ``anzahl``; 0 = Filament führen ohne
+        Spule), ``kennung`` (Spule ändern) oder ``spulen_entfernen``; dann statt ``posten`` die ``spulen``."""
 
     def einkaufsliste(self) -> dict[str, Any]:
         """Einkaufsliste wie in der App (bestand/einkauf.py): {"ok", "run", "lagerware", "zukauf", "normteile",
         "filament", "positionen", "summe" (Lagerware + Zukaufteile), "summe_lager", "summe_zukauf", "ohne_preis",
         "text", "csv"} und die Felder der Stückliste ("einkaufsliste", "einkauf_summe" nur Lagerware,
-        "einkauf_hinweis", "bestand_stand", "fehlt", "stueckgut")."""
+        "einkauf_hinweis", "bestand_stand", "fehlt", "stueckgut"); additiv "filament_kauf" (Spulen unter Lagerware),
+        "filament_aus_bestand", "filament_bestand"."""
 
     def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
-        """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}"""
+        """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}; führt das Projekt Filament,
+        auch das Filament der noch nicht gebuchten Druckplatten ("filament", "filament_text")."""
+
+    def gedruckt_buchen(self, grund: str = "", platten: list[int] | None = None, spule: str | None = None,
+                        run: int | None = None) -> dict[str, Any]:
+        """Strang „Bestand Stufe 2“ (additiv), nur auf Kevins ausdrücklichen Wunsch: Filament der Druckvorschau
+        abbuchen (alle noch nicht gebuchten Platten oder ``platten``; ``spule`` zuerst). {"ok", "buchung",
+        "aenderungen_text", "filament", "filament_text", "platten"}"""
 
     def buchung_rueckgaengig(self, buchung: str) -> dict[str, Any]:
         """{"ok", "buchung" (die Umkehrbuchung), "aenderungen_text"}"""
@@ -306,6 +320,21 @@ class KernelService(Protocol):
                          ) -> dict[str, Any]:
         """Neues Szenario mit dem Statikmodell des letzten Laufs (ohne neuen Lauf): {"ok", "run", "szenario",
         "gezeigt", "grenzen", "vereinfachungen", "ms"}. ``lasten``: [{"teil", "kg" | "kraft" [N], "punkt" [mm]?}]."""
+
+    # Statik Stufe 2 (PLAN-STATIK.md T-C; umgesetzt in kevcad_kernel.statik.dynamik.laufzeit.DynamikRuntime)
+    def dynamik(self, name: str, geschwindigkeit: float | None = None, bremsen: Any = None, dauer: float | None = None,
+                neigung: float | None = None, richtung: Any = None, stoss: float | None = None,
+                animation: str | None = None, antrieb: str | None = None, angriff: Any = None,
+                fahrtrichtung: Any = None, lasten: list[dict[str, Any]] | None = None, suche: bool = True,
+                zeigen: bool = True, beschreibung: str | None = None) -> dict[str, Any]:
+        """Ablauf (S2, MuJoCo im eigenen Prozess) mit dem Modell des letzten Laufs: {"ok", "run", "szenario",
+        "ablauf" (kennzahlen, urteile, handrechnung, suche, ms), "animation" ("Ablauf: <name>"), "gezeigt",
+        "befunde", "grenzen", "vereinfachungen", "ms"}."""
+
+    def dynamik_grenze(self, ohne: str = "beides", bremsen: Any = "abrupt", geschwindigkeit: float = 1.0,
+                       name: str | None = None) -> dict[str, Any]:
+        """Grenzgeschwindigkeit (Suche mit Rollouts): wie ``dynamik`` plus "grenzen_suche" {"kippen": {"v_abheben",
+        "a_abheben", "a_kipp_hand", …}, "ladung": [{"name", "v_grenze"}]}."""
 
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:

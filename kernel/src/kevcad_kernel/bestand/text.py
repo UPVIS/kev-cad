@@ -8,7 +8,7 @@ from typing import Any
 from kevcad_kernel.appformat import zahl
 from kevcad_kernel.bom import de_num
 
-from .datei import einstellungen, mm
+from .datei import einstellungen, fuehrt_filament, gramm_text, mm, spule_text, spulen
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -119,6 +119,35 @@ def posten_text(pid: str, posten: dict[str, Any], item: dict[str, Any] | None, b
     return f"{name} ({pid}): " + ("; ".join(parts) or "leer")
 
 
+def filament_zeilen(bestand: dict[str, Any] | None, katalog: Any, nur: str | None = None) -> list[str]:
+    """Filament je Material mit seinen Spulen (Strang „Bestand Stufe 2“); leer, wenn das Projekt kein Filament führt.
+    ``nur``: Material-id oder Spulenkennung."""
+    if not fuehrt_filament(bestand):
+        return []
+    liste = spulen(bestand)
+    if nur:
+        liste = [s for s in liste if nur in (s.get("material"), s.get("kennung"))]
+        if not liste:
+            return []
+    out = ["Filament:"]
+    if not liste:
+        out.append("- keine Spule (Filament wird geführt: alles für Druckteile steht auf der Einkaufsliste)")
+    mats: dict[str, list[dict[str, Any]]] = {}
+    for s in liste:
+        mats.setdefault(str(s.get("material")), []).append(s)
+    for mid, eigene in mats.items():
+        try:
+            m = katalog.material(mid) if katalog is not None else None
+        except Exception:  # noqa: BLE001 - nur der Anzeigename
+            m = None
+        name = (m or {}).get("name") or mid
+        summe = sum(float(s.get("gramm") or 0) for s in eigene)
+        out.append(f"- {name} ({mid}): {gramm_text(summe)} auf {_plural(len(eigene), 'Spule', 'Spulen')}")
+        for s in eigene:
+            out.append(f"  - {spule_text(s)}" + (f" (seit {s['seit']})" if s.get("seit") else ""))
+    return out
+
+
 def bestand_text(bestand: dict[str, Any] | None, katalog: Any, *, projekt: str = "", datei: str | None = None,
                  stand: str | None = None, buchungen: list[dict[str, Any]] | None = None,
                  nur: str | None = None) -> str:
@@ -129,12 +158,17 @@ def bestand_text(bestand: dict[str, Any] | None, katalog: Any, *, projekt: str =
     head += f" ({datei}, Stand {stand})" if datei and stand else (" (noch keine bestand.json)" if not stand else "")
     out = [head + ":"]
     ids = [nur] if nur else list(posten)
-    if not ids or (nur and nur not in posten):
-        out.append(f"- {nur}: nichts im Bestand" if nur else "- leer: Kevin hat für dieses Projekt noch nichts eingetragen")
+    fil = filament_zeilen(bestand, katalog, nur)
+    if nur and nur not in posten and fil:
+        ids = []
+    elif not ids or (nur and nur not in posten):
+        out.append(f"- {nur}: nichts im Bestand" if nur else (
+            "- keine Lagerteile" if fil else "- leer: Kevin hat für dieses Projekt noch nichts eingetragen"))
     for pid in ids:
         if pid in posten:
             item = katalog.item(pid) if katalog is not None else None
             out.append("- " + posten_text(pid, posten[pid], item, bestand))
+    out += fil
     e = einstellungen(bestand)
     out.append(f"Einstellungen: Mindestrest {mm(e['mindestrest_mm'])} mm, Sägeblatt {mm(e['saegeblatt_mm'])} mm")
     if buchungen:

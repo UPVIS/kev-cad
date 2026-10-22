@@ -78,5 +78,64 @@
     "zeigen": false,
     "szenarien": [],
     "grenzen": 0
+  },
+  "statics_ablauf": {
+    "run": 9,
+    "stand": "done",
+    "aktiv": "Bremsen aus 1 m/s",
+    "zeigen": true,
+    "szenarien": [
+      {
+        "name": "Eigengewicht",
+        "ampel": "gruen",
+        "urteile": 0,
+        "teile": [
+          "Rahmen/Rohr"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 41.2,
+        "ueberhoehung": 66.7
+      },
+      {
+        "name": "Aufstützen 30 kg",
+        "ampel": "rot",
+        "urteile": 2,
+        "teile": [
+          "Rahmen/Rohr",
+          "Rahmen/Halter (Druck)"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 0.2,
+        "ueberhoehung": 1.0
+      },
+      {
+        "name": "Bremsen aus 1 m/s",
+        "ampel": "rot",
+        "urteile": 2,
+        "teile": [],
+        "staebe": [],
+        "sicherheit": 8.4,
+        "ueberhoehung": 1.0,
+        "ablauf": {
+          "stand": "done",
+          "animation": "Ablauf: Bremsen aus 1 m/s",
+          "bilder": 3,
+          "kippreserve": 0.25,
+          "pfeile": [
+            0,
+            1,
+            2
+          ],
+          "ladung": [
+            "Bowlingball"
+          ]
+        }
+      }
+    ],
+    "grenzen": 3
   }
 }

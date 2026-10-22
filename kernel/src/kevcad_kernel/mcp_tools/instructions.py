@@ -102,6 +102,13 @@ findings `statik_*` (warnings and hints, export is not blocked). `statik` reads 
 "does it hold if ..." in under a second without a new run and shows it in the viewer. Lighter or stronger \
 alternatives come only from the inventory. Always mention the simplifications and that it is no substitute for a \
 structural engineer for safety-relevant things.
+- Motion over time (Statik S2, MuJoCo in a separate process): "what happens if I push at 1 m/s and brake abruptly?" → \
+`dynamik(name, geschwindigkeit=1, bremsen="abrupt")`; "how fast may I push without the ball jumping out?" → \
+`dynamik_grenze(ohne="ball")`. Rigid bodies from parts fixed together, free joints (joints without bereich), wheels \
+from the animation, loose bodies (`verbinde(..., art="aufliegen")`) like a ball. Result: tipping reserve, lift in mm, \
+ball stays or jumps out with the speed limit, sliding limit, contact forces, hand check a = g*b/h; the app plays it as \
+animation "Ablauf: <name>". In model.py: `st.szenario("Bremsen", geschwindigkeit=1, bremsen="abrupt")` (computed in \
+the background after every run). Always state: rigid bodies, simplified friction, no deformation.
 
 Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
 explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \
@@ -133,7 +140,9 @@ Stock on hand and shopping list (Bestand, per project)
 - Each project has its own stock (bestand.json in the project folder): whole bars/sheets, offcuts with ids (R-0001, \
 P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it. Purchased parts, cameras, \
 lenses and camera accessories are piece goods: `bestand_eintragen(id, stueck=1, grund=...)`; parts Kevin has leave \
-the shopping list.
+the shopping list. Filament spools (S-0001) per material and colour: `bestand_eintragen(material="petg", gramm=640, \
+spule="Bambu PETG Basic schwarz", grund=...)`; once a project tracks filament, the shopping list adds whole spools for \
+what the print preview needs beyond the stock, and `gedruckt_buchen` (only when Kevin says he printed) books it off.
 - After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
 (optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
 offcuts remain. `einkaufsliste` returns exactly the list Kevin sees and shares in the app: stock items and bought \

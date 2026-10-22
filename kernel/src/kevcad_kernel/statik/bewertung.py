@@ -228,6 +228,7 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
                              "Befestigen (verbinde mit Schraube oder Klemmung) oder Anschlag vorsehen.", reserve=r))
     schr_min = None
     for s in s0.get("schrauben") or []:
+        ur += _einsatz_urteile(s, sz)
         sf = s.get("sicherheit")
         if sf is None:
             continue
@@ -241,7 +242,7 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
                              "quer (grob).",
                              "Mehr oder dickere Schrauben, größerer Abstand zwischen den Schrauben, Last näher an die "
                              "Verbindung.", sicherheit=sf, ziel=ziel))
-        elif s.get("druckteil") and not sz.nur_eigengewicht and s["kraft_axial"] > 50:
+        elif s.get("druckteil") and not s.get("einsatz") and not sz.nur_eigengewicht and s["kraft_axial"] > 50:
             ur.append(urteil("schraube", s["druckteil"][0], "grau",
                              f"Schrauben {s['verbindung']}: je Schraube {z(s['kraft_axial'], 0)} N Zug; im Druckteil "
                              f"{s['druckteil'][0]} trägt das der Gewindeeinsatz (Auszug nicht nachgewiesen).",
@@ -260,6 +261,41 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
             "auflager": list(getattr(s1, "auflager", []) or []) if s1 is not None else [],
             "s0": s0, "s1": {"ok": bool(getattr(s1, "ok", False)), "meldung": getattr(s1, "meldung", ""),
                              "ms": getattr(s1, "ms", None)} if s1 is not None else None}
+
+
+def _einsatz_urteile(s: dict[str, Any], sz: Any) -> list[dict[str, Any]]:
+    """Gewindeeinsatz im Druckteil (Strang „Bestand Stufe 2“): Zugkraft je Schraube gegen die Auszugkraft aus dem
+    Katalog, Ziel wie bei Druckteilen (statisch 4, T5). Grün meldet nichts; ohne belegte Auszugkraft ein graues Urteil,
+    sobald nennenswert Zug auf der Verbindung liegt."""
+    e = s.get("einsatz")
+    if not e:
+        return []
+    druckteil = str(e.get("druckteil") or "").rsplit("/", 1)[-1]
+    wo = f"Gewindeeinsatz {e['groesse']} in {druckteil}"
+    if e.get("auszug_n") is None:
+        if sz.nur_eigengewicht or s["kraft_axial"] <= 50:
+            return []
+        mat = e.get("material") or "diesem Material"
+        return [urteil("schraube", e.get("teil") or e.get("druckteil"), "grau",
+                       f"{wo}: je Schraube {z(s['kraft_axial'], 0)} N Zug; Auszugkraft für {e['groesse']} in {mat} "
+                       "nicht belegt (Katalog einsatz_auszug), nicht nachgewiesen.",
+                       "Auszugkraft beim Hersteller oder aus einem Versuch nachsehen und im Katalog ergänzen, oder "
+                       "eine Größe mit belegtem Wert nehmen.")]
+    sf = e.get("sicherheit")
+    if sf is None:
+        return []
+    ziel = sz.ziel_fuer(True)
+    a = ziel / sf if sf > 0 else math.inf
+    amp = ampel_a(a)
+    if amp == "gruen":
+        return []
+    vorbehalt = " (Wert aus einem Diagramm abgelesen)" if e.get("geschaetzt") else ""
+    return [urteil("schraube", e.get("teil") or e.get("druckteil"), amp,
+                   f"{wo} {'reißt aus' if amp == 'rot' else 'hält knapp'}: je Schraube {z(s['kraft_axial'], 0)} N "
+                   f"Zug, Auszugkraft {z(e['auszug_n'], 0)} N{vorbehalt}: Sicherheit {_sf(sf)} (Ziel {z(ziel, 0)}).",
+                   "Größerer oder längerer Einsatz, mehr Einsätze, mehr Wände und Füllung um den Einsatz, oder Last "
+                   "näher an die Verbindung.", sicherheit=sf, ziel=ziel, ausnutzung=round(a, 3),
+                   auszug_n=e["auszug_n"], quelle=e.get("quelle"))]
 
 
 def kurztext(e: dict[str, Any]) -> str:

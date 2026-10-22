@@ -105,6 +105,40 @@ final class MaterialKernelGleichTests: XCTestCase {
         XCTAssertTrue(try daten(mitDruck: false).filament.allSatisfy { $0.stand == nil })
     }
 
+    /// Strang „Bestand Stufe 2“: Filament-Spulen nach Abzug des Projektbestands (`BOM.filament_bestand`), auf ganze
+    /// Spulen aufgerundet, nur gegen die Druckvorschau desselben Laufs; stehen unter Lagerware hinter der Stückliste und
+    /// zählen zur Summe. Beispiel: PETG 120 g im Bestand für 188,8 g (eine Spule kaufen), PLA 310 g für 24,6 g (reicht).
+    func testFilamentSpulenWieDerKernel() throws {
+        let e = try erwartet()
+        let m = try bom()
+        let bestand = try XCTUnwrap(m.bestand)
+        XCTAssertEqual(bestand.filamentBestand?.map(\.material),
+                       try XCTUnwrap(e["filament_bestand"]?.arrayValue).compactMap { $0["material"]?.stringValue })
+        let soll = try XCTUnwrap(e["filament_kauf"]?.arrayValue)
+        XCTAssertEqual(soll.count, 1)
+        let d = try daten()
+        let ist = d.lagerEinkauf.suffix(soll.count).map(\.position)
+        XCTAssertEqual(ist.map(\.id), soll.compactMap { $0["id"]?.stringValue })
+        XCTAssertEqual(ist.map(\.benennung), soll.compactMap { $0["benennung"]?.stringValue })
+        XCTAssertEqual(ist.map(\.menge), soll.compactMap { $0["menge"]?.doubleValue })
+        XCTAssertEqual(ist.map(\.einheit), soll.compactMap { $0["einheit"]?.stringValue })
+        XCTAssertEqual(ist.map(\.preisJe), soll.map { $0["preis_je"]?.doubleValue })
+        XCTAssertEqual(ist.map(\.preis), soll.map { $0["preis"]?.doubleValue })
+        XCTAssertEqual(ist.map(\.hinweis), soll.map { $0["hinweis"]?.stringValue })
+        XCTAssertEqual(ist.map(\.stand), soll.map { $0["preis_stand"]?.stringValue })
+        XCTAssertFalse(d.lagerEinkauf.contains { $0.position.id == "pla" }, "PLA reicht aus dem Bestand")
+        // Ohne Druckvorschau desselben Laufs keine Spulen, wie im Kernel
+        XCTAssertEqual(try daten(mitDruck: false).lagerEinkauf.filter { $0.position.einheit.hasPrefix("Spule ") }
+            .map(\.position.id), try XCTUnwrap(e["filament_kauf_ohne_druck"]?.arrayValue).compactMap(\.stringValue))
+        // Führt das Projekt kein Filament (älterer Kernel, kein filament_bestand): keine Spulen, Summe wie bisher
+        var ohne = bestand
+        ohne.filamentBestand = nil
+        let alt = MaterialDaten(bom: m.bom, bestand: ohne, druckvorschau: try druck())
+        XCTAssertFalse(alt.lagerEinkauf.contains { $0.position.einheit.hasPrefix("Spule ") })
+        XCTAssertEqual(alt.kennzahlen.einkaufLagerSumme, bestand.summe)
+        XCTAssertEqual(d.kennzahlen.einkaufLagerSumme ?? 0, (bestand.summe ?? 0) + 17, accuracy: 1e-9)
+    }
+
     func testGleicherVerschnitt() throws {
         let e = try erwartet()
         let d = try daten()

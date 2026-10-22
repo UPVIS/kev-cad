@@ -217,9 +217,17 @@ def _bedingungen(namen: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, 
             achse = getattr(B, "d", None) if B is not None else None
             if achse is None and A is not None:
                 achse = getattr(A, "d", None)
+            # für S2 (Dynamik): Punkt der Achse in der gezeigten Lage und Bereich (mit Bereich: Einstellgelenk)
+            aw = getattr(c, "achse_welt", None)
+            punkt = aw[0] if aw is not None else (getattr(B, "p", None) if B is not None else None)
+            if aw is not None and achse is None:
+                achse = aw[1]
             gel.append({"a": a, "b": b, "art": GELENK_ART.get(getattr(c, "art", ""), "fest"),
                         "achse": None if achse is None else np.asarray(achse, dtype=float),
-                        "mitbewegt": [str(x) for x in getattr(c, "mitbewegt", []) if isinstance(x, str)]})
+                        "mitbewegt": [n for n in (x if isinstance(x, str) else _bezug_name(x)
+                                                  for x in getattr(c, "mitbewegt", []) or []) if n],
+                        "punkt": None if punkt is None else np.asarray(punkt, dtype=float),
+                        "bereich": getattr(c, "bereich", None), "zeile": getattr(c, "zeile", None)})
     return verb, gel
 
 

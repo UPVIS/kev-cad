@@ -37,6 +37,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "bestand_eintragen",
     "einkaufsliste",
     "gebaut_buchen",
+    "gedruckt_buchen",
     "buchung_rueckgaengig",
     "zukauf_anlegen",
     "zukauf_html",
