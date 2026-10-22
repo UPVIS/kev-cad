@@ -15,7 +15,7 @@ from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepTools import BRepTools
 from OCP.GeomAbs import GeomAbs_SurfaceType
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_REVERSED
 from OCP.TopoDS import TopoDS
 
 

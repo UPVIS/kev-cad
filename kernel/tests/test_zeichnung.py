@@ -352,3 +352,37 @@ def test_drawing_rundlauf_protokoll():
     m = h["masse"][0]
     assert {"id", "linien", "pfeile", "text", "text_lage", "text_winkel", "wert"} <= set(m)
     assert h["blatt"]["id"] == "platte" and h["blattgroesse"] == [297.0, 210.0]
+
+
+def test_automatischer_schnitt_bei_innenmerkmalen():
+    """Sacklöcher, Senkung und Tasche lägen in der Vorderansicht nur verdeckt: Vorderansicht als Vollschnitt A–A."""
+    t = _teil("Halter", druckteil(), {"druckteil": {"material": "petg"}})
+    erg = rechne(dokument.neu("halter", "Halter", "teil", [t.name]), szene_mit(t))
+    v1 = next(a for a in erg.blatt["ansichten"] if a["id"] == "v1")
+    assert v1["art"] == "schnitt" and v1["schnitt"]["von"] == "v2" and v1["schnitt"]["blick"] == "vorn"
+    g1 = next(g for g in erg.kopf["geometrie"] if g["id"] == "v1")
+    assert g1["linien"]["schraffur"] > 0 and g1["linien"]["verdeckt"] == 0
+    g2 = next(g for g in erg.kopf["geometrie"] if g["id"] == "v2")
+    assert g2["linien"]["schnitt"] == 1  # Schnittverlauf in der Draufsicht
+    assert any(x["text"] == "A–A" for x in erg.kopf["texte"])
+    tiefe = next(m for m in erg.blatt["masse"] if str(m.get("schluessel", "")).startswith("tiefe:tasche"))
+    assert tiefe["ansicht"] == "v1"
+    # Druckteil ohne Innenmerkmale: keine Schnittansicht
+    t2 = _teil("Klotz", Box(40, 30, 20, align=UNTEN) - Pos(0, 0, 10) * Cylinder(3, 30), {"druckteil": {}})
+    erg2 = rechne(dokument.neu("klotz", "Klotz", "teil", [t2.name]), szene_mit(t2))
+    assert not any(a["art"] == "schnitt" for a in erg2.blatt["ansichten"])
+
+
+def test_bohrungstabelle_bei_vielen_bohrungen():
+    p = Box(300, 200, 6, align=(Align.MIN, Align.MIN, Align.MIN))
+    p -= [Pos(30 + 80 * i, 30 + 45 * j, 0) * Cylinder(3.3, 20) for i in range(4) for j in range(4)]
+    t = _teil("Lochplatte", p, {"stock": {"id": "platte-alu-6"}}, {"id": "platte-alu-6", "art": "platte"})
+    erg = rechne(dokument.neu("lochplatte", "Lochplatte", "teil", [t.name]), szene_mit(t))
+    koord = [m for m in erg.blatt["masse"] if m["art"] == "koordinaten"]
+    assert len(koord) == 1 and len(koord[0]["bezuege"]) == 2 + 16
+    grafik = next(m for m in erg.kopf["masse"] if m["id"] == koord[0]["id"])
+    assert sorted(x["text"] for x in grafik["texte"])[:2] == ["A1", "A10"] and len(grafik["texte"]) == 16
+    texte = [x["text"] for x in erg.kopf["texte"]]
+    assert any(x.startswith("Bohrungen (X, Y ab Ecke unten links)") for x in texte) and "A16" in texte
+    assert "110" in texte and "30" in texte  # X und Y in der Tabelle
+    assert not [b for b in erg.kopf["pruefung"] if b["pruefung"] == "fehlend"]

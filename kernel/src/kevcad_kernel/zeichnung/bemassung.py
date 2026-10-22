@@ -24,7 +24,7 @@ Regeln (begründet):
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -33,6 +33,7 @@ from kevcad_kernel.zeichnung.bezuege import aus_merkmal
 from kevcad_kernel.zeichnung.merkmale import Merkmal, Merkmale, zahl
 
 TOL = 0.01
+BOHRUNGSTABELLE_AB = 12
 
 
 def _achse(v: np.ndarray) -> tuple[int, int] | None:
@@ -57,8 +58,10 @@ def _senkrecht(a: Any, b: Any) -> bool:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-def ansichten_planen(merk: Merkmale, art: str = "teil") -> list[dict[str, Any]]:
-    """Ansichten eines Einzelteils (Regel 1). Baugruppen und Zusammenbau: Vorderansicht, Draufsicht, Isometrie."""
+def ansichten_planen(merk: Merkmale, art: str = "teil",
+                     innen: Callable[[np.ndarray], bool] | None = None) -> list[dict[str, Any]]:
+    """Ansichten eines Einzelteils (Regel 1). Baugruppen und Zusammenbau: Vorderansicht, Draufsicht, Isometrie.
+    ``innen(p)`` (Weltpunkt im Material?) erlaubt die Prüfung, ob ein Vollschnitt Stufen verdecken würde."""
     if art != "teil":
         return [{"id": "v1", "art": "vorn", "lage": None, "massstab": None, "verdeckt": False, "mittellinien": False},
                 {"id": "v2", "art": "oben", "lage": None, "massstab": None, "verdeckt": False, "mittellinien": False},
@@ -102,7 +105,71 @@ def ansichten_planen(merk: Merkmale, art: str = "teil") -> list[dict[str, Any]]:
                       "mittellinien": True})
     views.append({"id": f"v{len(views) + 1}", "art": "iso", "lage": None, "massstab": None, "verdeckt": False,
                   "mittellinien": False, "optional": True})
+    schnitt = _schnittebene(merk, innen)
+    if schnitt is not None and braucht_oben:
+        # Innenmerkmale (Taschen, Sacklöcher, Senkungen, Einsatz- und Muttertaschen) lägen in der Vorderansicht nur
+        # verdeckt: Vorderansicht als Vollschnitt A–A durch ihre Achsen, Schnittverlauf in der Draufsicht (ISO 128-44)
+        views[0] = {"id": "v1", "art": "schnitt", "lage": None, "massstab": None, "verdeckt": False,
+                    "mittellinien": True, "schnitt": {"von": "v2", "name": "A", "blick": "vorn",
+                                                      "ebene": {"punkt": schnitt, "normale": [0.0, 1.0, 0.0]}}}
     return views
+
+
+def _schnittebene(merk: Merkmale, innen: Callable[[np.ndarray], bool] | None = None) -> list[float] | None:
+    """Lage (lokal) eines Vollschnitts parallel zur Vorderansicht durch die meisten Innenmerkmale, sonst None.
+    Innenmerkmal: Tasche, Sackloch, Bohrung mit Senkung, Einsatz- oder Muttertasche, deren Achse bzw. Boden in der
+    Vorderansicht als Kante erscheint (sonst zeigt die Vorderansicht sie schon als wahre Gestalt).
+
+    Regeln (ISO 128-40/-44, RECHERCHE-PHASE6.md 1.5): Bohrungen, Sacklöcher, Senkungen und Einsätze beschreibt die
+    Bohrungsangabe vollständig; sie lohnen den Schnitt erst ab zwei auf derselben Ebene (Übersicht statt verdeckter
+    Kanten). Taschen und Muttertaschen zählen doppelt, ihre Tiefe braucht eine Ansicht. Kein Schnitt, wenn die
+    Schnittfläche Stufen oder Taschen außerhalb der Ebene verdecken würde, die die Vorderansicht noch zeigt, denn
+    Schnittansichten zeigen keine verdeckten Kanten."""
+    gewicht: dict[float, int] = {}
+    for m in merk.liste:
+        y: float | None = None
+        w = 1
+        if m.art in ("bohrung", "einsatztasche"):
+            a = np.asarray(m.werte.get("achse"), dtype=float)
+            verdeckt = (not m.werte.get("durch")) or m.werte.get("gegenbohrung") or m.werte.get("senkung")
+            if verdeckt and abs(float(a[1])) < 1e-6:
+                y = round(float(np.asarray(m.signatur["mitte"])[1]), 3)
+        elif m.art == "muttertasche":
+            a = np.asarray(m.werte.get("achse"), dtype=float)
+            if abs(float(a[1])) < 1e-6:
+                y, w = round(float(np.asarray(m.signatur["mitte"])[1]), 3), 2
+        elif m.art == "tasche" and int(m.werte["achse"]) != 1:
+            y = round((float(np.asarray(m.werte["lo"])[1]) + float(np.asarray(m.werte["hi"])[1])) / 2, 3)
+            w = 2
+        if y is not None:
+            gewicht[y] = gewicht.get(y, 0) + w
+    if not gewicht:
+        return None
+    y = max(gewicht, key=lambda k: (gewicht[k], -k))
+    if gewicht[y] < 2:
+        return None
+    if innen is not None:
+        for m in merk.von_art("absatz", "tasche"):
+            i = int(m.werte["achse"])
+            lo, hi = np.asarray(m.werte["lo"], dtype=float), np.asarray(m.werte["hi"], dtype=float)
+            if i == 1 or lo[1] - 1e-3 <= y <= hi[1] + 1e-3:
+                continue  # Boden zeigt zum Betrachter oder liegt in der Ebene: bleibt im Schnitt sichtbar
+            if m.art == "absatz" and not _absatz_bemasst(m, merk.groesse):
+                continue  # kleine Stufe: bekommt kein Maß (_taschen), ihr Verschwinden im Schnitt schadet nicht
+            # Kante der Stufe in der Schnittebene: liegt auf beiden Seiten Material, steckt sie mitten in der
+            # Schnittfläche und wäre nicht mehr zu sehen (liegt sie auf dem Rand der Schnittfläche, bleibt sie Umriss)
+            p = (lo + hi) / 2
+            p[1] = y
+            boden, seite = float(m.werte["boden"]), float(m.werte["seite"])
+            beide = []
+            for d in (0.2, -0.2):
+                q = p.copy()
+                q[i] = boden + seite * d
+                beide.append(innen(merk.system.welt(q)))
+            if all(beide):
+                return None
+    g = merk.groesse
+    return [float(g[0]) / 2, y, float(g[2]) / 2]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -215,8 +282,8 @@ def _huellmasse(k: _Kontext) -> None:
     sysart = k.merk.system.art
     erledigt: set[int] = set()
     for a in k.ansichten:
-        if a.get("art") == "schnitt":
-            continue
+        if a.get("art") == "schnitt" and not (a.get("schnitt") or {}).get("blick"):
+            continue  # Teilschnitt in freier Lage: zeigt die Hülle nicht vollständig
         vid = a["id"]
         ax, ay = k.blattachsen(vid)
         for achse, richtung in ((ax, "x"), (ay, "y")):
@@ -376,6 +443,19 @@ def _bohrungen(k: _Kontext) -> None:
         in_ansicht.setdefault(vid, []).append(m)
     lochbild_von = {mid: lb for lb in k.merk.von_art("lochbild") for mid in lb.teile}
     for vid, ms in in_ansicht.items():
+        kreise = [m for m in ms if m.art in ("bohrung", "einsatztasche")
+                  and k.ansicht_mit_kreis(np.asarray(m.werte.get("achse"), dtype=float)) == vid]
+        if len(kreise) >= BOHRUNGSTABELLE_AB:
+            # Viele Bohrungen: Koordinatenbemaßung mit Tabelle statt Maßketten (RECHERCHE-PHASE6.md 1.6: ab etwa
+            # einem Dutzend, Lochplatten); Bezug ist die Ecke unten links der Ansicht
+            ax, ay = k.blattachsen(vid)
+            if ax is not None and ay is not None:
+                kreise.sort(key=lambda m: (m.text, *(round(float(v), 2) for v in m.signatur["mitte"])))
+                k.mass(f"koordinaten:{vid}", "koordinaten", vid,
+                       [k.seite(ax[0], -ax[1]), k.seite(ay[0], -ay[1])] + [k.bezug(m.id) for m in kreise], None, 5)
+                ms = [m for m in ms if m not in kreise]
+                if not ms:
+                    continue
         angegeben: set[str] = set()
         for m in ms:
             lb = lochbild_von.get(m.id)
@@ -394,6 +474,14 @@ def _bohrungen(k: _Kontext) -> None:
                                        if any(t in [x.id for x in ms] for t in lb.teile)])
 
 
+def _absatz_bemasst(m: Merkmal, g: np.ndarray) -> bool:
+    """Absatz mit eigenem Maß: Boden mindestens 2 % der Seitenfläche des Hüllquaders."""
+    i = int(m.werte["achse"])
+    a, b = [j for j in range(3) if j != i]
+    ausd = m.werte.get("ausdehnung") or [0, 0]
+    return float(ausd[0]) * float(ausd[1]) >= 0.02 * float(g[a]) * float(g[b])
+
+
 def _taschen(k: _Kontext) -> None:
     """Taschen: Tiefe, Umriss, Lage. Absätze: Höhe ab der Gegenseite, aber jede Höhe nur einmal (Regel 2: jedes Maß
     einmal; zwei Stufen auf gleicher Höhe oder symmetrisch gleich weit von beiden Seiten brauchen nur ein Maß) und nur
@@ -405,11 +493,8 @@ def _taschen(k: _Kontext) -> None:
         s = int(m.werte["seite"])
         n = np.zeros(3)
         n[i] = 1.0
-        if m.art == "absatz":
-            a, b = [j for j in range(3) if j != i]
-            ausd = m.werte.get("ausdehnung") or [0, 0]
-            if float(ausd[0]) * float(ausd[1]) < 0.02 * float(k.g[a]) * float(k.g[b]):
-                continue
+        if m.art == "absatz" and not _absatz_bemasst(m, k.g):
+            continue
         # Tiefe bzw. Höhe in einer Ansicht, in der der Boden als Kante erscheint
         vid = k.ansicht_seitlich(n)
         if vid is not None:

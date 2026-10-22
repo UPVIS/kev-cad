@@ -189,6 +189,15 @@ def pruefe(blatt: dict[str, Any], merk: Merkmale | None, ansichten: dict[str, An
         if i in symmetrie_achsen:
             graphen[i].verbinde(0.0, g[i] / 2)  # Mittellinie als Bezug
     for m in blatt["masse"]:
+        if m.get("art") == "koordinaten" and not m.get("verwaist"):
+            for b in (m.get("bezuege") or [])[2:]:
+                f = merk.get(str(b.get("merkmal") or ""))
+                if f is None:
+                    continue
+                for i in range(3):
+                    if abs(float(np.asarray(f.werte.get("achse"), dtype=float)[i])) < 0.5:
+                        graphen[i].verbinde(0.0, float(np.asarray(f.signatur["mitte"])[i]))
+            continue
         if m.get("verwaist") or m.get("art") not in ("linear", "bezugskette"):
             continue
         i = _achse_des_masses(merk, m, blicke)
@@ -220,7 +229,7 @@ def pruefe(blatt: dict[str, Any], merk: Merkmale | None, ansichten: dict[str, An
     angaben: set[str] = set()
     for m in blatt["masse"]:
         for b in m.get("bezuege") or []:
-            if m.get("art") in ("bohrung", "gewinde", "durchmesser", "merkmal"):
+            if m.get("art") in ("bohrung", "gewinde", "durchmesser", "merkmal", "koordinaten"):
                 angaben.add(str(b.get("merkmal")))
     lochbild_von = {t: lb for lb in merk.von_art("lochbild") for t in lb.teile}
     for f in merk.von_art("bohrung", "einsatztasche", "muttertasche", "langloch"):

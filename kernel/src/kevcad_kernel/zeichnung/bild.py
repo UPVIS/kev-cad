@@ -14,7 +14,6 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 
 from kevcad_kernel.zeichnung.zeichner import lies_nutzlast
 

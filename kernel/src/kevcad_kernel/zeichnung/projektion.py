@@ -535,7 +535,6 @@ def projiziere(formen: Any, ansicht: Any = "vorn", *, verdeckt: bool = True, gla
         proj.linien["verdeckt"] = ohne_ueberdeckte(proj.linien["verdeckt"], proj.linien["sichtbar"], tol_deck)
         for d in proj.teile.values():
             d["verdeckt"] = ohne_ueberdeckte(d.get("verdeckt") or [], proj.linien["sichtbar"], tol_deck)
-    netz = not proj.exakt
     for d in proj.teile.values():
         for art in ("sichtbar", "verdeckt", "duenn"):
             if d.get(art):
@@ -609,7 +608,6 @@ def _hlr(liste: list[tuple[str, Any]], b: Blick, *, verdeckt: bool, glatt: bool,
         algo.Hide()
         h = HLRBRep_HLRToShape(algo)
     else:
-        from OCP.BRepMesh import BRepMesh_IncrementalMesh
         from OCP.HLRBRep import HLRBRep_PolyAlgo, HLRBRep_PolyHLRToShape
 
         algo = HLRBRep_PolyAlgo()
