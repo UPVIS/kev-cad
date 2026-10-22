@@ -855,4 +855,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     register_zeichnung_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE, "writes": WRITES})
 
+    # Phase 6: Dokumente exportieren (dokument_tools.py, P6-A2)
+    from .dokument_tools import register_dokument_tools
+
+    register_dokument_tools(tool, t, svc)
+
     return t

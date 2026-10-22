@@ -59,8 +59,9 @@ struct KevCADCommands: Commands {
         }
         CommandGroup(replacing: .importExport) {
             Menu("Exportieren") {
+                // ⇧⌘E öffnet seit Phase 6 „Dokumente exportieren …“ (DokumenteExportCommands)
                 Button("STEP, STL und 3MF") { model.actions?.export(formats: ExportFormat.standard.map(\.rawValue)) }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .keyboardShortcut("e", modifiers: [.command, .shift, .option])
                 Divider()
                 ForEach(ExportFormat.allCases) { format in
                     Button("Nur \(format.title)") { model.actions?.export(formats: [format.rawValue]) }

@@ -529,6 +529,10 @@ public enum KernelMessage: Sendable {
     case bestand(BestandMessage)
     /// Phase 6 (additiv): Zeichnungen, DOCS und DRAWING (DOKUMENTE.md).
     case dokumente(DokumenteMessage)
+    /// Phase 6 (additiv, P6-A2): Bauplan mit Strichbildern (BAUPLAN).
+    case bauplan(BauplanNachricht)
+    /// Phase 6 (additiv, P6-A2): Der Kernel lässt ein PDF bauen (DOC_EXPORT_REQ, Antwort DOC_EXPORT_RES).
+    case dokumentExport(DokumentExportAnfrage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -560,6 +564,8 @@ public enum KernelMessage: Sendable {
         case .versionen(let v): return v.typeName
         case .bestand: return "BESTAND"
         case .dokumente(let d): return d.typeName
+        case .bauplan: return "BAUPLAN"
+        case .dokumentExport: return "DOC_EXPORT_REQ"
         case .unknown(let t, _): return t
         }
     }
@@ -578,6 +584,7 @@ public enum KernelMessage: Sendable {
         case .animation(let m): return m.replyTo
         case .versionen(let m): return m.replyTo
         case .dokumente(let m): return m.replyTo
+        case .bauplan(let m): return m.replyTo
         default: return nil
         }
     }
@@ -618,6 +625,8 @@ public enum KernelMessage: Sendable {
         case let t where VersionMessage.types.contains(t): return .versionen(try VersionMessage.decode(type: t, frame: frame))
         case let t where DokumenteMessage.types.contains(t):
             return .dokumente(try DokumenteMessage.decode(type: t, frame: frame))
+        case "BAUPLAN": return .bauplan(try BauplanNachricht.decode(frame))
+        case "DOC_EXPORT_REQ": return .dokumentExport(try DokumentExportAnfrage.decode(frame))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

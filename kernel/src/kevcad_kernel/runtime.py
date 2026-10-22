@@ -36,6 +36,7 @@ from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bauplan.dienst import BauplanDienst
 from kevcad_kernel.bestand.anbindung import ANFRAGEN as BESTAND_ANFRAGEN
 from kevcad_kernel.bestand.anbindung import BestandAnbindung
+from kevcad_kernel.dokument_export import DokumentExportDienst
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
 from kevcad_kernel.druck.laufzeit import DruckRuntime
@@ -99,11 +100,12 @@ class Job:
 
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
-                    ZeichnungRuntimeMixin, VersionenRuntimeMixin):
+                    ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
-    Zeichnungen (``ZeichnungRuntimeMixin``); Versionen (``VersionenRuntimeMixin``)."""
+    Zeichnungen (``ZeichnungRuntimeMixin``); Versionen (``VersionenRuntimeMixin``); Dokumente exportieren
+    (``DokumentExportDienst``, dokument_export.py)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -1216,7 +1218,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES", "DOC_EXPORT_RES") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:

@@ -244,3 +244,56 @@ Formatwahl ab), `{"op": "mass_aendern", "id", "text", "toleranz", "fest"}` (Text
 trägt zusätzlich `ausrichtung`, `massstab`, `masse`, `stand`, `hinweise`, `pruefung` (Anzahl).
 
 Einzelteilblätter rechnen die Verdeckung exakt im Hilfsprozess mit 1,5 s Budget je Ansicht, sonst auf dem Netz.
+
+## Anhang: Export und Bauplan in der App (P6-A2, rein additiv)
+
+Umsetzung: Kernel `kevcad_kernel/dokument_export.py` (Laufzeit), `mcp_tools/dokument_tools.py` (MCP), Referenz
+`protocol.doc_export_req` und `check_doc_export_res`; App `KevCADCore/Dokumente/Export*.swift` (Seiten, PDF, Druck),
+`Bauplan*.swift` (Decoder, Durchspielen) und die Oberfläche unter `app/Sources/KevCAD/Dokumente/`. Testdateien:
+`doc_export_req.frame`, `doc_export_res.frame` und Abschnitt `export` in `fixtures.json`
+(`kernel/tools/make_export_fixtures.py`).
+
+**DOC_EXPORT_REQ** (Kernel → App), Felder im Einzelnen:
+
+| Feld | Inhalt |
+|---|---|
+| `id` | Anfrage; die App antwortet mit `DOC_EXPORT_RES` und `reply_to` |
+| `bausteine` | Liste in der gewünschten Reihenfolge, je `{art, spalten?, auswahl?}`; `art` aus `deckblatt`, `stueckliste`, `teileliste`, `einkaufsliste`, `zuschnitt`, `zeichnungen`, `bauplan`; `spalten` (Spalten-ids der Tabelle in dieser Reihenfolge, sonst die der Vorlage bzw. die Vorgabe); `auswahl` nur bei `zeichnungen` (Blatt-ids, sonst alle). Leer mit `vorlage`: die Bausteine der Vorlage |
+| `ziel` | absoluter Pfad der .pdf (der Kernel legt den Ordner an) oder null, wenn nur gedruckt wird |
+| `drucken` | true: zusätzlich der macOS-Druckdialog, je Blattformat ein Auftrag mit `.pageScaleNone` |
+| `format`, `ausrichtung` | Papier der Berichts- und Bauplanseiten (`A4`/`A3`, `hoch`/`quer`), null = Vorlage bzw. A4 hoch; Zeichnungsblätter behalten immer ihr eigenes Format |
+| `vorlage` | Name einer Vorlage aus `vorlagen.json` oder null |
+
+Spalten-ids: Stückliste `pos`, `bild`, `benennung`, `norm`, `material`, `masse`, `anzahl`, `gewicht`, `preis_je`,
+`preis`, `herkunft`; Teileliste `nr`, `bild`, `name`, `baugruppe`, `herkunft`, `material`, `abmessungen`, `gewicht`;
+Einkaufsliste `abhaken`, `menge`, `einheit`, `benennung`, `preis_je`, `preis`, `bezugsquelle`, `hinweis`; Zuschnitt
+`stange`, `herkunft`, `stuecke`, `rest`, `verschnitt`.
+
+**DOC_EXPORT_RES** (App → Kernel): `reply_to`, `ok`, `pfad` (geschriebene Datei oder null), `seiten`, `fehler` (Text
+oder null), additiv `bausteine` (je `{art, seiten}`), `formate` (z. B. `{"A4 hoch": 13, "A3 quer": 1}`), `gedruckt`
+(Text, wenn der Druckdialog offen ist, sonst null), `hinweise` (z. B. „Bauplan noch nicht gerechnet“), `ms`, `phasen`
+(Dauer je Phase in ms: `bauplan_ms`, `blaetter_ms`, `bilder_ms`, `seiten_ms`, `pdf_ms`).
+
+**MCP** `dokument_export(bausteine=None, ziel=None, drucken=False)`: `bausteine` wie oben, Einträge auch als Namen
+(Groß- und Kleinschreibung egal, gängige Synonyme), `"alle"`, `"vorlage:<Name>"` oder `{format, ausrichtung}`.
+Ohne `ziel`: `<projekt>/output/<Projekt>-dokumente.pdf`; ein relativer Pfad liegt in `output/`.
+
+**`vorlagen.json`** (gehört der App):
+
+```json
+{"version": 1, "zuletzt": "Werkstatt",
+ "vorlagen": [{"name": "Werkstatt", "format": "A4", "ausrichtung": "hoch",
+               "bausteine": [{"art": "deckblatt", "an": true},
+                             {"art": "stueckliste", "an": true, "spalten": ["pos", "bild", "benennung", "masse", "anzahl"]},
+                             {"art": "zeichnungen", "an": true, "auswahl": null}, {"art": "bauplan", "an": true}]}]}
+```
+
+**PDF:** Kopf- und Fußzeile auf jeder Seite außer dem Deckblatt (Projekt, Baustein, Version und Datum, Seite x/y),
+Tabellen brechen nur zwischen Zeilen und wiederholen ihren Kopf, Gruppenüberschriften bleiben bei ihrer ersten Zeile,
+Inhaltsverzeichnis als PDF-Outline je Baustein. Berichtsschrift Helvetica Neue (Teilmenge eingebettet), Zeichnungen
+wie die Blätter selbst.
+
+**Durchspielen** (App): je Montageschritt sind nur die bis dahin montierten Teile zu sehen (Hauptmontage: alle
+früheren Hauptschritte; Vormontage: nur Schritte derselben `baugruppe`), die neuen fahren aus `bild.explosion` (sonst
+`−einbau.richtung × einbau.weg`) in ihre Lage, Kamera aus `bild.kamera`, eingepasst auf `bild.ausschnitt`. Schritte
+der übrigen Abschnitte zeigen ihre `teile` hervorgehoben im fertigen Stand.

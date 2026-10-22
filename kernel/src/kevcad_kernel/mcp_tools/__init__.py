@@ -70,6 +70,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "zeichnung_erstellen",
     "zeichnung_bearbeiten",
     "zeichnung_bild",
+    # Phase 6: Dokumente exportieren
+    "dokument_export",
     # Versionen
     "versionen",
     "version_wiederherstellen",

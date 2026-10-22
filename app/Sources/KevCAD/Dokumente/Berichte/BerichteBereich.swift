@@ -1,8 +1,8 @@
 import KevCADCore
 import SwiftUI
 
-/// Berichte im Bereich Dokumente. Platzhalter von P6-A1; Stückliste, Zuschnitt, Einkauf und Druckteile als Tabellen
-/// baut P6-A2 hier hinein.
+/// Berichte im Bereich Dokumente (Seitenleiste „Fertigung“): Stückliste, Teileliste, Einkaufsliste und Zuschnitt als
+/// druckfertige Seiten (BerichteAnsicht, Strang P6-A2). Der Name ist die Schnittstelle zum Bereich Dokumente von P6-A1.
 struct BerichteBereich: View {
     @ObservedObject var model: AppModel
 
@@ -11,10 +11,6 @@ struct BerichteBereich: View {
     }
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Berichte", systemImage: "tablecells")
-        } description: {
-            Text("Stückliste, Teileliste, Einkaufsliste, Zuschnitt, Druckteile, Gewicht und Kosten.")
-        }
+        BerichteAnsicht(model: model)
     }
 }

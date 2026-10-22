@@ -577,6 +577,19 @@ class FakeService:
     def drawing_image(self, blatt: str, breite: int = 1800) -> dict[str, Any]:
         self._record("drawing_image", blatt, breite)
         return {"ok": True, "png": PNG, "breite": breite, "hoehe": int(breite * 210 / 297), "blatt": dict(self.BLATT)}
+
+    # Dokumente exportieren (P6-A2) ---------------------------------------------------------------------------------
+
+    def dokument_export(self, bausteine: Any = None, ziel: str | None = None, drucken: bool = False,
+                        timeout_s: float = 600.0) -> dict[str, Any]:
+        self._record("dokument_export", bausteine, ziel, drucken)
+        if bausteine == ["gibtsnicht"]:
+            return {"ok": False, "error": "Baustein 'gibtsnicht' unbekannt"}
+        return {"ok": True, "pfad": ziel or "/tmp/p/output/Halter-dokumente.pdf", "seiten": 9,
+                "bausteine": [{"art": "deckblatt", "seiten": 1}, {"art": "stueckliste", "seiten": 2},
+                              {"art": "bauplan", "seiten": 6}],
+                "formate": {"A4 hoch": 9}, "gedruckt": "Druckdialog geöffnet" if drucken else None, "hinweise": [],
+                "ms": 1840, "vorlage": None}
     # Versionen ----------------------------------------------------------------------------------------------------
 
     VERSIONEN = [

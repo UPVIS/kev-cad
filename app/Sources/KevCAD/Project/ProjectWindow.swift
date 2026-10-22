@@ -34,9 +34,14 @@ struct ProjectWindow: View {
             SelfTest.runIfRequested(session)
             CatalogSelfTest.runIfRequested(session)
             ZukaufSelfTest.runIfRequested(session)
+            BauplanExportSelfTest.runIfRequested(session, state: state, zustand: dokumente)  // Phase 6, P6-A2
             if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
+        // Phase 6, P6-A2: Durchspielen und „Im 3D zeigen“ aus dem Bauplan holen den 3D-Bereich nach vorn
+        .onReceive(model.bauplan.$zeige3D.dropFirst()) { _ in
+            withAnimation(.snappy(duration: 0.2)) { state.bereich = .modell }
+        }
         .onChange(of: model.project?.path) { _, _ in  // Phase 6: anderes Projekt, andere Blätter
             dokumente.bearbeiter.vergessen()
             dokumente.auswahl = nil
@@ -156,6 +161,7 @@ struct ProjectWindow: View {
                                 VergleichKarte(model: model, store: model.versionen, zustand: versionen)
                                     .padding(14)
                             }
+                            .overlay(alignment: .bottom) { DurchspielenLeiste(model: model) }  // Phase 6, P6-A2
                         AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
                         if state.showBOM {
                             PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
@@ -297,7 +303,7 @@ struct ProjectToolbar: ToolbarContent {
                 actions?.export(formats: ExportFormat.standard.map(\.rawValue))
             }
             .disabled(model.parts.isEmpty)
-            .help("Klick: STEP, STL und 3MF nach output/ (⇧⌘E); Pfeil: einzelnes Format")
+            .help("Klick: STEP, STL und 3MF nach output/ (⌥⇧⌘E); Pfeil: einzelnes Format")
 
             Toggle(isOn: Binding(
                 get: { state.showBOM }, set: { on in withAnimation(.snappy(duration: 0.2)) { state.showBOM = on } }

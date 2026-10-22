@@ -1,8 +1,8 @@
 import KevCADCore
 import SwiftUI
 
-/// Bauplan im Bereich Dokumente. Platzhalter von P6-A1; die Ansicht mit Schritten, Strichbildern und Durchspielen baut
-/// P6-A2 hier hinein.
+/// Bauplan im Bereich Dokumente (Seitenleiste „Fertigung“): Schritte mit Strichbildern, Bearbeiten und Durchspielen
+/// (BauplanAnsicht, Strang P6-A2). Der Name ist die Schnittstelle zum Bereich Dokumente von P6-A1.
 struct BauplanBereich: View {
     @ObservedObject var model: AppModel
 
@@ -11,10 +11,6 @@ struct BauplanBereich: View {
     }
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Bauplan", systemImage: "hammer")
-        } description: {
-            Text("Schritt für Schritt: Material, Zuschnitt, Bearbeiten, Drucken, Montage.")
-        }
+        BauplanAnsicht(model: model)
     }
 }
