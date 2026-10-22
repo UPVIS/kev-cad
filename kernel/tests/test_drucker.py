@@ -199,6 +199,9 @@ def test_profile_vererbung_und_auswahl(tmp_path):
     einst, fil = p.schreiben(tmp_path / "flach", "0.20mm Standard @BBL P1P", ["Kevins PLA"])
     assert json.loads(fil[0].read_text())["filament_density"] == ["1.24"]
     assert json.loads(einst[1].read_text())["wall_loops"] == "2"
+    assert json.loads(einst[1].read_text())["curr_bed_type"] == "Textured PEI Plate"  # sonst scheitert PETG
+    einst, _ = p.schreiben(tmp_path / "flach2", "0.20mm Standard @BBL P1P", ["Kevins PLA"], platte="Cool Plate")
+    assert json.loads(einst[1].read_text())["curr_bed_type"] == "Cool Plate"
 
 
 def test_slicen_attrappe_zwischenspeicher_und_modell_id(tmp_path, monkeypatch):
@@ -266,13 +269,17 @@ def test_slicen_fehler_zeitlimit_abbruch(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not ECHTES_BAMBU.exists(), reason="Bambu Studio fehlt (Mac mini)")
-def test_slicen_echt_mit_bambu_studio(tmp_path):
-    """Echte CLI mit aufgelösten Systemprofilen; Kevins Benutzerordner wird nur gelesen."""
+@pytest.mark.parametrize("material", ["pla", "petg"])
+def test_slicen_echt_mit_bambu_studio(tmp_path, material):
+    """Echte CLI mit aufgelösten Systemprofilen; Kevins Benutzerordner wird nur gelesen. PETG braucht die Druckplatte
+    des P1P (Textured PEI), sonst lehnt die CLI ab."""
     p = Profile()
+    assert p.standard_platte() == "Textured PEI Plate"
     stl = wuerfel_stl(tmp_path / "wuerfel.stl")
-    einst, fil = p.schreiben(tmp_path / "prof", p.prozess_fuer(0.2), [p.filament_fuer("pla")])
+    einst, fil = p.schreiben(tmp_path / "prof", p.prozess_fuer(0.2), [p.filament_fuer(material)])
     e = slicen([stl], "Wuerfel", einstellungen=einst, filamente=fil, anordnen=True, cache=tmp_path / "c")
     assert len(e.platten) == 1 and e.platten[0].zeit_s > 300 and 2 < e.platten[0].g < 8  # 20-mm-Würfel ≈ 3,7 g
+    assert e.platten[0].material == material.upper()
     with zipfile.ZipFile(e.datei) as z:
         namen = z.namelist()
         assert "Metadata/plate_1.gcode" in namen and not any(n.startswith("3D/Objects") for n in namen)

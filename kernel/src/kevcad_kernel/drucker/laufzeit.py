@@ -31,6 +31,8 @@ class DruckerRuntimeMixin:
             extra["app"] = Path(os.environ["KEVCAD_BAMBU_STUDIO"])
         if os.environ.get("KEVCAD_DRUCKER_CACHE"):
             extra["cache"] = Path(os.environ["KEVCAD_DRUCKER_CACHE"])
+        if os.environ.get("KEVCAD_DRUCKER_NICHT_OEFFNEN") == "1":  # Selbsttest: Bambu Studio nicht wirklich öffnen
+            extra["oeffnen"] = lambda p: self._log(f"[drucker] (Selbsttest) würde in Bambu Studio öffnen: {p.name}")  # type: ignore[attr-defined]
         self._drucker = DruckerDienst(senden=self._send_app, quelle=self._drucker_quelle,  # type: ignore[attr-defined]
                                       log=self._log, **extra,  # type: ignore[attr-defined]
                                       ssdp_an=os.environ.get("KEVCAD_DRUCKER_SSDP", "1") != "0",
@@ -135,13 +137,25 @@ class DruckerRuntimeMixin:
             res = export(ziel=str(ordner / f"{name}.3mf"), platten=list(platten))
             if not res.get("ok"):
                 raise QuelleFehler(res.get("fehler") or res.get("error") or "Druckvorschau: Export fehlgeschlagen")
-            pfad = Path(str(res.get("pfad")))
+            # V-K: ein Bambu-Projekt je Material (Bambu Studio 2.07 slict mehrere Filamente per CLI nicht richtig;
+            # der P1P ohne AMS druckt ohnehin ein Material je Platte)
+            dateien = res.get("dateien") or [{"pfad": res.get("pfad"), "material": None,
+                                              "platten": res.get("platten") or platten}]
+            if len(dateien) > 1:
+                wahl = "; ".join(f"{str(d.get('material') or '?').upper()}: Platte "
+                                 + ", ".join(str(n) for n in d.get("platten") or []) for d in dateien)
+                raise QuelleFehler("Mehrere Materialien: Der P1P druckt ein Material je Platte. Bitte nur Platten "
+                                   f"eines Materials wählen ({wahl}).")
+            datei = dateien[0]
+            pfad = Path(str(datei.get("pfad")))
             mit = hat_projekt_einstellungen(pfad)
             q = Quelle(name=name, eingaben=[pfad], ausgabe=proj.output_dir, mit_einstellungen=mit,
-                       platten=[int(p) for p in (res.get("platten") or platten)],
+                       platten=[int(p) for p in (datei.get("platten") or res.get("platten") or platten)],
+                       hinweise=[str(h) for h in res.get("hinweise") or []],
                        run=getattr(self, "_run_no", None))
             if not mit:
                 q.prozess, q.filamente = self._drucker_profile_aus_vorschau(q.platten)
+                q.platte = self._drucker_platte()
                 q.hinweise.append("Das 3MF der Druckvorschau bringt keine Bambu-Einstellungen mit; Kev CAD nimmt die "
                                   "Systemprofile (P1P 0.4).")
             return q
@@ -174,6 +188,12 @@ class DruckerRuntimeMixin:
                            if t.get("material") == mat), None)
             filamente.append(prof.filament_fuer(mat, wunsch) if wunsch else self._drucker_filament(prof, mat))
         return prozess, filamente
+
+    def _drucker_platte(self) -> str | None:
+        """Druckplatte aus ``kevcad.json`` (``druck.platte``, Name wie in Bambu Studio), sonst None (Druckermodell)."""
+        proj = self._project  # type: ignore[attr-defined]
+        wert = ((proj.settings.get("druck") or {}).get("platte") if proj is not None else None)
+        return str(wert) if wert else None
 
     def _drucker_filament(self, prof: Profile, material: str) -> str:
         proj = self._project  # type: ignore[attr-defined]
@@ -214,7 +234,8 @@ class DruckerRuntimeMixin:
         prof = Profile(self._drucker.app)
         return Quelle(name=name if len(materialien) == 1 else f"{name}-{material}", eingaben=eingaben,
                       ausgabe=proj.output_dir, anordnen=True, ausrichten=True, prozess=PROZESS_STANDARD,
-                      filamente=[self._drucker_filament(prof, material)], platten=list(platten),
+                      filamente=[self._drucker_filament(prof, material)], platte=self._drucker_platte(),
+                      platten=list(platten),
                       hinweise=["Ohne Druckvorschau: Bambu Studio richtet die Teile selbst aus und ordnet sie an "
                                 f"({len(eingaben)} Teile, {material.upper()})."],
                       run=getattr(self, "_run_no", None))

@@ -4,6 +4,7 @@ MCP ``drucken``, PRINT_CONTROL gesperrt. Kein echter Drucker, kein echtes Bambu 
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -83,12 +84,13 @@ def test_drucken_ueber_die_laufzeit(env):
     assert ack["ok"]
     _, _, r, _ = app.wait_for(lambda h: h["type"] == "PRINT_JOB_RES" and h["reply_to"] == "a-4", start=0)
     start = app.mark()
-    assert not r["ok"] and "Platten 1 bis 1" in r["fehler"] and check_drucker_message(r) == []
+    assert not r["ok"] and "1 bis 1" in r["fehler"] and check_drucker_message(r) == []
     # alle Platten vorbereiten, dann bestätigen
     anfrage(app, {"type": "PRINT_JOB_REQ", "id": "a-5", "platten": [], "weg": "a", "bestaetigt": False})
     _, _, r, _ = app.wait_for(lambda h: h["type"] == "PRINT_JOB_RES" and h["reply_to"] == "a-5", start=start)
     assert r["ok"] and r["schritt"] == "vorbereitet" and r["platten"] == []
-    assert any("Bambu Studio richtet" in x and "2 Teile, PETG" in x for x in r["hinweise"])
+    if not callable(getattr(rt, "druck_export", None)):  # Ersatzweg ohne Druckvorschau
+        assert any("Bambu Studio richtet" in x and "2 Teile, PETG" in x for x in r["hinweise"])
     anfrage(app, {"type": "PRINT_JOB_REQ", "id": "a-6", "platten": [], "weg": "a", "bestaetigt": True,
                   "auftrag": r["auftrag"]})
     _, _, r2, _ = app.wait_for(lambda h: h["type"] == "PRINT_JOB_RES" and h["reply_to"] == "a-6", start=start)
@@ -119,6 +121,48 @@ def test_drucken_ueber_die_laufzeit(env):
     assert not rt.drucken([1], "b")["ok"]
     ack = anfrage(app, {"type": "PRINT_CONTROL", "id": "a-8", "aktion": "verwerfen", "auftrag": res["auftrag"]})
     assert ack["ok"] and rt.drucker_status()["auftrag"]["zustand"] == "verworfen"
+
+
+def test_quelle_aus_der_druckvorschau(env, tmp_path):
+    """Naht zu V-K: ``druck_export`` liefert ein Bambu-Projekt je Material; mehrere Materialien → Fehler mit Wahl."""
+    import zipfile
+
+    rt = env["rt"]
+    if rt._project is None:
+        assert rt.project_new(str(env["tmp"] / "Halter"), "empty")["ok"]
+    projekt = tmp_path / "p.3mf"
+    with zipfile.ZipFile(projekt, "w") as z:
+        z.writestr("Metadata/project_settings.config", json.dumps({"printer_model": "Bambu Lab P1P",
+                                                                   "printer_settings_id": "Bambu Lab P1P 0.4 nozzle"}))
+    aufrufe = []
+
+    def export_ein(ziel=None, platten=None):
+        aufrufe.append((ziel, platten))
+        return {"ok": True, "pfad": str(projekt), "pfade": [str(projekt)], "platten": [1, 2], "fehler": None,
+                "dateien": [{"pfad": str(projekt), "material": "petg", "filament": "Generic PETG @BBL P1P",
+                             "platten": [1, 2]}], "hinweise": ["PETG: in Bambu Studio geprüft"]}
+
+    def export_zwei(ziel=None, platten=None):
+        return {"ok": True, "pfad": "a.3mf", "platten": [1, 2], "fehler": None,
+                "dateien": [{"pfad": "a.3mf", "material": "petg", "platten": [1]},
+                            {"pfad": "b.3mf", "material": "pla", "platten": [2]}]}
+
+    try:
+        rt.druck_export = export_ein
+        q = rt._drucker_quelle([], tmp_path / "q")
+        assert q.eingaben == [projekt] and q.mit_einstellungen and not q.anordnen and q.platten == [1, 2]
+        assert q.hinweise == ["PETG: in Bambu Studio geprüft"] and aufrufe[0][1] == []
+        assert aufrufe[0][0].endswith("Halter-platten.3mf")
+        rt.druck_export = export_zwei
+        from kevcad_kernel.drucker.dienst import QuelleFehler
+
+        with pytest.raises(QuelleFehler, match=r"PETG: Platte 1; PLA: Platte 2"):
+            rt._drucker_quelle([], tmp_path / "q")
+        rt.druck_export = lambda ziel=None, platten=None: {"ok": False, "fehler": "Keine Druckteile im Modell."}
+        with pytest.raises(QuelleFehler, match="Keine Druckteile"):
+            rt._drucker_quelle([1], tmp_path / "q")
+    finally:
+        del rt.druck_export
 
 
 def call(url: str, name: str, args: dict | None = None):

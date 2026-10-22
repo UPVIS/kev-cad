@@ -176,7 +176,9 @@ Gehören der App, eine Datei je Variante: `~/Library/Application Support/<Bundle
   geprüft), hält ihn nur im Speicher, solange die Verbindung besteht, und gibt Ausgabe und Fehlertext von `security`
   nie weiter. Niemand gibt ihn aus: nicht in Nachrichten, Protokollen, Tracebacks, MCP-Ergebnissen, Dateien oder
   Commits. Das Feld `schluesselbund` in `drucker.json` ist nur ein Hinweis für Menschen.
-- Profile für das Slicen wie in der Druckvorschau (`kevcad.json` → `druck.filament`, Drucker `p1p-0.4`).
+- Profile für das Slicen wie in der Druckvorschau (`kevcad.json` → `druck.filament`, Drucker `p1p-0.4`); additiv
+  `druck.platte` (Druckplatte mit dem Namen aus Bambu Studio, Vorgabe die des P1P: „Textured PEI Plate“). Die CLI setzt
+  die Platte nicht selbst; ohne sie nimmt sie die Cool Plate, und PETG scheitert.
 
 ### Nachrichten (ohne Nutzlast)
 

@@ -48,6 +48,7 @@ class Quelle:
     ausrichten: bool = False
     prozess: str | None = None  # Profilname, wenn der Kernel Profile lädt
     filamente: list[str] = field(default_factory=list)
+    platte: str | None = None  # Druckplatte (Bambu-Name), sonst die des Druckermodells
     platten: list[int] = field(default_factory=list)  # Plattennummern der Vorschau in Reihenfolge der Ausgabe
     hinweise: list[str] = field(default_factory=list)
     run: int | None = None
@@ -476,19 +477,24 @@ class DruckerDienst:
         if a.datei is not None and a.ergebnis is not None and a.datei.exists():
             return a.ergebnis
         self._setze(a, "slict", "Platten werden bereitgestellt …")
-        ordner = self.cache / "quelle" / a.id
-        shutil.rmtree(ordner, ignore_errors=True)
+        quelle = self.cache / "quelle"
+        shutil.rmtree(quelle, ignore_errors=True)  # Eingänge früherer Aufträge (Platte ist knapp)
+        ordner = quelle / a.id
         ordner.mkdir(parents=True, exist_ok=True)
-        q = self._quelle_fn(list(a.platten), ordner)
-        einst: list[Path] = []
-        fil: list[Path] = []
-        if not q.mit_einstellungen:
-            prof = self._profile_fn()
-            einst, fil = prof.schreiben(ordner / "profile", q.prozess or prof.prozess_fuer(None),
-                                        q.filamente or [prof.filament_fuer("pla")])
-        self._setze(a, "slict", "Bambu Studio slict die Platten …")
-        erg = slicen(q.eingaben, q.name, einstellungen=einst, filamente=fil, anordnen=q.anordnen,
-                     ausrichten=q.ausrichten, app=self.app, cache=self.cache, abbruch=self._abbruch, log=self._log)
+        try:
+            q = self._quelle_fn(list(a.platten), ordner)
+            einst: list[Path] = []
+            fil: list[Path] = []
+            if not q.mit_einstellungen:
+                prof = self._profile_fn()
+                einst, fil = prof.schreiben(ordner / "profile", q.prozess or prof.prozess_fuer(None),
+                                            q.filamente or [prof.filament_fuer("pla")], platte=q.platte)
+            self._setze(a, "slict", "Bambu Studio slict die Platten …")
+            erg = slicen(q.eingaben, q.name, einstellungen=einst, filamente=fil, anordnen=q.anordnen,
+                         ausrichten=q.ausrichten, app=self.app, cache=self.cache, abbruch=self._abbruch,
+                         log=self._log)
+        finally:
+            shutil.rmtree(ordner, ignore_errors=True)  # das Ergebnis liegt im Zwischenspeicher
         erg.hinweise = list(q.hinweise) + list(erg.hinweise)
         with self._lock:
             a.ergebnis = erg

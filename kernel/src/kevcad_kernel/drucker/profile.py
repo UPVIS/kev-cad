@@ -33,6 +33,7 @@ FILAMENT_STANDARD: dict[str, str] = {
     "petg-cf": "Generic PETG-CF @BBL P1P",
 }
 PROZESS_STANDARD = "0.20mm Standard @BBL P1P"
+PLATTE_STANDARD = "Textured PEI Plate"  # default_bed_type des P1P in Bambu Studio
 
 
 class ProfilFehler(Exception):
@@ -119,13 +120,27 @@ class Profile:
             return wunsch
         return FILAMENT_STANDARD[material_schluessel(material)]
 
-    def schreiben(self, ordner: Path, prozess: str, filamente: list[str]) -> tuple[list[Path], list[Path]]:
-        """Flache Profile für ``--load-settings`` (Maschine, Prozess) und ``--load-filaments`` schreiben."""
+    def standard_platte(self) -> str:
+        """Druckplatte des Druckermodells (``default_bed_type`` in „Bambu Lab P1P“, beim P1P „Textured PEI Plate“)."""
+        try:
+            modell = str(self.laden(MASCHINE_P1P_04).get("printer_model") or "Bambu Lab P1P")
+            return str(self.laden(modell).get("default_bed_type") or PLATTE_STANDARD)
+        except ProfilFehler:
+            return PLATTE_STANDARD
+
+    def schreiben(self, ordner: Path, prozess: str, filamente: list[str],
+                  platte: str | None = None) -> tuple[list[Path], list[Path]]:
+        """Flache Profile für ``--load-settings`` (Maschine, Prozess) und ``--load-filaments`` schreiben.
+
+        ``curr_bed_type`` (Druckplatte) setzt die CLI nicht aus dem Druckermodell; ohne ihn nimmt sie die Cool Plate,
+        und PETG scheitert mit „Filaments are not compatible with the plate type“ (lokal geprüft am 22.10.2026)."""
         ordner.mkdir(parents=True, exist_ok=True)
         einst = []
         for art, name in (("maschine", MASCHINE_P1P_04), ("prozess", prozess)):
             d = self.laden(name)
             d.setdefault("from", "system")
+            if art == "prozess":
+                d["curr_bed_type"] = platte or self.standard_platte()
             p = ordner / f"{art}.json"
             p.write_text(json.dumps(d, indent=1, ensure_ascii=False), encoding="utf-8")
             einst.append(p)

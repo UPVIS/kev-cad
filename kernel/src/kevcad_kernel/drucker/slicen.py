@@ -38,7 +38,10 @@ from kevcad_kernel.drucker.profile import BAMBU_APP, MODELL_ID_P1P
 
 CACHE = Path.home() / "Library/Caches/de.upvis.kevcad/drucker"
 ZEITLIMIT_S = 900.0
-CACHE_BEHALTEN = 24
+# Die Systemplatte ist knapp: nur die letzten Stände und höchstens rund 400 MB behalten
+CACHE_BEHALTEN = 6
+CACHE_MAX_BYTES = 400 * 1024 * 1024
+NICHT_AUFRAEUMEN = ("home", "quelle")
 
 
 class SlicenFehler(Exception):
@@ -159,14 +162,26 @@ def modell_id_nachtragen(datei: Path, modell_id: str = MODELL_ID_P1P) -> bool:
     return True
 
 
-def _aufraeumen(cache: Path) -> None:
+def _groesse(p: Path) -> int:
     try:
-        ordner = sorted((p for p in cache.iterdir() if p.is_dir() and p.name != "home"),
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    except OSError:
+        return 0
+
+
+def _aufraeumen(cache: Path) -> None:
+    """Nur die neuesten ``CACHE_BEHALTEN`` Stände und zusammen höchstens ``CACHE_MAX_BYTES`` behalten."""
+    try:
+        ordner = sorted((p for p in cache.iterdir() if p.is_dir() and p.name not in NICHT_AUFRAEUMEN
+                         and not p.name.startswith("slicen-")),
                         key=lambda p: p.stat().st_mtime, reverse=True)
     except OSError:
         return
-    for p in ordner[CACHE_BEHALTEN:]:
-        shutil.rmtree(p, ignore_errors=True)
+    summe = 0
+    for i, p in enumerate(ordner):
+        summe += _groesse(p)
+        if i >= CACHE_BEHALTEN or (i > 0 and summe > CACHE_MAX_BYTES):
+            shutil.rmtree(p, ignore_errors=True)
 
 
 def slicen(eingaben: list[Path], name: str, *, einstellungen: list[Path] | None = None,
