@@ -119,29 +119,34 @@ struct DruckAnsicht: View {
 
     private func exportKnopf(_ v: Druckvorschau) -> some View {
         Menu {
-            Button("Alle Platten als 3MF sichern …") { exportieren([]) }
+            Button("Alle Platten als 3MF sichern …") { exportieren([], v) }
             if v.platten.count > 1 {
                 Divider()
                 ForEach(v.platten) { p in
-                    Button("Nur Platte \(p.nr) als 3MF sichern …") { exportieren([p.nr]) }
+                    Button("Nur Platte \(p.nr) als 3MF sichern …") { exportieren([p.nr], v) }
                 }
             }
         } label: {
             Label("Als 3MF sichern …", systemImage: "square.and.arrow.down.on.square")
         } primaryAction: {
-            exportieren([])
+            exportieren([], v)
         }
         .menuStyle(.button)
         .fixedSize()
         .controlSize(.small)
         .disabled(model.druckActions == nil || v.platten.isEmpty || druck.export.laeuftGerade)
-        .help("Ohne Drucken: die angeordneten Platten als 3MF für Bambu Studio sichern, je Material eine Datei. "
-              + "Zum Drucken „Drucken …“ in der Druckerleiste.")
+        .help("Ohne Drucken: die angeordneten Platten als 3MF für Bambu Studio sichern, je Material eine Datei, mit "
+              + "dem Preset des gewählten Filaments. Zum Drucken „Drucken …“ in der Druckerleiste.")
     }
 
-    /// Ziel wählen und PRINT_EXPORT_REQ senden.
-    private func exportieren(_ platten: [Int]) {
+    /// Ziel und Filament wählen und PRINT_EXPORT_REQ senden (Strang „Druckexport 2“: der Kernel schreibt ohne
+    /// Filament nichts; der Dialog zeigt je Material Kevins Filamente, vorausgewählt das angenommene der Vorschau).
+    private func exportieren(_ platten: [Int], _ v: Druckvorschau) {
         let panel = NSSavePanel()
+        let auswahl = FilamentAuswahl(v, platten: platten)
+        if let ansicht = auswahl.ansicht {
+            panel.accessoryView = ansicht
+        }
         panel.title = platten.isEmpty ? "Platten als 3MF sichern" : "Platte \(platten[0]) als 3MF sichern"
         panel.message = "Je Material entsteht eine eigene Datei (ohne AMS druckt der P1P ein Material je Platte)."
         panel.allowedContentTypes = [UTType(filenameExtension: "3mf") ?? .data]
@@ -155,7 +160,7 @@ struct DruckAnsicht: View {
         }
         let senden: (NSApplication.ModalResponse) -> Void = { r in
             guard r == .OK, let url = panel.url else { return }
-            model.druckActions?.druckExportieren(platten: platten, nach: url)
+            model.druckActions?.druckExportieren(platten: platten, nach: url, filament: auswahl.gewaehlt())
         }
         if let fenster = NSApp.keyWindow {
             panel.beginSheetModal(for: fenster, completionHandler: senden)
@@ -847,5 +852,71 @@ struct DruckExportDateiZeile: View {
         }
         .font(.callout)
         .padding(.vertical, 2)
+    }
+}
+
+/// Filament je Material im Sichern-Dialog des 3MF-Exports (Strang „Druckexport 2“): je Material eine Auswahl aus
+/// Kevins Filamentliste (`druckvorschau.filamente`), vorausgewählt das Filament, mit dem die Vorschau rechnet.
+@MainActor
+final class FilamentAuswahl {
+    private var auswahl: [(material: String, knopf: NSPopUpButton, liste: [DruckFilament])] = []
+    private(set) var ansicht: NSView?
+
+    init(_ v: Druckvorschau, platten: [Int]) {
+        let gewaehlt = platten.isEmpty ? v.platten : v.platten.filter { platten.contains($0.nr) }
+        var materialien: [String] = []
+        for m in gewaehlt.flatMap({ $0.material.map(\.material) }) + (gewaehlt.isEmpty ? v.summe.material.map(\.material) : [])
+            where !materialien.contains(m)
+        {
+            materialien.append(m)
+        }
+        guard !materialien.isEmpty else { return }
+        let stapel = NSStackView()
+        stapel.orientation = .vertical
+        stapel.alignment = .leading
+        stapel.spacing = 6
+        stapel.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        stapel.addArrangedSubview(NSTextField(labelWithString: "Filament im Drucker (sein Preset kommt ins 3MF):"))
+        for m in materialien {
+            let liste = v.filamente(fuer: m)
+            let zeile = NSStackView()
+            zeile.orientation = .horizontal
+            zeile.spacing = 8
+            let name = v.summe.material.first { $0.material == m }?.name ?? m.uppercased()
+            zeile.addArrangedSubview(NSTextField(labelWithString: "\(name):"))
+            let knopf = NSPopUpButton(frame: .zero, pullsDown: false)
+            if liste.isEmpty {
+                knopf.addItem(withTitle: "Kein \(name) in der Filamentliste (erst anlegen)")
+                knopf.isEnabled = false
+            }
+            for f in liste {
+                knopf.addItem(withTitle: f.name + (f.preset.map { "  ·  Preset „\($0)“" } ?? ""))
+            }
+            if let vorschlag = v.filamentVorschlag[m], let i = liste.firstIndex(where: { $0.id == vorschlag }) {
+                knopf.selectItem(at: i)
+            }
+            zeile.addArrangedSubview(knopf)
+            stapel.addArrangedSubview(zeile)
+            auswahl.append((m, knopf, liste))
+        }
+        let hinweis = NSTextField(wrappingLabelWithString: "Vorausgewählt ist das Filament, mit dem die Vorschau "
+            + "rechnet (zuletzt gewählt, Spule im Bestand oder erstes der Liste). Bitte prüfen.")
+        hinweis.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        hinweis.textColor = .secondaryLabelColor
+        hinweis.preferredMaxLayoutWidth = 460
+        stapel.addArrangedSubview(hinweis)
+        stapel.layoutSubtreeIfNeeded()
+        stapel.setFrameSize(stapel.fittingSize)
+        ansicht = stapel
+    }
+
+    /// Material → id des gewählten Filaments.
+    func gewaehlt() -> [String: String] {
+        var out: [String: String] = [:]
+        for a in auswahl where !a.liste.isEmpty {
+            let i = a.knopf.indexOfSelectedItem
+            if i >= 0, i < a.liste.count { out[a.material] = a.liste[i].id }
+        }
+        return out
     }
 }

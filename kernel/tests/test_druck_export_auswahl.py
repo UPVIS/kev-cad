@@ -22,6 +22,7 @@ from kevcad_kernel.druck.dreimf import schreibe_3mf
 from kevcad_kernel.protocol import check_druck_message, print_export_req, print_export_res
 
 HEAD = "from build123d import *\nfrom kevcad import lager, show, param\n"
+PETG = "polymaker-polylite-petg-gelb"
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -303,7 +304,7 @@ def test_laufzeit_spaeter_und_export_mit_auswahl(env):
 
     assert "Später drucken" in text(v) and "SPÄTER, auf keiner Platte" in text(v)
     # Export ohne Lenksperren: Stangenhalter bleiben an ihrer Stelle, Objekte heißen wie die Teile
-    ex = rt.druck_export(str(tmp / "ohne.3mf"), ohne=["Kugelschieber/Lenksperren"])
+    ex = rt.druck_export(str(tmp / "ohne.3mf"), ohne=["Kugelschieber/Lenksperren"], filament=PETG)
     assert ex["ok"], ex
     assert ex["teile"] == ["Kugelschieber/Stangenhalter links (Druck)", "Kugelschieber/Stangenhalter rechts (Druck)"]
     gruende = {(w["name"], w["grund"]) for w in ex["weggelassen"]}
@@ -321,17 +322,18 @@ def test_laufzeit_spaeter_und_export_mit_auswahl(env):
         x, y = (float(w) for w in item.get("transform").split()[9:11])
         assert (x, y) == pytest.approx(lagen_vorschau[name], abs=0.01), name
     # ohne Auswahl: auch die Fangrolle fehlt (später), mit Hinweis
-    alle = rt.druck_export(str(tmp / "alle.3mf"))
+    alle = rt.druck_export(str(tmp / "alle.3mf"), filament=PETG)
     assert alle["ok"] and len(alle["teile"]) == 6
     assert [w["grund"] for w in alle["weggelassen"]] == ["spaeter"] and "(später)" in alle["hinweise"][0]
     # unbekannter Name: Fehler mit Vorschlag
-    falsch = rt.druck_export(ohne=["Kugelschieber/Lenksperre"])
+    falsch = rt.druck_export(ohne=["Kugelschieber/Lenksperre"], filament=PETG)
     assert not falsch["ok"] and "Meintest du" in falsch["fehler"] and "Lenksperren" in falsch["fehler"]
-    nichts = rt.druck_export(teile=["Kugelschieber/Fangrolle (Druck)"])
+    nichts = rt.druck_export(teile=["Kugelschieber/Fangrolle (Druck)"], filament=PETG)
     assert not nichts["ok"] and "spaeter=True" in nichts["fehler"]
     # App: PRINT_EXPORT_REQ mit ohne
     m = app.mark()
-    app.send(print_export_req("a-50", ziel=str(tmp / "app.3mf"), ohne=["Lenksperre (Druck)"]))
+    app.send({**print_export_req("a-50", ziel=str(tmp / "app.3mf"), ohne=["Lenksperre (Druck)"]),
+              "filament": {"petg": PETG}})
     _, _, antwort, _ = app.wait_for(lambda h: h["type"] == "PRINT_EXPORT_RES" and h["reply_to"] == "a-50", start=m)
     assert antwort["ok"] and check_druck_message(antwort) == [], antwort
     assert {w["grund"] for w in antwort["weggelassen"]} == {"ohne", "spaeter"}
@@ -351,3 +353,37 @@ def test_spaeter_und_gedruckt_schliessen_sich_aus(env):
     assert rt.model_write(code)["ok"]
     res = rt.run()
     assert not res["ok"] and "schließen sich aus" in json.dumps(res, ensure_ascii=False)
+
+
+def test_spule_verweist_auf_filament_und_rueckfrage(env):
+    """Spule mit Verweis auf Kevins Filamentliste (bestand_eintragen(filament=…)); ohne Filament fragt der Export
+    nach und schlägt zuletzt gewählt, die Spule und alle PETG der Liste vor."""
+    rt, tmp = env["rt"], env["tmp"]
+    assert rt.project_new(str(tmp / "Spulen"), "empty")["ok"]
+    code = HEAD + 'show(lager.druckteil(Box(30, 20, 5), "Halter", material="petg"), "Halter")\n'
+    assert rt.model_write(code)["ok"] and rt.run()["ok"]
+    r = rt.bestand_eintragen(filament="bambu-petg-basic", gramm=640, grund="Kevin")
+    assert r["ok"], r
+    spule = json.loads((tmp / "Spulen" / "bestand.json").read_text())["filament"][0]
+    assert (spule["material"], spule["filament"], spule["hersteller"], spule["name"]) == \
+        ("petg", "bambu-petg-basic", "Bambu Lab", "PETG Basic")
+    assert not rt.bestand_eintragen(filament="gibt-es-nicht", gramm=10)["ok"]
+    rt.run()
+    v = rt.druckvorschau()
+    assert v["summe"]["material"][0]["filament_quelle"] == "spule"
+    assert v["summe"]["material"][0]["filament_id"] == "bambu-petg-basic"
+    frage = rt.druck_export(str(tmp / "frage.3mf"))
+    assert not frage["ok"] and frage["filament_frage"] and "Frag Kevin nach dem Filament" in frage["fehler"]
+    vor = frage["vorschlaege"]["petg"]
+    assert vor["zuletzt"] is None and vor["spulen"][0]["filament"] == "bambu-petg-basic"
+    assert [x["id"] for x in vor["liste"]] == ["polymaker-polylite-petg-gelb", "bambu-petg-basic"]
+    falsch = rt.druck_export(filament={"petg": "amazon-basics-pla"})
+    assert not falsch["ok"] and "PLA" in falsch["fehler"] and "PETG" in falsch["fehler"]
+    ok = rt.druck_export(str(tmp / "basic.3mf"), filament="bambu-petg-basic")
+    assert ok["ok"] and ok["filamente"]["petg"]["preset"] == "Bambu Lab PETG Basic (Kev CAD)", ok
+    assert ok["dateien"][0]["filament_basis"] == "Bambu PETG Basic @BBL X1C"
+    assert rt.druck_export(str(tmp / "x.3mf"))["vorschlaege"]["petg"]["zuletzt"] == "bambu-petg-basic"
+    liste = rt.filament_liste("petg")
+    assert liste["ok"] and [f["id"] for f in liste["filamente"]] == ["polymaker-polylite-petg-gelb",
+                                                                     "bambu-petg-basic"]
+    assert liste["zuletzt"] == {"petg": "bambu-petg-basic"} and liste["spulen"][0]["filament"] == "bambu-petg-basic"

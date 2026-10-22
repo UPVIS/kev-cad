@@ -3,7 +3,8 @@
 Zusatz zum Skill `kev-cad`. Gilt für jedes neue Druckteil (`lager.druckteil(form, name, material)`). Zuerst nach
 diesen Regeln konstruieren, dann prüfen lassen (`pruefe_druckteil`, Abschnitt 15) und die Hinweise abarbeiten.
 Kevins Drucker: **Bambu Lab P1P** (offen, ohne Gehäuse), Düse 0,4 mm, Schicht 0,2 mm; Standardfilament
-„Amazon Basics PLA“, sonst PETG. Zahlen mit Quelle in eckigen Klammern (Liste am Ende);
+„Amazon Basics PLA“, sonst PETG (Polymaker PolyLite PETG gelb oder Bambu PETG Basic; vor jedem Druck nach dem
+Filament fragen, Abschnitt 11a). Zahlen mit Quelle in eckigen Klammern (Liste am Ende);
 **EW** = Erfahrungswert, nicht direkt belegt, bewusst vorsichtig. Die Daten stehen auch maschinenlesbar in
 `kevcad_kernel/druck/regeln.py`.
 
@@ -229,7 +230,7 @@ Werte aus den P1P-Profilen in Kevins Bambu Studio [BS-F]; Kammer gibt es keine.
 | Material | Düse / Bett (P1P-Profil) | Auf dem offenen P1P | Trocknen | AMS (Zubehör) | Besonderheit |
 |---|---|---|---|---|---|
 | PLA (Kevin: Amazon Basics PLA) | **205 / 47 °C** (Bambu PLA Basic: 220 / 65 °C) | ideal | 55 °C 8 h | ja | weich ab ca. 55 °C |
-| PETG | 255 / 80 °C Texturplatte (70 °C Eng.-Platte) | geht; Zugluft meiden, Lagenhaftung offen etwas geringer [B-Fil] | 65 °C 12 h | ja | zäh, gut für Clips |
+| PETG (Kevin: PolyLite PETG, Bambu PETG Basic) | **255 / 80 °C** Texturplatte mit „PolyLite PETG @BBL P1P“; **255 (erste Schicht 245) / 70 °C** mit „Bambu PETG Basic @BBL X1C“ | geht; Zugluft meiden, Lagenhaftung offen etwas geringer [B-Fil] | 65 °C 12 h | ja | zäh, gut für Clips |
 | TPU 95A | 230 / 45 °C | ideal | 70 °C 8 h, Pflicht | **nein** | siehe unten |
 | PLA-CF | 230 / 65 °C | nur mit gehärteter Düse (HRC 40) | 55 °C 8 h | ja | steif, spröde |
 | ABS | 270 / 100 °C | **nur mit Einhausung** | 80 °C 8 h | ja | Verzug, Lagentrennung |
@@ -237,12 +238,46 @@ Werte aus den P1P-Profilen in Kevins Bambu Studio [BS-F]; Kammer gibt es keine.
 | PC | 280 / 100 °C (P1P-Maximum, empfohlen 100–120) | **nur mit Einhausung** | 80 °C 8 h, Pflicht | ja | starker Verzug |
 | PA / PA-CF | 260 / 290 °C, Bett 100 °C, Klebestift | **nur mit Einhausung**, PA-CF zusätzlich gehärtete Düse | 80 °C 8–12 h, Pflicht | trocken, PA-CF nur Bambu | Maße ändern sich mit Feuchte |
 
-Quellen [BS-F, KEV-PLA, B-P1P, B-Fil]. Die Prüfung warnt bei ABS, ASA, PC und PA auf dem offenen P1P und bei
+Quellen [BS-F, KEV-PLA, KEV-PETG, B-P1P, B-Fil]. Die Prüfung warnt bei ABS, ASA, PC und PA auf dem offenen P1P und bei
 CF-Filamenten ohne gehärtete Düse. **Harzdruck gibt es nicht** (kein Harzdrucker; die Prüfung meldet einen Fehler).
 
 **Kevins Amazon Basics PLA** erbt „Bambu PLA Basic @BBL P1P“ und ändert nur Düse (205 °C, max. 210) und Bett (47 °C)
 [KEV-PLA]. Für die Konstruktion gelten die PLA-Regeln unverändert: Überhang 60°, Brücke 30 mm (EW), Schwund ca. 0,3 %.
 Die niedrigere Düsentemperatur hilft eher bei Überhängen und Brücken, die Lagenhaftung ist eher etwas geringer (EW).
+
+**Kevins PETG:** zwei Sorten, Polymaker PolyLite PETG gelb (1,75 mm; Systemprofil „PolyLite PETG @BBL P1P“, Düse
+255 °C, Texturplatte 80 °C, Lüfter 40–90 %) und Bambu Lab PETG Basic (Farbe offen; Profil „Bambu PETG Basic @BBL
+X1C“, das Bambu Studio für den P1P 0.4 freigibt, Düse 255/245 °C, Texturplatte 70 °C; Bambu nennt 230–260 °C)
+[KEV-PETG]. Polymakers 230–240 °C gelten für 30–50 mm/s; das Systemprofil ist auf das Tempo des P1P abgestimmt,
+deshalb 255 °C. Eine feste PETG-Vorgabe gibt es nicht: Kevin wird gefragt.
+
+## 11a Filament: immer fragen, Preset ins 3MF
+
+Kevin, 22.10.2026: „Wenn ich etwas zum Drucken anweise oder abfrage, fragst du mich nach dem Filament, und die
+Projektdatei liefert die passenden Custom Presets zum Filament mit.“
+
+- **Vor jedem Drucken, jedem Druckexport und jeder Druckabfrage Kevin fragen, welches Filament im Drucker ist.**
+  `filament_liste` zeigt seine Filamente, das zuletzt für das Projekt gewählte und die Spulen im Bestand. Das zuletzt
+  benutzte ist nur der Vorschlag, nie stillschweigend genommen. Ohne `filament` schreibt `druck_export` nichts und
+  antwortet „Frag Kevin nach dem Filament“ mit Vorschlägen (zuletzt gewählt, Spulen, alle Filamente des Materials).
+- **Kevins Filamentliste** (nicht der Katalog, keine Freigabe): `~/Library/Application Support/de.upvis.kevcad/
+  filamente.json`; Startbestand Polymaker PolyLite PETG gelb, Bambu Lab PETG Basic, Amazon Basics PLA. Je Filament
+  Hersteller, Produkt, Material, Farbe, Durchmesser und ein **Preset**: Bambu-Studio-Profil als Basis (System oder
+  Kevins Benutzerprofil, nur gelesen) plus Abweichungen. Neue Filamente nur auf Kevins Wunsch mit `filament_define`.
+- **Abweichungen nur belegt**, je mit Quelle: das offizielle Herstellerprofil für den P1P mit anderen Werten oder
+  Kevins getestete Werte (mit Datum). Datenblattbereiche für andere Geschwindigkeiten sind kein Grund. Schlüssel
+  `duese`, `duese_erste_schicht`, `bett`, `bett_erste_schicht`, `luefter_min`, `luefter_max`, `max_volumen`, `fluss`.
+- **Im 3MF:** Das Preset geht vollständig als Filamentprofil ins Bambu-Projekt, sprechend benannt („Polymaker
+  PolyLite PETG gelb (Kev CAD)“), mit dem Systemprofil als Elternteil; Bambu Studio führt es als Projekt-Preset. Die
+  Temperatur kommt im G-Code an (geprüft am 22.10.2026: `M109 S255`, Testfilament mit 238 °C: `M109 S238`).
+  `druck_export` nennt Filament, Preset, Basisprofil, Abweichungen mit Quelle und die Temperaturen; Kevin das sagen.
+- **Druckvorschau:** rechnet vorher mit einem angenommenen Filament (kevcad.json `druck.filament`, zuletzt für das
+  Projekt gewählt, Spule im Bestand, erstes der Liste) und zeigt es an (`summe.material[]`: `filament_id`,
+  `filament_quelle`, `filament_detail`, `temperaturen`).
+- **Spulen** im Bestand verweisen auf ein Filament der Liste: `bestand_eintragen(filament="…", gramm=…)`.
+- Seit 22.10.2026 nimmt Kev CAD auch die Vorlagen der Bambu-Profile (`include`) mit, etwa den Start-G-Code des P1P.
+  Vorher stand in jedem geslicten G-Code und in den Projekt-Einstellungen jedes 3MF der allgemeine Start-G-Code mit
+  fester Düsentemperatur 205 °C (für PETG viel zu kalt).
 
 **TPU 95A:** Bambu druckt TPU ab 85A [B-TPU]. Nicht über AMS oder AMS 2 Pro; nur AMS HT mit eigenem TPU-Ausgang oder
 externe Spule – beim P1P ohne AMS der Normalfall („TPU for AMS“ ist die Ausnahme) [B-TPU]. Max. 3,6 mm³/s
@@ -502,8 +537,9 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   Druckprüfung behandeln: wenn möglich konstruktiv lösen (Fase statt Überhang, größere Auflage).
 - **Einstellungen festlegen:** nur auf Kevins Wunsch `druck_einstellen(teil, einstellungen={…}, zweck=…)`; gespeichert
   in `<projekt>/druck.json` (gehört zu den Versionen), in der App mit „von Kevin“ bzw. „vom Agenten“.
-- **3MF:** `druck_export(ziel=None, platten=None, teile=None, ohne=None)` schreibt die Platten als
-  Bambu-Studio-Projekt mit Profilen und Einstellungen je Teil (je Material eine Datei); gedruckt wird nichts. Die
+- **3MF:** `druck_export(ziel=None, platten=None, teile=None, ohne=None, filament={…})` schreibt die Platten als
+  Bambu-Studio-Projekt mit Profilen, dem Preset des gewählten Filaments und Einstellungen je Teil (je Material eine
+  Datei); gedruckt wird nichts. Vorher Kevin nach dem Filament fragen (Abschnitt 11a). Die
   Objekte heißen in Bambu Studio wie die Teile aus `show()` (lange Namen ohne die mittleren Baugruppen, Ersatzteile
   mit „(2)“), die Platten wie in der Vorschau („Platte 2“).
 - **Teile auswählen:** `druck_export(ohne=["Kugelschieber/Lenksperren"])` (alles unter der Baugruppe),
@@ -521,6 +557,11 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   „@BBL P1P“ – installiert unter `~/Library/Application Support/BambuStudio/system/BBL/`, gleich im Repo
   https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL
 - [KEV-PLA] Kevins Bambu-Studio-Filament „Amazon Basics PLA“ (`~/Library/Application Support/BambuStudio/user/…/filament/`)
+- [KEV-PETG] Kevins PETG: Polymaker PolyLite PETG gelb 1,75 mm (Systemprofil „PolyLite PETG @BBL P1P“) und Bambu Lab
+  PETG Basic (Profil „Bambu PETG Basic @BBL X1C“), beide in `/Applications/BambuStudio.app/Contents/Resources/profiles/
+  BBL/filament/`; Polymaker nennt Düse 230–240 °C, Bett 70–80 °C bei 30–50 mm/s (Angabe Kevin); das Polymaker-Wiki
+  (Printer Profiles, PET/PETG) bietet ein eigenes Bambu-Studio-Profil für A1, A1 mini, P1P, P1S und X1C zum Laden an,
+  ohne Werte auf der Seite – https://wiki.polymaker.com/polymaker-products/printer-profiles/legacy-profiles-by-material/pet-petg
 - [BS-Cut] Bambu Studio, Schnittwerkzeug (GLGizmoAdvancedCut) – https://github.com/bambulab/BambuStudio/tree/master/src
 - [BS-Flow] Bambu Studio, Flow.cpp – https://github.com/bambulab/BambuStudio/blob/master/src/libslic3r/Flow.cpp
 - [B-Shr] Bambu Lab Wiki, 3D Prints Shrinkage – https://wiki.bambulab.com/en/knowledge-sharing/3d-prints-shrinkage

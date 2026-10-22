@@ -67,6 +67,14 @@ def text(v: dict[str, Any]) -> str:
         f"{m.get('name')} {_n(m.get('g'))} g, {_n(m.get('m'))} m, {_n(m.get('kosten'), 2)} € "
         f"({_n(m.get('preis_kg'), 2)} €/kg, Stand {m.get('preis_stand') or '?'}; {STAND_TEXT.get(m.get('stand'))})"
         for m in s.get("material") or []) + ".")
+    from kevcad_kernel.druck.filamentwahl import temperaturen_text
+
+    for m in s.get("material") or []:  # additiv: welches Filamentprofil, woher, mit welchen Temperaturen
+        if m.get("filament"):
+            t = temperaturen_text(m.get("temperaturen"))
+            z.append(f"Filament {m.get('name')}: „{m.get('filament')}“"
+                     + (f" ({m.get('filament_detail')})" if m.get("filament_detail") else "")
+                     + (f", {t}" if t else "") + ".")
     namen = {t.get("gruppe"): t.get("name") for t in v.get("teile") or []}
     for p in v.get("platten") or []:
         zaehl: dict[str, int] = {}

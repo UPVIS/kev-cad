@@ -93,7 +93,11 @@ is a warning `gedruckt_geaendert`; `neu_drucken=True` for one run locks a new sh
 measuring): `spaeter=True` (listed in the preview, on no plate, not in the total and the 3MF). `druckvorschau` reads \
 it (estimate first, Bambu Studio results follow in the background), `druck_einstellen` fixes settings only on Kevin's \
 request, `druck_export` writes the plates as 3MF for Bambu Studio with the part names as object names; \
-`teile=[...]`/`ohne=[...]` select parts for one export (name, assembly prefix or group).
+`teile=[...]`/`ohne=[...]` select parts for one export (name, assembly prefix or group). Before any printing, export or \
+print question ALWAYS ask Kevin which filament is in the printer (`filament_liste`: his filaments, the last one chosen \
+for this project, spools in stock) and pass it as `druck_export(filament={"petg": "<id>"})`; the last one is only a \
+suggestion, never take it silently. Without filament druck_export writes nothing. The filament's preset goes into the \
+3MF; new filaments only on Kevin's request with `filament_define` (deviations need a source).
 - Statics (Statik): after every run Kev CAD computes load scenarios: Eigengewicht, Bremsen on wheels, a Nutzlast from \
 a param in kg, and Kevin's own from model.py (`import kevcad.statik as st`, `st.szenario("Aufstützen", ...)`, \
 `st.last(teil, kg=30)` or `kraft=(fx, fy, fz)` in N with `punkt=`, `beschleunigung=` m/s², `neigung=`, `stoss=`). \

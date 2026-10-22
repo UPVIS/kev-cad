@@ -254,10 +254,28 @@ final class DruckFixtureTests: XCTestCase {
                        try fixtureKopf("print_export_req.frame"))
         // additiv: Auswahl der Teile (ohne), Ergebnis mit weggelassen und Objektnamen
         let auswahl = try XCTUnwrap(try erwartet()["export_auswahl"])
+        var filament: [String: String] = [:]
+        for (k, w) in auswahl["filament"]?.objectValue ?? [:] { filament[k] = w.stringValue }
+        XCTAssertEqual(filament, ["petg": "polymaker-polylite-petg-gelb"])
         XCTAssertEqual(try kopf(DruckExportNachricht(id: "a-38", platten: [],
                                                      ziel: try erwartet()["export"]?["pfad"]?.stringValue,
-                                                     ohne: auswahl["ohne"]?.stringList ?? [])),
+                                                     ohne: auswahl["ohne"]?.stringList ?? [], filament: filament)),
                        try fixtureKopf("print_export_req_auswahl.frame"))
+        guard case .druck(.exportErgebnis(let frage)) = try Fixtures.message("print_export_res_frage.frame") else {
+            return XCTFail("kein PRINT_EXPORT_RES (Rückfrage)")
+        }
+        XCTAssertFalse(frage.ok)
+        XCTAssertTrue(frage.filamentFrage)
+        // Filamentliste und angenommenes Filament der Vorschau (Auswahl im Sichern-Dialog)
+        let (v, _) = try vorschau("print_preview.frame")
+        let liste = try XCTUnwrap(try erwartet()["filamente"]?.arrayValue)
+        XCTAssertEqual(v.filamente.map(\.id), liste.compactMap { $0["id"]?.stringValue })
+        XCTAssertEqual(v.filamente(fuer: "petg").map(\.id), ["polymaker-polylite-petg-gelb", "bambu-petg-basic"])
+        XCTAssertEqual(v.filamente.first?.preset, "Polymaker PolyLite PETG gelb (Kev CAD)")
+        var ids: [String: String] = [:]
+        for (k, w) in try erwartet()["material_filament_id"]?.objectValue ?? [:] { ids[k] = w.stringValue }
+        XCTAssertEqual(v.filamentVorschlag, ids)
+        XCTAssertEqual(v.summe.material.first { $0.material == "petg" }?.filamentQuelle, "zuletzt")
         guard case .druck(.exportErgebnis(let ex)) = try Fixtures.message("print_export_res_auswahl.frame") else {
             return XCTFail("kein PRINT_EXPORT_RES")
         }

@@ -171,23 +171,49 @@ def _index_voll(art: str, name: str) -> Path | None:
 
 
 def index_leeren() -> None:
+    """Profilverzeichnis neu lesen (anderes Bambu Studio, neue Benutzerprofile); auch die Zwischenspeicher der
+    Kompatibilität und der Filamentwahl."""
     global _INDEX
     with _INDEX_LOCK:
         _INDEX = None
+    _KOMPATIBEL.clear()
+    try:
+        from kevcad_kernel.druck import filamentwahl
+
+        filamentwahl.cache_leeren()
+    except ImportError:  # pragma: no cover
+        pass
+
+
+# Schlüssel einer Vorlage (``include``), die nicht in das einbindende Profil gehören
+_VORLAGE_META = ("name", "type", "from", "instantiation", "setting_id", "inherits", "include", "filament_id")
 
 
 def profil(art: str, name: str) -> dict[str, Any]:
-    """Profil mit aufgelöster Vererbung (``inherits``); ``SlicerFehler``, wenn es fehlt."""
+    """Profil mit aufgelöster Vererbung (``inherits``) und eingebundenen Vorlagen (``include``); ``SlicerFehler``,
+    wenn es fehlt.
+
+    ``include`` (seit Bambu Studio 2.x): Vorlagen, deren Werte das Profil übernimmt, etwa beim „Bambu Lab P1P 0.4
+    nozzle“ den Start-, End-, Filamentwechsel- und Schichtwechsel-G-Code („… template machine_start_gcode“). Reihenfolge
+    wie in Bambu Studio: Eltern, dann die Vorlagen, dann die eigenen Werte. Ohne das blieb bis 22.10.2026 der allgemeine
+    Start-G-Code aus „fdm_machine_common“ stehen (Düse fest ``M109 S205``, ohne das P1P-Vorprogramm), in jedem
+    geslicten G-Code und in den Projekt-Einstellungen jedes exportierten 3MF."""
     p = _index().get((art, name)) or _index_voll(art, name)
     if p is None:
         raise SlicerFehler(f"Bambu-Studio-Profil {art} „{name}“ nicht gefunden")
-    d = json.loads(p.read_text(encoding="utf-8"))
-    eltern = d.get("inherits")
-    if eltern:
-        basis = profil(art, str(eltern))
-        basis.update(d)
-        d = basis
+    eigen = json.loads(p.read_text(encoding="utf-8"))
+    eltern = eigen.get("inherits")
+    d: dict[str, Any] = profil(art, str(eltern)) if eltern else {}
+    vorlagen = eigen.get("include") or []
+    for v in [vorlagen] if isinstance(vorlagen, str) else vorlagen:
+        try:
+            t = profil(art, str(v))
+        except SlicerFehler:
+            continue  # Vorlage fehlt: Bambu Studio lädt das Profil trotzdem
+        d.update({k: x for k, x in t.items() if k not in _VORLAGE_META})
+    d.update(eigen)
     d.pop("inherits", None)
+    d.pop("include", None)
     d["type"] = art
     return d
 
@@ -288,10 +314,10 @@ def platte_name(wert: Any) -> str:
     return t
 
 
-def platte_passt(filament: str, platte: str) -> bool:
+def platte_passt(filament: Filament, platte: str) -> bool:
     """Kann das Filament auf dieser Platte gedruckt werden (Plattentemperatur im Profil nicht 0)?"""
     try:
-        v = profil("filament", filament).get(PLATTEN.get(platte, ""))
+        v = filament_daten(filament).get(PLATTEN.get(platte, ""))
     except (SlicerFehler, OSError, ValueError):
         return True
     v = v[0] if isinstance(v, list) and v else v
@@ -354,8 +380,37 @@ def maschinen_profil(drucker: str = "p1p-0.4") -> dict[str, Any]:
     return d
 
 
-def filament_profil(name: str) -> dict[str, Any]:
-    d = profil("filament", name)
+Filament = str | dict  # Name eines Bambu-Profils oder Preset (druck/filamente.py ``preset_spec``)
+
+
+def filament_name_von(f: Filament) -> str:
+    return str(f.get("name") or f.get("basis")) if isinstance(f, dict) else str(f)
+
+
+def filament_daten(f: Filament) -> dict[str, Any]:
+    """Aufgelöstes Filamentprofil zu einem Profilnamen oder einem Preset ``{"name", "basis", "werte", "farbe",
+    "inherits"}``: Basisprofil (mit Vererbung und Vorlagen), darüber die Abweichungen (``werte``, Bambu-Schlüssel).
+    Ein Preset geht vollständig aufgelöst an Bambu Studio (die Kommandozeile löst ``inherits`` nicht selbst auf und
+    nähme sonst Vorgabewerte, geprüft am 22.10.2026); ``inherits`` nennt nur das Systemprofil, von dem es abstammt,
+    damit Bambu Studio es als Projekt-Preset mit diesem Elternteil führt (``inherits_group``)."""
+    if not isinstance(f, dict):
+        return profil("filament", str(f))
+    d = profil("filament", str(f["basis"]))
+    d.update(f.get("werte") or {})
+    if f.get("farbe"):
+        d["filament_colour"] = [str(f["farbe"])]
+        d["default_filament_colour"] = [str(f["farbe"])]
+    d["from"] = "User"
+    if f.get("inherits"):
+        d["inherits"] = str(f["inherits"])
+    return d
+
+
+def filament_profil(f: Filament) -> dict[str, Any]:
+    """Filamentprofil für ``--load-filaments``: aufgelöst, Name und ``filament_settings_id`` = Profil- bzw.
+    Preset-Name."""
+    d = filament_daten(f)
+    name = filament_name_von(f)
     d["filament_settings_id"] = [name]
     d["name"] = name
     return d
@@ -565,7 +620,7 @@ class Profile:
     werte: dict[str, Any] = field(default_factory=dict)
 
 
-def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: list[str],
+def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: list[Filament],
                      drucker: str = "p1p-0.4", platte: str | None = None) -> Profile:
     ordner.mkdir(parents=True, exist_ok=True)
     m = maschinen_profil(drucker)
@@ -580,7 +635,7 @@ def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: lis
         fp.write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
         fpfade.append(fp)
         dichten.append(filament_dichte(f))
-    return Profile(mp, pp, fpfade, pname, list(filamente), dichten)
+    return Profile(mp, pp, fpfade, pname, [filament_name_von(f) for f in filamente], dichten)
 
 
 def _profil_args(pr: Profile) -> list[str]:
@@ -606,7 +661,7 @@ def _platten_ergebnis(res: dict[str, Any], dichten: list[float]) -> list[dict[st
     return out
 
 
-def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: str, ordner: Path,
+def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: Filament, ordner: Path,
                abbruch: threading.Event | None = None, drucker: str = "p1p-0.4",
                platte: str | None = None) -> dict[str, Any]:
     """Ein Teil (STL in Druckausrichtung) slicen: ``zeit_s``, ``volumen_cm3``, ``m``, ``merkmale`` …"""
@@ -618,7 +673,7 @@ def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: str, ordner: 
     if not platten:
         raise SlicerFehler("Bambu Studio hat nichts geslict")
     erg = platten[0]
-    erg.update({"prozess": pr.prozess_name, "filament": filament, "dauer_s": res.get("_dauer_s")})
+    erg.update({"prozess": pr.prozess_name, "filament": filament_name_von(filament), "dauer_s": res.get("_dauer_s")})
     return erg
 
 
@@ -682,7 +737,7 @@ def lies_anordnung(pfad_3mf: Path) -> list[dict[str, Any]]:
 
 
 def anordnen(objekte: list[tuple[Path, int]], ordner: Path, abbruch: threading.Event | None = None,
-             filament: str | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None,
+             filament: Filament | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None,
              platte: str | None = None) -> list[dict]:
     """``objekte``: (STL, Anzahl). Bambu Studio ordnet an (mit Drehen, Sperrzone aus dem Maschinenprofil) und legt bei
     Bedarf weitere Platten an. Ergebnis wie ``lies_anordnung``; Namen „<stl-stamm>_<n>“."""
@@ -849,7 +904,7 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
     return pfad
 
 
-def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordner: Path,
+def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[Filament], ordner: Path,
                   einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
                   drucker: str = "p1p-0.4", platte: str | None = None) -> list[dict[str, Any]]:
     """Platten mit festen Lagen slicen (je Platte Zeit und Filament)."""
@@ -861,7 +916,7 @@ def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordn
     return _platten_ergebnis(res, pr.dichten)
 
 
-def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, ordner: Path,
+def export_3mf(platten: list[list[PlattenObjekt]], filament: Filament, ziel: Path, ordner: Path,
                einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
                drucker: str = "p1p-0.4", farbe: str | None = None, platte: str | None = None,
                platten_namen: list[str] | None = None) -> dict[str, Any]:
@@ -875,7 +930,7 @@ def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, or
     erneuten Laden nur mit Filament 1 (und nach Ergänzen der Listen gar nicht) slicen kann; der P1P ohne AMS druckt
     ohnehin ein Material je Platte."""
     pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, [filament], drucker, platte)
-    if farbe:
+    if farbe and not (isinstance(filament, dict) and filament.get("farbe")):  # Farbe des Filaments geht vor
         d = json.loads(pr.filamente[0].read_text(encoding="utf-8"))
         d["filament_colour"] = [farbe]
         d["default_filament_colour"] = [farbe]

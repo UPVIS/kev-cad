@@ -46,7 +46,7 @@ from .planung import Verbrauch, gebaut_aenderungen, plane
 from .text import bestand_text
 
 FILAMENT_PARAMETER = ("material", "gramm", "gramm_voll", "spule", "farbe", "hersteller", "anzahl", "kennung",
-                      "spulen_entfernen")
+                      "spulen_entfernen", "filament")
 
 ANFRAGEN = ("BESTAND_REQ", "BESTAND_SAVE", "GEBAUT_REQ", "BUCHUNG_RUECKGAENGIG")
 KEIN_PROJEKT = "Kein Projekt offen: Bestand gibt es je Projekt (bestand.json im Projektordner)."
@@ -287,17 +287,17 @@ class BestandAnbindung:
         if kennung and sp is None:
             return self._filament_eintragen(grund=grund, material=None, gramm=None, gramm_voll=None, spule=None,
                                             farbe=None, hersteller=None, anzahl=None, kennung=None, ort=None,
-                                            spulen_entfernen=[kennung], von=von)
+                                            spulen_entfernen=[kennung], von=von, filament=None)
         if not isinstance(sp, dict):
             return {"ok": False, "error": "spule fehlt: Objekt mit material, gramm, gramm_voll, name, hersteller, "
                                           "farbe, ort (oder null mit spule_kennung zum Entfernen)"}
         bad = [k for k in sp if k not in ("material", "gramm", "gramm_voll", "name", "hersteller", "farbe", "ort",
-                                         "kennung", "seit")]
+                                         "kennung", "seit", "filament")]
         if bad:
             return {"ok": False, "error": f"spule kennt {', '.join(map(str, bad))} nicht"}
         felder = {"material": sp.get("material"), "gramm": number(sp.get("gramm")),
                   "gramm_voll": number(sp.get("gramm_voll")), "spule": sp.get("name"), "farbe": sp.get("farbe"),
-                  "hersteller": sp.get("hersteller"), "ort": sp.get("ort")}
+                  "hersteller": sp.get("hersteller"), "ort": sp.get("ort"), "filament": sp.get("filament")}
         if kennung:
             res = self._filament_eintragen(grund=grund, kennung=kennung, anzahl=None, spulen_entfernen=None, von=von,
                                            **felder)
@@ -544,23 +544,25 @@ class BestandAnbindung:
                           grund: str = "", *, material: str | None = None, gramm: float | None = None,
                           gramm_voll: float | None = None, spule: str | None = None, farbe: str | None = None,
                           hersteller: str | None = None, anzahl: int | None = None, kennung: str | None = None,
-                          ort: str | None = None, spulen_entfernen: list[str] | None = None) -> dict[str, Any]:
+                          ort: str | None = None, spulen_entfernen: list[str] | None = None,
+                          filament: str | None = None) -> dict[str, Any]:
         """Kevins Angabe zum Bestand eintragen (nur auf seine Angabe). ``ganze``: Anzahl (setzt) oder Objekt;
         ``reste``: dazu (Längen bzw. [b, h] oder Objekte mit ``ort``); ``reste_entfernen``: Kennungen; ``stueck``:
         Anzahl bzw. Liste {laenge, anzahl} (setzt je Länge). Filament (statt ``stock_id``): ``material`` mit ``gramm``
         (übrig), ``spule`` (Name), ``gramm_voll``, ``farbe``, ``hersteller``, ``ort``, ``anzahl`` (gleiche Spulen; 0:
         Filament führen ohne Spule) legt Spulen an; ``kennung`` ändert eine Spule; ``spulen_entfernen``.
+        ``filament`` (additiv): id aus Kevins Filamentliste; ergänzt Material, Name, Hersteller und Farbe der Spule.
         {"ok", "buchung", "aenderungen_text", "posten" bzw. "spulen"}"""
-        filament = {"material": material, "gramm": gramm, "gramm_voll": gramm_voll, "spule": spule, "farbe": farbe,
-                    "hersteller": hersteller, "anzahl": anzahl, "kennung": kennung, "ort": ort,
-                    "spulen_entfernen": spulen_entfernen}
-        ist_filament = any(filament[k] is not None for k in FILAMENT_PARAMETER) or (ort is not None and not stock_id)
+        fil_param = {"material": material, "gramm": gramm, "gramm_voll": gramm_voll, "spule": spule, "farbe": farbe,
+                     "hersteller": hersteller, "anzahl": anzahl, "kennung": kennung, "ort": ort,
+                     "spulen_entfernen": spulen_entfernen, "filament": filament}
+        ist_filament = any(fil_param[k] is not None for k in FILAMENT_PARAMETER) or (ort is not None and not stock_id)
         with self._bestand_lock:
             if ist_filament and (stock_id or "").strip():
                 res = {"ok": False, "error": "Entweder ein Lagerteil (id) oder Filament (material, kennung, "
                                              "spulen_entfernen), nicht beides in einem Aufruf."}
             elif ist_filament:
-                res = self._filament_eintragen(grund=grund, **filament)
+                res = self._filament_eintragen(grund=grund, **fil_param)
             elif ort is not None:
                 res = {"ok": False, "error": "ort gilt hier nur für Filamentspulen; Reste mit Ort als "
                                              "{\"laenge\": 430, \"ort\": \"Regal 2\"} unter reste angeben"}
@@ -582,7 +584,21 @@ class BestandAnbindung:
     def _filament_eintragen(self, *, grund: str, material: str | None, gramm: float | None, gramm_voll: float | None,
                             spule: str | None, farbe: str | None, hersteller: str | None, anzahl: int | None,
                             kennung: str | None, ort: str | None, spulen_entfernen: list[str] | None,
-                            von: str = "agent") -> dict[str, Any]:
+                            von: str = "agent", filament: str | None = None) -> dict[str, Any]:
+        if filament is not None:  # Filament aus Kevins Liste: ergänzt Material, Name, Hersteller, Farbe
+            from kevcad_kernel.druck import filamente as fl_liste
+
+            eintrag = fl_liste.finde(filament)
+            if eintrag is None:
+                return {"ok": False, "error": f"Filament {filament!r} gibt es nicht in Kevins Liste (vorhanden: "
+                                              + ", ".join(str(f.get("id")) for f in fl_liste.liste()) + ")"}
+            filament = str(eintrag.get("id"))
+            if material is None and not kennung:
+                material = str(eintrag.get("material"))
+            if not kennung:
+                spule = spule or " ".join(str(x) for x in (eintrag.get("produkt"), eintrag.get("farbe")) if x)
+                hersteller = hersteller or eintrag.get("hersteller")
+                farbe = farbe or eintrag.get("farbe")
         d, data, fehler = self._bestand_lesen()
         if d is None:
             return {"ok": False, "error": KEIN_PROJEKT}
@@ -624,7 +640,8 @@ class BestandAnbindung:
             for key, wert in (("gramm", gramm), ("gramm_voll", gramm_voll)):
                 if wert is not None:
                     neu[key] = zahl(wert)
-            for key, wert in (("name", spule), ("farbe", farbe), ("hersteller", hersteller), ("ort", ort)):
+            for key, wert in (("name", spule), ("farbe", farbe), ("hersteller", hersteller), ("ort", ort),
+                              ("filament", filament)):
                 if wert is not None:
                     neu[key] = str(wert).strip() or None
             if neu == alt:
@@ -651,11 +668,13 @@ class BestandAnbindung:
                 neu = {"kennung": kennungen.spule(), "material": mat["id"], "gramm": zahl(g), "gramm_voll": zahl(voll),
                        "name": (spule or "").strip() or None, "hersteller": (hersteller or "").strip() or None,
                        "farbe": (farbe or "").strip() or None, "ort": (ort or "").strip() or None, "seit": heute()}
+                if filament:
+                    neu["filament"] = filament
                 errors = pruefe_spule(f"Spule {neu['kennung']}", neu)
                 if errors:
                     return {"ok": False, "error": "\n".join(errors)}
                 ops.append({"op": "spule", "kennung": neu["kennung"], "vorher": None, "nachher": neu})
-        elif any(x is not None for x in (gramm, gramm_voll, spule, farbe, hersteller, anzahl, ort)):
+        elif any(x is not None for x in (gramm, gramm_voll, spule, farbe, hersteller, anzahl, ort, filament)):
             return {"ok": False, "error": "Für eine neue Spule material angeben (z. B. \"petg\"), zum Ändern kennung "
                                           "(z. B. \"S-0001\")"}
         if not ops:

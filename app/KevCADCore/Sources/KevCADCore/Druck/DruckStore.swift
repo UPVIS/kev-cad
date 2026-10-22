@@ -174,6 +174,9 @@ public protocol DruckActions: AnyObject {
     func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?, zuruecksetzen: Bool)
     /// PRINT_EXPORT_REQ: Platten (leer = alle) als 3MF nach `ziel` (nil = `<projekt>/output/<projekt>-druck.3mf`).
     func druckExportieren(platten: [Int], nach ziel: URL?)
+    /// PRINT_EXPORT_REQ mit dem Filament je Material, das Kevin gewählt hat (Strang „Druckexport 2“; ohne Filament
+    /// fragt der Kernel nach und schreibt nichts).
+    func druckExportieren(platten: [Int], nach ziel: URL?, filament: [String: String])
     /// Die exportierte Datei in Bambu Studio öffnen (nur auf Klick).
     func druckInBambuStudioOeffnen(_ datei: URL)
     /// Teile im 3D-Bereich und im Teilebaum auswählen, auf Wunsch einpassen.
@@ -181,6 +184,10 @@ public protocol DruckActions: AnyObject {
 }
 
 extension DruckActions {
+    public func druckExportieren(platten: [Int], nach ziel: URL?, filament: [String: String]) {
+        druckExportieren(platten: platten, nach: ziel)
+    }
+
     public func druckEinstellen(_ ziel: DruckZiel, einstellungen: [String: JSONValue]?, zweck: JSONValue?) {
         druckEinstellen(ziel, einstellungen: einstellungen, zweck: zweck, zuruecksetzen: false)
     }
