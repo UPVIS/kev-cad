@@ -126,8 +126,9 @@ def lies_obj(pfad: str | Path) -> tuple[np.ndarray, np.ndarray]:
 
 
 def silhouette(P: np.ndarray, T: np.ndarray, K: np.ndarray, R: np.ndarray, t: np.ndarray, w: int, h: int,
-               fein: int = 4) -> np.ndarray:
-    """Weiche Maske (float32 0…1, h × w) des Netzes durch die Kamera (K für w × h, Pixel stetig wie fotomess)."""
+               fein: int = 2) -> np.ndarray:
+    """Weiche Maske (float32 0…1, h × w) des Netzes durch die Kamera (K für w × h, Pixel stetig wie fotomess).
+    Vereinigung aller Dreiecke vor der Kamera, in ``fein``-facher Auflösung gezeichnet."""
     Xc = np.asarray(P, float) @ np.asarray(R, float).T + np.asarray(t, float)
     z = Xc[:, 2]
     vorne = z > 1.0
@@ -135,12 +136,12 @@ def silhouette(P: np.ndarray, T: np.ndarray, K: np.ndarray, R: np.ndarray, t: np
     uv[vorne, 0] = K[0, 0] * Xc[vorne, 0] / z[vorne] + K[0, 2]
     uv[vorne, 1] = K[1, 1] * Xc[vorne, 1] / z[vorne] + K[1, 2]
     ok = vorne[T].all(1)
-    tri = uv[T[ok]] * fein - 0.5  # stetige Pixel (i deckt [i, i+1]) -> Pixelmitten von OpenCV
+    drin = ((uv[:, 0] > -w) & (uv[:, 0] < 2 * w) & (uv[:, 1] > -h) & (uv[:, 1] < 2 * h))[T].all(1)
+    tri = uv[T[ok & drin]] * fein - 0.5  # stetige Pixel (i deckt [i, i+1]) -> Pixelmitten von OpenCV
     gross = np.zeros((h * fein, w * fein), np.uint8)
     if len(tri):
-        schritt = 16  # cv2.fillPoly mit 4 Bit Unterpixel
-        pts = np.rint(tri * schritt).astype(np.int32)
-        cv2.fillPoly(gross, list(pts.reshape(-1, 3, 1, 2)), 255, lineType=cv2.LINE_8, shift=4)
+        pts = np.ascontiguousarray(np.rint(tri * 16).astype(np.int32).reshape(-1, 3, 1, 2))  # 4 Bit Unterpixel
+        cv2.fillPoly(gross, pts, 255, lineType=cv2.LINE_8, shift=4)
     return cv2.resize(gross.astype(np.float32) / 255.0, (w, h), interpolation=cv2.INTER_AREA)
 
 

@@ -17,6 +17,12 @@ Kontrollbilder. Auftrag:
  "hoehen": [0, 80], "kanten_gewicht": 0.8, "jackknife": true}
 ```
 
+Scan vom iPhone (Kev Scan, ``fotomess.scan``): dazu ``"scan": {"kameras": ".../capture/kameras.json", "netz": …,
+"namen": [...]}``, ``"maske": "scan"`` (Umriss des Scan-Netzes), optional ``"tiefe_gewicht"`` (1,0; 0 = ohne
+Tiefenbedingung), ``"kamera_sigma_mm"`` (15), ``"kamera_sigma_grad"`` (1,5), ``"scan_durchgaenge"`` (2). Kameras und
+Brennweite kommen dann aus ARKit, ein bekanntes Maß ist nicht nötig; messung.json bekommt ``"scan"`` mit der Lage
+Scan -> Modell (A, b), den Tiefenresten und wie weit die Kameras nachgeführt wurden.
+
 Fortschritt als JSON-Zeilen auf stdout (``{"event": "progress", "phase", "fraction", "text"}``), am Ende
 ``{"event": "done", "ergebnis": "<ablage>/messung.json"}`` oder ``{"event": "error", "message"}``. Alles andere
 (Ausgaben von OpenCV, Warten auf Speicher) geht auf stderr.

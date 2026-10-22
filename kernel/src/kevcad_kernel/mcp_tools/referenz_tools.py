@@ -64,9 +64,12 @@ def ergebnis_text(e: dict[str, Any]) -> str:
 
 def eintrag_text(r: dict[str, Any]) -> str:
     z = r.get("zustand")
-    kopf = f"- {r.get('name')} ({'Video' if r.get('art') == 'video' else 'Fotos'}: {r.get('quelle')}): "
+    art = {"video": "Video", "scan": "Scan"}.get(str(r.get("art")), "Fotos")
+    kopf = f"- {r.get('name')} ({art}: {r.get('quelle')}): "
     if z == "rechnet":
-        kopf += (f"{'Object Capture' if r.get('laeuft') == 'capture' else 'Vermessen'} läuft, "
+        lauf = ('Auswertung' if r.get('art') == 'scan' else 'Object Capture') if r.get('laeuft') == 'capture' \
+            else 'Vermessen'
+        kopf += (f"{lauf} läuft, "
                  f"{fmt.num((r.get('fortschritt') or 0) * 100, 0)} %" + (f" ({r.get('text')})" if r.get("text") else ""))
     elif z == "fehler":
         kopf += f"Fehler: {r.get('meldung')}"

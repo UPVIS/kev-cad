@@ -4,6 +4,9 @@
 Welt in mm (Kev CAD, z oben). Je Bild: Voxelmitten in die Kamera, Tiefe am Bildpunkt (bilinear, nur wenn die vier
 Nachbarn gemessen sind), Abstand d = D − z, abgeschnitten auf ±trunc, gewichtet mit der Konfidenz gemittelt. Voxel
 weit hinter der Fläche (d < −trunc) bleiben unberührt, so wachsen keine Rückseiten zu.
+
+Rechnet mit torch auf der GPU (MPS), wenn vorhanden (``geraet="auto"``), sonst mit numpy; beide Wege rechnen gleich.
+Am echten Scan (7,7 Mio. Voxel) braucht numpy rund 0,9 s je Bild.
 """
 
 from __future__ import annotations
@@ -14,7 +17,8 @@ MAX_VOXEL = 24_000_000
 
 
 class TSDF:
-    def __init__(self, lo, hi, voxel_mm: float, trunc_mm: float | None = None, farbe: bool = True) -> None:
+    def __init__(self, lo, hi, voxel_mm: float, trunc_mm: float | None = None, farbe: bool = True,
+                 geraet: str | None = "auto") -> None:
         lo, hi = np.asarray(lo, float), np.asarray(hi, float)
         ausdehnung = hi - lo
         v = float(voxel_mm)
@@ -35,6 +39,21 @@ class TSDF:
         self.gewicht = np.zeros(len(self.mitten), np.float32)
         self.farbe = np.zeros((len(self.mitten), 3), np.float32) if farbe else None
         self.bilder = 0
+        self._torch = None
+        if geraet:
+            try:
+                import torch
+
+                dev = ("mps" if torch.backends.mps.is_available() else None) if geraet == "auto" else geraet
+            except ImportError:
+                dev = None
+            if dev:
+                self._torch, self._dev = torch, dev
+                self._t_mitten = torch.from_numpy(self.mitten).to(dev)
+                self._t_wert = torch.from_numpy(self.wert).to(dev)
+                self._t_gewicht = torch.from_numpy(self.gewicht).to(dev)
+                self._t_farbe = torch.from_numpy(self.farbe).to(dev) if self.farbe is not None else None
+        self.geraet = self._dev if self._torch is not None else "numpy"
 
     @property
     def form(self) -> tuple[int, int, int]:
@@ -43,6 +62,8 @@ class TSDF:
     def integriere(self, tiefe_mm: np.ndarray, K: np.ndarray, R: np.ndarray, t: np.ndarray,
                    konf: np.ndarray | None = None, farbe_rgb: np.ndarray | None = None, gewicht: float = 1.0) -> int:
         """Ein Tiefenbild (mm, K für genau diese Bildgröße, Kamera R, t: Welt -> OpenCV). Rückgabe: getroffene Voxel."""
+        if self._torch is not None:
+            return self._integriere_torch(tiefe_mm, K, R, t, konf, farbe_rgb, gewicht)
         h, w = tiefe_mm.shape
         R = np.asarray(R, np.float32)
         Xc = self.mitten @ R.T + np.asarray(t, np.float32)
@@ -89,9 +110,66 @@ class TSDF:
         self.bilder += 1
         return int(len(idx))
 
+    def _integriere_torch(self, tiefe_mm, K, R, t, konf, farbe_rgb, gewicht) -> int:
+        torch, dev = self._torch, self._dev
+        f32 = torch.float32
+        h, w = tiefe_mm.shape
+        D = torch.from_numpy(np.ascontiguousarray(tiefe_mm, np.float32)).to(dev)
+        Rt = torch.tensor(np.asarray(R, np.float32), device=dev)
+        tt = torch.tensor(np.asarray(t, np.float32), device=dev)
+        Xc = self._t_mitten @ Rt.T + tt
+        z = Xc[:, 2]
+        zs = torch.clamp(z, min=1.0)
+        u = float(K[0, 0]) * Xc[:, 0] / zs + float(K[0, 2]) - 0.5
+        v = float(K[1, 1]) * Xc[:, 1] / zs + float(K[1, 2]) - 0.5
+        drin = (z > 1.0) & (u >= 0) & (v >= 0) & (u < w - 1) & (v < h - 1)
+        idx = torch.nonzero(drin).squeeze(1)
+        if idx.numel() == 0:
+            return 0
+        u, v, z = u[idx], v[idx], z[idx]
+        x0, y0 = u.long(), v.long()
+        fx, fy = u - x0.to(f32), v - y0.to(f32)
+        d00, d10, d01, d11 = D[y0, x0], D[y0, x0 + 1], D[y0 + 1, x0], D[y0 + 1, x0 + 1]
+        alle = (d00 > 0) & (d10 > 0) & (d01 > 0) & (d11 > 0)
+        Dw = d00 * (1 - fx) * (1 - fy) + d10 * fx * (1 - fy) + d01 * (1 - fx) * fy + d11 * fx * fy
+        st = torch.stack([d00, d10, d01, d11])
+        spanne = st.amax(0) - st.amin(0)
+        d = Dw - z
+        ok = alle & (spanne < torch.clamp(0.02 * Dw, min=self.trunc)) & (d > -self.trunc)
+        g = torch.full_like(d, float(gewicht))
+        if konf is not None:
+            g = g * torch.from_numpy(np.ascontiguousarray(konf, np.float32)).to(dev)[y0, x0]
+        ok &= g > 0
+        sel = torch.nonzero(ok).squeeze(1)
+        if sel.numel() == 0:
+            return 0
+        idx, d, g, x0, y0 = idx[sel], d[sel], g[sel], x0[sel], y0[sel]
+        neu = torch.clamp(d / self.trunc, max=1.0)
+        alt_g = self._t_gewicht[idx]
+        summe = alt_g + g
+        self._t_wert[idx] = (self._t_wert[idx] * alt_g + neu * g) / summe
+        if self._t_farbe is not None and farbe_rgb is not None:
+            c = torch.from_numpy(np.ascontiguousarray(farbe_rgb, np.float32)).to(dev)[y0, x0]
+            nah = torch.nonzero(neu.abs() < 0.5).squeeze(1)
+            j = idx[nah]
+            self._t_farbe[j] = (self._t_farbe[j] * alt_g[nah, None] + c[nah] * g[nah, None]) / summe[nah, None]
+        self._t_gewicht[idx] = torch.clamp(summe, max=64.0)
+        self.bilder += 1
+        return int(idx.numel())
+
+    def _zurueck(self) -> None:
+        """Werte von der GPU zurück in die numpy-Felder (vor dem Netz)."""
+        if self._torch is not None:
+            self.wert = self._t_wert.cpu().numpy()
+            self.gewicht = self._t_gewicht.cpu().numpy()
+            if self._t_farbe is not None:
+                self.farbe = self._t_farbe.cpu().numpy()
+
     def netz(self, min_gewicht: float = 0.5) -> dict[str, np.ndarray]:
         """Dreiecksnetz der Nullfläche: positions (mm, Welt), triangles, colors (0…255) oder leer."""
         from skimage import measure
+
+        self._zurueck()
 
         vol = self.wert.reshape(self.form)
         maske = (self.gewicht >= min_gewicht).reshape(self.form)

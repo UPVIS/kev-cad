@@ -135,19 +135,19 @@ class Auswertung:
         vid = [i for i in wahl if not ist_foto[i]]
         geholt = auswahl.video_bilder(scan.video_datei, [alle[i].index for i in vid], self.aus / "bilder",
                                       [alle[i].name for i in vid]) if vid else {}
-        for j, i in enumerate(wahl):
+        def hole(i: int) -> dict[str, Any] | None:
             a = alle[i]
             if a.art == "foto":
                 im = cv2.imread(str(a.datei))
                 if im is None:
                     self.warnungen.append(f"{a.datei.name} nicht lesbar")
-                    continue
+                    return None
                 datei = self.aus / "bilder" / f"{a.name}.jpg"
             else:
                 datei = geholt.get(a.index)
                 if datei is None:
                     self.warnungen.append(f"Videobild {a.index} nicht dekodiert")
-                    continue
+                    return None
                 im = cv2.imread(str(datei))
             h0, w0 = im.shape[:2]
             s = min(1.0, ARBEIT / max(w0, h0))
@@ -164,10 +164,17 @@ class Auswertung:
             # Tiefe eines Fotos aus dem letzten Videobild (SCAN.md, tiefe_quelle "videobild"): Lage leicht anders,
             # deshalb halbes Gewicht in TSDF und fotomess
             gewicht = 0.5 if a.extra.get("tiefe_quelle") == "videobild" else 1.0
-            bilder.append({"name": a.name, "art": a.art, "index": a.index, "zeit": a.zeit, "datei": datei,
-                           "w": im.shape[1], "h": im.shape[0], "K": K, "R": R_alle[i], "t": t_alle[i],
-                           "lidar": a.tiefe, "konf": a.konfidenz, "gewicht": gewicht})
-            self.fortschritt("bilder", (j + 1) / len(wahl), f"Bild {j + 1} von {len(wahl)}")
+            return {"name": a.name, "art": a.art, "index": a.index, "zeit": a.zeit, "datei": datei,
+                    "w": im.shape[1], "h": im.shape[0], "K": K, "R": R_alle[i], "t": t_alle[i],
+                    "lidar": a.tiefe, "konf": a.konfidenz, "gewicht": gewicht}
+
+        from concurrent.futures import ThreadPoolExecutor  # JPEG lesen und verkleinern gibt die GIL frei
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for j, b in enumerate(pool.map(hole, wahl)):
+                if b is not None:
+                    bilder.append(b)
+                self.fortschritt("bilder", (j + 1) / len(wahl), f"Bild {j + 1} von {len(wahl)}")
         self.zeiten["bilder"] = time.perf_counter() - t
 
         # 4. Boden und Objektbox (Kev-CAD-Welt vor dem Verschieben)
@@ -252,11 +259,17 @@ class Auswertung:
 
         # 8. Masken, Punktwolke, Genauigkeit
         t = time.perf_counter()
-        for j, b in enumerate(bilder):
+
+        def maske(b: dict) -> None:
             m = netzmod.silhouette(P, T, b["K"], b["R"], b["t"], b["w"], b["h"])
             cv2.imwrite(str(self.aus / "masken" / f"{b['name']}.png"), np.clip(m * 255, 0, 255).astype(np.uint8))
             b["maske_anteil"] = float((m >= 0.5).mean())
-            self.fortschritt("masken", (j + 1) / len(bilder), f"Maske {j + 1} von {len(bilder)}")
+
+        from concurrent.futures import ThreadPoolExecutor  # OpenCV gibt die GIL frei
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for j, _ in enumerate(pool.map(maske, bilder)):
+                self.fortschritt("masken", (j + 1) / len(bilder), f"Maske {j + 1} von {len(bilder)}")
         self.zeiten["masken"] = time.perf_counter() - t
 
         t = time.perf_counter()
@@ -302,7 +315,9 @@ class Auswertung:
             "oberkante_mm": round(float(hi_p[2]), 1),
             "genauigkeit": {**abst, "lidar_gegen_tiefe_mm": _quantile(lidar_diff)},
             "abdeckung": {**_abdeckung(bilder), **sichtbar},
-            "boden": {"quelle": box_quelle, "hoehe_ar_m": round(float(boden_z) / 1000.0, 4)},
+            "boden": {"quelle": box_quelle, "hoehe_ar_m": round(float(boden_z) / 1000.0, 4),
+                      "streuung_mm": round(getattr(self, "boden_streuung", 0.0), 2)},
+            "box_mm": {"groesse": [round(float(x), 1) for x in (box_hi - box_lo)]},
             "transformation": {"beschreibung": "X_kevcad = A · (1000 · M · X_arkit) + b, M = [[1,0,0],[0,0,-1],[0,1,0]]",
                                "A": A.tolist(), "b": bvec.tolist(), "matrix": geo.matrix4(A @ geo.M_AR * 1000.0, bvec)},
             "zeiten": zeiten, "warnungen": self.warnungen,
@@ -350,7 +365,11 @@ class Auswertung:
             k = int(np.argmax(hist))
             z0 = 0.5 * (kanten[k] + kanten[k + 1])
             boden_z = float(np.median(z[np.abs(z - z0) < 8.0]))
-        ueber = Q[(Q[:, 2] > boden_z + 8.0)]
+        # Schwelle über dem Boden aus der Streuung der Bodenpunkte (Rauschen und Lagefehler von ARKit), mindestens 8 mm
+        zb = Q[np.abs(Q[:, 2] - boden_z) < 25.0, 2]
+        streuung = 1.4826 * float(np.median(np.abs(zb - np.median(zb)))) if len(zb) > 50 else 0.0
+        self.boden_streuung = streuung
+        ueber = Q[(Q[:, 2] > boden_z + max(8.0, 4.0 * streuung))]
         if len(ueber) < 50:
             raise fmt.ScanFehler("Über dem Boden ist kein Objekt zu finden (zu flach oder nicht im Bild)")
         # Belegung im Grundriss (1 cm), Gruppe am Fokuspunkt
@@ -463,7 +482,7 @@ def _ohne_bodenreste(netz: dict[str, np.ndarray], boden_z: float, voxel: float) 
     n = np.cross(b - a, c - a)
     n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
     z = (a[:, 2] + b[:, 2] + c[:, 2]) / 3
-    weg = (n[:, 2] > 0.8) & (z < boden_z + max(2.5 * voxel, 5.0))
+    weg = (np.abs(n[:, 2]) > 0.7) & (z < boden_z + max(4.0 * voxel, 8.0))
     return {**netz, "triangles": T[~weg]}
 
 
