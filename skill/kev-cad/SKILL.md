@@ -680,6 +680,30 @@ rechts, oben), nicht nach jedem Schritt. Erste Quelle bleiben die Zahlen aus `ru
 - `screenshot()` zeigt genau Kevins Ansicht, 1280 × 800 px. Größer nur, wenn Details fehlen.
 - `mm_per_px` gibt es nur in paralleler Projektion. Maße trotzdem mit `measure` bestätigen.
 
+## Renderings (Phase 7)
+
+Schöne Bilder für Kevin (Produktbild, Deckblatt, Kunden, Social Media) macht `render`, nicht `screenshot`. Nur auf
+Kevins Wunsch, und das Bild ist für ihn: die Antwort nennt den Pfad; selbst ansehen nur mit `bild_zeigen=true`, wenn
+Kevin danach fragt oder du etwas prüfen musst.
+
+- `render(szene="studio", ansicht=None, kamera=None, groesse="hd", qualitaet="schnell", hintergrund=None, ziel=None)`
+  schreibt ein PNG nach `<projekt>/output/renders/`. Es zeigt, was der Viewer zeigt: sichtbare Teile, Explosion und
+  Animationslage; ohne Schnitt, Hervorhebungen und Maße.
+- Szenen: `studio` (heller Hintergrund, weicher Schatten), `werkstatt` (dunkle Halle mit Lampen), `draussen` (Garten
+  bei Tageslicht), `wohnraum`, `freigestellt` (PNG mit Alpha und halbdurchsichtigem Schatten). `hintergrund` ersetzt den
+  Hintergrund (`weiss`, `hell`, `grau`, `dunkel`, `schwarz`, `transparent`, `#RRGGBB`).
+- `ansicht`: `aktuell` (Kevins Ansicht, Vorgabe), `produkt` (3/4 von vorn rechts, leicht von oben, eingepasst) oder
+  eine Standardansicht; `kamera="FX6"` rendert durch eine Kamera aus model.py (Seitenverhältnis ihres Formats).
+- `groesse`: `hd`, `4k`, `quadrat`, `hochkant` (Instagram 4:5), `story`, `deckblatt` (3:2), `a4`, `vorschau` oder
+  `"2400x1600"`.
+- `qualitaet="schnell"`: RealityKit in der App, ein bis wenige Sekunden, wartet. `qualitaet="foto"`: Blender Cycles im
+  Hintergrund, eine bis wenige Minuten; die Antwort kommt sofort mit Auftrag `R-n`. Stand mit
+  `render(auftrag="R-3", warten_s=120)`, Abbruch mit `abbrechen=true`. Kevin sieht den Fortschritt in der App.
+- Materialien kommen aus dem Katalog (`render`: eloxiert, gebürstet, verzinkt, Schichtlinien bei Druckteilen, Holz,
+  Gummi). Eine Farbe in `show(..., color=...)` hat Vorrang vor der Katalogfarbe, Glanz und Metall bleiben.
+- Kevin selbst: Ablage → „Rendern …“ (⌥⌘R) mit Vorschau, Finder und Teilen; im Export-Dialog der Baustein
+  „Produktbild“.
+
 ## Animation
 
 Bewegungen gehören wie die Geometrie in `model.py`: `from kevcad import animation`, am Ende nach allen `show()`.
@@ -828,8 +852,10 @@ App im Bereich „Dokumente“ mit Strichbild je Schritt; Vertrag in DOKUMENTE.m
 ## Dokumente als PDF
 
 `dokument_export(bausteine, ziel=None, drucken=False)` lässt die App ein PDF bauen, dieselben Seiten wie im Dialog
-„Dokumente exportieren …“ (⇧⌘E): `deckblatt`, `stueckliste`, `teileliste`, `einkaufsliste`, `zuschnitt`,
-`zeichnungen`, `bauplan`, in der angegebenen Reihenfolge; leer oder `"alle"` = alles. Objekte wie
+„Dokumente exportieren …“ (⇧⌘E): `deckblatt`, `produktbild` (Rendering auf eigener Seite: das jüngste aus
+`output/renders/`, wenn es nach dem letzten Lauf entstand, sonst ein schnelles Studio-Bild), `stueckliste`,
+`teileliste`, `einkaufsliste`, `zuschnitt`, `zeichnungen`, `bauplan`, in der angegebenen Reihenfolge; leer oder
+`"alle"` = alles. Objekte wie
 `{"art": "stueckliste", "spalten": ["pos", "bild", "benennung", "masse", "anzahl"]}` oder
 `{"art": "zeichnungen", "auswahl": ["<blatt-id>", …]}` wählen Spalten bzw. Blätter; `"vorlage:<Name>"` nimmt eine
 Vorlage, die Kevin im Dialog gesichert hat; `{"format": "A3", "ausrichtung": "quer"}` setzt das Papier der Listen und

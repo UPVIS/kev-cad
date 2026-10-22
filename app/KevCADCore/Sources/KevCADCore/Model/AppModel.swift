@@ -217,6 +217,8 @@ public final class AppModel: ObservableObject {
     public let referenzen = ReferenzStore()
     /// Statik (additiv, PLAN-STATIK.md): Szenarien mit Ampel, Farbverlauf und Verformung (Aktionen: `StatikActions`).
     public let statik = StatikStore()
+    /// Phase 7 (additiv): Renderings – Einstellungen des Dialogs, Aufträge, Vorschau (Aktionen: `renderActions`).
+    public let render = RenderStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

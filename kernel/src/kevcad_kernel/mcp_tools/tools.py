@@ -946,5 +946,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .statik_tools import register_statik_tools
 
     register_statik_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE})
+    # Phase 7: Renderings (render_tools.py, PLAN-PHASE7-RENDERINGS.md)
+    from .render_tools import register_render_tools
+
+    register_render_tools(tool, t, svc)
 
     return t

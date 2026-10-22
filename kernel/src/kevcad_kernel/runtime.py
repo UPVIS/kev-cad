@@ -51,6 +51,7 @@ from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
+from kevcad_kernel.render.laufzeit import RenderRuntime  # Phase 7: Renderings
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.versionen.laufzeit import VersionenRuntimeMixin
 from kevcad_kernel.worker import WorkerClient
@@ -108,7 +109,7 @@ class Job:
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
-                    StatikRuntime):
+                    StatikRuntime, RenderRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -1277,7 +1278,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
-        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES", "DOC_EXPORT_RES") and reply_to:
+        if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES", "DOC_EXPORT_RES", "RENDER_RES",
+                    "RENDER_SCENE") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1328,6 +1330,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._druckvorschau_app_message(kind, header):
             pass
         elif self._referenz_app_message(kind, header):  # Phase 4: REF_ADD, REF_MEASURE_REQ, REF_APPLY
+            pass
+        elif self._render_app_message(kind, header):  # Phase 7: RENDER_START, RENDER_CANCEL
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

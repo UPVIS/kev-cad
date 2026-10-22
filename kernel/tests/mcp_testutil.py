@@ -54,6 +54,8 @@ EXPECTED_TOOLS |= {"freigabe_anfragen"}
 EXPECTED_TOOLS |= {"referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen", "referenz_fotoansicht"}
 # Statik Stufe 1 (PLAN-STATIK.md)
 EXPECTED_TOOLS |= {"statik", "szenario_rechnen"}
+# Phase 7: Renderings (PLAN-PHASE7-RENDERINGS.md)
+EXPECTED_TOOLS |= {"render"}
 
 
 def free_port() -> int:
