@@ -81,6 +81,8 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     private var gezogen = false
     private var zug = CGVector.zero
     private var maus: CGPoint?  // Blatt-mm
+    /// Element unter dem Zeiger (Hervorhebung im Auswahlwerkzeug).
+    private var hoverElement: BlattElement?
 
     /// Nach dem Loslassen bis zur Antwort des Kernels: die verschobenen Dinge an ihrer neuen Stelle (kein Zurückspringen).
     private struct Ausstehend {
@@ -358,7 +360,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     // MARK: Zwischenbild
 
     /// Höchstens so viele Pixel für das Zwischenbild des ganzen Blatts.
-    static let maxPixel: CGFloat = 14_000_000
+    static let maxPixel: CGFloat = 8_000_000
 
     /// Rechnet im Hintergrund ein Bild des ganzen Blatts in der aktuellen Auflösung (für flüssiges Zoomen auch bei
     /// Blättern mit vielen Linien und Maßen).
@@ -580,7 +582,9 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
         // Hervorhebung unter dem Zeiger (Auswahlwerkzeug)
-        if werkzeug == .auswahl, case .keine = geste, let p = maus, let h = treffer(p, in: z), h != element {
+        if werkzeug == .auswahl, case .keine = geste, maus != nil, let h = hoverElement, h != element,
+           BlattLeinwand.gibt(h, in: z)
+        {
             zeichneHervorhebung(h, z, in: ctx, farbe: akzent.copy(alpha: 0.55) ?? akzent, staerke: 1.3)
         }
         if let e = element, !(gezogen && istGezogen(e)), schubs == .zero || !istElement(e) {
@@ -760,19 +764,37 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         let p = mm(convert(event.locationInWindow, from: nil))
         maus = p
         zustand?.anzeige.zeiger = p
-        if werkzeug == .mass, let z = zeichnung {
-            let k = kante(p, z)
-            if k?.linie != hoverLinie?.linie { hoverLinie = k }
+        // Neu zeichnen nur, wenn sich die Hervorhebung ändert oder eine Vorschau dem Zeiger folgt
+        var neu = false
+        switch werkzeug {
+        case .mass:
+            if let z = zeichnung {
+                let k = kante(p, z)
+                if k?.linie != hoverLinie?.linie {
+                    hoverLinie = k
+                    neu = true
+                }
+            }
+            neu = neu || massKlicks.count == 2
+        case .auswahl:
+            if let z = zeichnung {
+                // Zeiger zeigt, was sich ziehen lässt: Maß, Notiz, Ansicht; leeres Papier verschiebt das Blatt
+                let t = treffer(p, in: z)
+                (t != nil ? NSCursor.openHand : NSCursor.arrow).set()
+                if t != hoverElement {
+                    hoverElement = t
+                    neu = true
+                }
+            }
+        case .ansicht, .notiz:
+            neu = true
         }
-        if werkzeug == .auswahl, let z = zeichnung {
-            // Zeiger zeigt, was sich ziehen lässt: Maß, Notiz, Ansicht; leeres Papier verschiebt das Blatt
-            (treffer(p, in: z) != nil ? NSCursor.openHand : NSCursor.arrow).set()
-        }
-        needsDisplay = true
+        if neu { needsDisplay = true }
     }
 
     override func mouseExited(with event: NSEvent) {
         maus = nil
+        hoverElement = nil
         zustand?.anzeige.zeiger = nil
         hoverLinie = nil
         needsDisplay = true
