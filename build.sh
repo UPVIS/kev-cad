@@ -137,7 +137,8 @@ command -v uv >/dev/null || { echo "uv fehlt (https://docs.astral.sh/uv/)"; exit
 
 if [ "$MODE" = "--core-tests" ]; then
   echo "==> Tests KevCADCore"
-  (cd app/KevCADCore && swift test 2>&1 | tail -5)
+  # Zusammenfassung von XCTest und Fehlerzeilen; der Exit-Code von swift test kommt über pipefail durch
+  (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; } | tail -15)
   echo "==> Tests Kernel"
   (cd kernel && .venv/bin/python -m pytest -q)
   exit 0
