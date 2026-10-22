@@ -402,6 +402,82 @@
    "payload_bytes": 0,
    "reply_to": "i-44",
    "ok": false
+  },
+  "freigabe.bin": {
+   "type": "FREIGABE",
+   "prio": "zustand",
+   "seq": 17,
+   "payload_bytes": 0,
+   "anfrage_id": "F-0001-5c1e9a27",
+   "nonce": "9f86d081884c7d659a2feaa0c55ad015",
+   "ablauf": "2026-10-23T14:03:12Z",
+   "ids": [
+    "rohr-alfer-16x1",
+    "alutec-05200",
+    "petg-cf"
+   ],
+   "links": [
+    "https://www.alfer.com/",
+    "https://www.beispiel-shop.de/p/alutec-05200",
+    null
+   ]
+  },
+  "cmd_freigabe.bin": {
+   "type": "CMD",
+   "prio": "zustand",
+   "seq": 8,
+   "payload_bytes": 0,
+   "op": "freigabe",
+   "id": "i-46",
+   "eintrag": "rohr-alfer-16x1",
+   "entscheidung": "frei"
+  },
+  "cmd_freigabe_ablehnen.bin": {
+   "type": "CMD",
+   "prio": "zustand",
+   "seq": 10,
+   "payload_bytes": 0,
+   "op": "freigabe",
+   "id": "i-47",
+   "eintrag": "alutec-05200",
+   "entscheidung": "abgelehnt"
+  },
+  "cmd_res_freigabe.bin": {
+   "type": "CMD_RES",
+   "prio": "zustand",
+   "seq": 18,
+   "payload_bytes": 0,
+   "reply_to": "i-46",
+   "ok": true,
+   "status": "frei"
+  },
+  "freigabe_ende_eintrag.bin": {
+   "type": "FREIGABE_ENDE",
+   "prio": "zustand",
+   "seq": 19,
+   "payload_bytes": 0,
+   "anfrage_id": "F-0001-5c1e9a27",
+   "id": "rohr-alfer-16x1",
+   "grund": "iphone",
+   "ergebnis": "frei"
+  },
+  "cmd_res_freigabe_fehler.bin": {
+   "type": "CMD_RES",
+   "prio": "zustand",
+   "seq": 20,
+   "payload_bytes": 0,
+   "reply_to": "i-48",
+   "ok": false,
+   "status": "ungueltig"
+  },
+  "freigabe_ende.bin": {
+   "type": "FREIGABE_ENDE",
+   "prio": "zustand",
+   "seq": 21,
+   "payload_bytes": 0,
+   "anfrage_id": "F-0001-5c1e9a27",
+   "id": null,
+   "grund": "abgelaufen"
   }
  }
 }

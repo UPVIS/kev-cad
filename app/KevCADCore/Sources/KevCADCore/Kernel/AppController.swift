@@ -32,6 +32,8 @@ public final class AppController: AppActions {
     private var outSeq = 0
     private var requestCounter = 0
     private var pending: [String: PendingRequest] = [:]
+    /// Offene Anfragen an den Kernel (ID → Typ), für Tests.
+    var pendingRequestTypes: [String: String] { pending.mapValues(\.kind) }
     var queuedProjectRequest: (() -> Void)?
     private var unknownTypesLogged = Set<String>()
 

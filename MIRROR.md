@@ -1,6 +1,7 @@
 # Kev CAD · Spiegel-Protokoll
 
-Version 1 vom 21.10.2026, mit VoiceBridge abgestimmt. Gehört zu [PLAN-IPHONE-LIVE.md](PLAN-IPHONE-LIVE.md). Änderungen
+Version 1 vom 21.10.2026, mit VoiceBridge abgestimmt; Version 1.1 vom 22.10.2026 (rein additiv: Freigabe vom iPhone,
+siehe [unten](#freigabe-vom-iphone-version-11)). Gehört zu [PLAN-IPHONE-LIVE.md](PLAN-IPHONE-LIVE.md). Änderungen
 nur gemeinsam mit VoiceBridge: Vertrag, Testdateien und beide Seiten im selben Schritt.
 
 Drei Strecken, ein Inhalt:
@@ -22,7 +23,8 @@ Kev CAD spricht nur die erste Strecke. VoiceBridge reicht Kopf und Nutzlast unve
   Testvarianten kurz halten.
 - Ordner 0700, Socket 0600. Kev CAD prüft die Gegenstelle mit `getpeereid` auf dieselbe UID und trennt sonst sofort.
   Eine Prüfung der Codesignatur ist in Version 1 nicht vorgesehen (Kev CAD ist ad hoc signiert, VoiceBridge mit Team-ID;
-  eine einseitige Prüfung wäre später möglich).
+  eine einseitige Prüfung wäre später möglich). Seit Version 1.1 prüft Kev CAD die Signatur der Gegenstelle für die
+  Freigabe (Abschnitt „Freigabe vom iPhone“): Nur die VoiceBridge-App bekommt `FREIGABE` und darf `freigabe` schicken.
 - **Vertrauensgrenze ist VoiceBridge.** VoiceBridge reicht ein `CMD` nur weiter, wenn es von einem gekoppelten iPhone
   kommt: über den direkten Kanal (TLS-PSK plus Handschlag) oder über CloudKit mit Geräte-Unterschrift wie beim
   `AgentCommand`. Kev CAD nimmt `CMD` ausschließlich über diesen Socket an und vertraut ihm. Kev CAD öffnet keinen
@@ -170,6 +172,100 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 Alle Befehle außer `kamera` bekommen ein `CMD_RES`. Die Wirkung kommt als `STATE_DELTA` bzw. `CAMERA` mit
 `quelle: "iphone"` an alle zurück. Im Modus „Frei“ schickt das iPhone keine Kamera, alles andere schon.
 
+## Freigabe vom iPhone (Version 1.1)
+
+Kevin am 22.10.2026: Lagerkatalog-Freigaben auch vom iPhone, nicht nur per Klick am Mac. Rein additiv; `version` im
+HELLO bleibt 1, Kev CAD nennt im HELLO zusätzlich das Merkmal `freigabe-1`.
+
+**Grundsatz:** Freigeben darf nur Kevin selbst. Eine Antwort im Agenten-Chat oder eine von einem Agenten weitergegebene
+Nachricht zählt nie. Die Freigabe vom iPhone läuft deshalb **am Agenten vorbei**, direkt zwischen der VoiceBridge-App
+und Kev CAD über diesen Socket. MCP hat keinen Weg, eine Freigabe zu setzen: `freigabe_anfragen` öffnet nur den Dialog
+und wartet.
+
+| type | Richtung | prio | Felder |
+|---|---|---|---|
+| `FREIGABE` | KC → VB | zustand | `epoche`, `anfrage_id`, `nonce`, `ablauf`, `eintraege` |
+| `FREIGABE_ENDE` | KC → VB | zustand | `epoche`, `anfrage_id`, optional `id`, `grund`, mit `id` auch `ergebnis` |
+| `CMD` mit `op: "freigabe"` | VB → KC | zustand | `id` (des Befehls), `args`: `anfrage_id`, `nonce`, `id` (Katalog-ID), `entscheidung` |
+| `CMD_RES` | KC → VB | zustand | wie bisher plus `status` (nur bei `freigabe`) |
+
+**FREIGABE:** geht hinaus, sobald ein Agent `freigabe_anfragen` aufruft und der Dialog „Vorschläge freigeben“ im
+Projektfenster aufgeht (kurz danach, sobald der Katalog nachgeladen ist).
+
+- **Ohne Miete:** an jede verbundene Gegenstelle, die die Prüfung unten besteht und ihr HELLO geschickt hat, wie `HELLO`
+  und `AGENTS`, auch ohne `WATCH`. Nach dem HELLO von Kev CAD kommen alle noch offenen Anfragen, sobald die Prüfung
+  der Gegenstelle durch ist (sie läuft neben dem Socket und braucht Bruchteile einer Sekunde).
+- `anfrage_id`: eindeutig je Programmstart („F-0001-5c1e9a27“). `ablauf`: ISO 8601 in UTC, 24 h nach der Anfrage.
+- `nonce`: 128 Bit Zufall als 32 Hex-Zeichen, einmalig je Anfrage. Kev CAD hält sie nur im Speicher, nie auf Platte und
+  nie im Protokoll; VoiceBridge ebenso (kein Log, kein CloudKit-Feld im Klartext, das länger lebt als die Anfrage).
+- `eintraege`: die noch offenen Vorschläge, je `{id, kind, name, art, kurz, link, grund, projekt}`. `kind` `teil` oder
+  `material`; `art` wie im Katalog (`rohr`, `zukaufteil` …, bei Materialien `material`); `kurz` die Kurzdaten in einer
+  Zeile (Maße, Preis, Händler, z. B. „d 16 · s 1 mm · 4,20 €/m · ALFER“). `link` **nur `https`**, sonst fehlt das Feld.
+  `grund` (Text oder null) wie in `freigabe_anfragen`; `projekt` nur der Projektname (oder null), **nie ein Pfad**.
+- Eine neue Anfrage ersetzt eine offene (die alte endet mit `grund: "zurueckgezogen"`). Eine neue Epoche beendet alle.
+
+**FREIGABE_ENDE:** Die Karte auf dem iPhone verschwindet sofort. Mit `id` ist nur dieser Eintrag erledigt (`ergebnis`
+`frei` oder `abgelehnt`), ohne `id` die ganze Anfrage. `grund`:
+
+| grund | wann |
+|---|---|
+| `mac` | Kevin hat am Mac entschieden (Dialog, Lagerkatalog) oder den Dialog geschlossen |
+| `iphone` | per `CMD freigabe` entschieden (auch: der letzte offene Eintrag) |
+| `abgelaufen` | 24 h ohne Entscheidung |
+| `zurueckgezogen` | eine neue Anfrage hat diese ersetzt |
+
+**CMD freigabe:** eine Entscheidung je Eintrag, `entscheidung` `frei` oder `abgelehnt`. Kev CAD führt sie aus wie
+Kevins Klick: Freigeben über dieselbe Freigabe wie der Dialog im Projektfenster (`CATALOG_SAVE` mit `status: "frei"`,
+erst nach der Bestätigung im neu geladenen Katalog), mit dem Vermerk `freigegeben_von: "Kevin (iPhone)"` und
+`freigegeben_am` (ISO 8601, UTC) im Katalogeintrag; Ablehnen löscht den Vorschlag (`CATALOG_DELETE`, ebenfalls
+bestätigt). Der Dialog am Mac aktualisiert sich, `freigabe_anfragen` meldet dem Agenten das Ergebnis wie bisher.
+`CMD_RES` kommt erst nach der Bestätigung (Zeitlimit 45 s), danach `FREIGABE_ENDE` mit `id` an alle.
+
+| status | ok | Bedeutung |
+|---|---|---|
+| `frei` | true | freigegeben und im Katalog bestätigt |
+| `abgelehnt` | true | gelöscht und bestätigt |
+| `schon_frei` | false | war schon freigegeben |
+| `fehlt` | false | steht nicht mehr im Katalog |
+| `ungueltig` | false | `anfrage_id`, `nonce`, `id` oder `entscheidung` passen nicht |
+| `verbraucht` | false | dieser Eintrag ist mit dieser Nonce schon entschieden oder wird gerade ausgeführt |
+| `abgelaufen` | false | die Anfrage ist abgelaufen |
+| `beendet` | false | die Anfrage ist erledigt (am Mac geschlossen, ersetzt, alles entschieden) |
+| `nicht_erlaubt` | false | die Gegenstelle ist nicht die VoiceBridge-App |
+| `katalogfehler` | false | Kernel oder Katalog hat abgelehnt, ist nicht verbunden oder hat nicht bestätigt; `fehler` nennt den Grund |
+
+Die Nonce gilt für die ganze Anfrage, jede Entscheidung aber nur einmal: Ein entschiedener Eintrag ist mit ihr
+verbraucht, die Anfrage endet mit dem letzten Eintrag, mit dem Schließen am Mac oder nach 24 h, und mit ihr die Nonce.
+Scheitert eine Entscheidung am Katalog (`katalogfehler`), darf das iPhone sie wiederholen.
+
+**Prüfung der Gegenstelle** (`KevCADCore/Mirror/MirrorGegenstelle.swift`): Kev CAD liest beim Verbinden das Audit-Token
+des Sockets (`getsockopt(LOCAL_PEERTOKEN)`) und prüft daraus, ohne PID-Umweg:
+
+1. Code der Gegenstelle aus dem Audit-Token: `SecCodeCopyGuestWithAttributes` mit `kSecGuestAttributeAudit` (gleichwertig
+   zu `SecCodeCreateWithAuditToken`, das im öffentlichen macOS-SDK nicht deklariert ist).
+2. Argumente des Prozesses (`sysctl KERN_PROCARGS2`, PID aus dem Audit-Token) enthalten kein `--mcp`: Die MCP-Prozesse
+   der Agenten sind dieselbe Datei wie die VoiceBridge-App und dürfen sich nie als Freigabe-Gegenstelle ausgeben.
+3. `SecCodeCheckValidity` gegen das Requirement (Konstante `MirrorGegenstelle.voiceBridgeRequirement`):
+   `anchor apple generic and identifier "de.upvis.voicebridge.mac" and certificate leaf[subject.OU] = "2GX7UC98J6"`.
+   Gilt für Apple Development und später Developer ID; Testinstanzen von VoiceBridge (Bundle-ID mit „test“) fallen
+   gewollt heraus. Die Prüfung kommt nach dem Lesen der Argumente, so passt sie zum selben Prozess (Audit-Token mit
+   PID-Version). Geprüft wird mit Standard-Flags, also auch gegen die Datei auf der Platte: Nach einem Update von
+   VoiceBridge scheitert der noch laufende alte Prozess (`errSecCSStaticCodeChanged`, Antwort `nicht_erlaubt` mit
+   „VoiceBridge neu starten“), bis VoiceBridge neu startet. Die Prüfung im Kernel
+   (`kSecCSMatchGuestRequirementInKernel`) kann Zertifikatsfelder nicht auswerten und kommt deshalb nicht in Frage.
+
+Kev CAD prüft beim Verbinden (entscheidet, wer `FREIGABE` bekommt) und vor jedem `CMD freigabe` noch einmal mit dem
+Audit-Token vom Verbinden. Alle anderen Gegenstellen bekommen kein `FREIGABE` und auf `freigabe` die Antwort
+`nicht_erlaubt`; der übrige Spiegel bleibt für sie wie in Version 1. **Testmodus:** Nur eine Testvariante (Bundle-ID mit
+`.test`) mit der Umgebungsvariable `KEVCAD_FREIGABE_TESTMODUS=1` lässt jede Gegenstelle derselben UID zu (etwa
+`mirror_sim.py --client`); die installierte App kennt keinen Testmodus.
+
+**VoiceBridge** reicht `FREIGABE` und `FREIGABE_ENDE` wie Zustand weiter (nie verwerfen, auch ohne CAD-Ansicht und
+ohne `WATCH`), zeigt je Eintrag eine Karte mit Name, Kurzdaten, Grund, Projekt und Link und schickt `CMD freigabe` nur
+aus einer Entscheidung von Kevin auf dem gekoppelten iPhone (gleiche Vertrauensgrenze wie bei allen `CMD`). Keine
+automatische Antwort, keine Weitergabe an einen Agenten. Abgelaufene Anfragen (`ablauf`) zeigt sie nicht mehr an, auch
+wenn `FREIGABE_ENDE` unterwegs verloren ging; nach einer neuen Epoche verwirft sie alle Karten.
+
 ## Kontext für den Agenten
 
 Nicht Teil dieses Sockets, aber hier festgehalten: Ein Diktat oder Text aus der CAD-Ansicht trägt im `AgentCommand` das
@@ -195,7 +291,10 @@ Liegen in `mirror-fixtures/` im Kev-CAD-Repo, je Datei ein Rahmen, erzeugt aus e
 über zwei Blöcke), `state.bin`, `state_delta_auswahl.bin`, `state_delta_sichtbarkeit.bin`, `camera.bin`,
 `cmd_kamera.bin`, `cmd_auswahl.bin`, `cmd_res.bin`; dazu `hello_vb.bin`, `watch.bin`, `unwatch.bin`,
 `part_remove.bin`, `mesh_req.bin`, `state_delta_alle_zeigen.bin` (isoliert ausdrücklich null), `cmd_sichtbarkeit.bin`,
-`cmd_res_fehler.bin` und `fixtures.json` mit den erwarteten Werten. Erzeugt byte-gleich von
+`cmd_res_fehler.bin` und `fixtures.json` mit den erwarteten Werten. Version 1.1 dazu: `freigabe.bin` (drei Einträge,
+einer ohne Link), `cmd_freigabe.bin`, `cmd_freigabe_ablehnen.bin`, `cmd_res_freigabe.bin`,
+`cmd_res_freigabe_fehler.bin` (`ungueltig`), `freigabe_ende_eintrag.bin` (mit `id`) und `freigabe_ende.bin` (ganze
+Anfrage, `abgelaufen`); die Nonce darin ist ein festes Beispiel. Erzeugt byte-gleich von
 `kernel/tools/make_mirror_fixtures.py`; Szene, Zustand und Befehle aus `gestell.kcadrec`, das Netz über zwei Blöcke aus
 `samples/drehknopf` (6.680 Dreiecke, gepackt 86 KB).
 
@@ -210,6 +309,10 @@ README).
 `kernel/tools/mirror_sim.py` (Teil von M1): bietet einen Spiegel-Socket an, spielt eine aufgezeichnete Szene ab (Aufbau
 Teil für Teil wie bei einem Lauf), beantwortet Befehle wie die App und kann Kamerafahrten, Auswahlwechsel und einen
 Neustart mit neuer Epoche simulieren. Aufruf mit eigenem, kurzem Socket-Pfad, damit er neben der echten App läuft.
+Seit Version 1.1 auch die Freigabe: `freigabe` (Anfrage mit drei Einträgen), `freigabe-mac`, `freigabe-zurueck` auf
+stdin, `--freigabe-ablauf S` zum Testen des Ablaufs; ohne Prüfung der Gegenstelle. Mit `--client PFAD` spielt er
+umgekehrt die Gegenstelle gegen eine Testvariante im Testmodus (wartet auf `FREIGABE`, entscheidet jeden Eintrag,
+`--pruefen` auch falsche Nonce und Wiederholung).
 
 ## Offen
 

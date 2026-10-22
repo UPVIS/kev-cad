@@ -12,11 +12,14 @@ public struct FreigabeEintrag: Identifiable, Equatable, Hashable, Sendable {
     public var id: String
     public var kind: String
     public var name: String
+    /// Vermerk `freigegeben_von` im Katalogeintrag (nur bei der Freigabe vom iPhone: „Kevin (iPhone)“), sonst nil.
+    public var von: String?
 
-    public init(id: String, kind: String, name: String? = nil) {
+    public init(id: String, kind: String, name: String? = nil, von: String? = nil) {
         self.id = id
         self.kind = kind
         self.name = name ?? id
+        self.von = von
     }
 }
 

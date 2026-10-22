@@ -7,9 +7,16 @@ import Foundation
 /// (`seq` in Leitungsreihenfolge) und einzeln nacheinander geschrieben, so kann ein Zustand höchstens hinter dem
 /// gerade laufenden Netzblock warten. Lesen, Dekodieren und Schreiben laufen auf einer eigenen Warteschlange; Ereignisse
 /// kommen auf dem Hauptthread an.
+///
+/// Version 1.1: Beim Verbinden liest der Server das Audit-Token der Gegenstelle und prüft es mit `peerVerifier`
+/// (MirrorGegenstelle) auf einer eigenen Warteschlange (die Signaturprüfung liest die App auf der Platte und kann dauern);
+/// das Urteil kommt als `.geprueft`. Vor einer Freigabe prüft `pruefeGegenstelle(_:completion:)` noch einmal mit
+/// demselben Token.
 public final class MirrorSocketServer: @unchecked Sendable {
     public enum Event: Sendable {
         case connected(Int)
+        /// Urteil der Freigabe-Prüfung einer Verbindung (MIRROR.md 1.1), kurz nach `.connected`.
+        case geprueft(Int, MirrorGegenstelle.Urteil)
         case disconnected(Int, String)
         case message(Int, MirrorMessage)
         /// Rahmen, der sich nicht lesen ließ (Verbindung, Grund)
@@ -33,8 +40,12 @@ public final class MirrorSocketServer: @unchecked Sendable {
     public var onEvent: (@MainActor (Event) -> Void)?
     /// Mindestabstand zwischen zwei Kamerarahmen je Verbindung.
     public var cameraInterval: TimeInterval = 1 / MirrorProtocol.cameraRate
+    /// Prüfung der Gegenstelle für die Freigabe (vor `start()` setzen; Vorgabe: niemand darf freigeben).
+    public var peerVerifier: MirrorGegenstelle.Pruefer = { _ in .nein("keine Prüfung eingerichtet") }
 
     let queue = DispatchQueue(label: "de.upvis.kevcad.mirror", qos: .userInitiated)
+    /// Prüfung der Gegenstellen, damit Lesen und Schreiben nicht auf die Signaturprüfung warten.
+    private let pruefQueue = DispatchQueue(label: "de.upvis.kevcad.mirror.pruefung", qos: .userInitiated)
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private var connections: [Int: MirrorConnection] = [:]
@@ -122,12 +133,17 @@ public final class MirrorSocketServer: @unchecked Sendable {
             }
             var on: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+            // Audit-Token beim Verbinden festhalten: Es bindet an genau diesen Prozess (PID und PID-Version)
+            let token = MirrorGegenstelle.auditToken(fd: fd)
             _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
             nextID += 1
-            let conn = MirrorConnection(id: nextID, fd: fd, server: self)
-            connections[nextID] = conn
+            let id = nextID
+            let conn = MirrorConnection(id: id, fd: fd, server: self, token: token)
+            connections[id] = conn
             conn.start()
-            deliver(.connected(nextID))
+            deliver(.connected(id))
+            let verifier = peerVerifier
+            pruefQueue.async { [weak self] in self?.deliver(.geprueft(id, verifier(token))) }
         }
     }
 
@@ -163,6 +179,20 @@ public final class MirrorSocketServer: @unchecked Sendable {
         queue.async { self.connections[id]?.close(reason: reason) }
     }
 
+    /// Gegenstelle noch einmal prüfen (vor jeder Freigabe), mit dem Audit-Token vom Verbinden; das Urteil kommt auf dem
+    /// Hauptthread. Eine getrennte Verbindung ist nie erlaubt.
+    public func pruefeGegenstelle(_ id: Int, completion: @escaping @MainActor (MirrorGegenstelle.Urteil) -> Void) {
+        let verifier = peerVerifier
+        queue.async {
+            // nil = Verbindung weg; .some(nil) = verbunden, aber ohne lesbares Audit-Token
+            let found: audit_token_t?? = self.connections[id].map { $0.token }
+            self.pruefQueue.async {
+                let urteil = found.map { verifier($0) } ?? .nein("Verbindung \(id) ist getrennt")
+                DispatchQueue.main.async { MainActor.assumeIsolated { completion(urteil) } }
+            }
+        }
+    }
+
     /// Für Tests: wartet, bis alles bisher Eingereihte bearbeitet ist (nicht: bis es geschrieben ist).
     public func sync() { queue.sync {} }
 
@@ -180,6 +210,8 @@ final class MirrorConnection {
     }
 
     let id: Int
+    /// Audit-Token der Gegenstelle beim Verbinden (nil, wenn nicht lesbar).
+    let token: audit_token_t?
     private let fd: Int32
     private unowned let server: MirrorSocketServer
     private var readSource: DispatchSourceRead?
@@ -198,10 +230,11 @@ final class MirrorConnection {
     private var outOffset = 0
     private var closed = false
 
-    init(id: Int, fd: Int32, server: MirrorSocketServer) {
+    init(id: Int, fd: Int32, server: MirrorSocketServer, token: audit_token_t? = nil) {
         self.id = id
         self.fd = fd
         self.server = server
+        self.token = token
     }
 
     var pendingCount: Int { zustand.count + szene.count + netz.count + (camera == nil ? 0 : 1) + (out.isEmpty ? 0 : 1) }

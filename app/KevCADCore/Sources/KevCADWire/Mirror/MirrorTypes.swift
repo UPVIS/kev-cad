@@ -1,6 +1,6 @@
 import Foundation
 
-// Werte des Spiegel-Protokolls (MIRROR.md, Version 1): Teile der Szene, Kamera, Zustand, Sitzungen.
+// Werte des Spiegel-Protokolls (MIRROR.md, Version 1.1): Teile der Szene, Kamera, Zustand, Sitzungen.
 // Alle Typen lesen tolerant (fehlende Felder werden Vorgaben, unbekannte Felder werden ignoriert) und schreiben genau
 // die Felder aus MIRROR.md. Felder, die dort „oder null“ sind, gehen ausdrücklich als null auf die Leitung.
 
@@ -17,7 +17,7 @@ public enum MirrorProtocol {
     /// Bundle-ID der installierten App; nur deren Socket sucht VoiceBridge ohne Debug-Schalter.
     public static let installedBundleID = "de.upvis.kevcad"
     /// Merkmale, die Kev CAD im HELLO anbietet.
-    public static let features = [KcadMesh.format]
+    public static let features = [KcadMesh.format, freigabeFeature]
     /// Kamerastände höchstens so oft je Sekunde (latest-only).
     public static let cameraRate = 40.0
     /// Höchstens so viele Netzblöcke gleichzeitig unterwegs.

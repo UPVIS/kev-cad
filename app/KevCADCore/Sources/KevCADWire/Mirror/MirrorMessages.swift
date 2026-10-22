@@ -493,6 +493,8 @@ public struct MirrorCommand: MirrorOutgoing, Decodable, Equatable {
 
     public enum Op: String, Sendable, CaseIterable {
         case kamera, auswahl, sichtbarkeit, fokus, ansicht, darstellung, einpassen
+        /// Version 1.1: Kevins Entscheidung zu einem Vorschlag (MirrorFreigabe.swift)
+        case freigabe
     }
 
     public var id: String
@@ -570,16 +572,19 @@ public struct MirrorCommandResult: MirrorOutgoing, Decodable, Equatable {
     public var replyTo: String
     public var ok: Bool
     public var fehler: String?
+    /// Version 1.1, nur bei CMD `freigabe`: Ergebnis als Wert (MirrorFreigabeStatus); sonst nil und weggelassen.
+    public var status: String?
 
-    public init(replyTo: String, ok: Bool, fehler: String? = nil) {
+    public init(replyTo: String, ok: Bool, fehler: String? = nil, status: String? = nil) {
         self.replyTo = replyTo
         self.ok = ok
         self.fehler = fehler
+        self.status = status
     }
 
     enum CodingKeys: String, CodingKey {
         case replyTo = "reply_to"
-        case ok, fehler
+        case ok, fehler, status
     }
 
     public init(from decoder: Decoder) throws {
@@ -587,6 +592,7 @@ public struct MirrorCommandResult: MirrorOutgoing, Decodable, Equatable {
         replyTo = (try? c.decodeIfPresent(String.self, forKey: .replyTo)) ?? ""
         ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? false
         fehler = try? c.decodeIfPresent(String.self, forKey: .fehler)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -594,6 +600,7 @@ public struct MirrorCommandResult: MirrorOutgoing, Decodable, Equatable {
         try c.encode(replyTo, forKey: .replyTo)
         try c.encode(ok, forKey: .ok)
         try c.encode(fehler, forKey: .fehler)
+        try c.encodeIfPresent(status, forKey: .status)
     }
 }
 
@@ -635,6 +642,10 @@ public enum MirrorMessage: Sendable, Equatable {
     case camera(MirrorCameraMessage)
     case command(MirrorCommand)
     case commandResult(MirrorCommandResult)
+    /// Version 1.1: offene Freigabe-Anfrage (Kev CAD → VoiceBridge).
+    case freigabe(MirrorFreigabeMessage)
+    /// Version 1.1: Eintrag oder Anfrage erledigt (Kev CAD → VoiceBridge).
+    case freigabeEnde(MirrorFreigabeEndeMessage)
     /// Typ, den diese Version nicht kennt: verwerfen und protokollieren, nicht beantworten.
     case unknown(type: String)
 
@@ -653,6 +664,8 @@ public enum MirrorMessage: Sendable, Equatable {
         case .camera: return MirrorCameraMessage.type
         case .command: return MirrorCommand.type
         case .commandResult: return MirrorCommandResult.type
+        case .freigabe: return MirrorFreigabeMessage.type
+        case .freigabeEnde: return MirrorFreigabeEndeMessage.type
         case .unknown(let t): return t
         }
     }
@@ -675,6 +688,9 @@ public enum MirrorMessage: Sendable, Equatable {
         case MirrorCameraMessage.type: return .camera(try dec.decode(MirrorCameraMessage.self, from: h))
         case MirrorCommand.type: return .command(try dec.decode(MirrorCommand.self, from: h))
         case MirrorCommandResult.type: return .commandResult(try dec.decode(MirrorCommandResult.self, from: h))
+        case MirrorFreigabeMessage.type: return .freigabe(try dec.decode(MirrorFreigabeMessage.self, from: h))
+        case MirrorFreigabeEndeMessage.type:
+            return .freigabeEnde(try dec.decode(MirrorFreigabeEndeMessage.self, from: h))
         default: return .unknown(type: env.type)
         }
     }

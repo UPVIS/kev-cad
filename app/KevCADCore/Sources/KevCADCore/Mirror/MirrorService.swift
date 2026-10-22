@@ -13,6 +13,8 @@ import simd
 ///   Inhalt (Prüfsumme des Teils) und Hash. MESH nur auf MESH_REQ.
 /// - CMD wirkt über `AppActions` wie ein Klick am Mac; die Wirkung geht als STATE_DELTA bzw. CAMERA mit
 ///   `quelle: "iphone"` an alle zurück, dazu CMD_RES (außer bei `kamera`).
+/// - Version 1.1: Freigabe vom iPhone (FreigabeVomIPhone.swift) nur für Gegenstellen, die die Prüfung in
+///   MirrorGegenstelle.swift bestehen (VoiceBridge-App, Testmodus nur in Testvarianten).
 @MainActor
 public final class MirrorService {
     /// Zufällige Kennung je Programmstart.
@@ -49,6 +51,8 @@ public final class MirrorService {
     private static let cacheLimitBytes = 96 << 20
 
     private struct Peer {
+        /// Prüfung der Gegenstelle beim Verbinden (Freigabe, MIRROR.md 1.1); nil, solange sie läuft.
+        var urteil: MirrorGegenstelle.Urteil?
         var hello = false
         var leaseUntil: Date?
         var fullSent = false
@@ -68,10 +72,17 @@ public final class MirrorService {
         case scene
     }
 
-    public init(controller: AppController, path: String) {
+    /// Freigabe vom iPhone (MIRROR.md 1.1).
+    private(set) lazy var freigabe = FreigabeVomIPhone(service: self)
+    /// Testmodus der Freigabe (nur Testvariante mit KEVCAD_FREIGABE_TESTMODUS=1).
+    public let freigabeTestmodus: Bool
+
+    public init(controller: AppController, path: String, freigabeTestmodus: Bool = MirrorGegenstelle.testmodus()) {
         self.controller = controller
         self.epoche = String(format: "%016llx", UInt64.random(in: 0...UInt64.max))
         self.server = MirrorSocketServer(path: path)
+        self.freigabeTestmodus = freigabeTestmodus
+        server.peerVerifier = MirrorGegenstelle.standardPruefer(testmodus: freigabeTestmodus)
         server.onEvent = { [weak self] event in self?.handle(event) }
         controller.model.objectWillChange
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.scheduleSync() } }
@@ -87,6 +98,9 @@ public final class MirrorService {
     public func start() throws {
         try server.start()
         controller.log(.info, "Spiegel lauscht auf \(server.path) (Epoche \(epoche))")
+        if freigabeTestmodus {
+            controller.log(.warning, "Spiegel: Testmodus der Freigabe, jede Gegenstelle darf freigeben (nur Testvariante)")
+        }
         // Seitenverhältnis der Ansicht (kamera.aspect) ändert sich mit der Fenstergröße, ohne dass die Kamera sich rührt
         aspectTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -143,12 +157,25 @@ public final class MirrorService {
 
     private var anyoneWaiting: Bool { connections.values.contains { $0.awaitingFull } }
 
+    /// Gegenstellen, die FREIGABE und FREIGABE_ENDE bekommen: Prüfung bestanden und HELLO geschickt (ohne Miete).
+    var freigabeEmpfaenger: [Int] {
+        connections.filter { $0.value.hello && $0.value.urteil?.erlaubt == true }.map(\.key).sorted()
+    }
+
     private func handle(_ event: MirrorSocketServer.Event) {
         let t0 = CACurrentMediaTime()
         defer { mainThreadSeconds += CACurrentMediaTime() - t0 }
         switch event {
         case .connected(let id):
             connections[id] = Peer()
+        case .geprueft(let id, let urteil):
+            guard connections[id] != nil else { return }
+            connections[id]?.urteil = urteil
+            if urteil.erlaubt {
+                controller.log(.info, "Spiegel: Verbindung \(id) darf freigeben (\(urteil.grund), PID \(urteil.pid))")
+                // Schon begrüßt: offene Anfragen jetzt hinterher
+                if connections[id]?.hello == true { freigabe.nachHello(id) }
+            }
         case .disconnected(let id, let reason):
             connections[id] = nil
             controller.log(.info, "Spiegel: Verbindung \(id) getrennt (\(reason))")
@@ -169,11 +196,13 @@ public final class MirrorService {
             connections[id]?.hello = true
             connections[id]?.client = h.client
             server.send(helloMessage(), to: [id])
+            if connections[id]?.urteil?.erlaubt == true { freigabe.nachHello(id) }  // offene Anfragen gleich hinterher
             controller.log(.info, "Spiegel: \(h.client ?? "Gegenstelle") verbunden (Verbindung \(id))")
         case .watch(let w):
             if connections[id]?.hello != true {
                 connections[id]?.hello = true
                 server.send(helloMessage(), to: [id])
+                if connections[id]?.urteil?.erlaubt == true { freigabe.nachHello(id) }
             }
             connections[id]?.leaseUntil = Date().addingTimeInterval(max(1, w.dauerS))
             let active = connections[id]?.fullSent == true && watcherIDs.contains(id)
@@ -627,6 +656,15 @@ public final class MirrorService {
             }
             pendingSource = .iphone
             c.setDisplayStyle(style)
+
+        case .freigabe?:
+            // Vor jeder Freigabe die Gegenstelle noch einmal prüfen (Audit-Token vom Verbinden); Antwort kommt erst nach
+            // der Bestätigung im Katalog. Die Prüfung läuft neben dem Hauptthread (sie liest die App auf der Platte).
+            server.pruefeGegenstelle(id) { [weak self] urteil in
+                guard let self, self.connections[id] != nil else { return }
+                self.freigabe.befehl(cmd, von: id, urteil: urteil)
+            }
+            return
 
         case .einpassen?:
             // Wie Pos1 (alles) bzw. „.“ (die genannten Teile), mit den Rändern und der Projektion des Macs

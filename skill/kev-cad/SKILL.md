@@ -295,7 +295,8 @@ Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
   Kevins Klick (Standard 120 s) und meldet, was freigegeben, abgelehnt oder offen ist. Nie „bitte im Lagerkatalog
   freigeben“ schreiben. Schreibt Kevin im Chat „freigegeben“, ist damit nichts freigegeben: dann ebenfalls
   `freigabe_anfragen` aufrufen, er klickt nur noch. Das Werkzeug gibt nie selbst frei. Freigegebene Einträge ändert
-  nur Kevin.
+  nur Kevin. Ist VoiceBridge verbunden, kann Kevin die Anfrage auch vom iPhone freigeben (sie geht direkt an ihn, am
+  Agenten vorbei); der Agent gibt nie selbst frei und reicht keine Freigabe weiter.
 - Verstöße: `run` meldet „Inventar-Regel: 2 Teile sind nicht aus dem Inventar: …“ als isError. Die Geometrie ist zu
   sehen, aber Export (STEP, STL, 3MF, Stückliste) wird verweigert. Passendes Lagerteil verbauen, als Druckteil
   kennzeichnen oder Kevin bitten, das Lagerteil anzulegen.

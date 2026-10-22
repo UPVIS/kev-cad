@@ -54,7 +54,7 @@ def test_socket_rights_and_handshake(sock_dir):
         c = MirrorClient(sim.socket_path)
         c.hello()
         h = c.wait_for(lambda h: h["type"] == "HELLO")
-        assert h["version"] == 1 and len(h["epoche"]) == 16 and h["features"] == ["kcad-mesh-1"]
+        assert h["version"] == 1 and len(h["epoche"]) == 16 and h["features"] == ["kcad-mesh-1", "freigabe-1"]
         assert h["project"]["name"] == "gestell" and h["prio"] == "zustand" and h["seq"] == 1
         assert h["agents"][0]["aktiv"] is True
         # Ohne Miete nur HELLO und AGENTS
