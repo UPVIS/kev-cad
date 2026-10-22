@@ -1112,5 +1112,89 @@
     "unterdrueckung_aufheben"
    ]
   }
+ },
+ "export": {
+  "bausteine": [
+   "deckblatt",
+   "stueckliste",
+   "teileliste",
+   "einkaufsliste",
+   "zuschnitt",
+   "zeichnungen",
+   "bauplan"
+  ],
+  "req": {
+   "type": "DOC_EXPORT_REQ",
+   "seq": 40,
+   "bausteine": [
+    {
+     "art": "deckblatt"
+    },
+    {
+     "art": "stueckliste",
+     "spalten": [
+      "pos",
+      "bild",
+      "benennung",
+      "anzahl",
+      "masse"
+     ]
+    },
+    {
+     "art": "zeichnungen",
+     "auswahl": [
+      "seitenstange-links",
+      "zusammenbau"
+     ]
+    },
+    {
+     "art": "bauplan"
+    }
+   ],
+   "ziel": "/tmp/Halter/output/Halter-dokumente.pdf",
+   "drucken": false,
+   "format": "A4",
+   "ausrichtung": "hoch",
+   "vorlage": null,
+   "id": "k-12"
+  },
+  "res": {
+   "type": "DOC_EXPORT_RES",
+   "seq": 9,
+   "reply_to": "k-12",
+   "ok": true,
+   "pfad": "/tmp/Halter/output/Halter-dokumente.pdf",
+   "seiten": 14,
+   "fehler": null,
+   "bausteine": [
+    {
+     "art": "deckblatt",
+     "seiten": 1
+    },
+    {
+     "art": "stueckliste",
+     "seiten": 2
+    },
+    {
+     "art": "zeichnungen",
+     "seiten": 2
+    },
+    {
+     "art": "bauplan",
+     "seiten": 9
+    }
+   ],
+   "formate": {
+    "A4 hoch": 13,
+    "A3 quer": 1
+   },
+   "gedruckt": null,
+   "hinweise": [],
+   "ms": 1830
+  },
+  "frames": [
+   "doc_export_req.frame",
+   "doc_export_res.frame"
+  ]
  }
 }

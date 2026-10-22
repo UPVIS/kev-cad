@@ -466,6 +466,34 @@ def bauplan_beispiel() -> dict[str, Any]:
     }
 
 
+# Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; Strang P6-A2). Das PDF baut die App.
+
+DOC_EXPORT_BAUSTEINE: tuple[str, ...] = ("deckblatt", "stueckliste", "teileliste", "einkaufsliste", "zuschnitt",
+                                         "zeichnungen", "bauplan")
+
+
+def doc_export_req(bausteine: list[dict[str, Any]], *, ziel: str | None, drucken: bool = False,
+                   format: str | None = None, ausrichtung: str | None = None,  # noqa: A002
+                   vorlage: str | None = None, id: str | None = None, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    """Kopf von DOC_EXPORT_REQ (Kernel → App): ``bausteine`` je ``{art, spalten?, auswahl?}`` in der gewünschten
+    Reihenfolge, ``ziel`` (absoluter Pfad der .pdf oder None nur zum Drucken), ``drucken``, Papier der Berichtsseiten
+    (``format`` A4/A3, ``ausrichtung`` hoch/quer, None = Vorgabe der App), ``vorlage`` (Name einer Vorlage der App)."""
+    h: dict[str, Any] = {"type": "DOC_EXPORT_REQ", "seq": seq, "bausteine": [dict(b) for b in bausteine],
+                         "ziel": ziel, "drucken": bool(drucken), "format": format, "ausrichtung": ausrichtung,
+                         "vorlage": vorlage}
+    if id is not None:
+        h["id"] = id
+    return h
+
+
+def check_doc_export_res(header: dict[str, Any]) -> list[str]:
+    """Fehlende Pflichtfelder von DOC_EXPORT_RES (App → Kernel): ``reply_to``, ``ok``, ``pfad``, ``seiten``, ``fehler``
+    (additiv: ``bausteine`` je ``{art, seiten}``, ``formate``, ``gedruckt``, ``hinweise``, ``ms``)."""
+    if header.get("type") != "DOC_EXPORT_RES":
+        return [f"{header.get('type')!r} ist nicht DOC_EXPORT_RES"]
+    return [k for k in ("reply_to", "ok", "pfad", "seiten", "fehler") if k not in header]
+
+
 # Bestand je Projekt (BESTAND.md): Nachrichten ohne Nutzlast
 
 BESTAND_NACHRICHTEN: dict[str, tuple[str, ...]] = {

@@ -281,6 +281,13 @@ class KernelService(Protocol):
 
     def drawing_image(self, blatt: str, breite: int = 1800) -> dict[str, Any]:
         """Blatt als PNG (Kernel, aus den Vektoren): {"ok", "png", "breite", "hoehe", "blatt": Zusammenfassung}"""
+
+    # Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; umgesetzt in dokument_export.py, P6-A2)
+    def dokument_export(self, bausteine: Any = None, ziel: str | None = None, drucken: bool = False,
+                        timeout_s: float = 600.0) -> dict[str, Any]:
+        """Die App baut das PDF aus den Bausteinen (Deckblatt, Stückliste, Teileliste, Einkaufsliste, Zuschnitt,
+        Zeichnungen, Bauplan); ``drucken`` öffnet den Druckdialog. {"ok", "pfad", "seiten", "bausteine" (je {art,
+        seiten}), "formate", "gedruckt", "hinweise", "ms", "angefragt", "vorlage"}"""
     # Versionen (PLAN-VERSIONEN.md, PROTOCOL.md „Versionen“; umgesetzt in kevcad_kernel.versionen.laufzeit)
     def versionen(self, limit: int | None = 50, variante: str | None = None) -> dict[str, Any]:
         """{"ok", "verfuegbar", "meldung", "variante", "varianten", "versionen" (neueste zuerst, siehe VERSIONEN),

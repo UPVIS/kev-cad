@@ -331,6 +331,9 @@ def main() -> None:
     import make_bauplan_fixtures  # Bauplan (BAUPLAN, DOCS mit Bauplan …): eigene Dateien und Abschnitt bauplan
 
     make_bauplan_fixtures.main()
+    import make_export_fixtures  # Dokument-Export (DOC_EXPORT_REQ/RES): eigene Dateien und Abschnitt export
+
+    make_export_fixtures.main()
 
 
 if __name__ == "__main__":
