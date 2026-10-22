@@ -47,7 +47,9 @@ extension AppController: ExportActions {
     public func exportDokument(_ v: ExportVorlage) async -> ExportDokument {
         let q = await exportQuellen(v)
         model.export.laeuft = "Seiten werden gesetzt"
+        let t = Date()
         let doc = ExportBauer.dokument(v, q)
+        model.export.phasen["seiten_ms"] = Int(Date().timeIntervalSince(t) * 1000)
         model.export.laeuft = nil
         return doc
     }
@@ -73,6 +75,12 @@ extension AppController: ExportActions {
     func exportQuellen(_ v: ExportVorlage) async -> ExportQuellen {
         let store = model.export
         let arten = Set(v.aktive.map(\.art))
+        store.phasen = [:]
+        var uhr = Date()
+        func phase(_ name: String) {
+            store.phasen[name] = Int(Date().timeIntervalSince(uhr) * 1000)
+            uhr = Date()
+        }
         var q = ExportQuellen(kopf: exportKopf(), bom: model.bom, bestand: model.bestandZustand.zuschnitt,
                               teile: model.parts)
         // Bauplan: wenn nötig beim Kernel holen (erzeugt ihn beim ersten Mal)
@@ -84,10 +92,12 @@ extension AppController: ExportActions {
             }
             q.bauplan = model.bauplan.plan
             q.strichbilder = model.bauplan.bilder
+            phase("bauplan_ms")
         }
         // Zeichnungen: Übersicht und alle gewählten Blätter (gerechnet und aktuell)
         if let wahl = v.aktive.first(where: { $0.art == .zeichnungen }) {
             q.zeichnungen = await exportZeichnungen(wahl)
+            phase("blaetter_ms")
         }
         // Vorschaubilder
         let stueck = v.aktive.first { $0.art == .stueckliste }
@@ -104,6 +114,7 @@ extension AppController: ExportActions {
             q.teilBilder = await exportTeilBilder(Array(Set(namen)))
         }
         if arten.contains(.deckblatt) { q.gesamtBild = exportGesamtBild() }
+        phase("bilder_ms")
         q.pruefFehler = model.pruefung?.fehler
         store.laeuft = nil
         return q
@@ -215,10 +226,13 @@ extension AppController: ExportActions {
         }
         model.export.laeuft = "PDF wird geschrieben"
         defer { model.export.laeuft = nil }
+        let tPDF = Date()
         try await Task.detached(priority: .userInitiated) { try doc.schreibePDF(nach: url) }.value
+        model.export.phasen["pdf_ms"] = Int(Date().timeIntervalSince(tPDF) * 1000)
         let e = exportErgebnis(doc, pfad: url, t0: t0)
         model.export.letztes = e
-        log(.info, "Dokumente exportiert: \(url.path), \(e.seiten) Seiten, \(e.ms) ms")
+        log(.info, "Dokumente exportiert: \(url.path), \(e.seiten) Seiten, \(e.ms) ms "
+            + "(\(e.phasen.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")))")
         for h in doc.hinweise { log(.info, "Export: \(h)") }
         return e
     }
@@ -245,7 +259,8 @@ extension AppController: ExportActions {
     func exportErgebnis(_ doc: ExportDokument, pfad: URL?, t0: Date) -> ExportErgebnis {
         ExportErgebnis(
             pfad: pfad, seiten: doc.seiten.count, bausteine: doc.bausteinSeiten.map { ($0.art, $0.anzahl) },
-            formate: doc.formate, hinweise: doc.hinweise, ms: Int(Date().timeIntervalSince(t0) * 1000))
+            formate: doc.formate, hinweise: doc.hinweise, ms: Int(Date().timeIntervalSince(t0) * 1000),
+            phasen: model.export.phasen)
     }
 
     // MARK: Anfrage des Kernels

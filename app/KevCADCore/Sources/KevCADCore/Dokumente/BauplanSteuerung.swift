@@ -11,6 +11,7 @@ final class BauplanLaufzeit {
     var pauseBis: CFTimeInterval = 0
     var explosionVorher: Double = 0
     var animationVorher: Bool = false
+    var symboleVorher: Bool = true
 }
 
 /// Bauplan (DOKUMENTE.md, Strang P6-A2): BAUPLAN in den BauplanStore, Anfragen und Änderungen der Oberfläche an den
@@ -159,7 +160,10 @@ extension AppController: BauplanActions {
         if model.bauplan.durchspielen == nil {
             lz.explosionVorher = model.explodeFactor
             lz.animationVorher = model.animation.posed
+            lz.symboleVorher = model.showConstraintSymbols
             animationPlayer.pause()
+            // Symbole der Bedingungen gehören zu allen Teilen, auch den noch nicht montierten: solange aus
+            if model.showConstraintSymbols { setConstraintSymbolsVisible(false) }
             if model.explodeFactor != 0 { applyExplode(0) }
         }
         let idx = schritt.flatMap { schritte.firstIndex(of: $0) } ?? 0
@@ -220,6 +224,7 @@ extension AppController: BauplanActions {
         scene.setAnimationPose([:])
         if lz.animationVorher { animationPlayer.seek(to: model.animation.time) }
         if lz.explosionVorher != 0 { applyExplode(lz.explosionVorher) }
+        if lz.symboleVorher && !model.showConstraintSymbols { setConstraintSymbolsVisible(true) }
         viewport.fit(scene.visibleBounds(), animated: true)
         refreshOverlay()
     }

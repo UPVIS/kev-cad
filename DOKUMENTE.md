@@ -260,7 +260,8 @@ Einkaufsliste `abhaken`, `menge`, `einheit`, `benennung`, `preis_je`, `preis`, `
 
 **DOC_EXPORT_RES** (App → Kernel): `reply_to`, `ok`, `pfad` (geschriebene Datei oder null), `seiten`, `fehler` (Text
 oder null), additiv `bausteine` (je `{art, seiten}`), `formate` (z. B. `{"A4 hoch": 13, "A3 quer": 1}`), `gedruckt`
-(Text, wenn der Druckdialog offen ist, sonst null), `hinweise` (z. B. „Bauplan noch nicht gerechnet“), `ms`.
+(Text, wenn der Druckdialog offen ist, sonst null), `hinweise` (z. B. „Bauplan noch nicht gerechnet“), `ms`, `phasen`
+(Dauer je Phase in ms: `bauplan_ms`, `blaetter_ms`, `bilder_ms`, `seiten_ms`, `pdf_ms`).
 
 **MCP** `dokument_export(bausteine=None, ziel=None, drucken=False)`: `bausteine` wie oben, Einträge auch als Namen
 (Groß- und Kleinschreibung egal, gängige Synonyme), `"alle"`, `"vorlage:<Name>"` oder `{format, ausrichtung}`.

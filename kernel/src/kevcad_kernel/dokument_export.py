@@ -157,5 +157,5 @@ class DokumentExportDienst:
                 "seiten": int(reply.get("seiten") or 0), "bausteine": reply.get("bausteine") or [],
                 "formate": reply.get("formate") or {}, "gedruckt": reply.get("gedruckt"),
                 "hinweise": list(reply.get("hinweise") or []),
-                "ms": reply.get("ms") or int((time.perf_counter() - t0) * 1000),
+                "ms": reply.get("ms") or int((time.perf_counter() - t0) * 1000), "phasen": reply.get("phasen") or {},
                 "angefragt": [b["art"] for b in liste], "vorlage": optionen.get("vorlage")}

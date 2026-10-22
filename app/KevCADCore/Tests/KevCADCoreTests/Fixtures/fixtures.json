@@ -1198,7 +1198,14 @@
    },
    "gedruckt": null,
    "hinweise": [],
-   "ms": 1830
+   "ms": 1830,
+   "phasen": {
+    "bauplan_ms": 0,
+    "blaetter_ms": 410,
+    "bilder_ms": 760,
+    "seiten_ms": 95,
+    "pdf_ms": 520
+   }
   },
   "frames": [
    "doc_export_req.frame",

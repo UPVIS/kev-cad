@@ -167,86 +167,122 @@ struct DurchspielenLeiste: View {
 
     var body: some View {
         if let d = store.durchspielen, let plan = store.plan, let id = d.schritt, let s = plan.schritt(id) {
-            let actions = model.bauplanActions
             VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    BauplanNummer(nummer: plan.nummer(id) ?? 0, groesse: 34)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(s.titel).font(.headline).lineLimit(1)
-                        Text("Montageschritt \(d.index + 1) von \(d.schritte.count)"
-                             + (s.baugruppe.map { " · Vormontage \($0)" } ?? ""))
-                            .font(.caption).foregroundStyle(.secondary)
+                // breit: alles in einer Zeile; schmal (Versionsleiste, Stückliste offen): Titel und Steuerung getrennt
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        titel(d, plan, id, s)
+                        Spacer(minLength: 16)
+                        problem(s)
+                        steuerung(d)
                     }
-                    if s.anzahl > 1 { BauplanMengenMarke(anzahl: s.anzahl) }
-                    Spacer(minLength: 16)
-                    if let w = s.schwersterBefund, w != .hinweis {
-                        Button {
-                            if let b = s.probleme.first { actions?.bauplanZeigen(teile: b.teile, ort: b.ort) }
-                        } label: {
-                            Label(KevFormat.count(s.probleme.count, one: "Problem", many: "Probleme"), systemImage: w.symbol)
-                                .foregroundStyle(w.farbe)
-                        }
-                        .buttonStyle(.borderless)
-                        .help(s.probleme.map(\.text).joined(separator: "\n"))
-                    }
-                    HStack(spacing: 4) {
-                        Button { actions?.durchspielenGeheZu(0) } label: { Image(systemName: "backward.end.fill") }
-                            .help("Zum ersten Schritt")
-                        Button { actions?.durchspielenSchritt(-1) } label: { Image(systemName: "backward.fill") }
-                            .help("Voriger Schritt (⌥⌘←)")
-                        Button { actions?.durchspielenAbspielen(!d.spielt) } label: {
-                            Image(systemName: d.spielt ? "pause.fill" : "play.fill").frame(width: 18)
-                        }
-                        .help(d.spielt ? "Anhalten" : "Abspielen")
-                        Button { actions?.durchspielenSchritt(1) } label: { Image(systemName: "forward.fill") }
-                            .help("Nächster Schritt (⌥⌘→)")
-                        Button { actions?.durchspielenGeheZu(d.schritte.count - 1) } label: { Image(systemName: "forward.end.fill") }
-                            .help("Zum letzten Schritt")
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.title3)
-                    Menu {
-                        ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { t in
-                            Button("\(KevFormat.compact(t, maxDigits: 1))×") { actions?.durchspielenTempo(t) }
-                        }
-                    } label: {
-                        Text("\(KevFormat.compact(d.tempo, maxDigits: 1))×").monospacedDigit()
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Tempo")
-                    Button { actions?.durchspielenBeenden() } label: {
-                        Image(systemName: "xmark.circle.fill").font(.title3)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Durchspielen beenden: alle Teile wieder zeigen")
-                }
-                // Fortschritt: je Schritt ein Segment, der aktuelle füllt sich beim Einfahren
-                GeometryReader { geo in
-                    let n = max(1, d.schritte.count)
-                    let w = (geo.size.width - CGFloat(n - 1) * 2) / CGFloat(n)
-                    HStack(spacing: 2) {
-                        ForEach(0..<n, id: \.self) { i in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.primary.opacity(0.12))
-                                Capsule().fill(Color.kevAkzent)
-                                    .frame(width: i < d.index ? w : i == d.index ? w * d.fortschritt : 0)
-                            }
-                            .frame(width: w)
-                            .contentShape(Rectangle())
-                            .onTapGesture { actions?.durchspielenGeheZu(i) }
-                            .help(plan.schritt(d.schritte[i])?.titel ?? "")
+                    VStack(alignment: .leading, spacing: 8) {
+                        titel(d, plan, id, s)
+                        HStack(spacing: 10) {
+                            problem(s)
+                            Spacer(minLength: 0)
+                            steuerung(d)
                         }
                     }
                 }
-                .frame(height: 5)
+                fortschritt(d, plan)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .frame(maxWidth: 760)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
+            .padding(.horizontal, 12)
             .padding(.bottom, 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    private var actions: BauplanActions? { model.bauplanActions }
+
+    private func titel(_ d: BauplanDurchspielen, _ plan: Bauplan, _ id: String, _ s: BauplanSchritt) -> some View {
+        HStack(spacing: 12) {
+            BauplanNummer(nummer: plan.nummer(id) ?? 0, groesse: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(s.titel).font(.headline).lineLimit(1)
+                Text("Montageschritt \(d.index + 1) von \(d.schritte.count)"
+                     + (s.baugruppe.map { " · Vormontage \($0)" } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .layoutPriority(-1)
+            if s.anzahl > 1 { BauplanMengenMarke(anzahl: s.anzahl) }
+        }
+    }
+
+    @ViewBuilder
+    private func problem(_ s: BauplanSchritt) -> some View {
+        if let w = s.schwersterBefund, w != .hinweis {
+            Button {
+                if let b = s.probleme.first { actions?.bauplanZeigen(teile: b.teile, ort: b.ort) }
+            } label: {
+                Label(KevFormat.count(s.probleme.count, one: "Problem", many: "Probleme"), systemImage: w.symbol)
+                    .foregroundStyle(w.farbe)
+            }
+            .buttonStyle(.borderless)
+            .help(s.probleme.map(\.text).joined(separator: "\n"))
+        }
+    }
+
+    private func steuerung(_ d: BauplanDurchspielen) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) {
+                Button { actions?.durchspielenGeheZu(0) } label: { Image(systemName: "backward.end.fill") }
+                    .help("Zum ersten Schritt")
+                Button { actions?.durchspielenSchritt(-1) } label: { Image(systemName: "backward.fill") }
+                    .help("Voriger Schritt (⌥⌘←)")
+                Button { actions?.durchspielenAbspielen(!d.spielt) } label: {
+                    Image(systemName: d.spielt ? "pause.fill" : "play.fill").frame(width: 18)
+                }
+                .help(d.spielt ? "Anhalten (⌥⌘P)" : "Abspielen (⌥⌘P)")
+                Button { actions?.durchspielenSchritt(1) } label: { Image(systemName: "forward.fill") }
+                    .help("Nächster Schritt (⌥⌘→)")
+                Button { actions?.durchspielenGeheZu(d.schritte.count - 1) } label: { Image(systemName: "forward.end.fill") }
+                    .help("Zum letzten Schritt")
+            }
+            .buttonStyle(.borderless)
+            .font(.title3)
+            Menu {
+                ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { t in
+                    Button("\(KevFormat.compact(t, maxDigits: 1))×") { actions?.durchspielenTempo(t) }
+                }
+            } label: {
+                Text("\(KevFormat.compact(d.tempo, maxDigits: 1))×").monospacedDigit()
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Tempo")
+            Button { actions?.durchspielenBeenden() } label: {
+                Image(systemName: "xmark.circle.fill").font(.title3)
+            }
+            .buttonStyle(.borderless)
+            .help("Durchspielen beenden: alle Teile wieder zeigen (⌥⌘.)")
+        }
+        .fixedSize()
+    }
+
+    /// Je Schritt ein Segment, der aktuelle füllt sich beim Einfahren; Klick springt hin.
+    private func fortschritt(_ d: BauplanDurchspielen, _ plan: Bauplan) -> some View {
+        GeometryReader { geo in
+            let n = max(1, d.schritte.count)
+            let w = max(1, (geo.size.width - CGFloat(n - 1) * 2) / CGFloat(n))
+            HStack(spacing: 2) {
+                ForEach(0..<n, id: \.self) { i in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.12))
+                        Capsule().fill(Color.kevAkzent)
+                            .frame(width: i < d.index ? w : i == d.index ? w * d.fortschritt : 0)
+                    }
+                    .frame(width: w)
+                    .contentShape(Rectangle())
+                    .onTapGesture { actions?.durchspielenGeheZu(i) }
+                    .help(plan.schritt(d.schritte[i])?.titel ?? "")
+                }
+            }
+        }
+        .frame(height: 5)
     }
 }

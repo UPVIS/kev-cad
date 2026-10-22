@@ -17,6 +17,8 @@ public final class ExportStore: ObservableObject {
     /// Vorschaubilder je Teil und Formschlüssel (bleiben über Exporte, solange sich das Teil nicht ändert).
     var bildCache: [String: (digest: Int, bild: CGImage)] = [:]
     var gesamtCache: (signatur: Int, bild: CGImage)?
+    /// Dauer der Phasen des letzten Exports in ms (Bauplan, Blätter, Bilder, Seiten, PDF).
+    var phasen: [String: Int] = [:]
 
     public init() {}
 

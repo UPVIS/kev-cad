@@ -375,9 +375,12 @@ public struct ExportErgebnis: Equatable, Sendable {
     public var hinweise: [String]
     public var ms: Int
     public var gedruckt: String?
+    /// Dauer je Phase in ms (bauplan_ms, blaetter_ms, bilder_ms, seiten_ms, pdf_ms).
+    public var phasen: [String: Int]
 
     public init(pfad: URL?, seiten: Int, bausteine: [(art: ExportBausteinArt, seiten: Int)], formate: [String: Int],
-                hinweise: [String], ms: Int, gedruckt: String? = nil) {
+                hinweise: [String], ms: Int, gedruckt: String? = nil, phasen: [String: Int] = [:]) {
+        self.phasen = phasen
         self.pfad = pfad
         self.seiten = seiten
         self.bausteine = bausteine
@@ -410,8 +413,10 @@ public struct DokumentExportAntwortMessage: OutgoingMessage {
     public var gedruckt: String?
     public var hinweise: [String]
     public var ms: Int
+    public var phasen: [String: Int]
 
     public init(replyTo: String, ergebnis: ExportErgebnis) {
+        phasen = ergebnis.phasen
         self.replyTo = replyTo
         ok = true
         pfad = ergebnis.pfad?.path
@@ -435,10 +440,11 @@ public struct DokumentExportAntwortMessage: OutgoingMessage {
         gedruckt = nil
         hinweise = []
         ms = 0
+        phasen = [:]
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, seq, ok, pfad, seiten, fehler, bausteine, formate, gedruckt, hinweise, ms
+        case type, seq, ok, pfad, seiten, fehler, bausteine, formate, gedruckt, hinweise, ms, phasen
         case replyTo = "reply_to"
     }
 
@@ -456,5 +462,6 @@ public struct DokumentExportAntwortMessage: OutgoingMessage {
         if let gedruckt { try c.encode(gedruckt, forKey: .gedruckt) } else { try c.encodeNil(forKey: .gedruckt) }
         try c.encode(hinweise, forKey: .hinweise)
         try c.encode(ms, forKey: .ms)
+        try c.encode(phasen, forKey: .phasen)
     }
 }

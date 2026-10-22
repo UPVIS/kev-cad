@@ -24,7 +24,7 @@ struct BauplanSchrittAnsicht: View {
                 if schritt.bild != nil || bild != nil {
                     BauplanBildKarte(bild: bild)
                         .aspectRatio(1.5, contentMode: .fit)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: 560)
                         .overlay(alignment: .bottomTrailing) {
                             if istMontage {
                                 Button {

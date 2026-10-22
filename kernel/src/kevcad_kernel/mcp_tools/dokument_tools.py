@@ -41,7 +41,12 @@ def export_text(res: dict[str, Any]) -> str:
     for h in res.get("hinweise") or []:
         zeilen.append(f"Hinweis: {h}")
     if res.get("ms"):
-        zeilen.append(f"Gebaut in {fmt.num(float(res['ms']) / 1000, 1)} s.")
+        namen = {"bauplan_ms": "Bauplan", "blaetter_ms": "Blätter", "bilder_ms": "Bilder", "seiten_ms": "Seiten",
+                 "pdf_ms": "PDF"}
+        teile_zeit = [f"{namen.get(k, k)} {fmt.num(float(v) / 1000, 1)} s" for k, v in (res.get("phasen") or {}).items()
+                      if v and float(v) >= 50]
+        zeilen.append(f"Gebaut in {fmt.num(float(res['ms']) / 1000, 1)} s"
+                      + (f" ({', '.join(teile_zeit)})." if teile_zeit else "."))
     return "\n".join(zeilen)
 
 
@@ -74,4 +79,4 @@ def register_dokument_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         if err:
             return fmt.error_result(err, res)
         return fmt.result(export_text(res), {k: res.get(k) for k in ("pfad", "seiten", "bausteine", "formate",
-                                                                    "gedruckt", "hinweise", "ms", "vorlage")})
+                                                                    "gedruckt", "hinweise", "ms", "phasen", "vorlage")})

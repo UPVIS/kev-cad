@@ -141,6 +141,7 @@ struct BauplanListe: View {
         VStack(spacing: 0) {
             kopf
             Divider()
+            ScrollViewReader { proxy in
             List(selection: $auswahl) {
                 ForEach(plan.abschnitte.filter { !$0.schritte.isEmpty }) { a in
                     Section {
@@ -157,6 +158,7 @@ struct BauplanListe: View {
                                 BauplanZeile(schritt: s, nummer: plan.nummer(s.id) ?? 0,
                                              aktiv: store.durchspielen?.schritt == s.id)
                                     .tag(s.id)
+                                    .id(s.id)
                                     .contextMenu { kontextMenu(s, a) }
                             }
                             .onMove { quelle, ziel in verschiebe(a, g.schritte, quelle, ziel) }
@@ -201,6 +203,11 @@ struct BauplanListe: View {
                 }
             }
             .listStyle(.sidebar)
+            .onChange(of: auswahl) { _, id in
+                // gewählter Schritt (auch beim Durchspielen) bleibt sichtbar
+                if let id { withAnimation(.snappy(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) } }
+            }
+            }
         }
     }
 

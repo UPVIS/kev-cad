@@ -133,7 +133,8 @@ final class BauplanExportTests: XCTestCase {
         let ergebnis = ExportErgebnis(
             pfad: URL(fileURLWithPath: "/tmp/Halter/output/Halter-dokumente.pdf"), seiten: 14,
             bausteine: [(.deckblatt, 1), (.stueckliste, 2), (.zeichnungen, 2), (.bauplan, 9)],
-            formate: ["A4 hoch": 13, "A3 quer": 1], hinweise: [], ms: 1830)
+            formate: ["A4 hoch": 13, "A3 quer": 1], hinweise: [], ms: 1830,
+            phasen: ["bauplan_ms": 0, "blaetter_ms": 410, "bilder_ms": 760, "seiten_ms": 95, "pdf_ms": 520])
         var ich = try kopf(DokumentExportAntwortMessage(replyTo: "k-12", ergebnis: ergebnis))
         var soll = r
         if case .object(var o) = soll { o["seq"] = nil; soll = .object(o) }

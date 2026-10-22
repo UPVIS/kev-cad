@@ -28,7 +28,8 @@ def main() -> None:
            "pfad": "/tmp/Halter/output/Halter-dokumente.pdf", "seiten": 14, "fehler": None,
            "bausteine": [{"art": "deckblatt", "seiten": 1}, {"art": "stueckliste", "seiten": 2},
                          {"art": "zeichnungen", "seiten": 2}, {"art": "bauplan", "seiten": 9}],
-           "formate": {"A4 hoch": 13, "A3 quer": 1}, "gedruckt": None, "hinweise": [], "ms": 1830}
+           "formate": {"A4 hoch": 13, "A3 quer": 1}, "gedruckt": None, "hinweise": [], "ms": 1830,
+           "phasen": {"bauplan_ms": 0, "blaetter_ms": 410, "bilder_ms": 760, "seiten_ms": 95, "pdf_ms": 520}}
     (ZIEL / "doc_export_res.frame").write_bytes(encode_frame(res))
     fx = ZIEL / "fixtures.json"
     daten = json.loads(fx.read_text()) if fx.exists() else {}
