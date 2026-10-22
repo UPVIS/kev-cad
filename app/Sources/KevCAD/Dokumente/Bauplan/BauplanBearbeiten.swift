@@ -166,13 +166,12 @@ struct DurchspielenLeiste: View {
     }
 
     var body: some View {
-        // Feste Breite unten links (wie die Vergleichskarte): Die Versionsleiste liegt über dem rechten Teil des
-        // 3D-Bereichs, deshalb nicht mittig; Titel kürzen statt die Leiste über den Rand zu schieben.
+        // Mittig über die Breite des 3D-Bereichs (die Versionsleiste nimmt ihren eigenen Platz, ProjectWindow), breit
+        // höchstens 760 pt; schmal kürzt sie den Titel statt über den Rand zu laufen.
         GeometryReader { geo in
             leiste
-                .frame(width: max(240, min(420, geo.size.width - 28)))
-                .padding(.leading, 14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .frame(width: max(240, min(760, geo.size.width - 32)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
         .allowsHitTesting(store.durchspielen != nil)
     }
@@ -203,7 +202,7 @@ struct DurchspielenLeiste: View {
             .padding(.horizontal, 16).padding(.vertical, 12)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
-            .padding(.bottom, 18)
+            .padding(.bottom, 44)  // über dem Maßstabsbalken des 3D-Bereichs
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }

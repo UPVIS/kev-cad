@@ -109,15 +109,17 @@ struct ViewportArea: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if pruefKey == nil, !state.pruefListeOffen, let p = model.pruefung, !p.montageSchritte.isEmpty {
-                Pill(symbol: "checkmark.seal", tint: .green) {
-                    Text("Prüfung in Ordnung")
-                } trailing: {
-                    Button("Montage") {
-                        state.pruefTab = "montage"
-                        withAnimation(.snappy(duration: 0.2)) { state.pruefListeOffen = true }
+                OhneDurchspielen(store: model.bauplan) {  // dort steht dann die Leiste des Durchspielens
+                    Pill(symbol: "checkmark.seal", tint: .green) {
+                        Text("Prüfung in Ordnung")
+                    } trailing: {
+                        Button("Montage") {
+                            state.pruefTab = "montage"
+                            withAnimation(.snappy(duration: 0.2)) { state.pruefListeOffen = true }
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -261,5 +263,15 @@ private struct SectionBar: View {
         .overlay(Capsule().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.14), radius: 8, y: 2)
         .onAppear { state.adoptSectionIfUnknown(model) }
+    }
+}
+
+/// Zeigt den Inhalt nur, solange der Bauplan nicht durchgespielt wird (die Leiste des Durchspielens steht unten mittig).
+private struct OhneDurchspielen<Inhalt: View>: View {
+    @ObservedObject var store: BauplanStore
+    @ViewBuilder var inhalt: () -> Inhalt
+
+    var body: some View {
+        if store.durchspielen == nil { inhalt() }
     }
 }
