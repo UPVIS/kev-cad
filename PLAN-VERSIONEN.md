@@ -100,6 +100,7 @@ teilen sich den Platz, ein niedrigerer Rang kommt erst dazu, wenn alles Höhere 
 | 5 | ohne Wirkung auf Parameter, Teile, Stückliste: nur Kommentar, Docstring, Formatierung (Syntaxbaum bzw. JSON gleich) | `Code aufgeräumt (ohne Wirkung)` |
 | 5 | sonst Thema (Aufrufe von Kev CAD: Bedingungen, Montage, Druckausrichtung, Animation, Kamera, erlaubte Überlappung) und Stelle (Funktion, Abschnitt ab dem letzten `step()`, Konstante, Hilfsdatei) | `Bedingungen in klemme() geändert, Teile gleich`, `Code in „Kamera: Kameraträger“ geändert, Teile gleich` |
 | 6 | zuletzt die Dateien, deren Inhalt sich nicht lesen lässt | `Geändert: teil.step` |
+| 7 | nur Dokumente (`dokumente/`: Blätter, Bauplan; `versionen/dokumente.py`), wenn sich sonst nichts mit Wirkung geändert hat (neben einer Modelländerung sind neu zugeordnete Maße deren Folge); `titel.REGEL` 2 | `Zeichnung Seitenstange: 2 Maße geändert`, `Bauplan: Schritt 7 umformuliert`, `Zeichnungen Platte, Wange neu` |
 
 Teilnamen: nach dem letzten `/`, ohne Klammerzusatz (`(Druck)`) und Lagewörter (vorn, links …); Gleiches mit Anzahl
 (`Gewindestift M4x35 (4×)`) oder als Nummernbereich (`Lenkrolle 1–4`); zu lang, dann gröber (`Flügelschraube M4
@@ -107,7 +108,7 @@ Teilnamen: nach dem letzten `/`, ohne Klammerzusatz (`(Druck)`) und Lagewörter 
 
 **Speicher:** Titel stehen nur in `.kevcad/versionen/index.json` je Version (`titel_auto`, `titel_regel`,
 `titel_basis` = `daten` oder `code`, `titel_gegen` = Nummer der Vorgängerversion, `titel_agent`). Die Git-Geschichte
-wird nie umgeschrieben; ihre erste Zeile bleibt der Grundtitel beim Anlegen. Bestehende Archive zieht der Kernel beim
+wird für Titel nie umgeschrieben; ihre erste Zeile bleibt der Grundtitel beim Anlegen. Bestehende Archive zieht der Kernel beim
 Öffnen nach (`_titel_nachziehen`: fehlender Titel, ältere `titel.REGEL`, anderer Vorgänger nach dem Ausdünnen, bisher
 nur aus dem Code), danach nach jeder Nachberechnung (dann aus den Daten). Neue Versionen bekommen ihren Titel gleich
 nach dem Lauf (etwa 40–80 ms bei 70 KB model.py). Läufe mit überschriebenen Parametern (`run(params=…)`, Regler der
@@ -122,3 +123,29 @@ V15 `+ Flügelschraube M4 (12×) … · − Gewindestift M4 (12×) …`, V18 `St
 V22 `Montage in „Rollwagen: Lenkrollen“ geändert, Teile gleich`, V24 `Schieberschlitten, Fängerschlitten geändert`
 (alle 24 nach dem Öffnen in 2,5 s nachgezogen). Neuer Lauf mit `run(titel="Lücke zwischen den Teilen auf 12 mm")`:
 V25 mit diesem Titel und dem Zusatz `luecke 10 → 12`; danach nur ein Kommentar: V26 `Code aufgeräumt (ohne Wirkung)`.
+
+## Dokumente (Phase 6, 22.10.2026, Zweig `phase6-v`)
+
+Blätter (`dokumente/zeichnungen/*.json`) und Bauplan (`dokumente/bauplan.json`) gehören zu den Projektdateien und damit
+zu den Versionen. Nach jedem Lauf rechnen sie im Hintergrund neu (Bezüge neu zuordnen, automatische Maße); am
+Kugelschieber dauert das Sekunden. Regeln (`versionen/laufzeit.py`, `archiv.dokumente_nachtragen`):
+
+- **Nachtragen statt zweiter Version:** Was die Hintergrundrechnung von Lauf N schreibt, gehört in die Version, die Lauf N
+  angelegt hat (oder das Wiederherstellen unmittelbar davor). Ist die Rechnung fertig, wird diese Version neu
+  geschrieben: Baum der Version plus `dokumente/` der Arbeitskopie, gleiche Eltern, Nachricht und Zeiten, der Zweig zeigt
+  auf den neuen Commit. Nummer, Titel, Bild und Metadaten bleiben. Nur, solange die Version die Spitze ist, keinen
+  Meilenstein trägt und kein anderer Zweig sie enthält; andere Änderungen (model.py) bleiben für den nächsten Lauf.
+  `run` wartet deshalb nicht auf die Blätter.
+- **Neuer Lauf mitten hinein:** Die alte Rechnung speichert nicht weiter (`_lauf_aktuell`). Ein Lauf ohne Änderung und
+  ohne überschriebene Parameter übernimmt das Nachtragen; ändert sich bis dahin nur `dokumente/`, legt er keine Version
+  dafür an.
+- **Regler und `run(params=…)`:** Blätter und Bauplan dazu werden gerechnet und der App gezeigt, aber nicht gespeichert.
+- **Eigene Änderungen** an Blättern oder Bauplan (Kevin, Agent: `zeichnung_bearbeiten`, `zeichnung_erstellen`,
+  `bauplan_bearbeiten`) werden mit dem nächsten Lauf eine eigene Version, z. B. `Zeichnung Zusammenbau: Notiz neu`.
+- **Wiederherstellen und Varianten:** laufende Hintergrundrechnungen speichern danach nicht mehr; nach dem
+  Wiederherstellen ordnet der folgende Lauf die Blätter dem wiederhergestellten Modell zu und trägt sie in die Version
+  „Wiederhergestellt aus …“ nach (keine Phantomversion danach).
+- **Schriftfeld:** `versionen_info(run)` liefert die Version, zu der der Lauf gehört: `V12`, in einer Variante
+  `V12 (Flacher Rand)`, mit Meilenstein `V12 „Prototyp“`. Nur dargestellt, nie gespeichert.
+- **Vergleich:** `code` ohne `dokumente/`; die Dokumente stehen als eigene Gruppe in `dokumente` und am Ende der
+  `zusammenfassung` (PROTOCOL.md, `VERSION_VERGLEICH`).

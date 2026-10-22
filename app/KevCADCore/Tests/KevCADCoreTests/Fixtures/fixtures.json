@@ -1111,6 +1111,14 @@
     "auto",
     "unterdrueckung_aufheben"
    ]
+  },
+  "drawing_create": {
+   "id": "a-13",
+   "art": "teil",
+   "teile": [
+    "Halter/Platte"
+   ],
+   "format": "A3 quer"
   }
  }
 }

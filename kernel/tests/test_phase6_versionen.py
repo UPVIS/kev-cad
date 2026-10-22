@@ -92,20 +92,186 @@ def test_bauplan_im_hintergrund_legt_keine_version_je_lauf_an(env):
         time.sleep(3)
 
 
-@pytest.mark.xfail(strict=False, reason="P6-V: Blätter der Hintergrundrechnung in die Version des Laufs nachtragen (zeitabhängig)")
 def test_modellaenderung_ergibt_eine_version_mit_blaettern(env):
-    """Nach einer Modelländerung landen die neu zugeordneten Blätter in derselben Version, nicht in einer zweiten."""
+    """Nach einer Modelländerung landen die neu zugeordneten Blätter in derselben Version, nicht in einer zweiten.
+    Unabhängig davon, wann der nächste Lauf kommt: nach der Hintergrundrechnung (hier) oder mitten hinein
+    (test_zweiter_lauf_direkt_danach_uebernimmt_das_nachtragen)."""
     rt = env["rt"]
-    _projekt(env)
+    path = _projekt(env)
     assert rt.run()["ok"]
     assert rt.drawing_create()["ok"]
     assert rt.run()["ok"]
     res = rt.run(params={})  # Ruhezustand
     assert res["ok"]
     rt.model_write(CODE.replace('param("b", 60)', 'param("b", 80)'))
+    start = env["app"].mark()
     res = rt.run()
     assert res["ok"] and res["version"]["neu"] is True
-    time.sleep(3)  # Blätter werden im Hintergrund neu gerechnet
+    nr = res["version"]["nr"]
+    _warte_docs(env, start, res["run"])  # Blätter werden im Hintergrund neu gerechnet …
+    _warte_sauber(rt)  # … und in V(nr) nachgetragen
+    assert _im_commit(rt, path) and "80" in _masse(rt)
     res = rt.run()
     assert res["ok"]
-    assert res["version"]["neu"] is False, res["version"]
+    assert res["version"]["neu"] is False and res["version"]["nr"] == nr, res["version"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Hintergrundrechnung, Schriftfeld, Wiederherstellen, Vergleich (P6-V)
+
+BLATT = "zusammenbau"
+
+
+def _code(b: int) -> str:
+    return CODE.replace('param("b", 60)', f'param("b", {b})')
+
+
+def _warte_docs(env, start: int, run: int) -> None:
+    env["app"].wait_for(lambda h: h["type"] == "DOCS" and h.get("run") == run, start=start, timeout=60)
+
+
+def _warte_sauber(rt, timeout: float = 20.0) -> None:
+    """Bis die Hintergrundrechnung nachgetragen ist (keine ungesicherten Änderungen mehr)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not rt._archiv.ungesichert():
+            return
+        time.sleep(0.1)
+    raise AssertionError("Hintergrundrechnung nicht nachgetragen: " + str(rt._archiv.git.status()))
+
+
+def _lauf(env, **kw) -> dict:
+    """Lauf und warten, bis seine Blätter gerechnet und nachgetragen sind."""
+    start = env["app"].mark()
+    res = env["rt"].run(**kw)
+    assert res["ok"], res.get("error")
+    _warte_docs(env, start, res["run"])
+    _warte_sauber(env["rt"])
+    return res
+
+
+def _mit_blaettern(env) -> tuple[Path, dict]:
+    path = _projekt(env)
+    assert env["rt"].run()["ok"]
+    assert env["rt"].drawing_create()["ok"]
+    return path, _lauf(env)
+
+
+def _schriftfeld(rt) -> list[str]:
+    res = rt.drawing(BLATT)
+    assert res["ok"], res
+    return [t["text"] for t in res["kopf"]["texte"] if t.get("art") == "schriftfeld"]
+
+
+def _masse(rt) -> list[str]:
+    return [m.get("text") for m in rt.drawing(BLATT)["kopf"]["masse"]]
+
+
+def _im_commit(rt, path: Path) -> bool:
+    """Steht das Blatt der Arbeitskopie so in der aktuellen Version?"""
+    rel = f"dokumente/zeichnungen/{BLATT}.json"
+    return rt._archiv.git.datei(rt._archiv.aktuelle().commit, rel) == (path / rel).read_bytes()
+
+
+def test_zweiter_lauf_direkt_danach_uebernimmt_das_nachtragen(env):
+    """Beginnt der nächste Lauf, bevor die Blätter fertig sind, speichert der alte Hintergrund nicht weiter; der neue
+    Lauf (gleicher Stand) trägt in dieselbe Version nach."""
+    rt = env["rt"]
+    path, _ = _mit_blaettern(env)
+    rt.model_write(_code(80))
+    res = rt.run()
+    assert res["ok"] and res["version"]["neu"] is True
+    nr = res["version"]["nr"]
+    start = env["app"].mark()
+    res2 = rt.run(params={})  # sofort, ohne auf die Blätter zu warten
+    assert res2["ok"] and res2["version"]["nr"] == nr and res2["version"]["neu"] is False
+    _warte_docs(env, start, res2["run"])
+    _warte_sauber(rt)
+    assert "80" in _masse(rt)
+    assert _im_commit(rt, path)
+    res3 = rt.run()
+    assert res3["version"]["neu"] is False and res3["version"]["nr"] == nr
+
+
+def test_reglerlauf_aendert_keine_dokumente(env):
+    """Läufe mit überschriebenen Parametern zeigen die Blätter, schreiben sie aber nicht (sonst legte der nächste Lauf
+    eine Version für den Reglerstand an)."""
+    rt = env["rt"]
+    path, res = _mit_blaettern(env)
+    nr = res["version"]["nr"]
+    ordner = path / "dokumente" / "zeichnungen"
+    vorher = {p.name: p.read_bytes() for p in ordner.glob("*.json")}
+    start = env["app"].mark()
+    res = rt.run(params={"b": 90})
+    assert res["ok"]
+    _warte_docs(env, start, res["run"])
+    assert "90" in _masse(rt)  # die App sieht den Reglerstand
+    time.sleep(0.5)
+    assert {p.name: p.read_bytes() for p in ordner.glob("*.json")} == vorher
+    res = _lauf(env)
+    assert res["version"]["neu"] is False and res["version"]["nr"] == nr
+    assert "60" in _masse(rt)
+
+
+def test_schriftfeld_zeigt_version_des_laufs(env):
+    rt = env["rt"]
+    path, _ = _mit_blaettern(env)
+    rt.model_write(_code(80))
+    res = _lauf(env)
+    nr = res["version"]["nr"]
+    assert res["version"]["neu"] is True
+    assert f"V{nr}" in _schriftfeld(rt)  # das Blatt der Hintergrundrechnung trägt die Version, zu der es gehört
+    datei = json.loads((path / "dokumente" / "zeichnungen" / f"{BLATT}.json").read_text())
+    assert datei["schriftfeld"]["version"] is None  # nur dargestellt, nie gespeichert
+    assert rt.meilenstein("Prototyp", wer="kevin")["version"] == nr
+    assert f"V{nr} „Prototyp“" in _schriftfeld(rt)
+    var = rt.variante("anlegen", "Flacher Rand", wer="kevin")
+    assert var["ok"], var
+    _warte_sauber(rt)
+    assert f"V{nr} (Flacher Rand) „Prototyp“" in _schriftfeld(rt)
+    rt.model_write(_code(70))
+    res = _lauf(env)
+    assert res["version"]["neu"] is True
+    assert f"V{res['version']['nr']} (Flacher Rand)" in _schriftfeld(rt)
+    assert (rt.versionen_info(res["run"]) or {}).get("variante") == "Flacher Rand"
+
+
+def test_wiederherstellen_ordnet_blaetter_neu_ohne_phantomversion(env):
+    """Eine alte Version mit Blättern, die nicht zu ihrem Modell passen (gesichert ohne Lauf): Nach dem Wiederherstellen
+    passen Blätter zum Modell, landen in der wiederhergestellten Version, und der nächste Lauf legt keine an."""
+    rt = env["rt"]
+    path, _ = _mit_blaettern(env)  # Blätter für b = 60
+    rt.model_write(_code(70))
+    alt = rt.meilenstein("Ohne Blätter", wer="kevin")  # model.py mit b = 70, Blätter noch für 60
+    assert alt["ok"], alt
+    rt.model_write(_code(80))
+    assert _lauf(env)["version"]["neu"] is True
+    start = env["app"].mark()
+    res = rt.version_wiederherstellen(alt["version"], wer="kevin")
+    assert res["ok"] and res["lauf"]["ok"], res
+    _warte_docs(env, start, res["lauf"]["run"])
+    _warte_sauber(rt)
+    assert "70" in _masse(rt)
+    akt = rt.versionen(limit=2)["versionen"][0]
+    assert akt["nr"] == res["version"] and akt["quelle"] == "wiederherstellen"
+    assert akt["titel"] == f"Wiederhergestellt aus V{alt['version']} „Ohne Blätter“"
+    assert _im_commit(rt, path)
+    for _ in range(2):
+        nach = _lauf(env)
+        assert nach["version"]["neu"] is False and nach["version"]["nr"] == res["version"]
+
+
+def test_eigene_blattaenderung_ist_eigene_version_und_vergleich_nennt_dokumente(env):
+    rt = env["rt"]
+    _, res = _mit_blaettern(env)
+    vor = res["version"]["nr"]
+    edit = rt.drawing_edit(BLATT, [{"op": "notiz", "text": "Grat entfernen", "lage": [30, 30]}], "kevin")
+    assert edit["ok"], edit
+    res = _lauf(env)
+    assert res["version"]["neu"] is True
+    assert res["version"]["titel"] == "Zeichnung Zusammenbau: Notiz neu"
+    cmp = rt.versionen_vergleichen(vor, res["version"]["nr"], zeigen=False)
+    assert cmp["ok"], cmp
+    assert cmp["code"]["dateien"] == []  # Blätter sind kein Code
+    assert [e["text"] for e in cmp["dokumente"]] == ["Zeichnung Zusammenbau: Notiz neu"]
+    assert "Zeichnung Zusammenbau: Notiz neu" in cmp["zusammenfassung"]

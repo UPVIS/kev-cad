@@ -50,3 +50,11 @@ def test_rohr_docs_und_bearbeiten():
     assert edit["type"] == "DRAWING_EDIT" and edit["von"] == "kevin"
     assert [o["op"] for o in edit["ops"]] == erw["drawing_edit"]["ops"]
     assert set(erw["drawing_edit"]["ops"]) <= set(OPS)
+
+
+def test_drawing_create_frame():
+    """DRAWING_CREATE (Vertrag 1.2): App → Kernel, wie protocol.drawing_create_message."""
+    erw = json.loads((FIX / "fixtures.json").read_text())["dokumente"]["drawing_create"]
+    h, p = _frame("drawing_create")
+    assert h["type"] == "DRAWING_CREATE" and p == b""
+    assert {k: h.get(k) for k in erw} == erw

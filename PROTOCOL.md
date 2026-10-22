@@ -584,7 +584,7 @@ projektweit eindeutiger Nummer `nr` (Anzeige „V12“). Varianten sind Zweige (
 | type | Felder | Nutzlast |
 |---|---|---|
 | `VERSIONEN` | `projekt`, `verfuegbar` (bool; false = Git fehlt), `meldung` (Text oder null), `variante` (aktueller Zweig), `varianten`, `versionen` (neueste zuerst, höchstens 400 plus alle Meilensteine), `gruppen`, `anzahl`, `meilensteine`, `ungesichert` (Dateien weichen vom aktuellen Stand ab), optional `reply_to` – nach dem Öffnen, nach jeder neuen Version, nach Änderungen an Kennzahlen, Prüfstand, Bild, Meilenstein oder Variante und beim Verbinden | – |
-| `VERSION_VERGLEICH` | `a`, `b` (je `nr` (bei b null = aktueller Stand), `titel`, `zeit`, `kennzahlen`), `aktuell`, `zusammenfassung`, `params`, `teile`, `stueckliste`, `pruefung`, `kennzahlen`, `code`, `hinweise`, `ms`, `geometrie` (Netzköpfe), optional `reply_to` | Netze |
+| `VERSION_VERGLEICH` | `a`, `b` (je `nr` (bei b null = aktueller Stand), `titel`, `zeit`, `kennzahlen`), `aktuell`, `zusammenfassung`, `params`, `teile`, `stueckliste`, `pruefung`, `kennzahlen`, `code`, `dokumente` (additiv), `hinweise`, `ms`, `geometrie` (Netzköpfe), optional `reply_to` | Netze |
 | `VERSION_BILD_REQ` | `id`, `nr`, `width`, `height`, `view` (Standardansicht), `teile` (Netzköpfe mit `teil`, `farbe` sRGB) – die App rendert offscreen nur diese Netze und antwortet mit `SCREENSHOT_RES` (PNG) | Netze |
 
 `versionen[i]`:
@@ -627,7 +627,10 @@ projektweit eindeutiger Nummer `nr` (Anzeige „V12“). Varianten sind Zweige (
 "totals_neu"}` (Zeilen mit `benennung`, `masse_text`, `anzahl`, `preis`; geänderte zusätzlich `alt_anzahl`,
 `neu_anzahl`, `alt_masse_text`, `alt_preis`); `pruefung` = `{"alt", "neu"}` (je `zusammenfassung`, `zaehler`,
 `befunde` oder null); `kennzahlen` = `{"alt", "neu"}`; `code` = `{"dateien": [{"pfad", "status": "A"|"M"|"D",
-"plus", "minus", "binaer"}], "diff" (unified, höchstens 4000 Zeilen), "gekuerzt", "zeilen"}`.
+"plus", "minus", "binaer"}], "diff" (unified, höchstens 4000 Zeilen), "gekuerzt", "zeilen"}` ohne `dokumente/`;
+`dokumente` (additiv, 22.10.2026) = Änderungen an Blättern und Bauplan als eigene Gruppe, je Datei `{"pfad", "art":
+"zeichnung"|"bauplan"|"datei", "name", "status", "punkte": [Text], "text"}` (z. B. „Zeichnung Seitenstange: 2 Maße
+geändert“); `zusammenfassung` nennt sie am Ende.
 
 Geisterkörper gibt es nur, wenn `b` der aktuelle Stand ist: `geometrie[i]` = `{"teil", "art": "alt"|"weg", "vert",
 "tri", "epts", "edge"}` – `alt` ist die frühere Form eines geänderten Teils (Form oder Lage), `weg` ein Teil, das es

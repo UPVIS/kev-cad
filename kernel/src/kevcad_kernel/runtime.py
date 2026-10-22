@@ -913,9 +913,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             self._anim_publish(job, result)
-            self._bauplan_nach_lauf(job.run, result)  # Phase 6: vorhandenen Bauplan im Hintergrund erneuern
-            self._zeichnung_nach_lauf(job.run)  # Phase 6: Blätter neu rechnen, danach DOCS
+            # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
+            # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
             self._versionen_nach_lauf(job, result)  # Versionen: neue Version bei Änderung (ohne Git: save_version)
+            speichern = not job.params
+            hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
+                           self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, danach DOCS
+            self._versionen_dokumente_nach_lauf(job, hintergrund)
         else:  # RUN_FAILED
             error = dict(final.get("error") or {"message": "Unbekannter Fehler"})
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error.get("message", ""),
