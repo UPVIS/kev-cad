@@ -182,13 +182,15 @@ final class BlattAnzeige: ObservableObject {
     @Published var hinweis: String?
 }
 
-/// Führt Zeichnungsänderungen aus und trägt sie in die Rückgängig-Liste des Fensters ein (⌘Z, ⇧⌘Z).
+/// Führt Zeichnungsänderungen aus und führt die Rückgängig-Liste des Bereichs Dokumente (⌘Z, ⇧⌘Z über die Blattansicht).
 ///
 /// Der Kernel kennt kein Rückgängig: Zu jeder Änderung rechnet die App nach dem ACK die Gegenoperationen
-/// (`ZeichnungsUmkehr`). Rückgängig schickt sie als neue Änderung, deren Gegenstück wiederum Wiederholen ist. Was sich so
-/// nicht umkehren lässt (Ansicht löschen, Automatik zurücksetzen), meldet das und verweist auf die Versionen.
+/// (`ZeichnungsUmkehr`). Rückgängig schickt sie als neue Änderung, deren Gegenoperationen wiederum Wiederholen sind. Was
+/// sich so nicht umkehren lässt (Ansicht löschen, Automatik zurücksetzen), meldet das und verweist auf die Versionen.
+/// Eine eigene Liste statt des UndoManagers des Fensters: dessen automatische Gruppen fassen Änderungen, die ohne
+/// Ereignis entstehen (Antworten des Kernels, Zeitgeber), zu einem Schritt zusammen.
 @MainActor
-final class BlattBearbeiter {
+final class BlattBearbeiter: ObservableObject {
     final class Schritt {
         let blatt: String
         let titel: String
@@ -201,54 +203,87 @@ final class BlattBearbeiter {
         }
     }
 
+    enum Richtung { case neu, rueckgaengig, wiederholen }
+
     weak var model: AppModel?
-    /// Rückgängig-Liste des Projektfensters.
-    var undoManager: () -> UndoManager? = { NSApp.keyWindow?.undoManager }
-    /// Bereich Dokumente mit diesem Blatt zeigen (Rückgängig aus dem 3D-Bereich heraus).
+    /// Bereich Dokumente mit diesem Blatt zeigen.
     var zeige: (String) -> Void = { _ in }
     /// Meldung in der Blattansicht.
     var melde: (String) -> Void = { _ in }
 
-    func ausfuehren(_ ops: [ZeichnungsOp], blatt: String, titel: String? = nil,
+    @Published private(set) var rueckgaengigListe: [Schritt] = []
+    @Published private(set) var wiederholenListe: [Schritt] = []
+    static let maxSchritte = 100
+
+    var rueckgaengigTitel: String? { rueckgaengigListe.last?.titel }
+    var wiederholenTitel: String? { wiederholenListe.last?.titel }
+
+    /// Projektwechsel: Listen leeren.
+    func vergessen() {
+        rueckgaengigListe = []
+        wiederholenListe = []
+    }
+
+    func ausfuehren(_ ops: [ZeichnungsOp], blatt: String, titel: String? = nil, richtung: Richtung = .neu,
                     abschluss: (@MainActor (ZeichnungsBearbeitung) -> Void)? = nil) {
         guard let model, let actions = model.dokumenteActions, !ops.isEmpty else { return }
         let name = titel ?? (ops.count == 1 ? ops[0].titel : ops.first(where: { $0.name != "mass_aendern" })?.titel
             ?? "Zeichnung ändern")
         let schritt = Schritt(blatt: blatt, titel: name)
         let vorher = model.dokumente.zeichnung(blatt)
-        if let um = undoManager() {
-            // Eigene Gruppe je Änderung: ohne sie hängt die Rückgängig-Liste Änderungen, die im selben Durchlauf der
-            // Ereignisschleife entstehen (etwa aus Aufgaben ohne Mausereignis), zu einem Schritt zusammen
-            let eigeneGruppe = um.groupingLevel == 0
-            if eigeneGruppe { um.beginUndoGrouping() }
-            um.registerUndo(withTarget: self) { me in
-                MainActor.assumeIsolated { me.gegenstueck(schritt) }
-            }
-            um.setActionName(name)
-            if eigeneGruppe { um.endUndoGrouping() }
+        switch richtung {
+        case .neu:
+            rueckgaengigListe.append(schritt)
+            wiederholenListe = []
+        case .wiederholen:
+            rueckgaengigListe.append(schritt)
+        case .rueckgaengig:
+            wiederholenListe.append(schritt)
         }
+        if rueckgaengigListe.count > Self.maxSchritte { rueckgaengigListe.removeFirst() }
         actions.zeichnungBearbeiten(blatt, ops: ops) { [weak self] erg in
             schritt.fertig = true
             if let vorher {
                 schritt.gegen = ZeichnungsUmkehr.gegen(ops, vorher: vorher, bearbeitung: erg)
             }
-            if !erg.ok, erg.ergebnisse.allSatisfy({ !$0.ok }) { schritt.gegen = [] }
+            if !erg.ok, erg.ergebnisse.allSatisfy({ !$0.ok }) {
+                schritt.gegen = []
+                // gescheitert: nichts zum Umkehren, aus der Liste nehmen
+                self?.rueckgaengigListe.removeAll { $0 === schritt }
+                self?.wiederholenListe.removeAll { $0 === schritt }
+            }
             if let f = erg.fehlerText { self?.melde("\(name): \(f)") }
             abschluss?(erg)
         }
     }
 
-    private func gegenstueck(_ s: Schritt) {
+    func rueckgaengig() {
+        guard let s = rueckgaengigListe.last else { return }
+        guard umkehrbar(s) else { return }
+        rueckgaengigListe.removeLast()
         zeige(s.blatt)
+        ausfuehren(s.gegen ?? [], blatt: s.blatt, titel: s.titel, richtung: .rueckgaengig)
+    }
+
+    func wiederholen() {
+        guard let s = wiederholenListe.last else { return }
+        guard umkehrbar(s) else { return }
+        wiederholenListe.removeLast()
+        zeige(s.blatt)
+        ausfuehren(s.gegen ?? [], blatt: s.blatt, titel: s.titel, richtung: .wiederholen)
+    }
+
+    private func umkehrbar(_ s: Schritt) -> Bool {
         guard s.fertig else {
             melde("„\(s.titel)“ läuft noch – gleich noch einmal versuchen")
-            return
+            return false
         }
-        guard let ops = s.gegen else {
+        guard let ops = s.gegen, !ops.isEmpty else {
             melde("„\(s.titel)“ lässt sich hier nicht umkehren. Ein früherer Stand liegt in den Versionen (⌥⌘V).")
-            return
+            rueckgaengigListe.removeAll { $0 === s }
+            wiederholenListe.removeAll { $0 === s }
+            return false
         }
-        guard !ops.isEmpty else { return }  // die Änderung war gescheitert
-        ausfuehren(ops, blatt: s.blatt, titel: s.titel)
+        return true
     }
 }

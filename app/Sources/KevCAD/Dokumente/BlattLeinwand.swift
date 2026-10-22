@@ -1024,6 +1024,25 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         }
     }
 
+    // MARK: Rückgängig (Menü Bearbeiten, ⌘Z und ⇧⌘Z)
+
+    @objc func undo(_ sender: Any?) { zustand?.bearbeiter.rueckgaengig() }
+    @objc func redo(_ sender: Any?) { zustand?.bearbeiter.wiederholen() }
+
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let b = zustand?.bearbeiter else { return false }
+        switch item.action {
+        case #selector(undo(_:))?:
+            item.title = b.rueckgaengigTitel.map { "Rückgängig: \($0)" } ?? "Rückgängig"
+            return b.rueckgaengigTitel != nil
+        case #selector(redo(_:))?:
+            item.title = b.wiederholenTitel.map { "Wiederholen: \($0)" } ?? "Wiederholen"
+            return b.wiederholenTitel != nil
+        default:
+            return true
+        }
+    }
+
     // MARK: Tastatur
 
     override func keyDown(with event: NSEvent) {

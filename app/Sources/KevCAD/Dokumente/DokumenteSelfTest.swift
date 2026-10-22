@@ -146,6 +146,23 @@ enum DokumenteSelfTest {
             w.sendEvent(e)
         }
 
+        /// ⌘Z und ⇧⌘Z wie aus dem Menü: `undo:` bzw. `redo:` an die Blattansicht als ersten Antwortgeber.
+        func rueckgaengig() {
+            guard let l = leinwand else { return }
+            let punkt = NSMenuItem(title: "", action: #selector(BlattLeinwand.undo(_:)), keyEquivalent: "z")
+            let frei = l.validateMenuItem(punkt)
+            info("Menü: „\(punkt.title)“\(frei ? "" : " (gesperrt)")")
+            NSApp.sendAction(#selector(BlattLeinwand.undo(_:)), to: l, from: punkt)
+        }
+
+        func wiederholen() {
+            guard let l = leinwand else { return }
+            let punkt = NSMenuItem(title: "", action: #selector(BlattLeinwand.redo(_:)), keyEquivalent: "Z")
+            let frei = l.validateMenuItem(punkt)
+            info("Menü: „\(punkt.title)“\(frei ? "" : " (gesperrt)")")
+            NSApp.sendAction(#selector(BlattLeinwand.redo(_:)), to: l, from: punkt)
+        }
+
         /// Wartet auf ein neues Blatt (anderer Stand als `alt`).
         func neuerStand(_ id: String, alt: String, s: Double = 60) async -> Zeichnung? {
             _ = await warte(s) { (store.zeichnung(id)?.stand ?? alt) != alt && store.bearbeitung[id] == nil }
@@ -285,13 +302,13 @@ enum DokumenteSelfTest {
 
             // 2. ⌘Z und Wiederholen
             stand = z.stand
-            fenster?.undoManager?.undo()
+            rueckgaengig()
             z = await neuerStand(id, alt: stand) ?? z
             check(abs((z.blatt.mass(b.id)?.versatz ?? 999) - alt) < 0.05,
                   "Rückgängig: Versatz wieder \(z.blatt.mass(b.id)?.versatz ?? .nan)")
             check(z.blatt.mass(b.id)?.fest == false, "Rückgängig: Maß wieder automatisch platziert")
             stand = z.stand
-            fenster?.undoManager?.redo()
+            wiederholen()
             z = await neuerStand(id, alt: stand) ?? z
             check(abs((z.blatt.mass(b.id)?.versatz ?? 999) - neu) < 0.05, "Wiederholen: Versatz wieder \(neu)")
 
@@ -307,7 +324,7 @@ enum DokumenteSelfTest {
             check(z.masse.count == anzahl - 1 && z.blatt.unterdrueckt.count == unterdrueckt + 1,
                   "Löschen: \(anzahl) → \(z.masse.count) Maße, unterdrückt \(z.blatt.unterdrueckt.count)")
             stand = z.stand
-            fenster?.undoManager?.undo()
+            rueckgaengig()
             z = await neuerStand(id, alt: stand) ?? z
             check(z.masse.count == anzahl && z.blatt.unterdrueckt.count == unterdrueckt,
                   "Rückgängig: Maß wieder da (\(z.masse.count) Maße)")
@@ -346,7 +363,7 @@ enum DokumenteSelfTest {
                 let neu = z.blatt.ansicht(v.id)?.lage ?? lage
                 check(abs(neu.x - lage.x - 10) < 0.6, "Ansicht \(v.id) gezogen: x \(lage.x) → \(neu.x)")
                 stand = z.stand
-                fenster?.undoManager?.undo()
+                rueckgaengig()
                 z = await neuerStand(id, alt: stand) ?? z
                 check(abs((z.blatt.ansicht(v.id)?.lage?.x ?? 0) - lage.x) < 0.6, "Rückgängig: Ansicht zurück")
             }
@@ -373,7 +390,7 @@ enum DokumenteSelfTest {
             check(z.blatt.massstab == anderer, "Maßstab \(massstab) → \(z.blatt.massstab)")
             await pruefpunkt("bearbeitet")
             stand = z.stand
-            fenster?.undoManager?.undo()
+            rueckgaengig()
             z = await neuerStand(id, alt: stand) ?? z
             check(z.blatt.massstab == massstab, "Rückgängig: Maßstab wieder \(z.blatt.massstab)")
 

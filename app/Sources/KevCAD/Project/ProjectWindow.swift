@@ -37,6 +37,12 @@ struct ProjectWindow: View {
             if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
+        .onChange(of: model.project?.path) { _, _ in  // Phase 6: anderes Projekt, andere Blätter
+            dokumente.bearbeiter.vergessen()
+            dokumente.auswahl = nil
+            dokumente.markiert = []
+            dokumente.element = nil
+        }
     }
 
     /// Verbaut das Modell zum ersten Mal Lagerteile, öffnet sich die Stückliste einmal von selbst.
@@ -63,7 +69,6 @@ struct ProjectWindow: View {
     private func dokumenteVerbinden() {
         let b = dokumente.bearbeiter
         b.model = model
-        b.undoManager = { [weak session] in session?.projectWindow?.undoManager }
         b.zeige = { [weak state, weak dokumente] id in
             state?.bereich = .dokumente
             dokumente?.waehle(.blatt(id))
