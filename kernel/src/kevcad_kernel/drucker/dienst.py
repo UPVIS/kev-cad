@@ -476,6 +476,9 @@ class DruckerDienst:
     def _vorbereiten(self, a: Auftrag) -> SliceErgebnis:
         if a.datei is not None and a.ergebnis is not None and a.datei.exists():
             return a.ergebnis
+        if not vorhanden(self.app):  # vor dem Export: ohne Bambu Studio kein fertiges Slicen
+            raise SlicenFehler(f"Bambu Studio fehlt ({self.app}); ohne Bambu Studio kann Kev CAD nicht fertig "
+                               "slicen. „Platten als 3MF …“ in der Druckvorschau geht trotzdem.")
         self._setze(a, "slict", "Platten werden bereitgestellt …")
         quelle = self.cache / "quelle"
         shutil.rmtree(quelle, ignore_errors=True)  # Eingänge früherer Aufträge (Platte ist knapp)

@@ -141,11 +141,14 @@ class DruckerRuntimeMixin:
             # der P1P ohne AMS druckt ohnehin ein Material je Platte)
             dateien = res.get("dateien") or [{"pfad": res.get("pfad"), "material": None,
                                               "platten": res.get("platten") or platten}]
-            if len(dateien) > 1:
+            if len({str(d.get("material")) for d in dateien}) > 1:
                 wahl = "; ".join(f"{str(d.get('material') or '?').upper()}: Platte "
                                  + ", ".join(str(n) for n in d.get("platten") or []) for d in dateien)
                 raise QuelleFehler("Mehrere Materialien: Der P1P druckt ein Material je Platte. Bitte nur Platten "
                                    f"eines Materials wählen ({wahl}).")
+            if len(dateien) > 1:  # V-K ohne Bambu Studio: je Platte eine Datei
+                raise QuelleFehler("Die Druckvorschau hat je Platte eine eigene Datei geschrieben (ohne Bambu "
+                                   "Studio). Bitte eine Platte wählen.")
             datei = dateien[0]
             pfad = Path(str(datei.get("pfad")))
             mit = hat_projekt_einstellungen(pfad)

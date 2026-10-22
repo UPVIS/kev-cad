@@ -158,6 +158,12 @@ def test_quelle_aus_der_druckvorschau(env, tmp_path):
 
         with pytest.raises(QuelleFehler, match=r"PETG: Platte 1; PLA: Platte 2"):
             rt._drucker_quelle([], tmp_path / "q")
+        rt.druck_export = lambda ziel=None, platten=None: {  # V-K ohne Bambu Studio: je Platte eine Datei
+            "ok": True, "pfad": "a.3mf", "platten": [1, 2], "fehler": None,
+            "dateien": [{"pfad": "a.3mf", "material": "petg", "platten": [1]},
+                        {"pfad": "b.3mf", "material": "petg", "platten": [2]}]}
+        with pytest.raises(QuelleFehler, match="je Platte eine eigene Datei"):
+            rt._drucker_quelle([], tmp_path / "q")
         rt.druck_export = lambda ziel=None, platten=None: {"ok": False, "fehler": "Keine Druckteile im Modell."}
         with pytest.raises(QuelleFehler, match="Keine Druckteile"):
             rt._drucker_quelle([1], tmp_path / "q")

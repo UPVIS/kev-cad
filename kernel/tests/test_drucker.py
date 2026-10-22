@@ -549,6 +549,22 @@ def test_dienst_fehler_beim_slicen(tmp_path, monkeypatch):
         d.stoppen()
 
 
+def test_dienst_ohne_bambu_studio(tmp_path):
+    app = _App()
+    aufrufe = []
+    d, _ = _dienst(tmp_path, app, quelle=lambda platten, ordner: aufrufe.append(platten))
+    d.app = tmp_path / "Fehlt.app"
+    try:
+        assert d.status()["wege"]["a"]["moeglich"] is False
+        antworten = []
+        d.auftrag_anfordern({"id": "1", "platten": [], "weg": "a", "bestaetigt": False}, antworten.append)
+        warte(lambda: antworten)
+        assert not antworten[0]["ok"] and "Bambu Studio fehlt" in antworten[0]["fehler"]
+        assert aufrufe == []  # nichts exportiert
+    finally:
+        d.stoppen()
+
+
 def test_dienst_weg_b_abgelehnt_ohne_einstellung_und_im_cloud_modus(tmp_path):
     app = _App()
     with Attrappe(tmp_path / "a", modus="cloud") as a:
