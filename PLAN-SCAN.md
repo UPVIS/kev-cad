@@ -30,8 +30,9 @@ BENCHMARK.md 3 bis 4 mm statt 12 bis 14 mm Maßfehler), und die Tiefe macht den 
      (Umriss des Netzes), Tiefenbilder, `bericht.json` (Laufzeiten, Abdeckung, Streuung der Tiefe gegen das Netz).
 4. **Vermessen** (fotomess, `fotomess/src/fotomess/scan.py`): Scan per ICP an das Modell legen (Drehung um Z,
    Verschiebung), ARKit-Kameras als feste Startwerte (Brennweite fest, keine Grobsuche) mit weicher Bindung
-   (15 mm, 1,5°), Tiefe als zusätzliche Bedingung (Tiefe des Modells gegen gemessene Tiefe, Cauchy, Gewicht nach
-   Konfidenz), zweiter Durchgang nach Nachführen der Lage. Das Netz liegt danach am Modell (`lage`).
+   (5 mm, 0,5°), Tiefe als zusätzliche Bedingung (Tiefe des Modells gegen gemessene Tiefe, Cauchy, Gewicht 0,3 nach
+   Konfidenz), zweiter Durchgang, nachdem die gemeinsame Bewegung der Kameras in die Lage gewandert ist. Das Netz
+   liegt danach am Modell (`lage`).
 
 ## Entscheidungen
 
@@ -47,6 +48,8 @@ BENCHMARK.md 3 bis 4 mm statt 12 bis 14 mm Maßfehler), und die Tiefe macht den 
 | S8 | Masken aus dem Umriss des Netzes, Umriss in fotomess gegen Bildkanten | Vision kennt die Szene nicht; der Netzumriss ist um 1 bis 2 Voxel ungenau, dient nur Überdeckung und Ausreißern |
 | S9 | Testvarianten als `_kevscan-test._tcp` | das iPhone sieht sie nicht und sendet nie an eine Testvariante |
 | S10 | Mitteilung über macOS und Protokollzeile, keine neue Nachricht im Protokoll | „lieber ohne“; die Referenzliste zeigt den Rest |
+| S11 | Nach dem ersten Durchgang die gemeinsame Bewegung aller Kameras in die Lage Scan → Modell legen | sonst zieht ein Anlegefehler (an der Probe 6°, 10 mm) jede Kamera gegen ihre Bindung; danach bewegen sich die Kameras nur um das ARKit-Rauschen |
+| S12 | Tiefengewicht 0,3, Bindung der Kameras 5 mm und 0,5° | an der Probe mit Lagefehlern abgestimmt (Gewicht 1,0 und 15 mm: Fehler bis 1,2 mm; 0,3 und 5 mm: unter 0,5 mm) |
 
 ## Gemessen (MacBook M2 Pro, 16 GB)
 
@@ -55,11 +58,13 @@ LiDAR-Ersatz 256 × 192 mit Rauschen (2 mm + 0,4 %, langwelliger Versatz, Mischp
 
 | Schritt | Large | Small |
 |---|---|---|
-| PromptDA je Bild (1008 × 756, MPS) | 1,9 s | 0,28 s |
+| PromptDA je Bild (1008 × 756, MPS; Median) | 1,6 bis 1,9 s | 0,26 bis 0,28 s |
 | Modell laden | 3 bis 7 s | 0,5 s |
-| TSDF je Bild (2 mm) | 0,07 s | 0,07 s |
-| Auswertung gesamt (40 bzw. 22 Bilder) | 95 s | 17 s |
-| Hüllmaß des Netzes (wahr 200 × 100 × 50) | Grundriss 200,4 × 101,3, Hülle mit Krempe | 202,4 × 103,1 × 50,9 |
+| TSDF je Bild (2 mm, 2,6 Mio. Voxel) | 0,03 s (MPS) bis 0,07 s (numpy) | 0,07 s |
+| Auswertung gesamt (40 bzw. 22 Bilder) | 77 bis 95 s | 15 bis 17 s |
+| Grundriss des Netzes, ohne Lagefehler (wahr 200 × 100) | 200,4 × 101,3 | 201,6 × 103,3 |
+| Grundriss des Netzes, mit Lagefehlern | 198,1 × 97,8 | 199,5 × 102,3 |
+| Höhe (wahr 50) | 51,0 bis 53,0 | 50,3 bis 50,9 |
 
 Maße nach `referenz_vermessen` über den Kernel (`scan_importieren`, dann `referenz_vermessen`; alle drei Maße frei,
 Startwerte 214 × 108 × 54 mm, kein bekanntes Maß). Die Lagen im Scan sind wie bei ARKit verfälscht (je Bild 3 mm und
@@ -67,16 +72,22 @@ Startwerte 214 × 108 × 54 mm, kein bekanntes Maß). Die Lagen im Scan sind wie
 
 | Tiefe aus | Bilder | mit Tiefenbedingung | ohne Tiefenbedingung (nur Kanten, ARKit-Kameras) |
 |---|---|---|---|
-| Small | 10 (8 genutzt) | +0,10 / +0,30 / +0,07 (Sigma 0,6 / 0,7 / 0,1) | +0,07 / +0,07 / +0,15 (Sigma 14 / 7 / 3,5) |
-| Large | 10 (8 genutzt) | −0,48 / −0,07 / +0,75 (Sigma 1,3 / 0,8 / 0,5) | −0,04 / −0,03 / +0,02 (Sigma 14 / 7 / 3,5) |
-| Large | 3 | −0,42 / −0,51 / +0,45 | +4,27 / +1,95 / +0,98 |
+| Small | 10 (8 genutzt) | +0,18 / +0,31 / +0,08 (Sigma 0,6 / 0,7 / 0,1) | +0,68 / +0,20 / +0,22 (Sigma 4,7 / 2,3 / 1,2) |
+| Small | 3 | +0,36 / +0,05 / +0,02 (Sigma 2,5 / 0,2 / 0,2) | +0,54 / +0,35 / +0,14 (Sigma 7,8 / 3,9 / 2,0) |
+| Large | 10 (8 genutzt) | −0,46 / −0,17 / +0,02 (Sigma 0,9 / 0,4 / 0,2) | +0,28 / +0,03 / +0,09 (Sigma 4,7 / 2,3 / 1,2) |
+| Large | 3 | −0,50 / −0,43 / +0,18 (Sigma 2,3 / 0,3 / 0,4) | +1,27 / +0,93 / +0,32 (Sigma 7,3 / 3,7 / 1,8) |
 
-Lesart: Mit bekannten Kameras sind die Kanten der synthetischen Bilder (scharf, kontrastreich) schon allein auf
-Zehntelmillimeter genau; die Tiefe bringt dort nichts und zieht mit der verzerrten Large-Tiefe leicht weg. Mit wenigen
-Bildern trägt die Tiefe (3 Bilder: 4,3 statt 0,5 mm), und die Unsicherheit wird ehrlich klein angegeben (Sigma
-0,1 bis 1,3 statt 3,5 bis 14 mm). Echte Kanten sind weicher, Masken ungenauer; dort ist der Gewinn der Tiefe größer zu
-erwarten, nachgewiesen ist er noch nicht. Laufzeit `referenz_vermessen` 25 s (8 Bilder, zwei Durchgänge), ohne Tiefe
-11 s; `scan_importieren` 15 s (Small, 22 Bilder) bzw. 78 s (Large, 40 Bilder).
+Die eingepassten Kameras liegen 1,5 bis 4,7 mm und 0,2 bis 0,8° neben den (verrauschten) ARKit-Lagen, also im Bereich
+des eingebauten Fehlers. Lesart: Mit bekannten Kameras sind die Kanten der synthetischen Bilder (scharf, kontrastreich)
+schon allein auf Zehntel- bis Millimeter genau. Die Tiefe hält den größten Fehler unter 0,5 mm (ohne bis 1,3 mm bei
+drei Bildern) und gibt eine ehrliche, kleine Unsicherheit an (Sigma 0,1 bis 2,5 statt 1,2 bis 7,8 mm); mit der an
+dieser Szene verzerrten Large-Tiefe zieht sie die Länge um knapp 0,5 mm. Echte Kanten sind weicher, Masken ungenauer;
+dort ist der Gewinn der Tiefe größer zu erwarten, nachgewiesen ist er noch nicht. Die erste Fassung (Tiefengewicht
+1,0, Bindung 15 mm, Lage nur über die Oberfläche) lag bei drei Bildern ohne Tiefe 4,3 mm daneben, mit Tiefe 0,5 mm,
+die Kameras wanderten dabei gemeinsam bis 6° (siehe S11, S12).
+
+Laufzeit `referenz_vermessen` 18 bis 34 s (8 Bilder, zwei Durchgänge, je nach Last), ohne Tiefe 12 s, mit drei
+Bildern 8 bzw. 5 s; `scan_importieren` 15 s (Small, 22 Bilder) bzw. 78 s (Large, 40 Bilder).
 
 Echter Scan (Kevins iPhone 15 Pro, 22.10.2026 21:38, 78 s, 779 Videobilder 1920 × 1440 HEVC, 61 Fotos 4032 × 3024 mit
 eigener Tiefe, Box 306 × 402 × 341 mm gesetzt). Gegenstand: oben offener, rechteckiger Behälter.
