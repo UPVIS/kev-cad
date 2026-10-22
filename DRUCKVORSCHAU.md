@@ -201,6 +201,14 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
 - Einstellungen je Teil bzw. Gruppe ändern (Zweck, Wände, Füllung, Muster, Stützen, Brim) → `PRINT_SETTINGS`.
 - **„Platten als 3MF …“** → `PRINT_EXPORT_REQ`; danach „In Bambu Studio öffnen“.
 - Bericht „Druck“ im Export-Dialog von Phase 6 (Baustein `druck`): Tabelle je Platte und Teil mit Einstellungen.
+- **Filament statt Vollkörper** (Strang „Feinschliff 2“, 22.10.2026): Stückliste, Material und Inspektor nannten bei
+  Druckteilen „Gewicht“ den Vollkörper (Lenksperre 104,7 g), die Druckvorschau das Filament (39 g bei 20 % Füllung).
+  Jetzt einheitlich: Liegt die Vorschau desselben Laufs vor, gelten für Druckteile Filament und Filamentkosten (je
+  Teil das Stück seiner Gruppe, `je_stueck.g`, Kosten anteilig), bezeichnet als „Filament 39,1 g (gedruckt,
+  Schätzung | Bambu Studio) · Vollkörper 104,7 g“ (Inspektor im 3D-Bereich und im Material, Tooltip in der
+  Stückliste, Gruppenkopf „Filament, Bambu Studio“); Summen von Gewicht und Kosten folgen. Ohne Vorschau desselben
+  Laufs bleibt Vollkörper × Dichte. App `DruckFilamentWert` (Material/MaterialDaten.swift); Kernel MCP `bom` additiv
+  `druck_filament` je Position (`druck/vorschau.filament_je_zeile`) und im Text eine Zeile je Druckteil.
 
 ## Drucken (Phase 8)
 

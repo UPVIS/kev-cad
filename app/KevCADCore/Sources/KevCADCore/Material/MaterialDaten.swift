@@ -152,11 +152,29 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
     public var werkstoff: String?
     /// Link zur Bezugsquelle: Shop des Zukaufteils bzw. Bezugsquelle aus der Einkaufsliste.
     public var link: URL?
+    /// Strang „Feinschliff 2“: Filament dieser Position aus der Druckvorschau desselben Laufs (Druckteile; Wände,
+    /// Füllung und Stützen statt Vollkörper), nil ohne Vorschau.
+    public var filament: DruckFilamentWert? = nil
+
     public var id: Int { line.pos }
     public var pos: Int { line.pos }
     public var anzahl: Int { line.anzahl }
-    public var kg: Double? { line.kg }
-    public var preis: Double? { line.preis }
+    /// Gewicht: bei Druckteilen das Filament aus der Druckvorschau, wenn vorhanden, sonst Vollkörper × Dichte.
+    public var kg: Double? { filament.map { $0.gramm / 1000 } ?? line.kg }
+    /// Kosten: bei Druckteilen die Filamentkosten aus der Druckvorschau, wenn vorhanden.
+    public var preis: Double? { filament.flatMap(\.kosten) ?? line.preis }
+    /// Gewicht des Vollkörpers (Volumen × Dichte) laut Stückliste.
+    public var vollkoerperKg: Double? { line.kg }
+
+    /// „Filament 39,0 g (gedruckt, Schätzung) · Vollkörper 104,7 g“; nil ohne Filament.
+    public var gewichtText: String? {
+        guard let f = filament else { return nil }
+        var t = "Filament \(KevFormat.mass(grams: f.gramm)) (gedruckt, \(f.stand.titel))"
+        if let v = line.kg { t += " · Vollkörper \(KevFormat.kg(v))" }
+        return t
+    }
+    public var teile: [String] { line.teile }
+    public var stockID: String? { line.stockID }
 
     /// Alle Kennzeichen zum Anzeigen: Herkunft, sonst die Versorgung.
     public var kennzeichen: [MaterialKennzeichen] {
@@ -214,6 +232,37 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
 }
 
 // MARK: - Einkauf
+
+/// Filament einer Stücklistenposition aus der Druckvorschau (Summe ihrer Teile, je Teil der Anteil seiner Gruppe).
+public struct DruckFilamentWert: Equatable, Sendable {
+    public var gramm: Double
+    public var kosten: Double?
+    public var stand: DruckStand
+
+    public init(gramm: Double, kosten: Double? = nil, stand: DruckStand = .schaetzung) {
+        self.gramm = gramm
+        self.kosten = kosten
+        self.stand = stand
+    }
+
+    /// Aus der Vorschau desselben Laufs: je Teil der Zeile das Stück seiner Gruppe (`je_stueck.g`, sonst g / Anzahl),
+    /// Kosten anteilig; nil, wenn kein Teil der Zeile in der Vorschau steht.
+    public static func aus(_ v: Druckvorschau, teile: [String]) -> DruckFilamentWert? {
+        var g = 0.0
+        var kosten: Double?
+        var staende = Set<DruckStand>()
+        for teil in teile {
+            guard let grp = v.gruppe(vonTeil: teil) else { continue }
+            let n = Double(max(grp.anzahl, 1))
+            g += grp.jeStueck?.g ?? grp.g / n
+            if let k = grp.kosten { kosten = (kosten ?? 0) + k / n }
+            staende.insert(grp.stand)
+        }
+        guard !staende.isEmpty else { return nil }
+        let stand: DruckStand = staende.count == 1 ? staende.first! : .gemischt
+        return DruckFilamentWert(gramm: g, kosten: kosten, stand: stand)
+    }
+}
 
 /// Zeile der Einkaufsliste: Lagerware aus dem Abgleich mit dem Bestand (Kernel) oder ein Zukaufteil aus der Stückliste
 /// (seit dem Strang „Feinschliff 2“ nach Abzug des Projektbestands, `BOM.zukauf_bestand`).
@@ -444,8 +493,14 @@ public struct MaterialDaten: Equatable, Sendable {
         mindestreste = mindest
 
         let lines = bom?.lines ?? []
+        let vorschau = druckvorschau.flatMap { $0.run == (bom?.run ?? 0) && !$0.istLeer ? $0 : nil }
         positionen = lines.map { line in
-            Self.position(line, zuschnitt: bestand, stueckgut: bestand?.stueckgut ?? [], katalog: katalog)
+            var p = Self.position(line, zuschnitt: bestand, stueckgut: bestand?.stueckgut ?? [], katalog: katalog)
+            // Strang „Feinschliff 2“: Druckteile mit dem Filament der Vorschau desselben Laufs statt des Vollkörpers
+            if let vorschau, p.herkunft == .druckteil, !line.gedruckt {
+                p.filament = DruckFilamentWert.aus(vorschau, teile: line.teile)
+            }
+            return p
         }
 
         // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste nach Abzug des Projektbestands
@@ -497,6 +552,11 @@ public struct MaterialDaten: Equatable, Sendable {
             k.kg = bom.totals.kg
             k.preis = bom.totals.preis
             k.preisHinweis = bom.totals.preisHinweis
+            // Druckteile mit Filament aus der Druckvorschau: Gewicht und Kosten wie in der Stückliste
+            for p in positionen where p.filament != nil {
+                k.kg += (p.kg ?? 0) - (p.vollkoerperKg ?? 0)
+                if let neu = p.preis, k.preis != nil { k.preis! += neu - (p.line.preis ?? 0) }
+            }
         }
         k.mitBestand = bestand != nil
         let lager = einkauf.filter { $0.art == .lager }.map(\.position)

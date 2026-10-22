@@ -474,6 +474,16 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen (Lagerteile mit "
                                           "lager.teil(...).verbauen(...) oder Teile mit material= zeigen)."}
         out = {"ok": True, **bom}
+        try:  # Strang „Feinschliff 2“: Filament der Druckteile aus der Druckvorschau desselben Laufs
+            from kevcad_kernel.druck.vorschau import filament_je_zeile
+
+            with self._dv_lock:
+                dv = self._dv_vorschau
+            fil = filament_je_zeile(bom, dv)
+            if fil:
+                out["druck_filament"] = {str(k): v for k, v in fil.items()}
+        except Exception:  # noqa: BLE001 - die Stückliste kommt auch ohne
+            pass
         if bom.get("einkaufsliste") is not None:  # Einkaufsliste wie in der App (Text wie „Teilen“)
             from kevcad_kernel.bestand.einkauf import heute_text, text
 

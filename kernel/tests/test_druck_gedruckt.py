@@ -173,3 +173,26 @@ def test_bauplan_ohne_druckschritt_fuer_gedruckte():
                   verbindungen=[], gewinde=[], erlaubt=set(), durchdringend=set(), hat_verbinde=False)
     schritte = drucken(ein)
     assert [s["teile"] for s in schritte] == [["Halter (Druck)"]]
+
+
+def test_filament_je_zeile_und_bom_text():
+    """Punkt 4: Stückliste nennt bei Druckteilen das Filament aus der Druckvorschau desselben Laufs neben dem
+    Vollkörper, gleich benannt wie in der App."""
+    from kevcad_kernel.druck.vorschau import filament_je_zeile
+    from kevcad_kernel.mcp_tools.format import bom_text
+
+    bom = {"run": 5, "totals": {}, "cuts": [], "warnings": [],
+           "lines": [{"pos": 3, "art": "druckteil", "benennung": "Lenksperre (Druck)", "anzahl": 2, "kg": 0.2094,
+                      "preis": 3.56, "masse_text": "50 × 47 × 70 mm", "teile": ["A/Lenksperre 1", "A/Lenksperre 2"]},
+                     {"pos": 4, "art": "druckteil", "benennung": "Fangrolle (Druck)", "anzahl": 1, "kg": 0.06,
+                      "gedruckt": True, "teile": ["A/Fangrolle"]}]}
+    dv = {"run": 5, "teile": [{"gruppe": "g1", "teile": ["A/Lenksperre 1", "A/Lenksperre 2", "B/Lenksperre 3"],
+                               "anzahl": 3, "g": 117.3, "kosten": 2.0, "stand": "slicer",
+                               "je_stueck": {"g": 39.1}}]}
+    f = filament_je_zeile(bom, dv)
+    assert f == {3: {"g": 78.2, "kosten": 1.33, "stand": "slicer", "vollkoerper_g": 209.4}}
+    assert filament_je_zeile(bom, {**dv, "run": 4}) == {}
+    text = bom_text({**bom, "druck_filament": {str(k): v for k, v in f.items()}})
+    assert ("- Pos. 3 Lenksperre (Druck) ×2: Filament 78,2 g (gedruckt, Bambu Studio), 1,33 € · Vollkörper 209,4 g"
+            in text)
+    assert "Fangrolle (Druck) (Druckteil, gedruckt)" in text

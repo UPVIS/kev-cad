@@ -59,10 +59,17 @@ struct MaterialInspektor: View {
             if p.gehrungText != "–" { InfoRow(MaterialText.Spalte.gehrung, p.gehrungText) }
             InfoRow(MaterialText.Spalte.werkstoff, p.werkstoff ?? "–")
             if let n = p.line.norm { InfoRow(MaterialText.Spalte.norm, n) }
-            InfoRow(MaterialText.Spalte.gewicht, (p.kg.map(KevFormat.kg) ?? "–")
-                + (p.line.kgJe.map { p.anzahl > 1 ? " (je \(KevFormat.kg($0)))" : "" } ?? ""))
+            if let f = p.filament {  // Druckteile: Filament (gedruckt) und Vollkörper getrennt benannt
+                InfoRow("Filament", "\(KevFormat.mass(grams: f.gramm)) (gedruckt, \(f.stand.titel))")
+                InfoRow("Vollkörper", (p.vollkoerperKg.map(KevFormat.kg) ?? "–")
+                    + (p.line.kgJe.map { p.anzahl > 1 ? " (je \(KevFormat.kg($0)))" : "" } ?? ""))
+            } else {
+                InfoRow(MaterialText.Spalte.gewicht, (p.kg.map(KevFormat.kg) ?? "–")
+                    + (p.line.kgJe.map { p.anzahl > 1 ? " (je \(KevFormat.kg($0)))" : "" } ?? ""))
+            }
             InfoRow(MaterialText.Spalte.preis, (p.preis.map(KevFormat.euro) ?? "–")
-                + (p.line.preisJe.map { p.anzahl > 1 ? " (je \(KevFormat.euro($0)))" : "" } ?? ""))
+                + (p.filament?.kosten != nil ? " (Filament, \(p.filament!.stand.titel))"
+                    : (p.line.preisJe.map { p.anzahl > 1 ? " (je \(KevFormat.euro($0)))" : "" } ?? "")))
             if let id = p.stockID { InfoRow(MaterialText.Spalte.lagerteil, id, monospaced: true) }
         }
         if let sid = p.stockID, p.herkunft == nil {

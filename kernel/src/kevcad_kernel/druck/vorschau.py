@@ -424,6 +424,38 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     return out, gr, [(m, p) for m, p, _ in platten]
 
 
+def filament_je_zeile(bom: dict[str, Any] | None, vorschau: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+    """Strang „Feinschliff 2“: Filament je Stücklistenzeile eines Druckteils aus der Druckvorschau desselben Laufs
+    (wie ``DruckFilamentWert.aus`` in der App): je Teil das Stück seiner Gruppe (``je_stueck.g``, sonst g / Anzahl),
+    Kosten anteilig, ``stand`` der Gruppen. Leer ohne passende Vorschau."""
+    if not bom or not vorschau or int(vorschau.get("run") or 0) != int(bom.get("run") or 0):
+        return {}
+    gruppe_von: dict[str, dict[str, Any]] = {}
+    for g in vorschau.get("teile") or []:
+        for n in g.get("teile") or []:
+            gruppe_von.setdefault(n, g)
+    out: dict[int, dict[str, Any]] = {}
+    for ln in bom.get("lines") or []:
+        if ln.get("art") != "druckteil" or ln.get("gedruckt"):
+            continue
+        g_sum, kosten, staende = 0.0, None, set()
+        for teil in ln.get("teile") or []:
+            g = gruppe_von.get(teil)
+            if g is None:
+                continue
+            n = max(int(g.get("anzahl") or 1), 1)
+            je = (g.get("je_stueck") or {}).get("g")
+            g_sum += float(je) if je is not None else float(g.get("g") or 0.0) / n
+            if g.get("kosten") is not None:
+                kosten = (kosten or 0.0) + float(g["kosten"]) / n
+            staende.add(str(g.get("stand") or "schaetzung"))
+        if staende:
+            out[int(ln.get("pos") or 0)] = {"g": round(g_sum, 1), "kosten": round(kosten, 2) if kosten is not None
+                                            else None, "stand": staende.pop() if len(staende) == 1 else "gemischt",
+                                            "vollkoerper_g": round(float(ln.get("kg") or 0.0) * 1000, 1)}
+    return out
+
+
 def gedruckte_teile(druck: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Als gedruckt markierte Teile (``lager.druckteil(…, gedruckt=True)``): Name, Material, Stand der Form
     (``gleich`` | ``geaendert`` | ``neu`` (eben festgeschrieben) | ``neu_drucken``) und Unterschiede."""
