@@ -147,6 +147,25 @@ def test_anlegen_findet_drehung_und_verschiebung():
     assert np.allclose(netz.zentrum(kb), netz.zentrum(modell_kams[3]["kamera"]), atol=0.5)
 
 
+def test_feinanlegen_an_der_oberflaeche(tmp_path):
+    """Netz um 3° und (6; −4; 1) mm versetzt: ICP legt es wieder auf das Modell (auch mit einem Bodenrest)."""
+    _obj(tmp_path / "m.obj", (180, 105, 46))
+    m = netz.lies_obj(tmp_path / "m.obj")
+    # dichteres Netz als Referenz: Punkte auf der Oberfläche plus ein Streifen „Boden“ daneben
+    rng = np.random.default_rng(1)
+    P, _ = netz._flaechenpunkte(m["positions"], m["triangles"], 6000, rng)
+    boden = np.column_stack([rng.uniform(-120, 120, 800), rng.uniform(60, 90, 800), np.zeros(800)])
+    w = math.radians(3)
+    R = np.array([[math.cos(w), -math.sin(w), 0], [math.sin(w), math.cos(w), 0], [0, 0, 1]])
+    versatz = np.array([6.0, -4.0, 1.0])
+    ref = np.concatenate([P, boden]) @ R.T + versatz  # so liegt das Referenznetz im eigenen System
+    fein = netz.feinanlegen(ref, m["positions"], m["triangles"], np.eye(3), np.zeros(3))
+    assert fein is not None
+    zurueck = (ref[:6000] @ fein["A"].T + fein["b"])
+    assert np.abs(zurueck - P).max() < 0.8, np.abs(zurueck - P).max()
+    assert fein["rest_mm"] < 0.5
+
+
 def test_kamera_skaliert_und_zeit_aus_name():
     k = _kamera([0, -500, 200], [0, 0, 0], f=3000, w=3840, h=2160)
     s = netz.skaliert(k, 1920, 1080)

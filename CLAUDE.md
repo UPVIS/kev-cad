@@ -18,7 +18,9 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 | `app/project.yml` | XcodeGen; `app/KevCAD.xcodeproj` wird erzeugt und ist nicht im Git |
 | `skill/kev-cad/` | Modellierleitfaden für den Agenten |
 | `spikes/ap0/` | Viewer- und Kerneltest (abgeschlossen, nur Nachschlagen) |
-| `fotomess/` | Prototyp Phase 4: Modell aus wenigen Fotos oder einem Video vermessen (eigene uv-Umgebung, `STRATEGIE.md`, `BENCHMARK.md`, Tests mit `.venv/bin/python -m pytest`) |
+| `fotomess/` | Phase 4: Modell aus wenigen Fotos oder einem Video vermessen (eigene uv-Umgebung, `STRATEGIE.md`, `BENCHMARK.md`, Tests mit `.venv/bin/python -m pytest`); Einstieg für Kev CAD `fotomess.kevcad` |
+| `tools/capture/` | Phase 4: `kevcad-capture` (SwiftPM, Apple Object Capture), Referenznetz aus einem Handyvideo; `build.sh` baut und installiert es mit |
+| `kernel/src/kevcad_kernel/referenz/` | Phase 4 im Kernel: Referenzen in `<projekt>/referenzen/<name>/`, Object Capture und fotomess als eigene Prozesse, Bauer aus model.py (`varianten`), MCP in `mcp_tools/referenz_tools.py` |
 
 ## Befehle
 

@@ -155,7 +155,8 @@ def de(x: float, nd: int = 1) -> str:
     return f"{x:.{nd}f}".replace(".", ",")
 
 
-def ergebnis_aus(messung: dict[str, Any], referenz: str, varianten: dict[str, Any] | None = None) -> dict[str, Any]:
+def ergebnis_aus(messung: dict[str, Any], referenz: str, varianten: dict[str, Any] | None = None,
+                 ordner: Path | None = None) -> dict[str, Any]:
     """REF_RESULT (ohne type/seq) aus messung.json: Maße mit Sigma, Hülle, Grundkörper, Empfehlungen."""
     masse = []
     for k in messung.get("frei") or []:
@@ -202,7 +203,8 @@ def ergebnis_aus(messung: dict[str, Any], referenz: str, varianten: dict[str, An
            "verworfen": list(messung.get("verworfen") or []), "ueberdeckung": _num(sum(iou) / len(iou), 4) if iou
            else None, "empfehlungen": empf, "zeiten": messung.get("zeiten"), "dauer_s": messung.get("dauer_s"),
            "warnungen": list(messung.get("warnungen") or []) + list((varianten or {}).get("warnungen") or []),
-           "kontrollbilder": [b.get("kontrolle") for b in bilder if b.get("kontrolle")]}
+           "kontrollbilder": [str(ordner / b["kontrolle"]) if ordner is not None else b["kontrolle"]
+                              for b in bilder if b.get("kontrolle")]}
     return sauber(out)
 
 

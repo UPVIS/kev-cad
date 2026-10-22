@@ -61,6 +61,36 @@ def fotomess_ordner() -> Path | None:
     return None
 
 
+def lesbar(pfad: str | Path, warten_s: float = 6.0) -> None:
+    """Prüft, ob die Datei wirklich lesbar ist. macOS fragt beim ersten Zugriff auf Wechselmedien, den Ordner
+    Downloads, Schreibtisch oder Dokumente, ob Kev CAD darf; bis Kevin antwortet, hängt jeder Lesezugriff (auch der
+    von ffprobe, ffmpeg und Object Capture). Dann lieber gleich mit einer klaren Meldung abbrechen."""
+    import threading
+
+    ergebnis: dict[str, Any] = {}
+
+    def lies() -> None:
+        try:
+            with open(pfad, "rb") as f:
+                f.read(1)
+            ergebnis["ok"] = True
+        except OSError as exc:
+            ergebnis["fehler"] = exc
+
+    t = threading.Thread(target=lies, daemon=True)
+    t.start()
+    t.join(warten_s)
+    if t.is_alive():
+        raise ReferenzFehler(f"Kein Zugriff auf {Path(pfad).name}: macOS fragt gerade, ob Kev CAD auf diesen Ort "
+                             "zugreifen darf (Wechselmedium, Downloads o. ä.). Bitte in der Meldung „Erlauben“ wählen "
+                             "und noch einmal versuchen, oder die Datei vorher in den Projektordner legen.")
+    if "fehler" in ergebnis:
+        exc = ergebnis["fehler"]
+        hinweis = " (macOS hat den Zugriff verweigert: Systemeinstellungen › Datenschutz & Sicherheit › Dateien und " \
+                  "Ordner)" if isinstance(exc, PermissionError) else ""
+        raise ReferenzFehler(f"{Path(pfad).name} ist nicht lesbar: {exc}{hinweis}")
+
+
 def ist_video(pfad: str | Path) -> bool:
     return Path(pfad).suffix.lower() in VIDEO_ENDUNGEN
 

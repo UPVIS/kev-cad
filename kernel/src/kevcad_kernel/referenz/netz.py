@@ -254,6 +254,70 @@ def startkamera(capture_posen: list[dict[str, Any]], zeit: float, lage: dict[str
     return skaliert(k, breite, hoehe)
 
 
+def _flaechenpunkte(V: np.ndarray, T: np.ndarray, anzahl: int, rng: np.random.Generator):
+    """Punkte gleichmäßig auf der Oberfläche (nach Fläche gewichtet) mit den Normalen ihrer Dreiecke."""
+    a, b, c = V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
+    n = np.cross(b - a, c - a)
+    fl = np.linalg.norm(n, axis=1)
+    ok = fl > 1e-9
+    a, b, c, n, fl = a[ok], b[ok], c[ok], n[ok], fl[ok]
+    wahl = rng.choice(len(fl), size=anzahl, p=fl / fl.sum())
+    u, v = rng.random(anzahl), rng.random(anzahl)
+    aussen = u + v > 1
+    u[aussen], v[aussen] = 1 - u[aussen], 1 - v[aussen]
+    P = a[wahl] + u[:, None] * (b[wahl] - a[wahl]) + v[:, None] * (c[wahl] - a[wahl])
+    return P, n[wahl] / fl[wahl, None]
+
+
+def feinanlegen(netz_pos: np.ndarray, modell_V: np.ndarray, modell_T: np.ndarray, A: np.ndarray, b: np.ndarray,
+                schritte: int = 25, max_weg_mm: float = 40.0) -> dict[str, Any] | None:
+    """Lage des Netzes an der Oberfläche des eingepassten Modells verfeinern (ICP Punkt zu Ebene, nur Drehung um Z
+    und Verschiebung, gestutzt auf die besten 70 % der Paare, Fangradius von 15 auf 4 mm). Start ist die Lage aus den
+    Kamerapaaren. Rückgabe: {"A", "b", "rest_mm" (mittlerer Abstand der genutzten Punkte), "anteil"} oder None, wenn
+    es nicht trägt (zu wenige Paare, Weg zu groß)."""
+    from scipy.spatial import cKDTree
+
+    rng = np.random.default_rng(7)
+    S, N = _flaechenpunkte(np.asarray(modell_V, float), np.asarray(modell_T, np.int64), 40_000, rng)
+    baum = cKDTree(S)
+    P0 = np.asarray(netz_pos, float)
+    if len(P0) > 12_000:
+        P0 = P0[rng.choice(len(P0), 12_000, replace=False)]
+    A, b = np.asarray(A, float).copy(), np.asarray(b, float).copy()
+    b_start = b.copy()
+    rest = None
+    anteil = 0.0
+    for i in range(schritte):
+        fang = 15.0 - (11.0 * i / max(1, schritte - 1))
+        P = P0 @ A.T + b
+        d, idx = baum.query(P, distance_upper_bound=fang)
+        ok = np.isfinite(d)
+        if ok.sum() < 200:
+            return None
+        grenze = np.quantile(d[ok], 0.7)
+        ok &= d <= grenze
+        p, s, n = P[ok], S[idx[ok]], N[idx[ok]]
+        # e = n · (p + dθ k + t − s), k = (−p_y, p_x, 0)
+        k = np.stack([-p[:, 1], p[:, 0], np.zeros(len(p))], 1)
+        J = np.concatenate([(n * k).sum(1, keepdims=True), n], 1)
+        e = (n * (p - s)).sum(1)
+        try:
+            x = np.linalg.solve(J.T @ J + 1e-6 * np.eye(4), -J.T @ e)
+        except np.linalg.LinAlgError:
+            return None
+        c, sn = math.cos(x[0]), math.sin(x[0])
+        Rz = np.array([[c, -sn, 0.0], [sn, c, 0.0], [0.0, 0.0, 1.0]])
+        A = Rz @ A
+        b = Rz @ b + x[1:]
+        rest = float(np.abs(e).mean())
+        anteil = float(ok.mean())
+        if abs(x[0]) < 1e-5 and np.linalg.norm(x[1:]) < 0.01:
+            break
+    if np.linalg.norm(b - b_start) > max_weg_mm:
+        return None
+    return {"A": A, "b": b, "rest_mm": round(rest or 0.0, 2), "anteil": round(anteil, 3)}
+
+
 def bewege_netz(netz: dict[str, np.ndarray], A: np.ndarray, b: np.ndarray) -> dict[str, np.ndarray]:
     return {"positions": netz["positions"] @ A.T + b, "normals": netz["normals"] @ A.T,
             "triangles": netz["triangles"]}

@@ -487,6 +487,8 @@ def vermessen_kevcad(auftrag):
         lo, hi = P.min(0), P.max(0)
         return {"min": [round(float(x), 2) for x in lo], "max": [round(float(x), 2) for x in hi],
                 "groesse": [round(float(x), 2) for x in hi - lo]}
+    # eingepasstes Modell als Netz (für das Anlegen des Referenznetzes im Kernel)
+    np.savez_compressed(ablage / "modell_eingepasst.npz", V=V.astype(np.float32), T=netz.tris.astype(np.int32))
     teile_huelle = {}
     for ti, name in enumerate(netz.teile):
         P = V[netz.punkt_teil == ti]

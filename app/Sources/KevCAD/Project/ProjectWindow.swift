@@ -185,7 +185,7 @@ struct ProjectWindow: View {
                 case .material:
                     MaterialInspektor(model: model, material: material, navigation: navigation, zeigeIm3D: zeigeIm3D)
                 case .modell:
-                    InspectorView(model: model)
+                    InspectorView(model: model, state: state)
                 }
             }
             .modifier(SpaltenBreite())
@@ -204,6 +204,7 @@ struct ProjectWindow: View {
         }
         .modifier(BestandDialoge(model: model))  // Gebaut, Erfassen, Band nach einer Buchung: in allen Bereichen
         .modifier(FreigabeDialogModifier(model: model, state: state))  // Vorschläge freigeben (Feinschliff 2)
+        .modifier(ReferenzDialoge(model: model, state: state))  // Phase 4: Referenz hinzufügen, Vermessen
         .environment(\.materialNavigation, navigation)
     }
 

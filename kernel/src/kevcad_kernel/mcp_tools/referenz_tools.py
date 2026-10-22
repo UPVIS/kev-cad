@@ -15,7 +15,8 @@ from pydantic import Field
 
 from . import format as fmt
 
-REFERENZ_TOOL_NAMES: tuple[str, ...] = ("referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen")
+REFERENZ_TOOL_NAMES: tuple[str, ...] = ("referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen",
+                                        "referenz_fotoansicht")
 
 
 def _mm(v: Any, nd: int = 1) -> str:
@@ -75,9 +76,14 @@ def eintrag_text(r: dict[str, Any]) -> str:
         teile = []
         if r.get("netz"):
             c = r.get("capture") or {}
-            teile.append(f"Netz (Hülle {_groesse(c.get('huelle'))}, Grundkörper {_groesse(c.get('grundkoerper'))}"
-                         + (f", {c.get('ausgerichtet')} von {c.get('bilder')} Bildern" if c.get("bilder") else "")
-                         + ")")
+            angaben = []
+            if c.get("huelle"):
+                angaben.append(f"Hülle mit Anbauten {_groesse(c['huelle'])}")
+            if c.get("grundkoerper"):
+                angaben.append(f"Grundkörper ohne Anbauten {_groesse(c['grundkoerper'])}")
+            if c.get("bilder"):
+                angaben.append(f"{c.get('ausgerichtet')} von {c.get('bilder')} Bildern")
+            teile.append("Netz" + (f" ({', '.join(angaben)})" if angaben else ""))
         if r.get("messung"):
             teile.append(f"vermessen ({fmt.plural(int(r.get('fotos') or 0), 'Foto', 'Fotos')} mit Kamera)")
         kopf += ", ".join(teile) or "fertig"
@@ -88,7 +94,7 @@ def eintrag_text(r: dict[str, Any]) -> str:
 
 def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
     """Registriert die Referenz-Werkzeuge mit dem ``tool``-Dekorator aus ``register_tools``."""
-    from .tools import ADDITIVE, READ_ONLY
+    from .tools import ADDITIVE, READ_ONLY, VIEWER
 
     @tool("referenzen", "Referenzen",
           "References of the open project (photos or phone videos of the real object in <project>/referenzen/): state "
@@ -201,3 +207,31 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         if err:
             return fmt.error_result(f"Vermessen fehlgeschlagen: {err}", res)
         return fmt.result(ergebnis_text(res), res)
+
+    @tool("referenz_fotoansicht", "Fotoansicht",
+          "Show Kevin a reference photo in the app's photo view: the photo seen through its fitted camera behind the "
+          "current model (updates live after every run), with model opacity (deckkraft 0..1) and mode 'ueberlagern' "
+          "(overlay) or 'differenz' (red = only in the photo, blue = only in the model; needs the mask from "
+          "referenz_vermessen). foto: 1-based number or image name; satz 'messung' (fotomess, default) or 'capture' "
+          "(Object Capture frames). Returns the silhouette overlap (IoU). bild_zeigen=true also returns the image to "
+          "you (only when you need to look; Kevin does not want unnecessary screenshots). aus=true closes it.", VIEWER)
+    async def referenz_fotoansicht(
+        name: Annotated[str | None, Field(description="Reference name")] = None,
+        foto: Annotated[int | str | None, Field(description="Photo number (1-based) or name")] = None,
+        modus: Annotated[Literal["ueberlagern", "differenz"] | None, Field(description="Display mode")] = None,
+        deckkraft: Annotated[float | None, Field(ge=0, le=1, description="Model opacity over the photo")] = None,
+        satz: Annotated[Literal["messung", "capture"] | None, Field(description="Photo set")] = None,
+        aus: Annotated[bool, Field(description="Close the photo view")] = False,
+        bild_zeigen: Annotated[bool, Field(description="Also return the image to you")] = False,
+    ) -> CallToolResult:
+        res = await t.work("zeigt die Fotoansicht" if not aus else "schließt die Fotoansicht", svc.referenz_fotoansicht,
+                           name, foto, satz, modus, deckkraft, aus, bild_zeigen)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Fotoansicht nicht möglich: {err}", res)
+        png = res.get("png") or b""
+        text = str(res.get("message") or "")
+        if res.get("bild_fehler"):
+            text += f"\nKein Bild: {res['bild_fehler']}"
+        data = {k: v for k, v in res.items() if k != "png"}
+        return fmt.result(text, data, extra=[fmt.image_block(png)] if png else None)

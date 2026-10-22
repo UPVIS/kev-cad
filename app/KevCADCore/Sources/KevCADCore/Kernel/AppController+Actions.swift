@@ -426,6 +426,7 @@ extension AppController {
 
         default:
             if let r = performCameraCommand(v) { return r }
+            if let r = performReferenzCommand(v) { return r }  // Phase 4: Fotoansicht
             return (false, "Unbekannter Befehl \(v.cmd)")
         }
     }
@@ -448,6 +449,7 @@ extension AppController {
             return
         }
         if answerCameraScreenshot(s) { return }  // Phase 5: Bild durch eine Kamera
+        if answerFotoScreenshot(s) { return }  // Phase 4: Bild der Fotoansicht
         // Kommt die Anfrage direkt nach view/focus, läuft die Kamerafahrt noch: erst deren Ende abwarten (höchstens
         // 1,5 s, falls das Fenster gerade nicht zeichnet und die Fahrt deshalb nicht weiterläuft).
         if s.source != "offscreen" {

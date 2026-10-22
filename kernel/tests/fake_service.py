@@ -710,7 +710,9 @@ class FakeService:
         liste = [dict(r) for r in beispiele["ref_list"]["referenzen"]]
         erg = {k: v for k, v in beispiele["ref_result"].items() if k not in ("type", "seq")}
         liste[0].update(zustand="fertig", laeuft=None, fortschritt=None, text=None, netz=True,
-                        messung_ergebnis=erg)
+                        messung_ergebnis=erg, lage={"drehung_z": 180.0, "rest_mm": 6.3, "paare": 8},
+                        capture={"huelle": {"laenge": 180, "breite": 117.3, "hoehe": 48.4},
+                                 "grundkoerper": {"laenge": 174, "breite": 102.1}, "bilder": 60, "ausgerichtet": 42})
         if name:
             liste = [r for r in liste if r["name"] == name]
         return {"ok": True, "projekt": self.project["path"], "referenzen": liste,
@@ -740,6 +742,15 @@ class FakeService:
         erg = {k: v for k, v in dict((n, h) for n, h, _ in referenz_beispiele())["ref_result"].items()
                if k not in ("type", "seq")}
         return {"ok": True, **erg, "kontrollbilder": ["/tmp/r/messung/kontrolle/a.jpg"]}
+
+    def referenz_fotoansicht(self, name: str | None = None, foto: Any = None, satz: str | None = None,
+                             modus: str | None = None, deckkraft: float | None = None, aus: bool = False,
+                             bild: bool = False, breite: int = 1280) -> dict[str, Any]:
+        self._record("referenz_fotoansicht", name, foto, satz, modus, deckkraft, aus, bild)
+        out = {"ok": True, "message": "Fotoansicht IMG_5186: Foto 1 von 8, Überdeckung 93,5 %"}
+        if bild:
+            out.update(png=PNG, width=4, height=3, ueberdeckung=0.935)
+        return out
 
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:

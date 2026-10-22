@@ -379,6 +379,13 @@ class KernelService(Protocol):
         "sigma", "start", "aenderung"}], "bekannt", "huelle", "grundkoerper", "teile", "empfehlungen", "bilder",
         "verworfen", "ueberdeckung", "kontrollbilder", "zeiten", "dauer_s", "lage_netz"}"""
 
+    def referenz_fotoansicht(self, name: str | None = None, foto: int | str | None = None, satz: str | None = None,
+                             modus: str | None = None, deckkraft: float | None = None, aus: bool = False,
+                             bild: bool = False, breite: int = 1280) -> dict[str, Any]:
+        """Fotoansicht in der App: Foto (1-basiert oder Name) durch die eingepasste Kamera hinter dem Modell, ``modus``
+        "ueberlagern" | "differenz", ``deckkraft`` des Modells; ``aus`` schließt sie. Mit ``bild`` das Bild dazu.
+        {"ok", "message", "png"?, "width"?, "height"?, "ueberdeckung"?, "foto"?}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 

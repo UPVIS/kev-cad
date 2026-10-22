@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import threading
@@ -70,7 +71,9 @@ class ReferenzRuntimeMixin:
             ms = ablage.ordner(proj.path, n) / ablage.MESSUNG / "messung.json"
             if ms.is_file():
                 try:
-                    e["messung_ergebnis"] = vermessen.ergebnis_aus(json.loads(ms.read_text("utf-8")), n)
+                    e["messung_ergebnis"] = vermessen.ergebnis_aus(
+                        json.loads(ms.read_text("utf-8")), n, {"bekannt": (meta.get("messung") or {}).get("bekannt")
+                                                                or {}}, ordner=ms.parent)
                 except (OSError, ValueError, KeyError) as exc:
                     e["messung_fehler"] = str(exc)
             e["capture_einstellung"] = meta.get("capture")
@@ -94,6 +97,10 @@ class ReferenzRuntimeMixin:
             return {"ok": False, "error": f"{video.name} ist kein Video (erlaubt: {', '.join(ablage.VIDEO_ENDUNGEN)})."}
         if einstellung not in capture.EINSTELLUNGEN:
             return {"ok": False, "error": f"einstellung {einstellung!r} unbekannt (schnell oder genau)"}
+        try:
+            ablage.lesbar(video)
+        except ReferenzFehler as exc:
+            return {"ok": False, "error": str(exc)}
         n = self._ref_name_fuer(proj.path, name or video.stem, video)
         schluessel = (str(proj.path), n)
         with self._ref_lock:
@@ -121,7 +128,7 @@ class ReferenzRuntimeMixin:
             vermessen.warte_auf_speicher(lambda a, t: self._ref_fortschritt(schluessel, 0.0, t), 0.0)
             self._ref_fortschritt(schluessel, 0.0, "Bilder auswählen")
             erg: dict[str, Any] = {}
-            for versuch in (1, 2):
+            for versuch in range(1, capture.VERSUCHE + 1):
 
                 def melde(z: dict[str, Any]) -> None:
                     if "fertig" not in z:
@@ -135,22 +142,22 @@ class ReferenzRuntimeMixin:
                     erg = {"ok": False, "fehler": f"kevcad-capture startet nicht: {exc}"}
                     break
                 cl.fertig.wait()
-                erg = dict(cl.ergebnis)
-                anteil = capture.objekt_anteil(erg.get("bericht"))
-                if not erg.get("ok") or cl.abgebrochen or anteil is None or anteil >= capture.MIN_OBJEKT_ANTEIL:
+                erg = dict(cl.ergebnis, versuche=versuch)
+                hinweis = capture.zweifel(erg.get("bericht"))
+                if not erg.get("ok") or cl.abgebrochen or hinweis is None:
                     break
-                # Object Capture ist nicht deterministisch: manchmal bleibt vom Gegenstand nur ein Splitter übrig
-                # (Scarlett, 22.10.2026: 5 % statt 48 % der Dreiecke). Einmal neu rechnen, sonst warnen.
-                hinweis = (f"Object Capture hat den Gegenstand kaum freigestellt ({anteil * 100:.0f} % der Dreiecke)")
-                if versuch == 1:
+                # Object Capture ist nicht deterministisch (Scarlett, 22.10.2026: von vier gleichen Läufen zwei
+                # brauchbar, einmal blieben 5 % der Dreiecke, einmal 31 von 60 Bildern und eine falsche Auflage)
+                if versuch < capture.VERSUCHE:
                     self._log(f"[referenz] {n}: {hinweis}, rechnet noch einmal")
                     with self._ref_lock:
                         lauf["fortschritt"] = 0.0
-                    self._ref_fortschritt(schluessel, 0.0, hinweis + ", rechnet noch einmal")
+                    self._ref_fortschritt(schluessel, 0.0, f"{hinweis}, rechnet noch einmal ({versuch + 1}. Versuch)")
                     shutil.rmtree(aus, ignore_errors=True)
                 else:
-                    erg.setdefault("warnungen", []).append(hinweis + " (auch im zweiten Versuch): Video mit ruhigerem "
-                                                                     "Hintergrund oder --von/--bis versuchen")
+                    erg.setdefault("warnungen", []).append(
+                        f"{hinweis} (auch im {versuch}. Versuch): Netz prüfen; Video mit ruhigerem Hintergrund oder "
+                        "--von/--bis versuchen")
             self._ref_capture_fertig(proj.path, n, erg)
 
         threading.Thread(target=los, name=f"kevcad-capture-{n}", daemon=True).start()
@@ -174,6 +181,11 @@ class ReferenzRuntimeMixin:
         keine = [p.name for p in dateien if not ablage.ist_foto(p)]
         if keine:
             return {"ok": False, "error": f"Keine Fotos: {', '.join(keine)}"}
+        try:
+            for p in dateien:
+                ablage.lesbar(p)
+        except ReferenzFehler as exc:
+            return {"ok": False, "error": str(exc)}
         n = ablage.freier_name(proj.path, name or (dateien[0].parent.name if len(dateien) > 1 else dateien[0].stem))
         ziel = ablage.ordner(proj.path, n) / ablage.FOTOS
         ziel.mkdir(parents=True, exist_ok=True)
@@ -225,6 +237,42 @@ class ReferenzRuntimeMixin:
             return {"ok": False, "referenz": n, "error": f"Vermessen fehlgeschlagen: {type(exc).__name__}: {exc}"}
         finally:
             self._ref_lauf_beenden(schluessel, lauf)
+
+    def referenz_fotoansicht(self, name: str | None = None, foto: int | str | None = None, satz: str | None = None,
+                             modus: str | None = None, deckkraft: float | None = None, aus: bool = False,
+                             bild: bool = False, breite: int = 1280) -> dict[str, Any]:
+        """Fotoansicht in der App öffnen (VIEW_CMD referenz_foto) und auf Wunsch ihr Bild holen (SCREENSHOT_REQ mit
+        source "referenz_foto"). {"ok", "message", "png"?, "width"?, "height"?, "ueberdeckung"?}"""
+        if not self._link.connected:
+            return {"ok": False, "error": "App nicht verbunden"}
+        args: dict[str, Any] = {"aus": bool(aus)}
+        if name:
+            args["name"] = name
+        if isinstance(foto, int) and not isinstance(foto, bool):
+            args["index"] = max(0, int(foto) - 1)  # 1-basiert wie in der App
+        elif foto:
+            args["foto"] = str(foto)
+        if satz:
+            args["satz"] = satz
+        if modus:
+            args["modus"] = modus
+        if deckkraft is not None:
+            args["deckkraft"] = float(deckkraft)
+        res = self.view_command("referenz_foto", args, timeout_s=60)
+        if not res.get("ok"):
+            return res
+        out: dict[str, Any] = {"ok": True, "message": res.get("message")}
+        if bild and not aus:
+            reply, payload, error = self._request({"type": "SCREENSHOT_REQ", "width": int(breite), "height": 0,
+                                                   "source": "referenz_foto", "view": None, "hide_overlays": True},
+                                                  60)
+            if error or not reply.get("ok", False):
+                out["bild_fehler"] = error or reply.get("message")
+            else:
+                cam = reply.get("camera") or {}
+                out.update(png=payload, width=reply.get("width"), height=reply.get("height"),
+                           ueberdeckung=cam.get("ueberdeckung"), foto=cam.get("foto"))
+        return out
 
     # =================================================================================================================
     # Vermessen
@@ -291,7 +339,7 @@ class ReferenzRuntimeMixin:
                                                  if b.get("zeit") is not None], startkameras=start)
                 datei = vermessen.fotomess_lauf(auftrag2, mess, melde)
                 messung = json.loads(datei.read_text("utf-8"))
-        ergebnis = vermessen.ergebnis_aus(messung, n, var)
+        ergebnis = vermessen.ergebnis_aus(messung, n, var, ordner=mess)
         if zweiter:
             ergebnis["empfehlungen"].append({"art": "zweiter_durchgang", "text": (
                 f"In {len(zweiter)} Bild(ern) ({', '.join(f'{z:.1f} s' for z in zweiter)}) lag das Modell zuerst "
@@ -299,20 +347,17 @@ class ReferenzRuntimeMixin:
                 "Lage")})
         if messung.get("startkameras"):
             ergebnis["startkameras"] = messung["startkameras"]
-        if posen:
-            probe = dict(ablage.lese_meta(proj.path, n) or meta)
-            self._ref_lage_neu(proj.path, n, probe, messung)
-            ungeprueft = (probe.get("lage") or {}).get("ohne_paar") or []
-            if ungeprueft:
-                ergebnis["empfehlungen"].append({"art": "lage_ungeprueft", "text": (
-                    f"Lage in {len(ungeprueft)} Bild(ern) nicht gegen Object Capture prüfbar ("
-                    f"{', '.join(f'{z:.1f} s' for z in ungeprueft)}, dort fehlen dessen Kameras): Kontrollbild "
-                    "ansehen, ob vorn und hinten stimmen")})
         meta = ablage.lese_meta(proj.path, n) or meta
         meta["messung"] = {"stand": messung.get("stand"), "frei": var.get("frei"), "bekannt": var.get("bekannt"),
                            "bilder": ergebnis.get("bilder"), "dauer_s": round(time.perf_counter() - t0, 1),
                            "quelle": q}
         self._ref_lage_neu(proj.path, n, meta, messung)
+        ungeprueft = (meta.get("lage") or {}).get("ohne_paar") or []
+        if posen and ungeprueft:
+            ergebnis["empfehlungen"].append({"art": "lage_ungeprueft", "text": (
+                f"Lage in {len(ungeprueft)} Bild(ern) nicht gegen Object Capture prüfbar ("
+                f"{', '.join(f'{z:.1f} s' for z in ungeprueft)}, dort fehlen dessen Kameras): Kontrollbild "
+                "ansehen, ob vorn und hinten stimmen")})
         ablage.schreibe_meta(proj.path, n, meta)
         self._ref_fehler.pop(schluessel, None)
         if self._project is not None and self._project.path == proj.path:
@@ -334,6 +379,7 @@ class ReferenzRuntimeMixin:
             if not p.is_file():
                 raise ReferenzFehler(f"{str(p)!r} gibt es nicht.")
             if ablage.ist_video(p):
+                ablage.lesbar(p)
                 n = self._ref_name_fuer(projekt, p.stem, p)
                 meta = ablage.lese_meta(projekt, n)
                 if meta is None:
@@ -348,6 +394,8 @@ class ReferenzRuntimeMixin:
             raise ReferenzFehler(f"referenz.json von {n} ist nicht lesbar.")
         if meta.get("art") == "video" and not Path(str(meta.get("quelle"))).is_file():
             raise ReferenzFehler(f"Das Video der Referenz {n} ist nicht erreichbar: {meta.get('quelle')}")
+        if meta.get("art") == "video":
+            ablage.lesbar(meta["quelle"])
         return n, meta
 
     def _ref_name_fuer(self, projekt: Path, wunsch: str, video: Path) -> str:
@@ -373,7 +421,8 @@ class ReferenzRuntimeMixin:
                        bilder=rek.get("images"), ausgerichtet=rek.get("posed"),
                        huelle=b.get("huellmass_mm"), grundkoerper=b.get("grundkoerper_mm"),
                        oberkante=b.get("oberkante_mm"), massstab_bekannt=b.get("massstab_bekannt"),
-                       pruefmasse=b.get("pruefmasse"), warnungen=erg.get("warnungen") or [])
+                       pruefmasse=b.get("pruefmasse"), warnungen=erg.get("warnungen") or [],
+                       versuche=erg.get("versuche") or 1)
             self._ref_fehler.pop(schluessel, None)
         else:
             cap.update(zustand="fehler", fehler=erg.get("fehler"), dauer_s=erg.get("dauer_s"))
@@ -429,6 +478,24 @@ class ReferenzRuntimeMixin:
             meta["lage_verworfen"] = {k: v for k, v in lage.items() if k not in ("A", "b")}
             return
         meta.pop("lage_verworfen", None)
+        # Feinanlegen an der Oberfläche des eingepassten Modells (fotomess schreibt es mit)
+        modell = ablage.ordner(projekt, n) / ablage.MESSUNG / "modell_eingepasst.npz"
+        if modell.is_file():
+            try:
+                with np.load(modell) as m:
+                    fein = netz.feinanlegen(n_obj["positions"], m["V"], m["T"], lage["A"], lage["b"])
+            except (OSError, ValueError, KeyError) as exc:
+                self._log(f"[referenz] Feinanlegen {n}: {exc!r}")
+                fein = None
+            if fein is not None:
+                A, b = fein["A"], fein["b"]
+                M = np.eye(4)
+                M[:3, :3] = A
+                M[:3, 3] = b
+                lage.update(A=A, b=b, matrix=[float(x) for x in M.T.reshape(-1)],
+                            drehung_z=round(math.degrees(math.atan2(A[1, 0], A[0, 0])), 2),
+                            verschiebung=[round(float(x), 2) for x in b],
+                            fein={"rest_mm": fein["rest_mm"], "anteil": fein["anteil"]})
         meta["lage"] = {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in lage.items()}
 
     # =================================================================================================================
@@ -579,7 +646,7 @@ class ReferenzRuntimeMixin:
         send(vermessen.sauber({"type": "REF_PHOTOS", "referenz": n, "satz": "messung",
                                "fotos": vermessen.fotos_aus_messung(messung, mess)}))
         bekannt = ((ablage.lese_meta(projekt, n) or {}).get("messung") or {}).get("bekannt") or {}
-        send({"type": "REF_RESULT", **vermessen.ergebnis_aus(messung, n, {"bekannt": bekannt})})
+        send({"type": "REF_RESULT", **vermessen.ergebnis_aus(messung, n, {"bekannt": bekannt}, ordner=mess)})
 
     def _ref_alles(self, conn: Any = None) -> None:
         proj = self._project
@@ -733,13 +800,16 @@ def bekannte_masse_ok(bekannt: Any) -> dict[str, float]:
 def _lage_kurz(lage: dict[str, Any] | None) -> dict[str, Any] | None:
     if not lage:
         return None
-    return {k: lage.get(k) for k in ("drehung_z", "verschiebung", "massstab", "rest_mm", "paare") if k in lage}
+    return {k: lage.get(k) for k in ("drehung_z", "verschiebung", "massstab", "rest_mm", "paare", "fein")
+            if k in lage}
 
 
 def _lage_text(lage: dict[str, Any] | None) -> str | None:
     if not lage:
         return None
     v = lage.get("verschiebung") or [0, 0, 0]
+    fein = lage.get("fein") or {}
     return (f"Netz an das Modell angelegt: {lage.get('drehung_z')}° um Z, verschoben um "
-            f"({v[0]:.0f}; {v[1]:.0f}; {v[2]:.0f}) mm, Kameras {lage.get('rest_mm')} mm auseinander "
-            f"({lage.get('paare')} Paare, Maßstab Kamerawege {lage.get('massstab')})")
+            f"({v[0]:.0f}; {v[1]:.0f}; {v[2]:.0f}) mm (Kameras {lage.get('rest_mm')} mm auseinander, "
+            f"{lage.get('paare')} Paare" + (f"; an der Oberfläche nachgeführt, mittlerer Abstand {fein.get('rest_mm')} mm"
+                                             if fein else "") + ")")

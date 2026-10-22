@@ -33,6 +33,25 @@ MASZ_NAMEN = ("laenge", "breite", "hoehe", "grund_laenge", "grund_breite")
 MIN_OBJEKT_ANTEIL = 0.15
 
 
+VERSUCHE = 3
+MIN_AUSGERICHTET = 0.6  # Anteil der Bilder, die Object Capture ausrichtet (gute Läufe: 70 bis 100 %)
+
+
+def zweifel(bericht: dict[str, Any] | None) -> str | None:
+    """Grund, das Netz nicht zu trauen (dann rechnet der Kernel noch einmal), oder None."""
+    anteil = objekt_anteil(bericht)
+    if anteil is not None and anteil < MIN_OBJEKT_ANTEIL:
+        return f"Object Capture hat den Gegenstand kaum freigestellt ({anteil * 100:.0f} % der Dreiecke)"
+    rek = (bericht or {}).get("rekonstruktion") or {}
+    try:
+        bilder, posen = int(rek.get("images") or 0), int(rek.get("posed") or 0)
+    except (TypeError, ValueError):
+        return None
+    if bilder and posen / bilder < MIN_AUSGERICHTET:
+        return f"Object Capture hat nur {posen} von {bilder} Bildern ausgerichtet"
+    return None
+
+
 def objekt_anteil(bericht: dict[str, Any] | None) -> float | None:
     o = (bericht or {}).get("objekt") or {}
     try:

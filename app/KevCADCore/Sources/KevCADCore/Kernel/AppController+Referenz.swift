@@ -291,6 +291,7 @@ extension AppController: ReferenzActions {
     /// Foto laden, Modell durch die Kamera rendern (auf Weiß und auf Schwarz), dann verrechnen.
     func fotoRendern() {
         guard let a = referenzen.fotoansicht, let foto = referenzen.aktuellesFoto else { return }
+        let t0 = CACurrentMediaTime()
         let k = foto.kamera
         let schluessel = "\(a.referenz)/\(a.satz)/\(foto.name)/\(fotoSpeicher.stand)"
         let w = k.breite, h = k.hoehe
@@ -320,6 +321,7 @@ extension AppController: ReferenzActions {
                 referenzen.fotoMeldung = "Modell ließ sich nicht rendern"
                 return
             }
+            let t1 = CACurrentMediaTime()
             fotoSpeicher.foto = FotoAbgleich.pixel(bild, breite: w, hoehe: h)
             fotoSpeicher.maske = foto.maske.flatMap(FotoAbgleich.laden).map { FotoAbgleich.grau($0, breite: w, hoehe: h) }
             fotoSpeicher.deckung = FotoAbgleich.deckung(weiss: weiss, schwarz: schwarz)
@@ -327,6 +329,11 @@ extension AppController: ReferenzActions {
             fotoSpeicher.breite = w
             fotoSpeicher.hoehe = h
             fotoSpeicher.schluessel = schluessel
+            let t2 = CACurrentMediaTime()
+            fotoVerrechnen()
+            log(.info, "Fotoansicht \(foto.name): Modell gerendert in \(Int((t1 - t0) * 1000)) ms, Foto und Maske "
+                + "\(Int((t2 - t1) * 1000)) ms, verrechnet \(Int((CACurrentMediaTime() - t2) * 1000)) ms")
+            return
         }
         fotoVerrechnen()
     }
@@ -341,5 +348,77 @@ extension AppController: ReferenzActions {
         referenzen.fotoUeberdeckung = e.ueberdeckung
         referenzen.fotoMeldung = a.modus == .differenz && fotoSpeicher.maske == nil
             ? "Für dieses Foto gibt es keine Maske (Object Capture): nur Überlagern" : nil
+    }
+}
+
+
+// MARK: - Fotoansicht für den Agenten (VIEW_CMD referenz_foto, SCREENSHOT_REQ source "referenz_foto")
+
+extension AppController {
+    /// VIEW_CMD `referenz_foto`: Fotoansicht öffnen (name, satz, index oder foto, modus, deckkraft) oder schließen (aus).
+    func performReferenzCommand(_ v: ViewCommandMessage) -> (Bool, String?)? {
+        guard v.cmd == "referenz_foto" else { return nil }
+        let a = v.args
+        if a["aus"]?.boolValue == true {
+            fotoansichtSchliessen()
+            return (true, "Fotoansicht geschlossen")
+        }
+        let erste = referenzen.referenzen.first(where: { !referenzen.fotos($0.name).isEmpty })?.name
+        guard let name = a["name"]?.stringValue ?? erste else { return (false, "Keine Referenz mit Fotos") }
+        let satz = a["satz"]?.stringValue ?? (referenzen.fotoSatz(name, "messung").isEmpty ? "capture" : "messung")
+        let liste = referenzen.fotoSatz(name, satz)
+        guard !liste.isEmpty else { return (false, "Referenz \(name) hat keine Fotos im Satz \(satz)") }
+        var index = a["index"]?.intValue ?? 0
+        if let f = a["foto"]?.stringValue, let i = liste.firstIndex(where: { $0.name == f }) { index = i }
+        fotoansichtOeffnen(name, satz: satz, index: index)
+        if let m = a["modus"]?.stringValue, let modus = FotoAnsicht.Modus(rawValue: m) { fotoModus(modus) }
+        if let d = a["deckkraft"]?.doubleValue { fotoDeckkraft(d) }
+        fotoSpeicher.geplant?.cancel()
+        fotoRendern()
+        guard let ansicht = referenzen.fotoansicht, let foto = referenzen.aktuellesFoto else {
+            return (false, "Fotoansicht nicht geöffnet")
+        }
+        var text = "Fotoansicht \(name): Foto \(ansicht.index + 1) von \(liste.count) (\(foto.name)), "
+            + (ansicht.modus == .differenz ? "Differenz" : "Überlagern")
+        if let iou = referenzen.fotoUeberdeckung {
+            text += ", Überdeckung Modell und Maske \(KevFormat.number(iou * 100, digits: 1)) %"
+        }
+        if let m = referenzen.fotoMeldung { text += " (\(m))" }
+        return (true, text)
+    }
+
+    /// SCREENSHOT_REQ mit `source: "referenz_foto"`: das Bild der offenen Fotoansicht (Foto mit Modell bzw. Differenz).
+    func answerFotoScreenshot(_ s: ScreenshotRequestMessage) -> Bool {
+        guard s.source == "referenz_foto" else { return false }
+        if referenzen.fotoansicht != nil, fotoSpeicher.foto.isEmpty { fotoRendern() }
+        guard referenzen.fotoansicht != nil, let bild = referenzen.fotoBild else {
+            send(ScreenshotResponseMessage(
+                replyTo: s.id, ok: false, width: 0, height: 0, camera: .null, mmPerPx: nil,
+                message: "Keine Fotoansicht offen (erst referenz_fotoansicht)"))
+            return true
+        }
+        var out = bild
+        let w = max(16, min(s.width, bild.width))
+        if w < bild.width {
+            let h = max(16, Int((Double(bild.height) * Double(w) / Double(bild.width)).rounded()))
+            if let space = CGColorSpace(name: CGColorSpace.sRGB),
+               let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                ctx.interpolationQuality = .high
+                ctx.draw(bild, in: CGRect(x: 0, y: 0, width: w, height: h))
+                out = ctx.makeImage() ?? bild
+            }
+        }
+        guard let png = ScreenshotRenderer.pngData(out) else {
+            send(ScreenshotResponseMessage(
+                replyTo: s.id, ok: false, width: 0, height: 0, camera: .null, mmPerPx: nil, message: "PNG fehlgeschlagen"))
+            return true
+        }
+        var info: [String: JSONValue] = ["foto": .string(referenzen.aktuellesFoto?.name ?? "")]
+        if let iou = referenzen.fotoUeberdeckung { info["ueberdeckung"] = .number(iou) }
+        send(ScreenshotResponseMessage(
+            replyTo: s.id, ok: true, width: out.width, height: out.height, camera: .object(info), mmPerPx: nil),
+             payload: png)
+        return true
     }
 }
