@@ -124,6 +124,32 @@ So schreibt Kev Scan 1.0 die Dateien; alles hier ist Präzisierung oder Zusatz, 
 - Rückfall ohne WLAN: Die App teilt das ZIP über das Teilen-Menü (AirDrop); `scan_importieren(pfad)` nimmt dann den
   Pfad (etwa im Ordner Downloads).
 
+### Ergänzungen der Mac-Seite (22.10.2026, additiv)
+
+So setzt Kev CAD den Empfang um (`kernel/src/kevcad_kernel/scan/`); nichts davon verlangt etwas Neues von der App.
+
+- **TXT:** zusätzlich `variante=kevcad`. **Testvarianten** von Kev CAD („Kev CAD Test …“) melden sich als
+  `_kevscan-test._tcp` an, Name `<Rechnername> (Kev CAD Test …)`, TXT `variante=test`; das iPhone sucht nur
+  `_kevscan._tcp` und sieht sie nicht. Ihre Scans landen im Datenordner der Testvariante (`…/de.upvis.kevcad.test…/Scans`).
+- **Bonjour** über `dns-sd -R` als Unterprozess; ein Wächter beendet die Anmeldung, sobald der Kernel endet.
+- **Antworten auf `POST /scan`:** 200 mit `{"ok": true, "id", "ordner"}`; 400 (kein gültiges ZIP, unzulässiger Pfad
+  oder Verknüpfung im ZIP, kein `meta.json`, entpackt über 4 GB, Übertragung abgebrochen), 411 (`Content-Length` fehlt
+  oder `chunked`), 413 (`Content-Length` über 4 GB), 507 (zu wenig Platz auf dem Mac, gebraucht etwa das Doppelte), 500 sonst;
+  jeweils `{"ok": false, "fehler": "…"}` auf Deutsch. Unbekannte Pfade 404.
+- **Ordnername:** `<JJJJ-MM-TT_hhmmss>_<Name>` (Name aus `X-KevScan-Name`, sonst `meta.name`, Sonderzeichen zu `-`),
+  bei Gleichstand mit Zusatz „ 2“. Der Inhalt liegt direkt darin (der Ordner `<name>.kevscan/` aus dem ZIP wird
+  aufgelöst; ZIPs mit und ohne ihn gehen). Daneben `.kevcad-scan.json` mit Empfangszeit, Quelle (`wlan` | `datei`) und
+  den Referenzen, in die der Scan übernommen wurde.
+- **Mitteilung** „Scan empfangen“ als Mitteilung von macOS (nur Kevins App) und Zeile im Protokoll des Kernels.
+- **Auswertung** (`scan/`, `kevscan auswerten`): Ausgabe in `<projekt>/referenzen/<name>/capture/` mit `netz_mm.obj`
+  und `.ply` (mm, Z oben, Boden z = 0, Mitte des Grundrisses x = y = 0, lange Seite = X, wie Object Capture),
+  `punkte_mm.ply`, `poses.json` (Form von kevcad-capture, nur `aligned`), `kameras.json` (für fotomess), `bilder/`
+  (lange Kante 1920 px), `masken/` (Umriss des Netzes je Bild), `tiefe/` (PromptDA in mm, 16 bit, dazu Konfidenz
+  0…255), `bericht.json` (Laufzeiten, Bildzahl, Abdeckung, Streuung der Tiefe gegen das Netz, Transformation
+  ARKit → Kev CAD). Referenz mit `art: "scan"` (REF_LIST), Netz als REF_UPSERT mit `quelle: "kevscan"`.
+- **Fotos** mit `tiefe_quelle: "videobild"` zählen in TSDF und fotomess mit halbem Gewicht; Fotos mit `tracking`
+  ungleich `normal` werden nicht genutzt.
+
 ## Auswertung auf dem Mac (Überblick)
 
 1. Bilder auswählen: alle Fotos, dazu Videobilder nach Abstand und Blickwinkel (Schärfe als Filter).

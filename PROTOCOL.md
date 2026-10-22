@@ -738,6 +738,10 @@ nicht zur Stückliste (R4). Umsetzung: `kernel/src/kevcad_kernel/referenz/`, Pac
  "lage": {"drehung_z": 180.0, "verschiebung": [0, -1.2, 0], "massstab": 1.012, "rest_mm": 6.3, "paare": 8}}
 ```
 
+- `art` (additiv, 22.10.2026): `video`, `fotos` oder `scan` (Kev Scan vom iPhone, SCAN.md). Bei `scan` ist `quelle` der
+  Scan-Ordner, die Auswertung läuft als `laeuft: "capture"` (Text „Scan: …“), das Netz kommt als `REF_UPSERT` mit
+  `quelle: "kevscan"` im System des Scans (Boden z = 0, Mitte x = y = 0), bis `referenz_vermessen` es über `lage` an
+  das Modell legt; Satz `capture` in `REF_PHOTOS` sind die Bilder mit den Kameras aus ARKit.
 - `zustand`: `leer` (nichts gerechnet), `rechnet` (`laeuft`: `capture` oder `messung`, `fortschritt` 0…1, `text`),
   `fertig`, `fehler` (`meldung`). `fotos`: Zahl der Fotos mit eingepasster Kamera (sonst der abgelegten Fotos).
 - `capture.huelle` ist das Hüllmaß mit allen Anbauten, `capture.grundkoerper` die dichteste waagrechte Schicht ohne
