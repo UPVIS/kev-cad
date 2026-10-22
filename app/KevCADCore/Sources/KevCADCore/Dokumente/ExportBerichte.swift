@@ -35,12 +35,15 @@ public struct ExportQuellen {
     public var zeichnungen: [ExportZeichnungsblatt]
     /// Offene Befunde der Prüfung (für das Deckblatt).
     public var pruefFehler: Int?
+    /// Druckvorschau (additiv, Baustein `druck`, DRUCKVORSCHAU.md).
+    public var druck: Druckvorschau?
 
     public init(kopf: ExportKopf, bom: BillOfMaterials? = nil, bestand: BOMBestand? = nil, teile: [PartNode] = [],
                 bauplan: Bauplan? = nil, strichbilder: [String: BauplanStrichbild] = [:],
                 teilBilder: [String: CGImage] = [:], gesamtBild: CGImage? = nil,
-                zeichnungen: [ExportZeichnungsblatt] = [], pruefFehler: Int? = nil)
+                zeichnungen: [ExportZeichnungsblatt] = [], pruefFehler: Int? = nil, druck: Druckvorschau? = nil)
     {
+        self.druck = druck
         self.kopf = kopf
         self.bom = bom
         self.bestand = bestand
@@ -74,6 +77,7 @@ public enum ExportBauer {
             case .teileliste: neu = teileliste(q, wahl, format, &hinweise)
             case .einkaufsliste: neu = einkaufsliste(q, wahl, format, &hinweise)
             case .zuschnitt: neu = zuschnitt(q, wahl, format, &hinweise)
+            case .druck: neu = ExportDruckSeiten.seiten(q, wahl, format, &hinweise)
             case .zeichnungen: neu = zeichnungen(q, wahl, &hinweise)
             case .bauplan: neu = ExportBauplanSeiten.seiten(q, format, &hinweise)
             }
@@ -218,6 +222,10 @@ public enum ExportBauer {
         }
         if let plan = q.bauplan, inhaltArten.contains(.bauplan) {
             zahlen.append((KevFormat.integer(plan.alleSchritte.count), "Bauschritte"))
+        }
+        if inhaltArten.contains(.druck), let d = q.druck, !d.platten.isEmpty {
+            zahlen.append((DruckFormat.zeit(d.summe.zeitMitWechselS), "Druckzeit"))
+            zahlen.append((KevFormat.integer(d.summe.platten), d.summe.platten == 1 ? "Druckplatte" : "Druckplatten"))
         }
         if inhaltArten.contains(.zeichnungen), !q.zeichnungen.isEmpty {
             zahlen.append((KevFormat.integer(q.zeichnungen.count), "Zeichnungen"))

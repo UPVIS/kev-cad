@@ -371,6 +371,7 @@ public final class AppController: AppActions {
             case .bom(let b): applyBOM(b)
             case .catalog(let c): applyCatalog(c)
             case .bestand(let b): applyBestand(b)
+            case .druck(let d): handleDruck(d)  // Druckvorschau: PRINT_PREVIEW auf PRINT_PREVIEW_REQ
             default: break
             }
             return
@@ -406,6 +407,7 @@ public final class AppController: AppActions {
                 reopenProjectIfKernelForgotIt(open)
             }
             requestBOMAfterConnect()
+            druckNachVerbinden()  // Druckvorschau des offenen Projekts (AppController+Druck.swift)
             quietCatalogOff = false
         case .status(let s):
             switch s.state {
@@ -508,6 +510,8 @@ public final class AppController: AppActions {
             handleBauplan(b)
         case .dokumentExport(let a):  // Phase 6, P6-A2: PDF für den Kernel (ExportSteuerung.swift)
             handleDokumentExport(a)
+        case .druck(let d):  // Druckvorschau (AppController+Druck.swift)
+            handleDruck(d)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -562,12 +566,14 @@ public final class AppController: AppActions {
             resetDokumente()  // Phase 6: Blätter des alten Projekts verwerfen
             resetBauplan()  // Phase 6, P6-A2: Bauplan und Durchspielen des alten Projekts verwerfen
             resetExport()
+            resetDruck()  // Druckvorschau des alten Projekts verwerfen
             bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info
             adoptInventarRegel(p, project: url)
             // Der Katalog hat eine Projekt-Ebene: war er schon geladen, für das neue Projekt neu holen
             if catalogWanted { reloadCatalog() }
+            druckNachVerbinden()
             return
         }
         model.project = info

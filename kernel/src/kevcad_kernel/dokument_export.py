@@ -19,7 +19,7 @@ from kevcad_kernel.protocol import DOC_EXPORT_BAUSTEINE, doc_export_req
 # Reihenfolge = Standardreihenfolge im Export-Dialog der App
 BAUSTEINE: tuple[str, ...] = DOC_EXPORT_BAUSTEINE
 BAUSTEIN_TITEL: dict[str, str] = {"deckblatt": "Deckblatt", "stueckliste": "Stückliste", "teileliste": "Teileliste",
-                                  "einkaufsliste": "Einkaufsliste", "zuschnitt": "Zuschnitt",
+                                  "einkaufsliste": "Einkaufsliste", "zuschnitt": "Zuschnitt", "druck": "3D-Druck",
                                   "zeichnungen": "Zeichnungen", "bauplan": "Bauplan"}
 # Andere Schreibweisen, die der Agent oder Kevin benutzen könnten
 _ALIAS: dict[str, str] = {"titel": "deckblatt", "titelblatt": "deckblatt", "deckseite": "deckblatt",
@@ -27,7 +27,8 @@ _ALIAS: dict[str, str] = {"titel": "deckblatt", "titelblatt": "deckblatt", "deck
                           "einkauf": "einkaufsliste", "einkaufliste": "einkaufsliste", "kaufen": "einkaufsliste",
                           "schnitt": "zuschnitt", "zuschnittliste": "zuschnitt", "zeichnung": "zeichnungen",
                           "blaetter": "zeichnungen", "blätter": "zeichnungen", "anleitung": "bauplan",
-                          "bauanleitung": "bauplan", "montage": "bauplan"}
+                          "bauanleitung": "bauplan", "montage": "bauplan", "3d-druck": "druck", "3d_druck": "druck",
+                          "druckteile": "druck", "druckvorschau": "druck", "druckplatten": "druck"}
 FORMATE = ("A4", "A3")
 AUSRICHTUNGEN = ("hoch", "quer")
 APP_NOT_CONNECTED = "App nicht verbunden"
