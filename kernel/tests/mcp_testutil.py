@@ -50,6 +50,8 @@ EXPECTED_TOOLS |= {"dokument_export"}
 EXPECTED_TOOLS |= {"drucker_status", "drucken"}
 # Strang „Feinschliff 2“: Freigabe im Projektfenster
 EXPECTED_TOOLS |= {"freigabe_anfragen"}
+# Statik Stufe 1 (PLAN-STATIK.md)
+EXPECTED_TOOLS |= {"statik", "szenario_rechnen"}
 
 
 def free_port() -> int:

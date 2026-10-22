@@ -221,4 +221,11 @@ class Erfassung:
                     erkl["befestigt"].append({"teile": teile, "grund": d["grund"], "zeile": z})
             elif art == "boden":
                 erkl["boden"] = {"z": float(d.get("z") or 0.0), "zeile": z}
+            elif art == "statik":  # kevcad.statik: Szenarien und Lasten (statik/szenario.py), Teile als Namen
+                e = dict(d)
+                if d.get("teile"):
+                    e["teile"] = self._namen(d.get("teile") or [], shown, warnungen, f"statik.{d.get('was')}", z)
+                    if not e["teile"]:
+                        continue
+                erkl.setdefault("statik", []).append(e)
         return {"teile": {n: self.teile.get(n, {}) for n in shown if n in self.teile}, "erklaerungen": erkl}

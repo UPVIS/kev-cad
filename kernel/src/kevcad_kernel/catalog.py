@@ -236,8 +236,69 @@ def validate_material(entry: Any) -> list[str]:
         errors.append(f"{who}: preis_stand als Monat \"JJJJ-MM\" angeben")
     if entry.get("druckbar") is not None and not isinstance(entry.get("druckbar"), bool):
         errors.append(f"{who}: druckbar muss true oder false sein")
+    if entry.get("mechanik") is not None:
+        errors += validate_mechanik(entry["mechanik"], who)
     errors += _check_status(entry, who)
     return errors
+
+
+# Statik (PLAN-STATIK.md, T6): Werkstoffkennwerte je Material in ``mechanik`` (KATALOG.md, Abschnitt „Mechanik“)
+MECHANIK_ZAHLEN = ("e_modul", "schubmodul", "streckgrenze", "zugfestigkeit", "biegefestigkeit", "druckfestigkeit",
+                   "e_modul_z", "zugfestigkeit_z")
+
+
+def validate_mechanik(mech: Any, who: str = "Material") -> list[str]:
+    """Fehler im Feld ``mechanik`` eines Materials (leer = gültig). Spannungen und Moduln in N/mm² (MPa)."""
+    if not isinstance(mech, dict):
+        return [f"{who}: mechanik muss ein Objekt sein"]
+    errors: list[str] = []
+    for key in MECHANIK_ZAHLEN:
+        if key in mech and mech[key] is not None:
+            v = number(mech[key])
+            if v is None or v <= 0:
+                errors.append(f"{who}: mechanik.{key} muss eine Zahl > 0 sein (N/mm²)")
+    if number(mech.get("e_modul")) is None:
+        errors.append(f"{who}: mechanik.e_modul fehlt (N/mm², z. B. 210000 für Stahl)")
+    if not any(number(mech.get(k)) for k in ("streckgrenze", "zugfestigkeit", "biegefestigkeit")):
+        errors.append(f"{who}: mechanik braucht streckgrenze, zugfestigkeit oder biegefestigkeit (N/mm²)")
+    nu = mech.get("querkontraktion")
+    if nu is not None and (number(nu) is None or not 0 <= float(number(nu)) < 0.5):
+        errors.append(f"{who}: mechanik.querkontraktion muss zwischen 0 und 0,5 liegen")
+    q = mech.get("quer_zur_schicht")
+    if q is not None and (number(q) is None or not 0 < float(number(q)) <= 1):
+        errors.append(f"{who}: mechanik.quer_zur_schicht muss zwischen 0 und 1 liegen (Anteil der Festigkeit)")
+    if not isinstance(mech.get("quelle"), str) or not mech["quelle"].strip():
+        errors.append(f"{who}: mechanik.quelle fehlt (Norm oder Datenblatt; Schätzungen in geschaetzt nennen)")
+    if mech.get("stand") is not None and not _MONTH_RE.match(str(mech["stand"])):
+        errors.append(f"{who}: mechanik.stand als Monat \"JJJJ-MM\" angeben")
+    g = mech.get("geschaetzt")
+    if g is not None and not isinstance(g, bool) and not (isinstance(g, list) and all(isinstance(x, str) for x in g)):
+        errors.append(f"{who}: mechanik.geschaetzt ist true oder eine Liste der geschätzten Felder")
+    return errors
+
+
+def validate_reibwert(entry: Any) -> list[str]:
+    """Fehler eines Reibwerts (Paarung zweier Materialien oder Gruppen, leer = gültig)."""
+    if not isinstance(entry, dict):
+        return ["Reibwert muss ein JSON-Objekt sein"]
+    who = f"Reibwert {entry.get('a')!r}/{entry.get('b')!r}"
+    errors = []
+    for key in ("a", "b"):
+        if not isinstance(entry.get(key), str) or not entry[key].strip():
+            errors.append(f"{who}: Feld {key} fehlt (Material-id oder Gruppe)")
+    v = number(entry.get("haft"))
+    if v is None or not 0 < v <= 3:
+        errors.append(f"{who}: haft muss eine Zahl zwischen 0 und 3 sein (Haftreibungszahl)")
+    if entry.get("gleit") is not None and (number(entry.get("gleit")) is None or not 0 < float(entry["gleit"]) <= 3):
+        errors.append(f"{who}: gleit muss eine Zahl zwischen 0 und 3 sein")
+    if not isinstance(entry.get("quelle"), str) or not entry["quelle"].strip():
+        errors.append(f"{who}: quelle fehlt")
+    return errors
+
+
+def _reib_key(a: str, b: str) -> tuple[str, str]:
+    x, y = fold(a), fold(b)
+    return (x, y) if x <= y else (y, x)
 
 
 def _num_field(masse: dict[str, Any], key: str) -> float | None:
@@ -607,6 +668,8 @@ class Catalog:
         self._items: dict[str, dict[str, Any]] = {}
         self._source: dict[tuple[str, str], tuple[str, Path]] = {}  # (kind, id) → (ebene, Datei)
         self._aliases: dict[str, str] = {}
+        self._reibwerte: dict[tuple[str, str], dict[str, Any]] = {}  # Statik: Paarung → Reibwert (KATALOG.md)
+        self._reibgruppen: dict[str, str] = {}
         self.warnings: list[str] = []
         self.loaded_at = 0.0
 
@@ -680,6 +743,8 @@ class Catalog:
         items: dict[str, dict[str, Any]] = {}
         source: dict[tuple[str, str], tuple[str, Path]] = {}
         warnings: list[str] = []
+        reib: dict[tuple[str, str], dict[str, Any]] = {}
+        reibgruppen: dict[str, str] = {}
         seen_in_level: dict[tuple[str, str, str], Path] = {}
         for ebene, path in files:
             data, err = _read_json(path)
@@ -688,6 +753,16 @@ class Catalog:
                 warnings.append(f"Katalog {ebene}: {err}")
                 continue
             assert data is not None
+            # Statik: Reibwerte je Paarung und Zuordnung von Gruppen (spätere Ebene ersetzt dieselbe Paarung)
+            for row in data.get("reibwerte") or []:
+                errors = validate_reibwert(row)
+                if errors:
+                    warnings.append(f"{label}: " + "; ".join(errors) + " – übersprungen")
+                    continue
+                reib[_reib_key(row["a"], row["b"])] = {**copy.deepcopy(row), "ebene": ebene}
+            gruppen = data.get("reibgruppen") or {}
+            if isinstance(gruppen, dict):
+                reibgruppen.update({fold(str(k)): str(v) for k, v in gruppen.items() if isinstance(v, str)})
             for kind, key, target, check in (("material", "materialien", materials, validate_material),
                                               ("teil", "teile", items, None)):
                 rows = data.get(key) or []
@@ -734,6 +809,7 @@ class Catalog:
                                         f"{mid!r} gilt")
                     aliases[key] = mid
         self._materials, self._items, self._source, self._aliases = materials, items, source, aliases
+        self._reibwerte, self._reibgruppen = reib, reibgruppen
         self.warnings = warnings
         self.loaded_at = time.time()
 
@@ -795,6 +871,41 @@ class Catalog:
     def printable_materials(self) -> list[dict[str, Any]]:
         """Freigegebene Materialien mit ``"druckbar": true``."""
         return [m for m in self.materials() if is_free(m) and m.get("druckbar") is True]
+
+    # -- Statik (KATALOG.md, Abschnitt „Mechanik“) ----------------------------------------------------------------------
+
+    def reibwerte(self) -> list[dict[str, Any]]:
+        """Alle Reibwerte (Paarungen), sortiert."""
+        with self._lock:
+            self.refresh()
+            return [copy.deepcopy(r) for _, r in sorted(self._reibwerte.items())]
+
+    def reibwert(self, a: Any, b: Any) -> dict[str, Any] | None:
+        """Reibwert der Paarung zweier Materialien (Eintrag, id oder Name). Gesucht wird id/id, id/Gruppe, Gruppe/id,
+        Gruppe/Gruppe, jeweils auch mit der Reibgruppe (Edelstahl → Stahl, Holzwerkstoff → Holz). Mit ``paarung``
+        (wie gefunden) oder None."""
+
+        def kandidaten(x: Any) -> list[str]:
+            m = x if isinstance(x, dict) else (self.find_material(x, include_proposed=True) if x else None)
+            if m is None:
+                return [str(x)] if isinstance(x, str) and x else []
+            out = [m["id"]]
+            g = str(m.get("gruppe") or "")
+            if g:
+                out.append(g)
+                rg = self._reibgruppen.get(fold(g))
+                if rg:
+                    out.append(rg)
+            return out
+
+        with self._lock:
+            self.refresh()
+            for x in kandidaten(a):
+                for y in kandidaten(b):
+                    r = self._reibwerte.get(_reib_key(x, y))
+                    if r is not None:
+                        return {**copy.deepcopy(r), "paarung": [x, y]}
+        return None
 
     def material_suggestions(self, name: str, n: int = 3) -> list[str]:
         with self._lock:

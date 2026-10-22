@@ -46,6 +46,7 @@ from kevcad_kernel.druck.gedruckt import GedrucktAnbindung
 from kevcad_kernel.freigabe import FreigabeAnbindung
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
+from kevcad_kernel.statik.laufzeit import StatikRuntime  # Statik Stufe 1: statik, szenario_rechnen, STATICS
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
@@ -105,7 +106,7 @@ class Job:
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
-                    DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung):
+                    DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, StatikRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -1091,9 +1092,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if kind == "CHECK_DONE":  # kommt nach RUN_DONE, wenn der Lauf schon abgeschlossen ist
             app_len = int(header.get("app_len", 0))
             check = dict(header.get("app") or {})
+            statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
             with self._app_lock:  # erst nach RUN_END dieses Laufs an die App (sonst schickt es _run_job)
                 if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
                     self._send_app({**check, "type": "CHECK"}, payload[:app_len])
+                if statik is not None:
+                    self._statik_senden()  # STATICS
             self._versionen_pruefung(check)  # Versionen: Prüfstand an die Version des Laufs
             self._gedruckt_check(check)  # gedruckte Teile: neue Formen in gedruckt.json festschreiben
             self._druckvorschau_pruefung(check)  # Druckvorschau: Geometrie je Druckteil aus der Prüfung
@@ -1184,6 +1188,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             check, check_payload = self._pruef.letztes()
             if check is not None:
                 conn.send(check, check_payload)
+            self._statik_on_connect(conn)  # Statik: letztes STATICS
             self._zeichnung_on_connect(conn)
             self._druckvorschau_on_connect(conn)
             conn.send({"type": "AGENT", **agent})

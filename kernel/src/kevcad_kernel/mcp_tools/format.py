@@ -295,6 +295,12 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
                 lines.insert(0, text)
             else:
                 lines.append(text)
+        if isinstance(res["pruefung"].get("statik"), dict):  # Statik: eine Zeile je Lauf (Details mit statik)
+            from kevcad_kernel.statik.bericht import lauf_zeile
+
+            zeile = lauf_zeile(res["pruefung"]["statik"])
+            if zeile:
+                lines.append(zeile)
     constraint_failed = False
     if isinstance(res.get("bedingungen"), dict):  # Zwangsbedingungen (PLAN-BEDINGUNGEN.md)
         from kevcad_kernel.bedingungen.bericht import run_zeilen

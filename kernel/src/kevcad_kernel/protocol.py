@@ -1103,3 +1103,143 @@ def drucker_status_beispiel(*, druckt: bool = True) -> dict[str, Any]:
                     "von": "kevin"},
         "aktualisiert": 1792656000.0,
     }
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Statik (PLAN-STATIK.md, Stufe 1): STATICS (Kernel → App), siehe PROTOCOL.md Abschnitt „Statik“
+
+STATIK_AMPELN = ("gruen", "gelb", "rot", "grau")
+STATIK_STAENDE = ("done", "failed")
+STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit", "ziel", "reserve", "ausnutzung", "ort",
+                        "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative")
+
+
+def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
+    sz = e.get("szenario") or {}
+    out: dict[str, Any] = {
+        "name": e.get("name"), "art": sz.get("art") or e.get("art") or "statisch",
+        "quelle": sz.get("quelle") or e.get("quelle") or "modell", "ampel": e.get("ampel") or "grau",
+        "ziel": e.get("ziel"), "text": e.get("text") or "", "kennzahlen": dict(e.get("kennzahlen") or {}),
+        "beschreibung": sz.get("beschreibung") or e.get("beschreibung"),
+    }
+    if not voll:
+        return out
+    out["urteile"] = [{k: u[k] for k in STATIK_URTEIL_FELDER if k in u} for u in e.get("urteile") or []]
+    out["teile"] = list(e.get("teile") or [])
+    out["staebe"] = list(e.get("staebe") or [])
+    out["auflager"] = list(e.get("auflager") or [])
+    out["ueberhoehung"] = e.get("ueberhoehung") or 1.0
+    kippen = (e.get("s0") or {}).get("kippen") if e.get("s0") is not None else e.get("kippen")
+    out["kippen"] = [{k: g.get(k) for k in ("name", "reserve", "richtung_text", "je_richtung", "teile")}
+                     for g in kippen or []]
+    return out
+
+
+def pack_statics(statik: dict[str, Any], *, run: int, aktiv: str | None = None, reply_to: str | None = None,
+                 zeigen: bool = False, seq: int = 0) -> dict[str, Any]:
+    """Kopf von STATICS (keine Nutzlast): Ergebnis der Statik (statik/rechnen.py) für die App. ``aktiv``: Szenario,
+    das die App anbietet (sonst das des Ergebnisses); ``zeigen``: der Agent will es im Viewer sehen (Farbverlauf und
+    Verformung an)."""
+    header: dict[str, Any] = {
+        "type": "STATICS", "seq": seq, "run": int(run), "stand": statik.get("stand") or "done",
+        "aktiv": aktiv or statik.get("aktiv"), "zeigen": bool(zeigen), "meldung": statik.get("meldung"),
+        "szenarien": [_statik_szenario(e) for e in statik.get("szenarien") or []],
+        "ueberdimensioniert": [{k: u[k] for k in STATIK_URTEIL_FELDER if k in u}
+                               for u in statik.get("ueberdimensioniert") or []],
+        "grenzen": list(statik.get("grenzen") or []), "vereinfachungen": list(statik.get("vereinfachungen") or []),
+        "modell": dict(statik.get("modell") or {}), "ms": statik.get("ms"),
+    }
+    if reply_to is not None:
+        header["reply_to"] = reply_to
+    return header
+
+
+def statik_kurz(statik: dict[str, Any]) -> dict[str, Any]:
+    """Kurzfassung für den CHECK-Kopf (Feld ``statik``): je Szenario Ampel, Text und Kennzahlen."""
+    return {"stand": statik.get("stand") or "done", "aktiv": statik.get("aktiv"),
+            "szenarien": [_statik_szenario(e, voll=False) for e in statik.get("szenarien") or []],
+            "ms": statik.get("ms")}
+
+
+def check_statics_message(header: dict[str, Any]) -> list[str]:
+    """Fehler einer STATICS-Nachricht (leer = gültig): Pflichtfelder, Ampeln, Stäbe mit gleich langen Listen."""
+    err: list[str] = []
+    if header.get("type") != "STATICS":
+        err.append("type ist nicht STATICS")
+    if header.get("stand") not in STATIK_STAENDE:
+        err.append(f"stand {header.get('stand')!r} unbekannt")
+    namen = []
+    for i, e in enumerate(header.get("szenarien") or []):
+        wo = f"szenarien[{i}]"
+        err += _fehlend(e, ("name", "ampel", "kennzahlen", "urteile", "teile", "staebe"), wo)
+        namen.append(e.get("name"))
+        if e.get("ampel") not in STATIK_AMPELN:
+            err.append(f"{wo}.ampel {e.get('ampel')!r} unbekannt")
+        for u in e.get("urteile") or []:
+            if u.get("ampel") not in STATIK_AMPELN:
+                err.append(f"{wo}: Urteil mit Ampel {u.get('ampel')!r}")
+        for t in e.get("teile") or []:
+            if t.get("ampel") not in STATIK_AMPELN:
+                err.append(f"{wo}: Teil {t.get('name')!r} mit Ampel {t.get('ampel')!r}")
+        for s in e.get("staebe") or []:
+            n = len(s.get("punkte") or [])
+            if n < 2 or len(s.get("ausnutzung") or []) != n or len(s.get("verschiebung") or []) != n:
+                err.append(f"{wo}: Stab {s.get('name')!r}: punkte, ausnutzung und verschiebung brauchen gleich viele "
+                           "Einträge (mindestens 2)")
+    if header.get("aktiv") is not None and header.get("aktiv") not in namen:
+        err.append(f"aktiv {header.get('aktiv')!r} ist kein Szenario")
+    return err
+
+
+def statik_beispiel() -> dict[str, Any]:
+    """Kleines, vollständiges Ergebnis für Testdateien und Attrappen (zwei Szenarien, ein Stab, ein Druckteil)."""
+    punkte = [[0.0, 0.0, 30.0], [250.0, 0.0, 30.0], [500.0, 0.0, 30.0]]
+    return {
+        "stand": "done", "aktiv": "Aufstützen 30 kg", "ms": 412.5,
+        "modell": {"staebe": 1, "starrkoerper": 1, "geerdet": 1, "anschluesse": 2, "ms": 12.0},
+        "szenarien": [
+            {"name": "Eigengewicht", "szenario": {"art": "statisch", "quelle": "standard",
+                                                  "beschreibung": "nur das eigene Gewicht"},
+             "ampel": "gruen", "ziel": 2.0, "text": "Eigengewicht: grün – Sicherheit 41,2",
+             "kennzahlen": {"sicherheit": 41.2, "knicken": None, "kippreserve": 9.6, "rutschreserve": None,
+                            "durchbiegung_mm": 0.3, "durchbiegung_grenze_mm": 5.0, "verformung_max_mm": 0.3},
+             "urteile": [], "teile": [{"name": "Rahmen/Rohr", "ausnutzung": 0.049, "ampel": "gruen",
+                                       "verformung_mm": 0.3, "sicherheit": 41.2}],
+             "staebe": [{"name": "Rahmen/Rohr", "punkte": punkte, "ausnutzung": [0.05, 0.02, 0.0],
+                         "verschiebung": [[0, 0, 0], [0, 0, -0.1], [0, 0, -0.3]], "radius": 6.0, "sicherheit": 41.2,
+                         "ampel": "gruen"}],
+             "auflager": [{"stab": "Rahmen/Rohr", "teil": "Rahmen/Halter (Druck)", "punkt": [0.0, 0.0, 30.0],
+                           "kraft": [0.0, 0.0, 1.7], "moment": [0.0, 210.0, 0.0], "art": "fest"}],
+             "ueberhoehung": 66.7, "s0": {"kippen": [{"name": "Der Aufbau um Rahmen (3 Teile)", "reserve": 9.6,
+                                                     "richtung_text": "+X", "teile": ["Rahmen/Platte"],
+                                                     "je_richtung": {"+X": {"kippwinkel": 31.0, "a_kipp": 5.9}}}]}},
+            {"name": "Aufstützen 30 kg", "szenario": {"art": "statisch", "quelle": "modell",
+                                                      "beschreibung": "30 kg vorn auf dem Rohr"},
+             "ampel": "rot", "ziel": 2.0, "text": "Aufstützen 30 kg: rot – Rahmen/Rohr hält nicht (Sicherheit 0,2)",
+             "kennzahlen": {"sicherheit": 0.2, "knicken": None, "kippreserve": 0.8, "rutschreserve": None,
+                            "durchbiegung_mm": 61.0, "durchbiegung_grenze_mm": 5.0, "verformung_max_mm": 61.0},
+             "urteile": [
+                 {"art": "festigkeit", "teil": "Rahmen/Rohr", "ampel": "rot",
+                  "text": "Rahmen/Rohr hält nicht: Sicherheit 0,2 (Ziel 2), Spannung 790 N/mm² bei 0 mm (Grenze "
+                          "160 N/mm², Aluminium EN AW-6060).",
+                  "loesung": "Alurohr 25 × 2,0 aus dem Lager reicht (Sicherheit 2,4, 0,2 kg mehr)",
+                  "sicherheit": 0.2, "ziel": 2.0, "ausnutzung": 10.0, "ort": [0.0, 0.0, 30.0]},
+                 {"art": "bauteil", "teil": "Rahmen/Halter (Druck)", "ampel": "rot",
+                  "text": "Rahmen/Halter (Druck) hält nicht: Sicherheit 1,4 (Ziel 4, Druckteil), quer zur Schicht.",
+                  "loesung": "Drehen: so drucken, dass die Schichten längs der Last liegen (z. B. lager.druckteil(…, "
+                             "ausrichtung=\"-y\")); oder verstärken: an der Einspannung um etwa 70 % höher machen",
+                  "sicherheit": 1.4, "ziel": 4.0, "schichtfaktor": 0.4, "quer_zur_schicht": True}],
+             "teile": [{"name": "Rahmen/Rohr", "ausnutzung": 10.0, "ampel": "rot", "verformung_mm": 61.0,
+                        "sicherheit": 0.2},
+                       {"name": "Rahmen/Halter (Druck)", "ausnutzung": 2.86, "ampel": "rot", "verformung_mm": None,
+                        "sicherheit": 1.4}],
+             "staebe": [{"name": "Rahmen/Rohr", "punkte": punkte, "ausnutzung": [10.0, 5.0, 0.0],
+                         "verschiebung": [[0, 0, 0], [0, 0, -22.0], [0, 0, -61.0]], "radius": 6.0, "sicherheit": 0.2,
+                         "ampel": "rot"}],
+             "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []}},
+        ],
+        "ueberdimensioniert": [],
+        "grenzen": ["Vereinfacht gerechnet: Stäbe als Balken, linear-elastisch, kleine Verformungen, keine "
+                    "Plastizität.", "Kein Ersatz für einen Statiker bei sicherheitsrelevanten Dingen."],
+        "vereinfachungen": ["Aluminium EN AW-6060: Zustand T66 angenommen"],
+    }

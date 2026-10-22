@@ -293,6 +293,20 @@ class KernelService(Protocol):
         """Vorschau des letzten Laufs wie PRINT_PREVIEW: {"ok", "run", "stand", "drucker", "summe", "platten",
         "teile", "hinweise", "slicer", "einstellungen", "regler", "ms"}; ohne ``detail`` ohne Umrisse."""
 
+    # Statik Stufe 1 (PLAN-STATIK.md; umgesetzt in kevcad_kernel.statik.laufzeit.StatikRuntime)
+    def statik(self, szenario: str | None = None) -> dict[str, Any]:
+        """Statik des letzten Laufs (nach jedem Lauf gerechnet): {"ok", "run", "aktiv", "szenarien": [{"name", "ampel",
+        "text", "ziel", "kennzahlen", "urteile"}], "ueberdimensioniert", "grenzen", "vereinfachungen", "modell", "ms"};
+        mit ``szenario`` statt "szenarien" ein "szenario" mit Stäben, Lagern, Kippen je Richtung, Rutschen,
+        Schrauben, und die App zeigt es."""
+
+    def szenario_rechnen(self, name: str, beschleunigung: Any = None, neigung: float | None = None,
+                         richtung: Any = None, lasten: list[dict[str, Any]] | None = None, stoss: float | None = None,
+                         ziel: float | None = None, beschreibung: str | None = None, zeigen: bool = True
+                         ) -> dict[str, Any]:
+        """Neues Szenario mit dem Statikmodell des letzten Laufs (ohne neuen Lauf): {"ok", "run", "szenario",
+        "gezeigt", "grenzen", "vereinfachungen", "ms"}. ``lasten``: [{"teil", "kg" | "kraft" [N], "punkt" [mm]?}]."""
+
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in

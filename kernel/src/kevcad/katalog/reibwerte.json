@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "reibgruppen": {"Edelstahl": "Stahl", "Holzwerkstoff": "Holz", "Schaumstoff": "Kunststoff"},
+  "reibwerte": [
+    {"a": "Stahl", "b": "Stahl", "haft": 0.5, "bereich": [0.5, 0.8], "gleit": 0.42, "quelle": "Engineering ToolBox, Friction Coefficients (mild steel, sauber und trocken)", "stand": "2026-10"},
+    {"a": "Aluminium", "b": "Aluminium", "haft": 1.05, "bereich": [1.05, 1.35], "gleit": 0.4, "quelle": "Engineering ToolBox, Friction Coefficients (sauber und trocken)", "stand": "2026-10"},
+    {"a": "Aluminium", "b": "Stahl", "haft": 0.61, "gleit": 0.47, "quelle": "Engineering ToolBox, Friction Coefficients (aluminum on mild steel, sauber und trocken)", "stand": "2026-10"},
+    {"a": "Buntmetall", "b": "Stahl", "haft": 0.51, "gleit": 0.44, "quelle": "Engineering ToolBox, Friction Coefficients (brass on steel, sauber und trocken)", "stand": "2026-10"},
+    {"a": "Guss", "b": "Guss", "haft": 1.1, "gleit": 0.15, "quelle": "Engineering ToolBox, Friction Coefficients (cast iron, sauber und trocken)", "stand": "2026-10"},
+    {"a": "Guss", "b": "Stahl", "haft": 0.4, "gleit": 0.23, "quelle": "Engineering ToolBox, Friction Coefficients (cast iron on steel, sauber und trocken)", "stand": "2026-10"},
+    {"a": "Holz", "b": "Holz", "haft": 0.25, "bereich": [0.25, 0.5], "quelle": "Engineering ToolBox, Friction Coefficients (clean wood, trocken)", "stand": "2026-10"},
+    {"a": "Holz", "b": "Mineralisch", "haft": 0.62, "quelle": "Engineering ToolBox, Friction Coefficients (wood on concrete, sauber und trocken)", "stand": "2026-10"},
+    {"a": "Holz", "b": "Stahl", "haft": 0.2, "bereich": [0.2, 0.6], "quelle": "Engineering ToolBox, Friction Coefficients (wood on clean metal, trocken)", "stand": "2026-10"},
+    {"a": "Holz", "b": "Aluminium", "haft": 0.2, "bereich": [0.2, 0.6], "quelle": "Engineering ToolBox, Friction Coefficients (wood on clean metal, trocken)", "stand": "2026-10"},
+    {"a": "Elastomer", "b": "Mineralisch", "haft": 0.6, "bereich": [0.6, 0.85], "quelle": "Engineering ToolBox, Friction Coefficients (rubber on dry concrete)", "stand": "2026-10"},
+    {"a": "Kunststoff", "b": "Stahl", "haft": 0.2, "bereich": [0.2, 0.4], "quelle": "Engineering ToolBox, Friction Coefficients (polyethylene 0,2 bis nylon 0,4 on steel, trocken)", "stand": "2026-10", "geschaetzt": true, "hinweis": "PLA, PETG und andere Kunststoffe mit dem kleinsten Wert der Tabelle (Polyethylen) angenommen"},
+    {"a": "Kunststoff", "b": "Aluminium", "haft": 0.2, "bereich": [0.2, 0.4], "quelle": "wie Kunststoff auf Stahl angenommen (Engineering ToolBox nennt keinen Wert)", "stand": "2026-10", "geschaetzt": true}
+  ]
+}

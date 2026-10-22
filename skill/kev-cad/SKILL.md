@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“) und Statik („hält das, wenn ich mich mit 30 kg draufstütze“, „trägt der Rahmen das“, „kippt das beim Bremsen“, „ist das überdimensioniert“).
 ---
 
 # Kev CAD
@@ -213,6 +213,19 @@ die Materialeinstellungen. Die Ausrichtung wählt die Prüfung selbst; muss die 
 ebene Flächennummer, Vektor oder `Rot(...)`, bezogen auf die Form, wie sie an `druckteil` geht). Unveränderte Teile
 kommen aus dem Zwischenspeicher; der Live-Aufbau wartet nie auf die Prüfung. Kevin die Ausrichtung neuer Druckteile
 nennen.
+
+## Statik (Kevin, 22.10.2026)
+
+Nach jedem Lauf rechnet Kev CAD Lastszenarien: Eigengewicht, auf Rollen das Bremsen, eine Nutzlast aus einem
+Parameter in kg und Kevins eigene aus model.py (`import kevcad.statik as st`, `st.szenario("…")`,
+`st.last(teil, kg=30)` oder `kraft=(fx, fy, fz)` mit `punkt=`). Rahmen aus Lagerteilen rechnet es als Stabwerk
+(Spannung, Durchbiegung, Knicken), belastete Halter und Druckteile als Kragträger (quer zur Schicht nur ein Teil der
+Festigkeit), dazu Kippen je Richtung, Rutschen und Schraubenlast. Jedes Szenario bekommt eine Ampel gegen das Ziel
+(statisch 2, dynamisch 3, Druckteile das Doppelte); rot und gelb sind Befunde `statik_*` (sperren den Export nicht).
+Auf „hält das, wenn …?“ mit **`szenario_rechnen`** antworten (unter einer Sekunde, ohne neuen Lauf, im Viewer
+gezeigt), Überblick mit **`statik`**. Vorschläge für leichtere oder stärkere Profile kommen nur aus dem Lager. Immer
+die Grenzen dazusagen: vereinfacht (Balken, linear-elastisch, Verbinder starr), kein Ersatz für einen Statiker bei
+sicherheitsrelevanten Dingen. Einzelheiten, API und Urteile: [statik.md](statik.md).
 
 ## Arbeitsablauf
 

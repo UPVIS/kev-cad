@@ -92,6 +92,9 @@ def main() -> int:
     runner = Runner(emit)
     emit({"type": "READY", "pid": os.getpid(), "build123d": build123d.__version__,
           "python": sys.version.split()[0], "import_s": round(time.perf_counter() - t0, 2)})
+    from kevcad_kernel.statik.laufzeit import aufwaermen_im_hintergrund
+
+    aufwaermen_im_hintergrund()  # Statik: PyNite und scipy laden, ohne READY zu verzögern
 
     reader = FrameReader()
     wartend: collections.deque = collections.deque()  # während der Prüfung angekommene Aufträge

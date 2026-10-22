@@ -938,4 +938,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     register_dokument_tools(tool, t, svc)
 
+    # Statik Stufe 1: statik, szenario_rechnen (statik_tools.py, PLAN-STATIK.md)
+    from .statik_tools import register_statik_tools
+
+    register_statik_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE})
+
     return t
