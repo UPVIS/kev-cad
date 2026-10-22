@@ -492,7 +492,8 @@ def _punkte_fassungen(kopf: str, punkte: list[str]) -> Fassungen:
 
 
 def _dokumente_segmente(eintraege: list[dict[str, Any]]) -> list[Segment]:
-    """Regel 7: Blätter (neu, geändert, entfernt), Bauplan, übrige Dateien in ``dokumente/``."""
+    """Regel 7: Blätter (neu, geändert, entfernt; Namen ohne Klammerzusatz wie bei Teilen), Bauplan, übrige Dateien
+    in ``dokumente/``."""
     out: list[Segment] = []
     blaetter = [e for e in eintraege if e["art"] == "zeichnung"]
     for status, wort in (("A", "neu"), ("M", None), ("D", "entfernt")):
@@ -500,9 +501,10 @@ def _dokumente_segmente(eintraege: list[dict[str, Any]]) -> list[Segment]:
         if not gruppe:
             continue
         if wort is None and len(gruppe) == 1:
-            out.append(Segment("dokumente", _punkte_fassungen(f"Zeichnung {gruppe[0]['name']}", gruppe[0]["punkte"])))
+            kopf = f"Zeichnung {ohne_klammer(gruppe[0]['name'])}"
+            out.append(Segment("dokumente", _punkte_fassungen(kopf, gruppe[0]["punkte"])))
             continue
-        namen = [e["name"] for e in gruppe]
+        namen = list(dict.fromkeys(ohne_klammer(e["name"]) for e in gruppe))  # wie Teilnamen: ohne „(Druck)“
         wort = wort or "geändert"
 
         def form(n: list[str], r: int, w: str = wort) -> str:
