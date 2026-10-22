@@ -215,7 +215,7 @@ remote_cmd="$remote_cmd KEVCAD_COMMIT_ID=$(q "$COMMIT") KEVCAD_APP_REPO=$(q "$AP
 remote_cmd="$remote_cmd /bin/bash tools/fern/mini.sh $(q "$JOB_ID") $KIND $(q "$NAME")"
 # Herzschlag in stdin: Endet dieses fern.sh, endet er, und der Mini gibt den Auftrag samt Plätzen auf (tools/fern/mini.sh).
 T_REMOTE=$(now)
-ssh "${SSH_OPTS[@]}" "$HOST" "$remote_cmd" < <(while kill -0 $$ 2>/dev/null; do echo; sleep 5; done)
+ssh "${SSH_OPTS[@]}" "$HOST" "$remote_cmd" < <(while kill -0 $$ 2>/dev/null; do echo 2>/dev/null || break; sleep 5; done)
 rc=$?
 REMOTE_SECS=$(secs "$T_REMOTE" "$(now)")
 case $rc in
