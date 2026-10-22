@@ -138,6 +138,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
         self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
+        self.bedingungen_warten_s = 60.0  # so lange wartet bedingungen() auf den Bewegungsraum im Hintergrund
         self.catalog = Catalog(own=own_dir(socket_path))
         self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
@@ -442,8 +443,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if rep is None:
             return {"ok": False, "error": "Noch kein Bericht: erst run aufrufen."}
         out = {"ok": True, **rep}
-        # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören
+        # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören.
+        # Rechnet er noch im Hintergrund (CHECK „teilweise“), kurz auf den Endstand warten
+        if self._pruef.hintergrund == rep.get("run"):
+            self._pruef.warte(int(rep["run"]), self.bedingungen_warten_s, endstand=True)
         check, _ = self._pruef.letztes()
+        if check is not None and check.get("run") == rep.get("run") and check.get("state") == "teilweise":
+            out["bewegungsraum_im_hintergrund"] = list(check.get("im_hintergrund") or [])
         if check is not None and check.get("run") == rep.get("run"):
             weg = [{**b, "pruefung": "bewegungsraum"} for b in check.get("befunde") or []
                    if b.get("art") == "bewegungsraum"]

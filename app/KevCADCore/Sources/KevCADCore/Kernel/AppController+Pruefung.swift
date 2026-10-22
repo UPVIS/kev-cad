@@ -23,7 +23,8 @@ extension AppController: PruefActions {
             return
         case .cancelled:
             return  // ein neuerer Lauf kam dazwischen; dessen Ergebnis folgt
-        case .done, .failed:
+        case .done, .failed, .teilweise:
+            // teilweise: Befunde gelten schon, der Bewegungsraum kommt mit `done` desselben Laufs nach
             let alt = model.pruefung?.bandText ?? ""
             model.pruefung = e
             if e.zustand == .failed {

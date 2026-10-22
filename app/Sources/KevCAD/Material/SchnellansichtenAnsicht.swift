@@ -104,8 +104,13 @@ private func schnellKennzahlen(_ a: Schnellansicht, _ daten: MaterialDaten, kurz
         return t.joined(separator: " · ")
     case .druck:
         guard k.druckteile > 0 else { return "keine" }
-        return KevFormat.count(k.druckteile, one: "Teil", many: "Teile") + " · " + KevFormat.mass(grams: k.druckGramm)
-            + (kurz ? "" : (k.druckPreis.map { " · " + KevFormat.euro($0) } ?? ""))
+        // mit Druckvorschau: Gramm, Kosten, Zeit und Platten aus ihr (Druck/DruckMaterial.swift)
+        var t = kurz && k.druckZeitS != nil ? [] : [KevFormat.count(k.druckteile, one: "Teil", many: "Teile")]
+        t.append(DruckFormat.gramm(k.druckGramm))
+        if let p = k.druckPreis { t.append((k.druckZeitS != nil ? "≈ " : "") + KevFormat.euro(p)) }
+        if let z = k.druckZeitS { t.append(DruckFormat.zeit(z)) }
+        if let n = k.druckPlatten { t.append(KevFormat.count(n, one: "Platte", many: "Platten")) }
+        return t.joined(separator: " · ")
     }
 }
 

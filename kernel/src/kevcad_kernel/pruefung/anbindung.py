@@ -4,6 +4,11 @@ Export-Sperre).
 Ablauf: Nach ``RUN_END`` schickt die Laufzeit ``CHECK`` mit ``state: "running"`` und merkt sich den Lauf als offen
 (``erwarte``). Kommt ``CHECK_DONE`` aus dem Rechenprozess, legt ``fertig`` das Ergebnis ab und weckt alle, die darauf
 warten (``warte``). Befunde mit ``schwere: "fehler"`` sperren den Export, gleich aus welcher Prüfung sie stammen.
+
+``state: "teilweise"`` (Prüftempo, 22.10.2026): Das Ergebnis steht, nur der Bewegungsraum hat das Zeitlimit des Laufs
+erreicht und wird im Rechenprozess fertig gerechnet (``im_hintergrund``: die offenen Wege). Danach kommt für denselben
+Lauf ein zweites ``CHECK_DONE`` mit ``state: "done"``. ``warte`` gibt das teilweise Ergebnis zurück (``run`` wartet
+nicht auf den Hintergrund), ``warte(..., endstand=True)`` wartet auf den Endstand (``pruefen(warten=True)``).
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from typing import Any
 from kevcad_kernel.pruefung.befund import offen as offene_befunde
 
 ENDZUSTAENDE = ("done", "failed", "cancelled")
+ERGEBNIS = ("done", "failed", "teilweise")  # Zustände mit Ergebnis (teilweise: Bewegungsraum rechnet noch)
 
 
 class PruefStand:
@@ -23,6 +29,7 @@ class PruefStand:
         self.header: dict[str, Any] | None = None  # letztes fertiges CHECK (mit type)
         self.payload: bytes = b""
         self.erwartet: int | None = None  # Lauf, dessen Prüfung noch läuft
+        self.hintergrund: int | None = None  # Lauf, dessen Ergebnis teilweise ist (Bewegungsraum rechnet weiter)
         self._zustand: dict[int, str] = {}  # Lauf → letzter Zustand
 
     # -- Laufzeit --------------------------------------------------------------------------------------------------
@@ -32,6 +39,12 @@ class PruefStand:
         prüft direkt nach RUN_DONE und kann schneller sein als die Laufzeit mit RUN_END)."""
         with self._cond:
             if self._zustand.get(run) in ENDZUSTAENDE:
+                return False
+            if self.hintergrund is not None and self.hintergrund < run:
+                # neuer Lauf: der Rechenprozess bricht das Fertigrechnen des alten ab, es bleibt teilweise
+                self.hintergrund = None
+                self._cond.notify_all()
+            if self._zustand.get(run) == "teilweise":
                 return False
             self.erwartet = run
             self._zustand[run] = "running"
@@ -56,9 +69,13 @@ class PruefStand:
             if self.erwartet == run:
                 self.erwartet = None
             neuer = self.header is None or run >= int(self.header.get("run") or 0)
-            if state in ("done", "failed") and neuer:
+            if state in ERGEBNIS and neuer:
                 self.header = {**header, "type": "CHECK"}
-                self.payload = payload if state == "done" else b""
+                self.payload = payload if state != "failed" else b""
+            if state == "teilweise" and neuer and header.get("im_hintergrund"):
+                self.hintergrund = run  # leer: das Fertigrechnen ist gescheitert, es kommt nichts mehr
+            elif self.hintergrund is not None and self.hintergrund <= run:
+                self.hintergrund = None
             self._cond.notify_all()
             return neuer and state != "cancelled"
 
@@ -68,32 +85,40 @@ class PruefStand:
             if self.erwartet is not None:
                 self._zustand[self.erwartet] = "cancelled"
                 self.erwartet = None
+            self.hintergrund = None  # das Fertigrechnen ist mit dem Rechenprozess weg; das Ergebnis bleibt teilweise
             self._cond.notify_all()
 
     def reset(self) -> None:
         with self._cond:
-            self.header, self.payload, self.erwartet = None, b"", None
+            self.header, self.payload, self.erwartet, self.hintergrund = None, b"", None, None
             self._zustand.clear()
             self._cond.notify_all()
 
     # -- Abfragen --------------------------------------------------------------------------------------------------
 
-    def warte(self, run: int, timeout: float) -> dict[str, Any] | None:
+    def warte(self, run: int, timeout: float, endstand: bool = False) -> dict[str, Any] | None:
         """Wartet auf die Prüfung von Lauf ``run``. Ergebnis (CHECK-Kopf) oder ein Kopf mit ``state`` "cancelled" /
-        "running" (Zeitlimit) bzw. None, wenn der Lauf gar nicht geprüft wird."""
+        "running" (Zeitlimit) bzw. None, wenn der Lauf gar nicht geprüft wird. Ein teilweises Ergebnis (Bewegungsraum
+        rechnet im Hintergrund) kommt sofort zurück; mit ``endstand`` wird auf das fertige gewartet, solange der
+        Rechenprozess daran rechnet (sonst bleibt es teilweise, etwa nach einem neueren Lauf)."""
         ende = time.monotonic() + max(0.0, timeout)
         with self._cond:
             while True:
                 z = self._zustand.get(run)
                 if z is None:
                     return None
-                if z in ("done", "failed") and self.header is not None and int(self.header.get("run") or 0) == run:
-                    return dict(self.header)
-                if z in ENDZUSTAENDE:
-                    return {"type": "CHECK", "run": run, "state": z, "befunde": [],
-                            "message": "Prüfung abgebrochen (neuerer Lauf)" if z == "cancelled" else None}
+                eigenes = self.header is not None and int(self.header.get("run") or 0) == run
+                if z in ("done", "failed") and eigenes:
+                    return dict(self.header)  # type: ignore[arg-type]
+                if z == "teilweise" and eigenes and (not endstand or self.hintergrund != run):
+                    return dict(self.header)  # type: ignore[arg-type]
+                if z in ENDZUSTAENDE or (z == "teilweise" and not eigenes):
+                    return {"type": "CHECK", "run": run, "state": "cancelled", "befunde": [],
+                            "message": "Prüfung abgebrochen (neuerer Lauf)"}
                 rest = ende - time.monotonic()
                 if rest <= 0:
+                    if z == "teilweise":
+                        return dict(self.header)  # type: ignore[arg-type]
                     return {"type": "CHECK", "run": run, "state": "running", "befunde": [],
                             "message": "Prüfung läuft noch"}
                 self._cond.wait(min(rest, 0.5))
@@ -106,9 +131,9 @@ class PruefStand:
         """(Befunde mit schwere "fehler" der letzten fertigen Prüfung, ob noch eine Prüfung läuft). Läuft eine,
         wird bis zu ``warten_s`` auf sie gewartet."""
         with self._cond:
-            run = self.erwartet
+            run = self.erwartet if self.erwartet is not None else self.hintergrund
         if run is not None and warten_s > 0:
-            self.warte(run, warten_s)
+            self.warte(run, warten_s, endstand=True)
         with self._cond:
             befunde = list((self.header or {}).get("befunde") or [])
             return offene_befunde(befunde), self.erwartet is not None
@@ -123,6 +148,8 @@ class PruefStand:
                        "zaehler": h.get("zaehler"), "befunde": len(h.get("befunde") or [])}
             if self.erwartet is not None:
                 out = {**(out or {}), "laeuft": self.erwartet}
+            if self.hintergrund is not None:
+                out = {**(out or {}), "hintergrund": self.hintergrund}
             return out
 
 
@@ -131,7 +158,8 @@ def fuer_ergebnis(check: dict[str, Any] | None) -> dict[str, Any] | None:
     if check is None:
         return None
     out = {k: check.get(k) for k in ("state", "message", "zusammenfassung", "zaehler", "befunde", "duration_ms",
-                                     "gewinde", "erlaubt", "statistik") if check.get(k) is not None}
+                                     "gewinde", "erlaubt", "statistik", "im_hintergrund")
+           if check.get(k) is not None}
     if check.get("druck"):  # Druckprüfung: Ausrichtung je Druckteil, ihre Hinweise nur über druckpruefung
         from kevcad_kernel.druck.bericht import druck_kurz, ohne_druckhinweise
 

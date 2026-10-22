@@ -378,7 +378,7 @@ public struct DruckEinstellungen: Equatable, Sendable {
 public enum DruckQuelle: String, Equatable, Sendable {
     case kevin, agent
 
-    public var titel: String { self == .kevin ? "von Kevin" : "von Claude" }
+    public var titel: String { self == .kevin ? "von Kevin" : "vom Agenten" }
 }
 
 /// Eine Gruppe gleicher Druckteile (gleicher Formschlüssel, Material und Einstellungen) mit Empfehlung.
@@ -396,6 +396,8 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
     public var kosten: Double?
     public var stand: DruckStand
     public var abweichung: Double?
+    /// Wie `abweichung`, für das Filament (additiv `abweichung_material`).
+    public var abweichungMaterial: Double?
     public var einstellungen: DruckEinstellungen
     public var begruendung: [String]
     public var hinweise: [DruckpraxisHinweis]
@@ -474,6 +476,7 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
             jeStueck = DruckJeStueck(g: g, m: j["m"]?.doubleValue,
                                      zeitS: j["zeit_s"]?.doubleValue ?? zeitS / Double(max(1, self.anzahl)))
         }
+        abweichungMaterial = json["abweichung_material"]?.doubleValue
         profilProzess = json["profil"]?["prozess"]?.lenientString
         profilFilament = json["profil"]?["filament"]?.lenientString
         risiko = json["risiko"]?.doubleValue
@@ -709,8 +712,11 @@ public struct DruckProjektEinstellungen: Equatable, Sendable {
     public var leistungW: Double?
     public var plattenwechselS: Double?
     public var slicer: Bool?
+    /// Druckplatte als Bambu-Name, z. B. „Textured PEI Plate“ (additiv `einstellungen.platte`).
+    public var platte: String?
 
     public init(json: JSONValue) {
+        platte = json["platte"]?.lenientString
         drucker = json["drucker"]?.lenientString
         strompreisKwh = json["strompreis_kwh"]?.doubleValue
         leistungW = json["leistung_w"]?.doubleValue

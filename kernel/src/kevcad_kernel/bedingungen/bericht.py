@@ -154,4 +154,9 @@ def bericht_text(rep: dict[str, Any], teil: str | None = None, alle: bool = Fals
             zeilen.append(f"- und {len(befunde) - 40} weitere")
     elif not zeige:
         zeilen.append("Keine Befunde: alle Bedingungen erfüllt.")
+    offen = rep.get("bewegungsraum_im_hintergrund")
+    if offen:  # Prüftempo: Bewegungsraum noch nicht fertig, Endstand folgt
+        zeilen.insert(1, f"Bewegungsraum: {mehrzahl(len(offen), 'Gelenk', 'Gelenke')} noch nicht geprüft (Zeitlimit), "
+                         "wird im Hintergrund fertig gerechnet; bedingungen() später erneut oder pruefen() wartet auf "
+                         "den Endstand.")
     return "\n".join(zeilen)

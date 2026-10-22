@@ -215,7 +215,8 @@ def pruefe_kollisionen(formen: Mapping[str, Any], lagen: Mapping[str, np.ndarray
                        toleranz: float = 0.05, min_volumen: float = 0.5,
                        sichtbar: Callable[[str, int], bool] | None = None,
                        zeitlimit_s: float | None = None, cache: MutableMapping[tuple, Any] | None = None,
-                       schluessel: Mapping[str, str] | None = None) -> tuple[list[Befund], dict[str, Any]]:
+                       schluessel: Mapping[str, str] | None = None,
+                       abbrechen: Callable[[], None] | None = None) -> tuple[list[Befund], dict[str, Any]]:
     """Durchdringungen von Teilepaaren an Zeitschritten (siehe Moduldoku).
 
     ``kugeln`` (optional): Name → (Mitte, Radius) einer Hüllkugel in Ruhelage. Dreht sich ein Teil gegenüber dem
@@ -223,7 +224,10 @@ def pruefe_kollisionen(formen: Mapping[str, Any], lagen: Mapping[str, np.ndarray
     Bilder frei; das spart die teuren exakten Prüfungen.
 
     ``cache`` (optional): Zwischenspeicher über Aufrufe hinweg (z. B. über Läufe), Schlüssel aus ``schluessel``
-    (Name → Geometrieschlüssel der Form in Ruhelage, sonst der Name) und der relativen Lage beider Teile."""
+    (Name → Geometrieschlüssel der Form in Ruhelage, sonst der Name) und der relativen Lage beider Teile.
+
+    ``abbrechen`` (optional): wird vor jeder exakten Rechnung aufgerufen und darf mit einer Ausnahme unterbrechen
+    (Bewegungsraum im Hintergrund: ein neuer Auftrag geht vor); was bis dahin gerechnet ist, steht im ``cache``."""
     t0 = time.perf_counter()
     zeiten = np.asarray(zeiten, dtype=float)
     frames = np.array(sorted(set(bilder)) if bilder is not None else range(len(zeiten)), dtype=int)
@@ -279,6 +283,8 @@ def pruefe_kollisionen(formen: Mapping[str, Any], lagen: Mapping[str, np.ndarray
                 stats["zwischenspeicher"] += 1
                 res = hit
             else:
+                if abbrechen is not None:
+                    abbrechen()
                 stats["exakt"] += 1
                 res = _common(formen[a], _moved(formen[b], rel[i]))
                 cache[key] = res

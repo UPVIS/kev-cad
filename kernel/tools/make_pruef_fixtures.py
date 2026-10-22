@@ -1,8 +1,9 @@
 """Testdateien für die Nachricht CHECK (Prüfung, PROTOCOL.md Abschnitt „Prüfung“).
 
 Aufruf (im Ordner kernel):  .venv/bin/python tools/make_pruef_fixtures.py   (läuft auch am Ende von make_fixtures.py)
-Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/check_done.frame, check_running.frame und check.json (erwartete
-Werte). Eigene Dateien, damit die übrigen Testdateien und stream.bin unverändert bleiben.
+Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/check_done.frame, check_running.frame, check_teilweise.frame
+(Bewegungsraum rechnet im Hintergrund, Prüftempo) und check.json (erwartete Werte). Eigene Dateien, damit die übrigen
+Testdateien und stream.bin unverändert bleiben.
 """
 
 from __future__ import annotations
@@ -30,6 +31,10 @@ def main() -> None:
     (ZIEL / "check_done.frame").write_bytes(encode_frame(header, payload))
     laeuft, _ = pack_check(run=4, state="running", seq=22)
     (ZIEL / "check_running.frame").write_bytes(encode_frame(laeuft, b""))
+    offen = ["drehgelenk Halter/Flügelmutter", "schiebegelenk Halter/Schlitten"]
+    teilweise, t_payload = pack_check(run=3, state="teilweise", ergebnis=erg, geometrie=geo, seq=23,
+                                      im_hintergrund=offen)
+    (ZIEL / "check_teilweise.frame").write_bytes(encode_frame(teilweise, t_payload))
     (g,) = unpack_check(header, payload)
     erwartet = {
         "run": 3,
@@ -40,6 +45,7 @@ def main() -> None:
         "geometrie": header["geometrie"],
         "payload_bytes": len(payload),
         "erste_position": [round(float(x), 4) for x in g["positions"][0]],
+        "teilweise": {"run": 3, "state": "teilweise", "im_hintergrund": offen},
     }
     (ZIEL / "check.json").write_text(json.dumps(erwartet, indent=1, ensure_ascii=False))
     print(f"CHECK-Testdateien nach {ZIEL}: {header['zusammenfassung']}, {len(payload)} Byte Nutzlast")

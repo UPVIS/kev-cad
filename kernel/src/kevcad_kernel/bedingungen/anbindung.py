@@ -8,17 +8,22 @@ Ablauf im Rechenprozess:
    ``bedingungen`` gibt die Befunde aus Schritt 1 im Format der Prüfung zurück und prüft zusätzlich den Bewegungsraum
    (B8, kann Sekunden dauern, deshalb nicht vor RUN_END). So sperren verletzte Bedingungen, nicht befestigte Teile und
    blockierte Bewegungswege den Export wie Durchdringungen, an einer Stelle.
+3. Erreicht der Bewegungsraum das Zeitlimit des Laufs (``ZEITLIMIT_S``), legt die Prüffunktion eine ``Fortsetzung``
+   ab: Das Ergebnis geht als ``teilweise`` hinaus, der Rechenprozess rechnet die offenen Wege danach ohne Zeitlimit
+   fertig (unterbrechbar, jeder Auftrag geht vor) und schickt dasselbe Ergebnis mit dem vollständigen Bewegungsraum als
+   ``done`` (Prüftempo, 22.10.2026: ein teilweises Ergebnis darf nicht für fertig gehalten werden).
 """
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from kevcad_kernel.pruefung import befund as bf
 from kevcad_kernel.pruefung.befund import befund
-from kevcad_kernel.pruefung.pruefer import PruefKontext, registriere
+from kevcad_kernel.pruefung.pruefer import Fortsetzung, PruefKontext, registriere
 
 # Art der Befunde in der gemeinsamen Prüfung (Text für die Zusammenfassung)
 ARTEN = {
@@ -43,7 +48,9 @@ class Stand:
 
 
 STAND = Stand()
-ZEITLIMIT_S = 8.0  # Bewegungsraum je Lauf; danach „teilweise geprüft“ (Zwischenspeicher hilft beim nächsten Lauf)
+# Bewegungsraum je Lauf; der Rest wird danach im Hintergrund fertig gerechnet. KEVCAD_BEWEGUNGSRAUM_ZEITLIMIT_S
+# setzt es anders (Tests: 0 = alles im Hintergrund)
+ZEITLIMIT_S = float(os.environ.get("KEVCAD_BEWEGUNGSRAUM_ZEITLIMIT_S") or 8.0)
 
 
 def merke(sammlung: Any, formen: dict[str, Any], schluessel: dict[str, str], boxen: dict[str, Any],
@@ -92,12 +99,24 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     from .bewegungsraum import bewegungen_pruefen
 
     ctx.abbrechen()
+    offen: list[str] = []
+    # Was die Fortsetzung braucht, hier festhalten: ein Schattenlauf (Versionen) im selben Rechenprozess überschreibt
+    # STAND, bevor der Hintergrund fertig ist
+    sammlung, aufgeloest, formen = stand.sammlung, dict(stand.sammlung.aufgeloest or {}), dict(stand.formen)
+    schluessel, projekt, boxen = dict(stand.schluessel), stand.projekt, dict(stand.boxen)
     bewegungen, bew_befunde = bewegungen_pruefen(
-        stand.sammlung, stand.sammlung.aufgeloest or {}, stand.formen, schluessel=stand.schluessel,
-        projekt=stand.projekt, zeitlimit_s=ZEITLIMIT_S, boxen=stand.boxen)
+        sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt, zeitlimit_s=ZEITLIMIT_S, boxen=boxen,
+        abbrechen=ctx.abbrechen, offen=offen)
     out += [als_pruefbefund(b) for b in bew_befunde]
     if bewegungen:
         ctx.ergebnis["bewegungen"] = bewegungen
+    if offen:
+        def rechne(abbrechen: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+            alle, befunde = bewegungen_pruefen(sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt,
+                                               zeitlimit_s=None, boxen=boxen, abbrechen=abbrechen)
+            return [als_pruefbefund(b) for b in befunde], {"bewegungen": alle}
+
+        ctx.hintergrund["bewegungsraum"] = Fortsetzung(arten={"bewegungsraum"}, offen=list(offen), rechne=rechne)
     ctx.zeiten["bedingungen"] = (time.perf_counter() - t0) * 1000
     return out
 

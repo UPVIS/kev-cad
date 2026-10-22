@@ -84,6 +84,16 @@ struct ConstraintsSection: View {
                 MotionRow(motion: m)
             }
         }
+        if let p = model.pruefung, p.wirdFertigGerechnet {
+            // Bewegungsraum über dem Zeitlimit des Laufs: der Kernel rechnet weiter und schickt den Endstand
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(p.hintergrundText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help(p.imHintergrund.joined(separator: "\n"))
+        }
     }
 }
 

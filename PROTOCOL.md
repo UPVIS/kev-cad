@@ -322,11 +322,19 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 
 | type | Felder | Nutzlast |
 |---|---|---|
-| `CHECK` | `run`, `state` (`running` \| `done` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand` | Schnittkörper |
+| `CHECK` | `run`, `state` (`running` \| `done` \| `teilweise` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand`, `im_hintergrund` | Schnittkörper |
 
 - Nach `RUN_END` kommt sofort `CHECK` mit `state: "running"` und leeren Listen, das Ergebnis folgt als zweites `CHECK`.
   `cancelled`: ein neuerer Lauf kam dazwischen (dessen `CHECK` folgt). Beim Verbinden schickt der Kernel das letzte
   fertige `CHECK` mit.
+- `teilweise` (additiv, Prüftempo 22.10.2026): Das Ergebnis steht und gilt (Befunde, Schnittkörper, Montage), nur der
+  Bewegungsraum hat das Zeitlimit des Laufs erreicht. `im_hintergrund` nennt die offenen Wege (etwa
+  `"drehgelenk Kugelschieber/Sterngriffschraube M6x25 Fänger links"`); ihre Befunde sind bis dahin Hinweise
+  („… wird im Hintergrund fertig gerechnet“). Der Kernel rechnet sie ohne neuen Lauf fertig und schickt dann ein
+  weiteres `CHECK` mit demselben `run` und `state: "done"`, das das teilweise vollständig ersetzt (ohne
+  `im_hintergrund`). Kommt vorher ein neuer Lauf, bleibt es beim teilweisen Ergebnis des alten. Ältere Apps lesen
+  einen unbekannten `state` als `done` und ersetzen es beim zweiten `CHECK`; die App zeigt im Prüfband und im
+  Inspektor „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
 - Befund:
 
 ```json
@@ -345,7 +353,8 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
-Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+Testdateien: `check_done.frame`, `check_running.frame`, `check_teilweise.frame`, `check.json` (aus
+`kernel/tools/make_pruef_fixtures.py`).
 
 Weitere Teile von `CHECK` (Stufe 2):
 
@@ -512,7 +521,8 @@ Zusammenspiel mit der Prüfung: Alle Befunde der Bedingungen gehen zusätzlich a
 gemeinsame Ergebnis `CHECK` (Arten `bedingung`, `befestigung`, `bewegungsraum`, mit den Zusatzfeldern `soll` und
 `ist`); dort sperren Befunde mit Schwere `fehler` den Export. Den Bewegungsraum (Gelenke mit Bereich,
 `bewegungen.json`) rechnet nur die Prüfung nach `RUN_END`, weil er Sekunden dauern kann; im Lauf bleibt `bewegungen` in
-`CONSTRAINTS` deshalb leer, die Ergebnisse stehen als Befunde in `CHECK`.
+`CONSTRAINTS` deshalb leer, die Ergebnisse stehen als Befunde in `CHECK`. Was im Zeitlimit des Laufs nicht fertig wird,
+rechnet der Kernel im Hintergrund fertig (`CHECK` `teilweise` → `done` mit demselben `run`, siehe „Prüfung“).
 
 ### Kernel → App
 

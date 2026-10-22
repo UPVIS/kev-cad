@@ -301,7 +301,7 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
 
         data["bedingungen"] = res["bedingungen"]
         # Mit fertigem Prüfergebnis stehen die Befunde der Bedingungen schon dort (gemeinsame Prüfung): nur die Summe
-        mit_pruefung = isinstance(res.get("pruefung"), dict) and res["pruefung"].get("state") == "done"
+        mit_pruefung = isinstance(res.get("pruefung"), dict) and res["pruefung"].get("state") in ("done", "teilweise")
         extra, constraint_failed = run_zeilen(res["bedingungen"], befunde=not mit_pruefung)
         constraint_failed = constraint_failed and not mit_pruefung
         if constraint_failed:

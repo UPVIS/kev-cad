@@ -197,9 +197,11 @@ class KernelService(Protocol):
         """{"ok", "items": [Zukaufteil + "ebene", "cad_art", "cad_datei_fehlt", "zustand", "kurz"], "total"}"""
 
     # Prüfung (additiv, siehe kevcad_kernel/pruefung und PROTOCOL.md Abschnitt „Prüfung“)
-    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
+    def pruefen(self, warten_s: float = 120.0, endstand: bool = False) -> dict[str, Any]:
         """Letztes Prüfergebnis nach einem Lauf (wartet auf eine laufende Prüfung): {"ok", "run", "state",
-        "zusammenfassung", "zaehler", "befunde", "montage", "stand", "gewinde", "erlaubt", …} wie die Nachricht CHECK."""
+        "zusammenfassung", "zaehler", "befunde", "montage", "stand", "gewinde", "erlaubt", …} wie die Nachricht CHECK.
+        ``state`` "teilweise": der Bewegungsraum wird im Hintergrund fertig gerechnet (``im_hintergrund``, offene
+        Wege); mit ``endstand`` wird bis ``warten_s`` auf das fertige Ergebnis gewartet (additiv, Prüftempo)."""
 
     def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,
                   timeout_s: float = 20) -> dict[str, Any]:

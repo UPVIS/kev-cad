@@ -140,9 +140,9 @@ public enum ExportDruckSeiten {
             let g = d.gruppe(key) ?? d.gruppe(vonTeil: key)
             let e = g?.einstellungen ?? DruckEinstellungen(json: nil)
             let anteil = Double(anzahl) / Double(max(1, g?.anzahl ?? anzahl))
-            let gesetzt = g?.vorgaben.keys.sorted().map(DruckFormat.schluessel) ?? []
+            let gesetzt = DruckFormat.vorgaben(g?.vorgaben ?? [:])
             var unter = g?.begruendung.first
-            if !gesetzt.isEmpty { unter = "Von Kevin: " + gesetzt.joined(separator: ", ") + (unter.map { " · " + $0 } ?? "") }
+            if !gesetzt.isEmpty { unter = gesetzt.joined(separator: " · ") + (unter.map { " · " + $0 } ?? "") }
             var z: [String: ExportZelle] = [:]
             z["nr"] = ExportZelle(g.flatMap { nummern[$0.gruppe] }.map(String.init) ?? "–", fett: true)
             z["teil"] = ExportZelle(g?.kurzname ?? key, unter: unter,
