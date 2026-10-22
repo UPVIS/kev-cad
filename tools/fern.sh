@@ -194,7 +194,6 @@ if [ "$KIND" = bundle ]; then APP_REPO=$INSTALL_ROOT; else APP_REPO=$REPO; fi
 T_UP=$(now)
 if ! rsync -az --delete --exclude-from=tools/fern/ausschluss.txt --link-dest="../../quelle/$ID" -e "$RSH" \
   ./ "$HOST:$REMOTE/auftrag/$JOB_ID/"; then
-  : > "$MINI_GONE_MARK"
   fallback "Hochladen fehlgeschlagen"
 fi
 UP=$(secs "$T_UP" "$(now)")
@@ -209,7 +208,8 @@ ssh "${SSH_OPTS[@]}" "$HOST" "$remote_cmd" < <(while kill -0 $$ 2>/dev/null; do 
 rc=$?
 REMOTE_SECS=$(secs "$T_REMOTE" "$(now)")
 case $rc in
-  255) : > "$MINI_GONE_MARK"; fallback "Verbindung abgerissen" ;;
+  # Nur dieser Auftrag geht aufs MacBook; der nächste fragt den Mini wieder (die Marke setzt nur die Erreichbarkeitsprobe).
+  255) fallback "Verbindung abgerissen" ;;
   86) fallback "ihm fehlt ein Werkzeug (tools/fern.sh einrichten)" ;;
 esac
 

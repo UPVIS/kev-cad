@@ -46,6 +46,8 @@ mkdir -p "$QUEUE/bau" "$QUEUE/test" "$TREES" "$RESULTS" "$JOBS" "$SOURCES" "$HOM
 
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 mem_free() { memory_pressure 2>/dev/null | tail -1 | grep -oE '[0-9]+' | tail -1; }
+# Ablauf je Auftrag in protokoll/mini.log, auch wenn die Verbindung weg ist und niemand mehr die Ausgabe liest.
+note() { echo "$(date '+%Y-%m-%d %H:%M:%S') ${JOB_ID:-?} [$$] $*" >> "$LOGS/mini.log" 2>/dev/null; }
 
 # Ist ein Platz frei? Verwaiste Sperren (Halter und seine Prozessgruppe tot) werden dabei entfernt. Nur unter MUTEX.
 slot_free() {
@@ -137,12 +139,17 @@ finish() {
   [ "$FINISHING" = 1 ] && return
   FINISHING=1
   trap '' TERM INT HUP PIPE
+  # Ab hier nichts mehr an fern.sh: Ist die Verbindung weg, hält bash den Text einer gescheiterten Ausgabe im Puffer und
+  # gibt ihn an die nächste Befehlsersetzung weiter (so blieb beim ersten Abriss-Versuch ein Platz belegt).
+  exec >>"$LOGS/mini.log" 2>&1
+  note "Ende $rc (Plätze:${HELD:- keine})"
   [ -n "$JOB_PID" ] && kill -TERM -- "-$JOB_PID" 2>/dev/null
   [ -n "$TIMER_PID" ] && kill -TERM -- "-$TIMER_PID" 2>/dev/null
   [ -n "$WATCH_PID" ] && kill "$WATCH_PID" 2>/dev/null
-  local s
+  local s holder
   for s in $HELD; do
-    [ "$(cat "$LOCKS/$s/pid" 2>/dev/null)" = "$$" ] && rm -rf "$LOCKS/$s"
+    holder=""; read -r holder < "$LOCKS/$s/pid" 2>/dev/null
+    if [ "$holder" = "$$" ]; then rm -rf "$LOCKS/$s"; else note "Platz $s gehört nicht mehr mir ($holder)"; fi
   done
   [ -n "$TICKET" ] && rm -f "$TICKET"
   rm -f "$RUNNING/$JOB_ID"
@@ -162,7 +169,9 @@ finish() {
 # Als Falle statt ignoriert, damit die Kinder (xcodebuild, swift, pytest) SIGPIPE wie gewohnt bekommen.
 on_signal() {
   trap '' PIPE
-  echo "==> Mini: Auftrag abgebrochen ($1)" 2>/dev/null
+  [ "$1" = PIPE ] || echo "==> Mini: Auftrag abgebrochen ($1)" 2>/dev/null
+  exec >>"$LOGS/mini.log" 2>&1
+  note "Signal $1"
   finish "$2"
 }
 trap 'on_signal TERM 143' TERM
@@ -191,7 +200,9 @@ find "$SOURCES" -mindepth 1 -maxdepth 1 -ctime +14 -exec rm -rf {} + 2>/dev/null
 if [ "${KEVCAD_FERN_WACHE:-1}" != 0 ]; then
   exec 3<&0
   (
+    trap '' PIPE
     while IFS= read -r -t 60 _ <&3; do :; done
+    note "Wache: kein Herzschlag mehr"
     echo "==> Mini: fern.sh meldet sich nicht mehr (beendet oder Verbindung weg), breche ab" >&2
     kill -TERM $$ 2>/dev/null
   ) &
@@ -232,6 +243,7 @@ run() {
   local s
   for s in $HELD; do echo "$JOB_PID" > "$LOCKS/$s/gruppe"; done
   wait "$JOB_PID"; rc=$?
+  note "Lauf $1 endet mit $rc"
   JOB_PID=""
   kill -TERM -- "-$TIMER_PID" 2>/dev/null; TIMER_PID=""
   return $rc
@@ -250,8 +262,10 @@ sync_tree() {
 }
 
 echo "$$" > "$RUNNING/$JOB_ID"
+note "Beginn $KIND ${NAME:-} für $ID"
 acquire bau
 sync_tree
+note "Platz $SLOT"
 echo "==> Mini: Platz $SLOT ($(sysctl -n hw.ncpu) Kerne, $(mem_free) % Speicher frei)"
 T_RUN=$(date +%s)
 mkdir -p "$RESULTS/$JOB_ID"
