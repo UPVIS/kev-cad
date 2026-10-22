@@ -137,6 +137,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
         self._last_hash: str | None = None  # zuletzt angestoßener Dateistand (für den Auto-Lauf)
         self._run_no = 0
+        self._regler: dict[str, Any] = {}  # überschriebene Parameter des letzten erfolgreichen Laufs (Reglerstand)
         self._state: tuple[str, str] = ("busy", "Rechenprozess startet")
         self._pending: dict[str, dict[str, Any]] = {}
         self._ids = itertools.count(1)
@@ -666,6 +667,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self._bom = None
                 self._violations = []
                 self._constraints = None
+                self._regler = {}
                 self._selection = {"run": None, "refs": []}
                 self._pruef.reset()
             run = self._run_no
@@ -701,6 +703,23 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
     # Läufe intern
     # =================================================================================================================
+
+    def _reglerstand(self) -> dict[str, Any]:
+        """Überschriebene Parameter des letzten erfolgreichen Laufs (Regler der App, ``run(params=…)``); leer, wenn die
+        Szene den Stand der Dateien zeigt."""
+        with self._lock:
+            return dict(self._regler)
+
+    def _regler_sperre(self, was: str = "Blätter und Bauplan") -> str | None:
+        """Meldung, wenn die Szene einen Reglerstand zeigt: Dann bearbeiten Kevin und der Agent keine Dokumente (sie
+        bezögen sich auf Maße, die es in model.py nicht gibt, und die Versionen erfassten den Reglerstand)."""
+        regler = self._reglerstand()
+        if not regler:
+            return None
+        werte = ", ".join(f"{k} = {v:g}" if isinstance(v, (int, float)) else f"{k} = {v}" for k, v in regler.items())
+        return (f"Das Modell zeigt gerade einen Reglerstand ({werte}). {was} werden dazu nur gezeigt, nicht "
+                "gespeichert; bearbeiten geht erst nach einem Lauf ohne überschriebene Parameter (Regler zurück, "
+                "run ohne params).")
 
     def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str,
                     katalog_neu: bool = False):
@@ -912,6 +931,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            with self._lock:
+                self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
             self._anim_publish(job, result)
             # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
             # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts

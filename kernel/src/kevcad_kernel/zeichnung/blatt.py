@@ -95,6 +95,16 @@ def zeichenflaeche(breite: float, hoehe: float) -> Rechteck:
     return Rechteck(RAND_LINKS, RAND, breite - RAND, hoehe - RAND)
 
 
+def lage_umrechnen(lage: Any, von: tuple[str, str], nach: tuple[str, str]) -> list[float]:
+    """Lage (Blatt-mm) beim Formatwechsel proportional mitnehmen: gleicher Anteil der Zeichenfläche."""
+    a = zeichenflaeche(*blattgroesse(*von))
+    b = zeichenflaeche(*blattgroesse(*nach))
+    x, y = float(lage[0]), float(lage[1])
+    u = (x - a.x0) / a.breite if a.breite else 0.5
+    v = (y - a.y0) / a.hoehe if a.hoehe else 0.5
+    return [round(b.x0 + u * b.breite, 2), round(b.y0 + v * b.hoehe, 2)]
+
+
 def rahmen(breite: float, hoehe: float) -> Grafik:
     """Schneidekante (dünn), Zeichenflächenrahmen (breit), Mittenmarken (ISO 5457)."""
     g = Grafik()

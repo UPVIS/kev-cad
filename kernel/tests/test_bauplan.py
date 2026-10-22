@@ -437,3 +437,42 @@ def test_testdateien_der_app():
     for name in erwartet["frames"]:
         (kopf, _), = FrameReader().feed((FIXTURES / name).read_bytes())
         assert kopf["type"] in ("BAUPLAN", "DOCS", "BAUPLAN_REQ", "BAUPLAN_EDIT", "BAUPLAN_PRUEFEN")
+
+
+def test_schluessel_der_eingaben():
+    """Gleiche Eingaben, gleicher Schlüssel (Laufnummern, Zeiten, Zwischenspeicher und Befunde, die der Bauplan nicht
+    liest, zählen nicht); Form, Lage, Prüfangaben des Bauplans oder Katalog ändern ihn."""
+    from types import SimpleNamespace
+
+    from kevcad_kernel.bauplan.eingang import schluessel
+
+    def rec(name, key, run, x=0.0):
+        return SimpleNamespace(name=name, key=key, header={"run": run, "bbox": {"min": [x, 0, 0], "max": [x + 10, 5, 5]},
+                                                           "stock": {"id": "rohr-1"}})
+
+    class Kat:
+        def __init__(self, laenge):
+            self.laenge = laenge
+
+        def item(self, i):
+            return {"id": i, "art": "rohr", "masse": {"laenge": self.laenge}}
+
+    def check(run, zusatz=(), gewinde=()):
+        return {"run": run, "state": "done", "duration_ms": 12.0 * run, "gewinde": list(gewinde),
+                "befunde": [{"art": "durchdringung", "teile": ["A", "B"]}, *zusatz],
+                "druck": {"neu_geprueft": run, "teile": {"A": {"ms": run, "zwischenspeicher": run > 1,
+                                                                "ausrichtung": {"text": "Seite unten"}}}}}
+
+    def k(recs, chk, kat=Kat(1000), bom=None):
+        return schluessel(recs, bom=bom or {"run": 1, "lines": [{"teile": ["A"], "anzahl": 1}]},
+                          bedingungen={"run": 1, "loese_ms": 3.0, "items": []}, check=chk, katalog=kat, titel="T",
+                          projekt=Path("/tmp/T"))
+
+    basis = k([rec("A", "a1", 1), rec("B", "b1", 1)], check(1))
+    bewegung = {"art": "bewegungsraum", "teile": ["A"], "text": "Weg nur teilweise geprüft"}
+    assert k([rec("A", "a1", 2), rec("B", "b1", 2)], check(2, [bewegung])) == basis
+    assert k([rec("A", "a2", 2), rec("B", "b1", 2)], check(2)) != basis  # Form oder Lage
+    assert k([rec("A", "a1", 2, x=5), rec("B", "b1", 2)], check(2)) != basis  # Hüllquader
+    assert k([rec("A", "a1", 2), rec("B", "b1", 2)], check(2, gewinde=[{"teile": ["A", "B"]}])) != basis
+    assert k([rec("A", "a1", 2), rec("B", "b1", 2)], check(2), kat=Kat(1200)) != basis
+

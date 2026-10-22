@@ -134,9 +134,14 @@ def test_neuzuordnung_nach_lauf(env):
     assert texte[eigen["id"]] == "600"  # Kevins Maß hängt an den Stirnseiten und folgt der neuen Länge
     laenge = next(m for m in res["kopf"]["blatt"]["masse"] if m.get("schluessel") == "huelle:x")
     assert texte[laenge["id"]] == "600" and laenge["versatz"] == pytest.approx(-30.0)
-    # nur noch eine Bohrung: ein Kevin-Maß auf die dritte Bohrung wird verwaist
-    rt.drawing_edit("rohr", [{"op": "mass_neu", "art": "linear", "richtung": "x", "ansicht": "v1",
-                              "bezuege": [{"merkmal": "seite:x-"}, {"merkmal": "bohrung:3"}]}], "kevin")
+    # nur noch eine Bohrung: ein Kevin-Maß auf die dritte Bohrung wird verwaist. Bearbeitet wird am Stand der Dateien;
+    # im Reglerstand lehnt der Kernel das ab (die Bezüge gehörten zum Reglerstand)
+    op = {"op": "mass_neu", "art": "linear", "richtung": "x", "ansicht": "v1",
+          "bezuege": [{"merkmal": "seite:x-"}, {"merkmal": "bohrung:3"}]}
+    abgelehnt = rt.drawing_edit("rohr", [op], "kevin")
+    assert abgelehnt["ok"] is False and abgelehnt.get("regler") and "Reglerstand" in abgelehnt["error"]
+    assert rt.run()["ok"]
+    assert rt.drawing_edit("rohr", [op], "kevin")["ok"]
     start = app.mark()
     lauf = rt.run(params={"laenge": 600, "loecher": 1})
     assert lauf["ok"]

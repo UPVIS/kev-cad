@@ -390,6 +390,70 @@ def verbindungen_aus(bericht: dict[str, Any] | None) -> tuple[list[Verbindung], 
     return out, hat
 
 
+FLUECHTIG = frozenset({"run", "seq", "since_run", "duration_ms", "ms", "aus_zwischenspeicher", "zwischenspeicher",
+                       "neu_geprueft", "erzeugt"})
+
+
+def stabil(o: Any) -> Any:
+    """Für den Schlüssel der Eingaben: ohne Laufnummern, Zeiten (``…_ms``) und Angaben zum Zwischenspeicher, Zahlen
+    gerundet (dieselben Eingaben ergeben in jedem Lauf denselben Schlüssel)."""
+    if isinstance(o, dict):
+        return {str(k): stabil(v) for k, v in o.items() if k not in FLUECHTIG and not str(k).endswith("_ms")}
+    if isinstance(o, (list, tuple)):
+        return [stabil(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return stabil(o.tolist())
+    if isinstance(o, (bool, np.bool_)):
+        return bool(o)
+    if isinstance(o, (float, np.floating)):
+        return round(float(o), 6)
+    if isinstance(o, np.integer):
+        return int(o)
+    return o
+
+
+def pruef_eingang(check: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Was der Bauplan aus dem Prüfstand liest (``sammle``, ``geruest``): Gewindeeingriffe, erlaubte Überlappungen,
+    Durchdringungen und Verformungen, Druckbefunde und die Druckprüfung je Teil. Andere Befunde (etwa der Bewegungsraum,
+    der nur nach einer Änderung neu geprüft wird) bestimmen den Plan nicht. Wer im Bauplan weitere Teile des Prüfstands
+    liest, nimmt sie hier auf."""
+    if not check:
+        return None
+    befunde = [b for b in check.get("befunde") or [] if b.get("art") in ("durchdringung", "verformt")
+               or str(b.get("art", "")).startswith("druck_")]
+    druck = check.get("druck") or {}
+    return {"state": check.get("state"), "gewinde": check.get("gewinde"), "erlaubt": check.get("erlaubt"),
+            "befunde": befunde, "druck": {"teile": druck.get("teile"), "materialien": druck.get("materialien")}}
+
+
+def schluessel(records: list[Any], *, bom: dict[str, Any] | None, bedingungen: dict[str, Any] | None,
+               check: dict[str, Any] | None, katalog: Any, titel: str, projekt: Path | None) -> str:
+    """Schlüssel über alles, was ``sammle`` liest und den Plan bestimmt: Formschlüssel (Form und Lage) und Kopf jedes
+    Teils, Stückliste, Bedingungen, Prüfstand, die Katalogeinträge der Lagerteile, Titel und Projekt. Die Datei
+    (gespeicherte Bearbeitungen, ``umfang``) prüft der Dienst getrennt. Kostet Millisekunden statt Sekunden."""
+    import hashlib
+    import json
+
+    teile = []
+    ids: set[str] = set()
+    for rec in records:
+        kopf = rec.header or {}
+        teile.append([rec.name, getattr(rec, "key", ""), stabil(kopf)])
+        st = kopf.get("stock") or {}
+        if st.get("id"):
+            ids.add(str(st["id"]))
+    kat: dict[str, Any] = {}
+    for i in sorted(ids):
+        try:
+            kat[i] = stabil(katalog.item(i)) if katalog is not None else None
+        except Exception:  # noqa: BLE001 - unbekannter Eintrag: gilt als „fehlt“
+            kat[i] = None
+    daten = {"teile": teile, "bom": stabil(bom or {}), "bedingungen": stabil(bedingungen),
+             "check": stabil(pruef_eingang(check)),
+             "katalog": kat, "titel": titel, "projekt": str(projekt)}
+    return hashlib.sha1(json.dumps(daten, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
 def sammle(records: list[Any], *, bom: dict[str, Any] | None, bedingungen: dict[str, Any] | None,
            check: dict[str, Any] | None, katalog: Any, titel: str, run: int, projekt: Path | None,
            umfang: dict[str, Any] | None = None) -> Eingang:

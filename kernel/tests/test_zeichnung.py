@@ -386,3 +386,70 @@ def test_bohrungstabelle_bei_vielen_bohrungen():
     assert any(x.startswith("Bohrungen (X, Y ab Ecke unten links)") for x in texte) and "A16" in texte
     assert "110" in texte and "30" in texte  # X und Y in der Tabelle
     assert not [b for b in erg.kopf["pruefung"] if b["pruefung"] == "fehlend"]
+
+
+def _im_zeichenfeld(erg, vid: str) -> None:
+    """Ansicht liegt im Zeichenfeld des Blatts und überdeckt das Schriftfeld nicht."""
+    from kevcad_kernel.zeichnung import blatt as bl
+
+    W, H = bl.blattgroesse(erg.blatt["format"], erg.blatt["ausrichtung"])
+    z, sf = bl.zeichenflaeche(W, H), bl.schriftfeld_rechteck(W, H)
+    x0, y0, x1, y1 = next(g for g in erg.kopf["geometrie"] if g["id"] == vid)["rahmen"]
+    assert z.x0 <= x0 and x1 <= z.x1 and z.y0 <= y0 and y1 <= z.y1, (x0, y0, x1, y1, z)
+    assert not (x0 < sf.x1 and sf.x0 < x1 and y0 < sf.y1 and sf.y0 < y1), "Ansicht überdeckt das Schriftfeld"
+
+
+def test_feste_ansicht_beim_formatwechsel():
+    """Maßstab geändert, Kev CAD wählt ein anderes Format: feste Ansichten wandern anteilig mit und bleiben im
+    Zeichenfeld; passt eine dort nicht ohne Schriftfeld zu überdecken, bleibt ein größeres Format mit Hinweis."""
+    from kevcad_kernel.zeichnung import blatt as bl
+
+    t = _teil("Halter/Platte", platte())
+    sz = szene_mit(t)
+    erg = rechne(dokument.neu("platte", "Platte", "teil", [t.name]), sz)
+    b, res = bearbeiten.anwenden(erg.blatt, [{"op": "massstab", "wert": "2:1"}], "kevin", erg)
+    gross = rechne(b, sz)
+    fmt_gross = (gross.blatt["format"], gross.blatt["ausrichtung"])
+    assert fmt_gross != ("A4", "quer")
+    # 1. passt: Lage anteilig nach A4 quer, ohne Hinweis
+    lage = bl.lage_umrechnen([156.0, 123.0], ("A4", "quer"), fmt_gross)
+    b, res = bearbeiten.anwenden(gross.blatt, [{"op": "ansicht_verschieben", "id": "v1", "lage": lage}], "kevin", gross)
+    erg = rechne(b, sz)
+    b, res = bearbeiten.anwenden(erg.blatt, [{"op": "massstab", "wert": "1:1"}], "kevin", erg)
+    klein = rechne(b, sz)
+    assert (klein.blatt["format"], klein.blatt["ausrichtung"]) == ("A4", "quer")
+    v1 = next(a for a in klein.blatt["ansichten"] if a["id"] == "v1")
+    assert v1["fest"] and v1["lage"] == pytest.approx(bl.lage_umrechnen(lage, fmt_gross, ("A4", "quer")), abs=0.01)
+    _im_zeichenfeld(klein, "v1")
+    assert not [h for h in klein.hinweise if "Feste Ansicht" in h]
+    # 2. passt nicht: auf A4 überdeckte die mitgenommene Ansicht das Schriftfeld; ein größeres Format bleibt
+    lage = [330.0, 220.0] if fmt_gross == ("A2", "quer") else bl.lage_umrechnen([330.0, 220.0], ("A2", "quer"),
+                                                                                 fmt_gross)
+    b, res = bearbeiten.anwenden(gross.blatt, [{"op": "ansicht_verschieben", "id": "v1", "lage": lage}], "kevin", gross)
+    erg = rechne(b, sz)
+    b, res = bearbeiten.anwenden(erg.blatt, [{"op": "massstab", "wert": "1:1"}], "kevin", erg)
+    klein = rechne(b, sz)
+    assert klein.blatt["format"] != "A4"
+    assert any("Feste Ansicht v1 passt nicht auf A4 quer" in h for h in klein.hinweise), klein.hinweise
+    _im_zeichenfeld(klein, "v1")
+
+
+def test_feste_ansicht_ausserhalb_wird_ins_zeichenfeld_geklemmt():
+    t = _teil("Halter/Platte", platte())
+    sz = szene_mit(t)
+    erg = rechne(dokument.neu("platte", "Platte", "teil", [t.name]), sz)
+    assert erg.blatt["format"] == "A4"
+    b, res = bearbeiten.anwenden(erg.blatt, [{"op": "ansicht_verschieben", "id": "v1", "lage": [300, 230]}], "kevin",
+                                 erg)
+    erg = rechne(b, sz)
+    assert erg.blatt["format"] == "A4"
+    _im_zeichenfeld(erg, "v1")
+    # explizites Format: feste Lagen anteilig mit
+    from kevcad_kernel.zeichnung import blatt as bl
+
+    alt = list(next(a for a in erg.blatt["ansichten"] if a["id"] == "v1")["lage"])
+    b, res = bearbeiten.anwenden(erg.blatt, [{"op": "format", "wert": "A3", "ausrichtung": "quer"}], "kevin", erg)
+    v1 = next(a for a in b["ansichten"] if a["id"] == "v1")
+    assert v1["lage"] == pytest.approx(bl.lage_umrechnen(alt, ("A4", "quer"), ("A3", "quer")), abs=0.01)
+    _im_zeichenfeld(rechne(b, sz), "v1")
+

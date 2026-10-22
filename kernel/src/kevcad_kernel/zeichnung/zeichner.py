@@ -779,9 +779,11 @@ def _anordnen(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: lis
     stueckliste = art in ("zusammenbau", "baugruppe")
     beste = None
     versuche = []
+    fest_fehlt: list[tuple[str, str, str]] = []  # (Format, Ausrichtung, Ansicht): feste Ansicht passt dort nicht
     for fmt, ausr in kandidaten_fmt:
         for s in massstaebe:
-            erg = _versuch(blatt, ansichten, arbeit, merk, system, art, szene, teile, fmt, ausr, s, stueckliste)
+            erg = _versuch(blatt, ansichten, arbeit, merk, system, art, szene, teile, fmt, ausr, s, stueckliste,
+                           fest_fehlt=fest_fehlt)
             if erg is not None:
                 versuche.append((fmt, ausr, s, erg))
                 break
@@ -815,6 +817,17 @@ def _anordnen(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: lis
         hinweise.append("Ansichten passen nicht ohne Überlappung auf das Blatt; Maßstab oder Format von Hand wählen.")
     fmt, ausr, s, erg = beste
     if auto_fmt:
+        # Lag es an einer festen Ansicht, dass ein kleineres Format nicht ging? Dann hätte es ohne sie gepasst.
+        kleiner = sorted({(f, a) for f, a, _ in fest_fehlt if FORMAT_RANG.get(f, 9) < FORMAT_RANG.get(fmt, 9)},
+                         key=lambda x: FORMAT_RANG.get(x[0], 9))
+        for f, a in kleiner:
+            if any(_versuch(blatt, ansichten, arbeit, merk, system, art, szene, teile, f, a, s_, stueckliste,
+                            ohne_fest=True) is not None for s_ in massstaebe if s_ >= s - 1e-9):
+                namen = ", ".join(sorted({vid for f2, a2, vid in fest_fehlt if (f2, a2) == (f, a)}))
+                hinweise.append(f"Feste Ansicht {namen} passt nicht auf {f} {a} (sie überdeckte dort Schriftfeld, "
+                                f"Tabelle oder eine andere feste Ansicht): deshalb {fmt} {ausr}. Ansicht verschieben "
+                                "oder das Format von Hand wählen.")
+                break
         blatt["format"], blatt["ausrichtung"] = fmt, ausr
     if auto_ms:
         blatt["massstab"] = bl.massstab_text(s)
@@ -874,7 +887,13 @@ def _bohrungen_titel(a: _Arbeit, ansichten: dict[str, _Ansicht]) -> str:
 
 def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list[_Arbeit], merk: Merkmale | None,
              system: Teilsystem, art: str, szene: Szene, teile: list[Teil], fmt: str, ausr: str, s: float,
-             stueckliste: bool, erzwingen: bool = False) -> dict[str, Any] | None:
+             stueckliste: bool, erzwingen: bool = False,
+             fest_fehlt: list[tuple[str, str, str]] | None = None, ohne_fest: bool = False) -> dict[str, Any] | None:
+    """Anordnung auf Format ``fmt``/``ausr`` im Maßstab ``s`` oder None. Feste Ansichten (Kevin hat sie gesetzt) stehen
+    zuerst: ihre Lage gilt im Format des Blatts; auf einem anderen Format wird sie anteilig mitgenommen und ins
+    Zeichenfeld geklemmt, und überdeckt sie dort Schriftfeld, Tabellen oder eine andere feste Ansicht, passt das Format
+    nicht (``fest_fehlt`` bekommt (Format, Ausrichtung, Ansicht)). ``ohne_fest``: feste Ansichten wie freie setzen
+    (nur zur Frage, ob es an ihnen lag)."""
     W, H = bl.blattgroesse(fmt, ausr)
     z = bl.zeichenflaeche(W, H)
     sf = bl.schriftfeld_rechteck(W, H)
@@ -929,7 +948,7 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
             if min(w, h) >= 2.2 * (tw + 10.0):
                 continue  # große Ansicht: die Angabe findet innen Platz
             hinweis_platz[a.v.id] = max(hinweis_platz.get(a.v.id, 0.0), tw + 14.0)
-    raster = [v for v in ansichten.values() if _raster_art(v) in RASTER and not v.e.get("fest")]
+    raster = [v for v in ansichten.values() if _raster_art(v) in RASTER and (ohne_fest or not v.e.get("fest"))]
     frei = [v for v in ansichten.values() if v not in raster]
 
     def platz(v: _Ansicht) -> tuple[float, float, float, float]:
@@ -976,9 +995,30 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
         blocks.append(("raster", Rechteck(0, -block_h, block_w, 0), rel))
     belegt = list(reserviert)
     platzierte: dict[str, tuple[float, float]] = {}
-    # Raster: in der freien Fläche oben links bzw. mittig über dem Schriftfeld
     rand = 4.0
     flaeche = Rechteck(z.x0 + rand, z.y0 + rand, z.x1 - rand, z.y1 - rand)
+
+    def rechteck(v: _Ansicht) -> Rechteck:
+        L_, R_, B_, T_ = platz(v)
+        w, h = v.groesse
+        titel_h = 8.0 if (v.titel or v.art in ("schnitt", "einzelheit") or abs(v.s - s) > 1e-9) else 0.0
+        return Rechteck(-w / 2 - L_, -h / 2 - B_, w / 2 + R_, h / 2 + T_ + titel_h)
+
+    # feste Ansichten zuerst (die übrigen richten sich nach ihnen)
+    eigenes = (str(blatt.get("format") or fmt), str(blatt.get("ausrichtung") or ausr))
+    for v in [v for v in frei if v.e.get("fest") and v.e.get("lage") and not ohne_fest]:
+        rb = rechteck(v)
+        lage = (v.e["lage"] if (fmt, ausr) == eigenes else bl.lage_umrechnen(v.e["lage"], eigenes, (fmt, ausr)))
+        cx, cy, passt = _klemmen(rb, (float(lage[0]), float(lage[1])), flaeche)
+        r_abs = rb.verschoben(cx, cy)
+        if (fmt, ausr) != eigenes and (not passt or any(r_abs.schneidet(b) for b in belegt)):
+            if fest_fehlt is not None:
+                fest_fehlt.append((fmt, ausr, v.id))
+            if not erzwingen:
+                return None
+        platzierte[v.id] = (cx, cy)
+        belegt.append(r_abs.erweitert(2.0))
+    # Raster: in der freien Fläche oben links bzw. mittig über dem Schriftfeld
     if blocks:
         _, rb, rel = blocks[0]
         pos = _finde_platz(rb, flaeche, belegt, bevorzugt="mitte_oben")
@@ -993,15 +1033,9 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     weggelassen = []
     # feste Ansichten (Kevin hat sie gesetzt) und freie Ansichten (Isometrie, Schnitt, Einzelheit)
     for v in sorted(frei, key=lambda v: (bool(v.e.get("optional")), -v.groesse[0] * v.groesse[1])):
-        L_, R_, B_, T_ = platz(v)
-        w, h = v.groesse
-        titel_h = 8.0 if (v.titel or v.art in ("schnitt", "einzelheit") or abs(v.s - s) > 1e-9) else 0.0
-        rb = Rechteck(-w / 2 - L_, -h / 2 - B_, w / 2 + R_, h / 2 + T_ + titel_h)
-        if v.e.get("fest") and v.e.get("lage"):
-            cx, cy = float(v.e["lage"][0]), float(v.e["lage"][1])
-            platzierte[v.id] = (cx, cy)
-            belegt.append(rb.verschoben(cx, cy).erweitert(2.0))
+        if v.id in platzierte:  # feste Ansicht, schon gesetzt
             continue
+        rb = rechteck(v)
         pos = _finde_platz(rb, flaeche, belegt, bevorzugt="rechts_oben")
         if pos is None and v.e.get("optional"):
             # kleinerer Maßstab für die Isometrie, sonst weglassen
@@ -1033,6 +1067,22 @@ def _versuch(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: list
     return {"lagen": lagen, "reserviert": reserviert, "tabellen": tabellen, "brueche": brueche,
             "weggelassen": weggelassen, "fuellung": gesamt / (flaeche.breite * flaeche.hoehe), "breiter": breiter,
             "flaeche": flaeche}
+
+
+def _klemmen(rb: Rechteck, mitte: tuple[float, float], flaeche: Rechteck) -> tuple[float, float, bool]:
+    """Mitte so verschieben, dass das Rechteck ``rb`` (um die Mitte) in ``flaeche`` liegt. Dritter Wert: passt es
+    überhaupt hinein."""
+    cx, cy = mitte
+    passt = rb.breite <= flaeche.breite + 1e-6 and rb.hoehe <= flaeche.hoehe + 1e-6
+    if rb.x0 + cx < flaeche.x0:
+        cx = flaeche.x0 - rb.x0
+    elif rb.x1 + cx > flaeche.x1:
+        cx = flaeche.x1 - rb.x1
+    if rb.y1 + cy > flaeche.y1:  # oben zuerst: der Titel der Ansicht steht oben
+        cy = flaeche.y1 - rb.y1
+    elif rb.y0 + cy < flaeche.y0:
+        cy = flaeche.y0 - rb.y0
+    return round(cx, 2), round(cy, 2), passt
 
 
 def _raster_art(v: _Ansicht) -> str:

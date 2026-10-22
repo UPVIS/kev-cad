@@ -145,3 +145,76 @@ def test_notiz_mit_zeiger_auf_kante(env):
     v1 = _gruppe(kopf, gruppen, "v1")
     assert min(_abstand(spitze, np.asarray(pl, dtype=float)) for pl in v1["sichtbar"]) < 0.5
     assert rt.run()["ok"]
+
+
+def _nach_lauf(env, **kw) -> dict:
+    """Lauf und warten, bis Blätter und Bauplan im Hintergrund fertig sind (DOCS mit diesem Lauf)."""
+    app = env["app"]
+    start = app.mark()
+    res = env["rt"].run(**kw)
+    assert res["ok"], res.get("error")
+    app.wait_for(lambda h: h["type"] == "DOCS" and h.get("run") == res["run"] and h.get("blaetter"), start=start,
+                 timeout=60)
+    app.wait_for(lambda h: h["type"] == "DOCS" and (h.get("bauplan") or {}).get("run") == res["run"], start=start,
+                 timeout=120)
+    return res
+
+
+def test_unveraendert_wird_nichts_neu_gerechnet(env):
+    """Gleiche Eingaben: Bauplan und Blätter gelten weiter, ohne Rechnen; jede Änderung rechnet neu."""
+    rt = env["rt"]
+    if not rt.drawings()["blaetter"]:
+        assert rt.drawing_create(["Gestell/Platte"])["ok"]
+    if not rt.bauplan()["ok"]:
+        pytest.fail("kein Bauplan")
+    _nach_lauf(env)
+    plan, blatt = rt._bp()["erg"], rt._z_cache["platte"]
+    res = _nach_lauf(env)
+    assert rt._bp()["erg"] is plan and rt._z_cache["platte"] is blatt  # nichts neu gerechnet
+    assert plan.plan["stand"]["run"] == res["run"] and blatt.kopf["run"] == res["run"]
+    assert rt.bauplan()["bauplan"]["stand"]["run"] == res["run"]
+    # eigene Bearbeitung: danach gilt der bearbeitete Plan, der nächste Lauf rechnet ihn nicht neu
+    schritt = next(s for a in plan.plan["abschnitte"] for s in a["schritte"])
+    assert rt.bauplan_bearbeiten([{"op": "text", "schritt": schritt["id"], "text": "Erst prüfen."}], "kevin")["ok"]
+    bearbeitet = rt._bp()["erg"]
+    _nach_lauf(env)
+    assert rt._bp()["erg"] is bearbeitet
+    assert any(s["text"] == "Erst prüfen." for a in rt.bauplan()["bauplan"]["abschnitte"] for s in a["schritte"])
+    # Modell geändert: beides neu
+    _nach_lauf(env, params={"breite": 240})
+    assert rt._bp()["erg"] is not bearbeitet and rt._z_cache["platte"] is not blatt
+    _nach_lauf(env)
+
+
+def test_reglerstand_sperrt_bearbeiten(env):
+    """Im Reglerstand (Lauf mit überschriebenen Parametern) lehnen Kernel, App und MCP Bearbeitungen der Dokumente mit
+    klarer Meldung ab; ansehen geht. Nach einem Lauf ohne Regler geht alles wieder."""
+    rt, app, path = env["rt"], env["app"], env["path"]
+    if not rt.drawings()["blaetter"]:
+        assert rt.drawing_create(["Gestell/Platte"])["ok"]
+    assert rt.bauplan()["ok"]
+    _nach_lauf(env, params={"breite": 280})
+    ordner = path / "dokumente"
+    vorher = {p.relative_to(ordner): p.read_bytes() for p in ordner.rglob("*.json")}
+    notiz = [{"op": "notiz", "text": "Im Reglerstand", "lage": [30.0, 30.0]}]
+    res = rt.drawing_edit("platte", notiz, "agent")
+    assert res["ok"] is False and res["regler"] and "breite = 280" in res["error"]
+    assert rt.drawing_create(art="zusammenbau")["ok"] is False
+    schritt = next(s for a in rt.bauplan()["bauplan"]["abschnitte"] for s in a["schritte"])  # ansehen geht
+    res = rt.bauplan_bearbeiten([{"op": "text", "schritt": schritt["id"], "text": "x"}], "agent")
+    assert res["ok"] is False and "Reglerstand" in res["error"]
+    assert rt.bauplan(neu=True)["ok"] is False
+    assert rt.drawing("platte")["ok"]
+    start = app.mark()
+    app.send({"type": "DRAWING_EDIT", "id": "r-1", "blatt": "platte", "von": "kevin", "ops": notiz})
+    _, _, ack, _ = app.wait_for(lambda h: h["type"] == "ACK" and h.get("reply_to") == "r-1", start=start)
+    assert ack["ok"] is False and "Reglerstand" in ack["message"]
+    app.send({"type": "BAUPLAN_EDIT", "id": "r-2", "von": "kevin",
+              "ops": [{"op": "text", "schritt": schritt["id"], "text": "x"}]})
+    _, _, ack, _ = app.wait_for(lambda h: h["type"] == "ACK" and h.get("reply_to") == "r-2", start=start)
+    assert ack["ok"] is False and "Reglerstand" in ack["message"]
+    rt.bauplan_pruefen()  # Prüfen im Reglerstand speichert nichts
+    assert {p.relative_to(ordner): p.read_bytes() for p in ordner.rglob("*.json")} == vorher
+    _nach_lauf(env)  # Regler zurück
+    assert rt.drawing_edit("platte", notiz, "agent")["ok"]
+    assert rt.bauplan_bearbeiten([{"op": "text", "schritt": schritt["id"], "text": "Wieder frei."}], "agent")["ok"]

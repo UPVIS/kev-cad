@@ -28,7 +28,7 @@ import numpy as np
 
 from kevcad_kernel.zeichnung import bezuege as bz
 from kevcad_kernel.zeichnung import dokument as dok
-from kevcad_kernel.zeichnung.blatt import MASSSTAEBE, massstab_faktor, massstab_text
+from kevcad_kernel.zeichnung.blatt import MASSSTAEBE, lage_umrechnen, massstab_faktor, massstab_text
 from kevcad_kernel.zeichnung.merkmale import Merkmale
 
 OPS = ("mass_verschieben", "mass_loeschen", "mass_neu", "ansicht_neu", "ansicht_verschieben", "ansicht_loeschen",
@@ -411,10 +411,14 @@ def _format(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> dict[s
     fmt = str(op.get("wert") or "").upper()
     if fmt not in dok.FORMATE:
         raise OpFehler(f"Format {fmt!r} unbekannt ({', '.join(dok.FORMATE)})")
+    vorher = (str(b.get("format") or fmt), str(b.get("ausrichtung") or "quer"))
     b["format"] = fmt
     if op.get("ausrichtung") in ("quer", "hoch"):
         b["ausrichtung"] = op["ausrichtung"]
     b["auto"]["format"] = False
+    for a in b["ansichten"]:  # feste Lagen gelten im bisherigen Format: anteilig mitnehmen (der Zeichner klemmt sie)
+        if a.get("fest") and a.get("lage"):
+            a["lage"] = lage_umrechnen(a["lage"], vorher, (b["format"], b["ausrichtung"]))
     return {"wert": fmt, "ausrichtung": b["ausrichtung"]}
 
 

@@ -13,6 +13,7 @@ eigenen Sperre, damit ein Lauf und eine Bearbeitung nicht gleichzeitig dieselbe 
 
 from __future__ import annotations
 
+import copy
 import datetime as _dt
 import threading
 import time
@@ -37,8 +38,8 @@ class ZeichnungRuntimeMixin:
         self._z_stand_run = 0
         self._z_cache_version: dict[str, str | None] = {}  # Blatt-id → Version im Schriftfeld des Ergebnisses
         self._z_cache_eingang: dict[str, Any] = {}  # Blatt-id → Datei, aus der das Ergebnis gerechnet wurde
+        self._z_cache_schluessel: dict[str, str] = {}  # Blatt-id → Schlüssel der Szene des Ergebnisses
         self._z_ausgelassen = 0  # Blätter, die eine überholte Hintergrundrechnung nicht gespeichert hat
-        self._z_regler_lauf: int | None = None  # letzter Lauf mit überschriebenen Parametern (Szene ≠ Dateien)
 
     def _zeichnung_schliessen(self) -> None:
         from kevcad_kernel.zeichnung.projektion import EXAKT
@@ -50,14 +51,21 @@ class ZeichnungRuntimeMixin:
             self._z_cache.clear()
             self._z_cache_version.clear()
             self._z_cache_eingang.clear()
+            self._z_cache_schluessel.clear()
             self._z_docs = None
 
     def _z_szene_ist_dateistand(self) -> bool:
         """Zeigt die Szene den Stand der Dateien? Nicht nach einem Lauf mit überschriebenen Parametern (Regler,
         ``run(params=…)``): Blätter dazu werden gerechnet und gezeigt, aber nicht gespeichert (die Versionen erfassen
         ``dokumente/``, und die Bezüge sollen zum Stand von model.py passen)."""
-        with self._lock:
-            return self._z_regler_lauf is None or self._z_regler_lauf != self._run_no
+        regler = getattr(self, "_reglerstand", None)
+        return not (callable(regler) and regler())
+
+    def _z_sperre(self) -> str | None:
+        """Meldung, wenn gerade ein Reglerstand gezeigt wird: dann keine Bearbeitung der Blätter (runtime.py,
+        ``_regler_sperre``)."""
+        sperre = getattr(self, "_regler_sperre", None)
+        return sperre("Blätter") if callable(sperre) else None
 
     def _z_bearbeitet(self) -> None:
         """Kevin oder der Agent ändert Blätter: den Versionen melden (eigene Version beim nächsten Lauf)."""
@@ -119,20 +127,60 @@ class ZeichnungRuntimeMixin:
 
     # -- Rechnen -------------------------------------------------------------------------------------------------------
 
+    def _z_schluessel(self, szene: Any) -> str:
+        """Schlüssel über alles, was ein Blatt außer seiner Datei bestimmt: Teile (Formschlüssel mit Lage, Kopf,
+        Katalogeintrag), Stückliste, Projekt mit Version und Datum fürs Schriftfeld, Hausregeln. Je Szene einmal."""
+        k = getattr(szene, "_schluessel", None)
+        if k:
+            return k
+        import hashlib
+        import json
+
+        from kevcad_kernel.bauplan.eingang import stabil
+
+        proj = self._project
+        regeln = None
+        if proj is not None:
+            try:
+                regeln = (Path(proj.path) / "dokumente" / "hausregeln.json").read_text(encoding="utf-8")
+            except OSError:
+                regeln = None
+        daten = {"teile": [[n, t.key, stabil(t.kopf), stabil(t.katalog)] for n, t in szene.teile.items()],
+                 "bom": stabil(szene.bom), "projekt": stabil(szene.projekt), "regeln": regeln}
+        k = hashlib.sha1(json.dumps(daten, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+        try:
+            szene._schluessel = k
+        except AttributeError:
+            pass
+        return k
+
     def _z_rechne(self, blatt: dict[str, Any], szene: Any, speichern: bool = True, lauf: int | None = None) -> Any:
         """Blatt rechnen und speichern. ``lauf``: Hintergrundrechnung dieses Laufs; sie speichert nur, solange er der
         neueste ist (``_lauf_aktuell`` der Versionen), sonst gehörte das Blatt zu einem überholten Stand (gezählt in
-        ``_z_ausgelassen``)."""
+        ``_z_ausgelassen``). Gleicher Schlüssel der Szene (``_z_schluessel``) und die Datei ist Eingang oder Ergebnis
+        des gemerkten Ergebnisses: nichts zu rechnen, das gemerkte gilt (unverändert am Kugelschieber 1 s gespart)."""
         from kevcad_kernel.zeichnung.hausregeln import laden
         from kevcad_kernel.zeichnung.zeichner import rechne
 
         proj = self._project
         ordner = self._z_ordner()
-        regeln, fehler = laden(proj.path if proj is not None else None)
-        with self._occ_lock:
-            erg = rechne(blatt, szene, regeln=regeln)
-        if fehler:
-            erg.hinweise.append(fehler)
+        key = self._z_schluessel(szene)
+        bid = str(blatt.get("id"))
+        eingang = dok.zum_speichern(blatt)
+        erg = None
+        with self._z_lock:
+            alt = self._z_cache.get(bid)
+            if alt is not None and self._z_cache_schluessel.get(bid) == key and eingang in (
+                    self._z_cache_eingang.get(bid), dok.zum_speichern(alt.blatt)):
+                erg = alt
+                erg.kopf["run"] = szene.run
+        neu = erg is None
+        if neu:
+            regeln, fehler = laden(proj.path if proj is not None else None)
+            with self._occ_lock:
+                erg = rechne(blatt, szene, regeln=regeln)
+            if fehler:
+                erg.hinweise.append(fehler)
         aktuell = getattr(self, "_lauf_aktuell", None)
         darf = not callable(aktuell) or lauf is None or aktuell(lauf)
         if speichern and ordner is not None and darf and ordner == self._z_ordner():
@@ -142,10 +190,12 @@ class ZeichnungRuntimeMixin:
                 self._log(f"[zeichnung] Blatt {erg.blatt['id']} nicht gespeichert: {exc}")
         elif speichern and not darf:
             self._z_ausgelassen += 1
-        with self._z_lock:
-            self._z_cache[erg.blatt["id"]] = erg
-            self._z_cache_version[erg.blatt["id"]] = (szene.projekt or {}).get("version")
-            self._z_cache_eingang[erg.blatt["id"]] = dok.zum_speichern(blatt)
+        if neu:
+            with self._z_lock:
+                self._z_cache[erg.blatt["id"]] = erg
+                self._z_cache_version[erg.blatt["id"]] = (szene.projekt or {}).get("version")
+                self._z_cache_eingang[erg.blatt["id"]] = eingang
+                self._z_cache_schluessel[erg.blatt["id"]] = key
         return erg
 
     def _z_alle_rechnen(self, speichern: bool = True, lauf: int | None = None) -> list[tuple[Path, Any, str | None]]:
@@ -196,8 +246,6 @@ class ZeichnungRuntimeMixin:
         """Nach RUN_END: im Hintergrund alle Blätter neu rechnen und DOCS schicken. ``speichern`` False (Lauf mit
         überschriebenen Parametern): nur rechnen und zeigen, die Dateien bleiben beim Stand von model.py. Rückgabe:
         Future (Ergebnis True, wenn alles gespeichert ist, was zu speichern war) oder None ohne Blätter."""
-        with self._lock:
-            self._z_regler_lauf = None if speichern else run
         ordner = self._z_ordner()
         if ordner is None or not ordner.is_dir() or not any(ordner.glob("*.json")):
             return None
@@ -382,6 +430,9 @@ class ZeichnungRuntimeMixin:
         if art not in ("teil", "baugruppe", "zusammenbau"):
             return {"ok": False, "error": f"art {art!r} unbekannt (teil, baugruppe, zusammenbau)"}
         fmt, ausr = _format(format)
+        sperre = self._z_sperre()
+        if sperre:
+            return {"ok": False, "error": sperre, "regler": True}
         szene = self._z_szene()
         if not szene.teile:
             return {"ok": False, "error": "Keine Teile: erst run aufrufen."}
@@ -455,13 +506,17 @@ class ZeichnungRuntimeMixin:
         die App; die App selbst (DRAWING_EDIT) bekommt ACK und danach DRAWING aus ``_z_app_edit``."""
         from kevcad_kernel.zeichnung.bearbeiten import anwenden
 
+        sperre = self._z_sperre()
+        if sperre:  # Klicks und Bezüge gehörten zum Reglerstand, gespeichert würde er in die Datei
+            return {"ok": False, "error": sperre, "regler": True, "ergebnisse": []}
         res = self.drawing(blatt_id)
         if not res.get("ok"):
             return res
         erg = res["ergebnis"]
         self._z_bearbeitet()
         with self._z_lock:
-            blatt, ergebnisse = anwenden(erg.blatt, ops, von, erg)
+            # auf einer Kopie: anwenden ändert verschachtelte Listen, und das gemerkte Ergebnis muss bleiben, wie es war
+            blatt, ergebnisse = anwenden(copy.deepcopy(erg.blatt), ops, von, erg)
             try:
                 neu = self._z_rechne(blatt, self._z_szene())
             except Exception as exc:  # noqa: BLE001

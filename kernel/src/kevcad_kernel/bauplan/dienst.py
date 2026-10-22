@@ -47,11 +47,9 @@ class BauplanDienst:
 
     # -- Erzeugen --------------------------------------------------------------------------------------------------
 
-    def _bp_eingang(self, warten_s: float = 120.0, umfang: dict[str, Any] | None = None):
-        from kevcad_kernel.bauplan.eingang import sammle
-
+    def _bp_pruefstand(self, run: int | None, warten_s: float = 120.0) -> dict[str, Any] | None:
+        """Prüfstand des Laufs (wartet auf die Prüfung, sie liefert die Gewindeeingriffe), sonst der letzte."""
         proj = self._project  # type: ignore[attr-defined]
-        run = self._bp_run()
         if proj is None:
             raise RuntimeError("Kein Projekt offen. Erst project_open oder project_new aufrufen.")
         if run is None:
@@ -59,18 +57,47 @@ class BauplanDienst:
         check = self._pruef.warte(run, warten_s)  # type: ignore[attr-defined]
         if check is None or check.get("state") not in ("done", "failed"):
             check, _ = self._pruef.letztes()  # type: ignore[attr-defined]
+        return check
+
+    def _bp_eingang(self, warten_s: float = 120.0, umfang: dict[str, Any] | None = None,
+                    check: dict[str, Any] | None = None):
+        from kevcad_kernel.bauplan.eingang import sammle
+
+        proj = self._project  # type: ignore[attr-defined]
+        run = self._bp_run()
+        if check is None:
+            check = self._bp_pruefstand(run, warten_s)
         alt = datei.laden(proj.path)
         return sammle(self.scene.records(), bom=self._bom, bedingungen=self._constraints,  # type: ignore[attr-defined]
                       check=check, katalog=self.catalog, titel=proj.name, run=run,  # type: ignore[attr-defined]
                       projekt=proj.path, umfang=umfang if umfang is not None else (alt or {}).get("umfang")), alt
 
-    def _bp_erzeugen(self, erzwingen: bool = False, speichern: bool = True, lauf: int | None = None):
-        """Bauplan des letzten Laufs (aus dem Zwischenstand oder neu). ``speichern`` False (Hintergrund eines Laufs mit
-        überschriebenen Parametern): rechnen und merken, aber die Datei bleibt beim Stand von model.py. ``lauf``:
-        Hintergrundrechnung dieses Laufs; sie speichert und merkt nur, solange er der neueste ist (``_lauf_aktuell``
-        der Versionen)."""
+    def _bp_schluessel(self, check: dict[str, Any] | None) -> str:
+        from kevcad_kernel.bauplan.eingang import schluessel
+
+        proj = self._project  # type: ignore[attr-defined]
+        return schluessel(self.scene.records(), bom=self._bom, bedingungen=self._constraints,  # type: ignore
+                          check=check, katalog=self.catalog, titel=proj.name, projekt=proj.path)  # type: ignore
+
+    def _bp_regler(self) -> str | None:
+        """Meldung, wenn die Szene einen Reglerstand zeigt (runtime.py, ``_regler_sperre``), sonst None."""
+        sperre = getattr(self, "_regler_sperre", None)
+        return sperre("Bauplan") if callable(sperre) else None
+
+    def _bp_erzeugen(self, erzwingen: bool = False, speichern: bool | None = None, lauf: int | None = None):
+        """Bauplan des letzten Laufs (aus dem Zwischenstand oder neu).
+
+        - Neu gerechnet wird nur, wenn sich die Eingaben geändert haben (``eingang.schluessel``: Teile mit Form und
+          Lage, Stückliste, Bedingungen, Prüfstand, Katalog) oder die Datei (Bearbeitungen, ``umfang``); sonst gilt der
+          vorhandene Plan für diesen Lauf weiter (am Kugelschieber 13 s gespart).
+        - ``speichern`` False (Reglerstand: Lauf mit überschriebenen Parametern): rechnen und merken, aber die Datei
+          bleibt beim Stand von model.py; None: so, wie die Szene es verlangt.
+        - ``lauf``: Hintergrundrechnung dieses Laufs; sie speichert und merkt nur, solange er der neueste ist
+          (``_lauf_aktuell`` der Versionen)."""
         from kevcad_kernel.bauplan.plan import erzeuge
 
+        if speichern is None:
+            speichern = self._bp_regler() is None
         st = self._bp()
         with st["lock"]:
             proj = self._project  # type: ignore[attr-defined]
@@ -79,11 +106,25 @@ class BauplanDienst:
             if (not erzwingen and erg is not None and st["run"] == run and proj is not None
                     and st["pfad"] == str(proj.path)):
                 return erg
-            ein, alt = self._bp_eingang()
+            check = self._bp_pruefstand(run)
+            t0 = time.perf_counter()
+            key = self._bp_schluessel(check)
+            datei_stand = _datei_stand(proj.path)
+            aktuell = getattr(self, "_lauf_aktuell", None)
+            if (not erzwingen and erg is not None and st["pfad"] == str(proj.path) and st.get("schluessel") == key
+                    and st.get("datei") == datei_stand):
+                if self._bp_run() != run or (lauf is not None and callable(aktuell) and not aktuell(lauf)):
+                    return erg
+                erg.ein.run = run  # gleiche Eingaben, gleiche Datei: der Plan gilt für diesen Lauf
+                erg.plan.setdefault("stand", {})["run"] = run
+                st.update(run=run, docs=datei.zusammenfassung(erg.plan), nur_anzeige=not speichern)
+                self._log(f"[bauplan] Lauf {run}: Eingaben unverändert, nicht neu gerechnet "  # type: ignore
+                          f"({(time.perf_counter() - t0) * 1000:.0f} ms)")
+                return erg
+            ein, alt = self._bp_eingang(check=check)
             erg = erzeuge(ein, alt)
             if self._bp_run() != run:  # ein neuerer Lauf kam dazwischen: nicht speichern
                 return erg
-            aktuell = getattr(self, "_lauf_aktuell", None)
             if lauf is not None and callable(aktuell) and not aktuell(lauf):
                 return erg  # überholt (neuer Lauf begonnen, Dateien ersetzt): weder speichern noch merken
             if proj is not self._project:  # type: ignore[attr-defined]
@@ -91,7 +132,7 @@ class BauplanDienst:
             if speichern:
                 datei.speichern(proj.path, erg.plan)
             st.update(erg=erg, run=run, pfad=str(proj.path), docs=datei.zusammenfassung(erg.plan),
-                      nur_anzeige=not speichern)
+                      nur_anzeige=not speichern, schluessel=key, datei=_datei_stand(proj.path))
             return erg
 
     def _bp_speichern(self, erg: Any) -> None:
@@ -99,6 +140,7 @@ class BauplanDienst:
         proj = self._project  # type: ignore[attr-defined]
         if proj is not None:
             datei.speichern(proj.path, erg.plan)
+            st["datei"] = _datei_stand(proj.path)  # eigene Bearbeitung: der gemerkte Plan entspricht der Datei
         st["docs"] = datei.zusammenfassung(erg.plan)
 
     # -- MCP -------------------------------------------------------------------------------------------------------
@@ -108,6 +150,9 @@ class BauplanDienst:
         Agent und Kevin bleiben). {"ok", "datei", "bauplan", "zusammenfassung", "zeiten"}"""
         proj = self._project  # type: ignore[attr-defined]
         if neu or (proj is not None and not datei.pfad(proj.path).exists()):
+            sperre = self._bp_regler()
+            if sperre:  # anlegen oder neu rechnen im Reglerstand: der Plan gehörte zu keinem Stand von model.py
+                return {"ok": False, "error": sperre, "regler": True}
             self._bp_bearbeitet()  # neu angelegt oder ausdrücklich neu gerechnet: eine eigene Änderung
         try:
             erg = self._bp_erzeugen(erzwingen=neu)
@@ -128,6 +173,9 @@ class BauplanDienst:
         from kevcad_kernel.bauplan.plan import bilder_setzen, erzeuge, pruefe
 
         st = self._bp()
+        sperre = self._bp_regler()
+        if sperre:  # Bearbeitung bezöge sich auf den Reglerstand und würde ihn speichern
+            return {"ok": False, "error": sperre, "regler": True}
         self._bp_bearbeitet()
         with st["lock"]:
             try:
@@ -298,3 +346,13 @@ class BauplanDienst:
         st = self._bp()
         with st["lock"]:
             st.update(erg=None, run=None, pfad=None, docs=None)
+
+
+def _datei_stand(projekt: Any) -> str | None:
+    """Prüfsumme von bauplan.json (Bearbeitungen, ``umfang``) oder None ohne Datei."""
+    import hashlib
+
+    try:
+        return hashlib.sha1(datei.pfad(projekt).read_bytes()).hexdigest()
+    except OSError:
+        return None
