@@ -30,11 +30,13 @@ struct DruckAbschnitt: View {
         if let v = druck.vorschau, !v.istLeer {
             return [KevFormat.count(v.stueck, one: "Teil", many: "Teile") + " in "
                         + KevFormat.count(v.teile.count, one: "Gruppe", many: "Gruppen"),
+                    v.gedruckt.isEmpty ? nil : "\(v.gedruckt.count) schon gedruckt",
                     v.drucker, v.projekt?.platte].compactMap { $0 }.joined(separator: " · ")
         }
         let k = model.materialDaten.kennzahlen
         guard k.druckteile > 0 else { return "3D-Druckteile aus druckbarem Material" }
-        return [KevFormat.count(k.druckteile, one: "Teil", many: "Teile"), KevFormat.mass(grams: k.druckGramm) + " Filament",
+        return [KevFormat.count(k.druckteile, one: "Teil", many: "Teile"),
+                k.gedruckt > 0 ? "\(k.gedruckt) schon gedruckt" : nil, KevFormat.mass(grams: k.druckGramm) + " Filament",
                 k.druckPreis.map { "≈ " + KevFormat.euro($0) }].compactMap { $0 }.joined(separator: " · ")
     }
 }
