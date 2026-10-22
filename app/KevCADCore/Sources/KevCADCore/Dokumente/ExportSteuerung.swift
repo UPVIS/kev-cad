@@ -83,6 +83,7 @@ extension AppController: ExportActions {
         }
         var q = ExportQuellen(kopf: exportKopf(), bom: model.bom, bestand: model.bestandZustand.zuschnitt,
                               teile: model.parts)
+        q.druck = model.druck.vorschau  // Baustein „3D-Druck“ (DRUCKVORSCHAU.md)
         // Bauplan: wenn nötig beim Kernel holen (erzeugt ihn beim ersten Mal)
         if arten.contains(.bauplan) || arten.contains(.deckblatt) {
             if model.bauplan.plan == nil && connected {

@@ -483,7 +483,7 @@ def bauplan_beispiel() -> dict[str, Any]:
 # Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; Strang P6-A2). Das PDF baut die App.
 
 DOC_EXPORT_BAUSTEINE: tuple[str, ...] = ("deckblatt", "stueckliste", "teileliste", "einkaufsliste", "zuschnitt",
-                                         "zeichnungen", "bauplan")
+                                         "druck", "zeichnungen", "bauplan")
 
 
 def doc_export_req(bausteine: list[dict[str, Any]], *, ziel: str | None, drucken: bool = False,

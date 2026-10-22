@@ -38,6 +38,7 @@ struct ProjectWindow: View {
             CatalogSelfTest.runIfRequested(session)
             ZukaufSelfTest.runIfRequested(session)
             BauplanExportSelfTest.runIfRequested(session, state: state, zustand: dokumente)  // Phase 6, P6-A2
+            DruckSelfTest.runIfRequested(session)  // Druckvorschau (KEVCAD_SELFTEST=druck)
             if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
