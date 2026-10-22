@@ -140,7 +140,7 @@ public enum ExportAusrichtung: String, CaseIterable, Codable, Sendable {
 }
 
 /// Seitengröße in mm und als Name („A4 hoch“).
-public struct ExportFormat: Equatable, Hashable, Sendable {
+public struct ExportSeitenformat: Equatable, Hashable, Sendable {
     public var papier: ExportPapier
     public var ausrichtung: ExportAusrichtung
 
@@ -162,10 +162,10 @@ public struct ExportFormat: Equatable, Hashable, Sendable {
     public static let ptJeMM: CGFloat = 72 / 25.4
 
     /// Format zu einer Seitengröße in mm (A4/A3, hoch/quer), sonst nil.
-    public static func passend(mm s: CGSize) -> ExportFormat? {
+    public static func passend(mm s: CGSize) -> ExportSeitenformat? {
         for p in ExportPapier.allCases {
             for a in ExportAusrichtung.allCases {
-                let f = ExportFormat(p, a)
+                let f = ExportSeitenformat(p, a)
                 if abs(f.mm.width - s.width) < 1.5 && abs(f.mm.height - s.height) < 1.5 { return f }
             }
         }
@@ -234,7 +234,7 @@ public struct ExportVorlage: Codable, Equatable, Identifiable, Sendable {
 
     public var aktive: [ExportBausteinWahl] { bausteine.filter(\.an) }
 
-    public var seitenformat: ExportFormat { ExportFormat(format, ausrichtung) }
+    public var seitenformat: ExportSeitenformat { ExportSeitenformat(format, ausrichtung) }
 
     enum CodingKeys: String, CodingKey { case name, format, ausrichtung, bausteine }
 

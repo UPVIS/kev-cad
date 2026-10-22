@@ -64,11 +64,11 @@ public struct ExportSeite {
     }
 
     public var formatName: String {
-        if let f = ExportFormat.passend(mm: groesse) { return f.name }
+        if let f = ExportSeitenformat.passend(mm: groesse) { return f.name }
         return "\(Int(groesse.width.rounded())) × \(Int(groesse.height.rounded())) mm"
     }
 
-    public var punkte: CGSize { CGSize(width: groesse.width * ExportFormat.ptJeMM, height: groesse.height * ExportFormat.ptJeMM) }
+    public var punkte: CGSize { CGSize(width: groesse.width * ExportSeitenformat.ptJeMM, height: groesse.height * ExportSeitenformat.ptJeMM) }
 }
 
 public struct ExportSeitenInfo {
@@ -170,7 +170,7 @@ public final class ExportDokument {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: tmp) }
-        var box = CGRect(origin: .zero, size: seiten.first?.punkte ?? ExportFormat().punkte)
+        var box = CGRect(origin: .zero, size: seiten.first?.punkte ?? ExportSeitenformat().punkte)
         let meta: [CFString: Any] = [
             kCGPDFContextTitle: "\(kopf.projekt) – Dokumente", kCGPDFContextAuthor: kopf.autor,
             kCGPDFContextCreator: "Kev CAD", kCGPDFContextSubject: "Stückliste, Zeichnungen und Bauplan",
@@ -226,7 +226,7 @@ public final class ExportDokument {
         else { return nil }
         ctx.setFillColor(ExportStil.weiss)
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-        let k = pixelJeMM / ExportFormat.ptJeMM
+        let k = pixelJeMM / ExportSeitenformat.ptJeMM
         ctx.scaleBy(x: k, y: k)
         zeichne(i, in: ctx)
         return ctx.makeImage()

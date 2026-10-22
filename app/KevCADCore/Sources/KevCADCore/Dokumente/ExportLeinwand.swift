@@ -63,7 +63,7 @@ public struct ExportSchrift: Sendable {
     public var ctFont: CTFont {
         let key = "\(name)|\(pt)"
         if let f = ExportSchriftCache.shared.get(key) { return f }
-        let f = CTFontCreateWithName(name as CFString, pt / ExportFormat.ptJeMM, nil)
+        let f = CTFontCreateWithName(name as CFString, pt / ExportSeitenformat.ptJeMM, nil)
         ExportSchriftCache.shared.set(key, f)
         return f
     }
@@ -71,7 +71,7 @@ public struct ExportSchrift: Sendable {
     /// Zeilenhöhe in mm (Ober- plus Unterlänge plus Durchschuss).
     public var zeilenhoehe: CGFloat {
         let f = ctFont
-        return CTFontGetAscent(f) + CTFontGetDescent(f) + max(CTFontGetLeading(f), pt * 0.12 / ExportFormat.ptJeMM)
+        return CTFontGetAscent(f) + CTFontGetDescent(f) + max(CTFontGetLeading(f), pt * 0.12 / ExportSeitenformat.ptJeMM)
     }
 
     public var oberlaenge: CGFloat { CTFontGetAscent(ctFont) }
@@ -149,7 +149,7 @@ public final class ExportLeinwand {
     public let groesse: CGSize
 
     /// `ctx` in Punkt mit Ursprung links unten (PDF-Kontext); `groesse` in mm.
-    public init(ctx: CGContext, groesse: CGSize, punktJeMM: CGFloat = ExportFormat.ptJeMM) {
+    public init(ctx: CGContext, groesse: CGSize, punktJeMM: CGFloat = ExportSeitenformat.ptJeMM) {
         self.ctx = ctx
         self.groesse = groesse
         ctx.translateBy(x: 0, y: groesse.height * punktJeMM)

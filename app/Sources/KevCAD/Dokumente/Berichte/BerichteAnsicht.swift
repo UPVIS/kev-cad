@@ -9,7 +9,7 @@ struct BerichteAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject var export: ExportStore
     @State private var bericht: ExportBausteinArt = .stueckliste
-    @State private var format = ExportFormat()
+    @State private var format = ExportSeitenformat()
     @State private var dokument: ExportDokument?
     @State private var baut = false
     @State private var zoom: CGFloat = 1

@@ -83,7 +83,7 @@ public enum ExportBauer {
     }
 
     /// Seiten eines Bausteins aus Blöcken im Fluss; die erste Seite trägt die Überschrift.
-    static func flussSeiten(_ art: ExportBausteinArt, _ format: ExportFormat, titel: String? = nil,
+    static func flussSeiten(_ art: ExportBausteinArt, _ format: ExportSeitenformat, titel: String? = nil,
                             _ bloecke: [ExportBlock]) -> [ExportSeite]
     {
         let inhalt = ExportRand.inhalt(format.mm)
@@ -137,7 +137,7 @@ public enum ExportBauer {
 
     // MARK: Deckblatt
 
-    static func deckblatt(_ q: ExportQuellen, _ vorlage: ExportVorlage, _ format: ExportFormat) -> [ExportSeite] {
+    static func deckblatt(_ q: ExportQuellen, _ vorlage: ExportVorlage, _ format: ExportSeitenformat) -> [ExportSeite] {
         let titel = q.kopf.projekt
         let inhaltArten = vorlage.aktive.map(\.art).filter { $0 != .deckblatt }
         let seite = ExportSeite(groesse: format.mm, baustein: .deckblatt, titel: "Deckblatt", mitKopf: false,
@@ -261,7 +261,7 @@ public enum ExportBauer {
         return t
     }
 
-    static func stueckliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportFormat,
+    static func stueckliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportSeitenformat,
                             _ hinweise: inout [String]) -> [ExportSeite]
     {
         guard let bom = q.bom, !bom.lines.isEmpty else {
@@ -319,7 +319,7 @@ public enum ExportBauer {
         return ("3D-Druck", p.material)
     }
 
-    static func teileliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportFormat,
+    static func teileliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportSeitenformat,
                            _ hinweise: inout [String]) -> [ExportSeite]
     {
         guard !q.teile.isEmpty else {
@@ -371,7 +371,7 @@ public enum ExportBauer {
 
     // MARK: Einkaufsliste
 
-    static func einkaufsliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportFormat,
+    static func einkaufsliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportSeitenformat,
                               _ hinweise: inout [String]) -> [ExportSeite]
     {
         let spalten = wahl.wirksameSpalten
@@ -434,7 +434,7 @@ public enum ExportBauer {
 
     // MARK: Zuschnitt
 
-    static func zuschnitt(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportFormat,
+    static func zuschnitt(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportSeitenformat,
                           _ hinweise: inout [String]) -> [ExportSeite]
     {
         var bloecke: [ExportBlock] = []

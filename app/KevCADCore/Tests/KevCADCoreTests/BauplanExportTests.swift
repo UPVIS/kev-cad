@@ -155,14 +155,14 @@ final class BauplanExportTests: XCTestCase {
         nurVorlage.ausrichtung = nil
         let (v1, h1) = nurVorlage.vorlage(aus: datei)
         XCTAssertEqual(v1.aktive.map(\.art), [.stueckliste, .bauplan])
-        XCTAssertEqual(v1.seitenformat, ExportFormat(.a3, .quer))
+        XCTAssertEqual(v1.seitenformat, ExportSeitenformat(.a3, .quer))
         XCTAssertTrue(h1.isEmpty)
         var mitBausteinen = a
         mitBausteinen.vorlage = "Werkstatt"
         mitBausteinen.bausteine = [ExportBausteinWahl(art: .stueckliste)]
         let (v2, _) = mitBausteinen.vorlage(aus: datei)
         XCTAssertEqual(v2.aktive.first?.spalten, ["pos", "benennung"])
-        XCTAssertEqual(v2.seitenformat, ExportFormat(.a4, .hoch))  // Format der Anfrage gewinnt
+        XCTAssertEqual(v2.seitenformat, ExportSeitenformat(.a4, .hoch))  // Format der Anfrage gewinnt
         nurVorlage.vorlage = "gibtsnicht"
         XCTAssertEqual(nurVorlage.vorlage(aus: datei).1.count, 1)
     }
@@ -318,10 +318,10 @@ final class BauplanExportTests: XCTestCase {
     }
 
     func testFormate() {
-        XCTAssertEqual(ExportFormat(.a4, .hoch).mm, CGSize(width: 210, height: 297))
-        XCTAssertEqual(ExportFormat(.a3, .quer).mm, CGSize(width: 420, height: 297))
-        XCTAssertEqual(ExportFormat.passend(mm: CGSize(width: 297, height: 210))?.name, "A4 quer")
-        XCTAssertEqual(ExportFormat(.a4, .hoch).punkte.width, 595.28, accuracy: 0.01)
+        XCTAssertEqual(ExportSeitenformat(.a4, .hoch).mm, CGSize(width: 210, height: 297))
+        XCTAssertEqual(ExportSeitenformat(.a3, .quer).mm, CGSize(width: 420, height: 297))
+        XCTAssertEqual(ExportSeitenformat.passend(mm: CGSize(width: 297, height: 210))?.name, "A4 quer")
+        XCTAssertEqual(ExportSeitenformat(.a4, .hoch).punkte.width, 595.28, accuracy: 0.01)
     }
 
     // MARK: PDF

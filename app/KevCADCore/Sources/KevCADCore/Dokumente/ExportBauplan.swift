@@ -8,7 +8,7 @@ import Foundation
 public enum ExportBauplanSeiten {
     static let nummerGroesse: CGFloat = 11
 
-    public static func seiten(_ q: ExportQuellen, _ format: ExportFormat, _ hinweise: inout [String]) -> [ExportSeite] {
+    public static func seiten(_ q: ExportQuellen, _ format: ExportSeitenformat, _ hinweise: inout [String]) -> [ExportSeite] {
         guard let plan = q.bauplan, !plan.alleSchritte.isEmpty else {
             hinweise.append("Bauplan noch nicht gerechnet: in der App unter Dokumente › Bauplan öffnen oder "
                             + "bauplan() aufrufen")
@@ -187,7 +187,7 @@ public enum ExportBauplanSeiten {
         let r = CGRect(x: at.x, y: at.y, width: groesse, height: groesse)
         l.rechteck(r, fuellung: ExportStil.akzent, radius: groesse * 0.22)
         let pt: CGFloat = nr >= 100 ? groesse * 1.15 : groesse * 1.45
-        l.text("\(nr)", x: r.midX, y: r.midY + pt / ExportFormat.ptJeMM * 0.36, .fett(pt), farbe: ExportStil.weiss, .mitte)
+        l.text("\(nr)", x: r.midX, y: r.midY + pt / ExportSeitenformat.ptJeMM * 0.36, .fett(pt), farbe: ExportStil.weiss, .mitte)
     }
 
     /// Kopfzeile eines Schritts: Nummer, Titel, Untertitel, Wiederholung.
@@ -378,7 +378,7 @@ public enum ExportBauplanSeiten {
 
     // MARK: Montageschritt (eine Seite)
 
-    static func montageSchritt(_ s: BauplanSchritt, nr: Int, bild: BauplanStrichbild?, format: ExportFormat,
+    static func montageSchritt(_ s: BauplanSchritt, nr: Int, bild: BauplanStrichbild?, format: ExportSeitenformat,
                                abzug: CGFloat = 0) -> ExportBlock {
         let inhalt = ExportRand.inhalt(format.mm)
         let breite = inhalt.width

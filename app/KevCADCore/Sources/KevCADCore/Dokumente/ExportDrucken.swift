@@ -29,9 +29,9 @@ public final class ExportDrucker: NSObject {
         for i in 0..<pdf.pageCount {
             guard let page = pdf.page(at: i), let kopie = page.copy() as? PDFPage else { continue }
             let box = page.bounds(for: .mediaBox).size
-            let name = ExportFormat.passend(mm: CGSize(width: box.width / ExportFormat.ptJeMM,
-                                                       height: box.height / ExportFormat.ptJeMM))?.name
-                ?? "\(Int((box.width / ExportFormat.ptJeMM).rounded())) × \(Int((box.height / ExportFormat.ptJeMM).rounded())) mm"
+            let name = ExportSeitenformat.passend(mm: CGSize(width: box.width / ExportSeitenformat.ptJeMM,
+                                                       height: box.height / ExportSeitenformat.ptJeMM))?.name
+                ?? "\(Int((box.width / ExportSeitenformat.ptJeMM).rounded())) × \(Int((box.height / ExportSeitenformat.ptJeMM).rounded())) mm"
             if let k = out.firstIndex(where: { abs($0.groessePt.width - box.width) < 1 && abs($0.groessePt.height - box.height) < 1 }) {
                 out[k].dokument.insert(kopie, at: out[k].dokument.pageCount)
             } else {
