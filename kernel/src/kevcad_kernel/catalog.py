@@ -242,6 +242,10 @@ def validate_material(entry: Any) -> list[str]:
             errors.append(f"{who}: spule_g muss eine Zahl zwischen 0 und 20000 sein (g Filament je Kaufspule)")
     if entry.get("mechanik") is not None:
         errors += validate_mechanik(entry["mechanik"], who)
+    if entry.get("render") is not None:  # Phase 7: Darstellung im Rendering (render/materialien.py)
+        from kevcad_kernel.render.materialien import validate_render
+
+        errors += validate_render(entry["render"], who)
     errors += _check_status(entry, who)
     return errors
 

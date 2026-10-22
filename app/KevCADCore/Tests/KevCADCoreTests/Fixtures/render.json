@@ -1,0 +1,305 @@
+{
+  "render_start": {
+    "type": "RENDER_START",
+    "id": "a-41",
+    "szene": "studio",
+    "ansicht": "aktuell",
+    "kamera": null,
+    "breite": 1920,
+    "hoehe": 1080,
+    "qualitaet": "schnell",
+    "hintergrund": null,
+    "ziel": null,
+    "vorschau": false
+  },
+  "render_start_foto": {
+    "type": "RENDER_START",
+    "id": "a-42",
+    "szene": "draussen",
+    "ansicht": "produkt",
+    "kamera": "Kamera/FX6",
+    "breite": 3840,
+    "hoehe": 2160,
+    "qualitaet": "foto",
+    "hintergrund": "transparent",
+    "ziel": "titel.png",
+    "vorschau": false
+  },
+  "render_cancel": {
+    "type": "RENDER_CANCEL",
+    "id": "a-43",
+    "auftrag": "R-7"
+  },
+  "render_req": {
+    "type": "RENDER_REQ",
+    "id": "k-80",
+    "auftrag": "R-6",
+    "szene": {
+      "name": "studio",
+      "titel": "Studio",
+      "licht": "studio",
+      "umgebung": null,
+      "staerke": 1.0,
+      "drehung": 0.0,
+      "hintergrund": "#F1F2F4",
+      "transparent": false,
+      "boden": true
+    },
+    "ansicht": "aktuell",
+    "kamera": null,
+    "width": 1920,
+    "height": 1080,
+    "teile": [
+      {
+        "name": "Rahmen/Rohr",
+        "basisfarbe": [
+          0.827,
+          0.839,
+          0.851
+        ],
+        "metallisch": 1.0,
+        "rauheit": 0.42,
+        "oberflaeche": "eloxiert",
+        "klarlack": 0.35,
+        "klarlack_rauheit": 0.25,
+        "anisotropie": 0.0,
+        "durchsichtig": 0.0,
+        "material": "alu-6060",
+        "quelle": "katalog",
+        "kulisse": false
+      },
+      {
+        "name": "Rahmen/Halter (Druck)",
+        "basisfarbe": [
+          0.85,
+          0.2,
+          0.15
+        ],
+        "metallisch": 0.0,
+        "rauheit": 0.5,
+        "oberflaeche": "schichten",
+        "klarlack": 0.0,
+        "klarlack_rauheit": 0.1,
+        "anisotropie": 0.0,
+        "durchsichtig": 0.0,
+        "schichthoehe": 0.2,
+        "material": "pla",
+        "quelle": "teilfarbe",
+        "kulisse": false
+      },
+      {
+        "name": "Kulisse/Boden",
+        "basisfarbe": [
+          0.9,
+          0.9,
+          0.9
+        ],
+        "metallisch": 0.0,
+        "rauheit": 0.5,
+        "oberflaeche": "glatt",
+        "klarlack": 0.0,
+        "klarlack_rauheit": 0.1,
+        "anisotropie": 0.0,
+        "durchsichtig": 0.0,
+        "material": null,
+        "quelle": "ohne_material",
+        "kulisse": true
+      }
+    ],
+    "path": "/Users/kevin/Documents/Kev CAD/Halter/output/renders/Halter_studio_schnell.png",
+    "vorschau": false
+  },
+  "render_req_hdri": {
+    "type": "RENDER_REQ",
+    "id": "k-81",
+    "auftrag": "R-8",
+    "szene": {
+      "name": "draussen",
+      "titel": "Draußen",
+      "licht": "umgebung",
+      "umgebung": "/Applications/Kev CAD/umgebungen/garten.hdr",
+      "staerke": 1.0,
+      "drehung": 30.0,
+      "hintergrund": "umgebung",
+      "transparent": false,
+      "boden": true
+    },
+    "ansicht": "produkt",
+    "kamera": "Kamera/FX6",
+    "width": 960,
+    "height": 540,
+    "teile": [
+      {
+        "name": "Rahmen/Rohr",
+        "basisfarbe": [
+          0.827,
+          0.839,
+          0.851
+        ],
+        "metallisch": 1.0,
+        "rauheit": 0.42,
+        "oberflaeche": "eloxiert",
+        "klarlack": 0.35,
+        "klarlack_rauheit": 0.25,
+        "anisotropie": 0.0,
+        "durchsichtig": 0.0,
+        "material": "alu-6060",
+        "quelle": "katalog",
+        "kulisse": false
+      }
+    ],
+    "path": "/tmp/vorschau-schnell.png",
+    "vorschau": true
+  },
+  "render_res": {
+    "type": "RENDER_RES",
+    "reply_to": "k-80",
+    "ok": true,
+    "path": "/Users/kevin/Documents/Kev CAD/Halter/output/renders/Halter_studio_schnell.png",
+    "width": 1920,
+    "height": 1080,
+    "ms": 840,
+    "kamera": {
+      "projection": "perspective",
+      "position": [
+        420.0,
+        -510.0,
+        360.0
+      ],
+      "target": [
+        0.0,
+        0.0,
+        40.0
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "fov_deg": 26.0,
+      "ortho_height_mm": null,
+      "name": null
+    },
+    "message": null,
+    "phasen": {
+      "netze_ms": 120,
+      "umgebung_ms": 310,
+      "rendern_ms": 330,
+      "png_ms": 80
+    }
+  },
+  "render_scene_req": {
+    "type": "RENDER_SCENE_REQ",
+    "id": "k-82",
+    "auftrag": "R-9",
+    "ansicht": "iso",
+    "kamera": null,
+    "width": 2400,
+    "height": 1600,
+    "kulisse": [
+      "Kulisse/Boden"
+    ]
+  },
+  "render_scene": {
+    "type": "RENDER_SCENE",
+    "reply_to": "k-82",
+    "ok": true,
+    "kamera": {
+      "projection": "perspective",
+      "position": [
+        420.0,
+        -510.0,
+        360.0
+      ],
+      "target": [
+        0.0,
+        0.0,
+        40.0
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "fov_deg": 26.0,
+      "ortho_height_mm": null,
+      "name": null
+    },
+    "teile": [
+      {
+        "name": "Rahmen/Rohr",
+        "matrix": null
+      },
+      {
+        "name": "Rahmen/Halter (Druck)",
+        "matrix": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          25.5,
+          1
+        ]
+      }
+    ],
+    "message": null
+  },
+  "render_status_laeuft": {
+    "type": "RENDER_STATUS",
+    "auftrag": "R-9",
+    "zustand": "laeuft",
+    "qualitaet": "foto",
+    "szene": "studio",
+    "fortschritt": 0.42,
+    "text": "Probe 54 von 128",
+    "pfad": null,
+    "width": 2400,
+    "height": 1600,
+    "ms": null,
+    "von": "app",
+    "vorschau": false,
+    "fehler": null
+  },
+  "render_status_fertig": {
+    "type": "RENDER_STATUS",
+    "auftrag": "R-9",
+    "zustand": "fertig",
+    "qualitaet": "foto",
+    "szene": "studio",
+    "fortschritt": 1.0,
+    "text": "fertig in 74 s",
+    "pfad": "/Users/kevin/Documents/Kev CAD/Halter/output/renders/x.png",
+    "width": 2400,
+    "height": 1600,
+    "ms": 74210,
+    "von": "app",
+    "vorschau": false,
+    "fehler": null
+  },
+  "render_status_fehler": {
+    "type": "RENDER_STATUS",
+    "auftrag": "R-10",
+    "zustand": "fehler",
+    "qualitaet": "foto",
+    "szene": "werkstatt",
+    "fortschritt": 0.0,
+    "text": "Blender fehlt",
+    "pfad": null,
+    "width": 0,
+    "height": 0,
+    "ms": null,
+    "von": "agent",
+    "vorschau": false,
+    "fehler": "Blender fehlt (erwartet unter /Applications/Blender.app)"
+  }
+}

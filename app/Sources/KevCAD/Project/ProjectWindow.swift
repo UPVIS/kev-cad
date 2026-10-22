@@ -35,6 +35,7 @@ struct ProjectWindow: View {
         .navigationTitle(model.project?.name ?? "Kev CAD")
         .navigationSubtitle(untertitel)
         .modifier(DruckerDialoge(model: model))  // Phase 8: „Drucken …“ und Drucker-Einstellungen
+        .modifier(RenderDialoge(model: model))  // Phase 7: „Rendern …“
         .onAppear {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
             BedingungenSchalter.wiederherstellen(model)
@@ -46,6 +47,7 @@ struct ProjectWindow: View {
             BauplanExportSelfTest.runIfRequested(session, state: state, zustand: dokumente)  // Phase 6, P6-A2
             DruckSelfTest.runIfRequested(session, state: state)  // Druckvorschau (KEVCAD_SELFTEST=druck)
             DruckerSelbsttest.runIfRequested(session)  // Phase 8 (KEVCAD_SELFTEST=drucker)
+            RenderSelbsttest.runIfRequested(session)  // Phase 7 (KEVCAD_SELFTEST=render)
             BestandSelfTest.runIfRequested(session)
             FilamentSelfTest.runIfRequested(session, state: state, material: material)  // KEVCAD_SELFTEST=filament
             MaterialSelfTest.runIfRequested(session, state: state, material: material)

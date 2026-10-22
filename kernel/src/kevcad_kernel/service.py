@@ -276,6 +276,18 @@ class KernelService(Protocol):
     def camera_suggestion(self, name: str = "", timeout_s: float = 10) -> dict[str, Any]:
         """Aktuelle Ansicht der App als neue Lage vorschlagen: {"ok", "name", "vorschlag", "code"}"""
 
+    # Phase 7: Renderings (PROTOCOL.md „Phase 7: Renderings“, umgesetzt in render/laufzeit.py)
+    def render(self, szene: str | None = "studio", ansicht: str | None = None, kamera: str | None = None,
+               groesse: Any = None, qualitaet: str = "schnell", hintergrund: str | None = None,
+               umgebung: str | None = None, ziel: str | None = None, warten_s: float | None = None,
+               auftrag: str | None = None, abbrechen: bool = False, bild: bool = False,
+               samples: int | None = None) -> dict[str, Any]:
+        """Rendering nach <projekt>/output/renders/ (schnell: RealityKit in der App, wartet; foto: Blender im
+        Hintergrund, kehrt sofort zurück, außer ``warten_s``). Mit ``auftrag`` („R-3“): Stand abfragen, mit
+        ``abbrechen`` abbrechen. {"ok", "auftrag", "zustand" (wartet | laeuft | fertig | fehler | abgebrochen),
+        "qualitaet", "szene", "ansicht", "kamera", "width", "height", "pfad", "ms", "fortschritt", "text", "phasen",
+        "kamera_json", "png"? (nur mit ``bild``), "error"?}"""
+
     # Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Bauplan“; umgesetzt in bauplan/dienst.py)
     def bauplan(self, neu: bool = False) -> dict[str, Any]:
         """Bauplan des letzten Laufs, bei Bedarf erzeugt und als <projekt>/dokumente/bauplan.json gespeichert:

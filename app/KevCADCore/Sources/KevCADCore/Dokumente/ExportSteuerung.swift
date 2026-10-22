@@ -117,6 +117,13 @@ extension AppController: ExportActions {
             q.teilBilder = await exportTeilBilder(Array(Set(namen)))
         }
         if arten.contains(.deckblatt) { q.gesamtBild = exportGesamtBild() }
+        if arten.contains(.produktbild) {  // Phase 7: Rendering (Render/AppController+Render.swift)
+            store.laeuft = "Produktbild wird gerendert"
+            if let p = await exportProduktbild() {
+                q.produktBild = p.bild
+                q.produktQuelle = p.quelle
+            }
+        }
         phase("bilder_ms")
         q.pruefFehler = model.pruefung?.fehler
         store.laeuft = nil

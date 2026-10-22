@@ -543,6 +543,8 @@ public enum KernelMessage: Sendable {
     case referenz(ReferenzNachricht)
     /// Statik (additiv, PLAN-STATIK.md): STATICS mit Szenarien, Ampel und Ausnutzung je Teil und Stab.
     case statik(StatikErgebnis)
+    /// Phase 7 (additiv): Renderings – RENDER_REQ, RENDER_SCENE_REQ, RENDER_STATUS.
+    case render(RenderNachricht)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -581,6 +583,7 @@ public enum KernelMessage: Sendable {
         case .freigabe: return "FREIGABE_ANFRAGE"
         case .referenz(let r): return r.typeName
         case .statik: return "STATICS"
+        case .render(let r): return r.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -652,6 +655,7 @@ public enum KernelMessage: Sendable {
         case let t where ReferenzNachricht.types.contains(t):
             return .referenz(try ReferenzNachricht.decode(type: t, frame: frame))
         case "STATICS": return .statik(try StatikErgebnis.decode(h))
+        case let t where RenderNachricht.types.contains(t): return .render(try RenderNachricht.decode(type: t, header: h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

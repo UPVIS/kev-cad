@@ -491,8 +491,8 @@ def bauplan_beispiel() -> dict[str, Any]:
 
 # Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; Strang P6-A2). Das PDF baut die App.
 
-DOC_EXPORT_BAUSTEINE: tuple[str, ...] = ("deckblatt", "stueckliste", "teileliste", "einkaufsliste", "zuschnitt",
-                                         "druck", "zeichnungen", "bauplan")
+DOC_EXPORT_BAUSTEINE: tuple[str, ...] = ("deckblatt", "produktbild", "stueckliste", "teileliste", "einkaufsliste",
+                                         "zuschnitt", "druck", "zeichnungen", "bauplan")  # produktbild: Phase 7
 
 
 def doc_export_req(bausteine: list[dict[str, Any]], *, ziel: str | None, drucken: bool = False,
@@ -1499,3 +1499,125 @@ def statik_beispiel_ablauf() -> dict[str, Any]:
     b["grenzen"] = list(b["grenzen"]) + ["Ablauf (S2) mit Starrkörpern: keine Verformung, kein Federn der Rohre, "
                                          "Stöße ohne Rückprall."]
     return b
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 7: Renderings (PROTOCOL.md, Abschnitt „Phase 7: Renderings“; PLAN-PHASE7-RENDERINGS.md)
+# ---------------------------------------------------------------------------------------------------------------------
+
+RENDER_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    # App → Kernel
+    "RENDER_START": ("id", "szene", "ansicht", "kamera", "breite", "hoehe", "qualitaet", "hintergrund", "ziel",
+                     "vorschau"),
+    "RENDER_CANCEL": ("id", "auftrag"),
+    "RENDER_RES": ("reply_to", "ok", "path", "width", "height", "ms", "kamera", "message"),
+    "RENDER_SCENE": ("reply_to", "ok", "kamera", "teile", "message"),
+    # Kernel → App
+    "RENDER_REQ": ("id", "auftrag", "szene", "ansicht", "kamera", "width", "height", "teile", "path", "vorschau"),
+    "RENDER_SCENE_REQ": ("id", "auftrag", "ansicht", "kamera", "width", "height"),
+    "RENDER_STATUS": ("auftrag", "zustand", "qualitaet", "szene", "fortschritt", "text", "pfad", "width", "height",
+                      "ms", "von", "vorschau", "fehler"),
+}
+RENDER_ZUSTAENDE: tuple[str, ...] = ("wartet", "laeuft", "fertig", "fehler", "abgebrochen")
+RENDER_SZENE_FELDER: tuple[str, ...] = ("name", "titel", "licht", "umgebung", "staerke", "drehung", "hintergrund",
+                                        "transparent", "boden")
+RENDER_PBR_FELDER: tuple[str, ...] = ("name", "basisfarbe", "metallisch", "rauheit", "oberflaeche", "klarlack",
+                                      "klarlack_rauheit", "anisotropie", "durchsichtig")
+RENDER_KAMERA_FELDER: tuple[str, ...] = ("projection", "position", "target", "up", "fov_deg", "ortho_height_mm")
+
+
+def render_status(auftrag: str, zustand: str, *, qualitaet: str, szene: str, fortschritt: float = 0.0,
+                  text: str = "", pfad: str | None = None, width: int = 0, height: int = 0, ms: int | None = None,
+                  von: str = "agent", vorschau: bool = False, fehler: str | None = None,
+                  seq: int = 0) -> dict[str, Any]:
+    """RENDER_STATUS (Kernel → App): Stand eines Auftrags, bei jedem Wechsel und höchstens alle 0,4 s im Lauf."""
+    return {"type": "RENDER_STATUS", "seq": seq, "auftrag": auftrag, "zustand": zustand, "qualitaet": qualitaet,
+            "szene": szene, "fortschritt": round(max(0.0, min(1.0, float(fortschritt))), 3), "text": text,
+            "pfad": pfad, "width": width, "height": height, "ms": ms, "von": von, "vorschau": vorschau,
+            "fehler": fehler}
+
+
+def check_render_message(header: dict[str, Any]) -> list[str]:
+    """Fehler einer Render-Nachricht (leer = gültig)."""
+    kind = header.get("type")
+    if kind not in RENDER_NACHRICHTEN:
+        return [f"type {kind!r} ist keine Render-Nachricht"]
+    err = _fehlend(header, RENDER_NACHRICHTEN[kind], kind)
+    if kind == "RENDER_STATUS" and header.get("zustand") not in RENDER_ZUSTAENDE:
+        err.append(f"zustand {header.get('zustand')!r} unbekannt")
+    if kind == "RENDER_REQ":
+        err += _fehlend(header.get("szene") or {}, RENDER_SZENE_FELDER, "RENDER_REQ.szene")
+        for i, t in enumerate(header.get("teile") or []):
+            err += _fehlend(t, RENDER_PBR_FELDER, f"RENDER_REQ.teile[{i}]")
+    if kind == "RENDER_SCENE" and header.get("ok"):
+        err += _fehlend(header.get("kamera") or {}, RENDER_KAMERA_FELDER, "RENDER_SCENE.kamera")
+        for i, t in enumerate(header.get("teile") or []):
+            m = t.get("matrix")
+            if "name" not in t or not (m is None or (isinstance(m, list) and len(m) == 16)):
+                err.append(f"RENDER_SCENE.teile[{i}]: name und matrix (16 Zahlen oder null) erwartet")
+    for key in ("width", "height", "breite", "hoehe"):
+        v = header.get(key)
+        if v is not None and (not isinstance(v, int) or v < 0 or v > 8192):
+            err.append(f"{kind}.{key} {v!r} außerhalb von 0 bis 8192")
+    return err
+
+
+def render_beispiele() -> list[tuple[str, dict[str, Any]]]:
+    """Beispiel-Nachrichten für Testdateien beider Seiten (tools/make_render_fixtures.py)."""
+    szene = {"name": "studio", "titel": "Studio", "licht": "studio", "umgebung": None, "staerke": 1.0, "drehung": 0.0,
+             "hintergrund": "#F1F2F4", "transparent": False, "boden": True}
+    szene_hdri = {"name": "draussen", "titel": "Draußen", "licht": "umgebung",
+                  "umgebung": "/Applications/Kev CAD/umgebungen/garten.hdr", "staerke": 1.0, "drehung": 30.0,
+                  "hintergrund": "umgebung", "transparent": False, "boden": True}
+    teile = [
+        {"name": "Rahmen/Rohr", "basisfarbe": [0.827, 0.839, 0.851], "metallisch": 1.0, "rauheit": 0.42,
+         "oberflaeche": "eloxiert", "klarlack": 0.35, "klarlack_rauheit": 0.25, "anisotropie": 0.0,
+         "durchsichtig": 0.0, "material": "alu-6060", "quelle": "katalog", "kulisse": False},
+        {"name": "Rahmen/Halter (Druck)", "basisfarbe": [0.85, 0.2, 0.15], "metallisch": 0.0, "rauheit": 0.5,
+         "oberflaeche": "schichten", "klarlack": 0.0, "klarlack_rauheit": 0.1, "anisotropie": 0.0,
+         "durchsichtig": 0.0, "schichthoehe": 0.2, "material": "pla", "quelle": "teilfarbe", "kulisse": False},
+        {"name": "Kulisse/Boden", "basisfarbe": [0.9, 0.9, 0.9], "metallisch": 0.0, "rauheit": 0.5,
+         "oberflaeche": "glatt", "klarlack": 0.0, "klarlack_rauheit": 0.1, "anisotropie": 0.0, "durchsichtig": 0.0,
+         "material": None, "quelle": "ohne_material", "kulisse": True},
+    ]
+    kamera = {"projection": "perspective", "position": [420.0, -510.0, 360.0], "target": [0.0, 0.0, 40.0],
+              "up": [0.0, 0.0, 1.0], "fov_deg": 26.0, "ortho_height_mm": None, "name": None}
+    return [
+        ("render_start", {"type": "RENDER_START", "seq": 1, "id": "a-41", "szene": "studio", "ansicht": "aktuell",
+                          "kamera": None, "breite": 1920, "hoehe": 1080, "qualitaet": "schnell", "hintergrund": None,
+                          "ziel": None, "vorschau": False}),
+        ("render_start_foto", {"type": "RENDER_START", "seq": 2, "id": "a-42", "szene": "draussen",
+                               "ansicht": "produkt", "kamera": "Kamera/FX6", "breite": 3840, "hoehe": 2160,
+                               "qualitaet": "foto", "hintergrund": "transparent", "ziel": "titel.png",
+                               "vorschau": False}),
+        ("render_cancel", {"type": "RENDER_CANCEL", "seq": 3, "id": "a-43", "auftrag": "R-7"}),
+        ("render_req", {"type": "RENDER_REQ", "seq": 31, "id": "k-80", "auftrag": "R-6", "szene": szene,
+                        "ansicht": "aktuell", "kamera": None, "width": 1920, "height": 1080, "teile": teile,
+                        "path": "/Users/kevin/Documents/Kev CAD/Halter/output/renders/Halter_studio_schnell.png",
+                        "vorschau": False}),
+        ("render_req_hdri", {"type": "RENDER_REQ", "seq": 32, "id": "k-81", "auftrag": "R-8", "szene": szene_hdri,
+                             "ansicht": "produkt", "kamera": "Kamera/FX6", "width": 960, "height": 540,
+                             "teile": teile[:1], "path": "/tmp/vorschau-schnell.png", "vorschau": True}),
+        ("render_res", {"type": "RENDER_RES", "seq": 5, "reply_to": "k-80", "ok": True,
+                        "path": "/Users/kevin/Documents/Kev CAD/Halter/output/renders/Halter_studio_schnell.png",
+                        "width": 1920, "height": 1080, "ms": 840, "kamera": kamera, "message": None,
+                        "phasen": {"netze_ms": 120, "umgebung_ms": 310, "rendern_ms": 330, "png_ms": 80}}),
+        ("render_scene_req", {"type": "RENDER_SCENE_REQ", "seq": 33, "id": "k-82", "auftrag": "R-9",
+                              "ansicht": "iso", "kamera": None, "width": 2400, "height": 1600,
+                              "kulisse": ["Kulisse/Boden"]}),
+        ("render_scene", {"type": "RENDER_SCENE", "seq": 6, "reply_to": "k-82", "ok": True, "kamera": kamera,
+                          "teile": [{"name": "Rahmen/Rohr", "matrix": None},
+                                    {"name": "Rahmen/Halter (Druck)",
+                                     "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 25.5, 1]}],
+                          "message": None}),
+        ("render_status_laeuft", render_status("R-9", "laeuft", qualitaet="foto", szene="studio", fortschritt=0.42,
+                                               text="Probe 54 von 128", width=2400, height=1600, von="app",
+                                               seq=34)),
+        ("render_status_fertig", render_status("R-9", "fertig", qualitaet="foto", szene="studio", fortschritt=1.0,
+                                               text="fertig in 74 s",
+                                               pfad="/Users/kevin/Documents/Kev CAD/Halter/output/renders/x.png",
+                                               width=2400, height=1600, ms=74210, von="app", seq=35)),
+        ("render_status_fehler", render_status("R-10", "fehler", qualitaet="foto", szene="werkstatt",
+                                               text="Blender fehlt", fehler="Blender fehlt (erwartet unter "
+                                               "/Applications/Blender.app)", von="agent", seq=36)),
+    ]

@@ -54,6 +54,7 @@ struct KevCADApp: App {
             MaterialCommands(session: session, model: session.model)  // Bereiche ⌘1 bis ⌘3, Schnellansichten, Material
             // Phase 6, P6-A2: Dokumente exportieren (⇧⌘E), Durchspielen
             DokumenteExportCommands(session: session, model: session.model, bauplan: session.model.bauplan)
+            RenderCommands(model: session.model)  // Phase 7: Rendern … (⌥⌘R)
         }
 
         Window("Kev CAD", id: WindowID.project) {

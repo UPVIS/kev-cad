@@ -22,6 +22,11 @@ public final class AppController: AppActions {
     let screenshots = ScreenshotRenderer()
     /// Phase 4: Zwischenstand der Fotoansicht (AppController+Referenz.swift).
     let fotoSpeicher = FotoAbgleichSpeicher()
+    /// Phase 7: Renderer für „schnell“ (RealityKit) und die Materialien des letzten Auftrags (Render/).
+    let pbr = PBRRenderer()
+    var letzteRenderMaterialien: [RenderPBR] = []
+    /// Ende des letzten Laufs (Produktbild im Export: ein älteres Rendering passt nicht mehr zum Modell)
+    var letzterLaufZeitpunkt = Date.distantPast
 
     /// Zeitlupe für Läufe aus der App (ms je Schritt).
     public static let slowMotionMs = 350
@@ -444,6 +449,7 @@ public final class AppController: AppActions {
             refreshOverlay()
         case .runEnd(let e):
             scene.endRun(e.run)
+            letzterLaufZeitpunkt = Date()
             model.run = .finished(
                 run: e.run, durationMs: e.durationMs, parts: e.parts > 0 ? e.parts : scene.order.count,
                 warnings: e.warnings)
@@ -529,6 +535,8 @@ public final class AppController: AppActions {
             handleReferenz(r)
         case .statik(let e):  // Statik (Statik/AppController+Statik.swift)
             applyStatik(e)
+        case .render(let r):  // Phase 7: Renderings (Render/AppController+Render.swift)
+            handleRender(r)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

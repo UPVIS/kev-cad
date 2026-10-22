@@ -828,6 +828,26 @@ class FakeService:
             out.update(png=PNG, width=4, height=3, ueberdeckung=0.935)
         return out
 
+    def render(self, szene: str | None = "studio", ansicht: str | None = None, kamera: str | None = None,
+               groesse: Any = None, qualitaet: str = "schnell", hintergrund: str | None = None,
+               umgebung: str | None = None, ziel: str | None = None, warten_s: float | None = None,
+               auftrag: str | None = None, abbrechen: bool = False, bild: bool = False,
+               samples: int | None = None) -> dict[str, Any]:
+        self._record("render", szene, ansicht, kamera, groesse, qualitaet, hintergrund, umgebung, ziel, warten_s,
+                     auftrag, abbrechen, bild)
+        if szene == "mond":
+            return {"ok": False, "error": "szene 'mond' unbekannt: studio, werkstatt, draussen, wohnraum, freigestellt"}
+        foto = qualitaet == "foto" and not auftrag
+        out = {"ok": True, "auftrag": auftrag or "R-1", "zustand": "laeuft" if foto else "fertig",
+               "qualitaet": qualitaet, "szene": szene or "studio", "szene_titel": "Studio", "ansicht": ansicht or "aktuell",
+               "kamera": kamera, "width": 1920, "height": 1080, "fortschritt": 0.1 if foto else 1.0,
+               "text": "Blender startet" if foto else "fertig in 0,8 s",
+               "pfad": "/tmp/Wandhalter/output/renders/Wandhalter_studio_schnell_20261022-120000.png",
+               "ms": None if foto else 840, "phasen": {} if foto else {"rendern_ms": 330, "png_ms": 80}}
+        if bild and not foto:
+            out["png"] = PNG
+        return out
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)
