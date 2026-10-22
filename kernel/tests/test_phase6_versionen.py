@@ -93,21 +93,27 @@ def test_bauplan_im_hintergrund_legt_keine_version_je_lauf_an(env):
 
 
 def test_modellaenderung_ergibt_eine_version_mit_blaettern(env):
-    """Nach einer Modelländerung landen die neu zugeordneten Blätter in derselben Version, nicht in einer zweiten."""
+    """Nach einer Modelländerung landen die neu zugeordneten Blätter in derselben Version, nicht in einer zweiten.
+    Unabhängig davon, wann der nächste Lauf kommt: nach der Hintergrundrechnung (hier) oder mitten hinein
+    (test_zweiter_lauf_direkt_danach_uebernimmt_das_nachtragen)."""
     rt = env["rt"]
-    _projekt(env)
+    path = _projekt(env)
     assert rt.run()["ok"]
     assert rt.drawing_create()["ok"]
     assert rt.run()["ok"]
     res = rt.run(params={})  # Ruhezustand
     assert res["ok"]
     rt.model_write(CODE.replace('param("b", 60)', 'param("b", 80)'))
+    start = env["app"].mark()
     res = rt.run()
     assert res["ok"] and res["version"]["neu"] is True
-    time.sleep(3)  # Blätter werden im Hintergrund neu gerechnet
+    nr = res["version"]["nr"]
+    _warte_docs(env, start, res["run"])  # Blätter werden im Hintergrund neu gerechnet …
+    _warte_sauber(rt)  # … und in V(nr) nachgetragen
+    assert _im_commit(rt, path) and "80" in _masse(rt)
     res = rt.run()
     assert res["ok"]
-    assert res["version"]["neu"] is False, res["version"]
+    assert res["version"]["neu"] is False and res["version"]["nr"] == nr, res["version"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
