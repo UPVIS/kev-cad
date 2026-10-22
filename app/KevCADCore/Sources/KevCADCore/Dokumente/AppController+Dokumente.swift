@@ -75,6 +75,31 @@ extension AppController: DokumenteActions {
         }
     }
 
+    public func zeichnungenErzeugen(teile: [String]?, art: String, format: String?) {
+        let store = model.dokumente
+        guard !store.erzeugt else { return }
+        store.erzeugt = true
+        let msg = DrawingCreateMessage(id: nextRequestID(), teile: teile, art: art, format: format)
+        request(msg, timeout: 600) { [weak self] result in
+            guard let self else { return }
+            let store = self.model.dokumente
+            store.erzeugt = false
+            switch result {
+            case .success(.ack(let a)) where a.ok:
+                self.log(.info, "Zeichnungen angelegt" + (a.message.map { ": \($0)" } ?? ""))
+            case .success(.ack(let a)):
+                store.meldung = DokumenteMeldung(text: a.message ?? "Zeichnungen nicht angelegt", fehler: true)
+            case .success(.dokumente(.docs(let d, _))):
+                self.applyDocs(d)
+            case .success(let m):
+                self.log(.warning, "Zeichnungen anlegen: unerwartete Antwort \(m.typeName)")
+            case .failure(let e):
+                store.meldung = DokumenteMeldung(text: "Zeichnungen anlegen: \(e.message)", fehler: true)
+                self.log(.error, "Zeichnungen anlegen: \(e.message)")
+            }
+        }
+    }
+
     public func zeichnungAnfordern(_ blatt: String) {
         let store = model.dokumente
         store.laedt.insert(blatt)
@@ -106,6 +131,7 @@ extension AppController: DokumenteActions {
         store.bearbeitung[blatt] = titel
         store.angefordert[blatt] = Date()
         let msg = DrawingEditMessage(id: nextRequestID(), blatt: blatt, ops: ops, von: "kevin")
+        log(.info, "Blatt \(blatt) ändern: " + ops.map(\.name).joined(separator: ", "))
         request(msg, timeout: 180) { [weak self] result in
             guard let self else { return }
             let store = self.model.dokumente

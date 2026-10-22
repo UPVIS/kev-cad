@@ -45,6 +45,38 @@ public struct DrawingRequestMessage: OutgoingRequest {
     }
 }
 
+/// DRAWING_CREATE (Vertrag 1.2): Blätter anlegen. Ohne `teile` alle gefertigten Teile und den Zusammenbau. Antwort ACK,
+/// danach DOCS mit `reply_to`.
+public struct DrawingCreateMessage: OutgoingRequest {
+    public static let type = "DRAWING_CREATE"
+    public var seq = 0
+    public var id: String
+    public var teile: [String]?
+    /// `teil`, `baugruppe` oder `zusammenbau`.
+    public var art: String
+    /// z. B. „A3“ oder „A4 hoch“; nil = Kev CAD wählt.
+    public var format: String?
+
+    public init(id: String, teile: [String]? = nil, art: String = "teil", format: String? = nil) {
+        self.id = id
+        self.teile = teile
+        self.art = art
+        self.format = format
+    }
+
+    enum CodingKeys: String, CodingKey { case type, seq, id, teile, art, format }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(Self.type, forKey: .type)
+        try c.encode(seq, forKey: .seq)
+        try c.encode(id, forKey: .id)
+        if let teile { try c.encode(teile, forKey: .teile) }
+        try c.encode(art, forKey: .art)
+        if let format { try c.encode(format, forKey: .format) }
+    }
+}
+
 /// DRAWING_EDIT: Operationen auf einem Blatt, `von: "kevin"`. Antwort ACK (mit `ergebnisse`), danach DRAWING.
 public struct DrawingEditMessage: OutgoingRequest {
     public static let type = "DRAWING_EDIT"

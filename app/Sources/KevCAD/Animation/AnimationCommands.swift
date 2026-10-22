@@ -10,7 +10,9 @@ struct AnimationCommands: Commands {
     @FocusedObject private var window: ProjectWindowState?
 
     private var actions: AnimationActions? { model.actions as? AnimationActions }
-    private var enabled: Bool { window != nil && animation.hasAnimation && actions != nil }
+    private var enabled: Bool {
+        window != nil && window?.bereich != .dokumente && animation.hasAnimation && actions != nil
+    }
 
     var body: some Commands {
         CommandMenu("Animation") {

@@ -26,13 +26,16 @@ public enum BlattZeichner {
         public var ohneMasse: Set<String>
         /// Ansichten, die der Aufrufer selbst zeichnet (Vorschau beim Verschieben).
         public var ohneAnsichten: Set<String>
+        /// Texte (Index in `Zeichnung.texte`), die der Aufrufer selbst zeichnet (Notiz, Ansichtstitel beim Verschieben).
+        public var ohneTexte: Set<Int>
         /// Nur zeichnen, was diesen Ausschnitt (Blatt-mm) schneidet; nil = alles.
         public var ausschnitt: CGRect?
 
         public init(
             papier: CGColor? = CGColor(gray: 1, alpha: 1), linien: CGColor = CGColor(gray: 0, alpha: 1),
             verwaist: CGColor? = BlattZeichner.rot, eigene: CGColor? = nil, mindestbreitePixel: CGFloat? = nil,
-            ohneMasse: Set<String> = [], ohneAnsichten: Set<String> = [], ausschnitt: CGRect? = nil
+            ohneMasse: Set<String> = [], ohneAnsichten: Set<String> = [], ohneTexte: Set<Int> = [],
+            ausschnitt: CGRect? = nil
         ) {
             self.papier = papier
             self.linien = linien
@@ -41,6 +44,7 @@ public enum BlattZeichner {
             self.mindestbreitePixel = mindestbreitePixel
             self.ohneMasse = ohneMasse
             self.ohneAnsichten = ohneAnsichten
+            self.ohneTexte = ohneTexte
             self.ausschnitt = ausschnitt
         }
 
@@ -85,7 +89,7 @@ public enum BlattZeichner {
             zeichneMass(m, in: ctx, farbe: farbe(fuer: m.mass, o), skala: skala, optionen: o)
         }
         ctx.setFillColor(o.linien)
-        for t in g.texte {
+        for (i, t) in g.texte.enumerated() where !o.ohneTexte.contains(i) {
             if let sicht, !t.rahmen.intersects(sicht) { continue }
             t.zeichne(in: ctx)
         }
@@ -197,6 +201,14 @@ public enum BlattZeichner {
             ctx.addPath(strich.pfad)
             ctx.strokePath()
         }
+        ctx.restoreGState()
+    }
+
+    /// Ein vorbereiteter Text in einer Farbe (Hervorhebung am Bildschirm).
+    public static func zeichneText(_ t: TextGrafik, in ctx: CGContext, farbe: CGColor) {
+        ctx.saveGState()
+        ctx.setFillColor(farbe)
+        t.zeichne(in: ctx)
         ctx.restoreGState()
     }
 

@@ -77,6 +77,7 @@ final class AppSession: ObservableObject {
         if let project = model.project { recents.note(project.path, name: project.name) }
         keyboard.install()
         Self.applyAppearanceOverride()
+        DokumenteSelfTest.projektOeffnenWennVerlangt(self)  // Phase 6: Selbsttest startet mit offenem Projekt
     }
 
     /// `KEVCAD_APPEARANCE=light` oder `dark` erzwingt das Erscheinungsbild (für Fensterbilder in beiden Varianten).

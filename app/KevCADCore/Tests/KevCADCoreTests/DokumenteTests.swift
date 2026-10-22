@@ -190,6 +190,22 @@ final class DokumenteTests: XCTestCase {
                        ["op": "mass_aendern", "id": "m4", "text": "<> H7", "fest": true])
     }
 
+    /// DRAWING_CREATE (Vertrag 1.2): mit Teilen und Format, ohne Teile für alle gefertigten Teile.
+    func testDrawingCreateEncoder() throws {
+        let f = try Fixtures.frame("drawing_create.frame")
+        var m = DrawingCreateMessage(id: "a-13", teile: ["Halter/Platte"], art: "teil", format: "A3 quer")
+        m.seq = 7
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: m.encodedHeader()),
+                       try JSONDecoder().decode(JSONValue.self, from: f.header))
+        let e = try XCTUnwrap(erwartet()["drawing_create"])
+        XCTAssertEqual(e["teile"]?.stringList, m.teile)
+        XCTAssertEqual(e["format"]?.stringValue, m.format)
+        let alle = try JSONDecoder().decode(JSONValue.self, from: DrawingCreateMessage(id: "a-4").encodedHeader())
+        XCTAssertNil(alle["teile"])
+        XCTAssertNil(alle["format"])
+        XCTAssertEqual(alle["art"], "teil")
+    }
+
     func testAckMitErgebnissen() throws {
         let h = #"{"type":"ACK","seq":3,"reply_to":"a-12","ok":false,"message":"mass_neu: kein Element","ergebnisse":[{"op":"mass_verschieben","ok":true,"id":"m1"},{"op":"mass_neu","ok":false,"fehler":"kein Element"}]}"#
         guard case .ack(let a) = try KernelMessage.decode(Frame(header: Data(h.utf8))) else { return XCTFail() }

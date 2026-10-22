@@ -7,6 +7,7 @@ struct ProjectWindow: View {
     @ObservedObject var model: AppModel
     @StateObject private var state = ProjectWindowState()
     @StateObject private var versionen = VersionenZustand()
+    @StateObject private var dokumente = DokumenteZustand()  // Phase 6: Bereich Dokumente
     @State private var columns = NavigationSplitViewVisibility.all
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -23,10 +24,13 @@ struct ProjectWindow: View {
         .background(WindowHook(placement: .large) { session.projectWindow = $0 })
         .focusedSceneObject(state)
         .focusedSceneObject(versionen)
+        .focusedSceneObject(dokumente)
         .navigationTitle(model.project?.name ?? "Kev CAD")
-        .navigationSubtitle(model.project.map { KevFormat.abbreviatedPath($0.path.deletingLastPathComponent().path) } ?? "")
+        .navigationSubtitle(untertitel)
         .onAppear {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
+            dokumenteVerbinden()
+            DokumenteSelfTest.runIfRequested(session, state: state, zustand: dokumente)
             SelfTest.runIfRequested(session)
             CatalogSelfTest.runIfRequested(session)
             ZukaufSelfTest.runIfRequested(session)
@@ -44,11 +48,101 @@ struct ProjectWindow: View {
         withAnimation(.snappy(duration: 0.25)) { state.showBOM = true }
     }
 
+    /// Untertitel: im 3D-Bereich der Projektordner, im Bereich Dokumente das gezeigte Blatt.
+    private var untertitel: String {
+        if state.bereich == .dokumente {
+            if let id = dokumente.blattID, let e = model.dokumente.uebersicht?.blatt(id) {
+                return "Dokumente · \(e.titel)"
+            }
+            return "Dokumente"
+        }
+        return model.project.map { KevFormat.abbreviatedPath($0.path.deletingLastPathComponent().path) } ?? ""
+    }
+
+    /// Bereich Dokumente: Rückgängig über das Fenster, Teile im 3D-Bereich zeigen.
+    private func dokumenteVerbinden() {
+        let b = dokumente.bearbeiter
+        b.model = model
+        b.undoManager = { [weak session] in session?.projectWindow?.undoManager }
+        b.zeige = { [weak state, weak dokumente] id in
+            state?.bereich = .dokumente
+            dokumente?.waehle(.blatt(id))
+        }
+        b.melde = { [weak dokumente] t in dokumente?.melde(t, fehler: true) }
+        dokumente.zeigeIm3D = { [weak state, weak model] teile in
+            withAnimation(.snappy(duration: 0.2)) { state?.bereich = .modell }
+            model?.actions?.select(teile)
+            model?.actions?.focus(on: teile)
+        }
+        state.dokumenteZustand = dokumente
+    }
+
     private var content: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            PartTreeView(model: model, state: state)
-                .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 400)
+            Group {
+                if state.bereich == .dokumente {
+                    DokumenteSeitenleiste(model: model, store: model.dokumente, zustand: dokumente)
+                } else {
+                    PartTreeView(model: model, state: state)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 400)
         } detail: {
+            // Der 3D-Bereich bleibt bestehen (Kamera, Metal-Ansicht), ruht aber, solange die Dokumente vorne sind
+            ZStack {
+                modellBereich
+                    .opacity(state.bereich == .dokumente ? 0 : 1)
+                    .allowsHitTesting(state.bereich != .dokumente)
+                    .accessibilityHidden(state.bereich == .dokumente)
+                if state.bereich == .dokumente {
+                    DokumenteBereich(model: model, store: model.dokumente, zustand: dokumente)
+                        .transition(.opacity)
+                }
+            }
+            .onChange(of: state.bereich) { _, b in
+                session.controller?.viewport.mtkView?.isPaused = b == .dokumente
+                if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
+            }
+        }
+        .inspector(isPresented: $state.showInspector) {
+            Group {
+                if state.bereich == .dokumente {
+                    BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
+                } else {
+                    InspectorView(model: model)
+                }
+            }
+            .inspectorColumnWidth(min: 260, ideal: 300, max: 440)
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) { BereichUmschalter(state: state) }  // Phase 6: 3D / Dokumente
+            if state.bereich == .dokumente {
+                DokumenteToolbar(model: model, store: model.dokumente, zustand: dokumente, state: state)
+            } else {
+                modellToolbar
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var modellToolbar: some ToolbarContent {
+        ProjectToolbar(model: model, state: state, session: session)
+        ToolbarItem(placement: .navigation) {  // Versionen: Variantenmenü in der Titelleiste
+            VariantenMenu(model: model, store: model.versionen, zustand: versionen)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Toggle(isOn: Binding(
+                get: { versionen.zeigeLeiste },
+                set: { on in withAnimation(.snappy(duration: 0.2)) { versionen.zeigeLeiste = on } }
+            )) {
+                Label("Versionen", systemImage: "clock.arrow.circlepath")
+            }
+            .help("Versionsleiste ein- oder ausblenden (⌥⌘V)")
+        }
+    }
+
+    /// 3D-Bereich: Viewport mit Zeitleiste, Stückliste, Statusleiste und Versionsleiste.
+    private var modellBereich: some View {
             HStack(spacing: 0) {
                 GeometryReader { geo in
                     VStack(spacing: 0) {
@@ -74,26 +168,6 @@ struct ProjectWindow: View {
                 }
             }
             .modifier(VersionenBlaetter(model: model, zustand: versionen))
-        }
-        .inspector(isPresented: $state.showInspector) {
-            InspectorView(model: model)
-                .inspectorColumnWidth(min: 260, ideal: 300, max: 440)
-        }
-        .toolbar {
-            ProjectToolbar(model: model, state: state, session: session)
-            ToolbarItem(placement: .navigation) {  // Versionen: Variantenmenü in der Titelleiste
-                VariantenMenu(model: model, store: model.versionen, zustand: versionen)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Toggle(isOn: Binding(
-                    get: { versionen.zeigeLeiste },
-                    set: { on in withAnimation(.snappy(duration: 0.2)) { versionen.zeigeLeiste = on } }
-                )) {
-                    Label("Versionen", systemImage: "clock.arrow.circlepath")
-                }
-                .help("Versionsleiste ein- oder ausblenden (⌥⌘V)")
-            }
-        }
     }
 }
 

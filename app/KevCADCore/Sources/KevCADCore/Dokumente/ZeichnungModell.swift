@@ -461,8 +461,17 @@ public enum ZeichnungText {
     /// Maßstäbe nach ISO 5455 für Auswahllisten.
     public static let massstaebe = ["10:1", "5:1", "2:1", "1:1", "1:2", "1:5", "1:10", "1:20", "1:50", "1:100"]
 
+    /// Format mit Ausrichtung für Auswahllisten.
+    public struct Format: Hashable, Sendable {
+        public var format: String
+        public var ausrichtung: String
+        public var titel: String { "\(format) \(ausrichtung)" }
+    }
+
     /// Formate mit Ausrichtung (ISO 5457: A4 hoch oder quer, ab A3 quer).
-    public static let formate: [(format: String, ausrichtung: String)] = [
-        ("A4", "hoch"), ("A4", "quer"), ("A3", "quer"), ("A2", "quer"), ("A1", "quer"),
+    public static let formate: [Format] = [
+        Format(format: "A4", ausrichtung: "hoch"), Format(format: "A4", ausrichtung: "quer"),
+        Format(format: "A3", ausrichtung: "quer"), Format(format: "A2", ausrichtung: "quer"),
+        Format(format: "A1", ausrichtung: "quer"),
     ]
 }
