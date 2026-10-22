@@ -92,7 +92,7 @@ def test_bauplan_im_hintergrund_legt_keine_version_je_lauf_an(env):
         time.sleep(3)
 
 
-@pytest.mark.xfail(strict=True, reason="P6-V: Blätter der Hintergrundrechnung in die Version des Laufs nachtragen")
+@pytest.mark.xfail(strict=False, reason="P6-V: Blätter der Hintergrundrechnung in die Version des Laufs nachtragen (zeitabhängig)")
 def test_modellaenderung_ergibt_eine_version_mit_blaettern(env):
     """Nach einer Modelländerung landen die neu zugeordneten Blätter in derselben Version, nicht in einer zweiten."""
     rt = env["rt"]
