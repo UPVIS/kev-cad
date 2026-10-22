@@ -46,6 +46,8 @@ struct ZukaufDialog: View {
     @State private var showIssues = false
     @State private var submitted = false
     @State private var kernelError: String?
+    /// Freigabe gespeichert, wartet darauf, dass der Katalog den Eintrag als frei zeigt.
+    @State private var awaitingRelease: String?
     @State private var createdID: String?
     @State private var copied = false
     @Environment(\.openURL) private var openURL
@@ -77,6 +79,7 @@ struct ZukaufDialog: View {
         .animation(.snappy(duration: 0.2), value: step)
         .onChange(of: model.zukaufActivity) { _, activity in zukaufFinished(activity) }
         .onChange(of: model.catalogActivity) { _, activity in saveFinished(activity) }
+        .onChange(of: model.catalog) { releaseChecked() }
         .onChange(of: draft.hersteller) { suggest() }
         .onChange(of: draft.mpn) { suggest() }
         .onChange(of: draft.shopNr) { suggest() }
@@ -423,15 +426,32 @@ struct ZukaufDialog: View {
         guard submitted, request.mode != .new else { return }
         switch activity {
         case .saved(let id, _):
-            submitted = false
-            session.showCatalog(focus: .item(id))
-            close()
+            // Freigabe: erst schließen, wenn der nachgeladene Katalog den Eintrag als frei zeigt (sonst meldet der
+            // App-Kern „nicht wirksam“, und die Meldung steht hier unten)
+            if request.mode == .confirm, model.catalog?.item(id)?.vorgeschlagen == true {
+                awaitingRelease = id
+                return
+            }
+            finishSaved(id)
         case .failed(let text):
             submitted = false
+            awaitingRelease = nil
             kernelError = text
         default:
             break
         }
+    }
+
+    private func releaseChecked() {
+        guard let id = awaitingRelease, model.catalog?.item(id)?.vorgeschlagen == false else { return }
+        finishSaved(id)
+    }
+
+    private func finishSaved(_ id: String) {
+        submitted = false
+        awaitingRelease = nil
+        session.showCatalog(focus: .item(id))
+        close()
     }
 
     // MARK: 3. Stand beim Kernel

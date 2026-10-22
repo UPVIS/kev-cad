@@ -104,6 +104,17 @@ public struct ZukaufDraft: Equatable, Sendable {
     public var material = ""
     public var hinweis = ""
     public var extra: [String: JSONValue] = [:]
+    /// Maße und Ersatzkörper des Eintrags, wie sie kamen (Vorschlag prüfen, bearbeiten). Solange Form und Maße im Dialog
+    /// unverändert bleiben, gehen sie unverändert zurück: Der Dialog kennt nur Quader (l, b, h) und Zylinder (d, l),
+    /// ein Vorschlag darf aber auch z. B. `{"d": 19.05, "h": 15.875}` haben.
+    public var sourceSize: SourceSize?
+
+    public struct SourceSize: Equatable, Sendable {
+        public var masse: JSONValue
+        public var ersatz: JSONValue?
+        public var form: ZukaufForm
+        public var felder: [String: String]
+    }
 
     static let knownKeys: Set<String> = [
         "id", "art", "name", "hersteller", "mpn", "shop_nr", "gtin", "url", "bild", "preis", "masse", "gewicht",
@@ -151,7 +162,16 @@ public struct ZukaufDraft: Equatable, Sendable {
         let m = entry["masse"]?.objectValue ?? entry["ersatz"]?["masse"]?.objectValue ?? [:]
         let formText = entry["ersatz"]?["form"]?.lenientString
         form = ZukaufForm(rawValue: formText ?? "") ?? (m["d"] != nil && m["b"] == nil ? .zylinder : .quader)
-        for (key, value) in m { masse[key] = value.doubleValue.map(KevFormat.input) ?? value.lenientString ?? "" }
+        func text(_ value: JSONValue) -> String { value.doubleValue.map(KevFormat.input) ?? value.lenientString ?? "" }
+        for (key, value) in m { masse[key] = text(value) }
+        // Fehlt ein Maß der Form (Kugel nur mit d, Schraube mit d und h), aus dem Ersatzkörper des Kernels ergänzen;
+        // sonst ließe sich ein gültiger Vorschlag im Dialog nicht freigeben („Länge fehlt“)
+        for key in form.keys where (masse[key] ?? "").isEmpty {
+            if let value = entry["ersatz"]?["masse"]?[key] { masse[key] = text(value) }
+        }
+        if let original = entry["masse"], original.objectValue != nil {
+            sourceSize = SourceSize(masse: original, ersatz: entry["ersatz"], form: form, felder: masse)
+        }
         gewicht = entry["gewicht"]?.doubleValue.map(KevFormat.input) ?? ""
         material = entry["material"]?.lenientString ?? ""
         hinweis = entry["hinweis"]?.lenientString ?? ""
@@ -297,12 +317,18 @@ public struct ZukaufDraft: Equatable, Sendable {
             if !quelle.isEmpty { price["quelle"] = .string(quelle) }
             o["preis"] = .object(price)
         }
-        let m = masseValues.mapValues { JSONValue.number($0) }
-        o["masse"] = .object(m)
-        var ersatz = extraErsatz
-        ersatz["form"] = .string(form.rawValue)
-        ersatz["masse"] = .object(m)
-        o["ersatz"] = .object(ersatz)
+        if let source = sourceSize, source.form == form, source.felder == masse {
+            // Maße nicht angefasst: so zurück, wie sie kamen
+            o["masse"] = source.masse
+            if let ersatz = source.ersatz { o["ersatz"] = ersatz }
+        } else {
+            let m = masseValues.mapValues { JSONValue.number($0) }
+            o["masse"] = .object(m)
+            var ersatz = extraErsatz
+            ersatz["form"] = .string(form.rawValue)
+            ersatz["masse"] = .object(m)
+            o["ersatz"] = .object(ersatz)
+        }
         if let w = KevFormat.parseNumber(gewicht) { o["gewicht"] = .number(w) }
         return .object(o)
     }

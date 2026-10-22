@@ -92,13 +92,16 @@ extension AppController: CatalogActions {
         sendCatalogRequest()
     }
 
-    /// Mit der letzten Suche neu laden, ohne Ladezustand (Ergebnis von Speichern/Löschen bleibt stehen).
-    func reloadCatalog() {
-        guard !AppInfo.isDemoMode, helloReceived else { return }
-        sendCatalogRequest()
+    /// Mit der letzten Suche neu laden, ohne Ladezustand (Ergebnis von Speichern/Löschen bleibt stehen). Gibt die ID der
+    /// Anfrage zurück (nil ohne Kernel).
+    @discardableResult
+    func reloadCatalog() -> String? {
+        guard !AppInfo.isDemoMode, helloReceived else { return nil }
+        return sendCatalogRequest()
     }
 
-    private func sendCatalogRequest() {
+    @discardableResult
+    private func sendCatalogRequest() -> String {
         let msg = CatalogRequestMessage(id: nextRequestID(), query: catalogQuery.query, art: catalogQuery.art)
         request(msg, timeout: Self.catalogTimeout) { [weak self] result in
             guard let self else { return }
@@ -112,8 +115,15 @@ extension AppController: CatalogActions {
                     ? "Der Kernel antwortet nicht auf die Katalog-Anfrage. Ältere Kernel-Versionen kennen den "
                         + "Lagerkatalog noch nicht." : e.message
                 self.catalogFailed(text)
+                // Nachladen nach einer Freigabe gescheitert: Ob sie wirkt, ist offen, also melden statt warten
+                if let check = self.approvalCheck, check.reloadID == msg.id {
+                    self.approvalCheck = nil
+                    self.saveFailed("Freigabe von „\(check.id)“ nicht bestätigt: Der Katalog ließ sich danach nicht neu "
+                        + "laden (\(e.message)).")
+                }
             }
         }
+        return msg.id
     }
 
     private func catalogFailed(_ text: String) {
@@ -123,9 +133,35 @@ extension AppController: CatalogActions {
     }
 
     func applyCatalog(_ message: CatalogMessage) {
+        let hadCatalog = model.catalog != nil
         model.catalog = message.catalog
         if model.catalogActivity == .loading { model.catalogActivity = .idle }
-        if case .failed = model.catalogActivity { model.catalogActivity = .idle }
+        // Nur ein Fehler beim ersten Laden ist damit erledigt. Fehler beim Speichern, Freigeben oder Löschen bleiben
+        // stehen, bis die nächste Aktion beginnt: Früher löschte jedes Nachladen (etwa still nach jeder Stückliste) die
+        // Meldung nach wenigen Sekunden, und eine gescheiterte Freigabe sah aus wie keine.
+        if !hadCatalog, case .failed = model.catalogActivity { model.catalogActivity = .idle }
+        verifyApproval(message)
+    }
+
+    /// Nach einer Freigabe: Das Nachladen (Anfrage `reloadID`) muss den Eintrag als frei zeigen, sonst ist die Freigabe
+    /// nicht wirksam (z. B. überdeckt ein Vorschlag gleicher ID in einer späteren Ebene den gespeicherten Eintrag).
+    private func verifyApproval(_ message: CatalogMessage) {
+        guard let check = approvalCheck, message.replyTo == check.reloadID else { return }
+        approvalCheck = nil
+        let what = check.kind == "material" ? "das Material" : "den Eintrag"
+        let found: (suggested: Bool, ebene: CatalogLevel)? = check.kind == "material"
+            ? message.catalog.material(check.id).map { ($0.vorgeschlagen, $0.ebene) }
+            : message.catalog.item(check.id).map { ($0.vorgeschlagen, $0.ebene) }
+        guard let found else {
+            saveFailed("Freigabe von „\(check.id)“ nicht wirksam: Nach dem Speichern fehlt \(what) im Katalog.")
+            return
+        }
+        guard found.suggested else { return }
+        let reason = found.ebene != check.ebene
+            ? " Ein Vorschlag gleicher ID in der Ebene „\(found.ebene.title)“ überdeckt ihn; dort freigeben oder löschen."
+            : ""
+        saveFailed("Freigabe von „\(check.id)“ nicht wirksam: Der Kernel hat gespeichert, der Katalog führt \(what) aber "
+            + "weiter als Vorschlag.\(reason)")
     }
 
     public func saveCatalogEntry(kind: String, json: Data, ebene: CatalogLevel) {
@@ -143,6 +179,13 @@ extension AppController: CatalogActions {
             model.catalogActivity = .failed("Der Kernel ist nicht verbunden, der Eintrag wurde nicht gespeichert.")
             return
         }
+        // Freigabe eines Vorschlags: status frei für einen Eintrag, der im Katalog noch vorgeschlagen ist
+        let wasSuggested = kind == "material"
+            ? model.catalog?.material(entryID)?.vorgeschlagen == true
+            : model.catalog?.item(entryID)?.vorgeschlagen == true
+        let approving = wasSuggested && (entry["status"]?.stringValue ?? "frei") == "frei"
+        let action = approving ? "freigegeben" : "gespeichert"
+        approvalCheck = nil
         model.catalogActivity = .saving
         let msg = CatalogSaveMessage(id: nextRequestID(), kind: kind, entry: entry, ebene: ebene)
         request(msg, timeout: Self.catalogTimeout) { [weak self] result in
@@ -151,14 +194,23 @@ extension AppController: CatalogActions {
             case .success(.ack(let a)) where a.ok:
                 let note = a.message.flatMap { $0.isEmpty ? nil : $0 }
                 self.model.catalogActivity = .saved(id: entryID, message: note)
-                self.log(.info, "Katalog: \(entryID) gespeichert (\(ebene.title))" + (note.map { ", \($0)" } ?? ""))
-                self.reloadCatalog()
+                self.log(.info, "Katalog: \(entryID) \(action) (\(ebene.title))" + (note.map { ", \($0)" } ?? ""))
+                let reloadID = self.reloadCatalog()
+                if approving, let reloadID {
+                    self.approvalCheck = (kind, entryID, ebene, reloadID)
+                } else if approving {
+                    self.saveFailed("Freigabe von „\(entryID)“ nicht bestätigt: Der Kernel hat gespeichert, ist danach aber "
+                        + "nicht mehr verbunden; nach dem Neuverbinden im Katalog prüfen.")
+                }
             case .success(.ack(let a)):
-                self.saveFailed(a.message ?? "Der Kernel hat den Eintrag abgelehnt.")
+                self.saveFailed("„\(entryID)“ nicht \(action): " + (a.message ?? "Der Kernel hat den Eintrag abgelehnt."))
             case .success(let m):
-                self.saveFailed("Unerwartete Antwort \(m.typeName)")
+                self.saveFailed("„\(entryID)“ nicht \(action): unerwartete Antwort \(m.typeName)")
             case .failure(let e):
-                self.saveFailed(e.message)
+                let reason = e.message.contains("keine Antwort")
+                    ? "Der Kernel hat nicht geantwortet (\(e.message)). Ob gespeichert wurde, zeigt der Katalog nach "
+                        + "dem Neuladen." : e.message
+                self.saveFailed("„\(entryID)“ nicht \(action): \(reason)")
             }
         }
     }

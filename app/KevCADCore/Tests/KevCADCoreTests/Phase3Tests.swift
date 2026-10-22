@@ -391,6 +391,40 @@ final class ZukaufDraftTests: XCTestCase {
         XCTAssertNil(cat.zukauf(matching: .mpn("05201")))
         XCTAssertEqual(CatalogSchema.art("zukaufteil").plural, "Zukaufteile")
     }
+
+    /// Vorschläge mit Maßen, die der Dialog nicht als Feld hat (Kugel nur mit d, Senkschraube mit d und h): Der Dialog
+    /// ergänzt die Länge aus dem Ersatzkörper, lässt sich freigeben und schickt die Maße unverändert zurück (Kevins
+    /// Bowlingball und Senkschraube vom 22.10.2026 ließen sich im Dialog nicht freigeben: „Länge fehlt“).
+    func testDraftKeepsProposalSizes() throws {
+        let kugel: JSONValue = [
+            "id": "bowlingball-usbc", "art": "zukaufteil", "name": "Bowlingball", "hersteller": "unbekannt",
+            "mpn": "unbekannt", "masse": ["d": 217.0],
+            "cad": ["quelle": "skript", "modul": "geometrie.bowlingball", "funktion": "bowlingball"],
+            "ersatz": ["form": "zylinder", "masse": ["d": 217.0, "l": 217.0]], "status": "vorgeschlagen",
+        ]
+        let schraube: JSONValue = [
+            "id": "senkschraube", "art": "zukaufteil", "name": "Senkschraube 3/8\"", "hersteller": "Normteil ASME B18.3",
+            "mpn": "3/8-16 UNC x 5/8", "masse": ["d": 19.05, "h": 15.875],
+            "ersatz": ["form": "zylinder", "masse": ["d": 19.05, "l": 15.875]], "status": "vorgeschlagen",
+        ]
+        for entry in [kugel, schraube] {
+            let d = ZukaufDraft(entry: entry)
+            XCTAssertEqual(d.form, .zylinder)
+            XCTAssertTrue(d.validate().isEmpty, "\(entry["id"]?.stringValue ?? "?"): \(d.validate())")
+            let back = d.entry()
+            XCTAssertEqual(back["masse"], entry["masse"], "Maße unverändert")
+            XCTAssertEqual(back["ersatz"], entry["ersatz"], "Ersatzkörper unverändert")
+            XCTAssertEqual(back["cad"], entry["cad"])
+            XCTAssertEqual(back["status"]?.stringValue, "frei")
+        }
+        XCTAssertEqual(ZukaufDraft(entry: kugel).masse["l"], "217")
+
+        // Ändert Kevin ein Maß, gelten die Felder des Dialogs
+        var d = ZukaufDraft(entry: schraube)
+        d.masse["l"] = "20"
+        XCTAssertEqual(d.entry()["masse"], ["d": 19.05, "l": 20])
+        XCTAssertEqual(d.entry()["ersatz"]?["masse"], ["d": 19.05, "l": 20])
+    }
 }
 
 extension JSONValue {
