@@ -53,6 +53,10 @@ public final class SceneStore {
     public private(set) var inventoryWarnings: Set<String> = []
     /// Prüfung: rote, durchscheinende Schnittkörper (immer obenauf, nicht anklickbar), siehe AppController+Pruefung.
     public private(set) var ghostBodies: [ViewportBody] = []
+    /// Versionen: Geisterkörper der verglichenen Version (durchscheinend, obenauf, nicht anklickbar) und Färbung der
+    /// geänderten bzw. neuen Teile im Vergleich (linear), siehe AppController+Versionen.
+    public private(set) var vergleichBodies: [ViewportBody] = []
+    public private(set) var vergleichTints: [String: SIMD3<Float>] = [:]
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -155,6 +159,8 @@ public final class SceneStore {
         animationHidden = []
         collisionParts = []
         ghostBodies = []
+        vergleichBodies = []
+        vergleichTints = [:]
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -306,6 +312,15 @@ public final class SceneStore {
     /// Schnittkörper der Prüfung ersetzen (leer = keine).
     public func setGhostBodies(_ bodies: [ViewportBody]) {
         ghostBodies = bodies
+        publish()
+    }
+
+    /// Versionen: Geisterkörper und Färbung eines Vergleichs setzen (leer = kein Vergleich).
+    public func setVergleich(bodies: [ViewportBody], tints: [String: SIMD3<Float>]) {
+        let touched = Set(tints.keys).union(vergleichTints.keys)
+        vergleichBodies = bodies
+        vergleichTints = tints
+        for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
 
@@ -619,6 +634,7 @@ public final class SceneStore {
         if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor }
         if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
         if collisionParts.contains(name) { rgb = rgb + (Self.collisionColor - rgb) * 0.8 }
+        if let t = vergleichTints[name] { rgb = rgb + (t - rgb) * 0.7 }  // Versionen: geändert oder neu
         if includeFlash, let t0 = flashStart[name] {
             let k = Float(max(0, 1 - (now - t0) / Self.flashDuration))
             rgb = rgb + (Self.flashColor - rgb) * (0.7 * k)
@@ -672,6 +688,7 @@ public final class SceneStore {
             for n in order where simplifiedParts.contains(n) { renderBodies.append(contentsOf: edgeBodies[n] ?? []) }
         }
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: ghostBodies) }  // Schnittkörper: Ruhelage
+        if animationTransforms.isEmpty { renderBodies.append(contentsOf: vergleichBodies) }  // Versionen: Vergleich
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -770,7 +787,7 @@ public final class SceneStore {
             }
         }
         // Schnittkörper der Prüfung gelten für die Ruhelage, in einem Bild der Animation stehen sie nicht
-        for g in ghostBodies where g.isVisible && animationTransforms.isEmpty {  // der Offscreen-Renderer erwartet sRGB
+        for g in ghostBodies + vergleichBodies where g.isVisible && animationTransforms.isEmpty {  // erwartet sRGB
             var b = g
             b.color = Self.srgb(g.color)
             out.append(b)

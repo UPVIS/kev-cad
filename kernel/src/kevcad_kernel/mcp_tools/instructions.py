@@ -37,6 +37,10 @@ released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-
 is refused. Fix the model: search a matching stock item and verbauen it, or make it a druckteil.
 - Only Kevin can switch the rule off for a project (kevcad.json "inventar_regel": false, e.g. for reconstructions \
 from photos). There is no tool for it and you must not change it yourself.
+- Scenery only for images and videos (tiled floor, wall, table) that is neither bought nor built: \
+`show(form, "Kulisse/Boden", kulisse=True)` or `lager.kulisse(form, name)`. Exempt from BOM, inventory rule, print \
+check, fastening and assembly; still checked for interpenetration and parts standing on it count as on the floor. \
+Never for real parts of the design.
 - 3D printed parts follow the design rules for Kevin's Bambu Lab P1P (open frame, no enclosure: PLA or PETG by default) (see the skill kev-cad, file 3d-druck.md): \
 walls in multiples of the 0.42 mm line width, overhangs up to 45°, teardrop horizontal holes, bed-side chamfer, \
 clearances, inserts and nut traps, layer direction for strength, build volume 256 × 256 × 250 mm.
@@ -137,8 +141,11 @@ constraints param(name, value, min=, max=), gleich, spiel, min_abstand, min_wand
 mit=[screw, nut])`; the check verifies the connection physically exists (contact or clearance ≤ 0.5 mm, aligned holes \
 in both parts, head and nut seated) and that every part hangs on the floor through connections.
 - Every joint with a range (`bereich=(min, max)`) is checked over its whole travel on every run (B8): collisions with \
-all non-moving parts, finger or tool clearance with `bedienung="finger"`; findings name the blocking part and the free \
-range. Redesign when the free range is too small for operation, do not shrink the range.
+all non-moving parts, finger or tool clearance with `bedienung="finger"` (wing nuts and knobs: \
+`bedienung="fluegel"`, checked as a grip ring around the axis above the seat); pairs already in thread engagement do \
+not block travel along their thread axis. Findings name the blocking part and the free range. Redesign when the free \
+range is too small for operation, do not shrink the range. The axis direction of `bezug(teil, "bohrung")` points out \
+of the hole through its opening (through holes: positive main axis); set it with `richtung="+x"`.
 - `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
 travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
 constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
@@ -198,6 +205,15 @@ the app) and fix missing, doubled or misplaced dimensions with `zeichnung_bearbe
 feature references (`{"merkmal": "bohrung:2"}`, `{"merkmal": "seite:x-"}`), mass_loeschen, mass_verschieben, \
 mass_aendern, ansicht_neu (also schnitt/einzelheit), massstab, format, notiz, schriftfeld. Results list the checks of \
 each sheet (missing size or position, over-dimensioning, overlaps, orphaned dimensions).
+
+Versions (like Onshape/Fusion)
+- Every successful run that changed a project file is a version V<n> (all project files, not output/). Kevin sees \
+them in the version bar with thumbnail, time, who, parts, mass, cost and check result.
+- At the end of every task, after the last successful run, set a milestone: `meilenstein(titel, notiz)` with a short \
+German title and one or two sentences on what was done.
+- `versionen` lists the history, `versionen_vergleichen(a, b)` shows parameters, parts, bill of materials, check and \
+code diff (and overlays the old geometry in the viewer), `version_wiederherstellen(v)` goes back without losing \
+anything (only when Kevin asks), `variante` creates or switches named variants to try ideas.
 
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \

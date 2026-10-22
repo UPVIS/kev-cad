@@ -40,6 +40,8 @@ EXPECTED_TOOLS |= {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"}
 EXPECTED_TOOLS |= {"druckpruefung"}
 # Phase 6: Zeichnungen
 EXPECTED_TOOLS |= {"zeichnungen", "zeichnung_erstellen", "zeichnung_bearbeiten", "zeichnung_bild"}
+# Versionen
+EXPECTED_TOOLS |= {"versionen", "version_wiederherstellen", "versionen_vergleichen", "meilenstein", "variante"}
 
 
 def free_port() -> int:

@@ -38,11 +38,13 @@ class Erfassung:
     # -- Teile ---------------------------------------------------------------------------------------------------
 
     def teil(self, name: str, shape: Any, mat: Any, pieces: list[Any], catalog: Any, tess: Any = None,
-             props: dict[str, Any] | None = None) -> None:
+             props: dict[str, Any] | None = None, kulisse: bool = False) -> None:
         if tess is not None:  # Geometrie für die Prüfung im Rechenprozess (lauf.py)
             self.geometrie[name] = (tess.key, shape.wrapped, tess.geometry.positions, tess.geometry.triangles,
                                     tess.bbox, dict(props or tess.props), tess.geometry.faces)
         info: dict[str, Any] = {}
+        if kulisse:  # Umgebung (Boden, Wand): Durchdringung und Auflage ja, Einbaubarkeit und Druck nein
+            info["kulisse"] = True
         entry = getattr(mat, "entry", None) if mat is not None else None
         if mat is not None:
             info["material"] = mat.display
@@ -60,6 +62,9 @@ class Erfassung:
             info["art"] = p.art
             if p.stock_id:
                 info["stock_id"] = p.stock_id
+            if p.art == "zukaufteil" and len({x.seq for x in pieces}) == 1:
+                # Zukauf-Instanz: alle Teile derselben Stücklistenzeile kommen fertig montiert (Einbauprüfung)
+                info["zukauf"] = f"{p.seq}:{p.name}"
             if p.art == "druckteil":
                 info["druckteil"] = True
                 info.update(self._druck(shape, self._druckstueck(name, shape, pieces)))
@@ -109,11 +114,12 @@ class Erfassung:
         out["groesse"] = masse.get("groesse") or piece.groesse
         if piece.laenge:
             out["laenge"] = float(piece.laenge)
-        import re
+        from kevcad_kernel.gewinde import aus_text
 
-        m = re.match(r"[Mm](\d+(?:\.\d+)?)", str(out.get("groesse") or ""))
-        if m:
-            out["d"] = float(m.group(1))
+        g = aus_text(out.get("groesse"))  # metrisch oder Zoll (UNC/UNF)
+        if g is not None:
+            out["d"] = g.d
+            out["gewinde"] = g.name
         orig = piece.shape  # TopoDS_Shape, wie verbaut (Kopf auf z = 0, Achse +Z)
         # Lage: gleiche Form (IsPartner) → Verschiebung und Drehung gegenüber dem verbauten Teil. Kopfmaße rechnet die
         # Prüfung aus dem Netz entlang dieser Achse.

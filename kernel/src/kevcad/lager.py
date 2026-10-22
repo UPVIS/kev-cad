@@ -57,7 +57,7 @@ from kevcad_kernel.catalog import (
 )
 
 __all__ = ["LagerError", "MaterialError", "Lagerteil", "teil", "suche", "druckteil", "katalog", "VERFAHREN", "zukauf",
-           "kamera", "kamerazubehoer"]
+           "kamera", "kamerazubehoer", "kulisse"]
 
 MAX_GEHRUNG = 80.0
 VERFAHREN = ("3d-druck", "harzdruck")
@@ -532,6 +532,30 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
                   size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)],
                   ausrichtung=ausrichtung)
     _register(piece, shape)
+    return shape
+
+
+def kulisse(form: Any, name: str | None = None) -> Any:
+    """Kennzeichnet ``form`` als Kulisse: Umgebung für Bilder und Videos (gekachelter Boden, Wand, Tisch, Straße), die
+    weder gekauft noch gebaut wird. Gleichwertig mit ``show(form, name, kulisse=True)``; die Kennzeichnung reist mit der
+    Form (auch nach ``Pos(...) * form``).
+
+    - Ausgenommen: Stückliste, Inventar-Regel (Material frei wählbar), Druckprüfung, Befestigung (``verbinde``) und
+      Einbaubarkeit.
+    - Weiter erfasst: Durchdringung (nichts darf im Boden stecken), und als Auflage: Teile, die auf einer Kulisse
+      stehen, gelten als am Boden (Standsicherheit, Schweben).
+    - Im Viewer: Namen unter einer eigenen Gruppe wählen, z. B. ``"Kulisse/Boden"``; die Gruppe lässt sich ausblenden.
+      Ohne eigene Farbe wird sie zurückhaltend grau gezeigt.
+
+    Nur für Umgebung, nie für echte Teile des Entwurfs."""
+    from build123d import BuildPart, Shape
+
+    shape = form.part if isinstance(form, BuildPart) else form
+    if not isinstance(shape, Shape):
+        raise LagerError(f"kulisse: form muss eine build123d-Form sein, nicht {type(form).__name__}")
+    shape.kevcad_kulisse = True
+    if name:
+        shape.label = str(name).strip().strip("/").replace("#", "-")
     return shape
 
 

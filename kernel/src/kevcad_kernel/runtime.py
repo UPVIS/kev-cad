@@ -45,6 +45,7 @@ from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.refs import RefError, Scene
+from kevcad_kernel.versionen.laufzeit import VersionenRuntimeMixin
 from kevcad_kernel.worker import WorkerClient
 from kevcad_kernel.zukauf.dienst import ZukaufDienst
 from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
@@ -71,7 +72,7 @@ def _params_key(params: dict[str, Any] | None) -> str:
 
 @dataclass
 class Job:
-    kind: str  # "run" | "exec"
+    kind: str  # "run" | "exec" | "schatten" (Lauf ohne Live-Aufbau, Versionen) | "aufgabe" (fn im Auftragsfaden)
     code: str
     source: str  # agent | app | auto
     timeout_s: float
@@ -89,6 +90,8 @@ class Job:
     started: float = 0.0
     cancelled: str | None = None  # Grund, wenn der Lauf nicht mehr zählt (anderes Projekt geöffnet)
     animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
+    teile: list = field(default_factory=list)  # Versionen: Teile eines Schattenlaufs (Name, Schlüssel, Kopf, Nutzlast)
+    fn: Any = None  # Versionen: Aufgabe für kind "aufgabe"
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -96,11 +99,11 @@ class Job:
 
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
-                    ZeichnungRuntimeMixin):
+                    ZeichnungRuntimeMixin, VersionenRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
-    Zeichnungen (``ZeichnungRuntimeMixin``)."""
+    Zeichnungen (``ZeichnungRuntimeMixin``); Versionen (``VersionenRuntimeMixin``)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -140,6 +143,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._annotations = itertools.count(1)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
         self._zeichnung_init()  # Phase 6: Zeichnungen
+        self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
@@ -572,6 +576,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         return {**item, "berechnet": self._values(item)}
 
     def set_agent_activity(self, text: str | None) -> None:
+        self._agent_seen = time.monotonic()  # Versionen: Wer hat zuletzt etwas getan
         with self._lock:
             self._agent["activity"] = text or None
             msg = {"type": "AGENT", **self._agent}
@@ -609,6 +614,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             cur.finished.set()
         self._worker.stop(timeout=1.0)
         self._zeichnung_schliessen()
+        self._versionen_schliessen()  # Versionen: Hintergrund-Rechenprozess der Nachberechnung
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -685,6 +691,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._bestand_projekt(same)  # BESTAND nach jedem Projektwechsel
             for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
                 self._send_app(status)
+        self._versionen_projekt(proj, same)  # Versionen: Repo anlegen, alte Stände übernehmen
         if self._settings.get("auto_run") and (not same or self._last_result is None):
             self._submit_run(None, int(self._settings.get("slow_ms") or 0), self.run_timeout_s, source="auto")
 
@@ -711,9 +718,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             cur = self._current
             if cur is not None and cur.key == job.key and cur.path == job.path and not cur.done.is_set() \
                     and not katalog_neu:
+                if source == "agent":
+                    cur.source = "agent"  # Versionen: der Agent hat diesen Stand ausgelöst
                 return cur
             for pending in self._jobs:
                 if pending.key == job.key and pending.path == job.path:
+                    if source == "agent":
+                        pending.source = "agent"
                     return pending
             if source == "auto":
                 for pending in [j for j in self._jobs if j.kind == "run" and j.source == "auto"]:
@@ -740,7 +751,14 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 job = self._jobs.popleft()
                 self._current = job
             try:
-                job.result = self._run_job(job) if job.kind == "run" else self._exec_job(job)
+                if job.kind == "run":
+                    job.result = self._run_job(job)
+                elif job.kind == "schatten":
+                    job.result = self._schatten_job(job)
+                elif job.kind == "aufgabe":
+                    job.result = job.fn()
+                else:
+                    job.result = self._exec_job(job)
             except Exception as exc:  # noqa: BLE001
                 import traceback
 
@@ -894,12 +912,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._anim_publish(job, result)
             self._bauplan_nach_lauf(job.run, result)  # Phase 6: vorhandenen Bauplan im Hintergrund erneuern
             self._zeichnung_nach_lauf(job.run)  # Phase 6: Blätter neu rechnen, danach DOCS
-            proj = self._project
-            if proj is not None and str(proj.model) == job.path:
-                try:
-                    proj.save_version(job.code)
-                except OSError as exc:
-                    result.setdefault("warnings", []).append(f"Version nicht gespeichert: {exc}")
+            self._versionen_nach_lauf(job, result)  # Versionen: neue Version bei Änderung (ohne Git: save_version)
         else:  # RUN_FAILED
             error = dict(final.get("error") or {"message": "Unbekannter Fehler"})
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error.get("message", ""),
@@ -933,6 +946,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if "inventar_regel" in final:
             result["inventar_regel"] = bool(final["inventar_regel"])
             result["inventar_verstoesse"] = list(final.get("inventar_verstoesse") or [])
+        if final.get("kulisse"):  # Umgebung (show(..., kulisse=True)): ohne Stückliste und Inventar-Regel
+            result["kulisse"] = list(final["kulisse"])
         bom = final.get("bom")
         if isinstance(bom, dict) and (bom.get("lines") or bom.get("warnings")):
             result["bom"] = {"totals": bom.get("totals") or {}, "warnings": list(bom.get("warnings") or [])[:10],
@@ -1008,6 +1023,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             with self._app_lock:  # erst nach RUN_END dieses Laufs an die App (sonst schickt es _run_job)
                 if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
                     self._send_app({**check, "type": "CHECK"}, payload[:app_len])
+            self._versionen_pruefung(check)  # Versionen: Prüfstand an die Version des Laufs
             return
         if kind == "READY":
             self._log(f"[kernel] Rechenprozess bereit (pid {header.get('pid')}, Import {header.get('import_s')} s)")
@@ -1016,6 +1032,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if job is None or job.generation != gen:
             return
         if job.cancelled and kind in ("STEP", "PART"):
+            return
+        if job.kind == "schatten" and kind in ("STEP", "PART", "ANIM"):
+            self._schatten_nachricht(job, kind, header, payload)  # Versionen: Lauf ohne Live-Aufbau
             return
         if kind == "STEP":
             if header.get("run") != job.run:
@@ -1097,6 +1116,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
                 conn.send(status)
             self._link.activate(conn)
+            self._versionen_on_connect(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
 
     def _on_app_disconnect(self, conn: AppConnection) -> None:
@@ -1111,12 +1131,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             slot["error"] = message
             slot["event"].set()
 
-    def _request(self, header: dict[str, Any], timeout_s: float) -> tuple[dict[str, Any], bytes, str | None]:
+    def _request(self, header: dict[str, Any], timeout_s: float,
+                 payload: bytes = b"") -> tuple[dict[str, Any], bytes, str | None]:
         rid = f"k-{next(self._ids)}"
         slot: dict[str, Any] = {"event": threading.Event(), "reply": None, "payload": b"", "error": None}
         with self._lock:
             self._pending[rid] = slot
-        if not self._send_app({**header, "id": rid}):
+        if not self._send_app({**header, "id": rid}, payload):
             with self._lock:
                 self._pending.pop(rid, None)
             return {}, b"", APP_NOT_CONNECTED
@@ -1208,6 +1229,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._bauplan_app_message(kind, header):
             pass
         elif self._zeichnung_app_message(kind, header):
+            pass
+        elif self._versionen_app_message(kind, header):
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

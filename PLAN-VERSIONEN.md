@@ -46,3 +46,23 @@ Varianten (Zweige) erlauben, eine Idee auszuprobieren, ohne den Hauptstand anzuf
 Ein Strang (Kernel und App). Kernel: `kevcad_kernel/versionen/` (Git-Anbindung, Kennzahlen, Vergleich, Aufräumen,
 Übernahme), Protokoll (additiv: Versionsliste, Wiederherstellen, Vergleich mit Geisterkörpern), MCP, Skill-Regel.
 App: Leiste „Versionen“ (Seitenleiste oder unten), Vergleichsansicht, Meilenstein-Dialog, Varianten-Menü.
+
+## Stand (22.10.2026, Zweig `versionen`)
+
+Umgesetzt wie oben (V1–V10):
+
+- Kernel `kevcad_kernel/versionen/`: `git.py` (Repo mit abgeschlossener Umgebung), `archiv.py` (Versionen,
+  Meilensteine, Wiederherstellen, Varianten, Ausdünnen, Übernahme per fast-import), `schnappschuss.py` (Daten und Netze
+  je Version, Netze je Formschlüssel nur einmal), `vergleich.py`, `laufzeit.py` (Einbindung, Lauf ohne Live-Aufbau im
+  Rechenprozess der Laufzeit für Vergleiche), `hintergrund.py` (Nachberechnung alter Stände in einem eigenen,
+  niedriger priorisierten Prozess).
+- Protokoll „Versionen“ in PROTOCOL.md; MCP `versionen`, `version_wiederherstellen`, `versionen_vergleichen`,
+  `meilenstein`, `variante`; Skill-Regel „Am Ende jeder Aufgabe ein Meilenstein“.
+- App: Leiste rechts neben dem Viewport (⌥⌘V), Vergleichskarte mit Details (Übersicht, Teile, Stückliste, Code),
+  Geisterkörper (alt blau, entfernt rot) und Färbung (geändert orange, neu grün), Variantenmenü in der Titelleiste,
+  Menü „Versionen“ (⌘S Meilenstein, ⌥⌘U Vergleich mit der vorherigen Version, ⇧⌘U Vergleich beenden, ⌥⌘Z vorherige
+  Version wiederherstellen).
+
+Offen: Geisterkörper erscheinen in Bildern aus dem Offscreen-Renderer (MCP `screenshot`) nur, wo sie nicht verdeckt
+sind (der Renderer kennt keine Überlagerungsebene); der Vergleich zweier älterer Versionen zeigt nur Unterschiede,
+keine Geometrie.
