@@ -63,8 +63,10 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 - `teile[]`: `g`, `m`, `zeit_s` und `kosten` gelten für alle `anzahl` Stück der Gruppe; je Stück additiv
   `je_stueck: {"g", "m", "zeit_s"}`. `teile` sind die Namen aus `show()`; `anzahl` ist mindestens ihre Zahl (mehr nur
   mit `druckteil(…, anzahl=)`). Additiv: `fest` (Liste der Einstellungen, die Kevin oder der Agent fest vorgegeben
-  hat, dazu `"zweck"`, wenn der Zweck vorgegeben ist), `profil: {"prozess", "filament"}` (Bambu-Studio-Profile),
-  `risiko` (0–1, Fehldruck-Wahrscheinlichkeit), `stuetzen_g` (Stützmaterial aller Stück), `kosten`.
+  hat, dazu `"zweck"`, wenn der Zweck vorgegeben ist), `fest_von: {schlüssel: "kevin" | "agent"}` (wer jede feste
+  Vorgabe gesetzt hat; aus `PRINT_SETTINGS.von` bzw. dem MCP), `profil: {"prozess", "filament"}`
+  (Bambu-Studio-Profile), `risiko` (0–1, Fehldruck-Wahrscheinlichkeit), `stuetzen_g` (Stützmaterial aller Stück),
+  `kosten`, `abweichung_material` (wie `abweichung`, für das Filament). `abweichung` = Schätzung der Zeit / Slicer − 1.
 - `einstellungen.fuellung` ist ein Anteil 0–1 (0,25 = 25 %); `muster` wie in Bambu Studio (`gyroid`, `grid`,
   `cubic`, `honeycomb`, `rectilinear`, `line`, `concentric`, `triangles`, `zigzag`, `crosshatch`, `lightning`).
 - `platten[].teile[]`: `x`, `y` = Mitte des Hüllrechtecks auf der Platte (Drucker-mm, Ursprung vorn links);
@@ -108,11 +110,30 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 `PRINT_SETTINGS` von Kevin gelten als feste Vorgabe je Gruppe und überleben Läufe (gespeichert in
 `<projekt>/druck.json`, gehört zu den Projektdateien und damit zu den Versionen).
 
-Präzisierungen (additiv): `PRINT_SETTINGS.von` (`kevin` Vorgabe, `agent` vom MCP); ein Wert `null` in
+Präzisierungen (additiv): `PRINT_SETTINGS.von` (`kevin` Vorgabe, `agent` vom MCP), in `druck.json` je Vorgabe
+gespeichert (`"von": {"waende": "kevin", "zweck": "agent"}`) und als `teile[].fest_von` ausgegeben; ein Wert `null` in
 `einstellungen` nimmt diese Vorgabe zurück; `zuruecksetzen: true` nimmt alle Vorgaben des Teils bzw. der Gruppe
 zurück. Gespeichert wird je Teilname (aus `show()`), damit die Vorgabe Formänderungen übersteht; eine Gruppe schreibt
 alle ihre Teile. `PRINT_EXPORT_REQ.ziel` `null` = `<projekt>/output/<projekt>-druck.3mf`. `PRINT_EXPORT_RES` additiv
-`hinweise`, `ms`, `geprueft` (die Datei wurde zur Kontrolle in Bambu Studio geladen). Testdateien:
+`hinweise`, `ms`, `geprueft` (die Datei wurde zur Kontrolle in Bambu Studio geladen), `pfade` und `dateien`
+(`[{"pfad", "material", "filament", "platten"}]`).
+
+**3MF (Eingang von Phase 8):** je Material ein Bambu-Studio-Projekt (`pfad` ist das erste, bei mehreren Materialien
+heißen sie `<ziel>-<material>.3mf`): Platten mit den Lagen der Vorschau, Drucker-, Prozess- und Filamentprofil in
+`Metadata/project_settings.config`, Einstellungen je Teil (Schicht, Wände, Decken, Böden, Füllung, Muster, Stützen,
+Brim) in `Metadata/model_settings.config`. `BambuStudio --slice 0 <datei>` übernimmt sie; geprüft am 22.10.2026:
+Zeit und Filament nachgeslict wie in der Vorschau (±0,3 %). Ein Filament je Datei, weil Bambu Studio 2.07 Projekte mit
+mehreren Filamenten aus der Kommandozeile nicht wieder slicen kann (Teile landen auf Filament 1); der P1P ohne AMS
+druckt ohnehin ein Material je Platte. Ohne Bambu Studio schreibt der Kernel das 3MF selbst (Platten und Teile, ohne
+Profile). Laufzeit: `druck_export(ziel=None, platten=None) -> {"ok", "pfad", "platten", "fehler", "pfade", "dateien",
+"hinweise", "geprueft", "ms"}`.
+
+**Druckprüfung, Abdrücke (V-K, 22.10.2026):** Schichtraster-Hinweise an Flächen, deren Eckpunkte alle näher als
+1,5 mm an einem gezeigten Lager- oder Zukaufteil liegen (Aussparung um ein fremdes Teil), fasst die Prüfung je Teil
+und fremdem Teil zu einem Hinweis `druck_schichtraster_abdruck` zusammen („6 Flächen aus der Aussparung für
+ALUTEC-Rahmen liegen nicht im Schichtraster (unkritisch, Passung prüfen)“, `wert.abdruck_von`).
+
+Testdateien:
 `tools/make_druck_fixtures.py` (`print_*.frame`, `ack_print_*.frame`, Abschnitt `druck` in `fixtures.json`);
 Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_message`).
 

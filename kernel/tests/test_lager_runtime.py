@@ -74,7 +74,7 @@ def test_gestell_bom_after_run_end(p2):
     _, _, bom, _ = app.wait_for(lambda h: h["type"] == "BOM" and h.get("run") == res["run"], start=start)
     app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h.get("run") == res["run"], start=start)
     types = [h["type"] for h in app.since(start)
-             if h["type"] not in ("STATUS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ")]  # Versionen: im Hintergrund
+             if h["type"] not in ("STATUS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ", "PRINT_PREVIEW")]  # Versionen: im Hintergrund
     assert types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # CONSTRAINTS: Zwangsbedingungen, additiv
     parts = [h for h in app.since(start) if h["type"] == "PART_UPSERT"]
     bein = next(h for h in parts if h["name"] == "Gestell/Bein vorn links")

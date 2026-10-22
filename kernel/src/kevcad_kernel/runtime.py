@@ -41,6 +41,7 @@ from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
 from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.drucker.laufzeit import DruckerRuntimeMixin  # Phase 8: Drucken auf dem P1P
+from kevcad_kernel.druck.vorschau_laufzeit import DruckvorschauRuntime
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
@@ -101,13 +102,13 @@ class Job:
 
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
-                    ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst,
+                    ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
     Zeichnungen (``ZeichnungRuntimeMixin``); Versionen (``VersionenRuntimeMixin``); Dokumente exportieren
-    (``DokumentExportDienst``, dokument_export.py)."""
+    (``DokumentExportDienst``, dokument_export.py); Druckvorschau (``DruckvorschauRuntime``, druck/vorschau_laufzeit.py)."""
 
     def __init__(self, socket_path: str, mcp_port: int, *, auto_run: bool = True, run_timeout_s: float = 120.0,
                  poll_interval_s: float = 0.25, debounce_s: float = 0.3, start_worker: bool = True,
@@ -152,6 +153,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
         self._drucker_init()  # Phase 8: Drucken (drucker/laufzeit.py)
+        self._druckvorschau_init()  # Druckvorschau (DRUCKVORSCHAU.md)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
         self._link.start()
@@ -625,6 +627,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._zeichnung_schliessen()
         self._versionen_schliessen()  # Versionen: Hintergrund-Rechenprozess der Nachberechnung
         self._drucker_close()  # Phase 8: MQTT trennen, SSDP und Auftragsfaden beenden
+        self._druckvorschau_schliessen()  # Druckvorschau: Slicer abbrechen
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -695,6 +698,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self.cameras_clear(run)
                 self._bauplan_project_changed()
                 self._zeichnung_projekt()
+            self._druckvorschau_projekt(same)  # Druckvorschau: Stand des alten Projekts vergessen
             msg = {"type": "PROJECT", **proj.info()}
             if reply_to:
                 msg["reply_to"] = reply_to
@@ -939,6 +943,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
             with self._lock:
                 self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
+            self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
             self._anim_publish(job, result)
             # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
             # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
@@ -1058,6 +1063,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
                     self._send_app({**check, "type": "CHECK"}, payload[:app_len])
             self._versionen_pruefung(check)  # Versionen: Prüfstand an die Version des Laufs
+            self._druckvorschau_pruefung(check)  # Druckvorschau: Geometrie je Druckteil aus der Prüfung
             return
         if kind == "READY":
             self._log(f"[kernel] Rechenprozess bereit (pid {header.get('pid')}, Import {header.get('import_s')} s)")
@@ -1146,6 +1152,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             if check is not None:
                 conn.send(check, check_payload)
             self._zeichnung_on_connect(conn)
+            self._druckvorschau_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
             for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
                 conn.send(status)
@@ -1268,6 +1275,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._versionen_app_message(kind, header):
             pass
         elif self._drucker_app_message(kind, header):  # Phase 8: PRINTER_*, PRINT_JOB_REQ, PRINT_CONTROL
+            pass
+        elif self._druckvorschau_app_message(kind, header):
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

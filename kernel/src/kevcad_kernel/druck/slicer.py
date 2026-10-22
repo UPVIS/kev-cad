@@ -1,0 +1,738 @@
+"""Bambu Studio im Hintergrund: Profile, STL, Slicen, Anordnen, 3MF (Druckvorschau, DRUCKVORSCHAU.md).
+
+Bambu Studio 2.07 lässt sich ohne Fenster bedienen (``--slice``, ``--arrange``, ``--export-3mf``,
+``--load-assemble-list``). Diese Datei kapselt das:
+
+- **Profile:** Drucker-, Prozess- und Filamentprofile aus dem App-Bundle (``Contents/Resources/profiles/BBL``) und
+  Kevins Benutzerprofile (``~/Library/Application Support/BambuStudio/user/<id>/``), Vererbung (``inherits``) aufgelöst.
+  Kevins Dateien werden nur gelesen; alles, was der Slicer bekommt, liegt als Kopie im Arbeitsordner.
+- **Slicen** einer Gruppe (ein Teil in Druckausrichtung) und ganzer Platten (Montageliste mit festen Lagen und
+  Einstellungen je Teil). Ergebnis aus ``result.json`` des Slicers: Druckzeit, Filament, Zeiten je Merkmal.
+- **Anordnen** mit ``--arrange`` (genau, mit Drehen) und **3MF** der Platten mit allen Einstellungen.
+
+Höchstens ein Slicer-Prozess gleichzeitig auf dem Rechner (Dateisperre im Zwischenspeicher), niedrige Priorität
+(``nice``), Abbruch über ein ``threading.Event``. Ohne Bambu Studio (Mac mini) liefert ``verfuegbar()`` False.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import hashlib
+import json
+import math
+import os
+import plistlib
+import re
+import shutil
+import struct
+import subprocess
+import tempfile
+import threading
+import time
+import zipfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+FILAMENT_QUERSCHNITT_CM2 = math.pi * 0.0875 ** 2   # 1,75 mm
+CM3_JE_M = FILAMENT_QUERSCHNITT_CM2 * 100          # 2,405 cm³ je Meter
+PLATTENABSTAND = 256.0 * 1.2                       # Bambu legt Platte n um 1,2 Bettbreiten versetzt ab
+ZEITLIMIT_S = 300.0
+
+PROZESSE: dict[float, str] = {
+    0.08: "0.08mm Extra Fine @BBL P1P", 0.12: "0.12mm Fine @BBL P1P", 0.16: "0.16mm Optimal @BBL P1P",
+    0.2: "0.20mm Standard @BBL P1P", 0.24: "0.24mm Draft @BBL P1P", 0.28: "0.28mm Extra Draft @BBL P1P",
+}
+MASCHINE = "Bambu Lab P1P 0.4 nozzle"
+DRUCKER = {"p1p-0.4": {"name": "Bambu Lab P1P 0.4", "maschine": MASCHINE, "bett": "Textured PEI Plate"}}
+# Filament je Material: Reihenfolge = Vorrang (Kevins Profil zuerst); Projekt-Einstellung druck.filament geht vor
+FILAMENTE: dict[str, tuple[str, ...]] = {
+    "pla": ("Amazon Basics PLA", "Bambu PLA Basic @BBL P1P"),
+    "petg": ("Bambu PETG Basic @BBL X1C", "Generic PETG @BBL P1P"),
+    "tpu-95a": ("Bambu TPU 95A @BBL P1P", "Generic TPU @BBL P1P"),
+    "abs": ("Bambu ABS @BBL P1P", "Generic ABS @BBL P1P"),
+    "asa": ("Generic ASA @BBL P1P",),
+    "pc-filament": ("Bambu PC @BBL P1P", "Generic PC @BBL P1P"),
+    "pa": ("Generic PA @BBL P1P",),
+    "pa-cf": ("Bambu PA-CF @BBL P1P", "Generic PA-CF @BBL P1P"),
+    "pla-cf": ("Bambu PLA-CF @BBL P1P", "Generic PLA-CF @BBL P1P"),
+}
+MUSTER_BAMBU = {"gyroid": "gyroid", "grid": "grid", "cubic": "cubic", "honeycomb": "honeycomb",
+                "rectilinear": "zig-zag", "zigzag": "zig-zag", "line": "line", "concentric": "concentric",
+                "triangles": "triangles", "crosshatch": "crosshatch", "lightning": "lightning"}
+STUETZEN_BAMBU = {"baum": "tree(auto)", "normal": "normal(auto)"}
+
+
+class SlicerFehler(RuntimeError):
+    pass
+
+
+class Abgebrochen(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Orte
+
+
+def app_pfad() -> Path:
+    return Path(os.environ.get("KEVCAD_BAMBU_APP", "/Applications/BambuStudio.app"))
+
+
+def programm() -> Path | None:
+    p = app_pfad() / "Contents" / "MacOS" / "BambuStudio"
+    return p if p.is_file() and os.access(p, os.X_OK) else None
+
+
+def verfuegbar() -> bool:
+    return programm() is not None and system_ordner().is_dir()
+
+
+def version() -> str | None:
+    try:
+        with open(app_pfad() / "Contents" / "Info.plist", "rb") as f:
+            info = plistlib.load(f)
+        return str(info.get("CFBundleShortVersionString") or info.get("CFBundleVersion") or "") or None
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return None
+
+
+def system_ordner() -> Path:
+    return app_pfad() / "Contents" / "Resources" / "profiles" / "BBL"
+
+
+def benutzer_ordner() -> list[Path]:
+    basis = Path(os.environ.get("KEVCAD_BAMBU_USER", str(Path.home() / "Library/Application Support/BambuStudio/user")))
+    if not basis.is_dir():
+        return []
+    return sorted(p for p in basis.iterdir() if p.is_dir())
+
+
+def cache_ordner() -> Path:
+    p = Path(os.environ.get("KEVCAD_DRUCK_CACHE", str(Path.home() / "Library/Caches/de.upvis.kevcad/druck")))
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Profile
+
+
+_INDEX: dict[tuple[str, str], Path] | None = None
+_INDEX_LOCK = threading.Lock()
+
+
+def _index() -> dict[tuple[str, str], Path]:
+    """(Art, Name) → Datei; Benutzerprofile gehen vor (sie überschreiben gleichnamige nicht, haben eigene Namen)."""
+    global _INDEX
+    with _INDEX_LOCK:
+        if _INDEX is not None:
+            return _INDEX
+        idx: dict[tuple[str, str], Path] = {}
+        for ordner in benutzer_ordner():
+            for art in ("machine", "process", "filament"):
+                for p in sorted((ordner / art).glob("*.json")) if (ordner / art).is_dir() else []:
+                    try:
+                        d = json.loads(p.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    if isinstance(d, dict) and d.get("name"):
+                        idx.setdefault((art, str(d["name"])), p)
+        basis = system_ordner()
+        if basis.is_dir():  # Systemprofile heißen wie ihre Datei: nur Namen lesen (schnell)
+            for art in ("machine", "process", "filament"):
+                for wurzel, _, dateien in os.walk(basis / art):
+                    for d in sorted(dateien):
+                        if d.endswith(".json"):
+                            idx.setdefault((art, d[:-5]), Path(wurzel) / d)
+        _INDEX = idx
+        return idx
+
+
+def _index_voll(art: str, name: str) -> Path | None:
+    """Langsamer Weg: Systemprofile lesen, deren Name nicht dem Dateinamen entspricht."""
+    basis = system_ordner() / art
+    if not basis.is_dir():
+        return None
+    for p in sorted(basis.rglob("*.json")):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(d, dict) and d.get("name") == name:
+            with _INDEX_LOCK:
+                if _INDEX is not None:
+                    _INDEX[(art, name)] = p
+            return p
+    return None
+
+
+def index_leeren() -> None:
+    global _INDEX
+    with _INDEX_LOCK:
+        _INDEX = None
+
+
+def profil(art: str, name: str) -> dict[str, Any]:
+    """Profil mit aufgelöster Vererbung (``inherits``); ``SlicerFehler``, wenn es fehlt."""
+    p = _index().get((art, name)) or _index_voll(art, name)
+    if p is None:
+        raise SlicerFehler(f"Bambu-Studio-Profil {art} „{name}“ nicht gefunden")
+    d = json.loads(p.read_text(encoding="utf-8"))
+    eltern = d.get("inherits")
+    if eltern:
+        basis = profil(art, str(eltern))
+        basis.update(d)
+        d = basis
+    d.pop("inherits", None)
+    d["type"] = art
+    return d
+
+
+def profil_vorhanden(art: str, name: str) -> bool:
+    return (art, name) in _index()
+
+
+def filament_name(material: str, wunsch: str | None = None) -> str:
+    """Filamentprofil für ein Material: Wunsch aus den Projekt-Einstellungen (genau, mit „ @BBL P1P“ oder als
+    Anfang eines passenden Profils), sonst die Liste ``FILAMENTE``."""
+    kandidaten: list[str] = []
+    if wunsch:
+        kandidaten += [wunsch, f"{wunsch} @BBL P1P", f"{wunsch} @BBL X1C"]
+    kandidaten += list(FILAMENTE.get(material, ()))
+    for k in kandidaten:
+        if profil_vorhanden("filament", k):
+            return k
+    if wunsch:
+        for (art, name) in _index():
+            if art == "filament" and name.startswith(wunsch) and "P1P" in name and "nozzle" not in name:
+                return name
+    raise SlicerFehler(f"kein Bambu-Studio-Filamentprofil für {material!r}" + (f" ({wunsch!r})" if wunsch else ""))
+
+
+def prozess_name(schicht: float) -> str:
+    beste = min(PROZESSE, key=lambda h: abs(h - float(schicht)))
+    return PROZESSE[beste]
+
+
+def prozess_einstellungen(einstellungen: dict[str, Any]) -> dict[str, str]:
+    """Kev-CAD-Einstellungen (DRUCK_EINSTELLUNGEN) als Bambu-Studio-Prozesswerte (Texte wie in den Profilen)."""
+    e = einstellungen
+    out: dict[str, str] = {}
+    if e.get("schicht_mm") is not None:
+        out["layer_height"] = f"{float(e['schicht_mm']):g}"
+    if e.get("waende") is not None:
+        out["wall_loops"] = str(int(e["waende"]))
+    if e.get("decken") is not None:
+        out["top_shell_layers"] = str(int(e["decken"]))
+        out["top_shell_thickness"] = "0"
+    if e.get("boeden") is not None:
+        out["bottom_shell_layers"] = str(int(e["boeden"]))
+        out["bottom_shell_thickness"] = "0"
+    if e.get("fuellung") is not None:
+        out["sparse_infill_density"] = f"{round(float(e['fuellung']) * 100):d}%"
+    if e.get("muster"):
+        out["sparse_infill_pattern"] = MUSTER_BAMBU.get(str(e["muster"]), str(e["muster"]))
+    st = e.get("stuetzen")
+    if st is not None:
+        out["enable_support"] = "0" if st == "keine" else "1"
+        if st in STUETZEN_BAMBU:
+            out["support_type"] = STUETZEN_BAMBU[st]
+    if e.get("brim") is not None:
+        out["brim_type"] = "outer_only" if e["brim"] else "no_brim"
+        if e["brim"]:
+            out["brim_width"] = "5"
+    return out
+
+
+def prozess_profil(einstellungen: dict[str, Any], bett: str = "Textured PEI Plate") -> tuple[str, dict[str, Any]]:
+    name = prozess_name(float(einstellungen.get("schicht_mm") or 0.2))
+    d = profil("process", name)
+    d.update(prozess_einstellungen(einstellungen))
+    d["curr_bed_type"] = bett
+    d["print_settings_id"] = name
+    d["name"] = name
+    return name, d
+
+
+def maschinen_profil(drucker: str = "p1p-0.4") -> dict[str, Any]:
+    name = DRUCKER.get(drucker, DRUCKER["p1p-0.4"])["maschine"]
+    d = profil("machine", name)
+    d["printer_settings_id"] = name
+    d["name"] = name
+    return d
+
+
+def filament_profil(name: str) -> dict[str, Any]:
+    d = profil("filament", name)
+    d["filament_settings_id"] = [name]
+    d["name"] = name
+    return d
+
+
+def filament_dichte(d: dict[str, Any]) -> float:
+    v = d.get("filament_density")
+    if isinstance(v, list):
+        v = v[0] if v else None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 1.24
+
+
+def filament_wert(d: dict[str, Any], key: str, standard: float) -> float:
+    v = d.get(key)
+    if isinstance(v, list):
+        v = v[0] if v else None
+    try:
+        return float(str(v).rstrip("%"))
+    except (TypeError, ValueError):
+        return standard
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# STL
+
+
+def schreibe_stl(pfad: Path, punkte: np.ndarray, dreiecke: np.ndarray, name: str = "kevcad") -> None:
+    """Binäres STL (Normalen aus den Ecken)."""
+    P = np.asarray(punkte, dtype=np.float64).reshape(-1, 3)
+    T = np.asarray(dreiecke, dtype=np.int64).reshape(-1, 3)
+    a, b, c = P[T[:, 0]], P[T[:, 1]], P[T[:, 2]]
+    n = np.cross(b - a, c - a)
+    ln = np.linalg.norm(n, axis=1, keepdims=True)
+    n = np.divide(n, ln, out=np.zeros_like(n), where=ln > 1e-12)
+    rec = np.zeros(len(T), dtype=[("n", "<f4", 3), ("a", "<f4", 3), ("b", "<f4", 3), ("c", "<f4", 3), ("x", "<u2")])
+    rec["n"], rec["a"], rec["b"], rec["c"] = n, a, b, c
+    kopf = name.encode("ascii", "replace")[:80].ljust(80, b" ")
+    with open(pfad, "wb") as f:
+        f.write(kopf)
+        f.write(struct.pack("<I", len(T)))
+        f.write(rec.tobytes())
+
+
+def lies_stl(pfad: Path) -> np.ndarray:
+    """Dreiecke (m, 3, 3) eines binären STL."""
+    data = Path(pfad).read_bytes()
+    n = struct.unpack_from("<I", data, 80)[0]
+    rec = np.frombuffer(data, dtype=[("n", "<f4", 3), ("a", "<f4", 3), ("b", "<f4", 3), ("c", "<f4", 3),
+                                     ("x", "<u2")], count=n, offset=84)
+    return np.stack([rec["a"], rec["b"], rec["c"]], axis=1).astype(np.float64)
+
+
+def schreibe_stl_dreiecke(pfad: Path, tris: np.ndarray, name: str = "kevcad") -> None:
+    m = len(tris)
+    schreibe_stl(pfad, tris.reshape(-1, 3), np.arange(m * 3).reshape(m, 3), name)
+
+
+def netz_der_form(shape: Any, toleranz: float = 0.01, winkel: float = 0.1) -> tuple[np.ndarray, np.ndarray]:
+    """Feines Dreiecksnetz einer build123d-Form (Weltlage) für den Slicer; vernetzt eine Kopie."""
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS
+
+    topo = getattr(shape, "wrapped", shape)
+    kopie = BRepBuilderAPI_Copy(topo, True, False).Shape()
+    BRepMesh_IncrementalMesh(kopie, toleranz, False, winkel, True)
+    punkte: list[np.ndarray] = []
+    dreiecke: list[np.ndarray] = []
+    basis = 0
+    exp = TopExp_Explorer(kopie, TopAbs_FACE)
+    while exp.More():
+        face = TopoDS.Face(exp.Current())
+        loc = TopLoc_Location()
+        tri = BRep_Tool.Triangulation_s(face, loc)
+        exp.Next()
+        if tri is None:
+            continue
+        trsf = loc.Transformation()
+        n = tri.NbNodes()
+        P = np.empty((n, 3))
+        for i in range(1, n + 1):
+            p = tri.Node(i).Transformed(trsf)
+            P[i - 1] = (p.X(), p.Y(), p.Z())
+        m = tri.NbTriangles()
+        T = np.empty((m, 3), dtype=np.int64)
+        for i in range(1, m + 1):
+            a, b, c = tri.Triangle(i).Get()
+            T[i - 1] = (a - 1, b - 1, c - 1)
+        if face.Orientation() == TopAbs_REVERSED:
+            T = T[:, [0, 2, 1]]
+        punkte.append(P)
+        dreiecke.append(T + basis)
+        basis += n
+    if not punkte:
+        raise SlicerFehler("Form ohne Flächen (nichts zu vernetzen)")
+    return np.vstack(punkte), np.vstack(dreiecke)
+
+
+def stl_in_druckausrichtung(shape: Any, geo: dict[str, Any], pfad: Path, toleranz: float = 0.01) -> dict[str, Any]:
+    """STL eines gezeigten Teils (Weltlage) in Druckausrichtung: ``p = matrix · (p_welt − t) − versatz`` (aus
+    ``druck/vorschau_geo.py``), Auflage bei z = 0, Mitte des Hüllrechtecks bei (0, 0). Liefert Hüllmaß und
+    Dreieckszahl."""
+    P, T = netz_der_form(shape, toleranz=toleranz)
+    A = np.asarray(geo["matrix"], dtype=np.float64)
+    t = np.asarray(geo["t"], dtype=np.float64)
+    v = np.asarray(geo["versatz"], dtype=np.float64)
+    Q = (P - t) @ A.T - v
+    Q[:, 2] -= float(Q[:, 2].min())  # das feine Netz liegt genau auf dem Bett
+    if abs(np.linalg.det(A) + 1) < 1e-6:  # gespiegelt: Umlaufsinn umkehren
+        T = T[:, [0, 2, 1]]
+    schreibe_stl(pfad, Q, T, name=str(geo.get("form") or "kevcad")[:60])
+    lo, hi = Q.min(axis=0), Q.max(axis=0)
+    return {"groesse": [round(float(x), 3) for x in hi - lo], "min": [round(float(x), 3) for x in lo],
+            "dreiecke": int(len(T))}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Ausführen
+
+
+@contextlib.contextmanager
+def _sperre(abbruch: threading.Event | None):
+    """Rechnerweit höchstens ein Slicer (Dateisperre); wartet, bricht bei ``abbruch`` ab."""
+    pfad = cache_ordner() / "slicer.lock"
+    f = open(pfad, "a+")
+    try:
+        while True:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if abbruch is not None and abbruch.wait(0.2):
+                    raise Abgebrochen("neuer Lauf") from None
+                if abbruch is None:
+                    time.sleep(0.2)
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+
+def ausfuehren(args: list[str], ordner: Path, abbruch: threading.Event | None = None,
+               zeitlimit_s: float = ZEITLIMIT_S) -> dict[str, Any]:
+    """Bambu Studio mit ``args`` im Arbeitsordner (dort landet auch ``result.json``); liefert result.json."""
+    exe = programm()
+    if exe is None:
+        raise SlicerFehler("Bambu Studio nicht gefunden (/Applications/BambuStudio.app)")
+    ordner.mkdir(parents=True, exist_ok=True)
+    (ordner / "result.json").unlink(missing_ok=True)
+    with _sperre(abbruch):
+        if abbruch is not None and abbruch.is_set():
+            raise Abgebrochen("neuer Lauf")
+        cmd = ["nice", "-n", "15", str(exe), "--debug", "1", *args, "--outputdir", str(ordner)]
+        proc = subprocess.Popen(cmd, cwd=str(ordner), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, env={**os.environ, "HOME": str(Path.home())})
+        t0 = time.monotonic()
+        try:
+            while True:
+                try:
+                    proc.wait(0.1)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                if abbruch is not None and abbruch.is_set():
+                    proc.kill()
+                    proc.wait(5)
+                    raise Abgebrochen("neuer Lauf")
+                if time.monotonic() - t0 > zeitlimit_s:
+                    proc.kill()
+                    proc.wait(5)
+                    raise SlicerFehler(f"Bambu Studio antwortet nicht (über {zeitlimit_s:g} s)")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+        ausgabe = (proc.stdout.read() if proc.stdout else b"").decode("utf-8", "replace")
+    try:
+        res = json.loads((ordner / "result.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        res = {}
+    rc = res.get("return_code", proc.returncode)
+    if rc not in (0, None) or proc.returncode not in (0, None):
+        zeilen = [z for z in ausgabe.splitlines() if "error" in z.lower() or "fehl" in z.lower()]
+        meldung = res.get("error_string") or (zeilen[-1] if zeilen else ausgabe.strip()[-300:])
+        raise SlicerFehler(f"Bambu Studio meldet Fehler {rc}: {meldung}")
+    res["_dauer_s"] = round(time.monotonic() - t0, 2)
+    return res
+
+
+@dataclass
+class Profile:
+    """Die drei Profile eines Slicer-Laufs als Dateien im Arbeitsordner."""
+
+    maschine: Path
+    prozess: Path
+    filamente: list[Path]
+    prozess_name: str
+    filament_namen: list[str]
+    dichten: list[float]
+    werte: dict[str, Any] = field(default_factory=dict)
+
+
+def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: list[str],
+                     drucker: str = "p1p-0.4") -> Profile:
+    ordner.mkdir(parents=True, exist_ok=True)
+    m = maschinen_profil(drucker)
+    pname, p = prozess_profil(einstellungen, DRUCKER.get(drucker, DRUCKER["p1p-0.4"])["bett"])
+    mp, pp = ordner / "maschine.json", ordner / "prozess.json"
+    mp.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+    pp.write_text(json.dumps(p, ensure_ascii=False), encoding="utf-8")
+    fpfade, dichten = [], []
+    for i, name in enumerate(filamente):
+        f = filament_profil(name)
+        fp = ordner / f"filament{i + 1}.json"
+        fp.write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
+        fpfade.append(fp)
+        dichten.append(filament_dichte(f))
+    return Profile(mp, pp, fpfade, pname, list(filamente), dichten)
+
+
+def _profil_args(pr: Profile) -> list[str]:
+    return ["--load-settings", f"{pr.maschine};{pr.prozess}", "--load-filaments", ";".join(str(p) for p in pr.filamente)]
+
+
+def _platten_ergebnis(res: dict[str, Any], dichten: list[float]) -> list[dict[str, Any]]:
+    out = []
+    for pl in res.get("sliced_plates") or []:
+        vol_cm3 = 0.0
+        for f in pl.get("filaments") or []:
+            i = int(f.get("id") or 1) - 1
+            d = dichten[i] if 0 <= i < len(dichten) else dichten[0]
+            vol_cm3 += float(f.get("total_used_g") or 0.0) / d
+        merkmale = {k: round(float(v), 1) for k, v in (pl.get("feature_type_times") or {}).items()}
+        out.append({"platte": int(pl.get("id") or len(out) + 1),
+                    "zeit_s": round(float(pl.get("total_predication") or 0.0), 1),
+                    "volumen_cm3": round(vol_cm3, 4), "m": round(vol_cm3 / CM3_JE_M, 3),
+                    "g_bambu": round(sum(float(f.get("total_used_g") or 0.0) for f in pl.get("filaments") or []), 3),
+                    "merkmale": merkmale, "start_s": merkmale.get("Custom", 0.0),
+                    "objekte": [o.get("name") for o in pl.get("objects") or []],
+                    "warnung": pl.get("warning_message") or ""})
+    return out
+
+
+def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: str, ordner: Path,
+               abbruch: threading.Event | None = None, drucker: str = "p1p-0.4") -> dict[str, Any]:
+    """Ein Teil (STL in Druckausrichtung) slicen: ``zeit_s``, ``volumen_cm3``, ``m``, ``merkmale`` …"""
+    pr = schreibe_profile(ordner, einstellungen, [filament], drucker)
+    res = ausfuehren([*_profil_args(pr), "--slice", "0", str(stl)], ordner, abbruch)
+    platten = _platten_ergebnis(res, pr.dichten)
+    for g in ordner.glob("*.gcode"):
+        g.unlink(missing_ok=True)
+    if not platten:
+        raise SlicerFehler("Bambu Studio hat nichts geslict")
+    erg = platten[0]
+    erg.update({"prozess": pr.prozess_name, "filament": filament, "dauer_s": res.get("_dauer_s")})
+    return erg
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Anordnen und Platten
+
+
+def _matrix_aus_3mf(text: str) -> np.ndarray:
+    v = [float(x) for x in text.split()]
+    m = np.eye(4)
+    m[:3, :3] = np.array(v[:9]).reshape(3, 3).T if len(v) >= 12 else np.eye(3)
+    if len(v) >= 12:
+        m[:3, 3] = v[9:12]
+    return m
+
+
+def lies_anordnung(pfad_3mf: Path) -> list[dict[str, Any]]:
+    """Platten eines von Bambu Studio geschriebenen 3MF: je Platte die Objekte mit Name, Drehung (Grad um Z) und
+    Lage (Mitte, Plattenkoordinaten)."""
+    import xml.etree.ElementTree as ET
+
+    with zipfile.ZipFile(pfad_3mf) as z:
+        modell = ET.fromstring(z.read("3D/3dmodel.model"))
+        einst = ET.fromstring(z.read("Metadata/model_settings.config"))
+    ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+    lagen: dict[str, np.ndarray] = {}
+    for item in modell.findall(".//m:build/m:item", ns):
+        lagen[item.get("objectid") or ""] = _matrix_aus_3mf(item.get("transform") or "1 0 0 0 1 0 0 0 1 0 0 0")
+    namen: dict[str, str] = {}
+    for obj in einst.findall("object"):
+        for md in obj.findall("metadata"):
+            if md.get("key") == "name":
+                namen[obj.get("id") or ""] = md.get("value") or ""
+    platten = []
+    for pl in einst.findall("plate"):
+        nr = 0
+        for md in pl.findall("metadata"):
+            if md.get("key") == "plater_id":
+                nr = int(md.get("value") or 0)
+        objekte = []
+        for inst in pl.findall("model_instance"):
+            oid = ""
+            for md in inst.findall("metadata"):
+                if md.get("key") == "object_id":
+                    oid = md.get("value") or ""
+            m = lagen.get(oid)
+            if m is None:
+                continue
+            objekte.append({"objekt": oid, "name": namen.get(oid, ""), "matrix": m})
+        platten.append({"nr": nr, "objekte": objekte})
+    platten.sort(key=lambda p: p["nr"])
+    n = len(platten)
+    spalten = max(1, math.ceil(math.sqrt(n)))
+    for i, pl in enumerate(platten):
+        ox, oy = (i % spalten) * PLATTENABSTAND, -(i // spalten) * PLATTENABSTAND
+        for o in pl["objekte"]:
+            m = o["matrix"]
+            o["x"], o["y"] = float(m[0, 3] - ox), float(m[1, 3] - oy)
+            o["drehung"] = round(math.degrees(math.atan2(m[1, 0], m[0, 0])), 3)
+    return platten
+
+
+def anordnen(objekte: list[tuple[Path, int]], ordner: Path, abbruch: threading.Event | None = None,
+             filament: str | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None) -> list[dict]:
+    """``objekte``: (STL, Anzahl). Bambu Studio ordnet an (mit Drehen, Sperrzone aus dem Maschinenprofil) und legt bei
+    Bedarf weitere Platten an. Ergebnis wie ``lies_anordnung``; Namen „<stl-stamm>_<n>“."""
+    e = {"schicht_mm": 0.2}
+    pr = schreibe_profile(ordner, e, [filament or FILAMENTE["pla"][-1]], drucker)
+    if abstand_mm is not None:
+        d = json.loads(pr.prozess.read_text())
+        d["min_object_distance"] = f"{abstand_mm:g}"
+        pr.prozess.write_text(json.dumps(d))
+    ziel = ordner / "anordnung.3mf"
+    ziel.unlink(missing_ok=True)
+    args = [*_profil_args(pr), "--arrange", "1", "--allow-rotations",
+            "--clone-objects", ",".join(str(max(1, int(n))) for _, n in objekte),
+            "--export-3mf", ziel.name, *[str(p) for p, _ in objekte]]
+    ausfuehren(args, ordner, abbruch)
+    if not ziel.exists():
+        raise SlicerFehler("Bambu Studio hat keine Anordnung geschrieben")
+    return lies_anordnung(ziel)
+
+
+def drehe_stl(tris: np.ndarray, grad: float) -> tuple[np.ndarray, np.ndarray]:
+    """Dreiecke um Z drehen und das Hüllrechteck wieder auf die Mitte legen: (Dreiecke, Verschiebung der Mitte)."""
+    w = math.radians(grad)
+    c, s = math.cos(w), math.sin(w)
+    R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.0]])
+    P = tris.reshape(-1, 3) @ R.T
+    lo, hi = P.min(axis=0), P.max(axis=0)
+    mitte = np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]])
+    return (P - mitte).reshape(-1, 3, 3), mitte
+
+
+@dataclass
+class PlattenObjekt:
+    stl: Path            # STL in Druckausrichtung, Mitte des Hüllrechtecks bei (0, 0), Auflage bei z = 0
+    x: float             # Mitte auf der Platte
+    y: float
+    drehung: float       # Grad um Z
+    filament: int = 1    # Nummer des Filaments (1 …)
+    einstellungen: dict[str, Any] = field(default_factory=dict)
+    name: str = ""
+
+
+def montageliste(platten: list[list[PlattenObjekt]], ordner: Path) -> Path:
+    """Montageliste (``--load-assemble-list``) mit festen Lagen; gedrehte Teile als eigene STL-Kopien."""
+    gedreht: dict[tuple[str, float], Path] = {}
+    liste: dict[str, Any] = {"plates": []}
+    nr = 0
+    for i, objekte in enumerate(platten, start=1):
+        eintraege = []
+        for o in objekte:
+            nr += 1
+            pfad = o.stl
+            dx = dy = 0.0
+            g = round(float(o.drehung) % 360.0, 3)
+            if g not in (0.0, 360.0):
+                key = (str(o.stl), g)
+                tris, mitte = drehe_stl(lies_stl(o.stl), g)
+                if key not in gedreht:
+                    p = ordner / f"{o.stl.stem}_d{str(g).replace('.', '_')}.stl"
+                    schreibe_stl_dreiecke(p, tris)
+                    gedreht[key] = p
+                pfad = gedreht[key]
+                dx, dy = float(mitte[0]), float(mitte[1])
+            eintrag: dict[str, Any] = {"path": str(pfad), "count": 1, "filaments": [int(o.filament)],
+                                       "assemble_index": [nr], "pos_x": [round(o.x + dx, 4)],
+                                       "pos_y": [round(o.y + dy, 4)], "pos_z": [0]}
+            pp = prozess_einstellungen(o.einstellungen)
+            if pp:
+                eintrag["print_params"] = pp
+            eintraege.append(eintrag)
+        liste["plates"].append({"plate_name": f"Platte {i}", "need_arrange": False, "objects": eintraege})
+    pfad = ordner / "montageliste.json"
+    pfad.write_text(json.dumps(liste, ensure_ascii=False, indent=1), encoding="utf-8")
+    return pfad
+
+
+def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordner: Path,
+                  einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
+                  drucker: str = "p1p-0.4") -> list[dict[str, Any]]:
+    """Platten mit festen Lagen slicen (je Platte Zeit und Filament)."""
+    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, filamente, drucker)
+    liste = montageliste(platten, ordner)
+    res = ausfuehren([*_profil_args(pr), "--load-assemble-list", str(liste), "--slice", "0"], ordner, abbruch)
+    for g in ordner.glob("*.gcode"):
+        g.unlink(missing_ok=True)
+    return _platten_ergebnis(res, pr.dichten)
+
+
+def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, ordner: Path,
+               einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
+               drucker: str = "p1p-0.4", farbe: str | None = None) -> dict[str, Any]:
+    """3MF der Platten eines Materials als Bambu-Projekt (ohne Slicen): Drucker-, Prozess- und Filamentprofil in
+    ``Metadata/project_settings.config``, Einstellungen je Teil in ``Metadata/model_settings.config``; danach zur
+    Kontrolle mit ``--info`` geladen. Liefert {"pfad", "objekte", "geprueft"}.
+
+    Ein Filament je Datei: Bambu Studio 2.07 schreibt Projekte mit mehreren ``--load-filaments`` so, dass es sie beim
+    erneuten Laden nur mit Filament 1 (und nach Ergänzen der Listen gar nicht) slicen kann; der P1P ohne AMS druckt
+    ohnehin ein Material je Platte."""
+    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, [filament], drucker)
+    if farbe:
+        d = json.loads(pr.filamente[0].read_text(encoding="utf-8"))
+        d["filament_colour"] = [farbe]
+        d["default_filament_colour"] = [farbe]
+        pr.filamente[0].write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    for liste_ in platten:
+        for o in liste_:
+            o.filament = 1
+    liste = montageliste(platten, ordner)
+    name = "platten.3mf"
+    (ordner / name).unlink(missing_ok=True)
+    ausfuehren([*_profil_args(pr), "--load-assemble-list", str(liste), "--export-3mf", name], ordner, abbruch)
+    erzeugt = ordner / name
+    if not erzeugt.exists():
+        raise SlicerFehler("Bambu Studio hat kein 3MF geschrieben")
+    objekte = pruefe_3mf(erzeugt, ordner / "pruefung", abbruch)
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(erzeugt, ziel)
+    return {"pfad": str(ziel), "objekte": objekte, "geprueft": True}
+
+
+def pruefe_3mf(pfad: Path, ordner: Path, abbruch: threading.Event | None = None) -> int:
+    """3MF in Bambu Studio laden (``--info``); Anzahl der Objekte oder ``SlicerFehler``."""
+    exe = programm()
+    if exe is None:
+        raise SlicerFehler("Bambu Studio nicht gefunden")
+    ordner.mkdir(parents=True, exist_ok=True)
+    with _sperre(abbruch):
+        r = subprocess.run(["nice", "-n", "15", str(exe), "--info", str(pfad)], cwd=str(ordner), capture_output=True,
+                           text=True, timeout=120)
+    n = len(re.findall(r"^number_of_facets\s*=", r.stdout, flags=re.M))
+    if r.returncode != 0 or n == 0:
+        raise SlicerFehler(f"Bambu Studio kann das 3MF nicht laden ({r.returncode}): {r.stdout[-300:]}")
+    return n
+
+
+def arbeitsordner(prefix: str = "lauf") -> Path:
+    basis = cache_ordner() / "tmp"
+    basis.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=prefix + "-", dir=str(basis)))
+
+
+def schluessel(*teile: Any) -> str:
+    return hashlib.sha1(json.dumps(teile, sort_keys=True, default=str).encode()).hexdigest()[:20]

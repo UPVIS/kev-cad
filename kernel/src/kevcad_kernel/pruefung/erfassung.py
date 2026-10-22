@@ -96,6 +96,12 @@ class Erfassung:
         out: dict[str, Any] = {"druck_material": piece.material_id, "druck_verfahren": piece.verfahren}
         if getattr(piece, "ausrichtung", None) is not None:
             out["druck_ausrichtung"] = piece.ausrichtung
+        # Druckvorschau (druck/vorschau_geo.py): Zweck, Anzahl und Kennung des druckteil-Aufrufs
+        out["druck_stueck"] = int(getattr(piece, "seq", 0) or 0)
+        if getattr(piece, "zweck", None):
+            out["druck_zweck"] = piece.zweck
+        if getattr(piece, "anzahl", None):
+            out["druck_anzahl"] = int(piece.anzahl)
         orig = piece.shape
         try:
             if orig is not None and shape.wrapped.IsPartner(orig):

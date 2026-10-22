@@ -131,6 +131,8 @@ class Piece:
     shape: Any = field(default=None, repr=False, compare=False)
     solids: list[Any] = field(default_factory=list, repr=False, compare=False)
     ausrichtung: Any = field(default=None, repr=False, compare=False)  # Druckteile: Lage aufs Bett, None = automatisch
+    zweck: str | None = field(default=None, compare=False)  # Druckteile: zier, funktion, tragend, bewegt, aussen
+    anzahl: int | None = field(default=None, compare=False)  # Druckteile: so oft insgesamt drucken (Ersatzteile)
 
     @property
     def group(self) -> str:

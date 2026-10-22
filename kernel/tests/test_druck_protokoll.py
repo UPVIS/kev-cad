@@ -63,3 +63,5 @@ def test_testdateien_lesen_und_pruefen():
     voll = FrameReader().feed((FIX / "print_preview.frame").read_bytes())[0][0]
     assert voll["summe"]["platten"] == data["vorschau"]["summe"]["platten"]
     assert voll["teile"][0]["einstellungen"] == data["vorschau"]["erstes_teil"]["einstellungen"]
+    assert voll["teile"][0]["fest_von"] == {"waende": "kevin"}
+    assert data["vorschau"]["fest_von"]["g3"] == {"fuellung": "agent"}

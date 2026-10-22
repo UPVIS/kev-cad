@@ -839,6 +839,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .drucker_tools import register_drucker_tools
 
     register_drucker_tools(t, svc, tool, {"read_only": READ_ONLY})
+    # Druckvorschau: Filament, Zeit, Platten, Kosten, Empfehlungen, 3MF (druckvorschau_tools.py, DRUCKVORSCHAU.md)
+    from .druckvorschau_tools import register_druckvorschau_tools
+
+    register_druckvorschau_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE})
 
     # Versionen, Meilensteine, Varianten (versionen_tools.py)
     from .versionen_tools import register_versionen_tools

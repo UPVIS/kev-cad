@@ -1441,7 +1441,20 @@
     },
     "fest": [
      "waende"
-    ]
+    ],
+    "fest_von": {
+     "waende": "kevin"
+    }
+   },
+   "fest_von": {
+    "g1": {
+     "waende": "kevin"
+    },
+    "g2": {},
+    "g3": {
+     "fuellung": "agent"
+    },
+    "g4": {}
    },
    "hinweise": [
     {
