@@ -93,11 +93,12 @@ def test_example_run_parts_and_frame_order(env):
     app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h["run"] == res["run"], start=start)
     all_types = [h["type"] for h in app.since(start)  # CHECK: Prüfung folgt; Versionen kommen im Hintergrund
                  if h["type"] not in ("STATUS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ", "PRINT_PREVIEW",
-                                      "STATICS", "STATICS_FIELD")]  # Statik S2/S3 rechnet im Hintergrund nach
+                                      "STATICS", "STATICS_FIELD", "SCAN_LIST",
+                                      "REF_DEVIATION")]  # Statik S2/S3, Scans und Abweichung kommen im Hintergrund
     assert all_types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # Stückliste, dann Bedingungen direkt nach RUN_END
     frames = [h for h in app.since(start)
               if h["type"] not in ("STATUS", "BOM", "CONSTRAINTS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ", "PRINT_PREVIEW",
-                                   "STATICS", "STATICS_FIELD")]
+                                   "STATICS", "STATICS_FIELD", "SCAN_LIST", "REF_DEVIATION")]
     types = [h["type"] for h in frames]
     assert types[0] == "RUN_START" and types[-1] == "RUN_END"
     assert types == ["RUN_START", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP", "PART_UPSERT", "STEP",
