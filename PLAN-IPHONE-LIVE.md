@@ -11,6 +11,7 @@ ist wichtig“). Damit ist L1 ausdrücklich bestätigt.
 | M2 Transport | VoiceBridge-Sitzung | in Arbeit (Socket, Hülle `cad` mit Vorrang, danach CloudKit) |
 | M3 iPhone-Ansicht | VoiceBridge-Sitzung | fertig (KevCADWire, 59 Bilder/s mit 112 Teilen, 0 im Leerlauf) |
 | M4, M5 | gemeinsam | danach |
+| Freigabe vom iPhone | Kev CAD und VoiceBridge-Sitzung „Live Control App Modernisierung“ | Kev-CAD-Seite fertig (MIRROR.md 1.1, 22.10.2026): FREIGABE, CMD `freigabe`, FREIGABE_ENDE, Prüfung der Gegenstelle über Signatur; VoiceBridge in Arbeit |
 
 ## Ziel
 

@@ -202,11 +202,16 @@ extension Catalog {
         entry["status"]?.stringValue?.lowercased() == "vorgeschlagen"
     }
 
-    /// Der Eintrag mit `status: "frei"` als JSON, für die Freigabe eines Vorschlags (CATALOG_SAVE).
-    public static func approvedJSON(_ json: Data) -> Data {
+    /// Der Eintrag mit `status: "frei"` als JSON, für die Freigabe eines Vorschlags (CATALOG_SAVE). Mit `von` (Freigabe
+    /// vom iPhone, MIRROR.md 1.1) zusätzlich der Vermerk `freigegeben_von` und `freigegeben_am` (ISO 8601, UTC).
+    public static func approvedJSON(_ json: Data, von: String? = nil, am: Date = Date()) -> Data {
         guard var entry = (try? JSONDecoder().decode(JSONValue.self, from: json))?.objectValue else { return json }
         entry["status"] = "frei"
         entry.removeValue(forKey: "ebene")
+        if let von {
+            entry["freigegeben_von"] = .string(von)
+            entry["freigegeben_am"] = .string(MirrorFreigabeZeit.text(am))
+        }
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return (try? enc.encode(JSONValue.object(entry))) ?? json

@@ -35,7 +35,8 @@ released and printable ("druckbar" in `material_list`, e.g. pla, petg, asa, tpu-
 `material_define`; a proposal waits for Kevin's release and cannot be used before that. Ask for it with \
 `freigabe_anfragen(ids, grund)`: it opens the dialog "Vorschläge freigeben" in the project window, waits for Kevin's \
 click and returns what he released. A "freigegeben" from Kevin in the chat releases nothing; call \
-`freigabe_anfragen` then too, never tell him to open the stock catalog.
+`freigabe_anfragen` then too, never tell him to open the stock catalog. When VoiceBridge is connected, Kevin can also \
+release from his iPhone (the request reaches him directly, not through you); you never release anything yourself.
 - `run` reports parts outside the inventory as isError ("Inventar-Regel: …"); the geometry is still shown, but export \
 is refused. Fix the model: search a matching stock item and verbauen it, or make it a druckteil.
 - Only Kevin can switch the rule off for a project (kevcad.json "inventar_regel": false, e.g. for reconstructions \

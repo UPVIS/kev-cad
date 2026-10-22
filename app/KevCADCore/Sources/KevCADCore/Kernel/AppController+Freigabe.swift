@@ -17,6 +17,7 @@ extension AppController: FreigabeActions {
         send(AckOutMessage(replyTo: a.requestID, ok: true, message: "Freigabedialog im Projektfenster offen"))
         reloadCatalog()
         log(.info, "Claude bittet um Freigabe (\(a.anfrage)): " + a.eintraege.map(\.id).joined(separator: ", "))
+        mirror?.freigabe.angefragt(a)  // auch aufs iPhone (MIRROR.md 1.1), am Agenten vorbei
     }
 
     public func freigeben(_ eintraege: [FreigabeEintrag]) {
@@ -29,7 +30,10 @@ extension AppController: FreigabeActions {
     }
 
     public func freigabeSchliessen() {
-        if let a = model.freigabe.anfrage { meldeGeschlossen(a) }
+        if let a = model.freigabe.anfrage {
+            meldeGeschlossen(a)
+            mirror?.freigabe.dialogGeschlossen(a.anfrage)
+        }
         model.freigabe.anfrage = nil
         model.freigabe.freigegeben = []
     }
@@ -73,11 +77,13 @@ extension AppController: FreigabeActions {
             }
             guard gefunden.vorgeschlagen else {
                 if !model.freigabe.freigegeben.contains(e.id) { model.freigabe.freigegeben.append(e.id) }
+                mirror?.freigabe.schonFrei(e.id)
                 continue
             }
             model.freigabe.laeuft = e.id
+            // Vom iPhone mit Vermerk `freigegeben_von` (MIRROR.md 1.1), sonst wie bisher
             saveCatalogEntry(
-                kind: e.kind, json: Catalog.approvedJSON(gefunden.json),
+                kind: e.kind, json: Catalog.approvedJSON(gefunden.json, von: e.von),
                 ebene: gefunden.ebene.isEditable ? gefunden.ebene : .eigen)
             // Sofort gescheitert (nicht verbunden, ungültiges JSON): saveCatalogEntry setzt nur den Katalogzustand
             if case .failed(let text) = model.catalogActivity, model.freigabe.laeuft == e.id {
@@ -92,6 +98,7 @@ extension AppController: FreigabeActions {
         guard model.freigabe.laeuft == id else { return }
         model.freigabe.laeuft = nil
         if !model.freigabe.freigegeben.contains(id) { model.freigabe.freigegeben.append(id) }
+        mirror?.freigabe.bestaetigt(id)
         naechsteFreigabe()
     }
 
@@ -108,5 +115,6 @@ extension AppController: FreigabeActions {
         model.freigabe.warteschlange = []
         model.freigabe.fehler = text
         log(.warning, "Freigabe: \(text)")
+        mirror?.freigabe.angehalten(text)
     }
 }

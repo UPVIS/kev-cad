@@ -240,14 +240,18 @@ Scheitert eine Entscheidung am Katalog (`katalogfehler`), darf das iPhone sie wi
 **Prüfung der Gegenstelle** (`KevCADCore/Mirror/MirrorGegenstelle.swift`): Kev CAD liest beim Verbinden das Audit-Token
 des Sockets (`getsockopt(LOCAL_PEERTOKEN)`) und prüft daraus, ohne PID-Umweg:
 
-1. Code der Gegenstelle mit `SecCodeCreateWithAuditToken`.
+1. Code der Gegenstelle aus dem Audit-Token: `SecCodeCopyGuestWithAttributes` mit `kSecGuestAttributeAudit` (gleichwertig
+   zu `SecCodeCreateWithAuditToken`, das im öffentlichen macOS-SDK nicht deklariert ist).
 2. Argumente des Prozesses (`sysctl KERN_PROCARGS2`, PID aus dem Audit-Token) enthalten kein `--mcp`: Die MCP-Prozesse
    der Agenten sind dieselbe Datei wie die VoiceBridge-App und dürfen sich nie als Freigabe-Gegenstelle ausgeben.
 3. `SecCodeCheckValidity` gegen das Requirement (Konstante `MirrorGegenstelle.voiceBridgeRequirement`):
    `anchor apple generic and identifier "de.upvis.voicebridge.mac" and certificate leaf[subject.OU] = "2GX7UC98J6"`.
    Gilt für Apple Development und später Developer ID; Testinstanzen von VoiceBridge (Bundle-ID mit „test“) fallen
    gewollt heraus. Die Prüfung kommt nach dem Lesen der Argumente, so passt sie zum selben Prozess (Audit-Token mit
-   PID-Version).
+   PID-Version). Geprüft wird mit Standard-Flags, also auch gegen die Datei auf der Platte: Nach einem Update von
+   VoiceBridge scheitert der noch laufende alte Prozess (`errSecCSStaticCodeChanged`, Antwort `nicht_erlaubt` mit
+   „VoiceBridge neu starten“), bis VoiceBridge neu startet. Die Prüfung im Kernel
+   (`kSecCSMatchGuestRequirementInKernel`) kann Zertifikatsfelder nicht auswerten und kommt deshalb nicht in Frage.
 
 Kev CAD prüft beim Verbinden (entscheidet, wer `FREIGABE` bekommt) und vor jedem `CMD freigabe` noch einmal mit dem
 Audit-Token vom Verbinden. Alle anderen Gegenstellen bekommen kein `FREIGABE` und auf `freigabe` die Antwort
