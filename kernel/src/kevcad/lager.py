@@ -503,7 +503,7 @@ def _pruefe_zweck_anzahl(zweck: Any, anzahl: Any, name: str) -> tuple[str | None
 
 def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", ausrichtung: Any = None,
               zweck: str | None = None, anzahl: int | None = None, gedruckt: bool = False,
-              neu_drucken: bool = False):
+              neu_drucken: bool = False, spaeter: bool = False):
     """Selbst konstruiertes Teil, das gedruckt wird: registriert es für die Stückliste (Masse aus Volumen × Dichte,
     Kosten über preis_je_kg) und gibt es mit Name, Farbe und Material zurück. ``material`` muss freigegeben und
     druckbar sein; ``verfahren`` "3d-druck" oder "harzdruck".
@@ -520,14 +520,23 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
     ``gedruckt=True``: Kevin hat das Teil schon gedruckt. Es bleibt in Modell und Stückliste („gedruckt“), fällt aber
     aus Druckvorschau, Druckexport, Filament und dem Bauplanschritt „Drucken“ heraus. Der erste Lauf schreibt seine Form
     fest (``<projekt>/gedruckt.json``); ändert sie sich später, warnt die Prüfung (``gedruckt_geaendert``). Gewollte
-    Änderung: einen Lauf lang ``neu_drucken=True`` dazu (schreibt die neue Form fest), dann wieder weglassen."""
+    Änderung: einen Lauf lang ``neu_drucken=True`` dazu (schreibt die neue Form fest), dann wieder weglassen.
+
+    ``spaeter=True``: Das Teil wird erst später gedruckt (etwa nach dem Nachmessen). Es steht weiter in der Liste der
+    Druckvorschau (mit Filament, Zeit und Einstellungen, Gruppe „… (später)“), aber auf keiner Platte, nicht in der
+    Summe und nicht im Druckexport (3MF). Druckprüfung, Stückliste, Filament in der Einkaufsliste und der
+    Bauplanschritt „Drucken“ bleiben, denn gedruckt wird es ja noch. Zum Drucken ``spaeter`` wieder weglassen. Nicht
+    zusammen mit ``gedruckt=True`` (das heißt: schon gedruckt, fertig)."""
     from build123d import BuildPart, Color, Shape
 
     from kevcad_kernel.bom import Piece
 
     zweck, anzahl = _pruefe_zweck_anzahl(zweck, anzahl, str(name))
-    if not isinstance(gedruckt, bool) or not isinstance(neu_drucken, bool):
-        raise LagerError(f"druckteil {name!r}: gedruckt und neu_drucken sind True oder False")
+    if not isinstance(gedruckt, bool) or not isinstance(neu_drucken, bool) or not isinstance(spaeter, bool):
+        raise LagerError(f"druckteil {name!r}: gedruckt, neu_drucken und spaeter sind True oder False")
+    if spaeter and gedruckt:
+        raise LagerError(f"druckteil {name!r}: spaeter=True und gedruckt=True schließen sich aus (spaeter: wird noch "
+                         "gedruckt, nur nicht jetzt; gedruckt: ist schon gedruckt)")
     if neu_drucken and not gedruckt:
         raise LagerError(f"druckteil {name!r}: neu_drucken=True nur zusammen mit gedruckt=True (schreibt die neue "
                          "Form des gedruckten Teils fest)")
@@ -566,7 +575,8 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
                   preis=kg * pkg if pkg is not None else None, preis_stand=mat.get("preis_stand"),
                   preis_quelle=mat.get("preis_quelle"), verfahren=verfahren, volume=volume,
                   size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)],
-                  ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl, gedruckt=gedruckt, neu_drucken=neu_drucken)
+                  ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl, gedruckt=gedruckt, neu_drucken=neu_drucken,
+                  spaeter=spaeter)
     _register(piece, shape)
     return shape
 

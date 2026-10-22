@@ -4,7 +4,9 @@
 (``Metadata/model_settings.config``: Objekt je Teil mit Name und Filament, je Platte die Teile). Bambu Studio legt die
 Platten im Abstand von 1,2 Bettbreiten in Spalten ab (``slicer.PLATTENABSTAND``); so stehen sie hier auch. Ohne
 Prozess- und Filamentprofile: die wählt Kevin beim Öffnen in Bambu Studio (mit Bambu Studio schreibt
-``slicer.export_3mf`` das 3MF samt Profilen und Einstellungen je Teil).
+``slicer.export_3mf`` das 3MF samt Profilen und Einstellungen je Teil). Die Objekte heißen wie die Teile
+(``slicer.objekt_namen``, wie im Weg mit Bambu Studio): im Kern (``name``) und in ``model_settings.config`` am Objekt;
+von dort nimmt Bambu Studio den Namen für die Objektliste (die Objekte hier haben ihr Netz direkt, ohne ``<part>``).
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from xml.sax.saxutils import escape
 
 import numpy as np
 
-from kevcad_kernel.druck.slicer import PLATTENABSTAND, PlattenObjekt, lies_stl
+from kevcad_kernel.druck.slicer import PLATTENABSTAND, PlattenObjekt, lies_stl, objekt_namen
 
 NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 
@@ -35,6 +37,11 @@ BEZIEHUNGEN = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+def _attr(text: str) -> str:
+    """Text für ein XML-Attribut in doppelten Anführungszeichen."""
+    return escape(str(text), {'"': "&quot;"})
+
+
 def _netz(stl: Path) -> tuple[np.ndarray, np.ndarray]:
     tris = lies_stl(stl).reshape(-1, 3)
     pts, inv = np.unique(np.round(tris, 5), axis=0, return_inverse=True)
@@ -43,9 +50,12 @@ def _netz(stl: Path) -> tuple[np.ndarray, np.ndarray]:
     return pts, T[gut]
 
 
-def schreibe_3mf(ziel: Path, platten: list[list[PlattenObjekt]], titel: str = "Kev CAD") -> dict[str, Any]:
-    """Schreibt das 3MF; liefert {"pfad", "objekte", "platten"}."""
+def schreibe_3mf(ziel: Path, platten: list[list[PlattenObjekt]], titel: str = "Kev CAD",
+                 platten_namen: list[str] | None = None) -> dict[str, Any]:
+    """Schreibt das 3MF; liefert {"pfad", "objekte", "platten", "namen"}. ``platten_namen``: Namen der Platten in
+    Bambu Studio (sonst „Platte 1“ …)."""
     netze: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    namen = objekt_namen([o for liste in platten for o in liste])
     objekte: list[str] = []
     bau: list[str] = []
     einst_obj: list[str] = []
@@ -54,6 +64,7 @@ def schreibe_3mf(ziel: Path, platten: list[list[PlattenObjekt]], titel: str = "K
     oid = 0
     for i, liste in enumerate(platten):
         ox, oy = (i % spalten) * PLATTENABSTAND, -(i // spalten) * PLATTENABSTAND
+        pname = platten_namen[i] if platten_namen and i < len(platten_namen) else f"Platte {i + 1}"
         instanzen = []
         for o in liste:
             key = str(o.stl)
@@ -61,21 +72,22 @@ def schreibe_3mf(ziel: Path, platten: list[list[PlattenObjekt]], titel: str = "K
                 netze[key] = _netz(o.stl)
             P, T = netze[key]
             oid += 1
+            name = _attr(namen[oid - 1])
             v = "\n".join(f'     <vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in P)
             t = "\n".join(f'     <triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in T)
-            objekte.append(f'  <object id="{oid}" name="{escape(o.name or Path(o.stl).stem)}" type="model">\n'
+            objekte.append(f'  <object id="{oid}" name="{name}" type="model">\n'
                            f"   <mesh>\n    <vertices>\n{v}\n    </vertices>\n    <triangles>\n{t}\n    </triangles>\n"
                            "   </mesh>\n  </object>")
             w = math.radians(float(o.drehung or 0.0))
             c, s = math.cos(w), math.sin(w)
             bau.append(f'  <item objectid="{oid}" transform="{c:.6f} {s:.6f} 0 {-s:.6f} {c:.6f} 0 0 0 1 '
                        f'{o.x + ox:.4f} {o.y + oy:.4f} 0" printable="1"/>')
-            einst_obj.append(f'  <object id="{oid}">\n   <metadata key="name" value="{escape(o.name or "")}"/>\n'
+            einst_obj.append(f'  <object id="{oid}">\n   <metadata key="name" value="{name}"/>\n'
                              f'   <metadata key="extruder" value="{int(o.filament)}"/>\n  </object>')
             instanzen.append(f'   <model_instance>\n    <metadata key="object_id" value="{oid}"/>\n'
                              '    <metadata key="instance_id" value="0"/>\n   </model_instance>')
         einst_platten.append(f'  <plate>\n   <metadata key="plater_id" value="{i + 1}"/>\n'
-                             f'   <metadata key="plater_name" value="Platte {i + 1}"/>\n'
+                             f'   <metadata key="plater_name" value="{_attr(pname)}"/>\n'
                              '   <metadata key="locked" value="false"/>\n' + "\n".join(instanzen) + "\n  </plate>")
     modell = (f'<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="de-DE" xmlns="{NS}" '
               'xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">\n'
@@ -95,4 +107,4 @@ def schreibe_3mf(ziel: Path, platten: list[list[PlattenObjekt]], titel: str = "K
         z.writestr("3D/3dmodel.model", modell)
         z.writestr("Metadata/model_settings.config", einst)
     tmp.replace(ziel)
-    return {"pfad": str(ziel), "objekte": oid, "platten": len(platten)}
+    return {"pfad": str(ziel), "objekte": oid, "platten": len(platten), "namen": namen}

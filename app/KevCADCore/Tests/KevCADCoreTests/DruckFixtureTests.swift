@@ -252,6 +252,18 @@ final class DruckFixtureTests: XCTestCase {
         XCTAssertEqual(try kopf(DruckExportNachricht(id: "a-35", platten: [],
                                                      ziel: try erwartet()["export"]?["pfad"]?.stringValue)),
                        try fixtureKopf("print_export_req.frame"))
+        // additiv: Auswahl der Teile (ohne), Ergebnis mit weggelassen und Objektnamen
+        let auswahl = try XCTUnwrap(try erwartet()["export_auswahl"])
+        XCTAssertEqual(try kopf(DruckExportNachricht(id: "a-38", platten: [],
+                                                     ziel: try erwartet()["export"]?["pfad"]?.stringValue,
+                                                     ohne: auswahl["ohne"]?.stringList ?? [])),
+                       try fixtureKopf("print_export_req_auswahl.frame"))
+        guard case .druck(.exportErgebnis(let ex)) = try Fixtures.message("print_export_res_auswahl.frame") else {
+            return XCTFail("kein PRINT_EXPORT_RES")
+        }
+        XCTAssertTrue(ex.ok)
+        XCTAssertEqual(ex.platten, auswahl["platten"]?.arrayValue?.compactMap(\.intValue))
+        XCTAssertEqual(ex.dateien.count, 1)
     }
 
     /// Ablauf im App-Kern: Einstellung senden (wartet bis zur neuen Vorschau), Vorschau übernehmen, 3MF-Export mit

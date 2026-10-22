@@ -1357,6 +1357,16 @@
     "file": "print_export_req.frame",
     "type": "PRINT_EXPORT_REQ",
     "payload_bytes": 0
+   },
+   {
+    "file": "print_export_req_auswahl.frame",
+    "type": "PRINT_EXPORT_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_export_res_auswahl.frame",
+    "type": "PRINT_EXPORT_RES",
+    "payload_bytes": 0
    }
   ],
   "vorschau": {
@@ -1568,6 +1578,18 @@
     1,
     2
    ]
+  },
+  "export_auswahl": {
+   "ohne": [
+    "Kugelschieber/Lenksperren"
+   ],
+   "platten": [
+    1
+   ],
+   "leere_platten": [
+    2
+   ],
+   "weggelassen": 2
   }
  },
  "drucker": {

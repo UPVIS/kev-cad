@@ -492,13 +492,25 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   späterer Lauf sie, meldet die Prüfung `gedruckt_geaendert` (Warnung). Dann Kevin fragen: neu drucken (einen Lauf
   lang `neu_drucken=True`, danach weglassen) oder die Änderung zurücknehmen. Ersetzt eigene `GEDRUCKT`-Dicts mit
   Formprüfung im Modell.
+- **Später drucken:** `lager.druckteil(…, spaeter=True)` für Teile, die noch gedruckt werden, aber nicht jetzt (etwa
+  die Lenksperren erst nach dem Nachmessen). Sie stehen in der Druckvorschau als eigene Gruppe „… (später)“ mit
+  Filament und Zeit, liegen aber auf keiner Platte, zählen nicht in der Summe und kommen nicht ins 3MF. Druckprüfung,
+  Stückliste, Einkauf und Bauplan bleiben. Zum Drucken `spaeter` wieder weglassen. Nicht mit `gedruckt=True`
+  (das heißt: schon gedruckt). Für einen einmaligen Export ohne bestimmte Teile reicht `druck_export(ohne=[…])`.
 - **Was die Vorschau sagt:** Kevin in einem Satz nennen, was neu dazukommt (z. B. „2 Platten PETG, 6 h 40 min,
   4,80 €; die Lenksperre braucht Stützen“). Warnungen der Vorschau (Stützen, Verzug, Trocknen) wie Hinweise der
   Druckprüfung behandeln: wenn möglich konstruktiv lösen (Fase statt Überhang, größere Auflage).
 - **Einstellungen festlegen:** nur auf Kevins Wunsch `druck_einstellen(teil, einstellungen={…}, zweck=…)`; gespeichert
   in `<projekt>/druck.json` (gehört zu den Versionen), in der App mit „von Kevin“ bzw. „vom Agenten“.
-- **3MF:** `druck_export(ziel=None, platten=None)` schreibt die Platten als Bambu-Studio-Projekt mit Profilen und
-  Einstellungen je Teil (je Material eine Datei); gedruckt wird nichts.
+- **3MF:** `druck_export(ziel=None, platten=None, teile=None, ohne=None)` schreibt die Platten als
+  Bambu-Studio-Projekt mit Profilen und Einstellungen je Teil (je Material eine Datei); gedruckt wird nichts. Die
+  Objekte heißen in Bambu Studio wie die Teile aus `show()` (lange Namen ohne die mittleren Baugruppen, Ersatzteile
+  mit „(2)“), die Platten wie in der Vorschau („Platte 2“).
+- **Teile auswählen:** `druck_export(ohne=["Kugelschieber/Lenksperren"])` (alles unter der Baugruppe),
+  `ohne=["g3"]` oder `ohne=["Lenksperre (Druck)"]` (Gruppe der Vorschau), `teile=[…]` für nur diese Teile; `ohne`
+  gewinnt. Die übrigen Teile bleiben an ihrer Stelle (Lücken sind in Ordnung, Bambu Studio lädt und slict das), leere
+  Platten fallen weg, das Ergebnis nennt unter `weggelassen`, was fehlt (auch die Teile „später“). Unbekannte Namen
+  sind ein Fehler mit Vorschlägen. Kevin sagen, was weggelassen wurde und wo die Datei liegt.
 
 ## Quellen
 

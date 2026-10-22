@@ -702,6 +702,8 @@ DRUCK_PLATTENTEIL_FELDER: tuple[str, ...] = ("name", "gruppe", "x", "y", "drehun
 DRUCK_TEIL_FELDER: tuple[str, ...] = ("gruppe", "name", "teile", "anzahl", "material", "zweck", "zweck_geschaetzt", "g",
                                       "m", "zeit_s", "stand", "abweichung", "einstellungen", "begruendung", "hinweise")
 DRUCK_SLICER_FELDER: tuple[str, ...] = ("zustand", "fertig", "gesamt", "meldung")
+# PRINT_EXPORT_RES.weggelassen[].grund (additiv): per ohne, nicht in teile, als später markiert
+DRUCK_WEG_GRUENDE: tuple[str, ...] = ("ohne", "teile", "spaeter")
 
 
 def pack_print_preview(vorschau: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
@@ -740,16 +742,24 @@ def print_settings(id: str, *, teil: str | None = None, gruppe: str | None = Non
 
 
 def print_export_req(id: str, *, platten: list[int] | None = None, ziel: str | None = None,  # noqa: A002
-                     seq: int = 0) -> dict[str, Any]:
+                     teile: list[str] | None = None, ohne: list[str] | None = None, seq: int = 0) -> dict[str, Any]:
     """Kopf von PRINT_EXPORT_REQ (App → Kernel): ``platten`` leer = alle, ``ziel`` Pfad der .3mf oder None
-    (dann ``<projekt>/output/<projekt>-druck.3mf``)."""
-    return {"type": "PRINT_EXPORT_REQ", "seq": seq, "id": id, "platten": [int(p) for p in (platten or [])],
-            "ziel": ziel}
+    (dann ``<projekt>/output/<projekt>-druck.3mf``). Additiv ``teile`` (nur diese Teile) und ``ohne`` (diese
+    nicht): Teilname, Baugruppen-Präfix, Gruppe "g3" oder Gruppenname; ``ohne`` gewinnt; nur gesetzt, wenn nicht leer."""
+    h: dict[str, Any] = {"type": "PRINT_EXPORT_REQ", "seq": seq, "id": id,
+                         "platten": [int(p) for p in (platten or [])], "ziel": ziel}
+    if teile:
+        h["teile"] = [str(t) for t in teile]
+    if ohne:
+        h["ohne"] = [str(t) for t in ohne]
+    return h
 
 
 def print_export_res(reply_to: str, *, ok: bool, pfad: str | None, platten: list[int],
                      fehler: str | None = None, seq: int = 0, **extra: Any) -> dict[str, Any]:
-    """Kopf von PRINT_EXPORT_RES (Kernel → App); additiv ``hinweise``, ``ms``, ``geprueft`` (in Bambu Studio geladen)."""
+    """Kopf von PRINT_EXPORT_RES (Kernel → App); additiv ``hinweise``, ``ms``, ``geprueft`` (in Bambu Studio geladen),
+    ``pfade``, ``dateien`` (je Datei auch ``objekte``: Objektnamen im 3MF), ``weggelassen`` ([{"name", "grund":
+    ohne | teile | spaeter, "platte", "anzahl"}]) und ``leere_platten``."""
     return {"type": "PRINT_EXPORT_RES", "seq": seq, "reply_to": reply_to, "ok": bool(ok), "pfad": pfad,
             "platten": [int(p) for p in platten], "fehler": fehler, **extra}
 
@@ -777,6 +787,15 @@ def check_druck_message(header: dict[str, Any]) -> list[str]:
         for k in (header.get("einstellungen") or {}):
             if k not in DRUCK_EINSTELLUNGEN:
                 out.append(f"einstellungen.{k} unbekannt")
+    if kind == "PRINT_EXPORT_REQ":  # additiv: Auswahl der Teile
+        for k in ("teile", "ohne"):
+            if k in header and not (isinstance(header[k], list) and all(isinstance(x, str) for x in header[k])):
+                out.append(f"{k} ist keine Liste von Teilnamen")
+    if kind == "PRINT_EXPORT_RES":
+        for i, w in enumerate(header.get("weggelassen") or []):
+            out += _fehlend(w, ("name", "grund", "platte", "anzahl"), f"weggelassen[{i}]")
+            if isinstance(w, dict) and w.get("grund") not in DRUCK_WEG_GRUENDE:
+                out.append(f"weggelassen[{i}].grund {w.get('grund')!r} unbekannt")
     if kind != "PRINT_PREVIEW" or out:
         return out
     if header["stand"] not in DRUCK_STAENDE:

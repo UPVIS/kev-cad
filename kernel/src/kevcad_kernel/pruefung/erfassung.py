@@ -106,6 +106,8 @@ class Erfassung:
             out["druck_gedruckt"] = True
             if getattr(piece, "neu_drucken", False):
                 out["druck_neu_drucken"] = True
+        if getattr(piece, "spaeter", False):  # erst später drucken: nicht auf den Platten (druck/vorschau.py)
+            out["druck_spaeter"] = True
         orig = piece.shape
         try:
             if orig is not None and shape.wrapped.IsPartner(orig):

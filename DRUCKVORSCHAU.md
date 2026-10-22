@@ -29,7 +29,8 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 
 ## Zweck eines Druckteils (model.py, additiv)
 
-`lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)`
+`lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)` (dazu
+`gedruckt`, `neu_drucken` und `spaeter`, siehe „Gedruckt“ und „Auswahl und Objektnamen im Druckexport“)
 
 - `zweck`: `"zier"` | `"funktion"` | `"tragend"` | `"bewegt"` | `"aussen"`; ohne Angabe schätzt der Kernel
   (`funktion`), markiert als Schätzung.
@@ -128,6 +129,51 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
   (schreibt die neue Form fest) oder den Eintrag in gedruckt.json löschen. `neu_drucken` ohne `gedruckt` bricht den
   Lauf ab. Umsetzung `kernel/src/kevcad_kernel/druck/gedruckt.py`; CHECK additiv `druck.gedruckt` (Stand je Teil).
 
+## Auswahl und Objektnamen im Druckexport (Strang „Druckexport 2“, 22.10.2026, additiv)
+
+Anlass: Am Kugelschieber (Build 362) lagen alle Teile auf einer Platte, Kevin wollte sie ohne die Lenksperren drucken
+(die kommen erst nach dem Nachmessen), und Bambu Studio zeigte die Objekte als „assemble_1“ bis „assemble_8“.
+
+**Auswahl** (`druck/auswahl.py`): `druck_export(…, teile=[…], ohne=[…])`, ebenso `PRINT_EXPORT_REQ.teile` und
+`.ohne` (Listen, nur gesendet, wenn nicht leer).
+
+- Ein Eintrag ist ein Teilname aus `show()` (genau), eine Baugruppe als Präfix (`"Kugelschieber/Lenksperren"` trifft
+  alles darunter), eine Gruppe der Vorschau (`"g3"`) oder ihr Name (`"Lenksperre (Druck)"`). `teile` = nur diese,
+  `ohne` = diese nicht; beides zusammen geht, `ohne` gewinnt; `platten` filtert vorher. Ersatzteile gehen mit ihrem
+  Namen. Unbekannte Einträge sind ein Fehler mit Vorschlägen („Meintest du …?“); bleibt nichts übrig, ebenso.
+- **Lage:** Die übrigen Teile bleiben, wo die Vorschau sie hingelegt hat (Lücken sind in Ordnung). Bambu Studio lädt und
+  slict Platten mit festen Lagen und Lücken (`need_arrange: false`), geprüft am 22.10.2026 mit 2.07.01.62
+  (`pruefe_3mf` und `--slice 0`); die Lagen waren überschneidungsfrei, im Bauraum und außerhalb der Sperrzone und
+  bleiben es. Neu anordnen hieße andere Platten als die, die Kevin in der Vorschau gesehen hat. Leere Platten fallen
+  weg; passen die übrigen Teile auf weniger Platten, nennt das ein Hinweis (schnelles Anordnen als Probe).
+- Platten behalten im 3MF ihre Nummer aus der Vorschau als Namen („Platte 2“), auch wenn davor eine wegfällt.
+- Ergebnis additiv: `teile` (exportierte Teilnamen), `weggelassen: [{"name", "grund": "ohne" | "teile" | "spaeter",
+  "platte" (Nummer oder null), "anzahl"}]`, `leere_platten`, je Datei `objekte` (Objektnamen im 3MF); der erste
+  Hinweis lautet „Weggelassen: … (ohne), … (später).“. `PRINT_EXPORT_RES` trägt `weggelassen` und `leere_platten` mit
+  (`dateien` wie bisher, mit `objekte`).
+
+**Objektnamen im 3MF:** Bambu Studio nennt die Objekte einer Montageliste `assemble_<n>` (n = `assemble_index`, die
+laufende Nummer über alle Platten) und die Teile darin nach der STL-Datei; einen Namen nimmt die Montageliste nicht an.
+Den Namen der Objektliste liest Bambu Studio aus `Metadata/model_settings.config` (`<object>` und `<part>`, je
+`<metadata key="name">`); ein `name` an den Objekten in `3D/3dmodel.model` übergeht es bei eigenen Projekten
+(nachgeprüft: nur dort gesetzt, meldet der Slicer weiter „assemble_…“). Der Kernel setzt nach dem Export in dieser
+Datei die Teilnamen (`slicer.objekte_benennen`, Zuordnung über die Nummer, denn die `<object>`-Blöcke stehen nicht
+immer in der Reihenfolge der Liste); alles andere im Archiv bleibt unverändert. Name = Teilname aus `show()`, über 60
+Zeichen ohne die mittleren Baugruppen („Kugelschieber/…/Stangenhalter vorn links (Druck)“), sonst nur der letzte Teil,
+zuletzt gekürzt mit „…“; kommt ein Name mehrfach vor (Ersatzteile), zählen die weiteren mit „(2)“, „(3)“
+(`slicer.objekt_namen`). Das 3MF lädt danach (`pruefe_3mf`) und slict; der Slicer meldet die Objekte unter diesen
+Namen. Ohne Bambu Studio trägt `dreimf.py` dieselben Namen (im Kern und in `model_settings.config`).
+
+**Später drucken** (`lager.druckteil(…, spaeter=True)`): Das Teil wird noch gedruckt, nur nicht jetzt (etwa nach dem
+Nachmessen). Es steht weiter in `teile` (eigene Gruppe „… (später)“, `spaeter: true`, mit Filament, Zeit und
+Einstellungen; der Slicer rechnet es nach), liegt aber auf keiner Platte, zählt nicht in `summe` (auch nicht im
+Risikoaufschlag) und kommt nicht in den Druckexport (dort immer unter `weggelassen`, `grund: "spaeter"`; über `teile`
+nicht holbar). Additiv oben `spaeter: [{"name", "gruppe", "material"}]`. Druckprüfung, Stückliste, Filament in der
+Einkaufsliste und der Bauplanschritt „Drucken“ bleiben. Abgrenzung: `gedruckt=True` heißt schon gedruckt (fällt aus
+Vorschau, Export, Filament und Bauplan, Form festgeschrieben), `neu_drucken=True` schreibt die Form eines gedruckten
+Teils neu fest; `spaeter=True` zusammen mit `gedruckt=True` bricht den Lauf ab. Zum Drucken `spaeter` weglassen. Die
+App braucht nichts Neues: sie zeigt die Gruppe in der Liste mit dem Namen „(später)“, im Bericht unter „Ohne Platte“.
+
 ## Ablauf im Kernel
 
 1. Nach jedem erfolgreichen Lauf mit Druckteilen: Schätzung (V1/V2) und schnelles Anordnen (V3), Ziel unter 1 s am
@@ -153,7 +199,7 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 |---|---|---|---|
 | `PRINT_PREVIEW` | Kernel → App | Inhalt von `druckvorschau` (oben), `reply_to` optional | – |
 | `PRINT_PREVIEW_REQ` | App → Kernel | `id` | `PRINT_PREVIEW` |
-| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (Liste der Nummern oder leer = alle), `ziel` (Pfad .3mf) | `ACK`, danach `PRINT_EXPORT_RES` |
+| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (Liste der Nummern oder leer = alle), `ziel` (Pfad .3mf); additiv `teile`, `ohne` | `ACK`, danach `PRINT_EXPORT_RES` |
 | `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` | – |
 | `PRINT_SETTINGS` | App → Kernel | `id`, `teil` oder `gruppe`, `einstellungen` (Teilmenge wie oben) oder `zweck` | `ACK`, danach `PRINT_PREVIEW` |
 
@@ -176,8 +222,9 @@ Zeit und Filament nachgeslict wie in der Vorschau (±0,3 %). Ein Filament je Dat
 mehreren Filamenten aus der Kommandozeile nicht wieder slicen kann (Teile landen auf Filament 1); der P1P ohne AMS
 druckt ohnehin ein Material je Platte. Ohne Bambu Studio schreibt der Kernel die 3MF selbst: je Platte eine Datei
 (`<ziel>[-<material>]-platte<n>.3mf`, Teile in ihrer Lage, ohne Profile), weil Bambu Studio Platten nur aus eigenen
-Projekten liest. Laufzeit: `druck_export(ziel=None, platten=None) -> {"ok", "pfad", "platten", "fehler", "pfade", "dateien",
-"hinweise", "geprueft", "ms"}`.
+Projekten liest. Laufzeit: `druck_export(ziel=None, platten=None, teile=None, ohne=None) -> {"ok", "pfad", "platten",
+"fehler", "pfade", "dateien", "hinweise", "geprueft", "ms"}` (dazu additiv `teile`, `weggelassen`, `leere_platten`,
+`dateien[].objekte`, siehe „Auswahl und Objektnamen im Druckexport“).
 
 **Druckprüfung, Abdrücke (V-K, 22.10.2026):** Schichtraster-Hinweise an Flächen, deren Eckpunkte alle näher als
 1,5 mm an einem gezeigten Lager- oder Zukaufteil liegen (Aussparung um ein fremdes Teil), fasst die Prüfung je Teil
@@ -193,8 +240,8 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
 - `druckvorschau(detail=False)`: Summe, Platten, Teile mit Empfehlung und Hinweisen; `detail` mit Umrissen.
 - `druck_einstellen(teil, einstellungen=None, zweck=None)`: wie `PRINT_SETTINGS` mit `von: "agent"`; nur auf Kevins
   Wunsch oder mit Begründung im Bericht.
-- `druck_export(ziel=None, platten=None)`: 3MF der angeordneten Platten für Bambu Studio (Grundlage Phase 8), ohne
-  Drucken.
+- `druck_export(ziel=None, platten=None, teile=None, ohne=None)`: 3MF der angeordneten Platten für Bambu Studio
+  (Grundlage Phase 8), ohne Drucken; `teile`/`ohne` wählen Teile aus (unten).
 
 ## App
 

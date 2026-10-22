@@ -71,6 +71,13 @@ class Gruppe:
     pruefung: dict[str, Any] = field(default_factory=dict)
     stuetz_flaechen: list[str] = field(default_factory=list)
     fest_von: dict[str, str] = field(default_factory=dict)
+    # erst später drucken (lager.druckteil(…, spaeter=True)): in der Liste, nicht auf den Platten, nicht im Export
+    spaeter: bool = False
+
+
+def auf_platten(gr: list[Gruppe]) -> list[Gruppe]:
+    """Die Gruppen, die jetzt gedruckt werden (ohne „später drucken“)."""
+    return [g for g in gr if not g.spaeter]
 
 
 @dataclass
@@ -161,7 +168,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         # gleiche Teile in verschiedener Einbaulage (gedreht, andere Rahmenlage) eine Gruppe bleiben
         lage_bett = tuple(round(float(x), 1) for x in (geo.get("groesse") or [])) + \
             (round(float(geo.get("auflage") or 0.0)),)
-        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
+        spaeter = bool(geo.get("spaeter"))
+        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True), spaeter)
         sig = geo.get("signatur") if isinstance(geo.get("signatur"), dict) else None
         key: Any = (geo.get("form"), lage_bett, *basis)
         gespiegelt_von = None
@@ -186,7 +194,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
                 key = ("sig", len(roh))
         g = roh.setdefault(key, {"namen": [], "stuecke": {}, "geo": geo, "zweck": zweck, "vorgaben": e_vorgabe,
                                  "zweck_fest": bool(v.get("zweck")), "pruefung": teile_info.get(name) or {},
-                                 "von": {}, "basis": basis, "sig": sig, "gespiegelt_von": gespiegelt_von})
+                                 "von": {}, "basis": basis, "sig": sig, "gespiegelt_von": gespiegelt_von,
+                                 "spaeter": spaeter})
         for k_, w_ in von_je_schluessel(v).items():
             g["von"].setdefault(k_, w_)
         g["namen"].append(name)
@@ -215,25 +224,29 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         e_slicer = {k: v for k, v in emp["einstellungen"].items() if k != "ausrichtung"}
         schl = sl.schluessel(SCHLUESSEL_VERSION, geo.get("form"), geo.get("form_matrix"), e_slicer, prozess,
                              filament, projekt.get("drucker"), version, projekt.get("platte"))
-        name_g = _gruppen_name(g["namen"]) + (" (gespiegelt)" if g["gespiegelt_von"] is not None else "")
+        name_g = _gruppen_name(g["namen"]) + (" (gespiegelt)" if g["gespiegelt_von"] is not None else "") + \
+            (" (später)" if g["spaeter"] else "")
         out.append(Gruppe(id=f"g{i}", name=name_g, teile=g["namen"], anzahl=anzahl, material=mat,
                           zweck=emp["zweck"], zweck_geschaetzt=emp["zweck_geschaetzt"], geo=geo,
                           einstellungen=emp["einstellungen"], fest=fest, begruendung=emp["begruendung"],
                           prozess=prozess, filament=filament, schluessel=schl, vorgaben=g["vorgaben"],
                           pruefung=g["pruefung"], stuetz_flaechen=sorted(set(stuetz.get(g["namen"][0], []))),
-                          fest_von=fest_von,
+                          fest_von=fest_von, spaeter=bool(g["spaeter"]),
                           gespiegelt_von=ids.get(g["gespiegelt_von"]) if g["gespiegelt_von"] is not None else None))
     return out, ohne
 
 
 def anordnung_schluessel(material: str, gr: list[Gruppe]) -> str:
+    """Schlüssel der genauen Anordnung eines Materials (nur Gruppen auf den Platten, ohne „später“)."""
     return sl.schluessel(SCHLUESSEL_VERSION, "anordnung", material,
-                         [(g.schluessel, g.anzahl, bool(g.einstellungen.get("brim"))) for g in gr if g.material == material])
+                         [(g.schluessel, g.anzahl, bool(g.einstellungen.get("brim"))) for g in auf_platten(gr)
+                          if g.material == material])
 
 
 def stuecke(gr: list[Gruppe]) -> list[ao.Stueck]:
+    """Stücke zum Anordnen (ohne Gruppen „später drucken“)."""
     out: list[ao.Stueck] = []
-    for g in gr:
+    for g in auf_platten(gr):
         out += ao.stuecke_aus_gruppe(g.id, g.material, g.geo, g.teile, g.anzahl, bool(g.einstellungen.get("brim")))
     return out
 
@@ -317,17 +330,18 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "profil": {"prozess": g.prozess, "filament": g.filament}, "risiko": r,
             "begruendung": list(g.begruendung), "hinweise": hw,
             **({"gespiegelt_von": g.gespiegelt_von} if g.gespiegelt_von else {}),
+            **({"spaeter": True} if g.spaeter else {}),
         })
-    # Platten: je Material genau (Slicer) oder schnell
+    # Platten: je Material genau (Slicer) oder schnell; Gruppen „später drucken“ stehen nur in der Liste
     nach_id = {g.id: g for g in gr}
     materialien: list[str] = []
-    for g in gr:
+    for g in auf_platten(gr):
         if g.material not in materialien:
             materialien.append(g.material)
     platten: list[tuple[str, ao.Platte, str]] = []
     nicht_passend: list[str] = []
     for mat in materialien:
-        gm = [g for g in gr if g.material == mat]
+        gm = [g for g in auf_platten(gr) if g.material == mat]
         a = stand.anordnung.get(anordnung_schluessel(mat, gr))
         genau = _platten_aus_slicer(a, gm) if a else []
         if genau:
@@ -381,8 +395,9 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     strom = round(zeit_s / 3600 * float(projekt.get("leistung_w") or 0) / 1000 * float(projekt.get("strompreis_kwh")
                                                                                        or 0), 2)
     anteil_strom = strom / zeit_s if zeit_s else 0.0
-    risiko_eur = round(sum(t["risiko"] * (t["kosten"] + t["zeit_s"] * anteil_strom) for t in teile_out), 2)
-    staende = {t["stand"] for t in teile_out} | {p["stand"] for p in platten_out}
+    jetzt = [t for t in teile_out if not t.get("spaeter")]
+    risiko_eur = round(sum(t["risiko"] * (t["kosten"] + t["zeit_s"] * anteil_strom) for t in jetzt), 2)
+    staende = {t["stand"] for t in jetzt} | {p["stand"] for p in platten_out}
     gesamt_stand = "schaetzung" if not staende or staende == {"schaetzung"} else (
         "slicer" if staende == {"slicer"} else "gemischt")
     gramm = {m["material"]: m["g"] for m in material_out}
@@ -420,6 +435,9 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     gedruckt = gedruckte_teile(druck)
     if gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt, vorhanden; nicht in Platten, Summe, Filament
         out["gedruckt"] = gedruckt
+    spaeter = [{"name": n, "gruppe": g.id, "material": g.material} for g in gr if g.spaeter for n in g.teile]
+    if spaeter:  # additiv: erst später drucken; in teile (spaeter: true), nicht in Platten, Summe und Export
+        out["spaeter"] = spaeter
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
     return out, gr, [(m, p) for m, p, _ in platten]
 

@@ -671,10 +671,19 @@ class FakeService:
                 "teile": ["Kugelschieber/Stangenhalter vorn links (Druck)"], "druck_json": "druck.json",
                 "vorgaben": {}}
 
-    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
-        self._record("druck_export", ziel, platten)
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None, teile: list[str] | None = None,
+                     ohne: list[str] | None = None) -> dict[str, Any]:
+        self._record("druck_export", ziel, platten, teile, ohne)
+        if ohne and "Nix" in ohne:
+            return {"ok": False, "error": "ohne: 'Nix' ist kein Druckteil der Druckvorschau", "platten": []}
+        weg = [{"name": n, "grund": "ohne", "platte": 1, "anzahl": 1} for n in ohne or []]
         return {"ok": True, "pfad": ziel or "Kugelschieber-druck.3mf", "platten": platten or [1, 2],
-                "hinweise": ["In Bambu Studio geprüft: 2 Platten, 13 Teile."], "geprueft": True, "ms": 1200}
+                "hinweise": ["In Bambu Studio geprüft: 2 Platten, 13 Teile."], "geprueft": True, "ms": 1200,
+                "teile": ["Kugelschieber/Stangenhalter vorn links (Druck)"], "weggelassen": weg,
+                "leere_platten": [],
+                "dateien": [{"pfad": ziel or "Kugelschieber-druck.3mf", "material": "petg",
+                             "filament": "Bambu PETG Basic @BBL X1C", "platten": platten or [1, 2],
+                             "objekte": ["Kugelschieber/Stangenhalter vorn links (Druck)"]}]}
 
     # Phase 6: Zeichnungen -------------------------------------------------------------------------------------------
 

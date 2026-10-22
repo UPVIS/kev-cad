@@ -178,21 +178,26 @@ public struct DruckEinstellenNachricht: OutgoingRequest {
 }
 
 /// PRINT_EXPORT_REQ: die angeordneten Platten als 3MF für Bambu Studio (leere Liste = alle; `ziel` nil =
-/// `<projekt>/output/<projekt>-druck.3mf`).
+/// `<projekt>/output/<projekt>-druck.3mf`). Additiv `teile` (nur diese) und `ohne` (diese nicht): Teilname,
+/// Baugruppen-Präfix, Gruppe „g3“ oder Gruppenname; `ohne` gewinnt; leer = nicht gesendet.
 public struct DruckExportNachricht: OutgoingRequest {
     public static let type = "PRINT_EXPORT_REQ"
     public var seq = 0
     public var id: String
     public var platten: [Int]
     public var ziel: String?
+    public var teile: [String]
+    public var ohne: [String]
 
-    public init(id: String, platten: [Int], ziel: String?) {
+    public init(id: String, platten: [Int], ziel: String?, teile: [String] = [], ohne: [String] = []) {
         self.id = id
         self.platten = platten
         self.ziel = ziel
+        self.teile = teile
+        self.ohne = ohne
     }
 
-    enum CodingKeys: String, CodingKey { case type, seq, id, platten, ziel }
+    enum CodingKeys: String, CodingKey { case type, seq, id, platten, ziel, teile, ohne }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -201,5 +206,7 @@ public struct DruckExportNachricht: OutgoingRequest {
         try c.encode(id, forKey: .id)
         try c.encode(platten, forKey: .platten)
         if let ziel { try c.encode(ziel, forKey: .ziel) } else { try c.encodeNil(forKey: .ziel) }
+        if !teile.isEmpty { try c.encode(teile, forKey: .teile) }
+        if !ohne.isEmpty { try c.encode(ohne, forKey: .ohne) }
     }
 }

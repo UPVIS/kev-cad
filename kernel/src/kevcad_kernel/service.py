@@ -341,9 +341,12 @@ class KernelService(Protocol):
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in
         <projekt>/druck.json: {"ok", "meldung", "teile", "druck_json", "vorgaben", "gruppe"}"""
 
-    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None, teile: list[str] | None = None,
+                     ohne: list[str] | None = None) -> dict[str, Any]:
         """3MF der angeordneten Platten für Bambu Studio (ohne Drucken): {"ok", "pfad", "platten", "hinweise",
-        "geprueft", "ms", "materialien"}"""
+        "geprueft", "ms", "materialien"}. Additiv: ``teile`` (nur diese) und ``ohne`` (nicht diese; Teilname,
+        Baugruppen-Präfix, Gruppe "g3" oder Gruppenname; ``ohne`` gewinnt); im Ergebnis "teile", "weggelassen"
+        ([{"name", "grund", "platte", "anzahl"}]), "leere_platten", je Datei "objekte" (Objektnamen im 3MF)."""
 
     # Phase 6: Zeichnungen (DOKUMENTE.md; Umsetzung in kevcad_kernel.zeichnung.laufzeit.ZeichnungRuntimeMixin)
     def drawings(self) -> dict[str, Any]:

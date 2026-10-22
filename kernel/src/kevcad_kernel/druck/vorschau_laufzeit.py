@@ -311,8 +311,8 @@ class DruckvorschauRuntime:
         with self._dv_lock:
             gr = list(self._dv_gruppen)
             stand = self._dv_stand
-        offen = [g for g in gr if g.schluessel not in stand.gruppen and g.filament]
-        materialien = sorted({g.material for g in gr if g.filament})
+        offen = [g for g in gr if g.schluessel not in stand.gruppen and g.filament]  # auch „später“: Werte je Teil
+        materialien = sorted({g.material for g in vs.auf_platten(gr) if g.filament})
         t0 = time.perf_counter()
         with self._dv_lock:
             stand.zustand = "rechnet"
@@ -393,7 +393,7 @@ class DruckvorschauRuntime:
 
     def _dv_platten_slicen(self, mat: str, gr: list[vs.Gruppe], druck: dict[str, Any], abbruch: threading.Event,
                            drucker: str, platte: str | None = None) -> None:
-        gm = [g for g in gr if g.material == mat and g.filament]
+        gm = [g for g in vs.auf_platten(gr) if g.material == mat and g.filament]
         if not gm:
             return
         stand = self._dv_stand
@@ -488,8 +488,10 @@ class DruckvorschauRuntime:
 
                 self._send_app({"type": "ACK", "reply_to": rid, "ok": True,  # type: ignore[attr-defined]
                                 "message": "3MF wird geschrieben"})
-                res = self.druck_export(header.get("ziel"), header.get("platten") or None)
-                extra = {k: res[k] for k in ("hinweise", "ms", "geprueft", "pfade", "dateien") if k in res}
+                res = self.druck_export(header.get("ziel"), header.get("platten") or None,
+                                        teile=header.get("teile") or None, ohne=header.get("ohne") or None)
+                extra = {k: res[k] for k in ("hinweise", "ms", "geprueft", "pfade", "dateien", "weggelassen",
+                                             "leere_platten") if k in res}
                 self._send_app(print_export_res(str(rid), ok=bool(res.get("ok")), pfad=res.get("pfad"),  # type: ignore[attr-defined]
                                                 platten=list(res.get("platten") or []), fehler=res.get("error"),
                                                 **extra))
@@ -588,17 +590,27 @@ class DruckvorschauRuntime:
                 out["gruppe"] = next((t for t in v.get("teile") or [] if set(namen) & set(t.get("teile") or [])), None)
         return out
 
-    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None, teile: list[str] | None = None,
+                     ohne: list[str] | None = None) -> dict[str, Any]:
         """3MF der Platten (MCP ``druck_export``, ``PRINT_EXPORT_REQ``, Eingang von Phase 8): {"ok", "pfad",
         "platten", "fehler", "hinweise", "geprueft", "ms", "materialien"}; mit Bambu Studio ein Bambu-Projekt mit
         Drucker-, Prozess- und Filamentprofilen (``Metadata/project_settings.config``) und den Einstellungen je Teil
-        (``Metadata/model_settings.config``), so dass ``BambuStudio --slice 0 <3mf>`` die Empfehlungen übernimmt."""
-        res = self._druck_export(ziel, platten)
+        (``Metadata/model_settings.config``), so dass ``BambuStudio --slice 0 <3mf>`` die Empfehlungen übernimmt.
+
+        Auswahl (additiv, ``druck/auswahl.py``): ``teile`` nur diese Teile, ``ohne`` diese nicht (Teilname aus
+        ``show()``, Baugruppe als Präfix, Gruppe „g3“ oder Gruppenname; ``ohne`` gewinnt). Die übrigen Teile bleiben an
+        ihrer Stelle, leere Platten fallen weg. Dazu im Ergebnis "teile" (exportiert), "weggelassen" ([{"name",
+        "grund": ohne | teile | spaeter, "platte", "anzahl"}], auch die Teile „später drucken“), "leere_platten" und je
+        Datei "objekte" (Objektnamen im 3MF, wie Bambu Studio sie zeigt)."""
+        res = self._druck_export(ziel, platten, teile, ohne)
         res.setdefault("fehler", None if res.get("ok") else res.get("error"))
         res.setdefault("pfad", None)
         return res
 
-    def _druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+    def _druck_export(self, ziel: str | None = None, platten: list[int] | None = None,
+                      teile: list[str] | None = None, ohne: list[str] | None = None) -> dict[str, Any]:
+        from kevcad_kernel.druck import auswahl as au
+
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
             return {"ok": False, "error": "Kein Projekt offen.", "platten": []}
@@ -609,12 +621,22 @@ class DruckvorschauRuntime:
             alle = list(self._dv_platten)
             eingang = dict(self._dv_eingang or {})
         if not alle:
+            spaeter = [n for g in gr if g.spaeter for n in g.teile]
+            if spaeter:
+                return {"ok": False, "platten": [],
+                        "error": "Alle Druckteile sind als später markiert (lager.druckteil(…, spaeter=True)): "
+                                 + ", ".join(spaeter[:6]) + (" …" if len(spaeter) > 6 else "") + "."}
             return {"ok": False, "error": "Keine Druckteile im Modell.", "platten": []}
         nummern = [int(n) for n in (platten or [])] or list(range(1, len(alle) + 1))
         falsch = [n for n in nummern if not 1 <= n <= len(alle)]
         if falsch:
             return {"ok": False, "error": f"Platte {falsch[0]} gibt es nicht (1 bis {len(alle)})", "platten": []}
-        nicht = [n for n in nummern if getattr(alle[n - 1][1], "passt_nicht", False)]
+        try:
+            ausw = au.waehle([(n, alle[n - 1][0], alle[n - 1][1]) for n in nummern], gr, teile, ohne,
+                             gedruckt=[str(x.get("name")) for x in (v.get("gedruckt") or [])])
+        except au.AuswahlFehler as exc:
+            return {"ok": False, "error": str(exc), "platten": []}
+        nicht = [nr for nr, _, p in ausw.platten if p.passt_nicht]
         if nicht:
             return {"ok": False, "error": f"Platte {nicht[0]}: Teil passt nicht in den Bauraum (Druckprüfung)",
                     "platten": []}
@@ -623,16 +645,17 @@ class DruckvorschauRuntime:
             pfad = pfad.with_suffix(".3mf")
         nach_id = {g.id: g for g in gr}
         druck = eingang.get("druck") or {}
-        materialien: list[str] = []
-        for n in nummern:
-            if alle[n - 1][0] not in materialien:
-                materialien.append(alle[n - 1][0])
+        materialien = list(dict.fromkeys(m for _, m, _ in ausw.platten))
         arbeit = sl.arbeitsordner("export")
         hinweise: list[str] = []
+        weg_text = au.weggelassen_text(ausw.weggelassen)
+        if weg_text:
+            hinweise.append(weg_text)
+        hinweise += ausw.hinweise
         try:
             stls: dict[str, Path] = {}
-            for n in nummern:
-                for l_ in alle[n - 1][1].lagen:
+            for _, _, p in ausw.platten:
+                for l_ in p.lagen:
                     g = nach_id[l_.stueck.gruppe]
                     if g.id not in stls:
                         ordner = sl.cache_ordner() / g.schluessel
@@ -649,46 +672,54 @@ class DruckvorschauRuntime:
             if projekt.get("platte_fehler"):
                 hinweise.append(f"kevcad.json druck.platte: {projekt['platte_fehler']}; genommen: {platte}.")
             for mat in materialien:  # ein Bambu-Projekt je Material (ein Filament je Datei, P1P ohne AMS)
-                nr_mat = [n for n in nummern if alle[n - 1][0] == mat]
+                sel = [(nr, p) for nr, m, p in ausw.platten if m == mat]
+                nr_mat = [nr for nr, _ in sel]
                 listen = [[sl.PlattenObjekt(stl=stls[l_.stueck.gruppe], x=l_.x, y=l_.y, drehung=l_.drehung,
                                             einstellungen={k: x for k, x in nach_id[l_.stueck.gruppe]
                                                            .einstellungen.items() if k != "ausrichtung"},
-                                            name=l_.stueck.name) for l_ in alle[n - 1][1].lagen] for n in nr_mat]
+                                            name=l_.stueck.name) for l_ in p.lagen] for _, p in sel]
+                pnamen = [f"Platte {nr}" for nr in nr_mat]  # Nummern wie in der Druckvorschau
                 ziel_m = pfad if len(materialien) == 1 else pfad.with_name(f"{pfad.stem}-{mat}{pfad.suffix}")
                 filament = next((g.filament for g in gr if g.material == mat and g.filament), None)
-                gm = [g for g in gr if g.material == mat]
+                gm = [g for g in vs.auf_platten(gr) if g.material == mat]
                 if sl.verfuegbar() and filament:
                     e0 = {k: x for k, x in gm[0].einstellungen.items() if k != "ausrichtung"}
                     farbe = str((self._dv_material(mat) or {}).get("farbe") or "") or None
                     res = sl.export_3mf(listen, str(filament), ziel_m, arbeit / f"bambu-{mat}", e0, None, drucker,
-                                        farbe, platte)
+                                        farbe, platte, platten_namen=pnamen)
                     hinweise.append(f"{mat.upper()}: in Bambu Studio geprüft, {len(nr_mat)} Platte"
                                     + ("n" if len(nr_mat) != 1 else "") + f", {res['objekte']} Teile, Profile "
                                     f"„{sl.MASCHINE}“, „{sl.prozess_name(float(e0.get('schicht_mm') or 0.2))}“, "
                                     f"„{filament}“, Platte „{platte}“ und Einstellungen je Teil.")
+                    if res.get("benannt", 0) < len(res.get("namen") or []):
+                        hinweise.append(f"{mat.upper()}: Objektnamen nur teilweise gesetzt ({res.get('benannt', 0)} "
+                                        f"von {len(res.get('namen') or [])}); Bambu Studio zeigt sonst „assemble_…“.")
+                    dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament, "platten": nr_mat,
+                                    "objekte": list(res.get("namen") or [])})
                 else:
                     # Ohne Bambu Studio: ein 3MF je Platte (Teile in ihrer Lage); Bambu Studio liest Platten nur aus
                     # eigenen Projekten, ein fremdes 3MF legt es ganz auf eine Platte
                     from kevcad_kernel.druck.dreimf import schreibe_3mf
 
                     geprueft = False
-                    for nr, liste in zip(nr_mat, listen):
+                    for nr, liste, pname in zip(nr_mat, listen, pnamen):
                         ziel_p = ziel_m if len(nr_mat) == 1 else \
                             ziel_m.with_name(f"{ziel_m.stem}-platte{nr}{ziel_m.suffix}")
-                        schreibe_3mf(ziel_p, [liste], titel=f"Kev CAD · {proj.name} · Platte {nr}")
-                        dateien.append({"pfad": str(ziel_p), "material": mat, "filament": filament, "platten": [nr]})
+                        r = schreibe_3mf(ziel_p, [liste], titel=f"Kev CAD · {proj.name} · Platte {nr}",
+                                         platten_namen=[pname])
+                        dateien.append({"pfad": str(ziel_p), "material": mat, "filament": filament, "platten": [nr],
+                                        "objekte": list(r.get("namen") or [])})
                     hinweise.append(f"{mat.upper()}: ohne Bambu Studio geschrieben (je Platte eine Datei, Teile in "
                                     "ihrer Lage, ohne Profile); Drucker, Prozess und Filament beim Öffnen in Bambu "
                                     "Studio wählen.")
-                    continue
-                dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament, "platten": nr_mat})
         except (sl.SlicerFehler, OSError) as exc:
             return {"ok": False, "error": f"3MF nicht geschrieben: {exc}", "platten": []}
         finally:
             shutil.rmtree(arbeit, ignore_errors=True)
-        if len(dateien) > 1:
-            hinweise.append(f"{len(dateien)} Materialien: je Material ein Bambu-Projekt (Spule zwischen den Dateien "
-                            "wechseln).")
+        if len({d["material"] for d in dateien}) > 1:
+            hinweise.append(f"{len(materialien)} Materialien: je Material ein Bambu-Projekt (Spule zwischen den "
+                            "Dateien wechseln).")
         return {"ok": True, "pfad": dateien[0]["pfad"], "pfade": [d["pfad"] for d in dateien], "dateien": dateien,
-                "platten": nummern, "hinweise": hinweise, "geprueft": geprueft,
-                "ms": int(round((time.perf_counter() - t0) * 1000)), "materialien": materialien}
+                "platten": [nr for nr, _, _ in ausw.platten], "hinweise": hinweise, "geprueft": geprueft,
+                "ms": int(round((time.perf_counter() - t0) * 1000)), "materialien": materialien,
+                "teile": ausw.teile, "weggelassen": ausw.weggelassen, "leere_platten": ausw.leere_platten}

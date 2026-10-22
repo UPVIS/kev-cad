@@ -1,5 +1,6 @@
 """Testdateien für die Druckvorschau (DRUCKVORSCHAU.md): PRINT_PREVIEW (voll, leer, als Antwort), die Anfragen der App
-(PRINT_PREVIEW_REQ, PRINT_SETTINGS, PRINT_EXPORT_REQ) und die Antworten (ACK, PRINT_EXPORT_RES).
+(PRINT_PREVIEW_REQ, PRINT_SETTINGS, PRINT_EXPORT_REQ, auch mit Auswahl ``ohne``) und die Antworten (ACK,
+PRINT_EXPORT_RES, auch mit ``weggelassen`` und Objektnamen).
 
 Aufruf (im Ordner kernel):  .venv/bin/python tools/make_druck_fixtures.py   (läuft auch am Ende von make_fixtures.py)
 Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/print_*.frame, ack_print_*.frame und der Abschnitt ``druck`` in
@@ -69,6 +70,21 @@ def main() -> None:
         ("print_settings_reset", print_settings("a-37", teil="Kugelschieber/Fangrolle (Druck)", zuruecksetzen=True,
                                                 seq=76)),
         ("print_export_req", print_export_req("a-35", platten=[], ziel=ZIEL_3MF, seq=75)),
+        # additiv (Strang „Druckexport 2“): Auswahl der Teile, Ergebnis mit weggelassen und Objektnamen
+        ("print_export_req_auswahl", print_export_req("a-38", platten=[], ziel=ZIEL_3MF,
+                                                      ohne=["Kugelschieber/Lenksperren"], seq=77)),
+        ("print_export_res_auswahl", print_export_res(
+            "a-38", ok=True, pfad=ZIEL_3MF, platten=[1], seq=78, ms=1650, geprueft=True,
+            hinweise=["Weggelassen: Kugelschieber/Lenksperren/Lenksperre vorn links (Druck) (ohne), "
+                      "Kugelschieber/Fangrolle (Druck) (später)."],
+            dateien=[{"pfad": ZIEL_3MF, "material": "petg", "filament": "Bambu PETG Basic @BBL X1C", "platten": [1],
+                      "objekte": ["Kugelschieber/Stangenhalter vorn links (Druck)",
+                                  "Kugelschieber/Stangenhalter vorn links (Druck) (2)"]}],
+            weggelassen=[{"name": "Kugelschieber/Lenksperren/Lenksperre vorn links (Druck)", "grund": "ohne",
+                          "platte": 1, "anzahl": 1},
+                         {"name": "Kugelschieber/Fangrolle (Druck)", "grund": "spaeter", "platte": None,
+                          "anzahl": 1}],
+            leere_platten=[2])),
     ]
     files = []
     for name, header in frames:
@@ -106,6 +122,8 @@ def main() -> None:
         "antwort": {"reply_to": frames[2][1]["reply_to"], "slicer": frames[2][1]["slicer"]["zustand"]},
         "settings": {"gruppe": frames[8][1]["gruppe"], "einstellungen": frames[8][1]["einstellungen"]},
         "export": {"pfad": ZIEL_3MF, "platten": [1, 2]},
+        "export_auswahl": {"ohne": ["Kugelschieber/Lenksperren"], "platten": [1], "leere_platten": [2],
+                           "weggelassen": 2},
     }
     path = ZIEL / "fixtures.json"
     data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
