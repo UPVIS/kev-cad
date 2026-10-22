@@ -453,3 +453,61 @@ def test_feste_ansicht_ausserhalb_wird_ins_zeichenfeld_geklemmt():
     assert v1["lage"] == pytest.approx(bl.lage_umrechnen(alt, ("A4", "quer"), ("A3", "quer")), abs=0.01)
     _im_zeichenfeld(rechne(b, sz), "v1")
 
+
+def test_stueckliste_behaelt_katalogbenennungen():
+    """Kurznamen nur für Teilenamen aus show() (Druck-, Eigenteile), nie für Katalog- oder Zukaufbenennungen mit „/“
+    (Zoll-Schrauben, Profile)."""
+    from kevcad_kernel.zeichnung import blatt as bl
+    from kevcad_kernel.zeichnung.szene import Szene
+
+    zoll = 'Senkschraube 3/8"-16 UNC × 5/8", 82°, Stahl'
+    bom = {"lines": [
+        {"pos": 1, "art": "druckteil", "benennung": "Gestell/Halter (Druck)", "anzahl": 1, "material": "PETG",
+         "teile": ["Gestell/Halter (Druck)"]},
+        {"pos": 2, "art": "schraube", "stock_id": "senkschraube-3-8-16-unc", "benennung": zoll, "anzahl": 1,
+         "teile": ["Gestell/Schraube"]},
+        {"pos": 3, "art": "zukaufteil", "benennung": "Profil 40/40 B-Typ Nut 8", "anzahl": 1, "teile": []}]}
+    assert [z[2] for z in bl.stueckliste_zeilen(bom)] == ["Halter (Druck)", zoll, "Profil 40/40 B-Typ Nut 8"]
+    halter = _teil("Gestell/Halter (Druck)", platte(), {"druckteil": {"material": "petg"}})
+    schraube = _teil("Gestell/Schraube", Pos(20, 20, 5) * Cylinder(4.76, 15.9, align=UNTEN),
+                     {"stock": {"id": "senkschraube-3-8-16-unc"}}, {"id": "senkschraube-3-8-16-unc", "art": "schraube",
+                                                                    "name": zoll})
+    sz = Szene({halter.name: halter, schraube.name: schraube}, bom, {"name": "Probe", "version": "V1"}, 1)
+    erg = rechne(dokument.neu("zusammenbau", "Zusammenbau", "zusammenbau", []), sz)
+    texte = [x["text"] for x in erg.kopf["texte"]]
+    # die Zelle kürzt zu lange Benennungen am Ende („…“), der Anfang bleibt
+    assert any(x.startswith('Senkschraube 3/8"-16 UNC × 5/8"') for x in texte), [x for x in texte if "UNC" in x]
+    assert not any(x.startswith('8"') for x in texte)
+
+
+def test_formatwahl_kleinstes_passendes_format(monkeypatch):
+    """Wagen um 700 mm: passt A4 im selben Maßstab wie A3, nimmt Kev CAD A4 (nicht A2 im größeren Maßstab, zwei
+    Drittel leer). Eine Größe mehr nur bei kleinem Teil und größerem Maßstab."""
+    from kevcad_kernel.zeichnung import blatt as bl
+    from kevcad_kernel.zeichnung import zeichner
+
+    wagen = Box(700, 450, 30, align=UNTEN)
+    teile = [_teil("Wagen/Rahmen", Pos(0, 0, 120) * wagen)]
+    teile += [_teil(f"Wagen/Bein {i + 1}", Pos(x, y, 0) * Box(40, 40, 120, align=UNTEN))
+              for i, (x, y) in enumerate([(-320, -190), (320, -190), (-320, 190), (320, 190)])]
+    versuche = []
+    orig = zeichner._versuch
+
+    def versuch(*a, **kw):
+        erg = orig(*a, **kw)
+        if erg is not None and not kw.get("erzwingen") and not kw.get("ohne_fest"):
+            versuche.append((a[8], a[9], a[10]))
+        return erg
+
+    monkeypatch.setattr(zeichner, "_versuch", versuch)
+    erg = rechne(dokument.neu("wagen", "Wagen", "baugruppe", ["Wagen"]), szene_mit(*teile))
+    rang = zeichner.FORMAT_RANG
+    kleinstes = min(rang[f] for f, _, _ in versuche)
+    gewaehlt = (erg.blatt["format"], erg.blatt["ausrichtung"], bl.massstab_faktor(erg.blatt["massstab"]))
+    assert gewaehlt == ("A4", "hoch", 0.1), (gewaehlt, versuche)  # A3 ginge nur im selben Maßstab, A2 wäre leer
+    assert rang[gewaehlt[0]] <= kleinstes + 1, (gewaehlt, versuche)
+    if rang[gewaehlt[0]] == kleinstes + 1:  # nur mit größerem Maßstab als auf dem kleinsten Format
+        assert gewaehlt[2] > max(s for f, _, s in versuche if rang[f] == kleinstes)
+    groesser = [s for f, _, s in versuche if rang[f] == rang[gewaehlt[0]] + 1]
+    assert not groesser or max(groesser) > gewaehlt[2] or rang[gewaehlt[0]] == kleinstes
+

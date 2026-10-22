@@ -342,7 +342,9 @@ def stueckliste_zeilen(bom: dict[str, Any], positionen: list[int] | None = None)
         if norm and norm not in abm:
             abm = f"{abm}, {norm}" if abm else norm
         benennung = str(ln.get("benennung") or "")
-        if "/" in benennung:  # Druck- und Eigenteile heißen wie das Teil: letzter Teil des Namens genügt
+        # Druck- und Eigenteile heißen wie das Teil aus show(): letzter Teil des Pfads genügt. Katalog- und
+        # Zukaufbenennungen bleiben ganz („Senkschraube 3/8"-16 UNC × 5/8"“, „Profil 40/40“)
+        if "/" in benennung and ln.get("art") in ("druckteil", "eigenteil"):
             benennung = benennung.rsplit("/", 1)[-1]
         out.append([ln.get("pos"), ln.get("anzahl"), benennung, abm, ln.get("material") or "", masse])
     return out

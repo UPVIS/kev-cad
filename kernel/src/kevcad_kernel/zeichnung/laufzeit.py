@@ -47,6 +47,9 @@ class ZeichnungRuntimeMixin:
         EXAKT.schliessen()
 
     def _zeichnung_projekt(self) -> None:
+        ordner = self._z_ordner()
+        if ordner is not None and ordner.is_dir() and any(ordner.glob("*.json")):
+            self._z_vorstarten()  # Projekt mit Blättern: die App fragt gleich danach
         with self._z_lock:
             self._z_cache.clear()
             self._z_cache_version.clear()
@@ -145,7 +148,9 @@ class ZeichnungRuntimeMixin:
                 regeln = (Path(proj.path) / "dokumente" / "hausregeln.json").read_text(encoding="utf-8")
             except OSError:
                 regeln = None
-        daten = {"teile": [[n, t.key, stabil(t.kopf), stabil(t.katalog)] for n, t in szene.teile.items()],
+        # Köpfe unverändert bis auf die Laufnummer (gleiche Rechnung, gleiche Zahlen; stabil() wäre hier 50 ms)
+        daten = {"teile": [[n, t.key, {k: v for k, v in (t.kopf or {}).items() if k != "run"}, t.katalog]
+                           for n, t in szene.teile.items()],
                  "bom": stabil(szene.bom), "projekt": stabil(szene.projekt), "regeln": regeln}
         k = hashlib.sha1(json.dumps(daten, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
         try:
@@ -249,7 +254,17 @@ class ZeichnungRuntimeMixin:
         ordner = self._z_ordner()
         if ordner is None or not ordner.is_dir() or not any(ordner.glob("*.json")):
             return None
+        self._z_vorstarten()
         return self._pool.submit(self._z_nach_lauf_job, run, speichern)
+
+    def _z_vorstarten(self) -> None:
+        """Hilfsprozess der exakten Verdeckungsrechnung schon starten (erstes Blatt sonst gut 0,7 s langsamer)."""
+        from kevcad_kernel.zeichnung.projektion import EXAKT
+
+        try:
+            EXAKT.vorstarten()
+        except Exception as exc:  # noqa: BLE001 - ohne Hilfsprozess rechnet das Blatt auf dem Netz
+            self._log(f"[zeichnung] Hilfsprozess nicht vorgestartet: {exc!r}")
 
     def _z_nach_lauf_job(self, run: int, speichern: bool = True) -> bool:
         try:

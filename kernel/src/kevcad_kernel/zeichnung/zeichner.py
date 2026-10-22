@@ -790,23 +790,26 @@ def _anordnen(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], arbeit: lis
         if versuche and not auto_fmt:
             break
     if versuche:
-        # Format: A4 bevorzugt; A3 nur, wenn es mindestens den doppelten Maßstab erlaubt und A4 sonst klein wird
-        a4 = [x for x in versuche if x[0] == "A4"]
-        groessere = [x for x in versuche if x[0] != "A4"]
-        if a4:
-            # gleicher Maßstab: die Ausrichtung, die zum Seitenverhältnis der Ansichten passt (lange Teile quer)
-            beste = max(a4, key=lambda x: (x[2], (x[1] == "quer") == x[3]["breiter"]))
-            if groessere:
-                # A3 statt A4, wenn das Teil auf A4 klein würde (größte Abmessung unter 80 mm auf dem Blatt) oder
-                # kleine Merkmale unlesbar (unter 1,5 mm) und A3 einen größeren Maßstab erlaubt
-                g = min((x for x in groessere if x[2] > beste[2] + 1e-9), key=lambda x: FORMAT_RANG[x[0]],
-                        default=None)
-                kleinst = _kleinstes_merkmal(merk)
-                gross = float(np.max(merk.groesse)) if merk is not None and len(merk.groesse) else 100.0
-                if g is not None and (gross * beste[2] < 80.0 or (kleinst is not None and kleinst * beste[2] < 1.5)):
-                    beste = g
-        else:
-            beste = max(groessere, key=lambda x: x[2]) if groessere else None
+        # Format: das kleinste, auf dem Ansichten, Maße und Tabellen mit Abstand passen (A4 vor A3 vor A2), dort der
+        # größte passende Normmaßstab; bei gleichem Maßstab die Ausrichtung, die zum Seitenverhältnis der Ansichten
+        # passt (lange Teile quer)
+        raenge = sorted({FORMAT_RANG.get(x[0], 9) for x in versuche})
+
+        def bester(rang: int) -> tuple:
+            return max((x for x in versuche if FORMAT_RANG.get(x[0], 9) == rang),
+                       key=lambda x: (x[2], (x[1] == "quer") == x[3]["breiter"]))
+
+        beste = bester(raenge[0])
+        if len(raenge) > 1:
+            # eine Größe mehr nur, wenn das Teil sonst klein würde (größte Abmessung unter 80 mm auf dem Blatt) oder
+            # kleine Merkmale unlesbar (unter 1,5 mm) und die nächste Größe einen größeren Maßstab erlaubt; nie
+            # zwei Größen auf einmal (sonst A2 mit zwei Dritteln leer statt A4 im gleichen Maßstab wie A3)
+            kleinst = _kleinstes_merkmal(merk)
+            gross = float(np.max(merk.groesse)) if merk is not None and len(merk.groesse) else 100.0
+            g = bester(raenge[1])
+            if g[2] > beste[2] + 1e-9 and (gross * beste[2] < 80.0 or (kleinst is not None
+                                                                      and kleinst * beste[2] < 1.5)):
+                beste = g
     if beste is None:
         # Notlösung: kleinster Maßstab auf dem größten Format, auch wenn es eng wird
         fmt, ausr = kandidaten_fmt[-1]
@@ -1102,7 +1105,8 @@ def _eigener_faktor(v: _Ansicht, s: float) -> float:
 
 
 def _finde_platz(r: Rechteck, flaeche: Rechteck, belegt: list[Rechteck], bevorzugt: str) -> tuple[float, float] | None:
-    """Verschiebung (dx, dy), mit der das Rechteck ``r`` in ``flaeche`` liegt, ohne ``belegt`` zu schneiden."""
+    """Verschiebung (dx, dy), mit der das Rechteck ``r`` in ``flaeche`` liegt, ohne ``belegt`` zu schneiden. Raster
+    von 3 mm, alle Lagen auf einmal (numpy): dasselbe Ergebnis wie Lage für Lage, gut zehnmal schneller."""
     if r.breite > flaeche.breite or r.hoehe > flaeche.hoehe:
         return None
     schritt = 3.0
@@ -1110,23 +1114,27 @@ def _finde_platz(r: Rechteck, flaeche: Rechteck, belegt: list[Rechteck], bevorzu
     ys = np.arange(flaeche.y1 - r.y1, flaeche.y0 - r.y0 - 1e-6, -schritt)
     if len(xs) == 0 or len(ys) == 0:
         return None
-    kandidaten = []
-    cx_f, cy_f = flaeche.mitte
-    for dy in ys:
-        for dx in xs:
-            rr = r.verschoben(float(dx), float(dy))
-            if any(rr.schneidet(b) for b in belegt):
-                continue
-            mx, my = rr.mitte
-            if bevorzugt == "mitte_oben":
-                kosten = abs(mx - cx_f) * 0.6 + (flaeche.y1 - rr.y1) * 1.0
-            else:
-                kosten = (flaeche.x1 - rr.x1) * 0.5 + (flaeche.y1 - rr.y1) * 1.0
-            kandidaten.append((kosten, float(dx), float(dy)))
-    if not kandidaten:
+    rx0, rx1, ry0, ry1 = r.x0 + xs, r.x1 + xs, r.y0 + ys, r.y1 + ys
+    if belegt:
+        b = np.array([[q.x0, q.y0, q.x1, q.y1] for q in belegt], dtype=float)
+        # Rechteck.schneidet: nicht (x1 <= o.x0 oder o.x1 <= x0 oder y1 <= o.y0 oder o.y1 <= y0)
+        ueber_x = ~((rx1[:, None] <= b[None, :, 0]) | (b[None, :, 2] <= rx0[:, None]))  # (len(xs), n)
+        ueber_y = ~((ry1[:, None] <= b[None, :, 1]) | (b[None, :, 3] <= ry0[:, None]))  # (len(ys), n)
+        frei = (ueber_y.astype(np.int32) @ ueber_x.T.astype(np.int32)) == 0  # (len(ys), len(xs))
+    else:
+        frei = np.ones((len(ys), len(xs)), dtype=bool)
+    if not frei.any():
         return None
-    kandidaten.sort()
-    return kandidaten[0][1], kandidaten[0][2]
+    cx_f, cy_f = flaeche.mitte
+    if bevorzugt == "mitte_oben":
+        kosten = (np.abs((rx0 + rx1) / 2 - cx_f) * 0.6)[None, :] + ((flaeche.y1 - ry1) * 1.0)[:, None]
+    else:
+        kosten = ((flaeche.x1 - rx1) * 0.5)[None, :] + ((flaeche.y1 - ry1) * 1.0)[:, None]
+    jj, ii = np.nonzero(frei)
+    k = kosten[jj, ii]
+    dx, dy = xs[ii], ys[jj]
+    i = int(np.lexsort((dy, dx, k))[0])  # wie sorted() über (kosten, dx, dy)
+    return float(dx[i]), float(dy[i])
 
 
 def _positionen(szene: Szene, teile: list[Teil]) -> list[int]:

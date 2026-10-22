@@ -768,6 +768,17 @@ class _ExaktProzess:
             return False
         return kopf.get("type") == "BEREIT"
 
+    def vorstarten(self) -> None:
+        """Hilfsprozess im Hintergrund starten, falls er nicht läuft: sein Start (Python mit OCP, gut 0,7 s) soll nicht
+        im ersten Blatt nach dem Öffnen oder nach einer zu langen Rechnung stecken."""
+        def start() -> None:
+            with self._lock:
+                if self._proc is None or self._proc.poll() is not None:
+                    self._start()
+
+        if self._proc is None or self._proc.poll() is not None:
+            threading.Thread(target=start, name="kevcad-hlr-vorstart", daemon=True).start()
+
     def _stopp(self) -> None:
         if self._proc is not None:
             try:
@@ -808,6 +819,7 @@ class _ExaktProzess:
                 if rest <= 0:
                     self._stopp()
                     self.statistik["zu_langsam"] += 1
+                    self.vorstarten()  # startet, sobald diese Rechnung die Sperre freigibt
                     return None
                 try:
                     antwort, nutz = self._antworten.get(timeout=rest)

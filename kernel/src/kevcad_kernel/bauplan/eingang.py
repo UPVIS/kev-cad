@@ -438,7 +438,8 @@ def schluessel(records: list[Any], *, bom: dict[str, Any] | None, bedingungen: d
     ids: set[str] = set()
     for rec in records:
         kopf = rec.header or {}
-        teile.append([rec.name, getattr(rec, "key", ""), stabil(kopf)])
+        # Köpfe aus dem Rechenprozess (JSON): nur die Laufnummer heraus, ohne stabil() (sonst 50 ms am Kugelschieber)
+        teile.append([rec.name, getattr(rec, "key", ""), {k: v for k, v in kopf.items() if k not in FLUECHTIG}])
         st = kopf.get("stock") or {}
         if st.get("id"):
             ids.add(str(st["id"]))
