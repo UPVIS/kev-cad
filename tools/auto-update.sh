@@ -68,12 +68,21 @@ wait_for_memory() {
 APP="${KEVCAD_INSTALL_DIR:-$HOME/Applications/Tools}/Kev CAD.app"
 BUNDLE_ID="de.upvis.kevcad"
 
-app_running() { pgrep -f "$APP/Contents/MacOS/Kev CAD" >/dev/null; }
+# PID der installierten App: Prozessname genau „Kev CAD“ (nicht die Testvarianten) und Programmdatei aus $APP. Ein
+# Muster über die ganze Befehlszeile (pgrep -f) traf am 22.10.2026 auch einen kurzlebigen fremden Prozess.
+app_pid() {
+  local p
+  for p in $(pgrep -x "Kev CAD"); do
+    [ "$(ps -o comm= -p "$p")" = "$APP/Contents/MacOS/Kev CAD" ] && { echo "$p"; return 0; }
+  done
+  return 0
+}
+app_running() { [ -n "$(app_pid)" ]; }
 
 # Startzeit des laufenden Prozesses (Sekunden seit 1970), leer, wenn die App nicht läuft.
 app_started() {
   local pid
-  pid=$(pgrep -f "$APP/Contents/MacOS/Kev CAD" | head -1)
+  pid=$(app_pid)
   [ -n "$pid" ] || return 0
   LC_ALL=C date -j -f "%a %b %d %T %Y" "$(LC_ALL=C ps -o lstart= -p "$pid" | sed 's/  */ /g; s/^ //')" +%s 2>/dev/null
 }
