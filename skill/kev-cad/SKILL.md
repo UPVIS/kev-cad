@@ -227,7 +227,9 @@ Festigkeit), dazu Kippen je Richtung, Rutschen und Schraubenlast. Jedes Szenario
 Auf „hält das, wenn …?“ mit **`szenario_rechnen`** antworten (unter einer Sekunde, ohne neuen Lauf, im Viewer
 gezeigt), Überblick mit **`statik`**. Vorschläge für leichtere oder stärkere Profile kommen nur aus dem Lager. Immer
 die Grenzen dazusagen: vereinfacht (Balken, linear-elastisch, Verbinder starr), kein Ersatz für einen Statiker bei
-sicherheitsrelevanten Dingen. Einzelheiten, API und Urteile: [statik.md](statik.md).
+sicherheitsrelevanten Dingen. Teile mit Last (Druckteile, Halter, Verbinder) rechnet Kev CAD zusätzlich als
+Festkörper-FEM im Hintergrund; Einzelheiten mit **`festigkeit`** (Farbverlauf auf dem Netz, Sicherheit je Drucklage).
+Einzelheiten, API und Urteile: [statik.md](statik.md).
 
 Bewegung über der Zeit (Stufe 2, MuJoCo im eigenen Prozess): „Was passiert, wenn ich mit 1 m/s schiebe und abrupt
 bremse?“ → **`dynamik`**(name, geschwindigkeit=1, bremsen="abrupt"); „wie schnell darf ich schieben, ohne dass der

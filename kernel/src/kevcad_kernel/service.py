@@ -348,6 +348,17 @@ class KernelService(Protocol):
         """Grenzgeschwindigkeit (Suche mit Rollouts): wie ``dynamik`` plus "grenzen_suche" {"kippen": {"v_abheben",
         "a_abheben", "a_kipp_hand", …}, "ladung": [{"name", "v_grenze"}]}."""
 
+    # Statik Stufe 3 (PLAN-STATIK.md T-D; umgesetzt in kevcad_kernel.statik.festkoerper.laufzeit.FestkoerperRuntime)
+    def festigkeit(self, teil: str | None = None, szenario: str | None = None, fein: bool = False,
+                   ablauf: bool = False, zeigen: bool = True) -> dict[str, Any]:
+        """Festkörper-FEM (S3, eigener Prozess) für Teile mit Last: {"ok", "run", "teile": [{"teil", "ampel",
+        "sicherheit", "ziel", "kriterium", "ort", "spannung_max", "verformung_max_mm", "kragtraeger",
+        "ausrichtungen", "ausrichtung_beste", "netz", "ms", "text"}], "faelle", "szenarien", "befunde", "hinweise",
+        "grenzen", "ms", "gezeigt"}; die App zeigt das Feld (STATICS_FIELD)."""
+
+    def festigkeit_abbrechen(self) -> dict[str, Any]:
+        """Laufende Festkörper-Rechnung beenden: {"ok", "abgebrochen", "szenarien"}."""
+
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in

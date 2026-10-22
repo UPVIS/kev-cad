@@ -26,6 +26,11 @@ struct StatikAbschnitt: View {
                     if let ab = sz.ablauf {
                         AblaufDetail(ab: ab, szenario: sz.name, pfeile: store.kontaktpfeile, actions: actions)
                     }
+                    if let fk = sz.festkoerper {
+                        FestkoerperDetail(
+                            fk: fk, mitFeld: !store.felder(fuer: sz).isEmpty, farbverlauf: store.farbverlauf,
+                            actions: actions)
+                    }
                     SzenarioDetail(sz: sz, actions: actions)
                 }
                 if !e.vereinfachungen.isEmpty || !e.grenzen.isEmpty {
@@ -112,6 +117,17 @@ private struct SzenarioZeile: View {
                     }
                 }
                 Spacer(minLength: 4)
+                if sz.festkoerper?.laeuft == true {
+                    ProgressView(value: sz.festkoerper?.fortschritt ?? 0)
+                        .progressViewStyle(.circular)
+                        .controlSize(.mini)
+                        .help("Festkörper-FEM wird gerechnet (eigener Prozess)")
+                } else if sz.festkoerper?.teile.contains(where: { $0.stand == "done" }) == true {
+                    Image(systemName: "cube.transparent")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .help("Festkörper (Stufe 3): Teile mit Last als Volumen gerechnet")
+                }
                 if let ab = sz.ablauf {
                     if ab.laeuft {
                         ProgressView()
@@ -347,6 +363,149 @@ private struct KippVerlauf: View {
             linie.move(to: pt(0))
             for i in 1..<n { linie.addLine(to: pt(i)) }
             ctx.stroke(linie, with: .color(.orange), lineWidth: 1.2)
+        }
+    }
+}
+
+/// Stufe 3: Festkörper-FEM eines Szenarios: Fortschritt mit Abbruch, je Teil Ampel, Sicherheit (Ziel), maßgebendes
+/// Kriterium, Sicherheit in den anderen Drucklagen und der Vergleich mit dem Kragträger; dazu die Farbskala.
+private struct FestkoerperDetail: View {
+    var fk: StatikFestkoerper
+    var mitFeld: Bool
+    var farbverlauf: Bool
+    var actions: StatikActions?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            switch fk.stand {
+            case "laeuft":
+                HStack(spacing: 6) {
+                    ProgressView(value: fk.fortschritt)
+                        .controlSize(.small)
+                    Button {
+                        actions?.festkoerperAbbrechen()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Festkörper-Rechnung abbrechen")
+                }
+                Text("Festkörper: \(fk.text)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            case "abgebrochen":
+                Text("Festkörper abgebrochen")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case "failed":
+                Text("Festkörper nicht gerechnet: \(fk.meldung ?? "?")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            default:
+                EmptyView()
+            }
+            ForEach(Array(fk.teile.enumerated()), id: \.offset) { _, t in
+                teilZeile(t)
+            }
+            if mitFeld && farbverlauf {
+                FeldSkala()
+                    .frame(height: 22)
+                    .help("Farbverlauf auf dem Netz: Ausnutzung = Ziel / örtliche Sicherheit (grün bis 1, gelb bis 2, "
+                        + "darüber rot); Verformung überhöht als Geist")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func teilZeile(_ t: StatikFestkoerperTeil) -> some View {
+        let name = t.teil.split(separator: "/").last.map(String.init) ?? t.teil
+        if t.stand == "done" {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    AmpelPunkt(ampel: t.ampel)
+                    Text(name).font(.callout)
+                    Spacer(minLength: 4)
+                    Text("FEM \(t.sicherheit.map(StatikZahl.sf) ?? "–") / \(KevFormat.number(t.ziel ?? 2, digits: 0))")
+                        .font(.caption.monospacedDigit())
+                        .help("Sicherheit (Festkörper) gegen das Ziel")
+                }
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 1) {
+                    if let k = t.kriterium {
+                        zeile("Maßgebend", k == "schicht" ? "Schichtfuge (quer zur Schicht)"
+                            : (k == "quer_unbekannt" ? "Drucklage unbekannt" : "von Mises"))
+                    }
+                    if let sp = t.spannungMax { zeile("Spannung", "\(KevFormat.number(sp, digits: 1)) N/mm²") }
+                    if let v = t.verformungMaxMm { zeile("Verschiebung", "\(KevFormat.number(v, digits: 2)) mm") }
+                    if let k = t.kragtraeger { zeile("Kragträger S0", StatikZahl.sf(k)) }
+                    if !t.ausrichtungen.isEmpty {
+                        zeile("Drucklagen", t.ausrichtungen.map { "\($0.0) \(StatikZahl.sf($0.1))" }.joined(separator: ", "))
+                    }
+                    if let n = t.tetraeder {
+                        zeile("Netz", "\(n) Tetraeder P2, h \(KevFormat.number(t.hMm ?? 0, digits: 1)) mm"
+                            + (t.ms.map { ", \(KevFormat.number($0, digits: 0)) ms" } ?? "")
+                            + (t.ausSpeicher ? " (gemerkt)" : ""))
+                    }
+                }
+                .font(.caption)
+            }
+            .help(t.text)
+        } else {
+            HStack(spacing: 6) {
+                if t.stand == "laeuft" {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    AmpelPunkt(ampel: .grau)
+                }
+                Text(name + (t.stand == "laeuft" ? "" : ": \(t.meldung ?? "nicht gerechnet")"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func zeile(_ a: String, _ b: String) -> some View {
+        GridRow {
+            Text(a).foregroundStyle(.secondary)
+            Text(b).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Farbskala der Ausnutzung wie im Viewer: Bänder von 0 bis 2, Marke bei 1 (Ziel erreicht).
+private struct FeldSkala: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Canvas { ctx, size in
+                let n = StatikFeldGeometrie.baender
+                let w = size.width / CGFloat(n)
+                for b in 0..<n {
+                    let c = StatikGeometrie.farbe((Double(b) + 0.5) * Double(StatikFeldGeometrie.bandbreite))
+                    let r = CGRect(x: CGFloat(b) * w, y: 0, width: w + 0.5, height: size.height)
+                    ctx.fill(Path(r), with: .color(Color(.sRGBLinear, red: Double(c.x), green: Double(c.y),
+                                                         blue: Double(c.z))))
+                }
+                var mitte = Path()
+                mitte.move(to: CGPoint(x: size.width / 2, y: 0))
+                mitte.addLine(to: CGPoint(x: size.width / 2, y: size.height))
+                ctx.stroke(mitte, with: .color(.black.opacity(0.5)), lineWidth: 1)
+            }
+            .frame(height: 8)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+            HStack {
+                Text("0")
+                Spacer()
+                Text("1 = Ziel")
+                Spacer()
+                Text("2")
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
         }
     }
 }

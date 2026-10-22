@@ -41,6 +41,9 @@ def szenario_text(e: dict[str, Any], detail: bool = False) -> str:
     ab = e.get("ablauf")
     if isinstance(ab, dict) and ab.get("stand") != "done":
         zeilen.append("  " + ablauf_text(ab))
+    fk = e.get("festkoerper")
+    if isinstance(fk, dict):
+        zeilen += ["  " + z_ for z_ in festkoerper_zeilen(fk, detail=detail)]
     elif isinstance(ab, dict) and detail:
         zeilen += ablauf_text(ab, urteile=False).split("\n")[1:]
     if detail:
@@ -151,3 +154,66 @@ def ablauf_text(ab: dict[str, Any], urteile: bool = True) -> str:
     if ab.get("animation"):
         z_.append(f"  Zeitleiste: Animation „{ab['animation']}“ ({ab.get('bilder')} Bilder, {z(ab.get('fps'), 0)} fps)")
     return "\n".join(z_)
+
+
+def _ort(p: Any) -> str:
+    return "(" + "; ".join(z(c, 0) for c in p) + ")" if p else "?"
+
+
+def festkoerper_zeilen(fk: dict[str, Any], detail: bool = False) -> list[str]:
+    """Festkörper (S3) eines Szenarios: Stand, je Teil Sicherheit, Kriterium, Ort, Drucklagen, Netz und Zeit."""
+    st = fk.get("stand")
+    if st == "laeuft":
+        return [f"Festkörper (FEM) läuft: {z(100 * float(fk.get('fortschritt') or 0), 0)} % – {fk.get('text') or ''}"]
+    if st == "abgebrochen":
+        return ["Festkörper (FEM) abgebrochen."]
+    if st == "failed":
+        return [f"Festkörper (FEM) nicht gerechnet: {fk.get('meldung') or '?'}"]
+    out = []
+    for t in fk.get("teile") or []:
+        if t.get("stand") != "done":
+            out.append(f"Festkörper {t.get('teil')}: nicht gerechnet ({t.get('meldung') or '?'})")
+            continue
+        out.append(f"Festkörper [{AMPEL.get(t['ampel'], t['ampel'])}] {t.get('text')}")
+        if detail:
+            alt = t.get("ausrichtungen") or {}
+            if alt:
+                out.append("  Sicherheit je Drucklage (ausrichtung): " + ", ".join(
+                    f"{k} {_sf(v)}" for k, v in sorted(alt.items(), key=lambda kv: -kv[1])))
+            n = t.get("netz") or {}
+            lr = t.get("sicherheit_lagerrand")
+            out.append(f"  Verschiebung höchstens {z(t.get('verformung_max_mm'), 2)} mm; Netz {n.get('tetraeder')} "
+                       f"Tetraeder (P2, {n.get('freiheitsgrade')} Freiheitsgrade, h {z(n.get('h_mm'), 1)} mm"
+                       f"{', fein' if n.get('fein') else ''}); {z(t.get('ms'), 0)} ms"
+                       + (" (Zwischenspeicher)" if t.get("aus_speicher") else "")
+                       + (f"; am Rand der Einspannung rechnerisch {_sf(lr)} (Spitze der starren Einspannung, nicht "
+                          "gewertet)" if lr is not None and t.get("sicherheit") and lr < 0.9 * t["sicherheit"]
+                          else ""))
+    return out
+
+
+def festkoerper_text(res: dict[str, Any]) -> str:
+    """Text für MCP ``festigkeit``."""
+    zeilen = []
+    for t in res.get("teile") or []:
+        if t.get("stand") != "done":
+            zeilen.append(f"{t.get('teil')}: nicht gerechnet ({t.get('meldung') or '?'})")
+            continue
+        sz = next((f.get("szenario") for f in res.get("faelle") or [] if f.get("teil") == t.get("teil")
+                   and f.get("schluessel") == t.get("feld")), None)
+        zeilen.append(f"[{AMPEL.get(t['ampel'], t['ampel'])}]" + (f" {sz}:" if sz else "") + f" {t.get('text')}")
+        from kevcad_kernel.statik.festkoerper.urteil import loesung
+
+        l = loesung(t)
+        if l and t.get("ampel") != "gruen":
+            zeilen.append(f"  Lösung: {l}")
+        zeilen += ["  " + x for x in festkoerper_zeilen({"stand": "done", "teile": [t]}, detail=True)[1:]]
+    for h in res.get("hinweise") or []:
+        zeilen.append(f"Hinweis: {h}")
+    ms = res.get("ms") or {}
+    zeilen.append(f"(gesamt {z(ms.get('gesamt'), 0)} ms, FEM-Prozess {z(ms.get('prozess'), 0)} ms"
+                  + (", im Viewer gezeigt: Farbverlauf der Ausnutzung und überhöhte Verformung)" if res.get("gezeigt")
+                     else ")"))
+    if res.get("grenzen"):
+        zeilen.append("Grenzen: " + " ".join(res["grenzen"]))
+    return "\n".join(zeilen)

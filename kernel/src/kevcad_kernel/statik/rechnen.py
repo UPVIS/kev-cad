@@ -72,6 +72,9 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
                     bauteile.append(b)
             bauteile += _lagerteile(m, sz, s1erg.get(sz.name), koerper, {b["teil"] for b in bauteile})
         e = bw.bewerte(sz, s0, s1erg.get(sz.name), bauteile, m)
+        r1v = s1erg.get(sz.name)
+        if r1v is not None and getattr(r1v, "ok", False) and getattr(r1v, "verbinder", None):
+            e["verbinder"] = list(r1v.verbinder)  # Stufe 3: Kräfte der Stäbe auf Verbinder
         vmax = (e["kennzahlen"] or {}).get("verformung_max_mm") or 0.0
         e["ueberhoehung"] = round(max(1.0, min(1000.0, UEBERHOEHUNG_ANTEIL * groesse / vmax)), 1) if vmax > 1e-6 else 1.0
         r1 = s1erg.get(sz.name)

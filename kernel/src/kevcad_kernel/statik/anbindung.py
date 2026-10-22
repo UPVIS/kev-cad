@@ -33,6 +33,8 @@ ARTEN = {
     "statik_dyn_kippen": ("Ablauf: kippt", "Ablauf: kippen"),
     "statik_dyn_ladung": ("Ablauf: Ladung springt heraus", "Ablauf: Ladung springt heraus"),
     "statik_dyn_rutschen": ("Ablauf: rutscht", "Ablauf: rutschen"),
+    # Stufe 3 (Festkörper, statik/festkoerper): aus dem Ergebnis von festigkeit() und der Rechnung nach dem Lauf
+    "statik_festkoerper": ("Statik: Bauteil hält nicht (FEM)", "Statik: Bauteile halten nicht (FEM)"),
 }
 for _art, _text in ARTEN.items():
     bf.ART_TEXT.setdefault(_art, _text)

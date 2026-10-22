@@ -545,6 +545,8 @@ public enum KernelMessage: Sendable {
     case statik(StatikErgebnis)
     /// Phase 7 (additiv): Renderings – RENDER_REQ, RENDER_SCENE_REQ, RENDER_STATUS.
     case render(RenderNachricht)
+    /// Statik Stufe 3 (additiv): STATICS_FIELD, Oberflächennetz eines Teils mit Ausnutzung und Verschiebung.
+    case statikFeld(StatikFeld)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -584,6 +586,7 @@ public enum KernelMessage: Sendable {
         case .referenz(let r): return r.typeName
         case .statik: return "STATICS"
         case .render(let r): return r.typeName
+        case .statikFeld: return "STATICS_FIELD"
         case .unknown(let t, _): return t
         }
     }
@@ -656,6 +659,7 @@ public enum KernelMessage: Sendable {
             return .referenz(try ReferenzNachricht.decode(type: t, frame: frame))
         case "STATICS": return .statik(try StatikErgebnis.decode(h))
         case let t where RenderNachricht.types.contains(t): return .render(try RenderNachricht.decode(type: t, header: h))
+        case "STATICS_FIELD": return .statikFeld(try StatikFeld.decode(header: h, payload: frame.payload))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

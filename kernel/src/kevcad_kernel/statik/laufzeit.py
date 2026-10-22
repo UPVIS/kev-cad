@@ -30,6 +30,11 @@ def _szenario_auszug(e: dict[str, Any], detail: bool = True) -> dict[str, Any]:
                if isinstance(u.get("alternative"), dict) else {}) for u in e.get("urteile") or []]}
     if isinstance(e.get("ablauf"), dict):  # Stufe 2: Ablauf ohne Verlauf und Pfeile
         out["ablauf"] = {k: v for k, v in e["ablauf"].items() if k not in ("verlauf", "pfeile", "koerper")}
+    if isinstance(e.get("festkoerper"), dict):  # Stufe 3: Festkörper je Teil
+        fk = e["festkoerper"]
+        out["festkoerper"] = {**{k: fk.get(k) for k in ("stand", "fortschritt", "text", "meldung")},
+                              "teile": [{k: v for k, v in t.items() if k not in ("feld", "loeser")}
+                                        for t in fk.get("teile") or []]}
     if detail:
         out["staebe"] = [{k: s.get(k) for k in ("name", "sicherheit", "ampel", "radius")}
                          | {"ausnutzung_max": max(s.get("ausnutzung") or [0.0]),
@@ -177,6 +182,9 @@ class StatikRuntime:
             behalten = getattr(self, "_dyn_behalten", None)
             self._statik_voll = behalten(self._statik_voll, erg, name) if behalten else erg
             self._statik_aktiv = name if zeigen else None
+        nach = getattr(self, "_festkoerper_nach_szenario", None)  # Stufe 3: Festkörper für Teile mit Last
+        if nach is not None:
+            nach(name)
         gezeigt = self._statik_senden(zeigen=bool(zeigen)) and bool(zeigen)
         e = next((x for x in erg.get("szenarien") or [] if x.get("name") == name), None)
         return {"ok": True, "run": run, "szenario": _szenario_auszug(e or {}, detail=True), "gezeigt": gezeigt,
