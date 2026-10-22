@@ -128,7 +128,8 @@ class KernelService(Protocol):
 
     # Phase 2: Lagerteile, Materialien, Stückliste (siehe KATALOG.md und PROTOCOL.md, Abschnitt Phase 2)
     def bom(self) -> dict[str, Any]:
-        """Stückliste des letzten Laufs: {"ok", "run", "lines", "cuts", "totals", "warnings"} wie die BOM-Nachricht."""
+        """Stückliste des letzten Laufs: {"ok", "run", "lines", "cuts", "totals", "warnings"} wie die BOM-Nachricht;
+        mit Bestandsabgleich dazu "einkauf_text" (Einkaufsliste wie „Teilen“ in der App, BESTAND.md)."""
 
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
         """Lagerteile suchen (alle drei Ebenen): {"ok", "items": [Lagerteil + "ebene"], "total"}"""
