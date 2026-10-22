@@ -16,6 +16,7 @@ extension AppController: BestandActions {
         z.stand = message.stand
         z.datei = message.datei
         z.fehler = message.fehler
+        z.gebautFilament = message.gebautFilament
         model.bestandZustand = z
         if let f = message.fehler { log(.warning, "Bestand: \(f)") }
     }
@@ -34,6 +35,7 @@ extension AppController: BestandActions {
         z.zuschnitt = nil
         z.hinweis = nil
         z.aktivitaet = .idle
+        z.gebautFilament = nil
         model.bestandZustand = z
     }
 
@@ -60,6 +62,16 @@ extension AppController: BestandActions {
 
     public func saveBestandEinstellungen(_ einstellungen: BestandEinstellungen, grund: String) {
         sendBestandSave(BestandSaveMessage(id: nextRequestID(), einstellungen: einstellungen, grund: grund), was: grund)
+    }
+
+    public func saveBestandSpule(kennung: String?, spule: SpulenEingabe?, anzahl: Int?, grund: String) {
+        sendBestandSave(
+            BestandSaveMessage(id: nextRequestID(), spuleKennung: kennung, spule: spule?.json, anzahl: anzahl, grund: grund),
+            was: grund)
+    }
+
+    public func fuehreFilament(grund: String) {
+        sendBestandSave(BestandSaveMessage(id: nextRequestID(), filamentFuehren: true, grund: grund), was: grund)
     }
 
     private func sendBestandSave(_ msg: BestandSaveMessage, was: String) {

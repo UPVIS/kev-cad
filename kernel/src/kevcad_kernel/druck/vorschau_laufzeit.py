@@ -222,6 +222,10 @@ class DruckvorschauRuntime:
             self._dv_platten = platten
             self._dv_bau_nr = getattr(self, "_dv_bau_nr", 0) + 1
         self._send_app(pack_print_preview(v, reply_to=reply_to))  # type: ignore[attr-defined]
+        # Bestand Stufe 2: was „Gebaut“ vom Filament abbucht, hängt an der Vorschau (BESTAND gebaut_filament)
+        nachricht = getattr(self, "_bestand_vorschau_neu", None)
+        if nachricht is not None and not v.get("regler"):
+            nachricht()
         return v
 
     def _dv_bearbeiten(self, auftrag: dict[str, Any], eingang: dict[str, Any], abbruch: threading.Event) -> None:

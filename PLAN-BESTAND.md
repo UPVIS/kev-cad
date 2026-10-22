@@ -4,8 +4,9 @@ Stand: 21.10.2026 (Kevins Wunsch vom selben Tag). Baut auf Phase 2 (Lagerkatalog
 (Zukaufteile) auf. Gestartet am selben Abend auf Zweig `bestand`, erste Stufe Stangen, Platten, Stückgut; Vertrag in
 [BESTAND.md](BESTAND.md). Stufe 2 (22.10.2026, Zweig `bestand2`): Filament nach S2 (Spulen je Material und Farbe,
 Einkauf auf ganze Spulen gegen die Druckvorschau, „Gedruckt“ und „Gebaut“ buchen ab), BESTAND.md Abschnitt „Filament“.
-Offen: Spulen im Bereich „Bestand“ der App anzeigen und erfassen, Filament in der Vorschau des Dialogs „Gebaut“, Farbe
-je Druckteil.
+In der App (gleicher Tag): Spulen im Bereich „Bestand“ mit Erfassen, Ändern, Entfernen; Filament und gedruckte
+Platten im Dialog „Gebaut“; Spulen mit Zustand in der Einkaufsliste. Offen: Farbe je Druckteil, „Gedruckt“ aus der
+App (bisher nur MCP `gedruckt_buchen`).
 
 ## Ziel
 

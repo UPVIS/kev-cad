@@ -100,8 +100,8 @@ Kaufeinheiten: Stange, Platte, Stück (später Packung). Preis aus dem Katalog m
 | type | Richtung | Felder | Antwort |
 |---|---|---|---|
 | `BESTAND_REQ` | App → Kernel | `id` | `BESTAND` |
-| `BESTAND` | Kernel → App | `reply_to` (optional), `bestand` (Inhalt der Projektdatei oder null ohne Projekt), `buchungen` (die letzten 50 Buchungen, neueste zuerst, je Zeile wie in der Datei plus `zusammenfassung` als Text und `rueckgaengig_durch` mit der id der Umkehrbuchung oder null), `stand` (ISO-Zeit) | – |
-| `BESTAND_SAVE` | App → Kernel | `id`, entweder `posten_id` und `posten` (ganzer Posten wie in der Datei oder null zum Entfernen) oder `einstellungen` (ganzes Objekt), `grund` | `ACK`, danach `BESTAND` und neue `BOM` |
+| `BESTAND` | Kernel → App | `reply_to` (optional), `bestand` (Inhalt der Projektdatei oder null ohne Projekt), `buchungen` (die letzten 50 Buchungen, neueste zuerst, je Zeile wie in der Datei plus `zusammenfassung` als Text und `rueckgaengig_durch` mit der id der Umkehrbuchung oder null), `stand` (ISO-Zeit); additiv `gebaut_filament` (Abschnitt „Filament“) | – |
+| `BESTAND_SAVE` | App → Kernel | `id`, entweder `posten_id` und `posten` (ganzer Posten wie in der Datei oder null zum Entfernen) oder `einstellungen` (ganzes Objekt) oder Filament (`spule`, `spule_kennung`, `anzahl`, `filament_fuehren`; Abschnitt „Filament“), `grund` | `ACK`, danach `BESTAND` und neue `BOM` |
 | `GEBAUT_REQ` | App → Kernel | `id`, `run` | `ACK` mit `buchung` (id) und `message` (Kurztext), danach `BESTAND` und `BOM` |
 | `BUCHUNG_RUECKGAENGIG` | App → Kernel | `id`, `buchung` | `ACK`, danach `BESTAND` und `BOM` |
 
@@ -249,10 +249,54 @@ ohne: volle Spule), `spule` (Name), `gramm_voll`, `farbe`, `hersteller`, `ort`, 
 „Projekt führt Filament, keins da“); `kennung` mit neuen Werten ändert eine Spule; `spulen_entfernen`. `bestand_liste`
 zeigt die Spulen je Material (`id` auch Material-id oder Spulenkennung).
 
-**App:** liest `filament` in `bestand.json` nicht (der Bereich „Bestand“ zeigt keine Spulen), rechnet aber die
-Spulenzeilen der Einkaufsliste selbst (`BOMBestand.filamentBestand`, `FilamentBestand.kauf`) und zählt sie zur Summe.
-Geprüft über die Testdatei `material` (PETG 120 g für 188,8 g: eine Spule; PLA 310 g für 24,6 g: reicht) in
-`MaterialKernelGleichTests.testFilamentSpulenWieDerKernel`.
+**App:** rechnet die Spulenzeilen der Einkaufsliste selbst (`BOMBestand.filamentBestand`, `FilamentBestand.kauf`) und
+zählt sie zur Summe. Geprüft über die Testdatei `material` (PETG 120 g für 188,8 g: eine Spule; PLA 310 g für 24,6 g:
+reicht) in `MaterialKernelGleichTests.testFilamentSpulenWieDerKernel`.
+
+### Spulen in der App (22.10.2026, additiv)
+
+- **Bereich „Bestand“:** Abschnitt „Filament“ je Material (Auswahl `filament:<material>`); rechts die Spulen in der
+  Reihenfolge des Verbrauchs mit Kennung, Zustand (voll, angebrochen), Gramm übrig von voll als Balken, Hersteller,
+  Farbe, Ort; „Spule aufnehmen …“, Ändern, Entfernen (Blatt `SpuleSheet`, Felder wie MCP), dazu Bedarf der
+  Druckvorschau und was „Gebaut“ abbucht. Führt das Projekt kein Filament, aber das Modell hat Druckteile, steht dort
+  „Filament wird nicht geführt“ mit „Spule aufnehmen …“ und „Kein Filament da“. Modell: `Bestand.spulen`,
+  `BestandSpule`, `SpulenEingabe` (`KevCADCore/Model/Bestand+Filament.swift`), Oberfläche `Bestand/FilamentAnsicht.swift`.
+- **Einkaufsliste:** Die Kachel „Filament für Druckteile“ nennt je Material die Spulen des Bestands, ab zwei Spulen jede
+  mit „angebrochen“ bzw. „voll“.
+- **Dialog „Gebaut“:** je Spule, wie viel Gramm sie verliert (leer werdende: „danach leer, wird entfernt“), der Rest
+  gekaufter Spulen als neue Spule, Gekauftes als Voraussetzung und die Druckplatten, schon als gedruckt gebuchte mit
+  Haken und Buchung. „Gebaut“ ist nicht gesperrt, wenn nur Filament zu buchen ist (`BestandZustand.hatBuchbares`).
+
+**BESTAND** additiv `gebaut_filament` (nur wenn das Projekt Filament führt), gerechnet mit derselben Funktion wie die
+Buchung (`filament.gebaut_vorschau`):
+
+```json
+"gebaut_filament": {"run": 5, "ganz_gebucht": null, "hinweis": null,
+  "platten": [{"nr": 1, "material": [{"material": "petg", "g": 188.8}], "gebucht": null, "buchen": true},
+              {"nr": 2, "material": [{"material": "pla", "g": 24.6}], "gebucht": "B-0005", "buchen": false}],
+  "spulen": [{"kennung": "S-0001", "material": "petg", "name": "Bambu PETG Basic schwarz", "farbe": "schwarz",
+              "gramm": 120, "vorher": 120, "nachher": 0, "leer": true}],
+  "neue_spulen": [{"kennung": "S-0004", "material": "petg", "gramm": 931.2, "gramm_voll": 1000}],
+  "gekauft": [{"material": "petg", "gramm": 68.8}], "materialien": {"petg": "PETG", "pla": "PLA"}}
+```
+
+`run` ist der Lauf der Stückliste (null vor dem ersten Lauf, dann mit `hinweis`); die App zeigt es nur, wenn er zur
+aktuellen Stückliste passt. Der Kernel schickt BESTAND zusätzlich nach jeder Druckvorschau, wenn sich
+`gebaut_filament` geändert hat (Haken in `druck/vorschau_laufzeit.py`, `_bestand_vorschau_neu`).
+
+**BESTAND_SAVE** additiv für Spulen (dieselben Regeln wie MCP `bestand_eintragen`, `von: "kevin"`):
+
+| Felder | Wirkung |
+|---|---|
+| `spule` (Objekt mit `material`, `gramm`, `gramm_voll`, `name`, `hersteller`, `farbe`, `ort`), optional `anzahl` | neue Spule(n); ohne `gramm` voll |
+| `spule_kennung`, `spule` (Objekt) | diese Spule ändern; leere Texte löschen das Feld |
+| `spule_kennung`, `spule: null` | Spule entfernen |
+| `filament_fuehren: true` | Filament führen ohne Spule (leere Liste `filament`) |
+
+Antwort wie bisher: ACK (mit `buchung`; ohne Änderung `ok` und „keine Änderung“), danach BESTAND und BOM.
+Testdateien: `bestand_filament.frame`, `bestand_save_spule*.frame`, `bestand_save_filament_fuehren.frame`, Abschnitt
+`bestand.filament` in fixtures.json; Swift `FilamentBestandTests`, Ersatz-Kernel `fake_kernel.py --filament`,
+Selbsttest `KEVCAD_SELFTEST=filament`.
 
 ## Verschnitt (Definition 2, 22.10.2026)
 

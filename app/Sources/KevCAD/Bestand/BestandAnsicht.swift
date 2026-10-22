@@ -35,9 +35,13 @@ struct BestandAnsicht: View {
 
     /// Suche im Bereich „Material“ (Name, id).
     private func passt(_ id: String) -> Bool {
+        passtText(model.lagerteilName(id) + " " + id)
+    }
+
+    private func passtText(_ text: String) -> Bool {
         let q = material.suche.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return true }
-        return (model.lagerteilName(id) + " " + id).lowercased().contains(q)
+        return text.lowercased().contains(q)
     }
 
     /// Lagerteile der Stückliste, die noch nicht im Bestand stehen.
@@ -52,6 +56,15 @@ struct BestandAnsicht: View {
         return out
     }
 
+    /// Filament (Strang „Bestand Stufe 2“): je Material eine Zeile; führt das Projekt kein Filament, aber das Modell hat
+    /// Druckteile, eine Hinweiszeile („filament:“).
+    private var filamentIDs: [String] {
+        let materialien = model.filamentMaterialienImBestand
+        if !materialien.isEmpty { return materialien.map(FilamentAuswahl.id) }
+        let druck = (model.bom?.lines ?? []).contains { $0.druckteil && !$0.gedruckt }
+        return bestand?.fuehrtFilament == false && druck ? [FilamentAuswahl.praefix] : []
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             kopf
@@ -64,6 +77,7 @@ struct BestandAnsicht: View {
             waehleErstes()
         }
         .onChange(of: model.bestandZustand.bestand?.posten.map(\.id)) { _, _ in waehleErstes() }
+        .onChange(of: filamentIDs) { _, _ in waehleErstes() }
         .onChange(of: ui.auswahl) { _, id in teileZeigen(id) }
         .onChange(of: model.selectedPartIDs) { _, ids in auswahlAus3D(ids) }
     }
@@ -88,7 +102,7 @@ struct BestandAnsicht: View {
 
     /// Ohne gültige Auswahl das erste Lagerteil zeigen (der Bestand kommt oft erst nach dem Erscheinen).
     private func waehleErstes() {
-        let ids = posten.map(\.id) + nichtErfasst
+        let ids = posten.map(\.id) + filamentIDs + nichtErfasst
         if ui.auswahl.map({ !ids.contains($0) }) ?? true { ui.auswahl = ids.first }
     }
 
@@ -108,6 +122,13 @@ struct BestandAnsicht: View {
             }
             .disabled(!bereit)
             .help("Lagerteil aus dem Katalog in den Bestand dieses Projekts aufnehmen")
+            Button {
+                ui.spule = SpulenAnfrage(material: FilamentAuswahl.material(ui.auswahl).flatMap { $0.isEmpty ? nil : $0 })
+            } label: {
+                Label("Spule aufnehmen …", systemImage: "printer")
+            }
+            .disabled(!bereit)
+            .help("Filamentspule in den Bestand dieses Projekts aufnehmen")
             Button {
                 zeigeBuchungen.toggle()
             } label: {
@@ -146,6 +167,8 @@ struct BestandAnsicht: View {
         let reste = b.posten.reduce(0) { $0 + $1.reste.count }
         var t = KevFormat.count(b.posten.count, one: "Lagerteil", many: "Lagerteile")
         if reste > 0 { t += " · " + KevFormat.count(reste, one: "Rest", many: "Reste") }
+        let spulen = b.spulen.count
+        if spulen > 0 { t += " · " + KevFormat.count(spulen, one: "Spule", many: "Spulen") }
         return t
     }
 
@@ -205,6 +228,36 @@ struct BestandAnsicht: View {
                     }
                 }
             }
+            let filament = filamentIDs.filter { id in
+                guard let m = FilamentAuswahl.material(id), !m.isEmpty else { return true }
+                return passt(id) || passtText(model.filamentName(m) + " filament")
+            }
+            if !filament.isEmpty {
+                let kaufen = Set(model.materialDaten.lagerEinkauf.map(\.position.id))
+                Section("Filament") {
+                    ForEach(filament, id: \.self) { id in
+                        let m = FilamentAuswahl.material(id) ?? ""
+                        Group {
+                            if m.isEmpty {
+                                HStack(spacing: 9) {
+                                    Image(systemName: "printer").foregroundStyle(.secondary).frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Filament").fontWeight(.medium)
+                                        Text("nicht geführt").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            } else {
+                                FilamentZeile(model: model, material: m, kaufen: kaufen.contains(m))
+                            }
+                        }
+                        .tag(id)
+                        .contextMenu {
+                            Button("Spule aufnehmen …") { ui.spule = SpulenAnfrage(material: m.isEmpty ? nil : m) }
+                        }
+                    }
+                }
+            }
             let fehlen = nichtErfasst.filter(passt)
             if !fehlen.isEmpty {
                 Section("Aus der Stückliste, nicht erfasst") {
@@ -220,7 +273,7 @@ struct BestandAnsicht: View {
         }
         .listStyle(.inset)
         .overlay {
-            if posten.isEmpty && nichtErfasst.isEmpty {
+            if posten.isEmpty && nichtErfasst.isEmpty && filamentIDs.isEmpty {
                 ContentUnavailableView {
                     Label("Noch nichts im Bestand", systemImage: "shippingbox")
                 } description: {
@@ -253,7 +306,14 @@ struct BestandAnsicht: View {
 
     @ViewBuilder
     private var detail: some View {
-        if let id = ui.auswahl, let p = bestand?.posten(id) {
+        if let m = FilamentAuswahl.material(ui.auswahl) {
+            if m.isEmpty {
+                FilamentNichtGefuehrt(model: model)
+            } else {
+                FilamentDetail(model: model, material: material, materialID: m)
+                    .id(ui.auswahl)
+            }
+        } else if let id = ui.auswahl, let p = bestand?.posten(id) {
             PostenDetail(model: model, material: material, posten: p)
                 .id(id)
         } else if let id = ui.auswahl, nichtErfasst.contains(id) {
