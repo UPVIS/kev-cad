@@ -99,6 +99,7 @@ struct ProjectWindow: View {
                     PartTreeView(model: model, state: state)
                 }
             }
+            .modifier(SpaltenBreite())
             .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 400)
         } detail: {
             // Der 3D-Bereich bleibt bestehen (Kamera, Metal-Ansicht), ruht aber, solange die Dokumente vorne sind
@@ -112,6 +113,10 @@ struct ProjectWindow: View {
                         .transition(.opacity)
                 }
             }
+            // Die Mitte nimmt genau ihre Spaltenbreite: Ist ein Inhalt (Bauplan, Berichte) im Mindestmaß breiter, drückt
+            // er nicht das ganze Fenster über den Rand (Seitenleiste links und Inspektor rechts abgeschnitten)
+            .modifier(SpaltenBreite())
+            .clipped()
             .onChange(of: state.bereich) { _, b in
                 session.controller?.viewport.mtkView?.isPaused = b == .dokumente
                 if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
@@ -130,6 +135,7 @@ struct ProjectWindow: View {
                     InspectorView(model: model)
                 }
             }
+            .modifier(SpaltenBreite())
             .inspectorColumnWidth(min: 260, ideal: 300, max: 440)
         }
         .toolbar {
@@ -401,5 +407,15 @@ private struct ExplodePopover: View {
         }
         .padding(16)
         .frame(width: 280)
+    }
+}
+
+/// Inhalt einer Seitenspalte genau so breit wie die Spalte: Ist er im Mindestmaß breiter (lange Zeilen, Knöpfe), kürzt
+/// und bricht er um, statt mittig über die Spalte hinauszuragen und links bzw. rechts abgeschnitten zu werden.
+struct SpaltenBreite: ViewModifier {
+    func body(content: Content) -> some View {
+        GeometryReader { geo in
+            content.frame(width: geo.size.width, height: geo.size.height)
+        }
     }
 }

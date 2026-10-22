@@ -58,7 +58,7 @@ struct BerichteAnsicht: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            liste.frame(width: 210)
+            liste.frame(minWidth: 170, idealWidth: 210, maxWidth: 210)
             Divider()
             VStack(spacing: 0) {
                 leiste
@@ -66,7 +66,7 @@ struct BerichteAnsicht: View {
                 vorschau
             }
         }
-        .frame(minWidth: 600, minHeight: 480)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 480)
         .task(id: aufbauSchluessel) { await neuBauen() }
     }
 
@@ -127,10 +127,13 @@ struct BerichteAnsicht: View {
                 ProgressView().controlSize(.small)
                 if let l = export.laeuft { Text(l).foregroundStyle(.secondary).lineLimit(1) }
             }
-            Spacer()
-            Slider(value: $zoom, in: 0.5...2) { Image(systemName: "magnifyingglass") }
-                .frame(width: 100)
-                .help("Größe der Vorschau")
+            Spacer(minLength: 4)
+            ViewThatFits(in: .horizontal) {  // schmal: ohne Größenregler (Zoom auch mit ⌘+/⌘−)
+                Slider(value: $zoom, in: 0.5...2) { Image(systemName: "magnifyingglass") }
+                    .frame(width: 100)
+                Color.clear.frame(width: 0, height: 0)
+            }
+            .help("Größe der Vorschau")
             Button {
                 stand += 1
             } label: {

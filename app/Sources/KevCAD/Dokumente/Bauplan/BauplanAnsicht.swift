@@ -37,7 +37,7 @@ struct BauplanAnsicht: View {
                 HStack(spacing: 0) {
                     BauplanListe(plan: plan, store: store, auswahl: $ui.auswahl, nurProbleme: $nurProbleme,
                                  actions: actions)
-                        .frame(width: 300)
+                        .frame(minWidth: 230, idealWidth: 300, maxWidth: 300)
                     Divider()
                     if let id = ui.auswahl, let s = plan.schritt(id) {
                         BauplanSchrittAnsicht(
@@ -52,7 +52,7 @@ struct BauplanAnsicht: View {
                 leer
             }
         }
-        .frame(minWidth: 600, minHeight: 480)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 480)
         .overlay(alignment: .bottom) { meldungsLeiste }
         .onAppear {
             if store.plan == nil, !store.laedt { actions?.bauplanAnfordern() }
