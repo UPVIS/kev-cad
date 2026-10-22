@@ -47,6 +47,9 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
     t_s1 = 0.0
     if s1 and m.staebe:
         t = time.perf_counter()
+        from kevcad_kernel.statik import feder
+
+        feder.setze(m, koerper)  # Drehfedern an Druckteilen statt starrer Einspannung (T35)
         s1erg = stabwerk.rechne(m, szenarien)
         t_s1 = (time.perf_counter() - t) * 1000
     groesse = _modellgroesse(m)

@@ -10,7 +10,7 @@ Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, 
 |---|---|---|
 | S0, jeder Lauf | Schwerpunkt, Kippen je Kante der Standfläche (Reserve = Standmoment / Kippmoment) und je Richtung (Kippwinkel, Beschleunigung, bei der es kippt), Rutschen über den Reibwert gegen den Boden, lose aufliegende Teile, Schraubenlast grob | Standsicherheit in jedem Szenario |
 | S0, jeder Lauf | Bauteil mit Last als Kragträger: Schnitte durch das echte Teil zwischen Einspannung und Lastpunkt, Biegung, Längskraft, Torsion | Halter, Konsolen, Druckteile |
-| S1, jeder Lauf | Stabwerk mit PyNite: Rohre und Profile aus dem Lager als Stäbe (Querschnitt aus dem Katalog), Verbinder starr (ihre Kräfte je Anschluss gehen in Kragträger und Festkörper), Gelenke aus den Zwangsbedingungen (mit `bereich` festgestellt); Spannung, Durchbiegung, Knicken (Eigenwerte), Auflagerkräfte | Rahmen, Gestelle, Tische, Rigs |
+| S1, jeder Lauf | Stabwerk mit PyNite: Rohre und Profile aus dem Lager als Stäbe (Querschnitt aus dem Katalog), Verbinder starr (ihre Kräfte je Anschluss gehen in Kragträger und Festkörper), feste Anschlüsse an Druckteilen mit Drehfeder aus Geometrie und E-Modul, Gelenke aus den Zwangsbedingungen (mit `bereich` festgestellt, außer `frei=True`); Spannung, Durchbiegung, Knicken (Eigenwerte), Auflagerkräfte | Rahmen, Gestelle, Tische, Rigs |
 | S2, auf Anfrage und für Abläufe aus model.py nach jedem Lauf | Ablauf mit MuJoCo (Starrkörper, Gelenke, Kontakt, Reibung) im eigenen Prozess: Kippen und Abheben, Ladung (Ball) bleibt oder springt heraus, Grenzgeschwindigkeit, Rutschgrenze, Kontaktkräfte | Schieben, Bremsen, Anprall, Fahrt einer Animation |
 | S3, nach jedem Lauf im Hintergrund (Teile mit Last) und auf Anfrage | Festkörper-FEM im eigenen Prozess (Gmsh, Tetraeder zweiter Ordnung, scikit-fem, pyamg): Spannung (von Mises, bei Druckteilen die Schichtfuge), Sicherheit, Verformung, Sicherheit in den anderen Drucklagen; Farbverlauf auf dem Netz im Viewer | Druckteile, Halter, Platten, Verbinder statt Kragträger |
 
@@ -82,6 +82,11 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                            # eigen
 - Antwort an Kevin immer mit Ampel, Sicherheit, Spannung oder Durchbiegung, Kippreserve und **den Grenzen**: vereinfacht
   (Balken, linear-elastisch, Verbinder starr, Schrauben ohne Vorspannung, Werkstoffwerte Richtwerte), kein Ersatz für
   einen Statiker bei sicherheitsrelevanten Dingen (Personen, Lasten über Kopf, Fahrzeuge).
+- **In der Prüfung**: Rote und gelbe Urteile sind Befunde `statik_*` (Warnung bzw. Hinweis, nie Exportverbot). Ablauf
+  und Festkörper rechnen nach dem Lauf im Hintergrund; bis dahin ist die Prüfung „teilweise“ („Statik: Festkörper
+  „…“ rechnet im Hintergrund“), danach kommen `statik_dyn_*` und `statik_festkoerper` in dieselbe Prüfung nach (der
+  Festkörper ersetzt den Kragträger `statik_bauteil` desselben Teils). `pruefen()` wartet darauf; vor „fertig“ melden
+  aufrufen.
 
 ## Ablauf (Stufe 2, Dynamik)
 
@@ -99,7 +104,8 @@ st.szenario("Rampe", geschwindigkeit=0.5, neigung=5, richtung="+x")        # auf
 
 - **Szene aus dem Modell**: Teile, die fest verbunden sind (`verbinde` mit Schraube, Klemmung, Steck, Formschluss,
   Kleben; Gelenke mit `bereich` gelten als festgestellt), sind ein Körper. Frei laufen Gelenke ohne `bereich`
-  (Laufrolle auf der Querstange) und Räder (Achse aus `anim.rolle(…, achse=…)`, sonst Teile mit Rad/Rolle im Namen
+  (Laufrolle auf der Querstange), Gelenke mit `frei=True` (Schublade, Tür: bis an den Anschlag am Ende von
+  `bereich`, gedämpft, mit etwas Lagerreibung) und Räder (Achse aus `anim.rolle(…, achse=…)`, sonst Teile mit Rad/Rolle im Namen
   auf dem Boden). `verbinde(ball, boden, art="aufliegen")` lässt den Ball frei liegen; liegt ein Teil frei auf einem
   anderen und klemmt nichts es ein, ist es Ladung. Masse und Trägheit aus der Geometrie, Reibung aus `reibwerte.json`.
 - **Antrieb**: Der schwerste Körper auf Rädern (oder `antrieb=`) folgt der Sollbahn: fährt mit `geschwindigkeit`,
@@ -147,8 +153,8 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
   `abbrechen=True` beendet eine laufende Rechnung (in der App: Knopf am Fortschritt).
 - **Grenzen, immer dazusagen**: linear-elastisch, kleine Verformungen, Lagerflächen fest eingespannt (wie verklebt;
   am Rand der Einspannung rechnerische Spitzen, sie werden nicht gewertet und stehen als `sicherheit_lagerrand`
-  daneben), Schrauben und Gewinde nicht einzeln, Druckteile mit voller Füllung. Kein Ersatz für einen Statiker bei
-  sicherheitsrelevanten Dingen.
+  daneben), Schrauben und Gewinde nicht einzeln, Druckteile mit voller Füllung. Kontakt mit Abheben, Plastizität und
+  Beulen rechnet Kev CAD bewusst nicht (kein CalculiX). Kein Ersatz für einen Statiker bei sicherheitsrelevanten Dingen.
 
 ## Was die Statik braucht
 
@@ -161,9 +167,18 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
   gegen die Auszugkraft aus dem Katalog (`einsatz_auszug`: M3 und M6 in PLA und PETG belegt, M4 und M5 nicht), Ziel 4.
 - Verbindungen über `verbinde` und Gelenke (Teile über Bedingungen setzen): Schraube, Klemmung, Steck, Formschluss,
   Kleben gelten als fest, Aufliegen als gelenkig. **Gelenke mit `bereich`** sind Einstellungen (Schlitten mit
-  Sterngriff, Stange im Halter, Kopf) und gelten wie im Ablauf als festgestellt, also fest; nur Gelenke ohne `bereich`
-  geben die Freiheit frei (Laufrolle auf der Achse, Schiebegelenk als Hülse). Ohne Bedingung zählen Berührung (fest)
-  und Spiel (gesteckt, fest).
+  Sterngriff, Stange im Halter, Kopf) und gelten wie im Ablauf als festgestellt, also fest; Gelenke ohne `bereich`
+  geben die Freiheit frei (Laufrolle auf der Achse, Schiebegelenk als Hülse). **Läuft ein Gelenk mit `bereich` im
+  Betrieb wirklich frei** (Schublade, Tür ohne Feststeller, Schlitten ohne Klemme): `frei=True` angeben, etwa
+  `schiebegelenk(a, b, bereich=(0, 400), frei=True)`; dann rechnen Stabwerk und Ablauf es als Gelenk (im Ablauf mit
+  Anschlag an den Enden). Standard bleibt festgestellt. Ohne Bedingung zählen Berührung (fest) und Spiel (gesteckt,
+  fest).
+- **Feste Anschlüsse an Druckteilen** (Rohr in einem gedruckten Halter, Klemmung, Steck, festgestelltes Gelenk) sind
+  im Stabwerk nicht starr, sondern eine **Drehfeder** aus Geometrie und E-Modul: Bettung in der Bohrung
+  (E · L_b³ / 12) und Biegung des Halters bis zu seinem Lager. So teilt sich das Moment einer auskragenden Stange nach
+  Steifigkeit zwischen Halter und Rohr, und Kragträger und Festkörper des Halters bekommen genau dieses Moment.
+  `statik(szenario=…)` nennt die Federn je Anschluss (`modell.anschluesse[].feder`). Ohne Spiel gerechnet: Sitzt das
+  Rohr mit Spiel in der Bohrung, kippt es erst ein wenig, bevor der Halter trägt (das rechnet die Statik nicht).
 - **Verbinder zwischen Stäben** (Schlitten, Eckverbinder, im Stabwerk starr): Die Kraft je Anschluss kommt aus dem
   Stabwerk, statisch unbestimmt nach Steifigkeit verteilt (zwei gleiche Schlitten an einer Querstange: je die Hälfte).
   Damit weist Kev CAD jeden Verbinder als Kragträger nach (gehalten vom Stab mit der größten Kraft) und rechnet ihn als

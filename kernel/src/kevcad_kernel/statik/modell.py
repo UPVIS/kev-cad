@@ -113,10 +113,16 @@ class Anschluss:
     achse: np.ndarray | None = None
     teile: tuple[str, str] = ("", "")
     quelle: str = ""
+    # Drehfeder statt starrer Einspannung (T35, ``statik/feder.py``): an festen Anschlüssen an Druckteile, je Achse
+    # quer zum Stab die Steifigkeit in Nmm/rad aus Bettung in der Bohrung und Biegung des Teils bis zu seinem Lager
+    feder: dict[str, Any] | None = None
 
     def kurz(self) -> dict[str, Any]:
-        return {"stab": self.stab, "t": round(self.t, 1), "art": self.art, "partner": list(self.partner[:2]),
-                "teile": list(self.teile), "quelle": self.quelle}
+        out = {"stab": self.stab, "t": round(self.t, 1), "art": self.art, "partner": list(self.partner[:2]),
+               "teile": list(self.teile), "quelle": self.quelle}
+        if self.feder:
+            out["feder"] = {k: v for k, v in self.feder.items() if k != "achsen"}
+        return out
 
 
 @dataclass
