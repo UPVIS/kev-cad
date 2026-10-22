@@ -1,13 +1,17 @@
 import KevCADCore
 import SwiftUI
 
-/// Projektfenster: links Teilebaum, Mitte Viewport mit Statusleiste, rechts Inspektor.
+/// Projektfenster: links Teilebaum, Mitte Viewport mit Schnellansichten und Statusleiste, rechts Inspektor. Dazu die
+/// Bereiche „Dokumente“ (⌘2) und „Material“ (⌘3) mit eigener Seitenleiste, Mitte und eigenem Inspektor.
 struct ProjectWindow: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
     @StateObject private var state = ProjectWindowState()
     @StateObject private var versionen = VersionenZustand()
     @StateObject private var dokumente = DokumenteZustand()  // Phase 6: Bereich Dokumente
+    /// Strang „Material“: Bereich Material. Bewusst nicht beobachtet (gehört zum Fensterzustand): Auswahl, Suche und
+    /// Abschnitt sollen nicht das ganze Fenster samt verdecktem 3D-Bereich neu zeichnen; das tun die Ansichten selbst.
+    private var material: MaterialZustand { state.materialZustand }
     @State private var columns = NavigationSplitViewVisibility.all
     /// Breite von Viewport und Stückliste (links der Versionsleiste), für `platzFuerLeiste`.
     @State private var modellBreite: CGFloat = 0
@@ -39,7 +43,9 @@ struct ProjectWindow: View {
             CatalogSelfTest.runIfRequested(session)
             ZukaufSelfTest.runIfRequested(session)
             BauplanExportSelfTest.runIfRequested(session, state: state, zustand: dokumente)  // Phase 6, P6-A2
-            if let config = session.demo?.config, config.usesGestell { state.showBOM = true }
+            BestandSelfTest.runIfRequested(session)
+            MaterialSelfTest.runIfRequested(session, state: state, material: material)
+            if let config = session.demo?.config, config.usesGestell { state.schnell.oeffne(.stueckliste) }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
         // Phase 6, P6-A2: Durchspielen und „Im 3D zeigen“ aus dem Bauplan holen den 3D-Bereich nach vorn
@@ -54,17 +60,40 @@ struct ProjectWindow: View {
         }
     }
 
-    /// Verbaut das Modell zum ersten Mal Lagerteile, öffnet sich die Stückliste einmal von selbst.
+    /// Verbaut das Modell zum ersten Mal Lagerteile und ist keine Schnellansicht offen, klappt die Stückliste einmal von
+    /// selbst auf.
     private func autoShowBOM() {
-        guard !state.showBOM, !state.bomAutoShown, let bom = model.bom,
+        guard state.schnell.offen.isEmpty, !state.bomAutoShown, let bom = model.bom,
               bom.lines.contains(where: { !$0.eigenteil })
         else { return }
         state.bomAutoShown = true
-        withAnimation(.snappy(duration: 0.25)) { state.showBOM = true }
+        withAnimation(.snappy(duration: 0.25)) { state.schnell.oeffne(.stueckliste) }
+    }
+
+    /// Sprünge in den Bereich „Material“ und zu den Berichten (Schnellansichten, Inspektor, Berichte, Bauplan).
+    private var navigation: MaterialNavigation {
+        MaterialNavigation(
+            zeige: { [weak state, weak material] a, pos, sid in
+                material?.zeige(a, position: pos, stockID: sid)
+                state?.zeige(.material)
+            },
+            bericht: { [weak state, weak dokumente] art in
+                BerichteUI.shared.bericht = art
+                dokumente?.waehle(.berichte)
+                state?.zeige(.dokumente)
+            })
+    }
+
+    /// Aus dem Bereich „Material“: in den 3D-Bereich wechseln, die Teile wählen und einpassen.
+    private func zeigeIm3D(_ teile: [String]) {
+        state.zeige(.modell)
+        model.actions?.select(teile)
+        model.actions?.focus(on: teile)
     }
 
     /// Untertitel: im 3D-Bereich der Projektordner, im Bereich Dokumente das gezeigte Blatt.
     private var untertitel: String {
+        if state.bereich == .material { return "Material" }
         if state.bereich == .dokumente {
             if let id = dokumente.blattID, let e = model.dokumente.uebersicht?.blatt(id) {
                 return "Dokumente · \(e.titel)"
@@ -94,10 +123,10 @@ struct ProjectWindow: View {
     private var content: some View {
         NavigationSplitView(columnVisibility: $columns) {
             Group {
-                if state.bereich == .dokumente {
-                    DokumenteSeitenleiste(model: model, store: model.dokumente, zustand: dokumente)
-                } else {
-                    PartTreeView(model: model, state: state)
+                switch state.bereich {
+                case .dokumente: DokumenteSeitenleiste(model: model, store: model.dokumente, zustand: dokumente)
+                case .material: MaterialSeitenleiste(model: model, material: material, navigation: navigation)
+                case .modell: PartTreeView(model: model, state: state)
                 }
             }
             .modifier(SpaltenBreite())
@@ -106,33 +135,45 @@ struct ProjectWindow: View {
             // Der 3D-Bereich bleibt bestehen (Kamera, Metal-Ansicht), ruht aber, solange die Dokumente vorne sind
             ZStack {
                 modellBereich
-                    .opacity(state.bereich == .dokumente ? 0 : 1)
-                    .allowsHitTesting(state.bereich != .dokumente)
-                    .accessibilityHidden(state.bereich == .dokumente)
+                    .opacity(state.bereich == .modell ? 1 : 0)
+                    .allowsHitTesting(state.bereich == .modell)
+                    .accessibilityHidden(state.bereich != .modell)
                 if state.bereich == .dokumente {
                     DokumenteBereich(model: model, store: model.dokumente, zustand: dokumente)
                         .transition(.opacity)
                 }
+                if state.bereich == .material {
+                    MaterialBereich(model: model, material: material, navigation: navigation, zeigeIm3D: zeigeIm3D)
+                        .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .top) {  // Bestand: Hinweis nach „Gebaut“ bzw. „Rückgängig“, mit „Rückgängig“
+                BuchungsBand(model: model)
+                    .padding(.top, 10)
+                    .padding(.horizontal, 12)
             }
             // Die Mitte nimmt genau ihre Spaltenbreite: Ist ein Inhalt (Bauplan, Berichte) im Mindestmaß breiter, drückt
             // er nicht das ganze Fenster über den Rand (Seitenleiste links und Inspektor rechts abgeschnitten)
             .modifier(SpaltenBreite())
             .clipped()
             .onChange(of: state.bereich) { _, b in
-                session.controller?.viewport.mtkView?.isPaused = b == .dokumente
+                session.controller?.viewport.mtkView?.isPaused = b != .modell
                 if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
             }
         }
         .inspector(isPresented: $state.showInspector) {
             Group {
-                if state.bereich == .dokumente {
+                switch state.bereich {
+                case .dokumente:
                     // kontextbezogen: Blatt, gewählter Bauplanschritt oder Einstellungen des Berichts
                     switch dokumente.auswahl {
                     case .bauplan: BauplanInspektor(model: model)
                     case .berichte: BerichteInspektor(model: model)
                     default: BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
                     }
-                } else {
+                case .material:
+                    MaterialInspektor(model: model, material: material, navigation: navigation, zeigeIm3D: zeigeIm3D)
+                case .modell:
                     InspectorView(model: model)
                 }
             }
@@ -140,13 +181,18 @@ struct ProjectWindow: View {
             .inspectorColumnWidth(min: 260, ideal: 300, max: 440)
         }
         .toolbar {
-            ToolbarItem(placement: .navigation) { BereichUmschalter(state: state) }  // Phase 6: 3D / Dokumente
-            if state.bereich == .dokumente {
+            ToolbarItem(placement: .navigation) { BereichUmschalter(state: state) }  // 3D / Dokumente / Material
+            switch state.bereich {
+            case .dokumente:
                 DokumenteToolbar(model: model, store: model.dokumente, zustand: dokumente, state: state)
-            } else {
+            case .material:
+                MaterialToolbar(model: model, material: material, state: state, navigation: navigation, session: session)
+            case .modell:
                 modellToolbar
             }
         }
+        .modifier(BestandDialoge(model: model))  // Gebaut, Erfassen, Band nach einer Buchung: in allen Bereichen
+        .environment(\.materialNavigation, navigation)
     }
 
     @ToolbarContentBuilder
@@ -166,10 +212,10 @@ struct ProjectWindow: View {
         }
     }
 
-    /// 3D-Bereich: Viewport mit Zeitleiste, Stückliste, Statusleiste und Versionsleiste. Die Versionsleiste ist eine
-    /// Seitenleiste: Sie nimmt ihre Breite neben dem Viewport ein, Viewport und Stückliste werden schmaler und laufen
-    /// nie unter sie (alles links davon auf die verbleibende Breite gezwungen und beschnitten). Wird es zu eng, wächst
-    /// das Fenster beim Einblenden (`platzFuerLeiste`).
+    /// 3D-Bereich: Viewport mit Zeitleiste, Schnellansichten (Stückliste, Zuschnitt, Druck), Statusleiste und
+    /// Versionsleiste. Die Versionsleiste ist eine Seitenleiste: Sie nimmt ihre Breite neben dem Viewport ein, Viewport
+    /// und Schnellansichten werden schmaler und laufen nie unter sie (alles links davon auf die verbleibende Breite
+    /// gezwungen und beschnitten). Wird es zu eng, wächst das Fenster beim Einblenden (`platzFuerLeiste`).
     private var modellBereich: some View {
             HStack(spacing: 0) {
                 GeometryReader { geo in
@@ -181,12 +227,9 @@ struct ProjectWindow: View {
                             }
                             .overlay(alignment: .bottom) { DurchspielenLeiste(model: model) }  // Phase 6, P6-A2
                         AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
-                        if state.showBOM {
-                            PanelResizeHandle(height: $state.bomHeight, range: ProjectWindowState.bomHeightRange)
-                            ProjectBottomPanel(model: model, state: state)
-                                .frame(height: min(state.bomHeight, max(160, geo.size.height - 260)))
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
+                        // Strang „Material“: Stückliste und Zuschnitt kompakt, später Druck, je einzeln auf- und zuklappbar
+                        SchnellansichtenBereich(model: model, state: state, gesamtHoehe: geo.size.height - 30,
+                                                aktiv: state.bereich == .modell, navigation: navigation)
                         StatusBar(model: model)
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
@@ -368,11 +411,12 @@ struct ProjectToolbar: ToolbarContent {
             .help("Klick: STEP, STL und 3MF nach output/ (⌥⇧⌘E); Pfeil: einzelnes Format")
 
             Toggle(isOn: Binding(
-                get: { state.showBOM }, set: { on in withAnimation(.snappy(duration: 0.2)) { state.showBOM = on } }
+                get: { state.schnell.istOffen(.stueckliste) },
+                set: { _ in withAnimation(.snappy(duration: 0.2)) { state.schnell.umschalten(.stueckliste) } }
             )) {
                 Label("Stückliste", systemImage: "list.bullet.rectangle")
             }
-            .help("Stückliste mit Zuschnitt, Gewicht und Kosten ein- oder ausblenden (⇧⌘B)")
+            .help("Stückliste unter dem Viewport auf- oder zuklappen (⌃⌘1); ausführlich im Bereich Material (⌘3)")
 
             Button {
                 state.showInspector.toggle()

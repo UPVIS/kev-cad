@@ -23,7 +23,7 @@ struct DokumenteSeitenleiste: View {
                 DokumentZeile(titel: "Bauplan", untertitel: bauplanText, symbol: "hammer",
                               warnung: (store.uebersicht?.bauplan?.probleme ?? 0) > 0 ? store.uebersicht?.bauplan?.probleme : nil)
                     .tag(DokumentAuswahl.bauplan.zeile)
-                DokumentZeile(titel: "Berichte", untertitel: "Stückliste, Zuschnitt, Einkauf, Druckteile",
+                DokumentZeile(titel: "Berichte", untertitel: "Stückliste, Teileliste, Einkaufsliste, Zuschnitt",
                               symbol: "tablecells")
                     .tag(DokumentAuswahl.berichte.zeile)
             }

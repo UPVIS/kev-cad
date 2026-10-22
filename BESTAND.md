@@ -124,6 +124,13 @@ Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` vo
 - Stückliste: Zuschnittansicht zeigt je Stange bzw. Platte die Stücke, farbig nach Quelle (Rest, Bestand, kaufen),
   neue Reste markiert, Verschnitt grau; darunter die Einkaufsliste mit Summe, Export als CSV und „Kopieren“ als Text.
 - Dialog „Gebaut …“ mit Vorschau der Buchung (was weg, was neu) und Bestätigung.
+- Seit dem Strang „Material“ (22.10.2026) zeigt das alles der Bereich **„Material“** im Projektfenster (⌘3):
+  Übersicht, Stückliste, Zuschnitt, Bestand, Einkaufsliste (mit Abhaken, Teilen als Text oder CSV), Zukaufteile,
+  Druckteile. Unter dem Viewport bleiben Stückliste und Zuschnitt als einzeln aufklappbare Schnellansichten (⌃⌘1, ⌃⌘2,
+  ⇧⌘B alle). Eine Datenquelle für Bildschirm und Berichte: `MaterialDaten` im App-Kern
+  (`app/KevCADCore/Sources/KevCADCore/Material/`). Die Einkaufsliste der App führt neben der Lagerware auch die
+  Zukaufteile (der Kernel noch nicht, siehe offene Punkte im Bericht des Strangs); der Verschnitt zählt dort nur
+  Sägeschnitte und Reste unter dem Mindestrest, neue Reste nicht.
 
 ## Ergänzungen des Kernels (S-K, additiv und optional)
 

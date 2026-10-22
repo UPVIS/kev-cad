@@ -51,6 +51,7 @@ struct KevCADApp: App {
             AnimationCommands(model: session.model, animation: session.model.animation)
             VersionenCommands(model: session.model, store: session.model.versionen)
             DokumenteCommands(model: session.model)  // Phase 6: Bereich Dokumente, PDF, Drucken
+            MaterialCommands(session: session, model: session.model)  // Bereiche ⌘1 bis ⌘3, Schnellansichten, Material
             // Phase 6, P6-A2: Dokumente exportieren (⇧⌘E), Durchspielen
             DokumenteExportCommands(session: session, model: session.model, bauplan: session.model.bauplan)
         }

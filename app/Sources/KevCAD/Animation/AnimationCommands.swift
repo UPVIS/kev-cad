@@ -11,7 +11,7 @@ struct AnimationCommands: Commands {
 
     private var actions: AnimationActions? { model.actions as? AnimationActions }
     private var enabled: Bool {
-        window != nil && window?.bereich != .dokumente && animation.hasAnimation && actions != nil
+        window != nil && window?.bereich == .modell && animation.hasAnimation && actions != nil
     }
 
     var body: some Commands {
