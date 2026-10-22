@@ -135,3 +135,79 @@ Offen für S3 und später:
 - Massen aus dem Katalog statt angenommen (Bowlingball 5,3 kg bei 1 g/cm³ statt 6 bis 7,3 kg, Kamera); die
   Grenzgeschwindigkeit des Balls hängt stark an Masse und Reibwert Ball/Boden (angenommen 0,3).
 - Kontaktpfeile auch im Video; Schieben am Griff als eigene Bremsart neben `angriff=` (Höhe in mm).
+
+## Stand Stufe 3 (T-D; Zweig `statik3`, 22.10.2026)
+
+Umgesetzt in `kernel/src/kevcad_kernel/statik/festkoerper/` (Übersicht im Docstring von `__init__.py`), MCP
+`festigkeit` (mit `abbrechen=True` zum Beenden), STATICS mit Feld `festkoerper` je Szenario und Urteil `festkoerper`,
+neue Nachrichten `STATICS_FIELD` (Kernel → App, Oberflächennetz mit Ausnutzung, Spannung und Verschiebung als
+Nutzlast) und `STATICS_CANCEL` (App → Kernel), PROTOCOL.md „Festkörper (Stufe 3)“. App: Festkörper im Statik-Abschnitt
+(Fortschritt mit Abbruch, je Teil Ampel, Sicherheit, Kriterium, Drucklagen, Netz, Farbskala), Farbverlauf in Bändern
+auf dem Netz des Teils (das Teil selbst ist dann ausgeblendet) und die überhöhte Verformung als Geist
+(`KevCADCore/Statik/StatikFeld.swift`). Gmsh 4.15.2 (GPL, nur im eigenen Prozess), scikit-fem 12.0.2 (BSD) und pyamg
+5.3.0 (MIT) per `uv add`. Skill `skill/kev-cad/statik.md`, Abschnitt „Festkörper“.
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| T21 | Die FEM läuft nur im eigenen Prozess (`python -m kevcad_kernel.statik.festkoerper.prozess`): Der Rechenprozess schreibt nur den Auftrag (Teil als BREP in Weltlage, Netze der Nachbarn auf den Hüllquader zugeschnitten, Lastfälle; Millisekunden), die Laufzeit startet den Prozess, liest den Fortschritt (JSON-Zeilen) und beendet ihn bei einem neuen Lauf oder auf `STATICS_CANCEL`; immer nur einer zugleich, höchstens 4 Fäden | Gmsh ist GPL; model.py und die Prüfung bleiben ungestört, S0 und S1 werden nicht langsamer (die Prüfung schreibt nur Last und Lager ins Bauteil-Ergebnis mit) |
+| T22 | Tetraeder zweiter Ordnung (P2) auf geraden Kanten: Gmsh vernetzt erster Ordnung, die Kantenmitten kommen aus scikit-fem. Netzgröße aus der mittleren Wandstärke 2 V / A (ein Element über die Dicke genügt P2), höchstens 8 000 Tetraeder (fein 40 000), Löcher über die Krümmung verfeinert (18 bzw. 32 Elemente je Kreis) | Kragbalken mit einem Element über die Höhe: Durchbiegung −1,2 %, Wurzelspannung −0,6 %; Tempo vor feinstem Netz, `fein=True` für Kerben |
+| T23 | Steifigkeit über einen eigenen vektorisierten Kern (4-Punkt-Regel, beliebige 6×6-Steifigkeit), geprüft gegen `skfem.asm(linear_elasticity)` (gleiche Matrix bis 1e-9); scikit-fem liefert Topologie, Freiheitsgrade, Flächenlasten und die Starrkörperbewegungen | 3- bis 6-mal schneller als `asm`; quer zur Schicht weichere Druckteile ohne eigene Form |
+| T24 | Löser: SuperLU (symmetrische Ordnung) bis 25 000 Freiheitsgrade und für dünne Teile (Größe / Wandstärke über 25) bis 150 000; sonst pyamg (Smoothed Aggregation in 3×3-Blöcken, sechs Starrkörperbewegungen als Nahkern, CG); kommt AMG nach 150 Iterationen nicht unter 1e-6, rechnet SuperLU nach | Mit Tetraedern konvergiert AMG bei dünnen Platten nicht (Platte 400 × 100 × 5: 500 Iterationen ohne Ziel), SuperLU zerlegt sie in 3 s und rechnet alle Lastfälle mit einer Zerlegung |
+| T25 | Lager sind die Randdreiecke, deren Schwerpunkt höchstens 0,3 mm (Spiel: 0,75 mm) vom Netz eines tragenden Nachbarn liegt (dieselben Nachbarn wie beim Kragträger), fest eingespannt. Gewertet wird ab dem ersten Knoten neben der Lagerfläche; die Spitze auf ihr steht als `sicherheit_lagerrand` daneben | Auf der Lagerfläche ist die starre Einspannung eine Idealisierung (Querdehnung behindert, Kante singulär); beim Wandhalter läge die Sicherheit dort 18 % niedriger, ohne dass ein echtes Teil so bricht |
+| T26 | Lasten: Kraft an einem Punkt wie ein RBE3 auf der B-Rep-Fläche um den Punkt verteilt (Radius 10 % der Teilgröße, 3 bis 25 mm, Summe und Moment genau), ohne Punkt gleichmäßig über das Volumen (wie „am Schwerpunkt“), Lagerkräfte und -momente der Stäbe aus S1 über die Kontaktfläche zum Stab, bei Verbindern zwischen Stäben (im Stabwerk starr) Kraft und Moment jedes Stabs am Anschluss (Endkräfte des starren Glieds, neu in S1: `verbinder`), gehalten vom Stab mit der größten Kraft; immer das Eigengewicht im Beschleunigungsfeld des Szenarios; Kontaktkräfte eines Ablaufs (S2) nur auf Wunsch (`festigkeit(…, ablauf=True)`), dann allein: alle Kontakte auf das Teil im Bild mit der größten Summe, über die Lage des Teils in diesem Bild zurück in die Ruhelage | Gleiche Lasten wie S0/S1, Gleichgewicht je Fall geprüft (`gleichgewicht_n`); die Kontaktkraft ist die Last des Ablaufs, die ruhende Ersatzlast käme doppelt dazu |
+| T27 | Druckteile: Steifigkeit quer zur Schicht aus `e_modul_z` (angenommen ν_zp = ν, G_zp = E_z / (2 (1 + ν))), Festigkeit max(von Mises / f, Schichtfuge √((σ_n⁺ / q f)² + 3 (τ / q f)²)) mit q = `quer_zur_schicht`, Ziel wie S0 (statisch 4); unbekannte Drucklage überall mit q. Die Sicherheit in den anderen Drucklagen (`ausrichtung` −z, −y, −x) kommt aus demselben Spannungsfeld | Für einachsigen Zug quer zur Schicht dasselbe wie S0; der Hinweis „drehen oder verstärken“ bekommt einen FEM-Beleg ohne zweite Rechnung (der Einfluss der Steifigkeit auf die Verteilung ist bei E_z / E = 0,8 klein) |
+| T28 | Ergebnis: Urteil `festkoerper` ersetzt im Szenario den Kragträger (`bauteil`) desselben Teils, Ampel über die Ausnutzung wie T9; das Feld je Teil als STATICS_FIELD, die App zeichnet Bänder der Ausnutzung (0,1 breit, Farben wie an den Stäben) und blendet das Teil aus, die Verformung erscheint als 8 % der Teilgröße | Eine Farbsprache für Stäbe und Volumen; Bänder statt Farbe je Dreieck, weil der Viewport nur eine Farbe je Körper schattiert |
+| T29 | Im Hintergrund nach jedem Lauf nur Szenarien mit Last und höchstens 8 Teile (die nach S0 am stärksten ausgelasteten zuerst), dazu nach `szenario_rechnen` und `dynamik` das neue Szenario; Zwischenspeicher je Fall (Schlüssel aus Teilstand, Nachbarn, Lasten, Werkstoff, Netzeinstellung) und je Netz unter `~/Library/Caches/<Bundle-ID>/festkoerper` | Unveränderte Teile kosten nach dem nächsten Lauf nur den Prozessstart (0,2 bis 0,8 s); die Testvarianten haben eigene Speicher |
+
+Nachweise (Tests in `kernel/tests/test_festkoerper.py`, Werkstoffwerte aus dem Katalog):
+
+| Probe | Handrechnung | FEM | Abweichung | Netz, Zeit |
+|---|---|---|---|---|
+| Kragbalken 100 × 10 × 10 mm PLA, 100 N am Ende, Durchbiegung F L³ / (3 E I) | 14,925 mm | 14,912 mm | −0,1 % | 3 776 Tetraeder, 20 616 Freiheitsgrade, 2,5 s |
+| derselbe, Randfaser bei x = 25 mm, M / W | 45,00 N/mm² | 45,06 N/mm² | +0,1 % | |
+| derselbe, Einspannung, F L / W | 60,00 N/mm² | 60,29 N/mm² | +0,5 % | |
+| Lochplatte 400 × 100 × 5 mm, Loch Ø 20, 1000 N Zug, K_t σ_netto mit K_t = 2 + (1 − d/W)³ (Heywood) | 6,280 N/mm² | 6,172 N/mm² | −1,7 % | fein, 23 114 Tetraeder, 138 816 Freiheitsgrade, SuperLU, 17 s |
+| Wandhalter PETG 80 × 20 × 8 mm stehend gedruckt (Schichten quer zur Last), 20 N bei 78 mm: Sicherheit q f / (M / W) | 1,86 | 1,87 (Kragträger S0: 1,98) | +0,5 % | 532 Tetraeder, 1,4 s, aus dem Zwischenspeicher 0,2 s |
+
+Der Wandhalter ist rot (Ziel 4); flach gedruckt (`ausrichtung="-z"`) hätte er laut FEM Sicherheit 4,85, also grün:
+das ist der FEM-Beleg für „drehen“. Die Durchbiegung (2,4 mm) passt zur Handrechnung mit E_z (stehend gedruckt).
+
+Praxisfall Kugelschieber (Kopie von „Kugelschieber Variante B“ im Scratchpad, eigener Katalog und Speicher,
+22.10.2026, ohne App über die Laufzeit):
+
+- Nach dem Lauf (33 bis 52 s wie bisher, die FEM hält ihn nicht auf) rechnet der Hintergrund das Szenario „Bremsen“
+  (Standard, 3 m/s²) für 8 Teile: die vier Stangenhalter mit den Lagerkräften der Seitenstangen und die vier Schlitten
+  als Verbinder zwischen Querstange und Seitenstange; 18 s (ohne Zwischenspeicher 34 s), alle grün.
+- Ablauf „Bremsen aus 1 m/s“ (abrupt), dann `festigkeit(szenario="Bremsen aus 1 m/s", ablauf=True)`: Im Bild mit der
+  größten Last drückt der Ball mit 83 N auf die Fangrolle (Druck), die zugleich mit 122 N auf dem Boden aufsetzt (der
+  Wagen hebt hinten ab). FEM: Sicherheit 7,3 gegen Ziel 6 (dynamisch, Druckteil), grün; 5 907 Tetraeder, 1,9 s. Die
+  Schieberolle hat 164.
+- Szenario „Ball drückt 100 N“ (100 N in Fahrtrichtung auf die Querstange vorn, `szenario_rechnen`, 0,2 s), dann
+  `festigkeit(szenario=…)` für 8 Teile in 16 s: **Fängerschlitten rechts (Druck) rot**, Sicherheit 1,7 gegen Ziel 4,
+  Schichtfuge maßgebend bei (704; −412; 32), Lösung „verstärken um etwa 54 %“; drehen hilft hier nicht (−x 1,47, −y
+  1,21). Im Stabwerk geht die Längskraft der Querstange ganz über den rechten Schlitten (links 0 N); bisher galt er als
+  starr und wurde gar nicht nachgewiesen. Stangenhalter hinten links gelb mit 2,88 (Kragträger S0: 6,47), hinten
+  rechts 3,34 (S0: 4,99): Die FEM findet die Spitze an der Bohrung, die der Kragträger nicht sieht.
+- Rechenzeiten: Stangenhalter 4 400 Tetraeder, 26 000 Freiheitsgrade, SuperLU, 1,4 bis 2,0 s; Schlitten 7 000
+  Tetraeder, 39 000 Freiheitsgrade, pyamg mit 90 bis 120 Iterationen, 3,6 bis 4,6 s; aus dem Zwischenspeicher je Fall
+  Millisekunden, der Prozessstart rund 0,2 bis 0,8 s.
+
+Testvariante „Kev CAD Test s3“ (Kopie des Wandhalters im Scratchpad, nur über MCP der Testvariante): Nach dem Lauf
+zeigt der Statik-Abschnitt „Festkörper läuft“ mit Fortschritt (0 %, 45 %, fertig nach gut 1 s), danach je Teil „FEM
+1,86 / 4“, Schichtfuge maßgebend, Drucklagen, Netz und die Farbskala; `festigkeit` kommt aus dem Zwischenspeicher
+(0,25 s). Das Bild (offscreen) zeigt den Halter in Bändern rot an der Wand bis grün an der Spitze, auf der Seitenfläche
+grün an der neutralen Faser, das Teil selbst ausgeblendet, darunter den verformten Geist. Der Geist sitzt je Dreieck
+0,4 % der Teilgröße nach innen versetzt, sonst flimmerte er am Lager mit dem Farbverlauf.
+
+Offen für später:
+
+- Drehbar gelagerte Rollen (Fangrolle auf der Querstange) und Klemmungen (Schlitten auf der Seitenstange) rechnet die
+  FEM wie fest eingespannte Kontaktflächen; Kontaktkräfte aus dem Ablauf nur für Körper aus einem Teil; Verbinder aus
+  mehreren Teilen mit Hinweis (die Kraft über die übrigen Teile landet im Lager).
+- Kontakt mit Abheben und Reibung statt fester Einspannung, Schrauben und Gewindeeinsätze als eigene Lager
+  (Vorspannung), Plastizität und Beulen (CalculiX, eigener Prozess).
+- Füllung und Wände der Druckteile (heute volle Füllung); orthotrope Festigkeit statt eines Faktors.
+- Gekrümmte Elemente (P2 mit gebogenen Kanten) für sehr kleine Löcher; adaptive Verfeinerung an der Spitze statt
+  `fein`.
+- Befunde `statik_festkoerper` stehen in STATICS und im Ergebnis von `festigkeit`, noch nicht in der Prüfung (CHECK).
+- Falls SuperLU bei großen, gedrungenen Teilen zu langsam wird: Accelerate-Cholesky über ein Swift-Hilfsprogramm.

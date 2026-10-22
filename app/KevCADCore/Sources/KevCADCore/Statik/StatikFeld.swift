@@ -219,10 +219,18 @@ public enum StatikFeldGeometrie {
         return out
     }
 
-    /// Verformte Oberfläche (Punkte + Verschiebung × Überhöhung) als Geist.
+    /// Verformte Oberfläche (Punkte + Verschiebung × Überhöhung) als Geist, jedes Dreieck um `einzug` nach innen
+    /// versetzt: Wo sich nichts bewegt (am Lager), liegt der Geist knapp unter dem Farbverlauf statt mit ihm zu
+    /// flimmern.
     public static func verformung(_ f: StatikFeld, id: String) -> [ViewportBody] {
         let u = max(f.ueberhoehung, 1)
         let q = zip(f.punkte, f.verschiebung).map { $0 + $1 * u }
+        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+        for p in f.punkte {
+            lo = simd_min(lo, p)
+            hi = simd_max(hi, p)
+        }
+        let einzug = f.punkte.isEmpty ? 0 : max(0.2, 0.004 * simd_reduce_max(hi - lo))
         var vd: [Float] = []
         vd.reserveCapacity(f.dreiecke.count * 6)
         for t in 0..<(f.dreiecke.count / 3) {
@@ -231,7 +239,8 @@ public enum StatikFeldGeometrie {
             let l = simd_length(nrm)
             if l < 1e-12 { continue }
             nrm /= l
-            anhaengen(&vd, [a, b, c], nrm)
+            let d = -nrm * einzug
+            anhaengen(&vd, [a + d, b + d, c + d], nrm)
         }
         return zerlege(vd, id: "\(StatikGeometrie.praefix)g\(id)", farbe: PartBodies.linear(StatikGeometrie.geist))
     }
