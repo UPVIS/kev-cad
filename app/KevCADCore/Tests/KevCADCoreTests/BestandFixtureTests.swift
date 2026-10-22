@@ -180,6 +180,14 @@ final class BestandFixtureTests: XCTestCase {
         k = try kopf("buchung_rueckgaengig.frame")
         XCTAssertEqual(try meins(BuchungRueckgaengigMessage(id: "a-24", buchung: "B-0003"), seq: k["seq"]?.intValue ?? 0), k)
 
+        // Strang „Rest Druck“: Knopf „Gedruckt“
+        k = try kopf("gedruckt_req.frame")
+        XCTAssertEqual(try meins(GedrucktRequestMessage(id: "a-29", platten: [1], spule: "S-0001", run: 5,
+                                                        grund: "Kevin: Platte 1 gedruckt (App)"),
+                                 seq: k["seq"]?.intValue ?? 0), k)
+        guard case .ack(let ack) = try Fixtures.message("ack_gedruckt.frame") else { return XCTFail("ACK fehlt") }
+        XCTAssertEqual(ack.buchung, "B-0006")
+
         // Ein neuer Rest aus der App geht ohne Kennung hinaus, wie in bestand_save.frame
         let neu = BestandBearbeitung.restHinzu(.object([:]), laenge: 250)
         XCTAssertNil(neu["reste"]?.arrayValue?.first?["kennung"])

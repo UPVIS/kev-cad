@@ -110,6 +110,12 @@ def test_export_fragt_je_farbe_und_schreibt_je_farbe(env):
     # zuletzt gewählt je Klasse (Vorbelegung im Dialog „Drucken …“)
     v = rt.druckvorschau()
     assert v["filament_zuletzt"]["petg/gelb"] == "polymaker-polylite-petg-gelb"
+    # nur die gelbe Platte (wie der Dialog „Drucken …“): Kennung der Klasse wie in der Vorschau, oder das Material
+    gelb = [p["nr"] for p in v["platten"] if p["klasse"] == "petg/gelb"]
+    r = rt.druck_export(str(tmp / "g.3mf"), platten=gelb, filament={"petg/gelb": "polymaker-polylite-petg-gelb"})
+    assert r["ok"] and [Path(d["pfad"]).name for d in r["dateien"]] == ["g.3mf"], r
+    r = rt.druck_export(str(tmp / "g.3mf"), platten=gelb, filament={"petg": "polymaker-polylite-petg-gelb"})
+    assert r["ok"], r
 
 
 def test_farbe_aus_filamentliste_und_fehler(env):

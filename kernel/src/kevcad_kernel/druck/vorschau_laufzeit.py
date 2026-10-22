@@ -825,14 +825,19 @@ class DruckvorschauRuntime:
             pfad = pfad.with_suffix(".3mf")
         nach_id = {g.id: g for g in gr}
         druck = eingang.get("druck") or {}
-        # Farbklassen (Strang „Rest Druck“): ein Material mit Platten in mehreren Farben gibt je Farbe ein Bambu-Projekt
+        # Farbklassen (Strang „Rest Druck“): ein Material mit Platten in mehreren Farben gibt je Farbe ein Bambu-Projekt.
+        # Die Klasse ist dieselbe wie `platten[].klasse` der Vorschau (über alle Platten), auch wenn nur Platten einer
+        # Farbe gewählt sind (der Dialog „Drucken …“ schickt sein Filament unter dieser Kennung).
         farben_sel: dict[str, list[Any]] = {}
         for _, m, p_ in ausw.platten:
             if getattr(p_, "farbe", None) not in farben_sel.setdefault(m, []):
                 farben_sel[m].append(getattr(p_, "farbe", None))
+        farben_alle: dict[str, set[Any]] = {}
+        for m, p_ in alle:
+            farben_alle.setdefault(m, set()).add(getattr(p_, "farbe", None))
 
         def klasse_von(m: str, p_: Any) -> str:
-            return vs.klasse(m, getattr(p_, "farbe", None)) if len(farben_sel[m]) > 1 else m
+            return vs.klasse(m, getattr(p_, "farbe", None)) if len(farben_alle.get(m) or ()) > 1 else m
 
         materialien = list(dict.fromkeys(klasse_von(m, p_) for _, m, p_ in ausw.platten))
         projekt = self._dv_projekt()  # kevcad.json jetzt (druck.platte)
@@ -870,8 +875,8 @@ class DruckvorschauRuntime:
                 hinweise.append(f"kevcad.json druck.platte: {projekt['platte_fehler']}; genommen: {platte}.")
             for kl in materialien:  # ein Bambu-Projekt je Material bzw. Farbe (ein Filament je Datei, P1P ohne AMS)
                 mat, _, farbe_kl = kl.partition("/")
-                farbe_kl = farbe_kl or next((getattr(p_, "farbe", None) for _, m_, p_ in ausw.platten if m_ == mat),
-                                            None)
+                if not farbe_kl:  # eine Klasse je Material: deren Farbe (oder keine); sonst die Platten ohne Farbe
+                    farbe_kl = farben_sel[mat][0] if len(farben_sel[mat]) == 1 else None
                 titel = mat.upper() + (f" {farbe_kl}" if farbe_kl else "")
                 sel = [(nr, p) for nr, m, p in ausw.platten if klasse_von(m, p) == kl]
                 nr_mat = [nr for nr, _ in sel]

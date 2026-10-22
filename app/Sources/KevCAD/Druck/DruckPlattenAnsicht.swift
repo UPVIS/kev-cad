@@ -87,8 +87,8 @@ struct DruckPlattenBild: View {
         }
         let jemandBetont = platte.teile.contains(where: betont)
         for t in platte.teile {
-            let farbe = farben[vorschau.gruppe(t.gruppe ?? "")?.material ?? platte.material.first?.material ?? ""]
-                ?? DruckFarben.palette[0]
+            let farbe = DruckFarben.platte(platte, standard: farben[vorschau.gruppe(t.gruppe ?? "")?.material
+                ?? platte.material.first?.material ?? ""] ?? DruckFarben.palette[0])
             let pfad = Path(g.pfad(t.plattenUmriss))
             let an = betont(t)
             let schwach = jemandBetont && !an
@@ -274,9 +274,11 @@ struct DruckPlattenBereich: View {
             HStack(spacing: 6) {
                 Text("Platte \(p.nr)").fontWeight(.semibold)
                 if let m = p.material.first {
-                    Circle().fill(farben[m.material] ?? .gray).frame(width: 7, height: 7)
+                    Circle().fill(DruckFarben.platte(p, standard: farben[m.material] ?? .gray)).frame(width: 7, height: 7)
+                        .overlay(Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 0.5))
                 }
-                Text(material.joined(separator: ", ")).foregroundStyle(.secondary)
+                Text(material.joined(separator: ", ") + (p.farbe.map { " \($0)" } ?? "")).foregroundStyle(.secondary)
+                    .help(p.farbe.map { "Farbe der Platte: \($0) (P1P ohne AMS: eine Farbe je Platte)" } ?? "")
                 Spacer(minLength: 4)
                 Text(DruckFormat.zeit(p.zeitS)).monospacedDigit().contentTransition(.numericText())
             }
@@ -300,6 +302,8 @@ struct DruckPlattenBereich: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            // Strang „Rest Druck“: Knopf „Gedruckt“ je Platte (bucht ihr Filament von den Spulen ab) bzw. der Stand
+            GedrucktPlattenKnopf(model: model, platte: p, kompakt: kompakt)
             if !kompakt && (p.vomSlicerAngeordnet || p.hoeheMM != nil) {
                 HStack(spacing: 6) {
                     if p.vomSlicerAngeordnet {

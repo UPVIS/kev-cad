@@ -133,6 +133,38 @@ extension AppController: BestandActions {
         }
     }
 
+    public func bucheGedruckt(platten: [Int], spule: String?) {
+        guard !AppInfo.isDemoMode else { return }
+        guard helloReceived else {
+            bestandFailed("Der Kernel ist nicht verbunden, es wurde nichts gebucht.")
+            return
+        }
+        model.bestandZustand.aktivitaet = .saving
+        let run = model.druck.vorschau?.run
+        let was = platten.isEmpty ? "alle Platten" : "Platte " + platten.map(String.init).joined(separator: ", ")
+        let msg = GedrucktRequestMessage(id: nextRequestID(), platten: platten, spule: spule, run: run,
+                                         grund: "Kevin: \(was) gedruckt (App)")
+        request(msg, timeout: Self.bestandTimeout) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(.ack(let a)) where a.ok:
+                var z = self.model.bestandZustand
+                z.aktivitaet = .idle
+                z.hinweis = BuchungsHinweis(buchung: a.buchung, text: a.message ?? "Als gedruckt gebucht.")
+                self.model.bestandZustand = z
+                self.log(.info, "Gedruckt gebucht (\(was))" + (a.buchung.map { " \($0)" } ?? "")
+                    + (a.message.map { ": \($0)" } ?? ""))
+            case .success(.ack(let a)):
+                self.bestandFailed(a.message ?? "Der Kernel hat die Buchung abgelehnt.")
+            case .success(let m):
+                self.bestandFailed("Unerwartete Antwort \(m.typeName)")
+            case .failure(let e):
+                self.bestandFailed(e.message.contains("keine Antwort")
+                    ? "Der Kernel antwortet nicht. Ältere Kernel-Versionen kennen „Gedruckt“ noch nicht." : e.message)
+            }
+        }
+    }
+
     public func buchungRueckgaengig(_ id: String) {
         guard !AppInfo.isDemoMode else { return }
         guard helloReceived else {

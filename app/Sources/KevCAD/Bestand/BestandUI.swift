@@ -55,6 +55,10 @@ final class BestandUI: ObservableObject {
     @Published var auswahl: String?
     /// Blatt „Spule aufnehmen“ bzw. „Spule ändern“ (Strang „Bestand Stufe 2“).
     @Published var spule: SpulenAnfrage?
+    /// Blatt „Gedruckt“ (Strang „Rest Druck“): Filament von Platten der Druckvorschau abbuchen.
+    @Published var gedruckt: GedrucktAnfrage?
+    /// Selbsttest: das offene Blatt „Gedruckt“ bucht wie mit seinem Knopf (ohne Maus und Tastatur).
+    @Published var gedrucktBuchen = 0
 
     private init() {}
 
@@ -112,6 +116,9 @@ struct BestandDialoge: ViewModifier {
             }
             .sheet(item: $ui.spule) { anfrage in
                 SpuleSheet(model: model, anfrage: anfrage)
+            }
+            .sheet(item: $ui.gedruckt) { anfrage in
+                GedrucktSheet(model: model, anfrage: anfrage)
             }
     }
 }

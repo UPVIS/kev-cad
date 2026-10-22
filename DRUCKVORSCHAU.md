@@ -396,7 +396,8 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
   Wunsch oder mit Begründung im Bericht.
 - `druck_export(ziel=None, platten=None, teile=None, ohne=None, filament=None)`: 3MF der angeordneten Platten für
   Bambu Studio (Grundlage Phase 8), ohne Drucken; `teile`/`ohne` wählen Teile aus, `filament` ist Pflicht (sonst
-  Rückfrage, „Filamente und Presets“).
+  Rückfrage, „Filamente und Presets“), bei Platten in mehreren Farben je Klasse (`{"petg/gelb": …}`, „Farbe je
+  Druckteil“).
 - `filament_liste(material=None)`, `filament_define(hersteller, produkt, material, farbe, durchmesser_mm, basis,
   abweichungen, farbe_hex, id, preset_name, quelle, ersetzen)`: Kevins Filamentliste lesen bzw. erweitern.
 
@@ -409,6 +410,9 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
   3D-Bereich und dem Teilebaum.
 - Einstellungen je Teil bzw. Gruppe ändern (Zweck, Wände, Füllung, Muster, Stützen, Brim) → `PRINT_SETTINGS`.
 - **„Platten als 3MF …“** → `PRINT_EXPORT_REQ`; danach „In Bambu Studio öffnen“.
+- **Strang „Rest Druck“:** je Platte die Farbe neben dem Material und der Knopf „Gedruckt …“ (bucht das Filament der
+  Platte ab, BESTAND.md „Knopf Gedruckt“) bzw. „Gedruckt gebucht (B-0005)“ mit „Rückgängig“; in der Gruppe die Farbe
+  und die Zahl der Modifier.
 - Bericht „Druck“ im Export-Dialog von Phase 6 (Baustein `druck`): Tabelle je Platte und Teil mit Einstellungen.
 - **Filament statt Vollkörper** (Strang „Feinschliff 2“, 22.10.2026): Stückliste, Material und Inspektor nannten bei
   Druckteilen „Gewicht“ den Vollkörper (Lenksperre 104,7 g), die Druckvorschau das Filament (39 g bei 20 % Füllung).

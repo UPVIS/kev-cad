@@ -50,6 +50,7 @@ struct ProjectWindow: View {
             RenderSelbsttest.runIfRequested(session)  // Phase 7 (KEVCAD_SELFTEST=render)
             BestandSelfTest.runIfRequested(session)
             FilamentSelfTest.runIfRequested(session, state: state, material: material)  // KEVCAD_SELFTEST=filament
+            RestDruckSelbsttest.runIfRequested(session, state: state, material: material)  // KEVCAD_SELFTEST=restdruck
             MaterialSelfTest.runIfRequested(session, state: state, material: material)
             if let config = session.demo?.config, config.usesGestell { state.schnell.oeffne(.stueckliste) }
         }

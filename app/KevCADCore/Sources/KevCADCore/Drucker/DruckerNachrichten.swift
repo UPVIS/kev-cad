@@ -491,9 +491,12 @@ public struct DruckAuftragNachricht: OutgoingRequest {
     public var bestaetigt: Bool
     public var optionen: DruckOptionen?
     public var auftrag: String?
+    /// Strang „Rest Druck“ (additiv): Kevins Filament je Material bzw. Klasse („petg/gelb“) aus dem Dialog; ohne lehnt
+    /// der Kernel `bestaetigt: true` ab.
+    public var filament: [String: String]?
 
     public init(id: String, platten: [Int], weg: DruckWeg, bestaetigt: Bool, optionen: DruckOptionen? = nil,
-                auftrag: String? = nil)
+                auftrag: String? = nil, filament: [String: String]? = nil)
     {
         self.id = id
         self.platten = platten
@@ -501,9 +504,10 @@ public struct DruckAuftragNachricht: OutgoingRequest {
         self.bestaetigt = bestaetigt
         self.optionen = optionen
         self.auftrag = auftrag
+        self.filament = filament
     }
 
-    enum CodingKeys: String, CodingKey { case type, seq, id, platten, weg, bestaetigt, optionen, auftrag }
+    enum CodingKeys: String, CodingKey { case type, seq, id, platten, weg, bestaetigt, optionen, auftrag, filament }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -515,6 +519,7 @@ public struct DruckAuftragNachricht: OutgoingRequest {
         try c.encode(bestaetigt, forKey: .bestaetigt)
         if let optionen { try c.encode(optionen, forKey: .optionen) }
         if let auftrag { try c.encode(auftrag, forKey: .auftrag) }
+        if let filament, !filament.isEmpty { try c.encode(filament, forKey: .filament) }
     }
 }
 

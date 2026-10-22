@@ -230,27 +230,43 @@ struct FilamentDetail: View {
             grund: "Spule \(s.kennung) (\(s.bezeichnung)) aus dem Bestand entfernt")
     }
 
-    /// Bedarf der Druckvorschau und was „Gebaut“ von diesem Material abbuchen würde.
+    /// Bedarf der Druckvorschau (je Farbe, Strang „Rest Druck“), was zu kaufen ist, was „Gebaut“ von diesem Material
+    /// abbuchen würde, und „Gedruckt …“ für die Platten dieses Materials.
     @ViewBuilder
     private var bedarf: some View {
         let daten = model.materialDaten
-        let f = daten.filament.first { $0.material == materialID }
-        let kauf = daten.lagerEinkauf.first { $0.position.id == materialID }
+        let zeilen = daten.filament.filter { $0.material == materialID }
+        let kauf = daten.lagerEinkauf.filter { $0.position.id == materialID && $0.position.einheit.hasPrefix("Spule ") }
         let gebaut = model.bestandZustand.gebautFilamentAktuell?.spulen.filter { $0.material == materialID } ?? []
-        if f != nil || kauf != nil || !gebaut.isEmpty {
+        let platten = model.druck.vorschau?.platten.filter { $0.material.contains { $0.material == materialID } } ?? []
+        if !zeilen.isEmpty || !kauf.isEmpty || !gebaut.isEmpty || !platten.isEmpty {
             Divider()
             VStack(alignment: .leading, spacing: 6) {
-                if let f {
-                    Label("Druckvorschau: \(KevFormat.mass(grams: f.gramm)) für "
+                ForEach(zeilen) { f in
+                    Label("Druckvorschau" + (f.farbe.map { " \($0)" } ?? "") + ": \(KevFormat.mass(grams: f.gramm)) für "
                           + KevFormat.count(f.teile, one: "Teil", many: "Teile"), systemImage: "printer")
                 }
-                if let kauf {
-                    Label("\(kauf.position.mengeText) × \(kauf.position.einheit) kaufen"
+                ForEach(kauf) { kauf in
+                    Label("\(kauf.position.mengeText) × \(kauf.position.einheit) \(kauf.position.benennung) kaufen"
                           + (kauf.position.hinweis.map { " · \($0)" } ?? ""), systemImage: "cart")
                         .foregroundStyle(ZuschnittFarbe.kaufen.color)
-                } else if f != nil && !spulen.isEmpty {
+                }
+                if kauf.isEmpty && !zeilen.isEmpty && !spulen.isEmpty {
                     Label("Der Bestand reicht", systemImage: "checkmark.seal")
                         .foregroundStyle(MaterialKennzeichen.rest.color)
+                }
+                if !platten.isEmpty {
+                    HStack(spacing: 8) {
+                        Button {
+                            ui.gedruckt = GedrucktAnfrage(material: materialID)
+                        } label: {
+                            Label("Gedruckt …", systemImage: "checkmark.circle")
+                        }
+                        .controlSize(.small)
+                        .disabled(busy || model.bestandActions == nil)
+                        Text("bucht das Filament gedruckter Platten von den Spulen ab")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 if !gebaut.isEmpty {
                     Label("„Gebaut“ bucht ab: " + gebaut.map { "\(KevFormat.mass(grams: $0.gramm)) von \($0.kennung)" }

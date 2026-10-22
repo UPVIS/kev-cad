@@ -34,6 +34,7 @@ struct WelcomeView: View {
             DruckSelfTest.projektOeffnen(session)  // Druckvorschau: öffnet sein Projekt selbst
             DruckerSelbsttest.projektOeffnen(session)  // Phase 8: öffnet sein Projekt selbst
             MaterialSelfTest.projektOeffnen(session)  // Strang „Material“: ebenso
+            RestDruckSelbsttest.projektOeffnen(session)  // Strang „Rest Druck“: ebenso
             if session.launchFinished() { return }
             recents.refresh()
             consumeNewProjectRequest()

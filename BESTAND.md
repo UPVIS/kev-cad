@@ -290,7 +290,12 @@ reicht) in `MaterialKernelGleichTests.testFilamentSpulenWieDerKernel`.
   Gramm, die Spule zur Wahl („automatisch“: Reihenfolge wie oben, sonst die Spulen des Materials) und bucht mit
   `GEDRUCKT_REQ`; danach zeigt es die Antwort und den neuen Stand der Spulen mit „Rückgängig“ (`BUCHUNG_RUECKGAENGIG`).
   Schon gebuchte Platten tragen in der Druckvorschau „Gedruckt“ mit der Buchung und „Rückgängig“. Selbsttest
-  `KEVCAD_SELFTEST=gedruckt`.
+  `KEVCAD_SELFTEST=restdruck` (mit Farben, Filament im Dialog „Drucken …“ und „Gebaut“).
+- **Dialog „Gebaut“, übersichtlich (Strang „Rest Druck“):** Bei vielen Posten lagen die Druckplatten unter dem
+  sichtbaren Bereich. Oben steht jetzt „Auf einen Blick“: je Abschnitt eine Kachel mit Zahl (Abbuchen, Druckplatten
+  „1 jetzt, 1 gedruckt“, Neu, Gekauft, Verschnitt); ein Klick klappt den Abschnitt auf und springt hin. Darunter die
+  Abschnitte zum Ein- und Ausklappen mit Zahl im Kopf; bis 6 Zeilen anfangs offen, längere zu, die Druckplatten immer
+  offen; „Alle aufklappen“ bzw. „Alle zuklappen“.
 - **Dialog „Gebaut“:** je Spule, wie viel Gramm sie verliert (leer werdende: „danach leer, wird entfernt“), der Rest
   gekaufter Spulen als neue Spule, Gekauftes als Voraussetzung und die Druckplatten, schon als gedruckt gebuchte mit
   Haken und Buchung. „Gebaut“ ist nicht gesperrt, wenn nur Filament zu buchen ist (`BestandZustand.hatBuchbares`).

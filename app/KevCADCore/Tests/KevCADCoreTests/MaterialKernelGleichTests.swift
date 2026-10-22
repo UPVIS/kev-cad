@@ -139,6 +139,34 @@ final class MaterialKernelGleichTests: XCTestCase {
         XCTAssertEqual(d.kennzahlen.einkaufLagerSumme ?? 0, (bestand.summe ?? 0) + 17, accuracy: 1e-9)
     }
 
+    /// Strang „Rest Druck“: Filament je Material und Farbe (Testdatei `material_farbe`). PETG gelb fehlt ganz (eine
+    /// Spule kaufen), PETG schwarz reicht aus der schwarzen Spule, PLA ohne Farbe aus dem PLA-Bestand; Text und CSV
+    /// byteweise wie der Kernel.
+    func testFarbenWieDerKernel() throws {
+        let e = try XCTUnwrap(try Fixtures.expected()["material_farbe"])
+        guard case .bom(let m) = try Fixtures.message("bom_material_farbe.frame"),
+              case .druck(.vorschau(let v, _)) = try Fixtures.message("print_material_farbe.frame")
+        else { return XCTFail("Testdateien material_farbe fehlen") }
+        XCTAssertEqual(v.platten.map(\.klasse), ["petg/gelb", "petg/schwarz", "pla"])
+        XCTAssertEqual(v.platten.map(\.farbe), ["gelb", "schwarz", nil])
+        XCTAssertEqual(v.summe.material.first?.farben.map(\.farbe), ["gelb", "schwarz"])
+        let d = MaterialDaten(bom: m.bom, bestand: m.bestand, druckvorschau: v)
+        let projekt = e["projekt"]?.stringValue
+        let stand = e["stand"]?.stringValue
+        XCTAssertEqual(MaterialText.einkaufText(d, projekt: projekt, stand: stand), e["text"]?.stringValue)
+        XCTAssertEqual(Data(MaterialText.einkaufCSV(d).utf8), Data(try XCTUnwrap(e["csv"]?.stringValue).utf8))
+        XCTAssertEqual(d.filament.map(\.werkstoff),
+                       try XCTUnwrap(e["filament"]?.arrayValue).compactMap { $0["werkstoff"]?.stringValue })
+        XCTAssertEqual(d.filament.map(\.teile), try XCTUnwrap(e["filament"]?.arrayValue).compactMap { $0["teile"]?.intValue })
+        let soll = try XCTUnwrap(e["filament_kauf"]?.arrayValue)
+        let ist = d.lagerEinkauf.filter { $0.position.einheit.hasPrefix("Spule ") }.map(\.position)
+        XCTAssertEqual(ist.map(\.benennung), soll.compactMap { $0["benennung"]?.stringValue })
+        XCTAssertEqual(ist.map(\.hinweis), soll.map { $0["hinweis"]?.stringValue })
+        XCTAssertEqual(euro(d.kennzahlen.einkaufSumme), euro(e["summe"]?.doubleValue))
+        // Zeilen mit gleicher Material-id und Spulenzahl bleiben unterscheidbar (Abhaken, SwiftUI-Kennung)
+        XCTAssertEqual(Set(d.einkauf.map(\.id)).count, d.einkauf.count)
+    }
+
     func testGleicherVerschnitt() throws {
         let e = try erwartet()
         let d = try daten()

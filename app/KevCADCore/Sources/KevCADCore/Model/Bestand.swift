@@ -1080,6 +1080,9 @@ public protocol BestandActions: AnyObject {
     func fuehreFilament(grund: String)
     /// „Gebaut“: bucht ab, was der Zuschnitt der aktuellen Stückliste aus dem Bestand verplant.
     func bucheGebaut()
+    /// „Gedruckt“ (Strang „Rest Druck“): bucht das Filament dieser Platten der Druckvorschau ab (leer = alle noch nicht
+    /// gebuchten), `spule` zuerst; wie MCP `gedruckt_buchen`.
+    func bucheGedruckt(platten: [Int], spule: String?)
     func buchungRueckgaengig(_ id: String)
     func verwerfeBuchungsHinweis()
     /// Einkaufsliste als CSV nach `<projekt>/output/` schreiben und im Finder zeigen.

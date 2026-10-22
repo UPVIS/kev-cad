@@ -145,6 +145,31 @@ def test_montageliste_mit_modifier(tmp_path):
     assert (mitte_m - mitte_t)[:2] == pytest.approx([0.0, 6.0], abs=1e-3)
 
 
+def test_objekte_benennen_mit_modifier(tmp_path):
+    """Bambu Studio nennt den Modifier nach der STL-Datei; Kev CAD setzt „Gewindeeinsatz M3 (Modifier)“."""
+    cfg = """<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="3">
+    <metadata key="name" value="assemble_1"/>
+    <part id="1" subtype="normal_part">
+      <metadata key="name" value="g1_1"/>
+    </part>
+    <part id="2" subtype="modifier_part">
+      <metadata key="name" value="g1-modifier-1_1"/>
+    </part>
+  </object>
+</config>
+"""
+    p = tmp_path / "m.3mf"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("Metadata/model_settings.config", cfg)
+    assert sl.objekte_benennen(p, ["Halter"], [["Gewindeeinsatz M3 (Modifier)"]]) == 1
+    with zipfile.ZipFile(p) as z:
+        neu = ET.fromstring(z.read("Metadata/model_settings.config"))
+    namen = [(t.get("subtype"), t.find("metadata").get("value")) for t in neu.find("object").findall("part")]
+    assert namen == [("normal_part", "Halter"), ("modifier_part", "Gewindeeinsatz M3 (Modifier)")]
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Nachweis mit Bambu Studio: der Modifier kommt im 3MF und im G-Code an
 

@@ -138,6 +138,13 @@ enum DruckerSelbsttest {
         // 4. Drucken … (Weg A)
         actions.druckDialogOeffnen(platten: [])
         check(drucker.dialog != nil, "Dialog „Drucken …“ offen")
+        // Strang „Rest Druck“: ohne Wahl kein Druck; ist nichts vorbelegt, das erste Filament der Liste je Klasse
+        for k in drucker.dialog?.fehlendesFilament(model.druck.vorschau) ?? [] {
+            if let f = model.druck.vorschau?.filamente(fuerKlasse: k).first {
+                actions.druckDialogFilament(klasse: k, filament: f.id)
+                info("Filament \(k): \(f.name) (Preset „\(f.preset ?? "-")“)")
+            }
+        }
         let bereit = await wait(240) { drucker.dialog?.bestaetigbar == true || isFehler(drucker.dialog?.phase) }
         if case .bereit(let r) = drucker.dialog?.phase {
             check(bereit, "vorbereitet: \(r.gesliced.count) Platte(n), \(DruckFormat.zeit(r.zeitS)), "

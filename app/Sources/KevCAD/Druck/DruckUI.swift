@@ -69,6 +69,23 @@ final class DruckUI: ObservableObject {
 // MARK: - Farben
 
 enum DruckFarben {
+    /// Strang „Rest Druck“: Anzeigefarben häufiger Farbnamen wie im Kernel (`filamente.FARBEN_HEX`), für Platten mit
+    /// Farbe; unbekannte Namen behalten die Farbe des Materials.
+    static let namen: [String: (Double, Double, Double)] = [
+        "gelb": (0.949, 0.761, 0.0), "schwarz": (0.133, 0.133, 0.133), "weiß": (0.949, 0.949, 0.949),
+        "weiss": (0.949, 0.949, 0.949), "rot": (0.784, 0.063, 0.180), "blau": (0.122, 0.306, 0.612),
+        "grün": (0.180, 0.545, 0.239), "gruen": (0.180, 0.545, 0.239), "grau": (0.541, 0.553, 0.569),
+        "orange": (0.941, 0.490, 0.0), "silber": (0.722, 0.737, 0.761), "braun": (0.482, 0.290, 0.165),
+        "lila": (0.416, 0.239, 0.604), "violett": (0.416, 0.239, 0.604), "pink": (0.910, 0.353, 0.608),
+        "natur": (0.910, 0.878, 0.784), "transparent": (0.867, 0.933, 0.949), "beige": (0.847, 0.784, 0.659),
+    ]
+
+    /// Farbe einer Platte: ihre Druckfarbe, wenn sie bekannt ist, sonst `standard` (Farbe des Materials).
+    static func platte(_ p: DruckPlatte, standard: Color) -> Color {
+        guard let f = Druckvorschau.farbeSchluessel(p.farbe), let c = namen[f] else { return standard }
+        return Color(.sRGB, red: c.0, green: c.1, blue: c.2)
+    }
+
     static let palette: [Color] = [
         Color(.sRGB, red: 0.95, green: 0.55, blue: 0.16), Color(.sRGB, red: 0.20, green: 0.52, blue: 0.95),
         Color(.sRGB, red: 0.22, green: 0.70, blue: 0.42), Color(.sRGB, red: 0.62, green: 0.40, blue: 0.86),

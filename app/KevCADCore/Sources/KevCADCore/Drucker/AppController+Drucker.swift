@@ -28,6 +28,7 @@ extension AppController: DruckerActions {
             log(.info, "Claude möchte drucken" + (f.grund.map { ": \($0)" } ?? "") + " – wartet auf Kevins Bestätigung")
             var d = DruckDialogZustand(platten: DruckDialogZustand.auswahl(f.platten, vorschau: model.druck.vorschau),
                                        weg: f.weg, frage: f)
+            d.filamentVorbelegen(model.druck.vorschau)
             if f.weg == .b, model.drucker.status?.wegB.moeglich != true { d.weg = .a }
             model.drucker.setzeDialog(d)
             druckVorbereiten()
@@ -113,8 +114,9 @@ extension AppController: DruckerActions {
     public func druckDialogOeffnen(platten: [Int]) {
         guard !AppInfo.isDemoMode else { return }
         let weg: DruckWeg = model.drucker.aktiver?.weg == .b && model.drucker.status?.wegB.moeglich == true ? .b : .a
-        model.drucker.setzeDialog(DruckDialogZustand(
-            platten: DruckDialogZustand.auswahl(platten, vorschau: model.druck.vorschau), weg: weg))
+        var d = DruckDialogZustand(platten: DruckDialogZustand.auswahl(platten, vorschau: model.druck.vorschau), weg: weg)
+        d.filamentVorbelegen(model.druck.vorschau)
+        model.drucker.setzeDialog(d)
         druckVorbereiten()
     }
 
@@ -133,6 +135,16 @@ extension AppController: DruckerActions {
                 $0.auftragZustand = nil
                 $0.auftragMeldung = nil
             }
+        }
+        druckVorbereiten()
+    }
+
+    public func druckDialogFilament(klasse: String, filament: String?) {
+        guard let d = model.drucker.dialog, d.filament[klasse] != filament else { return }
+        if case .laeuft = d.phase { return }
+        if case .fertig = d.phase { return }
+        model.drucker.aendereDialog {
+            if let filament { $0.filament[klasse] = filament } else { $0.filament.removeValue(forKey: klasse) }
         }
         druckVorbereiten()
     }
@@ -157,8 +169,11 @@ extension AppController: DruckerActions {
             $0.vorbereitenID = id
             $0.phase = .bereitet
         }
-        // Weg B wird erst beim Klick geprüft; vorbereitet wird immer über Weg A (nur slicen)
-        let msg = DruckAuftragNachricht(id: id, platten: d.platten, weg: .a, bestaetigt: false, auftrag: d.auftrag)
+        // Weg B wird erst beim Klick geprüft; vorbereitet wird immer über Weg A (nur slicen). Ohne gewähltes Filament
+        // slict der Kernel mit dem der Druckvorschau, bestätigen geht dann aber nicht (Strang „Rest Druck“).
+        let wahl = d.filamentWahl(model.druck.vorschau)
+        let msg = DruckAuftragNachricht(id: id, platten: d.platten, weg: .a, bestaetigt: false, auftrag: d.auftrag,
+                                        filament: wahl.isEmpty ? nil : wahl)
         request(msg, timeout: Self.druckerTimeout) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -181,13 +196,23 @@ extension AppController: DruckerActions {
 
     public func druckBestaetigen() {
         guard let d = model.drucker.dialog, case .bereit = d.phase else { return }
+        // Kevin, 22.10.2026: ohne Wahl des Filaments geht kein Druck los
+        let fehlt = d.fehlendesFilament(model.druck.vorschau)
+        guard fehlt.isEmpty else {
+            let namen = fehlt.map { model.druck.vorschau?.klassenTitel($0) ?? $0.uppercased() }
+            model.drucker.aendereDialog {
+                $0.phase = .fehler("Bitte das Filament wählen (\(namen.joined(separator: ", "))).")
+            }
+            return
+        }
         let id = nextRequestID()
         model.drucker.aendereDialog {
             $0.bestaetigenID = id
             $0.phase = .laeuft
         }
         let msg = DruckAuftragNachricht(id: id, platten: d.platten, weg: d.weg, bestaetigt: true,
-                                        optionen: d.weg == .b ? d.optionen : nil, auftrag: d.auftrag)
+                                        optionen: d.weg == .b ? d.optionen : nil, auftrag: d.auftrag,
+                                        filament: d.filamentWahl(model.druck.vorschau))
         log(.info, "Kevin bestätigt: \(d.weg == .a ? "in Bambu Studio öffnen" : "direkt drucken"), Platten "
             + (d.platten.isEmpty ? "alle" : d.platten.map(String.init).joined(separator: ", ")))
         request(msg, timeout: Self.druckerTimeout) { [weak self] result in

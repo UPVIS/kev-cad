@@ -85,6 +85,9 @@ public struct DruckDialogZustand: Equatable, Sendable, Identifiable {
     public var phase: Phase = .bereitet
     public var auftragZustand: DruckAuftragZustand?
     public var auftragMeldung: String?
+    /// Strang „Rest Druck“: Kevins Filament je Klasse („petg“, „petg/gelb“), vorbelegt mit dem zuletzt für das Projekt
+    /// gewählten; ohne Wahl für jede Klasse der gewählten Platten geht kein Druck los.
+    public var filament: [String: String] = [:]
     /// ID der letzten Vorbereiten-Anfrage (ältere Antworten verwerfen).
     var vorbereitenID: String?
     var bestaetigenID: String?
@@ -97,10 +100,33 @@ public struct DruckDialogZustand: Equatable, Sendable, Identifiable {
         auftrag = frage?.auftrag
     }
 
-    /// Darf Kevin jetzt bestätigen?
+    /// Darf Kevin jetzt bestätigen? (Vorbereitet; das Filament prüft `filamentGewaehlt`.)
     public var bestaetigbar: Bool {
         if case .bereit = phase { return true }
         return false
+    }
+
+    /// Klassen der gewählten Platten, für die noch kein Filament gewählt ist (leer: alles gewählt).
+    public func fehlendesFilament(_ v: Druckvorschau?) -> [String] {
+        guard let v else { return [] }
+        return v.klassen(platten: platten).filter { (filament[$0] ?? "").isEmpty }
+    }
+
+    /// Wahl für die Klassen der gewählten Platten (für PRINT_JOB_REQ).
+    public func filamentWahl(_ v: Druckvorschau?) -> [String: String] {
+        guard let v else { return filament }
+        var out: [String: String] = [:]
+        for k in v.klassen(platten: platten) { if let f = filament[k], !f.isEmpty { out[k] = f } }
+        return out
+    }
+
+    /// Vorbelegung aus der Druckvorschau (zuletzt gewählt bzw. kevcad.json), ohne eine schon getroffene Wahl zu
+    /// überschreiben.
+    public mutating func filamentVorbelegen(_ v: Druckvorschau?) {
+        guard let v else { return }
+        for k in v.klassen(platten: []) where filament[k] == nil {
+            if let f = v.filamentVorbelegung(klasse: k) { filament[k] = f }
+        }
     }
 
     /// Plattenwahl so, dass nur ein Material dabei ist: Der P1P hat kein AMS, und die Druckvorschau liefert je Material
@@ -129,9 +155,10 @@ public struct DruckDialogZustand: Equatable, Sendable, Identifiable {
         return v.platten.filter { material($0.nr, v) == neu }.map(\.nr)
     }
 
-    /// Material einer Platte (Kennung wie „petg“).
+    /// Klasse einer Platte („petg“; „petg/gelb“, wenn das Material Platten in mehreren Farben hat, Strang „Rest
+    /// Druck“): ein Auftrag druckt eine Klasse (P1P ohne AMS: ein Filament je Platte).
     public static func material(_ nr: Int, _ v: Druckvorschau) -> String {
-        v.platten.first { $0.nr == nr }?.material.first?.material ?? "?"
+        v.platten.first { $0.nr == nr }?.klasse ?? "?"
     }
 }
 
@@ -148,6 +175,8 @@ public protocol DruckerActions: AnyObject {
     func druckDialogOeffnen(platten: [Int])
     /// Andere Platten oder anderer Weg: neu vorbereiten.
     func druckDialogAendern(platten: [Int], weg: DruckWeg)
+    /// Filament einer Klasse wählen (Strang „Rest Druck“; nil nimmt die Wahl zurück): neu vorbereiten mit dem Preset.
+    func druckDialogFilament(klasse: String, filament: String?)
     func druckDialogOptionen(_ o: DruckOptionen)
     /// Nach einem Fehler: noch einmal vorbereiten.
     func druckDialogNeuVorbereiten()

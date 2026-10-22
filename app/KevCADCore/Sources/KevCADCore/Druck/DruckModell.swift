@@ -123,6 +123,8 @@ public struct DruckMaterialSumme: Equatable, Sendable, Identifiable {
     /// (`filament_quelle`: projekt, zuletzt, spule, standard, system).
     public var filamentId: String? = nil
     public var filamentQuelle: String? = nil
+    /// Strang „Rest Druck“ (additiv `farben`): je Farbe der Platten, sobald ein Teil des Materials eine Farbe hat.
+    public var farben: [DruckFarbAnteil] = []
 
     public var id: String { material }
 
@@ -151,6 +153,34 @@ public struct DruckMaterialSumme: Equatable, Sendable, Identifiable {
             filament: json["filament"]?.lenientString ?? json["profil"]?.lenientString)
         filamentId = json["filament_id"]?.lenientString
         filamentQuelle = json["filament_quelle"]?.lenientString
+        farben = (json["farben"]?.arrayValue ?? []).compactMap(DruckFarbAnteil.init(json:))
+    }
+}
+
+/// Filament einer Farbe (`summe.material[].farben[]`, Strang „Rest Druck“): Farbe (nil = ohne Farbe), Gramm, Meter,
+/// Kosten und die Platten dieser Farbe.
+public struct DruckFarbAnteil: Equatable, Sendable, Identifiable {
+    public var farbe: String?
+    public var g: Double
+    public var m: Double?
+    public var kosten: Double?
+    public var platten: [Int]
+
+    public var id: String { farbe ?? "" }
+
+    public init(farbe: String?, g: Double, m: Double? = nil, kosten: Double? = nil, platten: [Int] = []) {
+        self.farbe = farbe
+        self.g = g
+        self.m = m
+        self.kosten = kosten
+        self.platten = platten
+    }
+
+    public init?(json: JSONValue) {
+        guard json.objectValue != nil else { return nil }
+        self.init(farbe: json["farbe"]?.lenientString, g: json["g"]?.doubleValue ?? 0, m: json["m"]?.doubleValue,
+                  kosten: json["kosten"]?.doubleValue,
+                  platten: (json["platten"]?.arrayValue ?? []).compactMap(\.intValue))
     }
 }
 
@@ -161,20 +191,31 @@ public struct DruckFilament: Equatable, Sendable, Identifiable, Hashable {
     public var material: String
     public var preset: String?
     public var basis: String?
+    /// Farbe aus Kevins Liste (additiv), Anzahl der Abweichungen vom Basisprofil.
+    public var farbe: String? = nil
+    public var abweichungen: Int = 0
 
-    public init(id: String, name: String, material: String, preset: String? = nil, basis: String? = nil) {
+    public init(id: String, name: String, material: String, preset: String? = nil, basis: String? = nil,
+                farbe: String? = nil)
+    {
         self.id = id
         self.name = name
         self.material = material
         self.preset = preset
         self.basis = basis
+        self.farbe = farbe
     }
 
     public init?(json: JSONValue) {
         guard let id = json["id"]?.lenientString, let material = json["material"]?.lenientString else { return nil }
         self.init(id: id, name: json["name"]?.lenientString ?? id, material: material,
-                  preset: json["preset"]?.lenientString, basis: json["basis"]?.lenientString)
+                  preset: json["preset"]?.lenientString, basis: json["basis"]?.lenientString,
+                  farbe: json["farbe"]?.lenientString)
+        abweichungen = json["abweichungen"]?.intValue ?? 0
     }
+
+    /// Farbe zum Vergleichen (klein, Leerzeichen zusammengefasst) wie der Kernel.
+    public var farbeSchluessel: String? { Druckvorschau.farbeSchluessel(farbe) }
 }
 
 /// Summe über alle Platten.
@@ -305,8 +346,14 @@ public struct DruckPlatte: Equatable, Sendable, Identifiable {
     public var anordnung: String?
     public var kosten: Double?
     public var hoeheMM: Double?
+    /// Strang „Rest Druck“ (additiv): Farbe der Platte und Klasse für Export und Filamentwahl („petg“, „petg/gelb“).
+    public var farbe: String?
+    public var klasseRoh: String?
 
     public var id: Int { nr }
+
+    /// Klasse der Platte: vom Kernel, sonst das Material (ältere Kernel).
+    public var klasse: String { klasseRoh ?? material.first?.material ?? "?" }
 
     public init(nr: Int, zeitS: Double = 0, material: [DruckMaterialSumme] = [], stand: DruckStand = .schaetzung,
                 teile: [DruckPlattenTeil] = [], auslastung: Double? = nil)
@@ -329,6 +376,8 @@ public struct DruckPlatte: Equatable, Sendable, Identifiable {
         anordnung = json["anordnung"]?.lenientString
         kosten = json["kosten"]?.doubleValue
         hoeheMM = json["hoehe_mm"]?.doubleValue
+        farbe = json["farbe"]?.lenientString
+        klasseRoh = json["klasse"]?.lenientString
     }
 
     /// Hat Bambu Studio die Platte angeordnet?
@@ -441,6 +490,10 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
     /// Fehldruck-Wahrscheinlichkeit 0…1 und Stützmaterial aller Stück in g (additiv).
     public var risiko: Double?
     public var stuetzenG: Double?
+    /// Strang „Rest Druck“ (additiv): Farbe der Gruppe (`lager.druckteil(…, farbe=…)`), Zahl der Modifier um
+    /// Gewindeeinsätze und Kernlöcher.
+    public var farbe: String?
+    public var modifier: Int = 0
 
     public var id: String { gruppe }
 
@@ -510,6 +563,8 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
         profilFilament = json["profil"]?["filament"]?.lenientString
         risiko = json["risiko"]?.doubleValue
         stuetzenG = json["stuetzen_g"]?.doubleValue
+        farbe = json["farbe"]?.lenientString
+        modifier = json["modifier"]?.arrayValue?.count ?? 0
     }
 
     public var ampel: DruckAmpel { DruckAmpel(hinweise) }
@@ -638,6 +693,9 @@ public struct Druckvorschau: Equatable, Sendable {
     public var gedruckt: [DruckGedruckt] = []
     /// Strang „Druckexport 2“ (additiv `filamente`): Kevins Filamente der Materialien, Auswahl beim Export.
     public var filamente: [DruckFilament] = []
+    /// Strang „Rest Druck“ (additiv `filament_zuletzt`): zuletzt für das Projekt gewähltes Filament je Material bzw.
+    /// Klasse („petg/gelb“), Vorbelegung im Dialog „Drucken …“.
+    public var filamentZuletzt: [String: String] = [:]
 
     public init(run: Int = 0, stand: DruckStand = .schaetzung, drucker: String = "Bambu Lab P1P 0.4",
                 summe: DruckSumme = DruckSumme(), platten: [DruckPlatte] = [], teile: [DruckGruppe] = [],
@@ -675,6 +733,7 @@ public struct Druckvorschau: Equatable, Sendable {
         ms = j["ms"]?.doubleValue
         gedruckt = (j["gedruckt"]?.arrayValue ?? []).compactMap(DruckGedruckt.init(json:))
         filamente = (j["filamente"]?.arrayValue ?? []).compactMap(DruckFilament.init(json:))
+        filamentZuletzt = (j["filament_zuletzt"]?.objectValue ?? [:]).compactMapValues(\.lenientString)
         // Filamentprofil je Material aus den Gruppen, wenn die Summe keins nennt
         for i in self.summe.material.indices where self.summe.material[i].filament == nil {
             let m = self.summe.material[i].material
@@ -731,6 +790,65 @@ public struct Druckvorschau: Equatable, Sendable {
             if let f = m.filamentId ?? filamente(fuer: m.material).first?.id { out[m.material] = f }
         }
         return out
+    }
+
+    // MARK: Farben und Klassen (Strang „Rest Druck“)
+
+    /// Farbe zum Vergleichen wie der Kernel (`filamente.farbe_schluessel`): klein, Leerzeichen zusammengefasst.
+    public static func farbeSchluessel(_ text: String?) -> String? {
+        let t = (text ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+        return t.isEmpty ? nil : t
+    }
+
+    /// Material einer Klasse („petg/gelb“ → „petg“) und ihre Farbe („gelb“, nil ohne).
+    public static func material(vonKlasse k: String) -> String { String(k.split(separator: "/", maxSplits: 1).first ?? "") }
+    public static func farbe(vonKlasse k: String) -> String? {
+        let teile = k.split(separator: "/", maxSplits: 1)
+        return teile.count > 1 ? String(teile[1]) : nil
+    }
+
+    /// Klassen der gewählten Platten (leer = alle) in der Reihenfolge der Platten.
+    public func klassen(platten nrn: [Int]) -> [String] {
+        var out: [String] = []
+        for p in platten where (nrn.isEmpty || nrn.contains(p.nr)) && !out.contains(p.klasse) { out.append(p.klasse) }
+        return out
+    }
+
+    /// „PETG gelb“ für eine Klasse.
+    public func klassenTitel(_ k: String) -> String {
+        let m = Self.material(vonKlasse: k)
+        let name = summe.material.first { $0.material == m }?.name ?? m.uppercased()
+        let farbe = Self.farbe(vonKlasse: k) ?? platten.first { $0.klasse == k }?.farbe
+        return farbe.map { "\(name) \($0)" } ?? name
+    }
+
+    /// Filamente der Liste zu einer Klasse: das Material, Filamente der passenden Farbe zuerst.
+    public func filamente(fuerKlasse k: String) -> [DruckFilament] {
+        let liste = filamente(fuer: Self.material(vonKlasse: k))
+        guard let f = Self.farbe(vonKlasse: k) ?? platten.first(where: { $0.klasse == k })?.farbe
+            .flatMap({ Self.farbeSchluessel($0) }) else { return liste }
+        return liste.filter { $0.farbeSchluessel == f } + liste.filter { $0.farbeSchluessel != f }
+    }
+
+    /// Vorbelegung im Dialog „Drucken …“ (Kevin, 22.10.2026: das zuletzt gewählte Filament des Projekts): zuletzt für
+    /// diese Klasse, sonst für das Material (wenn die Farbe passt), sonst das Filament aus `kevcad.json`; nil, wenn
+    /// Kevin noch keins gewählt hat (dann muss er wählen).
+    public func filamentVorbelegung(klasse k: String) -> String? {
+        let liste = filamente(fuerKlasse: k)
+        let farbe = Self.farbe(vonKlasse: k).flatMap { Self.farbeSchluessel($0) }
+        func passt(_ id: String?) -> String? {
+            guard let id, let f = liste.first(where: { $0.id == id }) else { return nil }
+            if let farbe, let ff = f.farbeSchluessel, ff != farbe { return nil }
+            return f.id
+        }
+        let m = Self.material(vonKlasse: k)
+        if let z = passt(filamentZuletzt[k]) { return z }
+        if k != m, let z = passt(filamentZuletzt[m]) { return z }
+        if let s = summe.material.first(where: { $0.material == m }),
+           ["zuletzt", "projekt"].contains(s.filamentQuelle ?? "") {
+            return passt(s.filamentId)
+        }
+        return nil
     }
 
     /// Anzahl gedruckter Stück über alle Gruppen.

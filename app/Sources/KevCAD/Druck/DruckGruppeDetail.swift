@@ -64,8 +64,15 @@ struct DruckGruppeDetail: View {
             }
             HStack(spacing: 6) {
                 Text("\(gruppe.anzahl) ×").monospacedDigit()
-                Text((gruppe.material ?? "–").uppercased())
+                Text((gruppe.material ?? "–").uppercased() + (gruppe.farbe.map { " \($0)" } ?? ""))
+                    .help(gruppe.farbe.map { "Druckfarbe \($0) (lager.druckteil(…, farbe=…))" } ?? "")
                 DruckZweckMarke(zweck: gruppe.zweck, geschaetzt: gruppe.zweckGeschaetzt)
+                if gruppe.modifier > 0 {
+                    Label(KevFormat.count(gruppe.modifier, one: "Modifier", many: "Modifier"), systemImage: "cylinder")
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.secondary)
+                        .help("Modifier um Gewindeeinsätze bzw. Kernlöcher: mehr Wände und 100 % Füllung nur dort")
+                }
                 if gruppe.stand == .slicer {
                     Label("Bambu Studio", systemImage: "checkmark.seal.fill")
                         .labelStyle(.titleAndIcon)

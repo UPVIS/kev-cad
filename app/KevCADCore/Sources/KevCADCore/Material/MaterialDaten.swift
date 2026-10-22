@@ -274,10 +274,21 @@ public struct MaterialEinkauf: Identifiable, Equatable, Sendable {
     /// Position der Stückliste (Zukaufteile).
     public var pos: Int?
 
-    public var id: String { art.rawValue + ":" + position.id + ":" + position.einheit + (pos.map { ":\($0)" } ?? "") }
+    public var id: String {
+        art.rawValue + ":" + position.id + ":" + position.einheit + (pos.map { ":\($0)" } ?? "") + farbZusatz
+    }
 
     /// Schlüssel zum Abhaken: ändert sich Menge oder Einheit, ist die Zeile wieder offen.
-    public var abhakSchluessel: String { "\(art.rawValue)|\(position.id)|\(position.mengeText)|\(position.einheit)" }
+    public var abhakSchluessel: String {
+        "\(art.rawValue)|\(position.id)|\(position.mengeText)|\(position.einheit)" + farbZusatz
+    }
+
+    /// Spulen je Farbe (Strang „Rest Druck“) haben dieselbe Material-id: die Benennung („Filament PETG gelb“)
+    /// unterscheidet sie.
+    private var farbZusatz: String {
+        position.einheit.hasPrefix("Spule ") && position.benennung != "Filament \(position.id.uppercased())"
+            ? "|" + position.benennung : ""
+    }
 }
 
 /// Filament der Druckteile je Werkstoff (zur Information; Spulen zum Kaufen stehen unter Lagerware, siehe
@@ -293,6 +304,8 @@ public struct MaterialFilament: Identifiable, Equatable, Sendable {
     public var preisStand: String? = nil
     /// Stand der Druckvorschau (Schätzung, Bambu Studio); nil: aus der Stückliste.
     public var stand: DruckStand? = nil
+    /// Strang „Rest Druck“: Farbe der Platten dieser Zeile (nil ohne Farbe); dann heißt der Werkstoff „PETG gelb“.
+    public var farbe: String? = nil
 
     public var id: String { werkstoff }
 
@@ -301,13 +314,25 @@ public struct MaterialFilament: Identifiable, Equatable, Sendable {
         stand.map { "Druckvorschau, \($0.titel)" } ?? "Stückliste, Volumen × Dichte"
     }
 
-    /// Filament je Material aus der Druckvorschau, wenn sie zum Lauf der Stückliste gehört; sonst nil.
+    /// Filament je Material aus der Druckvorschau, wenn sie zum Lauf der Stückliste gehört; sonst nil. Mit Farben
+    /// (Strang „Rest Druck“) je Farbe der Platten eine Zeile („PETG gelb“, Teile = Stück auf diesen Platten), wie
+    /// `einkauf.filament` im Kernel.
     public static func ausDruckvorschau(_ v: Druckvorschau?, run: Int) -> [MaterialFilament]? {
         guard let v, v.run == run, !v.summe.material.isEmpty else { return nil }
-        return v.summe.material.map { m in
-            MaterialFilament(
+        return v.summe.material.flatMap { m -> [MaterialFilament] in
+            if m.farben.contains(where: { $0.farbe != nil }) {
+                return m.farben.map { f in
+                    let teile = v.platten.filter { f.platten.contains($0.nr) }.reduce(0) { $0 + $1.teile.count }
+                    var z = MaterialFilament(
+                        werkstoff: f.farbe.map { "\(m.name) \($0)" } ?? m.name, teile: teile, gramm: f.g,
+                        preis: f.kosten, material: m.material, preisStand: m.preisStand, stand: m.stand)
+                    z.farbe = f.farbe
+                    return z
+                }
+            }
+            return [MaterialFilament(
                 werkstoff: m.name, teile: v.teile.filter { $0.material == m.material }.reduce(0) { $0 + $1.anzahl },
-                gramm: m.g, preis: m.kosten, material: m.material, preisStand: m.preisStand, stand: m.stand)
+                gramm: m.g, preis: m.kosten, material: m.material, preisStand: m.preisStand, stand: m.stand)]
         }
     }
 }
@@ -323,6 +348,15 @@ public struct FilamentBestand: Equatable, Sendable {
     public var spuleG: Double
     public var preisJeSpule: Double?
     public var preisStand: String?
+    /// Strang „Rest Druck“ (additiv `farben`): Spulen je Farbe (nil = ohne Farbe).
+    public var farben: [(farbe: String?, gramm: Double, spulen: Int)] = []
+
+    public static func == (a: FilamentBestand, b: FilamentBestand) -> Bool {
+        a.material == b.material && a.name == b.name && a.gramm == b.gramm && a.spulen == b.spulen
+            && a.spuleG == b.spuleG && a.preisJeSpule == b.preisJeSpule && a.preisStand == b.preisStand
+            && a.farben.map(\.farbe) == b.farben.map(\.farbe) && a.farben.map(\.gramm) == b.farben.map(\.gramm)
+            && a.farben.map(\.spulen) == b.farben.map(\.spulen)
+    }
 
     public init?(json: JSONValue) {
         guard let m = json["material"]?.lenientString else { return nil }
@@ -334,20 +368,57 @@ public struct FilamentBestand: Equatable, Sendable {
         spuleG = g > 0 ? g : 1000
         preisJeSpule = json["preis_je_spule"]?.doubleValue
         preisStand = json["preis_stand"]?.lenientString
+        farben = (json["farben"]?.arrayValue ?? []).compactMap { f in
+            guard f.objectValue != nil else { return nil }
+            return (f["farbe"]?.lenientString, f["gramm"]?.doubleValue ?? 0, max(0, f["spulen"]?.intValue ?? 0))
+        }
+    }
+
+    /// Bestand, der für eine Filamentzeile gilt (Strang „Rest Druck“, wie `_bestand_je_farbe` im Kernel): eine Zeile mit
+    /// Farbe zählt nur Spulen dieser Farbe, eine ohne Farbe den übrigen Bestand des Materials; ohne Farben alles.
+    static func bestand(fuer f: MaterialFilament, zeilen: [MaterialFilament], _ b: FilamentBestand)
+        -> (gramm: Double, spulen: Int)
+    {
+        let eigene = zeilen.filter { $0.stand != nil && $0.material == b.material }
+        guard eigene.contains(where: { $0.farbe != nil }) else { return (b.gramm, b.spulen) }
+        if let farbe = f.farbe {
+            let x = b.farben.first { $0.farbe == farbe }
+            return (x?.gramm ?? 0, x?.spulen ?? 0)
+        }
+        var verbrauchtG = 0.0
+        var verbrauchtN = 0
+        for z in eigene {
+            guard let farbe = z.farbe else { continue }
+            let x = b.farben.first { $0.farbe == farbe }
+            let g = x?.gramm ?? 0
+            verbrauchtG += min(g, z.gramm)
+            verbrauchtN += g <= z.gramm + 1e-6 ? (x?.spulen ?? 0) : 0
+        }
+        return (max(0, b.gramm - verbrauchtG), max(0, b.spulen - verbrauchtN))
     }
 
     /// Spulen zum Kaufen für einen Werkstoff der Druckvorschau desselben Laufs: Bedarf minus Bestand, auf ganze Spulen
-    /// aufgerundet; nil, wenn der Bestand reicht oder die Zahl nur aus der Stückliste kommt.
-    static func kauf(_ f: MaterialFilament, _ liste: [FilamentBestand]) -> EinkaufsPosition? {
+    /// aufgerundet; nil, wenn der Bestand reicht oder die Zahl nur aus der Stückliste kommt. Mit Farben je Farbe
+    /// (`zeilen`: alle Filamentzeilen, für den Bestand ohne Farbe).
+    static func kauf(_ f: MaterialFilament, _ liste: [FilamentBestand], zeilen: [MaterialFilament] = [])
+        -> EinkaufsPosition?
+    {
         guard f.stand != nil, let mid = f.material, let b = liste.first(where: { $0.material == mid }) else { return nil }
-        let fehl = f.gramm - b.gramm
+        let hb = bestand(fuer: f, zeilen: zeilen.isEmpty ? [f] : zeilen, b)
+        let fehl = f.gramm - hb.gramm
         guard fehl > 1e-6 else { return nil }
         let n = (fehl / b.spuleG - 1e-9).rounded(.up)
         guard n > 0 else { return nil }
-        let hinweis = b.spulen > 0
-            ? "Bedarf \(KevFormat.mass(grams: f.gramm)), Bestand im Projekt: \(KevFormat.mass(grams: b.gramm)) "
-                + "(\(KevFormat.count(b.spulen, one: "Spule", many: "Spulen")))"
-            : "Bedarf \(KevFormat.mass(grams: f.gramm)), kein Filament im Bestand des Projekts"
+        let farbe = f.farbe.map { " \($0)" } ?? ""
+        let hinweis: String
+        if hb.spulen > 0 {
+            hinweis = "Bedarf \(KevFormat.mass(grams: f.gramm))\(farbe), Bestand im Projekt: "
+                + "\(KevFormat.mass(grams: hb.gramm))\(farbe) (\(KevFormat.count(hb.spulen, one: "Spule", many: "Spulen")))"
+        } else if let fa = f.farbe {
+            hinweis = "Bedarf \(KevFormat.mass(grams: f.gramm))\(farbe), kein Filament in \(fa) im Bestand des Projekts"
+        } else {
+            hinweis = "Bedarf \(KevFormat.mass(grams: f.gramm)), kein Filament im Bestand des Projekts"
+        }
         return EinkaufsPosition(
             id: mid, benennung: "Filament \(f.werkstoff)", menge: n,
             einheit: "Spule \(KevFormat.compact(b.spuleG, maxDigits: 1)) g", preisJe: b.preisJeSpule,
@@ -564,7 +635,7 @@ public struct MaterialDaten: Equatable, Sendable {
         // Strang „Bestand Stufe 2“: Filament-Spulen, die der Projektbestand nicht deckt (Lagerware, nach der Stückliste)
         var filamentKauf: [EinkaufsPosition] = []
         if let liste = bestand?.filamentBestand {
-            filamentKauf = filamentListe.compactMap { FilamentBestand.kauf($0, liste) }
+            filamentKauf = filamentListe.compactMap { FilamentBestand.kauf($0, liste, zeilen: filamentListe) }
         }
 
         // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste nach Abzug des Projektbestands

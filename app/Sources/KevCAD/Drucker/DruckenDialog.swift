@@ -26,9 +26,11 @@ struct DruckerDialoge: ViewModifier {
     }
 }
 
-/// Dialog „Drucken …“ (Phase 8): Platten, Material und Spule, Zeit, Weg. Kevin bestätigt hier; vorher geschieht am
-/// Drucker nichts. Weg A slict fertig und öffnet die Datei in Bambu Studio (dort „Platte drucken“ und „Senden“).
-/// Weg B ist ausgegraut, solange der Kernel den Developer Mode nicht nachgewiesen hat, mit Grund und Anleitung.
+/// Dialog „Drucken …“ (Phase 8): Platten, Filament je Material bzw. Farbe, Zeit, Weg. Kevin bestätigt hier; vorher
+/// geschieht am Drucker nichts. Weg A slict fertig und öffnet die Datei in Bambu Studio (dort „Platte drucken“ und
+/// „Senden“). Weg B ist ausgegraut, solange der Kernel den Developer Mode nicht nachgewiesen hat, mit Grund und
+/// Anleitung. Strang „Rest Druck“: das Filament wählt Kevin hier aus seiner Liste (wie im Sichern-Dialog), vorbelegt
+/// mit dem zuletzt für das Projekt gewählten; das Preset steht darunter. Ohne Wahl geht kein Druck los.
 struct DruckenDialog: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var drucker: DruckerStore
@@ -93,7 +95,7 @@ struct DruckenDialog: View {
                     Toggle(isOn: Binding(get: { gewaehlt(p.nr, d) }, set: { setze(p.nr, $0, d) })) {
                         HStack(spacing: 10) {
                             Text("Platte \(p.nr)").monospacedDigit().frame(width: 62, alignment: .leading)
-                            Text(materialText(p)).frame(width: 70, alignment: .leading)
+                            Text(materialText(p)).lineLimit(1).frame(width: 110, alignment: .leading)
                             Text(DruckFormat.zeit(p.zeitS)).monospacedDigit().frame(width: 84, alignment: .trailing)
                             Text(DruckFormat.gramm(p.gramm)).monospacedDigit().frame(width: 64, alignment: .trailing)
                             Text(KevFormat.count(p.teile.count, one: "Teil", many: "Teile")).foregroundStyle(.secondary)
@@ -110,19 +112,70 @@ struct DruckenDialog: View {
 
     @ViewBuilder
     private func materialAbschnitt(_ d: DruckDialogZustand) -> some View {
-        let mats = materialien(d)
-        if !mats.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Material und Spule").font(.headline)
-                ForEach(mats, id: \.material) { m in
-                    Text("\(m.name): externe Spule" + (m.filament.map { " – Profil „\($0)“" } ?? ""))
-                        .font(.callout)
-                }
-                if mats.count > 1 {
-                    Text("Der P1P hat kein AMS: zwischen den Platten die Spule wechseln.")
-                        .font(.caption).foregroundStyle(.orange)
+        if let v = druck.vorschau, !v.platten.isEmpty {
+            let klassen = v.klassen(platten: d.platten)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Filament im Drucker").font(.headline)
+                ForEach(klassen, id: \.self) { k in filamentZeile(k, v, d) }
+                Text("Externe Spule (P1P ohne AMS). Das Preset des gewählten Filaments kommt in die Datei.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } else {
+            let mats = materialien(d)
+            if !mats.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Material und Spule").font(.headline)
+                    ForEach(mats, id: \.material) { m in
+                        Text("\(m.name): externe Spule" + (m.filament.map { " – Profil „\($0)“" } ?? ""))
+                            .font(.callout)
+                    }
                 }
             }
+        }
+    }
+
+    /// Eine Klasse („PETG“ bzw. „PETG gelb“): Auswahl aus Kevins Filamentliste, darunter Preset und Basisprofil.
+    private func filamentZeile(_ k: String, _ v: Druckvorschau, _ d: DruckDialogZustand) -> some View {
+        let liste = v.filamente(fuerKlasse: k)
+        let gewaehlt = d.filament[k]
+        let f = liste.first { $0.id == gewaehlt }
+        let farbe = Druckvorschau.farbe(vonKlasse: k)
+            ?? v.platten.first(where: { $0.klasse == k })?.farbe.flatMap { Druckvorschau.farbeSchluessel($0) }
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text("\(v.klassenTitel(k)):").frame(width: 120, alignment: .leading)
+                Picker("Filament \(v.klassenTitel(k))", selection: Binding(
+                    get: { gewaehlt ?? "" },
+                    set: { model.druckerActions?.druckDialogFilament(klasse: k, filament: $0.isEmpty ? nil : $0) }))
+                {
+                    Text(liste.isEmpty ? "Kein Filament in der Liste" : "Bitte wählen …").tag("")
+                    ForEach(liste) { x in Text(x.name).tag(x.id) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 340)
+                .disabled(gesperrt(d) || liste.isEmpty)
+            }
+            Group {
+                if let f {
+                    Text("Preset „\(f.preset ?? f.name)“" + (f.basis.map { " · Basis „\($0)“" } ?? "")
+                        + (f.abweichungen > 0 ? " · \(KevFormat.count(f.abweichungen, one: "Abweichung", many: "Abweichungen"))"
+                            : " · keine Abweichungen")
+                        + (v.filamentZuletzt[k] == f.id ? " · zuletzt gewählt" : ""))
+                        .foregroundStyle(.secondary)
+                    if let farbe, let ff = f.farbeSchluessel, ff != farbe {
+                        Label("Das Filament ist \(ff), die Teile sind \(farbe).", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                } else if liste.isEmpty {
+                    Text("Erst ein Filament dieses Materials in die Filamentliste aufnehmen (Claude: filament_define).")
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("Noch kein Filament gewählt: ohne Wahl geht kein Druck los.").foregroundStyle(.orange)
+                }
+            }
+            .font(.caption)
+            .padding(.leading, 128)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -239,7 +292,9 @@ struct DruckenDialog: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(!d.bestaetigbar || (d.weg == .b && (!status.wegB.moeglich || d.platten.count != 1)))
+                .disabled(!d.bestaetigbar || !d.fehlendesFilament(druck.vorschau).isEmpty
+                    || (d.weg == .b && (!status.wegB.moeglich || d.platten.count != 1)))
+                .help(d.fehlendesFilament(druck.vorschau).isEmpty ? "" : "Erst das Filament wählen")
             }
         }
     }
@@ -285,7 +340,7 @@ struct DruckenDialog: View {
         guard let v = druck.vorschau,
               let n = DruckDialogZustand.naechste(nach: d.platten.isEmpty ? platten.map(\.nr) : d.platten, vorschau: v)
         else { return nil }
-        let name = v.platten.first { $0.nr == n[0] }?.material.first?.name ?? "?"
+        let name = v.klassenTitel(DruckDialogZustand.material(n[0], v))  // „PETG gelb“ (Strang „Rest Druck“)
         return ("\(name), Platte " + n.map(String.init).joined(separator: ", "), n)
     }
 
@@ -294,7 +349,7 @@ struct DruckenDialog: View {
     }
 
     private func materialText(_ p: DruckPlatte) -> String {
-        p.material.map(\.name).joined(separator: ", ")
+        p.material.map(\.name).joined(separator: ", ") + (p.farbe.map { " \($0)" } ?? "")
     }
 
     private func materialien(_ d: DruckDialogZustand) -> [DruckMaterialSumme] {

@@ -184,3 +184,36 @@ public struct BuchungRueckgaengigMessage: OutgoingRequest {
         try c.encode(buchung, forKey: .buchung)
     }
 }
+
+/// GEDRUCKT_REQ (Strang „Rest Druck“, BESTAND.md): Knopf „Gedruckt“, bucht das Filament der Druckvorschau ab wie MCP
+/// `gedruckt_buchen` (`platten` leer = alle noch nicht gebuchten, `spule` zuerst, `run` der Druckvorschau).
+public struct GedrucktRequestMessage: OutgoingRequest {
+    public static let type = "GEDRUCKT_REQ"
+    public var seq = 0
+    public var id: String
+    public var platten: [Int]
+    public var spule: String?
+    public var run: Int?
+    public var grund: String
+
+    public init(id: String, platten: [Int], spule: String? = nil, run: Int? = nil, grund: String) {
+        self.id = id
+        self.platten = platten
+        self.spule = spule
+        self.run = run
+        self.grund = grund
+    }
+
+    enum CodingKeys: String, CodingKey { case type, seq, id, platten, spule, run, grund }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(Self.type, forKey: .type)
+        try c.encode(seq, forKey: .seq)
+        try c.encode(id, forKey: .id)
+        try c.encode(platten, forKey: .platten)
+        if let spule { try c.encode(spule, forKey: .spule) }
+        if let run { try c.encode(run, forKey: .run) }
+        try c.encode(grund, forKey: .grund)
+    }
+}

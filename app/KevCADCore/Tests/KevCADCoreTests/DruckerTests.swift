@@ -153,10 +153,41 @@ final class DruckerFixtureTests: XCTestCase {
         XCTAssertEqual(try ohneSeq(DruckAuftragNachricht(id: "a-44", platten: [1], weg: .b, bestaetigt: true,
                                                          optionen: DruckOptionen()).encodedHeader()),
                        try ohneSeq(Fixtures.frame("print_job_req_b.frame").header))
+        XCTAssertEqual(try ohneSeq(DruckAuftragNachricht(id: "a-48", platten: [2], weg: .a, bestaetigt: true,
+                                                         auftrag: "j-3",
+                                                         filament: ["petg": "polymaker-polylite-petg-gelb",
+                                                                    "pla/schwarz": "amazon-basics-pla"]).encodedHeader()),
+                       try ohneSeq(Fixtures.frame("print_job_req_filament.frame").header))
         XCTAssertEqual(try ohneSeq(DruckerSteuerNachricht(id: "a-45", aktion: .pause).encodedHeader()),
                        try ohneSeq(Fixtures.frame("print_control.frame").header))
         XCTAssertEqual(try ohneSeq(DruckerSteuerNachricht(id: "a-47", aktion: .verwerfen, auftrag: "j-6").encodedHeader()),
                        try ohneSeq(Fixtures.frame("print_control_verwerfen.frame").header))
+    }
+
+    /// Strang „Rest Druck“: Filament im Dialog „Drucken …“ je Klasse (Material bzw. Material und Farbe), vorbelegt mit
+    /// dem zuletzt gewählten, wenn die Farbe passt; ohne Wahl fehlt es (dann geht kein Druck los).
+    func testFilamentwahlImDialogJeKlasse() throws {
+        guard case .druck(.vorschau(let v, _)) = try Fixtures.message("print_material_farbe.frame") else {
+            return XCTFail("print_material_farbe.frame fehlt")
+        }
+        XCTAssertEqual(v.klassen(platten: []), ["petg/gelb", "petg/schwarz", "pla"])
+        XCTAssertEqual(v.klassen(platten: [2]), ["petg/schwarz"])
+        XCTAssertEqual(v.klassenTitel("petg/gelb"), "PETG gelb")
+        XCTAssertEqual(v.filamente(fuerKlasse: "petg/gelb").first?.id, "polymaker-polylite-petg-gelb")
+        // zuletzt gewählt (Quelle der Vorschau) ist gelb: passt zu Gelb, nicht zu Schwarz; PLA hat keine Wahl
+        XCTAssertEqual(v.filamentVorbelegung(klasse: "petg/gelb"), "polymaker-polylite-petg-gelb")
+        XCTAssertNil(v.filamentVorbelegung(klasse: "petg/schwarz"))
+        XCTAssertNil(v.filamentVorbelegung(klasse: "pla"))
+        // ein Auftrag druckt eine Klasse
+        XCTAssertEqual(DruckDialogZustand.auswahl([1, 2], vorschau: v), [1])
+        var d = DruckDialogZustand(platten: [2], weg: .a)
+        d.filamentVorbelegen(v)
+        XCTAssertEqual(d.fehlendesFilament(v), ["petg/schwarz"])
+        d.filament["petg/schwarz"] = "bambu-petg-basic"
+        XCTAssertEqual(d.fehlendesFilament(v), [])
+        XCTAssertEqual(d.filamentWahl(v), ["petg/schwarz": "bambu-petg-basic"])
+        d.platten = [1]
+        XCTAssertEqual(d.filamentWahl(v), ["petg/gelb": "polymaker-polylite-petg-gelb"])
     }
 }
 

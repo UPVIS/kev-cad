@@ -168,6 +168,8 @@ public struct GebautFilament: Equatable, Sendable {
         public var gebucht: String?
         /// „Gebaut“ bucht sie jetzt ab.
         public var buchen: Bool
+        /// Strang „Rest Druck“ (additiv): Farbe der Platte.
+        public var farbe: String? = nil
 
         public var id: Int { nr }
 
@@ -244,7 +246,8 @@ public struct GebautFilament: Equatable, Sendable {
                     material: (p["material"]?.arrayValue ?? []).compactMap { m in
                         m["material"]?.lenientString.map { ($0, m["g"]?.doubleValue ?? 0) }
                     },
-                    gebucht: p["gebucht"]?.lenientString, buchen: p["buchen"]?.boolValue ?? false)
+                    gebucht: p["gebucht"]?.lenientString, buchen: p["buchen"]?.boolValue ?? false,
+                    farbe: p["farbe"]?.lenientString)
             },
             ganzGebucht: json["ganz_gebucht"]?.lenientString,
             spulen: (json["spulen"]?.arrayValue ?? []).compactMap { s in
@@ -275,7 +278,8 @@ public struct GebautFilament: Equatable, Sendable {
 
     /// „PETG 188,8 g“ für eine Platte.
     public func plattenText(_ p: Platte) -> String {
-        p.material.map { "\(name($0.material)) \(KevFormat.mass(grams: $0.g))" }.joined(separator: ", ")
+        p.material.map { "\(name($0.material))" + (p.farbe.map { " \($0)" } ?? "") + " \(KevFormat.mass(grams: $0.g))" }
+            .joined(separator: ", ")
     }
 }
 
