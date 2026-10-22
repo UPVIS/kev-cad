@@ -67,10 +67,11 @@ final class ScanRecorder {
                 failure = error.localizedDescription
                 return false
             }
-            startTimestamp = frame.timestamp
             intrinsics = frame.camera.intrinsics
             intrinsicsResolution = frame.camera.imageResolution
         }
+        // Bild 0 hat die Zeit 0,0, auch wenn ein früheres Anhängen gescheitert ist.
+        if frameCount == 0 { startTimestamp = frame.timestamp }
         guard let writer, let input, let adaptor, let start = startTimestamp else { return false }
         guard writer.status == .writing else {
             failure = writer.error?.localizedDescription ?? "Der Videoschreiber hat angehalten."
