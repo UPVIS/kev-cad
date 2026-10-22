@@ -165,8 +165,38 @@ public final class ExportDokument {
 
     // MARK: PDF
 
-    /// Schreibt das PDF (Vektor, Seitenformate gemischt) und ergänzt die Gliederung über PDFKit.
+    /// Gliederung für `CGPDFContextSetOutline`: je Baustein ein Eintrag, darunter die Unterpunkte (Abschnitte,
+    /// Blätter). Seitenangaben 1-basiert wie im PDF-Betrachter.
+    func gliederung() -> [String: Any] {
+        var kinder: [[String: Any]] = []
+        for (i, s) in seiten.enumerated() {
+            let ziel = NSNumber(value: i + 1)
+            if kinder.isEmpty || (kinder.last?["art"] as? String) != s.baustein.rawValue {
+                kinder.append(["art": s.baustein.rawValue, kCGPDFOutlineTitle as String: s.baustein.titel,
+                               kCGPDFOutlineDestination as String: ziel, "unter": [[String: Any]]()])
+            }
+            for g in s.gliederung {
+                var unter = kinder[kinder.count - 1]["unter"] as? [[String: Any]] ?? []
+                unter.append([kCGPDFOutlineTitle as String: g, kCGPDFOutlineDestination as String: ziel])
+                kinder[kinder.count - 1]["unter"] = unter
+            }
+        }
+        let eintraege: [[String: Any]] = kinder.map { k in
+            var e: [String: Any] = [kCGPDFOutlineTitle as String: k[kCGPDFOutlineTitle as String] ?? "",
+                                    kCGPDFOutlineDestination as String: k[kCGPDFOutlineDestination as String] ?? 1]
+            if let u = k["unter"] as? [[String: Any]], !u.isEmpty { e[kCGPDFOutlineChildren as String] = u }
+            return e
+        }
+        return [kCGPDFOutlineChildren as String: eintraege]
+    }
+
+    /// Dauer des letzten PDF in ms (zum Messen).
+    public private(set) var pdfMs: Int = 0
+
+    /// Schreibt das PDF (Vektor, Seitenformate gemischt) mit Gliederung direkt aus dem CoreGraphics-Kontext (ohne
+    /// erneutes Einlesen über PDFKit, das bei großen Zeichnungsblättern Sekunden kostet).
     public func schreibePDF(nach url: URL) throws {
+        let t0 = Date()
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -185,35 +215,11 @@ public final class ExportDokument {
             zeichne(i, in: ctx)
             ctx.endPDFPage()
         }
+        CGPDFContextSetOutline(ctx, gliederung() as CFDictionary)
         ctx.closePDF()
-        // Gliederung (Inhaltsverzeichnis in der Seitenleiste von Vorschau und Acrobat)
-        guard let doc = PDFDocument(url: tmp) else { throw ExportFehler.pdf("PDF nicht lesbar") }
-        let wurzel = PDFOutline()
-        var aktuell: (art: ExportBausteinArt, eintrag: PDFOutline)?
-        for (i, s) in seiten.enumerated() {
-            guard let page = doc.page(at: i) else { continue }
-            let ziel = PDFDestination(page: page, at: CGPoint(x: 0, y: s.punkte.height))
-            if aktuell?.art != s.baustein {
-                let e = PDFOutline()
-                e.label = s.baustein.titel
-                e.destination = ziel
-                wurzel.insertChild(e, at: wurzel.numberOfChildren)
-                aktuell = (s.baustein, e)
-            }
-            for g in s.gliederung {
-                let u = PDFOutline()
-                u.label = g
-                u.destination = ziel
-                aktuell?.eintrag.insertChild(u, at: aktuell!.eintrag.numberOfChildren)
-            }
-        }
-        doc.outlineRoot = wurzel
-        doc.documentAttributes = [
-            PDFDocumentAttribute.titleAttribute: "\(kopf.projekt) – Dokumente",
-            PDFDocumentAttribute.authorAttribute: kopf.autor, PDFDocumentAttribute.creatorAttribute: "Kev CAD",
-        ]
-        if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
-        guard doc.write(to: url) else { throw ExportFehler.pdf("PDF nicht geschrieben: \(url.path)") }
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        try FileManager.default.moveItem(at: tmp, to: url)
+        pdfMs = Int(Date().timeIntervalSince(t0) * 1000)
     }
 
     /// Eine Seite als Bild (Vorschau, Prüfbilder), `pixelJeMM` z. B. 4 (≈ 100 dpi).
