@@ -8,6 +8,8 @@ import Foundation
 /// - SCENE kommt in Seiten; die Teileliste wird erst ersetzt, wenn alle Seiten `0 … seiten − 1` da sind.
 /// - STATE_DELTA mit kleinerem `rev` als dem bekannten wird verworfen; die Kamera zählt für sich (latest-only).
 /// - Netze: Blöcke je Hash zusammensetzen, entpacken, Hash prüfen; `takeMeshRequest()` fragt nur Fehlendes an.
+/// - Freigaben (Version 1.1): offene Anfragen aus FREIGABE, ohne Miete; FREIGABE_ENDE nimmt einen Eintrag bzw. die
+///   ganze Anfrage heraus, eine neue Epoche alle.
 public struct MirrorReceiver: Sendable {
     public enum Event: Sendable, Equatable {
         case hello(MirrorHello)
@@ -25,6 +27,10 @@ public struct MirrorReceiver: Sendable {
         case meshReady(String)
         case meshRejected(hash: String, reason: String)
         case commandResult(MirrorCommandResult)
+        /// Version 1.1: Anfrage neu oder aktualisiert (`freigaben` enthält sie).
+        case freigabe(MirrorFreigabeMessage)
+        /// Version 1.1: Eintrag (mit `id`) oder ganze Anfrage erledigt.
+        case freigabeEnde(MirrorFreigabeEndeMessage)
         /// Verworfen (fremde Epoche, altes `rev`, unbekannter Typ …), mit Grund.
         case ignored(String)
     }
@@ -45,6 +51,9 @@ public struct MirrorReceiver: Sendable {
     public private(set) var hasScene = false
     /// Ungepackte Netze nach Hash (`kcad-mesh-1`).
     public private(set) var meshes: [String: Data] = [:]
+    /// Offene Freigabe-Anfragen der aktuellen Epoche in der Reihenfolge ihres Eintreffens, je nur mit den noch offenen
+    /// Einträgen (Version 1.1).
+    public private(set) var freigaben: [MirrorFreigabeMessage] = []
 
     private var pages: [Int: [MirrorPart]] = [:]
     private var pageKey: (epoche: String, run: Int, seiten: Int)?
@@ -97,6 +106,11 @@ public struct MirrorReceiver: Sendable {
     }
 
     public mutating func removeMesh(hash: String) { meshes[hash] = nil }
+
+    /// Offene Anfragen, die zum Zeitpunkt `now` noch nicht abgelaufen sind.
+    public func offeneFreigaben(now: Date = Date()) -> [MirrorFreigabeMessage] {
+        freigaben.filter { !$0.abgelaufen(now: now) && !$0.eintraege.isEmpty }
+    }
 
     /// Nach dem Trennen: halbe Netze und Anforderungen vergessen (der volle Stand kommt nach dem nächsten WATCH neu).
     public mutating func connectionLost() {
@@ -205,6 +219,29 @@ public struct MirrorReceiver: Sendable {
         case .commandResult(let r):
             return [.commandResult(r)]
 
+        case .freigabe(let f):
+            if let e = epoche, !f.epoche.isEmpty, f.epoche != e { return [.ignored("FREIGABE mit fremder Epoche")] }
+            if let i = freigaben.firstIndex(where: { $0.anfrageID == f.anfrageID }) {
+                freigaben[i] = f
+            } else {
+                freigaben.append(f)
+            }
+            return [.freigabe(f)]
+
+        case .freigabeEnde(let ende):
+            if let e = epoche, !ende.epoche.isEmpty, ende.epoche != e {
+                return [.ignored("FREIGABE_ENDE mit fremder Epoche")]
+            }
+            if let id = ende.id {
+                if let i = freigaben.firstIndex(where: { $0.anfrageID == ende.anfrageID }) {
+                    freigaben[i].eintraege.removeAll { $0.id == id }
+                    if freigaben[i].eintraege.isEmpty { freigaben.remove(at: i) }
+                }
+            } else {
+                freigaben.removeAll { $0.anfrageID == ende.anfrageID }
+            }
+            return [.freigabeEnde(ende)]
+
         case .watch, .unwatch, .meshRequest, .command:
             return [.ignored("\(message.typeName) ist für Kev CAD bestimmt")]
 
@@ -232,6 +269,7 @@ public struct MirrorReceiver: Sendable {
         bbox = nil
         assembler.reset()
         requested = [:]
+        freigaben = []  // Anfragen gelten nur in ihrer Epoche; die offenen kommen nach dem HELLO neu
         return [.epochChanged(old: old, new: e)]
     }
 }
