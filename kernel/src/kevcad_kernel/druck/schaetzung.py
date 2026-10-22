@@ -6,8 +6,9 @@ Ein einfaches Modell wie im Slicer, nur aus Kennzahlen des Netzes (``druck/vorsc
   Schichten), Füllung (Rest des Volumens × Anteil), Stützen grob (Stützfläche der Druckprüfung × mittlere Höhe der
   Überhänge × Stützdichte), Brim (Umfang des Grundrisses × Brimbreite × erste Schicht).
 - **Zeit:** Bahnlängen je Merkmal durch wirksame Geschwindigkeiten (P1P-Profil „0.20mm Standard“, gedeckelt durch den
-  größten Volumenstrom des Filaments), dazu je Schicht ein fester Anteil, die erste Schicht langsam und der Start der
-  Platte; Mindestschichtzeit des Filaments (Kühlung) je Höhenband.
+  größten Volumenstrom des Filaments), dazu je Schicht ein fester Anteil und je weitere Wandschleife (Loch, Bohrung,
+  Innenkontur) ein Zuschlag, die erste Schicht langsam und der Start der Platte; Mindestschichtzeit des Filaments
+  (Kühlung) je Höhenband.
 - **Abgleich (V2):** Faktoren ``zeit`` und ``material`` je Drucker, Prozess und Material in
   ``~/Library/Application Support/de.upvis.kevcad/druck/abgleich.json`` (``KEVCAD_DRUCK_ABGLEICH`` übersteuert). Nach
   jedem Slicer-Ergebnis zieht ``abgleich_nachfuehren`` den Faktor zum Verhältnis Slicer / Rohschätzung (gleitend).
@@ -60,7 +61,9 @@ class Modell:
     """Wirksame Geschwindigkeiten (mm/s) und Zeiten (s) – Beschleunigung, kurze Wege und Wenden eingerechnet. Grundlage
     Profil „0.20mm Standard @BBL P1P“ (Außenwand 200, Innenwand 300, Füllung 270 mm/s); die Werte sind am ersten
     Abgleich angepasst (22.10.2026, 88 Slicer-Läufe: 11 Prüfteile × 4 Einstellungen × PETG und PLA, Bambu Studio
-    02.07.01.62): Zeit im Mittel ±9 % (größter Ausreißer 26 % bei vielen kleinen Löchern), Material ±4 %."""
+    02.07.01.62): Zeit im Mittel ±9 % (größter Ausreißer 26 % bei vielen kleinen Löchern), Material ±4 %. Seit dem
+    Strang „Feinschliff 2“ mit Wandschleifen je Schicht (``s_loch``, Umrisse aus ``schleifen_baender``): Zeit im Mittel
+    4,9 %, Lochscheibe höchstens 8,5 % daneben (vorher 26 %)."""
 
     v_aussen: float = 263.0
     p0_aussen: float = 400.0        # mm Umfang je Schicht, bei dem die Außenwand halb so schnell ist (kurze Wege)
@@ -80,6 +83,11 @@ class Modell:
     k_fuell: float = 0.978
     breite_aussen: float = 0.42
     breite_innen: float = 0.45
+    # Strang „Feinschliff 2“, Punkt 5: jede weitere Wandschleife je Schicht (Loch, Bohrung, Innenkontur) kostet Naht,
+    # Rückzug, Leerweg und Anfahren. Am Abgleich (88 Slicer-Läufe von V-K) gemessen: 0,40 s je Schicht und Schleife;
+    # die Lochscheibe (12 Löcher) lag vorher 17 bis 26 % zu tief, jetzt −8,5 bis +1,0 %, im Mittel aller Teile 4,9 %
+    # statt 6,3 %. Eine eigene Verlangsamung der Wand je Loch (wie p0_aussen) brachte am Abgleich nichts dazu.
+    s_loch: float = 0.40            # s je Schicht und weiterer Schleife
 
 
 # Füllung je Muster: Geschwindigkeit (mm/s) vor dem Volumenstrom-Deckel; Gyroid und Waben sind durch die
@@ -148,6 +156,13 @@ def schaetze(geo: dict[str, Any], einstellungen: dict[str, Any], material: str,
     l_fest = v_dach / (m.breite_aussen * h)
     l_fuell = v_fuell / (m.breite_innen * h)
     l_stuetz = v_stuetz / (m.breite_aussen * h)
+    # weitere Wandschleifen je Schicht (Löcher, Innenkonturen), gemittelt nach Seitenfläche der Höhenbänder
+    schl = [float(x) for x in geo.get("schleifen_baender") or []]
+    sb = [float(x) for x in geo.get("seite_baender") or []]
+    if schl and len(schl) == len(sb) and sum(sb) > 0:
+        extra = sum(max(0.0, n - 1) * w for n, w in zip(schl, sb)) / sum(sb)
+    else:
+        extra = 0.0
     t_aussen = l_aussen / (v_eff(m.v_aussen, m.breite_aussen) * umfang / (umfang + m.p0_aussen)) if l_aussen else 0.0
     t_innen = l_innen / (v_eff(m.v_innen, m.breite_innen) * umfang / (umfang + m.p0_innen)) if l_innen else 0.0
     waag_fl = oben + unten
@@ -155,7 +170,7 @@ def schaetze(geo: dict[str, Any], einstellungen: dict[str, Any], material: str,
     t_fuell = l_fuell / v_eff(MUSTER_V.get(muster, 200.0), m.breite_innen)
     t_stuetz = l_stuetz / v_eff(m.v_stuetz, m.breite_aussen)
     t_brim = (v_brim / (0.5 * SCHICHT_ERSTE)) / m.v_erste
-    t_leer = schichten * (m.s_schicht + m.s_umfang * umfang + m.s_flaeche * querschnitt)
+    t_leer = schichten * (m.s_schicht + m.s_umfang * umfang + m.s_flaeche * querschnitt + m.s_loch * extra)
     t_var = t_aussen + t_innen + t_fest + t_fuell + t_stuetz
     l_ges = l_aussen + l_innen + l_fest + l_fuell + l_stuetz
     # Kühlung je Höhenband: kurze Schichten werden bis zur Mindestschichtzeit gestreckt, aber nicht langsamer als v_min

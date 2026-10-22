@@ -141,6 +141,11 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
    abgleich.json` nachführen (V2).
 4. Ohne Bambu Studio (z. B. Mac mini): nur Schätzung, `slicer.zustand: "aus"` mit Meldung; Tests überspringen den
    Slicer-Teil.
+5. Löcher und Bohrungen (Strang „Feinschliff 2“, additiv): Der Prüfer „druckvorschau“ zählt je Höhenband die Umrisse
+   im waagrechten Schnitt (Außenkontur und jedes Loch, CHECK `druck.vorschau.formen[fid].schleifen_baender`); die
+   Schätzung rechnet je Schicht und weiterer Wandschleife 0,40 s für Naht, Rückzug und Leerweg (`Modell.s_loch`). Am
+   Abgleich von V-K (88 Slicer-Läufe): Lochscheibe mit 12 Löchern vorher 17 bis 26 % zu tief, jetzt −8,5 bis +1,0 %;
+   Zeit im Mittel aller Teile 4,9 % statt 6,3 %, Material unverändert 3,3 %.
 
 ## Protokoll (additiv)
 

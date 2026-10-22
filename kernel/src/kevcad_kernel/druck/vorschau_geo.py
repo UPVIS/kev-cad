@@ -111,6 +111,49 @@ def vereinfachen(huelle: np.ndarray, n: int = MAX_UMRISS) -> np.ndarray:
     return np.array(p)
 
 
+def schleifen_je_hoehe(P: np.ndarray, tri: np.ndarray, hoehen: np.ndarray) -> list[int]:
+    """Zahl der geschlossenen Umrisse (Außenkontur und jedes Loch) im waagrechten Schnitt je Höhe (Strang „Feinschliff
+    2“, Punkt 5): Jeder Umriss ist eine eigene Wandschleife je Schicht; viele kleine Löcher machen den Druck langsamer,
+    als die Wandfläche allein sagt. Gezählt über die Dreiecke, die die Ebene schneiden: zwei geschnittene Kanten je
+    Dreieck verbinden sich zu Ketten, jede zusammenhängende Kette ist ein Umriss."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    # Das Netz hat je Fläche eigene Knoten: gleiche Punkte zusammenlegen, sonst zählte jede Seitenfläche als Umriss
+    punkte, neu = np.unique(np.round(np.asarray(P, dtype=np.float64), 4), axis=0, return_inverse=True)
+    tri = neu.reshape(-1)[np.asarray(tri, dtype=np.int64)]
+    z = punkte[:, 2]
+    zt = z[tri]
+    out: list[int] = []
+    n_p = len(punkte)
+    for h0 in hoehen:
+        h = float(h0) + 1.37e-4  # nicht genau auf einer Knotenhöhe schneiden
+        unten = zt < h
+        quer = unten.any(axis=1) & ~unten.all(axis=1)
+        if not quer.any():
+            out.append(0)
+            continue
+        t = tri[quer]
+        u = unten[quer]
+        kanten = []
+        for i, j in ((0, 1), (1, 2), (2, 0)):
+            geschnitten = u[:, i] != u[:, j]
+            a, b = np.minimum(t[:, i], t[:, j]), np.maximum(t[:, i], t[:, j])
+            kanten.append(np.where(geschnitten, a.astype(np.int64) * n_p + b, -1))
+        k = np.stack(kanten, axis=1)
+        paare = np.sort(k, axis=1)[:, 1:]  # je Dreieck die zwei geschnittenen Kanten (die dritte ist -1)
+        if (paare < 0).any():
+            paare = paare[(paare >= 0).all(axis=1)]
+        if len(paare) == 0:
+            out.append(0)
+            continue
+        ids, inv = np.unique(paare.ravel(), return_inverse=True)
+        inv = inv.reshape(-1, 2)
+        m = coo_matrix((np.ones(len(inv)), (inv[:, 0], inv[:, 1])), shape=(len(ids), len(ids)))
+        out.append(int(connected_components(m, directed=False)[0]))
+    return out
+
+
 def _form_geometrie(pos: np.ndarray, tri: np.ndarray, B0: np.ndarray, ueberhang_max: float,
                     erste_schicht: float) -> dict[str, Any]:
     """Kennzahlen eines Teils aus dem Netz in Formkoordinaten (``pos`` schon ohne Lage, ``B0`` = Form → Druck)."""
@@ -166,6 +209,12 @@ def _form_geometrie(pos: np.ndarray, tri: np.ndarray, B0: np.ndarray, ueberhang_
     else:
         seite_band = np.zeros(baender)
         waag_band = np.zeros(baender)
+    # Umrisse je Höhenband (Mitte des Bands): Außenkontur und Löcher, je eine Wandschleife (Punkt 5)
+    try:
+        schleifen = schleifen_je_hoehe(P, tri, (np.arange(baender) + 0.5) * hoehe / baender) if hoehe > 1e-6 \
+            else [0] * baender
+    except Exception:  # noqa: BLE001 - ohne Zählung rechnet die Schätzung wie bisher (eine Schleife je Schicht)
+        schleifen = []
     umriss = vereinfachen(huelle)
     from kevcad_kernel.druck.signatur import mit_deckung
 
@@ -182,6 +231,7 @@ def _form_geometrie(pos: np.ndarray, tri: np.ndarray, B0: np.ndarray, ueberhang_
         "ueberhang_flaeche": round(ueberhang_flaeche, 2), "ueberhang_hoehe": round(ueberhang_hoehe, 3),
         "seite_baender": [round(float(x), 2) for x in seite_band],
         "waag_baender": [round(float(x), 2) for x in waag_band],
+        "schleifen_baender": [int(x) for x in schleifen],
     }
 
 
