@@ -98,7 +98,7 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(v.platten[0].gruppen.map(\.gruppe), ["g3"])
         XCTAssertEqual(v.platten[0].gruppen.map(\.anzahl), [2])
         let g3 = try XCTUnwrap(v.gruppe("g3"))
-        XCTAssertEqual(g3.kurzname, "Stangenhalter (Druck)")
+        XCTAssertEqual(g3.kurzname, "Stangenhalter")
         XCTAssertEqual(g3.anzahl, 2)
         XCTAssertEqual(g3.einstellungen.waende, 4)
         XCTAssertEqual(g3.einstellungen.fuellung, 0.25)
@@ -363,7 +363,7 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(zeit.zeile, "Druckzeit 17 h 2 min → 19 h 4 min (+12 %)")
         XCTAssertEqual(a.kurz, "Druckzeit +12 %, Filament ±0 %, Kosten ±0 %")
         XCTAssertEqual(a.urteil, "Die Schätzung lag etwas daneben")
-        XCTAssertEqual(Set(a.teile.map(\.name)), ["Stangenhalter (Druck)", "Schlitten (Druck)"])
+        XCTAssertEqual(Set(a.teile.map(\.name)), ["Stangenhalter", "Schlitten"])
         XCTAssertEqual(a.teile.first?.relativ ?? 0, 0.12, accuracy: 1e-9)
         // gleicher Lauf, noch einmal Slicer: kein neuer Vergleich, der Hinweis bleibt
         store.uebernehmen(try Self.vorschau(stand: "slicer", zeitFaktor: 1.12))
@@ -391,7 +391,7 @@ final class DruckTests: XCTestCase {
         let t = ExportDruckSeiten.teileTabelle(v.platten[0], v, spalten: ExportBausteinWahl(art: .druck).wirksameSpalten,
                                                nummern: ["g3": 1, "g5": 2])
         XCTAssertEqual(t.zeilen.count, 2)  // g3 und Summe
-        XCTAssertEqual(t.zeilen[0].zellen["teil"]?.text, "Stangenhalter (Druck)")
+        XCTAssertEqual(t.zeilen[0].zellen["teil"]?.text, "Stangenhalter")
         XCTAssertEqual(t.zeilen[0].zellen["anzahl"]?.text, "2")
         XCTAssertEqual(t.zeilen[0].zellen["waende"]?.text, "4")
         XCTAssertEqual(t.zeilen[0].zellen["fuellung"]?.text, "25 %")
@@ -399,7 +399,7 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(t.zeilen[0].zellen["zeit"]?.text, "1 h 30 min")
         XCTAssertTrue(t.zeilen[0].zellen["teil"]?.unter?.hasPrefix("Von Kevin: Wände") == true)
         XCTAssertEqual(ExportBausteinWahl(art: .druck).wirksameSpalten.reduce(0) { $0 + $1.mindestbreite },
-                       168, accuracy: 0.01)  // passt auf A4 hoch (178 mm)
+                       172, accuracy: 0.01)  // passt auf A4 hoch (178 mm)
         // Deckblatt mit Druckzeit und Platten
         let zahlen = ExportBauer.deckblattZahlen(q, [.druck])
         XCTAssertTrue(zahlen.contains { $0.1 == "Druckzeit" })
@@ -412,7 +412,7 @@ final class DruckTests: XCTestCase {
         XCTAssertEqual(pdf.pageCount, doc.seiten.count)
         let text = pdf.string ?? ""
         XCTAssertTrue(text.contains("Platte 1"))
-        XCTAssertTrue(text.contains("Stangenhalter (Druck)"))
+        XCTAssertTrue(text.contains("Stangenhalter"))
         XCTAssertTrue(text.contains("PETG vorher trocknen"))
         XCTAssertTrue(text.contains("Braucht Stützen unter der Lasche"))
         if let ausgabe = ProcessInfo.processInfo.environment["KEVCAD_TEST_AUSGABE"] {

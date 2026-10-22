@@ -29,6 +29,13 @@ extension AppController: DruckActions {
         }
     }
 
+    /// Nur Testvariante (Selbsttest `druck`): eine Nachricht so verarbeiten, als käme sie vom Kernel, solange der Kernel
+    /// die Druckvorschau noch nicht rechnet.
+    public func druckSelbsttestEinspeisen(_ n: DruckNachricht) {
+        guard AppInfo.isTestVariant || Bundle.main.bundleURL.pathExtension != "app" else { return }
+        handleDruck(n)
+    }
+
     /// Projektwechsel: die Vorschau gehört zum alten Projekt.
     func resetDruck() {
         model.druck.leeren()

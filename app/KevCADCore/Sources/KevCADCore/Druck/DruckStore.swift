@@ -66,6 +66,7 @@ public final class DruckStore: ObservableObject {
     func entmarkiere(_ ziel: DruckZiel) { ausstehend.remove(ziel.schluessel) }
 
     public func aenderungVerwerfen() { aenderung = nil }
+    public func fehlerVerwerfen() { fehler = nil }
 
     public func exportHinweisVerwerfen() {
         if case .laeuft = export { return }

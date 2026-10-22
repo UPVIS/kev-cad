@@ -167,7 +167,10 @@ public enum ExportDruckSeiten {
                 "zeit": ExportZelle(DruckFormat.zeit(p.zeitS)), "gewicht": ExportZelle(DruckFormat.gramm(p.gramm)),
             ]))
         }
-        return ExportTabelle(spalten: spalten, zeilen: zeilen)
+        var t = ExportTabelle(spalten: spalten, zeilen: zeilen)
+        t.schrift = .normal(7.5)
+        t.kopfSchrift = .mittel(6.2)
+        return t
     }
 
     /// Draufsicht der Platte im Maßstab (vorn unten) mit Sperrzone, Teile als Umriss mit ihrer Nummer; rechts daneben

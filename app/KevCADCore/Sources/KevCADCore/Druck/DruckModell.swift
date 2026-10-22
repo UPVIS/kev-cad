@@ -483,7 +483,9 @@ public struct DruckGruppe: Equatable, Sendable, Identifiable {
     public var ampel: DruckAmpel { DruckAmpel(hinweise) }
 
     /// Kurzer Name ohne Baugruppe („Kugelschieber/Stangenhalter (Druck)“ → „Stangenhalter (Druck)“).
-    public var kurzname: String { name.split(separator: "/").last.map(String.init) ?? name }
+    /// Anzeigename ohne Baugruppe und ohne „(Druck)“ (in der Druckvorschau ist alles Druck):
+    /// „Kugelschieber/Stangenhalter (Druck)“ → „Stangenhalter“.
+    public var kurzname: String { DruckFormat.teilname(name) }
 
     /// Gramm und Druckzeit je Stück.
     public var grammJe: Double { jeStueck?.g ?? g / Double(max(1, anzahl)) }

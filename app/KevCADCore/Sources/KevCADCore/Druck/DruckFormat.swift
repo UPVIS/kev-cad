@@ -59,6 +59,13 @@ public enum DruckFormat {
         "\(KevFormat.compact(b, maxDigits: 0)) × \(KevFormat.compact(t, maxDigits: 0)) mm"
     }
 
+    /// Teilname für die Anzeige: letzter Pfadteil ohne „(Druck)“ („Kugelschieber/Fangrolle (Druck)“ → „Fangrolle“).
+    public static func teilname(_ name: String) -> String {
+        var n = name.split(separator: "/").last.map(String.init) ?? name
+        if n.hasSuffix(" (Druck)") { n = String(n.dropLast(8)) }
+        return n.isEmpty ? name : n
+    }
+
     // MARK: Bezeichnungen
 
     /// Zwecke laut Vertrag in der Reihenfolge der Auswahl.
