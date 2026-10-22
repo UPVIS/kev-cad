@@ -475,8 +475,8 @@ Ablauf, wenn Kevin einen Link, eine Herstellernummer oder eine EAN nennt:
    b, h} bzw. {d, l}, gewicht, bild})`. Preis immer mit brutto/netto wie im Shop. Kevin Hersteller, Nummer, Preis und
    Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es freigibt
    (`freigabe_anfragen([id], grund)` öffnet den Dialog im Projektfenster); vorher lässt es sich nicht verbauen.
-4. **CAD suchen:** `cad_suchen(id)`. Mit Kevins TraceParts-Schlüssel kommt das STEP automatisch („powered by
-   TraceParts“ nennen). Sonst liefert es Links (Produktseite, Herstellerportal, TraceParts, 3Dfindit, Websuche):
+4. **CAD suchen:** `cad_suchen(id)` liefert Links (Produktseite, Herstellerportal, 3Dfindit, Websuche); eine
+   automatische CAD-Quelle gibt es nicht (TraceParts ist seit dem 22.10.2026 stillgelegt, Kevins Entscheidung):
    **Kevin bitten, das STEP (oder ein ZIP mit STEP) mit seinem Konto herunterzuladen.** Die App beobachtet derweil
    `~/Downloads` und fragt ihn selbst.
 5. **Übernehmen:** `cad_uebernehmen(id)` ohne Pfad nimmt die neueste passende Datei aus `~/Downloads` (auch aus ZIP).

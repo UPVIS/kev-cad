@@ -780,7 +780,7 @@ class FakeKernel:
             time.sleep(0.8)
             mpn = felder.get("mpn") or felder.get("shop_nr") or teil
             self.zukauf_status(
-                teil, "wartet_auf_cad", "Kein Modell bei TraceParts, bitte beim Hersteller herunterladen",
+                teil, "wartet_auf_cad", "Bitte das CAD beim Hersteller herunterladen",
                 cad_links=[{"titel": f"{felder.get('hersteller') or 'Hersteller'}-Portal",
                             "url": f"https://www.example.com/cad?mpn={mpn}"},
                            {"titel": "PARTcommunity", "url": f"https://www.example.org/partcommunity?q={mpn}"}],

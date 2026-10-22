@@ -469,10 +469,10 @@ class FakeService:
     def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
         self._record("cad_suchen", zukauf_id)
         links = [{"titel": "Produktseite (CAD-Download oft dort)", "url": "https://shop.example/p/05200"},
-                 {"titel": "TraceParts: ALUTEC 05200", "url": "https://www.traceparts.com/de/search?Keywords=05200"}]
+                 {"titel": "3Dfindit (CADENAS/PARTcommunity): ALUTEC 05200",
+                  "url": "https://www.3dfindit.com/de/?q=ALUTEC+05200"}]
         return {"ok": True, "zustand": "wartet_auf_cad", "cad_links": links, "erwartet": ["step", "stp", "zip"],
-                "hinweise": ["Kein TraceParts-Schlüssel (TRACEPARTS_API_KEY in secrets.env): CAD halbautomatisch "
-                             "über Links"],
+                "hinweise": [],
                 "text": "CAD für ALUTEC Transportroller 05200: Kevin lädt die STEP-Datei herunter (Links)"}
 
     def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,

@@ -332,7 +332,8 @@ Ergänzt bei der Zusammenführung (21.10.2026, additiv):
   `show()`.
 
 Kev CAD lädt Shop-Seiten nie selbst (PLAN-PHASE3-ZUKAUF.md, Z1): Daten kommen von Claude über MCP oder aus Kevins
-Eingabe im Dialog. CAD-Dateien kommen über die TraceParts-API (mit Kevins Schlüssel) oder aus `~/Downloads`.
+Eingabe im Dialog. CAD-Dateien kommen aus `~/Downloads` (Kevin lädt sie über die Links von `cad_suchen` herunter);
+eine automatische CAD-Quelle gibt es nicht, die TraceParts-API ist seit dem 22.10.2026 stillgelegt.
 
 ## Prüfung
 

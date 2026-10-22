@@ -208,8 +208,8 @@ class KernelService(Protocol):
         "angelegt"?: Ergebnis von zukauf_anlegen, "normteil"?}"""
 
     def cad_suchen(self, zukauf_id: str) -> dict[str, Any]:
-        """TraceParts (mit Schlüssel bis zum Import) oder Links. {"ok", "zustand": "importiert"|"wartet_auf_cad",
-        "cad_links", "erwartet", "hinweise", "text", "powered_by"?}"""
+        """Links zu Herstellerportalen und freien Quellen (keine automatische CAD-Quelle). {"ok", "zustand":
+        "importiert"|"wartet_auf_cad", "cad_links", "erwartet", "hinweise", "text"}"""
 
     def cad_uebernehmen(self, zukauf_id: str, pfad: str | None = None, minuten: float = 30,
                         erzwingen: bool = False) -> dict[str, Any]:

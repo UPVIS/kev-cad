@@ -1,6 +1,6 @@
 # Kev CAD · Roadmap
 
-Stand: 22.10.2026 (mittags). Jede Phase entsteht auf einem eigenen Zweig und kommt erst nach der Abnahme auf `main`; von dort
+Stand: 22.10.2026 (abends). Jede Phase entsteht auf einem eigenen Zweig und kommt erst nach der Abnahme auf `main`; von dort
 installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Abschnitt Installation).
 
 | Phase | Inhalt | Plan | Stand |
@@ -8,7 +8,7 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 | MVP | Viewer, Kernel, Live-Aufbau, Messen, MCP, Export | [PLAN-MVP.md](PLAN-MVP.md) | fertig, installiert |
 | – | Steuerung wie Blender, Neustart nach Update | – | fertig, installiert (Build 24) |
 | 2 | Lagerteile, Materialien, Stückliste, Zuschnitt, Inventar-Regel | [PLAN-PHASE2.md](PLAN-PHASE2.md) | fertig, installiert (Build 45); im Kugelschieber ist die Inventar-Regel aus, bis Phase 3 die Zukaufteile bringt |
-| 3 | Zukaufteile per Link, Artikelnummer oder EAN, Hersteller-CAD einbetten | [PLAN-PHASE3-ZUKAUF.md](PLAN-PHASE3-ZUKAUF.md) | fertig, installiert (Build 148): Dialog „Zukaufteil hinzufügen“, Hersteller-CAD aus den Downloads, Ersatzkörper, Stückliste mit Preis und Link; TraceParts wartet auf Kevins Schlüssel |
+| 3 | Zukaufteile per Link, Artikelnummer oder EAN, Hersteller-CAD einbetten | [PLAN-PHASE3-ZUKAUF.md](PLAN-PHASE3-ZUKAUF.md) | fertig, installiert (Build 148): Dialog „Zukaufteil hinzufügen“, Hersteller-CAD aus den Downloads, Ersatzkörper, Stückliste mit Preis und Link; TraceParts entfällt (22.10.2026, kostet Geld): `cad_suchen` liefert nur Links zu Herstellerportalen und freien Quellen |
 | 4 | Foto und Video als Referenz (Object Capture, Foto mit Live-Differenz, Abweichung) | [PLAN-PHASE4-REFERENZ.md](PLAN-PHASE4-REFERENZ.md) | installiert am 22.10.2026: Video oder Fotos per Drag and Drop, Referenznetz (Object Capture) halbdurchsichtig in der Szene, Maße der model.py-Parameter mit Sigma (fotomess), Fotoansicht durch die eingepasste Kamera mit Differenz, „Maße übernehmen“ auf Kevins Klick, MCP `referenz_*`; am Scarlett 2i2 nachgewiesen. Offen: Abweichung als Farbkarte, Maßstab nachträglich, Zwillingslagen ohne Object-Capture-Kamera |
 | 5 | Kamerasimulation (Sensor, Objektiv, Blick durch die Kamera, Kamerabild) und Animation (Bewegen, Rollen, Gelenke, Kollision, Video) | [PLAN-PHASE5-KAMERA-ANIMATION.md](PLAN-PHASE5-KAMERA-ANIMATION.md) | fertig, installiert (Build 89): Kameras mit Taste 0 und Kamerabild, Animation mit Zeitleiste, Kollision über den Ablauf, Video, Kamera fährt mit |
 | – | 3D-Druck-Konstruktionsregeln und Druckprüfung | `skill/kev-cad/3d-druck.md` | installiert (Build 156): Regelwerk für den P1P, Druckprüfung bei jedem Lauf, MCP `druckpruefung` |
@@ -29,6 +29,5 @@ installiert das automatische Update sie in den Tools-Stapel (siehe CLAUDE.md, Ab
 
 ## Offene Zuarbeit von Kevin
 
-- TraceParts-API-Schlüssel beantragen (für Phase 3, Prüfung dauert einige Tage).
 - Ein Probevideo eines matten Gegenstands plus ein nachgemessenes Maß (für Phase 4).
 - Zwei, drei echte Produktlinks aus dem Alltag (für Phase 3).

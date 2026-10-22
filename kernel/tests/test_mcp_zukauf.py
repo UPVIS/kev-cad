@@ -45,8 +45,9 @@ def test_html_suchen_uebernehmen_liste(srv):
     assert fake.calls_of("zukauf_html")[0][0] == ("https://shop.example/p", 14, False, "projekt")
     res = call(server.url, "cad_suchen", {"id": "alutec-05200"})
     text = texts(res)[0]
-    assert "Links zum Herunterladen" in text and "- TraceParts: ALUTEC 05200: https://www.traceparts.com" in text
-    assert 'cad_uebernehmen("alutec-05200")' in text and "TRACEPARTS_API_KEY" in text
+    assert "Links zum Herunterladen" in text and "- 3Dfindit (CADENAS/PARTcommunity): ALUTEC 05200: https://www." \
+        "3dfindit.com" in text
+    assert 'cad_uebernehmen("alutec-05200")' in text and "TraceParts" not in text
     res = call(server.url, "cad_uebernehmen", {"id": "alutec-05200"})
     text = texts(res)[0]
     assert "übernommen" in text and "Hüllmaß 610 × 410 × 128 mm (Katalog 610 × 410 × 128 mm)" in text

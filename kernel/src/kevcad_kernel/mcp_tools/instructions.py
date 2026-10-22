@@ -177,8 +177,8 @@ parts in your report to Kevin.
 - Kevin gives a shop link, part number or EAN: read the page with YOUR tools (Kev CAD never fetches shop pages), then \
 `zukauf_html(url, html)` or `zukauf_anlegen(url, felder={...})`; let Kevin confirm manufacturer, number, price and \
 dimensions. The entry is a proposal until Kevin releases it. Standard parts ("ISO 4762 M6x20") are redirected to the \
-stock catalog. Then `cad_suchen(id)`: with TraceParts the STEP comes automatically, otherwise ask Kevin to download it \
-from the returned links and call `cad_uebernehmen(id)` (newest file in ~/Downloads, ZIP too). `zukauf_liste` shows \
+stock catalog. Then `cad_suchen(id)` and ask Kevin to download the STEP \
+from the returned links (there is no automatic CAD source) and call `cad_uebernehmen(id)` (newest file in ~/Downloads, ZIP too). `zukauf_liste` shows \
 all purchased parts.
 
 Constraints (Bedingungen, always)

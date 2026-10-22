@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from kevcad_kernel.bezugspunkte import pruefen_punkt, pruefen_punkte
 from kevcad_kernel.catalog import FREI, STATUS, VORGESCHLAGEN, ZUKAUF_ARTEN, fold, number
 
+# "traceparts" nur noch für ältere Einträge: die TraceParts-API ist seit dem 22.10.2026 stillgelegt (Kevin)
 CAD_QUELLEN: tuple[str, ...] = ("traceparts", "hersteller", "download", "bd_warehouse", "skript", "keins")
 CAD_MIT_DATEI = ("traceparts", "hersteller", "download")
 ERSATZ_FORMEN: tuple[str, ...] = ("quader", "zylinder")
