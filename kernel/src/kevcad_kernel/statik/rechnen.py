@@ -49,7 +49,9 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
     out_sz = []
     vereinfacht: list[str] = list(m.hinweise)
     for sz in szenarien:
-        s0 = stufe0.rechne(m, sz, katalog, rollen, koerper)
+        r1 = s1erg.get(sz.name)
+        s0 = stufe0.rechne(m, sz, katalog, rollen, koerper,
+                           traeger_auch=bool(m.staebe) and (r1 is None or not r1.ok))  # einfache Träger als Ersatz
         bauteile = []
         if koerper:
             for last in sz.kraefte():

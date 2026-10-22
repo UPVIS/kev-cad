@@ -168,7 +168,22 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
                              ort=b.get("einspannung")))
         teile_anz[b["teil"]] = {"name": b["teil"], "ausnutzung": round(a, 4), "ampel": amp, "verformung_mm": None,
                                 "sicherheit": sf}
-    # S0: Kippen, Rutschen, lose Teile, Schrauben
+    # S0: einfache Träger (nur wenn das Stabwerk nicht gerechnet hat), Kippen, Rutschen, lose Teile, Schrauben
+    for t in s0.get("traeger") or []:
+        sf = t.get("sicherheit")
+        if sf is None:
+            continue
+        sicherheiten.append(sf)
+        a = ziel / sf
+        amp = ampel_a(a)
+        teile_anz[t["stab"]] = {"name": t["stab"], "ausnutzung": round(a, 4), "ampel": amp,
+                                "verformung_mm": t["durchbiegung_mm"], "sicherheit": sf}
+        if amp != "gruen":
+            ur.append(urteil("festigkeit", t["stab"], amp,
+                             f"{t['stab']} {'hält nicht' if amp == 'rot' else 'hält knapp'} (einfacher Träger, ohne "
+                             f"Stabwerk): Sicherheit {_sf(sf)} (Ziel {z(ziel, 0)}), {z(t['spannung'], 0)} N/mm².",
+                             "Stärkeres Profil, kürzere Spannweite oder Stütze; Verbindungen prüfen, damit das "
+                             "Stabwerk gerechnet werden kann.", sicherheit=sf, ziel=ziel, ausnutzung=round(a, 3)))
     kipp = None
     for k in s0.get("kippen") or []:
         r = k.get("reserve")

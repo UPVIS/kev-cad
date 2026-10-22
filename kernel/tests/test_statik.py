@@ -159,10 +159,19 @@ def test_s1_kragarm_einfeld_knicken():
     assert e["D"].knick_stab == "Rohr"
 
 
-def test_s1_mechanismus_wird_gemeldet():
+def test_s1_mechanismus_wird_gemeldet_und_s0_rechnet_einfache_traeger():
+    from kevcad_kernel.statik import s0
+    from kevcad_kernel.statik.bewertung import bewerte
+
     m = _modell(lager=(("gelenkig", 0.0),))  # nur ein Gelenk: beweglich
-    e = rechne(m, [Szenario("L", lasten=[Last(["Rohr"], np.array([0, 0, -10.0]), None)])])
+    sz = Szenario("L", lasten=[Last(["Rohr"], np.array([0, 0, -10.0]), np.array([1000.0, 0, 0]))])
+    e = rechne(m, [sz])
     assert not e["L"].ok and "beweglich" in e["L"].meldung
+    t = s0.traeger(m, sz)[0]  # Ersatz: Kragarm über die ganze Länge
+    W = querschnitt("rohr", {"d": 12, "s": 1.0}).W_lang
+    assert t["moment_nmm"] == pytest.approx(10 * 1000, rel=1e-3) and t["spannung"] == pytest.approx(10000 / W, rel=1e-3)
+    urteil = bewerte(sz, {"traeger": [t]}, e["L"], [], m)
+    assert urteil["kennzahlen"]["sicherheit"] == pytest.approx(160 / (10000 / W), rel=1e-3)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

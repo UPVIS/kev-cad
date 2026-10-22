@@ -303,7 +303,66 @@ def schrauben(m: StatikModell, sz: Szenario, koerper: dict[str, Any] | None = No
     return out
 
 
-def rechne(m: StatikModell, sz: Szenario, katalog: Any, rollen: bool, koerper: dict[str, Any] | None = None
-           ) -> dict[str, Any]:
-    return {"kippen": kippen(m, sz), "rutschen": rutschen(m, sz, katalog, rollen),
-            "lose": lose_teile(m, sz, katalog), "schrauben": schrauben(m, sz, koerper)}
+def traeger(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
+    """Einfache Träger (S0, ohne Stabwerk): jeder Stab für sich als Einfeldträger zwischen seinem ersten und letzten
+    Lager, Überstände als Kragarme, mit Eigengewicht und seinen Einzellasten (quer zur Achse). Ersatz, wenn das
+    Stabwerk nicht rechnen kann (beweglich, kein Lager); bewusst grob."""
+    out = []
+    f = sz.feld
+    for s in m.staebe.values():
+        ts = sorted({a.t for a in m.anschluesse if a.stab == s.name}
+                    | {a.partner[2] for a in m.anschluesse if a.partner[0] == "stab" and a.partner[1] == s.name})
+        if not ts:
+            continue
+        L, ax = s.laenge, s.achse
+        q_vec = s.masse_kg / L * f
+        q = float(np.linalg.norm(q_vec - ax * float(np.dot(q_vec, ax))))  # N/mm quer
+        lasten = []
+        for last in sz.kraefte():
+            ziele = [n for t in last.teile for n in m.aufloesen(t)]
+            if s.name in ziele:
+                F = last.kraft / len(ziele)
+                Fq = float(np.linalg.norm(F - ax * float(np.dot(F, ax))))
+                lasten.append((s.t_von(last.punkt) if last.punkt is not None else L / 2, Fq))
+        a, b = ts[0], ts[-1]
+        E, I = float(s.werkstoff.E), min(s.q.I_lang, s.q.I_quer)
+        W = min(s.q.W_lang, s.q.W_quer)
+        M = 0.0
+        w = 0.0
+        if b - a > 1.0:  # Feld
+            l = b - a
+            M = q * l * l / 8
+            w = 5 * q * l ** 4 / (384 * E * I)
+            for t, F in lasten:
+                if a <= t <= b:
+                    x, y = t - a, b - t
+                    M += F * x * y / l
+                    w += F * x * y * (l * l - x * x - y * y) / (6 * E * I * l) if l > 0 else 0.0
+        for k_l, seite in ((a, "Anfang"), (L - b, "Ende")):  # Kragarme
+            if k_l < 1.0:
+                continue
+            Mk = q * k_l * k_l / 2
+            wk = q * k_l ** 4 / (8 * E * I)
+            for t, F in lasten:
+                abst = (a - t) if seite == "Anfang" else (t - b)
+                if abst > 0:
+                    Mk += F * abst
+                    wk += F * abst * abst * (3 * k_l - abst) / (6 * E * I)
+            M = max(M, Mk)
+            w = max(w, wk)
+        sigma = M / W if W > 0 else math.inf
+        grenze = float(s.werkstoff.grenze or 0)
+        sf = grenze / sigma if sigma > 1e-9 else math.inf
+        out.append({"stab": s.name, "moment_nmm": round(M, 1), "spannung": round(sigma, 2),
+                    "sicherheit": round(sf, 3) if math.isfinite(sf) else None, "durchbiegung_mm": round(w, 3),
+                    "grenze_durchbiegung_mm": round(max(b - a, 2 * max(a, L - b)) / sz.durchbiegung, 3)})
+    return out
+
+
+def rechne(m: StatikModell, sz: Szenario, katalog: Any, rollen: bool, koerper: dict[str, Any] | None = None,
+           traeger_auch: bool = False) -> dict[str, Any]:
+    out = {"kippen": kippen(m, sz), "rutschen": rutschen(m, sz, katalog, rollen),
+           "lose": lose_teile(m, sz, katalog), "schrauben": schrauben(m, sz, koerper)}
+    if traeger_auch:
+        out["traeger"] = traeger(m, sz)
+    return out
