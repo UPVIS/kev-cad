@@ -86,6 +86,8 @@ class Gruppe:
     begruendung_je: dict[str, str] = field(default_factory=dict)
     # Strang „Rest Druck“: Modifier um Gewindeeinsätze und Kernlöcher (druckfertig._modifier), Druckkoordinaten
     modifier: list[dict[str, Any]] = field(default_factory=list)
+    # Strang „Rest Druck“: Farbe aus lager.druckteil(…, farbe=…) oder None (egal)
+    farbe: str | None = None
 
     @property
     def filament_slicer(self) -> Any:
@@ -97,6 +99,16 @@ def modifier_kurz(m: dict[str, Any]) -> dict[str, Any]:
     """Modifier für Vorschau und Export (ohne Lage): Art, Größe, Name, Maße und Einstellungen."""
     return {k: m.get(k) for k in ("art", "groesse", "hersteller", "name", "d", "radius", "laenge", "wand_mm",
                                   "einstellungen")}
+
+
+def mehrfarbig(gr: list[Gruppe]) -> bool:
+    """Mehr als eine Farbe unter den Gruppen (eines Materials): dann Platten je Farbe."""
+    return len({g.farbe for g in gr if g.farbe}) > 1
+
+
+def klasse(material: str, farbe: str | None) -> str:
+    """Kennung einer Farbklasse für Export und Filamentwahl: „petg“ bzw. „petg/gelb“."""
+    return f"{material}/{farbe}" if farbe else material
 
 
 def auf_platten(gr: list[Gruppe]) -> list[Gruppe]:
@@ -189,7 +201,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         lage_bett = tuple(round(float(x), 1) for x in (geo.get("groesse") or [])) + \
             (round(float(geo.get("auflage") or 0.0)),)
         spaeter = bool(geo.get("spaeter"))
-        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True), spaeter)
+        farbe = geo.get("farbe") or None  # Strang „Rest Druck“: gleiche Teile verschiedener Farbe getrennt
+        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True), spaeter, farbe)
         sig = geo.get("signatur") if isinstance(geo.get("signatur"), dict) else None
         key: Any = (geo.get("form"), lage_bett, *basis)
         gespiegelt_von = None
@@ -215,7 +228,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         g = roh.setdefault(key, {"namen": [], "stuecke": {}, "geo": geo, "zweck": zweck, "vorgaben": e_vorgabe,
                                  "zweck_fest": bool(v.get("zweck")), "pruefung": teile_info.get(name) or {},
                                  "von": {}, "basis": basis, "sig": sig, "gespiegelt_von": gespiegelt_von,
-                                 "spaeter": spaeter})
+                                 "spaeter": spaeter, "farbe": farbe})
         for k_, w_ in von_je_schluessel(v).items():
             g["von"].setdefault(k_, w_)
         g["namen"].append(name)
@@ -257,7 +270,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
                           pruefung=g["pruefung"], stuetz_flaechen=sorted(set(stuetz.get(g["namen"][0], []))),
                           fest_von=fest_von, spaeter=bool(g["spaeter"]), filament_wahl=wahlen[mat].als_dict(),
                           begruendung_je=dict(emp.get("begruendung_je") or {}),
-                          modifier=list(emp.get("modifier") or []),
+                          modifier=list(emp.get("modifier") or []), farbe=g["farbe"],
                           gespiegelt_von=ids.get(g["gespiegelt_von"]) if g["gespiegelt_von"] is not None else None))
     return out, ohne
 
@@ -273,19 +286,21 @@ def stuecke(gr: list[Gruppe]) -> list[ao.Stueck]:
     """Stücke zum Anordnen (ohne Gruppen „später drucken“)."""
     out: list[ao.Stueck] = []
     for g in auf_platten(gr):
-        out += ao.stuecke_aus_gruppe(g.id, g.material, g.geo, g.teile, g.anzahl, bool(g.einstellungen.get("brim")))
+        out += ao.stuecke_aus_gruppe(g.id, g.material, g.geo, g.teile, g.anzahl, bool(g.einstellungen.get("brim")),
+                                     farbe=g.farbe)
     return out
 
 
 def _platten_aus_slicer(a: dict[str, Any], gr: list[Gruppe]) -> list[ao.Platte]:
     """Genaue Anordnung (Slicer) als Platten: Objekte heißen „<gruppe>_<n>“ (STL-Stamm = Gruppen-id)."""
     nach_id = {g.id: g for g in gr}
-    st = {g.id: ao.stuecke_aus_gruppe(g.id, g.material, g.geo, g.teile, g.anzahl, bool(g.einstellungen.get("brim")))
-          for g in gr}
+    st = {g.id: ao.stuecke_aus_gruppe(g.id, g.material, g.geo, g.teile, g.anzahl, bool(g.einstellungen.get("brim")),
+                                      farbe=g.farbe) for g in gr}
+    farben = {g.farbe for g in gr if g.farbe}
     benutzt = {gid: 0 for gid in st}
     platten = []
     for p in a.get("platten") or []:
-        platte = ao.Platte(str(a.get("material")))
+        platte = ao.Platte(str(a.get("material")), farbe=next(iter(farben)) if len(farben) == 1 else None)
         for o in p.get("objekte") or []:
             gid = str(o.get("gruppe") or "")
             if gid not in nach_id or benutzt[gid] >= len(st[gid]):
@@ -361,8 +376,9 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "begruendung": list(g.begruendung), "begruendung_je": dict(g.begruendung_je), "hinweise": hw,
             **({"gespiegelt_von": g.gespiegelt_von} if g.gespiegelt_von else {}),
             **({"spaeter": True} if g.spaeter else {}),
-            # additiv (Strang „Rest Druck“): Modifier um Gewindeeinsätze und Kernlöcher
+            # additiv (Strang „Rest Druck“): Modifier um Gewindeeinsätze und Kernlöcher, Farbe
             **({"modifier": [modifier_kurz(m) for m in g.modifier]} if g.modifier else {}),
+            **({"farbe": g.farbe} if g.farbe else {}),
         })
     # Platten: je Material genau (Slicer) oder schnell; Gruppen „später drucken“ stehen nur in der Liste
     nach_id = {g.id: g for g in gr}
@@ -375,7 +391,9 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     for mat in materialien:
         gm = [g for g in auf_platten(gr) if g.material == mat]
         a = stand.anordnung.get(anordnung_schluessel(mat, gr))
-        genau = _platten_aus_slicer(a, gm) if a else []
+        # mehrere Farben (Strang „Rest Druck“): Platten je Farbe aus dem schnellen Anordnen, Bambu Studio ordnet dann
+        # nicht um (es kennt die Farben nicht), slict die Platten aber genau
+        genau = _platten_aus_slicer(a, gm) if a and not mehrfarbig(gm) else []
         if genau:
             platten += [(mat, p, "slicer") for p in genau]
         else:
@@ -385,6 +403,10 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
                     nicht_passend += [l_.stueck.name for l_ in p.lagen]
     platten_out: list[dict[str, Any]] = []
     start_s = sz.MODELL.s_start
+    farben_mat: dict[str, set[Any]] = {}
+    for mat_, p_, _ in platten:
+        farben_mat.setdefault(mat_, set()).add(p_.farbe)
+    mehrfarbig_mat = {m: len(f) > 1 for m, f in farben_mat.items()}
     for nr, (mat, p, art) in enumerate(platten, start=1):
         info = preise.get(mat) or {}
         dichte = float(info.get("dichte") or sz.FILAMENT.get(mat, sz.FILAMENT["pla"]).dichte)
@@ -406,6 +428,10 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "hoehe_mm": round(max((l_.stueck.hoehe for l_ in p.lagen), default=0.0), 2),
             "teile": [l_.eintrag() for l_ in p.lagen], "auslastung": p.auslastung(),
             "passt_nicht": bool(p.passt_nicht),
+            # additiv (Strang „Rest Druck“): Farbe der Platte (eine je Platte, P1P ohne AMS) und Klasse für Export und
+            # Filamentwahl („petg“ bzw. „petg/gelb“, wenn das Material Platten in mehreren Farben hat)
+            **({"farbe": p.farbe} if p.farbe else {}),
+            "klasse": klasse(mat, p.farbe) if mehrfarbig_mat.get(mat) else mat,
         })
     # Summen
     material_out = []
@@ -425,6 +451,19 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
                              "filament": wahl.get("profil"), "filament_id": wahl.get("filament"),
                              "filament_quelle": wahl.get("quelle"), "filament_detail": wahl.get("detail"),
                              "filament_basis": wahl.get("basis"), "temperaturen": wahl.get("temperaturen")})
+        # additiv (Strang „Rest Druck“): je Farbe der Platten, sobald ein Teil des Materials eine Farbe hat
+        pm = [pp for pp in platten_out if pp["material"][0]["material"] == mat]
+        if any(pp.get("farbe") for pp in pm):
+            farben_out: dict[Any, dict[str, Any]] = {}
+            for pp in pm:
+                f = farben_out.setdefault(pp.get("farbe"), {"farbe": pp.get("farbe"), "g": 0.0, "m": 0.0,
+                                                            "kosten": 0.0, "platten": []})
+                f["g"] += pp["material"][0]["g"]
+                f["m"] += pp["material"][0]["m"]
+                f["kosten"] += pp["material"][0]["kosten"]
+                f["platten"].append(pp["nr"])
+            material_out[-1]["farben"] = [{**f, "g": round(f["g"], 1), "m": round(f["m"], 2),
+                                           "kosten": round(f["kosten"], 2)} for f in farben_out.values()]
     zeit_s = sum(pp["zeit_s"] for pp in platten_out)
     wechsel = int(projekt.get("plattenwechsel_s") or 0)
     mit_wechsel = zeit_s + max(0, len(platten_out) - 1) * wechsel
@@ -484,6 +523,8 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     mats_alle = list(dict.fromkeys(g.material for g in gr))
     if mats_alle:  # additiv: Kevins Filamente der Materialien (Auswahl beim Export, druck/filamente.py)
         out["filamente"] = [fl.kurz(f) for m in mats_alle for f in fl.liste(m)]
+    if filament_zuletzt:  # additiv (Strang „Rest Druck“): zuletzt gewählt je Material bzw. Klasse (Dialog „Drucken …“)
+        out["filament_zuletzt"] = dict(filament_zuletzt)
     spaeter = [{"name": n, "gruppe": g.id, "material": g.material} for g in gr if g.spaeter for n in g.teile]
     if spaeter:  # additiv: erst später drucken; in teile (spaeter: true), nicht in Platten, Summe und Export
         out["spaeter"] = spaeter

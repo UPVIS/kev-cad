@@ -108,6 +108,8 @@ class Erfassung:
                 out["druck_neu_drucken"] = True
         if getattr(piece, "spaeter", False):  # erst später drucken: nicht auf den Platten (druck/vorschau.py)
             out["druck_spaeter"] = True
+        if getattr(piece, "farbe", None):  # Strang „Rest Druck“: Farbe (Platten und Filament je Farbe)
+            out["druck_farbe"] = piece.farbe
         orig = piece.shape
         try:
             if orig is not None and shape.wrapped.IsPartner(orig):

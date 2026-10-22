@@ -297,6 +297,12 @@ Der P1P hat ab Werk kein AMS; es ist Zubehör (AMS, AMS 2 Pro mit Upgrade-Kit od
   [B-Waste].
 - Günstigste Mehrfarbe: Schrift oder Logo erhaben (0,6 mm) auf der Oberseite – nur die obersten Schichten wechseln.
 - In model.py je Farbe ein eigener Körper (eigenes `show`/`druckteil`), im Slicer dem Filament zuordnen.
+- **Farbe je Druckteil:** `lager.druckteil(form, name, material="petg", farbe="gelb")` (Text oder die id eines
+  Filaments aus Kevins Liste, dann dessen Farbe). Ohne AMS druckt der P1P eine Farbe je Platte: Die Druckvorschau legt
+  Teile verschiedener Farben eines Materials auf getrennte Platten (Teile ohne Farbe füllen sie mit auf), Bedarf,
+  Bestand (Spulen derselben Farbe zuerst) und Einkaufsliste rechnen je Material und Farbe („Filament PETG gelb“), der
+  Export schreibt je Farbe ein Bambu-Projekt und braucht je Farbe ein Filament (`filament={"petg/gelb": …,
+  "petg/schwarz": …}`). Ohne `farbe` wie bisher (eine Farbe, egal welche).
 
 ## 13 Druckeinstellungen, die zur Konstruktion gehören
 

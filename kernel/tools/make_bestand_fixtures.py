@@ -85,6 +85,33 @@ def material_nachrichten() -> tuple[dict, dict]:
     return {"type": "BOM", "seq": 35, **planung.bom}, vorschau
 
 
+def material_farbe_nachrichten() -> tuple[dict, dict]:
+    """Strang „Rest Druck“: wie ``material_nachrichten``, aber PETG in zwei Farben auf getrennten Platten (gelb 120 g,
+    schwarz 68,8 g) und PLA ohne Farbe. Bestand: PETG schwarz 120 g (reicht für schwarz, nicht für gelb), PLA weiß."""
+    bom, vorschau = material_nachrichten()
+    v = copy.deepcopy(vorschau)
+    p1, p2 = v["platten"][0], v["platten"][1]
+    gelb, schwarz = copy.deepcopy(p1), copy.deepcopy(p1)
+    gelb.update(nr=1, farbe="gelb", teile=p1["teile"][:4], klasse="petg/gelb")
+    gelb["material"] = [{**p1["material"][0], "g": 120.0, "m": 39.29, "kosten": 2.04}]
+    schwarz.update(nr=2, farbe="schwarz", teile=p1["teile"][4:], klasse="petg/schwarz")
+    schwarz["material"] = [{**p1["material"][0], "g": 68.8, "m": 22.52, "kosten": 1.17}]
+    pla = {**copy.deepcopy(p2), "nr": 3, "klasse": "pla"}
+    v["platten"] = [gelb, schwarz, pla]
+    v["summe"]["platten"] = 3
+    petg = v["summe"]["material"][0]
+    petg["farben"] = [{"farbe": "gelb", "g": 120.0, "m": 39.29, "kosten": 2.04, "platten": [1]},
+                      {"farbe": "schwarz", "g": 68.8, "m": 22.52, "kosten": 1.17, "platten": [2]}]
+    for t in v["teile"]:
+        if t.get("gruppe") in ("g1",):
+            t["farbe"] = "gelb"
+        elif t.get("material") == "petg":
+            t["farbe"] = "schwarz"
+    v["seq"] = 38
+    assert not check_druck_message(v), check_druck_message(v)
+    return {**bom, "seq": 37}, v
+
+
 # Strang „Bestand Stufe 2“, App: Spulen im Bereich „Bestand“ und Filament im Dialog „Gebaut“. PETG reicht nicht
 # (Rest einer gekauften Spule wird S-0004), PLA hat zwei Spulen (angebrochen und voll), Platte 2 ist schon gedruckt.
 SPULEN_APP = SPULEN_BEISPIEL
@@ -108,13 +135,13 @@ SPULE_NEU = {"material": "petg", "gramm": 1000, "gramm_voll": 1000, "name": "Bam
              "hersteller": "Bambu Lab", "farbe": "schwarz", "ort": "Regal 3"}
 
 
-def material_erwartet(bom: dict, vorschau: dict) -> dict:
+def material_erwartet(bom: dict, vorschau: dict, name: str = "material") -> dict:
     """Was der Kernel liefert: Text und CSV der Einkaufsliste (mit und ohne Druckvorschau), Summen, Verschnitt."""
     mit = ek.zusammenstellen(bom, vorschau, Katalog())
     ohne = ek.zusammenstellen(bom, None, Katalog())
     return {
-        "frames": [{"file": "bom_material.frame", "type": "BOM", "payload_bytes": 0},
-                   {"file": "print_material.frame", "type": "PRINT_PREVIEW", "payload_bytes": 0}],
+        "frames": [{"file": f"bom_{name}.frame", "type": "BOM", "payload_bytes": 0},
+                   {"file": f"print_{name}.frame", "type": "PRINT_PREVIEW", "payload_bytes": 0}],
         "projekt": "Kugelschieber", "stand": MATERIAL_STAND,
         "text": ek.text(mit, "Kugelschieber", MATERIAL_STAND), "csv": ek.csv(mit),
         "text_ohne_druck": ek.text(ohne, "Kugelschieber", MATERIAL_STAND), "csv_ohne_druck": ek.csv(ohne),
@@ -169,6 +196,12 @@ def main() -> None:
                                           "spule": None, "grund": "Spule S-0003 entfernt"}),
         ("bestand_save_filament_fuehren", {"type": "BESTAND_SAVE", "seq": 49, "id": "a-28", "filament_fuehren": True,
                                            "grund": "Filament führen"}),
+        # Strang „Rest Druck“: Knopf „Gedruckt“ (App → Kernel) und die Antwort
+        ("gedruckt_req", {"type": "GEDRUCKT_REQ", "seq": 50, "id": "a-29", "platten": [1], "spule": "S-0001",
+                          "run": 5, "grund": "Kevin: Platte 1 gedruckt (App)"}),
+        ("ack_gedruckt", {"type": "ACK", "seq": 51, "reply_to": "a-29", "ok": True,
+                          "message": "120 g Filament verbraucht, 1 Spule leer, 1 Spule neu (S-0003 931,2 g)",
+                          "buchung": "B-0006"}),
     ]
     files = []
     for name, header in frames:
@@ -229,6 +262,11 @@ def main() -> None:
     data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["bestand"] = erwartet
     data["material"] = material_erwartet(mat_bom, mat_vorschau)
+    # Strang „Rest Druck“: Einkaufsliste je Material und Farbe
+    f_bom, f_vorschau = material_farbe_nachrichten()
+    for name, header in (("bom_material_farbe", f_bom), ("print_material_farbe", f_vorschau)):
+        (ZIEL / f"{name}.frame").write_bytes(encode_frame(header, b""))
+    data["material_farbe"] = material_erwartet(f_bom, f_vorschau, "material_farbe")
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
     lines = [f"{len(files)} Bestand-Testdateien nach {ZIEL}",
              f"Rohr: {rohr['aus_bestand']}, kaufen {rohr['kaufen']}, neue Reste {rohr['neue_reste']}",

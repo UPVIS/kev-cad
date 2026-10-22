@@ -32,6 +32,7 @@ class Stueck:
     rand: float = 0.0             # zusätzlich je Seite (Brim)
     ersatz: bool = False
     hoehe: float = 0.0
+    farbe: str | None = None      # Strang „Rest Druck“: Druckfarbe oder None (egal)
 
 
 @dataclass
@@ -61,6 +62,7 @@ class Platte:
     lagen: list[Lage] = field(default_factory=list)
     passt_nicht: bool = False
     skyline: list[list[float]] = field(default_factory=list)   # [x, breite, y] in erweiterten Koordinaten
+    farbe: str | None = None      # Strang „Rest Druck“: eine Farbe je Platte (P1P ohne AMS), None = keine Vorgabe
 
     def auslastung(self, drucker: Drucker = P1P) -> float:
         bx, by, _ = drucker.bauraum
@@ -131,15 +133,30 @@ class Skyline:
         self.seg = zus
 
 
-def _neue_platte(material: str, drucker: Drucker, a: float) -> tuple[Platte, Skyline]:
+def _neue_platte(material: str, drucker: Drucker, a: float, farbe: str | None = None) -> tuple[Platte, Skyline]:
     bx, by, _ = drucker.bauraum
     sx, sy = drucker.sperrflaeche
-    return Platte(material), Skyline(bx + a, by + a, (sx + a, sy + a))
+    return Platte(material, farbe=farbe), Skyline(bx + a, by + a, (sx + a, sy + a))
+
+
+def farben_je_material(stuecke: list[Any]) -> dict[str, list[str]]:
+    """Farben je Material in der Reihenfolge des ersten Auftretens (Stücke oder Gruppen mit ``material``, ``farbe``)."""
+    out: dict[str, list[str]] = {}
+    for s in stuecke:
+        f = getattr(s, "farbe", None)
+        liste = out.setdefault(str(s.material), [])
+        if f and f not in liste:
+            liste.append(f)
+    return out
 
 
 def anordne(stuecke: list[Stueck], drucker: Drucker = P1P, abstand: float = ABSTAND) -> list[Platte]:
     """Platten je Material (in der Reihenfolge des ersten Auftretens); Teile, die nicht passen, je auf eine eigene
-    Platte mit ``passt_nicht``."""
+    Platte mit ``passt_nicht``.
+
+    Farben (Strang „Rest Druck“): Hat ein Material Teile in mehreren Farben, bekommt jede Farbe eigene Platten (der P1P
+    druckt ohne AMS eine Farbe je Platte); Teile ohne Farbe füllen danach diese Platten mit auf, erst dann kommen neue
+    Platten ohne Farbe. Mit höchstens einer Farbe je Material wie bisher, die Platten tragen dann diese Farbe."""
     a = float(abstand)
     materialien: list[str] = []
     for s in stuecke:
@@ -150,43 +167,61 @@ def anordne(stuecke: list[Stueck], drucker: Drucker = P1P, abstand: float = ABST
         gruppen_rang.setdefault(s.gruppe, len(gruppen_rang))
     platten: list[Platte] = []
     bx, by, _ = drucker.bauraum
+    farben = farben_je_material(stuecke)
     for mat in materialien:
-        teile = [s for s in stuecke if s.material == mat]
+        alle = [s for s in stuecke if s.material == mat]
         # große zuerst (längste Seite, dann Fläche), gleiche Teile zusammen, Ersatzteile am Ende ihrer Gruppe
-        teile.sort(key=lambda s: (-round(max(s.w, s.h) + 2 * s.rand, 1), -round(s.w * s.h, 1),
-                                  gruppen_rang[s.gruppe], s.ersatz))
+        alle.sort(key=lambda s: (-round(max(s.w, s.h) + 2 * s.rand, 1), -round(s.w * s.h, 1),
+                                 gruppen_rang[s.gruppe], s.ersatz))
+        mehrfarbig = len(farben.get(mat) or []) > 1
+        if mehrfarbig:  # je Farbe, danach die Teile ohne Farbe (dürfen auf jede Platte des Materials)
+            klassen = [(f, [s for s in alle if s.farbe == f]) for f in farben[mat]]
+            klassen.append((None, [s for s in alle if not s.farbe]))
+        else:
+            klassen = [((farben.get(mat) or [None])[0], alle)]
         offen: list[tuple[Platte, Skyline]] = []
-        for s in teile:
-            w, h = s.w + 2 * s.rand + a, s.h + 2 * s.rand + a
-
-            def setze(platte: Platte, sky: Skyline) -> bool:
-                beste = None
-                for dreh, (rw, rh) in ((0, (w, h)), (90, (h, w))):
-                    pos = sky.finde(rw, rh)
-                    if pos is not None and (beste is None or (pos[2], pos[0]) < (beste[1][2], beste[1][0])):
-                        beste = (dreh, pos, rw, rh)
-                if beste is None:
-                    return False
-                dreh, (x, y, oben), rw, rh = beste
-                sky.setze(x, rw, oben)
-                platte.lagen.append(Lage(s, x + rw / 2 - a / 2, y + rh / 2 - a / 2, dreh))
-                return True
-
-            if any(setze(p, sky) for p, sky in offen if not p.passt_nicht):
-                continue
-            neu = _neue_platte(mat, drucker, a)
-            if setze(*neu):
-                offen.append(neu)
-                continue
-            p = Platte(mat, passt_nicht=True)  # passt auch auf eine leere Platte nicht
-            p.lagen.append(Lage(s, bx / 2, by / 2, 0))
-            offen.append((p, Skyline(0, 0)))
+        for farbe_k, teile in klassen:
+            _packe(teile, mat, farbe_k, mehrfarbig, offen, drucker, a)
         platten += [p for p, _ in offen]
     return platten
 
 
+def _packe(teile: list[Stueck], mat: str, farbe_k: str | None, mehrfarbig: bool,
+           offen: list[tuple[Platte, Skyline]], drucker: Drucker, a: float) -> None:
+    """Teile einer Farbklasse packen: erst auf offene Platten des Materials (bei mehreren Farben nur auf Platten
+    derselben Farbe; Teile ohne Farbe auf jede), sonst auf neue Platten dieser Farbe. ``offen`` wächst mit."""
+    bx, by, _ = drucker.bauraum
+    for s in teile:
+        w, h = s.w + 2 * s.rand + a, s.h + 2 * s.rand + a
+
+        def setze(platte: Platte, sky: Skyline, s: Stueck = s, w: float = w, h: float = h) -> bool:
+            beste = None
+            for dreh, (rw, rh) in ((0, (w, h)), (90, (h, w))):
+                pos = sky.finde(rw, rh)
+                if pos is not None and (beste is None or (pos[2], pos[0]) < (beste[1][2], beste[1][0])):
+                    beste = (dreh, pos, rw, rh)
+            if beste is None:
+                return False
+            dreh, (x, y, oben), rw, rh = beste
+            sky.setze(x, rw, oben)
+            platte.lagen.append(Lage(s, x + rw / 2 - a / 2, y + rh / 2 - a / 2, dreh))
+            return True
+
+        erlaubt = [(p, sky) for p, sky in offen if not p.passt_nicht
+                   and (not mehrfarbig or farbe_k is None or p.farbe == farbe_k)]
+        if any(setze(p, sky) for p, sky in erlaubt):
+            continue
+        neu = _neue_platte(mat, drucker, a, farbe_k)
+        if setze(*neu):
+            offen.append(neu)
+            continue
+        p = Platte(mat, passt_nicht=True, farbe=farbe_k)  # passt auch auf eine leere Platte nicht
+        p.lagen.append(Lage(s, bx / 2, by / 2, 0))
+        offen.append((p, Skyline(0, 0)))
+
+
 def stuecke_aus_gruppe(gruppe: str, material: str, geo: dict[str, Any], namen: list[str], anzahl: int,
-                       brim: bool) -> list[Stueck]:
+                       brim: bool, farbe: str | None = None) -> list[Stueck]:
     """Stück je zu druckendem Teil einer Gruppe: erst die gezeigten Namen, dann Ersatzteile (``ersatz``)."""
     gr = geo.get("groesse") or [0, 0, 0]
     out = []
@@ -194,5 +229,6 @@ def stuecke_aus_gruppe(gruppe: str, material: str, geo: dict[str, Any], namen: l
         name = namen[i] if i < len(namen) else namen[(i - len(namen)) % len(namen)] if namen else gruppe
         out.append(Stueck(gruppe=gruppe, name=name, material=material, w=float(gr[0]), h=float(gr[1]),
                           umriss=list(geo.get("umriss") or []), flaeche=float(geo.get("umriss_flaeche") or 0.0),
-                          rand=5.0 if brim else 0.0, ersatz=i >= len(namen), hoehe=float(gr[2] if len(gr) > 2 else 0)))
+                          rand=5.0 if brim else 0.0, ersatz=i >= len(namen), hoehe=float(gr[2] if len(gr) > 2 else 0),
+                          farbe=farbe))
     return out

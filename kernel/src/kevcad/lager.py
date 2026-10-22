@@ -501,9 +501,36 @@ def _pruefe_zweck_anzahl(zweck: Any, anzahl: Any, name: str) -> tuple[str | None
     return zweck, anzahl
 
 
+def _pruefe_farbe(farbe: Any, name: str, material: str) -> str | None:
+    """Farbe eines Druckteils (Strang „Rest Druck“): Text wie „gelb“ (klein, Leerzeichen zusammengefasst) oder die id
+    eines Filaments aus Kevins Filamentliste, dann dessen Farbe."""
+    if farbe is None:
+        return None
+    if not isinstance(farbe, str) or not farbe.strip() or len(farbe.strip()) > 40:
+        raise LagerError(f"druckteil {name!r}: farbe ist ein kurzer Text wie \"gelb\" oder die id eines Filaments aus "
+                         f"Kevins Filamentliste, nicht {farbe!r}")
+    from kevcad_kernel.druck import filamente as fl
+
+    text = fl.farbe_schluessel(farbe)
+    try:
+        liste = [f for f in fl.lies(anlegen=False).get("filamente") or [] if isinstance(f, dict)]
+    except fl.FilamentFehler:
+        liste = []
+    f = next((f for f in liste if f.get("id") == farbe.strip()), None)
+    if f is not None:
+        if str(f.get("material") or "").lower() != str(material or "").lower():
+            raise LagerError(f"druckteil {name!r}: Filament {f.get('id')!r} ist {str(f.get('material')).upper()}, das "
+                             f"Teil ist {str(material).upper()}")
+        if not f.get("farbe"):
+            raise LagerError(f"druckteil {name!r}: Filament {f.get('id')!r} hat in der Filamentliste keine Farbe; "
+                             "die Farbe als Text angeben (farbe=\"schwarz\")")
+        return fl.farbe_schluessel(f.get("farbe"))
+    return text
+
+
 def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", ausrichtung: Any = None,
               zweck: str | None = None, anzahl: int | None = None, gedruckt: bool = False,
-              neu_drucken: bool = False, spaeter: bool = False):
+              neu_drucken: bool = False, spaeter: bool = False, farbe: str | None = None):
     """Selbst konstruiertes Teil, das gedruckt wird: registriert es für die Stückliste (Masse aus Volumen × Dichte,
     Kosten über preis_je_kg) und gibt es mit Name, Farbe und Material zurück. ``material`` muss freigegeben und
     druckbar sein; ``verfahren`` "3d-druck" oder "harzdruck".
@@ -526,7 +553,12 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
     Druckvorschau (mit Filament, Zeit und Einstellungen, Gruppe „… (später)“), aber auf keiner Platte, nicht in der
     Summe und nicht im Druckexport (3MF). Druckprüfung, Stückliste, Filament in der Einkaufsliste und der
     Bauplanschritt „Drucken“ bleiben, denn gedruckt wird es ja noch. Zum Drucken ``spaeter`` wieder weglassen. Nicht
-    zusammen mit ``gedruckt=True`` (das heißt: schon gedruckt, fertig)."""
+    zusammen mit ``gedruckt=True`` (das heißt: schon gedruckt, fertig).
+
+    ``farbe`` (Strang „Rest Druck“): in welcher Farbe das Teil gedruckt wird, als Text („gelb“, „schwarz“) oder als id
+    eines Filaments aus Kevins Filamentliste (dessen Farbe). Druckvorschau, Bedarf, Bestand und Einkaufsliste rechnen
+    dann je Material und Farbe; Teile verschiedener Farben eines Materials liegen auf getrennten Platten (der P1P druckt
+    ohne AMS eine Farbe je Platte), Teile ohne Farbe füllen diese Platten mit auf. Ohne ``farbe`` wie bisher."""
     from build123d import BuildPart, Color, Shape
 
     from kevcad_kernel.bom import Piece
@@ -555,15 +587,21 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
         raise LagerError(f"druckteil {name!r}: form hat kein Volumen (erst mit extrude() zum Körper machen)")
     ausrichtung = _pruefe_ausrichtung(ausrichtung, shape, name)
     mat = released_material(material, druckbar=True)
+    farbe = _pruefe_farbe(farbe, str(name), str(mat.get("id") or material))
     label = name.strip().strip("/").replace("#", "-")
     shape.label = label
     try:
         shape.material = None
     except Exception:  # noqa: BLE001
         pass
-    if mat.get("farbe"):
+    anzeige = None
+    if farbe:  # Strang „Rest Druck“: die Druckfarbe auch im Viewer
+        from kevcad_kernel.druck import filamente as fl
+
+        anzeige = fl.farbe_hex(farbe)
+    if anzeige or mat.get("farbe"):
         try:
-            shape.color = Color(mat["farbe"])
+            shape.color = Color(anzeige or mat["farbe"])
         except Exception:  # noqa: BLE001
             pass
     dichte = number(mat.get("dichte")) or 0.0
@@ -576,7 +614,7 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
                   preis_quelle=mat.get("preis_quelle"), verfahren=verfahren, volume=volume,
                   size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)],
                   ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl, gedruckt=gedruckt, neu_drucken=neu_drucken,
-                  spaeter=spaeter)
+                  spaeter=spaeter, farbe=farbe)
     _register(piece, shape)
     return shape
 

@@ -37,6 +37,20 @@ def test_testdatei_passt_zum_kernel():
     assert frame("print_material.frame")["run"] == bom["run"]
 
 
+def test_testdatei_farben_passt_zum_kernel():
+    """Strang „Rest Druck“: Filament je Material und Farbe. PETG gelb fehlt ganz (eine Spule kaufen), PETG schwarz
+    reicht aus der schwarzen Spule, PLA ohne Farbe aus dem ganzen PLA-Bestand."""
+    bom, vorschau = mbf.material_farbe_nachrichten()
+    soll = json.loads((FIXTURES / "fixtures.json").read_text())["material_farbe"]
+    assert mbf.material_erwartet(bom, vorschau, "material_farbe") == soll
+    assert [f["werkstoff"] for f in soll["filament"]] == ["PETG gelb", "PETG schwarz", "PLA"]
+    assert [(z["benennung"], z["menge"]) for z in soll["filament_kauf"]] == [("Filament PETG gelb", 1.0)]
+    assert "kein Filament in gelb" in soll["filament_kauf"][0]["hinweis"]
+    e = ek.zusammenstellen(bom, vorschau)
+    reicht = {f["werkstoff"]: f["reicht"] for f in e["filament_aus_bestand"]}
+    assert reicht == {"PETG schwarz": True, "PLA": True}
+
+
 def test_beispiel_deckt_alles_ab():
     bom, vorschau = mbf.material_nachrichten()
     e = ek.zusammenstellen(bom, vorschau)

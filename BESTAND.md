@@ -104,6 +104,7 @@ Kaufeinheiten: Stange, Platte, Stück (später Packung). Preis aus dem Katalog m
 | `BESTAND_SAVE` | App → Kernel | `id`, entweder `posten_id` und `posten` (ganzer Posten wie in der Datei oder null zum Entfernen) oder `einstellungen` (ganzes Objekt) oder Filament (`spule`, `spule_kennung`, `anzahl`, `filament_fuehren`; Abschnitt „Filament“), `grund` | `ACK`, danach `BESTAND` und neue `BOM` |
 | `GEBAUT_REQ` | App → Kernel | `id`, `run` | `ACK` mit `buchung` (id) und `message` (Kurztext), danach `BESTAND` und `BOM` |
 | `BUCHUNG_RUECKGAENGIG` | App → Kernel | `id`, `buchung` | `ACK`, danach `BESTAND` und `BOM` |
+| `GEDRUCKT_REQ` | App → Kernel | `id`; optional `platten` (leer = alle noch nicht gebuchten), `spule` (Kennung zuerst), `run`, `grund` (additiv, Strang „Rest Druck“: Knopf „Gedruckt“, wie MCP `gedruckt_buchen` mit `von: "kevin"`) | `ACK` mit `buchung` und `message`, danach `BESTAND` und `BOM` |
 
 Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` von selbst.
 
@@ -243,7 +244,27 @@ buchen das Filament der Druckvorschau desselben Laufs ab: je Platte höchstens e
 Materials: die genannte `spule`, dann angebrochene mit dem wenigsten Filament, dann volle (nach Kennung). Eine
 leer gedruckte Spule wird entfernt („leer, entfernt“). Reicht der Bestand nicht, gilt der Rest als von gekauften Spulen
 (`spule_g`) gedruckt; was von der letzten übrig bleibt (ab 0,5 g), kommt als neue Spule ohne Name dazu, wie neue Reste
-aus gekauften Stangen. Die Druckvorschau kennt keine Farben, deshalb gelten Bedarf und Bestand je Material.
+aus gekauften Stangen. Ohne Farben an den Druckteilen gelten Bedarf und Bestand je Material (mit Farben: „Farben“ unten).
+
+**Farben (Strang „Rest Druck“, 22.10.2026, additiv):** Haben Druckteile eine Farbe (`lager.druckteil(…, farbe=…)`,
+DRUCKVORSCHAU.md „Farbe je Druckteil“), trägt die Druckvorschau je Platte die Farbe und `summe.material[].farben`. Farben
+werden klein und mit zusammengefassten Leerzeichen verglichen („Gelb“ = „gelb“, `filament.farbe_von`). Ohne Farben
+bleibt alles wie oben (je Material über alle Farben).
+
+- **BOM.filament_bestand[]** additiv `farben: [{"farbe", "gramm", "spulen", "kennungen"}]` (Spulen je Farbe, `farbe`
+  null ohne Farbe), nur wenn eine Spule des Materials eine Farbe hat.
+- **Einkaufsliste** (Kernel `einkauf.filament`, `filament_kauf`; App `MaterialFilament.ausDruckvorschau`,
+  `FilamentBestand.kauf`, Text und CSV byteweise gleich, Testdatei `material_farbe`): Gruppe „Filament für Druckteile“
+  je Farbe der Platten eine Zeile („PETG gelb: 120,0 g für 4 Teile“; Teile = Stück auf den Platten dieser Farbe).
+  Spulen zum Kaufen je Zeile: eine Farbe zählt nur Spulen dieser Farbe, eine Zeile ohne Farbe den übrigen Bestand des
+  Materials; Benennung „Filament PETG gelb“, `id` bleibt die Material-id, Hinweis „Bedarf 120,0 g gelb, Bestand im
+  Projekt: 800,0 g gelb (1 Spule)“ bzw. „…, kein Filament in gelb im Bestand des Projekts“. `filament_aus_bestand`
+  ebenso je Zeile (additiv `farbe`).
+- **Abbuchen** („Gedruckt“, „Gebaut“): Bedarf je (Material, Farbe) aus den Platten (`filament.bedarf_farben`); erst
+  die Farben, dann Platten ohne Farbe. Eine Farbe nimmt nur Spulen derselben Farbe (Reihenfolge wie oben), Platten ohne
+  Farbe jede Spule des Materials; reicht es nicht, gilt der Rest als von gekauften Spulen dieser Farbe (der Rest der
+  letzten kommt als neue Spule **mit** dieser Farbe dazu). `info[]` und Texte additiv mit Farbe („PETG gelb: 120 g,
+  davon 50 g aus S-0001 …“); `gebaut_filament.platten[]` und `.gekauft[]` additiv `farbe`.
 
 **MCP `bestand_eintragen`** (additiv, `id` jetzt optional): Filament statt `id` mit `material` und `gramm` (übrig;
 ohne: volle Spule), `spule` (Name), `gramm_voll`, `farbe`, `hersteller`, `ort`, `anzahl` (gleiche Spulen; `0` heißt
@@ -264,6 +285,12 @@ reicht) in `MaterialKernelGleichTests.testFilamentSpulenWieDerKernel`.
   `BestandSpule`, `SpulenEingabe` (`KevCADCore/Model/Bestand+Filament.swift`), Oberfläche `Bestand/FilamentAnsicht.swift`.
 - **Einkaufsliste:** Die Kachel „Filament für Druckteile“ nennt je Material die Spulen des Bestands, ab zwei Spulen jede
   mit „angebrochen“ bzw. „voll“.
+- **Knopf „Gedruckt“ (Strang „Rest Druck“, 22.10.2026):** im Bereich „Bestand“ (Abschnitt „Filament“, für alle noch
+  nicht gebuchten Platten) und in der Druckvorschau je Platte. Ein Blatt zeigt die Platten mit Material, Farbe und
+  Gramm, die Spule zur Wahl („automatisch“: Reihenfolge wie oben, sonst die Spulen des Materials) und bucht mit
+  `GEDRUCKT_REQ`; danach zeigt es die Antwort und den neuen Stand der Spulen mit „Rückgängig“ (`BUCHUNG_RUECKGAENGIG`).
+  Schon gebuchte Platten tragen in der Druckvorschau „Gedruckt“ mit der Buchung und „Rückgängig“. Selbsttest
+  `KEVCAD_SELFTEST=gedruckt`.
 - **Dialog „Gebaut“:** je Spule, wie viel Gramm sie verliert (leer werdende: „danach leer, wird entfernt“), der Rest
   gekaufter Spulen als neue Spule, Gekauftes als Voraussetzung und die Druckplatten, schon als gedruckt gebuchte mit
   Haken und Buchung. „Gebaut“ ist nicht gesperrt, wenn nur Filament zu buchen ist (`BestandZustand.hatBuchbares`).

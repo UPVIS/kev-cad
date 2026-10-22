@@ -252,6 +252,21 @@ def filament(bom: dict[str, Any], druckvorschau: dict[str, Any] | None = None,
             out = []
             for m in mats:
                 mid = _text(m.get("material")) or ""
+                farben = [f for f in m.get("farben") or [] if isinstance(f, dict)]
+                if any(_text(f.get("farbe")) for f in farben):
+                    # Strang „Rest Druck“: je Farbe der Platten eine Zeile („PETG gelb“), Teile = Stück auf den Platten
+                    name = _text(m.get("name")) or mid.upper()
+                    st = _druckstand(m.get("stand")) if "stand" in m else standard
+                    for f in farben:
+                        farbe = _text(f.get("farbe"))
+                        nrs = {_int(x) for x in f.get("platten") or []}
+                        teile = sum(len([t for t in p.get("teile") or [] if isinstance(t, dict)])
+                                    for p in dv.get("platten") or [] if isinstance(p, dict) and _int(p.get("nr")) in nrs)
+                        out.append({"werkstoff": f"{name} {farbe}" if farbe else name, "material": mid,
+                                    "farbe": farbe, "teile": teile, "gramm": _num(f.get("g")) or 0.0,
+                                    "preis": _num(f.get("kosten")), "preis_stand": _text(m.get("preis_stand")),
+                                    "quelle": "druckvorschau", "stand": st})
+                    continue
                 teile = 0
                 for g in dv.get("teile") or []:
                     if not isinstance(g, dict):
@@ -310,7 +325,35 @@ def filament_bestand(bom: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
         g = _num(f.get("spule_g"))
         out[mid] = {"material": mid, "name": _text(f.get("name")) or mid.upper(), "gramm": _num(f.get("gramm")) or 0.0,
                     "spulen": max(0, _int(f.get("spulen")) or 0), "spule_g": g if g is not None and g > 0 else 1000.0,
-                    "preis_je": _num(f.get("preis_je_spule")), "preis_stand": _text(f.get("preis_stand"))}
+                    "preis_je": _num(f.get("preis_je_spule")), "preis_stand": _text(f.get("preis_stand")),
+                    # additiv (Strang „Rest Druck“): Spulen je Farbe (None = ohne Farbe)
+                    **({"farben": [{"farbe": _text(x.get("farbe")), "gramm": _num(x.get("gramm")) or 0.0,
+                                    "spulen": max(0, _int(x.get("spulen")) or 0)}
+                                   for x in f.get("farben") or [] if isinstance(x, dict)]} if f.get("farben") else {})}
+    return out
+
+
+def _bestand_je_farbe(fil: list[dict[str, Any]], b: dict[str, Any], mid: str) -> dict[Any, dict[str, Any]]:
+    """Bestand, der für jede Filamentzeile eines Materials gilt (Strang „Rest Druck“): eine Zeile mit Farbe nimmt nur
+    Spulen dieser Farbe, eine ohne Farbe den ganzen übrigen Bestand des Materials; ohne Farben alles."""
+    zeilen = [f for f in fil if f.get("quelle") == "druckvorschau" and f.get("material") == mid]
+    if not any(f.get("farbe") for f in zeilen):
+        return {f.get("farbe"): {"gramm": b["gramm"], "spulen": b["spulen"], "farbe": None} for f in zeilen}
+    out: dict[Any, dict[str, Any]] = {}
+    verbraucht_g = 0.0
+    verbraucht_n = 0
+    for f in zeilen:
+        if not f.get("farbe"):
+            continue
+        x = next((x for x in b.get("farben") or [] if x["farbe"] == f["farbe"]), None)
+        g, n = (x["gramm"], x["spulen"]) if x else (0.0, 0)
+        out[f["farbe"]] = {"gramm": g, "spulen": n, "farbe": f["farbe"]}
+        verbraucht_g += min(g, f["gramm"])
+        verbraucht_n += n if g <= f["gramm"] + 1e-6 else 0
+    for f in zeilen:
+        if not f.get("farbe"):
+            out[None] = {"gramm": max(0.0, b["gramm"] - verbraucht_g), "spulen": max(0, b["spulen"] - verbraucht_n),
+                         "farbe": None}
     return out
 
 
@@ -327,15 +370,19 @@ def filament_kauf(fil: list[dict[str, Any]], fb: dict[str, dict[str, Any]] | Non
         b = fb.get(str(f["material"]))
         if b is None:
             continue
-        fehl = f["gramm"] - b["gramm"]
+        hb = _bestand_je_farbe(fil, b, str(f["material"])).get(f.get("farbe")) or {"gramm": 0.0, "spulen": 0}
+        fehl = f["gramm"] - hb["gramm"]
         if fehl <= 1e-6:
             continue
         n = math.ceil(fehl / b["spule_g"] - 1e-9)
         if n <= 0:
             continue
-        if b["spulen"] > 0:
-            hinweis = (f"Bedarf {masse_g(f['gramm'])}, Bestand im Projekt: {masse_g(b['gramm'])} "
-                       f"({anzahl(b['spulen'], 'Spule', 'Spulen')})")
+        farbe = f" {f['farbe']}" if f.get("farbe") else ""
+        if hb["spulen"] > 0:
+            hinweis = (f"Bedarf {masse_g(f['gramm'])}{farbe}, Bestand im Projekt: {masse_g(hb['gramm'])}{farbe} "
+                       f"({anzahl(hb['spulen'], 'Spule', 'Spulen')})")
+        elif f.get("farbe"):
+            hinweis = f"Bedarf {masse_g(f['gramm'])}{farbe}, kein Filament in {f['farbe']} im Bestand des Projekts"
         else:
             hinweis = f"Bedarf {masse_g(f['gramm'])}, kein Filament im Bestand des Projekts"
         preis_je = b["preis_je"]
@@ -343,7 +390,7 @@ def filament_kauf(fil: list[dict[str, Any]], fb: dict[str, dict[str, Any]] | Non
                     "menge": float(n), "einheit": f"Spule {kompakt(b['spule_g'], 1)} g", "preis_je": preis_je,
                     "preis": preis_je * n if preis_je is not None else None, "link": None, "link_text": None,
                     "hinweis": hinweis, "preis_stand": b["preis_stand"], "pos": None,
-                    "bedarf_g": f["gramm"], "bestand_g": b["gramm"]})
+                    "bedarf_g": f["gramm"], "bestand_g": hb["gramm"], **({"farbe": f["farbe"]} if farbe else {})})
     return out
 
 
@@ -392,10 +439,12 @@ def zusammenstellen(bom: dict[str, Any], druckvorschau: dict[str, Any] | None = 
     fil_bestand = []
     for f in fil:
         b = (fb or {}).get(str(f.get("material"))) if f.get("quelle") == "druckvorschau" else None
-        if b is not None and b["gramm"] > 0:
+        hb = _bestand_je_farbe(fil, b, str(f.get("material"))).get(f.get("farbe")) if b is not None else None
+        if b is not None and hb is not None and hb["gramm"] > 0:
             fil_bestand.append({"material": b["material"], "werkstoff": f["werkstoff"], "bedarf_g": f["gramm"],
-                                "bestand_g": b["gramm"], "spulen": b["spulen"],
-                                "reicht": f["gramm"] - b["gramm"] <= 1e-6})
+                                "bestand_g": hb["gramm"], "spulen": hb["spulen"],
+                                "reicht": f["gramm"] - hb["gramm"] <= 1e-6,
+                                **({"farbe": f["farbe"]} if f.get("farbe") else {})})
     return {"zeilen": zeilen, "lager": lager, "zukauf": zukauf, "zukauf_aus_bestand": aus_bestand,
             "normteile": normteile, "filament": fil, "filament_kauf": fkauf, "filament_bestand": fb,
             "filament_aus_bestand": fil_bestand,

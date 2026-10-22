@@ -102,15 +102,20 @@ class Auftrag:
     quelle_platten: list[int] = field(default_factory=list)
     run: int | None = None
     optionen: dict[str, Any] = field(default_factory=dict)
+    # Strang „Rest Druck“: Kevins Filament je Material bzw. Farbklasse („petg“, „petg/gelb“) aus dem Dialog
+    filament: dict[str, str] = field(default_factory=dict)
     name: str = "platten"  # Dateiname der Ausgabe ohne Endung
     ausgabe: Path | None = None  # <projekt>/output
     erstellt: float = field(default_factory=time.time)
 
     def als_dict(self) -> dict[str, Any]:
         datei = self.ziel or self.datei
-        return {"auftrag": self.id, "zustand": self.zustand, "weg": self.weg, "platten": list(self.platten),
-                "fortschritt": None if self.fortschritt is None else round(self.fortschritt, 3),
-                "meldung": self.meldung, "datei": str(datei) if datei else None, "von": self.von}
+        out = {"auftrag": self.id, "zustand": self.zustand, "weg": self.weg, "platten": list(self.platten),
+               "fortschritt": None if self.fortschritt is None else round(self.fortschritt, 3),
+               "meldung": self.meldung, "datei": str(datei) if datei else None, "von": self.von}
+        if self.filament:  # additiv (Strang „Rest Druck“)
+            out["filament"] = dict(self.filament)
+        return out
 
 
 def oeffne_in_bambu_studio(datei: Path, app: Path = BAMBU_APP) -> None:
@@ -365,6 +370,10 @@ class DruckerDienst:
         bestaetigt = header.get("bestaetigt") is True
         platten = [int(p) for p in (header.get("platten") or []) if isinstance(p, int | float)]
         optionen = header.get("optionen") if isinstance(header.get("optionen"), dict) else {}
+        roh = header.get("filament")
+        filament = {str(k).strip().lower(): str(v) for k, v in roh.items() if isinstance(v, str) and v.strip()} \
+            if isinstance(roh, dict) else {}
+
         with self._lock:
             e = self.eintrag
             if weg == "b":
@@ -379,10 +388,17 @@ class DruckerDienst:
                 return False, f"Auftrag {aid} gibt es nicht mehr"
             if a is not None and a.zustand in ("verworfen",):
                 return False, f"Auftrag {aid} wurde verworfen"
+            if bestaetigt and not filament and not (a is not None and a.filament):
+                # Kevin, 22.10.2026: ohne Wahl des Filaments geht kein Druck los (Strang „Rest Druck“)
+                return False, ("Kein Filament gewählt: im Dialog „Drucken …“ je Material das Filament im Drucker "
+                               "wählen (sein Preset kommt ins Projekt).")
             if a is None:
                 a = Auftrag(id=f"j-{next(self._auftraege)}", platten=platten, weg=weg, von="kevin")
-            neu_slicen = a.platten != platten or a.weg != weg or a.datei is None or a.zustand == "fehler"
+            neu_slicen = (a.platten != platten or a.weg != weg or a.datei is None or a.zustand == "fehler"
+                          or (bool(filament) and a.filament != filament))
             a.platten, a.weg, a.optionen = platten, weg, dict(optionen)
+            if filament:
+                a.filament = dict(filament)
             if neu_slicen:
                 a.datei = None
                 a.ergebnis = None
@@ -485,7 +501,7 @@ class DruckerDienst:
         ordner = quelle / a.id
         ordner.mkdir(parents=True, exist_ok=True)
         try:
-            q = self._quelle_fn(list(a.platten), ordner)
+            q = self._quelle_fn(list(a.platten), ordner, **({"filament": dict(a.filament)} if a.filament else {}))
             einst: list[Path] = []
             fil: list[Path] = []
             if not q.mit_einstellungen:

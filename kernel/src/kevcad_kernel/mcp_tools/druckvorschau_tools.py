@@ -89,14 +89,17 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
           "Write the arranged plates of the print preview as a 3MF project for Bambu Studio (Kevin's Bambu Lab P1P "
           "0.4 profile, the chosen filament's preset per material, settings per part). ALWAYS ASK KEVIN WHICH "
           "FILAMENT before calling this (also when he only asks about printing): filament = one entry of his list "
-          "per material, e.g. {'petg': 'polymaker-polylite-petg-gelb'} (filament_liste shows the list). Without "
+          "per material, e.g. {'petg': 'polymaker-polylite-petg-gelb'} (filament_liste shows the list); when parts "
+          "of one material have different colours (lager.druckteil(..., farbe=...)), one file per colour and one "
+          "filament per colour class, e.g. {'petg/gelb': ..., 'petg/schwarz': ...}. Without "
           "filament nothing is written and the result is an error 'Frag Kevin nach dem Filament' with suggestions "
           "(last chosen for this project, spools in stock, all filaments of the material); the last chosen one is "
           "only a suggestion, never take it silently. The filament's preset (Bambu base profile plus documented "
           "deviations, named like 'Polymaker PolyLite PETG gelb (Kev CAD)') goes completely into the project; the "
           "result names filament, preset, base profile, deviations with source and the temperatures. Every export "
           "is completely print-ready per object (supports only where needed, brim width, seam, ironing, walls "
-          "around holes and inserts, hole compensation 0, each with a reason in objekte_einstellungen); never tune "
+          "around holes, a modifier with more walls and 100 % infill around every heat-set insert and core hole, "
+          "hole compensation 0, each with a reason in objekte_einstellungen); never tune "
           "settings by hand afterwards. Before writing, Bambu Studio slices the file: druckfertig=true only without "
           "warnings, otherwise the hints say what is missing. With Bambu Studio installed the file is written "
           "by Bambu Studio and checked by loading it. Objects in the 3MF carry the part names from show() (shortened "
@@ -119,8 +122,10 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
         ohne: Annotated[list[str] | None, Field(description="Leave these parts out (same kinds of entries as "
                                                             "teile; wins over teile)")] = None,
         filament: Annotated[dict[str, str] | list[str] | str | None,
-                            Field(description="Kevin's answer: per material one filament id from filament_liste, "
-                                              "e.g. {'petg': 'polymaker-polylite-petg-gelb'}; required")] = None,
+                            Field(description="Kevin's answer: per material (or colour class like 'petg/gelb' when "
+                                              "a material has parts in several colours) one filament id from "
+                                              "filament_liste, e.g. {'petg': 'polymaker-polylite-petg-gelb'}; "
+                                              "required")] = None,
     ) -> CallToolResult:
         if isinstance(filament, str) and filament.strip().lower() == "vorschau":
             filament = None  # nur intern (Phase 8): der Agent fragt Kevin

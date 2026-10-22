@@ -4,7 +4,8 @@
   dem Rechenprozess bleibt gespeichert, damit Änderungen am Bestand ohne neuen Lauf neu geplant werden.
 - ``BESTAND`` geht nach dem Verbinden, nach jedem Projektwechsel und nach jeder Änderung an die App (auch wenn
   bestand.json von außen geändert wurde, Prüfung im Beobachtungsfaden).
-- Anfragen der App: ``BESTAND_REQ``, ``BESTAND_SAVE``, ``GEBAUT_REQ``, ``BUCHUNG_RUECKGAENGIG`` (ACK, danach BESTAND
+- Anfragen der App: ``BESTAND_REQ``, ``BESTAND_SAVE``, ``GEBAUT_REQ``, ``BUCHUNG_RUECKGAENGIG``, ``GEDRUCKT_REQ``
+  (Knopf „Gedruckt“, Strang „Rest Druck“; ACK, danach BESTAND
   und BOM).
 - MCP-Fassade (service.py): ``bestand_liste``, ``bestand_eintragen``, ``einkaufsliste``, ``gebaut_buchen``,
   ``buchung_rueckgaengig``; seit Strang „Bestand Stufe 2“ auch Filament (``bestand_eintragen`` mit ``material``,
@@ -48,7 +49,7 @@ from .text import bestand_text
 FILAMENT_PARAMETER = ("material", "gramm", "gramm_voll", "spule", "farbe", "hersteller", "anzahl", "kennung",
                       "spulen_entfernen", "filament")
 
-ANFRAGEN = ("BESTAND_REQ", "BESTAND_SAVE", "GEBAUT_REQ", "BUCHUNG_RUECKGAENGIG")
+ANFRAGEN = ("BESTAND_REQ", "BESTAND_SAVE", "GEBAUT_REQ", "BUCHUNG_RUECKGAENGIG", "GEDRUCKT_REQ")
 KEIN_PROJEKT = "Kein Projekt offen: Bestand gibt es je Projekt (bestand.json im Projektordner)."
 
 
@@ -209,6 +210,11 @@ class BestandAnbindung:
                 res = self._bestand_speichern(header, von="kevin")
             elif kind == "GEBAUT_REQ":
                 res = self._gebaut(run=header.get("run"), von="kevin", grund=str(header.get("grund") or ""))
+            elif kind == "GEDRUCKT_REQ":  # Knopf „Gedruckt“ (Strang „Rest Druck“): wie MCP gedruckt_buchen
+                platten = [int(p) for p in header.get("platten") or [] if isinstance(p, int | float)]
+                res = self._gedruckt(grund=str(header.get("grund") or "Kevin: gedruckt (App)"), platten=platten or None,
+                                     spule=str(header["spule"]) if header.get("spule") else None,
+                                     run=header.get("run"), von="kevin")
             else:
                 res = self._rueckgaengig(str(header.get("buchung") or ""), von="kevin")
             ack: dict[str, Any] = {"type": "ACK", "reply_to": rid, "ok": bool(res.get("ok")),
@@ -396,7 +402,10 @@ class BestandAnbindung:
                 return {**leer, "hinweis": "Filament aller Platten schon gebucht"}
         ganz_jetzt = not schon and (not platten or sorted(alle) == wahl)
         bed = fl.bedarf(v, run, None if ganz_jetzt else wahl)
-        ops, info = fl.verbrauch_aenderungen(bed, data, kennungen, heute(), self.catalog, vorzug)  # type: ignore
+        # Strang „Rest Druck“: mit Farben je (Material, Farbe), Spulen derselben Farbe zuerst
+        bed_f = fl.bedarf_farben(v, run, None if ganz_jetzt else wahl)
+        verbrauch = bed_f if any(f for _, f in bed_f) else bed
+        ops, info = fl.verbrauch_aenderungen(verbrauch, data, kennungen, heute(), self.catalog, vorzug)  # type: ignore
         return {"ops": ops, "info": info, "platten": wahl, "ganz": ganz_jetzt,
                 "gramm": {m: zahl(g) for m, g in bed.items()}, "hinweis": None}
 
@@ -410,7 +419,8 @@ class BestandAnbindung:
         """„PETG: 188,8 g, davon 120 g aus S-0001, 68,8 g von einer gekauften Spule (Rest als S-0003)“."""
         out = []
         for i in info:
-            t = f"{self._material_name(i['material'])}: {gramm_text(i['gramm'])}"
+            t = f"{self._material_name(i['material'])}" + (f" {i['farbe']}" if i.get("farbe") else "") + \
+                f": {gramm_text(i['gramm'])}"
             teile = []
             if i.get("aus_bestand"):
                 teile.append(f"{gramm_text(i['aus_bestand'])} aus {', '.join(i['spulen'])}")

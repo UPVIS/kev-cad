@@ -140,6 +140,7 @@ class Piece:
     gedruckt: bool = False  # Druckteile: schon gedruckt (Strang „Feinschliff 2“, druck/gedruckt.py)
     neu_drucken: bool = field(default=False, compare=False)  # Druckteile: neue Form festschreiben
     spaeter: bool = field(default=False, compare=False)  # Druckteile: erst später drucken (nicht auf den Platten)
+    farbe: str | None = None  # Druckteile: Farbe (Strang „Rest Druck“), eigene Stücklistenzeile je Farbe
 
     @property
     def group(self) -> str:
@@ -176,7 +177,8 @@ class Piece:
     def key(self) -> tuple:
         if self.art == "druckteil":
             return ("druckteil", self.material_id, self.verfahren, _significant(self.volume or 0.0, 4),
-                    tuple(sorted((round_half(v) for v in (self.size or [])), reverse=True)), self.gedruckt)
+                    tuple(sorted((round_half(v) for v in (self.size or [])), reverse=True)), self.gedruckt,
+                    self.farbe)
         if self.art in STANGENWARE:
             return (self.stock_id, round_half(self.laenge or 0.0), canonical_gehrung(self.gehrung))
         if self.art == "platte":
@@ -195,6 +197,8 @@ class Piece:
                "preis": _r(self.preis, 2)}
         if self.gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt
             out["gedruckt"] = True
+        if self.farbe:  # additiv (Strang „Rest Druck“)
+            out["farbe"] = self.farbe
         return out
 
     def zukauf_info(self) -> dict[str, Any]:
@@ -572,6 +576,8 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
             line["verfahren"] = p.verfahren
             if p.gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt, kein Filament, kein Druckschritt
                 line["gedruckt"] = True
+            if p.farbe:  # additiv (Strang „Rest Druck“): Farbe des Druckteils
+                line["farbe"] = p.farbe
         if p.art == "zukaufteil":
             line.update(p.zukauf_line())
             if preis_je is not None and line.get("preis_brutto") is True:

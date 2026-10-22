@@ -32,7 +32,8 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 ## Zweck eines Druckteils (model.py, additiv)
 
 `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)` (dazu
-`gedruckt`, `neu_drucken` und `spaeter`, siehe „Gedruckt“ und „Auswahl und Objektnamen im Druckexport“)
+`gedruckt`, `neu_drucken` und `spaeter`, siehe „Gedruckt“ und „Auswahl und Objektnamen im Druckexport“, und `farbe`,
+siehe „Farbe je Druckteil“)
 
 - `zweck`: `"zier"` | `"funktion"` | `"tragend"` | `"bewegt"` | `"aussen"`; ohne Angabe schätzt der Kernel
   (`funktion`), markiert als Schätzung.
@@ -108,6 +109,33 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 - Ohne Druckteile: `platten` und `teile` leer, Summe null, `slicer.zustand: "aus"`.
 - `hinweise[].art`: `trocknen`, `verzug`, `material`, `brim`, `stuetzen`, `ams`, `duese`, `risiko`, `bauraum`,
   `auflage`, `festigkeit`, `slicer`, `platte`.
+
+## Farbe je Druckteil (Strang „Rest Druck“, 22.10.2026, additiv)
+
+`lager.druckteil(…, farbe=None)`: Druckfarbe als Text („gelb“, verglichen klein und mit zusammengefassten Leerzeichen,
+`filamente.farbe_schluessel`) oder die id eines Filaments aus Kevins Filamentliste (dann dessen `farbe`; anderes Material
+oder Filament ohne Farbe ist ein Fehler im Lauf). Der Viewer zeigt das Teil in dieser Farbe (häufige Farbnamen,
+`filamente.FARBEN_HEX`). Ohne `farbe` bleibt alles wie bisher.
+
+- Teile mit verschiedener Farbe sind verschiedene Gruppen (auch bei gleicher Form) und eigene Stücklistenzeilen
+  (`BOM.lines[].farbe`, `PART_UPSERT.druckteil.farbe`). Vorschau additiv `teile[].farbe`.
+- **Platten:** Der P1P druckt ohne AMS eine Farbe je Platte. Hat ein Material Teile in mehreren Farben, bekommt jede
+  Farbe eigene Platten; Teile ohne Farbe füllen danach diese Platten mit auf, erst dann kommen neue Platten ohne Farbe
+  (`anordnen.anordne`). Mit höchstens einer Farbe je Material wie bisher, die Platten tragen dann diese Farbe. Bambu
+  Studio ordnet Materialien mit mehreren Farben nicht um (`--arrange` kennt keine Farben), slict die Platten aber genau.
+  Additiv je Platte `farbe` (fehlt ohne Farbe) und `klasse`: „petg“ bzw. „petg/gelb“, wenn das Material Platten in
+  mehreren Farben hat (Kennung für Export und Filamentwahl, `vorschau.klasse`).
+- **Summe:** `summe.material[]` bleibt je Material; additiv `farben: [{"farbe", "g", "m", "kosten", "platten"}]` aus den
+  Platten, sobald ein Teil des Materials eine Farbe hat (`farbe` null für Platten ohne Farbe).
+- **Export:** je Klasse ein Bambu-Projekt (`<ziel>-petg-gelb.3mf`), die Farbe der Klasse als Filamentfarbe, wenn das
+  Preset keine hat. `filament` je Klasse (`{"petg/gelb": "<id>", "petg/schwarz": "<id>"}`); ein Material-Schlüssel gilt
+  nur, wenn das Material eine Klasse hat, sonst Fehler „Filament je Farbe angeben“. Eine Liste von ids ordnet jedes
+  Filament über Material und Farbe zu (ein Filament ohne passende Farbe ist ein Fehler). Die Rückfrage
+  (`filament_frage`) nennt die Vorschläge je Klasse, Filamente der passenden Farbe zuerst (`vorschlaege[k].farbe`).
+  Weicht die Farbe des gewählten Filaments ab, sagt es ein Hinweis. `dateien[]` additiv `farbe` und `klasse`,
+  `filamente` je Klasse; zuletzt gewählt merkt sich `druck.json` je Klasse. Additiv oben in der Vorschau
+  `filament_zuletzt: {klasse: id}` (Vorbelegung im Dialog „Drucken …“).
+- **Bedarf, Bestand, Einkaufsliste:** BESTAND.md, Abschnitt „Filament“, „Farben“.
 
 ## Gedruckt (Strang „Feinschliff 2“, 22.10.2026, additiv)
 
@@ -450,6 +478,14 @@ Gehören der App, eine Datei je Variante: `~/Library/Application Support/<Bundle
 
 `optionen` (Weg B): `{"bett_nivellieren": true, "flussrate": true, "zeitraffer": false, "spule": "extern"}`.
 
+**Filament im Dialog (Strang „Rest Druck“, 22.10.2026, additiv):** `PRINT_JOB_REQ.filament` = Kevins Wahl je Material
+bzw. Farbklasse (`{"petg": "<id>"}`, `{"petg/gelb": "<id>"}`, Kennungen wie `platten[].klasse` der Vorschau). Der
+Kernel exportiert damit (`druck_export(…, filament=…)`, das Preset kommt ins Projekt, die Hinweise im `PRINT_JOB_RES`
+nennen Filament und Preset). `bestaetigt: true` ohne `filament` (und ohne Wahl im Auftrag) lehnt der Kernel ab
+(`ACK ok: false`, „Kein Filament gewählt …“): Ohne Wahl geht kein Druck los. Nur zum Vorbereiten ohne Wahl (ältere App)
+nimmt der Kernel das Filament der Druckvorschau. Eine andere Wahl beim Bestätigen slict neu. `PRINTER_STATUS.auftrag`
+additiv `filament`. Testdatei `print_job_req_filament.frame`.
+
 `PRINTER_STATUS`:
 
 ```json
@@ -507,7 +543,10 @@ Gehören der App, eine Datei je Variante: `~/Library/Application Support/<Bundle
 - `DruckerLeiste(model:)` in der Druckvorschau-Ansicht (Platz stimmt der Koordinator mit V-A ab): Zustand, Fortschritt,
   Schicht, Restzeit, Temperaturen, Fehler, Knopf „Drucken …“; Pause, Fortsetzen, Abbruch nur bei `steuern`.
 - `DruckenDialog`: Platten (Auswahl), Material und Spule je Platte, Zeit, Weg (B ausgegraut mit Grund und Anleitung),
-  „In Bambu Studio öffnen“ bzw. „Drucken“.
+  „In Bambu Studio öffnen“ bzw. „Drucken“. Seit dem Strang „Rest Druck“ je Material bzw. Farbklasse eine Auswahl aus
+  Kevins Filamentliste (`druckvorschau.filamente`, wie der Sichern-Dialog), vorbelegt mit dem zuletzt für das Projekt
+  gewählten Filament (`filament_zuletzt`, sonst das aus `kevcad.json`), darunter das Preset mit Basisprofil und
+  Temperaturen; ohne Wahl bleibt der Knopf gesperrt.
 - `DruckerEinstellungen`: Name, IP, Seriennummer, Zugangscode (in den Schlüsselbund), Weg, „Status lesen“, gefundene
   Drucker zum Übernehmen von Name und IP.
 - Selbsttest `KEVCAD_SELFTEST=drucker` gegen die Attrappe.

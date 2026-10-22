@@ -91,7 +91,7 @@ def test_drucken_ueber_die_laufzeit(env):
     assert r["ok"] and r["schritt"] == "vorbereitet" and r["platten"] == []
     if not callable(getattr(rt, "druck_export", None)):  # Ersatzweg ohne Druckvorschau
         assert any("Bambu Studio richtet" in x and "2 Teile, PETG" in x for x in r["hinweise"])
-    anfrage(app, {"type": "PRINT_JOB_REQ", "id": "a-6", "platten": [], "weg": "a", "bestaetigt": True,
+    anfrage(app, {"type": "PRINT_JOB_REQ", "id": "a-6", "platten": [], "weg": "a", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"},
                   "auftrag": r["auftrag"]})
     _, _, r2, _ = app.wait_for(lambda h: h["type"] == "PRINT_JOB_RES" and h["reply_to"] == "a-6", start=start)
     assert r2["ok"] and r2["schritt"] == "geoeffnet", r2

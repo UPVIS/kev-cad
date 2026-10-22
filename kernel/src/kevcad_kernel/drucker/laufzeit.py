@@ -122,7 +122,7 @@ class DruckerRuntimeMixin:
     # =================================================================================================================
     # Quelle der Platten
 
-    def _drucker_quelle(self, platten: list[int], ordner: Path) -> Quelle:
+    def _drucker_quelle(self, platten: list[int], ordner: Path, filament: dict[str, str] | None = None) -> Quelle:
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
             from kevcad_kernel.runtime import NO_PROJECT
@@ -134,19 +134,23 @@ class DruckerRuntimeMixin:
         name = f"{basis}-platten" if not platten else f"{basis}-platte-{'-'.join(str(p) for p in platten)}"
         export = getattr(self, "druck_export", None)
         if callable(export):
-            # Filament der Druckvorschau: der Dialog „Drucken …“ zeigt es Kevin vor dem Bestätigen
-            res = export(ziel=str(ordner / f"{name}.3mf"), platten=list(platten), filament="vorschau")
+            # Kevins Wahl im Dialog „Drucken …“ (Strang „Rest Druck“); nur zum Vorbereiten ohne Wahl (ältere App) das
+            # Filament der Druckvorschau. Bestätigen ohne Wahl lehnt der Dienst ab.
+            res = export(ziel=str(ordner / f"{name}.3mf"), platten=list(platten), filament=filament or "vorschau")
+            if res.get("filament_frage"):
+                fehlt = ", ".join(k.upper() for k in (res.get("vorschlaege") or {}))
+                raise QuelleFehler(f"Filament fehlt für {fehlt}: im Dialog wählen.")
             if not res.get("ok"):
                 raise QuelleFehler(res.get("fehler") or res.get("error") or "Druckvorschau: Export fehlgeschlagen")
             # V-K: ein Bambu-Projekt je Material (Bambu Studio 2.07 slict mehrere Filamente per CLI nicht richtig;
             # der P1P ohne AMS druckt ohnehin ein Material je Platte)
             dateien = res.get("dateien") or [{"pfad": res.get("pfad"), "material": None,
                                               "platten": res.get("platten") or platten}]
-            if len({str(d.get("material")) for d in dateien}) > 1:
-                wahl = "; ".join(f"{str(d.get('material') or '?').upper()}: Platte "
+            if len({str(d.get("klasse") or d.get("material")) for d in dateien}) > 1:
+                wahl = "; ".join(f"{str(d.get('klasse') or d.get('material') or '?').upper()}: Platte "
                                  + ", ".join(str(n) for n in d.get("platten") or []) for d in dateien)
-                raise QuelleFehler("Mehrere Materialien: Der P1P druckt ein Material je Platte. Bitte nur Platten "
-                                   f"eines Materials wählen ({wahl}).")
+                raise QuelleFehler("Mehrere Materialien oder Farben: Der P1P druckt ohne AMS ein Filament je Platte. "
+                                   f"Bitte nur Platten eines Materials und einer Farbe wählen ({wahl}).")
             if len(dateien) > 1:  # V-K ohne Bambu Studio: je Platte eine Datei
                 raise QuelleFehler("Die Druckvorschau hat je Platte eine eigene Datei geschrieben (ohne Bambu "
                                    "Studio). Bitte eine Platte wählen.")

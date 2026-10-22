@@ -144,7 +144,7 @@ def waehle(platten: list[tuple[int, str, ao.Platte]], gruppen: list[Any], teile:
                 continue
             zaehl[(n, grund, nr)] = zaehl.get((n, grund, nr), 0) + 1
         if lagen:
-            q = ao.Platte(p.material, lagen=lagen, passt_nicht=p.passt_nicht)
+            q = ao.Platte(p.material, lagen=lagen, passt_nicht=p.passt_nicht, farbe=getattr(p, "farbe", None))
             neue.append((nr, mat, q))
         elif p.lagen:
             leer.append(nr)

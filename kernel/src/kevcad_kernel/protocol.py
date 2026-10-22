@@ -526,6 +526,9 @@ BESTAND_NACHRICHTEN: dict[str, tuple[str, ...]] = {
     "BESTAND_SAVE": ("id",),  # dazu posten_id und posten oder einstellungen
     "GEBAUT_REQ": ("id", "run"),
     "BUCHUNG_RUECKGAENGIG": ("id", "buchung"),
+    # Strang „Rest Druck“: Knopf „Gedruckt“ (wie MCP gedruckt_buchen); platten leer = alle noch nicht gebuchten,
+    # spule optional (Kennung zuerst), run optional (Lauf der Druckvorschau), grund
+    "GEDRUCKT_REQ": ("id",),
 }
 
 
@@ -1049,13 +1052,18 @@ def printer_status(status: dict[str, Any], *, reply_to: str | None = None, seq: 
 
 
 def print_job_req(id: str, *, platten: list[int] | None = None, weg: str = "a", bestaetigt: bool = False,  # noqa: A002
-                  optionen: dict[str, Any] | None = None, auftrag: str | None = None, seq: int = 0) -> dict[str, Any]:
+                  optionen: dict[str, Any] | None = None, auftrag: str | None = None,
+                  filament: dict[str, str] | None = None, seq: int = 0) -> dict[str, Any]:
+    """``filament`` (additiv, Strang „Rest Druck“): Kevins Filament je Material bzw. Farbklasse („petg“, „petg/gelb“)
+    aus dem Dialog; ohne lehnt der Kernel ``bestaetigt: true`` ab."""
     h: dict[str, Any] = {"type": "PRINT_JOB_REQ", "seq": seq, "id": id, "platten": [int(p) for p in (platten or [])],
                          "weg": weg, "bestaetigt": bool(bestaetigt)}
     if optionen is not None:
         h["optionen"] = dict(optionen)
     if auftrag is not None:
         h["auftrag"] = auftrag
+    if filament:
+        h["filament"] = dict(filament)
     return h
 
 
@@ -1097,6 +1105,10 @@ def check_drucker_message(header: dict[str, Any]) -> list[str]:
             out.append(f"drucker.weg {header['drucker'].get('weg')!r} unbekannt")
     elif kind in ("PRINT_JOB_REQ", "PRINT_JOB_ASK") and header["weg"] not in DRUCKER_WEGE:
         out.append(f"weg {header['weg']!r} unbekannt")
+    elif kind == "PRINT_JOB_REQ" and header.get("filament") is not None and not (
+            isinstance(header["filament"], dict)
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in header["filament"].items())):
+        out.append("filament ist kein Objekt {material: Filament-id}")
     elif kind == "PRINT_CONTROL" and header["aktion"] not in DRUCKER_AKTIONEN:
         out.append(f"aktion {header['aktion']!r} unbekannt")
     elif kind == "PRINT_JOB_RES" and header["schritt"] is not None and header["schritt"] not in AUFTRAG_SCHRITTE:

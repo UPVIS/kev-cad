@@ -334,6 +334,69 @@ def test_gedruckt_buchen_je_platte_und_gebaut_bucht_den_rest(rt):
     assert [(s["kennung"], s["gramm"]) for s in spulen(rt)] == [("S-0001", 120), ("S-0002", 310)]
 
 
+def _vorschau_farben(run=5):
+    """Strang „Rest Druck“: Druckvorschau mit PETG gelb (Platte 1, 120 g) und PETG schwarz (Platte 2, 68,8 g), PLA ohne
+    Farbe (Platte 3)."""
+    v = druckvorschau_beispiel(run=run)
+    p1, p2 = v["platten"]
+    gelb = {**copy.deepcopy(p1), "nr": 1, "farbe": "gelb", "teile": p1["teile"][:4],
+            "material": [{**p1["material"][0], "g": 120.0}]}
+    schwarz = {**copy.deepcopy(p1), "nr": 2, "farbe": "schwarz", "teile": p1["teile"][4:],
+               "material": [{**p1["material"][0], "g": 68.8}]}
+    v["platten"] = [gelb, schwarz, {**copy.deepcopy(p2), "nr": 3}]
+    v["summe"]["material"][0]["farben"] = [{"farbe": "gelb", "g": 120.0, "platten": [1]},
+                                           {"farbe": "schwarz", "g": 68.8, "platten": [2]}]
+    return v
+
+
+def test_gedruckt_buchen_je_farbe(rt):
+    """Spulen derselben Farbe zuerst; reicht die gelbe nicht, ist der Rest von einer gekauften gelben Spule (neue Spule
+    in Gelb), die schwarze bleibt für Platte 2."""
+    rt.bestand_eintragen(material="petg", gramm=50, spule="PolyLite PETG gelb", farbe="Gelb", grund="Kevin")
+    rt.bestand_eintragen(material="petg", gramm=500, spule="Bambu PETG Basic schwarz", farbe="schwarz", grund="Kevin")
+    rt.rechnen()
+    with rt._dv_lock:
+        rt._dv_vorschau = _vorschau_farben()
+    assert fl.bedarf_farben(rt._dv_vorschau, 5, [1, 2]) == {("petg", "gelb"): 120.0, ("petg", "schwarz"): 68.8}
+    res = rt.gedruckt_buchen(grund="Kevin: Platte 1 ist gedruckt", platten=[1])
+    assert res["ok"], res
+    assert res["filament_text"] == ["PETG gelb: 120 g, davon 50 g aus S-0001, 70 g von gekauften Spulen (Rest als "
+                                    "S-0003)"]
+    sp = {s["kennung"]: (s["gramm"], s.get("farbe")) for s in spulen(rt)}
+    assert sp == {"S-0002": (500, "schwarz"), "S-0003": (930, "gelb")}
+    res = rt.gedruckt_buchen(grund="Kevin: Platte 2 auch", platten=[2])
+    assert res["ok"] and res["filament_text"] == ["PETG schwarz: 68,8 g, davon 68,8 g aus S-0002"]
+    # BOM: Spulen je Farbe
+    fb = next(f for f in rt._bestand_bom(bb.material_bom(run=5))["filament_bestand"] if f["material"] == "petg")
+    assert {f["farbe"]: f["gramm"] for f in fb["farben"]} == {"schwarz": 431.2, "gelb": 930}
+
+
+def test_knopf_gedruckt_in_der_app(rt):
+    """Strang „Rest Druck“: GEDRUCKT_REQ bucht wie MCP gedruckt_buchen (Spule wählbar), ACK mit Buchung; Rückgängig
+    über BUCHUNG_RUECKGAENGIG."""
+    from kevcad_kernel.protocol import check_bestand_message
+
+    rt.bestand_eintragen(material="petg", gramm=120, spule="Bambu PETG Basic schwarz", grund="Kevin")
+    rt.bestand_eintragen(material="petg", gramm=1000, spule="PolyLite gelb", grund="Kevin")
+    rt.bestand_eintragen(material="pla", gramm=310, grund="Kevin")
+    rt.rechnen()
+    anfrage = {"type": "GEDRUCKT_REQ", "id": "a-1", "platten": [1], "spule": "S-0002", "run": 5}
+    assert check_bestand_message(anfrage) == []
+    rt._bestand_anfrage(anfrage)
+    ack = [m for m in rt.gesendet if m.get("type") == "ACK" and m.get("reply_to") == "a-1"][-1]
+    assert ack["ok"] and ack["buchung"] == "B-0004", ack
+    sp = {s["kennung"]: s["gramm"] for s in spulen(rt)}
+    assert sp["S-0002"] == 811.2 and sp["S-0001"] == 120  # die gewählte Spule zuerst
+    b = rt.bestand_liste()["buchungen"][0]
+    assert (b["art"], b["von"], b["platten"]) == ("gedruckt", "kevin", [1])
+    rt._bestand_anfrage({"type": "GEDRUCKT_REQ", "id": "a-2", "platten": [1]})
+    ack = [m for m in rt.gesendet if m.get("reply_to") == "a-2"][-1]
+    assert not ack["ok"] and "Schon als gedruckt gebucht" in ack["message"]
+    rt._bestand_anfrage({"type": "BUCHUNG_RUECKGAENGIG", "id": "a-3", "buchung": "B-0004"})
+    assert [m for m in rt.gesendet if m.get("reply_to") == "a-3"][-1]["ok"]
+    assert {s["kennung"]: s["gramm"] for s in spulen(rt)}["S-0002"] == 1000
+
+
 def test_gebaut_ohne_gedruckt_bucht_die_ganze_vorschau(rt):
     rt.bestand_eintragen(material="petg", gramm=1000, grund="Kevin")
     rt.bestand_eintragen(material="pla", gramm=1000, grund="Kevin")

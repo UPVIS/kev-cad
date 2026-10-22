@@ -90,6 +90,10 @@ def main() -> None:
         ("print_job_req_b", print_job_req("a-44", platten=[1], weg="b", bestaetigt=True,
                                           optionen={"bett_nivellieren": True, "flussrate": True, "zeitraffer": False,
                                                     "spule": "extern"}, seq=96)),
+        # additiv (Strang „Rest Druck“): Kevins Filament je Material bzw. Farbklasse aus dem Dialog
+        ("print_job_req_filament", print_job_req("a-48", platten=[2], weg="a", bestaetigt=True, auftrag="j-3",
+                                                 filament={"petg": "polymaker-polylite-petg-gelb",
+                                                           "pla/schwarz": "amazon-basics-pla"}, seq=99)),
         ("print_control", print_control("a-45", "pause", seq=97)),
         ("print_control_verwerfen", print_control("a-47", "verwerfen", auftrag="j-6", seq=98)),
     ]

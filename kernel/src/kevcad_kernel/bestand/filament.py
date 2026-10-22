@@ -12,8 +12,10 @@ Farbe mit Gramm übrig, Gramm voll, Hersteller, Name, Kennung (``S-0001``) und o
   von gekauften Spulen gedruckt, und was von der letzten gekauften Spule übrig bleibt, kommt als neue Spule in den
   Bestand (wie neue Reste aus gekauften Stangen).
 
-Die Druckvorschau kennt keine Farben: Bedarf und Bestand gelten je Material über alle Farben. Welche Spule benutzt
-wurde, kann Kevin beim Buchen angeben (``spule``), sonst gilt die Reihenfolge oben.
+Farben (Strang „Rest Druck“): Haben Druckteile eine Farbe (``lager.druckteil(…, farbe=…)``), trägt die Druckvorschau
+je Platte die Farbe; Bedarf und Abbuchen gelten dann je Material und Farbe: Spulen derselben Farbe zuerst, für Teile
+ohne Farbe jede Spule des Materials. Ohne Farben wie bisher je Material über alle Farben. Welche Spule benutzt wurde,
+kann Kevin beim Buchen angeben (``spule``), sonst gilt die Reihenfolge oben.
 """
 
 from __future__ import annotations
@@ -43,6 +45,13 @@ def _material_eintrag(katalog: Any, mid_oder_name: str | None) -> dict[str, Any]
     except Exception:  # noqa: BLE001 - ohne Katalog kein Abgleich
         return None
     return m if isinstance(m, dict) else None
+
+
+def farbe_von(spule_oder_text: Any) -> str | None:
+    """Farbe zum Vergleichen (klein, Leerzeichen zusammengefasst) einer Spule oder eines Texts; None ohne Farbe."""
+    t = spule_oder_text.get("farbe") if isinstance(spule_oder_text, dict) else spule_oder_text
+    t = " ".join(str(t or "").split()).lower()
+    return t or None
 
 
 def spule_g(material: dict[str, Any] | None) -> float:
@@ -77,12 +86,22 @@ def bom_bestand(bestand: dict[str, Any] | None, lines: list[dict[str, Any]], kat
         eigene = [s for s in sp if s.get("material") == mid]
         g = spule_g(m)
         je_kg = number(m.get("preis_je_kg"))
-        out.append({"material": mid, "name": m.get("name") or mid.upper(),
-                    "gramm": zahl(sum(float(number(s.get("gramm")) or 0) for s in eigene)),
-                    "spulen": len(eigene), "kennungen": [s.get("kennung") for s in eigene],
-                    "spule_g": zahl(g),
-                    "preis_je_spule": round(float(je_kg) * g / 1000.0, 2) if je_kg is not None else None,
-                    "preis_stand": m.get("preis_stand")})
+        eintrag = {"material": mid, "name": m.get("name") or mid.upper(),
+                   "gramm": zahl(sum(float(number(s.get("gramm")) or 0) for s in eigene)),
+                   "spulen": len(eigene), "kennungen": [s.get("kennung") for s in eigene],
+                   "spule_g": zahl(g),
+                   "preis_je_spule": round(float(je_kg) * g / 1000.0, 2) if je_kg is not None else None,
+                   "preis_stand": m.get("preis_stand")}
+        if any(farbe_von(s) for s in eigene):  # additiv (Strang „Rest Druck“): Spulen je Farbe
+            farben: dict[Any, dict[str, Any]] = {}
+            for s in eigene:
+                f = farben.setdefault(farbe_von(s), {"farbe": farbe_von(s), "gramm": 0.0, "spulen": 0,
+                                                     "kennungen": []})
+                f["gramm"] += float(number(s.get("gramm")) or 0)
+                f["spulen"] += 1
+                f["kennungen"].append(s.get("kennung"))
+            eintrag["farben"] = [{**f, "gramm": zahl(f["gramm"])} for f in farben.values()]
+        out.append(eintrag)
     return out
 
 
@@ -110,7 +129,8 @@ def gebaut_vorschau(run: int | None, ops: list[dict[str, Any]], info: list[dict[
     neue = [{"kennung": op["nachher"].get("kennung"), "material": op["nachher"].get("material"),
              "gramm": op["nachher"].get("gramm"), "gramm_voll": op["nachher"].get("gramm_voll")}
             for op in ops if op.get("op") == "spule" and op.get("vorher") is None and op.get("nachher")]
-    gekauft = [{"material": i["material"], "gramm": i["gekauft"]} for i in info if float(i.get("gekauft") or 0) > 0]
+    gekauft = [{"material": i["material"], "gramm": i["gekauft"], **({"farbe": i["farbe"]} if i.get("farbe") else {})}
+               for i in info if float(i.get("gekauft") or 0) > 0]
     v = _vorschau(dv)
     platten = []
     if v is not None and run is not None and int(number(v.get("run")) or 0) == int(run):
@@ -120,7 +140,8 @@ def gebaut_vorschau(run: int | None, ops: list[dict[str, Any]], info: list[dict[
             nr = int(p["nr"])
             platten.append({"nr": nr, "material": [{"material": m.get("material"), "g": zahl(number(m.get("g")) or 0)}
                                                     for m in p.get("material") or [] if isinstance(m, dict)],
-                            "gebucht": schon.get(nr) or ganz, "buchen": bool(ops) and nr in platten_buchen})
+                            "gebucht": schon.get(nr) or ganz, "buchen": bool(ops) and nr in platten_buchen,
+                            **({"farbe": p["farbe"]} if p.get("farbe") else {})})
     mats = sorted({x["material"] for x in verbrauch + neue + gekauft if x.get("material")}
                   | {m["material"] for p in platten for m in p["material"] if m.get("material")})
     return {"run": run, "platten": platten, "ganz_gebucht": ganz, "spulen": verbrauch, "neue_spulen": neue,
@@ -155,6 +176,24 @@ def bedarf(dv: Any, run: int | None, platten: list[int] | None = None) -> dict[s
     return out
 
 
+def bedarf_farben(dv: Any, run: int | None, platten: list[int] | None = None) -> dict[tuple[str, str | None], float]:
+    """Wie ``bedarf``, aber je (Material, Farbe) aus den Farben der Platten (Strang „Rest Druck“); Platten ohne Farbe
+    unter (Material, None). Leer, wenn die Vorschau zu einem anderen Lauf gehört."""
+    v = _vorschau(dv)
+    if v is None or (run is not None and int(number(v.get("run")) or 0) != int(run)):
+        return {}
+    wahl = {int(p) for p in platten} if platten else None
+    out: dict[tuple[str, str | None], float] = {}
+    for p in v.get("platten") or []:
+        if not isinstance(p, dict) or (wahl is not None and int(number(p.get("nr")) or 0) not in wahl):
+            continue
+        for m in p.get("material") or []:
+            if isinstance(m, dict) and m.get("material"):
+                k = (str(m["material"]), farbe_von(p.get("farbe")))
+                out[k] = out.get(k, 0.0) + float(number(m.get("g")) or 0)
+    return out
+
+
 def _reihenfolge(eigene: list[dict[str, Any]], vorzug: str | None) -> list[dict[str, Any]]:
     """Welche Spule zuerst: die genannte, dann angebrochene mit wenig Filament, dann volle (nach Kennung)."""
 
@@ -167,7 +206,7 @@ def _reihenfolge(eigene: list[dict[str, Any]], vorzug: str | None) -> list[dict[
     return sorted(eigene, key=key)
 
 
-def verbrauch_aenderungen(verbrauch: dict[str, float], bestand: dict[str, Any], kennungen: Any, datum: str,
+def verbrauch_aenderungen(verbrauch: dict[Any, float], bestand: dict[str, Any], kennungen: Any, datum: str,
                           katalog: Any = None, vorzug: str | None = None) -> tuple[list[dict[str, Any]],
                                                                                     list[dict[str, Any]]]:
     """Änderungen, die ``verbrauch`` (g je Material) von den Spulen abbuchen, und je Material eine Übersicht
@@ -179,21 +218,29 @@ def verbrauch_aenderungen(verbrauch: dict[str, float], bestand: dict[str, Any], 
     ops: list[dict[str, Any]] = []
     info: list[dict[str, Any]] = []
     alle = spulen(bestand)
-    for mid, g in verbrauch.items():
+    entnommen: dict[Any, float] = {}  # je Spule schon abgebucht (mehrere Farben eines Materials nacheinander)
+    # Schlüssel: Material oder (Material, Farbe); benannte Farben zuerst, dann ohne Farbe (darf jede Spule nehmen)
+    reihe = sorted(verbrauch.items(), key=lambda kv: (isinstance(kv[0], tuple) and kv[0][1] is None,))
+    for schluessel, g in reihe:
+        mid, farbe = schluessel if isinstance(schluessel, tuple) else (schluessel, None)
         rest = float(g)
         if rest <= 0.05:
             continue
         eintrag = {"material": mid, "gramm": zahl(rest), "aus_bestand": 0.0, "gekauft": 0.0, "spulen": [],
                    "neue_spule": None}
-        for s in _reihenfolge([s for s in alle if s.get("material") == mid], vorzug):
+        if farbe:
+            eintrag["farbe"] = farbe
+        kandidaten = [s for s in alle if s.get("material") == mid and (not farbe or farbe_von(s) == farbe)]
+        for s in _reihenfolge(kandidaten, vorzug):
             if rest <= 0.05:
                 break
-            hat = float(number(s.get("gramm")) or 0)
+            hat = float(number(s.get("gramm")) or 0) - entnommen.get(s.get("kennung"), 0.0)
             if hat <= 0.05:
                 continue
             nimm = min(hat, rest)
             delta = zahl(-nimm)
             ops.append({"op": "spule_gramm", "kennung": s.get("kennung"), "material": mid, "delta": delta})
+            entnommen[s.get("kennung")] = entnommen.get(s.get("kennung"), 0.0) - float(delta)
             eintrag["spulen"].append(s.get("kennung"))
             eintrag["aus_bestand"] += nimm
             rest -= nimm
@@ -208,7 +255,7 @@ def verbrauch_aenderungen(verbrauch: dict[str, float], bestand: dict[str, Any], 
             eintrag["gekauft"] = zahl(rest)
             if uebrig >= MIN_REST_G:
                 neu = {"kennung": kennungen.spule(), "material": mid, "gramm": zahl(uebrig),
-                       "gramm_voll": zahl(groesse), "name": None, "hersteller": None, "farbe": None, "ort": None,
+                       "gramm_voll": zahl(groesse), "name": None, "hersteller": None, "farbe": farbe, "ort": None,
                        "seit": datum}
                 ops.append({"op": "spule", "kennung": neu["kennung"], "vorher": None, "nachher": neu})
                 eintrag["neue_spule"] = neu["kennung"]

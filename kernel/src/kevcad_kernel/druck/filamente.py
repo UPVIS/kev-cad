@@ -128,6 +128,26 @@ def liste(material: str | None = None) -> list[dict[str, Any]]:
     return [f for f in alle if not m or str(f.get("material") or "").lower() == m]
 
 
+# Anzeigefarbe im Viewer für häufige Farbnamen (Druckteil mit farbe=…); sonst die Farbe des Materials
+FARBEN_HEX = {"gelb": "#F2C200", "schwarz": "#222222", "weiß": "#F2F2F2", "weiss": "#F2F2F2", "rot": "#C8102E",
+              "blau": "#1F4E9C", "grün": "#2E8B3D", "gruen": "#2E8B3D", "grau": "#8A8D91", "orange": "#F07D00",
+              "silber": "#B8BCC2", "braun": "#7B4A2A", "lila": "#6A3D9A", "violett": "#6A3D9A", "pink": "#E85A9B",
+              "natur": "#E8E0C8", "transparent": "#DDEEF2", "beige": "#D8C8A8"}
+
+
+def farbe_hex(farbe: Any, filament: dict[str, Any] | None = None) -> str | None:
+    """Hex-Farbe zur Anzeige: aus dem Filament (``farbe_hex``) oder aus ``FARBEN_HEX``."""
+    if filament and filament.get("farbe_hex"):
+        return str(filament["farbe_hex"])
+    return FARBEN_HEX.get(farbe_schluessel(farbe) or "")
+
+
+def farbe_schluessel(text: Any) -> str | None:
+    """Farbe zum Vergleichen (Druckteil, Spule, Filament): klein, Leerzeichen zusammengefasst; leer → None."""
+    t = " ".join(str(text or "").split()).lower()
+    return t or None
+
+
 def _woerter(text: Any) -> frozenset[str]:
     return frozenset(re.findall(r"[0-9a-zäöüß]+", str(text or "").lower()))
 

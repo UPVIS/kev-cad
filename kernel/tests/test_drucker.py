@@ -451,7 +451,7 @@ def _dienst(tmp_path, app_cb, *, attrappe: Attrappe | None = None, oeffnen=None,
     stl = wuerfel_stl(tmp_path / "w.stl")
     ausgabe = tmp_path / "Projekt" / "output"
 
-    def q(platten, ordner):
+    def q(platten, ordner, filament=None):
         return Quelle(name="Projekt-platten", eingaben=[stl], ausgabe=ausgabe, anordnen=True, platten=platten,
                       filamente=["Generic PETG @BBL P1P"], prozess="0.20mm Standard @BBL P1P")
 
@@ -505,7 +505,7 @@ def test_dienst_weg_a_vorbereiten_bestaetigen_oeffnen(tmp_path):
         assert check_drucker_message(r) == []
         aid = r["auftrag"]
         assert d.auftrag().zustand == "bereit"
-        ok, _ = d.auftrag_anfordern({"id": "a-2", "platten": [], "weg": "a", "bestaetigt": True, "auftrag": aid},
+        ok, _ = d.auftrag_anfordern({"id": "a-2", "platten": [], "weg": "a", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"}, "auftrag": aid},
                                     antworten.append)
         warte(lambda: len(antworten) == 2)
         r = antworten[1]
@@ -526,10 +526,10 @@ def test_dienst_agent_frage_und_verwerfen(tmp_path):
         a = d.anfragen([1], "a", "Kevin will drucken")
         assert a.von == "agent" and a.zustand == "wartet"
         assert d.verwerfen(a.id)[0] and d.auftrag().zustand == "verworfen"
-        ok, text = d.auftrag_anfordern({"id": "x", "platten": [1], "weg": "a", "bestaetigt": True,
+        ok, text = d.auftrag_anfordern({"id": "x", "platten": [1], "weg": "a", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"},
                                         "auftrag": a.id}, lambda h: None)
         assert not ok and "verworfen" in text
-        assert not d.auftrag_anfordern({"id": "x", "platten": [], "weg": "a", "bestaetigt": True, "auftrag": "j-99"},
+        assert not d.auftrag_anfordern({"id": "x", "platten": [], "weg": "a", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"}, "auftrag": "j-99"},
                                        lambda h: None)[0]
     finally:
         d.stoppen()
@@ -541,7 +541,7 @@ def test_dienst_fehler_beim_slicen(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_BAMBU_FEHLER", "Kein Objekt auf der Platte")
     try:
         antworten = []
-        d.auftrag_anfordern({"id": "a-1", "platten": [], "weg": "a", "bestaetigt": True}, antworten.append)
+        d.auftrag_anfordern({"id": "a-1", "platten": [], "weg": "a", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"}}, antworten.append)
         warte(lambda: antworten)
         assert not antworten[0]["ok"] and "Kein Objekt" in antworten[0]["fehler"]
         assert d.auftrag().zustand == "fehler"
@@ -552,7 +552,7 @@ def test_dienst_fehler_beim_slicen(tmp_path, monkeypatch):
 def test_dienst_ohne_bambu_studio(tmp_path):
     app = _App()
     aufrufe = []
-    d, _ = _dienst(tmp_path, app, quelle=lambda platten, ordner: aufrufe.append(platten))
+    d, _ = _dienst(tmp_path, app, quelle=lambda platten, ordner, filament=None: aufrufe.append(platten))
     d.app = tmp_path / "Fehlt.app"
     try:
         assert d.status()["wege"]["a"]["moeglich"] is False
@@ -571,14 +571,14 @@ def test_dienst_weg_b_abgelehnt_ohne_einstellung_und_im_cloud_modus(tmp_path):
         d, _ = _dienst(tmp_path, app, attrappe=a)
         try:
             d.konfigurieren(_eintrag(a, weg="a"))
-            ok, text = d.auftrag_anfordern({"id": "1", "platten": [1], "weg": "b", "bestaetigt": True},
+            ok, text = d.auftrag_anfordern({"id": "1", "platten": [1], "weg": "b", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"}},
                                            lambda h: None)
             assert not ok and "Weg B ist nicht eingestellt" in text
             d.konfigurieren(_eintrag(a, weg="b"))
             warte(lambda: d.status()["verbindung"] == "verbunden")
             warte(lambda: d.status()["drucker"]["entwicklermodus"] is False)
             antworten = []
-            ok, _ = d.auftrag_anfordern({"id": "2", "platten": [1], "weg": "b", "bestaetigt": True},
+            ok, _ = d.auftrag_anfordern({"id": "2", "platten": [1], "weg": "b", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"}},
                                         antworten.append)
             assert ok
             warte(lambda: antworten)
@@ -602,7 +602,7 @@ def test_dienst_weg_b_mit_entwicklermodus_gegen_attrappe(tmp_path):
             d.konfigurieren(_eintrag(a, weg="b"))
             warte(lambda: d.status()["steuern"] is True)
             antworten = []
-            d.auftrag_anfordern({"id": "3", "platten": [1], "weg": "b", "bestaetigt": True,
+            d.auftrag_anfordern({"id": "3", "platten": [1], "weg": "b", "bestaetigt": True, "filament": {"petg": "bambu-petg-basic"},
                                  "optionen": {"bett_nivellieren": False, "flussrate": True, "zeitraffer": True}},
                                 antworten.append)
             warte(lambda: antworten, 20)
@@ -683,3 +683,36 @@ def test_testdateien_lesen_und_pruefen():
         assert TEST_ZUGANGSCODE.encode() not in roh
     (st, _), = FrameReader().feed((FIX / "printer_status.frame").read_bytes())
     assert st["druck"] == data["druck"] and st["drucker"] == data["drucker"]
+
+
+def test_dienst_ohne_filament_kein_druck(tmp_path):
+    """Strang „Rest Druck“: Bestätigen ohne Filament lehnt der Dienst ab; die Wahl geht an die Quelle (Export)."""
+    app = _App()
+    gesehen = []
+    stl = wuerfel_stl(tmp_path / "w2.stl")
+
+    def q(platten, ordner, filament=None):
+        gesehen.append(filament)
+        return Quelle(name="Projekt-platten", eingaben=[stl], ausgabe=tmp_path / "out", anordnen=True,
+                      platten=platten, filamente=["Generic PETG @BBL P1P"], prozess="0.20mm Standard @BBL P1P")
+
+    d, _ = _dienst(tmp_path, app, quelle=q)
+    try:
+        ok, text = d.auftrag_anfordern({"id": "1", "platten": [], "weg": "a", "bestaetigt": True}, lambda h: None)
+        assert not ok and "Kein Filament gewählt" in text
+        antworten = []
+        ok, _ = d.auftrag_anfordern({"id": "2", "platten": [], "weg": "a", "bestaetigt": False,
+                                     "filament": {"petg": "polymaker-polylite-petg-gelb"}}, antworten.append)
+        assert ok
+        warte(lambda: antworten)
+        assert gesehen == [{"petg": "polymaker-polylite-petg-gelb"}]
+        assert d.auftrag().als_dict()["filament"] == {"petg": "polymaker-polylite-petg-gelb"}
+        # anderes Filament beim Bestätigen: neu vorbereiten mit der neuen Wahl
+        ok, _ = d.auftrag_anfordern({"id": "3", "platten": [], "weg": "a", "bestaetigt": True,
+                                     "auftrag": antworten[0]["auftrag"], "filament": {"petg": "bambu-petg-basic"}},
+                                    antworten.append)
+        assert ok
+        warte(lambda: len(antworten) == 2)
+        assert antworten[1]["ok"] and gesehen[-1] == {"petg": "bambu-petg-basic"}
+    finally:
+        d.stoppen()
