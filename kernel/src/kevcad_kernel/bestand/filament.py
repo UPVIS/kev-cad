@@ -86,6 +86,47 @@ def bom_bestand(bestand: dict[str, Any] | None, lines: list[dict[str, Any]], kat
     return out
 
 
+def gebaut_vorschau(run: int | None, ops: list[dict[str, Any]], info: list[dict[str, Any]],
+                    bestand: dict[str, Any] | None, dv: Any, platten_buchen: list[int], schon: dict[int, str],
+                    ganz: str | None, hinweis: str | None = None,
+                    material_name: Any = None) -> dict[str, Any]:
+    """Was „Gebaut“ jetzt vom Filament abbuchen würde, für die App (BESTAND ``gebaut_filament``, Dialog „Gebaut“):
+    je Spule Gramm vorher, weg, nachher und ob sie leer wird, neue Spulen aus dem Rest gekaufter, was als gekauft
+    vorausgesetzt ist, und je Platte der Druckvorschau, ob sie jetzt gebucht wird oder schon als gedruckt gebucht ist."""
+    name = material_name or (lambda mid: mid)
+    by_k = {s.get("kennung"): s for s in spulen(bestand)}
+    entfernt = {op.get("kennung") for op in ops if op.get("op") == "spule" and op.get("nachher") is None}
+    verbrauch = []
+    for op in ops:
+        if op.get("op") != "spule_gramm":
+            continue
+        s = by_k.get(op.get("kennung")) or {}
+        vorher = float(number(s.get("gramm")) or 0)
+        delta = float(op.get("delta") or 0)
+        verbrauch.append({"kennung": op.get("kennung"), "material": op.get("material"),
+                          "name": s.get("name"), "farbe": s.get("farbe"), "gramm": zahl(-delta),
+                          "vorher": zahl(vorher), "nachher": zahl(max(0.0, vorher + delta)),
+                          "leer": op.get("kennung") in entfernt})
+    neue = [{"kennung": op["nachher"].get("kennung"), "material": op["nachher"].get("material"),
+             "gramm": op["nachher"].get("gramm"), "gramm_voll": op["nachher"].get("gramm_voll")}
+            for op in ops if op.get("op") == "spule" and op.get("vorher") is None and op.get("nachher")]
+    gekauft = [{"material": i["material"], "gramm": i["gekauft"]} for i in info if float(i.get("gekauft") or 0) > 0]
+    v = _vorschau(dv)
+    platten = []
+    if v is not None and run is not None and int(number(v.get("run")) or 0) == int(run):
+        for p in v.get("platten") or []:
+            if not isinstance(p, dict) or number(p.get("nr")) is None:
+                continue
+            nr = int(p["nr"])
+            platten.append({"nr": nr, "material": [{"material": m.get("material"), "g": zahl(number(m.get("g")) or 0)}
+                                                    for m in p.get("material") or [] if isinstance(m, dict)],
+                            "gebucht": schon.get(nr) or ganz, "buchen": bool(ops) and nr in platten_buchen})
+    mats = sorted({x["material"] for x in verbrauch + neue + gekauft if x.get("material")}
+                  | {m["material"] for p in platten for m in p["material"] if m.get("material")})
+    return {"run": run, "platten": platten, "ganz_gebucht": ganz, "spulen": verbrauch, "neue_spulen": neue,
+            "gekauft": gekauft, "materialien": {m: name(m) for m in mats}, "hinweis": hinweis}
+
+
 def _vorschau(dv: Any) -> dict[str, Any] | None:
     if not isinstance(dv, dict):
         return None

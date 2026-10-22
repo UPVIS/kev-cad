@@ -700,6 +700,31 @@
     "file": "buchung_rueckgaengig.frame",
     "type": "BUCHUNG_RUECKGAENGIG",
     "payload_bytes": 0
+   },
+   {
+    "file": "bestand_filament.frame",
+    "type": "BESTAND",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_save_spule.frame",
+    "type": "BESTAND_SAVE",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_save_spule_aendern.frame",
+    "type": "BESTAND_SAVE",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_save_spule_entfernen.frame",
+    "type": "BESTAND_SAVE",
+    "payload_bytes": 0
+   },
+   {
+    "file": "bestand_save_filament_fuehren.frame",
+    "type": "BESTAND_SAVE",
+    "payload_bytes": 0
    }
   ],
   "bestand": {
@@ -902,6 +927,56 @@
      "kaufen": 4
     }
    ]
+  },
+  "filament": {
+   "spulen": [
+    "S-0001",
+    "S-0002",
+    "S-0003"
+   ],
+   "voll": [
+    "S-0003"
+   ],
+   "gebaut": {
+    "run": 5,
+    "platten": [
+     [
+      1,
+      null,
+      true
+     ],
+     [
+      2,
+      "B-0005",
+      false
+     ]
+    ],
+    "spulen": [
+     [
+      "S-0001",
+      120,
+      120,
+      0,
+      true
+     ]
+    ],
+    "neue_spulen": [
+     [
+      "S-0004",
+      931.2
+     ]
+    ],
+    "gekauft": [
+     [
+      "petg",
+      68.8
+     ]
+    ],
+    "materialien": {
+     "petg": "PETG",
+     "pla": "PLA"
+    }
+   }
   }
  },
  "bauplan": {

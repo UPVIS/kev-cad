@@ -1045,10 +1045,14 @@ public struct BestandZustand: Equatable, Sendable {
     public var zuschnitt: BOMBestand?
     public var aktivitaet: BestandAktivitaet
     public var hinweis: BuchungsHinweis?
+    /// Was „Gebaut“ vom Filament abbuchen würde (BESTAND `gebaut_filament`, Strang „Bestand Stufe 2“); nil, wenn das
+    /// Projekt kein Filament führt oder der Kernel älter ist.
+    public var gebautFilament: GebautFilament?
 
     public init(
         bestand: Bestand? = nil, empfangen: Bool = false, buchungen: [BestandBuchung] = [], stand: String? = nil,
-        zuschnitt: BOMBestand? = nil, aktivitaet: BestandAktivitaet = .idle, hinweis: BuchungsHinweis? = nil
+        zuschnitt: BOMBestand? = nil, aktivitaet: BestandAktivitaet = .idle, hinweis: BuchungsHinweis? = nil,
+        gebautFilament: GebautFilament? = nil
     ) {
         self.bestand = bestand
         self.empfangen = empfangen
@@ -1057,6 +1061,7 @@ public struct BestandZustand: Equatable, Sendable {
         self.zuschnitt = zuschnitt
         self.aktivitaet = aktivitaet
         self.hinweis = hinweis
+        self.gebautFilament = gebautFilament
     }
 }
 
@@ -1068,6 +1073,11 @@ public protocol BestandActions: AnyObject {
     /// Ganzen Posten speichern (`posten` nil entfernt ihn).
     func saveBestandPosten(id: String, posten: JSONValue?, grund: String)
     func saveBestandEinstellungen(_ einstellungen: BestandEinstellungen, grund: String)
+    /// Filament (Strang „Bestand Stufe 2“): `kennung` nil legt `anzahl` gleiche Spulen an, sonst ändert es diese Spule;
+    /// `spule` nil mit `kennung` entfernt sie. Dieselben Regeln wie MCP `bestand_eintragen`.
+    func saveBestandSpule(kennung: String?, spule: SpulenEingabe?, anzahl: Int?, grund: String)
+    /// Filament im Projekt führen, ohne dass eine Spule da ist (dann steht alles Filament auf der Einkaufsliste).
+    func fuehreFilament(grund: String)
     /// „Gebaut“: bucht ab, was der Zuschnitt der aktuellen Stückliste aus dem Bestand verplant.
     func bucheGebaut()
     func buchungRueckgaengig(_ id: String)

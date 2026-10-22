@@ -51,8 +51,10 @@ final class BestandUI: ObservableObject {
     @Published var gebautDialog = false
     /// Blatt zum Erfassen (Lagerteil aufnehmen, Reste hinzufügen).
     @Published var erfassen: ErfassenAnfrage?
-    /// Ausgewählter Posten im Bestand.
+    /// Ausgewählter Posten im Bestand (Filament: „filament:petg“, siehe `FilamentAuswahl`).
     @Published var auswahl: String?
+    /// Blatt „Spule aufnehmen“ bzw. „Spule ändern“ (Strang „Bestand Stufe 2“).
+    @Published var spule: SpulenAnfrage?
 
     private init() {}
 
@@ -107,6 +109,9 @@ struct BestandDialoge: ViewModifier {
             }
             .sheet(item: $ui.erfassen) { anfrage in
                 BestandErfassenSheet(model: model, anfrage: anfrage)
+            }
+            .sheet(item: $ui.spule) { anfrage in
+                SpuleSheet(model: model, anfrage: anfrage)
             }
     }
 }

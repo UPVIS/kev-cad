@@ -60,6 +60,7 @@ class BestandAnbindung:
         self._bestand_verbrauch: list[Verbrauch] = []
         self._bestand_statistik: list[dict[str, Any]] = []
         self._bestand_sig: tuple | None = None
+        self._bestand_fil_gesendet: dict[str, Any] | None = None  # gebaut_filament der letzten BESTAND-Nachricht
         self._bestand_lock = threading.RLock()
         # Laufnummern beginnen nach jedem Kernelstart neu: die Sitzung gehört zur Sperre gegen doppeltes „Gebaut“
         self._bestand_sitzung = f"{time.strftime('%Y%m%d%H%M%S')}-{os.getpid()}"
@@ -89,11 +90,45 @@ class BestandAnbindung:
         if d is not None:
             with self._bestand_lock:
                 self._bestand_sig = d.signatur()
+        fil = self._gebaut_filament(d, data)
+        self._bestand_fil_gesendet = fil
         msg = pack_bestand(bestand=data, buchungen=d.buchungen(MELDUNG_BUCHUNGEN) if d is not None else [],
                            stand=d.stand() if d is not None else None, datei=str(d.pfad) if d is not None else None,
-                           fehler=fehler, reply_to=reply_to)
+                           fehler=fehler, reply_to=reply_to, gebaut_filament=fil)
         msg.pop("seq", None)
         return msg
+
+    def _gebaut_filament(self, d: BestandDatei | None, data: dict[str, Any] | None) -> dict[str, Any] | None:
+        """BESTAND ``gebaut_filament`` (Strang „Bestand Stufe 2“): was „Gebaut“ jetzt vom Filament abbuchen würde;
+        None, wenn das Projekt kein Filament führt."""
+        if d is None or data is None or not fuehrt_filament(data):
+            return None
+        try:
+            with self._lock:  # type: ignore[attr-defined]
+                basis = self._bom_basis
+            if basis is None:
+                return fl.gebaut_vorschau(None, [], [], data, None, [], {}, None,
+                                          "Noch keine Stückliste: erst rechnen", self._material_name)
+            run = int(basis.get("run") or 0)
+            plan = self._filament_plan(d, data, run, d.kennungen(data))
+            schon, ganz = self._platten_gebucht(d, run)
+            return fl.gebaut_vorschau(run, plan["ops"], plan["info"], data, self._einkauf_druckvorschau(),
+                                      plan["platten"], schon, ganz, plan.get("hinweis"), self._material_name)
+        except Exception as exc:  # noqa: BLE001 - BESTAND kommt auch ohne Vorschau des Filaments
+            self._log(f"[kernel] Bestand: Filament-Vorschau fehlgeschlagen: {exc!r}")  # type: ignore[attr-defined]
+            return None
+
+    def _bestand_vorschau_neu(self) -> None:
+        """Nach jeder neuen Druckvorschau (druck/vorschau_laufzeit.py): Führt das Projekt Filament und ändert sich, was
+        „Gebaut“ abbuchen würde, geht BESTAND mit der neuen ``gebaut_filament`` an die App."""
+        try:
+            d, data, _ = self._bestand_lesen()
+            fil = self._gebaut_filament(d, data)
+            if fil is None or fil == getattr(self, "_bestand_fil_gesendet", None):
+                return
+            self._send_app(self._bestand_nachricht())  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 - die Druckvorschau darf daran nicht scheitern
+            self._log(f"[kernel] Bestand nach Druckvorschau: {exc!r}")  # type: ignore[attr-defined]
 
     # -- Planung -------------------------------------------------------------------------------------------------------
 
@@ -192,6 +227,8 @@ class BestandAnbindung:
         if data is None:
             return {"ok": False, "error": f"bestand.json ist fehlerhaft, erst reparieren: {fehler}"}
         grund = str(header.get("grund") or "")
+        if any(k in header for k in ("spule", "spule_kennung", "filament_fuehren")):
+            return self._spule_speichern(d, data, header, grund, von)
         if header.get("posten_id") is None and isinstance(header.get("einstellungen"), dict):
             neu = {k: v for k, v in header["einstellungen"].items() if v is not None}
             errors = pruefe_einstellungen(neu)
@@ -229,6 +266,47 @@ class BestandAnbindung:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "buchung": buchung, "message": buchung["zusammenfassung"],
                 "aenderungen_text": aenderungen_text(ops, self._benennung, self._material_name)}
+
+    def _spule_speichern(self, d: BestandDatei, data: dict[str, Any], header: dict[str, Any], grund: str,
+                         von: str) -> dict[str, Any]:
+        """BESTAND_SAVE mit Filament (Strang „Bestand Stufe 2“, additiv): ``spule`` ohne ``spule_kennung`` legt
+        ``anzahl`` (Standard 1) gleiche Spulen an, mit ``spule_kennung`` ändert es diese Spule, ``spule: null`` entfernt
+        sie; ``filament_fuehren: true`` führt Filament ohne Spule. Dieselben Regeln wie MCP ``bestand_eintragen``."""
+        if header.get("filament_fuehren") is True and "spule" not in header:
+            if fuehrt_filament(data):
+                return {"ok": True, "message": "keine Änderung"}
+            ops = [{"op": "filament_fuehren", "vorher": False, "nachher": True}]
+            try:
+                buchung = d.buchen("eintrag", ops, von=von, grund=grund)
+            except BestandError as exc:
+                return {"ok": False, "error": str(exc)}
+            return {"ok": True, "buchung": buchung, "message": buchung["zusammenfassung"],
+                    "aenderungen_text": aenderungen_text(ops, self._benennung, self._material_name)}
+        kennung = str(header.get("spule_kennung") or "").strip() or None
+        sp = header.get("spule")
+        if kennung and sp is None:
+            return self._filament_eintragen(grund=grund, material=None, gramm=None, gramm_voll=None, spule=None,
+                                            farbe=None, hersteller=None, anzahl=None, kennung=None, ort=None,
+                                            spulen_entfernen=[kennung], von=von)
+        if not isinstance(sp, dict):
+            return {"ok": False, "error": "spule fehlt: Objekt mit material, gramm, gramm_voll, name, hersteller, "
+                                          "farbe, ort (oder null mit spule_kennung zum Entfernen)"}
+        bad = [k for k in sp if k not in ("material", "gramm", "gramm_voll", "name", "hersteller", "farbe", "ort",
+                                         "kennung", "seit")]
+        if bad:
+            return {"ok": False, "error": f"spule kennt {', '.join(map(str, bad))} nicht"}
+        felder = {"material": sp.get("material"), "gramm": number(sp.get("gramm")),
+                  "gramm_voll": number(sp.get("gramm_voll")), "spule": sp.get("name"), "farbe": sp.get("farbe"),
+                  "hersteller": sp.get("hersteller"), "ort": sp.get("ort")}
+        if kennung:
+            res = self._filament_eintragen(grund=grund, kennung=kennung, anzahl=None, spulen_entfernen=None, von=von,
+                                           **felder)
+            if not res.get("ok") and str(res.get("error", "")).startswith("Keine Änderung"):
+                return {"ok": True, "message": "keine Änderung"}
+            return res
+        anzahl = header.get("anzahl")
+        return self._filament_eintragen(grund=grund, kennung=None, spulen_entfernen=None, von=von,
+                                        anzahl=None if anzahl is None else int(number(anzahl) or 0), **felder)
 
     def _posten_pruefen(self, d: BestandDatei, data: dict[str, Any], pid: str, posten: Any) -> dict[str, Any]:
         """Posten gegen den Katalog prüfen; Reste ohne Kennung bekommen eine, ``seit`` ist sonst heute."""
@@ -503,7 +581,8 @@ class BestandAnbindung:
 
     def _filament_eintragen(self, *, grund: str, material: str | None, gramm: float | None, gramm_voll: float | None,
                             spule: str | None, farbe: str | None, hersteller: str | None, anzahl: int | None,
-                            kennung: str | None, ort: str | None, spulen_entfernen: list[str] | None) -> dict[str, Any]:
+                            kennung: str | None, ort: str | None, spulen_entfernen: list[str] | None,
+                            von: str = "agent") -> dict[str, Any]:
         d, data, fehler = self._bestand_lesen()
         if d is None:
             return {"ok": False, "error": KEIN_PROJEKT}
@@ -584,7 +663,7 @@ class BestandAnbindung:
                     else "Nichts einzutragen: material und gramm (neue Spule), kennung (ändern) oder spulen_entfernen"}
         art = "eintrag" if all(op.get("vorher") in (None, False) for op in ops) else "korrektur"
         try:
-            buchung = d.buchen(art, ops, von="agent", grund=grund)
+            buchung = d.buchen(art, ops, von=von, grund=grund)
         except BestandError as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "buchung": buchung, "message": buchung["zusammenfassung"],

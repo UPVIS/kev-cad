@@ -14,10 +14,12 @@ public struct BestandMessage: Sendable {
     /// Pfad der Projektdatei (oder nil) und Fehlertext, wenn bestand.json kaputt ist (BESTAND.md Anhang S-K).
     public var datei: String?
     public var fehler: String?
+    /// Was „Gebaut“ vom Filament abbuchen würde (additiv, Strang „Bestand Stufe 2“).
+    public var gebautFilament: GebautFilament?
 
     public init(
         replyTo: String? = nil, bestand: Bestand?, buchungen: [BestandBuchung] = [], stand: String? = nil,
-        datei: String? = nil, fehler: String? = nil
+        datei: String? = nil, fehler: String? = nil, gebautFilament: GebautFilament? = nil
     ) {
         self.replyTo = replyTo
         self.bestand = bestand
@@ -25,6 +27,7 @@ public struct BestandMessage: Sendable {
         self.stand = stand
         self.datei = datei
         self.fehler = fehler
+        self.gebautFilament = gebautFilament
     }
 
     public static func decode(_ header: Data) throws -> BestandMessage {
@@ -35,7 +38,7 @@ public struct BestandMessage: Sendable {
             bestand: roh.flatMap { $0.objectValue == nil ? nil : Bestand(json: $0) },
             buchungen: (json["buchungen"]?.arrayValue ?? []).compactMap(BestandBuchung.init(json:)),
             stand: json["stand"]?.lenientString, datei: json["datei"]?.lenientString,
-            fehler: json["fehler"]?.lenientString)
+            fehler: json["fehler"]?.lenientString, gebautFilament: GebautFilament(json: json["gebaut_filament"]))
     }
 }
 
@@ -67,6 +70,15 @@ public struct BestandSaveMessage: OutgoingRequest {
     public var posten: JSONValue?
     public var einstellungen: BestandEinstellungen?
     public var grund: String
+    /// Filament (Strang „Bestand Stufe 2“, additiv): Spule ändern bzw. entfernen (`spuleKennung`), neue Spulen
+    /// (`spule` ohne Kennung, `anzahl`), Filament führen ohne Spule (`filamentFuehren`).
+    public var spuleKennung: String?
+    public var spule: JSONValue?
+    public var anzahl: Int?
+    public var filamentFuehren = false
+    private var art: Art = .posten
+
+    private enum Art { case posten, einstellungen, spule, filament }
 
     public init(id: String, postenID: String, posten: JSONValue?, grund: String) {
         self.id = id
@@ -79,11 +91,32 @@ public struct BestandSaveMessage: OutgoingRequest {
         self.id = id
         self.einstellungen = einstellungen
         self.grund = grund
+        art = .einstellungen
+    }
+
+    /// Spule anlegen (`kennung` nil, `anzahl` gleiche), ändern (`kennung` und `spule`) oder entfernen (`spule` nil).
+    public init(id: String, spuleKennung: String?, spule: JSONValue?, anzahl: Int? = nil, grund: String) {
+        self.id = id
+        self.spuleKennung = spuleKennung
+        self.spule = spule
+        self.anzahl = spuleKennung == nil ? anzahl : nil
+        self.grund = grund
+        art = .spule
+    }
+
+    /// Filament im Projekt führen, ohne Spule.
+    public init(id: String, filamentFuehren: Bool, grund: String) {
+        self.id = id
+        self.filamentFuehren = filamentFuehren
+        self.grund = grund
+        art = .filament
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, seq, id, posten, einstellungen, grund
+        case type, seq, id, posten, einstellungen, grund, spule, anzahl
         case postenID = "posten_id"
+        case spuleKennung = "spule_kennung"
+        case filamentFuehren = "filament_fuehren"
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -91,11 +124,18 @@ public struct BestandSaveMessage: OutgoingRequest {
         try c.encode(Self.type, forKey: .type)
         try c.encode(seq, forKey: .seq)
         try c.encode(id, forKey: .id)
-        if let einstellungen {
-            try c.encode(einstellungen.json, forKey: .einstellungen)
-        } else {
+        switch art {
+        case .einstellungen:
+            try c.encode((einstellungen ?? .standard).json, forKey: .einstellungen)
+        case .posten:
             try c.encode(postenID, forKey: .postenID)
             try c.encode(posten ?? .null, forKey: .posten)  // null = Posten entfernen
+        case .spule:
+            if let spuleKennung { try c.encode(spuleKennung, forKey: .spuleKennung) }
+            try c.encode(spule ?? .null, forKey: .spule)  // null mit Kennung = Spule entfernen
+            if let anzahl { try c.encode(anzahl, forKey: .anzahl) }
+        case .filament:
+            try c.encode(filamentFuehren, forKey: .filamentFuehren)
         }
         try c.encode(grund, forKey: .grund)
     }

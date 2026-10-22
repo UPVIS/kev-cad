@@ -47,6 +47,7 @@ struct ProjectWindow: View {
             DruckSelfTest.runIfRequested(session, state: state)  // Druckvorschau (KEVCAD_SELFTEST=druck)
             DruckerSelbsttest.runIfRequested(session)  // Phase 8 (KEVCAD_SELFTEST=drucker)
             BestandSelfTest.runIfRequested(session)
+            FilamentSelfTest.runIfRequested(session, state: state, material: material)  // KEVCAD_SELFTEST=filament
             MaterialSelfTest.runIfRequested(session, state: state, material: material)
             if let config = session.demo?.config, config.usesGestell { state.schnell.oeffne(.stueckliste) }
         }

@@ -25,10 +25,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bestand_beispiel import BESTAND, BUCHUNGEN, FILAMENT_BESTAND, Katalog, basis_bom, material_bom  # noqa: E402
+from bestand_beispiel import (  # noqa: E402
+    BESTAND,
+    BUCHUNGEN,
+    FILAMENT_BESTAND,
+    SPULEN_BEISPIEL,
+    Katalog,
+    basis_bom,
+    material_bom,
+)
 
 from kevcad_kernel.bestand import einkauf as ek  # noqa: E402
-from kevcad_kernel.bestand.datei import zusammenfassung  # noqa: E402
+from kevcad_kernel.bestand import filament as fl  # noqa: E402
+from kevcad_kernel.bestand.datei import Kennungen, hoechste_kennungen, pruefe, zusammenfassung  # noqa: E402
 from kevcad_kernel.bestand.planung import plane  # noqa: E402
 from kevcad_kernel.protocol import (  # noqa: E402
     check_bestand_message,
@@ -74,6 +83,29 @@ def material_nachrichten() -> tuple[dict, dict]:
     vorschau = pack_print_preview(druckvorschau_beispiel(run=5), seq=36)
     assert not check_druck_message(vorschau), check_druck_message(vorschau)
     return {"type": "BOM", "seq": 35, **planung.bom}, vorschau
+
+
+# Strang „Bestand Stufe 2“, App: Spulen im Bereich „Bestand“ und Filament im Dialog „Gebaut“. PETG reicht nicht
+# (Rest einer gekauften Spule wird S-0004), PLA hat zwei Spulen (angebrochen und voll), Platte 2 ist schon gedruckt.
+SPULEN_APP = SPULEN_BEISPIEL
+
+
+def bestand_filament_nachricht(seq: int) -> dict:
+    """BESTAND mit Spulen und ``gebaut_filament``, gerechnet wie die Laufzeit (Platte 2 als gedruckt gebucht)."""
+    best = copy.deepcopy(BESTAND)
+    best["filament"] = copy.deepcopy(SPULEN_APP)
+    dv = druckvorschau_beispiel(run=5)
+    wahl, schon = [1], {2: "B-0005"}
+    ops, info = fl.verbrauch_aenderungen(fl.bedarf(dv, 5, wahl), best, Kennungen(hoechste_kennungen(best)),
+                                         "2026-10-22", Katalog())
+    g = fl.gebaut_vorschau(5, ops, info, best, dv, wahl, schon, None, None,
+                           lambda m: (Katalog().material(m) or {}).get("name") or m)
+    return pack_bestand(bestand=best, buchungen=[], stand=STAND,
+                        datei="/Users/test/Documents/Kev CAD/Kugelschieber/bestand.json", seq=seq, gebaut_filament=g)
+
+
+SPULE_NEU = {"material": "petg", "gramm": 1000, "gramm_voll": 1000, "name": "Bambu PETG Basic schwarz",
+             "hersteller": "Bambu Lab", "farbe": "schwarz", "ort": "Regal 3"}
 
 
 def material_erwartet(bom: dict, vorschau: dict) -> dict:
@@ -126,6 +158,17 @@ def main() -> None:
                                         "einstellungen": {"mindestrest_mm": 80, "saegeblatt_mm": 2.5}, "grund": ""}),
         ("gebaut_req", {"type": "GEBAUT_REQ", "seq": 44, "id": "a-21", "run": 5}),
         ("buchung_rueckgaengig", {"type": "BUCHUNG_RUECKGAENGIG", "seq": 45, "id": "a-24", "buchung": "B-0003"}),
+        # Strang „Bestand Stufe 2“: Spulen (Kernel → App mit gebaut_filament, App → Kernel BESTAND_SAVE)
+        ("bestand_filament", bestand_filament_nachricht(36)),
+        ("bestand_save_spule", {"type": "BESTAND_SAVE", "seq": 46, "id": "a-25", "spule": dict(SPULE_NEU),
+                                "anzahl": 2, "grund": "Filament: 2 Spulen PETG"}),
+        ("bestand_save_spule_aendern", {"type": "BESTAND_SAVE", "seq": 47, "id": "a-26", "spule_kennung": "S-0001",
+                                        "spule": {**SPULE_NEU, "gramm": 310, "ort": ""},
+                                        "grund": "Spule S-0001 geändert"}),
+        ("bestand_save_spule_entfernen", {"type": "BESTAND_SAVE", "seq": 48, "id": "a-27", "spule_kennung": "S-0003",
+                                          "spule": None, "grund": "Spule S-0003 entfernt"}),
+        ("bestand_save_filament_fuehren", {"type": "BESTAND_SAVE", "seq": 49, "id": "a-28", "filament_fuehren": True,
+                                           "grund": "Filament führen"}),
     ]
     files = []
     for name, header in frames:
@@ -166,6 +209,18 @@ def main() -> None:
             "stueckgut": [{k: s[k] for k in ("stock_id", "laenge", "anzahl", "aus_bestand", "kaufen")}
                           for s in bom["stueckgut"]],
         },
+    }
+    fil = dict(frames)["bestand_filament"]
+    assert not pruefe(fil["bestand"]), pruefe(fil["bestand"])
+    g = fil["gebaut_filament"]
+    erwartet["filament"] = {
+        "spulen": [s["kennung"] for s in fil["bestand"]["filament"]],
+        "voll": [s["kennung"] for s in fil["bestand"]["filament"] if s["gramm"] >= s["gramm_voll"]],
+        "gebaut": {"run": g["run"], "platten": [[p["nr"], p["gebucht"], p["buchen"]] for p in g["platten"]],
+                   "spulen": [[s["kennung"], s["gramm"], s["vorher"], s["nachher"], s["leer"]] for s in g["spulen"]],
+                   "neue_spulen": [[s["kennung"], s["gramm"]] for s in g["neue_spulen"]],
+                   "gekauft": [[s["material"], s["gramm"]] for s in g["gekauft"]],
+                   "materialien": g["materialien"]},
     }
     mat_bom, mat_vorschau = material_nachrichten()
     for name, header in (("bom_material", mat_bom), ("print_material", mat_vorschau)):

@@ -110,11 +110,16 @@ enum MaterialSelfTest {
         check(daten.kennzahlen.teile == bom?.totals.teile && daten.kennzahlen.preis == bom?.totals.preis,
               "Summen wie die Stückliste: \(daten.kennzahlen.teile) Teile, \(daten.kennzahlen.kostenText)")
         if let b = model.bestandZustand.zuschnitt {
-            check(daten.kennzahlen.einkaufLagerSumme == b.summe && daten.lagerEinkauf.count == b.einkaufsliste.count,
-                  "Einkaufsliste wie der Kernel: \(b.einkaufsliste.count) Positionen Lagerware")
+            // Filament-Spulen (Strang „Bestand Stufe 2“) rechnet die App aus Bestand und Druckvorschau dazu
+            let spulen = daten.lagerEinkauf.filter { $0.position.einheit.hasPrefix("Spule ") }.map(\.position)
+            let werte = ([b.summe] + spulen.map(\.preis)).compactMap { $0 }
+            let summe: Double? = werte.isEmpty ? nil : werte.reduce(0, +)
+            check(daten.kennzahlen.einkaufLagerSumme == summe && daten.lagerEinkauf.count == b.einkaufsliste.count + spulen.count,
+                  "Einkaufsliste wie der Kernel: \(b.einkaufsliste.count) Positionen Lagerware, \(spulen.count) Spulen")
         }
-        let quellen = ExportQuellen(kopf: ExportKopf(projekt: model.project?.name ?? ""), bom: bom,
+        var quellen = ExportQuellen(kopf: ExportKopf(projekt: model.project?.name ?? ""), bom: bom,
                                     bestand: model.bestandZustand.zuschnitt, teile: model.parts)
+        quellen.druck = model.druck.vorschau  // wie ExportSteuerung
         check(quellen.material.kennzahlen.einkaufSumme == daten.kennzahlen.einkaufSumme
               && quellen.material.zuschnitte.count == daten.zuschnitte.count,
               "Bericht liest dieselben Daten: Einkauf \(daten.kennzahlen.einkaufText), \(daten.zuschnitte.count) Zuschnitte")

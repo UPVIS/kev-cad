@@ -14,6 +14,7 @@ struct MaterialEinkaufAnsicht: View {
     var navigation: MaterialNavigation?
 
     private var k: MaterialKennzahlen { daten.kennzahlen }
+    private var bestand: Bestand? { model.bestandZustand.bestand }
 
     private var gefiltert: [MaterialEinkauf] {
         let q = material.suche.trimmingCharacters(in: .whitespaces).lowercased()
@@ -256,10 +257,20 @@ struct MaterialEinkaufAnsicht: View {
                     }
                     .monospacedDigit()
                     .help(f.quelleText)
+                    // Strang „Bestand Stufe 2“: Spulen im Bestand, ab zwei je Spule mit angebrochen bzw. voll
+                    if let m = f.material, let spulen = bestand?.spulen(material: m), !spulen.isEmpty {
+                        GridRow {
+                            SpulenKurz(spulen: spulen)
+                                .gridCellColumns(4)
+                                .padding(.leading, 10)
+                        }
+                    }
                 }
             }
             Text((daten.filament.first?.stand != nil ? "Aus der Druckvorschau. " : "Aus der Stückliste (Volumen × Dichte). ")
-                 + "Spulen werden noch nicht im Bestand geführt.")
+                 + (bestand?.fuehrtFilament == true
+                    ? "Fehlende Spulen stehen oben unter Lagerware; angebrochene werden zuerst verbraucht."
+                    : "Spulen führt der Bestand, sobald du eine einträgst (Material › Bestand)."))
                 .font(.caption).foregroundStyle(.secondary)
         }
         .font(.body)
@@ -309,6 +320,14 @@ private struct EinkaufBenennung: View {
         HStack(spacing: 8) {
             if zeile.art == .zukauf {
                 ArtTile(art: "zukaufteil", size: 22, tint: MaterialKennzeichen.zukauf.color)
+            } else if p.einheit.hasPrefix("Spule ") {
+                // Filament-Spule (Strang „Bestand Stufe 2“): id ist das Material, kein Lagerteil
+                Image(systemName: "printer.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(MaterialKennzeichen.kaufen.color)
+                    .frame(width: 22, height: 22)
+                    .background(RoundedRectangle(cornerRadius: 5.5, style: .continuous)
+                        .fill(MaterialKennzeichen.kaufen.color.opacity(0.12)))
             } else {
                 ArtTile(art: model.lagerteilArt(p.id), size: 22, tint: MaterialKennzeichen.kaufen.color)
             }
@@ -321,7 +340,8 @@ private struct EinkaufBenennung: View {
             .strikethrough(abgehakt, color: .secondary)
             .foregroundStyle(abgehakt ? .secondary : .primary)
         }
-        .help("\(p.benennung)\n\(zeile.art == .zukauf ? "Zukaufteil" : "Lagerteil") \(p.id)" + (p.hinweis.map { "\n\($0)" } ?? ""))
+        .help("\(p.benennung)\n\(zeile.art == .zukauf ? "Zukaufteil" : (p.einheit.hasPrefix("Spule ") ? "Material" : "Lagerteil")) \(p.id)"
+            + (p.hinweis.map { "\n\($0)" } ?? ""))
     }
 }
 

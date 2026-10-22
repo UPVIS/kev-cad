@@ -377,3 +377,87 @@ def test_katalog_prueft_spule_g():
     assert validate_material({**m, "spule_g": 750}) == []
     assert "spule_g" in validate_material({**m, "spule_g": 0})[0]
     assert "spule_g" in validate_material({**m, "spule_g": "1 kg"})[0]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# App: BESTAND_SAVE mit Spulen und gebaut_filament in BESTAND (Strang „Bestand Stufe 2“, App-Lücken)
+
+
+def speichern(rt, header):
+    rt.gesendet.clear()
+    rt._bestand_anfrage({"type": "BESTAND_SAVE", "id": "a-1", "grund": "Kevin in der App", **header})
+    (ack,) = [m for m in rt.gesendet if m.get("type") == "ACK"]
+    return ack
+
+
+def test_bestand_save_mit_spulen(rt):
+    ack = speichern(rt, {"filament_fuehren": True})
+    assert ack["ok"] and ack["buchung"] == "B-0001" and spulen(rt) == []
+    assert speichern(rt, {"filament_fuehren": True}) == {"type": "ACK", "reply_to": "a-1", "ok": True,
+                                                          "message": "keine Änderung"}
+    ack = speichern(rt, {"spule": {"material": "petg", "gramm": 640, "gramm_voll": 1000, "name": "Bambu PETG Basic",
+                                   "hersteller": "Bambu Lab", "farbe": "schwarz", "ort": "Regal 3"}, "anzahl": 2})
+    assert ack["ok"] and ack["message"] == "2 Spulen neu (S-0001 640 g, S-0002 640 g)"
+    assert [(s["kennung"], s["gramm"], s["farbe"]) for s in spulen(rt)] == [("S-0001", 640, "schwarz"),
+                                                                           ("S-0002", 640, "schwarz")]
+    assert any(m.get("type") == "BESTAND" for m in rt.gesendet)  # danach BESTAND und BOM
+    # ändern: alle Felder wie in der App, leere Texte löschen
+    ack = speichern(rt, {"spule_kennung": "S-0002", "spule": {"material": "petg", "gramm": 1000, "gramm_voll": 1000,
+                                                              "name": "Bambu PETG Basic", "hersteller": "Bambu Lab",
+                                                              "farbe": "schwarz", "ort": ""}})
+    assert ack["ok"] and ack["message"] == "Spule S-0002: 640 g → 1000 g"
+    assert spulen(rt)[1]["ort"] is None and spulen(rt)[1]["gramm"] == 1000
+    assert speichern(rt, {"spule_kennung": "S-0002", "spule": spulen(rt)[1]})["message"] == "keine Änderung"
+    # entfernen und Fehler mit den Regeln von bestand_eintragen
+    ack = speichern(rt, {"spule_kennung": "S-0001", "spule": None})
+    assert ack["ok"] and ack["message"] == "1 Spule weg (S-0001)"
+    ack = speichern(rt, {"spule": {"material": "messing", "gramm": 10}})
+    assert ack["ok"] is False and "kein Druckmaterial" in ack["message"]
+    ack = speichern(rt, {"spule": {"material": "petg", "gramm": 10, "dicke": 1.75}})
+    assert ack["ok"] is False and "dicke" in ack["message"]
+    datei = BestandDatei.fuer_projekt(rt._project.path)
+    assert {b["von"] for b in datei.buchungen()} == {"kevin"}
+    # Rückgängig wie jede Buchung
+    rt._bestand_anfrage({"type": "BUCHUNG_RUECKGAENGIG", "id": "a-2", "buchung": "B-0004"})
+    assert [s["kennung"] for s in spulen(rt)] == ["S-0001", "S-0002"]
+
+
+def test_gebaut_filament_in_bestand(rt):
+    assert "gebaut_filament" not in rt._bestand_nachricht()  # Projekt führt kein Filament
+    rt.bestand_eintragen(material="petg", gramm=120, spule="Bambu PETG Basic schwarz", grund="Kevin")
+    rt.bestand_eintragen(material="pla", gramm=310, grund="Kevin")
+    g = rt._bestand_nachricht()["gebaut_filament"]
+    assert g["run"] is None and g["hinweis"].startswith("Noch keine Stückliste")
+    rt.rechnen()
+    g = rt._bestand_nachricht()["gebaut_filament"]
+    assert g["run"] == 5 and g["ganz_gebucht"] is None
+    assert [(p["nr"], p["gebucht"], p["buchen"]) for p in g["platten"]] == [(1, None, True), (2, None, True)]
+    assert g["spulen"] == [
+        {"kennung": "S-0001", "material": "petg", "name": "Bambu PETG Basic schwarz", "farbe": None, "gramm": 120,
+         "vorher": 120, "nachher": 0, "leer": True},
+        {"kennung": "S-0002", "material": "pla", "name": None, "farbe": None, "gramm": 24.6, "vorher": 310,
+         "nachher": 285.4, "leer": False}]
+    assert g["neue_spulen"] == [{"kennung": "S-0003", "material": "petg", "gramm": 931.2, "gramm_voll": 1000}]
+    assert g["gekauft"] == [{"material": "petg", "gramm": 68.8}]
+    assert g["materialien"] == {"petg": "PETG", "pla": "PLA"}
+    # Platte 1 als gedruckt gebucht: Gebaut nimmt nur noch Platte 2
+    assert rt.gedruckt_buchen(grund="Kevin: Platte 1 gedruckt", platten=[1])["ok"]
+    g = rt._bestand_nachricht()["gebaut_filament"]
+    assert [(p["nr"], p["gebucht"], p["buchen"]) for p in g["platten"]] == [(1, "B-0003", False), (2, None, True)]
+    assert [s["kennung"] for s in g["spulen"]] == ["S-0002"] and g["neue_spulen"] == [] and g["gekauft"] == []
+
+
+def test_neue_druckvorschau_schickt_bestand_nur_bei_aenderung(rt):
+    rt.bestand_eintragen(material="petg", gramm=120, grund="Kevin")
+    rt.rechnen()
+    rt._bestand_nachricht()
+    rt.gesendet.clear()
+    rt._bestand_vorschau_neu()
+    assert rt.gesendet == []  # unverändert: nichts
+    with rt._dv_lock:
+        rt._dv_vorschau = vorschau(petg=500.0)
+    rt._bestand_vorschau_neu()
+    (m,) = rt.gesendet
+    assert m["type"] == "BESTAND" and m["gebaut_filament"]["spulen"][0]["gramm"] == 120
+    # PLA hat keine Spule: alles von gekauften Spulen
+    assert m["gebaut_filament"]["gekauft"] == [{"material": "petg", "gramm": 380}, {"material": "pla", "gramm": 24.6}]

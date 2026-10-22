@@ -124,6 +124,15 @@ FILAMENT = {"petg": {"id": "petg", "name": "PETG", "gruppe": "Kunststoff", "dich
                      "preis_stand": "2026-10", "druckbar": True},
             "pla": {"id": "pla", "name": "PLA", "gruppe": "Kunststoff", "dichte": 1.24, "preis_je_kg": 17.0,
                     "preis_stand": "2026-10", "druckbar": True}}
+# Spulen für den Ersatz-Kernel (--filament) und den Selbsttest der App: PETG reicht nicht, PLA hat zwei Spulen
+SPULEN_BEISPIEL: list[dict[str, Any]] = [
+    {"kennung": "S-0001", "material": "petg", "gramm": 120, "gramm_voll": 1000, "name": "Bambu PETG Basic schwarz",
+     "hersteller": "Bambu Lab", "farbe": "schwarz", "ort": "Regal 3", "seit": "2026-10-22"},
+    {"kennung": "S-0002", "material": "pla", "gramm": 310, "gramm_voll": 1000, "name": "Amazon Basics PLA weiß",
+     "hersteller": "Amazon Basics", "farbe": "weiß", "ort": None, "seit": "2026-10-22"},
+    {"kennung": "S-0003", "material": "pla", "gramm": 1000, "gramm_voll": 1000, "name": None,
+     "hersteller": "Amazon Basics", "farbe": "weiß", "ort": "Schrank", "seit": "2026-10-22"},
+]
 # Filament im Bestand (Strang „Bestand Stufe 2“): PETG reicht nicht (eine Spule kaufen), PLA reicht
 FILAMENT_BESTAND: list[dict[str, Any]] = [
     {"kennung": "S-0001", "material": "petg", "gramm": 120, "gramm_voll": 1000, "name": "Bambu PETG Basic schwarz",

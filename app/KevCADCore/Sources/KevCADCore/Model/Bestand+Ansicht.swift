@@ -7,6 +7,8 @@ import Foundation
 public struct GebautVorschau: Equatable, Sendable {
     public enum Art: String, Sendable {
         case restWeg, ganzeWeg, stueckWeg, restNeu, kaufen, verschnitt
+        /// Filament (Strang „Bestand Stufe 2“): Gramm von einer Spule, neue Spule, Platte der Druckvorschau.
+        case filamentWeg, spuleNeu, platte
     }
 
     public struct Zeile: Identifiable, Equatable, Sendable {
@@ -17,13 +19,16 @@ public struct GebautVorschau: Equatable, Sendable {
         /// Lagerteil, z. B. „ALFER-Rundrohr 12 × 1“.
         public var teil: String
         public var hinweis: String?
+        /// Platten: schon als gedruckt gebucht.
+        public var gebucht: Bool
 
-        public init(id: String, art: Art, text: String, teil: String, hinweis: String? = nil) {
+        public init(id: String, art: Art, text: String, teil: String, hinweis: String? = nil, gebucht: Bool = false) {
             self.id = id
             self.art = art
             self.text = text
             self.teil = teil
             self.hinweis = hinweis
+            self.gebucht = gebucht
         }
     }
 
@@ -31,6 +36,10 @@ public struct GebautVorschau: Equatable, Sendable {
     public var neu: [Zeile]
     public var kaufen: [Zeile]
     public var verschnitt: [Zeile]
+    /// Platten der Druckvorschau mit ihrem Stand (Filament); leer ohne Filament im Projekt.
+    public var platten: [Zeile] = []
+    /// Hinweis des Kernels zum Filament („Keine Druckvorschau zu Lauf 5“).
+    public var filamentHinweis: String?
 
     public init(weg: [Zeile] = [], neu: [Zeile] = [], kaufen: [Zeile] = [], verschnitt: [Zeile] = []) {
         self.weg = weg
@@ -53,8 +62,10 @@ public struct GebautVorschau: Equatable, Sendable {
     /// - Parameters:
     ///   - lines: Stücklistenzeilen (für Stückgut aus dem Bestand).
     ///   - name: Anzeigename eines Lagerteils (Katalog oder Stückliste).
+    ///   - filament: was „Gebaut“ vom Filament abbucht (BESTAND `gebaut_filament` zur aktuellen Stückliste).
     public static func berechnen(
-        zuschnitt: BOMBestand, bestand: Bestand?, lines: [BOMLine], name: (String) -> String? = { _ in nil }
+        zuschnitt: BOMBestand, bestand: Bestand?, lines: [BOMLine], name: (String) -> String? = { _ in nil },
+        filament: GebautFilament? = nil
     ) -> GebautVorschau {
         var v = GebautVorschau()
         for z in zuschnitt.zuschnitte {
@@ -144,7 +155,48 @@ public struct GebautVorschau: Equatable, Sendable {
                     hinweis: b.n > da ? "\(KevFormat.integer(b.n)) gebraucht, \(KevFormat.integer(da)) im Bestand" : nil))
             }
         }
+        if let filament { v.filamentEinrechnen(filament) }
         return v
+    }
+
+    /// Filament (Strang „Bestand Stufe 2“): je Spule, wie viel Gramm sie verliert (leer werdende werden entfernt), der
+    /// Rest gekaufter Spulen als neue Spule, Gekauftes als Voraussetzung und je Platte der Druckvorschau, ob sie jetzt
+    /// gebucht wird oder schon als gedruckt gebucht ist. Gerechnet hat es der Kernel (`gebaut_filament`).
+    mutating func filamentEinrechnen(_ f: GebautFilament) {
+        for s in f.spulen {
+            let bez = [s.name, s.farbe].compactMap { $0 }.filter { !$0.isEmpty }.first
+            weg.append(Zeile(
+                id: "filament/\(s.kennung)", art: .filamentWeg,
+                text: "\(KevFormat.mass(grams: s.gramm)) von Spule \(s.kennung)",
+                teil: "Filament \(f.name(s.material))" + (bez.map { " · \($0)" } ?? ""),
+                hinweis: s.leer
+                    ? "danach leer, wird aus dem Bestand entfernt"
+                    : "\(KevFormat.mass(grams: s.vorher)) → \(KevFormat.mass(grams: s.nachher))"))
+        }
+        for s in f.neueSpulen {
+            neu.append(Zeile(
+                id: "filament/\(s.kennung)", art: .spuleNeu,
+                text: "Spule \(s.kennung) · \(KevFormat.mass(grams: s.gramm))", teil: "Filament \(f.name(s.material))",
+                hinweis: "Rest einer gekauften Spule"))
+        }
+        for g in f.gekauft {
+            kaufen.append(Zeile(
+                id: "filament/kauf/\(g.material)", art: .kaufen,
+                text: "\(KevFormat.mass(grams: g.gramm)) von gekauften Spulen", teil: "Filament \(f.name(g.material))",
+                hinweis: "muss vorher gekauft sein; der Rest der Spule kommt in den Bestand"))
+        }
+        for p in f.platten {
+            let zustand: String
+            if let b = p.gebucht {
+                zustand = "schon als gedruckt gebucht (\(b))"
+            } else {
+                zustand = p.buchen ? "wird jetzt abgebucht" : "nichts abzubuchen"
+            }
+            platten.append(Zeile(
+                id: "platte/\(p.nr)", art: .platte, text: "Platte \(p.nr)", teil: f.plattenText(p), hinweis: zustand,
+                gebucht: p.gebucht != nil))
+        }
+        filamentHinweis = f.hinweis
     }
 
     static func masse(_ q: ZuschnittQuelle) -> String {

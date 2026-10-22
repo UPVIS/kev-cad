@@ -237,7 +237,14 @@ class BestandErsatz:
                 self._project = None
                 self._bom = None
                 self.catalog = Katalog()
+                # Druckvorschau für das Filament (--filament, Strang „Bestand Stufe 2“)
+                self._dv_lock = threading.RLock()
+                self._dv_vorschau: dict[str, Any] | None = None
                 self._bestand_init()
+
+            def _dv_aktuell(self, warten_s: float = 0.0) -> dict[str, Any] | None:
+                with self._dv_lock:
+                    return self._dv_vorschau
 
             def _send_app(self, header: dict[str, Any], payload: bytes = b"") -> bool:
                 fk.send(header, payload)
@@ -252,9 +259,14 @@ class BestandErsatz:
                 p.mkdir(parents=True, exist_ok=True)
                 datei = self._bestand_datei()
                 if datei is not None and not datei.existiert:
-                    from bestand_beispiel import BESTAND
+                    import copy
 
-                    datei.schreiben(BESTAND)
+                    from bestand_beispiel import BESTAND, SPULEN_BEISPIEL
+
+                    best = copy.deepcopy(BESTAND)
+                    if getattr(fk.args, "filament", False):
+                        best["filament"] = copy.deepcopy(SPULEN_BEISPIEL)
+                    datei.schreiben(best)
                     log(f"Bestand mit dem Beispiel angelegt: {datei.pfad}")
                 self._bestand_projekt(same=False)
 
@@ -416,11 +428,14 @@ class FakeKernel:
                        "inventar_verstoesse": self.violations()})
             self.last_bom = self.bom(run)
             if self.bestand is not None:
-                from bestand_beispiel import basis_bom
+                from bestand_beispiel import basis_bom, material_bom
 
-                self.last_bom = self.bestand._bestand_bom(basis_bom(run=run))
+                basis = material_bom(run=run) if getattr(self.args, "filament", False) else basis_bom(run=run)
+                self.last_bom = self.bestand._bestand_bom(basis)
                 self.bestand._bom = self.last_bom
             self.send({"type": "BOM", **self.last_bom})
+            if self.bestand is not None and getattr(self.args, "filament", False):
+                self.filament_vorschau(run)
             self.send({"type": "STATUS", "state": "ready", "message": None})
             log(f"Lauf {run} fertig: {len(self.current)} Teile, {tri} Dreiecke")
         finally:
@@ -558,6 +573,24 @@ class FakeKernel:
                 ev.set()
         else:
             log(f"Unbekannte Nachricht {t}")
+
+    def filament_vorschau(self, run: int) -> None:
+        """--filament: Druckvorschau des Beispiels zum Lauf (PRINT_PREVIEW), danach BESTAND mit gebaut_filament wie der
+        echte Kernel; beim ersten Lauf ist Platte 2 schon als gedruckt gebucht (für den Dialog „Gebaut“)."""
+        from kevcad_kernel.protocol import druckvorschau_beispiel, pack_print_preview
+
+        assert self.bestand is not None
+        v = druckvorschau_beispiel(run=run)
+        with self.bestand._dv_lock:
+            self.bestand._dv_vorschau = v
+        self.send(pack_print_preview(v))
+        if run == 1:
+            res = self.bestand._gedruckt(grund="Ersatz-Kernel: Platte 2 ist gedruckt", platten=[2], von="kevin",
+                                         warten_s=0.0)
+            log(f"Platte 2 als gedruckt gebucht: {res.get('message') or res.get('error')}")
+            self.send(self.bestand._bestand_nachricht())
+        else:
+            self.bestand._bestand_vorschau_neu()
 
     def _bestand_anfrage(self, header: dict[str, Any]) -> None:
         assert self.bestand is not None
@@ -876,7 +909,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bestand", action="store_true",
                         help="Bestand je Projekt mit dem Beispiel Kugelschieber (BESTAND.md)")
     parser.add_argument("--zukauf", action="store_true", help="Phase 3: Zukaufteil verbauen, ZUKAUF_* beantworten")
+    parser.add_argument("--filament", action="store_true",
+                        help="mit --bestand: Spulen, Druckteile und Druckvorschau (Strang „Bestand Stufe 2“)")
     args, rest = parser.parse_known_args(argv)
+    if args.filament:
+        args.bestand = True
     extra = [a for a in rest if a != "serve"]
     if extra:
         log(f"ignoriere Argumente: {extra}")
