@@ -55,6 +55,7 @@ struct ScanMeta: Codable {
         var fps: Int
         var kamera: String
         var hochaufloesend_empfohlen: Bool
+        var hdr: Bool
     }
 
     /// Zusatz zu Version 1: Einstellungen der automatischen Fotos.

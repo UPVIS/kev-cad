@@ -88,7 +88,7 @@ So schreibt Kev Scan 1.0 die Dateien; alles hier ist Präzisierung oder Zusatz, 
 - **`rgb.mp4`:** HEVC (Rückfall H.264), Bitrate etwa 16 Mbit/s, ein Schlüsselbild je zehn Bilder, ohne Drehung.
 - **`meta.json`, zusätzliche Felder:**
   `id` (UUID des Scans, bleibt beim Umbenennen gleich), `dauer_s` (Zeit des letzten Videobilds), `zeit_bezug`,
-  `videoformat` (`breite`, `hoehe`, `fps`, `kamera` als AVCaptureDevice-Typ, `hochaufloesend_empfohlen`) und
+  `videoformat` (`breite`, `hoehe`, `fps`, `kamera` als AVCaptureDevice-Typ, `hochaufloesend_empfohlen`, `hdr`) und
   `auto_foto` (`aktiv`, `winkel_grad`, `abstand_m`). `video.codec` ist `hevc` oder `h264`. `fotos.breite/hoehe` sind die
   des ersten Fotos (0 ohne Fotos). Die App schreibt `meta.json` als letzte Datei; ein Ordner ohne `meta.json` ist eine
   abgebrochene Aufnahme.

@@ -326,7 +326,8 @@ final class ScanRecorder {
                                               hoehe: Int(f.imageResolution.height),
                                               fps: f.framesPerSecond,
                                               kamera: f.captureDeviceType.rawValue,
-                                              hochaufloesend_empfohlen: f.isRecommendedForHighResolutionFrameCapturing)
+                                              hochaufloesend_empfohlen: f.isRecommendedForHighResolutionFrameCapturing,
+                                              hdr: f.isVideoHDRSupported)
         }
         return ScanMeta(format: "kevscan",
                         version: 1,

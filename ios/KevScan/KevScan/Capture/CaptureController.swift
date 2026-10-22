@@ -93,20 +93,25 @@ final class CaptureController: NSObject, ObservableObject, ARSessionDelegate {
         config.planeDetection = [.horizontal]
         config.environmentTexturing = .none
         config.isAutoFocusEnabled = true
+        config.videoHDRAllowed = false
         view.session.run(config)
     }
 
-    /// Videoformat mit Unterstützung für `captureHighResolutionFrame`, bevorzugt 1920 × 1440 mit der höchsten Bildrate.
+    /// Videoformat mit Unterstützung für `captureHighResolutionFrame`, bevorzugt 1920 × 1440 ohne HDR mit der höchsten
+    /// Bildrate. Auf dem iPhone 15 Pro Max (iOS 27) gibt es 1920 × 1440 bei 60 fps zweimal, mit und ohne HDR-Fähigkeit;
+    /// für Scans ist das Format ohne HDR besser (gleichmäßige Farben, 8-bit-Bilder für den Videoschreiber).
     static func bestVideoFormat() -> ARConfiguration.VideoFormat? {
         let formats = ARWorldTrackingConfiguration.supportedVideoFormats.filter {
             $0.captureDevicePosition == .back && $0.isRecommendedForHighResolutionFrameCapturing
         }
-        let preferred = formats
-            .filter { Int($0.imageResolution.width) == 1920 && Int($0.imageResolution.height) == 1440 }
-            .max { $0.framesPerSecond < $1.framesPerSecond }
+        let sensorSized = formats.filter {
+            Int($0.imageResolution.width) == 1920 && Int($0.imageResolution.height) == 1440
+        }
+        func rank(_ f: ARConfiguration.VideoFormat) -> Int { (f.isVideoHDRSupported ? 0 : 1000) + f.framesPerSecond }
+        let preferred = sensorSized.max { rank($0) < rank($1) }
         return preferred
             ?? ARWorldTrackingConfiguration.recommendedVideoFormatForHighResolutionFrameCapturing
-            ?? formats.max { $0.framesPerSecond < $1.framesPerSecond }
+            ?? formats.max { rank($0) < rank($1) }
     }
 
     // MARK: ARSessionDelegate
