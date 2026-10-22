@@ -57,6 +57,7 @@ class Szenario:
     quelle: str = "modell"  # modell | standard | agent
     beschreibung: str = ""
     zeile: int | None = None
+    ablauf: dict[str, Any] | None = None  # S2 (Dynamik): geschwindigkeit, bremsen, dauer, animation, antrieb, …
 
     @property
     def feld(self) -> np.ndarray:
@@ -96,7 +97,8 @@ class Szenario:
                 "stossfaktor": self.stoss_faktor if self.stoss_faktor != 1.0 else None,
                 "lasten": [l.kurz() for l in self.lasten], "ziel": self.ziel_fuer(False),
                 "ziel_druck": self.ziel_fuer(True), "durchbiegung": f"L/{self.durchbiegung:g}",
-                "beschreibung": self.beschreibung or None, "zeile": self.zeile}
+                "beschreibung": self.beschreibung or None, "zeile": self.zeile,
+                **({"ablauf": dict(self.ablauf)} if self.ablauf else {})}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -161,7 +163,55 @@ def szenario_aus(d: dict[str, Any], quelle: str = "agent") -> Szenario:
         s.durchbiegung = float(str(d["durchbiegung"]).replace("L/", "") or DURCHBIEGUNG)
     for l in d.get("lasten") or []:
         s.lasten.append(last_aus(l))
+    ab = ablauf_aus(d)
+    if ab:
+        s.ablauf = ab
+        s.dynamisch = True
+        if b is None:  # S0/S1 rechnen mit der größten Verzögerung als ruhender Last (d'Alembert)
+            s.beschleunigung = -float(ab.get("verzoegerung") or 0.0) * np.asarray(ab["fahrtrichtung"], dtype=float)
     return s
+
+
+ABLAUF_SCHLUESSEL = ("geschwindigkeit", "bremsen", "dauer", "animation", "antrieb", "angriff", "fahrtrichtung")
+
+
+def ablauf_aus(d: dict[str, Any]) -> dict[str, Any] | None:
+    """Angaben für den Ablauf (S2) aus einem Szenario: ``geschwindigkeit`` (m/s), ``bremsen`` (m/s², "abrupt",
+    "anprall"), ``dauer`` (s), ``animation`` (Sollbahn aus einer Animation), ``antrieb`` (geschobenes Teil),
+    ``angriff`` ("boden", Höhe in mm oder Punkt), ``fahrtrichtung`` ("+x" oder Vektor). Ohne Geschwindigkeit,
+    Bremsen und Animation: None (kein Ablauf)."""
+    quelle = d.get("ablauf") if isinstance(d.get("ablauf"), dict) else d
+    if not any(quelle.get(k) is not None for k in ("geschwindigkeit", "bremsen", "animation")):
+        return None
+    out: dict[str, Any] = {}
+    v = quelle.get("geschwindigkeit")
+    if v is not None:
+        v = float(v)
+        if not 0 < v <= 20:
+            raise ValueError(f"geschwindigkeit {v:g} m/s: zwischen 0 und 20 m/s angeben")
+        out["geschwindigkeit"] = v
+    elif quelle.get("animation") is None:
+        raise ValueError("Ablauf braucht geschwindigkeit=… (m/s) oder animation=\"Name\"")
+    br = quelle.get("bremsen")
+    if br is not None and not isinstance(br, (str, int, float)):
+        raise ValueError("bremsen als Zahl in m/s², \"abrupt\" oder \"anprall\" angeben")
+    out["bremsen"] = br
+    for k in ("dauer", "animation", "antrieb", "angriff"):
+        if quelle.get(k) is not None:
+            out[k] = quelle[k]
+    if out.get("dauer") is not None and not 0 < float(out["dauer"]) <= 30:
+        raise ValueError("dauer zwischen 0 und 30 s angeben")
+    out["fahrtrichtung"] = _richtung(quelle.get("fahrtrichtung") or "+x").tolist()
+    stoss = d.get("stoss")
+    faktor = float(stoss.get("faktor") if isinstance(stoss, dict) else stoss) if stoss else 1.0
+    if faktor != 1.0:
+        out["stoss"] = faktor
+    from kevcad_kernel.statik.dynamik.ablauf import bremszeit
+
+    a, text = bremszeit(br, float(v or 0.0))
+    out["verzoegerung"] = a * faktor
+    out["bremsart"] = text
+    return out
 
 
 def last_aus(l: dict[str, Any]) -> Last:

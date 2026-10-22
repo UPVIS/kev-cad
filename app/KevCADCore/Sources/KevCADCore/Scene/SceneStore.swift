@@ -63,6 +63,8 @@ public final class SceneStore {
     /// anklickbar) und Färbung der Teile nach ihrer Ausnutzung, siehe Statik/AppController+Statik.swift.
     public private(set) var statikBodies: [ViewportBody] = []
     public private(set) var statikTints: [String: SIMD3<Float>] = [:]
+    /// Statik Stufe 2: Kontaktkräfte des aktuellen Bilds eines Ablaufs als Pfeile (auch während der Animation).
+    public private(set) var ablaufBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -170,6 +172,7 @@ public final class SceneStore {
         vergleichTints = [:]
         statikBodies = []
         statikTints = [:]
+        ablaufBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -345,6 +348,13 @@ public final class SceneStore {
         statikBodies = bodies
         statikTints = tints
         for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Statik Stufe 2: Pfeile der Kontaktkräfte setzen (leer = aus); ohne Wirkung, wenn beides leer ist.
+    public func setAblauf(bodies: [ViewportBody]) {
+        if bodies.isEmpty && ablaufBodies.isEmpty { return }
+        ablaufBodies = bodies
         publish()
     }
 
@@ -716,6 +726,7 @@ public final class SceneStore {
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: vergleichBodies) }  // Versionen: Vergleich
         renderBodies.append(contentsOf: referenzBodies)  // Phase 4: Referenznetze
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: statikBodies) }  // Statik
+        renderBodies.append(contentsOf: ablaufBodies)  // Statik Stufe 2: Kontaktkräfte im Ablauf
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }

@@ -47,6 +47,7 @@ from kevcad_kernel.freigabe import FreigabeAnbindung
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.statik.laufzeit import StatikRuntime  # Statik Stufe 1: statik, szenario_rechnen, STATICS
+from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime  # Statik Stufe 2: dynamik, Ablauf als Animation
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
@@ -108,7 +109,7 @@ class Job:
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
-                    StatikRuntime):
+                    StatikRuntime, DynamikRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -1098,6 +1099,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             app_len = int(header.get("app_len", 0))
             check = dict(header.get("app") or {})
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
+            self._dynamik_nach_lauf(statik)  # Statik S2: Abläufe aus model.py im Hintergrund (eigener Prozess)
             # Druckvorschau: Geometrie je Druckteil aus der Prüfung, und zwar bevor fertig() das wartende run weckt;
             # sonst fragt ein Aufrufer direkt nach run (PRINT_JOB_REQ, druckvorschau) eine Vorschau ohne Eingang ab,
             # während die Versionen hier noch schreiben (Wettlauf, sichtbar seit die Statik die Prüfung verlängert)

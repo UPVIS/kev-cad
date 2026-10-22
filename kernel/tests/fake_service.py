@@ -592,6 +592,34 @@ class FakeService:
         return {"ok": True, "run": self.run_no, "szenario": _szenario_auszug(e), "gezeigt": zeigen, "ms": 120.0,
                 "grenzen": statik_beispiel()["grenzen"], "vereinfachungen": []}
 
+    # Statik Stufe 2 -------------------------------------------------------------------------------------------------
+
+    def dynamik(self, name: str, geschwindigkeit: float | None = None, bremsen: Any = None, dauer: float | None = None,
+                neigung: float | None = None, richtung: Any = None, stoss: float | None = None,
+                animation: str | None = None, antrieb: str | None = None, angriff: Any = None,
+                fahrtrichtung: Any = None, lasten: list[dict[str, Any]] | None = None, suche: bool = True,
+                zeigen: bool = True, beschreibung: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel_ablauf
+        from kevcad_kernel.statik.laufzeit import _szenario_auszug
+
+        self._record("dynamik", name, geschwindigkeit, bremsen)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Statikmodell: erst run aufrufen."}
+        b = statik_beispiel_ablauf()
+        e = dict(b["szenarien"][2], name=name)
+        return {"ok": True, "run": self.run_no, "szenario": _szenario_auszug(e), "ablauf": e["ablauf"],
+                "animation": e["ablauf"]["animation"], "gezeigt": zeigen, "befunde": [],
+                "grenzen": b["grenzen"], "vereinfachungen": [], "ms": {"gesamt": 1800.0, "prozess": 1500.0}}
+
+    def dynamik_grenze(self, ohne: str = "beides", bremsen: Any = "abrupt", geschwindigkeit: float = 1.0,
+                       name: str | None = None) -> dict[str, Any]:
+        res = self.dynamik(name or "Grenze", geschwindigkeit=geschwindigkeit, bremsen=bremsen)
+        if not res.get("ok"):
+            return res
+        return {**res, "grenzen_suche": {"ladung": [{"name": "Bowlingball", "v_grenze": 1.12}],
+                                         "kippen": {"v_abheben": 0.29, "a_abheben": 2.46, "a_kipp_hand": 14.1,
+                                                    "a_abheben_ohne_ladung": 13.92}}}
+
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 
     def drucker_status(self) -> dict[str, Any]:
