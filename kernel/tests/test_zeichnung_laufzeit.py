@@ -144,6 +144,8 @@ def test_neuzuordnung_nach_lauf(env):
     assert rt.run(params={"laenge": 500, "loecher": 3})["ok"]
 
 
+@pytest.mark.skipif(shutil.which("rsvg-convert") is None and not Path("/opt/homebrew/bin/rsvg-convert").exists(),
+                    reason="rsvg-convert fehlt (z. B. auf dem Mac mini)")
 def test_bild_aus_der_laufzeit(env):
     rt = env["rt"]
     if not rt.drawings()["blaetter"]:
