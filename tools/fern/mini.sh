@@ -6,7 +6,7 @@
 #   bash tools/fern/mini.sh status                               Plätze, Schlange, Speicher
 #
 # Ordner auf dem Mini, alle unter ~/KevCAD-Bau (Tessera und andere Projekte haben eigene, die hier nie berührt werden):
-#   auftrag/<id>   Schnappschuss eines Auftrags, von fern.sh hochgeladen (rsync --link-dest auf quelle/<Kürzel>)
+#   auftrag/<id>   Schnappschuss eines Auftrags, von fern.sh hochgeladen (rsync -c --link-dest auf quelle/<Kürzel>)
 #   quelle/<K>     letzter Schnappschuss je Kürzel, Grundlage für den nächsten Abgleich
 #   platz/a, b     feste Bäume der beiden Bauplätze mit warmem Bauordner (.build, build/DerivedData, kernel/.venv)
 #   ergebnis/<id>  was fern.sh danach abholt (Test-App, Paket)
@@ -41,6 +41,8 @@ LOGS="$ROOT/protokoll"
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 SNAP="$(cd "$(dirname "$0")/../.." && pwd)"
 export PATH="$ROOT/werkzeuge/xcodegen/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# Eine nicht interaktive ssh-Sitzung erbt von launchd nur 256 offene Dateien (siehe Hochladen in tools/fern.sh).
+ulimit -n 10240 2>/dev/null
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 export UV_CACHE_DIR="$ROOT/cache/uv"
 mkdir -p "$QUEUE/bau" "$QUEUE/test" "$TREES" "$RESULTS" "$JOBS" "$SOURCES" "$HOMES" "$RUNNING" "$LOGS"
@@ -252,13 +254,18 @@ run() {
 }
 
 # Spiegelt den Schnappschuss nach Inhalt in den Baum des Platzes: ohne Zeitstempel (-c statt -t), damit unveränderte
-# Dateien ihren alten behalten und geänderte einen neuen bekommen. Bauordner und Umgebungen stehen in ausschluss.txt und
-# bleiben deshalb stehen.
+# Dateien ihren alten behalten und geänderte einen neuen bekommen. Geschützt sind nur Bauordner und Umgebungen aus
+# ausschluss.txt, nicht die Python-Caches: Sonst bliebe ein Paket, das ein anderer Zweig im selben Platz hatte, als Ordner
+# mit nur __pycache__ stehen („not empty, cannot delete“), wäre importierbar und landete leer im Installationspaket
+# (am 22.10.2026 kevcad_kernel/zeichnung und bauplan aus phase6 im Paket von main).
 sync_tree() {
   TREE="$TREES/$SLOT"
   mkdir -p "$TREE"
-  rsync -rlpc --delete --exclude-from="$SNAP/tools/fern/ausschluss.txt" "$SNAP/" "$TREE/" || {
-    echo "==> Mini: Spiegeln in den Platz $SLOT fehlgeschlagen"; finish 1; }
+  local keep="$ROOT/sperren/.schutz.$$"
+  grep -vxE '__pycache__|\.pytest_cache|\*\.pyc|\.DS_Store' "$SNAP/tools/fern/ausschluss.txt" > "$keep"
+  rsync -rlpc --delete --exclude-from="$keep" "$SNAP/" "$TREE/" || {
+    rm -f "$keep"; echo "==> Mini: Spiegeln in den Platz $SLOT fehlgeschlagen"; finish 1; }
+  rm -f "$keep"
   echo "$SLOT" > "$HOMES/$ID"
   cd "$TREE" || finish 1
 }

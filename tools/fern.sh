@@ -27,11 +27,17 @@
 #   KEVCAD_FERN=mini    nie hier: ohne Mini Ausgang 255
 #   KEVCAD_FERN_HOST    anderer ssh-Name (Vorgabe mac-mini; mac-mini-ts über Tailscale)
 #   KEVCAD_FERN_FRIST   Frist eines Laufs auf dem Mini in Sekunden (3600)
+#   KEVCAD_FERN_SRC, KEVCAD_FERN_OUT   andere Quelle bzw. Ablage statt build/ (Proben; mit KEVCAD_FERN=mini schreibt fern.sh
+#                       dann nichts in die Quelle, solange dort das App-Symbol aktuell ist)
 # Zeiten je Aufruf: ~/Library/Logs/Kev CAD/fern.tsv (Beginn, Art, Kürzel, Rechner, Ausgang, gesamt, hin, Mini, zurück).
 set -uo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+FERN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Quelle und Ablage der Ergebnisse; anders nur für Proben (etwa release aus build-src, ohne dort zu schreiben).
+REPO="${KEVCAD_FERN_SRC:-$(cd "$FERN_DIR/.." && pwd)}"
 cd "$REPO" || exit 1
+REPO="$(pwd)"
+OUT="${KEVCAD_FERN_OUT:-$REPO/build}"
 export PATH="/opt/homebrew/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
 HOST=${KEVCAD_FERN_HOST:-mac-mini}
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
@@ -43,7 +49,7 @@ BUILD_LOCK=/tmp/vb-xcodebuild.lock
 LOGDIR="$HOME/Library/Logs/Kev CAD"
 INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 
-usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=${1:-}
 [ $# -gt 0 ] && shift
@@ -192,8 +198,13 @@ if [ "$KIND" = bundle ]; then APP_REPO=$INSTALL_ROOT; else APP_REPO=$REPO; fi
 
 # Hochladen in einen eigenen Schnappschuss je Auftrag; unveränderte Dateien verlinkt rsync aus dem letzten des Kürzels.
 T_UP=$(now)
-if ! rsync -az --delete --exclude-from=tools/fern/ausschluss.txt --link-dest="../../quelle/$ID" -e "$RSH" \
-  ./ "$HOST:$REMOTE/auftrag/$JOB_ID/"; then
+# Nach Inhalt (-c), nicht nach Zeitstempel: Eine andere Arbeitskopie desselben Stands (build-src nach git reset) hat
+# andere Zeitstempel, und openrsync kopiert dann jede Datei aus der Grundlage mit einer eigenen, erst am Ende
+# geschlossenen Datei. Am 22.10.2026 scheiterte so das erste echte Update bei rund 500 Dateien am Limit von 256 offenen
+# Dateien der ssh-Sitzung („copy_file fromfd: openat: Too many open files“). Mit -c verlinkt rsync gleiche Inhalte
+# unabhängig vom Zeitstempel und kopiert nur Geändertes; das höhere Limit fängt große Änderungen ab.
+if ! rsync -azc --delete --exclude-from="$FERN_DIR/fern/ausschluss.txt" --link-dest="../../quelle/$ID" -e "$RSH" \
+  --rsync-path="ulimit -n 10240 2>/dev/null; rsync" ./ "$HOST:$REMOTE/auftrag/$JOB_ID/"; then
   fallback "Hochladen fehlgeschlagen"
 fi
 UP=$(secs "$T_UP" "$(now)")
@@ -218,22 +229,22 @@ T_DOWN=$(now)
 if [ $rc -eq 0 ]; then
   case "$KIND" in
     testbau)
-      mkdir -p build
-      if rsync -az --delete -e "$RSH" "$HOST:$REMOTE/ergebnis/$JOB_ID/app.app/" "build/$APP_TEST.app/"; then
+      mkdir -p "$OUT"
+      if rsync -az --delete -e "$RSH" "$HOST:$REMOTE/ergebnis/$JOB_ID/app.app/" "$OUT/$APP_TEST.app/"; then
         # Hier signieren (ad hoc wie build.sh) und bei Launch Services abmelden wie jede Build-Kopie.
-        codesign --force --deep --sign - --timestamp=none "build/$APP_TEST.app" >/dev/null 2>&1
+        codesign --force --deep --sign - --timestamp=none "$OUT/$APP_TEST.app" >/dev/null 2>&1
         /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-          -u "build/$APP_TEST.app" >/dev/null 2>&1
-        echo "==> Fertig (vom Mac mini): $REPO/build/$APP_TEST.app"
+          -u "$OUT/$APP_TEST.app" >/dev/null 2>&1
+        echo "==> Fertig (vom Mac mini): $OUT/$APP_TEST.app"
       else
         fallback "Abholen der App fehlgeschlagen"
       fi
       ;;
     bundle)
-      mkdir -p build
-      if rsync -az --delete -e "$RSH" "$HOST:$REMOTE/ergebnis/$JOB_ID/bundle/" build/bundle/; then
+      mkdir -p "$OUT"
+      if rsync -az --delete -e "$RSH" "$HOST:$REMOTE/ergebnis/$JOB_ID/bundle/" "$OUT/bundle/"; then
         DOWN=$(secs "$T_DOWN" "$(now)")
-        ./build.sh --install-bundle build/bundle || rc=$?
+        ./build.sh --install-bundle "$OUT/bundle" || rc=$?
       else
         fallback "Abholen des Pakets fehlgeschlagen"
       fi
