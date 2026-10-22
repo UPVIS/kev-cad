@@ -93,7 +93,7 @@ Kennzeichnung: **belegt** (am SDK, am Quelltext oder durch eigene Messung auf di
 | R4 | **Materialien additiv im Katalog** (`render`: Basisfarbe, metallisch, Rauheit, Oberfläche, Klarlack, Anisotropie, Durchsicht); ohne `render` leitet der Kernel aus `farbe`, `metallisch`, `rauheit` und `gruppe` ab | Bestehende eigene Materialien rendern ohne Pflege; neue Oberflächen (gebürstet, eloxiert, verzinkt, Schichten, Holz, Gummi) als Name, nicht als Textur-Datei |
 | R5 | **Farbe aus model.py hat Vorrang**, wenn sie von der Katalogfarbe des Materials abweicht (farbiges PLA, eloxiert schwarz) | So bleibt das Bild bei Kevins Farbwahl; Glanz und Metall kommen weiter aus dem Material |
 | R6 | **Oberflächen prozedural:** Blender mit Knoten (Rauschen, Wellen, Voronoi), RealityKit mit kleinen erzeugten Texturen über Quaderprojektion (Normalen für Schichten und Bürstung, Farbe für Holz) | Keine Texturdateien, keine Lizenzfragen, Netze ohne UV reichen |
-| R7 | **Schatten in RealityKit über drei Durchgänge** (siehe Recherche), weichgezeichnet | Einziger Weg zu einem Schatten auf einem einheitlichen oder durchsichtigen Hintergrund |
+| R7 | **Schatten in RealityKit über drei Durchgänge** (siehe Recherche), weichgezeichnet; seit 23.10.2026 ersetzt durch R14 (ein Durchgang, Bodenschatten auf der CPU) | Einziger Weg zu einem Schatten auf einem einheitlichen oder durchsichtigen Hintergrund |
 | R8 | **Szenen:** `studio` (heller Hintergrund, weicher Schatten, eigene Softbox-Umgebung), `werkstatt` (Halle mit Lampen, HDRI), `draussen` (Garten, HDRI), `wohnraum` (Innenraum, HDRI), `freigestellt` (Studio-Licht, durchsichtiger Hintergrund, Schatten als halbdurchsichtiges Schwarz, ohne Kulisse) | Kevins Liste; HDRIs CC0 aus Blender |
 | R9 | **Kamera:** aktuelle Ansicht (Vorgabe), Standardansicht, `produkt` (3/4-Ansicht leicht von oben, perspektivisch, eingepasst) oder eine Kamera aus Phase 5 (posiert wie im Viewer) | Kevin bestimmt den Ausschnitt im Viewer, der Agent kann ohne Viewer eine gute Ansicht wählen |
 | R10 | **Blender nur einzeln, mit `nice` und Zeitlimit**, Fortschritt aus der Ausgabe von Cycles (`Sample n/m`), Arbeitsdateien werden nach dem Lauf gelöscht | 16 GB, zwei weitere Stränge, Platte knapp |
@@ -159,13 +159,37 @@ deshalb läuft nur ein Foto-Auftrag zur Zeit, und unter 20 % freiem Speicher war
 Tests: Kernel 889 grün, 1 übersprungen (echter Blender-Lauf, mit `KEVCAD_BLENDER_TEST=1` grün); `test_render.py`
 16 Fälle. KevCADCore: `RenderTests` (8) und die Export-Tests grün.
 
-### Offene Punkte
+### Offene Punkte (Stand 22.10.2026, erledigt bis auf zwei, siehe unten)
 
-- **Schatten im Schnellbild** sind weicher und schwächer als im Foto (RealityKit hat keine Flächenlichter und keine
-  Umgebungsverdeckung); bei Kulisse-Böden fällt der Schatten direkt aus RealityKit auf den Boden.
+- ~~Schatten im Schnellbild weicher und schwächer als im Foto~~ (R14)
 - **Werkstatt** ist vorerst eine dunkle Studiohalle; eine echte Werkstatt-HDRI braucht Kevins Freigabe zum Laden.
-- **Schichtlinien** liegen quer zur Welt-Z-Achse des Modells, nicht zur Druckausrichtung des Teils.
-- **Parallele Projektion** wird beim Rendern perspektivisch (gleicher Ausschnitt am Drehpunkt).
+- ~~Schichtlinien quer zur Welt-Z-Achse statt zur Druckausrichtung~~ (R16)
+- ~~Parallele Projektion wird perspektivisch~~ (R15)
 - **Von Hand prüfen:** Dialog mit echten Klicks (Teilen-Menü, Finder), Fokus und Tastenkürzel ⌥⌘R.
-- **Selten meldet RealityKit ein Bild nicht fertig** (zweimal beobachtet, Ursache offen); abgefangen über Frist und
-  neuen Renderer. Der Viewport zeichnet bei großen Modellen dauernd und belegt den Hauptfaden (unabhängig von Phase 7).
+- ~~RealityKit meldet selten ein Bild nicht fertig~~ (R17)
+
+## Restpunkte (Zweig `rest-statik-render`, 23.10.2026)
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| R14 | **Bodenschatten im Schnellbild auf der CPU** (`KevCADCore/Render/BodenSchatten.swift`) statt der Schattenmaske aus zwei weiteren RealityKit-Durchgängen (R7): je Licht des Fotos (Studio: Hauptlicht 18°, Kante 13°, Aufheller 18°, Decke 27°, Himmel 60°; mit HDRI Sonne 4° und Himmel) die Dreiecke des Produkts längs des Lichts auf den Boden projizieren und rastern (höchstens 768 Zellen je Seite), daraus weiche Schatten wie bei einer Flächenleuchte (PCSS: mittlerer Verdecker im Suchfenster, Halbschatten t · tan Winkel, Deckung über Summentabellen in O(1) je Zelle); seitliche Lichter mit der tiefsten Fläche (am Fuß hart), Decke und Himmel mit der höchsten (wie Umgebungsverdeckung), dazu ein Kontaktschatten aus allem bis 4 % der Modellgröße über dem Boden. Die Teile werfen in RealityKit weiter Schatten aufeinander. Gewichte und Stärke an Fotos derselben Szene abgeglichen | RealityKit hat keine Flächenlichter, keine Umgebungsverdeckung und auf dem Mac keinen Schattenfänger; die Schattenkarte eines Richtungslichts gibt weder den Kontaktschatten noch den mit dem Abstand weicher werdenden Halbschatten. Die CPU-Rechnung ist in 50 ms fertig (1600 × 1000, Release) und spart zwei RealityKit-Bilder je Aufnahme |
+| R15 | **Parallele Ansicht echt orthografisch:** `ansicht="aktuell"` bei paralleler Projektion im Viewer: RealityKit `OrthographicCameraComponent` (`scale` ist die halbe sichtbare Höhe, gemessen), Blender Kamera `ORTHO` mit `ortho_scale` (vertikal); die Kamera meldet `projection: orthographic` und `ortho_height_mm`; das Auge rückt hinter die Hüllkugel, der Hintergrund aus einer HDRI ist dann einfarbig in Blickrichtung (wie in Blender) | Zeichnungsähnliche Bilder (Schnitt, Ansicht von vorn) brauchen parallele Kanten; gleiche sichtbare Höhe wie im Viewer |
+| R16 | **Schichtlinien quer zur Druckrichtung:** Die Druckprüfung legt die Aufbaurichtung in Weltlage ab (`CHECK.druck.teile[n].ausrichtung.oben_welt`), der Kernel gibt sie als `druck_oben` je Teil mit (`RENDER_REQ.teile`, Blender-Material); RealityKit projiziert v längs dieser Richtung (`schichtUV`, Deck- und Bettflächen ohne Linien), Blender nimmt sin(2π (p · oben) / h) | Dieselbe Ausrichtung wie Druckvorschau und Druckprüfung (vorgegeben mit `lager.druckteil(…, ausrichtung=…)` oder automatisch) |
+| R17 | **Bild fertig, auch wenn RealityKit es nicht meldet:** Jedes Bild setzt nach dem Rendern ein GPU-Ereignis (`MTLSharedEvent`, `actionsAfterRender`); fertig ist es mit dem Ereignis oder der Meldung `onComplete`, was zuerst kommt. Kommt keins binnen 12 s, steht ein Befund im Protokoll (geplant, GPU fertig, gemeldet, auf welchem Faden, ob der Hauptfaden frei war), der Renderer wird verworfen und die App versucht es einmal neu (`phasen.wiederholt`); scheitert auch das, geht der Fehler mit Befund an den Kernel. Statt drei Durchgängen mit je zwei Bildern ist es nur noch einer (R14), höchstens 24 s je Versuch, zwei Versuche bleiben unter der Frist des Kernels (60 s) | Ursache nicht gefunden: In allen Läufen kam die Meldung abseits des Hauptfadens (`gemeldet ja (abseits des Hauptfadens)`), ein blockierter Hauptfaden scheidet als Ursache also aus; der Fehler ließ sich nicht nachstellen. Das Ereignis macht den Weg unabhängig von der Meldung, der Befund zeigt beim nächsten Auftreten, woran es lag |
+
+Nachweise (Tests in `RenderTests`: `testRealityKitOrthografisch`, `testBodenSchattenKontaktUndSchlagschatten`,
+`testKameraStrahlenPerspektiveUndParallel`, `testSchichtUVNachDruckrichtung`; Kernel `test_render.py`
+`test_render_schichtlinien_nach_druckrichtung`):
+
+- Orthografisch: zwei 100-mm-Würfel, einer 500 mm tiefer, bei 200 mm sichtbarer Höhe auf 200 px: beide 100 × 100 px,
+  der vordere an der erwarteten Stelle (x = −150 mm bei Pixel 50).
+- Testvariante „Kev CAD Test sr“ (über MCP, Probe im Scratchpad): parallele Iso-Ansicht im Viewer, `render(ansicht=
+  "aktuell")` schnell und als Foto: beide mit parallelen Kanten und gleichem Ausschnitt.
+- Schichtlinien: zwei gleiche Blöcke, einer `ausrichtung="-z"`, einer `"-x"`: im Schnellbild und im Foto liegen die
+  Linien beim ersten waagrecht, beim zweiten senkrecht (quer zu x), auf seiner Bettseite (Normale x) keine.
+- Schatten (Studio, Produktansicht, 1600 × 1000, gleiche Kamera, Helligkeit des Bodens linear relativ zum
+  Hintergrund): siehe Tabelle; Schnellbild 0,9 bis 1,1 s, davon Schatten 0,05 s.
+
+## Abnahme der Restpunkte (Testvariante „Kev CAD Test sr“, 23.10.2026)
+
+ABNAHME_TABELLE

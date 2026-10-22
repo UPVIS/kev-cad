@@ -171,6 +171,7 @@ public final class PBRRenderer {
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
         var loP = lo, hiP = hi  // nur das Produkt, ohne Kulisse (Licht, Schattenkarte, Nahebene)
         var bodenDreiecke: [SIMD3<Float>] = []  // Produkt in Weltlage für den Schatten auf dem Boden
+        var hellSumme: Float = 0, flaechenSumme: Float = 0  // mittlere Helligkeit des Produkts (Licht zurück auf den Boden)
         for teil in teile {
             guard teil.geometry.triangleCount > 0 else { continue }
             let achse = Self.laengsteAchse(teil.geometry)
@@ -186,6 +187,12 @@ public final class PBRRenderer {
                 loP = simd_min(loP, a)
                 hiP = simd_max(hiP, b)
                 if szene.boden { Self.dreieckeInWelt(teil.geometry, teil.transform, in: &bodenDreiecke) }
+                let s = b - a
+                let flaeche = 2 * (s.x * s.y + s.y * s.z + s.x * s.z)
+                let f = teil.pbr.basisfarbe
+                let hell = 0.2126 * Self.linear(f.x) + 0.7152 * Self.linear(f.y) + 0.0722 * Self.linear(f.z)
+                hellSumme += flaeche * hell * (1 - 0.5 * teil.pbr.metallisch)
+                flaechenSumme += flaeche
             }
         }
         guard lo.x <= hi.x else { throw Fehler.keineTeile }
@@ -293,10 +300,12 @@ public final class PBRRenderer {
         let lichter = (hdr == nil ? BodenSchatten.studioLichter : BodenSchatten.umgebungsLichter(sonne: sonne))
             + [BodenSchatten.kontakt(groesse: diag)]
         let tris = bodenDreiecke, cBild = c
+        let rueck = flaechenSumme > 0 ? hellSumme / flaechenSumme : 0
         let fertig = await Task.detached(priority: .userInitiated) { () -> (CGImage, Data, Int)? in
             let t0 = Date()
             var schatten = [Float](repeating: 1, count: w * h)
-            if mitBoden, let boden = BodenSchatten.rechne(dreiecke: tris, z0: z0, lichter: lichter) {
+            if mitBoden, let boden = BodenSchatten.rechne(dreiecke: tris, z0: z0, lichter: lichter,
+                                                          rueckstrahlung: rueck) {
                 schatten = Self.bodenMaske(boden, kamera: kamera, c: cBild, w: w, h: h)
             }
             let schattenMs = Int(Date().timeIntervalSince(t0) * 1000)
@@ -652,7 +661,7 @@ public final class PBRRenderer {
         var out = [UInt8](repeating: 0, count: w * h * 4)
         // Stärke des Bodenschattens: an Fotos derselben Szene aus Blender abgeglichen (Turm 40 × 40 × 120 mm im Studio,
         // Schatten von Hauptlicht und Kante und Kontaktschatten in linearer Helligkeit, 23.10.2026)
-        let staerke: Float = 0.72
+        let staerke: Float = 0.62
         var farbeLin = SIMD3<Float>(repeating: 1)
         if case .farbe(let f) = hintergrund { farbeLin = SIMD3(linear(f.x), linear(f.y), linear(f.z)) }
         for i in 0..<(w * h) {

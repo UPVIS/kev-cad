@@ -27,6 +27,9 @@ struct BodenSchatten {
         var hoechste: Bool = false
     }
 
+    /// Anteil der Verdeckung von oben, den ein weißes Teil durch zurückgeworfenes Licht aufhebt
+    static let rueckFaktor: Float = 0.7
+
     let z0: Float
     let ursprung: SIMD2<Float>
     let zelle: Float
@@ -52,8 +55,9 @@ struct BodenSchatten {
 
     /// Lichter wie im Foto (Blender) für das Studio: Gewicht je Licht etwa Leistung · cos(Einfall) / π.
     static let studioLichter: [Licht] = [
-        Licht(richtung: SIMD3(-0.9, -1.1, 1.25), winkelGrad: 15, gewicht: 2.3),  // Hauptlicht
-        Licht(richtung: SIMD3(0.4, 1.3, 1.1), winkelGrad: 13, gewicht: 1.0),  // Kante (im Foto schwächer als gerechnet)
+        Licht(richtung: SIMD3(-0.9, -1.1, 1.25), winkelGrad: 18, gewicht: 2.3),  // Hauptlicht
+        // Kante: im Foto viel schwächer, als ihre Leistung erwarten ließe (gemessen, 23.10.2026)
+        Licht(richtung: SIMD3(0.4, 1.3, 1.1), winkelGrad: 13, gewicht: 0.25),
         Licht(richtung: SIMD3(1.3, -0.6, 0.5), winkelGrad: 18, gewicht: 0.37),  // Aufheller
         Licht(richtung: SIMD3(0, 0, 1), winkelGrad: 27, gewicht: 0.8, hoechste: true),  // Decke
         Licht(richtung: SIMD3(0, 0, 1), winkelGrad: 60, gewicht: 0.45, hoechste: true),  // Himmel (graue Welt)
@@ -70,13 +74,17 @@ struct BodenSchatten {
 
     /// Kontaktschatten: eng und dunkel um die Aufstandsfläche, nur aus dem, was dicht über dem Boden liegt (Anteil der
     /// Modellgröße).
-    static func kontakt(groesse: Float, gewicht: Float = 0.6) -> Licht {
+    static func kontakt(groesse: Float, gewicht: Float = 0.35) -> Licht {
         Licht(richtung: SIMD3(0, 0, 1), winkelGrad: 70, gewicht: gewicht, nurUnter: max(1, groesse * 0.04),
               hoechste: true)
     }
 
     /// Rechnet das Raster. `dreiecke`: je Dreieck drei Punkte (Modell, mm, Z oben), flach hintereinander.
-    static func rechne(dreiecke: [SIMD3<Float>], z0: Float, lichter: [Licht], maxZellen: Int = 768) -> BodenSchatten? {
+    /// `rueckstrahlung` (0…1, mittlere Helligkeit des Produkts): helle Teile werfen Licht auf den Boden zurück und hellen
+    /// die Verdeckung von oben (Decke, Himmel, Kontakt) auf, wie im Foto unter einem weißen Turm (gemessen); dunkle
+    /// kaum.
+    static func rechne(dreiecke: [SIMD3<Float>], z0: Float, lichter: [Licht], maxZellen: Int = 768,
+                       rueckstrahlung: Float = 0) -> BodenSchatten? {
         guard dreiecke.count >= 3, !lichter.isEmpty else { return nil }
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
         for p in dreiecke {
@@ -118,7 +126,8 @@ struct BodenSchatten {
             }
             let sicht = weich(tmin, nx: nx, ny: ny, zelle: zelle, tanW: tan(l.winkelGrad * .pi / 180),
                               tMax: min(l.nurUnter ?? hoehe, hoehe) / d.z, hoechste: l.hoechste)
-            for i in 0..<(nx * ny) { summe[i] += l.gewicht * sicht[i] }
+            let fuell = l.hoechste ? max(0, min(1, rueckstrahlung)) * Self.rueckFaktor : 0
+            for i in 0..<(nx * ny) { summe[i] += l.gewicht * (1 - (1 - sicht[i]) * (1 - fuell)) }
             gewichte += l.gewicht
         }
         guard gewichte > 0 else { return nil }
