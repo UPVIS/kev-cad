@@ -250,3 +250,72 @@ def test_mcp_tools_against_runtime(p2):
     assert "petg" in texts(r["mats"])[0] and "ja" in texts(r["mats"])[0]
     assert not r["delete"].is_error
     assert r["export"].is_error and "Export verweigert" in texts(r["export"])[0]
+
+
+# Kevins Vorschläge vom 22.10.2026 (gekürzt): Zukaufteile mit Skript-Geometrie und Maßen, die nicht in die Felder des
+# Dialogs passen, eine Kamera und ein Objektiv.
+VORSCHLAEGE = [
+    {"id": "bowlingball-usbc", "art": "zukaufteil", "name": "Bowlingball nach USBC, 14 lb", "hersteller": "unbekannt",
+     "mpn": "unbekannt", "masse": {"d": 217.0},
+     "cad": {"quelle": "skript", "modul": "geometrie.bowlingball", "funktion": "bowlingball", "stand": "2026-10-22"},
+     "ersatz": {"form": "zylinder", "masse": {"d": 217.0, "l": 217.0}}},
+    {"id": "senkschraube-3-8-16-unc", "art": "zukaufteil", "name": "Senkschraube 3/8\"-16 UNC × 5/8\"",
+     "hersteller": "Normteil ASME B18.3", "mpn": "3/8-16 UNC x 5/8 Senkkopf 82°", "masse": {"d": 19.05, "h": 15.875},
+     "cad": {"quelle": "skript", "modul": "geometrie.senkschraube_unc", "funktion": "senkschraube",
+             "stand": "2026-10-22"},
+     "einbaupunkt": {"pos": [0, 0, 0], "richtung": [0, 0, 1], "hinweis": "Kopfmitte"}},
+    {"id": "blackmagic-pocket-6k-pro", "art": "kamera", "name": "Blackmagic Pocket Cinema Camera 6K Pro",
+     "kurzname": "Pocket 6K Pro", "hersteller": "Blackmagic Design", "modell": "Pocket Cinema Camera 6K Pro",
+     "bajonett": "canon-ef", "auflagemass": 44.0,
+     "sensor": {"typ": "Super 35", "b": 23.1, "h": 12.99}, "standard_format": "s35-6k",
+     "formate": [{"id": "s35-6k", "name": "6K 16:9 6144 × 3456", "modus": "super35", "sensor_mm": [23.1, 12.99],
+                  "aufloesung": [6144, 3456], "fps_max": 50}],
+     "gehaeuse": {"b": 179.8, "h": 122.9, "t": 112.0, "achse_hoehe": 65.0}, "gewicht": 1238,
+     "bezugspunkte": {"sensor": {"pos": [0.0, 0.0, 0.0], "richtung": [1.0, 0.0, 0.0], "hinweis": "Sensormitte"}}},
+    {"id": "sigma-18-35-f1.8-art-ef", "art": "objektiv", "name": "Sigma 18-35 mm F1,8 DC HSM Art (EF)",
+     "hersteller": "Sigma", "bajonett": "canon-ef", "brennweite": [18, 35], "lichtstaerke": 1.8, "blendenart": "f",
+     "blende_max": 16, "naheinstellgrenze": 280, "bildkreis": 28.4, "laenge": 121.0, "frontdurchmesser": 78.0,
+     "filter": 72.0, "gewicht": 810},
+]
+
+
+def _wie_swift(v):
+    """So schickt die App einen Eintrag zurück: Zahlen sind Double, ganze Zahlen ohne „.0“."""
+    if isinstance(v, bool) or v is None or isinstance(v, str):
+        return v
+    if isinstance(v, (int, float)):
+        return int(v) if float(v).is_integer() else float(v)
+    if isinstance(v, list):
+        return [_wie_swift(x) for x in v]
+    return {k: _wie_swift(x) for k, x in v.items()}
+
+
+def test_release_zukauf_kamera_objektiv_from_app(p2):
+    """Freigabe aus dem Lagerkatalog der App für jede Art von Vorschlag: der Eintrag aus CATALOG ohne ebene, mit status
+    frei und so kodiert wie von Swift. Danach steht er frei im eigenen Katalog, Maße und CAD unverändert."""
+    rt, app, own = p2["rt"], p2["app"], p2["own"]
+    for entry in VORSCHLAEGE:
+        res = rt.stock_define(entry)  # wie MCP: Vorschlag
+        assert res["ok"] and res["item"]["status"] == "vorgeschlagen", res.get("error")
+    try:
+        cat = request(app, {"type": "CATALOG_REQ", "id": "a-30", "query": None, "art": None})
+        items = {i["id"]: i for i in cat["items"]}
+        for n, entry in enumerate(VORSCHLAEGE):
+            item = items[entry["id"]]
+            assert item["status"] == "vorgeschlagen" and item["ebene"] == "eigen"
+            sent = _wie_swift({**{k: v for k, v in item.items() if k != "ebene"}, "status": "frei"})
+            ack = request(app, {"type": "CATALOG_SAVE", "id": f"a-3{n + 1}", "kind": "teil", "entry": sent,
+                                "ebene": "eigen"})
+            assert ack["type"] == "ACK" and ack["ok"] is True, ack
+        cat = request(app, {"type": "CATALOG_REQ", "id": "a-39", "query": None, "art": None})
+        after = {i["id"]: i for i in cat["items"]}
+        stored = {t["id"]: t for t in json.loads((own / "eigene.json").read_text(encoding="utf-8"))["teile"]}
+        for entry in VORSCHLAEGE:
+            assert after[entry["id"]]["status"] == "frei", entry["id"]
+            assert stored[entry["id"]]["status"] == "frei" and "vorgeschlagen_am" not in stored[entry["id"]]
+            for key in ("masse", "cad", "ersatz", "sensor", "formate", "brennweite"):
+                if key in entry:
+                    assert stored[entry["id"]][key] == entry[key], (entry["id"], key)
+    finally:
+        for entry in VORSCHLAEGE:
+            rt.catalog_delete("teil", entry["id"])

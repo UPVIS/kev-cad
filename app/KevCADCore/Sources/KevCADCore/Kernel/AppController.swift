@@ -69,6 +69,8 @@ public final class AppController: AppActions {
     /// Stilles Nachladen des Katalogs (Vorschläge von Claude): letzter Zeitpunkt, ausgesetzt nach einer Zeitüberschreitung.
     var lastQuietCatalog: Date?
     var quietCatalogOff = false
+    /// Freigabe eines Vorschlags gespeichert: das Nachladen mit dieser Anfrage-ID muss den Eintrag als frei zeigen.
+    var approvalCheck: (kind: String, id: String, ebene: CatalogLevel, reloadID: String)?
     /// Phase 3: Zukaufteile (Downloads-Beobachtung, Rückfragen, Namen), siehe AppController+Zukauf.swift.
     let zukaufState = ZukaufControllerState()
     /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht).
