@@ -311,6 +311,9 @@ def test_laufzeit_spaeter_und_export_mit_auswahl(env):
     assert ("Kugelschieber/Lenksperren/Lenksperre vorn links (Druck)", "ohne") in gruende
     assert ("Kugelschieber/Fangrolle (Druck)", "spaeter") in gruende
     assert ex["hinweise"][0].startswith("Weggelassen:")
+    assert ex["druckfertig"] is False  # ohne Bambu Studio nicht geprüft
+    assert [o["name"] for o in ex["objekte_einstellungen"]] == ["Stangenhalter (Druck)"] and \
+        "naht" in ex["objekte_einstellungen"][0]["begruendung_je"]
     assert _namen_im_3mf(ex["pfad"]) == ex["teile"] == ex["dateien"][0]["objekte"]
     lagen_vorschau = {t["name"]: (t["x"], t["y"]) for p in v["platten"] for t in p["teile"]}
     with zipfile.ZipFile(ex["pfad"]) as z:

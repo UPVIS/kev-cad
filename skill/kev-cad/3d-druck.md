@@ -542,6 +542,15 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   Datei); gedruckt wird nichts. Vorher Kevin nach dem Filament fragen (Abschnitt 11a). Die
   Objekte heißen in Bambu Studio wie die Teile aus `show()` (lange Namen ohne die mittleren Baugruppen, Ersatzteile
   mit „(2)“), die Platten wie in der Vorschau („Platte 2“).
+- **Druckfertig je Objekt (Kevin, 22.10.2026):** Jeder Druckexport ist komplett druckfertig voreingestellt, auch
+  wenn sich die Teile unterscheiden; Kevin öffnet das 3MF, prüft die Vorschau und druckt. Der Kernel setzt je Objekt
+  Schicht, Wände, Decken, Böden, Füllung, Muster, Stützen (nur wo nötig, Baum nur von der Platte, PETG mit 0,25 mm
+  Abstand), Brim mit Breite (3/5/8 mm; schmale hohe Stege ab Höhe > 8 × Breite), Naht (hinten bei Zier- und
+  Außenteilen), Bügeln (nur Zierteile mit ebener Oberseite), Lochkompensation 0 (Zugabe im Modell), Wände um
+  Bohrungen (≥ 3) und Gewindeeinsätze (nach Mindestwand, Füllung ≥ 30 %), jede Einstellung mit Begründung
+  (`teile[].begruendung_je`, `objekte_einstellungen`). Vor der Ausgabe slict Bambu Studio die Datei; nur ohne Warnung
+  ist sie `druckfertig`. **Der Agent stellt nichts von Hand nach**; Abweichungen nur auf Kevins Wunsch mit
+  `druck_einstellen` (gehen vor). Meldet der Export „NICHT druckfertig“, das Modell oder die Ausrichtung korrigieren.
 - **Teile auswählen:** `druck_export(ohne=["Kugelschieber/Lenksperren"])` (alles unter der Baugruppe),
   `ohne=["g3"]` oder `ohne=["Lenksperre (Druck)"]` (Gruppe der Vorschau), `teile=[…]` für nur diese Teile; `ohne`
   gewinnt. Die übrigen Teile bleiben an ihrer Stelle (Lücken sind in Ordnung, Bambu Studio lädt und slict das), leere

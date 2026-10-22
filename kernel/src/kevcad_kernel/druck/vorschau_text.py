@@ -33,8 +33,14 @@ def einstellungen_text(e: dict[str, Any]) -> str:
     teile = [f"{_n(e.get('schicht_mm'), 2)} mm", f"{e.get('waende')} Wände",
              f"{_n(float(e.get('fuellung') or 0) * 100, 0)} % {str(e.get('muster') or '').capitalize()}",
              f"{e.get('decken')}/{e.get('boeden')} Decken/Böden",
-             "keine Stützen" if e.get("stuetzen") in (None, "keine") else f"Stützen {e.get('stuetzen')}",
-             "Brim" if e.get("brim") else "ohne Brim"]
+             "keine Stützen" if e.get("stuetzen") in (None, "keine") else f"Stützen {e.get('stuetzen')}"
+             + (" nur von der Platte" if e.get("stuetzen_nur_platte") and e.get("stuetzen") not in (None, "keine")
+                else ""),
+             (f"Brim {_n(e.get('brim_mm'), 0)} mm" if e.get("brim_mm") else "Brim") if e.get("brim") else "ohne Brim"]
+    if e.get("naht"):
+        teile.append(f"Naht {e['naht']}")
+    if e.get("buegeln"):
+        teile.append("gebügelt")
     return ", ".join(teile)
 
 

@@ -82,6 +82,8 @@ class Gruppe:
     spaeter: bool = False
     # angenommenes Filament (druck/filamentwahl.py): {"profil", "quelle", "detail", "filament", "preset", …}
     filament_wahl: dict[str, Any] = field(default_factory=dict)
+    # Paket B: Begründung je Einstellung (druck/druckfertig.py)
+    begruendung_je: dict[str, str] = field(default_factory=dict)
 
     @property
     def filament_slicer(self) -> Any:
@@ -245,6 +247,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
                           prozess=prozess, filament=filament, schluessel=schl, vorgaben=g["vorgaben"],
                           pruefung=g["pruefung"], stuetz_flaechen=sorted(set(stuetz.get(g["namen"][0], []))),
                           fest_von=fest_von, spaeter=bool(g["spaeter"]), filament_wahl=wahlen[mat].als_dict(),
+                          begruendung_je=dict(emp.get("begruendung_je") or {}),
                           gespiegelt_von=ids.get(g["gespiegelt_von"]) if g["gespiegelt_von"] is not None else None))
     return out, ohne
 
@@ -345,7 +348,7 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "profil": {"prozess": g.prozess, "filament": g.filament, "filament_id": g.filament_wahl.get("filament"),
                        "quelle": g.filament_wahl.get("quelle"), "detail": g.filament_wahl.get("detail")},
             "risiko": r,
-            "begruendung": list(g.begruendung), "hinweise": hw,
+            "begruendung": list(g.begruendung), "begruendung_je": dict(g.begruendung_je), "hinweise": hw,
             **({"gespiegelt_von": g.gespiegelt_von} if g.gespiegelt_von else {}),
             **({"spaeter": True} if g.spaeter else {}),
         })

@@ -64,6 +64,9 @@ MUSTER_BAMBU = {"gyroid": "gyroid", "grid": "grid", "cubic": "cubic", "honeycomb
                 "rectilinear": "zig-zag", "zigzag": "zig-zag", "line": "line", "concentric": "concentric",
                 "triangles": "triangles", "crosshatch": "crosshatch", "lightning": "lightning"}
 STUETZEN_BAMBU = {"baum": "tree(auto)", "normal": "normal(auto)"}
+NAHT_BAMBU = {"hinten": "back", "ausgerichtet": "aligned", "nah": "nearest", "zufall": "random"}
+OBERFLAECHE_BAMBU = {"monoton_linie": "monotonicline", "monoton": "monotonic", "linie": "zig-zag",
+                     "konzentrisch": "concentric"}
 
 
 class SlicerFehler(RuntimeError):
@@ -358,7 +361,23 @@ def prozess_einstellungen(einstellungen: dict[str, Any]) -> dict[str, str]:
     if e.get("brim") is not None:
         out["brim_type"] = "outer_only" if e["brim"] else "no_brim"
         if e["brim"]:
-            out["brim_width"] = "5"
+            out["brim_width"] = f"{float(e.get('brim_mm') or 5):g}"
+    # Paket B (druck/druckfertig.py): druckfertig je Objekt
+    if e.get("stuetzen_nur_platte") is not None and st not in (None, "keine"):
+        out["support_on_build_plate_only"] = "1" if e["stuetzen_nur_platte"] else "0"
+    if e.get("stuetzen_abstand_mm") is not None and st not in (None, "keine"):
+        out["support_top_z_distance"] = f"{float(e['stuetzen_abstand_mm']):g}"
+    if e.get("naht"):
+        out["seam_position"] = NAHT_BAMBU.get(str(e["naht"]), str(e["naht"]))
+    if e.get("buegeln") is not None:
+        out["ironing_type"] = "top" if e["buegeln"] else "no ironing"
+    if e.get("oberflaeche"):
+        out["top_surface_pattern"] = OBERFLAECHE_BAMBU.get(str(e["oberflaeche"]), str(e["oberflaeche"]))
+    for k, b in (("loch_kompensation_mm", "xy_hole_compensation"), ("kontur_kompensation_mm",
+                                                                     "xy_contour_compensation"),
+                 ("elefantenfuss_mm", "elefant_foot_compensation")):
+        if e.get(k) is not None:
+            out[b] = f"{float(e[k]):g}"
     return out
 
 
@@ -366,6 +385,15 @@ def prozess_profil(einstellungen: dict[str, Any], bett: str = "Textured PEI Plat
     name = prozess_name(float(einstellungen.get("schicht_mm") or 0.2))
     d = profil("process", name)
     d.update(prozess_einstellungen(einstellungen))
+    if einstellungen.get("_global"):
+        # Platte mit Objekten: Global „kein Brim“ schaltet auch den Brim je Objekt ab (geprüft mit 2.07.01.62).
+        # Global bleibt der Profilwert (auto_brim), je Objekt entscheiden print_params.
+        basis = profil("process", name)
+        for k in ("brim_type", "brim_width"):
+            if k in basis:
+                d[k] = basis[k]
+            else:
+                d.pop(k, None)  # Vorgabe von Bambu Studio (auto_brim)
     d["curr_bed_type"] = bett
     d["print_settings_id"] = name
     d["name"] = name
@@ -908,12 +936,54 @@ def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[Filament],
                   einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
                   drucker: str = "p1p-0.4", platte: str | None = None) -> list[dict[str, Any]]:
     """Platten mit festen Lagen slicen (je Platte Zeit und Filament)."""
-    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, filamente, drucker, platte)
+    pr = schreibe_profile(ordner, global_einstellungen(einstellungen), filamente, drucker, platte)
     liste = montageliste(platten, ordner)
     res = ausfuehren([*_profil_args(pr), "--load-assemble-list", str(liste), "--slice", "0"], ordner, abbruch)
     for g in ordner.glob("*.gcode"):
         g.unlink(missing_ok=True)
     return _platten_ergebnis(res, pr.dichten)
+
+
+def global_einstellungen(e: dict[str, Any] | None) -> dict[str, Any]:
+    """Einstellungen für das Prozessprofil einer Platte (die Werte je Objekt kommen über ``print_params``)."""
+    return {**(e or {"schicht_mm": 0.2}), "_global": True}
+
+
+SLICER_WARNUNG_TEXT = {
+    "floating cantilever": "schwebender Überhang (Teil neu ausrichten oder Stützen)",
+    "floating regions": "schwebende Bereiche",
+    "support": "Stützen nötig",
+    "collision": "Kollision",
+    "outside": "außerhalb der Platte",
+}
+
+
+def pruefe_slicen(pfad: Path, ordner: Path, abbruch: threading.Event | None = None) -> dict[str, Any]:
+    """Das fertige 3MF so slicen, wie Kevin es in Bambu Studio öffnet (``--slice 0``, Projekt-Einstellungen aus der
+    Datei), und die Meldungen auswerten: {"ok", "warnungen": [{"platte", "text", "art"}], "platten": [{"platte",
+    "zeit_s", "g", "merkmale"}], "fehler"}. Der G-Code wird verworfen."""
+    exe = programm()
+    if exe is None:
+        return {"ok": False, "warnungen": [], "platten": [], "fehler": "Bambu Studio nicht gefunden"}
+    ordner.mkdir(parents=True, exist_ok=True)
+    try:
+        res = ausfuehren(["--slice", "0", str(pfad)], ordner, abbruch)
+    except SlicerFehler as exc:
+        return {"ok": False, "warnungen": [], "platten": [], "fehler": str(exc)}
+    finally:
+        for g in ordner.glob("*.gcode"):
+            g.unlink(missing_ok=True)
+    warnungen, platten = [], []
+    for pl in res.get("sliced_plates") or []:
+        nr = int(pl.get("id") or len(platten) + 1)
+        w = str(pl.get("warning_message") or "").strip()
+        if w:
+            art = next((a for k, a in SLICER_WARNUNG_TEXT.items() if k in w.lower()), "Warnung")
+            warnungen.append({"platte": nr, "text": w, "art": art})
+        platten.append({"platte": nr, "zeit_s": round(float(pl.get("total_predication") or 0.0), 1),
+                        "g": round(sum(float(f.get("total_used_g") or 0.0) for f in pl.get("filaments") or []), 2),
+                        "merkmale": {k: round(float(v), 1) for k, v in (pl.get("feature_type_times") or {}).items()}})
+    return {"ok": not warnungen, "warnungen": warnungen, "platten": platten, "fehler": None}
 
 
 def export_3mf(platten: list[list[PlattenObjekt]], filament: Filament, ziel: Path, ordner: Path,
@@ -929,7 +999,7 @@ def export_3mf(platten: list[list[PlattenObjekt]], filament: Filament, ziel: Pat
     Ein Filament je Datei: Bambu Studio 2.07 schreibt Projekte mit mehreren ``--load-filaments`` so, dass es sie beim
     erneuten Laden nur mit Filament 1 (und nach Ergänzen der Listen gar nicht) slicen kann; der P1P ohne AMS druckt
     ohnehin ein Material je Platte."""
-    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, [filament], drucker, platte)
+    pr = schreibe_profile(ordner, global_einstellungen(einstellungen), [filament], drucker, platte)
     if farbe and not (isinstance(filament, dict) and filament.get("farbe")):  # Farbe des Filaments geht vor
         d = json.loads(pr.filamente[0].read_text(encoding="utf-8"))
         d["filament_colour"] = [farbe]

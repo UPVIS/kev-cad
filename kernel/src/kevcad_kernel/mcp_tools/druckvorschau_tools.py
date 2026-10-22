@@ -54,7 +54,11 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
           "like 'g3' or a group name; identical parts are always set together. einstellungen: any of schicht_mm "
           "(0.08-0.28), waende, decken, boeden, fuellung (0-1 or percent), muster (gyroid, grid, cubic, honeycomb, "
           "rectilinear, line, concentric, triangles, crosshatch, lightning), stuetzen (keine, baum, normal), brim "
-          "(bool); a null value removes that fixed value. zweck: zier | funktion | tragend | bewegt | aussen "
+          "(bool), and the per-object print-ready keys stuetzen_nur_platte (bool), stuetzen_abstand_mm, brim_mm, naht "
+          "(hinten, ausgerichtet, nah, zufall), buegeln (bool), oberflaeche (monoton_linie, monoton, linie, "
+          "konzentrisch), loch_kompensation_mm, kontur_kompensation_mm, elefantenfuss_mm; a null value removes that "
+          "fixed value. Fixed values always win over the automatic settings. zweck: zier | funktion | tragend | "
+          "bewegt | aussen "
           "(better: set zweck= in lager.druckteil in model.py). Only on Kevin's request or with a reason in your "
           "report. The orientation is set in model.py (druckteil(..., ausrichtung=...)), not here.",
           annotations["additive"])
@@ -90,8 +94,11 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
           "(last chosen for this project, spools in stock, all filaments of the material); the last chosen one is "
           "only a suggestion, never take it silently. The filament's preset (Bambu base profile plus documented "
           "deviations, named like 'Polymaker PolyLite PETG gelb (Kev CAD)') goes completely into the project; the "
-          "result names filament, preset, base profile, deviations with source and the temperatures. With Bambu "
-          "Studio installed the file is written "
+          "result names filament, preset, base profile, deviations with source and the temperatures. Every export "
+          "is completely print-ready per object (supports only where needed, brim width, seam, ironing, walls "
+          "around holes and inserts, hole compensation 0, each with a reason in objekte_einstellungen); never tune "
+          "settings by hand afterwards. Before writing, Bambu Studio slices the file: druckfertig=true only without "
+          "warnings, otherwise the hints say what is missing. With Bambu Studio installed the file is written "
           "by Bambu Studio and checked by loading it. Objects in the 3MF carry the part names from show() (shortened "
           "to about 60 characters, repeats numbered '(2)'), plates keep their numbers from druckvorschau. Does not "
           "print or send anything. ziel: path of the .3mf (default <project>/output/<project>-druck.3mf); platten: "
@@ -133,6 +140,17 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
         for d in res.get("dateien") or []:
             if d.get("objekte"):
                 text += f"\nObjekte in {d.get('pfad')}: " + ", ".join(d["objekte"])
+        if res.get("objekte_einstellungen"):
+            from kevcad_kernel.druck.vorschau_text import einstellungen_text
+
+            text += "\n" + ("Druckfertig voreingestellt" if res.get("druckfertig") else "Voreingestellt (noch nicht "
+                                                                                     "druckfertig, siehe oben)") + ":"
+            for o in res["objekte_einstellungen"]:
+                text += f"\n- {o.get('name')}: {einstellungen_text(o.get('einstellungen') or {})}"
+                for k, b in (o.get("begruendung_je") or {}).items():
+                    if k in ("waende", "fuellung", "stuetzen", "brim_mm", "naht", "buegeln", "stuetzen_nur_platte") \
+                            or b.startswith("fest"):
+                        text += f"\n    {b}"
         return fmt.result(text, {k: v for k, v in res.items() if k != "ok"})
 
     @tool("filament_liste", "Filamente",

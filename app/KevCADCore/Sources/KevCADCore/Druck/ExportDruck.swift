@@ -141,7 +141,12 @@ public enum ExportDruckSeiten {
             let e = g?.einstellungen ?? DruckEinstellungen(json: nil)
             let anteil = Double(anzahl) / Double(max(1, g?.anzahl ?? anzahl))
             let gesetzt = DruckFormat.vorgaben(g?.vorgaben ?? [:])
-            var unter = g?.begruendung.first
+            let gruende = g?.begruendung ?? []
+            var unter = gruende.first
+            // Paket B (druckfertig je Objekt): abweichende Einstellungen mit Grund (Stützen, Brim, Naht, Bügeln, Wände)
+            let mehr = Array(gruende.dropFirst().filter { !$0.hasPrefix("Ausrichtung") && !$0.hasPrefix("Last längs") }
+                .prefix(3))
+            if !mehr.isEmpty { unter = ([unter].compactMap { $0 } + mehr).joined(separator: " · ") }
             if !gesetzt.isEmpty { unter = gesetzt.joined(separator: " · ") + (unter.map { " · " + $0 } ?? "") }
             var z: [String: ExportZelle] = [:]
             z["nr"] = ExportZelle(g.flatMap { nummern[$0.gruppe] }.map(String.init) ?? "–", fett: true)

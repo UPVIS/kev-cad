@@ -695,6 +695,10 @@ DRUCK_HINWEIS_ARTEN: tuple[str, ...] = ("trocknen", "verzug", "material", "brim"
                                         "bauraum", "auflage", "festigkeit", "slicer", "platte")
 DRUCK_EINSTELLUNGEN: tuple[str, ...] = ("schicht_mm", "waende", "decken", "boeden", "fuellung", "muster", "stuetzen",
                                         "brim", "ausrichtung")
+# Paket B „druckfertig je Objekt“ (additiv, optional in teile[].einstellungen, auch in PRINT_SETTINGS erlaubt)
+DRUCK_EINSTELLUNGEN_ERWEITERT: tuple[str, ...] = ("stuetzen_nur_platte", "stuetzen_abstand_mm", "brim_mm", "naht",
+                                                  "buegeln", "oberflaeche", "loch_kompensation_mm",
+                                                  "kontur_kompensation_mm", "elefantenfuss_mm")
 DRUCK_SUMME_FELDER: tuple[str, ...] = ("platten", "zeit_s", "zeit_mit_wechsel_s", "kosten", "kosten_teile", "material")
 DRUCK_MATERIAL_FELDER: tuple[str, ...] = ("material", "name", "g", "m", "kosten", "preis_kg", "preis_stand", "stand")
 DRUCK_PLATTE_FELDER: tuple[str, ...] = ("nr", "zeit_s", "material", "stand", "teile", "auslastung")
@@ -790,7 +794,7 @@ def check_druck_message(header: dict[str, Any]) -> list[str]:
         if header.get("zweck") is not None and header["zweck"] not in DRUCK_ZWECKE:
             out.append(f"zweck {header['zweck']!r} unbekannt")
         for k in (header.get("einstellungen") or {}):
-            if k not in DRUCK_EINSTELLUNGEN:
+            if k not in DRUCK_EINSTELLUNGEN and k not in DRUCK_EINSTELLUNGEN_ERWEITERT:
                 out.append(f"einstellungen.{k} unbekannt")
     if kind == "PRINT_EXPORT_REQ":  # additiv: Auswahl der Teile
         for k in ("teile", "ohne"):
@@ -920,6 +924,15 @@ def druckvorschau_beispiel(run: int = 12) -> dict[str, Any]:
             "risiko": 0.12 if e["stuetzen"] != "keine" else 0.04,
             "begruendung": begruendung[zweck], "hinweise": h,
         })
+        if gid == "g2":  # additiv (Paket B): druckfertig je Objekt mit Begründung je Einstellung
+            teile_out[-1]["einstellungen"].update({
+                "stuetzen_nur_platte": True, "stuetzen_abstand_mm": 0.25, "brim_mm": 0.0, "naht": "ausgerichtet",
+                "buegeln": False, "oberflaeche": "monoton_linie", "loch_kompensation_mm": 0.0,
+                "kontur_kompensation_mm": 0.0, "elefantenfuss_mm": 0.15})
+            teile_out[-1]["begruendung_je"] = {
+                "stuetzen_nur_platte": "nur von der Platte: Baumstützen wachsen um das Teil herum",
+                "stuetzen_abstand_mm": "Abstand oben 0,25 mm statt 0,2: PETG haftet stark an Stützen (EW)",
+                "loch_kompensation_mm": "X-Y-Lochkompensation 0: Zugabe steckt im Modell"}
     t = {x["gruppe"]: x for x in teile_out}
     # Platte 1 (PETG): 4 Halter, 2 Fangrollen, Lenksperre; Platte 2 (PLA): 6 Kappen
     platz1 = [("g1", t["g1"]["teile"][i], 60 + (i % 2) * 72, 60 + (i // 2) * 48, 0) for i in range(4)] + \

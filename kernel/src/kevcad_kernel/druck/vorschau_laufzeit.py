@@ -518,7 +518,8 @@ class DruckvorschauRuntime:
                                         teile=header.get("teile") or None, ohne=header.get("ohne") or None,
                                         filament=fil or None)
                 extra = {k: res[k] for k in ("hinweise", "ms", "geprueft", "pfade", "dateien", "weggelassen",
-                                             "leere_platten", "filamente", "filament_frage", "vorschlaege")
+                                             "leere_platten", "filamente", "filament_frage", "vorschlaege",
+                                             "druckfertig", "objekte_einstellungen")
                          if k in res}
                 self._send_app(print_export_res(str(rid), ok=bool(res.get("ok")), pfad=res.get("pfad"),  # type: ignore[attr-defined]
                                                 platten=list(res.get("platten") or []), fehler=res.get("error"),
@@ -760,6 +761,7 @@ class DruckvorschauRuntime:
             return frage
         arbeit = sl.arbeitsordner("export")
         hinweise: list[str] = []
+        pruefungen: list[dict[str, Any]] = []
         weg_text = au.weggelassen_text(ausw.weggelassen)
         if weg_text:
             hinweise.append(weg_text)
@@ -807,11 +809,29 @@ class DruckvorschauRuntime:
                                     + ("n" if len(nr_mat) != 1 else "") + f", {res['objekte']} Teile, Profile "
                                     f"„{sl.MASCHINE}“, „{sl.prozess_name(float(e0.get('schicht_mm') or 0.2))}“, "
                                     f"„{filament_n}“, Platte „{platte}“ und Einstellungen je Teil.")
+                    # Paket B: vor der Ausgabe so slicen, wie Kevin es öffnet, und die Warnungen auswerten
+                    pr_ = sl.pruefe_slicen(ziel_m, arbeit / f"pruef-{mat}")
+                    pruefungen.append(pr_)
+                    if pr_["fehler"]:
+                        hinweise.append(f"{mat.upper()}: NICHT druckfertig, Bambu Studio slict das 3MF nicht: "
+                                        f"{pr_['fehler']}")
+                    elif pr_["warnungen"]:
+                        hinweise.append(f"{mat.upper()}: NICHT druckfertig, Bambu Studio warnt: "
+                                        + "; ".join(f"Platte {w['platte']}: {w['art']} ({w['text']})"
+                                                    for w in pr_["warnungen"]))
+                    else:
+                        z_ = sum(p_["zeit_s"] for p_ in pr_["platten"])
+                        g_ = sum(p_["g"] for p_ in pr_["platten"])
+                        from kevcad_kernel.druck.vorschau_text import dauer_text
+
+                        hinweise.append(f"{mat.upper()}: druckfertig, in Bambu Studio geslict ohne Warnungen "
+                                        f"({dauer_text(z_)}, {g_:.0f} g).")
                     if res.get("benannt", 0) < len(res.get("namen") or []):
                         hinweise.append(f"{mat.upper()}: Objektnamen nur teilweise gesetzt ({res.get('benannt', 0)} "
                                         f"von {len(res.get('namen') or [])}); Bambu Studio zeigt sonst „assemble_…“.")
                     dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament_n, "platten": nr_mat,
-                                    "objekte": list(res.get("namen") or []), **herkunft})
+                                    "objekte": list(res.get("namen") or []), **herkunft,
+                                    "pruefung": {k: pr_[k] for k in ("ok", "warnungen", "platten", "fehler")}})
                 else:
                     # Ohne Bambu Studio: ein 3MF je Platte (Teile in ihrer Lage); Bambu Studio liest Platten nur aus
                     # eigenen Projekten, ein fremdes 3MF legt es ganz auf eine Platte
@@ -848,7 +868,36 @@ class DruckvorschauRuntime:
                 "teile": ausw.teile, "weggelassen": ausw.weggelassen, "leere_platten": ausw.leere_platten,
                 "filamente": {m: {"id": w.filament, "preset": w.profil, "basis": w.basis, "quelle": w.quelle,
                                   "detail": w.detail, "abweichungen": list(w.abweichungen),
-                                  "temperaturen": w.temperaturen} for m, w in wahl_je.items()}}
+                                  "temperaturen": w.temperaturen} for m, w in wahl_je.items()},
+                # Paket B: druckfertig nur, wenn Bambu Studio jede Datei ohne Warnung geslict hat
+                "druckfertig": bool(geprueft and pruefungen and all(p_["ok"] for p_ in pruefungen)),
+                "objekte_einstellungen": self._dv_objekt_einstellungen(gr, ausw, wahl_je, platte)}
+
+    @staticmethod
+    def _dv_objekt_einstellungen(gr: list[vs.Gruppe], ausw: Any, wahl_je: dict[str, fw.FilamentWahl] | None = None,
+                                 platte: str | None = None) -> list[dict[str, Any]]:
+        """Je exportierter Gruppe die Einstellungen mit Begründung (Paket B, druckfertig je Objekt); Platte, Bett,
+        Tempo und Kühlung kommen aus dem Preset des gewählten Filaments."""
+        drin = {l_.stueck.gruppe for _, _, p in ausw.platten for l_ in p.lagen}
+        out = []
+        for g in gr:
+            if g.id not in drin:
+                continue
+            b = dict(g.begruendung_je)
+            w = (wahl_je or {}).get(g.material)
+            if w is not None:
+                t = w.temperaturen or {}
+                b["platte"] = (f"{platte or sl.PLATTE_STANDARD}, Bett und Düse aus dem Preset „{w.profil}“"
+                               + (f": {fw.temperaturen_text(t)}" if t else ""))
+                lf = t.get("luefter") or [None, None]
+                b["tempo"] = (f"Tempo und Kühlung aus dem Preset „{w.profil}“"
+                              + (f" (Lüfter {lf[0]:g}–{lf[1]:g} %" if None not in lf else " (")
+                              + (f", höchstens {t['max_volumen']:g} mm³/s)" if t.get("max_volumen") else ")")
+                              + "; dessen Mindestschichtzeit bremst kleine Querschnitte selbst")
+            out.append({"gruppe": g.id, "name": g.name, "teile": [n for n in g.teile if n in ausw.teile],
+                        "einstellungen": {k: v for k, v in g.einstellungen.items()}, "fest": list(g.fest),
+                        "begruendung_je": b})
+        return out
 
     def _dv_material_druckbar(self, mid: str) -> bool:
         m = self._dv_material(mid)
