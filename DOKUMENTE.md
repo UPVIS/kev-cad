@@ -86,6 +86,9 @@ Maße, Notizen und Bauplan-Schritte zeigen auf Geometrie über einen **Bezug** m
   „Bohrbild“), `blatt_nr` und `blatt_anzahl` (der Kernel zählt je Inhalt), `eigentuemer`, `freigegeben` (Name oder
   null). Neben dem Maßstab steht das Symbol der Projektionsmethode 1. Allgemeintoleranz als „ISO 2768-m“ (ISO 2768-2
   ist zurückgezogen, kein „-mK“).
+- **Version im Schriftfeld:** `schriftfeld.version` bleibt in der Datei null, außer Kevin trägt selbst etwas ein. Das
+  gezeichnete Schriftfeld (Texte in `DRAWING`) zeigt die Version, zu der der Lauf gehört: `V12`, in einer Variante
+  `V12 (Flacher Rand)`, mit Meilenstein `V12 „Prototyp“` (PLAN-VERSIONEN.md, „Dokumente“).
 - **Unterdrückung** (Version 1.1): `mass_loeschen` auf ein Maß mit `quelle: "auto"` entfernt es und trägt Art und Bezüge
   in `unterdrueckt` ein. Die automatische Bemaßung legt für unterdrückte Bezüge kein Maß gleicher Art neu an.
   Aufheben mit `{"op": "unterdrueckung_aufheben", "index"}` oder `{"op": "auto", "masse": true, "zuruecksetzen": true}`.

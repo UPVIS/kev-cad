@@ -19,6 +19,10 @@ passt, entfällt:
    und die Stelle (Funktion, Abschnitt ab dem letzten ``step()`` davor, Konstante im Kopf, Hilfsdatei):
    ``Bedingungen in klemme() geändert, Teile gleich``, ``Code in „Kamera: Kameraträger“ geändert, Teile gleich``.
 6. **Zuletzt die Dateien**, deren Inhalt sich nicht lesen lässt (binär, sehr groß): ``Geändert: teil.step``.
+7. **Dokumente** (``dokumente/``: Blätter, Bauplan, dokumente.py) sind kein Code. Sie kommen nur in den Titel, wenn
+   sich sonst nichts mit Wirkung geändert hat (neben einer Modelländerung sind neu zugeordnete Maße deren Folge):
+   ``Zeichnung Seitenstange: 2 Maße geändert``, ``Bauplan: Schritt 7 umformuliert``, ``Zeichnungen Platte, Wange
+   neu``.
 
 Teilnamen: nach dem letzten ``/``, ohne Klammerzusatz (``(Druck)``) und Lagewörter (vorn, links …). Gleiches wird
 zusammengefasst, mit Anzahl (``Gewindestift M4x35 (4×)``) oder als Nummernbereich (``Lenkrolle 1–4``); wird es zu
@@ -47,12 +51,14 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any
 
+from kevcad_kernel.versionen.dokumente import ist_dokument, vergleiche_dokumente
 from kevcad_kernel.versionen.vergleich import _num, vergleiche, vergleiche_params
 
-REGEL = 1
+REGEL = 2  # 2: Dokumente (dokumente/) als eigene Regel statt „Code in zusammenbau.json geändert“
 MAX_LAENGE = 60
 TRENNER = " · "
 OHNE_WIRKUNG = "Code aufgeräumt (ohne Wirkung)"
+DOKUMENTE_OHNE_WIRKUNG = "Dokumente neu geschrieben (ohne Wirkung)"
 ERSTER = "Erster Stand"
 OHNE_AENDERUNG = "Ohne Dateiänderung"
 TEILE_GLEICH = ", Teile gleich"
@@ -102,7 +108,8 @@ class Fassungen(list):
 # Höhere vollständig dasteht
 RANG = {"parameter": 1, "teile_neu": 2, "teile_weg": 2, "teile_geaendert": 3, "teile_verschoben": 3,
         "teile_umgefaerbt": 3, "stueckliste_neu": 3, "stueckliste_weg": 3, "stueckliste_geaendert": 3,
-        "schritte_neu": 4, "schritte_weg": 4, "code_stellen": 5, "dateien": 6}
+        "schritte_neu": 4, "schritte_weg": 4, "code_stellen": 5, "dateien": 6, "dokumente": 7,
+        "code_aufgeraeumt": 8}
 
 
 @dataclass
@@ -468,6 +475,69 @@ def _code_segment(themen: dict[str, list[str]], orte: list[str], teile_gleich: b
     return Segment("code_stellen", list(dict.fromkeys(opts)), zahl)
 
 
+def _punkte_fassungen(kopf: str, punkte: list[str]) -> Fassungen:
+    """„Zeichnung Platte: 2 Maße geändert, Ansicht verschoben“, dann mit weniger Punkten („…“), zuletzt „… geändert“."""
+    out = Fassungen()
+    out.voll = set()
+    if punkte and punkte != ["geändert"]:
+        voll = f"{kopf}: {', '.join(punkte)}"
+        out.append(voll)
+        out.voll.add(voll)
+        for m in range(len(punkte) - 1, 0, -1):
+            out.append(f"{kopf}: {', '.join(punkte[:m])} …")
+    out.append(f"{kopf} geändert")
+    if not punkte or punkte == ["geändert"]:
+        out.voll.add(f"{kopf} geändert")
+    return out
+
+
+def _dokumente_segmente(eintraege: list[dict[str, Any]]) -> list[Segment]:
+    """Regel 7: Blätter (neu, geändert, entfernt; Namen ohne Klammerzusatz wie bei Teilen), Bauplan, übrige Dateien
+    in ``dokumente/``."""
+    out: list[Segment] = []
+    blaetter = [e for e in eintraege if e["art"] == "zeichnung"]
+    for status, wort in (("A", "neu"), ("M", None), ("D", "entfernt")):
+        gruppe = [e for e in blaetter if e["status"] == status]
+        if not gruppe:
+            continue
+        if wort is None and len(gruppe) == 1:
+            kopf = f"Zeichnung {ohne_klammer(gruppe[0]['name'])}"
+            out.append(Segment("dokumente", _punkte_fassungen(kopf, gruppe[0]["punkte"])))
+            continue
+        namen = list(dict.fromkeys(ohne_klammer(e["name"]) for e in gruppe))  # wie Teilnamen: ohne „(Druck)“
+        wort = wort or "geändert"
+
+        def form(n: list[str], r: int, w: str = wort) -> str:
+            kopf = "Zeichnung " if len(n) == 1 and not r else "Zeichnungen "
+            return kopf + _aufzaehlung(n, r) + f" {w}"
+
+        out.append(Segment("dokumente", _optionen(_einfach(namen), form),
+                           f"{len(namen)} Zeichnungen {wort}" if len(namen) > 1 else None))
+    for e in eintraege:
+        if e["art"] == "bauplan":
+            if e["status"] == "M":
+                out.append(Segment("dokumente", _punkte_fassungen("Bauplan", e["punkte"])))
+            else:
+                out.append(Segment("dokumente", [e["text"]]))
+    sonst = [e for e in eintraege if e["art"] == "datei"]
+    if sonst:
+        out.append(Segment("dokumente", _optionen(_einfach([e["text"] for e in sonst]), _aufzaehlung),
+                           f"{len(sonst)} Dokumente geändert" if len(sonst) > 1 else None))
+    return out
+
+
+def _dokumente_titel(aenderungen: list[dict[str, Any]], basis: str, max_laenge: int,
+                     code_aufgeraeumt: bool) -> dict[str, Any]:
+    segmente = _dokumente_segmente(vergleiche_dokumente(aenderungen))
+    if not segmente:
+        return {"titel": OHNE_WIRKUNG if code_aufgeraeumt else DOKUMENTE_OHNE_WIRKUNG, "basis": basis,
+                "regeln": ["ohne_wirkung"]}
+    if code_aufgeraeumt:
+        segmente.append(Segment("code_aufgeraeumt", ["Code aufgeräumt"]))
+    titel, regeln = _zusammensetzen(segmente, max_laenge)
+    return {"titel": titel, "basis": basis, "regeln": regeln}
+
+
 # =====================================================================================================================
 # Code lesen (Python, JSON)
 # =====================================================================================================================
@@ -767,6 +837,9 @@ def auto_titel(aenderungen: list[dict[str, Any]], alt: dict[str, Any] | None, ne
         return {"titel": ERSTER, "basis": "daten" if neu is not None else "code", "regeln": ["erster"]}
     if not aenderungen:
         return {"titel": OHNE_AENDERUNG, "basis": "code", "regeln": ["ohne_aenderung"]}
+    alle = aenderungen
+    dokumente = [a for a in aenderungen if ist_dokument(str(a.get("pfad") or ""))]
+    aenderungen = [a for a in aenderungen if not ist_dokument(str(a.get("pfad") or ""))]
     mit_daten = alt is not None and neu is not None
     basis = "daten" if mit_daten else "code"
     code = code_befund(aenderungen)
@@ -806,6 +879,8 @@ def auto_titel(aenderungen: list[dict[str, Any]], alt: dict[str, Any] | None, ne
         schritte = _schritt_segmente(code.schritte_alt, code.schritte_neu)
     if not daten_geaendert:
         if code.ohne_wirkung and not segmente and not schritte:
+            if dokumente:  # Regel 7: nur Dokumente geändert (und höchstens Code ohne Wirkung)
+                return _dokumente_titel(dokumente, basis, max_laenge, code_aufgeraeumt=bool(aenderungen))
             return {"titel": OHNE_WIRKUNG, "basis": basis, "regeln": ["ohne_wirkung"]}
         code_param = bool(segmente)  # Parameter aus dem Code: ihre Zeilen sind damit schon genannt
         segmente += schritte
@@ -820,7 +895,7 @@ def auto_titel(aenderungen: list[dict[str, Any]], alt: dict[str, Any] | None, ne
         segmente.append(Segment("dateien", [dateien_titel(code.binaer)]))
     titel, regeln = _zusammensetzen(segmente, max_laenge)
     if not titel:
-        titel, regeln = dateien_titel([str(a.get("pfad")) for a in aenderungen]), ["dateien"]
+        titel, regeln = dateien_titel([str(a.get("pfad")) for a in alle]), ["dateien"]
     return {"titel": titel, "basis": basis, "regeln": regeln}
 
 

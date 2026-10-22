@@ -9,6 +9,7 @@ Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/
 - docs.frame          DOCS (Kernel → App)
 - drawing_req.frame   DRAWING_REQ (App → Kernel)
 - drawing_edit.frame  DRAWING_EDIT (App → Kernel) mit allen Operationen
+- drawing_create.frame DRAWING_CREATE (App → Kernel, Vertrag 1.2): Teilblatt für eine Platte im Format A3 quer
 - fixtures.json       eigener Abschnitt ``dokumente`` mit den erwarteten Werten (der Rest der Datei bleibt)
 
 stream.bin bleibt unverändert.
@@ -21,7 +22,7 @@ from pathlib import Path
 
 from build123d import Align, Box, Cylinder, Pos, Rot
 
-from kevcad_kernel.protocol import docs_message, encode_frame, pack_drawing, unpack_polylinien
+from kevcad_kernel.protocol import docs_message, drawing_create_message, encode_frame, pack_drawing, unpack_polylinien
 from kevcad_kernel.zeichnung import dokument
 from kevcad_kernel.zeichnung.projektion import EXAKT, form_schluessel
 from kevcad_kernel.zeichnung.szene import Szene, Teil
@@ -103,6 +104,8 @@ def main() -> None:
     ]
     (ZIEL / "drawing_edit.frame").write_bytes(encode_frame({"type": "DRAWING_EDIT", "seq": 6, "id": "a-12",
                                                             "blatt": "platte", "von": "kevin", "ops": ops}))
+    create = drawing_create_message("a-13", "teil", ["Halter/Platte"], "A3 quer", seq=7)
+    (ZIEL / "drawing_create.frame").write_bytes(encode_frame(create))
 
     gruppen = unpack_polylinien(header, payload)
     erste = next(pl for g in gruppen for art in header["linien_reihenfolge"] for pl in g[art])
@@ -124,6 +127,7 @@ def main() -> None:
         },
         "docs": {"run": 7, "blaetter": [b["id"] for b in blaetter]},
         "drawing_edit": {"ops": [o["op"] for o in ops]},
+        "drawing_create": {k: create[k] for k in ("id", "art", "teile", "format")},
     }
     pfad = ZIEL / "fixtures.json"
     alles = json.loads(pfad.read_text()) if pfad.exists() else {}

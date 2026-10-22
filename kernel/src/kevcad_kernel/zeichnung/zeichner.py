@@ -202,8 +202,10 @@ def _rechne(blatt_in: dict[str, Any], szene: Szene, stand_extra: str) -> Ergebni
         gruppe = gruppen_merkmale(teile, inhalt["teile"][0] if inhalt["teile"] else "Zusammenbau")
         system = gruppe.system
         merkmale[""] = gruppe
-        for t in teile:  # Bezüge auf Einzelteile (Kevins Maße im Zusammenbau)
-            if any(any(b.get("teil") == t.name for b in m.get("bezuege") or []) for m in blatt["masse"]):
+        for t in teile:  # Bezüge auf Einzelteile (Kevins Maße und Notizzeiger im Zusammenbau)
+            if any(any(b.get("teil") == t.name for b in m.get("bezuege") or []) for m in blatt["masse"]) or any(
+                    isinstance(n.get("zeiger"), dict) and n["zeiger"].get("teil") == t.name
+                    for n in blatt.get("notizen") or []):
                 mm = szene.merkmale(t.name)
                 if mm is not None:
                     merkmale[t.name] = mm
@@ -232,7 +234,7 @@ def _rechne(blatt_in: dict[str, Any], szene: Szene, stand_extra: str) -> Ergebni
         blatt["allgemein"] = allgemein
     elif not blatt["auto"]["masse"]:
         pass
-    _neu_zuordnen(blatt, merkmale, teile, art)
+    zeiger = _neu_zuordnen(blatt, merkmale, teile, art)
     # Maßstab, Format, Anordnung
     hauptmerk = merkmale.get(teile[0].name) if art == "teil" and teile else gruppe
     arbeit = _vorbereiten(blatt, ansichten, merkmale, system, art, teile)
@@ -248,7 +250,7 @@ def _rechne(blatt_in: dict[str, Any], szene: Szene, stand_extra: str) -> Ergebni
         beleg.strecken(lin["verdeckt"], "verdeckt")
     grafiken = _masse_zeichnen(blatt, ansichten, arbeit, beleg, system)
     # Blatt: Rahmen, Schriftfeld, Tabellen, Positionsnummern, Ansichtstitel, Notizen
-    deko = _dekoration(blatt, ansichten, szene, teile, art, lage, beleg, system)
+    deko = _dekoration(blatt, ansichten, szene, teile, art, lage, beleg, system, zeiger)
     kopf, nutzlast = _ausgabe(blatt, ansichten, grafiken, deko, lage, szene, teile, stand_extra)
     kopf["hinweise"] = hinweise + lage.get("hinweise", [])
     from kevcad_kernel.zeichnung.pruefung import pruefe
@@ -436,7 +438,10 @@ def _auto_zusammenfuehren(blatt: dict[str, Any], neu: list[dict[str, Any]]) -> N
     blatt["masse"] = erg
 
 
-def _neu_zuordnen(blatt: dict[str, Any], merkmale: dict[str, Merkmale], teile: list[Teil], art: str) -> None:
+def _neu_zuordnen(blatt: dict[str, Any], merkmale: dict[str, Merkmale], teile: list[Teil],
+                  art: str) -> dict[str, bz.Element]:
+    """Bezüge der Maße und Notizzeiger neu zuordnen. Rückgabe: Notiz-id → Element des Zeigers (für die
+    Hinweislinie in _dekoration)."""
     namen = {t.name for t in teile}
     haupt = teile[0].name if art == "teil" and teile else ""
     for m in blatt["masse"]:
@@ -459,14 +464,20 @@ def _neu_zuordnen(blatt: dict[str, Any], merkmale: dict[str, Merkmale], teile: l
                 neu.append(nb)
         m["bezuege"] = neu
         m["verwaist"] = not ok or not neu
+    zeiger: dict[str, bz.Element] = {}
     for n in blatt["notizen"]:
         z = n.get("zeiger")
         if isinstance(z, dict) and z.get("teil") is not None:
-            mm = merkmale.get(z.get("teil") or haupt)
-            nb, _ = bz.zuordnen(z, mm)
+            teil = z.get("teil") or haupt
+            mm = merkmale.get(teil if teil in merkmale else ("" if art != "teil" else haupt))
+            nb, treffer = bz.zuordnen(z, mm)
             n["verwaist"] = nb is None
             if nb is not None:
-                n["zeiger"] = nb
+                n["zeiger"] = nb  # behält ansicht und punkt (Klickstelle)
+                el = bz.element(treffer, mm, teil) if mm is not None and treffer is not None else None
+                if el is not None:
+                    zeiger[str(n.get("id"))] = el
+    return zeiger
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1329,7 +1340,8 @@ def _winkel(a: _Arbeit, system: Teilsystem) -> dr.MassGrafik | None:
 
 
 def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Szene, teile: list[Teil], art: str,
-                lage: dict[str, Any], beleg: Belegung, system: Teilsystem) -> bl.Grafik:
+                lage: dict[str, Any], beleg: Belegung, system: Teilsystem,
+                zeiger: dict[str, bz.Element] | None = None) -> bl.Grafik:
     W, H = lage["breite"], lage["hoehe"]
     g = bl.rahmen(W, H)
     sf = dict(blatt["schriftfeld"])
@@ -1403,9 +1415,44 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
         lage_n = n.get("lage") or [30, 30]
         g.text(str(n.get("text") or ""), float(lage_n[0]), float(lage_n[1]), bl.TEXT_KLEIN, art="notiz")
         z = n.get("zeiger")
-        if isinstance(z, dict) and z.get("punkt") and not z.get("teil"):
-            g.linie("duenn", (float(lage_n[0]), float(lage_n[1])), tuple(z["punkt"]))
+        if not isinstance(z, dict):
+            continue
+        spitze = None
+        el = (zeiger or {}).get(str(n.get("id")))
+        v = ansichten.get(str(z.get("ansicht"))) if z.get("teil") is not None else None
+        if el is not None and v is not None:  # Zeiger auf Geometrie: folgt ihr in der Ansicht
+            spitze = _zeiger_spitze(el, v, system, z.get("punkt"))
+        elif z.get("punkt"):  # freier Punkt auf dem Blatt (oder Bezug nicht mehr da: zur Klickstelle)
+            spitze = (float(z["punkt"][0]), float(z["punkt"][1]))
+        if spitze is not None:
+            g.linie("duenn", (float(lage_n[0]), float(lage_n[1])), spitze)
     return g
+
+
+def _zeiger_spitze(el: bz.Element, v: _Ansicht, system: Teilsystem, klick: Any) -> tuple[float, float]:
+    """Spitze einer Hinweislinie auf ein Element in der Ansicht ``v`` (Blatt-mm): der Punkt des Elements, der der
+    Klickstelle am nächsten liegt (Kreis von vorn: auf dem Umfang, Kante: auf der Kante), sonst seine Mitte."""
+    c = np.asarray(v.blatt3(system.lokal(el.p)), dtype=float)
+    ziel = np.asarray(klick, dtype=float) if klick is not None else None
+    if el.typ in ("kreis", "bogen") and el.r and el.d is not None and abs(
+            float(np.dot(system.richtung_lokal(el.d), v.blick.d))) > 1 - 1e-6:
+        if ziel is not None and float(np.linalg.norm(ziel - c)) > 1e-9:
+            p = c + (ziel - c) / float(np.linalg.norm(ziel - c)) * float(el.r) * v.s
+            return float(p[0]), float(p[1])
+        return float(c[0]), float(c[1])
+    if el.ecken is not None and len(el.ecken) >= 2 and ziel is not None:
+        q = np.asarray(v.blatt3(system.lokal(np.asarray(el.ecken))), dtype=float)
+        if el.typ == "ebene":
+            lo, hi = q.min(axis=0), q.max(axis=0)
+            p = np.clip(ziel, lo, hi)  # Fläche (von vorn oder als Kante gesehen): nächster Punkt darauf
+            return float(p[0]), float(p[1])
+        a, b = q[:-1], q[1:]
+        ab = b - a
+        t = np.clip(np.einsum("ij,ij->i", ziel - a, ab) / np.maximum(np.einsum("ij,ij->i", ab, ab), 1e-12), 0, 1)
+        kand = a + ab * t[:, None]
+        p = kand[int(np.argmin(np.linalg.norm(kand - ziel, axis=1)))]
+        return float(p[0]), float(p[1])
+    return float(c[0]), float(c[1])
 
 
 def _positionsnummern(g: bl.Grafik, ansichten: dict[str, _Ansicht], szene: Szene, teile: list[Teil],

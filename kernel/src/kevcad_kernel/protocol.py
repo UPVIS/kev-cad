@@ -352,6 +352,19 @@ def docs_message(run: int, blaetter: list[dict[str, Any]], bauplan: dict[str, An
     return {"type": "DOCS", "seq": seq, "run": run, "blaetter": blaetter, "bauplan": bauplan}
 
 
+def drawing_create_message(rid: str, art: str = "teil", teile: list[str] | None = None, fmt: str | None = None,
+                           seq: int = 0) -> dict[str, Any]:
+    """Nachricht DRAWING_CREATE (App → Kernel, DOKUMENTE.md 1.2): Blätter anlegen wie ``zeichnung_erstellen``.
+    ``teile`` weggelassen: alle gefertigten Teile und der Zusammenbau; ``format`` z. B. „A3 quer“. Antwort: ACK, danach
+    DOCS mit ``reply_to``."""
+    msg: dict[str, Any] = {"type": "DRAWING_CREATE", "seq": seq, "id": rid, "art": art}
+    if teile:
+        msg["teile"] = list(teile)
+    if fmt:
+        msg["format"] = fmt
+    return msg
+
+
 # Phase 6: Bauplan (DOKUMENTE.md, Abschnitt „Protokoll“; Strang P6-B)
 
 # Linienarten der Strichbilder im Bauplan: die acht der Zeichnungen, dazu ``neu`` (neue Teile des Schritts,
