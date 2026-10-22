@@ -482,7 +482,27 @@ def _pruefe_ausrichtung(ausrichtung: Any, shape: Any, name: str) -> Any:
     return tuple(v)
 
 
-def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", ausrichtung: Any = None):
+ZWECKE = ("zier", "funktion", "tragend", "bewegt", "aussen")
+
+
+def _pruefe_zweck_anzahl(zweck: Any, anzahl: Any, name: str) -> tuple[str | None, int | None]:
+    if zweck is not None:
+        z = str(zweck).strip().lower().replace("außen", "aussen")
+        if z not in ZWECKE:
+            vorschlag = difflib.get_close_matches(z, ZWECKE, n=1)
+            raise LagerError(f"druckteil {name!r}: Zweck {zweck!r} unbekannt (erlaubt: {', '.join(ZWECKE)})"
+                             + (f". Meintest du {vorschlag[0]!r}?" if vorschlag else "."))
+        zweck = z
+    if anzahl is not None:
+        if isinstance(anzahl, bool) or not isinstance(anzahl, (int, float)) or anzahl != int(anzahl) or anzahl < 1:
+            raise LagerError(f"druckteil {name!r}: anzahl muss eine ganze Zahl ab 1 sein (wie oft das Teil insgesamt "
+                             f"gedruckt wird), nicht {anzahl!r}.")
+        anzahl = int(anzahl)
+    return zweck, anzahl
+
+
+def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", ausrichtung: Any = None,
+              zweck: str | None = None, anzahl: int | None = None):
     """Selbst konstruiertes Teil, das gedruckt wird: registriert es für die Stückliste (Masse aus Volumen × Dichte,
     Kosten über preis_je_kg) und gibt es mit Name, Farbe und Material zurück. ``material`` muss freigegeben und
     druckbar sein; ``verfahren`` "3d-druck" oder "harzdruck".
@@ -490,11 +510,16 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
     Nach jedem Lauf prüft die Druckprüfung das Teil für Kevins Bambu Lab P1P (Prüfer „druck“, Einzelheiten mit dem
     MCP-Werkzeug ``druckpruefung``). ``ausrichtung``: None = automatisch die beste Lage aufs Bett; "-z" = wie
     modelliert, "+x" usw. = diese Seite aufs Bett, Flächennummer, Richtungsvektor oder ``Rot(...)``. Die Angabe gilt
-    in den Koordinaten der übergebenen Form (vor dem Verschieben in die Baugruppe)."""
+    in den Koordinaten der übergebenen Form (vor dem Verschieben in die Baugruppe).
+
+    Druckvorschau (DRUCKVORSCHAU.md): ``zweck`` "zier" | "funktion" | "tragend" | "bewegt" | "aussen" bestimmt die
+    empfohlenen Einstellungen (Wände, Füllung, Schicht …); ohne Angabe gilt "funktion" als Schätzung. ``anzahl``: wie
+    oft dieses Teil insgesamt gedruckt wird, wenn das mehr ist, als es im Modell gezeigt wird (Ersatzteile)."""
     from build123d import BuildPart, Color, Shape
 
     from kevcad_kernel.bom import Piece
 
+    zweck, anzahl = _pruefe_zweck_anzahl(zweck, anzahl, str(name))
     if verfahren not in VERFAHREN:
         raise LagerError(f"Verfahren {verfahren!r} ist nicht erlaubt (erlaubt: {', '.join(VERFAHREN)}). Andere "
                          "Fertigung nur mit Lagerteilen aus dem Katalog.")
@@ -530,7 +555,7 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
                   preis=kg * pkg if pkg is not None else None, preis_stand=mat.get("preis_stand"),
                   preis_quelle=mat.get("preis_quelle"), verfahren=verfahren, volume=volume,
                   size=[round(float(bb.size.X), 3), round(float(bb.size.Y), 3), round(float(bb.size.Z), 3)],
-                  ausrichtung=ausrichtung)
+                  ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl)
     _register(piece, shape)
     return shape
 

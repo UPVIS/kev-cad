@@ -266,6 +266,20 @@ class KernelService(Protocol):
         """Alle Druckteile oder eines (Name oder Gruppe): {"ok", "run", "drucker", "teile": [{"name", "material",
         "zusammenfassung", "ausrichtung", "kennzahlen", "befunde", …}], "materialien", "zaehler", "statistik"}"""
 
+    # Druckvorschau (DRUCKVORSCHAU.md; umgesetzt in kevcad_kernel.druck.vorschau_laufzeit.DruckvorschauRuntime)
+    def druckvorschau(self, detail: bool = False) -> dict[str, Any]:
+        """Vorschau des letzten Laufs wie PRINT_PREVIEW: {"ok", "run", "stand", "drucker", "summe", "platten",
+        "teile", "hinweise", "slicer", "einstellungen", "regler", "ms"}; ohne ``detail`` ohne Umrisse."""
+
+    def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
+                         von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
+        """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in
+        <projekt>/druck.json: {"ok", "meldung", "teile", "druck_json", "vorgaben", "gruppe"}"""
+
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+        """3MF der angeordneten Platten für Bambu Studio (ohne Drucken): {"ok", "pfad", "platten", "hinweise",
+        "geprueft", "ms", "materialien"}"""
+
     # Phase 6: Zeichnungen (DOKUMENTE.md; Umsetzung in kevcad_kernel.zeichnung.laufzeit.ZeichnungRuntimeMixin)
     def drawings(self) -> dict[str, Any]:
         """Blätter des Projekts: {"ok", "ordner", "blaetter": [{"id", "titel", "inhalt", "format", "ausrichtung",
