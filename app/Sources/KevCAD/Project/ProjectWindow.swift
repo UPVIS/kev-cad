@@ -120,7 +120,12 @@ struct ProjectWindow: View {
         .inspector(isPresented: $state.showInspector) {
             Group {
                 if state.bereich == .dokumente {
-                    BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
+                    // kontextbezogen: Blatt, gewählter Bauplanschritt oder Einstellungen des Berichts
+                    switch dokumente.auswahl {
+                    case .bauplan: BauplanInspektor(model: model)
+                    case .berichte: BerichteInspektor(model: model)
+                    default: BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
+                    }
                 } else {
                     InspectorView(model: model)
                 }

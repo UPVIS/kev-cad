@@ -1,15 +1,41 @@
 import KevCADCore
 import SwiftUI
 
+/// Gewählter Bericht mit Papier und Spalten: Ansicht und Inspektor teilen ihn. Die Spalten bleiben je Bericht über
+/// Neustarts erhalten (nil = Vorgabe).
+@MainActor
+final class BerichteUI: ObservableObject {
+    static let shared = BerichteUI()
+    @Published var bericht: ExportBausteinArt = .stueckliste
+    @Published var format = ExportSeitenformat()
+    @Published var spalten: [String: [String]] = UserDefaults.standard.dictionary(forKey: "berichteSpalten")
+        as? [String: [String]] ?? [:] {
+        didSet { UserDefaults.standard.set(spalten, forKey: "berichteSpalten") }
+    }
+    /// Seiten des gesetzten Berichts (für den Inspektor).
+    @Published var seiten: Int?
+
+    var wahl: ExportBausteinWahl { ExportBausteinWahl(art: bericht, spalten: spalten[bericht.rawValue]) }
+
+    /// Spalte an- oder abwählen; die Reihenfolge bleibt die des Berichts, mindestens eine Spalte bleibt.
+    func setze(_ spalte: String, an: Bool) {
+        let art = bericht
+        var ids = Set(wahl.wirksameSpalten.map(\.id))
+        if an { ids.insert(spalte) } else { ids.remove(spalte) }
+        guard !ids.isEmpty else { return }
+        let neu = art.spalten.map(\.id).filter { ids.contains($0) }
+        spalten[art.rawValue] = neu == art.standardSpalten ? nil : neu
+    }
+}
+
 /// Berichte (Strang P6-A2): Stückliste, Teileliste, Einkaufsliste und Zuschnitt als druckfertige Vorschau. Gezeigt werden
 /// genau die Seiten, die auch ins PDF und auf den Drucker gehen (dieselbe Zeichenfunktion). Von hier aus als PDF
-/// sichern, drucken oder in den Export-Dialog.
+/// sichern, drucken oder in den Export-Dialog. Spalten und Papier stellt der Inspektor ein (BerichteInspektor).
 struct BerichteAnsicht: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
     @ObservedObject var export: ExportStore
-    @State private var bericht: ExportBausteinArt = .stueckliste
-    @State private var format = ExportSeitenformat()
+    @ObservedObject private var ui = BerichteUI.shared
     @State private var dokument: ExportDokument?
     @State private var baut = false
     @State private var zoom: CGFloat = 1
@@ -22,9 +48,12 @@ struct BerichteAnsicht: View {
 
     static let berichte: [ExportBausteinArt] = [.stueckliste, .teileliste, .einkaufsliste, .zuschnitt]
 
+    private var bericht: ExportBausteinArt { ui.bericht }
+    private var format: ExportSeitenformat { ui.format }
+
     private var vorlage: ExportVorlage {
         ExportVorlage(name: bericht.titel, format: format.papier, ausrichtung: format.ausrichtung,
-                      bausteine: [ExportBausteinWahl(art: bericht)])
+                      bausteine: [ui.wahl])
     }
 
     var body: some View {
@@ -43,7 +72,8 @@ struct BerichteAnsicht: View {
 
     /// Ändert sich, wenn die Seiten neu gesetzt werden müssen.
     private var aufbauSchluessel: String {
-        "\(bericht.rawValue)|\(format.name)|\(model.bom?.run ?? 0)|\(model.bestandZustand.zuschnitt?.run ?? 0)|\(stand)"
+        "\(bericht.rawValue)|\(format.name)|\(ui.wahl.wirksameSpalten.map(\.id))|\(model.bom?.run ?? 0)|"
+            + "\(model.bestandZustand.zuschnitt?.run ?? 0)|\(stand)"
     }
 
     private func neuBauen() async {
@@ -51,11 +81,12 @@ struct BerichteAnsicht: View {
         baut = true
         let d = await a.exportDokument(vorlage)
         dokument = d
+        ui.seiten = d.seiten.count
         baut = false
     }
 
     private var liste: some View {
-        List(selection: Binding(get: { bericht }, set: { if let b = $0 { bericht = b } })) {
+        List(selection: Binding(get: { ui.bericht }, set: { if let b = $0 { ui.bericht = b } })) {
             Section("Berichte") {
                 ForEach(Self.berichte) { b in
                     Label {
@@ -76,12 +107,12 @@ struct BerichteAnsicht: View {
 
     private var leiste: some View {
         HStack(spacing: 12) {
-            Picker("Format", selection: Binding(get: { format.papier }, set: { format.papier = $0 })) {
+            Picker("Format", selection: $ui.format.papier) {
                 ForEach(ExportPapier.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .fixedSize()
-            Picker("Ausrichtung", selection: Binding(get: { format.ausrichtung }, set: { format.ausrichtung = $0 })) {
+            Picker("Ausrichtung", selection: $ui.format.ausrichtung) {
                 Image(systemName: "rectangle.portrait").help("Hochformat").tag(ExportAusrichtung.hoch)
                 Image(systemName: "rectangle").help("Querformat").tag(ExportAusrichtung.quer)
             }

@@ -11,15 +11,17 @@ final class BauplanUI: ObservableObject {
     static let shared = BauplanUI()
     /// Gewählter Schritt (nil = Überblick).
     @Published var auswahl: String?
+    /// Offene Blätter (Text bearbeiten, Teilen, Reihenfolge): hier statt in der Ansicht, damit auch der Inspektor sie
+    /// öffnen kann.
+    @Published var bearbeiten: BauplanSchritt?
+    @Published var teilen: BauplanSchritt?
+    @Published var regel: BauplanSchritt?
 }
 
 struct BauplanAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject var store: BauplanStore
     @ObservedObject private var ui = BauplanUI.shared
-    @State private var bearbeiten: BauplanSchritt?
-    @State private var teilen: BauplanSchritt?
-    @State private var regel: BauplanSchritt?
     @State private var nurProbleme = false
 
     init(model: AppModel) {
@@ -40,7 +42,7 @@ struct BauplanAnsicht: View {
                     if let id = ui.auswahl, let s = plan.schritt(id) {
                         BauplanSchrittAnsicht(
                             plan: plan, schritt: s, bild: store.bild(s.id), store: store, actions: actions,
-                            bearbeiten: { bearbeiten = $0 }, teilen: { teilen = $0 }, regel: { regel = $0 })
+                            bearbeiten: { ui.bearbeiten = $0 }, teilen: { ui.teilen = $0 }, regel: { ui.regel = $0 })
                             .id(s.id)
                     } else {
                         BauplanUeberblick(plan: plan, store: store, actions: actions) { ui.auswahl = $0 }
@@ -61,18 +63,18 @@ struct BauplanAnsicht: View {
         .onChange(of: store.durchspielen?.schritt) { _, s in
             if let s { ui.auswahl = s }  // die Liste folgt dem Durchspielen
         }
-        .sheet(item: $bearbeiten) { s in
+        .sheet(item: $ui.bearbeiten) { s in
             BauplanTextBlatt(schritt: s) { titel, text, hinweise in
                 actions?.bauplanBearbeiten([BauplanOp.text(schritt: s.id, titel: titel, text: text, hinweise: hinweise)],
                                            titel: "Text von Schritt gespeichert")
             }
         }
-        .sheet(item: $teilen) { s in
+        .sheet(item: $ui.teilen) { s in
             BauplanTeilenBlatt(schritt: s) { teile in
                 actions?.bauplanBearbeiten([BauplanOp.teilen(schritt: s.id, teile: teile)], titel: "Schritt geteilt")
             }
         }
-        .sheet(item: $regel) { s in
+        .sheet(item: $ui.regel) { s in
             if let plan = store.plan {
                 BauplanRegelBlatt(plan: plan, schritt: s) { a, b, grund in
                     actions?.bauplanBearbeiten([BauplanOp.vorher(a: a, b: b, grund: grund)],
