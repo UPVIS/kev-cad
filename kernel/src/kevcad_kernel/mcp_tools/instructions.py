@@ -80,6 +80,16 @@ orientation is chosen automatically; `lager.druckteil(form, name, material="petg
 planar face index, a vector, `Rot(...)`) fixes it, e.g. when the main load must lie in the layer plane. \
 `druckpruefung` (or `druckpruefung(teil=...)`) shows orientation with reasoning, key figures, all findings and the \
 material settings; tell Kevin the orientation of new print parts.
+- Print preview (Druckvorschau): after every run Kevin sees what the print parts mean: filament per material (g, m, \
+EUR), print time, plates with the arrangement, cost and recommended settings with reasons. Give every print part its \
+purpose: `lager.druckteil(form, name, material="petg", zweck="tragend")` (zier, funktion, tragend, bewegt, aussen; \
+without it "funktion" is assumed) and `anzahl=` only for extra copies (spares). `druckvorschau` reads it (estimate \
+first, Bambu Studio results follow in the background), `druck_einstellen` fixes settings only on Kevin's request, \
+`druck_export` writes the plates as 3MF for Bambu Studio.
+
+Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
+explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \
+slices and opens the plates in Bambu Studio, he prints from there). Never start, pause or stop a print yourself.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
@@ -108,7 +118,8 @@ Stock on hand and shopping list (Bestand, per project)
 P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it.
 - After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
 (optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
-offcuts remain. `einkaufsliste` lists what is missing with price, link and total (also as CSV).
+offcuts remain. `einkaufsliste` returns exactly the list Kevin sees and shares in the app: stock items and bought \
+parts to buy with price, link and total, then standard parts to count and filament (also as CSV).
 - `bestand_eintragen` only with what Kevin told you (quote him in grund), never guessed; repeat every listed change \
 to him. `gebaut_buchen` only when Kevin explicitly says the project is built. Every booking can be undone with \
 `buchung_rueckgaengig`.
@@ -149,6 +160,11 @@ of the hole through its opening (through holes: positive main axis); set it with
 - `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
 travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
 constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
+- If the range of motion does not finish within the time limit of a run, `run` says "Bewegungsraum: N Gelenke noch \
+nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet" (check state `teilweise`). That result is not final: \
+the kernel finishes it without a new run. Before reporting done, call `pruefen()` (it waits for the final result by \
+default) or `bedingungen()` and fix what it finds; do not just repeat `run`, that restarts the work. For very large \
+models `run(timeout_s=...)` (up to 900 s) raises the time limit for model.py.
 
 Cameras (film set simulation)
 - Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \

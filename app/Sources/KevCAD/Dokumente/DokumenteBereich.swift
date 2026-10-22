@@ -81,7 +81,7 @@ struct DokumenteBereich: View {
     }
 }
 
-/// Umschalter 3D-Modell / Dokumente in der Werkzeugleiste (⌘1, ⌘2).
+/// Umschalter 3D-Modell / Dokumente / Material in der Werkzeugleiste (⌘1, ⌘2, ⌘3).
 struct BereichUmschalter: View {
     @ObservedObject var state: ProjectWindowState
 
@@ -90,13 +90,14 @@ struct BereichUmschalter: View {
             get: { state.bereich },
             set: { b in withAnimation(.snappy(duration: 0.2)) { state.bereich = b } }
         )) {
-            Label("3D-Modell", systemImage: "cube").tag(ProjektBereich.modell)
-            Label("Dokumente", systemImage: "doc.text").tag(ProjektBereich.dokumente)
+            ForEach(ProjektBereich.allCases, id: \.self) { b in
+                Label(b.titel, systemImage: b.symbol).tag(b)
+            }
         }
         .pickerStyle(.segmented)
         .labelStyle(.iconOnly)
-        .help(state.bereich == .modell ? "Zu den Dokumenten: Zeichnungen, Bauplan, Berichte (⌘2)"
-              : "Zurück zum 3D-Modell (⌘1)")
+        .help("3D-Modell (⌘1) · Dokumente: Zeichnungen, Bauplan, Berichte (⌘2) · "
+              + "Material: Stückliste, Zuschnitt, Bestand, Einkauf (⌘3)")
     }
 }
 

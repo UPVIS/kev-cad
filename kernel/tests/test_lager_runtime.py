@@ -74,7 +74,7 @@ def test_gestell_bom_after_run_end(p2):
     _, _, bom, _ = app.wait_for(lambda h: h["type"] == "BOM" and h.get("run") == res["run"], start=start)
     app.wait_for(lambda h: h["type"] == "CONSTRAINTS" and h.get("run") == res["run"], start=start)
     types = [h["type"] for h in app.since(start)
-             if h["type"] not in ("STATUS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ")]  # Versionen: im Hintergrund
+             if h["type"] not in ("STATUS", "CHECK", "VERSIONEN", "VERSION_BILD_REQ", "PRINT_PREVIEW")]  # Versionen: im Hintergrund
     assert types[-3:] == ["RUN_END", "BOM", "CONSTRAINTS"]  # CONSTRAINTS: Zwangsbedingungen, additiv
     parts = [h for h in app.since(start) if h["type"] == "PART_UPSERT"]
     bein = next(h for h in parts if h["name"] == "Gestell/Bein vorn links")
@@ -94,8 +94,10 @@ def test_gestell_bom_after_run_end(p2):
     assert set(ref["cuts"][0]) <= set(bom["cuts"][0]) and set(ref["totals"]) <= set(bom["totals"])
     (cut,) = [c for c in bom["cuts"] if c.get("art") != "platte"]  # Platten: Zuschnitt mit Bestand (BESTAND.md)
     assert cut["stangen"] == [[842, 842, 842, 842, 800, 800, 600], [600]] and cut["saegeschnitt"] == 3
-    # Fassade und BOM_REQ liefern dieselbe Liste
-    assert rt.bom() == {"ok": True, **{k: v for k, v in bom.items() if k not in ("type", "seq")}}
+    # Fassade und BOM_REQ liefern dieselbe Liste; die Fassade dazu die Einkaufsliste als Text wie in der App
+    fassade = rt.bom()
+    assert fassade.pop("einkauf_text").startswith("Einkaufsliste Q1 (Stand ")
+    assert fassade == {"ok": True, **{k: v for k, v in bom.items() if k not in ("type", "seq")}}
     reply = request(app, {"type": "BOM_REQ", "id": "a-1"})
     assert reply["type"] == "BOM" and reply["lines"] == bom["lines"] and reply["run"] == res["run"]
     # neue Verbindung bekommt die Stückliste mit

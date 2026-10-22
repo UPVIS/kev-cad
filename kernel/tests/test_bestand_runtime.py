@@ -174,8 +174,18 @@ def test_bestand_ueber_die_laufzeit(rb):
     # Einkaufsliste über die Fassade, CSV in output/
     ek = rt.einkaufsliste()
     assert ek["ok"] and Path(ek["csv"]).name == "Kugelschieber-einkaufsliste.csv"
-    assert Path(ek["csv"]).read_bytes().startswith(b"\xef\xbb\xbf")
-    assert "Summe: 3,95 €" in ek["text"]
+    roh = Path(ek["csv"]).read_bytes()
+    assert roh.startswith(b"\xef\xbb\xbfGruppe;") and not roh.startswith(b"\xef\xbb\xbf\xef\xbb\xbf")
+    assert "\n\nSumme: ≈ 3,95 €\n\nNormteile abzählen\n" in ek["text"]
+    assert ek["summe"] == 3.95 and ek["positionen"] == 2 and ek["zukauf"] == [] and ek["lagerware"]
+    assert ek["normteile"][0]["aus_bestand"] == 3 and ek["filament"] == []
+    # Text und CSV wie die App sie teilt (dieselbe Zusammenstellung, Testdatei material für Swift)
+    from kevcad_kernel.bestand import einkauf as ek_mod
+
+    e = ek_mod.zusammenstellen(rt.bom())
+    assert roh.decode("utf-8") == ek_mod.csv(e)
+    assert ek["text"] == ek_mod.text(e, "Kugelschieber", ek_mod.heute_text())
+    assert "einkauf_text" in rt.bom() and rt.bom()["verschnitt"]["definition"] == "2"
     exp = rt.export(["einkaufsliste_csv"])
     assert exp["ok"] and exp["files"] == [ek["csv"]]
 

@@ -83,6 +83,9 @@ extension AppController: ExportActions {
         }
         var q = ExportQuellen(kopf: exportKopf(), bom: model.bom, bestand: model.bestandZustand.zuschnitt,
                               teile: model.parts)
+        q.druck = model.druck.vorschau  // Baustein „3D-Druck“ (DRUCKVORSCHAU.md)
+        q.projektBestand = model.bestandZustand.bestand  // Material: dieselbe Datenquelle wie am Bildschirm
+        q.katalog = model.catalog
         // Bauplan: wenn nötig beim Kernel holen (erzeugt ihn beim ersten Mal)
         if arten.contains(.bauplan) || arten.contains(.deckblatt) {
             if model.bauplan.plan == nil && connected {
@@ -149,15 +152,13 @@ extension AppController: ExportActions {
     }
 
     /// Isometrische Vorschaubilder einzelner Teile auf weißem Grund (Offscreen-Renderer), zwischengespeichert je Teil
-    /// und Formschlüssel.
-    func exportTeilBilder(_ namen: [String], pixel: Int = 260) async -> [String: CGImage] {
+    /// und Formschlüssel. Auch für den Bereich „Material“ (MaterialBildActions); der weiße Grund gilt nur während des
+    /// einzelnen Bildes, damit sich zwei Aufrufe, die abwechselnd laufen, nicht den Grund des Viewports verstellen.
+    func exportTeilBilder(_ namen: [String], pixel: Int = 260, nachJeweils: Int = 8) async -> [String: CGImage] {
         let store = model.export
         var out: [String: CGImage] = [:]
         let iso = ViewportCoordinator.standardView(protocolName: "iso")!
         var bodies: [ViewportBody]?
-        let alterGrund = screenshots.backgroundColor
-        screenshots.backgroundColor = SIMD4(1, 1, 1, 1)
-        defer { screenshots.backgroundColor = alterGrund }
         for (i, name) in namen.enumerated() {
             guard let rec = scene.record(name) else { continue }
             if let c = store.bildCache[name], c.digest == rec.digest {
@@ -175,13 +176,16 @@ extension AppController: ExportActions {
             var cam = iso.cameraState(distance: 1000, orthographicScale: 100)
             cam.isOrthographic = true
             cam = ViewportCoordinator.fitted(cam, to: b, aspect: 1, padding: 1.08)
-            if let r = screenshots.render(bodies: eigene, camera: cam, width: pixel, height: pixel,
-                                          displayMode: .shadedWithEdges, lighting: viewport.controller.lightingConfiguration)
-            {
+            let alterGrund = screenshots.backgroundColor
+            screenshots.backgroundColor = SIMD4(1, 1, 1, 1)
+            let r = screenshots.render(bodies: eigene, camera: cam, width: pixel, height: pixel,
+                                       displayMode: .shadedWithEdges, lighting: viewport.controller.lightingConfiguration)
+            screenshots.backgroundColor = alterGrund
+            if let r {
                 out[name] = r.image
                 store.bildCache[name] = (rec.digest, r.image)
             }
-            if i % 8 == 7 { await Task.yield() }
+            if i % max(1, nachJeweils) == max(1, nachJeweils) - 1 { await Task.yield() }
         }
         return out
     }

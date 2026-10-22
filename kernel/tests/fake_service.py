@@ -226,10 +226,12 @@ class FakeService:
 
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
             titel: str | None = None) -> dict[str, Any]:
+        extra: dict[str, Any] = {}
         if titel is not None:
-            self._record("run", params, slow_ms, titel=titel)
-        else:
-            self._record("run", params, slow_ms)
+            extra["titel"] = titel
+        if timeout_s != 120:
+            extra["timeout_s"] = timeout_s
+        self._record("run", params, slow_ms, **extra)
         self.run_no += 1
         if self.fail_run:
             return {"ok": False, "run": self.run_no, "duration_ms": 12, "parts": [], "steps": ["Grundplatte"],
@@ -303,8 +305,8 @@ class FakeService:
 
     # Prüfung -------------------------------------------------------------------------------------------------
 
-    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
-        self._record("pruefen")
+    def pruefen(self, warten_s: float = 120.0, endstand: bool = False) -> dict[str, Any]:
+        self._record("pruefen", warten_s, endstand=endstand)
         if not self.run_no:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen (geprüft wird nach jedem Lauf)."}
         return {"ok": True, "run": self.run_no, "state": "done", **PRUEFUNG}
@@ -546,6 +548,48 @@ class FakeService:
         if not self.run_no:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
         return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
+
+    # Phase 8: Drucken -----------------------------------------------------------------------------------------------
+
+    def drucker_status(self) -> dict[str, Any]:
+        from kevcad_kernel.protocol import drucker_status_beispiel
+
+        self._record("drucker_status")
+        return {"ok": True, **drucker_status_beispiel()}
+
+    def drucken(self, platten: list[int] | None = None, weg: str = "a", grund: str | None = None) -> dict[str, Any]:
+        self._record("drucken", platten, weg, grund)
+        if weg == "b":
+            return {"ok": False, "error": "Weg B ist nicht eingestellt (Kevin hat Weg A gewählt)."}
+        return {"ok": True, "auftrag": "j-1", "zustand": "wartet", "weg": weg, "platten": list(platten or []),
+                "meldung": "Der Dialog „Drucken …“ ist in Kev CAD offen. Es geschieht nichts, bis Kevin dort "
+                           "bestätigt; den Stand zeigt drucker_status."}
+
+    # Druckvorschau (DRUCKVORSCHAU.md) ----------------------------------------------------------------------------------
+
+    def druckvorschau(self, detail: bool = False) -> dict[str, Any]:
+        from kevcad_kernel.druck.vorschau import kurz
+        from kevcad_kernel.protocol import druckvorschau_beispiel
+
+        self._record("druckvorschau", detail)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Lauf: erst run aufrufen."}
+        v = druckvorschau_beispiel(run=self.run_no)
+        return {"ok": True, **(v if detail else kurz(v))}
+
+    def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
+                         von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
+        self._record("druck_einstellen", teil, einstellungen, zweck, von, zuruecksetzen)
+        if teil not in ("g1", "Stangenhalter (Druck)"):
+            return {"ok": False, "error": f"Druckteil oder Gruppe {teil!r} nicht in der Druckvorschau"}
+        return {"ok": True, "meldung": "Stangenhalter (Druck): Wände 5 (fest, druck.json, 4 Teile)",
+                "teile": ["Kugelschieber/Stangenhalter vorn links (Druck)"], "druck_json": "druck.json",
+                "vorgaben": {}}
+
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+        self._record("druck_export", ziel, platten)
+        return {"ok": True, "pfad": ziel or "Kugelschieber-druck.3mf", "platten": platten or [1, 2],
+                "hinweise": ["In Bambu Studio geprüft: 2 Platten, 13 Teile."], "geprueft": True, "ms": 1200}
 
     # Phase 6: Zeichnungen -------------------------------------------------------------------------------------------
 

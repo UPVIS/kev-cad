@@ -88,7 +88,9 @@ def test_merge_lines_and_cuts():
     (cut,) = bom["cuts"]
     assert cut["stangenlaenge"] == 6000 and cut["saegeschnitt"] == 3 and cut["zu_lang"] == [6500.0]
     assert cut["stangen"] == [[882.0, 882.0, 882.0, 882.0, 800.0, 800.0, 800.0], [800.0]]  # 5.928 + 6 Schnitte
-    assert cut["verschnitt_prozent"] == pytest.approx((12000 - 6728) / 12000 * 100, abs=0.05)
+    # Definition 2: Stange 1 mit 7 Schnitten und 51 mm Rest unter dem Mindestrest (72 mm), Stange 2 ein Schnitt (3 mm)
+    assert cut["verschnitt_prozent"] == pytest.approx(75 / 12000 * 100, abs=0.05) == 0.6
+    assert cut["verschnitt_definition"] == "2" and bom["verschnitt"]["stangen"] == 0.6
     assert any("länger als die Stange" in w for w in bom["warnings"])
     assert cut_lines(cut)[0] == "Stange 1: 882 + 882 + 882 + 882 + 800 + 800 + 800 = 5.928 mm, Rest 72 mm"
     totals = bom["totals"]

@@ -5,7 +5,7 @@ import Foundation
 // <projekt>/dokumente/vorlagen.json. Rein Daten, ohne Oberfläche, mit `swift test` prüfbar.
 
 public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifiable {
-    case deckblatt, stueckliste, teileliste, einkaufsliste, zuschnitt, zeichnungen, bauplan
+    case deckblatt, stueckliste, teileliste, einkaufsliste, zuschnitt, druck, zeichnungen, bauplan
 
     public var id: String { rawValue }
 
@@ -16,6 +16,7 @@ public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifi
         case .teileliste: return "Teileliste"
         case .einkaufsliste: return "Einkaufsliste"
         case .zuschnitt: return "Zuschnitt"
+        case .druck: return "3D-Druck"
         case .zeichnungen: return "Zeichnungen"
         case .bauplan: return "Bauplan"
         }
@@ -28,6 +29,7 @@ public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifi
         case .teileliste: return "Jedes Teil einzeln mit Bild, Herkunft und Abmessungen"
         case .einkaufsliste: return "Was nach Abzug des Bestands zu kaufen ist, zum Abhaken"
         case .zuschnitt: return "Schnittpläne je Stange und Platte mit Resten"
+        case .druck: return "Druckplatten mit Anordnung, Teile mit Einstellungen, Filament, Zeit und Kosten"
         case .zeichnungen: return "Technische Zeichnungen im eigenen Blattformat"
         case .bauplan: return "Schritt für Schritt: Material, Zuschnitt, Bearbeiten, Drucken, Montage"
         }
@@ -40,6 +42,7 @@ public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifi
         case .teileliste: return "square.grid.3x3"
         case .einkaufsliste: return "cart"
         case .zuschnitt: return "ruler"
+        case .druck: return "printer"
         case .zeichnungen: return "pencil.and.ruler"
         case .bauplan: return "hammer"
         }
@@ -84,7 +87,7 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
                 ExportSpalte("norm", "Norm", mindest: 18, gewicht: 0.5, standard: false),
                 ExportSpalte("material", "Werkstoff", mindest: 22, gewicht: 1),
                 ExportSpalte("masse", "Maße", mindest: 24, gewicht: 1),
-                ExportSpalte("anzahl", "Anz.", mindest: 10, .rechts),
+                ExportSpalte("anzahl", MaterialText.Spalte.anzahl, mindest: 13, .rechts),
                 ExportSpalte("gewicht", "Gewicht", mindest: 16, .rechts),
                 ExportSpalte("preis_je", "Preis je", mindest: 15, .rechts, standard: false),
                 ExportSpalte("preis", "Preis", mindest: 15, .rechts),
@@ -119,6 +122,25 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
                 ExportSpalte("stuecke", "Stücke", mindest: 50, gewicht: 3),
                 ExportSpalte("rest", "Rest", mindest: 22, .rechts),
                 ExportSpalte("verschnitt", "Verschnitt", mindest: 18, .rechts, standard: false),
+            ]
+        case .druck:
+            // Je Platte eine Tabelle der Teile mit Einstellungen (ExportDruck.swift)
+            return [
+                // Breiten für 7,5 pt (ExportDruck setzt die Tabelle kleiner): Standard zusammen 172 mm, A4 hoch hat 178
+                ExportSpalte("nr", "Nr.", mindest: 8, .rechts),
+                ExportSpalte("teil", "Teil", mindest: 33, gewicht: 3),
+                ExportSpalte("anzahl", "Anz.", mindest: 9, .rechts),
+                ExportSpalte("material", "Material", mindest: 15),
+                ExportSpalte("zweck", "Zweck", mindest: 20),
+                ExportSpalte("schicht", "Schicht", mindest: 14, .rechts),
+                ExportSpalte("waende", "Wände", mindest: 12, .rechts),
+                ExportSpalte("fuellung", "Füllung", mindest: 15),
+                ExportSpalte("stuetzen", "Stützen", mindest: 14),
+                ExportSpalte("brim", "Brim", mindest: 10, .mitte, standard: false),
+                ExportSpalte("ausrichtung", "Ausrichtung", mindest: 24, gewicht: 1, standard: false),
+                ExportSpalte("zeit", "Zeit", mindest: 18, .rechts),
+                ExportSpalte("gewicht", "Gewicht", mindest: 14, .rechts),
+                ExportSpalte("kosten", "Kosten", mindest: 14, .rechts, standard: false),
             ]
         case .deckblatt, .zeichnungen, .bauplan:
             return []

@@ -12,7 +12,11 @@ Auftrag (Beispiel):
   "grenzen": {"rand": [8, 40]},                # optional: harte Grenzen (sichtbar vorhandene Teile nicht auf null)
   "video": "/pfad/video.mov", "bilder": 8,     # oder "fotos": ["/pfad/a.jpg", ...]
   "maske": "vision+farbe",                     # "weiss" (Studio), "vision", "vision+farbe"
-  "farbe_hsv": [[95, 130], 70, 25],            # für vision+farbe
+  "farbe_hsv": [[95, 130], 70, 25],            # für vision+farbe; Rot über 0 hinweg: [[168, 4], 70, 25]
+  "ausschluss_hsv": [[6, 24], 50, 45],         # optional: Farbe einer Unterlage, die Vision mitnimmt (Holzscheibe)
+  "gehaeuse": true,                            # optional: Farbe fasst andersfarbige Blenden ein (konvexe Hülle innen)
+  "farbteile": "/pfad/modell.py:farbteile",    # optional: ParamNetz -> bool je Dreieck (Teile in der Objektfarbe)
+  "zwillinge": [[[[-1,0,0],[0,-1,0],[0,0,1]], [0,0,0]]],   # optional: (Q, c) fast gleich aussehende Lagen
   "kb_brennweite": 24,                         # optional, sonst aus den Metadaten oder 50 mm
   "kopfueber": true                            # Grobsuche auch von unten (Objekt liegt im Video auf dem Kopf)
 }
@@ -58,12 +62,22 @@ def _bilder(auftrag, ablage):
         else:
             fm = masken.farbe(im, *auftrag["farbe_hsv"]) if art == "vision+farbe" else None
             v = masken.instanz_waehlen(vis.get(str(d), []), fm)
-            m = masken.kombiniert(im, v, fm) if fm is not None else v
+            if fm is None:
+                m = v
+            else:
+                aus = auftrag.get("ausschluss_hsv")
+                aus = (tuple(aus[0]), aus[1], aus[2]) if aus else None
+                opt = masken.gehaeuse_optionen(fm, w, ausschluss=aus) if auftrag.get("gehaeuse") else \
+                    dict(ausschluss=aus)
+                m = masken.kombiniert(im, v, fm, **opt)
         breite = min(w, 1600)
         s = breite / w
         klein = cv2.resize(im, (breite, round(h * s)), interpolation=cv2.INTER_AREA)
         mk = cv2.resize(m.astype(np.float32), (breite, round(h * s)), interpolation=cv2.INTER_AREA)
-        out.append(Bild(klein, d.stem, maske=mk, ursprung=(w, h)))
+        b = Bild(klein, d.stem, maske=mk, ursprung=(w, h))
+        if art == "vision+farbe":
+            b.farbmaske = cv2.resize(fm.astype(np.float32), (breite, round(h * s)), interpolation=cv2.INTER_AREA)
+        out.append(b)
     f = brennweite_aus_35mm(f35, out[0].breite, out[0].hoehe, 1.05 if "video" in auftrag else 1.0) if f35 else \
         50.0 / 36.0 * max(out[0].breite, out[0].hoehe)
     return out, f, f35
@@ -88,6 +102,9 @@ def vermessen_auftrag(auftrag, ablage):
     ablage = Path(ablage)
     gelenke = _funktion(auftrag["gelenke"])(auftrag["p"]) if auftrag.get("gelenke") else []
     netz = baue_param_netz(auftrag["bauer"], auftrag["p"], auftrag["frei"], gelenke=gelenke)
+    if auftrag.get("farbteile"):
+        netz.farb_tris = np.asarray(_funktion(auftrag["farbteile"])(netz), bool)
+    zwillinge = tuple((np.array(q, float), np.array(c, float)) for q, c in auftrag.get("zwillinge", []))
     bilder, f, f35 = _bilder(auftrag, ablage)
     paare = [(e, 0.0) for e in range(-10, 81, 10)]
     if auftrag.get("kopfueber"):
@@ -95,7 +112,8 @@ def vermessen_auftrag(auftrag, ablage):
     ng = len(gelenke)
     E = [Eingabe(bild=b, netz="m", f=f, f_gruppe="kamera" if "video" in auftrag else b.name,
                  winkel=tuple([0.0] * ng) if ng else None, winkel_frei=tuple(range(ng)), paare=tuple(paare),
-                 winkel_raster={g: list(np.arange(0, 360, 30.0)) for g in range(ng)}) for b in bilder]
+                 winkel_raster={g: list(np.arange(0, 360, 30.0)) for g in range(ng)}, zwillinge=zwillinge)
+         for b in bilder]
     pl = standard_plaene(bilder[0].breite_arbeit, grob=min(370, bilder[0].breite_arbeit // 4))
     vorg = {k: tuple(v) for k, v in auftrag.get("vorgaben", {}).items()}
     einst = Einstellungen(f_sigma_log=0.15 if f35 else 0.25, roll_sigma_grad=15.0 if "video" in auftrag else 3.0)

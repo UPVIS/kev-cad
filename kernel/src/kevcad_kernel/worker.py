@@ -24,7 +24,7 @@ Rechenprozess → Eltern:
 | ``STEP`` | ``run``, ``index``, ``text`` | – |
 | ``PART`` | ``run``, ``name``, ``key`` (Formschlüssel), ``cached``, ``tess_ms``, ``density``, ``app`` (Kopf des PART_UPSERT ohne seq), ``app_len`` | Nutzlast des PART_UPSERT, danach BRep-Binärform |
 | ``RUN_DONE`` / ``RUN_FAILED`` | ``run``, ``shown``, ``steps``, ``warnings``, ``params``, ``stdout``, ``duration_ms``, ``error`` (nur FAILED) | – |
-| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist | Nutzlast von CHECK |
+| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist; mit ``app.state`` "teilweise" folgt später ein zweites ``CHECK_DONE`` desselben Laufs mit "done" (Bewegungsraum im Hintergrund fertig gerechnet) | Nutzlast von CHECK |
 | ``EXEC_RES`` | ``ok``, ``result``, ``stdout``, ``shown``, ``warnings``, ``error``/``line``/``excerpt``/``hint`` | – |
 """
 
@@ -96,9 +96,11 @@ def main() -> int:
     reader = FrameReader()
     wartend: collections.deque = collections.deque()  # während der Prüfung angekommene Aufträge
     ende = False
+    # Lauf, dessen Prüfung teilweise ist (Bewegungsraum über dem Zeitlimit): wird fertig gerechnet, sobald nichts
+    # anderes ansteht, und kommt dann als zweites CHECK_DONE (state "done"). Ein neuer echter Lauf verwirft es.
+    fertigrechnen: int | None = None
 
-    def neuer_auftrag() -> None:
-        """Für die Prüfung nach einem Lauf: neue Rahmen einsammeln; ein neuer Lauf (oder QUIT) bricht sie ab."""
+    def einsammeln() -> None:
         nonlocal ende
         import select
 
@@ -108,10 +110,23 @@ def main() -> int:
                 ende = True
                 break
             wartend.extend(reader.feed(data))
+
+    def neuer_auftrag() -> None:
+        """Für die Prüfung nach einem Lauf: neue Rahmen einsammeln; ein neuer Lauf (oder QUIT) bricht sie ab."""
+        einsammeln()
         if ende or any(h.get("type") in ("RUN", "QUIT") for h, _ in wartend):
             from kevcad_kernel.pruefung.pruefer import Abgebrochen
 
             raise Abgebrochen("neuer Lauf")
+
+    def irgendein_auftrag() -> None:
+        """Für das Fertigrechnen im Hintergrund: jeder Auftrag (auch execute, PING, ein Schattenlauf) geht vor; danach
+        rechnet der Rechenprozess weiter, wo er war (Zwischenspeicher je Weg und Teilepaar)."""
+        einsammeln()
+        if ende or wartend:
+            from kevcad_kernel.pruefung.pruefer import Abgebrochen
+
+            raise Abgebrochen("Auftrag geht vor")
 
     while True:
         if wartend:
@@ -119,6 +134,25 @@ def main() -> int:
             wartend.clear()
         elif ende:
             return 0
+        elif fertigrechnen is not None:
+            from kevcad_kernel.pruefung.pruefer import Abgebrochen
+
+            run_h = fertigrechnen
+            try:
+                fertig = runner.fertig_rechnen(run_h, abbrechen=irgendein_auftrag)
+            except Abgebrochen:
+                continue  # erst die Aufträge, dann weiter
+            except Exception as exc:  # noqa: BLE001 - das teilweise Ergebnis bleibt stehen
+                import traceback
+
+                print(f"Fertigrechnen von Lauf {run_h} fehlgeschlagen: {exc!r}\n{traceback.format_exc(limit=6)}",
+                      file=sys.stderr)
+                fertig = None
+            fertigrechnen = None
+            if fertig is not None:
+                check, nutz = fertig
+                emit({"type": "CHECK_DONE", "run": run_h, "app": check, "app_len": len(nutz)}, nutz)
+            continue
         else:
             try:
                 data = os.read(0, 1 << 16)
@@ -131,6 +165,8 @@ def main() -> int:
             kind = header.get("type")
             try:
                 if kind == "RUN":
+                    if not header.get("schatten"):
+                        fertigrechnen = None  # ein neuer Lauf löst das teilweise Ergebnis des alten ab
                     result = runner.run(header)
                     emit(result)
                     if result.get("type") == "RUN_DONE" and header.get("pruefen", True):
@@ -141,6 +177,8 @@ def main() -> int:
                                            "message": f"Prüfung fehlgeschlagen: {type(exc).__name__}: {exc}",
                                            "befunde": [], "geometrie": []}, b""
                         emit({"type": "CHECK_DONE", "run": header["run"], "app": check, "app_len": len(nutz)}, nutz)
+                        if check.get("state") == "teilweise":
+                            fertigrechnen = int(header["run"])
                 elif kind == "EXEC":
                     emit(runner.execute(header))
                 elif kind == "PING":

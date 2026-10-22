@@ -12,7 +12,9 @@ import pytest
 
 from kevcad_kernel.bestand import BestandDatei, BestandError, gebaut_aenderungen, plane, plane_1d, plane_2d, pruefe
 from kevcad_kernel.bestand.datei import anwenden, pfade, umkehren, zusammenfassung
-from kevcad_kernel.bestand.text import einkauf_csv, einkauf_text, quellen_zeilen
+from kevcad_kernel.bestand import einkauf as ek
+from kevcad_kernel.bestand.text import quellen_zeilen, zuschnitt_kopf
+from kevcad_kernel.bom import verschnitt_bilanz, verschnitt_prozent
 from kevcad_kernel.bestand.zuschnitt import naeherung_1d
 
 ALFER = {"id": "rohr-alfer-12x1", "art": "rohr", "name": "ALFER-Rundrohr 12 × 1", "masse": {"d": 12, "s": 1},
@@ -76,8 +78,9 @@ def stueck_count(cut):
 def test_1d_reste_zuerst_beispiel():
     pl = plane(bom_mit(KUGELSCHIEBER), beispiel_bestand(), KAT, stand="2026-10-21T22:00:00")
     cut = pl.bom["cuts"][0]
-    # bisherige Felder unverändert
-    assert cut["stangen"] == [[1]] and cut["verschnitt_prozent"] == 1.0 and cut["stangenlaenge"] == 1000
+    # bisherige Felder unverändert, nur der Verschnitt ist nach Definition 2 über die Quellen gerechnet
+    assert cut["stangen"] == [[1]] and cut["stangenlaenge"] == 1000
+    assert cut["verschnitt_definition"] == "2" and cut["verschnitt_prozent"] == verschnitt_prozent(cut, 80)
     assert stueck_count(cut) == sorted([1000] * 3 + [175] * 2 + [120] * 4 + [60] * 2)
     arts = [q["art"] for q in cut["quellen"]]
     assert arts == sorted(arts, key=["rest", "bestand", "kaufen"].index)  # Reste, Bestand, kaufen
@@ -279,26 +282,104 @@ def test_einkaufsliste_text_csv_und_summe(tmp_path):
     lines = KUGELSCHIEBER + [{"pos": 5, "art": "mutter", "stock_id": MUTTER["id"], "benennung": MUTTER["name"],
                               "masse_text": "M4", "anzahl": 4, "preis_je": 0.03}]
     pl = plane(bom_mit(lines), beispiel_bestand(), KAT)
-    text = einkauf_text(pl.bom, "Kugelschieber")
-    assert text.splitlines()[0] == "Einkaufsliste Kugelschieber (Lauf 7): 2 Positionen"
-    assert "- 1 × ALFER-Rundrohr 12 × 1 (Stange 1.000 mm), 3,90 € je Einheit = 3,90 € (https://www.alfer.com/)" in text
-    assert "- 4 Stück Sechskantmutter ISO 4032 M4, 0,03 € je Einheit = 0,12 €" in text
-    assert text.splitlines()[-1] == "Summe: 4,02 € (Richtpreise, Stand 2026-10)"
-    data = einkauf_csv(pl.bom, "Kugelschieber")
+    e = ek.zusammenstellen(pl.bom)
+    text = ek.text(e, "Kugelschieber", "21.10.2026")
+    assert text.splitlines()[:3] == ["Einkaufsliste Kugelschieber (Stand 21.10.2026)", "", "Lagerware"]
+    assert "- [ ] 1 × Stange 1.000 mm: ALFER-Rundrohr 12 × 1, 3,90 € (https://www.alfer.com/)" in text
+    assert "- [ ] 4 × Stück: Sechskantmutter ISO 4032 M4, 0,12 €" in text
+    assert "\nSumme: ≈ 4,02 €\n\nNormteile abzählen\n- Sechskantmutter ISO 4032 M4: 4 gebraucht, 0 aus Bestand, 4 kaufen" \
+        in text
+    data = ek.csv(e)
     path = tmp_path / "e.csv"
-    path.write_text(data, encoding="utf-8-sig", newline="")
+    path.write_text(data, encoding="utf-8", newline="")
     raw = path.read_bytes()
-    assert raw.startswith(b"\xef\xbb\xbf") and b"\r\n" in raw
+    assert raw.startswith(b"\xef\xbb\xbfGruppe;Menge;") and not raw.startswith(b"\xef\xbb\xbf\xef\xbb\xbf")
+    assert raw.endswith(b"\r\n")
     rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig")), delimiter=";"))
-    assert rows[1][:7] == ["Pos", "Lagerteil", "Benennung", "Menge", "Einheit", "€ je Einheit", "€"]
-    assert rows[2][:7] == ["1", ALFER["id"], "ALFER-Rundrohr 12 × 1", "1", "Stange 1.000 mm", "3,90", "3,90"]
-    assert rows[2][9] == "https://www.alfer.com/"
-    assert ["Summe (€)", "4,02"] in rows
+    assert rows[0][:7] == ["Gruppe", "Menge", "Einheit", "Benennung", "Lagerteil", "Preis je (EUR)", "Preis (EUR)"]
+    assert rows[1] == ["Lagerware", "1", "Stange 1.000 mm", "ALFER-Rundrohr 12 × 1", ALFER["id"], "3,90", "3,90",
+                       "2026-10", "ALFER", "https://www.alfer.com/", rows[1][10]]
+    assert ["", "", "", "Summe", "", "", "4,02", "", "", "", ""] in rows
+    assert rows[-1][0] == "Normteile abzählen" and rows[-1][10] == "4 gebraucht, 0 aus Bestand, 4 kaufen"
     # nichts zu kaufen
     pl = plane(bom_mit([rohr_line(400, 1)]), beispiel_bestand(), KAT)
     assert pl.bom["einkaufsliste"] == [] and pl.bom["fehlt"] is False and pl.bom["einkauf_summe"] is None
-    assert "nichts zu kaufen" in einkauf_text(pl.bom)
+    e = ek.zusammenstellen(pl.bom)
+    assert ek.text(e, None) == "Einkaufsliste\nNichts zu kaufen, alles ist im Bestand."
+    assert ek.csv(e) == ("\ufeffGruppe;Menge;Einheit;Benennung;Lagerteil;Preis je (EUR);Preis (EUR);Preisstand;"
+                         "Bezugsquelle;Link;Hinweis\r\n;;;Summe;;;;;;;\r\n")
+    assert ek.zeile_kurz(e) == "Einkaufsliste: nichts zu kaufen, alles aus dem Bestand des Projekts"
     assert quellen_zeilen(pl.bom["cuts"][0]) == ["Rest R-0001 (430 mm): 400; Rest 27 mm Verschnitt"]
+    assert ek.dateiname("Kugel/schieber") == "Kugel-schieber-einkaufsliste.csv"
+
+
+def test_einkaufsliste_mit_zukauf_und_filament_aus_der_stueckliste():
+    lines = [rohr_line(400, 1),
+             {"pos": 2, "art": "zukaufteil", "stock_id": "alutec-05200", "benennung": "ALUTEC Transportroller 05200",
+              "anzahl": 2, "preis_je": 24.99, "preis": 49.98, "hersteller": "ALUTEC", "mpn": "05200",
+              "gtin": "4005187052008", "url": "https://www.beispiel-shop.de/p/alutec-05200",
+              "preis_stand": "2026-10-21", "eigenteil": False},
+             {"pos": 3, "art": "kamerazubehoer", "stock_id": "platte-200pl", "benennung": "Schnellwechselplatte",
+              "anzahl": 1, "preis_je": 29.9, "preis": 29.9, "eigenteil": False},
+             {"pos": 4, "art": "druckteil", "stock_id": None, "benennung": "Halter", "material": "PETG", "anzahl": 4,
+              "kg": 0.048, "preis": 1.2, "eigenteil": False},
+             {"pos": 5, "art": "druckteil", "stock_id": None, "benennung": "Clip", "material": "PETG", "anzahl": 1,
+              "kg": 0.012, "preis": 0.3, "eigenteil": False},
+             {"pos": 6, "art": "eigenteil", "stock_id": None, "benennung": "Kufe", "material": "Stahl", "anzahl": 1,
+              "kg": 2.0, "eigenteil": True}]
+    pl = plane(bom_mit(lines), beispiel_bestand(), KAT)
+    e = ek.zusammenstellen(pl.bom)
+    assert [z["gruppe"] for z in e["zeilen"]] == ["Zukaufteile", "Zukaufteile"]
+    rolle, platte = e["zukauf"]
+    assert (rolle["menge"], rolle["preis"], rolle["link_text"], rolle["hinweis"], rolle["preis_stand"]) == (
+        2.0, 49.98, "beispiel-shop.de", "ALUTEC · 05200 · EAN 4005187052008", "2026-10-21")
+    assert (platte["link"], platte["hinweis"], platte["preis_stand"]) == (None, None, None)
+    assert e["summe"] == pytest.approx(79.88) and e["summe_lager"] is None and e["positionen"] == 2
+    assert e["filament"] == [{"werkstoff": "PETG", "material": None, "teile": 5, "gramm": pytest.approx(60.0),
+                              "preis": pytest.approx(1.5), "preis_stand": None, "quelle": "stueckliste",
+                              "stand": None}]
+    text = ek.text(e, "Roller")
+    assert "- PETG: 60,0 g für 5 Teile, 1,50 € (Stückliste, Volumen × Dichte)" in text
+    assert "- [ ] 1 × Stück: Schnellwechselplatte, 29,90 €" in text
+    # Druckvorschau eines anderen Laufs gilt nicht, desselben Laufs schon
+    dv = {"run": 7, "stand": "slicer", "summe": {"material": [{"material": "petg", "name": "PETG", "g": 71.25,
+                                                               "kosten": 1.21}]},
+          "teile": [{"gruppe": "g1", "teile": ["Halter 1", "Halter 2"], "anzahl": 4, "material": "petg"},
+                    {"gruppe": "g2", "teile": ["Clip"], "material": "petg"}]}
+    assert ek.filament(pl.bom, {**dv, "run": 8})[0]["quelle"] == "stueckliste"
+    (f,) = ek.filament(pl.bom, {"druckvorschau": dv})
+    assert (f["werkstoff"], f["teile"], f["gramm"], f["preis"], f["stand"]) == ("PETG", 5, 71.25, 1.21, "slicer")
+    assert ek.text(ek.zusammenstellen(pl.bom, dv), None).endswith(
+        "Filament für Druckteile\n- PETG: 71,3 g für 5 Teile, 1,21 € (Druckvorschau, Bambu Studio)")
+
+
+def test_verschnitt_definition_2():
+    """Sägeschnitte und Reste unter dem Mindestrest, bezogen auf die verplante Länge bzw. Fläche; neue Reste zählen
+    nicht. Dieselben Zahlen wie MaterialTests.testVerschnittEinheitlich der App."""
+    stange = {"stock_id": "rohr", "art": "stange", "saegeschnitt": 3, "quellen": [
+        {"art": "kaufen", "laenge": 1000, "stuecke": [400, 300]},
+        {"art": "bestand", "laenge": 1000, "stuecke": [940]}]}
+    assert verschnitt_bilanz(stange, 100) == (2000.0, 66.0)
+    assert verschnitt_prozent(stange, 100) == 3.3
+    # Angabe des Kernels gilt vor dem Mindestrest
+    stange["quellen"][0].update({"rest_neu": 294, "verschnitt": True})
+    assert verschnitt_bilanz(stange, 100) == (2000.0, 360.0)
+    platte = {"stock_id": "platte", "art": "platte", "platte": {"b": 1000, "h": 500}, "quellen": [
+        {"art": "kaufen", "b": 1000, "h": 500, "stuecke": [{"b": 400, "h": 500, "x": 0, "y": 0, "gedreht": False}],
+         "rest_neu": [{"b": 590, "h": 500, "x": 410, "y": 0}]}]}
+    assert verschnitt_prozent(platte, 100) == 1.0
+    # ohne Quellen (Zuschnitt ohne Bestand): je Stange gekauft, Standard-Mindestrest 100
+    alt = {"stock_id": "rohr", "stangenlaenge": 6000, "saegeschnitt": 3, "stangen": [[882] * 4 + [800] * 3, [800]]}
+    assert verschnitt_bilanz(alt) == (12000.0, 75.0) and verschnitt_prozent(alt) == 0.6
+    # Rundung wie die App (halbe Werte von der Null weg): 0,25 % → 0,3 %, nicht 0,2 %
+    assert verschnitt_prozent({"quellen": [{"laenge": 1000, "stuecke": [997.5], "rest_neu": 0}],
+                               "saegeschnitt": 0}, 100) == 0.3
+    # im Plan: Rest R-0001 400 + Rest 27 (unter 80) → 3 + 27 von 430 mm
+    pl = plane(bom_mit([rohr_line(400, 1)]), beispiel_bestand(), KAT)
+    cut = pl.bom["cuts"][0]
+    assert cut["verschnitt_prozent"] == 7.0 and cut["verschnitt_definition"] == "2"
+    assert pl.bom["verschnitt"] == {"definition": "2", "stangen": 7.0, "platten": None}
+    assert zuschnitt_kopf(cut) == "ALFER-Rundrohr 12 × 1: 1 Rest, Verschnitt 7,0 %"
 
 
 def test_kaputte_bestandsdatei_gibt_hinweis_und_plant_ohne():
@@ -462,6 +543,6 @@ def test_beispiel_zahlen_fuer_den_bericht(capsys):
     pl = plane(bom_mit(KUGELSCHIEBER), beispiel_bestand(), KAT)
     cut = pl.bom["cuts"][0]
     print("\n".join(quellen_zeilen(cut)))
-    print(einkauf_text(pl.bom, "Kugelschieber"))
+    print(ek.text(ek.zusammenstellen(pl.bom), "Kugelschieber"))
     print(pl.statistik)
     assert Path(__file__).exists()

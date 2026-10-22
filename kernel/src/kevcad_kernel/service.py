@@ -128,7 +128,8 @@ class KernelService(Protocol):
 
     # Phase 2: Lagerteile, Materialien, Stückliste (siehe KATALOG.md und PROTOCOL.md, Abschnitt Phase 2)
     def bom(self) -> dict[str, Any]:
-        """Stückliste des letzten Laufs: {"ok", "run", "lines", "cuts", "totals", "warnings"} wie die BOM-Nachricht."""
+        """Stückliste des letzten Laufs: {"ok", "run", "lines", "cuts", "totals", "warnings"} wie die BOM-Nachricht;
+        mit Bestandsabgleich dazu "einkauf_text" (Einkaufsliste wie „Teilen“ in der App, BESTAND.md)."""
 
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
         """Lagerteile suchen (alle drei Ebenen): {"ok", "items": [Lagerteil + "ebene"], "total"}"""
@@ -163,7 +164,10 @@ class KernelService(Protocol):
         """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}"""
 
     def einkaufsliste(self) -> dict[str, Any]:
-        """{"ok", "run", "einkaufsliste", "einkauf_summe", "einkauf_hinweis", "fehlt", "stueckgut", "text", "csv"}"""
+        """Einkaufsliste wie in der App (bestand/einkauf.py): {"ok", "run", "lagerware", "zukauf", "normteile",
+        "filament", "positionen", "summe" (Lagerware + Zukaufteile), "summe_lager", "summe_zukauf", "ohne_preis",
+        "text", "csv"} und die Felder der Stückliste ("einkaufsliste", "einkauf_summe" nur Lagerware,
+        "einkauf_hinweis", "bestand_stand", "fehlt", "stueckgut")."""
 
     def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
         """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}"""
@@ -194,9 +198,11 @@ class KernelService(Protocol):
         """{"ok", "items": [Zukaufteil + "ebene", "cad_art", "cad_datei_fehlt", "zustand", "kurz"], "total"}"""
 
     # Prüfung (additiv, siehe kevcad_kernel/pruefung und PROTOCOL.md Abschnitt „Prüfung“)
-    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
+    def pruefen(self, warten_s: float = 120.0, endstand: bool = False) -> dict[str, Any]:
         """Letztes Prüfergebnis nach einem Lauf (wartet auf eine laufende Prüfung): {"ok", "run", "state",
-        "zusammenfassung", "zaehler", "befunde", "montage", "stand", "gewinde", "erlaubt", …} wie die Nachricht CHECK."""
+        "zusammenfassung", "zaehler", "befunde", "montage", "stand", "gewinde", "erlaubt", …} wie die Nachricht CHECK.
+        ``state`` "teilweise": der Bewegungsraum wird im Hintergrund fertig gerechnet (``im_hintergrund``, offene
+        Wege); mit ``endstand`` wird bis ``warten_s`` auf das fertige Ergebnis gewartet (additiv, Prüftempo)."""
 
     def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,
                   timeout_s: float = 20) -> dict[str, Any]:
@@ -265,6 +271,30 @@ class KernelService(Protocol):
     def druckpruefung(self, teil: str | None = None) -> dict[str, Any]:
         """Alle Druckteile oder eines (Name oder Gruppe): {"ok", "run", "drucker", "teile": [{"name", "material",
         "zusammenfassung", "ausrichtung", "kennzahlen", "befunde", …}], "materialien", "zaehler", "statistik"}"""
+
+    # Phase 8: Drucken auf dem Bambu Lab P1P (DRUCKVORSCHAU.md, „Drucken (Phase 8)“)
+    def drucker_status(self) -> dict[str, Any]:
+        """{"ok", "konfiguriert", "verbindung", "meldung", "drucker", "weg", "wege", "steuern", "druck",
+        "temperaturen", "fehler", "kamera", "gefunden", "auftrag", "aktualisiert"} wie PRINTER_STATUS; nie mit
+        Seriennummer oder Zugangscode."""
+
+    def drucken(self, platten: list[int] | None = None, weg: str = "a", grund: str | None = None) -> dict[str, Any]:
+        """Nur auf Kevins ausdrücklichen Wunsch: öffnet in der App den Dialog „Drucken …“ (PRINT_JOB_ASK). Es geschieht
+        nichts, bis Kevin dort bestätigt. {"ok", "auftrag", "zustand": "wartet", "weg", "platten", "meldung"}"""
+
+    # Druckvorschau (DRUCKVORSCHAU.md; umgesetzt in kevcad_kernel.druck.vorschau_laufzeit.DruckvorschauRuntime)
+    def druckvorschau(self, detail: bool = False) -> dict[str, Any]:
+        """Vorschau des letzten Laufs wie PRINT_PREVIEW: {"ok", "run", "stand", "drucker", "summe", "platten",
+        "teile", "hinweise", "slicer", "einstellungen", "regler", "ms"}; ohne ``detail`` ohne Umrisse."""
+
+    def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
+                         von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
+        """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in
+        <projekt>/druck.json: {"ok", "meldung", "teile", "druck_json", "vorgaben", "gruppe"}"""
+
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+        """3MF der angeordneten Platten für Bambu Studio (ohne Drucken): {"ok", "pfad", "platten", "hinweise",
+        "geprueft", "ms", "materialien"}"""
 
     # Phase 6: Zeichnungen (DOKUMENTE.md; Umsetzung in kevcad_kernel.zeichnung.laufzeit.ZeichnungRuntimeMixin)
     def drawings(self) -> dict[str, Any]:

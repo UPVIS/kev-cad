@@ -1,12 +1,12 @@
-"""Texte und CSV zum Bestand: Zuschnitt je Quelle, Einkaufsliste, Bestandsübersicht (deutsch, Kevin liest mit)."""
+"""Texte zum Bestand: Zuschnitt je Quelle, Bestandsübersicht (deutsch, Kevin liest mit). Die Einkaufsliste steht in
+``einkauf.py`` (Text und CSV wie die App)."""
 
 from __future__ import annotations
 
-import csv
-import io
 from typing import Any
 
-from kevcad_kernel.bom import de_fixed, de_num, eur
+from kevcad_kernel.appformat import zahl
+from kevcad_kernel.bom import de_num
 
 from .datei import einstellungen, mm
 
@@ -73,65 +73,10 @@ def zuschnitt_kopf(cut: dict[str, Any]) -> str:
             parts.append("neue Reste " + ", ".join(f"{de_num(r['b'])} × {de_num(r['h'])}" for r in neue))
         else:
             parts.append("neue Reste " + ", ".join(f"{de_num(x)}" for x in neue) + " mm")
-    if platte:
-        parts.append(f"Verschnitt {de_num(cut.get('verschnitt_prozent'), 1)} %")
-    else:
-        weg = sum(float(q.get("rest_neu") or 0) for q in cut.get("quellen") or [] if q.get("verschnitt"))
-        parts.append(f"Verschnitt {de_num(weg)} mm")
+    # Verschnitt wie in der App (Definition 2): Sägeschnitte und Reste unter dem Mindestrest
+    if cut.get("verschnitt_prozent") is not None:
+        parts.append(f"Verschnitt {zahl(cut['verschnitt_prozent'], 1)} %")
     return f"{cut.get('benennung')}: " + ", ".join(parts)
-
-
-def einkauf_zeilen(bom: dict[str, Any]) -> list[str]:
-    rows = bom.get("einkaufsliste") or []
-    out = []
-    for k in rows:
-        price = f", {de_fixed(k['preis_je'])} € je Einheit = {eur(k.get('preis'))}" if k.get("preis_je") is not None \
-            else ", ohne Preis"
-        if k.get("einheit") == "Stück":
-            line = f"{k.get('menge')} Stück {k.get('benennung')}{price}"
-        else:
-            line = f"{k.get('menge')} × {k.get('benennung')} ({k.get('einheit')}){price}"
-        if k.get("link"):
-            line += f" ({k['link']})"
-        if k.get("hinweis"):
-            line += f" – {k['hinweis']}"
-        out.append(line)
-    return out
-
-
-def einkauf_text(bom: dict[str, Any], titel: str = "") -> str:
-    rows = bom.get("einkaufsliste") or []
-    head = "Einkaufsliste" + (f" {titel}" if titel else "") + (f" (Lauf {bom['run']})" if bom.get("run") else "")
-    if not rows:
-        return f"{head}: nichts zu kaufen, alles kommt aus dem Bestand des Projekts."
-    out = [f"{head}: {_plural(len(rows), 'Position', 'Positionen')}"]
-    out += [f"- {line}" for line in einkauf_zeilen(bom)]
-    summe = bom.get("einkauf_summe")
-    out.append(f"Summe: {eur(summe)}" + (f" ({bom['einkauf_hinweis']})" if bom.get("einkauf_hinweis") else ""))
-    return "\n".join(out)
-
-
-def einkauf_csv(bom: dict[str, Any], titel: str = "") -> str:
-    """Einkaufsliste als CSV (Semikolon, deutsche Zahlen; als Datei mit ``utf-8-sig`` schreiben wie ``bom_csv``)."""
-    buf = io.StringIO()
-    w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
-
-    def money(v: Any) -> str:
-        return "" if v is None else f"{float(v):.2f}".replace(".", ",")
-
-    head = ["Einkaufsliste"] + ([titel] if titel else []) + ([f"Lauf {bom['run']}"] if bom.get("run") else [])
-    w.writerow(head)
-    w.writerow(["Pos", "Lagerteil", "Benennung", "Menge", "Einheit", "€ je Einheit", "€", "Preisstand", "Bezugsquelle",
-                "Link", "Hinweis"])
-    for i, k in enumerate(bom.get("einkaufsliste") or [], 1):
-        w.writerow([i, k.get("id"), k.get("benennung"), k.get("menge"), k.get("einheit"), money(k.get("preis_je")),
-                    money(k.get("preis")), k.get("preis_stand") or "", k.get("link_text") or "", k.get("link") or "",
-                    k.get("hinweis") or ""])
-    w.writerow([])
-    w.writerow(["Summe (€)", money(bom.get("einkauf_summe"))])
-    if bom.get("einkauf_hinweis"):
-        w.writerow(["Hinweis", bom["einkauf_hinweis"]])
-    return buf.getvalue()
 
 
 def rest_text(rest: dict[str, Any]) -> str:

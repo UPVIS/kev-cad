@@ -1,6 +1,7 @@
 # Kev CAD · Live-Druckvorschau für 3D-Druckteile
 
-Stand: 21.10.2026 (Kevins Wunsch vom selben Tag). Projekt für später; gehört zu den 3D-Druck-Regeln (Druckprüfung) und
+Stand: 22.10.2026 (Kevins Wunsch vom 21.10.2026, gestartet am 22.10.2026 auf Zweig `druckvorschau`, Vertrag in
+[DRUCKVORSCHAU.md](DRUCKVORSCHAU.md)). Gehört zu den 3D-Druck-Regeln (Druckprüfung) und
 zu Phase 8 (Druck auf dem Bambu-Drucker).
 
 ## Ziel

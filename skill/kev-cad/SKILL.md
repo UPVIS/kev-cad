@@ -25,6 +25,13 @@ Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst (Durc
 Einbaubarkeit), `run` wartet auf das Ergebnis; `pruefen` zeigt alles samt Stand und Montage. Befunde beheben, nicht nur
 melden:
 
+- **Vor dem Fertigmelden auf den Endstand warten** (Prüftempo, 22.10.2026): Schafft der Bewegungsraum das Zeitlimit
+  eines Laufs nicht, sagt `run` „Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig
+  gerechnet“ (Zustand `teilweise`). Das ist kein fertiges Ergebnis. Kev CAD rechnet ohne neuen Lauf weiter; `pruefen()`
+  (wartet standardmäßig, `warten=true`) bzw. `bedingungen()` zeigt den Endstand. Erst wenn dort keine Fehler mehr
+  stehen, fertig melden. Nicht einfach `run` wiederholen, das verwirft das Fertigrechnen und beginnt von vorn.
+- Große Modelle: `run(timeout_s=…)` (höchstens 900 s) hebt das Zeitlimit für model.py an, wenn ein Lauf daran scheitert.
+
 - **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
   Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
   Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
@@ -66,7 +73,9 @@ melden:
   umkonstruiert, nicht der Bereich verkleinert. Hat das Projekt eine Animation, zusätzlich `kollision_pruefen(name)`
   für jede Animation (siehe „Animation“).
 - **Druckteile:** Die Druckprüfung läuft bei jedem Lauf für jedes `lager.druckteil` mit; `druckpruefung` zeigt
-  Ausrichtung, Kennzahlen und alle Hinweise (siehe 3d-druck.md).
+  Ausrichtung, Kennzahlen und alle Hinweise (siehe 3d-druck.md). Jedem Druckteil seinen Zweck geben
+  (`lager.druckteil(…, zweck="tragend")`: zier, funktion, tragend, bewegt, aussen); `druckvorschau` sagt danach
+  Filament, Zeit, Platten, Kosten und empfohlene Einstellungen (3d-druck.md, Abschnitt 16).
 - Befestigung (`bed.verbinde`), Bewegungsraum, Schweben, Standsicherheit und Einbaubarkeit prüft Kev CAD bei jedem
   Lauf; `pruefen` zeigt das ganze Ergebnis, `montage_reihenfolge` die Einbaufolge.
 
@@ -217,7 +226,8 @@ nennen.
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`. Bei
    größeren Änderungen mit `titel` (siehe „Versionen“).
-6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
+6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“; meldet `run` den Bewegungsraum
+   als „wird im Hintergrund fertig gerechnet“, vorher `pruefen()` abwarten), Zahlen aus `run` mit der
    Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt, `bedingungen` für
    Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum. Kevin keine
    Screenshots schicken; Bilder nur zur eigenen Analyse (siehe „Bilder“).
@@ -330,7 +340,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.teil(id)` / `lager.teil(art, **maße, material=None)` | Lagerteil aus dem Katalog, genau passend, sonst Fehler mit Vorschlägen. |
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
-| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch). |
+| `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch); `zweck` (zier, funktion, tragend, bewegt, aussen) bestimmt die Empfehlungen der Druckvorschau, `anzahl` nur für zusätzliche Stück. |
 | `lager.zukauf(id)` → `.verbauen(name)`, `.bezugspunkt(name)` | Zukaufteil mit Hersteller-CAD, Skript oder Ersatzkörper (siehe „Zukaufteile“). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `montage(teil, richtung=, nach=, werkzeug=, baugruppe=, schnappt=, eingedruckt=)` | Einbau erklären, wo die Prüfung es nicht selbst wissen kann (siehe „Montagegerecht konstruieren“). |
@@ -365,7 +375,8 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 
 - `bom`: Positionen (Anzahl, Maße, Gehrung, Material, kg, €), Zuschnitt je Stangenware („Stange 1: 882 + 882 + … =
   5.394 mm, Rest 606 mm“, Sägeschnitt 3 mm, Verschnitt in %), Summen mit Richtpreis-Hinweis, Hinweise (etwa nicht
-  zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
+  zugeordnete Lagerteile). Verschnitt heißt wie in der App: Sägeschnitte und Reste unter dem Mindestrest, bezogen auf
+  die verplante Länge bzw. Fläche; neue Reste zählen nicht (`verschnitt_definition: "2"`). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
 
 ## Bestand und Einkauf (Kevin, 21.10.2026)
@@ -375,7 +386,11 @@ Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge
 
 - Der Zuschnitt nimmt nach jedem Lauf zuerst passende Reste, dann ganze Stangen bzw. Platten aus dem Bestand, dann
   zu kaufende (optimiert, mit Mindestrest und Sägeblatt). `bom` zeigt je Rest, Stange und Platte die Stücke und die
-  neuen Reste, `bestand_liste` den Bestand, `einkaufsliste` was fehlt (Menge, Preis mit Stand, Link, Summe, CSV).
+  neuen Reste, `bestand_liste` den Bestand.
+- `einkaufsliste` liefert genau die Liste, die Kevin unter „Material › Einkaufsliste“ sieht und teilt (gleicher Text,
+  gleiche CSV): Lagerware (was nach Resten und Bestand fehlt, Normteile zum Kaufen eingeschlossen), Zukaufteile (Link
+  und Preis aus dem Katalog), Summe dieser beiden, dann „Normteile abzählen“ (gebraucht, aus Bestand, kaufen) und
+  „Filament für Druckteile“ (aus der Druckvorschau, sonst Volumen × Dichte; nicht in der Summe).
 - **Bestand nur nach Kevins Angabe eintragen** (`bestand_eintragen`, seine Worte in `grund`), nie schätzen oder
   erfinden; jede Änderung aus der Antwort an Kevin nennen.
 - **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und
@@ -691,6 +706,19 @@ Gewindestift, Gewindeeinsatz auf derselben Achse); fehlt es, steht nur der Durch
 
 `export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`, `export(["bom_csv"])` die Stückliste als CSV. STEP für CAD und Fertigung, STL oder 3MF für den
 Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur diese Teile.
+
+## Drucken auf dem P1P (Phase 8)
+
+Kevins Entscheidung (22.10.2026): Weg A. Kev CAD slict die Platten der Druckvorschau mit Bambu Studio fertig und öffnet
+sie dort; Kevin klickt in Bambu Studio „Platte drucken“ und „Senden“, die Handy-App bleibt. Ein Material je Auftrag
+(P1P ohne AMS).
+
+- `drucker_status` liest den Stand (nur lesend): Verbindung, Fortschritt, Schicht, Restzeit, Temperaturen, Fehler,
+  letzter Auftrag. Seriennummer und Zugangscode stehen nie darin; frag Kevin nie danach, er trägt sie in der App ein.
+- `drucken(platten=[1], grund="…")` nur, wenn Kevin ausdrücklich drucken will. Es öffnet in Kev CAD den Dialog
+  „Drucken …“; es geschieht nichts, bis Kevin dort klickt. Nie zum Testen, nie aus eigenem Antrieb.
+- Starten, Pausieren oder Abbrechen am Drucker gibt es für den Agenten nicht. Weg B (direkt im LAN) ist gesperrt,
+  solange der Drucker nicht im LAN-only-Modus mit Developer Mode läuft.
 
 ## Bauplan
 

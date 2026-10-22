@@ -6,6 +6,10 @@
     .venv/bin/python -m fotomess.benchmark.lauf objectcapture 3 5 10
     .venv/bin/python -m fotomess.benchmark.lauf pruef 8
     .venv/bin/python -m fotomess.benchmark.lauf tabelle          # BENCHMARK.md aus den gespeicherten Ergebnissen
+    .venv/bin/python -m fotomess.benchmark.lauf scarlett 1 2 3 5 8
+    .venv/bin/python -m fotomess.benchmark.lauf scarlett_pruef_hoehe 8      # Breite frei, Höhe 47,5 fest
+    .venv/bin/python -m fotomess.benchmark.lauf scarlett_pruef_tiefe 8      # Breite frei, Tiefe 117 fest
+    .venv/bin/python -m fotomess.benchmark.lauf tabelle_scarlett
 
 Ergebnisse je Lauf als JSON unter build/fotomess/benchmark/, Kontrollbilder unter build/fotomess/kontrolle/.
 Laufzeiten ohne den einmaligen Modellaufbau (Netz mit Ableitungen, zwischengespeichert) und ohne das Laden der
@@ -239,6 +243,115 @@ def oc_vergleich(d, cams):
                 abstand_mm=dist, f_ihre_px=[float(f) for _, _, f in ihre], f_meine_px=d["f_px"])
 
 
+# ---------------------------------------------------------------------------------------------- Scarlett 2i2
+def _sc_einst():
+    from ..einpassen import Einstellungen
+    return Einstellungen(f_sigma_log=0.15, roll_sigma_grad=15.0, kanten_gewicht=0.8)
+
+
+# Prüfläufe: Breite frei, dafür ein anderes Maß fest (Name -> feste Werte). "hoehe": Herstellerhöhe 47,5 als
+# Gehäusehöhe gelesen; "tiefe": Herstellertiefe 117 als Gehäusetiefe ohne Knöpfe gelesen (Gegenprobe zur Lesart
+# „mit Knöpfen“).
+SC_PRUEF = {"hoehe": {"hoehe": 47.5}, "tiefe": {"tiefe": 117.0}}
+
+
+def scarlett(n, pruef=None, zeiten_video=None, name=None, kontrolle=True, jackknife=True):
+    """Scarlett 2i2 aus n Videobildern. pruef: Schlüssel in SC_PRUEF (Breite frei, dieses Maß fest)."""
+    from .. import unsicherheit as U
+    from ..ablauf import standard_plaene, vermessen
+    from ..modelle import scarlett as S
+    from . import scarlett as SC
+    fest = SC_PRUEF[pruef] if pruef else {}
+    frei = [k for k in SC.FREI if k not in fest] + (["breite"] if pruef else [])
+    netz = SC.netz(frei=SC.FREI + ["breite"])
+    t = time.perf_counter()
+    B = SC.bilder(n, zeiten_video)
+    t_bilder = time.perf_counter() - t
+    f0, f35 = SC.f_vorgabe()
+    E = SC.eingaben(B, f0)
+    pl = standard_plaene(B[0].breite_arbeit, grob=320)
+    theta0 = dict(S.P, **fest)
+    vorg = {k: SC.VORGABEN[k] for k in frei}
+    erg = vermessen({"scarlett": netz}, E, theta0, frei, vorgaben=vorg, einst=_sc_einst(), plaene=pl, kandidaten=4,
+                    protokoll=None, grenzen=SC.GRENZEN)
+    t = time.perf_counter()
+    kov = U.kovarianz(erg.ausgleich, pl.buendel[-1])
+    jack = U.jackknife(erg.ausgleich, pl.buendel[-1]) if jackknife else None
+    nm = U.nachmessen(kov, erg.ausgleich.frei)
+    richt = [(az, el, 0.0) for el in (5, 30, 60, 85) for az in range(0, 360, 45)]
+    ae = U.aufnahme_empfehlen(erg.ausgleich, kov, pl.kameras[-1], richtungen=richt)
+    t_unsicher = time.perf_counter() - t
+    f = math.exp(list(erg.ausgleich.z.logf.values())[0])
+    name = name or f"scarlett_{'pruef_' + pruef + '_' if pruef else ''}{n}"
+    bilder_pfade = []
+    if kontrolle:
+        from ..kontrolle import kontrollbild
+        for i, b in enumerate(erg.namen):
+            p = AUSGABE / "kontrolle" / f"{name}_{b}.jpg"
+            kontrollbild(erg.ausgleich, i, pl.buendel[-1], p, titel=f"Scarlett, {len(erg.namen)} Bild(er): {b}")
+            bilder_pfade.append(str(p))
+    theta = {k: erg.theta[k] for k in SC.FREI + ["breite"]}
+    d = dict(n=n, pruef=pruef, fest=fest, frei=frei, bilder=erg.namen, verworfen=erg.verworfen,
+             iou_kameras=erg.iou_kameras, zeiten=erg.zeiten, t_bilder=t_bilder, t_unsicherheit=t_unsicher, f_px=f,
+             f_vorgabe_px=f0, f35_meta=f35, theta=theta, gesamt=S.gesamt(theta), sigma_stat=kov["sigma"],
+             sigma_jack=jack, sigma=U.sigma_gesamt(kov["sigma"], jack), sigma_px=kov["sigma_px"],
+             nachmessen=[(a, b, c) for a, b, c, _ in nm[:4]], aufnahme=[(list(a), b, c) for a, b, c, _ in ae[:4]],
+             kameras=[k.als_dict() for k in erg.kameras], kontrollbilder=bilder_pfade,
+             bericht=erg.ausgleich.bericht(pl.buendel[-1]))
+    _speichere(name, d)
+    return d
+
+
+def tabelle_scarlett():
+    """Abschnitt für BENCHMARK.md aus den gespeicherten Läufen (fotomess und Object Capture)."""
+    from . import scarlett as SC
+    soll = SC.SOLL
+    z = []
+
+    def abw(ist, s):
+        return f"{ist - s:+.1f} mm ({(ist - s) / s * 100:+.1f} %)"
+    z.append("| Verfahren | Bilder (genutzt) | Laufzeit | f (px) | Gesamttiefe mit Knöpfen (Soll 117) | Höhe (Soll 47,5) | "
+             "Gehäusetiefe ohne Knöpfe | Überstand Knöpfe (Gain / Output) | kanten_r |")
+    z.append("|---|---|---|---|---|---|---|---|---|")
+    for n in (1, 2, 3, 5, 8):
+        d = _lade(f"scarlett_{n}")
+        if not d:
+            continue
+        th, sg, g = d["theta"], d["sigma"], d["gesamt"]
+        z.append(f"| fotomess | {n} ({len(d['bilder'])}) | {d['zeiten']['gesamt']:.1f} s | {d['f_px']:.0f} | "
+                 f"{g['tiefe']:.1f} ({abw(g['tiefe'], soll['tiefe'])}) | {th['hoehe']:.1f} ± {sg['hoehe']:.1f} "
+                 f"({abw(th['hoehe'], soll['hoehe'])}) | {th['tiefe']:.1f} ± {sg['tiefe']:.1f} | "
+                 f"{th['knopf_h']:.1f} ± {sg['knopf_h']:.1f} / {th['gross_h']:.1f} ± {sg['gross_h']:.1f} | "
+                 f"{th['kanten_r']:.1f} ± {sg['kanten_r']:.1f} |")
+    for lauf in ("scarlett_ganz", "scarlett_genau", "scarlett_umlauf", "scarlett_nah"):
+        p = WURZEL / "build" / "capture" / lauf / "bericht.json"
+        if not p.exists():
+            continue
+        b = json.loads(p.read_text())
+        r, h, gk = b["rekonstruktion"], b["huellmass_mm"], b["grundkoerper_mm"]
+        tz = r["times"]
+        gesamt = tz["reconstruction_s"] + tz.get("extraction_s", 0) + b["nachbearbeitung_s"]
+        oben = b.get("oberkante_mm") or float("nan")
+        z.append(f"| Object Capture {lauf.removeprefix('scarlett_')} | {r['images']} ({r['posed']}) | {gesamt:.0f} s | "
+                 f"– | {h['breite']:.1f} ({abw(h['breite'], soll['tiefe'])}) | {oben:.1f} ({abw(oben, soll['hoehe'])}); "
+                 f"Hülle {h['hoehe']:.1f} | {gk['breite']:.1f} (Deckelschicht) | {h['breite'] - gk['breite']:.1f} | – |")
+    z.append("")
+    for key in SC_PRUEF:
+        for n in (5, 8):
+            d = _lade(f"scarlett_pruef_{key}_{n}")
+            if not d:
+                continue
+            th, sg = d["theta"], d["sigma"]
+            fest = ", ".join(f"{k} = {v}" for k, v in d["fest"].items())
+            z.append(f"- Prüflauf {n} Bilder ({len(d['bilder'])} genutzt), fest {fest}: Breite **{th['breite']:.1f} ± "
+                     f"{sg['breite']:.1f} mm** (Soll 180, {abw(th['breite'], 180.0)}), Tiefe {th['tiefe']:.1f}, Höhe "
+                     f"{th['hoehe']:.1f}, kanten_r {th['kanten_r']:.1f}, mittlere IoU {np.mean(d['iou_kameras']):.3f} "
+                     f"(ohne Prüfmaß {np.mean((_lade(f'scarlett_{n}') or d)['iou_kameras']):.3f}), "
+                     f"{d['zeiten']['gesamt']:.1f} s")
+    z.append("")
+    return "\n".join(z)
+
+
 # ---------------------------------------------------------------------------------------------- Tabelle
 def tabelle():
     zeilen = []
@@ -331,11 +444,17 @@ def main():
             d = rollwagen(n, pruef=True)
         elif teil == "objectcapture":
             d = objectcapture(n)
+        elif teil == "scarlett":
+            d = scarlett(n)
+        elif teil.startswith("scarlett_pruef_"):
+            d = scarlett(n, pruef=teil.removeprefix("scarlett_pruef_"))
         else:
             raise SystemExit(f"unbekannt: {teil}")
         print(f"{teil} {n}: fertig in {time.perf_counter() - t:.1f} s (Lauf {d['zeiten']['gesamt']:.1f} s)", flush=True)
     if teil == "tabelle":
         print(tabelle())
+    if teil == "tabelle_scarlett":
+        print(tabelle_scarlett())
 
 
 if __name__ == "__main__":

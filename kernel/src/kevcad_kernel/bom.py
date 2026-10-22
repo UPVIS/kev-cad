@@ -21,12 +21,16 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from kevcad_kernel.appformat import runden
 from kevcad_kernel.catalog import ART_NAMEN, KLEINTEILE, STANGENWARE, number
 from kevcad_kernel.optik import OPTIK_ARTEN
 
 SAEGESCHNITT_MM = 3.0
 DEFAULT_STANGENLAENGE_MM = 6000.0
 ART_ORDER = {"stange": 0, "platte": 1, "klein": 2, "zukauf": 3, "druck": 4, "eigen": 5}
+# Verschnitt (BESTAND.md, Abschnitt „Verschnitt“): Definition 2 seit 22.10.2026, wie der Bereich „Material“ der App
+VERSCHNITT_DEFINITION = "2"
+STANDARD_MINDESTREST_MM = 100.0
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -131,6 +135,8 @@ class Piece:
     shape: Any = field(default=None, repr=False, compare=False)
     solids: list[Any] = field(default_factory=list, repr=False, compare=False)
     ausrichtung: Any = field(default=None, repr=False, compare=False)  # Druckteile: Lage aufs Bett, None = automatisch
+    zweck: str | None = field(default=None, compare=False)  # Druckteile: zier, funktion, tragend, bewegt, aussen
+    anzahl: int | None = field(default=None, compare=False)  # Druckteile: so oft insgesamt drucken (Ersatzteile)
 
     @property
     def group(self) -> str:
@@ -374,6 +380,121 @@ def first_fit_decreasing(lengths: list[float], stange: float, saege: float = SAE
     return bars, too_long
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Verschnitt, Definition 2 (wie ``MaterialZuschnitt`` in app/KevCADCore/Sources/KevCADCore/Material/MaterialDaten.swift)
+
+
+def _zahlen(value: Any) -> list[float]:
+    return [float(x) for x in value if not isinstance(x, (dict, list, bool)) and number(x) is not None] \
+        if isinstance(value, list) else []
+
+
+def _flaechen(value: Any) -> list[tuple[float, float]]:
+    out = []
+    for f in value if isinstance(value, list) else []:
+        if isinstance(f, dict) and number(f.get("b")) is not None and number(f.get("h")) is not None:
+            out.append((float(f["b"]), float(f["h"])))
+    return out
+
+
+def _platten_format(cut: dict[str, Any]) -> tuple[float | None, float | None]:
+    p = cut.get("platte")
+    if isinstance(p, dict):
+        b, h = number(p.get("b")), number(p.get("h"))
+        return (None if b is None else float(b)), (None if h is None else float(h))
+    if isinstance(p, list):
+        d = _zahlen(p)
+        return (d[0] if d else None), (d[1] if len(d) > 1 else None)
+    return None, None
+
+
+def zuschnitt_quellen(cut: dict[str, Any]) -> list[dict[str, Any]]:
+    """Quellen eines Zuschnitts; ohne ``quellen`` (Zuschnitt ohne Bestand) je Stange eine gekaufte."""
+    if isinstance(cut.get("quellen"), list):
+        return [q for q in cut["quellen"] if isinstance(q, dict)]
+    stange = number(cut.get("stangenlaenge"))
+    laenge = float(stange) if stange is not None else DEFAULT_STANGENLAENGE_MM
+    return [{"art": "kaufen", "laenge": laenge, "stuecke": list(bar)} for bar in cut.get("stangen") or []
+            if isinstance(bar, list)]
+
+
+def ist_plattenzuschnitt(cut: dict[str, Any]) -> bool:
+    return (cut.get("art") == "platte" or cut.get("platte") is not None
+            or any(number(q.get("b")) is not None and number(q.get("h")) is not None
+                   for q in zuschnitt_quellen(cut)))
+
+
+def verschnitt_bilanz(cut: dict[str, Any], mindestrest: float = STANDARD_MINDESTREST_MM) -> tuple[float, float]:
+    """(verplante Länge bzw. Fläche, Verschnitt) eines Zuschnitts in mm bzw. mm².
+
+    Definition 2: Verschnitt ist, was weder Stück noch verwertbarer Rest ist, also Sägeschnitte und Reste unter dem
+    Mindestrest; neue Reste ab Mindestrest zählen nicht (sie kommen in den Bestand). Bezugsgröße ist die verplante
+    Länge bzw. Fläche aller Quellen. Rechnet genau wie die App (gleiche Felder, gleiche Reihenfolge der Summen)."""
+    s = number(cut.get("saegeschnitt"))
+    s = 3.0 if s is None else float(s)
+    platte = ist_plattenzuschnitt(cut)
+    pb, ph = _platten_format(cut)
+    gesamt = verschnitt = 0.0
+    for q in zuschnitt_quellen(cut):
+        qb, qh = number(q.get("b")), number(q.get("h"))
+        if platte or (qb is not None and qh is not None):
+            b = float(qb) if qb is not None else (pb or 0.0)
+            h = float(qh) if qh is not None else (ph or 0.0)
+            a = b * h
+            if a <= 0:
+                continue
+            stuecke = 0.0
+            for fb, fh in _flaechen(q.get("stuecke")):
+                stuecke += fb * fh
+            reste = 0.0
+            for rb, rh in _flaechen(q.get("rest_neu")):
+                reste += rb * rh
+            gesamt += a
+            verschnitt += max(0.0, a - stuecke - reste)
+        else:
+            lq = number(q.get("laenge"))
+            if lq is None or lq <= 0:
+                continue
+            laenge = float(lq)
+            stuecke = _zahlen(q.get("stuecke"))
+            summe = 0.0
+            for x in stuecke:
+                summe += x
+            rn = q.get("rest_neu")
+            if number(rn) is not None and not isinstance(rn, bool):
+                rest = max(0.0, float(rn))
+            else:
+                rest = max(0.0, laenge - summe - float(len(stuecke)) * s)
+            kurz = q["verschnitt"] if isinstance(q.get("verschnitt"), bool) else rest < mindestrest
+            gesamt += laenge
+            verschnitt += max(0.0, laenge - summe - (0.0 if kurz else rest))
+    return gesamt, verschnitt
+
+
+def verschnitt_prozent(cut: dict[str, Any], mindestrest: float = STANDARD_MINDESTREST_MM) -> float:
+    """Verschnitt in Prozent (Definition 2), auf 0,1 gerundet wie die App; 0 ohne Quellen."""
+    gesamt, weg = verschnitt_bilanz(cut, mindestrest)
+    return runden(weg / gesamt * 100, 1) if gesamt > 0 else 0.0
+
+
+def verschnitt_summe(cuts: list[dict[str, Any]], mindestrest: float = STANDARD_MINDESTREST_MM) -> dict[str, Any]:
+    """Verschnitt über alle Stangen bzw. alle Platten (``BOM.verschnitt``), wie die Kennzahlen der App: Summe des
+    Verschnitts durch Summe der verplanten Länge bzw. Fläche, nicht der Mittelwert der Prozente."""
+    st = [0.0, 0.0]
+    pl = [0.0, 0.0]
+    for cut in cuts:
+        if not isinstance(cut, dict) or not (isinstance(cut.get("quellen"), list) or cut.get("stangen")):
+            continue
+        m = number(cut.get("mindestrest"))
+        g, v = verschnitt_bilanz(cut, float(m) if m is not None else mindestrest)
+        ziel = pl if ist_plattenzuschnitt(cut) else st
+        ziel[0] += g
+        ziel[1] += v
+    return {"definition": VERSCHNITT_DEFINITION,
+            "stangen": runden(st[1] / st[0] * 100, 1) if st[0] > 0 else None,
+            "platten": runden(pl[1] / pl[0] * 100, 1) if pl[0] > 0 else None}
+
+
 def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bool = False,
               saegeschnitt: float = SAEGESCHNITT_MM,
               default_stangenlaenge: float = DEFAULT_STANGENLAENGE_MM) -> dict[str, Any]:
@@ -519,10 +640,11 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
             names = [p.name for p in plist if round_half(p.laenge or 0.0) == length]
             warnings.append(f"{p0.benennung}: Stück {de_num(length)} mm ({', '.join(names[:3])}) ist länger als die "
                             f"Stange ({de_num(stange)} mm) – Sonderlänge oder stoßen")
-        total = len(bars) * stange
-        waste = (total - sum(sum(b) for b in bars)) / total * 100.0 if total else 0.0
         cut: dict[str, Any] = {"stock_id": stock_id, "benennung": p0.benennung, "stangenlaenge": stange,
-                               "saegeschnitt": saegeschnitt, "stangen": bars, "verschnitt_prozent": round(waste, 1)}
+                               "saegeschnitt": saegeschnitt, "stangen": bars}
+        # Definition 2 mit dem Standard-Mindestrest; die Planung mit Bestand rechnet ihn danach über die Quellen neu
+        cut["verschnitt_prozent"] = verschnitt_prozent(cut)
+        cut["verschnitt_definition"] = VERSCHNITT_DEFINITION
         if too_long:
             cut["zu_lang"] = too_long
         if p0.preis_je_m is not None:
@@ -539,7 +661,10 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
         "preis_hinweis": (_price_note(stands) + ("; Zukaufteile zum Shoppreis brutto" if brutto else "")) if priced
         else None,
     }
-    return {"lines": lines, "cuts": cuts, "totals": totals, "warnings": warnings}
+    out: dict[str, Any] = {"lines": lines, "cuts": cuts, "totals": totals, "warnings": warnings}
+    if cuts:
+        out["verschnitt"] = verschnitt_summe(cuts)
+    return out
 
 
 def _price_note(stands: set[str]) -> str:

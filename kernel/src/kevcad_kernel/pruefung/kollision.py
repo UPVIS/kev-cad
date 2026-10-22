@@ -243,12 +243,56 @@ def pruefe_paar(a: Koerper, b: Koerper, cache: PaarCache | None = None, mit_netz
                 achse=achse, netz=netz, rechenzeit_ms=hit.get("ms", 0.0))
 
 
+def _nahe_form(k: Koerper, anderer: Koerper) -> Any | None:
+    """Form von k für die Paarrechnung mit ``anderer``. Kulisse aus vielen Körpern (Bodenkacheln, Prüftempo
+    22.10.2026): nur die Körper, deren Hüllquader dem anderen Teil bis auf die Berührtoleranz nahekommen. Weiter
+    entfernte tragen weder zum Schnittvolumen bei noch zu einem Abstand unter der Toleranz; das Ergebnis bleibt
+    gleich, die Boolesche Operation wird kleiner. None: kein Körper ist nah genug."""
+    if not k.kulisse:
+        return k.shape
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS_Compound
+
+    if k._solids is None:
+        ex, liste = TopExp_Explorer(k.shape, TopAbs_SOLID), []
+        while ex.More():
+            liste.append(ex.Current())
+            ex.Next()
+        k._solids = liste
+    if len(k._solids) < 2:
+        return k.shape
+    lo, hi = anderer.bmin - 2 * BERUEHR_TOL, anderer.bmax + 2 * BERUEHR_TOL
+    nah = []
+    for solid in k._solids:
+        box = Bnd_Box()
+        BRepBndLib.Add_s(solid, box)
+        a, b = box.CornerMin(), box.CornerMax()
+        if np.all(np.array([a.X(), a.Y(), a.Z()]) <= hi) and np.all(np.array([b.X(), b.Y(), b.Z()]) >= lo):
+            nah.append(solid)
+    if not nah:
+        return None
+    if len(nah) == len(k._solids):
+        return k.shape
+    comp, builder = TopoDS_Compound(), BRep_Builder()
+    builder.MakeCompound(comp)
+    for solid in nah:
+        builder.Add(comp, solid)
+    return comp
+
+
 def _rechne_paar(p: Koerper, q: Koerper, ext: np.ndarray, mit_netz: bool) -> dict[str, Any]:
     """Rechnet in Weltlage und legt Ort, Achse und Netz im lokalen System von p ab."""
     out: dict[str, Any] = {"abstand": None, "volumen": 0.0, "tiefe": 0.0, "ort": None, "achse": None, "netz": None}
     inv = np.linalg.inv(p.lage)
+    p_form, q_form = _nahe_form(p, q), _nahe_form(q, p)
+    if p_form is None or q_form is None:
+        return out  # Kulisse: kein Teilkörper in Berührweite
     if np.all(ext > TIEFE_MIN):
-        common = schnittmenge(p.shape, q.shape)
+        common = schnittmenge(p_form, q_form)
         if common is not None:
             vol, zentrum, achsen = volumen_und_achsen(common)
             if vol > VOLUMEN_MIN:
@@ -265,7 +309,7 @@ def _rechne_paar(p: Koerper, q: Koerper, ext: np.ndarray, mit_netz: bool) -> dic
                         out["netz"] = (_transform(inv, pts.astype(np.float64)).astype(np.float32),
                                        (nrm.astype(np.float64) @ inv[:3, :3].T).astype(np.float32), tri)
                     return out
-    d = abstand(p.shape, q.shape)
+    d = abstand(p_form, q_form)
     out["abstand"] = d if d is not None and d <= BERUEHR_TOL else None
     return out
 

@@ -1,8 +1,9 @@
 import KevCADCore
 import SwiftUI
 
-// Bestand (BESTAND.md, Abschnitt „App“): gemeinsamer Oberflächenzustand, Farben und der untere Bereich des
-// Projektfensters mit den Reitern „Stückliste“ und „Bestand“.
+// Bestand (BESTAND.md, Abschnitt „App“): gemeinsamer Oberflächenzustand (Dialoge „Gebaut …“ und „Erfassen“), Farben
+// und das Band nach einer Buchung. Bestand, Zuschnitt und Einkaufsliste zeigt seit dem Strang „Material“ der Bereich
+// „Material“ (⌘3); die Dialoge hängen am Projektfenster und sind aus beiden Bereichen erreichbar.
 
 extension AppModel {
     /// Bestandsaktionen des App-Kerns (im Demomodus nicht vorhanden).
@@ -41,29 +42,11 @@ extension AppModel {
     }
 }
 
-/// Reiter im unteren Bereich des Projektfensters.
-enum UntererBereich: String, CaseIterable {
-    case stueckliste, bestand
-
-    var titel: String { self == .stueckliste ? "Stückliste" : "Bestand" }
-}
-
-/// Unterbereich unter der Stücklisten-Tabelle.
-enum StuecklisteUnten: String, CaseIterable {
-    case zuschnitt, einkauf
-}
-
 /// Zustand der Bestandsoberfläche, den Menü, Stückliste und Bestand teilen.
 @MainActor
 final class BestandUI: ObservableObject {
     static let shared = BestandUI()
 
-    @Published var bereich: UntererBereich {
-        didSet { UserDefaults.standard.set(bereich.rawValue, forKey: "unterBereich") }
-    }
-    @Published var unten: StuecklisteUnten {
-        didSet { UserDefaults.standard.set(unten.rawValue, forKey: "stuecklisteUnten") }
-    }
     /// Dialog „Gebaut …“ zeigen.
     @Published var gebautDialog = false
     /// Blatt zum Erfassen (Lagerteil aufnehmen, Reste hinzufügen).
@@ -71,20 +54,10 @@ final class BestandUI: ObservableObject {
     /// Ausgewählter Posten im Bestand.
     @Published var auswahl: String?
 
-    private init() {
-        bereich = UntererBereich(rawValue: UserDefaults.standard.string(forKey: "unterBereich") ?? "") ?? .stueckliste
-        unten = StuecklisteUnten(rawValue: UserDefaults.standard.string(forKey: "stuecklisteUnten") ?? "") ?? .zuschnitt
-    }
+    private init() {}
 
-    /// Unteren Bereich zeigen, mit dem gewünschten Reiter.
-    func zeige(_ bereich: UntererBereich, in window: ProjectWindowState?) {
-        self.bereich = bereich
-        if let window, !window.showBOM { withAnimation(.snappy(duration: 0.2)) { window.showBOM = true } }
-    }
-
-    /// Dialog „Gebaut …“ öffnen (aus dem Menü): Stückliste zeigen, dann den Dialog.
-    func zeigeGebaut(in window: ProjectWindowState?) {
-        zeige(.stueckliste, in: window)
+    /// Dialog „Gebaut …“ öffnen (Menü, Material-Bereich, Schnellansicht).
+    func zeigeGebaut() {
         DispatchQueue.main.async { self.gebautDialog = true }
     }
 }
@@ -119,52 +92,22 @@ extension ZuschnittQuelleArt {
     }
 }
 
-// MARK: - Unterer Bereich
+// MARK: - Dialoge und Band
 
-/// Unterer Bereich des Projektfensters: Stückliste oder Bestand, darüber der Hinweis nach einer Buchung.
-struct ProjectBottomPanel: View {
-    @EnvironmentObject private var session: AppSession
+/// Dialoge „Gebaut …“ und „Erfassen“ am Projektfenster (alle Bereiche). Das Band nach einer Buchung hängt oben in der
+/// Mitte des Fensters (ProjectWindow).
+struct BestandDialoge: ViewModifier {
     @ObservedObject var model: AppModel
-    @ObservedObject var state: ProjectWindowState
     @ObservedObject private var ui = BestandUI.shared
 
-    var body: some View {
-        VStack(spacing: 0) {
-            switch ui.bereich {
-            case .stueckliste: BOMPanel(model: model, state: state)
-            case .bestand: BestandPanel(model: model, state: state)
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $ui.gebautDialog) {
+                GebautDialog(model: model)
             }
-        }
-        .overlay(alignment: .top) {
-            BuchungsBand(model: model)
-                .padding(.top, 40)
-                .padding(.horizontal, 12)
-        }
-        .sheet(isPresented: $ui.gebautDialog) {
-            GebautDialog(model: model)
-        }
-        .sheet(item: $ui.erfassen) { anfrage in
-            BestandErfassenSheet(model: model, anfrage: anfrage)
-        }
-        .onAppear { BestandSelfTest.runIfRequested(session) }
-    }
-}
-
-/// Reiter „Stückliste | Bestand“ im Kopf des unteren Bereichs.
-struct UntererBereichReiter: View {
-    @ObservedObject private var ui = BestandUI.shared
-
-    var body: some View {
-        Picker("Bereich", selection: $ui.bereich) {
-            ForEach(UntererBereich.allCases, id: \.self) { b in
-                Text(b.titel).tag(b)
+            .sheet(item: $ui.erfassen) { anfrage in
+                BestandErfassenSheet(model: model, anfrage: anfrage)
             }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(.small)
-        .fixedSize()
-        .help("Stückliste mit Zuschnitt und Einkaufsliste oder Bestand des Projekts (⌥⌘B)")
     }
 }
 

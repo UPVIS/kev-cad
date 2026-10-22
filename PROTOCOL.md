@@ -233,6 +233,10 @@ im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
 ```
 
 - `zu_lang` (optional): Stücklängen, die länger als die Stange sind (Sonderlänge oder stoßen, steht auch in `warnings`).
+- `verschnitt_definition` (additiv, seit 22.10.2026): `"2"` heißt, `verschnitt_prozent` zählt nur Sägeschnitte und
+  Reste unter dem Mindestrest (neue Reste nicht), bezogen auf die verplante Länge; genau wie der Bereich „Material“ der
+  App. Ohne das Feld (älterer Kernel) war es alles außer den Stücken. Dazu `BOM.verschnitt`
+  `{"definition": "2", "stangen", "platten"}` über alle Zuschnitte. Einzelheiten in BESTAND.md, Abschnitt „Verschnitt“.
 - `preis_stangen` (optional): Preis der ganzen Stangen in Euro, wenn der Katalog `preis_je_m` kennt.
 
 `totals`: `{"kg": 41.3, "preis": 96.10, "positionen": 7, "teile": 23, "preis_hinweis": "Richtpreise, Stand 2026-10"}`.
@@ -318,11 +322,19 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 
 | type | Felder | Nutzlast |
 |---|---|---|
-| `CHECK` | `run`, `state` (`running` \| `done` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand` | Schnittkörper |
+| `CHECK` | `run`, `state` (`running` \| `done` \| `teilweise` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand`, `im_hintergrund` | Schnittkörper |
 
 - Nach `RUN_END` kommt sofort `CHECK` mit `state: "running"` und leeren Listen, das Ergebnis folgt als zweites `CHECK`.
   `cancelled`: ein neuerer Lauf kam dazwischen (dessen `CHECK` folgt). Beim Verbinden schickt der Kernel das letzte
   fertige `CHECK` mit.
+- `teilweise` (additiv, Prüftempo 22.10.2026): Das Ergebnis steht und gilt (Befunde, Schnittkörper, Montage), nur der
+  Bewegungsraum hat das Zeitlimit des Laufs erreicht. `im_hintergrund` nennt die offenen Wege (etwa
+  `"drehgelenk Kugelschieber/Sterngriffschraube M6x25 Fänger links"`); ihre Befunde sind bis dahin Hinweise
+  („… wird im Hintergrund fertig gerechnet“). Der Kernel rechnet sie ohne neuen Lauf fertig und schickt dann ein
+  weiteres `CHECK` mit demselben `run` und `state: "done"`, das das teilweise vollständig ersetzt (ohne
+  `im_hintergrund`). Kommt vorher ein neuer Lauf, bleibt es beim teilweisen Ergebnis des alten. Ältere Apps lesen
+  einen unbekannten `state` als `done` und ersetzen es beim zweiten `CHECK`; die App zeigt im Prüfband und im
+  Inspektor „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
 - Befund:
 
 ```json
@@ -341,7 +353,8 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
-Testdateien: `check_done.frame`, `check_running.frame`, `check.json` (aus `kernel/tools/make_pruef_fixtures.py`).
+Testdateien: `check_done.frame`, `check_running.frame`, `check_teilweise.frame`, `check.json` (aus
+`kernel/tools/make_pruef_fixtures.py`).
 
 Weitere Teile von `CHECK` (Stufe 2):
 
@@ -508,7 +521,8 @@ Zusammenspiel mit der Prüfung: Alle Befunde der Bedingungen gehen zusätzlich a
 gemeinsame Ergebnis `CHECK` (Arten `bedingung`, `befestigung`, `bewegungsraum`, mit den Zusatzfeldern `soll` und
 `ist`); dort sperren Befunde mit Schwere `fehler` den Export. Den Bewegungsraum (Gelenke mit Bereich,
 `bewegungen.json`) rechnet nur die Prüfung nach `RUN_END`, weil er Sekunden dauern kann; im Lauf bleibt `bewegungen` in
-`CONSTRAINTS` deshalb leer, die Ergebnisse stehen als Befunde in `CHECK`.
+`CONSTRAINTS` deshalb leer, die Ergebnisse stehen als Befunde in `CHECK`. Was im Zeitlimit des Laufs nicht fertig wird,
+rechnet der Kernel im Hintergrund fertig (`CHECK` `teilweise` → `done` mit demselben `run`, siehe „Prüfung“).
 
 ### Kernel → App
 
@@ -654,3 +668,17 @@ Kante k = Punkte `edge_offsets[k] ..< edge_offsets[k+1]`), Weltkoordinaten, litt
 Wiederherstellen ist nie zerstörend: ungesicherte Änderungen werden vorher eine Version (`sicherung`), der
 wiederhergestellte Stand eine neue Version „Wiederhergestellt aus V12“. Läufe, Wiederherstellen, Variantenwechsel und
 Meilensteine laufen im Kernel nacheinander (nie während eines Laufs).
+
+## Druckvorschau
+
+Vertrag mit Ergebnisformat und Ablauf: [DRUCKVORSCHAU.md](DRUCKVORSCHAU.md). Nachrichten ohne Nutzlast, Packen und
+Prüfen in `protocol.py` (`pack_print_preview`, `print_settings`, `print_export_req`, `print_export_res`,
+`check_druck_message`), Testdateien aus `tools/make_druck_fixtures.py`.
+
+| type | Richtung | Felder | Antwort |
+|---|---|---|---|
+| `PRINT_PREVIEW` | Kernel → App | `run`, `stand`, `drucker`, `summe`, `platten`, `teile`, `hinweise`, `slicer` (dazu `einstellungen`, `regler`, `ms`), `reply_to` optional; nach jedem Lauf mit Druckteilen, nach jedem Slicer-Ergebnis und beim Verbinden | – |
+| `PRINT_PREVIEW_REQ` | App → Kernel | `id` | `PRINT_PREVIEW` mit `reply_to` |
+| `PRINT_SETTINGS` | App → Kernel | `id`, `teil` oder `gruppe`, `einstellungen` (Wert `null` = Vorgabe zurück) und/oder `zweck`, `zuruecksetzen`, `von` | `ACK`, danach `PRINT_PREVIEW` |
+| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (leer = alle), `ziel` (Pfad .3mf oder null) | `ACK`, danach `PRINT_EXPORT_RES` |
+| `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` (dazu `hinweise`, `ms`, `geprueft`) | – |

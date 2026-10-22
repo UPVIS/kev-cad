@@ -110,6 +110,10 @@ struct ExportDialog: View {
             return n == 0 ? "alle Blätter (noch keine gerechnet)" : "alle \(n) Blätter, eigenes Format"
         case .stueckliste, .teileliste, .einkaufsliste, .zuschnitt:
             return "\(b.wirksameSpalten.count) Spalten"
+        case .druck:  // Druckvorschau (DRUCKVORSCHAU.md)
+            guard let d = model.druck.vorschau, !d.istLeer else { return "keine Druckteile im Modell" }
+            return KevFormat.count(d.summe.platten, one: "Platte", many: "Platten") + ", "
+                + KevFormat.count(d.stueck, one: "Teil", many: "Teile") + ", \(b.wirksameSpalten.count) Spalten"
         case .bauplan:
             if let p = model.bauplan.plan { return KevFormat.count(p.alleSchritte.count, one: "Schritt", many: "Schritte") }
             return "wird bei Bedarf erzeugt"

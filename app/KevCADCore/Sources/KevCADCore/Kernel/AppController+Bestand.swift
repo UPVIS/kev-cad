@@ -176,12 +176,13 @@ extension AppController: BestandActions {
     }
 
     func exportEinkaufslisteSelbst() {
-        guard let project = model.project, let z = model.bestandZustand.zuschnitt else { return }
+        guard let project = model.project, model.bestandZustand.zuschnitt != nil else { return }
         let ordner = project.path.appendingPathComponent("output", isDirectory: true)
         let datei = ordner.appendingPathComponent(EinkaufslisteFormat.dateiname(projekt: project.name))
         do {
             try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
-            try Data(EinkaufslisteFormat.csv(z.einkaufsliste, summe: z.summe).utf8).write(to: datei, options: .atomic)
+            // dieselben Bytes wie der Kernel-Export und „Teilen“ im Bereich „Material“
+            try Data(MaterialText.einkaufCSV(model.materialDaten).utf8).write(to: datei, options: .atomic)
             log(.info, "Einkaufsliste gespeichert: \(datei.path)")
             revealFiles([datei])
         } catch {

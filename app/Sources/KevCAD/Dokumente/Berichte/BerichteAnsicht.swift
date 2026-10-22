@@ -36,6 +36,7 @@ struct BerichteAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject var export: ExportStore
     @ObservedObject private var ui = BerichteUI.shared
+    @Environment(\.materialNavigation) private var materialNavigation
     @State private var dokument: ExportDokument?
     @State private var baut = false
     @State private var zoom: CGFloat = 1
@@ -140,6 +141,14 @@ struct BerichteAnsicht: View {
                 Image(systemName: "arrow.clockwise")
             }
             .help("Neu setzen (Vorschaubilder und Daten frisch)")
+            if let materialNavigation {
+                Button {
+                    materialNavigation.zeige(MaterialAbschnitt(bericht: bericht), nil, nil)
+                } label: {
+                    Label("Im Material-Bereich öffnen", systemImage: "shippingbox")
+                }
+                .help("Dieselben Daten am Bildschirm: Material › \(MaterialAbschnitt(bericht: bericht).titel) (⌘3)")
+            }
             Button { drucken() } label: { Label("Drucken …", systemImage: "printer") }
                 .help("Diesen Bericht drucken (1:1, ohne Skalierung)")
                 .disabled(dokument?.seiten.isEmpty != false)

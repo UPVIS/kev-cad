@@ -177,6 +177,9 @@ class KevcadTools:
         return fmt.result(done + (f" ({msg})" if msg else ""), data)
 
 
+RUN_TIMEOUT_MAX_S = 900.0  # Obergrenze für run(timeout_s=…)
+
+
 def _guard(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaitable[CallToolResult]]:
     """Fängt Fehler ab, damit der Agent sie lesbar als isError sieht (statt einer nichtssagenden Meldung)."""
 
@@ -205,6 +208,26 @@ def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, 
     return wrapper
 
 
+def _unbekannte_ablehnen(mcp: MCPServer, name: str) -> None:
+    """Unbekannte Argumente eines Werkzeugs ablehnen statt still zu verwerfen (KevCup, 22.10.2026: run(timeout_s=400)
+    verschwand ohne Meldung). Die MCP-Bibliothek prüft die Argumente mit einem pydantic-Modell, das zusätzliche Felder
+    ignoriert; hier bekommt es ``extra="forbid"``, und das Schema sagt ``additionalProperties: false``. Ein
+    Tippfehler im Namen kommt so als Fehler mit dem Feldnamen zurück („Extra inputs are not permitted“)."""
+    from pydantic import ConfigDict
+
+    manager = getattr(mcp, "_tool_manager", None)
+    werkzeug = manager.get_tool(name) if manager is not None and hasattr(manager, "get_tool") else None
+    meta = getattr(werkzeug, "fn_metadata", None)
+    modell = getattr(meta, "arg_model", None)
+    if werkzeug is None or modell is None or modell.model_config.get("extra") == "forbid":
+        return
+    streng = type(modell.__name__, (modell,), {"__module__": modell.__module__,
+                                                "model_config": ConfigDict(**{**modell.model_config,
+                                                                              "extra": "forbid"})})
+    meta.arg_model = streng
+    werkzeug.parameters = {**werkzeug.parameters, "additionalProperties": False}
+
+
 def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard | None = None) -> KevcadTools:
     """Registriert alle Werkzeuge am Server und liefert das Werkzeug-Objekt (für Tests). ``board`` führt die
     Claude-Sitzungen; jeder Aufruf eines nicht nur lesenden Werkzeugs zählt als verändernd."""
@@ -216,6 +239,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             wrapped = _tracked(_guard(fn), t.board, mutating=not annotations.read_only_hint)
             mcp.add_tool(wrapped, name=name, title=title, description=description, annotations=annotations,
                          structured_output=False)
+            _unbekannte_ablehnen(mcp, name)
             return wrapped
 
         return deco
@@ -271,9 +295,11 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         if pr is not None and project:
             if pr.get("laeuft"):
                 lines.append(f"Prüfung: läuft für Lauf {pr['laeuft']}")
-            elif pr.get("state") == "done":
+            elif pr.get("state") in ("done", "teilweise"):
                 lines.append(f"Prüfung (Lauf {pr.get('run', '?')}): "
-                             + (pr.get("zusammenfassung") or "in Ordnung, keine Befunde"))
+                             + (pr.get("zusammenfassung") or "in Ordnung, keine Befunde")
+                             + ("; Bewegungsraum wird im Hintergrund fertig gerechnet (pruefen wartet darauf)"
+                                if pr.get("state") == "teilweise" else ""))
         data = dict(res)
         if isinstance(last, dict) and last.get("parts"):
             data["last_run"] = {**last, "parts": [fmt.part_data(p) for p in last["parts"]]}
@@ -353,12 +379,17 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             "Short German description of this change in Kevin's words, e.g. 'Laufrollen auf Kugellager umgestellt'. "
             "Becomes the title of the new version; the automatic title (what changed) stays below it. Give one for "
             "larger changes, omit it for small fixes."))] = None,
+        timeout_s: Annotated[float | None, Field(ge=10, le=RUN_TIMEOUT_MAX_S, description=(
+            "Time limit for executing model.py in seconds (default 120, at most 900). Raise it only for large "
+            "models whose run was refused for the time limit; the check after the run has its own limit"))] = None,
     ) -> CallToolResult:
         activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
+        extra: dict[str, Any] = {}
         if titel and titel.strip():
-            res = await t.work(activity, svc.run, params, slow_ms, titel=titel.strip())
-        else:
-            res = await t.work(activity, svc.run, params, slow_ms)
+            extra["titel"] = titel.strip()
+        if timeout_s is not None:
+            extra["timeout_s"] = float(timeout_s)
+        res = await t.work(activity, svc.run, params, slow_ms, **extra)
         summary, data, failed = fmt.run_summary(res)
         return fmt.result(summary, data, error=failed)
 
@@ -834,6 +865,15 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .druck_tools import register_druck_tools
 
     register_druck_tools(t, svc, tool, {"read_only": READ_ONLY})
+
+    # Phase 8: Drucken auf dem P1P (drucker_tools.py)
+    from .drucker_tools import register_drucker_tools
+
+    register_drucker_tools(t, svc, tool, {"read_only": READ_ONLY})
+    # Druckvorschau: Filament, Zeit, Platten, Kosten, Empfehlungen, 3MF (druckvorschau_tools.py, DRUCKVORSCHAU.md)
+    from .druckvorschau_tools import register_druckvorschau_tools
+
+    register_druckvorschau_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE})
 
     # Versionen, Meilensteine, Varianten (versionen_tools.py)
     from .versionen_tools import register_versionen_tools

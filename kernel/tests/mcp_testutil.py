@@ -38,12 +38,16 @@ EXPECTED_TOOLS |= {"kamera_liste", "kamera_info", "kamera_ansicht", "kamera_bild
 EXPECTED_TOOLS |= {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"}
 # 3D-Druck
 EXPECTED_TOOLS |= {"druckpruefung"}
+# Druckvorschau (DRUCKVORSCHAU.md)
+EXPECTED_TOOLS |= {"druckvorschau", "druck_einstellen", "druck_export"}
 # Phase 6: Zeichnungen
 EXPECTED_TOOLS |= {"zeichnungen", "zeichnung_erstellen", "zeichnung_bearbeiten", "zeichnung_bild"}
 # Versionen
 EXPECTED_TOOLS |= {"versionen", "version_wiederherstellen", "versionen_vergleichen", "meilenstein", "variante"}
 # Phase 6: Dokumente exportieren (P6-A2)
 EXPECTED_TOOLS |= {"dokument_export"}
+# Phase 8: Drucken
+EXPECTED_TOOLS |= {"drucker_status", "drucken"}
 
 
 def free_port() -> int:

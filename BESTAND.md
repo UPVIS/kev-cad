@@ -110,7 +110,8 @@ Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` vo
 
 - `bestand_liste(id=None)` – Bestand und Reste des offenen Projekts.
 - `bestand_eintragen(id, ganze=…, reste=…, stueck=…, grund)` – nur nach Kevins Angabe; die Antwort nennt jede Änderung.
-- `einkaufsliste()` – Fehlmengen des aktuellen Projekts mit Preis und Summe, als Text und CSV-Pfad.
+- `einkaufsliste()` – die Einkaufsliste genau wie in der App (Abschnitt „Einkaufsliste wie in der App“): Text, CSV-Pfad,
+  Gruppen und Summen.
 - `gebaut_buchen()` – nur wenn Kevin ausdrücklich sagt, dass das Projekt gebaut ist; nennt, was abgebucht wird und
   welche Reste neu entstehen.
 - `buchung_rueckgaengig(id)`.
@@ -124,6 +125,66 @@ Nach dem Verbinden und nach jedem Projektwechsel schickt der Kernel `BESTAND` vo
 - Stückliste: Zuschnittansicht zeigt je Stange bzw. Platte die Stücke, farbig nach Quelle (Rest, Bestand, kaufen),
   neue Reste markiert, Verschnitt grau; darunter die Einkaufsliste mit Summe, Export als CSV und „Kopieren“ als Text.
 - Dialog „Gebaut …“ mit Vorschau der Buchung (was weg, was neu) und Bestätigung.
+- Seit dem Strang „Material“ (22.10.2026) zeigt das alles der Bereich **„Material“** im Projektfenster (⌘3):
+  Übersicht, Stückliste, Zuschnitt, Bestand, Einkaufsliste (mit Abhaken, Teilen als Text oder CSV), Zukaufteile,
+  Druckteile. Unter dem Viewport bleiben Stückliste und Zuschnitt als einzeln aufklappbare Schnellansichten (⌃⌘1, ⌃⌘2,
+  ⇧⌘B alle). Eine Datenquelle für Bildschirm und Berichte: `MaterialDaten` im App-Kern
+  (`app/KevCADCore/Sources/KevCADCore/Material/`). Seit dem Strang „Material im Kernel“ (22.10.2026) liefert der Kernel
+  über MCP und Export genau dieselbe Einkaufsliste und denselben Verschnitt (die beiden folgenden Abschnitte).
+
+## Einkaufsliste wie in der App (22.10.2026)
+
+Was Claude über MCP liest, ist das, was Kevin im Bereich „Material“ sieht und teilt. Kernel: `bestand/einkauf.py`
+(`zusammenstellen`, `text`, `csv`), App: `MaterialDaten` und `MaterialText`. Gruppen in fester Reihenfolge:
+
+| Gruppe | Inhalt | in der Summe |
+|---|---|---|
+| Lagerware | `BOM.einkaufsliste`: Fehlmengen nach Abzug des Projektbestands in Kaufeinheiten, Normteile zum Kaufen eingeschlossen | ja |
+| Zukaufteile | je Stücklistenzeile eines Zukaufteils (auch `kamera`, `objektiv`, `kamerazubehoer`) die ganze Anzahl, Preis und Link aus der Zeile (Katalog), Hinweis „Hersteller · Nummer · EAN …“; der Bestand führt sie noch nicht | ja |
+| Normteile abzählen | `BOM.stueckgut`: „16 gebraucht, 12 aus Bestand, 4 kaufen“ | nein |
+| Filament für Druckteile | je Material aus der Druckvorschau desselben Laufs (`summe.material`, Teile aus `teile[].anzahl`, mit Ersatzteilen), sonst aus den Druckteilen der Stückliste (Volumen × Dichte) | nein |
+
+- **Summe** = Lagerware + Zukaufteile, wie die Kennzahl „Summe“ der App. Gerundet wird wie `KevFormat` (halbe Werte von
+  der Null weg, Tausenderpunkt; Nachbau in `kernel/src/kevcad_kernel/appformat.py`).
+- **Text** wie „Als Text teilen“: Kopf „Einkaufsliste <Projekt> (Stand TT.MM.JJJJ)“, je Kaufzeile
+  „- [ ] 1 × Stange 1.000 mm: ALFER-Rundrohr 12 × 1, 3,90 € (Link)“ mit Hinweis darunter, „Summe: ≈ 84,62 €“, dann
+  Normteile und Filament („- PETG: 188,8 g für 7 Teile, 3,21 € (Druckvorschau, Teils Bambu Studio)“). Abgehakte Zeilen
+  („- [x] “) kennt nur die App.
+- **CSV** (`EXPORT_REQ einkaufsliste_csv`, MCP, „Als CSV teilen“ und „in output/ sichern“ der App), Datei
+  `<projekt>/output/<Projekt>-einkaufsliste.csv` (Name wie `EinkaufslisteFormat.dateiname`): UTF-8 mit BOM, Semikolon,
+  CRLF, Spalten `Gruppe;Menge;Einheit;Benennung;Lagerteil;Preis je (EUR);Preis (EUR);Preisstand;Bezugsquelle;Link;Hinweis`,
+  Zahlen mit Komma ohne Tausenderpunkt; nach den Kaufzeilen `;;;Summe;;;<Summe>;;;;`, danach Normteile (Menge =
+  gebraucht) und Filament (Menge in g, Lagerteil = Material-id, Kosten im Hinweis) ohne Preis.
+- **Entscheidung:** Die App rendert Text und CSV weiter selbst, der Kernel rendert dieselben Bytes; die App nimmt nicht
+  den Kernel-Export. Begründung: Teilen braucht den Text sofort (ShareLink, Kopieren, Demo und älterer Kernel ohne
+  Rundreise), und nur die App kennt abgehakte Zeilen und das Teilen-Datum. Gleich hält beide Seiten die Testdatei
+  `material` in fixtures.json (`kernel/tools/make_bestand_fixtures.py`, Beispiel mit Resten, Normteilen, Zukauf mit und
+  ohne Link, Druckteilen und Druckvorschau): `MaterialKernelGleichTests` (Swift) vergleicht Text und CSV Byte für Byte,
+  Summen und Verschnitt; `test_material_einkauf.py` prüft, dass die Testdatei zum Kernel passt.
+- **MCP** `einkaufsliste()`: `text`, `csv` (Pfad), `lagerware`, `zukauf`, `normteile`, `filament` (je Zeile `werkstoff`,
+  `material`, `teile`, `gramm`, `preis`, `quelle` `druckvorschau` | `stueckliste`, `stand`), `positionen`, `summe`,
+  `summe_lager`, `summe_zukauf`, `ohne_preis`; die bisherigen Felder der Stückliste bleiben (`einkauf_summe` ist nur
+  Lagerware). `bom` zeigt denselben Text (`einkauf_text`), `run` die Kennzeile („5 Positionen, ≈ 84,62 €“).
+
+## Verschnitt (Definition 2, 22.10.2026)
+
+Verschnitt ist, was weder Stück noch verwertbarer Rest ist: **Sägeschnitte und Reste unter dem Mindestrest, bezogen auf
+die verplante Länge bzw. Fläche aller Quellen; neue Reste ab Mindestrest zählen nicht** (sie kommen in den Bestand).
+Je Stange `Länge − Stücke − (Rest, falls ab Mindestrest)`, je Platte `Fläche − Stücke − neue Restrechtecke`; Prozent =
+Summe Verschnitt / Summe verplant · 100, auf 0,1 gerundet wie die App. Kernel `bom.verschnitt_bilanz`, App
+`MaterialZuschnitt.bilanz`.
+
+- `BOM.cuts[i].verschnitt_prozent` trägt (additiv) den neuen Wert, dazu `verschnitt_definition: "2"`. Mit Bestand über
+  die Quellen gerechnet (`quellen[i].verschnitt` entscheidet über den Rest, sonst der Mindestrest), ohne Quellen über
+  `stangen` mit dem Standard-Mindestrest 100 mm. Fehlt `verschnitt_definition` (älterer Kernel), meinte das Feld bei
+  Stangen alles außer den Stücken; die App rechnet dann selbst. Gewählt statt eines neuen Felds, weil es für die App
+  robuster ist: Jede Stelle, die `verschnitt_prozent` schon liest (`CutPlan`, `BestandZuschnitt`, Stücklisten-CSV, MCP),
+  zeigt ohne Änderung die Zahl des Bereichs „Material“, und es gibt keine zweite Zahl mit anderer Bedeutung; die Kennung
+  sagt der App, ob sie dem Wert trauen kann (`BestandZuschnitt.verschnittWieApp`).
+- `BOM.verschnitt` (additiv): `{"definition": "2", "stangen": 0.6 | null, "platten": 1.2 | null}`, über alle Zuschnitte
+  wie die Kennzahl „Verschnitt“ der App (Summen, nicht Mittelwert der Prozente).
+- Gilt für BOM bzw. Zuschnitt im Protokoll, MCP `bom` (Zeile „Verschnitt gesamt“, je Zuschnitt „Verschnitt 0,6 %“),
+  die Stücklisten-CSV (`bom_csv`) und die Berichte der App.
 
 ## Ergänzungen des Kernels (S-K, additiv und optional)
 
@@ -143,9 +204,9 @@ Was der Kernel über den Vertrag hinaus liefert; ältere Gegenseiten ignorieren 
 - **BOM.lines** (Platten): `breite`, `tiefe` (Zuschnittmaß, bei `form=` das Hüllrechteck).
 - **BOM.cuts:** Stangen tragen `art: "stange"`; jeder Cut mit Bestand trägt `mindestrest`. `quellen[i].verschnitt` ist
   immer da: true nur bei 0 < `rest_neu` < Mindestrest. Weicht `einstellungen.saegeblatt_mm` von 3 ab, sind auch die
-  bisherigen Felder (`saegeschnitt`, `stangen`, `verschnitt_prozent`, `preis_stangen`) mit dieser Schnittbreite
-  gerechnet. Platten: `platte` ist null ohne Standardformat im Katalog (dann wird je Stück ein Zuschnitt gekauft),
-  `neue_reste` als Liste `{b, h}`, `verschnitt_prozent` ohne die neuen Reste, optional `zu_gross` (Liste `{b, h}`).
+  bisherigen Felder (`saegeschnitt`, `stangen`, `preis_stangen`) mit dieser Schnittbreite gerechnet;
+  `verschnitt_prozent` siehe „Verschnitt (Definition 2)“. Platten: `platte` ist null ohne Standardformat im Katalog (dann wird je Stück ein Zuschnitt gekauft),
+  `neue_reste` als Liste `{b, h}`, `verschnitt_prozent` nach Definition 2, optional `zu_gross` (Liste `{b, h}`).
   In `stuecke` sind `b` und `h` die Lage auf der Platte (b entlang x); `gedreht` heißt: gegenüber `breite` × `tiefe`
   der Zeile um 90° gedreht. Platten haben ihren Ursprung links unten, Stücke liegen ohne Randschnitt an der Kante.
 - **BOM.stueckgut:** je Schraube (nach Länge), Mutter, Scheibe `{stock_id, benennung, masse_text, laenge, anzahl,
@@ -153,8 +214,8 @@ Was der Kernel über den Vertrag hinaus liefert; ältere Gegenseiten ignorieren 
 - **BOM:** `einkauf_summe` (€ oder null), `einkauf_hinweis` (Richtpreise mit Stand, Positionen ohne Preis).
   `einkaufsliste[i]` zusätzlich `link_text` (Name der Bezugsquelle) und `preis_stand`; `einheit` auch
   „Sonderlänge 1.200 mm“ (Stück länger als die Stange) und „Zuschnitt 800 × 600 mm“.
-- **EXPORT_REQ:** Format `einkaufsliste_csv` (Semikolon, deutsche Zahlen, UTF-8 mit BOM) nach
-  `<projekt>/output/<name>-einkaufsliste.csv`, ohne Export-Sperre.
+- **EXPORT_REQ:** Format `einkaufsliste_csv` nach `<projekt>/output/<Projekt>-einkaufsliste.csv`, ohne Export-Sperre;
+  seit 22.10.2026 die ganze Liste wie in der App (Abschnitt „Einkaufsliste wie in der App“).
 - **MCP:** `bestand_eintragen` zusätzlich mit `reste_entfernen`, `reste_ersetzen` und `mindestrest_mm`; `grund` ist
   Pflicht (Kevins Worte), ebenso bei `gebaut_buchen`. `run` nennt die Einkaufsliste in einer Zeile.
 - **Zuschnitt:** 1D-Näherung wie oben, danach `scipy.optimize.milp` (200 ms, nur wenn besser nach derselben Bewertung:

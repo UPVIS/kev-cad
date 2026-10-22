@@ -7,6 +7,7 @@ import simd
 struct InspectorView: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
+    @Environment(\.materialNavigation) private var materialNavigation
 
     var body: some View {
         Form {
@@ -164,16 +165,26 @@ struct InspectorView: View {
                 if let laenge = stock.laenge { PropertyRow("Zuschnitt", KevFormat.length(laenge)) }
                 let miter = KevFormat.gehrung(stock.gehrung)
                 PropertyRow("Gehrung", miter == "–" ? "gerade" : miter)
-                PropertyRow("Material", model.materialName(stock.material) ?? "–")
-                PropertyRow("Gewicht", stock.kg.map(KevFormat.kg) ?? "–")
-                PropertyRow("Preis", stock.preis.map { "\(KevFormat.euro($0)) (Richtpreis)" } ?? "–")
-                Button {
-                    session.showCatalog(focus: .item(stock.id))
-                } label: {
-                    Label("Im Lagerkatalog zeigen", systemImage: "books.vertical")
+                PropertyRow(MaterialText.Spalte.werkstoff, model.materialName(stock.material) ?? "–")
+                PropertyRow(MaterialText.Spalte.gewicht, stock.kg.map(KevFormat.kg) ?? "–")
+                PropertyRow(MaterialText.Spalte.preis, stock.preis.map { "\(KevFormat.euro($0)) (Richtpreis)" } ?? "–")
+                HStack {
+                    Button {
+                        session.showCatalog(focus: .item(stock.id))
+                    } label: {
+                        Label("Im Lagerkatalog zeigen", systemImage: "books.vertical")
+                    }
+                    .disabled(stock.id.isEmpty)
+                    if let materialNavigation, let line = model.bomLine(for: part.id) {
+                        Button {
+                            materialNavigation.zeige(.stueckliste, line.pos, stock.id)
+                        } label: {
+                            Label("In Material zeigen", systemImage: "shippingbox")
+                        }
+                        .help("Position \(line.pos) im Bereich Material: Stückliste, Zuschnitt, Bestand (⌘3)")
+                    }
                 }
                 .controlSize(.small)
-                .disabled(stock.id.isEmpty)
             } header: {
                 HStack(spacing: 6) {
                     Image(systemName: "shippingbox").foregroundStyle(.secondary)

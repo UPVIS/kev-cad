@@ -208,11 +208,18 @@ def constraints_example(run: int = 3) -> dict[str, Any]:
                   "hinweise": 1, "bewegungen": 1},
         "pruef_ms": 14.2, "loese_ms": 3.1,
     }
+CHECK_STATES = ("running", "done", "teilweise", "cancelled", "failed")
+
+
 def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
                geometrie: list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None = None, message: str | None = None,
-               seq: int = 0) -> tuple[dict[str, Any], bytes]:
+               seq: int = 0, im_hintergrund: list[str] | None = None) -> tuple[dict[str, Any], bytes]:
     """Baut Kopf und Nutzlast von CHECK (Prüfergebnis, PROTOCOL.md Abschnitt „Prüfung“). ``geometrie``: je
-    Schnittkörper (Punkte (n, 3), Normalen (n, 3), Dreiecke (m, 3)); die Nutzlast reiht sie hintereinander."""
+    Schnittkörper (Punkte (n, 3), Normalen (n, 3), Dreiecke (m, 3)); die Nutzlast reiht sie hintereinander.
+    ``state`` "teilweise" (additiv, Prüftempo): Ergebnis steht, der Bewegungsraum wird noch fertig gerechnet;
+    ``im_hintergrund`` nennt die offenen Wege, danach folgt dasselbe ``run`` mit "done"."""
+    if state not in CHECK_STATES:
+        raise ValueError(f"CHECK: state {state!r} unbekannt")
     erg = dict(ergebnis or {})
     teile: list[bytes] = []
     geo_kopf = []
@@ -240,6 +247,8 @@ def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
     for key in ("montage", "stand", "gewinde", "erlaubt"):
         if key in erg:
             header[key] = erg[key]
+    if im_hintergrund is not None:
+        header["im_hintergrund"] = list(im_hintergrund)
     return header, b"".join(teile)
 
 
@@ -483,7 +492,7 @@ def bauplan_beispiel() -> dict[str, Any]:
 # Phase 6: Dokumente exportieren (DOKUMENTE.md, Anhang „Export“; Strang P6-A2). Das PDF baut die App.
 
 DOC_EXPORT_BAUSTEINE: tuple[str, ...] = ("deckblatt", "stueckliste", "teileliste", "einkaufsliste", "zuschnitt",
-                                         "zeichnungen", "bauplan")
+                                         "druck", "zeichnungen", "bauplan")
 
 
 def doc_export_req(bausteine: list[dict[str, Any]], *, ziel: str | None, drucken: bool = False,
@@ -617,3 +626,440 @@ def unpack_netze(koepfe: list[dict[str, Any]], payload: bytes) -> list[dict[str,
     if offset != len(payload):
         raise ValueError(f"Nutzlast der Netze hat {len(payload)} Byte, erwartet {offset}")
     return out
+
+
+# Druckvorschau (DRUCKVORSCHAU.md): Nachrichten ohne Nutzlast. Inhalt von PRINT_PREVIEW wie das Ergebnis des
+# MCP-Werkzeugs druckvorschau (Summe, Platten, Teile mit Empfehlung, Hinweise, Zustand des Slicers).
+
+DRUCK_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    # type: Pflichtfelder (außer type/seq)
+    "PRINT_PREVIEW": ("run", "stand", "drucker", "summe", "platten", "teile", "hinweise", "slicer"),
+    "PRINT_PREVIEW_REQ": ("id",),
+    "PRINT_SETTINGS": ("id",),  # dazu teil oder gruppe und einstellungen, zweck oder zuruecksetzen
+    "PRINT_EXPORT_REQ": ("id", "platten", "ziel"),
+    "PRINT_EXPORT_RES": ("reply_to", "ok", "pfad", "platten", "fehler"),
+}
+DRUCK_STAENDE: tuple[str, ...] = ("schaetzung", "slicer", "gemischt")
+DRUCK_ZWECKE: tuple[str, ...] = ("zier", "funktion", "tragend", "bewegt", "aussen")
+DRUCK_STUETZEN: tuple[str, ...] = ("keine", "baum", "normal")
+DRUCK_MUSTER: tuple[str, ...] = ("gyroid", "grid", "cubic", "honeycomb", "rectilinear", "line", "concentric",
+                                 "triangles", "zigzag", "crosshatch", "lightning")
+DRUCK_SLICER_ZUSTAENDE: tuple[str, ...] = ("aus", "wartet", "rechnet", "fertig", "fehler")
+DRUCK_SCHWEREN: tuple[str, ...] = ("fehler", "warnung", "hinweis")
+DRUCK_HINWEIS_ARTEN: tuple[str, ...] = ("trocknen", "verzug", "material", "brim", "stuetzen", "ams", "duese", "risiko",
+                                        "bauraum", "auflage", "festigkeit", "slicer", "platte")
+DRUCK_EINSTELLUNGEN: tuple[str, ...] = ("schicht_mm", "waende", "decken", "boeden", "fuellung", "muster", "stuetzen",
+                                        "brim", "ausrichtung")
+DRUCK_SUMME_FELDER: tuple[str, ...] = ("platten", "zeit_s", "zeit_mit_wechsel_s", "kosten", "kosten_teile", "material")
+DRUCK_MATERIAL_FELDER: tuple[str, ...] = ("material", "name", "g", "m", "kosten", "preis_kg", "preis_stand", "stand")
+DRUCK_PLATTE_FELDER: tuple[str, ...] = ("nr", "zeit_s", "material", "stand", "teile", "auslastung")
+DRUCK_PLATTENTEIL_FELDER: tuple[str, ...] = ("name", "gruppe", "x", "y", "drehung", "umriss")
+DRUCK_TEIL_FELDER: tuple[str, ...] = ("gruppe", "name", "teile", "anzahl", "material", "zweck", "zweck_geschaetzt", "g",
+                                      "m", "zeit_s", "stand", "abweichung", "einstellungen", "begruendung", "hinweise")
+DRUCK_SLICER_FELDER: tuple[str, ...] = ("zustand", "fertig", "gesamt", "meldung")
+
+
+def pack_print_preview(vorschau: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
+    """Kopf von PRINT_PREVIEW (Kernel → App) aus dem Ergebnis der Druckvorschau (ohne ``ok``)."""
+    h: dict[str, Any] = {"type": "PRINT_PREVIEW", "seq": seq,
+                         **{k: v for k, v in vorschau.items() if k not in ("ok", "type", "seq", "reply_to")}}
+    if reply_to:
+        h["reply_to"] = reply_to
+    return h
+
+
+def print_preview_req(id: str, *, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    return {"type": "PRINT_PREVIEW_REQ", "seq": seq, "id": id}
+
+
+def print_settings(id: str, *, teil: str | None = None, gruppe: str | None = None,  # noqa: A002
+                   einstellungen: dict[str, Any] | None = None, zweck: str | None = None, von: str | None = None,
+                   zuruecksetzen: bool = False, seq: int = 0) -> dict[str, Any]:
+    """Kopf von PRINT_SETTINGS (App → Kernel): feste Vorgabe je Teil (Name aus show) oder Gruppe (``g3``).
+    ``einstellungen``: Teilmenge von DRUCK_EINSTELLUNGEN, ein Wert ``None`` nimmt die Vorgabe zurück;
+    ``zuruecksetzen`` nimmt alle Vorgaben des Teils bzw. der Gruppe zurück; ``von`` ``kevin`` (Vorgabe) oder ``agent``."""
+    h: dict[str, Any] = {"type": "PRINT_SETTINGS", "seq": seq, "id": id}
+    if teil is not None:
+        h["teil"] = teil
+    if gruppe is not None:
+        h["gruppe"] = gruppe
+    if einstellungen is not None:
+        h["einstellungen"] = dict(einstellungen)
+    if zweck is not None:
+        h["zweck"] = zweck
+    if von is not None:
+        h["von"] = von
+    if zuruecksetzen:
+        h["zuruecksetzen"] = True
+    return h
+
+
+def print_export_req(id: str, *, platten: list[int] | None = None, ziel: str | None = None,  # noqa: A002
+                     seq: int = 0) -> dict[str, Any]:
+    """Kopf von PRINT_EXPORT_REQ (App → Kernel): ``platten`` leer = alle, ``ziel`` Pfad der .3mf oder None
+    (dann ``<projekt>/output/<projekt>-druck.3mf``)."""
+    return {"type": "PRINT_EXPORT_REQ", "seq": seq, "id": id, "platten": [int(p) for p in (platten or [])],
+            "ziel": ziel}
+
+
+def print_export_res(reply_to: str, *, ok: bool, pfad: str | None, platten: list[int],
+                     fehler: str | None = None, seq: int = 0, **extra: Any) -> dict[str, Any]:
+    """Kopf von PRINT_EXPORT_RES (Kernel → App); additiv ``hinweise``, ``ms``, ``geprueft`` (in Bambu Studio geladen)."""
+    return {"type": "PRINT_EXPORT_RES", "seq": seq, "reply_to": reply_to, "ok": bool(ok), "pfad": pfad,
+            "platten": [int(p) for p in platten], "fehler": fehler, **extra}
+
+
+def _fehlend(d: Any, felder: tuple[str, ...], wo: str) -> list[str]:
+    if not isinstance(d, dict):
+        return [f"{wo} ist kein Objekt"]
+    return [f"{wo}.{k}" for k in felder if k not in d]
+
+
+def check_druck_message(header: dict[str, Any]) -> list[str]:
+    """Fehlende oder ungültige Felder einer Druckvorschau-Nachricht (leer = in Ordnung); für Tests und Ersatz-Kernel."""
+    kind = header.get("type")
+    need = DRUCK_NACHRICHTEN.get(str(kind))
+    if need is None:
+        return [f"{kind!r} ist keine Nachricht der Druckvorschau"]
+    out = [k for k in need if k not in header]
+    if kind == "PRINT_SETTINGS":
+        if "teil" not in header and "gruppe" not in header:
+            out.append("teil oder gruppe")
+        if not any(k in header for k in ("einstellungen", "zweck", "zuruecksetzen")):
+            out.append("einstellungen, zweck oder zuruecksetzen")
+        if header.get("zweck") is not None and header["zweck"] not in DRUCK_ZWECKE:
+            out.append(f"zweck {header['zweck']!r} unbekannt")
+        for k in (header.get("einstellungen") or {}):
+            if k not in DRUCK_EINSTELLUNGEN:
+                out.append(f"einstellungen.{k} unbekannt")
+    if kind != "PRINT_PREVIEW" or out:
+        return out
+    if header["stand"] not in DRUCK_STAENDE:
+        out.append(f"stand {header['stand']!r} unbekannt")
+    s = header["summe"]
+    out += _fehlend(s, DRUCK_SUMME_FELDER, "summe")
+    if isinstance(s, dict):
+        out += _fehlend(s.get("kosten_teile"), ("filament", "strom"), "summe.kosten_teile")
+        for i, m in enumerate(s.get("material") or []):
+            out += _fehlend(m, DRUCK_MATERIAL_FELDER, f"summe.material[{i}]")
+    for i, p in enumerate(header["platten"]):
+        out += _fehlend(p, DRUCK_PLATTE_FELDER, f"platten[{i}]")
+        for j, t in enumerate((p or {}).get("teile") or []):
+            out += _fehlend(t, DRUCK_PLATTENTEIL_FELDER, f"platten[{i}].teile[{j}]")
+    for i, t in enumerate(header["teile"]):
+        out += _fehlend(t, DRUCK_TEIL_FELDER, f"teile[{i}]")
+        if isinstance(t, dict):
+            out += _fehlend(t.get("einstellungen"), DRUCK_EINSTELLUNGEN, f"teile[{i}].einstellungen")
+            if t.get("zweck") not in DRUCK_ZWECKE:
+                out.append(f"teile[{i}].zweck {t.get('zweck')!r} unbekannt")
+            st = (t.get("einstellungen") or {}).get("stuetzen")
+            if st is not None and st not in DRUCK_STUETZEN:
+                out.append(f"teile[{i}].einstellungen.stuetzen {st!r} unbekannt")
+            for j, h in enumerate(t.get("hinweise") or []):
+                out += _fehlend(h, ("schwere", "text", "art"), f"teile[{i}].hinweise[{j}]")
+    for j, h in enumerate(header["hinweise"]):
+        out += _fehlend(h, ("schwere", "text", "art"), f"hinweise[{j}]")
+    out += _fehlend(header["slicer"], DRUCK_SLICER_FELDER, "slicer")
+    if isinstance(header["slicer"], dict) and header["slicer"].get("zustand") not in DRUCK_SLICER_ZUSTAENDE:
+        out.append(f"slicer.zustand {header['slicer'].get('zustand')!r} unbekannt")
+    return out
+
+
+def druckvorschau_beispiel(run: int = 12) -> dict[str, Any]:
+    """Beispiel einer Druckvorschau (Kugelschieber, zwei Materialien, Slicer halb fertig) für Testdateien und den
+    Ersatz-Kernel. Die Zahlen sind in sich stimmig (Summen, Meter aus Gramm, Kosten)."""
+    import math
+
+    g_je_m = {"petg": 1.27 * math.pi * 0.0875 ** 2 * 100, "pla": 1.24 * math.pi * 0.0875 ** 2 * 100}
+    preis = {"petg": 17.0, "pla": 17.0}
+    namen = {"petg": "PETG", "pla": "PLA"}
+    strom_kwh, leistung_w, wechsel_s = 0.32, 150.0, 120
+
+    def rechteck(x: float, y: float, w: float, h: float, drehung: int) -> list[list[float]]:
+        if drehung % 180:
+            w, h = h, w
+        return [[round(x - w / 2, 2), round(y - h / 2, 2)], [round(x + w / 2, 2), round(y - h / 2, 2)],
+                [round(x + w / 2, 2), round(y + h / 2, 2)], [round(x - w / 2, 2), round(y + h / 2, 2)]]
+
+    gruppen = [
+        # gruppe, name, teile, anzahl, material, zweck, geschätzt, g je Stück, s je Stück, stand, abweichung, Maße
+        ("g1", "Stangenhalter (Druck)", ["Kugelschieber/Stangenhalter vorn links (Druck)",
+                                         "Kugelschieber/Stangenhalter vorn rechts (Druck)",
+                                         "Kugelschieber/Stangenhalter hinten links (Druck)",
+                                         "Kugelschieber/Stangenhalter hinten rechts (Druck)"], 4, "petg", "tragend",
+         False, 35.6, 4980, "slicer", 0.06, (62.0, 38.0)),
+        ("g2", "Fangrolle (Druck)", ["Kugelschieber/Fangrolle (Druck)"], 2, "petg", "bewegt", False, 12.2, 2400,
+         "schaetzung", None, (30.0, 30.0)),
+        ("g3", "Lenksperre (Druck)", ["Kugelschieber/Lenksperre (Druck)"], 1, "petg", "funktion", True, 22.0, 3300,
+         "slicer", -0.04, (24.0, 18.0)),
+        ("g4", "Abdeckkappe (Druck)", ["Kugelschieber/Abdeckkappe 1 (Druck)", "Kugelschieber/Abdeckkappe 2 (Druck)",
+                                       "Kugelschieber/Abdeckkappe 3 (Druck)", "Kugelschieber/Abdeckkappe 4 (Druck)",
+                                       "Kugelschieber/Abdeckkappe 5 (Druck)", "Kugelschieber/Abdeckkappe 6 (Druck)"],
+         6, "pla", "zier", False, 4.1, 900, "schaetzung", None, (22.0, 22.0)),
+    ]
+    einstellungen = {
+        "tragend": {"schicht_mm": 0.2, "waende": 4, "decken": 5, "boeden": 4, "fuellung": 0.25, "muster": "gyroid",
+                    "stuetzen": "keine", "brim": False},
+        "bewegt": {"schicht_mm": 0.16, "waende": 4, "decken": 6, "boeden": 4, "fuellung": 0.3, "muster": "gyroid",
+                   "stuetzen": "baum", "brim": False},
+        "funktion": {"schicht_mm": 0.2, "waende": 3, "decken": 5, "boeden": 3, "fuellung": 0.2, "muster": "gyroid",
+                     "stuetzen": "keine", "brim": True},
+        "zier": {"schicht_mm": 0.16, "waende": 2, "decken": 6, "boeden": 4, "fuellung": 0.15, "muster": "grid",
+                 "stuetzen": "keine", "brim": False},
+    }
+    prozess = {0.2: "0.20mm Standard @BBL P1P", 0.16: "0.16mm Optimal @BBL P1P"}
+    filament = {"petg": "Bambu PETG Basic @BBL X1C", "pla": "Amazon Basics PLA"}
+    begruendung = {
+        "tragend": ["tragend: 4 Wände, 25 % Gyroid (Kevins Regel für Funktionsteile: 3–4 Wände, 20–40 % Füllung)",
+                    "Last längs der Schichten: liegend drucken, Zug und Biegung in der Schichtebene"],
+        "bewegt": ["bewegt: 4 Wände und 30 % Gyroid für verschleißfeste Laufflächen, 0,16 mm für glattere Flächen",
+                   "Baumstützen unter der Lauffläche: Stützen sauber entfernen, Lauffläche nacharbeiten"],
+        "funktion": ["Zweck nicht angegeben, geschätzt als funktion: 3 Wände, 20 % Gyroid",
+                     "Brim: kleine Auflage (ca. 120 mm²) bei 32 mm Höhe"],
+        "zier": ["zier: 2 Wände, 15 % Grid, 0,16 mm für die Sichtflächen"],
+    }
+    hinweise = {
+        "petg": [{"schwere": "hinweis", "text": "PETG vorher trocknen (65 °C, 12 h).", "art": "trocknen"}],
+        "pla": [],
+    }
+    teile_out = []
+    for (gid, name, teile, anzahl, mat, zweck, geschaetzt, g1, s1, stand, abw, _mass) in gruppen:
+        e = einstellungen[zweck]
+        h = list(hinweise[mat])
+        if e["stuetzen"] != "keine":
+            h.append({"schwere": "warnung", "text": "Braucht Stützen unter der Lauffläche (Fläche #f7, ca. 140 mm²): "
+                      "Nacharbeit, ca. 1,1 g Stützmaterial je Stück.", "art": "stuetzen"})
+        if e["brim"]:
+            h.append({"schwere": "hinweis", "text": "Brim 5 mm: kleine Auflage bei großer Höhe, sonst kippt das Teil.",
+                      "art": "brim"})
+        g = round(g1 * anzahl, 1)
+        kosten = round(g / 1000 * preis[mat], 2)
+        teile_out.append({
+            "gruppe": gid, "name": name, "teile": teile, "anzahl": anzahl, "material": mat, "zweck": zweck,
+            "zweck_geschaetzt": geschaetzt, "g": g, "m": round(g / g_je_m[mat], 2), "zeit_s": s1 * anzahl,
+            "kosten": kosten, "stand": stand, "abweichung": abw,
+            "je_stueck": {"g": g1, "m": round(g1 / g_je_m[mat], 2), "zeit_s": s1},
+            "einstellungen": {**e, "ausrichtung": "−Z-Seite unten (wie modelliert), Fläche #f3 liegt auf"},
+            "fest": {"g1": ["waende"], "g3": ["fuellung"]}.get(gid, []),
+            "fest_von": {"g1": {"waende": "kevin"}, "g3": {"fuellung": "agent"}}.get(gid, {}),
+            "profil": {"prozess": prozess[e["schicht_mm"]], "filament": filament[mat]},
+            "risiko": 0.12 if e["stuetzen"] != "keine" else 0.04,
+            "begruendung": begruendung[zweck], "hinweise": h,
+        })
+    t = {x["gruppe"]: x for x in teile_out}
+    # Platte 1 (PETG): 4 Halter, 2 Fangrollen, Lenksperre; Platte 2 (PLA): 6 Kappen
+    platz1 = [("g1", t["g1"]["teile"][i], 60 + (i % 2) * 72, 60 + (i // 2) * 48, 0) for i in range(4)] + \
+             [("g2", "Kugelschieber/Fangrolle (Druck)", 180, 60 + i * 40, 0) for i in range(2)] + \
+             [("g3", "Kugelschieber/Lenksperre (Druck)", 180, 150, 90)]
+    platz2 = [("g4", t["g4"]["teile"][i], 50 + (i % 3) * 32, 50 + (i // 3) * 32, 0) for i in range(6)]
+    masse = {g[0]: g[11] for g in gruppen}
+    platten = []
+    for nr, (platz, stand) in enumerate(((platz1, "gemischt"), (platz2, "schaetzung")), start=1):
+        mat = t[platz[0][0]]["material"]
+        zeit = 0
+        g = 0.0
+        teile_p = []
+        flaeche = 0.0
+        for i, (gid, name, x, y, dreh) in enumerate(platz):
+            je = t[gid]["je_stueck"]
+            zeit += je["zeit_s"]
+            g += je["g"]
+            w, hh = masse[gid]
+            flaeche += w * hh
+            ersatz = gid == "g2" and i > 4
+            teile_p.append({"name": name, "gruppe": gid, "x": float(x), "y": float(y), "drehung": dreh,
+                            "umriss": rechteck(x, y, w, hh, dreh), "ersatz": ersatz})
+        zeit += 35  # Start der Platte (Reinigungslinie)
+        g = round(g, 1)
+        kosten = round(g / 1000 * preis[mat], 2)
+        platten.append({"nr": nr, "zeit_s": zeit, "stand": stand, "anordnung": "slicer" if nr == 1 else "schnell",
+                        "material": [{"material": mat, "g": g, "m": round(g / g_je_m[mat], 2), "kosten": kosten}],
+                        "kosten": kosten, "hoehe_mm": 32.0 if nr == 1 else 9.6, "teile": teile_p,
+                        "auslastung": round(flaeche / (256 * 256 - 18 * 28), 3)})
+    zeit_s = sum(p["zeit_s"] for p in platten)
+    mit_wechsel = zeit_s + (len(platten) - 1) * wechsel_s
+    material = []
+    for mat in ("petg", "pla"):
+        g = round(sum(p["material"][0]["g"] for p in platten if p["material"][0]["material"] == mat), 1)
+        material.append({"material": mat, "name": namen[mat], "g": g, "m": round(g / g_je_m[mat], 2),
+                         "kosten": round(g / 1000 * preis[mat], 2), "preis_kg": preis[mat], "preis_stand": "2026-10",
+                         "stand": "gemischt" if mat == "petg" else "schaetzung"})
+    filament_eur = round(sum(m["kosten"] for m in material), 2)
+    strom = round(mit_wechsel / 3600 * leistung_w / 1000 * strom_kwh, 2)
+    risiko = round(sum(x["risiko"] * x["kosten"] for x in teile_out), 2)
+    return {
+        "run": run, "stand": "gemischt", "drucker": "Bambu Lab P1P 0.4",
+        "summe": {"platten": len(platten), "zeit_s": zeit_s, "zeit_mit_wechsel_s": mit_wechsel,
+                  "kosten": round(filament_eur + strom + risiko, 2),
+                  "kosten_teile": {"filament": filament_eur, "strom": strom, "risiko": risiko},
+                  "material": material},
+        "platten": platten,
+        "teile": teile_out,
+        "hinweise": [{"schwere": "hinweis", "text": "Zwei Materialien (PETG, PLA): je Material eigene Platten; ohne "
+                      "AMS die Spule zwischen den Platten wechseln.", "art": "ams"}],
+        "slicer": {"zustand": "rechnet", "fertig": 2, "gesamt": 4,
+                   "meldung": "Bambu Studio 02.07.01.62: 2 von 4 Gruppen gerechnet", "version": "02.07.01.62"},
+        "einstellungen": {"drucker": "p1p-0.4", "strompreis_kwh": strom_kwh, "leistung_w": leistung_w,
+                          "plattenwechsel_s": wechsel_s, "slicer": True},
+        "regler": False,
+        "ms": 38.2,
+    }
+
+
+# Drucken (Phase 8, DRUCKVORSCHAU.md „Drucken (Phase 8)“): Nachrichten ohne Nutzlast. Nie mit Seriennummer oder
+# Zugangscode: PRINTER_CONFIG trägt nur den Eintrag aus drucker.json, PRINTER_STATUS nur eine gehashte Kennung.
+
+DRUCKER_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    "PRINTER_CONFIG": ("id", "drucker"),
+    "PRINTER_STATUS_REQ": ("id",),
+    "PRINTER_STATUS": ("konfiguriert", "verbindung", "meldung", "drucker", "weg", "wege", "steuern", "druck",
+                       "temperaturen", "fehler", "kamera", "gefunden", "auftrag", "aktualisiert"),
+    "PRINT_JOB_REQ": ("id", "platten", "weg", "bestaetigt"),
+    "PRINT_JOB_RES": ("reply_to", "ok", "auftrag", "weg", "schritt", "datei", "platten", "fehler", "hinweise", "ms"),
+    "PRINT_JOB_ASK": ("id", "auftrag", "platten", "weg", "von", "grund"),
+    "PRINT_CONTROL": ("id", "aktion"),
+}
+DRUCKER_VERBINDUNGEN: tuple[str, ...] = ("aus", "verbindet", "verbunden", "getrennt", "fehler")
+DRUCKER_WEGE: tuple[str, ...] = ("a", "b")
+DRUCKER_MODI: tuple[str, ...] = ("cloud", "lan", "unbekannt")
+DRUCK_ZUSTAENDE: tuple[str, ...] = ("unbekannt", "bereit", "vorbereiten", "druckt", "pausiert", "fertig",
+                                    "fehlgeschlagen")
+AUFTRAG_ZUSTAENDE: tuple[str, ...] = ("wartet", "slict", "bereit", "oeffnet", "geoeffnet", "laedt_hoch", "startet",
+                                      "gestartet", "fehler", "verworfen")
+AUFTRAG_SCHRITTE: tuple[str, ...] = ("vorbereitet", "geoeffnet", "gestartet")
+DRUCKER_AKTIONEN: tuple[str, ...] = ("aktualisieren", "pause", "fortsetzen", "abbrechen", "verwerfen")
+DRUCKER_EINTRAG_FELDER: tuple[str, ...] = ("id", "name", "modell", "ip", "weg", "status_lesen")
+DRUCKER_FELDER: tuple[str, ...] = ("id", "name", "modell", "ip", "firmware", "modus", "entwicklermodus", "signal")
+DRUCK_STATUS_FELDER: tuple[str, ...] = ("zustand", "gcode_state", "fortschritt", "schicht", "schichten", "restzeit_s",
+                                        "aufgabe", "datei", "stufe", "geschwindigkeit")
+AUFTRAG_FELDER: tuple[str, ...] = ("auftrag", "zustand", "weg", "platten", "fortschritt", "meldung", "datei", "von")
+_GEHEIM = ("seriennummer", "zugangscode", "access_code", "serial", "passwort", "password")
+
+
+def printer_config(id: str, drucker: dict[str, Any] | None, *, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    return {"type": "PRINTER_CONFIG", "seq": seq, "id": id, "drucker": None if drucker is None else dict(drucker)}
+
+
+def printer_status(status: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
+    h: dict[str, Any] = {"type": "PRINTER_STATUS", "seq": seq,
+                         **{k: v for k, v in status.items() if k not in ("ok", "type", "seq", "reply_to")}}
+    if reply_to:
+        h["reply_to"] = reply_to
+    return h
+
+
+def print_job_req(id: str, *, platten: list[int] | None = None, weg: str = "a", bestaetigt: bool = False,  # noqa: A002
+                  optionen: dict[str, Any] | None = None, auftrag: str | None = None, seq: int = 0) -> dict[str, Any]:
+    h: dict[str, Any] = {"type": "PRINT_JOB_REQ", "seq": seq, "id": id, "platten": [int(p) for p in (platten or [])],
+                         "weg": weg, "bestaetigt": bool(bestaetigt)}
+    if optionen is not None:
+        h["optionen"] = dict(optionen)
+    if auftrag is not None:
+        h["auftrag"] = auftrag
+    return h
+
+
+def print_control(id: str, aktion: str, *, auftrag: str | None = None, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    h: dict[str, Any] = {"type": "PRINT_CONTROL", "seq": seq, "id": id, "aktion": aktion}
+    if auftrag is not None:
+        h["auftrag"] = auftrag
+    return h
+
+
+def _geheimnisse(obj: Any, wo: str = "") -> list[str]:
+    """Pfade von Feldern, deren Name nach Seriennummer oder Zugangscode klingt (dürfen nie in Nachrichten stehen)."""
+    out: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in _GEHEIM:
+                out.append(f"{wo}{k}")
+            out += _geheimnisse(v, f"{wo}{k}.")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out += _geheimnisse(v, f"{wo}[{i}].")
+    return out
+
+
+def check_drucker_message(header: dict[str, Any]) -> list[str]:
+    """Fehlende oder ungültige Felder einer Drucker-Nachricht (leer = in Ordnung); Felder mit Geheimnissen sind immer
+    ein Fehler."""
+    kind = header.get("type")
+    need = DRUCKER_NACHRICHTEN.get(str(kind))
+    if need is None:
+        return [f"{kind!r} ist keine Drucker-Nachricht"]
+    out = [k for k in need if k not in header]
+    out += [f"{p} darf nie in einer Nachricht stehen" for p in _geheimnisse(header)]
+    if out:
+        return out
+    if kind == "PRINTER_CONFIG" and header["drucker"] is not None:
+        out += _fehlend(header["drucker"], DRUCKER_EINTRAG_FELDER, "drucker")
+        if isinstance(header["drucker"], dict) and header["drucker"].get("weg") not in DRUCKER_WEGE:
+            out.append(f"drucker.weg {header['drucker'].get('weg')!r} unbekannt")
+    elif kind in ("PRINT_JOB_REQ", "PRINT_JOB_ASK") and header["weg"] not in DRUCKER_WEGE:
+        out.append(f"weg {header['weg']!r} unbekannt")
+    elif kind == "PRINT_CONTROL" and header["aktion"] not in DRUCKER_AKTIONEN:
+        out.append(f"aktion {header['aktion']!r} unbekannt")
+    elif kind == "PRINT_JOB_RES" and header["schritt"] is not None and header["schritt"] not in AUFTRAG_SCHRITTE:
+        out.append(f"schritt {header['schritt']!r} unbekannt")
+    elif kind == "PRINTER_STATUS":
+        if header["verbindung"] not in DRUCKER_VERBINDUNGEN:
+            out.append(f"verbindung {header['verbindung']!r} unbekannt")
+        if header["weg"] not in DRUCKER_WEGE:
+            out.append(f"weg {header['weg']!r} unbekannt")
+        if header["drucker"] is not None:
+            out += _fehlend(header["drucker"], DRUCKER_FELDER, "drucker")
+            if isinstance(header["drucker"], dict) and header["drucker"].get("modus") not in DRUCKER_MODI:
+                out.append(f"drucker.modus {header['drucker'].get('modus')!r} unbekannt")
+        for w in DRUCKER_WEGE:
+            out += _fehlend((header["wege"] or {}).get(w), ("moeglich", "grund"), f"wege.{w}")
+        if header["druck"] is not None:
+            out += _fehlend(header["druck"], DRUCK_STATUS_FELDER, "druck")
+            if isinstance(header["druck"], dict) and header["druck"].get("zustand") not in DRUCK_ZUSTAENDE:
+                out.append(f"druck.zustand {header['druck'].get('zustand')!r} unbekannt")
+        if header["temperaturen"] is not None:
+            out += _fehlend(header["temperaturen"], ("duese", "duese_ziel", "bett", "bett_ziel"), "temperaturen")
+        for i, f in enumerate(header["fehler"] or []):
+            out += _fehlend(f, ("code", "text", "schwere", "art"), f"fehler[{i}]")
+        for i, g in enumerate(header["gefunden"] or []):
+            out += _fehlend(g, ("name", "modell", "ip", "verbindung", "kennung"), f"gefunden[{i}]")
+        if header["auftrag"] is not None:
+            out += _fehlend(header["auftrag"], AUFTRAG_FELDER, "auftrag")
+            if isinstance(header["auftrag"], dict) and header["auftrag"].get("zustand") not in AUFTRAG_ZUSTAENDE:
+                out.append(f"auftrag.zustand {header['auftrag'].get('zustand')!r} unbekannt")
+        if header["kamera"] is not False:
+            out.append("kamera muss false sein (Phase 8 nutzt keine Kamera)")
+    return out
+
+
+def drucker_status_beispiel(*, druckt: bool = True) -> dict[str, Any]:
+    """Beispiel eines PRINTER_STATUS (Weg A, Cloud-Modus, Status lesend, Druck läuft) für Testdateien und Attrappen."""
+    from kevcad_kernel.drucker.sperre import ANLEITUNG_WEG_B
+
+    return {
+        "konfiguriert": True, "verbindung": "verbunden", "meldung": None,
+        "drucker": {"id": "p1p", "name": "P1P Werkstatt", "modell": "P1P", "ip": "192.168.178.40",
+                    "firmware": "01.10.00.00", "modus": "cloud", "entwicklermodus": False, "signal": "-52dBm"},
+        "weg": "a",
+        "wege": {"a": {"moeglich": True, "grund": None},
+                 "b": {"moeglich": False, "grund": "Der Drucker ist im Cloud-Modus (LAN Only Mode aus).",
+                       "anleitung": list(ANLEITUNG_WEG_B)}},
+        "steuern": False,
+        "druck": ({"zustand": "druckt", "gcode_state": "RUNNING", "fortschritt": 0.42, "schicht": 41, "schichten": 98,
+                   "restzeit_s": 3720, "aufgabe": "Kugelschieber-platten", "datei": "Kugelschieber-platten.gcode.3mf",
+                   "stufe": "druckt", "geschwindigkeit": "standard"} if druckt else
+                  {"zustand": "bereit", "gcode_state": "IDLE", "fortschritt": 0.0, "schicht": 0, "schichten": 0,
+                   "restzeit_s": 0, "aufgabe": None, "datei": None, "stufe": None, "geschwindigkeit": "standard"}),
+        "temperaturen": {"duese": 219.5, "duese_ziel": 220.0, "bett": 55.0, "bett_ziel": 55.0},
+        "fehler": [{"code": "0300-0100-0003-0007", "text": "Meldung 0300-0100-0003-0007 des Druckers, Erklärung: "
+                    "https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/0300_0100_0003_0007",
+                    "schwere": "warnung", "art": "hms"}] if druckt else [],
+        "kamera": False,
+        "gefunden": [{"name": "P1P Werkstatt", "modell": "P1P", "ip": "192.168.178.40", "verbindung": "cloud",
+                      "kennung": "3fa2c1d09e7b"}],
+        "auftrag": {"auftrag": "j-3", "zustand": "geoeffnet", "weg": "a", "platten": [1, 2], "fortschritt": None,
+                    "meldung": "In Bambu Studio geöffnet: dort „Platte drucken“ (bzw. „Alle drucken“) und „Senden“ "
+                               "klicken.",
+                    "datei": "/Users/test/Documents/Kev CAD/Kugelschieber/output/Kugelschieber-platten.gcode.3mf",
+                    "von": "kevin"},
+        "aktualisiert": 1792656000.0,
+    }

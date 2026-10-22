@@ -247,16 +247,11 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         for w in (bom.get("warnings") or [])[:5]:
             lines.append(f"Hinweis Stückliste: {w}")
         einkauf = bom.get("einkauf") if isinstance(bom.get("einkauf"), dict) else None
-        if einkauf is not None:  # Bestand je Projekt (BESTAND.md)
-            n = int(einkauf.get("positionen") or 0)
-            if n:
-                summe = einkauf.get("summe")
-                from kevcad_kernel.bom import eur
+        if einkauf is not None:  # Bestand je Projekt (BESTAND.md), gezählt wie in der App (Lagerware + Zukaufteile)
+            from kevcad_kernel.bestand.einkauf import zeile_kurz
 
-                lines.append(f"Einkaufsliste: {plural(n, 'Position', 'Positionen')}"
-                             + (f", {eur(summe)}" if summe is not None else "") + " (Details mit einkaufsliste)")
-            else:
-                lines.append("Einkaufsliste: nichts zu kaufen, alles aus dem Bestand des Projekts")
+            lines.append(zeile_kurz({"positionen": int(einkauf.get("positionen") or 0),
+                                     "summe": einkauf.get("summe")}))
     data = {
         "ok": True,
         "run": run_no,
@@ -306,7 +301,7 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
 
         data["bedingungen"] = res["bedingungen"]
         # Mit fertigem Prüfergebnis stehen die Befunde der Bedingungen schon dort (gemeinsame Prüfung): nur die Summe
-        mit_pruefung = isinstance(res.get("pruefung"), dict) and res["pruefung"].get("state") == "done"
+        mit_pruefung = isinstance(res.get("pruefung"), dict) and res["pruefung"].get("state") in ("done", "teilweise")
         extra, constraint_failed = run_zeilen(res["bedingungen"], befunde=not mit_pruefung)
         constraint_failed = constraint_failed and not mit_pruefung
         if constraint_failed:
@@ -449,7 +444,8 @@ def bom_totals_line(totals: dict[str, Any]) -> str:
 
 
 def bom_text(bom: dict[str, Any]) -> str:
-    """Stückliste als ausgerichtete Tabelle, darunter Zuschnitt und Hinweise."""
+    """Stückliste als ausgerichtete Tabelle, darunter Zuschnitt, Einkaufsliste (wie in der App) und Hinweise."""
+    from kevcad_kernel.appformat import zahl
     from kevcad_kernel.bom import cut_lines, de_fixed, de_num, gehrung_text
 
     lines_ = bom.get("lines") or []
@@ -483,16 +479,22 @@ def bom_text(bom: dict[str, Any]) -> str:
                 continue
             n = len(cut.get("stangen") or [])
             line = (f"{cut.get('benennung')}: {plural(n, 'Stange', 'Stangen')} à {de_num(cut.get('stangenlaenge'))} "
-                    f"mm, Verschnitt {de_num(cut.get('verschnitt_prozent'), 1)} %")
+                    f"mm, Verschnitt {zahl(cut.get('verschnitt_prozent') or 0, 1)} %")
             if cut.get("preis_stangen") is not None:
                 line += f", ganze Stangen {money(cut['preis_stangen'])}"
             out.append(line)
             out += [f"  {t}" for t in cut_lines(cut)]
-    if bom.get("einkaufsliste") is not None:
-        from kevcad_kernel.bestand.text import einkauf_text
+        v = bom.get("verschnitt") if isinstance(bom.get("verschnitt"), dict) else None
+        werte = [f"{name} {zahl(v[k], 1)} %" for k, name in (("stangen", "Stangen"), ("platten", "Platten"))
+                 if v and v.get(k) is not None]
+        if werte:
+            out.append("Verschnitt gesamt (Sägeschnitte und Reste unter dem Mindestrest, neue Reste zählen nicht): "
+                       + ", ".join(werte))
+    if bom.get("einkaufsliste") is not None or bom.get("einkauf_text"):
+        from kevcad_kernel.bestand import einkauf as ek
 
         out.append("")
-        out.append(einkauf_text({k: v for k, v in bom.items() if k != "run"}))
+        out.append(str(bom.get("einkauf_text") or ek.text(ek.zusammenstellen(bom), None)))
     warnings = bom.get("warnings") or []
     if warnings:
         out.append("")

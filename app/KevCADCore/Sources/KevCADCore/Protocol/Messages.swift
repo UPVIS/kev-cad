@@ -533,6 +533,10 @@ public enum KernelMessage: Sendable {
     case bauplan(BauplanNachricht)
     /// Phase 6 (additiv, P6-A2): Der Kernel lässt ein PDF bauen (DOC_EXPORT_REQ, Antwort DOC_EXPORT_RES).
     case dokumentExport(DokumentExportAnfrage)
+    /// Druckvorschau (additiv, DRUCKVORSCHAU.md): PRINT_PREVIEW und PRINT_EXPORT_RES.
+    case druck(DruckNachricht)
+    /// Drucken, Phase 8 (additiv, DRUCKVORSCHAU.md „Drucken (Phase 8)“): PRINTER_STATUS, PRINT_JOB_RES, PRINT_JOB_ASK.
+    case drucker(DruckerNachricht)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -566,6 +570,8 @@ public enum KernelMessage: Sendable {
         case .dokumente(let d): return d.typeName
         case .bauplan: return "BAUPLAN"
         case .dokumentExport: return "DOC_EXPORT_REQ"
+        case .druck(let d): return d.typeName
+        case .drucker(let d): return d.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -585,6 +591,8 @@ public enum KernelMessage: Sendable {
         case .versionen(let m): return m.replyTo
         case .dokumente(let m): return m.replyTo
         case .bauplan(let m): return m.replyTo
+        case .druck(let m): return m.replyTo
+        case .drucker(let m): return m.replyTo
         default: return nil
         }
     }
@@ -627,6 +635,9 @@ public enum KernelMessage: Sendable {
             return .dokumente(try DokumenteMessage.decode(type: t, frame: frame))
         case "BAUPLAN": return .bauplan(try BauplanNachricht.decode(frame))
         case "DOC_EXPORT_REQ": return .dokumentExport(try DokumentExportAnfrage.decode(frame))
+        case let t where DruckNachricht.types.contains(t): return .druck(try DruckNachricht.decode(type: t, header: h))
+        case let t where DruckerNachricht.types.contains(t):
+            return .drucker(try DruckerNachricht.decode(type: t, header: h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

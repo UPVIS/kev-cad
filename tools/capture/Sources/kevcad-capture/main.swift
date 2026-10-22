@@ -28,6 +28,8 @@ Nachbearbeitung:
                         grund_laenge, grund_breite (dichteste waagrechte Schicht, z. B. ein Rahmen)
   --pruef NAME=MM       Prüfmaß zur Genauigkeitsangabe (Namen wie --masz, dazu rad), z. B. breite=410
   --ohne-boden-schnitt  Boden finden und ausrichten, aber nichts abschneiden
+  --auflage             Gegenstand liegt auf einer Unterlage (Holzscheibe, Tisch), die mit im Netz ist:
+                        oberste große waagrechte Ebene unter ihm als Auflage (z = 0), alles darunter weg
   --kontrollbilder ORDNER  Kontrollbilder (vorne, Seite, oben, schräg) mit Blender dorthin rendern
 Allgemein:
   --kopie ORDNER        poses.json sofort und alle Ergebnisse am Ende zusätzlich dorthin kopieren
@@ -88,6 +90,7 @@ func parse() throws -> Args {
             let (n, mm) = try measure(try value(arg))
             a.post.checks.append(KnownMeasure(name: n, mm: mm))
         case "--ohne-boden-schnitt": a.post.cutFloor = false
+        case "--auflage": a.post.support = true
         case "--kontrollbilder": a.post.previewDir = URL(fileURLWithPath: try value(arg)).standardizedFileURL
         case "--kopie": a.copyTo = URL(fileURLWithPath: try value(arg)).standardizedFileURL
         case "--behalte-checkpoint": a.keepCheckpoint = true

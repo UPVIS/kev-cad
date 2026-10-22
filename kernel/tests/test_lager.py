@@ -211,7 +211,8 @@ def test_acceptance_gestell(tmp_path):
     assert all(ln["teile"] for ln in bom["lines"]) and not bom["warnings"]
     (cut,) = bom["cuts"]
     assert cut["stangen"] == [[842, 842, 842, 842, 800, 800, 600], [600]]
-    assert cut["verschnitt_prozent"] == pytest.approx(48.6)
+    # Definition 2: 7 Schnitte (Rest 411 mm ist verwertbar) und 1 Schnitt (Rest 5.397 mm): 24 von 12.000 mm
+    assert cut["verschnitt_prozent"] == 0.2 and cut["verschnitt_definition"] == "2"
     t = bom["totals"]
     assert t["positionen"] == 5 and t["teile"] == 17 and t["preis_hinweis"] == "Richtpreise, Stand 2026-10"
     assert t["kg"] == pytest.approx(4 * 3.30 * .842 + 2 * 3.30 * .8 + 2 * 3.30 * .6 + 0.48 * 18 * 0.68 + 8 * 0.0238,

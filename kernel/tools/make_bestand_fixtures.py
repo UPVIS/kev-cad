@@ -5,6 +5,12 @@ Aufruf (im Ordner kernel):  .venv/bin/python tools/make_bestand_fixtures.py   (l
 Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/bestand*.frame, bom_bestand.frame, ack_gebaut.frame,
 gebaut_req.frame, buchung_rueckgaengig.frame und der Abschnitt ``bestand`` in fixtures.json (erwartete Werte). Eigene
 Dateien, damit stream.bin und die Rahmenliste in fixtures.json unverändert bleiben.
+
+Strang „Material im Kernel angleichen“ (22.10.2026): bom_material.frame (Kugelschieber mit Resten, Normteilen,
+Zukaufteilen, Kamerazubehör und Druckteilen, geplant mit Bestand), print_material.frame (Druckvorschau desselben Laufs)
+und der Abschnitt ``material``: Einkaufsliste als Text und CSV genau so, wie der Kernel sie über MCP und Export liefert,
+mit und ohne Druckvorschau, Summen und Verschnitt (Definition 2). Der Swift-Test ``MaterialKernelGleichTests`` rechnet
+dieselben Werte mit ``MaterialDaten`` und vergleicht byteweise.
 """
 
 from __future__ import annotations
@@ -17,11 +23,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bestand_beispiel import BESTAND, BUCHUNGEN, Katalog, basis_bom  # noqa: E402
+from bestand_beispiel import BESTAND, BUCHUNGEN, Katalog, basis_bom, material_bom  # noqa: E402
 
+from kevcad_kernel.bestand import einkauf as ek  # noqa: E402
 from kevcad_kernel.bestand.datei import zusammenfassung  # noqa: E402
 from kevcad_kernel.bestand.planung import plane  # noqa: E402
-from kevcad_kernel.protocol import check_bestand_message, encode_frame, pack_bestand  # noqa: E402
+from kevcad_kernel.protocol import (  # noqa: E402
+    check_bestand_message,
+    check_druck_message,
+    druckvorschau_beispiel,
+    encode_frame,
+    pack_bestand,
+    pack_print_preview,
+)
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
 STAND = "2026-10-21T21:45:00"
@@ -38,6 +52,40 @@ def bestand_nachricht(seq: int) -> dict:
 def bom_nachricht(seq: int) -> dict:
     planung = plane(basis_bom(run=5), BESTAND, Katalog(), stand=STAND)
     return {"type": "BOM", "seq": seq, **planung.bom}
+
+
+MATERIAL_STAND = "22.10.2026"
+
+
+def material_nachrichten() -> tuple[dict, dict]:
+    """BOM des Kugelschiebers mit allem (Lauf 5, mit Bestand geplant) und die Druckvorschau desselben Laufs."""
+    planung = plane(material_bom(run=5), BESTAND, Katalog(), stand=STAND)
+    vorschau = pack_print_preview(druckvorschau_beispiel(run=5), seq=36)
+    assert not check_druck_message(vorschau), check_druck_message(vorschau)
+    return {"type": "BOM", "seq": 35, **planung.bom}, vorschau
+
+
+def material_erwartet(bom: dict, vorschau: dict) -> dict:
+    """Was der Kernel liefert: Text und CSV der Einkaufsliste (mit und ohne Druckvorschau), Summen, Verschnitt."""
+    mit = ek.zusammenstellen(bom, vorschau, Katalog())
+    ohne = ek.zusammenstellen(bom, None, Katalog())
+    return {
+        "frames": [{"file": "bom_material.frame", "type": "BOM", "payload_bytes": 0},
+                   {"file": "print_material.frame", "type": "PRINT_PREVIEW", "payload_bytes": 0}],
+        "projekt": "Kugelschieber", "stand": MATERIAL_STAND,
+        "text": ek.text(mit, "Kugelschieber", MATERIAL_STAND), "csv": ek.csv(mit),
+        "text_ohne_druck": ek.text(ohne, "Kugelschieber", MATERIAL_STAND), "csv_ohne_druck": ek.csv(ohne),
+        "positionen": mit["positionen"], "lager": len(mit["lager"]), "zukauf": len(mit["zukauf"]),
+        "summe": mit["summe"], "summe_lager": mit["summe_lager"], "summe_zukauf": mit["summe_zukauf"],
+        "ohne_preis": mit["ohne_preis"], "normteile": len(mit["normteile"]),
+        "filament": [{k: f[k] for k in ("werkstoff", "teile", "gramm", "preis", "stand")} for f in mit["filament"]],
+        "filament_ohne_druck": [{k: f[k] for k in ("werkstoff", "teile", "gramm", "preis")}
+                                for f in ohne["filament"]],
+        "verschnitt": {c["stock_id"]: c["verschnitt_prozent"] for c in bom["cuts"]},
+        "verschnitt_definition": sorted({c.get("verschnitt_definition") for c in bom["cuts"]}),
+        "verschnitt_gesamt": bom["verschnitt"],
+        "run_zeile": ek.zeile_kurz(mit),
+    }
 
 
 def main() -> None:
@@ -102,9 +150,13 @@ def main() -> None:
                           for s in bom["stueckgut"]],
         },
     }
+    mat_bom, mat_vorschau = material_nachrichten()
+    for name, header in (("bom_material", mat_bom), ("print_material", mat_vorschau)):
+        (ZIEL / f"{name}.frame").write_bytes(encode_frame(header, b""))
     path = ZIEL / "fixtures.json"
     data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["bestand"] = erwartet
+    data["material"] = material_erwartet(mat_bom, mat_vorschau)
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
     lines = [f"{len(files)} Bestand-Testdateien nach {ZIEL}",
              f"Rohr: {rohr['aus_bestand']}, kaufen {rohr['kaufen']}, neue Reste {rohr['neue_reste']}",

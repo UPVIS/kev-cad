@@ -1,8 +1,9 @@
 import KevCADCore
 import SwiftUI
 
-/// Menüpunkte für Phase 2 (eigene Datei, damit Commands.swift unberührt bleibt): Darstellung > Stückliste (⇧⌘B) und
-/// Ablage > Stückliste als CSV exportieren. Das Fenster Lagerkatalog (⇧⌘K) steht als eigene Szene im Fenstermenü.
+/// Menüpunkte für Phase 2 (eigene Datei, damit Commands.swift unberührt bleibt): Vorschläge von Claude prüfen und
+/// Ablage > Stückliste als CSV exportieren. Die Stückliste unter dem Viewport schalten die Schnellansichten
+/// (MaterialCommands, ⇧⌘B). Das Fenster Lagerkatalog (⇧⌘K) steht als eigene Szene im Fenstermenü.
 struct StockCommands: Commands {
     @ObservedObject var session: AppSession
     @ObservedObject var model: AppModel
@@ -10,12 +11,6 @@ struct StockCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .sidebar) {
-            Button(window?.showBOM == true ? "Stückliste ausblenden" : "Stückliste einblenden") {
-                guard let window else { return }
-                withAnimation(.snappy(duration: 0.2)) { window.showBOM.toggle() }
-            }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-            .disabled(window == nil || model.project == nil)
             if let count = model.catalog?.suggestionCount, count > 0 {
                 Button("Vorschläge von Claude prüfen (\(count)) …") { session.showCatalog(section: .suggestions) }
             }

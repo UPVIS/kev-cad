@@ -12,6 +12,8 @@ struct BauplanSchrittAnsicht: View {
     let bearbeiten: (BauplanSchritt) -> Void
     let teilen: (BauplanSchritt) -> Void
     let regel: (BauplanSchritt) -> Void
+    /// Sprung in den Bereich „Material“ (Strang „Material“), gesetzt vom Projektfenster.
+    @Environment(\.materialNavigation) private var materialNavigation
 
     private var abschnitt: BauplanAbschnitt? { plan.abschnitt(von: schritt.id) }
     private var istMontage: Bool { abschnitt?.art == .montage }
@@ -267,11 +269,23 @@ struct BauplanSchrittAnsicht: View {
 
     private var material: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Material").font(.headline)
+            HStack {
+                Text("Material").font(.headline)
+                Spacer()
+                if let materialNavigation {
+                    Button {
+                        materialNavigation.zeige(.einkauf, nil, nil)
+                    } label: {
+                        Label("Im Material-Bereich öffnen", systemImage: "shippingbox")
+                    }
+                    .buttonStyle(.link)
+                    .help("Stückliste, Zuschnitt, Bestand und Einkaufsliste ausführlich (⌘3)")
+                }
+            }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 ForEach(Array(schritt.material.enumerated()), id: \.offset) { _, m in
                     GridRow {
-                        Text(KevFormat.compact(m.menge, maxDigits: 3)).fontWeight(.bold).monospacedDigit()
+                        Text(KevFormat.compact(m.menge, maxDigits: 2)).fontWeight(.bold).monospacedDigit()
                             .gridColumnAlignment(.trailing)
                         Text(m.einheit).foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 1) {

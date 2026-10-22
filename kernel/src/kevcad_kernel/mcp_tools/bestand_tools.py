@@ -78,16 +78,21 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         return fmt.result(text, res)
 
     @tool("einkaufsliste", "Einkaufsliste",
-          "Shopping list of the current project after the last run: what is missing after using offcuts first, then "
-          "whole stock of this project, rounded up to purchase units (bar, sheet, piece), with guide price and date, "
-          "supplier link, hints and the total; also writes <project>/output/<name>-einkaufsliste.csv. Mention the "
-          "shopping list (or that nothing is missing) in your report to Kevin.", ADDITIVE)
+          "Shopping list of the current project after the last run, exactly as Kevin sees and shares it in the app "
+          "(Material, Einkaufsliste): Lagerware (what is missing after using offcuts first, then whole stock of "
+          "this project, rounded up to purchase units, standard parts to buy included), Zukaufteile (bought parts "
+          "with shop link and price from the catalog), the total of both, then Normteile abzählen (needed, from "
+          "stock, to buy) and Filament für Druckteile (from the print preview of the same run, else volume x "
+          "density). Also writes <project>/output/<name>-einkaufsliste.csv (same bytes as the app's CSV). Mention "
+          "the shopping list (or that nothing is missing) in your report to Kevin.", ADDITIVE)
     async def einkaufsliste() -> CallToolResult:
         res = await t.work("stellt die Einkaufsliste zusammen", svc.einkaufsliste)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(err, res)
         text = str(res.get("text") or "")
+        if res.get("einkauf_hinweis"):
+            text += f"\nPreise Lagerware: {res['einkauf_hinweis']}"
         if res.get("csv"):
             text += f"\nCSV: {res['csv']}"
         for w in res.get("warnings") or []:
