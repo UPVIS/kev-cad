@@ -11,6 +11,9 @@ public struct PostProcessOptions {
     public var known: KnownMeasure? = nil
     public var checks: [KnownMeasure] = []
     public var cutFloor = true
+    /// Der Gegenstand liegt auf einer Unterlage (Holzscheibe, Tisch, Kiste), die mit im Netz ist: oberste große
+    /// waagrechte Ebene unter dem Gegenstand als Auflage (z = 0) nehmen und alles darunter abschneiden.
+    public var support = false
     public var writeUSDZ = true
     /// Ordner für Kontrollbilder (Blender); nil = keine
     public var previewDir: URL? = nil
@@ -102,14 +105,42 @@ public final class PostProcessor {
         let rFloor = Self.rotation(from: floorPlane.normal, to: SIMD3(0, 0, 1))
         // Punkt auf der Ebene
         let p0 = -floorPlane.d * floorPlane.normal
-        let m1 = Self.translation(SIMD3(0, 0, 0)) * rFloor * Self.translation(-p0)
+        var m1 = Self.translation(SIMD3(0, 0, 0)) * rFloor * Self.translation(-p0)
         var pts1 = pts0.map { (m1 * SIMD4($0, 1)).xyz }
-        let camPos1 = camPos0.map { (m1 * SIMD4($0, 1)).xyz }
-        let camDir1 = cams.map { c -> SIMD3<Double> in
-            let d = -SIMD3<Double>(c.cameraToWorld.columns.2.xyz)
-            return simd_normalize(((m1 * m0) * SIMD4(d, 0)).xyz)
+        var camPos1 = camPos0.map { (m1 * SIMD4($0, 1)).xyz }
+        func directions(_ m: simd_double4x4) -> [SIMD3<Double>] {
+            cams.map { c -> SIMD3<Double> in
+                let d = -SIMD3<Double>(c.cameraToWorld.columns.2.xyz)
+                return simd_normalize(((m * m0) * SIMD4(d, 0)).xyz)
+            }
         }
+        var camDir1 = directions(m1)
         log.progress("post", 0.3, ["step": "floor", "floor_found": floorFound])
+
+        // --- 1b. Auflage (Gegenstand liegt auf einer Unterlage, die mit im Netz ist) -----------------
+        var supportInfo: [String: Any]? = nil
+        if options.support {
+            let look = Self.lookAtPoint(origins: camPos1, dirs: camDir1)
+            let dbg: ((String) -> Void)? = ProcessInfo.processInfo.environment["KEVCAD_CAPTURE_DEBUG"] != nil
+                ? { self.log.info($0) } : nil
+            if let s = Self.findSupport(pts1, lookAt: look, tol: tol, debug: dbg) {
+                let rS = Self.rotation(from: s.plane.normal, to: SIMD3(0, 0, 1))
+                let pS = -s.plane.d * s.plane.normal
+                m1 = rS * Self.translation(-pS) * m1
+                pts1 = pts0.map { (m1 * SIMD4($0, 1)).xyz }
+                camPos1 = camPos0.map { (m1 * SIMD4($0, 1)).xyz }
+                camDir1 = directions(m1)
+                let tilt = acos(min(1, abs(s.plane.normal.z))) * 180 / Double.pi
+                supportInfo = ["gefunden": true, "punkte_auf_auflage": s.inliers, "punkte_darauf": s.above,
+                               "neigung_zum_boden_grad": r2(tilt), "kandidaten": s.candidates,
+                               "hinweis": "Auflage = oberste große waagrechte Ebene unter dem Gegenstand (RANSAC)"]
+                log.info("Auflage gefunden: \(s.inliers) Punkte auf der Ebene, \(s.above) darauf, \(String(format: "%.1f", tilt))° gegen den Boden geneigt")
+            } else {
+                supportInfo = ["gefunden": false, "hinweis": "keine Auflage unter dem Gegenstand gefunden, Boden bleibt"]
+                log.warn("--auflage: keine Ebene mit einem Gegenstand darauf gefunden – Boden bzw. unterste Punkte bleiben die Auflage")
+            }
+            log.progress("post", 0.35, ["step": "support", "support_found": supportInfo?["gefunden"] as? Bool ?? false])
+        }
 
         // --- 2. Boden abschneiden, Objekt wählen ----------------------------------------------------
         let cutTol = tol * 1.5
@@ -350,6 +381,7 @@ public final class PostProcessor {
             "transform_roh_zu_mm": PosesWriter.rows4(float4x4(mAll)),
             "nachbearbeitung_s": r2(Date().timeIntervalSince(t0)),
         ]
+        if let s = supportInfo { summary["auflage"] = s }
         if let rt = reconTimes { summary["rekonstruktion"] = rt }
         if let im = images {
             summary["bilder"] = ["anzahl": (im["frames"] as? [Any])?.count ?? 0, "lange_kante": im["long_edge"] ?? 0,
@@ -420,6 +452,82 @@ public final class PostProcessor {
               Double(inl.count) > 0.12 * Double(sel.count) else { return nil }
         _ = pl
         return Geo.percentile(inl.map { sel[$0].z }, 0.5)
+    }
+
+    /// Auflage für `--auflage`: oberste große, annähernd waagrechte Ebene (Normale bis `maxTiltDeg` gegen Z), auf der
+    /// ein Gegenstand liegt (Holzscheibe, Tischplatte, Kiste). Kandidaten per wiederholtem RANSAC (Inlier entfernen,
+    /// neu suchen). Eine Ebene zählt als Auflage, wenn
+    /// - über ihrer Fläche genug Punkte liegen (der Gegenstand, mindestens 3 % aller Punkte),
+    /// - ihre Fläche deutlich größer ist als die Grundfläche dessen, was darauf liegt (sonst ist es die Oberseite
+    ///   des Gegenstands selbst oder eine Stufe an ihm),
+    /// - der Blickpunkt der Kameras waagrecht über dem liegt, was auf ihr steht (die Kameras zielen auf den
+    ///   Gegenstand).
+    /// Von den gültigen gewinnt die oberste (Holzscheibe vor Boden) unter denen, deren Rand mindestens 30 % des
+    /// größten Randes hat: kleine schräge Scheinebenen durch Netzreste (Schürze unter dem Gegenstand, Höcker der
+    /// Scheibe) sind sonst manchmal „höher“ als die echte Auflage (Video IMG_5186, Abschnitte). Punkte im
+    /// Z-oben-System.
+    public static func findSupport(_ pts: [SIMD3<Double>], lookAt: SIMD3<Double>?, tol: Double,
+                                   maxTiltDeg: Double = 25, rounds: Int = 8, debug: ((String) -> Void)? = nil)
+        -> (plane: Plane, inliers: Int, above: Int, candidates: Int)? {
+        guard pts.count > 200, tol > 0 else { return nil }
+        let minPlane = max(80, pts.count / 100)
+        let minAbove = max(100, pts.count * 3 / 100)
+        let cosTilt = cos(maxTiltDeg * Double.pi / 180)
+        var rest = pts
+        var valid: [(plane: Plane, inliers: Int, above: Int, rim: Int, height: Double)] = []
+        var candidates = 0
+        for round in 0..<rounds {
+            guard rest.count > 200,
+                  let (found, inl) = Geo.ransacPlane(rest, threshold: tol, iterations: 700, seed: 31 + UInt64(round),
+                                                     allowed: { abs($0.z) > cosTilt }),
+                  inl.count >= minPlane else { break }
+            let pl = found.normal.z >= 0 ? found : Plane(normal: -found.normal, d: -found.d)
+            candidates += 1
+            let onPlane = inl.map { rest[$0] }
+            let h = onPlane.reduce(0.0) { $0 + $1.z } / Double(onPlane.count)
+            func note(_ why: String) {
+                debug?(String(format: "Auflage-Kandidat %d: Höhe %.4f, Neigung %.1f°, %d Punkte: ", round, h,
+                              acos(min(1, pl.normal.z)) * 180 / Double.pi, inl.count) + why)
+            }
+            rest = rest.filter { abs(pl.distance($0)) >= 2 * tol }
+            // Fläche der Ebene: Rechteck der Inlier (robust 2–98 %)
+            let ix = onPlane.map { $0.x }, iy = onPlane.map { $0.y }
+            let lo = SIMD2(Geo.percentile(ix, 0.02), Geo.percentile(iy, 0.02))
+            let hi = SIMD2(Geo.percentile(ix, 0.98), Geo.percentile(iy, 0.98))
+            let area = (hi.x - lo.x) * (hi.y - lo.y)
+            let above = pts.filter { p in
+                pl.distance(p) > 3 * tol && p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y
+            }
+            guard above.count >= minAbove, area > 0 else { note("verworfen, nur \(above.count) Punkte darüber"); continue }
+            let ax = above.map { $0.x }, ay = above.map { $0.y }
+            let footprint = (Geo.percentile(ax, 0.98) - Geo.percentile(ax, 0.02))
+                * (Geo.percentile(ay, 0.98) - Geo.percentile(ay, 0.02))
+            guard footprint < 0.8 * area else { note("verworfen, Grundfläche darüber \(Int(footprint / area * 100)) % der Ebene"); continue }
+            // Die Unterlage steht rundum über den Gegenstand hinaus: ein guter Teil ihrer Punkte liegt außerhalb
+            // seiner Grundfläche. Schräge Scheinebenen durch die Seitenwände des Gegenstands haben diesen Rand nicht.
+            let hull = Geo.convexHull(above.map { SIMD2($0.x, $0.y) })
+            let rim = onPlane.filter { p in
+                let q = SIMD2(p.x, p.y)
+                return !Self.insidePolygon(q, hull) && Self.distanceToPolygon(q, hull) > 3 * tol
+            }.count
+            guard rim >= minPlane / 2, Double(rim) >= 0.3 * Double(onPlane.count) else { note("verworfen, Rand \(rim)"); continue }
+            // Der Gegenstand ist dort, wohin die Kameras schauen: der Blickpunkt liegt waagrecht über dem, was auf der
+            // Ebene steht. (Nur waagrecht: in der Höhe ist der Blickpunkt bei Draufsichten und Nahaufnahmen unsicher
+            // und lag im Video IMG_5186 unter der Scheibe.)
+            if let la = lookAt {
+                let q = SIMD2(la.x, la.y)
+                let span = simd_length(SIMD2(Geo.percentile(ax, 0.98), Geo.percentile(ay, 0.98))
+                                       - SIMD2(Geo.percentile(ax, 0.02), Geo.percentile(ay, 0.02)))
+                if !Self.insidePolygon(q, hull) && Self.distanceToPolygon(q, hull) > 0.1 * span {
+                    note("verworfen, Blickpunkt nicht über dem, was darauf steht"); continue
+                }
+            }
+            note("gültig, \(above.count) darüber, Rand \(rim)")
+            valid.append((pl, inl.count, above.count, rim, h))
+        }
+        guard let maxRim = valid.map({ $0.rim }).max() else { return nil }
+        let best = valid.filter { Double($0.rim) >= 0.3 * Double(maxRim) }.max { $0.height < $1.height }
+        return best.map { ($0.plane, $0.inliers, $0.above, candidates) }
     }
 
     /// Dichteste waagrechte Schicht (Dicke 12 % der Höhe) über dem Bodenschnitt, auf ±Ränder erweitert,
@@ -494,6 +602,16 @@ public final class PostProcessor {
             result["anzahl"] = diameters.count
         }
         return result
+    }
+
+    /// Liegt p in einem konvexen Polygon (gegen den Uhrzeigersinn, wie `Geo.convexHull`)?
+    static func insidePolygon(_ p: SIMD2<Double>, _ poly: [SIMD2<Double>]) -> Bool {
+        guard poly.count >= 3 else { return false }
+        for i in poly.indices {
+            let a = poly[i], b = poly[(i + 1) % poly.count]
+            if (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) < 0 { return false }
+        }
+        return true
     }
 
     static func distanceToPolygon(_ p: SIMD2<Double>, _ poly: [SIMD2<Double>]) -> Double {
@@ -713,6 +831,13 @@ public final class PostProcessor {
         }
         if let b = s["boden"] as? [String: Any] {
             t += "\n## Boden\n\nGefunden: \(b["gefunden"] as? Bool == true ? "ja" : "nein"), Schnitthöhe \(fmtAny(b["schnitthoehe_mm"])) mm.\n"
+        }
+        if let a = s["auflage"] as? [String: Any] {
+            if a["gefunden"] as? Bool == true {
+                t += "\nAuflage (`--auflage`): oberste große waagrechte Ebene unter dem Gegenstand, \(a["punkte_auf_auflage"] ?? 0) Punkte darauf, \(a["punkte_darauf"] ?? 0) Punkte des Gegenstands darüber, \(fmtAny(a["neigung_zum_boden_grad"]))° gegen den Boden geneigt. Höhen zählen ab dieser Ebene.\n"
+            } else {
+                t += "\nAuflage (`--auflage`): nicht gefunden, Höhen zählen ab dem Boden bzw. den untersten Punkten.\n"
+            }
         }
         t += "\n## Dateien\n\n- netz_mm.obj (+ netz_mm.mtl, Texturen), netz_mm.usdz, punktwolke_mm.ply\n- poses.json (Abschnitt `aligned` = dieses System)\n- roh/ (Object Capture ohne Maßstab)\n"
         if let k = s["kontrollbilder"] as? [String] {
