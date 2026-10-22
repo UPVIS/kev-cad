@@ -357,6 +357,24 @@ final class BauplanExportTests: XCTestCase {
         XCTAssertEqual(quer.kachelSpalten, 3)
     }
 
+    /// Zeichen, die der Berichtsschrift fehlen („→“), ersetzt die Leinwand aus der Schrift selbst; vorhandene („≈“,
+    /// „Ø“, „−“) bleiben. So bettet das PDF keine Ersatzschrift (Lucida Grande) ein.
+    func testErsatzFuerFehlendeZeichen() throws {
+        let f = ExportSchrift.normal(9).ctFont
+        XCTAssertEqual(ExportSatz.ersetzt("waagrechte Bohrungen 2 → 0", f), "waagrechte Bohrungen 2 › 0")
+        XCTAssertEqual(ExportSatz.ersetzt("≈ 42,01 € · Ø 6,6 · −Z-Seite", f), "≈ 42,01 € · Ø 6,6 · −Z-Seite")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("kc-zeichen-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let seite = ExportSeite(groesse: ExportSeitenformat().mm, baustein: .bauplan, titel: "Bauplan",
+                                inhalt: .leinwand { l, _ in
+            l.text("Ausrichtung: waagrechte Bohrungen 2 → 0, je ≈ 105,6 g", x: 20, y: 40, .normal(9))
+        })
+        try ExportDokument(kopf: ExportKopf(projekt: "Zeichen"), seiten: [seite]).schreibePDF(nach: url)
+        let roh = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        XCTAssertFalse(roh.contains("LucidaGrande"))
+        XCTAssertTrue(roh.contains("HelveticaNeue"))
+    }
+
     // MARK: PDF
 
     @MainActor

@@ -193,7 +193,7 @@ def test_waagrechte_bohrung_automatisch_senkrecht():
     r = pruefe_druckteil(bohrung_5(), "petg")
     assert "waagrechte_bohrung" not in arten(r)
     assert abs(r["ausrichtung"]["unten"][1]) == pytest.approx(1.0)     # auf die Y-Seite gelegt
-    assert "waagrechte Bohrungen 1 → 0" in r["ausrichtung"]["begruendung"]
+    assert "waagrechte Bohrungen von 1 auf 0" in r["ausrichtung"]["begruendung"]
 
 
 def test_tropfenform_wird_nicht_bemaengelt():

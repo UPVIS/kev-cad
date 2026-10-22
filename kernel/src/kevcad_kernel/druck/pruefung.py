@@ -1035,7 +1035,7 @@ def _begruendung(beste: dict, modell: dict, netz: Netz, mat: Material, liegt_auf
     teile.append(f"Auflage {_z(beste['auflage'], 0)} mm², Höhe {_z(beste['hoehe'], 1)} mm")
     if beste["bohrungen"]:
         if beste["waagrechte_bohrungen"] < modell["waagrechte_bohrungen"]:
-            teile.append(f"waagrechte Bohrungen {modell['waagrechte_bohrungen']} → {beste['waagrechte_bohrungen']}")
+            teile.append(f"waagrechte Bohrungen von {modell['waagrechte_bohrungen']} auf {beste['waagrechte_bohrungen']}")
         elif beste["waagrechte_bohrungen"]:
             teile.append(f"{beste['waagrechte_bohrungen']} Bohrung(en) liegen waagrecht")
     if not beste["passt"]:
