@@ -21,5 +21,5 @@ GRENZEN_S2 = [
     "Reibung vereinfacht nach Coulomb, ein Wert je Paarung aus dem Katalog (Haftreibung); Räder und Laufrollen ohne "
     "Lagerreibung, kein Rollwiderstand.",
     "Kev CAD führt den Wagen ideal auf der Sollbahn (Angriff am Boden, wie gebremste Räder); schiebt Kevin am Griff, "
-    "kippt es später.",
+    "kippt es später. Füße des geschobenen Körpers gleiten dabei reibungsfrei (die Führung übernimmt die Reibung).",
 ]

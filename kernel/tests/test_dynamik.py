@@ -194,6 +194,26 @@ def test_kippen_gegen_handrechnung_und_szenario(wagen):
     assert hart.lagen.shape[1:] == (len(hart.koerper), 4, 4)
 
 
+def test_turm_auf_fuss_ohne_raeder(tmp_path):
+    """Kein Rad: der Fuß rutscht über den Boden, die Führung greift am Boden an; Abheben über die Ecken des Fußes."""
+    code = '''
+from build123d import *
+from kevcad import show
+show(Pos(0, 0, 9) * Box(200, 120, 18), "Turm/Fuß", material="multiplex-birke")
+show(Pos(0, 0, 218) * Box(60, 60, 400), "Turm/Block", material="eiche")
+'''
+    meta, felder = _szene(tmp_path, code)
+    formen = mjcf.formen_je_teil(meta, felder, {})
+    mo = ab.baue_modell(meta, formen)
+    assert meta["antrieb"] and len(mo.fuss) == 4  # vier Ecken der Aufstandsfläche
+    hand = ut.handrechnung(meta, mo)
+    assert hand["b_mm"] == pytest.approx(100, abs=0.5)
+    mo0 = ab.baue_modell(meta, formen, ohne_ladung=True)
+    erg, _ = ab.grenzen(mo0, lambda x: ab.profil(0.4 * x, x), {"ab": lambda b: b.abheben_max > ab.ABHEBEN_MM},
+                        lo=0.5, hi=40.0)
+    assert erg["ab"]["wert"] == pytest.approx(hand["a_kipp"], rel=0.06), (erg, hand)
+
+
 def test_ablauf_prozess_urteile_und_suche(wagen, tmp_path):
     meta, felder, _ = wagen
     pfad = str(tmp_path / "szene.npz")

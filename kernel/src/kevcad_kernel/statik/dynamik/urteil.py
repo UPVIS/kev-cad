@@ -43,19 +43,7 @@ def handrechnung(meta: dict[str, Any], mo: Any) -> dict[str, Any] | None:
     m = sum(K[x]["masse"] for x in tb)
     c = sum(K[x]["masse"] * np.asarray(K[x]["schwerpunkt"], float) for x in tb) / max(m, 1e-9)
     d = np.asarray(mo.richtung, float)
-    punkte = []
-    for f in mo.fuss:
-        if f["art"] == "achse":
-            punkte.append(np.asarray(f["punkt"], float))
-        else:
-            kol = meta["kollision"].get(f.get("teil"))
-            if kol and kol["art"] == "kugel":
-                punkte.append(np.asarray(kol["mitte"], float))
-    for kid in tb:
-        for n in K[kid]["boden"]:
-            kol = meta["kollision"].get(n)
-            if kol and kol["art"] not in ("kugel", "drehteil"):
-                punkte.append((np.asarray(K[kid]["bmin"]) + np.asarray(K[kid]["bmax"])) / 2)
+    punkte = [np.asarray(f["boden"], float) for f in mo.fuss]  # Aufstandspunkte am Boden
     if not punkte:
         return None
     vorn = max(float((p - c) @ d) for p in punkte)

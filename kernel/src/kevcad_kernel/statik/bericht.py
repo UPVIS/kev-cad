@@ -38,6 +38,11 @@ def szenario_text(e: dict[str, Any], detail: bool = False) -> str:
         zeilen.append(f"  - [{AMPEL.get(u['ampel'], u['ampel'])}] {u['text']}")
         if u.get("loesung"):
             zeilen.append(f"    Lösung: {u['loesung']}")
+    ab = e.get("ablauf")
+    if isinstance(ab, dict) and ab.get("stand") != "done":
+        zeilen.append("  " + ablauf_text(ab))
+    elif isinstance(ab, dict) and detail:
+        zeilen += ablauf_text(ab, urteile=False).split("\n")[1:]
     if detail:
         for k in e.get("kippen") or []:
             jr = k.get("je_richtung") or {}
@@ -90,7 +95,7 @@ def lauf_zeile(kurz: dict[str, Any] | None) -> str | None:
     return "Statik: " + " · ".join(teile)
 
 
-def ablauf_text(ab: dict[str, Any]) -> str:
+def ablauf_text(ab: dict[str, Any], urteile: bool = True) -> str:
     """Text für MCP ``dynamik``: Urteil, Antrieb, Kippen mit Handrechnung, Ladung, Rutschen, Kräfte, Rechenzeit."""
     if not ab:
         return ""
@@ -101,7 +106,7 @@ def ablauf_text(ab: dict[str, Any]) -> str:
     kz = ab.get("kennzahlen") or {}
     an = ab.get("antrieb") or {}
     z_ = [ab.get("text") or ""]
-    for u in ab.get("urteile") or []:
+    for u in (ab.get("urteile") or []) if urteile else []:
         z_.append(f"  - [{AMPEL.get(u['ampel'], u['ampel'])}] {u['text']}")
         if u.get("loesung") and u["ampel"] != "gruen":
             z_.append(f"    Lösung: {u['loesung']}")
@@ -134,9 +139,11 @@ def ablauf_text(ab: dict[str, Any]) -> str:
                                                         for k in kz["kontaktkraefte"][:5]))
     ms = ab.get("ms") or {}
     if ms:
-        z_.append(f"  Rechenzeit: Ablauf {z(ms.get('ablauf'), 0)} ms ({z(ab.get('dauer'), 2)} s simuliert, "
-                  f"{ms.get('schritte')} Schritte à {z(ms.get('zeitschritt_ms'), 1)} ms), Suche "
-                  f"{ms.get('varianten')} Varianten in {z(ms.get('suche'), 0)} ms")
+        schritte = (f", {ms['schritte']} Schritte à {z(ms.get('zeitschritt_ms'), 1)} ms" if ms.get("schritte")
+                    else "")
+        z_.append(f"  Rechenzeit: Ablauf {z(ms.get('ablauf'), 0)} ms ({z(ab.get('dauer'), 2)} s simuliert{schritte})"
+                  + (f", Suche {ms.get('varianten')} Varianten in {z(ms.get('suche'), 0)} ms" if ms.get("varianten")
+                     else ""))
     if ab.get("animation"):
         z_.append(f"  Zeitleiste: Animation „{ab['animation']}“ ({ab.get('bilder')} Bilder, {z(ab.get('fps'), 0)} fps)")
     return "\n".join(z_)

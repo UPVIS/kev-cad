@@ -13,8 +13,6 @@
 from __future__ import annotations
 
 from typing import Any
-from xml.sax.saxutils import quoteattr
-
 import numpy as np
 
 from kevcad_kernel.statik.dynamik import formen as fm
@@ -22,8 +20,8 @@ from kevcad_kernel.statik.dynamik import formen as fm
 MM = 1e-3
 G = 9.81
 ZEITSCHRITT = 0.0005
-SOLREF = "0.004 1"
-SOLIMP = "0.95 0.99 0.001"
+SOLREF = "0.02 1"  # Kontakt: Zeitkonstante 20 ms, kritisch gedämpft (MuJoCo-Vorgabe, an der Handrechnung geprüft)
+SOLIMP = "0.9 0.95 0.001"
 
 
 def _f(x: float) -> str:
@@ -149,7 +147,7 @@ def baue_xml(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *, a
             typ = "hinge" if gj["art"] == "dreh" else "slide"
             z.append(f'{ein}  <joint name="j_{kid}" type="{typ}" pos="{_v(np.asarray(gj["punkt"]) * MM - c)}" '
                      f'axis="{_v(gj["achse"])}" damping="1e-5"/>')
-        elif k["art"] == "frei" or (k["art"] == "antrieb"):
+        elif k["art"] in ("frei", "antrieb"):  # Antrieb ohne Eintrag in der Szene (weggelassen): frei
             z.append(f'{ein}  <freejoint name="f_{kid}"/>')
         I = np.asarray(k["traegheit"], float) * 1e-6  # kg·mm² → kg·m²
         m = max(float(k["masse"]), 1e-4)
@@ -170,14 +168,21 @@ def baue_xml(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *, a
     welt_geoms = geom_xml("welt", np.zeros(3))
     boden_z = float(meta["boden_z"]) * MM
     # Kontaktpaare
+    # Kontaktpaare (ausdrücklich, mit Reibwert der Paarung; Paare erben die Vorgaben der Formen nicht)
     paare = []
+    kpar = f'solref="{SOLREF}" solimp="{SOLIMP}"'
     for (a, b), mu in zip(meta["paare"], meta["paar_mu"]):
         for ga in teil_geoms.get(a, []):
             for gb in teil_geoms.get(b, []):
-                paare.append(f'<pair geom1="{ga}" geom2="{gb}" friction="{_f(mu)} {_f(mu)} 0.001 0.0001 0.0001"/>')
+                paare.append(f'<pair geom1="{ga}" geom2="{gb}" friction="{_f(mu)} {_f(mu)} 0.001 0.0001 0.0001" '
+                             f'{kpar}/>')
     for n, mu in zip(meta["boden_paare"], meta["boden_mu"]):
+        # Füße des geschobenen Körpers gleiten reibungsfrei: die Führung greift ebenfalls am Boden an und übernimmt
+        # die Reibung (Kippen unverändert; ohne das hüpfen gleitende Füße mit weichen Kontakten). Räder rollen mit Reibung.
+        dim = ' condim="1"' if an is not None and meta["kollision"][n]["koerper"] == an else ""
         for g in teil_geoms.get(n, []):
-            paare.append(f'<pair geom1="boden" geom2="{g}" friction="{_f(mu)} {_f(mu)} 0.001 0.0001 0.0001"/>')
+            paare.append(f'<pair geom1="boden" geom2="{g}" friction="{_f(mu)} {_f(mu)} 0.001 0.0001 0.0001" '
+                         f'{kpar}{dim}/>')
     # Regler des Antriebs
     akt = []
     if an is not None:
@@ -198,8 +203,7 @@ def baue_xml(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *, a
         '  <compiler angle="radian" boundmass="1e-5" boundinertia="1e-10"/>',
         f'  <option timestep="{ZEITSCHRITT}" gravity="{_v(schwerkraft_v)}" integrator="implicitfast" '
         'cone="elliptic" iterations="60" ls_iterations="30" tolerance="1e-9"/>',
-        f'  <default><geom contype="0" conaffinity="0" condim="3" solref="{SOLREF}" solimp="{SOLIMP}" '
-        'rgba="0.6 0.6 0.6 1"/></default>',
+        '  <default><geom contype="0" conaffinity="0" condim="3" rgba="0.6 0.6 0.6 1"/></default>',
         "  <asset>", *["    " + x for x in mesh_xml], "  </asset>",
         "  <worldbody>",
         f'    <geom name="boden" type="plane" size="0 0 1" pos="0 0 {_f(boden_z)}"/>',
@@ -220,7 +224,3 @@ def _wurzel(K: dict[str, Any], kid: str) -> str:
     while K[kid]["eltern"] is not None and K[kid]["eltern"] in K:
         kid = K[kid]["eltern"]
     return kid
-
-
-def namen_quote(s: str) -> str:
-    return quoteattr(s)

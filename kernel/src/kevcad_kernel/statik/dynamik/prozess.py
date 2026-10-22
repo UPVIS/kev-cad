@@ -122,7 +122,7 @@ def rechne_szenario(meta: dict[str, Any], formen: dict[str, Any], sz: dict[str, 
             suche_info["geschwindigkeit"] = info
     if sz.get("suche", True) and mo.zuordnung.get("antrieb"):
         # 3) Plausibilität: ohne Ladung bei anhaltender Verzögerung (0,4 s) gegen die Handrechnung a = g·b/h
-        if True:
+        if mo.zuordnung.get("antrieb"):
             mo0 = ab.baue_modell(meta, formen, richtung=richtung, angriff=angriff, neigung=neigung,
                                  neigung_richtung=nr, ohne_ladung=True)
             erg, info = ab.grenzen(mo0, lambda x: ab.profil(0.4 * x, x),
@@ -187,7 +187,7 @@ def rechne_szenario(meta: dict[str, Any], formen: dict[str, Any], sz: dict[str, 
                      "teile": len(k["teile"]), "gelenk": (k.get("gelenk") or {}).get("quelle")}
                     for k in meta["koerper"]],
         "grenzen": list(GRENZEN_S2), "vereinfachungen": vereinfacht,
-        "ms": {"modell": round(t_modell + mo.bauzeit_ms * 0, 1), "ablauf": round(t_ablauf, 1),
+        "ms": {"modell": round(t_modell, 1), "ablauf": round(t_ablauf, 1),
                "suche": round(t_suche, 1), "varianten": sum(x.get("varianten", 0) for x in suche_info.values()),
                "gesamt": round((time.perf_counter() - t0) * 1000, 1), "schritte": auf.schritte,
                "zeitschritt_ms": mjcf.ZEITSCHRITT * 1000},

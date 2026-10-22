@@ -184,17 +184,18 @@ def baue_modell(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *
                             schwerkraft_v=mjcf.schwerkraft(neigung, neigung_richtung), ohne=ohne)
     model = mujoco.MjModel.from_xml_string(xml)
     m = Modell(meta, xml, zu, model, d, P, ohne, ladung=[x for x in ladung if x not in ohne])
-    m.fuss = fusspunkte(meta, tb)
+    m.fuss = fusspunkte(meta, tb, formen, an)
     m.bauzeit_ms = (time.perf_counter() - t0) * 1000
     return m
 
 
-def fusspunkte(meta: dict[str, Any], tb: set[str]) -> list[dict[str, Any]]:
-    """Punkte, auf denen der geschobene Teilbaum steht: Radachsen (drehende Kinder) und tiefste Hüllpunkte der übrigen
-    Teile am Boden (Weltkoordinaten der Ruhelage, mm)."""
+def fusspunkte(meta: dict[str, Any], tb: set[str], formen: dict[str, list[dict[str, Any]]] | None = None,
+               an: str | None = None) -> list[dict[str, Any]]:
+    """Punkte, auf denen der geschobene Teilbaum steht (Weltkoordinaten der Ruhelage, mm): Radachsen (drehende Kinder)
+    und je Teil am Boden der tiefste Punkt seiner Kollisionsform (Füße, Kufen), aber nur am geschobenen Körper selbst."""
     K = {k["id"]: k for k in meta["koerper"]}
     out = []
-    for kid in tb:
+    for kid in sorted(tb):
         k = K[kid]
         if not k["boden"]:
             continue
@@ -204,13 +205,34 @@ def fusspunkte(meta: dict[str, Any], tb: set[str]) -> list[dict[str, Any]]:
             dd = np.asarray(k["gelenk"]["achse"], float)
             c = np.asarray(k["schwerpunkt"], float)
             p = p + dd * float((c - p) @ dd)
-            out.append({"koerper": kid, "punkt": p, "art": "achse", "name": k["name"]})
-        else:
+            out.append({"koerper": kid, "punkt": p, "art": "achse", "name": k["name"],
+                        "boden": p - np.array([0.0, 0.0, float(p[2] - meta["boden_z"])])})
+        elif kid == an:
             for n in k["boden"]:
-                c = meta["kollision"].get(n)
-                if c is None:
+                pts = []
+                for f in (formen or {}).get(n, []):
+                    if f["typ"] in ("kugel", "zylinder"):
+                        pts.append(np.asarray(f["mitte"], float) - np.array([0, 0, f["r"]]))
+                    else:
+                        pts.extend(np.asarray(f["punkte"], float))
+                if not pts:
                     continue
-                out.append({"koerper": kid, "teil": n, "art": "tief", "name": n})
+                P = np.asarray(pts)
+                unten = P[P[:, 2] <= P[:, 2].min() + 0.5]
+                # Ecken der Aufstandsfläche (2D-Hülle), höchstens 8
+                if len(unten) > 3:
+                    from scipy.spatial import ConvexHull, QhullError
+
+                    try:
+                        unten = unten[ConvexHull(unten[:, :2]).vertices]
+                    except (QhullError, ValueError):
+                        pass
+                if len(unten) > 8:
+                    from kevcad_kernel.statik.dynamik.formen import fps
+
+                    unten = fps(unten, 8)
+                for q in unten:
+                    out.append({"koerper": kid, "teil": n, "punkt": q, "art": "tief", "name": n, "boden": q})
     return out
 
 
@@ -273,7 +295,7 @@ def _kugel_am_boden(mo: Modell, kid: str) -> float | None:
 def _radius_rad(mo: Modell, kid: str) -> float | None:
     k = mo.K[kid]
     gj = k["gelenk"]
-    p, dd = np.asarray(gj["punkt"], float), np.asarray(gj["achse"], float)
+    p = np.asarray(gj["punkt"], float)
     r = 0.0
     for n in k["teile"]:
         c = mo.meta["kollision"].get(n)
@@ -336,16 +358,7 @@ class Auswerter:
         self.P = mo.angriff * mjcf.MM
         self.c_an = np.asarray(K[an]["schwerpunkt"], float) * mjcf.MM if an else np.zeros(3)
         # Fußpunkte als Punkte im System der Ruhelage (m)
-        self.fuss = []
-        for f in mo.fuss:
-            if f["art"] == "achse":
-                self.fuss.append((f["name"], np.asarray(f["punkt"], float) * mjcf.MM))
-            else:
-                c = mo.meta["kollision"][f["teil"]]
-                if c["art"] == "kugel":
-                    p = np.asarray(c["mitte"], float) - np.array([0, 0, c["radius"]])
-                    self.fuss.append((f["name"], p * mjcf.MM))
-                # tiefste Punkte anderer Teile werden über die Neigung erfasst
+        self.fuss = [(f["name"], np.asarray(f["punkt"], float) * mjcf.MM) for f in mo.fuss]
         self.ladung = []
         for kid in mo.ladung:
             j = m.joint(f"f_{kid}")
