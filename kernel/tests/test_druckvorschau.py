@@ -270,6 +270,14 @@ def test_vorschau_aus_der_pruefung(tmp_path):
     assert "Platte 1" in text(v) and "Winkel ×8" in text(v)
 
 
+def test_projekt_einstellungen_druckplatte():
+    d = vs.projekt_einstellungen({"druck": {"platte": "glatt", "strompreis_kwh": 0.4}})
+    assert d["platte"] == "High Temp Plate" and d["strompreis_kwh"] == 0.4 and d["leistung_w"] == 150.0
+    assert vs.projekt_einstellungen({})["platte"] == "Textured PEI Plate"
+    falsch = vs.projekt_einstellungen({"druck": {"platte": "Glasplatte"}})
+    assert falsch["platte"] == "Textured PEI Plate" and "Glasplatte" in falsch["platte_fehler"]
+
+
 def test_vorgaben_in_druck_json(tmp_path):
     d = vg.setze(tmp_path, ["A", "B"], einstellungen={"waende": 5, "fuellung": 30}, von="kevin")
     assert d["teile"]["A"]["einstellungen"] == {"waende": 5, "fuellung": 0.3}

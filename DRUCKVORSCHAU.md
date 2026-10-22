@@ -17,6 +17,15 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 
 - Filamentpreis und Dichte kommen aus dem Materialkatalog (`material_list`, Stand-Datum mitführen). Ein Filament­profil
   aus Bambu Studio gilt für Slicer-Läufe; fehlt es, nimmt der Kernel das mitgelieferte Systemprofil gleichen Materials.
+- Präzisierung (V-K): Filamentprofile nur, wenn ihre `compatible_printers` (mit Vererbung über `inherits`) „Bambu Lab
+  P1P 0.4 nozzle“ nennen (Benutzerprofile ohne eigene Liste erben sie); Reihenfolge `druck.filament`, dann Kevins Liste
+  (`Amazon Basics PLA`, `Bambu PETG Basic @BBL X1C` …), dann das beste passende Systemprofil gleichen Typs („@BBL P1P“
+  zuerst). `Bambu PETG Basic @BBL X1C` ist Bambus PETG-Basic-Profil für P1P und X1 (nennt den P1P 0.4).
+- `druck.platte` (additiv): Druckplatte als Bambu-Name (`Textured PEI Plate` Vorgabe, `High Temp Plate`, `Cool Plate`,
+  `Engineering Plate`, `Supertack Plate`) oder kurz (`texturiert`, `glatt`, `cool`, `engineering`); geht als
+  `curr_bed_type` in jeden Slicer-Lauf und ins 3MF (die Kommandozeile nähme sonst die Cool Plate, PETG bricht dort ab).
+  Passt das Filament nicht zur Platte, meldet die Vorschau einen Fehler (`art: "platte"`) und slict nicht.
+  `einstellungen.platte` nennt die benutzte Platte.
 
 ## Zweck eines Druckteils (model.py, additiv)
 
@@ -124,8 +133,9 @@ heißen sie `<ziel>-<material>.3mf`): Platten mit den Lagen der Vorschau, Drucke
 Brim) in `Metadata/model_settings.config`. `BambuStudio --slice 0 <datei>` übernimmt sie; geprüft am 22.10.2026:
 Zeit und Filament nachgeslict wie in der Vorschau (±0,3 %). Ein Filament je Datei, weil Bambu Studio 2.07 Projekte mit
 mehreren Filamenten aus der Kommandozeile nicht wieder slicen kann (Teile landen auf Filament 1); der P1P ohne AMS
-druckt ohnehin ein Material je Platte. Ohne Bambu Studio schreibt der Kernel das 3MF selbst (Platten und Teile, ohne
-Profile). Laufzeit: `druck_export(ziel=None, platten=None) -> {"ok", "pfad", "platten", "fehler", "pfade", "dateien",
+druckt ohnehin ein Material je Platte. Ohne Bambu Studio schreibt der Kernel die 3MF selbst: je Platte eine Datei
+(`<ziel>[-<material>]-platte<n>.3mf`, Teile in ihrer Lage, ohne Profile), weil Bambu Studio Platten nur aus eigenen
+Projekten liest. Laufzeit: `druck_export(ziel=None, platten=None) -> {"ok", "pfad", "platten", "fehler", "pfade", "dateien",
 "hinweise", "geprueft", "ms"}`.
 
 **Druckprüfung, Abdrücke (V-K, 22.10.2026):** Schichtraster-Hinweise an Flächen, deren Eckpunkte alle näher als

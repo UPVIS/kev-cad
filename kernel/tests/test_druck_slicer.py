@@ -15,7 +15,15 @@ from app_testutil import FakeApp, make_runtime
 
 from kevcad_kernel.druck import slicer as sl
 
-pytestmark = pytest.mark.skipif(not sl.verfuegbar(), reason="Bambu Studio nicht installiert")
+BAMBU = Path("/Applications/BambuStudio.app")  # conftest.py schaltet Bambu Studio für alle anderen Tests ab
+pytestmark = pytest.mark.skipif(not (BAMBU / "Contents/MacOS/BambuStudio").exists(),
+                                reason="Bambu Studio nicht installiert")
+
+
+@pytest.fixture(autouse=True)
+def mit_bambu(monkeypatch):
+    monkeypatch.setenv("KEVCAD_BAMBU_APP", str(BAMBU))
+    yield
 
 HEAD = "from build123d import *\nfrom kevcad import lager, show, param\n"
 CODE = HEAD + """
@@ -41,11 +49,71 @@ def test_profile_aufgeloest():
     assert sl.version()
 
 
+def test_filamentprofile_passen_zum_p1p():
+    """Jedes Material bekommt ein Profil, dessen compatible_printers (mit Vererbung) den P1P 0.4 nennt; ein Wunsch
+    für einen anderen Drucker wird übergangen (Bambu Studio markierte ihn in der Oberfläche als unpassend)."""
+    for m in sl.FILAMENTE:
+        name = sl.filament_name(m)
+        cp = sl.profil("filament", name).get("compatible_printers") or []
+        assert sl.MASCHINE in cp, (m, name)
+    assert sl.filament_name("petg", "Generic PETG") == "Generic PETG @BBL P1P"
+    assert not sl.kompatibel("Bambu PETG Basic @BBL A1M 0.4 nozzle")
+    assert sl.filament_name("petg", "Bambu PETG Basic @BBL A1M 0.4 nozzle") == "Bambu PETG Basic @BBL X1C"
+    assert all(sl.kompatibel(n) for n in sl._filament_suche("petg", "p1p-0.4"))
+
+
+def test_druckplatte(tmp_path):
+    """Die Kommandozeile nimmt sonst die Cool Plate, und PETG bricht dort ab; Standard ist die Texturplatte."""
+    assert sl.platte_name(None) == "Textured PEI Plate"
+    assert sl.platte_name("glatt") == "High Temp Plate" and sl.platte_name("Cool Plate") == "Cool Plate"
+    with pytest.raises(sl.SlicerFehler):
+        sl.platte_name("Glasplatte")
+    assert not sl.platte_passt("Bambu PETG Basic @BBL X1C", "Cool Plate")
+    assert sl.platte_passt("Bambu PETG Basic @BBL X1C", "Textured PEI Plate")
+    _, p = sl.prozess_profil({"schicht_mm": 0.2})
+    assert p["curr_bed_type"] == "Textured PEI Plate"
+    stl = tmp_path / "klotz.stl"
+    import numpy as np
+
+    P = np.array([[x, y, z] for z in (0, 10) for y in (-10, 10) for x in (-15, 15)], dtype=float)
+    T = np.array([[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7],
+                  [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]])
+    sl.schreibe_stl(stl, P, T)
+    ok = sl.slice_teil(stl, {"schicht_mm": 0.2}, "Bambu PETG Basic @BBL X1C", tmp_path / "a")
+    assert ok["zeit_s"] > 0
+    with pytest.raises(sl.SlicerFehler, match="plate"):
+        sl.slice_teil(stl, {"schicht_mm": 0.2}, "Bambu PETG Basic @BBL X1C", tmp_path / "b", platte="Cool Plate")
+
+
+def test_selbst_geschriebenes_3mf_laedt_in_bambu_studio(tmp_path, monkeypatch):
+    """Rückfall ohne Bambu Studio: das eigene 3MF (eine Platte) lädt und slict in Bambu Studio mit allen Teilen."""
+    import numpy as np
+
+    from kevcad_kernel.druck.dreimf import schreibe_3mf
+
+    monkeypatch.setenv("KEVCAD_DRUCK_CACHE", str(tmp_path / "cache"))
+    stl = tmp_path / "klotz.stl"
+    P = np.array([[x, y, z] for z in (0, 10) for y in (-10, 10) for x in (-15, 15)], dtype=float)
+    T = np.array([[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7],
+                  [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]])
+    sl.schreibe_stl(stl, P, T)
+    liste = [sl.PlattenObjekt(stl, 60, 60, 0, name="A"), sl.PlattenObjekt(stl, 160, 60, 90, name="B")]
+    r = schreibe_3mf(tmp_path / "eigen.3mf", [liste])
+    assert r["objekte"] == 2
+    assert sl.pruefe_3mf(tmp_path / "eigen.3mf", tmp_path / "info") == 2
+    pr = sl.schreibe_profile(tmp_path / "s", {"schicht_mm": 0.2}, ["Bambu PETG Basic @BBL X1C"])
+    res = sl.ausfuehren([*sl._profil_args(pr), "--slice", "0", str(tmp_path / "eigen.3mf")], tmp_path / "s")
+    for g in (tmp_path / "s").glob("*.gcode"):
+        g.unlink()
+    assert [o["name"] for o in res["sliced_plates"][0]["objects"]] == ["A", "B"]
+
+
 @pytest.fixture(scope="module")
 def env():
-    alt = {k: os.environ.get(k) for k in ("KEVCAD_DRUCK_CACHE", "KEVCAD_DRUCK_ABGLEICH")}
+    alt = {k: os.environ.get(k) for k in ("KEVCAD_DRUCK_CACHE", "KEVCAD_DRUCK_ABGLEICH", "KEVCAD_BAMBU_APP")}
     tmp = Path(tempfile.mkdtemp(prefix="kcds", dir=tempfile.gettempdir()))
-    os.environ.update({"KEVCAD_DRUCK_CACHE": str(tmp / "cache"), "KEVCAD_DRUCK_ABGLEICH": str(tmp / "abgleich.json")})
+    os.environ.update({"KEVCAD_DRUCK_CACHE": str(tmp / "cache"), "KEVCAD_DRUCK_ABGLEICH": str(tmp / "abgleich.json"),
+                       "KEVCAD_BAMBU_APP": str(BAMBU)})
     sock = str(tmp / "k.sock")
     rt = make_runtime(sock)
     assert rt.wait_worker_ready(240), "Rechenprozess nicht bereit"
@@ -95,6 +163,8 @@ def test_slicer_im_hintergrund_und_export(env):
         einst = z.read("Metadata/model_settings.config").decode()
     assert ps["printer_settings_id"] == "Bambu Lab P1P 0.4 nozzle"
     assert ps["filament_settings_id"] == ["Bambu PETG Basic @BBL X1C"]
+    assert ps["curr_bed_type"] == "Textured PEI Plate"  # sonst nimmt die Kommandozeile Cool Plate, PETG bricht ab
+    assert v["einstellungen"]["platte"] == "Textured PEI Plate"
     assert 'key="wall_loops" value="4"' in einst and 'key="sparse_infill_pattern" value="gyroid"' in einst
     aus = tmp / "nachgeslict"
     aus.mkdir()
@@ -108,3 +178,19 @@ def test_slicer_im_hintergrund_und_export(env):
     assert len(zeiten) == len(v["platten"])
     for p, z in zip(v["platten"], zeiten):
         assert abs(z / p["zeit_s"] - 1) < 0.02, (p["zeit_s"], z)
+    # kevcad.json druck.platte überschreibt die Platte (gleicher Schlüssel wie Phase 8)
+    einst = tmp / "Slicer" / "kevcad.json"
+    d = json.loads(einst.read_text())
+    d["druck"] = {"platte": "glatt"}
+    einst.write_text(json.dumps(d))
+    ex2 = rt.druck_export(str(tmp / "glatt.3mf"))
+    assert ex2["ok"], ex2
+    with zipfile.ZipFile(ex2["pfad"]) as z:
+        assert json.loads(z.read("Metadata/project_settings.config"))["curr_bed_type"] == "High Temp Plate"
+    assert any("High Temp Plate" in h for h in ex2["hinweise"])
+    d["druck"] = {"platte": "cool"}
+    einst.write_text(json.dumps(d))
+    rt.run()
+    v3 = rt.druckvorschau()
+    assert v3["einstellungen"]["platte"] == "Cool Plate"
+    assert any(h["art"] == "platte" and h["schwere"] == "fehler" for h in v3["hinweise"]), v3["hinweise"]

@@ -196,21 +196,109 @@ def profil_vorhanden(art: str, name: str) -> bool:
     return (art, name) in _index()
 
 
-def filament_name(material: str, wunsch: str | None = None) -> str:
-    """Filamentprofil für ein Material: Wunsch aus den Projekt-Einstellungen (genau, mit „ @BBL P1P“ oder als
-    Anfang eines passenden Profils), sonst die Liste ``FILAMENTE``."""
+# Filamenttyp im Profil (filament_type) je Kev-CAD-Material
+FILAMENT_TYP = {"pla": "PLA", "petg": "PETG", "tpu-95a": "TPU", "abs": "ABS", "asa": "ASA", "pc-filament": "PC",
+                "pa": "PA", "pa-cf": "PA-CF", "pla-cf": "PLA-CF"}
+_KOMPATIBEL: dict[tuple[str, str], bool] = {}
+
+
+def maschinen_name(drucker: str = "p1p-0.4") -> str:
+    return DRUCKER.get(drucker, DRUCKER["p1p-0.4"])["maschine"]
+
+
+def kompatibel(filament: str, drucker: str = "p1p-0.4") -> bool:
+    """Passt das Filamentprofil (samt Vererbung) laut ``compatible_printers`` zum Drucker? Leere Liste = alle (so
+    behandelt Bambu Studio Benutzerprofile ohne eigene Liste)."""
+    maschine = maschinen_name(drucker)
+    key = (filament, maschine)
+    if key not in _KOMPATIBEL:
+        try:
+            cp = profil("filament", filament).get("compatible_printers") or []
+        except (SlicerFehler, OSError, ValueError):
+            _KOMPATIBEL[key] = False
+        else:
+            _KOMPATIBEL[key] = not cp or maschine in cp
+    return _KOMPATIBEL[key]
+
+
+def _filament_suche(material: str, drucker: str) -> list[str]:
+    """Alle Systemfilamente des Materialtyps, die zum Drucker passen: „@BBL P1P“ zuerst, dann Bambu, dann andere."""
+    typ = FILAMENT_TYP.get(material)
+    if not typ:
+        return []
+    treffer = []
+    for (art, name) in list(_index()):
+        if art != "filament" or typ.split("-")[0].lower() not in name.lower() or name.startswith("fdm_"):
+            continue
+        try:
+            d = profil("filament", name)
+        except (SlicerFehler, OSError, ValueError):
+            continue
+        ft = d.get("filament_type")
+        ft = ft[0] if isinstance(ft, list) and ft else ft
+        if str(ft) == typ and str(d.get("instantiation", "true")) != "false" and kompatibel(name, drucker):
+            treffer.append(name)
+    return sorted(treffer, key=lambda n: ("@BBL P1P" not in n or "nozzle" in n, not n.startswith("Bambu"),
+                                          "Support" in n, n))
+
+
+def filament_name(material: str, wunsch: str | None = None, drucker: str = "p1p-0.4") -> str:
+    """Filamentprofil für ein Material, das laut ``compatible_printers`` zum Drucker passt (sonst markiert Bambu Studio
+    es in der Oberfläche als unpassend): Wunsch aus den Projekt-Einstellungen (genau, mit „ @BBL P1P“ oder als Anfang
+    eines Profilnamens), sonst die Liste ``FILAMENTE``, sonst das beste passende Systemprofil gleichen Typs."""
     kandidaten: list[str] = []
     if wunsch:
         kandidaten += [wunsch, f"{wunsch} @BBL P1P", f"{wunsch} @BBL X1C"]
+        kandidaten += sorted(n for (a, n) in _index() if a == "filament" and n.startswith(wunsch)
+                             and "nozzle" not in n)
     kandidaten += list(FILAMENTE.get(material, ()))
     for k in kandidaten:
-        if profil_vorhanden("filament", k):
+        if profil_vorhanden("filament", k) and kompatibel(k, drucker):
             return k
-    if wunsch:
-        for (art, name) in _index():
-            if art == "filament" and name.startswith(wunsch) and "P1P" in name and "nozzle" not in name:
-                return name
-    raise SlicerFehler(f"kein Bambu-Studio-Filamentprofil für {material!r}" + (f" ({wunsch!r})" if wunsch else ""))
+    treffer = _filament_suche(material, drucker)
+    if treffer:
+        return treffer[0]
+    raise SlicerFehler(f"kein Bambu-Studio-Filamentprofil für {material!r} passt zum {maschinen_name(drucker)}"
+                       + (f" ({wunsch!r})" if wunsch else ""))
+
+
+# Druckplatten (curr_bed_type) und die Temperatur im Filamentprofil, die sie braucht (0 = nicht geeignet)
+PLATTEN = {"Textured PEI Plate": "textured_plate_temp", "Cool Plate": "cool_plate_temp",
+           "Engineering Plate": "eng_plate_temp", "High Temp Plate": "hot_plate_temp",
+           "Supertack Plate": "supertack_plate_temp"}
+PLATTE_STANDARD = "Textured PEI Plate"
+_PLATTEN_ALIAS = {"textured pei plate": "Textured PEI Plate", "textured pei": "Textured PEI Plate",
+                  "textured": "Textured PEI Plate", "texturiert": "Textured PEI Plate", "pei": "Textured PEI Plate",
+                  "cool plate": "Cool Plate", "cool": "Cool Plate", "engineering plate": "Engineering Plate",
+                  "engineering": "Engineering Plate", "high temp plate": "High Temp Plate",
+                  "smooth pei plate": "High Temp Plate", "smooth pei": "High Temp Plate", "glatt": "High Temp Plate",
+                  "high temp": "High Temp Plate", "supertack plate": "Supertack Plate", "supertack": "Supertack Plate"}
+
+
+def platte_name(wert: Any) -> str:
+    """Bambu-Studio-Name der Druckplatte (``kevcad.json`` ``druck.platte``); None = Texturplatte (Kevins P1P)."""
+    if wert is None or str(wert).strip() == "":
+        return PLATTE_STANDARD
+    s = str(wert).strip()
+    if s in PLATTEN:
+        return s
+    t = _PLATTEN_ALIAS.get(s.lower())
+    if t is None:
+        raise SlicerFehler(f"Druckplatte {wert!r} unbekannt (erlaubt: {', '.join(PLATTEN)})")
+    return t
+
+
+def platte_passt(filament: str, platte: str) -> bool:
+    """Kann das Filament auf dieser Platte gedruckt werden (Plattentemperatur im Profil nicht 0)?"""
+    try:
+        v = profil("filament", filament).get(PLATTEN.get(platte, ""))
+    except (SlicerFehler, OSError, ValueError):
+        return True
+    v = v[0] if isinstance(v, list) and v else v
+    try:
+        return float(v) > 0
+    except (TypeError, ValueError):
+        return True
 
 
 def prozess_name(schicht: float) -> str:
@@ -478,10 +566,10 @@ class Profile:
 
 
 def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: list[str],
-                     drucker: str = "p1p-0.4") -> Profile:
+                     drucker: str = "p1p-0.4", platte: str | None = None) -> Profile:
     ordner.mkdir(parents=True, exist_ok=True)
     m = maschinen_profil(drucker)
-    pname, p = prozess_profil(einstellungen, DRUCKER.get(drucker, DRUCKER["p1p-0.4"])["bett"])
+    pname, p = prozess_profil(einstellungen, platte_name(platte or DRUCKER.get(drucker, DRUCKER["p1p-0.4"])["bett"]))
     mp, pp = ordner / "maschine.json", ordner / "prozess.json"
     mp.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
     pp.write_text(json.dumps(p, ensure_ascii=False), encoding="utf-8")
@@ -519,9 +607,10 @@ def _platten_ergebnis(res: dict[str, Any], dichten: list[float]) -> list[dict[st
 
 
 def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: str, ordner: Path,
-               abbruch: threading.Event | None = None, drucker: str = "p1p-0.4") -> dict[str, Any]:
+               abbruch: threading.Event | None = None, drucker: str = "p1p-0.4",
+               platte: str | None = None) -> dict[str, Any]:
     """Ein Teil (STL in Druckausrichtung) slicen: ``zeit_s``, ``volumen_cm3``, ``m``, ``merkmale`` …"""
-    pr = schreibe_profile(ordner, einstellungen, [filament], drucker)
+    pr = schreibe_profile(ordner, einstellungen, [filament], drucker, platte)
     res = ausfuehren([*_profil_args(pr), "--slice", "0", str(stl)], ordner, abbruch)
     platten = _platten_ergebnis(res, pr.dichten)
     for g in ordner.glob("*.gcode"):
@@ -593,11 +682,12 @@ def lies_anordnung(pfad_3mf: Path) -> list[dict[str, Any]]:
 
 
 def anordnen(objekte: list[tuple[Path, int]], ordner: Path, abbruch: threading.Event | None = None,
-             filament: str | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None) -> list[dict]:
+             filament: str | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None,
+             platte: str | None = None) -> list[dict]:
     """``objekte``: (STL, Anzahl). Bambu Studio ordnet an (mit Drehen, Sperrzone aus dem Maschinenprofil) und legt bei
     Bedarf weitere Platten an. Ergebnis wie ``lies_anordnung``; Namen „<stl-stamm>_<n>“."""
     e = {"schicht_mm": 0.2}
-    pr = schreibe_profile(ordner, e, [filament or FILAMENTE["pla"][-1]], drucker)
+    pr = schreibe_profile(ordner, e, [filament or FILAMENTE["pla"][-1]], drucker, platte)
     if abstand_mm is not None:
         d = json.loads(pr.prozess.read_text())
         d["min_object_distance"] = f"{abstand_mm:g}"
@@ -671,9 +761,9 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path) -> Path:
 
 def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordner: Path,
                   einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
-                  drucker: str = "p1p-0.4") -> list[dict[str, Any]]:
+                  drucker: str = "p1p-0.4", platte: str | None = None) -> list[dict[str, Any]]:
     """Platten mit festen Lagen slicen (je Platte Zeit und Filament)."""
-    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, filamente, drucker)
+    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, filamente, drucker, platte)
     liste = montageliste(platten, ordner)
     res = ausfuehren([*_profil_args(pr), "--load-assemble-list", str(liste), "--slice", "0"], ordner, abbruch)
     for g in ordner.glob("*.gcode"):
@@ -683,7 +773,7 @@ def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordn
 
 def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, ordner: Path,
                einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
-               drucker: str = "p1p-0.4", farbe: str | None = None) -> dict[str, Any]:
+               drucker: str = "p1p-0.4", farbe: str | None = None, platte: str | None = None) -> dict[str, Any]:
     """3MF der Platten eines Materials als Bambu-Projekt (ohne Slicen): Drucker-, Prozess- und Filamentprofil in
     ``Metadata/project_settings.config``, Einstellungen je Teil in ``Metadata/model_settings.config``; danach zur
     Kontrolle mit ``--info`` geladen. Liefert {"pfad", "objekte", "geprueft"}.
@@ -691,7 +781,7 @@ def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, or
     Ein Filament je Datei: Bambu Studio 2.07 schreibt Projekte mit mehreren ``--load-filaments`` so, dass es sie beim
     erneuten Laden nur mit Filament 1 (und nach Ergänzen der Listen gar nicht) slicen kann; der P1P ohne AMS druckt
     ohnehin ein Material je Platte."""
-    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, [filament], drucker)
+    pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, [filament], drucker, platte)
     if farbe:
         d = json.loads(pr.filamente[0].read_text(encoding="utf-8"))
         d["filament_colour"] = [farbe]

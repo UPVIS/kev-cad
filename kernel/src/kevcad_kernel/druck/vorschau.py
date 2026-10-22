@@ -23,13 +23,15 @@ from kevcad_kernel.druck.vorschau_geo import teil_mit_form
 DRUCKER_ID = "p1p-0.4"
 DRUCKER_NAME = "Bambu Lab P1P 0.4"
 STANDARD = {"drucker": DRUCKER_ID, "strompreis_kwh": 0.32, "leistung_w": 150.0, "plattenwechsel_s": 120,
-            "slicer": True}
+            "slicer": True, "platte": sl.PLATTE_STANDARD}
 STUETZ_ARTEN = ("ueberhang", "freie_unterseite", "kragarm", "bruecke")
 SCHLUESSEL_VERSION = "v1"
 
 
 def projekt_einstellungen(settings: dict[str, Any] | None) -> dict[str, Any]:
-    """``kevcad.json`` → ``"druck"`` mit Vorgaben ergänzt (unbekannte Schlüssel bleiben erhalten)."""
+    """``kevcad.json`` → ``"druck"`` mit Vorgaben ergänzt (unbekannte Schlüssel bleiben erhalten). ``platte``
+    (Druckplatte, Bambu-Name wie „Textured PEI Plate“ oder kurz „texturiert“, „glatt“, „cool“, „engineering“)
+    wird vereinheitlicht; unbekannt: Texturplatte und ``platte_fehler``."""
     d = dict(STANDARD)
     roh = (settings or {}).get("druck") if isinstance(settings, dict) else None
     if isinstance(roh, dict):
@@ -38,6 +40,11 @@ def projekt_einstellungen(settings: dict[str, Any] | None) -> dict[str, Any]:
                 d[k] = v
     if d.get("drucker") not in sl.DRUCKER:
         d["drucker"] = DRUCKER_ID
+    try:
+        d["platte"] = sl.platte_name(d.get("platte"))
+    except sl.SlicerFehler as exc:
+        d["platte_fehler"] = str(exc)
+        d["platte"] = sl.PLATTE_STANDARD
     return d
 
 
@@ -108,7 +115,7 @@ def _filament(projekt: dict[str, Any], material: str) -> str | None:
     wunsch = _filament_wunsch(projekt, material)
     if sl.system_ordner().is_dir():
         try:
-            return sl.filament_name(material, wunsch)
+            return sl.filament_name(material, wunsch, str(projekt.get("drucker") or DRUCKER_ID))
         except sl.SlicerFehler:
             return None
     return wunsch or (sl.FILAMENTE.get(material) or (None,))[0]
@@ -132,7 +139,11 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         v = vt.get(name) if isinstance(vt.get(name), dict) else {}
         zweck = v.get("zweck") or geo.get("zweck")
         e_vorgabe = {k: x for k, x in (v.get("einstellungen") or {}).items() if x is not None}
-        key = (geo.get("fid"), geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
+        # gleiche Form (ohne Lage) in gleicher Lage auf dem Bett: Hüllmaß in Druckausrichtung statt der Drehungen, damit
+        # gleiche Teile in verschiedener Einbaulage (gedreht, andere Rahmenlage) eine Gruppe bleiben
+        lage_bett = tuple(round(float(x), 1) for x in (geo.get("groesse") or [])) + \
+            (round(float(geo.get("auflage") or 0.0)),)
+        key = (geo.get("form"), lage_bett, geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
         g = roh.setdefault(key, {"namen": [], "stuecke": {}, "geo": geo, "zweck": zweck, "vorgaben": e_vorgabe,
                                  "zweck_fest": bool(v.get("zweck")), "pruefung": teile_info.get(name) or {},
                                  "von": {}})
@@ -162,7 +173,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         filament = _filament(projekt, mat)
         e_slicer = {k: v for k, v in emp["einstellungen"].items() if k != "ausrichtung"}
         schl = sl.schluessel(SCHLUESSEL_VERSION, geo.get("form"), geo.get("form_matrix"), e_slicer, prozess,
-                             filament, projekt.get("drucker"), version)
+                             filament, projekt.get("drucker"), version, projekt.get("platte"))
         out.append(Gruppe(id=f"g{i}", name=_gruppen_name(g["namen"]), teile=g["namen"], anzahl=anzahl, material=mat,
                           zweck=emp["zweck"], zweck_geschaetzt=emp["zweck_geschaetzt"], geo=geo,
                           einstellungen=emp["einstellungen"], fest=fest, begruendung=emp["begruendung"],
@@ -332,6 +343,16 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
         "slicer" if staende == {"slicer"} else "gemischt")
     gramm = {m["material"]: m["g"] for m in material_out}
     hinweise = em.globale_hinweise(materialien, gramm, platten_out, sorted(set(nicht_passend)))
+    if projekt.get("platte_fehler"):
+        hinweise.append({"schwere": "warnung", "art": "platte",
+                         "text": f"kevcad.json druck.platte: {projekt['platte_fehler']}; genommen: Texturplatte."})
+    if sl.system_ordner().is_dir():
+        for mat in materialien:
+            fil = next((g.filament for g in gr if g.material == mat and g.filament), None)
+            if fil and not sl.platte_passt(fil, str(projekt.get("platte"))):
+                hinweise.append({"schwere": "fehler", "art": "platte",
+                                 "text": f"{fil} geht nicht auf der {projekt.get('platte')} (Bambu Studio bricht ab): "
+                                         "andere Platte in kevcad.json druck.platte, etwa „Textured PEI Plate“."})
     for n in ohne:
         hinweise.append({"schwere": "hinweis", "art": "slicer",
                          "text": f"{n}: keine Vorschau (Geometrie in Druckausrichtung fehlt, Druckprüfung ansehen)."})
@@ -349,7 +370,7 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
                   "material": material_out},
         "platten": platten_out, "teile": teile_out, "hinweise": hinweise, "slicer": slicer_info,
         "einstellungen": {k: projekt.get(k) for k in ("drucker", "strompreis_kwh", "leistung_w", "plattenwechsel_s",
-                                                      "slicer")},
+                                                      "slicer", "platte")},
         "regler": bool(regler),
     }
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)

@@ -56,6 +56,27 @@ als_warnungen(e)            # ["Druck Warnung: … [#f6]", …] nur Fehler und W
 - **Zwischenspeicher:** Schlüssel Form ohne Lage (`Koerper.form`) + Drehung der Druckteil-Form + Material +
   Ausrichtung, höchstens 512 Einträge. Verschieben der Baugruppe und gleiche Teile kosten nichts. Kugelschieber (20
   Druckteile PETG): kalt ca. 1,6 s (16 gerechnet, 4 gleiche Stellringe aus dem Speicher), warm ca. 1 ms.
+- **Abdrücke:** Schichtraster-Hinweise an Flächen, deren Ecken alle ≤ 1,5 mm an einem gezeigten Lager- oder
+  Zukaufteil liegen (Aussparung), bündelt `_abdruecke_buendeln` je fremdem Teil zu `druck_schichtraster_abdruck`.
+
+## Druckvorschau (DRUCKVORSCHAU.md, seit 22.10.2026)
+
+| Datei | Rolle |
+|---|---|
+| `vorschau_geo.py` | Prüfer „druckvorschau“ nach „druck“ (Rechenprozess): Grundriss (konvexe Hülle), Flächen nach Richtung, Überhanghöhe, Seitenfläche je Höhenband je Druckteil in Druckausrichtung; `check["druck"]["vorschau"]` |
+| `empfehlung.py` | Einstellungen je Zweck und Material mit Begründung, Hinweise der Druckpraxis, Erfolgsrisiko |
+| `schaetzung.py` | Filament und Zeit je Stück (Bahnlängen, Volumenstrom, Kühlung), Abgleich `abgleich.json` |
+| `anordnen.py` | schnelles Anordnen (Skyline, 90°, Abstand, Sperrzone), ein Material je Platte |
+| `vorschau.py` | Gruppen gleicher Teile, Summen, Kosten; ersetzt Schätzungen durch Slicer-Ergebnisse (`SlicerStand`) |
+| `slicer.py` | Bambu Studio: Profile, STL in Druckausrichtung, Slicen, `--arrange`, Platten, 3MF je Material |
+| `dreimf.py` | 3MF ohne Bambu Studio (je Platte eine Datei) |
+| `vorgaben.py` | `<projekt>/druck.json` (feste Vorgaben je Teil mit `von`) |
+| `vorschau_laufzeit.py` | Mixin der Laufzeit: PRINT_PREVIEW, Slicer im Hintergrund, PRINT_SETTINGS, PRINT_EXPORT_REQ, MCP-Dienste |
+| `vorschau_text.py` | Kurzfassung für das MCP-Werkzeug `druckvorschau` |
+
+Messung am Kugelschieber (15 Druckteile PETG, 22.10.2026): Geometrie im Rechenprozess 32 ms kalt / 2 ms warm, Bau der
+Vorschau 10–13 ms, PRINT_PREVIEW 33–77 ms nach CHECK; Bambu Studio je Gruppe 0,5–2,7 s, alles samt Anordnen und
+Platten 44 s; Schätzung gegen Slicer −8 bis +5 % Zeit, −2 bis +3 % Filament.
 
 ## Wie die Prüfung arbeitet
 
