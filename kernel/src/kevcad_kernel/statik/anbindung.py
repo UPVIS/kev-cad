@@ -112,14 +112,18 @@ def rechne_auftrag(auftrag: dict[str, Any]) -> dict[str, Any]:
             return {"stand": "failed", "meldung": f"Teil {unbekannt[0]!r} gibt es nicht"
                     + (f"; meinten Sie {', '.join(repr(t) for t in tips)}?" if tips else "")
                     + " (Namen wie in show(), auch Gruppen wie \"Kugelschieber/\")."}
-        szen = [neu]
-        if not auftrag.get("allein"):
-            szen += [s for s in st.szenarien if s.name != neu.name]
-        erg = rechne_alles(st.modell, szen, st.katalog, st.koerper, aktiv=neu.name,
-                           alternativen=bool(auftrag.get("alternativen", True)), alt_szenarien=[neu])
-        if erg.get("stand") == "done" and not auftrag.get("allein"):
+        # Nur das neue Szenario rechnen; die übrigen stehen schon im Ergebnis des Laufs (und früherer Anfragen)
+        erg = rechne_alles(st.modell, [neu], st.katalog, st.koerper, aktiv=neu.name,
+                           alternativen=bool(auftrag.get("alternativen", True)))
+        if erg.get("stand") == "done" and not auftrag.get("allein") and st.ergebnis:
+            alt = st.ergebnis
+            erg = {**alt, "aktiv": neu.name, "ms": erg.get("ms"), "zeiten_ms": erg.get("zeiten_ms"),
+                   "szenarien": erg["szenarien"] + [e for e in alt.get("szenarien") or [] if e.get("name") != neu.name],
+                   "vereinfachungen": list(dict.fromkeys(list(alt.get("vereinfachungen") or [])
+                                                         + list(erg.get("vereinfachungen") or [])))}
             # bis zum nächsten Lauf gehört das Szenario dazu (die App zeigt es in der Liste, statik() kennt es)
             st.szenarien = [s for s in st.szenarien if s.name != neu.name] + [neu]
+            st.ergebnis = erg
     else:
         erg = rechne_alles(st.modell, st.szenarien, st.katalog, st.koerper)
     return erg
