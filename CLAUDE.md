@@ -92,6 +92,9 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
   entlastet das MacBook). Dort gibt es zwei Bauplätze mit warmen Bauordnern und einen Testplatz, gewartet wird in einer
   Schlange; mehrere Agenten können also gleichzeitig aufrufen. Die Test-App kommt nach `build/` und läuft hier wie
   gewohnt. `./build.sh` direkt nur als Rückfall, wenn `tools/fern.sh` es nicht selbst tut.
+  **Seit 22.10.2026 mittags ist der Mac mini nicht mehr verfügbar** (Kevin: „alles auf dem MacBook“): Die Datei
+  `~/.kevcad-nur-macbook` ist gesetzt, `tools/fern.sh` und das automatische Update bauen deshalb hier unter der Sperre.
+  Weiter `tools/fern.sh` aufrufen; parallel höchstens zwei Agenten mit Builds.
 - **Lokal nur einzeln:** Der Mac hat 16 GB. Jedes lokale `xcodebuild` (also jedes `./build.sh`) läuft unter der mit
   VoiceBridge gemeinsamen Sperre: `lockf -k /tmp/vb-xcodebuild.lock ./build.sh --test …`, vorher
   `memory_pressure | tail -1` prüfen und unter 25 % freiem Speicher warten. `tools/fern.sh` und das automatische Update
