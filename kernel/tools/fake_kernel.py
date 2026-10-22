@@ -587,14 +587,14 @@ class FakeKernel:
                           "kg": 2.98, "preis_je": 7.06, "preis": 7.06, "teile": ["Gestell/Bein vorn links"],
                           "eigenteil": False})
             cuts.append({"stock_id": "vierkantrohr-en10219-40x40x3", "benennung": "Vierkantrohr 40 × 40 × 3",
-                         "stangenlaenge": 6000, "saegeschnitt": 3, "stangen": [[882]], "verschnitt_prozent": 85.3})
+                         "stangenlaenge": 6000, "saegeschnitt": 3, "stangen": [[882]]})
         if "Halter/Bolzen" in names:
             lines.append({"art": "rund", "stock_id": "rund-en10060-10", "benennung": "Rundstahl Ø 10",
                           "norm": "DIN EN 10060", "material": "Stahl S235", "laenge": 20.0, "gehrung": [0, 0],
                           "masse_text": "20 mm", "anzahl": 1, "kg_je": 0.012, "kg": 0.012, "preis_je": 0.03,
                           "preis": 0.03, "teile": ["Halter/Bolzen"], "eigenteil": False})
             cuts.append({"stock_id": "rund-en10060-10", "benennung": "Rundstahl Ø 10", "stangenlaenge": 6000,
-                         "saegeschnitt": 3, "stangen": [[20]], "verschnitt_prozent": 99.6})
+                         "saegeschnitt": 3, "stangen": [[20]]})
         if "Kugel" in names:
             kg = round(4 / 3 * math.pi * 15 ** 3 / 1e6 * 1.27, 3)
             lines.append({"art": "druckteil", "stock_id": None, "benennung": "Kugel", "material": "PETG schwarz",
@@ -622,12 +622,19 @@ class FakeKernel:
                           "cad_quelle": "keins" if simple else "download", "vereinfacht": simple})
         for i, line in enumerate(lines, start=1):
             line["pos"] = i
+        # Verschnitt nach Definition 2 wie der echte Kernel (BESTAND.md): sonst rechnete die App mit alten Werten
+        from kevcad_kernel.bom import VERSCHNITT_DEFINITION, verschnitt_prozent, verschnitt_summe
+
+        for cut in cuts:
+            cut["verschnitt_prozent"] = verschnitt_prozent(cut)
+            cut["verschnitt_definition"] = VERSCHNITT_DEFINITION
         kg = round(sum(line["kg"] or 0 for line in lines), 3)
         preis = round(sum(line["preis"] or 0 for line in lines), 2)
         hinweis = "Richtpreise, Stand 2026-10"
         if any(line["art"] == "zukaufteil" for line in lines):
             hinweis += "; Zukaufteile zum Shoppreis brutto"
         return {"run": run, "lines": lines, "cuts": cuts, "warnings": warnings,
+                **({"verschnitt": verschnitt_summe(cuts)} if cuts else {}),
                 "totals": {"kg": kg, "preis": preis, "positionen": len(lines),
                            "teile": sum(line["anzahl"] for line in lines),
                            "preis_hinweis": hinweis + " (Ersatz-Kernel)"}}

@@ -16,6 +16,12 @@ def _dauer(s: int | None) -> str:
     return f"{h} h {m} min" if h else f"{m} min"
 
 
+def _satz(text: str) -> str:
+    """Satzende anhängen, wenn noch keins da ist (sonst stand „Weg A geht trotzdem..“ im Status)."""
+    text = text.rstrip()
+    return text if text.endswith((".", "!", "?", "…")) else text + "."
+
+
 def status_text(st: dict[str, Any]) -> str:
     z: list[str] = []
     d = st.get("drucker")
@@ -26,7 +32,7 @@ def status_text(st: dict[str, Any]) -> str:
     else:
         z.append("Kein Drucker eingestellt (Drucker-Einstellungen in Kev CAD).")
     verbindung = VERBINDUNG.get(st.get("verbindung"), st.get("verbindung"))
-    z.append(f"Status: {verbindung}" + (f" – {st['meldung']}" if st.get("meldung") else "") + ".")
+    z.append(_satz(f"Status: {verbindung}" + (f" – {st['meldung']}" if st.get("meldung") else "")))
     w = st.get("wege") or {}
     a, b = w.get("a") or {}, w.get("b") or {}
     z.append(f"Weg: {str(st.get('weg') or 'a').upper()} (A = in Bambu Studio öffnen"
@@ -62,7 +68,7 @@ def status_text(st: dict[str, Any]) -> str:
         platten = ", ".join(str(n) for n in auf.get("platten") or []) or "alle"
         z.append(f"Auftrag {auf.get('auftrag')} ({'vom Agenten' if auf.get('von') == 'agent' else 'von Kevin'}, Weg "
                  f"{str(auf.get('weg')).upper()}, Platten {platten}): {auf.get('zustand')}"
-                 + (f" – {auf['meldung']}" if auf.get("meldung") else "")
+                 + (f" – {_satz(str(auf['meldung']))}" if auf.get("meldung") else "")
                  + (f" Datei: {auf['datei']}" if auf.get("datei") else ""))
     gef = st.get("gefunden") or []
     if gef:

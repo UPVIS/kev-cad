@@ -6,7 +6,9 @@ import Foundation
 
 extension MaterialDaten {
     public mutating func druckvorschauEinrechnen(_ v: Druckvorschau?) {
-        guard let v, !v.istLeer else { return }
+        // Nur die Vorschau desselben Laufs (wie Filament und Einkaufsliste): direkt nach einem neuen Lauf zeigte die
+        // Übersicht sonst noch die alte Vorschau, die Einkaufsliste schon die Stückliste (Strang „Feinschliff 2“)
+        guard let v, !v.istLeer, !hatStueckliste || v.run == run else { return }
         var k = kennzahlen
         k.druckZeitS = v.summe.zeitMitWechselS
         k.druckPlatten = v.summe.platten
