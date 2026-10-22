@@ -579,8 +579,9 @@ Scan per WLAN an Kev CAD (Bonjour, Ablage `~/Documents/Kev CAD/Scans/<datum>_<na
 2. `scan_importieren(scan, name=None, schnell=False, warten_s=600)`: wertet im Hintergrund aus (alle Fotos plus
    Videobilder nach Abstand und Winkel, Prompt Depth Anything mit der LiDAR-Tiefe als Prompt, TSDF etwa 2 mm, größte
    Komponente; Boden z = 0, Mitte x = y = 0, lange Seite = X) und legt eine Referenz an, Netz halbdurchsichtig im
-   Viewer. `schnell=True` (kleines Modell, weniger Bilder) als Vorschau in unter einer Minute; genau braucht etwa 2 s
-   je Bild (typisch 2 bis 4 min). Ohne WLAN: ZIP per AirDrop, dann `scan_importieren("/Users/…/Downloads/x.kevscan.zip")`.
+   Viewer. `schnell=True` (kleines Modell, weniger Bilder) als Vorschau in ein bis zwei Minuten; genau braucht etwa
+   2 s je Bild (typisch 2 bis 4 min). Ohne WLAN: ZIP per AirDrop, dann
+   `scan_importieren("/Users/…/Downloads/x.kevscan.zip")`.
 3. Messmodell bauen wie bei Phase 4, dann `referenz_vermessen(name, freie_masse=[…])`: fotomess nimmt die
    ARKit-Kameras als feste Startwerte (nur fein nachgeführt), passt die Modellkanten an die Bilder und das Modell an die
    gemessene Tiefe (robust, nach Konfidenz gewichtet) und legt das Netz an das Modell. `bekannte_masse` sind nicht

@@ -95,7 +95,7 @@ def register_scan_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "prompt per image (Large model; schnell=true uses the Small model and fewer frames as a quick preview), fuses "
           "them with the ARKit poses (TSDF, ~2 mm voxels) into a mesh in mm with Z up and the floor at z = 0, shown "
           "semi-transparent in the viewer like an Object Capture mesh. Runs in the background (Large: about 2 s per "
-          "image on the M2 Pro, a typical scan 1 to 3 min; schnell: well under a minute); warten_s waits for the "
+          "image on the M2 Pro, a typical scan 2 to 4 min; schnell: 1 to 2 min); warten_s waits for the "
           "result. scan: id or name from `scans`, 'letzter' / None for the newest, or a path to a scan folder or "
           ".kevscan.zip (AirDrop, Downloads). Afterwards referenz_vermessen(name) fits the param() dimensions with the "
           "known cameras and the measured depth (no known dimension needed: the scan is metric).", ADDITIVE)
