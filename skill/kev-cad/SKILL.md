@@ -25,6 +25,13 @@ Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst (Durc
 Einbaubarkeit), `run` wartet auf das Ergebnis; `pruefen` zeigt alles samt Stand und Montage. Befunde beheben, nicht nur
 melden:
 
+- **Vor dem Fertigmelden auf den Endstand warten** (Prüftempo, 22.10.2026): Schafft der Bewegungsraum das Zeitlimit
+  eines Laufs nicht, sagt `run` „Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig
+  gerechnet“ (Zustand `teilweise`). Das ist kein fertiges Ergebnis. Kev CAD rechnet ohne neuen Lauf weiter; `pruefen()`
+  (wartet standardmäßig, `warten=true`) bzw. `bedingungen()` zeigt den Endstand. Erst wenn dort keine Fehler mehr
+  stehen, fertig melden. Nicht einfach `run` wiederholen, das verwirft das Fertigrechnen und beginnt von vorn.
+- Große Modelle: `run(timeout_s=…)` (höchstens 900 s) hebt das Zeitlimit für model.py an, wenn ein Lauf daran scheitert.
+
 - **Keine Durchdringungen:** Teile dürfen sich berühren, aber nicht ineinander stecken (gemeldet ab 0,001 mm³
   Schnittvolumen und 0,01 mm Tiefe). Verbindungselemente sind keine Ausnahme: Scheibe in Scheibe, Kopf in Scheibe,
   Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
@@ -219,7 +226,8 @@ nennen.
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
    isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`. Bei
    größeren Änderungen mit `titel` (siehe „Versionen“).
-6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
+6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“; meldet `run` den Bewegungsraum
+   als „wird im Hintergrund fertig gerechnet“, vorher `pruefen()` abwarten), Zahlen aus `run` mit der
    Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt, `bedingungen` für
    Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum. Kevin keine
    Screenshots schicken; Bilder nur zur eigenen Analyse (siehe „Bilder“).

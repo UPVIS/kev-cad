@@ -36,5 +36,13 @@
   3.0,
   -5.0,
   -5.0
- ]
+ ],
+ "teilweise": {
+  "run": 3,
+  "state": "teilweise",
+  "im_hintergrund": [
+   "drehgelenk Halter/Flügelmutter",
+   "schiebegelenk Halter/Schlitten"
+  ]
+ }
 }

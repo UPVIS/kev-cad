@@ -17,6 +17,7 @@ StandardView = Literal[
     "top", "bottom", "front", "back", "left", "right", "iso", "iso_front_left", "iso_back_right", "iso_back_left"
 ]
 Darstellung = Literal["shaded_edges", "shaded", "wireframe", "xray"]
+PRUEF_ENDSTAND_S = 300.0  # so lange wartet pruefen(warten=true) auf das Fertigrechnen im Hintergrund
 ANSICHT_NAMEN = {"top": "oben", "bottom": "unten", "front": "vorne", "back": "hinten", "left": "links",
                  "right": "rechts", "iso": "iso", "iso_front_left": "iso vorne links",
                  "iso_back_right": "iso hinten rechts", "iso_back_left": "iso hinten links"}
@@ -40,16 +41,24 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
           "(interpenetration, floating, tipping, not assemblable, trapped, tool access, compliant parts, invalid "
           "declarations) with location, values and a fix each, plus stability per group and the assembly summary. "
           "bilder=true adds close-up offscreen images of the worst findings (2-3 directions, x-ray, red overlap "
-          "volume) for your own analysis; Kevin's view does not change. Do not send these images to Kevin.",
+          "volume) for your own analysis; Kevin's view does not change. Do not send these images to Kevin. If the "
+          "range of motion of a run hit its time limit (state 'teilweise'), the kernel finishes it in the "
+          "background; warten=true (default) waits for that final result, so call pruefen before reporting done.",
           READ_ONLY)
     async def pruefen(
         bilder: Annotated[bool, Field(description="Close-up images of up to 3 findings for your own analysis")] = False,
         hinweise: Annotated[bool, Field(description="Also list notes (schwere hinweis)")] = True,
+        warten: Annotated[bool, Field(description=(
+            "Wait for the final result when the range of motion is still being finished in the background "
+            "(state 'teilweise', up to 5 minutes); false returns the current state at once"))] = True,
     ) -> CallToolResult:
         from kevcad_kernel.pruefung.dienst import ansicht_fuer_befund
         from kevcad_kernel.pruefung.text import pruef_text, stand_text
 
-        res = await t.work("liest das Prüfergebnis", svc.pruefen)
+        if warten:
+            res = await t.work("wartet auf das fertige Prüfergebnis", svc.pruefen, PRUEF_ENDSTAND_S, endstand=True)
+        else:
+            res = await t.work("liest das Prüfergebnis", svc.pruefen)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(err, res)
@@ -66,6 +75,11 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
                          + " (Liste mit montage_reihenfolge).")
         if res.get("laeuft"):
             teile.append(f"Hinweis: eine neuere Prüfung (Lauf {res['laeuft']}) läuft noch.")
+        if res.get("state") == "teilweise" and warten:
+            teile.append("Der Bewegungsraum ist nach 5 Minuten noch nicht fertig gerechnet: später erneut pruefen."
+                         if res.get("hintergrund") == res.get("run") else
+                         "Der Bewegungsraum dieses Laufs wurde nicht fertig gerechnet (neuerer Lauf oder Rechenprozess "
+                         "neu gestartet): erneut run aufrufen.")
         extra: list[Any] = []
         if bilder:
             kandidaten = [b for b in res.get("befunde") or [] if b.get("ort") and b.get("schwere") != "hinweis"][:3]

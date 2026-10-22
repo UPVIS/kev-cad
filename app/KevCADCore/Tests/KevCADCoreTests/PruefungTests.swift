@@ -46,6 +46,46 @@ final class PruefungTests: XCTestCase {
         XCTAssertEqual(KernelMessage.check(laeuft).typeName, "CHECK")
     }
 
+    /// Prüftempo: CHECK mit state „teilweise“ (Bewegungsraum rechnet im Hintergrund), danach dasselbe run als done.
+    func testTeilweiseUndDannFertig() throws {
+        guard case .check(let msg) = try Fixtures.message("check_teilweise.frame") else { return XCTFail("kein CHECK") }
+        let exp = try JSONDecoder().decode(JSONValue.self, from: Fixtures.data("check.json"))
+        let e = msg.ergebnis
+        XCTAssertEqual(e.zustand, .teilweise)
+        XCTAssertEqual(e.run, exp["teilweise"]?["run"]?.intValue)
+        XCTAssertEqual(e.imHintergrund, exp["teilweise"]?["im_hintergrund"]?.stringList)
+        XCTAssertTrue(e.wirdFertigGerechnet)
+        XCTAssertEqual(e.hintergrundText, "Bewegungsraum: 2 Gelenke werden fertig gerechnet …")
+        XCTAssertEqual(e.bandText, "1 Durchdringung")  // die Befunde gelten schon
+        XCTAssertEqual(e.geometrie.count, 1)
+
+        let c = AppController(model: AppModel())
+        let events = try FrameReader().feed(Fixtures.data("stream.bin")).map(KernelConnection.decode)
+        c.handle(Array(events.prefix(7)))
+        let befund: JSONValue = [
+            "id": "du1", "art": "durchdringung", "teile": ["Grundplatte", "Halter/Bolzen"], "schwere": "fehler",
+            "text": "…", "geometrie": 0,
+        ]
+        var teil: JSONValue = [
+            "type": "CHECK", "run": 1, "state": "teilweise", "zusammenfassung": "", "befunde": [befund],
+            "geometrie": [["befund": "du1", "vert": 3, "tri": 1]], "im_hintergrund": ["drehgelenk Halter/Knopf"],
+        ]
+        c.handle([.message(try KernelMessage.decode(Frame(header: JSONEncoder().encode(teil), payload: dreieck)))])
+        XCTAssertEqual(c.model.pruefung?.zustand, .teilweise)
+        XCTAssertEqual(c.model.pruefung?.befunde.count, 1)
+        XCTAssertEqual(c.scene.ghostBodies.count, 1)
+        XCTAssertEqual(c.model.pruefung?.hintergrundText, "Bewegungsraum: 1 Gelenk wird fertig gerechnet …")
+        // Endstand desselben Laufs ohne neuen Lauf
+        teil = [
+            "type": "CHECK", "run": 1, "state": "done", "zusammenfassung": "", "befunde": [befund],
+            "geometrie": [["befund": "du1", "vert": 3, "tri": 1]],
+        ]
+        c.handle([.message(try KernelMessage.decode(Frame(header: JSONEncoder().encode(teil), payload: dreieck)))])
+        XCTAssertEqual(c.model.pruefung?.zustand, .done)
+        XCTAssertFalse(c.model.pruefung?.wirdFertigGerechnet ?? true)
+        XCTAssertEqual(c.model.pruefung?.hintergrundText, "")
+    }
+
     func testKaputteNutzlastWirdAbgelehnt() throws {
         let frame = try Fixtures.frame("check_done.frame")
         XCTAssertThrowsError(try CheckMessage.decode(frame.header, payload: frame.payload.dropLast(4)))

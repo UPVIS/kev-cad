@@ -98,7 +98,9 @@ public struct MontageSchritt: Identifiable, Equatable, Sendable {
 
 public struct PruefErgebnis: Equatable, Sendable {
     public enum Zustand: String, Sendable {
-        case running, done, cancelled, failed
+        /// `teilweise`: Ergebnis steht, der Bewegungsraum wird im Kernel noch fertig gerechnet; dasselbe `run` kommt
+        /// danach mit `done` (Prüftempo, 22.10.2026).
+        case running, done, teilweise, cancelled, failed
     }
 
     public var run: Int
@@ -117,12 +119,14 @@ public struct PruefErgebnis: Equatable, Sendable {
     /// Weitere Teile des Ergebnisses (Montagereihenfolge, Standsicherheit), roh für spätere Ansichten.
     public var montage: JSONValue?
     public var stand: JSONValue?
+    /// Wege des Bewegungsraums, die der Kernel noch im Hintergrund rechnet (CHECK.im_hintergrund, nur bei `teilweise`).
+    public var imHintergrund: [String]
 
     public init(
         run: Int, zustand: Zustand, laeuft: Bool = false, dauerMs: Double? = nil, meldung: String? = nil,
         zusammenfassung: String = "", fehler: Int = 0, warnungen: Int = 0, hinweise: Int = 0,
         befunde: [PruefBefund] = [], geometrie: [PruefGeometrie] = [], montage: JSONValue? = nil,
-        stand: JSONValue? = nil
+        stand: JSONValue? = nil, imHintergrund: [String] = []
     ) {
         self.run = run
         self.zustand = zustand
@@ -137,6 +141,17 @@ public struct PruefErgebnis: Equatable, Sendable {
         self.geometrie = geometrie
         self.montage = montage
         self.stand = stand
+        self.imHintergrund = imHintergrund
+    }
+
+    /// Wird der Bewegungsraum noch fertig gerechnet? (teilweise ohne offene Wege: das Fertigrechnen ist gescheitert)
+    public var wirdFertigGerechnet: Bool { zustand == .teilweise && !imHintergrund.isEmpty }
+
+    /// „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“ (leer, wenn nichts offen ist).
+    public var hintergrundText: String {
+        guard wirdFertigGerechnet else { return "" }
+        return "Bewegungsraum: " + KevFormat.count(imHintergrund.count, one: "Gelenk wird", many: "Gelenke werden")
+            + " fertig gerechnet …"
     }
 
     /// Befunde, die den Export sperren.
