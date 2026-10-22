@@ -490,6 +490,41 @@ final class BestandAnsichtTests: XCTestCase {
         XCTAssertNil(GebautVorschau.schraubenLaenge(bom.bom.lines[4]))
     }
 
+    /// Strang „Feinschliff 2“: Zukaufteile, Kameras und Objektive sind Stückgut im Bestand; „Gebaut“ zieht ab, was
+    /// aus dem Bestand kommt.
+    func testZukaufteileImBestand() throws {
+        let z = BOMBestand(run: 1, zuschnitte: [], einkaufsliste: [], zukaufBestand: [
+            ZukaufBestand(stockID: "blackmagic-pocket-6k-pro", pos: 2, benennung: "Pocket 6K Pro", anzahl: 1,
+                          ausBestand: 1, kaufen: 0),
+            ZukaufBestand(stockID: "alutec-05200", pos: 1, benennung: "Transportroller", anzahl: 4, ausBestand: 1,
+                          kaufen: 3),
+            ZukaufBestand(stockID: "bowlingball-usbc", pos: 3, benennung: "Ball", anzahl: 1, ausBestand: 0, kaufen: 1),
+        ])
+        XCTAssertTrue(z.hatBuchbares)
+        let v = GebautVorschau.berechnen(zuschnitt: z, bestand: nil, lines: [])
+        XCTAssertEqual(v.weg.map(\.text), ["1 Stück", "1 Stück"])
+        XCTAssertEqual(v.weg.map(\.teil), ["Pocket 6K Pro", "Transportroller"])
+        XCTAssertEqual(v.weg[1].hinweis, "4 gebraucht, 3 kaufen")
+        // Abgleich je Zeile: gleiche Position zuerst, sonst der erste freie Eintrag
+        var benutzt = Set<Int>()
+        XCTAssertEqual(BOMBestand.zukaufBestand(stockID: "alutec-05200", pos: 9, in: z.zukaufBestand!, benutzt: &benutzt)?.pos, 1)
+        XCTAssertNil(BOMBestand.zukaufBestand(stockID: "alutec-05200", pos: 1, in: z.zukaufBestand!, benutzt: &benutzt))
+        // Decoder: Feld fehlt → nil (älterer Kernel), sonst gelesen, kaufen notfalls gerechnet
+        let neu = try JSONDecoder().decode(JSONValue.self, from: Data(
+            #"{"run": 1, "zukauf_bestand": [{"stock_id": "a", "pos": 2, "anzahl": 2, "aus_bestand": 1}]}"#.utf8))
+        XCTAssertEqual(BOMBestand(json: neu)?.zukaufBestand,
+                       [ZukaufBestand(stockID: "a", pos: 2, benennung: "a", anzahl: 2, ausBestand: 1, kaufen: 1)])
+        let alt = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"run": 1, "stueckgut": []}"#.utf8))
+        XCTAssertNil(try XCTUnwrap(BOMBestand(json: alt)).zukaufBestand)
+        // Erfassen: Zukaufteile, Kameras, Objektive und Zubehör als Stückgut
+        for art in ["zukaufteil", "kamera", "objektiv", "kamerazubehoer"] {
+            XCTAssertTrue(CatalogSchema.art(art).imBestand, art)
+            XCTAssertEqual(BestandForm(art: art), .stueckgut, art)
+        }
+        XCTAssertTrue(CatalogSchema.art("rohr").imBestand)
+        XCTAssertFalse(CatalogSchema.art("druckteil").imBestand)
+    }
+
     func testEinkaufslisteExport() throws {
         let z = try XCTUnwrap(try BestandBeispiel.bomMessage().bestand)
         let csv = EinkaufslisteFormat.csv(z.einkaufsliste, summe: z.summe)

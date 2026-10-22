@@ -70,7 +70,7 @@ struct MaterialEinkaufAnsicht: View {
                 } else {
                     tabelle
                 }
-                if !daten.stueckgut.isEmpty || !daten.filament.isEmpty {
+                if !daten.stueckgut.isEmpty || !daten.filament.isEmpty || !daten.zukaufAusBestand.isEmpty {
                     Divider()
                     HStack(alignment: .top, spacing: 14) {
                         if !daten.stueckgut.isEmpty {
@@ -79,6 +79,7 @@ struct MaterialEinkaufAnsicht: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(KachelGrund())
                         }
+                        if !daten.zukaufAusBestand.isEmpty { zukaufAusBestand }
                         if !daten.filament.isEmpty { filament }
                     }
                     .padding(16)
@@ -155,7 +156,8 @@ struct MaterialEinkaufAnsicht: View {
                     ForEach(zukauf) { TableRow($0) }
                 } header: {
                     EinkaufGruppenKopf(titel: "Zukaufteile", symbol: "bag", zeilen: zukauf,
-                                       hinweis: "Bestand wird noch nicht geführt")
+                                       hinweis: daten.zukaufAbgeglichen ? "nach Abzug des Projektbestands"
+                                           : "Bestand wird noch nicht geführt")
                 }
             }
         }
@@ -210,6 +212,32 @@ struct MaterialEinkaufAnsicht: View {
             return z.position.preis == nil ? "Kein Preis beim Zukaufteil" : "Preis wie im Shop (Zukaufteil)"
         }
         return preisHilfe(z.position)
+    }
+
+    /// Zukaufteile, die Kevin für dieses Projekt schon hat (Strang „Feinschliff 2“): „aus Bestand“.
+    private var zukaufAusBestand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "bag").foregroundStyle(MaterialKennzeichen.bestand.color)
+                Text("Zukaufteile aus Bestand").fontWeight(.semibold)
+            }
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 3) {
+                ForEach(daten.zukaufAusBestand) { z in
+                    GridRow {
+                        Text(model.lagerteilName(z.stockID)).lineLimit(1)
+                        Text(z.kaufen > 0 ? "\(z.ausBestand) von \(z.anzahl)" : "\(z.ausBestand) Stück")
+                            .monospacedDigit().foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                    }
+                    .help(z.kaufen > 0 ? "\(z.kaufen) Stück stehen auf der Einkaufsliste" : "ganz aus dem Bestand")
+                }
+            }
+            Text("Im Bestand des Projekts erfasst, nicht auf der Einkaufsliste.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .font(.body)
+        .padding(14)
+        .frame(maxWidth: 360, alignment: .leading)
+        .background(KachelGrund())
     }
 
     private var filament: some View {

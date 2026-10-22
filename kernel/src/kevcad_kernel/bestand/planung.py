@@ -11,6 +11,8 @@ Bestand des Projekts und gibt eine erweiterte Kopie zurück. Die bisherigen Feld
   verplante Länge bzw. Fläche der Quellen; neue Reste zählen nicht) mit ``verschnitt_definition: "2"``, dazu
   ``verschnitt`` über alle Stangen bzw. Platten;
 - ``stueckgut``: je Schraube, Mutter, Scheibe gebraucht, aus dem Bestand, zu kaufen;
+- ``zukauf_bestand``: je Stücklistenzeile eines Zukaufteils (auch Kamera, Objektiv, Kamerazubehör) gebraucht, aus dem
+  Bestand, zu kaufen (die Einkaufsliste führt nur ``kaufen``);
 - ``einkaufsliste``, ``einkauf_summe``, ``einkauf_hinweis``, ``bestand_stand``, ``fehlt``.
 
 Ohne Bestandsdatei ist alles zu kaufen. Druckteile und Eigenteile stehen (noch) nicht auf der Einkaufsliste.
@@ -31,7 +33,7 @@ from kevcad_kernel.bom import (
     verschnitt_prozent,
     verschnitt_summe,
 )
-from kevcad_kernel.catalog import KLEINTEILE, STANGENWARE, number
+from kevcad_kernel.catalog import KLEINTEILE, STANGENWARE, STUECKGUT_ZUKAUF, number
 
 from .datei import einstellungen, mindestrest, zahl
 from .zuschnitt import ZEITLIMIT_S, plane_1d, plane_2d, platzierungen
@@ -331,6 +333,30 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
             if laenge is not None:
                 name += f", Länge {de_num(laenge)} mm"
             kauf(sid, name, left, "Stück", preis_je, _stand(item, mat), item, hinweis)
+    # ---- Zukaufteile (Stückgut ohne Länge, Strang „Feinschliff 2“) ---------------------------------------------------
+    # Was Kevin davon im Projekt hat, deckt die Stückliste zuerst; der Rest steht in der Gruppe „Zukaufteile“ der
+    # Einkaufsliste (einkauf.py, MaterialDaten), nicht unter Lagerware. „Gebaut“ zieht das Verplante ab.
+    zukauf_bestand: list[dict[str, Any]] = []
+    for ln in lines:
+        if ln.get("art") not in STUECKGUT_ZUKAUF or not ln.get("stock_id") or ln.get("eigenteil") is True:
+            continue
+        sid = str(ln["stock_id"])
+        need = int(number(ln.get("anzahl")) or 0)
+        pool = vorrat.get(sid, {})
+        left = need
+        taken = []
+        # Zukaufteile ohne Länge zuerst, dann Zeilen mit Länge (falls jemand eine angegeben hat)
+        for key in sorted(pool, key=lambda k: (k is not None, k or 0)):
+            k = min(pool[key], left)
+            if k > 0:
+                pool[key] -= k
+                taken.append((key, k))
+                left -= k
+        zukauf_bestand.append({"stock_id": sid, "pos": ln.get("pos"), "benennung": ln.get("benennung"),
+                               "anzahl": need, "aus_bestand": need - left, "kaufen": left})
+        if taken:
+            vb = stueck_verbrauch.setdefault(sid, Verbrauch(sid))
+            vb.stueck += taken
     verbrauch += list(stueck_verbrauch.values())
 
     priced = [k["preis"] for k in einkauf if k.get("preis") is not None]
@@ -346,7 +372,8 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
         out["verschnitt"] = verschnitt_summe(cuts)
     else:
         out.pop("verschnitt", None)
-    out.update({"cuts": cuts, "warnings": warnings, "stueckgut": stueckgut, "einkaufsliste": einkauf,
+    out.update({"cuts": cuts, "warnings": warnings, "stueckgut": stueckgut, "zukauf_bestand": zukauf_bestand,
+                "einkaufsliste": einkauf,
                 "einkauf_summe": round(sum(priced), 2) if priced else None, "einkauf_hinweis": note,
                 "bestand_stand": stand if not fehler else None, "fehlt": bool(einkauf)})
     return Planung(out, verbrauch, statistik)

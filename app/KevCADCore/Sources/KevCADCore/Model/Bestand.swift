@@ -864,10 +864,14 @@ public struct BOMBestand: Equatable, Sendable {
     /// Summe der Einkaufsliste vom Kernel (sonst gerechnet) und sein Hinweis zu den Preisen.
     public var einkaufSumme: Double?
     public var einkaufHinweis: String?
+    /// Zukaufteile mit Bestand (`BOM.zukauf_bestand`, Strang „Feinschliff 2“): je Stücklistenzeile gebraucht, aus dem
+    /// Bestand, zu kaufen. nil: der Kernel gleicht Zukaufteile nicht ab (dann stehen sie ganz auf der Einkaufsliste).
+    public var zukaufBestand: [ZukaufBestand]?
 
     public init(
         run: Int, zuschnitte: [BestandZuschnitt], einkaufsliste: [EinkaufsPosition], bestandStand: String? = nil,
-        fehlt: Bool? = nil, stueckgut: [StueckgutBedarf] = [], einkaufSumme: Double? = nil, einkaufHinweis: String? = nil
+        fehlt: Bool? = nil, stueckgut: [StueckgutBedarf] = [], einkaufSumme: Double? = nil, einkaufHinweis: String? = nil,
+        zukaufBestand: [ZukaufBestand]? = nil
     ) {
         self.run = run
         self.zuschnitte = zuschnitte
@@ -877,6 +881,7 @@ public struct BOMBestand: Equatable, Sendable {
         self.stueckgut = stueckgut
         self.einkaufSumme = einkaufSumme
         self.einkaufHinweis = einkaufHinweis
+        self.zukaufBestand = zukaufBestand
     }
 
     /// Aus der BOM-Nachricht; nil, wenn der Kernel keine Bestandsfelder schickt.
@@ -884,7 +889,7 @@ public struct BOMBestand: Equatable, Sendable {
         let zuschnitte = (json["cuts"]?.arrayValue ?? []).compactMap(BestandZuschnitt.init(json:))
         let liste = json["einkaufsliste"]?.arrayValue
         guard !zuschnitte.isEmpty || liste != nil || json["bestand_stand"] != nil || json["fehlt"] != nil
-            || json["stueckgut"] != nil
+            || json["stueckgut"] != nil || json["zukauf_bestand"] != nil
         else {
             return nil
         }
@@ -893,7 +898,8 @@ public struct BOMBestand: Equatable, Sendable {
             einkaufsliste: (liste ?? []).enumerated().compactMap { EinkaufsPosition(json: $1, index: $0) },
             bestandStand: json["bestand_stand"]?.lenientString, fehlt: json["fehlt"]?.boolValue,
             stueckgut: (json["stueckgut"]?.arrayValue ?? []).compactMap(StueckgutBedarf.init(json:)),
-            einkaufSumme: json["einkauf_summe"]?.doubleValue, einkaufHinweis: json["einkauf_hinweis"]?.lenientString)
+            einkaufSumme: json["einkauf_summe"]?.doubleValue, einkaufHinweis: json["einkauf_hinweis"]?.lenientString,
+            zukaufBestand: json["zukauf_bestand"]?.arrayValue.map { $0.compactMap(ZukaufBestand.init(json:)) })
     }
 
     /// Summe der Einkaufsliste: Angabe des Kernels, sonst gerechnet (nil, wenn keine Position einen Preis hat).
@@ -911,7 +917,55 @@ public struct BOMBestand: Equatable, Sendable {
     /// Etwas aus dem Bestand wird verplant oder es entstehen Reste: „Gebaut“ hat etwas zu buchen.
     public var hatBuchbares: Bool {
         zuschnitte.contains { $0.quellen.contains { $0.art != .kaufen } || $0.hatNeueReste }
-            || stueckgut.contains { $0.ausBestand > 0 }
+            || stueckgut.contains { $0.ausBestand > 0 } || (zukaufBestand ?? []).contains { $0.ausBestand > 0 }
+    }
+
+    /// Bestand einer Zukauf-Zeile der Stückliste: gleiche `stock_id` und Position, sonst der erste noch freie Eintrag
+    /// mit gleicher `stock_id` (wie `_bestand_fuer` in `kernel/src/kevcad_kernel/bestand/einkauf.py`).
+    public static func zukaufBestand(
+        stockID: String?, pos: Int?, in liste: [ZukaufBestand], benutzt: inout Set<Int>
+    ) -> ZukaufBestand? {
+        guard let stockID else { return nil }
+        let kandidaten = liste.indices.filter { liste[$0].stockID == stockID && !benutzt.contains($0) }
+        if let pos, let i = kandidaten.first(where: { liste[$0].pos == pos }) {
+            benutzt.insert(i)
+            return liste[i]
+        }
+        guard let i = kandidaten.first else { return nil }
+        benutzt.insert(i)
+        return liste[i]
+    }
+}
+
+/// Zukaufteil der Stückliste mit Bestand (`BOM.zukauf_bestand`): Zukaufteile, Kameras, Objektive und Kamerazubehör
+/// führt der Bestand als Stückgut ohne Länge (Strang „Feinschliff 2“).
+public struct ZukaufBestand: Identifiable, Equatable, Sendable {
+    public var stockID: String
+    /// Position der Stückliste (nil, wenn der Kernel keine schickt).
+    public var pos: Int?
+    public var benennung: String
+    public var anzahl: Int
+    public var ausBestand: Int
+    public var kaufen: Int
+
+    public var id: String { stockID + "/" + (pos.map(String.init) ?? "-") }
+
+    public init(stockID: String, pos: Int? = nil, benennung: String, anzahl: Int, ausBestand: Int, kaufen: Int) {
+        self.stockID = stockID
+        self.pos = pos
+        self.benennung = benennung
+        self.anzahl = anzahl
+        self.ausBestand = ausBestand
+        self.kaufen = kaufen
+    }
+
+    init?(json: JSONValue) {
+        guard let id = json["stock_id"]?.lenientString else { return nil }
+        let anzahl = json["anzahl"]?.intValue ?? 0
+        let aus = json["aus_bestand"]?.intValue ?? 0
+        self.init(
+            stockID: id, pos: json["pos"]?.intValue, benennung: json["benennung"]?.lenientString ?? id, anzahl: anzahl,
+            ausBestand: aus, kaufen: json["kaufen"]?.intValue ?? max(0, anzahl - aus))
     }
 }
 

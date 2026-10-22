@@ -111,7 +111,16 @@ public struct GebautVorschau: Equatable, Sendable {
                 teil: name(s.stockID) ?? s.benennung,
                 hinweis: s.kaufen > 0 ? "\(KevFormat.integer(s.anzahl)) gebraucht, \(KevFormat.integer(s.kaufen)) kaufen" : nil))
         }
-        for posten in bestand?.posten ?? [] where posten.form == .stueckgut && zuschnitt.stueckgut.isEmpty {
+        // Zukaufteile aus dem Bestand (BOM.zukauf_bestand, Strang „Feinschliff 2“)
+        let zukauf = zuschnitt.zukaufBestand ?? []
+        for zb in zukauf where zb.ausBestand > 0 {
+            v.weg.append(Zeile(
+                id: "\(zb.id)/zukauf", art: .stueckWeg, text: "\(KevFormat.integer(zb.ausBestand)) Stück",
+                teil: name(zb.stockID) ?? zb.benennung,
+                hinweis: zb.kaufen > 0 ? "\(KevFormat.integer(zb.anzahl)) gebraucht, \(KevFormat.integer(zb.kaufen)) kaufen" : nil))
+        }
+        for posten in bestand?.posten ?? [] where posten.form == .stueckgut && zuschnitt.stueckgut.isEmpty
+            && !zukauf.contains(where: { $0.stockID == posten.id }) {
             let zeilen = lines.filter { $0.stockID == posten.id }
             guard !zeilen.isEmpty else { continue }
             let teil = name(posten.id) ?? zeilen.first?.benennung ?? posten.id

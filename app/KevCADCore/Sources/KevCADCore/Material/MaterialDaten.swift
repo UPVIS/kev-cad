@@ -139,7 +139,8 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
     public var gruppe: MaterialGruppe
     /// Zukauf, Druckteil oder Eigenteil (Lagerteile: nil).
     public var herkunft: MaterialKennzeichen?
-    /// Woher das Material kommt: Bestand, Rest, Kaufen (leer ohne Bestandsangaben oder bei Zukauf-, Druck-, Eigenteilen).
+    /// Woher das Material kommt: Bestand, Rest, Kaufen (leer ohne Bestandsangaben oder bei Druck- und Eigenteilen;
+    /// Zukaufteile: Bestand und Kaufen, seit dem Strang „Feinschliff 2“).
     public var versorgung: [MaterialKennzeichen]
     /// Werkstoff als Anzeigename (Katalog, sonst Angabe der Stückliste).
     public var werkstoff: String?
@@ -212,7 +213,7 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
 // MARK: - Einkauf
 
 /// Zeile der Einkaufsliste: Lagerware aus dem Abgleich mit dem Bestand (Kernel) oder ein Zukaufteil aus der Stückliste
-/// (Zukaufteile führt der Bestand noch nicht, sie stehen immer auf der Liste).
+/// (seit dem Strang „Feinschliff 2“ nach Abzug des Projektbestands, `BOM.zukauf_bestand`).
 public struct MaterialEinkauf: Identifiable, Equatable, Sendable {
     public enum Art: String, Sendable { case lager, zukauf }
 
@@ -406,6 +407,10 @@ public struct MaterialDaten: Equatable, Sendable {
     public var mindestreste: [String: Double]
     public var stueckgut: [StueckgutBedarf]
     public var einkauf: [MaterialEinkauf]
+    /// Zukaufteile, die ganz oder teilweise aus dem Bestand des Projekts kommen (Stückliste in ihrer Reihenfolge).
+    public var zukaufAusBestand: [ZukaufBestand]
+    /// Der Kernel gleicht Zukaufteile mit dem Bestand ab (`BOM.zukauf_bestand`); sonst stehen sie ganz auf der Liste.
+    public var zukaufAbgeglichen: Bool
     public var filament: [MaterialFilament]
     public var kennzahlen: MaterialKennzahlen
     public var warnungen: [String]
@@ -438,22 +443,31 @@ public struct MaterialDaten: Equatable, Sendable {
             Self.position(line, zuschnitt: bestand, stueckgut: bestand?.stueckgut ?? [], katalog: katalog)
         }
 
-        // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste
+        // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste nach Abzug des Projektbestands
         var einkauf = (bestand?.einkaufsliste ?? []).map { MaterialEinkauf(art: .lager, position: $0, pos: nil) }
+        var benutzt = Set<Int>()
+        var ausBestand: [ZukaufBestand] = []
         for p in positionen where p.herkunft == .zukauf {
             let z = p.line.zukauf
             let hinweis = [z?.title.isEmpty == false ? z?.title : nil, z?.gtin.map { "EAN \($0)" }]
                 .compactMap { $0 }.joined(separator: " · ")
-            einkauf.append(MaterialEinkauf(
-                art: .zukauf,
-                position: EinkaufsPosition(
-                    id: p.stockID ?? "pos-\(p.pos)", benennung: p.line.benennung, menge: Double(p.anzahl),
-                    einheit: "Stück", preisJe: p.line.preisJe, preis: p.line.preis, link: z?.url,
-                    linkName: z?.url?.host?.replacingOccurrences(of: "www.", with: ""),
-                    hinweis: hinweis.isEmpty ? nil : hinweis, stand: z?.preisStand),
-                pos: p.pos))
+            var position = EinkaufsPosition(
+                id: p.stockID ?? "pos-\(p.pos)", benennung: p.line.benennung, menge: Double(p.anzahl),
+                einheit: "Stück", preisJe: p.line.preisJe, preis: p.line.preis, link: z?.url,
+                linkName: z?.url?.host?.replacingOccurrences(of: "www.", with: ""),
+                hinweis: hinweis.isEmpty ? nil : hinweis, stand: z?.preisStand)
+            if let liste = bestand?.zukaufBestand,
+               let zb = BOMBestand.zukaufBestand(stockID: p.stockID, pos: p.pos, in: liste, benutzt: &benutzt),
+               zb.ausBestand > 0 {
+                ausBestand.append(zb)
+                guard let mitBestand = Self.zukaufMitBestand(position, zb) else { continue }
+                position = mitBestand
+            }
+            einkauf.append(MaterialEinkauf(art: .zukauf, position: position, pos: p.pos))
         }
         self.einkauf = einkauf
+        zukaufAusBestand = ausBestand
+        zukaufAbgeglichen = bestand?.zukaufBestand != nil
 
         // Filament je Werkstoff: aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste
         var filament: [String: MaterialFilament] = [:]
@@ -521,6 +535,25 @@ public struct MaterialDaten: Equatable, Sendable {
 
     static func summe(_ liste: [EinkaufsPosition]) -> Double? { summe(liste.map(\.preis)) }
 
+    /// Zukauf-Zeile nach Abzug des Projektbestands (wie `_mit_bestand` in `bestand/einkauf.py`): ganz gedeckt → nil,
+    /// sonst die Fehlmenge mit anteiligem Preis und dem Hinweis „Bestand im Projekt: 1, gebraucht: 2“.
+    static func zukaufMitBestand(_ p: EinkaufsPosition, _ zb: ZukaufBestand) -> EinkaufsPosition? {
+        guard zb.ausBestand > 0 else { return p }
+        guard zb.kaufen > 0 else { return nil }
+        var out = p
+        out.menge = Double(zb.kaufen)
+        if let je = p.preisJe {
+            out.preis = je * Double(zb.kaufen)
+        } else if let preis = p.preis, zb.anzahl > 0 {
+            out.preis = preis * Double(zb.kaufen) / Double(zb.anzahl)
+        } else {
+            out.preis = nil
+        }
+        let bestand = "Bestand im Projekt: \(zb.ausBestand), gebraucht: \(zb.anzahl)"
+        out.hinweis = p.hinweis.map { "\($0) · \(bestand)" } ?? bestand
+        return out
+    }
+
     static func summe(_ werte: [Double?]) -> Double? {
         let w = werte.compactMap { $0 }
         return w.isEmpty ? nil : w.reduce(0, +)
@@ -541,6 +574,13 @@ public struct MaterialDaten: Equatable, Sendable {
         var versorgung: [MaterialKennzeichen] = []
         if herkunft == nil, let z = zuschnitt, let sid = line.stockID {
             versorgung = Self.versorgung(line, stockID: sid, zuschnitt: z, stueckgut: stueckgut)
+        } else if herkunft == .zukauf, let liste = zuschnitt?.zukaufBestand {
+            // Zukaufteile führt der Bestand als Stückgut (Strang „Feinschliff 2“)
+            var benutzt = Set<Int>()
+            if let zb = BOMBestand.zukaufBestand(stockID: line.stockID, pos: line.pos, in: liste, benutzt: &benutzt) {
+                versorgung = [zb.ausBestand > 0 ? MaterialKennzeichen.bestand : nil, zb.kaufen > 0 ? .kaufen : nil]
+                    .compactMap { $0 }
+            }
         }
         let werkstoff = line.material.map { m in katalog?.material(m)?.name ?? m }
         var link = line.zukauf?.url

@@ -39,6 +39,10 @@ STANGENWARE = frozenset(ARTEN[:10])
 ZUKAUF_ARTEN: tuple[str, ...] = ("zukaufteil",)
 ALLE_ARTEN: tuple[str, ...] = ARTEN + ZUKAUF_ARTEN
 KLEINTEILE = frozenset({"schraube", "mutter", "scheibe"})
+# Zukaufteile, Kameras, Objektive und Kamera-Zubehör führt der Bestand als Stückgut wie die Kleinteile (BESTAND.md,
+# Strang „Feinschliff 2“): eine Anzahl je Lagerteil, ohne Länge
+STUECKGUT_ZUKAUF = frozenset({"zukaufteil", "kamera", "objektiv", "kamerazubehoer"})
+STUECKGUT = KLEINTEILE | STUECKGUT_ZUKAUF
 EBENEN: tuple[str, ...] = ("mitgeliefert", "eigen", "projekt")
 WRITABLE = ("eigen", "projekt")
 KINDS = {"teil": "teil", "teile": "teil", "item": "teil", "stock": "teil", "lagerteil": "teil",

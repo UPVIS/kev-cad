@@ -140,6 +140,9 @@ def material_bom(run: int = 5, katalog: Katalog | None = None) -> dict[str, Any]
     neu(Piece(seq=0, name="Kamera/Schnellwechselplatte", stock_id="manfrotto-200pl-pro", art="kamerazubehoer",
               benennung="Manfrotto Schnellwechselplatte 200PL-PRO", groesse="1/4\"-20", kg=0.07, preis=29.9,
               preis_stand="2026-10"))
+    # Strang „Feinschliff 2“: eine Kamera, die Kevin hat (ganz aus dem Bestand, entfällt auf der Einkaufsliste)
+    neu(Piece(seq=0, name="Kamera/Blackmagic Pocket 6K Pro", stock_id="blackmagic-pocket-6k-pro", art="kamera",
+              benennung="Blackmagic Pocket Cinema Camera 6K Pro", kg=1.24, preis=1990.0, preis_stand="2026-10"))
     for name, mid, vol, size in DRUCKTEILE:
         m = FILAMENT[mid]
         kg = vol * m["dichte"] / 1e6

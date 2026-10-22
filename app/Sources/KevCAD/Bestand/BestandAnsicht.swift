@@ -44,8 +44,8 @@ struct BestandAnsicht: View {
     private var nichtErfasst: [String] {
         var seen = Set(bestand?.posten.map(\.id) ?? [])
         var out: [String] = []
-        // Erste Stufe: Stangenware, Platten, Stückgut (Zukaufteile und Kameras folgen später)
-        for line in model.bom?.lines ?? [] where !line.eigenteil && !line.druckteil && CatalogSchema.art(line.art).isKnown {
+        // Stangenware, Platten, Stückgut; Zukaufteile, Kameras und Objektive als Stückgut (Strang „Feinschliff 2“)
+        for line in model.bom?.lines ?? [] where !line.eigenteil && !line.druckteil && CatalogSchema.art(line.art).imBestand {
             guard let id = line.stockID, seen.insert(id).inserted else { continue }
             out.append(id)
         }

@@ -115,7 +115,9 @@ name="Schrauben/M8x60 1")` (bd_warehouse, head on z=0, shaft along -Z); nuts and
 
 Stock on hand and shopping list (Bestand, per project)
 - Each project has its own stock (bestand.json in the project folder): whole bars/sheets, offcuts with ids (R-0001, \
-P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it.
+P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it. Purchased parts, cameras, \
+lenses and camera accessories are piece goods: `bestand_eintragen(id, stueck=1, grund=...)`; parts Kevin has leave \
+the shopping list.
 - After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
 (optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
 offcuts remain. `einkaufsliste` returns exactly the list Kevin sees and shares in the app: stock items and bought \
