@@ -178,7 +178,7 @@ def _torsion(art: str, m: dict[str, Any], A: float, c_max: float) -> tuple[float
         h = _num(m, "a") if art == "vierkantrohr" else _num(m, "h")
         Am = (b - s) * (h - s)
         Um = 2 * ((b - s) + (h - s))
-        return 4 * Am * Am * s / Um, 2 * Am * s, "Torsion nach Bredt (dünnwandig geschlossen)"
+        return 4 * Am * Am * s / Um, 2 * Am * s, ""  # Bredt (dünnwandig geschlossen)
     if art in ("flach", "vierkant", "holz"):
         if art == "flach":
             b, h = _num(m, "b"), _num(m, "s")

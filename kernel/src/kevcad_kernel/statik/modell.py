@@ -453,6 +453,13 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
             mitte = _ueberlapp_mitte(np.asarray(koerper[s_name].bmin), np.asarray(koerper[s_name].bmax),
                                      np.asarray(koerper[x].bmin), np.asarray(koerper[x].bmax))
             roh.append(Anschluss(s_name, s.t_von(mitte), art, ("koerper", kid), e["achse"], (s_name, x), quelle))
+    # Stäbe, die selbst befestigt sind (befestigt(…) oder verbinde(…, boden)): fest eingespannt an beiden Enden
+    for s in m.staebe.values():
+        grund = befestigt.get(s.name) or ("verbinde(…, boden)" if s.name in boden_teile else None)
+        if grund:
+            for t in (0.0, s.laenge):
+                roh.append(Anschluss(s.name, t, "fest", ("boden",), None, (s.name, "Umgebung"),
+                                     f"befestigt: {grund}"))
     # Stäbe direkt auf dem Boden (ohne Kulisse)
     for s in m.staebe.values():
         if any(a.stab == s.name and a.partner[0] == "boden" for a in roh):
@@ -540,8 +547,9 @@ def auf_rollen(m: StatikModell) -> bool:
     """Steht das Modell auf Rädern oder Rollen (Teile am Boden mit Rad/Rolle im Namen)?"""
     from kevcad_kernel.statik.szenario import RAD_WORTE
 
+    an_kulisse = _am_kulisse(m)
     for n, t in m.teile.items():
-        if t.bmin[2] <= m.boden_z + BODEN_TOL or n in _am_kulisse(m):
+        if t.bmin[2] <= m.boden_z + BODEN_TOL or n in an_kulisse:
             kurz = n.lower()
             if any(w in kurz for w in RAD_WORTE):
                 return True

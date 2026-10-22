@@ -234,6 +234,8 @@ def _komponente(adj: dict[str, set[str]], start: str) -> set[str]:
 
 
 def _geerdet(m: StatikModell, teile: set[str]) -> bool:
+    an_kulisse = {e["a"] if e["b"] in m.kulisse else e["b"] for e in m.kanten.values()
+                  if (e["a"] in m.kulisse) != (e["b"] in m.kulisse)}
     for n in teile:
         k = m.koerper_von(n)
         if k is not None and k.geerdet:
@@ -241,7 +243,7 @@ def _geerdet(m: StatikModell, teile: set[str]) -> bool:
         t = m.teile.get(n)
         if t is not None and t.bmin[2] <= m.boden_z + BODEN_TOL:
             return True
-        if any(e["a"] == n and e["b"] in m.kulisse or e["b"] == n and e["a"] in m.kulisse for e in m.kanten.values()):
+        if n in an_kulisse:
             return True
     return False
 
