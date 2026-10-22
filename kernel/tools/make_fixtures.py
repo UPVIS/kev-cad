@@ -334,6 +334,9 @@ def main() -> None:
     import make_export_fixtures  # Dokument-Export (DOC_EXPORT_REQ/RES): eigene Dateien und Abschnitt export
 
     make_export_fixtures.main()
+    import make_druck_fixtures  # Druckvorschau (PRINT_*): eigene Dateien und Abschnitt druck
+
+    make_druck_fixtures.main()
 
 
 if __name__ == "__main__":

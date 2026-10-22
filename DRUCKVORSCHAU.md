@@ -58,6 +58,29 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 - Hinweise im gemeinsamen Format (`schwere`, `text`, `art`); Fehler der Druckprüfung bleiben dort, hier nur Druckpraxis
   (Trocknen, Verzug, Brim, Stützen-Nacharbeit, AMS-Spülmenge, Düsenverschleiß bei CF, Erfolgsrisiko).
 
+**Präzisierungen und additive Felder (V-K, 22.10.2026; nichts Bestehendes geändert):**
+
+- `teile[]`: `g`, `m`, `zeit_s` und `kosten` gelten für alle `anzahl` Stück der Gruppe; je Stück additiv
+  `je_stueck: {"g", "m", "zeit_s"}`. `teile` sind die Namen aus `show()`; `anzahl` ist mindestens ihre Zahl (mehr nur
+  mit `druckteil(…, anzahl=)`). Additiv: `fest` (Liste der Einstellungen, die Kevin oder der Agent fest vorgegeben
+  hat, dazu `"zweck"`, wenn der Zweck vorgegeben ist), `profil: {"prozess", "filament"}` (Bambu-Studio-Profile),
+  `risiko` (0–1, Fehldruck-Wahrscheinlichkeit), `stuetzen_g` (Stützmaterial aller Stück), `kosten`.
+- `einstellungen.fuellung` ist ein Anteil 0–1 (0,25 = 25 %); `muster` wie in Bambu Studio (`gyroid`, `grid`,
+  `cubic`, `honeycomb`, `rectilinear`, `line`, `concentric`, `triangles`, `zigzag`, `crosshatch`, `lightning`).
+- `platten[].teile[]`: `x`, `y` = Mitte des Hüllrechtecks auf der Platte (Drucker-mm, Ursprung vorn links);
+  `drehung` in Grad um Z gegenüber der Druckausrichtung; `umriss` = konvexe Hülle in Plattenkoordinaten (absolut,
+  gegen den Uhrzeigersinn). Additiv `ersatz` (true für Stück über die gezeigten hinaus, `name` bleibt das gezeigte
+  Teil). Additiv je Platte: `anordnung` (`schnell` | `slicer`), `kosten`, `hoehe_mm`, `material[].m` und
+  `material[].kosten`. Eine Platte trägt ein Material (P1P ohne AMS).
+- `summe.kosten` = Summe von `kosten_teile`; additiv `kosten_teile.risiko` (Aufschlag fürs Erfolgsrisiko, V5).
+  `zeit_mit_wechsel_s` = `zeit_s` + (Platten − 1) · `plattenwechsel_s`.
+- Additiv oben: `einstellungen` (benutzte Projekt-Einstellungen: `drucker`, `strompreis_kwh`, `leistung_w`,
+  `plattenwechsel_s`, `slicer`), `regler` (true: Lauf mit Reglerwerten, nichts gespeichert, kein Slicer), `ms`
+  (Rechenzeit der Schätzung); `slicer.version` (Bambu Studio), `slicer.ms`.
+- Ohne Druckteile: `platten` und `teile` leer, Summe null, `slicer.zustand: "aus"`.
+- `hinweise[].art`: `trocknen`, `verzug`, `material`, `brim`, `stuetzen`, `ams`, `duese`, `risiko`, `bauraum`,
+  `auflage`, `festigkeit`, `slicer`, `platte`.
+
 ## Ablauf im Kernel
 
 1. Nach jedem erfolgreichen Lauf mit Druckteilen: Schätzung (V1/V2) und schnelles Anordnen (V3), Ziel unter 1 s am
@@ -84,6 +107,14 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 
 `PRINT_SETTINGS` von Kevin gelten als feste Vorgabe je Gruppe und überleben Läufe (gespeichert in
 `<projekt>/druck.json`, gehört zu den Projektdateien und damit zu den Versionen).
+
+Präzisierungen (additiv): `PRINT_SETTINGS.von` (`kevin` Vorgabe, `agent` vom MCP); ein Wert `null` in
+`einstellungen` nimmt diese Vorgabe zurück; `zuruecksetzen: true` nimmt alle Vorgaben des Teils bzw. der Gruppe
+zurück. Gespeichert wird je Teilname (aus `show()`), damit die Vorgabe Formänderungen übersteht; eine Gruppe schreibt
+alle ihre Teile. `PRINT_EXPORT_REQ.ziel` `null` = `<projekt>/output/<projekt>-druck.3mf`. `PRINT_EXPORT_RES` additiv
+`hinweise`, `ms`, `geprueft` (die Datei wurde zur Kontrolle in Bambu Studio geladen). Testdateien:
+`tools/make_druck_fixtures.py` (`print_*.frame`, `ack_print_*.frame`, Abschnitt `druck` in `fixtures.json`);
+Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_message`).
 
 ## MCP
 

@@ -654,3 +654,17 @@ Kante k = Punkte `edge_offsets[k] ..< edge_offsets[k+1]`), Weltkoordinaten, litt
 Wiederherstellen ist nie zerstörend: ungesicherte Änderungen werden vorher eine Version (`sicherung`), der
 wiederhergestellte Stand eine neue Version „Wiederhergestellt aus V12“. Läufe, Wiederherstellen, Variantenwechsel und
 Meilensteine laufen im Kernel nacheinander (nie während eines Laufs).
+
+## Druckvorschau
+
+Vertrag mit Ergebnisformat und Ablauf: [DRUCKVORSCHAU.md](DRUCKVORSCHAU.md). Nachrichten ohne Nutzlast, Packen und
+Prüfen in `protocol.py` (`pack_print_preview`, `print_settings`, `print_export_req`, `print_export_res`,
+`check_druck_message`), Testdateien aus `tools/make_druck_fixtures.py`.
+
+| type | Richtung | Felder | Antwort |
+|---|---|---|---|
+| `PRINT_PREVIEW` | Kernel → App | `run`, `stand`, `drucker`, `summe`, `platten`, `teile`, `hinweise`, `slicer` (dazu `einstellungen`, `regler`, `ms`), `reply_to` optional; nach jedem Lauf mit Druckteilen, nach jedem Slicer-Ergebnis und beim Verbinden | – |
+| `PRINT_PREVIEW_REQ` | App → Kernel | `id` | `PRINT_PREVIEW` mit `reply_to` |
+| `PRINT_SETTINGS` | App → Kernel | `id`, `teil` oder `gruppe`, `einstellungen` (Wert `null` = Vorgabe zurück) und/oder `zweck`, `zuruecksetzen`, `von` | `ACK`, danach `PRINT_PREVIEW` |
+| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (leer = alle), `ziel` (Pfad .3mf oder null) | `ACK`, danach `PRINT_EXPORT_RES` |
+| `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` (dazu `hinweise`, `ms`, `geprueft`) | – |
