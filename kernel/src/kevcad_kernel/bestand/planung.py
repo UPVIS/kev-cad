@@ -368,6 +368,19 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
                                  (f", Stand {stands[0]} bis {stands[-1]}" if stands else "")))
         if ohne:
             note += "; ohne Preis: " + ", ".join(dict.fromkeys(ohne))
+    # „Ohne Preis“ der Stückliste nennt nur, was noch gekauft werden muss: ganz aus dem Bestand gedeckte Zukaufteile
+    # haben keinen Preis nötig (KevCup, 22.10.2026)
+    gedeckt = {str(z["benennung"]) for z in zukauf_bestand if z.get("benennung") and not z.get("kaufen")}
+    if gedeckt:
+        neu: list[str] = []
+        for w in warnings:
+            if w.startswith("Ohne Preis: "):
+                rest = [n for n in w[len("Ohne Preis: "):].split(", ") if n not in gedeckt]
+                if rest:
+                    neu.append("Ohne Preis: " + ", ".join(rest))
+            else:
+                neu.append(w)
+        warnings = neu
     if cuts:
         out["verschnitt"] = verschnitt_summe(cuts)
     else:

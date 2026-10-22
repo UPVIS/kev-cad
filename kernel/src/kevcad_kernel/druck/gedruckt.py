@@ -108,9 +108,28 @@ def geaendert(alt: dict[str, Any], neu: dict[str, Any]) -> list[str]:
     return out
 
 
-def eintrag(sig: dict[str, Any], geo: dict[str, Any]) -> dict[str, Any]:
-    return {"signatur": sig, "groesse": list(sig.get("g") or geo.get("groesse") or []),
-            "volumen": round(float(sig.get("v") or geo.get("volumen") or 0.0), 1),
+def _exakt(k: Any) -> tuple[float | None, list[float] | None]:
+    """Volumen und Maße der B-Rep (``k``: Prüfkörper): die Signatur rechnet auf dem Netz und dient nur dem Vergleich;
+    angezeigt werden die exakten Werte wie in der Stückliste (KevCup, 22.10.2026: 49 379,8 statt 49 273 mm³)."""
+    if k is None:
+        return None, None
+    vol = float(getattr(k, "volumen", 0.0) or 0.0) or None
+    try:
+        from OCP.Bnd import Bnd_OBB
+        from OCP.BRepBndLib import BRepBndLib
+
+        obb = Bnd_OBB()
+        BRepBndLib.AddOBB_s(k.shape, obb, True, True, False)
+        groesse = sorted(round(2.0 * h, 2) for h in (obb.XHSize(), obb.YHSize(), obb.ZHSize()))
+    except Exception:  # noqa: BLE001 - ohne OBB bleiben die Maße der Signatur
+        groesse = None
+    return vol, groesse
+
+
+def eintrag(sig: dict[str, Any], geo: dict[str, Any], k: Any = None) -> dict[str, Any]:
+    vol, groesse = _exakt(k)
+    return {"signatur": sig, "groesse": groesse or list(sig.get("g") or geo.get("groesse") or []),
+            "volumen": round(vol if vol else float(sig.get("v") or geo.get("volumen") or 0.0), 1),
             "material": geo.get("material"), "seit": time.strftime("%Y-%m-%dT%H:%M:%S")}
 
 
@@ -142,9 +161,9 @@ def pruefe(ctx: Any) -> list[dict[str, Any]]:
             continue
         e = gespeichert.get(name)
         if k.info.get("druck_neu_drucken"):
-            stand[name] = {"status": "neu_drucken", "eintrag": eintrag(sig, geo)}
+            stand[name] = {"status": "neu_drucken", "eintrag": eintrag(sig, geo, k)}
         elif not isinstance(e, dict) or not isinstance(e.get("signatur"), dict):
-            stand[name] = {"status": "neu", "eintrag": eintrag(sig, geo)}
+            stand[name] = {"status": "neu", "eintrag": eintrag(sig, geo, k)}
         else:
             diff = geaendert(e["signatur"], sig)
             stand[name] = {"status": "geaendert" if diff else "gleich", "unterschiede": diff, "seit": e.get("seit")}
