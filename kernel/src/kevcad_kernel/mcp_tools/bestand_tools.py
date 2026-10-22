@@ -1,5 +1,6 @@
-"""MCP-Werkzeuge für den Bestand je Projekt (BESTAND.md): bestand_liste, bestand_eintragen, einkaufsliste,
-gebaut_buchen, buchung_rueckgaengig. Beschreibungen englisch (für das Modell), Ergebnisse deutsch."""
+"""MCP-Werkzeuge für den Bestand je Projekt (BESTAND.md): bestand_liste, bestand_eintragen (auch Filament),
+einkaufsliste, gebaut_buchen, gedruckt_buchen, buchung_rueckgaengig. Beschreibungen englisch (für das Modell),
+Ergebnisse deutsch."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from typing import Annotated, Any
 from mcp_types import CallToolResult, ToolAnnotations
 from pydantic import Field
 
+from kevcad_kernel.appformat import masse_g
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
@@ -18,7 +20,7 @@ WRITES = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent
 ADDITIVE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False)
 
 BESTAND_TOOL_NAMES: tuple[str, ...] = ("bestand_liste", "bestand_eintragen", "einkaufsliste", "gebaut_buchen",
-                                       "buchung_rueckgaengig")
+                                       "gedruckt_buchen", "buchung_rueckgaengig")
 
 
 def _lines(res: dict[str, Any]) -> list[str]:
@@ -31,10 +33,12 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
     @tool("bestand_liste", "Bestand",
           "Stock on hand for the OPEN PROJECT only (each project has its own bestand.json, nothing is shared between "
           "projects): whole bars or sheets, offcuts (Reste) with id (R-0001 bars, P-0001 sheets), length or size and "
-          "location, piece goods (screws by length, purchased parts), settings (minimum offcut, saw kerf) and the "
-          "latest bookings. id limits it to one stock item.", READ_ONLY)
+          "location, piece goods (screws by length, purchased parts), filament spools (S-0001: material, grams left, "
+          "full spool, name, colour, location), settings (minimum offcut, saw kerf) and the latest bookings. id "
+          "limits it to one stock item, a material id or a spool id.", READ_ONLY)
     async def bestand_liste(
-        id: Annotated[str | None, Field(description="Stock id from the catalog; omit for everything")] = None,
+        id: Annotated[str | None, Field(description="Stock id from the catalog, material id or spool id; omit for "
+                                                    "everything")] = None,
     ) -> CallToolResult:
         res = await t.work("liest den Bestand", svc.bestand_liste, id)
         err = fmt.service_error(res)
@@ -50,11 +54,18 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "offcut ids to remove. reste_ersetzen=true replaces all offcuts of this item by reste. stueck: piece goods "
           "(screws, nuts, washers, and purchased parts: zukaufteil, kamera, objektiv, kamerazubehoer): count, or "
           "[{laenge, anzahl}] for screws per length (sets the count per length). "
-          "mindestrest_mm: shorter offcuts count as waste for this item. grund: Kevin's statement. Every change is "
+          "mindestrest_mm: shorter offcuts count as waste for this item. "
+          "FILAMENT (instead of id): material (printable material id or alias, e.g. 'petg') with gramm (grams left on "
+          "the spool; default a full spool), spule (spool name as Kevin says it, e.g. 'Bambu PETG Basic schwarz'), "
+          "gramm_voll (full spool, default spule_g of the material or 1000), farbe, hersteller, ort, anzahl (number "
+          "of identical spools; anzahl=0 records that the project tracks filament but has none) adds spools with new "
+          "ids S-0001…; kennung (e.g. 'S-0002') with gramm/ort/… updates one spool; spulen_entfernen removes spools. "
+          "Once the project tracks filament, the shopping list adds whole spools for what the print preview needs "
+          "beyond the stock. grund: Kevin's statement. Every change is "
           "booked (undo with buchung_rueckgaengig) and listed in the answer; repeat that list to Kevin.", WRITES)
     async def bestand_eintragen(
-        id: Annotated[str, Field(description="Stock id from the catalog")],
         grund: Annotated[str, Field(min_length=1, description="Kevin's statement this entry is based on")],
+        id: Annotated[str | None, Field(description="Stock id from the catalog (not for filament)")] = None,
         ganze: Annotated[int | dict[str, float] | None, Field(description="Whole bars/sheets: count (sets it) or "
                                                                         "{anzahl, laenge} / {anzahl, b, h}")] = None,
         reste: Annotated[list[float | list[float] | dict[str, Any]] | None,
@@ -67,9 +78,25 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
                                             "or [{laenge, anzahl}] for screws")] = None,
         mindestrest_mm: Annotated[float | None, Field(description="Minimum useful offcut for this item (mm)")] = None,
         reste_ersetzen: Annotated[bool, Field(description="Replace all offcuts of this item by reste")] = False,
+        material: Annotated[str | None, Field(description="Filament: printable material id or alias, e.g. 'petg'")]
+        = None,
+        gramm: Annotated[float | None, Field(description="Filament: grams left on the spool")] = None,
+        spule: Annotated[str | None, Field(description="Filament: spool name, e.g. 'Bambu PETG Basic schwarz'")]
+        = None,
+        gramm_voll: Annotated[float | None, Field(description="Filament: net grams of a full spool")] = None,
+        farbe: Annotated[str | None, Field(description="Filament: colour")] = None,
+        hersteller: Annotated[str | None, Field(description="Filament: manufacturer")] = None,
+        ort: Annotated[str | None, Field(description="Filament: storage location")] = None,
+        anzahl: Annotated[int | None, Field(description="Filament: number of identical new spools (0: none on hand)")]
+        = None,
+        kennung: Annotated[str | None, Field(description="Filament: spool id to update, e.g. 'S-0002'")] = None,
+        spulen_entfernen: Annotated[list[str] | None, Field(description="Filament: spool ids to remove")] = None,
     ) -> CallToolResult:
-        res = await t.work(f"trägt Bestand {id} ein", svc.bestand_eintragen, id, ganze, reste, reste_entfernen,
-                           stueck, mindestrest_mm, reste_ersetzen, grund)
+        was = id or (f"Filament {material}" if material else f"Spule {kennung}" if kennung else "Filament")
+        res = await t.work(f"trägt Bestand {was} ein", svc.bestand_eintragen, id, ganze, reste, reste_entfernen,
+                           stueck, mindestrest_mm, reste_ersetzen, grund, material=material, gramm=gramm,
+                           gramm_voll=gramm_voll, spule=spule, farbe=farbe, hersteller=hersteller, anzahl=anzahl,
+                           kennung=kennung, ort=ort, spulen_entfernen=spulen_entfernen)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Bestand nicht eingetragen: {err}", res)
@@ -85,8 +112,9 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "this project, rounded up to purchase units, standard parts to buy included), Zukaufteile (bought parts "
           "with shop link and price from the catalog, minus what the project stock holds), the total of both, then Normteile abzählen (needed, from "
           "stock, to buy) and Filament für Druckteile (from the print preview of the same run, else volume x "
-          "density). Also writes <project>/output/<name>-einkaufsliste.csv (same bytes as the app's CSV). Mention "
-          "the shopping list (or that nothing is missing) in your report to Kevin.", ADDITIVE)
+          "density). If the project tracks filament, Lagerware also lists whole spools for what the print preview "
+          "needs beyond the spools on hand. Also writes <project>/output/<name>-einkaufsliste.csv (same bytes as the "
+          "app's CSV). Mention the shopping list (or that nothing is missing) in your report to Kevin.", ADDITIVE)
     async def einkaufsliste() -> CallToolResult:
         res = await t.work("stellt die Einkaufsliste zusammen", svc.einkaufsliste)
         err = fmt.service_error(res)
@@ -97,6 +125,11 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         if aus:
             text += "\nZukaufteile aus dem Bestand: " + ", ".join(
                 f"{z.get('benennung')} ({z.get('aus_bestand')} von {z.get('anzahl')})" for z in aus)
+        fil = [f for f in res.get("filament_aus_bestand") or [] if f.get("reicht")]
+        if fil:
+            text += "\nFilament aus dem Bestand: " + ", ".join(
+                f"{f.get('werkstoff')} ({masse_g(f.get('bedarf_g') or 0)} von {masse_g(f.get('bestand_g') or 0)})"
+                for f in fil)
         if res.get("einkauf_hinweis"):
             text += f"\nPreise Lagerware: {res['einkauf_hinweis']}"
         if res.get("csv"):
@@ -108,7 +141,8 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
     @tool("gebaut_buchen", "Gebaut buchen",
           "ONLY when Kevin explicitly says the project has been built (\"ist gebaut\", \"buch das ab\"). Books the "
           "current cut plan against this project's stock: planned offcuts and whole bars/sheets are removed, new "
-          "offcuts (from the minimum length) are added with new ids, piece goods are deducted. Never call it on your "
+          "offcuts (from the minimum length) are added with new ids, piece goods are deducted, and (if the project "
+          "tracks filament) the filament of print plates not yet booked as printed. Never call it on your "
           "own initiative. grund: Kevin's words. Reversible with buchung_rueckgaengig.", WRITES)
     async def gebaut_buchen(
         grund: Annotated[str, Field(min_length=1, description="Kevin's words that the project is built")],
@@ -118,7 +152,33 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         if err:
             return fmt.error_result(f"Nicht gebucht: {err}", res)
         b = res.get("buchung") or {}
-        text = "\n".join([f"Gebaut gebucht ({b.get('id')}): {b.get('zusammenfassung')}", *_lines(res),
+        fil = [f"Filament: {x}" for x in res.get("filament_text") or []]
+        text = "\n".join([f"Gebaut gebucht ({b.get('id')}): {b.get('zusammenfassung')}", *_lines(res), *fil,
+                          f"Rückgängig mit buchung_rueckgaengig(\"{b.get('id')}\")."])
+        return fmt.result(text, res)
+
+    @tool("gedruckt_buchen", "Gedruckt buchen",
+          "ONLY when Kevin explicitly says he printed the parts (\"ist gedruckt\", \"Platte 1 ist fertig\"). Books the "
+          "filament of the print preview of the current run off this project's spools: all plates not booked yet, "
+          "or only platten (plate numbers). Partly used spools first (least filament first), or spule first if "
+          "Kevin names the spool he used; whatever the stock does not cover counts as printed from bought spools, "
+          "and the rest of the last bought spool becomes a new spool. Each plate is booked once per run; "
+          "gebaut_buchen later skips booked plates. Needs filament in the project stock (bestand_eintragen with "
+          "material). grund: Kevin's words. Reversible with buchung_rueckgaengig.", WRITES)
+    async def gedruckt_buchen(
+        grund: Annotated[str, Field(min_length=1, description="Kevin's words that the parts are printed")],
+        platten: Annotated[list[int] | None, Field(description="Plate numbers of the print preview; omit for all "
+                                                               "plates not booked yet")] = None,
+        spule: Annotated[str | None, Field(description="Spool id Kevin used, e.g. 'S-0002' (used first)")] = None,
+    ) -> CallToolResult:
+        res = await t.work("bucht das Gedruckte ab", svc.gedruckt_buchen, grund, platten, spule)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Nicht gebucht: {err}", res)
+        b = res.get("buchung") or {}
+        text = "\n".join([f"Gedruckt gebucht ({b.get('id')}, Platten {', '.join(map(str, res.get('platten') or []))}"
+                          f"): {b.get('zusammenfassung')}",
+                          *[f"- {x}" for x in res.get("filament_text") or []], *_lines(res),
                           f"Rückgängig mit buchung_rueckgaengig(\"{b.get('id')}\")."])
         return fmt.result(text, res)
 

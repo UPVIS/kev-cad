@@ -415,8 +415,19 @@ Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge
   erfinden; jede Änderung aus der Antwort an Kevin nennen. Zukaufteile, Kameras, Objektive und Kamerazubehör sind
   Stückgut: `bestand_eintragen("blackmagic-pocket-6k-pro", stueck=1, grund=…)`; was Kevin hat, fällt aus der
   Einkaufsliste („Zukaufteile aus dem Bestand“).
+- **Filament** (Strang „Bestand Stufe 2“): Spulen je Material und Farbe mit Kennung S-0001, Gramm übrig, Gramm voll,
+  Name, Hersteller, Ort: `bestand_eintragen(material="petg", gramm=640, spule="Bambu PETG Basic schwarz",
+  grund=…)`; mehrere volle Spulen mit `anzahl`, ändern mit `kennung="S-0002", gramm=310`, entfernen mit
+  `spulen_entfernen`; „kein Filament da“ mit `anzahl=0`. Sobald das Projekt Filament führt, stehen unter Lagerware die
+  Spulen, die der Druckvorschau desselben Laufs fehlen (Fehlmenge auf ganze Spulen aufgerundet, Spulengröße aus dem
+  Katalog `spule_g`, sonst 1 kg), mit Preis in der Summe. Farben kennt die Druckvorschau nicht: Bedarf und Bestand
+  gelten je Material.
+- **„Gedruckt“ nur auf Kevins ausdrücklichen Wunsch** (`gedruckt_buchen(grund, platten=…, spule=…)`): bucht das
+  Filament der Druckvorschau ab, angebrochene Spulen zuerst bzw. die Spule, die Kevin nennt; was der Bestand nicht
+  deckt, gilt als von gekauften Spulen gedruckt, deren Rest als neue Spule dazukommt. Jede Platte nur einmal je Lauf.
 - **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und
-  Stückgut ab und legt die neuen Reste an. Jede Buchung lässt sich mit `buchung_rueckgaengig` umkehren.
+  Stückgut ab, legt die neuen Reste an und bucht das Filament der noch nicht als gedruckt gebuchten Platten ab. Jede
+  Buchung lässt sich mit `buchung_rueckgaengig` umkehren.
 - **Einkaufsliste im Bericht nennen:** nach dem Bauen eines Modells die Positionen mit Summe aus `einkaufsliste`
   aufführen, oder ausdrücklich sagen, dass alles aus dem Bestand kommt.
 

@@ -40,7 +40,9 @@ def test_testdatei_passt_zum_kernel():
 def test_beispiel_deckt_alles_ab():
     bom, vorschau = mbf.material_nachrichten()
     e = ek.zusammenstellen(bom, vorschau)
-    assert [z["gruppe"] for z in e["zeilen"]] == ["Lagerware"] * 3 + ["Zukaufteile"] * 2
+    # Lagerware: drei Zeilen der Stückliste, dann die PETG-Spule (Strang „Bestand Stufe 2“)
+    assert [z["gruppe"] for z in e["zeilen"]] == ["Lagerware"] * 4 + ["Zukaufteile"] * 2
+    assert [z["id"] for z in e["filament_kauf"]] == ["petg"] and e["lager"][-1]["id"] == "petg"
     assert any("Reste verplant" in (z["hinweis"] or "") for z in e["lager"])
     assert any(n["aus_bestand"] and n["kaufen"] for n in e["normteile"])
     assert [bool(z["link"]) for z in e["zukauf"]] == [False, True]
@@ -50,7 +52,8 @@ def test_beispiel_deckt_alles_ab():
     assert {c["verschnitt_definition"] for c in bom["cuts"]} == {"2"}
     # Summe wie in der App: Lagerware + Zukaufteile, Filament und Normteile zum Abzählen nicht
     assert e["summe"] == pytest.approx(e["summe_lager"] + e["summe_zukauf"])
-    assert e["summe_lager"] == bom["einkauf_summe"]
+    # Lagerware = Stückliste (einkauf_summe, ohne Filament) + Spulen
+    assert e["summe_lager"] == pytest.approx(bom["einkauf_summe"] + 17.0)
 
 
 def test_formate_wie_kevformat():

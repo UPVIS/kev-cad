@@ -236,6 +236,10 @@ def validate_material(entry: Any) -> list[str]:
         errors.append(f"{who}: preis_stand als Monat \"JJJJ-MM\" angeben")
     if entry.get("druckbar") is not None and not isinstance(entry.get("druckbar"), bool):
         errors.append(f"{who}: druckbar muss true oder false sein")
+    if entry.get("spule_g") is not None:  # Strang „Bestand Stufe 2“: Kaufspule für die Einkaufsliste
+        v = number(entry.get("spule_g"))
+        if v is None or not 0 < v <= 20000:
+            errors.append(f"{who}: spule_g muss eine Zahl zwischen 0 und 20000 sein (g Filament je Kaufspule)")
     if entry.get("mechanik") is not None:
         errors += validate_mechanik(entry["mechanik"], who)
     errors += _check_status(entry, who)

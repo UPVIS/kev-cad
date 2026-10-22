@@ -63,6 +63,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `preis_quelle`, `preis_stand` | wenn Preis | Herkunft, Monat |
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
 | `druckbar` | nein | `true` für Materialien, aus denen 3D-Druckteile entstehen dürfen (PLA, PETG, ABS, ASA, TPU, PA, Harz …) |
+| `spule_g` | nein | Druckmaterialien: g Filament je Kaufspule für die Einkaufsliste (BESTAND.md, „Filament“); ohne Angabe 1000 |
 | `nachgiebig` | nein | `true` für weiche Werkstoffe (Schaum, Gummi, TPU, Gurtband): Die Prüfung meldet Überlappungen bis zur halben Dicke nur als „verformt“ (Hinweis) und lässt sie bei der Montage nicht als Hindernis zählen |
 | `mechanik` | nein | Werkstoffkennwerte für die Statik (Abschnitt „Mechanik“); ohne sie rechnet die Statik das Teil nicht nach und sagt es |
 | `hinweis` | nein | Text (z. B. wofür das Material gedacht ist) |

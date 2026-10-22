@@ -280,9 +280,9 @@ public struct MaterialEinkauf: Identifiable, Equatable, Sendable {
     public var abhakSchluessel: String { "\(art.rawValue)|\(position.id)|\(position.mengeText)|\(position.einheit)" }
 }
 
-/// Filament der Druckteile je Werkstoff (nur zur Information, Spulen führt der Bestand noch nicht): aus der
-/// Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste (Volumen × Dichte). Der Kernel rechnet es
-/// genauso (`kernel/src/kevcad_kernel/bestand/einkauf.py`).
+/// Filament der Druckteile je Werkstoff (zur Information; Spulen zum Kaufen stehen unter Lagerware, siehe
+/// `FilamentBestand`): aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste (Volumen ×
+/// Dichte). Der Kernel rechnet es genauso (`kernel/src/kevcad_kernel/bestand/einkauf.py`).
 public struct MaterialFilament: Identifiable, Equatable, Sendable {
     public var werkstoff: String
     public var teile: Int
@@ -309,6 +309,49 @@ public struct MaterialFilament: Identifiable, Equatable, Sendable {
                 werkstoff: m.name, teile: v.teile.filter { $0.material == m.material }.reduce(0) { $0 + $1.anzahl },
                 gramm: m.g, preis: m.kosten, material: m.material, preisStand: m.preisStand, stand: m.stand)
         }
+    }
+}
+
+/// Filament im Bestand des Projekts je Material (`BOM.filament_bestand`, Strang „Bestand Stufe 2“): Gramm auf allen
+/// Spulen, Spulengröße zum Kaufen und Preis je Spule. Die Spulen zum Kaufen rechnet `kauf` genau wie der Kernel
+/// (`filament_kauf` in `kernel/src/kevcad_kernel/bestand/einkauf.py`).
+public struct FilamentBestand: Equatable, Sendable {
+    public var material: String
+    public var name: String
+    public var gramm: Double
+    public var spulen: Int
+    public var spuleG: Double
+    public var preisJeSpule: Double?
+    public var preisStand: String?
+
+    public init?(json: JSONValue) {
+        guard let m = json["material"]?.lenientString else { return nil }
+        material = m
+        name = json["name"]?.lenientString ?? m.uppercased()
+        gramm = json["gramm"]?.doubleValue ?? 0
+        spulen = max(0, json["spulen"]?.intValue ?? 0)
+        let g = json["spule_g"]?.doubleValue ?? 0
+        spuleG = g > 0 ? g : 1000
+        preisJeSpule = json["preis_je_spule"]?.doubleValue
+        preisStand = json["preis_stand"]?.lenientString
+    }
+
+    /// Spulen zum Kaufen für einen Werkstoff der Druckvorschau desselben Laufs: Bedarf minus Bestand, auf ganze Spulen
+    /// aufgerundet; nil, wenn der Bestand reicht oder die Zahl nur aus der Stückliste kommt.
+    static func kauf(_ f: MaterialFilament, _ liste: [FilamentBestand]) -> EinkaufsPosition? {
+        guard f.stand != nil, let mid = f.material, let b = liste.first(where: { $0.material == mid }) else { return nil }
+        let fehl = f.gramm - b.gramm
+        guard fehl > 1e-6 else { return nil }
+        let n = (fehl / b.spuleG - 1e-9).rounded(.up)
+        guard n > 0 else { return nil }
+        let hinweis = b.spulen > 0
+            ? "Bedarf \(KevFormat.mass(grams: f.gramm)), Bestand im Projekt: \(KevFormat.mass(grams: b.gramm)) "
+                + "(\(KevFormat.count(b.spulen, one: "Spule", many: "Spulen")))"
+            : "Bedarf \(KevFormat.mass(grams: f.gramm)), kein Filament im Bestand des Projekts"
+        return EinkaufsPosition(
+            id: mid, benennung: "Filament \(f.werkstoff)", menge: n,
+            einheit: "Spule \(KevFormat.compact(b.spuleG, maxDigits: 1)) g", preisJe: b.preisJeSpule,
+            preis: b.preisJeSpule.map { $0 * n }, hinweis: hinweis, stand: b.preisStand)
     }
 }
 
@@ -503,8 +546,30 @@ public struct MaterialDaten: Equatable, Sendable {
             return p
         }
 
+        // Filament je Werkstoff: aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste
+        var filament: [String: MaterialFilament] = [:]
+        var reihenfolge: [String] = []
+        for p in positionen where p.herkunft == .druckteil && !p.line.gedruckt {
+            let w = p.werkstoff ?? "Filament"
+            if filament[w] == nil {
+                filament[w] = MaterialFilament(werkstoff: w, teile: 0, gramm: 0, preis: nil)
+                reihenfolge.append(w)
+            }
+            filament[w]!.teile += p.anzahl
+            filament[w]!.gramm += (p.kg ?? 0) * 1000
+            if let preis = p.preis { filament[w]!.preis = (filament[w]!.preis ?? 0) + preis }
+        }
+        let filamentListe = MaterialFilament.ausDruckvorschau(druckvorschau, run: run)
+            ?? reihenfolge.compactMap { filament[$0] }
+        // Strang „Bestand Stufe 2“: Filament-Spulen, die der Projektbestand nicht deckt (Lagerware, nach der Stückliste)
+        var filamentKauf: [EinkaufsPosition] = []
+        if let liste = bestand?.filamentBestand {
+            filamentKauf = filamentListe.compactMap { FilamentBestand.kauf($0, liste) }
+        }
+
         // Einkauf: Lagerware aus dem Bestandsabgleich, dann Zukaufteile der Stückliste nach Abzug des Projektbestands
         var einkauf = (bestand?.einkaufsliste ?? []).map { MaterialEinkauf(art: .lager, position: $0, pos: nil) }
+        einkauf += filamentKauf.map { MaterialEinkauf(art: .lager, position: $0, pos: nil) }
         var benutzt = Set<Int>()
         var ausBestand: [ZukaufBestand] = []
         for p in positionen where p.herkunft == .zukauf {
@@ -529,20 +594,7 @@ public struct MaterialDaten: Equatable, Sendable {
         zukaufAusBestand = ausBestand
         zukaufAbgeglichen = bestand?.zukaufBestand != nil
 
-        // Filament je Werkstoff: aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste
-        var filament: [String: MaterialFilament] = [:]
-        var reihenfolge: [String] = []
-        for p in positionen where p.herkunft == .druckteil && !p.line.gedruckt {
-            let w = p.werkstoff ?? "Filament"
-            if filament[w] == nil {
-                filament[w] = MaterialFilament(werkstoff: w, teile: 0, gramm: 0, preis: nil)
-                reihenfolge.append(w)
-            }
-            filament[w]!.teile += p.anzahl
-            filament[w]!.gramm += (p.kg ?? 0) * 1000
-            if let preis = p.preis { filament[w]!.preis = (filament[w]!.preis ?? 0) + preis }
-        }
-        self.filament = MaterialFilament.ausDruckvorschau(druckvorschau, run: run) ?? reihenfolge.compactMap { filament[$0] }
+        self.filament = filamentListe
 
         // Kennzahlen
         var k = MaterialKennzahlen()
@@ -562,7 +614,9 @@ public struct MaterialDaten: Equatable, Sendable {
         let lager = einkauf.filter { $0.art == .lager }.map(\.position)
         let zukauf = einkauf.filter { $0.art == .zukauf }.map(\.position)
         k.einkaufLager = lager.count
-        k.einkaufLagerSumme = bestand?.summe ?? Self.summe(lager)
+        // Summe der Stückliste (Kernel) plus Filament-Spulen, wie `summe_lager` in bestand/einkauf.py
+        let lagerStueckliste = Array(lager.dropLast(filamentKauf.count))
+        k.einkaufLagerSumme = Self.summe([bestand?.summe ?? Self.summe(lagerStueckliste)] + filamentKauf.map(\.preis))
         k.einkaufZukauf = zukauf.count
         k.einkaufZukaufSumme = Self.summe(zukauf)
         k.einkaufOhnePreis = einkauf.filter { $0.position.preis == nil }.count

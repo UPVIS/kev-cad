@@ -867,11 +867,14 @@ public struct BOMBestand: Equatable, Sendable {
     /// Zukaufteile mit Bestand (`BOM.zukauf_bestand`, Strang „Feinschliff 2“): je Stücklistenzeile gebraucht, aus dem
     /// Bestand, zu kaufen. nil: der Kernel gleicht Zukaufteile nicht ab (dann stehen sie ganz auf der Einkaufsliste).
     public var zukaufBestand: [ZukaufBestand]?
+    /// Filament im Bestand je Material (`BOM.filament_bestand`, Strang „Bestand Stufe 2“). nil: das Projekt führt kein
+    /// Filament (dann nennt die Einkaufsliste keine Spulen).
+    public var filamentBestand: [FilamentBestand]?
 
     public init(
         run: Int, zuschnitte: [BestandZuschnitt], einkaufsliste: [EinkaufsPosition], bestandStand: String? = nil,
         fehlt: Bool? = nil, stueckgut: [StueckgutBedarf] = [], einkaufSumme: Double? = nil, einkaufHinweis: String? = nil,
-        zukaufBestand: [ZukaufBestand]? = nil
+        zukaufBestand: [ZukaufBestand]? = nil, filamentBestand: [FilamentBestand]? = nil
     ) {
         self.run = run
         self.zuschnitte = zuschnitte
@@ -882,6 +885,7 @@ public struct BOMBestand: Equatable, Sendable {
         self.einkaufSumme = einkaufSumme
         self.einkaufHinweis = einkaufHinweis
         self.zukaufBestand = zukaufBestand
+        self.filamentBestand = filamentBestand
     }
 
     /// Aus der BOM-Nachricht; nil, wenn der Kernel keine Bestandsfelder schickt.
@@ -889,7 +893,7 @@ public struct BOMBestand: Equatable, Sendable {
         let zuschnitte = (json["cuts"]?.arrayValue ?? []).compactMap(BestandZuschnitt.init(json:))
         let liste = json["einkaufsliste"]?.arrayValue
         guard !zuschnitte.isEmpty || liste != nil || json["bestand_stand"] != nil || json["fehlt"] != nil
-            || json["stueckgut"] != nil || json["zukauf_bestand"] != nil
+            || json["stueckgut"] != nil || json["zukauf_bestand"] != nil || json["filament_bestand"] != nil
         else {
             return nil
         }
@@ -899,7 +903,8 @@ public struct BOMBestand: Equatable, Sendable {
             bestandStand: json["bestand_stand"]?.lenientString, fehlt: json["fehlt"]?.boolValue,
             stueckgut: (json["stueckgut"]?.arrayValue ?? []).compactMap(StueckgutBedarf.init(json:)),
             einkaufSumme: json["einkauf_summe"]?.doubleValue, einkaufHinweis: json["einkauf_hinweis"]?.lenientString,
-            zukaufBestand: json["zukauf_bestand"]?.arrayValue.map { $0.compactMap(ZukaufBestand.init(json:)) })
+            zukaufBestand: json["zukauf_bestand"]?.arrayValue.map { $0.compactMap(ZukaufBestand.init(json:)) },
+            filamentBestand: json["filament_bestand"]?.arrayValue.map { $0.compactMap(FilamentBestand.init(json:)) })
     }
 
     /// Summe der Einkaufsliste: Angabe des Kernels, sonst gerechnet (nil, wenn keine Position einen Preis hat).
