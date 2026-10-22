@@ -211,3 +211,14 @@ def test_typische_teile_je_objekt_eingestellt(env):
         merkmale |= set(re.findall(r"^; FEATURE: (.*)$", g.read_text(errors="replace"), flags=re.M))
         g.unlink()
     assert {"Ironing", "Brim"} <= merkmale and any(m.startswith("Support") for m in merkmale), merkmale
+
+
+def test_feste_vorgabe_ohne_widerspruch_in_den_gruenden():
+    """Brim fest an, obwohl die Empfehlung keins wäre (KevCup, 22.10.2026): Breite gesetzt, Empfehlung gekennzeichnet."""
+    r = em.empfehle(_geo(), "pla", "funktion", vorgaben={"brim": True})
+    e, b = r["einstellungen"], r["begruendung_je"]
+    assert e["brim"] is True and e["brim_mm"] > 0
+    assert b["brim_mm"].startswith("Brim 5 mm, weil Brim fest vorgegeben ist")
+    assert "ohne Vorgabe wäre die Empfehlung: kein Brim" in b["brim_mm"]
+    assert b["brim"].startswith("fest vorgegeben")
+    assert "Bedeutung" not in b.get("stuetzen_nur_platte", "")
