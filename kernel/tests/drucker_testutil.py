@@ -18,7 +18,7 @@ from drucker_attrappe import TEST_SERIENNUMMER, TEST_ZUGANGSCODE, Attrappe  # no
 ECHTES_BAMBU = Path("/Applications/BambuStudio.app")
 
 # CLI-Attrappe: schreibt eine .gcode.3mf wie Bambu Studio (slice_info.config, G-Code je Platte, MD5, Einstellungen)
-CLI = r'''#!{python}
+CLI = r'''
 import hashlib, json, os, sys, time, zipfile
 args = sys.argv[1:]
 def wert(name):
@@ -80,7 +80,11 @@ def bambu_attrappe(ordner: Path, version: str = "02.07.01.62") -> Path:
     app = ordner / "BambuStudio.app"
     exe = app / "Contents/MacOS/BambuStudio"
     exe.parent.mkdir(parents=True, exist_ok=True)
-    exe.write_text(CLI.format(python=sys.executable), encoding="utf-8")
+    skript = app / "Contents/Resources/cli_attrappe.py"
+    skript.parent.mkdir(parents=True, exist_ok=True)
+    skript.write_text(CLI.format(), encoding="utf-8")
+    # Shell-Hülle statt Shebang: Pfade mit Leerzeichen („Code Experiments“) gehen im Shebang nicht
+    exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{skript}" "$@"\n', encoding="utf-8")
     os.chmod(exe, 0o755)
     with (app / "Contents/Info.plist").open("wb") as fh:
         plistlib.dump({"CFBundleShortVersionString": version, "CFBundleIdentifier": "com.bambulab.bambu-studio"}, fh)

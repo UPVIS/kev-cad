@@ -165,7 +165,7 @@ Gehören der App, eine Datei je Variante: `~/Library/Application Support/<Bundle
               "schluesselbund": {"dienst": "de.upvis.kevcad.drucker", "konto": "p1p"}}]}
 ```
 
-- `id`: `[a-z0-9-]{1,32}`, zugleich das Konto im Schlüsselbund. `status_lesen` ist anfangs **aus**: Dass die lokale
+- `id`: `[a-z0-9][a-z0-9-]{0,31}`, zugleich das Konto im Schlüsselbund. `status_lesen` ist anfangs **aus**: Dass die lokale
   MQTT-Verbindung im Cloud-Modus ohne Nebenwirkung bleibt, ist nur für das Lesen belegt (ha-bambulab „hybrid mode“), nicht
   für die Zahl gleichzeitiger Verbindungen; Kevin schaltet es bewusst ein (Hinweis in den Einstellungen).
 - Seriennummer und Zugangscode stehen nur im Schlüsselbund: ein Eintrag (generisches Passwort) je Drucker, Dienst fest

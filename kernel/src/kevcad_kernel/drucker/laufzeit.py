@@ -25,8 +25,14 @@ class DruckerRuntimeMixin:
     ``_occ_lock``, ``scene``, ``_run_no``."""
 
     def _drucker_init(self) -> None:
+        # Tests: KEVCAD_BAMBU_STUDIO (Bambu-Studio-Attrappe), KEVCAD_DRUCKER_CACHE (eigener Zwischenspeicher)
+        extra: dict[str, Any] = {}
+        if os.environ.get("KEVCAD_BAMBU_STUDIO"):
+            extra["app"] = Path(os.environ["KEVCAD_BAMBU_STUDIO"])
+        if os.environ.get("KEVCAD_DRUCKER_CACHE"):
+            extra["cache"] = Path(os.environ["KEVCAD_DRUCKER_CACHE"])
         self._drucker = DruckerDienst(senden=self._send_app, quelle=self._drucker_quelle,  # type: ignore[attr-defined]
-                                      log=self._log,  # type: ignore[attr-defined]
+                                      log=self._log, **extra,  # type: ignore[attr-defined]
                                       ssdp_an=os.environ.get("KEVCAD_DRUCKER_SSDP", "1") != "0",
                                       # Selbsttest: CA der Attrappe (gilt nur für 127.0.0.1)
                                       ca_datei=os.environ.get("KEVCAD_DRUCKER_ATTRAPPE_CA") or None)
@@ -143,7 +149,7 @@ class DruckerRuntimeMixin:
 
     def _drucker_profile_aus_vorschau(self, platten: list[int]) -> tuple[str, list[str]]:
         vorschau_fn = getattr(self, "druckvorschau", None)
-        prof = Profile()
+        prof = Profile(self._drucker.app)
         if not callable(vorschau_fn):
             return PROZESS_STANDARD, [self._drucker_filament(prof, "pla")]
         try:
@@ -205,7 +211,7 @@ class DruckerRuntimeMixin:
                 p = ordner / f"teil_{i:03d}.stl"
                 export_stl(rec.shape, str(p))
                 eingaben.append(p)
-        prof = Profile()
+        prof = Profile(self._drucker.app)
         return Quelle(name=name if len(materialien) == 1 else f"{name}-{material}", eingaben=eingaben,
                       ausgabe=proj.output_dir, anordnen=True, ausrichten=True, prozess=PROZESS_STANDARD,
                       filamente=[self._drucker_filament(prof, material)], platten=list(platten),

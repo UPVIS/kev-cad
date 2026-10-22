@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 DIENST = "de.upvis.kevcad.drucker"
 SECURITY = "/usr/bin/security"
-ID_MUSTER = re.compile(r"^[a-z0-9-]{1,32}$")
+ID_MUSTER = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")  # nie mit „-“ vorn (wäre für security eine Option)
 
 
 class SchluesselbundFehler(Exception):
@@ -37,7 +37,8 @@ class Zugang:
 
 def pruefe_id(drucker_id: str) -> str:
     if not isinstance(drucker_id, str) or not ID_MUSTER.match(drucker_id):
-        raise SchluesselbundFehler("Drucker-ID ungültig (erlaubt: a–z, 0–9, Bindestrich, höchstens 32 Zeichen)")
+        raise SchluesselbundFehler("Drucker-ID ungültig (erlaubt: a–z, 0–9, Bindestrich nicht vorn, höchstens 32 "
+                                   "Zeichen)")
     return drucker_id
 
 
