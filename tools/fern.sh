@@ -43,7 +43,7 @@ BUILD_LOCK=/tmp/vb-xcodebuild.lock
 LOGDIR="$HOME/Library/Logs/Kev CAD"
 INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 
-usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=${1:-}
 [ $# -gt 0 ] && shift
@@ -226,7 +226,7 @@ if [ $rc -eq 0 ]; then
           -u "build/$APP_TEST.app" >/dev/null 2>&1
         echo "==> Fertig (vom Mac mini): $REPO/build/$APP_TEST.app"
       else
-        echo "==> Abholen der App vom Mini fehlgeschlagen"; rc=1
+        fallback "Abholen der App fehlgeschlagen"
       fi
       ;;
     bundle)
@@ -235,7 +235,7 @@ if [ $rc -eq 0 ]; then
         DOWN=$(secs "$T_DOWN" "$(now)")
         ./build.sh --install-bundle build/bundle || rc=$?
       else
-        echo "==> Abholen des Pakets vom Mini fehlgeschlagen"; rc=1
+        fallback "Abholen des Pakets fehlgeschlagen"
       fi
       ;;
   esac
