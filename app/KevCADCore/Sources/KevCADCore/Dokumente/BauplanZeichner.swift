@@ -79,11 +79,14 @@ public enum BauplanZeichner {
             let breite = (breiten[art] ?? 0.15) * einheitJeMM
             ctx.setStrokeColor(farbe)
             ctx.setLineWidth(breite)
-            switch art {
-            case "verdeckt": ctx.setLineDash(phase: 0, lengths: [1.2 * einheitJeMM, 0.8 * einheitJeMM])
-            case "mitte": ctx.setLineDash(phase: 0, lengths: [4 * einheitJeMM, 0.8 * einheitJeMM, 0.6 * einheitJeMM,
-                                                               0.8 * einheitJeMM])
-            default: ctx.setLineDash(phase: 0, lengths: [])
+            // Strichmuster nach ISO 128 wie auf den Blättern (LinienStil, P6-A1), in Vielfachen der Linienbreite
+            if let muster = LinienStil.fuer(art).muster {
+                let d = breite
+                ctx.setLineDash(phase: 0, lengths: muster.enumerated().map { i, v in
+                    i % 2 == 0 ? max(v * d - d, 0.002 * einheitJeMM) : v * d + d
+                })
+            } else {
+                ctx.setLineDash(phase: 0, lengths: [])
             }
             let path = CGMutablePath()
             var spitzen: [[CGPoint]] = []

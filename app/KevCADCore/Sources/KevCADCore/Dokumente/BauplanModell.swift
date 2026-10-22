@@ -352,55 +352,6 @@ public struct BauplanStrichbild: Equatable, Sendable {
     }
 }
 
-/// Zusammenfassung des Bauplans in DOCS (`bauplan`): für die Seitenleiste ohne den ganzen Plan.
-public struct BauplanZusammenfassung: Equatable, Sendable {
-    public struct Abschnitt: Equatable, Sendable {
-        public var art: String
-        public var titel: String
-        public var schritte: Int
-    }
-
-    public var abschnitte: [Abschnitt]
-    public var schritte: Int
-    public var probleme: Int
-    public var fehler: Int
-    public var hinweise: Int
-    public var run: Int?
-
-    public init(abschnitte: [Abschnitt], schritte: Int, probleme: Int, fehler: Int, hinweise: Int, run: Int?) {
-        self.abschnitte = abschnitte
-        self.schritte = schritte
-        self.probleme = probleme
-        self.fehler = fehler
-        self.hinweise = hinweise
-        self.run = run
-    }
-
-    /// Aus dem Feld `bauplan` einer DOCS-Nachricht (null → nil).
-    public init?(json: JSONValue?) {
-        guard let j = json, j.objectValue != nil else { return nil }
-        abschnitte = (j["abschnitte"]?.arrayValue ?? []).map {
-            Abschnitt(art: $0["art"]?.stringValue ?? "", titel: $0["titel"]?.stringValue ?? "",
-                      schritte: $0["schritte"]?.intValue ?? 0)
-        }
-        schritte = j["schritte"]?.intValue ?? abschnitte.reduce(0) { $0 + $1.schritte }
-        probleme = j["probleme"]?.intValue ?? 0
-        fehler = j["fehler"]?.intValue ?? 0
-        hinweise = j["hinweise"]?.intValue ?? 0
-        run = j["run"]?.intValue
-    }
-
-    /// Aus einem ganzen Plan (wenn BAUPLAN vor DOCS ankommt).
-    public init(plan: Bauplan) {
-        abschnitte = plan.abschnitte.map { Abschnitt(art: $0.art.raw, titel: $0.titel, schritte: $0.schritte.count) }
-        schritte = plan.alleSchritte.count
-        probleme = plan.befunde.filter { $0.schwere != .hinweis }.count
-        fehler = plan.fehlerAnzahl
-        hinweise = plan.befunde.filter { $0.schwere == .hinweis }.count
-        run = plan.run
-    }
-}
-
 // MARK: - Texte
 
 public enum BauplanText {

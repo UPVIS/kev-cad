@@ -308,7 +308,7 @@ public enum ExportFluss {
                 for (n, r) in bereiche.enumerated() {
                     if n > 0 { neueSeite() }
                     if r.isEmpty { continue }
-                    let h = t.kopfHoehe + r.reduce(CGFloat(0)) { $0 + hoehen[$1] } + 0.5
+                    let h = t.kopfHoehe + r.reduce(CGFloat(0)) { $0 + hoehen[$1] }
                     platziere(h) { l, rect in
                         t.zeichne(l, x: rect.minX, oben: rect.minY, breite: rect.width, bereich: r)
                     }

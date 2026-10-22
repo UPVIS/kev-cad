@@ -15,21 +15,16 @@ public struct BauplanNachricht: Sendable {
     public var feld: CGSize
     public var linienReihenfolge: [String]
 
-    public enum DecodeError: Error, CustomStringConvertible {
-        case nutzlast(String)
-        public var description: String {
-            switch self {
-            case .nutzlast(let s): return "BAUPLAN: \(s)"
-            }
-        }
-    }
+    public static let standardReihenfolge = [
+        "sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar", "bruch", "neu", "pfeil",
+    ]
 
     public static func decode(_ frame: Frame) throws -> BauplanNachricht {
         let j = try JSONDecoder().decode(JSONValue.self, from: frame.header)
-        let reihenfolge = j["linien_reihenfolge"]?.stringList ?? BauplanPolylinien.standardReihenfolge
+        let reihenfolge = j["linien_reihenfolge"]?.stringList ?? standardReihenfolge
         let koepfe = j["bilder"]?.arrayValue ?? []
-        let gruppen = try BauplanPolylinien.decode(
-            frame.payload, gruppen: koepfe.count, reihenfolge: reihenfolge)
+        // dieselbe Nutzlast wie DRAWING (P6-A1)
+        let gruppen = try PolylinienNutzlast.lesen(frame.payload, gruppen: koepfe.count, reihenfolge: reihenfolge)
         var bilder: [BauplanStrichbild] = []
         for (k, g) in zip(koepfe, gruppen) {
             let r = k["rahmen"]?.doubles ?? [0, 0, 180, 120]
@@ -47,62 +42,6 @@ public struct BauplanNachricht: Sendable {
             replyTo: j["reply_to"]?.stringValue, run: j["run"]?.intValue, plan: plan, bilder: bilder,
             feld: CGSize(width: feld.first ?? 180, height: feld.count > 1 ? feld[1] : 120),
             linienReihenfolge: reihenfolge)
-    }
-}
-
-/// Polylinien-Nutzlast (DOKUMENTE.md): je Gruppe, je Linienart in Reihenfolge: u32 Anzahl Polylinien, je Polylinie
-/// u32 Punktzahl und f32 x, y paarweise (little-endian).
-public enum BauplanPolylinien {
-    public static let standardReihenfolge = [
-        "sichtbar", "verdeckt", "mitte", "schnitt", "schraffur", "duenn", "nachbar", "bruch", "neu", "pfeil",
-    ]
-
-    public static func decode(_ data: Data, gruppen: Int, reihenfolge: [String]) throws
-        -> [[String: [[CGPoint]]]]
-    {
-        let bytes = [UInt8](data)
-        var off = 0
-        func u32() throws -> Int {
-            guard off + 4 <= bytes.count else { throw BauplanNachricht.DecodeError.nutzlast("zu kurz bei Byte \(off)") }
-            let v = UInt32(bytes[off]) | UInt32(bytes[off + 1]) << 8 | UInt32(bytes[off + 2]) << 16
-                | UInt32(bytes[off + 3]) << 24
-            off += 4
-            return Int(v)
-        }
-        func f32() throws -> CGFloat {
-            let bits = UInt32(try u32())
-            return CGFloat(Float(bitPattern: bits))
-        }
-        var out: [[String: [[CGPoint]]]] = []
-        for _ in 0..<gruppen {
-            var linien: [String: [[CGPoint]]] = [:]
-            for art in reihenfolge {
-                let n = try u32()
-                guard n <= 10_000_000 else { throw BauplanNachricht.DecodeError.nutzlast("\(n) Polylinien in \(art)") }
-                var ls: [[CGPoint]] = []
-                ls.reserveCapacity(n)
-                for _ in 0..<n {
-                    let k = try u32()
-                    guard off + 8 * k <= bytes.count else {
-                        throw BauplanNachricht.DecodeError.nutzlast("Polylinie mit \(k) Punkten passt nicht")
-                    }
-                    var pl: [CGPoint] = []
-                    pl.reserveCapacity(k)
-                    for _ in 0..<k {
-                        let x = try f32()
-                        let y = try f32()
-                        pl.append(CGPoint(x: x, y: y))
-                    }
-                    ls.append(pl)
-                }
-                linien[art] = ls
-            }
-            out.append(linien)
-        }
-        guard off == bytes.count else {
-            throw BauplanNachricht.DecodeError.nutzlast("\(bytes.count) Byte, gelesen \(off)")
-        }
-        return out
     }
 }
 
