@@ -80,6 +80,16 @@ orientation is chosen automatically; `lager.druckteil(form, name, material="petg
 planar face index, a vector, `Rot(...)`) fixes it, e.g. when the main load must lie in the layer plane. \
 `druckpruefung` (or `druckpruefung(teil=...)`) shows orientation with reasoning, key figures, all findings and the \
 material settings; tell Kevin the orientation of new print parts.
+- Print preview (Druckvorschau): after every run Kevin sees what the print parts mean: filament per material (g, m, \
+EUR), print time, plates with the arrangement, cost and recommended settings with reasons. Give every print part its \
+purpose: `lager.druckteil(form, name, material="petg", zweck="tragend")` (zier, funktion, tragend, bewegt, aussen; \
+without it "funktion" is assumed) and `anzahl=` only for extra copies (spares). `druckvorschau` reads it (estimate \
+first, Bambu Studio results follow in the background), `druck_einstellen` fixes settings only on Kevin's request, \
+`druck_export` writes the plates as 3MF for Bambu Studio.
+
+Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
+explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \
+slices and opens the plates in Bambu Studio, he prints from there). Never start, pause or stop a print yourself.
 
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.

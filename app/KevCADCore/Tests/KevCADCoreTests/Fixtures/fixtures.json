@@ -1441,7 +1441,20 @@
     },
     "fest": [
      "waende"
-    ]
+    ],
+    "fest_von": {
+     "waende": "kevin"
+    }
+   },
+   "fest_von": {
+    "g1": {
+     "waende": "kevin"
+    },
+    "g2": {},
+    "g3": {
+     "fuellung": "agent"
+    },
+    "g4": {}
    },
    "hinweise": [
     {
@@ -1480,6 +1493,211 @@
     1,
     2
    ]
+  }
+ },
+ "drucker": {
+  "frames": [
+   {
+    "file": "printer_status.frame",
+    "type": "PRINTER_STATUS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "printer_status_bereit.frame",
+    "type": "PRINTER_STATUS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "printer_status_ohne.frame",
+    "type": "PRINTER_STATUS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "printer_status_antwort.frame",
+    "type": "PRINTER_STATUS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_res.frame",
+    "type": "PRINT_JOB_RES",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_res_vorbereitet.frame",
+    "type": "PRINT_JOB_RES",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_res_fehler.frame",
+    "type": "PRINT_JOB_RES",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_ask.frame",
+    "type": "PRINT_JOB_ASK",
+    "payload_bytes": 0
+   },
+   {
+    "file": "ack_printer_config.frame",
+    "type": "ACK",
+    "payload_bytes": 0
+   },
+   {
+    "file": "ack_print_control_gesperrt.frame",
+    "type": "ACK",
+    "payload_bytes": 0
+   },
+   {
+    "file": "printer_config.frame",
+    "type": "PRINTER_CONFIG",
+    "payload_bytes": 0
+   },
+   {
+    "file": "printer_config_leer.frame",
+    "type": "PRINTER_CONFIG",
+    "payload_bytes": 0
+   },
+   {
+    "file": "printer_status_req.frame",
+    "type": "PRINTER_STATUS_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_req.frame",
+    "type": "PRINT_JOB_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_req_bestaetigt.frame",
+    "type": "PRINT_JOB_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_job_req_b.frame",
+    "type": "PRINT_JOB_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_control.frame",
+    "type": "PRINT_CONTROL",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_control_verwerfen.frame",
+    "type": "PRINT_CONTROL",
+    "payload_bytes": 0
+   }
+  ],
+  "status": {
+   "konfiguriert": true,
+   "verbindung": "verbunden",
+   "weg": "a",
+   "steuern": false,
+   "kamera": false
+  },
+  "drucker": {
+   "id": "p1p",
+   "name": "P1P Werkstatt",
+   "modell": "P1P",
+   "ip": "192.168.178.40",
+   "firmware": "01.10.00.00",
+   "modus": "cloud",
+   "entwicklermodus": false,
+   "signal": "-52dBm"
+  },
+  "druck": {
+   "zustand": "druckt",
+   "gcode_state": "RUNNING",
+   "fortschritt": 0.42,
+   "schicht": 41,
+   "schichten": 98,
+   "restzeit_s": 3720,
+   "aufgabe": "Kugelschieber-platten",
+   "datei": "Kugelschieber-platten.gcode.3mf",
+   "stufe": "druckt",
+   "geschwindigkeit": "standard"
+  },
+  "temperaturen": {
+   "duese": 219.5,
+   "duese_ziel": 220.0,
+   "bett": 55.0,
+   "bett_ziel": 55.0
+  },
+  "fehler": [
+   {
+    "code": "0300-0100-0003-0007",
+    "text": "Meldung 0300-0100-0003-0007 des Druckers, Erklärung: https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/0300_0100_0003_0007",
+    "schwere": "warnung",
+    "art": "hms"
+   }
+  ],
+  "wege": {
+   "a": true,
+   "b": false,
+   "b_grund": "Der Drucker ist im Cloud-Modus (LAN Only Mode aus).",
+   "anleitung": 6
+  },
+  "gefunden": [
+   {
+    "name": "P1P Werkstatt",
+    "modell": "P1P",
+    "ip": "192.168.178.40",
+    "verbindung": "cloud",
+    "kennung": "3fa2c1d09e7b"
+   }
+  ],
+  "auftrag": {
+   "auftrag": "j-3",
+   "zustand": "geoeffnet",
+   "weg": "a",
+   "platten": [
+    1,
+    2
+   ],
+   "fortschritt": null,
+   "meldung": "In Bambu Studio geöffnet: dort „Platte drucken“ (bzw. „Alle drucken“) und „Senden“ klicken.",
+   "datei": "/Users/test/Documents/Kev CAD/Kugelschieber/output/Kugelschieber-platten.gcode.3mf",
+   "von": "kevin"
+  },
+  "bereit": {
+   "zustand": "bereit",
+   "auftrag": "slict",
+   "von": "agent"
+  },
+  "ohne": {
+   "konfiguriert": false,
+   "verbindung": "aus"
+  },
+  "job_res": {
+   "auftrag": "j-3",
+   "schritt": "geoeffnet",
+   "datei": "/Users/test/Documents/Kev CAD/Kugelschieber/output/Kugelschieber-platten.gcode.3mf",
+   "platten": [
+    1,
+    2
+   ],
+   "ms": 18240
+  },
+  "ask": {
+   "auftrag": "j-6",
+   "platten": [
+    1
+   ],
+   "weg": "a",
+   "von": "agent",
+   "grund": "Kevin möchte die Halter jetzt drucken."
+  },
+  "config": {
+   "id": "p1p",
+   "name": "P1P Werkstatt",
+   "modell": "C11",
+   "ip": "192.168.178.40",
+   "weg": "a",
+   "status_lesen": true,
+   "schluesselbund": {
+    "dienst": "de.upvis.kevcad.drucker",
+    "konto": "p1p"
+   }
   }
  }
 }

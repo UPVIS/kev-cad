@@ -372,6 +372,7 @@ public final class AppController: AppActions {
             case .catalog(let c): applyCatalog(c)
             case .bestand(let b): applyBestand(b)
             case .druck(let d): handleDruck(d)  // Druckvorschau: PRINT_PREVIEW auf PRINT_PREVIEW_REQ
+            case .drucker(let d): handleDrucker(d)  // Phase 8: PRINTER_STATUS auf PRINTER_STATUS_REQ
             default: break
             }
             return
@@ -407,6 +408,7 @@ public final class AppController: AppActions {
                 reopenProjectIfKernelForgotIt(open)
             }
             requestBOMAfterConnect()
+            druckerNachHello()  // Phase 8: Drucker-Einstellungen an den Kernel (PRINTER_CONFIG)
             quietCatalogOff = false
         case .status(let s):
             switch s.state {
@@ -511,6 +513,8 @@ public final class AppController: AppActions {
             handleDokumentExport(a)
         case .druck(let d):  // Druckvorschau (AppController+Druck.swift)
             handleDruck(d)
+        case .drucker(let d):  // Phase 8: Drucken (AppController+Drucker.swift)
+            handleDrucker(d)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

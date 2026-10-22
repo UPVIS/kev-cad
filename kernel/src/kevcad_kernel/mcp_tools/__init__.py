@@ -65,6 +65,9 @@ TOOL_NAMES: tuple[str, ...] = (
     "bauplan_pruefen",
     # 3D-Druck
     "druckpruefung",
+    # Phase 8: Drucken
+    "drucker_status",
+    "drucken",
     # Phase 6: Zeichnungen
     "zeichnungen",
     "zeichnung_erstellen",

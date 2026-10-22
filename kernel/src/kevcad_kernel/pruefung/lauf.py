@@ -82,3 +82,9 @@ from kevcad_kernel.druck import anbindung as _druck_anbindung  # noqa: E402,F401
 
 if AKTIV is not None and "druck" not in AKTIV:
     AKTIV = (*AKTIV, "druck")
+
+# Druckvorschau: Geometrie je Druckteil in Druckausrichtung, direkt nach der Druckprüfung (druck/vorschau_geo.py)
+from kevcad_kernel.druck import vorschau_geo as _druck_vorschau_geo  # noqa: E402,F401
+
+if AKTIV is not None and "druckvorschau" not in AKTIV:
+    AKTIV = (*AKTIV, "druckvorschau")

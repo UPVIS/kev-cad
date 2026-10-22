@@ -181,6 +181,123 @@ def _ergebnis_fuer(k: Any, material: str, ausrichtung: Any, R: np.ndarray) -> tu
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Abdrücke fremder Teile (Schichtraster)
+
+ABDRUCK_ABSTAND = 1.5  # mm: so nah an einem Lager- oder Zukaufteil gilt eine Fläche als dessen Abdruck (Aussparung)
+
+
+def _fremde(ctx: PruefKontext, name: str) -> list[Any]:
+    """Gezeigte Lager- und Zukaufteile (keine Druckteile, keine Kulisse) außer ``name``."""
+    return [k for n, k in ctx.koerper.items()
+            if n != name and k.info.get("lager") and not k.info.get("druckteil") and not k.kulisse]
+
+
+def _abdruck_von(k: Any, flaeche: int, fremde: list[Any]) -> Any | None:
+    """Das fremde Teil, dessen Abdruck die Fläche ist (alle Eckpunkte der Fläche näher als ABDRUCK_ABSTAND an ihm),
+    oder None."""
+    from build123d import Shape
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+
+    faces = getattr(k, "_druck_faces", None)
+    if faces is None:
+        faces = Shape.cast(k.shape).faces()
+        k._druck_faces = faces
+    if not 0 <= flaeche < len(faces):
+        return None
+    ecken = faces[flaeche].vertices()[:16]
+    if not ecken:
+        return None
+    P = np.array([[v.X, v.Y, v.Z] for v in ecken])
+    for f in fremde:
+        if np.any(P < f.bmin - ABDRUCK_ABSTAND) or np.any(P > f.bmax + ABDRUCK_ABSTAND):
+            continue
+        nah = True
+        for v in ecken:
+            d = BRepExtrema_DistShapeShape(v.wrapped, f.shape)
+            if not d.IsDone() or d.Value() > ABDRUCK_ABSTAND:
+                nah = False
+                break
+        if nah:
+            return f
+    return None
+
+
+def _hoehe_von(k: Any, erg: dict[str, Any], R: np.ndarray) -> Any:
+    """Höhe einer Fläche (Mittel ihrer Eckpunkte) über dem Bett in der Druckausrichtung der Prüfung."""
+    M = np.asarray((erg.get("ausrichtung") or {}).get("matrix") or np.eye(3), dtype=np.float64)
+    lage = np.asarray(k.lage, dtype=np.float64).reshape(4, 4)
+    A, t = M @ R @ lage[:3, :3].T, lage[:3, 3]
+    zmin = float(((np.asarray(k.pos, dtype=np.float64) - t) @ A[2]).min())
+
+    def hoehe(f: int) -> float:
+        P = np.array([[v.X, v.Y, v.Z] for v in k._druck_faces[f].vertices()])
+        return float(((P - t) @ A[2]).mean()) - zmin
+
+    return hoehe
+
+
+def _abdruecke_buendeln(ctx: PruefKontext, name: str, k: Any, befunde: list[dict[str, Any]],
+                        hoehe_von: Any = None) -> list[dict[str, Any]]:
+    """Schichtraster-Hinweise an Flächen, die Abdrücke fremder Teile sind (Aussparung um ein Lager- oder Zukaufteil),
+    je fremdem Teil zu einem Hinweis bündeln: im Modell kaum zu beheben, beim Druck unkritisch (Passung prüfen)."""
+    import re
+
+    fremde = _fremde(ctx, name)
+    if not fremde:
+        return befunde
+    out = []
+    for b in befunde:
+        w = b.get("wert") or {}
+        if w.get("druckart") != "schichtraster" or not w.get("flaechen"):
+            out.append(b)
+            continue
+        eigene: list[int] = []
+        je_teil: dict[str, list[int]] = {}
+        for f in w["flaechen"]:
+            try:
+                fremd = _abdruck_von(k, int(f), fremde)
+            except Exception:  # noqa: BLE001 - im Zweifel bleibt die Fläche ein eigener Hinweis
+                fremd = None
+            if fremd is None:
+                eigene.append(int(f))
+            else:
+                je_teil.setdefault(fremd.name, []).append(int(f))
+        if not je_teil:
+            out.append(b)
+            continue
+        if eigene:
+            kopf = b["text"].split(" an den Flächen ")[0].split(" an Fläche ")[0].rstrip(".")
+            wert = {**w, "flaechen": eigene}
+            if hoehe_von is not None:
+                try:
+                    hs = sorted({round(hoehe_von(f), 2) for f in eigene})
+                    liste = ", ".join(bf.de_num(h, 2) for h in hs[:6]) + (" …" if len(hs) > 6 else "")
+                    kopf = re.sub(r"Höhen .*? mm liegen", f"Höhe{'n' if len(hs) != 1 else ''} {liste} mm "
+                                                         f"lieg{'en' if len(hs) != 1 else 't'}", kopf, count=1)
+                    wert["hoehen"] = hs
+                except Exception:  # noqa: BLE001 - dann bleibt der Text mit allen Höhen
+                    pass
+            out.append({**b, "wert": wert, "text": kopf + _flaechen_text(name, eigene) + "."})
+        for fremd, fl in je_teil.items():
+            kurz = fremd.rsplit("/", 1)[-1]
+            n = len(fl)
+            out.append(befund(PRAEFIX + "schichtraster_abdruck", [name], "hinweis",
+                              f"{name}: {n} Fläche{'n' if n != 1 else ''} aus der Aussparung für {kurz} "
+                              f"lieg{'en' if n != 1 else 't'} nicht im Schichtraster (unkritisch, Passung prüfen)"
+                              f"{_flaechen_text(name, fl)}.",
+                              "Nichts zu ändern: der Slicer rundet diese Höhen; nach dem Druck die Passung am "
+                              f"{kurz} prüfen.",
+                              wert={"pruefung": "druck", "druckart": "schichtraster_abdruck", "flaechen": fl,
+                                    "abdruck_von": fremd}))
+    return out
+
+
+ARTEN["schichtraster_abdruck"] = ("Abdruck außerhalb des Schichtrasters (Druck)",
+                                  "Abdrücke außerhalb des Schichtrasters (Druck)")
+bf.ART_TEXT.setdefault(PRAEFIX + "schichtraster_abdruck", ARTEN["schichtraster_abdruck"])
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Prüffunktion
 
 
@@ -304,6 +421,8 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
         neu += int(not aus_speicher)
         treffer += int(aus_speicher)
         bef = _befunde(name, erg, welt)
+        if any((b.get("wert") or {}).get("druckart") == "schichtraster" for b in bef):
+            bef = _abdruecke_buendeln(ctx, name, k, bef, _hoehe_von(k, erg, R))
         out += bef
         teile[name] = _teil_info(name, erg, bef, vorgabe, "druckteil" if rahmen is not None else "welt",
                                  aus_speicher, ms)

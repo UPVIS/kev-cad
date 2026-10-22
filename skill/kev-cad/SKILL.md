@@ -692,6 +692,19 @@ Gewindestift, Gewindeeinsatz auf derselben Achse); fehlt es, steht nur der Durch
 `export(["step", "stl", "3mf"])` schreibt nach `<Projekt>/output/`, `export(["bom_csv"])` die Stückliste als CSV. STEP für CAD und Fertigung, STL oder 3MF für den
 Bambu-Drucker, GLB für Ansichten. `parts=["Halter/Schelle"]` exportiert nur diese Teile.
 
+## Drucken auf dem P1P (Phase 8)
+
+Kevins Entscheidung (22.10.2026): Weg A. Kev CAD slict die Platten der Druckvorschau mit Bambu Studio fertig und öffnet
+sie dort; Kevin klickt in Bambu Studio „Platte drucken“ und „Senden“, die Handy-App bleibt. Ein Material je Auftrag
+(P1P ohne AMS).
+
+- `drucker_status` liest den Stand (nur lesend): Verbindung, Fortschritt, Schicht, Restzeit, Temperaturen, Fehler,
+  letzter Auftrag. Seriennummer und Zugangscode stehen nie darin; frag Kevin nie danach, er trägt sie in der App ein.
+- `drucken(platten=[1], grund="…")` nur, wenn Kevin ausdrücklich drucken will. Es öffnet in Kev CAD den Dialog
+  „Drucken …“; es geschieht nichts, bis Kevin dort klickt. Nie zum Testen, nie aus eigenem Antrieb.
+- Starten, Pausieren oder Abbrechen am Drucker gibt es für den Agenten nicht. Weg B (direkt im LAN) ist gesperrt,
+  solange der Drucker nicht im LAN-only-Modus mit Developer Mode läuft.
+
 ## Bauplan
 
 Kev CAD erzeugt aus dem Modell eine Bauanleitung zum Ausdrucken (Kevin, 22.10.2026: „was muss wann gemacht werden,

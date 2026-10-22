@@ -32,6 +32,7 @@ struct WelcomeView: View {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
             BauplanExportSelfTest.projektOeffnen(session)  // Phase 6, P6-A2: öffnet sein Projekt selbst
             DruckSelfTest.projektOeffnen(session)  // Druckvorschau: öffnet sein Projekt selbst
+            DruckerSelbsttest.projektOeffnen(session)  // Phase 8: öffnet sein Projekt selbst
             if session.launchFinished() { return }
             recents.refresh()
             consumeNewProjectRequest()

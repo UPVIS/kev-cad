@@ -207,6 +207,8 @@ public final class AppModel: ObservableObject {
     public let export = ExportStore()
     /// Druckvorschau (additiv, DRUCKVORSCHAU.md): Filament, Zeit, Platten, Kosten, Empfehlungen (Aktionen: `druckActions`).
     public let druck = DruckStore()
+    /// Phase 8 (additiv): Drucken auf dem P1P – Status, Einstellungen, Dialog (Aktionen: `druckerActions`).
+    public let drucker = DruckerStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?
