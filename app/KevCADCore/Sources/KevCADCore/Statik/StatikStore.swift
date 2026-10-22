@@ -13,8 +13,20 @@ public final class StatikStore: ObservableObject {
     @Published public var verformung = false
     /// Stufe 2: Kontaktkräfte als Pfeile, solange die Zeitleiste einen Ablauf zeigt.
     @Published public var kontaktpfeile = true
+    /// Stufe 3: Felder der Festkörper-FEM je Szenario und Teil (`StatikFeld.key`), nur des laufenden Laufs.
+    @Published public var felder: [String: StatikFeld] = [:]
 
     public init() {}
+
+    /// Stufe 3: Felder des Szenarios, die zum Stand in STATICS passen (gleicher Schlüssel, Teil gerechnet).
+    public func felder(fuer sz: StatikSzenario) -> [StatikFeld] {
+        guard let fk = sz.festkoerper else { return [] }
+        return fk.teile.compactMap { t in
+            guard t.stand == "done", let k = t.feld, let f = felder[StatikFeld.key(sz.name, t.teil)], f.schluessel == k
+            else { return nil }
+            return f
+        }
+    }
 
     public var szenario: StatikSzenario? {
         guard let e = ergebnis else { return nil }
@@ -35,6 +47,24 @@ public protocol StatikActions: AnyObject {
     func zeigeAblauf(_ szenario: String)
     /// Stufe 2: Kontaktkräfte als Pfeile während des Ablaufs ein- oder ausblenden.
     func setKontaktpfeile(_ an: Bool)
+    /// Stufe 3: laufende Festkörper-Rechnung abbrechen (STATICS_CANCEL).
+    func festkoerperAbbrechen()
+}
+
+/// Stufe 3: App → Kernel, laufende Festkörper-Rechnung beenden (PROTOCOL.md „Festkörper (Stufe 3)“).
+public struct StatikAbbrechenMessage: OutgoingMessage {
+    public static let type = "STATICS_CANCEL"
+    public var seq = 0
+
+    public init() {}
+
+    enum CodingKeys: String, CodingKey { case type, seq }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(Self.type, forKey: .type)
+        try c.encode(seq, forKey: .seq)
+    }
 }
 
 /// Körper für den Viewport aus einem Szenario: je Stab Röhrensegmente in der Farbe der Ausnutzung (etwas dicker als der

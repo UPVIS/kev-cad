@@ -48,6 +48,7 @@ from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.statik.laufzeit import StatikRuntime  # Statik Stufe 1: statik, szenario_rechnen, STATICS
 from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime  # Statik Stufe 2: dynamik, Ablauf als Animation
+from kevcad_kernel.statik.festkoerper.laufzeit import FestkoerperRuntime  # Statik Stufe 3: festigkeit, FEM
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
@@ -110,7 +111,7 @@ class Job:
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
-                    StatikRuntime, DynamikRuntime, RenderRuntime):
+                    StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -663,6 +664,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._drucker_close()  # Phase 8: MQTT trennen, SSDP und Auftragsfaden beenden
         self._druckvorschau_schliessen()  # Druckvorschau: Slicer abbrechen
         self._referenz_schliessen()  # Phase 4: laufendes Object Capture beenden
+        self._fk_abbrechen_intern()  # Statik S3: laufenden FEM-Prozess beenden
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -887,6 +889,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._set_state("busy", f"Lauf {job.run} rechnet")
         self._send_app({"type": "RUN_START", "run": job.run, "file_hash": job.file_hash, "params": job.params,
                         "slow_ms": job.slow_ms})
+        self._fk_abbrechen_intern()  # Statik S3: FEM des alten Laufs beenden, der neue Lauf hat die Kerne
         sent = self._worker.send({"type": "RUN", "run": job.run, "path": job.path, "code": job.code,
                                   "params": job.params, "slow_ms": job.slow_ms, "deviation": deviation,
                                   "angular": angular, "catalog": self._catalog_dirs(),
@@ -1101,6 +1104,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             check = dict(header.get("app") or {})
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
             self._dynamik_nach_lauf(statik)  # Statik S2: Abläufe aus model.py im Hintergrund (eigener Prozess)
+            self._festkoerper_nach_lauf(statik)  # Statik S3: Festkörper-FEM für Teile mit Last (eigener Prozess)
             # Druckvorschau: Geometrie je Druckteil aus der Prüfung, und zwar bevor fertig() das wartende run weckt;
             # sonst fragt ein Aufrufer direkt nach run (PRINT_JOB_REQ, druckvorschau) eine Vorschau ohne Eingang ab,
             # während die Versionen hier noch schreiben (Wettlauf, sichtbar seit die Statik die Prüfung verlängert)
@@ -1200,6 +1204,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             if check is not None:
                 conn.send(check, check_payload)
             self._statik_on_connect(conn)  # Statik: letztes STATICS
+            self._festkoerper_on_connect(conn)  # Statik S3: Felder (STATICS_FIELD) des letzten Laufs
             self._zeichnung_on_connect(conn)
             self._druckvorschau_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
@@ -1334,6 +1339,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._referenz_app_message(kind, header):  # Phase 4: REF_ADD, REF_MEASURE_REQ, REF_APPLY
             pass
         elif self._render_app_message(kind, header):  # Phase 7: RENDER_START, RENDER_CANCEL
+            pass
+        elif self._festkoerper_app_message(kind, header):  # Statik S3: STATICS_CANCEL
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

@@ -1273,6 +1273,12 @@ STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit",
 STATIK_ABLAUF_STAENDE = ("done", "laeuft", "failed")  # Stufe 2 (Ablauf): Feld ``ablauf`` je Szenario
 STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_max", "rutschgrenze", "rutschreserve",
                       "geschwindigkeit", "verzoegerung")
+STATIK_FK_STAENDE = ("done", "laeuft", "failed", "abgebrochen")  # Stufe 3 (Festkörper): Feld ``festkoerper``
+STATIK_FK_TEIL = ("teil", "stand", "ampel", "sicherheit", "ziel", "ausnutzung", "spannung_max", "kriterium", "ort",
+                  "sicherheit_lagerrand", "verformung_max_mm", "kragtraeger", "druckteil", "q", "ausrichtungen",
+                  "ausrichtung_beste", "netz", "ms", "feld", "meldung", "text", "aus_speicher")
+STATIK_FELD_ARRAYS = (("punkte", "<f4", 3), ("dreiecke", "<u4", 3), ("ausnutzung", "<f4", 1), ("spannung", "<f4", 1),
+                      ("verschiebung", "<f4", 3))
 
 
 def _statik_ablauf(ab: dict[str, Any], voll: bool = True) -> dict[str, Any]:
@@ -1289,6 +1295,18 @@ def _statik_ablauf(ab: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     return out
 
 
+def _statik_festkoerper(fk: dict[str, Any], voll: bool = True) -> dict[str, Any]:
+    """Festkörper (S3) eines Szenarios für die App: Stand, Fortschritt, je Teil Sicherheit, Ampel, Kriterium, Ort und
+    der Schlüssel des Felds (STATICS_FIELD); kurz nur Stand und je Teil Ampel und Sicherheit."""
+    out: dict[str, Any] = {k: fk.get(k) for k in ("stand", "fortschritt", "text", "meldung")}
+    teile = fk.get("teile") or []
+    if voll:
+        out["teile"] = [{k: t.get(k) for k in STATIK_FK_TEIL if k in t} for t in teile]
+    else:
+        out["teile"] = [{k: t.get(k) for k in ("teil", "stand", "ampel", "sicherheit")} for t in teile]
+    return out
+
+
 def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     sz = e.get("szenario") or {}
     out: dict[str, Any] = {
@@ -1300,6 +1318,8 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     if not voll:
         if isinstance(e.get("ablauf"), dict):
             out["ablauf"] = _statik_ablauf(e["ablauf"], voll=False)
+        if isinstance(e.get("festkoerper"), dict):
+            out["festkoerper"] = _statik_festkoerper(e["festkoerper"], voll=False)
         return out
     out["urteile"] = [{k: u[k] for k in STATIK_URTEIL_FELDER if k in u} for u in e.get("urteile") or []]
     out["teile"] = list(e.get("teile") or [])
@@ -1311,6 +1331,8 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
                      for g in kippen or []]
     if isinstance(e.get("ablauf"), dict):
         out["ablauf"] = _statik_ablauf(e["ablauf"])
+    if isinstance(e.get("festkoerper"), dict):
+        out["festkoerper"] = _statik_festkoerper(e["festkoerper"])
     return out
 
 
@@ -1381,6 +1403,15 @@ def check_statics_message(header: dict[str, Any]) -> list[str]:
                         err.append(f"{wo}.ablauf.verlauf.{k}: {len(vl[k])} Werte, Zeiten {n}")
                 if ab.get("pfeile") is not None and ab.get("bilder") and len(ab["pfeile"]) != ab["bilder"]:
                     err.append(f"{wo}.ablauf.pfeile: {len(ab['pfeile'])} Bilder, erwartet {ab['bilder']}")
+        fk = e.get("festkoerper")
+        if fk is not None:
+            if fk.get("stand") not in STATIK_FK_STAENDE:
+                err.append(f"{wo}.festkoerper.stand {fk.get('stand')!r} unbekannt")
+            for t in fk.get("teile") or []:
+                if not t.get("teil"):
+                    err.append(f"{wo}.festkoerper: Teil ohne Namen")
+                if t.get("stand") == "done" and t.get("ampel") not in STATIK_AMPELN:
+                    err.append(f"{wo}.festkoerper: Teil {t.get('teil')!r} mit Ampel {t.get('ampel')!r}")
     if header.get("aktiv") is not None and header.get("aktiv") not in namen:
         err.append(f"aktiv {header.get('aktiv')!r} ist kein Szenario")
     return err
@@ -1621,3 +1652,118 @@ def render_beispiele() -> list[tuple[str, dict[str, Any]]]:
                                                text="Blender fehlt", fehler="Blender fehlt (erwartet unter "
                                                "/Applications/Blender.app)", von="agent", seq=36)),
     ]
+
+
+# Statik Stufe 3 (Festkörper-FEM): STATICS_FIELD (Kernel → App), siehe PROTOCOL.md „Festkörper (Stufe 3)“
+
+
+def pack_statics_feld(kopf: dict[str, Any], felder: dict[str, Any], *, run: int, seq: int = 0
+                      ) -> tuple[dict[str, Any], bytes]:
+    """STATICS_FIELD: Oberflächennetz eines Teils mit Ausnutzung, von-Mises-Spannung und Verschiebung je Punkt.
+    ``kopf``: ``szenario``, ``teil``, ``feld`` (Schlüssel wie in ``festkoerper.teile[i].feld``), dazu ``ziel``,
+    ``sicherheit``, ``ampel``, ``spannung_max``, ``verformung_max_mm``, ``ueberhoehung``. Nutzlast: Felder in der
+    Reihenfolge von ``STATIK_FELD_ARRAYS``, little-endian, ohne Lücken."""
+    import numpy as np
+
+    teile = []
+    n = int(np.asarray(felder["punkte"]).reshape(-1, 3).shape[0])
+    m = int(np.asarray(felder["dreiecke"]).reshape(-1, 3).shape[0])
+    for name, typ, breite in STATIK_FELD_ARRAYS:
+        a = np.ascontiguousarray(np.asarray(felder[name]), dtype=typ).reshape(-1)
+        soll = (m if name == "dreiecke" else n) * breite
+        if a.size != soll:
+            raise ValueError(f"STATICS_FIELD: {name} hat {a.size} Werte, erwartet {soll}")
+        teile.append(a.tobytes())
+    header = {"type": "STATICS_FIELD", "seq": seq, "run": int(run),
+              **{k: kopf.get(k) for k in ("szenario", "teil", "feld", "ziel", "sicherheit", "ampel", "spannung_max",
+                                         "verformung_max_mm", "ueberhoehung")},
+              "werte": "ausnutzung", "punkte": n, "dreiecke": m}
+    return header, b"".join(teile)
+
+
+def unpack_statics_feld(header: dict[str, Any], payload: bytes) -> dict[str, Any]:
+    import numpy as np
+
+    n, m = int(header["punkte"]), int(header["dreiecke"])
+    out: dict[str, Any] = {}
+    pos = 0
+    for name, typ, breite in STATIK_FELD_ARRAYS:
+        k = (m if name == "dreiecke" else n) * breite
+        a = np.frombuffer(payload, dtype=typ, count=k, offset=pos)
+        pos += a.nbytes
+        out[name] = a.reshape(-1, breite) if breite > 1 else a
+    if pos != len(payload):
+        raise ValueError(f"STATICS_FIELD: Nutzlast {len(payload)} Byte, erwartet {pos}")
+    return out
+
+
+def check_statics_feld(header: dict[str, Any], payload: bytes) -> list[str]:
+    """Fehler einer STATICS_FIELD-Nachricht (leer = gültig)."""
+    err = _fehlend(header, ("run", "szenario", "teil", "feld", "punkte", "dreiecke"), "STATICS_FIELD")
+    if err:
+        return err
+    try:
+        f = unpack_statics_feld(header, payload)
+    except Exception as exc:  # noqa: BLE001
+        return [str(exc)]
+    if len(f["dreiecke"]) and int(f["dreiecke"].max()) >= int(header["punkte"]):
+        err.append("STATICS_FIELD: Dreieck zeigt auf einen Punkt, den es nicht gibt")
+    if header.get("ampel") is not None and header["ampel"] not in STATIK_AMPELN:
+        err.append(f"STATICS_FIELD: Ampel {header['ampel']!r} unbekannt")
+    return err
+
+
+def statik_beispiel_feld() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Kleines Feld für Testdateien: Quader 80 × 20 × 8 mm (Wandhalter) als 8 Punkte und 12 Dreiecke, Ausnutzung von
+    der Wand (2,1) zur Spitze (0) fallend, Spitze 2,4 mm nach unten verschoben."""
+    import numpy as np
+
+    p = np.array([[x, y, z] for z in (96.0, 104.0) for y in (-10.0, 10.0) for x in (0.0, 80.0)], dtype=np.float32)
+    tri = np.array([[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7],
+                    [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]], dtype=np.uint32)
+    aus = np.where(p[:, 0] < 1, 2.1, 0.0).astype(np.float32)
+    vm = (aus / 4.0 * 34.0).astype(np.float32)
+    v = np.zeros((8, 3), dtype=np.float32)
+    v[p[:, 0] > 1, 2] = -2.4
+    kopf = {"szenario": "Haken 2 kg", "teil": "Wandhalter (Druck)", "feld": "d0f84561664942f7ae15", "ziel": 4.0,
+            "sicherheit": 1.87, "ampel": "rot", "spannung_max": 7.05, "verformung_max_mm": 2.43, "ueberhoehung": 2.6}
+    return kopf, {"punkte": p, "dreiecke": tri, "ausnutzung": aus, "spannung": vm, "verschiebung": v}
+
+
+def statik_beispiel_festkoerper() -> dict[str, Any]:
+    """Wie ``statik_beispiel`` plus ein Szenario „Haken 2 kg“ mit Festkörper (S3): ein Druckteil, rot, gerechnet;
+    dazu läuft der Festkörper von „Aufstützen 30 kg“ noch (Testdatei ``statics_festkoerper.frame``)."""
+    b = statik_beispiel()
+    kopf, _ = statik_beispiel_feld()
+    teil = {"teil": "Wandhalter (Druck)", "stand": "done", "ampel": "rot", "sicherheit": 1.87, "ziel": 4.0,
+            "ausnutzung": 2.14, "spannung_max": 7.05, "kriterium": "schicht", "ort": [3.7, -2.4, 104.0],
+            "sicherheit_lagerrand": 1.52, "verformung_max_mm": 2.43, "kragtraeger": 1.98,
+            "druckteil": True, "q": 0.4, "ausrichtungen": {"-z": 4.82, "-y": 4.82, "-x": 1.87},
+            "ausrichtung_beste": "-z", "netz": {"tetraeder": 535, "freiheitsgrade": 3543, "h_mm": 5.33},
+            "ms": 1960.0, "feld": kopf["feld"], "aus_speicher": False,
+            "text": "Wandhalter (Druck) hält nicht (FEM): Sicherheit 1,87 (Ziel 4, Druckteil)"}
+    urteil = {"art": "festkoerper", "teil": "Wandhalter (Druck)", "ampel": "rot",
+              "text": "Wandhalter (Druck) hält nicht (Festkörper-FEM): Sicherheit 1,87 (Ziel 4, Druckteil), "
+                      "Schichtfuge maßgebend (nur 40 % der Festigkeit quer zur Schicht); Kragträger S0: 1,98.",
+              "loesung": "Drehen: mit lager.druckteil(…, ausrichtung=\"-z\") Sicherheit 4,82 statt 1,87 (FEM); "
+                         "oder verstärken: bei (4; −2; 104) in Lastrichtung um etwa 46 % höher",
+              "sicherheit": 1.87, "ziel": 4.0, "ausnutzung": 2.14, "ort": [3.7, -2.4, 104.0], "schichtfaktor": 0.4,
+              "quer_zur_schicht": True}
+    b["szenarien"].append({
+        "name": "Haken 2 kg", "szenario": {"art": "statisch", "quelle": "modell", "beschreibung": None},
+        "ampel": "rot", "ziel": 2.0, "text": "Haken 2 kg: rot – Wandhalter (Druck) hält nicht (Sicherheit 1,87)",
+        "kennzahlen": {"sicherheit": 1.87, "knicken": None, "kippreserve": None, "rutschreserve": None,
+                       "durchbiegung_mm": None, "durchbiegung_grenze_mm": None, "verformung_max_mm": 2.43},
+        "urteile": [urteil],
+        "teile": [{"name": "Wandhalter (Druck)", "ausnutzung": 2.14, "ampel": "rot", "verformung_mm": 2.43,
+                   "sicherheit": 1.87}],
+        "staebe": [], "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []},
+        "festkoerper": {"stand": "done", "fortschritt": 1.0, "text": "1 Teil gerechnet", "meldung": None,
+                        "teile": [teil]}})
+    for e in b["szenarien"]:
+        if e["name"] == "Aufstützen 30 kg":
+            e["festkoerper"] = {"stand": "laeuft", "fortschritt": 0.45, "text": "Rahmen/Halter (Druck): lösen",
+                                "meldung": None, "teile": [{"teil": "Rahmen/Halter (Druck)", "stand": "laeuft"}]}
+    b["aktiv"] = "Haken 2 kg"
+    b["grenzen"] = list(b["grenzen"]) + ["Festkörper (S3) linear-elastisch mit kleinen Verformungen."]
+    return b

@@ -25,6 +25,8 @@ _DRUCK = Path(tempfile.mkdtemp(prefix="kc-druck-"))
 os.environ["KEVCAD_DRUCK_CACHE"] = str(_DRUCK / "cache")
 os.environ["KEVCAD_DRUCK_ABGLEICH"] = str(_DRUCK / "abgleich.json")
 os.environ["KEVCAD_BAMBU_APP"] = str(_DRUCK / "kein-bambu-studio.app")
+# Statik Stufe 3: Zwischenspeicher der Festkörper-FEM (Netze, Fälle) nie in Kevins ~/Library/Caches
+os.environ["KEVCAD_FESTKOERPER_CACHE"] = str(_DRUCK / "festkoerper")
 
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001

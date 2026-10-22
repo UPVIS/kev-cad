@@ -58,6 +58,8 @@ EXPECTED_TOOLS |= {"statik", "szenario_rechnen"}
 EXPECTED_TOOLS |= {"dynamik", "dynamik_grenze"}
 # Phase 7: Renderings (PLAN-PHASE7-RENDERINGS.md)
 EXPECTED_TOOLS |= {"render"}
+# Statik Stufe 3 (Festkörper-FEM)
+EXPECTED_TOOLS |= {"festigkeit"}
 
 
 def free_port() -> int:

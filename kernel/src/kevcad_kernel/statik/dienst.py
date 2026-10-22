@@ -20,9 +20,12 @@ def auftrag(auftrag_json: str) -> str:
     t0 = time.perf_counter()
     try:
         a = json.loads(auftrag_json)
-        erg = rechne_auftrag(a) if (a.get("szenario") or a.get("neu") or not a.get("szene")) else {"stand": "done"}
+        nur_anhang = a.get("szene") is not None or a.get("festkoerper") is not None
+        erg = rechne_auftrag(a) if (a.get("szenario") or a.get("neu") or not nur_anhang) else {"stand": "done"}
         if a.get("szene") is not None and erg.get("stand") == "done":
             erg.update(szene_schreiben(a["szene"]))
+        if a.get("festkoerper") is not None and erg.get("stand") == "done":
+            erg.update(festkoerper_schreiben(a["festkoerper"]))
     except ValueError as exc:
         erg = {"stand": "failed", "meldung": str(exc)}
     except Exception as exc:  # noqa: BLE001 - als Meldung zurück, nicht als Absturz des Auftrags
@@ -51,6 +54,17 @@ def szene_schreiben(auftrag: dict) -> dict:
     schreibe(meta, felder, pfad)
     return {"szene_datei": pfad, "szene_run": LETZTER.run, "szene_ms": meta.get("ms"),
             "szene_koerper": len(meta["koerper"]), "antrieb": meta.get("antrieb")}
+
+
+def festkoerper_schreiben(wunsch: dict) -> dict:
+    """Aufträge für den Festkörper (S3) aus dem Modell des letzten Laufs als Ordner (``statik/festkoerper/auftrag.py``);
+    die Laufzeit gibt ihn an den FEM-Prozess weiter und löscht ihn danach."""
+    from kevcad_kernel.statik.anbindung import LETZTER
+    from kevcad_kernel.statik.festkoerper.auftrag import schreibe
+
+    if LETZTER.modell is None:
+        raise ValueError("Noch kein Statikmodell: erst run aufrufen.")
+    return {"festkoerper": schreibe(LETZTER, wunsch)}
 
 
 def aufwaermen() -> None:

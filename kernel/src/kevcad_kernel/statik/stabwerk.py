@@ -64,6 +64,8 @@ class S1Ergebnis:
     knick_stab: str | None = None
     auflager: list[dict[str, Any]] = field(default_factory=list)
     koerper_kraefte: dict[str, list[float]] = field(default_factory=dict)  # Starrkörper: Summe der Gliedkräfte
+    # Stufe 3: Kräfte der Stäbe auf Verbinder (Starrkörper zwischen Stäben), je Anschluss am Stab
+    verbinder: list[dict[str, Any]] = field(default_factory=list)
     meldung: str = ""
     ms: float = 0.0
 
@@ -122,6 +124,7 @@ class _Aufbau:
         self.k_knoten: dict[str, str] = {}  # Starrkörper → Knoten
         self.starr_glieder: dict[str, list[str]] = {}  # Starrkörper → seine Glieder (Kraftfluss)
         self.lager: list[tuple[str, Anschluss]] = []  # (Knoten, Anschluss)
+        self.verbinder: list[tuple[str, Anschluss, str]] = []  # Stufe 3: (starres Glied, Anschluss, Knoten am Stab)
         self.summe: dict[str, np.ndarray] = {}  # Szenario → Summe aller aufgebrachten Kräfte (Gleichgewichtsprobe)
         self.anbau: dict[str, Anschluss] = {}
         self._n = 0
@@ -270,7 +273,9 @@ class _Aufbau:
             fe.def_support(knoten, True, True, True, True, True, True)
             self.lager.append((knoten, a))
         elif ziel is not None:
-            self._starr(knoten, ziel, kid)
+            g = self._starr(knoten, ziel, kid)
+            if kid is not None and g is not None:
+                self.verbinder.append((g, a, knoten))
 
     def _freigaben(self, a: Anschluss, s: Stab) -> dict[str, bool]:
         """Freigaben am Gelenkglied (lokal: x quer, z längs des Stabs, y quer)."""
@@ -501,6 +506,17 @@ def _auswerten(b: _Aufbau, sz: Szenario) -> S1Ergebnis:
         e.auflager.append({"stab": a.stab, "teil": a.teile[1], "punkt": [round(float(c), 1) for c in b.knoten_pos[kn]],
                            "kraft": [round(float(c), 2) for c in F], "moment": [round(float(c), 1) for c in M],
                            "art": a.art, "t": round(a.t, 1)})
+    # Stufe 3: Kraft und Moment, die der Stab über sein starres Glied in den Verbinder leitet (Endkräfte des Glieds am
+    # Stabende, global; das Glied trägt keine Last, also kommt genau das im Starrkörper an), am Anschlusspunkt
+    for g, a, kn in b.verbinder:
+        try:
+            Fg = np.asarray(fe.members[g].F(combo), dtype=float).reshape(-1)
+        except Exception:  # noqa: BLE001
+            continue
+        e.verbinder.append({"stab": a.stab, "teil": a.teile[1], "koerper": a.partner[1],
+                            "punkt": [round(float(c), 2) for c in b.knoten_pos[kn]],
+                            "kraft": [round(float(c), 3) for c in Fg[0:3]],
+                            "moment": [round(float(c), 2) for c in Fg[3:6]], "art": a.art})
     # Kräfte in die Starrkörper (Summe der Gliedkräfte am Starrkörperknoten, grob)
     for kid, kn in b.k_knoten.items():
         node = fe.nodes[kn]

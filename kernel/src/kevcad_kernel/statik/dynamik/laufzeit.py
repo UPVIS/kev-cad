@@ -220,7 +220,8 @@ class DynamikRuntime:
         Ablauf übernimmt es aus dem bisherigen Ergebnis der Laufzeit (außer dem gerade gerechneten ``ausser``)."""
         if not alt:
             return neu
-        mit = {e.get("name"): e for e in alt.get("szenarien") or [] if isinstance(e.get("ablauf"), dict)}
+        mit = {e.get("name"): e for e in alt.get("szenarien") or []
+               if isinstance(e.get("ablauf"), dict) or isinstance(e.get("festkoerper"), dict)}  # Stufe 3 auch
         if not mit:
             return neu
         szen = [mit.get(e.get("name"), e) if e.get("name") != ausser else e for e in neu.get("szenarien") or []]
@@ -356,6 +357,9 @@ class DynamikRuntime:
                     "traceback": ablauf.get("traceback")}
         anim = self._dyn_animation(ablauf, felder, 0, run or 0)
         e = self._dyn_einbauen(name, ablauf, None, zeigen=bool(zeigen)) or {}
+        nach = getattr(self, "_festkoerper_nach_szenario", None)  # Stufe 3: Festkörper für Teile mit Last
+        if nach is not None:
+            nach(name)
         gezeigt = False
         if zeigen and anim and self._link.connected:  # type: ignore[attr-defined]
             # Zeitleiste auf den Ablauf stellen, ohne auf die Antwort der App zu warten

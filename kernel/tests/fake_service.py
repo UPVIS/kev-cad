@@ -634,6 +634,26 @@ class FakeService:
                                          "kippen": {"v_abheben": 0.29, "a_abheben": 2.46, "a_kipp_hand": 14.1,
                                                     "a_abheben_ohne_ladung": 13.92}}}
 
+    # Statik Stufe 3 -------------------------------------------------------------------------------------------------
+
+    def festigkeit(self, teil: str | None = None, szenario: str | None = None, fein: bool = False,
+                   ablauf: bool = False, zeigen: bool = True) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel_festkoerper
+
+        self._record("festigkeit", teil, szenario, fein, ablauf)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Statik: erst run aufrufen."}
+        b = statik_beispiel_festkoerper()
+        e = next(x for x in b["szenarien"] if x["name"] == "Haken 2 kg")
+        return {"ok": True, "run": self.run_no, "teile": e["festkoerper"]["teile"], "faelle": [],
+                "szenarien": [{"name": e["name"], "ampel": e["ampel"], "text": e["text"]}], "befunde": [],
+                "hinweise": [], "grenzen": b["grenzen"], "ms": {"gesamt": 2100.0, "prozess": 1960.0},
+                "gezeigt": zeigen}
+
+    def festigkeit_abbrechen(self) -> dict[str, Any]:
+        self._record("festigkeit_abbrechen")
+        return {"ok": True, "abgebrochen": False, "szenarien": []}
+
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 
     def drucker_status(self) -> dict[str, Any]:

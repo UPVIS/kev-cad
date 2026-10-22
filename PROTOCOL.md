@@ -805,7 +805,8 @@ an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `a
   Verformung, um `ueberhoehung` vergrößert, als Geist.
 - `kippen[i].je_richtung`: Neigung in Grad bzw. waagrechte Beschleunigung in m/s², bei der die Gruppe kippt.
 
-App → Kernel: nichts. Die App wählt Szenarien selbst; neue Szenarien rechnet der Agent mit MCP `szenario_rechnen`.
+App → Kernel: nur `STATICS_CANCEL` (Stufe 3, siehe „Festkörper“). Die App wählt Szenarien selbst; neue Szenarien rechnet
+der Agent mit MCP `szenario_rechnen`.
 
 ### Ablauf (Stufe 2, additiv)
 
@@ -845,6 +846,49 @@ erneut mit `"done"` (oder `"failed"` mit `meldung`). Das Szenario trägt dann di
   den wichtigsten `kennzahlen`.
 - Packen und Prüfen wie oben (`check_statics_message` prüft `ablauf`), Beispiel `statik_beispiel_ablauf`, Testdatei
   `statics_ablauf.frame` aus `tools/make_statik_fixtures.py`.
+
+### Festkörper (Stufe 3, additiv)
+
+Teile mit Last, die das Stabwerk als starr bzw. als Kragträger behandelt (Druckteile, Platten, Verbinder), rechnet der
+Kernel zusätzlich als Volumen-FEM in einem eigenen Prozess (`statik/festkoerper/`, Gmsh, scikit-fem, pyamg): nach jedem
+Lauf im Hintergrund (nur Szenarien mit Last), nach `szenario_rechnen` und `dynamik` für das neue Szenario und auf
+Anfrage (MCP `festigkeit`). Erst kommt `STATICS` mit `festkoerper.stand: "laeuft"` (Fortschritt alle 0,3 s), dann
+erneut mit `"done"` (oder `"failed"` mit `meldung`, `"abgebrochen"`). Das Szenario trägt dann je gerechnetem Teil ein
+Urteil `festkoerper` statt des Kragträger-Urteils `bauteil`, die Ausnutzung des Teils in `teile` (mit `fem: true`) und
+ein Feld `festkoerper`:
+
+```json
+{"stand": "done", "fortschritt": 1.0, "text": "1 Teil gerechnet", "meldung": null,
+ "teile": [{"teil": "Wandhalter (Druck)", "stand": "done", "ampel": "rot", "sicherheit": 1.87, "ziel": 4.0,
+            "ausnutzung": 2.14, "spannung_max": 7.05, "kriterium": "schicht", "ort": [3.7, -2.4, 104.0],
+            "sicherheit_lagerrand": 1.52, "verformung_max_mm": 2.43, "kragtraeger": 1.98, "druckteil": true,
+            "q": 0.4, "ausrichtungen": {"-z": 4.82, "-y": 4.82, "-x": 1.87}, "ausrichtung_beste": "-z",
+            "netz": {"tetraeder": 535, "freiheitsgrade": 3543, "h_mm": 5.33, "fein": false}, "ms": 1960.0,
+            "feld": "d0f84561664942f7ae15", "aus_speicher": false, "text": "Wandhalter (Druck) hält nicht …"}]}
+```
+
+- `sicherheit`: kleinste örtliche Sicherheit ohne die Knoten der Lagerfläche selbst (dort ist die starre Einspannung
+  eine Idealisierung); `sicherheit_lagerrand` mit ihnen. `kriterium`: `mises`, `schicht` (Schichtfuge der Druckteile:
+  Normalspannung und Schub quer zur Schicht gegen `quer_zur_schicht` · Festigkeit) oder `quer_unbekannt` (Drucklage
+  unbekannt, überall abgemindert). `ausrichtungen`: Sicherheit, wenn das Teil mit `lager.druckteil(…, ausrichtung=…)`
+  so gedruckt würde (gleiches Spannungsfeld); `ausrichtung_beste` nur, wenn sie mindestens 20 % mehr bringt.
+  `kragtraeger`: die Sicherheit des Kragträger-Nachweises (S0) zum Vergleich.
+- Kurzfassung im `CHECK` (das CHECK entsteht vor der FEM und trägt sie daher nie) bzw. in `statik_kurz`: `festkoerper`
+  mit `stand`, `fortschritt`, `text`, `meldung` und je Teil `teil`, `stand`, `ampel`, `sicherheit`.
+- Packen und Prüfen in `protocol.py` (`check_statics_message` prüft `festkoerper`), Beispiel
+  `statik_beispiel_festkoerper`, Testdatei `statics_festkoerper.frame` aus `tools/make_statik_fixtures.py`.
+
+| type | Richtung | Felder | Nutzlast |
+|---|---|---|---|
+| `STATICS_FIELD` | Kernel → App | `run`, `szenario`, `teil`, `feld` (Schlüssel wie `festkoerper.teile[i].feld`), `ziel`, `sicherheit`, `ampel`, `spannung_max`, `verformung_max_mm`, `ueberhoehung`, `werte` (`"ausnutzung"`), `punkte` (n), `dreiecke` (m); nach jeder gerechneten Rechnung je Teil und beim Verbinden (Felder des aktuellen Laufs) | n × 3 float32 Punkte (Welt, mm), m × 3 uint32 Dreiecke (nach außen orientiert), n float32 Ausnutzung (Ziel / örtliche Sicherheit), n float32 von-Mises-Spannung (N/mm²), n × 3 float32 Verschiebung (mm); little-endian, ohne Lücken |
+| `STATICS_CANCEL` | App → Kernel | `seq`; beendet eine laufende Festkörper-Rechnung (danach `STATICS` mit `stand: "abgebrochen"`) | – |
+
+- Die App zeigt ein Feld nur, wenn `STATICS` für dasselbe Szenario und Teil denselben Schlüssel `feld` nennt, und nur
+  für Felder des laufenden `run` (ein neuer Lauf verwirft sie). Mit dem Farbverlauf zeichnet sie das Netz in Bändern der
+  Ausnutzung (Breite 0,1 von 0 bis 2, Farben wie bei den Stäben) und blendet das Teil in der Ruhelage aus; mit der
+  Verformung zeichnet sie das Netz um `ueberhoehung` verschoben als Geist.
+- Packen und Prüfen: `pack_statics_feld`, `unpack_statics_feld`, `check_statics_feld`, Beispiel `statik_beispiel_feld`,
+  Testdatei `statics_feld.frame`.
 
 ## Phase 7: Renderings
 
