@@ -168,6 +168,38 @@ enum BauplanExportSelfTest {
             model.bauplanActions?.durchspielenBeenden()
             check(await wait(3) { model.bauplan.durchspielen == nil }, "Durchspielen beendet")
         }
+        // Bearbeiten über BAUPLAN_EDIT (Projektkopie): Text, fest, verschieben, Reihenfolge, zusammenfassen
+        if env["KEVCAD_SELFTEST_BEARBEITEN"] == "1", let a = model.bauplanActions, let m = plan.montage,
+           m.schritte.count > 3, let mat = plan.abschnitte.first(where: { $0.art == .material }), mat.schritte.count > 2
+        {
+            func plan2() -> Bauplan? { model.bauplan.plan }
+            let s1 = mat.schritte[0].id
+            BauplanUI.shared.auswahl = s1
+            let t = Date()
+            a.bauplanBearbeiten([BauplanOp.text(schritt: s1, titel: "Einkaufsliste prüfen", text: "Selbsttest: Text von Kevin.")],
+                                titel: "Text")
+            check(await wait(60) { plan2()?.schritt(s1)?.quelle == "kevin" && plan2()?.schritt(s1)?.titel == "Einkaufsliste prüfen" },
+                  "Text gesetzt (\(Int(Date().timeIntervalSince(t) * 1000)) ms bis zum neuen BAUPLAN)")
+            check(BauplanUI.shared.auswahl == s1, "Auswahl bleibt nach neuem BAUPLAN")
+            a.bauplanBearbeiten([BauplanOp.fest(schritt: s1, true)], titel: "fest")
+            check(await wait(60) { plan2()?.schritt(s1)?.fest == true }, "Schritt fest")
+            let ms = m.schritte.map(\.id)
+            a.bauplanBearbeiten([BauplanOp.verschieben(schritt: ms[3], nach: ms[1])], titel: "verschieben")
+            check(await wait(90) { (plan2()?.montage?.schritte.map(\.id).firstIndex(of: ms[3]) ?? -1) == 2 },
+                  "Montageschritt verschoben: \(plan2()?.montage?.schritte.prefix(4).map(\.id) ?? [])")
+            let regeln = plan2()?.vorher.count ?? 0
+            a.bauplanBearbeiten([BauplanOp.vorher(a: ms[0], b: ms[3], grund: "Selbsttest")], titel: "Reihenfolge")
+            check(await wait(90) { (plan2()?.vorher.count ?? 0) > regeln }, "Reihenfolge eingetragen")
+            if let r = plan2()?.vorher.first(where: { $0.grund == "Selbsttest" }) {
+                a.bauplanBearbeiten([BauplanOp.vorherLoeschen(index: r.index)], titel: "Reihenfolge löschen")
+                check(await wait(60) { !(plan2()?.vorher.contains { $0.grund == "Selbsttest" } ?? true) }, "Reihenfolge gelöscht")
+            }
+            let anzahl = plan2()?.alleSchritte.count ?? 0
+            a.bauplanBearbeiten([BauplanOp.zusammenfassen([mat.schritte[1].id, mat.schritte[2].id])], titel: "zusammenfassen")
+            check(await wait(60) { (plan2()?.alleSchritte.count ?? 0) == anzahl - 1 }, "Zwei Schritte zusammengefasst")
+            await pause(1)
+            await foto(fenster, "07-nach-bearbeiten")
+        }
         // Berichte
         state.bereich = .dokumente
         zustand.waehle(.berichte)
