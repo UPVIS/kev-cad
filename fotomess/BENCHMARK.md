@@ -244,6 +244,16 @@ Prüfläufe (Breite frei, dafür ein anderes Maß fest):
   als Holzfarbe ausgeschlossen); nur 33 bis 90 % der Kantenpunkte finden einen Partner (Unschärfe, Blendenkanten);
   Bildholen und Masken in 4K kosten rund 6 s je Bild und sollten auf der Arbeitsgröße laufen.
 
+### Über Kev CAD (22.10.2026)
+
+Derselbe Fall aus Kev CAD (`referenz_vermessen`, Messmodell `samples/scarlett/model.py` mit `messmodell()`, Masken in
+Arbeitsgröße 1920 px, Netz aus den Varianten des Kernels): 8 Bilder (dieselben Zeitpunkte wie oben), tiefe
+104,8 ± 4,2, hoehe 46,4 ± 1,3, kanten_r 3,6 ± 3,3, knopf_h 11,0 ± 3,9, gross_h 16,4 ± 1,1 mm, Gesamttiefe 121,4,
+Höhe mit Füßen 48,0, f 2938 px, Überdeckung 93,5 %. Ein Bild (32,8 s) lag zuerst in der Zwillingslage; erkannt an
+Object Capture und neu eingepasst. Zeiten: Varianten von model.py rund 10 s (mit Import), Bilder und Masken 5 s
+(Bewerten des Videos beim ersten Mal rund 20 s), Einpassen 4 s, Unsicherheit 3 s; gesamt 57 s mit beiden Durchgängen.
+Bei 14,8 s (ohne Object-Capture-Kamera) liegt das Modell weiter gedreht, die Fotoansicht zeigt es.
+
 ## Kontrollbilder
 
 `build/fotomess/kontrolle/`: `kueche_<n>_<foto>.jpg` (erste drei Fotos je Teilmenge), `rollwagen_<n>_<bild>.jpg`
