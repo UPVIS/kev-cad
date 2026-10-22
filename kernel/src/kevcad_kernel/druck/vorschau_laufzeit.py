@@ -311,9 +311,15 @@ class DruckvorschauRuntime:
             stand.gesamt = len(offen) + len(materialien)
             stand.fertig = 0
         abgleich_daten = sz.lies_abgleich()
-        drucker = str(vs.projekt_einstellungen(self._dv_projekt_daten()[0]).get("drucker"))
+        projekt = vs.projekt_einstellungen(self._dv_projekt_daten()[0])
+        drucker, platte = str(projekt.get("drucker")), str(projekt.get("platte"))
         for g in offen:
             self._dv_pruefe_abbruch(abbruch)
+            if not sl.platte_passt(str(g.filament), platte):  # Bambu Studio bräche ab (Hinweis steht in der Vorschau)
+                with self._dv_lock:
+                    stand.meldung = f"{g.filament} geht nicht auf der {platte}"
+                    stand.fertig += 1
+                continue
             ordner = sl.cache_ordner() / g.schluessel
             ordner.mkdir(parents=True, exist_ok=True)
             arbeit = sl.arbeitsordner("gruppe")
@@ -321,7 +327,7 @@ class DruckvorschauRuntime:
                 stl = self._dv_stl(g, druck, ordner)
                 e = {k: v for k, v in g.einstellungen.items() if k != "ausrichtung"}
                 t1 = time.perf_counter()
-                res = sl.slice_teil(stl, e, str(g.filament), arbeit, abbruch, drucker)
+                res = sl.slice_teil(stl, e, str(g.filament), arbeit, abbruch, drucker, platte)
                 res["slicer_s"] = round(time.perf_counter() - t1, 2)
             except (sl.SlicerFehler, OSError) as exc:
                 self._log(f"[druck] Slicer {g.name}: {exc}")
@@ -361,7 +367,7 @@ class DruckvorschauRuntime:
         for mat in materialien:
             self._dv_pruefe_abbruch(abbruch)
             try:
-                self._dv_platten_slicen(mat, gr, druck, abbruch, drucker)
+                self._dv_platten_slicen(mat, gr, druck, abbruch, drucker, platte)
             except (sl.SlicerFehler, OSError) as exc:
                 self._log(f"[druck] Anordnung {mat}: {exc}")
                 with self._dv_lock:
@@ -378,7 +384,7 @@ class DruckvorschauRuntime:
         self._dv_senden(eingang)
 
     def _dv_platten_slicen(self, mat: str, gr: list[vs.Gruppe], druck: dict[str, Any], abbruch: threading.Event,
-                           drucker: str) -> None:
+                           drucker: str, platte: str | None = None) -> None:
         gm = [g for g in gr if g.material == mat and g.filament]
         if not gm:
             return
@@ -397,7 +403,8 @@ class DruckvorschauRuntime:
             if akey not in stand.anordnung:
                 abstand = 6.0 + (10.0 if any(g.einstellungen.get("brim") for g in gm) else 0.0)
                 platten = sl.anordnen([(lokal[g.id], g.anzahl) for g in gm], arbeit / "anordnen", abbruch,
-                                      filament=str(gm[0].filament), drucker=drucker, abstand_mm=abstand)
+                                      filament=str(gm[0].filament), drucker=drucker, abstand_mm=abstand,
+                                      platte=platte)
                 for p in platten:
                     for o in p["objekte"]:
                         o["gruppe"] = str(o.get("name") or "").split(".stl")[0]
@@ -426,7 +433,7 @@ class DruckvorschauRuntime:
                 self._dv_pruefe_abbruch(abbruch)
                 e0 = {k: v for k, v in nach_id[p.lagen[0].stueck.gruppe].einstellungen.items() if k != "ausrichtung"}
                 res = sl.slice_platten([objekte], [str(gm[0].filament)], arbeit / f"p{len(ergebnis)}", e0, abbruch,
-                                       drucker)
+                                       drucker, platte)
                 if res:
                     ergebnis[pkey] = res
                     with self._dv_lock:
@@ -628,7 +635,11 @@ class DruckvorschauRuntime:
                         stls[g.id] = ziel_stl
             dateien: list[dict[str, Any]] = []
             geprueft = sl.verfuegbar()
-            drucker = str(v.get("einstellungen", {}).get("drucker") or vs.DRUCKER_ID)
+            projekt = vs.projekt_einstellungen(self._dv_projekt_daten()[0])  # kevcad.json jetzt (druck.platte)
+            drucker = str(projekt.get("drucker") or vs.DRUCKER_ID)
+            platte = str(projekt.get("platte") or sl.PLATTE_STANDARD)
+            if projekt.get("platte_fehler"):
+                hinweise.append(f"kevcad.json druck.platte: {projekt['platte_fehler']}; genommen: {platte}.")
             for mat in materialien:  # ein Bambu-Projekt je Material (ein Filament je Datei, P1P ohne AMS)
                 nr_mat = [n for n in nummern if alle[n - 1][0] == mat]
                 listen = [[sl.PlattenObjekt(stl=stls[l_.stueck.gruppe], x=l_.x, y=l_.y, drehung=l_.drehung,
@@ -642,11 +653,11 @@ class DruckvorschauRuntime:
                     e0 = {k: x for k, x in gm[0].einstellungen.items() if k != "ausrichtung"}
                     farbe = str((self._dv_material(mat) or {}).get("farbe") or "") or None
                     res = sl.export_3mf(listen, str(filament), ziel_m, arbeit / f"bambu-{mat}", e0, None, drucker,
-                                        farbe)
+                                        farbe, platte)
                     hinweise.append(f"{mat.upper()}: in Bambu Studio geprüft, {len(nr_mat)} Platte"
                                     + ("n" if len(nr_mat) != 1 else "") + f", {res['objekte']} Teile, Profile "
                                     f"„{sl.MASCHINE}“, „{sl.prozess_name(float(e0.get('schicht_mm') or 0.2))}“, "
-                                    f"„{filament}“ und Einstellungen je Teil.")
+                                    f"„{filament}“, Platte „{platte}“ und Einstellungen je Teil.")
                 else:
                     # Ohne Bambu Studio: ein 3MF je Platte (Teile in ihrer Lage); Bambu Studio liest Platten nur aus
                     # eigenen Projekten, ein fremdes 3MF legt es ganz auf eine Platte
