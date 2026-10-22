@@ -22,6 +22,11 @@ G = 9.81
 ZEITSCHRITT = 0.0005
 SOLREF = "0.02 1"  # Kontakt: Zeitkonstante 20 ms, kritisch gedämpft (MuJoCo-Vorgabe, an der Handrechnung geprüft)
 SOLIMP = "0.9 0.95 0.001"
+# Anschlag eines freien Gelenks mit Bereich (Schublade, Tür, T33): steifer und überkritisch gedämpft (ein Anschlag
+# federt kaum zurück), dazu Lagerreibung als Anteil des Gewichts (Kugelauszug, Scharnier; angenommen)
+SOLREF_ANSCHLAG = "0.004 2"
+REIBUNG_FREI = 0.03
+SCHARNIER_RADIUS_M = 0.01  # Reibmoment eines Drehgelenks: Reibkraft am Lagerradius
 
 
 def _f(x: float) -> str:
@@ -146,8 +151,15 @@ def baue_xml(meta: dict[str, Any], formen: dict[str, list[dict[str, Any]]], *, a
         elif k["art"] in ("dreh", "schiebe") and k.get("gelenk"):
             gj = k["gelenk"]
             typ = "hinge" if gj["art"] == "dreh" else "slide"
+            anschlag = ""
+            if gj.get("grenzen"):  # frei mit Bereich (T33): Anschläge an den Enden, Grad bzw. mm ab der Modelllage
+                lo, hi = (float(x) for x in gj["grenzen"])
+                f = np.pi / 180 if typ == "hinge" else MM
+                reib = REIBUNG_FREI * float(k["masse"]) * G * (SCHARNIER_RADIUS_M if typ == "hinge" else 1.0)
+                anschlag = (f' limited="true" range="{_f(lo * f)} {_f(hi * f)}" solreflimit="{SOLREF_ANSCHLAG}"'
+                            f' frictionloss="{_f(reib)}"')
             z.append(f'{ein}  <joint name="j_{kid}" type="{typ}" pos="{_v(np.asarray(gj["punkt"]) * MM - c)}" '
-                     f'axis="{_v(gj["achse"])}" damping="1e-5"/>')
+                     f'axis="{_v(gj["achse"])}" damping="1e-5"{anschlag}/>')
         elif k["art"] in ("frei", "antrieb"):  # Antrieb ohne Eintrag in der Szene (weggelassen): frei
             z.append(f'{ein}  <freejoint name="f_{kid}"/>')
         I = np.asarray(k["traegheit"], float) * 1e-6  # kg·mm² → kg·m²

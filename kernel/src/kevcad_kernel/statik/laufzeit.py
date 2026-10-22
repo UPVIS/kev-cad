@@ -20,6 +20,19 @@ from typing import Any
 WARTEN_S = 60.0
 
 
+def _aus_statik(b: dict[str, Any]) -> bool:
+    """Befund aus den Urteilen der Statik (``rechnen.befunde``); ``statik_szenario`` (Angaben in model.py) bleibt."""
+    art = str(b.get("art") or "")
+    return art.startswith("statik_") and art != "statik_szenario"
+
+
+def _signatur(check: dict[str, Any]) -> tuple:
+    """Was sich für die App ändert, wenn Ablauf oder Festkörper fertig werden (Fortschritt allein zählt nicht)."""
+    return (check.get("state"), tuple(check.get("statik_im_hintergrund") or ()),
+            tuple((b.get("art"), tuple(b.get("teile") or ()), b.get("schwere"), b.get("text"))
+                  for b in check.get("befunde") or [] if _aus_statik(b)))
+
+
 def _szenario_auszug(e: dict[str, Any], detail: bool = True) -> dict[str, Any]:
     """Ein Szenario für den Agenten: Ampel, Kennzahlen, Urteile; mit ``detail`` Stäbe, Bauteile, Lager, S0."""
     out = {"name": e.get("name"), "ampel": e.get("ampel"), "text": e.get("text"), "ziel": e.get("ziel"),
@@ -84,7 +97,90 @@ class StatikRuntime:
                 # zweites CHECK desselben Laufs (teilweise → done): gleiche Statik, Szenarien des Agenten behalten
                 return None
             self._statik_voll, self._statik_run, self._statik_aktiv = voll, run, None
+            # Szenarien des Laufs (model.py und Standard): nur deren Befunde gehören in die Prüfung (T34)
+            self._statik_lauf_namen = frozenset(str(e.get("name")) for e in voll.get("szenarien") or [])
         return voll
+
+    # -- Befunde aus Ablauf (S2) und Festkörper (S3) in der Prüfung (T34) ---------------------------------------------
+
+    _statik_lauf_namen: frozenset[str] = frozenset()
+    _statik_basis: tuple[int, str] | None = None  # (Lauf, Zustand des CHECK aus dem Rechenprozess)
+
+    def _statik_in_check(self, check: dict[str, Any], vom_rechenprozess: bool = False) -> dict[str, Any]:
+        """CHECK mit dem aktuellen Stand der Statik: die Befunde ``statik_*`` neu aus dem Ergebnis der Laufzeit (S0/S1
+        wie im Rechenprozess, dazu fertige Abläufe ``statik_dyn_*`` und Festkörper ``statik_festkoerper``, die den
+        Kragträger desselben Teils ersetzen), nur aus den Szenarien des Laufs. Rechnen Ablauf oder Festkörper noch, ist
+        das CHECK ``teilweise`` mit ``statik_im_hintergrund``; sonst gilt der Zustand aus dem Rechenprozess.
+        ``vom_rechenprozess``: das CHECK kommt frisch aus dem Rechenprozess (sein Zustand ist die Grundlage)."""
+        from kevcad_kernel.protocol import statik_kurz
+
+        run = int(check.get("run") or 0)
+        state = str(check.get("state") or "")
+        with self._lock:  # type: ignore[attr-defined]
+            if vom_rechenprozess and run == self._statik_run:  # nicht für Läufe der Versionen (Schatten)
+                self._statik_basis = (run, state)
+            voll, srun, namen, basis = self._statik_voll, self._statik_run, self._statik_lauf_namen, self._statik_basis
+            if voll is not None:
+                szen = [e for e in voll.get("szenarien") or [] if str(e.get("name")) in namen]
+                kurz = statik_kurz(voll)
+        if voll is None or srun != run or state not in ("done", "teilweise") or not namen:
+            return check
+        basis_state = basis[1] if basis is not None and basis[0] == run else state
+        offen: list[str] = []
+        for e in szen:
+            if (e.get("ablauf") or {}).get("stand") == "laeuft":
+                offen.append(f"Ablauf „{e['name']}“")
+            fk = e.get("festkoerper") if isinstance(e.get("festkoerper"), dict) else {}
+            if fk.get("stand") == "laeuft":
+                n = len([t for t in fk.get("teile") or [] if t.get("stand") == "laeuft"])
+                offen.append(f"Festkörper „{e['name']}“" + (f" ({n} {'Teil' if n == 1 else 'Teile'})" if n else ""))
+        from kevcad_kernel.pruefung import befund as bf
+        from kevcad_kernel.statik import anbindung as _arten  # noqa: F401 - Texte der Arten statik_* (ART_TEXT)
+        from kevcad_kernel.statik.rechnen import befunde as statik_befunde
+
+        behalten = [dict(b) for b in check.get("befunde") or [] if not _aus_statik(b)]
+        befunde = bf.sortieren(behalten + statik_befunde({"szenarien": szen}))
+        bf.nummerieren(befunde)
+        geo = []
+        for i, g in enumerate(check.get("geometrie") or []):
+            geo.append({**g, "befund": next((b["id"] for b in befunde if b.get("geometrie") == i), g.get("befund"))})
+        out = {**check, "befunde": befunde, "geometrie": geo, "zusammenfassung": bf.zusammenfassung(befunde),
+               "zaehler": bf.zaehler(befunde), "statik": kurz}
+        out.pop("statik_im_hintergrund", None)
+        if offen:
+            out["state"] = "teilweise"
+            out["statik_im_hintergrund"] = offen
+        else:
+            out["state"] = "teilweise" if basis_state == "teilweise" else "done"
+        return out
+
+    def _statik_pruefung_nachtragen(self) -> bool:
+        """Ablauf oder Festkörper hat sich geändert: CHECK des Laufs neu zusammensetzen und, wenn sich Befunde oder der
+        Hintergrund geändert haben, an die App schicken (der Lauf ist längst zu Ende, nichts wartet darauf). True, wenn
+        ein neues CHECK hinausging."""
+        stand = self._pruef  # type: ignore[attr-defined]
+        with self._app_lock:  # type: ignore[attr-defined]
+            alt, payload = stand.letztes()
+            if alt is None or alt.get("state") not in ("done", "teilweise"):
+                return False
+            run = int(alt.get("run") or 0)
+            with self._lock:  # type: ignore[attr-defined]
+                if self._statik_run != run:
+                    return False
+            neu = self._statik_in_check(alt)
+            if _signatur(neu) == _signatur(alt):
+                return False
+            if not stand.fertig(neu, payload):
+                return False
+            if getattr(self, "_run_end_run", run) >= run:
+                self._send_app({**neu, "type": "CHECK"}, payload)  # type: ignore[attr-defined]
+        nach = getattr(self, "_versionen_pruefung", None)  # Versionen: Prüfstand an die Version des Laufs
+        if nach is not None:
+            try:
+                nach(neu)
+            except Exception:  # noqa: BLE001 - die Prüfung geht vor
+                pass
+        return True
 
     def _statik_senden(self, reply_to: str | None = None, zeigen: bool = False) -> bool:
         from kevcad_kernel.protocol import pack_statics
@@ -95,7 +191,16 @@ class StatikRuntime:
             return False
         head = pack_statics(voll, run=run or 0, aktiv=aktiv, reply_to=reply_to, zeigen=zeigen)
         head.pop("seq", None)
-        return bool(self._send_app(head))  # type: ignore[attr-defined]
+        ok = bool(self._send_app(head))  # type: ignore[attr-defined]
+        # Ablauf oder Festkörper fertig (oder abgebrochen): ihre Befunde in die Prüfung des Laufs (T34). Jede Änderung
+        # der Statik geht hier durch; ändert sich nur der Fortschritt, geht kein neues CHECK hinaus
+        try:
+            self._statik_pruefung_nachtragen()
+        except Exception as exc:  # noqa: BLE001 - die Statik-Anzeige darf daran nicht scheitern
+            log = getattr(self, "_log", None)
+            if log is not None:
+                log(f"[statik] Befunde nicht in die Prüfung übernommen: {type(exc).__name__}: {exc}")
+        return ok
 
     def _statik_on_connect(self, conn: Any) -> None:
         from kevcad_kernel.protocol import pack_statics

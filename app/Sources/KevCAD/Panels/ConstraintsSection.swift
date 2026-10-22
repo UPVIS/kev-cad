@@ -88,7 +88,7 @@ struct ConstraintsSection: View {
             // Bewegungsraum über dem Zeitlimit des Laufs: der Kernel rechnet weiter und schickt den Endstand
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text(p.hintergrundText)
+                Text(p.bewegungsraumText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

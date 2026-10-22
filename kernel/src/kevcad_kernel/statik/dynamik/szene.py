@@ -7,7 +7,9 @@ reine Datenbeschreibung, die der eigene Ablauf-Prozess (``prozess.py``) in ein M
   Steck samt ``mit``; Gelenke mit ``bereich`` gelten als festgestellt: Einstellungen wie Klemmen und Kopf). Teile ohne
   jede Bedingung hängen wie in Stufe 1 an dem, was sie berühren. ``aufliegen`` verbindet nicht: der Ball liegt frei auf
   dem Boden, ein Karton frei auf dem Regal.
-- **Gelenke**: Dreh- und Schiebegelenke ohne ``bereich`` laufen frei (Laufrolle auf der Querstange). Räder rollen um die
+- **Gelenke**: Dreh- und Schiebegelenke ohne ``bereich`` laufen frei (Laufrolle auf der Querstange), ebenso Gelenke mit
+  ``frei=True`` (Schublade, Tür ohne Feststeller, T33); deren ``bereich`` wird zum Anschlag (``grenzen`` ab der Lage
+  in model.py, Grad bzw. mm). Räder rollen um die
   Achse aus der Animation (``anim.rolle(…, achse=…)``) oder, ohne Animation, um die Achse ihrer größten Zylinderfläche
   (Teile mit Rad/Rolle im Namen auf dem Boden).
 - **Masse, Schwerpunkt, Trägheit** je Teil aus der B-Rep (OCC, Dichte aus Masse und Volumen der Stückliste), je Körper
@@ -184,16 +186,25 @@ def baue(letzter: Any, auftrag: dict[str, Any] | None = None) -> tuple[dict[str,
         a, b = g["a"], g["b"]
         if a not in hat_bedingung or b not in hat_bedingung or g["art"] not in ("dreh", "schiebe", "zylinder"):
             continue
-        if g.get("bereich") is not None or g.get("achse") is None or g.get("punkt") is None:
-            continue
+        if g.get("festgestellt") or g.get("achse") is None or g.get("punkt") is None:
+            continue  # mit Bereich festgestellt (T15, T30), außer frei=True (T33)
         if a in in_gelenk:
             hinweise.append(f"{a}: mehrere freie Gelenke, nur das erste gerechnet")
             continue
         kind = [a] + [x for x in g.get("mitbewegt") or [] if x in hat_bedingung and x not in in_gelenk and x != b]
         i = len(gelenke)
-        gelenke.append({"kind": kind, "an": b, "art": "schiebe" if g["art"] == "schiebe" else "dreh",
+        art = "schiebe" if g["art"] == "schiebe" else "dreh"
+        name = "Schiebe" if art == "schiebe" else "Dreh"
+        # frei mit Bereich (Schublade, Tür): läuft frei bis an die Enden des Bereichs, gezählt ab der Lage in model.py
+        grenzen = None
+        if g.get("bereich") is not None and g["art"] in ("dreh", "schiebe"):
+            w = float(g.get("wert") or 0.0)
+            grenzen = [float(g["bereich"][0]) - w, float(g["bereich"][1]) - w]
+        gelenke.append({"kind": kind, "an": b, "art": art,
                         "punkt": np.asarray(g["punkt"], float), "achse": np.asarray(g["achse"], float),
-                        "quelle": f"{'Schiebe' if g['art'] == 'schiebe' else 'Dreh'}gelenk ohne Bereich"
+                        "grenzen": grenzen,
+                        "quelle": (f"{name}gelenk frei mit Bereich {g['bereich'][0]:g} … {g['bereich'][1]:g}"
+                                   if g.get("bereich") is not None else f"{name}gelenk ohne Bereich")
                                   + (f" (model.py Zeile {g['zeile']})" if g.get("zeile") else "")})
         for n in kind:
             in_gelenk[n] = i
@@ -300,7 +311,8 @@ def baue(letzter: Any, auftrag: dict[str, Any] | None = None) -> tuple[dict[str,
         a, b = g["a"], g["b"]
         if a not in uf.p or b not in uf.p:
             continue
-        frei = g.get("bereich") is None and g["art"] in ("dreh", "schiebe", "zylinder") and in_gelenk.get(a) is not None
+        frei = not g.get("festgestellt") and g["art"] in ("dreh", "schiebe", "zylinder") \
+            and in_gelenk.get(a) is not None
         if frei:
             continue
         verbinden(a, b)
@@ -362,7 +374,7 @@ def baue(letzter: Any, auftrag: dict[str, Any] | None = None) -> tuple[dict[str,
         k["eltern"] = eltern
         k["gelenk"] = {"art": gj["art"], "punkt": np.asarray(gj["punkt"], float).tolist(),
                        "achse": (np.asarray(gj["achse"], float) / np.linalg.norm(gj["achse"])).tolist(),
-                       "quelle": gj["quelle"], "rad": bool(gj.get("rad"))}
+                       "quelle": gj["quelle"], "rad": bool(gj.get("rad")), "grenzen": gj.get("grenzen")}
     # Kreise in der Elternkette aufbrechen
     for k in koerper:
         seen = {k["id"]}

@@ -34,7 +34,8 @@ public struct CheckMessage: Sendable {
             befunde: befunde, geometrie: geo,
             montage: json["montage"].flatMap { $0.isNull ? nil : $0 },
             stand: json["stand"].flatMap { $0.isNull ? nil : $0 },
-            imHintergrund: json["im_hintergrund"]?.stringList ?? [])
+            imHintergrund: json["im_hintergrund"]?.stringList ?? [],
+            statikImHintergrund: json["statik_im_hintergrund"]?.stringList ?? [])
         return CheckMessage(ergebnis: ergebnis)
     }
 

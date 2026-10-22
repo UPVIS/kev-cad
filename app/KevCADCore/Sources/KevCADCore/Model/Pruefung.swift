@@ -121,13 +121,17 @@ public struct PruefErgebnis: Equatable, Sendable {
     public var stand: JSONValue?
     /// Wege des Bewegungsraums, die der Kernel noch im Hintergrund rechnet (CHECK.im_hintergrund, nur bei `teilweise`).
     public var imHintergrund: [String]
+    /// Statik, die nach dem Lauf noch rechnet (CHECK.statik_im_hintergrund, T34): Ablauf und Festkörper; ihre Befunde
+    /// (`statik_dyn_*`, `statik_festkoerper`) kommen mit dem nächsten CHECK desselben Laufs nach.
+    public var statikImHintergrund: [String]
 
     public init(
         run: Int, zustand: Zustand, laeuft: Bool = false, dauerMs: Double? = nil, meldung: String? = nil,
         zusammenfassung: String = "", fehler: Int = 0, warnungen: Int = 0, hinweise: Int = 0,
         befunde: [PruefBefund] = [], geometrie: [PruefGeometrie] = [], montage: JSONValue? = nil,
-        stand: JSONValue? = nil, imHintergrund: [String] = []
+        stand: JSONValue? = nil, imHintergrund: [String] = [], statikImHintergrund: [String] = []
     ) {
+        self.statikImHintergrund = statikImHintergrund
         self.run = run
         self.zustand = zustand
         self.laeuft = laeuft
@@ -147,11 +151,30 @@ public struct PruefErgebnis: Equatable, Sendable {
     /// Wird der Bewegungsraum noch fertig gerechnet? (teilweise ohne offene Wege: das Fertigrechnen ist gescheitert)
     public var wirdFertigGerechnet: Bool { zustand == .teilweise && !imHintergrund.isEmpty }
 
+    /// Rechnet die Statik (Ablauf, Festkörper) dieses Laufs noch? Ihre Befunde kommen nach (T34).
+    public var statikRechnetNoch: Bool { zustand == .teilweise && !statikImHintergrund.isEmpty }
+
+    /// Kommt für dieses Ergebnis noch etwas nach (Bewegungsraum oder Statik)? Dann nicht „in Ordnung“ melden.
+    public var kommtNoch: Bool { wirdFertigGerechnet || statikRechnetNoch }
+
     /// „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“ (leer, wenn nichts offen ist).
-    public var hintergrundText: String {
+    public var bewegungsraumText: String {
         guard wirdFertigGerechnet else { return "" }
         return "Bewegungsraum: " + KevFormat.count(imHintergrund.count, one: "Gelenk wird", many: "Gelenke werden")
             + " fertig gerechnet …"
+    }
+
+    /// „Statik: Festkörper „Bremsen“ rechnet noch …“ (leer, wenn nichts offen ist).
+    public var statikHintergrundText: String {
+        guard statikRechnetNoch else { return "" }
+        let n = statikImHintergrund.count
+        return "Statik: " + (n == 1 ? statikImHintergrund[0] + " rechnet" : "\(n) Rechnungen laufen")
+            + " noch, Befunde folgen …"
+    }
+
+    /// Alles, was noch nachkommt, in einer Zeile (Prüfband).
+    public var hintergrundText: String {
+        [bewegungsraumText, statikHintergrundText].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// Befunde, die den Export sperren.

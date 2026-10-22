@@ -344,7 +344,7 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 
 | type | Felder | Nutzlast |
 |---|---|---|
-| `CHECK` | `run`, `state` (`running` \| `done` \| `teilweise` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand`, `im_hintergrund` | Schnittkörper |
+| `CHECK` | `run`, `state` (`running` \| `done` \| `teilweise` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand`, `im_hintergrund`, `statik_im_hintergrund`, `statik` (Kurzfassung je Szenario) | Schnittkörper |
 
 - Nach `RUN_END` kommt sofort `CHECK` mit `state: "running"` und leeren Listen, das Ergebnis folgt als zweites `CHECK`.
   `cancelled`: ein neuerer Lauf kam dazwischen (dessen `CHECK` folgt). Beim Verbinden schickt der Kernel das letzte
@@ -357,6 +357,16 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   `im_hintergrund`). Kommt vorher ein neuer Lauf, bleibt es beim teilweisen Ergebnis des alten. Ältere Apps lesen
   einen unbekannten `state` als `done` und ersetzen es beim zweiten `CHECK`; die App zeigt im Prüfband und im
   Inspektor „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
+- `statik_im_hintergrund` (additiv, 22.10.2026, PLAN-STATIK.md T34): Rechnen nach dem Lauf noch ein Ablauf (Stufe 2)
+  oder der Festkörper (Stufe 3), ist das `CHECK` ebenfalls `teilweise` und nennt sie hier (etwa
+  `"Ablauf „Bremsen aus 1 m/s“"`, `"Festkörper „Haken 2 kg“ (2 Teile)"`). Sind sie fertig (oder abgebrochen), folgt
+  dasselbe `run` erneut, ohne neuen Lauf: mit den Befunden `statik_dyn_kippen`, `statik_dyn_ladung`,
+  `statik_dyn_rutschen` und `statik_festkoerper` (rot → `warnung`, gelb → `hinweis`, nie `fehler`, T10; ein
+  Festkörper-Befund ersetzt `statik_bauteil` desselben Teils), neu nummeriert, und mit `done` (oder weiter
+  `teilweise`, solange der Bewegungsraum rechnet). Nur Szenarien des Laufs zählen (model.py und Standard), nicht die
+  auf Anfrage gerechneten. Bloßer Fortschritt schickt kein neues `CHECK`. Ältere Apps sehen ein `teilweise` ohne
+  `im_hintergrund` und ersetzen es beim nächsten `CHECK`; die App zeigt im Prüfband „Statik: … rechnet noch, Befunde
+  folgen …“.
 - Befund:
 
 ```json
@@ -375,7 +385,7 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
-Testdateien: `check_done.frame`, `check_running.frame`, `check_teilweise.frame`, `check.json` (aus
+Testdateien: `check_done.frame`, `check_running.frame`, `check_teilweise.frame`, `check_statik.frame`, `check.json` (aus
 `kernel/tools/make_pruef_fixtures.py`).
 
 Weitere Teile von `CHECK` (Stufe 2):
@@ -886,8 +896,9 @@ ein Feld `festkoerper`:
   unbekannt, überall abgemindert). `ausrichtungen`: Sicherheit, wenn das Teil mit `lager.druckteil(…, ausrichtung=…)`
   so gedruckt würde (gleiches Spannungsfeld); `ausrichtung_beste` nur, wenn sie mindestens 20 % mehr bringt.
   `kragtraeger`: die Sicherheit des Kragträger-Nachweises (S0) zum Vergleich.
-- Kurzfassung im `CHECK` (das CHECK entsteht vor der FEM und trägt sie daher nie) bzw. in `statik_kurz`: `festkoerper`
-  mit `stand`, `fortschritt`, `text`, `meldung` und je Teil `teil`, `stand`, `ampel`, `sicherheit`.
+- Kurzfassung im `CHECK` bzw. in `statik_kurz`: `festkoerper` mit `stand`, `fortschritt`, `text`, `meldung` und je
+  Teil `teil`, `stand`, `ampel`, `sicherheit`. Das erste `CHECK` eines Laufs entsteht vor der FEM; das nachgetragene
+  (`statik_im_hintergrund`, T34) trägt den Stand und die Befunde `statik_festkoerper`.
 - Packen und Prüfen in `protocol.py` (`check_statics_message` prüft `festkoerper`), Beispiel
   `statik_beispiel_festkoerper`, Testdatei `statics_festkoerper.frame` aus `tools/make_statik_fixtures.py`.
 

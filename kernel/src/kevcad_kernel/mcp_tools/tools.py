@@ -296,10 +296,16 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             if pr.get("laeuft"):
                 lines.append(f"Prüfung: läuft für Lauf {pr['laeuft']}")
             elif pr.get("state") in ("done", "teilweise"):
+                hinten = []
+                if pr.get("hintergrund"):
+                    hinten.append("Bewegungsraum wird im Hintergrund fertig gerechnet")
+                if pr.get("statik_hintergrund"):
+                    hinten.append("Statik (Ablauf, Festkörper) rechnet im Hintergrund")
+                if pr.get("state") == "teilweise" and not hinten:
+                    hinten.append("Bewegungsraum nicht vollständig geprüft")
                 lines.append(f"Prüfung (Lauf {pr.get('run', '?')}): "
                              + (pr.get("zusammenfassung") or "in Ordnung, keine Befunde")
-                             + ("; Bewegungsraum wird im Hintergrund fertig gerechnet (pruefen wartet darauf)"
-                                if pr.get("state") == "teilweise" else ""))
+                             + (f"; {', '.join(hinten)} (pruefen wartet darauf)" if hinten else ""))
         data = dict(res)
         if isinstance(last, dict) and last.get("parts"):
             data["last_run"] = {**last, "parts": [fmt.part_data(p) for p in last["parts"]]}

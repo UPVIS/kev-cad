@@ -884,7 +884,12 @@ class Gelenk(Bedingung):
     Bezug am bewegten Teil, sonst der Punkt am weitesten von der Achse) über den ganzen Weg so viel Platz. Teile, die
     um ihre eigene Achse gedreht werden (Flügelmutter, Flügelschraube, Knopf: ``bedienung="fluegel"``, bei
     ``"finger"``/``"hand"`` ohne ``griff``, wenn der Schwerpunkt auf der Drehachse liegt), prüfen stattdessen den
-    Griffraum: einen Ring um die Drehachse über der Auflage, bis Spitze plus Freiraum."""
+    Griffraum: einen Ring um die Drehachse über der Auflage, bis Spitze plus Freiraum.
+
+    Statik (PLAN-STATIK.md T30, T33): Ein Gelenk mit ``bereich`` gilt in Stabwerk, Ablauf und Festkörper als
+    festgestellt (Einstellung mit Klemme, Sterngriff, Kopf). ``frei=True`` sagt, dass es im Betrieb wirklich frei läuft
+    (Schublade, Tür ohne Feststeller, Schlitten ohne Klemme): Dann rechnet die Statik es als Gelenk, der Ablauf lässt es
+    laufen und hält es an den Enden von ``bereich`` an. Ohne ``bereich`` läuft ein Gelenk ohnehin frei."""
 
     gruppe = "gelenk"
     joint_art = ""
@@ -892,7 +897,11 @@ class Gelenk(Bedingung):
 
     def __init__(self, a: Any, b: Any, bereich: tuple[float, float] | None = None, weg_pruefen: bool = True,
                  schritte: int | None = None, mitbewegt: Any = None, ignorieren: Any = None,
-                 bedienung: str | None = None, freiraum: float | None = None, griff: Any = None, **kw: Any) -> None:
+                 bedienung: str | None = None, freiraum: float | None = None, griff: Any = None, frei: bool = False,
+                 **kw: Any) -> None:
+        if not isinstance(frei, bool):
+            raise BedingungsFehler(f"frei={frei!r}: True (läuft im Betrieb frei) oder False (festgestellt, Vorgabe)")
+        self.frei = frei
         self.bereich = None if bereich is None else (float(bereich[0]), float(bereich[1]))
         if self.bereich is not None and self.bereich[0] > self.bereich[1]:
             raise BedingungsFehler(f"bereich {self.bereich}: erst der kleinere, dann der größere Wert")
@@ -955,6 +964,8 @@ class Gelenk(Bedingung):
         out: dict[str, Any] = {"gelenk": self.joint_art, "wert": self.wert(), "wert_einheit": self.einheit_wert()}
         if self.bereich is not None:
             out["bereich"] = list(self.bereich)
+        if self.frei:  # Statik: läuft im Betrieb frei, auch mit Bereich (T33)
+            out["frei"] = True
         return out
 
     def _bereich_ergebnis(self, ist: float, punkte: list[np.ndarray]) -> Ergebnis | None:

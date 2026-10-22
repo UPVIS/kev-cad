@@ -56,7 +56,8 @@ class PruefDienst:
         """Letztes Prüfergebnis (wartet auf eine laufende Prüfung): CHECK-Kopf ohne type/seq. ``endstand``: auch
         auf das Fertigrechnen im Hintergrund warten (Zustand „teilweise“ → „done“), höchstens ``warten_s``."""
         stand = self._pruef  # type: ignore[attr-defined]
-        laufend = stand.erwartet if stand.erwartet is not None else (stand.hintergrund if endstand else None)
+        hinten = stand.hintergrund if stand.hintergrund is not None else stand.statik_hintergrund  # auch Statik (T34)
+        laufend = stand.erwartet if stand.erwartet is not None else (hinten if endstand else None)
         if laufend is not None:
             stand.warte(laufend, warten_s, endstand=endstand)
         check, _ = stand.letztes()
@@ -67,6 +68,8 @@ class PruefDienst:
             out["laeuft"] = stand.erwartet
         if stand.hintergrund is not None:
             out["hintergrund"] = stand.hintergrund
+        if stand.statik_hintergrund is not None:
+            out["statik_hintergrund"] = stand.statik_hintergrund
         return out
 
     def ansichten(self, ansichten: list[dict[str, Any]], width: int = 640, height: int = 400,

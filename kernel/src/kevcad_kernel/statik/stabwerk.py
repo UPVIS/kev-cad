@@ -10,7 +10,7 @@ Aus dem Statikmodell entsteht ein räumliches Stabwerk:
   gelenkig = beide Biegedrehungen frei (die Verdrehung um die Stabachse bleibt gekoppelt, sonst wäre der Stab drehbar),
   Drehgelenk = Drehung um die nächste der drei Achsen frei, Schiebegelenk längs des Stabs = Hülse (Verschiebung längs
   und beide Biegedrehungen frei); Gelenke mit ``bereich`` sind festgestellt und kommen hier als feste Anschlüsse an
-  (``modell._art``, T30);
+  (``modell._art``, T30), außer sie sind mit ``frei=True`` als frei laufend erklärt (T33);
 - Anschlüsse an geerdete Starrkörper und den Boden sind feste Lager (hinter dem Gelenkglied).
 
 Lastfälle: je Szenario Eigengewicht der Stäbe als Streckenlast im Beschleunigungsfeld, Starrkörper und Anbauteile mit
