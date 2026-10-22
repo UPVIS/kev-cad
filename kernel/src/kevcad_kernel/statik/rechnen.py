@@ -197,7 +197,10 @@ def befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
     gesehen = set()
     for e in erg.get("szenarien") or []:
+        ablauf = bool((e.get("szenario") or {}).get("ablauf"))
         for u in e.get("urteile") or []:
+            if ablauf and u["art"] in ("kippen", "rutschen"):
+                continue  # Szenario mit Ablauf (Stufe 2): Kippen und Rutschen beurteilt der Ablauf genauer
             if u["art"] == "ueberdimensioniert":
                 schwere = "hinweis"
             elif u["ampel"] == "rot":

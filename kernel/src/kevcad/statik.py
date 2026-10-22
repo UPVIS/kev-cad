@@ -15,6 +15,9 @@ st.szenario("Schräge", neigung=10, richtung="+y")                         # Bod
 st.szenario("Anstoßen", stoss=2)                                          # Stoßfaktor auf die Lasten des Szenarios
 st.last("Regal/Fach 2", kg=20, szenario="Anstoßen")
 
+st.szenario("Bremsen aus 1 m/s", geschwindigkeit=1, bremsen="abrupt")    # Ablauf (S2): schieben, abrupt bremsen
+st.szenario("Fahrt", animation="Fahrt", bremsen=4)                        # Sollbahn aus der Animation „Fahrt“
+
 st.untergrund("holz")                                                     # Boden zum Rutschen (Standard Beton)
 st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eigene Ziele statt T5
 ```
@@ -25,6 +28,12 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eige
   ``kg=`` für Gewichtskraft senkrecht nach unten. ``punkt`` in mm (Welt); ohne Punkt die Mitte (Stab: Mitte der
   Achse).
 - Ziele (T5): statisch 2, dynamisch (Beschleunigung, Stoß) 3, Druckteile das Doppelte; Durchbiegung L/200.
+- Ablauf (S2, Dynamik mit MuJoCo): ``geschwindigkeit`` (m/s), ``bremsen`` (m/s², ``"abrupt"`` = Stillstand in 0,1 s,
+  ``"anprall"`` = in 0,02 s), ``dauer`` (s), ``animation`` (Sollbahn des geschobenen Teils aus einer Animation),
+  ``antrieb`` (geschobenes Teil oder Gruppe, sonst der schwerste Körper auf Rädern), ``angriff`` (``"boden"``, Höhe in
+  mm oder Punkt), ``fahrtrichtung`` (``"+x"``). Kev CAD rechnet den Ablauf nach jedem Lauf im Hintergrund in einem
+  eigenen Prozess: Kippen, Abheben, Ladung (Ball springt heraus?), Grenzgeschwindigkeit; die Zeitleiste spielt ihn als
+  Animation „Ablauf: <Name>“ ab.
 - Außerhalb des Kernels tun die Funktionen nichts.
 
 Ergebnis: MCP ``statik`` und ``szenario_rechnen``, in der App der Abschnitt „Statik“ mit Ampel und Farbverlauf.
@@ -105,10 +114,14 @@ class Szenario:
 
 
 def szenario(name: str, beschleunigung: Any = None, neigung: float | None = None, richtung: Any = "+x",
-             stoss: float | None = None, ziel: float | None = None, beschreibung: str | None = None) -> Szenario:
+             stoss: float | None = None, ziel: float | None = None, beschreibung: str | None = None,
+             geschwindigkeit: float | None = None, bremsen: Any = None, dauer: float | None = None,
+             animation: str | None = None, antrieb: Any = None, angriff: Any = None,
+             fahrtrichtung: Any = None) -> Szenario:
     """Neues Szenario (folgende ``last``-Aufrufe gehören dazu). ``beschleunigung`` in m/s² (z. B. (-3, 0, 0) beim
-    Bremsen in Fahrtrichtung +X), ``neigung`` in Grad mit ``richtung`` (abwärts), ``stoss`` als Faktor auf alle Lasten,
-    ``ziel`` als eigene Zielsicherheit."""
+    Bremsen in Fahrtrichtung +X), ``neigung`` in Grad mit ``richtung`` (abwärts), ``stoss`` als Faktor auf alle Lasten
+    (im Ablauf auf die Verzögerung), ``ziel`` als eigene Zielsicherheit. Mit ``geschwindigkeit`` (m/s), ``bremsen``
+    (m/s², "abrupt", "anprall") oder ``animation`` wird es ein Ablauf (S2, Dynamik), siehe Moduldoku."""
     if not isinstance(name, str) or not name.strip():
         raise ValueError("statik.szenario: Namen angeben, z. B. st.szenario(\"Bremsen\", beschleunigung=(-3, 0, 0))")
     d: dict[str, Any] = {"was": "szenario", "name": name.strip(), "beschreibung": beschreibung}
@@ -121,6 +134,18 @@ def szenario(name: str, beschleunigung: Any = None, neigung: float | None = None
         d["stoss"] = {"faktor": float(stoss)}
     if ziel is not None:
         d["ziel"] = float(ziel)
+    if geschwindigkeit is not None or bremsen is not None or animation is not None:
+        ab: dict[str, Any] = {"geschwindigkeit": None if geschwindigkeit is None else float(geschwindigkeit),
+                              "bremsen": bremsen if isinstance(bremsen, str) or bremsen is None else float(bremsen),
+                              "dauer": None if dauer is None else float(dauer), "animation": animation}
+        if antrieb is not None:
+            ab["antrieb"] = antrieb if isinstance(antrieb, str) else _teile(antrieb)[0]
+        if angriff is not None:
+            ab["angriff"] = angriff if isinstance(angriff, (str, int, float)) else _vec(angriff, "angriff")
+        if fahrtrichtung is not None:
+            ab["fahrtrichtung"] = fahrtrichtung if isinstance(fahrtrichtung, str) else _vec(fahrtrichtung,
+                                                                                            "fahrtrichtung")
+        d["ablauf"] = ab
     _melde(d)
     _stand["aktuell"] = name.strip()
     return Szenario(name.strip())

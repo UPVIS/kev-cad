@@ -1264,7 +1264,24 @@ def referenz_beispiele() -> list[tuple[str, dict[str, Any], bytes]]:
 STATIK_AMPELN = ("gruen", "gelb", "rot", "grau")
 STATIK_STAENDE = ("done", "failed")
 STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit", "ziel", "reserve", "ausnutzung", "ort",
-                        "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative")
+                        "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative", "kurz")
+STATIK_ABLAUF_STAENDE = ("done", "laeuft", "failed")  # Stufe 2 (Ablauf): Feld ``ablauf`` je Szenario
+STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_max", "rutschgrenze", "rutschreserve",
+                      "geschwindigkeit", "verzoegerung")
+
+
+def _statik_ablauf(ab: dict[str, Any], voll: bool = True) -> dict[str, Any]:
+    """Ablauf (S2) eines Szenarios für die App: Stand, Ampel, Text, Animation (Name in ANIM_DEF), Kennzahlen; voll
+    zusätzlich Antrieb, Handrechnung, Verlauf je Bild und Kontaktpfeile."""
+    out: dict[str, Any] = {k: ab.get(k) for k in ("stand", "ampel", "text", "animation", "meldung")}
+    kz = dict(ab.get("kennzahlen") or {})
+    if not voll:
+        out["kennzahlen"] = {k: kz.get(k) for k in STATIK_ABLAUF_KURZ if k in kz}
+        return out
+    out.update({"kennzahlen": kz, "dauer": ab.get("dauer"), "fps": ab.get("fps"), "bilder": ab.get("bilder"),
+                "antrieb": ab.get("antrieb"), "handrechnung": ab.get("handrechnung"),
+                "verlauf": ab.get("verlauf"), "pfeile": ab.get("pfeile"), "ms": ab.get("ms")})
+    return out
 
 
 def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
@@ -1276,6 +1293,8 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
         "beschreibung": sz.get("beschreibung") or e.get("beschreibung"),
     }
     if not voll:
+        if isinstance(e.get("ablauf"), dict):
+            out["ablauf"] = _statik_ablauf(e["ablauf"], voll=False)
         return out
     out["urteile"] = [{k: u[k] for k in STATIK_URTEIL_FELDER if k in u} for u in e.get("urteile") or []]
     out["teile"] = list(e.get("teile") or [])
@@ -1285,6 +1304,8 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     kippen = (e.get("s0") or {}).get("kippen") if e.get("s0") is not None else e.get("kippen")
     out["kippen"] = [{k: g.get(k) for k in ("name", "reserve", "richtung_text", "je_richtung", "teile")}
                      for g in kippen or []]
+    if isinstance(e.get("ablauf"), dict):
+        out["ablauf"] = _statik_ablauf(e["ablauf"])
     return out
 
 
@@ -1339,6 +1360,22 @@ def check_statics_message(header: dict[str, Any]) -> list[str]:
             if n < 2 or len(s.get("ausnutzung") or []) != n or len(s.get("verschiebung") or []) != n:
                 err.append(f"{wo}: Stab {s.get('name')!r}: punkte, ausnutzung und verschiebung brauchen gleich viele "
                            "Einträge (mindestens 2)")
+        ab = e.get("ablauf")
+        if ab is not None:
+            if ab.get("stand") not in STATIK_ABLAUF_STAENDE:
+                err.append(f"{wo}.ablauf.stand {ab.get('stand')!r} unbekannt")
+            if ab.get("stand") == "done":
+                if not isinstance(ab.get("animation"), str) or not ab.get("animation"):
+                    err.append(f"{wo}.ablauf: animation fehlt")
+                if ab.get("ampel") not in STATIK_AMPELN:
+                    err.append(f"{wo}.ablauf.ampel {ab.get('ampel')!r} unbekannt")
+                vl = ab.get("verlauf") or {}
+                n = len(vl.get("zeit") or [])
+                for k in ("kipp", "abheben"):
+                    if k in vl and len(vl[k]) != n:
+                        err.append(f"{wo}.ablauf.verlauf.{k}: {len(vl[k])} Werte, Zeiten {n}")
+                if ab.get("pfeile") is not None and ab.get("bilder") and len(ab["pfeile"]) != ab["bilder"]:
+                    err.append(f"{wo}.ablauf.pfeile: {len(ab['pfeile'])} Bilder, erwartet {ab['bilder']}")
     if header.get("aktiv") is not None and header.get("aktiv") not in namen:
         err.append(f"aktiv {header.get('aktiv')!r} ist kein Szenario")
     return err
@@ -1396,3 +1433,64 @@ def statik_beispiel() -> dict[str, Any]:
                     "Plastizität.", "Kein Ersatz für einen Statiker bei sicherheitsrelevanten Dingen."],
         "vereinfachungen": ["Aluminium EN AW-6060: Zustand T66 angenommen"],
     }
+
+
+def statik_beispiel_ablauf() -> dict[str, Any]:
+    """Wie ``statik_beispiel`` plus ein Ablauf (S2): „Bremsen aus 1 m/s“ mit drei Bildern Verlauf und Kontaktpfeilen
+    (Testdatei ``statics_ablauf.frame``)."""
+    b = statik_beispiel()
+    urteile = [
+        {"art": "dyn_kippen", "teil": None, "ampel": "rot", "kurz": "Rollwagen kippt nach vorn (hebt 17 mm ab)",
+         "text": "Rollwagen kippt nach vorn: hebt hinten 17 mm ab (Rollwagen/Lenkrolle 2), 1,7°, fällt zurück; "
+                 "Fangrolle setzt auf dem Boden auf. Hebt schon ab 2,5 m/s² ab (Kippreserve 0,25).",
+         "loesung": "Sanfter bremsen oder langsamer schieben.", "reserve": 0.25, "ziel": 1.5,
+         "ort": [102.6, -347.3, 126.1]},
+        {"art": "dyn_ladung", "teil": "Bowlingball", "ampel": "gelb",
+         "kurz": "Bowlingball bleibt knapp (springt ab 1,12 m/s heraus)",
+         "text": "Bowlingball bleibt im Schieber: größter Versatz 46 mm, steigt 30 mm hoch; springt bei dieser "
+                 "Bremsart ab 1,12 m/s heraus.", "loesung": "Langsamer schieben oder sanfter bremsen.",
+         "reserve": 1.12, "ziel": 1.5},
+    ]
+    ablauf = {
+        "stand": "done", "ampel": "rot", "animation": "Ablauf: Bremsen aus 1 m/s",
+        "text": "Bremsen aus 1 m/s: rot – Rollwagen kippt nach vorn (hebt 17 mm ab), Bowlingball bleibt knapp "
+                "(springt ab 1,12 m/s heraus)",
+        "dauer": 0.04, "fps": 50.0, "bilder": 3,
+        "antrieb": {"koerper": "Rollwagen mit Kugelschieber (121 Teile)", "geschwindigkeit": 1.0,
+                    "verzoegerung": 10.0, "bremsen": "abrupt (Stillstand in 0,1 s)", "angriff": "boden"},
+        "kennzahlen": {"geschwindigkeit": 1.0, "verzoegerung": 10.0, "kippwinkel_max": 1.68, "abheben_max_mm": 16.6,
+                       "a_abheben": 2.46, "kippreserve": 0.25, "kippt_um": False, "v_abheben": 0.29,
+                       "a_abheben_ohne_ladung": 13.92, "a_kipp_hand": 14.1, "rutschgrenze": 5.89,
+                       "rutschreserve": 0.59, "mu_rad": 0.6, "setzt_auf": "Fangrolle",
+                       "ladung": [{"koerper": "K2", "name": "Bowlingball", "versatz_max_mm": 46.4,
+                                   "hebt_max_mm": 30.5, "bleibt": True, "v_grenze": 1.12}],
+                       "kontaktkraefte": [{"paar": ["Bowlingball", "Kugelschieber/Fangrolle (Druck)"],
+                                           "max_n": 97.9}]},
+        "handrechnung": {"b_mm": 169.3, "h_mm": 117.8, "a_kipp": 14.1, "kippwinkel": 55.2,
+                         "text": "a = g · b / h = 9,81 · 169 / 118 = 14,1 m/s²"},
+        "verlauf": {"zeit": [0.0, 0.02, 0.04], "kipp": [0.0, 0.4, 1.68], "abheben": [0.0, 4.1, 16.6],
+                    "weg": [0.0, 0.02, 0.035], "fuehrung": [0.0, -120.0, -190.0],
+                    "ladung": {"Bowlingball": {"laengs": [0.0, 12.0, 46.4], "hebt": [0.0, 5.0, 30.5]}},
+                    "kraefte": {"Bowlingball ↔ Kugelschieber/Fangrolle (Druck)": [0.0, 40.0, 97.9]}},
+        "pfeile": [[], [{"punkt": [700.0, -344.0, 60.0], "kraft": [-30.0, 0.0, 28.0],
+                         "paar": ["Kugelschieber/Fangrolle (Druck)", "Bowlingball"]}],
+                   [{"punkt": [700.0, -344.0, 60.0], "kraft": [-70.0, 0.0, 68.0],
+                     "paar": ["Kugelschieber/Fangrolle (Druck)", "Bowlingball"]},
+                    {"punkt": [705.0, -344.0, 0.0], "kraft": [0.0, 0.0, 156.5],
+                     "paar": ["Boden", "Kugelschieber/Fangrolle (Druck)"]}]],
+        "ms": {"ablauf": 96.9, "suche": 1248.6, "varianten": 56, "gesamt": 1469.4},
+        "urteile": urteile,
+    }
+    b["szenarien"].append({
+        "name": "Bremsen aus 1 m/s", "szenario": {"art": "dynamisch", "quelle": "agent",
+                                                  "beschreibung": "mit 1 m/s schieben, abrupt bremsen"},
+        "ampel": "rot", "ziel": 3.0, "text": ablauf["text"],
+        "kennzahlen": {"sicherheit": 8.4, "knicken": None, "kippreserve": 0.25, "rutschreserve": 0.59,
+                       "durchbiegung_mm": None, "durchbiegung_grenze_mm": None, "verformung_max_mm": 0.0,
+                       "kippwinkel_max": 1.68, "abheben_max_mm": 16.6},
+        "urteile": urteile, "teile": [], "staebe": [], "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []},
+        "ablauf": ablauf})
+    b["aktiv"] = "Bremsen aus 1 m/s"
+    b["grenzen"] = list(b["grenzen"]) + ["Ablauf (S2) mit Starrkörpern: keine Verformung, kein Federn der Rohre, "
+                                         "Stöße ohne Rückprall."]
+    return b

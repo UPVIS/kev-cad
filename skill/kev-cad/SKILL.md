@@ -229,6 +229,12 @@ gezeigt), Überblick mit **`statik`**. Vorschläge für leichtere oder stärkere
 die Grenzen dazusagen: vereinfacht (Balken, linear-elastisch, Verbinder starr), kein Ersatz für einen Statiker bei
 sicherheitsrelevanten Dingen. Einzelheiten, API und Urteile: [statik.md](statik.md).
 
+Bewegung über der Zeit (Stufe 2, MuJoCo im eigenen Prozess): „Was passiert, wenn ich mit 1 m/s schiebe und abrupt
+bremse?“ → **`dynamik`**(name, geschwindigkeit=1, bremsen="abrupt"); „wie schnell darf ich schieben, ohne dass der
+Ball herausspringt?“ → **`dynamik_grenze`**. Antwort mit Kippreserve, Abheben in mm, ob die Ladung bleibt (mit
+Grenzgeschwindigkeit), Rutschgrenze, Handrechnung a = g·b/h und den Grenzen (Starrkörper, Reibung vereinfacht, keine
+Verformung); Kevin sieht den Ablauf als Animation „Ablauf: …“ in der Zeitleiste.
+
 ## Arbeitsablauf
 
 1. `status`: offenes Projekt, Pfad von model.py, letzter Lauf, Kevins Auswahl, Inventar-Regel.

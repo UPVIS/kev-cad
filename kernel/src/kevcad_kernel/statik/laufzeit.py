@@ -28,6 +28,8 @@ def _szenario_auszug(e: dict[str, Any], detail: bool = True) -> dict[str, Any]:
                {"alternative": {k: u["alternative"].get(k) for k in ("name", "stock_id", "ersparnis_kg",
                                                                      "ersparnis_eur", "sicherheit")}}
                if isinstance(u.get("alternative"), dict) else {}) for u in e.get("urteile") or []]}
+    if isinstance(e.get("ablauf"), dict):  # Stufe 2: Ablauf ohne Verlauf und Pfeile
+        out["ablauf"] = {k: v for k, v in e["ablauf"].items() if k not in ("verlauf", "pfeile", "koerper")}
     if detail:
         out["staebe"] = [{k: s.get(k) for k in ("name", "sicherheit", "ampel", "radius")}
                          | {"ausnutzung_max": max(s.get("ausnutzung") or [0.0]),
@@ -171,7 +173,9 @@ class StatikRuntime:
             return {"ok": False, "error": erg.get("meldung") or "Statik nicht gerechnet"}
         with self._lock:  # type: ignore[attr-defined]
             run = self._statik_run
-            self._statik_voll = erg
+            # Stufe 2: fertige Abläufe anderer Szenarien behalten (das Ergebnis des Rechenprozesses kennt sie nicht)
+            behalten = getattr(self, "_dyn_behalten", None)
+            self._statik_voll = behalten(self._statik_voll, erg, name) if behalten else erg
             self._statik_aktiv = name if zeigen else None
         gezeigt = self._statik_senden(zeigen=bool(zeigen)) and bool(zeigen)
         e = next((x for x in erg.get("szenarien") or [] if x.get("name") == name), None)

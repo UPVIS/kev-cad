@@ -227,5 +227,9 @@ class Erfassung:
                     e["teile"] = self._namen(d.get("teile") or [], shown, warnungen, f"statik.{d.get('was')}", z)
                     if not e["teile"]:
                         continue
+                ab = d.get("ablauf")
+                if isinstance(ab, dict) and ab.get("antrieb") is not None and not isinstance(ab["antrieb"], str):
+                    namen = self._namen([ab["antrieb"]], shown, warnungen, "statik.szenario(antrieb=…)", z)
+                    e["ablauf"] = {**ab, "antrieb": namen[0] if namen else None}
                 erkl.setdefault("statik", []).append(e)
         return {"teile": {n: self.teile.get(n, {}) for n in shown if n in self.teile}, "erklaerungen": erkl}

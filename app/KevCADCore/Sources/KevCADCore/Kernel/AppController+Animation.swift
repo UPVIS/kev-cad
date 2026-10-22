@@ -41,6 +41,7 @@ extension AppController: AnimationActions {
                 self.applyAnimationCamera(camera)
             }
             self.refreshOverlay()  // Pyramiden fahren mit ihren Teilen
+            self.updateAblaufPfeile()  // Statik Stufe 2: Kontaktkräfte des Bilds
         }
         player.onStateChange = { [weak self] in self?.sendAnimationState() }
         player.pivotOf = { [weak self] name in

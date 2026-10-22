@@ -67,6 +67,82 @@ final class StatikTests: XCTestCase {
         XCTAssertTrue(idx.allSatisfy { Int($0) < vd.count / 6 })
     }
 
+    /// Stufe 2: Szenario mit Ablauf (statics_ablauf.frame): Kennzahlen, Verlauf, Kontaktpfeile als Körper.
+    func testAblaufAusTestdatei() throws {
+        guard case .statik(let e) = try Fixtures.message("statics_ablauf.frame") else { return XCTFail("kein STATICS") }
+        let soll = try erwartet("statics_ablauf")
+        XCTAssertEqual(e.aktiv, "Bremsen aus 1 m/s")
+        XCTAssertTrue(e.zeigen)
+        let sz = try XCTUnwrap(e.szenario("Bremsen aus 1 m/s"))
+        let ab = try XCTUnwrap(sz.ablauf)
+        let sollAb = soll["szenarien"]?.arrayValue?.compactMap { $0["ablauf"] }.first
+        XCTAssertEqual(ab.animation, sollAb?["animation"]?.stringValue)
+        XCTAssertEqual(ab.bilder, sollAb?["bilder"]?.intValue)
+        XCTAssertEqual(ab.kippreserve, sollAb?["kippreserve"]?.doubleValue)
+        XCTAssertEqual(ab.pfeile.map(\.count), sollAb?["pfeile"]?.arrayValue?.compactMap(\.intValue))
+        XCTAssertEqual(ab.ladung.map(\.name), ["Bowlingball"])
+        XCTAssertEqual(ab.ladung.first?.vGrenze, 1.12)
+        XCTAssertTrue(ab.fertig)
+        XCTAssertEqual(ab.ampel, .rot)
+        XCTAssertEqual(ab.aKippHand, 14.1)
+        XCTAssertEqual(ab.zeit.count, ab.kipp.count)
+        XCTAssertEqual(ab.bild(zur: 0.021), 1)
+        XCTAssertEqual(ab.bild(zur: 5), 2)
+        XCTAssertEqual(ab.kraftMax, simd_length(SIMD3<Float>(0, 0, 156.5)), accuracy: 1e-3)
+        XCTAssertEqual(sz.urteile.first?.art, "dyn_kippen")
+        // Szenarien ohne Ablauf haben keinen
+        XCTAssertNil(e.szenario("Eigengewicht")?.ablauf)
+        // Pfeile: einer je Kontaktkraft, enden am Angriffspunkt
+        let pf = StatikGeometrie.pfeile(ab.pfeile[2], kraftMax: ab.kraftMax)
+        XCTAssertEqual(pf.count, 2)
+        XCTAssertTrue(pf.allSatisfy { !$0.isPickable && $0.id.hasPrefix(StatikGeometrie.praefix) })
+        let p0 = ab.pfeile[2][1].punkt
+        let ecken = stride(from: 0, to: pf[1].vertexData.count, by: 6).map {
+            SIMD3<Float>(pf[1].vertexData[$0], pf[1].vertexData[$0 + 1], pf[1].vertexData[$0 + 2])
+        }
+        XCTAssertLessThan(ecken.map { simd_distance($0, p0) }.min() ?? 99, 1e-3)  // Spitze am Punkt
+        XCTAssertTrue(pf[1].indices.allSatisfy { Int($0) < ecken.count })
+        XCTAssertTrue(StatikGeometrie.pfeile(ab.pfeile[0], kraftMax: ab.kraftMax).isEmpty)
+    }
+
+    @MainActor
+    func testAblaufZeigenUndPfeile() throws {
+        let c = AppController(model: AppModel())
+        c.handle([.connected])
+        c.handle([.message(try Fixtures.message("hello.frame"))])
+        c.handle([.message(try Fixtures.message("statics_ablauf.frame"))])
+        XCTAssertEqual(c.model.statik.szenario?.name, "Bremsen aus 1 m/s")
+        // Ohne geladene Animation passiert nichts (nur eine Warnung)
+        c.zeigeAblauf("Bremsen aus 1 m/s")
+        XCTAssertNil(c.model.animation.selected)
+        XCTAssertTrue(c.scene.ablaufBodies.isEmpty)
+        // ANIM_DEF des Ablaufs (3 Bilder, ein Teil in Ruhe): „Ablauf zeigen“ wählt und spielt ihn
+        let kopf: [String: Any] = [
+            "type": "ANIM_DEF", "name": "Ablauf: Bremsen aus 1 m/s", "run": 9, "dauer": 0.04, "fps": 50.0,
+            "bilder": 3, "teile": ["Bowlingball"], "kamera": false, "sichtbar": [], "standard": false,
+            "warnungen": [], "spuren": 0, "ablauf": true,
+        ]
+        var werte: [Float] = []
+        for _ in 0..<3 { werte += [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0] }
+        let nutz = werte.withUnsafeBufferPointer { Data(buffer: $0) }
+        let clip = try AnimationClip.decode(header: try JSONSerialization.data(withJSONObject: kopf), payload: nutz)
+        c.handleAnimation(.definition(clip))
+        c.zeigeAblauf("Bremsen aus 1 m/s")
+        XCTAssertEqual(c.model.animation.selected, "Ablauf: Bremsen aus 1 m/s")
+        XCTAssertTrue(c.model.animation.playing)
+        c.seekAnimation(to: 0.04)  // letztes Bild: zwei Kontaktkräfte
+        XCTAssertEqual(c.scene.ablaufBodies.count, 2)
+        c.seekAnimation(to: 0.0)  // erstes Bild: keine Kraft
+        XCTAssertTrue(c.scene.ablaufBodies.isEmpty)
+        c.seekAnimation(to: 0.04)
+        c.setKontaktpfeile(false)
+        XCTAssertFalse(c.model.statik.kontaktpfeile)
+        XCTAssertTrue(c.scene.ablaufBodies.isEmpty)
+        c.resetAnimationPose()  // Ruhelage: keine Pfeile
+        c.setKontaktpfeile(true)
+        XCTAssertTrue(c.scene.ablaufBodies.isEmpty)
+    }
+
     @MainActor
     func testControllerZeigtGewaehltesSzenario() throws {
         let c = AppController(model: AppModel())

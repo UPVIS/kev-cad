@@ -19,6 +19,24 @@ extension AppController: StatikActions {
         }
         if e.stand == "failed", let m = e.meldung { log(.warning, "Statik: \(m)") }
         updateStatikAnzeige()
+        updateAblaufPfeile()
+    }
+
+    /// Statik Stufe 2: Ablauf zum gerade gezeigten Clip der Zeitleiste (Animation „Ablauf: …“), falls es ihn gibt.
+    func ablaufZumClip() -> StatikAblauf? {
+        guard let name = animationPlayer.current?.name, model.animation.posed else { return nil }
+        return model.statik.ergebnis?.szenarien.compactMap(\.ablauf).first { $0.animation == name }
+    }
+
+    /// Kontaktkräfte des aktuellen Bilds als Pfeile, solange ein Ablauf in der Zeitleiste steht.
+    func updateAblaufPfeile() {
+        guard model.statik.kontaktpfeile, let ab = ablaufZumClip(), !ab.pfeile.isEmpty else {
+            scene.setAblauf(bodies: [])
+            return
+        }
+        let k = ab.bild(zur: model.animation.time)
+        let bild = k < ab.pfeile.count ? ab.pfeile[k] : []
+        scene.setAblauf(bodies: StatikGeometrie.pfeile(bild, kraftMax: ab.kraftMax))
     }
 
     /// Körper und Färbung des gewählten Szenarios in die Szene (oder entfernen, wenn beides aus ist).
@@ -49,6 +67,24 @@ extension AppController: StatikActions {
     public func setStatikVerformung(_ an: Bool) {
         model.statik.verformung = an
         updateStatikAnzeige()
+    }
+
+    public func zeigeAblauf(_ szenario: String) {
+        guard let ab = model.statik.ergebnis?.szenario(szenario)?.ablauf, let name = ab.animation,
+              animationPlayer.clips[name] != nil
+        else {
+            log(.warning, "Ablauf „\(szenario)“ ist noch nicht gerechnet")
+            return
+        }
+        model.statik.auswahl = szenario
+        selectAnimation(name)
+        seekAnimation(to: 0)
+        setPlaying(true)
+    }
+
+    public func setKontaktpfeile(_ an: Bool) {
+        model.statik.kontaktpfeile = an
+        updateAblaufPfeile()
     }
 
     public func zeigeStatikUrteil(_ urteil: StatikUrteil) {

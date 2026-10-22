@@ -321,6 +321,21 @@ class KernelService(Protocol):
         """Neues Szenario mit dem Statikmodell des letzten Laufs (ohne neuen Lauf): {"ok", "run", "szenario",
         "gezeigt", "grenzen", "vereinfachungen", "ms"}. ``lasten``: [{"teil", "kg" | "kraft" [N], "punkt" [mm]?}]."""
 
+    # Statik Stufe 2 (PLAN-STATIK.md T-C; umgesetzt in kevcad_kernel.statik.dynamik.laufzeit.DynamikRuntime)
+    def dynamik(self, name: str, geschwindigkeit: float | None = None, bremsen: Any = None, dauer: float | None = None,
+                neigung: float | None = None, richtung: Any = None, stoss: float | None = None,
+                animation: str | None = None, antrieb: str | None = None, angriff: Any = None,
+                fahrtrichtung: Any = None, lasten: list[dict[str, Any]] | None = None, suche: bool = True,
+                zeigen: bool = True, beschreibung: str | None = None) -> dict[str, Any]:
+        """Ablauf (S2, MuJoCo im eigenen Prozess) mit dem Modell des letzten Laufs: {"ok", "run", "szenario",
+        "ablauf" (kennzahlen, urteile, handrechnung, suche, ms), "animation" ("Ablauf: <name>"), "gezeigt",
+        "befunde", "grenzen", "vereinfachungen", "ms"}."""
+
+    def dynamik_grenze(self, ohne: str = "beides", bremsen: Any = "abrupt", geschwindigkeit: float = 1.0,
+                       name: str | None = None) -> dict[str, Any]:
+        """Grenzgeschwindigkeit (Suche mit Rollouts): wie ``dynamik`` plus "grenzen_suche" {"kippen": {"v_abheben",
+        "a_abheben", "a_kipp_hand", …}, "ladung": [{"name", "v_grenze"}]}."""
+
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in
