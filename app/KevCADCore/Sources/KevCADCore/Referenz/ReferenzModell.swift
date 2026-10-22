@@ -11,7 +11,7 @@ public struct ReferenzInfo: Identifiable, Equatable, Sendable {
     public enum Zustand: String, Sendable { case leer, rechnet, fertig, fehler }
 
     public var name: String
-    /// "video" oder "fotos"
+    /// "video", "fotos" oder "scan" (Kev Scan vom iPhone)
     public var art: String
     public var quelle: String
     public var zustand: Zustand
@@ -32,9 +32,14 @@ public struct ReferenzInfo: Identifiable, Equatable, Sendable {
     /// Netz an das Modell angelegt (Drehung um Z in Grad), sonst nil.
     public var lageDrehung: Double?
     public var lageRest: Double?
+    /// Rest von Phase 4 (additiv): Phase der laufenden Scan-Auswertung, Kurzfassung der Abweichung, gesetzter Maßstab.
+    public var phase: String?
+    public var abweichung: ReferenzAbweichungKurz?
+    public var massstab: ReferenzMassstab?
 
     public var id: String { name }
     public var istVideo: Bool { art == "video" }
+    public var istScan: Bool { art == "scan" }
 
     public static func == (a: ReferenzInfo, b: ReferenzInfo) -> Bool {
         a.name == b.name && a.art == b.art && a.quelle == b.quelle && a.zustand == b.zustand && a.laeuft == b.laeuft
@@ -43,6 +48,7 @@ public struct ReferenzInfo: Identifiable, Equatable, Sendable {
             && a.captureGrundkoerper == b.captureGrundkoerper && a.lageDrehung == b.lageDrehung
             && a.captureBilder?.gesamt == b.captureBilder?.gesamt
             && a.captureBilder?.ausgerichtet == b.captureBilder?.ausgerichtet
+            && a.phase == b.phase && a.abweichung == b.abweichung && a.massstab == b.massstab
     }
 
     public init?(json: JSONValue) {
@@ -73,6 +79,15 @@ public struct ReferenzInfo: Identifiable, Equatable, Sendable {
         }
         lageDrehung = json["lage"]?["drehung_z"]?.doubleValue
         lageRest = json["lage"]?["rest_mm"]?.doubleValue
+        phase = json["phase"]?.stringValue
+        abweichung = ReferenzAbweichungKurz(json: json["abweichung"])
+        massstab = ReferenzMassstab(json: json["massstab"])
+    }
+
+    /// Text der laufenden Arbeit: „Scan wird ausgewertet …“, „Object Capture läuft“, „wird vermessen“.
+    public var laufText: String {
+        if laeuft == "capture" { return istScan ? "Scan wird ausgewertet …" : "Object Capture läuft" }
+        return "wird vermessen"
     }
 }
 
@@ -250,8 +265,12 @@ public enum ReferenzNachricht: Sendable {
     case entfernen(String)
     case fotos(referenz: String, satz: String, fotos: [ReferenzFoto])
     case ergebnis(ReferenzErgebnis)
+    /// Rest von Phase 4 (additiv): Feld der Abweichung (REF_DEVIATION), Scans vom iPhone (SCAN_LIST).
+    case abweichung(ReferenzAbweichungFeld)
+    case scans(ScanListe)
 
-    public static let types: Set<String> = ["REF_LIST", "REF_UPSERT", "REF_REMOVE", "REF_PHOTOS", "REF_RESULT"]
+    public static let types: Set<String> = ["REF_LIST", "REF_UPSERT", "REF_REMOVE", "REF_PHOTOS", "REF_RESULT",
+                                            "REF_DEVIATION", "SCAN_LIST"]
 
     public var typeName: String {
         switch self {
@@ -260,6 +279,8 @@ public enum ReferenzNachricht: Sendable {
         case .entfernen: return "REF_REMOVE"
         case .fotos: return "REF_PHOTOS"
         case .ergebnis: return "REF_RESULT"
+        case .abweichung: return "REF_DEVIATION"
+        case .scans: return "SCAN_LIST"
         }
     }
 
@@ -268,8 +289,13 @@ public enum ReferenzNachricht: Sendable {
     }
 
     public static func decode(type: String, frame: Frame) throws -> ReferenzNachricht {
+        if type == "REF_DEVIATION" {
+            return .abweichung(try ReferenzAbweichungFeld.decode(header: frame.header, payload: frame.payload))
+        }
         let json = try JSONDecoder().decode(JSONValue.self, from: frame.header)
         switch type {
+        case "SCAN_LIST":
+            return .scans(ScanListe(json: json))
         case "REF_LIST":
             return .liste((json["referenzen"]?.arrayValue ?? []).compactMap(ReferenzInfo.init(json:)))
         case "REF_REMOVE":
@@ -466,6 +492,17 @@ public final class ReferenzStore: ObservableObject {
     @Published public internal(set) var params: [String: Double] = [:]
     /// Letzte Antwort des Kernels (Übernehmen, Hinzufügen), für einen kurzen Hinweis.
     @Published public internal(set) var meldung: String?
+    /// Rest von Phase 4 (additiv): Felder der Abweichung (Schlüssel `ReferenzAbweichungFeld.key`), die gezeigte
+    /// Farbkarte, das Werkzeug „Maßstab setzen“, die Scans vom iPhone und die ausgeblendeten Bänder neuer Scans.
+    @Published public internal(set) var abweichungFelder: [String: ReferenzAbweichungFeld] = [:]
+    @Published public internal(set) var farbkarte: FarbkarteAnzeige?
+    @Published public internal(set) var massstabWerkzeug: MassstabWerkzeug?
+    @Published public internal(set) var scans: [ScanInfo] = []
+    @Published public internal(set) var scanEmpfaenger: String?
+    @Published public internal(set) var scanEmpfaengerLaeuft = false
+    @Published public internal(set) var scanAusgeblendet: Set<String> = []
+    /// Kennung des Scans, der gerade übernommen wird (bis der Kernel ihn als übernommen meldet).
+    @Published public internal(set) var scanUebernahme: String?
 
     public static let standardDeckkraft = 0.45
 
@@ -489,6 +526,34 @@ public final class ReferenzStore: ObservableObject {
     }
 
     public var laeuftEtwas: Bool { referenzen.contains { $0.zustand == .rechnet } }
+
+    /// Feld zu Referenz, Richtung und Teil, wenn es zum aktuellen Stand (Kurzfassung in REF_LIST) gehört.
+    public func abweichungFeld(_ referenz: String, _ auf: ReferenzAbweichungFeld.Auf, _ teil: String?)
+        -> ReferenzAbweichungFeld?
+    {
+        guard let kurz = self.referenz(referenz)?.abweichung,
+              let f = abweichungFelder[ReferenzAbweichungFeld.key(referenz, auf, teil)], kurz.schluessel.contains(f.feld)
+        else { return nil }
+        return f
+    }
+
+    /// Spanne der Legende der gezeigten Farbkarte in mm.
+    public var farbkarteSkala: Double? {
+        guard let a = farbkarte else { return nil }
+        return a.skala ?? referenz(a.referenz)?.abweichung?.skala
+    }
+
+    /// Neuester Scan, der noch nicht übernommen und nicht weggeklickt ist (Band „Neuer Scan empfangen“).
+    public var neuerScan: ScanInfo? {
+        scans.first { $0.neu && !scanAusgeblendet.contains($0.id) && !scanWirdAusgewertet($0.id) }
+    }
+
+    /// Der Scan wird gerade übernommen: über die App angestoßen oder eine Referenz aus ihm rechnet noch (auch über MCP).
+    public func scanWirdAusgewertet(_ id: String) -> Bool {
+        id == scanUebernahme || referenzen.contains {
+            $0.istScan && $0.zustand == .rechnet && ($0.quelle as NSString).lastPathComponent == id
+        }
+    }
 }
 
 /// Aktionen rund um Referenzen, implementiert vom App-Kern (AppController).
@@ -511,4 +576,17 @@ public protocol ReferenzActions: AnyObject {
     func fotoDeckkraft(_ wert: Double)
     func fotoModus(_ modus: FotoAnsicht.Modus)
     func referenzImFinder(_ name: String)
+    // Rest von Phase 4 (additiv)
+    /// Farbkarte der Abweichung zeigen (nil = aus), auf dem Modell oder auf dem Referenznetz.
+    func farbkarteZeigen(_ name: String?, auf: ReferenzAbweichungFeld.Auf)
+    /// Spanne der Legende in mm (nil = die des Kernels).
+    func farbkarteSkala(_ mm: Double?)
+    /// Werkzeug „Maßstab setzen“: zwei Punkte am Referenznetz anklicken (nil = abbrechen).
+    func massstabWerkzeug(_ name: String?)
+    /// REF_SCALE: Maßstab setzen mit den gewählten Punkten oder einem benannten Maß.
+    func massstabSetzen(_ name: String, mm: Double, punkte: [SIMD3<Float>]?, kante: String?)
+    /// SCAN_IMPORT: Scan ins offene Projekt übernehmen.
+    func scanUebernehmen(_ id: String, schnell: Bool)
+    /// Band „Neuer Scan empfangen“ für diesen Scan ausblenden (bleibt in der Liste).
+    func scanBandAusblenden(_ id: String)
 }

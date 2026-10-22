@@ -417,8 +417,8 @@ public struct ZukaufEntryInfo: Equatable, Sendable {
     /// CAD-Quelle für die Anzeige.
     public var cadTitle: String {
         switch cadQuelle?.lowercased() {
-        case "traceparts": return "Hersteller-CAD (TraceParts)"
-        case "hersteller": return "Hersteller-CAD"
+        // "traceparts" nur bei älteren Einträgen (TraceParts ist seit dem 22.10.2026 stillgelegt)
+        case "hersteller", "traceparts": return "Hersteller-CAD"
         case "download": return "Hersteller-CAD (Download)"
         case "bd_warehouse": return "Normteil (bd_warehouse)"
         case "skript": return "Skript"

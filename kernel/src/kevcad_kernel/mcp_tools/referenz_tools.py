@@ -16,7 +16,7 @@ from pydantic import Field
 from . import format as fmt
 
 REFERENZ_TOOL_NAMES: tuple[str, ...] = ("referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen",
-                                        "referenz_fotoansicht")
+                                        "referenz_fotoansicht", "referenz_abweichung", "referenz_massstab")
 
 
 def _mm(v: Any, nd: int = 1) -> str:
@@ -62,6 +62,44 @@ def ergebnis_text(e: dict[str, Any]) -> str:
     return "\n".join(zeilen)
 
 
+def _vz(v: Any) -> str:
+    """Abweichung mit Vorzeichen: „+1,2“ / „−0,8“."""
+    if not isinstance(v, (int, float)):
+        return "–"
+    return ("+" if v > 0 else "−" if v < 0 else "") + fmt.num(abs(v), 1)
+
+
+def abweichung_text(a: dict[str, Any], name: str | None = None, alle: bool = True) -> list[str]:
+    """Kennzahlen der Abweichung (positiv = Referenz außerhalb des Modells) als Tabelle je Teil."""
+    if not a:
+        return []
+    if a.get("stand") != "done":
+        return [f"Abweichung: {a.get('meldung') or a.get('stand')}"]
+    teile = a.get("teile") or []
+    zeilen = [f"Abweichung zum Referenznetz{(' ' + name) if name else ''} (Lauf {a.get('run')}, Punkte weiter als "
+              f"{_mm(a.get('grenze_mm'), 0)} mm zählen als ohne Referenz; positiv = Referenz außerhalb des Modells):"]
+    rows = [["Teil", "mittel", "95 %", "größte", "Versatz", "abgedeckt"]]
+    for t in teile if alle else teile[:12]:
+        rows.append([t["teil"], _mm(t.get("mittel_mm")), _mm(t.get("p95_mm")), _mm(t.get("max_mm")),
+                     _vz(t.get("versatz_mm")), f"{fmt.num((t.get('abgedeckt') or 0) * 100, 0)} %"])
+    r = a.get("referenz_netz") or a.get("referenz")  # MCP: referenz_netz; REF_LIST-Kurzfassung: referenz
+    if isinstance(r, dict):
+        rows.append(["(Referenznetz zum Modell)", _mm(r.get("mittel_mm")), _mm(r.get("p95_mm")), _mm(r.get("max_mm")),
+                     _vz(r.get("versatz_mm")), f"{fmt.num((r.get('abgedeckt') or 0) * 100, 0)} %"])
+    zeilen.append(fmt.table(rows, right={1, 2, 3, 4, 5}))
+    groesst = max((t for t in teile if t.get("max_mm") is not None), key=lambda t: t["max_mm"], default=None)
+    if groesst and groesst.get("ort_max"):
+        o = groesst["ort_max"]
+        zeilen.append(f"Größte Abweichung {_mm(groesst['max_mm'])} mm an {groesst['teil']} bei "
+                      f"({fmt.num(o[0], 0)}; {fmt.num(o[1], 0)}; {fmt.num(o[2], 0)})")
+    zeilen.append(f"Legende in der App: ±{_mm(a.get('skala_mm'))} mm"
+                  + (" (fest)" if a.get("skala_fest") else " (automatisch)"))
+    if a.get("angelegt") is False:
+        zeilen.append("Achtung: Netz nicht am Modell angelegt, der Lagefehler steckt in den Zahlen (erst "
+                      "referenz_vermessen).")
+    return zeilen
+
+
 def eintrag_text(r: dict[str, Any]) -> str:
     z = r.get("zustand")
     art = {"video": "Video", "scan": "Scan"}.get(str(r.get("art")), "Fotos")
@@ -69,7 +107,7 @@ def eintrag_text(r: dict[str, Any]) -> str:
     if z == "rechnet":
         lauf = ('Auswertung' if r.get('art') == 'scan' else 'Object Capture') if r.get('laeuft') == 'capture' \
             else 'Vermessen'
-        kopf += (f"{lauf} läuft, "
+        kopf += (f"{lauf} läuft" + (f" ({r['phase']})" if r.get("phase") else "") + ", "
                  f"{fmt.num((r.get('fortschritt') or 0) * 100, 0)} %" + (f" ({r.get('text')})" if r.get("text") else ""))
     elif z == "fehler":
         kopf += f"Fehler: {r.get('meldung')}"
@@ -92,6 +130,16 @@ def eintrag_text(r: dict[str, Any]) -> str:
         kopf += ", ".join(teile) or "fertig"
     if r.get("lage"):
         kopf += f"; Netz am Modell angelegt ({r['lage'].get('drehung_z')}° um Z)"
+    m = r.get("massstab")
+    if m and m.get("faktor"):
+        kopf += f"; Maßstab nachträglich gesetzt (Faktor {fmt.num(m['faktor'], 4)}, {_mm(m.get('mm'))} mm)"
+    a = r.get("abweichung")
+    if a and a.get("stand") == "done" and a.get("teile"):
+        mittel = [t["mittel_mm"] for t in a["teile"] if t.get("mittel_mm") is not None]
+        groesst = [t["max_mm"] for t in a["teile"] if t.get("max_mm") is not None]
+        if mittel:
+            kopf += (f"; Abweichung zum Modell im Mittel {_mm(sum(mittel) / len(mittel))} mm, größte "
+                     f"{_mm(max(groesst))} mm")
     return kopf
 
 
@@ -122,6 +170,9 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             if r.get("messung_ergebnis") and (name or len(liste) == 1):
                 zeilen.append("")
                 zeilen.append(ergebnis_text(r["messung_ergebnis"]))
+            if r.get("abweichung") and (name or len(liste) == 1):
+                zeilen.append("")
+                zeilen += abweichung_text(r["abweichung"], alle=bool(name))
         werkzeuge = res.get("werkzeuge") or {}
         fehlt = [n for n, k in (("kevcad-capture", "kevcad_capture"), ("fotomess", "fotomess")) if not werkzeuge.get(k)]
         if fehlt:
@@ -238,3 +289,71 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             text += f"\nKein Bild: {res['bild_fehler']}"
         data = {k: v for k, v in res.items() if k != "png"}
         return fmt.result(text, data, extra=[fmt.image_block(png)] if png else None)
+
+    @tool("referenz_abweichung", "Abweichung zur Referenz",
+          "Deviation between the model and a reference mesh (Object Capture or iPhone scan), per part: mean, 95 % and "
+          "largest distance in mm, signed offset (positive = the real object sticks out beyond the model, the model "
+          "is too small there; negative = the model is too big) and the covered share (points without reference "
+          "within grenze_mm, e.g. the unseen bottom, do not count). The kernel recomputes it in the background after "
+          "every run (about 1 s); this call waits for the current state. zeigen=true switches on the color map in "
+          "Kevin's viewer (auf='modell': colors on the model parts, auf='referenz': colors on the reference mesh) "
+          "with a legend in mm. skala_mm fixes the legend range, grenze_mm the coverage limit (0 = automatic again). "
+          "Use it after referenz_vermessen (the mesh is then aligned to the model) to see where the model still "
+          "differs from the real object.", VIEWER)
+    async def referenz_abweichung(
+        name: Annotated[str | None, Field(description="Reference name (default: the only one)")] = None,
+        teile: Annotated[list[str] | None, Field(description="Only these parts or groups")] = None,
+        zeigen: Annotated[bool, Field(description="Show the color map in the viewer")] = False,
+        auf: Annotated[Literal["modell", "referenz"], Field(description="Color map on the model or on the mesh")]
+        = "modell",
+        skala_mm: Annotated[float | None, Field(ge=0, le=500, description="Legend range ± mm (0 = automatic)")] = None,
+        grenze_mm: Annotated[float | None, Field(ge=0, le=500, description="Beyond this distance a point counts as "
+                                                                          "without reference (0 = automatic)")]
+        = None,
+    ) -> CallToolResult:
+        res = await t.work("vergleicht Modell und Referenz", svc.referenz_abweichung, name, teile, grenze_mm,
+                           skala_mm, zeigen, auf)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Abweichung nicht gerechnet: {err}", res)
+        zeilen = abweichung_text({**res, "stand": "done"}, res.get("referenz"))
+        if res.get("ms") is not None:
+            ms = float(res["ms"])
+            zeilen.append(f"Gerechnet in {fmt.num(ms / 1000, 1)} s (im Hintergrund nach dem Lauf; unveränderte "
+                          "Teile kommen aus dem Zwischenspeicher).")
+        if res.get("gezeigt"):
+            zeilen.append(f"Kevin sieht die Farbkarte {'auf dem Modell' if auf == 'modell' else 'auf dem Netz'} "
+                          "(blau = Modell zu groß, grün = passt, rot = Modell zu klein, grau = ohne Referenz).")
+        for h in res.get("hinweise") or []:
+            zeilen.append(f"Hinweis: {h}")
+        return fmt.result("\n".join(zeilen), res)
+
+    @tool("referenz_massstab", "Maßstab der Referenz",
+          "Set the scale of a reference afterwards from one known real dimension (Object Capture without LiDAR has no "
+          "true scale): either two points on the reference mesh (world mm as shown in the viewer, e.g. from "
+          "measure on the mesh or picked by Kevin; they are snapped to the mesh) or kante = 'laenge' | 'breite' | "
+          "'hoehe' | 'grund_laenge' | 'grund_breite' (hull of the mesh) or the name of a measured param, plus the "
+          "real distance mm. Mesh, point cloud, Object Capture cameras and report scale with it; the measurement "
+          "scales too when kante names a measured dimension. Not for iPhone scans (already metric). Afterwards "
+          "referenz_vermessen again if the model was measured against the old scale.", ADDITIVE)
+    async def referenz_massstab(
+        mm: Annotated[float, Field(gt=0, description="Real distance in mm")],
+        name: Annotated[str | None, Field(description="Reference name (default: the only one)")] = None,
+        punkte: Annotated[list[list[float]] | None, Field(description="Two points [[x, y, z], [x, y, z]] in mm on "
+                                                                      "the mesh")] = None,
+        kante: Annotated[str | None, Field(description="Named dimension instead of points")] = None,
+    ) -> CallToolResult:
+        res = await t.work("setzt den Maßstab der Referenz", svc.referenz_massstab, name, mm, punkte, kante)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Maßstab nicht gesetzt: {err}", res)
+        zeilen = [str(res.get("text") or "")]
+        if res.get("punkte_am_netz"):
+            a, b = res["punkte_am_netz"]
+            zeilen.append(f"Punkte am Netz: ({', '.join(fmt.num(x, 1) for x in a)}) und "
+                          f"({', '.join(fmt.num(x, 1) for x in b)}) mm")
+        if res.get("messung_skaliert"):
+            zeilen.append("Die Vermessung ist mitskaliert; beim nächsten referenz_vermessen gilt das Maß als bekannt.")
+        for h in res.get("hinweise") or []:
+            zeilen.append(f"Hinweis: {h}")
+        return fmt.result("\n".join(zeilen), res)

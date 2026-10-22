@@ -89,6 +89,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "referenz_fotos",
     "referenz_vermessen",
     "referenz_fotoansicht",
+    "referenz_abweichung",
+    "referenz_massstab",
     # Statik Stufe 1
     "statik",
     "szenario_rechnen",

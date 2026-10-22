@@ -9,6 +9,9 @@
 - ``referenz_vermessen``: Varianten von model.py, dann fotomess; danach REF_PHOTOS (Satz ``messung``) und REF_RESULT.
   Liegt auch ein Netz aus demselben Video vor, legt der Kernel es an das Modell an (Lage aus Kamerapaaren).
 - App: REF_ADD (Drag and Drop, Dialog), REF_MEASURE_REQ (Knopf „Vermessen“), REF_APPLY („Maße übernehmen“).
+- Rest von Phase 4 (``laufzeit_rest.py``, Basis dieser Klasse): Abweichung als Farbkarte (REF_DEVIATION, MCP
+  ``referenz_abweichung``), Maßstab nachträglich (REF_SCALE, MCP ``referenz_massstab``), Scans in der App
+  (SCAN_LIST, SCAN_IMPORT).
 """
 
 from __future__ import annotations
@@ -26,13 +29,15 @@ import numpy as np
 
 from kevcad_kernel.referenz import ablage, capture, netz, vermessen
 from kevcad_kernel.referenz.ablage import ReferenzFehler
+from kevcad_kernel.referenz.laufzeit_rest import APP_TYPEN_REST, ReferenzRestMixin
 
-APP_TYPEN = ("REF_ADD", "REF_MEASURE_REQ", "REF_APPLY")
+APP_TYPEN = ("REF_ADD", "REF_MEASURE_REQ", "REF_APPLY") + APP_TYPEN_REST
 MELDE_ABSTAND_S = 0.4
 
 
-class ReferenzRuntimeMixin:
+class ReferenzRuntimeMixin(ReferenzRestMixin):
     def _referenz_init(self) -> None:
+        self._ref_rest_init()  # Abweichung, Maßstab, Scans in der App (laufzeit_rest.py)
         self._ref_lock = threading.RLock()
         self._ref_laeufe: dict[tuple[str, str], dict[str, Any]] = {}
         self._ref_fehler: dict[tuple[str, str], str] = {}
@@ -373,6 +378,8 @@ class ReferenzRuntimeMixin:
             if meta.get("lage"):
                 self._ref_netz_senden(proj.path, n)
                 self._ref_capture_fotos_senden(proj.path, n)
+        if meta.get("lage"):
+            self._ref_abw_planen()  # Netz liegt jetzt (neu) am Modell
         out = {"ok": True, **ergebnis, "teile_gemessen": var.get("teile"), "messmodell": var.get("messmodell"),
                "ordner": str(mess), "lage_netz": _lage_text(meta.get("lage")),
                "dauer_s": round(time.perf_counter() - t0, 1)}
@@ -449,6 +456,8 @@ class ReferenzRuntimeMixin:
         if erg.get("ok") and self._project is not None and self._project.path == projekt:
             self._ref_netz_senden(projekt, n)
             self._ref_capture_fotos_senden(projekt, n)
+        if erg.get("ok"):
+            self._ref_abw_planen()
 
     def _ref_capture_posen(self, projekt: Path, n: str) -> list[dict[str, Any]]:
         datei = ablage.ordner(projekt, n) / ablage.CAPTURE / "poses.json"
@@ -576,7 +585,13 @@ class ReferenzRuntimeMixin:
                 "capture": {k: cap.get(k) for k in ("einstellung", "zustand", "dauer_s", "bilder", "ausgerichtet",
                                                     "huelle", "grundkoerper", "oberkante", "masz", "auflage")}
                 if cap else None,
-                "lage": _lage_kurz(meta.get("lage"))}
+                "lage": _lage_kurz(meta.get("lage")),
+                # additiv (22.10.2026): Phase der Scan-Auswertung, Kurzfassung der Abweichung, gesetzter Maßstab
+                "phase": lauf.get("phase") if lauf else None,
+                "abweichung": self._ref_abw_kurz(n),
+                "massstab": {k: (meta.get("massstab") or {}).get(k) for k in ("faktor", "mm", "ist_mm", "quelle",
+                                                                             "kante", "stand")}
+                if meta.get("massstab") else None}
 
     def _ref_liste(self) -> dict[str, Any]:
         proj = self._project
@@ -667,6 +682,7 @@ class ReferenzRuntimeMixin:
         proj = self._project
         send = conn.send if conn is not None else self._send_app
         send(self._ref_liste())
+        self._scan_liste_senden(conn)  # Scans vom iPhone, auch ohne offenes Projekt (Band „Neuer Scan empfangen“)
         if proj is None:
             return
         for n in ablage.namen(proj.path):
@@ -676,6 +692,8 @@ class ReferenzRuntimeMixin:
                 self._ref_messung_senden(proj.path, n, conn)
             except Exception as exc:  # noqa: BLE001 - eine kaputte Referenz darf die anderen nicht aufhalten
                 self._log(f"[referenz] {n}: {exc!r}")
+        if conn is not None:
+            self._ref_abw_senden(conn)  # Felder der Abweichung (alle, die App hat nach dem Verbinden keine)
 
     # Haken der Laufzeit -----------------------------------------------------------------------------------------------
 
@@ -687,9 +705,12 @@ class ReferenzRuntimeMixin:
 
     def _referenz_projekt(self, same: bool) -> None:
         if not same:
+            self._ref_abw = {}
             self._pool.submit(self._ref_alles)
+            self._ref_abw_planen()
 
     def _referenz_schliessen(self) -> None:
+        self._ref_rest_schliessen()
         with self._ref_lock:
             laeufe = list(self._ref_laeufe.values())
         for lauf in laeufe:
@@ -735,6 +756,8 @@ class ReferenzRuntimeMixin:
                     self._ref_liste_senden(sofort=True)
             elif kind == "REF_APPLY":
                 ack(*self._ref_uebernehmen(header.get("werte") or {}))
+            else:
+                self._ref_rest_app_anfrage(kind, header, ack)  # REF_SCALE, SCAN_IMPORT (laufzeit_rest.py)
         except Exception as exc:  # noqa: BLE001
             ack(False, f"{type(exc).__name__}: {exc}")
 

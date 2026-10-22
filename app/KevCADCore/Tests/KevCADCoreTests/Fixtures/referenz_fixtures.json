@@ -326,5 +326,412 @@
    "tiefe": 103.4,
    "hoehe": 46.4
   }
+ },
+ "ref_deviation_modell": {
+  "type": "REF_DEVIATION",
+  "seq": 6,
+  "referenz": "IMG_5186",
+  "run": 7,
+  "auf": "modell",
+  "teil": "Kiste/Korpus",
+  "feld": "a1b2c3d4e5f6a7b8c9d0",
+  "punkte": 8,
+  "dreiecke": 12,
+  "grenze_mm": 10.0,
+  "kennzahlen": {
+   "mittel_mm": 1.5,
+   "max_mm": 2.0,
+   "p95_mm": 2.0,
+   "versatz_mm": -0.5,
+   "abgedeckt": 0.8,
+   "punkte": 8,
+   "ort_max": [
+    -50.0,
+    -30.0,
+    40.0
+   ]
+  }
+ },
+ "ref_deviation_modell_nutzlast": {
+  "punkte": [
+   [
+    -50.0,
+    -30.0,
+    0.0
+   ],
+   [
+    50.0,
+    -30.0,
+    0.0
+   ],
+   [
+    -50.0,
+    30.0,
+    0.0
+   ],
+   [
+    50.0,
+    30.0,
+    0.0
+   ],
+   [
+    -50.0,
+    -30.0,
+    40.0
+   ],
+   [
+    50.0,
+    -30.0,
+    40.0
+   ],
+   [
+    -50.0,
+    30.0,
+    40.0
+   ],
+   [
+    50.0,
+    30.0,
+    40.0
+   ]
+  ],
+  "dreiecke": [
+   [
+    0,
+    2,
+    3
+   ],
+   [
+    0,
+    3,
+    1
+   ],
+   [
+    4,
+    5,
+    7
+   ],
+   [
+    4,
+    7,
+    6
+   ],
+   [
+    0,
+    1,
+    5
+   ],
+   [
+    0,
+    5,
+    4
+   ],
+   [
+    2,
+    6,
+    7
+   ],
+   [
+    2,
+    7,
+    3
+   ],
+   [
+    0,
+    4,
+    6
+   ],
+   [
+    0,
+    6,
+    2
+   ],
+   [
+    1,
+    3,
+    7
+   ],
+   [
+    1,
+    7,
+    5
+   ]
+  ],
+  "werte": [
+   null,
+   null,
+   null,
+   null,
+   -2.0,
+   1.0,
+   -2.0,
+   1.0
+  ]
+ },
+ "ref_deviation_referenz": {
+  "type": "REF_DEVIATION",
+  "seq": 7,
+  "referenz": "IMG_5186",
+  "run": 7,
+  "auf": "referenz",
+  "teil": null,
+  "feld": "f0e1d2c3b4a596877869",
+  "punkte": 5,
+  "dreiecke": 4,
+  "grenze_mm": 10.0,
+  "kennzahlen": {
+   "mittel_mm": 0.9,
+   "max_mm": 1.0,
+   "p95_mm": 1.0,
+   "versatz_mm": 0.9,
+   "abgedeckt": 1.0,
+   "punkte": 5,
+   "ort_max": [
+    51.0,
+    31.0,
+    1.0
+   ]
+  }
+ },
+ "ref_deviation_referenz_nutzlast": {
+  "punkte": [
+   [
+    -49.0,
+    -31.0,
+    1.0
+   ],
+   [
+    51.0,
+    -31.0,
+    1.0
+   ],
+   [
+    51.0,
+    31.0,
+    1.0
+   ],
+   [
+    -49.0,
+    31.0,
+    1.0
+   ],
+   [
+    0.0,
+    0.0,
+    41.0
+   ]
+  ],
+  "dreiecke": [
+   [
+    0,
+    1,
+    4
+   ],
+   [
+    1,
+    2,
+    4
+   ],
+   [
+    2,
+    3,
+    4
+   ],
+   [
+    3,
+    0,
+    4
+   ]
+  ],
+  "werte": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   0.5
+  ]
+ },
+ "ref_list_abweichung": {
+  "type": "REF_LIST",
+  "seq": 8,
+  "referenzen": [
+   {
+    "name": "IMG_5186",
+    "art": "video",
+    "quelle": "/Volumes/Aufnahmen/IMG_5186.MOV",
+    "zustand": "fertig",
+    "laeuft": null,
+    "fortschritt": null,
+    "text": null,
+    "meldung": null,
+    "netz": true,
+    "fotos": 8,
+    "messung": true,
+    "erstellt": "2026-10-22T14:03:11",
+    "capture": null,
+    "lage": {
+     "drehung_z": 180.0,
+     "verschiebung": [
+      0.0,
+      -1.2,
+      0.0
+     ],
+     "rest_mm": 6.3,
+     "paare": 8
+    },
+    "massstab": {
+     "faktor": 1.0125,
+     "mm": 180.0,
+     "ist_mm": 177.78,
+     "quelle": "punkte",
+     "stand": "2026-10-22T22:10:00"
+    },
+    "abweichung": {
+     "stand": "done",
+     "run": 7,
+     "grenze_mm": 10.0,
+     "skala_mm": 2.0,
+     "skala_fest": false,
+     "angelegt": true,
+     "ms": 840.0,
+     "meldung": null,
+     "teile": [
+      {
+       "teil": "Kiste/Korpus",
+       "feld": "a1b2c3d4e5f6a7b8c9d0",
+       "mittel_mm": 1.5,
+       "max_mm": 2.0,
+       "p95_mm": 2.0,
+       "versatz_mm": -0.5,
+       "abgedeckt": 0.8,
+       "punkte": 8,
+       "ort_max": [
+        -50.0,
+        -30.0,
+        40.0
+       ]
+      }
+     ],
+     "referenz": {
+      "feld": "f0e1d2c3b4a596877869",
+      "mittel_mm": 0.9,
+      "max_mm": 1.0,
+      "p95_mm": 1.0,
+      "versatz_mm": 0.9,
+      "abgedeckt": 1.0,
+      "punkte": 5,
+      "ort_max": [
+       51.0,
+       31.0,
+       1.0
+      ]
+     }
+    }
+   },
+   {
+    "name": "Scan Packung",
+    "art": "scan",
+    "quelle": "/Users/test/Documents/Kev CAD/Scans/2026-10-22_213800_Scan",
+    "zustand": "rechnet",
+    "laeuft": "capture",
+    "fortschritt": 0.42,
+    "text": "Scan: Tiefe 12 von 101",
+    "phase": "Tiefe (PromptDA)",
+    "meldung": null,
+    "netz": false,
+    "fotos": 0,
+    "messung": false,
+    "erstellt": "2026-10-22T21:40:00",
+    "capture": null,
+    "lage": null,
+    "abweichung": null
+   }
+  ]
+ },
+ "ref_scale_punkte": {
+  "type": "REF_SCALE",
+  "seq": 4,
+  "id": "a-4",
+  "referenz": "IMG_5186",
+  "punkte": [
+   [
+    -88.9,
+    -50.4,
+    0.0
+   ],
+   [
+    88.9,
+    -50.4,
+    0.0
+   ]
+  ],
+  "kante": null,
+  "mm": 180.0
+ },
+ "ref_scale_kante": {
+  "type": "REF_SCALE",
+  "seq": 5,
+  "id": "a-5",
+  "referenz": "IMG_5186",
+  "punkte": null,
+  "kante": "laenge",
+  "mm": 180.0
+ },
+ "scan_list": {
+  "type": "SCAN_LIST",
+  "seq": 9,
+  "ordner": "/Users/test/Documents/Kev CAD/Scans",
+  "neu": "2026-10-22_213800_Scan 22.10.",
+  "empfaenger": {
+   "laeuft": true,
+   "port": 50123,
+   "name": "MacBook Pro",
+   "dienst": "_kevscan._tcp"
+  },
+  "scans": [
+   {
+    "id": "2026-10-22_213800_Scan 22.10.",
+    "name": "Scan 22.10. 21.38",
+    "empfangen": "2026-10-22T21:40:12",
+    "erstellt": "2026-10-22T21:38:00+02:00",
+    "geraet": "iPhone16,1",
+    "fotos": 61,
+    "videobilder": 779,
+    "objekt": true,
+    "groesse_mb": 433.9,
+    "vorschau": "/Users/test/Documents/Kev CAD/Scans/2026-10-22_213800_Scan 22.10./vorschau.jpg",
+    "zustand": "neu",
+    "referenzen": []
+   },
+   {
+    "id": "2026-10-21_101500_Rollwagen",
+    "name": "Rollwagen",
+    "empfangen": "2026-10-21T10:15:40",
+    "erstellt": null,
+    "geraet": "iPhone16,1",
+    "fotos": 12,
+    "videobilder": 240,
+    "objekt": false,
+    "groesse_mb": 120.5,
+    "vorschau": null,
+    "zustand": "uebernommen",
+    "referenzen": [
+     {
+      "projekt": "/Users/test/Documents/Kev CAD/Rollwagen",
+      "name": "Rollwagen",
+      "stand": "2026-10-21T10:20:00",
+      "schnell": true
+     }
+    ]
+   }
+  ]
+ },
+ "scan_import": {
+  "type": "SCAN_IMPORT",
+  "seq": 6,
+  "id": "a-6",
+  "scan": "2026-10-22_213800_Scan 22.10.",
+  "name": null,
+  "schnell": false
  }
 }

@@ -120,7 +120,8 @@ So schreibt Kev Scan 1.0 die Dateien; alles hier ist Präzisierung oder Zusatz, 
   Antwort `{"ok": true, "id": "<ordnername>", "ordner": "…"}` oder `{"ok": false, "fehler": "…"}`.
 - Empfangene Scans landen unter `~/Documents/Kev CAD/Scans/<datum>_<name>/` (entpackt, ZIP-Pfade geprüft, höchstens
   4 GB). Importiert wird nicht automatisch ins Projekt, sondern auf Anfrage (MCP `scan_importieren`, oder „Scan
-  übernehmen“ in der App, wenn es sie gibt). Kev CAD zeigt eine Mitteilung „Scan empfangen“.
+  übernehmen“ in der App: Band „Neuer Scan empfangen“ bzw. Liste im Inspektor, seit 22.10.2026 abends; Protokoll
+  `SCAN_LIST` und `SCAN_IMPORT`, PROTOCOL.md). Kev CAD zeigt eine Mitteilung „Scan empfangen“.
 - Rückfall ohne WLAN: Die App teilt das ZIP über das Teilen-Menü (AirDrop); `scan_importieren(pfad)` nimmt dann den
   Pfad (etwa im Ordner Downloads).
 

@@ -54,3 +54,23 @@ def test_referenz_werkzeuge(srv):
     res = call(server.url, "referenz_fotoansicht", {"bild_zeigen": True})
     assert [c for c in res.content if c.type == "image"]
     assert fake.calls_of("referenz_fotoansicht")[-1][0][-1] is True
+
+
+def test_abweichung_und_massstab_werkzeuge(srv):
+    server, fake = srv
+    res = call(server.url, "referenz_abweichung", {"zeigen": True, "skala_mm": 2})
+    text = texts(res)[0]
+    assert not res.is_error, text
+    assert "Abweichung zum Referenznetz IMG_5186" in text and "positiv = Referenz außerhalb des Modells" in text
+    assert "Kiste/Korpus" in text and "(Referenznetz zum Modell)" in text and "Legende in der App: ±2 mm (fest)" in text
+    assert "Größte Abweichung 2 mm an Kiste/Korpus bei (-50; -30; 40)" in text
+    assert "Kevin sieht die Farbkarte auf dem Modell" in text
+    assert fake.calls_of("referenz_abweichung")[-1][0] == (None, None, None, 2.0, True, "modell")
+    assert call(server.url, "referenz_abweichung", {"auf": "seitlich"}).is_error  # Schema
+
+    res = call(server.url, "referenz_massstab", {"mm": 180, "punkte": [[-88.9, -50.4, 0], [88.9, -50.4, 0]]})
+    text = texts(res)[0]
+    assert not res.is_error and "Faktor 1.0125" in text and "Punkte am Netz: (-88,9, -50,4, 0)" in text
+    assert fake.calls_of("referenz_massstab")[-1][0][:2] == (None, 180.0)
+    assert call(server.url, "referenz_massstab", {"mm": 180}).is_error
+    assert call(server.url, "referenz_massstab", {"mm": 0, "kante": "laenge"}).is_error  # Schema: mm > 0

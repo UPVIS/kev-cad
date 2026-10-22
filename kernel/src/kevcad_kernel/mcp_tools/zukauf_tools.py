@@ -160,11 +160,10 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         return fmt.result("\n".join(lines), res)
 
     @tool("cad_suchen", "CAD suchen",
-          "Find the manufacturer CAD model (STEP) for a purchased part. With Kevin's TraceParts API key it is fetched "
-          "and imported automatically (show 'powered by TraceParts'). Otherwise it returns links (product page, "
-          "manufacturer portal like MISUMI, item, igus, McMaster, TraceParts, 3Dfindit/CADENAS, web search): ask "
-          "Kevin to download the STEP or ZIP with his account, then call cad_uebernehmen. The app watches ~/Downloads "
-          "meanwhile.", ADDITIVE)
+          "Find the manufacturer CAD model (STEP) for a purchased part: returns links (product page, manufacturer "
+          "portal like MISUMI, item, igus, McMaster, 3Dfindit/CADENAS, web search). There is no automatic CAD source: "
+          "ask Kevin to download the STEP or ZIP with his account, then call cad_uebernehmen. The app watches "
+          "~/Downloads meanwhile.", ADDITIVE)
     async def cad_suchen(
         id: Annotated[str, Field(description="Zukaufteil id")],
     ) -> CallToolResult:
@@ -173,9 +172,6 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         if err:
             return fmt.error_result(f"CAD-Suche fehlgeschlagen: {err}", res)
         lines = [res.get("text") or ""]
-        if res.get("zustand") == "importiert" and res.get("powered_by"):
-            lines.append(f"Quelle: TraceParts ({res['powered_by']}).")
-            lines += _pruefung_text(res.get("pruefung"))
         if res.get("zustand") == "wartet_auf_cad":
             lines.append("Links zum Herunterladen (Kevin mit seinem Konto):")
             lines.append(_links_text(res.get("cad_links") or []))

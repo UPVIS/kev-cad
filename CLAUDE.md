@@ -20,7 +20,7 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 | `spikes/ap0/` | Viewer- und Kerneltest (abgeschlossen, nur Nachschlagen) |
 | `fotomess/` | Phase 4: Modell aus wenigen Fotos oder einem Video vermessen (eigene uv-Umgebung, `STRATEGIE.md`, `BENCHMARK.md`, Tests mit `.venv/bin/python -m pytest`); Einstieg für Kev CAD `fotomess.kevcad` |
 | `tools/capture/` | Phase 4: `kevcad-capture` (SwiftPM, Apple Object Capture), Referenznetz aus einem Handyvideo; `build.sh` baut und installiert es mit |
-| `kernel/src/kevcad_kernel/referenz/` | Phase 4 im Kernel: Referenzen in `<projekt>/referenzen/<name>/`, Object Capture und fotomess als eigene Prozesse, Bauer aus model.py (`varianten`), MCP in `mcp_tools/referenz_tools.py` |
+| `kernel/src/kevcad_kernel/referenz/` | Phase 4 im Kernel: Referenzen in `<projekt>/referenzen/<name>/`, Object Capture und fotomess als eigene Prozesse, Bauer aus model.py (`varianten`), Abweichung als Farbkarte (`abweichung`), Maßstab nachträglich (`massstab`), Scans in der App (`laufzeit_rest`), MCP in `mcp_tools/referenz_tools.py` |
 
 ## Befehle
 

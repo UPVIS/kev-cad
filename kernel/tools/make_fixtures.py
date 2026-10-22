@@ -230,7 +230,8 @@ def main() -> None:
     add3("part_zukauf", head, payload)
     phase3["parts"]["part_zukauf.frame"] = exp
     links = [{"titel": "Produktseite (CAD-Download oft dort)", "url": "https://www.beispiel-shop.de/p/alutec-05200"},
-             {"titel": "TraceParts: ALUTEC 05200", "url": "https://www.traceparts.com/de/search?Keywords=ALUTEC+05200"}]
+             {"titel": "3Dfindit (CADENAS/PARTcommunity): ALUTEC 05200",
+              "url": "https://www.3dfindit.com/de/?q=ALUTEC+05200"}]
     add3("zukauf_status_wartet", zukauf_status("alutec-05200", "wartet_auf_cad",
                                                "CAD für ALUTEC Transportroller 05200: Kevin lädt die STEP-Datei herunter "
                                                "(Links), Kev CAD übernimmt sie aus dem Download-Ordner",

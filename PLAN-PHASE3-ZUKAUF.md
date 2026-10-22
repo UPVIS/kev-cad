@@ -1,6 +1,6 @@
 # Kev CAD · Phase 3: Zukaufteile per Link oder Nummer
 
-Stand: 21.10.2026 (Zusammenführung auf `phase3-int`: Kernel Z-K und App Z-A mit Prüfung Stufe 1 und Phase 5,
+Stand: 22.10.2026 abends (TraceParts entfällt, Entscheidung Z2); davor 21.10.2026 (Zusammenführung auf `phase3-int`: Kernel Z-K und App Z-A mit Prüfung Stufe 1 und Phase 5,
 Ende-zu-Ende mit echtem Kernel bestanden). Baut auf Phase 2 auf (Katalog, `lager.teil(...).verbauen(...)`, Stückliste). Gestartet am
 21.10.2026 abends auf Zweig `phase3`; Verträge in KATALOG.md (Abschnitt Zukaufteil) und PROTOCOL.md (Phase 3). Grundlage ist die Recherche vom 21.10.2026 (Abschnitt „Fundstücke“ unten).
 
@@ -32,11 +32,11 @@ Link / MPN / EAN
 Normteil? ── ja ──► bd_warehouse bzw. Katalog (Phase 2), fertig
    │ nein
    ▼
-2. CAD suchen: TraceParts-API (Teilenummer + Katalog des Herstellers), sonst Deep-Link ins Herstellerportal
-   (CADENAS/PARTcommunity, Misumi, item, igus …)
+2. CAD suchen: Deep-Links zur Produktseite, ins Herstellerportal (Misumi, item, igus, McMaster) und zu freien
+   Quellen (3Dfindit/CADENAS, Websuche)
    ▼
-3. STEP holen: über die API automatisch, sonst lädt Kevin mit seinem Konto herunter; Kev CAD beobachtet ~/Downloads
-   und übernimmt neue .step/.stp/.zip der letzten Minuten
+3. STEP holen: Kevin lädt mit seinem Konto herunter; Kev CAD beobachtet ~/Downloads und übernimmt neue
+   .step/.stp/.zip der letzten Minuten
    ▼
 4. Import: build123d import_step (Namen, Farben, Baugruppe), Einheiten und Achsen gegen die Shop-Maße prüfen,
    große Modelle als Instanz und grob tesselliert, BREP zwischengespeichert in <projekt>/zukauf/<hersteller>-<mpn>/
@@ -49,7 +49,7 @@ Normteil? ── ja ──► bd_warehouse bzw. Katalog (Phase 2), fertig
 | Nr. | Entscheidung | Begründung |
 |---|---|---|
 | Z1 | **Kev CAD lädt Shop-Seiten nicht selbst**, Claude liest sie mit seinen Werkzeugen und übergibt die Felder; Kev CAD wertet mitgeliefertes HTML aus (extruct, BSD-3) | Mehr als die Hälfte der Shops blockt Abrufe vom Server (Amazon, Würth, Hornbach, Conrad …). Bot-Schutz wird nicht umgangen |
-| Z2 | **TraceParts-API als einzige automatische CAD-Quelle**, Schlüssel liegt außerhalb des Repos (`~/Library/Application Support/de.upvis.kevcad/secrets.env`, nur für Kevin lesbar) | Einzige Hersteller-CAD-API mit Teilenummersuche. Bedingungen: Name/E-Mail/Firma beim Download, „powered by TraceParts“ anzeigen, keine Massenabrufe |
+| Z2 | **Keine automatische CAD-Quelle** (geändert am 22.10.2026): Die TraceParts-API ist stillgelegt, Client, Schlüssel (`secrets.env`) und Hinweise darauf sind entfernt; `cad_suchen` liefert nur noch Links zu Herstellerportalen und freien Quellen (Z3). Ursprünglich (21.10.2026) war TraceParts als einzige automatische Quelle vorgesehen | Kevin am 22.10.2026: TraceParts kostet Geld und entfällt. Ältere Katalogeinträge mit `cad.quelle: "traceparts"` bleiben lesbar |
 | Z3 | **Alles andere halbautomatisch:** Deep-Link öffnen, Kevin lädt herunter, Kev CAD übernimmt aus `~/Downloads` | Hersteller-Portale (CADENAS, Misumi, item) haben keine offene API oder verbieten automatische Abrufe |
 | Z4 | **Zukauf-Modelle liegen im Projektordner, nie im Git** und nicht im mitgelieferten Katalog | Weitergabe an Dritte ist durch die Bedingungen der Hersteller meist ausgeschlossen |
 | Z5 | **Ersatzkörper**, wenn kein Modell da ist: Quader oder Zylinder aus den Shop-Maßen, halbtransparent, Name mit „(vereinfacht)“ | Das Modell bleibt maßlich richtig im Raum, die Lücke ist sichtbar |
@@ -60,7 +60,7 @@ Normteil? ── ja ──► bd_warehouse bzw. Katalog (Phase 2), fertig
 - KATALOG.md: `art: "zukaufteil"` mit `hersteller`, `mpn`, `gtin`, `url`, `bild`, `preis.je_stueck`, `preis.stand`,
   `cad: {quelle, datei, lizenz, stand}`, `ersatz: {form, masse}`, `einbaupunkt` (Ursprung und Ausrichtung).
 - MCP: `zukauf_anlegen(url|mpn|gtin, felder…)`, `zukauf_html(url, html)` (Auswertung von mitgeliefertem HTML),
-  `cad_suchen(id)` (TraceParts bzw. Deep-Links), `cad_uebernehmen(id, pfad=None)` (ohne Pfad: neueste passende Datei
+  `cad_suchen(id)` (Deep-Links), `cad_uebernehmen(id, pfad=None)` (ohne Pfad: neueste passende Datei
   aus `~/Downloads`), `zukauf_liste()`.
 - Protokoll: `ZUKAUF_STATUS` (Kernel → App: Teil angelegt, wartet auf Download, importiert), `DOWNLOAD_SEEN`
   (App → Kernel: neue CAD-Datei in `~/Downloads`).
@@ -72,13 +72,13 @@ Normteil? ── ja ──► bd_warehouse bzw. Katalog (Phase 2), fertig
 
 | Strang | Inhalt |
 |---|---|
-| **Z-K Kernel** | Datenauswertung (extruct), Zukauf-Katalogeinträge, TraceParts-Client (mit Attrappe testbar, echter Test sobald der Schlüssel da ist), STEP-Import mit Prüfung und Zwischenspeicher, Ersatzkörper, Stückliste, MCP-Werkzeuge, Skill-Abschnitt |
+| **Z-K Kernel** | Datenauswertung (extruct), Zukauf-Katalogeinträge, Deep-Links (der TraceParts-Client ist seit dem 22.10.2026 entfernt), STEP-Import mit Prüfung und Zwischenspeicher, Ersatzkörper, Stückliste, MCP-Werkzeuge, Skill-Abschnitt |
 | **Z-A App** | Dialog, Downloads-Beobachtung (FSEvents), Anzeige im Teilebaum und in der Stückliste, Rückfragen |
 
 ## Was Kevin beitragen muss
 
-- **TraceParts-API-Schlüssel beantragen** (Formular, Prüfung dauert einige Tage):
-  https://developers.traceparts.com/docs/requesting-apikey.md. Ohne Schlüssel läuft alles halbautomatisch.
+- ~~TraceParts-API-Schlüssel beantragen~~: entfällt seit dem 22.10.2026 (TraceParts kostet Geld); CAD kommt immer
+  halbautomatisch über die Links und den Download-Ordner.
 - Zwei, drei echte Beispiel-Links aus dem Alltag (Schublade, Scharnier, Rolle, Profilverbinder) für die Abnahme.
 
 ## Fundstücke (Recherche 21.10.2026)
@@ -88,7 +88,8 @@ Normteil? ── ja ──► bd_warehouse bzw. Katalog (Phase 2), fertig
   Norelem und Ganter blocken Abrufe vom Server.
 - Elektronik: Mouser- und Digi-Key-API (kostenlos mit Schlüssel), Nexar/Octopart (Evaluation mit 100 Teilen,
   CAD-Modelle nur dort und in Enterprise).
-- CAD: TraceParts-API (`Search/PartNumber/Availability`, `CADDataAvailability`, `CadRequest`, `CadFileUrl`);
+- CAD: TraceParts-API (`Search/PartNumber/Availability`, `CADDataAvailability`, `CadRequest`, `CadFileUrl`),
+  am 22.10.2026 verworfen (kostenpflichtig);
   CADENAS ohne offene API, aber mit eingebettetem Portal (Vorbild: offizielles 3Dfindit-Addon für FreeCAD, LGPL-3.0);
   Misumi/item/igus nur über Login; GrabCAD für Kundenprojekte ungeeignet (kommerziell nur mit Erlaubnis).
 - Kein vorhandener MCP-Server holt Hersteller-STEP per Teilenummer – echte Lücke.

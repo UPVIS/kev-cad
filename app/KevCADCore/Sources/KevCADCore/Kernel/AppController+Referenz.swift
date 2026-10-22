@@ -23,6 +23,15 @@ final class FotoAbgleichSpeicher {
     var stand = 0
 }
 
+/// Körper der Farbkarte je Feld (Schlüssel, Spanne, Deckkraft), damit nur ein neues Feld oder eine neue Legende neu
+/// geschnitten wird; dazu die Körper der Referenznetze je Netz (ein neues REF_UPSERT zählt `netzStand` hoch), damit
+/// häufige REF_LIST (Fortschritt) oder ein Regler der Deckkraft nicht jedes Mal das ganze Netz neu aufteilen.
+final class AbweichungSpeicher {
+    var koerper: [String: [ViewportBody]] = [:]
+    var netzStand: [String: Int] = [:]
+    var netzKoerper: [String: (stand: Int, koerper: [ViewportBody])] = [:]
+}
+
 extension AppController: ReferenzActions {
     var referenzen: ReferenzStore { model.referenzen }
 
@@ -46,10 +55,17 @@ extension AppController: ReferenzActions {
                 log(r.zustand == .fehler ? .warning : .info,
                     "Referenz \(r.name): " + (r.meldung ?? (r.zustand == .fertig ? "fertig" : r.zustand.rawValue)))
             }
+            // Felder der Abweichung nur für den aktuellen Stand (Schlüssel in der Kurzfassung) behalten
+            let gueltig = Dictionary(uniqueKeysWithValues: liste.map { ($0.name, $0.abweichung?.schluessel ?? []) })
+            referenzen.abweichungFelder = referenzen.abweichungFelder.filter { gueltig[$0.value.referenz]?.contains($0.value.feld) == true }
+            if let k = referenzen.farbkarte, !namen.contains(k.referenz) { referenzen.farbkarte = nil }
+            if let w = referenzen.massstabWerkzeug, !namen.contains(w.referenz) { massstabWerkzeug(nil) }
             referenzKoerperSetzen()
         case .netz(let n):
             referenzen.netze[n.name] = n
+            abweichungSpeicher.netzStand[n.name, default: 0] += 1  // Körper des Netzes neu aufteilen
             referenzKoerperSetzen()
+            massstabSelbsttestPlanen(n)  // nur Testvariante mit KEVCAD_SELFTEST=massstab
             log(.info, "Referenznetz \(n.name): \(KevFormat.integer(n.triangleCount)) Dreiecke")
         case .entfernen(let name):
             referenzen.netze.removeValue(forKey: name)
@@ -67,8 +83,26 @@ extension AppController: ReferenzActions {
             log(.info, "Referenz \(e.referenz) vermessen: " + e.masse.map {
                 "\($0.name) \(KevFormat.number($0.wert, digits: 1)) ± \(KevFormat.number($0.sigma, digits: 1))"
             }.joined(separator: ", "))
+        case .abweichung(let f):
+            referenzen.abweichungFelder[f.key] = f
+            if referenzen.farbkarte?.referenz == f.referenz { referenzKoerperSetzen() }
+        case .scans(let l):
+            referenzen.scans = l.scans
+            referenzen.scanEmpfaenger = l.empfaengerName
+            referenzen.scanEmpfaengerLaeuft = l.empfaengerLaeuft
+            referenzen.scanAusgeblendet.formUnion(UserDefaults.standard.stringArray(forKey: Self.scanAusgeblendetKey) ?? [])
+            if let u = referenzen.scanUebernahme {
+                let laeuft = referenzen.referenzen.contains { $0.istScan && $0.zustand == .rechnet }
+                if !(l.scans.first { $0.id == u }?.neu ?? false) || !laeuft { referenzen.scanUebernahme = nil }
+            }
+            if let neu = l.neu, let s = l.scans.first(where: { $0.id == neu }) {  // gerade per WLAN empfangen
+                referenzen.scanAusgeblendet.remove(neu)
+                log(.info, "Neuer Scan empfangen: \(s.name) (\(s.fotos) Fotos, \(s.videobilder) Videobilder)")
+            }
         }
     }
+
+    static let scanAusgeblendetKey = "KevCAD.scanBandAusgeblendet"
 
     /// RUN_END: alle param()-Werte merken (für „Vermessen“).
     func referenzParams(_ params: JSONValue?) {
@@ -85,6 +119,9 @@ extension AppController: ReferenzActions {
         referenzen.netze = [:]
         referenzen.fotos = [:]
         referenzen.ergebnisse = [:]
+        referenzen.abweichungFelder = [:]
+        referenzen.massstabWerkzeug = nil
+        abweichungSpeicher.koerper = [:]
         if referenzen.fotoansicht != nil { fotoansichtSchliessen() }
         referenzKoerperSetzen()
     }
@@ -93,19 +130,64 @@ extension AppController: ReferenzActions {
 
     func referenzKoerperSetzen() {
         var koerper: [ViewportBody] = []
+        var verdeckt: Set<String> = []
+        var benutzt: Set<String> = []
+        let karte = referenzen.farbkarte
+        let skala = referenzen.farbkarteSkala ?? 1
+        func farbkarte(_ f: ReferenzAbweichungFeld, id: String) -> [ViewportBody] {
+            let schl = "\(f.feld)|\(skala)|\(id)"
+            benutzt.insert(schl)
+            if let k = abweichungSpeicher.koerper[schl] { return k }
+            let k = AbweichungGeometrie.koerper(f, skala: skala, id: id)
+            abweichungSpeicher.koerper[schl] = k
+            return k
+        }
         for name in referenzen.netze.keys.sorted() {
             guard let n = referenzen.netze[name], !referenzen.verborgen.contains(name), n.triangleCount > 0 else {
                 continue
             }
+            if let k = karte, k.referenz == name, k.auf == .referenz, referenzen.massstabWerkzeug == nil,
+               let f = referenzen.abweichungFeld(name, .referenz, nil) {
+                koerper += farbkarte(f, id: "r\(name)")
+                continue
+            }
+            // Farbkarte auf dem Modell: das halbdurchsichtige Netz derselben Referenz läge über den Farben
+            if let k = karte, k.referenz == name, k.auf == .modell, referenzen.massstabWerkzeug?.referenz != name,
+               referenzen.referenz(name)?.abweichung != nil {
+                continue
+            }
             var farbe = SceneStore.linear(n.farbe)
             farbe.w = Float(referenzen.deckkraft(name))
-            koerper += Self.referenzKoerper(n, farbe: farbe)
+            let stand = abweichungSpeicher.netzStand[name] ?? 0
+            var stuecke: [ViewportBody]
+            if let c = abweichungSpeicher.netzKoerper[name], c.stand == stand {
+                stuecke = c.koerper
+            } else {
+                stuecke = Self.referenzKoerper(n, farbe: farbe)
+                abweichungSpeicher.netzKoerper[name] = (stand, stuecke)
+            }
+            let anklickbar = referenzen.massstabWerkzeug?.referenz == name
+            for i in stuecke.indices {
+                stuecke[i].color = farbe
+                stuecke[i].isPickable = anklickbar
+            }
+            koerper += stuecke
         }
-        scene.setReferenzBodies(koerper)
+        if let k = karte, k.auf == .modell, let kurz = referenzen.referenz(k.referenz)?.abweichung {
+            for t in kurz.teile where scene.record(t.teil) != nil && !scene.hidden.contains(t.teil) {
+                guard let f = referenzen.abweichungFeld(k.referenz, .modell, t.teil) else { continue }
+                koerper += farbkarte(f, id: "m\(t.teil)")
+                verdeckt.insert(t.teil)
+            }
+        }
+        abweichungSpeicher.koerper = abweichungSpeicher.koerper.filter { benutzt.contains($0.key) }
+        scene.setReferenzBodies(koerper, verdeckt: verdeckt)
     }
 
-    /// Netz als Körper (Stücke bis 16 000 Dreiecke, nicht anklickbar).
-    nonisolated static func referenzKoerper(_ n: ReferenzNetz, farbe: SIMD4<Float>) -> [ViewportBody] {
+    /// Netz als Körper (Stücke bis 16 000 Dreiecke); anklickbar nur für das Werkzeug „Maßstab setzen“.
+    nonisolated static func referenzKoerper(_ n: ReferenzNetz, farbe: SIMD4<Float>, anklickbar: Bool = false)
+        -> [ViewportBody]
+    {
         var out: [ViewportBody] = []
         let nt = n.triangleCount
         var start = 0
@@ -133,7 +215,7 @@ extension AppController: ReferenzActions {
             }
             out.append(ViewportBody(
                 id: referenzKoerperPrefix + n.name + "\u{1F}\(stueck)", vertexData: vd, indices: idx, edges: [],
-                color: farbe, roughness: 0.7, isPickable: false))
+                color: farbe, roughness: 0.7, isPickable: anklickbar))
             start = ende
             stueck += 1
         }
@@ -217,6 +299,111 @@ extension AppController: ReferenzActions {
         guard let p = model.project?.path else { return }
         let url = p.appendingPathComponent("referenzen", isDirectory: true).appendingPathComponent(name)
         revealFiles([url])
+    }
+
+    // MARK: Abweichung, Maßstab, Scans (Rest von Phase 4)
+
+    public func farbkarteZeigen(_ name: String?, auf: ReferenzAbweichungFeld.Auf) {
+        if let name {
+            referenzen.farbkarte = FarbkarteAnzeige(referenz: name, auf: auf, skala: referenzen.farbkarte?.skala)
+            if auf == .referenz { referenzen.verborgen.remove(name) }
+        } else {
+            referenzen.farbkarte = nil
+        }
+        let t0 = CACurrentMediaTime()
+        referenzKoerperSetzen()
+        referenzSzeneGeaendert()
+        log(.info, "Farbkarte " + (name.map { "\($0) auf \(auf == .modell ? "dem Modell" : "dem Netz")" } ?? "aus")
+            + " in \(Int((CACurrentMediaTime() - t0) * 1000)) ms")
+    }
+
+    public func farbkarteSkala(_ mm: Double?) {
+        guard var k = referenzen.farbkarte else { return }
+        k.skala = mm.map { max(0.05, $0) }
+        referenzen.farbkarte = k
+        referenzKoerperSetzen()
+    }
+
+    public func massstabWerkzeug(_ name: String?) {
+        referenzen.massstabWerkzeug = name.map { MassstabWerkzeug(referenz: $0) }
+        if let name { referenzen.verborgen.remove(name) }
+        scene.setTeileAnklickbar(name == nil)  // Klicks gehen durch das Modell aufs Netz
+        referenzKoerperSetzen()
+        refreshOverlay()
+    }
+
+    /// Klick im Viewport, solange „Maßstab setzen“ läuft: Punkt am Referenznetz merken (zwei Punkte, ein dritter
+    /// beginnt neu). true = verbraucht.
+    func massstabKlick(_ pick: PickResult?, _ punkt: SIMD3<Float>?) -> Bool {
+        guard var w = referenzen.massstabWerkzeug else { return false }
+        guard let pick, pick.bodyID.hasPrefix(Self.referenzKoerperPrefix + w.referenz + "\u{1F}"), let punkt else {
+            referenzen.meldung = "Maßstab: bitte einen Punkt am Referenznetz \(w.referenz) anklicken"
+            return true
+        }
+        if w.punkte.count >= 2 { w.punkte = [] }
+        w.punkte.append(punkt)
+        referenzen.massstabWerkzeug = w
+        referenzen.meldung = nil
+        refreshOverlay()
+        return true
+    }
+
+    func massstabOverlay() -> [OverlayPrimitive] {
+        guard let w = referenzen.massstabWerkzeug else { return [] }
+        let farbe = SIMD4<Float>(0.93, 0.45, 0.05, 1)
+        var out: [OverlayPrimitive] = w.punkte.map { .dot(point: $0, color: farbe, radius: 5) }
+        if w.punkte.count == 2, let d = w.abstand {
+            out.append(.dimension(a: w.punkte[0], b: w.punkte[1], text: KevFormat.number(d, digits: 1) + " mm am Netz",
+                                  color: farbe))
+        }
+        return out
+    }
+
+    public func massstabSetzen(_ name: String, mm: Double, punkte: [SIMD3<Float>]?, kante: String?) {
+        let msg = ReferenzMassstabMessage(id: nextRequestID(), referenz: name, punkte: punkte, kante: kante, mm: mm)
+        request(msg, timeout: 60) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(.ack(let a)):
+                self.referenzen.meldung = a.message
+                self.log(a.ok ? .info : .warning, "Maßstab: \(a.message ?? "")")
+                if a.ok { self.massstabWerkzeug(nil) }
+            case .success(.error(let e)):
+                self.referenzen.meldung = e.message
+                self.log(.error, "Maßstab: \(e.message)")
+            case .success: break
+            case .failure(let e):
+                self.referenzen.meldung = e.message
+                self.log(.error, "Maßstab: \(e.message)")
+            }
+        }
+    }
+
+    public func scanUebernehmen(_ id: String, schnell: Bool) {
+        referenzen.scanUebernahme = id
+        request(ScanImportMessage(id: nextRequestID(), scan: id, schnell: schnell), timeout: 60) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(.ack(let a)):
+                self.referenzen.meldung = a.message
+                self.log(a.ok ? .info : .warning, "Scan übernehmen: \(a.message ?? "")")
+                if !a.ok { self.referenzen.scanUebernahme = nil }
+            case .success(.error(let e)):
+                self.referenzen.meldung = e.message
+                self.referenzen.scanUebernahme = nil
+            case .success: break
+            case .failure(let e):
+                self.referenzen.meldung = e.message
+                self.referenzen.scanUebernahme = nil
+            }
+        }
+    }
+
+    public func scanBandAusblenden(_ id: String) {
+        referenzen.scanAusgeblendet.insert(id)
+        var alle = UserDefaults.standard.stringArray(forKey: Self.scanAusgeblendetKey) ?? []
+        if !alle.contains(id) { alle.append(id) }
+        UserDefaults.standard.set(Array(alle.suffix(200)), forKey: Self.scanAusgeblendetKey)
     }
 
     // MARK: Fotoansicht
@@ -357,6 +544,20 @@ extension AppController: ReferenzActions {
 extension AppController {
     /// VIEW_CMD `referenz_foto`: Fotoansicht öffnen (name, satz, index oder foto, modus, deckkraft) oder schließen (aus).
     func performReferenzCommand(_ v: ViewCommandMessage) -> (Bool, String?)? {
+        if v.cmd == "referenz_abweichung" {  // Rest von Phase 4: Farbkarte an oder aus (MCP referenz_abweichung)
+            let an = v.args["an"]?.boolValue ?? true
+            let auf = ReferenzAbweichungFeld.Auf(rawValue: v.args["auf"]?.stringValue ?? "") ?? .modell
+            guard an else {
+                farbkarteZeigen(nil, auf: auf)
+                return (true, "Farbkarte aus")
+            }
+            guard let name = v.args["name"]?.stringValue ?? referenzen.referenzen.first(where: { $0.abweichung != nil })?.name,
+                  referenzen.referenz(name) != nil
+            else { return (false, "Keine Referenz mit Abweichung") }
+            farbkarteZeigen(name, auf: auf)
+            let skala = referenzen.farbkarteSkala.map { KevFormat.number($0, digits: 1) } ?? "?"
+            return (true, "Farbkarte \(name) auf \(auf == .modell ? "dem Modell" : "dem Netz"), Legende ±\(skala) mm")
+        }
         guard v.cmd == "referenz_foto" else { return nil }
         let a = v.args
         if a["aus"]?.boolValue == true {

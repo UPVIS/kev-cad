@@ -79,6 +79,7 @@ class ScanRuntimeMixin:
         text = (f"{eintrag.get('name')}: {eintrag.get('fotos', 0)} Fotos, {eintrag.get('videobilder', 0)} Videobilder"
                 f", {eintrag.get('groesse_mb', 0)} MB")
         self._log(f"[scan] Scan empfangen: {text} ({eintrag.get('ordner')})")
+        self._scan_liste_senden(neu=eintrag.get("id"))  # App: Band „Neuer Scan empfangen“
         if self._scan_variante == ablage.PRODUKTION and os.environ.get("KEVCAD_SCAN_MITTEILUNG", "1") != "0":
             skript = f'display notification "{_as(text)}" with title "Kev CAD" subtitle "Scan empfangen"'
             try:
@@ -213,6 +214,10 @@ class ScanRuntimeMixin:
                     continue
                 art = e.get("event")
                 if art == "progress":
+                    from kevcad_kernel.referenz.laufzeit_rest import SCAN_PHASEN
+
+                    with self._ref_lock:
+                        lauf["phase"] = SCAN_PHASEN.get(str(e.get("phase") or ""), e.get("phase"))
                     self._ref_fortschritt(schluessel, float(e.get("gesamt") or 0), "Scan: " + str(e.get("text") or ""))
                 elif art == "done":
                     ergebnis = e
@@ -234,6 +239,9 @@ class ScanRuntimeMixin:
         if fehler is None and self._project is not None and self._project.path == projekt:
             self._ref_netz_senden(projekt, n)
             self._ref_capture_fotos_senden(projekt, n)
+        if fehler is None:
+            self._ref_abw_planen()
+        self._scan_liste_senden()  # der Scan ist jetzt übernommen
 
     def _scan_fertig(self, projekt: Path, n: str, ordner: Path, ergebnis: dict[str, Any], fehler: str | None,
                      dauer: float, schnell: bool, stderr: list[str]) -> None:

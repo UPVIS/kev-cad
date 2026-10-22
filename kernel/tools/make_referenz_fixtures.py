@@ -5,6 +5,9 @@ Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/
 
 - ref_list.frame, ref_upsert.frame (Netz mit Nutzlast), ref_remove.frame, ref_photos.frame, ref_result.frame
   (Kernel → App) und ref_add.frame, ref_measure_req.frame, ref_apply.frame (App → Kernel)
+- additiv (22.10.2026): ref_deviation_modell.frame, ref_deviation_referenz.frame (Abweichung mit Nutzlast),
+  ref_list_abweichung.frame (Kurzfassung, Maßstab, Phase der Scan-Auswertung), scan_list.frame (Kernel → App),
+  ref_scale_punkte.frame, ref_scale_kante.frame, scan_import.frame (App → Kernel)
 - referenz_fixtures.json: die Köpfe zum Vergleich, dazu die Zahl der Punkte und Dreiecke des Netzes
 """
 
@@ -13,7 +16,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kevcad_kernel.protocol import check_ref_message, encode_frame, referenz_beispiele, unpack_ref_netz
+from kevcad_kernel.protocol import (
+    check_ref_abweichung,
+    check_ref_message,
+    encode_frame,
+    referenz_beispiele,
+    unpack_ref_abweichung,
+    unpack_ref_netz,
+)
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
 
@@ -22,12 +32,18 @@ def main() -> None:
     ZIEL.mkdir(parents=True, exist_ok=True)
     erwartet = {}
     for name, kopf, nutz in referenz_beispiele():
-        fehler = check_ref_message(kopf)
+        abw = kopf["type"] == "REF_DEVIATION"
+        fehler = check_ref_abweichung(kopf, nutz) if abw else check_ref_message(kopf)
         if fehler:
             raise SystemExit(f"{name}: {fehler}")
         (ZIEL / f"{name}.frame").write_bytes(encode_frame(kopf, nutz))
         erwartet[name] = kopf
-        if nutz:
+        if nutz and abw:
+            arr = unpack_ref_abweichung(kopf, nutz)
+            erwartet[name + "_nutzlast"] = {"punkte": arr["punkte"].round(4).tolist(),
+                                            "dreiecke": arr["dreiecke"].tolist(),
+                                            "werte": [None if v != v else round(float(v), 4) for v in arr["werte"]]}
+        elif nutz:
             arr = unpack_ref_netz(kopf, nutz)
             erwartet[name + "_nutzlast"] = {"positions": arr["positions"].round(4).tolist(),
                                             "triangles": arr["triangles"].tolist()}

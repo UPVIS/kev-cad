@@ -10,7 +10,7 @@ show(Pos(0, 0, 0) * oben * ball, "Ball")
 
 Geometrie je nach ``cad`` im Katalog:
 
-- ``traceparts`` / ``hersteller`` / ``download`` mit ``datei``: Hersteller-STEP (Namen, Farben, Baugruppe), Einheit und
+- ``hersteller`` / ``download`` (ältere Einträge auch ``traceparts``) mit ``datei``: Hersteller-STEP (Namen, Farben, Baugruppe), Einheit und
   Achsen gegen ``masse`` geprüft und korrigiert, zwischengespeichert in ``<projekt>/zukauf/<id>/``.
 - ``skript``: ``funktion`` aus ``modul`` bzw. ``datei`` (Python neben der Katalogdatei); ``verbauen(name, **kwargs)``
   reicht Schlüsselwörter an die Funktion weiter.

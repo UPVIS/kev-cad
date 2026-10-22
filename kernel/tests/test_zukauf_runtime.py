@@ -1,5 +1,5 @@
 """Phase 3 über die volle Laufzeit (Rechenprozess, Test-App am Socket, Test-Katalog): Anlegen als Vorschlag, Freigabe,
-Ersatzkörper im Lauf, CAD suchen (Links bzw. TraceParts-Attrappe), DOWNLOAD_SEEN und Übernahme aus dem Download-Ordner
+Ersatzkörper im Lauf, CAD suchen (Links), DOWNLOAD_SEEN und Übernahme aus dem Download-Ordner
 (ZIP mit STEP in Zoll), ZUKAUF_NEU und ZUKAUF_CAD aus der App, ZUKAUF_STATUS nach dem Verbinden, MCP über den echten
 Server."""
 
@@ -14,7 +14,6 @@ import pytest
 from app_testutil import FakeApp, make_runtime
 from build123d import Box, Compound, Cylinder, Pos, export_step
 from mcp_testutil import texts, with_client
-from test_zukauf_quellen import SCHLUESSEL, Attrappe
 
 from kevcad_kernel.baum import transformieren
 from kevcad_kernel.server import KevcadHTTPServer
@@ -60,8 +59,6 @@ def env(p3, tmp_path, monkeypatch):
     downloads = tmp_path / "Downloads"
     downloads.mkdir()
     monkeypatch.setenv("KEVCAD_DOWNLOADS_DIR", str(downloads))
-    monkeypatch.setenv("KEVCAD_SECRETS_FILE", str(tmp_path / "keine-secrets.env"))
-    p3["rt"].zukauf.traceparts_transport = None
     p3["rt"].zukauf._seen.clear()  # von der App gemeldete Downloads früherer Tests
     p3["downloads"] = downloads
     return p3
@@ -125,11 +122,11 @@ def test_anlegen_freigeben_bauen_cad_aus_downloads(env):
     _, _, bom, _ = app.wait_for(lambda h: h["type"] == "BOM" and h.get("run") == run["run"], start=start)
     line, = bom["lines"]
     assert line["art"] == "zukaufteil" and line["stock_id"] == "alutec-05200" and line["vereinfacht"] is True
-    # CAD suchen ohne Schlüssel: Links, wartet_auf_cad
+    # CAD suchen: Links, wartet_auf_cad (keine automatische Quelle)
     start = app.mark()
     found = rt.cad_suchen("alutec-05200")
     assert found["zustand"] == "wartet_auf_cad" and found["cad_links"][0]["url"].endswith("/p/05200")
-    assert any("TRACEPARTS_API_KEY" in h for h in found["hinweise"])
+    assert found["hinweise"] == [] and not any("traceparts" in link["url"] for link in found["cad_links"])
     st = wait_status(app, start, "alutec-05200", "wartet_auf_cad")
     assert st["erwartet"] == ["step", "stp", "zip"] and st["cad_links"]
     assert json.loads((proj / ".kevcad" / "zukauf-status.json").read_text())["alutec-05200"]["zustand"] == \
@@ -219,31 +216,6 @@ def test_app_neu_und_cad(env):
                              "felder": {"name": "DIN 912 M8x40", "mpn": "DIN 912 M8x40", "masse": {"d": 13, "l": 48}},
                              "ebene": "projekt"})
     assert reply["ok"] is False and "Normteil" in reply["message"]
-
-
-def test_traceparts_automatisch(env, tmp_path, monkeypatch):
-    rt, app = env["rt"], env["app"]
-    new_project(env)
-    secrets = tmp_path / "secrets.env"
-    secrets.write_text(f"TRACEPARTS_API_KEY={SCHLUESSEL}\nTRACEPARTS_TENANT_UID=11111111-2222-3333-4444-555555555555\n"
-                       "TRACEPARTS_USER_EMAIL=kevin@example.com\n", encoding="utf-8")
-    monkeypatch.setenv("KEVCAD_SECRETS_FILE", str(secrets))
-    step = step_zoll(tmp_path / "tp.step")
-    zbytes = tmp_path / "tp.zip"
-    with zipfile.ZipFile(zbytes, "w") as zf:
-        zf.write(step, "05200.stp")
-    rt.zukauf.traceparts_transport = Attrappe(warten=1, datei=zbytes.read_bytes())
-    rt.zukauf.traceparts_sleep = lambda s: None
-    res = rt.zukauf_anlegen(felder=FELDER)
-    assert res["ok"] and res["angelegt"]
-    start = app.mark()
-    found = rt.cad_suchen("alutec-05200")
-    assert found["ok"] and found["zustand"] == "importiert", found
-    assert found["powered_by"] == "powered by TraceParts" and found["item"]["cad"]["quelle"] == "traceparts"
-    assert found["item"]["cad"]["traceparts_id"] == "FAM-1" and "TraceParts" in found["item"]["cad"]["lizenz"]
-    assert found["item"]["status"] == "vorgeschlagen"
-    assert SCHLUESSEL not in json.dumps(found) and SCHLUESSEL not in json.dumps(app.since(start))
-    wait_status(app, start, "alutec-05200", "importiert")
 
 
 def test_mcp_ueber_echten_server(env):

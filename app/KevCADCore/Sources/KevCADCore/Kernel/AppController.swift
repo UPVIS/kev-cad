@@ -22,6 +22,9 @@ public final class AppController: AppActions {
     let screenshots = ScreenshotRenderer()
     /// Phase 4: Zwischenstand der Fotoansicht (AppController+Referenz.swift).
     let fotoSpeicher = FotoAbgleichSpeicher()
+    /// Phase 4: Körper der Farbkarte je Feld und Spanne (AppController+Referenz.swift), damit häufige REF_LIST nicht
+    /// jedes Mal die Bänder neu schneiden.
+    let abweichungSpeicher = AbweichungSpeicher()
     /// Phase 7: Renderer für „schnell“ (RealityKit) und die Materialien des letzten Auftrags (Render/).
     let pbr = PBRRenderer()
     var letzteRenderMaterialien: [RenderPBR] = []
@@ -113,6 +116,7 @@ public final class AppController: AppActions {
         // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
         setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
+        viewport.onClickPunkt = { [weak self] pick, punkt, _ in self?.massstabKlick(pick, punkt) ?? false }  // Phase 4
         installNavigation()
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
@@ -771,6 +775,7 @@ public final class AppController: AppActions {
         items.append(contentsOf: annotations.map(\.item))
         items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
         items.append(contentsOf: cameraOverlayItems())
+        items.append(contentsOf: massstabOverlay())  // Phase 4: Punkte des Werkzeugs „Maßstab setzen“
         return items
     }
 
