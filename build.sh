@@ -192,9 +192,11 @@ echo "==> Paket $BUNDLE"
 rm -rf "$BUNDLE" && mkdir -p "$BUNDLE"
 cp -R "$APP" "$BUNDLE/"
 "$LSREGISTER" -u "$BUNDLE/$APP_NAME.app" >/dev/null 2>&1 || true
-rsync -a --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
+# Ohne leere Ordner (-m): Ein Ordner, in dem nach einem Zweigwechsel nur __pycache__ übrig ist, wäre im installierten
+# Kernel ein importierbares leeres Paket.
+rsync -a -m --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
   kernel/ "$BUNDLE/kernel/"
-rsync -a skill/ "$BUNDLE/skill/"
+rsync -a -m --exclude .DS_Store skill/ "$BUNDLE/skill/"
 printf '%s %s %s\n' "$COMMIT" "$BUILD_NUMBER" "$(date '+%Y-%m-%d %H:%M')" > "$BUNDLE/VERSION"
 
 if [ "$MODE" = "--bundle" ]; then
