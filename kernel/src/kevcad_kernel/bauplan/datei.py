@@ -50,7 +50,9 @@ def speichern(projekt: str | Path, plan: dict[str, Any]) -> Path:
             return p
     except OSError:
         pass
-    fd, tmp = tempfile.mkstemp(prefix=".bauplan-", suffix=".json", dir=str(p.parent))
+    # Endung .tmp: die Versionen schließen Zwischendateien aus (versionen/git.py), eine .json risse ein Git-Aufruf
+    # während des Schreibens mit
+    fd, tmp = tempfile.mkstemp(prefix=".bauplan-", suffix=".json.tmp", dir=str(p.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(daten)

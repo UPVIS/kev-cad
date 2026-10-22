@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kevcad_kernel.versionen.dokumente import ist_dokument, vergleiche_dokumente
 from kevcad_kernel.versionen.git import HAUPT, GitFehler, GitRepo, git_verfuegbar
 from kevcad_kernel.versionen.titel import REGEL as TITEL_REGEL
 from kevcad_kernel.versionen.titel import auto_titel, dateien_titel
@@ -51,6 +52,8 @@ QUELLE_TEXT = {"lauf": "Lauf", "wiederherstellen": "Wiederhergestellt", "sicheru
 _TRAILER = re.compile(r"^Kevcad-([A-Za-z]+):\s?(.*)$")
 UEBERNOMMEN = "Übernommener Stand"
 MAX_TEXT_BYTES = 2_000_000  # größere Dateien vergleicht der Titel nur nach Namen
+DOKUMENTE = "dokumente"  # Blätter und Bauplan (DOKUMENTE.md): im Vergleich eine eigene Gruppe, nicht Code
+OHNE_DOKUMENTE = (".", f":(exclude){DOKUMENTE}")
 
 
 class VersionsFehler(ValueError):
@@ -360,19 +363,67 @@ class Versionsarchiv:
             return [p for p in self.git.text("ls-files").splitlines() if p]
         return [p for p in self.git.text("diff", "--cached", "--name-only", "--no-renames", "HEAD").splitlines() if p]
 
-    def nach_lauf(self, *, wer: str, sitzung: str | None = None, lauf: int | None = None) -> tuple[Version | None, bool]:
+    def nach_lauf(self, *, wer: str, sitzung: str | None = None, lauf: int | None = None,
+                  nachtrag: tuple[int, str] | None = None) -> tuple[Version | None, bool]:
         """Nach einem erfolgreichen Lauf: Änderung → neue Version; sonst gilt der Lauf für die aktuelle Version.
-        Rückgabe: (Version, neu)."""
+        ``nachtrag`` (Nummer, Commit): Version, die die Hintergrundrechnung ihres Laufs noch aufnimmt; betrifft die
+        Änderung nur ``dokumente/`` und ist diese Version noch die Spitze, entsteht keine neue (die Blätter und der
+        Bauplan werden in sie nachgetragen, ``dokumente_nachtragen``). Rückgabe: (Version, neu)."""
         if not self.verfuegbar:
             return None, False
         with self.lock:
             if self._vormerken():
                 dateien = self._geaenderte_dateien()
+                if nachtrag is not None and dateien and all(ist_dokument(p) for p in dateien) \
+                        and self.nachtrag_moeglich(*nachtrag) is not None:
+                    return self.aktuelle(), False
                 titel = "Erster Stand" if self.git.head() is None else dateien_titel(dateien)
                 v = self._neue_version(titel, wer=wer, sitzung=sitzung, quelle="lauf", lauf=lauf)
                 v.dateien = dateien
                 return v, True
             return self.aktuelle(), False
+
+    # =================================================================================================================
+    # Nachtragen der Hintergrundrechnung (Blätter, Bauplan)
+    # =================================================================================================================
+
+    def nachtrag_moeglich(self, nr: int, commit: str) -> Version | None:
+        """Die Version, wenn sie noch Ergebnisse der Hintergrundrechnung aufnehmen darf: Spitze des aktuellen Zweigs,
+        kein Meilenstein, kein anderer Zweig enthält sie (sonst änderte das Nachtragen eine fremde Geschichte)."""
+        with self.lock:
+            v = self.aktuelle()
+            if v is None or v.nr != nr or v.commit != commit or self.git.head() != commit:
+                return None
+            if (self.meta.get("versionen", {}).get(str(nr), {}) or {}).get("meilenstein"):
+                return None
+            zweig = self.git.zweig()
+            if any(z != zweig for z in self.git.enthaltende_zweige(commit)):
+                return None
+            return v
+
+    def dokumente_nachtragen(self, nr: int, commit: str) -> Version | None:
+        """Änderungen der Arbeitskopie in ``dokumente/`` in Version ``nr`` nachtragen (Hintergrundrechnung des Laufs,
+        der sie angelegt hat): neuer Commit mit dem Baum der Version plus ``dokumente/``, gleiche Eltern, Nachricht und
+        Zeiten, der Zweig zeigt danach darauf. Nummer, Titel, Bild und Metadaten bleiben (sie hängen an der Nummer).
+        Andere Änderungen (model.py …) bleiben für den nächsten Lauf liegen. Rückgabe: die Version mit dem neuen
+        Commit oder None (nichts nachzutragen oder nicht mehr erlaubt)."""
+        if not self.verfuegbar:
+            return None
+        with self.lock:
+            v = self.nachtrag_moeglich(nr, commit)
+            if v is None:
+                return None
+            baum = self.git.baum_mit(commit, DOKUMENTE)
+            if baum == self.git.baum(commit):
+                return None
+            autor_ts, commit_ts = self.git.zeiten(commit)
+            neu = self.git.commit_baum(baum, v.eltern, self.git.nachricht(commit), autor_ts, commit_ts)
+            self.git.setze_zweig(self.git.zweig(), neu)
+            self.git.vormerken(DOKUMENTE)
+            self._liste_cache.clear()
+            dateien = [d["pfad"] for d in self.git.diff_zahlen(commit, neu)]
+            self._log(f"[versionen] V{nr}: {len(dateien)} Dateien der Hintergrundrechnung nachgetragen")
+            return self.version_von_commit(neu) or v
 
     def sichern(self, *, wer: str, sitzung: str | None, titel: str, quelle: str = "sicherung") -> Version | None:
         """Ungesicherte Änderungen als eigene Version festhalten (vor Wiederherstellen, Variantenwechsel)."""
@@ -575,10 +626,14 @@ class Versionsarchiv:
         except UnicodeDecodeError:
             return None
 
-    def aenderungen(self, a: Version, b: Version) -> list[dict[str, Any]]:
-        """Geänderte Dateien von ``a`` nach ``b`` mit altem und neuem Inhalt (Text; None = fehlt, binär, zu groß)."""
+    def aenderungen(self, a: Version, b: Version | None, *, pfade: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+        """Geänderte Dateien von ``a`` nach ``b`` (None = aktueller Stand der Arbeitskopie) mit altem und neuem Inhalt
+        (Text; None = fehlt, binär, zu groß). ``pfade``: nur diese Pfadangaben."""
         with self.lock:
-            zahlen = self.git.diff_zahlen(a.commit, b.commit)
+            if b is None:
+                self._vormerken()
+            zahlen = self.git.diff_zahlen(a.commit, b.commit if b else None, pfade=pfade)
+            neu_ref = b.commit if b else ""  # "" + ":pfad" = vorgemerkter Stand
             out = []
             for d in zahlen:
                 e: dict[str, Any] = {"pfad": d["pfad"], "status": d["status"], "alt": None, "neu": None,
@@ -587,7 +642,7 @@ class Versionsarchiv:
                     if d["status"] != "A":
                         e["alt"] = self._text(a.commit, d["pfad"])
                     if d["status"] != "D":
-                        e["neu"] = self._text(b.commit, d["pfad"])
+                        e["neu"] = self._text(neu_ref, d["pfad"])
                     if (d["status"] != "A" and e["alt"] is None) or (d["status"] != "D" and e["neu"] is None):
                         e["binaer"] = True
                 out.append(e)
@@ -733,17 +788,23 @@ class Versionsarchiv:
     # =================================================================================================================
 
     def code_diff(self, a: Version, b: Version | None, *, max_zeilen: int = 4000) -> dict[str, Any]:
-        """Unterschied der Dateien von ``a`` nach ``b`` (None = aktueller Stand der Arbeitskopie)."""
+        """Unterschied der Dateien von ``a`` nach ``b`` (None = aktueller Stand der Arbeitskopie), ohne
+        ``dokumente/`` (die nennt der Vergleich als eigene Gruppe, ``dokumente_vergleich``)."""
         with self.lock:
             if b is None:
                 self._vormerken()
-            dateien = self.git.diff_zahlen(a.commit, b.commit if b else None)
-            text = self.git.diff_text(a.commit, b.commit if b else None)
+            dateien = self.git.diff_zahlen(a.commit, b.commit if b else None, pfade=OHNE_DOKUMENTE)
+            text = self.git.diff_text(a.commit, b.commit if b else None, pfade=OHNE_DOKUMENTE)
         zeilen = text.splitlines()
         gekuerzt = len(zeilen) > max_zeilen
         if gekuerzt:
             text = "\n".join(zeilen[:max_zeilen]) + "\n"
         return {"dateien": dateien, "diff": text, "gekuerzt": gekuerzt, "zeilen": len(zeilen)}
+
+    def dokumente_vergleich(self, a: Version, b: Version | None) -> list[dict[str, Any]]:
+        """Inhaltliche Änderungen an Blättern, Bauplan und übrigen Dateien in ``dokumente/`` von ``a`` nach ``b``
+        (None = aktueller Stand), siehe dokumente.py."""
+        return vergleiche_dokumente(self.aenderungen(a, b, pfade=(DOKUMENTE,)))
 
     def materialisiere(self, v: Version, ziel: Path) -> Path:
         """Dateien einer Version in einen eigenen Ordner auspacken (für den Lauf ohne Live-Aufbau)."""

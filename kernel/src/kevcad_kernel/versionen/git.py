@@ -301,6 +301,39 @@ class GitRepo:
         env = {"GIT_AUTHOR_DATE": f"@{autor_ts} +0000", "GIT_COMMITTER_DATE": f"@{commit_ts} +0000"}
         return self.text(*args, input=nachricht, env=env).strip()
 
+    def nachricht(self, ref: str) -> str:
+        """Commit-Nachricht unverändert (für ``commit_baum``; ``%B`` hängte eine Leerzeile an)."""
+        roh = self.text("cat-file", "commit", ref)
+        return roh.split("\n\n", 1)[1] if "\n\n" in roh else ""
+
+    def zeiten(self, ref: str) -> tuple[int, int]:
+        """(Autorzeit, Commitzeit) in Sekunden."""
+        teile = self.text("show", "-s", "--format=%at %ct", ref).split()
+        return int(teile[0]), int(teile[1])
+
+    def baum_mit(self, ref: str, pfad: str) -> str:
+        """Baum von ``ref``, in dem der Ordner ``pfad`` dem Stand der Arbeitskopie entspricht; alles andere bleibt wie
+        in ``ref``. Läuft über einen eigenen Index, der echte Index bleibt unberührt."""
+        vorhanden = (self.projekt / pfad).exists() or bool(self.text("ls-tree", "--name-only", ref, pfad).strip())
+        if not vorhanden:
+            return self.baum(ref)
+        index = self.git_dir / f"index-nachtrag-{os.getpid()}-{threading.get_ident()}"
+        env = {"GIT_INDEX_FILE": str(index)}
+        try:
+            self.run("read-tree", ref, env=env)
+            self.run("add", "-A", "--", pfad, env=env)
+            return self.text("write-tree", env=env).strip()
+        finally:
+            try:
+                index.unlink()
+            except OSError:
+                pass
+
+    def vormerken(self, pfad: str) -> None:
+        """Nur ``pfad`` im echten Index auf den Stand der Arbeitskopie bringen."""
+        if (self.projekt / pfad).exists() or self.text("ls-files", "--", pfad).strip():
+            self.run("add", "-A", "--", pfad)
+
     def fast_import(self, strom: bytes) -> None:
         self.run("fast-import", "--quiet", "--done", input=strom, timeout=600)
 
@@ -310,17 +343,21 @@ class GitRepo:
         liste = "\n".join(str(p) for p in pfade) + "\n"
         return self.text("hash-object", "-w", "--no-filters", "--stdin-paths", input=liste).split()
 
-    def diff_text(self, a: str, b: str | None, *, kontext: int = 3) -> str:
-        """Unterschied von ``a`` zu ``b`` (None = vorgemerkter Stand der Arbeitskopie)."""
+    def diff_text(self, a: str, b: str | None, *, kontext: int = 3, pfade: Iterable[str] = ()) -> str:
+        """Unterschied von ``a`` zu ``b`` (None = vorgemerkter Stand der Arbeitskopie); ``pfade``: Pfadangaben
+        (auch ``:(exclude)…``)."""
         args = ["diff", "--no-color", "--no-ext-diff", f"-U{kontext}", "--no-renames"]
         args += [a, b] if b else ["--cached", a]
-        return self.text(*args)
+        pfade = list(pfade)
+        return self.text(*args, *(["--", *pfade] if pfade else []))
 
-    def diff_zahlen(self, a: str, b: str | None) -> list[dict]:
+    def diff_zahlen(self, a: str, b: str | None, *, pfade: Iterable[str] = ()) -> list[dict]:
+        pfade = list(pfade)
+        nach = ["--", *pfade] if pfade else []
         args = ["diff", "--numstat", "--no-renames", "-z"]
         args += [a, b] if b else ["--cached", a]
-        out = self.run(*args).stdout.decode("utf-8", "replace")
-        status_args = ["diff", "--name-status", "--no-renames", "-z"] + ([a, b] if b else ["--cached", a])
+        out = self.run(*args, *nach).stdout.decode("utf-8", "replace")
+        status_args = ["diff", "--name-status", "--no-renames", "-z"] + ([a, b] if b else ["--cached", a]) + nach
         st = self.run(*status_args).stdout.decode("utf-8", "replace").split("\0")
         status = {st[i + 1]: st[i] for i in range(0, len(st) - 1, 2) if st[i]}
         res = []

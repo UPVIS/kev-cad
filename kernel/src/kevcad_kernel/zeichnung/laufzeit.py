@@ -35,6 +35,10 @@ class ZeichnungRuntimeMixin:
         self._z_cache: dict[str, Any] = {}  # Blatt-id → Ergebnis (zeichner.Ergebnis) des letzten Rechnens
         self._z_docs: dict[str, Any] | None = None
         self._z_stand_run = 0
+        self._z_cache_version: dict[str, str | None] = {}  # Blatt-id → Version im Schriftfeld des Ergebnisses
+        self._z_cache_eingang: dict[str, Any] = {}  # Blatt-id → Datei, aus der das Ergebnis gerechnet wurde
+        self._z_ausgelassen = 0  # Blätter, die eine überholte Hintergrundrechnung nicht gespeichert hat
+        self._z_regler_lauf: int | None = None  # letzter Lauf mit überschriebenen Parametern (Szene ≠ Dateien)
 
     def _zeichnung_schliessen(self) -> None:
         from kevcad_kernel.zeichnung.projektion import EXAKT
@@ -44,7 +48,22 @@ class ZeichnungRuntimeMixin:
     def _zeichnung_projekt(self) -> None:
         with self._z_lock:
             self._z_cache.clear()
+            self._z_cache_version.clear()
+            self._z_cache_eingang.clear()
             self._z_docs = None
+
+    def _z_szene_ist_dateistand(self) -> bool:
+        """Zeigt die Szene den Stand der Dateien? Nicht nach einem Lauf mit überschriebenen Parametern (Regler,
+        ``run(params=…)``): Blätter dazu werden gerechnet und gezeigt, aber nicht gespeichert (die Versionen erfassen
+        ``dokumente/``, und die Bezüge sollen zum Stand von model.py passen)."""
+        with self._lock:
+            return self._z_regler_lauf is None or self._z_regler_lauf != self._run_no
+
+    def _z_bearbeitet(self) -> None:
+        """Kevin oder der Agent ändert Blätter: den Versionen melden (eigene Version beim nächsten Lauf)."""
+        hook = getattr(self, "_versionen_dokumente_bearbeitet", None)
+        if callable(hook):
+            hook()
 
     def _z_ordner(self) -> Path | None:
         proj = getattr(self, "_project", None)
@@ -76,15 +95,17 @@ class ZeichnungRuntimeMixin:
         return Szene(teile, bom, info, run)
 
     def _z_version(self, run: int) -> str | None:
-        """Version bzw. Meilenstein für das Schriftfeld: vom Versions-Strang, falls vorhanden, sonst Zahl der
-        gespeicherten Stände des Projekts."""
+        """Version für das Schriftfeld (nur zur Darstellung, nie gespeichert): die Version, zu der Lauf ``run`` gehört,
+        vom Versions-Strang (``versionen_info``), mit Meilenstein „V12 „Prototyp““ und in einer Variante „V12 (Flacher
+        Rand)“; ohne Versionen die Zahl der gespeicherten Stände des Projekts."""
         hook = getattr(self, "versionen_info", None)
         if callable(hook):
             try:
-                info = hook() or {}
-                text = info.get("meilenstein") or info.get("version")
+                info = hook(run) or {}
+                text = info.get("version")
                 if text:
-                    return str(text)
+                    ms = info.get("meilenstein")
+                    return f"{text} „{ms}“" if ms else str(text)
             except Exception:  # noqa: BLE001
                 pass
         proj = self._project
@@ -98,27 +119,36 @@ class ZeichnungRuntimeMixin:
 
     # -- Rechnen -------------------------------------------------------------------------------------------------------
 
-    def _z_rechne(self, blatt: dict[str, Any], szene: Any, speichern: bool = True) -> Any:
+    def _z_rechne(self, blatt: dict[str, Any], szene: Any, speichern: bool = True, lauf: int | None = None) -> Any:
+        """Blatt rechnen und speichern. ``lauf``: Hintergrundrechnung dieses Laufs; sie speichert nur, solange er der
+        neueste ist (``_lauf_aktuell`` der Versionen), sonst gehörte das Blatt zu einem überholten Stand (gezählt in
+        ``_z_ausgelassen``)."""
         from kevcad_kernel.zeichnung.hausregeln import laden
         from kevcad_kernel.zeichnung.zeichner import rechne
 
         proj = self._project
+        ordner = self._z_ordner()
         regeln, fehler = laden(proj.path if proj is not None else None)
         with self._occ_lock:
             erg = rechne(blatt, szene, regeln=regeln)
         if fehler:
             erg.hinweise.append(fehler)
-        ordner = self._z_ordner()
-        if speichern and ordner is not None:
+        aktuell = getattr(self, "_lauf_aktuell", None)
+        darf = not callable(aktuell) or lauf is None or aktuell(lauf)
+        if speichern and ordner is not None and darf and ordner == self._z_ordner():
             try:
                 dok.speichere(ordner / f"{erg.blatt['id']}.json", erg.blatt)
             except OSError as exc:
                 self._log(f"[zeichnung] Blatt {erg.blatt['id']} nicht gespeichert: {exc}")
+        elif speichern and not darf:
+            self._z_ausgelassen += 1
         with self._z_lock:
             self._z_cache[erg.blatt["id"]] = erg
+            self._z_cache_version[erg.blatt["id"]] = (szene.projekt or {}).get("version")
+            self._z_cache_eingang[erg.blatt["id"]] = dok.zum_speichern(blatt)
         return erg
 
-    def _z_alle_rechnen(self) -> list[tuple[Path, Any, str | None]]:
+    def _z_alle_rechnen(self, speichern: bool = True, lauf: int | None = None) -> list[tuple[Path, Any, str | None]]:
         ordner = self._z_ordner()
         if ordner is None:
             return []
@@ -131,7 +161,7 @@ class ZeichnungRuntimeMixin:
             if szene is None:
                 szene = self._z_szene()
             try:
-                out.append((pfad, self._z_rechne(blatt, szene), None))
+                out.append((pfad, self._z_rechne(blatt, szene, speichern=speichern, lauf=lauf), None))
             except Exception as exc:  # noqa: BLE001 - ein kaputtes Blatt darf die anderen nicht aufhalten
                 import traceback
 
@@ -162,25 +192,33 @@ class ZeichnungRuntimeMixin:
                 bauplan = None
         return {"type": "DOCS", "run": run, "blaetter": blaetter, "bauplan": bauplan}
 
-    def _zeichnung_nach_lauf(self, run: int) -> None:
-        """Nach RUN_END: im Hintergrund alle Blätter neu rechnen und DOCS schicken."""
+    def _zeichnung_nach_lauf(self, run: int, speichern: bool = True) -> Any:
+        """Nach RUN_END: im Hintergrund alle Blätter neu rechnen und DOCS schicken. ``speichern`` False (Lauf mit
+        überschriebenen Parametern): nur rechnen und zeigen, die Dateien bleiben beim Stand von model.py. Rückgabe:
+        Future (Ergebnis True, wenn alles gespeichert ist, was zu speichern war) oder None ohne Blätter."""
+        with self._lock:
+            self._z_regler_lauf = None if speichern else run
         ordner = self._z_ordner()
         if ordner is None or not ordner.is_dir() or not any(ordner.glob("*.json")):
-            return
-        self._pool.submit(self._z_nach_lauf_job, run)
+            return None
+        return self._pool.submit(self._z_nach_lauf_job, run, speichern)
 
-    def _z_nach_lauf_job(self, run: int) -> None:
+    def _z_nach_lauf_job(self, run: int, speichern: bool = True) -> bool:
         try:
             t0 = time.perf_counter()
             with self._z_lock:
-                ergebnisse = self._z_alle_rechnen()
+                self._z_ausgelassen = 0
+                ergebnisse = self._z_alle_rechnen(speichern=speichern, lauf=run)
+                vollstaendig = speichern and self._z_ausgelassen == 0
                 docs = self._z_docs_bauen(ergebnisse, run)
                 self._z_docs = docs
             self._send_app(docs)
             self._log(f"[zeichnung] {len(ergebnisse)} Blätter nach Lauf {run} in "
-                      f"{(time.perf_counter() - t0) * 1000:.0f} ms")
+                      f"{(time.perf_counter() - t0) * 1000:.0f} ms" + ("" if speichern else " (nicht gespeichert)"))
+            return vollstaendig
         except Exception as exc:  # noqa: BLE001
             self._log(f"[zeichnung] nach Lauf {run}: {exc!r}")
+            return True
 
     def _zeichnung_on_connect(self, conn: Any) -> None:
         with self._z_lock:
@@ -225,7 +263,7 @@ class ZeichnungRuntimeMixin:
 
     def _z_app_docs(self, header: dict[str, Any]) -> None:
         with self._z_lock:
-            ergebnisse = self._z_alle_rechnen()
+            ergebnisse = self._z_alle_rechnen(speichern=self._z_szene_ist_dateistand())
             docs = self._z_docs_bauen(ergebnisse, self._run_no)
             self._z_docs = docs
         self._send_app({**docs, "reply_to": header.get("id")})
@@ -267,10 +305,14 @@ class ZeichnungRuntimeMixin:
             return {"ok": False, "error": str(exc)}
         with self._z_lock:
             erg = self._z_cache.get(blatt_id)
-            if erg is None or erg.kopf.get("run") != self._run_no or dok.zum_speichern(erg.blatt) != \
-                    dok.zum_speichern(blatt):
+            datei = dok.zum_speichern(blatt)
+            # neu rechnen, wenn ein neuer Lauf kam, die Datei nicht mehr dazu passt (weder Ergebnis noch Eingang des
+            # Ergebnisses, z. B. von außen bearbeitet) oder sich die Version im Schriftfeld geändert hat (Meilenstein)
+            if erg is None or erg.kopf.get("run") != self._run_no or datei not in (
+                    dok.zum_speichern(erg.blatt), self._z_cache_eingang.get(blatt_id)) \
+                    or self._z_cache_version.get(blatt_id) != self._z_version(self._run_no):
                 try:
-                    erg = self._z_rechne(blatt, self._z_szene())
+                    erg = self._z_rechne(blatt, self._z_szene(), speichern=self._z_szene_ist_dateistand())
                 except Exception as exc:  # noqa: BLE001
                     import traceback
 
@@ -291,6 +333,7 @@ class ZeichnungRuntimeMixin:
         szene = self._z_szene()
         if not szene.teile:
             return {"ok": False, "error": "Keine Teile: erst run aufrufen."}
+        self._z_bearbeitet()
         plaene: list[tuple[str, str, str, list[str]]] = []  # (id, titel, art, teile)
         if teile:
             unbekannt = [t for t in teile if not szene.auswahl([t])]
@@ -353,6 +396,7 @@ class ZeichnungRuntimeMixin:
         if not res.get("ok"):
             return res
         erg = res["ergebnis"]
+        self._z_bearbeitet()
         with self._z_lock:
             blatt, ergebnisse = anwenden(erg.blatt, ops, von, erg)
             try:

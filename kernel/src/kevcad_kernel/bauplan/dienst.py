@@ -35,6 +35,12 @@ class BauplanDienst:
             self._bp_stand = st
         return st
 
+    def _bp_bearbeitet(self) -> None:
+        """Kevin oder der Agent ändert den Bauplan: den Versionen melden (eigene Version beim nächsten Lauf)."""
+        hook = getattr(self, "_versionen_dokumente_bearbeitet", None)
+        if callable(hook):
+            hook()
+
     def _bp_run(self) -> int | None:
         bom = getattr(self, "_bom", None)
         return int(bom["run"]) if isinstance(bom, dict) and bom.get("run") else None
@@ -58,7 +64,11 @@ class BauplanDienst:
                       check=check, katalog=self.catalog, titel=proj.name, run=run,  # type: ignore[attr-defined]
                       projekt=proj.path, umfang=umfang if umfang is not None else (alt or {}).get("umfang")), alt
 
-    def _bp_erzeugen(self, erzwingen: bool = False):
+    def _bp_erzeugen(self, erzwingen: bool = False, speichern: bool = True, lauf: int | None = None):
+        """Bauplan des letzten Laufs (aus dem Zwischenstand oder neu). ``speichern`` False (Hintergrund eines Laufs mit
+        überschriebenen Parametern): rechnen und merken, aber die Datei bleibt beim Stand von model.py. ``lauf``:
+        Hintergrundrechnung dieses Laufs; sie speichert und merkt nur, solange er der neueste ist (``_lauf_aktuell``
+        der Versionen)."""
         from kevcad_kernel.bauplan.plan import erzeuge
 
         st = self._bp()
@@ -73,8 +83,15 @@ class BauplanDienst:
             erg = erzeuge(ein, alt)
             if self._bp_run() != run:  # ein neuerer Lauf kam dazwischen: nicht speichern
                 return erg
-            datei.speichern(proj.path, erg.plan)
-            st.update(erg=erg, run=run, pfad=str(proj.path), docs=datei.zusammenfassung(erg.plan))
+            aktuell = getattr(self, "_lauf_aktuell", None)
+            if lauf is not None and callable(aktuell) and not aktuell(lauf):
+                return erg  # überholt (neuer Lauf begonnen, Dateien ersetzt): weder speichern noch merken
+            if proj is not self._project:  # type: ignore[attr-defined]
+                return erg
+            if speichern:
+                datei.speichern(proj.path, erg.plan)
+            st.update(erg=erg, run=run, pfad=str(proj.path), docs=datei.zusammenfassung(erg.plan),
+                      nur_anzeige=not speichern)
             return erg
 
     def _bp_speichern(self, erg: Any) -> None:
@@ -89,6 +106,9 @@ class BauplanDienst:
     def bauplan(self, neu: bool = False) -> dict[str, Any]:
         """Bauplan des letzten Laufs (erzeugt ihn bei Bedarf, ``neu``: auf jeden Fall neu rechnen; Feste und Texte von
         Agent und Kevin bleiben). {"ok", "datei", "bauplan", "zusammenfassung", "zeiten"}"""
+        proj = self._project  # type: ignore[attr-defined]
+        if neu or (proj is not None and not datei.pfad(proj.path).exists()):
+            self._bp_bearbeitet()  # neu angelegt oder ausdrücklich neu gerechnet: eine eigene Änderung
         try:
             erg = self._bp_erzeugen(erzwingen=neu)
         except RuntimeError as exc:
@@ -108,6 +128,7 @@ class BauplanDienst:
         from kevcad_kernel.bauplan.plan import bilder_setzen, erzeuge, pruefe
 
         st = self._bp()
+        self._bp_bearbeitet()
         with st["lock"]:
             try:
                 erg = self._bp_erzeugen()
@@ -144,7 +165,10 @@ class BauplanDienst:
                 return {"ok": False, "error": f"Schritt {schritt!r} gibt es nicht"}
             t0 = time.perf_counter()
             befunde = pruefe(erg, schritt)
-            self._bp_speichern(erg)
+            if st.get("nur_anzeige"):  # Bauplan eines Laufs mit überschriebenen Parametern: Datei bleibt
+                st["docs"] = datei.zusammenfassung(erg.plan)
+            else:
+                self._bp_speichern(erg)
         self._bp_senden(None)
         return {"ok": True, "befunde": befunde, "zusammenfassung": datei.zusammenfassung(erg.plan),
                 "ms": round((time.perf_counter() - t0) * 1000, 1), "schritt": schritt}
@@ -237,28 +261,31 @@ class BauplanDienst:
         except Exception as exc:  # noqa: BLE001
             self._send_app({"type": "ERROR", "reply_to": rid, "message": f"{type(exc).__name__}: {exc}"})  # type: ignore
 
-    def _bauplan_nach_lauf(self, run: int, result: dict[str, Any]) -> None:
-        """Nach einem erfolgreichen Lauf: vorhandenen Bauplan im Hintergrund neu rechnen und DOCS melden."""
+    def _bauplan_nach_lauf(self, run: int, result: dict[str, Any], speichern: bool = True) -> Any:
+        """Nach einem erfolgreichen Lauf: vorhandenen Bauplan im Hintergrund neu rechnen und DOCS melden.
+        ``speichern`` False: Lauf mit überschriebenen Parametern, die Datei bleibt beim Stand von model.py. Rückgabe:
+        Future (Ergebnis False, wenn ein neuerer Lauf das Speichern verhindert hat) oder None ohne Bauplan."""
         proj = self._project  # type: ignore[attr-defined]
         if proj is None or not result.get("ok"):
-            return
+            return None
         if not datei.pfad(proj.path).exists():
             st = self._bp()
             if st.get("docs") is not None:  # nur melden, wenn der Bauplan verschwunden ist; sonst bleibt alles still
                 st["docs"] = None
                 self._bp_docs_senden()
-            return
+            return None
 
-        def arbeit() -> None:
+        def arbeit() -> bool:
             try:
-                self._bp_erzeugen()
+                erg = self._bp_erzeugen(speichern=speichern, lauf=run)
             except Exception as exc:  # noqa: BLE001 - im Hintergrund nur protokollieren
                 self._log(f"[kernel] Bauplan nicht erneuert: {type(exc).__name__}: {exc}")  # type: ignore
-                return
+                return True
             if self._bp_run() == run:
                 self._bp_docs_senden()
+            return self._bp()["erg"] is erg  # gemerkt heißt gespeichert (oder schon vorher für diesen Lauf)
 
-        self._pool.submit(arbeit)  # type: ignore[attr-defined]
+        return self._pool.submit(arbeit)  # type: ignore[attr-defined]
 
     def _bauplan_on_connect(self, conn: Any) -> None:
         if getattr(self, "_z_docs", None) is not None:

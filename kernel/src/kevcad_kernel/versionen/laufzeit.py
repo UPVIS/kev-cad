@@ -5,7 +5,9 @@ Nutzt die Bausteine der Laufzeit (``_project``, ``scene``, ``_bom``, ``_pruef``,
 
 - ``_versionen_init()`` im Konstruktor,
 - ``_versionen_projekt(proj, same)`` beim Öffnen eines Projekts (legt das Repo an, übernimmt alte Stände),
-- ``_versionen_nach_lauf(job, result)`` nach jedem erfolgreichen Lauf (statt ``save_version``),
+- ``_versionen_nach_lauf(job, result)`` nach jedem erfolgreichen Lauf (statt ``save_version``), vor der
+  Hintergrundrechnung der Dokumente,
+- ``_versionen_dokumente_nach_lauf(job, hintergrund)`` mit den Futures der Hintergrundrechnung (Blätter, Bauplan),
 - ``_versionen_pruefung(check)`` bei jedem fertigen CHECK,
 - ``_versionen_app_message(kind, header)`` für die App-Nachrichten dieses Abschnitts,
 - ``_versionen_on_connect(conn)`` beim Verbinden der App,
@@ -17,6 +19,23 @@ Stände zieht ``_titel_nachziehen`` beim Öffnen und nach jeder Nachberechnung n
 
 Läufe, Wiederherstellen, Variantenwechsel und Meilensteine laufen über die Auftragsschlange der Laufzeit; so ändert
 nichts die Dateien, während ein Lauf rechnet.
+
+Dokumente (Phase 6, DOKUMENTE.md): Blätter und Bauplan liegen in ``dokumente/`` und gehören zu den Versionen. Nach
+jedem Lauf rechnen sie im Hintergrund neu (Bezüge neu zuordnen, automatische Maße). Was dabei geschrieben wird, gehört
+zu der Version, die der Lauf angelegt hat:
+
+- Legt Lauf N eine Version an (oder das Wiederherstellen unmittelbar davor), darf sie die Ergebnisse der
+  Hintergrundrechnung noch aufnehmen (``_ver_nachtrag``). Ist die Rechnung fertig, trägt ``dokumente_nachtragen`` die
+  Änderungen in ``dokumente/`` in diese Version nach (neuer Commit, gleiche Nummer, Titel und Bild), wenn sie noch die
+  Spitze ist, keinen Meilenstein trägt und kein anderer Zweig sie enthält.
+- Beginnt vorher ein neuer Lauf, speichert die alte Rechnung nicht weiter (``_lauf_aktuell``); ein Lauf ohne Änderung
+  und ohne überschriebene Parameter übernimmt dann das Nachtragen. Ändert sich bis dahin nur ``dokumente/``, legt ein
+  Lauf keine eigene Version dafür an.
+- Läufe mit überschriebenen Parametern (Regler, ``run(params=…)``) zeigen nicht den Stand der Dateien: ihre
+  Hintergrundrechnung speichert nichts.
+- Ändern Kevin oder der Agent ein Blatt oder den Bauplan selbst (``_versionen_dokumente_bearbeitet``), ist das eine
+  eigene Änderung: Sie wird mit dem nächsten Lauf eine eigene Version.
+- ``versionen_info(run)`` liefert dem Schriftfeld die Nummer der Version des Laufs (mit Variante und Meilenstein).
 """
 
 from __future__ import annotations
@@ -73,6 +92,10 @@ class VersionenRuntimeMixin:
         self._ver_generation = 0
         self._ver_rechner = None  # HintergrundRechner für die Nachberechnung (eigener Prozess, bei Bedarf)
         self._ver_letzte: tuple[int, dict[str, Any]] | None = None  # Daten der zuletzt gerechneten Version (Titel)
+        # Version, die die Hintergrundrechnung ihres Laufs noch aufnimmt: {"nr", "commit", "lauf"} (Modulbeschreibung)
+        self._ver_nachtrag: dict[str, Any] | None = None
+        self._ver_nt_lock = threading.Lock()
+        self._ver_dok_sperre = 0  # Hintergrundrechnungen bis zu diesem Lauf speichern nicht mehr (Dateien ersetzt)
 
     def _versionen_schliessen(self) -> None:
         """Beim Beenden der Laufzeit: Hintergrund-Rechenprozess beenden."""
@@ -105,6 +128,7 @@ class VersionenRuntimeMixin:
         if same and self._archiv is not None and self._archiv.projekt == proj.path:
             return
         self._ver_generation += 1
+        self._dokumente_ersetzt()
         archiv = Versionsarchiv(proj.path, log=self._log)
         self._archiv = archiv
         self._ver_speicher = Zwischenspeicher(archiv.ordner)
@@ -185,12 +209,16 @@ class VersionenRuntimeMixin:
             return  # model.py ist schon weiter; der nächste Lauf legt die Version an
         wer, sitzung = self._versionen_wer(job)
         t0 = time.perf_counter()
+        with self._ver_nt_lock:
+            nt = self._ver_nachtrag
+            nachtrag = (int(nt["nr"]), str(nt["commit"])) if nt else None
         try:
-            v, neu = archiv.nach_lauf(wer=wer, sitzung=sitzung, lauf=job.run)
+            v, neu = archiv.nach_lauf(wer=wer, sitzung=sitzung, lauf=job.run, nachtrag=nachtrag)
         except (GitFehler, OSError) as exc:
             result.setdefault("warnings", []).append(f"Version nicht angelegt: {exc}")
             self._log(f"[versionen] Version nicht angelegt: {exc}")
             return
+        self._nachtrag_merken(job, v, neu)
         if v is None:
             return
         ms = (time.perf_counter() - t0) * 1000
@@ -281,6 +309,128 @@ class VersionenRuntimeMixin:
         except Exception as exc:  # noqa: BLE001
             self._log(f"[versionen] Prüfstand V{nr}: {exc!r}")
         self._pool.submit(self._versionen_senden)
+
+    # =================================================================================================================
+    # Dokumente: Hintergrundrechnung in die Version des Laufs nachtragen (Modulbeschreibung)
+    # =================================================================================================================
+
+    def _nachtrag_merken(self, job: Any, v: Version | None, neu: bool) -> None:
+        """Nach der Entscheidung über die Version: wer die Ergebnisse der Hintergrundrechnung aufnimmt."""
+        with self._ver_nt_lock:
+            nt = self._ver_nachtrag
+            if v is None:
+                self._ver_nachtrag = None
+            elif neu:
+                self._ver_nachtrag = None if job.params else {"nr": v.nr, "commit": v.commit, "lauf": job.run}
+            elif nt is not None and nt.get("commit") == v.commit:
+                if not job.params:  # gleicher Stand: die Rechnung dieses Laufs ersetzt die ältere
+                    nt["lauf"] = job.run
+            else:
+                self._ver_nachtrag = None
+
+    def _lauf_aktuell(self, run: int | None) -> bool:
+        """Darf die Hintergrundrechnung von Lauf ``run`` (Blätter, Bauplan) noch speichern? Nur, solange kein neuerer
+        Lauf begonnen hat und die Dateien seitdem nicht ersetzt wurden (Wiederherstellen, Variante, anderes Projekt);
+        sonst gehörte ihr Ergebnis zu einem Stand, den es nicht mehr gibt. ``None``: immer (Aufrufe von Kevin und dem
+        Agenten)."""
+        if run is None:
+            return True
+        with self._lock:
+            return self._run_no == run and run > self._ver_dok_sperre
+
+    def _dokumente_ersetzt(self) -> None:
+        """Die Projektdateien wurden ersetzt: laufende Hintergrundrechnungen speichern nicht mehr."""
+        with self._lock:
+            self._ver_dok_sperre = self._run_no
+        with self._ver_nt_lock:
+            self._ver_nachtrag = None
+
+    def _versionen_dokumente_bearbeitet(self) -> None:
+        """Kevin oder der Agent ändert ein Blatt oder den Bauplan selbst (zeichnung/laufzeit.py, bauplan/dienst.py):
+        eine eigene Änderung, die mit dem nächsten Lauf eine eigene Version wird, nicht in die letzte wandert."""
+        with self._ver_nt_lock:
+            self._ver_nachtrag = None
+
+    def _versionen_dokumente_nach_lauf(self, job: Any, hintergrund: list[Any]) -> None:
+        """Im Auftragsfaden, gleich nach dem Start der Hintergrundrechnung von ``job`` (Futures von Blättern und
+        Bauplan; ihr Ergebnis False heißt: nicht alles gespeichert, weil ein neuerer Lauf begann). Sind alle fertig und
+        gehört ihr Ergebnis noch zur Version dieses Laufs, wird nachgetragen."""
+        archiv = self._archiv
+        with self._ver_nt_lock:
+            nt = self._ver_nachtrag
+            if job.params or nt is None or nt.get("lauf") != job.run or archiv is None:
+                return
+        offen = [f for f in hintergrund if f is not None]
+        if not offen:
+            self._nachtrag_starten(archiv, job.run, True)
+            return
+        zustand = {"rest": len(offen), "voll": True}
+        sperre = threading.Lock()
+
+        def fertig(f: Any) -> None:
+            try:
+                ok = f.cancelled() or f.result() is not False
+            except Exception:  # noqa: BLE001 - eine gescheiterte Rechnung speichert nichts mehr
+                ok = True
+            with sperre:
+                zustand["voll"] = bool(zustand["voll"] and ok)
+                zustand["rest"] -= 1
+                letzte = zustand["rest"] == 0
+            if letzte:
+                self._nachtrag_starten(archiv, job.run, bool(zustand["voll"]))
+
+        for f in offen:
+            f.add_done_callback(fertig)
+
+    def _nachtrag_starten(self, archiv: Versionsarchiv, lauf: int, voll: bool) -> None:
+        try:
+            self._pool.submit(self._versionen_nachtragen, archiv, lauf, voll)
+        except RuntimeError:  # Laufzeit wird beendet
+            pass
+
+    def _versionen_nachtragen(self, archiv: Versionsarchiv, lauf: int, voll: bool) -> None:
+        with self._ver_nt_lock:
+            nt = self._ver_nachtrag
+            if nt is None or nt.get("lauf") != lauf or archiv is not self._archiv or self._closed:
+                return
+            if not voll:
+                return  # ein neuerer Lauf begann während der Rechnung; ein Lauf gleichen Stands übernimmt
+            self._ver_nachtrag = None
+        t0 = time.perf_counter()
+        try:
+            v = archiv.dokumente_nachtragen(int(nt["nr"]), str(nt["commit"]))
+        except (GitFehler, OSError) as exc:
+            self._log(f"[versionen] Dokumente nicht nachgetragen: {exc}")
+            return
+        if v is not None:
+            self._log(f"[versionen] V{v.nr}: Blätter und Bauplan aus Lauf {lauf} nachgetragen "
+                      f"({(time.perf_counter() - t0) * 1000:.0f} ms)")
+            self._versionen_senden()
+
+    def versionen_info(self, run: int | None = None) -> dict[str, Any] | None:
+        """Für das Schriftfeld der Blätter (zeichnung/laufzeit.py): die Version, zu der Lauf ``run`` gehört (sonst die
+        aktuelle). {"version": "V12" bzw. "V12 (Flacher Rand)" in einer Variante, "nr", "variante",
+        "meilenstein": Titel oder None}; None ohne Versionen."""
+        archiv = self._archiv
+        if archiv is None or not archiv.verfuegbar or not self._ver_bereit.is_set():
+            return None
+        try:
+            liste = archiv.versionen()
+            zweig = archiv.git.zweig() if liste else HAUPT
+        except (GitFehler, OSError):
+            return None
+        if not liste:
+            return None
+        v = liste[0]
+        nr = self._ver_lauf_nr.get(run) if run is not None else None
+        if nr is not None and nr != v.nr:
+            v = next((w for w in liste if w.nr == nr), v)
+        variante = None
+        if zweig != HAUPT:
+            variante = str((archiv.meta.get("varianten", {}).get(zweig) or {}).get("name") or zweig)
+        ms = (archiv.meta.get("versionen", {}).get(str(v.nr)) or {}).get("meilenstein") or {}
+        return {"version": f"V{v.nr}" + (f" ({variante})" if variante else ""), "nr": v.nr, "variante": variante,
+                "meilenstein": str(ms.get("titel") or "").strip() or None}
 
     # =================================================================================================================
     # Titel (titel.py, PLAN-VERSIONEN.md „Titel“)
@@ -750,9 +900,17 @@ class VersionenRuntimeMixin:
 
         def aufgabe() -> dict[str, Any]:
             try:
-                return archiv.wiederherstellen(version, wer=wer, sitzung=sitzung)
+                res = archiv.wiederherstellen(version, wer=wer, sitzung=sitzung)
             except (VersionsFehler, GitFehler) as exc:
                 return {"_ausnahme": exc}
+            neu = res.get("version")
+            if not res.get("unveraendert") and neu is not None:
+                # Blätter und Bauplan der alten Version neu zuordnen: das Ergebnis der Hintergrundrechnung des
+                # folgenden Laufs gehört in die wiederhergestellte Version (keine zusätzliche Version dafür)
+                self._dokumente_ersetzt()
+                with self._ver_nt_lock:
+                    self._ver_nachtrag = {"nr": neu.nr, "commit": neu.commit, "lauf": None}
+            return res
 
         try:
             res = self._aufgabe(aufgabe)
@@ -854,12 +1012,16 @@ class VersionenRuntimeMixin:
         def aufgabe() -> Any:
             try:
                 if aktion == "anlegen":
-                    return archiv.variante_anlegen(name, von, wer=wer, sitzung=sitzung)
-                if aktion == "wechseln":
-                    return archiv.variante_wechseln(name, wer=wer, sitzung=sitzung)
-                return archiv.variante_umbenennen(name, neuer_name or "")
+                    res = archiv.variante_anlegen(name, von, wer=wer, sitzung=sitzung)
+                elif aktion == "wechseln":
+                    res = archiv.variante_wechseln(name, wer=wer, sitzung=sitzung)
+                else:
+                    return archiv.variante_umbenennen(name, neuer_name or "")
             except (VersionsFehler, GitFehler) as exc:
                 return {"_ausnahme": exc}
+            if not res.get("unveraendert"):
+                self._dokumente_ersetzt()  # andere Dateien: laufende Hintergrundrechnungen speichern nicht mehr
+            return res
 
         try:
             res = self._aufgabe(aufgabe)
@@ -912,6 +1074,11 @@ class VersionenRuntimeMixin:
             code = archiv.code_diff(va, vb)
         except GitFehler as exc:
             code = {"dateien": [], "diff": "", "gekuerzt": False, "fehler": str(exc)}
+        try:  # Blätter und Bauplan als eigene Gruppe (dokumente.py), nicht im Code
+            v["dokumente"] = archiv.dokumente_vergleich(va, vb)
+        except GitFehler as exc:
+            v["dokumente"] = []
+            hinweise.append(f"Dokumente nicht verglichen: {exc}")
         kopf_a = archiv.version_dict(va)
         kopf_b = archiv.version_dict(vb) if vb else {"nr": None, "titel": "Aktueller Stand", "zeit": None}
         out: dict[str, Any] = {
