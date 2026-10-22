@@ -10,7 +10,8 @@
 #   quelle/<K>     letzter Schnappschuss je Kürzel, Grundlage für den nächsten Abgleich
 #   platz/a, b     feste Bäume der beiden Bauplätze mit warmem Bauordner (.build, build/DerivedData, kernel/.venv)
 #   ergebnis/<id>  was fern.sh danach abholt (Test-App, Paket)
-#   sperren/       Plätze a, b, test und die Schlange; protokoll/auftraege.tsv; cache/uv; werkzeuge/xcodegen
+#   sperren/       Plätze a, b, test und die Schlange; protokoll/auftraege.tsv (je Auftrag eine Zeile) und
+#                  protokoll/mini.log (Ablauf, auch nach Abriss der Verbindung); cache/uv; werkzeuge/xcodegen
 #
 # Plätze: Ein Auftrag nimmt einen freien Bauplatz, zuerst den, an dem sein Kürzel zuletzt war, und spiegelt seinen
 # Schnappschuss nach Inhalt hinein: Unveränderte Dateien behalten ihren Zeitstempel, also bleibt der Bauordner warm, auch
@@ -154,11 +155,10 @@ finish() {
   [ -n "$TICKET" ] && rm -f "$TICKET"
   rm -f "$RUNNING/$JOB_ID"
   # Der Schnappschuss wird die Grundlage des nächsten Abgleichs dieses Kürzels (fern.sh: rsync --link-dest).
+  # Unter der Vergabesperre, weil zwei Aufträge desselben Kürzels zugleich enden können.
   if [ -d "$SNAP" ]; then
-    rm -rf "$SOURCES/$ID.alt"
-    [ -d "$SOURCES/$ID" ] && mv "$SOURCES/$ID" "$SOURCES/$ID.alt"
-    mv "$SNAP" "$SOURCES/$ID" 2>/dev/null
-    rm -rf "$SOURCES/$ID.alt"
+    lockf -k -t 30 "$MUTEX" /bin/bash -c 'rm -rf "$2.alt"; if [ -d "$2" ]; then mv "$2" "$2.alt"; fi
+      mv "$1" "$2" && rm -rf "$2.alt"' _ "$SNAP" "$SOURCES/$ID" || rm -rf "$SNAP"
   fi
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ID" "$KIND" "${NAME:--}" "$rc" "$WAITED" \
     "$(( $(date +%s) - T_START ))" >> "$LOGS/auftraege.tsv"
