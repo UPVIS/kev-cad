@@ -131,7 +131,9 @@ Durchstich der ganzen Kette am echten Scan schon.
   schräger Tisch verschiebt Höhe und Lage. Vermessen nimmt an, dass das Modell auf z = 0 steht.
 - Die Gewichte der Tiefenbedingung sind nur an der synthetischen Probe abgestimmt; an einem echten Gegenstand mit
   bekannten Maßen (Messschieber) steht der Nachweis aus.
-- Die App zeigt die laufende Auswertung als „Object Capture läuft“ (Feld `laeuft` = `capture`); ein eigener Text wäre
-  eine kleine Änderung in `ReferenzPanels.swift`.
+- ~~Die App zeigt die laufende Auswertung als „Object Capture läuft“~~: erledigt am 22.10.2026 abends (Zweig
+  `rest-referenz`): „Scan wird ausgewertet …“ mit Phase (`REF_LIST.referenzen[i].phase`) und Fortschritt; dazu das Band
+  „Neuer Scan empfangen: <Name>“ mit „Scan übernehmen“ (Schnell oder Genau) und die Liste „Scans vom iPhone“ im
+  Abschnitt „Referenzen“ (`SCAN_LIST`, `SCAN_IMPORT`). Ein Scan ist metrisch; „Maßstab …“ gibt es für ihn nicht.
 - macOS-Firewall: Ist sie an, fragt macOS beim ersten Empfang, ob Python eingehende Verbindungen annehmen darf.
 - Bonjour-Name ist der Rechnername; bei zwei Macs mit Kev CAD sieht das iPhone beide.

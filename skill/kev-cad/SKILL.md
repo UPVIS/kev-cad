@@ -562,10 +562,26 @@ def messmodell(p):                       # p: alle param()-Werte des Grundstands
 6. Werte nicht selbst in model.py schreiben: Kevin übernimmt sie in der App mit „Maße übernehmen“ (auf 0,1 mm). Nur
    wenn er es ausdrücklich sagt, die `param()`-Werte selbst ändern. Unsicherheiten ehrlich nennen (Sigma) und das
    empfohlene Nachmessen vorschlagen.
+7. **Abweichung:** `referenz_abweichung(name, zeigen=False, auf="modell")` nennt je Teil die mittlere, die 95-%- und
+   die größte Abweichung zum Referenznetz, den Versatz mit Vorzeichen (**positiv = der echte Gegenstand ragt über das
+   Modell hinaus, das Modell ist dort zu klein**; negativ = Modell zu groß) und den abgedeckten Anteil (Stellen ohne
+   Referenz in der Nähe, etwa die Unterseite eines Scans, zählen nicht). Der Kernel rechnet sie nach jedem Lauf im
+   Hintergrund (rund 1 s); `referenzen(name)` zeigt die Kurzfassung. Sinnvoll erst, wenn das Netz am Modell anliegt
+   (nach `referenz_vermessen`), sonst steckt der Lagefehler mit drin (das Ergebnis sagt es). `zeigen=true` schaltet
+   bei Kevin die Farbkarte ein (blau Modell zu groß, grün passt, rot Modell zu klein, grau ohne Referenz, Legende in
+   mm), `auf="referenz"` färbt stattdessen das Netz; `skala_mm` legt die Legende fest, 0 wieder automatisch. Nutze die
+   Zahlen, um gezielt nachzubessern (größte Abweichung mit Ort), und nenne Kevin die Teile mit großer Abweichung.
+8. **Maßstab nachträglich:** Hatte das Video kein oder ein falsches Maß, `referenz_massstab(mm, name, punkte=[[x, y, z],
+   [x, y, z]])` mit zwei Punkten am Netz (Weltkoordinaten wie im Viewer, werden aufs Netz gezogen) oder
+   `kante="laenge"` (Hülle: `laenge`, `breite`, `hoehe`, `grund_laenge`, `grund_breite`) bzw. dem Namen eines
+   gemessenen `param`. Netz, Punktwolke, Kameras von Object Capture und Bericht skalieren mit, die Vermessung nur bei
+   einem gemessenen `param` (dann gilt es beim nächsten Vermessen als bekannt). Scans vom iPhone sind metrisch und
+   werden nicht skaliert. Kevin macht dasselbe in der App mit „Maßstab …“ (zwei Punkte anklicken, Maß eintragen).
 
 - Kevin: Video oder Fotos auf das Fenster ziehen öffnet „Referenz hinzufügen“ (bekanntes Maß, Unterlage, Abschnitt);
-  im Inspektor unter „Referenzen“ Netz mit Deckkraft, „Fotoansicht“ (Foto durch die eingepasste Kamera hinter dem
-  Modell, Differenz rot nur Foto, blau nur Modell), „Vermessen …“ und „Maße übernehmen“.
+  im Inspektor unter „Referenzen“ Netz mit Deckkraft, „Abweichung“ (Farbkarte auf Modell oder Netz, Legende in mm
+  unten links im Viewer), „Maßstab …“, „Fotoansicht“ (Foto durch die eingepasste Kamera hinter dem Modell, Differenz
+  rot nur Foto, blau nur Modell), „Vermessen …“ und „Maße übernehmen“.
 - macOS fragt beim ersten Zugriff auf Downloads oder ein Wechselmedium, ob Kev CAD darf; bis Kevin antwortet, bricht
   `referenz_video` mit einer Meldung ab. Dann Kevin bitten zu erlauben oder die Datei ins Projekt zu legen.
 
@@ -586,7 +602,12 @@ Scan per WLAN an Kev CAD (Bonjour, Ablage `~/Documents/Kev CAD/Scans/<datum>_<na
    ARKit-Kameras als feste Startwerte (nur fein nachgeführt), passt die Modellkanten an die Bilder und das Modell an die
    gemessene Tiefe (robust, nach Konfidenz gewichtet) und legt das Netz an das Modell. `bekannte_masse` sind nicht
    nötig; wenn Kevin ein Maß sicher kennt, darf es trotzdem fest sein.
-4. Ergebnis wie bei Phase 4 prüfen (Kontrollbilder, Sigma) und Kevin „Maße übernehmen“ lassen.
+4. Ergebnis wie bei Phase 4 prüfen (Kontrollbilder, Sigma, `referenz_abweichung`) und Kevin „Maße übernehmen“
+   lassen.
+
+In der App: Ein neu empfangener Scan erscheint als Band „Neuer Scan empfangen: <Name>“ mit „Scan übernehmen“
+(Schnell oder Genau) ins offene Projekt, dasselbe wie `scan_importieren`; im Inspektor unter „Referenzen“ steht die
+Liste der Scans, die laufende Auswertung zeigt „Scan wird ausgewertet …“ mit Phase und Fortschritt.
 
 Ehrliche Grenzen: LiDAR misst nur bis etwa 5 m und schlecht auf Glas, Spiegeln, sehr dunklen und glänzenden Flächen;
 dort fehlt Tiefe (Konfidenz 0) und das Netz hat Löcher. Dünne Teile unter etwa 5 mm (Kabel, Bleche von der Kante)
