@@ -58,7 +58,7 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `name`, `gruppe` | ja | Anzeige; `gruppe` z. B. Stahl, Edelstahl, Aluminium, Buntmetall, Holz, Holzwerkstoff, Kunststoff |
 | `dichte` | ja | g/cm³ |
 | `farbe` | ja | sRGB-Hex für den Viewer |
-| `metallisch`, `rauheit` | nein | 0…1 für spätere Renderings |
+| `metallisch`, `rauheit` | nein | 0…1; Grundlage der Darstellung, wenn `render` fehlt |
 | `preis_je_kg` | nein | € netto, Richtwert |
 | `preis_quelle`, `preis_stand` | wenn Preis | Herkunft, Monat |
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
@@ -66,6 +66,32 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `nachgiebig` | nein | `true` für weiche Werkstoffe (Schaum, Gummi, TPU, Gurtband): Die Prüfung meldet Überlappungen bis zur halben Dicke nur als „verformt“ (Hinweis) und lässt sie bei der Montage nicht als Hindernis zählen |
 | `mechanik` | nein | Werkstoffkennwerte für die Statik (Abschnitt „Mechanik“); ohne sie rechnet die Statik das Teil nicht nach und sagt es |
 | `hinweis` | nein | Text (z. B. wofür das Material gedacht ist) |
+| `render` | nein | Darstellung im Rendering (Abschnitt „Rendering“); ohne das Feld leitet der Kernel sie aus `farbe`, `metallisch`, `rauheit` und `gruppe` ab |
+
+## Rendering
+
+Additiv seit Phase 7 (22.10.2026, PLAN-PHASE7-RENDERINGS.md R4). Physikalisch basierte Darstellung (PBR) für die
+Renderings „schnell“ (RealityKit) und „Foto“ (Blender Cycles). Alle mitgelieferten Materialien haben `render`; Werte
+für Metalle nach den üblichen F0-Tabellen des physikalisch basierten Renderns angenommen, Rauheit nach Augenschein.
+
+```json
+"render": {"oberflaeche": "eloxiert", "basisfarbe": "#D3D6D9", "metallisch": 1.0, "rauheit": 0.42,
+           "klarlack": 0.35, "klarlack_rauheit": 0.25}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `oberflaeche` | `glatt`, `gebuerstet` (Schliff längs der längsten Kante), `eloxiert` (seidenmatt, Klarschicht), `verzinkt` (Zinkblumen), `walzhaut` (roher Stahl), `pulver` (Lack, Orangenhaut), `guss`, `schichten` (FDM-Druck, Linien quer zu Z), `harz`, `holz` (Maserung längs der längsten Kante), `gummi`, `schaum`, `glas` (durchsichtig), `beton` |
+| `basisfarbe` | sRGB-Hex; bei Metallen die Spiegelfarbe (Aluminium fast weiß, Stahl mittelgrau) |
+| `metallisch`, `rauheit` | 0…1 |
+| `klarlack`, `klarlack_rauheit` | 0…1, Klarschicht über der Oberfläche (Eloxal, Film der Siebdruckplatte, PETG) |
+| `anisotropie` | 0…1, gerichteter Glanz bei `gebuerstet` |
+| `durchsichtig` | 0…1, Lichtdurchlass (Acrylglas 0,9) |
+| `schichthoehe` | mm, nur `schichten` (Vorgabe 0,2) |
+
+Vorrang: Weicht die Farbe eines Teils in model.py von der Katalogfarbe seines Materials ab (farbiges PLA, schwarz
+eloxiert), wird sie die Basisfarbe; Glanz, Metall und Oberfläche bleiben vom Material. Druckteile
+(`lager.druckteil`) bekommen immer `schichten` (außer Harz).
 
 ## Mechanik (Statik)
 
