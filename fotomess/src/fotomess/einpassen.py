@@ -62,6 +62,17 @@ class Einstellungen:
     lm_lambda: float = 1e-3
     tiefe_toleranz: float = 0.004     # relativ zur Tiefe
     gelenk_sigma_grad: float | None = None
+    # Scan (fotomess.scan): gemessene Tiefe je Bild (Bild.tiefe) als zusätzliche Bedingung, Kameras an
+    # Bild.kamera_start gebunden (bekannt aus ARKit, nur fein nachführen)
+    tiefe_gewicht: float = 0.0        # 0 = aus
+    tiefe_sigma_mm: float = 2.0       # Cauchy-Skala der Tiefenreste: tiefe_sigma_mm + tiefe_sigma_rel * Tiefe
+    tiefe_sigma_rel: float = 0.004
+    tiefe_tor_mm: float = 20.0        # größerer Rest zählt konstant (Hintergrund, Modellfehler)
+    tiefe_punkte: int = 1200          # Flächenpunkte je Bild
+    tiefe_korrelation: float = 4.0    # benachbarte Tiefenpunkte sind abhängig (geglättete Schätzung)
+    kamera_sigma_mm: float | None = None    # weiche Bindung an Bild.kamera_start: Kamerazentrum (mm)
+    kamera_sigma_grad: float | None = None  # und Drehung (Grad)
+    umriss_gegen_kanten: bool = False  # Umrisspunkte gegen Bildkanten, auch wenn eine Maske da ist (grobe Masken)
 
 
 @dataclass
@@ -128,6 +139,8 @@ class Ausgleich:
         self.zeichner = {name: fuer_netz(n) for name, n in netze.items()}
         self.zeichner_farbe = {}
         self.proben = [None] * len(self.ansichten)
+        self.proben_tiefe = [None] * len(self.ansichten)
+        self._flaechen_proben = {}
         self.zeiten = dict(sichtbarkeit=0.0, auswertung=0.0, loesen=0.0, bildstufen=0.0)
         self.verlauf = []
 
@@ -191,11 +204,13 @@ class Ausgleich:
             sp = P["s"][keep].astype(np.float32)
             dX0 = ((1 - sp)[:, None, None] * netz.D[P["a"][keep]] + sp[:, None, None] * netz.D[P["b"][keep]])
             maske_da = st.kanaele[0] is not None
-            typ = np.where(aussen[keep] & maske_da, 0, 1)
+            typ = np.where(aussen[keep] & maske_da & (not self.e.umriss_gegen_kanten), 0, 1)
             if not self.e.umriss_auf_kanten:
                 typ = np.where(aussen[keep] & ~maske_da, -1, typ)
             self.proben[i] = dict(ids=ids, ia=ia, ib=ib, s=sp, dX0=dX0, typ=typ, vz=vorzeichen[keep],
                                   gelenk=netz.punkt_gelenk[P["a"][keep]], stufe=st, n=len(keep))
+            if self.e.tiefe_gewicht > 0 and getattr(a.bild, "tiefe", None) is not None:
+                self.proben_tiefe[i] = self._tiefe_proben(a, netz, V, cam, st, tiefe)
         self.zeiten["sichtbarkeit"] += time.perf_counter() - t0
 
     @staticmethod
@@ -261,6 +276,10 @@ class Ausgleich:
         rho = np.where(innen, 0.5 * np.log1p(rt * rt), 0.5 * math.log1p((plan.tor / plan.sigma) ** 2))
         kosten = float((gew * rho).sum())
         out = dict(kosten=kosten, r=r, innen=innen, gew=gew, n=len(r), u=u)
+        td = self._tiefe_teil(i, z, jacobi)
+        if td is not None:
+            out["kosten"] += td["kosten"]
+            out["tiefe"] = td
         if not jacobi:
             return out
         w_irls = gew * innen / (1 + rt * rt)
@@ -308,7 +327,100 @@ class Ausgleich:
         spalten_idx.append(np.arange(c0, c0 + 6 + len(a.winkel_frei)))
         bloecke.append(np.concatenate(bl, 1))
         J = np.concatenate(bloecke, 1) / plan.sigma
+        if td is not None and td.get("J") is not None:
+            J = np.concatenate([J, td["J"]], 0)
+            w_irls = np.concatenate([w_irls, td["w"]])
+            rt = np.concatenate([rt, td["rt"]])
         out.update(J=J, spalten=np.concatenate(spalten_idx), w=w_irls, rt=rt)
+        return out
+
+    # ------------------------------------------------------------------ Tiefe (Scan)
+    def _tiefe_proben(self, a, netz, V, cam, st, tiefe_modell):
+        """Sichtbare Flächenpunkte mit gültiger gemessener Tiefe: Dreieck und baryzentrische Lage (fest je Netz,
+        ohne Gelenkteile), höchstens tiefe_punkte, gleichmäßig ausgedünnt."""
+        if a.netz not in self._flaechen_proben:
+            rng = np.random.default_rng(11)
+            T = netz.tris
+            ok = (netz.punkt_gelenk[T] < 0).all(1)
+            p0, p1, p2 = netz.V0[T[:, 0]], netz.V0[T[:, 1]], netz.V0[T[:, 2]]
+            fl = np.linalg.norm(np.cross(p1 - p0, p2 - p0), axis=1) * ok
+            if fl.sum() <= 0:
+                self._flaechen_proben[a.netz] = None
+            else:
+                n = 40 * self.e.tiefe_punkte
+                idx = rng.choice(len(T), size=n, p=fl / fl.sum())
+                u_, v_ = rng.random(n), rng.random(n)
+                aus = u_ + v_ > 1
+                u_[aus], v_[aus] = 1 - u_[aus], 1 - v_[aus]
+                self._flaechen_proben[a.netz] = (idx, np.stack([1 - u_ - v_, u_, v_], 1))
+        fp = self._flaechen_proben[a.netz]
+        if fp is None:
+            return None
+        idx, bary = fp
+        T = netz.tris[idx]
+        X = np.einsum("nk,nkj->nj", bary, V[T])
+        u, zz = cam.projiziere(X, st.s)
+        drin = (u[:, 0] >= 0) & (u[:, 1] >= 0) & (u[:, 0] < st.breite) & (u[:, 1] < st.hoehe) & (zz > 1)
+        ix = np.clip(u[:, 0].astype(int), 0, st.breite - 1)
+        iy = np.clip(u[:, 1].astype(int), 0, st.hoehe - 1)
+        tm = tiefe_modell[iy, ix]
+        sicht = drin & (tm > 0) & (np.abs(tm - zz) <= zz * 2 * self.e.tiefe_toleranz + 1.0)
+        nrm = np.cross(V[T[:, 1]] - V[T[:, 0]], V[T[:, 2]] - V[T[:, 0]])
+        sicht &= np.einsum("ij,ij->i", nrm, X - cam.zentrum) < 0
+        _, _, _, _, gueltig = a.bild.tiefe.abtasten(u / st.s)
+        sel = np.flatnonzero(sicht & gueltig)
+        if len(sel) > self.e.tiefe_punkte:
+            sel = sel[np.linspace(0, len(sel) - 1, self.e.tiefe_punkte).astype(int)]
+        return dict(tri=T[sel], bary=bary[sel], n=len(sel))
+
+    def _tiefe_teil(self, i, z, jacobi):
+        """Reste r = z_Kamera(X) − D_gemessen(u(X)) (mm) der Tiefenpunkte von Ansicht i; Ableitungen wie bei den
+        Kanten (Maße über die Netzableitungen, Lage linksseitig, log f), dazu der Gradient der gemessenen Tiefe."""
+        P = self.proben_tiefe[i]
+        a = self.ansichten[i]
+        tk = getattr(a.bild, "tiefe", None)
+        if P is None or P["n"] < 10 or tk is None or self.e.tiefe_gewicht <= 0:
+            return None
+        netz = self.netze[a.netz]
+        cam = z.kameras[i]
+        th = self._theta_netz(z, a.netz)
+        ids, inv = np.unique(P["tri"], return_inverse=True)
+        Vt = netz.ecken_teil(ids, th, z.winkel[i])
+        tl = inv.reshape(P["tri"].shape)
+        bary = P["bary"]
+        X = np.einsum("nk,nkj->nj", bary, Vt[tl])
+        Xk = X @ cam.R.T + cam.t
+        zc = np.maximum(Xk[:, 2], 1e-3)
+        u = np.stack([cam.f * Xk[:, 0] / zc + cam.cx, cam.f * Xk[:, 1] / zc + cam.cy], 1)
+        D, gx, gy, conf, ok = tk.abtasten(u)
+        r = np.where(ok, zc - D, 0.0)
+        sig = self.e.tiefe_sigma_mm + self.e.tiefe_sigma_rel * np.where(ok, D, zc)
+        rt = r / sig
+        tor = self.e.tiefe_tor_mm
+        innen = ok & (np.abs(r) < tor)
+        gew = self.e.tiefe_gewicht * conf * a.gewicht / self.e.tiefe_korrelation
+        rho = np.where(innen, 0.5 * np.log1p(rt * rt), 0.5 * np.log1p((tor / sig) ** 2))
+        out = dict(kosten=float((gew * rho * ok).sum()), r=r, innen=innen, n=int(ok.sum()))
+        if not jacobi:
+            return out
+        Jp, Jf = projektion_ableitung(Xk, cam.f)                 # Pixel des Originals
+        g = np.stack([gx * tk.sx, gy * tk.sy], 1)                 # mm je Originalpixel
+        av = np.zeros((len(Xk), 3))
+        av[:, 2] = 1.0
+        av -= np.einsum("ni,nij->nj", g, Jp)
+        aw = av @ cam.R
+        dX = np.einsum("nk,nkjm->njm", bary, netz.D[P["tri"]].astype(np.float64))
+        _, frei_spalte = self.netz_spalten[a.netz]
+        sel = frei_spalte >= 0
+        bl = []
+        if sel.any():
+            bl.append(np.einsum("nj,njk->nk", aw, dX)[:, sel])
+        if a.f_gruppe is not None:
+            bl.append(-np.einsum("ni,ni->n", g, Jf)[:, None])
+        bl += [np.cross(Xk, av), av]
+        if a.winkel_frei:
+            bl.append(np.zeros((len(Xk), len(a.winkel_frei))))
+        out.update(J=np.concatenate(bl, 1) / sig[:, None], w=gew * innen / (1 + rt * rt), rt=rt)
         return out
 
     def _vorgaben(self, z, jacobi):
@@ -344,6 +456,29 @@ class Ausgleich:
                     c = self.spalte_bild[i]
                     H[c:c + 3, c:c + 3] += np.outer(Jr, Jr)
                     g[c:c + 3] += Jr * r
+        if self.e.kamera_sigma_mm or self.e.kamera_sigma_grad:
+            from .kamera import log_so3
+            for i, a in enumerate(self.ansichten):
+                k0 = getattr(a.bild, "kamera_start", None)
+                if k0 is None:
+                    continue
+                cam = z.kameras[i]
+                c = self.spalte_bild[i]
+                if self.e.kamera_sigma_grad:
+                    sr = math.radians(self.e.kamera_sigma_grad)
+                    rv = log_so3(cam.R @ k0.R.T) / sr
+                    kosten += 0.5 * float(rv @ rv)
+                    if jacobi:
+                        H[c:c + 3, c:c + 3] += np.eye(3) / sr ** 2
+                        g[c:c + 3] += rv / sr
+                if self.e.kamera_sigma_mm:
+                    sc = self.e.kamera_sigma_mm
+                    rc = (cam.zentrum - k0.zentrum) / sc
+                    kosten += 0.5 * float(rc @ rc)
+                    if jacobi:
+                        Jc = -cam.R.T / sc                     # d Zentrum / d dt (dw wirkt nicht aufs Zentrum)
+                        H[c + 3:c + 6, c + 3:c + 6] += Jc.T @ Jc
+                        g[c + 3:c + 6] += Jc.T @ rc
         if self.e.gelenk_sigma_grad:
             sig = self.e.gelenk_sigma_grad
             for i, a in enumerate(self.ansichten):

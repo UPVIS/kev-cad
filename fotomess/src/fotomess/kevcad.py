@@ -320,6 +320,10 @@ def bilder(auftrag, ablage):
     f35 = auftrag.get("kb_brennweite") or f35
     fortschritt("bilder", 0.45, "Masken rechnen")
     vis = masken.vision(dateien, Path(ablage) / "vision") if art.startswith("vision") else {}
+    scan = None
+    if art == "scan":
+        from .scan import Scan
+        scan = Scan(auftrag["scan"])
     maskenordner = Path(ablage) / "masken"
     maskenordner.mkdir(parents=True, exist_ok=True)
     out = []
@@ -327,7 +331,13 @@ def bilder(auftrag, ablage):
         im = cv2.imread(str(d))
         h, w = im.shape[:2]
         fm = None
-        if art == "weiss":
+        if art == "scan":
+            # Silhouette des Scan-Netzes durch die bekannte Kamera (kevscan), weich
+            mp = scan.maske(d.stem)
+            m = np.zeros((h, w), np.float32) if mp is None else cv2.resize(
+                cv2.imread(str(mp), cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0, (w, h),
+                interpolation=cv2.INTER_AREA)
+        elif art == "weiss":
             m = masken.weiss(im).astype(np.float32)
         else:
             if art == "vision+farbe" and farbe:
@@ -415,8 +425,21 @@ def vermessen_kevcad(auftrag):
                       h=int(b.hoehe), cx=float(k["cx"]) * sx, cy=float(k["cy"]) * sy)
     start = dict(auftrag.get("startkameras") or {})
     nach_zeit = [(float(e["zeit"]), e["kamera"]) for e in auftrag.get("startkameras_zeit") or []]
+    scan = scan_lage = None
+    theta0 = dict(daten["p"])
+    if auftrag.get("scan"):
+        # Scan: Kameras aus ARKit (bekannt), Tiefe aus PromptDA; Lage Scan -> Modell über die Oberfläche
+        from . import scan as S
+        fortschritt("einpassen", 0.0, "Scan an das Modell anlegen")
+        scan = S.Scan(auftrag["scan"])
+        V0 = netz.ecken(np.array([theta0[k] for k in netz.parameter]))
+        scan_lage = S.anlegen(scan.punkte, V0, netz.tris)
+        scan.setze(B, scan_lage)
 
     def eingabe(i, b):
+        if scan is not None and getattr(b, "kamera_start", None) is not None:
+            k = b.kamera_start.kopie()
+            return Eingabe(bild=b, netz="m", f=k.f, f_gruppe=None, paare=tuple(paare), zwillinge=(), kamera=k)
         kam = kamera_aus(start[b.name], b) if b.name in start else None
         if kam is None and bildzeiten and nach_zeit:
             z, k = min(nach_zeit, key=lambda e: abs(e[0] - bildzeiten[i]))
@@ -429,7 +452,13 @@ def vermessen_kevcad(auftrag):
     pl = standard_plaene(breite, grob=320 if breite >= 1280 else max(160, breite // 4))
     einst = Einstellungen(f_sigma_log=0.15 if f35 else 0.25, roll_sigma_grad=15.0 if video else 3.0,
                           kanten_gewicht=float(auftrag.get("kanten_gewicht") or 0.8))
-    theta0 = dict(daten["p"])
+    if scan is not None:
+        einst.f_sigma_log = None
+        einst.roll_sigma_grad = None
+        einst.tiefe_gewicht = float(auftrag.get("tiefe_gewicht", 1.0))
+        einst.kamera_sigma_mm = float(auftrag.get("kamera_sigma_mm") or 15.0)
+        einst.kamera_sigma_grad = float(auftrag.get("kamera_sigma_grad") or 1.5)
+        einst.umriss_gegen_kanten = bool(auftrag.get("umriss_gegen_kanten", True))
     vorg = {k: tuple(v) for k, v in (auftrag.get("vorgaben") or {}).items() if k in frei}
     grenzen = {k: tuple(v) for k, v in (auftrag.get("grenzen") or {}).items() if k in frei}
     for k in frei:  # Vorgaben, wo keine angegeben sind: weich um den Startwert
@@ -441,6 +470,17 @@ def vermessen_kevcad(auftrag):
     t = time.perf_counter()
     erg = vermessen({"m": netz}, E, theta0, frei, vorgaben=vorg, einst=einst, plaene=pl, kandidaten=4,
                     protokoll=None, grenzen=grenzen)
+    durchgaenge = 1
+    for _ in range(int(auftrag.get("scan_durchgaenge", 2)) - 1 if scan is not None else 0):
+        # Lage des Scans am eingepassten Modell nachführen, Kameras neu ansetzen, noch einmal einpassen
+        fortschritt("einpassen", 0.5, "Scan am eingepassten Modell nachführen, zweiter Durchgang")
+        V1 = netz.ecken(np.array([erg.theta[k] for k in netz.parameter]))
+        scan_lage = S.anlegen(scan.punkte, V1, netz.tris, start=scan_lage)
+        scan.setze(B, scan_lage)
+        E = [eingabe(i, b) for i, b in enumerate(B)]
+        erg = vermessen({"m": netz}, E, dict(erg.theta), frei, vorgaben=vorg, einst=einst, plaene=pl, kandidaten=4,
+                        protokoll=None, grenzen=grenzen)
+        durchgaenge += 1
     zeiten["einpassen"] = time.perf_counter() - t
     fortschritt("unsicherheit", 0.0, "Unsicherheit und Empfehlungen")
     t = time.perf_counter()
@@ -502,7 +542,8 @@ def vermessen_kevcad(auftrag):
         "masse": {k: float(theta[k]) for k in frei}, "sigma": {k: float(sigma[k]) for k in frei},
         "sigma_statistisch": {k: float(kov["sigma"][k]) for k in frei},
         "sigma_jackknife": {k: float(v) for k, v in (jack or {}).items()} if jack else None,
-        "brennweite_px": float(math.exp(list(A.z.logf.values())[0])), "brennweite_vorgabe_px": float(f0),
+        "brennweite_px": float(math.exp(list(A.z.logf.values())[0])) if A.z.logf
+        else float(np.median([k.f for k in erg.kameras])), "brennweite_vorgabe_px": float(f0),
         "f35_meta": f35, "bildgroesse": [int(B[0].breite), int(B[0].hoehe)],
         "arbeit": [int(B[0].breite_arbeit), int(B[0].hoehe_arbeit)],
         "bilder": eintraege, "verworfen": list(erg.verworfen),
@@ -521,11 +562,50 @@ def vermessen_kevcad(auftrag):
         "startkameras": sum(1 for e in E if e.kamera is not None),
         "dauer_s": round(time.perf_counter() - t0, 1),
     }
+    if scan is not None:
+        from .scan import lage_json
+        out["scan"] = {"lage": lage_json(scan_lage, len(erg.namen)), "durchgaenge": durchgaenge,
+                       "tiefe_gewicht": einst.tiefe_gewicht, "kamera_sigma_mm": einst.kamera_sigma_mm,
+                       "kamera_sigma_grad": einst.kamera_sigma_grad, "tiefe_rest_mm": _tiefe_rest(A, pl.buendel[-1]),
+                       "kameras_bewegt": _kameras_bewegt(A)}
     ziel = ablage / "messung.json"
     tmp = ziel.with_suffix(".tmp")
     tmp.write_text(json.dumps(out, indent=1, ensure_ascii=False, default=float))
     tmp.replace(ziel)
     return ziel
+
+
+def _tiefe_rest(A, plan):
+    """Median |Tiefenrest| (mm) je Bild und gesamt am Ergebnis (nur Scan)."""
+    alle, je = [], {}
+    A.sichtbarkeit(plan)
+    for i, a in enumerate(A.ansichten):
+        td = A._tiefe_teil(i, A.z, False)
+        if td is None:
+            continue
+        r = np.abs(td["r"][td["innen"]])
+        if len(r):
+            je[a.bild.name] = round(float(np.median(r)), 2)
+            alle.append(r)
+    if not alle:
+        return None
+    r = np.concatenate(alle)
+    return {"median": round(float(np.median(r)), 2), "p90": round(float(np.percentile(r, 90)), 2), "je_bild": je}
+
+
+def _kameras_bewegt(A):
+    """Wie weit die eingepassten Kameras von ihren Startwerten (ARKit) liegen: Median Zentrum (mm), Drehung (Grad)."""
+    from .kamera import winkel_zwischen
+    d, w = [], []
+    for i, a in enumerate(A.ansichten):
+        k0 = getattr(a.bild, "kamera_start", None)
+        if k0 is None:
+            continue
+        d.append(float(np.linalg.norm(A.z.kameras[i].zentrum - k0.zentrum)))
+        w.append(winkel_zwischen(A.z.kameras[i].R, k0.R))
+    if not d:
+        return None
+    return {"zentrum_mm": round(float(np.median(d)), 2), "drehung_grad": round(float(np.median(w)), 3)}
 
 
 def main(argv=None):
