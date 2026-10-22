@@ -192,8 +192,8 @@ public enum ExportBauer {
             let w = l.groesse.width, h = l.groesse.height
             let x0 = DeckblattAufteilung.rand, x1 = w - DeckblattAufteilung.rand
             l.rechteck(CGRect(x: 0, y: 0, width: w, height: 4.5), fuellung: ExportStil.akzent)
-            l.text(titel.uppercased(), x: x0, y: 26, .mittel(9), farbe: ExportStil.akzent, laufweite: 0.35,
-                   maxBreite: x1 - x0)
+            l.text(titel.uppercased(), x: x0, y: 26, .mittel(9), farbe: ExportStil.akzent, maxBreite: x1 - x0,
+                   laufweite: 0.35)
             l.text("Inhalt", x: x0, y: 40, .fett(26), farbe: ExportStil.tinte)
             let fy = h - 22
             let zeilen = CGFloat(info.bausteinSeiten.filter { $0.art != .deckblatt }.count)
