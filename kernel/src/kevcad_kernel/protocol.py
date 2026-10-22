@@ -1103,3 +1103,159 @@ def drucker_status_beispiel(*, druckt: bool = True) -> dict[str, Any]:
                     "von": "kevin"},
         "aktualisiert": 1792656000.0,
     }
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 4: Referenzen (PROTOCOL.md, Abschnitt „Phase 4: Referenzen“; Umsetzung in kevcad_kernel/referenz/)
+# ---------------------------------------------------------------------------------------------------------------------
+
+REF_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    # Kernel → App (Pflichtfelder außer type/seq)
+    "REF_LIST": ("referenzen",),
+    "REF_UPSERT": ("name", "farbe", "counts", "bbox", "quelle"),
+    "REF_REMOVE": ("name",),
+    "REF_PHOTOS": ("referenz", "satz", "fotos"),
+    "REF_RESULT": ("referenz", "stand", "masse", "huelle", "empfehlungen"),
+    # App → Kernel
+    "REF_ADD": ("id", "pfade"),
+    "REF_MEASURE_REQ": ("id", "referenz"),
+    "REF_APPLY": ("id", "referenz", "werte"),
+}
+REF_ZUSTAENDE: tuple[str, ...] = ("leer", "rechnet", "fertig", "fehler")
+REF_ARTEN: tuple[str, ...] = ("video", "fotos")
+REF_SAETZE: tuple[str, ...] = ("messung", "capture")
+REF_LISTE_FELDER: tuple[str, ...] = ("name", "art", "quelle", "zustand", "laeuft", "fortschritt", "text", "meldung",
+                                     "netz", "fotos", "messung", "erstellt")
+REF_FOTO_FELDER: tuple[str, ...] = ("name", "bild", "maske", "kamera")
+REF_KAMERA_FELDER: tuple[str, ...] = ("R", "t", "f", "cx", "cy", "w", "h")
+REF_MASS_FELDER: tuple[str, ...] = ("name", "wert", "sigma", "start")
+REF_NETZ_ARRAYS: tuple[tuple[str, str, str, int], ...] = (
+    ("positions", "<f4", "vert", 3),
+    ("normals", "<f4", "vert", 3),
+    ("triangles", "<u4", "tri", 3),
+)
+REF_FARBE: tuple[float, float, float, float] = (0.36, 0.62, 0.86, 0.45)  # sRGB, halbdurchsichtig
+
+
+def pack_ref_netz(*, name: str, positions: np.ndarray, normals: np.ndarray, triangles: np.ndarray,
+                  quelle: str = "object_capture", farbe: tuple[float, ...] | list[float] = REF_FARBE,
+                  lage: dict[str, Any] | None = None, seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """Kopf und Nutzlast von REF_UPSERT: Referenznetz in Weltkoordinaten des Modells (mm, Z oben), schon an das
+    Modell angelegt (``lage`` beschreibt nur, wie). Nutzlast wie PART_UPSERT ohne Flächen, Kanten und Punkte."""
+    pos = np.ascontiguousarray(positions, dtype="<f4").reshape(-1, 3)
+    nrm = np.ascontiguousarray(normals, dtype="<f4").reshape(-1, 3)
+    tri = np.ascontiguousarray(triangles, dtype="<u4").reshape(-1, 3)
+    if len(nrm) != len(pos):
+        raise ValueError(f"{name}: {len(pos)} Punkte, aber {len(nrm)} Normalen")
+    if len(tri) and int(tri.max()) >= len(pos):
+        raise ValueError(f"{name}: Dreiecke verweisen auf Punkte, die es nicht gibt")
+    lo = pos.min(0) if len(pos) else np.zeros(3)
+    hi = pos.max(0) if len(pos) else np.zeros(3)
+    header: dict[str, Any] = {
+        "type": "REF_UPSERT", "seq": seq, "name": name, "farbe": [float(c) for c in farbe],
+        "counts": {"vert": int(len(pos)), "tri": int(len(tri))},
+        "bbox": {"min": [round(float(x), 3) for x in lo], "max": [round(float(x), 3) for x in hi]},
+        "quelle": quelle, "lage": lage,
+    }
+    return header, pos.tobytes() + nrm.tobytes() + tri.tobytes()
+
+
+def unpack_ref_netz(header: dict[str, Any], payload: bytes) -> dict[str, np.ndarray]:
+    """Gegenstück zu pack_ref_netz."""
+    counts = header["counts"]
+    out: dict[str, np.ndarray] = {}
+    offset = 0
+    for name, dtype, key, per in REF_NETZ_ARRAYS:
+        n = int(counts[key]) * per
+        out[name] = np.frombuffer(payload, dtype=dtype, count=n, offset=offset).reshape(-1, per)
+        offset += n * 4
+    if offset != len(payload):
+        raise ValueError(f"Nutzlast von REF_UPSERT hat {len(payload)} Byte, erwartet {offset}")
+    return out
+
+
+def check_ref_message(header: dict[str, Any]) -> list[str]:
+    """Pflichtfelder und Wertebereiche der Referenz-Nachrichten (für Tests und Testdateien)."""
+    typ = header.get("type")
+    if typ not in REF_NACHRICHTEN:
+        return [f"type {typ!r} ist keine Referenz-Nachricht"]
+    out = _fehlend(header, REF_NACHRICHTEN[typ], typ)
+    if out:
+        return out
+    if typ == "REF_LIST":
+        for r in header["referenzen"]:
+            out += _fehlend(r, REF_LISTE_FELDER, "referenzen[]")
+            if r.get("zustand") not in REF_ZUSTAENDE:
+                out.append(f"zustand {r.get('zustand')!r} unbekannt")
+            if r.get("art") not in REF_ARTEN:
+                out.append(f"art {r.get('art')!r} unbekannt")
+    elif typ == "REF_PHOTOS":
+        if header["satz"] not in REF_SAETZE:
+            out.append(f"satz {header['satz']!r} unbekannt")
+        for f in header["fotos"]:
+            out += _fehlend(f, REF_FOTO_FELDER, "fotos[]")
+            if isinstance(f.get("kamera"), dict):
+                out += _fehlend(f["kamera"], REF_KAMERA_FELDER, "fotos[].kamera")
+                if len(f["kamera"].get("R") or []) != 3:
+                    out.append("kamera.R braucht drei Zeilen")
+    elif typ == "REF_RESULT":
+        for m in header["masse"]:
+            out += _fehlend(m, REF_MASS_FELDER, "masse[]")
+    elif typ == "REF_UPSERT":
+        out += _fehlend(header["counts"], ("vert", "tri"), "counts")
+    return out
+
+
+def referenz_beispiele() -> list[tuple[str, dict[str, Any], bytes]]:
+    """Beispielnachrichten für die Testdateien (kernel/tools/make_referenz_fixtures.py): (Dateiname, Kopf, Nutzlast)."""
+    kamera = {"R": [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]], "t": [0.0, 40.0, 600.0], "f": 1546.8,
+              "cx": 960.0, "cy": 540.0, "w": 1920, "h": 1080}
+    liste = {"type": "REF_LIST", "seq": 1, "referenzen": [
+        {"name": "IMG_5186", "art": "video", "quelle": "/Volumes/Aufnahmen/IMG_5186.MOV", "zustand": "rechnet",
+         "laeuft": "capture", "fortschritt": 0.42, "text": "Rekonstruktion: Netz wird erzeugt", "meldung": None,
+         "netz": False, "fotos": 8, "messung": True, "erstellt": "2026-10-22T14:03:11",
+         "capture": None, "lage": None},
+        {"name": "Fotos Küche", "art": "fotos", "quelle": "3 Fotos", "zustand": "leer", "laeuft": None,
+         "fortschritt": None, "text": None, "meldung": None, "netz": False, "fotos": 0, "messung": False,
+         "erstellt": "2026-10-22T14:10:00"}]}
+    pos = np.array([[-90, -51, 0], [90, -51, 0], [90, 51, 0], [-90, 51, 0], [0, 0, 47.5]], float)
+    tri = np.array([[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4], [0, 2, 1], [0, 3, 2]])
+    from kevcad_kernel.referenz.netz import normalen
+
+    netz, nutz = pack_ref_netz(name="IMG_5186", positions=pos, normals=normalen(pos, tri), triangles=tri,
+                               lage={"drehung_z": 180.0, "verschiebung": [0.0, -1.2, 0.0], "rest_mm": 6.3, "paare": 8,
+                                     "massstab": 1.012}, seq=2)
+    fotos = {"type": "REF_PHOTOS", "seq": 3, "referenz": "IMG_5186", "satz": "messung", "fotos": [
+        {"name": "IMG_5186_003.667", "bild": "/p/referenzen/IMG_5186/messung/bilder/IMG_5186_003.667.jpg",
+         "maske": "/p/referenzen/IMG_5186/messung/masken/IMG_5186_003.667.png",
+         "kontrolle": "/p/referenzen/IMG_5186/messung/kontrolle/IMG_5186_003.667.jpg", "zeit": 3.667, "iou": 0.916,
+         "kamera": kamera},
+        {"name": "bild_0007", "bild": "/p/referenzen/IMG_5186/capture/bilder/bild_0007.jpg", "maske": None,
+         "kontrolle": None, "zeit": 4.1, "iou": None, "kamera": {**kamera, "cx": 951.5, "cy": 547.25}}]}
+    ergebnis = {"type": "REF_RESULT", "seq": 4, "referenz": "IMG_5186", "stand": "2026-10-22T14:05:40",
+                "masse": [{"name": "tiefe", "wert": 103.4, "sigma": 1.8, "start": 110.0},
+                          {"name": "hoehe", "wert": 46.4, "sigma": 2.2, "start": 46.0}],
+                "bekannt": {"breite": 180.0},
+                "huelle": {"min": [-90.0, -63.0, 0.0], "max": [90.0, 55.0, 47.9], "groesse": [180.0, 118.0, 47.9]},
+                "grundkoerper": {"teil": "Scarlett/Gehaeuse", "groesse": [180.0, 103.7, 46.5]},
+                "brennweite_px": 3093.6, "bilder": 8, "verworfen": [],
+                "empfehlungen": [
+                    {"art": "nachmessen", "mass": "gross_h", "anteil": 0.45,
+                     "text": "Von Hand nachmessen: gross_h (die Unsicherheit aller Maße sinkt auf 45 %)"},
+                    {"art": "aufnahme", "anteil": 0.93,
+                     "text": "Zusatzaufnahme schräg von vorne rechts, 30° hoch: bringt nur noch 7 %"}],
+                "dauer_s": 72.6}
+    return [
+        ("ref_list", liste, b""),
+        ("ref_upsert", netz, nutz),
+        ("ref_remove", {"type": "REF_REMOVE", "seq": 5, "name": "Fotos Küche"}, b""),
+        ("ref_photos", fotos, b""),
+        ("ref_result", ergebnis, b""),
+        ("ref_add", {"type": "REF_ADD", "seq": 1, "id": "a-1", "pfade": ["/Users/test/IMG_5186.MOV"],
+                     "name": None, "masz": {"laenge": 180.0}, "auflage": True, "von": None, "bis": None,
+                     "einstellung": "schnell"}, b""),
+        ("ref_measure_req", {"type": "REF_MEASURE_REQ", "seq": 2, "id": "a-2", "referenz": "IMG_5186",
+                             "frei": ["tiefe", "hoehe"], "bekannt": {"breite": 180.0}, "bilder": 8}, b""),
+        ("ref_apply", {"type": "REF_APPLY", "seq": 3, "id": "a-3", "referenz": "IMG_5186",
+                       "werte": {"tiefe": 103.4, "hoehe": 46.4}}, b""),
+    ]

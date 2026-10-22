@@ -938,4 +938,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     register_dokument_tools(tool, t, svc)
 
+    # Phase 4: Foto und Video als Referenz (referenz_tools.py)
+    from .referenz_tools import register_referenz_tools
+
+    register_referenz_tools(tool, t, svc)
+
     return t

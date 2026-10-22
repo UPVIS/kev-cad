@@ -701,6 +701,46 @@ class FakeService:
             varianten.append({"id": "v-leicht", "name": name, "aktuell": True, "versionen": 0})
         return {"ok": True, "aktion": aktion, "variante": "v-leicht", "name": name, "von": 2, "varianten": varianten}
 
+    # Phase 4: Referenzen
+    def referenzen(self, name: str | None = None, warten_s: float = 0.0) -> dict[str, Any]:
+        self._record("referenzen", name, warten_s)
+        from kevcad_kernel.protocol import referenz_beispiele
+
+        beispiele = {n: h for n, h, _ in referenz_beispiele()}
+        liste = [dict(r) for r in beispiele["ref_list"]["referenzen"]]
+        erg = {k: v for k, v in beispiele["ref_result"].items() if k not in ("type", "seq")}
+        liste[0].update(zustand="fertig", laeuft=None, fortschritt=None, text=None, netz=True,
+                        messung_ergebnis=erg)
+        if name:
+            liste = [r for r in liste if r["name"] == name]
+        return {"ok": True, "projekt": self.project["path"], "referenzen": liste,
+                "werkzeuge": {"kevcad_capture": "/x/kevcad-capture", "fotomess": "/x/fotomess"}}
+
+    def referenz_video(self, pfad: str, name: str | None = None, masz: dict[str, float] | None = None,
+                       auflage: bool = False, von: float | None = None, bis: float | None = None,
+                       einstellung: str = "schnell", warten_s: float = 0.0) -> dict[str, Any]:
+        self._record("referenz_video", pfad, name, masz, auflage, von, bis, einstellung, warten_s)
+        if not str(pfad).lower().endswith((".mov", ".mp4")):
+            return {"ok": False, "error": "kein Video"}
+        return {"ok": True, "name": name or "IMG_5186", "ordner": "/tmp/Kev CAD/x/referenzen/IMG_5186",
+                "zustand": "rechnet", "befehl": "kevcad-capture lauf …"}
+
+    def referenz_fotos(self, pfade: list[str], name: str | None = None) -> dict[str, Any]:
+        self._record("referenz_fotos", pfade, name)
+        return {"ok": True, "name": name or "Fotos", "ordner": "/tmp/r", "fotos": list(pfade)}
+
+    def referenz_vermessen(self, quelle: str | None = None, freie_masse: list[str] | None = None,
+                           bekannte_masse: dict[str, float] | None = None, bilder: int = 8, vorgaben: Any = None,
+                           grenzen: Any = None, maske: Any = None, von: float | None = None, bis: float | None = None,
+                           kb_brennweite: float | None = None) -> dict[str, Any]:
+        self._record("referenz_vermessen", quelle, freie_masse, bekannte_masse, bilder, vorgaben, grenzen, maske, von,
+                     bis, kb_brennweite)
+        from kevcad_kernel.protocol import referenz_beispiele
+
+        erg = {k: v for k, v in dict((n, h) for n, h, _ in referenz_beispiele())["ref_result"].items()
+               if k not in ("type", "seq")}
+        return {"ok": True, **erg, "kontrollbilder": ["/tmp/r/messung/kontrolle/a.jpg"]}
+
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:
             self.activity.append(text)

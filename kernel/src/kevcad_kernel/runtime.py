@@ -49,6 +49,7 @@ from kevcad_kernel.project import Project, ProjectError, new_project, open_proje
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
+from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.versionen.laufzeit import VersionenRuntimeMixin
 from kevcad_kernel.worker import WorkerClient
@@ -105,7 +106,7 @@ class Job:
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
-                    DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung):
+                    DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -158,6 +159,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._freigabe_init()  # Freigabe im Projektfenster (freigabe.py)
         self._drucker_init()  # Phase 8: Drucken (drucker/laufzeit.py)
         self._druckvorschau_init()  # Druckvorschau (DRUCKVORSCHAU.md)
+        self._referenz_init()  # Phase 4: Referenzen (referenz/laufzeit.py)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
         self._link.start()
@@ -656,6 +658,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._versionen_schliessen()  # Versionen: Hintergrund-Rechenprozess der Nachberechnung
         self._drucker_close()  # Phase 8: MQTT trennen, SSDP und Auftragsfaden beenden
         self._druckvorschau_schliessen()  # Druckvorschau: Slicer abbrechen
+        self._referenz_schliessen()  # Phase 4: laufendes Object Capture beenden
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -732,6 +735,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 msg["reply_to"] = reply_to
             self._send_app(msg)
             self._bestand_projekt(same)  # BESTAND nach jedem Projektwechsel
+            self._referenz_projekt(same)  # Phase 4: Referenzen des neuen Projekts
             for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
                 self._send_app(status)
         self._versionen_projekt(proj, same)  # Versionen: Repo anlegen, alte Stände übernehmen
@@ -1190,6 +1194,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
                 conn.send(status)
             self._drucker_on_connect(conn)  # Phase 8: PRINTER_STATUS
+            self._referenz_on_connect(conn)  # Phase 4: Referenzen (Liste, Netze, Fotos, Messergebnisse)
             self._link.activate(conn)
             self._versionen_on_connect(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -1312,6 +1317,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._drucker_app_message(kind, header):  # Phase 8: PRINTER_*, PRINT_JOB_REQ, PRINT_CONTROL
             pass
         elif self._druckvorschau_app_message(kind, header):
+            pass
+        elif self._referenz_app_message(kind, header):  # Phase 4: REF_ADD, REF_MEASURE_REQ, REF_APPLY
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

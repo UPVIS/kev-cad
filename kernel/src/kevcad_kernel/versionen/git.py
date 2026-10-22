@@ -35,9 +35,29 @@ __pycache__/
 .ipynb_checkpoints/
 .vscode/
 .idea/
+# Referenzen (Phase 4): Berichte, Kameras und Netz gehören zu den Versionen, Bilder, Masken, Texturen und Rohdaten
+# bleiben nur im Projektordner
+/referenzen/**/bilder/
+/referenzen/**/masken/
+/referenzen/**/kontrolle/
+/referenzen/**/fotos/
+/referenzen/**/roh/
+/referenzen/**/cache/
+/referenzen/**/vision/
+/referenzen/**/*.jpg
+/referenzen/**/*.jpeg
+/referenzen/**/*.png
+/referenzen/**/*.heic
+/referenzen/**/*.usdz
+/referenzen/**/*.ply
+/referenzen/**/*.pkl
+/referenzen/**/*.npz
 """
 GROSS_MARKE = "# Zu groß für die Versionen (automatisch):"
 MAX_DATEI_BYTES = 200 * 1024 * 1024
+# Größenregel für Referenzen: was dort über dieser Größe liegt (großes Netz, Bericht mit vielen Bildern), bleibt
+# ebenfalls draußen
+MAX_REFERENZ_BYTES = 20 * 1024 * 1024
 
 _git_ok: bool | None = None
 _git_meldung = ""
@@ -222,7 +242,8 @@ class GitRepo:
         for code, rel in st:
             if code == "??":
                 try:
-                    if (self.projekt / rel).stat().st_size > MAX_DATEI_BYTES:
+                    grenze = MAX_REFERENZ_BYTES if rel.startswith("referenzen/") else MAX_DATEI_BYTES
+                    if (self.projekt / rel).stat().st_size > grenze:
                         gross.append(rel)
                 except OSError:
                     pass

@@ -539,6 +539,8 @@ public enum KernelMessage: Sendable {
     case drucker(DruckerNachricht)
     /// Freigabe im Projektfenster (additiv, Strang „Feinschliff 2“): FREIGABE_ANFRAGE, Antwort ACK.
     case freigabe(FreigabeAnfrage)
+    /// Phase 4 (additiv): Referenzen – REF_LIST, REF_UPSERT, REF_REMOVE, REF_PHOTOS, REF_RESULT.
+    case referenz(ReferenzNachricht)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -575,6 +577,7 @@ public enum KernelMessage: Sendable {
         case .druck(let d): return d.typeName
         case .drucker(let d): return d.typeName
         case .freigabe: return "FREIGABE_ANFRAGE"
+        case .referenz(let r): return r.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -642,6 +645,8 @@ public enum KernelMessage: Sendable {
         case let t where DruckerNachricht.types.contains(t):
             return .drucker(try DruckerNachricht.decode(type: t, header: h))
         case "FREIGABE_ANFRAGE": return .freigabe(try FreigabeAnfrage.decode(h))
+        case let t where ReferenzNachricht.types.contains(t):
+            return .referenz(try ReferenzNachricht.decode(type: t, frame: frame))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

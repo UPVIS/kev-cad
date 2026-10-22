@@ -351,6 +351,34 @@ class KernelService(Protocol):
         """aktion liste | anlegen | wechseln | umbenennen. {"ok", "aktion", "variante", "name", "von"?, "gesichert"?,
         "lauf"?, "varianten"}"""
 
+    # Phase 4: Foto und Video als Referenz (additiv; PROTOCOL.md „Phase 4: Referenzen“, umgesetzt in
+    # kevcad_kernel/referenz/laufzeit.py). Ablage in <projekt>/referenzen/<name>/.
+    def referenzen(self, name: str | None = None, warten_s: float = 0.0) -> dict[str, Any]:
+        """Referenzen des Projekts mit Zustand und Fortschritt (wie REF_LIST), je Referenz dazu "ordner",
+        "capture_einstellung" und, falls vermessen, "messung_ergebnis" (wie REF_RESULT). Mit ``name`` und
+        ``warten_s`` wartet es, bis der laufende Auftrag dieser Referenz fertig ist. {"ok", "projekt", "referenzen",
+        "werkzeuge"}"""
+
+    def referenz_video(self, pfad: str, name: str | None = None, masz: dict[str, float] | None = None,
+                       auflage: bool = False, von: float | None = None, bis: float | None = None,
+                       einstellung: str = "schnell", warten_s: float = 0.0) -> dict[str, Any]:
+        """Referenznetz aus einem Handyvideo mit Apple Object Capture (kevcad-capture) im Hintergrund. ``masz`` setzt
+        den Maßstab ({"laenge": 180}), ``auflage`` für Gegenstände auf einer Unterlage. {"ok", "name", "ordner",
+        "zustand", "befehl", "referenz"? (mit warten_s)}"""
+
+    def referenz_fotos(self, pfade: list[str], name: str | None = None) -> dict[str, Any]:
+        """Fotos als Referenz ablegen (Arbeitsgröße). {"ok", "name", "ordner", "fotos"}"""
+
+    def referenz_vermessen(self, quelle: str | None = None, freie_masse: list[str] | None = None,
+                           bekannte_masse: dict[str, float] | None = None, bilder: int = 8,
+                           vorgaben: dict[str, Any] | None = None, grenzen: dict[str, Any] | None = None,
+                           maske: dict[str, Any] | None = None, von: float | None = None, bis: float | None = None,
+                           kb_brennweite: float | None = None) -> dict[str, Any]:
+        """Freie param()-Maße von model.py an der Referenz messen (fotomess, eigener Prozess; ein Bauer rechnet
+        model.py mit überschriebenen param-Werten). Synchron. {"ok", "referenz", "stand", "masse": [{"name", "wert",
+        "sigma", "start", "aenderung"}], "bekannt", "huelle", "grundkoerper", "teile", "empfehlungen", "bilder",
+        "verworfen", "ueberdeckung", "kontrollbilder", "zeiten", "dauer_s", "lage_netz"}"""
+
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...
 
