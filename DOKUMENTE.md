@@ -1,6 +1,6 @@
 # Kev CAD · Dokumente (Vertrag Phase 6)
 
-Version 1.1 (22.10.2026, Ergänzungen aus [RECHERCHE-PHASE6.md](RECHERCHE-PHASE6.md) Abschnitt 7). Verbindlich für Zeichnungen, Bauplan und Berichte aus
+Version 1.2 (22.10.2026; 1.1: Ergänzungen aus [RECHERCHE-PHASE6.md](RECHERCHE-PHASE6.md) Abschnitt 7; 1.2: `DRAWING_CREATE`, Änderungen des Agenten erreichen die App). Verbindlich für Zeichnungen, Bauplan und Berichte aus
 [PLAN-PHASE6-DOKUMENTE.md](PLAN-PHASE6-DOKUMENTE.md). Änderungen nur gemeinsam: dieses Dokument, `protocol.py`,
 Testdateien und Swift-Decoder im selben Commit (wie PROTOCOL.md). Einheiten auf dem Blatt: mm, Ursprung links unten,
 y nach oben. Modellkoordinaten wie überall: mm, Z oben.
@@ -137,12 +137,16 @@ Maße, Notizen und Bauplan-Schritte zeigen auf Geometrie über einen **Bezug** m
 | `DRAWING_REQ` | App → Kernel | `id`, `blatt` | `DRAWING` |
 | `DRAWING` | Kernel → App | `reply_to` (optional), `blatt` (Inhalt der Datei), `geometrie` (je Ansicht `{id, rahmen: [x0,y0,x1,y1], linien: {sichtbar, verdeckt, mitte, schnitt, schraffur, duenn}}` mit Polylinien in Blatt-mm), `masse` (je Maß die fertige Darstellung `{id, linien, pfeile, text, text_lage, text_winkel, wert}`), `stand` | Polylinien als f32-Arrays (siehe unten) |
 | `DRAWING_EDIT` | App → Kernel | `id`, `blatt`, `ops` (Liste, siehe unten), `von`: `kevin` | `ACK`, danach `DRAWING` |
+| `DRAWING_CREATE` | App → Kernel | `id`, `teile` (optional; ohne: alle gefertigten Teile und Zusammenbau), `art` (`teil` \| `baugruppe` \| `zusammenbau`), `format` (optional) – Version 1.2 | `ACK`, danach `DOCS` mit `reply_to` |
 | `BAUPLAN_REQ` | App → Kernel | `id` | `BAUPLAN` |
 | `BAUPLAN` | Kernel → App | `reply_to` (optional), `bauplan` (Inhalt der Datei mit Prüfung), `bilder` (je Schritt Strichbild wie `geometrie` einer Ansicht, Blatt-mm in einem Feld 180 × 120) | Polylinien |
 | `BAUPLAN_EDIT` | App → Kernel | `id`, `ops`, `von` | `ACK`, danach `BAUPLAN` |
 | `BAUPLAN_PRUEFEN` | App → Kernel | `id`, `schritt` (oder null für alle) | `ACK`, danach `BAUPLAN` |
 | `DOC_EXPORT_REQ` | Kernel → App | `id`, `bausteine` (Liste wie im Export-Dialog), `ziel` (Pfad .pdf) oder `drucken: true` | App antwortet `DOC_EXPORT_RES` |
 | `DOC_EXPORT_RES` | App → Kernel | `reply_to`, `ok`, `pfad`, `seiten`, `fehler` | – |
+
+Änderungen über MCP (`zeichnung_erstellen`, `zeichnung_bearbeiten`, `bauplan_bearbeiten`) schickt der Kernel der App
+sofort: `DOCS` und für jedes geänderte Blatt `DRAWING` bzw. `BAUPLAN` (Version 1.2), nicht erst nach dem nächsten Lauf.
 
 Polylinien-Nutzlast: je Linienart nacheinander `u32 Anzahl Polylinien`, je Polylinie `u32 Punktzahl` und `f32 x, y`
 paarweise; Reihenfolge der Linienarten wie im Kopf `linien_reihenfolge`. Maße und Texte im JSON-Kopf.
