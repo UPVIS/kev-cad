@@ -118,6 +118,35 @@ def test_ablage_finden_und_variante(tmp_path):
     assert ablage.scans_ordner("/a/de.upvis.kevcad.test.ui/kernel.sock") == Path("/a/de.upvis.kevcad.test.ui/Scans")
 
 
+def test_laufzeit_testvariante_startet_empfaenger(monkeypatch, tmp_path):
+    """Kernel einer Testvariante: Empfänger läuft (ohne Bonjour), eigener Dienst, Ablage im Datenordner."""
+    import shutil
+    import tempfile
+
+    from kevcad_kernel.runtime import KernelRuntime
+
+    basis = Path(tempfile.mkdtemp(prefix="kcs", dir=tempfile.gettempdir()))
+    var = basis / "de.upvis.kevcad.test.scan"
+    var.mkdir()
+    monkeypatch.setenv("KEVCAD_SCAN_BONJOUR", "0")
+    monkeypatch.delenv("KEVCAD_SCAN_EMPFANG", raising=False)
+    monkeypatch.delenv("KEVCAD_SCANS_DIR", raising=False)
+    rt = KernelRuntime(str(var / "kernel.sock"), 0, auto_run=False, start_worker=False)
+    try:
+        s = rt.scans()
+        e = s["empfaenger"]
+        assert e["laeuft"] and e["dienst"] == "_kevscan-test._tcp" and e["name"].endswith("(Kev CAD Test scan)")
+        assert s["ordner"] == str(var / "Scans") and s["scans"] == []
+        code, antwort = _post(e["port"], _scan_zip())
+        assert code == 200 and antwort["ok"]
+        assert [x["name"] for x in rt.scans()["scans"]] == ["Würfel"]
+        assert not rt.scan_importieren("letzter")["ok"]  # kein Projekt offen
+    finally:
+        rt.close()
+        shutil.rmtree(basis, ignore_errors=True)
+    assert rt._scan_empfaenger is None
+
+
 def test_bilder_waehlen_und_lage():
     import numpy as np
 
