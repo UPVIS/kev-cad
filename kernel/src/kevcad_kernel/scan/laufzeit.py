@@ -255,10 +255,12 @@ class ScanRuntimeMixin:
                        warnungen=b.get("warnungen") or [], tiefe=b.get("tiefe"), genauigkeit=b.get("genauigkeit"),
                        zeiten=b.get("zeiten"), voxel_mm=b.get("voxel_mm"))
             self._ref_fehler.pop(schluessel, None)
-            try:
-                ablage.referenz_merken(ordner, projekt, n, schnell)
-            except OSError as exc:
-                self._log(f"[scan] Status in {ordner}: {exc!r}")
+            # Status nur in Scans der eigenen Ablage; ein Ordner, den scan_importieren als Pfad bekam, bleibt unberührt
+            if ordner.resolve().parent == self._scan_basis.resolve():
+                try:
+                    ablage.referenz_merken(ordner, projekt, n, schnell)
+                except OSError as exc:
+                    self._log(f"[scan] Status in {ordner}: {exc!r}")
             self._log(f"[scan] {n}: ausgewertet in {dauer:.0f} s ({cap.get('bilder')} Bilder, Hülle {hu})")
         else:
             cap.update(zustand="fehler", fehler=fehler, dauer_s=dauer)
