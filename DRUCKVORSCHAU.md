@@ -134,3 +134,126 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
 - Einstellungen je Teil bzw. Gruppe ändern (Zweck, Wände, Füllung, Muster, Stützen, Brim) → `PRINT_SETTINGS`.
 - **„Platten als 3MF …“** → `PRINT_EXPORT_REQ`; danach „In Bambu Studio öffnen“.
 - Bericht „Druck“ im Export-Dialog von Phase 6 (Baustein `druck`): Tabelle je Platte und Teil mit Einstellungen.
+
+## Drucken (Phase 8)
+
+Version 1 (22.10.2026), additiv. Plan, Recherche und Entscheidungen P1–P7: [PLAN-PHASE8-DRUCK.md](PLAN-PHASE8-DRUCK.md).
+Kevins Entscheidung: **Weg A**. Änderungen nur gemeinsam: dieser Abschnitt, `protocol.py` (Abschnitt Drucker),
+`tools/make_drucker_fixtures.py` mit den Testdateien und die Swift-Decoder im selben Commit.
+
+### Wege
+
+- **`a`** (Standard): Drucker bleibt im Cloud-Modus. Der Kernel slict die gewählten Platten mit der CLI von Bambu Studio
+  fertig (`.gcode.3mf` ohne Objekte, `--min-save`) und öffnet die Datei in Bambu Studio; dort „Platte drucken“ →
+  „Senden“. Status nur lesend, wenn IP, Seriennummer und Zugangscode eingetragen sind.
+- **`b`** (gesperrt, nicht ausgebaut): LAN-only + Developer Mode. Upload per FTPS nach `cache/`, Start per MQTT
+  (`project_file`) mit genau einer Platte, Pause, Fortsetzen, Abbruch.
+
+**Sperre (verbindlich, `drucker/sperre.py`):** Außer den Leseanfragen `pushing.pushall` (höchstens alle 300 s) und
+`info.get_version` schickt der Kernel nur dann etwas an den Drucker, wenn alles gilt: Weg `b` eingestellt;
+MQTT-Verbindung in dieser Sitzung; `print.fun` in dieser Verbindung empfangen und Bit `0x20000000` gelöscht (Developer
+Mode an); SSDP meldet nicht `cloud` (falls gesehen); kein HMS `0500-0500-0001-0007` offen; für den Start ein von Kevin
+bestätigter Auftrag. Sonst sendet er nichts und antwortet mit dem Grund. Die Kamera wird nicht benutzt (`kamera: false`).
+
+### Einstellungen
+
+Gehören der App, eine Datei je Variante: `~/Library/Application Support/<Bundle-ID>/drucker.json`, nie mit Geheimnissen:
+
+```json
+{"version": 1, "aktiv": "p1p",
+ "drucker": [{"id": "p1p", "name": "P1P", "modell": "C11", "ip": "192.168.178.40", "weg": "a", "status_lesen": false,
+              "schluesselbund": {"dienst": "de.upvis.kevcad.drucker", "konto": "p1p"}}]}
+```
+
+- `id`: `[a-z0-9-]{1,32}`, zugleich das Konto im Schlüsselbund. `status_lesen` ist anfangs **aus**: Dass die lokale
+  MQTT-Verbindung im Cloud-Modus ohne Nebenwirkung bleibt, ist nur für das Lesen belegt (ha-bambulab „hybrid mode“), nicht
+  für die Zahl gleichzeitiger Verbindungen; Kevin schaltet es bewusst ein (Hinweis in den Einstellungen).
+- Seriennummer und Zugangscode stehen nur im Schlüsselbund: ein Eintrag (generisches Passwort) je Drucker, Dienst fest
+  `de.upvis.kevcad.drucker`, Konto = `id`, Inhalt `{"seriennummer": "…", "zugangscode": "…"}` als JSON. Die App legt
+  ihn an (Zugriff erlaubt für Kev CAD und `/usr/bin/security`; damit kann jedes Programm unter Kevins Benutzer ihn ohne
+  Rückfrage lesen, die Einstellungen sagen das und bieten „Zugangsdaten löschen“). Der Kernel liest ihn nur beim
+  Verbinden mit `/usr/bin/security find-generic-password -s de.upvis.kevcad.drucker -a <id> -w` (feste Namen, `id`
+  geprüft), hält ihn nur im Speicher, solange die Verbindung besteht, und gibt Ausgabe und Fehlertext von `security`
+  nie weiter. Niemand gibt ihn aus: nicht in Nachrichten, Protokollen, Tracebacks, MCP-Ergebnissen, Dateien oder
+  Commits. Das Feld `schluesselbund` in `drucker.json` ist nur ein Hinweis für Menschen.
+- Profile für das Slicen wie in der Druckvorschau (`kevcad.json` → `druck.filament`, Drucker `p1p-0.4`).
+
+### Nachrichten (ohne Nutzlast)
+
+| type | Richtung | Felder | Antwort |
+|---|---|---|---|
+| `PRINTER_CONFIG` | App → Kernel | `id`, `drucker` (Eintrag wie oben oder `null` = keiner) | `ACK`, danach `PRINTER_STATUS` |
+| `PRINTER_STATUS_REQ` | App → Kernel | `id` | `PRINTER_STATUS` mit `reply_to` |
+| `PRINTER_STATUS` | Kernel → App | siehe unten; beim Verbinden, bei jeder Änderung (höchstens 2 je s) und auf Anfrage | – |
+| `PRINT_JOB_REQ` | App → Kernel | `id`, `platten` (leer = alle), `weg`, `bestaetigt` (false = nur vorbereiten, true = Kevin hat bestätigt), `optionen` (nur Weg B), `auftrag` (optional, aus `PRINT_JOB_ASK`) | `ACK`, danach `PRINT_JOB_RES` |
+| `PRINT_JOB_RES` | Kernel → App | `reply_to`, `ok`, `auftrag`, `weg`, `schritt` (`vorbereitet`, `geoeffnet`, `gestartet`), `datei`, `platten`, `fehler`, `hinweise`, `ms` | – |
+| `PRINT_JOB_ASK` | Kernel → App | `id`, `auftrag`, `platten`, `weg`, `von` (`agent`), `grund` | `ACK` (Dialog offen); Kevins Antwort als `PRINT_JOB_REQ` mit `auftrag` oder `PRINT_CONTROL` `verwerfen` |
+| `PRINT_CONTROL` | App → Kernel | `id`, `aktion` (`aktualisieren`, `pause`, `fortsetzen`, `abbrechen`, `verwerfen`), `auftrag` (bei `verwerfen`) | `ACK` (`ok: false` mit Grund, wenn gesperrt) |
+
+`optionen` (Weg B): `{"bett_nivellieren": true, "flussrate": true, "zeitraffer": false, "spule": "extern"}`.
+
+`PRINTER_STATUS`:
+
+```json
+{"konfiguriert": true, "verbindung": "aus" | "verbindet" | "verbunden" | "getrennt" | "fehler", "meldung": "…",
+ "drucker": {"id": "p1p", "name": "P1P", "modell": "P1P", "ip": "192.168.178.40", "firmware": "01.10.00.00",
+             "modus": "cloud" | "lan" | "unbekannt", "entwicklermodus": false, "signal": "-45dBm"},
+ "weg": "a",
+ "wege": {"a": {"moeglich": true, "grund": null},
+          "b": {"moeglich": false, "grund": "Developer Mode ist aus.", "anleitung": ["Einstellungen → WLAN …"]}},
+ "steuern": false,
+ "druck": {"zustand": "unbekannt" | "bereit" | "vorbereiten" | "druckt" | "pausiert" | "fertig" | "fehlgeschlagen",
+           "gcode_state": "RUNNING", "fortschritt": 0.42, "schicht": 41, "schichten": 98, "restzeit_s": 3720,
+           "aufgabe": "Kugelschieber Platte 1", "datei": "…gcode.3mf", "stufe": "druckt", "geschwindigkeit": "standard"},
+ "temperaturen": {"duese": 219.5, "duese_ziel": 220.0, "bett": 55.0, "bett_ziel": 55.0},
+ "fehler": [{"code": "0300-0100-0001-0001", "text": "…", "schwere": "fehler", "art": "hms"}],
+ "kamera": false,
+ "gefunden": [{"name": "P1P", "modell": "P1P", "ip": "192.168.178.40", "verbindung": "cloud", "kennung": "3fa2c1d09e7b"}],
+ "auftrag": {"auftrag": "j-3", "zustand": "wartet" | "slict" | "bereit" | "oeffnet" | "geoeffnet" | "laedt_hoch" |
+             "startet" | "gestartet" | "fehler" | "verworfen",
+             "weg": "a", "platten": [1, 2], "fortschritt": 0.5, "meldung": "…", "datei": "…", "von": "kevin" | "agent"},
+ "aktualisiert": 1792656000.0}
+```
+
+- Ohne Einstellungen: `konfiguriert: false`, `verbindung: "aus"`, `drucker: null`; Weg A geht trotzdem (slicen und
+  öffnen), nur ohne Status.
+- `druck` und `temperaturen` sind `null`, solange kein Bericht da ist; `fortschritt` 0–1, `restzeit_s` aus
+  `mc_remaining_time` · 60.
+- `steuern`: true nur, wenn die Sperre Steuerbefehle erlaubt (Weg B nachgewiesen); die App zeigt Pause, Fortsetzen und
+  Abbruch nur dann.
+- `gefunden`: passiv per SSDP gehörte Bambu-Drucker; `kennung` = die ersten 12 Hex-Zeichen von SHA-256 der
+  Seriennummer (die App vergleicht mit dem eigenen Eintrag), nie die Seriennummer selbst.
+
+### Ablauf
+
+1. Kevin klickt „Drucken …“ (oder MCP `drucken` schickt `PRINT_JOB_ASK`, die App öffnet denselben Dialog). Beim
+   Öffnen schickt die App `PRINT_JOB_REQ` mit `bestaetigt: false`: Der Kernel slict schon (Zwischenspeicher je Eingang
+   und Profilen) und meldet `schritt: "vorbereitet"`.
+2. Kevin bestätigt → `PRINT_JOB_REQ` mit `bestaetigt: true` (und `auftrag`, falls vorhanden). Weg A: Datei nach
+   `<projekt>/output/<projekt>-platten.gcode.3mf` kopieren und mit `open -a BambuStudio` öffnen →
+   `schritt: "geoeffnet"`. Weg B: Sperre prüfen, hochladen, starten → `schritt: "gestartet"`.
+3. Eingang des Slicens ist das 3MF der Druckvorschau (`druck_export(ziel, platten)` von V-K). Enthält es keine
+   Bambu-Projekteinstellungen, lädt der Kernel die aufgelösten Systemprofile (P1P 0.4, Prozess nach Schichthöhe,
+   Filament je Material). Ohne Druckvorschau: Ersatzweg je Material aus den Druckteilen (Bambu Studio richtet aus und
+   ordnet an), mit Hinweis.
+
+### MCP
+
+- `drucker_status()`: Verbindung, Modus, Wege mit Grund, laufender Druck, Temperaturen, Fehler, gefundene Drucker,
+  letzter Auftrag. Nur lesen; ohne Seriennummer und Zugangscode.
+- `drucken(platten=None, weg="a", grund=None)`: **nur auf Kevins ausdrücklichen Wunsch.** Schickt `PRINT_JOB_ASK`; es
+  geschieht nichts, bis Kevin im Dialog bestätigt. Antwort: Auftrag und „wartet auf Kevins Bestätigung“.
+
+### App
+
+- `DruckerLeiste(model:)` in der Druckvorschau-Ansicht (Platz stimmt der Koordinator mit V-A ab): Zustand, Fortschritt,
+  Schicht, Restzeit, Temperaturen, Fehler, Knopf „Drucken …“; Pause, Fortsetzen, Abbruch nur bei `steuern`.
+- `DruckenDialog`: Platten (Auswahl), Material und Spule je Platte, Zeit, Weg (B ausgegraut mit Grund und Anleitung),
+  „In Bambu Studio öffnen“ bzw. „Drucken“.
+- `DruckerEinstellungen`: Name, IP, Seriennummer, Zugangscode (in den Schlüsselbund), Weg, „Status lesen“, gefundene
+  Drucker zum Übernehmen von Name und IP.
+- Selbsttest `KEVCAD_SELFTEST=drucker` gegen die Attrappe.
+
+Testdateien: `tools/make_drucker_fixtures.py` (`printer_*.frame`, `print_job_*.frame`, `print_control*.frame`,
+`ack_printer_*.frame`, Abschnitt `drucker` in `fixtures.json`); Beispiel und Prüfung in `protocol.py`
+(`drucker_status_beispiel`, `check_drucker_message`).
