@@ -5,13 +5,14 @@ import Foundation
 // <projekt>/dokumente/vorlagen.json. Rein Daten, ohne Oberfläche, mit `swift test` prüfbar.
 
 public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifiable {
-    case deckblatt, stueckliste, teileliste, einkaufsliste, zuschnitt, druck, zeichnungen, bauplan
+    case deckblatt, produktbild, stueckliste, teileliste, einkaufsliste, zuschnitt, druck, zeichnungen, bauplan
 
     public var id: String { rawValue }
 
     public var titel: String {
         switch self {
         case .deckblatt: return "Deckblatt"
+        case .produktbild: return "Produktbild"
         case .stueckliste: return "Stückliste"
         case .teileliste: return "Teileliste"
         case .einkaufsliste: return "Einkaufsliste"
@@ -25,6 +26,7 @@ public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifi
     public var beschreibung: String {
         switch self {
         case .deckblatt: return "Titel, Gesamtansicht, Kennzahlen und Inhalt"
+        case .produktbild: return "Rendering im Studio auf einer eigenen Seite (Phase 7)"
         case .stueckliste: return "Positionen mit Bild, Maßen, Anzahl, Gewicht und Preis"
         case .teileliste: return "Jedes Teil einzeln mit Bild, Herkunft und Abmessungen"
         case .einkaufsliste: return "Was nach Abzug des Bestands zu kaufen ist, zum Abhaken"
@@ -38,6 +40,7 @@ public enum ExportBausteinArt: String, CaseIterable, Codable, Sendable, Identifi
     public var symbol: String {
         switch self {
         case .deckblatt: return "doc.richtext"
+        case .produktbild: return "camera.aperture"
         case .stueckliste: return "list.number"
         case .teileliste: return "square.grid.3x3"
         case .einkaufsliste: return "cart"
@@ -142,7 +145,7 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
                 ExportSpalte("gewicht", "Gewicht", mindest: 14, .rechts),
                 ExportSpalte("kosten", "Kosten", mindest: 14, .rechts, standard: false),
             ]
-        case .deckblatt, .zeichnungen, .bauplan:
+        case .deckblatt, .produktbild, .zeichnungen, .bauplan:
             return []
         }
     }

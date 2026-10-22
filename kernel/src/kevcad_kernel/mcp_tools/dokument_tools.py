@@ -66,9 +66,11 @@ def register_dokument_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "Check the PDF yourself if needed, but do not send page images to Kevin.", WRITES)
     async def dokument_export(
         bausteine: Annotated[list[Any] | None, Field(
-            description="Building blocks in order: names (deckblatt, stueckliste, teileliste, einkaufsliste, "
-                        "zuschnitt, druck, zeichnungen, bauplan) or objects {art, spalten, auswahl}; empty = all; druck "
-                        "= 3D printing: plates, parts with settings, filament, time, cost")] = None,
+            description="Building blocks in order: names (deckblatt, produktbild, stueckliste, teileliste, "
+                        "einkaufsliste, zuschnitt, druck, zeichnungen, bauplan) or objects {art, spalten, auswahl}; "
+                        "empty = all; druck = 3D printing: plates, parts with settings, filament, time, cost; "
+                        "produktbild = a page with a studio rendering (the newest render from output/renders/ if it is "
+                        "newer than the last run, else a fast one)")] = None,
         ziel: Annotated[str | None, Field(description="Target .pdf path; empty = <project>/output/<name>-dokumente.pdf")]
         = None,
         drucken: Annotated[bool, Field(description="Open the print dialog. Only if Kevin explicitly asked to print.")]

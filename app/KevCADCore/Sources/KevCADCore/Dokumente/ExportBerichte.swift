@@ -32,6 +32,9 @@ public struct ExportQuellen {
     /// Vorschaubilder je Teilname (weißer Grund, isometrisch).
     public var teilBilder: [String: CGImage]
     public var gesamtBild: CGImage?
+    /// Phase 7 (Baustein `produktbild`): Rendering und woher es stammt (Dateiname oder „Studio, schnell“).
+    public var produktBild: CGImage?
+    public var produktQuelle: String?
     public var zeichnungen: [ExportZeichnungsblatt]
     /// Offene Befunde der Prüfung (für das Deckblatt).
     public var pruefFehler: Int?
@@ -82,6 +85,7 @@ public enum ExportBauer {
             let neu: [ExportSeite]
             switch wahl.art {
             case .deckblatt: neu = deckblatt(q, vorlage, format)
+            case .produktbild: neu = produktbild(q, format, &hinweise)
             case .stueckliste: neu = stueckliste(q, wahl, format, &hinweise)
             case .teileliste: neu = teileliste(q, wahl, format, &hinweise)
             case .einkaufsliste: neu = einkaufsliste(q, wahl, format, &hinweise)
@@ -146,6 +150,38 @@ public enum ExportBauer {
             l.text(text, x: box.midX, y: box.midY + 1.2, .normal(9.5), farbe: ExportStil.grau, .mitte,
                    maxBreite: box.width - 8)
         }
+    }
+
+    // MARK: Produktbild (Phase 7)
+
+    /// Eine Seite mit dem Rendering, so groß wie möglich, Titel und Herkunft darunter.
+    static func produktbild(_ q: ExportQuellen, _ format: ExportSeitenformat, _ hinweise: inout [String])
+        -> [ExportSeite]
+    {
+        guard let img = q.produktBild else {
+            hinweise.append("Produktbild: kein Rendering möglich (keine sichtbaren Teile?)")
+            return []
+        }
+        let seite = ExportSeite(groesse: format.mm, baustein: .produktbild, titel: "Produktbild",
+                                inhalt: .leinwand { l, _ in
+            let inhalt = ExportRand.inhalt(format.mm)
+            l.text(q.kopf.projekt, x: inhalt.minX, y: inhalt.minY + 8.5, .fett(20), farbe: ExportStil.tinte,
+                   maxBreite: inhalt.width)
+            let platz = CGRect(x: inhalt.minX, y: inhalt.minY + 16, width: inhalt.width, height: inhalt.height - 26)
+            let seitenverhaeltnis = CGFloat(img.width) / CGFloat(max(img.height, 1))
+            var w = platz.width, h = w / seitenverhaeltnis
+            if h > platz.height {
+                h = platz.height
+                w = h * seitenverhaeltnis
+            }
+            let r = CGRect(x: platz.midX - w / 2, y: platz.minY, width: w, height: h)
+            l.bild(img, in: r)
+            if let quelle = q.produktQuelle {
+                l.text("Rendering: \(quelle)", x: r.minX, y: r.maxY + 6, .normal(8), farbe: ExportStil.grau,
+                       maxBreite: r.width)
+            }
+        })
+        return [seite]
     }
 
     // MARK: Deckblatt

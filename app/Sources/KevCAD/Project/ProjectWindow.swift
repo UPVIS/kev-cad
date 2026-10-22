@@ -35,6 +35,7 @@ struct ProjectWindow: View {
         .navigationTitle(model.project?.name ?? "Kev CAD")
         .navigationSubtitle(untertitel)
         .modifier(DruckerDialoge(model: model))  // Phase 8: „Drucken …“ und Drucker-Einstellungen
+        .modifier(RenderDialoge(model: model))  // Phase 7: „Rendern …“
         .onAppear {
             session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
             BedingungenSchalter.wiederherstellen(model)

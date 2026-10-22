@@ -119,6 +119,8 @@ struct ExportDialog: View {
             return "wird bei Bedarf erzeugt"
         case .deckblatt:
             return "Titel, Ansicht, Kennzahlen, Inhalt"
+        case .produktbild:  // Phase 7: jüngstes Rendering oder schnell im Studio
+            return "Rendering, Studio aus der Produktansicht"
         }
     }
 

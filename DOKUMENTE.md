@@ -275,7 +275,7 @@ Umsetzung: Kernel `kevcad_kernel/dokument_export.py` (Laufzeit), `mcp_tools/doku
 | Feld | Inhalt |
 |---|---|
 | `id` | Anfrage; die App antwortet mit `DOC_EXPORT_RES` und `reply_to` |
-| `bausteine` | Liste in der gewünschten Reihenfolge, je `{art, spalten?, auswahl?}`; `art` aus `deckblatt`, `stueckliste`, `teileliste`, `einkaufsliste`, `zuschnitt`, `zeichnungen`, `bauplan`; `spalten` (Spalten-ids der Tabelle in dieser Reihenfolge, sonst die der Vorlage bzw. die Vorgabe); `auswahl` nur bei `zeichnungen` (Blatt-ids, sonst alle). Leer mit `vorlage`: die Bausteine der Vorlage |
+| `bausteine` | Liste in der gewünschten Reihenfolge, je `{art, spalten?, auswahl?}`; `art` aus `deckblatt`, `produktbild` (Phase 7: Rendering auf eigener Seite), `stueckliste`, `teileliste`, `einkaufsliste`, `zuschnitt`, `zeichnungen`, `bauplan`; `spalten` (Spalten-ids der Tabelle in dieser Reihenfolge, sonst die der Vorlage bzw. die Vorgabe); `auswahl` nur bei `zeichnungen` (Blatt-ids, sonst alle). Leer mit `vorlage`: die Bausteine der Vorlage |
 | `ziel` | absoluter Pfad der .pdf (der Kernel legt den Ordner an) oder null, wenn nur gedruckt wird |
 | `drucken` | true: zusätzlich der macOS-Druckdialog, je Blattformat ein Auftrag mit `.pageScaleNone` |
 | `format`, `ausrichtung` | Papier der Berichts- und Bauplanseiten (`A4`/`A3`, `hoch`/`quer`), null = Vorlage bzw. A4 hoch; Zeichnungsblätter behalten immer ihr eigenes Format |
