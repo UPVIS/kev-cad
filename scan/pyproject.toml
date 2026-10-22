@@ -1,0 +1,33 @@
+[project]
+name = "kevscan"
+version = "0.1.0"
+description = "Kev Scan auswerten: LiDAR-Tiefe mit Prompt Depth Anything, TSDF-Netz, Kameras für fotomess (Kev CAD)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # torch nur in dieser Umgebung, nie im Kernel. 2.13.0 liegt im uv-Zwischenspeicher (Platz ist knapp).
+    "torch==2.13.0",
+    "numpy>=2",
+    "scipy>=1.13",
+    "opencv-python-headless>=4.10",
+    "scikit-image>=0.24",
+    "huggingface-hub>=0.30",
+    "pillow>=10",
+]
+
+[project.scripts]
+kevscan = "kevscan.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kevscan"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
