@@ -63,6 +63,8 @@ public final class SceneStore {
     /// anklickbar) und Färbung der Teile nach ihrer Ausnutzung, siehe Statik/AppController+Statik.swift.
     public private(set) var statikBodies: [ViewportBody] = []
     public private(set) var statikTints: [String: SIMD3<Float>] = [:]
+    /// Statik Stufe 3: Teile, deren Festkörper-Feld (Farbverlauf auf dem Netz) gerade an ihrer Stelle steht.
+    public private(set) var statikVerdeckt: Set<String> = []
     /// Statik Stufe 2: Kontaktkräfte des aktuellen Bilds eines Ablaufs als Pfeile (auch während der Animation).
     public private(set) var ablaufBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
@@ -172,6 +174,7 @@ public final class SceneStore {
         vergleichTints = [:]
         statikBodies = []
         statikTints = [:]
+        statikVerdeckt = []
         ablaufBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
@@ -311,6 +314,7 @@ public final class SceneStore {
     ) {
         var touched = Set(transforms.keys).union(animationTransforms.keys)
         touched.formUnion(hidden.symmetricDifference(animationHidden))
+        if transforms.isEmpty != animationTransforms.isEmpty { touched.formUnion(statikVerdeckt) }  // Statik Stufe 3
         touched.formUnion(collision.symmetricDifference(collisionParts))
         animationTransforms = transforms
         animationHidden = hidden
@@ -342,11 +346,13 @@ public final class SceneStore {
         publish()
     }
 
-    /// Statik: Körper (Farbverlauf, Verformung) und Färbung der Teile setzen (leer = aus).
-    public func setStatik(bodies: [ViewportBody], tints: [String: SIMD3<Float>]) {
-        let touched = Set(tints.keys).union(statikTints.keys)
+    /// Statik: Körper (Farbverlauf, Verformung) und Färbung der Teile setzen (leer = aus); `verdeckt`: Teile, an deren
+    /// Stelle ein Festkörper-Feld steht (Stufe 3), sind in der Ruhelage ausgeblendet.
+    public func setStatik(bodies: [ViewportBody], tints: [String: SIMD3<Float>], verdeckt: Set<String> = []) {
+        let touched = Set(tints.keys).union(statikTints.keys).union(verdeckt.symmetricDifference(statikVerdeckt))
         statikBodies = bodies
         statikTints = tints
+        statikVerdeckt = verdeckt
         for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
@@ -691,7 +697,7 @@ public final class SceneStore {
     private func applyProps(_ name: String, now: CFTimeInterval = CACurrentMediaTime()) {
         guard var list = partBodies[name] else { return }
         let color = displayColor(name, now: now)
-        let visible = !hidden.contains(name) && !animationHidden.contains(name)
+        let visible = !hidden.contains(name) && !animationHidden.contains(name) && !istStatikVerdeckt(name)
         let transform = worldTransform(name)
         for i in list.indices {
             list[i].color = color
@@ -708,6 +714,11 @@ public final class SceneStore {
             }
             edgeBodies[name] = edges
         }
+    }
+
+    /// Statik Stufe 3: Teil steht unter seinem Festkörper-Feld (nur in der Ruhelage, das Feld gilt für sie).
+    func istStatikVerdeckt(_ name: String) -> Bool {
+        animationTransforms.isEmpty && statikVerdeckt.contains(name)
     }
 
     private func publish() {
@@ -754,7 +765,7 @@ public final class SceneStore {
         let clip = applySection ? section : nil
         var out: [ViewportBody] = []
         let now = CACurrentMediaTime()
-        for name in order where !hidden.contains(name) && !animationHidden.contains(name) {
+        for name in order where !hidden.contains(name) && !animationHidden.contains(name) && !istStatikVerdeckt(name) {
             guard let rec = parts[name], let live = partBodies[name] else { continue }
             // Der OffscreenRenderer hat weder Belichtung noch Tonwertkurve; sRGB-Farben sehen dort so aus wie im Viewport
             let colorLinear = displayColor(name, now: now, includeFlash: false)

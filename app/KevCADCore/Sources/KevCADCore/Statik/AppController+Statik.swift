@@ -8,6 +8,7 @@ extension AppController: StatikActions {
     func applyStatik(_ e: StatikErgebnis) {
         let s = model.statik
         let alt = s.auswahl
+        if let vorher = s.ergebnis, vorher.run != e.run { s.felder = [:] }  // Stufe 3: Felder gelten je Lauf
         s.ergebnis = e
         if e.zeigen, let a = e.aktiv, e.szenario(a) != nil {
             // Der Agent will das Szenario sehen (szenario_rechnen, statik(szenario))
@@ -39,16 +40,37 @@ extension AppController: StatikActions {
         scene.setAblauf(bodies: StatikGeometrie.pfeile(bild, kraftMax: ab.kraftMax))
     }
 
-    /// Körper und Färbung des gewählten Szenarios in die Szene (oder entfernen, wenn beides aus ist).
+    /// Stufe 3: Feld eines Teils übernehmen (STATICS_FIELD); gezeigt wird es, sobald STATICS denselben Schlüssel nennt.
+    func applyStatikFeld(_ f: StatikFeld) {
+        let s = model.statik
+        if let e = s.ergebnis, e.run != f.run { return }
+        s.felder[f.key] = f
+        updateStatikAnzeige()
+    }
+
+    /// Körper und Färbung des gewählten Szenarios in die Szene (oder entfernen, wenn beides aus ist). Stufe 3: Teile
+    /// mit Festkörper-Feld zeigen statt der Teilfarbe den Farbverlauf auf ihrem Netz (das Teil selbst ist dann
+    /// ausgeblendet) und ihre Verformung als Geist.
     func updateStatikAnzeige() {
         let s = model.statik
         guard let sz = s.szenario, s.farbverlauf || s.verformung else {
-            if !scene.statikBodies.isEmpty || !scene.statikTints.isEmpty { scene.setStatik(bodies: [], tints: [:]) }
+            if !scene.statikBodies.isEmpty || !scene.statikTints.isEmpty || !scene.statikVerdeckt.isEmpty {
+                scene.setStatik(bodies: [], tints: [:])
+            }
             return
         }
-        let toene = s.farbverlauf ? StatikGeometrie.toene(sz, bekannt: { self.scene.record($0) != nil }) : [:]
-        scene.setStatik(
-            bodies: StatikGeometrie.koerper(sz, farbverlauf: s.farbverlauf, verformung: s.verformung), tints: toene)
+        var toene = s.farbverlauf ? StatikGeometrie.toene(sz, bekannt: { self.scene.record($0) != nil }) : [:]
+        var koerper = StatikGeometrie.koerper(sz, farbverlauf: s.farbverlauf, verformung: s.verformung)
+        var verdeckt: Set<String> = []
+        for (i, f) in s.felder(fuer: sz).enumerated() where scene.record(f.teil) != nil {
+            if s.farbverlauf {
+                koerper += StatikFeldGeometrie.farbverlauf(f, id: "\(i)")
+                verdeckt.insert(f.teil)
+                toene.removeValue(forKey: f.teil)
+            }
+            if s.verformung { koerper += StatikFeldGeometrie.verformung(f, id: "\(i)") }
+        }
+        scene.setStatik(bodies: koerper, tints: toene, verdeckt: verdeckt)
     }
 
     // MARK: StatikActions
@@ -85,6 +107,10 @@ extension AppController: StatikActions {
     public func setKontaktpfeile(_ an: Bool) {
         model.statik.kontaktpfeile = an
         updateAblaufPfeile()
+    }
+
+    public func festkoerperAbbrechen() {
+        if !send(StatikAbbrechenMessage()) { log(.warning, "Festkörper: keine Verbindung zum Kernel") }
     }
 
     public func zeigeStatikUrteil(_ urteil: StatikUrteil) {

@@ -529,6 +529,8 @@ public final class AppController: AppActions {
             handleReferenz(r)
         case .statik(let e):  // Statik (Statik/AppController+Statik.swift)
             applyStatik(e)
+        case .statikFeld(let f):  // Statik Stufe 3: Feld eines Teils (Statik/AppController+Statik.swift)
+            applyStatikFeld(f)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

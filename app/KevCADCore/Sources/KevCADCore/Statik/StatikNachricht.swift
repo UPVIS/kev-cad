@@ -289,6 +289,8 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
     public var kippen: [StatikKippen]
     /// Stufe 2: Ablauf (nur bei Szenarien mit Geschwindigkeit, Bremsen oder Animation).
     public var ablauf: StatikAblauf?
+    /// Stufe 3: Festkörper-FEM der Teile mit Last (läuft im Hintergrund nach dem Lauf oder auf Anfrage).
+    public var festkoerper: StatikFestkoerper?
 
     public var id: String { name }
 
@@ -307,6 +309,7 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
         ueberhoehung = Float(j["ueberhoehung"]?.doubleValue ?? 1)
         kippen = (j["kippen"]?.arrayValue ?? []).map(StatikKippen.init(json:))
         ablauf = j["ablauf"].flatMap { $0.objectValue == nil ? nil : StatikAblauf(json: $0) }
+        festkoerper = j["festkoerper"].flatMap { $0.objectValue == nil ? nil : StatikFestkoerper(json: $0) }
     }
 
     /// Urteile, die etwas zu sagen haben (rot, gelb, überdimensioniert, nicht gerechnet).

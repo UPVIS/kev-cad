@@ -56,6 +56,8 @@ EXPECTED_TOOLS |= {"referenzen", "referenz_video", "referenz_fotos", "referenz_v
 EXPECTED_TOOLS |= {"statik", "szenario_rechnen"}
 # Statik Stufe 2 (Ablauf mit MuJoCo)
 EXPECTED_TOOLS |= {"dynamik", "dynamik_grenze"}
+# Statik Stufe 3 (Festkörper-FEM)
+EXPECTED_TOOLS |= {"festigkeit"}
 
 
 def free_port() -> int:

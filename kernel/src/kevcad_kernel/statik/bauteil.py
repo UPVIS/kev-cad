@@ -98,8 +98,15 @@ def schnitte(k: Any, R: np.ndarray, P: np.ndarray) -> list[dict[str, Any]]:
 def einspannung(m: StatikModell, name: str, koerper: dict[str, Any], ohne: Any = ()) -> np.ndarray | None:
     """Mitte der Berührung des Teils mit den Teilen, die es tragen (ohne ``ohne``, etwa den Stab, der die Last
     einleitet; Verbindungselemente nur, wenn sonst nichts da ist)."""
+    return tragende_nachbarn(m, name, koerper, ohne)[0]
+
+
+def tragende_nachbarn(m: StatikModell, name: str, koerper: dict[str, Any], ohne: Any = ()
+                      ) -> tuple[np.ndarray | None, list[str]]:
+    """(Mitte der Einspannung, Namen der tragenden Nachbarn): dieselbe Auswahl wie ``einspannung``; die Namen nimmt
+    der Festkörper (S3) als Lager."""
     k = koerper[name]
-    nach: list[tuple[bool, np.ndarray]] = []
+    nach: list[tuple[bool, np.ndarray, str]] = []
     for e in m.kanten.values():
         if name not in (e["a"], e["b"]):
             continue
@@ -109,11 +116,11 @@ def einspannung(m: StatikModell, name: str, koerper: dict[str, Any], ohne: Any =
         o = koerper[x]
         lo, hi = np.maximum(k.bmin, o.bmin), np.minimum(k.bmax, o.bmax)
         ve = x in m.teile and m.teile[x].verbindungselement
-        nach.append((ve, (lo + hi) / 2))
-    feste = [p for ve, p in nach if not ve] or [p for _, p in nach]
+        nach.append((ve, (lo + hi) / 2, x))
+    feste = [(p, x) for ve, p, x in nach if not ve] or [(p, x) for _, p, x in nach]
     if not feste:
-        return None
-    return np.mean(feste, axis=0)
+        return None, []
+    return np.mean([p for p, _ in feste], axis=0), sorted(x for _, x in feste)
 
 
 def pruefe_last(m: StatikModell, sz: Szenario, koerper: dict[str, Any], name: str, F: np.ndarray,
@@ -128,9 +135,10 @@ def pruefe_last(m: StatikModell, sz: Szenario, koerper: dict[str, Any], name: st
     if w is None or not w.grenze:
         return {"teil": name, "sicherheit": None, "text": f"{name}: Material ohne Festigkeitswerte im Katalog, "
                                                           "nicht nachgewiesen"}
-    R = einspannung(m, name, koerper, ohne)
+    R, nachbarn = tragende_nachbarn(m, name, koerper, ohne)
     if R is None:
         return None
+    punkt_gegeben = P is not None
     P = np.asarray(P if P is not None else t.schwerpunkt, dtype=float)
     M0 = np.zeros(3) if moment is None else np.asarray(moment, dtype=float)
     r = P - R
@@ -180,7 +188,10 @@ def pruefe_last(m: StatikModell, sz: Szenario, koerper: dict[str, Any], name: st
             "quer_zur_schicht": quer_schicht, "druckteil": t.druckteil, "hebel_mm": round(L, 1),
             "schnitt_mm": round(beste["s"], 1), "schnitt_flaeche_mm2": round(beste["A"], 1),
             "einspannung": [round(float(c), 1) for c in R], "lastpunkt": [round(float(c), 1) for c in P],
-            "richtung": [round(float(c), 3) for c in e], "werkstoff": w.id}
+            "richtung": [round(float(c), 3) for c in e], "werkstoff": w.id,
+            # für den Festkörper (S3): Last, Lager und ob der Lastpunkt angegeben war (sonst Schwerpunkt)
+            "kraft": [float(c) for c in F], "moment": None if moment is None else [float(c) for c in M0],
+            "punkt_gegeben": punkt_gegeben, "ohne": sorted(ohne), "nachbarn": nachbarn}
 
 
 def vorschlag_druck(m: StatikModell, koerper: dict[str, Any], b: dict[str, Any]) -> str:

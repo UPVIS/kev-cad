@@ -109,6 +109,13 @@ from the animation, loose bodies (`verbinde(..., art="aufliegen")`) like a ball.
 ball stays or jumps out with the speed limit, sliding limit, contact forces, hand check a = g*b/h; the app plays it as \
 animation "Ablauf: <name>". In model.py: `st.szenario("Bremsen", geschwindigkeit=1, bremsen="abrupt")` (computed in \
 the background after every run). Always state: rigid bodies, simplified friction, no deformation.
+- Solid FEM (Statik S3, Gmsh + scikit-fem + pyamg in a separate process, a few seconds per part): parts with a load \
+that the frame treats as rigid or as a cantilever (printed holders, brackets, plates, connectors) are computed as \
+volumes in the background after every run; `festigkeit(teil, szenario)` gives safety, governing criterion (printed \
+parts: layer interface with e_modul_z and quer_zur_schicht, target 4), location, deflection, the safety in every \
+print orientation (evidence for "drehen oder verstärken") and shows the stress gradient on the part's mesh. \
+`ablauf=True` uses the largest contact force from the motion simulation. Always state: linear-elastic, supports \
+fully clamped, full infill.
 
 Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
 explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \

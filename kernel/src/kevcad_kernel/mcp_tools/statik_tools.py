@@ -14,7 +14,7 @@ from pydantic import Field
 
 from . import format as fmt
 
-STATIK_TOOL_NAMES: tuple[str, ...] = ("statik", "szenario_rechnen", "dynamik", "dynamik_grenze")
+STATIK_TOOL_NAMES: tuple[str, ...] = ("statik", "szenario_rechnen", "dynamik", "dynamik_grenze", "festigkeit")
 
 
 def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotations: dict[str, Any]) -> None:
@@ -171,6 +171,45 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
         if res.get("grenzen"):
             text += "\nGrenzen: " + " ".join(res["grenzen"])
         return fmt.result(text, {k_: v for k_, v in res.items() if k_ != "ok"})
+
+    @tool("festigkeit", "Festigkeit (FEM)",
+          "Solid FEM (statics stage S3, a few seconds per part, separate process): stress and deformation of a part "
+          "that the frame model treats as rigid or as a cantilever (3D printed holders, brackets, plates, "
+          "connectors), with second-order tetrahedra (Gmsh, scikit-fem, pyamg). Supports are the contact faces to "
+          "the carrying neighbours, loads come from the scenarios (st.last on the part, support forces of the bars "
+          "from the frame model, own weight) or, with ablauf=true, the largest contact force from the motion "
+          "simulation (dynamik) of that scenario (e.g. ball hitting the catch roller). 3D printed parts: stiffer "
+          "and stronger within the layers; across the layers e_modul_z and quer_zur_schicht from the catalog, the "
+          "layer interface criterion is checked against target 4 (static). Answer: per part safety factor, traffic "
+          "light, governing criterion, location of the highest utilization, max deflection, safety in the other "
+          "print orientations (evidence for 'drehen oder verstärken') and the cantilever result S0 for comparison. "
+          "The viewer shows the stress (utilization) gradient on the part and the exaggerated deformation. Runs "
+          "automatically in the background after every run for parts with load; call it for details, another "
+          "scenario, a finer mesh (fein=true) or contact forces. Results are cached per part state and load case. "
+          "Always state the limits (linear-elastic, supports fully clamped, full infill). abbrechen=true stops a "
+          "running computation.", annotations["additive"])
+    async def festigkeit(
+        teil: Annotated[str | None, Field(description="Part or group, e.g. 'Wandhalter (Druck)'; omit for all parts "
+                                                      "with load")] = None,
+        szenario: Annotated[str | None, Field(description="Scenario name; omit for all scenarios with load")] = None,
+        fein: Annotated[bool, Field(description="Finer mesh (about 5x the elements, slower) for stress peaks at "
+                                                "holes and fillets")] = False,
+        ablauf: Annotated[bool, Field(description="Use the largest contact force from the motion simulation of the "
+                                                  "scenario as load on the part")] = False,
+        zeigen: Annotated[bool, Field(description="Show the result in the viewer")] = True,
+        abbrechen: Annotated[bool, Field(description="Only stop a running computation")] = False,
+    ) -> CallToolResult:
+        if abbrechen:
+            res = await t.work("bricht die Festigkeit ab", svc.festigkeit_abbrechen)
+            return fmt.result("Festkörper-Rechnung abgebrochen." if res.get("abgebrochen")
+                              else "Es lief keine Festkörper-Rechnung.", {k: v for k, v in res.items() if k != "ok"})
+        res = await t.work("rechnet die Festigkeit (FEM)", svc.festigkeit, teil, szenario, fein, ablauf, zeigen)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Festigkeit nicht gerechnet: {err}", res)
+        from kevcad_kernel.statik.bericht import festkoerper_text
+
+        return fmt.result(festkoerper_text(res), {k: v for k, v in res.items() if k != "ok"})
 
 
 def _dynamik_ergebnis(res: dict[str, Any]) -> CallToolResult:

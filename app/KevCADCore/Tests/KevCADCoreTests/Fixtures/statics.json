@@ -137,5 +137,96 @@
       }
     ],
     "grenzen": 3
+  },
+  "statics_festkoerper": {
+    "run": 11,
+    "stand": "done",
+    "aktiv": "Haken 2 kg",
+    "zeigen": true,
+    "szenarien": [
+      {
+        "name": "Eigengewicht",
+        "ampel": "gruen",
+        "urteile": 0,
+        "teile": [
+          "Rahmen/Rohr"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 41.2,
+        "ueberhoehung": 66.7
+      },
+      {
+        "name": "Aufstützen 30 kg",
+        "ampel": "rot",
+        "urteile": 2,
+        "teile": [
+          "Rahmen/Rohr",
+          "Rahmen/Halter (Druck)"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 0.2,
+        "ueberhoehung": 1.0,
+        "festkoerper": {
+          "stand": "laeuft",
+          "fortschritt": 0.45,
+          "teile": [
+            {
+              "teil": "Rahmen/Halter (Druck)",
+              "stand": "laeuft",
+              "ampel": null,
+              "sicherheit": null,
+              "feld": null,
+              "ausrichtung_beste": null
+            }
+          ]
+        }
+      },
+      {
+        "name": "Haken 2 kg",
+        "ampel": "rot",
+        "urteile": 1,
+        "teile": [
+          "Wandhalter (Druck)"
+        ],
+        "staebe": [],
+        "sicherheit": 1.87,
+        "ueberhoehung": 1.0,
+        "festkoerper": {
+          "stand": "done",
+          "fortschritt": 1.0,
+          "teile": [
+            {
+              "teil": "Wandhalter (Druck)",
+              "stand": "done",
+              "ampel": "rot",
+              "sicherheit": 1.87,
+              "feld": "d0f84561664942f7ae15",
+              "ausrichtung_beste": "-z"
+            }
+          ]
+        }
+      }
+    ],
+    "grenzen": 3
+  },
+  "statics_feld": {
+    "run": 11,
+    "szenario": "Haken 2 kg",
+    "teil": "Wandhalter (Druck)",
+    "feld": "d0f84561664942f7ae15",
+    "punkte": 8,
+    "dreiecke": 12,
+    "ueberhoehung": 2.6,
+    "payload_bytes": 400,
+    "ausnutzung_max": 2.0999999046325684,
+    "verschiebung_1": [
+      0.0,
+      0.0,
+      -2.4000000953674316
+    ]
   }
 }
