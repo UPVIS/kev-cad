@@ -117,6 +117,9 @@ def rechne_auftrag(auftrag: dict[str, Any]) -> dict[str, Any]:
             szen += [s for s in st.szenarien if s.name != neu.name]
         erg = rechne_alles(st.modell, szen, st.katalog, st.koerper, aktiv=neu.name,
                            alternativen=bool(auftrag.get("alternativen", True)), alt_szenarien=[neu])
+        if erg.get("stand") == "done" and not auftrag.get("allein"):
+            # bis zum nächsten Lauf gehört das Szenario dazu (die App zeigt es in der Liste, statik() kennt es)
+            st.szenarien = [s for s in st.szenarien if s.name != neu.name] + [neu]
     else:
         erg = rechne_alles(st.modell, st.szenarien, st.katalog, st.koerper)
     return erg

@@ -193,11 +193,15 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
         if amp != "gruen" and not sz.nur_eigengewicht:  # im Ruhezustand meldet das die Prüfung „stand“ schon
             name = k.get("name") or k["teile"][0]
             richtung = f" nach {k['richtung_text']}" if k.get("richtung_text") else ""
-            ur.append(urteil("kippen", k["teile"][0], amp,
+            kante = k.get("kante")
+            ort = ([(kante[0][0] + kante[1][0]) / 2, (kante[0][1] + kante[1][1]) / 2, float(modell.boden_z)]
+                   if kante else None)
+            # kein einzelnes Teil: die ganze Gruppe kippt (sonst färbt die App nur das schwerste Teil rot)
+            ur.append(urteil("kippen", k["teile"][0] if k.get("gruppe") == 1 else None, amp,
                              f"{name} {'kippt' if amp == 'rot' else 'steht knapp'}{richtung}: Kippreserve {z(r, 2)} "
                              f"(Ziel {z(ZIEL_KIPPEN, 1)}; Standmoment durch Kippmoment um die Kante der Standfläche).",
                              "Standfläche in Kipprichtung verbreitern, Schwerpunkt senken oder Last näher an die "
-                             "Mitte.", reserve=r, ziel=ZIEL_KIPPEN, kante=k.get("kante")))
+                             "Mitte.", reserve=r, ziel=ZIEL_KIPPEN, kante=kante, ort=ort))
     rutsch = None
     for r_ in s0.get("rutschen") or []:
         r = r_.get("reserve")
@@ -206,7 +210,7 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
         amp = ampel_reserve(r, ZIEL_RUTSCHEN)
         if amp != "gruen":
             rollen = " (auf Rollen: gilt gebremst; ungebremst rollt es weg)" if r_.get("auf_rollen") else ""
-            ur.append(urteil("rutschen", r_["teile"][0], amp,
+            ur.append(urteil("rutschen", r_.get("teil") or r_["teile"][0], amp,
                              f"Rutscht {'' if amp == 'rot' else 'fast '}auf dem Boden: nötig μ = {z(r_['mu_erf'], 2)}, "
                              f"vorhanden μ = {z(r_['mu_vorh'], 2)} ({r_['teil'].rsplit('/', 1)[-1]} auf "
                              f"{r_['untergrund']}){rollen}.",
