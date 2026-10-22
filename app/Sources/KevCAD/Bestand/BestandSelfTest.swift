@@ -33,7 +33,6 @@ enum BestandSelfTest {
         let model = session.model
         _ = await wait(30) { model.bestandZustand.zuschnitt != nil && model.bestandZustand.bestand != nil }
         try? await Task.sleep(for: .milliseconds(800))
-        BestandUI.shared.bereich = .stueckliste
         BestandUI.shared.gebautDialog = true
     }
 
@@ -125,7 +124,6 @@ enum BestandSelfTest {
         let vorschau = GebautVorschau.berechnen(
             zuschnitt: zuschnitt, bestand: vorGebaut, lines: model.bom?.lines ?? [], name: { model.catalog?.item($0)?.name })
         check(!vorschau.leer, "Vorschau: \(vorschau.kurz); weg: " + vorschau.weg.map(\.text).joined(separator: ", "))
-        BestandUI.shared.bereich = .stueckliste
         BestandUI.shared.gebautDialog = true
         try? await Task.sleep(for: .seconds(1.5))
         actions.bucheGebaut()

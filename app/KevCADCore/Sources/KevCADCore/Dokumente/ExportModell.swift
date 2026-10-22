@@ -87,7 +87,7 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
                 ExportSpalte("norm", "Norm", mindest: 18, gewicht: 0.5, standard: false),
                 ExportSpalte("material", "Werkstoff", mindest: 22, gewicht: 1),
                 ExportSpalte("masse", "Maße", mindest: 24, gewicht: 1),
-                ExportSpalte("anzahl", "Anz.", mindest: 10, .rechts),
+                ExportSpalte("anzahl", MaterialText.Spalte.anzahl, mindest: 13, .rechts),
                 ExportSpalte("gewicht", "Gewicht", mindest: 16, .rechts),
                 ExportSpalte("preis_je", "Preis je", mindest: 15, .rechts, standard: false),
                 ExportSpalte("preis", "Preis", mindest: 15, .rechts),

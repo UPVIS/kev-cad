@@ -1,8 +1,8 @@
 import KevCADCore
 import SwiftUI
 
-/// Menü „Dokumente“ und Drucken: Bereich wechseln (⌘1 3D-Modell, ⌘2 Dokumente), Zoom (⌘9 einpassen, ⌘0 1:1, ⌘+ ⌘−),
-/// Werkzeuge (V, D, N, nur im Bereich Dokumente), Als PDF sichern (⌥⌘P), Drucken (⌘P).
+/// Menü „Dokumente“ und Drucken: Zoom (⌘9 einpassen, ⌘0 1:1, ⌘+ ⌘−), Werkzeuge (V, D, N, nur im Bereich Dokumente),
+/// Als PDF sichern (⌥⌘P), Drucken (⌘P). Den Bereich wechseln ⌘1, ⌘2, ⌘3 im Menü „Darstellung“ (MaterialCommands).
 struct DokumenteCommands: Commands {
     @ObservedObject var model: AppModel
     @FocusedObject private var window: ProjectWindowState?
@@ -13,13 +13,6 @@ struct DokumenteCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Dokumente") {
-            Button("3D-Modell") { setze(.modell) }
-                .keyboardShortcut("1", modifiers: .command)
-                .disabled(window == nil || model.project == nil)
-            Button("Dokumente") { setze(.dokumente) }
-                .keyboardShortcut("2", modifiers: .command)
-                .disabled(window == nil || model.project == nil)
-            Divider()
             Group {
                 Button("Blatt einpassen") { zustand?.ausfuehren(.einpassen) }
                     .keyboardShortcut("9", modifiers: .command)
@@ -60,9 +53,5 @@ struct DokumenteCommands: Commands {
                 .keyboardShortcut("p", modifiers: .command)
                 .disabled(!mitBlatt)
         }
-    }
-
-    private func setze(_ b: ProjektBereich) {
-        withAnimation(.snappy(duration: 0.2)) { window?.bereich = b }
     }
 }

@@ -2,27 +2,42 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Reiter „Bestand“ im unteren Bereich des Projektfensters (BESTAND.md, Abschnitt „App“): links die Lagerteile des
-/// Projektbestands und die noch nicht erfassten Lagerteile der Stückliste, rechts ganze Stangen bzw. Platten, Reste und
-/// Stückgut des ausgewählten Lagerteils mit schnellem Erfassen. Jede Änderung geht als BESTAND_SAVE an den Kernel, der
-/// sie bucht; das Buchungsprotokoll mit „Rückgängig“ und die Einstellungen sitzen im Kopf.
-struct BestandPanel: View {
+/// Abschnitt „Bestand“ im Bereich „Material“ (BESTAND.md, Abschnitt „App“): links die Lagerteile des Projektbestands
+/// und die noch nicht erfassten Lagerteile der Stückliste, nach Gruppen wie die Stückliste, rechts ganze Stangen bzw.
+/// Platten, Reste und Stückgut des ausgewählten Lagerteils mit schnellem Erfassen. Jede Änderung geht als BESTAND_SAVE an
+/// den Kernel, der sie bucht; Buchungsprotokoll mit „Rückgängig“, Einstellungen und „Gebaut …“ sitzen im Kopf.
+struct BestandAnsicht: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
-    @ObservedObject var state: ProjectWindowState
+    @ObservedObject var material: MaterialZustand
     @ObservedObject private var ui = BestandUI.shared
     @State private var zeigeBuchungen = false
     @State private var zeigeEinstellungen = false
 
     private var bestand: Bestand? { model.bestandZustand.bestand }
 
-    /// Posten im Bestand: Stangenware, Platten, Stückgut, darin nach Namen.
+    /// Posten im Bestand: Gruppen wie in der Stückliste (Stangen und Profile, Platten, Normteile), darin nach Namen.
     private var posten: [BestandPosten] {
-        let rang: [BestandForm: Int] = [.stange: 0, .platte: 1, .stueckgut: 2]
-        return (bestand?.posten ?? []).sorted {
-            if $0.form != $1.form { return rang[$0.form, default: 3] < rang[$1.form, default: 3] }
+        (bestand?.posten ?? []).sorted {
+            let ga = gruppe($0), gb = gruppe($1)
+            if ga != gb { return ga < gb }
             return model.lagerteilName($0.id).localizedStandardCompare(model.lagerteilName($1.id)) == .orderedAscending
         }
+    }
+
+    private func gruppe(_ p: BestandPosten) -> MaterialGruppe {
+        switch p.form {
+        case .stange: return .stangen
+        case .platte: return .platten
+        case .stueckgut: return .normteile
+        }
+    }
+
+    /// Suche im Bereich „Material“ (Name, id).
+    private func passt(_ id: String) -> Bool {
+        let q = material.suche.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return true }
+        return (model.lagerteilName(id) + " " + id).lowercased().contains(q)
     }
 
     /// Lagerteile der Stückliste, die noch nicht im Bestand stehen.
@@ -43,13 +58,32 @@ struct BestandPanel: View {
             Divider()
             inhalt
         }
-        .background(Color(nsColor: .controlBackgroundColor))
         .onAppear {
             if model.catalog == nil { model.catalogActions?.requestCatalog(query: nil, art: nil) }
             if !model.bestandZustand.empfangen { model.bestandActions?.requestBestand() }
             waehleErstes()
         }
         .onChange(of: model.bestandZustand.bestand?.posten.map(\.id)) { _, _ in waehleErstes() }
+        .onChange(of: ui.auswahl) { _, id in teileZeigen(id) }
+        .onChange(of: model.selectedPartIDs) { _, ids in auswahlAus3D(ids) }
+    }
+
+    /// Auswahl wirkt in den 3D-Bereich: die Teile dieses Lagerteils auswählen.
+    private func teileZeigen(_ id: String?) {
+        guard let id else { return }
+        let teile = (model.bom?.lines ?? []).filter { $0.stockID == id }.flatMap(\.teile)
+        let jetzt = Set(model.selectedPartIDs)
+        // Schon ein Teil dieses Lagerteils gewählt (etwa im 3D-Bereich): die Auswahl dort nicht ausweiten
+        guard !teile.isEmpty, jetzt.isEmpty || !jetzt.isSubset(of: Set(teile)) else { return }
+        model.actions?.select(teile)
+    }
+
+    /// Auswahl aus dem 3D-Bereich oder dem Teilebaum: das Lagerteil des gewählten Teils zeigen.
+    private func auswahlAus3D(_ ids: [String]) {
+        guard let teil = ids.first, let line = model.bom?.line(containing: teil), let sid = line.stockID,
+              sid != ui.auswahl, (posten.map(\.id) + nichtErfasst).contains(sid)
+        else { return }
+        ui.auswahl = sid
     }
 
     /// Ohne gültige Auswahl das erste Lagerteil zeigen (der Bestand kommt oft erst nach dem Erscheinen).
@@ -61,24 +95,17 @@ struct BestandPanel: View {
     // MARK: Kopf
 
     private var kopf: some View {
-        HStack(spacing: 12) {
-            UntererBereichReiter()
-            Text(zusammenfassung)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .help(model.bestandZustand.datei.map { "Bestand dieses Projekts: \($0)" } ?? "")
+        MaterialAbschnittKopf(titel: MaterialAbschnitt.bestand.titel, symbol: MaterialAbschnitt.bestand.symbol,
+                              zeile: zusammenfassung.isEmpty ? "Material, das du für dieses Projekt hast" : zusammenfassung) {
             if model.bestandZustand.aktivitaet == .saving {
                 ProgressView().controlSize(.small)
                 Text("Wird gebucht …").foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
             Button {
                 ui.erfassen = ErfassenAnfrage(stockID: nil)
             } label: {
                 Label("Lagerteil aufnehmen …", systemImage: "plus")
             }
-            .controlSize(.small)
             .disabled(!bereit)
             .help("Lagerteil aus dem Katalog in den Bestand dieses Projekts aufnehmen")
             Button {
@@ -86,9 +113,8 @@ struct BestandPanel: View {
             } label: {
                 Label("Buchungen", systemImage: "clock.arrow.circlepath")
             }
-            .controlSize(.small)
             .help("Buchungsprotokoll: jede Änderung am Bestand, mit „Rückgängig“")
-            .popover(isPresented: $zeigeBuchungen, arrowEdge: .top) {
+            .popover(isPresented: $zeigeBuchungen, arrowEdge: .bottom) {
                 BuchungenListe(model: model)
             }
             Button {
@@ -97,28 +123,20 @@ struct BestandPanel: View {
                 Label("Einstellungen", systemImage: "gearshape")
                     .labelStyle(.iconOnly)
             }
-            .controlSize(.small)
             .disabled(bestand == nil)
             .help("Mindestrest und Sägeblatt")
-            .popover(isPresented: $zeigeEinstellungen, arrowEdge: .top) {
+            .popover(isPresented: $zeigeEinstellungen, arrowEdge: .bottom) {
                 BestandEinstellungenForm(model: model, einstellungen: bestand?.einstellungen ?? .standard)
             }
             Button {
-                withAnimation(.snappy(duration: 0.2)) { state.showBOM = false }
+                ui.zeigeGebaut()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
+                Label("Gebaut …", systemImage: "hammer")
             }
-            .buttonStyle(.borderless)
-            .help("Bereich ausblenden (⇧⌘B)")
+            .disabled(model.bestandActions == nil || model.bestandZustand.zuschnitt == nil || model.laufAktiv)
+            .help("Bestand abbuchen: was der Zuschnitt verplant, geht weg; neue Reste kommen dazu")
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 10)
-        .frame(height: 36)
-        .background(.bar)
+        .help(model.bestandZustand.datei.map { "Bestand dieses Projekts: \($0)" } ?? "")
     }
 
     private var bereit: Bool { model.bestandActions != nil && bestand != nil }
@@ -167,7 +185,7 @@ struct BestandPanel: View {
         } else {
             HStack(spacing: 0) {
                 liste
-                    .frame(width: 300)
+                    .frame(width: 320)
                 Divider()
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -177,18 +195,20 @@ struct BestandPanel: View {
 
     private var liste: some View {
         List(selection: $ui.auswahl) {
-            if !posten.isEmpty {
-                Section("Im Bestand") {
-                    ForEach(posten) { p in
+            let gefiltert = posten.filter { passt($0.id) }
+            ForEach(MaterialGruppe.allCases.filter { g in gefiltert.contains { gruppe($0) == g } }) { g in
+                Section(g.titel) {
+                    ForEach(gefiltert.filter { gruppe($0) == g }) { p in
                         PostenZeile(model: model, id: p.id, text: p.zusammenfassung, leer: p.leer)
                             .tag(p.id)
                             .contextMenu { menu(p) }
                     }
                 }
             }
-            if !nichtErfasst.isEmpty {
+            let fehlen = nichtErfasst.filter(passt)
+            if !fehlen.isEmpty {
                 Section("Aus der Stückliste, nicht erfasst") {
-                    ForEach(nichtErfasst, id: \.self) { id in
+                    ForEach(fehlen, id: \.self) { id in
                         PostenZeile(model: model, id: id, text: "nicht im Bestand", leer: true)
                             .tag(id)
                             .contextMenu {
@@ -234,7 +254,7 @@ struct BestandPanel: View {
     @ViewBuilder
     private var detail: some View {
         if let id = ui.auswahl, let p = bestand?.posten(id) {
-            PostenDetail(model: model, posten: p)
+            PostenDetail(model: model, material: material, posten: p)
                 .id(id)
         } else if let id = ui.auswahl, nichtErfasst.contains(id) {
             ContentUnavailableView {
@@ -359,6 +379,7 @@ struct PostenAenderung {
 private struct PostenDetail: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
+    @ObservedObject var material: MaterialZustand
     let posten: BestandPosten
     @ObservedObject private var ui = BestandUI.shared
     @State private var entfernenFragen = false
@@ -441,8 +462,7 @@ private struct PostenDetail: View {
                 }
                 Spacer(minLength: 8)
                 Button("Zuschnitt zeigen") {
-                    ui.unten = .zuschnitt
-                    ui.bereich = .stueckliste
+                    material.zeige(.zuschnitt, stockID: posten.id)
                 }
                 .controlSize(.small)
             }

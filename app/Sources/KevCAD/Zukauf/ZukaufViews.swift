@@ -2,7 +2,7 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-// Phase 3: Zukaufteile im Inspektor, in der Stückliste und im Lagerkatalog.
+// Phase 3: Zukaufteile im Inspektor und im Lagerkatalog; die Liste der Zukaufteile steht im Bereich „Material“.
 
 // MARK: - Inspektor
 
@@ -122,102 +122,6 @@ struct InfoRow: View {
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
-        }
-    }
-}
-
-// MARK: - Stückliste
-
-/// Unter der Stückliste: je Zukaufteil Bild, Hersteller und Nummer, Stückpreis mit Datum, CAD-Quelle und Link.
-struct BOMZukaufList: View {
-    @ObservedObject var model: AppModel
-    let lines: [BOMLine]
-    var selected: Int?
-    var onSelect: (BOMLine) -> Void
-    @Environment(\.openURL) private var openURL
-
-    private var height: CGFloat { min(CGFloat(lines.count) * 46 + 30, 176) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "cart").foregroundStyle(.secondary)
-                Text("Zukaufteile").fontWeight(.semibold)
-                Text("· Stückpreise wie im Shop, mit Datum").foregroundStyle(.secondary)
-                Spacer()
-                if lines.contains(where: { $0.zukauf?.vereinfacht == true }) {
-                    Label("vereinfachte Teile sind Ersatzkörper", systemImage: "cube.transparent")
-                        .foregroundStyle(.orange)
-                        .help("Für diese Teile fehlt noch das Hersteller-CAD; im Modell stehen Quader oder Zylinder aus den Shop-Maßen")
-                }
-            }
-            .font(.callout)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.top, 7)
-            .padding(.bottom, 4)
-            ScrollView(.vertical) {
-                VStack(spacing: 2) {
-                    ForEach(lines) { line in
-                        row(line)
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 6)
-            }
-            .scrollBounceBehavior(.basedOnSize)
-        }
-        .frame(height: height)
-    }
-
-    private func row(_ line: BOMLine) -> some View {
-        let z = line.zukauf ?? ZukaufBOMInfo()
-        return HStack(spacing: 10) {
-            ZukaufImage(url: z.bild, size: 34)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(line.benennung).fontWeight(.medium).lineLimit(1)
-                Text(([z.title.isEmpty ? nil : z.title, z.gtin.map { "EAN \($0)" }, "Pos. \(line.pos)"] as [String?])
-                    .compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(line.preisJe.map { "\(KevFormat.euro($0)) / Stück" } ?? "ohne Preis")
-                    .monospacedDigit()
-                    .foregroundStyle(line.preisJe == nil ? .secondary : .primary)
-                Text(([z.preisBrutto.map { $0 ? "brutto" : "netto" }, ZukaufDate.display(z.preisStand).map { "Stand \($0)" }]
-                    as [String?]).compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(minWidth: 130, alignment: .trailing)
-            CADSourceBadge(simplified: z.vereinfacht, title: z.vereinfacht ? "vereinfacht" : z.cadTitle)
-                .frame(minWidth: 96, alignment: .leading)
-            Button {
-                if let url = z.url { openURL(url) }
-            } label: {
-                Label("Shop", systemImage: "arrow.up.right.square")
-            }
-            .controlSize(.small)
-            .disabled(z.url == nil)
-            .help(z.url?.absoluteString ?? "kein Link")
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(selected == line.pos ? Color.accentColor.opacity(0.14) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { onSelect(line) }
-        .contextMenu {
-            if let url = z.url {
-                Button("Produktseite öffnen") { openURL(url) }
-                Button("Link kopieren") { copyToPasteboard(url.absoluteString) }
-            }
-            if let mpn = z.mpn { Button("Nummer kopieren") { copyToPasteboard(mpn) } }
         }
     }
 }

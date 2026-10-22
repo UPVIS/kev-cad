@@ -2,9 +2,34 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Bereich des Projektfensters: 3D-Modell oder Dokumente (Zeichnungen, Bauplan, Berichte).
-enum ProjektBereich: String {
-    case modell, dokumente
+/// Bereich des Projektfensters: 3D-Modell (⌘1), Dokumente (⌘2: Zeichnungen, Bauplan, Berichte) oder Material (⌘3:
+/// Stückliste, Zuschnitt, Bestand, Einkaufsliste, Zukauf- und Druckteile).
+enum ProjektBereich: String, CaseIterable {
+    case modell, dokumente, material
+
+    var titel: String {
+        switch self {
+        case .modell: return "3D-Modell"
+        case .dokumente: return "Dokumente"
+        case .material: return "Material"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .modell: return "cube"
+        case .dokumente: return "doc.text"
+        case .material: return "shippingbox"
+        }
+    }
+
+    var kuerzel: KeyEquivalent {
+        switch self {
+        case .modell: return "1"
+        case .dokumente: return "2"
+        case .material: return "3"
+        }
+    }
 }
 
 /// Was die Seitenleiste des Bereichs Dokumente gerade zeigt.

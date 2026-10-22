@@ -37,6 +37,9 @@ public struct ExportQuellen {
     public var pruefFehler: Int?
     /// Druckvorschau (additiv, Baustein `druck`, DRUCKVORSCHAU.md).
     public var druck: Druckvorschau?
+    /// Bestand des Projekts und Katalog (Mindestreste, Werkstoffnamen), wie im Bereich „Material“.
+    public var projektBestand: Bestand?
+    public var katalog: Catalog?
 
     public init(kopf: ExportKopf, bom: BillOfMaterials? = nil, bestand: BOMBestand? = nil, teile: [PartNode] = [],
                 bauplan: Bauplan? = nil, strichbilder: [String: BauplanStrichbild] = [:],
@@ -54,6 +57,12 @@ public struct ExportQuellen {
         self.gesamtBild = gesamtBild
         self.zeichnungen = zeichnungen
         self.pruefFehler = pruefFehler
+    }
+
+    /// Dieselbe Datenquelle wie der Bereich „Material“ und die Schnellansichten: Positionen, Gruppen, Kennzeichen,
+    /// Zuschnitt, Einkauf und Summen.
+    public var material: MaterialDaten {
+        MaterialDaten(bom: bom, bestand: bestand, projektBestand: projektBestand, katalog: katalog)
     }
 
     /// Bild einer Stücklistenzeile: das erste ihrer Teile mit Bild.
@@ -216,7 +225,7 @@ public enum ExportBauer {
             zahlen.append((KevFormat.integer(bom.totals.teile), "Teile"))
             zahlen.append((KevFormat.integer(bom.totals.positionen), "Positionen"))
             zahlen.append((KevFormat.kg(bom.totals.kg), "Gewicht"))
-            if let p = bom.totals.preis { zahlen.append(("≈ " + KevFormat.euro(p), "Material")) }
+            if let p = bom.totals.preis { zahlen.append(("≈ " + KevFormat.euro(p), "Materialkosten")) }
         } else if !q.teile.isEmpty {
             zahlen.append((KevFormat.integer(q.teile.count), "Teile"))
         }
@@ -280,45 +289,24 @@ public enum ExportBauer {
 
     // MARK: Stückliste
 
+    /// Gruppe einer Art (Reihenfolge, Titel), wie im Bereich „Material“.
     static func artGruppe(_ art: String) -> (Int, String) {
-        switch art {
-        case "rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil", "nutprofil",
-            "holz":
-            return (0, "Stangen und Profile")
-        case "platte": return (1, "Platten")
-        case "druckteil": return (2, "3D-Druckteile")
-        case "schraube", "mutter", "scheibe": return (3, "Normteile")
-        case "zukaufteil", "kamera", "objektiv", "kamerazubehoer": return (4, "Zukaufteile")
-        case "eigenteil": return (5, "Eigenteile ohne Lager")
-        default: return (6, "Weitere")
-        }
+        let g = MaterialGruppe(art: art)
+        return (g.rawValue, g.titel)
+    }
+
+    /// Herkunft einer Position: Zukauf mit Hersteller, Druckteil, Eigenteil, sonst die Quelle aus dem Bestandsabgleich
+    /// („Rest + Kaufen“) bzw. „Lager“.
+    static func herkunft(_ p: MaterialPosition) -> String {
+        if p.herkunft != nil || p.versorgung.isEmpty { return p.herkunftText }
+        return p.versorgung.map(\.titel).joined(separator: " + ")
     }
 
     static func herkunft(_ line: BOMLine) -> String {
-        switch line.art {
-        case "druckteil": return "3D-Druck"
-        case "zukaufteil", "kamera", "objektiv", "kamerazubehoer": return line.zukauf?.hersteller ?? "Zukauf"
-        case "eigenteil": return "Eigenteil"
-        default: return "Lager"
-        }
+        herkunft(MaterialDaten.position(line, zuschnitt: nil, stueckgut: [], katalog: nil))
     }
 
-    static func masseText(_ line: BOMLine) -> String {
-        var t = line.masseText
-        if let l = line.laenge {
-            // Stangenware: der Maßtext ist meist schon die Länge
-            let laenge = KevFormat.length(l)
-            let zahl = KevFormat.compact(l, maxDigits: 1)
-            if t.isEmpty {
-                t = laenge
-            } else if !t.contains(laenge) && !t.hasSuffix(" " + zahl) && !t.contains("× " + zahl) {
-                t += ", L = " + laenge
-            }
-            let g = KevFormat.gehrung(line.gehrung)
-            if g != "–" { t += ", Gehrung " + g }
-        }
-        return t
-    }
+    static func masseText(_ line: BOMLine) -> String { MaterialText.masseMitGehrung(line) }
 
     static func stueckliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportSeitenformat,
                             _ hinweise: inout [String]) -> [ExportSeite]
@@ -329,28 +317,25 @@ public enum ExportBauer {
         }
         let spalten = wahl.wirksameSpalten
         var zeilen: [ExportZeile] = []
-        let gruppen = Dictionary(grouping: bom.lines) { artGruppe($0.art).0 }
-        let reihenfolge = gruppen.keys.sorted { (gruppen[$0]!.map(\.pos).min() ?? 0) < (gruppen[$1]!.map(\.pos).min() ?? 0) }
-        for key in reihenfolge {
-            let lines = gruppen[key]!.sorted { $0.pos < $1.pos }
-            zeilen.append(.gruppe(artGruppe(lines[0].art).1))
-            for line in lines {
+        // Gruppen und Texte aus der gemeinsamen Datenquelle (wie im Bereich „Material“)
+        for g in q.material.gruppen {
+            zeilen.append(.gruppe(g.gruppe.titel))
+            for p in g.positionen {
+                let line = p.line
                 var z: [String: ExportZelle] = [:]
                 z["pos"] = ExportZelle("\(line.pos)", fett: true)
                 z["bild"] = ExportZelle(bild: q.bild(line))
                 // Druck- und Eigenteile heißen wie ihr Teil im Modell: Name groß, Baugruppe darunter
-                let pfad = line.benennung.split(separator: "/").map(String.init)
-                let unter = line.zukauf?.mpn.map { "Nr. \($0)" } ?? line.norm
-                    ?? (pfad.count > 1 ? pfad.dropLast().joined(separator: " / ") : nil)
-                z["benennung"] = ExportZelle(pfad.last ?? line.benennung, unter: unter)
+                z["benennung"] = ExportZelle(p.name, unter: p.unter)
                 z["norm"] = ExportZelle(line.norm ?? "")
-                z["material"] = ExportZelle(line.material ?? "–")
+                z["material"] = ExportZelle(p.werkstoff ?? "–")
                 z["masse"] = ExportZelle(masseText(line))
                 z["anzahl"] = ExportZelle("\(line.anzahl)", fett: true)
                 z["gewicht"] = ExportZelle(line.kg.map(KevFormat.kg) ?? "–")
                 z["preis_je"] = ExportZelle(line.preisJe.map(KevFormat.euro) ?? "–")
                 z["preis"] = ExportZelle(line.preis.map(KevFormat.euro) ?? "–")
-                z["herkunft"] = ExportZelle(herkunft(line))
+                z["herkunft"] = ExportZelle(herkunft(p),
+                                            farbe: p.kennzeichen.count == 1 ? ExportStil.farbe(p.kennzeichen[0]) : nil)
                 zeilen.append(ExportZeile(z))
             }
         }
@@ -363,7 +348,7 @@ public enum ExportBauer {
         if !spalten.contains(where: { $0.id == "bild" }) { t.bildHoehe = 0 }
         let kennzeile = "\(KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")), "
             + "\(KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile")), \(KevFormat.kg(bom.totals.kg))"
-            + (bom.totals.preis.map { ", Material ≈ \(KevFormat.euro($0))" } ?? "")
+            + (bom.totals.preis.map { ", Materialkosten ≈ \(KevFormat.euro($0))" } ?? "")
         var bloecke: [ExportBlock] = [ueberschrift("Stückliste", kennzeile), .tabelle(t)]
         if let h = bom.totals.preisHinweis, !h.isEmpty { bloecke += [.abstand(2), hinweisZeile(h)] }
         for w in bom.warnings.prefix(4) { bloecke.append(hinweisZeile(w, farbe: ExportStil.tinte)) }
@@ -372,15 +357,10 @@ public enum ExportBauer {
 
     // MARK: Teileliste
 
-    static func herkunft(_ p: PartNode) -> (String, String?) {
-        if let s = p.stock {
-            var unter: String?
-            if let l = s.laenge { unter = "L = " + KevFormat.length(l) }
-            return (s.name, unter)
-        }
-        if let z = p.zukauf { return ("Zukauf" + (z.hersteller.map { " · \($0)" } ?? ""), z.mpn) }
-        if p.inventarFehlt { return ("nicht im Inventar", nil) }
-        return ("3D-Druck", p.material)
+    /// Herkunft eines Teils (gemeinsame Datenquelle: Druck- und Eigenteile nach der Stückliste).
+    static func herkunft(_ p: PartNode, _ material: MaterialDaten = .leer) -> (String, String?) {
+        let h = material.herkunft(p)
+        return (h.titel, h.unter)
     }
 
     static func teileliste(_ q: ExportQuellen, _ wahl: ExportBausteinWahl, _ format: ExportSeitenformat,
@@ -392,6 +372,7 @@ public enum ExportBauer {
         let spalten = wahl.wirksameSpalten
         var zeilen: [ExportZeile] = []
         var nr = 0
+        let material = q.material
         var gruppe: String?
         var ersteStelle: [String: Int] = [:]
         for (i, p) in q.teile.enumerated() {
@@ -410,7 +391,7 @@ public enum ExportBauer {
                 gruppe = g
             }
             nr += 1
-            let (her, herUnter) = herkunft(p)
+            let (her, herUnter) = herkunft(p, material)
             let size = p.bboxMax - p.bboxMin
             var z: [String: ExportZelle] = [:]
             z["nr"] = ExportZelle("\(nr)", fett: true)
@@ -445,47 +426,59 @@ public enum ExportBauer {
     {
         let spalten = wahl.wirksameSpalten
         var bloecke: [ExportBlock] = []
-        guard let b = q.bestand else {
+        let m = q.material
+        guard q.bestand != nil || !m.zukaufEinkauf.isEmpty else {
             hinweise.append("Einkaufsliste ohne Bestandsabgleich (Kernel hat keinen Zuschnitt mit Bestand geschickt)")
             return flussSeiten(.einkaufsliste, format, [ueberschrift("Einkaufsliste", nil),
                                                         leer("Noch keine Einkaufsliste: erst model.py rechnen")])
         }
-        let summe = b.summe ?? b.einkaufSumme
-        let kennzeile = b.einkaufsliste.isEmpty ? "Alles im Projektbestand vorhanden"
-            : "\(KevFormat.count(b.einkaufsliste.count, one: "Position", many: "Positionen")) nach Abzug des Bestands"
-                + (summe.map { ", zusammen ≈ \(KevFormat.euro($0))" } ?? "")
+        // Dieselbe Liste wie im Bereich „Material“: Lagerware nach Abzug des Bestands, dazu die Zukaufteile
+        let k = m.kennzahlen
+        let kennzeile = m.einkauf.isEmpty ? "Alles im Projektbestand vorhanden"
+            : "\(KevFormat.count(m.einkauf.count, one: "Position", many: "Positionen")) nach Abzug des Bestands"
+                + (k.einkaufSumme.map { ", zusammen ≈ \(KevFormat.euro($0))" } ?? "")
         bloecke.append(ueberschrift("Einkaufsliste", kennzeile))
-        if b.einkaufsliste.isEmpty {
+        if m.einkauf.isEmpty {
             bloecke.append(leer("Nichts zu kaufen: alles ist im Projektbestand"))
         } else {
-            var zeilen: [ExportZeile] = b.einkaufsliste.map { e in
-                ExportZeile([
-                    "abhaken": ExportZelle(kaestchen: true), "menge": ExportZelle(e.mengeText, fett: true),
-                    "einheit": ExportZelle(e.einheit), "benennung": ExportZelle(e.benennung, unter: e.hinweis),
-                    "preis_je": ExportZelle(e.preisJe.map(KevFormat.euro) ?? "–"),
-                    "preis": ExportZelle(e.preis.map(KevFormat.euro) ?? "–"),
-                    "bezugsquelle": ExportZelle(e.linkTitel ?? "–", farbe: e.link != nil ? ExportStil.blau : nil,
-                                                verweis: e.link),
-                    "hinweis": ExportZelle(e.hinweis ?? ""),
-                ])
+            var zeilen: [ExportZeile] = []
+            for (art, titel) in [(MaterialEinkauf.Art.lager, "Lagerware"), (.zukauf, "Zukaufteile")] {
+                let teil = m.einkauf.filter { $0.art == art }
+                guard !teil.isEmpty else { continue }
+                if !m.lagerEinkauf.isEmpty && !m.zukaufEinkauf.isEmpty { zeilen.append(.gruppe(titel)) }
+                for z in teil {
+                    let e = z.position
+                    zeilen.append(ExportZeile([
+                        "abhaken": ExportZelle(kaestchen: true), "menge": ExportZelle(e.mengeText, fett: true),
+                        "einheit": ExportZelle(e.einheit), "benennung": ExportZelle(e.benennung, unter: e.hinweis),
+                        "preis_je": ExportZelle(e.preisJe.map(KevFormat.euro) ?? "–"),
+                        "preis": ExportZelle(e.preis.map(KevFormat.euro) ?? "–"),
+                        "bezugsquelle": ExportZelle(e.linkTitel ?? "–", farbe: e.link != nil ? ExportStil.blau : nil,
+                                                    verweis: e.link),
+                        "hinweis": ExportZelle(e.hinweis ?? ""),
+                    ]))
+                }
             }
             zeilen.append(.summe(["benennung": ExportZelle("Summe"),
-                                  "preis": ExportZelle(summe.map(KevFormat.euro) ?? "–")]))
+                                  "preis": ExportZelle(k.einkaufSumme.map(KevFormat.euro) ?? "–")]))
             bloecke.append(.tabelle(ExportTabelle(spalten: spalten, zeilen: zeilen)))
-            if let h = b.einkaufHinweis, !h.isEmpty { bloecke += [.abstand(2), hinweisZeile(h)] }
-            if b.ohnePreis > 0 {
-                bloecke.append(hinweisZeile("\(b.ohnePreis) Positionen ohne Preis im Katalog, Summe daher unvollständig"))
+            if let h = m.einkaufHinweis, !h.isEmpty { bloecke += [.abstand(2), hinweisZeile(h)] }
+            if k.einkaufOhnePreis > 0 {
+                bloecke.append(hinweisZeile("\(k.einkaufOhnePreis) Positionen ohne Preis im Katalog, Summe daher unvollständig"))
             }
         }
-        // Kleinteile: Bedarf, aus Bestand, kaufen
-        if !b.stueckgut.isEmpty {
-            bloecke += [.abstand(6), zwischentitel("Kleinteile abzählen", "Bedarf, aus dem Projektbestand, zu kaufen")]
+        // Normteile: Bedarf, aus Bestand, kaufen
+        if !m.stueckgut.isEmpty {
+            bloecke += [.abstand(6), zwischentitel("Normteile abzählen", "Bedarf, aus dem Projektbestand, zu kaufen")]
             let sp = [
-                ExportSpalte("abhaken", "", mindest: 7, .mitte), ExportSpalte("benennung", "Benennung", mindest: 60, gewicht: 3),
-                ExportSpalte("masse", "Maße", mindest: 24, gewicht: 1), ExportSpalte("anzahl", "Bedarf", mindest: 15, .rechts),
-                ExportSpalte("bestand", "Bestand", mindest: 17, .rechts), ExportSpalte("kaufen", "Kaufen", mindest: 15, .rechts),
+                ExportSpalte("abhaken", "", mindest: 7, .mitte),
+                ExportSpalte("benennung", MaterialText.Spalte.benennung, mindest: 60, gewicht: 3),
+                ExportSpalte("masse", MaterialText.Spalte.masse, mindest: 24, gewicht: 1),
+                ExportSpalte("anzahl", "Bedarf", mindest: 15, .rechts),
+                ExportSpalte("bestand", MaterialKennzeichen.bestand.titel, mindest: 17, .rechts),
+                ExportSpalte("kaufen", MaterialKennzeichen.kaufen.titel, mindest: 15, .rechts),
             ]
-            let zeilen = b.stueckgut.map { s in
+            let zeilen = m.stueckgut.map { s in
                 ExportZeile([
                     "abhaken": ExportZelle(kaestchen: true), "benennung": ExportZelle(s.benennung),
                     "masse": ExportZelle(s.laenge.map { "\(s.masseText), L = \(KevFormat.length($0))" } ?? s.masseText),
@@ -495,7 +488,25 @@ public enum ExportBauer {
             }
             bloecke.append(.tabelle(ExportTabelle(spalten: sp, zeilen: zeilen)))
         }
-        if let s = b.bestandStand {
+        // Filament der Druckteile (Spulen führt der Bestand noch nicht)
+        if !m.filament.isEmpty {
+            bloecke += [.abstand(6), zwischentitel("Filament für Druckteile", "Spulen werden nicht im Bestand geführt")]
+            let sp = [
+                ExportSpalte("werkstoff", MaterialText.Spalte.werkstoff, mindest: 40, gewicht: 2),
+                ExportSpalte("teile", MaterialText.Spalte.anzahl, mindest: 15, .rechts),
+                ExportSpalte("gewicht", MaterialText.Spalte.gewicht, mindest: 18, .rechts),
+                ExportSpalte("preis", MaterialText.Spalte.preis, mindest: 16, .rechts),
+            ]
+            let zeilen = m.filament.map { f in
+                ExportZeile([
+                    "werkstoff": ExportZelle(f.werkstoff), "teile": ExportZelle("\(f.teile)"),
+                    "gewicht": ExportZelle(KevFormat.mass(grams: f.gramm), fett: true),
+                    "preis": ExportZelle(f.preis.map(KevFormat.euro) ?? "–"),
+                ])
+            }
+            bloecke.append(.tabelle(ExportTabelle(spalten: sp, zeilen: zeilen)))
+        }
+        if let s = m.bestandStand {
             bloecke += [.abstand(2), hinweisZeile("Bestand vom \(BestandText.anzeige(s) ?? s)")]
         }
         return flussSeiten(.einkaufsliste, format, bloecke)
@@ -507,42 +518,28 @@ public enum ExportBauer {
                           _ hinweise: inout [String]) -> [ExportSeite]
     {
         var bloecke: [ExportBlock] = []
-        let zuschnitte = q.bestand?.zuschnitte ?? []
-        if zuschnitte.isEmpty, let cuts = q.bom?.cuts, !cuts.isEmpty {
-            // ohne Bestandsabgleich: Zuschnitt aus der Stückliste (alle Stangen neu)
-            bloecke.append(ueberschrift("Zuschnitt", "Ohne Projektbestand: alle Stangen neu"))
-            for c in cuts {
-                bloecke.append(zwischentitel(c.benennung, "\(c.stangen.count) × \(KevFormat.length(c.stangenlaenge)), "
-                                             + "Sägeblatt \(KevFormat.length(c.saegeschnitt))"))
-                for (i, st) in c.stangen.enumerated() {
-                    let quelle = ZuschnittQuelle(json: [
-                        "art": "kaufen", "laenge": .number(c.stangenlaenge), "stuecke": .array(st.map { .number($0) }),
-                    ], index: i)
-                    if let quelle { bloecke.append(leiste(quelle, nummer: i + 1, saege: c.saegeschnitt, mindest: 100,
-                                                          skala: c.stangenlaenge)) }
-                }
-                bloecke.append(.abstand(4))
-            }
-            return flussSeiten(.zuschnitt, format, bloecke)
-        }
+        // Dieselben Zuschnitte wie im Bereich „Material“ (ohne Bestandsabgleich: alle Stangen neu)
+        let m = q.material
+        let zuschnitte = m.zuschnitte
         guard !zuschnitte.isEmpty else {
             return flussSeiten(.zuschnitt, format, [ueberschrift("Zuschnitt", nil), leer("Nichts zuzuschneiden")])
         }
-        let stangen = zuschnitte.filter { !$0.istPlatte }.reduce(0) { $0 + $1.quellen.count }
-        let platten = zuschnitte.filter(\.istPlatte).reduce(0) { $0 + $1.quellen.count }
-        var kz: [String] = []
-        if stangen > 0 { kz.append(KevFormat.count(stangen, one: "Stange", many: "Stangen")) }
-        if platten > 0 { kz.append(KevFormat.count(platten, one: "Platte", many: "Platten")) }
-        bloecke.append(ueberschrift("Zuschnitt", kz.joined(separator: ", ") + " · Reste aus dem Bestand zuerst"))
+        let k = m.kennzahlen
+        var kz = [k.zuschnittText]
+        if k.verschnittText != "–" { kz.append("Verschnitt " + k.verschnittText) }
+        kz.append(q.bestand == nil ? "ohne Projektbestand: alle Stangen neu" : "Reste aus dem Bestand zuerst")
+        bloecke.append(ueberschrift("Zuschnitt", kz.joined(separator: " · ")))
         bloecke.append(legende())
         var tabelle: [ExportZeile] = []
         for z in zuschnitte {
-            bloecke.append(zwischentitel(z.benennung, z.herkunftText))
+            let mindest = m.mindestrest(z.stockID)
+            let rechts = [z.herkunftText] + (m.verschnitt(z).map { ["Verschnitt \(KevFormat.number($0, digits: 1)) %"] } ?? [])
+            bloecke.append(zwischentitel(z.benennung, rechts.joined(separator: " · ")))
             let saege = z.saegeschnitt
-            let mindest = z.mindestrest ?? 100
             for (i, quelle) in z.quellen.enumerated() {
                 if z.istPlatte {
-                    bloecke.append(platte(quelle, nummer: i + 1, saege: saege))
+                    bloecke.append(platte(quelle, nummer: i + 1, saege: saege, b: quelle.b ?? z.platteB,
+                                          h: quelle.h ?? z.platteH))
                 } else {
                     bloecke.append(leiste(quelle, nummer: i + 1, saege: saege, mindest: mindest, skala: z.laengsteQuelle))
                 }
@@ -559,7 +556,8 @@ public enum ExportBauer {
                     "stange": ExportZelle("\(z.istPlatte ? "Platte" : "Stange") \(i + 1)", unter: z.benennung),
                     "herkunft": ExportZelle(quelle.titel, farbe: ExportStil.farbe(quelle.art.farbe)),
                     "stuecke": ExportZelle(stuecke), "rest": ExportZelle(rest),
-                    "verschnitt": ExportZelle(quelle.restIstVerschnitt(saegeschnitt: saege, mindestrest: mindest)
+                    "verschnitt": ExportZelle(!quelle.istPlatte
+                                              && quelle.restIstVerschnitt(saegeschnitt: saege, mindestrest: mindest)
                                               ? "ja" : "–"),
                 ]))
             }
@@ -571,16 +569,14 @@ public enum ExportBauer {
         if !tabelle.isEmpty {
             bloecke += [zwischentitel("Übersicht"), .tabelle(ExportTabelle(spalten: wahl.wirksameSpalten, zeilen: tabelle))]
         }
+        bloecke.append(hinweisZeile(MaterialZuschnitt.hilfe))
         return flussSeiten(.zuschnitt, format, bloecke)
     }
 
     static func legende() -> ExportBlock {
         .fest(hoehe: 9, mitNaechstem: false) { l, r in
             var x = r.minX
-            let eintraege: [(ZuschnittFarbe, String)] = [
-                (.rest, "aus Rest"), (.bestand, "aus Bestand"), (.kaufen, "kaufen"), (.restNeu, "neuer Rest"),
-                (.verschnitt, "Verschnitt"),
-            ]
+            let eintraege: [(ZuschnittFarbe, String)] = ZuschnittFarbe.allCases.map { ($0, $0.titel) }
             for (f, t) in eintraege {
                 let box = CGRect(x: x, y: r.minY + 2, width: 5, height: 3.4)
                 if f == .restNeu {
@@ -619,14 +615,14 @@ public enum ExportBauer {
                 case .schnitt:
                     l.rechteck(sr, fuellung: ExportStil.tinte)
                 case .restNeu:
-                    l.rechteck(sr.insetBy(dx: 0.2, dy: 0.2), rand: ExportStil.farbe(.restNeu), randBreite: 0.35,
+                    l.rechteck(sr.insetBy(dx: 0.2, dy: 0.2), rand: ExportStil.farbe(ZuschnittFarbe.restNeu), randBreite: 0.35,
                                strich: [0.8, 0.6])
                     let txt = "Rest " + KevFormat.compact(s.laenge, maxDigits: 0)
                     if ExportLeinwand.breite(txt, .normal(6.5)) < sr.width - 1.5 {
                         l.text(txt, x: sr.midX, y: barY + barH / 2 + 1.1, .normal(6.5), farbe: ExportStil.gruen, .mitte)
                     }
                 case .verschnitt:
-                    l.rechteck(sr, fuellung: ExportStil.farbe(.verschnitt))
+                    l.rechteck(sr, fuellung: ExportStil.farbe(ZuschnittFarbe.verschnitt))
                 }
             }
             // Maßlinie über die ganze Stange
@@ -635,9 +631,10 @@ public enum ExportBauer {
         }
     }
 
-    /// Plattenzuschnitt: Platte mit Stücken (Lage aus dem Kernel), neue Reste gestrichelt.
-    static func platte(_ q: ZuschnittQuelle, nummer: Int, saege: Double) -> ExportBlock {
-        let pb = CGFloat(q.b ?? 1000), ph = CGFloat(q.h ?? 500)
+    /// Plattenzuschnitt: Platte mit Stücken (Lage aus dem Kernel, Ursprung links unten wie am Bildschirm), neue Reste
+    /// gestrichelt.
+    static func platte(_ q: ZuschnittQuelle, nummer: Int, saege: Double, b: Double? = nil, h: Double? = nil) -> ExportBlock {
+        let pb = CGFloat(b ?? q.b ?? 1000), ph = CGFloat(h ?? q.h ?? 500)
         let breite: CGFloat = 120
         let k = breite / max(1, pb)
         let hoehe = ph * k
@@ -648,18 +645,20 @@ public enum ExportBauer {
             let rahmen = CGRect(x: ox, y: oy, width: breite, height: hoehe)
             l.rechteck(rahmen, fuellung: ExportStil.flaeche, rand: ExportStil.grau, randBreite: 0.25)
             let farbe = ExportStil.farbe(q.art.farbe)
-            for f in q.flaechen {
-                let sr = CGRect(x: ox + CGFloat(f.x) * k, y: oy + CGFloat(f.y) * k, width: CGFloat(f.b) * k,
-                                height: CGFloat(f.h) * k)
+            // Kernel: y nach oben ab der Unterkante; Leinwand: y nach unten
+            func rechteck(_ f: ZuschnittFlaeche) -> CGRect {
+                CGRect(x: ox + CGFloat(f.x) * k, y: oy + (ph - CGFloat(f.y) - CGFloat(f.h)) * k,
+                       width: CGFloat(f.b) * k, height: CGFloat(f.h) * k)
+            }
+            for f in q.flaechenLayout(saegeschnitt: saege) {
+                let sr = rechteck(f)
                 l.rechteck(sr, fuellung: farbe, rand: ExportStil.weiss, randBreite: 0.3)
                 if ExportLeinwand.breite(f.masseText, .mittel(6.5)) < sr.width - 2 && sr.height > 4 {
                     l.text(f.masseText, x: sr.midX, y: sr.midY + 1.1, .mittel(6.5), farbe: ExportStil.weiss, .mitte)
                 }
             }
             for f in q.resteNeu {
-                let sr = CGRect(x: ox + CGFloat(f.x) * k, y: oy + CGFloat(f.y) * k, width: CGFloat(f.b) * k,
-                                height: CGFloat(f.h) * k)
-                l.rechteck(sr.insetBy(dx: 0.4, dy: 0.4), rand: ExportStil.farbe(.restNeu), randBreite: 0.35,
+                l.rechteck(rechteck(f).insetBy(dx: 0.4, dy: 0.4), rand: ExportStil.farbe(ZuschnittFarbe.restNeu), randBreite: 0.35,
                            strich: [0.8, 0.6])
             }
             l.text(BestandText.format(Double(pb), Double(ph)), x: rahmen.maxX + 3, y: rahmen.minY + 3, .normal(7),

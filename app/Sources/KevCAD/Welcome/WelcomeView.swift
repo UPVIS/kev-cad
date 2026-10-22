@@ -33,6 +33,7 @@ struct WelcomeView: View {
             BauplanExportSelfTest.projektOeffnen(session)  // Phase 6, P6-A2: öffnet sein Projekt selbst
             DruckSelfTest.projektOeffnen(session)  // Druckvorschau: öffnet sein Projekt selbst
             DruckerSelbsttest.projektOeffnen(session)  // Phase 8: öffnet sein Projekt selbst
+            MaterialSelfTest.projektOeffnen(session)  // Strang „Material“: ebenso
             if session.launchFinished() { return }
             recents.refresh()
             consumeNewProjectRequest()
