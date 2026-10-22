@@ -702,8 +702,8 @@ Prüfen in `protocol.py` (`pack_print_preview`, `print_settings`, `print_export_
 | `PRINT_PREVIEW` | Kernel → App | `run`, `stand`, `drucker`, `summe`, `platten`, `teile`, `hinweise`, `slicer` (dazu `einstellungen`, `regler`, `ms`), `reply_to` optional; nach jedem Lauf mit Druckteilen, nach jedem Slicer-Ergebnis und beim Verbinden | – |
 | `PRINT_PREVIEW_REQ` | App → Kernel | `id` | `PRINT_PREVIEW` mit `reply_to` |
 | `PRINT_SETTINGS` | App → Kernel | `id`, `teil` oder `gruppe`, `einstellungen` (Wert `null` = Vorgabe zurück) und/oder `zweck`, `zuruecksetzen`, `von` | `ACK`, danach `PRINT_PREVIEW` |
-| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (leer = alle), `ziel` (Pfad .3mf oder null) | `ACK`, danach `PRINT_EXPORT_RES` |
-| `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` (dazu `hinweise`, `ms`, `geprueft`) | – |
+| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (leer = alle), `ziel` (Pfad .3mf oder null); additiv `teile` (nur diese Teile) und `ohne` (diese nicht): Teilname, Baugruppen-Präfix, Gruppe oder Gruppenname, `ohne` gewinnt; additiv `filament` (je Material die id eines Filaments aus Kevins Liste; ohne antwortet der Kernel mit `filament_frage`) | `ACK`, danach `PRINT_EXPORT_RES` |
+| `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` (dazu `hinweise`, `ms`, `geprueft`, `pfade`, `dateien` mit `objekte` = Objektnamen im 3MF, `weggelassen` = `[{"name", "grund": "ohne" \| "teile" \| "spaeter", "platte", "anzahl"}]`, `leere_platten`, `filamente`, je Datei `filament_id`, `filament_basis`, `abweichungen`, `temperaturen`; bei fehlendem Filament `ok: false`, `filament_frage: true`, `vorschlaege`) | – |
 
 ## Phase 4: Referenzen
 

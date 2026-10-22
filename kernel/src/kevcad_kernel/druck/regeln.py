@@ -32,6 +32,11 @@ QUELLEN: dict[str, str] = {
             "https://github.com/bambulab/BambuStudio/tree/master/resources/profiles/BBL/filament/P1P",
     "KEV-PLA": "Kevins Bambu-Studio-Filament „Amazon Basics PLA“ (erbt Bambu PLA Basic @BBL P1P; Düse 205 °C, "
                "max. 210, Bett 47 °C)",
+    "KEV-PETG": "Kevins PETG: Polymaker PolyLite PETG gelb 1,75 mm (Systemprofil „PolyLite PETG @BBL P1P“, erbt "
+                "PolyLite PETG @base; Düse 255 °C, Bereich 220–270, Texturplatte 80 °C, Lüfter 40–90 %; Polymaker "
+                "nennt 230–240 °C bei 30–50 mm/s) und Bambu Lab PETG Basic (Profil „Bambu PETG Basic @BBL X1C“, "
+                "für den P1P 0.4 freigegeben; Düse 255 °C, erste Schicht 245, Texturplatte 70 °C; Bambu nennt "
+                "230–260 °C); Filamentliste druck/filamente.py",
     "BS-Cut": "Bambu Studio, Schnittwerkzeug (GLGizmoAdvancedCut) – https://github.com/bambulab/BambuStudio/tree/master/src",
     "BS-Flow": "Bambu Studio, Flow.cpp (Linienabstand) – "
                "https://github.com/bambulab/BambuStudio/blob/master/src/libslic3r/Flow.cpp",
@@ -220,16 +225,20 @@ MATERIALIEN: dict[str, Material] = {m.id: m for m in (
         quellen=("BS-F", "B-P1P", "B-Fil", "B-Shr"),
     ),
     Material(
-        "petg", "PETG", 1.27, ("petg", "pet-g"),
+        "petg", "PETG", 1.27, ("petg", "pet-g", "polylite petg", "polymaker polylite petg"),
         ueberhang_max=55.0, bruecke_max=20.0, schwund=0.4, verzug=1, verzug_laenge=180.0,
         schnapp_dehnung=2.5, filmscharnier="bedingt", z_festigkeit=0.4,
-        duese_temp="255 °C (220–270)", bett_temp="80 °C Texturplatte (70 °C Engineering-Platte)",
+        duese_temp="255 °C (PolyLite PETG @BBL P1P und Bambu PETG Basic @BBL X1C, dort erste Schicht 245; Bereich "
+                   "220–270); es gilt das Preset des gewählten Filaments",
+        bett_temp="80 °C Texturplatte mit PolyLite PETG, 70 °C mit Bambu PETG Basic (Engineering-Platte 70 °C)",
         kammer=_OFFEN + "; Bambu empfiehlt geschlossen, weil kühle Umgebung die Lagenhaftung senkt – Zugluft "
                         "vermeiden", trocknen="65 °C 12 h",
-        hinweise=("Brücken und Überhänge etwas schlechter als PLA (P-PETG)",
+        hinweise=("Kevins PETG: Polymaker PolyLite PETG gelb oder Bambu PETG Basic; vor dem Druck fragen, welches "
+                  "im Drucker ist – sein Preset kommt ins 3MF (druck/filamente.py)",
+                  "Brücken und Überhänge etwas schlechter als PLA (P-PETG)",
                   "zäh, gut für Schnapphaken und Clips; Filmscharnier nur für wenige Zyklen",
                   "offen gedruckt eher etwas schwächer quer zu den Schichten (B-Fil)"),
-        quellen=("BS-F", "B-Fil", "P-PETG", "CK-45"),
+        quellen=("KEV-PETG", "BS-F", "B-Fil", "P-PETG", "CK-45"),
     ),
     Material(
         "abs", "ABS", 1.04, ("abs", "acrylnitril-butadien-styrol"),

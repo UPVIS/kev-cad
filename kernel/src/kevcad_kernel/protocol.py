@@ -702,6 +702,8 @@ DRUCK_PLATTENTEIL_FELDER: tuple[str, ...] = ("name", "gruppe", "x", "y", "drehun
 DRUCK_TEIL_FELDER: tuple[str, ...] = ("gruppe", "name", "teile", "anzahl", "material", "zweck", "zweck_geschaetzt", "g",
                                       "m", "zeit_s", "stand", "abweichung", "einstellungen", "begruendung", "hinweise")
 DRUCK_SLICER_FELDER: tuple[str, ...] = ("zustand", "fertig", "gesamt", "meldung")
+# PRINT_EXPORT_RES.weggelassen[].grund (additiv): per ohne, nicht in teile, als später markiert
+DRUCK_WEG_GRUENDE: tuple[str, ...] = ("ohne", "teile", "spaeter")
 
 
 def pack_print_preview(vorschau: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
@@ -740,16 +742,29 @@ def print_settings(id: str, *, teil: str | None = None, gruppe: str | None = Non
 
 
 def print_export_req(id: str, *, platten: list[int] | None = None, ziel: str | None = None,  # noqa: A002
-                     seq: int = 0) -> dict[str, Any]:
+                     teile: list[str] | None = None, ohne: list[str] | None = None,
+                     filament: dict[str, str] | None = None, seq: int = 0) -> dict[str, Any]:
     """Kopf von PRINT_EXPORT_REQ (App → Kernel): ``platten`` leer = alle, ``ziel`` Pfad der .3mf oder None
-    (dann ``<projekt>/output/<projekt>-druck.3mf``)."""
-    return {"type": "PRINT_EXPORT_REQ", "seq": seq, "id": id, "platten": [int(p) for p in (platten or [])],
-            "ziel": ziel}
+    (dann ``<projekt>/output/<projekt>-druck.3mf``). Additiv ``teile`` (nur diese Teile) und ``ohne`` (diese
+    nicht): Teilname, Baugruppen-Präfix, Gruppe "g3" oder Gruppenname; ``ohne`` gewinnt; nur gesetzt, wenn nicht leer.
+    Additiv ``filament``: je Material die id eines Filaments aus Kevins Liste ({"petg": "<id>"}); ohne antwortet der
+    Kernel mit ``PRINT_EXPORT_RES`` ``ok: false``, ``filament_frage: true`` und ``vorschlaege`` (nichts geschrieben)."""
+    h: dict[str, Any] = {"type": "PRINT_EXPORT_REQ", "seq": seq, "id": id,
+                         "platten": [int(p) for p in (platten or [])], "ziel": ziel}
+    if teile:
+        h["teile"] = [str(t) for t in teile]
+    if ohne:
+        h["ohne"] = [str(t) for t in ohne]
+    if filament:
+        h["filament"] = {str(k): str(v) for k, v in filament.items()}
+    return h
 
 
 def print_export_res(reply_to: str, *, ok: bool, pfad: str | None, platten: list[int],
                      fehler: str | None = None, seq: int = 0, **extra: Any) -> dict[str, Any]:
-    """Kopf von PRINT_EXPORT_RES (Kernel → App); additiv ``hinweise``, ``ms``, ``geprueft`` (in Bambu Studio geladen)."""
+    """Kopf von PRINT_EXPORT_RES (Kernel → App); additiv ``hinweise``, ``ms``, ``geprueft`` (in Bambu Studio geladen),
+    ``pfade``, ``dateien`` (je Datei auch ``objekte``: Objektnamen im 3MF), ``weggelassen`` ([{"name", "grund":
+    ohne | teile | spaeter, "platte", "anzahl"}]) und ``leere_platten``."""
     return {"type": "PRINT_EXPORT_RES", "seq": seq, "reply_to": reply_to, "ok": bool(ok), "pfad": pfad,
             "platten": [int(p) for p in platten], "fehler": fehler, **extra}
 
@@ -777,6 +792,19 @@ def check_druck_message(header: dict[str, Any]) -> list[str]:
         for k in (header.get("einstellungen") or {}):
             if k not in DRUCK_EINSTELLUNGEN:
                 out.append(f"einstellungen.{k} unbekannt")
+    if kind == "PRINT_EXPORT_REQ":  # additiv: Auswahl der Teile
+        for k in ("teile", "ohne"):
+            if k in header and not (isinstance(header[k], list) and all(isinstance(x, str) for x in header[k])):
+                out.append(f"{k} ist keine Liste von Teilnamen")
+        f = header.get("filament")
+        if f is not None and not (isinstance(f, dict) and all(isinstance(k, str) and isinstance(v, str)
+                                                              for k, v in f.items())):
+            out.append("filament ist kein Objekt {material: Filament-id}")
+    if kind == "PRINT_EXPORT_RES":
+        for i, w in enumerate(header.get("weggelassen") or []):
+            out += _fehlend(w, ("name", "grund", "platte", "anzahl"), f"weggelassen[{i}]")
+            if isinstance(w, dict) and w.get("grund") not in DRUCK_WEG_GRUENDE:
+                out.append(f"weggelassen[{i}].grund {w.get('grund')!r} unbekannt")
     if kind != "PRINT_PREVIEW" or out:
         return out
     if header["stand"] not in DRUCK_STAENDE:
@@ -854,6 +882,7 @@ def druckvorschau_beispiel(run: int = 12) -> dict[str, Any]:
     }
     prozess = {0.2: "0.20mm Standard @BBL P1P", 0.16: "0.16mm Optimal @BBL P1P"}
     filament = {"petg": "Bambu PETG Basic @BBL X1C", "pla": "Amazon Basics PLA"}
+    filament_id = {"petg": "polymaker-polylite-petg-gelb", "pla": "amazon-basics-pla"}
     begruendung = {
         "tragend": ["tragend: 4 Wände, 25 % Gyroid (Kevins Regel für Funktionsteile: 3–4 Wände, 20–40 % Füllung)",
                     "Last längs der Schichten: liegend drucken, Zug und Biegung in der Schichtebene"],
@@ -928,7 +957,9 @@ def druckvorschau_beispiel(run: int = 12) -> dict[str, Any]:
         g = round(sum(p["material"][0]["g"] for p in platten if p["material"][0]["material"] == mat), 1)
         material.append({"material": mat, "name": namen[mat], "g": g, "m": round(g / g_je_m[mat], 2),
                          "kosten": round(g / 1000 * preis[mat], 2), "preis_kg": preis[mat], "preis_stand": "2026-10",
-                         "stand": "gemischt" if mat == "petg" else "schaetzung"})
+                         "stand": "gemischt" if mat == "petg" else "schaetzung",
+                         # additiv (Strang „Druckexport 2“): angenommenes Filament aus Kevins Liste, woher
+                         "filament_id": filament_id[mat], "filament_quelle": "zuletzt" if mat == "petg" else "standard"})
     filament_eur = round(sum(m["kosten"] for m in material), 2)
     strom = round(mit_wechsel / 3600 * leistung_w / 1000 * strom_kwh, 2)
     risiko = round(sum(x["risiko"] * x["kosten"] for x in teile_out), 2)
@@ -948,6 +979,17 @@ def druckvorschau_beispiel(run: int = 12) -> dict[str, Any]:
                           "plattenwechsel_s": wechsel_s, "slicer": True},
         "regler": False,
         "ms": 38.2,
+        # additiv: Kevins Filamente der Materialien (Auswahl beim Export, druck/filamente.py)
+        "filamente": [
+            {"id": "polymaker-polylite-petg-gelb", "name": "Polymaker PolyLite PETG gelb (1,75 mm)", "material": "petg",
+             "farbe": "gelb", "farbe_hex": "#F5C518", "preset": "Polymaker PolyLite PETG gelb (Kev CAD)",
+             "basis": "PolyLite PETG @BBL P1P", "abweichungen": 0},
+            {"id": "bambu-petg-basic", "name": "Bambu Lab PETG Basic (1,75 mm)", "material": "petg", "farbe": None,
+             "farbe_hex": None, "preset": "Bambu Lab PETG Basic (Kev CAD)", "basis": "Bambu PETG Basic @BBL X1C",
+             "abweichungen": 0, "offen": ["farbe"]},
+            {"id": "amazon-basics-pla", "name": "Amazon Basics PLA (1,75 mm)", "material": "pla", "farbe": None,
+             "farbe_hex": None, "preset": "Amazon Basics PLA (Kev CAD)", "basis": "Amazon Basics PLA",
+             "abweichungen": 0}],
     }
 
 

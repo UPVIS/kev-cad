@@ -26,6 +26,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from kevcad_kernel.druck import filamentwahl as fw
 from kevcad_kernel.druck import schaetzung as sz
 from kevcad_kernel.druck import slicer as sl
 from kevcad_kernel.druck import vorgaben as vg
@@ -190,6 +191,28 @@ class DruckvorschauRuntime:
             pass
         return dict(proj.settings or {}), vg.lies(proj.path)
 
+    def _dv_spulen(self) -> list[dict[str, Any]]:
+        """Filamentspulen aus dem Bestand des Projekts (``bestand.json``, nur lesen) für die Wahl des Filamentprofils."""
+        from kevcad_kernel.bestand.datei import pfade, spulen
+
+        proj = self._project  # type: ignore[attr-defined]
+        p, _ = pfade(proj.path if proj is not None else None)
+        if p is None or not p.is_file():
+            return []
+        try:
+            return spulen(json.loads(p.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return []
+
+    def _dv_zuletzt(self) -> dict[str, str]:
+        """Zuletzt für dieses Projekt gewähltes Filament je Material (``druck.json`` → ``filament``)."""
+        proj = self._project  # type: ignore[attr-defined]
+        return vg.filament_zuletzt(proj.path) if proj is not None else {}
+
+    def _dv_projekt(self) -> dict[str, Any]:
+        """``kevcad.json`` → druck (jetzt) mit den Spulen des Bestands und dem zuletzt gewählten Filament."""
+        return vs.projekt_einstellungen(self._dv_projekt_daten()[0], self._dv_spulen(), self._dv_zuletzt())
+
     def _dv_material(self, mid: str) -> dict[str, Any] | None:
         try:
             return self.catalog.material(mid)  # type: ignore[attr-defined]
@@ -213,7 +236,8 @@ class DruckvorschauRuntime:
             gr, platten = [], []
         else:
             v, gr, platten = vs.baue(int(eingang.get("run") or 0), druck, eingang.get("befunde") or [], vorgaben,
-                                     settings, self._dv_material, stand, regler=bool(eingang.get("regler")))
+                                     settings, self._dv_material, stand, regler=bool(eingang.get("regler")),
+                                     spulen=self._dv_spulen(), filament_zuletzt=self._dv_zuletzt())
             if vorgaben.get("fehler"):
                 v["hinweise"].append({"schwere": "warnung", "art": "slicer", "text": str(vorgaben["fehler"])})
         with self._dv_lock:
@@ -229,8 +253,7 @@ class DruckvorschauRuntime:
         return v
 
     def _dv_bearbeiten(self, auftrag: dict[str, Any], eingang: dict[str, Any], abbruch: threading.Event) -> None:
-        settings, _ = self._dv_projekt_daten()
-        projekt = vs.projekt_einstellungen(settings)
+        projekt = self._dv_projekt()
         druck = eingang.get("druck") or {}
         regler = bool(eingang.get("regler"))
         # Zwischenspeicher lesen (auch bei Reglerwerten), dann die schnelle Vorschau
@@ -311,19 +334,19 @@ class DruckvorschauRuntime:
         with self._dv_lock:
             gr = list(self._dv_gruppen)
             stand = self._dv_stand
-        offen = [g for g in gr if g.schluessel not in stand.gruppen and g.filament]
-        materialien = sorted({g.material for g in gr if g.filament})
+        offen = [g for g in gr if g.schluessel not in stand.gruppen and g.filament]  # auch „später“: Werte je Teil
+        materialien = sorted({g.material for g in vs.auf_platten(gr) if g.filament})
         t0 = time.perf_counter()
         with self._dv_lock:
             stand.zustand = "rechnet"
             stand.gesamt = len(offen) + len(materialien)
             stand.fertig = 0
         abgleich_daten = sz.lies_abgleich()
-        projekt = vs.projekt_einstellungen(self._dv_projekt_daten()[0])
+        projekt = self._dv_projekt()
         drucker, platte = str(projekt.get("drucker")), str(projekt.get("platte"))
         for g in offen:
             self._dv_pruefe_abbruch(abbruch)
-            if not sl.platte_passt(str(g.filament), platte):  # Bambu Studio bräche ab (Hinweis steht in der Vorschau)
+            if not sl.platte_passt(g.filament_slicer, platte):  # Bambu Studio bräche ab (Hinweis steht in der Vorschau)
                 with self._dv_lock:
                     stand.meldung = f"{g.filament} geht nicht auf der {platte}"
                     stand.fertig += 1
@@ -335,7 +358,7 @@ class DruckvorschauRuntime:
                 stl = self._dv_stl(g, druck, ordner)
                 e = {k: v for k, v in g.einstellungen.items() if k != "ausrichtung"}
                 t1 = time.perf_counter()
-                res = sl.slice_teil(stl, e, str(g.filament), arbeit, abbruch, drucker, platte)
+                res = sl.slice_teil(stl, e, g.filament_slicer, arbeit, abbruch, drucker, platte)
                 res["slicer_s"] = round(time.perf_counter() - t1, 2)
             except (sl.SlicerFehler, OSError) as exc:
                 self._log(f"[druck] Slicer {g.name}: {exc}")
@@ -393,7 +416,7 @@ class DruckvorschauRuntime:
 
     def _dv_platten_slicen(self, mat: str, gr: list[vs.Gruppe], druck: dict[str, Any], abbruch: threading.Event,
                            drucker: str, platte: str | None = None) -> None:
-        gm = [g for g in gr if g.material == mat and g.filament]
+        gm = [g for g in vs.auf_platten(gr) if g.material == mat and g.filament]
         if not gm:
             return
         stand = self._dv_stand
@@ -411,7 +434,7 @@ class DruckvorschauRuntime:
             if akey not in stand.anordnung:
                 abstand = 6.0 + (10.0 if any(g.einstellungen.get("brim") for g in gm) else 0.0)
                 platten = sl.anordnen([(lokal[g.id], g.anzahl) for g in gm], arbeit / "anordnen", abbruch,
-                                      filament=str(gm[0].filament), drucker=drucker, abstand_mm=abstand,
+                                      filament=gm[0].filament_slicer, drucker=drucker, abstand_mm=abstand,
                                       platte=platte)
                 for p in platten:
                     for o in p["objekte"]:
@@ -440,7 +463,7 @@ class DruckvorschauRuntime:
                     continue
                 self._dv_pruefe_abbruch(abbruch)
                 e0 = {k: v for k, v in nach_id[p.lagen[0].stueck.gruppe].einstellungen.items() if k != "ausrichtung"}
-                res = sl.slice_platten([objekte], [str(gm[0].filament)], arbeit / f"p{len(ergebnis)}", e0, abbruch,
+                res = sl.slice_platten([objekte], [gm[0].filament_slicer], arbeit / f"p{len(ergebnis)}", e0, abbruch,
                                        drucker, platte)
                 if res:
                     ergebnis[pkey] = res
@@ -488,8 +511,15 @@ class DruckvorschauRuntime:
 
                 self._send_app({"type": "ACK", "reply_to": rid, "ok": True,  # type: ignore[attr-defined]
                                 "message": "3MF wird geschrieben"})
-                res = self.druck_export(header.get("ziel"), header.get("platten") or None)
-                extra = {k: res[k] for k in ("hinweise", "ms", "geprueft", "pfade", "dateien") if k in res}
+                fil = header.get("filament")
+                if isinstance(fil, str) and fil.strip().lower() == "vorschau":
+                    fil = None  # nur intern (Phase 8); die App wählt das Filament ausdrücklich
+                res = self.druck_export(header.get("ziel"), header.get("platten") or None,
+                                        teile=header.get("teile") or None, ohne=header.get("ohne") or None,
+                                        filament=fil or None)
+                extra = {k: res[k] for k in ("hinweise", "ms", "geprueft", "pfade", "dateien", "weggelassen",
+                                             "leere_platten", "filamente", "filament_frage", "vorschlaege")
+                         if k in res}
                 self._send_app(print_export_res(str(rid), ok=bool(res.get("ok")), pfad=res.get("pfad"),  # type: ignore[attr-defined]
                                                 platten=list(res.get("platten") or []), fehler=res.get("error"),
                                                 **extra))
@@ -588,17 +618,107 @@ class DruckvorschauRuntime:
                 out["gruppe"] = next((t for t in v.get("teile") or [] if set(namen) & set(t.get("teile") or [])), None)
         return out
 
-    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None, teile: list[str] | None = None,
+                     ohne: list[str] | None = None, filament: Any = None) -> dict[str, Any]:
         """3MF der Platten (MCP ``druck_export``, ``PRINT_EXPORT_REQ``, Eingang von Phase 8): {"ok", "pfad",
         "platten", "fehler", "hinweise", "geprueft", "ms", "materialien"}; mit Bambu Studio ein Bambu-Projekt mit
         Drucker-, Prozess- und Filamentprofilen (``Metadata/project_settings.config``) und den Einstellungen je Teil
-        (``Metadata/model_settings.config``), so dass ``BambuStudio --slice 0 <3mf>`` die Empfehlungen übernimmt."""
-        res = self._druck_export(ziel, platten)
+        (``Metadata/model_settings.config``), so dass ``BambuStudio --slice 0 <3mf>`` die Empfehlungen übernimmt.
+
+        Auswahl (additiv, ``druck/auswahl.py``): ``teile`` nur diese Teile, ``ohne`` diese nicht (Teilname aus
+        ``show()``, Baugruppe als Präfix, Gruppe „g3“ oder Gruppenname; ``ohne`` gewinnt). Die übrigen Teile bleiben an
+        ihrer Stelle, leere Platten fallen weg. Dazu im Ergebnis "teile" (exportiert), "weggelassen" ([{"name",
+        "grund": ohne | teile | spaeter, "platte", "anzahl"}], auch die Teile „später drucken“), "leere_platten" und je
+        Datei "objekte" (Objektnamen im 3MF, wie Bambu Studio sie zeigt).
+
+        Filament (Kevin, 22.10.2026, ``druck/filamente.py``): ``filament`` je Material ein Filament aus Kevins Liste
+        (``{"petg": "polymaker-polylite-petg-gelb"}``, eine id oder eine Liste von ids). Fehlt es, wird nichts
+        geschrieben: {"ok": false, "filament_frage": true, "vorschlaege": {material: {"zuletzt", "spulen",
+        "liste"}}} mit der Anweisung, Kevin zu fragen. ``"vorschau"`` (nur intern, Phase 8: der Dialog „Drucken …“
+        zeigt es Kevin) nimmt das Filament der Druckvorschau. Das Preset geht vollständig ins Bambu-Projekt; im
+        Ergebnis "filamente" je Material und je Datei "filament_id", "filament_basis", "abweichungen", "temperaturen"."""
+        res = self._druck_export(ziel, platten, teile, ohne, filament)
         res.setdefault("fehler", None if res.get("ok") else res.get("error"))
         res.setdefault("pfad", None)
         return res
 
-    def _druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+    def _dv_filament_waehlen(self, filament: Any, materialien: list[str], gr: list[vs.Gruppe],
+                             projekt: dict[str, Any]) -> tuple[dict[str, fw.FilamentWahl], dict[str, Any] | None]:
+        """Filament je Material für den Export: (Wahl je Material, Fehler bzw. Rückfrage oder None)."""
+        from kevcad_kernel.druck import filamente as fl
+
+        drucker = str(projekt.get("drucker") or vs.DRUCKER_ID)
+        platte = str(projekt.get("platte") or sl.PLATTE_STANDARD)
+        out: dict[str, fw.FilamentWahl] = {}
+        if isinstance(filament, str) and filament.strip().lower() == "vorschau":  # intern (Phase 8)
+            for mat in materialien:
+                g = next((x for x in vs.auf_platten(gr) if x.material == mat), None)
+                w = dict(g.filament_wahl) if g is not None else {}
+                out[mat] = fw.FilamentWahl(mat, w.get("profil") or (g.filament if g else None),
+                                           str(w.get("quelle") or "system"), str(w.get("detail") or ""),
+                                           filament=w.get("filament"), basis=w.get("basis"), preset=w.get("preset"),
+                                           abweichungen=list(w.get("abweichungen") or []),
+                                           temperaturen=w.get("temperaturen"))
+            return out, None
+        angaben: dict[str, str] = {}
+        fehler: list[str] = []
+        if isinstance(filament, dict):
+            angaben = {str(k).lower(): str(v) for k, v in filament.items() if v}
+        else:
+            for e in [filament] if isinstance(filament, str) else list(filament or []):
+                f = fl.finde(e)
+                if f is None:
+                    fehler.append(f"Filament {e!r} gibt es nicht in Kevins Liste (vorhanden: "
+                                  + ", ".join(fl.vorschlaege_ids(str(e))) + "; neues mit filament_define)")
+                else:
+                    angaben[str(f.get("material") or "").lower()] = str(f.get("id"))
+        fehlt = [m for m in materialien if m not in angaben]
+        for mat in materialien:
+            if mat not in angaben:
+                continue
+            f = fl.finde(angaben[mat])
+            if f is None:
+                fehler.append(f"Filament {angaben[mat]!r} gibt es nicht in Kevins Liste (vorhanden für {mat.upper()}: "
+                              + (", ".join(fl.vorschlaege_ids(angaben[mat], mat)) or "keins") + "; neues mit "
+                              "filament_define)")
+                continue
+            if str(f.get("material") or "").lower() != mat:
+                fehler.append(f"Filament {f.get('id')!r} ist {str(f.get('material')).upper()}, die Platten brauchen "
+                              f"{mat.upper()}")
+                continue
+            w = fw.wahl_fuer(f, "kevin", f"gewählt: {fl.anzeige(f)}", platte, drucker)
+            if w.verworfen:
+                fehler += w.verworfen
+                continue
+            out[mat] = w
+        if fehler:
+            return out, {"ok": False, "error": "; ".join(fehler), "platten": []}
+        if fehlt:
+            zuletzt = self._dv_zuletzt()
+            spulen = self._dv_spulen()
+            vorschlaege = {m: fw.vorschlaege(m, zuletzt.get(m), spulen) for m in fehlt}
+            teile = []
+            beispiel = []
+            for m in fehlt:
+                v_ = vorschlaege[m]
+                z = f"zuletzt gewählt {v_['zuletzt']}" if v_["zuletzt"] else "noch keins gewählt"
+                sp = ", ".join(f"{s_['kennung']} {s_.get('name') or ''} → {s_.get('filament') or '?'}"
+                               for s_ in v_["spulen"]) or "keine"
+                li = ", ".join(f"{x['id']} ({x['name']})" for x in v_["liste"]) or "keins (erst filament_define)"
+                teile.append(f"{m.upper()}: {z}; Spulen im Bestand: {sp}; Filamente: {li}")
+                bsp = v_["zuletzt"] or (v_["liste"][0]["id"] if v_["liste"] else "…")
+                beispiel.append(f'"{m}": "{bsp}"')
+            return out, {"ok": False, "filament_frage": True, "vorschlaege": vorschlaege, "platten": [],
+                         "error": "Frag Kevin nach dem Filament, bevor du exportierst (es wurde nichts geschrieben). "
+                                  "Nimm nie stillschweigend das zuletzt benutzte. Vorschläge: " + " | ".join(teile)
+                                  + ". Dann druck_export(filament={" + ", ".join(beispiel) + "}) mit Kevins Antwort."}
+        return out, None
+
+    def _druck_export(self, ziel: str | None = None, platten: list[int] | None = None,
+                      teile: list[str] | None = None, ohne: list[str] | None = None,
+                      filament: Any = None) -> dict[str, Any]:
+        from kevcad_kernel.druck import auswahl as au
+
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
             return {"ok": False, "error": "Kein Projekt offen.", "platten": []}
@@ -609,12 +729,22 @@ class DruckvorschauRuntime:
             alle = list(self._dv_platten)
             eingang = dict(self._dv_eingang or {})
         if not alle:
+            spaeter = [n for g in gr if g.spaeter for n in g.teile]
+            if spaeter:
+                return {"ok": False, "platten": [],
+                        "error": "Alle Druckteile sind als später markiert (lager.druckteil(…, spaeter=True)): "
+                                 + ", ".join(spaeter[:6]) + (" …" if len(spaeter) > 6 else "") + "."}
             return {"ok": False, "error": "Keine Druckteile im Modell.", "platten": []}
         nummern = [int(n) for n in (platten or [])] or list(range(1, len(alle) + 1))
         falsch = [n for n in nummern if not 1 <= n <= len(alle)]
         if falsch:
             return {"ok": False, "error": f"Platte {falsch[0]} gibt es nicht (1 bis {len(alle)})", "platten": []}
-        nicht = [n for n in nummern if getattr(alle[n - 1][1], "passt_nicht", False)]
+        try:
+            ausw = au.waehle([(n, alle[n - 1][0], alle[n - 1][1]) for n in nummern], gr, teile, ohne,
+                             gedruckt=[str(x.get("name")) for x in (v.get("gedruckt") or [])])
+        except au.AuswahlFehler as exc:
+            return {"ok": False, "error": str(exc), "platten": []}
+        nicht = [nr for nr, _, p in ausw.platten if p.passt_nicht]
         if nicht:
             return {"ok": False, "error": f"Platte {nicht[0]}: Teil passt nicht in den Bauraum (Druckprüfung)",
                     "platten": []}
@@ -623,16 +753,21 @@ class DruckvorschauRuntime:
             pfad = pfad.with_suffix(".3mf")
         nach_id = {g.id: g for g in gr}
         druck = eingang.get("druck") or {}
-        materialien: list[str] = []
-        for n in nummern:
-            if alle[n - 1][0] not in materialien:
-                materialien.append(alle[n - 1][0])
+        materialien = list(dict.fromkeys(m for _, m, _ in ausw.platten))
+        projekt = self._dv_projekt()  # kevcad.json jetzt (druck.platte)
+        wahl_je, frage = self._dv_filament_waehlen(filament, materialien, gr, projekt)
+        if frage is not None:
+            return frage
         arbeit = sl.arbeitsordner("export")
         hinweise: list[str] = []
+        weg_text = au.weggelassen_text(ausw.weggelassen)
+        if weg_text:
+            hinweise.append(weg_text)
+        hinweise += ausw.hinweise
         try:
             stls: dict[str, Path] = {}
-            for n in nummern:
-                for l_ in alle[n - 1][1].lagen:
+            for _, _, p in ausw.platten:
+                for l_ in p.lagen:
                     g = nach_id[l_.stueck.gruppe]
                     if g.id not in stls:
                         ordner = sl.cache_ordner() / g.schluessel
@@ -643,52 +778,159 @@ class DruckvorschauRuntime:
                         stls[g.id] = ziel_stl
             dateien: list[dict[str, Any]] = []
             geprueft = sl.verfuegbar()
-            projekt = vs.projekt_einstellungen(self._dv_projekt_daten()[0])  # kevcad.json jetzt (druck.platte)
             drucker = str(projekt.get("drucker") or vs.DRUCKER_ID)
             platte = str(projekt.get("platte") or sl.PLATTE_STANDARD)
             if projekt.get("platte_fehler"):
                 hinweise.append(f"kevcad.json druck.platte: {projekt['platte_fehler']}; genommen: {platte}.")
             for mat in materialien:  # ein Bambu-Projekt je Material (ein Filament je Datei, P1P ohne AMS)
-                nr_mat = [n for n in nummern if alle[n - 1][0] == mat]
+                sel = [(nr, p) for nr, m, p in ausw.platten if m == mat]
+                nr_mat = [nr for nr, _ in sel]
                 listen = [[sl.PlattenObjekt(stl=stls[l_.stueck.gruppe], x=l_.x, y=l_.y, drehung=l_.drehung,
                                             einstellungen={k: x for k, x in nach_id[l_.stueck.gruppe]
                                                            .einstellungen.items() if k != "ausrichtung"},
-                                            name=l_.stueck.name) for l_ in alle[n - 1][1].lagen] for n in nr_mat]
+                                            name=l_.stueck.name) for l_ in p.lagen] for _, p in sel]
+                pnamen = [f"Platte {nr}" for nr in nr_mat]  # Nummern wie in der Druckvorschau
                 ziel_m = pfad if len(materialien) == 1 else pfad.with_name(f"{pfad.stem}-{mat}{pfad.suffix}")
-                filament = next((g.filament for g in gr if g.material == mat and g.filament), None)
-                gm = [g for g in gr if g.material == mat]
-                if sl.verfuegbar() and filament:
+                gm = [g for g in vs.auf_platten(gr) if g.material == mat]
+                wahl = wahl_je[mat]
+                filament_n = wahl.profil
+                herkunft = {"filament_id": wahl.filament, "filament_basis": wahl.basis,
+                            "abweichungen": list(wahl.abweichungen), "filament_quelle": wahl.quelle,
+                            "filament_detail": wahl.detail, "temperaturen": wahl.temperaturen}
+                hinweise.append(self._dv_filament_text(mat, wahl))
+                if sl.verfuegbar() and filament_n:
                     e0 = {k: x for k, x in gm[0].einstellungen.items() if k != "ausrichtung"}
                     farbe = str((self._dv_material(mat) or {}).get("farbe") or "") or None
-                    res = sl.export_3mf(listen, str(filament), ziel_m, arbeit / f"bambu-{mat}", e0, None, drucker,
-                                        farbe, platte)
+                    res = sl.export_3mf(listen, wahl.slicer_filament, ziel_m, arbeit / f"bambu-{mat}", e0, None,
+                                        drucker, farbe, platte, platten_namen=pnamen)
                     hinweise.append(f"{mat.upper()}: in Bambu Studio geprüft, {len(nr_mat)} Platte"
                                     + ("n" if len(nr_mat) != 1 else "") + f", {res['objekte']} Teile, Profile "
                                     f"„{sl.MASCHINE}“, „{sl.prozess_name(float(e0.get('schicht_mm') or 0.2))}“, "
-                                    f"„{filament}“, Platte „{platte}“ und Einstellungen je Teil.")
+                                    f"„{filament_n}“, Platte „{platte}“ und Einstellungen je Teil.")
+                    if res.get("benannt", 0) < len(res.get("namen") or []):
+                        hinweise.append(f"{mat.upper()}: Objektnamen nur teilweise gesetzt ({res.get('benannt', 0)} "
+                                        f"von {len(res.get('namen') or [])}); Bambu Studio zeigt sonst „assemble_…“.")
+                    dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament_n, "platten": nr_mat,
+                                    "objekte": list(res.get("namen") or []), **herkunft})
                 else:
                     # Ohne Bambu Studio: ein 3MF je Platte (Teile in ihrer Lage); Bambu Studio liest Platten nur aus
                     # eigenen Projekten, ein fremdes 3MF legt es ganz auf eine Platte
                     from kevcad_kernel.druck.dreimf import schreibe_3mf
 
                     geprueft = False
-                    for nr, liste in zip(nr_mat, listen):
+                    for nr, liste, pname in zip(nr_mat, listen, pnamen):
                         ziel_p = ziel_m if len(nr_mat) == 1 else \
                             ziel_m.with_name(f"{ziel_m.stem}-platte{nr}{ziel_m.suffix}")
-                        schreibe_3mf(ziel_p, [liste], titel=f"Kev CAD · {proj.name} · Platte {nr}")
-                        dateien.append({"pfad": str(ziel_p), "material": mat, "filament": filament, "platten": [nr]})
+                        r = schreibe_3mf(ziel_p, [liste], titel=f"Kev CAD · {proj.name} · Platte {nr}",
+                                         platten_namen=[pname])
+                        dateien.append({"pfad": str(ziel_p), "material": mat, "filament": filament_n,
+                                        "platten": [nr], "objekte": list(r.get("namen") or []), **herkunft})
                     hinweise.append(f"{mat.upper()}: ohne Bambu Studio geschrieben (je Platte eine Datei, Teile in "
                                     "ihrer Lage, ohne Profile); Drucker, Prozess und Filament beim Öffnen in Bambu "
-                                    "Studio wählen.")
-                    continue
-                dateien.append({"pfad": str(ziel_m), "material": mat, "filament": filament, "platten": nr_mat})
+                                    f"Studio wählen" + (f": Preset „{filament_n}“." if filament_n else "."))
         except (sl.SlicerFehler, OSError) as exc:
             return {"ok": False, "error": f"3MF nicht geschrieben: {exc}", "platten": []}
         finally:
             shutil.rmtree(arbeit, ignore_errors=True)
-        if len(dateien) > 1:
-            hinweise.append(f"{len(dateien)} Materialien: je Material ein Bambu-Projekt (Spule zwischen den Dateien "
-                            "wechseln).")
+        neu = {m: w.filament for m, w in wahl_je.items() if w.filament and w.quelle == "kevin"}
+        if neu:
+            try:
+                if vg.setze_filament(proj.path, neu):  # zuletzt gewählt: Annahme der Vorschau, Vorschlag beim Fragen
+                    self._dv_neu_bauen()
+            except OSError as exc:
+                hinweise.append(f"druck.json nicht schreibbar (zuletzt gewähltes Filament): {exc}")
+        if len({d["material"] for d in dateien}) > 1:
+            hinweise.append(f"{len(materialien)} Materialien: je Material ein Bambu-Projekt (Spule zwischen den "
+                            "Dateien wechseln).")
         return {"ok": True, "pfad": dateien[0]["pfad"], "pfade": [d["pfad"] for d in dateien], "dateien": dateien,
-                "platten": nummern, "hinweise": hinweise, "geprueft": geprueft,
-                "ms": int(round((time.perf_counter() - t0) * 1000)), "materialien": materialien}
+                "platten": [nr for nr, _, _ in ausw.platten], "hinweise": hinweise, "geprueft": geprueft,
+                "ms": int(round((time.perf_counter() - t0) * 1000)), "materialien": materialien,
+                "teile": ausw.teile, "weggelassen": ausw.weggelassen, "leere_platten": ausw.leere_platten,
+                "filamente": {m: {"id": w.filament, "preset": w.profil, "basis": w.basis, "quelle": w.quelle,
+                                  "detail": w.detail, "abweichungen": list(w.abweichungen),
+                                  "temperaturen": w.temperaturen} for m, w in wahl_je.items()}}
+
+    def _dv_material_druckbar(self, mid: str) -> bool:
+        m = self._dv_material(mid)
+        if m is None:
+            try:
+                m = self.catalog.find_material(mid, include_proposed=False)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                m = None
+        return bool(m) and m.get("druckbar") is True and m.get("id") == mid
+
+    def filament_liste(self, material: str | None = None) -> dict[str, Any]:
+        """Kevins Filamente (``druck/filamente.py``) mit Preset, Basisprofil, Abweichungen und Temperaturen des
+        aufgelösten Presets: {"ok", "pfad", "filamente", "zuletzt" (dieses Projekt), "spulen" (Bestand)}."""
+        from kevcad_kernel.druck import filamente as fl
+
+        try:
+            liste = fl.liste(material)
+            fl.lies()
+        except fl.FilamentFehler as exc:
+            return {"ok": False, "error": str(exc)}
+        projekt = self._dv_projekt() if self._project is not None else {}  # type: ignore[attr-defined]
+        platte = projekt.get("platte")
+        out = []
+        for f in liste:
+            w = fw.wahl_fuer(f, "liste", fl.anzeige(f), platte)
+            out.append({**f, "anzeige": fl.anzeige(f), "preset_name": fl.preset_name(f),
+                        "abweichungen_text": fl.abweichungen_text(f), "temperaturen": w.temperaturen,
+                        "probleme": list(w.verworfen)})
+        spulen = [{"kennung": s.get("kennung"), "material": s.get("material"), "name": s.get("name"),
+                   "gramm": s.get("gramm"), "filament": (fl.fuer_spule(s) or {}).get("id")}
+                  for s in (self._dv_spulen() if self._project is not None else [])]  # type: ignore[attr-defined]
+        return {"ok": True, "pfad": str(fl.pfad()), "filamente": out,
+                "zuletzt": self._dv_zuletzt() if self._project is not None else {},  # type: ignore[attr-defined]
+                "spulen": spulen}
+
+    def filament_define(self, hersteller: str, produkt: str, material: str, farbe: str | None = None,
+                        durchmesser_mm: float = 1.75, basis: str | None = None,
+                        abweichungen: list[dict[str, Any]] | None = None, farbe_hex: str | None = None,
+                        id: str | None = None, preset_name: str | None = None, quelle: str | None = None,  # noqa: A002
+                        ersetzen: bool = False) -> dict[str, Any]:
+        """Filament in Kevins Liste anlegen (ohne Katalog-Freigabe). ``basis`` ohne Angabe aus Hersteller und Produkt
+        (Bambu-Studio-Profil für den P1P); ``abweichungen`` je {"schluessel", "wert", "quelle"}.
+        {"ok", "filament", "neu", "hinweise"}"""
+        from kevcad_kernel.druck import filamente as fl
+
+        mat = str(material or "").strip().lower()
+        hinweise: list[str] = []
+        if not basis:
+            basis = fw.basis_vorschlag(hersteller, produkt, mat)
+            if basis:
+                hinweise.append(f"Basisprofil aus Hersteller und Produkt: „{basis}“.")
+            elif sl.system_ordner().is_dir():
+                kand = [k[0] for k in fw._kandidaten(mat, vs.DRUCKER_ID)][:12]
+                return {"ok": False, "error": "basis fehlt: kein Bambu-Studio-Profil passt zu "
+                                              f"„{hersteller} {produkt}“; eins angeben (für den P1P 0.4: "
+                                              + (", ".join(kand) or "keins") + ")"}
+        eintrag = {"id": id, "hersteller": hersteller, "produkt": produkt, "material": mat, "farbe": farbe,
+                   "farbe_hex": farbe_hex, "durchmesser_mm": durchmesser_mm,
+                   "preset": {"basis": basis, "abweichungen": list(abweichungen or []),
+                              **({"name": preset_name} if preset_name else {})},
+                   **({"quelle": quelle} if quelle else {})}
+        vorher = {f.get("id") for f in fl.liste()}
+        try:
+            f = fl.define(eintrag, ersetzen=ersetzen, material_ok=self._dv_material_druckbar)
+        except fl.FilamentFehler as exc:
+            return {"ok": False, "error": str(exc)}
+        except OSError as exc:
+            return {"ok": False, "error": f"{fl.pfad().name} nicht schreibbar: {exc}"}
+        w = fw.wahl_fuer(f, "liste", fl.anzeige(f))
+        self._dv_neu_bauen(slicer=False)
+        return {"ok": True, "filament": {**f, "anzeige": fl.anzeige(f), "temperaturen": w.temperaturen},
+                "neu": f.get("id") not in vorher, "hinweise": hinweise + list(w.verworfen), "pfad": str(fl.pfad())}
+
+    @staticmethod
+    def _dv_filament_text(mat: str, w: fw.FilamentWahl) -> str:
+        """„PETG: Filament Polymaker PolyLite PETG gelb (1,75 mm), Preset „…“ (Basis „…“; keine Abweichungen);
+        Düse 255 °C, Texturplatte 80 °C.“"""
+        from kevcad_kernel.druck import filamente as fl
+
+        f = fl.finde(w.filament) if w.filament else None
+        t = fw.temperaturen_text(w.temperaturen)
+        if f is None:
+            return f"{mat.upper()}: Filamentprofil „{w.profil}“ ({w.detail})" + (f"; {t}." if t else ".")
+        return (f"{mat.upper()}: Filament {fl.anzeige(f)}, Preset „{w.profil}“ (Basis „{w.basis}“; "
+                f"{fl.abweichungen_text(f)})" + (f"; {t}." if t else "."))

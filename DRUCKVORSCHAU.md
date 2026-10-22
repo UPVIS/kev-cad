@@ -21,6 +21,8 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
   P1P 0.4 nozzle“ nennen (Benutzerprofile ohne eigene Liste erben sie); Reihenfolge `druck.filament`, dann Kevins Liste
   (`Amazon Basics PLA`, `Bambu PETG Basic @BBL X1C` …), dann das beste passende Systemprofil gleichen Typs („@BBL P1P“
   zuerst). `Bambu PETG Basic @BBL X1C` ist Bambus PETG-Basic-Profil für P1P und X1 (nennt den P1P 0.4).
+  Seit dem Strang „Druckexport 2“ gilt dafür „Filamente und Presets“ (unten): Kevins Filamentliste mit Presets; die
+  Liste der Systemprofile ist nur noch der Rückfall für Materialien ohne Filament in der Liste.
 - `druck.platte` (additiv): Druckplatte als Bambu-Name (`Textured PEI Plate` Vorgabe, `High Temp Plate`, `Cool Plate`,
   `Engineering Plate`, `Supertack Plate`) oder kurz (`texturiert`, `glatt`, `cool`, `engineering`); geht als
   `curr_bed_type` in jeden Slicer-Lauf und ins 3MF (die Kommandozeile nähme sonst die Cool Plate, PETG bricht dort ab).
@@ -29,7 +31,8 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 
 ## Zweck eines Druckteils (model.py, additiv)
 
-`lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)`
+`lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None)` (dazu
+`gedruckt`, `neu_drucken` und `spaeter`, siehe „Gedruckt“ und „Auswahl und Objektnamen im Druckexport“)
 
 - `zweck`: `"zier"` | `"funktion"` | `"tragend"` | `"bewegt"` | `"aussen"`; ohne Angabe schätzt der Kernel
   (`funktion`), markiert als Schätzung.
@@ -128,6 +131,105 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
   (schreibt die neue Form fest) oder den Eintrag in gedruckt.json löschen. `neu_drucken` ohne `gedruckt` bricht den
   Lauf ab. Umsetzung `kernel/src/kevcad_kernel/druck/gedruckt.py`; CHECK additiv `druck.gedruckt` (Stand je Teil).
 
+## Auswahl und Objektnamen im Druckexport (Strang „Druckexport 2“, 22.10.2026, additiv)
+
+Anlass: Am Kugelschieber (Build 362) lagen alle Teile auf einer Platte, Kevin wollte sie ohne die Lenksperren drucken
+(die kommen erst nach dem Nachmessen), und Bambu Studio zeigte die Objekte als „assemble_1“ bis „assemble_8“.
+
+**Auswahl** (`druck/auswahl.py`): `druck_export(…, teile=[…], ohne=[…])`, ebenso `PRINT_EXPORT_REQ.teile` und
+`.ohne` (Listen, nur gesendet, wenn nicht leer).
+
+- Ein Eintrag ist ein Teilname aus `show()` (genau), eine Baugruppe als Präfix (`"Kugelschieber/Lenksperren"` trifft
+  alles darunter), eine Gruppe der Vorschau (`"g3"`) oder ihr Name (`"Lenksperre (Druck)"`). `teile` = nur diese,
+  `ohne` = diese nicht; beides zusammen geht, `ohne` gewinnt; `platten` filtert vorher. Ersatzteile gehen mit ihrem
+  Namen. Unbekannte Einträge sind ein Fehler mit Vorschlägen („Meintest du …?“); bleibt nichts übrig, ebenso.
+- **Lage:** Die übrigen Teile bleiben, wo die Vorschau sie hingelegt hat (Lücken sind in Ordnung). Bambu Studio lädt und
+  slict Platten mit festen Lagen und Lücken (`need_arrange: false`), geprüft am 22.10.2026 mit 2.07.01.62
+  (`pruefe_3mf` und `--slice 0`); die Lagen waren überschneidungsfrei, im Bauraum und außerhalb der Sperrzone und
+  bleiben es. Neu anordnen hieße andere Platten als die, die Kevin in der Vorschau gesehen hat. Leere Platten fallen
+  weg; passen die übrigen Teile auf weniger Platten, nennt das ein Hinweis (schnelles Anordnen als Probe).
+- Platten behalten im 3MF ihre Nummer aus der Vorschau als Namen („Platte 2“), auch wenn davor eine wegfällt.
+- Ergebnis additiv: `teile` (exportierte Teilnamen), `weggelassen: [{"name", "grund": "ohne" | "teile" | "spaeter",
+  "platte" (Nummer oder null), "anzahl"}]`, `leere_platten`, je Datei `objekte` (Objektnamen im 3MF); der erste
+  Hinweis lautet „Weggelassen: … (ohne), … (später).“. `PRINT_EXPORT_RES` trägt `weggelassen` und `leere_platten` mit
+  (`dateien` wie bisher, mit `objekte`).
+
+**Objektnamen im 3MF:** Bambu Studio nennt die Objekte einer Montageliste `assemble_<n>` (n = `assemble_index`, die
+laufende Nummer über alle Platten) und die Teile darin nach der STL-Datei; einen Namen nimmt die Montageliste nicht an.
+Den Namen der Objektliste liest Bambu Studio aus `Metadata/model_settings.config` (`<object>` und `<part>`, je
+`<metadata key="name">`); ein `name` an den Objekten in `3D/3dmodel.model` übergeht es bei eigenen Projekten
+(nachgeprüft: nur dort gesetzt, meldet der Slicer weiter „assemble_…“). Der Kernel setzt nach dem Export in dieser
+Datei die Teilnamen (`slicer.objekte_benennen`, Zuordnung über die Nummer, denn die `<object>`-Blöcke stehen nicht
+immer in der Reihenfolge der Liste); alles andere im Archiv bleibt unverändert. Name = Teilname aus `show()`, über 60
+Zeichen ohne die mittleren Baugruppen („Kugelschieber/…/Stangenhalter vorn links (Druck)“), sonst nur der letzte Teil,
+zuletzt gekürzt mit „…“; kommt ein Name mehrfach vor (Ersatzteile), zählen die weiteren mit „(2)“, „(3)“
+(`slicer.objekt_namen`). Das 3MF lädt danach (`pruefe_3mf`) und slict; der Slicer meldet die Objekte unter diesen
+Namen. Ohne Bambu Studio trägt `dreimf.py` dieselben Namen (im Kern und in `model_settings.config`).
+
+**Später drucken** (`lager.druckteil(…, spaeter=True)`): Das Teil wird noch gedruckt, nur nicht jetzt (etwa nach dem
+Nachmessen). Es steht weiter in `teile` (eigene Gruppe „… (später)“, `spaeter: true`, mit Filament, Zeit und
+Einstellungen; der Slicer rechnet es nach), liegt aber auf keiner Platte, zählt nicht in `summe` (auch nicht im
+Risikoaufschlag) und kommt nicht in den Druckexport (dort immer unter `weggelassen`, `grund: "spaeter"`; über `teile`
+nicht holbar). Additiv oben `spaeter: [{"name", "gruppe", "material"}]`. Druckprüfung, Stückliste, Filament in der
+Einkaufsliste und der Bauplanschritt „Drucken“ bleiben. Abgrenzung: `gedruckt=True` heißt schon gedruckt (fällt aus
+Vorschau, Export, Filament und Bauplan, Form festgeschrieben), `neu_drucken=True` schreibt die Form eines gedruckten
+Teils neu fest; `spaeter=True` zusammen mit `gedruckt=True` bricht den Lauf ab. Zum Drucken `spaeter` weglassen. Die
+App braucht nichts Neues: sie zeigt die Gruppe in der Liste mit dem Namen „(später)“, im Bericht unter „Ohne Platte“.
+
+## Filamente und Presets (Strang „Druckexport 2“, 22.10.2026, additiv)
+
+Kevin: „Wenn ich etwas zum Drucken anweise oder abfrage, fragst du mich nach dem Filament, und die Projektdatei liefert
+die passenden Custom Presets zum Filament mit.“ Umsetzung `druck/filamente.py` (Liste), `druck/filamentwahl.py`
+(Annahme der Vorschau, Vorschläge), `slicer.filament_daten` (Preset → Bambu-Profil).
+
+- **Filamentliste** (nicht im freigabepflichtigen Katalog): `~/Library/Application Support/de.upvis.kevcad/
+  filamente.json` (`KEVCAD_FILAMENTE` übersteuert), `{"version": 1, "filamente": [{"id", "hersteller", "produkt",
+  "material", "farbe", "farbe_hex", "durchmesser_mm", "offen", "quelle", "preset": {"name", "basis",
+  "abweichungen": [{"schluessel", "wert", "quelle"}]}}]}`. Fehlt die Datei, legt der Kernel den Startbestand an:
+  `polymaker-polylite-petg-gelb` (Basis „PolyLite PETG @BBL P1P“), `bambu-petg-basic` (Basis „Bambu PETG Basic @BBL
+  X1C“, für den P1P 0.4 freigegeben, Farbe offen), `amazon-basics-pla` (Basis Kevins Benutzerprofil „Amazon Basics
+  PLA“, nur gelesen). Startwerte ohne Abweichungen; Abweichungen nur belegt (offizielles Herstellerprofil für den P1P
+  oder Kevins getestete Werte), je mit Quelle. Schlüssel `duese`, `duese_erste_schicht`, `bett` (alle Platten, auf
+  denen das Basisprofil druckt), `bett_erste_schicht`, `luefter_min`, `luefter_max`, `max_volumen`, `fluss` oder ein
+  Schlüssel des Basisprofils. Erweiterbar per MCP `filament_define`.
+- **Preset im 3MF:** aufgelöst (Basis mit `inherits` und `include`, darüber die Abweichungen), Name und
+  `filament_settings_id` = Preset-Name („Polymaker PolyLite PETG gelb (Kev CAD)“), `from: "User"`, `inherits` = das
+  Systemprofil, von dem es abstammt (bei Kevins Benutzerprofilen über deren `inherits`), Farbe aus `farbe_hex`. Bambu
+  Studio schreibt es als Projekt-Preset (`project_settings.config`: `filament_settings_id`, `inherits_group` mit dem
+  Elternteil); die Kommandozeile löst `inherits` nicht selbst auf, deshalb aufgelöst. Geprüft am 22.10.2026 mit
+  2.07.01.62: mit `--slice 0` steht die Temperatur des Presets im G-Code (`M109 S255` PolyLite PETG, `M109 S238` ein
+  Testfilament mit Abweichung). Die Anzeige in der Oberfläche von Bambu Studio ist nicht maschinell geprüft.
+- **Rückfrage erzwungen:** `druck_export(…, filament=…)`: je Material ein Filament der Liste (`{"petg": "<id>"}`, eine
+  id oder eine Liste von ids); `PRINT_EXPORT_REQ.filament` ebenso. Fehlt es, schreibt der Kernel nichts und antwortet
+  `{"ok": false, "filament_frage": true, "vorschlaege": {material: {"zuletzt", "spulen": [{"kennung", "name", "gramm",
+  "filament"}], "liste": [{"id", "name", "preset", "basis"}]}}, "fehler": "Frag Kevin nach dem Filament …"}` (MCP:
+  isError). `"vorschau"` (nur intern, Phase 8) nimmt das angenommene Filament, das der Dialog „Drucken …“ anzeigt;
+  über MCP und App gilt es nicht. Falsches Material oder unbekannte id: Fehler mit den vorhandenen ids.
+- **Ergebnis** additiv: `filamente: {material: {"id", "preset", "basis", "quelle", "detail", "abweichungen",
+  "temperaturen"}}`, je Datei `filament_id`, `filament_basis`, `abweichungen`, `filament_quelle` (`kevin`),
+  `temperaturen` (`duese`, `duese_erste_schicht`, `duese_bereich`, `platte`, `platte_erste_schicht`, `platte_name`,
+  `luefter`, `max_volumen`, `hersteller`); Hinweis „PETG: Filament …, Preset „…“ (Basis „…“; keine Abweichungen);
+  Düse 255 °C, Texturplatte 80 °C.“ Das gewählte Filament merkt sich das Projekt: `druck.json` → `filament:
+  {material: {"id", "stand"}}`.
+- **Druckvorschau:** schätzt mit einem angenommenen Filament und zeigt es an: `kevcad.json` `druck.filament.<material>`
+  (id der Liste oder Bambu-Profil), zuletzt für das Projekt gewählt (`druck.json`), Spule im Bestand (Verweis
+  `filament` oder Hersteller und Name), erstes Filament der Liste, sonst Systemprofil. Additiv `summe.material[]`:
+  `filament` (Preset-Name), `filament_id`, `filament_quelle` (`projekt` | `zuletzt` | `spule` | `standard` |
+  `system`), `filament_detail`, `filament_basis`, `temperaturen`; `teile[].profil.filament_id`, `.quelle`, `.detail`;
+  oben `filamente` (die Filamente der Liste zu den Materialien der Vorschau: `id`, `name`, `material`, `farbe`,
+  `farbe_hex`, `preset`, `basis`, `abweichungen` (Anzahl), `offen`). Das Preset gehört zum Schlüssel der Gruppe (anderes
+  Filament = neu slicen).
+- **Spulen** im Bestand verweisen mit `filament` auf einen Eintrag (BESTAND.md); `bestand_eintragen(filament=…)` füllt
+  Material, Name, Hersteller und Farbe.
+- **App:** Der Sichern-Dialog des 3MF-Exports zeigt je Material eine Auswahl aus `druckvorschau.filamente`,
+  vorausgewählt das angenommene Filament; `PRINT_EXPORT_REQ.filament` (`DruckExportNachricht.filament`,
+  `DruckActions.druckExportieren(platten:nach:filament:)`).
+- **Profil-Vorlagen (`include`):** Bambu Studio 2.x lagert Teile der Profile in Vorlagen aus, beim „Bambu Lab P1P 0.4
+  nozzle“ Start-, End-, Filamentwechsel- und Schichtwechsel-G-Code. Kev CAD löste bis 22.10.2026 nur `inherits` auf;
+  alle geslicten G-Codes und die Projekt-Einstellungen aller exportierten 3MF trugen deshalb den allgemeinen
+  Start-G-Code aus „fdm_machine_common“ (Düse fest `M109 S205`, ohne das P1P-Vorprogramm). Jetzt in `slicer.profil`
+  und `drucker/profile.Profile.laden` aufgelöst (Eltern, Vorlagen, eigene Werte); Schlüssel der Zwischenspeicher `v2`.
+
 ## Ablauf im Kernel
 
 1. Nach jedem erfolgreichen Lauf mit Druckteilen: Schätzung (V1/V2) und schnelles Anordnen (V3), Ziel unter 1 s am
@@ -153,7 +255,7 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 |---|---|---|---|
 | `PRINT_PREVIEW` | Kernel → App | Inhalt von `druckvorschau` (oben), `reply_to` optional | – |
 | `PRINT_PREVIEW_REQ` | App → Kernel | `id` | `PRINT_PREVIEW` |
-| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (Liste der Nummern oder leer = alle), `ziel` (Pfad .3mf) | `ACK`, danach `PRINT_EXPORT_RES` |
+| `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (Liste der Nummern oder leer = alle), `ziel` (Pfad .3mf); additiv `teile`, `ohne`, `filament` | `ACK`, danach `PRINT_EXPORT_RES` |
 | `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` | – |
 | `PRINT_SETTINGS` | App → Kernel | `id`, `teil` oder `gruppe`, `einstellungen` (Teilmenge wie oben) oder `zweck` | `ACK`, danach `PRINT_PREVIEW` |
 
@@ -176,8 +278,9 @@ Zeit und Filament nachgeslict wie in der Vorschau (±0,3 %). Ein Filament je Dat
 mehreren Filamenten aus der Kommandozeile nicht wieder slicen kann (Teile landen auf Filament 1); der P1P ohne AMS
 druckt ohnehin ein Material je Platte. Ohne Bambu Studio schreibt der Kernel die 3MF selbst: je Platte eine Datei
 (`<ziel>[-<material>]-platte<n>.3mf`, Teile in ihrer Lage, ohne Profile), weil Bambu Studio Platten nur aus eigenen
-Projekten liest. Laufzeit: `druck_export(ziel=None, platten=None) -> {"ok", "pfad", "platten", "fehler", "pfade", "dateien",
-"hinweise", "geprueft", "ms"}`.
+Projekten liest. Laufzeit: `druck_export(ziel=None, platten=None, teile=None, ohne=None) -> {"ok", "pfad", "platten",
+"fehler", "pfade", "dateien", "hinweise", "geprueft", "ms"}` (dazu additiv `teile`, `weggelassen`, `leere_platten`,
+`dateien[].objekte`, siehe „Auswahl und Objektnamen im Druckexport“).
 
 **Druckprüfung, Abdrücke (V-K, 22.10.2026):** Schichtraster-Hinweise an Flächen, deren Eckpunkte alle näher als
 1,5 mm an einem gezeigten Lager- oder Zukaufteil liegen (Aussparung um ein fremdes Teil), fasst die Prüfung je Teil
@@ -193,8 +296,11 @@ Beispiel und Prüfung in `protocol.py` (`druckvorschau_beispiel`, `check_druck_m
 - `druckvorschau(detail=False)`: Summe, Platten, Teile mit Empfehlung und Hinweisen; `detail` mit Umrissen.
 - `druck_einstellen(teil, einstellungen=None, zweck=None)`: wie `PRINT_SETTINGS` mit `von: "agent"`; nur auf Kevins
   Wunsch oder mit Begründung im Bericht.
-- `druck_export(ziel=None, platten=None)`: 3MF der angeordneten Platten für Bambu Studio (Grundlage Phase 8), ohne
-  Drucken.
+- `druck_export(ziel=None, platten=None, teile=None, ohne=None, filament=None)`: 3MF der angeordneten Platten für
+  Bambu Studio (Grundlage Phase 8), ohne Drucken; `teile`/`ohne` wählen Teile aus, `filament` ist Pflicht (sonst
+  Rückfrage, „Filamente und Presets“).
+- `filament_liste(material=None)`, `filament_define(hersteller, produkt, material, farbe, durchmesser_mm, basis,
+  abweichungen, farbe_hex, id, preset_name, quelle, ersetzen)`: Kevins Filamentliste lesen bzw. erweitern.
 
 ## App
 

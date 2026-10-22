@@ -129,6 +129,10 @@ extension AppController: DruckActions {
     }
 
     public func druckExportieren(platten: [Int], nach ziel: URL?) {
+        druckExportieren(platten: platten, nach: ziel, filament: [:])
+    }
+
+    public func druckExportieren(platten: [Int], nach ziel: URL?, filament: [String: String]) {
         guard !AppInfo.isDemoMode else { return }
         if case .laeuft = model.druck.export { return }
         guard helloReceived else {
@@ -138,7 +142,7 @@ extension AppController: DruckActions {
         let id = nextRequestID()
         model.druck.exportID = id
         model.druck.setzeExport(.laeuft(ziel: ziel))
-        let msg = DruckExportNachricht(id: id, platten: platten, ziel: ziel?.path)
+        let msg = DruckExportNachricht(id: id, platten: platten, ziel: ziel?.path, filament: filament)
         request(msg, timeout: Self.druckTimeout) { [weak self] result in
             guard let self else { return }
             switch result {

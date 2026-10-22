@@ -148,3 +148,32 @@ def setze(projekt: str | Path, namen: list[str], *, einstellungen: dict[str, Any
     tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     tmp.replace(p)
     return d
+
+
+def filament_zuletzt(projekt: str | Path | None) -> dict[str, str]:
+    """Zuletzt für dieses Projekt exportiertes Filament je Material (``druck.json`` → ``filament``: {material: {"id",
+    "stand"}}; Strang „Druckexport 2“): Vorschlag der Rückfrage und Annahme der Druckvorschau."""
+    f = lies(projekt).get("filament")
+    if not isinstance(f, dict):
+        return {}
+    return {str(k): str(v.get("id")) for k, v in f.items() if isinstance(v, dict) and v.get("id")}
+
+
+def setze_filament(projekt: str | Path, wahl: dict[str, str]) -> bool:
+    """Gewähltes Filament je Material merken; True, wenn sich etwas geändert hat."""
+    d = lies(projekt)
+    if d.get("fehler"):
+        return False
+    f = d.get("filament") if isinstance(d.get("filament"), dict) else {}
+    neu = dict(f)
+    for m, fid in wahl.items():
+        if fid and (f.get(m) or {}).get("id") != fid:
+            neu[m] = {"id": fid, "stand": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    if neu == f:
+        return False
+    d["filament"] = neu
+    p = pfad(projekt)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tmp.replace(p)
+    return True

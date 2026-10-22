@@ -290,6 +290,7 @@ def geometrie(k: Any, teil: dict[str, Any], formen: dict[str, Any] | None = None
         "zweck": k.info.get("druck_zweck"),
         "anzahl": k.info.get("druck_anzahl"),
         "gedruckt": bool(k.info.get("druck_gedruckt")),
+        "spaeter": bool(k.info.get("druck_spaeter")),
         "stuetzflaeche": float(kz.get("stuetzflaeche_mm2") or 0.0),
         "auflage_pruefung": float(kz.get("auflageflaeche_mm2") or 0.0),
         "ausrichtung_text": a.get("text"),

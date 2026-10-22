@@ -278,7 +278,7 @@ enum DruckSelfTest {
         // 6. Als 3MF sichern (je Material eine Datei)
         let ziel = (model.project?.path ?? ausgabe).appendingPathComponent("output/selbsttest-druck.3mf")
         let tExport = Date()
-        model.druckActions?.druckExportieren(platten: [], nach: ziel)
+        model.druckActions?.druckExportieren(platten: [], nach: ziel, filament: druck.vorschau?.filamentVorschlag ?? [:])
         let exportFertig = await wait(Double(env["KEVCAD_SELFTEST_EXPORT_WARTEN"] ?? "") ?? 420) { !druck.export.laeuftGerade }
         messwerte["export_ms"] = Int(Date().timeIntervalSince(tExport) * 1000)
         if case .fertig(let e) = druck.export {

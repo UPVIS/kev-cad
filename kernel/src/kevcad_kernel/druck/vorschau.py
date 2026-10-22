@@ -15,6 +15,8 @@ from typing import Any, Callable
 
 from kevcad_kernel.druck import anordnen as ao
 from kevcad_kernel.druck import empfehlung as em
+from kevcad_kernel.druck import filamente as fl
+from kevcad_kernel.druck import filamentwahl as fw
 from kevcad_kernel.druck import schaetzung as sz
 from kevcad_kernel.druck import signatur as sg
 from kevcad_kernel.druck import slicer as sl
@@ -26,13 +28,16 @@ DRUCKER_NAME = "Bambu Lab P1P 0.4"
 STANDARD = {"drucker": DRUCKER_ID, "strompreis_kwh": 0.32, "leistung_w": 150.0, "plattenwechsel_s": 120,
             "slicer": True, "platte": sl.PLATTE_STANDARD}
 STUETZ_ARTEN = ("ueberhang", "freie_unterseite", "kragarm", "bruecke")
-SCHLUESSEL_VERSION = "v1"
+SCHLUESSEL_VERSION = "v2"  # v2 (22.10.2026): Profile mit include (P1P-Start-G-Code), Filament-Presets
 
 
-def projekt_einstellungen(settings: dict[str, Any] | None) -> dict[str, Any]:
+def projekt_einstellungen(settings: dict[str, Any] | None, spulen: list[dict[str, Any]] | None = None,
+                          filament_zuletzt: dict[str, str] | None = None) -> dict[str, Any]:
     """``kevcad.json`` → ``"druck"`` mit Vorgaben ergänzt (unbekannte Schlüssel bleiben erhalten). ``platte``
     (Druckplatte, Bambu-Name wie „Textured PEI Plate“ oder kurz „texturiert“, „glatt“, „cool“, „engineering“)
-    wird vereinheitlicht; unbekannt: Texturplatte und ``platte_fehler``."""
+    wird vereinheitlicht; unbekannt: Texturplatte und ``platte_fehler``. ``spulen``: Filamentspulen aus dem Bestand
+    des Projekts (``bestand.json``) und ``filament_zuletzt`` (zuletzt gewähltes Filament je Material, ``druck.json``)
+    für das angenommene Filament der Vorschau (``druck/filamentwahl.py``)."""
     d = dict(STANDARD)
     roh = (settings or {}).get("druck") if isinstance(settings, dict) else None
     if isinstance(roh, dict):
@@ -46,6 +51,8 @@ def projekt_einstellungen(settings: dict[str, Any] | None) -> dict[str, Any]:
     except sl.SlicerFehler as exc:
         d["platte_fehler"] = str(exc)
         d["platte"] = sl.PLATTE_STANDARD
+    d["spulen"] = [s for s in (spulen or []) if isinstance(s, dict)]
+    d["filament_zuletzt"] = dict(filament_zuletzt or {})
     return d
 
 
@@ -71,6 +78,20 @@ class Gruppe:
     pruefung: dict[str, Any] = field(default_factory=dict)
     stuetz_flaechen: list[str] = field(default_factory=list)
     fest_von: dict[str, str] = field(default_factory=dict)
+    # erst später drucken (lager.druckteil(…, spaeter=True)): in der Liste, nicht auf den Platten, nicht im Export
+    spaeter: bool = False
+    # angenommenes Filament (druck/filamentwahl.py): {"profil", "quelle", "detail", "filament", "preset", …}
+    filament_wahl: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def filament_slicer(self) -> Any:
+        """Für die Slicer-Funktionen: das Preset des Filaments, sonst der Profilname."""
+        return self.filament_wahl.get("preset") or self.filament
+
+
+def auf_platten(gr: list[Gruppe]) -> list[Gruppe]:
+    """Die Gruppen, die jetzt gedruckt werden (ohne „später drucken“)."""
+    return [g for g in gr if not g.spaeter]
 
 
 @dataclass
@@ -117,20 +138,16 @@ def _gruppen_name(namen: list[str]) -> str:
     return name or letzte[0]
 
 
-def _filament_wunsch(projekt: dict[str, Any], material: str) -> str | None:
-    f = projekt.get("filament")
-    return str(f.get(material)) if isinstance(f, dict) and f.get(material) else None
+def filament_wahl(projekt: dict[str, Any], material: str) -> fw.FilamentWahl:
+    """Bambu-Studio-Filamentprofil eines Materials aus dem echten Filament (Projekt, Spule im Bestand, Kevins Vorgabe,
+    Systemprofil; ``druck/filamentwahl.py``)."""
+    return fw.waehle(material, projekt, projekt.get("spulen") or [], str(projekt.get("drucker") or DRUCKER_ID),
+                     projekt.get("platte"))
 
 
 def _filament(projekt: dict[str, Any], material: str) -> str | None:
-    """Name des Bambu-Studio-Filamentprofils (ohne Bambu Studio: Wunsch oder erster Vorschlag)."""
-    wunsch = _filament_wunsch(projekt, material)
-    if sl.system_ordner().is_dir():
-        try:
-            return sl.filament_name(material, wunsch, str(projekt.get("drucker") or DRUCKER_ID))
-        except sl.SlicerFehler:
-            return None
-    return wunsch or (sl.FILAMENTE.get(material) or (None,))[0]
+    """Name des Bambu-Studio-Filamentprofils (ohne Bambu Studio: Projekt oder Vorgabe ungeprüft)."""
+    return filament_wahl(projekt, material).profil
 
 
 def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict[str, Any],
@@ -161,7 +178,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         # gleiche Teile in verschiedener Einbaulage (gedreht, andere Rahmenlage) eine Gruppe bleiben
         lage_bett = tuple(round(float(x), 1) for x in (geo.get("groesse") or [])) + \
             (round(float(geo.get("auflage") or 0.0)),)
-        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True))
+        spaeter = bool(geo.get("spaeter"))
+        basis = (geo.get("material"), zweck, json.dumps(e_vorgabe, sort_keys=True), spaeter)
         sig = geo.get("signatur") if isinstance(geo.get("signatur"), dict) else None
         key: Any = (geo.get("form"), lage_bett, *basis)
         gespiegelt_von = None
@@ -186,7 +204,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
                 key = ("sig", len(roh))
         g = roh.setdefault(key, {"namen": [], "stuecke": {}, "geo": geo, "zweck": zweck, "vorgaben": e_vorgabe,
                                  "zweck_fest": bool(v.get("zweck")), "pruefung": teile_info.get(name) or {},
-                                 "von": {}, "basis": basis, "sig": sig, "gespiegelt_von": gespiegelt_von})
+                                 "von": {}, "basis": basis, "sig": sig, "gespiegelt_von": gespiegelt_von,
+                                 "spaeter": spaeter})
         for k_, w_ in von_je_schluessel(v).items():
             g["von"].setdefault(k_, w_)
         g["namen"].append(name)
@@ -203,6 +222,7 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
             stuetz.setdefault(n, []).extend(f"{n}#f{f}" for f in w.get("flaechen") or [])
     version = sl.version() or "-"
     ids = {k_: f"g{i}" for i, k_ in enumerate(roh, start=1)}
+    wahlen: dict[str, fw.FilamentWahl] = {}
     for i, g in enumerate(roh.values(), start=1):
         geo = g["geo"]
         mat = str(geo.get("material") or "pla")
@@ -211,29 +231,35 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
         fest_von = {k: g["von"].get(k, "kevin") for k in fest}
         anzahl = sum(max(s["gezeigt"], s["anzahl"]) for s in g["stuecke"].values())
         prozess = sl.prozess_name(float(emp["einstellungen"]["schicht_mm"]))
-        filament = _filament(projekt, mat)
+        if mat not in wahlen:
+            wahlen[mat] = filament_wahl(projekt, mat)
+        filament = wahlen[mat].profil
         e_slicer = {k: v for k, v in emp["einstellungen"].items() if k != "ausrichtung"}
         schl = sl.schluessel(SCHLUESSEL_VERSION, geo.get("form"), geo.get("form_matrix"), e_slicer, prozess,
-                             filament, projekt.get("drucker"), version, projekt.get("platte"))
-        name_g = _gruppen_name(g["namen"]) + (" (gespiegelt)" if g["gespiegelt_von"] is not None else "")
+                             filament, wahlen[mat].preset, projekt.get("drucker"), version, projekt.get("platte"))
+        name_g = _gruppen_name(g["namen"]) + (" (gespiegelt)" if g["gespiegelt_von"] is not None else "") + \
+            (" (später)" if g["spaeter"] else "")
         out.append(Gruppe(id=f"g{i}", name=name_g, teile=g["namen"], anzahl=anzahl, material=mat,
                           zweck=emp["zweck"], zweck_geschaetzt=emp["zweck_geschaetzt"], geo=geo,
                           einstellungen=emp["einstellungen"], fest=fest, begruendung=emp["begruendung"],
                           prozess=prozess, filament=filament, schluessel=schl, vorgaben=g["vorgaben"],
                           pruefung=g["pruefung"], stuetz_flaechen=sorted(set(stuetz.get(g["namen"][0], []))),
-                          fest_von=fest_von,
+                          fest_von=fest_von, spaeter=bool(g["spaeter"]), filament_wahl=wahlen[mat].als_dict(),
                           gespiegelt_von=ids.get(g["gespiegelt_von"]) if g["gespiegelt_von"] is not None else None))
     return out, ohne
 
 
 def anordnung_schluessel(material: str, gr: list[Gruppe]) -> str:
+    """Schlüssel der genauen Anordnung eines Materials (nur Gruppen auf den Platten, ohne „später“)."""
     return sl.schluessel(SCHLUESSEL_VERSION, "anordnung", material,
-                         [(g.schluessel, g.anzahl, bool(g.einstellungen.get("brim"))) for g in gr if g.material == material])
+                         [(g.schluessel, g.anzahl, bool(g.einstellungen.get("brim"))) for g in auf_platten(gr)
+                          if g.material == material])
 
 
 def stuecke(gr: list[Gruppe]) -> list[ao.Stueck]:
+    """Stücke zum Anordnen (ohne Gruppen „später drucken“)."""
     out: list[ao.Stueck] = []
-    for g in gr:
+    for g in auf_platten(gr):
         out += ao.stuecke_aus_gruppe(g.id, g.material, g.geo, g.teile, g.anzahl, bool(g.einstellungen.get("brim")))
     return out
 
@@ -270,11 +296,13 @@ def platten_schluessel(material: str, platte: ao.Platte, gr: dict[str, Gruppe]) 
 def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], vorgaben: dict[str, Any],
          settings: dict[str, Any] | None, material_info: Callable[[str], dict[str, Any] | None],
          stand: SlicerStand | None = None, abgleich: dict[str, Any] | None = None,
-         regler: bool = False) -> tuple[dict[str, Any], list[Gruppe], list[tuple[str, ao.Platte]]]:
+         regler: bool = False, spulen: list[dict[str, Any]] | None = None,
+         filament_zuletzt: dict[str, str] | None = None
+         ) -> tuple[dict[str, Any], list[Gruppe], list[tuple[str, ao.Platte]]]:
     """(Druckvorschau wie im Vertrag, Gruppen, Platten mit Material). ``material_info(id)`` liefert den Katalogeintrag
-    (dichte, preis_je_kg, preis_stand, name)."""
+    (dichte, preis_je_kg, preis_stand, name). ``spulen``: Filamentspulen des Projekts (Wahl des Filamentprofils)."""
     t0 = time.perf_counter()
-    projekt = projekt_einstellungen(settings)
+    projekt = projekt_einstellungen(settings, spulen, filament_zuletzt)
     stand = stand or SlicerStand()
     abgleich = abgleich if abgleich is not None else sz.lies_abgleich()
     gr, ohne = gruppen(druck or {}, befunde, vorgaben or {}, projekt)
@@ -314,20 +342,23 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
             "je_stueck": {"g": round(werte["g"], 2), "m": round(werte["m"], 3), "zeit_s": int(round(werte["zeit_s"]))},
             "stuetzen_g": round(werte["stuetzen_g"] * g.anzahl, 1),
             "einstellungen": dict(g.einstellungen), "fest": list(g.fest), "fest_von": dict(g.fest_von),
-            "profil": {"prozess": g.prozess, "filament": g.filament}, "risiko": r,
+            "profil": {"prozess": g.prozess, "filament": g.filament, "filament_id": g.filament_wahl.get("filament"),
+                       "quelle": g.filament_wahl.get("quelle"), "detail": g.filament_wahl.get("detail")},
+            "risiko": r,
             "begruendung": list(g.begruendung), "hinweise": hw,
             **({"gespiegelt_von": g.gespiegelt_von} if g.gespiegelt_von else {}),
+            **({"spaeter": True} if g.spaeter else {}),
         })
-    # Platten: je Material genau (Slicer) oder schnell
+    # Platten: je Material genau (Slicer) oder schnell; Gruppen „später drucken“ stehen nur in der Liste
     nach_id = {g.id: g for g in gr}
     materialien: list[str] = []
-    for g in gr:
+    for g in auf_platten(gr):
         if g.material not in materialien:
             materialien.append(g.material)
     platten: list[tuple[str, ao.Platte, str]] = []
     nicht_passend: list[str] = []
     for mat in materialien:
-        gm = [g for g in gr if g.material == mat]
+        gm = [g for g in auf_platten(gr) if g.material == mat]
         a = stand.anordnung.get(anordnung_schluessel(mat, gr))
         genau = _platten_aus_slicer(a, gm) if a else []
         if genau:
@@ -369,11 +400,16 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
         g_mat = sum(pp["material"][0]["g"] for pp in platten_out if pp["material"][0]["material"] == mat)
         st = {pp["stand"] for pp in platten_out if pp["material"][0]["material"] == mat}
         preis_kg = float(info.get("preis_je_kg") or 0.0)
+        wahl = next((g.filament_wahl for g in gr if g.material == mat), {})
         material_out.append({"material": mat, "name": info.get("name") or mat, "g": round(g_mat, 1),
                              "m": round(g_mat / dichte / sz.CM3_JE_M, 2), "kosten": round(g_mat / 1000 * preis_kg, 2),
                              "preis_kg": preis_kg or None, "preis_stand": info.get("preis_stand"),
                              "preis_quelle": info.get("preis_quelle"),
-                             "stand": st.pop() if len(st) == 1 else "gemischt"})
+                             "stand": st.pop() if len(st) == 1 else "gemischt",
+                             # additiv: angenommenes Filament, Preset, woher, Temperaturen (druck/filamentwahl.py)
+                             "filament": wahl.get("profil"), "filament_id": wahl.get("filament"),
+                             "filament_quelle": wahl.get("quelle"), "filament_detail": wahl.get("detail"),
+                             "filament_basis": wahl.get("basis"), "temperaturen": wahl.get("temperaturen")})
     zeit_s = sum(pp["zeit_s"] for pp in platten_out)
     wechsel = int(projekt.get("plattenwechsel_s") or 0)
     mit_wechsel = zeit_s + max(0, len(platten_out) - 1) * wechsel
@@ -381,8 +417,9 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     strom = round(zeit_s / 3600 * float(projekt.get("leistung_w") or 0) / 1000 * float(projekt.get("strompreis_kwh")
                                                                                        or 0), 2)
     anteil_strom = strom / zeit_s if zeit_s else 0.0
-    risiko_eur = round(sum(t["risiko"] * (t["kosten"] + t["zeit_s"] * anteil_strom) for t in teile_out), 2)
-    staende = {t["stand"] for t in teile_out} | {p["stand"] for p in platten_out}
+    jetzt = [t for t in teile_out if not t.get("spaeter")]
+    risiko_eur = round(sum(t["risiko"] * (t["kosten"] + t["zeit_s"] * anteil_strom) for t in jetzt), 2)
+    staende = {t["stand"] for t in jetzt} | {p["stand"] for p in platten_out}
     gesamt_stand = "schaetzung" if not staende or staende == {"schaetzung"} else (
         "slicer" if staende == {"slicer"} else "gemischt")
     gramm = {m["material"]: m["g"] for m in material_out}
@@ -393,10 +430,19 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     if sl.system_ordner().is_dir():
         for mat in materialien:
             fil = next((g.filament for g in gr if g.material == mat and g.filament), None)
-            if fil and not sl.platte_passt(fil, str(projekt.get("platte"))):
+            fil_s = next((g.filament_slicer for g in gr if g.material == mat and g.filament), None)
+            if fil and not sl.platte_passt(fil_s, str(projekt.get("platte"))):
                 hinweise.append({"schwere": "fehler", "art": "platte",
                                  "text": f"{fil} geht nicht auf der {projekt.get('platte')} (Bambu Studio bricht ab): "
                                          "andere Platte in kevcad.json druck.platte, etwa „Textured PEI Plate“."})
+    gesehen: set[str] = set()
+    for g in gr:  # Angaben zum Filament, die nicht passten (Projekt, Spule, Vorgabe)
+        for text in g.filament_wahl.get("verworfen") or []:
+            if text not in gesehen:
+                gesehen.add(text)
+                hinweise.append({"schwere": "warnung", "art": "material",
+                                 "text": f"Filamentprofil {g.material.upper()}: {text} Genommen: "
+                                         f"{g.filament or 'keins'} ({g.filament_wahl.get('detail')})."})
     for n in ohne:
         hinweise.append({"schwere": "hinweis", "art": "slicer",
                          "text": f"{n}: keine Vorschau (Geometrie in Druckausrichtung fehlt, Druckprüfung ansehen)."})
@@ -420,6 +466,12 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
     gedruckt = gedruckte_teile(druck)
     if gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt, vorhanden; nicht in Platten, Summe, Filament
         out["gedruckt"] = gedruckt
+    mats_alle = list(dict.fromkeys(g.material for g in gr))
+    if mats_alle:  # additiv: Kevins Filamente der Materialien (Auswahl beim Export, druck/filamente.py)
+        out["filamente"] = [fl.kurz(f) for m in mats_alle for f in fl.liste(m)]
+    spaeter = [{"name": n, "gruppe": g.id, "material": g.material} for g in gr if g.spaeter for n in g.teile]
+    if spaeter:  # additiv: erst später drucken; in teile (spaeter: true), nicht in Platten, Summe und Export
+        out["spaeter"] = spaeter
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
     return out, gr, [(m, p) for m, p, _ in platten]
 

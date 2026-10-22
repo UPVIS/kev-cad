@@ -214,6 +214,7 @@ Umsetzung `kernel/src/kevcad_kernel/bestand/filament.py` (Planung, Abbuchen), `d
 | `gramm` | Filament übrig (g, ≥ 0) |
 | `gramm_voll` | Netto einer vollen Spule (g); Standard `spule_g` des Materials, sonst 1000 |
 | `name`, `hersteller`, `farbe`, `ort`, `seit` | optional; `name` wie Kevin die Spule nennt („Bambu PETG Basic schwarz“) |
+| `filament` | optional (additiv, Strang „Druckexport 2“): id eines Filaments aus Kevins Filamentliste (`druck/filamente.py`, DRUCKVORSCHAU.md „Filamente und Presets“); `bestand_eintragen(filament=…)` füllt damit Material, Name, Hersteller und Farbe |
 
 **Buchungen:** neue Änderungen `spule` (`kennung`, `vorher`, `nachher`: ganze Spule oder null), `spule_gramm`
 (`kennung`, `material`, `delta` in g) und `filament_fuehren` (`vorher`, `nachher`: bool, legt die leere Liste an);

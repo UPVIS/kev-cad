@@ -51,7 +51,8 @@ ARTEN = ("eintrag", "gebaut", "korrektur", "rueckgaengig", "gedruckt")  # gedruc
 VON = ("kevin", "agent")
 
 POSTEN_FELDER = ("ganze", "reste", "stueck", "mindestrest_mm")
-SPULE_FELDER = ("kennung", "material", "gramm", "gramm_voll", "name", "hersteller", "farbe", "ort", "seit")
+# ``filament`` (additiv, Strang „Druckexport 2“): id eines Filaments aus Kevins Filamentliste (druck/filamente.py)
+SPULE_FELDER = ("kennung", "material", "gramm", "gramm_voll", "name", "hersteller", "farbe", "ort", "seit", "filament")
 SPULE_STANDARD_G = 1000.0  # Kaufspule, wenn der Katalog keine spule_g nennt
 _KENNUNG_RE = re.compile(r"^([RP])-(\d{1,9})$")
 _SPULE_RE = re.compile(r"^S-(\d{1,9})$")
@@ -321,6 +322,10 @@ def pruefe_spule(who: str, spule: Any) -> list[str]:
     for key in ("name", "hersteller", "farbe", "ort"):
         if spule.get(key) is not None and not isinstance(spule.get(key), str):
             errors.append(f"{who}: {key} muss Text sein")
+    fil = spule.get("filament")
+    if fil is not None and not (isinstance(fil, str) and re.match(r"^[a-z0-9][a-z0-9-]{0,63}$", fil)):
+        errors.append(f"{who}: filament ist die id eines Filaments aus Kevins Liste (z. B. "
+                      "\"polymaker-polylite-petg-gelb\")")
     if spule.get("seit") is not None and not (isinstance(spule["seit"], str) and _DATUM_RE.match(spule["seit"])):
         errors.append(f"{who}: seit als Datum \"JJJJ-MM-TT\" angeben")
     return errors

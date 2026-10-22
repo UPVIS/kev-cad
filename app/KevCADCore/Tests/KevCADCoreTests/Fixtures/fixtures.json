@@ -1330,6 +1330,11 @@
     "payload_bytes": 0
    },
    {
+    "file": "print_export_res_frage.frame",
+    "type": "PRINT_EXPORT_RES",
+    "payload_bytes": 0
+   },
+   {
     "file": "print_preview_req.frame",
     "type": "PRINT_PREVIEW_REQ",
     "payload_bytes": 0
@@ -1357,6 +1362,16 @@
    {
     "file": "print_export_req.frame",
     "type": "PRINT_EXPORT_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_export_req_auswahl.frame",
+    "type": "PRINT_EXPORT_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_export_res_auswahl.frame",
+    "type": "PRINT_EXPORT_RES",
     "payload_bytes": 0
    }
   ],
@@ -1569,6 +1584,45 @@
     1,
     2
    ]
+  },
+  "export_auswahl": {
+   "ohne": [
+    "Kugelschieber/Lenksperren"
+   ],
+   "platten": [
+    1
+   ],
+   "leere_platten": [
+    2
+   ],
+   "weggelassen": 2,
+   "filament": {
+    "petg": "polymaker-polylite-petg-gelb"
+   }
+  },
+  "filamente": [
+   {
+    "id": "polymaker-polylite-petg-gelb",
+    "name": "Polymaker PolyLite PETG gelb (1,75 mm)",
+    "material": "petg",
+    "preset": "Polymaker PolyLite PETG gelb (Kev CAD)"
+   },
+   {
+    "id": "bambu-petg-basic",
+    "name": "Bambu Lab PETG Basic (1,75 mm)",
+    "material": "petg",
+    "preset": "Bambu Lab PETG Basic (Kev CAD)"
+   },
+   {
+    "id": "amazon-basics-pla",
+    "name": "Amazon Basics PLA (1,75 mm)",
+    "material": "pla",
+    "preset": "Amazon Basics PLA (Kev CAD)"
+   }
+  ],
+  "material_filament_id": {
+   "petg": "polymaker-polylite-petg-gelb",
+   "pla": "amazon-basics-pla"
   }
  },
  "drucker": {
