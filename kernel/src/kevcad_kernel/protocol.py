@@ -894,3 +894,162 @@ def druckvorschau_beispiel(run: int = 12) -> dict[str, Any]:
         "regler": False,
         "ms": 38.2,
     }
+
+
+# Drucken (Phase 8, DRUCKVORSCHAU.md „Drucken (Phase 8)“): Nachrichten ohne Nutzlast. Nie mit Seriennummer oder
+# Zugangscode: PRINTER_CONFIG trägt nur den Eintrag aus drucker.json, PRINTER_STATUS nur eine gehashte Kennung.
+
+DRUCKER_NACHRICHTEN: dict[str, tuple[str, ...]] = {
+    "PRINTER_CONFIG": ("id", "drucker"),
+    "PRINTER_STATUS_REQ": ("id",),
+    "PRINTER_STATUS": ("konfiguriert", "verbindung", "meldung", "drucker", "weg", "wege", "steuern", "druck",
+                       "temperaturen", "fehler", "kamera", "gefunden", "auftrag", "aktualisiert"),
+    "PRINT_JOB_REQ": ("id", "platten", "weg", "bestaetigt"),
+    "PRINT_JOB_RES": ("reply_to", "ok", "auftrag", "weg", "schritt", "datei", "platten", "fehler", "hinweise", "ms"),
+    "PRINT_JOB_ASK": ("id", "auftrag", "platten", "weg", "von", "grund"),
+    "PRINT_CONTROL": ("id", "aktion"),
+}
+DRUCKER_VERBINDUNGEN: tuple[str, ...] = ("aus", "verbindet", "verbunden", "getrennt", "fehler")
+DRUCKER_WEGE: tuple[str, ...] = ("a", "b")
+DRUCKER_MODI: tuple[str, ...] = ("cloud", "lan", "unbekannt")
+DRUCK_ZUSTAENDE: tuple[str, ...] = ("unbekannt", "bereit", "vorbereiten", "druckt", "pausiert", "fertig",
+                                    "fehlgeschlagen")
+AUFTRAG_ZUSTAENDE: tuple[str, ...] = ("wartet", "slict", "bereit", "oeffnet", "geoeffnet", "laedt_hoch", "startet",
+                                      "gestartet", "fehler", "verworfen")
+AUFTRAG_SCHRITTE: tuple[str, ...] = ("vorbereitet", "geoeffnet", "gestartet")
+DRUCKER_AKTIONEN: tuple[str, ...] = ("aktualisieren", "pause", "fortsetzen", "abbrechen", "verwerfen")
+DRUCKER_EINTRAG_FELDER: tuple[str, ...] = ("id", "name", "modell", "ip", "weg", "status_lesen")
+DRUCKER_FELDER: tuple[str, ...] = ("id", "name", "modell", "ip", "firmware", "modus", "entwicklermodus", "signal")
+DRUCK_STATUS_FELDER: tuple[str, ...] = ("zustand", "gcode_state", "fortschritt", "schicht", "schichten", "restzeit_s",
+                                        "aufgabe", "datei", "stufe", "geschwindigkeit")
+AUFTRAG_FELDER: tuple[str, ...] = ("auftrag", "zustand", "weg", "platten", "fortschritt", "meldung", "datei", "von")
+_GEHEIM = ("seriennummer", "zugangscode", "access_code", "serial", "passwort", "password")
+
+
+def printer_config(id: str, drucker: dict[str, Any] | None, *, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    return {"type": "PRINTER_CONFIG", "seq": seq, "id": id, "drucker": None if drucker is None else dict(drucker)}
+
+
+def printer_status(status: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
+    h: dict[str, Any] = {"type": "PRINTER_STATUS", "seq": seq,
+                         **{k: v for k, v in status.items() if k not in ("ok", "type", "seq", "reply_to")}}
+    if reply_to:
+        h["reply_to"] = reply_to
+    return h
+
+
+def print_job_req(id: str, *, platten: list[int] | None = None, weg: str = "a", bestaetigt: bool = False,  # noqa: A002
+                  optionen: dict[str, Any] | None = None, auftrag: str | None = None, seq: int = 0) -> dict[str, Any]:
+    h: dict[str, Any] = {"type": "PRINT_JOB_REQ", "seq": seq, "id": id, "platten": [int(p) for p in (platten or [])],
+                         "weg": weg, "bestaetigt": bool(bestaetigt)}
+    if optionen is not None:
+        h["optionen"] = dict(optionen)
+    if auftrag is not None:
+        h["auftrag"] = auftrag
+    return h
+
+
+def print_control(id: str, aktion: str, *, auftrag: str | None = None, seq: int = 0) -> dict[str, Any]:  # noqa: A002
+    h: dict[str, Any] = {"type": "PRINT_CONTROL", "seq": seq, "id": id, "aktion": aktion}
+    if auftrag is not None:
+        h["auftrag"] = auftrag
+    return h
+
+
+def _geheimnisse(obj: Any, wo: str = "") -> list[str]:
+    """Pfade von Feldern, deren Name nach Seriennummer oder Zugangscode klingt (dürfen nie in Nachrichten stehen)."""
+    out: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in _GEHEIM:
+                out.append(f"{wo}{k}")
+            out += _geheimnisse(v, f"{wo}{k}.")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out += _geheimnisse(v, f"{wo}[{i}].")
+    return out
+
+
+def check_drucker_message(header: dict[str, Any]) -> list[str]:
+    """Fehlende oder ungültige Felder einer Drucker-Nachricht (leer = in Ordnung); Felder mit Geheimnissen sind immer
+    ein Fehler."""
+    kind = header.get("type")
+    need = DRUCKER_NACHRICHTEN.get(str(kind))
+    if need is None:
+        return [f"{kind!r} ist keine Drucker-Nachricht"]
+    out = [k for k in need if k not in header]
+    out += [f"{p} darf nie in einer Nachricht stehen" for p in _geheimnisse(header)]
+    if out:
+        return out
+    if kind == "PRINTER_CONFIG" and header["drucker"] is not None:
+        out += _fehlend(header["drucker"], DRUCKER_EINTRAG_FELDER, "drucker")
+        if isinstance(header["drucker"], dict) and header["drucker"].get("weg") not in DRUCKER_WEGE:
+            out.append(f"drucker.weg {header['drucker'].get('weg')!r} unbekannt")
+    elif kind in ("PRINT_JOB_REQ", "PRINT_JOB_ASK") and header["weg"] not in DRUCKER_WEGE:
+        out.append(f"weg {header['weg']!r} unbekannt")
+    elif kind == "PRINT_CONTROL" and header["aktion"] not in DRUCKER_AKTIONEN:
+        out.append(f"aktion {header['aktion']!r} unbekannt")
+    elif kind == "PRINT_JOB_RES" and header["schritt"] is not None and header["schritt"] not in AUFTRAG_SCHRITTE:
+        out.append(f"schritt {header['schritt']!r} unbekannt")
+    elif kind == "PRINTER_STATUS":
+        if header["verbindung"] not in DRUCKER_VERBINDUNGEN:
+            out.append(f"verbindung {header['verbindung']!r} unbekannt")
+        if header["weg"] not in DRUCKER_WEGE:
+            out.append(f"weg {header['weg']!r} unbekannt")
+        if header["drucker"] is not None:
+            out += _fehlend(header["drucker"], DRUCKER_FELDER, "drucker")
+            if isinstance(header["drucker"], dict) and header["drucker"].get("modus") not in DRUCKER_MODI:
+                out.append(f"drucker.modus {header['drucker'].get('modus')!r} unbekannt")
+        for w in DRUCKER_WEGE:
+            out += _fehlend((header["wege"] or {}).get(w), ("moeglich", "grund"), f"wege.{w}")
+        if header["druck"] is not None:
+            out += _fehlend(header["druck"], DRUCK_STATUS_FELDER, "druck")
+            if isinstance(header["druck"], dict) and header["druck"].get("zustand") not in DRUCK_ZUSTAENDE:
+                out.append(f"druck.zustand {header['druck'].get('zustand')!r} unbekannt")
+        if header["temperaturen"] is not None:
+            out += _fehlend(header["temperaturen"], ("duese", "duese_ziel", "bett", "bett_ziel"), "temperaturen")
+        for i, f in enumerate(header["fehler"] or []):
+            out += _fehlend(f, ("code", "text", "schwere", "art"), f"fehler[{i}]")
+        for i, g in enumerate(header["gefunden"] or []):
+            out += _fehlend(g, ("name", "modell", "ip", "verbindung", "kennung"), f"gefunden[{i}]")
+        if header["auftrag"] is not None:
+            out += _fehlend(header["auftrag"], AUFTRAG_FELDER, "auftrag")
+            if isinstance(header["auftrag"], dict) and header["auftrag"].get("zustand") not in AUFTRAG_ZUSTAENDE:
+                out.append(f"auftrag.zustand {header['auftrag'].get('zustand')!r} unbekannt")
+        if header["kamera"] is not False:
+            out.append("kamera muss false sein (Phase 8 nutzt keine Kamera)")
+    return out
+
+
+def drucker_status_beispiel(*, druckt: bool = True) -> dict[str, Any]:
+    """Beispiel eines PRINTER_STATUS (Weg A, Cloud-Modus, Status lesend, Druck läuft) für Testdateien und Attrappen."""
+    from kevcad_kernel.drucker.sperre import ANLEITUNG_WEG_B
+
+    return {
+        "konfiguriert": True, "verbindung": "verbunden", "meldung": None,
+        "drucker": {"id": "p1p", "name": "P1P Werkstatt", "modell": "P1P", "ip": "192.168.178.40",
+                    "firmware": "01.10.00.00", "modus": "cloud", "entwicklermodus": False, "signal": "-52dBm"},
+        "weg": "a",
+        "wege": {"a": {"moeglich": True, "grund": None},
+                 "b": {"moeglich": False, "grund": "Der Drucker ist im Cloud-Modus (LAN Only Mode aus).",
+                       "anleitung": list(ANLEITUNG_WEG_B)}},
+        "steuern": False,
+        "druck": ({"zustand": "druckt", "gcode_state": "RUNNING", "fortschritt": 0.42, "schicht": 41, "schichten": 98,
+                   "restzeit_s": 3720, "aufgabe": "Kugelschieber-platten", "datei": "Kugelschieber-platten.gcode.3mf",
+                   "stufe": "druckt", "geschwindigkeit": "standard"} if druckt else
+                  {"zustand": "bereit", "gcode_state": "IDLE", "fortschritt": 0.0, "schicht": 0, "schichten": 0,
+                   "restzeit_s": 0, "aufgabe": None, "datei": None, "stufe": None, "geschwindigkeit": "standard"}),
+        "temperaturen": {"duese": 219.5, "duese_ziel": 220.0, "bett": 55.0, "bett_ziel": 55.0},
+        "fehler": [{"code": "0300-0100-0003-0007", "text": "Meldung 0300-0100-0003-0007 des Druckers, Erklärung: "
+                    "https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/0300_0100_0003_0007",
+                    "schwere": "warnung", "art": "hms"}] if druckt else [],
+        "kamera": False,
+        "gefunden": [{"name": "P1P Werkstatt", "modell": "P1P", "ip": "192.168.178.40", "verbindung": "cloud",
+                      "kennung": "3fa2c1d09e7b"}],
+        "auftrag": {"auftrag": "j-3", "zustand": "geoeffnet", "weg": "a", "platten": [1, 2], "fortschritt": None,
+                    "meldung": "In Bambu Studio geöffnet: dort „Platte drucken“ (bzw. „Alle drucken“) und „Senden“ "
+                               "klicken.",
+                    "datei": "/Users/test/Documents/Kev CAD/Kugelschieber/output/Kugelschieber-platten.gcode.3mf",
+                    "von": "kevin"},
+        "aktualisiert": 1792656000.0,
+    }

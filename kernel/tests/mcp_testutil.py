@@ -44,6 +44,8 @@ EXPECTED_TOOLS |= {"zeichnungen", "zeichnung_erstellen", "zeichnung_bearbeiten",
 EXPECTED_TOOLS |= {"versionen", "version_wiederherstellen", "versionen_vergleichen", "meilenstein", "variante"}
 # Phase 6: Dokumente exportieren (P6-A2)
 EXPECTED_TOOLS |= {"dokument_export"}
+# Phase 8: Drucken
+EXPECTED_TOOLS |= {"drucker_status", "drucken"}
 
 
 def free_port() -> int:

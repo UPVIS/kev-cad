@@ -81,6 +81,10 @@ planar face index, a vector, `Rot(...)`) fixes it, e.g. when the main load must 
 `druckpruefung` (or `druckpruefung(teil=...)`) shows orientation with reasoning, key figures, all findings and the \
 material settings; tell Kevin the orientation of new print parts.
 
+Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
+explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \
+slices and opens the plates in Bambu Studio, he prints from there). Never start, pause or stop a print yourself.
+
 model.py rules
 - Units mm and degrees, Z up. Start with `from build123d import *` and `from kevcad import lager, show, step, param`.
 - Parameters at the top: `breite = param("breite", 120)`; `run(params={...})` overrides them for one run.

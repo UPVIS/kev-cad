@@ -547,6 +547,22 @@ class FakeService:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
         return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
 
+    # Phase 8: Drucken -----------------------------------------------------------------------------------------------
+
+    def drucker_status(self) -> dict[str, Any]:
+        from kevcad_kernel.protocol import drucker_status_beispiel
+
+        self._record("drucker_status")
+        return {"ok": True, **drucker_status_beispiel()}
+
+    def drucken(self, platten: list[int] | None = None, weg: str = "a", grund: str | None = None) -> dict[str, Any]:
+        self._record("drucken", platten, weg, grund)
+        if weg == "b":
+            return {"ok": False, "error": "Weg B ist nicht eingestellt (Kevin hat Weg A gewählt)."}
+        return {"ok": True, "auftrag": "j-1", "zustand": "wartet", "weg": weg, "platten": list(platten or []),
+                "meldung": "Der Dialog „Drucken …“ ist in Kev CAD offen. Es geschieht nichts, bis Kevin dort "
+                           "bestätigt; den Stand zeigt drucker_status."}
+
     # Phase 6: Zeichnungen -------------------------------------------------------------------------------------------
 
     BLATT = {"id": "seitenstange", "ok": True, "neu": True, "titel": "Seitenstange", "inhalt": {"art": "teil",

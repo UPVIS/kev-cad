@@ -40,6 +40,7 @@ from kevcad_kernel.dokument_export import DokumentExportDienst
 from kevcad_kernel.bom import inventory_text
 from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog, CatalogError, own_dir
 from kevcad_kernel.druck.laufzeit import DruckRuntime
+from kevcad_kernel.drucker.laufzeit import DruckerRuntimeMixin  # Phase 8: Drucken auf dem P1P
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
@@ -100,7 +101,8 @@ class Job:
 
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
-                    ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst):
+                    ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst,
+                    DruckerRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -149,6 +151,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
+        self._drucker_init()  # Phase 8: Drucken (drucker/laufzeit.py)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
         self._link.start()
@@ -621,6 +624,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._worker.stop(timeout=1.0)
         self._zeichnung_schliessen()
         self._versionen_schliessen()  # Versionen: Hintergrund-Rechenprozess der Nachberechnung
+        self._drucker_close()  # Phase 8: MQTT trennen, SSDP und Auftragsfaden beenden
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -1145,6 +1149,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             conn.send({"type": "AGENT", **agent})
             for status in self.zukauf.offene_status():  # Downloads-Beobachtung nach Neustart fortsetzen
                 conn.send(status)
+            self._drucker_on_connect(conn)  # Phase 8: PRINTER_STATUS
             self._link.activate(conn)
             self._versionen_on_connect(conn)
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
@@ -1261,6 +1266,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._zeichnung_app_message(kind, header):
             pass
         elif self._versionen_app_message(kind, header):
+            pass
+        elif self._drucker_app_message(kind, header):  # Phase 8: PRINTER_*, PRINT_JOB_REQ, PRINT_CONTROL
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
