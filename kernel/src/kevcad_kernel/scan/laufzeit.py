@@ -115,7 +115,7 @@ class ScanRuntimeMixin:
             return {"ok": False, "error": "Die Auswertung fehlt (Umgebung scan/): im Repo `cd scan && uv sync`, "
                                           "installiert legt ./build.sh sie unter install/scan an."}
         eintrag = ablage.eintrag(ordner) or {}
-        n = self._scan_ref_name(proj.path, kern, name or eintrag.get("name") or ordner.name)
+        n = self._scan_ref_name(proj.path, kern, name or eintrag.get("name") or ordner.name, bool(name))
         schluessel = (str(proj.path), n)
         with self._ref_lock:
             laeuft = self._ref_laeufe.get(schluessel)
@@ -160,11 +160,20 @@ class ScanRuntimeMixin:
     # Auswertung
     # =================================================================================================================
 
-    def _scan_ref_name(self, projekt: Path, kern: Path, wunsch: str) -> str:
-        """Bestehende Referenz desselben Scans wiederverwenden, sonst ein freier Name."""
-        for n in ref_ablage.namen(projekt):
+    def _scan_ref_name(self, projekt: Path, kern: Path, wunsch: str, ausdruecklich: bool = False) -> str:
+        """Ohne ausdrücklichen Namen die Referenz desselben Scans wiederverwenden; mit Namen genau diese Referenz
+        (neu, oder dieselbe, wenn sie schon zu diesem Scan gehört). Sonst ein freier Name."""
+
+        def gehoert(n: str) -> bool:
             m = ref_ablage.lese_meta(projekt, n) or {}
-            if m.get("art") == "scan" and str(m.get("quelle")) == str(kern):
+            return m.get("art") == "scan" and str(m.get("quelle")) == str(kern)
+
+        if ausdruecklich:
+            n = ref_ablage.sicherer_name(wunsch)
+            return n if not ref_ablage.ordner(projekt, n).exists() or gehoert(n) else \
+                ref_ablage.freier_name(projekt, wunsch)
+        for n in ref_ablage.namen(projekt):
+            if gehoert(n):
                 return n
         return ref_ablage.freier_name(projekt, wunsch)
 
