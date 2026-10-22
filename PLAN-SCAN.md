@@ -72,50 +72,65 @@ Startwerte 214 × 108 × 54 mm, kein bekanntes Maß). Die Lagen im Scan sind wie
 
 | Tiefe aus | Bilder | mit Tiefenbedingung | ohne Tiefenbedingung (nur Kanten, ARKit-Kameras) |
 |---|---|---|---|
-| Small | 10 (8 genutzt) | +0,18 / +0,31 / +0,08 (Sigma 0,6 / 0,7 / 0,1) | +0,68 / +0,20 / +0,22 (Sigma 4,7 / 2,3 / 1,2) |
-| Small | 3 | +0,36 / +0,05 / +0,02 (Sigma 2,5 / 0,2 / 0,2) | +0,54 / +0,35 / +0,14 (Sigma 7,8 / 3,9 / 2,0) |
-| Large | 10 (8 genutzt) | −0,46 / −0,17 / +0,02 (Sigma 0,9 / 0,4 / 0,2) | +0,28 / +0,03 / +0,09 (Sigma 4,7 / 2,3 / 1,2) |
-| Large | 3 | −0,50 / −0,43 / +0,18 (Sigma 2,3 / 0,3 / 0,4) | +1,27 / +0,93 / +0,32 (Sigma 7,3 / 3,7 / 1,8) |
+| Small | 10 (8 genutzt) | +0,13 / +0,29 / +0,03 (Sigma 0,6 / 0,7 / 0,2) | −0,56 / −0,29 / −0,14 (Sigma 4,7 / 2,3 / 1,2) |
+| Small | 3 | +0,35 / +0,05 / −0,01 (Sigma 2,1 / 0,3 / 0,2) | −0,28 / −0,37 / −0,28 (Sigma 7,8 / 3,9 / 1,9) |
+| Large | 10 (8 genutzt) | −0,48 / −0,17 / −0,03 (Sigma 0,8 / 0,5 / 0,2) | −1,09 / −0,56 / −0,30 (Sigma 4,7 / 2,3 / 1,2) |
+| Large | 3 | −0,43 / −0,42 / +0,04 (Sigma 2,5 / 0,4 / 0,3) | −1,70 / −0,41 / −0,39 (Sigma 7,2 / 3,6 / 1,8) |
 
-Die eingepassten Kameras liegen 1,5 bis 4,7 mm und 0,2 bis 0,8° neben den (verrauschten) ARKit-Lagen, also im Bereich
-des eingebauten Fehlers. Lesart: Mit bekannten Kameras sind die Kanten der synthetischen Bilder (scharf, kontrastreich)
-schon allein auf Zehntel- bis Millimeter genau. Die Tiefe hält den größten Fehler unter 0,5 mm (ohne bis 1,3 mm bei
-drei Bildern) und gibt eine ehrliche, kleine Unsicherheit an (Sigma 0,1 bis 2,5 statt 1,2 bis 7,8 mm); mit der an
-dieser Szene verzerrten Large-Tiefe zieht sie die Länge um knapp 0,5 mm. Echte Kanten sind weicher, Masken ungenauer;
-dort ist der Gewinn der Tiefe größer zu erwarten, nachgewiesen ist er noch nicht. Die erste Fassung (Tiefengewicht
-1,0, Bindung 15 mm, Lage nur über die Oberfläche) lag bei drei Bildern ohne Tiefe 4,3 mm daneben, mit Tiefe 0,5 mm,
-die Kameras wanderten dabei gemeinsam bis 6° (siehe S11, S12).
+Die eingepassten Kameras liegen 5 bis 9 mm und 0,15 bis 0,6° neben den (verrauschten) ARKit-Lagen, also im Bereich
+des eingebauten Fehlers (3 mm je Achse plus Drift bis 9 mm). Der Boden des Scans liegt bei der Probe mit Lagefehlern
+5 mm neben dem echten (geschätzt aus den verrauschten LiDAR-Punkten).
+
+Lesart: Mit bekannten Kameras sind die Kanten der synthetischen Bilder (scharf, kontrastreich) schon allein auf
+0,3 bis 1,7 mm genau. Mit der Tiefe bleibt jeder Fehler unter 0,5 mm, auch mit drei Bildern, und die angegebene
+Unsicherheit ist klein und ehrlich (Sigma 0,2 bis 2,5 statt 1,2 bis 7,8 mm). Die an dieser Szene verzerrte
+Large-Tiefe zieht die Länge um knapp 0,5 mm. Echte Kanten sind weicher, Masken ungenauer; dort ist der Gewinn der
+Tiefe größer zu erwarten, nachgewiesen ist er noch nicht. Die erste Fassung (Tiefengewicht 1,0, Bindung 15 mm, Lage
+nur über die Oberfläche, Höhe frei) lag bei drei Bildern ohne Tiefe 4,3 mm daneben, mit Tiefe 0,5 mm, die Kameras
+wanderten dabei gemeinsam bis 6° (siehe S11, S12).
 
 Laufzeit `referenz_vermessen` 18 bis 34 s (8 Bilder, zwei Durchgänge, je nach Last), ohne Tiefe 12 s, mit drei
 Bildern 8 bzw. 5 s; `scan_importieren` 15 s (Small, 22 Bilder) bzw. 78 s (Large, 40 Bilder).
 
 Echter Scan (Kevins iPhone 15 Pro, 22.10.2026 21:38, 78 s, 779 Videobilder 1920 × 1440 HEVC, 61 Fotos 4032 × 3024 mit
-eigener Tiefe, Box 306 × 402 × 341 mm gesetzt). Gegenstand: oben offener, rechteckiger Behälter.
+eigener Tiefe, Box 306 × 402 × 341 mm gesetzt). Gegenstand laut Fotos: eine geöffnete Frühstücksflocken-Packung mit
+aufgeklappten Laschen, stehend auf einem Sofapolster.
 
-| | Large (101 Bilder: 61 Fotos, 40 Videobilder) | Small (73 Bilder: 61 Fotos, 12 Videobilder) |
-|---|---|---|
-| Bilder wählen (Schärfe von 779 Videobildern) | 4,7 s | 10,4 s |
-| Bilder holen (Fotos verkleinern) | 11,4 s | 15,2 s |
-| PromptDA je Bild | 1,84 s (203 s) | 0,26 s (25 s) |
-| TSDF (7,7 Mio. Voxel, 2 mm) je Bild | 0,90 s numpy | 0,58 s numpy; mit MPS gemessen 0,24 s |
-| Masken | 117 s (vierfach) | 48 s (dreifach); jetzt zweifach und vier Fäden |
-| gesamt | 437 s | 148 s |
-| Grundriss des Netzes | 206,3 × 155,6 mm | 207,1 × 158,0 mm |
-| Oberkante | 303,7 mm (mit Bodenresten im Netz) | 294,4 mm (Bodenreste entfernt) |
-| Streuung Tiefe gegen Netz (Median / 90 %) | 3,4 / 9,6 mm | 3,8 / 10,9 mm |
-| PromptDA gegen LiDAR (Median) | 4,4 mm | 4,1 mm |
-| Maßstab PromptDA an LiDAR (Median, Spanne) | 0,982 (0,950 bis 1,004) | 0,979 (0,953 bis 0,998) |
-| Netzpunkte von mindestens 2 Bildern gesehen | 79 % | 79 % |
+| | Large, letzter Stand (101 Bilder: 61 Fotos, 40 Videobilder) | Large, erster Stand | Small, erster Stand (73 Bilder) |
+|---|---|---|---|
+| Bilder wählen (Schärfe von 779 Videobildern) | 3,3 s | 4,7 s | 10,4 s |
+| Bilder holen (Fotos verkleinern, vier Fäden) | 5,2 s | 11,4 s | 15,2 s |
+| PromptDA je Bild (Median) | 1,61 s (172 s) | 1,84 s (203 s) | 0,26 s (25 s) |
+| TSDF (7,7 Mio. Voxel, 2 mm) je Bild | 0,11 s (MPS) | 0,90 s (numpy) | 0,58 s (numpy) |
+| Masken | 16 s (zweifach, vier Fäden) | 117 s | 48 s |
+| gesamt | 216 s (`scan_importieren`, 218 s) | 437 s | 148 s |
+| Grundriss des Netzes | 206,3 × 155,6 mm | 206,3 × 155,6 mm | 207,1 × 158,0 mm |
+| Oberkante (99,9 %) | 303,7 mm | 303,7 mm | 294,4 mm |
+| Streuung Tiefe gegen Netz (Median / 90 %) | 3,4 / 9,6 mm | 3,4 / 9,6 mm | 3,8 / 10,9 mm |
+| PromptDA gegen LiDAR (Median) | 4,4 mm | 4,4 mm | 4,1 mm |
+| Maßstab PromptDA an LiDAR (Median, Spanne) | 0,982 (0,950 bis 1,004) | 0,982 | 0,979 (0,953 bis 0,998) |
+| Netzpunkte von mindestens 2 Bildern gesehen | 79 % | 79 % | 79 % |
 
 Auch am echten Scan liegt PromptDA rund 2 % zu weit; ohne Angleichen an LiDAR rückte bei 0,5 m Abstand jede Fläche
-um etwa 1 cm nach innen (an der Probe ohne Angleichen: 192 × 92 × 47 statt 200 × 100 × 50 mm). Die ARKit-Lagen passen untereinander auf wenige Millimeter (Streuung der Tiefe aller 101 Bilder gegen das
-gemeinsame Netz im Median 3,4 mm).
+um etwa 1 cm nach innen (an der Probe ohne Angleichen: 192 × 92 × 47 statt 200 × 100 × 50 mm). Die ARKit-Lagen passen
+untereinander auf wenige Millimeter (Streuung der Tiefe aller 101 Bilder gegen das gemeinsame Netz im Median 3,4 mm).
+Die Hülle enthält die aufgeklappten Laschen; die Oberkante hängt an ihnen (Large 304, Small 294 mm).
+
+`referenz_vermessen` mit einem geratenen Messmodell (Quader oben offen, frei Länge, Breite, Höhe, Wand; 12 Bilder,
+33 s): 190,6 ± 1,9 × 123,1 ± 13,4 × 288,5 ± 3,8 mm, Wand an der unteren Grenze 1 mm, 2 Bilder verworfen. Das Modell
+kennt weder die Laschen noch den weichen Untergrund; die Kameras werden dabei um 17 mm einzeln verschoben (Maß dafür,
+dass Modell und Gegenstand nicht zusammenpassen). Als Genauigkeitsnachweis taugt der Lauf deshalb nicht, als
+Durchstich der ganzen Kette am echten Scan schon.
 
 ## Grenzen und offene Punkte
 
 - PromptDA Large lag auf den synthetischen Bildern ungenauer als Small (Neigung der Deckfläche um 10 bis 15 mm,
   Seiten 10 mm zu weit); an echten Aufnahmen steht der Vergleich aus.
 - Netz ohne Unterseite; dünne Teile unter etwa zwei Voxeln fehlen. Glas, Spiegel, Schwarz: LiDAR-Lücken.
+- Der Boden gilt als eben und waagrecht (Ebene aus ARKit bzw. geschätzt); ein weicher Untergrund (Sofa) oder ein
+  schräger Tisch verschiebt Höhe und Lage. Vermessen nimmt an, dass das Modell auf z = 0 steht.
+- Die Gewichte der Tiefenbedingung sind nur an der synthetischen Probe abgestimmt; an einem echten Gegenstand mit
+  bekannten Maßen (Messschieber) steht der Nachweis aus.
 - Die App zeigt die laufende Auswertung als „Object Capture läuft“ (Feld `laeuft` = `capture`); ein eigener Text wäre
   eine kleine Änderung in `ReferenzPanels.swift`.
 - macOS-Firewall: Ist sie an, fragt macOS beim ersten Empfang, ob Python eingehende Verbindungen annehmen darf.
