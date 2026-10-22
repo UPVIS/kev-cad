@@ -100,6 +100,7 @@ private struct BlattStatuszeile: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
+            if store.zeichnung(blattID) != nil || anzeige.hinweis != nil {
             HStack(spacing: 12) {
                 if let z = store.zeichnung(blattID) {
                     Text(z.formatText)
@@ -125,6 +126,7 @@ private struct BlattStatuszeile: View {
                 }
             }
             .modifier(Kapsel())
+            }
             Spacer(minLength: 8)
             HStack(spacing: 10) {
                 if let p = anzeige.zeiger {

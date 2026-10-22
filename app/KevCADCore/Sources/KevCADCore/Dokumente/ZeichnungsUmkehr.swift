@@ -27,7 +27,7 @@ public enum ZeichnungsUmkehr {
             var g: [ZeichnungsOp] = []
             if versatz != nil, let alt = m.versatz { g.append(.massVerschieben(id: id, versatz: alt, textLage: nil)) }
             if textLage != nil, let d = z.mass(id) {
-                g.append(.massVerschieben(id: id, versatz: nil, textLage: d.textLage))
+                g.append(.massVerschieben(id: id, versatz: nil, textLage: d.textAnker))
             }
             if !m.fest { g.append(.massAendern(id: id, text: nil, toleranz: nil, fest: false)) }
             return g.isEmpty ? nil : g

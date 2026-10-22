@@ -383,6 +383,49 @@ final class DokumenteTests: XCTestCase {
         XCTAssertFalse(dunkel(15, 15), "zwischen zwei Schraffurlinien weiß")
     }
 
+    /// Verwaiste Maße erscheinen rot (Bildschirm, PDF, Druck), alle anderen schwarz.
+    func testVerwaistesMassRot() throws {
+        let basis = Self.testblatt()
+        let rot = MassDarstellung(id: "m9", linien: [[CGPoint(x: 5, y: 5), CGPoint(x: 35, y: 5)]], verwaist: true)
+        let schwarz = MassDarstellung(id: "m8", linien: [[CGPoint(x: 5, y: 25), CGPoint(x: 35, y: 25)]])
+        let z = Zeichnung(blatt: basis.blatt, groesse: basis.groesse, gruppen: [], masse: [rot, schwarz], texte: [])
+        let s: CGFloat = 20
+        let w = Int(z.groesse.width * s)
+        let h = Int(z.groesse.height * s)
+        let ctx = try XCTUnwrap(CGContext(
+            data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.scaleBy(x: s, y: s)
+        BlattZeichner.zeichne(z, in: ctx, optionen: .druck)
+        let d = try XCTUnwrap(ctx.data).assumingMemoryBound(to: UInt8.self)
+        func farbe(_ x: CGFloat, _ y: CGFloat) -> (UInt8, UInt8, UInt8) {
+            let i = ((h - 1 - Int(y * s)) * w + Int(x * s)) * 4
+            return (d[i], d[i + 1], d[i + 2])
+        }
+        let r = farbe(20, 5)
+        XCTAssertGreaterThan(r.0, 150, "verwaistes Maß rot")
+        XCTAssertLessThan(r.1, 90)
+        let k = farbe(20, 25)
+        XCTAssertLessThan(k.0, 80, "normales Maß schwarz")
+    }
+
+    /// Hinweise werden am Knick verschoben (so legt der Kernel `text_lage` ab), lineare Maße an der Zahl.
+    func testTextAnker() {
+        let tip = CGPoint(x: 10, y: 10)
+        let knick = CGPoint(x: 15, y: 18)
+        let h = MassDarstellung(id: "m1", linien: [[tip, knick, CGPoint(x: 35, y: 18)]],
+                                pfeile: [MassPfeil(spitze: tip, richtung: CGVector(dx: -1, dy: -1))], text: "Ø8",
+                                textLage: CGPoint(x: 25, y: 18.9), art: "bohrung")
+        XCTAssertTrue(h.istHinweis)
+        XCTAssertEqual(h.textAnker, knick)
+        let l = MassDarstellung(id: "m2", linien: [[CGPoint(x: 0, y: 0), CGPoint(x: 40, y: 0)]],
+                                pfeile: [MassPfeil(spitze: .zero, richtung: CGVector(dx: -1, dy: 0)),
+                                         MassPfeil(spitze: CGPoint(x: 40, y: 0), richtung: CGVector(dx: 1, dy: 0))],
+                                text: "40", textLage: CGPoint(x: 20, y: 0.9), art: "linear")
+        XCTAssertFalse(l.istHinweis)
+        XCTAssertEqual(l.textAnker, l.textLage)
+    }
+
     func testPDFMitGemischtenFormatenUndEingebetteterSchrift() throws {
         let (z, _) = try zeichnung("drawing.frame")
         let a3 = Self.testblatt(groesse: CGSize(width: 420, height: 297))

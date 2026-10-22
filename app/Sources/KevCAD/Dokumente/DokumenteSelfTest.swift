@@ -221,6 +221,7 @@ enum DokumenteSelfTest {
                 check(false, "kein Einzelteil mit linearem automatischem Maß")
             }
 
+            await erzeugen()
             await pdfUndDruck()
             fertig()
         }
@@ -394,7 +395,54 @@ enum DokumenteSelfTest {
             z = await neuerStand(id, alt: stand) ?? z
             check(z.blatt.massstab == massstab, "Rückgängig: Maßstab wieder \(z.blatt.massstab)")
 
-            // 7. Sprechblase für ein Feld des Schriftfelds (Doppelklick auf „Benennung“)
+            // 7. Maßzahl eines Hinweises ziehen (Bohrung, Fase …): Knick und Text wandern, die Spitze bleibt
+            if let h = z.masse.first(where: { $0.istHinweis && !$0.text.isEmpty }) {
+                zustand.element = nil
+                stand = z.stand
+                // vom Ziel weg ziehen, damit die Bezugslinie auf ihrer Seite bleibt
+                let sx: CGFloat = (h.linien.first.map { $0.count >= 2 && $0[1].x < $0[0].x } ?? false) ? -1 : 1
+                let von = CGPoint(x: h.textLage.x, y: h.textLage.y + 1.2)
+                await ziehe(von, nach: CGPoint(x: von.x + 12 * sx, y: von.y + 6))
+                z = await neuerStand(id, alt: stand) ?? z
+                let neu = z.mass(h.id)?.textLage ?? h.textLage
+                check(hypot(neu.x - h.textLage.x - 12 * sx, neu.y - h.textLage.y - 6) < 1.5,
+                      "Hinweis \(h.text) gezogen: Text (\(Int(h.textLage.x)), \(Int(h.textLage.y))) → (\(Int(neu.x)), \(Int(neu.y)))")
+                stand = z.stand
+                rueckgaengig()
+                z = await neuerStand(id, alt: stand) ?? z
+                let zurueck = z.mass(h.id)?.textLage ?? .zero
+                check(hypot(zurueck.x - h.textLage.x, zurueck.y - h.textLage.y) < 1.5, "Rückgängig: Hinweis wieder an seiner Stelle")
+            }
+
+            // 8. Ansicht über das Werkzeug hinzufügen (Klick auf eine freie Stelle), dann rückgängig
+            if let frei = freieStelle(z) {
+                let anzahl = z.ansichten.count
+                zustand.setzeWerkzeug(.ansicht("rechts"))
+                try? await Task.sleep(for: .milliseconds(150))
+                stand = z.stand
+                await klick(frei)
+                z = await neuerStand(id, alt: stand) ?? z
+                check(z.ansichten.count == anzahl + 1, "Ansicht hinzugefügt: \(anzahl) → \(z.ansichten.count) Ansichten")
+                await pruefpunkt("ansicht-neu")
+                stand = z.stand
+                rueckgaengig()
+                z = await neuerStand(id, alt: stand) ?? z
+                check(z.ansichten.count == anzahl, "Rückgängig: Ansicht wieder entfernt")
+            }
+
+            // 9. Notiz-Werkzeug: Klick öffnet die Sprechblase für den Text
+            if let frei = freieStelle(z) {
+                zustand.setzeWerkzeug(.notiz)
+                try? await Task.sleep(for: .milliseconds(150))
+                await klick(frei)
+                try? await Task.sleep(for: .milliseconds(400))
+                check(leinwand?.eingabeOffen ?? false, "Notiz-Werkzeug öffnet die Sprechblase")
+                await pruefpunkt("notiz-eingabe")
+                leinwand?.schliesseEingabe()
+                zustand.setzeWerkzeug(.auswahl)
+            }
+
+            // 10. Sprechblase für ein Feld des Schriftfelds (Doppelklick auf „Benennung“)
             if let label = z.texte.first(where: { $0.art == "schriftfeld_label" && $0.text == "Benennung" }) {
                 let p = CGPoint(x: label.lage.x + 20, y: label.lage.y - 5)
                 await klick(p, klicks: 1)
@@ -406,6 +454,20 @@ enum DokumenteSelfTest {
                 await pruefpunkt("sprechblase")
                 leinwand?.schliesseEingabe()
             }
+        }
+
+        /// Freie Stelle auf dem Blatt (nicht in einer Ansicht, keinem Maß, nicht im Schriftfeld), für neue Ansichten und
+        /// Notizen.
+        func freieStelle(_ z: Zeichnung) -> CGPoint? {
+            let belegt = z.ansichten.map { $0.rahmen.insetBy(dx: -15, dy: -15) } + z.grafik.masse.map(\.huelle)
+                + z.grafik.texte.map(\.rahmen)
+            for y in stride(from: z.groesse.height * 0.75, to: 40, by: -10) {
+                for x in stride(from: z.groesse.width * 0.6, to: z.groesse.width - 30, by: 10) {
+                    let p = CGPoint(x: x, y: y)
+                    if !belegt.contains(where: { $0.insetBy(dx: -4, dy: -4).contains(p) }) { return p }
+                }
+            }
+            return nil
         }
 
         /// Zwei senkrechte sichtbare Kanten mit verschiedenem x (Mitte je Kante), Abstand mindestens 8 mm. Gesucht wird in
@@ -420,6 +482,24 @@ enum DokumenteSelfTest {
             senkrecht.sort { $0.x < $1.x }
             guard let a = senkrecht.first, let b = senkrecht.last(where: { $0.x - a.x >= 8 }) else { return nil }
             return (a, b)
+        }
+
+        /// DRAWING_CREATE wie „Zeichnung anlegen“ im Teilebaum: Blatt für die Baugruppe der obersten Ebene.
+        func erzeugen() async {
+            guard let gruppe = model.parts.first(where: { $0.path.count >= 2 })?.path.first else { return }
+            let vorher = store.uebersicht?.blaetter.count ?? 0
+            zustand.wunschTeile = [gruppe]
+            model.dokumenteActions?.zeichnungenErzeugen(teile: [gruppe], art: "baugruppe", format: nil)
+            let neu = await warte(180) { (store.uebersicht?.blaetter.count ?? 0) > vorher }
+            check(neu, "Zeichnung anlegen (DRAWING_CREATE, Baugruppe „\(gruppe)“): \(vorher) → "
+                  + "\(store.uebersicht?.blaetter.count ?? 0) Blätter")
+            if neu {
+                _ = await warte(60) { self.zustand.blattID.flatMap { self.store.uebersicht?.blatt($0)?.inhaltArt } == "baugruppe" }
+                check(zustand.blattID.flatMap { store.uebersicht?.blatt($0)?.inhaltArt } == "baugruppe",
+                      "Neues Blatt der Baugruppe gewählt: \(zustand.blattID ?? "–")")
+                _ = await warte(60) { self.leinwand?.zeichnung?.id == self.zustand.blattID }
+                await pruefpunkt("baugruppe")
+            }
         }
 
         func pdfUndDruck() async {

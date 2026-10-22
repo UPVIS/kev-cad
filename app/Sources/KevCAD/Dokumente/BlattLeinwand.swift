@@ -764,6 +764,10 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             let k = kante(p, z)
             if k?.linie != hoverLinie?.linie { hoverLinie = k }
         }
+        if werkzeug == .auswahl, let z = zeichnung {
+            // Zeiger zeigt, was sich ziehen lässt: Maß, Notiz, Ansicht; leeres Papier verschiebt das Blatt
+            (treffer(p, in: z) != nil ? NSCursor.openHand : NSCursor.arrow).set()
+        }
         needsDisplay = true
     }
 
@@ -842,6 +846,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         case .mass(_, _, let start), .ansicht(_, let start), .notiz(_, let start):
             let d = CGVector(dx: p.x - start.x, dy: p.y - start.y)
             if !gezogen, hypot(d.dx, d.dy) * skala < 3 { return }
+            if !gezogen { NSCursor.closedHand.set() }
             gezogen = true
             zug = d
             if event.modifierFlags.contains(.shift) {  // Umschalt: nur waagrecht oder senkrecht
@@ -869,7 +874,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             let neu = MassVorschau.verschoben(m, blatt: z.blatt.mass(id), um: zug, text: art == .text)
             let op: ZeichnungsOp
             if art == .text {
-                op = .massVerschieben(id: id, versatz: nil, textLage: neu.textLage)
+                op = .massVerschieben(id: id, versatz: nil, textLage: neu.textAnker)
             } else {
                 guard let v = MassVorschau.neuerVersatz(m, blatt: z.blatt.mass(id), um: zug) else { return }
                 op = .massVerschieben(id: id, versatz: (v * 100).rounded() / 100, textLage: nil)
@@ -1093,7 +1098,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             } else if let m = z.mass(id) {  // Hinweis: Text verschieben
                 let neu = MassVorschau.verschoben(m, blatt: z.blatt.mass(id), um: d, text: true)
                 merkeAusstehend { $0.masse[id] = MassGrafik(neu) }
-                bearbeite([.massVerschieben(id: id, versatz: nil, textLage: neu.textLage)])
+                bearbeite([.massVerschieben(id: id, versatz: nil, textLage: neu.textAnker)])
             }
         case .ansicht(let id):
             if let lage = ansichtLage(id, z) {
