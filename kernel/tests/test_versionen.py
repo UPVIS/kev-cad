@@ -105,12 +105,12 @@ def test_grosse_datei_bleibt_draussen(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gitmod, "MAX_DATEI_BYTES", 1000)
     p = projekt(tmp_path)
-    (p / "referenzen").mkdir()
-    (p / "referenzen" / "scan.ply").write_bytes(b"0" * 5000)
+    (p / "scans").mkdir()
+    (p / "scans" / "scan.ply").write_bytes(b"0" * 5000)
     a = archiv(p)
     a.nach_lauf(wer="kevin")
-    assert "referenzen/scan.ply" not in git_dateien(a)
-    assert a.git.grosse_dateien() == ["referenzen/scan.ply"]
+    assert "scans/scan.ply" not in git_dateien(a)
+    assert a.git.grosse_dateien() == ["scans/scan.ply"]
     assert MAX_DATEI_BYTES > 1000
 
 
