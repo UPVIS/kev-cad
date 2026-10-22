@@ -229,7 +229,7 @@ struct DruckPlattenBereich: View {
                 },
                 schwebt: { t in if ui.hover != t?.name { ui.hover = t?.name } })
             .animation(.smooth(duration: 0.2), value: ui.hover)
-            plattenZeile(p)
+            plattenZeile(p, kompakt: !legende)
             if legende { teileLegende(p) }
         }
     }
@@ -266,7 +266,8 @@ struct DruckPlattenBereich: View {
         .padding(.top, 4)
     }
 
-    private func plattenZeile(_ p: DruckPlatte) -> some View {
+    /// Zeile unter der Platte; `kompakt` (nebeneinander): nur Zeit, Teile, Gewicht und Belegung.
+    private func plattenZeile(_ p: DruckPlatte, kompakt: Bool) -> some View {
         let anteil = DruckPlattenGeometrie.auslastung(p, bett: vorschau.bett)
         let material = p.material.map { m in vorschau.summe.material.first { $0.material == m.material }?.name ?? m.material.uppercased() }
         return VStack(alignment: .leading, spacing: 3) {
@@ -284,19 +285,22 @@ struct DruckPlattenBereich: View {
                 Text(KevFormat.count(p.teile.count, one: "Teil", many: "Teile"))
                 Text("·")
                 Text(DruckFormat.gramm(p.gramm)).contentTransition(.numericText())
-                if let k = p.kosten { Text("·"); Text(DruckFormat.euro(k)) }
+                if let k = p.kosten, !kompakt { Text("·"); Text(DruckFormat.euro(k)) }
                 Spacer(minLength: 4)
-                Gauge(value: anteil) { EmptyView() }
-                    .gaugeStyle(.accessoryLinearCapacity)
-                    .tint(Color.kevAkzent)
-                    .frame(width: 46)
-                    .controlSize(.mini)
-                Text("\(DruckFormat.prozent(anteil)) belegt")
+                if !kompakt {
+                    Gauge(value: anteil) { EmptyView() }
+                        .gaugeStyle(.accessoryLinearCapacity)
+                        .tint(Color.kevAkzent)
+                        .frame(width: 46)
+                        .controlSize(.mini)
+                }
+                Text(kompakt ? DruckFormat.prozent(anteil) : "\(DruckFormat.prozent(anteil)) belegt")
+                    .help("\(DruckFormat.prozent(anteil)) der Platte belegt")
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
             .lineLimit(1)
-            if p.vomSlicerAngeordnet || p.hoeheMM != nil {
+            if !kompakt && (p.vomSlicerAngeordnet || p.hoeheMM != nil) {
                 HStack(spacing: 6) {
                     if p.vomSlicerAngeordnet {
                         Label("von Bambu Studio angeordnet", systemImage: "checkmark.seal")
