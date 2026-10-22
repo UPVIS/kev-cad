@@ -20,6 +20,8 @@ public final class AppController: AppActions {
     let process = KernelProcess()
     let connection = KernelConnection()
     let screenshots = ScreenshotRenderer()
+    /// Phase 4: Zwischenstand der Fotoansicht (AppController+Referenz.swift).
+    let fotoSpeicher = FotoAbgleichSpeicher()
 
     /// Zeitlupe für Läufe aus der App (ms je Schritt).
     public static let slowMotionMs = 350
@@ -30,6 +32,8 @@ public final class AppController: AppActions {
     private var outSeq = 0
     private var requestCounter = 0
     private var pending: [String: PendingRequest] = [:]
+    /// Offene Anfragen an den Kernel (ID → Typ), für Tests.
+    var pendingRequestTypes: [String: String] { pending.mapValues(\.kind) }
     var queuedProjectRequest: (() -> Void)?
     private var unknownTypesLogged = Set<String>()
 
@@ -99,6 +103,7 @@ public final class AppController: AppActions {
         scene.onChange = { [weak self] in
             guard let self else { return }
             self.viewport.bodies = self.cameraFilteredBodies(self.scene.renderBodies)
+            self.referenzSzeneGeaendert()  // Phase 4: Fotoansicht rechnet das Modell neu
         }
         // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
         setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
@@ -373,6 +378,7 @@ public final class AppController: AppActions {
             case .bestand(let b): applyBestand(b)
             case .druck(let d): handleDruck(d)  // Druckvorschau: PRINT_PREVIEW auf PRINT_PREVIEW_REQ
             case .drucker(let d): handleDrucker(d)  // Phase 8: PRINTER_STATUS auf PRINTER_STATUS_REQ
+            case .statik(let e): applyStatik(e)  // Statik: STATICS als Antwort
             default: break
             }
             return
@@ -396,6 +402,7 @@ public final class AppController: AppActions {
             animationPlayer.removeAll()  // der Kernel schickt seine Animationen nach dem Anfangsstand neu
             scene.removeAll()
             clearCameras()
+            referenzenLeeren()  // Phase 4: der Kernel schickt die Referenzen neu
             fitOnFirstPart = !hadParts
             clearSelectionState()
             updateParts()
@@ -442,6 +449,7 @@ public final class AppController: AppActions {
                 warnings: e.warnings)
             if model.kernelState == .busy { model.kernelState = .ready }
             model.inventarVerstoesse = e.inventarVerstoesse
+            referenzParams(e.params)  // Phase 4: param()-Werte für „Vermessen“
             updateParts()
             if model.versionen.vergleich?.aktuell == true { endCompare() }  // Versionen: „aktuell“ hat sich geändert
             if let restore = pendingRestore {
@@ -517,6 +525,10 @@ public final class AppController: AppActions {
             handleDrucker(d)
         case .freigabe(let a):  // Freigabe im Projektfenster (AppController+Freigabe.swift)
             handleFreigabeAnfrage(a)
+        case .referenz(let r):  // Phase 4: Referenzen (AppController+Referenz.swift)
+            handleReferenz(r)
+        case .statik(let e):  // Statik (Statik/AppController+Statik.swift)
+            applyStatik(e)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -572,6 +584,7 @@ public final class AppController: AppActions {
             resetBauplan()  // Phase 6, P6-A2: Bauplan und Durchspielen des alten Projekts verwerfen
             resetExport()
             resetDruck()  // Druckvorschau des alten Projekts verwerfen
+            referenzenLeeren()  // Phase 4: Referenzen des alten Projekts (der Kernel schickt die neuen)
             bestandProjektGewechselt()
             log(.info, "Projekt \(info.name) geöffnet")
             model.project = info

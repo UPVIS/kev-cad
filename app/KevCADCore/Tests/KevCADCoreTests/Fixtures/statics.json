@@ -1,0 +1,82 @@
+{
+  "statics": {
+    "run": 7,
+    "stand": "done",
+    "aktiv": "Aufstützen 30 kg",
+    "zeigen": false,
+    "szenarien": [
+      {
+        "name": "Eigengewicht",
+        "ampel": "gruen",
+        "urteile": 0,
+        "teile": [
+          "Rahmen/Rohr"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 41.2,
+        "ueberhoehung": 66.7
+      },
+      {
+        "name": "Aufstützen 30 kg",
+        "ampel": "rot",
+        "urteile": 2,
+        "teile": [
+          "Rahmen/Rohr",
+          "Rahmen/Halter (Druck)"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 0.2,
+        "ueberhoehung": 1.0
+      }
+    ],
+    "grenzen": 2
+  },
+  "statics_eigengewicht": {
+    "run": 7,
+    "stand": "done",
+    "aktiv": "Eigengewicht",
+    "zeigen": true,
+    "szenarien": [
+      {
+        "name": "Eigengewicht",
+        "ampel": "gruen",
+        "urteile": 0,
+        "teile": [
+          "Rahmen/Rohr"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 41.2,
+        "ueberhoehung": 66.7
+      },
+      {
+        "name": "Aufstützen 30 kg",
+        "ampel": "rot",
+        "urteile": 2,
+        "teile": [
+          "Rahmen/Rohr",
+          "Rahmen/Halter (Druck)"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 0.2,
+        "ueberhoehung": 1.0
+      }
+    ],
+    "grenzen": 2
+  },
+  "statics_failed": {
+    "run": 8,
+    "stand": "failed",
+    "aktiv": null,
+    "zeigen": false,
+    "szenarien": [],
+    "grenzen": 0
+  }
+}

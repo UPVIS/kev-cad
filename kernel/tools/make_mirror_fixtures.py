@@ -24,13 +24,25 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from kevcad_kernel.protocol import encode_frame  # noqa: E402
 from mirror_demo import look_from, read_frames  # noqa: E402
-from mirror_sim import pack_mesh, scene_pages, union_bbox  # noqa: E402
+from mirror_sim import (  # noqa: E402
+    demo_freigabe_eintraege,
+    freigabe_cmd,
+    freigabe_ende_header,
+    freigabe_header,
+    pack_mesh,
+    scene_pages,
+    union_bbox,
+)
 
 RECORDINGS = ROOT.parent / "samples" / "mirror-recordings"
 ZIEL = ROOT.parent / "mirror-fixtures"
 EPOCHE = "0123456789abcdef"
 SESSION_A = "6b1f2c3d-0000-4000-8000-00000000000a"
 SESSION_B = "6b1f2c3d-0000-4000-8000-00000000000b"
+# Freigabe (Version 1.1): feste Werte, damit die Dateien byte-gleich entstehen. Die Nonce ist ein Beispiel, keine echte.
+ANFRAGE = "F-0001-5c1e9a27"
+NONCE = "9f86d081884c7d659a2feaa0c55ad015"
+ABLAUF = "2026-10-23T14:03:12Z"
 
 
 def recorded_parts(name: str) -> list[tuple[dict[str, Any], Any]]:
@@ -135,6 +147,25 @@ def build() -> tuple[dict[str, bytes], dict[str, Any]]:
         reply_to="i-42", ok=True)
     add("cmd_res_fehler.bin", {"type": "CMD_RES", "reply_to": "i-44", "ok": False,
                                "fehler": "Unbekannte Darstellung 'glas'"}, "zustand", 16, reply_to="i-44", ok=False)
+
+    # Freigabe vom iPhone (Version 1.1): Anfrage ohne Miete, Entscheidung je Eintrag, Ende je Eintrag und der Anfrage
+    eintraege = demo_freigabe_eintraege("kugelschieber", "Für die Lenksperren am Kugelschieber")
+    add("freigabe.bin", freigabe_header(EPOCHE, ANFRAGE, NONCE, ABLAUF, eintraege), "zustand", 17,
+        anfrage_id=ANFRAGE, nonce=NONCE, ablauf=ABLAUF, ids=[e["id"] for e in eintraege],
+        links=[e.get("link") for e in eintraege])
+    add("cmd_freigabe.bin", freigabe_cmd("i-46", ANFRAGE, NONCE, "rohr-alfer-16x1", "frei"), "zustand", 8,
+        op="freigabe", id="i-46", eintrag="rohr-alfer-16x1", entscheidung="frei")
+    add("cmd_freigabe_ablehnen.bin", freigabe_cmd("i-47", ANFRAGE, NONCE, "alutec-05200", "abgelehnt"), "zustand", 10,
+        op="freigabe", id="i-47", eintrag="alutec-05200", entscheidung="abgelehnt")
+    add("cmd_res_freigabe.bin", {"type": "CMD_RES", "reply_to": "i-46", "ok": True, "fehler": None, "status": "frei"},
+        "zustand", 18, reply_to="i-46", ok=True, status="frei")
+    add("freigabe_ende_eintrag.bin", freigabe_ende_header(EPOCHE, ANFRAGE, "iphone", "rohr-alfer-16x1", "frei"),
+        "zustand", 19, anfrage_id=ANFRAGE, id="rohr-alfer-16x1", grund="iphone", ergebnis="frei")
+    add("cmd_res_freigabe_fehler.bin", {"type": "CMD_RES", "reply_to": "i-48", "ok": False,
+                                        "fehler": "Die Nonce passt nicht zur Anfrage.", "status": "ungueltig"},
+        "zustand", 20, reply_to="i-48", ok=False, status="ungueltig")
+    add("freigabe_ende.bin", freigabe_ende_header(EPOCHE, ANFRAGE, "abgelaufen"), "zustand", 21, anfrage_id=ANFRAGE,
+        id=None, grund="abgelaufen")
     return files, expect
 
 

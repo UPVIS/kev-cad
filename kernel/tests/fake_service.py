@@ -558,6 +558,40 @@ class FakeService:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen."}
         return druck_auszug(self.DRUCK_CHECK, teil, ["Halter/Clip (Druck)", "Halter/Platte"])
 
+    # Statik Stufe 1 ------------------------------------------------------------------------------------------------
+
+    def statik(self, szenario: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel
+        from kevcad_kernel.statik.laufzeit import _szenario_auszug
+
+        self._record("statik", szenario)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch keine Statik: erst run aufrufen."}
+        b = statik_beispiel()
+        base = {"ok": True, "run": self.run_no, "aktiv": b["aktiv"], "grenzen": b["grenzen"],
+                "vereinfachungen": b["vereinfachungen"], "modell": b["modell"], "ms": b["ms"],
+                "ueberdimensioniert": []}
+        if szenario:
+            e = next((x for x in b["szenarien"] if x["name"] == szenario), None)
+            if e is None:
+                return {"ok": False, "error": f"Szenario {szenario!r} gibt es nicht"}
+            return {**base, "szenario": _szenario_auszug(e)}
+        return {**base, "szenarien": [_szenario_auszug(e, detail=False) for e in b["szenarien"]]}
+
+    def szenario_rechnen(self, name: str, beschleunigung: Any = None, neigung: float | None = None,
+                         richtung: Any = None, lasten: list[dict[str, Any]] | None = None, stoss: float | None = None,
+                         ziel: float | None = None, beschreibung: str | None = None, zeigen: bool = True
+                         ) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel
+        from kevcad_kernel.statik.laufzeit import _szenario_auszug
+
+        self._record("szenario_rechnen", name, lasten)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Statikmodell: erst run aufrufen."}
+        e = dict(statik_beispiel()["szenarien"][1], name=name)
+        return {"ok": True, "run": self.run_no, "szenario": _szenario_auszug(e), "gezeigt": zeigen, "ms": 120.0,
+                "grenzen": statik_beispiel()["grenzen"], "vereinfachungen": []}
+
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 
     def drucker_status(self) -> dict[str, Any]:
@@ -700,6 +734,57 @@ class FakeService:
         if aktion != "liste":
             varianten.append({"id": "v-leicht", "name": name, "aktuell": True, "versionen": 0})
         return {"ok": True, "aktion": aktion, "variante": "v-leicht", "name": name, "von": 2, "varianten": varianten}
+
+    # Phase 4: Referenzen
+    def referenzen(self, name: str | None = None, warten_s: float = 0.0) -> dict[str, Any]:
+        self._record("referenzen", name, warten_s)
+        from kevcad_kernel.protocol import referenz_beispiele
+
+        beispiele = {n: h for n, h, _ in referenz_beispiele()}
+        liste = [dict(r) for r in beispiele["ref_list"]["referenzen"]]
+        erg = {k: v for k, v in beispiele["ref_result"].items() if k not in ("type", "seq")}
+        liste[0].update(zustand="fertig", laeuft=None, fortschritt=None, text=None, netz=True,
+                        messung_ergebnis=erg, lage={"drehung_z": 180.0, "rest_mm": 6.3, "paare": 8},
+                        capture={"huelle": {"laenge": 180, "breite": 117.3, "hoehe": 48.4},
+                                 "grundkoerper": {"laenge": 174, "breite": 102.1}, "bilder": 60, "ausgerichtet": 42})
+        if name:
+            liste = [r for r in liste if r["name"] == name]
+        return {"ok": True, "projekt": self.project["path"], "referenzen": liste,
+                "werkzeuge": {"kevcad_capture": "/x/kevcad-capture", "fotomess": "/x/fotomess"}}
+
+    def referenz_video(self, pfad: str, name: str | None = None, masz: dict[str, float] | None = None,
+                       auflage: bool = False, von: float | None = None, bis: float | None = None,
+                       einstellung: str = "schnell", warten_s: float = 0.0) -> dict[str, Any]:
+        self._record("referenz_video", pfad, name, masz, auflage, von, bis, einstellung, warten_s)
+        if not str(pfad).lower().endswith((".mov", ".mp4")):
+            return {"ok": False, "error": "kein Video"}
+        return {"ok": True, "name": name or "IMG_5186", "ordner": "/tmp/Kev CAD/x/referenzen/IMG_5186",
+                "zustand": "rechnet", "befehl": "kevcad-capture lauf …"}
+
+    def referenz_fotos(self, pfade: list[str], name: str | None = None) -> dict[str, Any]:
+        self._record("referenz_fotos", pfade, name)
+        return {"ok": True, "name": name or "Fotos", "ordner": "/tmp/r", "fotos": list(pfade)}
+
+    def referenz_vermessen(self, quelle: str | None = None, freie_masse: list[str] | None = None,
+                           bekannte_masse: dict[str, float] | None = None, bilder: int = 8, vorgaben: Any = None,
+                           grenzen: Any = None, maske: Any = None, von: float | None = None, bis: float | None = None,
+                           kb_brennweite: float | None = None) -> dict[str, Any]:
+        self._record("referenz_vermessen", quelle, freie_masse, bekannte_masse, bilder, vorgaben, grenzen, maske, von,
+                     bis, kb_brennweite)
+        from kevcad_kernel.protocol import referenz_beispiele
+
+        erg = {k: v for k, v in dict((n, h) for n, h, _ in referenz_beispiele())["ref_result"].items()
+               if k not in ("type", "seq")}
+        return {"ok": True, **erg, "kontrollbilder": ["/tmp/r/messung/kontrolle/a.jpg"]}
+
+    def referenz_fotoansicht(self, name: str | None = None, foto: Any = None, satz: str | None = None,
+                             modus: str | None = None, deckkraft: float | None = None, aus: bool = False,
+                             bild: bool = False, breite: int = 1280) -> dict[str, Any]:
+        self._record("referenz_fotoansicht", name, foto, satz, modus, deckkraft, aus, bild)
+        out = {"ok": True, "message": "Fotoansicht IMG_5186: Foto 1 von 8, Überdeckung 93,5 %"}
+        if bild:
+            out.update(png=PNG, width=4, height=3, ueberdeckung=0.935)
+        return out
 
     def set_agent_activity(self, text: str | None) -> None:
         with self.lock:

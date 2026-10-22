@@ -93,6 +93,8 @@ class PruefLauf:
                                "zwischenspeicher": len(self.cache), "teile": erg.get("teile")}
         if erg.get("druck"):  # Druckprüfung: Ausrichtung und Kennzahlen je Druckteil (druck/anbindung.py)
             header["druck"] = erg["druck"]
+        if erg.get("statik"):  # Statik: Szenarien mit Ampel, S0 und S1 (statik/anbindung.py); die Laufzeit macht STATICS
+            header["statik"] = erg["statik"]
         return header, payload
 
     @property
@@ -165,3 +167,14 @@ _registriere("gedruckt", _druck_gedruckt.pruefe, nach="druckvorschau")
 
 if AKTIV is not None and "gedruckt" not in AKTIV:
     AKTIV = (*AKTIV, "gedruckt")
+
+# Statik Stufe 1 (PLAN-STATIK.md, statik/anbindung.py): ganz am Ende, sie braucht Kontakte, Stand und Druckausrichtung.
+# Stand und Montage registrieren sich erst beim Laden der Erweiterungen; deshalb hier laden und danach anhängen
+from kevcad_kernel.pruefung.pruefer import lade_erweiterungen as _lade_erweiterungen  # noqa: E402
+from kevcad_kernel.statik import anbindung as _statik  # noqa: E402
+
+_lade_erweiterungen()
+_registriere("statik", _statik.pruefe)
+
+if AKTIV is not None and "statik" not in AKTIV:
+    AKTIV = (*AKTIV, "statik")

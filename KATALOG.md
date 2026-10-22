@@ -23,11 +23,13 @@ freigegebenen Material mit `druckbar: true`. Jeder Eintrag (Material oder Teil) 
 |---|---|---|
 | `status` | `frei` (Standard, wenn das Feld fehlt) \| `vorgeschlagen` | Vorschläge von Claude (`stock_define`, `material_define`) sind erst nach Kevins Freigabe im Lagerkatalog verbaubar |
 | `vorgeschlagen_am`, `vorgeschlagen_von` | Datum, `agent` | nur bei Vorschlägen |
+| `freigegeben_von`, `freigegeben_am` | `Kevin (iPhone)`, ISO 8601 (UTC) | nur bei einer Freigabe vom iPhone (MIRROR.md 1.1) |
 
 Freigeben heißt: die App speichert den Eintrag mit `status: "frei"`; Ablehnen löscht ihn. Seit dem Strang
 „Feinschliff 2“ (22.10.2026) geht das auch direkt im Projektfenster (Band und Dialog „Vorschläge freigeben“); Claude
 öffnet den Dialog mit `freigabe_anfragen(ids, grund)` und gibt selbst nie frei (PROTOCOL.md, Abschnitt „Freigabe im
-Projektfenster“).
+Projektfenster“). Seit dem Strang „Freigabe vom iPhone“ (22.10.2026) geht dieselbe Anfrage auch an die VoiceBridge-App
+auf Kevins iPhone, direkt über den Spiegel-Socket und am Agenten vorbei (MIRROR.md, „Freigabe vom iPhone“).
 
 Der mitgelieferte Normkatalog (Rohre, Profile, Schrauben, Platten …) zählt als Inventar (Kevin, 21.10.2026): seine
 Einträge haben kein `status`-Feld und sind damit freigegeben.
@@ -62,6 +64,57 @@ Einträge haben kein `status`-Feld und sind damit freigegeben.
 | `aliase` | nein | weitere Namen für `material=` in `show()` und für die Suche (klein geschrieben) |
 | `druckbar` | nein | `true` für Materialien, aus denen 3D-Druckteile entstehen dürfen (PLA, PETG, ABS, ASA, TPU, PA, Harz …) |
 | `nachgiebig` | nein | `true` für weiche Werkstoffe (Schaum, Gummi, TPU, Gurtband): Die Prüfung meldet Überlappungen bis zur halben Dicke nur als „verformt“ (Hinweis) und lässt sie bei der Montage nicht als Hindernis zählen |
+| `mechanik` | nein | Werkstoffkennwerte für die Statik (Abschnitt „Mechanik“); ohne sie rechnet die Statik das Teil nicht nach und sagt es |
+| `hinweis` | nein | Text (z. B. wofür das Material gedacht ist) |
+
+## Mechanik (Statik)
+
+Additiv seit dem Strang „Statik Stufe 1“ (22.10.2026, PLAN-STATIK.md T6). Werte aus Normen oder Datenblättern, nie
+erfunden; Schätzungen und Annahmen stehen im Eintrag. Spannungen und Moduln in N/mm² (MPa).
+
+```json
+"mechanik": {"e_modul": 70000, "schubmodul": 27000, "querkontraktion": 0.3, "streckgrenze": 160, "zugfestigkeit": 215,
+             "quelle": "DIN EN 755-2:2016, EN AW-6060 T66 …; E, G und ν nach DIN EN 1999-1-1, 3.2.5",
+             "annahme": "Zustand T66 angenommen …", "stand": "2026-10"}
+```
+
+| Feld | Pflicht | Bedeutung |
+|---|---|---|
+| `e_modul` | ja | E-Modul (Holz: E₀,mean, Druckteile: in der Schicht X-Y) |
+| `streckgrenze` / `zugfestigkeit` / `biegefestigkeit` | eine davon | Metall: Streckgrenze (ReH bzw. Rp0,2) und Zugfestigkeit (Mindestwerte); spröde Werkstoffe und Kunststoffe ohne Streckgrenze: Zugfestigkeit; Holz: charakteristische Biegefestigkeit f_m,k, Zug f_t,0,k |
+| `druckfestigkeit` | nein | Holz: f_c,0,k |
+| `schubmodul`, `querkontraktion` | nein | ohne Schubmodul rechnet die Statik G = E / (2 (1 + ν)), ν sonst 0,3 |
+| `e_modul_z`, `zugfestigkeit_z` | nein | Druckteile: Werte quer zur Schicht laut Datenblatt (nur zur Information) |
+| `quer_zur_schicht` | nein | Druckteile: Anteil der Festigkeit quer zu den Schichten, mit dem die Statik rechnet (0…1; PLA 0,5, PETG 0,4 wie die Druckregeln in `druck/regeln.py`, offen gedruckt und damit vorsichtiger als die Datenblätter) |
+| `quelle` | ja | Norm, Datenblatt mit Version |
+| `stand` | nein | Monat `JJJJ-MM` |
+| `geschaetzt` | nein | `true` oder Liste der geschätzten Felder (z. B. `["querkontraktion"]`) |
+| `annahme` | nein | was angenommen ist (Zustand, Festigkeitsklasse, volle Füllung) |
+
+Mitgeliefert mit Mechanik (Stand 2026-10): Stahl S235, S355 (DIN EN 10025-2), Stahl verzinkt (wie S235 angenommen),
+Edelstahl 1.4301 und 1.4404 (DIN EN 10088-2), Aluminium EN AW-6060 T66 (DIN EN 755-2) und EN AW-5754 O/H111
+(DIN EN 485-2), Gusseisen EN-GJL-250 (DIN EN 1561), Nadelholz als C24 und Buche/Eiche als D30 (DIN EN 338:2016),
+OSB/3 (DIN EN 12369-1), PLA (Bambu Lab PLA Basic TDS V2.0), PETG (Bambu Lab PETG HF TDS V1.0), Schrauben 8.8 (DIN EN
+ISO 898-1) und A2-70 (DIN EN ISO 3506-1). Ohne Mechanik bleiben Messing, Kupfer, Multiplex, Siebdruckplatte, MDF,
+Spanplatte, die übrigen Druckmaterialien und die Kunststoffe; neu ist das Material `beton` (Boden, Dichte nach DIN EN
+1991-1-1) als Untergrund.
+
+### Reibwerte
+
+Eine Katalogdatei darf außer `materialien` und `teile` die Listen `reibwerte` und `reibgruppen` haben (mitgeliefert:
+`reibwerte.json`):
+
+```json
+{"version": 1,
+ "reibgruppen": {"Edelstahl": "Stahl", "Holzwerkstoff": "Holz"},
+ "reibwerte": [{"a": "Elastomer", "b": "Mineralisch", "haft": 0.6, "bereich": [0.6, 0.85],
+                "quelle": "Engineering ToolBox, Friction Coefficients (rubber on dry concrete)", "stand": "2026-10"}]}
+```
+
+`a`, `b` sind Material-ids oder Gruppen (`gruppe` des Materials); gesucht wird id/id, id/Gruppe, Gruppe/Gruppe und
+zuletzt über die Reibgruppen. `haft` ist die Haftreibungszahl, mit der die Statik rechnet (bei einer Spanne der untere
+Wert, trocken und sauber), `gleit` und `bereich` informativ, `geschaetzt` kennzeichnet Stellvertreterwerte (Kunststoff
+auf Metall). Eine spätere Ebene ersetzt dieselbe Paarung.
 
 ## Lagerteil
 

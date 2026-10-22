@@ -293,6 +293,20 @@ class KernelService(Protocol):
         """Vorschau des letzten Laufs wie PRINT_PREVIEW: {"ok", "run", "stand", "drucker", "summe", "platten",
         "teile", "hinweise", "slicer", "einstellungen", "regler", "ms"}; ohne ``detail`` ohne Umrisse."""
 
+    # Statik Stufe 1 (PLAN-STATIK.md; umgesetzt in kevcad_kernel.statik.laufzeit.StatikRuntime)
+    def statik(self, szenario: str | None = None) -> dict[str, Any]:
+        """Statik des letzten Laufs (nach jedem Lauf gerechnet): {"ok", "run", "aktiv", "szenarien": [{"name", "ampel",
+        "text", "ziel", "kennzahlen", "urteile"}], "ueberdimensioniert", "grenzen", "vereinfachungen", "modell", "ms"};
+        mit ``szenario`` statt "szenarien" ein "szenario" mit Stäben, Lagern, Kippen je Richtung, Rutschen,
+        Schrauben, und die App zeigt es."""
+
+    def szenario_rechnen(self, name: str, beschleunigung: Any = None, neigung: float | None = None,
+                         richtung: Any = None, lasten: list[dict[str, Any]] | None = None, stoss: float | None = None,
+                         ziel: float | None = None, beschreibung: str | None = None, zeigen: bool = True
+                         ) -> dict[str, Any]:
+        """Neues Szenario mit dem Statikmodell des letzten Laufs (ohne neuen Lauf): {"ok", "run", "szenario",
+        "gezeigt", "grenzen", "vereinfachungen", "ms"}. ``lasten``: [{"teil", "kg" | "kraft" [N], "punkt" [mm]?}]."""
+
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in
@@ -350,6 +364,41 @@ class KernelService(Protocol):
                  timeout_s: float = 300) -> dict[str, Any]:
         """aktion liste | anlegen | wechseln | umbenennen. {"ok", "aktion", "variante", "name", "von"?, "gesichert"?,
         "lauf"?, "varianten"}"""
+
+    # Phase 4: Foto und Video als Referenz (additiv; PROTOCOL.md „Phase 4: Referenzen“, umgesetzt in
+    # kevcad_kernel/referenz/laufzeit.py). Ablage in <projekt>/referenzen/<name>/.
+    def referenzen(self, name: str | None = None, warten_s: float = 0.0) -> dict[str, Any]:
+        """Referenzen des Projekts mit Zustand und Fortschritt (wie REF_LIST), je Referenz dazu "ordner",
+        "capture_einstellung" und, falls vermessen, "messung_ergebnis" (wie REF_RESULT). Mit ``name`` und
+        ``warten_s`` wartet es, bis der laufende Auftrag dieser Referenz fertig ist. {"ok", "projekt", "referenzen",
+        "werkzeuge"}"""
+
+    def referenz_video(self, pfad: str, name: str | None = None, masz: dict[str, float] | None = None,
+                       auflage: bool = False, von: float | None = None, bis: float | None = None,
+                       einstellung: str = "schnell", warten_s: float = 0.0) -> dict[str, Any]:
+        """Referenznetz aus einem Handyvideo mit Apple Object Capture (kevcad-capture) im Hintergrund. ``masz`` setzt
+        den Maßstab ({"laenge": 180}), ``auflage`` für Gegenstände auf einer Unterlage. {"ok", "name", "ordner",
+        "zustand", "befehl", "referenz"? (mit warten_s)}"""
+
+    def referenz_fotos(self, pfade: list[str], name: str | None = None) -> dict[str, Any]:
+        """Fotos als Referenz ablegen (Arbeitsgröße). {"ok", "name", "ordner", "fotos"}"""
+
+    def referenz_vermessen(self, quelle: str | None = None, freie_masse: list[str] | None = None,
+                           bekannte_masse: dict[str, float] | None = None, bilder: int = 8,
+                           vorgaben: dict[str, Any] | None = None, grenzen: dict[str, Any] | None = None,
+                           maske: dict[str, Any] | None = None, von: float | None = None, bis: float | None = None,
+                           kb_brennweite: float | None = None) -> dict[str, Any]:
+        """Freie param()-Maße von model.py an der Referenz messen (fotomess, eigener Prozess; ein Bauer rechnet
+        model.py mit überschriebenen param-Werten). Synchron. {"ok", "referenz", "stand", "masse": [{"name", "wert",
+        "sigma", "start", "aenderung"}], "bekannt", "huelle", "grundkoerper", "teile", "empfehlungen", "bilder",
+        "verworfen", "ueberdeckung", "kontrollbilder", "zeiten", "dauer_s", "lage_netz"}"""
+
+    def referenz_fotoansicht(self, name: str | None = None, foto: int | str | None = None, satz: str | None = None,
+                             modus: str | None = None, deckkraft: float | None = None, aus: bool = False,
+                             bild: bool = False, breite: int = 1280) -> dict[str, Any]:
+        """Fotoansicht in der App: Foto (1-basiert oder Name) durch die eingepasste Kamera hinter dem Modell, ``modus``
+        "ueberlagern" | "differenz", ``deckkraft`` des Modells; ``aus`` schließt sie. Mit ``bild`` das Bild dazu.
+        {"ok", "message", "png"?, "width"?, "height"?, "ueberdeckung"?, "foto"?}"""
 
     # Anzeige in der App, was der Agent gerade tut
     def set_agent_activity(self, text: str | None) -> None: ...

@@ -141,6 +141,7 @@ extension AppController: CatalogActions {
         // Meldung nach wenigen Sekunden, und eine gescheiterte Freigabe sah aus wie keine.
         if !hadCatalog, case .failed = model.catalogActivity { model.catalogActivity = .idle }
         verifyApproval(message)
+        mirror?.freigabe.katalogAktualisiert(message)  // Freigabe vom iPhone: senden, Entscheidungen am Mac erkennen
     }
 
     /// Nach einer Freigabe: Das Nachladen (Anfrage `reloadID`) muss den Eintrag als frei zeigen, sonst ist die Freigabe

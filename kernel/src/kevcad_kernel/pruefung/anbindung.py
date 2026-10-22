@@ -165,4 +165,6 @@ def fuer_ergebnis(check: dict[str, Any] | None) -> dict[str, Any] | None:
 
         out["befunde"], n = ohne_druckhinweise(out.get("befunde") or [])
         out["druck"] = {**druck_kurz(check["druck"]), "hinweise_nur_in_druckpruefung": n}
+    if check.get("statik"):  # Statik: Kurzfassung je Szenario (Ampel, Kennzahlen); ausführlich über MCP statik
+        out["statik"] = check["statik"]
     return out

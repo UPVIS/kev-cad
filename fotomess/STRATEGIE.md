@@ -147,6 +147,31 @@ Apple Object Capture auf 0,8° und 14 mm überein.
   rund 3 min, ein starres Objekt), fotomess die parametrischen Maße in Sekunden aus 3 bis 8 Bildern, auch bei
   bewegtem Objekt. Liegen Object-Capture-Kameras vor, können sie fotomess als Startwerte dienen (Grobsuche entfällt).
 
+### Umsetzung (22.10.2026, Strang „Phase 4 in die App“)
+
+- **Eigener Prozess statt Paket:** fotomess bringt OpenCV, moderngl, scipy und die Swift-Hilfe für Apple Vision mit
+  und läuft in seiner eigenen uv-Umgebung (`fotomess/.venv`, installiert unter `install/fotomess`). Einstieg
+  `python -m fotomess.kevcad auftrag.json` (`src/fotomess/kevcad.py`), Fortschritt als JSON-Zeilen.
+- **Bauer im Kernel:** model.py braucht die API `kevcad` (Lager, Katalog) aus der Kernel-Umgebung. Deshalb rechnet
+  ein eigener Prozess dort (`kevcad_kernel.referenz.varianten`) model.py mit überschriebenen `param`-Werten: Grundstand
+  und je freiem Maß eine Variante (+0,5 mm), Teile flächenweise aus der Tessellierung (`tri_face`), Kulisse und
+  Skizzen draußen. fotomess bildet daraus die Ableitungen (wie `fotocad.cad_netz.Jacobi`, die beiden Funktionen
+  übernommen, damit das installierte Kev CAD nicht am Arbeitsstand von „CAD aus Fotos“ hängt).
+- **Messmodell in model.py:** optionale Funktion `messmodell(p)` mit `frei`, `bekannt`, `farbteile` (Teilnamen oder
+  Funktion `(teil, fläche) -> bool`, je Fläche im Kernel ausgewertet), `zwillinge` (`"z180"` usw.), `maske`,
+  `vorgaben`, `grenzen`, `hoehen`, `kopfueber`. Beispiel `samples/scarlett/model.py`.
+- **Masken in Arbeitsgröße:** Bilder kommen mit ffmpeg gleich in 1920 px, Vision und Farbe rechnen darauf
+  (Scarlett: Masken 98,5 bis 99,6 % gleich den bisherigen; Holen und Masken für 8 Bilder wenige Sekunden statt
+  rund 50 s, das Bewerten des Videos bleibt bei rund 20 s und wird je Video zwischengespeichert).
+- **Zwillingslagen mit Object Capture:** Bilder, deren Kamera um Z deutlich anders liegt als die von Object Capture zur
+  selben Videozeit, liegen in der Zwillingslage; der Kernel rechnet dann noch einmal mit den eigenen Kameras als
+  Start, diese Bilder gedreht. Eine Gegenprüfung nur über die Güte (Silhouette plus Farbteile) bei festen Maßen
+  drehte an der Scarlett die falschen Bilder und ist verworfen. Bilder ohne Object-Capture-Kamera (Lücke 5,7 bis
+  20,9 s) bleiben ungeprüft und werden genannt; 14,8 s liegt dort gedreht (Fotoansicht zeigt es).
+- **Ausgabe:** `<projekt>/referenzen/<name>/messung/` mit `messung.json` (Maße, Sigma, Kameras in Originalpixeln,
+  Empfehlungen, Hülle gesamt und je Teil: Grundkörper getrennt von der Hülle mit Anbauten), `bilder/`, `masken/`,
+  `kontrolle/`, `modell_eingepasst.npz`; Bilder, Masken und Zwischenstände nicht in den Versionen.
+
 ## Entscheidungen
 
 | Nr. | Entscheidung | Begründung |

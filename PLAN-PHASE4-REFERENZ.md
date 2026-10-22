@@ -78,6 +78,51 @@ Entscheidungen beim Bau:
 - **Standard „schnell“** (60 Bilder, 1920 px, reduced, ~1 min); „genau“ (120, 2880, medium) kostet gut das Dreifache
   und bringt Details, aber keine besseren Hauptmaße.
 
+### Ergebnis „Phase 4 in die App“ (22.10.2026, Zweig `phase4`)
+
+Object Capture und fotomess sind aus Kev CAD heraus nutzbar, für den Agenten über MCP und für Kevin in der App.
+
+- **Kernel** (`kernel/src/kevcad_kernel/referenz/`, Mixin `ReferenzRuntimeMixin`, MCP in
+  `mcp_tools/referenz_tools.py`): `referenzen`, `referenz_video`, `referenz_fotos`, `referenz_vermessen`,
+  `referenz_fotoansicht`; Ablage in `<projekt>/referenzen/<name>/` (`referenz.json`, `capture/`, `messung/`,
+  `fotos/`). Bilder, Masken, Texturen, Rohdaten und Zwischenstände nicht in den Versionen (Ausschluss plus
+  Größenregel 20 MB unter `referenzen/`).
+- **Zwei eigene Prozesse:** kevcad-capture (Swift) und fotomess (eigene uv-Umgebung). Der Bauer läuft als dritter
+  Prozess in der Kernel-Umgebung (`varianten`): model.py mit überschriebenen `param`-Werten, Grundstand und je freiem
+  Maß eine Variante, flächenweise. model.py kann `messmodell()` angeben (frei, bekannt, Farbteile je Fläche,
+  Zwillingslagen, Maske, Vorgaben, Grenzen).
+- **Zusammenspiel:** Liegen Netz und Messung aus demselben Video vor, legt der Kernel das Netz an das Modell an
+  (Kamerapaare gleicher Videozeit, dann ICP an der Oberfläche des eingepassten Modells) und erkennt Bilder, in denen
+  fotomess die Zwillingslage gewählt hat (Drehung um Z gegen Object Capture); diese rechnet er noch einmal in der
+  richtigen Lage. Object Capture rechnet der Kernel bis zu dreimal, wenn die Freistellung misslingt.
+- **Protokoll** (additiv): `REF_LIST`, `REF_UPSERT`, `REF_REMOVE`, `REF_PHOTOS`, `REF_RESULT`, `REF_ADD`,
+  `REF_MEASURE_REQ`, `REF_APPLY`, dazu `VIEW_CMD referenz_foto` und `SCREENSHOT_REQ` mit `source: "referenz_foto"`.
+- **App:** Abschnitt „Referenzen“ im Inspektor, Drag and Drop auf den Viewport bzw. +, Netz halbdurchsichtig mit
+  Deckkraft, Fotoansicht (Foto durch die eingepasste Kamera hinter dem Modell, Deckkraft, Differenz rot/blau,
+  Überdeckung, live nach jedem Lauf, rund 0,1 s je Foto), Messergebnis mit Sigma neben den Werten aus model.py,
+  Hinweise, „Maße übernehmen“ (schreibt die Vorgabewerte der `param`-Aufrufe, nur auf Kevins Klick).
+- **Bauen:** `build.sh` baut kevcad-capture und die fotomess-Umgebung; Paket und Installation bringen
+  `bin/kevcad-capture` und `fotomess/` mit (Probe-Installation geprüft), `tools/auto-update.sh` baut bei Änderungen
+  an beiden neu.
+
+Nachweis an der Scarlett 2i2 (IMG_5186.MOV, Testvariante, alles über MCP; Messmodell `samples/scarlett/model.py`):
+
+| Schritt | Zeit | Ergebnis |
+|---|---|---|
+| Object Capture „schnell“ (`masz laenge=180`, `auflage`) | 37 s | Hülle 180 × 118,3 × 49,2 mm, Grundkörper 173,4 × 102,5 mm, Deckel 48,0 mm über der Auflage, 41 von 60 Bildern |
+| Vermessen, 8 Bilder, zwei Durchgänge (ein Bild lag gedreht) | 57 s | tiefe 104,8 ± 4,2 · hoehe 46,4 ± 1,3 · kanten_r 3,6 ± 3,3 · knopf_h 11,0 ± 3,9 · gross_h 16,4 ± 1,1 mm; Überdeckung 93,5 % |
+| Netz angelegt | – | −0,3° um Z, 2,4 mm verschoben, mittlerer Abstand Netz zu Modell 0,5 mm |
+| Fotoansicht | 0,1 s je Foto | Foto 1: Überdeckung 91,6 %, Knöpfe und Buchse decken sich |
+
+Gegen den Benchmark (fotomess 8 Bilder: tiefe 105,2 ± 2,0, hoehe 46,9 ± 0,6, Gesamttiefe 120,8) und den Hersteller
+(117 mit Knöpfen, 47,5): Gesamttiefe 121,4 mm (+3,8 %), Höhe mit Füßen 48,0 mm (+1,0 %), Rohrtiefe 104,8 mm (Object
+Capture 102,5). Object Capture war in zwei von vier gleichen Läufen unbrauchbar (Splitter, falsche Auflage); die
+Wiederholung fängt das ab.
+
+Offen: Zwillingslage in Bildern ohne Object-Capture-Kamera (dort 14,8 s gedreht, der Kernel nennt sie),
+`REF_DEVIATION`/`referenz_abweichung` und `referenz_massstab`, Punktwolke, Gemini-Videobeschreibung, Fotos ohne
+Video als Quelle von Startkameras, Versionstitel für geänderte Referenzdateien („Code in bericht.json“).
+
 ## Was Kevin beitragen muss
 
 - **Ein Probevideo:** ein matter Gegenstand (Holzkiste, Werkzeug, Kunststoffgehäuse), langsam einmal rundherum und

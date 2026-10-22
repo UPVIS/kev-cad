@@ -11,6 +11,11 @@
 #                           eigenem Datenordner und Port; wird nicht installiert, Fenster öffnet auf dem zweiten Monitor
 #   ./build.sh --core-tests nur die Tests von KevCADCore (swift test) und vom Kernel (pytest)
 #
+# Phase 4 (Referenzen aus Video und Fotos): Jeder Bau baut auch kevcad-capture (tools/capture, SwiftPM, Apple Object
+# Capture) und frischt die Umgebung von fotomess auf (fotomess/.venv). Das Paket bringt beide mit (bin/kevcad-capture
+# mit seinen Skripten, fotomess/ ohne Umgebung); die Installation legt sie unter install/bin und install/fotomess ab
+# und baut dort die Umgebung von fotomess. Der Kernel findet sie neben sich (kevcad_kernel/referenz/ablage.py).
+#
 # Für den Bau auf dem Mac mini (tools/fern.sh):
 #   ./build.sh --bundle     Installationsbau ohne Installation: Paket build/bundle/ mit App, Kernel, Skill und VERSION
 #   ./build.sh --install-bundle ORDNER
@@ -55,7 +60,7 @@ esac
 # Python-Umgebung, die immer hier entsteht, weil sie absolute Pfade enthält), die App ad hoc signiert in den Tools-Stapel.
 install_bundle() {
   local src="$1"
-  for f in "$APP_NAME.app" kernel skill VERSION; do
+  for f in "$APP_NAME.app" kernel skill VERSION bin/kevcad-capture fotomess; do
     [ -e "$src/$f" ] || { echo "Paket unvollständig, $f fehlt in $src"; exit 1; }
   done
   echo "==> Kernel und Skill installieren nach $INSTALL_ROOT"
@@ -64,6 +69,12 @@ install_bundle() {
     "$src/kernel/" "$INSTALL_ROOT/kernel/"
   (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev)
   rsync -a --delete "$src/skill/" "$INSTALL_ROOT/skill/"
+  # Phase 4: kevcad-capture (Object Capture) und fotomess mit eigener Umgebung (Abhängigkeiten aus uv.lock)
+  rsync -a --delete "$src/bin/" "$INSTALL_ROOT/bin/"
+  rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache "$src/fotomess/" \
+    "$INSTALL_ROOT/fotomess/"
+  (cd "$INSTALL_ROOT/fotomess" && uv sync -q --frozen --no-dev) \
+    || echo "Achtung: Umgebung von fotomess nicht gebaut, referenz_vermessen geht nicht"
   cp "$src/VERSION" "$INSTALL_ROOT/VERSION"
 
   echo "==> Installiere nach $INSTALL_DIR"
@@ -134,6 +145,8 @@ fi
 echo "==> Kernel-Umgebung"
 command -v uv >/dev/null || { echo "uv fehlt (https://docs.astral.sh/uv/)"; exit 1; }
 (cd kernel && uv sync -q)
+echo "==> fotomess-Umgebung"
+(cd fotomess && uv sync -q) || echo "Achtung: Umgebung von fotomess nicht gebaut"
 
 if [ "$MODE" = "--core-tests" ]; then
   echo "==> Tests KevCADCore"
@@ -143,6 +156,10 @@ if [ "$MODE" = "--core-tests" ]; then
   (cd kernel && .venv/bin/python -m pytest -q)
   exit 0
 fi
+
+echo "==> kevcad-capture (Object Capture)"
+swift build -c release --package-path tools/capture -q 2>&1 | grep -E "error|warning: unre" || true
+[ -x tools/capture/.build/release/kevcad-capture ] || { echo "kevcad-capture ließ sich nicht bauen"; exit 1; }
 
 echo "==> Icon"
 render_icon
@@ -197,6 +214,11 @@ cp -R "$APP" "$BUNDLE/"
 rsync -a -m --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
   kernel/ "$BUNDLE/kernel/"
 rsync -a -m --exclude .DS_Store skill/ "$BUNDLE/skill/"
+mkdir -p "$BUNDLE/bin"
+cp tools/capture/.build/release/kevcad-capture "$BUNDLE/bin/"
+cp tools/capture/scripts/*.py "$BUNDLE/bin/"  # Kontrollbilder (Blender), sucht das Programm neben sich
+rsync -a -m --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude benchmark \
+  --exclude .DS_Store fotomess/ "$BUNDLE/fotomess/"
 printf '%s %s %s\n' "$COMMIT" "$BUILD_NUMBER" "$(date '+%Y-%m-%d %H:%M')" > "$BUNDLE/VERSION"
 
 if [ "$MODE" = "--bundle" ]; then

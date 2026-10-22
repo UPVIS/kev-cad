@@ -704,3 +704,105 @@ Prüfen in `protocol.py` (`pack_print_preview`, `print_settings`, `print_export_
 | `PRINT_SETTINGS` | App → Kernel | `id`, `teil` oder `gruppe`, `einstellungen` (Wert `null` = Vorgabe zurück) und/oder `zweck`, `zuruecksetzen`, `von` | `ACK`, danach `PRINT_PREVIEW` |
 | `PRINT_EXPORT_REQ` | App → Kernel | `id`, `platten` (leer = alle), `ziel` (Pfad .3mf oder null) | `ACK`, danach `PRINT_EXPORT_RES` |
 | `PRINT_EXPORT_RES` | Kernel → App | `reply_to`, `ok`, `pfad`, `platten`, `fehler` (dazu `hinweise`, `ms`, `geprueft`) | – |
+
+## Phase 4: Referenzen
+
+Rein additiv (PLAN-PHASE4-REFERENZ.md, Strang „Phase 4 in die App“); ältere Gegenseiten ignorieren die neuen Typen.
+Eine Referenz ist ein Foto- oder Videobezug des echten Gegenstands, abgelegt in `<projekt>/referenzen/<name>/`
+(`referenz.json`, `capture/` aus Object Capture, `messung/` aus fotomess, `fotos/`); sie gehört nicht zum Modell und
+nicht zur Stückliste (R4). Umsetzung: `kernel/src/kevcad_kernel/referenz/`, Packen und Prüfen in `protocol.py`
+(`pack_ref_netz`, `unpack_ref_netz`, `check_ref_message`, `referenz_beispiele`), Testdateien `ref_*.frame` und
+`referenz_fixtures.json` aus `kernel/tools/make_referenz_fixtures.py`. Der Plan nannte die Nachrichten `REF_PHOTO`
+(hier gebündelt als `REF_PHOTOS`, ein Satz je Referenz) und `REF_DEVIATION`/`REF_SCALE` (noch nicht umgesetzt).
+
+| type | Richtung | Felder | Nutzlast / Antwort |
+|---|---|---|---|
+| `REF_LIST` | Kernel → App | `referenzen` (Liste, siehe unten); bei jeder Änderung (Fortschritt höchstens alle 0,4 s), nach `PROJECT` und beim Verbinden | – |
+| `REF_UPSERT` | Kernel → App | `name` (Referenz), `farbe` (RGBA sRGB, Vorgabe halbdurchsichtig), `counts` {`vert`, `tri`}, `bbox`, `quelle` (`object_capture`), `lage` (oder null) | positions f32 (vert × 3), normals f32 (vert × 3), triangles u32 (tri × 3), Weltkoordinaten des Modells (mm, Z oben) |
+| `REF_REMOVE` | Kernel → App | `name` – Netz weg (neue Rekonstruktion läuft) | – |
+| `REF_PHOTOS` | Kernel → App | `referenz`, `satz` (`messung` \| `capture`), `fotos` (Liste, ersetzt den Satz) | – |
+| `REF_RESULT` | Kernel → App | `referenz`, `stand`, `masse`, `bekannt`, `huelle`, `grundkoerper`, `teile`, `brennweite_px`, `bilder`, `verworfen`, `ueberdeckung`, `empfehlungen`, `zeiten`, `dauer_s`, `warnungen`, `kontrollbilder` | – |
+| `REF_ADD` | App → Kernel | `id`, `pfade` (ein Video oder Fotos, absolute Pfade), `name`, `masz` ({`laenge`: mm} o. ä.), `auflage`, `von`, `bis`, `einstellung` (`schnell` \| `genau`) | `ACK`, dann `REF_LIST` … |
+| `REF_MEASURE_REQ` | App → Kernel | `id`, `referenz`, `frei` (param-Namen oder null = aus `messmodell()`), `bekannt` ({Name: mm}), `bilder` | `ACK` sofort, dann `REF_LIST`, `REF_PHOTOS`, `REF_RESULT` |
+| `REF_APPLY` | App → Kernel | `id`, `referenz`, `werte` ({param-Name: mm}) – Kevins Klick „Maße übernehmen“: der Kernel ersetzt die Vorgabewerte in `param("name", wert)` von model.py (auf 0,1 mm gerundet), der Auto-Lauf rechnet neu | `ACK` mit `message` („tiefe 110 → 103,4; …“) |
+
+`REF_LIST.referenzen[i]`:
+
+```json
+{"name": "IMG_5186", "art": "video", "quelle": "/…/IMG_5186.MOV", "zustand": "rechnet", "laeuft": "capture",
+ "fortschritt": 0.42, "text": "Rekonstruktion: Netz wird erzeugt", "meldung": null, "netz": false, "fotos": 8,
+ "messung": true, "erstellt": "2026-10-22T14:03:11",
+ "capture": {"einstellung": "schnell", "zustand": "fertig", "dauer_s": 45.2, "bilder": 60, "ausgerichtet": 42,
+             "huelle": {"laenge": 180, "breite": 117.3, "hoehe": 48.4}, "grundkoerper": {"laenge": 174, "breite": 102.1},
+             "oberkante": 47.5, "masz": {"laenge": 180}, "auflage": true},
+ "lage": {"drehung_z": 180.0, "verschiebung": [0, -1.2, 0], "massstab": 1.012, "rest_mm": 6.3, "paare": 8}}
+```
+
+- `zustand`: `leer` (nichts gerechnet), `rechnet` (`laeuft`: `capture` oder `messung`, `fortschritt` 0…1, `text`),
+  `fertig`, `fehler` (`meldung`). `fotos`: Zahl der Fotos mit eingepasster Kamera (sonst der abgelegten Fotos).
+- `capture.huelle` ist das Hüllmaß mit allen Anbauten, `capture.grundkoerper` die dichteste waagrechte Schicht ohne
+  Anbauten (bei der Scarlett das Gehäuse ohne Knöpfe): beide getrennt anzeigen.
+- `lage`: Netz aus demselben Video wie die Messung an das Modell angelegt (Drehung um Z und Verschiebung aus
+  Kamerapaaren gleicher Videozeit, `rest_mm` = mittlerer Abstand der Kamerazentren danach); null = Netz im System von
+  Object Capture (Boden z = 0, Mitte x = y = 0, lange Seite = X). Netz und Kameras im Satz `capture` sind schon bewegt.
+
+`REF_PHOTOS.fotos[i]`: `name`, `bild` (absoluter Pfad, JPEG in Arbeitsgröße, lange Kante 1920), `maske` (PNG gleicher
+Größe, 8 bit, Objekt hell; null beim Satz `capture`), `kontrolle` (Kontrollbild von fotomess oder null), `zeit` (s im
+Video oder null), `iou` (Überdeckung Modell und Maske beim Einpassen oder null), `kamera` {`R` (3 × 3 zeilenweise,
+Welt → Kamera), `t`, `f`, `cx`, `cy` (Pixel), `w`, `h` (Bildgröße, auf die sich f, cx, cy beziehen = Größe von
+`bild`)}. Konvention OpenCV: Kamera x rechts, y unten, z Blickrichtung; Pixel = (f·x/z + cx, f·y/z + cy) mit
+(x, y, z) = R·X + t, Ursprung links oben, X in mm im System des Modells. Die App zeigt das Foto durch genau diese
+Kamera hinter dem Modell (Deckkraft, Differenz rot = nur Foto, blau = nur Modell).
+
+`REF_RESULT.masse[i]`: `name` (param), `wert` (mm), `sigma` (mm; größer von 2,5 × Jackknife und 8 × statistisch),
+`start` (Wert in model.py beim Messen), `aenderung`. `bekannt`: feste Maße (Maßstab). `huelle` {`min`, `max`,
+`groesse`} des eingepassten Modells mit allen Teilen, `grundkoerper` {`teil`, `min`, `max`, `groesse`} das Teil mit dem
+größten Hüllvolumen, `teile` je Teil. `empfehlungen[i]`: `art` (`nachmessen` \| `aufnahme` \| `unsicher` \|
+`verworfen`), `text` (deutsch, für den Hinweis in der App), dazu `mass`, `anteil` (Restvarianz), `azimut`, `hoehe`.
+
+## Statik
+
+Rein additiv (PLAN-STATIK.md, Strang „Statik Stufe 1“); ältere Apps ignorieren den Typ. Der Prüfer „statik“ rechnet
+nach jedem Lauf im Rechenprozess (zuletzt, nach Stand, Montage und Druck): S0 (Kippen je Richtung, Rutschen, lose
+Teile, Schrauben grob, Bauteile mit Last als Kragträger) und S1 (Stabwerk mit PyNite). Das volle Ergebnis kommt im
+CHECK-Kopf als Feld `statik` zur Laufzeit; sie nimmt es dort heraus, merkt es und schickt es als `STATICS`. Im `CHECK`
+an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `aktiv`, `szenarien` je mit `name`, `art`,
+`quelle`, `ampel`, `ziel`, `text`, `kennzahlen`, `beschreibung`, `ms`). Rote und gelbe Urteile sind zusätzlich Befunde
+`statik_*` im `CHECK` (Warnung bzw. Hinweis; die Statik sperrt den Export nicht). Packen und Prüfen in `protocol.py`
+(`pack_statics`, `statik_kurz`, `check_statics_message`, Beispiel `statik_beispiel`), Testdateien `statics.frame`,
+`statics_eigengewicht.frame`, `statics_failed.frame` und `statics.json` aus `tools/make_statik_fixtures.py`.
+
+| type | Richtung | Felder | Nutzlast |
+|---|---|---|---|
+| `STATICS` | Kernel → App | `run`, `stand` (`done` \| `failed`), `aktiv` (Szenario, das die App anbietet), `zeigen` (bool: der Agent will `aktiv` im Viewer sehen, Farbverlauf und Verformung an), `meldung`, `szenarien`, `ueberdimensioniert`, `grenzen`, `vereinfachungen`, `modell`, `ms`, `reply_to` optional; nach jeder Prüfung, nach `szenario_rechnen`, nach `statik(szenario)` und beim Verbinden | – |
+
+`szenarien[i]`:
+
+```json
+{"name": "Aufstützen 30 kg", "art": "statisch", "quelle": "modell", "ampel": "rot", "ziel": 2.0,
+ "text": "Aufstützen 30 kg: rot – Rahmen/Rohr hält nicht (Sicherheit 0,2)", "beschreibung": "30 kg vorn auf dem Rohr",
+ "kennzahlen": {"sicherheit": 0.2, "knicken": null, "kippreserve": 0.8, "rutschreserve": null, "durchbiegung_mm": 61.0,
+                "durchbiegung_grenze_mm": 5.0, "verformung_max_mm": 61.0},
+ "urteile": [{"art": "festigkeit", "teil": "Rahmen/Rohr", "ampel": "rot", "text": "…", "loesung": "…",
+              "sicherheit": 0.2, "ziel": 2.0, "ausnutzung": 10.0, "ort": [0, 0, 30]}],
+ "teile": [{"name": "Rahmen/Rohr", "ausnutzung": 10.0, "ampel": "rot", "verformung_mm": 61.0, "sicherheit": 0.2}],
+ "staebe": [{"name": "Rahmen/Rohr", "punkte": [[0, 0, 30], [250, 0, 30], [500, 0, 30]], "ausnutzung": [10.0, 5.0, 0.0],
+             "verschiebung": [[0, 0, 0], [0, 0, -22], [0, 0, -61]], "radius": 6.0, "sicherheit": 0.2, "ampel": "rot"}],
+ "auflager": [{"stab": "…", "teil": "…", "punkt": [x, y, z], "kraft": [N], "moment": [Nmm], "art": "fest"}],
+ "ueberhoehung": 1.0,
+ "kippen": [{"name": "Der Aufbau um Rahmen (3 Teile)", "reserve": 9.6, "richtung_text": "+X", "teile": ["…"],
+             "je_richtung": {"+X": {"kippwinkel": 31.0, "a_kipp": 5.9}}}]}
+```
+
+- `ampel`: `gruen` | `gelb` | `rot` | `grau` (nicht gerechnet). **Ausnutzung** = Zielsicherheit / vorhandene
+  Sicherheit: bis 1 grün, bis 2 gelb, darüber rot (T5; Ziel statisch 2, dynamisch 3, Druckteile das Doppelte).
+- `urteile[i].art`: `festigkeit`, `knicken`, `durchbiegung`, `kippen`, `rutschen`, `schraube`, `bauteil`,
+  `ueberdimensioniert`, `stabwerk`; dazu optional `reserve`, `durchbiegung`, `grenze`, `schichtfaktor`,
+  `quer_zur_schicht`, `alternative` (`stock_id`, `name`, `ersparnis_kg`, `ersparnis_eur`, `sicherheit` …).
+- `teile`: Ausnutzung je Teil (Stäbe und Bauteile mit Nachweis); die App färbt die Teile damit (grün → gelb → rot).
+- `staebe`: je Stab Stationen entlang der Achse (Welt, mm) mit Ausnutzung und Verschiebung (mm); `punkte`,
+  `ausnutzung` und `verschiebung` sind gleich lang (mindestens 2). Die App zeichnet daraus den Farbverlauf und die
+  Verformung, um `ueberhoehung` vergrößert, als Geist.
+- `kippen[i].je_richtung`: Neigung in Grad bzw. waagrechte Beschleunigung in m/s², bei der die Gruppe kippt.
+
+App → Kernel: nichts. Die App wählt Szenarien selbst; neue Szenarien rechnet der Agent mit MCP `szenario_rechnen`.

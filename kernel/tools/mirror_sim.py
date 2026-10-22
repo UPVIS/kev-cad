@@ -1,4 +1,4 @@
-"""Spiegel-Simulator (MIRROR.md, Version 1): bietet einen Spiegel-Socket an wie die Kev-CAD-App, ohne App und Kernel.
+"""Spiegel-Simulator (MIRROR.md, Version 1.1): bietet einen Spiegel-Socket an wie die Kev-CAD-App, ohne App und Kernel.
 
 Spielt eine Kernel-Aufzeichnung (`.kcadrec`, siehe samples/mirror-recordings/README.md) als Live-Aufbau mit
 Zeitverhalten ab, beantwortet HELLO, WATCH, UNWATCH, MESH_REQ (auch wiederholt) und CMD (auch `einpassen`) wie die App (eigener Zustand, Wirkung als
@@ -22,12 +22,26 @@ Befehle auf stdin, je eine Zeile:
     leeren     Auswahl, Hervorhebung, Ausblenden und Isolieren zurücksetzen
     xray       Darstellung zwischen shaded_edges und xray wechseln
     agent      zweite Sitzung dazu (aktiv) bzw. wieder weg
+    freigabe   Freigabe-Anfrage mit drei Vorschlägen (MIRROR.md 1.1), wie `freigabe_anfragen` eines Agenten
+    freigabe-mac        ersten offenen Eintrag „am Mac“ freigeben (FREIGABE_ENDE mit id, grund mac)
+    freigabe-zurueck    offene Anfragen zurückziehen (FREIGABE_ENDE, grund zurueckgezogen)
     neustart   Neustart mit neuer Epoche: Socket weg, Verbindungen zu, nach 1,5 s wieder da
     status     Verbindungen und Stand anzeigen
     ende       beenden
 
 `--auto` spielt nach dem Aufbau alle 4 s eine dieser Aktionen der Reihe nach ab (mit `--neustart-alle N` jede N-te
 Runde ein Neustart).
+
+Freigabe (MIRROR.md, Version 1.1): FREIGABE geht ohne Miete an jede Verbindung nach dem HELLO (offene Anfragen gleich
+mit), CMD `freigabe` wird mit Nonce, Ablauf und Anfrage geprüft und mit CMD_RES `status` beantwortet, danach
+FREIGABE_ENDE. `--freigabe-ablauf S` verkürzt die 24 h zum Testen. Eine Prüfung der Gegenstelle (Signatur) gibt es im
+Simulator nicht.
+
+Gegenstelle spielen (`--client`): verbindet sich mit einem Spiegel-Socket, etwa dem der Testvariante im Testmodus
+(`KEVCAD_FREIGABE_TESTMODUS=1`, nur Bundle-IDs mit `.test`), wartet auf FREIGABE und entscheidet jeden Eintrag:
+
+    .venv/bin/python tools/mirror_sim.py --client "<Datenordner der Testvariante>/mirror.sock" --entscheidung frei
+    … --client PFAD --pruefen   vorher falsche Nonce (ungueltig), hinterher Wiederholung (verbraucht)
 """
 
 from __future__ import annotations
@@ -49,6 +63,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -67,6 +82,10 @@ DEFAULT_SESSION = "00000000-0000-4000-8000-000000000001"
 SECOND_SESSION = "00000000-0000-4000-8000-000000000002"
 PRIOS = ("zustand", "kamera", "szene", "netz")
 DISPLAYS = ("shaded_edges", "shaded", "wireframe", "xray")
+FREIGABE_FEATURE = "freigabe-1"
+FREIGABE_LAUFZEIT_S = 24 * 60 * 60
+FREIGABE_STATUS = ("frei", "abgelehnt", "schon_frei", "fehlt", "ungueltig", "verbraucht", "abgelaufen", "beendet",
+                   "nicht_erlaubt", "katalogfehler")
 STANDARD_VIEWS = {
     "top": (0.0, 0.0, 1.0), "bottom": (0.0, 0.0, -1.0), "front": (0.0, -1.0, 0.0), "back": (0.0, 1.0, 0.0),
     "left": (-1.0, 0.0, 0.0), "right": (1.0, 0.0, 0.0), "iso": (1.0, -1.0, 1.0), "iso_front_right": (1.0, -1.0, 1.0),
@@ -98,6 +117,82 @@ def peer_uid(sock: socket.socket) -> int | None:
         return int(uid.value)
     except (OSError, AttributeError):
         return None
+
+
+# ======================================================================================================================
+# Freigabe vom iPhone (MIRROR.md, Version 1.1)
+# ======================================================================================================================
+
+
+def https_link(text: Any) -> str | None:
+    """Nur https mit Rechnername gilt als Link (sonst weglassen)."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    t = text.strip()
+    u = urlsplit(t)
+    return t if u.scheme.lower() == "https" and u.hostname else None
+
+
+def freigabe_eintrag(id: str, kind: str, name: str, art: str, kurz: str = "", link: str | None = None,
+                     grund: str | None = None, projekt: str | None = None) -> dict[str, Any]:
+    """Ein Eintrag in FREIGABE; `link` nur mit https, sonst fehlt das Feld."""
+    e: dict[str, Any] = {"id": id, "kind": kind, "name": name, "art": art, "kurz": kurz}
+    if https_link(link):
+        e["link"] = https_link(link)
+    e["grund"] = grund
+    e["projekt"] = projekt
+    return e
+
+
+def freigabe_header(epoche: str, anfrage_id: str, nonce: str, ablauf: str,
+                    eintraege: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"type": "FREIGABE", "epoche": epoche, "anfrage_id": anfrage_id, "nonce": nonce, "ablauf": ablauf,
+            "eintraege": eintraege}
+
+
+def freigabe_ende_header(epoche: str, anfrage_id: str, grund: str, id: str | None = None,
+                         ergebnis: str | None = None) -> dict[str, Any]:
+    h: dict[str, Any] = {"type": "FREIGABE_ENDE", "epoche": epoche, "anfrage_id": anfrage_id}
+    if id is not None:
+        h["id"] = id
+    h["grund"] = grund
+    if id is not None and ergebnis is not None:
+        h["ergebnis"] = ergebnis
+    return h
+
+
+def freigabe_cmd(cid: str, anfrage_id: str, nonce: str, eintrag: str, entscheidung: str) -> dict[str, Any]:
+    return {"type": "CMD", "id": cid, "op": "freigabe",
+            "args": {"anfrage_id": anfrage_id, "nonce": nonce, "id": eintrag, "entscheidung": entscheidung}}
+
+
+def iso_utc(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def demo_freigabe_eintraege(projekt: str | None, grund: str | None) -> list[dict[str, Any]]:
+    """Drei Vorschläge wie aus stock_define, zukauf_anlegen und material_define (auch in den Testdateien)."""
+    return [
+        freigabe_eintrag("rohr-alfer-16x1", "teil", "ALFER-Rundrohr 16 × 1", "rohr", "d 16 · s 1 mm · 4,20 €/m · ALFER",
+                         "https://www.alfer.com/", grund, projekt),
+        freigabe_eintrag("alutec-05200", "teil", "ALUTEC Transportroller 05200", "zukaufteil",
+                         "610 × 410 × 128 mm · 24,99 €/Stück · www.beispiel-shop.de",
+                         "https://www.beispiel-shop.de/p/alutec-05200", grund, projekt),
+        freigabe_eintrag("petg-cf", "material", "PETG-CF", "material", "1,3 g/cm³ · 29,00 €/kg", None, grund, projekt),
+    ]
+
+
+@dataclass
+class SimFreigabe:
+    """Eine offene Anfrage im Simulator."""
+    anfrage_id: str
+    nonce: str
+    ablauf: float  # time.time()
+    eintraege: list[dict[str, Any]]
+    entschieden: dict[str, str] = field(default_factory=dict)  # id → frei | abgelehnt
+
+    def offen(self) -> list[dict[str, Any]]:
+        return [e for e in self.eintraege if e["id"] not in self.entschieden]
 
 
 # ======================================================================================================================
@@ -303,8 +398,13 @@ class MirrorSim:
     def __init__(self, socket_path: str, recording: Path = DEFAULT_RECORDING, *, speed: float = 1.0,
                  part_delay_ms: float = 0.0, bundle_id: str = "de.upvis.kevcad.sim", app_build: int = 0,
                  session_id: str = DEFAULT_SESSION, start_full: bool = False, build_on_watch: bool = True,
-                 quiet: bool = False, aspect: float = 1.6) -> None:
+                 quiet: bool = False, aspect: float = 1.6,
+                 freigabe_ablauf_s: float = FREIGABE_LAUFZEIT_S) -> None:
         self.socket_path = socket_path
+        self.freigabe_ablauf_s = freigabe_ablauf_s
+        self.freigaben: dict[str, SimFreigabe] = {}
+        self.beendet: dict[str, str] = {}  # anfrage_id → Grund des Endes (für CMD_RES)
+        self._freigabe_nr = 0
         self.speed = max(speed, 1e-3)
         self.part_delay_ms = part_delay_ms
         self.bundle_id = bundle_id
@@ -525,7 +625,7 @@ class MirrorSim:
 
     def hello_reply(self) -> dict[str, Any]:
         return {"type": "HELLO", "version": VERSION, "epoche": self.epoche, "app_build": self.app_build,
-                "bundle_id": self.bundle_id, "features": ["kcad-mesh-1"], "project": self.project,
+                "bundle_id": self.bundle_id, "features": ["kcad-mesh-1", FREIGABE_FEATURE], "project": self.project,
                 "agents": self.agents()}
 
     # ------------------------------------------------------------------------------------------------- Empfangen
@@ -539,6 +639,7 @@ class MirrorSim:
             with self.lock:
                 conn.hello = True
                 conn.send(self.hello_reply())
+                self._freigaben_an(conn)  # offene Anfragen gleich nach dem HELLO, ohne Miete
             self.log(f"[{conn.number}] HELLO von {header.get('client', '?')}")
         elif kind == "WATCH":
             dauer = float(header.get("dauer_s") or 300)
@@ -602,6 +703,9 @@ class MirrorSim:
         op = header.get("op")
         args = header.get("args") or {}
         ok, fehler = True, None
+        if op == "freigabe":
+            self._cmd_freigabe(conn, cid, args if isinstance(args, dict) else {})
+            return
         with self.lock:
             if op == "kamera":
                 kamera = args.get("kamera")
@@ -634,6 +738,114 @@ class MirrorSim:
                 ok, fehler = False, f"Unbekannter Befehl {op!r}"
             conn.send({"type": "CMD_RES", "reply_to": cid, "ok": ok, "fehler": fehler})
         self.log(f"[{conn.number}] CMD {op} → {'ok' if ok else 'Fehler'}" + (f" ({fehler})" if fehler else ""))
+
+    # ------------------------------------------------------------------------------------------------- Freigabe
+
+    def _hello_conns(self) -> list[Connection]:
+        return [c for c in self.connections if c.hello and not c.closed]
+
+    def _freigabe_msg(self, f: SimFreigabe) -> dict[str, Any]:
+        return freigabe_header(self.epoche, f.anfrage_id, f.nonce, iso_utc(f.ablauf), f.offen())
+
+    def _freigaben_an(self, conn: Connection) -> None:
+        self._abgelaufene_beenden()
+        for f in self.freigaben.values():
+            if f.offen():
+                conn.send(self._freigabe_msg(f))
+
+    def _ende(self, f: SimFreigabe, grund: str, id: str | None = None, ergebnis: str | None = None) -> None:
+        msg = freigabe_ende_header(self.epoche, f.anfrage_id, grund, id, ergebnis)
+        for c in self._hello_conns():
+            c.send(msg)
+        if id is None:
+            self.freigaben.pop(f.anfrage_id, None)
+            self.beendet[f.anfrage_id] = grund
+
+    def _abgelaufene_beenden(self) -> None:
+        now = time.time()
+        for f in list(self.freigaben.values()):
+            if now >= f.ablauf:
+                self._ende(f, "abgelaufen")
+                self.log(f"Freigabe {f.anfrage_id} abgelaufen")
+
+    def freigabe_anfragen(self, eintraege: list[dict[str, Any]] | None = None, grund: str | None = None) -> str:
+        """Wie `freigabe_anfragen` eines Agenten: neue Anfrage an alle (ersetzt eine offene)."""
+        with self.lock:
+            for alt in list(self.freigaben.values()):
+                self._ende(alt, "zurueckgezogen")
+            self._freigabe_nr += 1
+            projekt = (self.project or self.recorded_project or {}).get("name")
+            f = SimFreigabe(anfrage_id=f"F-{self._freigabe_nr:04d}-{secrets.token_hex(4)}",
+                            nonce=secrets.token_hex(16), ablauf=time.time() + self.freigabe_ablauf_s,
+                            eintraege=eintraege or demo_freigabe_eintraege(projekt, grund or "Für den Simulator"))
+            self.freigaben[f.anfrage_id] = f
+            msg = self._freigabe_msg(f)
+            for c in self._hello_conns():
+                c.send(msg)
+            timer = threading.Timer(self.freigabe_ablauf_s + 0.05, self._ablauf_pruefen)
+            timer.daemon = True
+            timer.start()
+        self.log(f"Freigabe {f.anfrage_id} angefragt: {', '.join(e['id'] for e in f.eintraege)}")  # Nonce nie ins Log
+        return f.anfrage_id
+
+    def _ablauf_pruefen(self) -> None:
+        with self.lock:
+            self._abgelaufene_beenden()
+
+    def freigabe_mac(self) -> None:
+        """Kevin gibt am Mac den ersten offenen Eintrag frei."""
+        with self.lock:
+            for f in self.freigaben.values():
+                offen = f.offen()
+                if not offen:
+                    continue
+                eid = offen[0]["id"]
+                f.entschieden[eid] = "frei"
+                self._ende(f, "mac", eid, "frei")
+                if not f.offen():
+                    self._ende(f, "mac")
+                self.log(f"Freigabe {f.anfrage_id}: {eid} am Mac freigegeben")
+                return
+        self.log("Keine offene Freigabe")
+
+    def freigabe_zurueckziehen(self) -> None:
+        with self.lock:
+            for f in list(self.freigaben.values()):
+                self._ende(f, "zurueckgezogen")
+                self.log(f"Freigabe {f.anfrage_id} zurückgezogen")
+
+    def _cmd_freigabe(self, conn: Connection, cid: str, args: dict[str, Any]) -> None:
+        anfrage_id = str(args.get("anfrage_id") or "")
+        nonce = str(args.get("nonce") or "")
+        eid = str(args.get("id") or "")
+        entscheidung = args.get("entscheidung")
+        status, fehler = "ungueltig", None
+        with self.lock:
+            self._abgelaufene_beenden()
+            f = self.freigaben.get(anfrage_id)
+            if entscheidung not in ("frei", "abgelehnt") or not eid:
+                fehler = f"entscheidung {entscheidung!r} bzw. id fehlt (frei oder abgelehnt)"
+            elif f is None:
+                grund = self.beendet.get(anfrage_id)
+                status = "abgelaufen" if grund == "abgelaufen" else ("beendet" if grund else "ungueltig")
+                fehler = {"abgelaufen": "Die Anfrage ist abgelaufen.", "beendet": "Die Anfrage ist erledigt."}.get(
+                    status, "Anfrage unbekannt")
+            elif not secrets.compare_digest(nonce.encode(), f.nonce.encode()):
+                fehler = "Die Nonce passt nicht zur Anfrage."
+            elif eid not in {e["id"] for e in f.eintraege}:
+                fehler = f"{eid} gehört nicht zur Anfrage."
+            elif eid in f.entschieden:
+                status, fehler = "verbraucht", f"{eid} ist schon entschieden."
+            else:
+                f.entschieden[eid] = entscheidung
+                status = entscheidung
+            conn.send({"type": "CMD_RES", "reply_to": cid, "ok": status in ("frei", "abgelehnt"), "fehler": fehler,
+                       "status": status})
+            if f is not None and status in ("frei", "abgelehnt"):
+                self._ende(f, "iphone", eid, status)
+                if not f.offen():
+                    self._ende(f, "iphone")
+        self.log(f"[{conn.number}] CMD freigabe {eid} → {status}" + (f" ({fehler})" if fehler else ""))
 
     def _cmd_auswahl(self, args: dict[str, Any]) -> tuple[bool, str | None]:
         refs = [r for r in args.get("refs") or [] if isinstance(r, str)]
@@ -832,6 +1044,9 @@ class MirrorSim:
         with self.lock:
             lines = [f"Epoche {self.epoche}, rev {self.rev}, Lauf {self.run}, {len(self.parts)} Teile, "
                      f"{len(self.meshes)} Netze"]
+            for f in self.freigaben.values():
+                lines.append(f"  Freigabe {f.anfrage_id}: offen {[e['id'] for e in f.offen()]}, "
+                             f"entschieden {f.entschieden}")
             for c in self.connections:
                 lease = max(0.0, c.lease_until - time.monotonic())
                 lines.append(f"  [{c.number}] hello={c.hello} Miete {lease:.0f} s, wartend {c.pending()}, "
@@ -863,7 +1078,8 @@ def command_loop(sim: MirrorSim) -> bool:
     actions = {
         "aufbau": sim.build, "lauf": sim.build, "kamera": sim.orbit, "auswahl": sim.next_selection,
         "hervor": sim.highlight_next, "leeren": sim.clear, "xray": sim.toggle_xray, "agent": sim.toggle_second_agent,
-        "neustart": sim.restart,
+        "neustart": sim.restart, "freigabe": sim.freigabe_anfragen, "freigabe-mac": sim.freigabe_mac,
+        "freigabe-zurueck": sim.freigabe_zurueckziehen,
     }
     for line in sys.stdin:
         cmd = line.strip().lower()
@@ -876,9 +1092,121 @@ def command_loop(sim: MirrorSim) -> bool:
         elif cmd in actions:
             threading.Thread(target=actions[cmd], daemon=True).start()
         else:
-            print(f"Unbekannt: {cmd} (aufbau, kamera, auswahl, hervor, leeren, xray, agent, neustart, status, ende)",
-                  file=sys.stderr, flush=True)
+            print(f"Unbekannt: {cmd} (aufbau, kamera, auswahl, hervor, leeren, xray, agent, freigabe, freigabe-mac, "
+                  "freigabe-zurueck, neustart, status, ende)", file=sys.stderr, flush=True)
     return False
+
+
+# ======================================================================================================================
+# Gegenstelle (--client): Freigabe vom „iPhone“ gegen die echte App im Testmodus
+# ======================================================================================================================
+
+
+class MirrorClient:
+    """Kleiner Spiegel-Client: HELLO, Rahmen lesen, CMD schicken und auf CMD_RES warten."""
+
+    def __init__(self, path: str, client: str = "mirror-sim") -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(path)
+        self.reader = FrameReader()
+        self.inbox: collections.deque[dict[str, Any]] = collections.deque()
+        self.seq = 0
+        self.send({"type": "HELLO", "protocol": "kevcad-mirror", "version": VERSION, "client": client,
+                   "features": ["kcad-mesh-1", FREIGABE_FEATURE]})
+
+    def send(self, header: dict[str, Any]) -> None:
+        self.seq += 1
+        self.sock.sendall(encode_frame({**header, "seq": self.seq, "prio": "zustand"}))
+
+    def next(self, until: float, want: Any = None) -> dict[str, Any] | None:
+        """Nächster Kopf (bis `until`, time.monotonic); mit `want` nur passende, andere bleiben im Eingang."""
+        while True:
+            for i, h in enumerate(self.inbox):
+                if want is None or want(h):
+                    del self.inbox[i]
+                    return h
+            rest = until - time.monotonic()
+            if rest <= 0:
+                return None
+            self.sock.settimeout(rest)
+            try:
+                data = self.sock.recv(256 * 1024)
+            except TimeoutError:
+                return None
+            except OSError:
+                return None
+            if not data:
+                return None
+            for h, _ in self.reader.feed(data):
+                self.inbox.append(h)
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def run_client(path: str, entscheidung: str = "frei", warten_s: float = 60.0, pruefen: bool = False,
+               nur: list[str] | None = None) -> int:
+    """Wartet auf FREIGABE und entscheidet jeden (oder nur die genannten) Einträge; Ausgang 0, wenn alles passt."""
+    c = MirrorClient(path)
+    ende = time.monotonic() + warten_s
+    ok = True
+
+    def out(text: str) -> None:
+        print(text, flush=True)
+
+    hello = c.next(ende, lambda h: h.get("type") == "HELLO")
+    if hello is None:
+        out("FEHLER kein HELLO")
+        return 1
+    out(f"HELLO: Epoche {hello.get('epoche')}, Merkmale {hello.get('features')}")
+    f = c.next(ende, lambda h: h.get("type") == "FREIGABE")
+    if f is None:
+        out("FEHLER keine FREIGABE (Testmodus an? Bundle-ID mit .test und KEVCAD_FREIGABE_TESTMODUS=1)")
+        return 1
+    ids = [e["id"] for e in f.get("eintraege") or [] if not nur or e["id"] in nur]
+    out(f"FREIGABE {f['anfrage_id']}: {', '.join(e['id'] + ' (' + e.get('kurz', '') + ')' for e in f['eintraege'])}, "
+        f"Ablauf {f.get('ablauf')}")
+    n = 0
+
+    def cmd(eid: str, nonce: str, wofuer: str) -> dict[str, Any] | None:
+        nonlocal n
+        n += 1
+        cid = f"sim-{n}"
+        c.send(freigabe_cmd(cid, f["anfrage_id"], nonce, eid, wofuer))
+        res = c.next(time.monotonic() + 45, lambda h: h.get("type") == "CMD_RES" and h.get("reply_to") == cid)
+        out(f"CMD freigabe {eid} {wofuer} → " + (json.dumps(res, ensure_ascii=False) if res else "keine Antwort"))
+        return res
+
+    if pruefen and ids:
+        res = cmd(ids[0], "0" * 32, entscheidung)
+        good = bool(res) and res.get("ok") is False and res.get("status") == "ungueltig"
+        ok &= good
+        out(f"{'OK    ' if good else 'FEHLER'} falsche Nonce abgewiesen")
+    for eid in ids:
+        res = cmd(eid, f["nonce"], entscheidung)
+        good = bool(res) and res.get("ok") is True and res.get("status") == entscheidung
+        ok &= good
+        out(f"{'OK    ' if good else 'FEHLER'} {eid} {entscheidung}")
+        e = c.next(time.monotonic() + 5, lambda h: h.get("type") == "FREIGABE_ENDE" and h.get("id") == eid)
+        good = bool(e) and e.get("grund") == "iphone" and e.get("ergebnis") == entscheidung
+        ok &= good
+        out(f"{'OK    ' if good else 'FEHLER'} FREIGABE_ENDE {json.dumps(e, ensure_ascii=False) if e else 'fehlt'}")
+    if pruefen and ids:
+        res = cmd(ids[0], f["nonce"], entscheidung)
+        good = bool(res) and res.get("ok") is False and res.get("status") in ("verbraucht", "beendet")
+        ok &= good
+        out(f"{'OK    ' if good else 'FEHLER'} Wiederholung abgewiesen ({res.get('status') if res else '-'})")
+    if not nur:
+        e = c.next(time.monotonic() + 5, lambda h: h.get("type") == "FREIGABE_ENDE" and "id" not in h)
+        good = bool(e) and e.get("grund") == "iphone"
+        ok &= good
+        out(f"{'OK    ' if good else 'FEHLER'} Anfrage erledigt: {json.dumps(e, ensure_ascii=False) if e else 'fehlt'}")
+    c.close()
+    out("ALLES OK" if ok else "FEHLER")
+    return 0 if ok else 1
 
 
 def _interrupt(*_: Any) -> None:
@@ -887,7 +1215,15 @@ def _interrupt(*_: Any) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--socket", required=True, help="Socket-Pfad, kurz halten, z. B. /tmp/kcsim.sock")
+    ap.add_argument("--socket", help="Socket-Pfad, kurz halten, z. B. /tmp/kcsim.sock")
+    ap.add_argument("--client", metavar="PFAD", help="statt zu lauschen: als Gegenstelle mit PFAD verbinden und "
+                    "Freigaben entscheiden (siehe Moduldoku)")
+    ap.add_argument("--entscheidung", choices=("frei", "abgelehnt"), default="frei", help="bei --client")
+    ap.add_argument("--nur", default="", help="bei --client: nur diese ids (Komma), sonst alle Einträge")
+    ap.add_argument("--pruefen", action="store_true", help="bei --client: falsche Nonce und Wiederholung prüfen")
+    ap.add_argument("--warten", type=float, default=60.0, help="bei --client: so lange auf FREIGABE warten (s)")
+    ap.add_argument("--freigabe-ablauf", type=float, default=FREIGABE_LAUFZEIT_S,
+                    help="Laufzeit einer Freigabe-Anfrage in s (Vorgabe 24 h)")
     ap.add_argument("--recording", type=Path, default=DEFAULT_RECORDING, help="Kernel-Aufzeichnung (.kcadrec)")
     ap.add_argument("--speed", type=float, default=1.0, help="Abspielgeschwindigkeit (1 = Echtzeit)")
     ap.add_argument("--part-delay-ms", type=float, default=0.0, help="zusätzliche Pause je Teil beim Aufbau")
@@ -901,9 +1237,15 @@ def main() -> int:
     ap.add_argument("--aspect", type=float, default=1.6, help="Seitenverhältnis der Mac-Ansicht in kamera.aspect")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+    if args.client:
+        return run_client(args.client, args.entscheidung, args.warten, args.pruefen,
+                          [i for i in args.nur.split(",") if i.strip()] or None)
+    if not args.socket:
+        ap.error("--socket oder --client angeben")
     sim = MirrorSim(args.socket, args.recording, speed=args.speed, part_delay_ms=args.part_delay_ms,
                     bundle_id=args.bundle_id, session_id=args.session_id, start_full=args.start == "fertig",
-                    build_on_watch=args.start == "leer", quiet=args.quiet, aspect=args.aspect)
+                    build_on_watch=args.start == "leer", quiet=args.quiet, aspect=args.aspect,
+                    freigabe_ablauf_s=args.freigabe_ablauf)
     signal.signal(signal.SIGTERM, _interrupt)
     sim.start()
     if args.auto:
