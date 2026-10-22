@@ -199,6 +199,8 @@ public final class AppModel: ObservableObject {
     public let versionen = VersionenStore()
     /// Bestand (additiv, BESTAND.md): Bestand des Projekts, Buchungen, Zuschnitt mit Resten und Einkaufsliste.
     @Published public var bestandZustand = BestandZustand()
+    /// Phase 6 (additiv, DOKUMENTE.md): Zeichnungsblätter (Übersicht, gerechnete Blätter; Aktionen: `dokumenteActions`).
+    public let dokumente = DokumenteStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

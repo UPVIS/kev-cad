@@ -25,6 +25,8 @@ targets:
     platform: macOS
     sources:
       - path: Sources/KevCAD
+      # Ressourcen: App-Symbol (erzeugt) und Fonts/ mit osifont für die Zeichnungen samt Lizenz (Phase 6). Dateien landen
+      # flach in Contents/Resources; BlattSchrift sucht dort und unter Fonts/.
       - path: Resources
         buildPhase: resources
     dependencies:
