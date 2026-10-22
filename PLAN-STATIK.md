@@ -211,3 +211,81 @@ Offen für später:
   `fein`.
 - Befunde `statik_festkoerper` stehen in STATICS und im Ergebnis von `festigkeit`, noch nicht in der Prüfung (CHECK).
 - Falls SuperLU bei großen, gedrungenen Teilen zu langsam wird: Accelerate-Cholesky über ein Swift-Hilfsprogramm.
+
+## Nachbesserung: Lastaufteilung und innere Kräfte (Zweig `statik-nach`, 22.10.2026)
+
+Zwei Befunde aus der Arbeit am Kugelschieber (Sitzung KevCup, Build 391): Im Szenario „Ball drückt 100 N“ bekam der
+rechte Fängerschlitten die ganzen 100 N, der linke fast nichts (FEM 1,7 gegen Ziel 4); und die als äußere `st.last`
+gerechnete Kraft des Balls ließ den ganzen Wagen „rutschen“ (nötig μ = 0,9).
+
+Ursache des ersten Befunds war nicht die Regel „gehalten vom Stab mit der größten Kraft“ im Festkörper, sondern das
+Stabwerk: Der linke Schlitten hängt über `schiebegelenk(…, bereich=(…))` an der Seitenstange (der rechte über
+`verbinde(…, "klemmung")`), und S1 rechnete jedes Schiebegelenk als freie Hülse. Längs der Führung (in Fahrtrichtung,
+genau die Richtung der Ballkraft) hielt der linke Schlitten also nichts, die ganze Kraft lief über den rechten. Gleich
+ging es der Seitenstange im vorderen Stangenhalter (Schiebegelenk mit Bereich, in Wirklichkeit mit Sterngriff
+geklemmt).
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| T30 | Gelenke mit `bereich` sind auch im Stabwerk (S1) festgestellt, also feste Anschlüsse (wie T15 in S2); frei bleiben nur Gelenke ohne `bereich` (Hülse, Laufrolle). Quelle des Anschlusses: „Gelenk (schiebe) mit Bereich: festgestellt“ | Einstellgelenke (Schlitten, Stange im Halter, Kopf) sind im Betrieb geklemmt; frei gerechnet verteilt sich die Last falsch und der Leiterrahmen trägt nicht mit. Eine Stufe, eine Regel |
+| T31 | Verbinder zwischen Stäben (im Stabwerk starr) bekommen ihre Kräfte je Anschluss aus S1 (Endkräfte der starren Glieder, statisch unbestimmt nach Steifigkeit verteilt) und werden damit als Kragträger nachgewiesen (`rechnen._verbinderteile`, Bauteil mit `aus_verbinder`): eingespannt an der Berührung mit dem Stab mit der größten Kraft, belastet von den übrigen Stäben (Resultierende mit Moment). Der Festkörper nimmt dieselben Kräfte (wie T26), der Kragträger ist dort nur der Vergleich | Bisher galt ein Verbinder als starr und wurde in S0/S1 gar nicht nachgewiesen; jetzt dieselben Lasten in S0, S1 und S3 |
+| T32 | Kraftpaare für innere Kräfte: `st.last(teil, kraft, punkt, gegen=…)` oder `st.kraftpaar(a, b, kraft, punkt)` (auch in `szenario_rechnen`: `"gegen"`). Kraft auf `teil`, Gegenkraft −kraft am selben Punkt auf `gegen`. Kippen, Rutschen und Abheben des Ganzen lassen beide weg; Stabwerk, Kragträger, lose Teile, Schrauben und Festkörper bekommen jede Seite auf ihre Teile (eine Seite auf einem geerdeten Teil, etwa dem Ball auf dem Boden, trägt der Boden; ein Gegenstück ohne Festigkeitswerte bekommt kein graues Urteil). Im Ergebnis je Szenario `lasten` mit Angriffspunkt, `gegen` und `paar` (STATICS additiv); die App zeichnet Lasten als blaue Pfeile zum Angriffspunkt, ein Kraftpaar als zwei gegeneinander gerichtete violette Pfeile, und listet sie im Statik-Abschnitt | Der Ball drückt gegen die Fangrolle und die Fangrolle gegen den Ball; als äußere Last gerechnet rutscht oder kippt das Ganze scheinbar |
+
+Nachweise (Tests in `kernel/tests/test_statik_nach.py`):
+
+| Probe | Handrechnung | Stabwerk |
+|---|---|---|
+| Stange (Stahlrohr 21,3 × 2) in zwei gleichen Haltern an der Wand, 100 N in der Mitte | je 50 N | 50,00 / 50,00 N |
+| dieselbe, 150 mm neben der Mitte, gesteckt (eingespannt): R = P a² (a + 3b) / L³ mit a = 450, b = 150, L = 600 mm | 84,38 / 15,62 N | 84,38 / 15,63 N |
+| dieselbe, aufgelegt (gelenkig), Hebelgesetz R = P a / L | 75,00 / 25,00 N | 75,00 / 25,00 N |
+| Querstange in zwei Schlitten (Verbinder) auf zwei auskragenden Seitenstangen, einer über Schiebegelenk mit Bereich, einer geklemmt, 100 N in der Mitte | je 50 N | 50,0 / 50,0 N (vorher 100 / 0) |
+| dieselbe, 75 mm neben der Mitte: Träger auf zwei Stützen mit Drehfedern k = E I / L_s der Seitenstangen | 75,90 / 24,10 N | 75,49 / 24,51 N |
+
+Gegenprobe: dasselbe Schiebegelenk ohne Bereich läuft frei, dann trägt der andere Schlitten 100 N.
+
+Kugelschieber (Kopie von „Kugelschieber Variante B“ im Scratchpad, eigener Katalog und FEM-Speicher):
+
+| Szenario „Ball drückt 100 N …“ | vorher | Gelenk festgestellt (T30, T31) | dazu als Kraftpaar mit dem Ball (T32) |
+|---|---|---|---|
+| Fänger: Kraft der Querstange auf den Schlitten rechts / links | 100 / 0 N (Moment 6 640 Nmm rechts) | 50 / 50 N (Moment 369 Nmm) | gleich |
+| Fänger: Festkörper Fängerschlitten rechts / links (Ziel 4) | 1,69 rot / 56,7 | 8,31 / 8,49 grün | 8,41 / 8,73 grün |
+| Fänger: Kragträger der Fängerschlitten (neu) | – | 34,5 / 34,5 | gleich |
+| Schieber: Festkörper Schieberschlitten rechts / links | 4,37 / 526 | 23,3 / 23,9 | 23,4 / 23,8 |
+| Durchbiegung Seitenstangen (zulässig 4,8 mm) | Fänger 14,7 / 14,4 mm, Schieber 11,5 / 12,8 mm, rot | Fänger 1,81 mm, Schieber 3,07 mm, grün | gleich |
+| Sicherheit Seitenstange rechts | Fänger 1,42, Schieber 1,88 (gelb) | 7,04 bzw. 6,39 | gleich |
+| Rutschen des Ganzen | rot, nötig μ = 0,90 (Rad auf Beton 0,6) | rot, 0,90 | kein Urteil (nötig μ = 0) |
+| Kippreserve | 4,19 bzw. 10,2 | gleich | 9,0 (nur Eigengewicht) |
+| Ampel des Szenarios | rot | rot (nur noch Rutschen) | grün |
+
+Handrechnung der Seitenstange als Kragarm (Alurohr 12 × 1, E = 70 000 N/mm², I = 527 mm⁴, eingespannt im vorderen
+Stangenhalter, 482 mm bis zum Ende; Schieberschlitten bei 273 mm, Fängerschlitten bei 458 mm):
+
+- Eigengewicht: Rohr q L⁴ / (8 E I) = 0,17 mm, Schieber-Einheit 1,9 N bei 273 mm 0,75 mm, Fänger-Einheit 1,7 N bei
+  458 mm 1,59 mm, zusammen 2,51 mm (Stabwerk 2,50 mm).
+- Ball 100 N: je Seitenstange 50 N längs der Achse (Dehnung 0,01 mm) und, weil die Querstange 4,2 mm unter der
+  Stangenachse liegt, ein Moment M = 50 N · 4,2 mm = 210 Nmm; Spitze M a (L − a/2) / (E I): Schieber 0,54 mm,
+  Fänger 0,66 mm (Stabwerk 0,56 bzw. 0,69 mm, Vorzeichen nach Richtung). Zusammen 3,05 bzw. 1,85 mm, gerechnet 3,07
+  bzw. 1,81 mm.
+- Das Moment um die Hochachse (die Querstange gibt ihre Endmomente an die Schlitten) trägt der Leiterrahmen aus beiden
+  Seitenstangen und beiden Querstangen als Normalkraft der Querstangen ab (Querverschiebung unter 0,06 mm).
+- Die 11 bis 15 mm von vorher waren eine Folge der frei gerechneten Gelenke: die ganze Kraft über die rechte Stange mit
+  rund 9 200 Nmm um die Hochachse (100 N mal 92 mm Hebel), dazu die im vorderen Halter drehbar gelagerte Stange
+  (Eigengewicht allein: Spitze vorher 4,7 mm tief, davon 2,2 mm aus der Drehung im Halter, jetzt 2,5 mm; gewertet wird
+  in beiden Fällen die Biegung gegen die starre Fortsetzung, 2,5 mm). Real sind beide Schlitten und beide Halter
+  geklemmt.
+
+Offen:
+
+- Ein Gelenk mit Bereich, das im Betrieb wirklich frei läuft (Schublade, Tür ohne Feststeller), rechnet die Statik
+  jetzt fest; ein Schalter dafür (etwa `frei=True` am Gelenk) fehlt noch.
+- Der Kragträger nimmt bei einem Schnitt durch eine Bohrung nur das Stück auf einer Seite (grob): bei den beiden
+  gleichen Schlitten im Test 10,2 gegen 11,7; am Kugelschieber liegt der Kragträger der Fängerschlitten (34,5) weit
+  über der FEM (8,3), die die Spitze in der Schichtfuge findet. Maßgebend ist die FEM.
+- Kraftpaare gelten in S0, S1 und S3; ein Ablauf (S2) rechnet seine Kontaktkräfte selbst und nimmt `st.last` nicht.
+- Testvariante „Kev CAD Test sn“: an einer Probe ohne Animation (Wagen mit Fänger, Ball davor) zeigt der Viewer das
+  Kraftpaar als zwei violette Pfeile, die sich an der Fängerfläche treffen. Am Kugelschieber ist die Animation „Fahrt“
+  gesetzt; solange eine Animation gesetzt ist, blendet die Szene alle Statik-Körper aus (Farbverlauf, Geist, jetzt auch
+  die Pfeile; bestehendes Verhalten in `SceneStore`). Ohne `punkt` liegt der Angriffspunkt in der Mitte der Querstange,
+  also in der Fangrolle; mit `punkt` an der Berührstelle Ball–Rolle steht das Paar sichtbar zwischen beiden.
+- Der Kugelschieber selbst rechnet die Ballkraft noch als äußere Last: in seinem model.py `gegen="Bowlingball"`
+  ergänzen (nicht in diesem Zweig, Kevins Projekt bleibt unberührt).

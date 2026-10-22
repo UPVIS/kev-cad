@@ -36,11 +36,37 @@ class Last:
     kg: float | None = None
     zeile: int | None = None
     text: str = ""
+    # Kraftpaar (innere Kraft zwischen zwei Teilen der Konstruktion, T32): die Gegenkraft −kraft wirkt am selben Punkt
+    # auf diese Teile. Beim Kippen, Rutschen und Abheben des Ganzen heben sich beide auf; Stabwerk, Bauteile und
+    # Festkörper bekommen jede Seite auf ihre Teile.
+    gegen: list[str] = field(default_factory=list)
+
+    @property
+    def paar(self) -> bool:
+        return bool(self.gegen)
 
     def kurz(self) -> dict[str, Any]:
-        return {"teile": list(self.teile), "kraft": [round(float(c), 2) for c in self.kraft],
-                "punkt": None if self.punkt is None else [round(float(c), 2) for c in self.punkt],
-                "kg": self.kg, "zeile": self.zeile}
+        out = {"teile": list(self.teile), "kraft": [round(float(c), 2) for c in self.kraft],
+               "punkt": None if self.punkt is None else [round(float(c), 2) for c in self.punkt],
+               "kg": self.kg, "zeile": self.zeile}
+        if self.gegen:
+            out["gegen"] = list(self.gegen)
+            out["paar"] = True
+        return out
+
+
+def angriffe(m: Any, last: Last, innere: bool = True) -> list[tuple[str, np.ndarray, np.ndarray | None, bool]]:
+    """Wo eine Last angreift: je Teil ``(teil, kraft N, punkt mm oder None, gegenseite)``. Die Kraft verteilt sich
+    gleich auf die Teile einer Gruppe; bei einem Kraftpaar wirkt −kraft am selben Punkt auf die Teile von ``gegen``.
+    ``innere=False``: Kraftpaare ganz weglassen (Kippen, Rutschen, Abheben des Ganzen, T32)."""
+    if last.paar and not innere:
+        return []
+    out: list[tuple[str, np.ndarray, np.ndarray | None, bool]] = []
+    for seite, namen, F in ((False, last.teile, last.kraft), (True, last.gegen, -np.asarray(last.kraft, float))):
+        ziele = list(dict.fromkeys(n for t in namen for n in m.aufloesen(t)))
+        for n in ziele:
+            out.append((n, np.asarray(F, dtype=float) / len(ziele), last.punkt, seite))
+    return out
 
 
 @dataclass
@@ -87,7 +113,8 @@ class Szenario:
         """Einzellasten mit Stoßfaktor."""
         if abs(self.stoss_faktor - 1.0) < 1e-12:
             return list(self.lasten)
-        return [Last(l.teile, l.kraft * self.stoss_faktor, l.punkt, l.kg, l.zeile, l.text) for l in self.lasten]
+        return [Last(l.teile, l.kraft * self.stoss_faktor, l.punkt, l.kg, l.zeile, l.text, list(l.gegen))
+                for l in self.lasten]
 
     def kurz(self) -> dict[str, Any]:
         return {"name": self.name, "art": "dynamisch" if self.dynamisch else "statisch", "quelle": self.quelle,
@@ -228,8 +255,14 @@ def last_aus(l: dict[str, Any]) -> Last:
     faktor = l.get("stoss")
     if faktor:
         kraft = kraft * float(faktor)
+    gegen = l.get("gegen")
+    gegen = [gegen] if isinstance(gegen, str) else list(gegen or [])
+    gegen = [str(t).strip() for t in gegen if str(t).strip()]
+    if set(gegen) & {str(t) for t in teile}:
+        raise ValueError("Kraftpaar: gegen= muss ein anderes Teil sein als das belastete (Kraft und Gegenkraft auf "
+                         "demselben Teil heben sich auf)")
     return Last([str(t) for t in teile], kraft, _vec(l.get("punkt")), float(kg) if kg is not None else None,
-                l.get("zeile"), str(l.get("text") or ""))
+                l.get("zeile"), str(l.get("text") or ""), gegen)
 
 
 def aus_modell(ereignisse: list[dict[str, Any]]) -> tuple[list[Szenario], dict[str, Any]]:

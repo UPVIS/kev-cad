@@ -61,6 +61,8 @@ extension AppController: StatikActions {
         }
         var toene = s.farbverlauf ? StatikGeometrie.toene(sz, bekannt: { self.scene.record($0) != nil }) : [:]
         var koerper = StatikGeometrie.koerper(sz, farbverlauf: s.farbverlauf, verformung: s.verformung)
+        // Lasten als Pfeile zum Angriffspunkt, Kraftpaare als zwei gegeneinander gerichtete Pfeile (violett)
+        if s.farbverlauf { koerper += StatikGeometrie.lastpfeile(sz.lasten) }
         var verdeckt: Set<String> = []
         for (i, f) in s.felder(fuer: sz).enumerated() where scene.record(f.teil) != nil {
             if s.farbverlauf {

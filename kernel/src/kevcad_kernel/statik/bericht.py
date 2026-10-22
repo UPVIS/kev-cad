@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from kevcad_kernel.statik.bewertung import _sf, z
@@ -61,7 +62,50 @@ def szenario_text(e: dict[str, Any], detail: bool = False) -> str:
         for a in e.get("auflager") or []:
             f = a.get("kraft") or [0, 0, 0]
             zeilen.append(f"  Lager {a.get('teil')} an {a.get('stab')}: Kraft ({'; '.join(z(c, 1) for c in f)}) N")
+        zeilen += verbinder_zeilen(e.get("verbinder") or [])
+        zeilen += lasten_zeilen(e.get("lasten") or [])
     return "\n".join(zeilen)
+
+
+def _vek(v: Any, n: int = 1) -> str:
+    return "(" + "; ".join(z(c, n) for c in v) + ")"
+
+
+def _kurz(name: str) -> str:
+    return str(name).rsplit("/", 1)[-1]
+
+
+def _betrag(v: Any) -> float:
+    return math.sqrt(sum(float(c) ** 2 for c in v or (0, 0, 0)))
+
+
+def verbinder_zeilen(verbinder: list[dict[str, Any]]) -> list[str]:
+    """Kräfte der Stäbe auf Verbinder (S1, je Anschluss, statisch unbestimmt verteilt, T31): eine Zeile je Verbinder."""
+    je: dict[str, list[dict[str, Any]]] = {}
+    for v in verbinder:
+        je.setdefault(v["teil"], []).append(v)
+    out = []
+    for teil, vs in je.items():
+        if max(_betrag(v.get("kraft")) for v in vs) < 0.5:
+            continue
+        out.append(f"  Verbinder {teil}: "
+                   + ", ".join(f"{_kurz(v['stab'])} {z(_betrag(v['kraft']), 1)} N {_vek(v['kraft'])}" for v in vs)
+                   + " (Kräfte der Stäbe aus dem Stabwerk)")
+    return out
+
+
+def lasten_zeilen(lasten: list[dict[str, Any]]) -> list[str]:
+    """Lasten des Szenarios; Kraftpaare mit Gegenseite (innere Kraft, T32)."""
+    out = []
+    for l in lasten:
+        teile = ", ".join(_kurz(t) for t in l.get("teile") or [])
+        if l.get("paar"):
+            gegen = ", ".join(_kurz(t) for t in l.get("gegen") or [])
+            out.append(f"  Kraftpaar: {_vek(l['kraft'])} N auf {teile}, Gegenkraft auf {gegen}, bei "
+                       f"{_vek(l['punkt'], 0)} (innere Kraft: zählt nicht beim Kippen, Rutschen und Abheben)")
+        else:
+            out.append(f"  Last: {_vek(l['kraft'])} N auf {teile} bei {_vek(l['punkt'], 0)}")
+    return out
 
 
 def statik_text(res: dict[str, Any]) -> str:

@@ -16,7 +16,8 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 41.2,
-        "ueberhoehung": 66.7
+        "ueberhoehung": 66.7,
+        "lasten": []
       },
       {
         "name": "Aufstützen 30 kg",
@@ -30,7 +31,45 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 0.2,
-        "ueberhoehung": 1.0
+        "ueberhoehung": 1.0,
+        "lasten": [
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [],
+            "paar": false,
+            "kraft": [
+              0.0,
+              0.0,
+              -294.3
+            ],
+            "punkt": [
+              250.0,
+              0.0,
+              30.0
+            ]
+          },
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [
+              "Ball"
+            ],
+            "paar": true,
+            "kraft": [
+              100.0,
+              0.0,
+              0.0
+            ],
+            "punkt": [
+              500.0,
+              0.0,
+              30.0
+            ]
+          }
+        ]
       }
     ],
     "grenzen": 2
@@ -52,7 +91,8 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 41.2,
-        "ueberhoehung": 66.7
+        "ueberhoehung": 66.7,
+        "lasten": []
       },
       {
         "name": "Aufstützen 30 kg",
@@ -66,7 +106,45 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 0.2,
-        "ueberhoehung": 1.0
+        "ueberhoehung": 1.0,
+        "lasten": [
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [],
+            "paar": false,
+            "kraft": [
+              0.0,
+              0.0,
+              -294.3
+            ],
+            "punkt": [
+              250.0,
+              0.0,
+              30.0
+            ]
+          },
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [
+              "Ball"
+            ],
+            "paar": true,
+            "kraft": [
+              100.0,
+              0.0,
+              0.0
+            ],
+            "punkt": [
+              500.0,
+              0.0,
+              30.0
+            ]
+          }
+        ]
       }
     ],
     "grenzen": 2
@@ -96,7 +174,8 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 41.2,
-        "ueberhoehung": 66.7
+        "ueberhoehung": 66.7,
+        "lasten": []
       },
       {
         "name": "Aufstützen 30 kg",
@@ -110,7 +189,45 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 0.2,
-        "ueberhoehung": 1.0
+        "ueberhoehung": 1.0,
+        "lasten": [
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [],
+            "paar": false,
+            "kraft": [
+              0.0,
+              0.0,
+              -294.3
+            ],
+            "punkt": [
+              250.0,
+              0.0,
+              30.0
+            ]
+          },
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [
+              "Ball"
+            ],
+            "paar": true,
+            "kraft": [
+              100.0,
+              0.0,
+              0.0
+            ],
+            "punkt": [
+              500.0,
+              0.0,
+              30.0
+            ]
+          }
+        ]
       },
       {
         "name": "Bremsen aus 1 m/s",
@@ -120,6 +237,7 @@
         "staebe": [],
         "sicherheit": 8.4,
         "ueberhoehung": 1.0,
+        "lasten": [],
         "ablauf": {
           "stand": "done",
           "animation": "Ablauf: Bremsen aus 1 m/s",
@@ -155,7 +273,8 @@
           "Rahmen/Rohr"
         ],
         "sicherheit": 41.2,
-        "ueberhoehung": 66.7
+        "ueberhoehung": 66.7,
+        "lasten": []
       },
       {
         "name": "Aufstützen 30 kg",
@@ -170,6 +289,44 @@
         ],
         "sicherheit": 0.2,
         "ueberhoehung": 1.0,
+        "lasten": [
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [],
+            "paar": false,
+            "kraft": [
+              0.0,
+              0.0,
+              -294.3
+            ],
+            "punkt": [
+              250.0,
+              0.0,
+              30.0
+            ]
+          },
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [
+              "Ball"
+            ],
+            "paar": true,
+            "kraft": [
+              100.0,
+              0.0,
+              0.0
+            ],
+            "punkt": [
+              500.0,
+              0.0,
+              30.0
+            ]
+          }
+        ],
         "festkoerper": {
           "stand": "laeuft",
           "fortschritt": 0.45,
@@ -195,6 +352,7 @@
         "staebe": [],
         "sicherheit": 1.87,
         "ueberhoehung": 1.0,
+        "lasten": [],
         "festkoerper": {
           "stand": "done",
           "fortschritt": 1.0,

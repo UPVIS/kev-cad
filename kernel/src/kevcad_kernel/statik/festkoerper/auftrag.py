@@ -8,7 +8,8 @@ Ein **Fall** ist ein Teil in einem Szenario. Quelle sind die Bauteil-Nachweise d
   S1, eingeleitet über die Kontaktfläche zum jeweiligen Stab, Lager an den übrigen Nachbarn. Hängt das Teil nur an
   Stäben, ist der Stab mit der größten Kraft das Lager (Gleichgewicht);
 - **Verbinder zwischen Stäben** (im Stabwerk starr, ohne eigene Last): Kraft und Moment jedes Stabs am Anschluss aus
-  S1 (Endkräfte des starren Glieds), über die Kontaktfläche zum Stab; Lager wie oben;
+  S1 (Endkräfte des starren Glieds, statisch unbestimmt nach Steifigkeit verteilt), über die Kontaktfläche zum Stab;
+  Lager ist der Stab mit der größten Kraft (``rechnen.verbinder_lager``, wie beim Kragträger des Verbinders, T31);
 - **Kontaktkräfte eines Ablaufs** (S2) auf Wunsch: die größte Kontaktkraft auf das Teil, am Kontaktpunkt, allein
   (statt der ruhenden Ersatzlasten des Szenarios).
 
@@ -119,12 +120,17 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
         if wunsch.get("lasten"):  # Kontaktkräfte eines Ablaufs: allein (sie sind die Last des Ablaufs)
             continue
         bauteile = [b for b in e.get("bauteile") or [] if b.get("sicherheit") is not None]
+        s0_verbinder: dict[str, dict[str, Any]] = {}
         for b in bauteile:
             teil = b["teil"]
             if teile_filter is not None and teil not in teile_filter:
                 continue
             s0 = {k: b.get(k) for k in ("sicherheit", "spannung", "ziel", "schichtfaktor", "quer_zur_schicht",
-                                        "hebel_mm", "aus_lager")}
+                                        "hebel_mm", "aus_lager", "aus_verbinder")}
+            if b.get("aus_verbinder"):
+                # Verbinder (T31): der Kragträger ist nur der Vergleich; die Kräfte je Anschluss kommen unten aus S1
+                s0_verbinder[teil] = s0
+                continue
             f = fall(name, teil, float(b["ziel"]), s0)
             if f is None:
                 continue
@@ -152,7 +158,7 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
                 f["lager"] = sorted(set(f["lager"] or []) | set(b.get("nachbarn") or []))
         # Verbinder zwischen Stäben (S1, im Stabwerk starr): Kraft und Moment jedes Stabs am Anschluss; gehalten von
         # Nachbarn außerhalb der Stäbe (ohne Schrauben), sonst vom Stab mit der größten Kraft (``schreibe``)
-        schon = {b["teil"] for b in bauteile}
+        schon = {b["teil"] for b in bauteile if not b.get("aus_verbinder")}
         je_teil: dict[str, list[dict[str, Any]]] = {}
         for v in e.get("verbinder") or []:
             if v["teil"] in schon or (teile_filter is not None and v["teil"] not in teile_filter):
@@ -163,7 +169,7 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
             t = m.teile.get(teil)
             if t is None or kraft < 0.5:
                 continue
-            f = fall(name, teil, sz.ziel_fuer(t.druckteil), None)
+            f = fall(name, teil, sz.ziel_fuer(t.druckteil), s0_verbinder.get(teil))
             if f is None:
                 continue
             for v in vs:
