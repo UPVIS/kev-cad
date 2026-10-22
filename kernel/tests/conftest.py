@@ -19,9 +19,17 @@ os.environ["KEVCAD_CATALOG_DIR"] = str(_OWN)
 
 TEST_CATALOG = Path(__file__).resolve().parent / "katalog_test"
 
+# Druckvorschau (DRUCKVORSCHAU.md): Zwischenspeicher und Abgleich in einem Temp-Ordner, Bambu Studio im Hintergrund aus,
+# damit kein Test Kevins abgleich.json schreibt oder nebenbei slict; test_druck_slicer.py schaltet es selbst ein.
+_DRUCK = Path(tempfile.mkdtemp(prefix="kc-druck-"))
+os.environ["KEVCAD_DRUCK_CACHE"] = str(_DRUCK / "cache")
+os.environ["KEVCAD_DRUCK_ABGLEICH"] = str(_DRUCK / "abgleich.json")
+os.environ["KEVCAD_BAMBU_APP"] = str(_DRUCK / "kein-bambu-studio.app")
+
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
     shutil.rmtree(_OWN, ignore_errors=True)
+    shutil.rmtree(_DRUCK, ignore_errors=True)
 
 
 @pytest.fixture

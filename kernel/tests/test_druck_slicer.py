@@ -15,7 +15,15 @@ from app_testutil import FakeApp, make_runtime
 
 from kevcad_kernel.druck import slicer as sl
 
-pytestmark = pytest.mark.skipif(not sl.verfuegbar(), reason="Bambu Studio nicht installiert")
+BAMBU = Path("/Applications/BambuStudio.app")  # conftest.py schaltet Bambu Studio für alle anderen Tests ab
+pytestmark = pytest.mark.skipif(not (BAMBU / "Contents/MacOS/BambuStudio").exists(),
+                                reason="Bambu Studio nicht installiert")
+
+
+@pytest.fixture(autouse=True)
+def mit_bambu(monkeypatch):
+    monkeypatch.setenv("KEVCAD_BAMBU_APP", str(BAMBU))
+    yield
 
 HEAD = "from build123d import *\nfrom kevcad import lager, show, param\n"
 CODE = HEAD + """
@@ -66,9 +74,10 @@ def test_selbst_geschriebenes_3mf_laedt_in_bambu_studio(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="module")
 def env():
-    alt = {k: os.environ.get(k) for k in ("KEVCAD_DRUCK_CACHE", "KEVCAD_DRUCK_ABGLEICH")}
+    alt = {k: os.environ.get(k) for k in ("KEVCAD_DRUCK_CACHE", "KEVCAD_DRUCK_ABGLEICH", "KEVCAD_BAMBU_APP")}
     tmp = Path(tempfile.mkdtemp(prefix="kcds", dir=tempfile.gettempdir()))
-    os.environ.update({"KEVCAD_DRUCK_CACHE": str(tmp / "cache"), "KEVCAD_DRUCK_ABGLEICH": str(tmp / "abgleich.json")})
+    os.environ.update({"KEVCAD_DRUCK_CACHE": str(tmp / "cache"), "KEVCAD_DRUCK_ABGLEICH": str(tmp / "abgleich.json"),
+                       "KEVCAD_BAMBU_APP": str(BAMBU)})
     sock = str(tmp / "k.sock")
     rt = make_runtime(sock)
     assert rt.wait_worker_ready(240), "Rechenprozess nicht bereit"
