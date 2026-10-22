@@ -3,7 +3,8 @@ import Foundation
 
 // Strichbild eines Bauplanschritts zeichnen (Strang P6-A2): dieselbe Funktion für die Schrittansicht am Bildschirm, das
 // PDF und den Druck. Linien im Stil einer IKEA-Anleitung: schwarze Kontur, neue Teile in der Akzentfarbe etwas kräftiger,
-// Einführpfeile mit gefüllter Spitze.
+// Einführpfeile mit gefüllter Spitze. Beim Bearbeiten (Einsätze, Lager, Stifte) steht das aufnehmende Teil als Bezug
+// dünn und grau daneben (Linienart `kontext`).
 
 public struct BauplanPalette: Sendable {
     public var tinte: CGColor
@@ -11,31 +12,36 @@ public struct BauplanPalette: Sendable {
     public var pfeil: CGColor
     public var duenn: CGColor
     public var verdeckt: CGColor
+    /// Aufnehmendes Teil beim Bearbeiten (Bezug): grau, zurückhaltend.
+    public var kontext: CGColor
 
-    public init(tinte: CGColor, neu: CGColor, pfeil: CGColor, duenn: CGColor, verdeckt: CGColor) {
+    public init(tinte: CGColor, neu: CGColor, pfeil: CGColor, duenn: CGColor, verdeckt: CGColor,
+                kontext: CGColor? = nil)
+    {
         self.tinte = tinte
         self.neu = neu
         self.pfeil = pfeil
         self.duenn = duenn
         self.verdeckt = verdeckt
+        self.kontext = kontext ?? duenn
     }
 
     /// Papier (PDF, Druck, helle Ansicht).
     public static let papier = BauplanPalette(
         tinte: ExportStil.tinte, neu: ExportStil.akzent, pfeil: ExportStil.akzent, duenn: ExportStil.grauHell,
-        verdeckt: ExportStil.grauHell)
+        verdeckt: ExportStil.grauHell, kontext: ExportStil.farbe(0.50, 0.51, 0.54))
 
     /// Dunkle Ansicht am Bildschirm.
     public static let dunkel = BauplanPalette(
         tinte: ExportStil.farbe(0.90, 0.90, 0.92), neu: ExportStil.farbe(1.0, 0.58, 0.25),
         pfeil: ExportStil.farbe(1.0, 0.58, 0.25), duenn: ExportStil.farbe(0.50, 0.50, 0.54),
-        verdeckt: ExportStil.farbe(0.45, 0.45, 0.50))
+        verdeckt: ExportStil.farbe(0.45, 0.45, 0.50), kontext: ExportStil.farbe(0.62, 0.62, 0.66))
 }
 
 public enum BauplanZeichner {
     /// Linienbreiten in mm auf dem Papier (unabhängig von der Bildgröße).
     public static let breiten: [String: CGFloat] = [
-        "sichtbar": 0.30, "neu": 0.42, "pfeil": 0.40, "duenn": 0.15, "verdeckt": 0.15, "mitte": 0.15,
+        "sichtbar": 0.30, "neu": 0.42, "pfeil": 0.40, "duenn": 0.15, "verdeckt": 0.15, "mitte": 0.15, "kontext": 0.22,
         "schnitt": 0.35, "schraffur": 0.12, "nachbar": 0.15, "bruch": 0.15,
     ]
 
@@ -63,8 +69,8 @@ public enum BauplanZeichner {
         ctx.setLineJoin(.round)
         ctx.setLineCap(.round)
         // Reihenfolge: dünne und verdeckte zuerst, dann Kontur, neue Teile und Pfeile obenauf
-        let reihenfolge = ["duenn", "verdeckt", "mitte", "nachbar", "bruch", "schraffur", "schnitt", "sichtbar", "neu",
-                           "pfeil"]
+        let reihenfolge = ["duenn", "verdeckt", "mitte", "nachbar", "bruch", "schraffur", "schnitt", "kontext", "sichtbar",
+                           "neu", "pfeil"]
         let arten = reihenfolge + bild.linien.keys.filter { !reihenfolge.contains($0) }.sorted()
         for art in arten {
             guard let pls = bild.linien[art], !pls.isEmpty else { continue }
@@ -74,6 +80,7 @@ public enum BauplanZeichner {
             case "pfeil": farbe = palette.pfeil
             case "duenn", "mitte", "nachbar", "bruch", "schraffur": farbe = palette.duenn
             case "verdeckt": farbe = palette.verdeckt
+            case "kontext": farbe = palette.kontext
             default: farbe = palette.tinte
             }
             let breite = (breiten[art] ?? 0.15) * einheitJeMM

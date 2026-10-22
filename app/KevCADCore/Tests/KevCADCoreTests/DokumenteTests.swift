@@ -224,6 +224,26 @@ final class DokumenteTests: XCTestCase {
         XCTAssertEqual(b.fehlerText, "kein Element")
     }
 
+    /// Schnitt und Einzelheit aus der App (Vertrag 1.3): gezogene Linie bzw. Kreis in Blatt-mm, Blickrichtung umkehren.
+    func testSchnittUndEinzelheitEncoder() throws {
+        let s = ZeichnungsOp.schnittNeu(von: "v1", linie: [CGPoint(x: 10, y: 20), CGPoint(x: 90, y: 20)], umkehren: true)
+        XCTAssertEqual(s.json, ["op": "ansicht_neu", "art": "schnitt",
+                                "schnitt": ["von": "v1", "linie": [[10, 20], [90, 20]], "umkehren": true]])
+        XCTAssertNil(ZeichnungsOp.schnittNeu(von: nil, linie: [.zero, CGPoint(x: 1, y: 0)]).json["schnitt"]?["umkehren"])
+        XCTAssertEqual(ZeichnungsOp.einzelheitNeu(von: "v2", mitte: CGPoint(x: 50, y: 40), radius: 7.5).json,
+                       ["op": "ansicht_neu", "art": "einzelheit",
+                        "einzelheit": ["von": "v2", "kreis": ["mitte": [50, 40], "radius": 7.5]]])
+        XCTAssertEqual(ZeichnungsOp.schnittUmkehren(id: "v4").json, ["op": "schnitt_umkehren", "id": "v4"])
+        XCTAssertEqual(s.titel, "Schnitt anlegen")
+        // Rückgängig: neue Ansicht mit der Kennung aus dem ACK löschen; Umkehren kehrt sich selbst um
+        let (z, _) = try zeichnung("drawing.frame")
+        let neu = ZeichnungsBearbeitung(ok: true, ergebnisse: [["op": "ansicht_neu", "ok": true, "id": "v7"]])
+        XCTAssertEqual(ZeichnungsUmkehr.gegen([s], vorher: z, bearbeitung: neu), [.ansichtLoeschen(id: "v7")])
+        let um = ZeichnungsBearbeitung(ok: true, ergebnisse: [["op": "schnitt_umkehren", "ok": true, "id": "v4"]])
+        XCTAssertEqual(ZeichnungsUmkehr.gegen([.schnittUmkehren(id: "v4")], vorher: z, bearbeitung: um),
+                       [.schnittUmkehren(id: "v4")])
+    }
+
     // MARK: Rückgängig
 
     func testUmkehr() throws {
@@ -457,6 +477,26 @@ final class DokumenteTests: XCTestCase {
             XCTAssertEqual(info.leftMargin, 0)
             XCTAssertEqual(info.scalingFactor, 1)
         }
+    }
+
+    /// Zweizeiliger Bohrungshinweis mit Knick („4× Ø8,2 × 13,8 tief“ / „Einsatz M6 × 12,7“, Kameraträger): greifbar auf
+    /// beiden Zeilen und auf der Bezugslinie; der Anker zum Verschieben ist der Knick.
+    func testZweizeiligerHinweisIstGreifbar() {
+        let spitze = CGPoint(x: 233.275, y: 95.725)
+        let knick = CGPoint(x: 245.775, y: 74.074)
+        let h = MassDarstellung(
+            id: "m4", linien: [[spitze, knick, CGPoint(x: 290.745, y: 74.074)]],
+            pfeile: [MassPfeil(spitze: spitze, richtung: CGVector(dx: -0.5, dy: 0.87))], text: "4× Ø8,2 × 13,8 tief",
+            textLage: CGPoint(x: 268.26, y: 74.974), art: "bohrung")
+        var mit = h
+        mit.texte = [BlattText(text: "Einsatz M6 × 12,7", lage: CGPoint(x: 268.26, y: 67.574), hoehe: 3.5, anker: .mitte)]
+        XCTAssertTrue(mit.istHinweis)
+        XCTAssertEqual(mit.textAnker, knick)
+        let g = MassGrafik(mit)
+        XCTAssertTrue(g.trifftText(CGPoint(x: 268.26, y: 76.2), toleranz: 0.3))  // erste Zeile
+        XCTAssertTrue(g.trifftText(CGPoint(x: 262, y: 68.8), toleranz: 0.3))  // zweite Zeile
+        XCTAssertLessThan(g.abstand(zu: CGPoint(x: 239.5, y: 84.9)), 0.3)  // schräge Bezugslinie
+        XCTAssertTrue(g.huelle.contains(CGPoint(x: 262, y: 68.8)))
     }
 
     func testTrefferAufMassUndText() throws {

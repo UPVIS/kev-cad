@@ -40,9 +40,16 @@ extension AppController: CameraActions {
 
     /// Pyramiden aller Kameras außer der, durch die gerade geschaut wird (in der aktuellen Lage ihres Teils).
     func cameraOverlayItems() -> [OverlayPrimitive] {
-        cameras.cameras.filter { $0.name != cameras.activeView }.flatMap {
+        cameras.cameras.filter { $0.name != cameras.activeView && !cameraHidden($0) }.flatMap {
             CameraViewMath.overlay(posedCamera($0), selected: $0.name == cameras.selected)
         }
+    }
+
+    /// Die Pyramide erscheint und verschwindet mit ihrem Teil: Ist das Teil, dem die Kamera folgt, ausgeblendet
+    /// (Durchspielen des Bauplans vor seiner Montage, Animation, Sichtbarkeit), bleibt auch der Kamerarahmen weg.
+    func cameraHidden(_ c: CameraInfo) -> Bool {
+        CameraViewMath.verborgen(teil: followedPart(c), gruppe: c.folgt ?? c.teil, order: scene.order,
+                                 hidden: scene.hidden.union(scene.animationHidden))
     }
 
     /// Körper für den Viewport: beim Blick durch eine Kamera ohne ihr eigenes Objektiv und ohne Teile vor dem Augpunkt.

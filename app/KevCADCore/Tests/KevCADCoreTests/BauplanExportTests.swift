@@ -325,6 +325,56 @@ final class BauplanExportTests: XCTestCase {
         XCTAssertEqual(ExportSeitenformat(.a4, .hoch).punkte.width, 595.28, accuracy: 0.01)
     }
 
+    /// Deckblatt: Inhalt und Kennzahlen laufen nie in den Fuß (Projekt, Stand, Datum, Eigentümer), auch bei langem
+    /// Titel und vielen Bausteinen; erst zweispaltig, dann eine eigene Inhaltsseite; die Gesamtansicht bleibt sichtbar.
+    func testDeckblattUeberdecktNieDenFuss() {
+        let titel2 = ExportSatz("Kugelschieber Variante B mit sehr langem Projektnamen für zwei Zeilen", breite: 166,
+                                schrift: .fett(34), zeilenabstand: 0.95, maxZeilen: 2).hoehe
+        for format in [ExportSeitenformat(.a4, .hoch), ExportSeitenformat(.a4, .quer), ExportSeitenformat(.a3, .hoch)] {
+            for titelH in [CGFloat(13), titel2] {
+                for kacheln in 1...7 {
+                    for eintraege in 1...16 {
+                        let a = DeckblattAufteilung(groesse: format.mm, titelHoehe: titelH, kacheln: kacheln,
+                                                    eintraege: eintraege)
+                        let fall = "\(format.name), Titel \(titelH), \(kacheln) Kacheln, \(eintraege) Einträge"
+                        XCTAssertLessThanOrEqual(a.inhaltEnde, a.fussY - DeckblattAufteilung.fussAbstand + 0.01, fall)
+                        XCTAssertLessThanOrEqual(a.bild.maxY, a.fussY - DeckblattAufteilung.fussAbstand + 0.01, fall)
+                        XCTAssertGreaterThanOrEqual(a.bild.height, DeckblattAufteilung.bildMin, fall)
+                        if format.ausrichtung == .hoch { XCTAssertGreaterThan(a.kachelnY, a.bild.maxY, fall) }
+                    }
+                }
+            }
+        }
+        // sechs Bausteine passen einspaltig aufs Deckblatt, zwölf zweispaltig, dreißig auf eine eigene Seite
+        let a4 = ExportSeitenformat(.a4, .hoch).mm
+        XCTAssertEqual(DeckblattAufteilung(groesse: a4, titelHoehe: 13, kacheln: 6, eintraege: 6).inhaltSpalten, 1)
+        XCTAssertEqual(DeckblattAufteilung(groesse: a4, titelHoehe: 13, kacheln: 6, eintraege: 12).inhaltSpalten, 2)
+        XCTAssertFalse(DeckblattAufteilung(groesse: a4, titelHoehe: 13, kacheln: 6, eintraege: 30).inhaltAufDeckblatt)
+        // quer: sechs Kennzahlen und sechs Bausteine passen mit schmalerem Bild und dreispaltigen Kennzahlen
+        let quer = DeckblattAufteilung(groesse: ExportSeitenformat(.a4, .quer).mm, titelHoehe: 13, kacheln: 6,
+                                       eintraege: 6)
+        XCTAssertTrue(quer.inhaltAufDeckblatt)
+        XCTAssertEqual(quer.kachelSpalten, 3)
+    }
+
+    /// Zeichen, die der Berichtsschrift fehlen („→“), ersetzt die Leinwand aus der Schrift selbst; vorhandene („≈“,
+    /// „Ø“, „−“) bleiben. So bettet das PDF keine Ersatzschrift (Lucida Grande) ein.
+    func testErsatzFuerFehlendeZeichen() throws {
+        let f = ExportSchrift.normal(9).ctFont
+        XCTAssertEqual(ExportSatz.ersetzt("waagrechte Bohrungen 2 → 0", f), "waagrechte Bohrungen 2 › 0")
+        XCTAssertEqual(ExportSatz.ersetzt("≈ 42,01 € · Ø 6,6 · −Z-Seite", f), "≈ 42,01 € · Ø 6,6 · −Z-Seite")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("kc-zeichen-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let seite = ExportSeite(groesse: ExportSeitenformat().mm, baustein: .bauplan, titel: "Bauplan",
+                                inhalt: .leinwand { l, _ in
+            l.text("Ausrichtung: waagrechte Bohrungen 2 → 0, je ≈ 105,6 g", x: 20, y: 40, .normal(9))
+        })
+        try ExportDokument(kopf: ExportKopf(projekt: "Zeichen"), seiten: [seite]).schreibePDF(nach: url)
+        let roh = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        XCTAssertFalse(roh.contains("LucidaGrande"))
+        XCTAssertTrue(roh.contains("HelveticaNeue"))
+    }
+
     // MARK: PDF
 
     @MainActor

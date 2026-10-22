@@ -1,6 +1,6 @@
 # Kev CAD · Dokumente (Vertrag Phase 6)
 
-Version 1.2 (22.10.2026; 1.1: Ergänzungen aus [RECHERCHE-PHASE6.md](RECHERCHE-PHASE6.md) Abschnitt 7; 1.2: `DRAWING_CREATE`, Änderungen des Agenten erreichen die App). Verbindlich für Zeichnungen, Bauplan und Berichte aus
+Version 1.3 (22.10.2026; 1.1: Ergänzungen aus [RECHERCHE-PHASE6.md](RECHERCHE-PHASE6.md) Abschnitt 7; 1.2: `DRAWING_CREATE`, Änderungen des Agenten erreichen die App; 1.3: Schrittbilder beim Bearbeiten mit Bezug, Linienart `kontext`). Verbindlich für Zeichnungen, Bauplan und Berichte aus
 [PLAN-PHASE6-DOKUMENTE.md](PLAN-PHASE6-DOKUMENTE.md). Änderungen nur gemeinsam: dieses Dokument, `protocol.py`,
 Testdateien und Swift-Decoder im selben Commit (wie PROTOCOL.md). Einheiten auf dem Blatt: mm, Ursprung links unten,
 y nach oben. Modellkoordinaten wie überall: mm, Z oben.
@@ -124,6 +124,13 @@ Maße, Notizen und Bauplan-Schritte zeigen auf Geometrie über einen **Bezug** m
 
 - `bild.sichtbarkeit` (Version 1.1): gemessener sichtbarer Anteil jedes neuen Teils im Schrittbild (0 bis 1). Unter
   der Hausregel-Schwelle meldet die Prüfung einen Befund `verdeckt` mit Vorschlag für eine andere Blickrichtung.
+- **Bearbeiten mit Bezug** (Version 1.3): Schritte, die Teile in ein anderes bringen (Gewindeeinsätze einschmelzen,
+  Lager einpressen, Stifte einkleben), zeigen das aufnehmende Teil als Bezug: `bild.kontext` (das erste aufnehmende
+  Teil, bei Stiften dazu seine schon eingebrachten Einsätze), `bild.kontext_linie: "kontext"` (diese Teile im
+  Strichbild als Linienart `kontext`, dünn und grau), `bild.vertreter` (bei „4 ×“ steht dieses Teil für alle),
+  `bild.hervorheben` (nur seine neuen Teile), `bild.explosion` und `bild.pfeile` entlang der Einführrichtung (aus der
+  Tasche bzw. dem Sitz heraus; Pfeile mit `luecke: true` stehen zwischen abgerücktem Teil und Sitz), Blick auf die
+  Eintrittsseite. Das Strichbild hebt `bild.hervorheben` hervor (sonst `neu`).
 - `vorher` (Version 1.1): Reihenfolgen „a vor b“. Der Kernel leitet sie aus Bedingungen und Demontage ab
   (`quelle: "auto"`); eingetragene von Agent oder Kevin bleiben erhalten. Ein Verstoß ist ein Befund `reihenfolge`.
 
@@ -167,7 +174,8 @@ paarweise; Reihenfolge der Linienarten wie im Kopf `linien_reihenfolge`. Maße u
 
 Linienarten (Version 1.1, additiv): zusätzlich `nachbar` (Strich-Zweipunkt dünn, ISO 128 05.1: Nachbarteile,
 Endlagen von Gelenken) und `bruch` (Freihand dünn: Bruchkanten verkürzter Ansichten langer Rohre). Die App zeichnet
-unbekannte Linienarten dünn durchgezogen, statt abzubrechen.
+unbekannte Linienarten dünn durchgezogen, statt abzubrechen. Strichbilder des Bauplans (Version 1.3): nach `neu` und
+`pfeil` zusätzlich `kontext` (aufnehmendes Teil beim Bearbeiten, dünn und grau).
 
 `DRAWING_EDIT.ops`: `{"op": "mass_verschieben", "id", "versatz" | "text_lage"}`, `{"op": "mass_loeschen", "id"}`,
 `{"op": "mass_neu", "art", "ansicht", "bezuege": [{ "ansicht", "punkt": [x, y] (Blatt-mm, der Kernel sucht das nächste
@@ -175,6 +183,15 @@ Element) } …], "versatz"}`, `{"op": "ansicht_neu", "art", "lage"}`, `{"op": "a
 `{"op": "ansicht_loeschen", "id"}`, `{"op": "massstab", "wert"}`, `{"op": "notiz", "text", "lage", "zeiger"}`,
 `{"op": "notiz_loeschen", "id"}`, `{"op": "schriftfeld", "feld", "wert"}`, `{"op": "auto", "ansichten": bool, "masse": bool, "zuruecksetzen": bool}`,
 `{"op": "unterdrueckung_aufheben", "index"}`.
+
+**Schnitt und Einzelheit aus der App** (Version 1.3): `ansicht_neu` mit `art: "schnitt"` nimmt statt `schnitt.ebene`
+die gezogene Linie `schnitt.linie: [[x, y], [x, y]]` (Blatt-mm) und optional `schnitt.von`; der Kernel nimmt die
+Ansicht unter der Mitte der Linie und legt die Ebene durch Linie und Blickrichtung, Blick zur größeren Hälfte der
+Ansicht (geht die Linie durch die Mitte: links der Zeichenrichtung). Mit `art: "einzelheit"` statt `mitte`/`radius`
+der aufgezogene Kreis `einzelheit.kreis: {"mitte": [x, y], "radius": r}` (Blatt-mm); ohne `faktor` wählt der Kernel 2,
+4, 5 oder 10 (Einzelheit etwa 60 mm). Nur in Vorder-, Seiten- und Draufsichten. `schnitt.umkehren: true` nimmt die andere Seite als
+die vorgeschlagene (in der App ⌥ beim Ziehen). `{"op": "schnitt_umkehren", "id"}` dreht die Blickrichtung eines
+bestehenden Schnitts um (Normale umgekehrt, eine feste `schnitt.blick` entfällt); zweimal angewandt ist es wie vorher.
 
 `BAUPLAN_EDIT.ops`: `{"op": "text", "schritt", "titel", "text"}`, `{"op": "fest", "schritt", "wert"}`,
 `{"op": "verschieben", "schritt", "nach"}`, `{"op": "zusammenfassen" | "teilen", …}`, `{"op": "bild", "schritt", "kamera" | "explosion" | "pfeile"}`.

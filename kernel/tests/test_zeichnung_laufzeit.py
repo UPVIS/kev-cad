@@ -151,6 +151,69 @@ def test_neuzuordnung_nach_lauf(env):
     assert rt.run(params={"laenge": 500, "loecher": 3})["ok"]
 
 
+def test_schnitt_und_einzelheit_aus_der_app(env):
+    """In der App gezogen: Schnittlinie (zwei Punkte) und Einzelheitskreis in Blatt-mm; der Kernel rechnet Ebene bzw.
+    Mitte und Radius in Modell-mm der Ausgangsansicht, die neuen Ansichten erscheinen mit Schraffur bzw. vergrößert."""
+    rt, app = env["rt"], env["app"]
+    assert rt.run()["ok"]  # Stand der Dateien (ein Test davor endet im Reglerstand)
+    if not rt.drawings()["blaetter"]:
+        rt.drawing_create()
+    start = app.mark()
+    app.send({"type": "DRAWING_REQ", "id": "se-1", "blatt": "platte"})
+    _, _, h, _ = app.wait_for(lambda h: h["type"] == "DRAWING" and h.get("reply_to") == "se-1", start=start)
+    v1 = next(g for g in h["geometrie"] if g["id"] == "v1")
+    x0, y0, x1, y1 = v1["rahmen"]
+    xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
+    res = rt.drawing_edit("platte", [
+        {"op": "ansicht_neu", "art": "schnitt", "schnitt": {"linie": [[x0 - 6, ym + 1.0], [x1 + 6, ym + 1.0]]}},
+        {"op": "ansicht_neu", "art": "einzelheit", "einzelheit": {"kreis": {"mitte": [xm, ym], "radius": 8.0}}},
+    ], "kevin")
+    assert res["ok"], res
+    ergebnisse = res.get("ergebnisse") or []
+    assert all(e["ok"] for e in ergebnisse), ergebnisse
+    blatt = rt.drawing("platte")["kopf"]
+    ansichten = {a["id"]: a for a in blatt["blatt"]["ansichten"]}
+    schnitt = next(a for a in ansichten.values() if a["art"] == "schnitt")
+    ebene = schnitt["schnitt"]["ebene"]
+    assert schnitt["schnitt"]["von"] == "v1" and schnitt["schnitt"]["name"] == "A"
+    assert sum(c * c for c in ebene["normale"]) == pytest.approx(1.0, abs=1e-6)
+    einzel = next(a for a in ansichten.values() if a["art"] == "einzelheit")
+    ez = einzel["einzelheit"]
+    s = float(v1["massstab"]) if isinstance(v1.get("massstab"), (int, float)) else None
+    assert ez["von"] == "v1" and ez["faktor"] == 2 and ez["name"] == "B"
+    assert "kreis" not in ez and "linie" not in schnitt["schnitt"]  # nur das Ergebnis steht in der Blattdatei
+    if s:
+        assert ez["radius"] == pytest.approx(8.0 / s, rel=1e-3)
+    geo = {g["id"]: g for g in blatt["geometrie"]}
+    assert geo[schnitt["id"]]["linien"].get("schraffur", 0) > 0  # geschnitten und schraffiert
+    assert sum(geo[einzel["id"]]["linien"].values()) > 0
+    # Blickrichtung umkehren (Kontextmenü der App): Normale gedreht, die andere Hälfte geschnitten
+    res = rt.drawing_edit("platte", [{"op": "schnitt_umkehren", "id": schnitt["id"]}], "kevin")
+    assert res["ok"] and res["ergebnisse"][0]["ok"], res
+    blatt = rt.drawing("platte")["kopf"]
+    gedreht = next(a for a in blatt["blatt"]["ansichten"] if a["id"] == schnitt["id"])["schnitt"]["ebene"]["normale"]
+    assert gedreht == pytest.approx([-c for c in ebene["normale"]], abs=1e-9)
+    assert next(g for g in blatt["geometrie"] if g["id"] == schnitt["id"])["linien"].get("schraffur", 0) > 0
+    res = rt.drawing_edit("platte", [{"op": "schnitt_umkehren", "id": "v1"}], "kevin")
+    assert not res["ergebnisse"][0]["ok"] and "kein Schnitt" in res["ergebnisse"][0]["fehler"]
+    # gleich beim Ziehen umgekehrt (⌥): dieselbe Linie, Normale entgegen
+    res = rt.drawing_edit("platte", [{"op": "ansicht_neu", "art": "schnitt",
+                                      "schnitt": {"linie": [[x0 - 6, ym + 1.0], [x1 + 6, ym + 1.0]], "umkehren": True}}],
+                          "kevin")
+    zweiter = res["ergebnisse"][0]["id"]
+    blatt = rt.drawing("platte")["kopf"]
+    n2 = next(a for a in blatt["blatt"]["ansichten"] if a["id"] == zweiter)["schnitt"]
+    assert n2["ebene"]["normale"] == pytest.approx([-c for c in ebene["normale"]], abs=1e-6) and "umkehren" not in n2
+    assert rt.drawing_edit("platte", [{"op": "ansicht_loeschen", "id": zweiter}], "kevin")["ok"]
+    # ohne Ansicht unter dem Punkt: verständlicher Fehler
+    res = rt.drawing_edit("platte", [{"op": "ansicht_neu", "art": "einzelheit",
+                                      "einzelheit": {"kreis": {"mitte": [2.0, 2.0], "radius": 5.0}}}], "kevin")
+    assert not res["ergebnisse"][0]["ok"] and "Ansicht" in res["ergebnisse"][0]["fehler"]
+    # aufräumen: beide Ansichten wieder weg
+    assert rt.drawing_edit("platte", [{"op": "ansicht_loeschen", "id": schnitt["id"]},
+                                      {"op": "ansicht_loeschen", "id": einzel["id"]}], "kevin")["ok"]
+
+
 @pytest.mark.skipif(shutil.which("rsvg-convert") is None and not Path("/opt/homebrew/bin/rsvg-convert").exists(),
                     reason="rsvg-convert fehlt (z. B. auf dem Mac mini)")
 def test_bild_aus_der_laufzeit(env):

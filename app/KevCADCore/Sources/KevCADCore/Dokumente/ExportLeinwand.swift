@@ -112,7 +112,33 @@ public struct ExportSatz {
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): farbe,
         ]
         if laufweite != 0 { attrs[NSAttributedString.Key(kCTKernAttributeName as String)] = laufweite }
-        return NSAttributedString(string: s, attributes: attrs)
+        return NSAttributedString(string: ersetzt(s, schrift.ctFont), attributes: attrs)
+    }
+
+    /// Zeichen, die der Berichtsschrift fehlen, und ihr Ersatz aus der Schrift selbst. Sonst setzt CoreText eine
+    /// Ersatzschrift ein (etwa Lucida Grande für „→“), und das PDF bettet eine dritte Schrift ein.
+    static let ersatz: [Character: String] = [
+        "→": "›", "⇒": "›", "⟶": "›", "←": "‹", "⇐": "‹", "↔": "‹›", "⌀": "Ø", "∅": "Ø", "⋅": "·", "∙": "·",
+        "✓": "ja", "✔": "ja", "✗": "nein", "✘": "nein",
+    ]
+
+    /// Text mit Ersatz für Zeichen, die `font` nicht hat (nur bekannte, siehe `ersatz`; alles andere bleibt).
+    public static func ersetzt(_ s: String, _ font: CTFont) -> String {
+        guard s.unicodeScalars.contains(where: { $0.value > 0x2000 }) else { return s }
+        var out = ""
+        out.reserveCapacity(s.count)
+        for ch in s {
+            if let r = ersatz[ch] {
+                let u = Array(String(ch).utf16)
+                var g = [CGGlyph](repeating: 0, count: u.count)
+                if !CTFontGetGlyphsForCharacters(font, u, &g, u.count) {
+                    out += r
+                    continue
+                }
+            }
+            out.append(ch)
+        }
+        return out
     }
 
     public init(_ text: String, breite: CGFloat, schrift: ExportSchrift, farbe: CGColor = ExportStil.tinte,

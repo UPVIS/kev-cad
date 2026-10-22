@@ -95,21 +95,25 @@ public enum ExportBauplanSeiten {
         // Lesehilfe
         b.append(ExportBauer.zwischentitel("So liest du die Anleitung"))
         b.append(.fest(hoehe: 30, mitNaechstem: false) { l, r in
-            let w = (r.width - 6) / 3
+            let spalten = 4
+            let w = (r.width - CGFloat(spalten - 1) * 3) / CGFloat(spalten)
             let eintraege: [(String, String)] = [
-                ("Schwarz", "bereits montiert"), ("Orange", "neu in diesem Schritt"), ("Pfeil", "Einführrichtung"),
+                ("Schwarz", "bereits montiert"), ("Grau", "Werkstück beim Bearbeiten"),
+                ("Orange", "neu in diesem Schritt"), ("Pfeil", "Einführrichtung"),
                 ("4×", "so oft wiederholen"), ("Gelb", "Sicherheit beachten"), ("Rot", "Problem aus der Simulation"),
             ]
             for (i, e) in eintraege.enumerated() {
-                let x = r.minX + CGFloat(i % 3) * (w + 3)
-                let y = r.minY + CGFloat(i / 3) * 14
+                let x = r.minX + CGFloat(i % spalten) * (w + 3)
+                let y = r.minY + CGFloat(i / spalten) * 14
                 let icon = CGRect(x: x, y: y + 1, width: 10, height: 10)
                 switch i {
                 case 0:
                     l.rechteck(icon.insetBy(dx: 1.5, dy: 2.5), rand: ExportStil.tinte, randBreite: 0.3)
                 case 1:
-                    l.rechteck(icon.insetBy(dx: 1.5, dy: 2.5), rand: ExportStil.akzent, randBreite: 0.45)
+                    l.rechteck(icon.insetBy(dx: 1.5, dy: 2.5), rand: BauplanPalette.papier.kontext, randBreite: 0.22)
                 case 2:
+                    l.rechteck(icon.insetBy(dx: 1.5, dy: 2.5), rand: ExportStil.akzent, randBreite: 0.45)
+                case 3:
                     l.linie(CGPoint(x: icon.midX, y: icon.minY + 1), CGPoint(x: icon.midX, y: icon.maxY - 2.5), breite: 0.45,
                             farbe: ExportStil.akzent)
                     let tri = CGMutablePath()
@@ -119,9 +123,9 @@ public enum ExportBauplanSeiten {
                     l.ctx.addPath(tri)
                     l.ctx.setFillColor(ExportStil.akzent)
                     l.ctx.fillPath()
-                case 3:
-                    l.text("4×", x: icon.midX, y: icon.midY + 2, .fett(12), farbe: ExportStil.tinte, .mitte)
                 case 4:
+                    l.text("4×", x: icon.midX, y: icon.midY + 2, .fett(12), farbe: ExportStil.tinte, .mitte)
+                case 5:
                     l.rechteck(icon.insetBy(dx: 0.5, dy: 2), fuellung: ExportStil.gelb, radius: 1)
                     l.text("!", x: icon.midX, y: icon.midY + 1.6, .fett(10), farbe: ExportStil.tinte, .mitte)
                 default:
@@ -129,7 +133,7 @@ public enum ExportBauplanSeiten {
                                randBreite: 0.3, radius: 1)
                 }
                 l.text(e.0, x: x + 13, y: y + 5, .mittel(9), farbe: ExportStil.tinte)
-                l.text(e.1, x: x + 13, y: y + 9.5, .normal(8), farbe: ExportStil.grau, maxBreite: w - 14)
+                _ = l.absatz(e.1, x: x + 13, y: y + 7.2, breite: w - 13, .normal(8), farbe: ExportStil.grau, maxZeilen: 2)
             }
         })
         // Sicherheit: alle Sicherheitshinweise der Schritte ohne Doppel

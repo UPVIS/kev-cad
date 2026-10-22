@@ -126,6 +126,10 @@ enum BauplanExportSelfTest {
             gezeigt.append(a.art == .montage ? (a.schritte.dropFirst().first ?? a.schritte[0]).id : a.schritte[0].id)
         }
         if let p = plan.alleSchritte.first(where: { !$0.probleme.isEmpty }) { gezeigt.append(p.id) }
+        // Bearbeiten mit Bezug: Einsätze einschmelzen, Lager einpressen (aufnehmendes Teil grau im Bild)
+        for wort in ["einschmelzen", "einpressen"] {
+            if let s = plan.alleSchritte.first(where: { $0.titel.contains(wort) }) { gezeigt.append(s.id) }
+        }
         if let gross = plan.montage?.schritte.max(by: { $0.neu.count < $1.neu.count }) { gezeigt.append(gross.id) }
         for (i, id) in gezeigt.enumerated() {
             BauplanUI.shared.auswahl = id

@@ -96,6 +96,10 @@ class VersionenRuntimeMixin:
         self._ver_nachtrag: dict[str, Any] | None = None
         self._ver_nt_lock = threading.Lock()
         self._ver_dok_sperre = 0  # Hintergrundrechnungen bis zu diesem Lauf speichern nicht mehr (Dateien ersetzt)
+        # Ungesicherte Änderungen in dokumente/: von Kev CAD selbst angelegt (erster Bauplan) bzw. von Kevin oder dem
+        # Agenten bearbeitet; die nächste Version nur aus Dokumenten führt Kev CAD, solange niemand selbst etwas änderte
+        self._ver_dok_auto = False
+        self._ver_dok_eigen = False
 
     def _versionen_schliessen(self) -> None:
         """Beim Beenden der Laufzeit: Hintergrund-Rechenprozess beenden."""
@@ -129,6 +133,8 @@ class VersionenRuntimeMixin:
             return
         self._ver_generation += 1
         self._dokumente_ersetzt()
+        with self._ver_nt_lock:
+            self._ver_dok_auto = self._ver_dok_eigen = False
         archiv = Versionsarchiv(proj.path, log=self._log)
         self._archiv = archiv
         self._ver_speicher = Zwischenspeicher(archiv.ordner)
@@ -212,12 +218,18 @@ class VersionenRuntimeMixin:
         with self._ver_nt_lock:
             nt = self._ver_nachtrag
             nachtrag = (int(nt["nr"]), str(nt["commit"])) if nt else None
+            # nur von Kev CAD angelegte Dokumente offen: die Version führt Kev CAD, nicht der Auslöser des Laufs
+            auto = self._ver_dok_auto and not self._ver_dok_eigen
         try:
-            v, neu = archiv.nach_lauf(wer=wer, sitzung=sitzung, lauf=job.run, nachtrag=nachtrag)
+            v, neu = archiv.nach_lauf(wer=wer, sitzung=sitzung, lauf=job.run, nachtrag=nachtrag,
+                                      wer_dokumente="kevcad" if auto else None)
         except (GitFehler, OSError) as exc:
             result.setdefault("warnings", []).append(f"Version nicht angelegt: {exc}")
             self._log(f"[versionen] Version nicht angelegt: {exc}")
             return
+        if neu:
+            with self._ver_nt_lock:
+                self._ver_dok_auto = self._ver_dok_eigen = False
         self._nachtrag_merken(job, v, neu)
         if v is None:
             return
@@ -350,6 +362,42 @@ class VersionenRuntimeMixin:
         eine eigene Änderung, die mit dem nächsten Lauf eine eigene Version wird, nicht in die letzte wandert."""
         with self._ver_nt_lock:
             self._ver_nachtrag = None
+            self._ver_dok_eigen = True
+
+    def _versionen_dokumente_automatisch(self) -> None:
+        """Kev CAD hat Dokumente von sich aus angelegt (der erste Bauplan, wenn die App oder der Agent ihn ansehen
+        will): Das ist keine Änderung von Kevin. Sie gehört zur aktuellen Version, deren Stand sie beschreibt, und wird
+        dort nachgetragen (wie die Hintergrundrechnung nach einem Lauf), wenn das erlaubt ist (Spitze, kein
+        Meilenstein, keine eigene Bearbeitung offen). Sonst führt Kev CAD die nächste Version, die nur Dokumente
+        ändert, statt Kevin."""
+        archiv = self._archiv
+        if archiv is None or not archiv.verfuegbar:
+            return
+        with self._ver_nt_lock:
+            self._ver_dok_auto = True
+            eigen = self._ver_dok_eigen
+
+        def nachtragen() -> None:
+            if eigen or archiv is not self._archiv or self._closed:
+                return
+            try:
+                v = archiv.aktuelle()
+                neu = archiv.dokumente_nachtragen(v.nr, v.commit) if v is not None else None
+            except (GitFehler, OSError) as exc:
+                self._log(f"[versionen] Bauplan nicht nachgetragen: {exc}")
+                return
+            if neu is None:
+                return
+            with self._ver_nt_lock:
+                if not self._ver_dok_eigen:
+                    self._ver_dok_auto = False
+            self._log(f"[versionen] V{neu.nr}: von Kev CAD angelegte Dokumente nachgetragen")
+            self._versionen_senden()
+
+        try:
+            self._pool.submit(nachtragen)
+        except RuntimeError:  # Laufzeit wird beendet
+            pass
 
     def _versionen_dokumente_nach_lauf(self, job: Any, hintergrund: list[Any]) -> None:
         """Im Auftragsfaden, gleich nach dem Start der Hintergrundrechnung von ``job`` (Futures von Blättern und

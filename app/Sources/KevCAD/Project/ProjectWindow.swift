@@ -9,6 +9,9 @@ struct ProjectWindow: View {
     @StateObject private var versionen = VersionenZustand()
     @StateObject private var dokumente = DokumenteZustand()  // Phase 6: Bereich Dokumente
     @State private var columns = NavigationSplitViewVisibility.all
+    /// Breite von Viewport und Stückliste (links der Versionsleiste), für `platzFuerLeiste`.
+    @State private var modellBreite: CGFloat = 0
+    @State private var modellMitLeiste = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -96,6 +99,7 @@ struct ProjectWindow: View {
                     PartTreeView(model: model, state: state)
                 }
             }
+            .modifier(SpaltenBreite())
             .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 400)
         } detail: {
             // Der 3D-Bereich bleibt bestehen (Kamera, Metal-Ansicht), ruht aber, solange die Dokumente vorne sind
@@ -109,6 +113,10 @@ struct ProjectWindow: View {
                         .transition(.opacity)
                 }
             }
+            // Die Mitte nimmt genau ihre Spaltenbreite: Ist ein Inhalt (Bauplan, Berichte) im Mindestmaß breiter, drückt
+            // er nicht das ganze Fenster über den Rand (Seitenleiste links und Inspektor rechts abgeschnitten)
+            .modifier(SpaltenBreite())
+            .clipped()
             .onChange(of: state.bereich) { _, b in
                 session.controller?.viewport.mtkView?.isPaused = b == .dokumente
                 if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
@@ -117,11 +125,17 @@ struct ProjectWindow: View {
         .inspector(isPresented: $state.showInspector) {
             Group {
                 if state.bereich == .dokumente {
-                    BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
+                    // kontextbezogen: Blatt, gewählter Bauplanschritt oder Einstellungen des Berichts
+                    switch dokumente.auswahl {
+                    case .bauplan: BauplanInspektor(model: model)
+                    case .berichte: BerichteInspektor(model: model)
+                    default: BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
+                    }
                 } else {
                     InspectorView(model: model)
                 }
             }
+            .modifier(SpaltenBreite())
             .inspectorColumnWidth(min: 260, ideal: 300, max: 440)
         }
         .toolbar {
@@ -151,7 +165,10 @@ struct ProjectWindow: View {
         }
     }
 
-    /// 3D-Bereich: Viewport mit Zeitleiste, Stückliste, Statusleiste und Versionsleiste.
+    /// 3D-Bereich: Viewport mit Zeitleiste, Stückliste, Statusleiste und Versionsleiste. Die Versionsleiste ist eine
+    /// Seitenleiste: Sie nimmt ihre Breite neben dem Viewport ein, Viewport und Stückliste werden schmaler und laufen
+    /// nie unter sie (alles links davon auf die verbleibende Breite gezwungen und beschnitten). Wird es zu eng, wächst
+    /// das Fenster beim Einblenden (`platzFuerLeiste`).
     private var modellBereich: some View {
             HStack(spacing: 0) {
                 GeometryReader { geo in
@@ -171,14 +188,49 @@ struct ProjectWindow: View {
                         }
                         StatusBar(model: model)
                     }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .onAppear { modellGemessen(geo.size.width) }
+                    .onChange(of: geo.size.width) { _, w in modellGemessen(w) }
                 }
-                if versionen.zeigeLeiste {  // Versionen: Leiste rechts neben dem Viewport
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .clipped()
+                if versionen.zeigeLeiste {  // Versionen: Seitenleiste rechts neben dem Viewport
                     Divider()
                     VersionenLeiste(model: model, store: model.versionen, zustand: versionen)
+                        .fixedSize(horizontal: true, vertical: false)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            .onChange(of: versionen.zeigeLeiste) { _, an in
+                if an { DispatchQueue.main.async { platzFuerLeiste() } }  // nach dem Layout mit Leiste
+            }
             .modifier(VersionenBlaetter(model: model, zustand: versionen))
+    }
+
+    private func modellGemessen(_ w: CGFloat) {
+        modellBreite = w
+        modellMitLeiste = versionen.zeigeLeiste
+    }
+
+    /// Mindestbreite von Viewport und Stückliste neben der Versionsleiste.
+    static let modellMinBreite: CGFloat = 520
+
+    /// Versionsleiste eingeblendet: Bliebe dem Viewport weniger als `modellMinBreite`, wächst das Fenster um den
+    /// Fehlbetrag (so weit der Bildschirm reicht, nach links, wenn rechts kein Platz ist); im Vollbild bleibt es.
+    private func platzFuerLeiste() {
+        guard let fenster = session.projectWindow, !fenster.styleMask.contains(.fullScreen),
+              let schirm = fenster.screen?.visibleFrame
+        else { return }
+        let rest = modellMitLeiste ? modellBreite : modellBreite - VersionenZustand.breite - 1
+        let fehlt = Self.modellMinBreite - rest
+        guard fehlt > 1 else { return }
+        var f = fenster.frame
+        let breite = min(schirm.width, f.width + fehlt)
+        let zuwachs = breite - f.width
+        guard zuwachs > 1 else { return }
+        f.size.width = breite
+        if f.maxX > schirm.maxX { f.origin.x = max(schirm.minX, schirm.maxX - breite) }
+        fenster.setFrame(f, display: true, animate: true)
     }
 }
 
@@ -355,5 +407,15 @@ private struct ExplodePopover: View {
         }
         .padding(16)
         .frame(width: 280)
+    }
+}
+
+/// Inhalt einer Seitenspalte genau so breit wie die Spalte: Ist er im Mindestmaß breiter (lange Zeilen, Knöpfe), kürzt
+/// und bricht er um, statt mittig über die Spalte hinauszuragen und links bzw. rechts abgeschnitten zu werden.
+struct SpaltenBreite: ViewModifier {
+    func body(content: Content) -> some View {
+        GeometryReader { geo in
+            content.frame(width: geo.size.width, height: geo.size.height)
+        }
     }
 }

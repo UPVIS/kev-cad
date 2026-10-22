@@ -71,6 +71,7 @@ struct BOMPanel: View {
                     ViewThatFits(in: .horizontal) {
                         Text(positionen + " · " + KevFormat.count(bom.totals.teile, one: "Teil", many: "Teile"))
                         Text(positionen)
+                        Color.clear.frame(width: 0, height: 0)
                     }
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -79,26 +80,12 @@ struct BOMPanel: View {
             .lineLimit(1)
             Spacer(minLength: 8)
             if let bom = model.bom, !bom.lines.isEmpty {
-                Total(label: "Gewicht", value: KevFormat.kg(bom.totals.kg))
-                Total(label: "Material", value: bom.totals.preis.map(KevFormat.euro) ?? "–")
-                    .help(bom.totals.preisHinweis ?? "Richtpreise")
-                if model.bestandZustand.zuschnitt != nil {
-                    Button {
-                        BestandUI.shared.gebautDialog = true
-                    } label: {
-                        Label("Gebaut …", systemImage: "hammer")
-                    }
-                    .controlSize(.small)
-                    .disabled(model.bestandActions == nil || model.laufAktiv)
-                    .help("Bestand abbuchen: was der Zuschnitt verplant, geht weg; neue Reste kommen dazu")
+                // Schmal (Versionsleiste offen): erst die Knöpfe nur mit Symbol, dann ohne Gewicht
+                ViewThatFits(in: .horizontal) {
+                    kopfRechts(bom, kompakt: false, gewicht: true)
+                    kopfRechts(bom, kompakt: true, gewicht: true)
+                    kopfRechts(bom, kompakt: true, gewicht: false)
                 }
-                Button {
-                    model.actions?.export(formats: ["bom_csv"])
-                } label: {
-                    Label("Als CSV exportieren", systemImage: "square.and.arrow.up")
-                }
-                .controlSize(.small)
-                .help("Stückliste und Zuschnitt als CSV in output/ speichern und im Finder zeigen (Numbers, Excel)")
             }
             Button {
                 withAnimation(.snappy(duration: 0.2)) { state.showBOM = false }
@@ -116,6 +103,51 @@ struct BOMPanel: View {
         .padding(.trailing, 10)
         .frame(height: 36)
         .background(.bar)
+    }
+
+    private func kopfRechts(_ bom: BillOfMaterials, kompakt: Bool, gewicht: Bool) -> some View {
+        HStack(spacing: 14) {
+            if gewicht { Total(label: "Gewicht", value: KevFormat.kg(bom.totals.kg)) }
+            Total(label: "Material", value: bom.totals.preis.map(KevFormat.euro) ?? "–")
+                .help(bom.totals.preisHinweis ?? "Richtpreise")
+            if model.bestandZustand.zuschnitt != nil {
+                Button {
+                    BestandUI.shared.gebautDialog = true
+                } label: {
+                    Label("Gebaut …", systemImage: "hammer")
+                        .labelStyle(KnopfLabel(kompakt: kompakt))
+                }
+                .controlSize(.small)
+                .disabled(model.bestandActions == nil || model.laufAktiv)
+                .help("Bestand abbuchen: was der Zuschnitt verplant, geht weg; neue Reste kommen dazu")
+            }
+            Button {
+                model.actions?.export(formats: ["bom_csv"])
+            } label: {
+                Label("Als CSV exportieren", systemImage: "square.and.arrow.up")
+                    .labelStyle(KnopfLabel(kompakt: kompakt))
+            }
+            .controlSize(.small)
+            .help("Stückliste und Zuschnitt als CSV in output/ speichern und im Finder zeigen (Numbers, Excel)")
+        }
+        .fixedSize()
+    }
+
+    /// Knopfbeschriftung mit Text, schmal nur das Symbol.
+    private struct KnopfLabel: LabelStyle {
+        var kompakt: Bool
+
+        @ViewBuilder
+        func makeBody(configuration: Configuration) -> some View {
+            if kompakt {
+                configuration.icon
+            } else {
+                HStack(spacing: 4) {
+                    configuration.icon
+                    configuration.title
+                }
+            }
+        }
     }
 
     private struct Total: View {

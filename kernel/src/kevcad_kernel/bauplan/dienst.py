@@ -149,11 +149,13 @@ class BauplanDienst:
         """Bauplan des letzten Laufs (erzeugt ihn bei Bedarf, ``neu``: auf jeden Fall neu rechnen; Feste und Texte von
         Agent und Kevin bleiben). {"ok", "datei", "bauplan", "zusammenfassung", "zeiten"}"""
         proj = self._project  # type: ignore[attr-defined]
-        if neu or (proj is not None and not datei.pfad(proj.path).exists()):
+        angelegt = proj is not None and not datei.pfad(proj.path).exists()
+        if neu or angelegt:
             sperre = self._bp_regler()
             if sperre:  # anlegen oder neu rechnen im Reglerstand: der Plan gehörte zu keinem Stand von model.py
                 return {"ok": False, "error": sperre, "regler": True}
-            self._bp_bearbeitet()  # neu angelegt oder ausdrücklich neu gerechnet: eine eigene Änderung
+            if neu:
+                self._bp_bearbeitet()  # ausdrücklich neu gerechnet: eine eigene Änderung von Kevin oder dem Agenten
         try:
             erg = self._bp_erzeugen(erzwingen=neu)
         except RuntimeError as exc:
@@ -163,6 +165,11 @@ class BauplanDienst:
 
             self._log(traceback.format_exc())  # type: ignore[attr-defined]
             return {"ok": False, "error": f"Bauplan nicht erzeugt: {type(exc).__name__}: {exc}"}
+        if angelegt and not neu and proj is not None and datei.pfad(proj.path).exists():
+            # zum ersten Mal angelegt, weil die App oder der Agent ihn ansehen will: von Kev CAD, nicht von Kevin
+            hook = getattr(self, "_versionen_dokumente_automatisch", None)
+            if callable(hook):
+                hook()
         self._bp_docs_senden()
         proj = self._project  # type: ignore[attr-defined]
         return {"ok": True, "datei": str(datei.pfad(proj.path)) if proj else None, "bauplan": erg.plan,

@@ -119,6 +119,21 @@ mu = mutter.verbauen(name="Mutter")
 show(Pos(30, 0, 52.2 - mu.bounding_box().min.Z) * mu, "Mutter")
 '''
 
+# Zwei Blöcke nebeneinander mit je zwei Gewindeeinsätzen: einer von oben in eine Tasche mit Durchgangsbohrung darunter, einer von
+# rechts in eine Seitentasche (ohne Inventar-Regel: die Einsätze erkennt der Bauplan am Namen)
+EINSAETZE = '''from build123d import *
+from kevcad import lager, show
+unten = (Align.CENTER, Align.CENTER, Align.MIN)
+for i, y in enumerate((0, 30), 1):
+    block = Pos(0, y, 0) * Box(40, 30, 30, align=unten)
+    block -= Pos(0, y, 22) * Cylinder(2.8, 8.01, align=unten)
+    block -= Pos(0, y, 0) * Cylinder(2.25, 30, align=unten)
+    block -= Pos(12.01, y, 12) * Rot(0, 90, 0) * Cylinder(2.8, 8.01, align=unten)
+    show(lager.druckteil(block, f"Halter {i}/Block", material="petg"), f"Halter {i}/Block")
+    show(Pos(0, y, 22) * Cylinder(2.8, 8, align=unten), f"Halter {i}/Gewindeeinsatz M4 oben")
+    show(Pos(12, y, 12) * Rot(0, 90, 0) * Cylinder(2.8, 8, align=unten), f"Halter {i}/Gewindeeinsatz M4 seitlich")
+'''
+
 
 @pytest.fixture(scope="module")
 def env():
@@ -172,6 +187,36 @@ def test_wege_stift_in_bohrung_und_deckel():
     assert set(wp.sperrer("Stift", (1, 0, 0))) == {"Block"}
     assert not wp.sperrer("Stift", (0, 0, 1), weg=3)  # endlicher Weg: Deckel erst nach 5 mm
     assert not wp.sperrer("Stift", (1, 0, 0), versatz=(0, 0, 60))  # zweistufig: erst hoch, dann zur Seite
+
+
+def test_material_zukaufteile_nur_einmal():
+    """Zukaufteile (Flügelschraube DIN 316, Rillenkugellager) stehen nur unter „Zukaufteile bestellen“ mit voller
+    Benennung, nicht zusätzlich als „(nicht im Katalog)“ bei den Normteilen; Kleinteile ohne Katalog und ohne Zukauf
+    bleiben dort."""
+    from kevcad_kernel.bauplan.eingang import BTeil, Eingang
+    from kevcad_kernel.bauplan.geruest import material
+
+    def teil(name: str, rolle: str, kopf: dict) -> BTeil:
+        return BTeil(name=name, rolle=rolle, koerper=None, kopf=kopf)  # type: ignore[arg-type]
+
+    zk = {"id": "fluegelschraube-din316-m4x12", "mpn": "DIN 316 M4x12"}
+    teile = {t.name: t for t in (
+        teil("Halter/Flügelschraube M4x12 1", "vm", {"zukauf": zk}),
+        teil("Halter/Flügelschraube M4x12 2", "vm", {"zukauf": zk}),
+        teil("Halter/Rillenkugellager 61801", "einsatz", {"zukauf": {"id": "rillenkugellager-61801-2rs"}}),
+        teil("Halter/Stift M3 1", "vm", {}),
+    )}
+    bom = {"lines": [{"art": "zukaufteil", "benennung": "Flügelschraube DIN 316 M4 × 12, Stahl verzinkt",
+                      "anzahl": 2, "teile": ["Halter/Flügelschraube M4x12 1", "Halter/Flügelschraube M4x12 2"]},
+                     {"art": "zukaufteil", "benennung": "Rillenkugellager 61801-2RS (12 × 21 × 5 mm)", "anzahl": 1,
+                      "teile": ["Halter/Rillenkugellager 61801"]}]}
+    ein = Eingang(titel="T", run=1, projekt=None, teile=teile, bom=bom,
+                  bedingungen=None, check=None, verbindungen=[], gewinde=[], erlaubt=set(), durchdringend=set(),
+                  hat_verbinde=False)
+    out = {s["titel"]: [m["benennung"] for m in s["material"]] for s in material(ein)}
+    assert out["Zukaufteile bestellen"] == ["Flügelschraube DIN 316 M4 × 12, Stahl verzinkt",
+                                            "Rillenkugellager 61801-2RS (12 × 21 × 5 mm)"]
+    assert out["Normteile und Kleinteile"] == ["Stift M3 (nicht im Katalog)"]
 
 
 def test_standsicherheit_kippt_und_steht():
@@ -260,6 +305,34 @@ def test_kaefig_einfuehrweg_blockiert(env):
     assert {s["druck"]["material"] for s in dr} == {"petg"} and all(s["druck"]["seite"] for s in dr)
 
 
+def test_bild_einsaetze_mit_bezug(env):
+    """Bearbeiten „Gewindeeinsätze einschmelzen“: das Bild zeigt den ersten Block als Bezug (Linienart kontext) mit
+    seinen eigenen Einsätzen, hervorgehoben und entlang ihrer Einführrichtung (in die Tasche) abgerückt, mit Pfeilen."""
+    rt = env["rt"]
+    oeffne(env, "Einsaetze", EINSAETZE, inventar=False)
+    plan = rt.bauplan()["bauplan"]
+    s = next(s for s in schritte(plan, "bearbeiten") if "einschmelzen" in s["titel"])
+    assert s["anzahl"] == 2 and len(s["neu"]) == 4
+    bild = s["bild"]
+    assert bild["kontext"] == ["Halter 1/Block"] and bild["kontext_linie"] == "kontext"
+    assert sorted(bild["hervorheben"]) == ["Halter 1/Gewindeeinsatz M4 oben", "Halter 1/Gewindeeinsatz M4 seitlich"]
+    oben = bild["explosion"]["Halter 1/Gewindeeinsatz M4 oben"]
+    seite = bild["explosion"]["Halter 1/Gewindeeinsatz M4 seitlich"]
+    assert oben[2] >= 20 and abs(oben[0]) < 1e-6 and seite[0] >= 20 and abs(seite[2]) < 1e-6  # aus der Tasche heraus
+    richtungen = {p["teil"]: p["richtung"] for p in bild["pfeile"]}
+    assert richtungen["Halter 1/Gewindeeinsatz M4 oben"] == pytest.approx([0, 0, -1], abs=1e-3)
+    assert richtungen["Halter 1/Gewindeeinsatz M4 seitlich"] == pytest.approx([-1, 0, 0], abs=1e-3)
+    # Blick auf die Eintrittsseiten: von oben und von rechts
+    auge = -np.asarray(bild["ansicht"]["richtung"])
+    assert auge[0] > 0 and auge[2] > 0
+    # Strichbild: Bezug grau, nur die zwei Einsätze des ersten Blocks orange, zwei Pfeile mit Spitze
+    b = rt.bauplan_bilder([s["id"]])["bilder"][0]
+    assert b["linien"]["kontext"] and b["linien"]["neu"] and not b["linien"]["sichtbar"]
+    assert len(b["linien"]["pfeil"]) == 4
+    xs = np.concatenate(b["linien"]["neu"])[:, 0]
+    assert xs.min() >= 0 and xs.max() <= 180
+
+
 def test_stapel_reihenfolge_nach_verschieben(env):
     rt = env["rt"]
     oeffne(env, "Stapel", STAPEL)
@@ -329,7 +402,7 @@ def test_protokoll_rundlauf(env):
     _, _, h, p = app.wait_for(lambda h: h["type"] == "BAUPLAN" and h.get("reply_to") == "bp-1", timeout=120,
                               start=start)
     bilder = unpack_bauplan(h, p)
-    assert h["linien_reihenfolge"][-2:] == ["neu", "pfeil"] and h["feld"] == [180.0, 120.0]
+    assert h["linien_reihenfolge"][-3:] == ["neu", "pfeil", "kontext"] and h["feld"] == [180.0, 120.0]
     ids = [s["id"] for _, s in datei.alle_schritte(h["bauplan"]) if s.get("bild")]
     assert [b["schritt"] for b in bilder] == ids
     mont = [b for b in bilder if b["schritt"].startswith("m-")]

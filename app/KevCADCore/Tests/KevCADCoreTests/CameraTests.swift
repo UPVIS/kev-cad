@@ -231,4 +231,20 @@ final class CameraTests: XCTestCase {
             AppController.cameraFileName(cam, width: 3840, height: 2160, date: Date(timeIntervalSince1970: 0)).prefix(19),
             "FX6_35mm_3840x2160_")
     }
+
+    /// Durchspielen des Bauplans: Der Kamerarahmen verschwindet mit seinem Teil (oder der ganzen Baugruppe) und
+    /// erscheint wieder, sobald es montiert ist; eine frei stehende Kamera bleibt immer.
+    func testKamerarahmenMitDemTeilAusgeblendet() {
+        let order = ["Wagen/Platte", "Kamera FX6/Gehäuse", "Kamera FX6/Objektiv"]
+        XCTAssertFalse(CameraViewMath.verborgen(teil: nil, gruppe: nil, order: order, hidden: Set(order)))
+        XCTAssertTrue(CameraViewMath.verborgen(teil: "Wagen/Platte", gruppe: "Wagen/Platte", order: order,
+                                               hidden: ["Wagen/Platte"]))
+        XCTAssertFalse(CameraViewMath.verborgen(teil: "Wagen/Platte", gruppe: "Wagen/Platte", order: order,
+                                                hidden: ["Kamera FX6/Gehäuse"]))
+        // Baugruppe: erst verborgen, wenn alle ihre Teile verborgen sind
+        XCTAssertTrue(CameraViewMath.verborgen(teil: "Kamera FX6/Gehäuse", gruppe: "Kamera FX6", order: order,
+                                               hidden: ["Kamera FX6/Gehäuse", "Kamera FX6/Objektiv"]))
+        XCTAssertFalse(CameraViewMath.verborgen(teil: "Kamera FX6/Gehäuse", gruppe: "Kamera FX6", order: order,
+                                                hidden: ["Kamera FX6/Gehäuse"]))
+    }
 }

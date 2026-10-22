@@ -92,6 +92,54 @@ def test_bauplan_im_hintergrund_legt_keine_version_je_lauf_an(env):
         time.sleep(3)
 
 
+def test_erster_bauplan_der_app_ist_von_kev_cad(env):
+    """BAUPLAN_REQ der App legt den Bauplan beim ersten Mal an: das ist keine Änderung von Kevin. Er wird in die
+    aktuelle Version nachgetragen; trägt sie Kevins Meilenstein, führt Kev CAD die nächste Version „Bauplan …“.
+    Kevins eigene Bearbeitung bleibt „kevin“."""
+    rt, app = env["rt"], env["app"]
+    path = _projekt(env)
+    assert rt.run()["ok"]
+    start = app.mark()
+    app.send({"type": "BAUPLAN_REQ", "id": "bp-1"})
+    app.wait_for(lambda h: h["type"] == "BAUPLAN" and h.get("reply_to") == "bp-1", timeout=120, start=start)
+    assert (path / "dokumente" / "bauplan.json").exists()
+    _warte_sauber(rt)  # in V1 nachgetragen, nichts Ungesichertes
+    archiv = rt._archiv
+    assert archiv.git.datei(archiv.aktuelle().commit, "dokumente/bauplan.json") is not None
+    res = _app_lauf(rt)
+    assert res["ok"] and res["version"]["neu"] is False and res["version"]["nr"] == 1
+    # Mit Kevins Meilenstein darf nichts nachgetragen werden: die nächste Version führt Kev CAD
+    (path / "dokumente" / "bauplan.json").unlink()
+    assert rt.run()["version"]["neu"] is True  # Bauplan entfernt: eine eigene Version
+    start = app.mark()
+    app.send({"type": "VERSION_MILESTONE", "id": "ms-1", "version": None, "titel": "Prototyp", "notiz": ""})
+    assert app.wait_for(lambda h: h.get("reply_to") == "ms-1", start=start)[2]["ok"]
+    start = app.mark()
+    app.send({"type": "BAUPLAN_REQ", "id": "bp-2"})
+    app.wait_for(lambda h: h["type"] == "BAUPLAN" and h.get("reply_to") == "bp-2", timeout=120, start=start)
+    time.sleep(1)
+    assert archiv.ungesichert()
+    res = _app_lauf(rt)  # Lauf aus der App: Auslöser wäre Kevin
+    assert res["version"]["neu"] is True
+    v = rt.versionen()["versionen"][0]
+    assert v["wer"] == "kevcad" and "Bauplan" in v["titel"], v
+    _warte_sauber(rt)
+    # Kevins eigene Bearbeitung des Bauplans: seine Version
+    plan = rt.bauplan()["bauplan"]
+    sid = plan["abschnitte"][0]["schritte"][0]["id"]
+    assert rt.bauplan_bearbeiten([{"op": "text", "schritt": sid, "text": "Von Kevin"}], "kevin")["ok"]
+    res = _app_lauf(rt)
+    assert res["version"]["neu"] is True and rt.versionen()["versionen"][0]["wer"] == "kevin"
+
+
+def _app_lauf(rt) -> dict:
+    """Lauf, den Kevin in der App auslöst (RUN_REQ)."""
+    job = rt._submit_run(None, 0, 120, source="app")
+    assert job.done.wait(120)
+    assert job.result["ok"], job.result
+    return job.result
+
+
 def test_modellaenderung_ergibt_eine_version_mit_blaettern(env):
     """Nach einer Modelländerung landen die neu zugeordneten Blätter in derselben Version, nicht in einer zweiten.
     Unabhängig davon, wann der nächste Lauf kommt: nach der Hintergrundrechnung (hier) oder mitten hinein

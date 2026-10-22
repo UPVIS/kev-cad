@@ -140,45 +140,28 @@ public enum ExportBauer {
     static func deckblatt(_ q: ExportQuellen, _ vorlage: ExportVorlage, _ format: ExportSeitenformat) -> [ExportSeite] {
         let titel = q.kopf.projekt
         let inhaltArten = vorlage.aktive.map(\.art).filter { $0 != .deckblatt }
+        let zahlen = deckblattZahlen(q, inhaltArten)
+        // Aufteilung vorab: das Inhaltsverzeichnis darf nie in den Fuß laufen (einspaltig, zweispaltig oder eine
+        // eigene Seite), die Gesamtansicht nimmt, was übrig bleibt
+        let titelSatz = ExportSatz(titel, breite: format.mm.width - 44, schrift: .fett(34), zeilenabstand: 0.95,
+                                   maxZeilen: 2)
+        let aufteilung = DeckblattAufteilung(groesse: format.mm, titelHoehe: titelSatz.hoehe, kacheln: zahlen.count,
+                                             eintraege: max(1, inhaltArten.count))
         let seite = ExportSeite(groesse: format.mm, baustein: .deckblatt, titel: "Deckblatt", mitKopf: false,
                                 inhalt: .leinwand { l, info in
             let w = l.groesse.width, h = l.groesse.height
-            let x0: CGFloat = 22, x1 = w - 22
+            let x0 = DeckblattAufteilung.rand, x1 = w - DeckblattAufteilung.rand
             // Kennband oben
             l.rechteck(CGRect(x: 0, y: 0, width: w, height: 4.5), fuellung: ExportStil.akzent)
             var y: CGFloat = 26
             l.text("BAUUNTERLAGEN", x: x0, y: y, .mittel(9), farbe: ExportStil.akzent, laufweite: 0.35)
             y += 13
-            let titelSatz = ExportSatz(titel, breite: x1 - x0, schrift: .fett(34), zeilenabstand: 0.95, maxZeilen: 2)
             l.zeichne(titelSatz, x: x0, y: y - 9, breite: x1 - x0)
             y += titelSatz.hoehe - 2
             let inhaltText = inhaltArten.map(\.titel).joined(separator: "  ·  ")
             l.text(inhaltText, x: x0, y: y + 4, .normal(11), farbe: ExportStil.grau, maxBreite: x1 - x0)
-            y += 12
-            // Kennzahlen
-            var zahlen: [(String, String)] = []
-            if let bom = q.bom {
-                zahlen.append((KevFormat.integer(bom.totals.teile), "Teile"))
-                zahlen.append((KevFormat.integer(bom.totals.positionen), "Positionen"))
-                zahlen.append((KevFormat.kg(bom.totals.kg), "Gewicht"))
-                if let p = bom.totals.preis { zahlen.append(("≈ " + KevFormat.euro(p), "Material")) }
-            } else if !q.teile.isEmpty {
-                zahlen.append((KevFormat.integer(q.teile.count), "Teile"))
-            }
-            if let plan = q.bauplan, inhaltArten.contains(.bauplan) {
-                zahlen.append((KevFormat.integer(plan.alleSchritte.count), "Bauschritte"))
-            }
-            if inhaltArten.contains(.zeichnungen), !q.zeichnungen.isEmpty {
-                zahlen.append((KevFormat.integer(q.zeichnungen.count), "Zeichnungen"))
-            }
-            // Gesamtansicht so groß, wie Kennzahlen und Inhalt über dem Fuß Platz lassen
-            let quer = l.groesse.width > l.groesse.height
-            let fy = h - 22
-            let spaltenZahl = quer ? 2 : min(3, max(1, zahlen.count))
-            let kachelnH = CGFloat((zahlen.count + spaltenZahl - 1) / spaltenZahl) * 20
-            let inhaltH = 6 + CGFloat(info.bausteinSeiten.filter { $0.art != .deckblatt }.count) * 8
-            let bildH: CGFloat = quer ? fy - 8 - y : min(118, max(50, fy - 8 - y - 9 - kachelnH - 8 - inhaltH))
-            let bildR = CGRect(x: x0, y: y, width: quer ? (x1 - x0) * 0.58 : x1 - x0, height: bildH)
+            let a = aufteilung
+            let bildR = a.bild
             l.rechteck(bildR, fuellung: ExportStil.flaeche, radius: 3)
             if let img = q.gesamtBild {
                 l.bild(img, in: bildR.insetBy(dx: 4, dy: 4))
@@ -186,46 +169,105 @@ public enum ExportBauer {
                 l.text("Keine Gesamtansicht", x: bildR.midX, y: bildR.midY, .normal(10), farbe: ExportStil.grauHell,
                        .mitte)
             }
-            let kx0 = quer ? bildR.maxX + 10 : x0
-            let kw = quer ? x1 - kx0 : x1 - x0
-            var ky = quer ? y : bildR.maxY + 9
-            let kachelW = (kw - CGFloat(spaltenZahl - 1) * 4) / CGFloat(spaltenZahl)
+            let kachelW = (a.spalte.width - CGFloat(a.kachelSpalten - 1) * 4) / CGFloat(a.kachelSpalten)
             for (i, z) in zahlen.enumerated() {
-                let sx = kx0 + CGFloat(i % spaltenZahl) * (kachelW + 4)
-                let sy = ky + CGFloat(i / spaltenZahl) * 20
+                let sx = a.spalte.minX + CGFloat(i % a.kachelSpalten) * (kachelW + 4)
+                let sy = a.kachelnY + CGFloat(i / a.kachelSpalten) * DeckblattAufteilung.kachelRaster
                 l.rechteck(CGRect(x: sx, y: sy, width: kachelW, height: 17), rand: ExportStil.linie, randBreite: 0.2,
                            radius: 2)
                 l.text(z.0, x: sx + 4, y: sy + 8.6, .fett(14), farbe: ExportStil.tinte, maxBreite: kachelW - 8)
                 l.text(z.1.uppercased(), x: sx + 4, y: sy + 13.6, .mittel(6.5), farbe: ExportStil.grau,
                        laufweite: 0.2)
             }
-            ky += CGFloat((zahlen.count + spaltenZahl - 1) / spaltenZahl) * 20 + 8
-            // Inhalt mit Seitenzahlen
-            l.text("INHALT", x: kx0, y: ky + 3, .mittel(7.5), farbe: ExportStil.grau, laufweite: 0.3)
-            ky += 6
-            for b in info.bausteinSeiten where b.art != .deckblatt {
-                l.linie(CGPoint(x: kx0, y: ky + 6.8), CGPoint(x: kx0 + kw, y: ky + 6.8), breite: 0.12,
-                        farbe: ExportStil.linieFein)
-                l.text(b.art.titel, x: kx0, y: ky + 5, .mittel(10.5), farbe: ExportStil.tinte)
-                let n = b.anzahl == 1 ? "Seite \(b.seite)" : "Seite \(b.seite)–\(b.seite + b.anzahl - 1)"
-                l.text(n, x: kx0 + kw, y: ky + 5, .normal(9.5), farbe: ExportStil.grau, .rechts)
-                ky += 8
+            if a.inhaltAufDeckblatt {
+                inhaltsverzeichnis(l, info, x: a.spalte.minX, y: a.inhaltY, breite: a.spalte.width,
+                                   spalten: a.inhaltSpalten, titelGroesse: 10.5)
             }
-            // Fuß: Eigentümer, Version, Datum, Programm
-            l.linie(CGPoint(x: x0, y: fy), CGPoint(x: x1, y: fy), breite: 0.3, farbe: ExportStil.tinte)
-            let felder: [(String, String)] = [
-                ("Projekt", q.kopf.projekt), ("Stand", q.kopf.version ?? "aktueller Stand"),
-                ("Datum", q.kopf.datumText), ("Eigentümer", q.kopf.autor),
-            ]
-            let fw = (x1 - x0) / CGFloat(felder.count)
-            for (i, f) in felder.enumerated() {
-                let fx = x0 + CGFloat(i) * fw
-                l.text(f.0.uppercased(), x: fx, y: fy + 5, .mittel(6.5), farbe: ExportStil.grau, laufweite: 0.2)
-                l.text(f.1, x: fx, y: fy + 10, .normal(9), farbe: ExportStil.tinte, maxBreite: fw - 4)
-            }
-            l.text("Erstellt mit Kev CAD", x: x1, y: h - 6, .normal(7), farbe: ExportStil.grauHell, .rechts)
+            deckblattFuss(l, q, x0: x0, x1: x1, fy: a.fussY, h: h)
         })
-        return [seite]
+        guard !aufteilung.inhaltAufDeckblatt else { return [seite] }
+        // Langes Inhaltsverzeichnis: eigene Seite gleich nach dem Deckblatt, im Stil des Deckblatts
+        let inhalt = ExportSeite(groesse: format.mm, baustein: .deckblatt, titel: "Inhalt", mitKopf: false,
+                                 inhalt: .leinwand { l, info in
+            let w = l.groesse.width, h = l.groesse.height
+            let x0 = DeckblattAufteilung.rand, x1 = w - DeckblattAufteilung.rand
+            l.rechteck(CGRect(x: 0, y: 0, width: w, height: 4.5), fuellung: ExportStil.akzent)
+            l.text(titel.uppercased(), x: x0, y: 26, .mittel(9), farbe: ExportStil.akzent, maxBreite: x1 - x0,
+                   laufweite: 0.35)
+            l.text("Inhalt", x: x0, y: 40, .fett(26), farbe: ExportStil.tinte)
+            let fy = h - 22
+            let zeilen = CGFloat(info.bausteinSeiten.filter { $0.art != .deckblatt }.count)
+            let spalten = 6 + zeilen * 9 <= fy - 10 - 52 ? 1 : 2
+            inhaltsverzeichnis(l, info, x: x0, y: 52, breite: x1 - x0, spalten: spalten, titelGroesse: 12,
+                               zeile: 9, ohneKopf: true)
+            deckblattFuss(l, q, x0: x0, x1: x1, fy: fy, h: h)
+        })
+        return [seite, inhalt]
+    }
+
+    /// Kennzahlen des Deckblatts (Wert, Bezeichnung).
+    static func deckblattZahlen(_ q: ExportQuellen, _ inhaltArten: [ExportBausteinArt]) -> [(String, String)] {
+        var zahlen: [(String, String)] = []
+        if let bom = q.bom {
+            zahlen.append((KevFormat.integer(bom.totals.teile), "Teile"))
+            zahlen.append((KevFormat.integer(bom.totals.positionen), "Positionen"))
+            zahlen.append((KevFormat.kg(bom.totals.kg), "Gewicht"))
+            if let p = bom.totals.preis { zahlen.append(("≈ " + KevFormat.euro(p), "Material")) }
+        } else if !q.teile.isEmpty {
+            zahlen.append((KevFormat.integer(q.teile.count), "Teile"))
+        }
+        if let plan = q.bauplan, inhaltArten.contains(.bauplan) {
+            zahlen.append((KevFormat.integer(plan.alleSchritte.count), "Bauschritte"))
+        }
+        if inhaltArten.contains(.zeichnungen), !q.zeichnungen.isEmpty {
+            zahlen.append((KevFormat.integer(q.zeichnungen.count), "Zeichnungen"))
+        }
+        return zahlen
+    }
+
+    /// Inhaltsverzeichnis mit Seitenzahlen, in `spalten` Spalten (spaltenweise gefüllt).
+    static func inhaltsverzeichnis(_ l: ExportLeinwand, _ info: ExportSeitenInfo, x: CGFloat, y: CGFloat,
+                                   breite: CGFloat, spalten: Int, titelGroesse: CGFloat, zeile: CGFloat = 8,
+                                   ohneKopf: Bool = false)
+    {
+        var ky = y
+        if !ohneKopf {
+            l.text("INHALT", x: x, y: ky + 3, .mittel(7.5), farbe: ExportStil.grau, laufweite: 0.3)
+            ky += 6
+        }
+        let eintraege = info.bausteinSeiten.filter { $0.art != .deckblatt }
+        let n = max(1, spalten)
+        let jeSpalte = (eintraege.count + n - 1) / n
+        let sw = (breite - CGFloat(n - 1) * 8) / CGFloat(n)
+        for (i, b) in eintraege.enumerated() {
+            let sx = x + CGFloat(jeSpalte > 0 ? i / jeSpalte : 0) * (sw + 8)
+            let sy = ky + CGFloat(jeSpalte > 0 ? i % jeSpalte : i) * zeile
+            l.linie(CGPoint(x: sx, y: sy + zeile - 1.2), CGPoint(x: sx + sw, y: sy + zeile - 1.2), breite: 0.12,
+                    farbe: ExportStil.linieFein)
+            let seiten = b.anzahl == 1 ? "Seite \(b.seite)" : "Seite \(b.seite)–\(b.seite + b.anzahl - 1)"
+            let nw = l.text(seiten, x: sx + sw, y: sy + zeile - 3, .normal(titelGroesse - 1), farbe: ExportStil.grau,
+                            .rechts)
+            l.text(b.art.titel, x: sx, y: sy + zeile - 3, .mittel(titelGroesse), farbe: ExportStil.tinte,
+                   maxBreite: sw - nw - 4)
+        }
+    }
+
+    /// Fuß des Deckblatts: Projekt, Stand, Datum, Eigentümer; darunter „Erstellt mit Kev CAD“.
+    static func deckblattFuss(_ l: ExportLeinwand, _ q: ExportQuellen, x0: CGFloat, x1: CGFloat, fy: CGFloat,
+                              h: CGFloat)
+    {
+        l.linie(CGPoint(x: x0, y: fy), CGPoint(x: x1, y: fy), breite: 0.3, farbe: ExportStil.tinte)
+        let felder: [(String, String)] = [
+            ("Projekt", q.kopf.projekt), ("Stand", q.kopf.version ?? "aktueller Stand"),
+            ("Datum", q.kopf.datumText), ("Eigentümer", q.kopf.autor),
+        ]
+        let fw = (x1 - x0) / CGFloat(felder.count)
+        for (i, f) in felder.enumerated() {
+            let fx = x0 + CGFloat(i) * fw
+            l.text(f.0.uppercased(), x: fx, y: fy + 5, .mittel(6.5), farbe: ExportStil.grau, laufweite: 0.2)
+            l.text(f.1, x: fx, y: fy + 10, .normal(9), farbe: ExportStil.tinte, maxBreite: fw - 4)
+        }
+        l.text("Erstellt mit Kev CAD", x: x1, y: h - 6, .normal(7), farbe: ExportStil.grauHell, .rechts)
     }
 
     // MARK: Stückliste
@@ -636,5 +678,84 @@ public enum ExportBauer {
             ExportSeite(groesse: b.groesse, baustein: .zeichnungen, titel: b.titel, mitKopf: false,
                         gliederung: [b.titel], inhalt: .roh(b.zeichne))
         }
+    }
+}
+
+/// Aufteilung des Deckblatts (mm, Ursprung links oben), vorab gerechnet: Gesamtansicht, Kennzahlen und Inhalt über
+/// dem Fuß, ohne dass sich etwas überdeckt. Reicht der Platz nicht, wird das Inhaltsverzeichnis zweispaltig, dann
+/// kommt es auf eine eigene Seite; die Gesamtansicht schrumpft dabei nie unter `bildMin`.
+public struct DeckblattAufteilung: Equatable {
+    public static let rand: CGFloat = 22
+    public static let kachelRaster: CGFloat = 20
+    public static let bildMin: CGFloat = 50
+    /// Abstand des letzten Inhalts zur Fußlinie.
+    public static let fussAbstand: CGFloat = 8
+
+    public var bild: CGRect
+    /// Spalte für Kennzahlen und Inhalt (hoch: ganze Breite unter dem Bild; quer: rechts neben dem Bild).
+    public var spalte: CGRect
+    public var kachelSpalten: Int
+    public var kachelnY: CGFloat
+    public var inhaltY: CGFloat
+    public var inhaltSpalten: Int
+    public var inhaltAufDeckblatt: Bool
+    public var fussY: CGFloat
+    /// Unterkante des Inhaltsverzeichnisses (bzw. der Kennzahlen ohne Inhalt).
+    public var inhaltEnde: CGFloat
+
+    public static func inhaltHoehe(_ eintraege: Int, spalten: Int) -> CGFloat {
+        6 + CGFloat((eintraege + spalten - 1) / max(1, spalten)) * 8
+    }
+
+    public init(groesse: CGSize, titelHoehe: CGFloat, kacheln: Int, eintraege: Int) {
+        let w = groesse.width, h = groesse.height
+        let x0 = Self.rand, x1 = w - Self.rand
+        let quer = w > h
+        // wie im Deckblatt: Kennband, „BAUUNTERLAGEN“, Titel, Zeile mit den Bausteinen
+        let y = 39 + titelHoehe - 2 + 12
+        fussY = h - 22
+        let unten = fussY - Self.fussAbstand
+        if quer {
+            // rechts neben dem Bild: Kennzahlen zweispaltig; reicht das nicht für den Inhalt, ein schmaleres Bild und
+            // dreispaltige Kennzahlen; sonst kommt der Inhalt auf eine eigene Seite
+            var wahl: (anteil: CGFloat, spalten: Int, passt: Bool) = (0.58, 2, false)
+            for (anteil, sp) in [(CGFloat(0.58), 2), (CGFloat(0.5), 3)] {
+                let kh = CGFloat((kacheln + sp - 1) / sp) * Self.kachelRaster
+                if y + kh + 8 + Self.inhaltHoehe(eintraege, spalten: 1) <= unten {
+                    wahl = (anteil, sp, true)
+                    break
+                }
+            }
+            kachelSpalten = wahl.spalten
+            let kachelnH = CGFloat((kacheln + kachelSpalten - 1) / kachelSpalten) * Self.kachelRaster
+            let bildW = (x1 - x0) * wahl.anteil
+            bild = CGRect(x: x0, y: y, width: bildW, height: max(Self.bildMin, unten - y))
+            spalte = CGRect(x: x0 + bildW + 10, y: y, width: x1 - x0 - bildW - 10, height: unten - y)
+            kachelnY = y
+            inhaltY = y + kachelnH + 8
+            inhaltSpalten = 1
+            inhaltAufDeckblatt = wahl.passt
+            inhaltEnde = inhaltAufDeckblatt ? inhaltY + Self.inhaltHoehe(eintraege, spalten: 1) : y + kachelnH
+            return
+        }
+        kachelSpalten = min(3, max(1, kacheln))
+        let kachelnH = CGFloat((kacheln + kachelSpalten - 1) / kachelSpalten) * Self.kachelRaster
+        // hoch: Bild, darunter Kennzahlen (9 mm Abstand), Inhalt (8 mm Abstand)
+        let frei = unten - y - 9 - kachelnH
+        var spalten = 0
+        for s in [1, 2] where frei - 8 - Self.inhaltHoehe(eintraege, spalten: s) >= Self.bildMin {
+            spalten = s
+            break
+        }
+        inhaltAufDeckblatt = spalten > 0
+        inhaltSpalten = max(1, spalten)
+        let inhaltH = inhaltAufDeckblatt ? 8 + Self.inhaltHoehe(eintraege, spalten: inhaltSpalten) : 0
+        let bildH = min(inhaltAufDeckblatt ? 118 : 150, max(Self.bildMin, frei - inhaltH))
+        bild = CGRect(x: x0, y: y, width: x1 - x0, height: bildH)
+        kachelnY = bild.maxY + 9
+        inhaltY = kachelnY + kachelnH + 8
+        spalte = CGRect(x: x0, y: kachelnY, width: x1 - x0, height: unten - kachelnY)
+        inhaltEnde = inhaltAufDeckblatt ? inhaltY + Self.inhaltHoehe(eintraege, spalten: inhaltSpalten)
+            : kachelnY + kachelnH
     }
 }

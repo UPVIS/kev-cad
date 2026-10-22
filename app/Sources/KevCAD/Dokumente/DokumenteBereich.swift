@@ -128,11 +128,18 @@ struct DokumenteToolbar: ToolbarContent {
                 ForEach(["vorn", "oben", "links", "rechts", "hinten", "unten", "iso"], id: \.self) { art in
                     Button(ZeichnungText.ansichtArt(art)) { zustand.setzeWerkzeug(.ansicht(art)) }
                 }
+                Divider()
+                Button { zustand.setzeWerkzeug(.schnitt) } label: {
+                    Label("Schnitt: Linie durch eine Ansicht ziehen", systemImage: "line.diagonal")
+                }
+                Button { zustand.setzeWerkzeug(.einzelheit) } label: {
+                    Label("Einzelheit: Kreis aufziehen", systemImage: "circle.dashed")
+                }
             } label: {
                 Label("Ansicht hinzufügen", systemImage: "rectangle.badge.plus")
             }
             .disabled(blatt == nil)
-            .help("Ansicht hinzufügen, dann die Stelle auf dem Blatt anklicken")
+            .help("Ansicht, Schnitt oder Einzelheit hinzufügen, dann auf dem Blatt setzen")
 
             ControlGroup {
                 Button { zustand.ausfuehren(.verkleinern) } label: { Label("Verkleinern", systemImage: "minus.magnifyingglass") }
