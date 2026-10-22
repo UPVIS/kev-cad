@@ -29,7 +29,7 @@ struct BerichteAnsicht: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            liste.frame(width: 230)
+            liste.frame(width: 210)
             Divider()
             VStack(spacing: 0) {
                 leiste
@@ -97,8 +97,8 @@ struct BerichteAnsicht: View {
                 if let l = export.laeuft { Text(l).foregroundStyle(.secondary).lineLimit(1) }
             }
             Spacer()
-            Slider(value: $zoom, in: 0.5...2) { Text("Zoom") }
-                .frame(width: 110)
+            Slider(value: $zoom, in: 0.5...2) { Image(systemName: "magnifyingglass") }
+                .frame(width: 100)
                 .help("Größe der Vorschau")
             Button {
                 stand += 1
@@ -106,9 +106,11 @@ struct BerichteAnsicht: View {
                 Image(systemName: "arrow.clockwise")
             }
             .help("Neu setzen (Vorschaubilder und Daten frisch)")
-            Button("Drucken …") { drucken() }
+            Button { drucken() } label: { Label("Drucken …", systemImage: "printer") }
+                .help("Diesen Bericht drucken (1:1, ohne Skalierung)")
                 .disabled(dokument?.seiten.isEmpty != false)
-            Button("Als PDF sichern …") { sichern() }
+            Button { sichern() } label: { Label("Als PDF sichern …", systemImage: "arrow.down.doc") }
+                .help("Diesen Bericht als PDF sichern")
                 .disabled(dokument?.seiten.isEmpty != false)
             Button {
                 ExportDialogFenster.zeige(session: session, model: model, vorauswahl: [bericht])
@@ -117,6 +119,7 @@ struct BerichteAnsicht: View {
             }
             .help("Dokumente exportieren: Bausteine zusammenstellen (⇧⌘E)")
         }
+        .labelStyle(.iconOnly)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
     }

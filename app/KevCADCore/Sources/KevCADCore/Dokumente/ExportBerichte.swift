@@ -258,7 +258,12 @@ public enum ExportBauer {
         if let l = line.laenge {
             // Stangenware: der Maßtext ist meist schon die Länge
             let laenge = KevFormat.length(l)
-            if t.isEmpty { t = laenge } else if !t.contains(laenge) { t += ", L = " + laenge }
+            let zahl = KevFormat.compact(l, maxDigits: 1)
+            if t.isEmpty {
+                t = laenge
+            } else if !t.contains(laenge) && !t.hasSuffix(" " + zahl) && !t.contains("× " + zahl) {
+                t += ", L = " + laenge
+            }
             let g = KevFormat.gehrung(line.gehrung)
             if g != "–" { t += ", Gehrung " + g }
         }

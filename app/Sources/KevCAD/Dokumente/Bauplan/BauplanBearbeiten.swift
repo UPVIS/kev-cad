@@ -166,6 +166,17 @@ struct DurchspielenLeiste: View {
     }
 
     var body: some View {
+        // feste Breite aus dem 3D-Bereich, damit Titel kürzen statt die Leiste über den Rand zu schieben
+        GeometryReader { geo in
+            leiste
+                .frame(width: max(240, min(760, geo.size.width - 24)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        }
+        .allowsHitTesting(store.durchspielen != nil)
+    }
+
+    @ViewBuilder
+    private var leiste: some View {
         if let d = store.durchspielen, let plan = store.plan, let id = d.schritt, let s = plan.schritt(id) {
             VStack(spacing: 10) {
                 // breit: alles in einer Zeile; schmal (Versionsleiste, Stückliste offen): Titel und Steuerung getrennt
@@ -188,10 +199,8 @@ struct DurchspielenLeiste: View {
                 fortschritt(d, plan)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .frame(maxWidth: 760)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
-            .padding(.horizontal, 12)
             .padding(.bottom, 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
