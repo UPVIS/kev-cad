@@ -233,6 +233,10 @@ im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
 ```
 
 - `zu_lang` (optional): Stücklängen, die länger als die Stange sind (Sonderlänge oder stoßen, steht auch in `warnings`).
+- `verschnitt_definition` (additiv, seit 22.10.2026): `"2"` heißt, `verschnitt_prozent` zählt nur Sägeschnitte und
+  Reste unter dem Mindestrest (neue Reste nicht), bezogen auf die verplante Länge; genau wie der Bereich „Material“ der
+  App. Ohne das Feld (älterer Kernel) war es alles außer den Stücken. Dazu `BOM.verschnitt`
+  `{"definition": "2", "stangen", "platten"}` über alle Zuschnitte. Einzelheiten in BESTAND.md, Abschnitt „Verschnitt“.
 - `preis_stangen` (optional): Preis der ganzen Stangen in Euro, wenn der Katalog `preis_je_m` kennt.
 
 `totals`: `{"kg": 41.3, "preis": 96.10, "positionen": 7, "teile": 23, "preis_hinweis": "Richtpreise, Stand 2026-10"}`.

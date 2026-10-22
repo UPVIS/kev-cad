@@ -118,7 +118,8 @@ Stock on hand and shopping list (Bestand, per project)
 P-0001) and piece goods. Nothing is shared between projects. `bestand_liste` shows it.
 - After every run the cut plan uses offcuts first, then whole stock of the project, then bars/sheets to buy \
 (optimized, minimum offcut length, saw kerf); `bom` shows per bar or sheet where each piece comes from and which new \
-offcuts remain. `einkaufsliste` lists what is missing with price, link and total (also as CSV).
+offcuts remain. `einkaufsliste` returns exactly the list Kevin sees and shares in the app: stock items and bought \
+parts to buy with price, link and total, then standard parts to count and filament (also as CSV).
 - `bestand_eintragen` only with what Kevin told you (quote him in grund), never guessed; repeat every listed change \
 to him. `gebaut_buchen` only when Kevin explicitly says the project is built. Every booking can be undone with \
 `buchung_rueckgaengig`.

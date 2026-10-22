@@ -62,7 +62,7 @@ public struct ExportQuellen {
     /// Dieselbe Datenquelle wie der Bereich „Material“ und die Schnellansichten: Positionen, Gruppen, Kennzeichen,
     /// Zuschnitt, Einkauf und Summen.
     public var material: MaterialDaten {
-        MaterialDaten(bom: bom, bestand: bestand, projektBestand: projektBestand, katalog: katalog)
+        MaterialDaten(bom: bom, bestand: bestand, projektBestand: projektBestand, katalog: katalog, druckvorschau: druck)
     }
 
     /// Bild einer Stücklistenzeile: das erste ihrer Teile mit Bild.

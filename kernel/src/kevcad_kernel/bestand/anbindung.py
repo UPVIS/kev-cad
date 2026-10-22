@@ -18,7 +18,6 @@ import copy
 import difflib
 import json
 import os
-import re
 import threading
 import time
 from typing import Any
@@ -35,8 +34,9 @@ from .datei import (
     pruefe_posten,
     zahl,
 )
+from . import einkauf as ek
 from .planung import Verbrauch, gebaut_aenderungen, plane
-from .text import bestand_text, einkauf_csv, einkauf_text
+from .text import bestand_text
 
 ANFRAGEN = ("BESTAND_REQ", "BESTAND_SAVE", "GEBAUT_REQ", "BUCHUNG_RUECKGAENGIG")
 KEIN_PROJEKT = "Kein Projekt offen: Bestand gibt es je Projekt (bestand.json im Projektordner)."
@@ -430,8 +430,32 @@ class BestandAnbindung:
         return {"ok": True, "buchung": buchung, "aenderungen_text": aenderungen_text(ops, self._benennung),
                 "posten": posten, "message": buchung["zusammenfassung"]}
 
+    def _einkauf_druckvorschau(self, warten_s: float = 0.0) -> dict[str, Any] | None:
+        """Druckvorschau für das Filament der Einkaufsliste: die zuletzt gebaute (wie sie die App zuletzt bekam); mit
+        ``warten_s`` erst auf die Vorschau des laufenden Laufs warten (MCP direkt nach ``run``)."""
+        if not hasattr(self, "_dv_lock"):
+            return None
+        try:
+            if warten_s > 0:
+                return self._dv_aktuell(warten_s)  # type: ignore[attr-defined]
+            with self._dv_lock:  # type: ignore[attr-defined]
+                return self._dv_vorschau  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - ohne Vorschau gilt das Filament der Stückliste
+            return None
+
+    def einkauf_zusammenstellen(self, bom: dict[str, Any] | None = None,
+                                warten_s: float = 0.0) -> dict[str, Any] | None:
+        """Einkaufsliste wie im Bereich „Material“ der App (``einkauf.zusammenstellen``) zur aktuellen Stückliste."""
+        if bom is None:
+            with self._lock:  # type: ignore[attr-defined]
+                bom = self._bom  # type: ignore[attr-defined]
+        if bom is None:
+            return None
+        return ek.zusammenstellen(bom, self._einkauf_druckvorschau(warten_s), self.catalog)  # type: ignore
+
     def einkaufsliste(self) -> dict[str, Any]:
-        """Fehlmengen des aktuellen Projekts mit Preis und Summe, dazu die CSV-Datei in <projekt>/output/."""
+        """Einkaufsliste wie in der App: Lagerware, Zukaufteile, Normteile zum Abzählen, Filament, Summe; Text und CSV
+        (<projekt>/output/) byteweise wie „Teilen“ in der App."""
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
             return {"ok": False, "error": KEIN_PROJEKT}
@@ -439,26 +463,33 @@ class BestandAnbindung:
             bom = self._bom  # type: ignore[attr-defined]
         if bom is None:
             return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen."}
+        e = self.einkauf_zusammenstellen(bom, warten_s=5.0)
+        assert e is not None
         out: dict[str, Any] = {"ok": True, "run": bom.get("run"),
                                **{k: bom.get(k) for k in ("einkaufsliste", "einkauf_summe", "einkauf_hinweis",
                                                           "bestand_stand", "fehlt", "stueckgut")},
-                               "text": einkauf_text(bom, proj.name)}
-        res = self._bestand_export_csv(proj)
+                               "lagerware": e["lager"], "zukauf": e["zukauf"], "normteile": e["normteile"],
+                               "filament": e["filament"], "positionen": e["positionen"], "summe": e["summe"],
+                               "summe_lager": e["summe_lager"], "summe_zukauf": e["summe_zukauf"],
+                               "ohne_preis": e["ohne_preis"],
+                               "text": ek.text(e, proj.name, ek.heute_text())}
+        res = self._bestand_export_csv(proj, e)
         if res.get("ok"):
             out["csv"] = res["file"]
         else:
             out["warnings"] = [res["error"]]
         return out
 
-    def _bestand_export_csv(self, proj: Any) -> dict[str, Any]:
-        with self._lock:  # type: ignore[attr-defined]
-            bom = self._bom  # type: ignore[attr-defined]
-        if bom is None:
+    def _bestand_export_csv(self, proj: Any, e: dict[str, Any] | None = None) -> dict[str, Any]:
+        """CSV der Einkaufsliste wie die App sie sichert und teilt (gleicher Name, gleiche Bytes)."""
+        if e is None:
+            e = self.einkauf_zusammenstellen(warten_s=5.0)
+        if e is None:
             return {"ok": False, "error": "Einkaufsliste: noch kein erfolgreicher Lauf"}
-        path = (proj.output_dir / f"{_dateiname(proj.name)}-einkaufsliste.csv").resolve()
+        path = (proj.output_dir / ek.dateiname(proj.name)).resolve()
         try:
             proj.output_dir.mkdir(parents=True, exist_ok=True)
-            path.write_text(einkauf_csv(bom, proj.name), encoding="utf-8-sig", newline="")
+            path.write_text(ek.csv(e), encoding="utf-8", newline="")
         except OSError as exc:
             return {"ok": False, "error": f"Einkaufsliste nicht geschrieben: {exc}"}
         return {"ok": True, "file": str(path)}
@@ -479,12 +510,6 @@ class BestandAnbindung:
             if res.get("ok"):
                 self._bestand_geaendert()
         return res
-
-
-def _dateiname(name: str) -> str:
-    """Wie ``export.safe_name`` (ohne build123d zu laden)."""
-    s = re.sub(r"[^\w\-. äöüÄÖÜß]+", "_", name, flags=re.UNICODE).strip(" ._")
-    return s or "modell"
 
 
 def _art_fuer(vorher: dict[str, Any] | None, nachher: dict[str, Any] | None) -> str:

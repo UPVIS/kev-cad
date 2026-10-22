@@ -252,7 +252,7 @@ enum MaterialSelfTest {
             check(material.abgehakt.abgehakt(z) != war, "Abhaken: \(z.position.benennung)")
             let gespeichert = UserDefaults.standard.stringArray(forKey: EinkaufAbgehakt.defaultsKey(model.project!.path)) ?? []
             check(gespeichert.contains(z.abhakSchluessel) != war, "Abhaken je Projekt gemerkt")
-            let text = MaterialText.einkaufText(model.materialDaten.einkauf, projekt: model.project?.name,
+            let text = MaterialText.einkaufText(model.materialDaten, projekt: model.project?.name,
                                                 abgehakt: material.abgehakt.schluessel)
             check(text.contains("[x]") != war, "Text zum Teilen kennzeichnet abgehakte Zeilen")
             await pause(1)
@@ -262,11 +262,14 @@ enum MaterialSelfTest {
             check(true, "Einkaufsliste leer, nichts abzuhaken")
         }
         if let datei = EinkaufExport.sichern(model, zeigen: false) {
-            // Byte für Byte wie die Liste am Bildschirm (mit BOM für Excel): Kopfzeile, je Position eine Zeile, Summe
+            // Byte für Byte wie die Liste am Bildschirm (mit BOM für Excel): Kopfzeile, je Position eine Zeile, Summe,
+            // dann Normteile zum Abzählen und Filament
             let roh = (try? Data(contentsOf: datei)) ?? Data()
-            let einkauf = model.materialDaten.einkauf
+            let d = model.materialDaten
+            let einkauf = d.einkauf
             let zeilen = (String(data: roh, encoding: .utf8) ?? "").split(separator: "\r\n").count
-            check(roh == Data(MaterialText.einkaufCSV(einkauf).utf8) && zeilen == einkauf.count + 2,
+            check(roh == Data(MaterialText.einkaufCSV(d).utf8)
+                  && zeilen == einkauf.count + 2 + d.stueckgut.count + d.filament.count,
                   "CSV gesichert wie am Bildschirm: \(einkauf.count) Positionen, davon "
                   + "\(model.materialDaten.zukaufEinkauf.count) Zukaufteile (\(datei.lastPathComponent))")
         }

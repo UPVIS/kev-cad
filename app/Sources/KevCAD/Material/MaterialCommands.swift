@@ -72,7 +72,7 @@ struct MaterialCommands: Commands {
             Divider()
             Button("Einkaufsliste kopieren") {
                 copyToPasteboard(MaterialText.einkaufText(
-                    d.einkauf, projekt: model.project?.name, stand: BestandText.anzeige(BestandText.heute(), mitZeit: false),
+                    d, projekt: model.project?.name, stand: BestandText.anzeige(BestandText.heute(), mitZeit: false),
                     abgehakt: material?.abgehakt.schluessel ?? []))
             }
             .disabled(d.einkauf.isEmpty)

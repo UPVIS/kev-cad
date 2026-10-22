@@ -673,7 +673,11 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
     public var ausBestandReste: Int
     public var ausBestandGanze: Int
     public var kaufen: Int
+    /// Verschnitt laut Kernel in Prozent. Mit `verschnittDefinition` "2" (Kernel ab 22.10.2026) genau wie
+    /// `MaterialZuschnitt.prozent`: Sägeschnitte und Reste unter dem Mindestrest, bezogen auf die verplante Länge bzw.
+    /// Fläche; ohne Angabe ein älterer Kernel (Stangen: alles außer den Stücken), dann rechnet die App selbst.
     public var verschnittProzent: Double?
+    public var verschnittDefinition: String?
     /// Mindestrest dieses Lagerteils, mit dem der Kernel gerechnet hat.
     public var mindestrest: Double?
     /// Platten: Stücke, die größer als die Platte sind.
@@ -685,7 +689,8 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
         stockID: String, benennung: String, istPlatte: Bool = false, platteB: Double? = nil, platteH: Double? = nil,
         stangenlaenge: Double? = nil, saegeschnitt: Double = 3, quellen: [ZuschnittQuelle], neueReste: [Double] = [],
         neueResteFlaechen: [ZuschnittFlaeche] = [], ausBestandReste: Int = 0, ausBestandGanze: Int = 0, kaufen: Int = 0,
-        verschnittProzent: Double? = nil, mindestrest: Double? = nil, zuGross: [ZuschnittFlaeche] = []
+        verschnittProzent: Double? = nil, mindestrest: Double? = nil, zuGross: [ZuschnittFlaeche] = [],
+        verschnittDefinition: String? = nil
     ) {
         self.stockID = stockID
         self.benennung = benennung
@@ -701,6 +706,7 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
         self.ausBestandGanze = ausBestandGanze
         self.kaufen = kaufen
         self.verschnittProzent = verschnittProzent
+        self.verschnittDefinition = verschnittDefinition
         self.mindestrest = mindestrest
         self.zuGross = zuGross
     }
@@ -729,7 +735,8 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
             ausBestandGanze: json["aus_bestand"]?["ganze"]?.intValue ?? quellen.filter { $0.art == .bestand }.count,
             kaufen: kaufen, verschnittProzent: json["verschnitt_prozent"]?.doubleValue,
             mindestrest: json["mindestrest"]?.doubleValue,
-            zuGross: json["zu_gross"]?.arrayValue?.compactMap(ZuschnittFlaeche.init(json:)) ?? [])
+            zuGross: json["zu_gross"]?.arrayValue?.compactMap(ZuschnittFlaeche.init(json:)) ?? [],
+            verschnittDefinition: json["verschnitt_definition"]?.lenientString)
     }
 
     /// Längste Quelle (gemeinsamer Maßstab aller Leisten dieses Zuschnitts).
@@ -757,6 +764,9 @@ public struct BestandZuschnitt: Identifiable, Equatable, Sendable {
     }
 
     public var hatNeueReste: Bool { istPlatte ? !neueResteFlaechen.isEmpty : !neueReste.isEmpty }
+
+    /// Der Kernel rechnet den Verschnitt wie die App (Definition 2, siehe `verschnittProzent`).
+    public var verschnittWieApp: Bool { verschnittDefinition == MaterialZuschnitt.definition }
 }
 
 /// Maßstab der Zuschnittansicht.

@@ -1699,5 +1699,76 @@
     "konto": "p1p"
    }
   }
+ },
+ "material": {
+  "frames": [
+   {
+    "file": "bom_material.frame",
+    "type": "BOM",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_material.frame",
+    "type": "PRINT_PREVIEW",
+    "payload_bytes": 0
+   }
+  ],
+  "projekt": "Kugelschieber",
+  "stand": "22.10.2026",
+  "text": "Einkaufsliste Kugelschieber (Stand 22.10.2026)\n\nLagerware\n- [ ] 1 × Stange 1.000 mm: ALFER-Rundrohr 12 × 1, 3,90 € (https://www.alfer.com/)\n  Bestand im Projekt reicht nicht: 2 ganze Stangen und 3 Reste verplant\n- [ ] 4 × Stück: Linsenkopfschraube ISO 7380 M6, Länge 20 mm, 0,36 €\n  Bestand im Projekt: 12, gebraucht: 16\n- [ ] 4 × Stück: Flügelmutter DIN 315 M4, 0,48 €\n  Bestand im Projekt: 10, gebraucht: 14\n\nZukaufteile\n- [ ] 1 × Stück: Manfrotto Schnellwechselplatte 200PL-PRO, 29,90 €\n- [ ] 2 × Stück: ALUTEC Transportroller 05200, 49,98 € (https://www.beispiel-shop.de/p/alutec-05200)\n  ALUTEC · 05200 · EAN 4005187052008\n\nSumme: ≈ 84,62 €\n\nNormteile abzählen\n- Linsenkopfschraube ISO 7380 M6 · M6 × 20: 16 gebraucht, 12 aus Bestand, 4 kaufen\n- Flügelmutter DIN 315 M4: 14 gebraucht, 10 aus Bestand, 4 kaufen\n\nFilament für Druckteile\n- PETG: 188,8 g für 7 Teile, 3,21 € (Druckvorschau, Teils Bambu Studio)\n- PLA: 24,6 g für 6 Teile, 0,42 € (Druckvorschau, Schätzung)",
+  "csv": "﻿Gruppe;Menge;Einheit;Benennung;Lagerteil;Preis je (EUR);Preis (EUR);Preisstand;Bezugsquelle;Link;Hinweis\r\nLagerware;1;Stange 1.000 mm;ALFER-Rundrohr 12 × 1;rohr-alfer-12x1;3,90;3,90;2026-10;ALFER;https://www.alfer.com/;Bestand im Projekt reicht nicht: 2 ganze Stangen und 3 Reste verplant\r\nLagerware;4;Stück;Linsenkopfschraube ISO 7380 M6, Länge 20 mm;schraube-iso7380-m6;0,09;0,36;2026-10;;;Bestand im Projekt: 12, gebraucht: 16\r\nLagerware;4;Stück;Flügelmutter DIN 315 M4;mutter-din315-m4;0,12;0,48;2026-10;;;Bestand im Projekt: 10, gebraucht: 14\r\nZukaufteile;1;Stück;Manfrotto Schnellwechselplatte 200PL-PRO;manfrotto-200pl-pro;29,90;29,90;;;;\r\nZukaufteile;2;Stück;ALUTEC Transportroller 05200;alutec-05200;24,99;49,98;2026-10-21;beispiel-shop.de;https://www.beispiel-shop.de/p/alutec-05200;ALUTEC · 05200 · EAN 4005187052008\r\n;;;Summe;;;84,62;;;;\r\nNormteile abzählen;16;Stück;Linsenkopfschraube ISO 7380 M6 · M6 × 20;schraube-iso7380-m6;;;;;;16 gebraucht, 12 aus Bestand, 4 kaufen\r\nNormteile abzählen;14;Stück;Flügelmutter DIN 315 M4;mutter-din315-m4;;;;;;14 gebraucht, 10 aus Bestand, 4 kaufen\r\nFilament für Druckteile;188,8;g;PETG;petg;;;2026-10;;;7 Teile, 3,21 € (Druckvorschau, Teils Bambu Studio)\r\nFilament für Druckteile;24,6;g;PLA;pla;;;2026-10;;;6 Teile, 0,42 € (Druckvorschau, Schätzung)\r\n",
+  "text_ohne_druck": "Einkaufsliste Kugelschieber (Stand 22.10.2026)\n\nLagerware\n- [ ] 1 × Stange 1.000 mm: ALFER-Rundrohr 12 × 1, 3,90 € (https://www.alfer.com/)\n  Bestand im Projekt reicht nicht: 2 ganze Stangen und 3 Reste verplant\n- [ ] 4 × Stück: Linsenkopfschraube ISO 7380 M6, Länge 20 mm, 0,36 €\n  Bestand im Projekt: 12, gebraucht: 16\n- [ ] 4 × Stück: Flügelmutter DIN 315 M4, 0,48 €\n  Bestand im Projekt: 10, gebraucht: 14\n\nZukaufteile\n- [ ] 1 × Stück: Manfrotto Schnellwechselplatte 200PL-PRO, 29,90 €\n- [ ] 2 × Stück: ALUTEC Transportroller 05200, 49,98 € (https://www.beispiel-shop.de/p/alutec-05200)\n  ALUTEC · 05200 · EAN 4005187052008\n\nSumme: ≈ 84,62 €\n\nNormteile abzählen\n- Linsenkopfschraube ISO 7380 M6 · M6 × 20: 16 gebraucht, 12 aus Bestand, 4 kaufen\n- Flügelmutter DIN 315 M4: 14 gebraucht, 10 aus Bestand, 4 kaufen\n\nFilament für Druckteile\n- PETG: 74,5 g für 6 Teile, 1,26 € (Stückliste, Volumen × Dichte)\n- PLA: 19,3 g für 6 Teile, 0,33 € (Stückliste, Volumen × Dichte)",
+  "csv_ohne_druck": "﻿Gruppe;Menge;Einheit;Benennung;Lagerteil;Preis je (EUR);Preis (EUR);Preisstand;Bezugsquelle;Link;Hinweis\r\nLagerware;1;Stange 1.000 mm;ALFER-Rundrohr 12 × 1;rohr-alfer-12x1;3,90;3,90;2026-10;ALFER;https://www.alfer.com/;Bestand im Projekt reicht nicht: 2 ganze Stangen und 3 Reste verplant\r\nLagerware;4;Stück;Linsenkopfschraube ISO 7380 M6, Länge 20 mm;schraube-iso7380-m6;0,09;0,36;2026-10;;;Bestand im Projekt: 12, gebraucht: 16\r\nLagerware;4;Stück;Flügelmutter DIN 315 M4;mutter-din315-m4;0,12;0,48;2026-10;;;Bestand im Projekt: 10, gebraucht: 14\r\nZukaufteile;1;Stück;Manfrotto Schnellwechselplatte 200PL-PRO;manfrotto-200pl-pro;29,90;29,90;;;;\r\nZukaufteile;2;Stück;ALUTEC Transportroller 05200;alutec-05200;24,99;49,98;2026-10-21;beispiel-shop.de;https://www.beispiel-shop.de/p/alutec-05200;ALUTEC · 05200 · EAN 4005187052008\r\n;;;Summe;;;84,62;;;;\r\nNormteile abzählen;16;Stück;Linsenkopfschraube ISO 7380 M6 · M6 × 20;schraube-iso7380-m6;;;;;;16 gebraucht, 12 aus Bestand, 4 kaufen\r\nNormteile abzählen;14;Stück;Flügelmutter DIN 315 M4;mutter-din315-m4;;;;;;14 gebraucht, 10 aus Bestand, 4 kaufen\r\nFilament für Druckteile;74,5;g;PETG;;;;;;;6 Teile, 1,26 € (Stückliste, Volumen × Dichte)\r\nFilament für Druckteile;19,3;g;PLA;;;;;;;6 Teile, 0,33 € (Stückliste, Volumen × Dichte)\r\n",
+  "positionen": 5,
+  "lager": 3,
+  "zukauf": 2,
+  "summe": 84.61999999999999,
+  "summe_lager": 4.74,
+  "summe_zukauf": 79.88,
+  "ohne_preis": 0,
+  "normteile": 2,
+  "filament": [
+   {
+    "werkstoff": "PETG",
+    "teile": 7,
+    "gramm": 188.8,
+    "preis": 3.21,
+    "stand": "gemischt"
+   },
+   {
+    "werkstoff": "PLA",
+    "teile": 6,
+    "gramm": 24.6,
+    "preis": 0.42,
+    "stand": "schaetzung"
+   }
+  ],
+  "filament_ohne_druck": [
+   {
+    "werkstoff": "PETG",
+    "teile": 6,
+    "gramm": 74.5,
+    "preis": 1.2600000000000002
+   },
+   {
+    "werkstoff": "PLA",
+    "teile": 6,
+    "gramm": 19.3,
+    "preis": 0.33
+   }
+  ],
+  "verschnitt": {
+   "rohr-alfer-12x1": 0.6,
+   "platte-multiplex-birke-18": 1.2
+  },
+  "verschnitt_definition": [
+   "2"
+  ],
+  "verschnitt_gesamt": {
+   "definition": "2",
+   "stangen": 0.6,
+   "platten": 1.2
+  },
+  "run_zeile": "Einkaufsliste: 5 Positionen, ≈ 84,62 € (Details mit einkaufsliste)"
  }
 }

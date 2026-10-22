@@ -241,7 +241,7 @@ private struct SchnellKopf: View {
                 Button("Gebaut …") { BestandUI.shared.zeigeGebaut() }
                     .disabled(model.bestandActions == nil || model.bestandZustand.zuschnitt == nil || model.laufAktiv)
                 Button("Einkaufsliste kopieren") {
-                    copyToPasteboard(MaterialText.einkaufText(daten.einkauf, projekt: model.project?.name,
+                    copyToPasteboard(MaterialText.einkaufText(daten, projekt: model.project?.name,
                                                               stand: BestandText.anzeige(BestandText.heute(), mitZeit: false)))
                 }
                 .disabled(daten.einkauf.isEmpty)

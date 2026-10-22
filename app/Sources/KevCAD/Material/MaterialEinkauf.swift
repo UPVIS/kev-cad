@@ -227,9 +227,12 @@ struct MaterialEinkaufAnsicht: View {
                         Text(f.preis.map(KevFormat.euro) ?? "–").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
                     }
                     .monospacedDigit()
+                    .help(f.quelleText)
                 }
             }
-            Text("Spulen werden noch nicht im Bestand geführt.").font(.caption).foregroundStyle(.secondary)
+            Text((daten.filament.first?.stand != nil ? "Aus der Druckvorschau. " : "Aus der Stückliste (Volumen × Dichte). ")
+                 + "Spulen werden noch nicht im Bestand geführt.")
+                .font(.caption).foregroundStyle(.secondary)
         }
         .font(.body)
         .padding(14)
@@ -323,7 +326,7 @@ struct EinkaufTeilenMenue: View {
     let daten: MaterialDaten
 
     private var text: String {
-        MaterialText.einkaufText(daten.einkauf, projekt: model.project?.name,
+        MaterialText.einkaufText(daten, projekt: model.project?.name,
                                  stand: BestandText.anzeige(BestandText.heute(), mitZeit: false),
                                  abgehakt: material.abgehakt.schluessel)
     }
@@ -333,7 +336,7 @@ struct EinkaufTeilenMenue: View {
             ShareLink(item: text, preview: SharePreview("Einkaufsliste \(model.project?.name ?? "")")) {
                 Label("Als Text teilen …", systemImage: "text.alignleft")
             }
-            ShareLink(item: EinkaufCSVDatei(zeilen: daten.einkauf, projekt: model.project?.name ?? "Projekt"),
+            ShareLink(item: EinkaufCSVDatei(daten: daten, projekt: model.project?.name ?? "Projekt"),
                       preview: SharePreview(EinkaufslisteFormat.dateiname(projekt: model.project?.name ?? "Projekt"))) {
                 Label("Als CSV teilen …", systemImage: "tablecells")
             }
@@ -363,7 +366,7 @@ struct EinkaufTeilenMenue: View {
 
 /// CSV der Einkaufsliste zum Teilen (entsteht erst, wenn ein Dienst gewählt ist).
 struct EinkaufCSVDatei: Transferable {
-    let zeilen: [MaterialEinkauf]
+    let daten: MaterialDaten
     let projekt: String
 
     static var transferRepresentation: some TransferRepresentation {
@@ -371,13 +374,14 @@ struct EinkaufCSVDatei: Transferable {
             let ordner = FileManager.default.temporaryDirectory.appendingPathComponent("Kev CAD Teilen", isDirectory: true)
             try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
             let datei = ordner.appendingPathComponent(EinkaufslisteFormat.dateiname(projekt: d.projekt))
-            try MaterialText.einkaufCSV(d.zeilen).write(to: datei, atomically: true, encoding: .utf8)
+            try MaterialText.einkaufCSV(d.daten).write(to: datei, atomically: true, encoding: .utf8)
             return SentTransferredFile(datei)
         }
     }
 }
 
-/// Einkaufsliste als CSV in den Ausgabeordner des Projekts, dieselbe Liste wie am Bildschirm (mit Zukaufteilen).
+/// Einkaufsliste als CSV in den Ausgabeordner des Projekts, dieselbe Liste wie am Bildschirm (mit Zukaufteilen,
+/// Normteilen zum Abzählen und Filament) und byteweise wie der Export des Kernels.
 @MainActor
 enum EinkaufExport {
     @discardableResult
@@ -387,7 +391,7 @@ enum EinkaufExport {
         let datei = ordner.appendingPathComponent(EinkaufslisteFormat.dateiname(projekt: p.name))
         do {
             try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
-            try MaterialText.einkaufCSV(model.materialDaten.einkauf).write(to: datei, atomically: true, encoding: .utf8)
+            try MaterialText.einkaufCSV(model.materialDaten).write(to: datei, atomically: true, encoding: .utf8)
             model.append(LogLine(text: "Einkaufsliste gesichert: \(datei.path)"))
             if zeigen { NSWorkspace.shared.activateFileViewerSelecting([datei]) }
             return datei

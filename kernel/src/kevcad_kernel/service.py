@@ -163,7 +163,10 @@ class KernelService(Protocol):
         """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}"""
 
     def einkaufsliste(self) -> dict[str, Any]:
-        """{"ok", "run", "einkaufsliste", "einkauf_summe", "einkauf_hinweis", "fehlt", "stueckgut", "text", "csv"}"""
+        """Einkaufsliste wie in der App (bestand/einkauf.py): {"ok", "run", "lagerware", "zukauf", "normteile",
+        "filament", "positionen", "summe" (Lagerware + Zukaufteile), "summe_lager", "summe_zukauf", "ohne_preis",
+        "text", "csv"} und die Felder der Stückliste ("einkaufsliste", "einkauf_summe" nur Lagerware,
+        "einkauf_hinweis", "bestand_stand", "fehlt", "stueckgut")."""
 
     def gebaut_buchen(self, grund: str = "", run: int | None = None) -> dict[str, Any]:
         """Nur auf Kevins ausdrücklichen Wunsch. {"ok", "buchung", "aenderungen_text"}"""

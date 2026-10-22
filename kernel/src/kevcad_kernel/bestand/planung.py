@@ -6,7 +6,10 @@ Bestand des Projekts und gibt eine erweiterte Kopie zurück. Die bisherigen Feld
 - je Stangenware in ``cuts[i]``: ``art: "stange"``, ``quellen``, ``neue_reste``, ``aus_bestand``, ``kaufen``,
   ``mindestrest``;
 - je Platte ein neuer Eintrag in ``cuts`` mit ``art: "platte"``, ``platte: {b, h}`` (Kaufformat oder null),
-  ``saegeschnitt``, ``verschnitt_prozent`` (echter Verschnitt ohne neue Reste) und denselben neuen Feldern;
+  ``saegeschnitt`` und denselben neuen Feldern;
+- je Zuschnitt ``verschnitt_prozent`` nach Definition 2 (Sägeschnitte und Reste unter dem Mindestrest, bezogen auf die
+  verplante Länge bzw. Fläche der Quellen; neue Reste zählen nicht) mit ``verschnitt_definition: "2"``, dazu
+  ``verschnitt`` über alle Stangen bzw. Platten;
 - ``stueckgut``: je Schraube, Mutter, Scheibe gebraucht, aus dem Bestand, zu kaufen;
 - ``einkaufsliste``, ``einkauf_summe``, ``einkauf_hinweis``, ``bestand_stand``, ``fehlt``.
 
@@ -20,7 +23,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from kevcad_kernel.bom import de_num, first_fit_decreasing, round_half
+from kevcad_kernel.bom import (
+    VERSCHNITT_DEFINITION,
+    de_num,
+    first_fit_decreasing,
+    round_half,
+    verschnitt_prozent,
+    verschnitt_summe,
+)
 from kevcad_kernel.catalog import KLEINTEILE, STANGENWARE, number
 
 from .datei import einstellungen, mindestrest, zahl
@@ -139,10 +149,8 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
         laengen = [float(ln["laenge"]) for ln in rows for _ in range(int(ln.get("anzahl") or 0))]
         if abs(float(cut.get("saegeschnitt") or s) - s) > 1e-9 and kauf_laenge:
             bars, too_long = first_fit_decreasing(laengen, kauf_laenge, s)
-            total = len(bars) * kauf_laenge
             cut["saegeschnitt"] = zahl(s)
             cut["stangen"] = bars
-            cut["verschnitt_prozent"] = round((total - sum(map(sum, bars))) / total * 100.0, 1) if total else 0.0
             if "preis_stangen" in cut:
                 je_m = number(_preis(item).get("je_m"))
                 if je_m is not None:
@@ -175,6 +183,9 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
         cut.update({"art": "stange", "quellen": quellen, "neue_reste": list(v.neue_reste),
                     "aus_bestand": {"reste": len(v.reste), "ganze": v.ganze}, "kaufen": n_kauf,
                     "mindestrest": zahl(m)})
+        # Verschnitt (Definition 2) über die Quellen, genau wie die App: Sägeschnitte und Reste unter dem Mindestrest
+        cut["verschnitt_prozent"] = verschnitt_prozent(cut, m)
+        cut["verschnitt_definition"] = VERSCHNITT_DEFINITION
         if v.reste or v.ganze or v.neue_reste:
             verbrauch.append(v)
         benennung = str(cut.get("benennung") or (item or {}).get("name") or sid)
@@ -226,7 +237,6 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
                           "varianten": plan.varianten, "stuecke": len(stuecke)})
         v = Verbrauch(sid, True, ganze_mass={"b": zahl(g_fmt[0]), "h": zahl(g_fmt[1])} if g_fmt else {})
         quellen = []
-        flaeche_quellen = flaeche_stuecke = flaeche_reste = 0.0
         for bel in plan.belegungen:
             neu = [{"b": zahl(r.b), "h": zahl(r.h), "x": zahl(r.x), "y": zahl(r.y)} for r in bel.reste(m)]
             quellen.append({"art": bel.quelle.art, "kennung": bel.quelle.kennung, "b": zahl(bel.quelle.b),
@@ -234,9 +244,6 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
                             "stuecke": [{**{k: zahl(d[k]) for k in ("b", "h", "x", "y")}, "gedreht": d["gedreht"]}
                                         for d in platzierungen(bel)],
                             "rest_neu": neu})
-            flaeche_quellen += bel.quelle.b * bel.quelle.h
-            flaeche_stuecke += sum(pl.b * pl.h for pl in bel.stuecke)
-            flaeche_reste += sum(r.b * r.h for r in bel.reste(m))
             if bel.quelle.art == "rest":
                 v.reste.append(str(bel.quelle.kennung))
             elif bel.quelle.art == "bestand":
@@ -244,14 +251,14 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
             v.neue_reste += [{"b": r["b"], "h": r["h"]} for r in neu]
         n_kauf = sum(1 for q in quellen if q["art"] == "kaufen")
         benennung = str(rows[0].get("benennung") or (item or {}).get("name") or sid)
-        waste = flaeche_quellen - flaeche_stuecke - flaeche_reste
         cuts.append({"stock_id": sid, "benennung": benennung, "art": "platte",
                      "platte": {"b": zahl(kauf_fmt[0]), "h": zahl(kauf_fmt[1])} if kauf_fmt else None,
-                     "saegeschnitt": zahl(s),
-                     "verschnitt_prozent": round(waste / flaeche_quellen * 100.0, 1) if flaeche_quellen else 0.0,
+                     "saegeschnitt": zahl(s), "verschnitt_prozent": 0.0,
+                     "verschnitt_definition": VERSCHNITT_DEFINITION,
                      "quellen": quellen, "neue_reste": list(v.neue_reste),
                      "aus_bestand": {"reste": len(v.reste), "ganze": v.ganze}, "kaufen": n_kauf,
                      "mindestrest": zahl(m)})
+        cuts[-1]["verschnitt_prozent"] = verschnitt_prozent(cuts[-1], m)
         if plan.zu_gross:
             cuts[-1]["zu_gross"] = [{"b": zahl(b), "h": zahl(h)} for b, h in plan.zu_gross]
         if v.reste or v.ganze or v.neue_reste:
@@ -335,6 +342,10 @@ def plane(bom: dict[str, Any], bestand: dict[str, Any] | None, katalog: KatalogQ
                                  (f", Stand {stands[0]} bis {stands[-1]}" if stands else "")))
         if ohne:
             note += "; ohne Preis: " + ", ".join(dict.fromkeys(ohne))
+    if cuts:
+        out["verschnitt"] = verschnitt_summe(cuts)
+    else:
+        out.pop("verschnitt", None)
     out.update({"cuts": cuts, "warnings": warnings, "stueckgut": stueckgut, "einkaufsliste": einkauf,
                 "einkauf_summe": round(sum(priced), 2) if priced else None, "einkauf_hinweis": note,
                 "bestand_stand": stand if not fehler else None, "fehlt": bool(einkauf)})

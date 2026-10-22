@@ -241,9 +241,9 @@ final class MaterialTests: XCTestCase {
         XCTAssertTrue(text.contains("- [x] 1 × Stange 1.000 mm"))
         XCTAssertTrue(text.contains("- [ ] 1 × Stück: ALUTEC"))
         let csv = MaterialText.einkaufCSV(d.einkauf)
-        XCTAssertTrue(csv.hasPrefix("\u{FEFF}Menge;Einheit;Benennung"))
-        XCTAssertTrue(csv.contains("ALUTEC"))
-        XCTAssertTrue(csv.contains(";;Summe;;;29,73;;;;"))
+        XCTAssertTrue(csv.hasPrefix("\u{FEFF}Gruppe;Menge;Einheit;Benennung"))
+        XCTAssertTrue(csv.contains("\r\nZukaufteile;1;Stück;ALUTEC"))
+        XCTAssertTrue(csv.contains("\r\n;;;Summe;;;29,73;;;;\r\n"))
         // Ändert sich die Menge, ist die Zeile wieder offen
         var anders = d.einkauf
         anders[0].position.menge = 2

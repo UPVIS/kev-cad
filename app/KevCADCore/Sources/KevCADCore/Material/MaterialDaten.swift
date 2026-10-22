@@ -227,14 +227,36 @@ public struct MaterialEinkauf: Identifiable, Equatable, Sendable {
     public var abhakSchluessel: String { "\(art.rawValue)|\(position.id)|\(position.mengeText)|\(position.einheit)" }
 }
 
-/// Filament der Druckteile je Werkstoff (nur zur Information, Spulen führt der Bestand noch nicht).
+/// Filament der Druckteile je Werkstoff (nur zur Information, Spulen führt der Bestand noch nicht): aus der
+/// Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste (Volumen × Dichte). Der Kernel rechnet es
+/// genauso (`kernel/src/kevcad_kernel/bestand/einkauf.py`).
 public struct MaterialFilament: Identifiable, Equatable, Sendable {
     public var werkstoff: String
     public var teile: Int
     public var gramm: Double
     public var preis: Double?
+    /// Material-id der Druckvorschau (aus der Stückliste: nil).
+    public var material: String? = nil
+    public var preisStand: String? = nil
+    /// Stand der Druckvorschau (Schätzung, Bambu Studio); nil: aus der Stückliste.
+    public var stand: DruckStand? = nil
 
     public var id: String { werkstoff }
+
+    /// „Druckvorschau, Schätzung“ bzw. „Stückliste, Volumen × Dichte“.
+    public var quelleText: String {
+        stand.map { "Druckvorschau, \($0.titel)" } ?? "Stückliste, Volumen × Dichte"
+    }
+
+    /// Filament je Material aus der Druckvorschau, wenn sie zum Lauf der Stückliste gehört; sonst nil.
+    public static func ausDruckvorschau(_ v: Druckvorschau?, run: Int) -> [MaterialFilament]? {
+        guard let v, v.run == run, !v.summe.material.isEmpty else { return nil }
+        return v.summe.material.map { m in
+            MaterialFilament(
+                werkstoff: m.name, teile: v.teile.filter { $0.material == m.material }.reduce(0) { $0 + $1.anzahl },
+                gramm: m.g, preis: m.kosten, material: m.material, preisStand: m.preisStand, stand: m.stand)
+        }
+    }
 }
 
 // MARK: - Kennzahlen
@@ -313,6 +335,10 @@ public struct MaterialKennzahlen: Equatable, Sendable {
 /// Verschnitt einheitlich gerechnet (Schnellansicht, Material, Bericht): was weder Teil noch verwertbarer Rest ist
 /// (Sägeschnitte und Reste unter dem Mindestrest), bezogen auf die verplante Länge bzw. Fläche aller Quellen.
 public enum MaterialZuschnitt {
+    /// Kennung dieser Definition im Protokoll (`BOM.cuts[i].verschnitt_definition`, BESTAND.md): der Kernel rechnet
+    /// `verschnitt_prozent` dann genauso (`bom.verschnitt_bilanz`).
+    public static let definition = "2"
+
     public static let hilfe = "Verschnitt: Sägeschnitte und Reste unter dem Mindestrest, bezogen auf die verplante "
         + "Länge bzw. Fläche. Neue Reste zählen nicht dazu, sie kommen in den Bestand."
 
@@ -389,7 +415,7 @@ public struct MaterialDaten: Equatable, Sendable {
 
     public init(
         bom: BillOfMaterials?, bestand: BOMBestand? = nil, projektBestand: Bestand? = nil, katalog: Catalog? = nil,
-        wartetAufCAD: Int = 0, inventarVerstoesse: Int = 0
+        wartetAufCAD: Int = 0, inventarVerstoesse: Int = 0, druckvorschau: Druckvorschau? = nil
     ) {
         run = bom?.run ?? 0
         hatStueckliste = bom != nil
@@ -424,7 +450,7 @@ public struct MaterialDaten: Equatable, Sendable {
         }
         self.einkauf = einkauf
 
-        // Filament je Werkstoff
+        // Filament je Werkstoff: aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste
         var filament: [String: MaterialFilament] = [:]
         var reihenfolge: [String] = []
         for p in positionen where p.herkunft == .druckteil {
@@ -437,7 +463,7 @@ public struct MaterialDaten: Equatable, Sendable {
             filament[w]!.gramm += (p.kg ?? 0) * 1000
             if let preis = p.preis { filament[w]!.preis = (filament[w]!.preis ?? 0) + preis }
         }
-        self.filament = reihenfolge.compactMap { filament[$0] }
+        self.filament = MaterialFilament.ausDruckvorschau(druckvorschau, run: run) ?? reihenfolge.compactMap { filament[$0] }
 
         // Kennzahlen
         var k = MaterialKennzahlen()
@@ -698,13 +724,43 @@ public enum MaterialText {
         return cells.joined(separator: "\t")
     }
 
-    /// Einkaufsliste als Text zum Weiterleiten: Lagerware und Zukaufteile, abgehakte Zeilen als „erledigt“.
+    /// Gruppen der Einkaufsliste in Text und CSV (gleich im Kernel, `bestand/einkauf.py`).
+    public enum EinkaufGruppe {
+        public static let lager = "Lagerware"
+        public static let zukauf = "Zukaufteile"
+        public static let normteile = "Normteile abzählen"
+        public static let filament = "Filament für Druckteile"
+    }
+
+    /// Normteil zum Abzählen: Benennung, bei Schrauben ohne Länge im Namen dazu das Maß (wie „Normteile · abzählen“).
+    public static func normteilName(_ s: StueckgutBedarf) -> String {
+        s.benennung + (s.laenge != nil && !s.benennung.contains("Länge") ? " · \(s.masseText)" : "")
+    }
+
+    /// „16 gebraucht, 12 aus Bestand, 4 kaufen“.
+    public static func normteilMengen(_ s: StueckgutBedarf) -> String {
+        "\(KevFormat.integer(s.anzahl)) gebraucht, \(KevFormat.integer(s.ausBestand)) aus Bestand"
+            + (s.kaufen > 0 ? ", \(KevFormat.integer(s.kaufen)) kaufen" : "")
+    }
+
+    /// Die ganze Einkaufsliste als Text (Lagerware, Zukaufteile, Summe, Normteile zum Abzählen, Filament): so teilt
+    /// die App sie, und genau so liefert sie der Kernel über MCP `einkaufsliste()`.
     public static func einkaufText(
-        _ zeilen: [MaterialEinkauf], projekt: String?, stand: String? = nil, abgehakt: Set<String> = []
+        _ d: MaterialDaten, projekt: String?, stand: String? = nil, abgehakt: Set<String> = []
+    ) -> String {
+        einkaufText(d.einkauf, projekt: projekt, stand: stand, abgehakt: abgehakt, normteile: d.stueckgut,
+                    filament: d.filament)
+    }
+
+    /// Einkaufsliste als Text zum Weiterleiten: Lagerware und Zukaufteile mit Summe, abgehakte Zeilen als „erledigt“,
+    /// darunter (falls übergeben) Normteile zum Abzählen und Filament; beides zählt nicht zur Summe.
+    public static func einkaufText(
+        _ zeilen: [MaterialEinkauf], projekt: String?, stand: String? = nil, abgehakt: Set<String> = [],
+        normteile: [StueckgutBedarf] = [], filament: [MaterialFilament] = []
     ) -> String {
         var out = ["Einkaufsliste" + (projekt.map { " \($0)" } ?? "") + (stand.map { " (Stand \($0))" } ?? "")]
         if zeilen.isEmpty { out.append("Nichts zu kaufen, alles ist im Bestand.") }
-        for (art, titel) in [(MaterialEinkauf.Art.lager, "Lagerware"), (.zukauf, "Zukaufteile")] {
+        for (art, titel) in [(MaterialEinkauf.Art.lager, EinkaufGruppe.lager), (.zukauf, EinkaufGruppe.zukauf)] {
             let teil = zeilen.filter { $0.art == art }
             guard !teil.isEmpty else { continue }
             out.append("")
@@ -719,13 +775,61 @@ public enum MaterialText {
             }
         }
         if let summe = MaterialDaten.summe(zeilen.map(\.position)) { out.append(""); out.append("Summe: ≈ \(KevFormat.euro(summe))") }
+        if !normteile.isEmpty {
+            out.append("")
+            out.append(EinkaufGruppe.normteile)
+            for s in normteile { out.append("- \(normteilName(s)): \(normteilMengen(s))") }
+        }
+        if !filament.isEmpty {
+            out.append("")
+            out.append(EinkaufGruppe.filament)
+            for f in filament {
+                var zeile = "- \(f.werkstoff): \(KevFormat.mass(grams: f.gramm)) für "
+                    + KevFormat.count(f.teile, one: "Teil", many: "Teile")
+                if let preis = f.preis { zeile += ", \(KevFormat.euro(preis))" }
+                out.append(zeile + " (\(f.quelleText))")
+            }
+        }
         return out.joined(separator: "\n")
     }
 
-    /// Einkaufsliste als CSV wie der Export des Kernels (Semikolon, deutsche Zahlen, UTF-8 mit BOM), mit Zukaufteilen.
-    public static func einkaufCSV(_ zeilen: [MaterialEinkauf]) -> String {
-        let liste = zeilen.map(\.position)
-        return EinkaufslisteFormat.csv(liste, summe: MaterialDaten.summe(liste))
+    /// Die ganze Einkaufsliste als CSV (siehe `einkaufCSV(_:normteile:filament:)`), wie Kernel-Export und MCP.
+    public static func einkaufCSV(_ d: MaterialDaten) -> String {
+        einkaufCSV(d.einkauf, normteile: d.stueckgut, filament: d.filament)
+    }
+
+    /// Einkaufsliste als CSV, byteweise wie der Export des Kernels (EXPORT_REQ `einkaufsliste_csv`, MCP
+    /// `einkaufsliste()`): Semikolon, deutsche Zahlen, CRLF, UTF-8 mit BOM. Spalte „Gruppe“ zuerst; nach Lagerware und
+    /// Zukaufteilen die Summe, darunter Normteile zum Abzählen und Filament ohne Preis (sie zählen nicht zur Summe).
+    public static func einkaufCSV(
+        _ zeilen: [MaterialEinkauf], normteile: [StueckgutBedarf] = [], filament: [MaterialFilament] = []
+    ) -> String {
+        typealias F = EinkaufslisteFormat
+        var out = ["Gruppe;Menge;Einheit;Benennung;Lagerteil;Preis je (EUR);Preis (EUR);Preisstand;Bezugsquelle;Link;Hinweis"]
+        for z in zeilen {
+            let p = z.position
+            out.append([
+                z.art == .lager ? EinkaufGruppe.lager : EinkaufGruppe.zukauf,
+                KevFormat.compact(p.menge, maxDigits: 2).replacingOccurrences(of: ".", with: ""), p.einheit,
+                p.benennung, p.id, F.zahl(p.preisJe), F.zahl(p.preis), p.stand ?? "", p.linkName ?? "",
+                p.link?.absoluteString ?? "", p.hinweis ?? "",
+            ].map(F.feld).joined(separator: ";"))
+        }
+        out.append(";;;Summe;;;\(F.zahl(MaterialDaten.summe(zeilen.map(\.position))));;;;")
+        for s in normteile {
+            out.append([
+                EinkaufGruppe.normteile, KevFormat.integer(s.anzahl).replacingOccurrences(of: ".", with: ""), "Stück",
+                normteilName(s), s.stockID, "", "", "", "", "", normteilMengen(s),
+            ].map(F.feld).joined(separator: ";"))
+        }
+        for f in filament {
+            let hinweis = KevFormat.count(f.teile, one: "Teil", many: "Teile") + (f.preis.map { ", " + KevFormat.euro($0) } ?? "")
+            out.append([
+                EinkaufGruppe.filament, KevFormat.compact(f.gramm, maxDigits: 1).replacingOccurrences(of: ".", with: ""),
+                "g", f.werkstoff, f.material ?? "", "", "", f.preisStand ?? "", "", "", "\(hinweis) (\(f.quelleText))",
+            ].map(F.feld).joined(separator: ";"))
+        }
+        return "\u{FEFF}" + out.joined(separator: "\r\n") + "\r\n"
     }
 }
 
@@ -763,10 +867,12 @@ public struct EinkaufAbgehakt: Equatable, Sendable {
 // MARK: - App-Modell
 
 extension AppModel {
-    /// Die gemeinsame Datenquelle aus dem aktuellen Stand (Stückliste, Bestand, Katalog, Zukauf, Inventar).
+    /// Die gemeinsame Datenquelle aus dem aktuellen Stand (Stückliste, Bestand, Katalog, Zukauf, Inventar,
+    /// Druckvorschau für das Filament).
     public var materialDaten: MaterialDaten {
         MaterialDaten(
             bom: bom, bestand: bestandZustand.zuschnitt, projektBestand: bestandZustand.bestand, katalog: catalog,
-            wartetAufCAD: waitingForCAD.count, inventarVerstoesse: inventarVerstoesse.count)
+            wartetAufCAD: waitingForCAD.count, inventarVerstoesse: inventarVerstoesse.count,
+            druckvorschau: druck.vorschau)
     }
 }

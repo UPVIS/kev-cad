@@ -367,7 +367,8 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 
 - `bom`: Positionen (Anzahl, Maße, Gehrung, Material, kg, €), Zuschnitt je Stangenware („Stange 1: 882 + 882 + … =
   5.394 mm, Rest 606 mm“, Sägeschnitt 3 mm, Verschnitt in %), Summen mit Richtpreis-Hinweis, Hinweise (etwa nicht
-  zugeordnete Lagerteile). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
+  zugeordnete Lagerteile). Verschnitt heißt wie in der App: Sägeschnitte und Reste unter dem Mindestrest, bezogen auf
+  die verplante Länge bzw. Fläche; neue Reste zählen nicht (`verschnitt_definition: "2"`). `bom(format="csv")` liefert CSV, `export(["bom_csv"])` schreibt die Datei.
 - Preise sind Richtwerte mit Stand; so auch an Kevin weitergeben.
 
 ## Bestand und Einkauf (Kevin, 21.10.2026)
@@ -377,7 +378,11 @@ Kennung (R-0001, P-0001) und Länge bzw. Maß, Stückgut wie Schrauben je Länge
 
 - Der Zuschnitt nimmt nach jedem Lauf zuerst passende Reste, dann ganze Stangen bzw. Platten aus dem Bestand, dann
   zu kaufende (optimiert, mit Mindestrest und Sägeblatt). `bom` zeigt je Rest, Stange und Platte die Stücke und die
-  neuen Reste, `bestand_liste` den Bestand, `einkaufsliste` was fehlt (Menge, Preis mit Stand, Link, Summe, CSV).
+  neuen Reste, `bestand_liste` den Bestand.
+- `einkaufsliste` liefert genau die Liste, die Kevin unter „Material › Einkaufsliste“ sieht und teilt (gleicher Text,
+  gleiche CSV): Lagerware (was nach Resten und Bestand fehlt, Normteile zum Kaufen eingeschlossen), Zukaufteile (Link
+  und Preis aus dem Katalog), Summe dieser beiden, dann „Normteile abzählen“ (gebraucht, aus Bestand, kaufen) und
+  „Filament für Druckteile“ (aus der Druckvorschau, sonst Volumen × Dichte; nicht in der Summe).
 - **Bestand nur nach Kevins Angabe eintragen** (`bestand_eintragen`, seine Worte in `grund`), nie schätzen oder
   erfinden; jede Änderung aus der Antwort an Kevin nennen.
 - **„Gebaut“ nur auf Kevins ausdrücklichen Wunsch** (`gebaut_buchen`): bucht verplante Reste, ganze Stangen und

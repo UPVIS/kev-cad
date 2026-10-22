@@ -464,7 +464,15 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if bom is None:
             return {"ok": False, "error": "Noch keine Stückliste: erst run aufrufen (Lagerteile mit "
                                           "lager.teil(...).verbauen(...) oder Teile mit material= zeigen)."}
-        return {"ok": True, **bom}
+        out = {"ok": True, **bom}
+        if bom.get("einkaufsliste") is not None:  # Einkaufsliste wie in der App (Text wie „Teilen“)
+            from kevcad_kernel.bestand.einkauf import heute_text, text
+
+            e = self.einkauf_zusammenstellen(bom)
+            proj = self._project
+            if e is not None:
+                out["einkauf_text"] = text(e, proj.name if proj is not None else None, heute_text())
+        return out
 
     def stock_search(self, query: str = "", art: str | None = None, limit: int = 30) -> dict[str, Any]:
         if art is not None and art not in ALLE_ARTEN:
@@ -994,8 +1002,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             with self._lock:
                 full = self._bom
             if ok and full is not None and full.get("run") == job.run and full.get("einkaufsliste") is not None:
-                result["bom"]["einkauf"] = {"positionen": len(full["einkaufsliste"]),
-                                            "summe": full.get("einkauf_summe"), "hinweis": full.get("einkauf_hinweis")}
+                # wie die Kennzeile der App: Lagerware und Zukaufteile, Summe beider
+                from kevcad_kernel.bestand.einkauf import zusammenstellen
+
+                e = zusammenstellen(full)
+                result["bom"]["einkauf"] = {"positionen": e["positionen"], "summe": e["summe"],
+                                            "hinweis": full.get("einkauf_hinweis")}
         rep = final.get("bedingungen")
         if isinstance(rep, dict):
             from kevcad_kernel.bedingungen.bericht import kurzbericht

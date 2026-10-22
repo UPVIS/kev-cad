@@ -103,7 +103,53 @@ STUECKE: list[tuple[str, str, Any, int]] = [
 def basis_bom(run: int = 5, stuecke: list[tuple[str, str, Any, int]] | None = None,
               katalog: Katalog | None = None) -> dict[str, Any]:
     """Stückliste wie nach einem Lauf (``build_bom``), ohne Bestand."""
-    kat = katalog or Katalog()
+    pieces, parts = _lagerstuecke(stuecke or STUECKE, katalog or Katalog())
+    return {"run": run, **build_bom(pieces, parts, inventar_regel=True)}
+
+
+# Strang „Material im Kernel angleichen“ (22.10.2026): derselbe Kugelschieber mit Zukaufteilen, Kamerazubehör ohne
+# Zukauf-Angaben und Druckteilen wie in der Druckvorschau ``protocol.druckvorschau_beispiel`` (gleiche Teilnamen)
+ZUKAUF = {"hersteller": "ALUTEC", "mpn": "05200", "gtin": "4005187052008",
+          "url": "https://www.beispiel-shop.de/p/alutec-05200", "bild": "https://www.beispiel-shop.de/bilder/05200.jpg",
+          "masse_text": "610 × 410 × 128 mm", "preis_brutto": True, "cad": "vereinfacht", "cad_quelle": "keins"}
+FILAMENT = {"petg": {"id": "petg", "name": "PETG", "dichte": 1.27, "preis_je_kg": 17.0, "preis_stand": "2026-10"},
+            "pla": {"id": "pla", "name": "PLA", "dichte": 1.24, "preis_je_kg": 17.0, "preis_stand": "2026-10"}}
+# (Name, Material, Volumen mm³, Hüllmaß)
+DRUCKTEILE = [
+    *[(f"Kugelschieber/Stangenhalter {o} (Druck)", "petg", 9200.0, [40.0, 24.0, 18.0])
+      for o in ("vorn links", "vorn rechts", "hinten links", "hinten rechts")],
+    ("Kugelschieber/Fangrolle (Druck)", "petg", 15800.0, [36.0, 36.0, 22.0]),
+    ("Kugelschieber/Lenksperre (Druck)", "petg", 6100.0, [52.0, 20.0, 12.0]),
+    *[(f"Kugelschieber/Abdeckkappe {i} (Druck)", "pla", 2600.0, [16.0, 16.0, 9.0]) for i in range(1, 7)],
+]
+
+
+def material_bom(run: int = 5, katalog: Katalog | None = None) -> dict[str, Any]:
+    """Kugelschieber mit Resten, Normteilen, Zukaufteilen, Kamera und Druckteilen (Stückliste ohne Bestand)."""
+    pieces, parts = _lagerstuecke(STUECKE, katalog or Katalog())
+
+    def neu(p: Piece) -> None:
+        p.seq = len(pieces) + 1
+        pieces.append(p)
+        parts.append(ShownPart(name=p.name, pieces=[p.seq]))
+
+    for i in range(2):
+        neu(Piece(seq=0, name=f"Kugelschieber/Transportroller {i + 1}", stock_id="alutec-05200", art="zukaufteil",
+                  benennung="ALUTEC Transportroller 05200", kg=1.8, preis=24.99, preis_stand="2026-10-21",
+                  zukauf=dict(ZUKAUF)))
+    neu(Piece(seq=0, name="Kamera/Schnellwechselplatte", stock_id="manfrotto-200pl-pro", art="kamerazubehoer",
+              benennung="Manfrotto Schnellwechselplatte 200PL-PRO", groesse="1/4\"-20", kg=0.07, preis=29.9,
+              preis_stand="2026-10"))
+    for name, mid, vol, size in DRUCKTEILE:
+        m = FILAMENT[mid]
+        kg = vol * m["dichte"] / 1e6
+        neu(Piece(seq=0, name=name, stock_id=None, art="druckteil", benennung=name, material_id=mid,
+                  material_name=m["name"], verfahren="3d-druck", volume=vol, size=list(size), kg=kg,
+                  preis=kg * m["preis_je_kg"], preis_stand=m["preis_stand"]))
+    return {"run": run, **build_bom(pieces, parts, inventar_regel=True)}
+
+
+def _lagerstuecke(stuecke: list[tuple[str, str, Any, int]], kat: Katalog) -> tuple[list[Piece], list[ShownPart]]:
     pieces: list[Piece] = []
     parts: list[ShownPart] = []
     for sid, name, mass, n in stuecke or STUECKE:
@@ -128,7 +174,7 @@ def basis_bom(run: int = 5, stuecke: list[tuple[str, str, Any, int]] | None = No
             p.seq = len(pieces) + 1
             pieces.append(p)
             parts.append(ShownPart(name=pname, pieces=[p.seq]))
-    return {"run": run, **build_bom(pieces, parts, inventar_regel=True)}
+    return pieces, parts
 
 
 BUCHUNGEN: list[dict[str, Any]] = [
