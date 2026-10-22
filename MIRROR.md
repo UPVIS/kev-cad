@@ -193,7 +193,8 @@ und wartet.
 Projektfenster aufgeht (kurz danach, sobald der Katalog nachgeladen ist).
 
 - **Ohne Miete:** an jede verbundene Gegenstelle, die die Prüfung unten besteht und ihr HELLO geschickt hat, wie `HELLO`
-  und `AGENTS`, auch ohne `WATCH`. Direkt nach dem HELLO von Kev CAD kommen alle noch offenen Anfragen.
+  und `AGENTS`, auch ohne `WATCH`. Nach dem HELLO von Kev CAD kommen alle noch offenen Anfragen, sobald die Prüfung
+  der Gegenstelle durch ist (sie läuft neben dem Socket und braucht Bruchteile einer Sekunde).
 - `anfrage_id`: eindeutig je Programmstart („F-0001-5c1e9a27“). `ablauf`: ISO 8601 in UTC, 24 h nach der Anfrage.
 - `nonce`: 128 Bit Zufall als 32 Hex-Zeichen, einmalig je Anfrage. Kev CAD hält sie nur im Speicher, nie auf Platte und
   nie im Protokoll; VoiceBridge ebenso (kein Log, kein CloudKit-Feld im Klartext, das länger lebt als die Anfrage).
