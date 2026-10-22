@@ -208,11 +208,18 @@ def constraints_example(run: int = 3) -> dict[str, Any]:
                   "hinweise": 1, "bewegungen": 1},
         "pruef_ms": 14.2, "loese_ms": 3.1,
     }
+CHECK_STATES = ("running", "done", "teilweise", "cancelled", "failed")
+
+
 def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
                geometrie: list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None = None, message: str | None = None,
-               seq: int = 0) -> tuple[dict[str, Any], bytes]:
+               seq: int = 0, im_hintergrund: list[str] | None = None) -> tuple[dict[str, Any], bytes]:
     """Baut Kopf und Nutzlast von CHECK (Prüfergebnis, PROTOCOL.md Abschnitt „Prüfung“). ``geometrie``: je
-    Schnittkörper (Punkte (n, 3), Normalen (n, 3), Dreiecke (m, 3)); die Nutzlast reiht sie hintereinander."""
+    Schnittkörper (Punkte (n, 3), Normalen (n, 3), Dreiecke (m, 3)); die Nutzlast reiht sie hintereinander.
+    ``state`` "teilweise" (additiv, Prüftempo): Ergebnis steht, der Bewegungsraum wird noch fertig gerechnet;
+    ``im_hintergrund`` nennt die offenen Wege, danach folgt dasselbe ``run`` mit "done"."""
+    if state not in CHECK_STATES:
+        raise ValueError(f"CHECK: state {state!r} unbekannt")
     erg = dict(ergebnis or {})
     teile: list[bytes] = []
     geo_kopf = []
@@ -240,6 +247,8 @@ def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
     for key in ("montage", "stand", "gewinde", "erlaubt"):
         if key in erg:
             header[key] = erg[key]
+    if im_hintergrund is not None:
+        header["im_hintergrund"] = list(im_hintergrund)
     return header, b"".join(teile)
 
 

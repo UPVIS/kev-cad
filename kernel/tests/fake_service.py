@@ -226,10 +226,12 @@ class FakeService:
 
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
             titel: str | None = None) -> dict[str, Any]:
+        extra: dict[str, Any] = {}
         if titel is not None:
-            self._record("run", params, slow_ms, titel=titel)
-        else:
-            self._record("run", params, slow_ms)
+            extra["titel"] = titel
+        if timeout_s != 120:
+            extra["timeout_s"] = timeout_s
+        self._record("run", params, slow_ms, **extra)
         self.run_no += 1
         if self.fail_run:
             return {"ok": False, "run": self.run_no, "duration_ms": 12, "parts": [], "steps": ["Grundplatte"],
@@ -303,8 +305,8 @@ class FakeService:
 
     # Prüfung -------------------------------------------------------------------------------------------------
 
-    def pruefen(self, warten_s: float = 120.0) -> dict[str, Any]:
-        self._record("pruefen")
+    def pruefen(self, warten_s: float = 120.0, endstand: bool = False) -> dict[str, Any]:
+        self._record("pruefen", warten_s, endstand=endstand)
         if not self.run_no:
             return {"ok": False, "error": "Noch keine Prüfung: erst run aufrufen (geprüft wird nach jedem Lauf)."}
         return {"ok": True, "run": self.run_no, "state": "done", **PRUEFUNG}

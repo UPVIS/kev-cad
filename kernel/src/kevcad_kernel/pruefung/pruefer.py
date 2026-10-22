@@ -13,6 +13,10 @@ Jede Funktion bekommt den ``PruefKontext`` (Körper, Erklärungen aus model.py, 
 Zwischenspeicher) und gibt eine Liste von Befunden im Format von ``befund.py`` zurück. Zusatzangaben (etwa die
 Montagereihenfolge) legt sie in ``ctx.ergebnis`` ab. Befunde mit ``schwere: "fehler"`` machen den Lauf zum Fehler und
 sperren den Export, gleich aus welcher Quelle.
+
+Kommt eine Prüfung im Zeitlimit des Laufs nicht ganz durch (Bewegungsraum), legt sie in ``ctx.hintergrund`` eine
+``Fortsetzung`` ab: Das Ergebnis geht dann als ``state: "teilweise"`` hinaus, und der Rechenprozess rechnet den Rest
+fertig (``pruefung/lauf.py``, ``PruefLauf.fertig_rechnen``), ersetzt die Befunde dieser Arten und schickt ``done``.
 """
 
 from __future__ import annotations
@@ -32,6 +36,18 @@ from kevcad_kernel.pruefung.kollision import Paar, PaarCache, gewinde as gewinde
 
 class Abgebrochen(Exception):
     """Neuerer Prüfauftrag (nächster Lauf) oder Zeitlimit."""
+
+
+@dataclass
+class Fortsetzung:
+    """Rest einer Prüfung, der nach dem Lauf im Hintergrund fertig gerechnet wird. ``rechne(abbrechen)`` liefert
+    (Befunde, Zusatzangaben fürs Ergebnis) und ersetzt damit alle Befunde der ``arten``; es darf mit ``Abgebrochen``
+    unterbrochen werden und setzt beim nächsten Aufruf fort (Zwischenspeicher der Prüfung). ``offen``: Namen dessen,
+    was noch fehlt (für Text und Protokoll, ``CHECK.im_hintergrund``)."""
+
+    arten: set[str]
+    offen: list[str]
+    rechne: Callable[[Callable[[], None]], tuple[list[dict[str, Any]], dict[str, Any]]]
 
 
 def _in_gruppe(name: str, muster: str) -> bool:
@@ -59,6 +75,7 @@ class PruefKontext:
     geometrie: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = field(default_factory=list)  # Schnittkörper
     zeiten: dict[str, float] = field(default_factory=dict)
     stand_cache: dict = field(default_factory=dict)
+    hintergrund: dict[str, Fortsetzung] = field(default_factory=dict)  # Name der Prüfung → Rest fürs Fertigrechnen
 
     # -- Erklärungen ---------------------------------------------------------------------------------------------
 
@@ -310,17 +327,7 @@ def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, o
                                   f"Prüfung „{name}“ ist fehlgeschlagen: {type(exc).__name__}: {exc}",
                                   "Bitte melden; die übrigen Prüfungen sind gelaufen."))
             ctx.ergebnis.setdefault("fehler", []).append(traceback.format_exc(limit=6))
-    befunde = bf.sortieren(befunde)
-    bf.nummerieren(befunde)
-    # Schnittkörper in Reihenfolge der Befunde umnummerieren, ungenutzte weglassen
-    geo_alt, geometrie, karte = ctx.geometrie, [], {}
-    for b in befunde:
-        g = b.get("geometrie")
-        if g is not None and 0 <= g < len(geo_alt):
-            if g not in karte:
-                karte[g] = len(geometrie)
-                geometrie.append(geo_alt[g])
-            b["geometrie"] = karte[g]
+    befunde, geometrie = abschliessen(befunde, ctx.geometrie)
     ergebnis = {
         "befunde": befunde,
         "zusammenfassung": bf.zusammenfassung(befunde),
@@ -331,4 +338,24 @@ def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, o
         "zeiten_ms": {k: round(v, 1) for k, v in ctx.zeiten.items()},
         "dauer_ms": round((time.perf_counter() - t0) * 1000, 1),
     }
+    if ctx.hintergrund:  # nicht ins Protokoll: PruefLauf nimmt es heraus (Fertigrechnen im Hintergrund)
+        ergebnis["_hintergrund"] = dict(ctx.hintergrund)
     return ergebnis, geometrie
+
+
+def abschliessen(befunde: list[dict[str, Any]], geo_alt: list[tuple[np.ndarray, np.ndarray, np.ndarray]]
+                 ) -> tuple[list[dict[str, Any]], list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+    """Befunde sortieren und nummerieren, Schnittkörper in Reihenfolge der Befunde umnummerieren (ungenutzte
+    weglassen). Auch nach dem Fertigrechnen im Hintergrund (``PruefLauf.fertig_rechnen``)."""
+    befunde = bf.sortieren(befunde)
+    bf.nummerieren(befunde)
+    geometrie: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    karte: dict[int, int] = {}
+    for b in befunde:
+        g = b.get("geometrie")
+        if g is not None and 0 <= g < len(geo_alt):
+            if g not in karte:
+                karte[g] = len(geometrie)
+                geometrie.append(geo_alt[g])
+            b["geometrie"] = karte[g]
+    return befunde, geometrie

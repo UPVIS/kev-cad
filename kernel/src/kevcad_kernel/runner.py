@@ -738,7 +738,10 @@ class Runner:
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
                           sketch=False, state=state, catalog=catalog, register=register, strict=strict,
                           kameras=kameras, sammlung=sammlung)
-            with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out):
+            from kevcad_kernel.huellen import zwischenspeicher
+
+            # Hüllquader je Form und Lage merken (huellen.py): Ausbauprüfungen in model.py fragen sie hundertfach
+            with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out), zwischenspeicher():
                 warnings.simplefilter("always")
                 try:
                     code = compile(source, path, "exec")
@@ -851,6 +854,15 @@ class Runner:
         if self._pruef_lauf is None:
             self._pruef_lauf = PruefLauf()
         return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen)
+
+    def fertig_rechnen(self, run: int, abbrechen: Callable[[], None] | None = None
+                       ) -> tuple[dict[str, Any], bytes] | None:
+        """Teilweises Prüfergebnis von Lauf ``run`` fertig rechnen (Bewegungsraum über dem Zeitlimit): Kopf und
+        Nutzlast von CHECK mit ``state: "done"``, oder None, wenn nichts offen ist. ``abbrechen`` darf mit
+        ``Abgebrochen`` unterbrechen; der nächste Aufruf setzt fort."""
+        if self._pruef_lauf is None:
+            return None
+        return self._pruef_lauf.fertig_rechnen(run, abbrechen)
 
     # -- execute -------------------------------------------------------------------------------------------------------
 

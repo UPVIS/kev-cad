@@ -149,6 +149,11 @@ of the hole through its opening (through holes: positive main axis); set it with
 - `run` checks all constraints against the real geometry; violations, contradictions, unfastened parts and blocked \
 travel are findings with target, actual, location and fix (isError, export refused). `bedingungen` lists all \
 constraints, degrees of freedom per part, fastening and range of motion. Fix every error before reporting done.
+- If the range of motion does not finish within the time limit of a run, `run` says "Bewegungsraum: N Gelenke noch \
+nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet" (check state `teilweise`). That result is not final: \
+the kernel finishes it without a new run. Before reporting done, call `pruefen()` (it waits for the final result by \
+default) or `bedingungen()` and fix what it finds; do not just repeat `run`, that restarts the work. For very large \
+models `run(timeout_s=...)` (up to 900 s) raises the time limit for model.py.
 
 Cameras (film set simulation)
 - Cameras, lenses and rig accessories come from the inventory too: `kamera_katalog`. In model.py: \

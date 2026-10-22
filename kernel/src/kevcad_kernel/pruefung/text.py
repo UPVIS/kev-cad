@@ -43,11 +43,13 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
     if state == "failed":
         return f"Prüfung fehlgeschlagen: {check.get('message') or 'ohne Meldung'}", False
     befunde = list(check.get("befunde") or [])
+    if state == "teilweise":  # Bewegungsraum rechnet im Hintergrund: ausblenden, was nur „noch offen“ sagt
+        befunde = [b for b in befunde if not _nur_offen(b)]
     fehler = [b for b in befunde if b.get("schwere") == "fehler"]
     zeigen = [b for b in befunde if hinweise or b.get("schwere") != "hinweis"]
     zusammen = check.get("zusammenfassung") or zusammenfassung(befunde)
     if not fehler and not [b for b in befunde if b.get("schwere") == "warnung"]:
-        kopf = "Prüfung: in Ordnung, keine Befunde"
+        kopf = "Prüfung: bisher keine Befunde" if state == "teilweise" else "Prüfung: in Ordnung, keine Befunde"
         n_gew = len(check.get("gewinde") or [])
         n_erl = len(check.get("erlaubt") or [])
         extra = []
@@ -67,6 +69,8 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
         zeilen.append(befund_zeile(b))
     if len(zeigen) > max_befunde:
         zeilen.append(f"… und {len(zeigen) - max_befunde} weitere (pruefen zeigt alle).")
+    if state == "teilweise":
+        zeilen.insert(1, hintergrund_text(check))
     if check.get("druck"):  # Druckprüfung: Summen und Ausrichtung (druck/bericht.py)
         from kevcad_kernel.druck.bericht import druck_zeilen
 
@@ -82,6 +86,24 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
                       "schnappt=True), beim Druck eingelegte Mutter montage(teil, eingedruckt=True); "
                       "montage_reihenfolge zeigt die Reihenfolge.")
     return "\n".join(zeilen), bool(fehler)
+
+
+def _nur_offen(b: dict[str, Any]) -> bool:
+    """Hinweis des Bewegungsraums, dass ein Weg noch im Hintergrund gerechnet wird (steht im Text darüber)."""
+    return b.get("art") == "bewegungsraum" and b.get("schwere") == "hinweis" and "im Hintergrund" in str(
+        b.get("text") or "")
+
+
+def hintergrund_text(check: dict[str, Any]) -> str:
+    """„Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet; …“"""
+    offen = list(check.get("im_hintergrund") or [])
+    if not offen:  # Fertigrechnen gescheitert: es kommt nichts mehr nach
+        return f"Bewegungsraum nicht vollständig geprüft: {check.get('message') or 'Fertigrechnen abgebrochen'}."
+    n = len(offen)
+    namen = ", ".join(o.split(" ", 1)[-1].rsplit("/", 1)[-1] for o in offen[:4]) + (" …" if len(offen) > 4 else "")
+    return (f"Bewegungsraum: {n} {'Gelenk' if n == 1 else 'Gelenke'} noch nicht geprüft (Zeitlimit), wird im "
+            f"Hintergrund fertig gerechnet; bedingungen() bzw. pruefen() zeigt den Endstand"
+            + (f" ({namen})" if namen else "") + ". Erst danach fertig melden.")
 
 
 def montage_text(check: dict[str, Any] | None, max_schritte: int = 200) -> str:
