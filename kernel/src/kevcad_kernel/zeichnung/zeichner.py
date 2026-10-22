@@ -310,7 +310,11 @@ def _schriftfeld_fuellen(blatt: dict[str, Any], szene: Szene, teile: list[Teil],
         sf[feld] = wert
 
     setze("projekt", proj.get("name"))
-    setze("version", proj.get("version"))
+    # Version nur für die Darstellung (_dekoration): gespeichert würde sie die Blattdatei bei jedem Lauf ändern, und
+    # weil die Versionen dokumente/ erfassen, legte jeder Lauf ohne Änderung eine neue Version an.
+    blatt["_sf_laufzeit"] = {"version": proj.get("version")}
+    if "version" not in gesetzt:
+        sf["version"] = None
     if not sf.get("zeichnungsnummer"):
         kurz = "".join(w[0] for w in str(proj.get("name") or "KC").split() if w)[:4].upper() or "KC"
         sf["zeichnungsnummer"] = f"{kurz}-{blatt['id'][:24].upper()}"
@@ -1329,6 +1333,9 @@ def _dekoration(blatt: dict[str, Any], ansichten: dict[str, _Ansicht], szene: Sz
     W, H = lage["breite"], lage["hoehe"]
     g = bl.rahmen(W, H)
     sf = dict(blatt["schriftfeld"])
+    for feld, wert in (blatt.get("_sf_laufzeit") or {}).items():
+        if not sf.get(feld):
+            sf[feld] = wert
     if art == "teil" and teile:
         gleich = szene.gleiche_teile(teile[0].name)
         if len(gleich) > 1 and not sf.get("notiz"):

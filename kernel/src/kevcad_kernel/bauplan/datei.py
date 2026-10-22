@@ -40,10 +40,16 @@ def laden(projekt: str | Path | None) -> dict[str, Any] | None:
 
 
 def speichern(projekt: str | Path, plan: dict[str, Any]) -> Path:
-    """Atomar schreiben (erst Temp-Datei, dann umbenennen)."""
+    """Atomar schreiben (erst Temp-Datei, dann umbenennen), nur bei geändertem Inhalt. ``stand`` (Lauf, Uhrzeit,
+    Rechenzeiten) bleibt draußen: Die Versionen erfassen dokumente/, mit ``stand`` legte jeder Lauf eine Version an."""
     p = pfad(projekt)
     p.parent.mkdir(parents=True, exist_ok=True)
-    daten = json.dumps(plan, ensure_ascii=False, indent=1, default=_json)
+    daten = json.dumps({k: v for k, v in plan.items() if k != "stand"}, ensure_ascii=False, indent=1, default=_json)
+    try:
+        if p.read_text(encoding="utf-8") == daten:
+            return p
+    except OSError:
+        pass
     fd, tmp = tempfile.mkstemp(prefix=".bauplan-", suffix=".json", dir=str(p.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
