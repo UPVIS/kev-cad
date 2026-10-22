@@ -287,6 +287,11 @@ the values with "Maße übernehmen" in the app. Check the control images or `ref
 yourself (wrong front/back = model error), never send them to Kevin.
 - `referenz_fotoansicht(name, foto, modus="differenz")` shows Kevin a photo through its fitted camera behind the \
 model (red only in photo, blue only in model).
+- `referenz_abweichung(name, zeigen=..., auf="modell"|"referenz")` gives the deviation model <-> reference mesh per \
+part (mean, 95 %, largest in mm, signed offset: positive = the real object sticks out, the model is too small; \
+covered share) and can show Kevin the color map with a legend in mm. Meaningful once the mesh is aligned \
+(after referenz_vermessen). `referenz_massstab(mm, punkte=[[x,y,z],[x,y,z]] | kante="laenge")` fixes the scale of an \
+Object Capture reference afterwards (mesh, cameras and report scale with it; not for iPhone scans).
 - Scans from Kevin's iPhone app Kev Scan (LiDAR, ARKit poses, photos) arrive by Wi-Fi: `scans` lists them, \
 `scan_importieren(scan)` evaluates one in the background (Prompt Depth Anything plus TSDF, mesh in mm, floor z = 0) \
 and adds it as a reference; then `referenz_vermessen(name)` fits the dimensions with known cameras and measured depth \

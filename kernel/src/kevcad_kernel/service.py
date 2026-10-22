@@ -473,6 +473,23 @@ class KernelService(Protocol):
         "ueberlagern" | "differenz", ``deckkraft`` des Modells; ``aus`` schließt sie. Mit ``bild`` das Bild dazu.
         {"ok", "message", "png"?, "width"?, "height"?, "ueberdeckung"?, "foto"?}"""
 
+    # Rest von Phase 4 (additiv, 22.10.2026; kevcad_kernel/referenz/laufzeit_rest.py)
+    def referenz_abweichung(self, name: str | None = None, teile: list[str] | None = None,
+                            grenze_mm: float | None = None, skala_mm: float | None = None, zeigen: bool = False,
+                            auf: str = "modell", warten_s: float = 120.0) -> dict[str, Any]:
+        """Abweichung Modell ↔ Referenznetz (positiv = Referenz außerhalb des Modells), wartet auf die Rechnung im
+        Hintergrund. ``grenze_mm``/``skala_mm`` > 0 setzen, 0 = wieder automatisch; ``zeigen`` schaltet die Farbkarte
+        in der App ein (``auf`` "modell" | "referenz"). {"ok", "referenz", "grenze_mm", "skala_mm", "skala_fest",
+        "teile": [{"teil", "feld", "mittel_mm", "max_mm", "p95_mm", "versatz_mm", "abgedeckt", "punkte", "ort_max"}],
+        "referenz_netz", "angelegt", "ms", "run", "hinweise", "gezeigt"?}"""
+
+    def referenz_massstab(self, name: str | None = None, mm: float = 0.0, punkte: list[list[float]] | None = None,
+                          kante: str | None = None) -> dict[str, Any]:
+        """Maßstab nachträglich: zwei Punkte am Netz (Welt, mm) oder ``kante`` (laenge, breite, hoehe, grund_laenge,
+        grund_breite oder ein gemessenes param) mit dem echten Maß ``mm``; Netz, Kameras und (bei einem gemessenen
+        Maß) die Vermessung skalieren mit. {"ok", "referenz", "faktor", "faktor_gesamt", "ist_mm", "mm",
+        "geaendert", "messung_skaliert", "punkte_am_netz", "text", "hinweise"}"""
+
     # Scan mit dem iPhone (additiv; SCAN.md, PLAN-SCAN.md, umgesetzt in kevcad_kernel/scan/laufzeit.py)
     def scans(self) -> dict[str, Any]:
         """Empfangene Scans (neueste zuerst) mit Zustand und Referenzen, dazu der Empfänger. {"ok", "ordner",

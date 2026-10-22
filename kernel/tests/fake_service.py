@@ -876,6 +876,31 @@ class FakeService:
                if k not in ("type", "seq")}
         return {"ok": True, **erg, "kontrollbilder": ["/tmp/r/messung/kontrolle/a.jpg"]}
 
+    def referenz_abweichung(self, name: str | None = None, teile: list[str] | None = None,
+                            grenze_mm: float | None = None, skala_mm: float | None = None, zeigen: bool = False,
+                            auf: str = "modell", warten_s: float = 120.0) -> dict[str, Any]:
+        self._record("referenz_abweichung", name, teile, grenze_mm, skala_mm, zeigen, auf)
+        from kevcad_kernel.protocol import referenz_beispiele
+
+        kurz = {n: h for n, h, _ in referenz_beispiele()}["ref_list_abweichung"]["referenzen"][0]["abweichung"]
+        out = {"ok": True, "referenz": name or "IMG_5186", "grenze_mm": kurz["grenze_mm"],
+               "skala_mm": skala_mm or kurz["skala_mm"], "skala_fest": bool(skala_mm), "teile": kurz["teile"],
+               "referenz_netz": kurz["referenz"], "angelegt": True, "ms": 840.0, "run": 7, "hinweise": []}
+        if zeigen:
+            out["gezeigt"] = True
+        return out
+
+    def referenz_massstab(self, name: str | None = None, mm: float = 0.0, punkte: Any = None,
+                          kante: str | None = None) -> dict[str, Any]:
+        self._record("referenz_massstab", name, mm, punkte, kante)
+        if punkte is None and not kante:
+            return {"ok": False, "error": "Entweder punkte (zwei Punkte am Netz) oder kante (benanntes Maß) angeben"}
+        return {"ok": True, "referenz": name or "IMG_5186", "faktor": 1.0125, "faktor_gesamt": 1.0125,
+                "ist_mm": 177.78, "mm": mm, "geaendert": ["capture/netz_mm.obj", "capture/poses.json"],
+                "messung_skaliert": False, "punkte_am_netz": [[-88.9, -50.4, 0.0], [88.9, -50.4, 0.0]] if punkte
+                else None, "text": f"Maßstab von IMG_5186: 177,8 mm an der Referenz sind {mm} mm, Faktor 1.0125",
+                "hinweise": []}
+
     # Scan mit dem iPhone
     def scans(self) -> dict[str, Any]:
         self._record("scans")

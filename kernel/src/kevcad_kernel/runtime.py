@@ -986,6 +986,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             with self._lock:
                 self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
             self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
+            self._referenz_nach_lauf(job.run)  # Phase 4: Abweichung zum Referenznetz im Hintergrund
             self._anim_publish(job, result)
             # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
             # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts

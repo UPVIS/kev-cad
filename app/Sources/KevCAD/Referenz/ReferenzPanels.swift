@@ -3,9 +3,10 @@ import KevCADCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Phase 4: Referenzen in der Oberfläche. Abschnitt „Referenzen“ im Inspektor (Zustand, Netz, Fotos, Messergebnis mit
-// Sigma, Hinweise, „Maße übernehmen“), Dialog „Referenz hinzufügen“ (nach Drag and Drop oder über +), Dialog
-// „Vermessen“. Die Oberfläche liest nur `model.referenzen` und ruft `ReferenzActions`.
+// Phase 4: Referenzen in der Oberfläche. Abschnitt „Referenzen“ im Inspektor (Zustand, Netz, Abweichung, Fotos,
+// Messergebnis mit Sigma, Hinweise, „Maße übernehmen“, „Maßstab …“, Scans vom iPhone), Dialog „Referenz hinzufügen“
+// (nach Drag and Drop oder über +), Dialog „Vermessen“, Dialog „Maßstab“. Die Oberfläche liest nur `model.referenzen` und
+// ruft `ReferenzActions`; Legende, Band und Leiste im Viewport stehen in ReferenzRestAnsichten.swift.
 
 extension AppModel {
     var referenzActions: ReferenzActions? { actions as? ReferenzActions }
@@ -91,6 +92,7 @@ struct ReferenzInspectorSection: View {
             ForEach(store.referenzen) { r in
                 ReferenzZeile(model: model, store: store, state: state, referenz: r)
             }
+            ScanListeAbschnitt(store: store, actions: model.referenzActions)  // Scans vom iPhone
             if let m = store.meldung {
                 Text(m)
                     .font(.caption)
@@ -134,8 +136,25 @@ private struct ReferenzZeile: View {
             kopf
             if referenz.zustand == .rechnet {
                 ProgressView(value: referenz.fortschritt ?? 0) {
-                    Text(referenz.text ?? (referenz.laeuft == "capture" ? "Object Capture" : "Vermessen"))
+                    if referenz.istScan && referenz.laeuft == "capture" {
+                        // Scan vom iPhone: Phase und Fortschritt statt „Object Capture“
+                        HStack {
+                            Text("Scan wird ausgewertet …").fontWeight(.medium)
+                            Spacer()
+                            Text("\(Int(((referenz.fortschritt ?? 0) * 100).rounded())) %").monospacedDigit()
+                        }
                         .font(.caption)
+                    } else {
+                        Text(referenz.text ?? (referenz.laeuft == "capture" ? "Object Capture" : "Vermessen"))
+                            .font(.caption)
+                    }
+                } currentValueLabel: {
+                    if referenz.istScan && referenz.laeuft == "capture" {
+                        Text([referenz.phase, referenz.text.map { $0.hasPrefix("Scan: ") ? String($0.dropFirst(6)) : $0 }]
+                            .compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption2)
+                            .lineLimit(1)
+                    }
                 }
                 .progressViewStyle(.linear)
                 .controlSize(.small)
@@ -147,6 +166,7 @@ private struct ReferenzZeile: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if referenz.netz { netz }
+            ReferenzAbweichungZeile(store: store, referenz: referenz, actions: actions)  // Farbkarte und Kennzahlen
             if !store.fotos(referenz.name).isEmpty { fotos }
             if let e = ergebnis { ReferenzErgebnisTabelle(ergebnis: e, params: store.params) }
             knoepfe
@@ -173,7 +193,7 @@ private struct ReferenzZeile: View {
 
     private var kopf: some View {
         HStack(spacing: 6) {
-            Image(systemName: referenz.istVideo ? "video" : "photo.on.rectangle")
+            Image(systemName: referenz.istScan ? "iphone.gen3" : referenz.istVideo ? "video" : "photo.on.rectangle")
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
@@ -193,14 +213,14 @@ private struct ReferenzZeile: View {
 
     private var untertitel: String {
         var teile: [String] = []
-        if referenz.istVideo {
+        if referenz.istVideo || referenz.istScan {
             teile.append((referenz.quelle as NSString).lastPathComponent)
         } else {
             teile.append(referenz.quelle)
         }
         switch referenz.zustand {
         case .leer: teile.append("noch nicht gerechnet")
-        case .rechnet: teile.append(referenz.laeuft == "capture" ? "Object Capture läuft" : "wird vermessen")
+        case .rechnet: teile.append(referenz.laufText)
         case .fehler: teile.append("Fehler")
         case .fertig: break
         }
@@ -269,6 +289,11 @@ private struct ReferenzZeile: View {
             if let e = ergebnis, !e.masse.isEmpty {
                 Button("Maße übernehmen") { uebernehmenFragen = true }
                     .help("Gemessene Werte (auf 0,1 mm) in die param()-Aufrufe von model.py schreiben")
+            }
+            if !referenz.istScan && (referenz.netz || ergebnis != nil) {
+                Button("Maßstab …") { state.referenzMassstab = referenz.name }
+                    .disabled(referenz.zustand == .rechnet)
+                    .help("Bekanntes Maß setzen: zwei Punkte am Netz oder ein Maß der Hülle; Netz und Kameras skalieren mit")
             }
         }
         .controlSize(.small)
@@ -518,6 +543,11 @@ struct ReferenzDialoge: ViewModifier {
                     state.showInspector = true
                 } abbrechen: {
                     state.referenzDateien = nil
+                }
+            }
+            .sheet(isPresented: Binding(get: { state.referenzMassstab != nil }, set: { if !$0 { state.referenzMassstab = nil } })) {
+                MassstabDialog(referenz: state.referenzMassstab ?? "", store: model.referenzen, actions: model.referenzActions) {
+                    state.referenzMassstab = nil
                 }
             }
             .sheet(isPresented: Binding(get: { state.referenzVermessen != nil }, set: { if !$0 { state.referenzVermessen = nil } })) {

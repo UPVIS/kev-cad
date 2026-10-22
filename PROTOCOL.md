@@ -714,7 +714,8 @@ Eine Referenz ist ein Foto- oder Videobezug des echten Gegenstands, abgelegt in 
 nicht zur Stückliste (R4). Umsetzung: `kernel/src/kevcad_kernel/referenz/`, Packen und Prüfen in `protocol.py`
 (`pack_ref_netz`, `unpack_ref_netz`, `check_ref_message`, `referenz_beispiele`), Testdateien `ref_*.frame` und
 `referenz_fixtures.json` aus `kernel/tools/make_referenz_fixtures.py`. Der Plan nannte die Nachrichten `REF_PHOTO`
-(hier gebündelt als `REF_PHOTOS`, ein Satz je Referenz) und `REF_DEVIATION`/`REF_SCALE` (noch nicht umgesetzt).
+(hier gebündelt als `REF_PHOTOS`, ein Satz je Referenz) und `REF_DEVIATION`/`REF_SCALE` (seit 22.10.2026, siehe
+„Abweichung, Maßstab, Scans in der App“ unten).
 
 | type | Richtung | Felder | Nutzlast / Antwort |
 |---|---|---|---|
@@ -764,6 +765,45 @@ Kamera hinter dem Modell (Deckkraft, Differenz rot = nur Foto, blau = nur Modell
 `groesse`} des eingepassten Modells mit allen Teilen, `grundkoerper` {`teil`, `min`, `max`, `groesse`} das Teil mit dem
 größten Hüllvolumen, `teile` je Teil. `empfehlungen[i]`: `art` (`nachmessen` \| `aufnahme` \| `unsicher` \|
 `verworfen`), `text` (deutsch, für den Hinweis in der App), dazu `mass`, `anteil` (Restvarianz), `azimut`, `hoehe`.
+
+### Abweichung, Maßstab, Scans in der App (22.10.2026, additiv)
+
+Rest von Phase 4 (Zweig `rest-referenz`); ältere Gegenseiten ignorieren die neuen Typen und Felder. Umsetzung:
+`kernel/src/kevcad_kernel/referenz/{abweichung,massstab,laufzeit_rest}.py`; Packen und Prüfen in `protocol.py`
+(`pack_ref_abweichung`, `unpack_ref_abweichung`, `check_ref_abweichung`, `referenz_beispiele_rest`), Testdateien
+`ref_deviation_modell.frame`, `ref_deviation_referenz.frame`, `ref_list_abweichung.frame`, `ref_scale_punkte.frame`,
+`ref_scale_kante.frame`, `scan_list.frame`, `scan_import.frame` aus `kernel/tools/make_referenz_fixtures.py`.
+
+| type | Richtung | Felder | Nutzlast / Antwort |
+|---|---|---|---|
+| `REF_DEVIATION` | Kernel → App | `referenz`, `run`, `auf` (`modell` \| `referenz`), `teil` (Teilname bei `modell`, sonst null), `feld` (Schlüssel), `punkte` (n), `dreiecke` (m), `grenze_mm`, `kennzahlen` | n × 3 f32 Punkte (Welt, mm), m × 3 u32 Dreiecke, n f32 Abstand in mm (positiv = die Referenz liegt außerhalb des Modells, negativ = innerhalb, NaN = keine Referenz in der Nähe); little-endian, ohne Lücken |
+| `REF_SCALE` | App → Kernel | `id`, `referenz`, `mm` (echtes Maß), dazu `punkte` (zwei Punkte [x, y, z] am Referenznetz, Welt, mm, wie im Viewer) oder `kante` (`laenge`, `breite`, `hoehe`, `grund_laenge`, `grund_breite` der Hülle oder Name eines gemessenen param) | `ACK` mit `message`, dann `REF_LIST`, `REF_UPSERT`, `REF_PHOTOS`, `REF_RESULT`, `REF_DEVIATION` |
+| `SCAN_LIST` | Kernel → App | `scans` (höchstens 30, neueste zuerst: `id`, `name`, `empfangen`, `erstellt`, `geraet`, `fotos`, `videobilder`, `objekt`, `groesse_mb`, `vorschau`, `zustand` (`neu` \| `uebernommen`), `referenzen` [{`projekt`, `name`, `stand`, `schnell`}]), `empfaenger` {`laeuft`, `port`, `name`, `dienst`}, `ordner`, `neu` (Kennung des gerade per WLAN empfangenen Scans, sonst null); beim Verbinden, nach jedem Empfang und nach jeder Übernahme | – |
+| `SCAN_IMPORT` | App → Kernel | `id`, `scan` (Kennung aus `SCAN_LIST`), `name` (oder null), `schnell` (bool) – Kevins Klick „Scan übernehmen“, wie MCP `scan_importieren` | `ACK`, dann `REF_LIST` mit dem Fortschritt, am Ende `SCAN_LIST` |
+
+- **Abweichung:** Der Kernel rechnet nach jedem Lauf, nach einem neuen Netz, einer neuen Lage und einem neuen Maßstab
+  im Hintergrund, je Referenz mit Netz: `auf: "modell"` je Teil (ohne Kulisse) die fein unterteilte Oberfläche des
+  Teils (Kanten höchstens etwa 1 bis 3 mm, alle Teile zusammen höchstens 250 000 Dreiecke) mit dem Abstand zum
+  Referenznetz, Vorzeichen über die Außennormale des Modells; `auf: "referenz"` das Referenznetz (wie in `REF_UPSERT`)
+  mit dem Abstand zum Modell. Ein Punkt ist nicht abgedeckt (NaN), wenn die Referenz weiter als `grenze_mm` weg ist
+  (Vorgabe 6 % der Diagonale des Netzes, 10 bis 60 mm) oder ab 1 mm Abstand nur schräg daneben liegt (über 60° zur
+  Normale). Ein Feld mit unverändertem Schlüssel `feld` schickt der Kernel nicht noch einmal; beim Verbinden kommen
+  alle. Die App zeigt ein Feld nur, wenn die Kurzfassung in `REF_LIST` denselben Schlüssel nennt.
+- `kennzahlen` (Feld und Kurzfassung): `mittel_mm` (Mittel des Betrags), `p95_mm`, `max_mm`, `versatz_mm` (Mittel mit
+  Vorzeichen), `abgedeckt` (Anteil der Fläche), `punkte`, `ort_max` (Ort der größten Abweichung); Mittel und Anteil
+  nach Fläche gewichtet, nur abgedeckte Punkte.
+- `REF_LIST.referenzen[i]` additiv: `abweichung` (null ohne Netz) mit `stand` (`done` \| `laeuft` \| `failed`), `run`,
+  `grenze_mm`, `skala_mm` (Spanne der Legende ± mm: aufgerundeter 95-%-Wert, oder fest über MCP), `skala_auto`,
+  `skala_fest`, `angelegt` (Netz liegt über `lage` am Modell), `ms`, `meldung`, `teile` [{`teil`, `feld`,
+  `kennzahlen…`}], `referenz` {`feld`, `kennzahlen…`}; `massstab` (null oder {`faktor` über alle Schritte, `mm`,
+  `ist_mm`, `quelle` `punkte` \| `kante` \| `messung`, `kante`, `stand`}); `phase` (laufende Scan-Auswertung: „Einlesen“,
+  „Bilder wählen“, „Bilder holen“, „Tiefe (PromptDA)“, „Verschmelzen (TSDF)“, „Netz erzeugen“, „Masken“, „Bericht“).
+- `VIEW_CMD referenz_abweichung` {`name`, `auf`, `an`}: der Agent (MCP `referenz_abweichung(zeigen=true)`) schaltet die
+  Farbkarte ein bzw. aus.
+- **Maßstab:** skaliert um den Ursprung des Referenzsystems (Boden bleibt z = 0): `capture/netz_mm.obj`, PLY-Dateien,
+  `poses.json` (`aligned`), `kameras.json`, `bericht.json`, die Maße in `referenz.json`; die Vermessung
+  (`messung/messung.json`) nur, wenn `kante` ein gemessenes param ist. Scans (`art: "scan"`) sind metrisch und werden
+  abgelehnt. Faktor 0,2 bis 5, Punkte höchstens 3 mm (bzw. 5 % ihres Abstands) neben dem Netz.
 
 ## Statik
 

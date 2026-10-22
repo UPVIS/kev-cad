@@ -17,6 +17,9 @@ public final class ViewportCoordinator: ObservableObject {
 
     /// Ein Klick ohne Ziehen (linke Maustaste): Treffer (oder nil) und die Sondertasten.
     public var onClick: ((PickResult?, NSEvent.ModifierFlags) -> Void)?
+    /// Wird vor `onClick` gefragt, mit dem Weltpunkt unter der Maus auf dem getroffenen Dreieck (Phase 4: Werkzeug
+    /// „Maßstab setzen“); true = der Klick ist verbraucht, `onClick` kommt dann nicht.
+    public var onClickPunkt: ((PickResult?, SIMD3<Float>?, NSEvent.ModifierFlags) -> Bool)?
     /// Rahmenauswahl (linke Maustaste ziehen): alle Treffer im Rahmen und die Sondertasten.
     public var onBoxSelect: (([PickResult], NSEvent.ModifierFlags) -> Void)?
     /// Kontextmenü (rechte Maustaste).

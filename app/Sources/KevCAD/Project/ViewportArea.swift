@@ -16,6 +16,11 @@ struct ViewportArea: View {
                 ReferenzDateien.laden(provider) { urls in if !urls.isEmpty { state.referenzDateien = urls } }
             }
             .overlay { FotoAnsichtOverlay(store: model.referenzen, actions: model.referenzActions) }
+            .overlay(alignment: .bottomTrailing) {  // Phase 4: Legende der Farbkarte (unten links steht der Vergleich)
+                AbweichungLegende(store: model.referenzen, actions: model.referenzActions)
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 56)
+            }
             .overlay(alignment: .top) { topOverlays }
             .overlay(alignment: .bottom) { bottomOverlays }
             .animation(.snappy(duration: 0.25), value: bannerRun)
@@ -77,6 +82,7 @@ struct ViewportArea: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
             ZukaufBanner(model: model)
+            ScanBand(store: model.referenzen, actions: model.referenzActions, projektOffen: model.project != nil)
             if let key = inventoryKey, state.dismissedInventory != key {
                 InventoryBanner(model: model, vorschlaegeZeigen: { state.freigabeOffen = true }) {
                     state.dismissedInventory = key
@@ -110,6 +116,7 @@ struct ViewportArea: View {
 
     private var bottomOverlays: some View {
         HStack(spacing: 8) {
+            MassstabLeiste(store: model.referenzen, actions: model.referenzActions)  // Phase 4: zwei Punkte am Netz
             if model.measureMode {
                 Pill(symbol: "ruler", tint: .orange) {
                     Text("Messen: ein oder zwei Elemente anklicken")

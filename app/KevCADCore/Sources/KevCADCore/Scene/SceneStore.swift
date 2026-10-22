@@ -59,6 +59,10 @@ public final class SceneStore {
     public private(set) var vergleichTints: [String: SIMD3<Float>] = [:]
     /// Phase 4: Referenznetze (halbdurchsichtig, nicht anklickbar, Farbe linear), siehe AppController+Referenz.
     public private(set) var referenzBodies: [ViewportBody] = []
+    /// Phase 4, Farbkarte der Abweichung auf dem Modell: Teile, an deren Stelle ihr Feld steht (in der Ruhelage).
+    public private(set) var referenzVerdeckt: Set<String> = []
+    /// Phase 4, Werkzeug „Maßstab setzen“: Teile nicht anklickbar, damit ein Klick das Referenznetz dahinter trifft.
+    public private(set) var teileNichtAnklickbar = false
     /// Statik (additiv): Farbverlauf der Ausnutzung an den Stäben, überhöhte Verformung als Geist (linear, nicht
     /// anklickbar) und Färbung der Teile nach ihrer Ausnutzung, siehe Statik/AppController+Statik.swift.
     public private(set) var statikBodies: [ViewportBody] = []
@@ -171,6 +175,7 @@ public final class SceneStore {
         ghostBodies = []
         vergleichBodies = []
         referenzBodies = []
+        referenzVerdeckt = []
         vergleichTints = [:]
         statikBodies = []
         statikTints = [:]
@@ -314,7 +319,10 @@ public final class SceneStore {
     ) {
         var touched = Set(transforms.keys).union(animationTransforms.keys)
         touched.formUnion(hidden.symmetricDifference(animationHidden))
-        if transforms.isEmpty != animationTransforms.isEmpty { touched.formUnion(statikVerdeckt) }  // Statik Stufe 3
+        if transforms.isEmpty != animationTransforms.isEmpty {
+            touched.formUnion(statikVerdeckt)  // Statik Stufe 3
+            touched.formUnion(referenzVerdeckt)  // Phase 4: Farbkarte auf dem Modell
+        }
         touched.formUnion(collision.symmetricDifference(collisionParts))
         animationTransforms = transforms
         animationHidden = hidden
@@ -331,9 +339,21 @@ public final class SceneStore {
         publish()
     }
 
-    /// Phase 4: Referenznetze ersetzen (leer = keine).
-    public func setReferenzBodies(_ bodies: [ViewportBody]) {
+    /// Phase 4: Teile anklickbar oder nicht (Werkzeug „Maßstab setzen“ klickt durch sie hindurch aufs Netz).
+    public func setTeileAnklickbar(_ an: Bool) {
+        guard teileNichtAnklickbar == an else { return }
+        teileNichtAnklickbar = !an
+        for n in order where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Phase 4: Referenznetze ersetzen (leer = keine); `verdeckt`: Teile, an deren Stelle die Farbkarte der Abweichung
+    /// steht (in der Ruhelage ausgeblendet).
+    public func setReferenzBodies(_ bodies: [ViewportBody], verdeckt: Set<String> = []) {
+        let touched = verdeckt.symmetricDifference(referenzVerdeckt)
         referenzBodies = bodies
+        referenzVerdeckt = verdeckt
+        for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
 
@@ -703,6 +723,7 @@ public final class SceneStore {
             list[i].color = color
             list[i].isVisible = visible
             list[i].transform = transform
+            list[i].isPickable = !teileNichtAnklickbar
         }
         partBodies[name] = list
         if var edges = edgeBodies[name] {
@@ -716,9 +737,10 @@ public final class SceneStore {
         }
     }
 
-    /// Statik Stufe 3: Teil steht unter seinem Festkörper-Feld (nur in der Ruhelage, das Feld gilt für sie).
+    /// Statik Stufe 3: Teil steht unter seinem Festkörper-Feld (nur in der Ruhelage, das Feld gilt für sie); ebenso
+    /// unter der Farbkarte der Abweichung (Phase 4).
     func istStatikVerdeckt(_ name: String) -> Bool {
-        animationTransforms.isEmpty && statikVerdeckt.contains(name)
+        animationTransforms.isEmpty && (statikVerdeckt.contains(name) || referenzVerdeckt.contains(name))
     }
 
     private func publish() {
