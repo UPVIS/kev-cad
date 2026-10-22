@@ -287,6 +287,10 @@ the values with "Maße übernehmen" in the app. Check the control images or `ref
 yourself (wrong front/back = model error), never send them to Kevin.
 - `referenz_fotoansicht(name, foto, modus="differenz")` shows Kevin a photo through its fitted camera behind the \
 model (red only in photo, blue only in model).
+- Scans from Kevin's iPhone app Kev Scan (LiDAR, ARKit poses, photos) arrive by Wi-Fi: `scans` lists them, \
+`scan_importieren(scan)` evaluates one in the background (Prompt Depth Anything plus TSDF, mesh in mm, floor z = 0) \
+and adds it as a reference; then `referenz_vermessen(name)` fits the dimensions with known cameras and measured depth \
+(no known dimension needed).
 
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \

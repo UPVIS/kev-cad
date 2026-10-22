@@ -54,6 +54,7 @@ from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
 from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
 from kevcad_kernel.render.laufzeit import RenderRuntime  # Phase 7: Renderings
+from kevcad_kernel.scan.laufzeit import ScanRuntimeMixin  # Scan mit dem iPhone (SCAN.md, PLAN-SCAN.md)
 from kevcad_kernel.refs import RefError, Scene
 from kevcad_kernel.versionen.laufzeit import VersionenRuntimeMixin
 from kevcad_kernel.worker import WorkerClient
@@ -111,7 +112,7 @@ class Job:
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
-                    StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime):
+                    StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime, ScanRuntimeMixin):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -165,6 +166,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._drucker_init()  # Phase 8: Drucken (drucker/laufzeit.py)
         self._druckvorschau_init()  # Druckvorschau (DRUCKVORSCHAU.md)
         self._referenz_init()  # Phase 4: Referenzen (referenz/laufzeit.py)
+        self._scan_init()  # Scan mit dem iPhone: Empfänger (scan/laufzeit.py), nur mit App-Variante
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
         self._link.start()
@@ -665,6 +667,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._druckvorschau_schliessen()  # Druckvorschau: Slicer abbrechen
         self._referenz_schliessen()  # Phase 4: laufendes Object Capture beenden
         self._fk_abbrechen_intern()  # Statik S3: laufenden FEM-Prozess beenden
+        self._scan_schliessen()  # Scan: Empfänger und Bonjour beenden, laufende Auswertung abbrechen
         self._fail_pending("Kernel wird beendet")
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)

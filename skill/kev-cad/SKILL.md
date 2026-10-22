@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“) und Referenzen aus Handyvideo oder Fotos („hier ist ein Video vom Gerät, bau es nach“, „miss die Maße aus den Fotos“, „leg das Video als Referenz an“, „passt das Modell zum Foto?“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“) und Referenzen aus Handyvideo oder Fotos („hier ist ein Video vom Gerät, bau es nach“, „miss die Maße aus den Fotos“, „leg das Video als Referenz an“, „passt das Modell zum Foto?“) sowie Scans vom iPhone mit Kev Scan („ich hab das gescannt“, „übernimm den Scan“, „miss das am Scan“).
 
 description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“) und Statik („hält das, wenn ich mich mit 30 kg draufstütze“, „trägt der Rahmen das“, „kippt das beim Bremsen“, „ist das überdimensioniert“).
 ---
@@ -568,6 +568,31 @@ def messmodell(p):                       # p: alle param()-Werte des Grundstands
   Modell, Differenz rot nur Foto, blau nur Modell), „Vermessen …“ und „Maße übernehmen“.
 - macOS fragt beim ersten Zugriff auf Downloads oder ein Wechselmedium, ob Kev CAD darf; bis Kevin antwortet, bricht
   `referenz_video` mit einer Meldung ab. Dann Kevin bitten zu erlauben oder die Datei ins Projekt zu legen.
+
+## Scan mit dem iPhone (Kev Scan)
+
+Kevins iPhone-App Kev Scan nimmt LiDAR-Tiefe, ARKit-Kameralagen, Video und hochaufgelöste Fotos auf und schickt den
+Scan per WLAN an Kev CAD (Bonjour, Ablage `~/Documents/Kev CAD/Scans/<datum>_<name>/`, Vertrag SCAN.md). Gegenüber
+`referenz_video` sind die Kameras bekannt und der Scan ist metrisch: kein bekanntes Maß nötig.
+
+1. `scans` zeigt die empfangenen Scans (Kennung, Fotos, Videobilder, ob eine Box gesetzt ist, wohin übernommen).
+2. `scan_importieren(scan, name=None, schnell=False, warten_s=600)`: wertet im Hintergrund aus (alle Fotos plus
+   Videobilder nach Abstand und Winkel, Prompt Depth Anything mit der LiDAR-Tiefe als Prompt, TSDF etwa 2 mm, größte
+   Komponente; Boden z = 0, Mitte x = y = 0, lange Seite = X) und legt eine Referenz an, Netz halbdurchsichtig im
+   Viewer. `schnell=True` (kleines Modell, weniger Bilder) als Vorschau in ein bis zwei Minuten; genau braucht etwa
+   2 s je Bild (typisch 2 bis 4 min). Ohne WLAN: ZIP per AirDrop, dann
+   `scan_importieren("/Users/…/Downloads/x.kevscan.zip")`.
+3. Messmodell bauen wie bei Phase 4, dann `referenz_vermessen(name, freie_masse=[…])`: fotomess nimmt die
+   ARKit-Kameras als feste Startwerte (nur fein nachgeführt), passt die Modellkanten an die Bilder und das Modell an die
+   gemessene Tiefe (robust, nach Konfidenz gewichtet) und legt das Netz an das Modell. `bekannte_masse` sind nicht
+   nötig; wenn Kevin ein Maß sicher kennt, darf es trotzdem fest sein.
+4. Ergebnis wie bei Phase 4 prüfen (Kontrollbilder, Sigma) und Kevin „Maße übernehmen“ lassen.
+
+Ehrliche Grenzen: LiDAR misst nur bis etwa 5 m und schlecht auf Glas, Spiegeln, sehr dunklen und glänzenden Flächen;
+dort fehlt Tiefe (Konfidenz 0) und das Netz hat Löcher. Dünne Teile unter etwa 5 mm (Kabel, Bleche von der Kante)
+fallen in der TSDF weg. Lagen von ARKit driften bei langen Aufnahmen um einige Millimeter; das Nachführen in fotomess
+fängt das bei den Maßen ab, das Netz selbst bleibt so genau wie die Aufnahme. Die Unterseite fehlt immer. Bewegliche
+Teile (Deckel, Räder) müssen während der Aufnahme stillstehen.
 
 ## build123d: Kurzreferenz und Fallen
 

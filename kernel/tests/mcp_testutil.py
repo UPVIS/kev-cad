@@ -60,6 +60,8 @@ EXPECTED_TOOLS |= {"dynamik", "dynamik_grenze"}
 EXPECTED_TOOLS |= {"render"}
 # Statik Stufe 3 (Festkörper-FEM)
 EXPECTED_TOOLS |= {"festigkeit"}
+# Scan mit dem iPhone (SCAN.md)
+EXPECTED_TOOLS |= {"scans", "scan_importieren"}
 
 
 def free_port() -> int:
