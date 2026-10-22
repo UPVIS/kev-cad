@@ -230,6 +230,44 @@ die passenden Custom Presets zum Filament mit.“ Umsetzung `druck/filamente.py`
   Start-G-Code aus „fdm_machine_common“ (Düse fest `M109 S205`, ohne das P1P-Vorprogramm). Jetzt in `slicer.profil`
   und `drucker/profile.Profile.laden` aufgelöst (Eltern, Vorlagen, eigene Werte); Schlüssel der Zwischenspeicher `v2`.
 
+## Druckfertig je Objekt (Strang „Druckexport 2“, Paket B, 22.10.2026, additiv)
+
+Kevin: „Grundsätzlich alle Drucksettings immer automatisch einstellen, auch für die einzelnen Objekte, auch wenn sie
+sich unterscheiden, so dass alles komplett druckfertig voreingestellt ist.“ Umsetzung `druck/druckfertig.py`
+(`ergaenze`, aufgerufen von `empfehlung.empfehle`), Bambu-Schlüssel in `slicer.prozess_einstellungen`.
+
+`teile[].einstellungen` additiv (optional, `protocol.DRUCK_EINSTELLUNGEN_ERWEITERT`, auch in `PRINT_SETTINGS`):
+
+| Schlüssel | Bambu Studio | Regel |
+|---|---|---|
+| `stuetzen_nur_platte` | `support_on_build_plate_only` | Baumstützen nur von der Platte, normale überall; ohne Stützen ohne Bedeutung |
+| `stuetzen_abstand_mm` | `support_top_z_distance` | PETG 0,25 mm (haftet an Stützen, EW), sonst Profil |
+| `brim_mm` | `brim_width` | 3 mm kleine Auflage, 5 mm schlank (Höhe > 10 · √Auflage) oder schmaler hoher Steg (Höhe > 8 × kleinste Breite, setzt auch `brim`), 8 mm verziehendes Material |
+| `naht` | `seam_position` | `hinten` bei Zier- und Außenteilen, sonst `ausgerichtet` |
+| `buegeln` | `ironing_type` | nur Zierteile mit ebener Oberseite ab 300 mm² |
+| `oberflaeche` | `top_surface_pattern` | `monoton_linie` |
+| `loch_kompensation_mm`, `kontur_kompensation_mm` | `xy_hole_compensation`, `xy_contour_compensation` | 0: die Zugabe steckt im Modell |
+| `elefantenfuss_mm` | `elefant_foot_compensation` | 0,15 mm wie das P1P-Profil |
+
+Dazu: Bohrungen mindestens 3 Wände; Gewindeeinsätze (Bohrung wie `GEWINDEEINSAETZE`) Wände nach der Mindestwand des
+Herstellers (4 bis 6) und Füllung mindestens 30 %; Kernlöcher für Schrauben 4 Wände. Die Druckprüfung liefert dazu je
+Teil `kennzahlen.bohrungen` (`d`, `waagrecht`). `teile[].begruendung_je` (additiv): je Schlüssel ein Satz; die
+Abweichungen vom Zweck stehen zusätzlich in `teile[].begruendung`. Kevins feste Vorgaben gehen vor.
+
+Prüfung vor der Ausgabe: `druck_export` slict jedes geschriebene Bambu-Projekt mit `--slice 0` (`slicer.pruefe_slicen`)
+und wertet die Warnungen aus. Ergebnis und `PRINT_EXPORT_RES` additiv: `druckfertig` (true nur, wenn Bambu Studio jede
+Datei ohne Warnung und Fehler geslict hat; ohne Bambu Studio false), je Datei `pruefung` ({"ok", "warnungen":
+[{"platte", "text", "art"}], "platten": [{"platte", "zeit_s", "g", "merkmale"}], "fehler"}) und
+`objekte_einstellungen` ([{"gruppe", "name", "teile", "einstellungen", "fest", "begruendung_je"}], dazu `platte` und
+`tempo` aus dem Preset des Filaments). Die Hinweise sagen „PETG: druckfertig, in Bambu Studio geslict ohne
+Warnungen (…)“ oder „PETG: NICHT druckfertig, Bambu Studio warnt: …“.
+
+Geprüft am 22.10.2026 mit Bambu Studio 2.07.01.62 (`test_druck_druckfertig.py`): Die Werte stehen je Objekt in
+`Metadata/model_settings.config` und wirken beim Slicen (Merkmale „Support“, „Brim“, „Ironing“ im G-Code). Global
+„kein Brim“ schaltet den Brim je Objekt ab; das Prozessprofil einer Platte behält deshalb den Profilwert
+(`slicer.global_einstellungen`). Bambu Studio meldet zum Beispiel „It seems object … has floating cantilever“, wenn
+ein Überhang ohne Stützen bleibt; das ist dann `NICHT druckfertig`.
+
 ## Ablauf im Kernel
 
 1. Nach jedem erfolgreichen Lauf mit Druckteilen: Schätzung (V1/V2) und schnelles Anordnen (V3), Ziel unter 1 s am

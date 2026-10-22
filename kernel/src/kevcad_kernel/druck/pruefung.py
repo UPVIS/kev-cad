@@ -1172,6 +1172,9 @@ def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, 
                                        if br else None),
         "volumen_cm3": round(volumen / 1000, 3),
         "masse_voll_g": round(volumen / 1000 * mat.dichte, 1),
+        # Paket B (druck/druckfertig.py): Bohrungen mit Ø und Lage in Druckausrichtung (Wände, Einsätze)
+        "bohrungen": [{"d": round(g.d, 3), "waagrecht": bool(abs(float((g.achse @ lage.R.T)[2])) < 0.5)}
+                      for g in rund if g.hohl and g.winkel >= 300][:40],
         "dreiecke": int(len(netz.T)),
         "stichproben_wand": int(len(st.t)),
         "laufzeit_ms": round((time.perf_counter() - t0) * 1000, 1),

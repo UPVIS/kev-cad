@@ -97,8 +97,28 @@ def pruefe_einstellungen(e: dict[str, Any]) -> dict[str, Any]:
             if str(v) not in DRUCK_STUETZEN:
                 raise VorgabeFehler(f"Stützen {v!r} unbekannt (erlaubt: {', '.join(DRUCK_STUETZEN)})")
             out[k] = str(v)
-        elif k == "brim":
+        elif k in ("brim", "stuetzen_nur_platte", "buegeln"):
             out[k] = bool(v)
+        elif k in ("brim_mm", "stuetzen_abstand_mm", "loch_kompensation_mm", "kontur_kompensation_mm",
+                   "elefantenfuss_mm"):
+            f = float(v)
+            grenzen = {"brim_mm": (0, 20), "stuetzen_abstand_mm": (0.05, 0.6), "loch_kompensation_mm": (-0.5, 0.5),
+                       "kontur_kompensation_mm": (-0.5, 0.5), "elefantenfuss_mm": (0, 0.5)}[k]
+            if not grenzen[0] <= f <= grenzen[1]:
+                raise VorgabeFehler(f"{k} {v!r} liegt außerhalb von {grenzen[0]} bis {grenzen[1]} mm")
+            out[k] = round(f, 3)
+        elif k == "naht":
+            from kevcad_kernel.druck.druckfertig import NAHT
+
+            if str(v) not in NAHT:
+                raise VorgabeFehler(f"Naht {v!r} unbekannt (erlaubt: {', '.join(NAHT)})")
+            out[k] = str(v)
+        elif k == "oberflaeche":
+            from kevcad_kernel.druck.druckfertig import OBERFLAECHE
+
+            if str(v) not in OBERFLAECHE:
+                raise VorgabeFehler(f"Oberseite {v!r} unbekannt (erlaubt: {', '.join(OBERFLAECHE)})")
+            out[k] = str(v)
         elif k == "ausrichtung":
             raise VorgabeFehler("Die Ausrichtung legt die Druckprüfung fest: in model.py lager.druckteil(…, "
                                 "ausrichtung=\"-z\" / \"+x\" / Flächennummer …) angeben")

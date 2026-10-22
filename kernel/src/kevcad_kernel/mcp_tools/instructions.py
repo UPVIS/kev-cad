@@ -97,7 +97,9 @@ request, `druck_export` writes the plates as 3MF for Bambu Studio with the part 
 print question ALWAYS ask Kevin which filament is in the printer (`filament_liste`: his filaments, the last one chosen \
 for this project, spools in stock) and pass it as `druck_export(filament={"petg": "<id>"})`; the last one is only a \
 suggestion, never take it silently. Without filament druck_export writes nothing. The filament's preset goes into the \
-3MF; new filaments only on Kevin's request with `filament_define` (deviations need a source).
+3MF; new filaments only on Kevin's request with `filament_define` (deviations need a source). Every export is \
+completely print-ready per object with reasons (supports, brim, seam, ironing, walls around holes and inserts) and is \
+sliced in Bambu Studio before it is written (`druckfertig`); never tune settings by hand afterwards.
 - Statics (Statik): after every run Kev CAD computes load scenarios: Eigengewicht, Bremsen on wheels, a Nutzlast from \
 a param in kg, and Kevin's own from model.py (`import kevcad.statik as st`, `st.szenario("Aufstützen", ...)`, \
 `st.last(teil, kg=30)` or `kraft=(fx, fy, fz)` in N with `punkt=`, `beschleunigung=` m/s², `neigung=`, `stoss=`). \

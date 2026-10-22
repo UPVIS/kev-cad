@@ -361,7 +361,7 @@ def _teil_info(name: str, erg: dict[str, Any], befunde: list[dict[str, Any]], vo
         },
         "kennzahlen": {k: kz.get(k) for k in ("abmessungen_mm", "hoehe_mm", "schichten", "stuetzflaeche_mm2",
                                               "auflageflaeche_mm2", "bauraum_ausnutzung_prozent", "volumen_cm3",
-                                              "masse_voll_g", "dreiecke", "laufzeit_ms") if k in kz},
+                                              "masse_voll_g", "dreiecke", "laufzeit_ms", "bohrungen") if k in kz},
         "zwischenspeicher": aus_speicher,
         "ms": round(ms, 1),
     }

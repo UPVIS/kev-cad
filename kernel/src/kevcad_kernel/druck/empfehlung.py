@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from kevcad_kernel.druck import druckfertig as df
 from kevcad_kernel.druck.regeln import MATERIALIEN, P1P
 
 ZWECKE = ("zier", "funktion", "tragend", "bewegt", "aussen")
@@ -119,15 +120,28 @@ def empfehle(geo: dict[str, Any], material: str, zweck: str | None, vorgaben: di
     h = float(e["schicht_mm"])
     e["decken"] = max(int(e["decken"]), math.ceil(1.0 / h - 1e-6))
     e["boeden"] = max(int(e["boeden"]), math.ceil(0.6 / h - 1e-6))
-    # feste Vorgaben gehen vor
+    # Paket B: vollständiger, begründeter Satz je Objekt (druck/druckfertig.py)
+    begr_je: dict[str, str] = {}
+    vorher = dict(e)
+    df.ergaenze(e, begr_je, geo, material, z, pruefung)
+    for k in ("waende", "fuellung"):  # Anhebungen für Bohrungen und Einsätze auch in der Liste der Gründe
+        if e.get(k) != vorher.get(k) and begr_je.get(k):
+            begr.append(begr_je[k])
+    for k in ("stuetzen_nur_platte", "stuetzen_abstand_mm", "brim_mm", "naht", "buegeln"):
+        if k in begr_je and (k != "stuetzen_nur_platte" or e.get("stuetzen") != "keine") and \
+                (k != "brim_mm" or e.get("brim")) and (k != "buegeln" or e.get("buegeln")):
+            begr.append(begr_je[k])
+    # feste Vorgaben gehen vor (auch vor Paket B)
     fest = []
     for k, v in vorgaben.items():
         if k in e and v is not None:
             e[k] = v
             fest.append(k)
+            begr_je[k] = "fest vorgegeben (druck.json): " + _feld_text(k, v)
     if fest:
         begr.append("Fest vorgegeben: " + ", ".join(_feld_text(k, e[k]) for k in fest))
-    return {"einstellungen": e, "begruendung": begr, "fest": fest, "zweck": z, "zweck_geschaetzt": geschaetzt}
+    return {"einstellungen": e, "begruendung": begr, "fest": fest, "zweck": z, "zweck_geschaetzt": geschaetzt,
+            "begruendung_je": begr_je}
 
 
 def _feld_text(k: str, v: Any) -> str:
@@ -136,7 +150,10 @@ def _feld_text(k: str, v: Any) -> str:
     if k == "schicht_mm":
         return f"Schicht {_z(float(v), 2)} mm"
     namen = {"waende": "Wände", "decken": "Decken", "boeden": "Böden", "muster": "Muster", "stuetzen": "Stützen",
-             "brim": "Brim", "ausrichtung": "Ausrichtung"}
+             "brim": "Brim", "ausrichtung": "Ausrichtung", "stuetzen_nur_platte": "Stützen nur von der Platte",
+             "stuetzen_abstand_mm": "Stützabstand oben", "brim_mm": "Brim-Breite", "naht": "Naht", "buegeln": "Bügeln",
+             "oberflaeche": "Oberseite", "loch_kompensation_mm": "Lochkompensation",
+             "kontur_kompensation_mm": "Konturkompensation", "elefantenfuss_mm": "Elefantenfuß"}
     if k == "brim":
         return "Brim " + ("an" if v else "aus")
     return f"{namen.get(k, k)} {v}"
