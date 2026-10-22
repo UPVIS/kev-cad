@@ -1,5 +1,6 @@
 """Testdateien für die Druckvorschau (DRUCKVORSCHAU.md): PRINT_PREVIEW (voll, leer, als Antwort), die Anfragen der App
-(PRINT_PREVIEW_REQ, PRINT_SETTINGS, PRINT_EXPORT_REQ) und die Antworten (ACK, PRINT_EXPORT_RES).
+(PRINT_PREVIEW_REQ, PRINT_SETTINGS, PRINT_EXPORT_REQ, auch mit Auswahl ``ohne``) und die Antworten (ACK,
+PRINT_EXPORT_RES, auch mit ``weggelassen`` und Objektnamen).
 
 Aufruf (im Ordner kernel):  .venv/bin/python tools/make_druck_fixtures.py   (läuft auch am Ende von make_fixtures.py)
 Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/print_*.frame, ack_print_*.frame und der Abschnitt ``druck`` in
@@ -58,6 +59,12 @@ def main() -> None:
                                               geprueft=True)),
         ("print_export_res_fehler", print_export_res("a-36", ok=False, pfad=None, platten=[], seq=67,
                                                      fehler="Keine Druckteile im Modell.")),
+        ("print_export_res_frage", print_export_res(
+            "a-39", ok=False, pfad=None, platten=[], seq=79, filament_frage=True,
+            fehler="Frag Kevin nach dem Filament, bevor du exportierst (es wurde nichts geschrieben).",
+            vorschlaege={"petg": {"zuletzt": "polymaker-polylite-petg-gelb", "spulen": [], "liste": [
+                {"id": "polymaker-polylite-petg-gelb", "name": "Polymaker PolyLite PETG gelb (1,75 mm)",
+                 "preset": "Polymaker PolyLite PETG gelb (Kev CAD)", "basis": "PolyLite PETG @BBL P1P"}]}})),
         # App → Kernel
         ("print_preview_req", print_preview_req("a-31", seq=71)),
         ("print_settings", print_settings("a-32", gruppe="g1", einstellungen={"waende": 5, "fuellung": 0.3},
@@ -69,6 +76,25 @@ def main() -> None:
         ("print_settings_reset", print_settings("a-37", teil="Kugelschieber/Fangrolle (Druck)", zuruecksetzen=True,
                                                 seq=76)),
         ("print_export_req", print_export_req("a-35", platten=[], ziel=ZIEL_3MF, seq=75)),
+        # additiv (Strang „Druckexport 2“): Auswahl der Teile, Ergebnis mit weggelassen und Objektnamen
+        ("print_export_req_auswahl", print_export_req("a-38", platten=[], ziel=ZIEL_3MF,
+                                                      ohne=["Kugelschieber/Lenksperren"],
+                                                      filament={"petg": "polymaker-polylite-petg-gelb"}, seq=77)),
+        ("print_export_res_auswahl", print_export_res(
+            "a-38", ok=True, pfad=ZIEL_3MF, platten=[1], seq=78, ms=1650, geprueft=True,
+            hinweise=["Weggelassen: Kugelschieber/Lenksperren/Lenksperre vorn links (Druck) (ohne), "
+                      "Kugelschieber/Fangrolle (Druck) (später)."],
+            dateien=[{"pfad": ZIEL_3MF, "material": "petg", "filament": "Polymaker PolyLite PETG gelb (Kev CAD)",
+                      "platten": [1], "filament_id": "polymaker-polylite-petg-gelb",
+                      "filament_basis": "PolyLite PETG @BBL P1P", "abweichungen": [], "filament_quelle": "kevin",
+                      "temperaturen": {"duese": 255, "platte": 80, "platte_name": "Textured PEI Plate"},
+                      "objekte": ["Kugelschieber/Stangenhalter vorn links (Druck)",
+                                  "Kugelschieber/Stangenhalter vorn links (Druck) (2)"]}],
+            weggelassen=[{"name": "Kugelschieber/Lenksperren/Lenksperre vorn links (Druck)", "grund": "ohne",
+                          "platte": 1, "anzahl": 1},
+                         {"name": "Kugelschieber/Fangrolle (Druck)", "grund": "spaeter", "platte": None,
+                          "anzahl": 1}],
+            leere_platten=[2])),
     ]
     files = []
     for name, header in frames:
@@ -104,8 +130,13 @@ def main() -> None:
         },
         "leer": {"run": frames[1][1]["run"], "platten": 0, "slicer": frames[1][1]["slicer"]["zustand"]},
         "antwort": {"reply_to": frames[2][1]["reply_to"], "slicer": frames[2][1]["slicer"]["zustand"]},
-        "settings": {"gruppe": frames[8][1]["gruppe"], "einstellungen": frames[8][1]["einstellungen"]},
+        "settings": {"gruppe": dict(frames)["print_settings"]["gruppe"],
+                     "einstellungen": dict(frames)["print_settings"]["einstellungen"]},
         "export": {"pfad": ZIEL_3MF, "platten": [1, 2]},
+        "export_auswahl": {"ohne": ["Kugelschieber/Lenksperren"], "platten": [1], "leere_platten": [2],
+                           "weggelassen": 2, "filament": {"petg": "polymaker-polylite-petg-gelb"}},
+        "filamente": [{k: f.get(k) for k in ("id", "name", "material", "preset")} for f in v["filamente"]],
+        "material_filament_id": {m["material"]: m["filament_id"] for m in v["summe"]["material"]},
     }
     path = ZIEL / "fixtures.json"
     data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}

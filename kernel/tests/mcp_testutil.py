@@ -39,7 +39,7 @@ EXPECTED_TOOLS |= {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"}
 # 3D-Druck
 EXPECTED_TOOLS |= {"druckpruefung"}
 # Druckvorschau (DRUCKVORSCHAU.md)
-EXPECTED_TOOLS |= {"druckvorschau", "druck_einstellen", "druck_export"}
+EXPECTED_TOOLS |= {"druckvorschau", "druck_einstellen", "druck_export", "filament_liste", "filament_define"}
 # Phase 6: Zeichnungen
 EXPECTED_TOOLS |= {"zeichnungen", "zeichnung_erstellen", "zeichnung_bearbeiten", "zeichnung_bild"}
 # Versionen

@@ -92,11 +92,21 @@ class Profile:
         except (OSError, ValueError) as exc:
             raise ProfilFehler(f"Profil {name!r} nicht lesbar: {exc}") from None
         eltern = d.get("inherits")
-        if eltern:
-            basis = self.laden(str(eltern), _tiefe + 1)
-            basis.update(d)
-            d = basis
+        basis = self.laden(str(eltern), _tiefe + 1) if eltern else {}
+        # Vorlagen (``include``, Bambu Studio 2.x): etwa Start- und End-G-Code des P1P; ohne sie bliebe der allgemeine
+        # Start-G-Code aus „fdm_machine_common“ (Düse fest 205 °C). Reihenfolge: Eltern, Vorlagen, eigene Werte.
+        vorlagen = d.get("include") or []
+        for v in [vorlagen] if isinstance(vorlagen, str) else vorlagen:
+            try:
+                t = self.laden(str(v), _tiefe + 1)
+            except ProfilFehler:
+                continue
+            basis.update({k: x for k, x in t.items() if k not in ("name", "type", "from", "instantiation",
+                                                                    "setting_id", "include", "filament_id")})
+        basis.update(d)
+        d = basis
         d.pop("inherits", None)
+        d.pop("include", None)
         return d
 
     def prozess_fuer(self, schicht_mm: float | None) -> str:

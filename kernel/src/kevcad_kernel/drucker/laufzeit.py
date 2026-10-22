@@ -134,7 +134,8 @@ class DruckerRuntimeMixin:
         name = f"{basis}-platten" if not platten else f"{basis}-platte-{'-'.join(str(p) for p in platten)}"
         export = getattr(self, "druck_export", None)
         if callable(export):
-            res = export(ziel=str(ordner / f"{name}.3mf"), platten=list(platten))
+            # Filament der Druckvorschau: der Dialog „Drucken …“ zeigt es Kevin vor dem Bestätigen
+            res = export(ziel=str(ordner / f"{name}.3mf"), platten=list(platten), filament="vorschau")
             if not res.get("ok"):
                 raise QuelleFehler(res.get("fehler") or res.get("error") or "Druckvorschau: Export fehlgeschlagen")
             # V-K: ein Bambu-Projekt je Material (Bambu Studio 2.07 slict mehrere Filamente per CLI nicht richtig;
@@ -204,6 +205,19 @@ class DruckerRuntimeMixin:
         if proj is not None:
             fil = ((proj.settings.get("druck") or {}).get("filament") or {})
             wunsch = fil.get(material) or fil.get(material_schluessel(material))
+        if not wunsch:  # wie die Druckvorschau: zuletzt gewählt, Spule im Bestand, Liste (druck/filamentwahl.py)
+            projekt_fn = getattr(self, "_dv_projekt", None)
+            if callable(projekt_fn):
+                try:
+                    from kevcad_kernel.druck import filamentwahl as fw
+
+                    wahl = fw.waehle(material, projekt_fn())
+                    # Ersatzweg ohne Druckvorschau: das Basisprofil des angenommenen Filaments (Presets kennt nur
+                    # der Weg über druck_export)
+                    if wahl.basis and wahl.quelle != "system" and prof.kennt(wahl.basis):
+                        wunsch = wahl.basis
+                except Exception:  # noqa: BLE001 - dann wie bisher
+                    pass
         return prof.filament_fuer(material, wunsch)
 
     def _drucker_ersatzquelle(self, platten: list[int], ordner: Path, name: str) -> Quelle:

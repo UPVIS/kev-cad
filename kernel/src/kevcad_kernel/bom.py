@@ -139,6 +139,7 @@ class Piece:
     anzahl: int | None = field(default=None, compare=False)  # Druckteile: so oft insgesamt drucken (Ersatzteile)
     gedruckt: bool = False  # Druckteile: schon gedruckt (Strang „Feinschliff 2“, druck/gedruckt.py)
     neu_drucken: bool = field(default=False, compare=False)  # Druckteile: neue Form festschreiben
+    spaeter: bool = field(default=False, compare=False)  # Druckteile: erst später drucken (nicht auf den Platten)
 
     @property
     def group(self) -> str:

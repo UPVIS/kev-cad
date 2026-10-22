@@ -169,8 +169,10 @@ class KernelService(Protocol):
                           grund: str = "", *, material: str | None = None, gramm: float | None = None,
                           gramm_voll: float | None = None, spule: str | None = None, farbe: str | None = None,
                           hersteller: str | None = None, anzahl: int | None = None, kennung: str | None = None,
-                          ort: str | None = None, spulen_entfernen: list[str] | None = None) -> dict[str, Any]:
+                          ort: str | None = None, spulen_entfernen: list[str] | None = None,
+                          filament: str | None = None) -> dict[str, Any]:
         """Nur nach Kevins Angabe. {"ok", "buchung", "aenderungen_text" (jede Änderung als Zeile), "posten"}.
+        Additiv ``filament``: id aus Kevins Filamentliste (Spule verweist darauf, druck/filamente.py).
         Strang „Bestand Stufe 2“ (additiv): Filament statt ``stock_id`` mit ``material`` (neue Spulen: ``gramm``,
         ``spule`` als Name, ``gramm_voll``, ``farbe``, ``hersteller``, ``ort``, ``anzahl``; 0 = Filament führen ohne
         Spule), ``kennung`` (Spule ändern) oder ``spulen_entfernen``; dann statt ``posten`` die ``spulen``."""
@@ -364,9 +366,28 @@ class KernelService(Protocol):
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in
         <projekt>/druck.json: {"ok", "meldung", "teile", "druck_json", "vorgaben", "gruppe"}"""
 
-    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None) -> dict[str, Any]:
+    def druck_export(self, ziel: str | None = None, platten: list[int] | None = None, teile: list[str] | None = None,
+                     ohne: list[str] | None = None, filament: Any = None) -> dict[str, Any]:
         """3MF der angeordneten Platten für Bambu Studio (ohne Drucken): {"ok", "pfad", "platten", "hinweise",
-        "geprueft", "ms", "materialien"}"""
+        "geprueft", "ms", "materialien"}. Additiv: ``teile`` (nur diese) und ``ohne`` (nicht diese; Teilname,
+        Baugruppen-Präfix, Gruppe "g3" oder Gruppenname; ``ohne`` gewinnt); im Ergebnis "teile", "weggelassen"
+        ([{"name", "grund", "platte", "anzahl"}]), "leere_platten", je Datei "objekte" (Objektnamen im 3MF).
+        Additiv ``filament`` (je Material ein Filament aus Kevins Liste, {"petg": "<id>"}, eine id oder ids); fehlt es,
+        {"ok": false, "filament_frage": true, "vorschlaege", "error": "Frag Kevin nach dem Filament …"} und nichts
+        wird geschrieben; im Ergebnis "filamente" je Material und je Datei "filament_id", "filament_basis",
+        "abweichungen", "temperaturen"."""
+
+    def filament_liste(self, material: str | None = None) -> dict[str, Any]:
+        """Kevins Filamente (druck/filamente.py, Application Support): {"ok", "pfad", "filamente" (je Eintrag mit
+        "anzeige", "preset_name", "abweichungen_text", "temperaturen", "probleme"), "zuletzt", "spulen"}"""
+
+    def filament_define(self, hersteller: str, produkt: str, material: str, farbe: str | None = None,
+                        durchmesser_mm: float = 1.75, basis: str | None = None,
+                        abweichungen: list[dict[str, Any]] | None = None, farbe_hex: str | None = None,
+                        id: str | None = None, preset_name: str | None = None, quelle: str | None = None,  # noqa: A002
+                        ersetzen: bool = False) -> dict[str, Any]:
+        """Filament in Kevins Liste anlegen oder (``ersetzen``) ändern, ohne Katalog-Freigabe: {"ok", "filament",
+        "neu", "hinweise", "pfad"}"""
 
     # Phase 6: Zeichnungen (DOKUMENTE.md; Umsetzung in kevcad_kernel.zeichnung.laufzeit.ZeichnungRuntimeMixin)
     def drawings(self) -> dict[str, Any]:

@@ -438,7 +438,8 @@ show(Pos(0, 80, 0) * lager.druckteil(Box(30, 30, 6), "Deckel", material="petg"),
     # 3MF ohne Bambu Studio: selbst geschrieben, Platten in model_settings.config
     m = app.mark()
     ziel = env["tmp"] / "platten.3mf"
-    app.send({"type": "PRINT_EXPORT_REQ", "id": "a-4", "platten": [], "ziel": str(ziel)})
+    app.send({"type": "PRINT_EXPORT_REQ", "id": "a-4", "platten": [], "ziel": str(ziel),
+              "filament": {"petg": "polymaker-polylite-petg-gelb"}})
     _, _, ex, _ = app.wait_for(lambda h: h["type"] == "PRINT_EXPORT_RES" and h["reply_to"] == "a-4", start=m)
     assert check_druck_message(ex) == [] and ex["ok"] and ex["pfad"] == str(ziel) and ex["platten"] == [1]
     assert ex["fehler"] is None and ex["geprueft"] is False
@@ -446,10 +447,10 @@ show(Pos(0, 80, 0) * lager.druckteil(Box(30, 30, 6), "Deckel", material="petg"),
         assert {"3D/3dmodel.model", "Metadata/model_settings.config", "[Content_Types].xml"} <= set(z.namelist())
         einst = z.read("Metadata/model_settings.config").decode()
     assert einst.count("<plate>") == 1 and einst.count("<model_instance>") == 5
-    falsch = rt.druck_export(platten=[7])
+    falsch = rt.druck_export(platten=[7], filament="polymaker-polylite-petg-gelb")
     assert not falsch["ok"] and falsch["fehler"] and "Platte 7" in falsch["fehler"]
     # Standardziel im Ausgabeordner
-    std = rt.druck_export()
+    std = rt.druck_export(filament="polymaker-polylite-petg-gelb")
     assert std["ok"] and Path(std["pfad"]).name == "Druck-druck.3mf" and Path(std["pfad"]).exists()
 
 
@@ -475,6 +476,15 @@ def test_mcp_werkzeuge():
         assert fake.calls_of("druck_einstellen")[-1] == (("g1", {"waende": 5}, None, "agent", False), {})
         assert call(url, "druck_einstellen", {"teil": "Nix", "zweck": "zier"}).is_error
         r = call(url, "druck_export", {"platten": [1]})
+        assert r.is_error and "Frag Kevin nach dem Filament" in texts(r)[0]  # ohne Filament nichts
+        assert call(url, "druck_export", {"platten": [1], "filament": "vorschau"}).is_error  # nur intern
+        r = call(url, "druck_export", {"platten": [1], "filament": {"petg": "polymaker-polylite-petg-gelb"}})
         assert not r.is_error and "3MF mit 1 Platte" in texts(r)[0]
+        assert fake.calls_of("druck_export")[-1][0][-1] == {"petg": "polymaker-polylite-petg-gelb"}
+        r = call(url, "filament_liste", {"material": "petg"})
+        assert not r.is_error and "polymaker-polylite-petg-gelb" in texts(r)[0] and "Düse 255 °C" in texts(r)[0]
+        r = call(url, "filament_define", {"hersteller": "Extrudr", "produkt": "PETG", "material": "petg",
+                                          "abweichungen": [{"schluessel": "duese", "wert": 240}]})
+        assert r.is_error and "quelle" in texts(r)[0]
     finally:
         server.stop_thread()

@@ -91,12 +91,14 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         = None,
         kennung: Annotated[str | None, Field(description="Filament: spool id to update, e.g. 'S-0002'")] = None,
         spulen_entfernen: Annotated[list[str] | None, Field(description="Filament: spool ids to remove")] = None,
+        filament: Annotated[str | None, Field(description="Filament: id from Kevin's filament list (filament_liste), "
+                                                          "fills material, name, manufacturer, colour")] = None,
     ) -> CallToolResult:
         was = id or (f"Filament {material}" if material else f"Spule {kennung}" if kennung else "Filament")
         res = await t.work(f"trägt Bestand {was} ein", svc.bestand_eintragen, id, ganze, reste, reste_entfernen,
                            stueck, mindestrest_mm, reste_ersetzen, grund, material=material, gramm=gramm,
                            gramm_voll=gramm_voll, spule=spule, farbe=farbe, hersteller=hersteller, anzahl=anzahl,
-                           kennung=kennung, ort=ort, spulen_entfernen=spulen_entfernen)
+                           kennung=kennung, ort=ort, spulen_entfernen=spulen_entfernen, filament=filament)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Bestand nicht eingetragen: {err}", res)

@@ -171,23 +171,49 @@ def _index_voll(art: str, name: str) -> Path | None:
 
 
 def index_leeren() -> None:
+    """Profilverzeichnis neu lesen (anderes Bambu Studio, neue Benutzerprofile); auch die Zwischenspeicher der
+    Kompatibilität und der Filamentwahl."""
     global _INDEX
     with _INDEX_LOCK:
         _INDEX = None
+    _KOMPATIBEL.clear()
+    try:
+        from kevcad_kernel.druck import filamentwahl
+
+        filamentwahl.cache_leeren()
+    except ImportError:  # pragma: no cover
+        pass
+
+
+# Schlüssel einer Vorlage (``include``), die nicht in das einbindende Profil gehören
+_VORLAGE_META = ("name", "type", "from", "instantiation", "setting_id", "inherits", "include", "filament_id")
 
 
 def profil(art: str, name: str) -> dict[str, Any]:
-    """Profil mit aufgelöster Vererbung (``inherits``); ``SlicerFehler``, wenn es fehlt."""
+    """Profil mit aufgelöster Vererbung (``inherits``) und eingebundenen Vorlagen (``include``); ``SlicerFehler``,
+    wenn es fehlt.
+
+    ``include`` (seit Bambu Studio 2.x): Vorlagen, deren Werte das Profil übernimmt, etwa beim „Bambu Lab P1P 0.4
+    nozzle“ den Start-, End-, Filamentwechsel- und Schichtwechsel-G-Code („… template machine_start_gcode“). Reihenfolge
+    wie in Bambu Studio: Eltern, dann die Vorlagen, dann die eigenen Werte. Ohne das blieb bis 22.10.2026 der allgemeine
+    Start-G-Code aus „fdm_machine_common“ stehen (Düse fest ``M109 S205``, ohne das P1P-Vorprogramm), in jedem
+    geslicten G-Code und in den Projekt-Einstellungen jedes exportierten 3MF."""
     p = _index().get((art, name)) or _index_voll(art, name)
     if p is None:
         raise SlicerFehler(f"Bambu-Studio-Profil {art} „{name}“ nicht gefunden")
-    d = json.loads(p.read_text(encoding="utf-8"))
-    eltern = d.get("inherits")
-    if eltern:
-        basis = profil(art, str(eltern))
-        basis.update(d)
-        d = basis
+    eigen = json.loads(p.read_text(encoding="utf-8"))
+    eltern = eigen.get("inherits")
+    d: dict[str, Any] = profil(art, str(eltern)) if eltern else {}
+    vorlagen = eigen.get("include") or []
+    for v in [vorlagen] if isinstance(vorlagen, str) else vorlagen:
+        try:
+            t = profil(art, str(v))
+        except SlicerFehler:
+            continue  # Vorlage fehlt: Bambu Studio lädt das Profil trotzdem
+        d.update({k: x for k, x in t.items() if k not in _VORLAGE_META})
+    d.update(eigen)
     d.pop("inherits", None)
+    d.pop("include", None)
     d["type"] = art
     return d
 
@@ -288,10 +314,10 @@ def platte_name(wert: Any) -> str:
     return t
 
 
-def platte_passt(filament: str, platte: str) -> bool:
+def platte_passt(filament: Filament, platte: str) -> bool:
     """Kann das Filament auf dieser Platte gedruckt werden (Plattentemperatur im Profil nicht 0)?"""
     try:
-        v = profil("filament", filament).get(PLATTEN.get(platte, ""))
+        v = filament_daten(filament).get(PLATTEN.get(platte, ""))
     except (SlicerFehler, OSError, ValueError):
         return True
     v = v[0] if isinstance(v, list) and v else v
@@ -354,8 +380,37 @@ def maschinen_profil(drucker: str = "p1p-0.4") -> dict[str, Any]:
     return d
 
 
-def filament_profil(name: str) -> dict[str, Any]:
-    d = profil("filament", name)
+Filament = str | dict  # Name eines Bambu-Profils oder Preset (druck/filamente.py ``preset_spec``)
+
+
+def filament_name_von(f: Filament) -> str:
+    return str(f.get("name") or f.get("basis")) if isinstance(f, dict) else str(f)
+
+
+def filament_daten(f: Filament) -> dict[str, Any]:
+    """Aufgelöstes Filamentprofil zu einem Profilnamen oder einem Preset ``{"name", "basis", "werte", "farbe",
+    "inherits"}``: Basisprofil (mit Vererbung und Vorlagen), darüber die Abweichungen (``werte``, Bambu-Schlüssel).
+    Ein Preset geht vollständig aufgelöst an Bambu Studio (die Kommandozeile löst ``inherits`` nicht selbst auf und
+    nähme sonst Vorgabewerte, geprüft am 22.10.2026); ``inherits`` nennt nur das Systemprofil, von dem es abstammt,
+    damit Bambu Studio es als Projekt-Preset mit diesem Elternteil führt (``inherits_group``)."""
+    if not isinstance(f, dict):
+        return profil("filament", str(f))
+    d = profil("filament", str(f["basis"]))
+    d.update(f.get("werte") or {})
+    if f.get("farbe"):
+        d["filament_colour"] = [str(f["farbe"])]
+        d["default_filament_colour"] = [str(f["farbe"])]
+    d["from"] = "User"
+    if f.get("inherits"):
+        d["inherits"] = str(f["inherits"])
+    return d
+
+
+def filament_profil(f: Filament) -> dict[str, Any]:
+    """Filamentprofil für ``--load-filaments``: aufgelöst, Name und ``filament_settings_id`` = Profil- bzw.
+    Preset-Name."""
+    d = filament_daten(f)
+    name = filament_name_von(f)
     d["filament_settings_id"] = [name]
     d["name"] = name
     return d
@@ -565,7 +620,7 @@ class Profile:
     werte: dict[str, Any] = field(default_factory=dict)
 
 
-def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: list[str],
+def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: list[Filament],
                      drucker: str = "p1p-0.4", platte: str | None = None) -> Profile:
     ordner.mkdir(parents=True, exist_ok=True)
     m = maschinen_profil(drucker)
@@ -580,7 +635,7 @@ def schreibe_profile(ordner: Path, einstellungen: dict[str, Any], filamente: lis
         fp.write_text(json.dumps(f, ensure_ascii=False), encoding="utf-8")
         fpfade.append(fp)
         dichten.append(filament_dichte(f))
-    return Profile(mp, pp, fpfade, pname, list(filamente), dichten)
+    return Profile(mp, pp, fpfade, pname, [filament_name_von(f) for f in filamente], dichten)
 
 
 def _profil_args(pr: Profile) -> list[str]:
@@ -606,7 +661,7 @@ def _platten_ergebnis(res: dict[str, Any], dichten: list[float]) -> list[dict[st
     return out
 
 
-def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: str, ordner: Path,
+def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: Filament, ordner: Path,
                abbruch: threading.Event | None = None, drucker: str = "p1p-0.4",
                platte: str | None = None) -> dict[str, Any]:
     """Ein Teil (STL in Druckausrichtung) slicen: ``zeit_s``, ``volumen_cm3``, ``m``, ``merkmale`` …"""
@@ -618,7 +673,7 @@ def slice_teil(stl: Path, einstellungen: dict[str, Any], filament: str, ordner: 
     if not platten:
         raise SlicerFehler("Bambu Studio hat nichts geslict")
     erg = platten[0]
-    erg.update({"prozess": pr.prozess_name, "filament": filament, "dauer_s": res.get("_dauer_s")})
+    erg.update({"prozess": pr.prozess_name, "filament": filament_name_von(filament), "dauer_s": res.get("_dauer_s")})
     return erg
 
 
@@ -682,7 +737,7 @@ def lies_anordnung(pfad_3mf: Path) -> list[dict[str, Any]]:
 
 
 def anordnen(objekte: list[tuple[Path, int]], ordner: Path, abbruch: threading.Event | None = None,
-             filament: str | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None,
+             filament: Filament | None = None, drucker: str = "p1p-0.4", abstand_mm: float | None = None,
              platte: str | None = None) -> list[dict]:
     """``objekte``: (STL, Anzahl). Bambu Studio ordnet an (mit Drehen, Sperrzone aus dem Maschinenprofil) und legt bei
     Bedarf weitere Platten an. Ergebnis wie ``lies_anordnung``; Namen „<stl-stamm>_<n>“."""
@@ -725,8 +780,97 @@ class PlattenObjekt:
     name: str = ""
 
 
-def montageliste(platten: list[list[PlattenObjekt]], ordner: Path) -> Path:
-    """Montageliste (``--load-assemble-list``) mit festen Lagen; gedrehte Teile als eigene STL-Kopien."""
+NAME_MAX = 60  # Zeichen; länger wird die Objektliste von Bambu Studio unübersichtlich
+
+
+def kurzer_name(name: str, max_len: int = NAME_MAX) -> str:
+    """Objektname für Bambu Studio aus dem Teilnamen (``show()``): vollständig, solange er kurz genug ist; sonst ohne
+    die mittleren Baugruppen („Kugelschieber/…/Lenksperre links (Druck)“), dann nur der letzte Teil, zuletzt
+    abgeschnitten mit „…“."""
+    name = " ".join(str(name or "").split())
+    if len(name) <= max_len:
+        return name
+    teile = [t for t in name.split("/") if t]
+    if len(teile) > 2:
+        kurz = f"{teile[0]}/…/{teile[-1]}"
+        if len(kurz) <= max_len:
+            return kurz
+    letzter = teile[-1] if teile else name
+    if len(letzter) <= max_len:
+        return letzter
+    return letzter[:max_len - 1].rstrip() + "…"
+
+
+def objekt_namen(objekte: list[PlattenObjekt]) -> list[str]:
+    """Namen der Objekte im 3MF in ihrer Reihenfolge (alle Platten nacheinander): ``kurzer_name`` des Teilnamens,
+    ohne Namen der STL-Stamm; kommt ein Name mehrfach vor (Ersatzteile, ``anzahl=``), zählen die weiteren mit
+    „(2)“, „(3)“ …"""
+    namen = [kurzer_name(o.name) or Path(o.stl).stem for o in objekte]
+    gesehen: dict[str, int] = {}
+    out = []
+    for n in namen:
+        gesehen[n] = gesehen.get(n, 0) + 1
+        out.append(n if gesehen[n] == 1 else f"{n} ({gesehen[n]})")
+    return out
+
+
+_OBJEKT_BLOCK = re.compile(r'<object id="\d+">.*?</object>', re.S)
+_ASSEMBLE_NAME = re.compile(r'<metadata key="name" value="assemble_(\d+)"\s*/>')
+_TEIL_NAME = re.compile(r'(<part id="\d+"[^>]*>\s*<metadata key="name" value=)"[^"]*"')
+
+
+def objekte_benennen(pfad_3mf: Path, namen: list[str]) -> int:
+    """Teilnamen in ein von Bambu Studio geschriebenes 3MF setzen (nach ``--load-assemble-list``).
+
+    Bambu Studio nennt die Objekte einer Montageliste „assemble_<n>“ (n = ``assemble_index``, hier die laufende
+    Nummer über alle Platten) und die Teile darin nach der STL-Datei. Den Namen in der Objektliste liest es aus
+    ``Metadata/model_settings.config`` (``<object>`` und ``<part>``, ``metadata key="name"``); ein ``name`` an den
+    Objekten in ``3D/3dmodel.model`` übergeht es bei eigenen Projekten (geprüft mit 2.07.01.62). Geändert wird deshalb
+    nur diese Datei, alles andere im Archiv bleibt Byte für Byte gleich. Zugeordnet wird über die Nummer in
+    „assemble_<n>“, nicht über die Reihenfolge: die ``<object>``-Blöcke stehen nicht immer in der Reihenfolge der
+    Montageliste (nachgeprüft über die Lage in der Matrix jedes Teils). Liefert die Zahl der umbenannten Objekte."""
+    from xml.sax.saxutils import escape
+
+    pfad_3mf = Path(pfad_3mf)
+    with zipfile.ZipFile(pfad_3mf) as z:
+        eintraege = [(i, z.read(i.filename)) for i in z.infolist()]
+    cfg_name = "Metadata/model_settings.config"
+    idx = next((k for k, (i, _) in enumerate(eintraege) if i.filename == cfg_name), None)
+    if idx is None:
+        return 0
+    text = eintraege[idx][1].decode("utf-8")
+    gezaehlt = [0]
+
+    def ersetze(m: re.Match) -> str:
+        block = m.group(0)
+        a = _ASSEMBLE_NAME.search(block)
+        if a is None:
+            return block
+        k = int(a.group(1))
+        if not 1 <= k <= len(namen):
+            return block
+        neu = '"' + escape(namen[k - 1], {'"': "&quot;"}) + '"'
+        block = block[:a.start()] + f'<metadata key="name" value={neu}/>' + block[a.end():]
+        block = _TEIL_NAME.sub(lambda t: t.group(1) + neu, block, count=1)
+        gezaehlt[0] += 1
+        return block
+
+    neu_text = _OBJEKT_BLOCK.sub(ersetze, text)
+    if gezaehlt[0] == 0:
+        return 0
+    eintraege[idx] = (eintraege[idx][0], neu_text.encode("utf-8"))
+    tmp = pfad_3mf.with_name(pfad_3mf.name + ".namen")
+    with zipfile.ZipFile(tmp, "w") as z:
+        for info, daten in eintraege:
+            z.writestr(info, daten)
+    tmp.replace(pfad_3mf)
+    return gezaehlt[0]
+
+
+def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
+                 platten_namen: list[str] | None = None) -> Path:
+    """Montageliste (``--load-assemble-list``) mit festen Lagen; gedrehte Teile als eigene STL-Kopien.
+    ``platten_namen``: Namen der Platten in Bambu Studio (sonst „Platte 1“ …)."""
     gedreht: dict[tuple[str, float], Path] = {}
     liste: dict[str, Any] = {"plates": []}
     nr = 0
@@ -753,13 +897,14 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path) -> Path:
             if pp:
                 eintrag["print_params"] = pp
             eintraege.append(eintrag)
-        liste["plates"].append({"plate_name": f"Platte {i}", "need_arrange": False, "objects": eintraege})
+        pname = platten_namen[i - 1] if platten_namen and i <= len(platten_namen) else f"Platte {i}"
+        liste["plates"].append({"plate_name": pname, "need_arrange": False, "objects": eintraege})
     pfad = ordner / "montageliste.json"
     pfad.write_text(json.dumps(liste, ensure_ascii=False, indent=1), encoding="utf-8")
     return pfad
 
 
-def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordner: Path,
+def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[Filament], ordner: Path,
                   einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
                   drucker: str = "p1p-0.4", platte: str | None = None) -> list[dict[str, Any]]:
     """Platten mit festen Lagen slicen (je Platte Zeit und Filament)."""
@@ -771,18 +916,21 @@ def slice_platten(platten: list[list[PlattenObjekt]], filamente: list[str], ordn
     return _platten_ergebnis(res, pr.dichten)
 
 
-def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, ordner: Path,
+def export_3mf(platten: list[list[PlattenObjekt]], filament: Filament, ziel: Path, ordner: Path,
                einstellungen: dict[str, Any] | None = None, abbruch: threading.Event | None = None,
-               drucker: str = "p1p-0.4", farbe: str | None = None, platte: str | None = None) -> dict[str, Any]:
+               drucker: str = "p1p-0.4", farbe: str | None = None, platte: str | None = None,
+               platten_namen: list[str] | None = None) -> dict[str, Any]:
     """3MF der Platten eines Materials als Bambu-Projekt (ohne Slicen): Drucker-, Prozess- und Filamentprofil in
     ``Metadata/project_settings.config``, Einstellungen je Teil in ``Metadata/model_settings.config``; danach zur
-    Kontrolle mit ``--info`` geladen. Liefert {"pfad", "objekte", "geprueft"}.
+    Kontrolle mit ``--info`` geladen. Die Objekte tragen die Teilnamen (``objekt_namen``, gesetzt mit
+    ``objekte_benennen``; Bambu Studio selbst nennt sie „assemble_1“ …), die Platten ``platten_namen``.
+    Liefert {"pfad", "objekte", "geprueft", "namen", "benannt"}.
 
     Ein Filament je Datei: Bambu Studio 2.07 schreibt Projekte mit mehreren ``--load-filaments`` so, dass es sie beim
     erneuten Laden nur mit Filament 1 (und nach Ergänzen der Listen gar nicht) slicen kann; der P1P ohne AMS druckt
     ohnehin ein Material je Platte."""
     pr = schreibe_profile(ordner, einstellungen or {"schicht_mm": 0.2}, [filament], drucker, platte)
-    if farbe:
+    if farbe and not (isinstance(filament, dict) and filament.get("farbe")):  # Farbe des Filaments geht vor
         d = json.loads(pr.filamente[0].read_text(encoding="utf-8"))
         d["filament_colour"] = [farbe]
         d["default_filament_colour"] = [farbe]
@@ -790,17 +938,19 @@ def export_3mf(platten: list[list[PlattenObjekt]], filament: str, ziel: Path, or
     for liste_ in platten:
         for o in liste_:
             o.filament = 1
-    liste = montageliste(platten, ordner)
+    liste = montageliste(platten, ordner, platten_namen)
     name = "platten.3mf"
     (ordner / name).unlink(missing_ok=True)
     ausfuehren([*_profil_args(pr), "--load-assemble-list", str(liste), "--export-3mf", name], ordner, abbruch)
     erzeugt = ordner / name
     if not erzeugt.exists():
         raise SlicerFehler("Bambu Studio hat kein 3MF geschrieben")
+    namen = objekt_namen([o for liste_ in platten for o in liste_])
+    benannt = objekte_benennen(erzeugt, namen)
     objekte = pruefe_3mf(erzeugt, ordner / "pruefung", abbruch)
     ziel.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(erzeugt, ziel)
-    return {"pfad": str(ziel), "objekte": objekte, "geprueft": True}
+    return {"pfad": str(ziel), "objekte": objekte, "geprueft": True, "namen": namen, "benannt": benannt}
 
 
 def pruefe_3mf(pfad: Path, ordner: Path, abbruch: threading.Event | None = None) -> int:

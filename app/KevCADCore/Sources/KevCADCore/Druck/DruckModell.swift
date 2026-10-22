@@ -119,6 +119,10 @@ public struct DruckMaterialSumme: Equatable, Sendable, Identifiable {
     public var stand: DruckStand
     /// Name des Filamentprofils, falls der Kernel ihn mitschickt (additiv, z. B. „Bambu PETG Basic“).
     public var filament: String?
+    /// Angenommenes Filament aus Kevins Liste (additiv `filament_id`, Strang „Druckexport 2“) und woher
+    /// (`filament_quelle`: projekt, zuletzt, spule, standard, system).
+    public var filamentId: String? = nil
+    public var filamentQuelle: String? = nil
 
     public var id: String { material }
 
@@ -145,6 +149,31 @@ public struct DruckMaterialSumme: Equatable, Sendable, Identifiable {
             preisStand: json["preis_stand"]?.lenientString,
             stand: json["stand"] == nil ? standard : DruckStand(json: json["stand"]),
             filament: json["filament"]?.lenientString ?? json["profil"]?.lenientString)
+        filamentId = json["filament_id"]?.lenientString
+        filamentQuelle = json["filament_quelle"]?.lenientString
+    }
+}
+
+/// Ein Filament aus Kevins Liste (additiv `druckvorschau.filamente`, Strang „Druckexport 2“): Auswahl beim Export.
+public struct DruckFilament: Equatable, Sendable, Identifiable, Hashable {
+    public var id: String
+    public var name: String
+    public var material: String
+    public var preset: String?
+    public var basis: String?
+
+    public init(id: String, name: String, material: String, preset: String? = nil, basis: String? = nil) {
+        self.id = id
+        self.name = name
+        self.material = material
+        self.preset = preset
+        self.basis = basis
+    }
+
+    public init?(json: JSONValue) {
+        guard let id = json["id"]?.lenientString, let material = json["material"]?.lenientString else { return nil }
+        self.init(id: id, name: json["name"]?.lenientString ?? id, material: material,
+                  preset: json["preset"]?.lenientString, basis: json["basis"]?.lenientString)
     }
 }
 
@@ -607,6 +636,8 @@ public struct Druckvorschau: Equatable, Sendable {
     public var ms: Double?
     /// Strang „Feinschliff 2“ (additiv `gedruckt`): schon gedruckte Teile (vorhanden, nicht in Platten und Summe).
     public var gedruckt: [DruckGedruckt] = []
+    /// Strang „Druckexport 2“ (additiv `filamente`): Kevins Filamente der Materialien, Auswahl beim Export.
+    public var filamente: [DruckFilament] = []
 
     public init(run: Int = 0, stand: DruckStand = .schaetzung, drucker: String = "Bambu Lab P1P 0.4",
                 summe: DruckSumme = DruckSumme(), platten: [DruckPlatte] = [], teile: [DruckGruppe] = [],
@@ -643,6 +674,7 @@ public struct Druckvorschau: Equatable, Sendable {
         regler = j["regler"]?.boolValue ?? false
         ms = j["ms"]?.doubleValue
         gedruckt = (j["gedruckt"]?.arrayValue ?? []).compactMap(DruckGedruckt.init(json:))
+        filamente = (j["filamente"]?.arrayValue ?? []).compactMap(DruckFilament.init(json:))
         // Filamentprofil je Material aus den Gruppen, wenn die Summe keins nennt
         for i in self.summe.material.indices where self.summe.material[i].filament == nil {
             let m = self.summe.material[i].material
@@ -686,6 +718,19 @@ public struct Druckvorschau: Equatable, Sendable {
         return reihenfolge.enumerated().sorted { a, b in
             a.element.schwere == b.element.schwere ? a.offset < b.offset : a.element.schwere > b.element.schwere
         }.map { ($0.element, gruppen[$0.element.id] ?? []) }
+    }
+
+    /// Filamente der Liste zu einem Material (Auswahl beim Export).
+    public func filamente(fuer material: String) -> [DruckFilament] { filamente.filter { $0.material == material } }
+
+    /// Vorschlag je Material für die Auswahl beim Export: das angenommene Filament der Vorschau (zuletzt gewählt,
+    /// Spule oder erstes der Liste); Kevin wählt im Dialog ausdrücklich.
+    public var filamentVorschlag: [String: String] {
+        var out: [String: String] = [:]
+        for m in summe.material {
+            if let f = m.filamentId ?? filamente(fuer: m.material).first?.id { out[m.material] = f }
+        }
+        return out
     }
 
     /// Anzahl gedruckter Stück über alle Gruppen.

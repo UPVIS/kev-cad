@@ -136,13 +136,13 @@ def test_quelle_aus_der_druckvorschau(env, tmp_path):
                                                                    "printer_settings_id": "Bambu Lab P1P 0.4 nozzle"}))
     aufrufe = []
 
-    def export_ein(ziel=None, platten=None):
-        aufrufe.append((ziel, platten))
+    def export_ein(ziel=None, platten=None, filament=None):
+        aufrufe.append((ziel, platten, filament))
         return {"ok": True, "pfad": str(projekt), "pfade": [str(projekt)], "platten": [1, 2], "fehler": None,
                 "dateien": [{"pfad": str(projekt), "material": "petg", "filament": "Generic PETG @BBL P1P",
                              "platten": [1, 2]}], "hinweise": ["PETG: in Bambu Studio geprüft"]}
 
-    def export_zwei(ziel=None, platten=None):
+    def export_zwei(ziel=None, platten=None, **_):
         return {"ok": True, "pfad": "a.3mf", "platten": [1, 2], "fehler": None,
                 "dateien": [{"pfad": "a.3mf", "material": "petg", "platten": [1]},
                             {"pfad": "b.3mf", "material": "pla", "platten": [2]}]}
@@ -152,19 +152,20 @@ def test_quelle_aus_der_druckvorschau(env, tmp_path):
         q = rt._drucker_quelle([], tmp_path / "q")
         assert q.eingaben == [projekt] and q.mit_einstellungen and not q.anordnen and q.platten == [1, 2]
         assert q.hinweise == ["PETG: in Bambu Studio geprüft"] and aufrufe[0][1] == []
-        assert aufrufe[0][0].endswith("Halter-platten.3mf")
+        assert aufrufe[0][0].endswith("Halter-platten.3mf") and aufrufe[0][2] == "vorschau"
         rt.druck_export = export_zwei
         from kevcad_kernel.drucker.dienst import QuelleFehler
 
         with pytest.raises(QuelleFehler, match=r"PETG: Platte 1; PLA: Platte 2"):
             rt._drucker_quelle([], tmp_path / "q")
-        rt.druck_export = lambda ziel=None, platten=None: {  # V-K ohne Bambu Studio: je Platte eine Datei
+        rt.druck_export = lambda ziel=None, platten=None, **_: {  # V-K ohne Bambu Studio: je Platte eine Datei
             "ok": True, "pfad": "a.3mf", "platten": [1, 2], "fehler": None,
             "dateien": [{"pfad": "a.3mf", "material": "petg", "platten": [1]},
                         {"pfad": "b.3mf", "material": "petg", "platten": [2]}]}
         with pytest.raises(QuelleFehler, match="je Platte eine eigene Datei"):
             rt._drucker_quelle([], tmp_path / "q")
-        rt.druck_export = lambda ziel=None, platten=None: {"ok": False, "fehler": "Keine Druckteile im Modell."}
+        rt.druck_export = lambda ziel=None, platten=None, **_: {"ok": False,
+                                                                "fehler": "Keine Druckteile im Modell."}
         with pytest.raises(QuelleFehler, match="Keine Druckteile"):
             rt._drucker_quelle([1], tmp_path / "q")
     finally:
