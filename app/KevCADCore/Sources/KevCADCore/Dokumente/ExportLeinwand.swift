@@ -40,6 +40,12 @@ public enum ExportStil {
         let c = f.rgb
         return farbe(CGFloat(c.r), CGFloat(c.g), CGFloat(c.b))
     }
+
+    /// Farbe einer Kennzeichnung (Kaufen, Bestand, Rest, Zukauf, Druckteil, Eigenteil) wie im Bereich „Material“.
+    public static func farbe(_ k: MaterialKennzeichen) -> CGColor {
+        let c = k.rgb
+        return farbe(CGFloat(c.r), CGFloat(c.g), CGFloat(c.b))
+    }
 }
 
 public enum ExportTextAusrichtung: Sendable { case links, rechts, mitte }
