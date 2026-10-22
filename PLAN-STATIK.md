@@ -86,6 +86,13 @@ Entscheidungen, die beim Bauen dazukamen:
 | T12 | Leichtere oder stärkere Lagerteile nur aus dem Inventar und nur desselben Werkstoffs; geschätzt über Widerstandsmoment, Fläche und Steifigkeit, die aussichtsreichsten mit dem ganzen Stabwerk nachgerechnet | Inventar-Regel; Fügen und Optik bleiben gleich; schnell |
 | T13 | Kugeln und Walzen, die frei rollen, nehmen nicht an Kippen und Rutschen teil (das zeigt S2) | Sonst hieße es „Ball kippt“ |
 
+Werkstoffdaten (T6, Strang „Bestand Stufe 2“, 22.10.2026): Mechanik für Multiplex Birke, MDF, Spanplatte P2, Messing,
+Kupfer und die Druckmaterialien ABS, ASA, TPU 95A, PC, PA (nass), PA-CF, PLA-CF; Reibwert Stahl auf Beton 0,2 (statt
+der Annahme 0,3); Auszugkraft von Gewindeeinsätzen (`einsatz_auszug`, M3 und M6 in PLA und PETG) als Nachweis in S0
+(Schraubenlast im Druckteil, Ziel 4, `statik/s0.einsatz_nachweis`, Urteil in `bewertung`). Werte, Quellen und Lücken
+in KATALOG.md. Offen: M4 und M5 (keine belegten Auszugkräfte), Siebdruckplatte, Querkontraktion der Buntmetalle,
+feuchte Werte für PA-CF, Einfluss von Wänden und Füllung auf den Einsatz.
+
 Naht für S2 und S3: `statik.NAHT` nennt die Stufen; beide setzen auf `modell.StatikModell` (Teile mit Masse und
 Schwerpunkt, Starrkörper, Anschlüsse mit Gelenkart und Achse, Lager) und `szenario.Szenario` (Beschleunigungsfeld,
 Lasten) auf und liefern Urteile im Format von `bewertung.urteil`, die `rechnen.rechne_alles` wie S0/S1 in Ampel,

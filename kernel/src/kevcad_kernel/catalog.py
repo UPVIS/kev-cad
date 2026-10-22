@@ -305,6 +305,41 @@ def _reib_key(a: str, b: str) -> tuple[str, str]:
     return (x, y) if x <= y else (y, x)
 
 
+# Statik (Strang „Bestand Stufe 2“): Auszugkraft von Gewindeeinsätzen in Druckteilen (KATALOG.md, „Gewindeeinsätze“)
+_GROESSE_RE = re.compile(r"^\s*[mM]\s*(\d+(?:[.,]\d+)?)")
+
+
+def einsatz_groesse(text: Any) -> str | None:
+    """„M3“ aus „M3“, „m3“, „M3-0.5“ oder 3.0; None, wenn nichts passt."""
+    if isinstance(text, (int, float)) and not isinstance(text, bool):
+        v = float(text)
+        return f"M{v:g}" if v > 0 else None
+    m = _GROESSE_RE.match(str(text or ""))
+    if not m:
+        return None
+    return f"M{float(m.group(1).replace(',', '.')):g}"
+
+
+def validate_einsatz_auszug(entry: Any) -> list[str]:
+    """Fehler einer Auszugkraft (Gewindeeinsatz je Größe und Druckmaterial, leer = gültig)."""
+    if not isinstance(entry, dict):
+        return ["Auszugkraft muss ein JSON-Objekt sein"]
+    who = f"Auszugkraft {entry.get('groesse')!r}/{entry.get('material')!r}"
+    errors = []
+    if einsatz_groesse(entry.get("groesse")) is None:
+        errors.append(f"{who}: groesse fehlt (z. B. \"M3\")")
+    if not isinstance(entry.get("material"), str) or not entry["material"].strip():
+        errors.append(f"{who}: material fehlt (Material-id, z. B. \"pla\")")
+    v = number(entry.get("kraft_n"))
+    if v is None or not 0 < v <= 100000:
+        errors.append(f"{who}: kraft_n muss eine Zahl über 0 sein (N, axial)")
+    if not isinstance(entry.get("quelle"), str) or not entry["quelle"].strip():
+        errors.append(f"{who}: quelle fehlt (Versuch oder Datenblatt mit Datum)")
+    if entry.get("stand") is not None and not _MONTH_RE.match(str(entry["stand"])):
+        errors.append(f"{who}: stand als Monat \"JJJJ-MM\" angeben")
+    return errors
+
+
 def _num_field(masse: dict[str, Any], key: str) -> float | None:
     return number(masse.get(key))
 
@@ -674,6 +709,7 @@ class Catalog:
         self._aliases: dict[str, str] = {}
         self._reibwerte: dict[tuple[str, str], dict[str, Any]] = {}  # Statik: Paarung → Reibwert (KATALOG.md)
         self._reibgruppen: dict[str, str] = {}
+        self._einsatz: dict[tuple[str, str], dict[str, Any]] = {}  # Statik: (Größe, Material) → Auszugkraft
         self.warnings: list[str] = []
         self.loaded_at = 0.0
 
@@ -749,6 +785,7 @@ class Catalog:
         warnings: list[str] = []
         reib: dict[tuple[str, str], dict[str, Any]] = {}
         reibgruppen: dict[str, str] = {}
+        einsatz: dict[tuple[str, str], dict[str, Any]] = {}
         seen_in_level: dict[tuple[str, str, str], Path] = {}
         for ebene, path in files:
             data, err = _read_json(path)
@@ -767,6 +804,14 @@ class Catalog:
             gruppen = data.get("reibgruppen") or {}
             if isinstance(gruppen, dict):
                 reibgruppen.update({fold(str(k)): str(v) for k, v in gruppen.items() if isinstance(v, str)})
+            # Auszugkraft von Gewindeeinsätzen je Größe und Druckmaterial (spätere Ebene ersetzt dieselbe Paarung)
+            for row in data.get("einsatz_auszug") or []:
+                errors = validate_einsatz_auszug(row)
+                if errors:
+                    warnings.append(f"{label}: " + "; ".join(errors) + " – übersprungen")
+                    continue
+                key = (str(einsatz_groesse(row["groesse"])), fold(row["material"]))
+                einsatz[key] = {**copy.deepcopy(row), "groesse": key[0], "ebene": ebene}
             for kind, key, target, check in (("material", "materialien", materials, validate_material),
                                               ("teil", "teile", items, None)):
                 rows = data.get(key) or []
@@ -814,6 +859,7 @@ class Catalog:
                     aliases[key] = mid
         self._materials, self._items, self._source, self._aliases = materials, items, source, aliases
         self._reibwerte, self._reibgruppen = reib, reibgruppen
+        self._einsatz = einsatz
         self.warnings = warnings
         self.loaded_at = time.time()
 
@@ -909,6 +955,29 @@ class Catalog:
                     r = self._reibwerte.get(_reib_key(x, y))
                     if r is not None:
                         return {**copy.deepcopy(r), "paarung": [x, y]}
+        return None
+
+    def einsatz_auszuege(self) -> list[dict[str, Any]]:
+        """Alle Auszugkräfte von Gewindeeinsätzen, sortiert nach Material und Größe."""
+        with self._lock:
+            self.refresh()
+            return [copy.deepcopy(r) for _, r in sorted(self._einsatz.items(),
+                                                        key=lambda kv: (kv[0][1], float(kv[0][0][1:])))]
+
+    def einsatz_auszug(self, groesse: Any, material: Any) -> dict[str, Any] | None:
+        """Auszugkraft eines Gewindeeinsatzes der Größe ``groesse`` („M3“, 3) im Druckmaterial ``material`` (Eintrag,
+        id, Alias oder Name); None, wenn nichts belegt ist (dann ist der Einsatz nicht nachgewiesen)."""
+        g = einsatz_groesse(groesse)
+        if g is None or not material:
+            return None
+        m = material if isinstance(material, dict) else self.find_material(material, include_proposed=True)
+        kandidaten = [m["id"]] if m else [str(material)]
+        with self._lock:
+            self.refresh()
+            for mid in kandidaten:
+                r = self._einsatz.get((g, fold(mid)))
+                if r is not None:
+                    return copy.deepcopy(r)
         return None
 
     def material_suggestions(self, name: str, n: int = 3) -> list[str]:
