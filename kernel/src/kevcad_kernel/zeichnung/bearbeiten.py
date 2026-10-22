@@ -350,12 +350,18 @@ def _ansicht_neu(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> d
         a["fest"] = True
     if art == "schnitt":
         sp = dict(op.get("schnitt") or {})
+        if not sp.get("ebene") and sp.get("linie") is not None:  # in der App gezogen: Linie in Blatt-mm
+            linie = sp.pop("linie")
+            sp.update(schnitt_aus_linie(erg, sp.get("von"), linie))
         if not sp.get("ebene"):
             raise OpFehler("Schnitt braucht schnitt.ebene {punkt, normale} und schnitt.von")
         sp.setdefault("name", _naechster_buchstabe(b))
         a["schnitt"] = sp
     if art == "einzelheit":
         ez = dict(op.get("einzelheit") or {})
+        if ez.get("mitte") is None and ez.get("kreis") is not None:  # in der App aufgezogen: Kreis in Blatt-mm
+            kreis = ez.pop("kreis")
+            ez.update(einzelheit_aus_kreis(erg, ez.get("von"), kreis, ez.get("faktor")))
         if ez.get("mitte") is None or not ez.get("von"):
             raise OpFehler("Einzelheit braucht einzelheit.von, mitte [x, y] (Modell-mm der Ansicht), radius, faktor")
         ez.setdefault("radius", 10.0)
@@ -364,6 +370,83 @@ def _ansicht_neu(b: dict[str, Any], op: dict[str, Any], von: str, erg: Any) -> d
         a["einzelheit"] = ez
     b["ansichten"].append(a)
     return {"id": vid}
+
+
+def _quell_ansicht(erg: Any, von: Any, punkt: list[float]) -> tuple[str, Any]:
+    """Ansicht, in der ein Schnitt oder eine Einzelheit angelegt wird: ``von`` oder die unter ``punkt`` (Blatt-mm)."""
+    if erg is None:
+        raise OpFehler("Das Blatt ist noch nicht gerechnet: erst DRAWING_REQ, dann Schnitt oder Einzelheit")
+    vid = str(von) if von else _ansicht_unter(erg, punkt)
+    v = erg.ansichten.get(vid) if vid else None
+    if v is None:
+        raise OpFehler("Schnitt und Einzelheit in einer Ansicht anlegen (Punkt liegt in keiner Ansicht)")
+    if v.art in ("schnitt", "einzelheit") or not getattr(v.blick, "orthogonal", True):
+        raise OpFehler(f"In der Ansicht {vid} ({v.art}) geht das nicht: eine Vorder-, Seiten- oder Draufsicht wählen")
+    return vid, v
+
+
+def blatt_zu_modell(v: Any, p: Any) -> np.ndarray:
+    """Blatt-mm → Modell-mm der Ansicht (2D vor dem Maßstab), Umkehrung von ``_Ansicht.blatt`` samt Unterbrechungen
+    langer Rohre."""
+    p = np.asarray(p, dtype=float)
+    x0, y0, x1, y1 = v.rahmen_m
+    cx = (float(v.gx(x0)) + float(v.gx(x1))) / 2
+    cy = (y0 + y1) / 2
+    g = cx + (p[0] - v.mitte[0]) / v.s
+    if v.brueche:
+        w = max(x1 - x0, 1.0)
+        xs = np.linspace(x0 - 2 * w, x1 + 2 * w, 8001)
+        x = float(np.interp(g, v.gx(xs), xs))
+    else:
+        x = float(g)
+    return np.array([x, cy + (p[1] - v.mitte[1]) / v.s])
+
+
+def schnitt_aus_linie(erg: Any, von: Any, linie: Any) -> dict[str, Any]:
+    """Schnittebene aus einer in der App gezogenen Linie (zwei Punkte in Blatt-mm): Die Ebene enthält die Linie und die
+    Blickrichtung der Ansicht. Blickrichtung des Schnitts zur größeren Hälfte der Ansicht (der kleinere Teil vor der
+    Ebene fällt weg); geht die Linie durch die Mitte, nach links der Zeichenrichtung."""
+    if not isinstance(linie, (list, tuple)) or len(linie) != 2:
+        raise OpFehler("schnitt.linie: zwei Punkte [[x, y], [x, y]] in Blatt-mm")
+    a, b = _punkt(linie[0], "schnitt.linie"), _punkt(linie[1], "schnitt.linie")
+    # die Linie beginnt und endet meist außerhalb des Teils: maßgeblich ist die Ansicht unter ihrer Mitte
+    vid, v = _quell_ansicht(erg, von, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2])
+    a2, b2 = blatt_zu_modell(v, a), blatt_zu_modell(v, b)
+    d2 = b2 - a2
+    if float(np.linalg.norm(d2)) < 1e-6:
+        raise OpFehler("Schnittlinie zu kurz: zwei verschiedene Punkte ziehen")
+    d2 = d2 / np.linalg.norm(d2)
+    n2 = np.array([-d2[1], d2[0]])  # links der Zeichenrichtung
+    x0, y0, x1, y1 = v.rahmen_m
+    zur_mitte = np.array([(x0 + x1) / 2, (y0 + y1) / 2]) - a2
+    seite = float(np.dot(zur_mitte, n2))
+    if abs(seite) > 0.02 * max(x1 - x0, y1 - y0, 1.0) and seite < 0:
+        n2 = -n2
+    rechts, oben = np.asarray(v.blick.rechts, dtype=float), np.asarray(v.blick.oben, dtype=float)
+    punkt = a2[0] * rechts + a2[1] * oben
+    normale = n2[0] * rechts + n2[1] * oben
+    return {"von": vid, "ebene": {"punkt": [round(float(c), 4) for c in punkt],
+                                  "normale": [round(float(c), 6) for c in normale]}}
+
+
+EINZELHEIT_FAKTOREN = (2, 4, 5, 10)
+
+
+def einzelheit_aus_kreis(erg: Any, von: Any, kreis: Any, faktor: Any = None) -> dict[str, Any]:
+    """Einzelheit aus einem in der App aufgezogenen Kreis (``{"mitte": [x, y], "radius": r}`` in Blatt-mm): Mitte und
+    Radius in Modell-mm der Ansicht; ohne ``faktor`` so, dass die Einzelheit etwa 60 mm groß wird (2, 4, 5 oder 10)."""
+    if not isinstance(kreis, dict):
+        raise OpFehler("einzelheit.kreis: {mitte: [x, y], radius} in Blatt-mm")
+    m = _punkt(kreis.get("mitte"), "einzelheit.kreis.mitte")
+    r = float(kreis.get("radius") or 0)
+    if r < 1.0:
+        raise OpFehler("Einzelheit: Kreis mit mindestens 1 mm Radius aufziehen")
+    vid, v = _quell_ansicht(erg, von, m)
+    if faktor is None:
+        ziel = 60.0 / (2 * r)
+        faktor = max([f for f in EINZELHEIT_FAKTOREN if f <= ziel] or [EINZELHEIT_FAKTOREN[0]])
+    return {"von": vid, "mitte": [round(float(c), 4) for c in blatt_zu_modell(v, m)],
+            "radius": round(r / v.s, 4), "faktor": faktor}
 
 
 def _naechster_buchstabe(b: dict[str, Any]) -> str:

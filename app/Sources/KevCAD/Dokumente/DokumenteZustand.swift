@@ -43,6 +43,10 @@ enum BlattWerkzeug: Equatable {
     case notiz
     /// Ansicht dieser Art an der Klickstelle hinzufügen.
     case ansicht(String)
+    /// Schnitt: Schnittlinie durch eine Ansicht ziehen oder mit zwei Klicks setzen.
+    case schnitt
+    /// Einzelheit: Kreis um die Stelle aufziehen (Mitte, dann Radius).
+    case einzelheit
 
     var titel: String {
         switch self {
@@ -50,6 +54,8 @@ enum BlattWerkzeug: Equatable {
         case .mass: return "Maß"
         case .notiz: return "Notiz"
         case .ansicht(let art): return ZeichnungText.ansichtArt(art)
+        case .schnitt: return "Schnitt"
+        case .einzelheit: return "Einzelheit"
         }
     }
 }

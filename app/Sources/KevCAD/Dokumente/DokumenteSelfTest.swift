@@ -430,6 +430,40 @@ enum DokumenteSelfTest {
                 check(z.ansichten.count == anzahl, "Rückgängig: Ansicht wieder entfernt")
             }
 
+            // 8b. Schnitt (Linie ziehen) und Einzelheit (Kreis aufziehen) über die echte Leinwand, dann rückgängig
+            if let v = z.ansichten.first(where: { ["vorn", "oben", "links", "rechts", "hinten", "unten"].contains($0.art) }) {
+                let anzahl = z.ansichten.count
+                zustand.setzeWerkzeug(.schnitt)
+                try? await Task.sleep(for: .milliseconds(150))
+                stand = z.stand
+                let y = v.rahmen.midY + v.rahmen.height * 0.07
+                await ziehe(CGPoint(x: v.rahmen.minX - 6, y: y), nach: CGPoint(x: v.rahmen.maxX + 6, y: y + 0.4))
+                z = await neuerStand(id, alt: stand) ?? z
+                let schnitt = z.ansichten.first { $0.art == "schnitt" }
+                check(z.ansichten.count == anzahl + 1 && schnitt != nil,
+                      "Schnitt gezogen: \(anzahl) → \(z.ansichten.count) Ansichten"
+                      + (schnitt.map { ", Schraffur \($0.linien["schraffur"]?.count ?? 0)" } ?? ""))
+                check(zustand.werkzeug == .auswahl, "nach dem Schnitt wieder Auswählen")
+                await pruefpunkt("schnitt-neu")
+                // Einzelheit: Kreis um eine Ecke der Ausgangsansicht (der Schnitt kann Format und Lage geändert haben)
+                zustand.setzeWerkzeug(.einzelheit)
+                try? await Task.sleep(for: .milliseconds(150))
+                stand = z.stand
+                let w = z.gruppe(v.id) ?? v
+                let c = CGPoint(x: w.rahmen.minX + w.rahmen.width * 0.2, y: w.rahmen.minY + w.rahmen.height * 0.3)
+                await ziehe(c, nach: CGPoint(x: c.x + 7, y: c.y))
+                z = await neuerStand(id, alt: stand) ?? z
+                let einzel = z.ansichten.first { $0.art == "einzelheit" }
+                check(einzel != nil, "Einzelheit aufgezogen: \(z.ansichten.count) Ansichten")
+                await pruefpunkt("einzelheit-neu")
+                for _ in 0..<2 {
+                    stand = z.stand
+                    rueckgaengig()
+                    z = await neuerStand(id, alt: stand) ?? z
+                }
+                check(z.ansichten.count == anzahl, "Rückgängig: Schnitt und Einzelheit wieder entfernt")
+            }
+
             // 9. Notiz-Werkzeug: Klick öffnet die Sprechblase für den Text
             if let frei = freieStelle(z) {
                 zustand.setzeWerkzeug(.notiz)

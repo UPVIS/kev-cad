@@ -134,6 +134,10 @@ public enum ZeichnungsOp: Equatable, Sendable {
     /// `text`: nil = unverändert, "" = Messwert; `fest`: nil = unverändert lassen (der Kernel setzt sonst fest).
     case massAendern(id: String, text: String?, toleranz: String?, fest: Bool?)
     case ansichtNeu(art: String, lage: CGPoint?)
+    /// Schnitt aus einer gezogenen Linie (zwei Punkte, Blatt-mm); der Kernel rechnet die Ebene (DOKUMENTE.md 1.3).
+    case schnittNeu(von: String?, linie: [CGPoint])
+    /// Einzelheit aus einem aufgezogenen Kreis (Mitte und Radius in Blatt-mm); der Kernel wählt den Faktor.
+    case einzelheitNeu(von: String?, mitte: CGPoint, radius: Double)
     case ansichtVerschieben(id: String, lage: CGPoint)
     case ansichtLoeschen(id: String)
     case massstab(String)
@@ -156,7 +160,7 @@ public enum ZeichnungsOp: Equatable, Sendable {
         case .massLoeschen: return "mass_loeschen"
         case .massNeu: return "mass_neu"
         case .massAendern: return "mass_aendern"
-        case .ansichtNeu: return "ansicht_neu"
+        case .ansichtNeu, .schnittNeu, .einzelheitNeu: return "ansicht_neu"
         case .ansichtVerschieben: return "ansicht_verschieben"
         case .ansichtLoeschen: return "ansicht_loeschen"
         case .massstab: return "massstab"
@@ -178,6 +182,8 @@ public enum ZeichnungsOp: Equatable, Sendable {
         case .massNeu: return "Neues Maß"
         case .massAendern: return "Maß ändern"
         case .ansichtNeu: return "Ansicht hinzufügen"
+        case .schnittNeu: return "Schnitt anlegen"
+        case .einzelheitNeu: return "Einzelheit anlegen"
         case .ansichtVerschieben: return "Ansicht verschieben"
         case .ansichtLoeschen: return "Ansicht löschen"
         case .massstab: return "Maßstab ändern"
@@ -216,6 +222,17 @@ public enum ZeichnungsOp: Equatable, Sendable {
         case .ansichtNeu(let art, let lage):
             o["art"] = .string(art)
             if let lage { o["lage"] = Self.punkt(lage) }
+        case .schnittNeu(let von, let linie):
+            o["art"] = "schnitt"
+            var sp: [String: JSONValue] = ["linie": .array(linie.map(Self.punkt))]
+            if let von { sp["von"] = .string(von) }
+            o["schnitt"] = .object(sp)
+        case .einzelheitNeu(let von, let mitte, let radius):
+            o["art"] = "einzelheit"
+            let kreis: [String: JSONValue] = ["mitte": Self.punkt(mitte), "radius": Self.zahl(radius)]
+            var ez: [String: JSONValue] = ["kreis": .object(kreis)]
+            if let von { ez["von"] = .string(von) }
+            o["einzelheit"] = .object(ez)
         case .ansichtVerschieben(let id, let lage):
             o["id"] = .string(id)
             o["lage"] = Self.punkt(lage)

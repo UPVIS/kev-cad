@@ -53,6 +53,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             guard werkzeug != oldValue else { return }
             massKlicks = []
             notizStart = nil
+            schnittStart = nil
             hoverLinie = nil
             hinweisAktualisieren()
             window?.invalidateCursorRects(for: self)
@@ -75,6 +76,8 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         case ansicht(id: String, start: CGPoint)
         case notiz(id: String, start: CGPoint)
         case notizNeu(start: CGPoint)
+        case schnittNeu(start: CGPoint)
+        case einzelheitNeu(mitte: CGPoint)
     }
 
     private var geste: Geste = .keine
@@ -111,6 +114,8 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     private var massKlicks: [Klick] = []
     private var hoverLinie: (ansicht: String, linie: [CGPoint])?
     private var notizStart: CGPoint?
+    /// Schnitt-Werkzeug: erster Punkt der Linie (zweiter Klick oder Loslassen nach dem Ziehen setzt den Schnitt).
+    private var schnittStart: CGPoint?
 
     // Zeichnen und Messen
     private var interaktionBis: CFTimeInterval = 0
@@ -637,9 +642,144 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                     BlattText(text: ZeichnungText.ansichtArt(art), lage: CGPoint(x: m.x, y: m.y - 26), hoehe: 3.5,
                               anker: .mitte), in: ctx, farbe: akzent)
             }
+        case .schnitt:
+            if let a = schnittStart, let m = maus {
+                zeichneSchnittVorschau(von: a, bis: schnittPunkt(a, m), z, in: ctx, farbe: akzent)
+            } else if let m = maus {
+                zeichneFadenkreuz(m, in: ctx, farbe: akzent)
+            }
+        case .einzelheit:
+            if case .einzelheitNeu(let c) = geste, let m = maus {
+                let r = hypot(m.x - c.x, m.y - c.y)
+                ctx.setStrokeColor(akzent)
+                ctx.setLineWidth(max(0.25, 1.4 * px))
+                ctx.strokeEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
+                ctx.setLineDash(phase: 0, lengths: [3 * px, 3 * px])
+                ctx.move(to: c)
+                ctx.addLine(to: m)
+                ctx.strokePath()
+                ctx.setLineDash(phase: 0, lengths: [])
+                BlattZeichner.zeichneText(
+                    BlattText(text: "Einzelheit \(naechsterBuchstabe(z))", lage: CGPoint(x: c.x, y: c.y + r + 2),
+                              hoehe: 3.5, anker: .mitte), in: ctx, farbe: akzent)
+            } else if let m = maus {
+                zeichneFadenkreuz(m, in: ctx, farbe: akzent)
+            }
         case .auswahl:
             break
         }
+    }
+
+    private func zeichneFadenkreuz(_ m: CGPoint, in ctx: CGContext, farbe: CGColor) {
+        ctx.setStrokeColor(farbe)
+        ctx.setLineWidth(max(0.25, 1.2 / skala))
+        ctx.move(to: CGPoint(x: m.x - 4, y: m.y))
+        ctx.addLine(to: CGPoint(x: m.x + 4, y: m.y))
+        ctx.move(to: CGPoint(x: m.x, y: m.y - 4))
+        ctx.addLine(to: CGPoint(x: m.x, y: m.y + 4))
+        ctx.strokePath()
+    }
+
+    /// Schnittverlauf wie auf dem Blatt (Strichpunkt, Enden breit) mit Pfeilen in Blickrichtung: zur größeren Hälfte
+    /// der Ansicht, bei einer Linie durch die Mitte nach links der Zeichenrichtung (wie der Kernel rechnet).
+    private func zeichneSchnittVorschau(von a: CGPoint, bis b: CGPoint, _ z: Zeichnung, in ctx: CGContext,
+                                        farbe: CGColor)
+    {
+        let px = 1 / skala
+        let d = CGVector(dx: b.x - a.x, dy: b.y - a.y)
+        let l = hypot(d.dx, d.dy)
+        guard l > 0.5 else { return }
+        let u = CGVector(dx: d.dx / l, dy: d.dy / l)
+        var n = CGVector(dx: -u.dy, dy: u.dx)
+        let mitte = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        if let vid = ansichtTreffer(mitte, z), let g = z.gruppe(vid) {
+            let seite = (g.rahmen.midX - a.x) * n.dx + (g.rahmen.midY - a.y) * n.dy
+            if abs(seite) > 0.02 * max(g.rahmen.width, g.rahmen.height), seite < 0 { n = CGVector(dx: -n.dx, dy: -n.dy) }
+        }
+        ctx.setStrokeColor(farbe)
+        ctx.setLineWidth(max(0.25, 1.2 * px))
+        ctx.setLineDash(phase: 0, lengths: [6, 1.5, 0.6, 1.5])
+        ctx.move(to: a)
+        ctx.addLine(to: b)
+        ctx.strokePath()
+        ctx.setLineDash(phase: 0, lengths: [])
+        ctx.setLineWidth(max(0.5, 2.6 * px))
+        for (p, s) in [(a, 1.0), (b, -1.0)] {
+            ctx.move(to: p)
+            ctx.addLine(to: CGPoint(x: p.x + u.dx * 5 * s, y: p.y + u.dy * 5 * s))
+            ctx.strokePath()
+            // Pfeil in Blickrichtung an jedem Ende, mit dem Namen daneben
+            let fuss = CGPoint(x: p.x + u.dx * 2.5 * s, y: p.y + u.dy * 2.5 * s)
+            let spitze = CGPoint(x: fuss.x + n.dx * 7, y: fuss.y + n.dy * 7)
+            ctx.setLineWidth(max(0.25, 1.2 * px))
+            ctx.move(to: fuss)
+            ctx.addLine(to: spitze)
+            ctx.strokePath()
+            let tri = CGMutablePath()
+            tri.addLines(between: [
+                spitze,
+                CGPoint(x: spitze.x - n.dx * 2.6 + u.dx * 0.9, y: spitze.y - n.dy * 2.6 + u.dy * 0.9),
+                CGPoint(x: spitze.x - n.dx * 2.6 - u.dx * 0.9, y: spitze.y - n.dy * 2.6 - u.dy * 0.9),
+            ])
+            tri.closeSubpath()
+            ctx.setFillColor(farbe)
+            ctx.addPath(tri)
+            ctx.fillPath()
+            BlattZeichner.zeichneText(
+                BlattText(text: naechsterBuchstabe(z), lage: CGPoint(x: spitze.x + u.dx * 3 * s, y: spitze.y - 1.2),
+                          hoehe: 3.5, anker: .mitte), in: ctx, farbe: farbe)
+            ctx.setLineWidth(max(0.5, 2.6 * px))
+        }
+    }
+
+    /// Zweiter Punkt der Schnittlinie; fast waagrecht oder senkrecht (unter 4°) oder mit Umschalt rastet sie ein.
+    private func schnittPunkt(_ a: CGPoint, _ m: CGPoint) -> CGPoint {
+        let dx = m.x - a.x, dy = m.y - a.y
+        if NSEvent.modifierFlags.contains(.shift) {
+            return abs(dx) >= abs(dy) ? CGPoint(x: m.x, y: a.y) : CGPoint(x: a.x, y: m.y)
+        }
+        let winkel = abs(atan2(dy, dx)) * 180 / .pi  // 0 … 180
+        if min(winkel, 180 - winkel) < 4 { return CGPoint(x: m.x, y: a.y) }
+        if abs(90 - winkel) < 4 { return CGPoint(x: a.x, y: m.y) }
+        return m
+    }
+
+    /// Name, den der Kernel dem nächsten Schnitt bzw. der nächsten Einzelheit gibt (A, B, … ohne I, O, Q).
+    private func naechsterBuchstabe(_ z: Zeichnung) -> String {
+        let benutzt = Set((z.blatt.json["ansichten"]?.arrayValue ?? []).compactMap {
+            ($0["schnitt"]?["name"] ?? $0["einzelheit"]?["name"])?.stringValue
+        })
+        return "ABCDEFGHJKLMNPRSTUVWXYZ".map(String.init).first { !benutzt.contains($0) } ?? "Z"
+    }
+
+    private func schnittSetzen(_ a: CGPoint, _ b: CGPoint, _ z: Zeichnung) {
+        schnittStart = nil
+        let mitte = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        guard hypot(b.x - a.x, b.y - a.y) * skala >= 8 else {
+            kurzerHinweis("Schnitt: die Linie ist zu kurz, durch die ganze Ansicht ziehen")
+            return
+        }
+        guard let vid = ansichtTreffer(mitte, z) else {
+            kurzerHinweis("Schnitt: die Linie muss durch eine Ansicht gehen")
+            needsDisplay = true
+            return
+        }
+        bearbeite([.schnittNeu(von: vid, linie: [a, b])])
+        zustand?.setzeWerkzeug(.auswahl)
+    }
+
+    private func einzelheitSetzen(_ c: CGPoint, _ m: CGPoint, _ z: Zeichnung) {
+        let r = hypot(m.x - c.x, m.y - c.y)
+        guard r * skala >= 6, r >= 1 else {
+            kurzerHinweis("Einzelheit: von der Mitte aus einen Kreis aufziehen")
+            return
+        }
+        guard let vid = ansichtTreffer(c, z) else {
+            kurzerHinweis("Einzelheit: die Mitte muss in einer Ansicht liegen")
+            return
+        }
+        bearbeite([.einzelheitNeu(von: vid, mitte: c, radius: (Double(r) * 100).rounded() / 100)])
+        zustand?.setzeWerkzeug(.auswahl)
     }
 
     private func istGezogen(_ e: BlattElement) -> Bool {
@@ -786,7 +926,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                     neu = true
                 }
             }
-        case .ansicht, .notiz:
+        case .ansicht, .notiz, .schnitt, .einzelheit:
             neu = true
         }
         if neu { needsDisplay = true }
@@ -848,6 +988,16 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         case .ansicht(let art):
             bearbeite([.ansichtNeu(art: art, lage: p)])
             zustand?.setzeWerkzeug(.auswahl)
+        case .schnitt:
+            if let a = schnittStart {  // zweiter Klick
+                schnittSetzen(a, schnittPunkt(a, p), z)
+            } else {
+                schnittStart = p
+                geste = .schnittNeu(start: p)
+                hinweisAktualisieren()
+            }
+        case .einzelheit:
+            geste = .einzelheitNeu(mitte: p)
         }
     }
 
@@ -875,7 +1025,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                 if abs(d.dx) > abs(d.dy) { zug.dy = 0 } else { zug.dx = 0 }
             }
             needsDisplay = true
-        case .notizNeu:
+        case .notizNeu, .schnittNeu, .einzelheitNeu:
             needsDisplay = true
         }
     }
@@ -914,6 +1064,11 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             merkeAusstehend { $0.notizen[id] = d }
             bearbeite([.notizLoeschen(id: id), .notiz(text: n.text, lage: CGPoint(x: n.lage.x + d.dx, y: n.lage.y + d.dy),
                                                       zeiger: Self.zeiger(n))], titel: "Notiz verschieben")
+        case .schnittNeu(let start):
+            // gezogen statt geklickt: Loslassen setzt den Schnitt, sonst wartet er auf den zweiten Klick
+            if hypot(p.x - start.x, p.y - start.y) * skala >= 8 { schnittSetzen(start, schnittPunkt(start, p), z) }
+        case .einzelheitNeu(let c):
+            einzelheitSetzen(c, p, z)
         case .notizNeu(let start):
             notizStart = nil
             let mitZeiger = hypot(p.x - start.x, p.y - start.y) > 3
@@ -1035,6 +1190,11 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             }
         case .notiz: text = "Notiz: klicken oder vom Ziel zur Textstelle ziehen"
         case .ansicht(let art): text = "\(ZeichnungText.ansichtArt(art)): Stelle auf dem Blatt anklicken"
+        case .schnitt:
+            text = schnittStart == nil
+                ? "Schnitt: Linie durch eine Ansicht ziehen oder Anfang und Ende anklicken (⇧ waagrecht/senkrecht)"
+                : "Schnitt: Ende der Linie anklicken (Esc bricht ab)"
+        case .einzelheit: text = "Einzelheit: auf die Stelle drücken und den Kreis aufziehen"
         }
         if zustand?.anzeige.hinweis != text {
             DispatchQueue.main.async { [weak self] in self?.zustand?.anzeige.hinweis = text }
@@ -1077,11 +1237,12 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         case 51, 117:  // Rückschritt, Entfernen
             loeschen()
         case 53:  // Esc
-            if massKlicks.isEmpty && notizStart == nil && werkzeug == .auswahl {
+            if massKlicks.isEmpty && notizStart == nil && schnittStart == nil && werkzeug == .auswahl {
                 waehle(nil)
             } else {
                 massKlicks = []
                 notizStart = nil
+                schnittStart = nil
                 zustand?.setzeWerkzeug(.auswahl)
             }
             needsDisplay = true
@@ -1202,6 +1363,13 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                     self?.bearbeite([.ansichtNeu(art: art, lage: p)])
                 })
             }
+            sub.addItem(.separator())
+            sub.addItem(BlattMenuePunkt("Schnitt (Linie ziehen)") { [weak self] in
+                self?.zustand?.setzeWerkzeug(.schnitt)
+            })
+            sub.addItem(BlattMenuePunkt("Einzelheit (Kreis aufziehen)") { [weak self] in
+                self?.zustand?.setzeWerkzeug(.einzelheit)
+            })
             ansicht.submenu = sub
             menu.addItem(ansicht)
             menu.addItem(BlattMenuePunkt("Notiz hier …") { [weak self] in

@@ -184,6 +184,13 @@ Element) } …], "versatz"}`, `{"op": "ansicht_neu", "art", "lage"}`, `{"op": "a
 `{"op": "notiz_loeschen", "id"}`, `{"op": "schriftfeld", "feld", "wert"}`, `{"op": "auto", "ansichten": bool, "masse": bool, "zuruecksetzen": bool}`,
 `{"op": "unterdrueckung_aufheben", "index"}`.
 
+**Schnitt und Einzelheit aus der App** (Version 1.3): `ansicht_neu` mit `art: "schnitt"` nimmt statt `schnitt.ebene`
+die gezogene Linie `schnitt.linie: [[x, y], [x, y]]` (Blatt-mm) und optional `schnitt.von`; der Kernel nimmt die
+Ansicht unter der Mitte der Linie und legt die Ebene durch Linie und Blickrichtung, Blick zur größeren Hälfte der
+Ansicht (geht die Linie durch die Mitte: links der Zeichenrichtung). Mit `art: "einzelheit"` statt `mitte`/`radius`
+der aufgezogene Kreis `einzelheit.kreis: {"mitte": [x, y], "radius": r}` (Blatt-mm); ohne `faktor` wählt der Kernel 2,
+4, 5 oder 10 (Einzelheit etwa 60 mm). Nur in Vorder-, Seiten- und Draufsichten.
+
 `BAUPLAN_EDIT.ops`: `{"op": "text", "schritt", "titel", "text"}`, `{"op": "fest", "schritt", "wert"}`,
 `{"op": "verschieben", "schritt", "nach"}`, `{"op": "zusammenfassen" | "teilen", …}`, `{"op": "bild", "schritt", "kamera" | "explosion" | "pfeile"}`.
 
