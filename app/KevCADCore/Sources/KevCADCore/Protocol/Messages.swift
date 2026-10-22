@@ -539,6 +539,8 @@ public enum KernelMessage: Sendable {
     case drucker(DruckerNachricht)
     /// Freigabe im Projektfenster (additiv, Strang „Feinschliff 2“): FREIGABE_ANFRAGE, Antwort ACK.
     case freigabe(FreigabeAnfrage)
+    /// Statik (additiv, PLAN-STATIK.md): STATICS mit Szenarien, Ampel und Ausnutzung je Teil und Stab.
+    case statik(StatikErgebnis)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -575,6 +577,7 @@ public enum KernelMessage: Sendable {
         case .druck(let d): return d.typeName
         case .drucker(let d): return d.typeName
         case .freigabe: return "FREIGABE_ANFRAGE"
+        case .statik: return "STATICS"
         case .unknown(let t, _): return t
         }
     }
@@ -596,6 +599,7 @@ public enum KernelMessage: Sendable {
         case .bauplan(let m): return m.replyTo
         case .druck(let m): return m.replyTo
         case .drucker(let m): return m.replyTo
+        case .statik(let m): return m.replyTo
         default: return nil
         }
     }
@@ -642,6 +646,7 @@ public enum KernelMessage: Sendable {
         case let t where DruckerNachricht.types.contains(t):
             return .drucker(try DruckerNachricht.decode(type: t, header: h))
         case "FREIGABE_ANFRAGE": return .freigabe(try FreigabeAnfrage.decode(h))
+        case "STATICS": return .statik(try StatikErgebnis.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

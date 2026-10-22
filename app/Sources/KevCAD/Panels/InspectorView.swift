@@ -17,6 +17,7 @@ struct InspectorView: View {
             stockSection
             ZukaufInspectorSection(model: model)
             ConstraintsSection(model: model)
+            StatikAbschnitt(store: model.statik, actions: model.statikActions)  // Statik Stufe 1
             measurementsSection
             projectSection
         }

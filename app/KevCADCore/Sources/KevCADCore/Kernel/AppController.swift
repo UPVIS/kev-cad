@@ -373,6 +373,7 @@ public final class AppController: AppActions {
             case .bestand(let b): applyBestand(b)
             case .druck(let d): handleDruck(d)  // Druckvorschau: PRINT_PREVIEW auf PRINT_PREVIEW_REQ
             case .drucker(let d): handleDrucker(d)  // Phase 8: PRINTER_STATUS auf PRINTER_STATUS_REQ
+            case .statik(let e): applyStatik(e)  // Statik: STATICS als Antwort
             default: break
             }
             return
@@ -517,6 +518,8 @@ public final class AppController: AppActions {
             handleDrucker(d)
         case .freigabe(let a):  // Freigabe im Projektfenster (AppController+Freigabe.swift)
             handleFreigabeAnfrage(a)
+        case .statik(let e):  // Statik (Statik/AppController+Statik.swift)
+            applyStatik(e)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

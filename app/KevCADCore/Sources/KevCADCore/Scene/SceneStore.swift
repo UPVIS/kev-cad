@@ -57,6 +57,10 @@ public final class SceneStore {
     /// geänderten bzw. neuen Teile im Vergleich (linear), siehe AppController+Versionen.
     public private(set) var vergleichBodies: [ViewportBody] = []
     public private(set) var vergleichTints: [String: SIMD3<Float>] = [:]
+    /// Statik (additiv): Farbverlauf der Ausnutzung an den Stäben, überhöhte Verformung als Geist (linear, nicht
+    /// anklickbar) und Färbung der Teile nach ihrer Ausnutzung, siehe Statik/AppController+Statik.swift.
+    public private(set) var statikBodies: [ViewportBody] = []
+    public private(set) var statikTints: [String: SIMD3<Float>] = [:]
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -161,6 +165,8 @@ public final class SceneStore {
         ghostBodies = []
         vergleichBodies = []
         vergleichTints = [:]
+        statikBodies = []
+        statikTints = [:]
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -320,6 +326,15 @@ public final class SceneStore {
         let touched = Set(tints.keys).union(vergleichTints.keys)
         vergleichBodies = bodies
         vergleichTints = tints
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Statik: Körper (Farbverlauf, Verformung) und Färbung der Teile setzen (leer = aus).
+    public func setStatik(bodies: [ViewportBody], tints: [String: SIMD3<Float>]) {
+        let touched = Set(tints.keys).union(statikTints.keys)
+        statikBodies = bodies
+        statikTints = tints
         for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
@@ -635,6 +650,7 @@ public final class SceneStore {
         if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
         if collisionParts.contains(name) { rgb = rgb + (Self.collisionColor - rgb) * 0.8 }
         if let t = vergleichTints[name] { rgb = rgb + (t - rgb) * 0.7 }  // Versionen: geändert oder neu
+        if let t = statikTints[name] { rgb = rgb + (t - rgb) * 0.75 }  // Statik: Ausnutzung
         if includeFlash, let t0 = flashStart[name] {
             let k = Float(max(0, 1 - (now - t0) / Self.flashDuration))
             rgb = rgb + (Self.flashColor - rgb) * (0.7 * k)
@@ -689,6 +705,7 @@ public final class SceneStore {
         }
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: ghostBodies) }  // Schnittkörper: Ruhelage
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: vergleichBodies) }  // Versionen: Vergleich
+        if animationTransforms.isEmpty { renderBodies.append(contentsOf: statikBodies) }  // Statik
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -787,7 +804,7 @@ public final class SceneStore {
             }
         }
         // Schnittkörper der Prüfung gelten für die Ruhelage, in einem Bild der Animation stehen sie nicht
-        for g in ghostBodies + vergleichBodies where g.isVisible && animationTransforms.isEmpty {  // erwartet sRGB
+        for g in ghostBodies + vergleichBodies + statikBodies where g.isVisible && animationTransforms.isEmpty {  // sRGB
             var b = g
             b.color = Self.srgb(g.color)
             out.append(b)
