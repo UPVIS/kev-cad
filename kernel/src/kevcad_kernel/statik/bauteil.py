@@ -95,16 +95,16 @@ def schnitte(k: Any, R: np.ndarray, P: np.ndarray) -> list[dict[str, Any]]:
     return out
 
 
-def einspannung(m: StatikModell, name: str, koerper: dict[str, Any]) -> np.ndarray | None:
-    """Mitte der Berührung des Teils mit den Teilen, die es tragen (ohne Anbauteile; Verbindungselemente nur, wenn sonst
-    nichts da ist)."""
+def einspannung(m: StatikModell, name: str, koerper: dict[str, Any], ohne: Any = ()) -> np.ndarray | None:
+    """Mitte der Berührung des Teils mit den Teilen, die es tragen (ohne ``ohne``, etwa den Stab, der die Last
+    einleitet; Verbindungselemente nur, wenn sonst nichts da ist)."""
     k = koerper[name]
     nach: list[tuple[bool, np.ndarray]] = []
     for e in m.kanten.values():
         if name not in (e["a"], e["b"]):
             continue
         x = e["b"] if e["a"] == name else e["a"]
-        if x not in koerper:
+        if x not in koerper or x in ohne:
             continue
         o = koerper[x]
         lo, hi = np.maximum(k.bmin, o.bmin), np.minimum(k.bmax, o.bmax)
@@ -117,8 +117,9 @@ def einspannung(m: StatikModell, name: str, koerper: dict[str, Any]) -> np.ndarr
 
 
 def pruefe_last(m: StatikModell, sz: Szenario, koerper: dict[str, Any], name: str, F: np.ndarray,
-                P: np.ndarray | None) -> dict[str, Any] | None:
-    """Kragträger-Nachweis für ein Teil mit Last F (N) am Punkt P (mm, sonst Schwerpunkt)."""
+                P: np.ndarray | None, moment: np.ndarray | None = None, ohne: Any = ()) -> dict[str, Any] | None:
+    """Kragträger-Nachweis für ein Teil mit Last F (N) am Punkt P (mm, sonst Schwerpunkt), dazu ein Moment (Nmm) am
+    selben Punkt; ``ohne``: Nachbarn, die nicht zur Einspannung zählen (der lasteinleitende Stab)."""
     t = m.teile.get(name)
     k = koerper.get(name)
     if t is None or k is None or name in m.staebe:
@@ -127,10 +128,11 @@ def pruefe_last(m: StatikModell, sz: Szenario, koerper: dict[str, Any], name: st
     if w is None or not w.grenze:
         return {"teil": name, "sicherheit": None, "text": f"{name}: Material ohne Festigkeitswerte im Katalog, "
                                                           "nicht nachgewiesen"}
-    R = einspannung(m, name, koerper)
+    R = einspannung(m, name, koerper, ohne)
     if R is None:
         return None
     P = np.asarray(P if P is not None else t.schwerpunkt, dtype=float)
+    M0 = np.zeros(3) if moment is None else np.asarray(moment, dtype=float)
     r = P - R
     L = float(np.linalg.norm(r))
     if L < 5.0:
@@ -141,7 +143,7 @@ def pruefe_last(m: StatikModell, sz: Szenario, koerper: dict[str, Any], name: st
         A, C, J, pts = s["A"], s["C"], s["J"], s["punkte"]
         if A <= 1e-6:
             continue
-        M = np.cross(P - C, F)
+        M = np.cross(P - C, F) + M0
         T = float(np.dot(M, e))
         Mb = M - e * T
         N = float(np.dot(F, e))

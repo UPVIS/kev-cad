@@ -68,6 +68,7 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
                     if b.get("sicherheit") is not None and (b["sicherheit"] < b["ziel"] or b.get("quer_zur_schicht")):
                         b["vorschlag"] = bt.vorschlag_druck(m, koerper, b)
                     bauteile.append(b)
+            bauteile += _lagerteile(m, sz, s1erg.get(sz.name), koerper, {b["teil"] for b in bauteile})
         e = bw.bewerte(sz, s0, s1erg.get(sz.name), bauteile, m)
         vmax = (e["kennzahlen"] or {}).get("verformung_max_mm") or 0.0
         e["ueberhoehung"] = round(max(1.0, min(1000.0, UEBERHOEHUNG_ANTEIL * groesse / vmax)), 1) if vmax > 1e-6 else 1.0
@@ -152,6 +153,38 @@ def sauber(x: Any) -> Any:
     if isinstance(x, set):
         return sorted(sauber(v) for v in x)
     return x
+
+
+def _lagerteile(m: StatikModell, sz: Szenario, r1: Any, koerper: dict[str, Any], schon: set[str]
+                ) -> list[dict[str, Any]]:
+    """Teile, an denen das Stabwerk gelagert ist (Halter, Konsolen, oft Druckteile), mit der Lagerkraft des Stabs als
+    Kragträger nachweisen: Last am Lagerpunkt, Einspannung an den übrigen Berührungen. Je Teil das schlechteste
+    Lager."""
+    if r1 is None or not getattr(r1, "ok", False):
+        return []
+    beste: dict[str, dict[str, Any]] = {}
+    for a in r1.auflager:
+        teil = a.get("teil")
+        t = m.teile.get(teil)
+        if t is None or teil in m.staebe or t.verbindungselement or t.werkstoff is None or teil in schon:
+            continue
+        F = -np.asarray(a["kraft"], dtype=float)
+        if float(np.linalg.norm(F)) < 1e-3:
+            continue
+        try:
+            b = bt.pruefe_last(m, sz, koerper, teil, F, np.asarray(a["punkt"], dtype=float),
+                               moment=-np.asarray(a["moment"], dtype=float), ohne={a["stab"]})
+        except Exception:  # noqa: BLE001 - ein Lager darf die anderen nicht verhindern
+            continue
+        if b is None or b.get("sicherheit") is None:
+            continue
+        b["aus_lager"] = a["stab"]
+        if teil not in beste or b["sicherheit"] < beste[teil]["sicherheit"]:
+            beste[teil] = b
+    for b in beste.values():
+        if b["sicherheit"] < b["ziel"]:
+            b["vorschlag"] = bt.vorschlag_druck(m, koerper, b)
+    return list(beste.values())
 
 
 def befunde(erg: dict[str, Any]) -> list[dict[str, Any]]:

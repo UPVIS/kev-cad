@@ -499,7 +499,7 @@ def _auswerten(b: _Aufbau, sz: Szenario) -> S1Ergebnis:
         M = [node.RxnMX[combo], node.RxnMY[combo], node.RxnMZ[combo]]
         e.auflager.append({"stab": a.stab, "teil": a.teile[1], "punkt": [round(float(c), 1) for c in b.knoten_pos[kn]],
                            "kraft": [round(float(c), 2) for c in F], "moment": [round(float(c), 1) for c in M],
-                           "art": a.art})
+                           "art": a.art, "t": round(a.t, 1)})
     # Kräfte in die Starrkörper (Summe der Gliedkräfte am Starrkörperknoten, grob)
     for kid, kn in b.k_knoten.items():
         node = fe.nodes[kn]

@@ -157,11 +157,12 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
         amp = ampel_a(a)
         schicht = (f", quer zur Schicht (nur {z(b['schichtfaktor'] * 100, 0)} % der Festigkeit)"
                    if b.get("quer_zur_schicht") else "")
-        text = (f"{b['teil']} {'hält nicht' if amp == 'rot' else ('hält knapp' if amp == 'gelb' else 'hält')}: "
-                f"Sicherheit {_sf(sf)} (Ziel {z(zb, 0)}{', Druckteil' if b.get('druckteil') else ''}), "
+        lager = f" als Lager von {b['aus_lager']}" if b.get("aus_lager") else ""
+        text = (f"{b['teil']}{lager} {'hält nicht' if amp == 'rot' else ('hält knapp' if amp == 'gelb' else 'hält')}"
+                f": Sicherheit {_sf(sf)} (Ziel {z(zb, 0)}{', Druckteil' if b.get('druckteil') else ''}), "
                 f"{z(b['spannung'], 1)} N/mm² an der Einspannung (Hebel {z(b['hebel_mm'], 0)} mm){schicht}.")
         loesung = b.get("vorschlag") or ""
-        if amp != "gruen" or b.get("quer_zur_schicht"):
+        if amp != "gruen" or (b.get("quer_zur_schicht") and not b.get("aus_lager")):
             ur.append(urteil("bauteil", b["teil"], amp, text, loesung, sicherheit=sf, ziel=zb, ausnutzung=round(a, 3),
                              schichtfaktor=b.get("schichtfaktor"), quer_zur_schicht=b.get("quer_zur_schicht"),
                              ort=b.get("einspannung")))
