@@ -9,7 +9,11 @@ Nutzt die Bausteine der Laufzeit (``_project``, ``scene``, ``_bom``, ``_pruef``,
 - ``_versionen_pruefung(check)`` bei jedem fertigen CHECK,
 - ``_versionen_app_message(kind, header)`` für die App-Nachrichten dieses Abschnitts,
 - ``_versionen_on_connect(conn)`` beim Verbinden der App,
-- ``_schatten_job(job)`` / ``_schatten_nachricht(...)`` für den Lauf ohne Live-Aufbau (Vergleich, Nachberechnung).
+- ``_schatten_job(job)`` / ``_schatten_nachricht(...)`` für den Lauf ohne Live-Aufbau (Vergleich, Nachberechnung),
+- ``_versionen_agent_titel(result, titel)`` in ``run(titel=…)``: Titel des Agenten an die Version des Laufs.
+
+Titel (titel.py): Jede neue Version bekommt ihren automatischen Titel gleich nach dem Lauf; übernommene und ältere
+Stände zieht ``_titel_nachziehen`` beim Öffnen und nach jeder Nachberechnung nach (nur Metadaten, nie Git).
 
 Läufe, Wiederherstellen, Variantenwechsel und Meilensteine laufen über die Auftragsschlange der Laufzeit; so ändert
 nichts die Dateien, während ein Lauf rechnet.
@@ -25,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from kevcad_kernel.versionen.archiv import HAUPT, Version, Versionsarchiv, VersionsFehler
+from kevcad_kernel.versionen.archiv import HAUPT, KevinsMeilenstein, Version, Versionsarchiv, VersionsFehler
 from kevcad_kernel.versionen.git import GitFehler
 from kevcad_kernel.versionen.schnappschuss import (
     Zwischenspeicher,
@@ -44,6 +48,7 @@ LISTE_LIMIT = 400
 MAX_GEISTER_DREIECKE = 3_000_000
 SCHATTEN_RUN_BASIS = 1_000_000_000
 NACHRECHNEN_RUHE_S = 3.0  # so lange nach einem Lauf von Kevin oder dem Agenten keine Nachberechnung
+AGENT_TITEL_ALTER_S = 15 * 60  # run(titel=…) ohne neue Version: Titel an die aktuelle, wenn sie so jung ist
 
 
 class VersionenRuntimeMixin:
@@ -67,6 +72,7 @@ class VersionenRuntimeMixin:
         self._ver_nachrechnen: threading.Thread | None = None
         self._ver_generation = 0
         self._ver_rechner = None  # HintergrundRechner für die Nachberechnung (eigener Prozess, bei Bedarf)
+        self._ver_letzte: tuple[int, dict[str, Any]] | None = None  # Daten der zuletzt gerechneten Version (Titel)
 
     def _versionen_schliessen(self) -> None:
         """Beim Beenden der Laufzeit: Hintergrund-Rechenprozess beenden."""
@@ -105,6 +111,7 @@ class VersionenRuntimeMixin:
         self._ver_lauf_nr.clear()
         self._ver_pruef.clear()
         self._ver_aktuell = {}
+        self._ver_letzte = None
         self._ver_bereit.clear()
         t0 = time.perf_counter()
         try:
@@ -123,7 +130,8 @@ class VersionenRuntimeMixin:
             self._pool.submit(self._versionen_hintergrund, archiv, self._ver_generation)
 
     def _versionen_hintergrund(self, archiv: Versionsarchiv, generation: int) -> None:
-        """Nach dem Öffnen: einmal am Tag aufräumen, dann fehlende Kennzahlen und Bilder nachrechnen."""
+        """Nach dem Öffnen: einmal am Tag aufräumen, Titel nachziehen, dann fehlende Kennzahlen und Bilder
+        nachrechnen."""
         try:
             if archiv.aufraeumen_faellig():
                 res = archiv.aufraeumen()
@@ -132,6 +140,7 @@ class VersionenRuntimeMixin:
                     self._versionen_senden()
         except Exception as exc:  # noqa: BLE001 - Aufräumen darf nie stören
             self._log(f"[versionen] Aufräumen fehlgeschlagen: {exc!r}")
+        self._titel_nachziehen(archiv, generation)
         self._nachrechnen_starten(generation)
 
     # =================================================================================================================
@@ -185,21 +194,41 @@ class VersionenRuntimeMixin:
         if v is None:
             return
         ms = (time.perf_counter() - t0) * 1000
+        if job.params:
+            # Lauf mit überschriebenen Parametern (Agent, Regler der App): zeigt nicht den Stand der Dateien. Die
+            # Version bekommt seine Daten nicht; fehlen ihr welche, rechnet die Nachberechnung sie aus den Dateien.
+            self._ver_pruef.pop(job.run, None)
+            if neu:
+                self._versionen_titel(archiv, v, None)
+                self._nachrechnen_anstossen()
+            titel, _, _ = archiv.titel_von(v)
+            result["version"] = {"nr": v.nr, "neu": neu, "ms": round(ms, 1), "titel": titel,
+                                 "titel_auto": archiv.meta_von(v.nr).get("titel_auto")}
+            self._pool.submit(self._versionen_senden)
+            return
         self._ver_lauf_nr[job.run] = v.nr
         if len(self._ver_lauf_nr) > 500:
             for k in sorted(self._ver_lauf_nr)[:250]:
                 self._ver_lauf_nr.pop(k, None)
         check = self._ver_pruef.pop(job.run, None)
         daten = daten_aus_teilen([(n, k, h) for n, k, h, _ in teile], bom=bom, params=result.get("params"),
-                                 pruefung=check)
+                                 pruefung=check, schritte=result.get("steps"))
         werte: dict[str, Any] = {"kennzahlen": daten["kennzahlen"], "params": daten["params"], "lauf": job.run,
                                  "nachberechnung": None}
         if check is not None:
             werte["pruefung"] = pruef_kurz(check)
         archiv.aktualisiere(v.nr, **werte)
-        result["version"] = {"nr": v.nr, "neu": neu, "ms": round(ms, 1)}
+        t1 = time.perf_counter()
+        vor = archiv.version_von_commit(v.eltern, v.zweig)
+        if neu or archiv.titel_veraltet(v, vor, daten_da=vor is None or self._hat_titel_daten(vor.nr)):
+            self._versionen_titel(archiv, v, daten, vor=vor)
+        self._ver_letzte = (v.nr, daten)
+        titel, _, _ = archiv.titel_von(v)
+        result["version"] = {"nr": v.nr, "neu": neu, "ms": round(ms, 1), "titel": titel,
+                             "titel_auto": archiv.meta_von(v.nr).get("titel_auto"),
+                             "titel_ms": round((time.perf_counter() - t1) * 1000, 1)}
         if neu:
-            self._log(f"[versionen] V{v.nr} angelegt ({v.titel}, {ms:.0f} ms)")
+            self._log(f"[versionen] V{v.nr} angelegt ({titel}, {ms:.0f} ms)")
         meta = archiv.meta_von(v.nr)
         bild = neu and (time.time() - self._ver_letztes_bild >= BILD_ABSTAND_S or bool(meta.get("meilenstein")))
         bild = bild or not meta.get("bild")
@@ -252,6 +281,116 @@ class VersionenRuntimeMixin:
         except Exception as exc:  # noqa: BLE001
             self._log(f"[versionen] Prüfstand V{nr}: {exc!r}")
         self._pool.submit(self._versionen_senden)
+
+    # =================================================================================================================
+    # Titel (titel.py, PLAN-VERSIONEN.md „Titel“)
+    # =================================================================================================================
+
+    def _titel_daten(self, nr: int | None) -> dict[str, Any] | None:
+        if nr is None:
+            return None
+        letzte = self._ver_letzte
+        if letzte is not None and letzte[0] == nr:
+            return letzte[1]
+        speicher = self._ver_speicher
+        return speicher.lade_daten(nr) if speicher is not None else None
+
+    def _hat_titel_daten(self, nr: int) -> bool:
+        letzte = self._ver_letzte
+        speicher = self._ver_speicher
+        return (letzte is not None and letzte[0] == nr) or (speicher is not None and speicher.hat_daten(nr))
+
+    def _versionen_titel(self, archiv: Versionsarchiv, v: Version, daten: dict[str, Any] | None, *,
+                         vor: Version | None | bool = False) -> dict[str, Any] | None:
+        """Automatischen Titel von ``v`` berechnen (``daten``: die eigenen, None = aus dem Zwischenspeicher)."""
+        try:
+            if vor is False:
+                vor = archiv.version_von_commit(v.eltern, v.zweig)
+            vorgaenger = vor if isinstance(vor, Version) else None
+            alt = self._titel_daten(vorgaenger.nr) if vorgaenger else None
+            neu = daten if daten is not None else self._titel_daten(v.nr)
+            return archiv.titel_berechnen(v, vorgaenger, alt, neu)
+        except Exception as exc:  # noqa: BLE001 - ein Titel darf nie einen Lauf stören
+            self._log(f"[versionen] Titel V{v.nr}: {exc!r}")
+            return None
+
+    def _titel_nachziehen(self, archiv: Versionsarchiv | None, generation: int | None = None) -> int:
+        """Automatische Titel aller Versionen nachziehen, wo sie fehlen oder veraltet sind: beim Öffnen (auch bei
+        bestehenden Archiven mit „Übernommener Stand“), nach jeder Nachberechnung und nach Sicherungen. Schreibt nur
+        die Metadaten; Kevins Meilensteine und Titel des Agenten bleiben unberührt."""
+        if archiv is None or not archiv.verfuegbar:
+            return 0
+        try:
+            alle = archiv.alle_versionen()
+        except (GitFehler, OSError) as exc:
+            self._log(f"[versionen] Titel nicht nachgezogen: {exc}")
+            return 0
+        nach_commit = {v.commit: v for v in alle.values()}
+        geladen: dict[int, dict[str, Any] | None] = {}
+
+        def daten(nr: int) -> dict[str, Any] | None:
+            if nr not in geladen:
+                if len(geladen) > 4:
+                    geladen.clear()
+                geladen[nr] = self._titel_daten(nr)
+            return geladen[nr]
+
+        hat = self._hat_titel_daten
+        n = 0
+        t0 = gesendet = time.monotonic()
+        for v in sorted(alle.values(), key=lambda x: x.nr):
+            if self._closed or archiv is not self._archiv or (generation is not None
+                                                              and generation != self._ver_generation):
+                break
+            vor = nach_commit.get(v.eltern) if v.eltern else None
+            if not archiv.titel_veraltet(v, vor, daten_da=hat(v.nr) and (vor is None or hat(vor.nr))):
+                continue
+            try:
+                archiv.titel_berechnen(v, vor, daten(vor.nr) if vor else None, daten(v.nr))
+                n += 1
+            except Exception as exc:  # noqa: BLE001
+                self._log(f"[versionen] Titel V{v.nr}: {exc!r}")
+            if time.monotonic() - gesendet > 3.0:
+                self._versionen_senden()
+                gesendet = time.monotonic()
+        if n:
+            self._log(f"[versionen] {n} Titel nachgezogen in {(time.monotonic() - t0) * 1000:.0f} ms")
+            self._versionen_senden()
+        return n
+
+    def _versionen_agent_titel(self, result: dict[str, Any], titel: str | None) -> dict[str, Any]:
+        """``run(titel=…)``: Titel des Agenten an die Version dieses Laufs. Ohne neue Version (Dateien unverändert)
+        an die aktuelle, wenn sie ein junger Lauf ohne eigenen Agententitel ist (der Auto-Lauf nach dem Speichern hat
+        die Version schon angelegt); sonst bleibt alles, wie es ist, und ``hinweis`` sagt es."""
+        titel = " ".join(str(titel or "").split())
+        archiv = self._archiv
+        if not titel or archiv is None or not archiv.verfuegbar or not result.get("ok"):
+            return result
+        info = dict(result.get("version") or {})
+        if not info.get("nr"):
+            info["hinweis"] = "Keine Version angelegt: Titel nicht vergeben."
+            return {**result, "version": info}
+        nr = int(info["nr"])
+        passt = bool(info.get("neu"))
+        if not passt:
+            v = archiv.aktuelle()
+            m = archiv.meta.get("versionen", {}).get(str(nr), {}) or {}
+            passt = (v is not None and v.nr == nr and v.quelle == "lauf" and not m.get("titel_agent")
+                     and time.time() - v.ts < AGENT_TITEL_ALTER_S)
+        if passt:
+            archiv.titel_agent(nr, titel)
+            info["titel"] = archiv.meta_von(nr).get("titel_agent")
+            info["titel_auto"] = archiv.meta_von(nr).get("titel_auto")
+            info["titel_vergeben"] = True
+            self._pool.submit(self._versionen_senden)
+        else:
+            info["hinweis"] = f"Dateien unverändert seit V{nr}: keine neue Version, Titel nicht vergeben."
+        return {**result, "version": info}
+
+    def _nachrechnen_anstossen(self) -> None:
+        t = self._ver_nachrechnen
+        if t is None or not t.is_alive():
+            self._nachrechnen_starten(self._ver_generation)
 
     # =================================================================================================================
     # Nachrichten an die App
@@ -374,7 +513,7 @@ class VersionenRuntimeMixin:
         teile = sorted((t for n, t in letzte.items() if n in reihen and not n.startswith("Skizze/")),
                        key=lambda t: reihen[t[0]])
         return {"ok": True, "teile": teile, "bom": final.get("bom"), "params": dict(final.get("params") or {}),
-                "ms": ms}
+                "steps": list(final.get("steps") or []), "ms": ms}
 
     def _schatten_lauf(self, archiv: Versionsarchiv, v: Version, timeout_s: float = 300.0,
                        hintergrund: bool = False) -> dict[str, Any]:
@@ -430,7 +569,8 @@ class VersionenRuntimeMixin:
             return d, {}, f"V{v.nr} ließ sich nicht neu rechnen: {msg}"
         teile = res["teile"]
         alt_pruef = (d or {}).get("pruefung")
-        daten = daten_aus_teilen([(n, k, h) for n, k, h, _ in teile], bom=res.get("bom"), params=res.get("params"))
+        daten = daten_aus_teilen([(n, k, h) for n, k, h, _ in teile], bom=res.get("bom"), params=res.get("params"),
+                                 schritte=res.get("steps"))
         if alt_pruef:
             daten["pruefung"] = alt_pruef
         netze = {k: (h, p) for _, k, h, p in teile if k}
@@ -508,6 +648,7 @@ class VersionenRuntimeMixin:
                 if fehler or daten is None:
                     archiv.aktualisiere(offen.nr, nachberechnung=fehler or "nicht nachrechenbar")
                     continue
+                self._titel_nachziehen(archiv, generation)  # diese Version und ihre Nachfolger jetzt aus den Daten
                 if not archiv.meta_von(offen.nr).get("bild") and self._link.connected:
                     eintraege = self._netze_fuer_bild(daten, netze)
                     if not self._versionen_bild_netze(archiv, offen.nr, eintraege) and self._link.connected:
@@ -618,6 +759,7 @@ class VersionenRuntimeMixin:
         except (VersionsFehler, GitFehler) as exc:
             return {"ok": False, "error": str(exc)}
         ms_dateien = (time.perf_counter() - t0) * 1000
+        self._pool.submit(self._titel_nachziehen, archiv, self._ver_generation)
         neu, aus, gesichert = res["version"], res["aus"], res["gesichert"]
         out: dict[str, Any] = {"ok": True, "version": neu.nr if neu else None, "aus": aus.nr,
                                "gesichert": gesichert.nr if gesichert else None, "unveraendert": res["unveraendert"],
@@ -631,7 +773,9 @@ class VersionenRuntimeMixin:
         return out
 
     def meilenstein(self, titel: str, notiz: str = "", version: Any = None, *, wer: str = "agent",
-                    entfernen: bool = False) -> dict[str, Any]:
+                    entfernen: bool = False, ersetzen: bool = False) -> dict[str, Any]:
+        """Meilenstein setzen. Kevins eigene Meilensteine bleiben (``geschuetzt``), außer mit ``ersetzen`` auf seinen
+        ausdrücklichen Wunsch; der Titel des Agenten steht dann als Titel der Version unter Kevins Meilenstein."""
         archiv = self._archiv_oder_fehler()
         if isinstance(archiv, dict):
             return archiv
@@ -641,7 +785,9 @@ class VersionenRuntimeMixin:
             try:
                 if entfernen:
                     return archiv.meilenstein_entfernen(version)
-                return archiv.meilenstein(version, titel, notiz, wer=wer, sitzung=sitzung)
+                return archiv.meilenstein(version, titel, notiz, wer=wer, sitzung=sitzung, ersetzen=ersetzen)
+            except KevinsMeilenstein as exc:
+                return {"_geschuetzt": exc}
             except (VersionsFehler, GitFehler) as exc:
                 return {"_ausnahme": exc}
 
@@ -649,6 +795,20 @@ class VersionenRuntimeMixin:
             v = self._aufgabe(aufgabe)
         except (VersionsFehler, GitFehler) as exc:
             return {"ok": False, "error": str(exc)}
+        self._pool.submit(self._titel_nachziehen, archiv, self._ver_generation)  # eine Sicherung braucht ihren Titel
+        if isinstance(v, dict) and v.get("_geschuetzt") is not None:
+            exc = v["_geschuetzt"]
+            nr = exc.version.nr
+            beschrieben = bool(titel.strip()) and not archiv.meta_von(nr).get("titel_agent")
+            if beschrieben:
+                archiv.titel_agent(nr, titel)
+            self._pool.submit(self._versionen_senden)
+            hinweis = f"V{nr} trägt Kevins Meilenstein „{exc.meilenstein.get('titel', '')}“; er bleibt unverändert."
+            if beschrieben:
+                hinweis += f" „{titel.strip()}“ steht als Titel der Version darunter."
+            return {"ok": True, "version": nr, "titel": exc.meilenstein.get("titel", ""),
+                    "notiz": exc.meilenstein.get("notiz", ""), "entfernt": False, "geschuetzt": True,
+                    "hinweis": hinweis}
         out = {"ok": True, "version": v.nr, "titel": titel, "notiz": notiz, "entfernt": entfernen}
         if not entfernen:
             self._pool.submit(self._meilenstein_bild, archiv, v)
@@ -705,6 +865,8 @@ class VersionenRuntimeMixin:
             res = self._aufgabe(aufgabe)
         except (VersionsFehler, GitFehler) as exc:
             return {"ok": False, "error": str(exc)}
+        if res.get("gesichert") is not None:
+            self._pool.submit(self._titel_nachziehen, archiv, self._ver_generation)
         out: dict[str, Any] = {"ok": True, "aktion": aktion, "variante": res.get("zweig"), "name": res.get("name")}
         if res.get("gesichert") is not None:
             out["gesichert"] = res["gesichert"].nr

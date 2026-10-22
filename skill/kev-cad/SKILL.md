@@ -215,7 +215,8 @@ nennen.
 4. model.py mit den eigenen Dateiwerkzeugen schreiben oder ändern (Pfad aus `status`). `model_write` nur, wenn es keine
    Dateiwerkzeuge gibt.
 5. `run`: liefert jedes Teil mit Hüllmaß, Volumen und Masse und kurz die Summen der Stückliste. Ein Fehler kommt als
-   isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`.
+   isError mit Zeile, Auszug und Hinweis; die letzte gute Geometrie bleibt stehen. Korrigieren, wieder `run`. Bei
+   größeren Änderungen mit `titel` (siehe „Versionen“).
 6. Prüfen: Befunde der Prüfung aus `run` beheben (siehe „Prüfen vor dem Fertigmelden“), Zahlen aus `run` mit der
    Aufgabe vergleichen, wichtige Sollmaße mit `measure` nachmessen, `bom` für Stückliste und Zuschnitt, `bedingungen` für
    Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum. Kevin keine
@@ -235,9 +236,14 @@ Version V<n> (alle Projektdateien: model.py, Hilfsmodule, `geometrie/`, `bewegun
 `kevcad.json`, `zukauf/`; nicht `output/` und `bestand.json`). Kevin sieht sie in der Leiste „Versionen“ mit
 Vorschaubild, Zeit, wer (Kevin oder Agent), Teilen, Masse, Kosten und Prüfstand.
 
+- **Titel:** Jede Version bekommt automatisch einen Titel aus dem Inhalt der Änderung („breite 120 → 140“,
+  „+ Flügelschraube M4 (4×)“, „Rahmen, Schlitten geändert“, „Code aufgeräumt (ohne Wirkung)“). Bei größeren
+  Änderungen `run(titel="Laufrollen auf Kugellager umgestellt")` in Kevins Worten mitgeben: Das wird der Titel der
+  Version, der automatische steht darunter. Kleine Korrekturen brauchen keinen.
 - **Am Ende jeder Aufgabe ein Meilenstein:** `meilenstein(titel, notiz)` mit kurzem deutschem Titel
   („Stangenhalter mit Gewindeeinsätzen“) und einer Notiz in ein, zwei Sätzen. Erst nach dem letzten erfolgreichen
-  Lauf, nicht auf einen kaputten Stand.
+  Lauf, nicht auf einen kaputten Stand. Hat Kevin die Version selbst benannt, bleibt sein Name (`meilenstein`
+  meldet das, dein Titel steht dann darunter); `ersetzen=true` nur, wenn Kevin ausdrücklich darum bittet.
 - `versionen` zeigt die Geschichte; `versionen_vergleichen("V12")` vergleicht mit dem aktuellen Stand (Parameter,
   Teile, Stückliste, Prüfstand, Code) und zeigt Kevin die alte Geometrie als Geisterkörper im Viewer.
 - `version_wiederherstellen("V12")` nur auf Kevins Wunsch. Es ist nie zerstörend: ungesicherte Änderungen werden

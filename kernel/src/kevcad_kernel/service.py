@@ -49,6 +49,9 @@ class RunResult(TypedDict, total=False):
     inventar_verstoesse: list[str]  # gezeigte Teile ohne verbauen()/druckteil()
     # Zwangsbedingungen (additiv): Kurzfassung des Berichts, vollständig über constraints()
     bedingungen: dict[str, Any]  # {"summe", "befunde", "befunde_gesamt", "pruef_ms", "loese_ms", ...}
+    # Versionen (additiv): Version dieses Laufs, {"nr", "neu", "ms", "titel" (angezeigt: Agent vor Automatik),
+    # "titel_auto", "titel_vergeben"? (Titel aus run(titel=…) gesetzt), "hinweis"? (run(titel=…) ohne neue Version)}
+    version: dict[str, Any]
 
 
 class MeasureResult(TypedDict, total=False):
@@ -91,9 +94,11 @@ class KernelService(Protocol):
         """Schreibt model.py des offenen Projekts. {"ok", "path", "bytes"}"""
 
     # Lauf
-    def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120) -> RunResult:
+    def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
+            titel: str | None = None) -> RunResult:
         """Führt model.py aus; Teile gehen dabei live an die App. Läuft für denselben Dateistand schon ein Lauf,
-        wird auf dessen Ergebnis gewartet."""
+        wird auf dessen Ergebnis gewartet. ``titel`` (additiv): Beschreibung der Änderung in Kevins Worten; wird der
+        Titel der Version dieses Laufs (vor dem automatischen, der als Zusatz bleibt)."""
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         """Python im Namensraum des letzten Laufs. {"ok", "stdout", "result" (repr des letzten Ausdrucks), "error"?}
@@ -266,8 +271,10 @@ class KernelService(Protocol):
         "code" {"dateien", "diff", "gekuerzt"}, "geister", "hinweise", "ms"}; mit ``zeigen`` auch in der App."""
 
     def meilenstein(self, titel: str, notiz: str = "", version: str | None = None, *, wer: str = "agent",
-                    entfernen: bool = False) -> dict[str, Any]:
-        """{"ok", "version", "titel", "notiz", "warnung"?}"""
+                    entfernen: bool = False, ersetzen: bool = False) -> dict[str, Any]:
+        """{"ok", "version", "titel", "notiz", "warnung"?, "geschuetzt"?, "hinweis"?}. Einen Meilenstein, den Kevin
+        vergeben hat, überschreibt ein Agent nicht (``geschuetzt``: er bleibt, der Titel des Agenten wird Titel der
+        Version), außer mit ``ersetzen`` (additiv) auf Kevins ausdrücklichen Wunsch."""
 
     def variante(self, aktion: str = "liste", name: str | None = None, von: str | None = None,
                  neuer_name: str | None = None, *, wer: str = "agent", warten: bool = True,
