@@ -162,3 +162,17 @@ def test_ueber_die_laufzeit_eintragen_und_einkaufsliste(rt):
     assert [z["stock_id"] for z in res["zukauf_aus_bestand"]] == ["alutec-05200", "blackmagic-pocket-6k-pro"]
     assert "Blackmagic" not in res["text"]
     assert Path(res["csv"]).exists()
+
+
+def test_ohne_preis_nennt_nur_zu_kaufende_zukaufteile():
+    """„Ohne Preis“ der Stückliste lässt Zukaufteile weg, die der Bestand ganz deckt (KevCup, 22.10.2026)."""
+    b = bom()
+    b["warnings"] = ["Ohne Preis: " + ", ".join(ITEMS[s]["name"] for s in (
+        "manfrotto-mvh502ah", "bowlingball-usbc", "blackmagic-pocket-6k-pro")), "anderer Hinweis"]
+    best = {"version": 1, "posten": {"manfrotto-mvh502ah": {"stueck": [{"anzahl": 1}]},
+                                     "blackmagic-pocket-6k-pro": {"stueck": [{"anzahl": 1}]}}}
+    pl = plane(b, best, Katalog())
+    assert pl.bom["warnings"] == ["Ohne Preis: " + ITEMS["bowlingball-usbc"]["name"], "anderer Hinweis"]
+    best["posten"]["bowlingball-usbc"] = {"stueck": [{"anzahl": 1}]}
+    pl = plane(b, best, Katalog())
+    assert pl.bom["warnings"] == ["anderer Hinweis"]
