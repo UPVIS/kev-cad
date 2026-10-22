@@ -616,7 +616,9 @@ public struct MaterialDaten: Equatable, Sendable {
         k.einkaufLager = lager.count
         // Summe der Stückliste (Kernel) plus Filament-Spulen, wie `summe_lager` in bestand/einkauf.py
         let lagerStueckliste = Array(lager.dropLast(filamentKauf.count))
-        k.einkaufLagerSumme = Self.summe([bestand?.summe ?? Self.summe(lagerStueckliste)] + filamentKauf.map(\.preis))
+        let lagerBasis: Double? = bestand?.summe ?? Self.summe(lagerStueckliste)
+        let spulenPreise: [Double?] = filamentKauf.map(\.preis)
+        k.einkaufLagerSumme = Self.summe([lagerBasis] + spulenPreise)
         k.einkaufZukauf = zukauf.count
         k.einkaufZukaufSumme = Self.summe(zukauf)
         k.einkaufOhnePreis = einkauf.filter { $0.position.preis == nil }.count

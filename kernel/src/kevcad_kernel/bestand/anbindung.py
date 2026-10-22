@@ -483,6 +483,9 @@ class BestandAnbindung:
                                              "spulen_entfernen), nicht beides in einem Aufruf."}
             elif ist_filament:
                 res = self._filament_eintragen(grund=grund, **filament)
+            elif ort is not None:
+                res = {"ok": False, "error": "ort gilt hier nur für Filamentspulen; Reste mit Ort als "
+                                             "{\"laenge\": 430, \"ort\": \"Regal 2\"} unter reste angeben"}
             elif not (stock_id or "").strip():
                 res = {"ok": False, "error": "id fehlt (Lagerteil aus dem Katalog) oder material (Filament)"}
             else:

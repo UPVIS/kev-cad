@@ -172,6 +172,7 @@ def test_spulen_eintragen_aendern_entfernen(rt):
     ({"material": "petg", "gramm": 0}, "gramm muss größer als 0"),
     ({"material": "petg", "anzahl": 0, "gramm": 50}, "anzahl=0"),
     ({"spulen_entfernen": ["S-0001"]}, "Spule S-0001 gibt es nicht"),
+    ({"stock_id": "rohr-alfer-12x1", "ort": "Regal 2", "reste": [430]}, "ort gilt hier nur für Filamentspulen"),
 ])
 def test_eintragen_fehler(rt, args, fehler):
     res = rt.bestand_eintragen(grund="x", **args)
