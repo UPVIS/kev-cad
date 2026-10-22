@@ -81,19 +81,23 @@ enum DruckSelfTest {
         }
     }
 
-    static func runIfRequested(_ session: AppSession) {
+    static func runIfRequested(_ session: AppSession, state: ProjectWindowState? = nil) {
         guard !started, session.demo == nil, gewuenscht else { return }
         started = true
-        Task { await run(session) }
+        Task { await run(session, state) }
     }
 
-    private static func run(_ session: AppSession) async {
+    private static func run(_ session: AppSession, _ state: ProjectWindowState?) async {
         let model = session.model
         let env = ProcessInfo.processInfo.environment
         var lines: [String] = []
         var messwerte: [String: Any] = [:]
         var passed = true
+        // Hintergrund (open -g): ohne Aktivität drosselt App Nap die Zeitgeber
+        let aktivitaet = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Selbsttest Druck")
+        defer { ProcessInfo.processInfo.endActivity(aktivitaet) }
         try? FileManager.default.createDirectory(at: ausgabe, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: ausgabe.appendingPathComponent("foto-auftrag.txt"))
         func check(_ ok: Bool, _ text: String) {
             passed = passed && ok
             let line = "\(ok ? "OK    " : "FEHLER") \(text)"
@@ -136,20 +140,21 @@ enum DruckSelfTest {
         let ui = DruckUI.shared
         let druck = model.druck
         let controller = session.controller
+        let projektFenster = { session.projectWindow }
 
         check(await wait(240) { model.kernelState == .ready }, "Kernel bereit")
-        check(await wait(400) { model.project != nil && !model.isRunning && !model.parts.isEmpty }, "Projekt offen, Lauf fertig")
-        await pause(1)
-        let teileZahl = model.parts.count
-        info("\(teileZahl) Teile im Modell")
+        let tLauf = Date()
+        check(await wait(600) { model.project != nil && !model.isRunning && !model.parts.isEmpty }, "Projekt offen, Lauf fertig")
+        info("\(model.parts.count) Teile im Modell")
 
-        // 1. Vorschau vom Kernel, sonst Beispieldaten
-        let t0 = Date()
-        let vomKernel = await wait(Double(env["KEVCAD_SELFTEST_DRUCK_WARTEN"] ?? "") ?? 12) { druck.vorschau != nil }
+        // 1. Vorschau vom Kernel (nach dem Lauf von selbst), sonst Beispieldaten
+        let vomKernel = await wait(Double(env["KEVCAD_SELFTEST_DRUCK_WARTEN"] ?? "") ?? 60) { druck.vorschau != nil }
         messwerte["vorschau_vom_kernel"] = vomKernel
-        if vomKernel {
-            messwerte["vorschau_ms"] = Int(Date().timeIntervalSince(t0) * 1000)
-            info("PRINT_PREVIEW vom Kernel: \(druck.vorschau?.stand.titel ?? "?")")
+        if vomKernel, let v = druck.vorschau {
+            messwerte["vorschau_nach_lauf_ms"] = Int(Date().timeIntervalSince(tLauf) * 1000)
+            if let ms = v.ms { messwerte["schaetzung_kernel_ms"] = ms }
+            info("PRINT_PREVIEW vom Kernel: \(v.stand.titel), Slicer \(v.slicer.zustand.rawValue)"
+                 + (v.slicer.meldung.map { " (\($0))" } ?? ""))
         } else {
             let beispiel: Druckvorschau
             if let pfad = env["KEVCAD_SELFTEST_DRUCK_DATEI"], let d = try? Data(contentsOf: URL(fileURLWithPath: pfad)),
@@ -163,141 +168,185 @@ enum DruckSelfTest {
             }
             controller?.druckSelbsttestEinspeisen(.vorschau(beispiel, replyTo: nil))
         }
-        guard let v0 = druck.vorschau else {
-            check(false, "keine Vorschau")
+        guard let v0 = druck.vorschau, !v0.istLeer else {
+            check(false, "keine Vorschau mit Druckteilen: \(druck.vorschau?.slicer.meldung ?? "–")")
             return fertig(lines, messwerte, passed, model)
         }
-        check(!v0.istLeer, "Vorschau: \(v0.summe.platten) Platten, \(v0.teile.count) Gruppen, \(v0.stueck) Stück, "
+        let ersteSchaetzung = v0.stand != .slicer
+        check(true, "Vorschau: \(v0.summe.platten) Platten, \(v0.teile.count) Gruppen, \(v0.stueck) Stück, "
             + "\(DruckFormat.zeit(v0.summe.zeitMitWechselS)), \(DruckFormat.gramm(v0.summe.gramm)), "
-            + (v0.summe.kosten.map(DruckFormat.euro) ?? "–"))
+            + (v0.summe.kosten.map(DruckFormat.euro) ?? "–") + ", \(v0.stand.titel)")
         for p in v0.platten {
             let raus = DruckPlattenGeometrie.ausserhalb(p, bett: v0.bett)
-            check(raus.isEmpty, "Platte \(p.nr): \(KevFormat.count(p.teile.count, one: "Teil", many: "Teile")), alles auf der Platte und außerhalb der Sperrzone"
+            check(raus.isEmpty, "Platte \(p.nr) (\(p.material.first?.material.uppercased() ?? "?")): "
+                + "\(KevFormat.count(p.teile.count, one: "Teil", many: "Teile")), alles auf der Platte und außerhalb der Sperrzone"
                 + (raus.isEmpty ? "" : " (\(raus.joined(separator: ", ")))"))
         }
         let bekannte = Set(model.parts.map(\.id))
         let namen = Set(v0.platten.flatMap(\.teile).map(\.name))
-        info("Teilenamen der Platten im Modell: \(namen.intersection(bekannte).count) von \(namen.count)")
+        check(!vomKernel || namen.isSubset(of: bekannte),
+              "Teilenamen der Platten im Modell: \(namen.intersection(bekannte).count) von \(namen.count)")
 
-        // 2. Testfenster
+        // 2. Testfenster: Schnellansicht und volle Ansicht mit Druckerleiste
         let fenster = DruckTestFenster.zeige(model: model)
         ui.auswahl = nil
         ui.nebeneinander = false
         ui.platte = v0.platten.first?.nr ?? 1
         model.actions?.select([])
         await pause(2)
-        await foto(fenster, "01-ansicht-hell")
+        if druck.vorschau?.slicer.laeuft == true { await foto(fenster, "01-ansicht-slicer-rechnet") }
 
-        // 3. Auswahl Panel → 3D: die Gruppe mit den meisten Stück
+        // 3. Auswahl Panel → 3D und 3D → Panel
         if let g = v0.teile.filter({ !Set($0.teile).isDisjoint(with: bekannte) }).max(by: { $0.anzahl < $1.anzahl }) {
             ui.waehle(g, vorschau: v0, model: model)
-            await pause(0.8)
-            let gewaehlt = Set(model.selectedPartIDs)
-            check(gewaehlt == Set(g.teile).intersection(bekannte),
-                  "Gruppe „\(g.kurzname)“ gewählt: \(gewaehlt.count) Teile im 3D ausgewählt")
-            await pause(1)
-            await foto(fenster, "02-gruppe-gewaehlt")
-            if let w = session.projectWindow { await foto(w, "02b-projekt-auswahl") }
+            await pause(0.6)
+            check(Set(model.selectedPartIDs) == Set(g.teile).intersection(bekannte),
+                  "Gruppe „\(g.kurzname)“ gewählt: \(model.selectedPartIDs.count) Teile im 3D ausgewählt")
         }
-        // 4. Auswahl 3D → Panel: ein Teil einer anderen Gruppe (möglichst auf einer anderen Platte)
         if let t = v0.platten.reversed().flatMap(\.teile).first(where: { bekannte.contains($0.name) && $0.gruppe != ui.auswahl }) {
             model.actions?.select([t.name])
             let g = v0.gruppe(vonTeil: t.name)
-            check(await wait(3) { ui.auswahl == g?.gruppe }, "Auswahl im 3D (\(t.name)) wählt die Gruppe \(g?.kurzname ?? "?")")
+            check(await wait(3) { ui.auswahl == g?.gruppe }, "Auswahl im 3D (\(DruckFormat.teilname(t.name))) wählt die Gruppe \(g?.kurzname ?? "?")")
             let p = v0.platte(vonTeil: t.name)?.nr
             check(await wait(3) { ui.platte == p }, "und blättert zu Platte \(p ?? 0)")
-            await pause(1)
-            await foto(fenster, "03-auswahl-aus-3d")
         }
 
-        // 5. Vorgaben „von Kevin“ zeigen (Beispiel: Wände der ersten Gruppe fest)
-        if !vomKernel, var v = druck.vorschau, !v.teile.isEmpty {
-            v.teile[0].vorgaben["waende"] = .kevin
-            v.teile[0].vorgaben["zweck"] = .kevin
-            controller?.druckSelbsttestEinspeisen(.vorschau(v, replyTo: nil))
-            ui.waehle(v.teile[0], vorschau: v, model: model)
-            await pause(1.2)
-            await foto(fenster, "04-vorgabe-von-kevin")
-        }
-
-        // 6. PRINT_SETTINGS an den Kernel
-        if let g = druck.vorschau?.teile.first {
-            let t = Date()
-            model.druckActions?.druckEinstellen(.gruppe(g.gruppe), einstellungen: ["waende": .number(Double((g.einstellungen.waende ?? 3) + 1))],
-                                                zweck: nil)
-            let antwort = await wait(20) { !druck.wartet(.gruppe(g.gruppe)) }
-            let ms = Int(Date().timeIntervalSince(t) * 1000)
-            if druck.fehler == nil && antwort {
-                check(true, "PRINT_SETTINGS: neue Vorschau nach \(ms) ms")
-                messwerte["einstellen_ms"] = ms
-            } else {
-                info("PRINT_SETTINGS ohne Vorschau (\(druck.fehler ?? "keine Antwort")); Kernel kennt die Druckvorschau noch nicht")
-                messwerte["einstellen"] = druck.fehler ?? "keine Antwort"
+        // 4. Bambu Studio rechnet nach (echter Kernel): Wechsel Schätzung → Slicer mit Hinweis
+        if vomKernel {
+            let tSlicer = Date()
+            let fertigGerechnet = await wait(Double(env["KEVCAD_SELFTEST_SLICER_WARTEN"] ?? "") ?? 900) {
+                druck.vorschau?.stand == .slicer && druck.vorschau?.slicer.laeuft == false
             }
-            await pause(0.8)
-            await foto(fenster, "05-einstellen")
-            druck.fehlerVerwerfen()
-        }
-
-        // 7. Wechsel Schätzung → Bambu Studio mit Hinweis (nur mit Beispieldaten)
-        if !vomKernel, let v = druck.vorschau {
+            let v = druck.vorschau
+            check(fertigGerechnet, "Bambu Studio: \(v?.stand.titel ?? "?"), \(v?.slicer.meldung ?? v?.slicer.zustand.rawValue ?? "–")"
+                  + " nach \(Int(Date().timeIntervalSince(tSlicer))) s")
+            messwerte["slicer_s"] = Int(Date().timeIntervalSince(tSlicer))
+            if let a = druck.aenderung {
+                check(true, "Hinweis nach Bambu Studio: \(a.kurz)")
+                info(a.werte.map(\.zeile).joined(separator: " · "))
+            } else {
+                info(ersteSchaetzung ? "kein Hinweis (keine Änderung?)" : "erste Vorschau kam schon aus dem Zwischenspeicher des Slicers")
+            }
+            for g in v?.teile ?? [] {
+                info("\(g.kurzname) × \(g.anzahl): \(DruckFormat.zeit(g.zeitS)), \(DruckFormat.gramm(g.g)), \(g.stand.titel)"
+                     + (g.abweichung.map { ", Schätzung \(DruckFormat.aenderung(-$0 / (1 + $0)))" } ?? "")
+                     + " · \(DruckFormat.kurz(g.einstellungen)) · \(g.profilProzess ?? "–") · \(g.profilFilament ?? "–")")
+            }
+        } else if let v = druck.vorschau {
             var halb = DruckBeispiel.slicerVersion(v, faktorZeit: 1.06, faktorGramm: 1.01, fertig: false)
             halb.stand = .gemischt
             controller?.druckSelbsttestEinspeisen(.vorschau(halb, replyTo: nil))
-            await pause(1.2)
-            await foto(fenster, "06-slicer-rechnet")
-            let neu = DruckBeispiel.slicerVersion(v, faktorZeit: 1.12, faktorGramm: 0.97, fertig: true)
-            let t = Date()
-            controller?.druckSelbsttestEinspeisen(.vorschau(neu, replyTo: nil))
-            check(druck.aenderung != nil, "Hinweis nach Bambu Studio: \(druck.aenderung?.kurz ?? "fehlt")")
-            messwerte["uebernahme_ms"] = Int(Date().timeIntervalSince(t) * 1000)
-            if let a = druck.aenderung { info(a.werte.map(\.zeile).joined(separator: " · ")) }
-            await pause(0.35)
-            await foto(fenster, "07-wechsel-animation")
-            await pause(1.2)
-            await foto(fenster, "08-bambu-studio")
-        }
-
-        // 8. Platten nebeneinander
-        ui.nebeneinander = true
-        await pause(1)
-        await foto(fenster, "09-nebeneinander")
-        ui.nebeneinander = false
-
-        // 9. 3MF-Export
-        let ziel = (model.project?.path ?? ausgabe).appendingPathComponent("output/selbsttest-druck.3mf")
-        model.druckActions?.druckExportieren(platten: [], nach: ziel)
-        let exportFertig = await wait(30) { !druck.export.laeuftGerade }
-        if case .fertig(let e) = druck.export {
-            check(exportFertig, "3MF-Export: \(e.pfad?.path ?? "?"), \(e.platten.count) Platten")
-        } else {
-            info("3MF-Export über den Kernel: \(druck.export) (Kernel ohne PRINT_EXPORT_REQ)")
-            if !vomKernel {
-                controller?.druckSelbsttestEinspeisen(.exportErgebnis(DruckExportErgebnis(
-                    ok: true, pfad: ziel, platten: druck.vorschau?.platten.map(\.nr) ?? [])))
-            }
+            controller?.druckSelbsttestEinspeisen(.vorschau(
+                DruckBeispiel.slicerVersion(v, faktorZeit: 1.12, faktorGramm: 0.97, fertig: true), replyTo: nil))
+            check(druck.aenderung != nil, "Hinweis nach Bambu Studio (Beispieldaten): \(druck.aenderung?.kurz ?? "fehlt")")
         }
         await pause(1)
-        await foto(fenster, "10-export-fertig")
-        druck.exportHinweisVerwerfen()
-
-        // 10. dunkel und schmal
-        fenster.appearance = NSAppearance(named: .darkAqua)
         if let g = druck.vorschau?.teile.first { ui.waehle(g, vorschau: druck.vorschau, model: model) }
         await pause(1.2)
-        await foto(fenster, "11-dunkel")
-        fenster.setContentSize(NSSize(width: 820, height: 640))
-        await pause(1)
-        await foto(fenster, "12-schmal-dunkel")
-        fenster.appearance = nil
-        await pause(0.6)
-        await foto(fenster, "13-schmal-hell")
-        fenster.setContentSize(NSSize(width: 1320, height: 760))
+        await foto(fenster, "02-ansicht-bambu-studio")
 
-        // 11. Bericht-Baustein
+        // 5. PRINT_SETTINGS: Wände der ersten Gruppe +1 (fest „von Kevin“), dann zurücksetzen
+        if vomKernel, let g = druck.vorschau?.teile.first {
+            let ziel = DruckZiel.gruppe(g.gruppe)
+            let w0 = g.einstellungen.waende ?? 3
+            var t = Date()
+            model.druckActions?.druckEinstellen(ziel, einstellungen: ["waende": .number(Double(w0 + 1))], zweck: nil)
+            let gesetzt = await wait(60) {
+                druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende == w0 + 1 && !druck.wartet(ziel)
+            }
+            messwerte["einstellen_ms"] = Int(Date().timeIntervalSince(t) * 1000)
+            let g2 = druck.vorschau?.gruppe(g.gruppe)
+            check(gesetzt && druck.fehler == nil, "PRINT_SETTINGS Wände \(w0) → \(w0 + 1): neue Vorschau nach "
+                  + "\(messwerte["einstellen_ms"] ?? 0) ms" + (druck.fehler.map { " (\($0))" } ?? ""))
+            check(g2?.quelle("waende") == .kevin, "fest_von: Wände \(g2?.quelle("waende")?.titel ?? "ohne Quelle")")
+            await pause(1)
+            await foto(fenster, "03-vorgabe-von-kevin")
+            // Bambu Studio rechnet die geänderte Gruppe nach
+            let nach = await wait(300) { druck.vorschau?.gruppe(g.gruppe)?.stand == .slicer && druck.vorschau?.slicer.laeuft == false }
+            info("geänderte Gruppe nachgerechnet: \(nach ? "ja" : "nein"), \(druck.vorschau.map { DruckFormat.zeit($0.summe.zeitMitWechselS) } ?? "–")")
+            t = Date()
+            model.druckActions?.druckZuruecksetzen(ziel, schluessel: ["waende"])
+            let zurueck = await wait(60) {
+                druck.vorschau?.gruppe(g.gruppe)?.quelle("waende") == nil && !druck.wartet(ziel)
+            }
+            check(zurueck && druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende == w0,
+                  "Zurücksetzen: Wände wieder \(druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende ?? -1), ohne Vorgabe "
+                  + "(\(Int(Date().timeIntervalSince(t) * 1000)) ms)")
+            _ = await wait(300) { druck.vorschau?.slicer.laeuft == false }
+        }
+
+        // 6. Als 3MF sichern (je Material eine Datei)
+        let ziel = (model.project?.path ?? ausgabe).appendingPathComponent("output/selbsttest-druck.3mf")
+        let tExport = Date()
+        model.druckActions?.druckExportieren(platten: [], nach: ziel)
+        let exportFertig = await wait(Double(env["KEVCAD_SELFTEST_EXPORT_WARTEN"] ?? "") ?? 420) { !druck.export.laeuftGerade }
+        messwerte["export_ms"] = Int(Date().timeIntervalSince(tExport) * 1000)
+        if case .fertig(let e) = druck.export {
+            let da = e.dateien.filter { FileManager.default.fileExists(atPath: $0.pfad.path) }
+            check(exportFertig && da.count == e.dateien.count && !da.isEmpty,
+                  "3MF: \(KevFormat.count(e.dateien.count, one: "Datei", many: "Dateien")) in \(messwerte["export_ms"] ?? 0) ms, "
+                  + (e.geprueft == true ? "in Bambu Studio geprüft" : "ungeprüft"))
+            for d in e.dateien {
+                let bytes = (try? FileManager.default.attributesOfItem(atPath: d.pfad.path)[.size] as? Int) ?? 0
+                info("\(d.pfad.lastPathComponent): \(d.material ?? "?"), Platten \(d.platten), \(d.filament ?? "–"), \(bytes / 1024) KB")
+            }
+            messwerte["export_dateien"] = e.dateien.map(\.pfad.lastPathComponent)
+        } else if vomKernel {
+            check(false, "3MF-Export: \(druck.export)")
+        } else {
+            info("3MF-Export über den Kernel: \(druck.export)")
+            controller?.druckSelbsttestEinspeisen(.exportErgebnis(DruckExportErgebnis(
+                ok: true, pfad: ziel, platten: druck.vorschau?.platten.map(\.nr) ?? [])))
+        }
+        await pause(1)
+        await foto(fenster, "04-als-3mf-gesichert")
+        druck.exportHinweisVerwerfen()
+        druck.aenderungVerwerfen()
+
+        // 7. „Drucken …“ der Druckerleiste öffnet den Dialog von Phase 8 (am Projektfenster), getrennt vom 3MF-Sichern
+        if let d = model.druckerActions {
+            d.druckDialogOeffnen(platten: [])
+            let offen = await wait(10) { model.drucker.dialog != nil }
+            check(offen, "„Drucken …“ öffnet den Dialog von Phase 8")
+            await pause(2)
+            await foto(projektFenster(), "05-drucken-dialog")
+            d.druckDialogSchliessen()
+            _ = await wait(10) { model.drucker.dialog == nil }
+        }
+
+        // 8. Bereich Material: Abschnitt „Druckteile“ und Schnellansicht „Druck“, hell und dunkel
+        DruckTestFenster.fenster?.orderOut(nil)
+        if let state, let w = projektFenster() {
+            state.materialZustand.zeige(.druck)
+            state.zeige(.material)
+            await pause(2.5)
+            await foto(w, "06-material-druckteile-hell")
+            w.appearance = NSAppearance(named: .darkAqua)
+            await pause(1.5)
+            await foto(w, "07-material-druckteile-dunkel")
+            w.appearance = nil
+            state.zeige(.modell)
+            var s = state.schnell
+            s.offen = [.druck]
+            state.schnell = s
+            await pause(2)
+            await foto(w, "08-schnellansicht-druck-hell")
+            w.appearance = NSAppearance(named: .darkAqua)
+            await pause(1.5)
+            await foto(w, "09-schnellansicht-druck-dunkel")
+            w.appearance = nil
+            s.offen = []
+            state.schnell = s
+            await pause(1.5)
+            await foto(w, "10-schnellansicht-eingeklappt")
+            check(true, "Bereich Material und Schnellansicht gezeigt")
+        } else {
+            info("kein Projektfenster: Bereich Material nicht geprüft")
+        }
+
+        // 9. Bericht-Baustein
         if let actions = model.exportActions {
-            let vorlage = ExportVorlage(name: "Druck", bausteine: [ExportBausteinWahl(art: .deckblatt),
-                                                                 ExportBausteinWahl(art: .druck)])
+            let vorlage = ExportVorlage(name: "Druck", bausteine: [ExportBausteinWahl(art: .druck)])
             let pdf = ausgabe.appendingPathComponent("druck-bericht.pdf")
             do {
                 let t = Date()
@@ -305,10 +354,8 @@ enum DruckSelfTest {
                 let seiten = e.bausteine.first { $0.art == .druck }?.seiten ?? 0
                 check(seiten > 0, "Bericht 3D-Druck: \(seiten) Seiten in \(Int(Date().timeIntervalSince(t) * 1000)) ms")
                 let doc = await actions.exportDokument(vorlage)
-                for (i, s) in doc.seiten.enumerated() where s.baustein == .druck || i == 0 {
-                    if let img = doc.bild(i, pixelJeMM: 5), let d = ScreenshotRenderer.pngData(img) {
-                        try? d.write(to: ausgabe.appendingPathComponent(String(format: "20-bericht-seite-%02d.png", i + 1)))
-                    }
+                if let img = doc.bild(min(1, doc.seiten.count - 1), pixelJeMM: 4), let d = ScreenshotRenderer.pngData(img) {
+                    try? d.write(to: ausgabe.appendingPathComponent("20-bericht.png"))
                 }
             } catch {
                 check(false, "Bericht: \(error)")
@@ -316,6 +363,7 @@ enum DruckSelfTest {
         }
         messwerte["platten"] = druck.vorschau?.summe.platten
         messwerte["gruppen"] = druck.vorschau?.teile.count
+        messwerte["stand"] = druck.vorschau?.stand.rawValue
         fertig(lines, messwerte, passed, model)
         if env["KEVCAD_SELFTEST_BLEIBEN"] != "1" {
             try? await Task.sleep(for: .seconds(1))

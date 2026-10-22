@@ -16,6 +16,8 @@ extension AppController: DruckActions {
         case .vorschau(let v, _):
             let war = model.druck.vorschau
             model.druck.uebernehmen(v)
+            // Kennzahlen im Bereich Material und in den Schnellansichten (materialDaten) hängen an der Vorschau
+            model.objectWillChange.send()
             if war?.run != v.run || war?.stand != v.stand {
                 let platten = KevFormat.count(v.summe.platten, one: "Platte", many: "Platten")
                 log(.info, "Druckvorschau (\(v.stand.titel)): \(platten), \(DruckFormat.zeit(v.summe.zeitMitWechselS)), "

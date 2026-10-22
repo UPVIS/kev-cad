@@ -4,16 +4,19 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Volle Druckvorschau (DRUCKVORSCHAU.md, Abschnitt „App“): oben der Platz für die Druckerleiste (Phase 8), Kopf mit
-/// Stand und Summe (Platten, Zeit mit Plattenwechseln, Filament, Kosten) und „Platten als 3MF …“; darunter links die
+/// Stand und Summe (Platten, Zeit mit Plattenwechseln, Filament, Kosten) und „Als 3MF sichern …“; darunter links die
 /// Platten in der Draufsicht, in der Mitte Filament je Material, Platten, Teile mit Empfehlung und Hinweise als Ampel,
 /// rechts die gewählte Gruppe mit ihren Einstellungen. Eingebaut vom Material-Strang (`DruckAbschnitt`).
 struct DruckAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var druck: DruckStore
     @ObservedObject private var ui = DruckUI.shared
+    /// Im Bereich „Material“ eingebettet: Titel und Symbol trägt der Abschnittskopf, hier nur Stand und Summe.
+    var eingebettet = false
 
-    init(model: AppModel) {
+    init(model: AppModel, eingebettet: Bool = false) {
         self.model = model
+        self.eingebettet = eingebettet
         _druck = ObservedObject(wrappedValue: model.druck)
     }
 
@@ -39,8 +42,10 @@ struct DruckAnsicht: View {
     private var kopf: some View {
         HStack(spacing: 16) {
             HStack(spacing: 8) {
-                Image(systemName: "printer.fill").foregroundStyle(Color.kevAkzent)
-                Text("3D-Druck").font(.headline)
+                if !eingebettet {
+                    Image(systemName: "printer.fill").foregroundStyle(Color.kevAkzent)
+                    Text("3D-Druck").font(.headline)
+                }
                 if let v = druck.vorschau, !v.istLeer {
                     DruckStandMarke(vorschau: v)
                     if model.isRunning {
@@ -90,15 +95,15 @@ struct DruckAnsicht: View {
 
     private func exportKnopf(_ v: Druckvorschau) -> some View {
         Menu {
-            Button("Alle Platten als 3MF …") { exportieren([]) }
+            Button("Alle Platten als 3MF sichern …") { exportieren([]) }
             if v.platten.count > 1 {
                 Divider()
                 ForEach(v.platten) { p in
-                    Button("Nur Platte \(p.nr) als 3MF …") { exportieren([p.nr]) }
+                    Button("Nur Platte \(p.nr) als 3MF sichern …") { exportieren([p.nr]) }
                 }
             }
         } label: {
-            Label("Platten als 3MF …", systemImage: "square.and.arrow.up.on.square")
+            Label("Als 3MF sichern …", systemImage: "square.and.arrow.down.on.square")
         } primaryAction: {
             exportieren([])
         }
@@ -106,13 +111,15 @@ struct DruckAnsicht: View {
         .fixedSize()
         .controlSize(.small)
         .disabled(model.druckActions == nil || v.platten.isEmpty || druck.export.laeuftGerade)
-        .help("Die angeordneten Platten als 3MF für Bambu Studio speichern (ohne Drucken)")
+        .help("Ohne Drucken: die angeordneten Platten als 3MF für Bambu Studio sichern, je Material eine Datei. "
+              + "Zum Drucken „Drucken …“ in der Druckerleiste.")
     }
 
     /// Ziel wählen und PRINT_EXPORT_REQ senden.
     private func exportieren(_ platten: [Int]) {
         let panel = NSSavePanel()
-        panel.title = platten.isEmpty ? "Platten als 3MF" : "Platte \(platten[0]) als 3MF"
+        panel.title = platten.isEmpty ? "Platten als 3MF sichern" : "Platte \(platten[0]) als 3MF sichern"
+        panel.message = "Je Material entsteht eine eigene Datei (ohne AMS druckt der P1P ein Material je Platte)."
         panel.allowedContentTypes = [UTType(filenameExtension: "3mf") ?? .data]
         panel.canCreateDirectories = true
         let name = model.project?.name ?? "Projekt"
@@ -486,8 +493,7 @@ struct DruckGruppenZeile: View {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(Color.kevAkzent)
-                            .help("Von Kevin festgelegt: " + gruppe.vorgaben.keys.sorted().map(DruckFormat.schluessel)
-                                .joined(separator: ", "))
+                            .help(DruckFormat.vorgaben(gruppe.vorgaben).joined(separator: "\n"))
                     }
                     if druck.wartet(.gruppe(gruppe.gruppe)) { ProgressView().controlSize(.mini) }
                 }
@@ -595,6 +601,7 @@ struct DruckUeberblick: View {
                     if let s = p.strompreisKwh { reihe("Strompreis", "\(DruckFormat.euro(s))/kWh") }
                     if let l = p.leistungW { reihe("Leistung", "\(KevFormat.compact(l, maxDigits: 0)) W") }
                     if let w = p.plattenwechselS { reihe("Je Plattenwechsel", DruckFormat.zeit(w)) }
+                    if let pl = p.platte { reihe("Druckplatte", pl) }
                 }
             }
             .font(.callout)
@@ -716,27 +723,32 @@ struct DruckExportBand: View {
         case .bereit:
             EmptyView()
         case .laeuft(let ziel):
-            DruckBand(symbol: "square.and.arrow.up.on.square", farbe: .secondary, titel: "Platten werden als 3MF geschrieben …",
-                      text: ziel?.lastPathComponent, schliessen: nil) {
+            DruckBand(symbol: "square.and.arrow.down.on.square", farbe: .secondary,
+                      titel: "Platten werden als 3MF gesichert …",
+                      text: (ziel?.lastPathComponent).map { $0 + " · Bambu Studio ordnet an und prüft" }, schliessen: nil) {
                 ProgressView().controlSize(.small)
             }
+        case .fertig(let e) where e.dateien.count > 1:
+            DruckBand(symbol: "checkmark.circle.fill", farbe: .green,
+                      titel: "\(e.dateien.count) Dateien als 3MF gesichert, je Material eine"
+                          + (e.geprueft == true ? ", in Bambu Studio geprüft" : ""),
+                      text: e.hinweise.isEmpty ? nil : e.hinweise.joined(separator: " · "),
+                      schliessen: { druck.exportHinweisVerwerfen() })
+            VStack(spacing: 4) {
+                ForEach(e.dateien) { d in DruckExportDateiZeile(model: model, datei: d) }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .transition(.move(edge: .top).combined(with: .opacity))
         case .fertig(let e):
             DruckBand(symbol: "checkmark.circle.fill", farbe: .green,
                       titel: (e.platten.isEmpty ? "Platten" : KevFormat.count(e.platten.count, one: "Platte", many: "Platten"))
-                          + " als 3MF gespeichert" + (e.geprueft == true ? ", in Bambu Studio geprüft" : ""),
+                          + " als 3MF gesichert" + (e.geprueft == true ? ", in Bambu Studio geprüft" : ""),
                       text: ([e.pfad?.lastPathComponent].compactMap { $0 } + e.hinweise).joined(separator: " · "),
                       schliessen: { druck.exportHinweisVerwerfen() }) {
                 if let pfad = e.pfad {
-                    Button {
-                        model.druckActions?.druckInBambuStudioOeffnen(pfad)
-                    } label: {
-                        Label("In Bambu Studio öffnen", systemImage: "arrow.up.forward.app")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(DruckStore.bambuStudio == nil)
-                    .help(DruckStore.bambuStudio == nil ? "Bambu Studio ist nicht unter /Applications installiert"
-                          : "Die 3MF in Bambu Studio öffnen")
-                    Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([pfad]) }
+                    DruckBambuKnoepfe(model: model, pfad: pfad)
                 }
             }
         case .fehler(let f):
@@ -748,4 +760,62 @@ struct DruckExportBand: View {
 
 extension String {
     var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
+}
+
+/// „In Bambu Studio öffnen“ (nur auf Klick) und „Im Finder zeigen“ für eine 3MF-Datei.
+struct DruckBambuKnoepfe: View {
+    @ObservedObject var model: AppModel
+    var pfad: URL
+    var kompakt = false
+
+    var body: some View {
+        Button {
+            model.druckActions?.druckInBambuStudioOeffnen(pfad)
+        } label: {
+            Label("In Bambu Studio öffnen", systemImage: "arrow.up.forward.app")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(DruckStore.bambuStudio == nil)
+        .help(DruckStore.bambuStudio == nil ? "Bambu Studio ist nicht unter /Applications installiert"
+              : "\(pfad.lastPathComponent) in Bambu Studio öffnen")
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([pfad])
+        } label: {
+            if kompakt { Image(systemName: "folder") } else { Text("Im Finder zeigen") }
+        }
+        .help("Im Finder zeigen")
+    }
+}
+
+/// Eine von mehreren 3MF-Dateien (je Material): Farbe, Material, Platten, Filamentprofil, Datei, Knöpfe.
+struct DruckExportDateiZeile: View {
+    @ObservedObject var model: AppModel
+    var datei: DruckExportDatei
+
+    var body: some View {
+        let v = model.druck.vorschau
+        let farbe = DruckFarben.material(v, parts: model.parts)[datei.material ?? ""] ?? .gray
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(farbe.gradient).frame(width: 12, height: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(datei.material.map { m in v?.summe.material.first { $0.material == m }?.name ?? m.uppercased() }
+                         ?? "3MF").fontWeight(.semibold)
+                    if !datei.platten.isEmpty {
+                        Text(datei.platten.count == 1 ? "Platte \(datei.platten[0])"
+                             : "Platten " + datei.platten.map(String.init).joined(separator: ", "))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text([datei.pfad.lastPathComponent, datei.filament].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 8)
+            DruckBambuKnoepfe(model: model, pfad: datei.pfad, kompakt: true)
+                .controlSize(.small)
+        }
+        .font(.callout)
+        .padding(.vertical, 2)
+    }
 }

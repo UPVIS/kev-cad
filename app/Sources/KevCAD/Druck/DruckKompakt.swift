@@ -119,3 +119,55 @@ struct DruckKompakt: View {
         return t.joined(separator: "\n")
     }
 }
+
+/// Platten als kleine Draufsichten nebeneinander (Schnellansicht, aufgezogen): Klick wählt das Teil im 3D-Bereich.
+struct DruckPlattenStreifen: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var druck: DruckStore
+    @ObservedObject private var ui = DruckUI.shared
+
+    init(model: AppModel) {
+        self.model = model
+        _druck = ObservedObject(wrappedValue: model.druck)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            if let v = druck.vorschau, !v.istLeer {
+                let seite = max(40, geo.size.height - 30)
+                let farben = DruckFarben.material(v, parts: model.parts)
+                let nummern = Dictionary(uniqueKeysWithValues: v.teile.enumerated().map { ($1.gruppe, $0 + 1) })
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(v.platten) { p in
+                            VStack(alignment: .leading, spacing: 3) {
+                                DruckPlattenBild(
+                                    platte: p, vorschau: v, farben: farben, ausgewaehlt: Set(model.selectedPartIDs),
+                                    gruppe: nil, nummern: nummern, hover: ui.hover,
+                                    klick: { t, n in
+                                        if let t { ui.waehleTeil(t.name, vorschau: v, model: model, einpassen: n == 2) }
+                                    },
+                                    schwebt: { t in if ui.hover != t?.name { ui.hover = t?.name } })
+                                    .frame(width: seite, height: seite)
+                                HStack(spacing: 4) {
+                                    Text("\(p.nr)").fontWeight(.semibold)
+                                    if let m = p.material.first {
+                                        Circle().fill(farben[m.material] ?? .gray).frame(width: 6, height: 6)
+                                    }
+                                    Text(DruckFormat.zeit(p.zeitS)).monospacedDigit()
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .frame(width: seite, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .scrollIndicators(.never)
+            }
+        }
+    }
+}

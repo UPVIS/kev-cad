@@ -128,7 +128,8 @@ struct DruckGruppeDetail: View {
         if let s = gruppe.stuetzenG, s > 0.05 { t.append("Stützen \(DruckFormat.gramm(s))") }
         if let r = gruppe.risiko { t.append("Fehldruck-Risiko \(DruckFormat.prozent(r))") }
         if let a = gruppe.abweichung {
-            t.append("Schätzung lag \(DruckFormat.prozent(abs(a))) daneben")
+            t.append("Schätzung lag \(DruckFormat.prozent(abs(a))) daneben"
+                     + (gruppe.abweichungMaterial.map { " (Filament \(DruckFormat.prozent(abs($0))))" } ?? ""))
         }
         return t.joined(separator: " · ")
     }

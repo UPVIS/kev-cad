@@ -269,6 +269,11 @@ public struct MaterialKennzahlen: Equatable, Sendable {
     public var druckteile = 0
     public var druckGramm = 0.0
     public var druckPreis: Double?
+    /// Aus der Druckvorschau (additiv, DRUCKVORSCHAU.md): Druckzeit mit Plattenwechseln, Platten, Stand; Gramm und Preis
+    /// kommen dann aus der Vorschau (Filament samt Füllung, Kosten samt Strom), siehe `druckvorschauEinrechnen`.
+    public var druckZeitS: Double?
+    public var druckPlatten: Int?
+    public var druckStand: DruckStand?
     public var zukaufteile = 0
     public var wartetAufCAD = 0
     public var eigenteile = 0
@@ -765,8 +770,10 @@ public struct EinkaufAbgehakt: Equatable, Sendable {
 extension AppModel {
     /// Die gemeinsame Datenquelle aus dem aktuellen Stand (Stückliste, Bestand, Katalog, Zukauf, Inventar).
     public var materialDaten: MaterialDaten {
-        MaterialDaten(
+        var d = MaterialDaten(
             bom: bom, bestand: bestandZustand.zuschnitt, projektBestand: bestandZustand.bestand, katalog: catalog,
             wartetAufCAD: waitingForCAD.count, inventarVerstoesse: inventarVerstoesse.count)
+        d.druckvorschauEinrechnen(druck.vorschau)  // Druckvorschau (Druck/DruckMaterial.swift)
+        return d
     }
 }

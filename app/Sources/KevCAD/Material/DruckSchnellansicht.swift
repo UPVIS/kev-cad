@@ -1,14 +1,11 @@
 import KevCADCore
 import SwiftUI
 
-// Platzhalter für die Druck-Schnellansicht (PLAN-DRUCKVORSCHAU.md), die ein anderer Strang baut: Er ersetzt nur diese
-// Datei und DruckAbschnitt.swift. Vertrag: `struct DruckSchnellansicht: View { init(model: AppModel) }`.
-//
-// So hängt sie unter dem Viewport: Die Schnellansicht „Druck“ erscheint, sobald das Modell Druckteile hat. Ihre
-// Kopfzeile (Titel, Kennzahlen „6 Teile · 120 g“, Pfeil, „In Material öffnen“) zeichnet der Behälter; diese Ansicht
-// füllt nur den Inhalt darunter, in voller Breite und in der Höhe, die Kevin zieht (mindestens 72 Punkte).
+// Schnellansicht „Druck“ unter dem Viewport: dünne Hülle um die Druckvorschau (app/Sources/KevCAD/Druck/,
+// DRUCKVORSCHAU.md). Vertrag mit dem Material-Strang: `struct DruckSchnellansicht: View { init(model: AppModel) }`.
+// Die Kopfzeile (Titel, Gramm, Kosten, Zeit, Platten, „In Material öffnen“) zeichnet der Behälter; hier der Inhalt in
+// voller Breite: das Band der Druckvorschau und, wenn Kevin die Ansicht höher zieht, die Platten als kleine Draufsichten.
 
-/// Inhalt der Schnellansicht „Druck“. Heute ein ruhiger leerer Zustand.
 struct DruckSchnellansicht: View {
     @ObservedObject var model: AppModel
 
@@ -17,17 +14,16 @@ struct DruckSchnellansicht: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "printer.dotmatrix")
-                .font(.title3)
-                .foregroundStyle(.tertiary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Druckvorschau folgt").font(.callout.weight(.medium)).foregroundStyle(.secondary)
-                Text("Filament, Druckzeit und Platten je Lauf erscheinen hier.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                DruckKompakt(model: model)
+                    .frame(height: 32)
+                if geo.size.height >= 110 {
+                    Divider()
+                    DruckPlattenStreifen(model: model)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

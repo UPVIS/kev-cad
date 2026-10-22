@@ -171,6 +171,69 @@ final class DruckFixtureTests: XCTestCase {
         XCTAssertEqual(b.replyTo, "a-35")
     }
 
+    /// Mehrere Materialien: je Material eine Datei (`dateien`, sonst `pfade`); `fest_von` mit Kevin und Agent.
+    func testMehrereDateienUndFestVon() throws {
+        let kopf = #"""
+            {"type":"PRINT_EXPORT_RES","reply_to":"a-9","ok":true,"pfad":"/p/output/K-druck-petg.3mf",
+             "pfade":["/p/output/K-druck-petg.3mf","/p/output/K-druck-pla.3mf"],
+             "dateien":[{"pfad":"/p/output/K-druck-petg.3mf","material":"petg","filament":"Bambu PETG Basic @BBL X1C","platten":[1]},
+                        {"pfad":"/p/output/K-druck-pla.3mf","material":"pla","filament":"Amazon Basics PLA","platten":[2]}],
+             "platten":[1,2],"fehler":null,"geprueft":true,"ms":5120,"hinweise":["2 Materialien: je Material ein Bambu-Projekt"]}
+            """#
+        guard case .druck(.exportErgebnis(let e)) = try KernelMessage.decode(Frame(header: Data(kopf.utf8))) else {
+            return XCTFail()
+        }
+        XCTAssertEqual(e.dateien.map(\.material), ["petg", "pla"])
+        XCTAssertEqual(e.dateien.map(\.platten), [[1], [2]])
+        XCTAssertEqual(e.dateien.last?.filament, "Amazon Basics PLA")
+        XCTAssertEqual(e.dateien.first?.pfad.lastPathComponent, "K-druck-petg.3mf")
+        // nur `pfade` bzw. nur `pfad`
+        guard case .druck(.exportErgebnis(let f)) = try KernelMessage.decode(Frame(header: Data(
+            #"{"type":"PRINT_EXPORT_RES","ok":true,"pfad":"/a.3mf","pfade":["/a.3mf","/b.3mf"],"platten":[1,2]}"#.utf8)))
+        else { return XCTFail() }
+        XCTAssertEqual(f.dateien.map(\.pfad.path), ["/a.3mf", "/b.3mf"])
+        guard case .druck(.exportErgebnis(let g)) = try KernelMessage.decode(Fixtures.frame("print_export_res.frame"))
+        else { return XCTFail() }
+        XCTAssertEqual(g.dateien.count, 1)
+        XCTAssertEqual(g.dateien.first?.platten, [1, 2])
+
+        let teil = #"""
+            {"type":"PRINT_PREVIEW","run":3,"einstellungen":{"platte":"Textured PEI Plate","drucker":"p1p-0.4"},
+             "teile":[{"gruppe":"g1","name":"Halter (Druck)","teile":["A/Halter (Druck)"],"fest":["waende","fuellung","zweck"],
+                       "fest_von":{"waende":"kevin","fuellung":"agent","zweck":"kevin"},"abweichung":0.06,
+                       "abweichung_material":-0.02}]}
+            """#
+        guard case .druck(.vorschau(let v, _)) = try KernelMessage.decode(Frame(header: Data(teil.utf8))) else {
+            return XCTFail()
+        }
+        let g1 = try XCTUnwrap(v.gruppe("g1"))
+        XCTAssertEqual(g1.quelle("waende"), .kevin)
+        XCTAssertEqual(g1.quelle("fuellung"), .agent)
+        XCTAssertEqual(g1.quelle("zweck"), .kevin)
+        XCTAssertEqual(g1.abweichungMaterial, -0.02)
+        XCTAssertEqual(g1.kurzname, "Halter")
+        XCTAssertEqual(v.projekt?.platte, "Textured PEI Plate")
+        XCTAssertEqual(DruckFormat.vorgaben(g1.vorgaben), ["Von Kevin: Wände, Zweck", "Vom Agenten: Füllung"])
+        XCTAssertEqual(DruckQuelle.agent.titel, "vom Agenten")
+    }
+
+    /// Bereich Material: Kennzahlen der Druckteile aus der Vorschau.
+    func testMaterialKennzahlenAusVorschau() throws {
+        let (v, _) = try vorschau("print_preview.frame")
+        var d = MaterialDaten(bom: nil)
+        XCTAssertNil(d.kennzahlen.druckZeitS)
+        d.druckvorschauEinrechnen(v)
+        XCTAssertEqual(d.kennzahlen.druckZeitS, v.summe.zeitMitWechselS)
+        XCTAssertEqual(d.kennzahlen.druckPlatten, 2)
+        XCTAssertEqual(d.kennzahlen.druckGramm, v.summe.gramm, accuracy: 1e-9)
+        XCTAssertEqual(d.kennzahlen.druckPreis, v.summe.kosten)
+        XCTAssertEqual(d.kennzahlen.druckteile, v.stueck)
+        var leer = MaterialDaten(bom: nil)
+        let (l, _) = try vorschau("print_preview_leer.frame")
+        leer.druckvorschauEinrechnen(l)
+        XCTAssertNil(leer.kennzahlen.druckZeitS)
+    }
+
     /// Die Anfragen der App entsprechen Byte für Byte im Inhalt den Testdateien des Kernels (ohne `seq`).
     func testAnfragenWieTestdateien() throws {
         XCTAssertEqual(try kopf(DruckvorschauAnfrage(id: "a-31")), try fixtureKopf("print_preview_req.frame"))

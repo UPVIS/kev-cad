@@ -44,7 +44,7 @@ struct ProjectWindow: View {
             CatalogSelfTest.runIfRequested(session)
             ZukaufSelfTest.runIfRequested(session)
             BauplanExportSelfTest.runIfRequested(session, state: state, zustand: dokumente)  // Phase 6, P6-A2
-            DruckSelfTest.runIfRequested(session)  // Druckvorschau (KEVCAD_SELFTEST=druck)
+            DruckSelfTest.runIfRequested(session, state: state)  // Druckvorschau (KEVCAD_SELFTEST=druck)
             DruckerSelbsttest.runIfRequested(session)  // Phase 8 (KEVCAD_SELFTEST=drucker)
             BestandSelfTest.runIfRequested(session)
             MaterialSelfTest.runIfRequested(session, state: state, material: material)

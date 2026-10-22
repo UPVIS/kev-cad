@@ -155,6 +155,15 @@ public enum DruckFormat {
         return t.joined(separator: " · ")
     }
 
+    /// Feste Vorgaben nach Quelle: „Von Kevin: Wände, Zweck“, „Vom Agenten: Füllung“.
+    public static func vorgaben(_ v: [String: DruckQuelle]) -> [String] {
+        [DruckQuelle.kevin, .agent].compactMap { q in
+            let k = v.filter { $0.value == q }.keys.sorted().map(schluessel)
+            guard !k.isEmpty else { return nil }
+            return q.titel.prefix(1).uppercased() + q.titel.dropFirst() + ": " + k.joined(separator: ", ")
+        }
+    }
+
     /// Titel der Schlüssel in `einstellungen` (für „von Kevin“, Hinweise und den Bericht).
     public static func schluessel(_ k: String) -> String {
         switch k {

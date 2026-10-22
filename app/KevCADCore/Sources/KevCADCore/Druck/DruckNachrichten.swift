@@ -43,6 +43,8 @@ public struct DruckExportErgebnis: Equatable, Sendable {
     public var pfad: URL?
     public var platten: [Int]
     public var fehler: String?
+    /// Bei mehreren Materialien je Material eine Datei (additiv `dateien`, sonst aus `pfade` bzw. `pfad`).
+    public var dateien: [DruckExportDatei] = []
     /// Additiv: Hinweise, Dauer und ob die Datei zur Kontrolle in Bambu Studio geladen wurde.
     public var hinweise: [String] = []
     public var ms: Double?
@@ -63,9 +65,38 @@ public struct DruckExportErgebnis: Equatable, Sendable {
             replyTo: j["reply_to"]?.lenientString, ok: j["ok"]?.boolValue ?? (j["fehler"]?.lenientString == nil),
             pfad: j["pfad"]?.lenientString.map { URL(fileURLWithPath: $0) }, platten: platten,
             fehler: j["fehler"]?.lenientString)
+        dateien = (j["dateien"]?.arrayValue ?? []).compactMap(DruckExportDatei.init(json:))
+        if dateien.isEmpty, let pfade = j["pfade"]?.stringList, !pfade.isEmpty {
+            dateien = pfade.map { DruckExportDatei(pfad: URL(fileURLWithPath: $0)) }
+        }
+        if dateien.isEmpty, let p = pfad { dateien = [DruckExportDatei(pfad: p, platten: platten)] }
         hinweise = (j["hinweise"]?.arrayValue ?? []).compactMap { $0.lenientString ?? $0["text"]?.lenientString }
         ms = j["ms"]?.doubleValue
         geprueft = j["geprueft"]?.boolValue
+    }
+}
+
+/// Eine geschriebene 3MF-Datei: ein Bambu-Studio-Projekt je Material (bzw. ohne Bambu Studio je Platte).
+public struct DruckExportDatei: Equatable, Sendable, Identifiable {
+    public var pfad: URL
+    public var material: String?
+    public var filament: String?
+    public var platten: [Int]
+
+    public var id: String { pfad.path }
+
+    public init(pfad: URL, material: String? = nil, filament: String? = nil, platten: [Int] = []) {
+        self.pfad = pfad
+        self.material = material
+        self.filament = filament
+        self.platten = platten
+    }
+
+    public init?(json: JSONValue) {
+        guard let p = json["pfad"]?.lenientString ?? json.lenientString else { return nil }
+        self.init(pfad: URL(fileURLWithPath: p), material: json["material"]?.lenientString,
+                  filament: json["filament"]?.lenientString,
+                  platten: (json["platten"]?.arrayValue ?? []).compactMap(\.intValue))
     }
 }
 
