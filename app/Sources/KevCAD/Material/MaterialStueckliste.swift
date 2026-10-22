@@ -88,7 +88,8 @@ struct BenennungZelle: View {
                     .frame(width: 16)
             }
             if kompakt {
-                // Kennzeichen zuerst: der Name kürzt sich, die Norm fällt als Erstes weg
+                // Kennzeichen zuerst: der Name kürzt sich, die Norm fällt als Erstes weg; dem Namen bleiben mindestens
+                // 96 pt, darunter zeigen die Kennzeichen nur ihr Symbol (schmaler 3D-Bereich)
                 HStack(spacing: 6) {
                     ViewThatFits(in: .horizontal) {
                         if let norm = position.line.norm, !position.line.benennung.contains(norm) {
@@ -101,6 +102,7 @@ struct BenennungZelle: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
+                    .frame(minWidth: 96, alignment: .leading)
                     .layoutPriority(1)
                     Spacer(minLength: 0)
                     marken
@@ -348,50 +350,74 @@ struct StuecklisteKompaktTabelle: View {
             })
     }
 
+    /// Breite der Tabelle: ist der 3D-Bereich schmal (Seitenleisten, Versionsleiste offen), entfallen erst Gehrung,
+    /// dann Werkstoff, dann Gewicht, statt dass die Tabelle waagrecht scrollt. Die Summen stehen ohnehin im Kopf.
+    @State private var breite: CGFloat = .infinity
+    private var mitGehrung: Bool { breite >= 720 && daten.positionen.contains { $0.gehrungText != "–" } }
+    private var mitWerkstoff: Bool { breite >= 640 }
+    private var mitGewicht: Bool { breite >= 560 }
+
     var body: some View {
         Table(daten.positionen, selection: auswahl) {
-            TableColumn(MaterialText.Spalte.pos) { p in
-                Text("\(p.pos)").monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(36)
-            TableColumn(MaterialText.Spalte.benennung) { p in
-                BenennungZelle(position: p, kompakt: true)
-            }
-            .width(min: 180, ideal: 300)
-            TableColumn(MaterialText.Spalte.masse) { p in
-                Text(p.masseText).monospacedDigit().lineLimit(1).help(p.masseText)
-            }
-            .width(min: 80, ideal: 140)
-            TableColumn(MaterialText.Spalte.gehrung) { p in
-                Text(p.gehrungText)
-                    .monospacedDigit()
-                    .foregroundStyle(p.gehrungText == "–" ? .tertiary : .primary)
-            }
-            .width(min: 52, ideal: 70)
-            TableColumn(MaterialText.Spalte.werkstoff) { p in
-                Text(p.werkstoff ?? "–").foregroundStyle(p.werkstoff == nil ? .tertiary : .primary).lineLimit(1)
-            }
-            .width(min: 70, ideal: 120)
-            TableColumn(MaterialText.Spalte.anzahl) { p in
-                ZahlZelle(text: KevFormat.integer(p.anzahl))
-            }
-            .width(min: 44, ideal: 52)
-            TableColumn(MaterialText.Spalte.gewicht) { p in
-                ZahlZelle(text: p.kg.map(KevFormat.kg) ?? "–")
-                    .help(p.line.kgJe.map { "je Stück \(KevFormat.kg($0))" } ?? "")
-            }
-            .width(min: 58, ideal: 74)
-            TableColumn(MaterialText.Spalte.preis) { p in
-                ZahlZelle(text: p.preis.map(KevFormat.euro) ?? "–").help(p.preisHilfe)
-            }
-            .width(min: 60, ideal: 80)
+            spaltenVorn
+            spaltenHinten
         }
         .tableStyle(.inset)
         .alternatingRowBackgrounds()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { breite = $0 }
         .contextMenu(forSelectionType: Int.self) { ids in
             PositionsMenue(model: model, positionen: daten.positionen.filter { ids.contains($0.pos) }, navigation: navigation)
         } primaryAction: { ids in
             if let pos = ids.first, let p = daten.position(pos) { model.catalogActions?.showBOMLine(p.line) }
         }
+    }
+
+    @TableColumnBuilder<MaterialPosition, Never>
+    private var spaltenVorn: some TableColumnContent<MaterialPosition, Never> {
+        TableColumn(MaterialText.Spalte.pos) { (p: MaterialPosition) in
+            Text("\(p.pos)").monospacedDigit().foregroundStyle(.secondary)
+        }
+        .width(36)
+        TableColumn(MaterialText.Spalte.benennung) { (p: MaterialPosition) in
+            BenennungZelle(position: p, kompakt: true)
+        }
+        .width(min: 170, ideal: 260)
+        TableColumn(MaterialText.Spalte.masse) { (p: MaterialPosition) in
+            Text(p.masseText).monospacedDigit().lineLimit(1).help(p.masseText)
+        }
+        .width(min: 80, ideal: 120)
+        if mitGehrung {
+            TableColumn(MaterialText.Spalte.gehrung) { (p: MaterialPosition) in
+                Text(p.gehrungText)
+                    .monospacedDigit()
+                    .foregroundStyle(p.gehrungText == "–" ? .tertiary : .primary)
+            }
+            .width(min: 52, ideal: 64)
+        }
+    }
+
+    @TableColumnBuilder<MaterialPosition, Never>
+    private var spaltenHinten: some TableColumnContent<MaterialPosition, Never> {
+        if mitWerkstoff {
+            TableColumn(MaterialText.Spalte.werkstoff) { (p: MaterialPosition) in
+                Text(p.werkstoff ?? "–").foregroundStyle(p.werkstoff == nil ? .tertiary : .primary).lineLimit(1)
+            }
+            .width(min: 70, ideal: 100)
+        }
+        TableColumn(MaterialText.Spalte.anzahl) { (p: MaterialPosition) in
+            ZahlZelle(text: KevFormat.integer(p.anzahl))
+        }
+        .width(min: 44, ideal: 52)
+        if mitGewicht {
+            TableColumn(MaterialText.Spalte.gewicht) { (p: MaterialPosition) in
+                ZahlZelle(text: p.kg.map(KevFormat.kg) ?? "–")
+                    .help(p.line.kgJe.map { "je Stück \(KevFormat.kg($0))" } ?? "")
+            }
+            .width(min: 58, ideal: 70)
+        }
+        TableColumn(MaterialText.Spalte.preis) { (p: MaterialPosition) in
+            ZahlZelle(text: p.preis.map(KevFormat.euro) ?? "–").help(p.preisHilfe)
+        }
+        .width(min: 60, ideal: 76)
     }
 }
