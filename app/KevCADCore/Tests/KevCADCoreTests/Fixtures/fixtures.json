@@ -1215,5 +1215,271 @@
    "doc_export_req.frame",
    "doc_export_res.frame"
   ]
+ },
+ "druck": {
+  "frames": [
+   {
+    "file": "print_preview.frame",
+    "type": "PRINT_PREVIEW",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_preview_leer.frame",
+    "type": "PRINT_PREVIEW",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_preview_antwort.frame",
+    "type": "PRINT_PREVIEW",
+    "payload_bytes": 0
+   },
+   {
+    "file": "ack_print_settings.frame",
+    "type": "ACK",
+    "payload_bytes": 0
+   },
+   {
+    "file": "ack_print_export.frame",
+    "type": "ACK",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_export_res.frame",
+    "type": "PRINT_EXPORT_RES",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_export_res_fehler.frame",
+    "type": "PRINT_EXPORT_RES",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_preview_req.frame",
+    "type": "PRINT_PREVIEW_REQ",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_settings.frame",
+    "type": "PRINT_SETTINGS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_settings_zweck.frame",
+    "type": "PRINT_SETTINGS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_settings_zurueck.frame",
+    "type": "PRINT_SETTINGS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_settings_reset.frame",
+    "type": "PRINT_SETTINGS",
+    "payload_bytes": 0
+   },
+   {
+    "file": "print_export_req.frame",
+    "type": "PRINT_EXPORT_REQ",
+    "payload_bytes": 0
+   }
+  ],
+  "vorschau": {
+   "run": 12,
+   "stand": "gemischt",
+   "drucker": "Bambu Lab P1P 0.4",
+   "summe": {
+    "platten": 2,
+    "zeit_s": 33490,
+    "zeit_mit_wechsel_s": 33610,
+    "kosten": 4.26
+   },
+   "kosten_teile": {
+    "filament": 3.63,
+    "strom": 0.45,
+    "risiko": 0.18
+   },
+   "material": [
+    {
+     "material": "petg",
+     "g": 188.8,
+     "m": 61.81,
+     "kosten": 3.21,
+     "stand": "gemischt"
+    },
+    {
+     "material": "pla",
+     "g": 24.6,
+     "m": 8.25,
+     "kosten": 0.42,
+     "stand": "schaetzung"
+    }
+   ],
+   "platten": [
+    {
+     "nr": 1,
+     "zeit_s": 28055,
+     "stand": "gemischt",
+     "teile": 7,
+     "auslastung": 0.179,
+     "material": "petg"
+    },
+    {
+     "nr": 2,
+     "zeit_s": 5435,
+     "stand": "schaetzung",
+     "teile": 6,
+     "auslastung": 0.045,
+     "material": "pla"
+    }
+   ],
+   "erstes_plattenteil": {
+    "name": "Kugelschieber/Stangenhalter vorn links (Druck)",
+    "gruppe": "g1",
+    "x": 60.0,
+    "y": 60.0,
+    "drehung": 0,
+    "umriss": [
+     [
+      29.0,
+      41.0
+     ],
+     [
+      91.0,
+      41.0
+     ],
+     [
+      91.0,
+      79.0
+     ],
+     [
+      29.0,
+      79.0
+     ]
+    ]
+   },
+   "ersatzteile": [
+    "Kugelschieber/Fangrolle (Druck)"
+   ],
+   "teile": [
+    {
+     "gruppe": "g1",
+     "name": "Stangenhalter (Druck)",
+     "anzahl": 4,
+     "material": "petg",
+     "zweck": "tragend",
+     "zweck_geschaetzt": false,
+     "g": 142.4,
+     "zeit_s": 19920,
+     "stand": "slicer",
+     "abweichung": 0.06
+    },
+    {
+     "gruppe": "g2",
+     "name": "Fangrolle (Druck)",
+     "anzahl": 2,
+     "material": "petg",
+     "zweck": "bewegt",
+     "zweck_geschaetzt": false,
+     "g": 24.4,
+     "zeit_s": 4800,
+     "stand": "schaetzung",
+     "abweichung": null
+    },
+    {
+     "gruppe": "g3",
+     "name": "Lenksperre (Druck)",
+     "anzahl": 1,
+     "material": "petg",
+     "zweck": "funktion",
+     "zweck_geschaetzt": true,
+     "g": 22.0,
+     "zeit_s": 3300,
+     "stand": "slicer",
+     "abweichung": -0.04
+    },
+    {
+     "gruppe": "g4",
+     "name": "Abdeckkappe (Druck)",
+     "anzahl": 6,
+     "material": "pla",
+     "zweck": "zier",
+     "zweck_geschaetzt": false,
+     "g": 24.6,
+     "zeit_s": 5400,
+     "stand": "schaetzung",
+     "abweichung": null
+    }
+   ],
+   "erstes_teil": {
+    "einstellungen": {
+     "schicht_mm": 0.2,
+     "waende": 4,
+     "decken": 5,
+     "boeden": 4,
+     "fuellung": 0.25,
+     "muster": "gyroid",
+     "stuetzen": "keine",
+     "brim": false,
+     "ausrichtung": "−Z-Seite unten (wie modelliert), Fläche #f3 liegt auf"
+    },
+    "begruendung": [
+     "tragend: 4 Wände, 25 % Gyroid (Kevins Regel für Funktionsteile: 3–4 Wände, 20–40 % Füllung)",
+     "Last längs der Schichten: liegend drucken, Zug und Biegung in der Schichtebene"
+    ],
+    "hinweise": [
+     {
+      "schwere": "hinweis",
+      "text": "PETG vorher trocknen (65 °C, 12 h).",
+      "art": "trocknen"
+     }
+    ],
+    "je_stueck": {
+     "g": 35.6,
+     "m": 11.65,
+     "zeit_s": 4980
+    },
+    "fest": [
+     "waende"
+    ]
+   },
+   "hinweise": [
+    {
+     "schwere": "hinweis",
+     "text": "Zwei Materialien (PETG, PLA): je Material eigene Platten; ohne AMS die Spule zwischen den Platten wechseln.",
+     "art": "ams"
+    }
+   ],
+   "slicer": {
+    "zustand": "rechnet",
+    "fertig": 2,
+    "gesamt": 4,
+    "meldung": "Bambu Studio 02.07.01.62: 2 von 4 Gruppen gerechnet",
+    "version": "02.07.01.62"
+   }
+  },
+  "leer": {
+   "run": 13,
+   "platten": 0,
+   "slicer": "aus"
+  },
+  "antwort": {
+   "reply_to": "a-31",
+   "slicer": "fertig"
+  },
+  "settings": {
+   "gruppe": "g1",
+   "einstellungen": {
+    "waende": 5,
+    "fuellung": 0.3
+   }
+  },
+  "export": {
+   "pfad": "/Users/test/Documents/Kev CAD/Kugelschieber/output/Kugelschieber-druck.3mf",
+   "platten": [
+    1,
+    2
+   ]
+  }
  }
 }
