@@ -8,7 +8,8 @@ Aus dem Statikmodell entsteht ein räumliches Stabwerk:
   zu seinen Anschlüssen;
 - ein Gelenk sitzt in einem kurzen Gelenkglied (10 mm, quer zum Stab, lokale z-Achse längs des Stabs) mit Freigaben:
   gelenkig = beide Biegedrehungen frei (die Verdrehung um die Stabachse bleibt gekoppelt, sonst wäre der Stab drehbar),
-  Drehgelenk = Drehung um die nächste der drei Achsen frei, Schiebegelenk = Verschiebung längs der Achse frei;
+  Drehgelenk = Drehung um die nächste der drei Achsen frei, Schiebegelenk längs des Stabs = Hülse (Verschiebung längs
+  und beide Biegedrehungen frei);
 - Anschlüsse an geerdete Starrkörper und den Boden sind feste Lager (hinter dem Gelenkglied).
 
 Lastfälle: je Szenario Eigengewicht der Stäbe als Streckenlast im Beschleunigungsfeld, Starrkörper und Anbauteile mit
@@ -288,8 +289,8 @@ class _Aufbau:
                 out["Dz"] = True
             return out
         if a.art == "schiebe":
-            if laengs > 0.7:
-                return {"Dz": True}
+            if laengs > 0.7:  # Hülse, durch die der Stab gleitet: hält quer, aber weder längs noch gegen Biegung
+                return {"Dz": True, "Rx": True, "Ry": True}
             self.vereinfacht.append(f"{a.teile[1]}: Schiebegelenk quer zum Stab als fest gerechnet")
             return {}
         return {}
