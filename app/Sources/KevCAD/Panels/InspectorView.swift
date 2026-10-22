@@ -7,6 +7,8 @@ import simd
 struct InspectorView: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
+    /// Phase 4: für die Dialoge der Referenzen (nil in Vorschauen)
+    var state: ProjectWindowState?
     @Environment(\.materialNavigation) private var materialNavigation
 
     var body: some View {
@@ -17,6 +19,9 @@ struct InspectorView: View {
             stockSection
             ZukaufInspectorSection(model: model)
             ConstraintsSection(model: model)
+            if let state {  // Phase 4: Referenzen aus Video und Fotos
+                ReferenzInspectorSection(model: model, store: model.referenzen, state: state)
+            }
             measurementsSection
             projectSection
         }

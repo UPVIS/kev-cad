@@ -57,6 +57,8 @@ public final class SceneStore {
     /// geänderten bzw. neuen Teile im Vergleich (linear), siehe AppController+Versionen.
     public private(set) var vergleichBodies: [ViewportBody] = []
     public private(set) var vergleichTints: [String: SIMD3<Float>] = [:]
+    /// Phase 4: Referenznetze (halbdurchsichtig, nicht anklickbar, Farbe linear), siehe AppController+Referenz.
+    public private(set) var referenzBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -160,6 +162,7 @@ public final class SceneStore {
         collisionParts = []
         ghostBodies = []
         vergleichBodies = []
+        referenzBodies = []
         vergleichTints = [:]
         dimBelowRun = nil
         assemblyCenter = .zero
@@ -312,6 +315,12 @@ public final class SceneStore {
     /// Schnittkörper der Prüfung ersetzen (leer = keine).
     public func setGhostBodies(_ bodies: [ViewportBody]) {
         ghostBodies = bodies
+        publish()
+    }
+
+    /// Phase 4: Referenznetze ersetzen (leer = keine).
+    public func setReferenzBodies(_ bodies: [ViewportBody]) {
+        referenzBodies = bodies
         publish()
     }
 
@@ -689,6 +698,7 @@ public final class SceneStore {
         }
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: ghostBodies) }  // Schnittkörper: Ruhelage
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: vergleichBodies) }  // Versionen: Vergleich
+        renderBodies.append(contentsOf: referenzBodies)  // Phase 4: Referenznetze
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -790,6 +800,11 @@ public final class SceneStore {
         for g in ghostBodies + vergleichBodies where g.isVisible && animationTransforms.isEmpty {  // erwartet sRGB
             var b = g
             b.color = Self.srgb(g.color)
+            out.append(b)
+        }
+        for r in referenzBodies {  // Phase 4: Referenznetze auch in Bildern
+            var b = r
+            b.color = Self.srgb(r.color)
             out.append(b)
         }
         if let helper = depthHelper() { out.append(helper) }

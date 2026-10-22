@@ -1,6 +1,6 @@
 ---
 name: kev-cad
-description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“).
+description: Leitfaden für Kev CAD, Kevins nativen CAD-Viewer auf dem Mac (MCP-Server „kevcad“, Werkzeuge wie run, screenshot, measure). Verwenden, sobald Kevin in Kev CAD ein 3D-Modell bauen, ändern, vermessen, ansehen oder exportieren will – Halter, Gehäuse, Bauteile, Möbel, Baugruppen als model.py mit build123d, die sich live im Viewer aufbauen. Auch bei „bau mir …“, „mach die Bohrung größer“, „wie weit ist das vom Rand weg“, „zeig mir die Lasche von der Seite“, „was hab ich angeklickt“, „exportier als STEP/STL/3MF“ in einem Kev-CAD-Projekt, ebenso bei Lagerteilen (Rohre, Profile, Platten, Holz, Schrauben aus dem Katalog), Stückliste, Zuschnitt, Gewicht und Kosten („was kostet das“, „wie viele Stangen“), 3D-Druckteilen, Zukaufteilen per Shop-Link, Herstellernummer oder EAN („bau diesen Auszug ein: https://…“, Hersteller-CAD, STEP aus den Downloads übernehmen), Kameras („setz die FX6 mit 35 mm auf den Wagen“, „zeig mir ihr Bild“, „rendere das Kamerabild in 4K“) und Animationen („lass den Wagen rollen“, „Kollision prüfen“, „mach ein Video aus Sicht der FX6“), technischen Zeichnungen („mach mir Zeichnungen“, „Werkstattzeichnung vom Rohr“, „bemaß die Platte“, „Maß fehlt auf dem Blatt“) sowie Bauplan und Bauanleitung („mach mir einen Bauplan“, „was muss ich bohren und in welcher Reihenfolge montieren“) und Referenzen aus Handyvideo oder Fotos („hier ist ein Video vom Gerät, bau es nach“, „miss die Maße aus den Fotos“, „leg das Video als Referenz an“, „passt das Modell zum Foto?“).
 ---
 
 # Kev CAD
@@ -485,6 +485,54 @@ show(platte.verbauen("Rig/Baseplate", an=fx6.bezugspunkt("stativ_1_4"), bezug="k
 - Kevin: Taste 0 schaut durch die gewählte Kamera, noch einmal 0 zurück; Kameras stehen im Teilebaum unter „Kameras“.
 - Kevins Kamera ist die FX6 (Tilta-Käfig ES-T20). Objektive, Akkus und Platten im Katalog sind Beispiele, bis Kevin
   seine nennt; fehlt etwas, fragen und erst auf seinen Wunsch per `stock_define` vorschlagen.
+
+## Referenzen aus Video und Fotos (Phase 4)
+
+Kevin gibt ein Handyvideo oder einige Fotos des echten Gegenstands. Daraus entstehen ein maßstäbliches Referenznetz
+(Apple Object Capture) und die gemessenen `param()`-Werte des Modells (fotomess), beides in
+`<projekt>/referenzen/<name>/`. Beispiel mit Messmodell: `samples/scarlett/model.py`.
+
+1. `referenz_video(pfad, masz={"laenge": 180}, auflage=True)` startet Object Capture im Hintergrund (rund 1 min);
+   `referenzen(name, warten_s=300)` wartet. Ein echtes Maß ist Pflicht für den Maßstab (`laenge` = längste waagrechte
+   Ausdehnung, sonst `breite`, `hoehe`, `grund_laenge`, `grund_breite`); `auflage=True`, wenn der Gegenstand auf einer
+   Scheibe oder einem Tisch liegt; `von`/`bis` (s) schneiden das Video zu (etwa vor dem Umdrehen). Das Ergebnis nennt
+   Hülle mit Anbauten und Grundkörper ohne Anbauten getrennt. Object Capture ist nicht deterministisch; misslingt die
+   Freistellung, rechnet der Kernel selbst bis zu dreimal.
+2. model.py als Messmodell bauen: ein Teil je sichtbarem Bauteil, Maße als `param()`, Teile, die sich nicht messen
+   lassen (Unterseite, Füße), fest. Gemessen wird nur, was die Bilder zeigen; ein Modellfehler (falscher Rand,
+   fehlender Knopf) verfälscht die Maße – die Kontrollbilder zeigen ihn (rote Punkte ohne Partner).
+3. Optional `messmodell()` in model.py (wird nur zum Vermessen gelesen):
+
+```python
+def messmodell(p):                       # p: alle param()-Werte des Grundstands
+    return dict(
+        frei=["tiefe", "hoehe", "kanten_r"],            # zu messen
+        bekannt={"breite": 180.0},                      # fest, gibt den Maßstab (von Hand gemessen)
+        farbteile=lambda teil, flaeche: teil == "Gehaeuse",   # oder ["Gehaeuse"]: Flächen in der Objektfarbe
+        zwillinge=["z180"],                             # vorn und hinten sehen gleich aus
+        maske=dict(maske="vision+farbe", farbe_hsv=[[168, 4], 70, 25],   # Objektfarbe (OpenCV-HSV, über 0 hinweg)
+                   ausschluss_hsv=[[6, 24], 50, 45], gehaeuse=True),     # Farbe der Unterlage, Blenden einfassen
+        vorgaben={"tiefe": (110, 25)}, grenzen={"tiefe": (80, 130)},     # weich (Mittel, Sigma) und hart (mm)
+        hoehen=[0, 80],                                 # Grobsuche: Kamerahöhen (Grad); kopfueber=True bei Unterseite
+    )
+```
+
+4. `referenz_vermessen(quelle, freie_masse=None, bekannte_masse=None, bilder=8)` (ohne Angaben aus `messmodell()`):
+   rund 1 min, Ergebnis Maße mit Sigma, Hülle und Grundkörper des eingepassten Modells, Hinweise (welches Maß von Hand
+   nachmessen, welche Zusatzaufnahme). Liegt Object Capture zum selben Video vor, erkennt der Kernel Bilder, in denen
+   das Modell gedreht liegt (Zwillingslage), rechnet sie neu und legt das Netz genau an das Modell an.
+5. Prüfen: `referenz_fotoansicht(name, foto=n, bild_zeigen=true)` für dich selbst (nie an Kevin schicken), sonst die
+   Kontrollbilder aus dem Ergebnis. Stimmen vorn und hinten nicht, Modell oder Messmodell korrigieren und neu messen;
+   Bilder ohne Object-Capture-Kamera nennt das Ergebnis eigens.
+6. Werte nicht selbst in model.py schreiben: Kevin übernimmt sie in der App mit „Maße übernehmen“ (auf 0,1 mm). Nur
+   wenn er es ausdrücklich sagt, die `param()`-Werte selbst ändern. Unsicherheiten ehrlich nennen (Sigma) und das
+   empfohlene Nachmessen vorschlagen.
+
+- Kevin: Video oder Fotos auf das Fenster ziehen öffnet „Referenz hinzufügen“ (bekanntes Maß, Unterlage, Abschnitt);
+  im Inspektor unter „Referenzen“ Netz mit Deckkraft, „Fotoansicht“ (Foto durch die eingepasste Kamera hinter dem
+  Modell, Differenz rot nur Foto, blau nur Modell), „Vermessen …“ und „Maße übernehmen“.
+- macOS fragt beim ersten Zugriff auf Downloads oder ein Wechselmedium, ob Kev CAD darf; bis Kevin antwortet, bricht
+  `referenz_video` mit einer Meldung ab. Dann Kevin bitten zu erlauben oder die Datei ins Projekt zu legen.
 
 ## build123d: Kurzreferenz und Fallen
 

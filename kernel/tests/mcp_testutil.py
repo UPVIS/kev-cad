@@ -50,6 +50,8 @@ EXPECTED_TOOLS |= {"dokument_export"}
 EXPECTED_TOOLS |= {"drucker_status", "drucken"}
 # Strang „Feinschliff 2“: Freigabe im Projektfenster
 EXPECTED_TOOLS |= {"freigabe_anfragen"}
+# Phase 4: Referenzen
+EXPECTED_TOOLS |= {"referenzen", "referenz_video", "referenz_fotos", "referenz_vermessen", "referenz_fotoansicht"}
 
 
 def free_port() -> int:

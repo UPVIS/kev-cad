@@ -212,6 +212,9 @@ public final class AppModel: ObservableObject {
     public let druck = DruckStore()
     /// Phase 8 (additiv): Drucken auf dem P1P – Status, Einstellungen, Dialog (Aktionen: `druckerActions`).
     public let drucker = DruckerStore()
+    /// Phase 4 (additiv): Referenzen aus Video und Fotos – Liste, Netze, Fotos mit Kamera, Messergebnis, Fotoansicht
+    /// (Aktionen: `actions as? ReferenzActions`).
+    public let referenzen = ReferenzStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

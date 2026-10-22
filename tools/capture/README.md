@@ -279,7 +279,16 @@ liegen unter `build/capture/scarlett_*/`.
   `poses.json` neu schreibt.
 - **Bericht:** `done.summary` (= `bericht.json`) gibt der Kernel dem Agenten als Antwort von `referenz_video`
   zurück; Kontrollbilder (`--kontrollbilder`) kann der Agent direkt ansehen.
-- **Installation (offen):** `build.sh` bzw. `tools/auto-update.sh` bauen das Programm noch nicht. Vorschlag:
-  `swift build -c release --package-path tools/capture` und Programm plus `scripts/` nach
-  `~/Library/Application Support/de.upvis.kevcad/install/bin/` kopieren; das Programm sucht seine Skripte neben
-  sich, in `scripts/` darüber oder unter `$KEVCAD_CAPTURE_SCRIPTS`.
+- **Installation (seit 22.10.2026):** `build.sh` baut das Programm bei jedem Bau
+  (`swift build -c release --package-path tools/capture`), das Paket legt es mit `scripts/*.py` unter `bin/` ab, die
+  Installation nach `~/Library/Application Support/de.upvis.kevcad/install/bin/`; `tools/auto-update.sh` baut neu,
+  wenn sich `tools/capture/Sources`, `scripts` oder `Package.swift` ändern. Der Kernel sucht es über
+  `kevcad_kernel/referenz/ablage.py` (`KEVCAD_CAPTURE`, `install/bin`, sonst der Bau im Repo).
+- **Umgesetzt im Kernel** (`kevcad_kernel/referenz/`, Strang „Phase 4 in die App“): `referenz_video` startet
+  `kevcad-capture lauf … --aus <projekt>/referenzen/<name>/capture`, liest den Fortschritt und rechnet bis zu dreimal,
+  wenn Object Capture den Gegenstand kaum freistellt (unter 15 % der Dreiecke) oder unter 60 % der Bilder ausrichtet
+  (Scarlett: von vier gleichen Läufen „schnell“ zwei brauchbar, einer mit 5 % der Dreiecke, einer mit 31 von 60
+  Bildern und einer falschen Auflage auf dem Deckel). Netz (`REF_UPSERT`) und Kameras (`REF_PHOTOS`, Satz `capture`)
+  gehen an die App; liegt eine Messung aus demselben Video vor, legt der Kernel das Netz an das Modell an
+  (`netz.anlegen` aus Kamerapaaren gleicher Videozeit, `netz.feinanlegen` an der Oberfläche des eingepassten
+  Modells).

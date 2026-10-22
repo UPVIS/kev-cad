@@ -23,6 +23,9 @@ final class ProjectWindowState: ObservableObject {
     /// Reiter im Prüfband ("befunde" oder "montage") und der Montageschritt, der gerade gezeigt wird (nil = alles).
     @Published var pruefTab = "befunde"
     @Published var montageSchritt: Int?
+    /// Phase 4: Dateien für den Dialog „Referenz hinzufügen“ (Drag and Drop, +) und die Referenz für „Vermessen“.
+    @Published var referenzDateien: [URL]?
+    @Published var referenzVermessen: String?
 
     // Schnitt: AppModel kennt nur `sectionEnabled`, Achse und Lage hält die Oberfläche.
     @Published var sectionAxis = "z"

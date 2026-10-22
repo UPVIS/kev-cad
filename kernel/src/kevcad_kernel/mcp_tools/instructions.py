@@ -242,6 +242,17 @@ his explicit request).
 code diff (and overlays the old geometry in the viewer), `version_wiederherstellen(v)` goes back without losing \
 anything (only when Kevin asks), `variante` creates or switches named variants to try ideas.
 
+References from photos and phone videos (Phase 4)
+- `referenz_video(pfad, masz={"laenge": mm}, auflage=...)` builds a scaled reference mesh with Apple Object Capture \
+in the background (~1 min); `referenzen(name, warten_s=...)` waits. The mesh appears semi-transparent over the model.
+- `referenz_vermessen(quelle, freie_masse=[...], bekannte_masse={...})` measures free param() values of model.py \
+from the video or photos (fotomess, ~1 min) with sigma and recommendations; model.py may define `messmodell()` with \
+the defaults (frei, bekannt, farbteile, zwillinge, maske, vorgaben, grenzen). It never edits model.py: Kevin applies \
+the values with "Maße übernehmen" in the app. Check the control images or `referenz_fotoansicht(bild_zeigen=true)` \
+yourself (wrong front/back = model error), never send them to Kevin.
+- `referenz_fotoansicht(name, foto, modus="differenz")` shows Kevin a photo through its fitted camera behind the \
+model (red only in photo, blue only in model).
+
 Showing Kevin things
 - `focus` moves the camera, `highlight` colors and labels elements, `annotate` draws dimensions, arrows and labels \
 (world mm), `visibility` isolates or hides parts, `section` cuts, `view` switches standard views and display style. \

@@ -1,0 +1,330 @@
+{
+ "ref_list": {
+  "type": "REF_LIST",
+  "seq": 1,
+  "referenzen": [
+   {
+    "name": "IMG_5186",
+    "art": "video",
+    "quelle": "/Volumes/Aufnahmen/IMG_5186.MOV",
+    "zustand": "rechnet",
+    "laeuft": "capture",
+    "fortschritt": 0.42,
+    "text": "Rekonstruktion: Netz wird erzeugt",
+    "meldung": null,
+    "netz": false,
+    "fotos": 8,
+    "messung": true,
+    "erstellt": "2026-10-22T14:03:11",
+    "capture": null,
+    "lage": null
+   },
+   {
+    "name": "Fotos Küche",
+    "art": "fotos",
+    "quelle": "3 Fotos",
+    "zustand": "leer",
+    "laeuft": null,
+    "fortschritt": null,
+    "text": null,
+    "meldung": null,
+    "netz": false,
+    "fotos": 0,
+    "messung": false,
+    "erstellt": "2026-10-22T14:10:00"
+   }
+  ]
+ },
+ "ref_upsert": {
+  "type": "REF_UPSERT",
+  "seq": 2,
+  "name": "IMG_5186",
+  "farbe": [
+   0.36,
+   0.62,
+   0.86,
+   0.45
+  ],
+  "counts": {
+   "vert": 5,
+   "tri": 6
+  },
+  "bbox": {
+   "min": [
+    -90.0,
+    -51.0,
+    0.0
+   ],
+   "max": [
+    90.0,
+    51.0,
+    47.5
+   ]
+  },
+  "quelle": "object_capture",
+  "lage": {
+   "drehung_z": 180.0,
+   "verschiebung": [
+    0.0,
+    -1.2,
+    0.0
+   ],
+   "rest_mm": 6.3,
+   "paare": 8,
+   "massstab": 1.012
+  }
+ },
+ "ref_upsert_nutzlast": {
+  "positions": [
+   [
+    -90.0,
+    -51.0,
+    0.0
+   ],
+   [
+    90.0,
+    -51.0,
+    0.0
+   ],
+   [
+    90.0,
+    51.0,
+    0.0
+   ],
+   [
+    -90.0,
+    51.0,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    47.5
+   ]
+  ],
+  "triangles": [
+   [
+    0,
+    1,
+    4
+   ],
+   [
+    1,
+    2,
+    4
+   ],
+   [
+    2,
+    3,
+    4
+   ],
+   [
+    3,
+    0,
+    4
+   ],
+   [
+    0,
+    2,
+    1
+   ],
+   [
+    0,
+    3,
+    2
+   ]
+  ]
+ },
+ "ref_remove": {
+  "type": "REF_REMOVE",
+  "seq": 5,
+  "name": "Fotos Küche"
+ },
+ "ref_photos": {
+  "type": "REF_PHOTOS",
+  "seq": 3,
+  "referenz": "IMG_5186",
+  "satz": "messung",
+  "fotos": [
+   {
+    "name": "IMG_5186_003.667",
+    "bild": "/p/referenzen/IMG_5186/messung/bilder/IMG_5186_003.667.jpg",
+    "maske": "/p/referenzen/IMG_5186/messung/masken/IMG_5186_003.667.png",
+    "kontrolle": "/p/referenzen/IMG_5186/messung/kontrolle/IMG_5186_003.667.jpg",
+    "zeit": 3.667,
+    "iou": 0.916,
+    "kamera": {
+     "R": [
+      [
+       1.0,
+       0.0,
+       0.0
+      ],
+      [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      [
+       0.0,
+       1.0,
+       0.0
+      ]
+     ],
+     "t": [
+      0.0,
+      40.0,
+      600.0
+     ],
+     "f": 1546.8,
+     "cx": 960.0,
+     "cy": 540.0,
+     "w": 1920,
+     "h": 1080
+    }
+   },
+   {
+    "name": "bild_0007",
+    "bild": "/p/referenzen/IMG_5186/capture/bilder/bild_0007.jpg",
+    "maske": null,
+    "kontrolle": null,
+    "zeit": 4.1,
+    "iou": null,
+    "kamera": {
+     "R": [
+      [
+       1.0,
+       0.0,
+       0.0
+      ],
+      [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      [
+       0.0,
+       1.0,
+       0.0
+      ]
+     ],
+     "t": [
+      0.0,
+      40.0,
+      600.0
+     ],
+     "f": 1546.8,
+     "cx": 951.5,
+     "cy": 547.25,
+     "w": 1920,
+     "h": 1080
+    }
+   }
+  ]
+ },
+ "ref_result": {
+  "type": "REF_RESULT",
+  "seq": 4,
+  "referenz": "IMG_5186",
+  "stand": "2026-10-22T14:05:40",
+  "masse": [
+   {
+    "name": "tiefe",
+    "wert": 103.4,
+    "sigma": 1.8,
+    "start": 110.0
+   },
+   {
+    "name": "hoehe",
+    "wert": 46.4,
+    "sigma": 2.2,
+    "start": 46.0
+   }
+  ],
+  "bekannt": {
+   "breite": 180.0
+  },
+  "huelle": {
+   "min": [
+    -90.0,
+    -63.0,
+    0.0
+   ],
+   "max": [
+    90.0,
+    55.0,
+    47.9
+   ],
+   "groesse": [
+    180.0,
+    118.0,
+    47.9
+   ]
+  },
+  "grundkoerper": {
+   "teil": "Scarlett/Gehaeuse",
+   "groesse": [
+    180.0,
+    103.7,
+    46.5
+   ]
+  },
+  "brennweite_px": 3093.6,
+  "bilder": 8,
+  "verworfen": [],
+  "empfehlungen": [
+   {
+    "art": "nachmessen",
+    "mass": "gross_h",
+    "anteil": 0.45,
+    "text": "Von Hand nachmessen: gross_h (die Unsicherheit aller Maße sinkt auf 45 %)"
+   },
+   {
+    "art": "aufnahme",
+    "anteil": 0.93,
+    "text": "Zusatzaufnahme schräg von vorne rechts, 30° hoch: bringt nur noch 7 %"
+   }
+  ],
+  "dauer_s": 72.6
+ },
+ "ref_add": {
+  "type": "REF_ADD",
+  "seq": 1,
+  "id": "a-1",
+  "pfade": [
+   "/Users/test/IMG_5186.MOV"
+  ],
+  "name": null,
+  "masz": {
+   "laenge": 180.0
+  },
+  "auflage": true,
+  "von": null,
+  "bis": null,
+  "einstellung": "schnell"
+ },
+ "ref_measure_req": {
+  "type": "REF_MEASURE_REQ",
+  "seq": 2,
+  "id": "a-2",
+  "referenz": "IMG_5186",
+  "frei": [
+   "tiefe",
+   "hoehe"
+  ],
+  "bekannt": {
+   "breite": 180.0
+  },
+  "bilder": 8
+ },
+ "ref_apply": {
+  "type": "REF_APPLY",
+  "seq": 3,
+  "id": "a-3",
+  "referenz": "IMG_5186",
+  "werte": {
+   "tiefe": 103.4,
+   "hoehe": 46.4
+  }
+ }
+}

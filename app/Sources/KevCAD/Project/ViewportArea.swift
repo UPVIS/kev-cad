@@ -11,6 +11,11 @@ struct ViewportArea: View {
         viewport
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { emptyState }
+            // Phase 4: Video oder Fotos auf den Viewport ziehen = Referenz hinzufügen; Fotoansicht darüber
+            .onDrop(of: [.fileURL], isTargeted: nil) { provider in
+                ReferenzDateien.laden(provider) { urls in if !urls.isEmpty { state.referenzDateien = urls } }
+            }
+            .overlay { FotoAnsichtOverlay(store: model.referenzen, actions: model.referenzActions) }
             .overlay(alignment: .top) { topOverlays }
             .overlay(alignment: .bottom) { bottomOverlays }
             .animation(.snappy(duration: 0.25), value: bannerRun)
