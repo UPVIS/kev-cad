@@ -78,7 +78,7 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
         switch art {
         case .stueckliste:
             return [
-                ExportSpalte("pos", "Pos.", mindest: 9, .rechts),
+                ExportSpalte("pos", "Pos.", mindest: 11, .rechts),
                 ExportSpalte("bild", "Bild", mindest: 16, .mitte),
                 ExportSpalte("benennung", "Benennung", mindest: 40, gewicht: 3),
                 ExportSpalte("norm", "Norm", mindest: 18, gewicht: 0.5, standard: false),
@@ -92,11 +92,11 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
             ]
         case .teileliste:
             return [
-                ExportSpalte("nr", "Nr.", mindest: 9, .rechts),
+                ExportSpalte("nr", "Nr.", mindest: 11, .rechts),
                 ExportSpalte("bild", "Bild", mindest: 16, .mitte),
-                ExportSpalte("name", "Teil", mindest: 42, gewicht: 3),
+                ExportSpalte("name", "Teil", mindest: 42, gewicht: 2),
                 ExportSpalte("baugruppe", "Baugruppe", mindest: 24, gewicht: 1, standard: false),
-                ExportSpalte("herkunft", "Herkunft", mindest: 30, gewicht: 1.5),
+                ExportSpalte("herkunft", "Herkunft", mindest: 34, gewicht: 2),
                 ExportSpalte("material", "Werkstoff", mindest: 20, gewicht: 1),
                 ExportSpalte("abmessungen", "Abmessungen", mindest: 30, gewicht: 1),
                 ExportSpalte("gewicht", "Gewicht", mindest: 16, .rechts),
@@ -104,7 +104,7 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
         case .einkaufsliste:
             return [
                 ExportSpalte("abhaken", "", mindest: 7, .mitte),
-                ExportSpalte("menge", "Menge", mindest: 12, .rechts),
+                ExportSpalte("menge", "Menge", mindest: 15, .rechts),
                 ExportSpalte("einheit", "Einheit", mindest: 26, gewicht: 0.6),
                 ExportSpalte("benennung", "Benennung", mindest: 50, gewicht: 3),
                 ExportSpalte("preis_je", "Preis je", mindest: 16, .rechts),
@@ -115,7 +115,7 @@ public struct ExportSpalte: Identifiable, Equatable, Sendable {
         case .zuschnitt:
             return [
                 ExportSpalte("stange", "Stange", mindest: 18),
-                ExportSpalte("herkunft", "Herkunft", mindest: 22),
+                ExportSpalte("herkunft", "Herkunft", mindest: 32),
                 ExportSpalte("stuecke", "Stücke", mindest: 50, gewicht: 3),
                 ExportSpalte("rest", "Rest", mindest: 22, .rechts),
                 ExportSpalte("verschnitt", "Verschnitt", mindest: 18, .rechts, standard: false),

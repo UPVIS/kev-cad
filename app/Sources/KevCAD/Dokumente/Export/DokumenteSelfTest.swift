@@ -49,7 +49,24 @@ enum DokumenteSelfTest {
             return condition()
         }
         func pause(_ s: Double) async { try? await Task.sleep(for: .milliseconds(Int(s * 1000))) }
-        func foto(_ w: NSWindow?, _ name: String) {
+        func foto(_ w: NSWindow?, _ name: String) async {
+            // KEVCAD_SELFTEST_FOTO_AUSSEN=1: ein Werkzeug außerhalb fotografiert das echte Fenster (screencapture -l);
+            // der Test schreibt den Auftrag und wartet auf das Bild (cacheDisplay zeigt Materialien und Steuerelemente
+            // nicht vollständig)
+            if env["KEVCAD_SELFTEST_FOTO_AUSSEN"] == "1", let w {
+                let auftrag = ausgabe.appendingPathComponent("foto-auftrag.txt")
+                let zeile = "\(w.windowNumber) \(name)\n"
+                if let h = try? FileHandle(forWritingTo: auftrag) {
+                    h.seekToEndOfFile()
+                    h.write(zeile.data(using: .utf8)!)
+                    try? h.close()
+                } else {
+                    try? zeile.write(to: auftrag, atomically: true, encoding: .utf8)
+                }
+                let ziel = ausgabe.appendingPathComponent(name + ".png")
+                _ = await wait(8) { FileManager.default.fileExists(atPath: ziel.path) }
+                return
+            }
             guard let v = w?.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else {
                 check(false, "Bild \(name): kein Fenster")
                 return
@@ -78,12 +95,15 @@ enum DokumenteSelfTest {
         model.bauplanActions?.bauplanAnfordern()
         check(await wait(400) { model.bauplan.plan != nil }, "Bauplan geladen")
         messwerte["bauplan_ms"] = Int(Date().timeIntervalSince(t0) * 1000)
-        guard let plan = model.bauplan.plan else { return fertig(lines, messwerte, passed) }
+        guard let plan = model.bauplan.plan else {
+            lines.append("      Meldung: \(model.bauplan.meldung?.text ?? "keine")")
+            return fertig(lines, messwerte, passed, model)
+        }
         check(plan.alleSchritte.count > 0, "\(plan.alleSchritte.count) Schritte, \(model.bauplan.bilder.count) Bilder")
         messwerte["schritte"] = plan.alleSchritte.count
         await pause(1.5)
         let fenster = DokumenteFenster.fenster
-        foto(fenster, "01-bauplan-ueberblick")
+        await foto(fenster, "01-bauplan-ueberblick")
         // je Abschnitt ein Schritt, dazu der erste mit Problem
         var gezeigt: [String] = []
         for a in plan.abschnitte where !a.schritte.isEmpty {
@@ -94,15 +114,15 @@ enum DokumenteSelfTest {
         for (i, id) in gezeigt.enumerated() {
             BauplanUI.shared.auswahl = id
             await pause(1.2)
-            foto(fenster, String(format: "02-schritt-%02d-%@", i + 1, plan.abschnitt(von: id)?.art.raw ?? "x"))
+            await foto(fenster, String(format: "02-schritt-%02d-%@", i + 1, plan.abschnitt(von: id)?.art.raw ?? "x"))
         }
         // dunkel
         fenster?.appearance = NSAppearance(named: .darkAqua)
         await pause(1.2)
-        foto(fenster, "03-schritt-dunkel")
+        await foto(fenster, "03-schritt-dunkel")
         BauplanUI.shared.auswahl = nil
         await pause(1)
-        foto(fenster, "03-ueberblick-dunkel")
+        await foto(fenster, "03-ueberblick-dunkel")
         fenster?.appearance = nil
         // Durchspielen
         let halten = Double(env["KEVCAD_SELFTEST_HALTEN"] ?? "") ?? 0
@@ -116,6 +136,12 @@ enum DokumenteSelfTest {
                 check(await wait(6) { (model.bauplan.durchspielen?.fortschritt ?? 0) >= 1 }, "Schritt \(k + 1) eingefahren")
                 await pause(0.4)
                 bild3D(String(format: "04-durchspielen-%02d-b-eingebaut", k + 1))
+                if k == 1 {
+                    session.projectWindow?.orderFront(nil)
+                    await pause(0.5)
+                    await foto(session.projectWindow, "04-durchspielen-fenster")
+                    DokumenteFenster.fenster?.orderFront(nil)
+                }
                 if let d = model.bauplan.durchspielen, let id = d.schritt,
                    let pose = BauplanAblauf.pose(plan, schritt: id, fortschritt: 1)
                 {
@@ -131,11 +157,11 @@ enum DokumenteSelfTest {
         // Berichte
         DokumenteFenster.waehle(.berichte)
         await pause(6)
-        foto(fenster, "05-berichte-stueckliste")
+        await foto(fenster, "05-berichte-stueckliste")
         // Export-Dialog
         ExportDialogFenster.zeige(session: session, model: model)
         await pause(6)
-        foto(ExportDialogFenster.fenster, "06-export-dialog")
+        await foto(ExportDialogFenster.fenster, "06-export-dialog")
         if let w = ExportDialogFenster.fenster { w.sheetParent?.endSheet(w) ?? w.close() }
         // Export aller Bausteine, zweimal: erster Lauf mit Bildern, zweiter aus dem Zwischenspeicher
         let ziel = ausgabe.appendingPathComponent("\(model.project?.name ?? "Projekt") – alle Bausteine.pdf")
@@ -158,14 +184,17 @@ enum DokumenteSelfTest {
             check(pdf.pageCount > 5, "PDF lesbar, \(pdf.pageCount) Seiten, Gliederung \(pdf.outlineRoot?.numberOfChildren ?? 0)")
             messwerte["pdf_bytes"] = (try? FileManager.default.attributesOfItem(atPath: ziel.path)[.size]) as? Int
         }
-        fertig(lines, messwerte, passed)
+        fertig(lines, messwerte, passed, model)
         if env["KEVCAD_SELFTEST_BLEIBEN"] != "1" {
             try? await Task.sleep(for: .seconds(1))
             NSApp.terminate(nil)
         }
     }
 
-    private static func fertig(_ lines: [String], _ messwerte: [String: Any], _ passed: Bool) {
+    private static func fertig(_ lines: [String], _ messwerte: [String: Any], _ passed: Bool, _ model: AppModel) {
+        // Protokoll der App für die Fehlersuche
+        let log = model.log.suffix(400).map { "\($0.level.rawValue): \($0.text)" }.joined(separator: "\n")
+        try? log.write(to: ausgabe.appendingPathComponent("protokoll.txt"), atomically: true, encoding: .utf8)
         var text = lines.joined(separator: "\n")
         text += "\n\n" + (passed ? "Selbsttest Dokumente bestanden" : "Selbsttest Dokumente FEHLGESCHLAGEN") + "\n"
         try? text.write(to: ausgabe.appendingPathComponent("selftest-dokumente.txt"), atomically: true, encoding: .utf8)

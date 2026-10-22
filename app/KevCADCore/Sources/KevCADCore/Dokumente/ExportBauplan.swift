@@ -340,6 +340,7 @@ public enum ExportBauplanSeiten {
     }
 
     static func befundHoehe(_ befunde: [BauplanBefund], breite: CGFloat) -> CGFloat {
+        let befunde = BauplanBefund.zusammengefasst(befunde)
         guard !befunde.isEmpty else { return 0 }
         return befunde.reduce(CGFloat(3)) { h, b in
             h + ExportSatz(befundText(b), breite: breite - 10, schrift: .normal(8.3)).hoehe + 2
@@ -356,6 +357,7 @@ public enum ExportBauplanSeiten {
     {
         guard !befunde.isEmpty else { return 0 }
         let h = befundHoehe(befunde, breite: breite)
+        let befunde = BauplanBefund.zusammengefasst(befunde)
         let schwer = befunde.contains { $0.schwere != .hinweis }
         l.rechteck(CGRect(x: x, y: y, width: breite, height: h), fuellung: schwer ? ExportStil.rotHell : ExportStil.flaeche,
                    radius: 1.8)
@@ -393,7 +395,7 @@ public enum ExportBauplanSeiten {
         let unten = max(linksH, rechtsH)
         let befH = befundHoehe(s.pruefung, breite: breite)
         let kopfH: CGFloat = 18
-        let bildH = min(150, max(60, inhalt.height - abzug - kopfH - unten - befH - 14))
+        let bildH = min(170, max(60, inhalt.height - abzug - kopfH - unten - befH - 14))
         let gesamt = kopfH + bildH + 5 + unten + (befH > 0 ? befH + 4 : 0)
         let unter = s.baugruppe.map { "Vormontage \($0)" } ?? "Hauptmontage"
         return .fest(hoehe: gesamt, mitNaechstem: false) { l, r in
@@ -457,12 +459,14 @@ public enum ExportBauplanSeiten {
         let textH = s.text.isEmpty ? 0 : ExportSatz(s.text, breite: spalte, schrift: .normal(9.5), zeilenabstand: 1.1).hoehe + 2.5
         let detH: CGFloat = det.isEmpty ? 0 : CGFloat(det.count) * 4.8 + 2
         let sicherH = sicherheitsHoehe(s.sicherheitsHinweise, breite: spalte)
-        let hinwH = hinweisHoehe(s.uebrigeHinweise, breite: spalte)
+        // Hinweise laufen unter Bild und Text über die ganze Breite (lange Druckhinweise brauchen so weniger Zeilen)
+        let hinwH = hinweisHoehe(s.uebrigeHinweise, breite: breite)
         let wzH = werkzeugHoehe(s)
-        let rechtsH = textH + detH + wzH + (sicherH > 0 ? sicherH + 2 : 0) + hinwH
+        let rechtsH = textH + detH + wzH + (sicherH > 0 ? sicherH + 2 : 0)
         let bildH: CGFloat = mitBild ? 50 : 0
         let kopfH: CGFloat = 14
-        let gesamt = kopfH + max(bildH, rechtsH) + 2
+        let oben = max(bildH, rechtsH)
+        let gesamt = kopfH + oben + (hinwH > 0 ? hinwH + 3 : 0) + 2
         let unter: String? = {
             switch art {
             case .zuschnitt: return s.zuschnitt.first.map { "Lagerteil \($0.stockID)" }
@@ -492,7 +496,7 @@ public enum ExportBauplanSeiten {
             }
             if !s.werkzeug.isEmpty { y += werkzeugListe(l, s, x: x, y: y, breite: w) }
             if !s.sicherheitsHinweise.isEmpty { y += sicherheit(l, s.sicherheitsHinweise, x: x, y: y, breite: w) + 2 }
-            hinweisListe(l, s.uebrigeHinweise, x: x, y: y, breite: w)
+            hinweisListe(l, s.uebrigeHinweise, x: r.minX, y: y0 + oben + 3, breite: r.width)
         }
     }
 

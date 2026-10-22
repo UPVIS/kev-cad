@@ -155,17 +155,6 @@ public enum ExportBauer {
             let inhaltText = inhaltArten.map(\.titel).joined(separator: "  ·  ")
             l.text(inhaltText, x: x0, y: y + 4, .normal(11), farbe: ExportStil.grau, maxBreite: x1 - x0)
             y += 12
-            // Gesamtansicht
-            let quer = l.groesse.width > l.groesse.height
-            let bildH: CGFloat = quer ? h - y - 60 : min(118, h * 0.4)
-            let bildR = CGRect(x: x0, y: y, width: quer ? (x1 - x0) * 0.58 : x1 - x0, height: bildH)
-            l.rechteck(bildR, fuellung: ExportStil.flaeche, radius: 3)
-            if let img = q.gesamtBild {
-                l.bild(img, in: bildR.insetBy(dx: 4, dy: 4))
-            } else {
-                l.text("Keine Gesamtansicht", x: bildR.midX, y: bildR.midY, .normal(10), farbe: ExportStil.grauHell,
-                       .mitte)
-            }
             // Kennzahlen
             var zahlen: [(String, String)] = []
             if let bom = q.bom {
@@ -182,10 +171,24 @@ public enum ExportBauer {
             if inhaltArten.contains(.zeichnungen), !q.zeichnungen.isEmpty {
                 zahlen.append((KevFormat.integer(q.zeichnungen.count), "Zeichnungen"))
             }
+            // Gesamtansicht so groß, wie Kennzahlen und Inhalt über dem Fuß Platz lassen
+            let quer = l.groesse.width > l.groesse.height
+            let fy = h - 22
+            let spaltenZahl = quer ? 2 : min(3, max(1, zahlen.count))
+            let kachelnH = CGFloat((zahlen.count + spaltenZahl - 1) / spaltenZahl) * 20
+            let inhaltH = 6 + CGFloat(info.bausteinSeiten.filter { $0.art != .deckblatt }.count) * 8
+            let bildH: CGFloat = quer ? fy - 8 - y : min(118, max(50, fy - 8 - y - 9 - kachelnH - 8 - inhaltH))
+            let bildR = CGRect(x: x0, y: y, width: quer ? (x1 - x0) * 0.58 : x1 - x0, height: bildH)
+            l.rechteck(bildR, fuellung: ExportStil.flaeche, radius: 3)
+            if let img = q.gesamtBild {
+                l.bild(img, in: bildR.insetBy(dx: 4, dy: 4))
+            } else {
+                l.text("Keine Gesamtansicht", x: bildR.midX, y: bildR.midY, .normal(10), farbe: ExportStil.grauHell,
+                       .mitte)
+            }
             let kx0 = quer ? bildR.maxX + 10 : x0
             let kw = quer ? x1 - kx0 : x1 - x0
             var ky = quer ? y : bildR.maxY + 9
-            let spaltenZahl = quer ? 2 : min(3, max(1, zahlen.count))
             let kachelW = (kw - CGFloat(spaltenZahl - 1) * 4) / CGFloat(spaltenZahl)
             for (i, z) in zahlen.enumerated() {
                 let sx = kx0 + CGFloat(i % spaltenZahl) * (kachelW + 4)
@@ -209,7 +212,6 @@ public enum ExportBauer {
                 ky += 8
             }
             // Fuß: Eigentümer, Version, Datum, Programm
-            let fy = h - 22
             l.linie(CGPoint(x: x0, y: fy), CGPoint(x: x1, y: fy), breite: 0.3, farbe: ExportStil.tinte)
             let felder: [(String, String)] = [
                 ("Projekt", q.kopf.projekt), ("Stand", q.kopf.version ?? "aktueller Stand"),
@@ -254,7 +256,9 @@ public enum ExportBauer {
     static func masseText(_ line: BOMLine) -> String {
         var t = line.masseText
         if let l = line.laenge {
-            t = (t.isEmpty ? "" : t + ", ") + "L = " + KevFormat.length(l)
+            // Stangenware: der Maßtext ist meist schon die Länge
+            let laenge = KevFormat.length(l)
+            if t.isEmpty { t = laenge } else if !t.contains(laenge) { t += ", L = " + laenge }
             let g = KevFormat.gehrung(line.gehrung)
             if g != "–" { t += ", Gehrung " + g }
         }
@@ -271,14 +275,19 @@ public enum ExportBauer {
         let spalten = wahl.wirksameSpalten
         var zeilen: [ExportZeile] = []
         let gruppen = Dictionary(grouping: bom.lines) { artGruppe($0.art).0 }
-        for key in gruppen.keys.sorted() {
+        let reihenfolge = gruppen.keys.sorted { (gruppen[$0]!.map(\.pos).min() ?? 0) < (gruppen[$1]!.map(\.pos).min() ?? 0) }
+        for key in reihenfolge {
             let lines = gruppen[key]!.sorted { $0.pos < $1.pos }
             zeilen.append(.gruppe(artGruppe(lines[0].art).1))
             for line in lines {
                 var z: [String: ExportZelle] = [:]
                 z["pos"] = ExportZelle("\(line.pos)", fett: true)
                 z["bild"] = ExportZelle(bild: q.bild(line))
-                z["benennung"] = ExportZelle(line.benennung, unter: line.zukauf?.mpn.map { "Nr. \($0)" } ?? line.norm)
+                // Druck- und Eigenteile heißen wie ihr Teil im Modell: Name groß, Baugruppe darunter
+                let pfad = line.benennung.split(separator: "/").map(String.init)
+                let unter = line.zukauf?.mpn.map { "Nr. \($0)" } ?? line.norm
+                    ?? (pfad.count > 1 ? pfad.dropLast().joined(separator: " / ") : nil)
+                z["benennung"] = ExportZelle(pfad.last ?? line.benennung, unter: unter)
                 z["norm"] = ExportZelle(line.norm ?? "")
                 z["material"] = ExportZelle(line.material ?? "–")
                 z["masse"] = ExportZelle(masseText(line))
@@ -302,7 +311,7 @@ public enum ExportBauer {
             + (bom.totals.preis.map { ", Material ≈ \(KevFormat.euro($0))" } ?? "")
         var bloecke: [ExportBlock] = [ueberschrift("Stückliste", kennzeile), .tabelle(t)]
         if let h = bom.totals.preisHinweis, !h.isEmpty { bloecke += [.abstand(2), hinweisZeile(h)] }
-        for w in bom.warnings.prefix(4) { bloecke.append(hinweisZeile(w, farbe: ExportStil.rot)) }
+        for w in bom.warnings.prefix(4) { bloecke.append(hinweisZeile(w, farbe: ExportStil.tinte)) }
         return flussSeiten(.stueckliste, format, bloecke)
     }
 
@@ -329,9 +338,14 @@ public enum ExportBauer {
         var zeilen: [ExportZeile] = []
         var nr = 0
         var gruppe: String?
+        var ersteStelle: [String: Int] = [:]
+        for (i, p) in q.teile.enumerated() {
+            let g = p.path.count > 1 ? p.path[0] : ""
+            if ersteStelle[g] == nil { ersteStelle[g] = i }
+        }
         let sortiert = q.teile.enumerated().sorted { a, b in
-            let ga = a.element.path.count > 1 ? a.element.path[0] : ""
-            let gb = b.element.path.count > 1 ? b.element.path[0] : ""
+            let ga = ersteStelle[a.element.path.count > 1 ? a.element.path[0] : ""] ?? 0
+            let gb = ersteStelle[b.element.path.count > 1 ? b.element.path[0] : ""] ?? 0
             return ga == gb ? a.offset < b.offset : ga < gb
         }.map(\.element)
         for p in sortiert {
@@ -413,8 +427,8 @@ public enum ExportBauer {
             bloecke += [.abstand(6), zwischentitel("Kleinteile abzählen", "Bedarf, aus dem Projektbestand, zu kaufen")]
             let sp = [
                 ExportSpalte("abhaken", "", mindest: 7, .mitte), ExportSpalte("benennung", "Benennung", mindest: 60, gewicht: 3),
-                ExportSpalte("masse", "Maße", mindest: 24, gewicht: 1), ExportSpalte("anzahl", "Bedarf", mindest: 14, .rechts),
-                ExportSpalte("bestand", "Bestand", mindest: 14, .rechts), ExportSpalte("kaufen", "Kaufen", mindest: 14, .rechts),
+                ExportSpalte("masse", "Maße", mindest: 24, gewicht: 1), ExportSpalte("anzahl", "Bedarf", mindest: 15, .rechts),
+                ExportSpalte("bestand", "Bestand", mindest: 17, .rechts), ExportSpalte("kaufen", "Kaufen", mindest: 15, .rechts),
             ]
             let zeilen = b.stueckgut.map { s in
                 ExportZeile([

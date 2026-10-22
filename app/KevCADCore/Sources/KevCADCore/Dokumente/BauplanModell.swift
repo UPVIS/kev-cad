@@ -87,6 +87,31 @@ public struct BauplanBefund: Identifiable, Equatable, Sendable {
         self.ort = ort
     }
 
+    /// Gleiche Befunde an gleichen Teilen (vier Lenkrollen …) einmal mit Anzahl statt viermal.
+    public static func zusammengefasst(_ befunde: [BauplanBefund]) -> [BauplanBefund] {
+        var out: [BauplanBefund] = []
+        var gruppen: [String: [BauplanBefund]] = [:]
+        var reihenfolge: [String] = []
+        for b in befunde {
+            var t = b.text
+            for teil in b.teile { t = t.replacingOccurrences(of: teil, with: "§") }
+            let k = "\(b.schwere.rawValue)|\(b.art)|\(b.loesung ?? "")|\(t)"
+            if gruppen[k] == nil { reihenfolge.append(k) }
+            gruppen[k, default: []].append(b)
+        }
+        for k in reihenfolge {
+            let g = gruppen[k]!
+            var b = g[0]
+            if g.count > 1, let teil = b.teile.first {
+                let name = BauplanText.ohneNummer(BauplanSchritt.kurzname(teil))
+                b.text = b.text.replacingOccurrences(of: teil, with: "\(g.count)× \(name)")
+                b.teile = g.flatMap(\.teile)
+            }
+            out.append(b)
+        }
+        return out
+    }
+
     /// Lesbarer Name der Prüfart.
     public var artTitel: String {
         switch art {

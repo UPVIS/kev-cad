@@ -68,7 +68,7 @@ struct BauplanSchrittAnsicht: View {
                 if !schritt.pruefung.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Simulation").font(.headline)
-                        ForEach(schritt.pruefung.sorted { $0.schwere < $1.schwere }) { b in
+                        ForEach(BauplanBefund.zusammengefasst(schritt.pruefung).sorted { $0.schwere < $1.schwere }) { b in
                             BauplanBefundKarte(befund: b) { actions?.bauplanZeigen(teile: b.teile, ort: b.ort) }
                         }
                     }
