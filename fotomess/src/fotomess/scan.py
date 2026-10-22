@@ -169,7 +169,8 @@ def _rz(w):
 
 
 def _icp(P0, baum, S, N, A, b, schritte=30, fang=(25.0, 3.0)):
-    """Punkt-zu-Ebene, nur Drehung um Z und Verschiebung, gestutzt auf die besten 75 %."""
+    """Punkt-zu-Ebene, nur Drehung um Z und Verschiebung im Grundriss (die Höhe steht: Boden des Scans z = 0 auf
+    der Unterseite des Modells), gestutzt auf die besten 75 %."""
     rest = math.inf
     anteil = 0.0
     for i in range(schritte):
@@ -182,14 +183,14 @@ def _icp(P0, baum, S, N, A, b, schritte=30, fang=(25.0, 3.0)):
         ok &= d <= np.quantile(d[ok], 0.75)
         p, s, n = P[ok], S[idx[ok]], N[idx[ok]]
         k = np.stack([-p[:, 1], p[:, 0], np.zeros(len(p))], 1)
-        J = np.concatenate([(n * k).sum(1, keepdims=True), n], 1)
+        J = np.concatenate([(n * k).sum(1, keepdims=True), n[:, :2]], 1)
         e = (n * (p - s)).sum(1)
         try:
-            x = np.linalg.solve(J.T @ J + 1e-6 * np.eye(4), -J.T @ e)
+            x = np.linalg.solve(J.T @ J + 1e-6 * np.eye(3), -J.T @ e)
         except np.linalg.LinAlgError:
             break
         Rz = _rz(x[0])
-        A, b = Rz @ A, Rz @ b + x[1:]
+        A, b = Rz @ A, Rz @ b + np.array([x[1], x[2], 0.0])
         rest = float(np.abs(e).mean())
         anteil = float(ok.mean())
         if abs(x[0]) < 1e-6 and np.linalg.norm(x[1:]) < 1e-3:
@@ -234,7 +235,7 @@ def anlegen(P_scan: np.ndarray, V: np.ndarray, T: np.ndarray, start: dict | None
         Q = P0 @ A.T
         b = np.array([(S[:, 0].min() + S[:, 0].max()) / 2 - (Q[:, 0].min() + Q[:, 0].max()) / 2,
                       (S[:, 1].min() + S[:, 1].max()) / 2 - (Q[:, 1].min() + Q[:, 1].max()) / 2,
-                      S[:, 2].min() - Q[:, 2].min()])
+                      S[:, 2].min()])  # Boden des Scans (z = 0) auf die Unterseite des Modells
         A, b, rest, anteil = _icp(P0, baum, S, N, A, b)
         w = bewertung(A, b)
         if beste is None or w < beste["wertung"]:
@@ -260,6 +261,7 @@ def lage_aus_kameras(lage: dict, paare: list) -> dict:
     H = P.T @ Q
     Rz = _rz(math.atan2(H[0, 1] - H[1, 0], H[0, 0] + H[1, 1]))
     d = m1 - Rz @ m0
+    d[2] = 0.0  # Boden bleibt Boden: keine gemeinsame Höhenänderung
     rest = C1 - (C0 @ Rz.T + d)
     A, b = np.asarray(lage["A"], float), np.asarray(lage["b"], float)
     return {**lage, "A": Rz @ A, "b": Rz @ b + d, "kameras_rest_mm": round(float(np.median(np.linalg.norm(rest, axis=1))),
