@@ -459,6 +459,26 @@ final class DokumenteTests: XCTestCase {
         }
     }
 
+    /// Zweizeiliger Bohrungshinweis mit Knick („4× Ø8,2 × 13,8 tief“ / „Einsatz M6 × 12,7“, Kameraträger): greifbar auf
+    /// beiden Zeilen und auf der Bezugslinie; der Anker zum Verschieben ist der Knick.
+    func testZweizeiligerHinweisIstGreifbar() {
+        let spitze = CGPoint(x: 233.275, y: 95.725)
+        let knick = CGPoint(x: 245.775, y: 74.074)
+        let h = MassDarstellung(
+            id: "m4", linien: [[spitze, knick, CGPoint(x: 290.745, y: 74.074)]],
+            pfeile: [MassPfeil(spitze: spitze, richtung: CGVector(dx: -0.5, dy: 0.87))], text: "4× Ø8,2 × 13,8 tief",
+            textLage: CGPoint(x: 268.26, y: 74.974), art: "bohrung")
+        var mit = h
+        mit.texte = [BlattText(text: "Einsatz M6 × 12,7", lage: CGPoint(x: 268.26, y: 67.574), hoehe: 3.5, anker: .mitte)]
+        XCTAssertTrue(mit.istHinweis)
+        XCTAssertEqual(mit.textAnker, knick)
+        let g = MassGrafik(mit)
+        XCTAssertTrue(g.trifftText(CGPoint(x: 268.26, y: 76.2), toleranz: 0.3))  // erste Zeile
+        XCTAssertTrue(g.trifftText(CGPoint(x: 262, y: 68.8), toleranz: 0.3))  // zweite Zeile
+        XCTAssertLessThan(g.abstand(zu: CGPoint(x: 239.5, y: 84.9)), 0.3)  // schräge Bezugslinie
+        XCTAssertTrue(g.huelle.contains(CGPoint(x: 262, y: 68.8)))
+    }
+
     func testTrefferAufMassUndText() throws {
         let (z, _) = try zeichnung("drawing.frame")
         let m1 = try XCTUnwrap(z.grafik.mass("m1"))

@@ -120,13 +120,25 @@ enum DokumenteSelfTest {
             w.sendEvent(e)
         }
 
+        /// Die Leinwand bekommt einen neuen Stand erst mit dem nächsten Neuaufbau der Ansicht; bis dahin zeigt sie (und
+        /// trifft) den alten. Vor jeder Geste warten, bis sie den Stand des Speichers zeigt, sonst landet ein Klick auf
+        /// der alten Lage (so schlug „Hinweis ziehen“ nach dem Rückgängig des Maßstabs fehl: Klick ins Leere, Schwenken).
+        func leinwandAktuell() async {
+            _ = await warte(5) {
+                guard let lz = leinwand?.zeichnung, let sz = store.zeichnung(lz.id) else { return true }
+                return lz.stand == sz.stand
+            }
+        }
+
         func klick(_ mm: CGPoint, klicks: Int = 1) async {
+            await leinwandAktuell()
             maus(.leftMouseDown, mm, klicks: klicks)
             maus(.leftMouseUp, mm, klicks: klicks)
             try? await Task.sleep(for: .milliseconds(60))
         }
 
         func ziehe(_ von: CGPoint, nach: CGPoint) async {
+            await leinwandAktuell()
             maus(.leftMouseDown, von)
             for i in 1...12 {
                 let t = CGFloat(i) / 12
@@ -405,8 +417,12 @@ enum DokumenteSelfTest {
                 await ziehe(von, nach: CGPoint(x: von.x + 12 * sx, y: von.y + 6))
                 z = await neuerStand(id, alt: stand) ?? z
                 let neu = z.mass(h.id)?.textLage ?? h.textLage
-                check(hypot(neu.x - h.textLage.x - 12 * sx, neu.y - h.textLage.y - 6) < 1.5,
+                let gezogen = hypot(neu.x - h.textLage.x - 12 * sx, neu.y - h.textLage.y - 6) < 1.5
+                check(gezogen,
                       "Hinweis \(h.text) gezogen: Text (\(Int(h.textLage.x)), \(Int(h.textLage.y))) → (\(Int(neu.x)), \(Int(neu.y)))")
+                if !gezogen {  // Fehlersuche: was die Leinwand aus den Ereignissen gemacht hat
+                    for zeile in (leinwand?.gestenProtokoll ?? []).suffix(6) { info("Leinwand: \(zeile)") }
+                }
                 stand = z.stand
                 rueckgaengig()
                 z = await neuerStand(id, alt: stand) ?? z

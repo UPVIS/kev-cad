@@ -80,7 +80,16 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         case einzelheitNeu(mitte: CGPoint)
     }
 
-    private var geste: Geste = .keine
+    private var geste: Geste = .keine {
+        didSet { if case .keine = geste {} else { protokolliere("Geste \(geste) auf Stand \(zeichnung?.stand ?? "-")") } }
+    }
+    /// Letzte Gesten, Operationen und Antworten (Selbsttest und Fehlersuche).
+    private(set) var gestenProtokoll: [String] = []
+
+    private func protokolliere(_ s: String) {
+        gestenProtokoll.append(s)
+        if gestenProtokoll.count > 40 { gestenProtokoll.removeFirst(gestenProtokoll.count - 40) }
+    }
     private var gezogen = false
     private var zug = CGVector.zero
     private var maus: CGPoint?  // Blatt-mm
@@ -1038,6 +1047,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         }
         guard let z = zeichnung else { return }
         let p = mm(convert(event.locationInWindow, from: nil))
+        protokolliere("Loslassen bei \(p), gezogen \(gezogen), Zug \(zug)")
         switch geste {
         case .schwenken:
             NSCursor.arrow.set()
@@ -1318,7 +1328,9 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     private func bearbeite(_ ops: [ZeichnungsOp], titel: String? = nil) {
         guard let z = zeichnung, let zustand else { return }
+        protokolliere("Ops \(ops.map(\.name).joined(separator: ", ")) für \(z.id) (Stand \(z.stand))")
         zustand.bearbeiter.ausfuehren(ops, blatt: z.id, titel: titel) { [weak self] erg in
+            self?.protokolliere("Antwort ok \(erg.ok) \(erg.fehlerText ?? "")")
             if !erg.ok { self?.aenderungGescheitert() }
         }
     }
