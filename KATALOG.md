@@ -95,7 +95,7 @@ erfunden; Schätzungen und Annahmen stehen im Eintrag. Spannungen und Moduln in 
 Mitgeliefert mit Mechanik (Stand 2026-10): Stahl S235, S355 (DIN EN 10025-2), Stahl verzinkt (wie S235 angenommen),
 Edelstahl 1.4301 und 1.4404 (DIN EN 10088-2), Aluminium EN AW-6060 T66 (DIN EN 755-2) und EN AW-5754 O/H111
 (DIN EN 485-2), Gusseisen EN-GJL-250 (DIN EN 1561), Nadelholz als C24 und Buche/Eiche als D30 (DIN EN 338:2016),
-OSB/3 (DIN EN 12369-1), PLA (Bambu Lab PLA Basic TDS V2.0), PETG (Bambu Lab PETG HF TDS V1.0), Schrauben 8.8 (DIN EN
+OSB/3 (DIN EN 12369-1), PLA (Bambu Lab PLA Basic TDS V3.0, seit 22.10.2026; vorher V2.0), PETG (Bambu Lab PETG HF TDS V1.0), Schrauben 8.8 (DIN EN
 ISO 898-1) und A2-70 (DIN EN ISO 3506-1); neu ist das Material `beton` (Boden, Dichte nach DIN EN 1991-1-1) als
 Untergrund.
 
@@ -118,8 +118,8 @@ Ergänzt im Strang „Bestand Stufe 2“ (22.10.2026, Stand 2026-10, jede Quelle
 
 Druckmaterialien: Werte X-Y / Z (Schicht) bei 100 % Füllung, ISO 527; `quer_zur_schicht` wie `z_festigkeit` der
 Druckregeln (`druck/regeln.py`). Ohne Mechanik bleiben Siebdruckplatte, Harz, PMMA, Polycarbonat (Halbzeug), POM,
-EPDM und PE-Schaum. Hinweis: Bambu Lab führt für PLA Basic inzwischen TDS V3.0 mit niedrigeren Werten (E 2580 / 2060,
-Zug 35 / 31); der Eintrag `pla` nennt weiter V2.0 und ist nicht geändert.
+EPDM und PE-Schaum. PLA steht seit 22.10.2026 auf Kevins Wunsch auf Bambu Lab PLA Basic TDS V3.0 (25.04.2025):
+E 2580 / 2060, Zug 35 / 31, Biegung 76 / 59 (vorher V2.0: E 2680 / 2160, Zug 39 / 35).
 
 ### Gewindeeinsätze (Auszugkraft)
 
