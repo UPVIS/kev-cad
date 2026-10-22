@@ -223,6 +223,23 @@ private struct PartRow: View {
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                     .help("Lagerteil: \(stock.name)" + (stock.laenge.map { " · \(KevFormat.length($0))" } ?? ""))
+            } else if let part = node.part, model.istGedruckt(part.id) {
+                // Strang „Feinschliff 2“: schon gedruckt (Druck-Symbol mit Häkchen)
+                HStack(spacing: 3) {
+                    if let material = model.materialTitle(for: part) {
+                        Text(material).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                    }
+                    Image(systemName: "printer.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(.white, MaterialKennzeichen.gedruckt.color)
+                                .offset(x: 3, y: 2)
+                        }
+                }
+                .help("Schon gedruckt (lager.druckteil(…, gedruckt=True)): nicht in Druckvorschau und Filament")
             } else if let part = node.part, let material = model.materialTitle(for: part) {
                 Text(material)
                     .font(.caption)
@@ -270,5 +287,12 @@ private struct PartRow: View {
 
     private func toggleVisibility() {
         model.actions?.setVisibility(node.partIDs, visible: !node.allVisible)
+    }
+}
+
+extension AppModel {
+    /// Strang „Feinschliff 2“: Teil steckt in einer Stücklistenzeile mit `gedruckt` (schon gedrucktes Druckteil).
+    func istGedruckt(_ teil: String) -> Bool {
+        bom?.lines.contains { $0.gedruckt && $0.teile.contains(teil) } ?? false
     }
 }

@@ -106,6 +106,28 @@ selben Commit (wie PROTOCOL.md). Einheiten: mm, g, m, s, €; Platte in Drucker-
 - `hinweise[].art`: `trocknen`, `verzug`, `material`, `brim`, `stuetzen`, `ams`, `duese`, `risiko`, `bauraum`,
   `auflage`, `festigkeit`, `slicer`, `platte`.
 
+## Gedruckt (Strang „Feinschliff 2“, 22.10.2026, additiv)
+
+`lager.druckteil(…, gedruckt=True)` kennzeichnet ein Teil, das Kevin schon gedruckt hat (Vorbild: das eigene
+`GEDRUCKT`-Dict mit Formprüfung in Variante B des Kugelschiebers, das damit ersetzt werden kann).
+
+- **Ausgeschlossen:** nicht in `teile`, `platten`, `summe` der Druckvorschau, nicht im Druckexport (3MF), keine
+  Befunde der Druckprüfung mehr (`druck.teile[name].gedruckt: true`), kein Filament in der Einkaufsliste (auch nicht
+  aus der Stückliste), kein Bauplanschritt „Drucken“. Stattdessen additiv `druckvorschau.gedruckt: [{"name",
+  "material", "form": "gleich" | "geaendert" | "neu" | "neu_drucken", "unterschiede": [...], "seit"}]`; sind alle
+  Druckteile gedruckt, ist die Vorschau leer mit `slicer.meldung` „Alle Druckteile sind schon gedruckt.“.
+- **Stückliste:** eigene Zeile mit `gedruckt: true` (gedruckte und zu druckende gleiche Teile getrennt),
+  `PART_UPSERT.druckteil.gedruckt: true`. Die App zeigt das Kennzeichen „Gedruckt“ in Stückliste und Material und ein
+  Häkchen am Druck-Symbol im Teilebaum; die Druckansicht nennt sie als „Gedruckt, vorhanden“.
+- **Form festschreiben:** Beim ersten Lauf mit `gedruckt=True` schreibt der Kernel die Signatur der Form
+  (`druck/signatur.py`) mit Hüllmaßen, Volumen, Material und Datum nach `<projekt>/gedruckt.json` (Projektdatei, damit
+  in den Versionen). Der Prüfer `gedruckt` (nach „druckvorschau“) vergleicht bei jedem Lauf: Volumen ±0,2 %,
+  Oberfläche ±0,3 %, Hauptmomente, Maße ±0,1 mm, Spiegelbild. Weicht die Form ab: Befund `gedruckt_geaendert`
+  (Warnung, kein Fehler), z. B. „Fangrolle ist als gedruckt markiert, die Form hat sich geändert (Volumen +3,0 %).“,
+  Lösung „Neu drucken … oder die Änderung zurücknehmen“. Heraus: einen Lauf lang `gedruckt=True, neu_drucken=True`
+  (schreibt die neue Form fest) oder den Eintrag in gedruckt.json löschen. `neu_drucken` ohne `gedruckt` bricht den
+  Lauf ab. Umsetzung `kernel/src/kevcad_kernel/druck/gedruckt.py`; CHECK additiv `druck.gedruckt` (Stand je Teil).
+
 ## Ablauf im Kernel
 
 1. Nach jedem erfolgreichen Lauf mit Druckteilen: Schätzung (V1/V2) und schnelles Anordnen (V3), Ziel unter 1 s am

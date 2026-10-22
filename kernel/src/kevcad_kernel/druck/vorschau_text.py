@@ -42,8 +42,17 @@ def text(v: dict[str, Any]) -> str:
     s = v.get("summe") or {}
     z = [f"Druckvorschau Lauf {v.get('run')} ({STAND_TEXT.get(v.get('stand'), v.get('stand'))}), "
          f"{v.get('drucker')}" + (" – Reglerstand, nur Schätzung" if v.get("regler") else "") + ":"]
+    gedruckt = v.get("gedruckt") or []
+    if gedruckt:  # Strang „Feinschliff 2“: schon gedruckt, nicht in Platten und Summe
+        teile_g = []
+        for g in gedruckt:
+            t = str(g.get("name") or "").rsplit("/", 1)[-1]
+            if g.get("form") == "geaendert":
+                t += f" (FORM GEÄNDERT: {', '.join(g.get('unterschiede') or [])})"
+            teile_g.append(t)
+        z.append("Gedruckt, vorhanden (nicht in Platten und Summe): " + ", ".join(teile_g) + ".")
     if not v.get("teile"):
-        z.append("Keine Druckteile im Modell.")
+        z.append("Alle Druckteile sind schon gedruckt." if gedruckt else "Keine Druckteile im Modell.")
         return "\n".join(z)
     kt = s.get("kosten_teile") or {}
     z.append(f"Summe: {s.get('platten')} Platte{'n' if s.get('platten') != 1 else ''}, {dauer_text(s.get('zeit_s'))}"

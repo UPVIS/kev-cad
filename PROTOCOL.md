@@ -183,6 +183,9 @@ Optionales Feld im Kopf, wenn das Teil aus `lager.druckteil(...)` stammt (statt 
 "druckteil": {"verfahren": "3d-druck", "material": "petg", "kg": 0.0412, "preis": 1.03}
 ```
 
+Additiv (Strang „Feinschliff 2“): `"gedruckt": true`, wenn das Teil schon gedruckt ist (`lager.druckteil(…,
+gedruckt=True)`); dann trägt auch die Stücklistenzeile `BOM.lines[i].gedruckt: true` (DRUCKVORSCHAU.md, „Gedruckt“).
+
 ### PART_UPSERT.kulisse
 
 Optionales Feld im Kopf, `true`, wenn das Teil Kulisse ist (`show(..., kulisse=True)` oder `lager.kulisse(form)`):

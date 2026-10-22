@@ -86,7 +86,9 @@ material settings; tell Kevin the orientation of new print parts.
 - Print preview (Druckvorschau): after every run Kevin sees what the print parts mean: filament per material (g, m, \
 EUR), print time, plates with the arrangement, cost and recommended settings with reasons. Give every print part its \
 purpose: `lager.druckteil(form, name, material="petg", zweck="tragend")` (zier, funktion, tragend, bewegt, aussen; \
-without it "funktion" is assumed) and `anzahl=` only for extra copies (spares). `druckvorschau` reads it (estimate \
+without it "funktion" is assumed) and `anzahl=` only for extra copies (spares). Parts Kevin has already printed: \
+`gedruckt=True` (out of preview, filament and the print step; the shape is locked in gedruckt.json and a later change \
+is a warning `gedruckt_geaendert`; `neu_drucken=True` for one run locks a new shape). `druckvorschau` reads it (estimate \
 first, Bambu Studio results follow in the background), `druck_einstellen` fixes settings only on Kevin's request, \
 `druck_export` writes the plates as 3MF for Bambu Studio.
 

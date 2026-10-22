@@ -270,6 +270,8 @@ def filament(bom: dict[str, Any], druckvorschau: dict[str, Any] | None = None,
     for ln in bom.get("lines") or []:
         if not isinstance(ln, dict) or _text(ln.get("art")) != "druckteil" or ln.get("eigenteil") is True:
             continue
+        if ln.get("gedruckt") is True:  # schon gedruckt (Strang „Feinschliff 2“): kein Filament mehr
+            continue
         mat = _text(ln.get("material"))
         w = mat
         if mat is not None and katalog is not None:

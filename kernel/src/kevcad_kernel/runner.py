@@ -703,6 +703,8 @@ class Runner:
         deviation = float(msg.get("deviation") or DEFAULT_DEVIATION)
         angular = float(msg.get("angular") or DEFAULT_ANGULAR)
         project = str(Path(path).parent)
+        if not msg.get("schatten"):
+            self._projekt_pfad = project  # Prüfung „gedruckt“ liest <projekt>/gedruckt.json
         # Versionen: Lauf ohne Live-Aufbau (alte Version für Vergleich und Kennzahlen); Namensraum für execute,
         # Laufnummer und Prüfung bleiben beim letzten echten Lauf
         schatten = bool(msg.get("schatten"))
@@ -854,7 +856,8 @@ class Runner:
             return header, payload
         if self._pruef_lauf is None:
             self._pruef_lauf = PruefLauf()
-        return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen)
+        return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen,
+                                       optionen={"projekt": getattr(self, "_projekt_pfad", None)})
 
     def fertig_rechnen(self, run: int, abbrechen: Callable[[], None] | None = None
                        ) -> tuple[dict[str, Any], bytes] | None:

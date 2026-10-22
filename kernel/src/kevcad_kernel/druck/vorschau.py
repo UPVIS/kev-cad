@@ -152,6 +152,8 @@ def gruppen(druck: dict[str, Any], befunde: list[dict[str, Any]], vorgaben: dict
             if name not in ohne:
                 ohne.append(name)
             continue
+        if geo.get("gedruckt"):  # schon gedruckt (druck/gedruckt.py): nicht in der Vorschau
+            continue
         v = vt.get(name) if isinstance(vt.get(name), dict) else {}
         zweck = v.get("zweck") or geo.get("zweck")
         e_vorgabe = {k: x for k, x in (v.get("einstellungen") or {}).items() if x is not None}
@@ -415,8 +417,26 @@ def baue(run: int, druck: dict[str, Any] | None, befunde: list[dict[str, Any]], 
                                                       "slicer", "platte")},
         "regler": bool(regler),
     }
+    gedruckt = gedruckte_teile(druck)
+    if gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt, vorhanden; nicht in Platten, Summe, Filament
+        out["gedruckt"] = gedruckt
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
     return out, gr, [(m, p) for m, p, _ in platten]
+
+
+def gedruckte_teile(druck: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Als gedruckt markierte Teile (``lager.druckteil(…, gedruckt=True)``): Name, Material, Stand der Form
+    (``gleich`` | ``geaendert`` | ``neu`` (eben festgeschrieben) | ``neu_drucken``) und Unterschiede."""
+    vorschau = (druck or {}).get("vorschau") or {}
+    stand = (druck or {}).get("gedruckt") or {}
+    out = []
+    for name, t in (vorschau.get("teile") or {}).items():
+        if not t.get("gedruckt"):
+            continue
+        s = stand.get(name) or {}
+        out.append({"name": name, "material": t.get("material"), "form": s.get("status") or "neu",
+                    "unterschiede": list(s.get("unterschiede") or []), "seit": s.get("seit")})
+    return out
 
 
 def leer(run: int, meldung: str = "Keine Druckteile im Modell.", regler: bool = False) -> dict[str, Any]:

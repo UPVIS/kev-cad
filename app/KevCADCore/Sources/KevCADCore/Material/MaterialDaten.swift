@@ -67,6 +67,8 @@ public enum MaterialGruppe: Int, CaseIterable, Comparable, Identifiable, Sendabl
 /// woher ihr Material kommt (Bestand, Rest, Kaufen), dazu die Zuschnittfarben für neue Reste und Verschnitt.
 public enum MaterialKennzeichen: String, CaseIterable, Sendable {
     case kaufen, bestand, rest, zukauf, druckteil, eigenteil, restNeu, verschnitt
+    /// Strang „Feinschliff 2“: Druckteil schon gedruckt (vorhanden, nicht mehr zu drucken).
+    case gedruckt
 
     public var titel: String {
         switch self {
@@ -78,6 +80,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .eigenteil: return "Eigenteil"
         case .restNeu: return "Neuer Rest"
         case .verschnitt: return "Verschnitt"
+        case .gedruckt: return "Gedruckt"
         }
     }
 
@@ -91,6 +94,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .eigenteil: return "hammer"
         case .restNeu: return "plus.square.dashed"
         case .verschnitt: return "scissors"
+        case .gedruckt: return "checkmark.circle.fill"
         }
     }
 
@@ -105,6 +109,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .eigenteil: return "Eigenteil: frei modelliert, Masse aus Volumen × Dichte"
         case .restNeu: return "Neuer Rest ab Mindestrest: kommt nach „Gebaut“ mit Kennung in den Bestand"
         case .verschnitt: return "Verschnitt: Sägeschnitte und Reste unter dem Mindestrest"
+        case .gedruckt: return "Schon gedruckt und vorhanden: kein Filament, nicht in der Druckvorschau, kein Druckschritt"
         }
     }
 
@@ -119,6 +124,7 @@ public enum MaterialKennzeichen: String, CaseIterable, Sendable {
         case .zukauf: return (0.46, 0.36, 0.86)  // violett
         case .druckteil: return (0.10, 0.60, 0.62)  // petrol
         case .eigenteil: return (0.80, 0.45, 0.12)  // ocker
+        case .gedruckt: return (0.20, 0.64, 0.33)  // grün wie vorhanden
         }
     }
 
@@ -146,18 +152,15 @@ public struct MaterialPosition: Identifiable, Equatable, Sendable {
     public var werkstoff: String?
     /// Link zur Bezugsquelle: Shop des Zukaufteils bzw. Bezugsquelle aus der Einkaufsliste.
     public var link: URL?
-
     public var id: Int { line.pos }
     public var pos: Int { line.pos }
     public var anzahl: Int { line.anzahl }
     public var kg: Double? { line.kg }
     public var preis: Double? { line.preis }
-    public var teile: [String] { line.teile }
-    public var stockID: String? { line.stockID }
 
     /// Alle Kennzeichen zum Anzeigen: Herkunft, sonst die Versorgung.
     public var kennzeichen: [MaterialKennzeichen] {
-        if let herkunft { return [herkunft] }
+        if let herkunft { return [herkunft] + versorgung }  // Zukauf aus dem Bestand, gedruckte Druckteile
         return versorgung
     }
 
@@ -290,6 +293,8 @@ public struct MaterialKennzahlen: Equatable, Sendable {
     public var verschnittPlatten: Double?
     /// Druck-, Zukauf- und Eigenteile.
     public var druckteile = 0
+    /// Davon schon gedruckt (Strang „Feinschliff 2“): zählen nicht zu Gramm und Preis.
+    public var gedruckt = 0
     public var druckGramm = 0.0
     public var druckPreis: Double?
     /// Aus der Druckvorschau (additiv, DRUCKVORSCHAU.md): Druckzeit mit Plattenwechseln, Platten, Stand; Gramm und Preis
@@ -472,7 +477,7 @@ public struct MaterialDaten: Equatable, Sendable {
         // Filament je Werkstoff: aus der Druckvorschau desselben Laufs, sonst aus den Druckteilen der Stückliste
         var filament: [String: MaterialFilament] = [:]
         var reihenfolge: [String] = []
-        for p in positionen where p.herkunft == .druckteil {
+        for p in positionen where p.herkunft == .druckteil && !p.line.gedruckt {
             let w = p.werkstoff ?? "Filament"
             if filament[w] == nil {
                 filament[w] = MaterialFilament(werkstoff: w, teile: 0, gramm: 0, preis: nil)
@@ -521,9 +526,11 @@ public struct MaterialDaten: Equatable, Sendable {
         k.verschnittStangen = stangenGesamt > 0 ? stangenVerschnitt / stangenGesamt * 100 : nil
         k.verschnittPlatten = plattenGesamt > 0 ? plattenVerschnitt / plattenGesamt * 100 : nil
         let druck = positionen.filter { $0.herkunft == .druckteil }
+        let zuDrucken = druck.filter { !$0.line.gedruckt }  // schon gedruckte brauchen kein Filament mehr
         k.druckteile = druck.reduce(0) { $0 + $1.anzahl }
-        k.druckGramm = druck.compactMap(\.kg).reduce(0, +) * 1000
-        k.druckPreis = Self.summe(druck.map(\.preis))
+        k.gedruckt = druck.filter(\.line.gedruckt).reduce(0) { $0 + $1.anzahl }
+        k.druckGramm = zuDrucken.compactMap(\.kg).reduce(0, +) * 1000
+        k.druckPreis = Self.summe(zuDrucken.map(\.preis))
         k.zukaufteile = positionen.filter { $0.herkunft == .zukauf }.reduce(0) { $0 + $1.anzahl }
         k.eigenteile = positionen.filter { $0.herkunft == .eigenteil }.reduce(0) { $0 + $1.anzahl }
         k.wartetAufCAD = wartetAufCAD
@@ -574,6 +581,8 @@ public struct MaterialDaten: Equatable, Sendable {
         var versorgung: [MaterialKennzeichen] = []
         if herkunft == nil, let z = zuschnitt, let sid = line.stockID {
             versorgung = Self.versorgung(line, stockID: sid, zuschnitt: z, stueckgut: stueckgut)
+        } else if herkunft == .druckteil, line.gedruckt {
+            versorgung = [.gedruckt]  // Strang „Feinschliff 2“: schon gedruckt
         } else if herkunft == .zukauf, let liste = zuschnitt?.zukaufBestand {
             // Zukaufteile führt der Bestand als Stückgut (Strang „Feinschliff 2“)
             var benutzt = Set<Int>()

@@ -42,6 +42,7 @@ from kevcad_kernel.catalog import ALLE_ARTEN, STANGENWARE, ZUKAUF_ARTEN, Catalog
 from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.drucker.laufzeit import DruckerRuntimeMixin  # Phase 8: Drucken auf dem P1P
 from kevcad_kernel.druck.vorschau_laufzeit import DruckvorschauRuntime
+from kevcad_kernel.druck.gedruckt import GedrucktAnbindung
 from kevcad_kernel.freigabe import FreigabeAnbindung
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
@@ -104,7 +105,7 @@ class Job:
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
-                    DruckerRuntimeMixin, FreigabeAnbindung):
+                    DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -1084,6 +1085,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
                     self._send_app({**check, "type": "CHECK"}, payload[:app_len])
             self._versionen_pruefung(check)  # Versionen: Prüfstand an die Version des Laufs
+            self._gedruckt_check(check)  # gedruckte Teile: neue Formen in gedruckt.json festschreiben
             self._druckvorschau_pruefung(check)  # Druckvorschau: Geometrie je Druckteil aus der Prüfung
             return
         if kind == "READY":

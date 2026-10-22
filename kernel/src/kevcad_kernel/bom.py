@@ -137,6 +137,8 @@ class Piece:
     ausrichtung: Any = field(default=None, repr=False, compare=False)  # Druckteile: Lage aufs Bett, None = automatisch
     zweck: str | None = field(default=None, compare=False)  # Druckteile: zier, funktion, tragend, bewegt, aussen
     anzahl: int | None = field(default=None, compare=False)  # Druckteile: so oft insgesamt drucken (Ersatzteile)
+    gedruckt: bool = False  # Druckteile: schon gedruckt (Strang „Feinschliff 2“, druck/gedruckt.py)
+    neu_drucken: bool = field(default=False, compare=False)  # Druckteile: neue Form festschreiben
 
     @property
     def group(self) -> str:
@@ -173,7 +175,7 @@ class Piece:
     def key(self) -> tuple:
         if self.art == "druckteil":
             return ("druckteil", self.material_id, self.verfahren, _significant(self.volume or 0.0, 4),
-                    tuple(sorted((round_half(v) for v in (self.size or [])), reverse=True)))
+                    tuple(sorted((round_half(v) for v in (self.size or [])), reverse=True)), self.gedruckt)
         if self.art in STANGENWARE:
             return (self.stock_id, round_half(self.laenge or 0.0), canonical_gehrung(self.gehrung))
         if self.art == "platte":
@@ -188,8 +190,11 @@ class Piece:
 
     def druck_info(self) -> dict[str, Any]:
         """Feld ``druckteil`` an PART_UPSERT (zusätzlich zum Protokoll)."""
-        return {"verfahren": self.verfahren, "material": self.material_id, "kg": _r(self.kg, 4),
-                "preis": _r(self.preis, 2)}
+        out = {"verfahren": self.verfahren, "material": self.material_id, "kg": _r(self.kg, 4),
+               "preis": _r(self.preis, 2)}
+        if self.gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt
+            out["gedruckt"] = True
+        return out
 
     def zukauf_info(self) -> dict[str, Any]:
         """Feld ``zukauf`` an PART_UPSERT (PROTOCOL.md, Phase 3)."""
@@ -564,6 +569,8 @@ def build_bom(pieces: list[Piece], parts: list[ShownPart], *, inventar_regel: bo
             line["tiefe"] = _r(round_half(p.tiefe), 1) if p.tiefe is not None else None
         if p.art == "druckteil":
             line["verfahren"] = p.verfahren
+            if p.gedruckt:  # additiv (Strang „Feinschliff 2“): schon gedruckt, kein Filament, kein Druckschritt
+                line["gedruckt"] = True
         if p.art == "zukaufteil":
             line.update(p.zukauf_line())
             if preis_je is not None and line.get("preis_brutto") is True:

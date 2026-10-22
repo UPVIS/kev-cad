@@ -48,6 +48,7 @@ ART_TEXT: dict[str, tuple[str, str]] = {
     "nur_baugruppe": ("nur als Baugruppe einbaubar", "nur als Baugruppen einbaubar"),
     "annahme": ("Annahme", "Annahmen"),
     "erklaerung": ("Erklärung ungültig", "Erklärungen ungültig"),
+    "gedruckt_geaendert": ("gedrucktes Teil geändert", "gedruckte Teile geändert"),  # druck/gedruckt.py
 }
 # Reihenfolge in der Zusammenfassung
 ART_ORDNUNG = ("durchdringung", "schwebt", "kippt", "nicht_einbaubar", "eingesperrt", "einfuehren", "werkzeug",

@@ -204,8 +204,12 @@ class DruckvorschauRuntime:
         druck = eingang.get("druck") or {}
         with self._dv_lock:
             stand = self._dv_stand
-        if not druck.get("teile"):
-            v = vs.leer(int(eingang.get("run") or 0), regler=bool(eingang.get("regler")))
+        if not druck.get("teile") or not any(not t.get("gedruckt") for t in (druck.get("teile") or {}).values()):
+            alle_gedruckt = bool(druck.get("teile"))
+            v = vs.leer(int(eingang.get("run") or 0), regler=bool(eingang.get("regler")),
+                        **({"meldung": "Alle Druckteile sind schon gedruckt."} if alle_gedruckt else {}))
+            if alle_gedruckt:
+                v["gedruckt"] = vs.gedruckte_teile(druck)
             gr, platten = [], []
         else:
             v, gr, platten = vs.baue(int(eingang.get("run") or 0), druck, eingang.get("befunde") or [], vorgaben,

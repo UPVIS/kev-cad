@@ -581,13 +581,18 @@ def drucken(ein: Eingang) -> list[dict[str, Any]]:
     linien = [ln for ln in (ein.bom or {}).get("lines") or [] if ln.get("art") == "druckteil"]
     erfasst: set[str] = set()
     gruppen: list[list[str]] = []
+    gedruckt = {n for n, t in ein.teile.items() if t.rolle == "druck" and (t.druck or {}).get("gedruckt")}
     for line in linien:
-        namen = [n for n in line.get("teile") or [] if n in ein.teile and ein.teile[n].rolle == "druck"]
+        if line.get("gedruckt"):  # schon gedruckt (Strang „Feinschliff 2“): kein Druckschritt
+            gedruckt.update(line.get("teile") or [])
+            continue
+        namen = [n for n in line.get("teile") or [] if n in ein.teile and ein.teile[n].rolle == "druck"
+                 and n not in gedruckt]
         if namen:
             gruppen.append(namen)
             erfasst.update(namen)
     for t in ein.aufbau():  # Druckteile ohne Stücklistenzeile
-        if t.rolle == "druck" and t.name not in erfasst:
+        if t.rolle == "druck" and t.name not in erfasst and t.name not in gedruckt:
             gruppen.append([t.name])
     for namen in gruppen:
         t = ein.teile[namen[0]]
