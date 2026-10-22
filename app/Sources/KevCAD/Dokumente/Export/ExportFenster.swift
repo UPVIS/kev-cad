@@ -68,82 +68,13 @@ enum ExportDialogFenster {
     }
 }
 
-/// Fenster „Bauplan und Berichte“, bis der Bereich „Dokumente“ im Projektfenster (P6-A1) sie aufnimmt.
-@MainActor
-enum DokumenteFenster {
-    enum Reiter: String, CaseIterable { case bauplan, berichte }
-
-    private static var offen: NSWindow?
-    private static var zustand = DokumenteFensterZustand()
-
-    static func zeige(session: AppSession, model: AppModel, reiter: Reiter = .bauplan) {
-        zustand.reiter = reiter
-        if let w = offen {
-            w.makeKeyAndOrderFront(nil)
-            return
-        }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 820),
-                         styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
-                         backing: .buffered, defer: false)
-        w.title = "Bauplan und Berichte"
-        w.isReleasedWhenClosed = false
-        w.titlebarAppearsTransparent = false
-        w.toolbarStyle = .unified
-        w.contentView = NSHostingView(rootView: DokumenteFensterInhalt(model: model, zustand: zustand)
-            .environmentObject(session))
-        w.setFrameAutosaveName("KevCAD.BauplanBerichte")
-        offen = w
-        if AppInfo.isTestVariant {
-            WindowHook.place(w, .large)
-            w.orderFront(nil)
-        } else {
-            w.center()
-            w.makeKeyAndOrderFront(nil)
-        }
-    }
-
-    static var fenster: NSWindow? { offen }
-    static func waehle(_ r: Reiter) { zustand.reiter = r }
-}
-
-@MainActor
-final class DokumenteFensterZustand: ObservableObject {
-    @Published var reiter: DokumenteFenster.Reiter = .bauplan
-}
-
-struct DokumenteFensterInhalt: View {
-    @EnvironmentObject private var session: AppSession
-    @ObservedObject var model: AppModel
-    @ObservedObject var zustand: DokumenteFensterZustand
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $zustand.reiter) {
-                Label("Bauplan", systemImage: "hammer").tag(DokumenteFenster.Reiter.bauplan)
-                Label("Berichte", systemImage: "doc.text").tag(DokumenteFenster.Reiter.berichte)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .padding(.vertical, 8)
-            Divider()
-            switch zustand.reiter {
-            case .bauplan: BauplanAnsicht(model: model)
-            case .berichte: BerichteAnsicht(model: model)
-            }
-        }
-        .onReceive(model.bauplan.$zeige3D.dropFirst()) { _ in
-            // Durchspielen oder Befund: das Projektfenster mit dem 3D-Bereich nach vorn
-            session.projectWindow?.orderFront(nil)
-        }
-    }
-}
-
-/// Menüpunkte: Ablage › Dokumente exportieren … (⇧⌘E), Fenster › Bauplan und Berichte, Durchspielen.
+/// Menüpunkte: Ablage › Dokumente exportieren … (⇧⌘E); Menü „Bauplan“ mit Durchspielen (⌥⌘← ⌥⌘→ ⌥⌘.) und dem Sprung
+/// zu Bauplan und Berichten im Bereich Dokumente. ⌘P und ⌥⌘P gehören den Blättern (P6-A1).
 struct DokumenteExportCommands: Commands {
     @ObservedObject var session: AppSession
     @ObservedObject var model: AppModel
     @ObservedObject var bauplan: BauplanStore
+    @FocusedObject private var window: ProjectWindowState?
 
     var body: some Commands {
         CommandGroup(after: .importExport) {
@@ -151,11 +82,12 @@ struct DokumenteExportCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(model.project == nil || model.exportActions == nil)
         }
-        CommandGroup(after: .windowArrangement) {
-            Button("Bauplan und Berichte") { DokumenteFenster.zeige(session: session, model: model) }
-                .disabled(model.project == nil)
-        }
         CommandMenu("Bauplan") {
+            Button("Bauplan zeigen") { zeige(.bauplan) }
+                .disabled(window == nil || model.project == nil)
+            Button("Berichte zeigen") { zeige(.berichte) }
+                .disabled(window == nil || model.project == nil)
+            Divider()
             Button(bauplan.durchspielen == nil ? "Durchspielen" : "Durchspielen neu beginnen") {
                 model.bauplanActions?.durchspielenStarten(ab: nil)
             }
@@ -164,7 +96,6 @@ struct DokumenteExportCommands: Commands {
                 Button(bauplan.durchspielen?.spielt == true ? "Anhalten" : "Abspielen") {
                     model.bauplanActions?.durchspielenAbspielen(!(bauplan.durchspielen?.spielt ?? false))
                 }
-                .keyboardShortcut("p", modifiers: [.command, .option])
                 Button("Nächster Schritt") { model.bauplanActions?.durchspielenSchritt(1) }
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
                 Button("Voriger Schritt") { model.bauplanActions?.durchspielenSchritt(-1) }
@@ -173,11 +104,11 @@ struct DokumenteExportCommands: Commands {
                     .keyboardShortcut(".", modifiers: [.command, .option])
             }
             .disabled(bauplan.durchspielen == nil)
-            Divider()
-            Button("Bauplan zeigen") { DokumenteFenster.zeige(session: session, model: model, reiter: .bauplan) }
-                .disabled(model.project == nil)
-            Button("Berichte zeigen") { DokumenteFenster.zeige(session: session, model: model, reiter: .berichte) }
-                .disabled(model.project == nil)
         }
+    }
+
+    private func zeige(_ a: DokumentAuswahl) {
+        withAnimation(.snappy(duration: 0.2)) { window?.bereich = .dokumente }
+        window?.dokumenteZustand?.waehle(a)
     }
 }

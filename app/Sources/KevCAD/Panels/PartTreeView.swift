@@ -68,6 +68,13 @@ struct PartTreeView: View {
             Button(parts.count == 1 ? "Auf Teil zoomen" : "Auf Teile zoomen") { model.actions?.focus(on: parts) }
             Divider()
             Button("Alles einblenden") { model.actions?.showAll() }
+            if let d = model.dokumenteActions {  // Phase 6: Zeichnung für die Auswahl anlegen
+                Button(parts.count == 1 ? "Zeichnung anlegen" : "Zeichnung der Baugruppe anlegen") {
+                    d.zeichnungenErzeugen(teile: parts, art: parts.count == 1 ? "teil" : "baugruppe", format: nil)
+                    state.dokumenteZustand?.wunschTeile = parts
+                    withAnimation(.snappy(duration: 0.2)) { state.bereich = .dokumente }
+                }
+            }
             Button(parts.count == 1 ? "Namen kopieren" : "Namen kopieren (\(parts.count))") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(parts.joined(separator: "\n"), forType: .string)

@@ -37,7 +37,7 @@ struct BerichteAnsicht: View {
                 vorschau
             }
         }
-        .frame(minWidth: 820, minHeight: 520)
+        .frame(minWidth: 600, minHeight: 480)
         .task(id: aufbauSchluessel) { await neuBauen() }
     }
 

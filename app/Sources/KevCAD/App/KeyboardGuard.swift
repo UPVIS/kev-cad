@@ -12,6 +12,7 @@ final class KeyboardGuard {
     static let plainShortcutKeys: Set<String> = [
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "f", "h", "i", "m", "s", "e",
         " ", arrowLeft, arrowRight,  // Phase 5: Animation (Leertaste, Pfeil links/rechts)
+        "v", "d", "n",  // Phase 6: Werkzeuge im Bereich Dokumente (Auswählen, Maß, Notiz)
     ]
     static let arrowLeft = String(UnicodeScalar(UInt16(NSLeftArrowFunctionKey))!)
     static let arrowRight = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)

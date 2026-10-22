@@ -237,7 +237,7 @@ struct DurchspielenLeiste: View {
                 Button { actions?.durchspielenAbspielen(!d.spielt) } label: {
                     Image(systemName: d.spielt ? "pause.fill" : "play.fill").frame(width: 18)
                 }
-                .help(d.spielt ? "Anhalten (⌥⌘P)" : "Abspielen (⌥⌘P)")
+                .help(d.spielt ? "Anhalten" : "Abspielen")
                 Button { actions?.durchspielenSchritt(1) } label: { Image(systemName: "forward.fill") }
                     .help("Nächster Schritt (⌥⌘→)")
                 Button { actions?.durchspielenGeheZu(d.schritte.count - 1) } label: { Image(systemName: "forward.end.fill") }

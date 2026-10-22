@@ -12,6 +12,8 @@ public final class DokumenteStore: ObservableObject {
     @Published public internal(set) var laedt: Set<String> = []
     /// DOCS_REQ läuft (alle Blätter werden gerechnet).
     @Published public internal(set) var uebersichtLaedt = false
+    /// DRAWING_CREATE läuft (Blätter werden angelegt).
+    @Published public internal(set) var erzeugt = false
     /// Fehler beim Laden eines Blatts (Text des Kernels).
     @Published public internal(set) var fehler: [String: String] = [:]
     /// Änderungen, die gerade beim Kernel liegen (Blatt → Bezeichnung), für die Anzeige „wird geändert …“.
@@ -40,6 +42,7 @@ public final class DokumenteStore: ObservableObject {
         zeichnungen = [:]
         laedt = []
         uebersichtLaedt = false
+        erzeugt = false
         fehler = [:]
         bearbeitung = [:]
         meldung = nil
@@ -67,6 +70,9 @@ public protocol DokumenteActions: AnyObject {
     func dokumenteAnfordern()
     /// DRAWING_REQ: ein Blatt anfordern (das alte bleibt bis zur Antwort sichtbar).
     func zeichnungAnfordern(_ blatt: String)
+    /// DRAWING_CREATE (Vertrag 1.2): Blätter anlegen, ohne `teile` für alle gefertigten Teile und den Zusammenbau. Die neue
+    /// Übersicht kommt danach als DOCS.
+    func zeichnungenErzeugen(teile: [String]?, art: String, format: String?)
     /// DRAWING_EDIT mit `von: "kevin"`. `abschluss` bekommt das ACK (Ergebnisse je Operation); das neue Blatt kommt
     /// danach als DRAWING und landet im Store.
     func zeichnungBearbeiten(_ blatt: String, ops: [ZeichnungsOp],

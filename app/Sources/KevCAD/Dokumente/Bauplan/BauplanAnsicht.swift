@@ -50,7 +50,7 @@ struct BauplanAnsicht: View {
                 leer
             }
         }
-        .frame(minWidth: 820, minHeight: 520)
+        .frame(minWidth: 600, minHeight: 480)
         .overlay(alignment: .bottom) { meldungsLeiste }
         .onAppear {
             if store.plan == nil, !store.laedt { actions?.bauplanAnfordern() }

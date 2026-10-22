@@ -2,22 +2,40 @@ import AppKit
 import KevCADCore
 import PDFKit
 
-/// Selbsttest „Bauplan und Export“ in der Testvariante (`KEVCAD_SELFTEST=dokumente`, Strang P6-A2): öffnet
-/// `KEVCAD_SELFTEST_PROJEKT`, holt den Bauplan, zeigt Überblick und einzelne Schritte (hell und dunkel), spielt einige
-/// Montageschritte durch, setzt die Berichte, öffnet den Export-Dialog und exportiert alle Bausteine als PDF. Bilder,
-/// PDF und Messwerte landen in `KEVCAD_SELFTEST_AUSGABE` (sonst im Datenordner), Ergebnis in `selftest-dokumente.txt`.
-/// Ohne Maus- und Tastatureingaben; Fensterbilder über `cacheDisplay`, das 3D-Bild über den Offscreen-Renderer.
-/// `KEVCAD_SELFTEST_HALTEN=<s>` hält jeden Durchspielschritt so lange (für Bildschirmfotos von außen).
+/// Selbsttest „Bauplan und Export“ in der Testvariante (`KEVCAD_SELFTEST=bauplan-export`, Strang P6-A2): öffnet
+/// `KEVCAD_SELFTEST_PROJEKT`, holt den Bauplan im Bereich Dokumente, zeigt Überblick und einzelne Schritte (hell und
+/// dunkel), spielt einige Montageschritte im 3D-Bereich durch, setzt die Berichte, öffnet den Export-Dialog und
+/// exportiert alle Bausteine als PDF. Bilder, PDF und Messwerte landen in `KEVCAD_SELFTEST_AUSGABE` (sonst im
+/// Datenordner), Ergebnis in `selftest-dokumente.txt`. Ohne Maus- und Tastatureingaben; Fensterbilder über
+/// `cacheDisplay` oder mit `KEVCAD_SELFTEST_FOTO_AUSSEN=1` von außen, das 3D-Bild über den Offscreen-Renderer.
+/// `KEVCAD_SELFTEST_HALTEN=<s>` hält jeden Durchspielschritt so lange.
 @MainActor
-enum DokumenteSelfTest {
+enum BauplanExportSelfTest {
     private static var started = false
+    private static var gewuenscht: Bool {
+        AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "bauplan-export"
+    }
 
-    static func runIfRequested(_ session: AppSession) {
-        guard !started, session.demo == nil, AppInfo.isTestVariant,
-              ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "dokumente"
+    /// Aus dem Willkommensfenster: das Projekt öffnen, sobald der Kernel bereit ist; das Projektfenster startet den Test.
+    static func projektOeffnen(_ session: AppSession) {
+        guard gewuenscht, session.demo == nil,
+              let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
         else { return }
+        Task { @MainActor in
+            let ende = Date().addingTimeInterval(240)
+            while Date() < ende, session.model.kernelState != .ready {
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+            if session.model.project == nil {
+                session.model.actions?.openProject(at: URL(fileURLWithPath: p, isDirectory: true))
+            }
+        }
+    }
+
+    static func runIfRequested(_ session: AppSession, state: ProjectWindowState, zustand: DokumenteZustand) {
+        guard !started, session.demo == nil, gewuenscht else { return }
         started = true
-        Task { await run(session) }
+        Task { await run(session, state, zustand) }
     }
 
     static var ausgabe: URL {
@@ -27,7 +45,7 @@ enum DokumenteSelfTest {
         return AppInfo.supportDirectory.appendingPathComponent("selftest-dokumente", isDirectory: true)
     }
 
-    private static func run(_ session: AppSession) async {
+    private static func run(_ session: AppSession, _ state: ProjectWindowState, _ zustand: DokumenteZustand) async {
         let model = session.model
         let env = ProcessInfo.processInfo.environment
         var lines: [String] = []
@@ -84,14 +102,12 @@ enum DokumenteSelfTest {
         }
 
         check(await wait(240) { model.kernelState == .ready }, "Kernel bereit")
-        if let path = env["KEVCAD_SELFTEST_PROJEKT"], !path.isEmpty {
-            model.actions?.openProject(at: URL(fileURLWithPath: path, isDirectory: true))
-            check(await wait(400) { model.project != nil && !model.isRunning && model.bom != nil }, "Projekt offen, Lauf fertig")
-        }
+        check(await wait(400) { model.project != nil && !model.isRunning && model.bom != nil }, "Projekt offen, Lauf fertig")
         await pause(2)
         // Bauplan
         let t0 = Date()
-        DokumenteFenster.zeige(session: session, model: model, reiter: .bauplan)
+        state.bereich = .dokumente
+        zustand.waehle(.bauplan)
         model.bauplanActions?.bauplanAnfordern()
         check(await wait(400) { model.bauplan.plan != nil }, "Bauplan geladen")
         messwerte["bauplan_ms"] = Int(Date().timeIntervalSince(t0) * 1000)
@@ -102,7 +118,7 @@ enum DokumenteSelfTest {
         check(plan.alleSchritte.count > 0, "\(plan.alleSchritte.count) Schritte, \(model.bauplan.bilder.count) Bilder")
         messwerte["schritte"] = plan.alleSchritte.count
         await pause(1.5)
-        let fenster = DokumenteFenster.fenster
+        let fenster = session.projectWindow
         await foto(fenster, "01-bauplan-ueberblick")
         // je Abschnitt ein Schritt, dazu der erste mit Problem
         var gezeigt: [String] = []
@@ -124,7 +140,7 @@ enum DokumenteSelfTest {
         await pause(1)
         await foto(fenster, "03-ueberblick-dunkel")
         fenster?.appearance = nil
-        // Durchspielen
+        // Durchspielen (holt selbst den 3D-Bereich nach vorn)
         let halten = Double(env["KEVCAD_SELFTEST_HALTEN"] ?? "") ?? 0
         if let m = plan.montage, !m.schritte.isEmpty {
             model.bauplanActions?.durchspielenStarten(ab: nil)
@@ -137,10 +153,8 @@ enum DokumenteSelfTest {
                 await pause(0.4)
                 bild3D(String(format: "04-durchspielen-%02d-b-eingebaut", k + 1))
                 if k == 1 {
-                    session.projectWindow?.orderFront(nil)
-                    await pause(0.5)
+                    check(state.bereich == .modell, "3D-Bereich vorn beim Durchspielen")
                     await foto(session.projectWindow, "04-durchspielen-fenster")
-                    DokumenteFenster.fenster?.orderFront(nil)
                 }
                 if let d = model.bauplan.durchspielen, let id = d.schritt,
                    let pose = BauplanAblauf.pose(plan, schritt: id, fortschritt: 1)
@@ -155,7 +169,8 @@ enum DokumenteSelfTest {
             check(await wait(3) { model.bauplan.durchspielen == nil }, "Durchspielen beendet")
         }
         // Berichte
-        DokumenteFenster.waehle(.berichte)
+        state.bereich = .dokumente
+        zustand.waehle(.berichte)
         await pause(6)
         await foto(fenster, "05-berichte-stueckliste")
         // Export-Dialog

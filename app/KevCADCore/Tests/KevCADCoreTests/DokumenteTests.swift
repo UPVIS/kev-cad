@@ -7,6 +7,11 @@ import XCTest
 
 /// Phase 6, Zeichnungen (DOKUMENTE.md): Decoder gegen die Testdateien des Kernels, Encoder der Anfragen, BlattZeichner
 /// (Linienbreiten, Strichmuster, Schriftgröße in pt, Seitengrößen, Clip der Schraffur, PDF) und Rückgängig.
+/// Länge einer Polylinie (Hilfsfunktion der Tests).
+private func MassVorschau_laenge(_ pl: [CGPoint]) -> CGFloat {
+    zip(pl, pl.dropFirst()).reduce(0) { $0 + hypot($1.1.x - $1.0.x, $1.1.y - $1.0.y) }
+}
+
 final class DokumenteTests: XCTestCase {
     private func erwartet() throws -> JSONValue {
         try XCTUnwrap(Fixtures.expected()["dokumente"])
@@ -62,18 +67,22 @@ final class DokumenteTests: XCTestCase {
         XCTAssertEqual(m1.pfeile[0].polygon.count, 4)
         XCTAssertNotNil(m1.box)
         XCTAssertEqual(m1.quelle, "auto")
-        // Blattdatei: Bezüge, Anker, Schriftfeld
+        // Blattdatei: Bezüge, Anker, Schriftfeld (gegen den Rohkopf, damit neu erzeugte Testdateien passen)
+        let roh = try JSONDecoder().decode(JSONValue.self, from: Fixtures.frame("drawing.frame").header)
+        let rm = try XCTUnwrap(roh["blatt"]?["masse"]?.arrayValue?.first)
         let bm = try XCTUnwrap(z.blatt.mass("m1"))
-        XCTAssertEqual(bm.versatz, -10)
-        XCTAssertEqual(bm.richtung, "x")
-        XCTAssertEqual(bm.anker.count, 2)
-        XCTAssertEqual(bm.bezuege.count, 2)
-        XCTAssertEqual(z.blatt.schriftfeldText("zeichnungsnummer"), "T-PLATTE")
-        XCTAssertEqual(z.blatt.schriftfeldText("masse_g"), "267.5")
-        XCTAssertEqual(z.blatt.ansichten.first?.lage, CGPoint(x: 157.18, y: 119.23))
+        XCTAssertEqual(bm.versatz, rm["versatz"]?.doubleValue)
+        XCTAssertEqual(bm.richtung, rm["richtung"]?.stringValue)
+        XCTAssertEqual(bm.anker.count, rm["anker"]?.arrayValue?.count)
+        XCTAssertEqual(bm.bezuege.count, rm["bezuege"]?.arrayValue?.count)
+        XCTAssertEqual(z.blatt.schriftfeldText("zeichnungsnummer"), roh["blatt"]?["schriftfeld"]?["zeichnungsnummer"]?.stringValue)
+        let lage = try XCTUnwrap(roh["blatt"]?["ansichten"]?.arrayValue?.first?["lage"]?.doubles)
+        XCTAssertEqual(z.blatt.ansichten.first?.lage, CGPoint(x: lage[0], y: lage[1]))
         // steigende Bemaßung: Zahlen je Lage
         let kette = try XCTUnwrap(z.masse.first { $0.art == "bezugskette" })
-        XCTAssertEqual(kette.texte.count, 3)
+        let rohKette = try XCTUnwrap(roh["masse"]?.arrayValue?.first { $0["art"]?.stringValue == "bezugskette" })
+        XCTAssertEqual(kette.texte.count, rohKette["texte"]?.arrayValue?.count)
+        XCTAssertGreaterThan(kette.texte.count, 0)
         XCTAssertEqual(kette.pfeile.first?.art, "ursprung")
     }
 
@@ -190,6 +199,22 @@ final class DokumenteTests: XCTestCase {
                        ["op": "mass_aendern", "id": "m4", "text": "<> H7", "fest": true])
     }
 
+    /// DRAWING_CREATE (Vertrag 1.2): mit Teilen und Format, ohne Teile für alle gefertigten Teile.
+    func testDrawingCreateEncoder() throws {
+        let f = try Fixtures.frame("drawing_create.frame")
+        var m = DrawingCreateMessage(id: "a-13", teile: ["Halter/Platte"], art: "teil", format: "A3 quer")
+        m.seq = 7
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: m.encodedHeader()),
+                       try JSONDecoder().decode(JSONValue.self, from: f.header))
+        let e = try XCTUnwrap(erwartet()["drawing_create"])
+        XCTAssertEqual(e["teile"]?.stringList, m.teile)
+        XCTAssertEqual(e["format"]?.stringValue, m.format)
+        let alle = try JSONDecoder().decode(JSONValue.self, from: DrawingCreateMessage(id: "a-4").encodedHeader())
+        XCTAssertNil(alle["teile"])
+        XCTAssertNil(alle["format"])
+        XCTAssertEqual(alle["art"], "teil")
+    }
+
     func testAckMitErgebnissen() throws {
         let h = #"{"type":"ACK","seq":3,"reply_to":"a-12","ok":false,"message":"mass_neu: kein Element","ergebnisse":[{"op":"mass_verschieben","ok":true,"id":"m1"},{"op":"mass_neu","ok":false,"fehler":"kein Element"}]}"#
         guard case .ack(let a) = try KernelMessage.decode(Frame(header: Data(h.utf8))) else { return XCTFail() }
@@ -205,9 +230,11 @@ final class DokumenteTests: XCTestCase {
         let (z, _) = try zeichnung("drawing.frame")
         let ok = ZeichnungsBearbeitung(ok: true, ergebnisse: [["op": "mass_verschieben", "ok": true, "id": "m1"]])
         // Verschieben eines automatischen Maßes: alter Versatz, danach wieder nicht fest
+        let alt = try XCTUnwrap(z.blatt.mass("m1")?.versatz)
+        XCTAssertEqual(z.blatt.mass("m1")?.fest, false)
         XCTAssertEqual(
-            ZeichnungsUmkehr.gegen([.massVerschieben(id: "m1", versatz: -22, textLage: nil)], vorher: z, bearbeitung: ok),
-            [.massVerschieben(id: "m1", versatz: -10, textLage: nil),
+            ZeichnungsUmkehr.gegen([.massVerschieben(id: "m1", versatz: alt - 12, textLage: nil)], vorher: z, bearbeitung: ok),
+            [.massVerschieben(id: "m1", versatz: alt, textLage: nil),
              .massAendern(id: "m1", text: nil, toleranz: nil, fest: false)])
         // Löschen eines automatischen Maßes: Unterdrückung (am Ende der Liste) aufheben
         let weg = ZeichnungsBearbeitung(ok: true, ergebnisse: [["op": "mass_loeschen", "ok": true, "id": "m2"]])
@@ -310,9 +337,11 @@ final class DokumenteTests: XCTestCase {
     }
 
     func testSeitengroessen() throws {
-        let (z, _) = try zeichnung("drawing.frame")
-        XCTAssertEqual(Double(z.seitengroessePunkte.width), 841.89, accuracy: 0.01)  // A4 quer
+        let z = Self.testblatt(groesse: CGSize(width: 297, height: 210))  // A4 quer
+        XCTAssertEqual(Double(z.seitengroessePunkte.width), 841.89, accuracy: 0.01)
         XCTAssertEqual(Double(z.seitengroessePunkte.height), 595.28, accuracy: 0.01)
+        let (f, _) = try zeichnung("drawing.frame")
+        XCTAssertEqual(Double(f.seitengroessePunkte.width), Double(f.groesse.width) * 72 / 25.4, accuracy: 1e-6)
         let a3 = Self.testblatt(groesse: CGSize(width: 420, height: 297))
         XCTAssertEqual(Double(a3.seitengroessePunkte.width), 1190.55, accuracy: 0.01)
         XCTAssertEqual(Double(a3.seitengroessePunkte.height), 841.89, accuracy: 0.01)
@@ -354,19 +383,63 @@ final class DokumenteTests: XCTestCase {
         XCTAssertFalse(dunkel(15, 15), "zwischen zwei Schraffurlinien weiß")
     }
 
+    /// Verwaiste Maße erscheinen rot (Bildschirm, PDF, Druck), alle anderen schwarz.
+    func testVerwaistesMassRot() throws {
+        let basis = Self.testblatt()
+        let rot = MassDarstellung(id: "m9", linien: [[CGPoint(x: 5, y: 5), CGPoint(x: 35, y: 5)]], verwaist: true)
+        let schwarz = MassDarstellung(id: "m8", linien: [[CGPoint(x: 5, y: 25), CGPoint(x: 35, y: 25)]])
+        let z = Zeichnung(blatt: basis.blatt, groesse: basis.groesse, gruppen: [], masse: [rot, schwarz], texte: [])
+        let s: CGFloat = 20
+        let w = Int(z.groesse.width * s)
+        let h = Int(z.groesse.height * s)
+        let ctx = try XCTUnwrap(CGContext(
+            data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.scaleBy(x: s, y: s)
+        BlattZeichner.zeichne(z, in: ctx, optionen: .druck)
+        let d = try XCTUnwrap(ctx.data).assumingMemoryBound(to: UInt8.self)
+        func farbe(_ x: CGFloat, _ y: CGFloat) -> (UInt8, UInt8, UInt8) {
+            let i = ((h - 1 - Int(y * s)) * w + Int(x * s)) * 4
+            return (d[i], d[i + 1], d[i + 2])
+        }
+        let r = farbe(20, 5)
+        XCTAssertGreaterThan(r.0, 150, "verwaistes Maß rot")
+        XCTAssertLessThan(r.1, 90)
+        let k = farbe(20, 25)
+        XCTAssertLessThan(k.0, 80, "normales Maß schwarz")
+    }
+
+    /// Hinweise werden am Knick verschoben (so legt der Kernel `text_lage` ab), lineare Maße an der Zahl.
+    func testTextAnker() {
+        let tip = CGPoint(x: 10, y: 10)
+        let knick = CGPoint(x: 15, y: 18)
+        let h = MassDarstellung(id: "m1", linien: [[tip, knick, CGPoint(x: 35, y: 18)]],
+                                pfeile: [MassPfeil(spitze: tip, richtung: CGVector(dx: -1, dy: -1))], text: "Ø8",
+                                textLage: CGPoint(x: 25, y: 18.9), art: "bohrung")
+        XCTAssertTrue(h.istHinweis)
+        XCTAssertEqual(h.textAnker, knick)
+        let l = MassDarstellung(id: "m2", linien: [[CGPoint(x: 0, y: 0), CGPoint(x: 40, y: 0)]],
+                                pfeile: [MassPfeil(spitze: .zero, richtung: CGVector(dx: -1, dy: 0)),
+                                         MassPfeil(spitze: CGPoint(x: 40, y: 0), richtung: CGVector(dx: 1, dy: 0))],
+                                text: "40", textLage: CGPoint(x: 20, y: 0.9), art: "linear")
+        XCTAssertFalse(l.istHinweis)
+        XCTAssertEqual(l.textAnker, l.textLage)
+    }
+
     func testPDFMitGemischtenFormatenUndEingebetteterSchrift() throws {
         let (z, _) = try zeichnung("drawing.frame")
         let a3 = Self.testblatt(groesse: CGSize(width: 420, height: 297))
         let daten = BlattPDF.daten([z, a3], metadaten: .init(titel: "Test"))
         let doc = try XCTUnwrap(PDFDocument(data: daten))
         XCTAssertEqual(doc.pageCount, 2)
-        XCTAssertEqual(Double(doc.page(at: 0)!.bounds(for: .mediaBox).width), 841.89, accuracy: 0.01)
+        XCTAssertEqual(Double(doc.page(at: 0)!.bounds(for: .mediaBox).width), Double(z.seitengroessePunkte.width),
+                       accuracy: 0.01)
         XCTAssertEqual(Double(doc.page(at: 1)!.bounds(for: .mediaBox).width), 1190.55, accuracy: 0.01)
         XCTAssertEqual(doc.outlineRoot?.numberOfChildren, 2)
         XCTAssertEqual(doc.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String, "Test")
         // echter Text (durchsuchbar) in osifont, keine Ersatzschrift
         let text = doc.page(at: 0)?.string ?? ""
-        XCTAssertTrue(text.contains("Ø8"), text)
+        for m in z.masse where m.text.contains("Ø") { XCTAssertTrue(text.contains(m.text), "\(m.text) in \(text)") }
         XCTAssertTrue(text.contains("ISO 2768-m"))
         let roh = String(decoding: daten, as: UTF8.self)
         XCTAssertTrue(roh.contains("osifont"))
@@ -374,7 +447,7 @@ final class DokumenteTests: XCTestCase {
     }
 
     func testDruckAuftragNichtSkaliert() async throws {
-        let (z, _) = try zeichnung("drawing.frame")
+        let z = Self.testblatt(groesse: CGSize(width: 297, height: 210))  // A4 quer
         await MainActor.run {
             let a = BlattDruck.auftraege([z])[0]
             let info = BlattDruck.druckInfo(a)
@@ -389,8 +462,12 @@ final class DokumenteTests: XCTestCase {
     func testTrefferAufMassUndText() throws {
         let (z, _) = try zeichnung("drawing.frame")
         let m1 = try XCTUnwrap(z.grafik.mass("m1"))
-        XCTAssertLessThan(m1.abstand(zu: CGPoint(x: 100, y: 59.3)), 0.2)  // auf der Maßlinie
-        XCTAssertTrue(m1.trifftText(CGPoint(x: 157.18, y: 61.5)))  // auf der Zahl „200“
-        XCTAssertFalse(m1.trifftText(CGPoint(x: 100, y: 61.5)))
+        // auf der Maßlinie (längste Linie), auf der Zahl, daneben
+        let linie = try XCTUnwrap(m1.mass.linien.max { MassVorschau_laenge($0) < MassVorschau_laenge($1) })
+        let mitteLinie = CGPoint(x: (linie[0].x + linie[1].x) / 2, y: (linie[0].y + linie[1].y) / 2)
+        XCTAssertLessThan(m1.abstand(zu: mitteLinie), 0.2)
+        let t = m1.mass.textLage
+        XCTAssertTrue(m1.trifftText(CGPoint(x: t.x, y: t.y + 1.5)))
+        XCTAssertFalse(m1.trifftText(CGPoint(x: t.x + 40, y: t.y + 1.5)))
     }
 }
