@@ -121,6 +121,8 @@ class Anschluss:
     # Drehfeder statt starrer Einspannung (T35, ``statik/feder.py``): an festen Anschlüssen an Druckteile, je Achse
     # quer zum Stab die Steifigkeit in Nmm/rad aus Bettung in der Bohrung und Biegung des Teils bis zu seinem Lager
     feder: dict[str, Any] | None = None
+    # gleitendes Lager (Simulation): gehaltene Richtungen (Welt, Einheitsvektoren), genau statt auf eine Achse gerundet
+    gehalten: list[Any] | None = None
 
     def kurz(self) -> dict[str, Any]:
         out = {"stab": self.stab, "t": round(self.t, 1), "art": self.art, "partner": list(self.partner[:2]),
@@ -571,7 +573,8 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
             roh.append(Anschluss(s.name, t, {"fest": "fest", "gelenkig": "gelenkig"}.get(L.art, "gleitend"),
                                  ("boden", "lager"), None if L.normale is None else np.asarray(L.normale, float),
                                  (s.name, L.name),
-                                 f"Lager {L.id} ({L.art}, {'App' if L.quelle == 'app' else 'model.py'})"))
+                                 f"Lager {L.id} ({L.art}, {'App' if L.quelle == 'app' else 'model.py'})",
+                                 gehalten=getattr(L, "gehalten", None)))
     m.anschluesse = _zusammenfassen(roh)
     m.rollend = {n for n in m.teile if rollend(m, koerper, n)}
     # Anschlüsse an geerdete Starrkörper sind Auflager
@@ -641,7 +644,8 @@ def _zusammenfassen(roh: list[Anschluss]) -> list[Anschluss]:
             if partner[0] == "stab":
                 partner = ("stab", partner[1], float(np.mean([a.partner[2] for a in c if a.partner[0] == "stab"])))
             out.append(Anschluss(best.stab, t, best.art, partner, best.achse, best.teile,
-                                 best.quelle + (f" ({len(c)} Berührungen)" if len(c) > 1 else "")))
+                                 best.quelle + (f" ({len(c)} Berührungen)" if len(c) > 1 else ""),
+                                 gehalten=best.gehalten))
     out.sort(key=lambda a: (a.stab, a.t))
     return out
 

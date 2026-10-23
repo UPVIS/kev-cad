@@ -11,7 +11,10 @@ Aus dem Statikmodell entsteht ein räumliches Stabwerk:
   Drehgelenk = Drehung um die nächste der drei Achsen frei, Schiebegelenk längs des Stabs = Hülse (Verschiebung längs
   und beide Biegedrehungen frei); Gelenke mit ``bereich`` sind festgestellt und kommen hier als feste Anschlüsse an
   (``modell._art``, T30), außer sie sind mit ``frei=True`` als frei laufend erklärt (T33);
-- Anschlüsse an geerdete Starrkörper und den Boden sind feste Lager (hinter dem Gelenkglied).
+- Anschlüsse an geerdete Starrkörper und den Boden sind feste Lager (hinter dem Gelenkglied). Ein gleitendes Lager
+  (Simulation) hält nur in seinen Richtungen, genau und auch schräg zu den Weltachsen: je gehaltene Richtung ein kurzer
+  Pendelstab (nur Längskraft) zu einem festen Punkt, der Lagerknoten selbst ist nur gegen Drehen gehalten (die Drehung
+  gibt das Gelenkglied frei). Seine Lagerkraft ist die Summe der Pendelkräfte.
 
 Lastfälle: je Szenario Eigengewicht der Stäbe als Streckenlast im Beschleunigungsfeld, Starrkörper und Anbauteile mit
 ihrer Masse, Einzellasten (Stoßfaktor eingerechnet; ein Kraftpaar wirkt mit Kraft und Gegenkraft auf seine beiden
@@ -128,6 +131,7 @@ class _Aufbau:
         self.k_knoten: dict[str, str] = {}  # Starrkörper → Knoten
         self.starr_glieder: dict[str, list[str]] = {}  # Starrkörper → seine Glieder (Kraftfluss)
         self.lager: list[tuple[str, Anschluss]] = []  # (Knoten, Anschluss)
+        self.pendel: dict[str, list[str]] = {}  # gleitendes Lager: Lagerknoten → feste Knoten seiner Pendelstäbe
         self.verbinder: list[tuple[str, Anschluss, str]] = []  # Stufe 3: (starres Glied, Anschluss, Knoten am Stab)
         self.summe: dict[str, np.ndarray] = {}  # Szenario → Summe aller aufgebrachten Kräfte (Gleichgewichtsprobe)
         self.anbau: dict[str, Anschluss] = {}
@@ -297,14 +301,21 @@ class _Aufbau:
             knoten = g_knoten
         if geerdet:
             if a.art == "gleitend":
-                # gleitendes Lager (Simulation): hält nur senkrecht zur Fläche (auf die nächste Weltachse gerundet),
-                # Drehungen frei über das Gelenkglied
-                n = np.asarray(a.achse if a.achse is not None else (0, 0, 1.0), dtype=float)
-                c = int(np.argmax(np.abs(n)))
-                if float(np.max(np.abs(n))) < 0.99:
-                    self.vereinfacht.append(f"{a.teile[1]}: gleitendes Lager schräg zur Weltachse, senkrecht zur "
-                                            f"nächsten Achse ({'XYZ'[c]}) gerechnet")
-                fe.def_support(knoten, c == 0, c == 1, c == 2, True, True, True)
+                # gleitendes Lager (Simulation): hält nur in seinen Richtungen (senkrecht zur Fläche bzw. quer zur
+                # Schiene), genau auch schräg: je Richtung ein Pendelstab zu einem festen Punkt; Drehungen frei über
+                # das Gelenkglied, deshalb ist der Lagerknoten selbst nur gegen Drehen gehalten
+                gehalten = a.gehalten or [np.asarray(a.achse if a.achse is not None else (0, 0, 1.0), dtype=float)]
+                fe.def_support(knoten, False, False, False, True, True, True)
+                for h in gehalten:
+                    h = np.asarray(h, dtype=float) / max(float(np.linalg.norm(h)), 1e-12)
+                    g_knoten = self.knoten(self.knoten_pos[knoten] - h * GELENK_L, "P")
+                    self._n += 1
+                    pname = f"P{self._n}"
+                    fe.add_member(pname, g_knoten, knoten, "Starr", self.starr_querschnitt(GELENK_L))
+                    # nur Längskraft: Biegung an beiden Enden frei, Torsion an einem
+                    fe.def_releases(pname, Rxi=True, Ryi=True, Rzi=True, Ryj=True, Rzj=True)
+                    fe.def_support(g_knoten, True, True, True, True, True, True)
+                    self.pendel.setdefault(knoten, []).append(g_knoten)
             else:
                 fe.def_support(knoten, True, True, True, True, True, True)
             self.lager.append((knoten, a))
@@ -451,6 +462,18 @@ def rechne(m: StatikModell, szenarien: list[Szenario], knicken: bool = True,
     return out
 
 
+def _reaktion(b: _Aufbau, kn: str, combo: str) -> tuple[list[float], list[float]]:
+    """Lagerkraft und -moment eines Lagerknotens, bei gleitenden Lagern mit den Kräften seiner Pendelstäbe (sie
+    greifen auf ihrer Achse durch den Knoten an, also ohne Moment um ihn)."""
+    node = b.fe.nodes[kn]
+    F = [node.RxnFX[combo], node.RxnFY[combo], node.RxnFZ[combo]]
+    M = [node.RxnMX[combo], node.RxnMY[combo], node.RxnMZ[combo]]
+    for g in b.pendel.get(kn, []):
+        q = b.fe.nodes[g]
+        F = [F[0] + q.RxnFX[combo], F[1] + q.RxnFY[combo], F[2] + q.RxnFZ[combo]]
+    return F, M
+
+
 def _gleichgewicht(b: _Aufbau, szenarien: list[Szenario]) -> str | None:
     """Stimmen Auflagerkräfte und Lasten überein (und sind alle Verschiebungen endlich)? Sonst ist das Stabwerk
     beweglich: Meldung, sonst None."""
@@ -458,8 +481,7 @@ def _gleichgewicht(b: _Aufbau, szenarien: list[Szenario]) -> str | None:
     for sz in szenarien:
         R = np.zeros(3)
         for kn, _ in b.lager:
-            node = fe.nodes[kn]
-            R += [node.RxnFX[sz.name], node.RxnFY[sz.name], node.RxnFZ[sz.name]]
+            R += _reaktion(b, kn, sz.name)[0]
         F = b.summe.get(sz.name, np.zeros(3))
         groesse = max(float(np.linalg.norm(F)), 1e-6)
         if not np.all(np.isfinite(R)) or float(np.linalg.norm(R + F)) > 1e-3 * groesse + 1e-6:
@@ -533,9 +555,7 @@ def _auswerten(b: _Aufbau, sz: Szenario) -> S1Ergebnis:
             round(grenze_d, 3), None, round(n_min, 3))
     # Auflagerkräfte
     for kn, a in b.lager:
-        node = fe.nodes[kn]
-        F = [node.RxnFX[combo], node.RxnFY[combo], node.RxnFZ[combo]]
-        M = [node.RxnMX[combo], node.RxnMY[combo], node.RxnMZ[combo]]
+        F, M = _reaktion(b, kn, combo)
         e.auflager.append({"stab": a.stab, "teil": a.teile[1], "punkt": [round(float(c), 1) for c in b.knoten_pos[kn]],
                            "kraft": [round(float(c), 2) for c in F], "moment": [round(float(c), 1) for c in M],
                            "art": a.art, "t": round(a.t, 1)})
