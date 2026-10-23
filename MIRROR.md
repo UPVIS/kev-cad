@@ -172,6 +172,13 @@ Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugel
 Alle Befehle außer `kamera` bekommen ein `CMD_RES`. Die Wirkung kommt als `STATE_DELTA` bzw. `CAMERA` mit
 `quelle: "iphone"` an alle zurück. Im Modus „Frei“ schickt das iPhone keine Kamera, alles andere schon.
 
+**Kamerafahrt nach `einpassen`, `fokus` und `ansicht` (Zusage an das iPhone, seit Build 489):** Kev CAD markiert die
+Kamera danach etwa 1 s lang mit `quelle: "iphone"` (`MirrorService`, `cameraSource` bis jetzt + 1,0 s) und schickt
+während der Fahrt mindestens alle 0,25 s einen Stand (`CAMERA` höchstens 40 je Sekunde, bei jeder Änderung). Das
+iPhone fliegt sofort ans vorhergesagte Ziel (Nachbildung von `ViewportCoordinator.fitted`: Rand 1,12, Fahrt 0,45 s)
+und übernimmt danach den letzten Stand des Macs. Diese Zusage nicht ohne Absprache mit der VoiceBridge-Seite ändern;
+andere Ränder bringen am iPhone nur eine kleine Nachkorrektur.
+
 ## Freigabe vom iPhone (Version 1.1)
 
 Kevin am 22.10.2026: Lagerkatalog-Freigaben auch vom iPhone, nicht nur per Klick am Mac. Rein additiv; `version` im
