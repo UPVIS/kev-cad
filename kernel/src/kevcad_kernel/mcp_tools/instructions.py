@@ -124,6 +124,14 @@ parts: layer interface with e_modul_z and quer_zur_schicht, target 4), location,
 print orientation (evidence for "drehen oder verstärken") and shows the stress gradient on the part's mesh. \
 `ablauf=True` uses the largest contact force from the motion simulation. Always state: linear-elastic, supports \
 fully clamped, full infill.
+- Contact, plasticity, load capacity, buckling (Statik S4, CalculiX in a separate process, seconds to minutes per \
+part): `festigkeit(teil, szenario, verfahren="ccx")` replaces clamped supports by contact pairs that lift off and \
+slide (clamps with the clamp screw preloaded, tube in a bore, plate resting on a support), `plastisch=True` for \
+elastic-plastic material and permanent deformation, `traglast=True` (default with plasticity) for the load factor \
+until failure, `beulen=True` for the first buckling factor. In model.py `st.kontakt(a, b, reibwert=, klemmkraft=)` \
+and `st.festigkeit(teil, …)` run it after every run. CalculiX lives on the external disk UPVIS ULTRA; if it is not \
+connected the tool says so (S0-S3 keep working). Always state: penalty contact, partners only clipped around the \
+part, clamp force assumed hand tight unless given.
 - Supports and the app's Simulation area: supports are derived from contacts unless set explicitly with \
 `st.lager(teil, flaeche=..., punkt=..., art="fest"|"gelenkig"|"gleitend", szenario=..., gleiten=...)` (szenario: \
 only in these load cases; gleiten: free only along an axis, vector or edge, otherwise sliding in the face plane, held \
