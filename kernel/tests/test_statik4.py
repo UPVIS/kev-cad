@@ -308,6 +308,20 @@ def test_model_py_kontakt_und_festigkeit():
     assert f["was"] == "festigkeit" and f["plastisch"] and f["kontakt"] and f["traglast"] is None
 
 
+def test_kontakt_gegen_die_kulisse_wird_aufgeloest():
+    from kevcad_kernel.statik.anbindung import stufe4_aus
+    from kevcad_kernel.statik.modell import StatikModell
+
+    m = StatikModell()
+    m.teile["Klotz"] = None
+    m.kulisse.add("Kulisse/Tisch")
+    s4 = stufe4_aus([{"was": "kontakt", "teile": ["Klotz"], "gegen": ["Kulisse/Tisch"], "reibwert": 0.3},
+                     {"was": "kontakt", "teile": ["Klotz"], "gegen": ["Kulisse"]},
+                     {"was": "kontakt", "teile": ["Klotz"], "gegen": ["Gibt es nicht"]}], m)
+    assert len(s4["kontakte"]) == 2
+    assert s4["warnungen"] == ["st.kontakt: Teil 'Gibt es nicht' gibt es nicht"]
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Nachweise mit CalculiX
 

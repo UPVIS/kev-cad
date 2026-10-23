@@ -314,11 +314,13 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
 def stufe4_aus(ereignisse: list[dict[str, Any]], m: Any) -> dict[str, Any]:
     """Stufe 4 aus model.py: ``st.kontakt(a, b, …)`` (Kontaktpaare mit Reibwert, Klemmkraft, Spiel) und
     ``st.festigkeit(teil, …)`` (Teile, die nach jedem Lauf mit CalculiX nachgerechnet werden)."""
+    from kevcad_kernel.statik.ccx.auftrag import aufloesen
+
     out: dict[str, Any] = {"kontakte": [], "auftraege": [], "warnungen": []}
     for e in ereignisse or []:
         was = e.get("was")
         if was == "kontakt":
-            unbekannt = [t for t in (e.get("teile") or []) + (e.get("gegen") or []) if not m.aufloesen(str(t))]
+            unbekannt = [t for t in (e.get("teile") or []) + (e.get("gegen") or []) if not aufloesen(m, str(t))]
             if unbekannt:
                 out["warnungen"].append(f"st.kontakt: Teil {unbekannt[0]!r} gibt es nicht")
                 continue

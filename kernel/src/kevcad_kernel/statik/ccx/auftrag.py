@@ -125,12 +125,19 @@ def verbindungsart(m: Any, a: str, b: str, deklariert: list[dict[str, Any]],
     return "kontakt", f"Berührung ({e.get('kontakt') or 'Kontakt'})"
 
 
+def aufloesen(m: Any, muster: str) -> list[str]:
+    """Wie ``StatikModell.aufloesen``, kennt aber auch die Kulisse (``st.kontakt(teil, "Kulisse/Tisch")``)."""
+    namen = list(m.aufloesen(muster))
+    kulisse = sorted(getattr(m, "kulisse", None) or ())
+    return namen + [n for n in kulisse if n not in namen and (n == muster or m.passt(n, muster))]
+
+
 def _deklariert(st: Any) -> list[dict[str, Any]]:
     out = []
     m = st.modell
     for d in (getattr(st, "s4", None) or {}).get("kontakte") or []:
-        a = {n for t in d.get("teile") or [] for n in m.aufloesen(str(t))}
-        b = {n for t in d.get("gegen") or [] for n in m.aufloesen(str(t))}
+        a = {n for t in d.get("teile") or [] for n in aufloesen(m, str(t))}
+        b = {n for t in d.get("gegen") or [] for n in aufloesen(m, str(t))}
         if a and b:
             out.append({**d, "a": a, "b": b})
     return out
