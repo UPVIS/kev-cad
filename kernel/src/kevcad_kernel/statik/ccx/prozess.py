@@ -54,6 +54,7 @@ SCHLUPF_MM = 0.1  # ein frei gelagerter Körper, der sich so weit mehr bewegt al
 SPRUNG = ("rutschen",)  # Kriterien, die springen statt zu wachsen
 TRAG_GENAU = 0.02  # Traglast: eine Klammer schmaler als 2 % des Faktors genügt
 TRAG_LAEUFE = 3  # höchstens so viele Läufe der Laststeigerung (grob, dann in der Klammer fein)
+TETRA_PLASTISCH = 0.95  # Abminderung der Traglast aus Fließen (C3D10 voll plastisch zu steif, PLAN-STATIK T42)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -875,6 +876,11 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
                         break  # in der Klammer nicht erreicht: der vorige Lauf gilt
                     tr = neu
                 if tr is not None:
+                    if T.get("fliess") and tr["kriterium"] in ("dehnung", "kollaps"):
+                        # Tetraeder zweiter Ordnung versteifen voll plastisch (am symmetrisch gelagerten Kragbalken
+                        # +5,7 %, netzunabhängig): Traglast aus Fließen um diesen Anteil abgemindert (T42)
+                        tr["faktor_roh"] = tr["faktor"]
+                        tr["faktor"] = round(tr["faktor"] * TETRA_PLASTISCH, 4)
                     info["traglast"] = tr
             if opt.get("beulen"):
                 fall.baue("beulen")

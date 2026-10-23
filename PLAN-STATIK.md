@@ -31,7 +31,7 @@ und als Befunde wie bei der Prüfung.
 | S2 Kollisionsformen | **CoACD** (1.0) | MIT | zerlegt Teile in konvexe Stücke für schnellen, stabilen Kontakt | einmal je Teilstand, zwischengespeichert |
 | S3 Festkörper | **Gmsh** (4.15, eigener Prozess) | GPL | Tetraedernetze direkt aus STEP | Sekunden |
 | S3 Festkörper | **scikit-fem** (12) mit **pyamg** (5.3) | BSD, MIT | lineare Elastizität bis einige 100.000 Freiheitsgrade: Spannung (von Mises), Verformung, Sicherheitsfaktor | Sekunden |
-| S3 später | **CalculiX** (eigener Prozess) | GPL | Kontakt, Plastizität, Beulen; nicht in Homebrew, über conda-forge oder selbst gebaut | Sekunden bis Minuten |
+| S4 (gebaut, siehe „Stand Stufe 4“) | **CalculiX** 2.23 (eigener Prozess) | GPL | Kontakt, Plastizität, Traglast, Beulen; von conda-forge über micromamba auf der externen Platte UPVIS ULTRA | Sekunden bis Minuten |
 
 GPL-Werkzeuge laufen nur als eigene Prozesse; für Kevins eigenes Werkzeug unproblematisch.
 
@@ -342,12 +342,10 @@ Schalter für frei laufende Gelenke mit Bereich (Nachbesserung).
 
 ### Ehrliche Grenzen (Stand 23.10.2026)
 
-- **Bewusst offen: Kontakt mit Abheben und Reibung, Plastizität und Beulen (CalculiX).** Der Festkörper spannt
-  Lagerflächen fest ein (wie verklebt), rechnet linear-elastisch und ohne Vorspannung der Schrauben. CalculiX (GPL,
-  eigener Prozess, nicht in Homebrew) bleibt außen vor: Für Kevins Teile (gedruckte Halter, Platten, Rohre weit unter
-  der Streckgrenze) entscheidet die Schichtfuge bzw. die elastische Spannung, und der zusätzliche Baustein (Build über
-  conda-forge, Minuten je Rechnung, nichtlineare Konvergenz) stünde in keinem Verhältnis. Wird ein Teil gerade wegen
-  Abheben oder Fließen kritisch, sagt die Statik das nicht; dann zählt die Handrechnung oder ein Versuch.
+- ~~Bewusst offen: Kontakt mit Abheben und Reibung, Plastizität und Beulen (CalculiX).~~ Seit Stufe 4 gebaut
+  (Abschnitt „Stand Stufe 4“ unten): auf Anfrage (`festigkeit(…, verfahren="ccx")`) oder aus model.py
+  (`st.festigkeit`). Der Festkörper der Stufe 3 spannt weiter fest ein und rechnet linear-elastisch; er bleibt die
+  schnelle Stufe nach jedem Lauf.
 - Drehfedern ohne Spiel und ohne Rutschen der Klemmung, aus der Balkenrechnung (am Kugelschieber etwa doppelt so steif
   wie im Festkörper gemessen); eine Feder aus einer kleinen FEM des Halters im Hintergrund mit zweitem Stabwerk-Durchgang
   wäre die nächste Stufe.
@@ -355,3 +353,65 @@ Schalter für frei laufende Gelenke mit Bereich (Nachbesserung).
   lässt sie laufen. Festkörper spannen die Gleitfläche fest ein.
 - Weiter wie oben: Rückprall, Rollwiderstand, Lagerreibung der Laufrollen, federnde Stäbe im Ablauf; Füllung und Wände
   der Druckteile; gekrümmte Elemente; Kraftpaare nicht im Ablauf.
+
+## Stand Stufe 4: Kontakt, Plastizität, Traglast, Beulen (Zweig `statik4`, 23.10.2026)
+
+Kevin am 23.10.2026: „Bau doch auch die anderen Sachen, diese Kontakt- und Plastizität-Geschichten.“ Umgesetzt in
+`kernel/src/kevcad_kernel/statik/ccx/` (Übersicht im Docstring von `__init__.py`), MCP `festigkeit` mit
+`verfahren="ccx"`, `kontakt`, `plastisch`, `traglast`, `beulen`, `klemmkraft`, `reibwert` (additiv), in model.py
+`st.kontakt(a, b, reibwert=, klemmkraft=, spiel=)` und `st.festigkeit(teil, kontakt=, plastisch=, traglast=, beulen=)`,
+STATICS und STATICS_FIELD additiv (PROTOCOL.md „CalculiX (Stufe 4, additiv)“). App: im Festkörper des
+Statik-Abschnitts „CalculiX (S4)“, Traglast, Sicherheit unter Last, Kontakt je Partner, Klemmkraft, Plastizität, Beulen,
+„rutscht“ und die Auswahl „Farbfeld“ (Ausnutzung, Kontaktdruck, plastische Dehnung, Klaffen, Schlupf). Skill
+`statik.md`, Abschnitt „Kontakt, Plastizität, Traglast, Beulen“. Tests `kernel/tests/test_statik4.py` und
+`StatikFestkoerperTests.swift`.
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| T36 | **CalculiX 2.23 von conda-forge** (Paket `calculix`, osx-arm64, mit ARPACK, OpenBLAS, libgfortran, llvm-openmp; SPOOLES eingebaut) über **micromamba** (statisches Programm von conda-forge) in eine eigene Umgebung auf der **externen Platte**: `/Volumes/UPVIS ULTRA/#PROGRAMME_DO-NOT-DELETE#/Kev CAD/calculix/` mit `LIESMICH.txt` (wofür, wer, neu einrichten, Quelle, GPL), `bin/micromamba`, `env/bin/ccx`, `mamba/pkgs` (Paket-Zwischenspeicher), `stand.json`. Belegt 55 MB (micromamba 14 MB, Umgebung 26 MB, Zwischenspeicher 15 MB), rund 25 MB Download, 14 s. Übersteuerbar mit `KEVCAD_CALCULIX_DIR` bzw. `KEVCAD_CCX` oder der Einstellung `calculix.json` in Application Support. `build.sh` richtet es bei jeder Installation ein, falls es fehlt (nie fatal), sonst Kev CAD beim ersten Gebrauch | Kevins Vorgabe: externe Programme auf UPVIS ULTRA, die Systemplatte ist knapp. conda-forge baut ccx reproduzierbar mit allen Bibliotheken; Homebrew hat keine Formel, selbst bauen bräuchte gfortran, SPOOLES und ARPACK. Fehlt die Platte, meldet Stufe 4 „CalculiX nicht verfügbar (externe Platte UPVIS ULTRA nicht angeschlossen)“, S0 bis S3 laufen weiter, das Update scheitert nicht |
+| T37 | **Dieselben Fälle und Netze wie S3:** Der S4-Auftrag ist der Auftrag der Stufe 3 (Teil, Lasten, Lager aus dem Statikmodell) plus Verbindungsarten, Kontaktkörper, Klemmschrauben und Fließkurven (`ccx/auftrag.py`); das Netz ist das P2-Netz der Stufe 3 (Gmsh, scikit-fem) als C3D10, die Lasten dieselben konsistenten Knotenkräfte (RBE3-Verteilung). ccx rechnet in einem eigenen Prozess (`python -m kevcad_kernel.statik.ccx.prozess`), Fortschritt aus seiner Ausgabe über ein Pseudo-Terminal, Abbruch beendet die Prozessgruppe | Linear und ohne Kontakt gleicht S4 der Stufe 3 (Wandhalter: 1,835 und 1,835, Durchbiegung 2,435 mm): Unterschiede kommen nur aus Kontakt und Plastizität. Quer zur Schicht weicher über technische Konstanten mit eigener Orientierung |
+| T38 | **Kontaktpaare** statt fester Einspannung, wo die Verbindung abheben oder gleiten kann: Klemmung, Steck, Aufliegen, Gelenke, bloße Berührung und Spiel, dazu `st.kontakt`; fest bleiben `schraube`, `kleben`, `formschluss` und an der Umgebung `befestigt` Teile. Lager-Partner sind starr (Zuschnitt um das Teil plus 3 mm, alle Knoten fest); Stäbe, die Last einleiten, sind elastische Körper (Zuschnitt um das Teil plus max(15 mm, 1,5 Durchmesser)) und bekommen an ihren Schnittflächen Kraft und Moment beider Seiten aus dem Stabwerk (`auflager[i].seiten`, neu in S1). Fläche zu Fläche nach dem Strafverfahren, Drucksteifigkeit 2 E je mm des weicheren Werkstoffs, Haftsteifigkeit ein Fünfzigstel davon, Haftreibwert der Paarung aus `reibwerte.json` (sonst 0,3). Kontaktzonen nur aus zugewandten Flächen (Normalen gegeneinander, bis 0,3 mm plus Toleranz) | So kommt die Last dort an, wo sie im Bauteil herkommt (über die Bohrung, nicht als Ersatzkraft auf der Fläche). Ohne die Richtungsprüfung kamen Stirn- und Innenflächen des Rohrs als Kontaktflächen dazu: 36 000 Kontaktelemente statt einiger Tausend |
+| T39 | **Halte-Federn** für Körper ohne feste Knoten (Stab im Kontakt, Teil nur auf Kontakt gelagert): je Knoten und Richtung eine Feder, zusammen mindestens 1e-6 · E · Größe und 2 % der Last je mm; das erste Inkrement eines Schritts, in dem ein frei gelagerter Körper Last bekommt, 0,2 % der Last; Inkremente wachsen nach leichter Konvergenz um das Dreifache (CalculiX `D_D`, sonst 1,5). Tragen die Federn mehr als 5 % der Last oder bewegt sich der Körper mehr als 0,1 mm über das Zehnfache des linear Erwarteten, **rutscht** er | Ohne Federn ist das System singulär, solange der Kontakt offen ist; zu weiche Federn schoben die Kugel im ersten Inkrement 13 m aus der Kontaktzone, mit 2 % je mm tragen sie unter Last 0,46 % (Hertz). Das Dreifache halbiert die Zahl der Inkremente |
+| T40 | **Klemmschrauben** aus den Verbindungen: `verbinde(…, art="schraube", mit=[…])` innerhalb des Teils samt eingeschmolzener oder geklebter Teile (Sterngriffklemme: Halter, Einsatz, Schraube, Scheibe). Kräftepaar in einem eigenen ersten Schritt „Vorspannung“: Kopfseite (Flächen an Scheibe bzw. Kopf, Richtung senkrecht zur Auflage) in das Teil, Mutterseite (Einsatz, Mutter) dagegen; liegt die Mutterseite nicht am Teil (im starren Lager), nur die Kopfseite. Klemmkraft ohne Angabe „handfest“ 120 N je mm Gewinde (M6: 720 N), sonst `klemmkraft=` in model.py oder im Werkzeug. Die Teile der Klemmung sind kein Lager (Stufe 3 nimmt sie, weil sie das Teil berühren) | Der Schlitz schließt sich, die Backen pressen das Rohr: das ist die Klemmung, die S3 und die Drehfeder T35 nur annähern. Die Kante zwischen Halter und Einsatz kennt nur die zuletzt erklärte Art, darum aus der Liste der Verbindungen; die Richtung aus den Schwerpunkten allein kippte die Kraft um 2° (Rutschgrenze −4 %) |
+| T41 | **Plastizität** isotrop nach von Mises: Metalle von Rp0,2 auf Rm bei angenommener Gleichmaßdehnung (Stahl 15 %, Edelstahl 30 %, Aluminium 6 %, Buntmetall 20 %), danach ideal plastisch; Druckteile ideal plastisch ab der Zugfestigkeit (Drucklage bekannt) bzw. ab `quer_zur_schicht` · Zugfestigkeit (unbekannt), die Schichtfuge bleibt spröde (Kriterium wie S3). Nach der Last wird entlastet: **bleibende Verformung** | Der Katalog hat Rp0,2 und Rm, aber keine Bruch- oder Gleichmaßdehnung; CalculiX hat keine richtungsabhängige Fließgrenze ohne eigenes Werkstoffmodell, die Schichtfuge bricht spröde: eine Näherung mit ehrlicher Kennzeichnung |
+| T42 | **Traglast** (Standard mit Plastizität, sonst auf Wunsch, etwa die Rutschgrenze einer Klemmung): eigener Lauf mit einer Rampe bis λ_max = max(2, 3 · Ziel, 3 · Sicherheit unter Last) ≤ 50 in Schritten von höchstens 5 %, dann bis zu zwei Läufe in der Klammer des maßgebenden Kriteriums (zügig bis an ihren Anfang, dann 16 Schritte), bis die Klammer schmaler als 2 % ist. Kriterien: plastische Grenzdehnung 5 % (Metall, DIN EN 1993-1-5 Anhang C) bzw. 2 % (Druckteil), Schichtfuge, Festigkeit (elastische Werkstoffe), Rutschen, Kollaps; ccx wird beendet, wenn die Verschiebung springt oder davonläuft. Traglast aus Fließen × 0,95 | Bei Stufe 4 **ist die Sicherheit der Traglastfaktor** (gleiche Ziele, T5). Klammer statt Interpolation, weil Rutschen springt (ein grober Lauf gab 2,19 statt 3,00). Tetraeder zweiter Ordnung liegen voll plastisch zu hoch: am symmetrisch gelagerten Kragbalken +5,7 %, netzunabhängig (h 3 und 1,7 mm), daher × 0,95 |
+| T43 | **Beulen** als eigener linearer Lauf (`*BUCKLE`, Lager wie S3, Last λ = 1); der kleinste positive Beulfaktor zählt als Sicherheit, wenn er kleiner ist | Einfach und genau (Kragstütze +0,1 %), für Bleche und Profile unter Druck |
+| T44 | **Urteil** wie S3 (Urteil `festkoerper`, Ampel über Ziel / Sicherheit, T9), dazu mindestens gelb, wenn das Teil schon unter der Last bleibend fließt (über 0,2 %), rot bei Grenzdehnung unter Last oder wenn ein Partner schon unter der Last rutscht („Klemmkraft erhöhen oder Formschluss“). Ergebnis je Teil additiv in `festkoerper.teile[i]`, Feld mit Zusatzwerten; Befunde in der Prüfung wie S3 (T34, kein Exportverbot, T10) | Eine Farbsprache für alle Stufen; die Zahlen der Stufe 4 ersetzen die der Stufe 3 desselben Teils im Szenario |
+| T45 | **Hintergrund aus model.py:** `st.festigkeit(teil, …)` rechnet nach jedem Lauf nach dem Festkörper der Stufe 3 (Stand „Stufe 4 (CalculiX) folgt“, damit die Prüfung nicht zwischendurch fertig meldet), je Auftrag ein CalculiX-Lauf; ohne `st.festigkeit` nur auf Anfrage. Zwischenspeicher je Fall (Schlüssel aus dem Fall der Stufe 3, Optionen, Verbindungen, Kontaktkörpern, Klemmungen, Stabkräften) unter `<Bundle-Cache>/festkoerper/ccx` | Stufe 4 dauert Sekunden bis Minuten: nicht für jedes Teil nach jedem Lauf, sondern wo Kevin oder der Agent es will; gleiche Fälle sofort |
+
+Nachweise (Tests in `kernel/tests/test_statik4.py`, CalculiX 2.23 auf dem MacBook, Zeiten einschließlich Vernetzen
+und aller Läufe):
+
+| Probe | Handrechnung bzw. Literatur | CalculiX (S4) | Abweichung | Netz, Zeit |
+|---|---|---|---|---|
+| S4 linear gleich S3: Wandhalter PETG stehend gedruckt, 20 N | S3 1,835 | 1,835 | 0 | 537 Tetraeder, 1,2 s |
+| Reibschluss: Block 20 × 20 × 10 mm (Stahl) auf starrer Platte, Klemmkraft 1000 N über Scheibe und Mutter, Querkraft in halber Höhe steigt, μ = 0,3: Rutschgrenze μ F_k / F_q | 3,000 | 3,002 | +0,1 % | 937 Tetraeder, drei Läufe, 112 s |
+| Kragbalken S235 10 × 10 mm, 100 mm, ideal plastisch: F_pl = Rp0,2 · b h² / 4 / L | 587,5 N | 652,5 N roh, 619,9 N abgemindert | +11,1 % roh, +5,5 % | h 3 mm, 17 s |
+| derselbe bei 500 N (über der Fließlast 391,7 N) | fließt an der Einspannung, bleibt verbogen | plastische Dehnung an der Einspannung, bleibend 0,017 mm | | |
+| Kragstütze 10 × 10 × 300 mm, unten eingespannt: F_k = π² E I / (4 L²) | 4 798 N | 4 803 N | +0,1 % | h 5 mm, 1,4 s |
+| Hertz: Kugelkappe R 20 mm auf Block 30 × 30 × 10 mm, PLA, 1000 N, reibungsfrei: p0 = 3 F / (2 π a²) | 102,0 N/mm² | HERTZ_P0 | | HERTZ_NETZ |
+| derselbe: a = (3 F R / (4 E*))^(1/3) | 2,163 mm | HERTZ_A | | |
+| derselbe: Abplattung als Annäherung zweier Punkte auf der Achse in 2 a Tiefe (Halbraum, Johnson Gl. 3.45) | HERTZ_SOLL | HERTZ_IST | | |
+
+Ehrlich zum Kragbalken: Die +11 % roh setzen sich aus der Versteifung der Tetraeder im voll plastischen Zustand (+5,7 %
+am symmetrisch gelagerten Balken, gleich bei h 3 und 1,7 mm) und der starren Einspannung zusammen, die die
+Querdehnung an der Wand behindert und das Fließgelenk etwas vor die Wand schiebt (bei 200 mm Hebel nur noch +7 % roh).
+Abgemindert bleibt die Traglast an starren Einspannungen einige Prozent über der Balkenrechnung.
+
+KUGELSCHIEBER_ABSCHNITT
+
+### Ehrliche Grenzen (Stand Stufe 4)
+
+- **Kontakt** nach dem Strafverfahren (Fläche zu Fläche) mit kleinen Verformungen; die Partner sind Zuschnitte um das
+  Teil, ein lasteinleitender Stab bekommt die Kräfte aus dem Stabwerk, ohne Rückwirkung auf das Stabwerk (die
+  Verteilung der Last zwischen mehreren Haltern rechnet weiter S1 mit den Drehfedern T35). Lager-Partner sind starr.
+- **Klemmkraft** ohne Angabe angenommen („handfest“); Schraubverbindungen zu den Lagern bleiben fest eingespannt, ihre
+  Vorspannung und das Gewinde nicht einzeln.
+- **Plastizität** isotrop; Metalle mit angenommener Gleichmaßdehnung, Druckteile ideal plastisch mit spröder
+  Schichtfuge, ohne richtungsabhängige Fließgrenze, Füllung voll. Traglast aus Fließen mit Tetraedern einige Prozent zu
+  hoch (abgemindert × 0,95; an starren Einspannungen bleiben einige Prozent).
+- **Beulen** linear (Verzweigung), ohne Imperfektionen und ohne Plastizität: eine obere Schranke für dünne Teile.
+- **Dauer**: CalculiX löst mit SPOOLES; bei 40 000 Freiheitsgraden mit Kontakt einige Sekunden je Iteration, ein Fall
+  mit Klemmung und Traglast Minuten. Deshalb nur auf Anfrage oder für Teile mit `st.festigkeit`.
+- Weiter wie oben: Rückprall, Rollwiderstand, Lagerreibung der Laufrollen, federnde Stäbe im Ablauf; gekrümmte
+  Elemente; Kraftpaare nicht im Ablauf.

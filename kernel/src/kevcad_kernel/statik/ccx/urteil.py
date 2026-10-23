@@ -46,7 +46,8 @@ def teil_kurz(r: dict[str, Any]) -> dict[str, Any]:
                                                               "fliessgrenze", "modell", "ort")}
     if r.get("traglast"):
         t = r["traglast"]
-        out["traglast"] = {x: t.get(x) for x in ("faktor", "kriterium", "text", "lastfaktor_max", "erreicht")}
+        out["traglast"] = {x: t.get(x) for x in ("faktor", "kriterium", "text", "lastfaktor_max", "erreicht",
+                                                 "faktor_roh", "laeufe")}
     if r.get("beulen"):
         out["beulen"] = {"faktor": r["beulen"].get("faktor")}
     out["rutscht"] = bool(r.get("rutscht"))

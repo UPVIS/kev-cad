@@ -338,10 +338,12 @@ def test_kragbalken_plastisch_traglast_und_fliessgelenk(tmp_path):
     tr = r["traglast"]
     assert tr["kriterium"] in ("dehnung", "kollaps")
     verhaeltnis = tr["faktor"] * F / F_pl
-    # Tetraeder zweiter Ordnung versteifen voll plastisch, die starre Einspannung behindert die Querdehnung: einige
-    # Prozent über der Balkenrechnung (PLAN-STATIK.md, Stand Stufe 4)
-    assert 1.0 <= verhaeltnis <= 1.15, verhaeltnis
-    print(f"Kragbalken: Traglast {tr['faktor'] * F:.1f} N gegen M_pl/L {F_pl:.1f} N ({verhaeltnis - 1:+.1%}), "
+    roh = tr["faktor_roh"] * F / F_pl
+    # Roh liegen Tetraeder zweiter Ordnung voll plastisch zu hoch (Versteifung, dazu behindert die starre Einspannung
+    # die Querdehnung); abgemindert um 5 % bleibt die starre Einspannung (PLAN-STATIK.md, T42)
+    assert 1.0 <= verhaeltnis <= 1.08 and roh == pytest.approx(verhaeltnis / 0.95, rel=1e-3), (verhaeltnis, roh)
+    print(f"Kragbalken: Traglast {tr['faktor'] * F:.1f} N (roh {tr['faktor_roh'] * F:.1f} N) gegen M_pl/L {F_pl:.1f} N "
+          f"({verhaeltnis - 1:+.1%}, roh {roh - 1:+.1%}), "
           f"plastische Dehnung bei 500 N {pl['dehnung_max']:.4f} bei {pl['ort']}, bleibend {pl['bleibend_mm']:.3f} mm, "
           f"{dauer:.1f} s")
 
