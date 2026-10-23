@@ -8,6 +8,15 @@ Je Teil: Netz (Zwischenspeicher je Teilstand und Netzeinstellung), Steifigkeit e
 je Lagerung alle Lastfälle mit einer Zerlegung bzw. einem AMG-Aufbau. Ergebnis je Fall (Zwischenspeicher je Schlüssel,
 siehe ``auftrag``): Sicherheit, maßgebendes Kriterium, Ort, Verformung, Sicherheit in den anderen Drucklagen und das
 Oberflächennetz mit Ausnutzung, von-Mises-Spannung und Verschiebung je Punkt (für STATICS_FIELD).
+
+Lager (simulation2): fest (Fläche eingespannt), gleitend (an jedem Ort der Fläche nur die gehaltenen Richtungen, genau
+auch schräg) und gelenkig (Fläche wie ein RBE3 an einem festen Bezugspunkt: mittlere Verschiebung null, mittlere Drehung
+nur um die gehaltenen Achsen null, sonst frei). Sobald ein gleitendes oder gelenkiges Lager dabei ist, rechnet der Löser
+mit Zwangsbedingungen (``loeser.Zwang``) und prüft vorher, ob die Lager das Teil in allen sechs Richtungen halten. Je
+Lager steht die Lagerkraft im Ergebnis (``lagerkraefte``). Lasten auf der ganzen Fläche (``flaeche_datei``): gleichmäßig
+(Kraft / Fläche) oder als Druck senkrecht auf jedes Dreieck. Für „Grenze suchen“ mit der FEM schreibt der Prozess die
+Spannungen je Knoten mit (``<schluessel>.sig.npz``) und sucht die Grenze je Teil durch Halbieren über die Überlagerung
+der gerechneten Fälle (``grenzen_suchen``).
 """
 
 from __future__ import annotations
@@ -27,6 +36,46 @@ import numpy as np
 from kevcad_kernel.statik.festkoerper import GRENZEN_S3, VERSION
 
 LAST_RADIUS = (0.1, 3.0, 25.0)  # Lastfläche um einen Punkt: Anteil der Teilgröße, mindestens, höchstens (mm)
+FLAECHE_TOL = 0.35  # mm: Randdreiecke einer Lastfläche (Netz der B-Rep-Fläche)
+GRENZE_MAX = 1000.0  # Lastfaktor höchstens
+GRENZE_SCHRITTE = 16
+
+
+def _lager_art(nb: dict[str, Any]) -> str:
+    """Art eines Lagers (Nachbar): gelenkig, gleitend oder fest (Kontakt mit einem Nachbarn ist fest)."""
+    if nb.get("art") == "gelenkig" or nb.get("gelenkig"):
+        return "gelenkig"
+    if nb.get("gehalten") or nb.get("komponenten"):
+        return "gleitend"
+    return "fest"
+
+
+def _gehalten(nb: dict[str, Any]) -> list[list[float]]:
+    if nb.get("gehalten"):
+        return [list(map(float, h)) for h in nb["gehalten"]]
+    return [[1.0 if i == int(c) else 0.0 for i in range(3)] for c in nb.get("komponenten") or []]
+
+
+def _flaechen_facetten(N: Any, datei: str, tol: float = FLAECHE_TOL) -> np.ndarray:
+    """Randdreiecke des FEM-Netzes auf einer B-Rep-Fläche (Netz der Fläche): Schwerpunkt nah an ihr und Normale wie
+    das nächste Dreieck der Fläche (keine Nachbarflächen an den Kanten)."""
+    from scipy.spatial import cKDTree
+
+    from kevcad_kernel.statik.festkoerper import kontakt
+
+    with np.load(datei) as z:
+        P, T = np.asarray(z["pos"], float), np.asarray(z["tri"], np.int64)
+    if len(T) == 0:
+        return np.zeros(0, dtype=np.int64)
+    d = kontakt.abstand(N.rand_mitte, P, T, tol)
+    sel = np.flatnonzero(np.isfinite(d))
+    if len(sel) == 0:
+        return sel
+    X = P[T]
+    n = np.cross(X[:, 1] - X[:, 0], X[:, 2] - X[:, 0])
+    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-300)
+    _, j = cKDTree(X.mean(axis=1)).query(N.rand_mitte[sel])
+    return sel[np.einsum("ij,ij->i", N.rand_normale[sel], n[j]) > 0.5]
 
 
 def speicher() -> Path:
@@ -160,8 +209,11 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
     kurz = T["name"].rsplit("/", 1)[-1]
     out: list[dict[str, Any]] = []
     offen = []
+    mit_sigma = bool(T.get("grenze"))
     for f in T["faelle"]:
         alt = lies_fall(ablage / "faelle" / f"{f['schluessel']}.npz")
+        if alt is not None and mit_sigma and not (ablage / "faelle" / f"{f['schluessel']}.sig.npz").exists():
+            alt = None  # Grenze suchen braucht die Spannungen je Knoten
         if alt is not None:
             out.append({**alt, "id": f["id"], "aus_speicher": True})
         else:
@@ -208,18 +260,10 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
                 out.append({"id": f["id"], "stand": "failed", "meldung": f"keine Lagerfläche zu {', '.join(lager)} "
                                                                         "gefunden (berühren sie sich?)"})
             continue
-        # Gleitende Lager (Simulation): nur die Richtung senkrecht zur Fläche ist gehalten
-        teilweise = {x: T["nachbarn"].get(x, {}).get("komponenten") for x in lager
-                     if T["nachbarn"].get(x, {}).get("komponenten")}
-        voll = [x for x in lager if x not in teilweise]
-        gehalten = set(range(3)) if any(len(beruehrt.get(x, ())) for x in voll) else \
-            {int(c) for ks in teilweise.values() for c in ks}
-        if gehalten != {0, 1, 2}:
-            for f in fs:
-                out.append({"id": f["id"], "stand": "failed",
-                            "meldung": "nur gleitende Lager: das Teil ist längs der Lagerflächen nicht gehalten "
-                                       "(ein festes Lager dazu setzen)"})
-            continue
+        # Lagerarten (simulation2): fest, gleitend (gehaltene Richtungen), gelenkig (RBE3-artig gekoppelt)
+        arten = {x: _lager_art(T["nachbarn"].get(x, {})) for x in lager}
+        mit_zwang = any(a != "fest" for a in arten.values())
+        voll = [x for x in lager if arten[x] == "fest"]
         # Teile des Netzes ohne Lager (lose Stücke) würden das System singulär machen: weglassen
         komp = loeser.komponenten(N.t, N.n)
         mit_lager = np.unique(komp[np.unique(N.rand[fest])])
@@ -228,14 +272,10 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
             for f in fs:
                 f.setdefault("hinweise", []).append(f"{int(lose.sum())} Tetraeder ohne Verbindung zum Lager "
                                                     "weggelassen")
-        if teilweise:
+        if mit_zwang:
             voll_f = np.unique(np.concatenate([beruehrt.get(x, np.zeros(0, dtype=np.int64)) for x in voll])) \
                 if voll else np.zeros(0, dtype=np.int64)
             fest_dofs = N.feste_dofs(voll_f) if len(voll_f) else np.zeros(0, dtype=np.int64)
-            for x, ks in teilweise.items():
-                sel = beruehrt.get(x, np.zeros(0, dtype=np.int64))
-                if len(sel):
-                    fest_dofs = np.union1d(fest_dofs, N.feste_dofs(sel, komponenten=[int(c) for c in ks]))
         else:
             fest_dofs = N.feste_dofs(fest)
         if lose.any():
@@ -245,6 +285,29 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
             weg_kanten = np.unique(N.kante[:, lose])
             weg_kanten = weg_kanten[~np.isin(weg_kanten, np.unique(N.kante[:, ~lose]))]
             fest_dofs = np.union1d(fest_dofs, N.basis.edge_dofs[:, weg_kanten].reshape(-1))
+        zw = None
+        if mit_zwang:
+            schief, kopplung = [], []
+            for x in lager:
+                sel = beruehrt.get(x, np.zeros(0, dtype=np.int64))
+                if len(sel) == 0:
+                    continue
+                nb = T["nachbarn"].get(x, {})
+                if arten[x] == "gleitend":
+                    schief.append((N.facetten_dofs(sel), _gehalten(nb)))
+                elif arten[x] == "gelenkig":
+                    kopplung += N.gelenk_zeilen(sel, nb.get("drehachsen") or [])
+            zw = N.zwang(fest_dofs, schief, kopplung)
+            n_frei, frei_text = N.starr_frei(zw)
+            if n_frei:
+                nur_gleitend = all(a == "gleitend" for a in arten.values())
+                text = ("nur gleitende Lager: " if nur_gleitend else "") + \
+                    "das Teil ist mit diesen Lagern nicht in allen Richtungen gehalten (" + "; ".join(frei_text) + \
+                    ("); ein festes Lager dazu setzen" if nur_gleitend else "); ein Lager dazu setzen oder eines fest "
+                                                                           "machen")
+                for f in fs:
+                    out.append({"id": f["id"], "stand": "failed", "meldung": text})
+                continue
         vektoren, details = [], []
         for f in fs:
             lv = np.zeros(N.N)
@@ -255,7 +318,19 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
                 M = np.asarray(last["moment"], float) if last.get("moment") is not None else None
                 P = np.asarray(last["punkt"], float) if last.get("punkt") is not None else None
                 summe += F
-                if last.get("kontakt_mit"):
+                if last.get("flaeche_datei"):  # Last auf der ganzen Fläche (simulation2)
+                    sel = _flaechen_facetten(N, last["flaeche_datei"])
+                    if len(sel) == 0:
+                        sel = _lastflaeche(N, P, groesse, n["h"]) if P is not None else np.arange(len(N.rand))
+                    druck = (last.get("flaeche") or {}).get("druck")
+                    if druck:
+                        lv += N.last_druck(sel, float(druck))
+                        F_ist = -float(druck) * (N.rand_normale[sel] * N.rand_flaeche_mm2[sel, None]).sum(axis=0)
+                        summe += F_ist - F  # Resultierende auf dem FEM-Netz (gleich F bis auf die Vernetzung)
+                    else:
+                        lv += N.last_flaeche(sel, F, None, None)  # gleichmäßig: F / A auf jedem Dreieck
+                    lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
+                elif last.get("kontakt_mit"):
                     sel = beruehrt.get(last["kontakt_mit"], np.zeros(0, dtype=np.int64))
                     if len(sel) == 0 and P is not None:
                         sel = _lastflaeche(N, P, groesse, n["h"])
@@ -280,13 +355,25 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
                             "eigengewicht_n": [round(float(c), 4) for c in g * V]})
         schritt(0.5 + 0.4 * erledigt / max(len(offen), 1), f"lösen ({len(fs)} Lastfälle)")
         t2 = time.perf_counter()
-        us, info = N.loese(K, fest_dofs, vektoren, duenn=duenn)
+        us, info = N.loese(K, fest_dofs, vektoren, duenn=duenn, zwang=zw)
         t_loesen = (time.perf_counter() - t2) * 1000
         fest_knoten = np.unique(N.rand[fest])
+        lager_dofs = {x: N.facetten_dofs(beruehrt[x]) if len(beruehrt.get(x, ())) else np.zeros(0, dtype=np.int64)
+                      for x in lager}
         for i, (f, u, det) in enumerate(zip(fs, us, details)):
             t3 = time.perf_counter()
             kurzinfo, felder = _bewerten(N, u, C, T, f, fest_knoten)
             kurzinfo.update(det)
+            kurzinfo["lagerkraefte"] = lagerkraefte(N, K, u, vektoren[i], lager_dofs, arten, T["nachbarn"])
+            kurzinfo["lagerarten"] = dict(arten)
+            if zw is not None:
+                kurzinfo["zwang"] = dict(zw.info)
+            if mit_sigma:
+                frei = np.ones(N.n, dtype=bool)
+                frei[fest_knoten] = False
+                _schreibe_npz(ablage / "faelle" / f"{f['schluessel']}.sig.npz",
+                              sigma=N.spannung(u, C).astype(np.float64), frei=frei,
+                              punkte=N.p.astype(np.float32))
             kurzinfo.update({
                 "stand": "done", "szenario": f["szenario"], "teil": T["name"], "schluessel": f["schluessel"],
                 "lager": list(lager), "lager_aus_last": f.get("lager_aus_last"),
@@ -308,6 +395,138 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
             out.append({**kurzinfo, "id": f["id"], "aus_speicher": False, "_felder": felder})
             erledigt += 1
         schritt(0.5 + 0.45 * erledigt / max(len(offen), 1), f"{erledigt} von {len(offen)} Lastfällen fertig")
+    return out
+
+
+def lagerkraefte(N: Any, K: Any, u: np.ndarray, f: np.ndarray, lager_dofs: dict[str, np.ndarray],
+                 arten: dict[str, str], nachbarn: dict[str, Any]) -> dict[str, list[float]]:
+    """Resultierende Lagerkraft je Lager (N, auf das Teil): Reaktion r = K u − f an den Orten seiner Fläche. Teilen
+    sich Lager einen Ort (Kante zwischen zwei Lagerflächen), wird r dort nach ihren gehaltenen Richtungen aufgeteilt
+    (kleinste Quadrate; gleitend nur in seinen Richtungen); ein festes oder gelenkiges Lager an diesem Ort nimmt, was
+    übrig bleibt."""
+    r = np.asarray(K @ u).reshape(-1) - f
+    trip, ort = N.orte()
+    je_ort: dict[int, list[str]] = {}
+    for x, d_ in lager_dofs.items():
+        for o in np.unique(ort[d_]):
+            je_ort.setdefault(int(o), []).append(x)
+    out = {x: np.zeros(3) for x in lager_dofs}
+    for o, xs in je_ort.items():
+        ro = r[trip[o]]
+        if len(xs) == 1:
+            out[xs[0]] += ro
+            continue
+        gl = [x for x in xs if arten.get(x) == "gleitend"]
+        rest = [x for x in xs if x not in gl]
+        if gl:
+            spalten = [(x, np.asarray(h, float)) for x in gl for h in _gehalten(nachbarn.get(x, {}))]
+            A = np.stack([h / max(float(np.linalg.norm(h)), 1e-300) for _, h in spalten], axis=1)
+            lam = np.linalg.lstsq(A, ro, rcond=None)[0] if not rest else np.zeros(A.shape[1])
+            for (x, _), lk, a in zip(spalten, lam, A.T):
+                out[x] += lk * a
+            ro = ro - A @ lam
+        if rest:
+            out[rest[0]] += ro
+    return {x: [round(float(c), 3) + 0.0 for c in v] for x, v in out.items()}
+
+
+def _index(s: np.ndarray, T: dict[str, Any]) -> np.ndarray:
+    """Ausnutzungsindex je Knoten (1 = Festigkeit erreicht) wie in ``_bewerten``."""
+    from kevcad_kernel.statik.festkoerper import werkstoff as wk
+
+    w = T["werkstoff"]
+    i_m, i_s = wk.index(s, w["f"], w.get("q"), T.get("schicht") if T["druckteil"] else None)
+    if T["druckteil"] and i_s is None:
+        return i_m / float(w.get("q") or 0.5)
+    if i_s is not None:
+        return np.maximum(i_m, i_s)
+    return i_m
+
+
+def halbieren(ok: Any, lo: float, hi: float, schritte: int = GRENZE_SCHRITTE) -> float | None:
+    """Größtes x in [lo, hi] mit ok(x) (wie ``simulation.grenze._halbieren``): einklammern, dann halbieren."""
+    if not ok(lo):
+        return None
+    b = min(max(lo * 2, 1.0), hi)
+    while b < hi and ok(b):
+        lo, b = b, min(b * 2, hi)
+    if b >= hi and ok(hi):
+        return hi
+    hi = b
+    for _ in range(schritte):
+        mitte = (lo + hi) / 2
+        if ok(mitte):
+            lo = mitte
+        else:
+            hi = mitte
+    return lo
+
+
+def grenzen_suchen(teile: list[dict[str, Any]], faelle: list[dict[str, Any]], ablage: Path) -> list[dict[str, Any]]:
+    """„Grenze suchen“ mit der FEM: je Teil und Gruppe die gerechneten Grundfälle überlagern (linear-elastisch:
+    Spannung = Σ Gewicht · Spannung des Grundfalls) und den Faktor halbieren, bis die Ausnutzung das Ziel bzw. die
+    Festigkeit erreicht. ``last``: Grundfälle bei λ₁ und λ₂ (Spannung linear in λ); ``neigung``: drei Neigungen θₖ
+    (Spannung = A + B sin θ + C cos θ)."""
+    nach_id = {r.get("id"): r for r in faelle}
+    out = []
+    for T in teile:
+        for gruppe, g in (T.get("grenze") or {}).items():
+            basis = {}
+            for f in T["faelle"]:
+                if (f.get("grenze") or {}).get("gruppe") == gruppe:
+                    r = nach_id.get(f["id"]) or {}
+                    if r.get("stand") != "done":
+                        continue
+                    pfad = ablage / "faelle" / f"{f['schluessel']}.sig.npz"
+                    if pfad.exists():
+                        with np.load(pfad) as z:
+                            basis[float(f["grenze"]["wert"])] = (np.asarray(z["sigma"], float),
+                                                                 np.asarray(z["frei"], bool),
+                                                                 np.asarray(z["punkte"], float), f, r)
+            werte = sorted(basis)
+            art = g.get("art") or "last"
+            if (art == "last" and len(werte) < 2) or (art == "neigung" and len(werte) < 3):
+                out.append({"teil": T["name"], "gruppe": gruppe, "stand": "failed",
+                            "meldung": "Grundfälle nicht gerechnet"})
+                continue
+            frei = basis[werte[0]][1]
+            if not frei.any():
+                frei = np.ones_like(frei)
+            punkte = basis[werte[0]][2]
+            if art == "last":
+                (l1, (s1, *_)), (l2, (s2, *_)) = (werte[0], basis[werte[0]]), (werte[1], basis[werte[1]])
+                d = (s2 - s1) / (l2 - l1)
+
+                def sigma(x: float, s1=s1, l1=l1, d=d) -> np.ndarray:
+                    return s1 + (x - l1) * d
+                hi = GRENZE_MAX
+            else:
+                th = np.radians(werte[:3])
+                A = np.stack([np.ones(3), np.sin(th), np.cos(th)], axis=1)
+                S = np.stack([basis[w][0] for w in werte[:3]])  # (3, n, 6)
+                koef = np.einsum("ij,jkl->ikl", np.linalg.inv(A), S)
+
+                def sigma(x: float, koef=koef) -> np.ndarray:
+                    t = math.radians(x)
+                    return koef[0] + math.sin(t) * koef[1] + math.cos(t) * koef[2]
+                hi = float(g.get("max") or 60.0)
+            ziel = float(basis[werte[0]][3].get("ziel") or 2.0)
+            zaehler = {"n": 0}
+
+            def ausnutzung(x: float) -> tuple[float, int]:
+                zaehler["n"] += 1
+                idx = _index(sigma(x), T)
+                k = int(np.flatnonzero(frei)[np.argmax(idx[frei])])
+                return float(idx[k]), k
+
+            ziel_g = halbieren(lambda x: ausnutzung(x)[0] * ziel <= 1.0, 0.0, hi)
+            bruch_g = halbieren(lambda x: ausnutzung(x)[0] <= 1.0, 0.0, hi)
+            e: dict[str, Any] = {"teil": T["name"], "gruppe": gruppe, "art": art, "stand": "done", "ziel": ziel,
+                                 "ziel_grenze": ziel_g, "bruch_grenze": bruch_g, "auswertungen": zaehler["n"]}
+            if ziel_g is not None and ziel_g < hi:
+                _, k = ausnutzung(ziel_g * 1.0001)
+                e["ort"] = [round(float(c), 2) for c in punkte[k]]
+            out.append(e)
     return out
 
 
@@ -336,6 +555,9 @@ def main(argv: list[str] | None = None) -> int:
                 out["faelle"].append({"id": f["id"], "stand": "failed", "szenario": f["szenario"], "teil": T["name"],
                                       "meldung": f"nicht gerechnet: {type(exc).__name__}: {exc}",
                                       "traceback": traceback.format_exc(limit=6)})
+    if any(T.get("grenze") for T in teile):
+        melde(0.97, "Grenze suchen (Halbieren über die überlagerten Spannungen)")
+        out["grenze"] = grenzen_suchen(teile, out["faelle"], ablage)
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
     melde(1.0, "fertig")
     tmp = argv[1] + ".tmp"

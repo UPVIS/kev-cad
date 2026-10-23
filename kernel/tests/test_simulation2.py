@@ -193,3 +193,192 @@ def test_lager_je_lastfall(tmp_path):
     assert anbindung.LETZTER.modell_fuer("Kragarm") is anbindung.LETZTER.modell
     print(f"Lager je Lastfall: Kragarm w = {_durchbiegung(krag):.2f} mm (Hand {w_krag:.2f}), gestützt R_B = {rb:.2f} N "
           f"(Hand {20 + 3 * q * L / 8:.2f})")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Festkörper-FEM: gelenkige und gleitende Lager, Last auf der ganzen Fläche (Prozess direkt, Netz im Speicher je Test)
+
+
+def _ebene(pfad: Path, mitte, normale, groesse: float = 400.0) -> str:
+    """Nachbarnetz „Lagerfläche“: Quadrat in der Ebene durch ``mitte`` senkrecht zu ``normale``."""
+    n = np.asarray(normale, float) / np.linalg.norm(normale)
+    a = np.cross(n, [0, 0, 1.0]) if abs(n[2]) < 0.9 else np.cross(n, [1.0, 0, 0])
+    a /= np.linalg.norm(a)
+    b = np.cross(n, a)
+    m = np.asarray(mitte, float)
+    g = groesse / 2
+    pos = np.array([m - a * g - b * g, m + a * g - b * g, m + a * g + b * g, m - a * g + b * g])
+    np.savez(pfad, pos=pos, tri=np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64))
+    return str(pfad)
+
+
+def _flaeche_npz(pfad: Path, face) -> str:
+    """Netz einer build123d-Fläche (Lastfläche) wie ``zuordnung.flaechen_netz``."""
+    pts, tris = face.tessellate(0.05)
+    np.savez(pfad, pos=np.array([[p.X, p.Y, p.Z] for p in pts], float), tri=np.asarray(tris, dtype=np.int64))
+    return str(pfad)
+
+
+def _balken(tmp: Path, lager_art: str):
+    """Balken 200 × 20 × 20 mm (PLA aus dem Katalog), Stirnflächen gelagert, 100 N gleichmäßig auf der ganzen
+    Oberseite."""
+    from build123d import Axis, Box, Location
+    from test_festkoerper import _brep, _rechne, _teil, mechanik
+
+    me = mechanik("pla")
+    E, nu = float(me["e_modul"]), float(me.get("querkontraktion") or 0.3)
+    L, b, h, F = 200.0, 20.0, 20.0, 100.0
+    form = Box(L, b, h).moved(Location((L / 2, 0, h / 2)))
+    brep = _brep(form, tmp / "balken.brep")
+    oben = form.faces().sort_by(Axis.Z)[-1]
+    nachbarn = {}
+    for name, x, n in (("Lager: L", 0.0, (-1, 0, 0)), ("Lager: R", L, (1, 0, 0))):
+        nb = {"datei": _ebene(tmp / f"{name[-1]}.npz", (x, 0, h / 2), n), "tol": 0.3}
+        if lager_art == "gelenkig":
+            nb.update({"art": "gelenkig", "drehachsen": [list(n)]})
+        nachbarn[name] = nb
+    w = {"E": E, "nu": nu, "E_z": None, "f": float(me["zugfestigkeit"]), "q": None, "name": "PLA"}
+    teil = _teil("Balken", brep, w, L * b * h, (0, -10, 0), (L, 10, h), nachbarn, h_mm=4.0)
+    fall = {"id": "0.0", "szenario": "Last", "teil": "Balken", "ziel": 2.0, "schluessel": f"balken-{lager_art}",
+            "lasten": [{"kraft": [0, 0, -F], "moment": None, "punkt": [L / 2, 0, h],
+                        "flaeche": {"index": 5, "flaeche_mm2": L * b},
+                        "flaeche_datei": _flaeche_npz(tmp / "oben.npz", oben)}],
+            "lager": ["Lager: L", "Lager: R"], "feld": [0, 0, 0]}
+    out, dauer = _rechne(tmp, teil, [fall])
+    r = out["faelle"][0]
+    assert r["stand"] == "done", r
+    with np.load(r["feld"]) as z:
+        P, U = z["punkte"].astype(float), z["verschiebung"].astype(float)
+    I = b * h ** 3 / 12
+    G_ = E / (2 * (1 + nu))
+    kappa = 10 * (1 + nu) / (12 + 11 * nu)
+    return {"r": r, "P": P, "U": U, "E": E, "I": I, "F": F, "L": L, "h": h, "schub": F * L / (8 * kappa * G_ * b * h),
+            "dauer": dauer}
+
+
+def _mitte_w(d: dict) -> float:
+    """Durchbiegung in Feldmitte auf der neutralen Faser (Seitenfläche y = −10, z = 10)."""
+    P, U = d["P"], d["U"]
+    sel = (np.abs(P[:, 0] - d["L"] / 2) < 3) & (np.abs(P[:, 2] - d["h"] / 2) < 3) & (np.abs(P[:, 1] + 10) < 1e-3)
+    assert sel.any()
+    return float(-U[sel, 2].mean())
+
+
+def _endwinkel(d: dict) -> float:
+    """Drehung der linken Stirnfläche (rad): (u_x oben − u_x unten) / h (oben wandert ins Feld)."""
+    P, U = d["P"], d["U"]
+    ende = np.abs(P[:, 0]) < 1e-3
+    oben = ende & (np.abs(P[:, 2] - d["h"]) < 1e-3)
+    unten = ende & (np.abs(P[:, 2]) < 1e-3)
+    return float((U[oben, 0].mean() - U[unten, 0].mean()) / d["h"])
+
+
+def test_gelenkiges_lager_in_der_fem_und_flaechenlast(tmp_path):
+    """Balken auf zwei gelenkigen Stirnflächen (RBE3-artig: Fläche hält im Mittel, dreht frei um die Querachsen,
+    um ihre Normale gehalten), 100 N gleichmäßig auf der ganzen Oberseite: Durchbiegung in Feldmitte
+    w = 5 F L³ / (384 E I) + F L / (8 κ G A) (Timoshenko, κ nach Cowper), Endverdrehung θ = F L² / (24 E I), je Lager
+    F / 2. Gegenprobe beidseitig fest: w = F L³ / (384 E I) + F L / (8 κ G A), keine Endverdrehung."""
+    (tmp_path / "g").mkdir()
+    (tmp_path / "f").mkdir()
+    g = _balken(tmp_path / "g", "gelenkig")
+    f = _balken(tmp_path / "f", "fest")
+    E, I, F, L = g["E"], g["I"], g["F"], g["L"]
+    w_g = 5 * F * L ** 3 / (384 * E * I) + g["schub"]
+    w_f = F * L ** 3 / (384 * E * I) + f["schub"]
+    assert _mitte_w(g) == pytest.approx(w_g, rel=0.04)
+    assert _mitte_w(f) == pytest.approx(w_f, rel=0.12)  # Einspannung der ganzen Stirnfläche: etwas steifer
+    assert _mitte_w(g) > 3.5 * _mitte_w(f)
+    theta = F * L ** 2 / (24 * E * I)
+    assert _endwinkel(g) == pytest.approx(theta, rel=0.06)
+    assert abs(_endwinkel(f)) < 0.05 * theta
+    lk = g["r"]["lagerkraefte"]
+    for name in ("Lager: L", "Lager: R"):
+        assert lk[name] == pytest.approx([0, 0, F / 2], abs=0.02 * F)
+    assert g["r"]["lagerarten"] == {"Lager: L": "gelenkig", "Lager: R": "gelenkig"}
+    assert g["r"]["lastflaechen_mm2"][0] == pytest.approx(L * 20, rel=0.01)  # ganze Oberseite
+    assert g["r"]["gleichgewicht_n"] < 1e-6
+    print(f"Gelenkig (FEM): w {_mitte_w(g):.4f} mm (Hand {w_g:.4f}), θ {_endwinkel(g) * 1e3:.3f} mrad (Hand "
+          f"{theta * 1e3:.3f}); fest: w {_mitte_w(f):.4f} mm (Hand {w_f:.4f}); Lager {lk}, {g['r']['netz']}")
+
+
+def test_gleitende_lager_schraeg_in_der_fem(tmp_path):
+    """Würfel 40 mm, um 30° um Y gekippt, liegt in einer reibungsfreien Ecke aus drei gleitenden Lagern (Unterseite,
+    Vorderseite, Seite; je nur senkrecht gehalten, schräg zu den Achsen). Unter dem Eigengewicht W überträgt jede
+    Fläche nur eine Kraft senkrecht zu sich: Σ Rᵢ (−nᵢ) = −W, also R_unten = W cos α, R_vorn = W sin α, R_seite = 0.
+    Auf die nächste Achse gerundet (bisher) gäbe es R = W senkrecht und nichts waagrecht."""
+    from build123d import Box, Rot
+    from test_festkoerper import _brep, _rechne, _teil
+
+    a = math.radians(30)
+    form = Rot(0, 30, 0) * Box(40, 40, 40)
+    brep = _brep(form, tmp_path / "klotz.brep")
+    faces = list(form.faces())
+
+    def normale(fc):
+        n = fc.normal_at(fc.center())
+        return np.array([n.X, n.Y, n.Z])
+
+    unten = min(faces, key=lambda fc: normale(fc)[2])
+    vorn = max(faces, key=lambda fc: normale(fc)[0])
+    seite = min(faces, key=lambda fc: normale(fc)[1])
+    nachbarn, ns = {}, {}
+    for name, fc in (("Lager: U", unten), ("Lager: V", vorn), ("Lager: S", seite)):
+        n = normale(fc)
+        c = fc.center()
+        ns[name] = n
+        nachbarn[name] = {"datei": _ebene(tmp_path / f"{name[-1]}.npz", (c.X, c.Y, c.Z), n), "tol": 0.3,
+                          "gehalten": [n.tolist()], "normale": n.tolist()}
+    w = {"E": 3500.0, "nu": 0.35, "E_z": None, "f": 50.0, "q": None, "name": "PLA"}
+    bb = form.bounding_box()
+    teil = _teil("Klotz", brep, w, 64000.0, (bb.min.X, bb.min.Y, bb.min.Z), (bb.max.X, bb.max.Y, bb.max.Z), nachbarn,
+                 h_mm=5.0)
+    teil["masse_kg"] = 10.0
+    fall = {"id": "0.0", "szenario": "Ecke", "teil": "Klotz", "ziel": 2.0, "schluessel": "ecke-1", "lasten": [],
+            "lager": list(nachbarn), "feld": [0, 0, -G]}
+    out, _ = _rechne(tmp_path, teil, [fall])
+    r = out["faelle"][0]
+    assert r["stand"] == "done", r
+    W = 10.0 * G
+    Nm = np.stack([-ns[k] for k in nachbarn], axis=1)  # Kräfte auf den Klotz längs der Innennormalen
+    R = np.linalg.solve(Nm, -np.array([0, 0, -W]))
+    assert R == pytest.approx([W * math.cos(a), W * math.sin(a), 0.0], abs=1e-6)
+    for k, Rk in zip(nachbarn, R):
+        assert r["lagerkraefte"][k] == pytest.approx((-ns[k] * Rk).tolist(), abs=0.01 * W)
+    assert r["zwang"]["schraeg"] >= 2
+    # nur zwei der drei Flächen: in Richtung Y verschiebbar, nicht gehalten
+    teil2 = dict(teil, nachbarn={k: v for k, v in nachbarn.items() if k != "Lager: S"})
+    out2, _ = _rechne(tmp_path, teil2, [dict(fall, lager=["Lager: U", "Lager: V"], schluessel="ecke-2")])
+    r2 = out2["faelle"][0]
+    assert r2["stand"] == "failed" and "verschiebbar in (0,00; 1,00; 0,00)" in r2["meldung"]
+    print(f"Ecke schräg: Lagerkräfte {r['lagerkraefte']} (Hand R = {np.round(R, 3).tolist()} N)")
+
+
+def test_druck_auf_der_ganzen_flaeche_in_der_fem(tmp_path):
+    """Würfel 20 mm, unten fest, oben Druck 0,5 N/mm²: Resultierende p · A = 200 N, die das Lager aufnimmt; die
+    Lastfläche ist die ganze Oberseite."""
+    from build123d import Axis, Box, Location
+    from test_festkoerper import _brep, _rechne, _teil
+
+    form = Box(20, 20, 20).moved(Location((0, 0, 10)))
+    brep = _brep(form, tmp_path / "w.brep")
+    oben = form.faces().sort_by(Axis.Z)[-1]
+    nachbarn = {"Lager: B": {"datei": _ebene(tmp_path / "b.npz", (0, 0, 0), (0, 0, -1)), "tol": 0.3}}
+    w = {"E": 3500.0, "nu": 0.35, "E_z": None, "f": 50.0, "q": None, "name": "PLA"}
+    teil = _teil("Würfel", brep, w, 8000.0, (-10, -10, 0), (10, 10, 20), nachbarn, h_mm=3.0)
+    fall = {"id": "0.0", "szenario": "Druck", "teil": "Würfel", "ziel": 2.0, "schluessel": "druck-1",
+            "lasten": [{"kraft": [0, 0, -200.0], "moment": None, "punkt": [0, 0, 20],
+                        "flaeche": {"index": 5, "flaeche_mm2": 400.0, "druck": 0.5},
+                        "flaeche_datei": _flaeche_npz(tmp_path / "oben.npz", oben)}],
+            "lager": ["Lager: B"], "feld": [0, 0, 0]}
+    out, _ = _rechne(tmp_path, teil, [fall])
+    r = out["faelle"][0]
+    assert r["stand"] == "done", r
+    assert r["kraft_n"] == pytest.approx([0, 0, -200.0], abs=0.01)
+    assert r["lagerkraefte"]["Lager: B"] == pytest.approx([0, 0, 200.0], abs=0.5)
+    assert r["lastflaechen_mm2"][0] == pytest.approx(400.0, rel=1e-3)
+    # gleichmäßiger Druck auf einem Würfel: σ_z = −p im ganzen Teil (ohne Querdehnungsbehinderung oben)
+    with np.load(r["feld"]) as z:
+        P, U = z["punkte"], z["verschiebung"]
+    oben_u = float(U[np.abs(P[:, 2] - 20) < 1e-3, 2].mean())
+    assert oben_u < 0
+    print(f"Druck: Lagerkraft {r['lagerkraefte']['Lager: B']} N, Senkung oben {oben_u:.5f} mm")
