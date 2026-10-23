@@ -219,6 +219,8 @@ public final class AppModel: ObservableObject {
     public let statik = StatikStore()
     /// Phase 7 (additiv): Renderings – Einstellungen des Dialogs, Aufträge, Vorschau (Aktionen: `renderActions`).
     public let render = RenderStore()
+    /// Topologie (additiv, PLAN-TOPOLOGIE.md): Optimierung eines Druckteils (Aktionen: `actions as? TopologieActions`).
+    public let topologie = TopologieStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

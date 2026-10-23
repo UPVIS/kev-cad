@@ -539,6 +539,10 @@ public final class AppController: AppActions {
             handleRender(r)
         case .statikFeld(let f):  // Statik Stufe 3: Feld eines Teils (Statik/AppController+Statik.swift)
             applyStatikFeld(f)
+        case .topologie(let s):  // Topologie (Topologie/AppController+Topologie.swift)
+            applyTopologie(s)
+        case .topologieFeld(let f):  // Topologie: Netze (Dichte, Schutz, Körper, vorher/nachher)
+            applyTopologieFeld(f)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

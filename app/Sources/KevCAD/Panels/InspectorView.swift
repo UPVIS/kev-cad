@@ -23,6 +23,8 @@ struct InspectorView: View {
                 ReferenzInspectorSection(model: model, store: model.referenzen, state: state)
             }
             StatikAbschnitt(store: model.statik, actions: model.statikActions)  // Statik Stufe 1
+            TopologieAbschnitt(model: model, store: model.topologie, statik: model.statik,
+                               actions: model.topologieActions)  // Topologie (PLAN-TOPOLOGIE.md)
             measurementsSection
             projectSection
         }
