@@ -13,6 +13,8 @@ extension AppModel {
 struct StatikAbschnitt: View {
     @ObservedObject var store: StatikStore
     var actions: StatikActions?
+    /// Bereich „Simulation“ öffnen (Lastfälle anlegen, Kräfte und Lager per Klick, Ergebnistabelle).
+    var oeffnen: (() -> Void)?
 
     var body: some View {
         if let e = store.ergebnis, !e.szenarien.isEmpty {
@@ -56,6 +58,14 @@ struct StatikAbschnitt: View {
                             .foregroundStyle(.tertiary)
                     }
                     Spacer()
+                    if let oeffnen {
+                        Button(action: oeffnen) {
+                            Image(systemName: "gauge.with.needle")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Im Bereich Simulation öffnen: Lastfälle, Kräfte und Lager per Klick, Ergebnistabelle (⌘4)")
+                    }
                     if actions != nil {
                         Toggle(isOn: Binding(get: { store.farbverlauf }, set: { actions?.setStatikFarbverlauf($0) })) {
                             Image(systemName: "paintpalette")

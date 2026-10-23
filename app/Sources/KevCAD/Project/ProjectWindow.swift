@@ -2,7 +2,8 @@ import KevCADCore
 import SwiftUI
 
 /// Projektfenster: links Teilebaum, Mitte Viewport mit Schnellansichten und Statusleiste, rechts Inspektor. Dazu die
-/// Bereiche „Dokumente“ (⌘2) und „Material“ (⌘3) mit eigener Seitenleiste, Mitte und eigenem Inspektor.
+/// Bereiche „Dokumente“ (⌘2) und „Material“ (⌘3) mit eigener Seitenleiste, Mitte und eigenem Inspektor, und
+/// „Simulation“ (⌘4): eigene Seitenleiste und eigener Inspektor um denselben Viewport, darunter die Ergebnisse.
 struct ProjectWindow: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
@@ -52,6 +53,7 @@ struct ProjectWindow: View {
             FilamentSelfTest.runIfRequested(session, state: state, material: material)  // KEVCAD_SELFTEST=filament
             RestDruckSelbsttest.runIfRequested(session, state: state, material: material)  // KEVCAD_SELFTEST=restdruck
             MaterialSelfTest.runIfRequested(session, state: state, material: material)
+            SimulationSelfTest.runIfRequested(session, state: state)  // Bereich Simulation (KEVCAD_SELFTEST=simulation)
             if let config = session.demo?.config, config.usesGestell { state.schnell.oeffne(.stueckliste) }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
@@ -98,9 +100,13 @@ struct ProjectWindow: View {
         model.actions?.focus(on: teile)
     }
 
+    /// Der Viewport ist zu sehen: im 3D-Bereich und im Bereich Simulation.
+    private var zeigtViewport: Bool { state.bereich == .modell || state.bereich == .simulation }
+
     /// Untertitel: im 3D-Bereich der Projektordner, im Bereich Dokumente das gezeigte Blatt.
     private var untertitel: String {
         if state.bereich == .material { return "Material" }
+        if state.bereich == .simulation { return "Simulation" + (model.simulation.auswahl.map { " · \($0)" } ?? "") }
         if state.bereich == .dokumente {
             if let id = dokumente.blattID, let e = model.dokumente.uebersicht?.blatt(id) {
                 return "Dokumente · \(e.titel)"
@@ -133,6 +139,8 @@ struct ProjectWindow: View {
                 switch state.bereich {
                 case .dokumente: DokumenteSeitenleiste(model: model, store: model.dokumente, zustand: dokumente)
                 case .material: MaterialSeitenleiste(model: model, material: material, navigation: navigation)
+                case .simulation:
+                    SimulationSeitenleiste(model: model, store: model.simulation, zustand: state.simulationZustand)
                 case .modell: PartTreeView(model: model, state: state)
                 }
             }
@@ -141,10 +149,10 @@ struct ProjectWindow: View {
         } detail: {
             // Der 3D-Bereich bleibt bestehen (Kamera, Metal-Ansicht), ruht aber, solange die Dokumente vorne sind
             ZStack {
-                modellBereich
-                    .opacity(state.bereich == .modell ? 1 : 0)
-                    .allowsHitTesting(state.bereich == .modell)
-                    .accessibilityHidden(state.bereich != .modell)
+                modellBereich  // auch im Bereich Simulation: Kräfte und Lager per Klick im Viewer
+                    .opacity(zeigtViewport ? 1 : 0)
+                    .allowsHitTesting(zeigtViewport)
+                    .accessibilityHidden(!zeigtViewport)
                 if state.bereich == .dokumente {
                     DokumenteBereich(model: model, store: model.dokumente, zustand: dokumente)
                         .transition(.opacity)
@@ -172,8 +180,9 @@ struct ProjectWindow: View {
             .modifier(SpaltenBreite())
             .clipped()
             .onChange(of: state.bereich) { _, b in
-                session.controller?.viewport.mtkView?.isPaused = b != .modell
-                if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
+                session.controller?.viewport.mtkView?.isPaused = b != .modell && b != .simulation
+                if b == .modell || b == .simulation { session.projectWindow?.makeFirstResponder(nil) }
+                model.simulationActions?.setSimulationAktiv(b == .simulation)  // Kräfte und Lager im Viewer
             }
         }
         .inspector(isPresented: $state.showInspector) {
@@ -188,6 +197,8 @@ struct ProjectWindow: View {
                     }
                 case .material:
                     MaterialInspektor(model: model, material: material, navigation: navigation, zeigeIm3D: zeigeIm3D)
+                case .simulation:
+                    SimulationInspektor(model: model, store: model.simulation, zustand: state.simulationZustand)
                 case .modell:
                     InspectorView(model: model, state: state)
                 }
@@ -202,6 +213,8 @@ struct ProjectWindow: View {
                 DokumenteToolbar(model: model, store: model.dokumente, zustand: dokumente, state: state)
             case .material:
                 MaterialToolbar(model: model, material: material, state: state, navigation: navigation, session: session)
+            case .simulation:
+                SimulationToolbar(model: model, store: model.simulation, state: state)
             case .modell:
                 modellToolbar
             }
@@ -244,9 +257,15 @@ struct ProjectWindow: View {
                             }
                             .overlay(alignment: .bottom) { DurchspielenLeiste(model: model) }  // Phase 6, P6-A2
                         AnimationTimeline(model: model, animation: model.animation)  // Phase 5, nur mit Animation
-                        // Strang „Material“: Stückliste und Zuschnitt kompakt, später Druck, je einzeln auf- und zuklappbar
-                        SchnellansichtenBereich(model: model, state: state, gesamtHoehe: geo.size.height - 30,
-                                                aktiv: state.bereich == .modell, navigation: navigation)
+                        if state.bereich == .simulation {  // Bereich Simulation: Ergebnistabelle statt Schnellansichten
+                            Divider()
+                            SimulationErgebnisAnsicht(model: model, store: model.simulation, statik: model.statik,
+                                                      zustand: state.simulationZustand)
+                        } else {
+                            // Strang „Material“: Stückliste und Zuschnitt kompakt, später Druck, je einzeln aufklappbar
+                            SchnellansichtenBereich(model: model, state: state, gesamtHoehe: geo.size.height - 30,
+                                                    aktiv: state.bereich == .modell, navigation: navigation)
+                        }
                         StatusBar(model: model)
                     }
                     .frame(width: geo.size.width, height: geo.size.height)

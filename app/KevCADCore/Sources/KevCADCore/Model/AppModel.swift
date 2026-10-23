@@ -221,6 +221,9 @@ public final class AppModel: ObservableObject {
     public let render = RenderStore()
     /// Topologie (additiv, PLAN-TOPOLOGIE.md): Optimierung eines Druckteils (Aktionen: `actions as? TopologieActions`).
     public let topologie = TopologieStore()
+    /// Simulation (additiv, PLAN-SIMULATION.md): Lastfälle, Kräfte und Lager aus der App, Aufträge, Ergebnistabelle
+    /// (Aktionen: `actions as? SimulationActions`).
+    public let simulation = SimulationStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

@@ -147,7 +147,13 @@ struct KevCADCommands: Commands {
                 ))
                 .keyboardShortcut(.tab, modifiers: [])
                 Button("Abbrechen") {
-                    if model.measureMode { model.actions?.setMeasureMode(false) } else { model.clearSelection() }
+                    if model.simulation.werkzeug != .keins, let sim = model.actions as? SimulationActions {
+                        sim.setSimulationWerkzeug(.keins)  // Simulation: Werkzeug (Kraft, Lager, Schutz) beenden
+                    } else if model.measureMode {
+                        model.actions?.setMeasureMode(false)
+                    } else {
+                        model.clearSelection()
+                    }
                 }
                 .keyboardShortcut(.escape, modifiers: [])
                 Divider()

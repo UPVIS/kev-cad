@@ -22,9 +22,11 @@ struct InspectorView: View {
             if let state {  // Phase 4: Referenzen aus Video und Fotos
                 ReferenzInspectorSection(model: model, store: model.referenzen, state: state)
             }
-            StatikAbschnitt(store: model.statik, actions: model.statikActions)  // Statik Stufe 1
+            StatikAbschnitt(store: model.statik, actions: model.statikActions,
+                            oeffnen: state.map { st in { SimulationOeffnen.lastfall(model, st) } })  // Statik
             TopologieAbschnitt(model: model, store: model.topologie, statik: model.statik,
-                               actions: model.topologieActions)  // Topologie (PLAN-TOPOLOGIE.md)
+                               actions: model.topologieActions,
+                               oeffnen: state.map { st in { teil in SimulationOeffnen.topologie(model, st, teil) } })
             measurementsSection
             projectSection
         }

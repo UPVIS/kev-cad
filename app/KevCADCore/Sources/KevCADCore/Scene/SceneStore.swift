@@ -77,6 +77,9 @@ public final class SceneStore {
     public private(set) var topologieVerdeckt: Set<String> = []
     public private(set) var topologieBlass: Set<String> = []
     static let topologieBlassAlpha: Float = 0.16
+    /// Bereich „Simulation“ (additiv, PLAN-SIMULATION.md): Kraftpfeile, Entwurf mit Griff, Lager, Lager- und
+    /// Schutzflächen (linear, nicht anklickbar), nur in der Ruhelage.
+    public private(set) var simulationBodies: [ViewportBody] = []
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -190,6 +193,7 @@ public final class SceneStore {
         topologieBodies = []
         topologieVerdeckt = []
         topologieBlass = []
+        simulationBodies = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -398,6 +402,13 @@ public final class SceneStore {
         topologieVerdeckt = verdeckt
         topologieBlass = blass
         for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Simulation: Körper setzen (leer = aus); ohne Wirkung, wenn beides leer ist.
+    public func setSimulation(bodies: [ViewportBody]) {
+        if bodies.isEmpty && simulationBodies.isEmpty { return }
+        simulationBodies = bodies
         publish()
     }
 
@@ -792,6 +803,7 @@ public final class SceneStore {
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: statikBodies) }  // Statik
         renderBodies.append(contentsOf: ablaufBodies)  // Statik Stufe 2: Kontaktkräfte im Ablauf
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: topologieBodies) }  // Topologie
+        if animationTransforms.isEmpty { renderBodies.append(contentsOf: simulationBodies) }  // Simulation
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }

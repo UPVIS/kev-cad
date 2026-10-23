@@ -9,6 +9,7 @@ extension AppController: StatikActions {
         let s = model.statik
         let alt = s.auswahl
         if let vorher = s.ergebnis, vorher.run != e.run { s.felder = [:] }  // Stufe 3: Felder gelten je Lauf
+        simulationVorherMerken(alt: s.ergebnis, neu: e)  // Simulation: vorheriger Stand je Lastfall (Vergleich)
         s.ergebnis = e
         if e.zeigen, let a = e.aktiv, e.szenario(a) != nil {
             // Der Agent will das Szenario sehen (szenario_rechnen, statik(szenario))

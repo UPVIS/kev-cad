@@ -116,7 +116,11 @@ public final class AppController: AppActions {
         // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
         setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
-        viewport.onClickPunkt = { [weak self] pick, punkt, _ in self?.massstabKlick(pick, punkt) ?? false }  // Phase 4
+        viewport.onClickPunkt = { [weak self] pick, punkt, _ in  // Phase 4: Maßstab; Simulation: Kraft, Lager, Schutz
+            guard let self else { return false }
+            return self.massstabKlick(pick, punkt) || self.simulationKlick(pick, punkt)
+        }
+        installSimulationGriff()  // Simulation: Pfeil-Griff einer freien Kraft ziehen
         installNavigation()
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
@@ -388,6 +392,7 @@ public final class AppController: AppActions {
             case .druck(let d): handleDruck(d)  // Druckvorschau: PRINT_PREVIEW auf PRINT_PREVIEW_REQ
             case .drucker(let d): handleDrucker(d)  // Phase 8: PRINTER_STATUS auf PRINTER_STATUS_REQ
             case .statik(let e): applyStatik(e)  // Statik: STATICS als Antwort
+            case .simulation(let s): applySimulation(s)  // Simulation: SIM auf SIM_REQ
             default: break
             }
             return
@@ -547,6 +552,10 @@ public final class AppController: AppActions {
             applyTopologie(s)
         case .topologieFeld(let f):  // Topologie: Netze (Dichte, Schutz, Körper, vorher/nachher)
             applyTopologieFeld(f)
+        case .simulation(let s):  // Simulation (Simulation/AppController+Simulation.swift)
+            applySimulation(s)
+        case .simulationJob(let j):
+            applySimulationJob(j)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

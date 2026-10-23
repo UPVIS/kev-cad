@@ -551,6 +551,10 @@ public enum KernelMessage: Sendable {
     case topologie(TopologieStand)
     /// Topologie (additiv): TOPO_FIELD, Netz der Dichte, der Schutzzonen, des Körpers oder des Felds vorher/nachher.
     case topologieFeld(TopologieFeld)
+    /// Simulation (additiv, PLAN-SIMULATION.md): SIM, Lastfälle, Lasten und Lager aus simulation.json mit Zustand.
+    case simulation(SimStand)
+    /// Simulation (additiv): SIM_JOB, Stand eines Auftrags (Rechnen, Festigkeit, Ablauf, Grenze).
+    case simulationJob(SimJob)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -593,6 +597,8 @@ public enum KernelMessage: Sendable {
         case .statikFeld: return "STATICS_FIELD"
         case .topologie: return "TOPO"
         case .topologieFeld: return "TOPO_FIELD"
+        case .simulation: return "SIM"
+        case .simulationJob: return "SIM_JOB"
         case .unknown(let t, _): return t
         }
     }
@@ -615,6 +621,7 @@ public enum KernelMessage: Sendable {
         case .druck(let m): return m.replyTo
         case .drucker(let m): return m.replyTo
         case .statik(let m): return m.replyTo
+        case .simulation(let m): return m.replyTo
         default: return nil
         }
     }
@@ -668,6 +675,8 @@ public enum KernelMessage: Sendable {
         case "STATICS_FIELD": return .statikFeld(try StatikFeld.decode(header: h, payload: frame.payload))
         case "TOPO": return .topologie(try TopologieStand.decode(h))
         case "TOPO_FIELD": return .topologieFeld(try TopologieFeld.decode(header: h, payload: frame.payload))
+        case "SIM": return .simulation(try SimStand.decode(h))
+        case "SIM_JOB": return .simulationJob(try SimJob.decode(h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

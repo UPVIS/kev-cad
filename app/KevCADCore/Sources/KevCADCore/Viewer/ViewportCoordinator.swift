@@ -26,6 +26,12 @@ public final class ViewportCoordinator: ObservableObject {
     public var onContextMenu: (() -> NSMenu?)?
     /// Taste des Ziffernblocks im Viewport (Tastencode, Sondertasten); true = verarbeitet.
     public var onNumpadKey: ((UInt16, NSEvent.ModifierFlags) -> Bool)?
+    /// Griff im Viewer (Simulation: Pfeil-Griff einer Kraft): Maustaste gedrückt an diesem Punkt (Eingabeebene,
+    /// Ursprung unten links); true = Griff getroffen, dann folgen `onGriffZiehen` und `onGriffEnde` statt Auswahl
+    /// und Drehen.
+    public var onGriffBeginnt: ((CGPoint) -> Bool)?
+    public var onGriffZiehen: ((CGPoint) -> Void)?
+    public var onGriffEnde: ((CGPoint) -> Void)?
 
     public private(set) weak var mtkView: MTKView?
     private var cancellables = Set<AnyCancellable>()

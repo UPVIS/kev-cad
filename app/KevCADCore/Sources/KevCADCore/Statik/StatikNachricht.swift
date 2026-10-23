@@ -68,6 +68,8 @@ public struct StatikTeil: Equatable, Sendable {
     public var ampel: StatikAmpel
     public var verformungMm: Double?
     public var sicherheit: Double?
+    /// Stufe 3 (additiv): Ausnutzung aus der Festkörper-FEM.
+    public var fem: Bool
 
     init(json j: JSONValue) {
         name = j["name"]?.stringValue ?? ""
@@ -75,6 +77,7 @@ public struct StatikTeil: Equatable, Sendable {
         ampel = StatikAmpel(rawValue: j["ampel"]?.stringValue ?? "") ?? .grau
         verformungMm = j["verformung_mm"]?.doubleValue
         sicherheit = j["sicherheit"]?.doubleValue
+        fem = j["fem"]?.boolValue ?? false
     }
 }
 
@@ -122,6 +125,8 @@ public struct StatikLast: Equatable, Sendable {
     public var kraft: SIMD3<Float>
     public var punkt: SIMD3<Float>
     public var kg: Double?
+    /// Last aus der App (Bereich Simulation): Kennung in simulation.json (additiv).
+    public var id: String?
 
     public var paar: Bool { !gegen.isEmpty }
     /// Betrag der Kraft in N.
@@ -140,6 +145,7 @@ public struct StatikLast: Equatable, Sendable {
         self.init(
             teile: j["teile"]?.stringList ?? [], gegen: j["gegen"]?.stringList ?? [], kraft: kraft, punkt: punkt,
             kg: j["kg"]?.doubleValue)
+        id = j["id"]?.stringValue
     }
 }
 

@@ -45,6 +45,8 @@ final class ProjectWindowState: ObservableObject {
     /// Bereich „Material“ in diesem Fenster (Menü, Sprünge aus den Schnellansichten). Ein eigenes beobachtbares Objekt,
     /// das dieses hier nicht weiterreicht: Auswahl, Suche und Abschnitt zeichnen nicht das ganze Fenster neu.
     let materialZustand = MaterialZustand()
+    /// Bereich „Simulation“ (⌘4) in diesem Fenster: Reiter des Inspektors, Ergebnistabelle, Umbenennen.
+    let simulationZustand = SimulationZustand()
 
     // MARK: Schnellansichten (Strang „Material“)
 
@@ -68,7 +70,7 @@ final class ProjectWindowState: ObservableObject {
         return z
     }
 
-    /// Bereich wechseln (⌘1, ⌘2, ⌘3), mit der gewohnten Animation.
+    /// Bereich wechseln (⌘1, ⌘2, ⌘3, ⌘4), mit der gewohnten Animation.
     func zeige(_ b: ProjektBereich) {
         withAnimation(.snappy(duration: 0.2)) { bereich = b }
     }
