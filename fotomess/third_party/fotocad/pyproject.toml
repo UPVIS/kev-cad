@@ -1,0 +1,16 @@
+# Kopie des Pakets fotocad aus Kevins Repo UPVIS/cad-aus-fotos (Stand a49ab03, 23.10.2026), damit fotomess ohne
+# Zugriff auf dieses private Repo baut. Nur die Module, die fotomess braucht (cad_netz, netz_gl, kamera, masken) und
+# ihre Nachbarn; neue Stände von Hand übernehmen.
+[project]
+name = "fotocad"
+version = "0.1.0"
+description = "Parametrische CAD-Modelle aus Studiofotos vermessen (UPVIS), Auszug für Kev CAD"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "moderngl", "trimesh", "build123d"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["fotocad"]

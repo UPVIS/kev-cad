@@ -25,8 +25,9 @@ dev = [
 
 [tool.uv.sources]
 # Kevins bestehendes Verfahren (Repo UPVIS/cad-aus-fotos), nur gelesen: cad_netz (Netz und Ableitungen nach den
-# Maßen), netz_gl (Zeichnen), kamera und masken (Vergleich mit dem bisherigen Verfahren).
-fotocad = { path = "/Users/kevinschwed/Code Experiments/UPVIS/CAD aus Fotos", editable = true }
+# Maßen), netz_gl (Zeichnen), kamera und masken (Vergleich mit dem bisherigen Verfahren). Als Kopie im Repo
+# (third_party/fotocad), damit Kev CAD ohne das private Repo baut.
+fotocad = { path = "third_party/fotocad" }
 
 [tool.uv]
 # fotocad verlangt opencv-python mit Oberfläche; hier genügt (und gilt) opencv-python-headless. Beide zugleich

@@ -39,8 +39,8 @@ melden:
   Schraube in einer zu kleinen Durchgangsbohrung. Die einzige Ausnahme erkennt Kev CAD selbst: echter
   Gewindeeingriff (Schraube in Mutter, Einsatz oder Kern-/Gewindeloch, gleiche Achse, nur im Gewindeband), metrisch
   und Zoll (UNC/UNF, etwa 1/4"-20 und 3/8"-16 an Kameras und Stativen). Innengewinde dafür als Kernloch modellieren
-  (M4 3,3, M6 5,0, 1/4"-20 5,1, 3/8"-16 7,94; Tabelle unten). Ohne App:
-  `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python tools/check_interference.py
+  (M4 3,3, M6 5,0, 1/4"-20 5,1, 3/8"-16 7,94; Tabelle unten). Ohne App (im geklonten Repo, bei Kevin
+  `~/Code Experiments/Kev CAD`): `cd "<Repo>/kernel" && .venv/bin/python tools/check_interference.py
   "<Projektordner>" [--kontakte] [--gewinde]` rechnet eine Kopie mit genau dieser Prüfung (gleiche Schwellen,
   Gewindeeingriff, `erlaubt_ueberlappung`).
 - Befunde kommen als isError mit Ort, Volumen, Tiefe und einer Lösung je Befund. Kevin sieht die Teile rot und das
@@ -70,7 +70,7 @@ melden:
   „Bewegungsraum“ mit freiem Bereich). Was schon in der Ausgangslage im Gewinde greift, sperrt den Weg entlang bzw. um
   die Gewindeachse nicht (herausdrehen), quer dazu schon. Ein unveränderter Stand kommt aus dem Zwischenspeicher, bei
   Änderungen rechnen nur die betroffenen Gelenke neu. `<projekt>/bewegungen.json` gilt nur noch für Teile ohne Gelenk. Zum Ausloten
-  weiter Bereiche einmalig `cd "/Users/kevinschwed/Code Experiments/Kev CAD/kernel" && .venv/bin/python
+  weiter Bereiche einmalig `cd "<Repo>/kernel" && .venv/bin/python
   tools/check_motion.py "<Projektordner>" --teile … --drehen …`. Reicht der freie Bereich nicht für die Bedienung, wird
   umkonstruiert, nicht der Bereich verkleinert. Hat das Projekt eine Animation, zusätzlich `kollision_pruefen(name)`
   für jede Animation (siehe „Animation“).

@@ -3,6 +3,10 @@
 Kevins eigenes Werkzeug (kein Kundenprojekt): ein nativer CAD-Viewer für den Mac, den ein KI-Agent über MCP bedient.
 Modelle entstehen als `model.py` mit build123d und bauen sich live im Viewer auf.
 
+Auf anderen Rechnern als Kevins: Einrichtung und Bau nach [EINRICHTUNG.md](EINRICHTUNG.md) mit `./build.sh`. Die
+Regeln unten zu Mac mini, `tools/fern.sh`, zweitem Monitor, Sperrdatei und automatischem Update gelten nur auf Kevins
+Rechnern; die Verträge und Code-Regeln gelten überall.
+
 Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10, Arbeitspakete, AP0-Ergebnis),
 [PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine).
 

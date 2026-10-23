@@ -1,0 +1,5 @@
+numpy
+scipy
+moderngl
+trimesh
+build123d

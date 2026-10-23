@@ -1,0 +1,12 @@
+pyproject.toml
+fotocad/__init__.py
+fotocad/cad_netz.py
+fotocad/kamera.py
+fotocad/masken.py
+fotocad/netz_gl.py
+fotocad/schild.py
+fotocad.egg-info/PKG-INFO
+fotocad.egg-info/SOURCES.txt
+fotocad.egg-info/dependency_links.txt
+fotocad.egg-info/requires.txt
+fotocad.egg-info/top_level.txt

@@ -7,8 +7,12 @@
 #   tools/kevscan.sh starten       App auf dem iPhone starten
 #   tools/kevscan.sh geraet        geraet.json vom iPhone holen (Videoformate laut ARKit, gemessene Fotogröße)
 #
-# Gebaut wird für iOS allgemein ('generic/platform=iOS'), das iPhone muss dafür nicht erreichbar sein. Signiert mit Team
-# 2GX7UC98J6, automatische Signierung, -allowProvisioningUpdates (Vorbild: VoiceBridge/Tools/build-and-install.sh).
+# Gebaut wird für iOS allgemein ('generic/platform=iOS'), das iPhone muss dafür nicht erreichbar sein. Automatische
+# Signierung mit -allowProvisioningUpdates (Vorbild: VoiceBridge/Tools/build-and-install.sh).
+#
+# Eigenes Apple-Team (alle außer Kevin): KEVSCAN_TEAM=<Team-ID> und KEVSCAN_BUNDLE_ID=<eigene Kennung, etwa
+# com.example.kevscan> setzen, sonst signiert Xcode mit Kevins Team 2GX7UC98J6 und scheitert. Die Team-ID steht in
+# Xcode unter Settings > Accounts oder auf developer.apple.com unter Membership.
 # Gebaut wird unter der mit VoiceBridge gemeinsamen Sperre /tmp/vb-xcodebuild.lock und erst bei mindestens 25 % freiem
 # Speicher. DerivedData liegt in /tmp/kevscan-build und wird nach dem Bau gelöscht (die Systemplatte ist knapp).
 set -uo pipefail
@@ -19,7 +23,8 @@ IOS_DIR="$ROOT/ios/KevScan"
 DERIVED=/tmp/kevscan-build
 LOG=/tmp/kevscan-build.log
 OUT="$ROOT/build/KevScan.app"
-BUNDLE_ID=de.upvis.kevscan
+BUNDLE_ID="${KEVSCAN_BUNDLE_ID:-de.upvis.kevscan}"
+TEAM="${KEVSCAN_TEAM:-2GX7UC98J6}"
 LOCK=/tmp/vb-xcodebuild.lock
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -48,7 +53,8 @@ bauen() {
   rm -rf "$DERIVED"
   echo "==> Baue Kev Scan (Release, iOS-Gerät) …"
   lockf -k "$LOCK" xcodebuild -project "$IOS_DIR/KevScan.xcodeproj" -scheme KevScan -configuration Release \
-    -destination 'generic/platform=iOS' -allowProvisioningUpdates -derivedDataPath "$DERIVED" build >"$LOG" 2>&1
+    -destination 'generic/platform=iOS' -allowProvisioningUpdates -derivedDataPath "$DERIVED" \
+    DEVELOPMENT_TEAM="$TEAM" PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" build >"$LOG" 2>&1
   local status=$?
   grep -E "error:|\*\* BUILD" "$LOG" | sort -u | head -40
   local app="$DERIVED/Build/Products/Release-iphoneos/KevScan.app"
