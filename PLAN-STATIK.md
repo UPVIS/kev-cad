@@ -389,9 +389,10 @@ und aller Läufe):
 | Kragbalken S235 10 × 10 mm, 100 mm, ideal plastisch: F_pl = Rp0,2 · b h² / 4 / L | 587,5 N | 652,5 N roh, 619,9 N abgemindert | +11,1 % roh, +5,5 % | h 3 mm, 17 s |
 | derselbe bei 500 N (über der Fließlast 391,7 N) | fließt an der Einspannung, bleibt verbogen | plastische Dehnung an der Einspannung, bleibend 0,017 mm | | |
 | Kragstütze 10 × 10 × 300 mm, unten eingespannt: F_k = π² E I / (4 L²) | 4 798 N | 4 803 N | +0,1 % | h 5 mm, 1,4 s |
-| Hertz: Kugelkappe R 20 mm auf Block 30 × 30 × 10 mm, PLA, 1000 N, reibungsfrei: p0 = 3 F / (2 π a²) | 102,0 N/mm² | HERTZ_P0 | | HERTZ_NETZ |
-| derselbe: a = (3 F R / (4 E*))^(1/3) | 2,163 mm | HERTZ_A | | |
-| derselbe: Abplattung als Annäherung zweier Punkte auf der Achse in 2 a Tiefe (Halbraum, Johnson Gl. 3.45) | HERTZ_SOLL | HERTZ_IST | | |
+| Hertz: Kugelkappe R 20 mm auf Block 30 × 30 × 10 mm, PLA, 1000 N (μ 0,3; bei gleichen Werkstoffen ohne Einfluss auf den Druck): p0 = 3 F / (2 π a²), aus einer Ausgleichsgeraden von p² über r² | 102,0 N/mm² | 93,6 N/mm² | −8,2 % | an der Berührung h 0,7 mm (3 Elemente über a), 4 274 Tetraeder im Block, 35 343 Freiheitsgrade, 198 s |
+| derselbe: a = (3 F R / (4 E*))^(1/3) | 2,163 mm | 2,254 mm | +4,2 % | |
+| derselbe: Kraft aus dem Kontaktdruck | 1000 N | 1030 N | +3 % | |
+| derselbe: Abplattung als Annäherung zweier Punkte auf der Achse in 2 a Tiefe (Halbraum, Johnson Gl. 3.45; δ = a² / R = 0,234 mm für weit entfernte Punkte) | 0,153 mm | 0,148 mm | −3,2 % | |
 
 Ehrlich zum Kragbalken: Die +11 % roh setzen sich aus der Versteifung der Tetraeder im voll plastischen Zustand (+5,7 %
 am symmetrisch gelagerten Balken, gleich bei h 3 und 1,7 mm) und der starren Einspannung zusammen, die die
