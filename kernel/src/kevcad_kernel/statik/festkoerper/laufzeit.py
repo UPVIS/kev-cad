@@ -28,6 +28,7 @@ from typing import Any
 import numpy as np
 
 PROZESS_S = 300.0
+PROZESS_S_CCX = 1800.0  # Stufe 4 (CalculiX): Kontakt und Traglast brauchen Minuten
 SENDEN_S = 0.3
 FAEDEN = 4
 UEBERHOEHUNG_ANTEIL = 0.08  # größte Verschiebung erscheint als 8 % der Teilgröße
@@ -98,8 +99,11 @@ class FestkoerperRuntime:
                    VECLIB_MAXIMUM_THREADS=str(FAEDEN), PYTHONUNBUFFERED="1")
         z = self._fk
         t0 = time.perf_counter()
-        proc = subprocess.Popen([sys.executable, "-m", "kevcad_kernel.statik.festkoerper.prozess", job["auftrag"],
-                                 str(ergebnis)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        modul = ("kevcad_kernel.statik.ccx.prozess" if job.get("verfahren") == "ccx"  # Stufe 4: CalculiX
+                 else "kevcad_kernel.statik.festkoerper.prozess")
+        proc = subprocess.Popen([sys.executable, "-m", modul, job["auftrag"], str(ergebnis)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                                start_new_session=True)
         z["proc"] = proc
         fehler: list[str] = []
 
@@ -110,7 +114,13 @@ class FestkoerperRuntime:
                 del fehler[:-40]
 
         threading.Thread(target=lies_fehler, daemon=True).start()
-        uhr = threading.Timer(timeout_s, proc.kill)
+        def toeten() -> None:
+            try:
+                os.killpg(proc.pid, 9)
+            except OSError:
+                proc.kill()
+
+        uhr = threading.Timer(timeout_s, toeten)
         uhr.start()
         try:
             assert proc.stdout is not None
@@ -167,11 +177,17 @@ class FestkoerperRuntime:
     def _fk_feld_senden(self, kopf: dict[str, Any], pfad: str, run: int, conn: Any = None) -> bool:
         from kevcad_kernel.protocol import pack_statics_feld
 
+        from kevcad_kernel.protocol import STATIK_FELD_ZUSATZ
+
         try:
             with np.load(pfad) as d:
                 felder = {k: d[k] for k in ("punkte", "dreiecke", "ausnutzung", "spannung", "verschiebung")}
+                zusatz = [k for k in STATIK_FELD_ZUSATZ if k in d.files]  # Stufe 4: Kontaktdruck, plastische Dehnung …
+                felder.update({k: d[k] for k in zusatz})
         except Exception:  # noqa: BLE001 - Zwischenspeicher gelöscht: dann eben ohne Feld
             return False
+        if zusatz:
+            kopf = {**kopf, "zusatz": zusatz}
         p = felder["punkte"]
         groesse = float(np.max(p.max(axis=0) - p.min(axis=0))) if len(p) else 1.0
         vmax = float(np.max(np.linalg.norm(felder["verschiebung"], axis=1))) if len(p) else 0.0
@@ -192,14 +208,18 @@ class FestkoerperRuntime:
 
         je: dict[str, list[dict[str, Any]]] = {}
         felder: list[tuple[dict[str, Any], str]] = []
+        from kevcad_kernel.statik.ccx import GRENZEN_S4
+        from kevcad_kernel.statik.ccx.urteil import teil_kurz as teil_kurz_s4
+
+        s4 = out.get("verfahren") == "ccx"
         for r in out.get("faelle") or []:
-            t = teil_kurz(r)
+            t = teil_kurz_s4(r) if (s4 or r.get("verfahren") == "ccx") else teil_kurz(r)
             je.setdefault(r.get("szenario") or "", []).append(t)
             if r.get("stand") == "done" and r.get("feld"):
                 felder.append(({"szenario": r["szenario"], "teil": r["teil"], "feld": r["schluessel"],
                                 "ziel": t["ziel"], "sicherheit": t["sicherheit"], "ampel": t["ampel"],
-                                "spannung_max": t["spannung_max"], "verformung_max_mm": t["verformung_max_mm"]},
-                               r["feld"]))
+                                "spannung_max": t["spannung_max"], "verformung_max_mm": t["verformung_max_mm"],
+                                "verfahren": t.get("verfahren")}, r["feld"]))
         neu_alle: list[dict[str, Any]] = []
         with self._lock:  # type: ignore[attr-defined]
             voll = self._statik_voll  # type: ignore[attr-defined]
@@ -217,14 +237,17 @@ class FestkoerperRuntime:
                     fk = {"stand": "done", "fortschritt": 1.0, "meldung": None,
                           "text": (f"{len(gerechnet)} {'Teil' if len(gerechnet) == 1 else 'Teile'} gerechnet"
                                    if gerechnet else "kein Teil gerechnet"), "teile": teile}
+                    if name in (self._fk.get("s4_folgt") or set()):  # Stufe 4 aus model.py folgt gleich
+                        fk.update({"stand": "laeuft", "fortschritt": 0.0, "text": "Stufe 4 (CalculiX) folgt"})
                     if not teile:
                         e = {k: v for k, v in e.items() if k != "festkoerper"}
                     else:
                         e = einbauen(e, fk)
                         neu_alle += [t for t in teile if t.get("teil") in neu_teile]
                 szen.append(e)
+            grenzen = list(GRENZEN_S3) + (list(GRENZEN_S4) if s4 else [])
             self._statik_voll = {**voll, "szenarien": szen,  # type: ignore[attr-defined]
-                                 "grenzen": list(dict.fromkeys(list(voll.get("grenzen") or []) + list(GRENZEN_S3)))
+                                 "grenzen": list(dict.fromkeys(list(voll.get("grenzen") or []) + grenzen))
                                  if neu_alle else voll.get("grenzen")}
             if zeigen:
                 self._statik_aktiv = zeigen  # type: ignore[attr-defined]
@@ -314,7 +337,16 @@ class FestkoerperRuntime:
             try:
                 if token != z["token"]:
                     raise Abgebrochen("überholt")
-                self._fk_rechnen({"auto": True, "szenarien": namen}, namen, run, token)
+                s4 = self._s4_auftraege(namen)
+                z["s4_folgt"] = {n for a in s4 for n in a["namen"]}
+                try:
+                    self._fk_rechnen({"auto": True, "szenarien": namen}, namen, run, token)
+                finally:
+                    z["s4_folgt"] = set()
+                for a in s4:  # Stufe 4 aus model.py (st.festigkeit): nach S3, je Auftrag ein CalculiX-Lauf
+                    if token != z["token"]:
+                        raise Abgebrochen("überholt")
+                    self._s4_rechnen(a, run, token)
             except Abgebrochen:
                 # nur, was noch „läuft“ (ein neuer Lauf hat eigene Szenarien, festigkeit() kann schon fertig sein)
                 self._fk_status(run, namen, {"stand": "abgebrochen", "text": "abgebrochen"}, erzwingen=True,
@@ -324,6 +356,34 @@ class FestkoerperRuntime:
                                                                          f"{type(exc).__name__}: {exc}"},
                                 erzwingen=True, nur_laufende=True)
 
+    def _s4_auftraege(self, namen: list[str]) -> list[dict[str, Any]]:
+        """Aufträge ``st.festigkeit(…)`` aus model.py (Ergebnis des Laufs, Feld ``s4``) für die Szenarien ``namen``."""
+        with self._lock:  # type: ignore[attr-defined]
+            voll = self._statik_voll  # type: ignore[attr-defined]
+        out = []
+        for a in ((voll or {}).get("s4") or {}).get("auftraege") or []:
+            sz = [n for n in namen if a.get("szenario") in (None, n)]
+            if sz:
+                out.append({**a, "namen": sz})
+        return out
+
+    def _s4_rechnen(self, a: dict[str, Any], run: int | None, token: int) -> None:
+        from kevcad_kernel.statik.ccx import installation
+
+        namen = a["namen"]
+        self._fk_status(run, namen, {"stand": "laeuft", "fortschritt": 0.0, "text": "CalculiX startet"},
+                        erzwingen=True)
+        inst = installation.sicherstellen(lambda t: self._fk_status(run, namen, {"stand": "laeuft",
+                                                                                  "text": t}))
+        if not inst["ok"]:
+            self._fk_status(run, namen, {"stand": "done", "fortschritt": 1.0, "meldung": inst["meldung"],
+                                         "text": "Stufe 4 nicht gerechnet"}, erzwingen=True)
+            return
+        wunsch = {"verfahren": "ccx", "teile": a["teile"], "szenarien": namen, "kontakt": a.get("kontakt", True),
+                  "plastisch": bool(a.get("plastisch")), "traglast": a.get("traglast"),
+                  "beulen": bool(a.get("beulen")), "klemmkraft": a.get("klemmkraft"), "reibwert": a.get("reibwert")}
+        self._fk_rechnen(wunsch, namen, run, token, timeout_s=PROZESS_S_CCX)
+
     def _fk_abbrechen_intern(self) -> bool:
         z = self._fk
         z["token"] += 1
@@ -331,9 +391,12 @@ class FestkoerperRuntime:
         if p is not None and p.poll() is None:
             z["abbruch"] = True
             try:
-                p.kill()
+                os.killpg(p.pid, 9)  # mit ccx (Stufe 4), das als Kindprozess läuft
             except OSError:
-                pass
+                try:
+                    p.kill()
+                except OSError:
+                    pass
             return True
         return False
 
@@ -369,13 +432,36 @@ class FestkoerperRuntime:
         return {"ok": True, "abgebrochen": lief or bool(namen), "szenarien": namen}
 
     def festigkeit(self, teil: str | None = None, szenario: str | None = None, fein: bool = False,
-                   ablauf: bool = False, zeigen: bool = True, timeout_s: float = PROZESS_S) -> dict[str, Any]:
+                   ablauf: bool = False, zeigen: bool = True, timeout_s: float | None = None,
+                   verfahren: str | None = None, kontakt: bool | None = None, plastisch: bool | None = None,
+                   traglast: bool | None = None, beulen: bool | None = None, klemmkraft: float | None = None,
+                   reibwert: float | None = None, lastfaktor_max: float | None = None) -> dict[str, Any]:
         """Festkörper-FEM (S3) für Teile mit Last: ``teil`` (Name oder Gruppe, sonst alle mit Last), ``szenario``
         (sonst alle mit Last), ``fein`` (feineres Netz), ``ablauf`` (größte Kontaktkraft aus dem Ablauf des Szenarios
-        als Last). Wartet auf das Ergebnis und zeigt es in der App."""
+        als Last). Wartet auf das Ergebnis und zeigt es in der App.
+
+        Stufe 4 (additiv): ``verfahren="ccx"`` rechnet mit CalculiX (eigenes Programm) und ``kontakt`` (Kontaktpaare
+        statt fester Einspannung, Standard an), ``plastisch``, ``traglast`` (Standard: mit Kontakt oder
+        Plastizität), ``beulen``, ``klemmkraft`` (N, für Klemmschrauben), ``reibwert``, ``lastfaktor_max``. Eine der
+        Optionen ohne ``verfahren`` wählt CalculiX ebenfalls."""
         from kevcad_kernel.statik.rechnen import befunde
 
         t0 = time.perf_counter()
+        s4 = verfahren == "ccx" or (verfahren is None and any(
+            v for v in (kontakt, plastisch, beulen, klemmkraft is not None, reibwert is not None)))
+        if verfahren not in (None, "s3", "ccx", "calculix"):
+            return {"ok": False, "error": f"verfahren {verfahren!r} unbekannt (\"s3\" oder \"ccx\")"}
+        if verfahren == "calculix":
+            s4 = True
+        if timeout_s is None:
+            timeout_s = PROZESS_S_CCX if s4 else PROZESS_S
+        if s4:
+            from kevcad_kernel.statik.ccx import installation
+
+            inst = installation.sicherstellen()
+            if not inst["ok"]:
+                return {"ok": False, "error": inst["meldung"], "calculix": {k: inst.get(k) for k in ("ordner",
+                                                                                                  "einrichtbar")}}
         self._statik_warten()  # type: ignore[attr-defined]
         with self._lock:  # type: ignore[attr-defined]
             voll, run = self._statik_voll, self._statik_run  # type: ignore[attr-defined]
@@ -390,6 +476,10 @@ class FestkoerperRuntime:
                                           f"{', '.join(repr(e.get('name')) for e in szen)})"
                                           + (f"; meinten Sie {tips[0]!r}?" if tips else "")}
         wunsch: dict[str, Any] = {"fein": bool(fein)}
+        if s4:
+            wunsch.update({"verfahren": "ccx", "kontakt": True if kontakt is None else bool(kontakt),
+                           "plastisch": bool(plastisch), "traglast": traglast, "beulen": bool(beulen),
+                           "klemmkraft": klemmkraft, "reibwert": reibwert, "lastfaktor_max": lastfaktor_max})
         if teil:
             wunsch["teile"] = [teil]
         if szenario:
@@ -438,7 +528,7 @@ class FestkoerperRuntime:
         for r in res["out"].get("faelle") or []:
             kurz = {k: v for k, v in r.items() if k not in ("feld", "traceback", "_felder")}
             faelle.append(kurz)
-        return {"ok": True, "run": run, "faelle": faelle,
+        return {"ok": True, "run": run, "faelle": faelle, "verfahren": "ccx" if s4 else "s3",
                 "teile": teile, "befunde": befunde({"szenarien": betroffen}),
                 "szenarien": [{"name": e["name"], "ampel": e.get("ampel"), "text": e.get("text")} for e in betroffen],
                 "hinweise": hinweise, "grenzen": (voll or {}).get("grenzen"),

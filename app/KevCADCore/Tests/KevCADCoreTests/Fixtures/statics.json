@@ -371,6 +371,153 @@
     ],
     "grenzen": 3
   },
+  "statics_s4": {
+    "run": 12,
+    "stand": "done",
+    "aktiv": "Haken 2 kg (Kontakt)",
+    "zeigen": true,
+    "szenarien": [
+      {
+        "name": "Eigengewicht",
+        "ampel": "gruen",
+        "urteile": 0,
+        "teile": [
+          "Rahmen/Rohr"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 41.2,
+        "ueberhoehung": 66.7,
+        "lasten": []
+      },
+      {
+        "name": "Aufstützen 30 kg",
+        "ampel": "rot",
+        "urteile": 2,
+        "teile": [
+          "Rahmen/Rohr",
+          "Rahmen/Halter (Druck)"
+        ],
+        "staebe": [
+          "Rahmen/Rohr"
+        ],
+        "sicherheit": 0.2,
+        "ueberhoehung": 1.0,
+        "lasten": [
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [],
+            "paar": false,
+            "kraft": [
+              0.0,
+              0.0,
+              -294.3
+            ],
+            "punkt": [
+              250.0,
+              0.0,
+              30.0
+            ]
+          },
+          {
+            "teile": [
+              "Rahmen/Rohr"
+            ],
+            "gegen": [
+              "Ball"
+            ],
+            "paar": true,
+            "kraft": [
+              100.0,
+              0.0,
+              0.0
+            ],
+            "punkt": [
+              500.0,
+              0.0,
+              30.0
+            ]
+          }
+        ],
+        "festkoerper": {
+          "stand": "laeuft",
+          "fortschritt": 0.45,
+          "teile": [
+            {
+              "teil": "Rahmen/Halter (Druck)",
+              "stand": "laeuft",
+              "ampel": null,
+              "sicherheit": null,
+              "feld": null,
+              "ausrichtung_beste": null
+            }
+          ]
+        }
+      },
+      {
+        "name": "Haken 2 kg",
+        "ampel": "rot",
+        "urteile": 1,
+        "teile": [
+          "Wandhalter (Druck)"
+        ],
+        "staebe": [],
+        "sicherheit": 1.87,
+        "ueberhoehung": 1.0,
+        "lasten": [],
+        "festkoerper": {
+          "stand": "done",
+          "fortschritt": 1.0,
+          "teile": [
+            {
+              "teil": "Wandhalter (Druck)",
+              "stand": "done",
+              "ampel": "rot",
+              "sicherheit": 1.87,
+              "feld": "d0f84561664942f7ae15",
+              "ausrichtung_beste": "-z"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Haken 2 kg (Kontakt)",
+        "ampel": "gelb",
+        "urteile": 1,
+        "teile": [
+          "Wandhalter (Druck)"
+        ],
+        "staebe": [],
+        "sicherheit": 6.2,
+        "ueberhoehung": 1.0,
+        "lasten": [],
+        "festkoerper": {
+          "stand": "done",
+          "fortschritt": 1.0,
+          "teile": [
+            {
+              "teil": "Wandhalter (Druck)",
+              "stand": "done",
+              "ampel": "gelb",
+              "sicherheit": 6.2,
+              "feld": "s4a8b3c2d1e0f9a8b7c6",
+              "ausrichtung_beste": null,
+              "verfahren": "ccx",
+              "traglast": 6.2,
+              "dehnung_max": 0.004,
+              "kontakt_mit": [
+                "Wand"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "grenzen": 4
+  },
   "statics_feld": {
     "run": 11,
     "szenario": "Haken 2 kg",
@@ -386,5 +533,21 @@
       0.0,
       -2.4000000953674316
     ]
+  },
+  "statics_feld_s4": {
+    "run": 12,
+    "szenario": "Haken 2 kg (Kontakt)",
+    "teil": "Wandhalter (Druck)",
+    "feld": "s4a8b3c2d1e0f9a8b7c6",
+    "punkte": 8,
+    "zusatz": [
+      "kontaktdruck",
+      "plast_dehnung",
+      "klaffen",
+      "schlupf"
+    ],
+    "payload_bytes": 528,
+    "kontaktdruck_max": 6.5,
+    "plast_dehnung_max": 0.004000000189989805
   }
 }

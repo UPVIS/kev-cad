@@ -42,7 +42,7 @@ def rechne(ordner: str | Path, name: str, schritte: int, fortschritt: Callable[[
                             env=installation.umgebung(ccx, faeden), start_new_session=True)
     os.close(slave)
     zustand: dict[str, Any] = {"schritt": 0, "inkremente": 0, "zeit": 0.0, "disp_max": 0.0, "iterationen": 0,
-                               "schritte": schritte}
+                               "schritte": schritte, "inc_disps": []}
     fehler: list[str] = []
     warnungen: list[str] = []
     log: list[str] = []
@@ -89,6 +89,8 @@ def rechne(ordner: str | Path, name: str, schritte: int, fortschritt: Callable[[
                 m = R_STEP.match(z)
                 if m:
                     zustand["schritt"] = int(m.group(1))
+                    zustand["inc_disps"] = []
+                    zustand.pop("disp_letzt", None)
                     continue
                 m = R_INC.search(z)
                 if m:
@@ -102,6 +104,9 @@ def rechne(ordner: str | Path, name: str, schritte: int, fortschritt: Callable[[
                     continue
                 m = R_TOTAL.search(z)
                 if m:
+                    # ein neues Inkrement beginnt: das vorige ist konvergiert und geschrieben
+                    if "disp_letzt" in zustand:
+                        zustand.setdefault("inc_disps", []).append(zustand.pop("disp_letzt"))
                     zustand["zeit"] = float(m.group(1))
                     zustand["inkremente"] += 1
                     jetzt = time.perf_counter()

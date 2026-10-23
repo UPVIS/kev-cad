@@ -63,9 +63,11 @@ def lies_fall(pfad: Path) -> dict[str, Any] | None:
 def _netz(T: dict[str, Any], fein: bool, ablage: Path) -> tuple[dict[str, Any], bool]:
     from kevcad_kernel.statik.festkoerper import netz
 
-    key = hashlib.sha1(json.dumps({"v": VERSION, "teil": T["schluessel_teil"], "fein": fein, "h": T.get("h_mm"),
-                                   "max": [netz.MAX_TET, netz.MAX_TET_FEIN, netz.WAND_ANTEIL, netz.KRUEMMUNG]},
-                                  sort_keys=True).encode()).hexdigest()[:20]
+    schl = {"v": VERSION, "teil": T["schluessel_teil"], "fein": fein, "h": T.get("h_mm"),
+            "max": [netz.MAX_TET, netz.MAX_TET_FEIN, netz.WAND_ANTEIL, netz.KRUEMMUNG]}
+    if T.get("verfeinern"):  # Stufe 4 (additiv): örtliche Verfeinerung, etwa am Punktkontakt
+        schl["verfeinern"] = T["verfeinern"]
+    key = hashlib.sha1(json.dumps(schl, sort_keys=True).encode()).hexdigest()[:20]
     pfad = ablage / "netze" / f"{key}.npz"
     if pfad.exists():
         try:
@@ -73,7 +75,7 @@ def _netz(T: dict[str, Any], fein: bool, ablage: Path) -> tuple[dict[str, Any], 
                 return {k: z[k] for k in z.files} | {"h": float(z["h"]), "ms": 0.0}, True
         except Exception:  # noqa: BLE001
             pass
-    n = netz.vernetze(T["brep"], fein=fein, h_vorgabe=T.get("h_mm"))
+    n = netz.vernetze(T["brep"], fein=fein, h_vorgabe=T.get("h_mm"), verfeinern=T.get("verfeinern"))
     _schreibe_npz(pfad, p=n["p"], t=n["t"], rand=n["rand"], flaeche=n["flaeche"], h=np.float64(n["h"]))
     return n, False
 

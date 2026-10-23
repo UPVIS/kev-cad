@@ -35,9 +35,12 @@ def netzgroesse(volumen: float, flaeche: float, groesse: float, fein: bool = Fal
     return float(min(max(h, h_min), groesse / 6.0))
 
 
-def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faeden: int = 4) -> dict[str, Any]:
+def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faeden: int = 4,
+             verfeinern: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Tetraedernetz aus einer BREP-Datei: ``p`` (n, 3), ``t`` (m, 4), ``rand`` (k, 3) Randdreiecke, ``flaeche`` (k,)
-    B-Rep-Fläche je Randdreieck, ``h``, ``volumen``, ``ms``."""
+    B-Rep-Fläche je Randdreieck, ``h``, ``volumen``, ``ms``. ``verfeinern`` (Stufe 4, additiv): Kugeln
+    ``{"punkt", "radius", "h", "aussen"}``, in denen das Netz höchstens ``h`` groß ist (nach außen bis ``aussen``,
+    sonst dem Dreifachen des Radius, auf die Netzgröße übergehend), etwa an einem Punktkontakt."""
     import gmsh
 
     t0 = time.perf_counter()
@@ -74,6 +77,8 @@ def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faed
                 gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", KRUEMMUNG_FEIN if fein else KRUEMMUNG)
                 gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
                 gmsh.option.setNumber("Mesh.Algorithm3D", algo)
+                if verfeinern:
+                    _felder(gmsh, verfeinern, h)
                 gmsh.model.mesh.generate(3)
                 out = _auslesen(gmsh)
                 break
@@ -86,6 +91,29 @@ def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faed
         return out
     finally:
         gmsh.finalize()
+
+
+def _felder(gmsh: Any, verfeinern: list[dict[str, Any]], h: float) -> None:
+    """Größenfelder für örtliche Verfeinerung (Abstand zu einem Punkt, Schwelle), als Minimum aller Felder."""
+    f = gmsh.model.mesh.field
+    ids = []
+    for v in verfeinern:
+        p = gmsh.model.occ.addPoint(*[float(c) for c in v["punkt"]])
+        gmsh.model.occ.synchronize()
+        d = f.add("Distance")
+        f.setNumbers(d, "PointsList", [p])
+        t = f.add("Threshold")
+        f.setNumber(t, "InField", d)
+        f.setNumber(t, "SizeMin", float(v["h"]))
+        f.setNumber(t, "SizeMax", float(h))
+        f.setNumber(t, "DistMin", float(v["radius"]))
+        f.setNumber(t, "DistMax", float(v.get("aussen") or 3.0 * float(v["radius"])))
+        ids.append(t)
+    m = f.add("Min")
+    f.setNumbers(m, "FieldsList", ids)
+    f.setAsBackgroundMesh(m)
+    gmsh.option.setNumber("Mesh.MeshSizeMin", min(float(v["h"]) for v in verfeinern))
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
 
 
 def _auslesen(gmsh: Any) -> dict[str, Any]:

@@ -1512,9 +1512,16 @@ STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_
 STATIK_FK_STAENDE = ("done", "laeuft", "failed", "abgebrochen")  # Stufe 3 (Festkörper): Feld ``festkoerper``
 STATIK_FK_TEIL = ("teil", "stand", "ampel", "sicherheit", "ziel", "ausnutzung", "spannung_max", "kriterium", "ort",
                   "sicherheit_lagerrand", "verformung_max_mm", "kragtraeger", "druckteil", "q", "ausrichtungen",
-                  "ausrichtung_beste", "netz", "ms", "feld", "meldung", "text", "aus_speicher")
+                  "ausrichtung_beste", "netz", "ms", "feld", "meldung", "text", "aus_speicher",
+                  # Stufe 4 (CalculiX, additiv): Verfahren, Sicherheit unter Last, Kontakt je Paar, Plastizität,
+                  # Traglast, Beulen, Rutschen, größte Zusatzwerte des Felds
+                  "verfahren", "sicherheit_last", "kontakt", "plastisch", "traglast", "beulen", "rutscht",
+                  "zusatz_max")
 STATIK_FELD_ARRAYS = (("punkte", "<f4", 3), ("dreiecke", "<u4", 3), ("ausnutzung", "<f4", 1), ("spannung", "<f4", 1),
                       ("verschiebung", "<f4", 3))
+# Stufe 4 (additiv): weitere Werte je Punkt (float32), in der Reihenfolge von ``zusatz`` im Kopf hinter den obigen:
+# Kontaktdruck (N/mm²), plastische Vergleichsdehnung (1), Klaffen (mm), Schlupf (mm)
+STATIK_FELD_ZUSATZ = ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf")
 
 
 def _statik_ablauf(ab: dict[str, Any], voll: bool = True) -> dict[str, Any]:
@@ -1924,10 +1931,21 @@ def pack_statics_feld(kopf: dict[str, Any], felder: dict[str, Any], *, run: int,
         if a.size != soll:
             raise ValueError(f"STATICS_FIELD: {name} hat {a.size} Werte, erwartet {soll}")
         teile.append(a.tobytes())
+    zusatz = [z for z in (kopf.get("zusatz") or [z for z in STATIK_FELD_ZUSATZ if z in felder]) if z in felder]
+    for name in zusatz:  # Stufe 4 (additiv)
+        a = np.ascontiguousarray(np.asarray(felder[name]), dtype="<f4").reshape(-1)
+        if a.size != n:
+            raise ValueError(f"STATICS_FIELD: {name} hat {a.size} Werte, erwartet {n}")
+        teile.append(a.tobytes())
     header = {"type": "STATICS_FIELD", "seq": seq, "run": int(run),
               **{k: kopf.get(k) for k in ("szenario", "teil", "feld", "ziel", "sicherheit", "ampel", "spannung_max",
                                          "verformung_max_mm", "ueberhoehung")},
               "werte": "ausnutzung", "punkte": n, "dreiecke": m}
+    if zusatz:
+        header["zusatz"] = list(zusatz)
+        header["zusatz_max"] = {z: round(float(np.max(felder[z])) if n else 0.0, 6) for z in zusatz}
+        if kopf.get("verfahren"):
+            header["verfahren"] = kopf["verfahren"]
     return header, b"".join(teile)
 
 
@@ -1942,6 +1960,10 @@ def unpack_statics_feld(header: dict[str, Any], payload: bytes) -> dict[str, Any
         a = np.frombuffer(payload, dtype=typ, count=k, offset=pos)
         pos += a.nbytes
         out[name] = a.reshape(-1, breite) if breite > 1 else a
+    for name in header.get("zusatz") or []:  # Stufe 4 (additiv)
+        a = np.frombuffer(payload, dtype="<f4", count=n, offset=pos)
+        pos += a.nbytes
+        out[name] = a
     if pos != len(payload):
         raise ValueError(f"STATICS_FIELD: Nutzlast {len(payload)} Byte, erwartet {pos}")
     return out
@@ -1960,6 +1982,9 @@ def check_statics_feld(header: dict[str, Any], payload: bytes) -> list[str]:
         err.append("STATICS_FIELD: Dreieck zeigt auf einen Punkt, den es nicht gibt")
     if header.get("ampel") is not None and header["ampel"] not in STATIK_AMPELN:
         err.append(f"STATICS_FIELD: Ampel {header['ampel']!r} unbekannt")
+    for z in header.get("zusatz") or []:
+        if z not in STATIK_FELD_ZUSATZ:
+            err.append(f"STATICS_FIELD: Zusatzwert {z!r} unbekannt")
     return err
 
 
@@ -1978,6 +2003,67 @@ def statik_beispiel_feld() -> tuple[dict[str, Any], dict[str, Any]]:
     kopf = {"szenario": "Haken 2 kg", "teil": "Wandhalter (Druck)", "feld": "d0f84561664942f7ae15", "ziel": 4.0,
             "sicherheit": 1.87, "ampel": "rot", "spannung_max": 7.05, "verformung_max_mm": 2.43, "ueberhoehung": 2.6}
     return kopf, {"punkte": p, "dreiecke": tri, "ausnutzung": aus, "spannung": vm, "verschiebung": v}
+
+
+def statik_beispiel_feld_s4() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Feld der Stufe 4: wie ``statik_beispiel_feld`` plus Kontaktdruck (an der Wand), plastische Dehnung (an der
+    Kante), Klaffen und Schlupf (Testdatei ``statics_feld_s4.frame``)."""
+    import numpy as np
+
+    kopf, f = statik_beispiel_feld()
+    p = f["punkte"]
+    wand = p[:, 0] < 1
+    f = {**f, "kontaktdruck": np.where(wand & (p[:, 2] < 100), 6.5, 0.0).astype(np.float32),
+         "plast_dehnung": np.where(wand & (p[:, 2] > 100), 0.004, 0.0).astype(np.float32),
+         "klaffen": np.where(wand & (p[:, 2] > 100), 0.08, 0.0).astype(np.float32),
+         "schlupf": np.where(wand, 0.01, 0.0).astype(np.float32)}
+    kopf = {**kopf, "feld": "s4a8b3c2d1e0f9a8b7c6", "verfahren": "ccx", "zusatz": list(STATIK_FELD_ZUSATZ),
+            "szenario": "Haken 2 kg (Kontakt)"}
+    return kopf, f
+
+
+def statik_beispiel_s4() -> dict[str, Any]:
+    """Wie ``statik_beispiel_festkoerper`` plus ein Szenario mit einem Teil der Stufe 4 (CalculiX): Kontakt mit der
+    Wand (klafft oben), plastisch, Traglast (Testdatei ``statics_s4.frame``)."""
+    b = statik_beispiel_festkoerper()
+    kopf, _ = statik_beispiel_feld_s4()
+    teil = {"teil": "Wandhalter (Druck)", "stand": "done", "ampel": "gelb", "sicherheit": 6.2, "ziel": 4.0,
+            "ausnutzung": 0.645, "spannung_max": 31.4, "kriterium": "mises", "ort": [0.0, -10.0, 104.0],
+            "sicherheit_lagerrand": 1.1, "verformung_max_mm": 2.61, "kragtraeger": 1.98, "druckteil": True,
+            "q": 0.4, "ausrichtungen": {}, "ausrichtung_beste": None,
+            "netz": {"tetraeder": 1820, "freiheitsgrade": 31250, "h_mm": 2.5}, "ms": 18400.0, "feld": kopf["feld"],
+            "aus_speicher": False, "verfahren": "ccx", "sicherheit_last": 1.12,
+            "kontakt": {"paare": [{"mit": "Wand", "rolle": "lager", "reibwert": 0.4, "druck_max": 6.5,
+                                   "kraft_n": 61.0, "traegt_mm2": 80.0, "anteil_traegt": 0.5,
+                                   "klaffen_max_mm": 0.08, "schlupf_max_mm": 0.01, "reibung_ausnutzung": 0.3,
+                                   "gleitet_anteil": 0.0, "quelle": "Berührung (beruehrt)"}],
+                        "klemmungen": [{"schraube": "Schraube M4", "kraft_n": 480.0,
+                                        "quelle": "handfest angenommen (120 N je mm, M4)"}]},
+            "plastisch": {"dehnung_max": 0.004, "bleibend_mm": 0.12, "fliesst": True, "grenzdehnung": 0.02,
+                          "fliessgrenze": 34.0, "modell": "Druckteil: ideal plastisch ab der Zugfestigkeit, "
+                                                         "Schichtfuge spröde (Näherung)", "ort": [0.0, -10.0, 104.0]},
+            "traglast": {"faktor": 6.2, "kriterium": "schicht", "text": "Schichtfuge", "lastfaktor_max": 12.0,
+                         "erreicht": 6.3},
+            "beulen": None, "rutscht": False,
+            "zusatz_max": {"kontaktdruck": 6.5, "plast_dehnung": 0.004, "klaffen": 0.08, "schlupf": 0.01},
+            "text": "Wandhalter (Druck) hält knapp (CalculiX, S4): Traglast beim 6,2-Fachen der Last (Schichtfuge); "
+                    "fließt: plastische Dehnung 0,4 %, bleibend 0,12 mm."}
+    urteil = {"art": "festkoerper", "teil": "Wandhalter (Druck)", "ampel": "gelb", "text": teil["text"],
+              "loesung": "", "sicherheit": 6.2, "ziel": 4.0, "ausnutzung": 0.645, "ort": [0.0, -10.0, 104.0]}
+    b["szenarien"].append({
+        "name": "Haken 2 kg (Kontakt)", "szenario": {"art": "statisch", "quelle": "agent", "beschreibung": None},
+        "ampel": "gelb", "ziel": 2.0, "text": "Haken 2 kg (Kontakt): gelb – Wandhalter (Druck) hält knapp",
+        "kennzahlen": {"sicherheit": 6.2, "knicken": None, "kippreserve": None, "rutschreserve": None,
+                       "durchbiegung_mm": None, "durchbiegung_grenze_mm": None, "verformung_max_mm": 2.61},
+        "urteile": [urteil],
+        "teile": [{"name": "Wandhalter (Druck)", "ausnutzung": 0.645, "ampel": "gelb", "verformung_mm": 2.61,
+                   "sicherheit": 6.2, "fem": True}],
+        "staebe": [], "auflager": [], "ueberhoehung": 1.0, "s0": {"kippen": []},
+        "festkoerper": {"stand": "done", "fortschritt": 1.0, "text": "1 Teil gerechnet", "meldung": None,
+                        "teile": [teil]}})
+    b["aktiv"] = "Haken 2 kg (Kontakt)"
+    b["grenzen"] = list(b["grenzen"]) + ["CalculiX (S4): Kontakt nach dem Strafverfahren, kleine Verformungen."]
+    return b
 
 
 def statik_beispiel_festkoerper() -> dict[str, Any]:

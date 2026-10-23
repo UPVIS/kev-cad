@@ -25,6 +25,11 @@ st.szenario("Fahrt", animation="Fahrt", bremsen=4)                        # Soll
 
 st.untergrund("holz")                                                     # Boden zum Rutschen (Standard Beton)
 st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eigene Ziele statt T5
+
+# Stufe 4 (CalculiX): Kontakt statt fester Einspannung, Plastizität, Traglast, Beulen
+st.kontakt("Kugelschieber/Stangenhalter vorn links (Druck)", "Kugelschieber/Seitenstange links (Rohr 1)",
+           reibwert=0.3, klemmkraft=500)                                  # Paar hebt ab und gleitet
+st.festigkeit("Kugelschieber/Stangenhalter vorn links (Druck)", kontakt=True, plastisch=True)
 ```
 
 - ``szenario`` legt ein Szenario an (oder ergänzt das gleichnamige); ``last``, ``stoss``, ``neigung`` ohne
@@ -44,6 +49,13 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eige
   Animation „Ablauf: <Name>“ ab.
 - Außerhalb des Kernels tun die Funktionen nichts.
 
+- Stufe 4 (CalculiX, eigener Prozess): ``kontakt(a, b, reibwert=, klemmkraft=, spiel=)`` macht aus der Verbindung
+  zweier Teile ein Kontaktpaar (abheben, gleiten; ohne Reibwert der Haftreibwert der Paarung aus reibwerte.json, ohne
+  Klemmkraft „handfest“ angenommen); ``festigkeit(teil, kontakt=True, plastisch=False, traglast=None, beulen=False)``
+  rechnet das Teil nach jedem Lauf im Hintergrund mit CalculiX nach (Kontaktdruck, Klaffen, Schlupf, plastische
+  Dehnung, bleibende Verformung, Traglast, Beulfaktor). Ohne ``st.festigkeit`` gelten die Kontaktpaare, sobald der
+  Agent ``festigkeit(…, verfahren="ccx")`` aufruft.
+
 Ergebnis: MCP ``statik`` und ``szenario_rechnen``, in der App der Abschnitt „Statik“ mit Ampel und Farbverlauf.
 """
 
@@ -53,7 +65,8 @@ import math
 import sys
 from typing import Any
 
-__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel",
+__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel", "kontakt",
+           "festigkeit",
            "Szenario"]
 
 G = 9.81
@@ -239,3 +252,33 @@ def ziel(sicherheit: float | None = None, durchbiegung: str | float | None = Non
     """Eigene Ziele für alle Szenarien: Sicherheit (statisch; dynamisch × 1,5) und Durchbiegung ("L/300")."""
     _hook()
     _melde({"was": "ziel", "sicherheit": sicherheit, "durchbiegung": durchbiegung})
+
+
+def kontakt(teil: Any, gegen: Any, reibwert: float | None = None, klemmkraft: float | None = None,
+            spiel: float | None = None) -> None:
+    """Stufe 4: Die Verbindung von ``teil`` und ``gegen`` ist ein Kontakt (heben ab, gleiten mit ``reibwert``) statt
+    einer festen Einspannung. ``klemmkraft`` in N für Klemmschrauben an ``teil`` (sonst „handfest“ angenommen),
+    ``spiel`` in mm als Anfangsspalt (sonst aus der Geometrie)."""
+    if not _teile(teil) or not _teile(gegen):
+        raise ValueError("statik.kontakt: zwei Teile angeben, z. B. st.kontakt(\"Halter\", \"Rohr\")")
+    for name, wert in (("reibwert", reibwert), ("klemmkraft", klemmkraft), ("spiel", spiel)):
+        if wert is not None and (not isinstance(wert, (int, float)) or not math.isfinite(float(wert)) or wert < 0):
+            raise ValueError(f"statik.kontakt: {name} muss eine Zahl ≥ 0 sein")
+    _melde({"was": "kontakt", "teile": _teile(teil), "gegen": _teile(gegen),
+            "reibwert": None if reibwert is None else float(reibwert),
+            "klemmkraft": None if klemmkraft is None else float(klemmkraft),
+            "spiel": None if spiel is None else float(spiel)})
+
+
+def festigkeit(teil: Any, kontakt: bool = True, plastisch: bool = False, traglast: bool | None = None,
+               beulen: bool = False, klemmkraft: float | None = None, reibwert: float | None = None,
+               szenario: str | None = None) -> None:
+    """Stufe 4: ``teil`` (Name, Gruppe oder Form) nach jedem Lauf im Hintergrund mit CalculiX nachrechnen: Kontakt mit
+    Abheben und Gleiten (``kontakt``), elastisch-plastisch (``plastisch``), Traglast (``traglast``, Standard: mit
+    Kontakt oder Plastizität), Beulfaktor (``beulen``). ``szenario``: nur dieses (sonst alle mit Last)."""
+    if not _teile(teil):
+        raise ValueError("statik.festigkeit: Teil angeben")
+    _melde({"was": "festigkeit", "teile": _teile(teil), "kontakt": bool(kontakt), "plastisch": bool(plastisch),
+            "traglast": None if traglast is None else bool(traglast), "beulen": bool(beulen),
+            "klemmkraft": None if klemmkraft is None else float(klemmkraft),
+            "reibwert": None if reibwert is None else float(reibwert), "szenario": szenario})

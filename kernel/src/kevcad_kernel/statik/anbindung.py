@@ -50,6 +50,7 @@ class Letzter:
     namen: set[str] = field(default_factory=set)
     befestigt: dict[str, str] = field(default_factory=dict)  # für S2: an der Umgebung befestigte Teile
     run: int | None = None
+    s4: dict[str, Any] = field(default_factory=dict)  # Stufe 4: st.kontakt und st.festigkeit aus model.py
 
 
 LETZTER = Letzter()
@@ -87,17 +88,47 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     szen, einst = szenarien_fuer(ctx.erklaerungen, ctx.optionen.get("params"), m)
     erg = rechne_alles(m, szen, katalog, ctx.koerper)
     ctx.abbrechen()
+    s4 = stufe4_aus(ereignisse, m)
+    if s4.get("auftraege") or s4.get("kontakte"):
+        erg["s4"] = s4  # die Laufzeit rechnet st.festigkeit(…) nach dem Festkörper im Hintergrund (Stufe 4)
     global LETZTER
     LETZTER = Letzter(m, szen, dict(ctx.koerper), katalog, erg, set(ctx.koerper), befestigt,
-                      ctx.optionen.get("run"))
+                      ctx.optionen.get("run"), s4)
     ctx.ergebnis["statik"] = erg
     ctx.zeiten["statik"] = (time.perf_counter() - t0) * 1000
     out = befunde(erg)
+    for w in s4.get("warnungen") or []:
+        out.append(bf.befund("statik_szenario", ["model.py"], "warnung", w,
+                             "Namen wie in show() oder eine Gruppe angeben.", wert={"pruefung": "statik"}))
     for w in einst.get("warnungen") or []:
         out.append(bf.befund("statik_szenario", ["model.py"], "warnung", w["text"]
                              + (f" [model.py Zeile {w['zeile']}]" if w.get("zeile") else ""),
                              "Angaben in st.szenario/st.last korrigieren (Kraft in N als (fx, fy, fz) oder kg=…).",
                              wert={"pruefung": "statik"}))
+    return out
+
+
+def stufe4_aus(ereignisse: list[dict[str, Any]], m: Any) -> dict[str, Any]:
+    """Stufe 4 aus model.py: ``st.kontakt(a, b, …)`` (Kontaktpaare mit Reibwert, Klemmkraft, Spiel) und
+    ``st.festigkeit(teil, …)`` (Teile, die nach jedem Lauf mit CalculiX nachgerechnet werden)."""
+    out: dict[str, Any] = {"kontakte": [], "auftraege": [], "warnungen": []}
+    for e in ereignisse or []:
+        was = e.get("was")
+        if was == "kontakt":
+            unbekannt = [t for t in (e.get("teile") or []) + (e.get("gegen") or []) if not m.aufloesen(str(t))]
+            if unbekannt:
+                out["warnungen"].append(f"st.kontakt: Teil {unbekannt[0]!r} gibt es nicht")
+                continue
+            out["kontakte"].append({k: e.get(k) for k in ("teile", "gegen", "reibwert", "klemmkraft", "spiel",
+                                                          "zeile")})
+        elif was == "festigkeit":
+            teile = [n for t in e.get("teile") or [] for n in m.aufloesen(str(t))]
+            if not teile:
+                out["warnungen"].append(f"st.festigkeit: Teil {(e.get('teile') or ['?'])[0]!r} gibt es nicht")
+                continue
+            out["auftraege"].append({**{k: e.get(k) for k in ("kontakt", "plastisch", "traglast", "beulen",
+                                                              "klemmkraft", "reibwert", "szenario", "zeile")},
+                                     "teile": teile})
     return out
 
 

@@ -64,6 +64,10 @@ def festkoerper_schreiben(wunsch: dict) -> dict:
 
     if LETZTER.modell is None:
         raise ValueError("Noch kein Statikmodell: erst run aufrufen.")
+    if wunsch.get("verfahren") == "ccx":  # Stufe 4 (CalculiX): S3-Auftrag plus Kontakt, Klemmung, Fließkurven
+        from kevcad_kernel.statik.ccx.auftrag import schreibe as schreibe_s4
+
+        return {"festkoerper": schreibe_s4(LETZTER, wunsch)}
     return {"festkoerper": schreibe(LETZTER, wunsch)}
 
 

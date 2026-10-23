@@ -44,11 +44,11 @@ from kevcad_kernel.statik.festkoerper.prozess import _lastflaeche, _netz, _schre
 ZUSATZ = ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf")
 FEDER_ANTEIL = 1e-6  # Halte-Federn: Gesamtsteifigkeit = Anteil · E · Größe des Körpers
 RUTSCH_ANTEIL = 0.05  # tragen die Federn mehr als 5 % der Last, hält der Kontakt den Körper nicht
-KONTAKT_FAKTOR = 10.0  # Druck-Strafsteifigkeit = Faktor · E (weicherer Werkstoff) je mm
+KONTAKT_FAKTOR = 2.0  # Druck-Strafsteifigkeit = Faktor · E (weicherer Werkstoff) je mm
 HAFT_TEILER = 50.0  # Haftsteifigkeit = Druck-Strafsteifigkeit / Teiler
 SUCH_MM = 1.0  # Kontaktzone: Randflächen bis so weit vom Partner (dazu die Toleranz des Paars)
 TRAG_MAX = 50.0
-SCHUTZ_BIS = 1.0e-3  # Klaffen und Schlupf unter 1 µm zählen nicht
+SCHLUPF_MM = 0.1  # ein frei gelagerter Körper, der sich so weit mehr bewegt als linear erwartet, rutscht
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -103,7 +103,8 @@ def _netz_koerper(info: dict[str, Any], h_teil: float, ablage: Path) -> dict[str
 
     starr = info["rolle"] == "lager"
     key = hashlib.sha1(json.dumps({"v": VERSION, "k": info["schluessel"], "box": info["box"], "starr": starr,
-                                   "h": round(h_teil, 3)}, sort_keys=True).encode()).hexdigest()[:20]
+                                   "h": round(h_teil, 3), "verfeinern": info.get("verfeinern"),
+                                   "h_mm": info.get("h_mm")}, sort_keys=True).encode()).hexdigest()[:20]
     pfad = ablage / "netze" / f"k{key}.npz"
     if pfad.exists():
         try:
@@ -112,8 +113,8 @@ def _netz_koerper(info: dict[str, Any], h_teil: float, ablage: Path) -> dict[str
         except Exception:  # noqa: BLE001
             pass
     # elastische Körper so fein wie das Teil (Kontakt Fläche zu Fläche mag ähnliche Netze), starre gröber
-    h = max(h_teil, 2.0) * (1.5 if starr else 1.0)
-    n = netz.vernetze(info["brep"], h_vorgabe=h)
+    h = info.get("h_mm") or max(h_teil, 2.0) * (1.5 if starr else 1.0)
+    n = netz.vernetze(info["brep"], h_vorgabe=h, verfeinern=info.get("verfeinern"))
     _schreibe_npz(pfad, p=n["p"], t=n["t"], rand=n["rand"], flaeche=n["flaeche"], h=np.float64(n["h"]))
     return n
 
@@ -170,6 +171,7 @@ class Fall:
         self.beruehrt, self.zone, self.kn = beruehrt, zone, koerper_netze
         self.hinweise: list[str] = list(f.get("hinweise") or [])
         self.groesse = float(np.max(np.asarray(T["bmax"]) - np.asarray(T["bmin"])))
+        self.u_last: dict[str, float] = {}  # Verschiebung der frei gelagerten Körper bei λ = 1 (Lauf 1)
 
     # -- Aufbau ----------------------------------------------------------------------------------------------------
 
@@ -415,6 +417,12 @@ class Fall:
             if len(kopf_n):
                 kopf = kopf_n
                 ck = (A[kopf, None] * N.rand_mitte[kopf]).sum(axis=0) / A[kopf].sum()
+                # Richtung senkrecht zur Auflage von Scheibe bzw. Kopf (in das Teil hinein); die Lage der Schwerpunkte
+                # gibt nur das Vorzeichen (sonst kippt ein ungleich vernetzter Kopf die Kraft um einige Grad)
+                nm = -(A[kopf, None] * N.rand_normale[kopf]).sum(axis=0)
+                if float(np.linalg.norm(nm)) > 1e-9:
+                    nm /= np.linalg.norm(nm)
+                    a = nm if float(np.dot(nm, a)) > 0 else -nm
         Fk = float(kl["kraft"])
         lv = np.zeros(N.N)
         if len(kopf):
@@ -567,8 +575,14 @@ def auswerten_last(fall: Fall, ordner: Path, name: str) -> tuple[dict[str, Any],
         ui = U[k_.offset_k:k_.offset_k + nn]
         kraft = float(np.linalg.norm(ui.mean(axis=0))) * fd["k_ges"]
         anteil = kraft / max(fd["last_n"], 1e-9)
+        u0 = np.zeros(3)
+        if "vorspannung" in namen and ende[namen.index("vorspannung")] is not None:
+            u0 = fr.feld(ende[namen.index("vorspannung")], "DISP", nk, 3)[k_.offset_k:k_.offset_k + nn].mean(axis=0)
+        fd["u_last"] = float(np.linalg.norm(ui.mean(axis=0) - u0))
+        fall.u_last[k_.name] = fd["u_last"]
         rutsch.append({"koerper": k_.name, "federkraft_n": round(kraft, 3), "anteil": round(anteil, 4),
-                       "verschiebung_mm": round(float(np.linalg.norm(ui.mean(axis=0))), 4)})
+                       "verschiebung_mm": round(float(np.linalg.norm(ui.mean(axis=0))), 4),
+                       "verschiebung_last_mm": round(fd["u_last"], 5)})
     info["federn"] = rutsch
     info["rutscht"] = any(r["anteil"] > RUTSCH_ANTEIL for r in rutsch)
     sv = np.unique(N.rand)
@@ -596,7 +610,16 @@ def auswerten_traglast(fall: Fall, ordner: Path, name: str, stufen: list[tuple[f
         a, b, _ = stufen[k]
         return a + (b - a) * (zeit - t0 - k)
 
-    inks = [i for i in fr.lies_frd(str(ordner / f"{name}.frd"), ("DISP", "STRESS", "PE")) if i["zeit"] > t0 + 1e-9]
+    alle = fr.lies_frd(str(ordner / f"{name}.frd"), ("DISP", "STRESS", "PE"))
+    inks = [i for i in alle if i["zeit"] > t0 + 1e-9]
+    u_vor: dict[int, np.ndarray] = {}
+    vor = [i for i in alle if abs(i["zeit"] - t0) < 1e-4]
+    if vor and t0 > 0:
+        Uv = fr.feld(vor[-1], "DISP", d.knotenzahl, 3)
+        if Uv is not None:
+            for i in fall.federn:
+                k_ = d.koerper[i]
+                u_vor[i] = Uv[k_.offset_k:k_.offset_k + fall.netze[i].N.n].mean(axis=0)
     nk = d.knotenzahl
     w = T["werkstoff"]
     fl = T.get("fliess")
@@ -629,14 +652,19 @@ def auswerten_traglast(fall: Fall, ordner: Path, name: str, stufen: list[tuple[f
                 werte["schicht"] = float(ks[frei].max())
             else:
                 werte["bruch"] = float(idx[frei].max())
+        # Rutschen: ein frei gelagerter Körper (Stab im Kontakt, Teil ohne festes Lager) bewegt sich als Ganzes mehr
+        # als SCHLUPF_MM und mehr als zehnmal so weit, wie es die Last bei λ = 1 linear erwarten ließe, oder seine
+        # Halte-Federn tragen mehr als RUTSCH_ANTEIL der Last
         anteil = 0.0
         for i, fd in fall.federn.items():
             k_ = d.koerper[i]
             nn = fall.netze[i].N.n
-            ui = U[k_.offset_k:k_.offset_k + nn].mean(axis=0)
-            last_n = fd["last_n"] * max(lam, 1e-9) if i != 0 else fd["last_n"] * max(lam, 1e-9)
-            anteil = max(anteil, float(np.linalg.norm(ui)) * fd["k_ges"] / max(last_n, 1e-9))
-        werte["rutschen"] = anteil / RUTSCH_ANTEIL
+            ui = U[k_.offset_k:k_.offset_k + nn].mean(axis=0) - u_vor.get(i, 0.0)
+            last_n = fd["last_n"] * max(lam, 1e-9)
+            anteil = max(anteil, float(np.linalg.norm(ui)) * fd["k_ges"] / max(last_n, 1e-9) / RUTSCH_ANTEIL)
+            erwartet = max(SCHLUPF_MM, 10.0 * lam * float(fall.u_last.get(k_.name) or 0.0))
+            anteil = max(anteil, float(np.linalg.norm(ui)) / erwartet)
+        werte["rutschen"] = anteil
         kurve.append({"faktor": round(lam, 4), "verformung_max_mm": round(um, 5), "dehnung_max": round(pe, 6),
                       **{k_: round(v, 4) for k_, v in werte.items()}})
         for kr, v in werte.items():
@@ -742,13 +770,18 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
                         if tr is None or tr["kriterium"] == "nicht_erreicht" or tr["faktor"] <= 0:
                             break
                         la = tr["faktor"]
-                        stufen = [(0.0, 0.85 * la, 0.25), (0.85 * la, 1.15 * la, 0.0167)]
+                        stufen = [(0.0, 0.85 * la, 0.25), (0.85 * la, 1.15 * la, 0.025)]
                     fall.baue("traglast", stufen)
                     grenze = max(0.02 * fall.groesse, 8.0 * u_last * stufen[-1][1])
 
                     def stopp(z: dict[str, Any], g=grenze) -> str | None:
-                        if z.get("schritt") == len(fall.d.schritte) and z.get("disp_letzt", 0.0) > g:
+                        if z.get("schritt") != len(fall.d.schritte):
+                            return None
+                        if z.get("disp_letzt", 0.0) > g:
                             return "Verschiebung läuft davon"
+                        d_ = z.get("inc_disps") or []
+                        if len(d_) >= 4 and d_[-1] > max(0.02, 30.0 * float(np.median(d_[:-1]))):
+                            return "Verschiebung springt"
                         return None
 
                     def ft(x: float, text: str, a=a0, b=a1, nr=lauf_nr) -> None:

@@ -82,6 +82,12 @@ def urteil_fuer(t: dict[str, Any]) -> dict[str, Any] | None:
                                                                 f"({t.get('meldung') or '?'})")
         return None
     quer = t.get("kriterium") == "schicht"
+    if t.get("verfahren") == "ccx":  # Stufe 4 (CalculiX): eigene Lösungstexte (Klemmkraft, drehen, verstärken)
+        from kevcad_kernel.statik.ccx.urteil import loesung as loesung_s4
+
+        return urteil("festkoerper", t["teil"], t["ampel"], t["text"], loesung_s4(t), sicherheit=t.get("sicherheit"),
+                      ziel=t.get("ziel"), ausnutzung=t.get("ausnutzung"), ort=t.get("ort"),
+                      schichtfaktor=t.get("q") if quer else None, quer_zur_schicht=quer or None)
     return urteil("festkoerper", t["teil"], t["ampel"], t["text"], loesung(t), sicherheit=t.get("sicherheit"),
                   ziel=t.get("ziel"), ausnutzung=t.get("ausnutzung"), ort=t.get("ort"),
                   schichtfaktor=t.get("q") if quer else None, quer_zur_schicht=quer or None)

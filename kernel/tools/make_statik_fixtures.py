@@ -4,7 +4,8 @@ fehlgeschlagen, dazu statics.json mit den erwarteten Werten für den Swift-Decod
 Aufruf (im Ordner kernel):  .venv/bin/python tools/make_statik_fixtures.py
 Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/statics*.frame und statics.json (seit Stufe 2 auch
 statics_ablauf.frame mit einem Ablauf, seit Stufe 3 statics_festkoerper.frame mit Festkörper und statics_feld.frame,
-eine STATICS_FIELD mit Nutzlast). Eigene Dateien, damit stream.bin und fixtures.json unverändert bleiben.
+eine STATICS_FIELD mit Nutzlast, seit Stufe 4 statics_s4.frame und statics_feld_s4.frame mit Zusatzwerten). Eigene
+Dateien, damit stream.bin und fixtures.json unverändert bleiben.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from kevcad_kernel.protocol import (  # noqa: E402
     statik_beispiel,
     statik_beispiel_ablauf,
     statik_beispiel_feld,
+    statik_beispiel_feld_s4,
     statik_beispiel_festkoerper,
+    statik_beispiel_s4,
 )
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
@@ -43,6 +46,8 @@ def main() -> None:
         ("statics_ablauf", pack_statics(statik_beispiel_ablauf(), run=9, zeigen=True, seq=74)),
         # Stufe 3: Szenario mit Festkörper (gerechnet) und eines, dessen Festkörper noch läuft
         ("statics_festkoerper", pack_statics(statik_beispiel_festkoerper(), run=11, zeigen=True, seq=75)),
+        # Stufe 4: ein Teil mit CalculiX (Kontakt, Plastizität, Traglast)
+        ("statics_s4", pack_statics(statik_beispiel_s4(), run=12, zeigen=True, seq=77)),
     ]
     erwartet = {}
     for name, head in frames:
@@ -67,6 +72,12 @@ def main() -> None:
                                                "fortschritt": e["festkoerper"]["fortschritt"],
                                                "teile": [{k: t.get(k) for k in ("teil", "stand", "ampel", "sicherheit",
                                                                                  "feld", "ausrichtung_beste")}
+                                                         | ({"verfahren": t["verfahren"],
+                                                             "traglast": (t.get("traglast") or {}).get("faktor"),
+                                                             "dehnung_max": (t.get("plastisch") or {}).get("dehnung_max"),
+                                                             "kontakt_mit": [p["mit"] for p in (t.get("kontakt") or {})
+                                                                             .get("paare") or []]}
+                                                            if t.get("verfahren") else {})
                                                          for t in e["festkoerper"]["teile"]]}}
                               if e.get("festkoerper") else {})}
                           for e in head["szenarien"]],
@@ -83,8 +94,19 @@ def main() -> None:
                                 "ueberhoehung": kopf["ueberhoehung"], "payload_bytes": len(payload),
                                 "ausnutzung_max": float(felder["ausnutzung"].max()),
                                 "verschiebung_1": [float(c) for c in felder["verschiebung"][1]]}
+    # Stufe 4: STATICS_FIELD mit Zusatzwerten (Kontaktdruck, plastische Dehnung, Klaffen, Schlupf)
+    kopf, felder = statik_beispiel_feld_s4()
+    head, payload = pack_statics_feld(kopf, felder, run=12, seq=78)
+    fehler = check_statics_feld(head, payload)
+    assert not fehler, fehler
+    (ZIEL / "statics_feld_s4.frame").write_bytes(encode_frame(head, payload))
+    erwartet["statics_feld_s4"] = {"run": 12, "szenario": kopf["szenario"], "teil": kopf["teil"],
+                                   "feld": kopf["feld"], "punkte": head["punkte"], "zusatz": head["zusatz"],
+                                   "payload_bytes": len(payload),
+                                   "kontaktdruck_max": float(felder["kontaktdruck"].max()),
+                                   "plast_dehnung_max": float(felder["plast_dehnung"].max())}
     (ZIEL / "statics.json").write_text(json.dumps(erwartet, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"{len(frames) + 1} Rahmen nach {ZIEL}")
+    print(f"{len(frames) + 2} Rahmen nach {ZIEL}")
 
 
 if __name__ == "__main__":
