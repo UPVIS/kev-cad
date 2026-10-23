@@ -36,7 +36,7 @@ def netzgroesse(volumen: float, flaeche: float, groesse: float, fein: bool = Fal
 
 
 def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faeden: int = 4,
-             verfeinern: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+             verfeinern: list[dict[str, Any]] | None = None, kantenmitten: bool = False) -> dict[str, Any]:
     """Tetraedernetz aus einer BREP-Datei: ``p`` (n, 3), ``t`` (m, 4), ``rand`` (k, 3) Randdreiecke, ``flaeche`` (k,)
     B-Rep-Fläche je Randdreieck, ``h``, ``volumen``, ``ms``. ``verfeinern`` (Stufe 4, additiv): Kugeln
     ``{"punkt", "radius", "h", "aussen"}``, in denen das Netz höchstens ``h`` groß ist (nach außen bis ``aussen``,
@@ -81,6 +81,8 @@ def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faed
                     _felder(gmsh, verfeinern, h)
                 gmsh.model.mesh.generate(3)
                 out = _auslesen(gmsh)
+                if kantenmitten:
+                    out.update(_kantenmitten(gmsh, out))
                 break
             except Exception as exc:  # noqa: BLE001
                 if versuch == 1:
@@ -114,6 +116,52 @@ def _felder(gmsh: Any, verfeinern: list[dict[str, Any]], h: float) -> None:
     f.setAsBackgroundMesh(m)
     gmsh.option.setNumber("Mesh.MeshSizeMin", min(float(v["h"]) for v in verfeinern))
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+
+
+def _kantenmitten(gmsh: Any, p1: dict[str, Any]) -> dict[str, Any]:
+    """Kantenmitten der Tetraeder auf der Geometrie: Netz zweiter Ordnung erzeugen, je Kante (Paar der Ecken) den
+    Mittelknoten. Welche Kante ein Mittelknoten hat, ergibt die nächste gerade Kantenmitte (unabhängig von der
+    Knotenfolge der Gmsh-Elemente)."""
+    try:
+        gmsh.model.mesh.setOrder(2)
+    except Exception:  # noqa: BLE001 - dann eben gerade Kanten
+        return {}
+    tags, xyz, _ = gmsh.model.mesh.getNodes()
+    xyz = np.asarray(xyz, float).reshape(-1, 3)
+    tags = np.asarray(tags, dtype=np.int64)
+    idx = np.full(int(tags.max()) + 1, -1, dtype=np.int64)
+    idx[tags] = np.arange(len(tags))
+    p = np.asarray(p1["p"], float)
+    # Ecken des Netzes zweiter Ordnung → Indizes des P1-Netzes (gleiche Koordinaten)
+    from scipy.spatial import cKDTree
+
+    baum = cKDTree(p)
+    paare, pos = [], []
+    for _, vt in gmsh.model.getEntities(3):
+        et, _, en = gmsh.model.mesh.getElements(3, vt)
+        for typ, knoten in zip(et, en):
+            if int(typ) != 11:  # 10-Knoten-Tetraeder
+                continue
+            k = idx[np.asarray(knoten, dtype=np.int64)].reshape(-1, 10)
+            ecken_xyz = xyz[k[:, :4]]
+            d, e = baum.query(ecken_xyz.reshape(-1, 3))
+            e = e.reshape(-1, 4)
+            mitte = xyz[k[:, 4:]]  # (m, 6, 3)
+            kanten = np.array([(0, 1), (1, 2), (0, 2), (0, 3), (1, 3), (2, 3)])
+            gerade = 0.5 * (ecken_xyz[:, kanten[:, 0]] + ecken_xyz[:, kanten[:, 1]])  # (m, 6, 3)
+            dist = np.linalg.norm(mitte[:, :, None, :] - gerade[:, None, :, :], axis=3)  # (m, 6 mitte, 6 kante)
+            wahl = np.argmin(dist, axis=2)
+            a = e[np.arange(len(e))[:, None], kanten[wahl, 0]]
+            b = e[np.arange(len(e))[:, None], kanten[wahl, 1]]
+            paare.append(np.sort(np.stack([a.reshape(-1), b.reshape(-1)], axis=1), axis=1))
+            pos.append(mitte.reshape(-1, 3))
+    if not paare:
+        return {}
+    P = np.concatenate(paare)
+    X = np.concatenate(pos)
+    key = P[:, 0] * len(p) + P[:, 1]
+    _, erst = np.unique(key, return_index=True)
+    return {"km_paare": P[erst], "km_pos": X[erst]}
 
 
 def _auslesen(gmsh: Any) -> dict[str, Any]:

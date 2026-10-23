@@ -164,6 +164,38 @@ def test_deck_orientierung_flaechen_und_eingabe(tmp_path):
         assert teil in text, teil
 
 
+KANTENMITTEN = r'''
+import json, sys
+import numpy as np
+from kevcad_kernel.statik.festkoerper import loeser, netz
+from kevcad_kernel.statik.ccx.prozess import Teilnetz
+n = netz.vernetze(sys.argv[1], h_vorgabe=2.0, kantenmitten=True)
+N = loeser.Netz(n["p"], n["t"], n["rand"], n["flaeche"])
+e = N.mesh.edges
+ra, rb = (np.hypot(N.p[e[i], 0], N.p[e[i], 1]) for i in (0, 1))
+aussen = (np.abs(ra - 6.0) < 1e-6) & (np.abs(rb - 6.0) < 1e-6)  # Kanten auf der Außenfläche
+def abw(tn):
+    m = tn.knoten[N.n:][aussen]
+    return float(np.abs(np.hypot(m[:, 0], m[:, 1]) - 6.0).max())
+print(json.dumps({"km": int(len(n["km_paare"])), "kanten": int(N.mesh.edges.shape[1]),
+                  "gerade": abw(Teilnetz(N)), "krumm": abw(Teilnetz(N, (n["km_paare"], n["km_pos"])))}))
+'''
+
+
+def test_kantenmitten_auf_der_geometrie(tmp_path):
+    """Kontaktflächen brauchen gekrümmte Kanten: Rohr Ø 12 × 1 mit h 2 mm. Gerade Kantenmitten liegen bis zur
+    Pfeilhöhe innen (Bohrung und Rohr durchdrängen sich bei 0,1 mm Spiel), die Mitten aus Gmsh zweiter Ordnung auf dem
+    Kreis. Gmsh läuft wie in Kev CAD in einem eigenen Prozess."""
+    from build123d import Cylinder
+
+    brep = _brep(Cylinder(6.0, 40) - Cylinder(5.0, 42), tmp_path / "rohr.brep")
+    r = subprocess.run([sys.executable, "-c", KANTENMITTEN, brep], capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr[-1500:]
+    d = json.loads(r.stdout.strip().splitlines()[-1])
+    assert d["km"] == d["kanten"]
+    assert d["gerade"] > 0.02 and d["krumm"] < 0.1 * d["gerade"], d
+
+
 def test_frd_leser(tmp_path):
     from kevcad_kernel.statik.ccx import frd
 

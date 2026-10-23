@@ -39,7 +39,7 @@ from kevcad_kernel.statik.ccx import VERSION, GRENZEN_S4
 from kevcad_kernel.statik.ccx import frd as fr
 from kevcad_kernel.statik.ccx import lauf
 from kevcad_kernel.statik.ccx.deck import Deck, Koerper, Kontakt, Schritt
-from kevcad_kernel.statik.festkoerper.prozess import _lastflaeche, _netz, _schreibe_npz, lies_fall, melde, speicher
+from kevcad_kernel.statik.festkoerper.prozess import _lastflaeche, _schreibe_npz, lies_fall, melde, speicher
 
 try:  # Lagerarten und Flächenlasten der Simulation (Stufe 3, Simulation 2); ältere Stände kennen nur feste Lager
     from kevcad_kernel.statik.festkoerper.prozess import _flaechen_facetten, _gehalten, _lager_art
@@ -123,12 +123,20 @@ def zugewandt(punkte: np.ndarray, normalen: np.ndarray, pos: np.ndarray, tri: np
 class Teilnetz:
     """Netz eines Körpers (P2 aus S3) mit Kanten-Index und Umrechnung P2-Lastvektor → Knotenkräfte."""
 
-    def __init__(self, N: Any) -> None:
+    def __init__(self, N: Any, km: tuple[np.ndarray, np.ndarray] | None = None) -> None:
         self.N = N
         e = np.sort(N.mesh.edges, axis=0).astype(np.int64)
         self.ekey = e[0] * N.n + e[1]
         self.eord = np.argsort(self.ekey)
         mid = 0.5 * (N.p[N.mesh.edges[0]] + N.p[N.mesh.edges[1]])
+        if km is not None and len(km[0]):  # Kantenmitten auf der Geometrie (Gmsh zweiter Ordnung)
+            paare, pos = np.asarray(km[0], dtype=np.int64), np.asarray(km[1], float)
+            k = self.kanten(paare[:, 0], paare[:, 1])
+            ok = np.all(np.sort(N.mesh.edges[:, k].T, axis=1) == paare, axis=1)
+            # nur kleine Verschiebungen übernehmen (Schutz gegen falsch zugeordnete Knoten)
+            laenge = np.linalg.norm(N.p[paare[:, 0]] - N.p[paare[:, 1]], axis=1)
+            ok &= np.linalg.norm(pos - mid[k], axis=1) < 0.25 * laenge
+            mid[k[ok]] = pos[ok]
         self.knoten = np.vstack([N.p, mid])
         el = np.zeros((len(N.t), 10), dtype=np.int64)
         el[:, :4] = N.t
@@ -169,7 +177,7 @@ def _netz_koerper(info: dict[str, Any], h_teil: float, ablage: Path) -> dict[str
     starr = info["rolle"] == "lager"
     key = hashlib.sha1(json.dumps({"v": VERSION, "k": info["schluessel"], "box": info["box"], "starr": starr,
                                    "h": round(h_teil, 3), "verfeinern": info.get("verfeinern"),
-                                   "h_mm": info.get("h_mm")}, sort_keys=True).encode()).hexdigest()[:20]
+                                   "h_mm": info.get("h_mm"), "km": True}, sort_keys=True).encode()).hexdigest()[:20]
     pfad = ablage / "netze" / f"k{key}.npz"
     if pfad.exists():
         try:
@@ -179,8 +187,9 @@ def _netz_koerper(info: dict[str, Any], h_teil: float, ablage: Path) -> dict[str
             pass
     # elastische Körper so fein wie das Teil (Kontakt Fläche zu Fläche mag ähnliche Netze), starre gröber
     h = info.get("h_mm") or max(h_teil, 2.0) * (1.5 if starr else 1.0)
-    n = netz.vernetze(info["brep"], h_vorgabe=h, verfeinern=info.get("verfeinern"))
-    _schreibe_npz(pfad, p=n["p"], t=n["t"], rand=n["rand"], flaeche=n["flaeche"], h=np.float64(n["h"]))
+    n = netz.vernetze(info["brep"], h_vorgabe=h, verfeinern=info.get("verfeinern"), kantenmitten=True)
+    _schreibe_npz(pfad, p=n["p"], t=n["t"], rand=n["rand"], flaeche=n["flaeche"], h=np.float64(n["h"]),
+                  km_paare=n.get("km_paare", np.zeros((0, 2), np.int64)), km_pos=n.get("km_pos", np.zeros((0, 3))))
     return n
 
 
@@ -236,6 +245,34 @@ def _gleichungen(tn: "Teilnetz", d: Deck, fest_k: np.ndarray, gleit: list[tuple[
             terme += [(int(gi), int(richtung[i]) + 1, float(z[i] * skala)) for gi, i in zip(g, nz) if i != dep]
             out.append(terme)
     return out
+
+
+def _netz_teil(T: dict[str, Any], fein: bool, ablage: Path) -> tuple[dict[str, Any], bool]:
+    """Netz des Teils wie Stufe 3 (gleiche Größe und Ecken), dazu die Kantenmitten auf der Geometrie (eigener
+    Zwischenspeicher, damit Stufe 3 ihr Netz behält)."""
+    from kevcad_kernel.statik.festkoerper import netz
+
+    schl = {"v": VERSION, "teil": T["schluessel_teil"], "fein": fein, "h": T.get("h_mm"), "km": True,
+            "verfeinern": T.get("verfeinern"),
+            "max": [netz.MAX_TET, netz.MAX_TET_FEIN, netz.WAND_ANTEIL, netz.KRUEMMUNG]}
+    pfad = ablage / "netze" / f"s4{hashlib.sha1(json.dumps(schl, sort_keys=True).encode()).hexdigest()[:18]}.npz"
+    if pfad.exists():
+        try:
+            with np.load(pfad) as z:
+                return {k: z[k] for k in z.files} | {"h": float(z["h"])}, True
+        except Exception:  # noqa: BLE001
+            pass
+    n = netz.vernetze(T["brep"], fein=fein, h_vorgabe=T.get("h_mm"), verfeinern=T.get("verfeinern"),
+                      kantenmitten=True)
+    _schreibe_npz(pfad, p=n["p"], t=n["t"], rand=n["rand"], flaeche=n["flaeche"], h=np.float64(n["h"]),
+                  km_paare=n.get("km_paare", np.zeros((0, 2), np.int64)), km_pos=n.get("km_pos", np.zeros((0, 3))))
+    return n, False
+
+
+def _km(n: dict[str, Any]) -> tuple[np.ndarray, np.ndarray] | None:
+    if n.get("km_paare") is None or not len(n["km_paare"]):
+        return None
+    return np.asarray(n["km_paare"]), np.asarray(n["km_pos"])
 
 
 def _werkstoff_deck(w: dict[str, Any], fliess: dict[str, Any] | None, schicht: Any, druckteil: bool) -> dict[str, Any]:
@@ -300,7 +337,7 @@ class Fall:
         T, f, opt, N = self.T, self.f, self.opt, self.N
         kontakt = opt["kontakt"] and art != "beulen"
         d = Deck()
-        tn = Teilnetz(N)
+        tn = Teilnetz(N, _km(self.n))
         K0 = Koerper(T["name"], tn.knoten, tn.elemente,
                      _werkstoff_deck(T["werkstoff"], T.get("fliess") if art != "beulen" else None, T.get("schicht"),
                                      T["druckteil"]))
@@ -315,8 +352,8 @@ class Fall:
         def koerper(x: str) -> int:
             if x in koerper_index:
                 return koerper_index[x]
-            info, nx = self.kn[x]
-            tx = Teilnetz(nx)
+            info, nx, km = self.kn[x]
+            tx = Teilnetz(nx, km)
             if info["rolle"] == "lager":
                 w = {"E": float(T["werkstoff"]["E"]) * 100, "nu": 0.3}
             else:
@@ -883,7 +920,7 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
         melde(von + (bis - von) * anteil, f"{kurz}: {text}")
 
     schritt(0.01, "vernetzen")
-    n, netz_gemerkt = _netz(T, fein, ablage)
+    n, netz_gemerkt = _netz_teil(T, fein, ablage)
     N = loeser.Netz(n["p"], n["t"], n["rand"], n["flaeche"])
     t_netz = (time.perf_counter() - t0) * 1000
     beruehrt: dict[str, np.ndarray] = {}
@@ -900,7 +937,7 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
         schritt(0.04, f"vernetzen: {x.rsplit('/', 1)[-1]}")
         try:
             nx = _netz_koerper(info, float(n["h"]), ablage)
-            koerper_netze[x] = (info, loeser.Netz(nx["p"], nx["t"], nx["rand"], nx["flaeche"]))
+            koerper_netze[x] = (info, loeser.Netz(nx["p"], nx["t"], nx["rand"], nx["flaeche"]), _km(nx))
         except Exception as exc:  # noqa: BLE001 - dann eben fest wie S3
             zone.pop(x, None)
             T.setdefault("_hinweise", []).append(f"{x}: Kontaktkörper nicht vernetzt ({exc}), fest gerechnet")
