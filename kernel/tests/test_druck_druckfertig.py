@@ -239,3 +239,31 @@ def test_feste_vorgabe_ohne_widerspruch_in_den_gruenden():
     assert "ohne Vorgabe wäre die Empfehlung: kein Brim" in b["brim_mm"]
     assert b["brim"].startswith("fest vorgegeben")
     assert "Bedeutung" not in b.get("stuetzen_nur_platte", "")
+
+
+ZWEI_MATERIALIEN = """from build123d import *
+from kevcad import lager, show
+show(lager.druckteil(Box(30, 20, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)), "Halter", material="petg",
+                     farbe="schwarz", zweck="funktion", ausrichtung="-z"), "Probe2/Halter")
+show(Pos(80, 0, 0) * lager.druckteil(Box(16, 16, 12, align=(Align.CENTER, Align.CENTER, Align.MIN)), "Schraube",
+                                     material="petg", farbe="gelb", zweck="funktion", ausrichtung="-z"),
+     "Probe2/Schraube")
+"""
+
+
+def test_auswahl_nur_platte_2_ohne_leere_platte(env):
+    """teile= wählt nur das Teil der zweiten Platte (anderes Material): kein leeres Bambu-Projekt mit Platte 1
+    (KevCup, Build 467: Bambu-Fehler -50 „One of the plate is empty“)."""
+    if not env["bambu"]:
+        pytest.skip("ohne Bambu Studio")
+    rt, tmp = env["rt"], env["tmp"]
+    assert rt.project_new(str(tmp / "Probe2"), "empty")["ok"]
+    assert rt.model_write(ZWEI_MATERIALIEN)["ok"]
+    r = rt.run()
+    assert r.get("parts"), {k: r.get(k) for k in ("error", "message", "line", "excerpt")}  # Befunde der Prüfung (lose Teile) sind hier egal, die Druckvorschau läuft trotzdem
+    v = rt.druckvorschau()
+    assert len(v["platten"]) == 2, v["platten"]
+    ex = rt.druck_export(str(tmp / "nur-schraube.3mf"), teile=["Probe2/Schraube"],
+                         filament={"petg/gelb": "polymaker-polylite-petg-gelb"})
+    assert ex["ok"], ex
+    assert ex["druckfertig"] is True, ex["hinweise"]

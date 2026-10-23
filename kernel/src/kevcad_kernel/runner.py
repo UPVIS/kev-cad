@@ -415,11 +415,30 @@ def _error_dict(exc: BaseException, model_path: str, source: str, ns: dict[str, 
 
 
 def _purge_user_modules() -> None:
-    """Eigene Module (Hilfsdateien neben model.py, per sys.path geladene Skripte) vor jedem Lauf neu laden lassen."""
+    """Eigene Module (Hilfsdateien neben model.py, per sys.path geladene Skripte) vor jedem Lauf neu laden lassen.
+
+    Auch Pakete ohne ``__init__.py`` (Namespace-Pakete wie ``geometrie/`` neben model.py) zählen; sie haben kein
+    ``__file__``, nur ``__path__``. Bliebe so ein Paket stehen, hielte es das alte Untermodul als Attribut, und
+    ``from geometrie import teil`` bekäme die alte Fassung (KevCup, 23.10.2026)."""
+    weg: list[str] = []
     for name, mod in list(sys.modules.items()):
+        if name == "__main__":
+            continue
         f = getattr(mod, "__file__", None)
-        if f and name not in ("__main__",) and _is_user_file(f):
+        if f:
+            eigen = _is_user_file(f)
+        else:
+            pfade = [str(p) for p in (getattr(mod, "__path__", None) or [])]
+            eigen = bool(pfade) and all(_is_user_file(p) for p in pfade)
+        if eigen:
             sys.modules.pop(name, None)
+            weg.append(name)
+    # Verweise verbliebener Elternpakete auf entfernte Untermodule lösen
+    for name in weg:
+        eltern, _, kind = name.rpartition(".")
+        if eltern and eltern in sys.modules:
+            with contextlib.suppress(AttributeError):
+                delattr(sys.modules[eltern], kind)
 
 
 class _Capture(io.StringIO):

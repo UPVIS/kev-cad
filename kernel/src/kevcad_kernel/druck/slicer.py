@@ -958,6 +958,29 @@ def objekte_benennen(pfad_3mf: Path, namen: list[str], modifier_namen: list[list
     return gezaehlt[0]
 
 
+BETT_MM = (256.0, 256.0)   # Druckfläche des P1P (wie PLATTENABSTAND)
+BETT_RAND_MM = 0.3         # Abstand zur Kante nach dem Nachschieben
+BETT_SCHIEBEN_MAX_MM = 3.0  # größere Überstände sind ein Fehler der Anordnung, nicht des Rundens
+
+
+def _ins_bett(tris: np.ndarray, px: float, py: float) -> tuple[float, float]:
+    """Verschiebung (x, y), damit das Teil an (px, py) mit BETT_RAND_MM innerhalb der Druckfläche liegt; (0, 0), wenn
+    es schon drin liegt oder um mehr als BETT_SCHIEBEN_MAX_MM übersteht."""
+    P = np.asarray(tris, dtype=np.float64).reshape(-1, 3)
+    if not len(P):
+        return 0.0, 0.0
+    out = []
+    for achse, pos, bett in ((0, px, BETT_MM[0]), (1, py, BETT_MM[1])):
+        lo, hi = pos + float(P[:, achse].min()), pos + float(P[:, achse].max())
+        d = 0.0
+        if lo < BETT_RAND_MM:
+            d = BETT_RAND_MM - lo
+        elif hi > bett - BETT_RAND_MM:
+            d = (bett - BETT_RAND_MM) - hi
+        out.append(d if abs(d) <= BETT_SCHIEBEN_MAX_MM and hi - lo + 2 * BETT_RAND_MM <= bett else 0.0)
+    return out[0], out[1]
+
+
 def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
                  platten_namen: list[str] | None = None) -> Path:
     """Montageliste (``--load-assemble-list``) mit festen Lagen; gedrehte Teile als eigene STL-Kopien.
@@ -983,6 +1006,11 @@ def montageliste(platten: list[list[PlattenObjekt]], ordner: Path,
                 pfad = gedreht[key]
                 dx, dy = float(mitte[0]), float(mitte[1])
                 mitte_main = np.asarray(mitte, dtype=np.float64)
+            # Knapp über die Bettkante ragende Teile nach innen schieben: Die Anordnung rechnet mit gerundeten
+            # Maßen; schon 0,009 mm außen lässt Bambu Studio mit -50 („no object fully inside“) abbrechen (KevCup,
+            # Build 467). Nur kleine Überstände; größere meldet die Prüfung weiter.
+            sx_, sy_ = _ins_bett(tris if g not in (0.0, 360.0) else lies_stl(o.stl), o.x + dx, o.y + dy)
+            dx, dy = dx + sx_, dy + sy_
             eintrag: dict[str, Any] = {"path": str(pfad), "count": 1, "filaments": [int(o.filament)],
                                        "assemble_index": [nr], "pos_x": [round(o.x + dx, 4)],
                                        "pos_y": [round(o.y + dy, 4)], "pos_z": [0]}
