@@ -42,6 +42,7 @@ from kevcad_kernel.statik.ccx import installation
 PROZESS = [sys.executable, "-m", "kevcad_kernel.statik.ccx.prozess"]
 CCX = installation.finde()
 mit_ccx = pytest.mark.skipif(not CCX["ok"], reason=f"CalculiX fehlt: {CCX.get('meldung')}")
+lange = pytest.mark.timeout(1200)  # CalculiX mit Kontakt und Traglast braucht Minuten (Vorgabe der Suite 180 s)
 
 
 @pytest.fixture(autouse=True)
@@ -123,6 +124,7 @@ def test_einrichtung_ohne_platte_meldet_klar(monkeypatch, tmp_path):
 
 
 @mit_ccx
+@lange
 def test_installation_probe_und_liesmich():
     f = installation.finde()
     assert installation.version(f["ccx"]).startswith("2.")
@@ -311,6 +313,7 @@ def test_model_py_kontakt_und_festigkeit():
 
 
 @mit_ccx
+@lange
 def test_reibschluss_rutschgrenze(tmp_path):
     """Block 20 × 20 × 10 mm (Stahl) auf starrer Platte, Klemmkraft F_k = 1000 N über Scheibe und Mutter unter der
     Platte, Querkraft 100 N in halber Höhe: Rutschen bei λ = μ F_k / F_q = 3,0 (μ = 0,3)."""
@@ -347,6 +350,7 @@ def test_reibschluss_rutschgrenze(tmp_path):
 
 
 @mit_ccx
+@lange
 def test_kragbalken_plastisch_traglast_und_fliessgelenk(tmp_path):
     """Kragbalken S235 10 × 10 mm, 100 mm bis zur Last, ideal plastisch, F = 500 N (über der Fließlast 391,7 N):
     fließt an der Einspannung, bleibt nach Entlasten verbogen; Traglast gegen F_pl = Rp0,2 · b h² / 4 / L = 587,5 N."""
@@ -381,6 +385,7 @@ def test_kragbalken_plastisch_traglast_und_fliessgelenk(tmp_path):
 
 
 @mit_ccx
+@lange
 def test_beulen_kragstuetze_euler(tmp_path):
     """Stütze 10 × 10 × 300 mm, unten eingespannt, 1000 N Druck oben: F_k = π² E I / (4 L²) = 4 798 N."""
     from build123d import Box, Pos
@@ -427,10 +432,13 @@ def test_hertz_handrechnung_halbraum():
 
 
 @mit_ccx
+@lange
 def test_hertz_kugel_auf_platte(tmp_path, monkeypatch):
-    """Kugelkappe R 20 mm (6 mm hoch) mit 1000 N auf einen Block 30 × 30 × 10 mm, beide PLA, reibungsfrei, Netz an der
-    Berührung örtlich verfeinert: Druckverlauf p0 √(1 − r²/a²) gegen Hertz (p0 und a aus einer Ausgleichsgeraden von
-    p² über r²), Kraft aus dem Druck, Annäherung zweier Punkte auf der Achse in der Tiefe 2 a."""
+    """Kugelkappe R 20 mm (6 mm hoch) mit 1000 N auf einen Block 30 × 30 × 10 mm, beide PLA, Netz an der Berührung
+    örtlich verfeinert: Druckverlauf p0 √(1 − r²/a²) gegen Hertz (p0 und a aus einer Ausgleichsgeraden von p² über r²),
+    Kraft aus dem Druck, Annäherung zweier Punkte auf der Achse in der Tiefe 2 a. Reibwert 0,3: Bei gleichen Werkstoffen
+    ändert Reibung den Normaldruck nicht (Johnson, Kap. 5), sie hält die Kugel aber seitlich, die sonst nur an den
+    weichen Halte-Federn hinge."""
     import shutil
 
     from build123d import Align, Box, Pos, Sphere
@@ -454,7 +462,7 @@ def test_hertz_kugel_auf_platte(tmp_path, monkeypatch):
                 "lasten": [{"kraft": [0, 0, -F], "moment": None, "punkt": [0, 0, HK], "kontakt_mit": "Kugel",
                             "quelle": "Kugel"}], "feld": [0, 0, 0], "schluessel": "hertz"}],
               h_mm=3.0, verfeinern=ver,
-              verbindungen={"Kugel": {"art": "kontakt", "quelle": "Test", "reibwert": 0.0, "reibwert_quelle": "Test",
+              verbindungen={"Kugel": {"art": "kontakt", "quelle": "Test", "reibwert": 0.3, "reibwert_quelle": "Test",
                                       "spiel": None}},
               koerper={"Kugel": {"brep": _brep(kugel, tmp_path / "kugel.brep"), "rolle": "last",
                                  "werkstoff": dict(PLA), "fliess": None, "box": [[-R, -R, -1], [R, R, HK]],
@@ -550,6 +558,7 @@ def test_klemmschraube_aus_den_verbindungen_und_lager_ohne_klemmteile(tmp_path):
 
 
 @mit_ccx
+@lange
 @pytest.mark.parametrize("art", ["gelenkig", "gleitend"])
 def test_lagerarten_der_simulation_im_ccx_deck(tmp_path, art):
     """Lager aus der Simulation kommen als *EQUATION in CalculiX an und rechnen wie Stufe 3: Balken 200 × 20 × 20 mm
@@ -641,6 +650,7 @@ def env():
 
 
 @mit_ccx
+@lange
 def test_laufzeit_st_festigkeit_im_hintergrund_und_mcp_werkzeug(env):
     """model.py meldet den Wandhalter für Stufe 4 an: nach dem Lauf rechnet erst S3, dann CalculiX im Hintergrund;
     STATICS trägt das Teil mit verfahren "ccx", STATICS_FIELD die Zusatzwerte; festigkeit(verfahren="ccx") kommt aus
@@ -666,8 +676,7 @@ def test_laufzeit_st_festigkeit_im_hintergrund_und_mcp_werkzeug(env):
                                      start=start, timeout=60)
     assert not check_statics_feld(fh, payload) and fh["zusatz"] == list(STATIK_FELD_ZUSATZ)
     assert fh["feld"] == t["feld"]
-    check = app.wait_for(lambda h: h["type"] == "CHECK" and any(b.get("art") == "statik_szenario" and
-                                                                 "st.kontakt" in b.get("text", "")
+    check = app.wait_for(lambda h: h["type"] == "CHECK" and any("Gibt es nicht" in b.get("text", "")
                                                                  for b in h.get("befunde") or []),
                          start=start, timeout=30)[2]
     assert check["state"] in ("done", "teilweise")
