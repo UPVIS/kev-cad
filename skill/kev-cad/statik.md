@@ -1,4 +1,4 @@
-# Statik in Kev CAD (Stufe 1 bis 3)
+# Statik in Kev CAD (Stufe 1 bis 3, Topologie)
 
 Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, und ob sie unnötig schwer ist
 (PLAN-STATIK.md, Strang „Statik Stufe 1“). Das Ergebnis steht im Laufergebnis (eine Zeile „Statik: …“), ausführlich
@@ -149,6 +149,52 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
   am Rand der Einspannung rechnerische Spitzen, sie werden nicht gewertet und stehen als `sicherheit_lagerrand`
   daneben), Schrauben und Gewinde nicht einzeln, Druckteile mit voller Füllung. Kein Ersatz für einen Statiker bei
   sicherheitsrelevanten Dingen.
+
+## Topologie optimieren
+
+„Behalte 40 %, entferne den Rest“ wie bei implicit.build: Kev CAD macht aus einem **Druckteil** eine organische
+Fachwerkform entlang der Lastpfade (PLAN-TOPOLOGIE.md). Lager und Lasten kommen genau wie beim Festkörper aus einem
+Szenario der Statik; ohne Last auf dem Teil gibt es nichts zu optimieren (erst `st.szenario` und `st.last` anlegen).
+
+```python
+from kevcad import lager, show, topologie
+
+halter = lager.druckteil(form, "Halter", material="petg", zweck="tragend")
+halter = topologie.optimieren(halter, szenario="Bolzen 50 N", behalten=0.42)   # ueberhang=True, steg=6, fein=True
+show(Pos(0, 0, 10) * halter, "Halter")
+```
+
+- **Ablauf:** Fehlt das Ergebnis, zeigt der Lauf das Ausgangsteil und meldet „wird im Hintergrund optimiert“; die
+  Rechnung läuft in einem eigenen Prozess (Bracket mit 60 000 Voxeln etwa eine Minute), Kevin sieht die Dichte live
+  halbdurchsichtig im Viewer, danach startet der Lauf von selbst neu mit dem optimierten Körper. Das Ergebnis liegt
+  in `topologie/<teil>-<schlüssel>.brep` (gehört zu den Versionen) und ist ein gewöhnliches Druckteil (Stückliste,
+  Druckprüfung, Druckvorschau, Export).
+- **Lager:** Vorgabe `lager="kontakt"` wie die Statik (Kontaktflächen zu den tragenden Nachbarn). Für einen
+  **angeschraubten Halter auf einer Platte** `lager="bohrungen"`: Dann halten die Schrauben in den Bohrungen ohne Last
+  („Fix the bolts“), und es entstehen Arme zu den Schrauben wie im Reel. Mit `"kontakt"` trägt die Auflage alles; die
+  Schraubenaugen bindet Kev CAD dann mit einem Steg an (Hinweis im Ergebnis), sie fallen nie als Inseln ab.
+  Nachgerechnet wird immer mit den Lagern der Statik. In der App: Schalter „Schrauben halten“.
+- **MCP:** `topologie_optimieren(teil, szenario, behalten, schutz, ueberhang, fein, steg, lager)` startet im Hintergrund
+  (`warten=true` wartet, `abbrechen=true` beendet), `topologie_ergebnis(warten_s=…)` liefert Fortschritt bzw. Kennzahlen
+  vorher → nachher (Volumen, Masse, Filament, Druckzeit, größte Spannung, Sicherheit mit Ampel, Verformung, dünnster
+  Steg), `topologie_uebernehmen()` legt **auf Kevins Wunsch** eine Variante an und trägt die Zeile in model.py ein.
+  In der App: Inspektor, Abschnitt „Optimieren“ (Schieber „Behalten“, Lastfall, Start, Abbruch, Vorher/Nachher mit
+  Spannungsfarben, „Als Variante übernehmen“).
+- **Schutzzonen von selbst:** Bohrungen mit Wandring (max(Steg, 0,6 r), ganze Tiefe), Gewindeeinsätze (Sacklöcher mit
+  Einsatzmaß) mit 1,5 × Mindestwand, Last- und Klemmflächen mit einer Haut in Stegdicke. Abschaltbar mit
+  `bohrungen=False`, `einsaetze=False`, `kontakt=False`; `bett=True` hält eine geschlossene Bodenhaut. Von Hand:
+  `schutz=[form, fläche]` (build123d-Körper bzw. Flächen des Teils, Teilkoordinaten), per MCP Quader, Kugel oder
+  Flächennummer.
+- **Druckbarkeit:** `ueberhang=True` verbietet neue Überhänge über 45° in Druckrichtung (Drucklage aus der
+  Druckprüfung, also vorher `ausrichtung` festlegen, wenn sie zählt). `steg` = kleinste Stegbreite in Linienbreiten
+  (6 × 0,42 = 2,5 mm); das Ergebnis nennt den dünnsten Steg.
+- **Werte richtig lesen:** Optimiert wird die **Steifigkeit** (kleinste Nachgiebigkeit), nicht die Spannung: Die
+  Sicherheit sinkt mit dem Material, an scharfen Innenecken oft stärker als das Volumen. Deshalb immer die Kennzahlen
+  vorher → nachher nennen und bei rot oder gelb mehr behalten (0,5 statt 0,4) oder die Ecke ausrunden. Die Form gilt
+  nur für die Lastfälle, für die optimiert wurde.
+- **Grenzen, immer dazusagen:** Näherung, kein Festigkeitsnachweis (Voxel-FEM, linear-elastisch, Lager fest
+  eingespannt, Eigengewicht beim Optimieren vernachlässigt); nachgerechnet mit der Festkörper-FEM bei voller Füllung,
+  quer zur Schicht weicher und schwächer. Gedruckt mit Wänden und Füllung trägt das Teil weniger.
 
 ## Was die Statik braucht
 
