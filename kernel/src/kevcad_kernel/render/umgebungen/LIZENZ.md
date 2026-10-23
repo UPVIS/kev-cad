@@ -1,6 +1,9 @@
 # Umgebungen (HDRI) für Renderings
 
-Alle drei Bilder stammen unverändert aus Blender 4.5.3 LTS (`/Applications/Blender.app/Contents/Resources/4.5/datafiles/
+`werkstatt.hdr` ist „Carpentry Shop 02“ von Greg Zaal, am 23.10.2026 auf Kevins Freigabe von Poly Haven geladen
+(https://polyhaven.com/a/carpentry_shop_02, 2K, Radiance-HDR, unverändert), Lizenz CC0.
+
+Die übrigen drei Bilder stammen unverändert aus Blender 4.5.3 LTS (`/Applications/Blender.app/Contents/Resources/4.5/datafiles/
 studiolights/world/`), umgewandelt von EXR (DWAB) nach Radiance-HDR, 1024 × 512, damit macOS (ImageIO) sie lesen kann.
 Nichts wurde heruntergeladen.
 
@@ -9,12 +12,12 @@ https://polyhaven.com), 1K-Fassung der Originale.
 
 | Datei | Szene | Blender-Datei | Original (laut license.txt) |
 |---|---|---|---|
-| `halle.hdr` | `werkstatt` | `studio.exr` | „Probably“ https://polyhaven.com/a/studio_small_01 |
+| `werkstatt.hdr` | `werkstatt` | – (Poly Haven, 2K) | https://polyhaven.com/a/carpentry_shop_02 |
+| `halle.hdr` | bis 23.10.2026 `werkstatt`, jetzt nur über `render(umgebung=…)` | `studio.exr` | „Probably“ https://polyhaven.com/a/studio_small_01 |
 | `garten.hdr` | `draussen` | `forest.exr` | https://polyhaven.com/a/ninomaru_teien |
 | `innenraum.hdr` | `wohnraum` | `interior.exr` | https://polyhaven.com/a/hotel_room |
 
-„Werkstatt“ ist damit vorerst eine dunkle Studiohalle mit Lampen und grauem Boden; eine echte Werkstatt-HDRI (etwa von
-Poly Haven, ebenfalls CC0) wird erst nach Kevins Freigabe geladen.
+„Werkstatt“ war bis 23.10.2026 die dunkle Studiohalle (`halle.hdr`); seitdem ist es die Schreinerwerkstatt.
 
 Die Studio-Umgebung (`studio`, `freigestellt`) ist selbst erzeugt (Softboxen auf neutralem Grau, im Code der App bzw.
 als Flächenlichter in Blender), ohne fremde Lizenz.

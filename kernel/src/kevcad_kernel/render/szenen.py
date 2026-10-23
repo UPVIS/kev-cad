@@ -3,7 +3,8 @@
 Eine Szene beschreibt Licht und Hintergrund; App (RealityKit) und Blender setzen sie je auf ihre Art um:
 
 - ``studio``: heller Hintergrund, weicher Schatten, eigene Softbox-Umgebung (im Code erzeugt).
-- ``werkstatt``: Studiohalle mit Lampen (HDRI, CC0, Poly Haven über Blender), Hintergrund unscharf aus der Umgebung.
+- ``werkstatt``: Schreinerwerkstatt mit Werkbank und Regalen (HDRI carpentry_shop_02, CC0, Poly Haven), Hintergrund
+  unscharf aus der Umgebung.
 - ``draussen``: Garten bei Tageslicht (HDRI, CC0, Poly Haven über Blender).
 - ``wohnraum``: Innenraum mit Fensterlicht (HDRI, CC0).
 - ``freigestellt``: Studio-Licht, durchsichtiger Hintergrund, Schatten als halbdurchsichtiges Schwarz.
@@ -24,9 +25,9 @@ SZENEN: dict[str, dict[str, Any]] = {
     "studio": {"titel": "Studio", "umgebung": None, "licht": "studio", "hintergrund": "#F1F2F4", "boden": True,
                "staerke": 1.0, "drehung": 0.0,
                "text": "heller Hintergrund, weicher Schatten, Softboxen"},
-    "werkstatt": {"titel": "Werkstatt", "umgebung": "halle.hdr", "licht": "umgebung", "hintergrund": "umgebung",
-                  "boden": True, "staerke": 1.6, "drehung": 0.0,
-                  "text": "Halle mit Lampen und grauem Boden (HDRI, CC0), Hintergrund unscharf"},
+    "werkstatt": {"titel": "Werkstatt", "umgebung": "werkstatt.hdr", "licht": "umgebung", "hintergrund": "umgebung",
+                  "boden": True, "staerke": 1.0, "drehung": 0.0,
+                  "text": "Werkstatt mit Werkbank und Regalen (HDRI, CC0), Hintergrund unscharf"},
     "draussen": {"titel": "Draußen", "umgebung": "garten.hdr", "licht": "umgebung", "hintergrund": "umgebung",
                  "boden": True, "staerke": 1.0, "drehung": 0.0,
                  "text": "Garten bei Tageslicht (HDRI, CC0), Hintergrund unscharf"},

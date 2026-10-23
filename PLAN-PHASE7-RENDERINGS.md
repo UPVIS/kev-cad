@@ -162,7 +162,8 @@ Tests: Kernel 889 grün, 1 übersprungen (echter Blender-Lauf, mit `KEVCAD_BLEND
 ### Offene Punkte (Stand 22.10.2026, erledigt bis auf zwei, siehe unten)
 
 - ~~Schatten im Schnellbild weicher und schwächer als im Foto~~ (R14)
-- **Werkstatt** ist vorerst eine dunkle Studiohalle; eine echte Werkstatt-HDRI braucht Kevins Freigabe zum Laden.
+- **Werkstatt** ist seit 23.10.2026 die Schreinerwerkstatt „Carpentry Shop 02“ (Poly Haven, CC0, 2K, Kevins Freigabe);
+  vorher die dunkle Studiohalle `halle.hdr`.
 - ~~Schichtlinien quer zur Welt-Z-Achse statt zur Druckausrichtung~~ (R16)
 - ~~Parallele Projektion wird perspektivisch~~ (R15)
 - **Von Hand prüfen:** Dialog mit echten Klicks (Teilen-Menü, Finder), Fokus und Tastenkürzel ⌥⌘R.

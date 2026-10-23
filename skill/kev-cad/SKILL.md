@@ -764,7 +764,7 @@ Kevin danach fragt oder du etwas prüfen musst.
 - `render(szene="studio", ansicht=None, kamera=None, groesse="hd", qualitaet="schnell", hintergrund=None, ziel=None)`
   schreibt ein PNG nach `<projekt>/output/renders/`. Es zeigt, was der Viewer zeigt: sichtbare Teile, Explosion und
   Animationslage; ohne Schnitt, Hervorhebungen und Maße.
-- Szenen: `studio` (heller Hintergrund, weicher Schatten), `werkstatt` (dunkle Halle mit Lampen), `draussen` (Garten
+- Szenen: `studio` (heller Hintergrund, weicher Schatten), `werkstatt` (Werkstatt mit Werkbank und Regalen), `draussen` (Garten
   bei Tageslicht), `wohnraum`, `freigestellt` (PNG mit Alpha und halbdurchsichtigem Schatten). `hintergrund` ersetzt den
   Hintergrund (`weiss`, `hell`, `grau`, `dunkel`, `schwarz`, `transparent`, `#RRGGBB`).
 - `ansicht`: `aktuell` (Kevins Ansicht, Vorgabe; steht der Viewer auf paralleler Projektion, wird das Bild in beiden
