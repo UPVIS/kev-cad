@@ -21,6 +21,10 @@
 # Umgebung aus uv.lock (offline möglich, solange der uv-Zwischenspeicher da ist). Die Gewichte von PromptDA sind nicht
 # im Paket, sie laden beim ersten Gebrauch nach ~/Library/Caches/de.upvis.kevcad/promptda.
 #
+# Statik Stufe 4 (PLAN-STATIK.md): Die Installation richtet CalculiX auf der externen Platte UPVIS ULTRA ein, falls es
+# fehlt ("/Volumes/UPVIS ULTRA/#PROGRAMME_DO-NOT-DELETE#/Kev CAD/calculix", micromamba und conda-forge, LIESMICH.txt
+# dort). Fehlt die Platte, geht die Installation trotzdem durch.
+#
 # Für den Bau auf dem Mac mini (tools/fern.sh):
 #   ./build.sh --bundle     Installationsbau ohne Installation: Paket build/bundle/ mit App, Kernel, Skill und VERSION
 #   ./build.sh --install-bundle ORDNER
@@ -84,6 +88,13 @@ install_bundle() {
   rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache "$src/scan/" "$INSTALL_ROOT/scan/"
   (cd "$INSTALL_ROOT/scan" && uv sync -q --frozen --no-dev) \
     || echo "Achtung: Umgebung von scan nicht gebaut, scan_importieren geht nicht"
+  # Statik Stufe 4: CalculiX (GPL, eigenes Programm) auf der externen Platte UPVIS ULTRA unter
+  # "#PROGRAMME_DO-NOT-DELETE#/Kev CAD/calculix" einrichten, falls es fehlt (einmalig, etwa 25 MB von conda-forge).
+  # Nie fatal: Ohne Platte oder Netz meldet Stufe 4 das beim Gebrauch, S0 bis S3 laufen weiter.
+  if [ -z "${KEVCAD_INSTALL_DIR:-}" ]; then
+    "$INSTALL_ROOT/kernel/.venv/bin/python" -m kevcad_kernel.statik.ccx.installation --wenn-fehlt 2>&1 | tail -3 \
+      || echo "Hinweis: CalculiX nicht eingerichtet (Statik Stufe 4 meldet es beim Gebrauch)"
+  fi
   cp "$src/VERSION" "$INSTALL_ROOT/VERSION"
 
   echo "==> Installiere nach $INSTALL_DIR"

@@ -105,11 +105,16 @@ def _gruppe(ws: Any) -> str:
     return g
 
 
-def verbindungsart(m: Any, a: str, b: str, deklariert: list[dict[str, Any]]) -> tuple[str, str]:
-    """("fest" | "kontakt", Quelle) für das Paar a, b."""
+def verbindungsart(m: Any, a: str, b: str, deklariert: list[dict[str, Any]],
+                   befestigt: dict[str, str] | None = None) -> tuple[str, str]:
+    """("fest" | "kontakt", Quelle) für das Paar a, b. An der Umgebung befestigte Teile (``befestigt(…)``, etwa an die
+    Wand geschraubt) bleiben an der Kulisse fest."""
     for d in deklariert:
         if (a in d["a"] and b in d["b"]) or (a in d["b"] and b in d["a"]):
             return "kontakt", "st.kontakt in model.py"
+    for x, y in ((a, b), (b, a)):
+        if befestigt and x in befestigt and (y in m.kulisse or y not in m.teile):
+            return "fest", f"befestigt: {befestigt[x]}"
     e = m.kanten.get(frozenset((a, b))) or {}
     if e.get("verbinde") in FEST_ARTEN:
         return "fest", f"verbinde {e['verbinde']}"
@@ -245,7 +250,7 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
             for x in sorted(nachbarn):
                 if x not in st.koerper:
                     continue
-                art, quelle = verbindungsart(m, name, x, deklariert)
+                art, quelle = verbindungsart(m, name, x, deklariert, getattr(st, "befestigt", None))
                 rw = reibwert(st.katalog, t.material_id, (m.teile[x].material_id if x in m.teile else None))
                 mu = float(rw.get("haft")) if rw and rw.get("haft") is not None else 0.3
                 mu_quelle = (rw.get("quelle") if rw else "angenommen 0,3")

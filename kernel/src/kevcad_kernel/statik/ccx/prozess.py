@@ -766,7 +766,11 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
             info["konvergenz"] = {"code": r1["code"], "inkremente": r1["inkremente"], "fehler": r1["fehler"][:3],
                                   "warnungen": r1["warnungen"][:5]}
             # Traglast: zweiter Lauf, Rampe bis lam_max; dann fein um den gefundenen Faktor
-            if opt.get("traglast") and (T.get("fliess") or opt["kontakt"]):
+            if info.get("rutscht"):  # hält schon unter der Last nicht (die Halte-Federn tragen): keine Laststeigerung
+                info["traglast"] = {"faktor": 0.0, "kriterium": "rutschen", "text": "rutscht schon unter der Last",
+                                    "lastfaktor_max": 1.0, "erreicht": 1.0, "gestoppt": None, "kurve": [],
+                                    "kriterien": {"rutschen": 0.0}}
+            elif opt.get("traglast") and (T.get("fliess") or opt["kontakt"]):
                 lam_el = info["sicherheit_last"] or 1.0
                 if T.get("fliess") and info.get("plastisch", {}).get("fliesst"):
                     lam_el = 1.0
