@@ -41,9 +41,11 @@ from kevcad_kernel.statik.ccx import lauf
 from kevcad_kernel.statik.ccx.deck import Deck, Koerper, Kontakt, Schritt
 from kevcad_kernel.statik.festkoerper.prozess import _lastflaeche, _netz, _schreibe_npz, lies_fall, melde, speicher
 
-try:  # Lagerarten der Simulation (Stufe 3, Zweig Simulation 2); ältere Stände kennen nur feste Lager
-    from kevcad_kernel.statik.festkoerper.prozess import _gehalten, _lager_art
+try:  # Lagerarten und Flächenlasten der Simulation (Stufe 3, Simulation 2); ältere Stände kennen nur feste Lager
+    from kevcad_kernel.statik.festkoerper.prozess import _flaechen_facetten, _gehalten, _lager_art
 except ImportError:  # pragma: no cover
+    _flaechen_facetten = None
+
     def _lager_art(nb: dict[str, Any]) -> str:
         return "fest"
 
@@ -339,10 +341,10 @@ class Fall:
                 # in CalculiX als *EQUATION, wie die Zwangsbedingungen der Stufe 3
                 sel = self.beruehrt.get(x, np.zeros(0, dtype=np.int64))
                 nb = T["nachbarn"].get(x, {})
-                art = _lager_art(nb)
-                if art == "gleitend" and len(sel):
+                lart = _lager_art(nb)
+                if lart == "gleitend" and len(sel):
                     gleit.append((tn.flaechenknoten(sel), _gehalten(nb)))
-                elif art == "gelenkig" and len(sel):
+                elif lart == "gelenkig" and len(sel):
                     gelenk += N.gelenk_zeilen(sel, nb.get("drehachsen") or [])
                 else:
                     fest_teil.append(tn.flaechenknoten(sel))
@@ -374,7 +376,19 @@ class Fall:
                 lastflaechen.append(self._schnitt_last(x, nx, lv[i], last, F, M, P))
                 lastkoerper[i] = lastkoerper.get(i, 0.0) + float(np.linalg.norm(F))
                 continue
-            if x:
+            if last.get("flaeche_datei") and _flaechen_facetten is not None:  # Last auf der ganzen Fläche (Simulation)
+                sel = _flaechen_facetten(N, last["flaeche_datei"])
+                if len(sel) == 0:
+                    sel = _lastflaeche(N, P, self.groesse, self.n["h"]) if P is not None else np.arange(len(N.rand))
+                druck = (last.get("flaeche") or {}).get("druck")
+                if druck:
+                    lv[0] += N.last_druck(sel, float(druck))
+                    F_ist = -float(druck) * (N.rand_normale[sel] * N.rand_flaeche_mm2[sel, None]).sum(axis=0)
+                    summe += F_ist - F
+                else:
+                    lv[0] += N.last_flaeche(sel, F, None, None)
+                lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
+            elif x:
                 sel = self.beruehrt.get(x, np.zeros(0, dtype=np.int64))
                 if len(sel) == 0 and P is not None:
                     sel = _lastflaeche(N, P, self.groesse, self.n["h"])

@@ -517,6 +517,60 @@ def test_klemmschraube_aus_den_verbindungen_und_lager_ohne_klemmteile(tmp_path):
     assert verbindungsart(m, "Halter", "Wand", [], {"Halter": "an die Wand geschraubt"})[0] == "fest"
 
 
+@mit_ccx
+@pytest.mark.parametrize("art", ["gelenkig", "gleitend"])
+def test_lagerarten_der_simulation_im_ccx_deck(tmp_path, art):
+    """Lager aus der Simulation kommen als *EQUATION in CalculiX an und rechnen wie Stufe 3: Balken 200 × 20 × 20 mm
+    (PLA), 100 N auf der ganzen Oberseite; gelenkig auf beiden Stirnflächen (RBE3-artig, um die Normale gehalten)
+    bzw. links gelenkig und rechts gleitend (hält y und z, gleitet längs x)."""
+    from build123d import Axis, Box, Location
+
+    import test_simulation2 as ts2
+
+    L, b, h, F = 200.0, 20.0, 20.0, 100.0
+    form = Box(L, b, h).moved(Location((L / 2, 0, h / 2)))
+    brep = _brep(form, tmp_path / "balken.brep")
+    oben = form.faces().sort_by(Axis.Z)[-1]
+    nachbarn = {}
+    for name, x, n in (("Lager: L", 0.0, (-1, 0, 0)), ("Lager: R", L, (1, 0, 0))):
+        nb = {"datei": ts2._ebene(tmp_path / f"{name[-1]}.npz", (x, 0, h / 2), n), "tol": 0.3}
+        if art == "gelenkig" or name == "Lager: L":
+            nb.update({"art": "gelenkig", "drehachsen": [list(n)]})
+        else:
+            nb.update({"art": "gleitend", "gehalten": [[0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]})
+        nachbarn[name] = nb
+    fall = {"id": "0.0", "szenario": "Last", "teil": "Balken", "ziel": 2.0, "schluessel": f"lagerart-{art}",
+            "lasten": [{"kraft": [0, 0, -F], "moment": None, "punkt": [L / 2, 0, h],
+                        "flaeche": {"index": 5, "flaeche_mm2": L * b},
+                        "flaeche_datei": ts2._flaeche_npz(tmp_path / "oben.npz", oben)}],
+            "lager": ["Lager: L", "Lager: R"], "feld": [0, 0, 0]}
+    T = _teil("Balken", brep, PLA, L * b * h, (0, -10, 0), (L, 10, h), nachbarn, [fall], h_mm=4.0)
+    s3 = subprocess.run([sys.executable, "-m", "kevcad_kernel.statik.festkoerper.prozess",
+                         str(_json(tmp_path / "a3.json", {"version": 1, "fein": False, "teile": [T]})),
+                         str(tmp_path / "e3.json")], capture_output=True, text=True, timeout=600)
+    assert s3.returncode == 0, s3.stderr[-1500:]
+    r3 = json.loads((tmp_path / "e3.json").read_text())["faelle"][0]
+    assert r3["stand"] == "done", r3
+    r4, dauer = _rechne(tmp_path, T, {"kontakt": False, "plastisch": False, "traglast": False, "beulen": False})
+
+    def mitte(r):
+        with np.load(r["feld"]) as z:
+            P, U = z["punkte"].astype(float), z["verschiebung"].astype(float)
+        sel = (np.abs(P[:, 0] - L / 2) < 3) & (np.abs(P[:, 2] - h / 2) < 3) & (np.abs(P[:, 1] + 10) < 1e-3)
+        return float(-U[sel, 2].mean())
+
+    w3, w4 = mitte(r3), mitte(r4)
+    assert w4 == pytest.approx(w3, rel=0.01)
+    assert r4["sicherheit_last"] == pytest.approx(r3["sicherheit"], rel=0.03)
+    print(f"Lagerart {art}: Durchbiegung S3 {w3:.4f} mm, S4 {w4:.4f} mm; Sicherheit S3 {r3['sicherheit']}, S4 "
+          f"{r4['sicherheit_last']}; {dauer:.1f} s")
+
+
+def _json(pfad: Path, daten: dict) -> Path:
+    pfad.write_text(json.dumps(daten), encoding="utf-8")
+    return pfad
+
+
 HALTER_S4 = '''
 from build123d import *
 from kevcad import lager, show, befestigt
