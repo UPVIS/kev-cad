@@ -20,7 +20,7 @@ per Code und baut sich live Stück für Stück auf. Kein vollwertiges CAD mit ei
 - `~/.venvs/cad`: Python 3.12, **build123d 0.13** auf OCCT 8.0.1 (aus „CAD aus Fotos“)
 - Bambu Studio 02.07.01.62 mit P2S-Profilen, Blender, FreeCAD
 - Swift 6.4, Xcode, `uv`, `rsvg-convert`
-- Testmodell mit vielen Teilen: Beelonia-Outdoorküche in build123d (`~/Code Experiments/Beelonia/cad/outdoor-kueche/`)
+- Testmodell mit vielen Teilen: Outdoorküche eines Kunden in build123d (bei Kevin lokal, nicht im Repo)
 
 ## Fundstücke
 

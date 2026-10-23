@@ -5,7 +5,7 @@ Stand: 21.10.2026. Prototyp für Kev CAD, Phase 4 (Foto und Video als Referenz).
 
 ## Kurzfassung
 
-Kevins bisheriges Verfahren (`fotocad`, an der Beelonia-Küche erprobt) vergleicht gerenderte Silhouetten mit dem
+Kevins bisheriges Verfahren (`fotocad`, an einer Outdoorküche erprobt) vergleicht gerenderte Silhouetten mit dem
 Foto und sucht mit Powell, also ohne Ableitungen: jede Auswertung ist ein ganzes GPU-Bild, ein Foto braucht einige
 tausend Auswertungen. fotomess behält Kevins Modellanbindung (`fotocad.cad_netz`: Netz linear in den Maßen) und
 ersetzt das Einpassen:

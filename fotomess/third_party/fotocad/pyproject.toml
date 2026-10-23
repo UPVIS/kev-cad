@@ -1,4 +1,4 @@
-# Kopie des Pakets fotocad aus Kevins Repo UPVIS/cad-aus-fotos (Stand a49ab03, 23.10.2026), damit fotomess ohne
+# Kopie des Pakets fotocad aus Kevins Repo UPVIS/cad-aus-fotos (Stand a49ab03, 23.10.2026, ohne schild.py), damit fotomess ohne
 # Zugriff auf dieses private Repo baut. Nur die Module, die fotomess braucht (cad_netz, netz_gl, kamera, masken) und
 # ihre Nachbarn; neue Stände von Hand übernehmen.
 [project]

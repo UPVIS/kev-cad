@@ -35,7 +35,20 @@ MASS_ARTEN = ("linear", "durchmesser", "radius", "winkel", "fase", "bohrung", "g
 SCHRIFTFELD = ("benennung", "zeichnungsnummer", "werkstoff", "halbzeug", "masse_g", "allgemeintoleranz", "projekt",
                "version", "datum", "gezeichnet", "notiz", "stueckzahl", "dokumentart", "blatt_nr", "blatt_anzahl",
                "eigentuemer", "freigegeben")
-EIGENTUEMER = "Kevin Schwed"
+
+
+def eigentuemer() -> str:
+    """Eigentümer im Schriftfeld: ``KEVCAD_AUTOR``, sonst der volle Name des macOS-Benutzers (bei Kevin „Kevin Schwed“),
+    sonst „Kev CAD“."""
+    name = os.environ.get("KEVCAD_AUTOR", "").strip()
+    if not name:
+        try:
+            import pwd
+
+            name = pwd.getpwuid(os.getuid()).pw_gecos.split(",")[0].strip()
+        except (ImportError, KeyError):
+            name = ""
+    return name or "Kev CAD"
 
 
 class BlattFehler(ValueError):
@@ -99,7 +112,7 @@ def normalisiere(blatt: dict[str, Any]) -> dict[str, Any]:
     if sf.get("allgemeintoleranz") is None:
         sf["allgemeintoleranz"] = "ISO 2768-m"
     if sf.get("eigentuemer") is None:
-        sf["eigentuemer"] = EIGENTUEMER
+        sf["eigentuemer"] = eigentuemer()
     if sf.get("blatt_nr") is None:
         sf["blatt_nr"] = 1
     if sf.get("blatt_anzahl") is None:

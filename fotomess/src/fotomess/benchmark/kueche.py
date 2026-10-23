@@ -1,4 +1,4 @@
-"""Prüfdatensatz Beelonia-Küche: 22 Studiofotos auf Weiß, Referenz aus dem vollen Bündelausgleich (fotocad).
+"""Prüfdatensatz Outdoorküche (Kundenprojekt, Daten nur bei Kevin): 22 Studiofotos auf Weiß, Referenz aus dem vollen Bündelausgleich (fotocad).
 
 Alles im Kundenordner wird nur gelesen (keine pyc-Dateien, keine Zwischenablagen dort). Referenz:
 - Maße: kueche.P (nach dem Bündelausgleich übernommen),

@@ -238,7 +238,7 @@ enum DemoData {
         let entries: [(String, TimeInterval)] = [
             ("Alter Entwurf", -86400 * 40),
             ("Gartenbank", -86400 * 9),
-            ("Outdoorküche Beelonia", -86400 * 3),
+            ("Outdoorküche", -86400 * 3),
             ("Regalwinkel", -86400 - 3600 * 5),
             ("Wandhalter", -3600 * 2),
             ("Gestell", -60 * 20),

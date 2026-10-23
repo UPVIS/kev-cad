@@ -289,7 +289,7 @@ Laut [OCCT-Benutzerhandbuch, Abschnitt Hidden Line Removal](https://occt3d.com/d
 
 ### 3.2 Messungen [G]
 
-Die Zeiten gelten je Ansicht und Lauf. Die Szene ist die Outdoorküche von Beelonia (STEP, 112 Körper, 2.126 Flächen, 10.356 Kanten).
+Die Zeiten gelten je Ansicht und Lauf. Die Szene ist die Outdoorküche eines Kunden (STEP, 112 Körper, 2.126 Flächen, 10.356 Kanten).
 
 | Fall | exakt (`HLRBRep_Algo`) | Netz (`PolyAlgo`, inklusive Vernetzung 0,5 mm) |
 |---|---|---|

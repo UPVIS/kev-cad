@@ -13,7 +13,7 @@ public struct ExportKopf: Sendable {
     public var datum: Date
     public var autor: String
 
-    public init(projekt: String, version: String? = nil, datum: Date = Date(), autor: String = "Kevin Schwed") {
+    public init(projekt: String, version: String? = nil, datum: Date = Date(), autor: String = Dokumentautor.standard) {
         self.projekt = projekt
         self.version = version
         self.datum = datum
@@ -247,5 +247,17 @@ public enum ExportFehler: Error, CustomStringConvertible {
         switch self {
         case .pdf(let s), .leer(let s): return s
         }
+    }
+}
+
+/// Autor in PDFs und Berichten: `KEVCAD_AUTOR`, sonst der volle Name des macOS-Benutzers (bei Kevin „Kevin Schwed“).
+public enum Dokumentautor {
+    public static var standard: String {
+        if let name = ProcessInfo.processInfo.environment["KEVCAD_AUTOR"]?.trimmingCharacters(in: .whitespaces),
+           !name.isEmpty {
+            return name
+        }
+        let voll = NSFullUserName().trimmingCharacters(in: .whitespaces)
+        return voll.isEmpty ? "Kev CAD" : voll
     }
 }

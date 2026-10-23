@@ -227,6 +227,7 @@ Für den MCP-Server bzw. den Kernel. Keine ist nötig.
 | `KEVCAD_BAMBU_APP`, `KEVCAD_BLENDER` | Pfade zu Bambu Studio bzw. Blender |
 | `KEVCAD_CALCULIX_DIR`, `KEVCAD_CCX` | Ordner der CalculiX-Umgebung bzw. das Programm `ccx` direkt |
 | `KEVCAD_SCANS_DIR` | Ablage empfangener Scans statt `~/Documents/Kev CAD/Scans` |
+| `KEVCAD_AUTOR` | Name im Schriftfeld der Zeichnungen und in PDFs (Vorgabe: voller Name des macOS-Benutzers) |
 
 ## Fehlerbehebung
 

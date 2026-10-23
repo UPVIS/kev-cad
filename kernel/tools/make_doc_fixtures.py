@@ -18,9 +18,12 @@ stream.bin bleibt unverändert.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from build123d import Align, Box, Cylinder, Pos, Rot
+
+os.environ.setdefault("KEVCAD_AUTOR", "Kevin Schwed")  # Testdateien unabhängig vom Benutzer des Rechners
 
 from kevcad_kernel.protocol import docs_message, drawing_create_message, encode_frame, pack_drawing, unpack_polylinien
 from kevcad_kernel.zeichnung import dokument

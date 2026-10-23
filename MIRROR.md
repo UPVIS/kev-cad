@@ -123,7 +123,7 @@ die Hashes nicht mehr.
 Eine kompaktere Form (Positionen 16 Bit, Normalen 8 Bit) ist als `kcad-mesh-q1` vorgesehen, falls Messungen es
 verlangen; sie würde über `features` ausgehandelt.
 
-Größen zur Abschätzung (Beelonia-Outdoorküche, 75 Teile, 134.000 Dreiecke): roh 4,8 MB, mit LZFSE 0,82 MB; mit
+Größen zur Abschätzung (Outdoorküche eines Kunden, 75 Teile, 134.000 Dreiecke): roh 4,8 MB, mit LZFSE 0,82 MB; mit
 Innenleben roh 5,7 MB, gepackt 1,0 MB. Das sind 13 bzw. 16 Blöcke. Kevins Kugelschieber mit 63 Teilen ist kleiner.
 
 ## Zustand

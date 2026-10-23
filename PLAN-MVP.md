@@ -15,7 +15,7 @@ Das MVP ist fertig, wenn dieser Ablauf ohne Handarbeit funktioniert:
    blendet das Maß im Viewer ein.
 5. „Zoom auf die Lasche und zeig sie mir von der Seite.“ Die Kamera fährt hin, Claude bekommt ein Bild davon.
 6. Export als STEP, STL und 3MF in den Projektordner.
-7. Die Beelonia-Outdoorküche (75 Bauteile, rund 134.000 Dreiecke) öffnet, dreht sich flüssig, ein Teil lässt sich
+7. Die Outdoorküche eines Kunden (75 Bauteile, rund 134.000 Dreiecke) öffnet, dreht sich flüssig, ein Teil lässt sich
    isolieren und aufschneiden.
 
 Dazu kann Kevin auch ohne Claude: Projekte öffnen, Teile ein- und ausblenden, Flächen und Kanten anklicken und messen,
@@ -350,7 +350,7 @@ abgelegt. Zurückholen und Vergleichen kommen nach dem MVP.
   60 fps. Für noch größere Baugruppen mit vielen Kleinteilen fassen wir später kleine Teile zu gemeinsamen Körpern
   zusammen und rechnen Treffer über die Flächenzuordnung zurück.
 - **Bildqualität:** Kanten, Schattierung und das transparente Kühlschrankglas sehen sauber aus
-  (`spikes/ap0/results/kueche_viewer.png`).
+  (Bildschirmbild aus dem Kundenprojekt, seit 23.10.2026 nicht mehr im Repo).
 
 **Entscheidung:** OCCTSwiftViewport wird die Viewer-Basis, mit den Auflagen aus Abschnitt 9. RealityKit bleibt nur für
 spätere Renderings im Plan.

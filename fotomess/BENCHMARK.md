@@ -6,7 +6,7 @@ Kontrollbilder unter `build/fotomess/kontrolle/` (beides nicht im Git). Laufzeit
 (Netz mit Ableitungen: Küche rund 2 min für drei Bauformen, Rollwagen rund 30 s, danach zwischengespeichert) und ohne
 das Laden der Bilder.
 
-## Küche (Beelonia, Studiofotos auf Weiß)
+## Küche (Kundenprojekt, Studiofotos auf Weiß)
 
 Start: alle 18 Maße um 3 bis 5 % verfälscht (mittlerer Fehler 25 mm), Kameras unbekannt, Brennweite je Foto frei
 (Zoom, kein EXIF; Vorgabe 50 mm KB). Teilmengen: 1 = 0006; 2 = + 0035; 3 = + 0064 (Ofen); 5 = + 0104a (gerade Zeile),

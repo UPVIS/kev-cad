@@ -19,7 +19,6 @@ ios/*/*.xcodeproj/
 # Testdaten, die sich jederzeit neu erzeugen lassen
 *.kcad
 spikes/ap0/results/*.png
-!spikes/ap0/results/kueche_viewer.png
 
 # Geheimnisse
 .env

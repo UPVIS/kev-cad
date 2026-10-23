@@ -355,7 +355,7 @@ def tabelle_scarlett():
 # ---------------------------------------------------------------------------------------------- Tabelle
 def tabelle():
     zeilen = []
-    zeilen.append("## Küche (Beelonia, Studiofotos auf Weiß)\n")
+    zeilen.append("## Küche (Kundenprojekt, Studiofotos auf Weiß)\n")
     zeilen.append("Start: alle 18 Maße um 3 bis 5 % verfälscht (mittlerer Fehler 25 mm), Kameras unbekannt. Referenz: "
                   "voller Bündelausgleich mit fotocad über alle 22 Fotos (selbst etwa ±1 cm unsicher, siehe README "
                   "der Küche).\n")

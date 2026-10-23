@@ -23,7 +23,7 @@ im Viewer**, gegen die Claude das parametrische Modell baut und prüft:
    Viewer, Kevin setzt den Maßstab mit einem bekannten Maß.
 2. Claude baut das Modell in build123d, `referenz_abweichung` meldet die mittlere und größte Abweichung je Teil und
    färbt die Referenz danach ein.
-3. Mit Studiofotos eines Produkts (Beelonia-Küche) passt Kev CAD die Kameras ein (Verfahren aus `fotocad`) und zeigt
+3. Mit Studiofotos eines Produkts (Outdoorküche eines Kunden) passt Kev CAD die Kameras ein (Verfahren aus `fotocad`) und zeigt
    jedes Foto mit Live-Differenz hinter dem Modell.
 
 ## Entscheidungen

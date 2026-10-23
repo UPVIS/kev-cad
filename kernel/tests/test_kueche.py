@@ -1,4 +1,4 @@
-"""Leistungstest mit der Beelonia-Outdoorküche über die volle Laufzeit (als slow markiert).
+"""Leistungstest mit der Outdoorküche eines Kunden (Daten nur bei Kevin) über die volle Laufzeit (als slow markiert).
 
 Ein temporäres model.py lädt ``kueche.py`` per sys.path, baut ``kueche(P, True, "winkel")`` und zeigt alle Blätter
 mit show(). Gemessen werden der erste Lauf, das Neu-Rechnen ohne Änderung (Zwischenspeicher) und die Zeit bis zum
@@ -40,7 +40,7 @@ for blatt in k.leaves:
 
 
 @slow
-@pytest.mark.skipif(not (KUECHE / "kueche.py").exists(), reason="Beelonia-Küche nicht vorhanden")
+@pytest.mark.skipif(not (KUECHE / "kueche.py").exists(), reason="Outdoorküche nicht vorhanden")
 def test_kueche_performance(record_property):
     tmp = Path(tempfile.mkdtemp(prefix="kc"))
     sock = str(tmp / "k.sock")

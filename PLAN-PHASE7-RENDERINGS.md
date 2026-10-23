@@ -62,12 +62,12 @@ Kennzeichnung: **belegt** (am SDK, am Quelltext oder durch eigene Messung auf di
 ### Blender Cycles im Hintergrund
 
 - Blender 4.5.3 LTS liegt unter `/Applications/Blender.app`; Cycles rendert auf dem M2 Pro über Metal
-  (`compute_device_type = "METAL"`). **belegt** (Version, Beelonia-Renderer `render_blender.py`)
+  (`compute_device_type = "METAL"`). **belegt** (Version, Renderer `render_blender.py` aus einem Kundenprojekt)
 - Erfahrungswert aus „CAD aus Fotos“: Standbild 2400 × 1600 mit 160 Proben rund 2 min auf dem M2 Pro, Glas und
   Spiegelungen richtig. **belegt** (README dort)
 - Messung dieser Phase (Kugelschieber, Studio): siehe Abschnitt „Nachweis“.
 - Schattenfänger (`is_shadow_catcher`) und durchsichtiger Film (`film_transparent`) gibt es in Cycles; Flächenlichter
-  ohne Kamerasichtbarkeit für weiches Studiolicht. **belegt** (Beelonia-Renderer)
+  ohne Kamerasichtbarkeit für weiches Studiolicht. **belegt** (Renderer aus dem Kundenprojekt)
 
 ### Umgebungen (HDRI) und Lizenz
 
