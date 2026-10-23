@@ -232,12 +232,15 @@ sicherheitsrelevanten Dingen. Teile mit Last (Druckteile, Halter, Verbinder) rec
 Festkörper-FEM im Hintergrund; Einzelheiten mit **`festigkeit`** (Farbverlauf auf dem Netz, Sicherheit je Drucklage).
 Einzelheiten, API und Urteile: [statik.md](statik.md).
 
-Lager setzt `st.lager(teil, flaeche=…|punkt=…, art="fest"|"gelenkig"|"gleitend")` ausdrücklich (sonst aus den
-Kontakten abgeleitet). Lastfälle, Kräfte und Lager, die Kevin im Bereich „Simulation“ (⌘4) per Klick anlegt, liegen in
+Lager setzt `st.lager(teil, flaeche=…|punkt=…, art="fest"|"gelenkig"|"gleitend", szenario=…, gleiten=…)`
+ausdrücklich (sonst aus den Kontakten abgeleitet): je Lastfall oder für alle, gleitend in der Fläche (genau senkrecht
+gehalten) oder wie auf einer Schiene entlang einer Achse oder Kante, gelenkig in der FEM wie ein RBE3 (Fläche hält im
+Mittel und dreht frei). Lastfälle, Kräfte und Lager, die Kevin im Bereich „Simulation“ (⌘4) per Klick anlegt, liegen in
 `simulation.json` und gehören zu jedem Lauf: `statik` und `szenario_rechnen` sehen sie, **`simulation_liste`** zeigt
 sie mit Zustand (nach Modelländerungen neu zugeordnet oder nicht mehr zuordenbar), **`simulation_aendern`** ändert sie
-nur auf Kevins Wunsch, **`simulation_rechnen`** rechnet wie seine Knöpfe (auch „Grenze suchen“: wie viel Last, wie
-steil, wie schnell). Einzelheiten: [statik.md](statik.md), Abschnitte „Lager“ und „Lastfälle aus der App“.
+nur auf Kevins Wunsch (auch Lasten auf der ganzen Fläche, Druck in N/mm²), **`simulation_rechnen`** rechnet wie seine
+Knöpfe (auch „Grenze suchen“: wie viel Last, wie steil, wie schnell; Last und Neigung wahlweise mit der FEM,
+`verfahren="fem"`). Einzelheiten: [statik.md](statik.md), Abschnitte „Lager“ und „Lastfälle aus der App“.
 
 Material sparen an einem Druckteil („mach den Halter leichter“, „Topologie optimieren wie implicit“): in model.py
 **`topologie.optimieren(teil, szenario=…, behalten=0.4)`** hinter `lager.druckteil(…)` (oder MCP

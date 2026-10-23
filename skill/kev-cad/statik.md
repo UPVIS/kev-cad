@@ -64,19 +64,34 @@ Ohne Angabe leitet Kev CAD die Lager aus den Kontakten ab: Teile auf dem Boden b
 ```python
 st.lager("Halter", flaeche=halter.faces().sort_by(Axis.X)[0])          # Fläche fest eingespannt (Standard)
 st.lager("Rahmen/Rohr", punkt=(0, 0, 30), art="gelenkig")               # Punkt; am Stab ein Gelenk
-st.lager("Schlitten", flaeche=3, art="gleitend")                        # hält nur senkrecht zur Fläche
+st.lager("Schlitten", flaeche=3, art="gleitend")                        # gleitet in der Fläche, hält senkrecht
+st.lager("Wagen", flaeche=5, art="gleitend", gleiten="+x")              # Schiene: frei nur längs X
+st.lager("Wagen", flaeche=5, art="gleitend", gleiten=kante)             # … oder längs einer build123d-Kante
+st.lager("Stütze", flaeche=0, szenario="Aufstützen")                    # nur in diesem Lastfall (auch Liste)
 st.lager("Fuß")                                                         # ganzes Teil
 ```
 
-- `art`: `"fest"` (eingespannt), `"gelenkig"` (hält, dreht frei), `"gleitend"` (hält nur senkrecht zur Fläche, auf
-  die nächste Weltachse gerundet). `flaeche` als Nummer wie im Viewer bzw. aus `selection` oder als build123d-Fläche.
-- Lager gelten in allen Szenarien: am Stab ein Auflager am nächsten Achspunkt, an anderen Teilen ist der Starrkörper
-  geerdet (seine Gruppe kippt und rutscht nicht), im Bauteil-Nachweis und in der FEM hält die Lagerfläche (gleitend nur
-  senkrecht), die Topologie nimmt sie wie Kontaktflächen. Ein Teil mit ausdrücklichem Lager verliert sein abgeleitetes
-  Bodenlager; nur gleitende Lager halten ein Teil nicht (FEM meldet „nur gleitende Lager“).
-- Nachgewiesen (`test_simulation.py`): Rohr auf gelenkig und gleitend wie der Träger auf zwei Stützen (F L³ / 48 E I),
-  beidseitig fest (F L³ / 192 E I), Kragarm (F L³ / 3 E I) je unter 2 %; Halter an einer Lagerfläche in der FEM wie an
-  der Wand (1,84 gegen Hand 1,86).
+- `art`: `"fest"` (eingespannt), `"gelenkig"` (hält, dreht frei), `"gleitend"` (gleitet in der Fläche und hält nur
+  senkrecht zu ihr, genau entlang ihrer Normale, auch schräg; mit `gleiten` nur entlang dieser Richtung frei wie auf
+  einer Schiene, quer dazu in beide Richtungen gehalten). `flaeche` als Nummer wie im Viewer bzw. aus `selection` oder
+  als build123d-Fläche.
+- Lager gelten in allen Szenarien, mit `szenario=` nur in den genannten (je Lagermenge rechnet Kev CAD ein eigenes
+  Statikmodell; STATICS zeigt je Szenario `lager`). Am Stab ein Auflager am nächsten Achspunkt (gleitend als Pendelstab
+  je gehaltener Richtung), an anderen Teilen ist der Starrkörper geerdet (seine Gruppe kippt und rutscht nicht).
+- **FEM:** fest spannt die Lagerfläche ein; gleitend hält jeden Ort der Fläche nur in den gehaltenen Richtungen;
+  **gelenkig** koppelt die Fläche wie ein RBE3 an einen festen Bezugspunkt: ihre mittlere Verschiebung ist null, sie
+  dreht frei um die Achsen in der Fläche (Ebene: nicht um die Normale; Bohrung: nur um die Bohrungsachse, wie ein
+  Bolzen) und verformt sich selbst frei. Ein einzelnes gelenkiges Lager hält ein Teil nicht (es kippt um das Gelenk);
+  die FEM prüft vor dem Rechnen, ob alle sechs Starrkörperbewegungen gehalten sind, und nennt sonst, was frei ist
+  („verschiebbar in …“, „drehbar um …“). Je Lager steht die Lagerkraft im Ergebnis (`lagerkraefte`). Die Topologie
+  rundet gleitende Lager weiter auf die nächste Gitterachse und spannt gelenkige ein.
+- Ein Teil mit ausdrücklichem Lager verliert sein abgeleitetes Bodenlager (je Lastfall, in dem das Lager gilt).
+- Nachgewiesen (`test_simulation.py`, `test_simulation2.py`): Rohr auf gelenkig und gleitend wie der Träger auf zwei
+  Stützen (F L³ / 48 E I), beidseitig fest (F L³ / 192 E I), Kragarm (F L³ / 3 E I) je unter 2 %; gleitend auf einer um
+  30° geneigten Ebene: Lagerkraft senkrecht auf der Ebene, R = (F + q L) / (2 cos α) genau; Lager je Lastfall
+  (gestützt R_B = F + 3 q L / 8); FEM: Balken auf zwei gelenkigen Stirnflächen unter gleichmäßiger Last
+  5 F L³ / (384 E I) plus Schub und Endverdrehung F L² / (24 E I), Würfel in einer schrägen Ecke aus drei gleitenden
+  Lagern (Lagerkräfte W cos α und W sin α genau); Halter an einer Lagerfläche wie an der Wand (1,84 gegen Hand 1,86).
 
 ## Lastfälle aus der App (Bereich „Simulation“)
 
@@ -91,11 +106,21 @@ einer Achse oder frei, Betrag in N oder kg, Kraftpaar) und Lager per Klick an; s
   abgeleitete Lager und die Topologie-Einstellungen.
 - **`simulation_aendern(ops)`** ändert wie Kevins Klicks (`lastfall_neu`, `lastfall_setzen`, `lastfall_kopieren` auch
   aus model.py, `last_setzen` mit `ort: {flaeche, punkt, normale}`, `richtung: {art: normale | achse | frei}`, `betrag`,
-  `einheit`, `lager_setzen`, `abgeleitet` …) und rechnet sofort neu. Nur auf Kevins Wunsch: seine Klicks sind seine
-  Entscheidungen. Fehlt eine Kraft nach einer Modelländerung (`fehlt`), Kevin fragen, statt sie still neu zu setzen.
+  `einheit` N | kg | N/mm2, `verteilung` punkt | flaeche, `lager_setzen` mit `szenarien` und `gleiten`, `abgeleitet` …)
+  und rechnet sofort neu. Nur auf Kevins Wunsch: seine Klicks sind seine Entscheidungen. Fehlt eine Kraft nach einer
+  Modelländerung (`fehlt`), Kevin fragen, statt sie still neu zu setzen.
+- **Last auf der ganzen Fläche** (`verteilung: "flaeche"`): S0, S1 und der Kragträger nehmen sie im Schwerpunkt der
+  Fläche, die FEM gleichmäßig über die ganze Fläche (Kraft / Fläche); als Druck (`einheit: "N/mm2"`, nur Richtung
+  „Normale“) senkrecht auf jedes Stück der Fläche, Kraft = Druck × Fläche (auf gekrümmten Flächen die Summe übers Netz).
+- **Untergrund je Lastfall** (`untergrund`, auch `st.szenario(…, untergrund="eiche")`): gilt fürs Rutschen in S0, die
+  Grenze „wie steil“ und den Ablauf (Reibung am Boden in S2, Rutschgrenze μ · g mit dem Reibwert dieses Bodens).
 - **`simulation_rechnen(was, lastfall)`**: `rechnen`, `festigkeit`, `ablauf`, `grenze` mit `grenze="last"` (bis zum
   wievielfachen der Kräfte hält es: Ziel, Bruch, Kippen, Rutschen), `"neigung"` (wie steil), `"geschwindigkeit"` (wie
-  schnell, über den Ablauf). Last und Neigung sucht S0/S1, nicht die FEM: das dazusagen.
+  schnell, über den Ablauf). `verfahren="s0s1"` (Standard, Millisekunden) oder `"fem"`: dazu die Festkörper-FEM der
+  Teile mit Last (Grundfälle einmal gerechnet und im Zwischenspeicher, je Teil durch Halbieren über ihre Überlagerung,
+  Probe bei der Grenze); Kippen, Rutschen und Stäbe bleiben S0/S1. Jeder Wert trägt sein `verfahren` (S0, S1, FEM), das
+  Ergebnis `massgebend_verfahren`; den Kragträger der FEM-Teile zeigt es zum Vergleich (`ersetzt`). Immer sagen, mit
+  welchem Verfahren die Grenze gefunden ist.
 - Soll ein Lastfall dauerhaft im Code stehen, in model.py eintragen und den der App löschen lassen (Kevin fragen).
 
 ## Urteile (T5)

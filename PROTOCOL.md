@@ -1005,7 +1005,7 @@ Name: die App gewinnt). Der Agent sieht und ändert dieselben Daten (MCP `simula
 | `SIM_JOB` | Kernel → App | `auftrag`, `was` (`rechnen` \| `festigkeit` \| `ablauf` \| `grenze`), `lastfall`, `teil`, `grenze` (`last` \| `neigung` \| `geschwindigkeit`), `von` (`app` \| `agent`), `stand` (`laeuft` \| `done` \| `failed` \| `abgebrochen`), `fortschritt` (0…1 oder null), `text`, `ergebnis`, `meldung`, `ms`; beim Start, bei Fortschritt (FEM, Ablauf; höchstens alle 0,4 s) und am Ende | – |
 | `SIM_REQ` | App → Kernel | `id` | `SIM` mit `reply_to` |
 | `SIM_EDIT` | App → Kernel | `id`, `basis` (erwarteter `stand`, optional), `ops` (Liste von Operationen wie MCP `simulation_aendern`) | `ACK` (`message`: Meldungen bzw. Fehler; alles oder nichts), danach `STATICS` (alles mit dem letzten Modell neu gerechnet) und `SIM` |
-| `SIM_RUN` | App → Kernel | `id`, `was`, `lastfall`, `teil`, `fein`, `grenze` | `ACK` (`message`: Nummer des Auftrags), danach `SIM_JOB` |
+| `SIM_RUN` | App → Kernel | `id`, `was`, `lastfall`, `teil`, `fein`, `grenze`, `verfahren` (additiv: `s0s1` \| `fem`) | `ACK` (`message`: Nummer des Auftrags), danach `SIM_JOB` |
 | `SIM_CANCEL` | App → Kernel | `seq`, `id` optional | `SIM_JOB` mit `stand: "abgebrochen"` |
 
 `lastfaelle[i]` (App): `name`, `art` (`statisch` \| `dynamisch`), `beschreibung`, `kopie_von`, `neigung` (`grad`,
@@ -1032,7 +1032,15 @@ m/s², `dauer`, `animation`, `angriff` `boden` \| mm, `fahrtrichtung`, `antrieb`
   `beschreibung`, `dynamisch`, `ersetzt`: von einem gleichnamigen Lastfall der App ersetzt).
 - `lager[i]` (App): `id`, `teil`, `art` (`fest` \| `gelenkig` \| `gleitend`), `auf` (`flaeche` \| `punkt` \| `teil`),
   `ort`, `zustand`, `zustand_text`, `punkt_wirksam`, `normale_wirksam`, `flaeche_wirksam`. `modell_lager[i]`: Lager aus
-  `st.lager` (flach: `punkt`, `normale`, `flaeche`, `zeile`). Lager gelten für alle Lastfälle.
+  `st.lager` (flach: `punkt`, `normale`, `flaeche`, `zeile`). Additiv (simulation2): `szenarien` (null = alle
+  Lastfälle, sonst die Namen, in denen das Lager gilt; `[]` = in keinem), `gleiten` (nur `gleitend`; fehlt bzw. null =
+  gleitet in der Fläche und hält genau senkrecht zu ihr; `{art: "richtung", richtung: [x, y, z], quelle: "achse" \|
+  "kante" \| "frei", kante}` = frei nur entlang dieser Richtung wie auf einer Schiene), `gehalten_wirksam` (gehaltene
+  Richtungen, Einheitsvektoren, wie der Kernel rechnet; bei `modell_lager` `gehalten`).
+- `lasten[j]` additiv (simulation2): `verteilung` (`punkt`, Standard, oder `flaeche`: gleichmäßig auf der ganzen
+  angeklickten Fläche), `einheit` auch `N/mm2` (Druck senkrecht auf die Fläche, nur mit `verteilung: "flaeche"` und
+  `richtung.art: "normale"`; Kraft = Druck × Fläche), `flaeche_mm2_wirksam` (Flächeninhalt, mit dem gerechnet wird).
+  Der Angriffspunkt einer Last auf der ganzen Fläche ist der Schwerpunkt der Fläche (`punkt_wirksam`).
 - `abgeleitet[i]`: `id` (`boden:<teil>` = steht auf dem Boden bzw. der Kulisse; `kontakt:<teil>|<nachbar>` = Kontakt
   trägt im Bauteil-Nachweis und in der FEM), `art`, `teil`, `nachbar`, `text`, `punkt`, `aktiv`, `ersetzt` (Kennung des
   ausdrücklichen Lagers, das es ersetzt).
@@ -1040,7 +1048,14 @@ m/s², `dauer`, `animation`, `angriff` `boden` \| mm, `fahrtrichtung`, `antrieb`
   `bohrungen`, `einsaetze`, `kontakt`, `bett`, `lager`, `schutz` [{`art`: `index`, `index`, `zustand`, `text`}]).
 - `SIM_JOB.ergebnis` bei `grenze`: `art`, `lastfall`, `werte` [{`kriterium`, `grenze`, `einheit` (`×` \| `°` \| `m/s`),
   `text`, `massgebend`, `last_n`}], `text`, `hinweis`; bei `festigkeit`: `teile` [{`teil`, `ampel`, `sicherheit`,
-  `ziel`, `kriterium`}]; bei `ablauf`: `ampel`, `animation`, `kennzahlen`.
+  `ziel`, `kriterium`}]; bei `ablauf`: `ampel`, `animation`, `kennzahlen`. Additiv (simulation2): `SIM_RUN.verfahren`
+  (`s0s1`, Standard, oder `fem` bei `grenze` `last` und `neigung`), `SIM_JOB.verfahren`, im Ergebnis der Grenze
+  `verfahren`, `massgebend_verfahren` (`S0` \| `S1` \| `FEM`), je Wert `verfahren` und `ersetzt` (Kragträger eines
+  Teils, das die FEM rechnet: nur zum Vergleich), `probe` {`faktor`, `teil`, `ausnutzung`, `sicherheit`, `ziel`, `ok`}
+  (FEM bei der gefundenen Grenze noch einmal gerechnet) und `fem` {`teile`, `grenzen`, `faelle`, `aus_speicher`}.
+- `STATICS.szenarien[i]` additiv (simulation2): `lager` (Kennungen der ausdrücklichen Lager, die in diesem Szenario
+  gelten), `untergrund` (eigener Boden des Szenarios); `lasten[j].flaeche` {`teil`, `index`, `flaeche_mm2`, `druck`}
+  bei einer Last auf der ganzen Fläche.
 
 Operationen (`ops`, wie `simulation_aendern`): `lastfall_neu` (`name` und Felder), `lastfall_setzen` (`name`,
 `felder`), `lastfall_kopieren` (`von` App oder model.py, `name`), `lastfall_umbenennen` (`name`, `neu`),
