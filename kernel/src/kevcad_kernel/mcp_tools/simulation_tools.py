@@ -63,11 +63,17 @@ def register_simulation_tools(t: Any, svc: Any, tool: Callable[..., Any], annota
           "{op:'lastfall_loeschen', name}; {op:'last_setzen', lastfall, last:{id?, teil, gegen? (force pair: the "
           "counter force acts on this part), ort:{flaeche: face number as in the viewer/selection, punkt:[x,y,z] mm, "
           "normale:[nx,ny,nz]}, richtung:{art:'normale'} (into the face; umkehren:true pulls) | {art:'achse', "
-          "achse:'-z'} | {art:'frei', vektor:[x,y,z]} or {art:'frei', azimut, hoehe} degrees, betrag, einheit:'N'|'kg'}}"
-          " (without id: new force, otherwise replace); {op:'last_loeschen', lastfall, id}; {op:'lager_setzen', "
+          "achse:'-z'} | {art:'frei', vektor:[x,y,z]} or {art:'frei', azimut, hoehe} degrees, betrag, einheit:'N'|'kg'"
+          "|'N/mm2', verteilung:'punkt'|'flaeche'}} (without id: new force, otherwise replace; verteilung 'flaeche' "
+          "spreads it evenly over the whole clicked face, einheit 'N/mm2' is a pressure normal to that face); "
+          "{op:'last_loeschen', lastfall, id}; {op:'lager_setzen', "
           "lager:{id?, teil, art:'fest'|'gelenkig'|'gleitend', auf:'flaeche'|'punkt'|'teil', ort:{flaeche, punkt, "
-          "normale}}} (supports apply to all load cases: bars get a support at the nearest axis point, other parts "
-          "are grounded; the solid FEM and topology fix the face, 'gleitend' only normal to it); {op:'lager_loeschen', "
+          "normale}, szenarien: null (all load cases) or [names] (only these), gleiten: {art:'richtung', "
+          "richtung:[x,y,z] or '+x', quelle:'achse'|'kante'|'frei'} (gleitend only: free only along this direction, "
+          "like a rail; without it the support slides in the face plane and holds exactly along the face normal)}} "
+          "(bars get a support at the nearest axis point, other parts are grounded; the solid FEM fixes the face for "
+          "'fest', holds only the held directions for 'gleitend' and couples the face like an RBE3 for 'gelenkig': "
+          "mean displacement zero, free to rotate except about the face normal); {op:'lager_loeschen', "
           "id}; {op:'abgeleitet', id:'boden:<part>'|'kontakt:<part>|<neighbour>', aktiv:false} (switch a derived "
           "support off/on); {op:'topologie', teil, einstellungen:{szenario, behalten, ueberhang, fein, steg, "
           "bohrungen, einsaetze, kontakt, bett, lager, schutz:[{art:'index', index}]}}. Face numbers come from "
@@ -93,17 +99,24 @@ def register_simulation_tools(t: Any, svc: Any, tool: Callable[..., Any], annota
           "teil, fein), 'ablauf' (dynamic run with MuJoCo for a load case with fahrt), 'grenze' with "
           "grenze='last' (how much load: factor on the forces until the target safety, breaking, tipping, sliding), "
           "'neigung' (how steep the floor may get) or 'geschwindigkeit' (how fast: limit speed of the dynamic run). "
-          "Waits for the result; the app shows progress and the result. Load and slope limits use S0 and S1 (not the "
-          "solid FEM).", annotations["additive"])
+          "Waits for the result; the app shows progress and the result. Load and slope limits use S0 and S1 "
+          "(verfahren='s0s1', fast) or additionally the solid FEM (verfahren='fem': base cases solved once, bisection "
+          "over their superposition per part, a check run at the limit); each value carries its method (S0, S1, FEM) "
+          "and the result names the governing one.", annotations["additive"])
     async def simulation_rechnen(
         was: Annotated[str, Field(description="rechnen | festigkeit | ablauf | grenze")],
         lastfall: Annotated[str | None, Field(description="Load case name (required for ablauf and grenze)")] = None,
         teil: Annotated[str | None, Field(description="festigkeit: only this part")] = None,
         fein: Annotated[bool, Field(description="festigkeit: finer mesh")] = False,
         grenze: Annotated[str | None, Field(description="grenze: last | neigung | geschwindigkeit")] = None,
+        verfahren: Annotated[str | None, Field(description="grenze last/neigung: s0s1 (default) | fem")] = None,
     ) -> CallToolResult:
-        res = await t.work("rechnet in der Simulation", svc.simulation_rechnen, was, lastfall, teil, fein, grenze,
-                           True, "agent")
+        if verfahren:
+            res = await t.work("rechnet in der Simulation", svc.simulation_rechnen, was, lastfall, teil, fein, grenze,
+                               True, "agent", verfahren=verfahren)
+        else:
+            res = await t.work("rechnet in der Simulation", svc.simulation_rechnen, was, lastfall, teil, fein, grenze,
+                               True, "agent")
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Simulation: {err}", res)

@@ -398,9 +398,11 @@ class KernelService(Protocol):
         "datei", "lastfaelle", "lager", "hinweise"}."""
 
     def simulation_rechnen(self, was: str, lastfall: str | None = None, teil: str | None = None, fein: bool = False,
-                           grenze: str | None = None, warten: bool = True, von: str = "agent") -> dict[str, Any]:
+                           grenze: str | None = None, warten: bool = True, von: str = "agent", *,
+                           verfahren: str | None = None) -> dict[str, Any]:
         """Knopf im Bereich Simulation: ``was`` rechnen | festigkeit | ablauf | grenze (``grenze`` last | neigung |
-        geschwindigkeit): {"ok", "auftrag", "text", "ergebnis"}."""
+        geschwindigkeit; additiv ``verfahren`` s0s1 | fem für last und neigung): {"ok", "auftrag", "text",
+        "ergebnis"}."""
 
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:

@@ -474,3 +474,94 @@ def test_untergrund_je_lastfall_im_ablauf(tmp_path):
     assert DynamikRuntime._dyn_szenario(DynamikRuntime(), "Bremsen Eiche", kurz)["untergrund"] == "eiche"
     print(f"Ablauf: μ Beton {mu_beton}, Eiche {mu_eiche}; Rutschgrenze {kz[None]['rutschgrenze']} / "
           f"{kz['eiche']['rutschgrenze']} m/s²")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Grenze suchen mit der FEM (Laufzeit, wie der Knopf in der App)
+
+
+@pytest.fixture(scope="module")
+def env():
+    import os
+    import shutil
+    import tempfile
+
+    from app_testutil import FakeApp, make_runtime
+
+    tmp = Path(tempfile.mkdtemp(prefix="kcsim2", dir=tempfile.gettempdir()))
+    os.environ["KEVCAD_FESTKOERPER_CACHE"] = str(tmp / "fem-cache")
+    sock = str(tmp / "k.sock")
+    rt = make_runtime(sock)
+    assert rt.wait_worker_ready(240), "Rechenprozess nicht bereit"
+    app = FakeApp(sock)
+    app.wait_for(lambda h: h["type"] == "HELLO")
+    yield {"rt": rt, "app": app, "tmp": tmp}
+    app.close()
+    rt.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_grenze_mit_der_fem(env):
+    """Wandhalter PETG an einer Lagerfläche, 20 N am Ende. Die FEM ist linear: der Lastfaktor bis zur Ziel-Sicherheit
+    ist λ = S(λ = 1) / Ziel (das Eigengewicht ist klein); die Probe bei λ ergibt Ausnutzung 1. Kippen und Rutschen
+    entfallen (gelagert), die Festigkeit sucht S0 nur noch zum Vergleich (Kragträger, durch FEM ersetzt). Ein zweiter
+    Lauf kommt aus dem Zwischenspeicher."""
+    from test_festkoerper import _projekt_mit_petg
+    from test_simulation import HALTER_LAGER
+
+    from kevcad_kernel.protocol import check_sim_job
+
+    rt, app = env["rt"], env["app"]
+    _projekt_mit_petg(rt, env["tmp"] / "Halter")
+    assert rt.model_write(HALTER_LAGER.replace("ART", '"fest"'))["ok"]
+    assert rt.run()["ok"]
+    fk = rt.festigkeit(szenario="Haken 2 kg", zeigen=False)
+    assert fk["ok"], fk
+    s1 = next(t for t in fk["teile"] if t["teil"] == "Wandhalter (Druck)")
+    start = app.mark()
+    r = rt.simulation_rechnen("grenze", "Haken 2 kg", grenze="last", verfahren="fem", warten=True)
+    assert r["ok"], r
+    g = r["ergebnis"]
+    assert g["verfahren"] == "fem" and g["fem"]["teile"] == ["Wandhalter (Druck)"]
+    ziel = next(w for w in g["werte"] if w["verfahren"] == "FEM" and w["kriterium"] == "Ziel-Sicherheit")
+    bruch = next(w for w in g["werte"] if w["verfahren"] == "FEM" and w["kriterium"].startswith("Bruch"))
+    assert ziel["grenze"] == pytest.approx(s1["sicherheit"] / s1["ziel"], rel=0.02)
+    assert bruch["grenze"] == pytest.approx(s1["sicherheit"], rel=0.02)
+    assert g["massgebend_verfahren"] == "FEM" and g["werte"][0] is ziel
+    assert g["probe"]["ok"] and g["probe"]["ausnutzung"] == pytest.approx(1.0, abs=0.03)
+    vgl = [w for w in g["werte"] if w.get("ersetzt")]
+    assert vgl and all(w["verfahren"] == "S0" for w in vgl)
+    assert "FEM" in r["text"] and "Ziel-Sicherheit" in r["text"]
+    # SIM_JOB mit Fortschritt und Verfahren
+    _, _, job, _ = app.wait_for(lambda h: h["type"] == "SIM_JOB" and h["stand"] == "done", start=start, timeout=60)
+    assert not check_sim_job(job) and job["verfahren"] == "fem" and job["ergebnis"]["probe"]["ok"]
+    # Zwischenspeicher: dieselbe Suche noch einmal
+    r2 = rt.simulation_rechnen("grenze", "Haken 2 kg", grenze="last", verfahren="fem", warten=True)
+    assert r2["ok"] and r2["ergebnis"]["fem"]["aus_speicher"] == r2["ergebnis"]["fem"]["faelle"]
+    w2 = next(w for w in r2["ergebnis"]["werte"] if w["verfahren"] == "FEM" and w["kriterium"] == "Ziel-Sicherheit")
+    assert w2["grenze"] == pytest.approx(ziel["grenze"], rel=1e-6)
+    # „wie schnell“ nicht mit der FEM
+    assert not rt.simulation_rechnen("grenze", "Haken 2 kg", grenze="geschwindigkeit", verfahren="fem")["ok"]
+    print(f"Grenze mit FEM: λ_Ziel {ziel['grenze']} (S/Ziel = {s1['sicherheit'] / s1['ziel']:.3f}), λ_Bruch "
+          f"{bruch['grenze']}, Probe {g['probe']}, {g['ms']:.0f} ms, wieder {r2['ergebnis']['ms']:.0f} ms")
+
+
+def test_grenze_mit_der_fem_abbrechen(env):
+    rt = env["rt"]
+    if rt.status().get("project") is None:
+        pytest.skip("braucht das Projekt aus test_grenze_mit_der_fem")
+    r = rt.simulation_rechnen("grenze", "Haken 2 kg", grenze="last", verfahren="fem", fein=True, warten=False)
+    assert r["ok"], r
+    import time
+
+    ende = time.time() + 60
+    while time.time() < ende and "FEM:" not in str((rt._sim.get("job") or {}).get("text")):
+        time.sleep(0.05)
+    assert rt.simulation_abbrechen()["abgebrochen"]
+    ende = time.time() + 30
+    while time.time() < ende and (rt._sim.get("job") or {}).get("stand") == "laeuft":
+        time.sleep(0.1)
+    assert rt._sim["job"]["stand"] == "abgebrochen"
+    time.sleep(1.0)
+    assert rt._sim["sperre"].acquire(timeout=30)
+    rt._sim["sperre"].release()

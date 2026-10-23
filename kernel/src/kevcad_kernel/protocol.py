@@ -2234,7 +2234,7 @@ SIM_FELDER = ("run", "stand", "datei", "vorhanden", "lastfaelle", "modell", "lag
               "topologie", "hinweise", "fehler", "job")
 SIM_ZUSTAENDE = ("ok", "neu", "fehlt", "offen")
 SIM_JOB_FELDER = ("auftrag", "was", "lastfall", "teil", "grenze", "von", "stand", "fortschritt", "text", "ergebnis",
-                  "meldung", "ms")
+                  "meldung", "ms", "verfahren")  # verfahren: additiv (simulation2), bei grenze
 SIM_JOB_STAENDE = ("laeuft", "done", "failed", "abgebrochen")
 SIM_APP = ("SIM_REQ", "SIM_EDIT", "SIM_RUN", "SIM_CANCEL")
 SIM_VERFAHREN = ("s0s1", "fem")  # additiv: Grenze suchen mit S0 und S1 bzw. dazu mit der Festkörper-FEM
@@ -2427,7 +2427,7 @@ def sim_job_beispiel(stand: str = "done") -> dict[str, Any]:
                 "von": "app", "stand": "laeuft", "fortschritt": 0.45, "text": "Halter: lösen", "ergebnis": None,
                 "meldung": None, "ms": None}
     return {"auftrag": 5, "was": "grenze", "lastfall": "Aufstützen 30 kg", "teil": None, "grenze": "last",
-            "von": "app", "stand": "done", "fortschritt": 1.0,
+            "von": "app", "stand": "done", "fortschritt": 1.0, "verfahren": "fem",
             "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen (365 N statt 294 N), begrenzt durch Ziel-Sicherheit "
                     "(FEM, Halter)",
             "ergebnis": {"art": "last", "lastfall": "Aufstützen 30 kg", "verfahren": "fem",

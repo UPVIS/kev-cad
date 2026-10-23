@@ -701,10 +701,14 @@ class FakeService:
                 "lastfaelle": [], "lager": [], "hinweise": []}
 
     def simulation_rechnen(self, was: str, lastfall: str | None = None, teil: str | None = None, fein: bool = False,
-                           grenze: str | None = None, warten: bool = True, von: str = "agent") -> dict[str, Any]:
+                           grenze: str | None = None, warten: bool = True, von: str = "agent", *,
+                           verfahren: str | None = None) -> dict[str, Any]:
         from kevcad_kernel.protocol import sim_job_beispiel
 
-        self._record("simulation_rechnen", was, lastfall, teil, fein, grenze)
+        if verfahren:
+            self._record("simulation_rechnen", was, lastfall, teil, fein, grenze, verfahren)
+        else:
+            self._record("simulation_rechnen", was, lastfall, teil, fein, grenze)
         j = sim_job_beispiel("done")
         return {"ok": True, "auftrag": j["auftrag"], "text": j["text"], "ergebnis": j["ergebnis"]}
 

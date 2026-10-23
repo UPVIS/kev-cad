@@ -10,6 +10,11 @@ Anfragen SIM_REQ, SIM_EDIT, SIM_RUN, SIM_CANCEL und die MCP-Werkzeuge ``simulati
   ``festigkeit``), ``ablauf`` (S2 für dynamische Lastfälle, wie nach einem Lauf im Hintergrund), ``grenze`` (wie viel
   Last, wie steil: ``simulation/grenze.py`` im Rechenprozess; wie schnell: der Ablauf mit Suche). Immer nur ein Auftrag
   zugleich; Stand als SIM_JOB (läuft mit Fortschritt, fertig, Fehler, abgebrochen).
+- **Grenze mit der FEM** (``verfahren="fem"``, simulation2): Grundfälle im Rechenprozess (``grenze.fem_auftrag``), der
+  FEM-Prozess rechnet sie (Zwischenspeicher je Fall) und halbiert je Teil über ihre Überlagerung; S0 und S1 suchen
+  Kippen, Rutschen und die Festigkeit der übrigen Teile, dazu zum Vergleich den Kragträger der FEM-Teile. Eine Probe
+  rechnet die FEM bei der gefundenen Grenze noch einmal. Fortschritt und Abbruch wie bei ``festigkeit``; jeder Wert
+  trägt sein Verfahren (S0, S1, FEM), das Ergebnis das maßgebende.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -26,6 +32,8 @@ from kevcad_kernel.simulation import datei as dt
 
 JOB_ARTEN = ("rechnen", "festigkeit", "ablauf", "grenze")
 GRENZ_ARTEN = ("last", "neigung", "geschwindigkeit")
+VERFAHREN = ("s0s1", "fem")
+PROBE_TOL = 0.03  # Probe der FEM bei der Grenze: Ausnutzung 1 ± 3 %
 FORTSCHRITT_S = 0.4
 
 
@@ -265,7 +273,7 @@ class SimulationRuntime:
             elif kind == "SIM_RUN":
                 res = self.simulation_rechnen(str(header.get("was") or ""), header.get("lastfall"),
                                               header.get("teil"), bool(header.get("fein")), header.get("grenze"),
-                                              warten=False, von="app")
+                                              warten=False, von="app", verfahren=header.get("verfahren"))
                 self._send_app({"type": "ACK", "reply_to": rid, "ok": bool(res.get("ok")),  # type: ignore[attr-defined]
                                 "message": str(res.get("auftrag") if res.get("ok") else res.get("error") or "")})
             elif kind == "SIM_CANCEL":
@@ -319,14 +327,19 @@ class SimulationRuntime:
 
     def simulation_rechnen(self, was: str, lastfall: str | None = None, teil: str | None = None, fein: bool = False,
                            grenze: str | None = None, warten: bool = True, von: str = "agent",
-                           timeout_s: float = 600.0) -> dict[str, Any]:
+                           timeout_s: float = 600.0, verfahren: str | None = None) -> dict[str, Any]:
         """Knopf im Bereich Simulation: ``rechnen`` (S0/S1), ``festigkeit`` (FEM), ``ablauf`` (S2), ``grenze``
-        (``last``, ``neigung``, ``geschwindigkeit``). Läuft im Hintergrund (Stand als SIM_JOB); mit ``warten`` bis zum
-        Ergebnis."""
+        (``last``, ``neigung``, ``geschwindigkeit``; ``verfahren`` "s0s1" oder "fem"). Läuft im Hintergrund (Stand als
+        SIM_JOB); mit ``warten`` bis zum Ergebnis."""
         if was not in JOB_ARTEN:
             return {"ok": False, "error": f"was {was!r} unbekannt ({', '.join(JOB_ARTEN)})"}
         if was == "grenze" and grenze not in GRENZ_ARTEN:
             return {"ok": False, "error": f"grenze {grenze!r} unbekannt ({', '.join(GRENZ_ARTEN)})"}
+        verfahren = verfahren or "s0s1"
+        if verfahren not in VERFAHREN:
+            return {"ok": False, "error": f"verfahren {verfahren!r} unbekannt (s0s1 oder fem)"}
+        if was == "grenze" and grenze == "geschwindigkeit" and verfahren == "fem":
+            return {"ok": False, "error": "„wie schnell“ sucht der Ablauf (S2), nicht die FEM"}
         if self._sim_projekt() is None:
             return {"ok": False, "error": "Kein Projekt offen."}
         if was in ("ablauf", "grenze") and not lastfall:
@@ -341,14 +354,14 @@ class SimulationRuntime:
         z["abbruch"] = False
         z["job"] = {"auftrag": nr, "was": was, "lastfall": lastfall, "teil": teil, "grenze": grenze, "von": von,
                     "stand": "laeuft", "fortschritt": None, "text": "startet", "ergebnis": None, "meldung": None,
-                    "beginn": time.time()}
+                    "beginn": time.time(), "verfahren": verfahren if was == "grenze" else None}
         self._sim_job_senden()
         fertig = threading.Event()
         ausgabe: dict[str, Any] = {}
 
         def arbeit() -> None:
             try:
-                ausgabe.update(self._sim_auftrag(nr, was, lastfall, teil, fein, grenze, timeout_s))
+                ausgabe.update(self._sim_auftrag(nr, was, lastfall, teil, fein, grenze, timeout_s, verfahren))
             except Exception as exc:  # noqa: BLE001 - als Stand des Auftrags
                 ausgabe.update({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
             finally:
@@ -375,7 +388,7 @@ class SimulationRuntime:
         return {"ok": True, "auftrag": nr, "text": f"{was} gestartet"}
 
     def _sim_auftrag(self, nr: int, was: str, lastfall: str | None, teil: str | None, fein: bool,
-                     grenze: str | None, timeout_s: float) -> dict[str, Any]:
+                     grenze: str | None, timeout_s: float, verfahren: str = "s0s1") -> dict[str, Any]:
         if was == "rechnen":
             res = self._sim_neu_rechnen()
             return {**res, "text": "S0 und S1 gerechnet" if res.get("gerechnet") else res.get("text"),
@@ -391,6 +404,8 @@ class SimulationRuntime:
                     "ergebnis": {"teile": teile, "szenarien": res.get("szenarien")}}
         if was == "ablauf" or (was == "grenze" and grenze == "geschwindigkeit"):
             return self._sim_ablauf(str(lastfall), grenze == "geschwindigkeit")
+        if verfahren == "fem":  # Grenze Last oder Neigung mit der Festkörper-FEM (simulation2)
+            return self._sim_grenze_fem(str(lastfall), str(grenze), fein, timeout_s)
         # Grenze Last oder Neigung: Suche im Rechenprozess (S0 und S1)
         self._sim_job_setzen(text="sucht die Grenze (S0 und S1)")
         erg = self._sim_exec({"grenze": {"lastfall": lastfall, "art": grenze}}, timeout_s=min(timeout_s, 300.0))
@@ -398,6 +413,148 @@ class SimulationRuntime:
         if self._sim.get("abbruch"):
             return {"ok": False, "error": "abgebrochen"}
         return {"ok": True, "text": g.get("text") or "Grenze gefunden", "ergebnis": g}
+
+    def _sim_fem_lauf(self, job: dict[str, Any], von: float, bis: float, text: str, timeout_s: float
+                      ) -> dict[str, Any]:
+        """FEM-Prozess für einen Auftrag der Grenzsuche (ohne Einbau in STATICS), immer nur einer zugleich; Fortschritt
+        als SIM_JOB, Abbruch wie bei ``festigkeit``."""
+        from kevcad_kernel.statik.festkoerper.laufzeit import Abgebrochen
+
+        fk = self._fk  # type: ignore[attr-defined]
+        if not fk["sperre"].acquire(timeout=timeout_s):
+            raise RuntimeError("Eine andere Festkörper-Rechnung läuft noch")
+        try:
+            if self._sim.get("abbruch"):
+                raise Abgebrochen("abgebrochen")
+            fk["abbruch"] = False
+
+            def fortschritt(x: float, t: str) -> None:
+                self._sim_job_setzen(fortschritt=round(von + (bis - von) * max(0.0, min(1.0, x)), 3),
+                                     text=f"{text}: {t}")
+
+            return self._fk_prozess(job, fortschritt, timeout_s)  # type: ignore[attr-defined]
+        finally:
+            fk["sperre"].release()
+            shutil.rmtree(job.get("ordner") or "", ignore_errors=True)
+
+    def _sim_grenze_fem(self, lastfall: str, art: str, fein: bool, timeout_s: float) -> dict[str, Any]:
+        """„Grenze suchen“ mit der FEM: Grundfälle rechnen und halbieren (FEM-Prozess), dazu S0 und S1 für Kippen,
+        Rutschen und die übrigen Teile, eine Probe bei der Grenze; jeder Wert mit seinem Verfahren."""
+        from kevcad_kernel.statik.festkoerper.laufzeit import Abgebrochen
+
+        t0 = time.perf_counter()
+        z = self._sim
+        einheit = "×" if art == "last" else "°"
+        self._sim_job_setzen(fortschritt=0.02, text="FEM: Grundfälle vorbereiten")
+        try:
+            job = self._sim_exec({"grenze_fem": {"lastfall": lastfall, "art": art, "fein": bool(fein)}},
+                                 timeout_s=120.0)["festkoerper"]
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        fem_teile = list(job.get("teile") or [])
+        betrag = float(job.get("betrag_n") or 0.0)
+        try:
+            self._sim_job_setzen(fortschritt=0.06, text="S0 und S1: Kippen, Rutschen, Teile ohne FEM")
+            rest = self._sim_exec({"grenze": {"lastfall": lastfall, "art": art, "ohne": fem_teile}},
+                                  timeout_s=300.0)["grenze"]
+            vgl = self._sim_exec({"grenze": {"lastfall": lastfall, "art": art, "nur": fem_teile}},
+                                 timeout_s=300.0)["grenze"] if fem_teile else None
+            if z.get("abbruch"):
+                return {"ok": False, "error": "abgebrochen"}
+            if not fem_teile:
+                hinweis = ("FEM: kein Teil mit Last in diesem Lastfall (die FEM rechnet Druckteile, Platten und "
+                           "Verbinder mit Last); gesucht mit S0 und S1")
+                return {"ok": True, "text": rest.get("text") or "Grenze gefunden",
+                        "ergebnis": {**rest, "verfahren": "fem", "hinweis": hinweis,
+                                     "massgebend_verfahren": (rest.get("werte") or [{}])[0].get("verfahren")}}
+            out = self._sim_fem_lauf(job, 0.12, 0.75, "FEM", timeout_s)
+        except Abgebrochen:
+            return {"ok": False, "error": "abgebrochen"}
+        finally:
+            shutil.rmtree(job.get("ordner") or "", ignore_errors=True)
+        grenzen = [g for g in out.get("grenze") or [] if g.get("stand") == "done"]
+        hoch = 1000.0 if art == "last" else 60.0
+        werte: list[dict[str, Any]] = []
+
+        def wert(kriterium: str, x: float | None, teil: str | None, verfahren: str, **kw: Any) -> dict[str, Any]:
+            g = 0.0 if x is None else float(x)
+            if art == "last":
+                t = (f"{kriterium}: bis zum {g:.2f}-fachen der Lasten ({verfahren})" if x is not None
+                     else f"{kriterium}: schon ohne Last nicht erfüllt ({verfahren})")
+            else:
+                t = (f"{kriterium}: ab {g:.1f}° Neigung ({verfahren})" if x is not None
+                     else f"{kriterium}: schon auf ebenem Boden nicht erfüllt ({verfahren})")
+            e = {"kriterium": kriterium, "grenze": round(g, 3 if art == "last" else 2), "einheit": einheit,
+                 "massgebend": teil, "verfahren": verfahren, "text": t.replace(".", ","), **kw}
+            if art == "last":
+                e["last_n"] = round(betrag * g, 1)
+            return e
+
+        for krit, feld in (("Ziel-Sicherheit", "ziel_grenze"), ("Bruch (Sicherheit 1)", "bruch_grenze")):
+            kand = [(g.get(feld), g["teil"], g) for g in grenzen]
+            kand = [(0.0 if x is None else float(x), t, g) for x, t, g in kand]
+            kand = [k for k in kand if k[0] < hoch]
+            if kand:
+                x, teil, g = min(kand, key=lambda k: k[0])
+                werte.append(wert(krit, x, teil, "FEM", **({"ort": g["ort"]} if g.get("ort") else {})))
+        for w in rest.get("werte") or []:  # S0 und S1: Kippen, Rutschen, Teile ohne FEM
+            werte.append({**w, "verfahren": w.get("verfahren") or "S0"})
+        for w in (vgl or {}).get("werte") or []:  # Kragträger der FEM-Teile: zum Vergleich, von der FEM ersetzt
+            if w.get("kriterium") in ("Ziel-Sicherheit", "Bruch (Sicherheit 1)"):
+                werte.append({**w, "verfahren": "S0", "ersetzt": True,
+                              "text": str(w.get("text") or "") + " (S0, Kragträger; durch FEM ersetzt)"})
+        gueltig = sorted((w for w in werte if not w.get("ersetzt")), key=lambda w: float(w["grenze"]))
+        werte = gueltig + [w for w in werte if w.get("ersetzt")]
+        # Probe: die FEM bei der kleinsten FEM-Grenze (Ziel-Sicherheit) noch einmal richtig gerechnet
+        probe = None
+        fem_ziel = next((w for w in werte if w.get("verfahren") == "FEM" and w["kriterium"] == "Ziel-Sicherheit"),
+                        None)
+        if fem_ziel is not None and float(fem_ziel["grenze"]) > 0:
+            try:
+                self._sim_job_setzen(fortschritt=0.78, text="Probe: FEM bei der Grenze")
+                pj = self._sim_exec({"grenze_fem": {"lastfall": lastfall, "art": art, "fein": bool(fein),
+                                                    "werte": [float(fem_ziel["grenze"])],
+                                                    "teile": [fem_ziel["massgebend"]], "grenze": False}},
+                                    timeout_s=120.0)["festkoerper"]
+                po = self._sim_fem_lauf(pj, 0.8, 0.98, "Probe", timeout_s)
+                r = next((f for f in po.get("faelle") or [] if f.get("teil") == fem_ziel["massgebend"]
+                          and f.get("stand") == "done"), None)
+                if r is not None and r.get("sicherheit"):
+                    a = float(r["ziel"]) / float(r["sicherheit"])
+                    probe = {"faktor": fem_ziel["grenze"], "teil": fem_ziel["massgebend"],
+                             "ausnutzung": round(a, 4), "sicherheit": r["sicherheit"], "ziel": r["ziel"],
+                             "ok": abs(a - 1.0) <= PROBE_TOL}
+            except Abgebrochen:
+                return {"ok": False, "error": "abgebrochen"}
+            except (RuntimeError, ValueError) as exc:
+                probe = {"meldung": f"Probe nicht gerechnet: {exc}"}
+        if gueltig:
+            m = gueltig[0]
+            teil = f", {str(m['massgebend']).rsplit('/', 1)[-1]}" if m.get("massgebend") else ""
+            if art == "last":
+                text = (f"„{lastfall}“ hält bis zum {float(m['grenze']):.2f}-fachen ({float(m.get('last_n') or 0):.0f} N "
+                        f"statt {betrag:.0f} N), begrenzt durch {m['kriterium']} ({m['verfahren']}{teil})")
+            else:
+                text = (f"„{lastfall}“ hält bis {float(m['grenze']):.1f}° Neigung, begrenzt durch {m['kriterium']} "
+                        f"({m['verfahren']}{teil})")
+            text = text.replace(".", ",")
+        else:
+            text = f"„{lastfall}“: in der Suche nichts kritisch"
+        ergebnis = {"art": art, "lastfall": lastfall, "verfahren": "fem",
+                    "massgebend_verfahren": gueltig[0]["verfahren"] if gueltig else None, "werte": werte,
+                    "probe": probe, "text": text,
+                    "hinweis": (f"FEM für {len(fem_teile)} {'Teil' if len(fem_teile) == 1 else 'Teile'} (Grundfälle "
+                                f"bei {', '.join(f'{x:g}' for x in (job.get('basis') or {}).values())}, überlagert "
+                                "und halbiert, linear-elastisch), Kippen, Rutschen und die übrigen Teile mit S0 und S1"
+                                + (f"; Probe bei {float(probe['faktor']):g}: Ausnutzung "
+                                   f"{float(probe['ausnutzung']):.3f}".replace(".", ",")
+                                   if probe and probe.get("ausnutzung") is not None else "")),
+                    "rechnungen": int(rest.get("rechnungen") or 0) + int((vgl or {}).get("rechnungen") or 0)
+                    + sum(int(g.get("auswertungen") or 0) for g in grenzen),
+                    "fem": {"teile": fem_teile, "grenzen": grenzen, "faelle": len(out.get("faelle") or []),
+                            "aus_speicher": sum(1 for f in out.get("faelle") or [] if f.get("aus_speicher"))},
+                    "ms": round((time.perf_counter() - t0) * 1000, 1)}
+        return {"ok": True, "text": text, "ergebnis": ergebnis}
 
     def _sim_ablauf(self, lastfall: str, grenze: bool) -> dict[str, Any]:
         """Ablauf (S2) eines dynamischen Lastfalls wie nach einem Lauf, mit Suche der Grenzgeschwindigkeit."""
@@ -466,7 +623,7 @@ class SimulationRuntime:
         if job.get("stand") != "laeuft":
             return {"ok": True, "abgebrochen": False}
         z["abbruch"] = True
-        if job.get("was") == "festigkeit":
+        if job.get("was") == "festigkeit" or (job.get("was") == "grenze" and job.get("verfahren") == "fem"):
             self.festigkeit_abbrechen()  # type: ignore[attr-defined]
         if job.get("was") in ("ablauf", "grenze"):
             dyn = getattr(self, "_dyn_abbrechen", None)
