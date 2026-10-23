@@ -2,7 +2,8 @@
 
 ``pruefe_druckteil(form, material="petg", ausrichtung=None)`` legt das Teil (auf Wunsch automatisch) aufs Bett und
 prüft Bauraum, Auflage, Überhänge, Brücken, freie Unterseiten, Gegenbohrungen zur Bettseite, waagrechte und kleine
-Bohrungen, dünne Stifte, Wandstärken, Bettkanten (Elefantenfuß, Rundungen unten), Verzug und das Schichtraster.
+Bohrungen, Gewindeeinsätze im Sackloch, dünne Stifte, Wandstärken, Bettkanten (Elefantenfuß, Rundungen unten), Verzug
+und das Schichtraster.
 
 Alle Flächennummern beziehen sich auf ``form.faces()`` der übergebenen Form, alle Punkte auf ihre Modellkoordinaten
 (so wie der Viewer das Teil zeigt). Die Ausrichtung ist die Drehung, mit der das Teil auf dem Bett liegt:
@@ -23,8 +24,12 @@ from kevcad_kernel.druck.regeln import (
     P1P,
     Drucker,
     Material,
+    EINSATZ_ENTLASTUNG_D,
+    EINSATZ_ENTLASTUNG_TIEFE,
+    EINSATZ_RESERVE_MIN,
     Schwellen,
     bohrung_zugabe,
+    einsatz_fuer,
     material as material_fuer,
     schwellen as schwellen_fuer,
 )
@@ -532,6 +537,80 @@ def _pruefe_bohrungen(c: _Ctx) -> None:
             "Schraubendurchgang M3 → 3,4, M4 → 4,5); Gewindeeinsätze nach Tabelle (M3 → 4,0–4,2)",
             flaechen=fl, punkt=netz.tri_c[np.isin(netz.tri_face, nenn[0][1])].mean(axis=0),
             durchmesser=ds))
+
+
+def _frei_laengs(netz: Netz, o: np.ndarray, d: np.ndarray) -> float:
+    """Luft vom Punkt ``o`` (in einer Bohrung) in Richtung ``d`` bis zur ersten Fläche (inf: der Strahl verlässt das
+    Teil)."""
+    ta, tb, tc = netz.tri_ecken()
+    e1, e2 = tb - ta, tc - ta
+    pvec = np.cross(d[None, :], e2)
+    det = np.einsum("ij,ij->i", pvec, e1)
+    ok = np.abs(det) > 1e-14
+    inv = 1.0 / np.where(ok, det, 1.0)
+    tvec = o[None, :] - ta
+    u = np.einsum("ij,ij->i", tvec, pvec) * inv
+    qvec = np.cross(tvec, e1)
+    v = (qvec @ d) * inv
+    t = np.einsum("ij,ij->i", qvec, e2) * inv
+    treffer = ok & (u >= -1e-7) & (v >= -1e-7) & (u + v <= 1 + 1e-7) & (t > 1e-4)
+    return float(t[treffer].min()) if treffer.any() else math.inf
+
+
+def _pruefe_einsaetze(c: _Ctx) -> None:
+    """Gewindeeinsatz (Bohrung nach Tabelle) im Sackloch: Unter dem Einsatz muss Platz für die verdrängte Schmelze
+    bleiben, sonst steigt sie ins Gewinde (Kevins Praxis, regeln ``KEV``). Gemessen wird längs der Achse vom Grund der
+    Bohrung bis zur nächsten Fläche, also samt einer Entlastungsbohrung darunter."""
+    netz = c.netz
+    bohr = []  # (Gruppe, Achse, Basis, s0, s1)
+    for g in c.rund:
+        mask = np.isin(netz.tri_face, g.flaechen)
+        if not g.hohl or g.winkel < 300 or not mask.any():
+            continue
+        a = g.achse / np.linalg.norm(g.achse)
+        proj = netz.V[netz.T[mask]].reshape(-1, 3) @ a
+        bohr.append((g, a, g.punkt - a * float(g.punkt @ a), float(proj.min()), float(proj.max())))
+    for g, a, basis, s0, s1 in bohr:
+        ein = einsatz_fuer(g.d)
+        if ein is None:
+            continue
+        herst, groesse, e = ein
+        tiefe = s1 - s0
+        rein = 0.05
+        frei0 = _frei_laengs(netz, basis + a * (s0 + rein), -a) - rein
+        frei1 = _frei_laengs(netz, basis + a * (s1 - rein), a) - rein
+        offen, zu = (frei0, frei1) if frei0 >= frei1 else (frei1, frei0)
+        if not math.isinf(offen) and offen < tiefe:
+            continue  # kein offenes Ende: Hohlraum, kein Einsatz von außen
+        if math.isinf(zu):
+            continue  # durchgehend: die Schmelze kann unten austreten
+        ende = s0 if frei0 >= frei1 else s1  # offenes Ende
+        if any(h is not g and h.d > g.d + 0.1 and einsatz_fuer(h.d) is not None and abs(float(b @ a)) > 0.9999
+               and np.linalg.norm(hb - basis) < 1e-2 and min(abs(ende - x) for x in sorted(
+                   (h0 * float(b @ a), h1 * float(b @ a)))) < 0.1
+               for h, b, hb, h0, h1 in bohr):
+            continue  # Entlastungsbohrung unter einem größeren Einsatz, selbst kein Einsatz
+        laengen = sorted({float(x) for x in (e["laenge"], e["kurz"]) if x}, reverse=True)
+        laenge = next((x for x in laengen if tiefe >= x - 0.05), None)
+        if laenge is None:
+            continue  # flacher als jeder Einsatz dieser Größe: eher eine Senkung oder ein Absatz
+        reserve = tiefe - laenge + max(0.0, zu)
+        if reserve >= EINSATZ_RESERVE_MIN - 1e-6:
+            continue
+        nenn = groesse.split("-")[0]
+        ent_d = EINSATZ_ENTLASTUNG_D.get(nenn)
+        grund = basis + a * (s1 if frei0 >= frei1 else s0)
+        c.hinweise.append(_hinweis(
+            "einsatz_sackloch", "warnung",
+            f"Gewindeeinsatz {groesse} (Bohrung Ø {_z(g.d, 2)}, {_z(laenge, 1)} mm lang) im Sackloch {_z(tiefe, 1)} mm "
+            f"tief: darunter nur {_z(reserve, 1)} mm frei, die verdrängte Schmelze steigt ins Gewinde und die "
+            "Schraube geht nicht mehr hinein",
+            f"unter dem Einsatz eine Entlastungsbohrung{f' Ø {_z(ent_d, 1)}' if ent_d else ''} "
+            f"{_z(EINSATZ_ENTLASTUNG_TIEFE, 0)} mm tiefer oder durchgehend (mindestens {_z(EINSATZ_RESERVE_MIN, 0)} mm "
+            "frei), oder statt des Einsatzes eine Mutter in eine Presstasche (Schlüsselweite 0,1 mm unter Nennmaß, "
+            "leicht einschmelzen; bei Zug von der Schraubenseite seitlich eingeschoben, mit Material darüber)",
+            flaechen=g.flaechen, punkt=grund, groesse=groesse, hersteller=herst, durchmesser=g.d, tiefe=tiefe,
+            laenge=laenge, reserve=reserve))
 
 
 def _pruefe_stifte(c: _Ctx) -> None:
@@ -1157,6 +1236,7 @@ def pruefe_druckteil(form, material: str | Material = "petg", ausrichtung=None, 
     _pruefe_material(c)
     _pruefe_auflage(c)
     _pruefe_bohrungen(c)
+    _pruefe_einsaetze(c)
     _pruefe_stifte(c)
     if mat.fdm:
         _pruefe_decken(c)

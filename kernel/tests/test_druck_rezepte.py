@@ -58,9 +58,15 @@ def test_bettfase(ns):
 def test_passung_und_einsatz(ns):
     assert ns["bohrung_fuer"](5, "spiel") == pytest.approx(5.3)
     assert ns["bohrung_fuer"](8, "press") == pytest.approx(8.0)
-    w = ns["einsatz_tasche"]("M3")
+    w = ns["einsatz_tasche"]("M3", entlastung=0)
     bb = w.bounding_box()
     assert bb.size.X == pytest.approx(4.2) and bb.min.Z == pytest.approx(-6.8) and bb.max.Z == pytest.approx(1)
+    assert ns["einsatz_tasche"]("M3").bounding_box().min.Z == pytest.approx(-10.8, abs=0.02)  # Entlastung 4 mm
+    Box, Pos, UNTEN = ns["Box"], ns["Pos"], ns["UNTEN"]
+    flach = Box(20, 20, 16, align=UNTEN) - Pos(0, 0, 16) * ns["einsatz_tasche"]("M3", entlastung=0)
+    assert "einsatz_sackloch" in arten(pruefe_druckteil(flach, "petg", "-z"), "warnung")
+    gut = Box(20, 20, 16, align=UNTEN) - Pos(0, 0, 16) * ns["einsatz_tasche"]("M3")
+    assert "einsatz_sackloch" not in arten(pruefe_druckteil(gut, "petg", "-z"))
     dom = ns["einsatz_dom"]("M3", 10)
     assert dom.bounding_box().size.X == pytest.approx(4.6 + 2 * 1.6)
 

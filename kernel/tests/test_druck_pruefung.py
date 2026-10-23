@@ -418,6 +418,9 @@ def test_regeltabellen():
     assert {m.id for m in MATERIALIEN.values() if m.einhausung} == {"abs", "asa", "pc-filament", "pa", "pa-cf"}
     e = einsatz("M3")
     assert e["bohrung"] == 4.0 and e["tiefe"] == pytest.approx(6.7)
+    assert e["entlastung_d"] == 3.4 and e["entlastung_tiefe"] == 4.0 and e["reserve_min"] == 2.0
+    assert einsatz("M3-voron")["entlastung_d"] == 3.4
+    assert muttertasche("M6", press=True)["sw"] == pytest.approx(9.9) and muttertasche("M6", press=True)["tiefe"] == 5.2
     assert einsatz("M4", hersteller="cnc-kitchen")["bohrung"] == 5.7
     m = muttertasche("M3")
     assert m["sw"] == pytest.approx(5.8) and m["eck"] == pytest.approx(5.8 / math.cos(math.radians(30)))
@@ -462,3 +465,48 @@ def test_laufzeit(capsys):
         assert ms < 1000, f"{name}: {ms:.0f} ms"
     with capsys.disabled():
         print("\nLaufzeit Druckprüfung (automatische Ausrichtung):\n  " + "\n  ".join(zeilen))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Gewindeeinsatz im Sackloch (Kevins Praxis am Kugelschieber, 23.10.2026)
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def einsatz_block(tiefe: float, d: float = 8.2, entlastung: tuple[float, float] | None = None, durch: bool = False):
+    """Block 30 × 30 × 25, Einsatzbohrung von oben (M6: Ø 8,2), optional Entlastung (Ø, Tiefe) darunter."""
+    b = Box(30, 30, 25, align=UNTEN)
+    if durch:
+        return b - Cylinder(d / 2, 60)
+    b -= Pos(0, 0, 25 - tiefe) * Cylinder(d / 2, tiefe + 1, align=UNTEN)
+    if entlastung:
+        ed, et = entlastung
+        b -= Pos(0, 0, 25 - tiefe - et) * Cylinder(ed / 2, et + 0.5, align=UNTEN)
+    return b
+
+
+def test_einsatz_im_flachen_sackloch_ist_warnung():
+    r = pruefe_druckteil(einsatz_block(12.7 + 1), "pla", ausrichtung="-z")
+    h = finde(r, "einsatz_sackloch")
+    assert h["schwere"] == "warnung" and h["werte"]["groesse"] == "M6"
+    assert h["werte"]["reserve"] == pytest.approx(1.0, abs=0.05) and h["werte"]["laenge"] == pytest.approx(12.7)
+    assert "Entlastungsbohrung Ø 6,6" in h["abhilfe"] and "Presstasche" in h["abhilfe"]
+    assert h["punkt"][2] == pytest.approx(25 - 13.7, abs=0.05)  # am Grund der Bohrung
+    assert "Gewindeeinsatz M6" in "; ".join(als_warnungen(r))
+
+
+def test_einsatz_mit_entlastung_tief_genug_oder_durchgehend():
+    for form in (einsatz_block(13.7, entlastung=(6.6, 4.0)), einsatz_block(12.7 + 2.0), einsatz_block(0, durch=True)):
+        r = pruefe_druckteil(form, "pla", ausrichtung="-z")
+        assert "einsatz_sackloch" not in arten(r), [h["befund"] for h in r["hinweise"]]
+    # eine tiefe Entlastung Ø 6,6 (passt auch zu M5 + 0,2) ist selbst kein Einsatz
+    r = pruefe_druckteil(einsatz_block(13.7, entlastung=(6.6, 7.0)), "pla", ausrichtung="-z")
+    assert "einsatz_sackloch" not in arten(r), [h["befund"] for h in r["hinweise"]]
+    # zu knappe Entlastung zählt mit: 1 mm über dem Einsatz plus 0,5 mm darunter
+    r = pruefe_druckteil(einsatz_block(13.7, entlastung=(6.6, 0.5)), "pla", ausrichtung="-z")
+    assert finde(r, "einsatz_sackloch")["werte"]["reserve"] == pytest.approx(1.5, abs=0.05)
+
+
+def test_flache_bohrung_ist_kein_einsatz():
+    # Ø 8,2 nur 5 mm tief: kürzer als jeder M6-Einsatz (12,7), eher eine Senkung
+    r = pruefe_druckteil(einsatz_block(5.0), "pla", ausrichtung="-z")
+    assert "einsatz_sackloch" not in arten(r)

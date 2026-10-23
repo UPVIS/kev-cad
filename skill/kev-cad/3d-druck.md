@@ -139,6 +139,26 @@ Schraubendurchgang wie im Skill (ISO 273 mittel: M3 3,4 · M4 4,5 · M5 5,5 · M
 Durchgangsloch nicht länger als der Einsatz [CK-Tips, RX]. Einsetzen mit Lötkolben 10–20 °C über Drucktemperatur
 (PLA 225, PETG 245, ABS 265 °C), 90 % einschmelzen, Rest eindrücken [CK-Tips].
 
+**Kevins Praxis (Kugelschieber, 23.10.2026): Länge + 1 mm reicht nicht.** Ein M6-Einsatz in PLA, Bohrung Ø 8,2 bei Rändel
+Ø 8,7, Sackloch nur Einsatzlänge + 1 mm: Die verdrängte Schmelze fand unten keinen Platz, stieg in die Bohrung des
+Einsatzes, und die Schraube ging nicht mehr hinein. Deshalb gilt:
+
+1. **Die vorgeformte Öffnung ist nur knapp enger als das Teil**, das hineingeschmolzen wird: die Bohrung knapp unter dem
+   Rändel-Außenmaß (Herstellerbohrung + 0,2, also etwa Außen-Ø − 0,5; M6: 8,2 bei 8,7), nie kleiner als die
+   Herstellerbohrung. So schmilzt wenig Material.
+2. **Unter dem Einsatz bleibt Platz für die Schmelze:** eine Entlastungsbohrung mit dem Durchgangs-Ø der Schraube (ISO 273
+   mittel, M3 3,4 · M4 4,5 · M5 5,5 · M6 6,6; die Schraube darf dann auch durch) 3–5 mm tiefer, oder die Bohrung
+   durchgehend. Mindestens 2 mm frei unter dem Einsatz; die Druckprüfung meldet weniger als Warnung
+   (`einsatz_sackloch`). Rezept `einsatz_tasche` bohrt die Entlastung mit (`entlastung=4`). Beim Einschmelzen eine Schraube im
+   Einsatz lassen, dann läuft keine Schmelze ins Gewinde. Schon verstopft: Gewinde nachschneiden oder die Schmelze mit
+   einem Bohrer knapp unter dem Kern-Ø von Hand ausräumen.
+3. **Wo es geht, eine Mutter statt des Einsatzes:** Sechskanttasche knapp enger als die Mutter (Schlüsselweite 0,1 mm unter
+   Nennmaß, Höhe ohne Zugabe; `regeln.muttertasche(…, press=True)`, Rezept `mutter_tasche(…, spiel=-0.1, fase=0)`), die
+   Mutter mit dem Lötkolben leicht einschmelzen. Es schmilzt kaum Material, nichts läuft ins Gewinde.
+4. **Schraube von oben in ein hängendes Druckteil** (die Last zieht die Mutter zur Schraube hin): Mutterschlitz seitlich
+   unter der Oberfläche, mit Material über der Mutter (`mutter_tasche(…, schlitz=…)`). Eine zur Schraube hin offene Tasche
+   hält die Mutter nur über die Pressung.
+
 | Größe | ruthex L × Außen-Ø | ruthex Bohrung | CNC Kitchen L | CNC Kitchen Bohrung | Wand min. |
 |---|---|---|---|---|---|
 | M2 | 4,0 × 3,6 | 3,2 | 3,0 | 3,2 | 1,3 |
@@ -155,7 +175,7 @@ Quellen [RX, CK-Tab]. CNC Kitchen 2026: bei M3 ist **4,2 mm im CAD** der beste K
 Grat, ca. 90 % Festigkeit), Faustregel Nennbohrung + 0,2–0,3 [CK-DS]. Ausreißkraft M3 in PLA bis ca. 1400 N.
 
 **Muttern** (ISO 4032) als Sechskanttasche: Schlüsselweite + 0,3, Tiefe Höhe + 0,3, aufs Schichtraster runden (EW,
-Praxis 0,2–0,4). Eckmaß im CAD = SW / cos 30° = 1,155 · SW. Waagrecht liegende Tasche mit Flachseite oben (kurze Brücke
+Praxis 0,2–0,4); zum Einschmelzen statt Einschieben Schlüsselweite − 0,1 (Kevins Praxis, oben). Eckmaß im CAD = SW / cos 30° = 1,155 · SW. Waagrecht liegende Tasche mit Flachseite oben (kurze Brücke
 statt 60°-Spitze); eingeschlossene Tasche (Schlitz von der Seite) mit Opferschicht über der Tasche.
 
 | | M2 | M2,5 | M3 | M4 | M5 | M6 | M8 | M10 |
@@ -375,12 +395,21 @@ EINSATZ = {  # ruthex: Bohrung, Länge, Außen-Ø, Mindestwand (mm)
 }
 
 
-def einsatz_tasche(groesse="M3", plus=0.2):
+ENTLASTUNG = {"M2": 2.4, "M2.5": 2.9, "M3": 3.4, "M4": 4.5, "M5": 5.5, "M6": 6.6, "M8": 9.0}  # ISO 273 mittel
+
+
+def einsatz_tasche(groesse="M3", plus=0.2, entlastung=4.0):
     """Werkzeug: Sackloch für einen Gewindeeinsatz, Öffnung bei z = 0 nach unten, Tiefe = Länge + 1 mm (im Raster).
-    plus=0.2: CNC-Kitchen-Empfehlung (M3 → 4,2); plus=0 für die Herstellerbohrung."""
+    plus=0.2: CNC-Kitchen-Empfehlung (M3 → 4,2), knapp unter dem Rändel-Außenmaß; plus=0 für die Herstellerbohrung.
+    entlastung: darunter so viel tiefer eine Bohrung mit Durchgangs-Ø der Schraube, damit die verdrängte Schmelze
+    nicht ins Gewinde steigt (Kevins Praxis); 0 nur, wenn die Bohrung ohnehin durchgeht."""
     d, laenge, _, _ = EINSATZ[groesse]
     tiefe = math.ceil((laenge + 1) / SCHICHT - 1e-9) * SCHICHT
-    return Pos(0, 0, 1) * Cylinder((d + plus) / 2, tiefe + 1, align=(Align.CENTER, Align.CENTER, Align.MAX))
+    w = Pos(0, 0, 1) * Cylinder((d + plus) / 2, tiefe + 1, align=(Align.CENTER, Align.CENTER, Align.MAX))
+    if entlastung:
+        w += Pos(0, 0, -tiefe + 0.01) * Cylinder(ENTLASTUNG[groesse] / 2, entlastung + 0.01,
+                                                 align=(Align.CENTER, Align.CENTER, Align.MAX))
+    return w
 
 
 def einsatz_dom(groesse="M3", hoehe=None):
@@ -399,7 +428,8 @@ def mutter_tasche(groesse="M3", spiel=0.3, fase=0.4, schlitz=0.0):
     """Werkzeug: Sechskanttasche von z = 0 nach unten, Flachseiten parallel zu X.
     schlitz=0: oben offen, 1 mm Überstand, Einführschräge fase.
     schlitz>0: eingeschlossen, endet bei z = 0, um schlitz in +X verlängert (Mutter seitlich einschieben);
-    das Schraubenloch darüber erst eine Schicht höher beginnen lassen (Opferschicht)."""
+    das Schraubenloch darüber erst eine Schicht höher beginnen lassen (Opferschicht).
+    spiel=-0.1, fase=0: knapp enger als die Mutter, die Mutter wird leicht eingeschmolzen (statt eines Einsatzes)."""
     sw, m = MUTTER[groesse]
     sw += spiel
     tiefe = math.ceil((m + spiel) / SCHICHT - 1e-9) * SCHICHT
@@ -502,6 +532,7 @@ Höhe, Schichten, Abmessungen, Bauraum-Ausnutzung, Masse voll, Laufzeit) und `dr
 | `bruecke`, `kragarm`, `freie_unterseite` | waagrechte Unterseiten: Spannweite in einer Brückenrichtung, frei auskragend, ohne Halt |
 | `gegenbohrung_unten`, `opferschicht` | Senkung zur Bettseite ohne bzw. mit Opferschicht |
 | `waagrechte_bohrung`, `bohrung_klein`, `bohrung_mass` | Tropfenform nötig, Ø < 2 / < 1 mm, glattes Nennmaß ohne Zugabe |
+| `einsatz_sackloch` | Gewindeeinsatz (Bohrung nach Tabelle) im Sackloch mit weniger als 2 mm frei darunter, samt Entlastungsbohrung längs der Achse gemessen (Warnung) |
 | `stift` | Stifte Ø < 3 mm (stehend: Bruch zwischen Schichten) |
 | `wand` | Wandstärke (Strahlen ins Material, nur parallele Gegenfläche): < 1 Bahn Fehler, < 0,8 Warnung, < 1,2 Hinweis; waagrecht < 1/2/3 Schichten |
 | `elefantenfuss`, `rundung_unten` | scharfe Unterkanten, Rundungen an der Bettkante |

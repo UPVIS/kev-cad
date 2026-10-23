@@ -42,6 +42,7 @@ ARTEN: dict[str, tuple[str, str]] = {
     "bohrung_klein": ("Bohrung zu klein (Druck)", "Bohrungen zu klein (Druck)"),
     "bohrung_mass": ("Bohrungsmaß (Druck)", "Bohrungsmaße (Druck)"),
     "waagrechte_bohrung": ("waagrechte Bohrung (Druck)", "waagrechte Bohrungen (Druck)"),
+    "einsatz_sackloch": ("Gewindeeinsatz im Sackloch (Druck)", "Gewindeeinsätze im Sackloch (Druck)"),
     "stift": ("dünner Stift (Druck)", "dünne Stifte (Druck)"),
     "bruecke": ("Brücke (Druck)", "Brücken (Druck)"),
     "kragarm": ("Auskragung (Druck)", "Auskragungen (Druck)"),

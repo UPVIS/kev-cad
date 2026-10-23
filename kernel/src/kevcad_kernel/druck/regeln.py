@@ -96,6 +96,7 @@ QUELLEN: dict[str, str] = {
     "RJG": "Schwindmaße gängiger Kunststoffe (Spritzguss) – "
            "https://rjcmold.com/wp-content/uploads/Shrinkage-Rates-for-Common-Plastics.pdf",
     "EW": "Erfahrungswert (nicht direkt belegt, vorsichtig gewählt)",
+    "KEV": "Kevins Praxis am Kugelschieber, 23.10.2026: Gewindeeinsatz M6 in PLA, Bohrung Ø 8,2 bei Rändel Ø 8,7, Sackloch nur Einsatzlänge + 1 mm; die verdrängte Schmelze stieg ins Gewinde, die Schraube ging nicht mehr hinein",
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -430,12 +431,20 @@ GEWINDEEINSAETZE: dict[str, dict[str, dict[str, float | None]]] = {
         "M10": {"laenge": 12.7, "aussen": 12.6, "bohrung": 12.0, "wand_min": 6.0, "kurz": None},
     },
 }
-EINSATZ_TIEFE_ZUGABE = 1.0   # Sackloch mind. Einsatzlänge + 1 mm (RX, CK-Tips)
+EINSATZ_TIEFE_ZUGABE = 1.0   # Sackloch mind. Einsatzlänge + 1 mm (RX, CK-Tips); reicht allein nicht (KEV)
 EINSATZ_BOHRUNG_PLUS = 0.2   # CNC-Kitchen-Test 2026: Nennmaß + 0,2 im CAD (M3: 4,2) ist der beste Kompromiss (CK-DS)
+# Die Bohrung liegt nur knapp unter dem Rändel-Außenmaß (M6: 8,2 bei 8,7), damit wenig Material schmilzt (KEV). Unter
+# dem Einsatz bleibt Platz für die verdrängte Schmelze: eine Entlastungsbohrung mit Durchgangs-Ø der Schraube
+# (ISO 273 mittel, die Schraube darf auch hindurch) 3–5 mm tiefer oder durchgehend; mindestens 2 mm frei (KEV, EW).
+EINSATZ_RESERVE_MIN = 2.0
+EINSATZ_ENTLASTUNG_TIEFE = 4.0
+EINSATZ_ENTLASTUNG_D = {"M2": 2.4, "M2.5": 2.9, "M3": 3.4, "M4": 4.5, "M5": 5.5, "M6": 6.6, "M8": 9.0, "M10": 11.0}
 
 
 def einsatz(groesse: str, hersteller: str = "ruthex", kurz: bool = False) -> dict[str, float]:
-    """Maße der Tasche für einen Gewindeeinsatz: ``bohrung`` (CAD-Ø), ``tiefe`` (Sackloch), ``wand_min``, ``laenge``."""
+    """Maße der Tasche für einen Gewindeeinsatz: ``bohrung`` (CAD-Ø), ``tiefe`` (Sackloch im Bohrungs-Ø),
+    ``entlastung_d`` und ``entlastung_tiefe`` (Bohrung darunter für die Schmelze, oder durchgehend), ``reserve_min``
+    (so viel frei unter dem Einsatz, sonst steigt die Schmelze ins Gewinde), ``wand_min``, ``laenge``, ``aussen``."""
     tab = GEWINDEEINSAETZE[hersteller]
     key = groesse.upper().replace(",", ".").replace("-VORON", "-voron")
     if key not in tab:
@@ -443,7 +452,25 @@ def einsatz(groesse: str, hersteller: str = "ruthex", kurz: bool = False) -> dic
     e = tab[key]
     laenge = e["kurz"] if kurz and e["kurz"] else e["laenge"]
     return {"bohrung": e["bohrung"], "tiefe": laenge + EINSATZ_TIEFE_ZUGABE, "wand_min": e["wand_min"],
-            "laenge": laenge, "aussen": e["aussen"]}
+            "laenge": laenge, "aussen": e["aussen"], "entlastung_d": EINSATZ_ENTLASTUNG_D[key.split("-")[0]],
+            "entlastung_tiefe": EINSATZ_ENTLASTUNG_TIEFE, "reserve_min": EINSATZ_RESERVE_MIN}
+
+
+def einsatz_fuer(d: float, toleranz: float = 0.06) -> tuple[str, str, dict[str, float | None]] | None:
+    """Gewindeeinsatz, dessen Bohrung (Nennmaß oder Nennmaß + 0,2) dem Durchmesser entspricht. Nur bis M6 (Bohrung bis
+    9 mm): größere Bohrungen sind eher Passungen für Rohre und Wellen (Ø 12,2 für ein Alurohr Ø 12, nicht M10)."""
+    treffer = []
+    for hersteller, tab in GEWINDEEINSAETZE.items():
+        for groesse, e in tab.items():
+            b = float(e["bohrung"] or 0)
+            if b > 9.0:
+                continue
+            if abs(d - b) <= toleranz or abs(d - (b + EINSATZ_BOHRUNG_PLUS)) <= toleranz:
+                treffer.append((hersteller, groesse, e))
+    if not treffer:
+        return None
+    # Ø 4,0 passt zu M2.5 und M3: die größere Mindestwand gilt, bei gleicher die übliche Größe (ohne Kommastelle)
+    return max(treffer, key=lambda t: (float(t[2]["wand_min"] or 0), "." not in t[1] and "-" not in t[1]))
 
 
 # ISO 4032: Schlüsselweite s, Höhe m (max), Eckmaß e (min)
@@ -459,13 +486,18 @@ MUTTERN_ISO4032: dict[str, dict[str, float]] = {
 }
 MUTTER_SPIEL_SW = 0.3       # mm auf die Schlüsselweite (EW, Praxis 0,2–0,4)
 MUTTER_SPIEL_HOEHE = 0.3    # mm auf die Höhe (EW)
+# Mutter statt Einsatz (KEV): Tasche knapp enger als die Mutter, die Mutter wird mit dem Lötkolben leicht eingeschmolzen;
+# dabei schmilzt kaum Material und nichts läuft ins Gewinde. Schlüsselweite 0,1 mm unter Nennmaß, Höhe ohne Zugabe.
+MUTTER_PRESS_SW = -0.1
 
 
-def muttertasche(groesse: str) -> dict[str, float]:
-    """Sechskanttasche: ``sw`` (über die Flächen, mit Spiel), ``eck`` (über die Ecken), ``tiefe``."""
+def muttertasche(groesse: str, press: bool = False) -> dict[str, float]:
+    """Sechskanttasche: ``sw`` (über die Flächen, mit Spiel), ``eck`` (über die Ecken), ``tiefe``. ``press=True``: knapp
+    enger als die Mutter zum leichten Einschmelzen (statt eines Gewindeeinsatzes)."""
     m = MUTTERN_ISO4032[groesse.upper().replace(",", ".")]
-    sw = m["sw"] + MUTTER_SPIEL_SW
-    return {"sw": sw, "eck": sw / math.cos(math.radians(30)), "tiefe": m["hoehe"] + MUTTER_SPIEL_HOEHE}
+    sw = m["sw"] + (MUTTER_PRESS_SW if press else MUTTER_SPIEL_SW)
+    return {"sw": sw, "eck": sw / math.cos(math.radians(30)),
+            "tiefe": m["hoehe"] + (0.0 if press else MUTTER_SPIEL_HOEHE)}
 
 
 # Kernloch (CAD-Ø) für Kunststoff-Direktschrauben, senkrecht gedruckt. Bambu BT-Schrauben (B-BT); liegend eine Stufe

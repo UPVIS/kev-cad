@@ -31,7 +31,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from kevcad_kernel.druck.regeln import GEWINDEEINSAETZE, MATERIALIEN
+from kevcad_kernel.druck.regeln import GEWINDEEINSAETZE, MATERIALIEN, einsatz_fuer  # noqa: F401
 
 # Zusätzliche Einstellungen je Objekt (Schlüssel wie DRUCK_EINSTELLUNGEN; Bambu-Schlüssel in slicer.prozess_einstellungen)
 ERWEITERT: tuple[str, ...] = ("stuetzen_nur_platte", "stuetzen_abstand_mm", "brim_mm", "naht", "buegeln",
@@ -49,23 +49,6 @@ SCHMAL = 8.0                # Höhe über 8 × kleinste Breite der Auflage: Brim
 def _z(x: float, nd: int = 1) -> str:
     s = f"{x:.{nd}f}".rstrip("0").rstrip(".") if nd else f"{x:.0f}"
     return s.replace(".", ",")
-
-
-def einsatz_fuer(d: float, toleranz: float = 0.06) -> tuple[str, str, dict[str, Any]] | None:
-    """Gewindeeinsatz, dessen Bohrung (Nennmaß oder Nennmaß + 0,2) dem Durchmesser entspricht. Nur bis M6 (Bohrung bis
-    9 mm): größere Bohrungen sind eher Passungen für Rohre und Wellen (Ø 12,2 für ein Alurohr Ø 12, nicht M10)."""
-    treffer = []
-    for hersteller, tab in GEWINDEEINSAETZE.items():
-        for groesse, e in tab.items():
-            b = float(e["bohrung"] or 0)
-            if b > 9.0:
-                continue
-            if abs(d - b) <= toleranz or abs(d - (b + 0.2)) <= toleranz:
-                treffer.append((hersteller, groesse, e))
-    if not treffer:
-        return None
-    # Ø 4,0 passt zu M2.5 und M3: die größere Mindestwand gilt, bei gleicher die übliche Größe (ohne Kommastelle)
-    return max(treffer, key=lambda t: (float(t[2]["wand_min"] or 0), "." not in t[1] and "-" not in t[1]))
 
 
 KERNLOCH = {2.5: "M3", 2.2: "M2.5", 3.4: "M4"}  # selbstschneidend direkt ins Teil (regeln, B-BT), senkrecht
