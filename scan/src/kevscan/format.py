@@ -172,6 +172,7 @@ def lesen(ordner: str | Path) -> Scan:
     warnungen = []
     if meta.get("format") not in (FORMAT, None):
         warnungen.append(f"meta.json: Format {meta.get('format')!r} statt {FORMAT!r}")
+    warnungen += [f"iPhone: {w}" for w in (meta.get("warnungen") or []) if isinstance(w, str)]
     if int(meta.get("version") or 1) > 1:
         warnungen.append(f"Scan-Format Version {meta.get('version')}: neuere Felder werden übergangen")
 

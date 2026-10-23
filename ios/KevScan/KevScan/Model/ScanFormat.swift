@@ -83,6 +83,8 @@ struct ScanMeta: Codable {
     var zeit_bezug: String
     var videoformat: VideoFormat?
     var auto_foto: AutoPhoto
+    /// Zusatz zu Version 1: Hinweise beim Speichern (verworfene Fotos, nicht geschriebene Dateien); fehlt ohne Hinweise.
+    var warnungen: [String]?
 }
 
 /// Nur zum Lesen in der Liste: alles optional, damit auch fremde oder unvollständige Scans erscheinen.

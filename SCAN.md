@@ -91,7 +91,10 @@ So schreibt Kev Scan 1.0 die Dateien; alles hier ist Präzisierung oder Zusatz, 
   `videoformat` (`breite`, `hoehe`, `fps`, `kamera` als AVCaptureDevice-Typ, `hochaufloesend_empfohlen`, `hdr`) und
   `auto_foto` (`aktiv`, `winkel_grad`, `abstand_m`). `video.codec` ist `hevc` oder `h264`. `fotos.breite/hoehe` sind die
   des ersten Fotos (0 ohne Fotos). Die App schreibt `meta.json` als letzte Datei; ein Ordner ohne `meta.json` ist eine
-  abgebrochene Aufnahme.
+  abgebrochene Aufnahme. `warnungen` (Liste von Texten, fehlt ohne Hinweise): Die App schreibt jede Datei für sich;
+  Fotos mit nicht endlichen Zahlen (Lage, Zeit, Kameramatrix) fallen weg, eine Datei, die nicht geschrieben werden
+  konnte, steht hier, und `fotos.anzahl` bzw. `objekt` richten sich nach dem, was wirklich auf der Platte liegt (seit
+  23.10.2026; vorher scheiterte an einer ungültigen Zahl das Speichern des ganzen Scans ohne `meta.json`).
 - **`fotos.json`, zusätzliche Felder je Foto:** `tiefe_quelle` = `"foto"` (Tiefe gehört zum hochaufgelösten Bild
   selbst) oder `"videobild"` (das Foto kam ohne `sceneDepth`, genommen ist die Tiefe des letzten Videobilds, Lage dann
   leicht verschieden); `ausloeser` = `"hand"` oder `"auto"`. `tracking` ist `normal`, `nicht_verfuegbar` oder

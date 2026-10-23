@@ -36,6 +36,10 @@ final class ScanRecorder {
     private var lastFrameTime: TimeInterval = 0
     private var photos: [PhotoEntry] = []
     private var previewWritten = false
+    /// Fotos, deren Dateien noch auf der Schreibwarteschlange liegen (Hauptthread).
+    private(set) var photoBacklog = 0
+    /// Hinweise für meta.json (`warnungen`): verworfene Fotos, nicht geschriebene Dateien.
+    private(set) var warnings: [String] = []
 
     private(set) var frameCount = 0
     private(set) var startTimestamp: TimeInterval?
@@ -162,7 +166,10 @@ final class ScanRecorder {
     // MARK: Fotos
 
     /// Legt ein hochaufgelöstes Foto ab. `latest` ist das letzte Videobild, falls das Foto selbst keine Tiefe hat.
-    func addPhoto(_ frame: ARFrame, latest: ARFrame?, trigger: String) {
+    /// false: verworfen, weil Lage, Zeit oder Kameramatrix keine endlichen Zahlen sind (JSON kann sie nicht
+    /// darstellen; früher scheiterte daran das Speichern des ganzen Scans).
+    @discardableResult
+    func addPhoto(_ frame: ARFrame, latest: ARFrame?, trigger: String) -> Bool {
         let index = photos.count
         let base = String(format: "%03d", index)
         let buffer = frame.capturedImage
@@ -194,16 +201,23 @@ final class ScanRecorder {
 
         let start = startTimestamp ?? frame.timestamp
         let exposure = Self.exposure(of: frame)
+        let pose = Pose(frame.camera.transform)
+        let zeit = r6(frame.timestamp - start)
+        guard zeit.isFinite, (pose.t + pose.q + k.flatMap { $0 }).allSatisfy(\.isFinite) else {
+            warnings.append("Foto bei \(String(format: "%.1f", frame.timestamp - start)) s verworfen: Lage oder "
+                            + "Kameramatrix ungültig (Tracking \(Self.trackingName(frame.camera.trackingState)))")
+            return false
+        }
         let entry = PhotoEntry(datei: "\(base).jpg",
-                               zeit: r6(frame.timestamp - start),
+                               zeit: zeit,
                                breite: width,
                                hoehe: height,
                                k: k,
-                               lage: Pose(frame.camera.transform),
+                               lage: pose,
                                tiefe: depthPlane == nil ? nil : "\(base)_depth.png",
                                konfidenz: confidencePlane == nil ? nil : "\(base)_confidence.png",
-                               belichtung_s: exposure.duration.map { r6($0) },
-                               iso: exposure.iso,
+                               belichtung_s: exposure.duration.map { r6($0) }.flatMap { $0.isFinite ? $0 : nil },
+                               iso: exposure.iso.flatMap { $0.isFinite ? $0 : nil },
                                tracking: Self.trackingName(frame.camera.trackingState),
                                tiefe_quelle: depthSource,
                                ausloeser: trigger)
@@ -211,6 +225,7 @@ final class ScanRecorder {
 
         let fotos = folder.appendingPathComponent("fotos", isDirectory: true)
         let image = CIImage(cvPixelBuffer: buffer)
+        photoBacklog += 1
         pending.enter()
         io.async { [pending] in
             try? ImageCoding.writeJPEG(image, to: fotos.appendingPathComponent("\(base).jpg"), quality: 0.95)
@@ -218,8 +233,10 @@ final class ScanRecorder {
             if let confidencePlane {
                 ImageCoding.writePNG(confidencePlane, to: fotos.appendingPathComponent("\(base)_confidence.png"))
             }
+            DispatchQueue.main.async { [weak self] in self?.photoBacklog -= 1 }
             pending.leave()
         }
+        return true
     }
 
     static func exposure(of frame: ARFrame) -> (duration: Double?, iso: Double?) {
@@ -263,12 +280,15 @@ final class ScanRecorder {
     }
 
     /// Schließt das Video ab und schreibt odometry.csv, camera_matrix.csv, fotos.json, objekt.json und zuletzt meta.json.
+    /// Jede Datei für sich: Scheitert eine (etwa eine ungültige Zahl in einem Foto), gehen die übrigen trotzdem auf die
+    /// Platte, das Foto fällt weg und `meta.json` nennt es unter `warnungen`. `completion` meldet nur einen Fehler,
+    /// wenn `meta.json` selbst nicht geschrieben werden konnte; die Hinweise stehen danach in `warnings`.
     func finish(_ info: FinishInfo, completion: @escaping (Error?) -> Void) {
-        let meta = makeMeta(info)
         let odometryText = "timestamp, frame, x, y, z, qx, qy, qz, qw\n" + odometry.map { $0 + "\n" }.joined()
         let matrixText = cameraMatrixText()
-        let photosFile = PhotosFile(fotos: photos)
+        let entries = photos
         let folder = self.folder
+        var notes = warnings
 
         pending.enter()
         if let writer, let input, writer.status == .writing {
@@ -279,20 +299,53 @@ final class ScanRecorder {
             pending.leave()
         }
 
+        // self stark halten: Der Aufrufer gibt den Rekorder nach finish frei, meta.json muss trotzdem entstehen.
         pending.notify(queue: io) {
-            do {
-                try odometryText.write(to: folder.appendingPathComponent("odometry.csv"), atomically: true, encoding: .utf8)
-                if let matrixText {
-                    try matrixText.write(to: folder.appendingPathComponent("camera_matrix.csv"), atomically: true, encoding: .utf8)
+            func versuche(_ datei: String, _ schreiben: () throws -> Void) -> Bool {
+                do {
+                    try schreiben()
+                    return true
+                } catch {
+                    notes.append("\(datei) nicht geschrieben: \(error.localizedDescription)")
+                    return false
                 }
-                try JSONFiles.write(photosFile, to: folder.appendingPathComponent("fotos.json"))
-                if let objekt = info.objekt {
+            }
+            _ = versuche("odometry.csv") {
+                try odometryText.write(to: folder.appendingPathComponent("odometry.csv"), atomically: true, encoding: .utf8)
+            }
+            if let matrixText {
+                _ = versuche("camera_matrix.csv") {
+                    try matrixText.write(to: folder.appendingPathComponent("camera_matrix.csv"), atomically: true,
+                                         encoding: .utf8)
+                }
+            }
+            // Fotos, die sich einzeln nicht kodieren lassen, fallen weg statt alle anderen mitzunehmen.
+            let encoder = JSONEncoder()
+            let gute = entries.filter { (try? encoder.encode($0)) != nil }
+            if gute.count < entries.count {
+                notes.append("\(entries.count - gute.count) Foto(s) ohne gültige Zahlen verworfen")
+            }
+            let fotosOK = versuche("fotos.json") {
+                try JSONFiles.write(PhotosFile(fotos: gute), to: folder.appendingPathComponent("fotos.json"))
+            }
+            var objektOK = false
+            if let objekt = info.objekt {
+                objektOK = versuche("objekt.json") {
                     try JSONFiles.write(objekt, to: folder.appendingPathComponent("objekt.json"))
                 }
+            }
+            let meta = self.makeMeta(info, photoCount: fotosOK ? gute.count : 0, objekt: objektOK, warnings: notes)
+            do {
                 try JSONFiles.write(meta, to: folder.appendingPathComponent("meta.json"))
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async {
+                    self.warnings = notes
+                    completion(nil)
+                }
             } catch {
-                DispatchQueue.main.async { completion(error) }
+                DispatchQueue.main.async {
+                    self.warnings = notes
+                    completion(error)
+                }
             }
         }
     }
@@ -318,8 +371,8 @@ final class ScanRecorder {
         return String(format: "%.6f,%.6f,%.6f\n%.6f,%.6f,%.6f\n%.6f,%.6f,%.6f\n", fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0)
     }
 
-    private func makeMeta(_ info: FinishInfo) -> ScanMeta {
-        let photoDims = photoSize ?? (0, 0)
+    private func makeMeta(_ info: FinishInfo, photoCount: Int, objekt: Bool, warnings: [String]) -> ScanMeta {
+        let photoDims = photoCount > 0 ? (photoSize ?? (0, 0)) : (0, 0)
         var formatInfo: ScanMeta.VideoFormat?
         if let f = info.videoFormat {
             formatInfo = ScanMeta.VideoFormat(breite: Int(f.imageResolution.width),
@@ -340,12 +393,13 @@ final class ScanRecorder {
                         hz: 10,
                         video: .init(breite: Int(videoSize.width), hoehe: Int(videoSize.height), bilder: frameCount, codec: codec),
                         tiefe: .init(breite: Int(depthSize.width), hoehe: Int(depthSize.height), einheit: "mm", quelle: "sceneDepth"),
-                        fotos: .init(anzahl: photos.count, breite: photoDims.0, hoehe: photoDims.1),
+                        fotos: .init(anzahl: photoCount, breite: photoDims.0, hoehe: photoDims.1),
                         notiz: info.notiz,
-                        objekt: info.objekt != nil,
-                        dauer_s: r6(lastFrameTime),
+                        objekt: objekt,
+                        dauer_s: lastFrameTime.isFinite ? r6(lastFrameTime) : 0,
                         zeit_bezug: "erstes_videobild",
                         videoformat: formatInfo,
-                        auto_foto: info.autoPhoto)
+                        auto_foto: info.autoPhoto,
+                        warnungen: warnings.isEmpty ? nil : warnings)
     }
 }

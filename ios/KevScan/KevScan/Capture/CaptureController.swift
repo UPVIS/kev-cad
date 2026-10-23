@@ -256,6 +256,8 @@ final class CaptureController: NSObject, ObservableObject, ARSessionDelegate {
             self.finishing = false
             if let error {
                 self.errorText = "Speichern gescheitert: \(error.localizedDescription)"
+            } else if !rec.warnings.isEmpty {
+                self.errorText = "Gespeichert, mit Hinweis: " + rec.warnings.prefix(2).joined(separator: "; ")
             }
             self.finished = true
         }
@@ -308,12 +310,20 @@ final class CaptureController: NSObject, ObservableObject, ARSessionDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in self?.photoFlash = false }
     }
 
-    /// Automatisches Foto, sobald sich die Kamera seit dem letzten Foto genug gedreht oder bewegt hat.
+    static let autoPhotoMinInterval: TimeInterval = 1.5
+
+    /// Automatisches Foto, sobald sich die Kamera seit dem letzten Foto genug gedreht oder bewegt hat. Höchstens eins je
+    /// 1,5 s und nur, wenn die vorigen Fotos fast geschrieben sind und das iPhone nicht heiß läuft: Ein 12-MP-Foto
+    /// hält einen Bildpuffer von ARKit fest, bis es als JPEG auf der Platte liegt; zu viele davon bremsen Tracking und
+    /// Videoaufnahme (Scan am Rollwagen, 23.10.2026: 77 Fotos in 93 s, das iPhone war überlastet).
     private func checkAutoPhoto(_ frame: ARFrame) {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: AppSettings.autoPhoto), !photoInFlight, !stopRequested else { return }
         guard case .normal = frame.camera.trackingState else { return }
-        guard frame.timestamp - lastPhotoTime > 0.8 else { return }
+        guard frame.timestamp - lastPhotoTime > Self.autoPhotoMinInterval else { return }
+        guard (recorder?.photoBacklog ?? 0) < 2 else { return }
+        let thermal = ProcessInfo.processInfo.thermalState
+        guard thermal != .serious, thermal != .critical else { return }
         let current = frame.camera.transform
         guard let last = lastPhotoTransform else {
             takePhoto(trigger: "auto")
