@@ -23,7 +23,7 @@ Einheiten: mm, N, N/mm².
 
 from __future__ import annotations
 
-VERSION = 1  # Rechenstand der Stufe 4 (Zwischenspeicher)
+VERSION = 3  # Rechenstand der Stufe 4 (Zwischenspeicher); 2: Kantenmitten auf der Geometrie, 3: weichere Federn
 
 GRENZEN_S4 = [
     "CalculiX (S4): Kontakt nach dem Strafverfahren (Fläche zu Fläche, Coulomb-Reibung mit Haftreibwert der "

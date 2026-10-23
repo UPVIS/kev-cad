@@ -27,7 +27,7 @@ from typing import Any
 
 import numpy as np
 
-VERSION = 1
+from kevcad_kernel.statik.ccx import VERSION  # Rechenstand (Schlüssel des Zwischenspeichers)
 FEST_ARTEN = ("schraube", "kleben", "formschluss")  # bleiben fest eingespannt (Vorspannung der Schrauben nicht einzeln)
 RAND_STARR = 3.0  # mm Rand um das Teil für starre Lager-Körper
 KLEMM_N_JE_MM = 120.0  # handfest: N je mm Gewindedurchmesser

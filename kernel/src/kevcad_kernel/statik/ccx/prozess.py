@@ -53,9 +53,9 @@ except ImportError:  # pragma: no cover
         return []
 
 ZUSATZ = ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf")
-FEDER_ANTEIL = 1e-6  # Halte-Federn: Gesamtsteifigkeit mindestens Anteil · E · Größe des Körpers
-FEDER_LAST = 0.02  # … und mindestens 2 % der Last je mm (bei 0,25 mm Weg tragen sie 0,5 % der Last)
-ANFANG_KONTAKT = 0.002  # erstes Inkrement mit Kontakt: 0,2 % der Last (höchstens 0,1 mm Weg auf den Federn)
+FEDER_ANTEIL = 1e-8  # Halte-Federn: Gesamtsteifigkeit mindestens Anteil · E · Größe des Körpers
+FEDER_LAST = 0.001  # … und mindestens 0,1 % der Last je mm (bewegt sich der Körper mit dem Teil 2 mm, 0,2 %)
+ANFANG_KONTAKT = 1e-4  # erstes Inkrement mit Kontakt: 0,01 % der Last (höchstens 0,1 mm Weg auf den Federn)
 ANFANG_KLEMMUNG = 0.05  # nach einer Vorspannung (Klemmung) liegt der Körper an
 RUTSCH_ANTEIL = 0.05  # tragen die Federn mehr als 5 % der Last, hält der Kontakt den Körper nicht
 KONTAKT_FAKTOR = 2.0  # Druck-Strafsteifigkeit = Faktor · E (weicherer Werkstoff) je mm
@@ -747,7 +747,9 @@ def auswerten_last(fall: Fall, ordner: Path, name: str) -> tuple[dict[str, Any],
             traegt = p > 1e-6
             v = (fall.T.get("verbindungen") or {}).get(x) or {}
             mu = float(v.get("reibwert") or 0.0)
-            ausn = np.where(traegt, tau / np.maximum(mu * p, 1e-12), 0.0) if mu > 0 else np.zeros(len(p))
+            # Reibung genutzt nur, wo nennenswert Druck ist (am Rand der Kontaktzone teilt sonst fast null durch null)
+            merklich = p > 0.02 * float(p.max(initial=0.0))
+            ausn = np.where(merklich, tau / np.maximum(mu * p, 1e-12), 0.0) if mu > 0 else np.zeros(len(p))
             paare.append({
                 "mit": x, "rolle": fall.kn[x][0]["rolle"], "reibwert": mu, "reibwert_quelle": v.get("reibwert_quelle"),
                 "quelle": v.get("quelle"), "druck_max": round(float(p.max(initial=0.0)), 3),
@@ -757,8 +759,10 @@ def auswerten_last(fall: Fall, ordner: Path, name: str) -> tuple[dict[str, Any],
                 "anteil_traegt": round(float(A[traegt].sum() / max(A.sum(), 1e-9)), 3),
                 "klaffen_max_mm": round(float(klaff.max(initial=0.0)), 4),
                 "schlupf_max_mm": round(float(sl.max(initial=0.0)), 4),
-                "reibung_ausnutzung": round(float(ausn.max(initial=0.0)), 3),
-                "gleitet_anteil": round(float(A[ausn > 0.98].sum() / max(A[traegt].sum(), 1e-9)), 3),
+                # Knotenwerte sind gemittelt und überschießen an den Rändern: 90 %-Wert, höchstens 1 (Haftgrenze)
+                "reibung_ausnutzung": round(min(1.0, float(np.percentile(ausn[merklich], 90))) if merklich.any()
+                                            else 0.0, 3),
+                "gleitet_anteil": round(float(A[ausn > 0.98].sum() / max(A[merklich].sum(), 1e-9)), 3),
             })
         info["kontakt"] = {"paare": paare, "klemmungen": fall.klemm}
     # Federn: trägt ein freier Körper über die Federn statt über den Kontakt?
