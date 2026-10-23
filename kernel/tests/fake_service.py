@@ -659,7 +659,7 @@ class FakeService:
     def topologie_optimieren(self, teil: str | None = None, szenario: str | None = None, behalten: float | None = None,
                              schutz: list | None = None, ueberhang: bool | None = None, fein: bool | None = None,
                              steg: float | None = None, bett: bool | None = None, neu: bool = False,
-                             warten: bool = False) -> dict[str, Any]:
+                             warten: bool = False, lager: str | None = None) -> dict[str, Any]:
         self._record("topologie_optimieren", teil, szenario, behalten, ueberhang, fein)
         if not self.run_no:
             return {"ok": False, "error": "Noch kein Statikmodell: erst run aufrufen."}

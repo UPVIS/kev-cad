@@ -120,10 +120,10 @@ def _schnitte(P: np.ndarray, T: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> t
         with np.errstate(divide="ignore", invalid="ignore"):
             l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
             l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
-        l3 = 1.0 - l1 - l2
-        drin = gut & (l1 >= 0) & (l2 >= 0) & (l3 >= 0)
+            l3 = 1.0 - l1 - l2
+            drin = gut & (l1 >= 0) & (l2 >= 0) & (l3 >= 0)
+            zs.append((l1 * az + l2 * bz + l3 * cz)[drin])
         cols.append((ii * ny + jj)[drin])
-        zs.append((l1 * az + l2 * bz + l3 * cz)[drin])
         start = ende
     col = np.concatenate(cols)
     z = np.concatenate(zs)

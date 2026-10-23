@@ -302,6 +302,63 @@ def test_prozess_winkelhalter(tmp_path, monkeypatch):
     assert e["optimierung"]["iterationen"] >= 20 and dauer < 400
 
 
+def test_lager_an_den_bohrungen(tmp_path, monkeypatch):
+    """lager="bohrungen": Auf einer Platte halten die Schrauben in den vier Löchern, nicht die ganze Unterseite; das
+    Bolzenloch mit der Last hält nicht."""
+    monkeypatch.setenv("KEVCAD_TOPOLOGIE_VOXEL", "15000")
+    from build123d import Align, Box, Pos
+    from kevcad_kernel.topologie.prozess import Aufbau
+
+    A = _winkelhalter(tmp_path)
+    platte = Pos(0, 0, -5) * Box(120, 90, 5, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    P, T, _ = raster.brep_netz(platte.wrapped)
+    np.savez(tmp_path / "platte.npz", pos=P, tri=T)
+    A["nachbarn"] = {"Platte": {"datei": str(tmp_path / "platte.npz"), "tol": 0.3, "schluessel": "p"}}
+    A["faelle"][0]["lager"] = ["Platte"]
+    achsen = np.array([(-30, -15), (30, -15), (-30, 15), (30, 15)], dtype=float)
+
+    def fest_xyz(lager: str) -> np.ndarray:
+        B = Aufbau(A, einstellungen(behalten=0.42, lager=lager))
+        Fd, kn = B.lasten(A["faelle"][0], None)
+        B.lager(A["faelle"], kn)
+        return B.G.knoten(B.fest_knoten), B
+
+    X, B = fest_xyz("bohrungen")
+    r = np.min(np.linalg.norm(X[:, None, :2] - achsen[None, :, :], axis=2), axis=1)
+    assert len(X) >= 4 * 8 and r.max() <= 2.75 + 1.0 * B.G.h  # nur an den Schraubenlöchern
+    nahe = np.argmin(np.linalg.norm(X[:, None, :2] - achsen[None, :, :], axis=2), axis=1)
+    assert set(nahe.tolist()) == {0, 1, 2, 3}  # alle vier
+    Xk, _ = fest_xyz("kontakt")
+    assert np.abs(Xk[:, 2]).max() <= 1.01 * B.G.h and len(Xk) > 2 * len(X)  # sonst die ganze Unterseite
+
+
+def test_inseln_anbinden():
+    """Abseits liegende Schutzzonen bekommen einen Steg zum Lastpfad, lose Inseln ohne Schutz fallen weg."""
+    from types import SimpleNamespace
+
+    from kevcad_kernel.topologie.prozess import inseln_anbinden
+
+    ne = (40, 10, 10)
+    G = SimpleNamespace(ne=ne, nn=tuple(n + 1 for n in ne), h=1.0)
+    aktiv = np.ones(ne, dtype=bool)
+    B = SimpleNamespace(G=G, aktiv=aktiv, steg_mm=2.0, fest_knoten=np.zeros(0, dtype=np.int64))
+    rho = np.zeros(ne)
+    rho[0:12, 3:7, 3:7] = 1.0      # Lastpfad
+    rho[22:28, 3:7, 3:7] = 1.0     # Schraubenauge (geschützt)
+    rho[34:38, 3:7, 3:7] = 1.0     # lose Insel
+    passiv = np.zeros(ne, dtype=bool)
+    passiv[23:27, 4:6, 4:6] = True
+    last = np.ravel_multi_index((np.zeros(4, int), np.array([4, 5, 4, 5]), np.array([4, 4, 5, 5])), G.nn)
+    neu, text = inseln_anbinden(rho, 0.5, B, [last], passiv, 2.0)
+    from scipy.ndimage import label
+
+    lab, n = label(neu > 0.5, structure=np.ones((3, 3, 3)))
+    assert n == 1, n
+    assert neu[34:38].max() == 0.0 and neu[22:28, 3:7, 3:7].min() == 1.0
+    assert neu[12:22, 3:7, 3:7].max() == 1.0  # Steg dazwischen
+    assert "angebunden" in text and "entfernt" in text
+
+
 # -- model.py anpassen ------------------------------------------------------------------------------------------------
 
 
@@ -345,6 +402,8 @@ def test_protokoll_topo():
         u = unpack_topo_feld(h, p)
         assert np.allclose(u["punkte"], f["punkte"])
     assert not check_topo_app({"type": "TOPO_START", "behalten": 0.4}) and check_topo_app({"type": "TOPO_X"})
+    assert not check_topo_app({"type": "TOPO_START", "lager": "bohrungen"})
+    assert check_topo_app({"type": "TOPO_START", "lager": "boden"})
     with pytest.raises(ValueError):
         pack_topo_feld({"art": "unbekannt"}, topo_beispiel_feld("dichte")[1])
 

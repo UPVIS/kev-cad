@@ -1979,6 +1979,8 @@ def check_topo_app(header: dict[str, Any]) -> list[str]:
         b = header.get("behalten")
         if b is not None and not (0.05 <= float(b) <= 0.95):
             err.append("TOPO_START: behalten außerhalb 0,05…0,95")
+        if header.get("lager") not in (None, "kontakt", "bohrungen"):
+            err.append("TOPO_START: lager ist kontakt oder bohrungen")
     return err
 
 
@@ -1987,7 +1989,8 @@ def topo_beispiel(stand: str = "done") -> dict[str, Any]:
     PLAN-TOPOLOGIE.md)."""
     basis = {"auftrag": 3, "teil": "Halter", "szenario": "Bolzen 50 N", "quelle": "app",
              "einstellungen": {"behalten": 0.42, "ueberhang": False, "fein": False, "steg": 6, "bett": False,
-                               "bohrungen": True, "einsaetze": True, "kontakt": True, "iterationen": 60},
+                               "bohrungen": True, "einsaetze": True, "kontakt": True, "iterationen": 60,
+                               "lager": "kontakt"},
              "max_iter": 60, "voxel": 59804, "h_mm": 0.947}
     if stand == "laeuft":
         return {**basis, "stand": "laeuft", "fortschritt": 0.41, "phase": "optimieren", "iteration": 12,

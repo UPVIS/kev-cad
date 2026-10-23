@@ -239,13 +239,37 @@ class Aufbau:
                 self._nahe[x] = np.flatnonzero(np.isfinite(d))
         return self._nahe[x]
 
-    def lager(self, faelle: list[dict[str, Any]]) -> np.ndarray:
+    def bohr_liste(self) -> list[Any]:
+        from kevcad_kernel.topologie import raster
+
+        if not hasattr(self, "_bohr"):
+            self._bohr = raster.bohrungen(self.shape, max_radius=max(30.0, 0.3 * self.groesse))
+        return self._bohr
+
+    def lager(self, faelle: list[dict[str, Any]], last_knoten: list[np.ndarray] | None = None) -> np.ndarray:
+        """Feste Randknoten: Kontaktflächen zu den tragenden Nachbarn (wie die Statik) oder mit ``lager="bohrungen"``
+        die Wände der Bohrungen, an denen keine Last angreift (die Schrauben halten)."""
         fest = np.zeros((3,) + self.G.nn, dtype=bool)
-        sel = []
-        for f in faelle:
-            for x in f["lager"]:
-                sel.append(self.nahe(x))
-        idx = np.unique(np.concatenate(sel)) if sel else np.zeros(0, dtype=np.int64)
+        idx = np.zeros(0, dtype=np.int64)
+        if self.einst.get("lager") == "bohrungen":
+            lastk = set(np.concatenate([k for k in last_knoten or [] if k is not None and len(k)]).tolist()) \
+                if last_knoten else set()
+            sel = []
+            for b in self.bohr_liste():
+                nah = np.flatnonzero(b.abstand(self.Xr) <= 0.9 * self.G.h)
+                if len(nah) and not (set(self.rand_idx[nah].tolist()) & lastk):
+                    sel.append(nah)
+            if sel:
+                idx = np.unique(np.concatenate(sel))
+            else:
+                self.hinweise.append("lager=\"bohrungen\": keine Bohrung ohne Last gefunden, Lager an den "
+                                     "Kontaktflächen")
+        if len(idx) == 0:
+            sel = []
+            for f in faelle:
+                for x in f["lager"]:
+                    sel.append(self.nahe(x))
+            idx = np.unique(np.concatenate(sel)) if sel else np.zeros(0, dtype=np.int64)
         if len(idx) == 0:
             raise ValueError("keine Lagerfläche auf dem Gitter gefunden (berühren sich Teil und Nachbar?)")
         ijk = np.unravel_index(self.rand_idx[idx], self.G.nn)
@@ -320,7 +344,7 @@ class Aufbau:
         passiv = np.zeros(len(self.akt_idx), dtype=bool)
         zonen: list[dict[str, Any]] = []
         if e["bohrungen"] or e["einsaetze"]:
-            for b in raster.bohrungen(self.shape, max_radius=max(30.0, 0.3 * self.groesse)):
+            for b in self.bohr_liste():
                 d = 2 * b.radius
                 enden = np.stack([b.punkt + b.achse * (b.t0 - 0.6), b.punkt + b.achse * (b.t1 + 0.6)])
                 innen_enden = self.innen_punkte(enden)
@@ -446,6 +470,80 @@ def druck_kennzahlen(P: np.ndarray, T: np.ndarray, R: np.ndarray, material: str,
             "ueberhang_mm2": geo.get("ueberhang_flaeche"), "einstellungen": e, "hoehe_mm": geo["groesse"][2]}
 
 
+def _elemente_an_knoten(knoten: np.ndarray, G: Any) -> np.ndarray:
+    nx, ny, nz = G.ne
+    knm = np.zeros(int(np.prod(G.nn)), dtype=bool)
+    knm[knoten] = True
+    knm = knm.reshape(G.nn)
+    el = np.zeros(G.ne, dtype=bool)
+    for dx in (0, 1):
+        for dy in (0, 1):
+            for dz in (0, 1):
+                el |= knm[dx:dx + nx, dy:dy + ny, dz:dz + nz]
+    return el
+
+
+def inseln_anbinden(rho: np.ndarray, schwelle: float, B: Any, last_knoten: list[np.ndarray], passiv: np.ndarray,
+                    r_mm: float) -> tuple[np.ndarray, str | None]:
+    """Ein Körper aus einem Stück: Es bleibt, was mit der Last zusammenhängt. Schutzzonen, die abseits liegen (eine
+    Bohrung, die die Optimierung nicht braucht, weil die Auflage unter dem Teil trägt), werden auf kürzestem Weg mit
+    einem Steg in Stegdicke angebunden (sonst fiele die Bohrung als lose Insel ab); alles andere fällt weg."""
+    from scipy.ndimage import distance_transform_edt, label
+
+    G = B.G
+    voll = rho > schwelle
+    lab, nlab = label(voll, structure=np.ones((3, 3, 3)))
+    if nlab <= 1:
+        return rho, None
+    last_el = _elemente_an_knoten(np.concatenate([k for k in last_knoten if k is not None and len(k)])
+                                  if any(k is not None and len(k) for k in last_knoten) else B.fest_knoten, G)
+    haupt_lab = np.unique(lab[last_el & (lab > 0)])
+    if len(haupt_lab) == 0:  # Last auf einer schwachen Stelle: das größte Stück
+        groesse = np.bincount(lab.reshape(-1))
+        groesse[0] = 0
+        haupt_lab = np.array([int(np.argmax(groesse))])
+    haupt = np.isin(lab, haupt_lab)
+    andere = [i for i in range(1, nlab + 1) if i not in set(haupt_lab.tolist())]
+    geschuetzt = [i for i in andere if (passiv & (lab == i)).any()]
+    neu = rho.copy()
+    weg = (lab > 0) & ~haupt & ~np.isin(lab, geschuetzt)
+    neu[weg] = 0.0
+    stege = 0
+    if geschuetzt:
+        _, idx = distance_transform_edt(~haupt, return_indices=True)
+        r_v = max(1.0, 0.5 * max(r_mm, B.steg_mm) / G.h + 0.5)
+        ii, jj, kk = np.indices(G.ne)
+        for i in geschuetzt:
+            insel = lab == i
+            pts = np.stack(np.nonzero(insel), axis=1)
+            ziele = np.stack([idx[a][tuple(pts.T)] for a in range(3)], axis=1)
+            dist = np.linalg.norm(pts - ziele, axis=1)
+            k = int(np.argmin(dist))
+            a_, b_ = pts[k].astype(float), ziele[k].astype(float)
+            n = max(2, int(np.ceil(np.linalg.norm(b_ - a_) * 2)) + 1)
+            weg_pkt = a_[None, :] + np.linspace(0, 1, n)[:, None] * (b_ - a_)[None, :]
+            r2 = r_v * r_v
+            band = np.zeros(G.ne, dtype=bool)
+            lo = np.maximum(np.floor(weg_pkt.min(axis=0) - r_v).astype(int), 0)
+            hi = np.minimum(np.ceil(weg_pkt.max(axis=0) + r_v).astype(int) + 1, np.asarray(G.ne))
+            sub = (slice(lo[0], hi[0]), slice(lo[1], hi[1]), slice(lo[2], hi[2]))
+            I, J, K = ii[sub], jj[sub], kk[sub]
+            for q in weg_pkt:
+                band[sub] |= (I - q[0]) ** 2 + (J - q[1]) ** 2 + (K - q[2]) ** 2 <= r2
+            band &= B.aktiv
+            neu[band] = np.maximum(neu[band], 1.0)
+            stege += 1
+    teile = []
+    if stege:
+        teile.append(f"{stege} {'Schutzzone' if stege == 1 else 'Schutzzonen'} abseits des Lastpfads mit "
+                     f"{'einem Steg' if stege == 1 else 'Stegen'} angebunden (Bohrungen, die die Optimierung nicht "
+                     "braucht; mit lager=\"bohrungen\" halten die Schrauben)")
+    n_weg = len(andere) - len(geschuetzt)
+    if n_weg:
+        teile.append(f"{n_weg} lose {'Insel' if n_weg == 1 else 'Inseln'} ohne Verbindung zur Last entfernt")
+    return neu, "; ".join(teile) if teile else None
+
+
 def decken_kippen(p: np.ndarray, d: np.ndarray, R: np.ndarray, z_bett: float, grad: float = 3.0
                   ) -> tuple[np.ndarray, np.ndarray, int]:
     """Waagrechte Unterseiten über dem Bett (Normale innerhalb 1,8° nach unten) in flache Pyramiden teilen: je Dreieck
@@ -520,13 +618,13 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
     G = B.G
     ms.update(B.ms)
     faelle = A["faelle"]
-    fest = B.lager(faelle)
-    # Lasten, dann Schutzzonen (Lastflächen geschützt), dann Lasten ohne Punkt auf die Schutzzonen
+    # Lasten, dann Lager (Bohrungen mit Last halten nicht), dann Schutzzonen (Lastflächen geschützt)
     F_list, last_knoten = [], []
     for f in faelle:
         Fd, kn = B.lasten(f, None)
         F_list.append(Fd)
         last_knoten += kn
+    fest = B.lager(faelle, last_knoten)
     passiv, zonen = B.schutz(last_knoten)
     w = A["werkstoff"]
     druckteil = A.get("oben") is not None or w.get("q") is not None
@@ -603,7 +701,7 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
     # Oberfläche
     t3 = time.perf_counter()
     melde(0.75, "Oberfläche aus der Dichte", phase="oberflaeche")
-    from scipy.ndimage import label, map_coordinates
+    from scipy.ndimage import map_coordinates
 
     rho = np.where(B.aktiv, opt.xh, 0.0)
     lo_t, hi_t = 0.02, 0.98
@@ -615,26 +713,9 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
         else:
             hi_t = t_mid
     schwelle = 0.5 * (lo_t + hi_t)
-    # lose Inseln weg: nur, was mit einem Lager oder einer Last zusammenhängt
-    fest_el = np.zeros(G.ne, dtype=bool)
-    nx, ny, nz = G.ne
-    knm = np.zeros(int(np.prod(G.nn)), dtype=bool)
-    knm[B.fest_knoten] = True
-    for kn in last_knoten:
-        knm[kn] = True
-    knm = knm.reshape(G.nn)
-    for dx in (0, 1):
-        for dy in (0, 1):
-            for dz in (0, 1):
-                fest_el |= knm[dx:dx + nx, dy:dy + ny, dz:dz + nz]
-    lab, nlab = label(rho > schwelle, structure=np.ones((3, 3, 3)))
-    behalte = np.unique(lab[fest_el & (lab > 0)])
-    inseln = int(nlab - len(behalte))
-    if inseln > 0:
-        weg = (lab > 0) & ~np.isin(lab, behalte)
-        rho = np.where(weg, 0.0, rho)
-        B.hinweise.append(f"{inseln} lose {'Insel' if inseln == 1 else 'Inseln'} ohne Verbindung zu Lager oder Last "
-                          "entfernt")
+    rho, inseln_text = inseln_anbinden(rho, schwelle, B, last_knoten, passiv, r_mm)
+    if inseln_text:
+        B.hinweise.append(inseln_text)
     # Feld auf dem halb so großen Gitter: max(Abstand zum Teil, Dichte)
     from kevcad_kernel.topologie import raster
 
@@ -777,6 +858,14 @@ def rechne(A: dict[str, Any], ablage: Path) -> dict[str, Any]:
     for k in ("masse_g", "filament_g", "druckzeit_min"):
         if kz_v.get(k) and kz_n.get(k) is not None:
             ersparnis[k] = round(float(kz_v[k]) - float(kz_n[k]), 1)
+    sv, sn = kz_v.get("sicherheit"), kz_n.get("sicherheit")
+    ziel = float(kz_v.get("ziel") or kz_n.get("ziel") or 4.0)
+    if sv is not None and sv < ziel:
+        B.hinweise.append(f"Schon das Ausgangsteil erreicht das Ziel nicht (Sicherheit {sv:.2f} gegen {ziel:g}): "
+                          "Optimieren spart Material, macht das Teil aber nicht tragfähig; erst verstärken")
+    elif sn is not None and sn < ziel:
+        B.hinweise.append(f"Nach dem Optimieren Sicherheit {sn:.2f} unter dem Ziel {ziel:g}: mehr behalten "
+                          f"(etwa {min(0.95, behalten + 0.15):.2f}) oder die Stelle der größten Spannung ausrunden")
     steg_mm = B.steg_mm
     if dicke is not None and dicke < steg_mm * 0.8:
         B.hinweise.append(f"Dünnster Steg {dicke:.1f} mm unter der Vorgabe {steg_mm:.1f} mm: steg erhöhen oder "

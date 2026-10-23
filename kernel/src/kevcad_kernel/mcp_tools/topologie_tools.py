@@ -29,7 +29,9 @@ def register_topologie_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
           "wall, load and clamping faces; plus schutz=[{art:'quader', min, max} | {art:'kugel', mitte, radius} "
           "(world, mm) | {art:'index', index: face number of the part}]. ueberhang=true: no new overhangs above 45 "
           "degrees in the print direction (Bambu P1P). steg: minimum member size in line widths of 0.42 mm "
-          "(default 6 = 2.5 mm). fein=true: ~3x the voxels. Runs in the background in its own process (about a "
+          "(default 6 = 2.5 mm). lager='bohrungen': the bolts in the unloaded holes hold the part instead of the "
+          "whole contact face (like 'Fix the bolts'; use it for brackets screwed onto a plate, otherwise the plate "
+          "carries everything and the bosses end up as islands). fein=true: ~3x the voxels. Runs in the background in its own process (about a "
           "minute; the viewer shows the density live as translucent iterations); it returns at once unless "
           "warten=true. Afterwards the result is re-analysed with the solid FEM (safety vs target 4 for printed "
           "parts) and the print check, with key figures before and after (volume, mass, filament, print time, max "
@@ -48,6 +50,9 @@ def register_topologie_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
         fein: Annotated[bool | None, Field(description="Finer voxel grid (about 3x the voxels, slower)")] = None,
         steg: Annotated[float | None, Field(description="Minimum member size in line widths (0.42 mm), default 6")]
         = None,
+        lager: Annotated[str | None, Field(
+            description="Supports while optimizing: 'kontakt' (contact faces, default, like statics) or 'bohrungen' "
+                        "(bolts in the unloaded holes)")] = None,
         neu: Annotated[bool, Field(description="Recompute even if a stored result matches")] = False,
         warten: Annotated[bool, Field(description="Wait for the result (up to 10 minutes)")] = False,
         abbrechen: Annotated[bool, Field(description="Only stop a running optimization")] = False,
@@ -57,7 +62,7 @@ def register_topologie_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
             return fmt.result("Topologieoptimierung abgebrochen." if res.get("abgebrochen")
                               else "Es lief keine Topologieoptimierung.", {k: v for k, v in res.items() if k != "ok"})
         res = await t.work("startet die Topologieoptimierung", svc.topologie_optimieren, teil, szenario, behalten,
-                           schutz, ueberhang, fein, steg, None, neu, warten)
+                           schutz, ueberhang, fein, steg, None, neu, warten, lager)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Topologie nicht gestartet: {err}", res)

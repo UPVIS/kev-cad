@@ -478,8 +478,8 @@ class TopologieRuntime:
     def _topologie_app_message(self, kind: str | None, header: dict[str, Any]) -> bool:
         if kind == "TOPO_START":
             wunsch = {k: header.get(k) for k in ("teil", "szenario") if header.get(k) is not None}
-            wunsch["einstellungen"] = {k: header.get(k) for k in ("behalten", "ueberhang", "fein", "steg", "bett")
-                                       if header.get(k) is not None}
+            wunsch["einstellungen"] = {k: header.get(k) for k in ("behalten", "ueberhang", "fein", "steg", "bett",
+                                                                   "lager") if header.get(k) is not None}
             self._pool.submit(self._tp_app_start, wunsch)  # type: ignore[attr-defined]
             return True
         if kind == "TOPO_CANCEL":
@@ -502,7 +502,8 @@ class TopologieRuntime:
     def topologie_optimieren(self, teil: str | None = None, szenario: str | None = None, behalten: float | None = None,
                              schutz: list[dict[str, Any]] | None = None, ueberhang: bool | None = None,
                              fein: bool | None = None, steg: float | None = None, bett: bool | None = None,
-                             neu: bool = False, warten: bool = False, timeout_s: float = PROZESS_S) -> dict[str, Any]:
+                             neu: bool = False, warten: bool = False, lager: str | None = None,
+                             timeout_s: float = PROZESS_S) -> dict[str, Any]:
         """Topologieoptimierung eines Druckteils starten (im Hintergrund; ``warten`` = bis zum Ergebnis)."""
         if self._tp_projekt() is None:
             return {"ok": False, "error": "Kein Projekt offen. Erst project_open aufrufen."}
@@ -511,7 +512,8 @@ class TopologieRuntime:
             statik_warten()
         wunsch: dict[str, Any] = {"teil": teil, "szenario": szenario, "neu": bool(neu),
                                   "einstellungen": {k: v for k, v in (("behalten", behalten), ("ueberhang", ueberhang),
-                                                                      ("fein", fein), ("steg", steg), ("bett", bett))
+                                                                      ("fein", fein), ("steg", steg), ("bett", bett),
+                                                                      ("lager", lager))
                                                     if v is not None},
                                   "schutz": list(schutz or [])}
         a = self._tp_aufruf_fuer(teil)
@@ -614,7 +616,8 @@ def aufruf_text(var: str, st: dict[str, Any]) -> str:
     args = [var]
     if st.get("szenario"):
         args.append(f"szenario={st['szenario']!r}")
-    for k in ("behalten", "ueberhang", "fein", "steg", "bett", "bohrungen", "einsaetze", "kontakt", "iterationen"):
+    for k in ("behalten", "ueberhang", "fein", "steg", "bett", "bohrungen", "einsaetze", "kontakt", "iterationen",
+              "lager"):
         if e.get(k) != STANDARD.get(k) or k == "behalten":
             v = e[k]
             if isinstance(v, float) and v.is_integer() and k != "behalten":

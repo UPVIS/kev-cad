@@ -35,6 +35,8 @@ STANDARD = {
     "einsaetze": True,    # Gewindeeinsätze mit Mindestwand schützen
     "kontakt": True,      # Last- und Klemmflächen schützen
     "iterationen": 60,    # höchstens so viele SIMP-Schritte
+    "lager": "kontakt",   # Lager beim Optimieren: Kontaktflächen zu tragenden Nachbarn (wie die Statik) oder nur die
+                          # Bohrungen ("bohrungen": die Schrauben halten, wie im Reel „Fix the bolts“)
 }
 LINIENBREITE = 0.42
 
@@ -60,6 +62,8 @@ def einstellungen(**kw) -> dict:
         out[k] = bool(out[k])
     out["steg"] = round(max(2.0, min(40.0, float(out["steg"]))), 2)
     out["iterationen"] = int(max(10, min(200, int(out["iterationen"]))))
+    out["lager"] = "bohrungen" if str(out["lager"]).strip().lower() in ("bohrungen", "bohrung", "schrauben") \
+        else "kontakt"
     return out
 
 

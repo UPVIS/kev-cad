@@ -17,6 +17,8 @@ show(Pos(0, 0, 10) * halter, "Halter")
 - ``behalten``: Volumenanteil, der bleibt (0,4 = 40 %; Schutzzonen zählen mit). ``ueberhang=True``: keine neuen
   Überhänge über 45° in Druckrichtung (Bambu Lab P1P). ``steg``: kleinste Stegbreite in Linienbreiten (6 × 0,42 mm).
   ``fein=True``: etwa dreimal so viele Voxel. ``bett=True``: geschlossene Bodenhaut in Stegdicke.
+  ``lager="bohrungen"``: beim Optimieren halten die Schrauben in den Bohrungen ohne Last (wie im Reel „Fix the
+  bolts“), nicht die ganze Auflagefläche; Vorgabe ``"kontakt"`` wie die Statik.
 - Schutzzonen von selbst: Bohrungen mit Wandring, Gewindeeinsätze mit Mindestwand, Last- und Klemmflächen
   (``bohrungen``, ``einsaetze``, ``kontakt`` abschaltbar); dazu ``schutz=[form, fläche, …]``: build123d-Körper (was
   darin liegt, bleibt) oder Flächen des Teils (eine Haut darunter bleibt), in den Koordinaten des Teils.
@@ -84,7 +86,7 @@ def _schutz_liste(schutz: Any) -> list[dict[str, Any]]:
 def optimieren(teil: Any, szenario: str | None = None, behalten: float = 0.4, schutz: Any = None,
                ueberhang: bool = False, fein: bool = False, steg: float = 6, bett: bool = False,
                bohrungen: bool = True, einsaetze: bool = True, kontakt: bool = True, iterationen: int = 60,
-               automatisch: bool = True) -> Any:
+               lager: str = "kontakt", automatisch: bool = True) -> Any:
     """Topologieoptimiertes Druckteil (siehe Moduldoku): das Ergebnis, sobald es berechnet ist, sonst ``teil``."""
     import kevcad
     from kevcad.lager import LagerError
@@ -99,7 +101,8 @@ def optimieren(teil: Any, szenario: str | None = None, behalten: float = 0.4, sc
     from kevcad_kernel.topologie.ergebnis import aufruf_schreiben, finde, lies_brep, lies_json
 
     einst = einstellungen(behalten=behalten, ueberhang=ueberhang, fein=fein, steg=steg, bett=bett,
-                          bohrungen=bohrungen, einsaetze=einsaetze, kontakt=kontakt, iterationen=iterationen)
+                          bohrungen=bohrungen, einsaetze=einsaetze, kontakt=kontakt, iterationen=iterationen,
+                          lager=lager)
     sl = _schutz_liste(schutz)
     name = piece.name
     form = form_signatur(teil.wrapped)

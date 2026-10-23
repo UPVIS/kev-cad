@@ -365,7 +365,7 @@ class KernelService(Protocol):
     def topologie_optimieren(self, teil: str | None = None, szenario: str | None = None, behalten: float | None = None,
                              schutz: list[dict[str, Any]] | None = None, ueberhang: bool | None = None,
                              fein: bool | None = None, steg: float | None = None, bett: bool | None = None,
-                             neu: bool = False, warten: bool = False) -> dict[str, Any]:
+                             neu: bool = False, warten: bool = False, lager: str | None = None) -> dict[str, Any]:
         """Topologieoptimierung eines Druckteils im Hintergrund (eigener Prozess): {"ok", "stand", "teil",
         "szenario", "text"}; mit ``warten`` das Ergebnis wie ``topologie_ergebnis``. ``schutz``: Zonen in Welt
         ({"art": "quader", "min", "max"}, {"art": "kugel", "mitte", "radius"}) oder Flächen des Teils
