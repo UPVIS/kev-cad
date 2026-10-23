@@ -488,7 +488,7 @@ def inseln_anbinden(rho: np.ndarray, schwelle: float, B: Any, last_knoten: list[
     """Ein Körper aus einem Stück: Es bleibt, was mit der Last zusammenhängt. Schutzzonen, die abseits liegen (eine
     Bohrung, die die Optimierung nicht braucht, weil die Auflage unter dem Teil trägt), werden auf kürzestem Weg mit
     einem Steg in Stegdicke angebunden (sonst fiele die Bohrung als lose Insel ab); alles andere fällt weg."""
-    from scipy.ndimage import distance_transform_edt, label
+    from scipy.ndimage import binary_dilation, label
 
     G = B.G
     voll = rho > schwelle
@@ -508,28 +508,48 @@ def inseln_anbinden(rho: np.ndarray, schwelle: float, B: Any, last_knoten: list[
     neu = rho.copy()
     weg = (lab > 0) & ~haupt & ~np.isin(lab, geschuetzt)
     neu[weg] = 0.0
-    stege = 0
+    stege, offen = 0, 0
     if geschuetzt:
-        _, idx = distance_transform_edt(~haupt, return_indices=True)
+        # Weg im Bauraum (nicht durch Bohrungen oder außen herum): Abstand in Schritten vom Hauptstück, Schicht für
+        # Schicht im Bauraum gewachsen, dann von der Insel bergab
+        ziel = np.isin(lab, geschuetzt)
+        schritte = np.full(G.ne, -1, dtype=np.int32)
+        schritte[haupt] = 0
+        front = haupt.copy()
+        kern = np.ones((3, 3, 3), dtype=bool)
+        k = 0
+        while front.any() and (ziel & (schritte < 0)).any():
+            front = binary_dilation(front, structure=kern) & B.aktiv & (schritte < 0)
+            k += 1
+            schritte[front] = k
         r_v = max(1.0, 0.5 * max(r_mm, B.steg_mm) / G.h + 0.5)
-        ii, jj, kk = np.indices(G.ne)
+        nachbar = np.array([(a, b, c) for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1)
+                            if (a, b, c) != (0, 0, 0)])
+        grenze = np.asarray(G.ne) - 1
+        r = int(np.ceil(r_v))
+        kugel = np.array([(a, b, c) for a in range(-r, r + 1) for b in range(-r, r + 1) for c in range(-r, r + 1)
+                          if a * a + b * b + c * c <= r_v * r_v])
         for i in geschuetzt:
             insel = lab == i
-            pts = np.stack(np.nonzero(insel), axis=1)
-            ziele = np.stack([idx[a][tuple(pts.T)] for a in range(3)], axis=1)
-            dist = np.linalg.norm(pts - ziele, axis=1)
-            k = int(np.argmin(dist))
-            a_, b_ = pts[k].astype(float), ziele[k].astype(float)
-            n = max(2, int(np.ceil(np.linalg.norm(b_ - a_) * 2)) + 1)
-            weg_pkt = a_[None, :] + np.linspace(0, 1, n)[:, None] * (b_ - a_)[None, :]
-            r2 = r_v * r_v
+            d = np.where(insel & (schritte > 0), schritte, np.iinfo(np.int32).max)
+            if d.min() == np.iinfo(np.int32).max:
+                offen += 1
+                continue
+            q = np.array(np.unravel_index(int(np.argmin(d)), G.ne))
+            weg_pkt = [q]
+            while schritte[tuple(q)] > 0:
+                kand = np.clip(q[None, :] + nachbar, 0, grenze)
+                s_k = schritte[tuple(kand.T)]
+                gut = s_k == schritte[tuple(q)] - 1
+                if not gut.any():
+                    break
+                # gerade Schritte bevorzugen (kurzer Steg ohne Zickzack)
+                kand = kand[gut]
+                q = kand[int(np.argmin(np.abs(kand - q[None, :]).sum(axis=1)))]
+                weg_pkt.append(q)
+            zellen = np.clip((np.asarray(weg_pkt)[:, None, :] + kugel[None, :, :]).reshape(-1, 3), 0, grenze)
             band = np.zeros(G.ne, dtype=bool)
-            lo = np.maximum(np.floor(weg_pkt.min(axis=0) - r_v).astype(int), 0)
-            hi = np.minimum(np.ceil(weg_pkt.max(axis=0) + r_v).astype(int) + 1, np.asarray(G.ne))
-            sub = (slice(lo[0], hi[0]), slice(lo[1], hi[1]), slice(lo[2], hi[2]))
-            I, J, K = ii[sub], jj[sub], kk[sub]
-            for q in weg_pkt:
-                band[sub] |= (I - q[0]) ** 2 + (J - q[1]) ** 2 + (K - q[2]) ** 2 <= r2
+            band[tuple(zellen.T)] = True
             band &= B.aktiv
             neu[band] = np.maximum(neu[band], 1.0)
             stege += 1
@@ -538,6 +558,9 @@ def inseln_anbinden(rho: np.ndarray, schwelle: float, B: Any, last_knoten: list[
         teile.append(f"{stege} {'Schutzzone' if stege == 1 else 'Schutzzonen'} abseits des Lastpfads mit "
                      f"{'einem Steg' if stege == 1 else 'Stegen'} angebunden (Bohrungen, die die Optimierung nicht "
                      "braucht; mit lager=\"bohrungen\" halten die Schrauben)")
+    if offen:
+        teile.append(f"{offen} {'Schutzzone liegt' if offen == 1 else 'Schutzzonen liegen'} ohne Weg im Bauraum "
+                     "abseits der Last (eigenes Stück)")
     n_weg = len(andere) - len(geschuetzt)
     if n_weg:
         teile.append(f"{n_weg} lose {'Insel' if n_weg == 1 else 'Inseln'} ohne Verbindung zur Last entfernt")

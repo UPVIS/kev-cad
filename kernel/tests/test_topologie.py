@@ -357,6 +357,14 @@ def test_inseln_anbinden():
     assert neu[34:38].max() == 0.0 and neu[22:28, 3:7, 3:7].min() == 1.0
     assert neu[12:22, 3:7, 3:7].max() == 1.0  # Steg dazwischen
     assert "angebunden" in text and "entfernt" in text
+    # Wand im Bauraum mit einem Durchlass am Rand: der Steg läuft durch den Durchlass, nicht durch die Wand
+    aktiv[15:18] = False
+    aktiv[15:18, 0:2] = True
+    rho[15:18] = 0.0
+    neu, text = inseln_anbinden(rho, 0.5, B, [last], passiv, 2.0)
+    lab, n = label(neu > 0.5, structure=np.ones((3, 3, 3)))
+    assert n == 1, n
+    assert neu[~aktiv].max() == 0.0 and neu[15:18, 0:2].max() == 1.0
 
 
 # -- model.py anpassen ------------------------------------------------------------------------------------------------
