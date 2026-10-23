@@ -131,6 +131,10 @@ enum SimulationSelfTest {
         check(await aendern([SimOp.lastfallNeu(name)]), "Lastfall „\(name)“ angelegt (SIM_EDIT)")
         check(await wait(20) { st.stand?.lastfall(name) != nil }, "Lastfall in SIM")
         actions.waehleLastfall(name)
+        // Fensterleiste: der Untertitel folgt der Auswahl sofort (Punkt 10)
+        let soll = "Simulation · \(name)"
+        check(await wait(1) { session.projectWindow?.subtitle == soll },
+              "Untertitel folgt sofort: „\(session.projectWindow?.subtitle ?? "–")“")
         zustand.reiter = .kraefte
 
         // 3. Kraft per Klick auf die Oberseite des Stegs (Normale +z), 2 kg
@@ -258,6 +262,14 @@ enum SimulationSelfTest {
             let h = v.first { $0.name == teil }
             check((h?.aenderung ?? 0) < 0, "Vergleich: \(teil) Sicherheit \(h?.a.map(StatikZahl.sf) ?? "–") → "
                   + "\(h?.b.map(StatikZahl.sf) ?? "–")")
+            // nur gleiche Verfahren (vorher FEM, jetzt ohne FEM: verglichen wird S0 mit S0, nie FEM mit S0)
+            let nachweisVorher = SimErgebnis.zeilen(a).first { $0.teil == teil }?.nachweis.rawValue ?? "–"
+            let nachweisJetzt = SimErgebnis.zeilen(b).first { $0.teil == teil }?.nachweis.rawValue ?? "–"
+            check(h?.verfahren != nil || h?.hinweis != nil,
+                  "Vergleich nur gleicher Verfahren: \(h?.verfahrenText ?? "–") (vorher \(nachweisVorher), "
+                  + "jetzt \(nachweisJetzt))")
+            check(nachweisVorher == nachweisJetzt || h?.verfahren != "FEM" || h?.hinweis != nil,
+                  "FEM nicht mit S0 gemischt")
         }
         await pause(1)
         await foto("08-vergleich")
@@ -308,7 +320,12 @@ enum SimulationSelfTest {
         await pause(2)
         await foto("11-topologie-nachher")
 
-        // 13. Zurück im 3D-Bereich: Kräfte und Lager verschwinden aus dem Viewer
+        // 13. Offene Grenzen (simulation2): Lager je Lastfall, gleitend entlang einer Kante, gelenkig in der FEM,
+        // Last auf der ganzen Fläche als Druck, Grenze mit FEM, Pfeil-Griff frei im Raum, Pfeile bildschirmfest
+        await simulation2(session, state, controller: controller, teil: teil, name: name, oben: oben, unten: unten,
+                          check: check, wait: wait, foto: foto, aendern: aendern, jobFertig: jobFertig)
+
+        // 14. Zurück im 3D-Bereich: Kräfte und Lager verschwinden aus dem Viewer
         state.zeige(.modell)
         check(await wait(5) { !st.aktiv && controller.scene.simulationBodies.isEmpty }, "3D-Bereich ohne Simulationskörper")
         fertig(lines, passed)
@@ -323,5 +340,243 @@ enum SimulationSelfTest {
         if ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_QUIT"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { NSApp.terminate(nil) }
         }
+    }
+}
+
+// MARK: - Offene Grenzen (simulation2)
+
+extension SimulationSelfTest {
+    /// Schritte der zweiten Ausbaustufe: Lager je Lastfall, gleitend entlang einer Kante, gelenkiges Lager im
+    /// Bolzenloch mit Festigkeit (FEM), Last auf der ganzen Fläche als Druck, Grenze mit FEM, Pfeil-Griff (Kugel, Ring,
+    /// Einrasten), Pfeile bildschirmfest, Untertitel. Läuft in einem eigenen Lastfall „Selbsttest Gelenk“.
+    // swiftlint:disable:next function_body_length function_parameter_count cyclomatic_complexity
+    static func simulation2(_ session: AppSession, _ state: ProjectWindowState, controller: AppController,
+                            teil: String, name: String, oben: Int, unten: Int,
+                            check: (Bool, String) -> Void,
+                            wait: (Double, () -> Bool) async -> Bool,
+                            foto: (String) async -> Void,
+                            aendern: ([JSONValue]) async -> Bool,
+                            jobFertig: (String, Double) async -> SimJob?) async {
+        let model = session.model
+        let st = model.simulation
+        let zustand = state.simulationZustand
+        guard let actions = model.simulationActions, let rec = controller.scene.record(teil) else {
+            check(false, "simulation2: App-Kern oder Teil fehlt")
+            return
+        }
+        func pause(_ s: Double) async { try? await Task.sleep(for: .milliseconds(Int(s * 1000))) }
+        let gelenk = "Selbsttest Gelenk"
+        if st.stand?.lastfall(gelenk) != nil { _ = await aendern([SimOp.loeschen(gelenk)]) }
+        check(await aendern([SimOp.lastfallNeu(gelenk)]), "Lastfall „\(gelenk)“ angelegt")
+        _ = await wait(20) { st.stand?.lastfall(gelenk) != nil }
+        actions.waehleLastfall(gelenk)
+        check(await wait(1) { session.projectWindow?.subtitle == "Simulation · \(gelenk)" },
+              "Untertitel folgt dem Lastfallwechsel sofort: „\(session.projectWindow?.subtitle ?? "–")“")
+
+        // a) Lager je Lastfall: das feste Lager auf der Unterseite gilt nur noch in „name“
+        if var a1 = st.stand?.lager.first(where: { $0.teil == teil && $0.art == .fest }) {
+            a1.szenarien = [name]
+            check(await aendern([SimOp.lagerSetzen(a1)]), "Lager \(a1.id) nur in „\(name)“ (lager_setzen)")
+            check(await wait(20) { st.stand?.lager.first { $0.id == a1.id }?.szenarien == [name] },
+                  "SIM: \(a1.id) gilt \(st.stand?.lager.first { $0.id == a1.id }?.giltText ?? "–")")
+            check(await wait(20) {
+                (model.statik.ergebnis?.szenario(name)?.lagerIDs ?? []).contains(a1.id)
+                    && !(model.statik.ergebnis?.szenario(gelenk)?.lagerIDs ?? [a1.id]).contains(a1.id)
+            }, "STATICS: \(a1.id) in „\(name)“ \(model.statik.ergebnis?.szenario(name)?.lagerIDs ?? []), nicht in "
+                + "„\(gelenk)“ \(model.statik.ergebnis?.szenario(gelenk)?.lagerIDs ?? [])")
+        } else {
+            check(false, "festes Lager aus Schritt 5 fehlt")
+        }
+
+        // b) Kraft 2 kg auf die Oberseite, c) Druck auf der ganzen Oberseite
+        zustand.reiter = .kraefte
+        actions.setSimulationWerkzeug(.kraft)
+        actions.setKraftEntwurf(nil)
+        check(controller.simulationKlickAufFlaeche(teil: teil, flaeche: oben), "Klick auf die Oberseite (Kraft)")
+        if var e = st.entwurf {
+            e.last.richtung = SimRichtung(art: .normale)
+            e.last.betrag = 2
+            e.last.einheit = "kg"
+            actions.setKraftEntwurf(e)
+        }
+        actions.kraftEntwurfSpeichern()
+        check(await wait(30) { st.stand?.lastfall(gelenk)?.lasten.count == 1 && st.entwurf == nil },
+              "Kraft 2 kg gespeichert")
+        let a = rec.header.faces[oben].a ?? 0
+        check(controller.simulationKlickAufFlaeche(teil: teil, flaeche: oben), "Klick auf die Oberseite (Druck)")
+        if var e = st.entwurf {
+            e.last.verteilung = "flaeche"
+            e.last.einheit = SimKraft.druck
+            e.last.betrag = 0.02
+            e.last.richtung = SimRichtung(art: .normale)
+            actions.setKraftEntwurf(e)
+        }
+        let vorschau = st.entwurf?.kraft.map { Double(simd_length($0)) } ?? 0
+        check(abs(vorschau - 0.02 * a) < 0.01 * 0.02 * a + 1e-6,
+              "Vorschau Druck 0,02 N/mm² × \(KevFormat.number(a, digits: 0)) mm² = "
+              + "\(KevFormat.number(vorschau, digits: 2)) N")
+        await pause(0.5)
+        await foto("12-flaechenlast-entwurf")
+        actions.kraftEntwurfSpeichern()
+        check(await wait(30) { st.stand?.lastfall(gelenk)?.lasten.count == 2 && st.entwurf == nil }, "Druck gespeichert")
+        let druck = st.stand?.lastfall(gelenk)?.lasten.first { $0.aufFlaeche }
+        let fw = druck?.kraftWirksam.map { Double(simd_length($0)) } ?? 0
+        check(druck?.zustand == .ok && abs(fw - 0.02 * a) < 0.02 * 0.02 * a,
+              "Kernel: Druck auf der ganzen Fläche \(KevFormat.number(fw, digits: 2)) N (p · A = "
+              + "\(KevFormat.number(0.02 * a, digits: 2)) N), Fläche "
+              + "\(KevFormat.number(druck?.flaecheMm2Wirksam ?? 0, digits: 0)) mm²")
+        actions.setSimulationWerkzeug(.keins)
+
+        // d) gelenkiges Lager im Bolzenloch, nur in „gelenk“
+        zustand.reiter = .lager
+        let bohrung = rec.header.faces.indices.first {
+            rec.header.faces[$0].t == "cylinder" && (rec.header.faces[$0].r ?? 0) > 4
+        }
+        let vorher = Set(st.stand?.lager.map(\.id) ?? [])
+        actions.setLagerEntwurf(nil)
+        st.lagerSzenarien = [gelenk]
+        st.lagerArt = .gelenkig
+        st.lagerAuf = .flaeche
+        st.lagerGleiten = nil
+        actions.setSimulationWerkzeug(.lager)
+        if let b = bohrung {
+            check(controller.simulationKlickAufFlaeche(teil: teil, flaeche: b), "Klick ins Bolzenloch (Fläche \(b))")
+            check(st.lagerEntwurf?.szenarien == [gelenk], "Entwurf gilt nur in „\(gelenk)“")
+            actions.lagerEntwurfSpeichern()
+            check(await wait(30) {
+                st.stand?.lager.contains { !vorher.contains($0.id) && $0.art == .gelenkig && $0.zustand == .ok } == true
+            }, "Gelenkiges Lager gespeichert")
+        } else {
+            check(false, "Bolzenloch nicht gefunden")
+        }
+        // e) gleitend entlang einer Kante auf der Unterseite
+        st.lagerArt = .gleitend
+        check(controller.simulationKlickAufFlaeche(teil: teil, flaeche: unten), "Klick auf die Unterseite (gleitend)")
+        let kante = rec.header.edges.indices.first { rec.header.edges[$0].t == "line" }
+        if let k = kante {
+            st.kanteWaehlen = true
+            controller.simulationKanteGewaehlt(teil: teil, kante: k)
+        }
+        check(st.lagerEntwurf?.gleiten?.quelle == "kante",
+              "Gleitrichtung \(st.lagerEntwurf?.gleiten?.titel ?? "–") (Kante \(kante.map(String.init) ?? "–"))")
+        await pause(0.5)
+        await foto("13-lager-kante")
+        let vorher2 = Set(st.stand?.lager.map(\.id) ?? [])
+        actions.lagerEntwurfSpeichern()
+        check(await wait(30) {
+            st.stand?.lager.contains { !vorher2.contains($0.id) && $0.gleiten?.quelle == "kante" && $0.zustand == .ok
+                && $0.gehaltenWirksam.count == 2 } == true
+        }, "Gleitendes Lager (Schiene) gespeichert, zwei gehaltene Richtungen")
+        let neu = Set(st.stand?.lager.map(\.id) ?? []).subtracting(vorher)
+        check(await wait(20) { Set(model.statik.ergebnis?.szenario(gelenk)?.lagerIDs ?? []).isSuperset(of: neu) },
+              "STATICS „\(gelenk)“: Lager \(model.statik.ergebnis?.szenario(gelenk)?.lagerIDs ?? [])")
+        st.lagerSzenarien = nil
+        actions.setSimulationWerkzeug(.keins)
+
+        // f) Festigkeit (FEM) mit gelenkigem und gleitendem Lager
+        zustand.reiter = .rechnen
+        actions.simulationRechnen(was: "festigkeit", lastfall: gelenk, teil: nil, fein: false, grenze: nil)
+        let jf = await jobFertig("festigkeit", 300)
+        check(jf?.stand == "done", "Festigkeit (FEM) mit Gelenk und Schiene: \(jf?.text ?? jf?.meldung ?? "–")")
+        let fk = model.statik.ergebnis?.szenario(gelenk)?.festkoerper?.teile.first { $0.teil == teil }
+        check(fk?.stand == "done", "FEM \(teil): Sicherheit \(fk?.sicherheit.map(StatikZahl.sf) ?? "–") "
+              + "(\(fk?.meldung ?? fk?.text ?? ""))")
+        await pause(1)
+        await foto("14-festigkeit-gelenk")
+
+        // g) Grenze mit FEM
+        zustand.grenzeArt = "last"
+        zustand.grenzeVerfahren = "fem"
+        actions.simulationGrenzeSuchen(lastfall: gelenk, art: "last", verfahren: "fem")
+        let jg = await jobFertig("grenze", 600)
+        check(jg?.stand == "done" && jg?.verfahren == "fem",
+              "Grenze mit FEM: \(jg?.ergebnisText ?? jg?.meldung ?? "–")")
+        check(jg?.werte.contains { $0.verfahren == "FEM" } == true,
+              "Werte je Verfahren: " + (jg?.werte.map { "\($0.kriterium) (\($0.verfahren ?? "?"))" }
+                                            .joined(separator: ", ") ?? "–"))
+        check(jg?.massgebendVerfahren != nil, "Maßgebend: \(jg?.massgebendVerfahren ?? "–"), Probe "
+              + (jg?.probeAusnutzung.map { KevFormat.number($0, digits: 2) } ?? "–"))
+        await pause(0.5)
+        await foto("15-grenze-fem")
+
+        // h) Pfeil-Griff frei im Raum: Kugel, Ring Azimut, Einrasten
+        zustand.reiter = .kraefte
+        actions.setSimulationWerkzeug(.kraft)
+        check(controller.simulationKlickAufFlaeche(teil: teil, flaeche: oben), "Klick für den Griff")
+        if var e = st.entwurf {
+            e.last.richtung = SimRichtung(art: .frei, azimut: 30, hoehe: -40)
+            e.last.betrag = 10
+            e.last.einheit = "N"
+            e.last.verteilung = "punkt"
+            actions.setKraftEntwurf(e)
+        }
+        await pause(0.3)
+        if let g = controller.simGriffPunkt(), let p0 = controller.viewport.bildpunkt(g) {
+            check(controller.simulationGriffBeginnt(p0) && st.griffArt == .kugel, "Kugel am Pfeilende angefasst")
+            var p = p0
+            for _ in 0..<6 {
+                p = CGPoint(x: p.x + 9, y: p.y + 7)
+                controller.simulationGriffZiehen(p)
+            }
+            let r = st.entwurf?.last.richtung
+            check(r?.art == .frei && abs((r?.azimut ?? 30) - 30) > 2 && abs((r?.hoehe ?? -40) + 40) > 2,
+                  "Kugel: Azimut und Höhe gedreht (\(KevFormat.number(r?.azimut ?? 0, digits: 1))°, "
+                  + "\(KevFormat.number(r?.hoehe ?? 0, digits: 1))°)")
+            controller.simulationGriffEnde()
+        } else {
+            check(false, "Griff nicht im Bild")
+        }
+        if let ringe = controller.simGriffRinge(), let ende = controller.simGriffPunkt(),
+           let fern = ringe.azimut.max(by: { simd_length($0 - ende) < simd_length($1 - ende) }) {
+            let h0 = st.entwurf?.last.richtung.hoehe ?? 0
+            let az0 = st.entwurf?.last.richtung.azimut ?? 0
+            let ziel = simd_length(fern - ende) * 0.7071
+            let anfassen = ringe.azimut.min { abs(simd_length($0 - ende) - ziel) < abs(simd_length($1 - ende) - ziel) }
+            if let an = anfassen, let p0 = controller.viewport.bildpunkt(an),
+               let p1 = controller.viewport.bildpunkt(fern) {
+                check(controller.simulationGriffBeginnt(p0) && st.griffArt == .ringAzimut, "Ring „nur Azimut“ angefasst")
+                controller.simulationGriffZiehen(p1)
+                let r = st.entwurf?.last.richtung
+                check(abs((r?.hoehe ?? 99) - h0) < 0.5 && abs((r?.azimut ?? az0) - az0) > 10,
+                      "Ring: nur der Azimut (\(KevFormat.number(az0, digits: 1))° → "
+                      + "\(KevFormat.number(r?.azimut ?? 0, digits: 1))°, Höhe "
+                      + "\(KevFormat.number(r?.hoehe ?? 0, digits: 1))°)")
+                await pause(0.4)
+                await foto("16-griff-ring")
+                controller.simulationGriffEnde()
+            } else {
+                check(false, "Ring nicht im Bild")
+            }
+        }
+        if var e = st.entwurf {
+            e.last.richtung = SimRichtung(art: .frei, azimut: 0, hoehe: -86)
+            actions.setKraftEntwurf(e)
+        }
+        if let g = controller.simGriffPunkt(), let p0 = controller.viewport.bildpunkt(g) {
+            _ = controller.simulationGriffBeginnt(p0)
+            controller.simulationGriffZiehen(CGPoint(x: p0.x + 0.5, y: p0.y))
+            let r = st.entwurf?.last.richtung
+            check(st.eingerastet != nil && (r?.art == .normale || r?.art == .achse),
+                  "Eingerastet: \(st.eingerastet ?? "–") (\(r?.art.titel ?? "–"))")
+            await pause(0.4)
+            await foto("17-griff-eingerastet")
+            controller.simulationGriffEnde()
+        }
+
+        // i) Pfeile bildschirmfest: Länge in mm folgt dem Zoom
+        let punkt = st.entwurf?.last.ort.punkt
+        actions.setPfeileBildschirmfest(true)
+        let l1 = controller.simPfeilLaenge(bei: punkt)
+        controller.zoomStep(4)
+        _ = await wait(2) { abs(controller.simPfeilLaenge(bei: punkt) - l1) > 0.1 * l1 }
+        let l2 = controller.simPfeilLaenge(bei: punkt)
+        check(abs(l2 - l1) > 0.1 * l1, "Bildschirmfest: Pfeil \(KevFormat.number(Double(l1), digits: 1)) mm → "
+              + "\(KevFormat.number(Double(l2), digits: 1)) mm nach dem Zoomen (gleich groß auf dem Bildschirm)")
+        await pause(0.5)
+        await foto("18-bildschirmfest")
+        controller.zoomStep(-4)
+        actions.setPfeileBildschirmfest(false)
+        actions.setKraftEntwurf(nil)
+        actions.setSimulationWerkzeug(.keins)
     }
 }

@@ -87,6 +87,7 @@ struct SimulationErgebnisAnsicht: View {
                 }
                 .toggleStyle(.button)
                 .help("Verformung überhöht als Geist")
+                PfeileBildschirmfestSchalter(store: store, actions: actions)
             }
         }
         .controlSize(.small)
@@ -142,6 +143,13 @@ struct SimulationErgebnisAnsicht: View {
         return Table(zeilen) {
             TableColumn("Teil") { z in Text(simKurz(z.name)).help(z.name) }
                 .width(min: 120, ideal: 180)
+            TableColumn("Verfahren") { z in
+                Text(z.verfahrenText)
+                    .foregroundStyle(z.hinweis == nil ? Color.primary : Color.orange)
+                    .help(z.hinweis.map { "\($0): nur gleiche Verfahren werden verglichen; z. B. erst in beiden "
+                        + "Ständen die FEM rechnen" } ?? "verglichen mit \(z.verfahren ?? "–") in beiden Ständen")
+            }
+            .width(min: 50, ideal: 70)
             TableColumn(vorher ? "Vorher" : "„\(sz.name)“") { z in
                 HStack(spacing: 4) {
                     if let a = z.ampelA { AmpelPunkt(ampel: a) }
@@ -312,7 +320,9 @@ struct SimulationCommands: Commands {
                       || !(model.simulation.lastfall?.dynamisch ?? model.simulation.modellLastfall?.dynamisch ?? false))
             Menu("Grenze suchen") {
                 Button("Wie viel Last") { grenze("last") }
+                Button("Wie viel Last (mit FEM)") { grenze("last", verfahren: "fem") }
                 Button("Wie steil") { grenze("neigung") }
+                Button("Wie steil (mit FEM)") { grenze("neigung", verfahren: "fem") }
                 Button("Wie schnell") { grenze("geschwindigkeit") }
             }
             .disabled(!bereit || model.simulation.auswahl == nil || model.simulation.job?.laeuft == true)
@@ -321,9 +331,10 @@ struct SimulationCommands: Commands {
         }
     }
 
-    private func grenze(_ art: String) {
-        actions?.simulationRechnen(was: "grenze", lastfall: model.simulation.auswahl, teil: nil, fein: false,
-                                   grenze: art)
+    private func grenze(_ art: String, verfahren: String = "s0s1") {
+        actions?.simulationGrenzeSuchen(lastfall: model.simulation.auswahl, art: art, verfahren: verfahren)
+        window?.simulationZustand.grenzeArt = art
+        window?.simulationZustand.grenzeVerfahren = verfahren
         window?.simulationZustand.reiter = .rechnen
         window?.zeige(.simulation)
     }

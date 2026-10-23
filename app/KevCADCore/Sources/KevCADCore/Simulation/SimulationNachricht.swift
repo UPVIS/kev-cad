@@ -114,6 +114,62 @@ public struct SimRichtung: Equatable, Sendable {
     }
 }
 
+/// Gleitrichtung eines gleitenden Lagers (additiv, simulation2): in der Fläche (hält nur senkrecht zu ihr) oder nur
+/// entlang einer Richtung (Schiene: hält quer dazu in beide Richtungen).
+public struct SimGleiten: Equatable, Sendable {
+    public enum Art: String, Sendable { case flaeche, richtung }
+
+    public var art: Art
+    /// Richtung, entlang der das Lager frei ist (Welt, Einheitsvektor), nur bei `.richtung`.
+    public var richtung: SIMD3<Float>?
+    /// achse | kante | frei
+    public var quelle: String
+    /// Angeklickte Kante (Nummer wie im Viewer), wenn `quelle` "kante" ist.
+    public var kante: Int?
+
+    public init(art: Art = .flaeche, richtung: SIMD3<Float>? = nil, quelle: String = "frei", kante: Int? = nil) {
+        self.art = art
+        self.richtung = richtung.map { simd_length($0) > 1e-9 ? simd_normalize($0) : $0 }
+        self.quelle = quelle
+        self.kante = kante
+    }
+
+    /// In der Fläche (Standard).
+    public static let flaeche = SimGleiten()
+
+    /// Entlang einer Weltachse ("+x" … "-z").
+    public static func achse(_ t: String) -> SimGleiten {
+        SimGleiten(art: .richtung, richtung: SimKraft.achse(t), quelle: "achse")
+    }
+
+    init?(json j: JSONValue?) {
+        guard let j, j.objectValue != nil else { return nil }
+        art = Art(rawValue: j["art"]?.stringValue ?? "") ?? (j["richtung"] != nil ? .richtung : .flaeche)
+        richtung = j["richtung"]?.vector3
+        quelle = j["quelle"]?.stringValue ?? "frei"
+        kante = j["kante"]?.intValue
+    }
+
+    /// Für SIM_EDIT (`lager_setzen.lager.gleiten`); nil für „in der Fläche“.
+    public var json: JSONValue? {
+        guard art == .richtung, let r = richtung else { return nil }
+        var o: [String: JSONValue] = ["art": .string("richtung"), "richtung": SimJSON.vec(r), "quelle": .string(quelle)]
+        if let k = kante { o["kante"] = .number(Double(k)) }
+        return .object(o)
+    }
+
+    /// Kurztext: „in der Fläche“, „entlang +X“, „entlang Kante 7“, „entlang (0,71; 0,71; 0)“.
+    public var titel: String {
+        guard art == .richtung, let r = richtung else { return "in der Fläche" }
+        if quelle == "kante", let k = kante { return "entlang Kante \(k)" }
+        if let a = SimKraft.achsen.first(where: { simd_dot($0.1, r) > 0.9999 }) {
+            return "entlang " + a.0.replacingOccurrences(of: "-", with: "−").uppercased()
+        }
+        let f = { (x: Float) in String(format: "%.2f", Double(x)).replacingOccurrences(of: ".", with: ",") }
+        return "entlang (\(f(r.x)); \(f(r.y)); \(f(r.z)))"
+    }
+}
+
 /// Eine Last eines Lastfalls aus der App.
 public struct SimLast: Identifiable, Equatable, Sendable {
     public var id: String
@@ -123,7 +179,7 @@ public struct SimLast: Identifiable, Equatable, Sendable {
     public var ort: SimOrt
     public var richtung: SimRichtung
     public var betrag: Double
-    /// "N" oder "kg"
+    /// "N", "kg" oder "N/mm2" (Druck auf die ganze Fläche)
     public var einheit: String
     /// Kraft in N (Welt), wie gespeichert.
     public var kraft: SIMD3<Float>
@@ -134,10 +190,14 @@ public struct SimLast: Identifiable, Equatable, Sendable {
     public var punktWirksam: SIMD3<Float>?
     public var normaleWirksam: SIMD3<Float>?
     public var flaecheWirksam: Int?
+    /// Am Klickpunkt ("punkt", Standard) oder gleichmäßig auf der ganzen angeklickten Fläche ("flaeche"), additiv.
+    public var verteilung: String = "punkt"
+    /// Flächeninhalt (mm²), mit dem der Kernel eine Last auf der ganzen Fläche rechnet.
+    public var flaecheMm2Wirksam: Double?
 
     public init(id: String = "", teil: String, gegen: String? = nil, ort: SimOrt, richtung: SimRichtung,
                 betrag: Double, einheit: String = "N", kraft: SIMD3<Float> = .zero, zustand: SimZuordnung = .offen,
-                zustandText: String = "") {
+                zustandText: String = "", verteilung: String = "punkt") {
         self.id = id
         self.teil = teil
         self.gegen = gegen
@@ -148,6 +208,7 @@ public struct SimLast: Identifiable, Equatable, Sendable {
         self.kraft = kraft
         self.zustand = zustand
         self.zustandText = zustandText
+        self.verteilung = verteilung
     }
 
     init(json j: JSONValue) {
@@ -157,11 +218,12 @@ public struct SimLast: Identifiable, Equatable, Sendable {
             betrag: j["betrag"]?.doubleValue ?? 0, einheit: j["einheit"]?.stringValue ?? "N",
             kraft: j["kraft"]?.vector3 ?? .zero,
             zustand: SimZuordnung(rawValue: j["zustand"]?.stringValue ?? "") ?? .offen,
-            zustandText: j["zustand_text"]?.stringValue ?? "")
+            zustandText: j["zustand_text"]?.stringValue ?? "", verteilung: j["verteilung"]?.stringValue ?? "punkt")
         kraftWirksam = j["kraft_wirksam"]?.vector3
         punktWirksam = j["punkt_wirksam"]?.vector3
         normaleWirksam = j["normale_wirksam"]?.vector3
         flaecheWirksam = j["flaeche_wirksam"]?.intValue
+        flaecheMm2Wirksam = j["flaeche_mm2_wirksam"]?.doubleValue
     }
 
     /// Für SIM_EDIT (`last_setzen`): ohne Zustand und ohne Kraft (die rechnet der Kernel).
@@ -172,12 +234,17 @@ public struct SimLast: Identifiable, Equatable, Sendable {
         ]
         if !id.isEmpty { o["id"] = .string(id) }
         o["gegen"] = gegen.map(JSONValue.string) ?? .null
+        if verteilung == "flaeche" { o["verteilung"] = .string("flaeche") }
         return .object(o)
     }
 
     /// Angriffspunkt für den Viewer: wirksam, sonst gespeichert.
     public var punkt: SIMD3<Float>? { punktWirksam ?? ort.punkt }
-    public var betragN: Double { einheit == "kg" ? betrag * SimKraft.g : betrag }
+    /// Auf der ganzen Fläche (gleichmäßig oder als Druck).
+    public var aufFlaeche: Bool { verteilung == "flaeche" }
+    /// Flächeninhalt (mm²): wirksam, sonst aus der Signatur der angeklickten Fläche.
+    public var flaecheMm2: Double? { flaecheMm2Wirksam ?? ort.signatur?["a"]?.doubleValue }
+    public var betragN: Double { SimKraft.betragN(betrag, einheit: einheit, flaecheMm2: flaecheMm2) }
     public var paar: Bool { gegen != nil }
 }
 
@@ -196,8 +263,12 @@ public struct SimLager: Identifiable, Equatable, Sendable {
         public var hilfe: String {
             switch self {
             case .fest: return "eingespannt: hält in allen Richtungen und gegen Drehen"
-            case .gelenkig: return "hält in allen Richtungen, dreht frei (am Stab ein Gelenk)"
-            case .gleitend: return "hält nur senkrecht zur Fläche, gleitet längs"
+            case .gelenkig:
+                return "hält in allen Richtungen, dreht frei (am Stab ein Gelenk; in der FEM hält die Fläche im Mittel "
+                    + "und dreht frei, Bohrung: nur um ihre Achse)"
+            case .gleitend:
+                return "gleitet in der Fläche und hält nur senkrecht zu ihr, oder wie auf einer Schiene nur entlang "
+                    + "einer Richtung (Achse, Kante)"
             }
         }
     }
@@ -226,9 +297,16 @@ public struct SimLager: Identifiable, Equatable, Sendable {
     public var zustandText: String
     public var punktWirksam: SIMD3<Float>?
     public var normaleWirksam: SIMD3<Float>?
+    /// Lastfälle, in denen das Lager gilt (additiv): nil = alle, Namen = nur diese, leer = in keinem.
+    public var szenarien: [String]?
+    /// Gleitrichtung (nur gleitend, additiv): nil = in der Fläche.
+    public var gleiten: SimGleiten?
+    /// Gehaltene Richtungen (Einheitsvektoren, Welt), wie der Kernel rechnet (nur gleitend).
+    public var gehaltenWirksam: [SIMD3<Float>] = []
 
     public init(id: String = "", teil: String, art: Art = .fest, auf: Auf = .flaeche, ort: SimOrt = SimOrt(),
-                quelle: String = "app", zeile: Int? = nil, zustand: SimZuordnung = .offen, zustandText: String = "") {
+                quelle: String = "app", zeile: Int? = nil, zustand: SimZuordnung = .offen, zustandText: String = "",
+                szenarien: [String]? = nil, gleiten: SimGleiten? = nil) {
         self.id = id
         self.teil = teil
         self.art = art
@@ -238,6 +316,8 @@ public struct SimLager: Identifiable, Equatable, Sendable {
         self.zeile = zeile
         self.zustand = zustand
         self.zustandText = zustandText
+        self.szenarien = szenarien
+        self.gleiten = gleiten
     }
 
     init(json j: JSONValue) {
@@ -246,27 +326,47 @@ public struct SimLager: Identifiable, Equatable, Sendable {
         if j["ort"] == nil {
             ort = SimOrt(flaeche: j["flaeche"]?.intValue, punkt: j["punkt"]?.vector3, normale: j["normale"]?.vector3)
         }
+        let szen: [String]? = j["szenarien"]?.arrayValue.map { $0.compactMap(\.stringValue) }
         self.init(
             id: j["id"]?.stringValue ?? "", teil: j["teil"]?.stringValue ?? "",
             art: Art(rawValue: j["art"]?.stringValue ?? "") ?? .fest,
             auf: Auf(rawValue: j["auf"]?.stringValue ?? "") ?? (ort.flaeche != nil ? .flaeche : .punkt), ort: ort,
             quelle: j["quelle"]?.stringValue ?? "app", zeile: j["zeile"]?.intValue,
             zustand: SimZuordnung(rawValue: j["zustand"]?.stringValue ?? "") ?? .offen,
-            zustandText: j["zustand_text"]?.stringValue ?? "")
+            zustandText: j["zustand_text"]?.stringValue ?? "", szenarien: szen,
+            gleiten: SimGleiten(json: j["gleiten"]).flatMap { $0.art == .richtung ? $0 : nil })
         punktWirksam = j["punkt_wirksam"]?.vector3 ?? (j["ort"] == nil ? ort.punkt : nil)
         normaleWirksam = j["normale_wirksam"]?.vector3 ?? (j["ort"] == nil ? ort.normale : nil)
+        gehaltenWirksam = (j["gehalten_wirksam"]?.arrayValue ?? j["gehalten"]?.arrayValue ?? []).compactMap(\.vector3)
     }
 
     public var json: JSONValue {
         var o: [String: JSONValue] = [
             "teil": .string(teil), "art": .string(art.rawValue), "auf": .string(auf.rawValue), "ort": ort.json,
+            "szenarien": szenarien.map { .array($0.map(JSONValue.string)) } ?? .null,
         ]
         if !id.isEmpty { o["id"] = .string(id) }
+        if art == .gleitend, let g = gleiten?.json { o["gleiten"] = g }
         return .object(o)
     }
 
     public var punkt: SIMD3<Float>? { punktWirksam ?? ort.punkt }
     public var normale: SIMD3<Float>? { normaleWirksam ?? ort.normale }
+
+    /// Gilt das Lager im Lastfall `name`? (nil: ohne Lastfall nur Lager für alle)
+    public func giltFuer(_ name: String?) -> Bool {
+        guard let s = szenarien else { return true }
+        guard let name else { return false }
+        return s.contains(name)
+    }
+
+    /// „alle Lastfälle“, „nur „A““, „„A“, „B““, „in keinem Lastfall“.
+    public var giltText: String {
+        guard let s = szenarien else { return "alle Lastfälle" }
+        if s.isEmpty { return "in keinem Lastfall" }
+        let namen = s.map { "„\($0)“" }.joined(separator: ", ")
+        return s.count == 1 ? "nur \(namen)" : namen
+    }
 }
 
 /// Fahrt eines dynamischen Lastfalls (Ablauf, Stufe 2).
@@ -521,7 +621,9 @@ public struct SimGrenzwert: Equatable, Sendable, Identifiable {
     public var text: String
     public var massgebend: String?
     public var lastN: Double?
-    public var id: String { kriterium }
+    /// Verfahren, mit dem der Wert gesucht ist (additiv): S0, S1, FEM oder Ablauf.
+    public var verfahren: String?
+    public var id: String { kriterium + "\u{1F}" + (verfahren ?? "") }
 }
 
 /// Stand eines Auftrags (SIM_JOB).
@@ -539,6 +641,13 @@ public struct SimJob: Equatable, Sendable {
     public var werte: [SimGrenzwert]
     public var ergebnisText: String?
     public var ms: Double?
+    /// Grenze: gesucht mit "s0s1" oder "fem" (additiv), maßgebendes Verfahren, Probe der FEM bei der Grenze, Hinweis.
+    public var verfahren: String?
+    public var massgebendVerfahren: String?
+    public var probeFaktor: Double?
+    public var probeAusnutzung: Double?
+    public var probeTeil: String?
+    public var hinweis: String?
 
     public var laeuft: Bool { stand == "laeuft" }
 
@@ -556,9 +665,17 @@ public struct SimJob: Equatable, Sendable {
         werte = (j["ergebnis"]?["werte"]?.arrayValue ?? []).map { w in
             SimGrenzwert(kriterium: w["kriterium"]?.stringValue ?? "", grenze: w["grenze"]?.doubleValue ?? 0,
                          einheit: w["einheit"]?.stringValue ?? "", text: w["text"]?.stringValue ?? "",
-                         massgebend: w["massgebend"]?.stringValue, lastN: w["last_n"]?.doubleValue)
+                         massgebend: w["massgebend"]?.stringValue, lastN: w["last_n"]?.doubleValue,
+                         verfahren: w["verfahren"]?.stringValue)
         }
         ms = j["ms"]?.doubleValue
+        let e = j["ergebnis"]
+        verfahren = e?["verfahren"]?.stringValue
+        massgebendVerfahren = e?["massgebend_verfahren"]?.stringValue
+        probeFaktor = e?["probe"]?["faktor"]?.doubleValue
+        probeAusnutzung = e?["probe"]?["ausnutzung"]?.doubleValue
+        probeTeil = e?["probe"]?["teil"]?.stringValue
+        hinweis = e?["hinweis"]?.stringValue
     }
 
     public var titel: String {
@@ -677,16 +794,27 @@ public enum SimKraft {
         return r.umkehren ? -d : d
     }
 
-    public static func betragN(_ betrag: Double, einheit: String) -> Double {
-        einheit == "kg" ? betrag * g : betrag
+    /// Einheit des Drucks auf die ganze Fläche (N/mm², wie im Kernel "N/mm2").
+    public static let druck = "N/mm2"
+
+    /// Betrag in N; Druck (N/mm²) mal Flächeninhalt (mm²), ohne Fläche 0.
+    public static func betragN(_ betrag: Double, einheit: String, flaecheMm2: Double? = nil) -> Double {
+        switch einheit {
+        case "kg": return betrag * g
+        case druck: return betrag * max(flaecheMm2 ?? 0, 0)
+        default: return betrag
+        }
     }
 
-    /// Kraft in N (Welt).
-    public static func kraft(_ r: SimRichtung, betrag: Double, einheit: String, normale: SIMD3<Float>?)
-        -> SIMD3<Float>?
+    /// Kraft in N (Welt). Druck (N/mm²) nur senkrecht auf die Fläche (Richtung „Normale“) und mit Flächeninhalt.
+    public static func kraft(_ r: SimRichtung, betrag: Double, einheit: String, normale: SIMD3<Float>?,
+                             flaecheMm2: Double? = nil) -> SIMD3<Float>?
     {
         guard betrag > 0, let d = richtung(r, normale: normale) else { return nil }
-        return d * Float(betragN(betrag, einheit: einheit))
+        if einheit == druck {
+            guard r.art == .normale, let a = flaecheMm2, a > 0 else { return nil }
+        }
+        return d * Float(betragN(betrag, einheit: einheit, flaecheMm2: flaecheMm2))
     }
 }
 
@@ -791,18 +919,21 @@ public struct SimRunMessage: OutgoingRequest {
     public var teil: String?
     public var fein: Bool
     public var grenze: String?
+    /// Grenze suchen mit "s0s1" (Standard) oder "fem" (additiv); nil = wie bisher.
+    public var verfahren: String?
 
     public init(id: String, was: String, lastfall: String? = nil, teil: String? = nil, fein: Bool = false,
-                grenze: String? = nil) {
+                grenze: String? = nil, verfahren: String? = nil) {
         self.id = id
         self.was = was
         self.lastfall = lastfall
         self.teil = teil
         self.fein = fein
         self.grenze = grenze
+        self.verfahren = verfahren
     }
 
-    enum CodingKeys: String, CodingKey { case type, seq, id, was, lastfall, teil, fein, grenze }
+    enum CodingKeys: String, CodingKey { case type, seq, id, was, lastfall, teil, fein, grenze, verfahren }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -814,6 +945,7 @@ public struct SimRunMessage: OutgoingRequest {
         try c.encodeIfPresent(teil, forKey: .teil)
         try c.encode(fein, forKey: .fein)
         try c.encodeIfPresent(grenze, forKey: .grenze)
+        try c.encodeIfPresent(verfahren, forKey: .verfahren)
     }
 }
 

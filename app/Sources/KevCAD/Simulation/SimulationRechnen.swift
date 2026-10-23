@@ -51,9 +51,20 @@ struct RechnenAnsicht: View {
                         Text("Wie steil").tag("neigung")
                         Text("Wie schnell").tag("geschwindigkeit")
                     }
+                    Picker("Verfahren", selection: Binding(
+                        get: { zustand.grenzeArt == "geschwindigkeit" ? "s0s1" : zustand.grenzeVerfahren },
+                        set: { zustand.grenzeVerfahren = $0 })) {
+                        Text("S0 und S1 (schnell)").tag("s0s1")
+                        Text("mit FEM (genauer)").tag("fem")
+                    }
+                    .disabled(zustand.grenzeArt == "geschwindigkeit")
+                    .help(zustand.grenzeArt == "geschwindigkeit"
+                          ? "„Wie schnell“ sucht der Ablauf (S2) mit Rollouts"
+                          : "Mit FEM: dazu die Festkörper-FEM der Teile mit Last (Halbierung über den Faktor, "
+                            + "Zwischenspeicher, Probe bei der Grenze); dauert Sekunden bis Minuten")
                     knopf("Grenze suchen", "scope", "Wert, bei dem „\(name ?? "")“ gerade noch hält") {
-                        actions?.simulationRechnen(was: "grenze", lastfall: name, teil: nil, fein: false,
-                                                   grenze: zustand.grenzeArt)
+                        actions?.simulationGrenzeSuchen(lastfall: name, art: zustand.grenzeArt,
+                                                        verfahren: zustand.grenzeVerfahren)
                     }
                     .disabled(name == nil || (zustand.grenzeArt == "geschwindigkeit" && !dynamisch))
                 }
@@ -121,12 +132,19 @@ struct RechnenAnsicht: View {
     }
 
     private func grenzeAnsicht(_ g: SimJob) -> some View {
-        GroupBox(g.titel) {
+        GroupBox(g.titel + (g.verfahren == "fem" ? " (mit FEM)" : "")) {
             VStack(alignment: .leading, spacing: 4) {
                 if let t = g.ergebnisText { Text(t).font(.callout).fixedSize(horizontal: false, vertical: true) }
                 ForEach(g.werte) { w in
                     HStack {
                         Text(w.kriterium).font(.caption)
+                        if let v = w.verfahren {
+                            Text(v)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 4)
+                                .background(Capsule().fill(v == "FEM" ? Color.accentColor.opacity(0.18)
+                                                           : Color.secondary.opacity(0.15)))
+                        }
                         Spacer()
                         Text(w.einheit == "×" ? "\(KevFormat.number(w.grenze, digits: 2))-fach"
                              + (w.lastN.map { " (\(KevFormat.number($0, digits: 0)) N)" } ?? "")
@@ -135,8 +153,22 @@ struct RechnenAnsicht: View {
                     }
                     .help(w.text + (w.massgebend.map { " – maßgebend: \($0)" } ?? ""))
                 }
-                Text(g.werte.isEmpty ? "" : "Gesucht mit S0 und S1 (ohne FEM)").font(.caption2)
-                    .foregroundStyle(.tertiary)
+                if let m = g.massgebendVerfahren {
+                    Text("Maßgebend: \(m)" + (g.werte.first?.massgebend.map { ", \(simKurz($0))" } ?? ""))
+                        .font(.caption.weight(.medium))
+                }
+                if let f = g.probeFaktor, let a = g.probeAusnutzung {
+                    Text("Probe mit FEM beim \(KevFormat.number(f, digits: 2))-fachen: Ausnutzung "
+                         + KevFormat.number(a, digits: 2) + (g.probeTeil.map { " (\(simKurz($0)))" } ?? ""))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if !g.werte.isEmpty {
+                    Text(g.hinweis ?? (g.verfahren == "fem" ? "Gesucht mit S0, S1 und FEM"
+                                       : "Gesucht mit S0 und S1 (ohne FEM)"))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

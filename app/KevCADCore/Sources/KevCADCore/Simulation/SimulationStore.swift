@@ -47,9 +47,32 @@ public final class SimulationStore: ObservableObject {
         /// Kraft (N, Welt) für die Vorschau; nil, wenn sie nicht zu rechnen ist.
         public var kraft: SIMD3<Float>? {
             SimKraft.kraft(last.richtung, betrag: last.betrag, einheit: last.einheit,
-                           normale: last.ort.normale)
+                           normale: last.ort.normale, flaecheMm2: last.flaecheMm2)
         }
     }
+
+    /// Welcher Teil des Pfeil-Griffs gezogen wird (additiv, simulation2).
+    public enum GriffArt: String, Sendable {
+        /// nichts
+        case keins
+        /// Kugel am Pfeilende: frei im Raum drehen (Arcball)
+        case kugel
+        /// Breitenkreis durch den Griff: nur der Azimut ändert sich
+        case ringAzimut
+        /// Meridian durch den Griff: nur die Höhe ändert sich
+        case ringHoehe
+
+        public var titel: String {
+            switch self {
+            case .keins: return ""
+            case .kugel: return "frei drehen"
+            case .ringAzimut: return "nur Azimut"
+            case .ringHoehe: return "nur Höhe"
+            }
+        }
+    }
+
+    static let bildschirmfestSchluessel = "simulationPfeileBildschirmfest"
 
     @Published public var stand: SimStand?
     @Published public var job: SimJob?
@@ -86,11 +109,40 @@ public final class SimulationStore: ObservableObject {
     @Published public var aktiv = false
     /// Der Pfeil-Griff wird gerade gezogen.
     @Published public var griffAktiv = false
+    /// Gezogener Teil des Griffs (Kugel, Ring Azimut, Ring Höhe).
+    @Published public var griffArt: GriffArt = .keins
+    /// Beim Ziehen eingerastet auf eine Achse oder die Normale („−Z“, „Normale“), sonst nil.
+    @Published public var eingerastet: String?
+    /// Lastfälle für das nächste Lager: nil = alle, Namen = nur diese.
+    @Published public var lagerSzenarien: [String]?
+    /// Gleitrichtung für das nächste gleitende Lager: nil = in der Fläche.
+    @Published public var lagerGleiten: SimGleiten?
+    /// Der nächste Klick auf eine Kante setzt die Gleitrichtung (Werkzeug „Lager“).
+    @Published public var kanteWaehlen = false
+    /// Pfeile, Lagersymbole und Griff mit fester Größe auf dem Bildschirm statt in Millimetern (gemerkt).
+    @Published public var pfeileBildschirmfest: Bool = UserDefaults.standard.bool(
+        forKey: SimulationStore.bildschirmfestSchluessel) {
+        didSet { UserDefaults.standard.set(pfeileBildschirmfest, forKey: Self.bildschirmfestSchluessel) }
+    }
     /// Nach dem Speichern einer neuen Kraft: die neue Last wählen, sobald SIM sie bringt.
     public var neueLastErwartet: Bool?
     public var alteLasten: Set<String> = []
     /// Für dieses Druckteil sind die Topologie-Einstellungen aus simulation.json geladen.
     public var topologieGeladen: String?
+
+    /// Ziehen des Griffs (nur App-Kern): Art, Richtung beim Anfassen, freie Richtung jetzt (ohne Einrasten), letzter
+    /// Mauspunkt.
+    struct GriffZug {
+        var art: GriffArt
+        var d0: SIMD3<Float>
+        var d: SIMD3<Float>
+        var letzter: CGPoint
+    }
+
+    var griffZug: GriffZug?
+    /// Kamera beim letzten Bau der bildschirmfesten Pfeile (Abstand, Drehung, Drehpunkt, Größe), für „nur bei
+    /// merklicher Änderung“.
+    var bildschirmSchluessel: [Float] = []
 
     public static let vorherSchluessel = "\u{1F}vorher"
 
@@ -150,6 +202,12 @@ public protocol SimulationActions: AnyObject {
     func waehleTopologieTeil(_ teil: String?)
     /// Ort aus einem Klick (auch ohne Maus, Selbsttest): je Werkzeug Kraft- bzw. Lagerentwurf oder Schutzfläche.
     func simulationOrtGewaehlt(teil: String, flaeche: Int?, punkt: SIMD3<Float>?, normale: SIMD3<Float>?)
+    /// Grenze suchen (SIM_RUN `grenze` mit `verfahren`): "s0s1" schnell oder "fem" mit der Festkörper-FEM (additiv).
+    func simulationGrenzeSuchen(lastfall: String?, art: String, verfahren: String)
+    /// Pfeile, Lagersymbole und Griff bildschirmfest (wahlweise, gemerkt).
+    func setPfeileBildschirmfest(_ an: Bool)
+    /// Kante gewählt (Werkzeug „Lager“, „Kante wählen“): Gleitrichtung des gleitenden Lagers entlang dieser Kante.
+    func simulationKanteGewaehlt(teil: String, kante: Int)
 }
 
 // MARK: - Ergebnistabelle (rein, testbar)
@@ -234,6 +292,11 @@ public enum SimErgebnis {
         return out
     }
 
+    /// Ampel aus der Ausnutzung (Ziel / Sicherheit, T9): bis 1 grün, bis 2 gelb, darüber rot.
+    public static func ampel(ausnutzung a: Double) -> StatikAmpel {
+        a <= 1 ? .gruen : (a <= 2 ? .gelb : .rot)
+    }
+
     static func ausnutzung(_ a: StatikAmpel) -> Double {
         switch a {
         case .gruen: return 0.5
@@ -270,7 +333,8 @@ public enum SimErgebnis {
         }
     }
 
-    /// Vergleich zweier Stände: je Zeile (gleiche Kennung) die Sicherheit vorher und nachher.
+    /// Vergleich zweier Stände: je Zeile (gleiche Kennung) die Sicherheit vorher und nachher, nur mit demselben
+    /// Verfahren (FEM mit FEM, S0 mit S0, S1 mit S1, Ablauf mit Ablauf).
     public struct Vergleich: Identifiable, Equatable, Sendable {
         public var id: String
         public var name: String
@@ -278,22 +342,72 @@ public enum SimErgebnis {
         public var b: Double?
         public var ampelA: StatikAmpel?
         public var ampelB: StatikAmpel?
+        /// Verfahren, mit dem verglichen wird (additiv): S0, S1, FEM oder Ablauf.
+        public var verfahren: String? = nil
+        /// Gesetzt, wenn die beiden Stände kein gemeinsames Verfahren haben: „nicht vergleichbar (FEM ↔ S0)“; dann
+        /// gibt es keine Änderung in Prozent.
+        public var hinweis: String? = nil
 
-        /// Änderung der Sicherheit in Prozent (positiv = besser).
+        /// Änderung der Sicherheit in Prozent (positiv = besser); nil bei verschiedenen Verfahren.
         public var aenderung: Double? {
-            guard let a, let b, a > 0, a.isFinite, b.isFinite else { return nil }
+            guard hinweis == nil, let a, let b, a > 0, a.isFinite, b.isFinite else { return nil }
             return (b - a) / a * 100
         }
+
+        /// Spalte „Verfahren“: „FEM“ oder der Hinweis.
+        public var verfahrenText: String { hinweis ?? verfahren ?? "–" }
+    }
+
+    /// Werte einer Zeile je Verfahren: das gezeigte (Nachweis der Zeile) und weitere, die im Stand stecken (bei
+    /// FEM-Teilen der Kragträger-Wert aus S0).
+    struct Werte {
+        var primaer: SimErgebnisZeile.Nachweis
+        var je: [SimErgebnisZeile.Nachweis: (Double?, StatikAmpel?)]
+    }
+
+    static func werteJeVerfahren(_ sz: StatikSzenario) -> [String: Werte] {
+        var out: [String: Werte] = [:]
+        let fem = Dictionary(
+            (sz.festkoerper?.teile ?? []).filter { $0.stand == "done" }.map { ($0.teil, $0) },
+            uniquingKeysWith: { a, _ in a })
+        for z in zeilen(sz) {
+            var w = Werte(primaer: z.nachweis, je: [z.nachweis: (z.sicherheit, z.ampel)])
+            if z.nachweis == .fem, let t = z.teil, let k = fem[t]?.kragtraeger {
+                let ziel = fem[t]?.ziel ?? z.ziel
+                w.je[.s0] = (k, ziel.map { k > 0 ? ampel(ausnutzung: $0 / k) : .rot })
+            }
+            out[z.id] = w
+        }
+        return out
     }
 
     public static func vergleich(_ a: StatikSzenario, _ b: StatikSzenario) -> [Vergleich] {
         let za = Dictionary(zeilen(a).map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })
         let zb = Dictionary(zeilen(b).map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })
+        let wa = werteJeVerfahren(a), wb = werteJeVerfahren(b)
         var ids = zeilen(a).map(\.id)
         for i in zeilen(b).map(\.id) where za[i] == nil { ids.append(i) }
+        let reihe: [SimErgebnisZeile.Nachweis] = [.fem, .s1, .s0, .ablauf]
         return ids.map { i in
-            Vergleich(id: i, name: za[i]?.name ?? zb[i]?.name ?? i, a: za[i]?.sicherheit, b: zb[i]?.sicherheit,
-                      ampelA: za[i]?.ampel, ampelB: zb[i]?.ampel)
+            var v = Vergleich(id: i, name: za[i]?.name ?? zb[i]?.name ?? i, a: za[i]?.sicherheit,
+                              b: zb[i]?.sicherheit, ampelA: za[i]?.ampel, ampelB: zb[i]?.ampel)
+            guard let x = wa[i], let y = wb[i] else {
+                v.verfahren = (za[i] ?? zb[i])?.nachweis.rawValue
+                return v
+            }
+            // dasselbe Verfahren wie gezeigt, sonst ein gemeinsames (FEM vor S1 vor S0), sonst nicht vergleichbar
+            let gemeinsam: SimErgebnisZeile.Nachweis? =
+                x.primaer == y.primaer ? x.primaer : reihe.first { x.je[$0] != nil && y.je[$0] != nil }
+            if let g = gemeinsam, let wA = x.je[g], let wB = y.je[g] {
+                v.verfahren = g.rawValue
+                v.a = wA.0
+                v.b = wB.0
+                v.ampelA = wA.1 ?? v.ampelA
+                v.ampelB = wB.1 ?? v.ampelB
+            } else {
+                v.hinweis = "nicht vergleichbar (\(x.primaer.rawValue) ↔ \(y.primaer.rawValue))"
+            }
+            return v
         }
     }
 }

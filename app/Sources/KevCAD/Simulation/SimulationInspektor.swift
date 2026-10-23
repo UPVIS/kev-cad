@@ -135,7 +135,8 @@ struct LastfallEditor: View {
                         Picker("Untergrund", selection: binding(\.untergrund, l)) {
                             ForEach(SimulationZustand.untergruende, id: \.titel) { u in Text(u.titel).tag(u.id) }
                         }
-                        .help("Boden zum Rutschen (Reibwert aus dem Katalog); gilt für S0, der Ablauf nimmt den des Modells")
+                        .help("Boden zum Rutschen (Reibwert aus dem Katalog); gilt für Rutschen in S0 und für den "
+                              + "Ablauf (Reibung am Boden in S2)")
                     }
                 }
                 if (e ?? l).dynamisch {

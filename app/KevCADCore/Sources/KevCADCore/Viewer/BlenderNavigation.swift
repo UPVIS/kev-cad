@@ -253,6 +253,34 @@ extension ViewportCoordinator {
         return o + d * t
     }
 
+    /// Blickstrahl durch einen Punkt der Eingabeebene (Ursprung unten links): Ursprung und Richtung (Welt, normiert);
+    /// Simulation: Ringe des Pfeil-Griffs ziehen.
+    public func blickstrahl(_ punkt: CGPoint) -> (ursprung: SIMD3<Float>, richtung: SIMD3<Float>)? {
+        let c = controller.cameraState
+        let size = viewSize
+        guard size.width > 0, size.height > 0 else { return nil }
+        let proj = c.projectionMatrix(aspectRatio: Float(size.width / size.height), near: 0.01, far: 1e7)
+        let inv = simd_inverse(proj * c.viewMatrix)
+        let ndc = SIMD2<Float>(Float(punkt.x / size.width) * 2 - 1, Float(punkt.y / size.height) * 2 - 1)
+        func unproject(_ z: Float) -> SIMD3<Float> {
+            let p = inv * SIMD4<Float>(ndc.x, ndc.y, z, 1)
+            return SIMD3(p.x, p.y, p.z) / p.w
+        }
+        let o = unproject(0.1)
+        let d = unproject(0.9) - o
+        guard simd_length(d) > 1e-12, o.x.isFinite, o.y.isFinite, o.z.isFinite else { return nil }
+        return (o, simd_normalize(d))
+    }
+
+    /// Millimeter je Bildschirmpunkt am Weltpunkt `p` (perspektivisch je Tiefe verschieden); Simulation: Pfeile
+    /// bildschirmfest.
+    public func weltProPunkt(bei p: SIMD3<Float>) -> Float? {
+        let r = controller.cameraState.rightVector
+        guard let a = bildpunkt(p), let b = bildpunkt(p + simd_normalize(r)) else { return nil }
+        let d = hypot(b.x - a.x, b.y - a.y)
+        return d > 1e-9 ? Float(1 / d) : nil
+    }
+
     /// Weltpunkt unter der Maus auf dem getroffenen Dreieck (für „Ansicht auf Mauspunkt zentrieren“).
     func surfacePoint(of pick: PickResult, at point: CGPoint, in view: NSView) -> SIMD3<Float>? {
         guard pick.kind == .face, let body = bodies.first(where: { $0.id == pick.bodyID }) else { return nil }
@@ -368,6 +396,7 @@ final class NavigationInputView: NSView {
         let p = point(event)
         last = p
         let flags = event.modifierFlags
+        coordinator?.griffModifiers = flags
         if !flags.contains(.option), let griff = coordinator?.onGriffBeginnt, griff(p) {
             mode = .griff
             return
@@ -391,6 +420,7 @@ final class NavigationInputView: NSView {
         case .boxSelect(let start, _):
             drawBox(from: start, to: p)
         case .griff:
+            coordinator?.griffModifiers = event.modifierFlags  // Simulation: ⌘ schaltet das Einrasten ab
             coordinator?.onGriffZiehen?(p)
         default:
             apply(p.x - last.x, p.y - last.y)

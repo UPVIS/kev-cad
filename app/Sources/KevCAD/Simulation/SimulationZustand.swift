@@ -43,6 +43,8 @@ final class SimulationZustand: ObservableObject {
     @Published var neuerName = ""
     @Published var ergebnisOffen = true
     @Published var grenzeArt = "last"
+    /// Verfahren der Grenzsuche: "s0s1" (schnell) oder "fem" (dazu die Festkörper-FEM).
+    @Published var grenzeVerfahren = "s0s1"
     @Published var festigkeitTeil: String?
     @Published var fein = false
     @Published var sortierung = [KeyPathComparator(\SimErgebnisZeile.ampelSort, order: .reverse)]
@@ -147,13 +149,17 @@ struct SimulationWerkzeugLeiste: View {
     var actions: SimulationActions?
 
     var body: some View {
-        if store.aktiv, store.werkzeug != .keins {
+        if store.aktiv, store.werkzeug != .keins || store.griffAktiv {
             HStack(spacing: 8) {
                 Image(systemName: symbol).foregroundStyle(.orange)
-                Text(store.werkzeug.hinweis)
+                Text(store.kanteWaehlen ? "Gleitrichtung: eine Kante des Teils anklicken" : store.werkzeug.hinweis)
                     .lineLimit(1)
                 if store.griffAktiv {
-                    Text("Richtung ziehen …").foregroundStyle(.secondary)
+                    Text(store.griffArt.titel + " …").foregroundStyle(.secondary)
+                    if let e = store.eingerastet {
+                        Text("eingerastet: \(e)").foregroundStyle(.green)
+                    }
+                    Text("⌘ beim Ziehen: ohne Einrasten").font(.caption).foregroundStyle(.secondary)
                 }
                 Button("Fertig") { actions?.setSimulationWerkzeug(.keins) }
                     .buttonStyle(.borderless)

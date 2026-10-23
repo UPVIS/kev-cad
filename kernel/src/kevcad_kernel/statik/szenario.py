@@ -41,6 +41,9 @@ class Last:
     # Festkörper bekommen jede Seite auf ihre Teile.
     gegen: list[str] = field(default_factory=list)
     id: str | None = None  # Last aus der App (Simulation): Kennung in simulation.json
+    # Last gleichmäßig auf der ganzen Fläche (Simulation): {"teil", "index", "flaeche_mm2", "druck" (N/mm², optional)};
+    # ``punkt`` ist dann der Schwerpunkt der Fläche, die FEM verteilt sie über die ganze Fläche statt um den Punkt
+    flaeche: dict[str, Any] | None = None
 
     @property
     def paar(self) -> bool:
@@ -55,6 +58,8 @@ class Last:
             out["paar"] = True
         if self.id:
             out["id"] = self.id
+        if self.flaeche:
+            out["flaeche"] = dict(self.flaeche)
         return out
 
 
@@ -117,7 +122,9 @@ class Szenario:
         """Einzellasten mit Stoßfaktor."""
         if abs(self.stoss_faktor - 1.0) < 1e-12:
             return list(self.lasten)
-        return [Last(l.teile, l.kraft * self.stoss_faktor, l.punkt, l.kg, l.zeile, l.text, list(l.gegen), l.id)
+        return [Last(l.teile, l.kraft * self.stoss_faktor, l.punkt, l.kg, l.zeile, l.text, list(l.gegen), l.id,
+                     None if not l.flaeche else {**l.flaeche, **({"druck": l.flaeche["druck"] * self.stoss_faktor}
+                                                                 if l.flaeche.get("druck") else {})})
                 for l in self.lasten]
 
     def kurz(self) -> dict[str, Any]:
@@ -268,8 +275,10 @@ def last_aus(l: dict[str, Any]) -> Last:
     if set(gegen) & {str(t) for t in teile}:
         raise ValueError("Kraftpaar: gegen= muss ein anderes Teil sein als das belastete (Kraft und Gegenkraft auf "
                          "demselben Teil heben sich auf)")
+    fl = l.get("flaeche") if isinstance(l.get("flaeche"), dict) else None
     return Last([str(t) for t in teile], kraft, _vec(l.get("punkt")), float(kg) if kg is not None else None,
-                l.get("zeile"), str(l.get("text") or ""), gegen, str(l["id"]) if l.get("id") else None)
+                l.get("zeile"), str(l.get("text") or ""), gegen, str(l["id"]) if l.get("id") else None,
+                dict(fl) if fl else None)
 
 
 def aus_modell(ereignisse: list[dict[str, Any]]) -> tuple[list[Szenario], dict[str, Any]]:
@@ -312,12 +321,13 @@ def aus_modell(ereignisse: list[dict[str, Any]]) -> tuple[list[Szenario], dict[s
                         s.dynamisch = True
             elif was == "untergrund":
                 einstellungen["untergrund"] = e.get("material")
-            elif was == "lager":  # st.lager (PLAN-SIMULATION.md): gilt in allen Szenarien
+            elif was == "lager":  # st.lager (PLAN-SIMULATION.md): alle Szenarien oder die in ``szenarien``
                 for t in e.get("teile") or []:
                     n = len(einstellungen.setdefault("lager", [])) + 1
                     einstellungen["lager"].append({"id": f"M{n}", "teil": str(t), "art": e.get("art") or "fest",
                                                    "auf": e.get("auf"), "ort": dict(e.get("ort") or {}),
-                                                   "zeile": e.get("zeile")})
+                                                   "zeile": e.get("zeile"), "szenarien": e.get("szenarien"),
+                                                   "gleiten": e.get("gleiten")})
             elif was == "ziel":
                 einstellungen["ziel"] = {k: e.get(k) for k in ("sicherheit", "durchbiegung") if e.get(k) is not None}
         except ValueError as exc:

@@ -1,3 +1,4 @@
+import Combine
 import KevCADCore
 import SwiftUI
 
@@ -17,6 +18,9 @@ struct ProjectWindow: View {
     /// Breite von Viewport und Stückliste (links der Versionsleiste), für `platzFuerLeiste`.
     @State private var modellBreite: CGFloat = 0
     @State private var modellMitLeiste = false
+    /// Gewählter Lastfall im Bereich Simulation, für den Untertitel: das Fenster beobachtet den SimulationStore nicht
+    /// (sonst zeichnete jeder Griff-Zug das ganze Fenster neu), nur dessen Auswahl.
+    @State private var simulationAuswahl: String?
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -57,6 +61,8 @@ struct ProjectWindow: View {
             if let config = session.demo?.config, config.usesGestell { state.schnell.oeffne(.stueckliste) }
         }
         .onChange(of: model.bom?.run) { _, _ in autoShowBOM() }
+        // Untertitel „Simulation · <Lastfall>“ folgt der Auswahl sofort
+        .onReceive(model.simulation.$auswahl.removeDuplicates()) { simulationAuswahl = $0 }
         // Phase 6, P6-A2: Durchspielen und „Im 3D zeigen“ aus dem Bauplan holen den 3D-Bereich nach vorn
         .onReceive(model.bauplan.$zeige3D.dropFirst()) { _ in
             withAnimation(.snappy(duration: 0.2)) { state.bereich = .modell }
@@ -106,7 +112,7 @@ struct ProjectWindow: View {
     /// Untertitel: im 3D-Bereich der Projektordner, im Bereich Dokumente das gezeigte Blatt.
     private var untertitel: String {
         if state.bereich == .material { return "Material" }
-        if state.bereich == .simulation { return "Simulation" + (model.simulation.auswahl.map { " · \($0)" } ?? "") }
+        if state.bereich == .simulation { return "Simulation" + (simulationAuswahl.map { " · \($0)" } ?? "") }
         if state.bereich == .dokumente {
             if let id = dokumente.blattID, let e = model.dokumente.uebersicht?.blatt(id) {
                 return "Dokumente · \(e.titel)"

@@ -13,7 +13,8 @@ Richtung (``richtung``):
   XY-Ebene ab +X gegen den Uhrzeigersinn, Höhe über der XY-Ebene (−90 = senkrecht nach unten).
 
 Betrag: ``einheit`` ``"N"`` (Kraft) oder ``"kg"`` (Masse, F = m · 9,81 m/s², Richtung wie angegeben; ohne Richtung
-nach unten).
+nach unten), auf der ganzen Fläche auch ``"N/mm2"`` (Druck p, senkrecht auf die Fläche: F = p · A, A aus der Signatur
+der Fläche; auf gekrümmten Flächen rechnet ``zuordnung`` die Resultierende aus dem Netz der Fläche).
 """
 
 from __future__ import annotations
@@ -27,7 +28,8 @@ G = 9.81
 ACHSEN = {"+x": (1.0, 0.0, 0.0), "-x": (-1.0, 0.0, 0.0), "+y": (0.0, 1.0, 0.0), "-y": (0.0, -1.0, 0.0),
           "+z": (0.0, 0.0, 1.0), "-z": (0.0, 0.0, -1.0)}
 RICHTUNGSARTEN = ("normale", "achse", "frei")
-EINHEITEN = ("N", "kg")
+DRUCK = "N/mm2"  # Druck auf die ganze Fläche (N/mm² = MPa)
+EINHEITEN = ("N", "kg", DRUCK)
 
 
 class KraftFehler(ValueError):
@@ -99,24 +101,39 @@ def richtung_aus(richtung: dict[str, Any] | None, normale: Any = None, einheit_t
     return -d if r.get("umkehren") else d
 
 
-def betrag_n(betrag: Any, einheit_text: str = "N") -> float:
+def einheit_text(e: Any) -> str:
+    """Einheit vereinheitlichen: "N", "kg", "N/mm2" (auch "N/mm²", "MPa")."""
+    t = str(e or "N").strip().replace("²", "2")
+    return DRUCK if t.lower() in ("n/mm2", "mpa") else t
+
+
+def betrag_n(betrag: Any, einheit_text: str = "N", flaeche_mm2: Any = None) -> float:
+    """Betrag in N; bei Druck (N/mm²) mal der Fläche (mm²)."""
     if einheit_text not in EINHEITEN:
-        raise KraftFehler(f"Einheit {einheit_text!r} unbekannt (N oder kg)")
+        raise KraftFehler(f"Einheit {einheit_text!r} unbekannt (N, kg oder N/mm2)")
     try:
         b = float(betrag)
     except (TypeError, ValueError) as exc:
         raise KraftFehler(f"Betrag {betrag!r} ist keine Zahl") from exc
     if not math.isfinite(b) or b <= 0:
         raise KraftFehler("Betrag muss größer als 0 sein")
+    if einheit_text == DRUCK:
+        try:
+            a = float(flaeche_mm2)
+        except (TypeError, ValueError) as exc:
+            raise KraftFehler("Druck (N/mm²) braucht eine angeklickte Fläche mit Flächeninhalt") from exc
+        if not math.isfinite(a) or a <= 0:
+            raise KraftFehler("Druck (N/mm²) braucht eine angeklickte Fläche mit Flächeninhalt")
+        b = b * a
     if b > 1e7:
-        raise KraftFehler("Betrag über 10 MN: bitte in N oder kg prüfen")
+        raise KraftFehler("Betrag über 10 MN: bitte in N, kg oder N/mm² prüfen")
     return b * G if einheit_text == "kg" else b
 
 
-def kraft_aus(richtung: dict[str, Any] | None, betrag: Any, einheit_text: str = "N", normale: Any = None
-              ) -> np.ndarray:
-    """Kraftvektor in N (Welt)."""
-    return richtung_aus(richtung, normale, einheit_text) * betrag_n(betrag, einheit_text)
+def kraft_aus(richtung: dict[str, Any] | None, betrag: Any, einheit_text: str = "N", normale: Any = None,
+              flaeche_mm2: Any = None) -> np.ndarray:
+    """Kraftvektor in N (Welt). ``flaeche_mm2``: Flächeninhalt bei Druck (N/mm²)."""
+    return richtung_aus(richtung, normale, einheit_text) * betrag_n(betrag, einheit_text, flaeche_mm2)
 
 
 def kurz(kraft: Any) -> list[float]:

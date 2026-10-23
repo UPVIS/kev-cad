@@ -169,7 +169,7 @@ class SimulationRuntime:
                 lasten.append({**x, "zustand": z.get("zustand") or ("offen" if voll is None else "ok"),
                                "zustand_text": z.get("text") or "", "kraft_wirksam": z.get("kraft"),
                                "punkt_wirksam": z.get("punkt"), "normale_wirksam": z.get("normale"),
-                               "flaeche_wirksam": z.get("flaeche")})
+                               "flaeche_wirksam": z.get("flaeche"), "flaeche_mm2_wirksam": z.get("flaeche_mm2")})
             lastfaelle.append({**l, "lasten": lasten, "ampel": e.get("ampel"), "text": e.get("text"),
                                "gerechnet": bool(e)})
         modell = []
@@ -191,7 +191,8 @@ class SimulationRuntime:
             z = za.get(str(x.get("id"))) or {}
             lager.append({**x, "zustand": z.get("zustand") or ("offen" if voll is None else "ok"),
                           "zustand_text": z.get("text") or "", "punkt_wirksam": z.get("punkt"),
-                          "normale_wirksam": z.get("normale"), "flaeche_wirksam": z.get("flaeche")})
+                          "normale_wirksam": z.get("normale"), "flaeche_wirksam": z.get("flaeche"),
+                          "gehalten_wirksam": z.get("gehalten")})
         modell_lager = [{**L, "zustand": "ok", "zustand_text": ""} for L in sim.get("lager") or []
                         if L.get("quelle") == "modell"]
         for lid, z in za.items():

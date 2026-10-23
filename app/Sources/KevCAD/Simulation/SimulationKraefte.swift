@@ -22,6 +22,7 @@ struct KraefteAnsicht: View {
                     .toggleStyle(.button)
                     .help("Im Viewer eine Fläche oder einen Punkt anklicken: dort entsteht ein Kraftpfeil (Esc beendet)")
                     Spacer()
+                    PfeileBildschirmfestSchalter(store: store, actions: actions)
                 }
                 if let e = store.entwurf {
                     KraftEditor(model: model, store: store, entwurf: e)
@@ -96,9 +97,175 @@ struct KraefteAnsicht: View {
         case .achse: r = "entlang \(l.richtung.umkehren ? "−" : "")\(l.richtung.achse)"
         case .frei: r = "frei \(KevFormat.number(l.richtung.azimut, digits: 0))° / \(KevFormat.number(l.richtung.hoehe, digits: 0))°"
         }
-        let b = l.einheit == "kg" ? "\(KevFormat.number(l.betrag, digits: 1)) kg" : "\(KevFormat.number(l.betrag, digits: 0)) N"
+        let b: String
+        switch l.einheit {
+        case "kg": b = "\(KevFormat.number(l.betrag, digits: 1)) kg"
+        case SimKraft.druck: b = "\(KevFormat.number(l.betrag, digits: 3)) N/mm²"
+        default: b = "\(KevFormat.number(l.betrag, digits: 0)) N"
+        }
         let f = l.kraftWirksam.map { " = " + simKraftText($0) } ?? ""
-        return "\(b) \(r)\(f)"
+        return "\(b) \(r)\(l.aufFlaeche ? " auf der ganzen Fläche" : "")\(f)"
+    }
+}
+
+/// Schalter „Pfeile bildschirmfest“: Pfeile, Lagersymbole und Griff behalten beim Zoomen ihre Größe auf dem Bildschirm.
+struct PfeileBildschirmfestSchalter: View {
+    @ObservedObject var store: SimulationStore
+    var actions: SimulationActions?
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { store.pfeileBildschirmfest }, set: { actions?.setPfeileBildschirmfest($0) })) {
+            Image(systemName: "arrow.up.left.and.down.right.magnifyingglass")
+        }
+        .toggleStyle(.button)
+        .help("Pfeile bildschirmfest: Kräfte, Lager und Griff behalten beim Heranzoomen ihre Größe auf dem Bildschirm "
+              + "(sonst in Millimetern wie das Modell)")
+    }
+}
+
+/// „Gilt für“: alle Lastfälle, nur der gewählte oder eine Auswahl mit Häkchen (Lager je Lastfall).
+struct LastfallWahl: View {
+    var titel: String
+    @Binding var szenarien: [String]?
+    var namen: [String]
+    var gewaehlt: String?
+    @State private var auswahlOffen = false
+
+    private enum Modus: Hashable { case alle, gewaehlt, auswahl }
+
+    private var modus: Modus {
+        if auswahlOffen { return .auswahl }
+        guard let s = szenarien else { return .alle }
+        if let g = gewaehlt, s == [g] { return .gewaehlt }
+        return .auswahl
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(titel, selection: Binding(get: { modus }, set: { m in
+                switch m {
+                case .alle:
+                    auswahlOffen = false
+                    szenarien = nil
+                case .gewaehlt:
+                    auswahlOffen = false
+                    szenarien = gewaehlt.map { [$0] } ?? []
+                case .auswahl:
+                    auswahlOffen = true
+                    if szenarien == nil { szenarien = gewaehlt.map { [$0] } ?? [] }
+                }
+            })) {
+                Text("Alle Lastfälle").tag(Modus.alle)
+                Text(gewaehlt.map { "Nur „\($0)“" } ?? "Nur der gewählte").tag(Modus.gewaehlt)
+                    .disabled(gewaehlt == nil)
+                Text("Auswahl …").tag(Modus.auswahl)
+            }
+            if modus == .auswahl {
+                ForEach(namen, id: \.self) { n in
+                    Toggle(n, isOn: Binding(get: { szenarien?.contains(n) ?? true }, set: { an in
+                        var s = szenarien ?? []
+                        if an { if !s.contains(n) { s.append(n) } } else { s.removeAll { $0 == n } }
+                        szenarien = s
+                    }))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                }
+                if szenarien?.isEmpty == true {
+                    Text("In keinem Lastfall: das Lager zählt nicht").font(.caption).foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+}
+
+/// Gleitrichtung eines gleitenden Lagers: in der Fläche, entlang X, Y, Z, entlang einer Kante (anklicken) oder frei.
+struct GleitenWahl: View {
+    @Binding var gleiten: SimGleiten?
+    var kanteWaehlen: Bool
+    var kanteAn: (Bool) -> Void
+    @State private var freiAzimut = 0.0
+    @State private var freiHoehe = 0.0
+
+    private enum Wahl: Hashable { case flaeche, x, y, z, kante, frei }
+
+    private var wahl: Wahl {
+        if kanteWaehlen { return .kante }
+        guard let g = gleiten, g.art == .richtung, let r = g.richtung else { return .flaeche }
+        if g.quelle == "kante" { return .kante }
+        if g.quelle == "achse" {
+            if abs(r.x) > 0.999 { return .x }
+            if abs(r.y) > 0.999 { return .y }
+            if abs(r.z) > 0.999 { return .z }
+        }
+        return .frei
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Gleitet", selection: Binding(get: { wahl }, set: { w in
+                if w != .kante, kanteWaehlen { kanteAn(false) }
+                switch w {
+                case .flaeche: gleiten = nil
+                case .x: gleiten = .achse("+x")
+                case .y: gleiten = .achse("+y")
+                case .z: gleiten = .achse("+z")
+                case .kante: kanteAn(true)
+                case .frei:
+                    let r = gleiten?.richtung ?? SimKraft.ausWinkeln(azimut: freiAzimut, hoehe: freiHoehe)
+                    let wk = SimKraft.winkel(r)
+                    freiAzimut = wk.azimut
+                    freiHoehe = wk.hoehe
+                    gleiten = SimGleiten(art: .richtung, richtung: r, quelle: "frei")
+                }
+            })) {
+                Text("in der Fläche").tag(Wahl.flaeche)
+                Text("entlang X").tag(Wahl.x)
+                Text("entlang Y").tag(Wahl.y)
+                Text("entlang Z").tag(Wahl.z)
+                Text("entlang einer Kante").tag(Wahl.kante)
+                Text("frei (Winkel)").tag(Wahl.frei)
+            }
+            .help("In der Fläche: hält nur senkrecht zur Fläche (genau entlang ihrer Normale). Entlang einer Richtung: "
+                  + "wie auf einer Schiene, hält quer dazu in beide Richtungen")
+            switch wahl {
+            case .kante:
+                HStack {
+                    Text(kanteWaehlen ? "Kante im Viewer anklicken …" : (gleiten?.titel ?? "noch keine Kante"))
+                        .font(.caption).foregroundStyle(kanteWaehlen ? .orange : .secondary)
+                    Spacer()
+                    Button(kanteWaehlen ? "Abbrechen" : "Kante anklicken") { kanteAn(!kanteWaehlen) }
+                        .controlSize(.small)
+                }
+            case .frei:
+                HStack {
+                    Text("Azimut")
+                    TextField("", value: Binding(get: { freiAzimut }, set: { v in
+                        freiAzimut = v
+                        gleiten = SimGleiten(art: .richtung, richtung: SimKraft.ausWinkeln(azimut: v, hoehe: freiHoehe),
+                                             quelle: "frei")
+                    }), format: .number.precision(.fractionLength(0...1)))
+                        .frame(width: 50).multilineTextAlignment(.trailing)
+                    Text("°")
+                    Text("Höhe")
+                    TextField("", value: Binding(get: { freiHoehe }, set: { v in
+                        freiHoehe = v
+                        gleiten = SimGleiten(art: .richtung, richtung: SimKraft.ausWinkeln(azimut: freiAzimut, hoehe: v),
+                                             quelle: "frei")
+                    }), format: .number.precision(.fractionLength(0...1)))
+                        .frame(width: 50).multilineTextAlignment(.trailing)
+                    Text("°")
+                }
+                .onAppear {
+                    if let r = gleiten?.richtung {
+                        let w = SimKraft.winkel(r)
+                        freiAzimut = w.azimut
+                        freiHoehe = w.hoehe
+                    }
+                }
+            default:
+                EmptyView()
+            }
+        }
     }
 }
 
@@ -118,9 +285,22 @@ struct KraftEditor: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Picker("Verteilung", selection: Binding(get: { l.verteilung }, set: { v in
+                    var e = entwurf
+                    e.last.verteilung = v
+                    if v != "flaeche", e.last.einheit == SimKraft.druck { e.last.einheit = "N" }
+                    actions?.setKraftEntwurf(e)
+                })) {
+                    Text("Am Punkt").tag("punkt")
+                    Text("Ganze Fläche").tag("flaeche").disabled(l.ort.flaeche == nil)
+                }
+                .pickerStyle(.segmented)
+                .help("Am Punkt: greift am Klickpunkt an (in der FEM im Umkreis verteilt). Ganze Fläche: gleichmäßig "
+                      + "über die angeklickte Fläche, auch als Druck in N/mm²")
                 Picker("Richtung", selection: bind(\.richtung.art)) {
                     ForEach(SimRichtung.Art.allCases, id: \.self) { a in
-                        Text(a.titel).tag(a).disabled(a == .normale && l.ort.normale == nil)
+                        Text(a.titel).tag(a).disabled(a == .normale && l.ort.normale == nil
+                                                      || a != .normale && l.einheit == SimKraft.druck)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -144,20 +324,37 @@ struct KraftEditor: View {
                             .frame(width: 56).multilineTextAlignment(.trailing)
                         Text("°")
                     }
-                    Text("Oder den weißen Griff am Pfeilende im Viewer ziehen").font(.caption)
-                        .foregroundStyle(.secondary)
+                }
+                if l.einheit != SimKraft.druck {
+                    Text("Im Viewer: weiße Kugel am Pfeilende frei drehen, blauer Ring nur Azimut, grüner Ring nur "
+                         + "Höhe; rastet auf Achsen und die Normale ein (⌘: aus)")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Toggle("Umkehren", isOn: bind(\.richtung.umkehren))
                 HStack {
                     Text("Betrag")
-                    TextField("", value: bind(\.betrag), format: .number.precision(.fractionLength(0...2)))
+                    TextField("", value: bind(\.betrag), format: .number.precision(.fractionLength(0...3)))
                         .frame(width: 72).multilineTextAlignment(.trailing)
-                    Picker("", selection: bind(\.einheit)) {
+                    Picker("", selection: Binding(get: { l.einheit }, set: { v in
+                        var e = entwurf
+                        e.last.einheit = v
+                        if v == SimKraft.druck {  // Druck: auf der ganzen Fläche, senkrecht
+                            e.last.verteilung = "flaeche"
+                            e.last.richtung.art = .normale
+                        }
+                        actions?.setKraftEntwurf(e)
+                    })) {
                         Text("N").tag("N")
                         Text("kg").tag("kg")
+                        Text("N/mm²").tag(SimKraft.druck).disabled(l.ort.flaeche == nil || l.ort.normale == nil)
                     }
                     .labelsHidden()
-                    .frame(width: 64)
+                    .frame(width: 84)
+                }
+                if l.aufFlaeche {
+                    Text("Fläche " + (l.flaecheMm2.map { "\(KevFormat.number($0, digits: 1)) mm²" } ?? "?")
+                         + (l.einheit == SimKraft.druck ? ", Kraft = Druck × Fläche" : ", gleichmäßig verteilt"))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Picker("Kraftpaar mit", selection: bind(\.gegen)) {
                     Text("keinem (äußere Last)").tag(String?.none)
@@ -205,16 +402,57 @@ struct KraftEditor: View {
 
 // MARK: - Reiter Lager
 
+/// Menü „Gilt für“ eines gesetzten Lagers: alle Lastfälle oder einzelne an- und abwählen (lager_setzen).
+struct LagerLastfallMenue: View {
+    var lager: SimLager
+    var namen: [String]
+    var actions: SimulationActions?
+
+    var body: some View {
+        Menu {
+            Toggle("Alle Lastfälle", isOn: Binding(get: { lager.szenarien == nil }, set: { an in
+                setze(an ? nil : namen)
+            }))
+            Divider()
+            ForEach(namen, id: \.self) { n in
+                Toggle(n, isOn: Binding(get: { lager.szenarien?.contains(n) ?? false }, set: { an in
+                    var s = lager.szenarien ?? []
+                    if an { if !s.contains(n) { s.append(n) } } else { s.removeAll { $0 == n } }
+                    setze(s)
+                }))
+            }
+        } label: {
+            Image(systemName: "list.bullet.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Gilt für: \(lager.giltText)")
+    }
+
+    private func setze(_ s: [String]?) {
+        var x = lager
+        x.szenarien = s
+        actions?.simulationAendern([SimOp.lagerSetzen(x)], fertig: nil)
+    }
+}
+
 struct LagerAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject var store: SimulationStore
 
     private var actions: SimulationActions? { model.simulationActions }
 
+    /// „Kante anklicken“: Werkzeug Lager an, der nächste Klick auf eine Kante setzt die Gleitrichtung.
+    private func kanteAn(_ an: Bool) {
+        if an, store.werkzeug != .lager { actions?.setSimulationWerkzeug(.lager) }
+        store.kanteWaehlen = an
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Lager gelten für alle Lastfälle. Ohne ausdrückliches Lager leitet Kev CAD sie aus den Kontakten ab "
-                 + "(Boden, Kulisse, befestigt, tragende Nachbarn).")
+            Text("Lager gelten für alle Lastfälle oder nur für ausgewählte. Ohne ausdrückliches Lager leitet Kev CAD "
+                 + "sie aus den Kontakten ab (Boden, Kulisse, befestigt, tragende Nachbarn).")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker("Art", selection: $store.lagerArt) {
                 ForEach(SimLager.Art.allCases, id: \.self) { Text($0.titel).tag($0) }
@@ -222,10 +460,18 @@ struct LagerAnsicht: View {
             .pickerStyle(.segmented)
             .help(store.lagerArt.hilfe)
             Text(store.lagerArt.hilfe).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Picker("Auf", selection: $store.lagerAuf) {
                 ForEach(SimLager.Auf.allCases, id: \.self) { Text($0.titel).tag($0) }
             }
             .pickerStyle(.segmented)
+            if store.lagerArt == .gleitend && store.lagerEntwurf == nil {
+                GleitenWahl(gleiten: $store.lagerGleiten, kanteWaehlen: store.kanteWaehlen, kanteAn: kanteAn)
+            }
+            if store.lagerEntwurf == nil {
+                LastfallWahl(titel: "Gilt für", szenarien: $store.lagerSzenarien, namen: store.stand?.alleNamen ?? [],
+                             gewaehlt: store.auswahl)
+            }
             Toggle(isOn: Binding(get: { store.werkzeug == .lager },
                                  set: { actions?.setSimulationWerkzeug($0 ? .lager : .keins) })) {
                 Label("Lager setzen", systemImage: "hand.tap")
@@ -253,13 +499,26 @@ struct LagerAnsicht: View {
                                 Text(a.titel).tag(a).disabled(a == .flaeche && l.ort.flaeche == nil)
                             }
                         }
-                        if l.art == .gleitend && l.ort.normale == nil {
-                            Text("Gleitend braucht eine Fläche mit Normale").font(.caption).foregroundStyle(.red)
+                        if l.art == .gleitend {
+                            GleitenWahl(gleiten: Binding(get: { l.gleiten }, set: { g in
+                                var x = l
+                                x.gleiten = g
+                                actions?.setLagerEntwurf(x)
+                            }), kanteWaehlen: store.kanteWaehlen, kanteAn: kanteAn)
+                        }
+                        LastfallWahl(titel: "Gilt für", szenarien: Binding(get: { l.szenarien }, set: { s in
+                            var x = l
+                            x.szenarien = s
+                            actions?.setLagerEntwurf(x)
+                        }), namen: store.stand?.alleNamen ?? [], gewaehlt: store.auswahl)
+                        if l.art == .gleitend && l.ort.normale == nil && l.gleiten == nil {
+                            Text("Gleitend braucht eine Fläche mit Normale oder eine Gleitrichtung").font(.caption)
+                                .foregroundStyle(.red)
                         }
                         HStack {
                             Button("Übernehmen") { actions?.lagerEntwurfSpeichern() }
                                 .keyboardShortcut(.defaultAction)
-                                .disabled(l.art == .gleitend && l.ort.normale == nil)
+                                .disabled(l.art == .gleitend && l.ort.normale == nil && l.gleiten == nil)
                             Button("Verwerfen") { actions?.setLagerEntwurf(nil) }
                             Spacer()
                         }
@@ -273,7 +532,14 @@ struct LagerAnsicht: View {
                     if alle.isEmpty { Text("keine").font(.caption).foregroundStyle(.secondary) }
                     ForEach(alle) { l in
                         HStack(spacing: 6) {
-                            Text("\(l.id) · \(l.art.titel) · \(simKurz(l.teil)) · \(l.auf.titel)").lineLimit(1)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(l.id) · \(l.art.titel) · \(simKurz(l.teil)) · \(l.auf.titel)").lineLimit(1)
+                                Text(l.giltText + (l.art == .gleitend ? " · gleitet "
+                                                   + (l.gleiten?.titel ?? "in der Fläche") : ""))
+                                    .font(.caption)
+                                    .foregroundStyle(l.giltFuer(store.auswahl) ? Color.secondary : Color.orange)
+                                    .lineLimit(1)
+                            }
                             if l.quelle == "modell" {
                                 Text("model.py" + (l.zeile.map { " Z. \($0)" } ?? "")).font(.caption)
                                     .foregroundStyle(.secondary)
@@ -281,6 +547,7 @@ struct LagerAnsicht: View {
                             Spacer(minLength: 2)
                             SimZuordnungZeichen(zustand: l.zustand, text: l.zustandText)
                             if l.quelle != "modell" {
+                                LagerLastfallMenue(lager: l, namen: store.stand?.alleNamen ?? [], actions: actions)
                                 Button {
                                     actions?.simulationAendern([SimOp.lagerLoeschen(l.id)], fertig: nil)
                                 } label: {

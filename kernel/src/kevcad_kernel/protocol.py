@@ -1505,7 +1505,8 @@ STATIK_AMPELN = ("gruen", "gelb", "rot", "grau")
 STATIK_STAENDE = ("done", "failed")
 STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit", "ziel", "reserve", "ausnutzung", "ort",
                         "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative", "kurz")
-STATIK_LAST_FELDER = ("teile", "kraft", "punkt", "kg", "zeile", "gegen", "paar", "id")  # ``lasten`` je Szenario (T32)
+STATIK_LAST_FELDER = ("teile", "kraft", "punkt", "kg", "zeile", "gegen", "paar", "id",  # ``lasten`` je Szenario (T32)
+                      "flaeche")  # additiv (Simulation): Last auf der ganzen Fläche {teil, index, flaeche_mm2, druck}
 STATIK_ABLAUF_STAENDE = ("done", "laeuft", "failed")  # Stufe 2 (Ablauf): Feld ``ablauf`` je Szenario
 STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_max", "rutschgrenze", "rutschreserve",
                       "geschwindigkeit", "verzoegerung")
@@ -1564,6 +1565,11 @@ def _statik_szenario(e: dict[str, Any], voll: bool = True) -> dict[str, Any]:
     # additiv (Nachbesserung, T32): Lasten mit Angriffspunkt; Kraftpaare mit `gegen` und `paar` (Gegenkraft −kraft am
     # selben Punkt auf `gegen`)
     out["lasten"] = [{k: l[k] for k in STATIK_LAST_FELDER if k in l} for l in e.get("lasten") or []]
+    # additiv (Simulation): ausdrückliche Lager, die in diesem Szenario gelten (Lager je Lastfall), eigener Untergrund
+    if e.get("lager_ids") is not None:
+        out["lager"] = list(e.get("lager_ids") or [])
+    if sz.get("untergrund"):
+        out["untergrund"] = sz.get("untergrund")
     out["ueberhoehung"] = e.get("ueberhoehung") or 1.0
     kippen = (e.get("s0") or {}).get("kippen") if e.get("s0") is not None else e.get("kippen")
     out["kippen"] = [{k: g.get(k) for k in ("name", "reserve", "richtung_text", "je_richtung", "teile")}
@@ -2231,6 +2237,9 @@ SIM_JOB_FELDER = ("auftrag", "was", "lastfall", "teil", "grenze", "von", "stand"
                   "meldung", "ms")
 SIM_JOB_STAENDE = ("laeuft", "done", "failed", "abgebrochen")
 SIM_APP = ("SIM_REQ", "SIM_EDIT", "SIM_RUN", "SIM_CANCEL")
+SIM_VERFAHREN = ("s0s1", "fem")  # additiv: Grenze suchen mit S0 und S1 bzw. dazu mit der Festkörper-FEM
+SIM_GLEITEN = ("flaeche", "richtung")  # additiv: gleitendes Lager in der Fläche oder entlang einer Richtung
+SIM_VERTEILUNGEN = ("punkt", "flaeche")  # additiv: Last am Klickpunkt oder auf der ganzen Fläche
 
 
 def pack_sim(stand: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
@@ -2273,6 +2282,19 @@ def check_sim_message(header: dict[str, Any]) -> list[str]:
         err += _fehlend(x, ("id", "teil", "art", "zustand"), f"SIM.lager[{i}]")
         if x.get("art") not in ("fest", "gelenkig", "gleitend"):
             err.append(f"SIM.lager[{i}].art {x.get('art')!r} unbekannt")
+        sz = x.get("szenarien")
+        if sz is not None and (not isinstance(sz, list) or not all(isinstance(n, str) for n in sz)):
+            err.append(f"SIM.lager[{i}].szenarien: null oder Liste von Namen")
+        g = x.get("gleiten")
+        if g is not None and (not isinstance(g, dict) or g.get("art") not in SIM_GLEITEN
+                              or (g.get("art") == "richtung" and len(g.get("richtung") or []) != 3)):
+            err.append(f"SIM.lager[{i}].gleiten: {{art: flaeche}} oder {{art: richtung, richtung: [x, y, z]}}")
+    for i, l in enumerate(header.get("lastfaelle") or []):
+        for j, x in enumerate(l.get("lasten") or []):
+            if x.get("verteilung") not in (None, *SIM_VERTEILUNGEN):
+                err.append(f"SIM.lastfaelle[{i}].lasten[{j}].verteilung {x.get('verteilung')!r} unbekannt")
+            if x.get("einheit") not in (None, "N", "kg", "N/mm2"):
+                err.append(f"SIM.lastfaelle[{i}].lasten[{j}].einheit {x.get('einheit')!r} unbekannt")
     for i, a in enumerate(header.get("abgeleitet") or []):
         err += _fehlend(a, ("id", "art", "teil", "aktiv"), f"SIM.abgeleitet[{i}]")
     return err
@@ -2322,6 +2344,11 @@ def check_sim_app(header: dict[str, Any]) -> list[str]:
             err.append(f"SIM_RUN: was {header.get('was')!r} unbekannt")
         if header.get("was") == "grenze" and header.get("grenze") not in ("last", "neigung", "geschwindigkeit"):
             err.append("SIM_RUN: grenze ist last, neigung oder geschwindigkeit")
+        # additiv: Verfahren der Grenzsuche (S0 und S1, oder dazu die Festkörper-FEM)
+        if header.get("verfahren") not in (None, *SIM_VERFAHREN):
+            err.append(f"SIM_RUN: verfahren ist {' oder '.join(SIM_VERFAHREN)}")
+        if header.get("verfahren") == "fem" and header.get("grenze") == "geschwindigkeit":
+            err.append("SIM_RUN: „wie schnell“ sucht der Ablauf (S2), nicht die FEM")
     return err
 
 
@@ -2347,7 +2374,12 @@ def sim_beispiel() -> dict[str, Any]:
                  "richtung": {"art": "frei", "azimut": 0.0, "hoehe": -30.0}, "betrag": 50.0, "einheit": "N",
                  "kraft": [43.3, 0.0, -25.0], "zustand": "fehlt",
                  "zustand_text": "Fläche 9 (Zylinder, 120 mm²) passt zu keiner Fläche des Teils mehr",
-                 "kraft_wirksam": None, "punkt_wirksam": None, "normale_wirksam": None, "flaeche_wirksam": None}]},
+                 "kraft_wirksam": None, "punkt_wirksam": None, "normale_wirksam": None, "flaeche_wirksam": None},
+                {"id": "L3", "teil": "Halter", "gegen": None, "verteilung": "flaeche", "ort": ort,
+                 "richtung": {"art": "normale"}, "betrag": 0.05, "einheit": "N/mm2", "kraft": [0.0, 0.0, -40.0],
+                 "zustand": "ok", "zustand_text": "", "kraft_wirksam": [0.0, 0.0, -40.0],
+                 "punkt_wirksam": [40.0, 0.0, 60.0], "normale_wirksam": [0.0, 0.0, 1.0], "flaeche_wirksam": 5,
+                 "flaeche_mm2_wirksam": 800.0}]},
             {"name": "Bremsen aus 1 m/s", "art": "dynamisch", "beschreibung": "", "kopie_von": "Bremsen",
              "neigung": None, "beschleunigung": None,
              "fahrt": {"geschwindigkeit": 1.0, "bremsen": "abrupt", "dauer": None, "animation": None,
@@ -2360,10 +2392,19 @@ def sim_beispiel() -> dict[str, Any]:
                     "text": "", "beschreibung": None, "dynamisch": False, "ersetzt": True}],
         "lager": [{"id": "A1", "teil": "Halter", "art": "fest", "auf": "flaeche",
                    "ort": {"flaeche": 2, "punkt": [0.0, 0.0, 30.0], "normale": [-1.0, 0.0, 0.0], "signatur": None},
+                   "szenarien": None,
                    "zustand": "neu", "zustand_text": "Fläche 3 → 2", "punkt_wirksam": [0.0, 0.0, 30.0],
-                   "normale_wirksam": [-1.0, 0.0, 0.0], "flaeche_wirksam": 2}],
+                   "normale_wirksam": [-1.0, 0.0, 0.0], "flaeche_wirksam": 2},
+                  {"id": "A2", "teil": "Halter", "art": "gleitend", "auf": "flaeche",
+                   "ort": {"flaeche": 4, "punkt": [40.0, 0.0, 0.0], "normale": [0.0, 0.0, -1.0], "signatur": None},
+                   "szenarien": ["Aufstützen 30 kg"],
+                   "gleiten": {"art": "richtung", "richtung": [0.0, 1.0, 0.0], "quelle": "kante", "kante": 7},
+                   "zustand": "ok", "zustand_text": "", "punkt_wirksam": [40.0, 0.0, 0.0],
+                   "normale_wirksam": [0.0, 0.0, -1.0], "flaeche_wirksam": 4,
+                   "gehalten_wirksam": [[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]]}],
         "modell_lager": [{"id": "M1", "teil": "Platte", "art": "gleitend", "quelle": "modell", "auf": "flaeche",
                           "flaeche": 0, "punkt": [0.0, 0.0, 0.0], "normale": [0.0, 0.0, -1.0], "zeile": 20,
+                          "szenarien": None, "gehalten": [[0.0, 0.0, -1.0]],
                           "zustand": "ok", "zustand_text": ""}],
         "abgeleitet": [{"id": "boden:Fuß", "art": "boden", "teil": "Fuß", "text": "Fuß steht auf dem Boden",
                         "punkt": [0.0, 0.0, 0.0], "aktiv": False},
@@ -2387,13 +2428,21 @@ def sim_job_beispiel(stand: str = "done") -> dict[str, Any]:
                 "meldung": None, "ms": None}
     return {"auftrag": 5, "was": "grenze", "lastfall": "Aufstützen 30 kg", "teil": None, "grenze": "last",
             "von": "app", "stand": "done", "fortschritt": 1.0,
-            "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen (365 N statt 294 N), begrenzt durch Ziel-Sicherheit",
-            "ergebnis": {"art": "last", "lastfall": "Aufstützen 30 kg",
+            "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen (365 N statt 294 N), begrenzt durch Ziel-Sicherheit "
+                    "(FEM, Halter)",
+            "ergebnis": {"art": "last", "lastfall": "Aufstützen 30 kg", "verfahren": "fem",
+                         "massgebend_verfahren": "FEM",
                          "werte": [{"kriterium": "Ziel-Sicherheit", "grenze": 1.24, "einheit": "×", "last_n": 364.9,
-                                    "massgebend": "Halter", "text": "Ziel-Sicherheit: bis zum 1,24-fachen der Lasten"},
+                                    "massgebend": "Halter", "verfahren": "FEM",
+                                    "text": "Ziel-Sicherheit: bis zum 1,24-fachen der Lasten (FEM)"},
+                                   {"kriterium": "Ziel-Sicherheit", "grenze": 1.71, "einheit": "×", "last_n": 503.2,
+                                    "massgebend": "Halter", "verfahren": "S0",
+                                    "text": "Ziel-Sicherheit: bis zum 1,71-fachen der Lasten (S0)"},
                                    {"kriterium": "Bruch (Sicherheit 1)", "grenze": 3.1, "einheit": "×",
-                                    "last_n": 912.3, "massgebend": "Halter",
-                                    "text": "Bruch (Sicherheit 1): bis zum 3,10-fachen der Lasten"}],
+                                    "last_n": 912.3, "massgebend": "Halter", "verfahren": "FEM",
+                                    "text": "Bruch (Sicherheit 1): bis zum 3,10-fachen der Lasten (FEM)"}],
+                         "probe": {"faktor": 1.24, "ausnutzung": 1.0, "teil": "Halter"},
                          "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen", "rechnungen": 41,
-                         "hinweis": "gesucht mit S0 und S1 (ohne Festkörper-FEM)", "ms": 812.0},
+                         "hinweis": "S0 und S1 gesucht, dazu die Festkörper-FEM (zwei Lösungen, überlagert; "
+                                    "Probe bei 1,24)", "ms": 812.0},
             "meldung": None, "ms": 905.0}

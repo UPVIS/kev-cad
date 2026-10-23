@@ -328,6 +328,11 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
     public var ablauf: StatikAblauf?
     /// Stufe 3: Festkörper-FEM der Teile mit Last (läuft im Hintergrund nach dem Lauf oder auf Anfrage).
     public var festkoerper: StatikFestkoerper?
+    /// Simulation (additiv): Kennungen der ausdrücklichen Lager, die in diesem Szenario gelten (Lager je Lastfall);
+    /// nil bei älteren Kerneln.
+    public var lagerIDs: [String]?
+    /// Simulation (additiv): eigener Untergrund des Szenarios (Rutschen in S0 und Ablauf), sonst nil.
+    public var untergrund: String?
 
     public var id: String { name }
 
@@ -348,6 +353,8 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
         lasten = (j["lasten"]?.arrayValue ?? []).compactMap(StatikLast.init(json:))
         ablauf = j["ablauf"].flatMap { $0.objectValue == nil ? nil : StatikAblauf(json: $0) }
         festkoerper = j["festkoerper"].flatMap { $0.objectValue == nil ? nil : StatikFestkoerper(json: $0) }
+        lagerIDs = j["lager"]?.arrayValue.map { $0.compactMap(\.stringValue) }
+        untergrund = j["untergrund"]?.stringValue
     }
 
     /// Urteile, die etwas zu sagen haben (rot, gelb, überdimensioniert, nicht gerechnet).

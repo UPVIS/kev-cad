@@ -14,8 +14,12 @@ Bezug ist der **Teilname** aus ``show()`` und die **Fläche** (Nummer wie im Vie
 
 Ein Teil, das es nicht mehr gibt, wird über den letzten Namensteil gesucht (Teil in eine Gruppe verschoben), sonst
 ``fehlt``. Ergebnis: ``Vorbereitet`` mit den Szenarien der App (Wörterbücher für ``szenario.szenario_aus``), den
-aufgelösten Lagern (Punkt, Normale, Netz der Lagerfläche in Weltlage für Festkörper und Topologie), den ausgeschalteten
-abgeleiteten Lagern und dem Zustand je Last, Lager und Schutzfläche für die App (``SIM``).
+aufgelösten Lagern (Punkt, Normale, Netz der Lagerfläche in Weltlage für Festkörper und Topologie, gehaltene Richtungen,
+Lastfälle), den ausgeschalteten abgeleiteten Lagern und dem Zustand je Last, Lager und Schutzfläche für die App (``SIM``).
+
+Lasten auf der ganzen Fläche (``verteilung`` ``flaeche``) greifen im Schwerpunkt der Fläche an (S0, S1, Kragträger) und
+tragen die Fläche mit (``flaeche``: Nummer, Inhalt, Druck), damit die FEM sie gleichmäßig bzw. als Druck senkrecht auf
+jedes Dreieck verteilt; ein Druck auf einer gekrümmten Fläche hat als Resultierende die Summe über ihr Netz.
 """
 
 from __future__ import annotations
@@ -38,6 +42,15 @@ PUNKT_TOL = 3.0  # mm: ein Punkt ohne Fläche muss so nah an der Oberfläche lie
 LAGER_RADIUS = (0.05, 3.0, 15.0)  # Punktlager: Anteil der Teilgröße, mindestens, höchstens (mm)
 
 
+def senkrechte(d: Any) -> list[np.ndarray]:
+    """Zwei Einheitsvektoren senkrecht zu ``d`` und zueinander (rechtshändig mit d)."""
+    d = kr.einheit(d)
+    hilf = np.array([0.0, 0.0, 1.0]) if abs(float(d[2])) < 0.9 else np.array([1.0, 0.0, 0.0])
+    a = np.cross(d, hilf)
+    a /= float(np.linalg.norm(a))
+    return [a, np.cross(d, a)]
+
+
 @dataclass
 class Lager:
     """Ein Lager im Statikmodell (aus der App oder aus ``st.lager``)."""
@@ -52,25 +65,75 @@ class Lager:
     netz: tuple[np.ndarray, np.ndarray] | None = None  # Lagerfläche (Welt): Punkte, Dreiecke
     zeile: int | None = None
     auf: str = "flaeche"  # flaeche | punkt | teil
+    # Lastfälle, in denen das Lager gilt (None = alle, [] = keiner)
+    szenarien: list[str] | None = None
+    # gleitend: None = in der Fläche (hält nur längs der Normale), sonst {"art": "richtung", "richtung": [x, y, z]}
+    gleiten: dict[str, Any] | None = None
+    signatur: dict[str, Any] | None = None  # Signatur der Lagerfläche (Typ, Achse) für gelenkige Lager in der FEM
 
     @property
     def name(self) -> str:
         """Name als Nachbar im Bauteil-Nachweis und in der FEM."""
         return f"Lager: {self.id}"
 
+    def gilt_fuer(self, szenario: str | None) -> bool:
+        """Gilt das Lager im Lastfall ``szenario``? (None: alle Lastfälle)."""
+        return self.szenarien is None or (szenario is not None and szenario in self.szenarien)
+
+    @property
+    def gleitrichtung(self) -> np.ndarray | None:
+        """Richtung, in der ein gleitendes Lager entlang einer Schiene frei ist (sonst None: gleitet in der Fläche)."""
+        if self.art != "gleitend" or not self.gleiten or self.gleiten.get("art") != "richtung":
+            return None
+        return kr.einheit(self.gleiten["richtung"])
+
+    @property
+    def gehalten(self) -> list[np.ndarray] | None:
+        """Gehaltene Verschiebungsrichtungen (Einheitsvektoren, Welt) eines gleitenden Lagers: in der Fläche nur die
+        Normale (genau, nicht gerundet), entlang einer Richtung d die beiden Richtungen senkrecht zu d. None = alle
+        (fest, gelenkig)."""
+        if self.art != "gleitend":
+            return None
+        d = self.gleitrichtung
+        if d is not None:
+            return senkrechte(d)
+        if self.normale is None:
+            return None
+        return [kr.einheit(self.normale)]
+
     @property
     def komponenten(self) -> list[int] | None:
-        """Gehaltene Richtungen (0 = x, 1 = y, 2 = z) eines gleitenden Lagers: nur senkrecht zur Fläche, auf die
-        nächste Weltachse gerundet; None = alle (fest, gelenkig)."""
-        if self.art != "gleitend" or self.normale is None:
+        """Gehaltene Weltachsen (0 = x, 1 = y, 2 = z) eines gleitenden Lagers, auf die nächste Achse gerundet; nur noch
+        für die Topologie (das Gitter kennt nur Achsen). None = alle (fest, gelenkig)."""
+        g = self.gehalten
+        if g is None:
             return None
-        return [int(np.argmax(np.abs(self.normale)))]
+        return sorted({int(np.argmax(np.abs(v))) for v in g})
+
+    @property
+    def drehachsen(self) -> list[np.ndarray]:
+        """Gelenkiges Lager auf einer Fläche in der FEM: Drehungen um diese Achsen sind gehalten (wie im Stabwerk die
+        Verdrehung um die Stabachse), um die übrigen dreht die Fläche frei. Ebene (und Punkt mit Normale): um die
+        Normale gehalten; Zylinder (Bolzen in einer Bohrung): nur um die Achse frei; sonst frei wie ein Kugelgelenk."""
+        sig = self.signatur or {}
+        if sig.get("t") == "cylinder" and sig.get("ax") is not None:
+            return senkrechte(sig["ax"])
+        if sig.get("t") in (None, "plane") and self.normale is not None:
+            return [kr.einheit(self.normale)]
+        return []
 
     def kurz(self) -> dict[str, Any]:
-        return {"id": self.id, "teil": self.teil, "art": self.art, "quelle": self.quelle, "flaeche": self.flaeche,
-                "punkt": None if self.punkt is None else [round(float(c), 2) for c in self.punkt],
-                "normale": None if self.normale is None else [round(float(c), 4) for c in self.normale],
-                "zeile": self.zeile, "auf": self.auf}
+        out = {"id": self.id, "teil": self.teil, "art": self.art, "quelle": self.quelle, "flaeche": self.flaeche,
+               "punkt": None if self.punkt is None else [round(float(c), 2) for c in self.punkt],
+               "normale": None if self.normale is None else [round(float(c), 4) for c in self.normale],
+               "zeile": self.zeile, "auf": self.auf, "szenarien": None if self.szenarien is None
+               else list(self.szenarien)}
+        if self.gleiten:
+            out["gleiten"] = dict(self.gleiten)
+        g = self.gehalten
+        if g is not None:
+            out["gehalten"] = [[round(float(c), 4) + 0.0 for c in v] for v in g]
+        return out
 
 
 @dataclass
@@ -154,6 +217,20 @@ def _abstand(f: dict[str, Any], sig: dict[str, Any], groesse: float) -> float | 
     if sig.get("a") and f.get("a"):
         fl = abs(math.log(max(float(f["a"]), 1e-9) / max(float(sig["a"]), 1e-9)))
     return d / groesse + w / 90.0 + 0.3 * fl
+
+
+def flaeche_kennwerte(netz: tuple[np.ndarray, np.ndarray] | None) -> dict[str, Any] | None:
+    """Inhalt (mm²), Schwerpunkt und Summe der Flächenvektoren (∫ n dA, nach außen) eines Flächennetzes."""
+    if netz is None or len(netz[1]) == 0:
+        return None
+    P, T = np.asarray(netz[0], float), np.asarray(netz[1], np.int64)
+    X = P[T]
+    nA = 0.5 * np.cross(X[:, 1] - X[:, 0], X[:, 2] - X[:, 0])
+    A = np.linalg.norm(nA, axis=1)
+    if float(A.sum()) <= 0:
+        return None
+    return {"a": float(A.sum()), "c": (A[:, None] * X.mean(axis=1)).sum(axis=0) / float(A.sum()),
+            "na": nA.sum(axis=0)}
 
 
 def flaeche_suchen(k: Any, index: int | None, sig: dict[str, Any] | None) -> tuple[int | None, str, str]:
@@ -391,8 +468,31 @@ def vorbereiten(doc: dict[str, Any], koerper: dict[str, Any], modell_lager: list
             if o["zustand"] == "fehlt":
                 zl[lid] = eintrag
                 continue
+            einh = kr.einheit_text(x.get("einheit"))
+            fl_info = None
+            if x.get("verteilung") == "flaeche":
+                k = koerper.get(o["teil"])
+                kw = flaeche_kennwerte(flaechen_netz(k, int(o["flaeche"]))) if (
+                    k is not None and o["flaeche"] is not None) else None
+                if kw is None:
+                    zl[lid] = {**eintrag, "zustand": "fehlt",
+                               "text": "Last auf der ganzen Fläche: Fläche im aktuellen Modell nicht gefunden"}
+                    continue
+                fl_info = {"teil": o["teil"], "index": int(o["flaeche"]), "flaeche_mm2": round(kw["a"], 3)}
+                o["punkt"] = kw["c"]  # greift im Schwerpunkt der Fläche an
             try:
-                F = kr.kraft_aus(x.get("richtung"), x.get("betrag"), str(x.get("einheit") or "N"), o["normale"])
+                if einh == kr.DRUCK and fl_info is not None:
+                    # Druck senkrecht auf jedes Stück der Fläche: Resultierende −p ∫ n dA (auf Ebenen −p A n)
+                    p_druck = kr.betrag_n(x.get("betrag"), einh, 1.0)
+                    vz = -1.0 if (x.get("richtung") or {}).get("umkehren") else 1.0
+                    F = -vz * p_druck * np.asarray(kw["na"], float)
+                    fl_info["druck"] = vz * p_druck
+                    if float(np.linalg.norm(F)) < 1e-9:
+                        raise kr.KraftFehler("Druck auf dieser Fläche hebt sich auf (geschlossene Fläche): als "
+                                             "Gesamtkraft in N angeben")
+                else:
+                    F = kr.kraft_aus(x.get("richtung"), x.get("betrag"), einh, o["normale"],
+                                     flaeche_mm2=(fl_info or {}).get("flaeche_mm2"))
             except kr.KraftFehler as exc:
                 zl[lid] = {**eintrag, "zustand": "fehlt", "text": str(exc)}
                 continue
@@ -405,9 +505,13 @@ def vorbereiten(doc: dict[str, Any], koerper: dict[str, Any], modell_lager: list
                     "text": f"Last {lid} (App)", "id": lid}
             if gegen:
                 last["gegen"] = [gegen]
+            if fl_info is not None:
+                last["flaeche"] = fl_info
             lasten.append(last)
             zl[lid] = {**eintrag, "kraft": kr.kurz(F), "punkt": last["punkt"],
                        "normale": None if o["normale"] is None else kr.kurz(o["normale"])}
+            if fl_info is not None:
+                zl[lid]["flaeche_mm2"] = fl_info["flaeche_mm2"]
         v.szenarien.append(_szenario_dict(l, lasten, zg))
     za: dict[str, Any] = {}
     quellen = [(x, "app") for x in doc.get("lager") or []] + [(x, "modell") for x in modell_lager or []]
@@ -419,10 +523,20 @@ def vorbereiten(doc: dict[str, Any], koerper: dict[str, Any], modell_lager: list
         if o["zustand"] == "fehlt" or o["teil"] is None:
             continue
         k = koerper.get(o["teil"])
+        szen = x.get("szenarien")
+        szen = None if szen is None else [str(n) for n in szen]
+        try:
+            from kevcad_kernel.simulation.datei import SimulationFehler, pruefe_gleiten
+
+            gleiten = pruefe_gleiten(x.get("gleiten")) if str(x.get("art")) == "gleitend" else None
+        except SimulationFehler as exc:
+            za[lid].update(zustand="fehlt", text=str(exc))
+            continue
+        za[lid]["szenarien"] = szen
         if k is None:  # Gruppe: jedes Teil der Gruppe ganz gelagert
             for n in [n for n in koerper if n.startswith(o["teil"].rstrip("/") + "/")]:
                 v.lager.append(Lager(f"{lid}.{n.rsplit('/', 1)[-1]}", n, str(x.get("art") or "fest"), quelle,
-                                     zeile=x.get("zeile")))
+                                     zeile=x.get("zeile"), szenarien=szen, gleiten=gleiten))
             continue
         netz = None
         auf = str(x.get("auf") or ("flaeche" if o["flaeche"] is not None else "punkt"))
@@ -433,9 +547,10 @@ def vorbereiten(doc: dict[str, Any], koerper: dict[str, Any], modell_lager: list
         L = Lager(lid, o["teil"], str(x.get("art") or "fest"), quelle,
                   None if o["punkt"] is None else np.asarray(o["punkt"], float),
                   None if o["normale"] is None else np.asarray(o["normale"], float), o["flaeche"], netz,
-                  x.get("zeile"), auf)
-        if L.art == "gleitend" and L.normale is None:
-            za[lid].update(zustand="fehlt", text="gleitendes Lager ohne Normale (Fläche anklicken)")
+                  x.get("zeile"), auf, szen, gleiten, o.get("signatur"))
+        if L.art == "gleitend" and L.normale is None and L.gleitrichtung is None:
+            za[lid].update(zustand="fehlt", text="gleitendes Lager ohne Normale (Fläche anklicken) und ohne "
+                                                 "Gleitrichtung")
             continue
         if x.get("ort", {}).get("signatur") is None and o.get("signatur") is not None and quelle == "app":
             v.signaturen[lid] = dict(o["signatur"])
@@ -452,6 +567,9 @@ def vorbereiten(doc: dict[str, Any], koerper: dict[str, Any], modell_lager: list
             idx, zz, tt = flaeche_suchen(k, z.get("index"), z.get("signatur"))
             zs[key] = {"zustand": zz, "text": tt, "index": idx}
     v.zustand = {"lasten": zl, "lager": za, "schutz": zs}
+    for L in v.lager:
+        if L.szenarien is not None and not L.szenarien and not L.id.count("."):
+            v.hinweise.append(f"Lager {L.id} gilt in keinem Lastfall (in der App einen Lastfall wählen oder löschen)")
     fehlen = [i for i, z in {**zl, **za}.items() if z.get("zustand") == "fehlt"]
     if fehlen:
         v.hinweise.append(f"{len(fehlen)} Lasten bzw. Lager aus der App sind nicht mehr zuordenbar und zählen nicht "

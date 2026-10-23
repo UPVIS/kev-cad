@@ -147,10 +147,12 @@ struct SimulationSeitenleiste: View {
                         .frame(width: 16)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(l.id) · \(l.art.titel)").lineLimit(1)
-                        Text("\(simKurz(l.teil)) · \(l.auf.titel)" + (l.quelle == "modell" ? " · model.py" : ""))
+                        Text("\(simKurz(l.teil)) · \(l.auf.titel)" + (l.quelle == "modell" ? " · model.py" : "")
+                             + (l.szenarien != nil ? " · \(l.giltText)" : ""))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(l.giltFuer(store.auswahl) ? Color.secondary : Color.orange)
                             .lineLimit(1)
+                            .help(l.giltText)
                     }
                     Spacer(minLength: 2)
                     SimZuordnungZeichen(zustand: l.zustand, text: l.zustandText)

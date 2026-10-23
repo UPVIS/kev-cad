@@ -16,7 +16,11 @@ Format (``version`` 1)::
                                          "signatur": {"t": "plane", "a": 200.0, "n": [0, 0, 1], "c": [250, 0, 30]}},
                                  "richtung": {"art": "normale"}, "betrag": 30, "einheit": "kg",
                                  "kraft": [0, 0, -294.3]}]}],
-     "lager": [{"id": "A1", "teil": "Halter", "art": "fest", "ort": {"flaeche": 3, "punkt": null, …}}],
+     "lager": [{"id": "A1", "teil": "Halter", "art": "fest", "ort": {"flaeche": 3, "punkt": null, …},
+                "szenarien": null},
+               {"id": "A2", "teil": "Schlitten", "art": "gleitend", "ort": {"flaeche": 5, …},
+                "gleiten": {"art": "richtung", "richtung": [1, 0, 0], "quelle": "kante", "kante": 7},
+                "szenarien": ["Aufstützen 30 kg"]}],
      "abgeleitet_aus": ["boden:Rahmen/Fuß links"],
      "topologie": {"Halter": {"szenario": "Bolzen 50 N", "behalten": 0.42, "ueberhang": false, "fein": false,
                               "steg": 6, "bohrungen": true, "einsaetze": true, "kontakt": true, "bett": false,
@@ -27,9 +31,16 @@ Format (``version`` 1)::
   ``signatur`` wie ``PART_UPSERT.faces[i]``). Nach Modelländerungen ordnet ``zuordnung.py`` sie neu zu oder markiert
   sie als „nicht mehr zuordenbar“; die Datei bleibt dabei unverändert.
 - ``kraft`` (N, Welt) rechnet der Kernel aus Richtung und Betrag (``kraft.py``) und nach einer Neuzuordnung neu.
-- Lager gelten für alle Lastfälle (wie Lager in einer Konstruktion); ``abgeleitet_aus`` schaltet von selbst abgeleitete
-  Lager aus (``boden:<teil>`` = steht auf dem Boden bzw. der Kulisse, ``kontakt:<teil>|<nachbar>`` = Kontakt trägt im
-  Bauteil-Nachweis und in der FEM).
+- Lager gelten für alle Lastfälle (``szenarien`` fehlt oder null) oder nur für die genannten (``szenarien``: Namen von
+  Lastfällen der App oder Szenarien aus model.py; ``[]`` = in keinem, also aus). Ein gleitendes Lager gleitet in der
+  Fläche (``gleiten`` fehlt oder ``{"art": "flaeche"}``: hält nur senkrecht zur Fläche, die Normale genau, nicht auf eine
+  Achse gerundet) oder nur entlang einer Richtung (``{"art": "richtung", "richtung": [x, y, z]}``: Schiene, hält quer
+  dazu in beide Richtungen; ``quelle`` achse, kante oder frei, ``kante`` die angeklickte Kante). ``abgeleitet_aus``
+  schaltet von selbst abgeleitete Lager aus (``boden:<teil>`` = steht auf dem Boden bzw. der Kulisse,
+  ``kontakt:<teil>|<nachbar>`` = Kontakt trägt im Bauteil-Nachweis und in der FEM).
+- Eine Last greift am Klickpunkt an (``verteilung`` fehlt oder ``punkt``; in der FEM im Umkreis verteilt) oder
+  gleichmäßig auf der ganzen angeklickten Fläche (``verteilung`` ``flaeche``), dort auch als Druck (``einheit`` ``N/mm2``,
+  senkrecht auf die Fläche, Kraft = Druck × Fläche).
 
 Änderungen kommen als Liste von Operationen (``anwenden``), aus der App (``SIM_EDIT``) und vom Agenten gleich.
 """
@@ -51,6 +62,9 @@ VERSION = 1
 ARTEN = ("statisch", "dynamisch")
 LAGERARTEN = ("fest", "gelenkig", "gleitend")
 LAGER_AUF = ("flaeche", "punkt", "teil")  # Lagerfläche: ganze Fläche, Umkreis eines Punkts, ganzes Teil
+GLEITEN = ("flaeche", "richtung")  # gleitendes Lager: in der Fläche oder nur entlang einer Richtung (Schiene)
+GLEIT_QUELLEN = ("achse", "kante", "frei")
+VERTEILUNGEN = ("punkt", "flaeche")  # Last am Klickpunkt (im Umkreis) oder gleichmäßig auf der ganzen Fläche
 BREMSARTEN = ("abrupt", "anprall")
 RICHTUNGEN_TEXT = ("+x", "-x", "+y", "-y")
 TOPO_SCHLUESSEL = ("szenario", "behalten", "ueberhang", "fein", "steg", "bett", "bohrungen", "einsaetze", "kontakt",
@@ -278,10 +292,22 @@ def pruefe_last(x: dict[str, Any], alt: dict[str, Any] | None = None) -> dict[st
     if gegen == teil:
         raise SimulationFehler("Kraftpaar: das Gegenstück muss ein anderes Teil sein als das belastete")
     ort = pruefe_ort(base.get("ort"))
-    einh = str(base.get("einheit") or "N")
+    einh = kr.einheit_text(base.get("einheit"))
+    verteilung = str(base.get("verteilung") or "punkt")
+    if verteilung not in VERTEILUNGEN:
+        raise SimulationFehler(f"Verteilung {verteilung!r} unbekannt (punkt oder flaeche)")
+    if verteilung == "flaeche" and ort.get("flaeche") is None:
+        raise SimulationFehler("Last auf der ganzen Fläche: eine Fläche anklicken")
     richtung = dict(base.get("richtung") or {"art": "achse" if einh == "kg" else "normale"})
+    if einh == kr.DRUCK:
+        if verteilung != "flaeche":
+            raise SimulationFehler("Druck (N/mm²) wirkt auf die ganze Fläche: Verteilung „ganze Fläche“ wählen")
+        if (richtung.get("art") or "normale") != "normale":
+            raise SimulationFehler("Druck (N/mm²) wirkt senkrecht auf die Fläche (Richtung „Normale“, umkehren zieht); "
+                                   "für eine andere Richtung die Gesamtkraft in N angeben")
+    flaeche_mm2 = (ort.get("signatur") or {}).get("a")
     try:
-        F = kr.kraft_aus(richtung, base.get("betrag"), einh, ort.get("normale"))
+        F = kr.kraft_aus(richtung, base.get("betrag"), einh, ort.get("normale"), flaeche_mm2=flaeche_mm2)
     except kr.KraftFehler as exc:
         raise SimulationFehler(str(exc)) from exc
     r = {"art": richtung.get("art") or "normale"}
@@ -295,8 +321,11 @@ def pruefe_last(x: dict[str, Any], alt: dict[str, Any] | None = None) -> dict[st
             r["hoehe"] = float(richtung.get("hoehe") or 0.0)
     if richtung.get("umkehren"):
         r["umkehren"] = True
-    return {"id": str(base.get("id") or ""), "teil": teil, "gegen": gegen, "ort": ort, "richtung": r,
-            "betrag": float(base["betrag"]), "einheit": einh, "kraft": kr.kurz(F)}
+    out = {"id": str(base.get("id") or ""), "teil": teil, "gegen": gegen, "ort": ort, "richtung": r,
+           "betrag": float(base["betrag"]), "einheit": einh, "kraft": kr.kurz(F)}
+    if verteilung != "punkt":
+        out["verteilung"] = verteilung
+    return out
 
 
 def pruefe_lager(x: dict[str, Any], alt: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -315,9 +344,60 @@ def pruefe_lager(x: dict[str, Any], alt: dict[str, Any] | None = None) -> dict[s
         raise SimulationFehler("Lager auf einer Fläche: Fläche anklicken")
     if auf == "punkt" and ort.get("punkt") is None:
         raise SimulationFehler("Lager an einem Punkt: Punkt anklicken")
-    if art == "gleitend" and ort.get("normale") is None and (ort.get("signatur") or {}).get("n") is None:
-        raise SimulationFehler("Ein gleitendes Lager braucht eine Fläche mit Normale (es hält nur senkrecht dazu)")
-    return {"id": str(base.get("id") or ""), "teil": teil, "art": art, "auf": auf, "ort": ort}
+    gleiten = pruefe_gleiten(base.get("gleiten")) if art == "gleitend" else None
+    if art == "gleitend" and gleiten is None and ort.get("normale") is None \
+            and (ort.get("signatur") or {}).get("n") is None:
+        raise SimulationFehler("Ein gleitendes Lager braucht eine Fläche mit Normale (es hält nur senkrecht dazu) "
+                               "oder eine Gleitrichtung (Achse, Kante)")
+    out = {"id": str(base.get("id") or ""), "teil": teil, "art": art, "auf": auf, "ort": ort,
+           "szenarien": pruefe_szenarien(base.get("szenarien"))}
+    if gleiten is not None:
+        out["gleiten"] = gleiten
+    return out
+
+
+def pruefe_szenarien(v: Any) -> list[str] | None:
+    """Lastfälle eines Lagers: None = alle, sonst Namen (ohne Doppelte, Reihenfolge bleibt); [] = in keinem."""
+    if v is None or v == "alle":
+        return None
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, (list, tuple)):
+        raise SimulationFehler("szenarien: Liste von Lastfällen oder null (= alle Lastfälle)")
+    out: list[str] = []
+    for n in v:
+        t = _name(n, "Lastfall des Lagers")
+        if t not in out:
+            out.append(t)
+    return out
+
+
+def pruefe_gleiten(g: Any) -> dict[str, Any] | None:
+    """Gleitrichtung eines gleitenden Lagers: None (in der Fläche, ``{"art": "flaeche"}`` ebenso) oder {"art":
+    "richtung", "richtung": [x, y, z] bzw. "+x", "quelle": "achse" | "kante" | "frei", "kante": n}."""
+    if g is None or g == "flaeche":
+        return None
+    if isinstance(g, (str, list, tuple)):
+        g = {"art": "richtung", "richtung": g}
+    if not isinstance(g, dict):
+        raise SimulationFehler('gleiten: {"art": "flaeche"} oder {"art": "richtung", "richtung": [x, y, z]}')
+    art = str(g.get("art") or ("richtung" if g.get("richtung") is not None else "flaeche"))
+    if art not in GLEITEN:
+        raise SimulationFehler(f"gleiten {art!r} unbekannt (flaeche oder richtung)")
+    if art == "flaeche":
+        return None
+    r = g.get("richtung")
+    quelle = str(g.get("quelle") or ("achse" if isinstance(r, str) else "frei"))
+    if quelle not in GLEIT_QUELLEN:
+        raise SimulationFehler(f"gleiten.quelle {quelle!r} unbekannt (achse, kante, frei)")
+    try:
+        d = kr.achse(r) if isinstance(r, str) else kr.einheit(r, "Gleitrichtung")
+    except kr.KraftFehler as exc:
+        raise SimulationFehler(str(exc)) from exc
+    out: dict[str, Any] = {"art": "richtung", "richtung": [round(float(c), 6) + 0.0 for c in d], "quelle": quelle}
+    if g.get("kante") is not None:
+        out["kante"] = int(g["kante"])
+    return out
 
 
 def pruefe_topologie(e: dict[str, Any]) -> dict[str, Any]:
@@ -486,12 +566,22 @@ def _eine(d: dict[str, Any], op: dict[str, Any], modell: dict[str, dict[str, Any
         for t in d["topologie"].values():
             if t.get("szenario") == alt:
                 t["szenario"] = neu_name
+        for x in d["lager"]:  # Lager je Lastfall folgen dem neuen Namen
+            if isinstance(x.get("szenarien"), list):
+                x["szenarien"] = [neu_name if n == alt else n for n in x["szenarien"]]
         return f"„{alt}“ heißt jetzt „{neu_name}“"
     if art == "lastfall_loeschen":
         name = _name(op.get("name"))
         _lastfall(d, name)
         d["lastfaelle"] = [l for l in d["lastfaelle"] if l["name"] != name]
-        return f"Lastfall „{name}“ gelöscht"
+        leer = []
+        for x in d["lager"]:  # Lager nur für diesen Lastfall: gelten danach in keinem (bleiben sichtbar)
+            if isinstance(x.get("szenarien"), list) and name in x["szenarien"]:
+                x["szenarien"] = [n for n in x["szenarien"] if n != name]
+                if not x["szenarien"]:
+                    leer.append(str(x.get("id")))
+        return f"Lastfall „{name}“ gelöscht" + (f" (Lager {', '.join(leer)} gilt jetzt in keinem Lastfall)"
+                                                 if leer else "")
     if art == "last_setzen":
         l = _lastfall(d, _name(op.get("lastfall"), "Lastfall"))
         x = op.get("last") if isinstance(op.get("last"), dict) else None
@@ -521,13 +611,18 @@ def _eine(d: dict[str, Any], op: dict[str, Any], modell: dict[str, dict[str, Any
         lid = str(x.get("id") or "")
         alt = next((y for y in d["lager"] if y.get("id") == lid), None) if lid else None
         neu = pruefe_lager(x, alt)
+        bekannt = set(namen) | set(modell)
+        unbekannt = [n for n in neu.get("szenarien") or [] if n not in bekannt]
+        if unbekannt and modell:  # ohne Lauf sind die Szenarien aus model.py noch nicht bekannt
+            raise SimulationFehler(f"Lastfall {unbekannt[0]!r} gibt es nicht (vorhanden: "
+                                   f"{', '.join(repr(n) for n in sorted(bekannt))})")
         if not neu["id"]:
             neu["id"] = _neue_id({str(y.get("id")) for y in d["lager"]}, "A")
         if alt is not None:
             d["lager"][d["lager"].index(alt)] = neu
             return f"Lager {neu['id']} geändert"
         d["lager"].append(neu)
-        return f"Lager {neu['id']} ({neu['art']}) an {neu['teil']}"
+        return f"Lager {neu['id']} ({neu['art']}) an {neu['teil']}{gilt_text(neu.get('szenarien'))}"
     if art == "lager_loeschen":
         lid = str(op.get("id") or "")
         if not any(y.get("id") == lid for y in d["lager"]):
@@ -556,7 +651,19 @@ def _eine(d: dict[str, Any], op: dict[str, Any], modell: dict[str, dict[str, Any
     raise SimulationFehler(f"Operation {art!r} unbekannt")  # pragma: no cover
 
 
+def gilt_text(szenarien: list[str] | None) -> str:
+    """Zusatz für Meldungen: „, nur in „A“, „B““ bzw. „, in keinem Lastfall“; leer für alle."""
+    if szenarien is None:
+        return ""
+    if not szenarien:
+        return ", in keinem Lastfall"
+    return ", nur in " + ", ".join(f"„{n}“" for n in szenarien)
+
+
 def _kraft_text(last: dict[str, Any]) -> str:
     F = last.get("kraft") or [0, 0, 0]
     b = math.sqrt(sum(float(c) ** 2 for c in F))
-    return f"{b:.0f} N" if last.get("einheit") != "kg" else f"{last['betrag']:g} kg = {b:.0f} N"
+    if last.get("einheit") == kr.DRUCK:
+        return f"{last['betrag']:g} N/mm² auf die ganze Fläche = {b:.0f} N"
+    t = f"{b:.0f} N" if last.get("einheit") != "kg" else f"{last['betrag']:g} kg = {b:.0f} N"
+    return t + (" auf die ganze Fläche" if last.get("verteilung") == "flaeche" else "")
