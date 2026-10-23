@@ -429,9 +429,12 @@ def test_app_hinzufuegen_und_vermessen(umgebung):
     assert ack["ok"]
     _, _, erg, _ = app.wait_for(lambda h: h["type"] == "REF_RESULT", start=start, timeout=60)
     assert [m["name"] for m in erg["masse"]] == ["tiefe"]
+    # Das Ende von Object Capture schickt ebenfalls eine Liste „fertig“ (Netz, noch ohne Messung); sie kann nach
+    # dem Zeitstempel ankommen. Deshalb auf die Liste mit der Messung warten.
     _, _, liste, _ = app.wait_for(lambda h: h["type"] == "REF_LIST" and h["referenzen"]
-                                  and h["referenzen"][0]["zustand"] == "fertig", start=start)
-    assert liste["referenzen"][0]["messung"] and liste["referenzen"][0]["netz"]
+                                  and h["referenzen"][0]["zustand"] == "fertig"
+                                  and h["referenzen"][0]["messung"], start=start)
+    assert liste["referenzen"][0]["netz"]
     app.close()
 
 
