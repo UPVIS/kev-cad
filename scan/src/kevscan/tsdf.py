@@ -3,7 +3,11 @@
 
 Welt in mm (Kev CAD, z oben). Je Bild: Voxelmitten in die Kamera, Tiefe am Bildpunkt (bilinear, nur wenn die vier
 Nachbarn gemessen sind), Abstand d = D − z, abgeschnitten auf ±trunc, gewichtet mit der Konfidenz gemittelt. Voxel
-weit hinter der Fläche (d < −trunc) bleiben unberührt, so wachsen keine Rückseiten zu.
+weit hinter der Fläche (d < −trunc) bleiben unberührt, so wachsen keine Rückseiten zu. Freier Raum weit vor der
+gemessenen Fläche (d > ``frei_ab``) zählt nur mit ``frei_gewicht``: Mit 1 räumen Sichtstrahlen, die an dünnen Kanten
+um ein LiDAR-Pixel danebenliegen und erst den Boden dahinter treffen, ganze Platten weg (Rollwagen, 4-mm-Platten,
+23.10.2026); mit 0,1 setzt sich solcher freier Raum nur durch, wenn viele Bilder ihn sehen. Nah vor der Fläche
+(trunc < d ≤ frei_ab) zählt er voll, sonst würden kompakte Teile durch Rauschen dicker.
 
 Rechnet mit torch auf der GPU (MPS), wenn vorhanden (``geraet="auto"``), sonst mit numpy; beide Wege rechnen gleich.
 Am echten Scan (7,7 Mio. Voxel) braucht numpy rund 0,9 s je Bild.
@@ -18,7 +22,7 @@ MAX_VOXEL = 24_000_000
 
 class TSDF:
     def __init__(self, lo, hi, voxel_mm: float, trunc_mm: float | None = None, farbe: bool = True,
-                 geraet: str | None = "auto") -> None:
+                 geraet: str | None = "auto", frei_gewicht: float = 1.0, frei_ab_mm: float | None = None) -> None:
         lo, hi = np.asarray(lo, float), np.asarray(hi, float)
         ausdehnung = hi - lo
         v = float(voxel_mm)
@@ -28,6 +32,8 @@ class TSDF:
             n = np.ceil(ausdehnung / v).astype(int)
         self.voxel = v
         self.trunc = float(trunc_mm or max(4.0 * v, 8.0))
+        self.frei_gewicht = float(frei_gewicht)
+        self.frei_ab = float(frei_ab_mm) if frei_ab_mm is not None else 2.0 * self.trunc
         self.lo = lo
         self.n = n
         gx = lo[0] + (np.arange(n[0]) + 0.5) * v
@@ -93,7 +99,7 @@ class TSDF:
         if not len(idx):
             return 0
         neu = np.minimum(1.0, d / self.trunc).astype(np.float32)
-        g = np.full(len(idx), float(gewicht), np.float32)
+        g = np.where(d > self.frei_ab, float(gewicht) * self.frei_gewicht, float(gewicht)).astype(np.float32)
         if konf is not None:
             g *= konf[y0, x0]
         nutz = g > 0
@@ -136,7 +142,7 @@ class TSDF:
         spanne = st.amax(0) - st.amin(0)
         d = Dw - z
         ok = alle & (spanne < torch.clamp(0.02 * Dw, min=self.trunc)) & (d > -self.trunc)
-        g = torch.full_like(d, float(gewicht))
+        g = torch.where(d > self.frei_ab, float(gewicht) * self.frei_gewicht, float(gewicht)).to(f32)
         if konf is not None:
             g = g * torch.from_numpy(np.ascontiguousarray(konf, np.float32)).to(dev)[y0, x0]
         ok &= g > 0
@@ -188,10 +194,11 @@ class TSDF:
 
 
 def voxel_aus_box(groesse_mm, ziel_mm: float = 2.0) -> float:
-    """Voxelgröße aus der Objektgröße: 2 mm bei Gegenständen bis etwa 40 cm, darüber so, dass die lange Seite rund
-    200 Voxel hat (höchstens 10 mm)."""
+    """Voxelgröße aus der Objektgröße: 2 mm bei Gegenständen bis etwa 60 cm, darüber so, dass die lange Seite rund
+    300 Voxel hat (höchstens 10 mm). Bis Build 491 waren es 200 Voxel; am Rollwagen (84 cm Box) wurden daraus 4 bis
+    5 mm, zu grob für seine 4-mm-Platten."""
     lang = float(max(groesse_mm))
-    return float(min(10.0, max(ziel_mm, lang / 200.0)))
+    return float(min(10.0, max(ziel_mm, lang / 300.0)))
 
 
 def trunc_fuer(voxel_mm: float, rauschen_mm: float = 3.0) -> float:

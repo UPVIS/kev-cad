@@ -7,7 +7,9 @@ Ablauf (``auswerten``):
 3. Boden und Objekt: aus ``objekt.json`` oder geschätzt (stärkste waagrechte Ebene unter dem Fokuspunkt der Kameras,
    größte Gruppe von LiDAR-Punkten darüber).
 4. Tiefe je Bild mit PromptDA (LiDAR als Prompt, Konfidenz 0 maskiert), ``--schnell`` mit dem kleinen Modell.
-5. TSDF über die Box (Voxel aus der Boxgröße, etwa 2 mm), Netz mit marching cubes, größte Komponente.
+5. TSDF über die Box (Voxel aus der Boxgröße, etwa 2 mm, lange Seite höchstens 300 Voxel; freier Raum weit vor einer
+   Fläche zählt nur ein Zehntel, damit dünne Platten stehen bleiben), Netz mit marching cubes, alle Komponenten ab 3 %
+   der größten (dünne Rahmen zerfallen an Kanten in Stücke).
 6. Kev-CAD-System wie bei Object Capture: Boden z = 0, Mitte des Grundrisses x = y = 0, lange Seite = X.
 7. Ausgabe: ``netz_mm.obj``/``.ply``, ``punkte_mm.ply``, ``poses.json`` (Form von kevcad-capture), ``kameras.json``
    (für fotomess), ``bilder/``, ``masken/`` (Silhouette des Netzes), ``tiefe/``, ``bericht.json``.
@@ -37,6 +39,13 @@ BERICHT_FORMAT = "kevcad-scan/bericht"
 ARBEIT = 1920  # lange Kante der Bilder für fotomess und die Fotoansicht
 PHASEN = {"einlesen": (0.0, 0.03), "auswahl": (0.03, 0.05), "bilder": (0.08, 0.05), "tiefe": (0.13, 0.57),
           "tsdf": (0.70, 0.17), "netz": (0.87, 0.04), "masken": (0.91, 0.04), "bericht": (0.95, 0.05)}
+# Freier Raum weit vor einer Fläche zählt in der TSDF nur zu diesem Anteil (siehe tsdf.py): Sonst räumen Sichtstrahlen,
+# die an dünnen Kanten um ein LiDAR-Pixel danebenliegen, ganze Platten weg (Rollwagen: mit 1,0 nur Boden und Räder,
+# mit 0,1 der ganze Rahmen samt Öffnung).
+FREI_GEWICHT = 0.1
+# Komponenten des Netzes, die bleiben: mindestens dieser Anteil an der Fläche der größten (dünne Rahmen zerfallen an
+# Kanten in mehrere Stücke, die alle zum Objekt gehören)
+KOMPONENTE_MIN_ANTEIL = 0.03
 
 Melde = Callable[[dict[str, Any]], None]
 
@@ -234,7 +243,8 @@ class Auswertung:
         voxel = voxel_aus_box(groesse, 2.0)
         lo = box_lo.copy()
         lo[2] = boden_z
-        tsdf = TSDF(lo, box_hi, voxel, trunc_fuer(voxel, 2.0 if not self.ohne_promptda else 4.0))
+        tsdf = TSDF(lo, box_hi, voxel, trunc_fuer(voxel, 2.0 if not self.ohne_promptda else 4.0),
+                    frei_gewicht=FREI_GEWICHT)
         for j, b in enumerate(mit_tiefe):
             tsdf.integriere(b["tiefe"], b["K_tiefe"], b["R"], b["t"], konf=b["tiefe_konf"], farbe_rgb=b["farbe_tiefe"])
             self.fortschritt("tsdf", (j + 1) / len(mit_tiefe), f"Verschmelzen {j + 1} von {len(mit_tiefe)}")
@@ -245,7 +255,7 @@ class Auswertung:
         self.fortschritt("netz", 0.0, "Netz erzeugen")
         roh = tsdf.netz()
         roh = _ohne_bodenreste(roh, boden_z, tsdf.voxel)
-        n, info = netzmod.aufraeumen(roh)
+        n, info = netzmod.aufraeumen(roh, min_anteil=KOMPONENTE_MIN_ANTEIL)
         if not len(n["triangles"]):
             raise fmt.ScanFehler("Kein Netz entstanden (Objekt nicht gefunden oder Tiefe unbrauchbar)")
         g = netzmod.grundriss(n["positions"], boden_z + 0.15 * float(np.ptp(n["positions"][:, 2])))
@@ -307,8 +317,10 @@ class Auswertung:
                        "fotos_im_scan": len(scan.fotos)},
             "rekonstruktion": {"images": len(bilder), "posed": len(bilder)},
             "objekt": {"dreiecke": info.get("dreiecke"), "dreiecke_gesamt": info.get("dreiecke_gesamt"),
-                       "komponenten": info.get("komponenten"), "box_quelle": box_quelle},
-            "voxel_mm": round(tsdf.voxel, 3), "trunc_mm": round(tsdf.trunc, 2), "punkte": int(len(punkte)),
+                       "komponenten": info.get("komponenten"), "komponenten_behalten": info.get("behalten"),
+                       "box_quelle": box_quelle},
+            "voxel_mm": round(tsdf.voxel, 3), "trunc_mm": round(tsdf.trunc, 2), "frei_gewicht": tsdf.frei_gewicht,
+            "punkte": int(len(punkte)),
             "huellmass_mm": {"laenge": round(float(hi_p[0] - lo_p[0]), 1), "breite": round(float(hi_p[1] - lo_p[1]), 1),
                              "hoehe": round(float(hi_p[2]), 1)},
             "grundriss_mm": {"laenge": round(g["laenge"], 1), "breite": round(g["breite"], 1)},

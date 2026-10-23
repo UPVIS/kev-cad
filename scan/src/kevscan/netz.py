@@ -45,8 +45,10 @@ def komponenten(n_punkte: int, T: np.ndarray) -> np.ndarray:
     return lab[T[:, 0]]
 
 
-def aufraeumen(netz: dict[str, np.ndarray], nur_groesste: bool = True) -> tuple[dict[str, np.ndarray], dict]:
-    """Größte Komponente (nach Fläche), ungenutzte Ecken weg. Rückgabe (Netz, Kennzahlen)."""
+def aufraeumen(netz: dict[str, np.ndarray], nur_groesste: bool = True,
+               min_anteil: float | None = None) -> tuple[dict[str, np.ndarray], dict]:
+    """Größte Komponente (nach Fläche), ungenutzte Ecken weg. ``min_anteil``: statt nur der größten alle Komponenten
+    mit mindestens diesem Anteil an deren Fläche (dünne Rahmen zerfallen in Stücke). Rückgabe (Netz, Kennzahlen)."""
     P, T = netz["positions"], netz["triangles"]
     farbe = netz.get("colors")
     info = {"dreiecke_gesamt": int(len(T)), "komponenten": 0}
@@ -57,8 +59,13 @@ def aufraeumen(netz: dict[str, np.ndarray], nur_groesste: bool = True) -> tuple[
     fl = flaechen(P, T)
     summe = np.bincount(lab, weights=fl)
     info["komponenten"] = int((summe > 0).sum())
-    if nur_groesste:
+    if min_anteil is not None and summe.max() > 0:
+        behalten = np.flatnonzero(summe >= float(min_anteil) * summe.max())
+        T = T[np.isin(lab, behalten)]
+        info["behalten"] = int(len(behalten))
+    elif nur_groesste:
         T = T[lab == int(np.argmax(summe))]
+        info["behalten"] = 1
     benutzt = np.unique(T)
     neu = np.full(len(P), -1, np.int64)
     neu[benutzt] = np.arange(len(benutzt))
