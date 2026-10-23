@@ -156,7 +156,9 @@ def _anzeige(teile: list[str], masse: dict[str, float]) -> str:
 
 def baue(letzter: Any, auftrag: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """Szene aus ``LETZTER`` (Modell, Körper, Katalog des letzten Laufs). ``auftrag``: ``spins`` (Teil → [Punkt,
-    Richtung] rollender Teile aus der Animation), ``antrieb`` (Teil oder Gruppe, die geschoben wird), ``run``."""
+    Richtung] rollender Teile aus der Animation), ``antrieb`` (Teil oder Gruppe, die geschoben wird), ``run``,
+    ``szenario`` (Lager je Lastfall: dessen feste Lager gelten als befestigt), ``untergruende`` (Untergründe je
+    Lastfall: Reibwerte der Bodenpaare zusätzlich je Untergrund, ``boden_mu_je``)."""
     from kevcad_kernel.statik.modell import _bedingungen
     from kevcad_kernel.statik.werkstoff import reibwert
 
@@ -333,8 +335,10 @@ def baue(letzter: Any, auftrag: dict[str, Any] | None = None) -> tuple[dict[str,
             continue
         if not hat_bedingung[a] or not hat_bedingung[b]:
             verbinden(a, b)
+    fest_teile = (letzter.befestigt_fuer(auftrag.get("szenario")) if hasattr(letzter, "befestigt_fuer")
+                  else getattr(letzter, "befestigt", {}))
     for n in m.teile:
-        if n in getattr(letzter, "befestigt", {}) and n not in welt:
+        if n in fest_teile and n not in welt:
             welt[n] = "befestigt"
 
     gruppen: dict[str, list[str]] = {}
@@ -540,13 +544,16 @@ def baue(letzter: Any, auftrag: dict[str, Any] | None = None) -> tuple[dict[str,
 
     paar_mu = [mu(kollision[a]["material"], kollision[b]["material"]) for a, b in paare]
     boden_mu = [mu(kollision[n]["material"], m.untergrund) for n in boden_paare]
+    # Untergrund je Lastfall (Simulation): dieselben Bodenpaare mit dem Reibwert gegen diesen Boden
+    boden_mu_je = {str(u): [mu(kollision[n]["material"], str(u)) for n in boden_paare]
+                   for u in dict.fromkeys(auftrag.get("untergruende") or []) if u}
 
     for c in kollision.values():
         c.pop("_ebenen", None)
     meta = {
         "version": VERSION, "run": auftrag.get("run"), "boden_z": boden_z, "untergrund": m.untergrund,
         "koerper": koerper, "kollision": kollision, "paare": paare, "paar_mu": paar_mu, "boden_paare": boden_paare,
-        "boden_mu": boden_mu, "antrieb": antrieb, "coacd": coacd_teile,
+        "boden_mu": boden_mu, "boden_mu_je": boden_mu_je, "antrieb": antrieb, "coacd": coacd_teile,
         "reibung_angenommen": sorted(angenommen), "hinweise": hinweise, "frei_auf": frei_auf,
         "masse_gesamt": float(sum(masse.values())),
         "ms": round((time.perf_counter() - t0) * 1000, 1),

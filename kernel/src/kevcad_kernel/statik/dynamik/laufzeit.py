@@ -274,26 +274,35 @@ class DynamikRuntime:
                 if voll is None or self._statik_run != run:  # type: ignore[attr-defined]
                     return
                 eintraege = {e["name"]: e for e in voll.get("szenarien") or [] if e.get("name") in namen}
-            szenarien = [self._dyn_szenario(e["name"], (e.get("szenario") or {})) for e in eintraege.values()]
-            antrieb = next((s.get("antrieb_teil") for s in szenarien if s.get("antrieb_teil")), None)
-            erg = self._dyn_exec({"szene": {"spins": self._dyn_spins(), "antrieb": antrieb}})
-            if run is not None and erg.get("szene_run") not in (None, run):
-                return
-            try:
-                out, felder = self._dyn_prozess(erg["szene_datei"], szenarien)
-            finally:
+            # Lager je Lastfall (Simulation): eine Szene je Menge gültiger Lager (feste Lager sind befestigt)
+            gruppen: dict[tuple, list[dict[str, Any]]] = {}
+            for e in eintraege.values():
+                gruppen.setdefault(tuple(e.get("lager") or e.get("lager_ids") or []), []).append(e)
+            for liste in gruppen.values():
+                szenarien = [self._dyn_szenario(e["name"], (e.get("szenario") or {})) for e in liste]
+                antrieb = next((s.get("antrieb_teil") for s in szenarien if s.get("antrieb_teil")), None)
+                erg = self._dyn_exec({"szene": {"spins": self._dyn_spins(), "antrieb": antrieb,
+                                                "szenario": liste[0]["name"],
+                                                "untergruende": [s["untergrund"] for s in szenarien
+                                                                 if s.get("untergrund")]}})
+                if run is not None and erg.get("szene_run") not in (None, run):
+                    return
                 try:
-                    os.unlink(erg["szene_datei"])
-                except OSError:
-                    pass
-            for i, s in enumerate(out.get("szenarien") or []):
-                ablauf = s.get("ablauf") or {"stand": "failed", "meldung": out.get("meldung")}
-                if ablauf.get("stand") == "done":
-                    self._dyn_animation(ablauf, felder, i, run or 0)
-                self._dyn_einbauen(s["name"], ablauf, run, zeigen=False)
-            if out.get("stand") != "done":
-                for n in namen:
-                    self._dyn_einbauen(n, {"stand": "failed", "meldung": out.get("meldung")}, run, zeigen=False)
+                    out, felder = self._dyn_prozess(erg["szene_datei"], szenarien)
+                finally:
+                    try:
+                        os.unlink(erg["szene_datei"])
+                    except OSError:
+                        pass
+                for i, s in enumerate(out.get("szenarien") or []):
+                    ablauf = s.get("ablauf") or {"stand": "failed", "meldung": out.get("meldung")}
+                    if ablauf.get("stand") == "done":
+                        self._dyn_animation(ablauf, felder, i, run or 0)
+                    self._dyn_einbauen(s["name"], ablauf, run, zeigen=False)
+                if out.get("stand") != "done":
+                    for e in liste:
+                        self._dyn_einbauen(e["name"], {"stand": "failed", "meldung": out.get("meldung")}, run,
+                                           zeigen=False)
         except Exception as exc:  # noqa: BLE001 - Hintergrund: als Meldung am Szenario
             for n in namen:
                 try:
@@ -309,6 +318,8 @@ class DynamikRuntime:
                                "dauer": ab.get("dauer"), "stoss": ab.get("stoss"),
                                "fahrtrichtung": ab.get("fahrtrichtung") or [1.0, 0.0, 0.0],
                                "angriff": ab.get("angriff") or "boden", "suche": suche}
+        if sz.get("untergrund"):  # Untergrund je Lastfall (Simulation): Reibung am Boden im Ablauf
+            out["untergrund"] = str(sz["untergrund"])
         ng = sz.get("neigung")
         if ng:
             out["neigung"] = ng.get("grad")
@@ -355,7 +366,9 @@ class DynamikRuntime:
             return {"ok": False, "error": str(exc)}
         try:
             erg = self._dyn_exec({"szenario": sz, "szene": {"spins": self._dyn_spins(animation),
-                                                            "antrieb": auftrag.get("antrieb_teil")}})
+                                                            "antrieb": auftrag.get("antrieb_teil"),
+                                                            "untergruende": [auftrag["untergrund"]]
+                                                            if auftrag.get("untergrund") else []}})
         except (ValueError, RuntimeError) as exc:
             return {"ok": False, "error": str(exc)}
         t_szene = (time.perf_counter() - t0) * 1000

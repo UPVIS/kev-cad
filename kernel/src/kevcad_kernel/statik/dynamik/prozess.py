@@ -4,7 +4,8 @@ Läuft getrennt vom Rechenprozess von model.py und von der Laufzeit; MuJoCo und 
 (JSON): ``szene`` (Datei aus ``szene.schreibe``), ``ausgabe`` (Ergebnis JSON), ``lagen`` (Ergebnis npz: Lagen je Bild
 und Teil für die Zeitleiste), ``szenarien`` (je ``name``, ``geschwindigkeit`` m/s, ``bremsen`` m/s² | "abrupt" |
 "anprall", ``stoss`` Faktor auf die Verzögerung, ``dauer`` s, ``fahrtrichtung``, ``angriff`` "boden" | Höhe mm | Punkt,
-``neigung`` Grad, ``neigung_richtung``, ``bahn`` {zeiten, weg_m} aus einer Animation, ``suche`` bool), ``fps``,
+``neigung`` Grad, ``neigung_richtung``, ``bahn`` {zeiten, weg_m} aus einer Animation, ``suche`` bool,
+``untergrund``: eigener Boden des Lastfalls, Reibwerte aus ``boden_mu_je`` der Szene), ``fps``,
 ``faeden`` (höchstens 4).
 
 Ergebnis je Szenario: ``ablauf`` (Kennzahlen, Urteile, Handrechnung, Verlauf, Kontaktpfeile, Grenzen, Rechenzeiten).
@@ -76,6 +77,9 @@ def rechne_szenario(meta: dict[str, Any], formen: dict[str, Any], sz: dict[str, 
     """Ein Szenario: Ablauf mit Aufzeichnung, Suche nach den Grenzen, Urteile. Liefert (ablauf, Felder für die
     Zeitleiste)."""
     t0 = time.perf_counter()
+    u = sz.get("untergrund")
+    if u and u in (meta.get("boden_mu_je") or {}):  # Untergrund je Lastfall: Reibung gegen diesen Boden
+        meta = {**meta, "boden_mu": list(meta["boden_mu_je"][u]), "untergrund": u}
     richtung = np.asarray(sz.get("fahrtrichtung") or (1.0, 0.0, 0.0), float)
     angriff = sz.get("angriff") or "boden"
     neigung = float(sz.get("neigung") or 0.0)
@@ -201,7 +205,7 @@ def rechne_szenario(meta: dict[str, Any], formen: dict[str, Any], sz: dict[str, 
                     "verzoegerung": round(a, 3), "bremsen": pr.text, "stoss": stoss if stoss != 1.0 else None,
                     "angriff": angriff if isinstance(angriff, str) else _r(angriff, 1),
                     "richtung": _r(mo.richtung, 3), "t_brems": pr.t_brems, "t_steht": _r(pr.t_steht, 3),
-                    "neigung": neigung or None},
+                    "neigung": neigung or None, "untergrund": meta.get("untergrund")},
         "kennzahlen": kz, "urteile": urteile, "handrechnung": hand,
         "suche": {k: {kk: _r(vv, 3) for kk, vv in x.items()} for k, x in suche.items()},
         "verlauf": verlauf, "pfeile": pfeile,

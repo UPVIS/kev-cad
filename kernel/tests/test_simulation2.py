@@ -430,3 +430,47 @@ def test_gelenkig_und_flaechenlast_vom_modell_bis_zur_fem(tmp_path, monkeypatch)
                                                         abs=0.5)
     print(f"Balken gelenkig, Druck 0,025 N/mm² auf der Oberseite: Lager {r['lagerkraefte']}, Sicherheit "
           f"{r['sicherheit']}, {dauer:.1f} s")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Untergrund je Lastfall im Ablauf (S2)
+
+
+def test_untergrund_je_lastfall_im_ablauf(tmp_path):
+    """Derselbe Wagen (Räder aus Multiplex) bremst einmal auf Beton (Untergrund des Modells), einmal auf Eiche (eigener
+    Untergrund des Lastfalls): Rutschgrenze mit blockierten Rädern μ · g mit dem Reibwert des jeweiligen Bodens aus dem
+    Katalog."""
+    from test_dynamik import WAGEN
+
+    from kevcad_kernel.statik.dynamik import mjcf, prozess, szene
+    from kevcad_kernel.statik.werkstoff import reibwert
+
+    code = WAGEN + ('st.szenario("Bremsen Eiche", geschwindigkeit=1, bremsen="abrupt", untergrund="eiche")\n'
+                    'st.szenario("Bremsen Beton", geschwindigkeit=1, bremsen="abrupt")\n')
+    _, check, _ = laufe(tmp_path, code, strikt=False)
+    assert szenario(check, "Bremsen Eiche")["szenario"]["untergrund"] == "eiche"
+    st = anbindung.LETZTER
+    meta, felder = szene.baue(st, {"run": 1, "untergruende": ["eiche"]})
+    mu_eiche = reibwert(st.katalog, "multiplex-birke", "eiche")["haft"]
+    mu_beton = reibwert(st.katalog, "multiplex-birke", "beton")["haft"]
+    assert mu_eiche != mu_beton
+    assert set(meta["boden_mu_je"]) == {"eiche"}
+    formen = mjcf.formen_je_teil(meta, felder, {})
+    kz = {}
+    for u in (None, "eiche"):
+        sz = {"name": f"Bremsen {u}", "geschwindigkeit": 1.0, "bremsen": "abrupt", "suche": False}
+        if u:
+            sz["untergrund"] = u
+        abl, _ = prozess.rechne_szenario(meta, formen, sz)
+        assert abl["stand"] == "done", abl
+        kz[u] = abl["kennzahlen"]
+        assert abl["antrieb"]["untergrund"] == (u or "beton")
+    assert kz[None]["mu_rad"] == pytest.approx(mu_beton) and kz["eiche"]["mu_rad"] == pytest.approx(mu_eiche)
+    assert kz["eiche"]["rutschgrenze"] == pytest.approx(mu_eiche * G, rel=0.01)
+    # die Laufzeit gibt den Untergrund an den Ablauf weiter
+    from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime
+
+    kurz = next(e for e in check["statik"]["szenarien"] if e["name"] == "Bremsen Eiche")["szenario"]
+    assert DynamikRuntime._dyn_szenario(DynamikRuntime(), "Bremsen Eiche", kurz)["untergrund"] == "eiche"
+    print(f"Ablauf: μ Beton {mu_beton}, Eiche {mu_eiche}; Rutschgrenze {kz[None]['rutschgrenze']} / "
+          f"{kz['eiche']['rutschgrenze']} m/s²")
