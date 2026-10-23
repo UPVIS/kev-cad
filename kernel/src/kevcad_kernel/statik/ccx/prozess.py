@@ -56,6 +56,7 @@ ZUSATZ = ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf")
 FEDER_ANTEIL = 1e-6  # Halte-Federn: Gesamtsteifigkeit mindestens Anteil · E · Größe des Körpers
 FEDER_LAST = 0.02  # … und mindestens 2 % der Last je mm (bei 0,25 mm Weg tragen sie 0,5 % der Last)
 ANFANG_KONTAKT = 0.002  # erstes Inkrement mit Kontakt: 0,2 % der Last (höchstens 0,1 mm Weg auf den Federn)
+ANFANG_KLEMMUNG = 0.05  # nach einer Vorspannung (Klemmung) liegt der Körper an
 RUTSCH_ANTEIL = 0.05  # tragen die Federn mehr als 5 % der Last, hält der Kontakt den Körper nicht
 KONTAKT_FAKTOR = 2.0  # Druck-Strafsteifigkeit = Faktor · E (weicherer Werkstoff) je mm
 HAFT_TEILER = 50.0  # Haftsteifigkeit = Druck-Strafsteifigkeit / Teiler
@@ -470,7 +471,9 @@ class Fall:
             if klemm:
                 d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if 0 in frei else 0.25, 1.0, 1e-7,
                                                                     0.5), frequenz=1000))
-            d.schritte.append(Schritt("last", F_vor + F_last, zeit=(ANFANG_KONTAKT if frei_last else 0.25, 1.0, 1e-7, 0.5),
+            # nach der Vorspannung liegt der geklemmte Körper schon an: zügiger anfangen
+            anfang = (ANFANG_KLEMMUNG if klemm else ANFANG_KONTAKT) if frei_last else 0.25
+            d.schritte.append(Schritt("last", F_vor + F_last, zeit=(anfang, 1.0, 1e-7, 0.5),
                                       frequenz=1000))
             if T.get("fliess"):
                 d.schritte.append(Schritt("entlasten", F_vor, zeit=(0.5, 1.0, 1e-6, 1.0), frequenz=1000))
