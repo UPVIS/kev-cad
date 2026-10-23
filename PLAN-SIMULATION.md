@@ -141,6 +141,16 @@ Druck, Verfahren der Grenze), Druck und SIM_EDIT, Kante setzt Gleitrichtung und 
 Trackball folgt der Maus, Ringe und Einrasten, Griff mit Kugel, Ring und bildschirmfester Länge, Vergleich nur gleicher
 Verfahren.
 
+Selbsttest der Testvariante (`KEVCAD_SELFTEST=simulation`, jetzt 73 Prüfungen, bestanden in „Kev CAD Test sim2“): zu
+den bisherigen Schritten der Untertitel (folgt Lastfall und Wechsel sofort), der Vergleich nur gleicher Verfahren
+(vorher FEM, jetzt S0: verglichen wird S0 mit S0) und ein eigener Lastfall „Selbsttest Gelenk“: das feste Lager gilt
+nur noch im ersten Lastfall (SIM und STATICS), 2 kg und ein Druck 0,02 N/mm² auf der ganzen Oberseite (Vorschau und
+Kernel 4,80 N = p · 240 mm²), ein gelenkiges Lager im Bolzenloch und ein gleitendes Lager als Schiene entlang einer
+angeklickten Kante (zwei gehaltene Richtungen), beide nur in diesem Lastfall; Festigkeit (FEM) mit Gelenk und Schiene
+(Sicherheit 55,6), Grenze mit der FEM (13,89-fach, maßgebend FEM, Probe Ausnutzung 1,00, daneben S0 zum Vergleich);
+Griff: Kugel dreht Azimut und Höhe, Ring nur den Azimut (Höhe bleibt), Einrasten auf die Normale; bildschirmfest:
+13,1 mm vor und 5,0 mm nach dem Zoomen bei gleicher Größe auf dem Bildschirm.
+
 ## Grenzen und offen
 
 - Gleitende Lager halten bilateral (kein Abheben) und reibungsfrei; die Topologie rundet sie weiter auf die nächste
