@@ -528,7 +528,7 @@ def _auswerten(b: _Aufbau, sz: Szenario) -> S1Ergebnis:
         M = [node.RxnMX[combo], node.RxnMY[combo], node.RxnMZ[combo]]
         e.auflager.append({"stab": a.stab, "teil": a.teile[1], "punkt": [round(float(c), 1) for c in b.knoten_pos[kn]],
                            "kraft": [round(float(c), 2) for c in F], "moment": [round(float(c), 1) for c in M],
-                           "art": a.art, "t": round(a.t, 1)})
+                           "art": a.art, "t": round(a.t, 1), "seiten": _seiten(b, a.stab, a.t, combo)})
     # Stufe 3: Kraft und Moment, die der Stab über sein starres Glied in den Verbinder leitet (Endkräfte des Glieds am
     # Stabende, global; das Glied trägt keine Last, also kommt genau das im Starrkörper an), am Anschlusspunkt
     for g, a, kn in b.verbinder:
@@ -539,13 +539,43 @@ def _auswerten(b: _Aufbau, sz: Szenario) -> S1Ergebnis:
         e.verbinder.append({"stab": a.stab, "teil": a.teile[1], "koerper": a.partner[1],
                             "punkt": [round(float(c), 2) for c in b.knoten_pos[kn]],
                             "kraft": [round(float(c), 3) for c in Fg[0:3]],
-                            "moment": [round(float(c), 2) for c in Fg[3:6]], "art": a.art})
+                            "moment": [round(float(c), 2) for c in Fg[3:6]], "art": a.art,
+                            "seiten": _seiten(b, a.stab, a.t, combo)})
     # Kräfte in die Starrkörper (Summe der Gliedkräfte am Starrkörperknoten, grob)
     for kid, kn in b.k_knoten.items():
         node = fe.nodes[kn]
         e.koerper_kraefte[kid] = [round(float(node.DX[combo]), 4), round(float(node.DY[combo]), 4),
                                   round(float(node.DZ[combo]), 4)]
     return e
+
+
+def _seiten(b: _Aufbau, stab: str, t: float, combo: str) -> list[dict[str, Any]]:
+    """Stufe 4 (Kontakt, additiv): Kraft und Moment, die der Stab von jeder Seite in seine Station am Anschluss leitet
+    (Endkräfte der angrenzenden Stabglieder, global, Moment um die Station). ``richtung``: Einheitsvektor von der
+    Station zur Seite, ``punkt`` die Station (Bezug der Momente). Ein Festkörper mit dem Stab als eigenem Körper (Rohr in der Klemmung) bringt sie an den
+    Schnittflächen des Stabs auf; die Summe beider Seiten ist die Lagerkraft (ohne Lasten genau an der Station)."""
+    try:
+        s = b.m.staebe[stab]
+        kn = b.station(stab, t)
+        t_kn = next(tt for tt, n in b.stationen[stab] if n == kn)
+        punkt = [round(float(c), 3) for c in b.knoten_pos[kn]]
+        out = []
+        for g, ti, tj in b.glieder[stab]:
+            if abs(tj - t_kn) < 1e-6:  # Glied endet an der Station (j-Ende): Seite zum Stabanfang
+                F = np.asarray(b.fe.members[g].F(combo), dtype=float).reshape(-1)
+                out.append({"richtung": [round(float(c), 6) for c in -s.achse],
+                            "kraft": [round(-float(c), 3) for c in F[6:9]],
+                            "moment": [round(-float(c), 2) for c in F[9:12]], "laenge": round(t_kn, 1),
+                            "punkt": punkt})
+            elif abs(ti - t_kn) < 1e-6:  # Glied beginnt an der Station (i-Ende): Seite zum Stabende
+                F = np.asarray(b.fe.members[g].F(combo), dtype=float).reshape(-1)
+                out.append({"richtung": [round(float(c), 6) for c in s.achse],
+                            "kraft": [round(-float(c), 3) for c in F[0:3]],
+                            "moment": [round(-float(c), 2) for c in F[3:6]], "laenge": round(s.laenge - t_kn, 1),
+                            "punkt": punkt})
+        return out
+    except Exception:  # noqa: BLE001 - nur Zusatz für Stufe 4
+        return []
 
 
 def _durchbiegung(b: _Aufbau, s: Stab, combo: str, sz: Szenario) -> tuple[float, float]:
