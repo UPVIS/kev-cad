@@ -390,3 +390,13 @@ def test_spule_verweist_auf_filament_und_rueckfrage(env):
     assert liste["ok"] and [f["id"] for f in liste["filamente"]] == ["polymaker-polylite-petg-gelb",
                                                                      "bambu-petg-basic"]
     assert liste["zuletzt"] == {"petg": "bambu-petg-basic"} and liste["spulen"][0]["filament"] == "bambu-petg-basic"
+
+
+def test_knapp_ueber_der_kante_wird_ins_bett_geschoben():
+    """Schraube 18 × 18 mm bei y = 8,991 ragt 0,009 mm über die Kante: Bambu Studio bricht sonst mit -50 ab
+    (KevCup, Build 467). Kleine Überstände werden nach innen geschoben, große nicht (die meldet die Prüfung)."""
+    P = np.array([[-9, -9, 0], [9, 9, 19]], dtype=float)
+    assert sl._ins_bett(P, 33.0, 8.991) == (0.0, pytest.approx(0.309))
+    assert sl._ins_bett(P, 128.0, 128.0) == (0.0, 0.0)
+    assert sl._ins_bett(P, 247.0, 128.0) == (pytest.approx(-0.3), 0.0)  # rechte Kante
+    assert sl._ins_bett(P, 260.0, 128.0) == (0.0, 0.0)  # 13 mm über der Kante: kein stilles Schieben
