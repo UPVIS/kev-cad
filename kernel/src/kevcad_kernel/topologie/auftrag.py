@@ -237,8 +237,10 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
             brauche.add(anderer)
     from kevcad_kernel.statik.festkoerper.auftrag import lager_nachbar, lager_npz, lager_schluessel
 
+    # Lager je Lastfall (Simulation): die Lager des gewählten Szenarios
+    m_sz = st.modell_fuer(szen[0]) if hasattr(st, "modell_fuer") and szen else m
     for x in sorted(brauche):
-        L = lager_nachbar(m, x)
+        L = lager_nachbar(m_sz, x) or lager_nachbar(m, x)
         if L is not None:  # ausdrücklich gesetztes Lager (Simulation): seine Fläche ist das „Nachbarnetz“
             datei = os.path.join(ordner, f"nachbar_{len(nachbarn)}.npz")
             n = lager_npz(L, datei)
