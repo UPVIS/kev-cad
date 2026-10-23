@@ -9,10 +9,15 @@ import simd
 /// Rendering „schnell“ (Phase 7, PLAN-PHASE7-RENDERINGS.md R1, R7): RealityKit offscreen (`RealityRenderer`, ab
 /// macOS 15) mit PBR-Materialien, Bildbeleuchtung und Schatten.
 ///
-/// Ablauf je Bild: drei Durchgänge in eigene Texturen – (C) nur die Teile auf durchsichtigem Grund, (A) Teile mit
-/// beleuchtetem Boden, (B) nur der Boden. A / B ergibt die Schattenmaske (RealityKit hat auf dem Mac keinen
-/// Schattenfänger), weichgezeichnet und über den Hintergrund gelegt (Farbe, unscharfe Umgebung oder durchsichtig),
-/// darüber C. Modell in mm mit Z oben, RealityKit in m mit Y oben.
+/// Ablauf je Bild: ein Durchgang (C) mit den Teilen auf durchsichtigem Grund (die Teile werfen in RealityKit Schatten
+/// aufeinander). Den Schatten auf dem Boden rechnet `BodenSchatten` auf der CPU wie die Flächenlichter des Fotos
+/// (Kontaktschatten unter dem Objekt, weicher Schlagschatten, R7 neu, 23.10.2026); er liegt über dem Hintergrund
+/// (Farbe, unscharfe Umgebung oder durchsichtig), darüber C. Parallele Ansichten rendern echt orthografisch. Modell in
+/// mm mit Z oben, RealityKit in m mit Y oben.
+///
+/// Ein Bild gilt als fertig, sobald RealityKit es meldet oder die GPU das Ereignis nach dem Rendern setzt (je nachdem,
+/// was zuerst kommt, `MTLSharedEvent`); die Meldung von RealityKit allein kam zweimal nicht. Kommt keins von beiden
+/// binnen `bildFrist`, verwirft der Renderer sich und die App versucht es einmal neu, beides mit Befund im Protokoll.
 @MainActor
 public final class PBRRenderer {
     public struct Teil {
@@ -33,27 +38,56 @@ public final class PBRRenderer {
         }
     }
 
-    /// Kamera in Modellkoordinaten (mm, Z oben), immer perspektivisch.
+    /// Kamera in Modellkoordinaten (mm, Z oben): perspektivisch oder, mit `orthoHoehe`, parallel (orthografisch).
     public struct Kamera: Equatable {
         public var position: SIMD3<Float>
         public var ziel: SIMD3<Float>
         public var oben: SIMD3<Float>
-        /// vertikaler Öffnungswinkel in Grad
+        /// vertikaler Öffnungswinkel in Grad (perspektivisch)
         public var fovGrad: Float
+        /// sichtbare Höhe in mm bei paralleler Projektion; nil = perspektivisch
+        public var orthoHoehe: Float?
 
-        public init(position: SIMD3<Float>, ziel: SIMD3<Float>, oben: SIMD3<Float>, fovGrad: Float) {
+        public init(position: SIMD3<Float>, ziel: SIMD3<Float>, oben: SIMD3<Float>, fovGrad: Float,
+                    orthoHoehe: Float? = nil) {
             self.position = position
             self.ziel = ziel
             self.oben = oben
             self.fovGrad = fovGrad
+            self.orthoHoehe = orthoHoehe
         }
 
         public var json: JSONValue {
             func v(_ p: SIMD3<Float>) -> JSONValue { .array([.number(Double(p.x)), .number(Double(p.y)), .number(Double(p.z))]) }
             return .object([
-                "projection": .string("perspective"), "position": v(position), "target": v(ziel), "up": v(oben),
-                "fov_deg": .number(Double(fovGrad)), "ortho_height_mm": .null,
+                "projection": .string(orthoHoehe == nil ? "perspective" : "orthographic"), "position": v(position),
+                "target": v(ziel), "up": v(oben), "fov_deg": .number(Double(fovGrad)),
+                "ortho_height_mm": orthoHoehe.map { .number(Double($0)) } ?? .null,
             ])
+        }
+
+        /// Strahl durch die Pixelmitte (x, y; y = 0 oben) eines Bildes w × h: Ursprung und Richtung (Modell).
+        func strahl(_ x: Int, _ y: Int, _ w: Int, _ h: Int) -> (SIMD3<Float>, SIMD3<Float>) {
+            let basis = Self.basis(position: position, ziel: ziel, oben: oben)
+            let nx = 2 * (Float(x) + 0.5) / Float(w) - 1
+            let ny = 1 - 2 * (Float(y) + 0.5) / Float(h)
+            let aspekt = Float(w) / Float(max(h, 1))
+            if let oh = orthoHoehe {
+                let halb = oh / 2
+                return (position + basis.rechts * (nx * halb * aspekt) + basis.oben * (ny * halb), basis.vor)
+            }
+            let t = tan(fovGrad * .pi / 360)
+            return (position, simd_normalize(basis.vor + basis.rechts * (nx * t * aspekt) + basis.oben * (ny * t)))
+        }
+
+        static func basis(position: SIMD3<Float>, ziel: SIMD3<Float>, oben: SIMD3<Float>)
+            -> (vor: SIMD3<Float>, rechts: SIMD3<Float>, oben: SIMD3<Float>)
+        {
+            let vor = simd_normalize(ziel - position)
+            var rechts = simd_cross(vor, oben)
+            if simd_length(rechts) < 1e-6 { rechts = SIMD3(1, 0, 0) }
+            rechts = simd_normalize(rechts)
+            return (vor, rechts, simd_normalize(simd_cross(rechts, vor)))
         }
     }
 
@@ -64,7 +98,8 @@ public final class PBRRenderer {
     }
 
     public enum Fehler: Error, LocalizedError {
-        case metal, keineTeile, umgebung(String), rendern(String), png, zeitueberschreitung
+        /// `befund`: was von RealityKit kam (geplant, GPU fertig, Meldung) und wie lange es dauerte
+        case metal, keineTeile, umgebung(String), rendern(String), png, zeitueberschreitung(String)
 
         public var errorDescription: String? {
             switch self {
@@ -73,13 +108,25 @@ public final class PBRRenderer {
             case .umgebung(let t): return "Umgebung nicht lesbar: \(t)"
             case .rendern(let t): return "RealityKit: \(t)"
             case .png: return "PNG ließ sich nicht schreiben"
-            case .zeitueberschreitung: return "RealityKit hat das Bild nicht fertig gemeldet (Zeitüberschreitung)"
+            case .zeitueberschreitung(let befund):
+                return "RealityKit hat das Bild nicht fertig gemeldet (Zeitüberschreitung; \(befund))"
             }
+        }
+
+        public var istZeitueberschreitung: Bool {
+            if case .zeitueberschreitung = self { return true }
+            return false
         }
     }
 
     private var renderer: RealityRenderer?
     private let device = MTLCreateSystemDefaultDevice()
+    /// GPU-Ereignis nach jedem Bild: fertig, auch wenn die Meldung von RealityKit ausbleibt
+    private lazy var ereignis: MTLSharedEvent? = device?.makeSharedEvent()
+    private let zuhoerer = MTLSharedEventListener(dispatchQueue: DispatchQueue(label: "de.upvis.kevcad.render.gpu"))
+    private var ereignisWert: UInt64 = 0
+    /// Befund des letzten Bildes (geplant, GPU fertig, gemeldet, über welchen Faden), für Protokoll und Tests
+    public private(set) var letzterBefund = ""
     private var netze: [String: MeshResource] = [:]
     private var umgebungen: [String: EnvironmentResource] = [:]
     private var hdrBilder: [String: HDRBild] = [:]
@@ -123,6 +170,8 @@ public final class PBRRenderer {
         welt.transform = Transform(matrix: Self.modellNachRK)
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
         var loP = lo, hiP = hi  // nur das Produkt, ohne Kulisse (Licht, Schattenkarte, Nahebene)
+        var bodenDreiecke: [SIMD3<Float>] = []  // Produkt in Weltlage für den Schatten auf dem Boden
+        var hellSumme: Float = 0, flaechenSumme: Float = 0  // mittlere Helligkeit des Produkts (Licht zurück auf den Boden)
         for teil in teile {
             guard teil.geometry.triangleCount > 0 else { continue }
             let achse = Self.laengsteAchse(teil.geometry)
@@ -137,6 +186,13 @@ public final class PBRRenderer {
             if !teil.pbr.kulisse && !teil.name.hasPrefix("Kulisse/") {
                 loP = simd_min(loP, a)
                 hiP = simd_max(hiP, b)
+                if szene.boden { Self.dreieckeInWelt(teil.geometry, teil.transform, in: &bodenDreiecke) }
+                let s = b - a
+                let flaeche = 2 * (s.x * s.y + s.y * s.z + s.x * s.z)
+                let f = teil.pbr.basisfarbe
+                let hell = 0.2126 * Self.linear(f.x) + 0.7152 * Self.linear(f.y) + 0.0722 * Self.linear(f.z)
+                hellSumme += flaeche * hell * (1 - 0.5 * teil.pbr.metallisch)
+                flaechenSumme += flaeche
             }
         }
         guard lo.x <= hi.x else { throw Fehler.keineTeile }
@@ -168,11 +224,12 @@ public final class PBRRenderer {
         // Licht: Hauptlicht mit Schatten (Studio wie in Blender von vorn links oben, sonst aus der hellsten Richtung)
         let mitte = (loP + hiP) / 2
         let diag = max(simd_length(hiP - loP), 1)
-        let diagAlles = max(simd_length(hi - lo), diag)
         var richtung = simd_normalize(SIMD3<Float>(-0.9, -1.1, 1.25))
         var lux: Float = 1700
-        if let hdr, let sonne = hdr.hellsteRichtung(drehungGrad: Float(szene.drehung)), sonne.z > 0.12 {
-            richtung = simd_normalize(sonne)
+        var sonne: SIMD3<Float>?
+        if let hdr, let s = hdr.hellsteRichtung(drehungGrad: Float(szene.drehung)), s.z > 0.12 {
+            richtung = simd_normalize(s)
+            sonne = richtung
             lux = 1400 * Float(szene.staerke)
         } else if hdr != nil {
             richtung = simd_normalize(SIMD3<Float>(-0.4, -0.6, 1.4))
@@ -187,17 +244,6 @@ public final class PBRRenderer {
             depthBias: 0.6)
         licht.look(at: rkMitte, from: rkMitte + Self.rkRichtung(richtung) * rkDiag * 3, relativeTo: nil)
 
-        // Boden knapp unter dem tiefsten Punkt, weiß und matt (nur für die Schattenmaske)
-        var bodenMat = PhysicallyBasedMaterial()
-        bodenMat.baseColor = .init(tint: NSColor(white: 0.85, alpha: 1))
-        bodenMat.roughness = 1.0
-        bodenMat.metallic = 0.0
-        let groesse = max(rkDiag * 40, diagAlles * 0.001 * 3)
-        let boden = ModelEntity(mesh: .generatePlane(width: groesse, depth: groesse), materials: [bodenMat])
-        boden.position = Self.rk(SIMD3(mitte.x, mitte.y, lo.z - diag * 0.0005))
-        boden.components.set(GroundingShadowComponent(castsShadow: false, receivesShadow: true))
-        boden.components.set(ImageBasedLightReceiverComponent(imageBasedLight: ibl))
-
         // Kamera
         let cam = Entity()
         // Nah- und Fernebene: das Produkt ganz, die Kulisse bis zur fernsten Ecke, Verhältnis höchstens 1 : 20 000
@@ -209,49 +255,60 @@ public final class PBRRenderer {
         }
         fern *= 1.05
         let nah = max(abstand - diag * 1.2, fern / 20_000, 0.5) * 0.5
-        cam.components.set(PerspectiveCameraComponent(
-            near: nah * 0.001, far: fern * 0.001, fieldOfViewInDegrees: kamera.fovGrad))
+        if let oh = kamera.orthoHoehe {
+            // Parallele Ansicht: echt orthografisch, `scale` ist die halbe sichtbare Höhe (in RenderTests nachgemessen)
+            var o = OrthographicCameraComponent()
+            o.near = nah * 0.001
+            o.far = fern * 0.001
+            o.scale = oh * 0.001 * Self.orthoMassstab
+            o.scaleDirection = .vertical
+            cam.components.set(o)
+        } else {
+            cam.components.set(PerspectiveCameraComponent(
+                near: nah * 0.001, far: fern * 0.001, fieldOfViewInDegrees: kamera.fovGrad))
+        }
         cam.look(at: Self.rk(kamera.ziel), from: Self.rk(kamera.position), upVector: Self.rkRichtung(kamera.oben),
                  relativeTo: nil)
 
         renderer.entities.removeAll()
-        renderer.entities.append(contentsOf: [welt, boden, licht, ibl, cam])
+        renderer.entities.append(contentsOf: [welt, licht, ibl, cam])
         renderer.activeCamera = cam
         renderer.cameraSettings.colorBackground = .color(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
         renderer.cameraSettings.antialiasing = .multisample4X
         defer { renderer.entities.removeAll() }
         phase("szene_ms")
 
-        // Drei Durchgänge. Meldet RealityKit ein Bild nicht fertig (selten beobachtet), wird der Renderer verworfen und
-        // beim nächsten Bild neu angelegt.
-        let texC = try textur(device, w, h), texA = try textur(device, w, h), texB = try textur(device, w, h)
-        var c: [Float16] = [], a: [Float16] = [], b: [Float16] = []
+        // Ein Durchgang. Meldet RealityKit ein Bild nicht fertig (und setzt die GPU auch kein Ereignis), wird der
+        // Renderer verworfen und beim nächsten Bild neu angelegt (die App versucht es einmal neu)
+        let texC = try textur(device, w, h)
+        var c: [Float16] = []
         do {
-            boden.isEnabled = false
             try await durchgang(renderer, texC)
             c = Self.lesen(texC, w, h)
-            if szene.boden {
-                boden.isEnabled = true
-                try await durchgang(renderer, texA)
-                a = Self.lesen(texA, w, h)
-                welt.isEnabled = false
-                try await durchgang(renderer, texB)
-                b = Self.lesen(texB, w, h)
-                welt.isEnabled = true
-            }
         } catch {
             self.renderer = nil
             throw error
         }
         phase("rendern_ms")
 
-        // Zusammensetzen und PNG abseits des Hauptfadens (bei 4K einige hundert ms Rechnen je Pixel)
-        let mitBoden = szene.boden, transparent = szene.transparent
+        // Schatten auf dem Boden, Zusammensetzen und PNG abseits des Hauptfadens (bei 4K einige hundert ms)
+        let mitBoden = szene.boden && !bodenDreiecke.isEmpty, transparent = szene.transparent
         let umgebungAlsHintergrund = szene.hintergrund == "umgebung"
         let farbe = szene.hintergrundFarbe ?? SIMD3(0.945, 0.949, 0.957)
         let drehung = Float(szene.drehung), staerke = Float(szene.staerke)
-        let fertig = await Task.detached(priority: .userInitiated) { () -> (CGImage, Data)? in
-            let schatten = mitBoden ? Self.schattenmaske(a: a, b: b, w: w, h: h) : [Float](repeating: 1, count: w * h)
+        let z0 = lo.z  // Boden knapp am tiefsten Punkt (mit Kulisse: ihre Unterkante, dann verdeckt sie ihn)
+        let lichter = (hdr == nil ? BodenSchatten.studioLichter : BodenSchatten.umgebungsLichter(sonne: sonne))
+            + [BodenSchatten.kontakt(groesse: diag)]
+        let tris = bodenDreiecke, cBild = c
+        let rueck = flaechenSumme > 0 ? hellSumme / flaechenSumme : 0
+        let fertig = await Task.detached(priority: .userInitiated) { () -> (CGImage, Data, Int)? in
+            let t0 = Date()
+            var schatten = [Float](repeating: 1, count: w * h)
+            if mitBoden, let boden = BodenSchatten.rechne(dreiecke: tris, z0: z0, lichter: lichter,
+                                                          rueckstrahlung: rueck) {
+                schatten = Self.bodenMaske(boden, kamera: kamera, c: cBild, w: w, h: h)
+            }
+            let schattenMs = Int(Date().timeIntervalSince(t0) * 1000)
             let hintergrund: Hintergrund
             if transparent {
                 hintergrund = .durchsichtig
@@ -261,35 +318,55 @@ public final class PBRRenderer {
             } else {
                 hintergrund = .farbe(farbe)
             }
-            let pixel = Self.zusammensetzen(c: c, schatten: schatten, hintergrund: hintergrund, w: w, h: h)
+            let pixel = Self.zusammensetzen(c: cBild, schatten: schatten, hintergrund: hintergrund, w: w, h: h)
             guard let bild = Self.cgImage(pixel, w, h), let png = Self.pngDaten(bild) else { return nil }
-            return (bild, png)
+            return (bild, png, schattenMs)
         }.value
-        guard let (bild, png) = fertig else { throw Fehler.png }
+        guard let (bild, png, schattenMs) = fertig else { throw Fehler.png }
         phase("png_ms")
+        phasen["schatten_ms"] = schattenMs
         return Ergebnis(bild: bild, png: png, phasen: phasen)
     }
 
+    /// Ein Durchgang in `tex`, zwei Bilder (im ersten sind Schattenkarte und Bildbeleuchtung womöglich noch nicht
+    /// fertig). Jedes Bild gilt als fertig, sobald RealityKit es meldet oder die GPU das Ereignis nach dem Rendern setzt;
+    /// sonst nach `bildFrist` Zeitüberschreitung mit Befund (geplant, GPU, Meldung).
     private func durchgang(_ r: RealityRenderer, _ tex: MTLTexture) async throws {
         let out: RealityRenderer.CameraOutput
         do { out = try RealityRenderer.CameraOutput(.singleProjection(colorTexture: tex)) } catch {
             throw Fehler.rendern(error.localizedDescription)
         }
-        // Zwei Bilder: im ersten sind Schattenkarte und Bildbeleuchtung womöglich noch nicht fertig
-        for _ in 0..<2 {
+        for bild in 0..<2 {
+            ereignisWert += 1
+            let wert = ereignisWert
+            let stand = BildStand()
+            let t0 = Date()
             try await withCheckedThrowingContinuation { (k: CheckedContinuation<Void, Error>) in
                 let einmal = EinmalFortsetzung(k)
                 DispatchQueue.global().asyncAfter(deadline: .now() + Self.bildFrist) {
-                    einmal.fortsetzen(Fehler.zeitueberschreitung)
+                    einmal.fortsetzen(Fehler.zeitueberschreitung(stand.befund(bild: bild + 1, seit: t0)))
+                }
+                var danach: [RealityRenderer.MetalEventAction] = []
+                if let e = ereignis {
+                    e.notify(zuhoerer, atValue: wert) { _, _ in
+                        stand.setze(\.gpu)
+                        einmal.fortsetzen()
+                    }
+                    danach = [.signal(e, value: wert)]
                 }
                 do {
-                    try r.updateAndRender(deltaTime: 1.0 / 60, cameraOutput: out, onComplete: { _ in
-                        einmal.fortsetzen()
-                    })
+                    try r.updateAndRender(deltaTime: 1.0 / 60, cameraOutput: out,
+                                          whenScheduled: { _ in stand.setze(\.geplant) },
+                                          onComplete: { _ in
+                                              stand.meldungAufHauptfaden = Thread.isMainThread
+                                              stand.setze(\.gemeldet)
+                                              einmal.fortsetzen()
+                                          }, actionsAfterRender: danach)
                 } catch {
                     einmal.fortsetzen(Fehler.rendern(error.localizedDescription))
                 }
             }
+            letzterBefund = stand.befund(bild: bild + 1, seit: t0)
         }
     }
 
@@ -308,8 +385,11 @@ public final class PBRRenderer {
 
     private func netz(_ teil: Teil, achse: Int) throws -> MeshResource {
         let flach = teil.pbr.oberflaeche == "schichten"
-        let key = "\(teil.digest)|\(achse)|\(flach)"
+        // Schichtlinien quer zur Druckrichtung des Teils (aus der Druckprüfung), sonst quer zu Z
+        let oben = flach ? (teil.pbr.druckOben ?? SIMD3<Float>(0, 0, 1)) : nil
+        let key = "\(teil.digest)|\(achse)|\(flach)|\(oben.map { "\($0.x),\($0.y),\($0.z)" } ?? "")"
         if let m = netze[key] { return m }
+        let schicht = oben.map { Self.schichtBasis($0) }
         let g = teil.geometry
         let n = g.vertexCount
         var pos = [SIMD3<Float>](), nor = [SIMD3<Float>](), uv = [SIMD2<Float>]()
@@ -323,7 +403,11 @@ public final class PBRRenderer {
             if simd_length_squared(q) < 1e-12 { q = SIMD3(0, 0, 1) }
             pos.append(p)
             nor.append(simd_normalize(q))
-            uv.append(Self.quaderUV(p, q, laengs: achse, deckeFlach: flach))
+            if let schicht {
+                uv.append(Self.schichtUV(p, simd_normalize(q), basis: schicht))
+            } else {
+                uv.append(Self.quaderUV(p, q, laengs: achse, deckeFlach: flach))
+            }
         }
         var d = MeshDescriptor(name: teil.name)
         d.positions = MeshBuffers.Positions(pos)
@@ -350,6 +434,79 @@ public final class PBRRenderer {
         if dominant == 2 && deckeFlach { v = 0 }
         return SIMD2(u, v)
     }
+
+    /// Basis für Schichtlinien: zwei Richtungen quer zur Aufbaurichtung und die Aufbaurichtung selbst.
+    nonisolated static func schichtBasis(_ oben: SIMD3<Float>) -> (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>) {
+        let o = simd_normalize(oben)
+        let hilf: SIMD3<Float> = abs(o.z) < 0.9 ? SIMD3(0, 0, 1) : SIMD3(1, 0, 0)
+        let w1 = simd_normalize(simd_cross(hilf, o))
+        let w2 = simd_normalize(simd_cross(o, w1))
+        return (w1, w2, o)
+    }
+
+    /// Schichtlinien (Phase 7, 23.10.2026): v = Höhe längs der Aufbaurichtung, die Normalentextur wechselt längs v, die
+    /// Linien liegen also quer zur Druckrichtung. u läuft in der Seitenfläche (die Richtung quer zur Aufbaurichtung, die
+    /// am wenigsten in die Normale zeigt). Deck- und Bodenflächen (Normale längs der Aufbaurichtung) bekommen v = 0, dort
+    /// sind keine Linien. Mit Aufbaurichtung Z dasselbe wie `quaderUV(…, deckeFlach: true)`.
+    nonisolated static func schichtUV(_ p: SIMD3<Float>, _ n: SIMD3<Float>,
+                                      basis b: (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)) -> SIMD2<Float> {
+        let (w1, w2, o) = b
+        let u = abs(simd_dot(n, w1)) <= abs(simd_dot(n, w2)) ? simd_dot(p, w1) : simd_dot(p, w2)
+        if abs(simd_dot(n, o)) > 0.9 { return SIMD2(u, 0) }
+        return SIMD2(u, simd_dot(p, o))
+    }
+
+    /// Dreiecke eines Teils in Weltlage (mm), je drei Punkte hintereinander (für den Schatten auf dem Boden).
+    nonisolated static func dreieckeInWelt(_ g: PartGeometry, _ m: simd_float4x4, in out: inout [SIMD3<Float>]) {
+        out.reserveCapacity(out.count + g.triangles.count)
+        let pos = g.positions
+        for i in g.triangles {
+            let k = Int(i) * 3
+            guard k + 2 < pos.count else { continue }
+            let w = m * SIMD4(pos[k], pos[k + 1], pos[k + 2], 1)
+            out.append(SIMD3(w.x, w.y, w.z))
+        }
+    }
+
+    /// Helligkeit des Bodens je Pixel (1 = kein Schatten): Strahl durch das Pixel auf die Bodenebene, dort der Wert aus
+    /// `BodenSchatten`; wo ein Teil deckt oder kein Boden zu sehen ist, 1.
+    nonisolated static func bodenMaske(_ boden: BodenSchatten, kamera: Kamera, c: [Float16], w: Int, h: Int) -> [Float] {
+        var out = [Float](repeating: 1, count: w * h)
+        let basis = Kamera.basis(position: kamera.position, ziel: kamera.ziel, oben: kamera.oben)
+        let aspekt = Float(w) / Float(max(h, 1))
+        let ortho = kamera.orthoHoehe.map { $0 / 2 }
+        let t = tan(kamera.fovGrad * .pi / 360)
+        let deckend = c.count >= w * h * 4
+        out.withUnsafeMutableBufferPointer { o in
+            c.withUnsafeBufferPointer { cb in
+                for y in 0..<h {
+                    let ny = 1 - 2 * (Float(y) + 0.5) / Float(h)
+                    for x in 0..<w {
+                        let i = y * w + x
+                        if deckend, Float(cb[i * 4 + 3]) >= 0.999 { continue }
+                        let nx = 2 * (Float(x) + 0.5) / Float(w) - 1
+                        let ursprung: SIMD3<Float>, d: SIMD3<Float>
+                        if let halb = ortho {
+                            ursprung = kamera.position + basis.rechts * (nx * halb * aspekt) + basis.oben * (ny * halb)
+                            d = basis.vor
+                        } else {
+                            ursprung = kamera.position
+                            d = basis.vor + basis.rechts * (nx * t * aspekt) + basis.oben * (ny * t)  // ungenormt
+                        }
+                        guard d.z < -1e-6 else { continue }
+                        let s = (boden.z0 - ursprung.z) / d.z
+                        guard s > 0 else { continue }
+                        o[i] = boden.wert(ursprung.x + d.x * s, ursprung.y + d.y * s)
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    /// Maßstab der orthografischen Kamera von RealityKit: `scale` ist die halbe sichtbare Höhe (gemessen in
+    /// RenderTests.testRealityKitOrthografisch: mit scale = Höhe war ein 100-mm-Würfel nur halb so groß wie erwartet)
+    nonisolated static let orthoMassstab: Float = 0.5
 
     nonisolated static func laengsteAchse(_ g: PartGeometry) -> Int {
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
@@ -471,23 +628,6 @@ public final class PBRRenderer {
         return px
     }
 
-    /// Schatten je Pixel (1 = kein Schatten): Helligkeit mit Teilen durch Helligkeit ohne Teile, nur wo Boden ist;
-    /// weichgezeichnet (zweimal Kastenfilter).
-    nonisolated static func schattenmaske(a: [Float16], b: [Float16], w: Int, h: Int) -> [Float] {
-        var s = [Float](repeating: 1, count: w * h)
-        for i in 0..<(w * h) {
-            let ab = Float(b[i * 4 + 3])
-            guard ab > 0.5 else { continue }
-            let la = 0.2126 * Float(a[i * 4]) + 0.7152 * Float(a[i * 4 + 1]) + 0.0722 * Float(a[i * 4 + 2])
-            let lb = 0.2126 * Float(b[i * 4]) + 0.7152 * Float(b[i * 4 + 1]) + 0.0722 * Float(b[i * 4 + 2])
-            s[i] = lb > 1e-4 ? min(1, max(0, la / lb)) : 1
-        }
-        let r = max(1, min(w, h) / 220)
-        kastenfilter(&s, w, h, r)
-        kastenfilter(&s, w, h, r)
-        return s
-    }
-
     nonisolated static func kastenfilter(_ s: inout [Float], _ w: Int, _ h: Int, _ r: Int) {
         var tmp = s
         let n = Float(2 * r + 1)
@@ -519,7 +659,9 @@ public final class PBRRenderer {
     /// C (vormultipliert, linear) über dem Hintergrund mit Schatten; Ergebnis 8 bit sRGB, vormultipliert.
     nonisolated static func zusammensetzen(c: [Float16], schatten: [Float], hintergrund: Hintergrund, w: Int, h: Int) -> [UInt8] {
         var out = [UInt8](repeating: 0, count: w * h * 4)
-        let staerke: Float = 0.9
+        // Stärke des Bodenschattens: an Fotos derselben Szene aus Blender abgeglichen (Turm 40 × 40 × 120 mm im Studio,
+        // Schatten von Hauptlicht und Kante und Kontaktschatten in linearer Helligkeit, 23.10.2026)
+        let staerke: Float = 0.62
         var farbeLin = SIMD3<Float>(repeating: 1)
         if case .farbe(let f) = hintergrund { farbeLin = SIMD3(linear(f.x), linear(f.y), linear(f.z)) }
         for i in 0..<(w * h) {
@@ -782,7 +924,8 @@ struct HDRBild {
             let ny = 1 - 2 * (Float(y) + 0.5) / Float(h)
             for x in 0..<w {
                 let nx = 2 * (Float(x) + 0.5) / Float(w) - 1
-                let d = simd_normalize(vor + rechts * (nx * t * aspekt) + oben * (ny * t))
+                // parallel: alle Strahlen in Blickrichtung (wie die Kamera ORTHO in Blender)
+                let d = k.orthoHoehe == nil ? simd_normalize(vor + rechts * (nx * t * aspekt) + oben * (ny * t)) : vor
                 out[y * w + x] = wert(dreh.act(d)) * staerke
             }
         }
@@ -805,6 +948,53 @@ struct HDRBild {
         let az = (u - 0.5) * 2 * .pi, el = (v - 0.5) * .pi
         let d = SIMD3<Float>(-cos(el) * cos(az), cos(el) * sin(az), sin(el))
         return simd_quatf(angle: drehungGrad * .pi / 180, axis: SIMD3(0, 0, 1)).act(d)
+    }
+}
+
+/// Was von RealityKit zu einem Bild kam (aus verschiedenen Fäden gesetzt): geplant (`whenScheduled`), GPU fertig
+/// (Ereignis nach dem Rendern), gemeldet (`onComplete`). Der Befund steht bei einer Zeitüberschreitung im Protokoll.
+final class BildStand: @unchecked Sendable {
+    struct Werte {
+        var geplant = false
+        var gpu = false
+        var gemeldet = false
+    }
+
+    private let lock = NSLock()
+    private var w = Werte()
+    private var hauptfaden: Date?
+    /// kam `onComplete` auf dem Hauptfaden? (nil: nicht gekommen)
+    var meldungAufHauptfaden: Bool?
+
+    init() {
+        // Antwortet der Hauptfaden? (Die Meldung von RealityKit kommt über ihn; ist er belegt, bleibt sie aus.)
+        DispatchQueue.main.async { [self] in
+            lock.lock()
+            hauptfaden = Date()
+            lock.unlock()
+        }
+    }
+
+    func setze(_ k: WritableKeyPath<Werte, Bool>) {
+        lock.lock()
+        w[keyPath: k] = true
+        lock.unlock()
+    }
+
+    func lies(_ k: KeyPath<Werte, Bool>) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return w[keyPath: k]
+    }
+
+    func befund(bild: Int, seit t0: Date) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        func ja(_ b: Bool) -> String { b ? "ja" : "nein" }
+        let haupt = hauptfaden.map { "frei nach \(Int($0.timeIntervalSince(t0) * 1000)) ms" } ?? "belegt"
+        let faden = meldungAufHauptfaden.map { $0 ? " (auf dem Hauptfaden)" : " (abseits des Hauptfadens)" } ?? ""
+        return "Bild \(bild) nach \(Int(Date().timeIntervalSince(t0) * 1000)) ms: geplant \(ja(w.geplant)), GPU fertig "
+            + "\(ja(w.gpu)), gemeldet \(ja(w.gemeldet))\(faden), Hauptfaden \(haupt)"
     }
 }
 

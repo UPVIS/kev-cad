@@ -37,6 +37,7 @@ class Werkstoff:
     biege: float | None = None
     druck: float | None = None
     quer: float | None = None  # Druckteile: Anteil der Festigkeit quer zu den Schichten
+    E_z: float | None = None  # Druckteile: E-Modul quer zu den Schichten (Aufbaurichtung)
     quelle: str = ""
     stand: str = ""
     geschaetzt: list[str] = field(default_factory=list)
@@ -91,7 +92,8 @@ def werkstoff_aus_eintrag(m: dict[str, Any] | None) -> Werkstoff | None:
     return Werkstoff(id=m.get("id"), name=str(m.get("name") or m.get("id") or "?"), gruppe=str(m.get("gruppe") or ""),
                      dichte=m.get("dichte"), E=z("e_modul"), G=z("schubmodul"), nu=z("querkontraktion"),
                      streckgrenze=z("streckgrenze"), zug=z("zugfestigkeit"), biege=z("biegefestigkeit"),
-                     druck=z("druckfestigkeit"), quer=z("quer_zur_schicht"), quelle=str(me.get("quelle") or ""),
+                     druck=z("druckfestigkeit"), quer=z("quer_zur_schicht"), E_z=z("e_modul_z"),
+                     quelle=str(me.get("quelle") or ""),
                      stand=str(me.get("stand") or ""), geschaetzt=gesch_liste, annahme=str(me.get("annahme") or ""))
 
 

@@ -758,15 +758,19 @@ Kevin danach fragt oder du etwas prüfen musst.
 - Szenen: `studio` (heller Hintergrund, weicher Schatten), `werkstatt` (dunkle Halle mit Lampen), `draussen` (Garten
   bei Tageslicht), `wohnraum`, `freigestellt` (PNG mit Alpha und halbdurchsichtigem Schatten). `hintergrund` ersetzt den
   Hintergrund (`weiss`, `hell`, `grau`, `dunkel`, `schwarz`, `transparent`, `#RRGGBB`).
-- `ansicht`: `aktuell` (Kevins Ansicht, Vorgabe), `produkt` (3/4 von vorn rechts, leicht von oben, eingepasst) oder
-  eine Standardansicht; `kamera="FX6"` rendert durch eine Kamera aus model.py (Seitenverhältnis ihres Formats).
+- `ansicht`: `aktuell` (Kevins Ansicht, Vorgabe; steht der Viewer auf paralleler Projektion, wird das Bild in beiden
+  Qualitäten echt orthografisch mit derselben sichtbaren Höhe), `produkt` (3/4 von vorn rechts, leicht von oben,
+  eingepasst) oder eine Standardansicht (perspektivisch); `kamera="FX6"` rendert durch eine Kamera aus model.py
+  (Seitenverhältnis ihres Formats).
 - `groesse`: `hd`, `4k`, `quadrat`, `hochkant` (Instagram 4:5), `story`, `deckblatt` (3:2), `a4`, `vorschau` oder
   `"2400x1600"`.
 - `qualitaet="schnell"`: RealityKit in der App, ein bis wenige Sekunden, wartet. `qualitaet="foto"`: Blender Cycles im
   Hintergrund, eine bis wenige Minuten; die Antwort kommt sofort mit Auftrag `R-n`. Stand mit
   `render(auftrag="R-3", warten_s=120)`, Abbruch mit `abbrechen=true`. Kevin sieht den Fortschritt in der App.
 - Materialien kommen aus dem Katalog (`render`: eloxiert, gebürstet, verzinkt, Schichtlinien bei Druckteilen, Holz,
-  Gummi). Eine Farbe in `show(..., color=...)` hat Vorrang vor der Katalogfarbe, Glanz und Metall bleiben.
+  Gummi). Die Schichtlinien liegen quer zur Druckrichtung des Teils (Ausrichtung aus der Druckprüfung, wie in der
+  Druckvorschau). Den Schatten auf dem Boden rechnet das Schnellbild wie die Flächenlichter des Fotos (Kontaktschatten
+  unter dem Objekt, weicher Schlagschatten). Eine Farbe in `show(..., color=...)` hat Vorrang vor der Katalogfarbe, Glanz und Metall bleiben.
 - Kevin selbst: Ablage → „Rendern …“ (⌥⌘R) mit Vorschau, Finder und Teilen; im Export-Dialog der Baustein
   „Produktbild“.
 

@@ -429,6 +429,12 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
         out += bef
         teile[name] = _teil_info(name, erg, bef, vorgabe, "druckteil" if rahmen is not None else "welt",
                                  aus_speicher, ms)
+        unten = (erg.get("ausrichtung") or {}).get("unten")
+        if unten is not None:  # Aufbaurichtung in Weltlage (Schichtlinien im Rendering, Phase 7)
+            d = welt_m[:3, :3] @ (R.T @ np.asarray(unten, dtype=np.float64))
+            n_d = float(np.linalg.norm(d))
+            if n_d > 1e-9:
+                teile[name]["ausrichtung"]["oben_welt"] = [round(float(-c / n_d), 6) + 0.0 for c in d]
         if gedruckt:
             teile[name]["gedruckt"] = True
         mid = str(erg.get("material"))

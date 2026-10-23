@@ -458,7 +458,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         # Bewegungsraum prüft die gemeinsame Prüfung nach RUN_END: ihre Befunde dazunehmen, wenn sie zum Lauf gehören.
         # Rechnet er noch im Hintergrund (CHECK „teilweise“), kurz auf den Endstand warten
         if self._pruef.hintergrund == rep.get("run"):
-            self._pruef.warte(int(rep["run"]), self.bedingungen_warten_s, endstand=True)
+            self._pruef.warte(int(rep["run"]), self.bedingungen_warten_s, endstand=True, statik=False)
         check, _ = self._pruef.letztes()
         if check is not None and check.get("run") == rep.get("run") and check.get("state") == "teilweise":
             out["bewegungsraum_im_hintergrund"] = list(check.get("im_hintergrund") or [])
@@ -1114,6 +1114,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             # während die Versionen hier noch schreiben (Wettlauf, sichtbar seit die Statik die Prüfung verlängert)
             self._druckvorschau_pruefung(check)
             with self._app_lock:  # erst nach RUN_END dieses Laufs an die App (sonst schickt es _run_job)
+                # Statik S2/S3: was schon fertig ist, als Befund dazu; was noch rechnet, macht das CHECK „teilweise“
+                # (T34). Unter derselben Sperre wie das Nachtragen, damit kein fertiger Hintergrund verloren geht
+                check = self._statik_in_check(check, vom_rechenprozess=True)
                 if self._pruef.fertig(check, payload[:app_len]) and self._run_end_run >= int(check.get("run") or 0):
                     self._send_app({**check, "type": "CHECK"}, payload[:app_len])
             self._versionen_pruefung(check)  # Versionen: Prüfstand an die Version des Laufs

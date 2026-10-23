@@ -2,8 +2,8 @@
 
 Aufruf (im Ordner kernel):  .venv/bin/python tools/make_pruef_fixtures.py   (läuft auch am Ende von make_fixtures.py)
 Ziel: app/KevCADCore/Tests/KevCADCoreTests/Fixtures/check_done.frame, check_running.frame, check_teilweise.frame
-(Bewegungsraum rechnet im Hintergrund, Prüftempo) und check.json (erwartete Werte). Eigene Dateien, damit die übrigen
-Testdateien und stream.bin unverändert bleiben.
+(Bewegungsraum rechnet im Hintergrund, Prüftempo), check_statik.frame (Ablauf und Festkörper im Hintergrund, T34) und
+check.json (erwartete Werte). Eigene Dateien, damit die übrigen Testdateien und stream.bin unverändert bleiben.
 """
 
 from __future__ import annotations
@@ -35,6 +35,17 @@ def main() -> None:
     teilweise, t_payload = pack_check(run=3, state="teilweise", ergebnis=erg, geometrie=geo, seq=23,
                                       im_hintergrund=offen)
     (ZIEL / "check_teilweise.frame").write_bytes(encode_frame(teilweise, t_payload))
+    # Statik im Hintergrund (T34): Festkörper rechnet noch, ein fertiger Ablauf hat schon einen Befund nachgetragen
+    statik_befund = {"id": "st1", "art": "statik_dyn_kippen", "teile": ["Wagen"], "schwere": "warnung",
+                     "wert": {"pruefung": "statik", "szenario": "Bremsen aus 1 m/s", "ampel": "rot", "reserve": 0.25},
+                     "ort": None, "text": "Statik „Bremsen aus 1 m/s“: Wagen kippt nach vorn (Kippreserve 0,25).",
+                     "loesung": "Schwerpunkt senken oder Radstand vergrößern.", "geometrie": None}
+    erg_statik = {**erg, "befunde": [*erg["befunde"], statik_befund],
+                  "zaehler": {**erg["zaehler"], "warnung": erg["zaehler"]["warnung"] + 1}}
+    statik_offen = ["Festkörper „Bremsen aus 1 m/s“ (2 Teile)"]
+    statik, s_payload = pack_check(run=3, state="teilweise", ergebnis=erg_statik, geometrie=geo, seq=24,
+                                   statik_im_hintergrund=statik_offen)
+    (ZIEL / "check_statik.frame").write_bytes(encode_frame(statik, s_payload))
     (g,) = unpack_check(header, payload)
     erwartet = {
         "run": 3,
@@ -46,6 +57,8 @@ def main() -> None:
         "payload_bytes": len(payload),
         "erste_position": [round(float(x), 4) for x in g["positions"][0]],
         "teilweise": {"run": 3, "state": "teilweise", "im_hintergrund": offen},
+        "statik": {"run": 3, "state": "teilweise", "statik_im_hintergrund": statik_offen,
+                   "befunde": len(erg_statik["befunde"]), "letzter": "statik_dyn_kippen"},
     }
     (ZIEL / "check.json").write_text(json.dumps(erwartet, indent=1, ensure_ascii=False))
     print(f"CHECK-Testdateien nach {ZIEL}: {header['zusammenfassung']}, {len(payload)} Byte Nutzlast")

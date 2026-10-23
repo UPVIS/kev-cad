@@ -29,8 +29,10 @@ RANG = {"rot": 3, "gelb": 2, "gruen": 1, "grau": 0}
 GRENZEN = [
     "Vereinfacht gerechnet: Stäbe als Balken, linear-elastisch, kleine Verformungen, keine Plastizität.",
     "Verbinder (Druckteile, Platten, Zukaufteile) gelten im Stabwerk als starr, ihre Kräfte je Anschluss kommen aus "
-    "dem Stabwerk; Gelenke mit Bereich (Einstellungen mit Klemme) gelten als festgestellt; Schweißnähte und Schrauben "
-    "vereinfacht, Schrauben ohne Vorspannung und ohne Gewindeauszug im Kunststoff.",
+    "dem Stabwerk; feste Anschlüsse an Druckteilen federn mit einer Drehfeder aus Geometrie und E-Modul (ohne Spiel "
+    "und ohne Rutschen der Klemmung); Gelenke mit Bereich (Einstellungen mit Klemme) gelten als festgestellt, außer "
+    "mit frei=True; Schweißnähte und Schrauben vereinfacht, Schrauben ohne Vorspannung und ohne Gewindeauszug im "
+    "Kunststoff.",
     "Werkstoffwerte und Reibwerte sind Richtwerte aus dem Katalog (Norm-Mindestwerte bzw. Datenblatt); Druckteile mit "
     "voller Füllung gerechnet.",
     "Kein Ersatz für einen Statiker bei sicherheitsrelevanten Dingen (Personen, Lasten über Kopf, Fahrzeuge).",

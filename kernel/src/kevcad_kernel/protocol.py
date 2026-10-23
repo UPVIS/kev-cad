@@ -213,11 +213,13 @@ CHECK_STATES = ("running", "done", "teilweise", "cancelled", "failed")
 
 def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
                geometrie: list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None = None, message: str | None = None,
-               seq: int = 0, im_hintergrund: list[str] | None = None) -> tuple[dict[str, Any], bytes]:
+               seq: int = 0, im_hintergrund: list[str] | None = None,
+               statik_im_hintergrund: list[str] | None = None) -> tuple[dict[str, Any], bytes]:
     """Baut Kopf und Nutzlast von CHECK (Prüfergebnis, PROTOCOL.md Abschnitt „Prüfung“). ``geometrie``: je
     Schnittkörper (Punkte (n, 3), Normalen (n, 3), Dreiecke (m, 3)); die Nutzlast reiht sie hintereinander.
     ``state`` "teilweise" (additiv, Prüftempo): Ergebnis steht, der Bewegungsraum wird noch fertig gerechnet;
-    ``im_hintergrund`` nennt die offenen Wege, danach folgt dasselbe ``run`` mit "done"."""
+    ``im_hintergrund`` nennt die offenen Wege, danach folgt dasselbe ``run`` mit "done". ``statik_im_hintergrund``
+    (additiv, T34): Ablauf (S2) bzw. Festkörper (S3), die nach dem Lauf noch rechnen; ihre Befunde kommen nach."""
     if state not in CHECK_STATES:
         raise ValueError(f"CHECK: state {state!r} unbekannt")
     erg = dict(ergebnis or {})
@@ -249,6 +251,8 @@ def pack_check(*, run: int, state: str, ergebnis: dict[str, Any] | None = None,
             header[key] = erg[key]
     if im_hintergrund is not None:
         header["im_hintergrund"] = list(im_hintergrund)
+    if statik_im_hintergrund:
+        header["statik_im_hintergrund"] = list(statik_im_hintergrund)
     return header, b"".join(teile)
 
 

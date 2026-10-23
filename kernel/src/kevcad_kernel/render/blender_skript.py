@@ -158,13 +158,16 @@ def material(key: str, pbr: dict, achse: int = 0) -> bpy.types.Material:
             links.new(koord.outputs["Object"], fein.inputs["Vector"])
             beule(fein.outputs["Fac"], 0.25, 0.3)
     elif o == "schichten":
-        # Schichtlinien quer zu Z: sin(2π z / h), dazu leichtes Rauschen
+        # Schichtlinien quer zur Druckrichtung des Teils (``druck_oben`` aus der Druckprüfung, sonst Z):
+        # sin(2π (p · oben) / h)
         h = float(pbr.get("schichthoehe", 0.2))
-        sep = _knoten(nt, "ShaderNodeSeparateXYZ", -1000, 0)
-        links.new(koord.outputs["Object"], sep.inputs["Vector"])
+        oben = pbr.get("druck_oben") or [0.0, 0.0, 1.0]
+        dot = _knoten(nt, "ShaderNodeVectorMath", -1000, 0, operation="DOT_PRODUCT")
+        dot.inputs[1].default_value = tuple(float(c) for c in oben)
+        links.new(koord.outputs["Object"], dot.inputs[0])
         mul = _knoten(nt, "ShaderNodeMath", -800, 0, operation="MULTIPLY")
         mul.inputs[1].default_value = 2 * math.pi / h
-        links.new(sep.outputs["Z"], mul.inputs[0])
+        links.new(dot.outputs["Value"], mul.inputs[0])
         sin = _knoten(nt, "ShaderNodeMath", -600, 0, operation="SINE")
         links.new(mul.outputs[0], sin.inputs[0])
         beule(sin.outputs[0], 0.18, 0.05)

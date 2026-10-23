@@ -40,6 +40,44 @@ st.last("Stange", kraft=(0, 0, -100), punkt=(25, 150, 100))
 '''
 
 
+def balken(EI: float, x: list[float], lager: dict[int, float | None], lasten: dict[int, float]
+           ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Handrechnung für einen geraden Balken (Euler-Bernoulli, Knoten an ``x``): ``lager`` je Knotenindex die Drehfeder
+    k in Nmm/rad (None = starr eingespannt, 0 = gelenkig), dort ist die Durchbiegung null; ``lasten`` je Knoten die
+    Kraft quer (nach oben positiv). Liefert (Durchbiegung und Drehung je Knoten (n × 2), Lagerkräfte nach oben je
+    Knoten, Momente in den Lagern je Knoten: Feder k · φ bzw. Einspannmoment)."""
+    n = len(x)
+    K = np.zeros((2 * n, 2 * n))
+    for i in range(n - 1):
+        L = x[i + 1] - x[i]
+        k = EI / L ** 3 * np.array([[12, 6 * L, -12, 6 * L], [6 * L, 4 * L * L, -6 * L, 2 * L * L],
+                                    [-12, -6 * L, 12, -6 * L], [6 * L, 2 * L * L, -6 * L, 4 * L * L]])
+        K[2 * i:2 * i + 4, 2 * i:2 * i + 4] += k
+    f = np.zeros(2 * n)
+    for i, F in lasten.items():
+        f[2 * i] += F
+    fest = []
+    for i, k in lager.items():
+        fest.append(2 * i)
+        if k is None:
+            fest.append(2 * i + 1)
+        else:
+            K[2 * i + 1, 2 * i + 1] += k
+    frei = [j for j in range(2 * n) if j not in fest]
+    u = np.zeros(2 * n)
+    u[frei] = np.linalg.solve(K[np.ix_(frei, frei)], f[frei])
+    r = K @ u - f
+    R = np.array([r[2 * i] if i in lager else 0.0 for i in range(n)])
+    M = np.array([(r[2 * i + 1] if lager[i] is None else lager[i] * u[2 * i + 1]) if i in lager else 0.0
+                  for i in range(n)])
+    return u.reshape(n, 2), R, M
+
+
+def feder_quer(a, achse: np.ndarray) -> float:
+    """Drehfeder (Nmm/rad) eines Anschlusses um ``achse`` (T35)."""
+    return next(k for u, k in zip(a.feder["achsen"], a.feder["k"]) if abs(float(np.dot(u, achse))) > 0.99)
+
+
 def _lagerkraft(e: dict, e0: dict, teil: str) -> np.ndarray:
     """Lagerkraft (N) eines Halters aus der Last allein: Szenario minus Eigengewicht (linear, Überlagerung)."""
     def summe(x: dict) -> np.ndarray:
@@ -49,9 +87,10 @@ def _lagerkraft(e: dict, e0: dict, teil: str) -> np.ndarray:
 
 @pytest.mark.parametrize("art", ["steck", "aufliegen"])
 def test_halterpaar_mitte_halbe_halbe_aussermittig_nach_steifigkeit(tmp_path, art):
-    """100 N in der Mitte: je Halter 50 N. Außermittig (150 mm neben der Mitte): steck (eingespannt) nach dem beidseitig
-    eingespannten Träger R_A = P b² (3a + b) / L³, aufliegen (gelenkig) nach dem Hebelgesetz R_A = P b / L. Die
-    Abstände kommen aus den Anschlüssen des Modells."""
+    """100 N in der Mitte: je Halter 50 N. Außermittig (150 mm neben der Mitte): aufliegen (gelenkig) nach dem
+    Hebelgesetz R_A = P b / L; steck in den gedruckten Haltern mit deren Drehfeder (T35, Balken mit Federn an beiden
+    Enden), zwischen Hebelgesetz und beidseitig eingespanntem Träger R_A = P b² (3a + b) / L³. Die Abstände kommen aus
+    den Anschlüssen des Modells."""
     _, check, _ = laufe(tmp_path, HALTERPAAR.replace("ART", repr(art)), strikt=False)
     m = anbindung.LETZTER.modell
     s = m.staebe["Stange"]
@@ -73,7 +112,15 @@ def test_halterpaar_mitte_halbe_halbe_aussermittig_nach_steifigkeit(tmp_path, ar
     a, b = tp - lo, hi - tp  # a: Abstand zum Halter bei kleinem t (rechts, y = −300), b: zum anderen
     L = a + b
     if art == "steck":
-        r_klein, r_gross = P * b * b * (3 * a + b) / L ** 3, P * a * a * (a + 3 * b) / L ** 3
+        an = {x.teile[1]: x for x in m.anschluesse if x.stab == "Stange"}
+        kl = feder_quer(an["Halter links (Druck)"], np.array([1.0, 0, 0]))
+        kr = feder_quer(an["Halter rechts (Druck)"], np.array([1.0, 0, 0]))
+        k_klein, k_gross = (kr, kl) if tr < tl else (kl, kr)
+        EI = float(s.werkstoff.E) * s.q.I_lang
+        _, R, _ = balken(EI, [0.0, a, L], {0: k_klein, 2: k_gross}, {1: -P})
+        r_klein, r_gross = float(R[0]), float(R[2])
+        grenzen = sorted((P * b / L, P * b * b * (3 * a + b) / L ** 3))
+        assert grenzen[0] < r_klein < grenzen[1]  # zwischen gelenkig und starr eingespannt
     else:
         r_klein, r_gross = P * b / L, P * a / L
     r_rechts, r_links = (r_klein, r_gross) if tr < tl else (r_gross, r_klein)
@@ -149,11 +196,13 @@ def test_schlitten_teilen_die_last_halbe_halbe(tmp_path):
         b = vb[f"Schlitten {seite} (Druck)"]
         assert b["aus_verbinder"] == f"Seitenstange {seite}" and b["nachbarn"] == [f"Seitenstange {seite}"]
         assert b["kraft"][0] == pytest.approx(50.0, abs=1.0) and b["sicherheit"] > 0
-    # gleiche Last, gleicher Hebel; die Sicherheit weicht nur ab, weil der Kragträger einen Schnitt durch die Bohrung
-    # einseitig nimmt (grob, S0). Genauer rechnet der Festkörper.
+    # gleiche Last (spiegelbildlich), gleicher Hebel; die Sicherheit weicht nur ab, weil der Kragträger einen Schnitt
+    # durch die Bohrung einseitig nimmt (grob, S0). Genauer rechnet der Festkörper.
     assert vb["Schlitten links (Druck)"]["hebel_mm"] == pytest.approx(vb["Schlitten rechts (Druck)"]["hebel_mm"])
+    ml, mr = (np.asarray(vb[f"Schlitten {x} (Druck)"]["moment"]) for x in ("links", "rechts"))
+    assert np.allclose(ml * [-1, 1, -1], mr, atol=2.0)  # Spiegelung an y = 0
     assert vb["Schlitten links (Druck)"]["sicherheit"] == pytest.approx(vb["Schlitten rechts (Druck)"]["sicherheit"],
-                                                                        rel=0.2)
+                                                                        rel=0.25)
     # Festkörper (S3): die Fälle bekommen dieselben Kräfte je Anschluss, Lager ist die Seitenstange
     from kevcad_kernel.statik.festkoerper.auftrag import faelle
 
@@ -167,12 +216,18 @@ def test_schlitten_teilen_die_last_halbe_halbe(tmp_path):
     assert "Verbinder Schlitten links (Druck): Querstange" in text
     # außermittig (75 mm neben der Mitte, zum linken Schlitten hin): nach Steifigkeit. Handrechnung: Querstange als
     # Träger auf zwei starren Stützen (die Seitenstangen sind in x 25-mal steifer als die Querstange in Biegung) mit
-    # Drehfedern k = E I / L_s an den Enden (Biegung der auskragenden Seitenstange um z); dazwischen liegen das
-    # Hebelgesetz (k = 0) und der beidseitig eingespannte Träger (k → ∞).
+    # Drehfedern an den Enden: in Reihe die Biegung der auskragenden Seitenstange um z (E I / L_s) und die beiden
+    # Drehfedern des gedruckten Schlittens um z (Querstange und Seitenstange in ihren Bohrungen, T35); dazwischen
+    # liegen das Hebelgesetz (k = 0) und der beidseitig eingespannte Träger (k → ∞).
     s, q = m.staebe["Seitenstange links"], m.staebe["Querstange"]
     EI = float(q.werkstoff.E) * q.q.I_lang
     t_s = {a.teile[1]: a.t for a in m.anschluesse if a.stab == "Seitenstange links"}
-    k = float(s.werkstoff.E) * s.q.I_lang / (t_s["Schlitten links (Druck)"] - t_s["Sockel links"])
+    k_stange = float(s.werkstoff.E) * s.q.I_lang / (t_s["Schlitten links (Druck)"] - t_s["Sockel links"])
+    an = {(a.stab, a.teile[1]): a for a in m.anschluesse}
+    z = np.array([0.0, 0, 1])
+    k_q = feder_quer(an[("Querstange", "Schlitten links (Druck)")], z)
+    k_s = feder_quer(an[("Seitenstange links", "Schlitten links (Druck)")], z)
+    k = 1 / (1 / k_stange + 1 / k_q + 1 / k_s)
     t_q = {a.teile[1]: a.t for a in m.anschluesse if a.stab == "Querstange"}
     L = t_q["Schlitten links (Druck)"] - t_q["Schlitten rechts (Druck)"]
     a = q.t_von(np.array([500.0, 75.0, 60.0])) - t_q["Schlitten rechts (Druck)"]

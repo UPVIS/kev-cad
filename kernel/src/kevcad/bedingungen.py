@@ -35,7 +35,9 @@ ganze Weg bei jedem Lauf auf Kollision geprüft (``schritte``, ``mitbewegt=[…]
 ``bedienung="finger" | "hand" | "werkzeug" | "fluegel"`` oder ``freiraum=mm`` am ``griff``; Teile, die um ihre eigene
 Achse gedreht werden, wie Flügelmuttern und Drehknöpfe, prüfen den Griffraum als Zylinder um die Drehachse über der
 Auflage). ``gelenk.fuer_animation()`` liefert
-Art, Achse und Grenzen für ``animation.gelenk``.
+Art, Achse und Grenzen für ``animation.gelenk``. Statik: Ein Gelenk mit ``bereich`` gilt als festgestellt (Einstellung
+mit Klemme oder Sterngriff); läuft es im Betrieb wirklich frei (Schublade, Tür ohne Feststeller), ``frei=True`` angeben,
+dann rechnen Stabwerk und Ablauf es als Gelenk mit Anschlägen an den Enden von ``bereich``.
 
 Befestigung (Pflicht für jedes Teil): ``verbinde(a, b, art="schraube" | "klemmung" | "steck" | "formschluss" |
 "kleben" | "aufliegen", mit=[schraube, mutter, scheibe])``; ``b`` darf ``boden`` sein.

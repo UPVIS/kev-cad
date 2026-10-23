@@ -10,7 +10,7 @@ Aus dem Statikmodell entsteht ein räumliches Stabwerk:
   gelenkig = beide Biegedrehungen frei (die Verdrehung um die Stabachse bleibt gekoppelt, sonst wäre der Stab drehbar),
   Drehgelenk = Drehung um die nächste der drei Achsen frei, Schiebegelenk längs des Stabs = Hülse (Verschiebung längs
   und beide Biegedrehungen frei); Gelenke mit ``bereich`` sind festgestellt und kommen hier als feste Anschlüsse an
-  (``modell._art``, T30);
+  (``modell._art``, T30), außer sie sind mit ``frei=True`` als frei laufend erklärt (T33);
 - Anschlüsse an geerdete Starrkörper und den Boden sind feste Lager (hinter dem Gelenkglied).
 
 Lastfälle: je Szenario Eigengewicht der Stäbe als Streckenlast im Beschleunigungsfeld, Starrkörper und Anbauteile mit
@@ -35,6 +35,7 @@ from kevcad_kernel.statik.werkstoff import Querschnitt, Werkstoff
 
 GLIEDER_MIN = 8  # Glieder je Stab mindestens
 GELENK_L = 10.0  # mm, Länge des Gelenkglieds
+FEDER_L = 2.0  # mm, Länge eines Federglieds (Drehfeder an Druckteilen, T35)
 STARR = 1e3  # Starre Glieder: so viel steifer als das steifste Stabglied gleicher Länge (je Glied nach Länge bemessen,
 # sonst wird das Gleichungssystem schlecht konditioniert und der Löser hält das Stabwerk für beweglich)
 L_BEZUG_MIN = 20.0  # mm, kürzeste Bezugslänge der Stabglieder
@@ -220,6 +221,18 @@ class _Aufbau:
             self._starr_q[L] = name
         return name
 
+    def feder_querschnitt(self, k: float) -> str:
+        """Querschnitt eines Federglieds (Länge ``FEDER_L``): axial und in Biegung wie ein starres Glied, Torsion so,
+        dass G · J / L = k (Nmm/rad)."""
+        base = self.fe.sections[self.starr_querschnitt(FEDER_L)]
+        J = max(float(k), 1e-6) * FEDER_L / (E_STARR / 2.6)
+        # in Biegung mindestens STARR-mal so steif wie die Feder selbst, sonst gäbe das zweite Glied mit nach
+        I = max(float(base.Iy), STARR * float(k) * FEDER_L / E_STARR)
+        name = f"Feder:{k:.6g}"
+        if name not in self.fe.sections:
+            self.fe.add_section(name, base.A, I, I, J)
+        return name
+
     def station(self, stab: str, t: float) -> str:
         return min(self.stationen[stab], key=lambda x: abs(x[0] - t))[1]
 
@@ -253,6 +266,18 @@ class _Aufbau:
             ziel = self.k_knoten[kid]
         frei = self._freigaben(a, s)
         knoten = n
+        if a.feder and not any(frei.values()):
+            # Drehfeder an einem Druckteil (T35): zwei kurze Glieder längs der Hauptachsen quer zum Stab, starr bis auf
+            # ihre Torsion G · J / L = k; Verschiebungen und Drehung um die Stabachse bleiben starr
+            for u, k in zip(a.feder["achsen"], a.feder["k"]):
+                u = np.asarray(u, dtype=float)
+                f_knoten = self.knoten(self.knoten_pos[knoten] + u * FEDER_L, "F")
+                self._n += 1
+                g = f"F{self._n}"
+                fe.add_member(g, knoten, f_knoten, "Starr", self.feder_querschnitt(float(k)))
+                if kid is not None:
+                    self.starr_glieder.setdefault(kid, []).append(g)
+                knoten = f_knoten
         if any(frei.values()):
             richtung = (self.knoten_pos[ziel] - self.knoten_pos[n]) if ziel is not None else np.array([0, 0, -1.0])
             quer = richtung - s.achse * float(np.dot(richtung, s.achse))

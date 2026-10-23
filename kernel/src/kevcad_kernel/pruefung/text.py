@@ -95,15 +95,25 @@ def _nur_offen(b: dict[str, Any]) -> bool:
 
 
 def hintergrund_text(check: dict[str, Any]) -> str:
-    """„Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet; …“"""
+    """„Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet; …“ und/oder
+    „Statik: Festkörper „Bremsen“ rechnet im Hintergrund, seine Befunde kommen nach; …“ (T34)."""
     offen = list(check.get("im_hintergrund") or [])
-    if not offen:  # Fertigrechnen gescheitert: es kommt nichts mehr nach
-        return f"Bewegungsraum nicht vollständig geprüft: {check.get('message') or 'Fertigrechnen abgebrochen'}."
-    n = len(offen)
-    namen = ", ".join(o.split(" ", 1)[-1].rsplit("/", 1)[-1] for o in offen[:4]) + (" …" if len(offen) > 4 else "")
-    return (f"Bewegungsraum: {n} {'Gelenk' if n == 1 else 'Gelenke'} noch nicht geprüft (Zeitlimit), wird im "
-            f"Hintergrund fertig gerechnet; bedingungen() bzw. pruefen() zeigt den Endstand"
-            + (f" ({namen})" if namen else "") + ". Erst danach fertig melden.")
+    statik = list(check.get("statik_im_hintergrund") or [])
+    zeilen = []
+    if offen:
+        n = len(offen)
+        namen = ", ".join(o.split(" ", 1)[-1].rsplit("/", 1)[-1] for o in offen[:4]) + (" …" if len(offen) > 4 else "")
+        zeilen.append(f"Bewegungsraum: {n} {'Gelenk' if n == 1 else 'Gelenke'} noch nicht geprüft (Zeitlimit), wird "
+                      f"im Hintergrund fertig gerechnet; bedingungen() bzw. pruefen() zeigt den Endstand"
+                      + (f" ({namen})" if namen else "") + ". Erst danach fertig melden.")
+    elif not statik or check.get("message"):  # Fertigrechnen gescheitert: es kommt nichts mehr nach
+        zeilen.append(f"Bewegungsraum nicht vollständig geprüft: "
+                      f"{check.get('message') or 'Fertigrechnen abgebrochen'}.")
+    if statik:
+        zeilen.append(f"Statik: {', '.join(statik[:4])}{' …' if len(statik) > 4 else ''} "
+                      f"{'rechnet' if len(statik) == 1 else 'rechnen'} im Hintergrund, die Befunde (Warnungen und "
+                      "Hinweise, kein Exportverbot) kommen nach; pruefen() wartet darauf.")
+    return "\n".join(zeilen)
 
 
 def montage_text(check: dict[str, Any] | None, max_schritte: int = 200) -> str:

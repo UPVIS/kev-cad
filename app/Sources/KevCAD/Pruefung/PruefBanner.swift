@@ -18,7 +18,7 @@ struct PruefBanner: View {
         let befunde = (p?.befunde ?? []).filter { $0.schwere != .hinweis }
         let fehler = befunde.contains { $0.schwere == .fehler }
         let farbe: Color = fehler ? .red : befunde.isEmpty ? .green : .orange
-        let offen = p?.wirdFertigGerechnet == true  // Bewegungsraum rechnet noch: nicht „in Ordnung“ melden
+        let offen = p?.kommtNoch == true  // Bewegungsraum oder Statik rechnen noch: nicht „in Ordnung“ melden
         let kopf = befunde.isEmpty ? (offen ? "bisher in Ordnung" : "in Ordnung") : (p?.bandText ?? "")
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
@@ -103,7 +103,7 @@ struct PruefBanner: View {
     }
 
     private func untertitel(fehler: Bool, leer: Bool, laeuft: Bool, hintergrund: String = "") -> String {
-        if leer, !hintergrund.isEmpty { return hintergrund }  // noch nicht „in Ordnung“: der Bewegungsraum fehlt
+        if leer, !hintergrund.isEmpty { return hintergrund }  // noch nicht „in Ordnung“: Bewegungsraum oder Statik fehlt
         var t =
             leer
             ? "Keine Durchdringung, nichts schwebt, alles lässt sich einbauen."

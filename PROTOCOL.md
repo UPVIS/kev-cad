@@ -345,7 +345,7 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 
 | type | Felder | Nutzlast |
 |---|---|---|
-| `CHECK` | `run`, `state` (`running` \| `done` \| `teilweise` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand`, `im_hintergrund` | Schnittkörper |
+| `CHECK` | `run`, `state` (`running` \| `done` \| `teilweise` \| `cancelled` \| `failed`), `duration_ms`, `message` (Text oder null), `zusammenfassung` (z. B. „2 Durchdringungen · 1 Teil nicht einbaubar“, leer = nichts offen), `zaehler` (`fehler`, `warnung`, `hinweis`), `befunde` (Liste), `geometrie` (Liste `{befund, vert, tri}`), optional `gewinde`, `erlaubt` (nicht gemeldete Überlappungen mit Grund), `montage`, `stand`, `im_hintergrund`, `statik_im_hintergrund`, `statik` (Kurzfassung je Szenario) | Schnittkörper |
 
 - Nach `RUN_END` kommt sofort `CHECK` mit `state: "running"` und leeren Listen, das Ergebnis folgt als zweites `CHECK`.
   `cancelled`: ein neuerer Lauf kam dazwischen (dessen `CHECK` folgt). Beim Verbinden schickt der Kernel das letzte
@@ -358,6 +358,16 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   `im_hintergrund`). Kommt vorher ein neuer Lauf, bleibt es beim teilweisen Ergebnis des alten. Ältere Apps lesen
   einen unbekannten `state` als `done` und ersetzen es beim zweiten `CHECK`; die App zeigt im Prüfband und im
   Inspektor „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
+- `statik_im_hintergrund` (additiv, 22.10.2026, PLAN-STATIK.md T34): Rechnen nach dem Lauf noch ein Ablauf (Stufe 2)
+  oder der Festkörper (Stufe 3), ist das `CHECK` ebenfalls `teilweise` und nennt sie hier (etwa
+  `"Ablauf „Bremsen aus 1 m/s“"`, `"Festkörper „Haken 2 kg“ (2 Teile)"`). Sind sie fertig (oder abgebrochen), folgt
+  dasselbe `run` erneut, ohne neuen Lauf: mit den Befunden `statik_dyn_kippen`, `statik_dyn_ladung`,
+  `statik_dyn_rutschen` und `statik_festkoerper` (rot → `warnung`, gelb → `hinweis`, nie `fehler`, T10; ein
+  Festkörper-Befund ersetzt `statik_bauteil` desselben Teils), neu nummeriert, und mit `done` (oder weiter
+  `teilweise`, solange der Bewegungsraum rechnet). Nur Szenarien des Laufs zählen (model.py und Standard), nicht die
+  auf Anfrage gerechneten. Bloßer Fortschritt schickt kein neues `CHECK`. Ältere Apps sehen ein `teilweise` ohne
+  `im_hintergrund` und ersetzen es beim nächsten `CHECK`; die App zeigt im Prüfband „Statik: … rechnet noch, Befunde
+  folgen …“.
 - Befund:
 
 ```json
@@ -376,7 +386,7 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
 - Nutzlast: je Eintrag von `geometrie` hintereinander positions f32 (`vert` × 3), normals f32 (`vert` × 3), triangles
   u32 (`tri` × 3), Weltkoordinaten. Die App zeigt sie als roten, durchscheinenden Schnittkörper.
 
-Testdateien: `check_done.frame`, `check_running.frame`, `check_teilweise.frame`, `check.json` (aus
+Testdateien: `check_done.frame`, `check_running.frame`, `check_teilweise.frame`, `check_statik.frame`, `check.json` (aus
 `kernel/tools/make_pruef_fixtures.py`).
 
 Weitere Teile von `CHECK` (Stufe 2):
@@ -927,8 +937,9 @@ ein Feld `festkoerper`:
   unbekannt, überall abgemindert). `ausrichtungen`: Sicherheit, wenn das Teil mit `lager.druckteil(…, ausrichtung=…)`
   so gedruckt würde (gleiches Spannungsfeld); `ausrichtung_beste` nur, wenn sie mindestens 20 % mehr bringt.
   `kragtraeger`: die Sicherheit des Kragträger-Nachweises (S0) zum Vergleich.
-- Kurzfassung im `CHECK` (das CHECK entsteht vor der FEM und trägt sie daher nie) bzw. in `statik_kurz`: `festkoerper`
-  mit `stand`, `fortschritt`, `text`, `meldung` und je Teil `teil`, `stand`, `ampel`, `sicherheit`.
+- Kurzfassung im `CHECK` bzw. in `statik_kurz`: `festkoerper` mit `stand`, `fortschritt`, `text`, `meldung` und je
+  Teil `teil`, `stand`, `ampel`, `sicherheit`. Das erste `CHECK` eines Laufs entsteht vor der FEM; das nachgetragene
+  (`statik_im_hintergrund`, T34) trägt den Stand und die Befunde `statik_festkoerper`.
 - Packen und Prüfen in `protocol.py` (`check_statics_message` prüft `festkoerper`), Beispiel
   `statik_beispiel_festkoerper`, Testdatei `statics_festkoerper.frame` aus `tools/make_statik_fixtures.py`.
 
@@ -957,9 +968,9 @@ jeden Auftrag „R-n“: schnell rendert die App (RealityKit), Foto rendert Blen
 | `RENDER_START` | App → Kernel | `id`, `szene`, `ansicht`, `kamera` (oder null), `breite`, `hoehe`, `qualitaet` (`schnell` \| `foto`), `hintergrund` (oder null = wie die Szene), `ziel` (oder null), `vorschau` (bool) | `ACK` (`message` = Auftrag „R-n“ oder Fehler), danach `RENDER_STATUS` |
 | `RENDER_CANCEL` | App → Kernel | `id`, `auftrag` | `ACK` |
 | `RENDER_REQ` | Kernel → App | `id`, `auftrag`, `szene` (Objekt, unten), `ansicht`, `kamera`, `width`, `height`, `teile` (Darstellung je Teil, unten), `path` (absolute Zieldatei .png), `vorschau` | `RENDER_RES` |
-| `RENDER_RES` | App → Kernel | `reply_to`, `ok`, `path`, `width`, `height`, `ms`, `kamera` (wie bei `RENDER_SCENE`), `message` (oder null), `phasen` (ms je Phase: `netze_ms`, `umgebung_ms`, `szene_ms`, `rendern_ms`, `png_ms`) | – |
+| `RENDER_RES` | App → Kernel | `reply_to`, `ok`, `path`, `width`, `height`, `ms`, `kamera` (wie bei `RENDER_SCENE`), `message` (oder null), `phasen` (ms je Phase: `netze_ms`, `umgebung_ms`, `szene_ms`, `rendern_ms`, `png_ms`, additiv `schatten_ms` (Schatten auf dem Boden), `wiederholt` (1: das erste Bild kam nicht zurück, zweiter Versuch mit neuem Renderer)) | – |
 | `RENDER_SCENE_REQ` | Kernel → App | `id`, `auftrag`, `ansicht`, `kamera`, `width`, `height`, `kulisse` (Namen der Kulisse-Teile) | `RENDER_SCENE` |
-| `RENDER_SCENE` | App → Kernel | `reply_to`, `ok`, `kamera` {`projection` (immer `perspective`), `position`, `target`, `up`, `fov_deg` (vertikal), `ortho_height_mm` (null), `name` (Kamera oder null)} in mm mit Z oben, `teile` (sichtbare Teile `{name, matrix}`; `matrix` 16 Zahlen spaltenweise = Lage gegenüber PART_UPSERT, null = Ruhelage), `message` | – |
+| `RENDER_SCENE` | App → Kernel | `reply_to`, `ok`, `kamera` {`projection` (`perspective` \| `orthographic`, additiv 23.10.2026: parallele Viewer-Ansicht), `position`, `target`, `up`, `fov_deg` (vertikal), `ortho_height_mm` (sichtbare Höhe bei `orthographic`, sonst null), `name` (Kamera oder null)} in mm mit Z oben, `teile` (sichtbare Teile `{name, matrix}`; `matrix` 16 Zahlen spaltenweise = Lage gegenüber PART_UPSERT, null = Ruhelage), `message` | – |
 | `RENDER_STATUS` | Kernel → App | `auftrag`, `zustand` (`wartet` \| `laeuft` \| `fertig` \| `fehler` \| `abgebrochen`), `qualitaet`, `szene` (Name), `fortschritt` (0…1), `text`, `pfad` (nur bei `fertig`), `width`, `height`, `ms`, `von` (`agent` \| `app`), `vorschau`, `fehler` | – |
 
 `RENDER_REQ.szene`: `name`, `titel`, `licht` (`studio` = eigene Softbox-Umgebung \| `umgebung` = HDRI), `umgebung`
@@ -968,14 +979,16 @@ jeden Auftrag „R-n“: schnell rendert die App (RealityKit), Foto rendert Blen
 
 `RENDER_REQ.teile[i]` (KATALOG.md „Rendering“, `render/materialien.py`): `name`, `basisfarbe` [r, g, b] sRGB 0…1,
 `metallisch`, `rauheit`, `oberflaeche`, `klarlack`, `klarlack_rauheit`, `anisotropie`, `durchsichtig`, optional
-`schichthoehe`, `material`, `quelle` (`katalog` \| `abgeleitet` \| `teilfarbe` \| `ohne_material`), `kulisse` (bool).
+`schichthoehe`, `material`, `quelle` (`katalog` \| `abgeleitet` \| `teilfarbe` \| `ohne_material`), `kulisse` (bool), additiv
+`druck_oben` (Aufbaurichtung des Druckteils als Einheitsvektor in Weltlage aus der Druckprüfung, nur bei `schichten`;
+Schichtlinien liegen quer dazu, ohne das Feld quer zu Z).
 Teile ohne Eintrag rendert die App mit ihrer Farbe, matt. Kulisse-Teile (PART_UPSERT.kulisse, Gruppe `Kulisse/`)
 sind im Bild, zählen aber nicht für den Ausschnitt von `produkt` und den Standardansichten; bei durchsichtigem
 Hintergrund (Freisteller) bleiben sie weg.
 
 Szene wie im Viewer: sichtbare Teile (ausgeblendete und in der Animation verborgene nicht), Lage mit Explosion und
 Animation, bei einer Kamera ohne ihr Objektiv und Teile vor dem Augpunkt. Schnitt, Hervorhebungen, Röntgen und Maße
-gehen nicht ins Bild. `ansicht`: `aktuell` (Viewer-Kamera, parallele Projektion wird perspektivisch mit gleichem
-Ausschnitt am Drehpunkt), `produkt` (3/4-Ansicht vorn rechts, 24° von oben, 22° Bildwinkel, eingepasst) oder eine
+gehen nicht ins Bild. `ansicht`: `aktuell` (Viewer-Kamera; eine parallele Projektion rendert echt orthografisch mit
+derselben sichtbaren Höhe, RealityKit `OrthographicCameraComponent`, Blender Kamera `ORTHO` mit `ortho_scale`), `produkt` (3/4-Ansicht vorn rechts, 24° von oben, 22° Bildwinkel, eingepasst) oder eine
 Standardansicht (26°, eingepasst); `kamera` (Phase 5) hat Vorrang. Vorschau-Aufträge (`vorschau: true`) schreibt der
 Kernel nach `output/renders/.vorschau/` und die App zeigt sie nur im Dialog.

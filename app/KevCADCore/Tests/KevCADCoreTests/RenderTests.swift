@@ -165,22 +165,112 @@ final class RenderTests: XCTestCase {
         XCTAssertEqual(o.oben, SIMD3(0, 1, 0))
     }
 
-    func testSchattenmaskeUndZusammensetzen() {
-        let w = 40, h = 20
-        // B: heller Boden überall; A: links halb so hell (Schatten)
-        var a = [Float16](repeating: 0, count: w * h * 4), b = a
-        for i in 0..<(w * h) {
-            let x = i % w
-            for k in 0..<3 {
-                b[i * 4 + k] = 0.8
-                a[i * 4 + k] = x < w / 2 ? 0.4 : 0.8
+    /// Schichtlinien nach Druckrichtung: v läuft längs der Aufbaurichtung, Deckflächen quer dazu ohne Linien; mit Z wie
+    /// bisher (quaderUV mit deckeFlach).
+    func testSchichtUVNachDruckrichtung() {
+        let z = PBRRenderer.schichtBasis(SIMD3(0, 0, 1))
+        XCTAssertEqual(PBRRenderer.schichtUV(SIMD3(10, 5, 3), SIMD3(0, 1, 0), basis: z).y, 3)  // Seite: v = z
+        XCTAssertEqual(PBRRenderer.schichtUV(SIMD3(10, 5, 3), SIMD3(0, 0, 1), basis: z).y, 0)  // Decke: keine Linien
+        // stehend gedruckt in −x (Aufbaurichtung +x): auf der Fläche mit Normale y laufen die Linien quer zu x
+        let x = PBRRenderer.schichtBasis(SIMD3(1, 0, 0))
+        XCTAssertEqual(PBRRenderer.schichtUV(SIMD3(10, 5, 3), SIMD3(0, 1, 0), basis: x).y, 10)
+        XCTAssertEqual(PBRRenderer.schichtUV(SIMD3(10, 5, 3), SIMD3(0, 0, 1), basis: x).y, 10)  // jetzt auch oben
+        XCTAssertEqual(PBRRenderer.schichtUV(SIMD3(10, 5, 3), SIMD3(1, 0, 0), basis: x).y, 0)  // Bettseite: keine
+        // Teile schräg: v ist die Höhe längs der Aufbaurichtung
+        let s = PBRRenderer.schichtBasis(simd_normalize(SIMD3(1, 0, 1)))
+        XCTAssertEqual(PBRRenderer.schichtUV(SIMD3(1, 0, 1), SIMD3(0, 1, 0), basis: s).y, sqrt(2), accuracy: 1e-5)
+        // aus der Nachricht: druck_oben normiert
+        let pbr = RenderPBR(json: ["name": "H", "basisfarbe": [0.5, 0.5, 0.5], "oberflaeche": "schichten",
+                                   "druck_oben": [0, 0, 2]])
+        XCTAssertEqual(pbr.druckOben, SIMD3(0, 0, 1))
+        XCTAssertNil(RenderPBR(json: ["name": "H"]).druckOben)
+    }
+
+    /// Schatten auf dem Boden (CPU, wie die Flächenlichter im Foto): unter dem Würfel dunkel, am Fuß hart, der
+    /// Schlagschatten weg vom Licht, weich mit dem Abstand.
+    /// Nur zur Sichtprüfung (KEVCAD_RENDER_AUSGABE): Raster des Bodenschattens der Studio-Szene als Graustufenbild.
+    func testBodenSchattenRasterBild() throws {
+        guard let ordner = ProcessInfo.processInfo.environment["KEVCAD_RENDER_AUSGABE"] else { return }
+        var tri: [SIMD3<Float>] = []
+        PBRRenderer.dreieckeInWelt(Self.quader(SIMD3(-60, -40, 0), SIMD3(60, 40, 10)), matrix_identity_float4x4, in: &tri)
+        PBRRenderer.dreieckeInWelt(Self.quader(SIMD3(-20, -20, 10), SIMD3(20, 20, 50)), matrix_identity_float4x4, in: &tri)
+        let t0 = Date()
+        let b = try XCTUnwrap(BodenSchatten.rechne(dreiecke: tri, z0: 0, lichter: BodenSchatten.studioLichter
+                                                   + [BodenSchatten.kontakt(groesse: 152)]))
+        print("Bodenschatten \(b.nx) × \(b.ny), Zelle \(b.zelle) mm, \(Int(Date().timeIntervalSince(t0) * 1000)) ms")
+        var px = [UInt8](repeating: 255, count: b.nx * b.ny * 4)
+        for j in 0..<b.ny {
+            for i in 0..<b.nx {
+                let v = UInt8(max(0, min(255, b.hell[j * b.nx + i] * 255)))
+                let k = ((b.ny - 1 - j) * b.nx + i) * 4  // y nach oben
+                px[k] = v
+                px[k + 1] = v
+                px[k + 2] = v
             }
-            a[i * 4 + 3] = 1
-            b[i * 4 + 3] = 1
         }
-        let s = PBRRenderer.schattenmaske(a: a, b: b, w: w, h: h)
-        XCTAssertEqual(s[10 * w + 2], 0.5, accuracy: 0.02)
-        XCTAssertEqual(s[10 * w + w - 2], 1, accuracy: 0.02)
+        let img = try XCTUnwrap(PBRRenderer.cgImage(px, b.nx, b.ny))
+        try XCTUnwrap(PBRRenderer.pngDaten(img)).write(to: URL(fileURLWithPath: ordner).appendingPathComponent("raster.png"))
+        print("Ursprung \(b.ursprung), Platte rechts (65, 0): \(b.wert(65, 0)), vorn (0, -45): \(b.wert(0, -45))")
+    }
+
+    func testBodenSchattenKontaktUndSchlagschatten() throws {
+        // Würfel 100 mm auf dem Boden, Licht schräg von −x oben (45°)
+        var tri: [SIMD3<Float>] = []
+        PBRRenderer.dreieckeInWelt(Self.quader(SIMD3(-50, -50, 0), SIMD3(50, 50, 100)), matrix_identity_float4x4,
+                                   in: &tri)
+        let licht = BodenSchatten.Licht(richtung: SIMD3(-1, 0, 1), winkelGrad: 10, gewicht: 1)
+        let b = try XCTUnwrap(BodenSchatten.rechne(dreiecke: tri, z0: 0, lichter: [licht], maxZellen: 400))
+        XCTAssertLessThan(b.wert(0, 0), 0.05)  // unter dem Würfel
+        XCTAssertLessThan(b.wert(80, 0), 0.2)  // Schlagschatten hinter dem Würfel (+x, weg vom Licht)
+        XCTAssertGreaterThan(b.wert(-90, 0), 0.95)  // vor dem Würfel zum Licht hin: hell
+        XCTAssertGreaterThan(b.wert(0, 120), 0.95)  // seitlich weit weg: hell
+        XCTAssertEqual(b.wert(5000, 0), 1)  // außerhalb des Rasters
+        // Halbschatten: am Fuß (Würfelkante x = 50, Weg t klein) schmal, am Ende des Schattens (x ≈ 150) breit
+        func breite(_ x0: Float) -> Float {  // Abstand von hell (0,9) bis dunkel (0,1) quer zum Schatten bei x0
+            var y = Float(0), dunkel: Float = 0, hell: Float = 0
+            while y < 200 {
+                let v = b.wert(x0, y)
+                if v < 0.1 { dunkel = y }
+                if v < 0.9 { hell = y }
+                y += 0.5
+            }
+            return hell - dunkel
+        }
+        XCTAssertLessThan(breite(60), breite(140))
+        // Kontaktschatten: nur Flächen dicht über dem Boden, eng um den Fuß
+        let k = try XCTUnwrap(BodenSchatten.rechne(dreiecke: tri, z0: 0, lichter: [BodenSchatten.kontakt(groesse: 170)]))
+        XCTAssertLessThan(k.wert(52, 0), k.wert(70, 0))
+        XCTAssertGreaterThan(k.wert(150, 0), 0.97)
+    }
+
+    /// Strahlen der Kamera: perspektivisch vom Auge, parallel alle in Blickrichtung über die sichtbare Höhe verteilt.
+    func testKameraStrahlenPerspektiveUndParallel() {
+        let p = PBRRenderer.Kamera(position: SIMD3(0, -500, 0), ziel: .zero, oben: SIMD3(0, 0, 1), fovGrad: 30)
+        let (o, d) = p.strahl(50, 50, 101, 101)
+        XCTAssertEqual(o, SIMD3(0, -500, 0))
+        XCTAssertLessThan(simd_length(d - SIMD3(0, 1, 0)), 1e-5)
+        let q = PBRRenderer.Kamera(position: SIMD3(0, -500, 0), ziel: .zero, oben: SIMD3(0, 0, 1), fovGrad: 30,
+                                   orthoHoehe: 200)
+        let (o1, d1) = q.strahl(0, 0, 100, 100)  // oben links
+        XCTAssertLessThan(simd_length(d1 - SIMD3(0, 1, 0)), 1e-5)
+        XCTAssertEqual(o1.z, 99, accuracy: 0.01)  // halbe Höhe minus halbes Pixel
+        XCTAssertEqual(o1.x, -99, accuracy: 0.01)
+        if case .object(let j) = q.json {
+            XCTAssertEqual(j["projection"], .string("orthographic"))
+            XCTAssertEqual(j["ortho_height_mm"]?.doubleValue, 200)
+        } else { XCTFail("kein JSON-Objekt") }
+        // Orthografische Kamera für eine parallele Ansicht: Auge hinter der Hüllkugel, Ziel bleibt
+        let b = BoundingBox(min: SIMD3(-100, -50, 0), max: SIMD3(100, 50, 80))
+        let k = AppController.orthoKamera(blick: SIMD3(0, 1, 0), ziel: b.center, oben: SIMD3(0, 0, 1), hoehe: 150,
+                                          fovGrad: 30, bounds: b)
+        XCTAssertEqual(k.orthoHoehe, 150)
+        XCTAssertLessThan(k.position.y, b.min.y)
+    }
+
+    func testZusammensetzen() {
+        let w = 40, h = 20
+        // Schatten links halb so hell
+        let s = (0..<(w * h)).map { i -> Float in i % w < w / 2 ? 0.5 : 1 }
         // C: ein deckendes rotes Pixel in der Mitte, sonst leer
         var c = [Float16](repeating: 0, count: w * h * 4)
         let mitte = 10 * w + 20
@@ -235,17 +325,80 @@ final class RenderTests: XCTestCase {
         XCTAssertEqual(fp[3], 0)
         XCTAssertEqual(fp[m + 3], 255)
         print("RealityKit 320 × 200: \(Int(ms)) ms, Phasen \(e.phasen)")
-        // Zur Sichtprüfung: KEVCAD_RENDER_AUSGABE=/pfad schreibt Studio und Draußen in 1600 × 1000
+        print("RealityKit, letztes Bild: \(r.letzterBefund)")
+        XCTAssertTrue(r.letzterBefund.contains("GPU fertig ja") || r.letzterBefund.contains("gemeldet ja"))
+        // Schatten auf dem Boden: rechts hinter dem Block (weg vom Hauptlicht vorn links) dunkler als die Ecke
+        XCTAssertNotNil(e.phasen["schatten_ms"])
+        // Zur Sichtprüfung: KEVCAD_RENDER_AUSGABE=/pfad schreibt Studio, Freisteller, Draußen und eine Parallelansicht in
+        // 1600 × 1000, dazu die Kamera als JSON (Vergleich mit dem Foto aus Blender)
         if let ordner = ProcessInfo.processInfo.environment["KEVCAD_RENDER_AUSGABE"] {
+            let url = URL(fileURLWithPath: ordner)
             let gross = try await r.render(teile: teile, kamera: k, szene: RenderSzene(), width: 1600, height: 1000)
-            try gross.png.write(to: URL(fileURLWithPath: ordner).appendingPathComponent("studio.png"))
+            try gross.png.write(to: url.appendingPathComponent("studio.png"))
             print("RealityKit 1600 × 1000 Phasen \(gross.phasen)")
+            let fg = try await r.render(teile: teile, kamera: k, szene: RenderSzene(
+                name: "freigestellt", hintergrund: "transparent", transparent: true), width: 1600, height: 1000)
+            try fg.png.write(to: url.appendingPathComponent("freigestellt.png"))
+            let o = AppController.orthoKamera(blick: simd_normalize(SIMD3(-0.6, 0.8, -0.45)), ziel: SIMD3(0, 0, 25),
+                                              oben: SIMD3(0, 0, 1), hoehe: 140, fovGrad: 24,
+                                              bounds: BoundingBox(min: SIMD3(-60, -40, 0), max: SIMD3(60, 40, 50)))
+            let og = try await r.render(teile: teile, kamera: o, szene: RenderSzene(), width: 1600, height: 1000)
+            try og.png.write(to: url.appendingPathComponent("parallel.png"))
+            // hoher Turm auf dem Boden (Schlagschatten deutlich), gleiche Kamera wie im Foto
+            let turm = [PBRRenderer.Teil(name: "Turm", geometry: Self.quader(SIMD3(-20, -20, 0), SIMD3(20, 20, 120)),
+                                         digest: 21, transform: matrix_identity_float4x4,
+                                         pbr: RenderPBR(name: "Turm", basisfarbe: SIMD3(0.8, 0.8, 0.78), rauheit: 0.5))]
+            let kt = AppController.eingepasst(blick: simd_normalize(SIMD3(-0.6, 0.8, -0.45)), oben: SIMD3(0, 0, 1),
+                                              fov: 24, bounds: BoundingBox(min: SIMD3(-60, -60, 0),
+                                                                           max: SIMD3(60, 60, 120)), aspekt: 1.6)
+            let tg = try await r.render(teile: turm, kamera: kt, szene: RenderSzene(), width: 1600, height: 1000)
+            try tg.png.write(to: url.appendingPathComponent("turm.png"))
+            let kameras: JSONValue = .object(["perspektivisch": k.json, "parallel": o.json, "turm": kt.json])
+            try JSONEncoder().encode(kameras).write(to: url.appendingPathComponent("kameras.json"))
             if let hdr = ProcessInfo.processInfo.environment["KEVCAD_RENDER_HDR"] {
                 let d = try await r.render(teile: teile, kamera: k, szene: RenderSzene(
                     name: "draussen", licht: "umgebung", umgebung: hdr, hintergrund: "umgebung"), width: 1600, height: 1000)
-                try d.png.write(to: URL(fileURLWithPath: ordner).appendingPathComponent("draussen.png"))
+                try d.png.write(to: url.appendingPathComponent("draussen.png"))
             }
         }
+    }
+
+    /// Parallele Ansicht echt orthografisch: zwei gleich große Würfel in verschiedener Tiefe sind im Bild gleich groß,
+    /// und die sichtbare Höhe stimmt mit `orthoHoehe` (100 mm Würfel bei 200 mm Bildhöhe = halbe Bildhöhe).
+    @MainActor
+    func testRealityKitOrthografisch() async throws {
+        let r = PBRRenderer()
+        let pbr = RenderPBR(name: "W", basisfarbe: SIMD3(0.8, 0.3, 0.2), rauheit: 0.6)
+        let teile = [
+            PBRRenderer.Teil(name: "vorn", geometry: Self.quader(SIMD3(-150, -50, -50), SIMD3(-50, 50, 50)), digest: 11,
+                             transform: matrix_identity_float4x4, pbr: pbr),
+            PBRRenderer.Teil(name: "hinten", geometry: Self.quader(SIMD3(50, 450, -50), SIMD3(150, 550, 50)),
+                             digest: 12, transform: matrix_identity_float4x4, pbr: pbr),
+        ]
+        let k = PBRRenderer.Kamera(position: SIMD3(0, -1500, 0), ziel: SIMD3(0, 0, 0), oben: SIMD3(0, 0, 1), fovGrad: 30,
+                                   orthoHoehe: 200)
+        let szene = RenderSzene(name: "freigestellt", hintergrund: "transparent", transparent: true, boden: false)
+        let e = try await r.render(teile: teile, kamera: k, szene: szene, width: 400, height: 200)
+        let px = try Self.pixel(e.bild)
+        // Spalten mit deckenden Pixeln je Hälfte (links der vordere, rechts der hintere Würfel)
+        func spalten(_ von: Int, _ bis: Int) -> (Int, Int, Int) {
+            var lo = Int.max, hi = -1, zeilen = Set<Int>()
+            for y in 0..<200 {
+                for x in von..<bis where px[(y * 400 + x) * 4 + 3] > 128 {
+                    lo = min(lo, x)
+                    hi = max(hi, x)
+                    zeilen.insert(y)
+                }
+            }
+            return (lo, hi, zeilen.count)
+        }
+        let (l0, l1, lh) = spalten(0, 200), (r0, r1, rh) = spalten(200, 400)
+        print("Orthografisch: vorn \(l1 - l0 + 1) × \(lh) px, hinten \(r1 - r0 + 1) × \(rh) px")
+        XCTAssertEqual(l1 - l0 + 1, 100, accuracy: 3)  // 100 mm bei 1 px/mm
+        XCTAssertEqual(lh, 100, accuracy: 3)
+        XCTAssertEqual(r1 - r0 + 1, l1 - l0 + 1, accuracy: 2)  // gleich groß trotz 500 mm Tiefe
+        XCTAssertEqual(rh, lh, accuracy: 2)
+        XCTAssertEqual(l0, 50, accuracy: 3)  // x = −150 mm liegt bei Pixel 50
     }
 
     // MARK: Hilfen

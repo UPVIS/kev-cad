@@ -289,3 +289,69 @@ Offen:
   also in der Fangrolle; mit `punkt` an der Berührstelle Ball–Rolle steht das Paar sichtbar zwischen beiden.
 - Der Kugelschieber selbst rechnet die Ballkraft noch als äußere Last: in seinem model.py `gegen="Bowlingball"`
   ergänzen (nicht in diesem Zweig, Kevins Projekt bleibt unberührt).
+
+## Restpunkte: freie Gelenke, Befunde in der Prüfung, Drehfedern (Zweig `rest-statik-render`, 23.10.2026)
+
+Kevin am 22.10.2026: „Mach weiter, so dass wir mit dem Projekt ganz fertig werden.“ Dazu der Befund von KevCup am
+Kugelschieber (Build 427, V86): Seit T30 nehmen die vorderen Stangenhalter (PLA, Klemmung mit Sterngriff um Alurohr
+12 × 1) das ganze Kragmoment der rund 460 mm auskragenden Seitenstange; `festigkeit` meldet 0,30 bis 0,48 (75 N/mm²
+von Mises), vorher 8 bis 26.
+
+| Nr. | Entscheidung | Begründung |
+|---|---|---|
+| T33 | **Gelenk mit `bereich`, das frei läuft:** `frei=True` am Gelenk (`drehgelenk`, `schiebegelenk`, `zylindergelenk`, Prüfung `frei` muss ein Wahrheitswert sein). Standard bleibt festgestellt (T30). Mit `frei=True` rechnet das Stabwerk das Gelenk als Gelenk (Hülse, Drehgelenk; Quelle „Gelenk (schiebe) frei“), der Ablauf lässt es laufen und hält es an den Enden von `bereich` an (MuJoCo-Grenzen ab der Lage in model.py, Anschlag überkritisch gedämpft `solreflimit 0,004 2`, Lagerreibung 3 % des Gewichts, bei Drehgelenken am Radius 10 mm). Zwischen zwei Nicht-Stäben (Schublade im Korpus) bleibt es in S0/S1 ein Körper (wie am Anschlag), mit Hinweis | Kevins Gelenke mit Bereich sind meist geklemmt; Schublade und Tür ohne Feststeller laufen wirklich. Ohne Dämpfung federte der Anschlag zurück (Schublade bei 87 mm, dann zurück auf 8 mm) und ohne Reibung driftete sie schon beim Fahren |
+| T34 | **Befunde aus Ablauf (S2) und Festkörper (S3) in der Prüfung:** Rechnen sie nach dem Lauf noch, geht das CHECK als `teilweise` mit `statik_im_hintergrund` hinaus (das Muster des Bewegungsraums); sind sie fertig oder abgebrochen, setzt die Laufzeit das CHECK desselben Laufs neu zusammen (`statik/laufzeit.py`, `_statik_in_check`): Befunde `statik_*` neu aus dem Ergebnis der Laufzeit, nur aus den Szenarien des Laufs, `statik_dyn_*` und `statik_festkoerper` dazu (rot Warnung, gelb Hinweis, nie Exportverbot, T10), neu nummeriert, und schickt es mit `done` (bzw. weiter `teilweise`, solange der Bewegungsraum rechnet). Bloßer Fortschritt schickt kein CHECK. `run` wartet nicht, `pruefen(warten=True)` schon, die Export-Sperre nicht | Eine Prüfung, in der alle Befunde stehen; der Lauf bleibt so schnell wie vorher. Szenarien auf Anfrage (`szenario_rechnen`, `dynamik`) sind Fragen des Agenten, keine Befunde des Modells |
+| T35 | **Drehfeder an festen Anschlüssen an Druckteile** (`statik/feder.py`): Klemmung, Steck, Spiel, festgestelltes Gelenk oder Schraube eines Stabs an ein Druckteil ist im Stabwerk nicht starr, sondern hat für die beiden Drehungen quer zum Stab je eine Feder (Verschiebungen und Drehung um die Stabachse starr). Nachgiebigkeit in Reihe: Bettung in der Bohrung k = E · L_b³ / 12 (Bettung E / d angenommen) und Biegung und Torsion des Teils bis zu seinem Lager an denselben Schnitten wie der Kragträger (Δs / (E I), Δs / (G I_t), I_t ≈ A⁴ / (40 I_p), quer zur Schicht `e_modul_z`); bei Verbindern zwischen Stäben je Anschluss der Anteil 1 / n. Im Stabwerk zwei kurze Glieder (2 mm) längs der Hauptachsen, starr bis auf die Torsion G J / L = k. Die Lagerkraft samt Moment durch die Feder geht wie bisher in Kragträger und Festkörper | Starr nahm ein weicher Halter das ganze Kragmoment, gelenkig keines; real teilt es sich nach Steifigkeit. Geometrie und E-Modul reichen im Rechenprozess (Millisekunden, keine FEM im Lauf, T21) |
+
+Nachweise (Tests in `kernel/tests/test_statik_rest.py`, Handrechnung als Euler-Bernoulli-Balken mit Federn,
+`test_statik_nach.balken`):
+
+| Probe | Handrechnung | Stabwerk |
+|---|---|---|
+| Edelstahlrohr 12 × 1 in zwei Pfosten 300 mm auseinander, 400 mm Kragarm, 50 N an der Spitze; Pfosten aus Stahl (starr): Lager B nimmt P · L_k | R_A 0, R_B 50 N, M_B 20 000 Nmm | 0,00 / 50,00 N, 20 000 Nmm |
+| dieselbe, aufgelegt (gelenkig): Durchlaufträger mit Kragarm | R_A −66,67, R_B 116,67 N, keine Momente | −66,67 / 116,67 N, 0 |
+| dieselbe, Pfosten PLA 40 × 30 × 95 mm stehend gedruckt (federnd): k = 1 / (1 / (E L_b³ / 12) + 1 / (E_z I / H)) = 1,66 · 10⁶ Nmm/rad, Feder aus dem Modell innerhalb 3 % | R_A −37,33, R_B 87,33 N, M_A 2 621, M_B 11 421 Nmm | −37,36 / 87,35 N, 2 622 / 11 416 Nmm |
+| Stange (Stahlrohr 21,3 × 2) in zwei PETG-Haltern, gesteckt, 150 mm neben der Mitte (T30-Probe): jetzt mit Feder, zwischen Hebelgesetz (75 / 25) und Einspannung (84,38 / 15,62) | 75,46 / 24,54 N | 75,47 / 24,54 N |
+| Querstange in zwei PETG-Schlitten, 75 mm neben der Mitte: Federn der Seitenstangen und beider Bohrungen der Schlitten in Reihe | 75,23 / 24,77 N | 75,08 / 24,92 N |
+| Kommode mit Schublade auf `schiebegelenk(…, bereich=(0, 80), frei=True)`, Bremsen aus 1 m/s abrupt | fährt bis an den Anschlag | größter Weg 81,3 mm, am Ende 79,1 mm; festgestellt 0 mm |
+
+Kugelschieber (Kopie von „Kugelschieber Variante B“ im Scratchpad, eigener Katalog und FEM-Speicher), Szenario „Ball
+drückt 100 N auf den Fänger“ (bzw. „… Schieber“):
+
+| | starr (T30, wie KevCup) | mit Drehfeder (T35) |
+|---|---|---|
+| Feder Stangenhalter vorn (Bohrung 40 mm, Hebel 98 mm bis zum Rahmen, PLA, Biegung quer zur Schicht) | – | 1,13 · 10⁶ Nmm/rad um y (Drehung der Stange in der senkrechten Ebene) |
+| Moment im Stangenhalter vorn links | 15 989 Nmm | 12 813 Nmm (Stangenhalter hinten jetzt 1 286 statt 19) |
+| Kragträger Stangenhalter vorn links / rechts (Ziel 4) | 2,09 / 2,09 (Schieber 2,71) | 2,40 / 2,53 (Schieber 3,04 / 3,24) |
+| Festkörper Stangenhalter vorn links / rechts (Ziel 4, Schichtfuge maßgebend) | 0,30 / 0,31, 75 N/mm² (Schieber 0,46 / 0,47) | 0,37 / 0,38, 62 N/mm² (Schieber 0,56 / 0,57) |
+| Seitenstange (Sicherheit) | 0,867 | 0,859 |
+
+Ehrlich dazu: Der Halter ist auch federnd viel steifer als das Rohr. Die Seitenstange (Alurohr 12 × 1, E I = 3,7 · 10⁷
+Nmm²) spannt rund 500 mm bis zum hinteren Halter, ihre Drehsteifigkeit dort ist etwa 3 E I / L = 2,2 · 10⁵ Nmm/rad;
+der vordere Halter (ein 116 mm hoher Pfosten unter dem Rahmen) hat aus Geometrie 1,13 · 10⁶ und behält damit rund
+80 % des Moments. Eine einmalige Festkörper-Messung desselben Halters (Kräftepaar in der Bohrung, Drehung der Bohrung
+aus den Verschiebungen) ergibt 5,8 · 10⁵ Nmm/rad, also etwa halb so steif wie die Balkenrechnung (örtliche
+Nachgiebigkeit an Schlitz und Bohrung); damit blieben rund 70 % im Halter und der Festkörper etwa bei 0,42 bis 0,45.
+Die Handrechnung „gelenkig, S0 etwa 2 bis 3“ setzt voraus, dass der Halter kein Moment nimmt; das tut er elastisch nur,
+wenn die Klemmung rutscht oder das Rohr Spiel hat. Der Halter bleibt rot; maßgebend ist die Schichtfuge (stehend
+gedruckt, Biegung quer zur Schicht): drehen (liegend drucken) oder verstärken, wie die Drucklagen des Festkörpers
+zeigen.
+
+Erledigt aus den offenen Punkten oben: Befunde `statik_dyn_*` und `statik_festkoerper` in der Prüfung (S2, S3),
+Schalter für frei laufende Gelenke mit Bereich (Nachbesserung).
+
+### Ehrliche Grenzen (Stand 23.10.2026)
+
+- **Bewusst offen: Kontakt mit Abheben und Reibung, Plastizität und Beulen (CalculiX).** Der Festkörper spannt
+  Lagerflächen fest ein (wie verklebt), rechnet linear-elastisch und ohne Vorspannung der Schrauben. CalculiX (GPL,
+  eigener Prozess, nicht in Homebrew) bleibt außen vor: Für Kevins Teile (gedruckte Halter, Platten, Rohre weit unter
+  der Streckgrenze) entscheidet die Schichtfuge bzw. die elastische Spannung, und der zusätzliche Baustein (Build über
+  conda-forge, Minuten je Rechnung, nichtlineare Konvergenz) stünde in keinem Verhältnis. Wird ein Teil gerade wegen
+  Abheben oder Fließen kritisch, sagt die Statik das nicht; dann zählt die Handrechnung oder ein Versuch.
+- Drehfedern ohne Spiel und ohne Rutschen der Klemmung, aus der Balkenrechnung (am Kugelschieber etwa doppelt so steif
+  wie im Festkörper gemessen); eine Feder aus einer kleinen FEM des Halters im Hintergrund mit zweitem Stabwerk-Durchgang
+  wäre die nächste Stufe.
+- Freie Gelenke zwischen Nicht-Stäben (Schublade im Korpus) sind in S0/S1 ein Körper wie am Anschlag; erst der Ablauf
+  lässt sie laufen. Festkörper spannen die Gleitfläche fest ein.
+- Weiter wie oben: Rückprall, Rollwiderstand, Lagerreibung der Laufrollen, federnde Stäbe im Ablauf; Füllung und Wände
+  der Druckteile; gekrümmte Elemente; Kraftpaare nicht im Ablauf.

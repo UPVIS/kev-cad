@@ -78,12 +78,17 @@ public struct RenderPBR: Equatable, Sendable {
     public var material: String?
     /// Kulisse (Boden, Wand): im Bild, aber nicht für den Ausschnitt
     public var kulisse: Bool
+    /// Aufbaurichtung des Druckteils (Modell, Einheitsvektor) aus der Druckprüfung; Schichtlinien liegen quer dazu.
+    /// nil: quer zur Z-Achse des Modells
+    public var druckOben: SIMD3<Float>?
 
     public init(
         name: String, basisfarbe: SIMD3<Float>, metallisch: Float = 0, rauheit: Float = 0.5,
         oberflaeche: String = "glatt", klarlack: Float = 0, klarlackRauheit: Float = 0.1, anisotropie: Float = 0,
-        durchsichtig: Float = 0, schichthoehe: Float = 0.2, material: String? = nil, kulisse: Bool = false
+        durchsichtig: Float = 0, schichthoehe: Float = 0.2, material: String? = nil, kulisse: Bool = false,
+        druckOben: SIMD3<Float>? = nil
     ) {
+        self.druckOben = druckOben
         self.name = name
         self.basisfarbe = basisfarbe
         self.metallisch = metallisch
@@ -111,6 +116,7 @@ public struct RenderPBR: Equatable, Sendable {
         schichthoehe = Float(j["schichthoehe"]?.doubleValue ?? 0.2)
         material = j["material"]?.lenientString
         kulisse = j["kulisse"]?.boolValue ?? false
+        druckOben = j["druck_oben"]?.vector3.flatMap { simd_length($0) > 1e-6 ? simd_normalize($0) : nil }
     }
 }
 

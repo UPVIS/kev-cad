@@ -12,8 +12,8 @@
   (Gelenk vor ``verbinde`` vor Berührung): fest (Schraube, Klemmung, Kleben, Formschluss,
   Steck, Berührung und Spiel: ein Rohr in einer Bohrung trägt über die Stecklänge auch Momente), gelenkig (Aufliegen),
   Drehgelenk, Schiebegelenk, Zylindergelenk. Gelenke mit ``bereich`` sind Einstellungen (Schlitten mit Klemme,
-  Stange im Halter, Kopf): im Betrieb festgestellt, also fest (wie in Stufe 2, T15); frei sind nur Gelenke ohne
-  ``bereich`` (Laufrolle auf der Achse).
+  Stange im Halter, Kopf): im Betrieb festgestellt, also fest (wie in Stufe 2, T15); frei sind Gelenke ohne
+  ``bereich`` (Laufrolle auf der Achse) und Gelenke mit ``frei=True`` (Schublade, Tür ohne Feststeller, T33).
 - Starrkörper mit nur einem Anschluss an einen Stab sind **Anbauteile**: Ihr Gewicht und ihre Lasten gehen an diesen
   Anschluss.
 
@@ -113,10 +113,16 @@ class Anschluss:
     achse: np.ndarray | None = None
     teile: tuple[str, str] = ("", "")
     quelle: str = ""
+    # Drehfeder statt starrer Einspannung (T35, ``statik/feder.py``): an festen Anschlüssen an Druckteile, je Achse
+    # quer zum Stab die Steifigkeit in Nmm/rad aus Bettung in der Bohrung und Biegung des Teils bis zu seinem Lager
+    feder: dict[str, Any] | None = None
 
     def kurz(self) -> dict[str, Any]:
-        return {"stab": self.stab, "t": round(self.t, 1), "art": self.art, "partner": list(self.partner[:2]),
-                "teile": list(self.teile), "quelle": self.quelle}
+        out = {"stab": self.stab, "t": round(self.t, 1), "art": self.art, "partner": list(self.partner[:2]),
+               "teile": list(self.teile), "quelle": self.quelle}
+        if self.feder:
+            out["feder"] = {k: v for k, v in self.feder.items() if k != "achsen"}
+        return out
 
 
 @dataclass
@@ -229,8 +235,25 @@ def _bedingungen(namen: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, 
                         "mitbewegt": [n for n in (x if isinstance(x, str) else _bezug_name(x)
                                                   for x in getattr(c, "mitbewegt", []) or []) if n],
                         "punkt": None if punkt is None else np.asarray(punkt, dtype=float),
-                        "bereich": getattr(c, "bereich", None), "zeile": getattr(c, "zeile", None)})
+                        "bereich": getattr(c, "bereich", None), "zeile": getattr(c, "zeile", None),
+                        "frei": bool(getattr(c, "frei", False)), "festgestellt": festgestellt(c),
+                        "wert": _gelenkwert(c)})
     return verb, gel
+
+
+def festgestellt(c: Any) -> bool:
+    """Gilt das Gelenk in der Statik als festgestellt? Mit ``bereich`` ja (Einstellung mit Klemme, T30), außer es ist
+    mit ``frei=True`` als frei laufend erklärt (Schublade, Tür ohne Feststeller, T33); ohne ``bereich`` nie."""
+    return getattr(c, "bereich", None) is not None and not bool(getattr(c, "frei", False))
+
+
+def _gelenkwert(c: Any) -> float:
+    """Gelenkwert, mit dem model.py platziert hat (Grad bzw. mm gegenüber der Modelllage); Grenzen des Ablaufs zählen
+    ab dieser Lage."""
+    try:
+        return float(c.wert())
+    except Exception:  # noqa: BLE001 - ältere Gelenke ohne Wert
+        return 0.0
 
 
 def _hauptachse(pos: np.ndarray, zentrum: np.ndarray) -> tuple[np.ndarray, float, float, np.ndarray]:
@@ -399,7 +422,12 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
         if a in alle and b in alle:
             e = kante(a, b)
             e["gelenk"], e["achse"] = g["art"], g["achse"]
-            e["festgestellt"] = g.get("bereich") is not None  # Einstellgelenk: im Betrieb geklemmt (T15, T30)
+            # Einstellgelenk: im Betrieb geklemmt (T15, T30), außer frei=True (Schublade, Tür, T33)
+            e["festgestellt"] = bool(g.get("festgestellt"))
+            e["frei"] = bool(g.get("frei"))
+            if e["frei"] and g["art"] != "fest" and a not in m.staebe and b not in m.staebe:
+                m.hinweise.append(f"{a}: Gelenk frei, zwischen zwei Nicht-Stäben in Stufe 0/1 als ein Körper mit {b} "
+                                  "gerechnet (wie am Anschlag); der Ablauf (dynamik) lässt es laufen")
 
     # Starrkörper -----------------------------------------------------------------------------------------------------
     nicht = [n for n in m.teile if n not in m.staebe]
@@ -501,6 +529,8 @@ def _art(e: dict[str, Any]) -> tuple[str, str]:
             # Gelenk mit Bereich: Einstellung, die im Betrieb geklemmt ist (Schlitten, Stange im Halter). Frei
             # gerechnet liefe die ganze Kraft längs der Führung über das andere Gegenstück (T30).
             return "fest", f"Gelenk ({e['gelenk']}) mit Bereich: festgestellt"
+        if e.get("frei") and e["gelenk"] != "fest":  # frei=True: läuft im Betrieb frei (T33)
+            return e["gelenk"], f"Gelenk ({e['gelenk']}) frei"
         return e["gelenk"], f"Gelenk ({e['gelenk']})"
     v = e.get("verbinde")
     if v:

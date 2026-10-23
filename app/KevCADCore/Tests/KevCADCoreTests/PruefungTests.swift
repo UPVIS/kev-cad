@@ -46,6 +46,23 @@ final class PruefungTests: XCTestCase {
         XCTAssertEqual(KernelMessage.check(laeuft).typeName, "CHECK")
     }
 
+    /// Statik im Hintergrund (T34): CHECK „teilweise“ mit `statik_im_hintergrund`, Befund aus dem Ablauf schon dabei.
+    func testStatikImHintergrund() throws {
+        guard case .check(let msg) = try Fixtures.message("check_statik.frame") else { return XCTFail("kein CHECK") }
+        let exp = try JSONDecoder().decode(JSONValue.self, from: Fixtures.data("check.json"))
+        let e = msg.ergebnis
+        XCTAssertEqual(e.zustand, .teilweise)
+        XCTAssertEqual(e.statikImHintergrund, exp["statik"]?["statik_im_hintergrund"]?.stringList)
+        XCTAssertTrue(e.imHintergrund.isEmpty)
+        XCTAssertFalse(e.wirdFertigGerechnet)  // kein Bewegungsraum offen
+        XCTAssertTrue(e.statikRechnetNoch && e.kommtNoch)
+        XCTAssertEqual(e.befunde.count, exp["statik"]?["befunde"]?.intValue)
+        XCTAssertEqual(e.befunde.last?.art, exp["statik"]?["letzter"]?.stringValue)
+        XCTAssertEqual(e.hintergrundText, "Statik: Festkörper „Bremsen aus 1 m/s“ (2 Teile) rechnet noch, Befunde folgen …")
+        XCTAssertEqual(e.bewegungsraumText, "")
+        XCTAssertTrue(e.offen.allSatisfy { !$0.art.hasPrefix("statik_") })  // Statik sperrt den Export nicht
+    }
+
     /// Prüftempo: CHECK mit state „teilweise“ (Bewegungsraum rechnet im Hintergrund), danach dasselbe run als done.
     func testTeilweiseUndDannFertig() throws {
         guard case .check(let msg) = try Fixtures.message("check_teilweise.frame") else { return XCTFail("kein CHECK") }

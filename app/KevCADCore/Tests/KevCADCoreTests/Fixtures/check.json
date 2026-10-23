@@ -44,5 +44,14 @@
    "drehgelenk Halter/Flügelmutter",
    "schiebegelenk Halter/Schlitten"
   ]
+ },
+ "statik": {
+  "run": 3,
+  "state": "teilweise",
+  "statik_im_hintergrund": [
+   "Festkörper „Bremsen aus 1 m/s“ (2 Teile)"
+  ],
+  "befunde": 2,
+  "letzter": "statik_dyn_kippen"
  }
 }
