@@ -287,10 +287,10 @@ class SimulationRuntime:
 
     # -- Aufträge (Knöpfe) ---------------------------------------------------------------------------------------------
 
-    def _sim_job_senden(self) -> None:
+    def _sim_job_senden(self, job: dict[str, Any] | None = None) -> None:
         from kevcad_kernel.protocol import pack_sim_job
 
-        job = self._sim.get("job")
+        job = job if job is not None else self._sim.get("job")
         if job:
             head = pack_sim_job(job)
             head.pop("seq", None)
@@ -366,17 +366,22 @@ class SimulationRuntime:
                 ausgabe.update({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
             finally:
                 job = z.get("job") or {}
+                ende = None
                 if job.get("auftrag") == nr:
                     if z.get("abbruch"):
                         stand = "abgebrochen"
                     else:
                         stand = "done" if ausgabe.get("ok") else "failed"
-                    self._sim_job_setzen(stand=stand, fortschritt=1.0 if stand == "done" else job.get("fortschritt"),
-                                         text=str(ausgabe.get("text") or ("abgebrochen" if stand == "abgebrochen"
-                                                                          else ausgabe.get("error") or "")),
-                                         ergebnis=ausgabe.get("ergebnis"), meldung=ausgabe.get("error"),
-                                         ms=round((time.time() - float(job.get("beginn") or time.time())) * 1000, 1))
+                    ende = {**job, "stand": stand, "fortschritt": 1.0 if stand == "done" else job.get("fortschritt"),
+                            "text": str(ausgabe.get("text") or ("abgebrochen" if stand == "abgebrochen"
+                                                                else ausgabe.get("error") or "")),
+                            "ergebnis": ausgabe.get("ergebnis"), "meldung": ausgabe.get("error"),
+                            "ms": round((time.time() - float(job.get("beginn") or time.time())) * 1000, 1)}
+                    z["job"] = ende
+                # erst freigeben, dann melden: wer auf das Ende wartet, kann sofort den nächsten Auftrag starten
                 z["sperre"].release()
+                if ende is not None:
+                    self._sim_job_senden(ende)
                 fertig.set()
 
         if was in ("festigkeit", "ablauf") or (was == "grenze" and grenze == "geschwindigkeit"):

@@ -100,10 +100,16 @@ enum SimulationSelfTest {
             _ = await wait(90) { ergebnis != nil }
             return ergebnis ?? false
         }
+        // Aufträge zählen hoch: gewartet wird auf einen neueren als den zuletzt fertigen (sonst gälte der vorige
+        // Auftrag gleicher Art schon als fertig)
+        var gesehen = st.job?.auftrag ?? 0
         func jobFertig(_ was: String, _ s: Double) async -> SimJob? {
-            _ = await wait(5) { st.job?.was == was && st.job?.laeuft == true || st.job?.was == was && st.job?.laeuft == false }
-            _ = await wait(s) { st.job?.was == was && st.job?.laeuft == false }
-            return st.job?.was == was ? st.job : nil
+            let alt = gesehen
+            _ = await wait(10) { (st.job?.auftrag ?? 0) > alt && st.job?.was == was }
+            _ = await wait(s) { (st.job?.auftrag ?? 0) > alt && st.job?.was == was && st.job?.laeuft == false }
+            guard let j = st.job, j.auftrag > alt, j.was == was, !j.laeuft else { return nil }
+            gesehen = j.auftrag
+            return j
         }
 
         guard let controller = session.controller, let actions = model.simulationActions else {
@@ -478,6 +484,10 @@ extension SimulationSelfTest {
         actions.simulationRechnen(was: "festigkeit", lastfall: gelenk, teil: nil, fein: false, grenze: nil)
         let jf = await jobFertig("festigkeit", 300)
         check(jf?.stand == "done", "Festigkeit (FEM) mit Gelenk und Schiene: \(jf?.text ?? jf?.meldung ?? "–")")
+        _ = await wait(10) {
+            model.statik.ergebnis?.szenario(gelenk)?.festkoerper?.teile.contains { $0.teil == teil && $0.stand != "laeuft" }
+                == true
+        }
         let fk = model.statik.ergebnis?.szenario(gelenk)?.festkoerper?.teile.first { $0.teil == teil }
         check(fk?.stand == "done", "FEM \(teil): Sicherheit \(fk?.sicherheit.map(StatikZahl.sf) ?? "–") "
               + "(\(fk?.meldung ?? fk?.text ?? ""))")
