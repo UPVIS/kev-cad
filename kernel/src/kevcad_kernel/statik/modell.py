@@ -16,6 +16,11 @@
   ``bereich`` (Laufrolle auf der Achse) und Gelenke mit ``frei=True`` (Schublade, Tür ohne Feststeller, T33).
 - Starrkörper mit nur einem Anschluss an einen Stab sind **Anbauteile**: Ihr Gewicht und ihre Lasten gehen an diesen
   Anschluss.
+- **Lager** (PLAN-SIMULATION.md): ausdrücklich gesetzte Lager (``st.lager``, Bereich „Simulation“ der App) kommen zu den
+  abgeleiteten dazu: an einem Stab ein Auflager am nächsten Punkt der Achse (fest, gelenkig oder gleitend), an einem
+  anderen Teil ist dessen Starrkörper geerdet und seine Gruppe kippt und rutscht nicht. Abgeleitete Lager (``boden:…``:
+  steht auf dem Boden bzw. der Kulisse) lassen sich ausschalten (``aus``); ``abgeleitet`` listet sie für die App. Ein
+  Teil mit ausdrücklichem Lager hat keine abgeleiteten Bodenlager mehr (das Lager sagt, wie es gehalten ist).
 
 Das Modell ist reine Daten (numpy) und taugt für S0, S1 und später S2/S3 (Naht in ``statik/__init__.py``).
 """
@@ -116,6 +121,8 @@ class Anschluss:
     # Drehfeder statt starrer Einspannung (T35, ``statik/feder.py``): an festen Anschlüssen an Druckteile, je Achse
     # quer zum Stab die Steifigkeit in Nmm/rad aus Bettung in der Bohrung und Biegung des Teils bis zu seinem Lager
     feder: dict[str, Any] | None = None
+    # gleitendes Lager (Simulation): gehaltene Richtungen (Welt, Einheitsvektoren), genau statt auf eine Achse gerundet
+    gehalten: list[Any] | None = None
 
     def kurz(self) -> dict[str, Any]:
         out = {"stab": self.stab, "t": round(self.t, 1), "art": self.art, "partner": list(self.partner[:2]),
@@ -141,6 +148,17 @@ class StatikModell:
     rollend: set[str] = field(default_factory=set)  # Teile, die frei auf dem Boden rollen (Kugel, Walze)
     hinweise: list[str] = field(default_factory=list)
     ms: float = 0.0
+    # Lager (PLAN-SIMULATION.md): ausdrücklich gesetzte (``simulation.zuordnung.Lager``), ausgeschaltete abgeleitete
+    # (``boden:<teil>``, ``kontakt:<teil>|<nachbar>``) und die Liste der abgeleiteten Lager für die App
+    lager_explizit: list[Any] = field(default_factory=list)
+    aus: set[str] = field(default_factory=set)
+    abgeleitet: list[dict[str, Any]] = field(default_factory=list)
+
+    def lager_von(self, teil: str) -> list[Any]:
+        return [L for L in self.lager_explizit if L.teil == teil]
+
+    def kontakt_aus(self, teil: str, nachbar: str) -> bool:
+        return f"kontakt:{teil}|{nachbar}" in self.aus
 
     # -- Abfragen ------------------------------------------------------------------------------------------------------
 
@@ -317,8 +335,10 @@ def _druck_oben(name: str, k: Any, druck: dict[str, Any]) -> np.ndarray | None:
 
 def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dict[str, Any], stand: dict[str, Any],
          druck: dict[str, Any] | None, katalog: Any, befestigt: dict[str, str] | None = None,
-         untergrund: str | None = None) -> StatikModell:
-    """Statikmodell aus den Körpern und Kontakten der Prüfung (``PruefKontext``)."""
+         untergrund: str | None = None, lager: list[Any] | None = None, aus: set[str] | None = None
+         ) -> StatikModell:
+    """Statikmodell aus den Körpern und Kontakten der Prüfung (``PruefKontext``). ``lager``: ausdrücklich gesetzte
+    Lager (``simulation.zuordnung.Lager``), ``aus``: ausgeschaltete abgeleitete Lager (``boden:<teil>``)."""
     import time
 
     from kevcad_kernel.pruefung.befund import DICHTE_ANNAHME
@@ -326,8 +346,14 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
     t0 = time.perf_counter()
     m = StatikModell()
     m.boden_z = float((stand or {}).get("boden_z") or 0.0)
-    m.gruppen = list((stand or {}).get("gruppen") or [])
     m.untergrund = untergrund or "beton"
+    m.lager_explizit = [L for L in (lager or []) if L.teil in koerper]
+    m.aus = set(aus or ())
+    gelagert = {L.teil for L in m.lager_explizit}
+    # Gruppen der Standsicherheit: mit einem Lager kippt und rutscht die Gruppe nicht (wie befestigt)
+    m.gruppen = [dict(g, befestigt={**(g.get("befestigt") or {}), **{n: "Lager" for n in g.get("teile") or []
+                                                                         if n in gelagert}})
+                 if gelagert & set(g.get("teile") or []) else g for g in (stand or {}).get("gruppen") or []]
     druck = druck or {}
     befestigt = befestigt or {}
 
@@ -448,16 +474,28 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
               else np.mean([m.teile[n].schwerpunkt for n in teile], axis=0))
         grund = ""
         for n in teile:
+            abgeleitet = None
             if n in am_kulisse:
-                grund = f"{n} steht auf der Kulisse"
+                abgeleitet = f"{n} steht auf der Kulisse"
             elif n in boden_teile:
                 grund = f"{n}: verbinde(…, boden)"
             elif n in befestigt:
                 grund = f"{n} befestigt: {befestigt[n]}"
             elif m.teile[n].bmin[2] <= m.boden_z + BODEN_TOL:
-                grund = f"{n} steht auf dem Boden"
+                abgeleitet = f"{n} steht auf dem Boden"
+            if abgeleitet:  # abgeleitetes Lager: in der App abschaltbar (Simulation)
+                key = f"boden:{n}"
+                t = m.teile[n]
+                m.abgeleitet.append(_abgeleitet(m, key, n, abgeleitet, ((t.bmin[0] + t.bmax[0]) / 2,
+                                                                        (t.bmin[1] + t.bmax[1]) / 2, t.bmin[2])))
+                if m.abgeleitet[-1]["aktiv"] and not grund:
+                    grund = abgeleitet
             if grund:
                 break
+        if not grund:
+            L = next((L for n in teile for L in m.lager_von(n)), None)
+            if L is not None:
+                grund = f"Lager {L.id} ({L.art}) an {L.teil}"
         kid = f"K{i}"
         m.koerper[kid] = Starrkoerper(kid, sorted(teile), masse, np.asarray(sp, dtype=float), bool(grund), grund)
         for n in teile:
@@ -483,6 +521,11 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
             if x in m.kulisse:
                 mitte = _ueberlapp_mitte(np.asarray(koerper[s_name].bmin), np.asarray(koerper[s_name].bmax),
                                          np.asarray(koerper[x].bmin), np.asarray(koerper[x].bmax))
+                key = f"boden:{s_name}"
+                if not any(a["id"] == key for a in m.abgeleitet):
+                    m.abgeleitet.append(_abgeleitet(m, key, s_name, f"{s_name} steht auf der Kulisse", mitte))
+                if not _abgeleitet_aktiv(m, key, s_name):
+                    continue
                 roh.append(Anschluss(s_name, s.t_von(mitte), "gelenkig" if art == "fest" else art, ("boden",),
                                      e["achse"], (s_name, x), "steht auf der Kulisse"))
                 continue
@@ -504,12 +547,34 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
         if any(a.stab == s.name and a.partner[0] == "boden" for a in roh):
             continue
         if m.teile[s.name].bmin[2] <= m.boden_z + BODEN_TOL:
-            if abs(float(s.p0[2]) - float(s.p1[2])) < 2 * s.q.radius:  # liegt: an beiden Enden
+            key = f"boden:{s.name}"
+            liegt = abs(float(s.p0[2]) - float(s.p1[2])) < 2 * s.q.radius
+            unten = s.p0 if float(s.p0[2]) <= float(s.p1[2]) else s.p1
+            if not any(a["id"] == key for a in m.abgeleitet):
+                m.abgeleitet.append(_abgeleitet(m, key, s.name, f"{s.name} {'liegt' if liegt else 'steht'} auf dem "
+                                                "Boden", (s.p0 + s.p1) / 2 if liegt else unten))
+            if not _abgeleitet_aktiv(m, key, s.name):
+                continue
+            if liegt:  # liegt: an beiden Enden
                 for t in (0.0, s.laenge):
                     roh.append(Anschluss(s.name, t, "gelenkig", ("boden",), None, (s.name, "Boden"), "liegt auf"))
             else:
                 t = 0.0 if float(s.p0[2]) <= float(s.p1[2]) else s.laenge
                 roh.append(Anschluss(s.name, t, "gelenkig", ("boden",), None, (s.name, "Boden"), "steht auf"))
+    # Ausdrücklich gesetzte Lager an Stäben (Simulation): Auflager am nächsten Punkt der Achse; eigener Partner, damit
+    # sie nicht mit abgeleiteten Lagern zusammenfallen
+    for L in m.lager_explizit:
+        s = m.staebe.get(L.teil)
+        if s is None:
+            continue
+        p = L.punkt if L.punkt is not None else (s.p0 + s.p1) / 2
+        ts = [s.t_von(p)] if (L.punkt is not None and L.auf != "teil") else [0.0, s.laenge]
+        for t in ts:
+            roh.append(Anschluss(s.name, t, {"fest": "fest", "gelenkig": "gelenkig"}.get(L.art, "gleitend"),
+                                 ("boden", "lager"), None if L.normale is None else np.asarray(L.normale, float),
+                                 (s.name, L.name),
+                                 f"Lager {L.id} ({L.art}, {'App' if L.quelle == 'app' else 'model.py'})",
+                                 gehalten=getattr(L, "gehalten", None)))
     m.anschluesse = _zusammenfassen(roh)
     m.rollend = {n for n in m.teile if rollend(m, koerper, n)}
     # Anschlüsse an geerdete Starrkörper sind Auflager
@@ -520,7 +585,23 @@ def baue(koerper: dict[str, Any], paare: dict[frozenset, Any], erklaerungen: dic
     return m
 
 
-RANG = {"dreh": 5, "schiebe": 5, "zylinder": 5, "fest": 3, "gelenkig": 1}
+def _abgeleitet_aktiv(m: StatikModell, key: str, teil: str) -> bool:
+    """Gilt ein abgeleitetes Bodenlager? Nicht, wenn Kevin es ausgeschaltet hat oder das Teil ein ausdrückliches
+    Lager hat."""
+    return key not in m.aus and not m.lager_von(teil)
+
+
+def _abgeleitet(m: StatikModell, key: str, teil: str, text: str, punkt: Any) -> dict[str, Any]:
+    eigen = m.lager_von(teil)
+    out = {"id": key, "art": "boden", "teil": teil, "text": text,
+           "punkt": [round(float(c), 2) for c in punkt], "aktiv": _abgeleitet_aktiv(m, key, teil)}
+    if eigen:
+        out["ersetzt"] = eigen[0].id
+        out["text"] = f"{text} (ersetzt durch Lager {eigen[0].id})"
+    return out
+
+
+RANG = {"dreh": 5, "schiebe": 5, "zylinder": 5, "fest": 3, "gleitend": 2, "gelenkig": 1}
 
 
 def _art(e: dict[str, Any]) -> tuple[str, str]:
@@ -563,7 +644,8 @@ def _zusammenfassen(roh: list[Anschluss]) -> list[Anschluss]:
             if partner[0] == "stab":
                 partner = ("stab", partner[1], float(np.mean([a.partner[2] for a in c if a.partner[0] == "stab"])))
             out.append(Anschluss(best.stab, t, best.art, partner, best.achse, best.teile,
-                                 best.quelle + (f" ({len(c)} Berührungen)" if len(c) > 1 else "")))
+                                 best.quelle + (f" ({len(c)} Berührungen)" if len(c) > 1 else ""),
+                                 gehalten=best.gehalten))
     out.sort(key=lambda a: (a.stab, a.t))
     return out
 

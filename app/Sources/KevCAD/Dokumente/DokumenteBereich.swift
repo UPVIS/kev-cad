@@ -97,7 +97,8 @@ struct BereichUmschalter: View {
         .pickerStyle(.segmented)
         .labelStyle(.iconOnly)
         .help("3D-Modell (⌘1) · Dokumente: Zeichnungen, Bauplan, Berichte (⌘2) · "
-              + "Material: Stückliste, Zuschnitt, Bestand, Einkauf (⌘3)")
+              + "Material: Stückliste, Zuschnitt, Bestand, Einkauf (⌘3) · "
+              + "Simulation: Lastfälle, Kräfte, Lager, Ergebnisse, Topologie (⌘4)")
     }
 }
 

@@ -65,6 +65,8 @@ EXPECTED_TOOLS |= {"festigkeit"}
 EXPECTED_TOOLS |= {"scans", "scan_importieren"}
 # Topologieoptimierung (PLAN-TOPOLOGIE.md)
 EXPECTED_TOOLS |= {"topologie_optimieren", "topologie_ergebnis", "topologie_uebernehmen"}
+# Bereich „Simulation“ (PLAN-SIMULATION.md)
+EXPECTED_TOOLS |= {"simulation_liste", "simulation_aendern", "simulation_rechnen"}
 
 
 def free_port() -> int:

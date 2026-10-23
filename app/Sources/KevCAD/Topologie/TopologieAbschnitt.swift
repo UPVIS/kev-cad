@@ -20,6 +20,8 @@ struct TopologieAbschnitt: View {
     @ObservedObject var store: TopologieStore
     @ObservedObject var statik: StatikStore
     var actions: TopologieActions?
+    /// Bereich „Simulation“ mit dem Reiter Topologie für dieses Teil öffnen (Verweis; nil in Vorschauen).
+    var oeffnen: ((String) -> Void)?
 
     /// Teil des Abschnitts: das ausgewählte Druckteil, sonst das Teil des letzten Auftrags.
     private var teil: String? {
@@ -28,82 +30,51 @@ struct TopologieAbschnitt: View {
         return store.stand?.teil
     }
 
+    /// Im Inspektor bleibt ein Verweis (Simulation, PLAN-SIMULATION.md): Stand in einer Zeile und der Sprung in den
+    /// Bereich „Simulation“, wo Einstellungen, Schutzzonen per Klick, Start, Dichte und vorher/nachher stehen.
     var body: some View {
         if let teil {
             Section {
-                einstellungen(teil)
                 if let s = store.stand, s.teil == teil {
-                    stand(s)
+                    if s.laeuft {
+                        ProgressView(value: s.fortschritt) { Text(s.text).font(.caption) }
+                    } else if s.fertig, let p = s.ersparnisProzent {
+                        Text("Volumen −\(KevFormat.number(p, digits: 0)) %, Sicherheit "
+                             + "\(s.nachher.sicherheit.map { KevFormat.number($0, digits: 2) } ?? "–")"
+                             + (s.imModell ? " · in model.py übernommen" : ""))
+                            .font(.caption)
+                    } else {
+                        Text(s.stand == "failed" ? "Fehlgeschlagen: \(s.meldung ?? "?")" : s.text)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
+                Button {
+                    oeffnen?(teil)
+                } label: {
+                    Label("Im Bereich Simulation optimieren …", systemImage: "wand.and.rays")
+                }
+                .disabled(oeffnen == nil)
+                .help("Druckteil, Lastfall, Behalten, Überhang, Mindeststeg, Schutzzonen per Klick, Start und Abbruch, "
+                      + "Dichte live, vorher/nachher, „Als Variante übernehmen“ (⌘4)")
             } header: {
                 HStack(spacing: 6) {
                     Text("Optimieren")
-                    if let s = store.stand, s.teil == teil, s.fertig {
-                        AmpelPunkt(ampel: s.nachher.ampel)
-                    }
-                    Spacer()
-                    if actions != nil {
-                        Toggle(isOn: Binding(get: { store.schutzZeigen }, set: { actions?.setTopologieSchutz($0) })) {
-                            Image(systemName: "shield.lefthalf.filled")
-                        }
-                        .toggleStyle(.button)
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                        .help("Schutzzonen zeigen (Bohrungen, Einsätze, Last- und Klemmflächen bleiben massiv)")
-                    }
+                    if let s = store.stand, s.teil == teil, s.fertig { AmpelPunkt(ampel: s.nachher.ampel) }
                 }
             }
         }
     }
+}
 
-    // MARK: Einstellungen
+/// Stand einer Topologieoptimierung (Fortschritt, Kennzahlen vorher → nachher, Ansicht, „Als Variante übernehmen“,
+/// Schutzzonen, Hinweise, Grenzen), im Bereich „Simulation“ unter den Einstellungen.
+struct TopologieStandAnsicht: View {
+    @ObservedObject var store: TopologieStore
+    var actions: TopologieActions?
+    var s: TopologieStand
 
-    @ViewBuilder
-    private func einstellungen(_ teil: String) -> some View {
-        let laeuft = store.stand?.laeuft ?? false
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Behalten")
-                Slider(value: $store.behalten, in: 0.1...0.9, step: 0.01)
-                    .disabled(laeuft)
-                Text("\(KevFormat.number(store.behalten * 100, digits: 0)) %")
-                    .font(.body.monospacedDigit())
-                    .frame(width: 44, alignment: .trailing)
-            }
-            .help("Volumenanteil, der bleibt (Schutzzonen zählen mit); der Rest wird entlang der Lastpfade entfernt")
-            Picker("Lastfall", selection: $store.szenario) {
-                Text("Automatisch").tag(String?.none)
-                ForEach(statik.ergebnis?.szenarien.map(\.name) ?? [], id: \.self) { n in
-                    Text(n).tag(String?.some(n))
-                }
-            }
-            .disabled(laeuft)
-            .help("Szenario aus der Statik; automatisch das mit der größten Ausnutzung des Teils")
-            Toggle("Überhänge höchstens 45° (P1P)", isOn: $store.ueberhang)
-                .disabled(laeuft)
-                .help("Überhangfilter in Druckrichtung: keine neuen Überhänge, die Stützen brauchen")
-            Toggle("Schrauben halten", isOn: $store.schraubenHalten)
-                .disabled(laeuft)
-                .help("Lager beim Optimieren sind die Bohrungen ohne Last (angeschraubte Halter), nicht die ganze "
-                      + "Auflagefläche; sonst trägt die Platte alles und die Schraubenaugen bleiben als Inseln")
-            Toggle("Feines Gitter", isOn: $store.fein)
-                .disabled(laeuft)
-                .help("Etwa dreimal so viele Voxel: feinere Stege, rechnet länger")
-            HStack {
-                if laeuft {
-                    Button("Abbrechen", role: .cancel) { actions?.brecheTopologieAb() }
-                } else {
-                    Button {
-                        actions?.starteTopologie(teil: teil)
-                    } label: {
-                        Label("Optimieren", systemImage: "wand.and.rays")
-                    }
-                    .help("Topologie im Hintergrund optimieren (etwa eine Minute), Dichte live im Viewer")
-                }
-                Spacer()
-            }
-            .disabled(actions == nil)
-        }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) { stand(s) }
     }
 
     // MARK: Stand
@@ -137,6 +108,7 @@ struct TopologieAbschnitt: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .help("Vorher/Nachher: Spannungsfarben (Ausnutzung grün → gelb → rot) am Ausgangsteil bzw. am Ergebnis")
             HStack {
                 Button {

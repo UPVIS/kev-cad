@@ -5,13 +5,14 @@ import SwiftUI
 /// Bereich des Projektfensters: 3D-Modell (⌘1), Dokumente (⌘2: Zeichnungen, Bauplan, Berichte) oder Material (⌘3:
 /// Stückliste, Zuschnitt, Bestand, Einkaufsliste, Zukauf- und Druckteile).
 enum ProjektBereich: String, CaseIterable {
-    case modell, dokumente, material
+    case modell, dokumente, material, simulation
 
     var titel: String {
         switch self {
         case .modell: return "3D-Modell"
         case .dokumente: return "Dokumente"
         case .material: return "Material"
+        case .simulation: return "Simulation"
         }
     }
 
@@ -20,6 +21,7 @@ enum ProjektBereich: String, CaseIterable {
         case .modell: return "cube"
         case .dokumente: return "doc.text"
         case .material: return "shippingbox"
+        case .simulation: return "gauge.with.needle"
         }
     }
 
@@ -28,6 +30,7 @@ enum ProjektBereich: String, CaseIterable {
         case .modell: return "1"
         case .dokumente: return "2"
         case .material: return "3"
+        case .simulation: return "4"
         }
     }
 }

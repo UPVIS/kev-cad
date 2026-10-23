@@ -16,6 +16,16 @@ Lasten:
 - **Volumenlast** b (N/mm³), etwa Eigengewicht oder eine Last „am Schwerpunkt“ ohne Punkt: konsistent mit
   ∫ N dV (Ecken −V/20, Kantenmitten V/5).
 
+- **Druck** p (N/mm², simulation2) senkrecht auf jedes Randdreieck: Zugspannung t = −p n (n nach außen).
+
+Zwangsbedingungen (simulation2, ``Zwang``): außer festen Freiheitsgraden (u = 0) auch schräge (gleitende Lager:
+u · h = 0 je gehaltener Richtung h, genau auch schräg zu den Achsen) und gekoppelte (gelenkiges Lager auf einer Fläche,
+wie ein RBE3 mit festem Bezugspunkt: die mittlere Verschiebung der Fläche ist null, ∫ u dA = 0, und die mittlere
+Drehung um die gehaltenen Achsen, ∫ (b × r) · u dA = 0 mit b = J⁻¹ t; die Fläche selbst bleibt frei verformbar und
+dreht um die übrigen Achsen). Gelöst wird über u = T q mit den freien Koordinaten q: schräge Bedingungen je Ort über eine
+Drehung seiner drei Freiheitsgrade, gekoppelte über Haupt- und Nebenfreiheitsgrade (QR mit Pivotsuche), dann
+(Tᵀ K T) q = Tᵀ f. Die Matrix bleibt symmetrisch positiv definit; SuperLU und pyamg rechnen wie ohne Zwang.
+
 Spannung: je Element an den vier Ecken aus den P2-Gradienten, dann je Knoten gemittelt (Knotenmittelwert).
 """
 
@@ -214,6 +224,112 @@ class Netz:
 
         return asm(zug, fb)
 
+    def last_druck(self, facetten: np.ndarray, p: float) -> np.ndarray:
+        """Druck p (N/mm²) senkrecht auf die Randdreiecke ``facetten``: Zugspannung −p n (n nach außen, je Dreieck
+        konstant); auf einer Ebene ist die Resultierende −p A n."""
+        from skfem import FacetBasis, LinearForm, asm
+
+        fb = FacetBasis(self.mesh, self.basis.elem, facets=self.rand_index[facetten], intorder=3)
+        pp = float(p)
+
+        @LinearForm
+        def druck(v, w):
+            n = w.n
+            return -pp * (n[0] * v[0] + n[1] * v[1] + n[2] * v[2])
+
+        f = np.asarray(asm(druck, fb)).reshape(-1)
+        # w.n zeigt bei Randfacetten nach außen; an der Summe prüfen (sonst umdrehen)
+        soll = -pp * (self.rand_normale[facetten] * self.rand_flaeche_mm2[facetten, None]).sum(axis=0)
+        ist = np.array([f[self.basis.nodal_dofs[c]].sum() + f[self.basis.edge_dofs[c]].sum() for c in range(3)])
+        if float(np.dot(ist, soll)) < 0:
+            f = -f
+        return f
+
+    # -- Zwangsbedingungen (simulation2) ------------------------------------------------------------------------------
+
+    def orte(self) -> tuple[np.ndarray, np.ndarray]:
+        """Freiheitsgrade je Ort (Ecken, dann Kantenmitten): ``trip`` (Orte, 3) und Ort je Freiheitsgrad (N,)."""
+        trip = np.concatenate([self.basis.nodal_dofs.T, self.basis.edge_dofs.T]).astype(np.int64)
+        ort = np.full(self.N, -1, dtype=np.int64)
+        ort[trip.reshape(-1)] = np.repeat(np.arange(len(trip)), 3)
+        return trip, ort
+
+    def facetten_dofs(self, facetten: np.ndarray) -> np.ndarray:
+        return np.unique(self.basis.get_dofs(facets=self.rand_index[facetten]).all())
+
+    def gelenk_zeilen(self, facetten: np.ndarray, drehachsen: list[Any]) -> list[np.ndarray]:
+        """Zwangsbedingungen eines gelenkigen Lagers auf einer Fläche (wie ein RBE3, Bezugspunkt fest): mittlere
+        Verschiebung null (drei Zeilen ∫ N dA je Richtung) und mittlere Drehung um jede gehaltene Achse t null
+        (∫ (b × r) · u dA mit b = J⁻¹ t, r = x − Schwerpunkt). Um die übrigen Achsen dreht die Fläche frei."""
+        from skfem import FacetBasis, LinearForm, asm
+
+        fb = FacetBasis(self.mesh, self.basis.elem, facets=self.rand_index[facetten], intorder=3)
+        zeilen = []
+        for c in range(3):
+            def mittel(v, w, c=c):
+                return v[c]
+
+            zeilen.append(np.asarray(asm(LinearForm(mittel), fb)).reshape(-1))
+        if drehachsen:
+            g = self.flaeche_geometrie(facetten)
+            c0 = g["c"]
+            Jinv = np.linalg.pinv(g["J"])
+            for t in drehachsen:
+                b = Jinv @ np.asarray(t, float)
+                if float(np.linalg.norm(b)) < 1e-300:
+                    continue
+
+                def drehung(v, w, b=b):
+                    x = w.x
+                    r = [x[i] - c0[i] for i in range(3)]
+                    return ((b[1] * r[2] - b[2] * r[1]) * v[0] + (b[2] * r[0] - b[0] * r[2]) * v[1]
+                            + (b[0] * r[1] - b[1] * r[0]) * v[2])
+
+                zeilen.append(np.asarray(asm(LinearForm(drehung), fb)).reshape(-1))
+        return zeilen
+
+    def zwang(self, fest: np.ndarray, schief: list[tuple[np.ndarray, list[Any]]] | None = None,
+              kopplung: list[np.ndarray] | None = None) -> Zwang:
+        """Zwangsbedingungen zu u = T q: ``fest`` Freiheitsgrade mit u = 0, ``schief`` je (Freiheitsgrade, gehaltene
+        Richtungen) u · h = 0 an jedem Ort dieser Freiheitsgrade, ``kopplung`` Zeilen c mit c · u = 0."""
+        return Zwang(self, fest, schief or [], kopplung or [])
+
+    def starr_frei(self, zwang: Zwang) -> tuple[int, list[str]]:
+        """Wie viele der sechs Starrkörperbewegungen die Zwangsbedingungen zulassen, und welche (Texte)."""
+        B = self.starrkoerper()
+        groesse = float(np.max(np.ptp(self.basis.doflocs, axis=1))) or 1.0
+        B[:, 3:] /= groesse  # Drehungen auf die Teilgröße bezogen, damit Rang und Toleranz passen
+        Cb = zwang.mal_bedingungen(B)
+        if Cb.shape[0] == 0:
+            return 6, ["frei in allen Richtungen"]
+        Cb = Cb / np.maximum(np.linalg.norm(Cb, axis=1, keepdims=True), 1e-300)
+        _, s, vt = np.linalg.svd(Cb, full_matrices=True)
+        tol = 1e-8 * max(float(s[0]) if len(s) else 1.0, 1e-30)
+        rang = int((s > tol).sum())
+        frei = []
+        for v in vt[rang:]:
+            t, r = v[:3], np.array([v[4], v[5], v[3]])  # Spalten 3, 4, 5: Drehung um z, x, y
+            def txt(a):
+                a = a / np.linalg.norm(a)
+                a = a * np.sign(a[int(np.argmax(np.abs(a)))])  # Vorzeichen: größte Komponente positiv
+                return "(" + "; ".join(f"{round(float(c), 2) + 0.0:.2f}".replace(".", ",") for c in a) + ")"
+            frei.append(f"verschiebbar in {txt(t)}" if float(np.linalg.norm(t)) >= float(np.linalg.norm(r))
+                        else f"drehbar um {txt(r)}")
+        return 6 - rang, frei
+
+    def komponente(self) -> np.ndarray:
+        comp = np.full(self.N, -1, dtype=np.int64)
+        for c in range(3):
+            comp[self.basis.nodal_dofs[c]] = c
+            comp[self.basis.edge_dofs[c]] = c
+        return comp
+
+    def reaktion(self, K: sp.csr_matrix, u: np.ndarray, f: np.ndarray, dofs: np.ndarray) -> np.ndarray:
+        """Resultierende Lagerkraft (N) auf den Freiheitsgraden ``dofs``: Summe von K u − f je Richtung."""
+        r = np.asarray(K @ u).reshape(-1) - f
+        comp = self.komponente()
+        return np.array([float(r[dofs[comp[dofs] == c]].sum()) for c in range(3)])
+
     # -- Lösen -------------------------------------------------------------------------------------------------------
 
     def starrkoerper(self) -> np.ndarray:
@@ -232,20 +348,38 @@ class Netz:
         B[comp == 2, 5], B[comp == 0, 5] = -x[comp == 2], z[comp == 0]
         return B
 
-    def feste_dofs(self, facetten: np.ndarray) -> np.ndarray:
-        return np.unique(self.basis.get_dofs(facets=self.rand_index[facetten]).all())
+    def feste_dofs(self, facetten: np.ndarray, komponenten: list[int] | None = None) -> np.ndarray:
+        """Freiheitsgrade der Randfacetten; ``komponenten`` (0 = x, 1 = y, 2 = z): nur diese Richtungen (gleitendes
+        Lager, Simulation)."""
+        dofs = np.unique(self.basis.get_dofs(facets=self.rand_index[facetten]).all())
+        if komponenten is None:
+            return dofs
+        comp = np.full(self.N, -1, dtype=np.int64)
+        for c in range(3):
+            comp[self.basis.nodal_dofs[c]] = c
+            comp[self.basis.edge_dofs[c]] = c
+        return dofs[np.isin(comp[dofs], komponenten)]
 
     def loese(self, K: sp.csr_matrix, fest: np.ndarray, lasten: list[np.ndarray], abbruch: Any = None,
-              duenn: bool = False) -> tuple[list[np.ndarray], dict[str, Any]]:
-        """Löst K u = f für alle Lastvektoren mit den festen Freiheitsgraden ``fest`` (u = 0).
+              duenn: bool = False, zwang: Zwang | None = None) -> tuple[list[np.ndarray], dict[str, Any]]:
+        """Löst K u = f für alle Lastvektoren mit den festen Freiheitsgraden ``fest`` (u = 0), mit ``zwang`` statt
+        dessen unter allgemeinen Zwangsbedingungen u = T q (``fest`` steckt dann in T).
 
         pyamg (Smoothed Aggregation, CG) für gedrungene Teile; bei dünnen, langen Teilen (Platten, Leisten) kommt
         AMG mit Tetraedern kaum voran, dort und bei kleinen Systemen zerlegt SuperLU direkt (symmetrische Ordnung,
         ein Mal für alle Lastfälle). Kommt AMG nicht unter die Toleranz, rechnet SuperLU nach (bis ``LU_MAX``)."""
         t0 = time.perf_counter()
-        frei = np.setdiff1d(np.arange(self.N), fest)
-        A = K[frei][:, frei].tocsr()
+        if zwang is not None:
+            T = zwang.T
+            frei = np.arange(T.shape[1])
+            A = (T.T @ K @ T).tocsr()
+        else:
+            T = None
+            frei = np.setdiff1d(np.arange(self.N), fest)
+            A = K[frei][:, frei].tocsr()
         info: dict[str, Any] = {"freiheitsgrade": int(len(frei)), "iterationen": [], "residuum": [], "verfahren": []}
+        if zwang is not None:
+            info["zwang"] = dict(zwang.info)
         lu = None
         ml = None
 
@@ -264,9 +398,11 @@ class Netz:
             import pyamg
 
             t = time.perf_counter()
-            block = len(frei) % 3 == 0 and bool(np.all(frei.reshape(-1, 3) - frei.reshape(-1, 3)[:, :1] == [0, 1, 2]))
+            block = T is None and len(frei) % 3 == 0 and bool(
+                np.all(frei.reshape(-1, 3) - frei.reshape(-1, 3)[:, :1] == [0, 1, 2]))
+            nah = zwang.restriktion(self.starrkoerper()) if zwang is not None else self.starrkoerper()[frei]
             ml = pyamg.smoothed_aggregation_solver(sp.bsr_matrix(A, blocksize=(3, 3)) if block else A,
-                                                   B=self.starrkoerper()[frei], symmetry="symmetric",
+                                                   B=nah, symmetry="symmetric",
                                                    strength="symmetric", max_coarse=300)
             info["amg_ms"] = round((time.perf_counter() - t) * 1000, 1)
             info["ebenen"] = len(ml.levels)
@@ -274,7 +410,7 @@ class Netz:
         for f in lasten:
             if abbruch is not None:
                 abbruch()
-            b = f[frei]
+            b = np.asarray(T.T @ f).reshape(-1) if T is not None else f[frei]
             nb = float(np.linalg.norm(b))
             u = np.zeros(self.N)
             if nb == 0:
@@ -299,7 +435,10 @@ class Netz:
                 x = lu.solve(b)
                 r = float(np.linalg.norm(b - A @ x)) / nb
                 verfahren = "superlu"
-            u[frei] = x
+            if T is not None:
+                u = np.asarray(T @ x).reshape(-1)
+            else:
+                u[frei] = x
             out.append(u)
             info["iterationen"].append(len(res))
             info["residuum"].append(r)
@@ -327,6 +466,97 @@ class Netz:
             np.add.at(summe, self.t[:, i], sig)
             np.add.at(zahl, self.t[:, i], 1.0)
         return summe / np.maximum(zahl, 1)[:, None]
+
+
+class Zwang:
+    """Lineare Zwangsbedingungen als u = T q (siehe Moduldoku). ``T`` (N × M, dünn); ``restriktion(B)`` bildet
+    Starrkörperbewegungen in die freien Koordinaten ab (Nahkern für pyamg)."""
+
+    def __init__(self, netz: Netz, fest: np.ndarray, schief: list[tuple[np.ndarray, list[Any]]],
+                 kopplung: list[np.ndarray]) -> None:
+        import scipy.linalg as sla
+
+        N = netz.N
+        trip, ort = netz.orte()
+        self._trip = trip
+        komp = netz.komponente()
+        achsen = np.eye(3)
+        gehalten: dict[int, list[np.ndarray]] = {}
+        fest = np.asarray(fest, dtype=np.int64).reshape(-1)
+        for d in fest:
+            gehalten.setdefault(int(ort[d]), []).append(achsen[komp[d]])
+        schraeg = 0
+        for dofs, richt in schief:
+            hs = [np.asarray(h, float) / max(float(np.linalg.norm(h)), 1e-300) for h in richt]
+            schraeg += sum(1 for h in hs if float(np.max(np.abs(h))) < 1 - 1e-9)
+            for o in np.unique(ort[np.asarray(dofs, dtype=np.int64)]):
+                gehalten.setdefault(int(o), []).extend(hs)
+        self.halt: dict[int, np.ndarray] = {}  # Ort → gehaltene Richtungen (orthonormale Zeilen)
+        frei_orte = np.ones(len(trip), dtype=bool)
+        if gehalten:
+            frei_orte[np.fromiter(gehalten, dtype=np.int64)] = False
+        idx = np.flatnonzero(frei_orte)
+        rows = [trip[idx].reshape(-1)]
+        cols = [np.arange(3 * len(idx))]
+        vals = [np.ones(3 * len(idx))]
+        spalte = 3 * len(idx)
+        for o, hs in sorted(gehalten.items()):
+            H = np.asarray(hs, float)
+            _, s, vt = np.linalg.svd(H)
+            r = int((s > 1e-9 * s[0]).sum()) if len(s) else 0
+            self.halt[o] = vt[:r]
+            for v in vt[r:]:
+                rows.append(trip[o])
+                cols.append(np.full(3, spalte))
+                vals.append(v)
+                spalte += 1
+        T0 = sp.csc_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(N, spalte))
+        T0.eliminate_zeros()
+        self.T0 = T0
+        self.koppel = np.asarray(kopplung, float).reshape(-1, N) if len(kopplung) else np.zeros((0, N))
+        self.info: dict[str, Any] = {"fest": int(len(fest)), "schraeg": int(schraeg),
+                                     "kopplung": int(len(self.koppel)), "frei": int(spalte)}
+        self.haupt = np.arange(spalte)
+        if len(self.koppel) == 0:
+            self.T = T0.tocsr()
+            return
+        C0 = (sp.csr_matrix(self.koppel) @ T0).tocsc()  # Bedingungen in den Koordinaten nach T0
+        J = np.unique(C0.nonzero()[1])
+        D = C0[:, J].toarray()
+        # abhängige Bedingungen weg (orthonormale Zeilen), dann Nebenfreiheitsgrade über QR mit Pivotsuche
+        _, s, vt = np.linalg.svd(D, full_matrices=False)
+        k = int((s > 1e-10 * s[0]).sum()) if len(s) else 0
+        Dn = vt[:k]
+        _, _, P = sla.qr(Dn, mode="economic", pivoting=True)
+        neben, haupt_lok = P[:k], P[k:]
+        X = -np.linalg.solve(Dn[:, neben], Dn[:, haupt_lok])  # u_neben = X · u_haupt
+        neben_glob = J[neben]
+        haupt_mask = np.ones(spalte, dtype=bool)
+        haupt_mask[neben_glob] = False
+        self.haupt = np.flatnonzero(haupt_mask)
+        pos = np.full(spalte, -1, dtype=np.int64)
+        pos[self.haupt] = np.arange(len(self.haupt))
+        hj = pos[J[haupt_lok]]
+        r1 = [self.haupt] + [np.full(len(hj), g) for g in neben_glob]
+        c1 = [np.arange(len(self.haupt))] + [hj] * len(neben_glob)
+        v1 = [np.ones(len(self.haupt))] + [X[i] for i in range(len(neben_glob))]
+        T1 = sp.csr_matrix((np.concatenate(v1), (np.concatenate(r1), np.concatenate(c1))),
+                           shape=(spalte, len(self.haupt)))
+        self.T = (T0 @ T1).tocsr()
+        self.T.eliminate_zeros()
+        self.info["kopplung_unabhaengig"] = k
+        self.info["frei"] = int(len(self.haupt))
+
+    def restriktion(self, B: np.ndarray) -> np.ndarray:
+        """Starrkörperbewegungen (N, 6) in den freien Koordinaten (Hauptfreiheitsgrade nach T0)."""
+        return np.asarray(self.T0.T @ B)[self.haupt]
+
+    def mal_bedingungen(self, B: np.ndarray) -> np.ndarray:
+        """Alle Bedingungen angewandt auf die Spalten von B (N, k): gehaltene Richtungen je Ort und Kopplungen."""
+        zeilen = [H @ B[self._trip[o]] for o, H in self.halt.items() if len(H)]
+        if len(self.koppel):
+            zeilen.append(self.koppel @ B)
+        return np.vstack(zeilen) if zeilen else np.zeros((0, B.shape[1]))
 
 
 def komponenten(t: np.ndarray, n: int) -> np.ndarray:

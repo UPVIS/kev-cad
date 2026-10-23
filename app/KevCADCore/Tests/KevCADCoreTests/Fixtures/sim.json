@@ -1,0 +1,86 @@
+{
+ "sim": {
+  "run": 7,
+  "stand": 3,
+  "lastfaelle": 2,
+  "erster": "Aufstützen 30 kg",
+  "lasten": 3,
+  "kraft_l1": [
+   0.0,
+   0.0,
+   -294.3
+  ],
+  "zustand_l2": "fehlt",
+  "lager": 2,
+  "lager_zustand": "neu",
+  "modell": 2,
+  "ersetzt": [
+   "Aufstützen 30 kg"
+  ],
+  "abgeleitet": 2,
+  "abgeleitet_aus": [
+   "boden:Fuß"
+  ],
+  "hinweise": 2,
+  "neigung": 5.0,
+  "ziel": 2.5,
+  "untergrund": "holz",
+  "fahrt_bremsen": "abrupt",
+  "topologie_schutz": 7,
+  "lager_szenarien": [
+   null,
+   [
+    "Aufstützen 30 kg"
+   ]
+  ],
+  "gleiten_richtung": [
+   0.0,
+   1.0,
+   0.0
+  ],
+  "gleiten_quelle": "kante",
+  "gehalten_a2": [
+   [
+    0.0,
+    0.0,
+    1.0
+   ],
+   [
+    -1.0,
+    0.0,
+    0.0
+   ]
+  ],
+  "verteilung_l3": "flaeche",
+  "einheit_l3": "N/mm2",
+  "flaeche_mm2_l3": 800.0
+ },
+ "sim_job": {
+  "auftrag": 5,
+  "was": "grenze",
+  "stand": "done",
+  "fortschritt": 1.0,
+  "werte": 3,
+  "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen (365 N statt 294 N), begrenzt durch Ziel-Sicherheit (FEM, Halter)",
+  "verfahren": "fem",
+  "massgebend_verfahren": "FEM",
+  "werte_verfahren": [
+   "FEM",
+   "S0",
+   "FEM"
+  ],
+  "probe_ausnutzung": 1.0
+ },
+ "sim_job_laeuft": {
+  "auftrag": 4,
+  "was": "festigkeit",
+  "stand": "laeuft",
+  "fortschritt": 0.45,
+  "werte": 0,
+  "text": "Halter: lösen",
+  "verfahren": null,
+  "massgebend_verfahren": null,
+  "werte_verfahren": [],
+  "probe_ausnutzung": null
+ }
+}

@@ -124,6 +124,17 @@ parts: layer interface with e_modul_z and quer_zur_schicht, target 4), location,
 print orientation (evidence for "drehen oder verstärken") and shows the stress gradient on the part's mesh. \
 `ablauf=True` uses the largest contact force from the motion simulation. Always state: linear-elastic, supports \
 fully clamped, full infill.
+- Supports and the app's Simulation area: supports are derived from contacts unless set explicitly with \
+`st.lager(teil, flaeche=..., punkt=..., art="fest"|"gelenkig"|"gleitend", szenario=..., gleiten=...)` (szenario: \
+only in these load cases; gleiten: free only along an axis, vector or edge, otherwise sliding in the face plane, held \
+exactly along its normal; gelenkig in the solid FEM couples the face like an RBE3: mean displacement zero, free to \
+rotate). Kevin creates load cases, forces and \
+supports by clicking in the app (area "Simulation", stored in <project>/simulation.json); they belong to every run \
+and `statik`/`szenario_rechnen` see them by name (an app load case replaces a model.py scenario of the same name). \
+`simulation_liste` shows them with their state after model changes (ok, re-associated, no longer assignable), \
+`simulation_aendern` changes them like his clicks (only on his request; also loads on a whole face and pressure in \
+N/mm2), `simulation_rechnen` runs the buttons (also "Grenze suchen": how much load, how steep, how fast; load and \
+slope optionally with the solid FEM, verfahren="fem"; always say which method governs).
 
 Printing (Phase 8): `drucker_status` reads Kevin's P1P (read-only) and the last print job. `drucken` ONLY when Kevin \
 explicitly asks to print: it opens the dialog in Kev CAD and nothing happens until he confirms there (way A: Kev CAD \

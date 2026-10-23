@@ -693,6 +693,33 @@ class FakeService:
                 "zeile": "halter = topologie.optimieren(halter, szenario='Bolzen 50 N', behalten=0.42)",
                 "text": "Als Variante übernommen"}
 
+    # Bereich „Simulation“ ------------------------------------------------------------------------------------------
+
+    def simulation_liste(self) -> dict[str, Any]:
+        from kevcad_kernel.protocol import sim_beispiel
+
+        self._record("simulation_liste")
+        return {"ok": True, **sim_beispiel()}
+
+    def simulation_aendern(self, ops: list, basis: int | None = None, von: str = "agent") -> dict[str, Any]:
+        self._record("simulation_aendern", ops, basis, von)
+        if not ops:
+            return {"ok": False, "error": "Keine Änderung angegeben (ops: Liste von Operationen)"}
+        return {"ok": True, "stand": 4, "meldungen": [f"{op.get('op')} ausgeführt" for op in ops], "gerechnet": True,
+                "lastfaelle": [], "lager": [], "hinweise": []}
+
+    def simulation_rechnen(self, was: str, lastfall: str | None = None, teil: str | None = None, fein: bool = False,
+                           grenze: str | None = None, warten: bool = True, von: str = "agent", *,
+                           verfahren: str | None = None) -> dict[str, Any]:
+        from kevcad_kernel.protocol import sim_job_beispiel
+
+        if verfahren:
+            self._record("simulation_rechnen", was, lastfall, teil, fein, grenze, verfahren)
+        else:
+            self._record("simulation_rechnen", was, lastfall, teil, fein, grenze)
+        j = sim_job_beispiel("done")
+        return {"ok": True, "auftrag": j["auftrag"], "text": j["text"], "ergebnis": j["ergebnis"]}
+
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 
     def drucker_status(self) -> dict[str, Any]:

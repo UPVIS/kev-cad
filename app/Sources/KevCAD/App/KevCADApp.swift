@@ -55,6 +55,7 @@ struct KevCADApp: App {
             // Phase 6, P6-A2: Dokumente exportieren (⇧⌘E), Durchspielen
             DokumenteExportCommands(session: session, model: session.model, bauplan: session.model.bauplan)
             RenderCommands(model: session.model)  // Phase 7: Rendern … (⌥⌘R)
+            SimulationCommands(model: session.model)  // Bereich Simulation (⌘4): Lastfälle, Kräfte, Lager, Rechnen
         }
 
         Window("Kev CAD", id: WindowID.project) {

@@ -50,6 +50,7 @@ from kevcad_kernel.statik.laufzeit import StatikRuntime  # Statik Stufe 1: stati
 from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime  # Statik Stufe 2: dynamik, Ablauf als Animation
 from kevcad_kernel.statik.festkoerper.laufzeit import FestkoerperRuntime  # Statik Stufe 3: festigkeit, FEM
 from kevcad_kernel.topologie.laufzeit import TopologieRuntime  # Topologieoptimierung (PLAN-TOPOLOGIE.md)
+from kevcad_kernel.simulation.laufzeit import SimulationRuntime  # Bereich „Simulation“ (PLAN-SIMULATION.md)
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
@@ -114,7 +115,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
                     StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime, ScanRuntimeMixin,
-                    TopologieRuntime):
+                    TopologieRuntime, SimulationRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -1127,6 +1128,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._gedruckt_check(check)  # gedruckte Teile: neue Formen in gedruckt.json festschreiben
             if statik is not None:
                 self._statik_senden()  # Statik: STATICS (nach allem anderen, es eilt nicht)
+                self._simulation_nach_lauf()  # Simulation: SIM mit dem Zustand der Lasten und Lager dieses Laufs
             return
         if kind == "READY":
             self._log(f"[kernel] Rechenprozess bereit (pid {header.get('pid')}, Import {header.get('import_s')} s)")
@@ -1217,6 +1219,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._statik_on_connect(conn)  # Statik: letztes STATICS
             self._festkoerper_on_connect(conn)  # Statik S3: Felder (STATICS_FIELD) des letzten Laufs
             self._topologie_on_connect(conn)  # Topologie: letzter Stand (TOPO) und Netze (TOPO_FIELD)
+            self._simulation_on_connect(conn)  # Simulation: SIM (Lastfälle, Lasten, Lager der App)
             self._zeichnung_on_connect(conn)
             self._druckvorschau_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
@@ -1355,6 +1358,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._festkoerper_app_message(kind, header):  # Statik S3: STATICS_CANCEL
             pass
         elif self._topologie_app_message(kind, header):  # Topologie: TOPO_START, TOPO_CANCEL, TOPO_APPLY
+            pass
+        elif self._simulation_app_message(kind, header):  # Simulation: SIM_REQ, SIM_EDIT, SIM_RUN, SIM_CANCEL
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

@@ -190,6 +190,97 @@ extension ViewportCoordinator {
         }
     }
 
+    /// Flächennormale (Welt, nach außen) am getroffenen Dreieck: gemittelte Punktnormalen des Netzes (glatt auf
+    /// gekrümmten Flächen), sonst die Dreiecksnormale (Simulation: Kraft entlang der Normale).
+    public func surfaceNormal(of pick: PickResult) -> SIMD3<Float>? {
+        guard pick.kind == .face, let body = bodies.first(where: { $0.id == pick.bodyID }) else { return nil }
+        let t = pick.triangleIndex
+        guard t >= 0, (t + 1) * 3 <= body.indices.count else { return nil }
+        let rot = simd_float3x3(
+            SIMD3(body.transform.columns.0.x, body.transform.columns.0.y, body.transform.columns.0.z),
+            SIMD3(body.transform.columns.1.x, body.transform.columns.1.y, body.transform.columns.1.z),
+            SIMD3(body.transform.columns.2.x, body.transform.columns.2.y, body.transform.columns.2.z))
+        if !body.usesDirectMesh {
+            var n = SIMD3<Float>.zero
+            for j in 0..<3 {
+                let k = Int(body.indices[t * 3 + j])
+                n += SIMD3(body.vertexData[k * 6 + 3], body.vertexData[k * 6 + 4], body.vertexData[k * 6 + 5])
+            }
+            if simd_length(n) > 1e-6 { return simd_normalize(rot * n) }
+        }
+        func vertex(_ i: UInt32) -> SIMD3<Float> {
+            let k = Int(i)
+            if body.usesDirectMesh {
+                return SIMD3(body.meshPositions[k * 3], body.meshPositions[k * 3 + 1], body.meshPositions[k * 3 + 2])
+            }
+            return SIMD3(body.vertexData[k * 6], body.vertexData[k * 6 + 1], body.vertexData[k * 6 + 2])
+        }
+        let a = vertex(body.indices[t * 3]), b = vertex(body.indices[t * 3 + 1]), c = vertex(body.indices[t * 3 + 2])
+        let n = simd_cross(b - a, c - a)
+        return simd_length(n) > 1e-12 ? simd_normalize(rot * n) : nil
+    }
+
+    /// Weltpunkt → Punkt in der Eingabeebene (Ursprung unten links wie die Mausereignisse); nil hinter der Kamera.
+    public func bildpunkt(_ welt: SIMD3<Float>) -> CGPoint? {
+        let c = controller.cameraState
+        let size = viewSize
+        guard size.width > 0, size.height > 0 else { return nil }
+        let proj = c.projectionMatrix(aspectRatio: Float(size.width / size.height), near: 0.01, far: 1e7)
+        let p = proj * c.viewMatrix * SIMD4<Float>(welt, 1)
+        guard p.w > 1e-9 else { return nil }
+        let ndc = SIMD2<Float>(p.x / p.w, p.y / p.w)
+        return CGPoint(x: CGFloat((ndc.x + 1) / 2) * size.width, y: CGFloat((ndc.y + 1) / 2) * size.height)
+    }
+
+    /// Punkt in der Eingabeebene → Punkt auf der Ebene durch `durch`, senkrecht zur Blickrichtung (Griff ziehen).
+    public func weltpunkt(_ punkt: CGPoint, durch: SIMD3<Float>) -> SIMD3<Float>? {
+        let c = controller.cameraState
+        let size = viewSize
+        guard size.width > 0, size.height > 0 else { return nil }
+        let proj = c.projectionMatrix(aspectRatio: Float(size.width / size.height), near: 0.01, far: 1e7)
+        let inv = simd_inverse(proj * c.viewMatrix)
+        let ndc = SIMD2<Float>(Float(punkt.x / size.width) * 2 - 1, Float(punkt.y / size.height) * 2 - 1)
+        func unproject(_ z: Float) -> SIMD3<Float> {
+            let p = inv * SIMD4<Float>(ndc.x, ndc.y, z, 1)
+            return SIMD3(p.x, p.y, p.z) / p.w
+        }
+        let o = unproject(0.1)
+        let d = simd_normalize(unproject(0.9) - o)
+        let n = simd_normalize(c.viewDirection)
+        let den = simd_dot(d, n)
+        guard abs(den) > 1e-9 else { return nil }
+        let t = simd_dot(durch - o, n) / den
+        return o + d * t
+    }
+
+    /// Blickstrahl durch einen Punkt der Eingabeebene (Ursprung unten links): Ursprung und Richtung (Welt, normiert);
+    /// Simulation: Ringe des Pfeil-Griffs ziehen.
+    public func blickstrahl(_ punkt: CGPoint) -> (ursprung: SIMD3<Float>, richtung: SIMD3<Float>)? {
+        let c = controller.cameraState
+        let size = viewSize
+        guard size.width > 0, size.height > 0 else { return nil }
+        let proj = c.projectionMatrix(aspectRatio: Float(size.width / size.height), near: 0.01, far: 1e7)
+        let inv = simd_inverse(proj * c.viewMatrix)
+        let ndc = SIMD2<Float>(Float(punkt.x / size.width) * 2 - 1, Float(punkt.y / size.height) * 2 - 1)
+        func unproject(_ z: Float) -> SIMD3<Float> {
+            let p = inv * SIMD4<Float>(ndc.x, ndc.y, z, 1)
+            return SIMD3(p.x, p.y, p.z) / p.w
+        }
+        let o = unproject(0.1)
+        let d = unproject(0.9) - o
+        guard simd_length(d) > 1e-12, o.x.isFinite, o.y.isFinite, o.z.isFinite else { return nil }
+        return (o, simd_normalize(d))
+    }
+
+    /// Millimeter je Bildschirmpunkt am Weltpunkt `p` (perspektivisch je Tiefe verschieden); Simulation: Pfeile
+    /// bildschirmfest.
+    public func weltProPunkt(bei p: SIMD3<Float>) -> Float? {
+        let r = controller.cameraState.rightVector
+        guard let a = bildpunkt(p), let b = bildpunkt(p + simd_normalize(r)) else { return nil }
+        let d = hypot(b.x - a.x, b.y - a.y)
+        return d > 1e-9 ? Float(1 / d) : nil
+    }
+
     /// Weltpunkt unter der Maus auf dem getroffenen Dreieck (für „Ansicht auf Mauspunkt zentrieren“).
     func surfacePoint(of pick: PickResult, at point: CGPoint, in view: NSView) -> SIMD3<Float>? {
         guard pick.kind == .face, let body = bodies.first(where: { $0.id == pick.bodyID }) else { return nil }
@@ -245,6 +336,8 @@ final class NavigationInputView: NSView {
         case boxSelect(start: CGPoint, modifiers: NSEvent.ModifierFlags)
         case orbit, pan, zoom
         case pendingCenter(start: CGPoint)
+        /// Griff im Viewer ziehen (Simulation: Pfeil einer Kraft drehen)
+        case griff
     }
 
     private var mode: Mode = .idle
@@ -303,6 +396,11 @@ final class NavigationInputView: NSView {
         let p = point(event)
         last = p
         let flags = event.modifierFlags
+        coordinator?.griffModifiers = flags
+        if !flags.contains(.option), let griff = coordinator?.onGriffBeginnt, griff(p) {
+            mode = .griff
+            return
+        }
         if flags.contains(.option) {
             mode = navMode(flags)
         } else {
@@ -321,6 +419,9 @@ final class NavigationInputView: NSView {
             }
         case .boxSelect(let start, _):
             drawBox(from: start, to: p)
+        case .griff:
+            coordinator?.griffModifiers = event.modifierFlags  // Simulation: ⌘ schaltet das Einrasten ab
+            coordinator?.onGriffZiehen?(p)
         default:
             apply(p.x - last.x, p.y - last.y)
         }
@@ -345,6 +446,8 @@ final class NavigationInputView: NSView {
             coordinator?.pickRect(rect, in: self) { [weak self] results in
                 self?.coordinator?.onBoxSelect?(results, flags)
             }
+        case .griff:
+            coordinator?.onGriffEnde?(p)
         default:
             break
         }

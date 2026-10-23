@@ -264,18 +264,31 @@ class Aufbau:
             else:
                 self.hinweise.append("lager=\"bohrungen\": keine Bohrung ohne Last gefunden, Lager an den "
                                      "Kontaktflächen")
+        teilweise: dict[int, list[np.ndarray]] = {}  # gleitende Lager (Simulation): Richtung im Gitter → Knoten
         if len(idx) == 0:
             sel = []
             for f in faelle:
                 for x in f["lager"]:
-                    sel.append(self.nahe(x))
+                    nb = self.nachbarn.get(x) or {}
+                    if nb.get("komponenten") and nb.get("normale") is not None:
+                        n_d = self.R @ np.asarray(nb["normale"], float)  # Welt → Druckkoordinaten des Gitters
+                        teilweise.setdefault(int(np.argmax(np.abs(n_d))), []).append(self.nahe(x))
+                    else:
+                        sel.append(self.nahe(x))
             idx = np.unique(np.concatenate(sel)) if sel else np.zeros(0, dtype=np.int64)
-        if len(idx) == 0:
+        alle = np.unique(np.concatenate([idx] + [a for v in teilweise.values() for a in v])) if teilweise else idx
+        if len(alle) == 0:
             raise ValueError("keine Lagerfläche auf dem Gitter gefunden (berühren sich Teil und Nachbar?)")
+        if len(idx) == 0 and set(teilweise) != {0, 1, 2}:
+            raise ValueError("nur gleitende Lager: das Teil ist längs der Lagerflächen nicht gehalten (ein festes "
+                             "Lager dazu setzen)")
         ijk = np.unravel_index(self.rand_idx[idx], self.G.nn)
         for c in range(3):
             fest[(c,) + ijk] = True
-        self.fest_knoten = self.rand_idx[idx]
+        for c, listen in teilweise.items():
+            k = np.unique(np.concatenate(listen))
+            fest[(c,) + np.unravel_index(self.rand_idx[k], self.G.nn)] = True
+        self.fest_knoten = self.rand_idx[alle]
         return fest
 
     def lastknoten(self, last: dict[str, Any]) -> tuple[np.ndarray, str]:
@@ -402,7 +415,9 @@ class Aufbau:
             sel = self._schutzform(s, ts)
             if sel is not None and sel.any():
                 passiv |= sel
-                zonen.append({"art": f"Schutz aus model.py ({s.get('art')})", "elemente": int(sel.sum())})
+                art = (f"Schutzfläche {s.get('index')}" if s.get("art") == "index"  # per Klick (App) oder MCP
+                       else f"Schutz aus model.py ({s.get('art')})")
+                zonen.append({"art": art, "elemente": int(sel.sum())})
         out = np.zeros(G.ne, dtype=bool)
         out.reshape(-1)[self.akt_idx[passiv]] = True
         return out, zonen

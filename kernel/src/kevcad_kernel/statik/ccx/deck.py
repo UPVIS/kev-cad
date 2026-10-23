@@ -82,6 +82,8 @@ class Deck:
     fest: list[np.ndarray] = field(default_factory=list)  # globale Knotennummern (1-basiert), alle drei Richtungen
     fest_richtung: list[tuple[np.ndarray, tuple[int, ...]]] = field(default_factory=list)  # (Knoten, Richtungen 1..3)
     federn: list[tuple[np.ndarray, float]] = field(default_factory=list)  # (globale Knoten, Steifigkeit N/mm)
+    # lineare Zwangsbedingungen Σ c · u = 0 als (Knoten, Richtung 1..3, Faktor); der erste Term ist abhängig
+    gleichungen: list[list[tuple[int, int, float]]] = field(default_factory=list)
     kontakte: list[Kontakt] = field(default_factory=list)
     schritte: list[Schritt] = field(default_factory=list)
     nlgeom: bool = False
@@ -146,6 +148,12 @@ class Deck:
         if len(alle_fest):
             z.append("*NSET, NSET=FEST")
             z += _zeilen(alle_fest)
+        # Zwangsbedingungen (gleitende und gelenkige Lager)
+        for terme in self.gleichungen:
+            z.append("*EQUATION")
+            z.append(str(len(terme)))
+            for i in range(0, len(terme), 4):
+                z.append(", ".join(f"{int(n)}, {int(r)}, {c:.12g}" for n, r, c in terme[i:i + 4]))
         # Halte-Federn (eine Feder je Knoten und Richtung gegen den Boden)
         nr = self._m
         for fi, (kn, k) in enumerate(self.federn):

@@ -960,6 +960,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     from .topologie_tools import register_topologie_tools
 
     register_topologie_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE})
+    # Bereich „Simulation“: Lastfälle der App lesen, ändern, rechnen (simulation_tools.py, PLAN-SIMULATION.md)
+    from .simulation_tools import register_simulation_tools
+
+    register_simulation_tools(t, svc, tool, {"read_only": READ_ONLY, "additive": ADDITIVE})
     # Phase 7: Renderings (render_tools.py, PLAN-PHASE7-RENDERINGS.md)
     from .render_tools import register_render_tools
 

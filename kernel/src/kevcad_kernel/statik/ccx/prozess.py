@@ -41,6 +41,15 @@ from kevcad_kernel.statik.ccx import lauf
 from kevcad_kernel.statik.ccx.deck import Deck, Koerper, Kontakt, Schritt
 from kevcad_kernel.statik.festkoerper.prozess import _lastflaeche, _netz, _schreibe_npz, lies_fall, melde, speicher
 
+try:  # Lagerarten der Simulation (Stufe 3, Zweig Simulation 2); ältere Stände kennen nur feste Lager
+    from kevcad_kernel.statik.festkoerper.prozess import _gehalten, _lager_art
+except ImportError:  # pragma: no cover
+    def _lager_art(nb: dict[str, Any]) -> str:
+        return "fest"
+
+    def _gehalten(nb: dict[str, Any]) -> list[list[float]]:
+        return []
+
 ZUSATZ = ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf")
 FEDER_ANTEIL = 1e-6  # Halte-Federn: Gesamtsteifigkeit mindestens Anteil · E · Größe des Körpers
 FEDER_LAST = 0.02  # … und mindestens 2 % der Last je mm (bei 0,25 mm Weg tragen sie 0,5 % der Last)
@@ -172,6 +181,60 @@ def _netz_koerper(info: dict[str, Any], h_teil: float, ablage: Path) -> dict[str
     return n
 
 
+def _gleichungen(tn: "Teilnetz", d: Deck, fest_k: np.ndarray, gleit: list[tuple[np.ndarray, list[list[float]]]],
+                 gelenk: list[np.ndarray]) -> list[list[tuple[int, int, float]]]:
+    """Zwangsbedingungen des Teils (Körper 0) als lineare Gleichungen Σ c · u = 0 für CalculiX (*EQUATION): gleitende
+    Lager je Knoten und gehaltener Richtung h (h · u = 0), gelenkige Lager als Zeilen der Stufe 3 (P2-Freiheitsgrade
+    → Knoten). Der erste Term jeder Gleichung ist abhängig: je Gleichung ein anderer, nicht fester Freiheitsgrad."""
+    N = tn.N
+    fest = set(int(k) for k in fest_k)
+    benutzt: set[tuple[int, int]] = set()
+    out: list[list[tuple[int, int, float]]] = []
+    for knoten, H in gleit:
+        for k in knoten:
+            k = int(k)
+            if k in fest:
+                continue
+            for h in H:
+                h = np.asarray(h, float)
+                if float(np.linalg.norm(h)) < 1e-12:
+                    continue
+                order = [int(c) for c in np.argsort(-np.abs(h)) if abs(h[c]) > 1e-9 and (k, int(c)) not in benutzt]
+                if not order:
+                    continue
+                dep = order[0]
+                benutzt.add((k, dep))
+                g = int(d.global_knoten(0, np.array([k]))[0])
+                terme = [(g, dep + 1, float(h[dep]))] + [(g, c + 1, float(h[c])) for c in range(3)
+                                                          if c != dep and abs(h[c]) > 1e-12]
+                out.append(terme)
+    if gelenk:
+        ort = np.full(N.N, -1, dtype=np.int64)
+        richtung = np.zeros(N.N, dtype=np.int64)
+        for c in range(3):
+            ort[N.basis.nodal_dofs[c]] = np.arange(N.n)
+            richtung[N.basis.nodal_dofs[c]] = c
+            ort[N.basis.edge_dofs[c]] = N.n + np.arange(N.basis.edge_dofs.shape[1])
+            richtung[N.basis.edge_dofs[c]] = c
+        for zeile in gelenk:
+            z = np.asarray(zeile, float).reshape(-1)
+            nz = np.flatnonzero(np.abs(z) > 1e-12 * max(float(np.abs(z).max()), 1e-300))
+            if not len(nz):
+                continue
+            kand = [int(i) for i in nz[np.argsort(-np.abs(z[nz]))]
+                    if int(ort[i]) not in fest and (int(ort[i]), int(richtung[i])) not in benutzt]
+            if not kand:
+                continue
+            dep = kand[0]
+            benutzt.add((int(ort[dep]), int(richtung[dep])))
+            g = d.global_knoten(0, ort[nz])
+            skala = 1.0 / float(np.abs(z[dep]))
+            terme = [(int(d.global_knoten(0, np.array([ort[dep]]))[0]), int(richtung[dep]) + 1, float(z[dep] * skala))]
+            terme += [(int(gi), int(richtung[i]) + 1, float(z[i] * skala)) for gi, i in zip(g, nz) if i != dep]
+            out.append(terme)
+    return out
+
+
 def _werkstoff_deck(w: dict[str, Any], fliess: dict[str, Any] | None, schicht: Any, druckteil: bool) -> dict[str, Any]:
     out = {"E": float(w["E"]), "nu": float(w["nu"])}
     if fliess:
@@ -261,6 +324,9 @@ class Fall:
             return i
 
         fest_teil: list[np.ndarray] = []
+        gleit: list[tuple[np.ndarray, list[list[float]]]] = []
+        gelenk: list[np.ndarray] = []
+        self.zwang_gehalten = False
         paare: list[tuple[str, int]] = []
         for x in f.get("lager") or []:
             if ist_kontakt(x) and self.kn[x][0]["rolle"] == "lager":
@@ -268,10 +334,25 @@ class Fall:
                 d.fest.append(d.global_knoten(i, np.arange(len(netze[i].knoten))))
                 paare.append((x, i))
             else:
-                fest_teil.append(tn.flaechenknoten(self.beruehrt.get(x, np.zeros(0, dtype=np.int64))))
+                # Lagerarten der Simulation (ausdrücklich gesetzte Lager): fest, gleitend (gehaltene Richtungen je
+                # Knoten), gelenkig (RBE3-artig: mittlere Verschiebung und Drehung um die gehaltenen Achsen null);
+                # in CalculiX als *EQUATION, wie die Zwangsbedingungen der Stufe 3
+                sel = self.beruehrt.get(x, np.zeros(0, dtype=np.int64))
+                nb = T["nachbarn"].get(x, {})
+                art = _lager_art(nb)
+                if art == "gleitend" and len(sel):
+                    gleit.append((tn.flaechenknoten(sel), _gehalten(nb)))
+                elif art == "gelenkig" and len(sel):
+                    gelenk += N.gelenk_zeilen(sel, nb.get("drehachsen") or [])
+                else:
+                    fest_teil.append(tn.flaechenknoten(sel))
         fest_k = np.unique(np.concatenate(fest_teil)) if fest_teil else np.zeros(0, dtype=np.int64)
         if len(fest_k):
             d.fest.append(d.global_knoten(0, fest_k))
+        if gleit or gelenk:
+            d.gleichungen += _gleichungen(tn, d, fest_k, gleit, gelenk)
+            if not len(fest_k):  # nur gleitende oder gelenkige Lager: gilt als gehalten (kein Halte-Federn-Fall)
+                self.zwang_gehalten = True
         # Lasten (je Körper ein P2-Lastvektor, dann Knotenkräfte)
         lv = {0: np.zeros(N.N)}
         summe = np.zeros(3)
@@ -348,7 +429,8 @@ class Fall:
                                       (verb.get(x) or {}).get("spiel")))
         # Halte-Federn für Körper ohne feste Knoten (Stäbe im Kontakt, das Teil ohne festes Lager)
         frei = [i for i in range(len(d.koerper)) if not any(
-            np.isin(d.global_knoten(i, np.arange(len(netze[i].knoten))), fk).any() for fk in d.fest)]
+            np.isin(d.global_knoten(i, np.arange(len(netze[i].knoten))), fk).any() for fk in d.fest)
+            and not (i == 0 and self.zwang_gehalten)]
         federn = {}
         for i in frei:
             k = d.koerper[i]

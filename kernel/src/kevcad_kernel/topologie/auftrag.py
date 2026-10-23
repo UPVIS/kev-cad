@@ -235,7 +235,19 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
         if (e.get("verbinde") in KLEMMEN) or (e.get("gelenk") and e.get("festgestellt")):
             klemmen.append(anderer)
             brauche.add(anderer)
+    from kevcad_kernel.statik.festkoerper.auftrag import lager_nachbar, lager_npz, lager_schluessel
+
+    # Lager je Lastfall (Simulation): die Lager des gewählten Szenarios
+    m_sz = st.modell_fuer(szen[0]) if hasattr(st, "modell_fuer") and szen else m
     for x in sorted(brauche):
+        L = lager_nachbar(m_sz, x) or lager_nachbar(m, x)
+        if L is not None:  # ausdrücklich gesetztes Lager (Simulation): seine Fläche ist das „Nachbarnetz“
+            datei = os.path.join(ordner, f"nachbar_{len(nachbarn)}.npz")
+            n = lager_npz(L, datei)
+            nachbarn[x] = {"datei": datei, "tol": 0.3, "schluessel": lager_schluessel(L), "dreiecke": n,
+                           "normale": None if L.normale is None else [float(c) for c in L.normale],
+                           "komponenten": L.komponenten}
+            continue
         if x not in st.koerper:
             continue
         datei = os.path.join(ordner, f"nachbar_{len(nachbarn)}.npz")

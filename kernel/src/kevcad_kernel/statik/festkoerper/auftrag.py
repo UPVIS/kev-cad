@@ -13,7 +13,10 @@ Ein **Fall** ist ein Teil in einem Szenario. Quelle sind die Bauteil-Nachweise d
 - **Kontaktkräfte eines Ablaufs** (S2) auf Wunsch: die größte Kontaktkraft auf das Teil, am Kontaktpunkt, allein
   (statt der ruhenden Ersatzlasten des Szenarios).
 
-Dazu immer das Eigengewicht im Beschleunigungsfeld des Szenarios. Der Ordner enthält ``auftrag.json``, je Teil die
+Dazu immer das Eigengewicht im Beschleunigungsfeld des Szenarios. Ausdrücklich gesetzte Lager (Simulation) kommen mit
+ihrer Art in den Auftrag: fest, gleitend mit den gehaltenen Richtungen (``gehalten``, genau), gelenkig mit den Achsen,
+um die die Fläche nicht dreht (``drehachsen``); Lager je Lastfall über das Modell des Szenarios
+(``LETZTER.modell_fuer``). Lasten auf der ganzen Fläche bringen das Netz der Fläche mit (``flaeche_datei``). Der Ordner enthält ``auftrag.json``, je Teil die
 Form als BREP (Welt) und die Netze der Nachbarn, auf den Hüllquader des Teils zugeschnitten. Der Schlüssel je Fall
 (Teilstand, Lager, Lasten, Werkstoff, Netzeinstellung) adressiert den Zwischenspeicher des FEM-Prozesses.
 """
@@ -77,6 +80,52 @@ def _werkstoff(m: Any, katalog: Any, name: str) -> dict[str, Any] | None:
     return {"id": w.id, "name": w.name, "E": float(w.E), "nu": float(w.nu if w.nu is not None else 0.3),
             "E_z": ez, "f": float(w.grenze), "q": (float(w.quer) if w.quer else 0.5) if t.druckteil else None,
             "nu_angenommen": w.nu is None}
+
+
+def lager_nachbar(m: Any, x: str) -> Any:
+    """Ausdrücklich gesetztes Lager (``simulation.zuordnung.Lager``) zum Nachbarnamen „Lager: …“, sonst None."""
+    if not str(x).startswith("Lager: "):
+        return None
+    return next((L for L in getattr(m, "lager_explizit", None) or [] if L.name == x and L.netz is not None), None)
+
+
+def lager_npz(L: Any, datei: str) -> int:
+    pos, tri = L.netz
+    tri = np.asarray(tri, dtype=np.int64)
+    used = np.unique(tri) if len(tri) else np.zeros(0, dtype=np.int64)
+    remap = np.full(len(pos), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    np.savez(datei, pos=np.asarray(pos, dtype=np.float64)[used], tri=remap[tri].astype(np.int64))
+    return int(len(tri))
+
+
+def _modell(st: Any, szenario: str | None) -> Any:
+    """Statikmodell eines Szenarios (Lager je Lastfall), sonst das des Laufs."""
+    f = getattr(st, "modell_fuer", None)
+    return f(szenario) if f is not None else st.modell
+
+
+def lager_eintrag(L: Any) -> dict[str, Any]:
+    """Art, gehaltene Richtungen und gehaltene Drehachsen eines Lagers für den FEM-Prozess."""
+    out: dict[str, Any] = {"art": L.art, "komponenten": L.komponenten,
+                           "normale": None if L.normale is None else [float(c) for c in L.normale]}
+    g = getattr(L, "gehalten", None)
+    if g is not None:
+        out["gehalten"] = [[round(float(c), 9) for c in v] for v in g]
+    if L.art == "gelenkig":
+        out["drehachsen"] = [[round(float(c), 9) for c in v] for v in getattr(L, "drehachsen", None) or []]
+    return out
+
+
+def lager_schluessel(L: Any) -> str:
+    pos, tri = L.netz
+    P = np.asarray(pos, float)[np.asarray(tri, np.int64)].reshape(-1, 3) if len(tri) else np.zeros((0, 3))
+    e = lager_eintrag(L)
+    d = {"art": L.art, "komp": L.komponenten, "n": len(P), "gehalten": e.get("gehalten"),
+         "drehachsen": e.get("drehachsen"),
+         "m": _r(P.mean(axis=0).tolist()) if len(P) else None, "lo": _r(P.min(axis=0).tolist()) if len(P) else None,
+         "hi": _r(P.max(axis=0).tolist()) if len(P) else None}
+    return hashlib.sha1(json.dumps(d, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def _toleranz(m: Any, a: str, b: str) -> float:
@@ -149,12 +198,16 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
                                         "moment": [-float(c) for c in a.get("moment") or (0, 0, 0)],
                                         "punkt": [float(c) for c in a["punkt"]], "kontakt_mit": a["stab"],
                                         "quelle": f"Lager von {a['stab']}"})
-                _, nach = tragende_nachbarn(m, teil, st.koerper, set(stabs))
+                _, nach = tragende_nachbarn(_modell(st, name), teil, st.koerper, set(stabs))
                 f["lager"] = nach or None
             else:
-                f["lasten"].append({"kraft": list(b["kraft"]), "moment": b.get("moment"),
-                                    "punkt": list(b["lastpunkt"]) if b.get("punkt_gegeben") else None,
-                                    "quelle": "Last aus dem Szenario"})
+                last = {"kraft": list(b["kraft"]), "moment": b.get("moment"),
+                        "punkt": list(b["lastpunkt"]) if b.get("punkt_gegeben") else None,
+                        "quelle": "Last aus dem Szenario"}
+                if b.get("flaeche_last"):  # Last auf der ganzen Fläche (Simulation)
+                    last["flaeche"] = dict(b["flaeche_last"])
+                    last["quelle"] = "Last auf der ganzen Fläche"
+                f["lasten"].append(last)
                 f["lager"] = sorted(set(f["lager"] or []) | set(b.get("nachbarn") or []))
         # Verbinder zwischen Stäben (S1, im Stabwerk starr): Kraft und Moment jedes Stabs am Anschluss; gehalten von
         # Nachbarn außerhalb der Stäbe (ohne Schrauben), sonst vom Stab mit der größten Kraft (``schreibe``)
@@ -196,7 +249,7 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         f["lasten"].append({"kraft": list(l["kraft"]), "moment": None, "punkt": list(l["punkt"]),
                             "quelle": l.get("quelle") or "Kontaktkraft aus dem Ablauf"})
-        _, nach = tragende_nachbarn(m, teil, st.koerper, {mit} if mit else set())
+        _, nach = tragende_nachbarn(_modell(st, l["szenario"]), teil, st.koerper, {mit} if mit else set())
         f["lager"] = sorted(set(f["lager"] or []) | set(nach))
     liste = [f for f in out.values() if f["lasten"]]
     for f in liste:
@@ -262,7 +315,16 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
         lo, hi = np.asarray(k.bmin) - RAND_MM, np.asarray(k.bmax) + RAND_MM
         brauche = set(f["lager"]) | {l["kontakt_mit"] for l in f["lasten"] if l.get("kontakt_mit")}
         for x in sorted(brauche):
-            if x in T["nachbarn"] or x not in st.koerper:
+            if x in T["nachbarn"]:
+                continue
+            L = lager_nachbar(_modell(st, f["szenario"]), x) or lager_nachbar(m, x)
+            if L is not None:  # ausdrücklich gesetztes Lager (Simulation): seine Fläche ist das „Nachbarnetz“
+                datei = os.path.join(ordner, f"nachbar_{T['id']}_{len(T['nachbarn'])}.npz")
+                n_tri = lager_npz(L, datei)
+                T["nachbarn"][x] = {"datei": datei, "tol": TOL_BERUEHRT, "schluessel": lager_schluessel(L),
+                                    "dreiecke": n_tri, **lager_eintrag(L)}
+                continue
+            if x not in st.koerper:
                 continue
             o = st.koerper[x]
             pos = np.asarray(o.pos, dtype=float)
@@ -279,19 +341,34 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
             np.savez(datei, pos=pos[used].astype(np.float64), tri=remap[tri].astype(np.int64))
             T["nachbarn"][x] = {"datei": datei, "tol": _toleranz(m, name, x), "schluessel": o.key,
                                 "dreiecke": int(len(tri))}
+        for last in f["lasten"]:  # Last auf der ganzen Fläche: Netz der B-Rep-Fläche dazu
+            fl = last.get("flaeche")
+            if fl and fl.get("index") is not None and not last.get("flaeche_datei"):
+                from kevcad_kernel.simulation.zuordnung import flaechen_netz
+
+                netz = flaechen_netz(k, int(fl["index"]))
+                if netz is not None and len(netz[1]):
+                    datei = os.path.join(ordner, f"flaeche_{T['id']}_{int(fl['index'])}.npz")
+                    if not os.path.exists(datei):
+                        np.savez(datei, pos=np.asarray(netz[0], np.float64), tri=np.asarray(netz[1], np.int64))
+                    last["flaeche_datei"] = datei
         sz = szen_obj[f["szenario"]]
         f["feld"] = [float(c) for c in sz.feld]
         schl = {"v": VERSION, "teil": k.key, "fein": bool(wunsch.get("fein")), "w": w, "schicht": T["schicht"],
                 "masse": round(T["masse_kg"], 6), "feld": _r(f["feld"]),
                 "lager": [(x, T["nachbarn"].get(x, {}).get("schluessel"), T["nachbarn"].get(x, {}).get("tol"))
                           for x in sorted(f["lager"])],
-                "lasten": [{kk: _r(v) if kk != "kontakt_mit" else v for kk, v in l.items() if kk != "quelle"}
-                           for l in f["lasten"]],
+                "lasten": [{kk: (v if kk in ("kontakt_mit", "flaeche") else _r(v)) for kk, v in l.items()
+                            if kk not in ("quelle", "flaeche_datei")} for l in f["lasten"]],
                 "kontakte": [(l.get("kontakt_mit"), T["nachbarn"].get(l.get("kontakt_mit"), {}).get("schluessel"))
                              for l in f["lasten"] if l.get("kontakt_mit")],
                 "ausrichtungen": {a: _r(v) for a, v in T["ausrichtungen"].items()}}
         f["schluessel"] = hashlib.sha1(json.dumps(schl, sort_keys=True, default=str).encode()).hexdigest()[:20]
         f["id"] = f"{T['id']}.{len(T['faelle'])}"
+        gr = (wunsch.get("grenze") or {})
+        if f["szenario"] in (gr.get("basis") or {}):  # „Grenze suchen“ mit der FEM: Grundfall einer Gruppe
+            f["grenze"] = {"gruppe": gr["gruppe"], "wert": float(gr["basis"][f["szenario"]])}
+            T.setdefault("grenze", {})[gr["gruppe"]] = {"art": gr.get("art") or "last", "max": gr.get("max")}
         T["faelle"].append(f)
     auftrag = {"version": VERSION, "fein": bool(wunsch.get("fein")), "teile": list(teile.values()),
                "run": st.run}

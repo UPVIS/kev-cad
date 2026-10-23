@@ -117,6 +117,7 @@ struct ViewportArea: View {
     private var bottomOverlays: some View {
         HStack(spacing: 8) {
             MassstabLeiste(store: model.referenzen, actions: model.referenzActions)  // Phase 4: zwei Punkte am Netz
+            SimulationWerkzeugLeiste(store: model.simulation, actions: model.simulationActions)  // Simulation
             if model.measureMode {
                 Pill(symbol: "ruler", tint: .orange) {
                     Text("Messen: ein oder zwei Elemente anklicken")

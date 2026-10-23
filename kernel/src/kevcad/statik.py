@@ -26,6 +26,11 @@ st.szenario("Fahrt", animation="Fahrt", bremsen=4)                        # Soll
 st.untergrund("holz")                                                     # Boden zum Rutschen (Standard Beton)
 st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eigene Ziele statt T5
 
+st.lager("Halter", flaeche=halter.faces().sort_by(Axis.X)[0])            # Lager: Fläche fest eingespannt
+st.lager("Rahmen/Rohr", punkt=(0, 0, 30), art="gelenkig")                 # Punkt, gelenkig (Stab: Gelenk)
+st.lager("Schlitten", flaeche=3, art="gleitend")                          # gleitet in der Fläche, hält senkrecht
+st.lager("Wagen", flaeche=5, art="gleitend", gleiten="+x")                # Schiene: gleitet nur längs X
+st.lager("Stütze", flaeche=0, art="fest", szenario="Aufstützen")          # Lager nur in diesem Lastfall
 # Stufe 4 (CalculiX): Kontakt statt fester Einspannung, Plastizität, Traglast, Beulen
 st.kontakt("Kugelschieber/Stangenhalter vorn links (Druck)", "Kugelschieber/Seitenstange links (Rohr 1)",
            reibwert=0.3, klemmkraft=500)                                  # Paar hebt ab und gleitet
@@ -47,6 +52,16 @@ st.festigkeit("Kugelschieber/Stangenhalter vorn links (Druck)", kontakt=True, pl
   mm oder Punkt), ``fahrtrichtung`` (``"+x"``). Kev CAD rechnet den Ablauf nach jedem Lauf im Hintergrund in einem
   eigenen Prozess: Kippen, Abheben, Ladung (Ball springt heraus?), Grenzgeschwindigkeit; die Zeitleiste spielt ihn als
   Animation „Ablauf: <Name>“ ab.
+- **Lager** (``lager``, PLAN-SIMULATION.md): Ohne Angabe leitet Kev CAD die Lager aus den Kontakten ab (Boden,
+  Kulisse, ``befestigt``, tragende Nachbarn). ``lager(teil, flaeche=…, punkt=…, art=…)`` setzt eines ausdrücklich:
+  ``art`` ``"fest"`` (eingespannt), ``"gelenkig"`` (hält, dreht frei: an Stäben ein Gelenk, in der FEM hält die Fläche
+  nur im Mittel und dreht frei, siehe PLAN-SIMULATION.md) oder ``"gleitend"`` (hält nur senkrecht zur Fläche, genau
+  entlang ihrer Normale; mit ``gleiten`` als Achse "+x", Vektor, Kante oder ``Axis`` aus build123d nur entlang dieser
+  Richtung frei, wie auf einer Schiene); ``flaeche`` als Nummer wie im Viewer oder als Fläche aus build123d, ``punkt``
+  in mm (Welt), ohne beides das ganze Teil. Lager gelten in allen Szenarien, mit ``szenario`` (Name oder Liste) nur in
+  diesen: Stabwerk (Auflager am Stab bzw. Körper fest), Kippen und Rutschen (gelagerte Gruppen kippen nicht),
+  Bauteil-Nachweis und Festkörper (Lagerfläche fest, gelenkig bzw. nur in den gehaltenen Richtungen) und Topologie.
+  Dieselben Lager setzt Kevin in der App im Bereich „Simulation“ (``simulation.json``).
 - Außerhalb des Kernels tun die Funktionen nichts.
 
 - Stufe 4 (CalculiX, eigener Prozess): ``kontakt(a, b, reibwert=, klemmkraft=, spiel=)`` macht aus der Verbindung
@@ -65,8 +80,8 @@ import math
 import sys
 from typing import Any
 
-__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel", "kontakt",
-           "festigkeit",
+__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel", "lager",
+           "kontakt", "festigkeit",
            "Szenario"]
 
 G = 9.81
@@ -145,11 +160,12 @@ def szenario(name: str, beschleunigung: Any = None, neigung: float | None = None
              stoss: float | None = None, ziel: float | None = None, beschreibung: str | None = None,
              geschwindigkeit: float | None = None, bremsen: Any = None, dauer: float | None = None,
              animation: str | None = None, antrieb: Any = None, angriff: Any = None,
-             fahrtrichtung: Any = None) -> Szenario:
+             fahrtrichtung: Any = None, untergrund: str | None = None) -> Szenario:
     """Neues Szenario (folgende ``last``-Aufrufe gehören dazu). ``beschleunigung`` in m/s² (z. B. (-3, 0, 0) beim
     Bremsen in Fahrtrichtung +X), ``neigung`` in Grad mit ``richtung`` (abwärts), ``stoss`` als Faktor auf alle Lasten
-    (im Ablauf auf die Verzögerung), ``ziel`` als eigene Zielsicherheit. Mit ``geschwindigkeit`` (m/s), ``bremsen``
-    (m/s², "abrupt", "anprall") oder ``animation`` wird es ein Ablauf (S2, Dynamik), siehe Moduldoku."""
+    (im Ablauf auf die Verzögerung), ``ziel`` als eigene Zielsicherheit, ``untergrund`` als eigener Boden (Reibwert für
+    Rutschen und den Ablauf, sonst ``st.untergrund``). Mit ``geschwindigkeit`` (m/s), ``bremsen`` (m/s², "abrupt",
+    "anprall") oder ``animation`` wird es ein Ablauf (S2, Dynamik), siehe Moduldoku."""
     if not isinstance(name, str) or not name.strip():
         raise ValueError("statik.szenario: Namen angeben, z. B. st.szenario(\"Bremsen\", beschleunigung=(-3, 0, 0))")
     d: dict[str, Any] = {"was": "szenario", "name": name.strip(), "beschreibung": beschreibung}
@@ -162,6 +178,8 @@ def szenario(name: str, beschleunigung: Any = None, neigung: float | None = None
         d["stoss"] = {"faktor": float(stoss)}
     if ziel is not None:
         d["ziel"] = float(ziel)
+    if untergrund:
+        d["untergrund"] = str(untergrund)
     if geschwindigkeit is not None or bremsen is not None or animation is not None:
         ab: dict[str, Any] = {"geschwindigkeit": None if geschwindigkeit is None else float(geschwindigkeit),
                               "bremsen": bremsen if isinstance(bremsen, str) or bremsen is None else float(bremsen),
@@ -252,6 +270,79 @@ def ziel(sicherheit: float | None = None, durchbiegung: str | float | None = Non
     """Eigene Ziele für alle Szenarien: Sicherheit (statisch; dynamisch × 1,5) und Durchbiegung ("L/300")."""
     _hook()
     _melde({"was": "ziel", "sicherheit": sicherheit, "durchbiegung": durchbiegung})
+
+
+LAGERARTEN = ("fest", "gelenkig", "gleitend")
+
+
+def _flaeche(f: Any) -> tuple[int | None, dict[str, Any] | None]:
+    """Fläche als Nummer (wie im Viewer) oder als Fläche aus build123d (Signatur wie ``PART_UPSERT.faces[i]``; der
+    Kernel sucht die Nummer im gezeigten Teil)."""
+    if f is None:
+        return None, None
+    if isinstance(f, bool):
+        raise ValueError("statik.lager: flaeche ist eine Nummer oder eine Fläche aus build123d")
+    if isinstance(f, int):
+        if f < 0:
+            raise ValueError("statik.lager: flaeche ab 0 (Nummer wie im Viewer)")
+        return f, None
+    if not hasattr(f, "wrapped"):
+        raise ValueError(f"statik.lager: flaeche {f!r} ist weder Nummer noch Fläche")
+    from kevcad_kernel.tessellate import face_info
+
+    return None, face_info(f)
+
+
+def _gleiten(g: Any) -> dict[str, Any] | None:
+    """Gleitrichtung: None/"flaeche" (in der Fläche), Achse "+x", Vektor, build123d-``Axis`` oder -Kante."""
+    if g is None or g == "flaeche":
+        return None
+    if isinstance(g, str):
+        return {"art": "richtung", "richtung": g, "quelle": "achse"}
+    if hasattr(g, "direction") and not hasattr(g, "wrapped"):  # build123d Axis
+        return {"art": "richtung", "richtung": _vec(g.direction, "gleiten"), "quelle": "achse"}
+    if hasattr(g, "wrapped") and hasattr(g, "position_at"):  # Kante: Richtung vom Anfang zum Ende
+        a, b = g.position_at(0), g.position_at(1)
+        d = [float(b.X - a.X), float(b.Y - a.Y), float(b.Z - a.Z)]
+        if math.sqrt(sum(c * c for c in d)) < 1e-9:
+            raise ValueError("statik.lager: gleiten an einer geschlossenen Kante hat keine Richtung")
+        return {"art": "richtung", "richtung": d, "quelle": "kante"}
+    return {"art": "richtung", "richtung": _vec(g, "gleiten"), "quelle": "frei"}
+
+
+def lager(teil: Any, flaeche: Any = None, punkt: Any = None, art: str = "fest", normale: Any = None,
+          szenario: Any = None, gleiten: Any = None) -> None:
+    """Lager ausdrücklich setzen (statt nur aus den Kontakten abgeleitet): ``art`` "fest", "gelenkig" oder "gleitend",
+    an einer ``flaeche`` (Nummer oder build123d-Fläche), einem ``punkt`` (mm, Welt) oder ohne beides am ganzen Teil.
+    Gilt in allen Szenarien, mit ``szenario`` (Name oder Liste von Namen) nur in diesen. ``gleiten`` (nur gleitend):
+    Richtung, entlang der das Lager frei ist (Achse "+x", Vektor, ``Axis`` oder Kante aus build123d); ohne gleitet es in
+    der Fläche und hält nur senkrecht zu ihr."""
+    if str(art) not in LAGERARTEN:
+        raise ValueError(f"statik.lager: art {art!r} unbekannt (fest, gelenkig, gleitend)")
+    if not _teile(teil):
+        raise ValueError("statik.lager: Teil angeben (Name aus show(), Gruppe oder Form)")
+    index, sig = _flaeche(flaeche)
+    p = _vec(punkt, "punkt")
+    n = _vec(normale, "normale")
+    if n is None and sig is not None and sig.get("n") is not None:
+        n = [float(c) for c in sig["n"]]
+    g = _gleiten(gleiten) if str(art) == "gleitend" else None
+    if gleiten is not None and str(art) != "gleitend":
+        raise ValueError("statik.lager: gleiten gilt nur für art=\"gleitend\"")
+    if str(art) == "gleitend" and n is None and index is None and g is None:
+        raise ValueError("statik.lager: ein gleitendes Lager braucht eine ebene Fläche, normale=(x, y, z) oder gleiten=…")
+    if szenario is None:
+        szen = None
+    elif isinstance(szenario, str):
+        szen = [szenario.strip()]
+    else:
+        szen = [str(x).strip() for x in szenario]
+    if szen is not None and not all(szen):
+        raise ValueError("statik.lager: szenario ist ein Name oder eine Liste von Namen")
+    auf = "flaeche" if (index is not None or sig is not None) else ("punkt" if p is not None else "teil")
+    _hook()
+    _melde({"was": "lager", "teile": _teile(teil), "art": str(art), "auf": auf,
+            "ort": {"flaeche": index, "signatur": sig, "punkt": p, "normale": n}, "szenarien": szen, "gleiten": g})
 
 
 def kontakt(teil: Any, gegen: Any, reibwert: float | None = None, klemmkraft: float | None = None,

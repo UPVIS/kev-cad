@@ -870,7 +870,7 @@ an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `a
   das Feld.
 
 App → Kernel: nur `STATICS_CANCEL` (Stufe 3, siehe „Festkörper“). Die App wählt Szenarien selbst; neue Szenarien rechnet
-der Agent mit MCP `szenario_rechnen`.
+der Agent mit MCP `szenario_rechnen`, Kevin legt sie im Bereich „Simulation“ an (Abschnitt „Simulation“, `SIM_EDIT`).
 
 ### Ablauf (Stufe 2, additiv)
 
@@ -1027,6 +1027,86 @@ alten. Packen und Prüfen in `protocol.py` (`pack_topo`, `check_topo_message`, `
 - Die App zeigt während `laeuft` die Dichte (`dichte`) halbdurchsichtig über dem blass gezeigten Teil, danach wahlweise
   „Vorher“ bzw. „Nachher“ als Bänder der Ausnutzung (wie `STATICS_FIELD`, das Teil ist dann ausgeblendet) und auf Wunsch
   die Schutzzonen (`schutz`). Felder eines anderen `auftrag` verwirft sie.
+
+## Simulation
+
+Rein additiv (PLAN-SIMULATION.md, 23.10.2026); ältere Gegenseiten ignorieren die Typen. Bereich „Simulation“ (⌘4) der
+App: Lastfälle, Kräfte und Lager, die Kevin per Klick anlegt, liegen in `<projekt>/simulation.json` (Format in
+`kernel/src/kevcad_kernel/simulation/datei.py`) und kommen bei jedem Lauf zu den Szenarien aus model.py dazu (gleicher
+Name: die App gewinnt). Der Agent sieht und ändert dieselben Daten (MCP `simulation_liste`, `simulation_aendern`,
+`simulation_rechnen`). Packen und Prüfen in `protocol.py` (`pack_sim`, `check_sim_message`, `pack_sim_job`,
+`check_sim_job`, `check_sim_app`, Beispiele `sim_beispiel`, `sim_job_beispiel`), Testdateien `sim.frame`,
+`sim_job.frame`, `sim_job_laeuft.frame` und `sim.json` aus `tools/make_simulation_fixtures.py`.
+
+| type | Richtung | Felder | Antwort |
+|---|---|---|---|
+| `SIM` | Kernel → App | `run`, `stand` (Zähler von simulation.json), `datei`, `vorhanden`, `lastfaelle`, `modell`, `lager`, `modell_lager`, `abgeleitet`, `topologie`, `hinweise`, `fehler`, `job`, `reply_to` optional; nach jedem Lauf (nach STATICS), nach jeder Änderung, beim Verbinden, auf `SIM_REQ` | – |
+| `SIM_JOB` | Kernel → App | `auftrag`, `was` (`rechnen` \| `festigkeit` \| `ablauf` \| `grenze`), `lastfall`, `teil`, `grenze` (`last` \| `neigung` \| `geschwindigkeit`), `von` (`app` \| `agent`), `stand` (`laeuft` \| `done` \| `failed` \| `abgebrochen`), `fortschritt` (0…1 oder null), `text`, `ergebnis`, `meldung`, `ms`; beim Start, bei Fortschritt (FEM, Ablauf; höchstens alle 0,4 s) und am Ende | – |
+| `SIM_REQ` | App → Kernel | `id` | `SIM` mit `reply_to` |
+| `SIM_EDIT` | App → Kernel | `id`, `basis` (erwarteter `stand`, optional), `ops` (Liste von Operationen wie MCP `simulation_aendern`) | `ACK` (`message`: Meldungen bzw. Fehler; alles oder nichts), danach `STATICS` (alles mit dem letzten Modell neu gerechnet) und `SIM` |
+| `SIM_RUN` | App → Kernel | `id`, `was`, `lastfall`, `teil`, `fein`, `grenze`, `verfahren` (additiv: `s0s1` \| `fem`) | `ACK` (`message`: Nummer des Auftrags), danach `SIM_JOB` |
+| `SIM_CANCEL` | App → Kernel | `seq`, `id` optional | `SIM_JOB` mit `stand: "abgebrochen"` |
+
+`lastfaelle[i]` (App): `name`, `art` (`statisch` \| `dynamisch`), `beschreibung`, `kopie_von`, `neigung` (`grad`,
+`richtung` `+x` … oder Vektor), `beschleunigung` (m/s²), `fahrt` (`geschwindigkeit`, `bremsen` `abrupt` \| `anprall` \|
+m/s², `dauer`, `animation`, `angriff` `boden` \| mm, `fahrtrichtung`, `antrieb`), `stoss`, `untergrund`, `ziel`
+(`sicherheit`, `durchbiegung` als x in L/x), `ampel`, `text`, `gerechnet` und `lasten[j]`:
+
+```json
+{"id": "L1", "teil": "Halter", "gegen": null,
+ "ort": {"flaeche": 5, "punkt": [40, 0, 60], "normale": [0, 0, 1],
+         "signatur": {"t": "plane", "a": 800.0, "n": [0, 0, 1], "c": [40, 0, 60]}},
+ "richtung": {"art": "normale"}, "betrag": 30, "einheit": "kg", "kraft": [0, 0, -294.3],
+ "zustand": "ok", "zustand_text": "", "kraft_wirksam": [0, 0, -294.3], "punkt_wirksam": [40, 0, 60],
+ "normale_wirksam": [0, 0, 1], "flaeche_wirksam": 5}
+```
+
+- `richtung.art`: `normale` (in die angeklickte Fläche hinein; `umkehren` zieht), `achse` (`achse` `+x` … `-z`) oder
+  `frei` (`azimut`, `hoehe` in Grad oder `vektor`). `einheit` `N` oder `kg` (F = m · 9,81). `kraft` rechnet der Kernel
+  (`simulation/kraft.py`; die App spiegelt es für die Vorschau in `SimKraft`).
+- `zustand` nach der Zuordnung im aktuellen Modell: `ok`, `neu` (andere Fläche bzw. umbenanntes Teil, `zustand_text`
+  „Fläche 12 → 15“), `fehlt` (nicht mehr zuordenbar, zählt nicht mit), `offen` (noch kein Lauf). `*_wirksam`: Kraft,
+  Punkt, Normale und Fläche, mit denen gerechnet wird.
+- `modell[i]`: Szenarien aus model.py bzw. Standard (`name`, `quelle`, `art`, `zeile`, `ampel`, `text`,
+  `beschreibung`, `dynamisch`, `ersetzt`: von einem gleichnamigen Lastfall der App ersetzt).
+- `lager[i]` (App): `id`, `teil`, `art` (`fest` \| `gelenkig` \| `gleitend`), `auf` (`flaeche` \| `punkt` \| `teil`),
+  `ort`, `zustand`, `zustand_text`, `punkt_wirksam`, `normale_wirksam`, `flaeche_wirksam`. `modell_lager[i]`: Lager aus
+  `st.lager` (flach: `punkt`, `normale`, `flaeche`, `zeile`). Additiv (simulation2): `szenarien` (null = alle
+  Lastfälle, sonst die Namen, in denen das Lager gilt; `[]` = in keinem), `gleiten` (nur `gleitend`; fehlt bzw. null =
+  gleitet in der Fläche und hält genau senkrecht zu ihr; `{art: "richtung", richtung: [x, y, z], quelle: "achse" \|
+  "kante" \| "frei", kante}` = frei nur entlang dieser Richtung wie auf einer Schiene), `gehalten_wirksam` (gehaltene
+  Richtungen, Einheitsvektoren, wie der Kernel rechnet; bei `modell_lager` `gehalten`).
+- `lasten[j]` additiv (simulation2): `verteilung` (`punkt`, Standard, oder `flaeche`: gleichmäßig auf der ganzen
+  angeklickten Fläche), `einheit` auch `N/mm2` (Druck senkrecht auf die Fläche, nur mit `verteilung: "flaeche"` und
+  `richtung.art: "normale"`; Kraft = Druck × Fläche), `flaeche_mm2_wirksam` (Flächeninhalt, mit dem gerechnet wird).
+  Der Angriffspunkt einer Last auf der ganzen Fläche ist der Schwerpunkt der Fläche (`punkt_wirksam`).
+- `abgeleitet[i]`: `id` (`boden:<teil>` = steht auf dem Boden bzw. der Kulisse; `kontakt:<teil>|<nachbar>` = Kontakt
+  trägt im Bauteil-Nachweis und in der FEM), `art`, `teil`, `nachbar`, `text`, `punkt`, `aktiv`, `ersetzt` (Kennung des
+  ausdrücklichen Lagers, das es ersetzt).
+- `topologie`: je Druckteil die Einstellungen des Bereichs (`szenario`, `behalten`, `ueberhang`, `fein`, `steg`,
+  `bohrungen`, `einsaetze`, `kontakt`, `bett`, `lager`, `schutz` [{`art`: `index`, `index`, `zustand`, `text`}]).
+- `SIM_JOB.ergebnis` bei `grenze`: `art`, `lastfall`, `werte` [{`kriterium`, `grenze`, `einheit` (`×` \| `°` \| `m/s`),
+  `text`, `massgebend`, `last_n`}], `text`, `hinweis`; bei `festigkeit`: `teile` [{`teil`, `ampel`, `sicherheit`,
+  `ziel`, `kriterium`}]; bei `ablauf`: `ampel`, `animation`, `kennzahlen`. Additiv (simulation2): `SIM_RUN.verfahren`
+  (`s0s1`, Standard, oder `fem` bei `grenze` `last` und `neigung`), `SIM_JOB.verfahren`, im Ergebnis der Grenze
+  `verfahren`, `massgebend_verfahren` (`S0` \| `S1` \| `FEM`), je Wert `verfahren` und `ersetzt` (Kragträger eines
+  Teils, das die FEM rechnet: nur zum Vergleich), `probe` {`faktor`, `teil`, `ausnutzung`, `sicherheit`, `ziel`, `ok`}
+  (FEM bei der gefundenen Grenze noch einmal gerechnet) und `fem` {`teile`, `grenzen`, `faelle`, `aus_speicher`}.
+- `STATICS.szenarien[i]` additiv (simulation2): `lager` (Kennungen der ausdrücklichen Lager, die in diesem Szenario
+  gelten), `untergrund` (eigener Boden des Szenarios); `lasten[j].flaeche` {`teil`, `index`, `flaeche_mm2`, `druck`}
+  bei einer Last auf der ganzen Fläche.
+
+Operationen (`ops`, wie `simulation_aendern`): `lastfall_neu` (`name` und Felder), `lastfall_setzen` (`name`,
+`felder`), `lastfall_kopieren` (`von` App oder model.py, `name`), `lastfall_umbenennen` (`name`, `neu`),
+`lastfall_loeschen` (`name`), `last_setzen` (`lastfall`, `last` ohne `id` = neu), `last_loeschen` (`lastfall`, `id`),
+`lager_setzen` (`lager`), `lager_loeschen` (`id`), `abgeleitet` (`id`, `aktiv`), `topologie` (`teil`, `einstellungen`).
+
+Ergänzungen bestehender Nachrichten (additiv):
+
+- `STATICS.szenarien[i].lasten[j].id`: Kennung einer Last aus der App; `szenarien[i].quelle` ist `app` für Lastfälle aus
+  simulation.json.
+- `TOPO_START`: `bohrungen`, `einsaetze`, `kontakt`, `bett` (Wahrheitswerte: automatische Schutzzonen je Art), `steg`
+  (Linienbreiten), `schutz` [{`art`: `index`, `index`}] (Schutzflächen per Klick); die Zone heißt dann „Schutzfläche n“.
 
 ## Phase 7: Renderings
 

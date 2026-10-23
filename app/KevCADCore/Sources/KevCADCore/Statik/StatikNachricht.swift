@@ -68,6 +68,8 @@ public struct StatikTeil: Equatable, Sendable {
     public var ampel: StatikAmpel
     public var verformungMm: Double?
     public var sicherheit: Double?
+    /// Stufe 3 (additiv): Ausnutzung aus der Festkörper-FEM.
+    public var fem: Bool
 
     init(json j: JSONValue) {
         name = j["name"]?.stringValue ?? ""
@@ -75,6 +77,7 @@ public struct StatikTeil: Equatable, Sendable {
         ampel = StatikAmpel(rawValue: j["ampel"]?.stringValue ?? "") ?? .grau
         verformungMm = j["verformung_mm"]?.doubleValue
         sicherheit = j["sicherheit"]?.doubleValue
+        fem = j["fem"]?.boolValue ?? false
     }
 }
 
@@ -122,6 +125,8 @@ public struct StatikLast: Equatable, Sendable {
     public var kraft: SIMD3<Float>
     public var punkt: SIMD3<Float>
     public var kg: Double?
+    /// Last aus der App (Bereich Simulation): Kennung in simulation.json (additiv).
+    public var id: String?
 
     public var paar: Bool { !gegen.isEmpty }
     /// Betrag der Kraft in N.
@@ -140,6 +145,7 @@ public struct StatikLast: Equatable, Sendable {
         self.init(
             teile: j["teile"]?.stringList ?? [], gegen: j["gegen"]?.stringList ?? [], kraft: kraft, punkt: punkt,
             kg: j["kg"]?.doubleValue)
+        id = j["id"]?.stringValue
     }
 }
 
@@ -322,6 +328,11 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
     public var ablauf: StatikAblauf?
     /// Stufe 3: Festkörper-FEM der Teile mit Last (läuft im Hintergrund nach dem Lauf oder auf Anfrage).
     public var festkoerper: StatikFestkoerper?
+    /// Simulation (additiv): Kennungen der ausdrücklichen Lager, die in diesem Szenario gelten (Lager je Lastfall);
+    /// nil bei älteren Kerneln.
+    public var lagerIDs: [String]?
+    /// Simulation (additiv): eigener Untergrund des Szenarios (Rutschen in S0 und Ablauf), sonst nil.
+    public var untergrund: String?
 
     public var id: String { name }
 
@@ -342,6 +353,8 @@ public struct StatikSzenario: Identifiable, Equatable, Sendable {
         lasten = (j["lasten"]?.arrayValue ?? []).compactMap(StatikLast.init(json:))
         ablauf = j["ablauf"].flatMap { $0.objectValue == nil ? nil : StatikAblauf(json: $0) }
         festkoerper = j["festkoerper"].flatMap { $0.objectValue == nil ? nil : StatikFestkoerper(json: $0) }
+        lagerIDs = j["lager"]?.arrayValue.map { $0.compactMap(\.stringValue) }
+        untergrund = j["untergrund"]?.stringValue
     }
 
     /// Urteile, die etwas zu sagen haben (rot, gelb, überdimensioniert, nicht gerechnet).
