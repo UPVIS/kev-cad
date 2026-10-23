@@ -361,6 +361,28 @@ class KernelService(Protocol):
     def festigkeit_abbrechen(self) -> dict[str, Any]:
         """Laufende Festkörper-Rechnung beenden: {"ok", "abgebrochen", "szenarien"}."""
 
+    # Topologieoptimierung (PLAN-TOPOLOGIE.md, additiv)
+    def topologie_optimieren(self, teil: str | None = None, szenario: str | None = None, behalten: float | None = None,
+                             schutz: list[dict[str, Any]] | None = None, ueberhang: bool | None = None,
+                             fein: bool | None = None, steg: float | None = None, bett: bool | None = None,
+                             neu: bool = False, warten: bool = False, lager: str | None = None) -> dict[str, Any]:
+        """Topologieoptimierung eines Druckteils im Hintergrund (eigener Prozess): {"ok", "stand", "teil",
+        "szenario", "text"}; mit ``warten`` das Ergebnis wie ``topologie_ergebnis``. ``schutz``: Zonen in Welt
+        ({"art": "quader", "min", "max"}, {"art": "kugel", "mitte", "radius"}) oder Flächen des Teils
+        ({"art": "index", "index": 12})."""
+
+    def topologie_ergebnis(self, warten_s: float = 0.0) -> dict[str, Any]:
+        """Stand der letzten Optimierung: {"ok", "stand" (laeuft|done|failed|abgebrochen|keine), "teil", "szenario",
+        "fortschritt", "kennzahlen": {"vorher", "nachher", "ersparnis"}, "schutz", "hinweise", "grenzen",
+        "ergebnis": {"datei", "schluessel", "im_modell"}, "text"}."""
+
+    def topologie_abbrechen(self) -> dict[str, Any]:
+        """Laufende Optimierung beenden: {"ok", "abgebrochen"}."""
+
+    def topologie_uebernehmen(self, variante: str | None = None, warten: bool = False) -> dict[str, Any]:
+        """Letztes Ergebnis als Variante übernehmen (Variante anlegen, model.py ergänzen, Lauf): {"ok", "variante",
+        "zeile", "text"}."""
+
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in

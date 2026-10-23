@@ -2017,3 +2017,196 @@ def statik_beispiel_festkoerper() -> dict[str, Any]:
     b["aktiv"] = "Haken 2 kg"
     b["grenzen"] = list(b["grenzen"]) + ["Festkörper (S3) linear-elastisch mit kleinen Verformungen."]
     return b
+
+
+# Topologieoptimierung (PLAN-TOPOLOGIE.md): TOPO und TOPO_FIELD (Kernel → App), TOPO_START, TOPO_CANCEL, TOPO_APPLY
+# (App → Kernel), siehe PROTOCOL.md „Topologie“. Rein additiv; ältere Gegenseiten ignorieren die Typen.
+
+TOPO_STAENDE = ("laeuft", "done", "failed", "abgebrochen")
+TOPO_FELDER = ("stand", "auftrag", "teil", "szenario", "einstellungen", "fortschritt", "phase", "text", "text_lang",
+               "iteration", "max_iter", "verlauf", "voxel", "h_mm", "kennzahlen", "schutz", "netz", "gitter",
+               "druckpruefung", "hinweise", "grenzen", "meldung", "ergebnis", "quelle", "modell_schluessel",
+               "behalten_wirksam", "optimierung", "ms", "berechnet")
+TOPO_FELD_ARTEN = ("dichte", "schutz", "koerper", "vorher", "nachher")
+TOPO_FELD_KOPF = ("art", "auftrag", "teil", "iteration", "sicherheit", "ziel", "spannung_max", "verformung_max_mm",
+                  "ueberhoehung")
+TOPO_APP = ("TOPO_START", "TOPO_CANCEL", "TOPO_APPLY")
+
+
+def _json_rein(x: Any) -> Any:
+    """Zahlen aus numpy und nicht endliche Werte JSON-tauglich machen (NaN/inf → None)."""
+    import math
+
+    if isinstance(x, dict):
+        return {str(k): _json_rein(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_json_rein(v) for v in x]
+    if hasattr(x, "item") and not isinstance(x, (str, bytes)):
+        try:
+            x = x.item()
+        except Exception:  # noqa: BLE001
+            pass
+    if isinstance(x, float) and not math.isfinite(x):
+        return None
+    return x
+
+
+def pack_topo(stand: dict[str, Any], *, run: int, seq: int = 0) -> dict[str, Any]:
+    """Kopf von TOPO (ohne Nutzlast): Stand der Topologieoptimierung (``topologie/laufzeit.py``)."""
+    head = {"type": "TOPO", "seq": seq, "run": int(run)}
+    for k in TOPO_FELDER:
+        head[k] = _json_rein(stand.get(k))
+    head["stand"] = head["stand"] or "laeuft"
+    if head["fortschritt"] is None:
+        head["fortschritt"] = 0.0
+    return head
+
+
+def check_topo_message(header: dict[str, Any]) -> list[str]:
+    """Fehler einer TOPO-Nachricht (leer = gültig)."""
+    err = _fehlend(header, ("type", "run", "stand", "teil", "fortschritt"), "TOPO")
+    if err:
+        return err
+    if header["type"] != "TOPO":
+        err.append("type ist nicht TOPO")
+    if header["stand"] not in TOPO_STAENDE:
+        err.append(f"TOPO: stand {header['stand']!r} unbekannt")
+    f = header.get("fortschritt")
+    if f is not None and not (0.0 <= float(f) <= 1.0):
+        err.append("TOPO: fortschritt außerhalb 0…1")
+    kz = header.get("kennzahlen")
+    if header["stand"] == "done":
+        if not isinstance(kz, dict) or not isinstance(kz.get("vorher"), dict) or not isinstance(kz.get("nachher"), dict):
+            err.append("TOPO: done ohne kennzahlen.vorher/nachher")
+        if not isinstance(header.get("ergebnis"), dict) or not header["ergebnis"].get("datei"):
+            err.append("TOPO: done ohne ergebnis.datei")
+    for i, v in enumerate(header.get("verlauf") or []):
+        if not isinstance(v, dict) or "i" not in v:
+            err.append(f"TOPO: verlauf[{i}] ohne i")
+            break
+    return err
+
+
+def topo_feld_arrays(werte: str | None) -> tuple[tuple[str, str, int], ...]:
+    """Reihenfolge der Nutzlast von TOPO_FIELD: immer Punkte und Dreiecke, bei ``werte`` "ausnutzung" (Felder der
+    Festkörper-FEM vorher und nachher) dazu Ausnutzung, Spannung und Verschiebung wie bei STATICS_FIELD."""
+    return STATIK_FELD_ARRAYS if werte == "ausnutzung" else STATIK_FELD_ARRAYS[:2]
+
+
+def pack_topo_feld(kopf: dict[str, Any], felder: dict[str, Any], *, seq: int = 0) -> tuple[dict[str, Any], bytes]:
+    """TOPO_FIELD: Netz in Weltkoordinaten (Dichte einer Iteration, Schutzzonen, Körper, Festkörperfeld vorher und
+    nachher). ``kopf``: ``art`` (TOPO_FELD_ARTEN) und Angaben aus TOPO_FELD_KOPF; ``felder``: ``punkte``,
+    ``dreiecke`` und bei vorher/nachher ``ausnutzung``, ``spannung``, ``verschiebung``."""
+    import numpy as np
+
+    art = kopf.get("art")
+    if art not in TOPO_FELD_ARTEN:
+        raise ValueError(f"TOPO_FIELD: art {art!r} unbekannt")
+    werte = "ausnutzung" if art in ("vorher", "nachher") and "ausnutzung" in felder else None
+    n = int(np.asarray(felder["punkte"]).reshape(-1, 3).shape[0])
+    m = int(np.asarray(felder["dreiecke"]).reshape(-1, 3).shape[0])
+    teile = []
+    for name, typ, breite in topo_feld_arrays(werte):
+        a = np.ascontiguousarray(np.asarray(felder[name]), dtype=typ).reshape(-1)
+        soll = (m if name == "dreiecke" else n) * breite
+        if a.size != soll:
+            raise ValueError(f"TOPO_FIELD: {name} hat {a.size} Werte, erwartet {soll}")
+        teile.append(a.tobytes())
+    header = {"type": "TOPO_FIELD", "seq": seq, **{k: _json_rein(kopf.get(k)) for k in TOPO_FELD_KOPF},
+              "werte": werte, "punkte": n, "dreiecke": m}
+    return header, b"".join(teile)
+
+
+def unpack_topo_feld(header: dict[str, Any], payload: bytes) -> dict[str, Any]:
+    import numpy as np
+
+    n, m = int(header["punkte"]), int(header["dreiecke"])
+    out: dict[str, Any] = {}
+    pos = 0
+    for name, typ, breite in topo_feld_arrays(header.get("werte")):
+        k = (m if name == "dreiecke" else n) * breite
+        a = np.frombuffer(payload, dtype=typ, count=k, offset=pos)
+        pos += a.nbytes
+        out[name] = a.reshape(-1, breite) if breite > 1 else a
+    if pos != len(payload):
+        raise ValueError(f"TOPO_FIELD: Nutzlast {len(payload)} Byte, erwartet {pos}")
+    return out
+
+
+def check_topo_feld(header: dict[str, Any], payload: bytes) -> list[str]:
+    """Fehler einer TOPO_FIELD-Nachricht (leer = gültig)."""
+    err = _fehlend(header, ("art", "punkte", "dreiecke"), "TOPO_FIELD")
+    if err:
+        return err
+    if header["art"] not in TOPO_FELD_ARTEN:
+        err.append(f"TOPO_FIELD: art {header['art']!r} unbekannt")
+    try:
+        f = unpack_topo_feld(header, payload)
+    except Exception as exc:  # noqa: BLE001
+        return err + [str(exc)]
+    if len(f["dreiecke"]) and int(f["dreiecke"].max()) >= int(header["punkte"]):
+        err.append("TOPO_FIELD: Dreieck zeigt auf einen Punkt, den es nicht gibt")
+    return err
+
+
+def check_topo_app(header: dict[str, Any]) -> list[str]:
+    """Fehler einer Anfrage der App (TOPO_START, TOPO_CANCEL, TOPO_APPLY)."""
+    t = header.get("type")
+    if t not in TOPO_APP:
+        return [f"type {t!r} ist keine Topologie-Anfrage"]
+    err = []
+    if t == "TOPO_START":
+        b = header.get("behalten")
+        if b is not None and not (0.05 <= float(b) <= 0.95):
+            err.append("TOPO_START: behalten außerhalb 0,05…0,95")
+        if header.get("lager") not in (None, "kontakt", "bohrungen"):
+            err.append("TOPO_START: lager ist kontakt oder bohrungen")
+    return err
+
+
+def topo_beispiel(stand: str = "done") -> dict[str, Any]:
+    """Stand für Testdateien: Winkelhalter wie im Reel, 42 % behalten (Zahlen gerundet aus dem Nachweis in
+    PLAN-TOPOLOGIE.md)."""
+    basis = {"auftrag": 3, "teil": "Halter", "szenario": "Bolzen 50 N", "quelle": "app",
+             "einstellungen": {"behalten": 0.42, "ueberhang": False, "fein": False, "steg": 6, "bett": False,
+                               "bohrungen": True, "einsaetze": True, "kontakt": True, "iterationen": 60,
+                               "lager": "kontakt"},
+             "max_iter": 60, "voxel": 59804, "h_mm": 0.947}
+    if stand == "laeuft":
+        return {**basis, "stand": "laeuft", "fortschritt": 0.41, "phase": "optimieren", "iteration": 12,
+                "text": "Iteration 12: Nachgiebigkeit 15 %, Volumen 42 %",
+                "verlauf": [{"i": 1, "c": 568.0, "volumen": 0.56, "grau": 0.62},
+                            {"i": 12, "c": 85.3, "volumen": 0.42, "grau": 0.31}]}
+    return {**basis, "stand": "done", "fortschritt": 1.0, "phase": "fertig", "iteration": 25, "text": "fertig",
+            "verlauf": [{"i": 1, "c": 568.0, "volumen": 0.56, "grau": 0.62},
+                        {"i": 25, "c": 74.1, "volumen": 0.42, "grau": 0.18}],
+            "kennzahlen": {"vorher": {"volumen_mm3": 50908.8, "masse_g": 64.7, "filament_g": 34.1,
+                                      "druckzeit_min": 82.6, "sicherheit": 11.8, "ziel": 4.0, "ampel": "gruen",
+                                      "spannung_max": 2.1, "verformung_max_mm": 0.18},
+                           "nachher": {"volumen_mm3": 21304.5, "masse_g": 27.1, "filament_g": 20.6,
+                                       "druckzeit_min": 70.2, "sicherheit": 5.4, "ziel": 4.0, "ampel": "gruen",
+                                       "spannung_max": 4.5, "verformung_max_mm": 0.25, "steg_min_mm": 2.4},
+                           "ersparnis": {"volumen_prozent": 58.2, "masse_g": 37.6, "filament_g": 13.5,
+                                         "druckzeit_min": 12.4}},
+            "schutz": {"anteil": 0.12, "zonen": [{"art": "Bohrung", "d": 5.5, "ring_mm": 3.15, "elemente": 768},
+                                                 {"art": "Lastfläche", "haut_mm": 2.52, "elemente": 1672}]},
+            "netz": {"dreiecke": 8000, "punkte": 3990, "offen": 0},
+            "hinweise": [], "grenzen": ["Topologieoptimierung ist eine Näherung, kein Festigkeitsnachweis."],
+            "ergebnis": {"datei": "topologie/Halter-1a2b3c4d5e6f.brep", "schluessel": "1a2b3c4d5e6f78901234",
+                         "im_modell": False, "aus_projekt": False},
+            "text_lang": "Halter: Volumen −58 % (50,9 → 21,3 cm³); Näherung, kein Festigkeitsnachweis."}
+
+
+def topo_beispiel_feld(art: str = "nachher") -> tuple[dict[str, Any], dict[str, Any]]:
+    """Kleines Netz (Quader, 8 Punkte, 12 Dreiecke) als TOPO_FIELD; vorher und nachher mit Ausnutzung."""
+    import numpy as np
+
+    kopf_s, felder = statik_beispiel_feld()
+    kopf: dict[str, Any] = {"art": art, "auftrag": 3, "teil": "Halter"}
+    if art in ("vorher", "nachher"):
+        kopf.update({k: kopf_s.get(k) for k in ("sicherheit", "ziel", "spannung_max", "verformung_max_mm")})
+        kopf["ueberhoehung"] = 2.6
+        return kopf, felder
+    if art == "dichte":
+        kopf["iteration"] = 12
+    return kopf, {"punkte": felder["punkte"], "dreiecke": felder["dreiecke"].astype(np.uint32)}

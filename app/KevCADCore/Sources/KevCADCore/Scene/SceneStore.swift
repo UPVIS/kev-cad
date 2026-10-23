@@ -71,6 +71,12 @@ public final class SceneStore {
     public private(set) var statikVerdeckt: Set<String> = []
     /// Statik Stufe 2: Kontaktkräfte des aktuellen Bilds eines Ablaufs als Pfeile (auch während der Animation).
     public private(set) var ablaufBodies: [ViewportBody] = []
+    /// Topologie (additiv, PLAN-TOPOLOGIE.md): Dichte, Schutzzonen, Spannungsfarben vorher/nachher (linear, nicht
+    /// anklickbar); `topologieVerdeckt` blendet das Teil darunter aus, `topologieBlass` zeigt es fast durchsichtig.
+    public private(set) var topologieBodies: [ViewportBody] = []
+    public private(set) var topologieVerdeckt: Set<String> = []
+    public private(set) var topologieBlass: Set<String> = []
+    static let topologieBlassAlpha: Float = 0.16
     static let inventoryWarningColor = SIMD3<Float>(0.85, 0.05, 0.03)
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
@@ -181,6 +187,9 @@ public final class SceneStore {
         statikTints = [:]
         statikVerdeckt = []
         ablaufBodies = []
+        topologieBodies = []
+        topologieVerdeckt = []
+        topologieBlass = []
         dimBelowRun = nil
         assemblyCenter = .zero
         latestRun = 0
@@ -322,6 +331,7 @@ public final class SceneStore {
         if transforms.isEmpty != animationTransforms.isEmpty {
             touched.formUnion(statikVerdeckt)  // Statik Stufe 3
             touched.formUnion(referenzVerdeckt)  // Phase 4: Farbkarte auf dem Modell
+            touched.formUnion(topologieVerdeckt)  // Topologie
         }
         touched.formUnion(collision.symmetricDifference(collisionParts))
         animationTransforms = transforms
@@ -373,6 +383,20 @@ public final class SceneStore {
         statikBodies = bodies
         statikTints = tints
         statikVerdeckt = verdeckt
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
+    /// Topologie: Körper setzen (leer = aus); `verdeckt`: Teile unter einem Feld (in der Ruhelage ausgeblendet),
+    /// `blass`: Teile fast durchsichtig (unter der Dichte einer laufenden Optimierung).
+    public func setTopologie(bodies: [ViewportBody], verdeckt: Set<String>, blass: Set<String>) {
+        if bodies.isEmpty && topologieBodies.isEmpty && verdeckt == topologieVerdeckt && blass == topologieBlass {
+            return
+        }
+        let touched = verdeckt.symmetricDifference(topologieVerdeckt).union(blass.symmetricDifference(topologieBlass))
+        topologieBodies = bodies
+        topologieVerdeckt = verdeckt
+        topologieBlass = blass
         for n in touched where parts[n] != nil { applyProps(n) }
         publish()
     }
@@ -710,6 +734,7 @@ public final class SceneStore {
         }
         c = SIMD4(rgb, c.w)
         if simplifiedParts.contains(name) { c.w = min(c.w, Self.simplifiedAlpha) }
+        if topologieBlass.contains(name) && animationTransforms.isEmpty { c.w = min(c.w, Self.topologieBlassAlpha) }
         if displayStyle == .xray { c.w = min(c.w, Self.xrayAlpha) }
         return c
     }
@@ -718,6 +743,7 @@ public final class SceneStore {
         guard var list = partBodies[name] else { return }
         let color = displayColor(name, now: now)
         let visible = !hidden.contains(name) && !animationHidden.contains(name) && !istStatikVerdeckt(name)
+            && !istTopologieVerdeckt(name)
         let transform = worldTransform(name)
         for i in list.indices {
             list[i].color = color
@@ -735,6 +761,11 @@ public final class SceneStore {
             }
             edgeBodies[name] = edges
         }
+    }
+
+    /// Topologie: Teil steht unter dem Feld vorher/nachher (nur in der Ruhelage).
+    func istTopologieVerdeckt(_ name: String) -> Bool {
+        animationTransforms.isEmpty && topologieVerdeckt.contains(name)
     }
 
     /// Statik Stufe 3: Teil steht unter seinem Festkörper-Feld (nur in der Ruhelage, das Feld gilt für sie); ebenso
@@ -760,6 +791,7 @@ public final class SceneStore {
         renderBodies.append(contentsOf: referenzBodies)  // Phase 4: Referenznetze
         if animationTransforms.isEmpty { renderBodies.append(contentsOf: statikBodies) }  // Statik
         renderBodies.append(contentsOf: ablaufBodies)  // Statik Stufe 2: Kontaktkräfte im Ablauf
+        if animationTransforms.isEmpty { renderBodies.append(contentsOf: topologieBodies) }  // Topologie
         if let helper = depthHelper() { renderBodies.append(helper) }
         onChange?()
     }
@@ -787,7 +819,8 @@ public final class SceneStore {
         let clip = applySection ? section : nil
         var out: [ViewportBody] = []
         let now = CACurrentMediaTime()
-        for name in order where !hidden.contains(name) && !animationHidden.contains(name) && !istStatikVerdeckt(name) {
+        for name in order where !hidden.contains(name) && !animationHidden.contains(name) && !istStatikVerdeckt(name)
+            && !istTopologieVerdeckt(name) {
             guard let rec = parts[name], let live = partBodies[name] else { continue }
             // Der OffscreenRenderer hat weder Belichtung noch Tonwertkurve; sRGB-Farben sehen dort so aus wie im Viewport
             let colorLinear = displayColor(name, now: now, includeFlash: false)
@@ -858,7 +891,8 @@ public final class SceneStore {
             }
         }
         // Schnittkörper der Prüfung gelten für die Ruhelage, in einem Bild der Animation stehen sie nicht
-        for g in ghostBodies + vergleichBodies + statikBodies where g.isVisible && animationTransforms.isEmpty {  // sRGB
+        for g in ghostBodies + vergleichBodies + statikBodies + topologieBodies
+        where g.isVisible && animationTransforms.isEmpty {  // sRGB
             var b = g
             b.color = Self.srgb(g.color)
             out.append(b)

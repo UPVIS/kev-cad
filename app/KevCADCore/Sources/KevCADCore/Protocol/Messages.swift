@@ -547,6 +547,10 @@ public enum KernelMessage: Sendable {
     case render(RenderNachricht)
     /// Statik Stufe 3 (additiv): STATICS_FIELD, Oberflächennetz eines Teils mit Ausnutzung und Verschiebung.
     case statikFeld(StatikFeld)
+    /// Topologie (additiv, PLAN-TOPOLOGIE.md): TOPO, Stand der Optimierung mit Kennzahlen vorher und nachher.
+    case topologie(TopologieStand)
+    /// Topologie (additiv): TOPO_FIELD, Netz der Dichte, der Schutzzonen, des Körpers oder des Felds vorher/nachher.
+    case topologieFeld(TopologieFeld)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -587,6 +591,8 @@ public enum KernelMessage: Sendable {
         case .statik: return "STATICS"
         case .render(let r): return r.typeName
         case .statikFeld: return "STATICS_FIELD"
+        case .topologie: return "TOPO"
+        case .topologieFeld: return "TOPO_FIELD"
         case .unknown(let t, _): return t
         }
     }
@@ -660,6 +666,8 @@ public enum KernelMessage: Sendable {
         case "STATICS": return .statik(try StatikErgebnis.decode(h))
         case let t where RenderNachricht.types.contains(t): return .render(try RenderNachricht.decode(type: t, header: h))
         case "STATICS_FIELD": return .statikFeld(try StatikFeld.decode(header: h, payload: frame.payload))
+        case "TOPO": return .topologie(try TopologieStand.decode(h))
+        case "TOPO_FIELD": return .topologieFeld(try TopologieFeld.decode(header: h, payload: frame.payload))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

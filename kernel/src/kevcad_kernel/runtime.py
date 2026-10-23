@@ -49,6 +49,7 @@ from kevcad_kernel.project import Project, ProjectError, new_project, open_proje
 from kevcad_kernel.statik.laufzeit import StatikRuntime  # Statik Stufe 1: statik, szenario_rechnen, STATICS
 from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime  # Statik Stufe 2: dynamik, Ablauf als Animation
 from kevcad_kernel.statik.festkoerper.laufzeit import FestkoerperRuntime  # Statik Stufe 3: festigkeit, FEM
+from kevcad_kernel.topologie.laufzeit import TopologieRuntime  # Topologieoptimierung (PLAN-TOPOLOGIE.md)
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import PROTOCOL_VERSION
@@ -112,7 +113,8 @@ class Job:
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
-                    StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime, ScanRuntimeMixin):
+                    StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime, ScanRuntimeMixin,
+                    TopologieRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -889,6 +891,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             job.run = self._run_no
         job.generation = self._worker.generation
         job.started = time.perf_counter()
+        self._topologie_lauf_beginn(job.run)  # Topologie: Aufrufe aus model.py ab hier gehören zu diesem Lauf
         self._set_state("busy", f"Lauf {job.run} rechnet")
         self._send_app({"type": "RUN_START", "run": job.run, "file_hash": job.file_hash, "params": job.params,
                         "slow_ms": job.slow_ms})
@@ -1109,6 +1112,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
             self._dynamik_nach_lauf(statik)  # Statik S2: Abläufe aus model.py im Hintergrund (eigener Prozess)
             self._festkoerper_nach_lauf(statik)  # Statik S3: Festkörper-FEM für Teile mit Last (eigener Prozess)
+            self._topologie_nach_lauf(check, statik)  # Topologie: fehlende Ergebnisse aus model.py im Hintergrund
             # Druckvorschau: Geometrie je Druckteil aus der Prüfung, und zwar bevor fertig() das wartende run weckt;
             # sonst fragt ein Aufrufer direkt nach run (PRINT_JOB_REQ, druckvorschau) eine Vorschau ohne Eingang ab,
             # während die Versionen hier noch schreiben (Wettlauf, sichtbar seit die Statik die Prüfung verlängert)
@@ -1212,6 +1216,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 conn.send(check, check_payload)
             self._statik_on_connect(conn)  # Statik: letztes STATICS
             self._festkoerper_on_connect(conn)  # Statik S3: Felder (STATICS_FIELD) des letzten Laufs
+            self._topologie_on_connect(conn)  # Topologie: letzter Stand (TOPO) und Netze (TOPO_FIELD)
             self._zeichnung_on_connect(conn)
             self._druckvorschau_on_connect(conn)
             conn.send({"type": "AGENT", **agent})
@@ -1348,6 +1353,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif self._render_app_message(kind, header):  # Phase 7: RENDER_START, RENDER_CANCEL
             pass
         elif self._festkoerper_app_message(kind, header):  # Statik S3: STATICS_CANCEL
+            pass
+        elif self._topologie_app_message(kind, header):  # Topologie: TOPO_START, TOPO_CANCEL, TOPO_APPLY
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")

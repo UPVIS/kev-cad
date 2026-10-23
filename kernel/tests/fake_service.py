@@ -654,6 +654,37 @@ class FakeService:
         self._record("festigkeit_abbrechen")
         return {"ok": True, "abgebrochen": False, "szenarien": []}
 
+    # Topologieoptimierung -------------------------------------------------------------------------------------------
+
+    def topologie_optimieren(self, teil: str | None = None, szenario: str | None = None, behalten: float | None = None,
+                             schutz: list | None = None, ueberhang: bool | None = None, fein: bool | None = None,
+                             steg: float | None = None, bett: bool | None = None, neu: bool = False,
+                             warten: bool = False, lager: str | None = None) -> dict[str, Any]:
+        self._record("topologie_optimieren", teil, szenario, behalten, ueberhang, fein)
+        if not self.run_no:
+            return {"ok": False, "error": "Noch kein Statikmodell: erst run aufrufen."}
+        if warten:
+            return self.topologie_ergebnis()
+        return {"ok": True, "stand": "laeuft", "teil": teil or "Halter", "szenario": szenario or "Bolzen 50 N",
+                "text": f"{teil or 'Halter'}: Topologieoptimierung läuft im Hintergrund"}
+
+    def topologie_ergebnis(self, warten_s: float = 0.0) -> dict[str, Any]:
+        from kevcad_kernel.protocol import topo_beispiel
+
+        self._record("topologie_ergebnis", warten_s)
+        st = topo_beispiel("done")
+        return {"ok": True, **st, "text": st["text_lang"]}
+
+    def topologie_abbrechen(self) -> dict[str, Any]:
+        self._record("topologie_abbrechen")
+        return {"ok": True, "abgebrochen": False}
+
+    def topologie_uebernehmen(self, variante: str | None = None, warten: bool = False) -> dict[str, Any]:
+        self._record("topologie_uebernehmen", variante)
+        return {"ok": True, "variante": variante or "Topologie Halter 42 %",
+                "zeile": "halter = topologie.optimieren(halter, szenario='Bolzen 50 N', behalten=0.42)",
+                "text": "Als Variante übernommen"}
+
     # Phase 8: Drucken -----------------------------------------------------------------------------------------------
 
     def drucker_status(self) -> dict[str, Any]:

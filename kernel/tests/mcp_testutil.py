@@ -63,6 +63,8 @@ EXPECTED_TOOLS |= {"render"}
 EXPECTED_TOOLS |= {"festigkeit"}
 # Scan mit dem iPhone (SCAN.md)
 EXPECTED_TOOLS |= {"scans", "scan_importieren"}
+# Topologieoptimierung (PLAN-TOPOLOGIE.md)
+EXPECTED_TOOLS |= {"topologie_optimieren", "topologie_ergebnis", "topologie_uebernehmen"}
 
 
 def free_port() -> int:

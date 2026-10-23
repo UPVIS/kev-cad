@@ -232,6 +232,14 @@ sicherheitsrelevanten Dingen. Teile mit Last (Druckteile, Halter, Verbinder) rec
 Festkörper-FEM im Hintergrund; Einzelheiten mit **`festigkeit`** (Farbverlauf auf dem Netz, Sicherheit je Drucklage).
 Einzelheiten, API und Urteile: [statik.md](statik.md).
 
+Material sparen an einem Druckteil („mach den Halter leichter“, „Topologie optimieren wie implicit“): in model.py
+**`topologie.optimieren(teil, szenario=…, behalten=0.4)`** hinter `lager.druckteil(…)` (oder MCP
+**`topologie_optimieren`**, Ergebnis mit **`topologie_ergebnis`**). Rechnet im Hintergrund (etwa eine Minute), Lager
+und Lasten aus der Statik, Bohrungen und Lastflächen bleiben massiv; danach Kennzahlen vorher → nachher (Volumen,
+Filament, Druckzeit, Sicherheit) nennen und dazusagen: Näherung, kein Festigkeitsnachweis. Übernehmen als Variante
+(`topologie_uebernehmen`) nur auf Kevins Wunsch. Einzelheiten: [statik.md](statik.md), Abschnitt „Topologie
+optimieren“.
+
 Bewegung über der Zeit (Stufe 2, MuJoCo im eigenen Prozess): „Was passiert, wenn ich mit 1 m/s schiebe und abrupt
 bremse?“ → **`dynamik`**(name, geschwindigkeit=1, bremsen="abrupt"); „wie schnell darf ich schieben, ohne dass der
 Ball herausspringt?“ → **`dynamik_grenze`**. Antwort mit Kippreserve, Abheben in mm, ob die Ladung bleibt (mit
@@ -370,6 +378,7 @@ show(Pos(0, abstand, -150) * rohr.verbauen(laenge=300, name="Rohr"), "Rohr")
 | `lager.suche("rohr 42,4")` | Liste von Lagerteilen (zum Ausprobieren in `execute`). |
 | `teil.verbauen(...)` | build123d-Teil mit Name, Farbe und Material, dazu eine Stücklistenzeile (siehe unten). |
 | `lager.druckteil(form, name, material, verfahren="3d-druck", ausrichtung=None, zweck=None, anzahl=None, gedruckt=False, neu_drucken=False, spaeter=False)` | selbst konstruiertes Druckteil; Material druckbar; Druckprüfung bei jedem Lauf, `ausrichtung` gibt die Lage aufs Bett vor (None = automatisch); `zweck` (zier, funktion, tragend, bewegt, aussen) bestimmt die Empfehlungen der Druckvorschau, `anzahl` nur für zusätzliche Stück; `gedruckt=True` für schon gedruckte Teile (Form in gedruckt.json festgeschrieben, Änderung = Warnung `gedruckt_geaendert`, `neu_drucken=True` einen Lauf lang schreibt die neue Form fest); `spaeter=True` für Teile, die erst später gedruckt werden (in der Druckvorschau gelistet, auf keiner Platte, nicht im 3MF). Vor jedem Druck oder Druckexport Kevin nach dem Filament fragen (`filament_liste`, dann `druck_export(filament={"petg": "<id>"})`; 3d-druck.md Abschnitt 11a). |
+| `topologie.optimieren(teil, szenario=None, behalten=0.4, schutz=None, ueberhang=False, fein=False, steg=6, bett=False, bohrungen=True, einsaetze=True, kontakt=True, iterationen=60, lager="kontakt", automatisch=True)` | topologieoptimiertes Druckteil (`from kevcad import topologie`): das Ergebnis aus `topologie/<teil>-<schlüssel>.brep`, solange es fehlt das Ausgangsteil (Rechnung im Hintergrund, danach neuer Lauf); Stückliste und Masse folgen dem neuen Volumen; `topologie.aus_datei(pfad, name, material)` verbaut eine gespeicherte Form als Druckteil; `lager="bohrungen"` für angeschraubte Halter (die Schrauben halten statt der Auflage). Siehe statik.md, „Topologie optimieren“. |
 | `lager.zukauf(id)` → `.verbauen(name)`, `.bezugspunkt(name)` | Zukaufteil mit Hersteller-CAD, Skript oder Ersatzkörper (siehe „Zukaufteile“). |
 | `erlaubt_ueberlappung(a, b, grund="…")` | gewollte Überlappung, nur nach Rückfrage bei Kevin (siehe „Prüfen vor dem Fertigmelden“). |
 | `montage(teil, richtung=, nach=, werkzeug=, baugruppe=, schnappt=, eingedruckt=)` | Einbau erklären, wo die Prüfung es nicht selbst wissen kann (siehe „Montagegerecht konstruieren“). |

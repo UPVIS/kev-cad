@@ -616,6 +616,7 @@ def druckteil(form: Any, name: str, material: str, verfahren: str = "3d-druck", 
                   ausrichtung=ausrichtung, zweck=zweck, anzahl=anzahl, gedruckt=gedruckt, neu_drucken=neu_drucken,
                   spaeter=spaeter, farbe=farbe)
     _register(piece, shape)
+    shape.kevcad_druckteil = piece  # Topologie (kevcad.topologie.optimieren) stellt das Stück auf den neuen Körper um
     return shape
 
 

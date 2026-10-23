@@ -404,6 +404,62 @@ def shape_props(shape: Shape, bbox_center: list[float]) -> dict[str, Any]:
     }
 
 
+NETZ_MIN_FLAECHEN = 300
+NETZ_SCHARF_GRAD = 30.0
+
+
+def _ist_netzkoerper(face_meta: list[dict[str, Any]], kanten: int) -> bool:
+    """Körper aus einem Dreiecksnetz (etwa das Ergebnis der Topologieoptimierung, ``BRepBuilderAPI_MakeShapeOnMesh``):
+    viele ebene Flächen und anderthalb Kanten je Fläche wie bei einem geschlossenen Dreiecksnetz."""
+    n = len(face_meta)
+    if n < NETZ_MIN_FLAECHEN:
+        return False
+    eben = sum(1 for f in face_meta if f.get("t") == "plane")
+    return eben >= 0.95 * n and abs(kanten - 1.5 * n) <= 0.12 * n
+
+
+def _scharf(edge_topo: Any, edge_faces: Any) -> bool:
+    """Kante zwischen zwei ebenen Flächen mit mehr als ``NETZ_SCHARF_GRAD`` Knick (oder nicht zwischen zwei ebenen)."""
+    if not edge_faces.Contains(edge_topo):
+        return True
+    fl = edge_faces.FindFromKey(edge_topo)
+    if fl.Size() != 2:
+        return True
+    ns = []
+    for f in (fl.First(), fl.Last()):
+        face = TopoDS.Face(f)
+        a = BRepAdaptor_Surface(face)
+        if a.GetType() != GeomAbs_SurfaceType.GeomAbs_Plane:
+            return True
+        n = face_normal(face)
+        ns.append(n)
+    c = sum(x * y for x, y in zip(ns[0], ns[1]))
+    return c < math.cos(math.radians(NETZ_SCHARF_GRAD))
+
+
+def _weiche_normalen(positions: np.ndarray, triangles: np.ndarray, normals: np.ndarray) -> np.ndarray:
+    """Normalen je Punkt über alle Dreiecke am selben Ort gemittelt (nach Fläche gewichtet); weicht die Mittelung mehr
+    als 40° von der eigenen Flächennormale ab (Knick), bleibt die eigene."""
+    if len(triangles) == 0:
+        return normals
+    P = positions.astype(np.float64)
+    a, b, c = P[triangles[:, 0]], P[triangles[:, 1]], P[triangles[:, 2]]
+    fn = np.cross(b - a, c - a)  # Länge = doppelte Fläche
+    ort = np.round(P / 1e-4).astype(np.int64)
+    _, gruppe = np.unique(ort, axis=0, return_inverse=True)
+    gruppe = gruppe.reshape(-1)
+    summe = np.zeros((int(gruppe.max()) + 1, 3))
+    for k in range(3):
+        np.add.at(summe, gruppe[triangles[:, k]], fn)
+    weich = summe[gruppe]
+    weich /= np.maximum(np.linalg.norm(weich, axis=1, keepdims=True), 1e-300)
+    eigen = normals.astype(np.float64)
+    eigen /= np.maximum(np.linalg.norm(eigen, axis=1, keepdims=True), 1e-300)
+    gut = np.einsum("ij,ij->i", weich, eigen) > math.cos(math.radians(40.0))
+    out = np.where(gut[:, None], weich, eigen)
+    return out.astype(np.float32)
+
+
 def tessellate_shape(
     shape: Shape,
     deviation: float = DEFAULT_DEVIATION,
@@ -464,10 +520,14 @@ def tessellate_shape(
     # Kantenzüge in der Reihenfolge von part.edges()
     edge_faces = TopTools_IndexedDataMapOfShapeListOfShape()
     TopExp.MapShapesAndAncestors_s(topo, TopAbs_EDGE, TopAbs_FACE, edge_faces)
+    netz = _ist_netzkoerper(face_meta, len(edges))
+    if netz:  # Netzkörper (Topologie): weich schattieren, nur scharfe Kanten zeichnen
+        normals = _weiche_normalen(positions, triangles, normals)
     pts: list[tuple[float, float, float]] = []
     offsets = [0]
     for e in edges:
-        pts.extend(_edge_polyline(e.wrapped, edge_faces, quality, angular))
+        if not netz or _scharf(e.wrapped, edge_faces):
+            pts.extend(_edge_polyline(e.wrapped, edge_faces, quality, angular))
         offsets.append(len(pts))
 
     geometry = PartGeometry(
