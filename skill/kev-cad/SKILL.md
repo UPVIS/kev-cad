@@ -230,7 +230,9 @@ gezeigt), Überblick mit **`statik`**. Vorschläge für leichtere oder stärkere
 die Grenzen dazusagen: vereinfacht (Balken, linear-elastisch, Verbinder starr), kein Ersatz für einen Statiker bei
 sicherheitsrelevanten Dingen. Teile mit Last (Druckteile, Halter, Verbinder) rechnet Kev CAD zusätzlich als
 Festkörper-FEM im Hintergrund; Einzelheiten mit **`festigkeit`** (Farbverlauf auf dem Netz, Sicherheit je Drucklage).
-Einzelheiten, API und Urteile: [statik.md](statik.md).
+Rutscht die Klemmung, hebt etwas ab, fließt Metall oder beult ein Blech: **`festigkeit(…, verfahren="ccx")`**
+(Stufe 4, CalculiX: Kontakt mit Klemmkraft, `plastisch=True`, Traglast, `beulen=True`; in model.py `st.kontakt`,
+`st.festigkeit`). Einzelheiten, API und Urteile: [statik.md](statik.md).
 
 Material sparen an einem Druckteil („mach den Halter leichter“, „Topologie optimieren wie implicit“): in model.py
 **`topologie.optimieren(teil, szenario=…, behalten=0.4)`** hinter `lager.druckteil(…)` (oder MCP

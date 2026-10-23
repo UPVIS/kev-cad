@@ -1,4 +1,4 @@
-# Statik in Kev CAD (Stufe 1 bis 3, Topologie)
+# Statik in Kev CAD (Stufe 1 bis 4, Topologie)
 
 Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, und ob sie unnötig schwer ist
 (PLAN-STATIK.md, Strang „Statik Stufe 1“). Das Ergebnis steht im Laufergebnis (eine Zeile „Statik: …“), ausführlich
@@ -154,7 +154,57 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
 - **Grenzen, immer dazusagen**: linear-elastisch, kleine Verformungen, Lagerflächen fest eingespannt (wie verklebt;
   am Rand der Einspannung rechnerische Spitzen, sie werden nicht gewertet und stehen als `sicherheit_lagerrand`
   daneben), Schrauben und Gewinde nicht einzeln, Druckteile mit voller Füllung. Kontakt mit Abheben, Plastizität und
-  Beulen rechnet Kev CAD bewusst nicht (kein CalculiX). Kein Ersatz für einen Statiker bei sicherheitsrelevanten Dingen.
+  Beulen rechnet erst Stufe 4 (CalculiX, nächster Abschnitt). Kein Ersatz für einen Statiker bei sicherheitsrelevanten
+  Dingen.
+
+## Kontakt, Plastizität, Traglast, Beulen (Stufe 4, CalculiX)
+
+Wenn die feste Einspannung der Stufe 3 die Frage nicht beantwortet: Klemmung (rutscht das Rohr in der Klemme?),
+aufliegende Teile (hebt es ab?), Bolzen in der Bohrung, Fließen von Metall (bleibt es verbogen, was ist die Traglast?),
+dünne Bleche und Profile unter Druck (beult es?). Dasselbe Werkzeug, dieselben Lasten und Lager wie Stufe 3:
+
+```python
+festigkeit(teil="Kugelschieber/Stangenhalter vorn links (Druck)", szenario="Ball drückt 100 N auf den Fänger",
+           verfahren="ccx")                              # Kontakt (Standard) mit Klemmkraft und Traglast
+festigkeit(teil="Konsole", verfahren="ccx", plastisch=True)          # dazu elastisch-plastisch
+festigkeit(teil="Blechwinkel", verfahren="ccx", kontakt=False, beulen=True)   # erster Beulfaktor
+```
+
+In model.py (dann rechnet es nach jedem Lauf im Hintergrund, nach Stufe 3):
+
+```python
+st.kontakt("Halter (Druck)", "Rohr", reibwert=0.3, klemmkraft=600)   # Paar hebt ab und gleitet (statt fest)
+st.festigkeit("Halter (Druck)", plastisch=True)                      # dieses Teil mit CalculiX nachrechnen
+```
+
+- **Kontakt** (`kontakt=True`, Standard mit `verfahren="ccx"`): Verbindungen mit `klemmung`, `steck`, `aufliegen`,
+  Gelenke, bloße Berührung oder Spiel werden Kontaktpaare (Fläche zu Fläche, Haftreibwert der Paarung aus
+  `reibwerte.json`, sonst 0,3); `schraube`, `kleben`, `formschluss` und an der Umgebung `befestigt(…)` bleiben fest.
+  Ein Stab, der die Last einleitet (Rohr im Halter), wird als Stück um das Teil mitgerechnet und bekommt an seinen
+  Schnittflächen die Kräfte beider Seiten aus dem Stabwerk; Lager-Partner sind starr. **Klemmschrauben** des Teils
+  (`verbinde(backe, einsatz, art="schraube", mit=[schraube, scheibe])`, etwa die Sterngriffklemme) ziehen in einem
+  ersten Schritt mit der Klemmkraft zusammen: ohne Angabe „handfest“ 120 N je mm Gewinde (M6: 720 N), genauer mit
+  `klemmkraft=` (N).
+- **Plastizität** (`plastisch=True`): Metalle von Rp0,2 auf Rm (Verfestigung bei angenommener Gleichmaßdehnung),
+  Druckteile ideal plastisch ab der Zugfestigkeit, ihre Schichtfuge bleibt spröde (Näherung). Danach wird entlastet:
+  **bleibende Verformung**.
+- **Traglast** (Standard mit Kontakt oder Plastizität): Last steigt bis zum Versagen – Grenzdehnung 5 % (Metall) bzw.
+  2 % (Druckteil), Bruch der Schichtfuge, Rutschen, Kollaps. Bei Stufe 4 **ist die Sicherheit dieser Lastfaktor**
+  (gleiche Ziele wie sonst). Fließt das Teil schon unter der Last (über 0,2 %), ist es mindestens gelb; rutscht ein
+  Partner schon unter der Last, rot („Klemmkraft erhöhen oder Formschluss“).
+- **Beulen** (`beulen=True`): erster Beulfaktor (linear, CalculiX `*BUCKLE`), zählt, wenn er kleiner ist.
+- **Ergebnis** zusätzlich je Teil: Kontaktdruck, tragender Anteil der Fläche, Klaffen, Schlupf, Reibung genutzt,
+  Klemmkraft, plastische Dehnung und Ort, bleibend, Traglast mit Kriterium, Beulfaktor. Die App färbt wahlweise nach
+  Kontaktdruck, plastischer Dehnung, Klaffen oder Schlupf (Auswahl „Farbfeld“ im Statik-Abschnitt).
+- **Dauer**: Sekunden bis wenige Minuten je Teil (Kontakt ist nichtlinear; die Traglast rechnet zwei weitere Läufe).
+  Gleiche Fälle kommen aus dem Zwischenspeicher. `abbrechen=True` beendet auch CalculiX.
+- **CalculiX** liegt auf der externen Platte UPVIS ULTRA (`#PROGRAMME_DO-NOT-DELETE#/Kev CAD/calculix`). Fehlt die
+  Platte, meldet `festigkeit` „CalculiX nicht verfügbar (externe Platte UPVIS ULTRA nicht angeschlossen)“; S0 bis S3
+  laufen weiter. Sag Kevin das, statt es zu umgehen.
+- **Grenzen, immer dazusagen**: kleine Verformungen, Kontakt nach dem Strafverfahren; Partner nur als Zuschnitt um das
+  Teil, ohne Rückwirkung auf das Stabwerk; Klemmkraft angenommen, wenn nicht angegeben; isotrope Plastizität (keine
+  richtungsabhängige Fließgrenze der Druckteile); Tetraeder zweiter Ordnung liegen voll plastisch einige Prozent zu
+  hoch (Kragbalken +5 bis +11 % über M_pl).
 
 ## Topologie optimieren
 

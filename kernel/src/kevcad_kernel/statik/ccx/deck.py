@@ -73,6 +73,7 @@ class Schritt:
     halten: bool = True  # Kräfte der vorigen Schritte bleiben (CalculiX: *CLOAD ohne OP=NEW ergänzt)
     frequenz: int = 1  # Ergebnisse jedes n-ten Inkrements (das letzte des Schritts immer)
     kontakt_frequenz: int | None = None
+    wachstum: float | None = 3.0  # Faktor für das nächste Inkrement nach leichter Konvergenz (CalculiX D_D, Vorgabe 1,5)
 
 
 @dataclass
@@ -196,6 +197,10 @@ class Deck:
                 z.append(f"*STEP, INC={int(s.max_inkremente)}" + (", NLGEOM" if self.nlgeom else ""))
                 z.append("*STATIC")
                 z.append(", ".join(f"{v:.6g}" for v in s.zeit))
+                if s.wachstum:  # Inkremente nach leichter Konvergenz schneller vergrößern (D_D, sonst 1,5)
+                    z.append("*CONTROLS, PARAMETERS=TIME INCREMENTATION")
+                    z.append("4, 8, 9, 200, 10, 4, 0, 5")
+                    z.append(f"0.25, 0.5, 0.75, 0.85, 0., 0., {float(s.wachstum):g}, 0.")
             if s.kraefte is not None:
                 F = np.asarray(s.kraefte, float)
                 z.append("*CLOAD, OP=NEW")

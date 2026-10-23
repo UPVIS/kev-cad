@@ -955,6 +955,45 @@ ein Feld `festkoerper`:
 - Packen und Prüfen: `pack_statics_feld`, `unpack_statics_feld`, `check_statics_feld`, Beispiel `statik_beispiel_feld`,
   Testdatei `statics_feld.frame`.
 
+### CalculiX (Stufe 4, additiv)
+
+Teile, die der Agent mit `festigkeit(…, verfahren="ccx")` rechnet oder die model.py mit `st.festigkeit(teil, …)`
+anmeldet (dann im Hintergrund nach dem Festkörper der Stufe 3), rechnet der Kernel mit CalculiX (eigenes Programm,
+GPL, `statik/ccx/`): Kontakt mit Abheben und Gleiten, Klemmkraft, Plastizität, Traglast, Beulen. Sie stehen wie Stufe 3
+im Feld `festkoerper` des Szenarios und ersetzen dort das Ergebnis der Stufe 3 desselben Teils (Urteil `festkoerper`,
+Befund `statik_festkoerper`, T34). `festkoerper.teile[i]` hat dann zusätzlich:
+
+```json
+{"verfahren": "ccx", "sicherheit": 6.2, "sicherheit_last": 1.12,
+ "kontakt": {"paare": [{"mit": "Wand", "rolle": "lager", "reibwert": 0.4, "druck_max": 6.5, "kraft_n": 61.0,
+                        "traegt_mm2": 80.0, "anteil_traegt": 0.5, "klaffen_max_mm": 0.08, "schlupf_max_mm": 0.01,
+                        "reibung_ausnutzung": 0.3, "gleitet_anteil": 0.0, "quelle": "Berührung (beruehrt)"}],
+             "klemmungen": [{"schraube": "Schraube M4", "kraft_n": 480.0, "quelle": "handfest angenommen …"}]},
+ "plastisch": {"dehnung_max": 0.004, "bleibend_mm": 0.12, "fliesst": true, "grenzdehnung": 0.02,
+               "fliessgrenze": 34.0, "modell": "Druckteil: …", "ort": [0, -10, 104]},
+ "traglast": {"faktor": 6.2, "kriterium": "schicht", "text": "Schichtfuge", "lastfaktor_max": 12.0, "erreicht": 6.3},
+ "beulen": {"faktor": 48.0}, "rutscht": false,
+ "zusatz_max": {"kontaktdruck": 6.5, "plast_dehnung": 0.004, "klaffen": 0.08, "schlupf": 0.01}}
+```
+
+- `sicherheit` ist bei Stufe 4 der Traglastfaktor (Last bis zur Grenzdehnung, zum Bruch der Schichtfuge, zum Rutschen
+  oder Kollaps; `kriterium`: `dehnung`, `schicht`, `bruch`, `rutschen`, `kollaps`, `nicht_erreicht`), ohne Traglast
+  die Sicherheit unter Last (`sicherheit_last`, elastisch-plastisch mit Kontakt); ein kleinerer Beulfaktor zählt.
+  `rutscht`: ein Kontaktpartner hält schon unter der Last nicht (die Halte-Federn tragen ihn).
+- `kontakt.paare[i].rolle`: `lager` (starrer Partner, das Teil liegt mit Kontakt auf) oder `last` (elastischer Stab,
+  der die Last einleitet). `klaffen_max_mm`: Öffnen, wo der Kontakt vorher geschlossen war (mit Klemmkraft) bzw. Spalt
+  in der Kontaktzone; `schlupf_max_mm`: Gleiten unter der Last.
+- STATICS_FIELD bekommt im Kopf `zusatz` (Namen aus `kontaktdruck`, `plast_dehnung`, `klaffen`, `schlupf`),
+  `zusatz_max` und `verfahren`; die Nutzlast hat hinter den Feldern der Stufe 3 je Name n float32 (Kontaktdruck
+  N/mm², plastische Vergleichsdehnung, Klaffen mm, Schlupf mm). Ohne `zusatz` bleibt alles wie in Stufe 3; ältere Apps
+  lehnen ein Feld mit Zusatz wegen der Länge ab (App und Kernel kommen zusammen). Die App färbt wahlweise nach einem
+  Zusatzwert (Bänder wie bei der Ausnutzung, 0 bis zum größten Wert).
+- Beispiele `statik_beispiel_s4`, `statik_beispiel_feld_s4`, Testdateien `statics_s4.frame`, `statics_feld_s4.frame`
+  (`tools/make_statik_fixtures.py`).
+- `auflager[i]` und `verbinder[i]` je Szenario tragen additiv `seiten`: Kraft und Moment, die der Stab von jeder Seite
+  in seine Station am Anschluss leitet (`richtung`, `kraft`, `moment`, `punkt`, `laenge`); Stufe 4 bringt sie an den
+  Schnittflächen des zugeschnittenen Stabs auf.
+
 ## Topologie
 
 Rein additiv (PLAN-TOPOLOGIE.md, 23.10.2026); ältere Gegenseiten ignorieren die Typen. Der Kernel optimiert ein

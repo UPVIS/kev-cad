@@ -174,9 +174,11 @@ def _klemmungen(st: Any, teil: str, opt: dict[str, Any], deklariert: list[dict[s
     """Schrauben, die das Teil in sich zusammenziehen (Klemmschlitz) oder an einen Kontaktpartner pressen."""
     m = st.modell
     einheit = {teil}
-    for e in m.kanten.values():  # eingeschmolzene oder geklebte Teile (Einsatz) gehören zum Teil
-        if e.get("verbinde") in ("formschluss", "kleben") and teil in (e["a"], e["b"]):
-            einheit.add(e["b"] if e["a"] == teil else e["a"])
+    # eingeschmolzene oder geklebte Teile (Einsatz) gehören zum Teil; aus der Liste der Verbindungen, nicht aus den
+    # Kanten (dasselbe Paar kann auch die Schraubverbindung sein, die Kante kennt nur die letzte Art)
+    for v in m.verbindungen:
+        if v.get("art") in ("formschluss", "kleben") and teil in (v.get("a"), v.get("b")):
+            einheit.add(v["b"] if v.get("a") == teil else v["a"])
     out = []
     for v in m.verbindungen:
         if v.get("art") != "schraube":
@@ -216,6 +218,7 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
                                       "verfestigung", "lastfaktor_max")}
     opt["kontakt"] = bool(opt.get("kontakt"))
     opt["plastisch"] = bool(opt.get("plastisch"))
+    # Traglast ohne Angabe nur mit Plastizität (mit Kontakt allein auf Wunsch: Rutschgrenze einer Klemmung)
     opt["traglast"] = bool(opt["plastisch"] if opt.get("traglast") is None else opt["traglast"])
     opt["beulen"] = bool(opt.get("beulen"))
     deklariert = _deklariert(st)
@@ -293,6 +296,14 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
                                    "box": [lo.tolist(), hi.tolist()], "schluessel": o.key,
                                    "groesse": float(np.max(np.asarray(o.bmax) - np.asarray(o.bmin)))}
             T["klemmungen"] = _klemmungen(st, name, opt, deklariert)
+            # Teile der Klemmschraube (Schraube, Scheibe, Einsatz) sind innere Kräfte, kein Lager (Stufe 3 nimmt sie
+            # als tragende Nachbarn, weil sie das Teil berühren)
+            innen = {x for kl in T["klemmungen"] for x in [kl.get("schraube"), *kl["kopf"], *kl["mutter"]] if x}
+            for f in T["faelle"]:
+                rest = [x for x in f.get("lager") or [] if x not in innen]
+                if rest and len(rest) < len(f.get("lager") or []):
+                    f["lager_s3"] = f["lager"]
+                    f["lager"] = rest
             for kl in T["klemmungen"]:
                 for x in kl["kopf"] + kl["mutter"]:
                     if x in T["nachbarn"] or x not in st.koerper:

@@ -311,6 +311,7 @@ class Fall:
             kn = d.global_knoten(i, np.arange(len(k.knoten)))
             d.federn.append((kn, kges / len(kn)))
             federn[i] = {"k_ges": kges, "knoten": len(kn), "last_n": last_n}
+        frei_last = any(i in lastkoerper for i in frei) or (0 in frei)  # ein frei gelagerter Körper bekommt Last
         # Ausgabe: Ecken des Teils und der freien Körper
         aus = [d.global_knoten(0, np.arange(N.n))]
         for i in frei:
@@ -322,19 +323,19 @@ class Fall:
             d.schritte.append(Schritt("beulen", F_last, art="beulen", beulfaktoren=int(self.opt.get("beulmoden") or 4)))
         elif art == "last":
             if klemm:
-                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if frei else 0.25, 1.0, 1e-7, 0.5),
-                                          frequenz=1000))
-            d.schritte.append(Schritt("last", F_vor + F_last, zeit=(ANFANG_KONTAKT if frei else 0.25, 1.0, 1e-7, 0.5),
+                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if 0 in frei else 0.25, 1.0, 1e-7,
+                                                                    0.5), frequenz=1000))
+            d.schritte.append(Schritt("last", F_vor + F_last, zeit=(ANFANG_KONTAKT if frei_last else 0.25, 1.0, 1e-7, 0.5),
                                       frequenz=1000))
             if T.get("fliess"):
                 d.schritte.append(Schritt("entlasten", F_vor, zeit=(0.5, 1.0, 1e-6, 1.0), frequenz=1000))
         else:
             if klemm:
-                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if frei else 0.25, 1.0, 1e-7, 0.5),
-                                          frequenz=1000,
+                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if 0 in frei else 0.25, 1.0, 1e-7,
+                                                                    0.5), frequenz=1000,
                                           ausgabe=("U",)))
             for j, (_, lb, dmax) in enumerate(stufen or [(0.0, 1.0, 0.04)]):
-                anfang = min(0.01, dmax) if not (frei and j == 0 and not klemm) else min(dmax, ANFANG_KONTAKT / max(lb, 1.0))
+                anfang = min(0.01, dmax) if not (frei_last and j == 0) else min(dmax, ANFANG_KONTAKT / max(lb, 1.0))
                 d.schritte.append(Schritt(f"traglast{j}", F_vor + lb * F_last, zeit=(anfang, 1.0, 1e-7, dmax),
                                           max_inkremente=600, ausgabe=("U", "S", "PEEQ")))
         self.d, self.netze, self.koerper_index = d, netze, koerper_index
@@ -777,12 +778,12 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
                 lam_max = float(opt.get("lastfaktor_max") or min(TRAG_MAX, max(2.0, 3.0 * ziel, 3.0 * lam_el)))
                 u_last = max(info["verformung_max_mm"], 1e-3)
                 tr = None
-                for lauf_nr, stufen in enumerate(([(0.0, lam_max, 0.04)], None)):
+                for lauf_nr, stufen in enumerate(([(0.0, lam_max, 0.08)], None)):
                     if stufen is None:  # fein: bis 85 % zügig, dann in Schritten von 0,5 % bis 115 %
                         if tr is None or tr["kriterium"] == "nicht_erreicht" or tr["faktor"] <= 0:
                             break
                         la = tr["faktor"]
-                        stufen = [(0.0, 0.85 * la, 0.25), (0.85 * la, 1.15 * la, 0.025)]
+                        stufen = [(0.0, 0.85 * la, 0.5), (0.85 * la, 1.15 * la, 0.05)]
                     fall.baue("traglast", stufen)
                     grenze = max(0.02 * fall.groesse, 8.0 * u_last * stufen[-1][1])
 
