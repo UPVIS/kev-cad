@@ -4,7 +4,6 @@ fotocad/cad_netz.py
 fotocad/kamera.py
 fotocad/masken.py
 fotocad/netz_gl.py
-fotocad/schild.py
 fotocad.egg-info/PKG-INFO
 fotocad.egg-info/SOURCES.txt
 fotocad.egg-info/dependency_links.txt

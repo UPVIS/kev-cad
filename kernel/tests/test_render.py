@@ -357,6 +357,14 @@ def test_render_start_aus_der_app(laufzeit):
         app.close()
 
 
+def _frisch_mit_szene(p: Path) -> bool:
+    """Arbeitsordner der letzten 5 s mit szene.json; ein Ordner, der zwischen glob und stat aufgeräumt wird, zählt nicht."""
+    try:
+        return p.stat().st_mtime > time.time() - 5 and (p / "szene.json").exists()
+    except FileNotFoundError:
+        return False
+
+
 def test_render_foto_mit_ersatz_blender(laufzeit, monkeypatch):
     rt, tmp = laufzeit
     monkeypatch.setenv("KEVCAD_BLENDER", str(ersatz_blender(tmp, schlafen=0.25)))
@@ -379,8 +387,7 @@ def test_render_foto_mit_ersatz_blender(laufzeit, monkeypatch):
         status = [h for h in app.since(start) if h["type"] == "RENDER_STATUS"]
         assert status[-1]["zustand"] == "fertig" and any(s["text"].startswith("Probe") for s in status)
         # Arbeitsordner aufgeräumt
-        assert not [p for p in Path(tempfile.gettempdir()).glob("kevcad-render-*") if p.stat().st_mtime > time.time() - 5
-                    and (p / "szene.json").exists()]
+        assert not [p for p in Path(tempfile.gettempdir()).glob("kevcad-render-*") if _frisch_mit_szene(p)]
     finally:
         app.close()
 
