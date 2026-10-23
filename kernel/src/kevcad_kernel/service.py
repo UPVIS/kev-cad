@@ -352,11 +352,19 @@ class KernelService(Protocol):
 
     # Statik Stufe 3 (PLAN-STATIK.md T-D; umgesetzt in kevcad_kernel.statik.festkoerper.laufzeit.FestkoerperRuntime)
     def festigkeit(self, teil: str | None = None, szenario: str | None = None, fein: bool = False,
-                   ablauf: bool = False, zeigen: bool = True) -> dict[str, Any]:
+                   ablauf: bool = False, zeigen: bool = True, verfahren: str | None = None,
+                   kontakt: bool | None = None, plastisch: bool | None = None, traglast: bool | None = None,
+                   beulen: bool | None = None, klemmkraft: float | None = None,
+                   reibwert: float | None = None) -> dict[str, Any]:
         """Festkörper-FEM (S3, eigener Prozess) für Teile mit Last: {"ok", "run", "teile": [{"teil", "ampel",
         "sicherheit", "ziel", "kriterium", "ort", "spannung_max", "verformung_max_mm", "kragtraeger",
         "ausrichtungen", "ausrichtung_beste", "netz", "ms", "text"}], "faelle", "szenarien", "befunde", "hinweise",
-        "grenzen", "ms", "gezeigt"}; die App zeigt das Feld (STATICS_FIELD)."""
+        "grenzen", "ms", "gezeigt"}; die App zeigt das Feld (STATICS_FIELD).
+
+        Stufe 4 (additiv, PLAN-STATIK.md „Stand Stufe 4“): ``verfahren="ccx"`` (oder eine der Optionen) rechnet mit
+        CalculiX: ``kontakt`` (Standard an), ``plastisch``, ``traglast``, ``beulen``, ``klemmkraft`` (N),
+        ``reibwert``. Je Teil zusätzlich "verfahren", "sicherheit_last", "kontakt" {"paare", "klemmungen"},
+        "plastisch", "traglast", "beulen", "rutscht"; "verfahren" im Ergebnis. Ohne CalculiX {"ok": False, "error"}."""
 
     def festigkeit_abbrechen(self) -> dict[str, Any]:
         """Laufende Festkörper-Rechnung beenden: {"ok", "abgebrochen", "szenarien"}."""

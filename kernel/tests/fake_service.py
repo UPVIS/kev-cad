@@ -637,12 +637,20 @@ class FakeService:
     # Statik Stufe 3 -------------------------------------------------------------------------------------------------
 
     def festigkeit(self, teil: str | None = None, szenario: str | None = None, fein: bool = False,
-                   ablauf: bool = False, zeigen: bool = True) -> dict[str, Any]:
-        from kevcad_kernel.protocol import statik_beispiel_festkoerper
+                   ablauf: bool = False, zeigen: bool = True, **s4: Any) -> dict[str, Any]:
+        from kevcad_kernel.protocol import statik_beispiel_festkoerper, statik_beispiel_s4
 
-        self._record("festigkeit", teil, szenario, fein, ablauf)
+        self._record("festigkeit", teil, szenario, fein, ablauf, *([s4] if s4 else []))
         if not self.run_no:
             return {"ok": False, "error": "Noch keine Statik: erst run aufrufen."}
+        if s4:  # Stufe 4 (CalculiX)
+            b = statik_beispiel_s4()
+            e = next(x for x in b["szenarien"] if x["name"] == "Haken 2 kg (Kontakt)")
+            return {"ok": True, "run": self.run_no, "verfahren": "ccx", "teile": e["festkoerper"]["teile"],
+                    "faelle": [], "szenarien": [{"name": e["name"], "ampel": e["ampel"], "text": e["text"]}],
+                    "befunde": [], "hinweise": [], "grenzen": b["grenzen"], "ms": {"gesamt": 19000.0,
+                                                                                  "prozess": 18400.0},
+                    "gezeigt": zeigen}
         b = statik_beispiel_festkoerper()
         e = next(x for x in b["szenarien"] if x["name"] == "Haken 2 kg")
         return {"ok": True, "run": self.run_no, "teile": e["festkoerper"]["teile"], "faelle": [],

@@ -27,9 +27,11 @@ struct StatikAbschnitt: View {
                         AblaufDetail(ab: ab, szenario: sz.name, pfeile: store.kontaktpfeile, actions: actions)
                     }
                     if let fk = sz.festkoerper {
+                        let wert = store.wirksamerFeldWert(fuer: sz)
                         FestkoerperDetail(
                             fk: fk, mitFeld: !store.felder(fuer: sz).isEmpty, farbverlauf: store.farbverlauf,
-                            actions: actions)
+                            feldWerte: store.feldWerte(fuer: sz), feldWert: wert,
+                            feldGroesster: store.feldGroesster(wert, fuer: sz), actions: actions)
                     }
                     SzenarioDetail(sz: sz, actions: actions)
                 }
@@ -126,7 +128,9 @@ private struct SzenarioZeile: View {
                     Image(systemName: "cube.transparent")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                        .help("Festkörper (Stufe 3): Teile mit Last als Volumen gerechnet")
+                        .help(sz.festkoerper?.teile.contains(where: \.istCalculix) == true
+                            ? "Festkörper (Stufe 4, CalculiX): mit Kontakt, Plastizität und Traglast gerechnet"
+                            : "Festkörper (Stufe 3): Teile mit Last als Volumen gerechnet")
                 }
                 if let ab = sz.ablauf {
                     if ab.laeuft {
@@ -401,10 +405,18 @@ private struct KippVerlauf: View {
 
 /// Stufe 3: Festkörper-FEM eines Szenarios: Fortschritt mit Abbruch, je Teil Ampel, Sicherheit (Ziel), maßgebendes
 /// Kriterium, Sicherheit in den anderen Drucklagen und der Vergleich mit dem Kragträger; dazu die Farbskala.
+/// Stufe 4 (CalculiX): zusätzlich Traglast, Sicherheit unter Last, Kontakt je Partner, Klemmkraft, Plastizität,
+/// Beulen und „rutscht“; trägt das Feld Zusatzwerte, die Wahl des Farbfelds.
 private struct FestkoerperDetail: View {
     var fk: StatikFestkoerper
     var mitFeld: Bool
     var farbverlauf: Bool
+    /// Wählbare Werte des Farbfelds (`StatikFeldWert`), erster ist die Ausnutzung.
+    var feldWerte: [String]
+    /// Wert, nach dem gerade gefärbt wird.
+    var feldWert: String
+    /// Größter Wert des gewählten Zusatzwerts über alle Felder (nil bei der Ausnutzung).
+    var feldGroesster: Double?
     var actions: StatikActions?
 
     var body: some View {
@@ -442,14 +454,87 @@ private struct FestkoerperDetail: View {
             ForEach(Array(fk.teile.enumerated()), id: \.offset) { _, t in
                 teilZeile(t)
             }
+            if mitFeld && feldWerte.count > 1 {
+                Picker("Farbfeld", selection: Binding(get: { feldWert }, set: { actions?.waehleStatikFeldWert($0) })) {
+                    ForEach(feldWerte, id: \.self) { w in
+                        Text(StatikFeldWert.titel(w)).tag(w)
+                    }
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .font(.caption)
+                .disabled(actions == nil)
+                .help("Wert, nach dem das Netz gefärbt wird: Ausnutzung oder Ergebnis von CalculiX (S4)")
+            }
             if mitFeld && farbverlauf {
-                FeldSkala()
+                FeldSkala(wert: feldWert, groesster: feldGroesster)
                     .frame(height: 22)
-                    .help("Farbverlauf auf dem Netz: Ausnutzung = Ziel / örtliche Sicherheit (grün bis 1, gelb bis 2, "
-                        + "darüber rot); Verformung überhöht als Geist")
+                    .help(skalaHilfe)
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var skalaHilfe: String {
+        if feldWert == StatikFeldWert.ausnutzung {
+            return "Farbverlauf auf dem Netz: Ausnutzung = Ziel / örtliche Sicherheit (grün bis 1, gelb bis 2, "
+                + "darüber rot); Verformung überhöht als Geist"
+        }
+        return "Farbverlauf auf dem Netz: \(StatikFeldWert.titel(feldWert)) von 0 (grün) bis "
+            + "\(StatikFeldWert.text(feldWert, feldGroesster ?? 0)) (rot); Verformung überhöht als Geist"
+    }
+
+    /// Vielfaches der Last, z. B. "6,2" oder "12".
+    private func fach(_ x: Double) -> String {
+        KevFormat.number(x, digits: x >= 10 ? 0 : 1)
+    }
+
+    private func kurz(_ name: String) -> String {
+        name.split(separator: "/").last.map(String.init) ?? name
+    }
+
+    private func traglastText(_ tl: StatikTraglast) -> String? {
+        if tl.nichtErreicht {
+            return "über \(fach(tl.lastfaktorMax ?? tl.erreicht ?? 0))-fach"
+        }
+        guard let f = tl.faktor else { return nil }
+        return "\(fach(f))-fach" + (tl.text.map { ", \($0)" } ?? "")
+    }
+
+    private func kontaktText(_ k: StatikKontaktPaar) -> String {
+        var t: [String] = []
+        if let d = k.druckMax { t.append("Druck bis \(StatikFeldWert.text("kontaktdruck", d))") }
+        if let a = k.anteilTraegt { t.append("trägt \(KevFormat.percent(a))") }
+        if let kl = k.klaffenMaxMm, kl > 0.001 { t.append("klafft \(StatikFeldWert.text("klaffen", kl))") }
+        if let s = k.schlupfMaxMm, s > 0.001 { t.append("gleitet \(StatikFeldWert.text("schlupf", s))") }
+        return "\(kurz(k.mit)): " + (t.isEmpty ? "berührt" : t.joined(separator: ", "))
+    }
+
+    private func kontaktHilfe(_ k: StatikKontaktPaar) -> String {
+        var t = ["Kontakt mit \(k.mit)" + (k.rolle.map { " (\($0))" } ?? "")]
+        if let f = k.kraftN { t.append("Kraft \(KevFormat.number(f, digits: 1)) N") }
+        if let a = k.traegtMm2 { t.append("trägt \(KevFormat.number(a, digits: 0)) mm²") }
+        if let mu = k.reibwert { t.append("Reibwert \(KevFormat.number(mu, digits: 2))") }
+        if let r = k.reibungAusnutzung { t.append("Reibung zu \(KevFormat.percent(r)) genutzt") }
+        if let g = k.gleitetAnteil { t.append("gleitet auf \(KevFormat.percent(g)) der tragenden Fläche") }
+        if let q = k.quelle { t.append(q) }
+        return t.joined(separator: " · ")
+    }
+
+    private func plastischText(_ pl: StatikPlastisch) -> String {
+        guard pl.fliesst else { return "bleibt elastisch" }
+        var t: [String] = []
+        if let d = pl.dehnungMax { t.append("Dehnung \(StatikFeldWert.text("plast_dehnung", d))") }
+        if let b = pl.bleibendMm { t.append("bleibend \(StatikFeldWert.text("klaffen", b))") }  // mm wie Klaffen
+        return t.isEmpty ? "fließt" : t.joined(separator: ", ")
+    }
+
+    private func plastischHilfe(_ pl: StatikPlastisch) -> String {
+        var t: [String] = []
+        if let m = pl.modell { t.append(m) }
+        if let g = pl.grenzdehnung { t.append("Grenzdehnung \(StatikFeldWert.text("plast_dehnung", g))") }
+        if let f = pl.fliessgrenze { t.append("Fließgrenze \(KevFormat.number(f, digits: 1)) N/mm²") }
+        return t.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -460,16 +545,36 @@ private struct FestkoerperDetail: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     AmpelPunkt(ampel: t.ampel)
                     Text(name).font(.callout)
+                    if t.istCalculix {
+                        Text("CalculiX (S4)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                            .help("Stufe 4: mit CalculiX gerechnet (Kontakt, Plastizität, Traglast)")
+                    }
+                    if t.rutscht {
+                        Text("rutscht")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                            .help("Ein Kontaktpartner rutscht schon unter der Last: Die Klemmung hält nicht")
+                    }
                     Spacer(minLength: 4)
                     Text("FEM \(t.sicherheit.map(StatikZahl.sf) ?? "–") / \(KevFormat.number(t.ziel ?? 2, digits: 0))")
                         .font(.caption.monospacedDigit())
-                        .help("Sicherheit (Festkörper) gegen das Ziel")
+                        .help(t.istCalculix
+                            ? "Sicherheit (CalculiX) gegen das Ziel: der Traglastfaktor, ohne Traglast die Sicherheit "
+                                + "unter Last"
+                            : "Sicherheit (Festkörper) gegen das Ziel")
                 }
                 Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 1) {
+                    traglastZeilen(t)  // Stufe 4
                     if let k = t.kriterium {
                         zeile("Maßgebend", k == "schicht" ? "Schichtfuge (quer zur Schicht)"
                             : (k == "quer_unbekannt" ? "Drucklage unbekannt" : "von Mises"))
                     }
+                    kontaktZeilen(t)  // Stufe 4
                     if let sp = t.spannungMax { zeile("Spannung", "\(KevFormat.number(sp, digits: 1)) N/mm²") }
                     if let v = t.verformungMaxMm { zeile("Verschiebung", "\(KevFormat.number(v, digits: 2)) mm") }
                     if let k = t.kragtraeger { zeile("Kragträger S0", StatikZahl.sf(k)) }
@@ -500,17 +605,76 @@ private struct FestkoerperDetail: View {
         }
     }
 
+    /// Stufe 4: Traglast und Sicherheit unter Last (Zeilen im Grid des Teils).
     @ViewBuilder
-    private func zeile(_ a: String, _ b: String) -> some View {
+    private func traglastZeilen(_ t: StatikFestkoerperTeil) -> some View {
+        if let tl = t.traglast, let text = traglastText(tl) {
+            zeile("Traglast", text, hilfe: traglastHilfe(tl))
+        }
+        if let sl = t.sicherheitLast {
+            zeile("Unter Last", "Sicherheit \(StatikZahl.sf(sl))",
+                  hilfe: "Sicherheit unter der Last aus den elastisch-plastischen Spannungen mit Kontakt")
+        }
+    }
+
+    /// Stufe 4: je Kontaktpaar eine Zeile, Klemmkräfte, Plastizität, Beulen (Zeilen im Grid des Teils).
+    @ViewBuilder
+    private func kontaktZeilen(_ t: StatikFestkoerperTeil) -> some View {
+        ForEach(Array(t.kontaktPaare.enumerated()), id: \.offset) { _, k in
+            zeile("Kontakt", kontaktText(k), hilfe: kontaktHilfe(k))
+        }
+        ForEach(Array(t.klemmungen.enumerated()), id: \.offset) { _, c in
+            zeile("Klemmkraft", klemmText(c), hilfe: c.quelle)
+        }
+        if let pl = t.plastisch {
+            zeile("Plastisch", plastischText(pl), hilfe: plastischHilfe(pl))
+        }
+        if let b = t.beulfaktor {
+            zeile("Beulen", "bei \(fach(b))-facher Last")
+        }
+    }
+
+    private func traglastHilfe(_ tl: StatikTraglast) -> String? {
+        guard let e = tl.erreicht else { return nil }
+        var t = "Last gesteigert bis zum \(fach(e))-Fachen"
+        if let m = tl.lastfaktorMax { t += ", höchstens \(fach(m))-fach" }
+        return t
+    }
+
+    private func klemmText(_ c: StatikKlemmung) -> String {
+        let kraft = c.kraftN.map { KevFormat.number($0, digits: 0) } ?? "–"
+        return "\(kraft) N" + (c.schraube.map { " (\(kurz($0)))" } ?? "")
+    }
+
+    @ViewBuilder
+    private func zeile(_ a: String, _ b: String, hilfe: String? = nil) -> some View {
         GridRow {
-            Text(a).foregroundStyle(.secondary)
-            Text(b).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+            Text(a).foregroundStyle(.secondary).hilfe(hilfe)
+            Text(b).monospacedDigit().fixedSize(horizontal: false, vertical: true).hilfe(hilfe)
         }
     }
 }
 
-/// Farbskala der Ausnutzung wie im Viewer: Bänder von 0 bis 2, Marke bei 1 (Ziel erreicht).
+private extension View {
+    /// Tooltip nur, wenn es einen Text gibt (sonst bleibt der des umgebenden Views).
+    @ViewBuilder
+    func hilfe(_ text: String?) -> some View {
+        if let text, !text.isEmpty {
+            help(text)
+        } else {
+            self
+        }
+    }
+}
+
+/// Farbskala wie im Viewer: Bänder von 0 bis 2. Für die Ausnutzung mit Marke bei 1 (Ziel erreicht), für einen
+/// Zusatzwert der Stufe 4 mit Name, Einheit und Bereich von 0 bis zum größten Wert.
 private struct FeldSkala: View {
+    var wert: String = StatikFeldWert.ausnutzung
+    var groesster: Double?
+
+    private var istAusnutzung: Bool { wert == StatikFeldWert.ausnutzung }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Canvas { ctx, size in
@@ -522,19 +686,27 @@ private struct FeldSkala: View {
                     ctx.fill(Path(r), with: .color(Color(.sRGBLinear, red: Double(c.x), green: Double(c.y),
                                                          blue: Double(c.z))))
                 }
-                var mitte = Path()
-                mitte.move(to: CGPoint(x: size.width / 2, y: 0))
-                mitte.addLine(to: CGPoint(x: size.width / 2, y: size.height))
-                ctx.stroke(mitte, with: .color(.black.opacity(0.5)), lineWidth: 1)
+                if istAusnutzung {
+                    var mitte = Path()
+                    mitte.move(to: CGPoint(x: size.width / 2, y: 0))
+                    mitte.addLine(to: CGPoint(x: size.width / 2, y: size.height))
+                    ctx.stroke(mitte, with: .color(.black.opacity(0.5)), lineWidth: 1)
+                }
             }
             .frame(height: 8)
             .clipShape(RoundedRectangle(cornerRadius: 2))
             HStack {
                 Text("0")
                 Spacer()
-                Text("1 = Ziel")
-                Spacer()
-                Text("2")
+                if istAusnutzung {
+                    Text("1 = Ziel")
+                    Spacer()
+                    Text("2")
+                } else {
+                    Text(StatikFeldWert.titel(wert))
+                    Spacer()
+                    Text(StatikFeldWert.text(wert, groesster ?? 0))
+                }
             }
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.secondary)

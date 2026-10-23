@@ -42,7 +42,9 @@ from kevcad_kernel.statik.ccx.deck import Deck, Koerper, Kontakt, Schritt
 from kevcad_kernel.statik.festkoerper.prozess import _lastflaeche, _netz, _schreibe_npz, lies_fall, melde, speicher
 
 ZUSATZ = ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf")
-FEDER_ANTEIL = 1e-6  # Halte-Federn: Gesamtsteifigkeit = Anteil · E · Größe des Körpers
+FEDER_ANTEIL = 1e-6  # Halte-Federn: Gesamtsteifigkeit mindestens Anteil · E · Größe des Körpers
+FEDER_LAST = 0.02  # … und mindestens 2 % der Last je mm (bei 0,25 mm Weg tragen sie 0,5 % der Last)
+ANFANG_KONTAKT = 0.002  # erstes Inkrement mit Kontakt: 0,2 % der Last (höchstens 0,1 mm Weg auf den Federn)
 RUTSCH_ANTEIL = 0.05  # tragen die Federn mehr als 5 % der Last, hält der Kontakt den Körper nicht
 KONTAKT_FAKTOR = 2.0  # Druck-Strafsteifigkeit = Faktor · E (weicherer Werkstoff) je mm
 HAFT_TEILER = 50.0  # Haftsteifigkeit = Druck-Strafsteifigkeit / Teiler
@@ -302,10 +304,13 @@ class Fall:
         for i in frei:
             k = d.koerper[i]
             gr = float(np.max(k.knoten.max(axis=0) - k.knoten.min(axis=0)))
-            kges = FEDER_ANTEIL * float(k.werkstoff["E"]) * gr
+            last_n = lastkoerper.get(i, float(np.linalg.norm(summe)))
+            # so weich, dass sie fast nichts tragen, aber so steif, dass das erste Inkrement den Körper nicht aus der
+            # Kontaktzone schiebt (bevor der Kontakt Steifigkeit hat): FEDER_LAST · Last je mm
+            kges = max(FEDER_ANTEIL * float(k.werkstoff["E"]) * gr, FEDER_LAST * max(last_n, 1.0))
             kn = d.global_knoten(i, np.arange(len(k.knoten)))
             d.federn.append((kn, kges / len(kn)))
-            federn[i] = {"k_ges": kges, "knoten": len(kn), "last_n": lastkoerper.get(i, float(np.linalg.norm(summe)))}
+            federn[i] = {"k_ges": kges, "knoten": len(kn), "last_n": last_n}
         # Ausgabe: Ecken des Teils und der freien Körper
         aus = [d.global_knoten(0, np.arange(N.n))]
         for i in frei:
@@ -317,17 +322,20 @@ class Fall:
             d.schritte.append(Schritt("beulen", F_last, art="beulen", beulfaktoren=int(self.opt.get("beulmoden") or 4)))
         elif art == "last":
             if klemm:
-                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(0.25, 1.0, 1e-6, 0.5), frequenz=1000))
-            d.schritte.append(Schritt("last", F_vor + F_last, zeit=(0.25 if not kontakt else 0.1, 1.0, 1e-6, 0.5),
+                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if frei else 0.25, 1.0, 1e-7, 0.5),
+                                          frequenz=1000))
+            d.schritte.append(Schritt("last", F_vor + F_last, zeit=(ANFANG_KONTAKT if frei else 0.25, 1.0, 1e-7, 0.5),
                                       frequenz=1000))
             if T.get("fliess"):
                 d.schritte.append(Schritt("entlasten", F_vor, zeit=(0.5, 1.0, 1e-6, 1.0), frequenz=1000))
         else:
             if klemm:
-                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(0.25, 1.0, 1e-6, 0.5), frequenz=1000,
+                d.schritte.append(Schritt("vorspannung", F_vor, zeit=(ANFANG_KONTAKT if frei else 0.25, 1.0, 1e-7, 0.5),
+                                          frequenz=1000,
                                           ausgabe=("U",)))
             for j, (_, lb, dmax) in enumerate(stufen or [(0.0, 1.0, 0.04)]):
-                d.schritte.append(Schritt(f"traglast{j}", F_vor + lb * F_last, zeit=(min(0.01, dmax), 1.0, 1e-7, dmax),
+                anfang = min(0.01, dmax) if not (frei and j == 0 and not klemm) else min(dmax, ANFANG_KONTAKT / max(lb, 1.0))
+                d.schritte.append(Schritt(f"traglast{j}", F_vor + lb * F_last, zeit=(anfang, 1.0, 1e-7, dmax),
                                           max_inkremente=600, ausgabe=("U", "S", "PEEQ")))
         self.d, self.netze, self.koerper_index = d, netze, koerper_index
         self.federn, self.klemm, self.fest_k = federn, klemm, fest_k

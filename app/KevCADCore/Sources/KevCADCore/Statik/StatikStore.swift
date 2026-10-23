@@ -15,6 +15,9 @@ public final class StatikStore: ObservableObject {
     @Published public var kontaktpfeile = true
     /// Stufe 3: Felder der Festkörper-FEM je Szenario und Teil (`StatikFeld.key`), nur des laufenden Laufs.
     @Published public var felder: [String: StatikFeld] = [:]
+    /// Stufe 4: Wert, nach dem die Felder gefärbt werden (`StatikFeldWert`): "ausnutzung" (Standard) oder ein
+    /// Zusatzwert ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf"). Gilt, solange ein gezeigtes Feld ihn trägt.
+    @Published public var feldWert: String = StatikFeldWert.ausnutzung
 
     public init() {}
 
@@ -26,6 +29,26 @@ public final class StatikStore: ObservableObject {
             else { return nil }
             return f
         }
+    }
+
+    /// Stufe 4: wählbare Werte für den Farbverlauf der Felder des Szenarios: die Ausnutzung und die Zusatzwerte, die
+    /// mindestens ein Feld trägt (in fester Reihenfolge). Ohne Zusatzwerte nur die Ausnutzung.
+    public func feldWerte(fuer sz: StatikSzenario) -> [String] {
+        let da = Set(felder(fuer: sz).flatMap(\.zusatzNamen))
+        return [StatikFeldWert.ausnutzung] + StatikFeldWert.zusatz.filter { da.contains($0) }
+    }
+
+    /// Stufe 4: der Wert, nach dem tatsächlich gefärbt wird: der gewählte, wenn ein Feld des Szenarios ihn trägt, sonst
+    /// die Ausnutzung.
+    public func wirksamerFeldWert(fuer sz: StatikSzenario) -> String {
+        feldWerte(fuer: sz).contains(feldWert) ? feldWert : StatikFeldWert.ausnutzung
+    }
+
+    /// Stufe 4: gemeinsamer Bezug der Skala für einen Zusatzwert: der größte Wert über alle Felder des Szenarios (nil
+    /// für die Ausnutzung oder ohne Feld mit diesem Wert).
+    public func feldGroesster(_ wert: String, fuer sz: StatikSzenario) -> Double? {
+        guard wert != StatikFeldWert.ausnutzung else { return nil }
+        return felder(fuer: sz).compactMap { $0.groesster(wert) }.max()
     }
 
     public var szenario: StatikSzenario? {
@@ -49,6 +72,9 @@ public protocol StatikActions: AnyObject {
     func setKontaktpfeile(_ an: Bool)
     /// Stufe 3: laufende Festkörper-Rechnung abbrechen (STATICS_CANCEL).
     func festkoerperAbbrechen()
+    /// Stufe 4: Wert für den Farbverlauf der Felder wählen (`StatikFeldWert`: "ausnutzung" oder ein Zusatzwert);
+    /// schaltet den Farbverlauf ein und baut die Feldkörper neu.
+    func waehleStatikFeldWert(_ wert: String)
 }
 
 /// Stufe 3: App → Kernel, laufende Festkörper-Rechnung beenden (PROTOCOL.md „Festkörper (Stufe 3)“).

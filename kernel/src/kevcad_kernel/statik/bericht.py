@@ -227,7 +227,8 @@ def festkoerper_zeilen(fk: dict[str, Any], detail: bool = False) -> list[str]:
             n = t.get("netz") or {}
             lr = t.get("sicherheit_lagerrand")
             out.append(f"  Verschiebung höchstens {z(t.get('verformung_max_mm'), 2)} mm; Netz {n.get('tetraeder')} "
-                       f"Tetraeder (P2, {n.get('freiheitsgrade')} Freiheitsgrade, h {z(n.get('h_mm'), 1)} mm"
+                       f"Tetraeder ({'C3D10' if t.get('verfahren') == 'ccx' else 'P2'}, {n.get('freiheitsgrade')} "
+                       f"Freiheitsgrade, h {z(n.get('h_mm'), 1)} mm"
                        f"{', fein' if n.get('fein') else ''}); {z(t.get('ms'), 0)} ms"
                        + (" (Zwischenspeicher)" if t.get("aus_speicher") else "")
                        + (f"; am Rand der Einspannung rechnerisch {_sf(lr)} (Spitze der starren Einspannung, nicht "
@@ -248,14 +249,23 @@ def festkoerper_text(res: dict[str, Any]) -> str:
         zeilen.append(f"[{AMPEL.get(t['ampel'], t['ampel'])}]" + (f" {sz}:" if sz else "") + f" {t.get('text')}")
         from kevcad_kernel.statik.festkoerper.urteil import loesung
 
-        l = loesung(t)
+        if t.get("verfahren") == "ccx":  # Stufe 4: Lösung und Zusatzzeilen (Kontakt, Werkstoff, Traglast)
+            from kevcad_kernel.statik.ccx.urteil import loesung as loesung_s4, zeilen as zeilen_s4
+
+            l = loesung_s4(t)
+            zusatz = zeilen_s4(t)
+        else:
+            l = loesung(t)
+            zusatz = []
         if l and t.get("ampel") != "gruen":
             zeilen.append(f"  Lösung: {l}")
+        zeilen += ["  " + x for x in zusatz]
         zeilen += ["  " + x for x in festkoerper_zeilen({"stand": "done", "teile": [t]}, detail=True)[1:]]
     for h in res.get("hinweise") or []:
         zeilen.append(f"Hinweis: {h}")
     ms = res.get("ms") or {}
-    zeilen.append(f"(gesamt {z(ms.get('gesamt'), 0)} ms, FEM-Prozess {z(ms.get('prozess'), 0)} ms"
+    wer = "CalculiX-Prozess" if res.get("verfahren") == "ccx" else "FEM-Prozess"
+    zeilen.append(f"(gesamt {z(ms.get('gesamt'), 0)} ms, {wer} {z(ms.get('prozess'), 0)} ms"
                   + (", im Viewer gezeigt: Farbverlauf der Ausnutzung und überhöhte Verformung)" if res.get("gezeigt")
                      else ")"))
     if res.get("grenzen"):

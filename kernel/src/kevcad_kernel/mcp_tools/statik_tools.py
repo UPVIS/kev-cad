@@ -191,7 +191,21 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
           "automatically in the background after every run for parts with load; call it for details, another "
           "scenario, a finer mesh (fein=true) or contact forces. Results are cached per part state and load case. "
           "Always state the limits (linear-elastic, supports fully clamped, full infill). abbrechen=true stops a "
-          "running computation.", annotations["additive"])
+          "running computation. "
+          "Stage S4 (verfahren='ccx', CalculiX in a separate process, seconds to a few minutes per part): contact "
+          "instead of clamped supports (kontakt=true, default with ccx): parts that touch can lift off and slide "
+          "(clamps, tube in a bore, plate resting on a support, pin in a hole), friction from reibwerte.json, clamp "
+          "screws of the part (e.g. star knob clamps) preload the joint (klemmkraft in N, default 'hand tight' 120 N "
+          "per mm thread diameter); bars that load the part are modelled as clipped bodies with the forces of both "
+          "sides from the frame model; plastisch=true: elastic-plastic (metals Rp0.2 to Rm with hardening, printed "
+          "parts ideally plastic with brittle layer interface), permanent deformation after unloading; traglast "
+          "(default with contact or plasticity): load factor until failure (strain limit 5 % metals, 2 % prints, "
+          "layer interface, sliding, collapse) - with ccx the safety factor IS this load factor; beulen=true: first "
+          "buckling factor (*BUCKLE). Answer additionally: contact pressure, gap opening (Klaffen), slip, plastic "
+          "strain, permanent deformation; the viewer can colour contact pressure and plastic strain. In model.py "
+          "st.kontakt(a, b, reibwert=, klemmkraft=) and st.festigkeit(teil, plastisch=...) make it run after every "
+          "run. If CalculiX is not available (external disk UPVIS ULTRA not connected) the tool says so; S0-S3 keep "
+          "working.", annotations["additive"])
     async def festigkeit(
         teil: Annotated[str | None, Field(description="Part or group, e.g. 'Wandhalter (Druck)'; omit for all parts "
                                                       "with load")] = None,
@@ -202,12 +216,31 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
                                                   "scenario as load on the part")] = False,
         zeigen: Annotated[bool, Field(description="Show the result in the viewer")] = True,
         abbrechen: Annotated[bool, Field(description="Only stop a running computation")] = False,
+        verfahren: Annotated[str | None, Field(description="'s3' (default, linear FEM) or 'ccx' (stage S4 with "
+                                                           "CalculiX: contact, plasticity, load capacity, "
+                                                           "buckling)")] = None,
+        kontakt: Annotated[bool | None, Field(description="S4: contact pairs instead of clamped supports "
+                                                          "(default true with ccx)")] = None,
+        plastisch: Annotated[bool | None, Field(description="S4: elastic-plastic material")] = None,
+        traglast: Annotated[bool | None, Field(description="S4: increase the load until failure (default with "
+                                                           "contact or plasticity)")] = None,
+        beulen: Annotated[bool | None, Field(description="S4: first buckling factor")] = None,
+        klemmkraft: Annotated[float | None, Field(description="S4: clamping force of the clamp screws in N")] = None,
+        reibwert: Annotated[float | None, Field(description="S4: friction coefficient for all contact pairs "
+                                                            "(default from the catalog)")] = None,
     ) -> CallToolResult:
         if abbrechen:
             res = await t.work("bricht die Festigkeit ab", svc.festigkeit_abbrechen)
             return fmt.result("Festkörper-Rechnung abgebrochen." if res.get("abgebrochen")
                               else "Es lief keine Festkörper-Rechnung.", {k: v for k, v in res.items() if k != "ok"})
-        res = await t.work("rechnet die Festigkeit (FEM)", svc.festigkeit, teil, szenario, fein, ablauf, zeigen)
+        s4 = {k: v for k, v in (("verfahren", verfahren), ("kontakt", kontakt), ("plastisch", plastisch),
+                                ("traglast", traglast), ("beulen", beulen), ("klemmkraft", klemmkraft),
+                                ("reibwert", reibwert)) if v is not None}
+        if s4:
+            res = await t.work("rechnet die Festigkeit mit CalculiX (S4)", svc.festigkeit, teil, szenario, fein, ablauf,
+                               zeigen, **s4)
+        else:
+            res = await t.work("rechnet die Festigkeit (FEM)", svc.festigkeit, teil, szenario, fein, ablauf, zeigen)
         err = fmt.service_error(res)
         if err:
             return fmt.error_result(f"Festigkeit nicht gerechnet: {err}", res)

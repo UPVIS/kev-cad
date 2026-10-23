@@ -64,9 +64,12 @@ extension AppController: StatikActions {
         // Lasten als Pfeile zum Angriffspunkt, Kraftpaare als zwei gegeneinander gerichtete Pfeile (violett)
         if s.farbverlauf { koerper += StatikGeometrie.lastpfeile(sz.lasten) }
         var verdeckt: Set<String> = []
+        // Stufe 4: gefärbt nach dem gewählten Wert (Ausnutzung oder Zusatzwert), alle Felder auf einer Skala
+        let wert = s.wirksamerFeldWert(fuer: sz)
+        let groesster = s.feldGroesster(wert, fuer: sz)
         for (i, f) in s.felder(fuer: sz).enumerated() where scene.record(f.teil) != nil {
             if s.farbverlauf {
-                koerper += StatikFeldGeometrie.farbverlauf(f, id: "\(i)")
+                koerper += StatikFeldGeometrie.farbverlauf(f, id: "\(i)", wert: wert, groesster: groesster)
                 verdeckt.insert(f.teil)
                 toene.removeValue(forKey: f.teil)
             }
@@ -113,6 +116,13 @@ extension AppController: StatikActions {
 
     public func festkoerperAbbrechen() {
         if !send(StatikAbbrechenMessage()) { log(.warning, "Festkörper: keine Verbindung zum Kernel") }
+    }
+
+    public func waehleStatikFeldWert(_ wert: String) {
+        let gueltig = wert == StatikFeldWert.ausnutzung || StatikFeldWert.zusatz.contains(wert)
+        model.statik.feldWert = gueltig ? wert : StatikFeldWert.ausnutzung
+        model.statik.farbverlauf = true  // wer einen Wert wählt, will ihn sehen
+        updateStatikAnzeige()
     }
 
     public func zeigeStatikUrteil(_ urteil: StatikUrteil) {
