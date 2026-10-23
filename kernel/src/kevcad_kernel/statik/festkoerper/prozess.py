@@ -208,6 +208,18 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
                 out.append({"id": f["id"], "stand": "failed", "meldung": f"keine Lagerfläche zu {', '.join(lager)} "
                                                                         "gefunden (berühren sie sich?)"})
             continue
+        # Gleitende Lager (Simulation): nur die Richtung senkrecht zur Fläche ist gehalten
+        teilweise = {x: T["nachbarn"].get(x, {}).get("komponenten") for x in lager
+                     if T["nachbarn"].get(x, {}).get("komponenten")}
+        voll = [x for x in lager if x not in teilweise]
+        gehalten = set(range(3)) if any(len(beruehrt.get(x, ())) for x in voll) else \
+            {int(c) for ks in teilweise.values() for c in ks}
+        if gehalten != {0, 1, 2}:
+            for f in fs:
+                out.append({"id": f["id"], "stand": "failed",
+                            "meldung": "nur gleitende Lager: das Teil ist längs der Lagerflächen nicht gehalten "
+                                       "(ein festes Lager dazu setzen)"})
+            continue
         # Teile des Netzes ohne Lager (lose Stücke) würden das System singulär machen: weglassen
         komp = loeser.komponenten(N.t, N.n)
         mit_lager = np.unique(komp[np.unique(N.rand[fest])])
@@ -216,7 +228,16 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
             for f in fs:
                 f.setdefault("hinweise", []).append(f"{int(lose.sum())} Tetraeder ohne Verbindung zum Lager "
                                                     "weggelassen")
-        fest_dofs = N.feste_dofs(fest)
+        if teilweise:
+            voll_f = np.unique(np.concatenate([beruehrt.get(x, np.zeros(0, dtype=np.int64)) for x in voll])) \
+                if voll else np.zeros(0, dtype=np.int64)
+            fest_dofs = N.feste_dofs(voll_f) if len(voll_f) else np.zeros(0, dtype=np.int64)
+            for x, ks in teilweise.items():
+                sel = beruehrt.get(x, np.zeros(0, dtype=np.int64))
+                if len(sel):
+                    fest_dofs = np.union1d(fest_dofs, N.feste_dofs(sel, komponenten=[int(c) for c in ks]))
+        else:
+            fest_dofs = N.feste_dofs(fest)
         if lose.any():
             weg_knoten = np.unique(N.t[lose])
             weg_knoten = weg_knoten[~np.isin(weg_knoten, np.unique(N.t[~lose]))]

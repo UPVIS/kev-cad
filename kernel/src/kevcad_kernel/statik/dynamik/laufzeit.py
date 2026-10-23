@@ -137,12 +137,24 @@ class DynamikRuntime:
         t0 = time.perf_counter()
         try:
             with self._dyn_sperre:
-                r = subprocess.run([sys.executable, "-m", "kevcad_kernel.statik.dynamik.prozess",
-                                    str(ordner / "auftrag.json")], capture_output=True, text=True,
-                                   timeout=timeout_s, env=env)
+                # eigener Prozess, abbrechbar (Simulation: „Abbrechen“ beendet ihn, ``_dyn_abbrechen``)
+                proc = subprocess.Popen([sys.executable, "-m", "kevcad_kernel.statik.dynamik.prozess",
+                                         str(ordner / "auftrag.json")], stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, text=True, env=env)
+                self.__dict__["_dyn_proc"] = proc
+                try:
+                    _, stderr = proc.communicate(timeout=timeout_s)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    raise
+                finally:
+                    self.__dict__["_dyn_proc"] = None
+            if self.__dict__.pop("_dyn_abgebrochen", False):
+                raise RuntimeError("Ablauf abgebrochen")
             if not (ordner / "ergebnis.json").exists():
-                raise RuntimeError(f"Ablauf-Prozess ohne Ergebnis beendet (Code {r.returncode}): "
-                                   f"{(r.stderr or '')[-800:]}")
+                raise RuntimeError(f"Ablauf-Prozess ohne Ergebnis beendet (Code {proc.returncode}): "
+                                   f"{(stderr or '')[-800:]}")
             out = json.loads((ordner / "ergebnis.json").read_text(encoding="utf-8"))
             felder: dict[str, np.ndarray] = {}
             if (ordner / "lagen.npz").exists():
@@ -187,6 +199,18 @@ class DynamikRuntime:
             hub.anims[name] = a
         self._send_app({"type": "ANIM_DEF", **header}, payload)  # type: ignore[attr-defined]
         return name
+
+    def _dyn_abbrechen(self) -> bool:
+        """Laufenden Ablauf-Prozess beenden (Simulation: „Abbrechen“); True, wenn einer lief."""
+        p = self.__dict__.get("_dyn_proc")
+        if p is None or p.poll() is not None:
+            return False
+        self.__dict__["_dyn_abgebrochen"] = True
+        try:
+            p.kill()
+        except OSError:
+            pass
+        return True
 
     def _dyn_einbauen(self, name: str, ablauf: dict[str, Any], run: int | None, zeigen: bool) -> dict[str, Any] | None:
         """Ablauf in das Szenario des Statik-Ergebnisses einbauen; STATICS an die App."""

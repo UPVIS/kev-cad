@@ -1505,7 +1505,7 @@ STATIK_AMPELN = ("gruen", "gelb", "rot", "grau")
 STATIK_STAENDE = ("done", "failed")
 STATIK_URTEIL_FELDER = ("art", "teil", "ampel", "text", "loesung", "sicherheit", "ziel", "reserve", "ausnutzung", "ort",
                         "durchbiegung", "grenze", "schichtfaktor", "quer_zur_schicht", "alternative", "kurz")
-STATIK_LAST_FELDER = ("teile", "kraft", "punkt", "kg", "zeile", "gegen", "paar")  # Feld ``lasten`` je Szenario (T32)
+STATIK_LAST_FELDER = ("teile", "kraft", "punkt", "kg", "zeile", "gegen", "paar", "id")  # ``lasten`` je Szenario (T32)
 STATIK_ABLAUF_STAENDE = ("done", "laeuft", "failed")  # Stufe 2 (Ablauf): Feld ``ablauf`` je Szenario
 STATIK_ABLAUF_KURZ = ("kippreserve", "a_abheben", "abheben_max_mm", "kippwinkel_max", "rutschgrenze", "rutschreserve",
                       "geschwindigkeit", "verzoegerung")
@@ -2161,6 +2161,14 @@ def check_topo_app(header: dict[str, Any]) -> list[str]:
             err.append("TOPO_START: behalten außerhalb 0,05…0,95")
         if header.get("lager") not in (None, "kontakt", "bohrungen"):
             err.append("TOPO_START: lager ist kontakt oder bohrungen")
+        # additiv (Simulation): Schutzzonen je Art abwählbar, Schutzflächen per Klick
+        for k in ("bohrungen", "einsaetze", "kontakt", "bett"):
+            if header.get(k) is not None and not isinstance(header.get(k), bool):
+                err.append(f"TOPO_START: {k} ist ein Wahrheitswert")
+        s = header.get("schutz")
+        if s is not None and (not isinstance(s, list) or any(not isinstance(z, dict) or z.get("index") is None
+                                                             for z in s)):
+            err.append("TOPO_START: schutz ist eine Liste von {\"art\": \"index\", \"index\": n}")
     return err
 
 
@@ -2210,3 +2218,182 @@ def topo_beispiel_feld(art: str = "nachher") -> tuple[dict[str, Any], dict[str, 
     if art == "dichte":
         kopf["iteration"] = 12
     return kopf, {"punkte": felder["punkte"], "dreiecke": felder["dreiecke"].astype(np.uint32)}
+
+
+# Simulation (PLAN-SIMULATION.md): SIM und SIM_JOB (Kernel → App), SIM_REQ, SIM_EDIT, SIM_RUN, SIM_CANCEL (App → Kernel),
+# siehe PROTOCOL.md „Simulation“. Rein additiv; ältere Gegenseiten ignorieren die Typen. Inhalt von SIM:
+# ``simulation/laufzeit.py`` (``simulation_stand``), Format von simulation.json: ``simulation/datei.py``.
+
+SIM_FELDER = ("run", "stand", "datei", "vorhanden", "lastfaelle", "modell", "lager", "modell_lager", "abgeleitet",
+              "topologie", "hinweise", "fehler", "job")
+SIM_ZUSTAENDE = ("ok", "neu", "fehlt", "offen")
+SIM_JOB_FELDER = ("auftrag", "was", "lastfall", "teil", "grenze", "von", "stand", "fortschritt", "text", "ergebnis",
+                  "meldung", "ms")
+SIM_JOB_STAENDE = ("laeuft", "done", "failed", "abgebrochen")
+SIM_APP = ("SIM_REQ", "SIM_EDIT", "SIM_RUN", "SIM_CANCEL")
+
+
+def pack_sim(stand: dict[str, Any], *, reply_to: str | None = None, seq: int = 0) -> dict[str, Any]:
+    """Kopf von SIM (keine Nutzlast): Lastfälle, Lasten und Lager aus simulation.json mit ihrem Zustand im aktuellen
+    Modell, Szenarien und Lager aus model.py, abgeleitete Lager, Topologie-Einstellungen, laufender Auftrag."""
+    head: dict[str, Any] = {"type": "SIM", "seq": seq}
+    for k in SIM_FELDER:
+        head[k] = _json_rein(stand.get(k))
+    head["run"] = int(head["run"] or 0)
+    head["stand"] = int(head["stand"] or 0)
+    for k in ("lastfaelle", "modell", "lager", "modell_lager", "abgeleitet", "hinweise"):
+        head[k] = list(head[k] or [])
+    head["topologie"] = dict(head["topologie"] or {})
+    if reply_to is not None:
+        head["reply_to"] = reply_to
+    return head
+
+
+def check_sim_message(header: dict[str, Any]) -> list[str]:
+    """Fehler einer SIM-Nachricht (leer = gültig)."""
+    err = _fehlend(header, ("type", "run", "stand", "lastfaelle", "lager", "abgeleitet"), "SIM")
+    if err:
+        return err
+    if header["type"] != "SIM":
+        err.append("type ist nicht SIM")
+    namen = set()
+    for i, l in enumerate(header.get("lastfaelle") or []):
+        wo = f"SIM.lastfaelle[{i}]"
+        err += _fehlend(l, ("name", "art", "lasten"), wo)
+        if l.get("name") in namen:
+            err.append(f"{wo}: Name {l.get('name')!r} doppelt")
+        namen.add(l.get("name"))
+        if l.get("art") not in ("statisch", "dynamisch"):
+            err.append(f"{wo}.art {l.get('art')!r} unbekannt")
+        for j, x in enumerate(l.get("lasten") or []):
+            err += _fehlend(x, ("id", "teil", "kraft", "zustand"), f"{wo}.lasten[{j}]")
+            if x.get("zustand") not in SIM_ZUSTAENDE:
+                err.append(f"{wo}.lasten[{j}].zustand {x.get('zustand')!r} unbekannt")
+    for i, x in enumerate(header.get("lager") or []):
+        err += _fehlend(x, ("id", "teil", "art", "zustand"), f"SIM.lager[{i}]")
+        if x.get("art") not in ("fest", "gelenkig", "gleitend"):
+            err.append(f"SIM.lager[{i}].art {x.get('art')!r} unbekannt")
+    for i, a in enumerate(header.get("abgeleitet") or []):
+        err += _fehlend(a, ("id", "art", "teil", "aktiv"), f"SIM.abgeleitet[{i}]")
+    return err
+
+
+def pack_sim_job(job: dict[str, Any], *, seq: int = 0) -> dict[str, Any]:
+    """Kopf von SIM_JOB: Stand eines Auftrags aus dem Bereich Simulation (Rechnen, Festigkeit, Ablauf, Grenze)."""
+    head: dict[str, Any] = {"type": "SIM_JOB", "seq": seq}
+    for k in SIM_JOB_FELDER:
+        head[k] = _json_rein(job.get(k))
+    head["stand"] = head["stand"] or "laeuft"
+    return head
+
+
+def check_sim_job(header: dict[str, Any]) -> list[str]:
+    err = _fehlend(header, ("type", "auftrag", "was", "stand"), "SIM_JOB")
+    if err:
+        return err
+    if header["stand"] not in SIM_JOB_STAENDE:
+        err.append(f"SIM_JOB: stand {header['stand']!r} unbekannt")
+    if header.get("was") not in ("rechnen", "festigkeit", "ablauf", "grenze"):
+        err.append(f"SIM_JOB: was {header.get('was')!r} unbekannt")
+    f = header.get("fortschritt")
+    if f is not None and not 0.0 <= float(f) <= 1.0:
+        err.append("SIM_JOB: fortschritt außerhalb 0…1")
+    return err
+
+
+def check_sim_app(header: dict[str, Any]) -> list[str]:
+    """Fehler einer Anfrage der App (SIM_REQ, SIM_EDIT, SIM_RUN, SIM_CANCEL)."""
+    t = header.get("type")
+    if t not in SIM_APP:
+        return [f"type {t!r} ist keine Simulations-Anfrage"]
+    err: list[str] = []
+    if t == "SIM_EDIT":
+        ops = header.get("ops")
+        if not isinstance(ops, list) or not ops:
+            err.append("SIM_EDIT: ops (Liste von Operationen) fehlt")
+        else:
+            from kevcad_kernel.simulation.datei import OPS
+
+            for i, op in enumerate(ops):
+                if not isinstance(op, dict) or op.get("op") not in OPS:
+                    err.append(f"SIM_EDIT: ops[{i}] unbekannt")
+    if t == "SIM_RUN":
+        if header.get("was") not in ("rechnen", "festigkeit", "ablauf", "grenze"):
+            err.append(f"SIM_RUN: was {header.get('was')!r} unbekannt")
+        if header.get("was") == "grenze" and header.get("grenze") not in ("last", "neigung", "geschwindigkeit"):
+            err.append("SIM_RUN: grenze ist last, neigung oder geschwindigkeit")
+    return err
+
+
+def sim_beispiel() -> dict[str, Any]:
+    """Stand für Testdateien: ein Lastfall der App mit einer Last auf einer Fläche (zugeordnet) und einer nicht mehr
+    zuordenbaren, ein festes Lager, ein Lastfall aus model.py (ersetzt), ein abgeleitetes Lager (aus)."""
+    ort = {"flaeche": 5, "punkt": [40.0, 0.0, 60.0], "normale": [0.0, 0.0, 1.0],
+           "signatur": {"t": "plane", "a": 800.0, "n": [0.0, 0.0, 1.0], "c": [40.0, 0.0, 60.0]}}
+    return {
+        "run": 7, "stand": 3, "datei": "simulation.json", "vorhanden": True,
+        "lastfaelle": [{
+            "name": "Aufstützen 30 kg", "art": "statisch", "beschreibung": "Kevin stützt sich auf", "kopie_von": None,
+            "neigung": {"grad": 5.0, "richtung": "+y"}, "beschleunigung": None,
+            "fahrt": None, "stoss": None, "untergrund": "holz", "ziel": {"sicherheit": 2.5, "durchbiegung": 300.0},
+            "ampel": "gelb", "text": "Aufstützen 30 kg: gelb – Halter hält knapp (Sicherheit 3,1)", "gerechnet": True,
+            "lasten": [
+                {"id": "L1", "teil": "Halter", "gegen": None, "ort": ort, "richtung": {"art": "normale"},
+                 "betrag": 30.0, "einheit": "kg", "kraft": [0.0, 0.0, -294.3], "zustand": "ok", "zustand_text": "",
+                 "kraft_wirksam": [0.0, 0.0, -294.3], "punkt_wirksam": [40.0, 0.0, 60.0],
+                 "normale_wirksam": [0.0, 0.0, 1.0], "flaeche_wirksam": 5},
+                {"id": "L2", "teil": "Halter", "gegen": "Bolzen",
+                 "ort": {"flaeche": 9, "punkt": [10.0, 0.0, 30.0], "normale": None, "signatur": None},
+                 "richtung": {"art": "frei", "azimut": 0.0, "hoehe": -30.0}, "betrag": 50.0, "einheit": "N",
+                 "kraft": [43.3, 0.0, -25.0], "zustand": "fehlt",
+                 "zustand_text": "Fläche 9 (Zylinder, 120 mm²) passt zu keiner Fläche des Teils mehr",
+                 "kraft_wirksam": None, "punkt_wirksam": None, "normale_wirksam": None, "flaeche_wirksam": None}]},
+            {"name": "Bremsen aus 1 m/s", "art": "dynamisch", "beschreibung": "", "kopie_von": "Bremsen",
+             "neigung": None, "beschleunigung": None,
+             "fahrt": {"geschwindigkeit": 1.0, "bremsen": "abrupt", "dauer": None, "animation": None,
+                       "angriff": "boden", "fahrtrichtung": "+x", "antrieb": None},
+             "stoss": None, "untergrund": None, "ziel": None, "ampel": "rot", "text": "", "gerechnet": True,
+             "lasten": []}],
+        "modell": [{"name": "Eigengewicht", "quelle": "standard", "art": "statisch", "zeile": None, "ampel": "gruen",
+                    "text": "", "beschreibung": "nur das eigene Gewicht", "dynamisch": False, "ersetzt": False},
+                   {"name": "Aufstützen 30 kg", "quelle": "modell", "art": "statisch", "zeile": 12, "ampel": None,
+                    "text": "", "beschreibung": None, "dynamisch": False, "ersetzt": True}],
+        "lager": [{"id": "A1", "teil": "Halter", "art": "fest", "auf": "flaeche",
+                   "ort": {"flaeche": 2, "punkt": [0.0, 0.0, 30.0], "normale": [-1.0, 0.0, 0.0], "signatur": None},
+                   "zustand": "neu", "zustand_text": "Fläche 3 → 2", "punkt_wirksam": [0.0, 0.0, 30.0],
+                   "normale_wirksam": [-1.0, 0.0, 0.0], "flaeche_wirksam": 2}],
+        "modell_lager": [{"id": "M1", "teil": "Platte", "art": "gleitend", "quelle": "modell", "auf": "flaeche",
+                          "flaeche": 0, "punkt": [0.0, 0.0, 0.0], "normale": [0.0, 0.0, -1.0], "zeile": 20,
+                          "zustand": "ok", "zustand_text": ""}],
+        "abgeleitet": [{"id": "boden:Fuß", "art": "boden", "teil": "Fuß", "text": "Fuß steht auf dem Boden",
+                        "punkt": [0.0, 0.0, 0.0], "aktiv": False},
+                       {"id": "kontakt:Halter|Wand", "art": "kontakt", "teil": "Halter", "nachbar": "Wand",
+                        "text": "Halter wird von Wand gehalten (Kontakt)", "aktiv": True,
+                        "szenarien": ["Aufstützen 30 kg"]}],
+        "topologie": {"Halter": {"szenario": "Aufstützen 30 kg", "behalten": 0.42, "ueberhang": True,
+                                 "bohrungen": True, "einsaetze": False, "kontakt": True,
+                                 "schutz": [{"art": "index", "index": 7, "zustand": "ok", "text": ""}]}},
+        "hinweise": ["Lastfall „Aufstützen 30 kg“ aus der App ersetzt den gleichnamigen aus model.py (Zeile 12)",
+                     "1 Lasten bzw. Lager aus der App sind nicht mehr zuordenbar und zählen nicht mit (L2)"],
+        "fehler": None,
+        "job": None}
+
+
+def sim_job_beispiel(stand: str = "done") -> dict[str, Any]:
+    """Auftrag für Testdateien: „Grenze suchen“ (Last) fertig bzw. FEM laufend."""
+    if stand == "laeuft":
+        return {"auftrag": 4, "was": "festigkeit", "lastfall": "Aufstützen 30 kg", "teil": None, "grenze": None,
+                "von": "app", "stand": "laeuft", "fortschritt": 0.45, "text": "Halter: lösen", "ergebnis": None,
+                "meldung": None, "ms": None}
+    return {"auftrag": 5, "was": "grenze", "lastfall": "Aufstützen 30 kg", "teil": None, "grenze": "last",
+            "von": "app", "stand": "done", "fortschritt": 1.0,
+            "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen (365 N statt 294 N), begrenzt durch Ziel-Sicherheit",
+            "ergebnis": {"art": "last", "lastfall": "Aufstützen 30 kg",
+                         "werte": [{"kriterium": "Ziel-Sicherheit", "grenze": 1.24, "einheit": "×", "last_n": 364.9,
+                                    "massgebend": "Halter", "text": "Ziel-Sicherheit: bis zum 1,24-fachen der Lasten"},
+                                   {"kriterium": "Bruch (Sicherheit 1)", "grenze": 3.1, "einheit": "×",
+                                    "last_n": 912.3, "massgebend": "Halter",
+                                    "text": "Bruch (Sicherheit 1): bis zum 3,10-fachen der Lasten"}],
+                         "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen", "rechnungen": 41,
+                         "hinweis": "gesucht mit S0 und S1 (ohne Festkörper-FEM)", "ms": 812.0},
+            "meldung": None, "ms": 905.0}

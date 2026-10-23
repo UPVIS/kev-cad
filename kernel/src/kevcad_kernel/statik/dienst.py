@@ -21,7 +21,18 @@ def auftrag(auftrag_json: str) -> str:
     try:
         a = json.loads(auftrag_json)
         nur_anhang = a.get("szene") is not None or a.get("festkoerper") is not None
-        erg = rechne_auftrag(a) if (a.get("szenario") or a.get("neu") or not nur_anhang) else {"stand": "done"}
+        if a.get("simulation"):  # Simulation: simulation.json geändert, alles mit dem letzten Modell neu
+            from kevcad_kernel.statik.anbindung import neu_mit_simulation
+
+            erg = neu_mit_simulation()
+        elif a.get("grenze"):  # Simulation: „Grenze suchen“ (Last, Neigung) mit S0 und S1
+            from kevcad_kernel.simulation.grenze import suche
+            from kevcad_kernel.statik.anbindung import LETZTER
+
+            erg = {"stand": "done", "grenze": suche(LETZTER, str(a["grenze"].get("lastfall")),
+                                                    str(a["grenze"].get("art")))}
+        else:
+            erg = rechne_auftrag(a) if (a.get("szenario") or a.get("neu") or not nur_anhang) else {"stand": "done"}
         if a.get("szene") is not None and erg.get("stand") == "done":
             erg.update(szene_schreiben(a["szene"]))
         if a.get("festkoerper") is not None and erg.get("stand") == "done":

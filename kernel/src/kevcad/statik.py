@@ -25,6 +25,10 @@ st.szenario("Fahrt", animation="Fahrt", bremsen=4)                        # Soll
 
 st.untergrund("holz")                                                     # Boden zum Rutschen (Standard Beton)
 st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eigene Ziele statt T5
+
+st.lager("Halter", flaeche=halter.faces().sort_by(Axis.X)[0])            # Lager: Fläche fest eingespannt
+st.lager("Rahmen/Rohr", punkt=(0, 0, 30), art="gelenkig")                 # Punkt, gelenkig (Stab: Gelenk)
+st.lager("Schlitten", flaeche=3, art="gleitend")                          # gleitet in der Fläche, hält senkrecht
 ```
 
 - ``szenario`` legt ein Szenario an (oder ergänzt das gleichnamige); ``last``, ``stoss``, ``neigung`` ohne
@@ -42,6 +46,13 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                             # eige
   mm oder Punkt), ``fahrtrichtung`` (``"+x"``). Kev CAD rechnet den Ablauf nach jedem Lauf im Hintergrund in einem
   eigenen Prozess: Kippen, Abheben, Ladung (Ball springt heraus?), Grenzgeschwindigkeit; die Zeitleiste spielt ihn als
   Animation „Ablauf: <Name>“ ab.
+- **Lager** (``lager``, PLAN-SIMULATION.md): Ohne Angabe leitet Kev CAD die Lager aus den Kontakten ab (Boden,
+  Kulisse, ``befestigt``, tragende Nachbarn). ``lager(teil, flaeche=…, punkt=…, art=…)`` setzt eines ausdrücklich:
+  ``art`` ``"fest"`` (eingespannt), ``"gelenkig"`` (hält, dreht frei: an Stäben ein Gelenk) oder ``"gleitend"`` (hält
+  nur senkrecht zur Fläche); ``flaeche`` als Nummer wie im Viewer oder als Fläche aus build123d, ``punkt`` in mm (Welt),
+  ohne beides das ganze Teil. Lager gelten in allen Szenarien: Stabwerk (Auflager am Stab bzw. Körper fest), Kippen und
+  Rutschen (gelagerte Gruppen kippen nicht), Bauteil-Nachweis und Festkörper (Lagerfläche fest bzw. nur senkrecht
+  gehalten) und Topologie. Dieselben Lager setzt Kevin in der App im Bereich „Simulation“ (``simulation.json``).
 - Außerhalb des Kernels tun die Funktionen nichts.
 
 Ergebnis: MCP ``statik`` und ``szenario_rechnen``, in der App der Abschnitt „Statik“ mit Ampel und Farbverlauf.
@@ -53,7 +64,7 @@ import math
 import sys
 from typing import Any
 
-__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel",
+__all__ = ["szenario", "last", "kraftpaar", "neigung", "beschleunigung", "stoss", "untergrund", "ziel", "lager",
            "Szenario"]
 
 G = 9.81
@@ -239,3 +250,45 @@ def ziel(sicherheit: float | None = None, durchbiegung: str | float | None = Non
     """Eigene Ziele für alle Szenarien: Sicherheit (statisch; dynamisch × 1,5) und Durchbiegung ("L/300")."""
     _hook()
     _melde({"was": "ziel", "sicherheit": sicherheit, "durchbiegung": durchbiegung})
+
+
+LAGERARTEN = ("fest", "gelenkig", "gleitend")
+
+
+def _flaeche(f: Any) -> tuple[int | None, dict[str, Any] | None]:
+    """Fläche als Nummer (wie im Viewer) oder als Fläche aus build123d (Signatur wie ``PART_UPSERT.faces[i]``; der
+    Kernel sucht die Nummer im gezeigten Teil)."""
+    if f is None:
+        return None, None
+    if isinstance(f, bool):
+        raise ValueError("statik.lager: flaeche ist eine Nummer oder eine Fläche aus build123d")
+    if isinstance(f, int):
+        if f < 0:
+            raise ValueError("statik.lager: flaeche ab 0 (Nummer wie im Viewer)")
+        return f, None
+    if not hasattr(f, "wrapped"):
+        raise ValueError(f"statik.lager: flaeche {f!r} ist weder Nummer noch Fläche")
+    from kevcad_kernel.tessellate import face_info
+
+    return None, face_info(f)
+
+
+def lager(teil: Any, flaeche: Any = None, punkt: Any = None, art: str = "fest", normale: Any = None) -> None:
+    """Lager ausdrücklich setzen (statt nur aus den Kontakten abgeleitet): ``art`` "fest", "gelenkig" oder "gleitend",
+    an einer ``flaeche`` (Nummer oder build123d-Fläche), einem ``punkt`` (mm, Welt) oder ohne beides am ganzen Teil.
+    Gilt in allen Szenarien."""
+    if str(art) not in LAGERARTEN:
+        raise ValueError(f"statik.lager: art {art!r} unbekannt (fest, gelenkig, gleitend)")
+    if not _teile(teil):
+        raise ValueError("statik.lager: Teil angeben (Name aus show(), Gruppe oder Form)")
+    index, sig = _flaeche(flaeche)
+    p = _vec(punkt, "punkt")
+    n = _vec(normale, "normale")
+    if n is None and sig is not None and sig.get("n") is not None:
+        n = [float(c) for c in sig["n"]]
+    if str(art) == "gleitend" and n is None and index is None:
+        raise ValueError("statik.lager: ein gleitendes Lager braucht eine ebene Fläche oder normale=(x, y, z)")
+    auf = "flaeche" if (index is not None or sig is not None) else ("punkt" if p is not None else "teil")
+    _hook()
+    _melde({"was": "lager", "teile": _teile(teil), "art": str(art), "auf": auf,
+            "ort": {"flaeche": index, "signatur": sig, "punkt": p, "normale": n}})

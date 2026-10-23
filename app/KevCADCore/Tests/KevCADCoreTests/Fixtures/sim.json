@@ -1,0 +1,47 @@
+{
+ "sim": {
+  "run": 7,
+  "stand": 3,
+  "lastfaelle": 2,
+  "erster": "Aufstützen 30 kg",
+  "lasten": 2,
+  "kraft_l1": [
+   0.0,
+   0.0,
+   -294.3
+  ],
+  "zustand_l2": "fehlt",
+  "lager": 1,
+  "lager_zustand": "neu",
+  "modell": 2,
+  "ersetzt": [
+   "Aufstützen 30 kg"
+  ],
+  "abgeleitet": 2,
+  "abgeleitet_aus": [
+   "boden:Fuß"
+  ],
+  "hinweise": 2,
+  "neigung": 5.0,
+  "ziel": 2.5,
+  "untergrund": "holz",
+  "fahrt_bremsen": "abrupt",
+  "topologie_schutz": 7
+ },
+ "sim_job": {
+  "auftrag": 5,
+  "was": "grenze",
+  "stand": "done",
+  "fortschritt": 1.0,
+  "werte": 2,
+  "text": "„Aufstützen 30 kg“ hält bis zum 1,24-fachen (365 N statt 294 N), begrenzt durch Ziel-Sicherheit"
+ },
+ "sim_job_laeuft": {
+  "auftrag": 4,
+  "was": "festigkeit",
+  "stand": "laeuft",
+  "fortschritt": 0.45,
+  "werte": 0,
+  "text": "Halter: lösen"
+ }
+}

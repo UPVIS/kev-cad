@@ -188,13 +188,14 @@ def rutschen(m: StatikModell, sz: Szenario, katalog: Any, rollen: bool) -> list[
         unten = [n for n in teile if n in m.teile and m.teile[n].bmin[2] <= z0 + BODEN_TOL and n not in m.rollend]
         werte = []
         for n in unten:
-            r = reibwert(katalog, _material(m, n), m.untergrund)
+            r = reibwert(katalog, _material(m, n), sz.untergrund or m.untergrund)
             werte.append((r["haft"] if r else MU_ANNAHME, n, r))
         if not werte:
             continue
         mu, teil, r = min(werte, key=lambda w: w[0])
         e = {"teile": sorted(teile)[:3], "gruppe": len(teile), "mu_erf": round(mu_erf, 3), "mu_vorh": round(mu, 3),
-             "reserve": None if mu_erf < 1e-9 else round(mu / mu_erf, 3), "teil": teil, "untergrund": m.untergrund,
+             "reserve": None if mu_erf < 1e-9 else round(mu / mu_erf, 3), "teil": teil,
+             "untergrund": sz.untergrund or m.untergrund,
              "paarung": (r or {}).get("paarung"), "quelle": (r or {}).get("quelle"), "angenommen": r is None,
              "auf_rollen": rollen}
         out.append(e)

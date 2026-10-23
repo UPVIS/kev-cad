@@ -383,6 +383,25 @@ class KernelService(Protocol):
         """Letztes Ergebnis als Variante übernehmen (Variante anlegen, model.py ergänzen, Lauf): {"ok", "variante",
         "zeile", "text"}."""
 
+    # Bereich „Simulation“ (PLAN-SIMULATION.md, additiv; umgesetzt in kevcad_kernel.simulation.laufzeit)
+    def simulation_liste(self) -> dict[str, Any]:
+        """Lastfälle, Lasten, Lager und Topologie-Einstellungen aus der App (<projekt>/simulation.json) mit ihrem
+        Zustand im aktuellen Modell: {"ok", "run", "stand", "datei", "vorhanden", "lastfaelle" (je mit "lasten",
+        "ampel", "text"), "modell" (Szenarien aus model.py), "lager", "modell_lager", "abgeleitet", "topologie",
+        "hinweise", "fehler", "job"}."""
+
+    def simulation_aendern(self, ops: list[dict[str, Any]], basis: int | None = None,
+                           von: str = "agent") -> dict[str, Any]:
+        """Operationen auf simulation.json wie SIM_EDIT der App (lastfall_neu, lastfall_setzen, lastfall_kopieren,
+        lastfall_umbenennen, lastfall_loeschen, last_setzen, last_loeschen, lager_setzen, lager_loeschen, abgeleitet,
+        topologie), danach alles mit dem letzten Modell neu gerechnet: {"ok", "stand", "meldungen", "gerechnet",
+        "datei", "lastfaelle", "lager", "hinweise"}."""
+
+    def simulation_rechnen(self, was: str, lastfall: str | None = None, teil: str | None = None, fein: bool = False,
+                           grenze: str | None = None, warten: bool = True, von: str = "agent") -> dict[str, Any]:
+        """Knopf im Bereich Simulation: ``was`` rechnen | festigkeit | ablauf | grenze (``grenze`` last | neigung |
+        geschwindigkeit): {"ok", "auftrag", "text", "ergebnis"}."""
+
     def druck_einstellen(self, teil: str, einstellungen: dict[str, Any] | None = None, zweck: str | None = None,
                          von: str = "agent", zuruecksetzen: bool = False) -> dict[str, Any]:
         """Feste Vorgabe wie PRINT_SETTINGS (Teil, Gruppe „g3“ oder Gruppenname), gespeichert in

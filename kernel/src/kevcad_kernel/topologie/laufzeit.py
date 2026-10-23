@@ -478,8 +478,14 @@ class TopologieRuntime:
     def _topologie_app_message(self, kind: str | None, header: dict[str, Any]) -> bool:
         if kind == "TOPO_START":
             wunsch = {k: header.get(k) for k in ("teil", "szenario") if header.get(k) is not None}
+            # additiv (Simulation): automatische Schutzzonen je Art abwählbar, Schutzflächen per Klick
             wunsch["einstellungen"] = {k: header.get(k) for k in ("behalten", "ueberhang", "fein", "steg", "bett",
-                                                                   "lager") if header.get(k) is not None}
+                                                                   "lager", "bohrungen", "einsaetze", "kontakt")
+                                       if header.get(k) is not None}
+            if isinstance(header.get("schutz"), list):
+                # mit Schlüssel, damit eine andere Auswahl ein eigenes Ergebnis bekommt (Modellschlüssel)
+                wunsch["schutz"] = [{"art": "index", "index": int(s["index"]), "schluessel": f"index-{int(s['index'])}"}
+                                    for s in header["schutz"] if isinstance(s, dict) and s.get("index") is not None]
             self._pool.submit(self._tp_app_start, wunsch)  # type: ignore[attr-defined]
             return True
         if kind == "TOPO_CANCEL":

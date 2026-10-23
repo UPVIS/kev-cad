@@ -296,7 +296,17 @@ class _Aufbau:
                 self.starr_glieder.setdefault(kid, []).append(g)
             knoten = g_knoten
         if geerdet:
-            fe.def_support(knoten, True, True, True, True, True, True)
+            if a.art == "gleitend":
+                # gleitendes Lager (Simulation): hält nur senkrecht zur Fläche (auf die nächste Weltachse gerundet),
+                # Drehungen frei über das Gelenkglied
+                n = np.asarray(a.achse if a.achse is not None else (0, 0, 1.0), dtype=float)
+                c = int(np.argmax(np.abs(n)))
+                if float(np.max(np.abs(n))) < 0.99:
+                    self.vereinfacht.append(f"{a.teile[1]}: gleitendes Lager schräg zur Weltachse, senkrecht zur "
+                                            f"nächsten Achse ({'XYZ'[c]}) gerechnet")
+                fe.def_support(knoten, c == 0, c == 1, c == 2, True, True, True)
+            else:
+                fe.def_support(knoten, True, True, True, True, True, True)
             self.lager.append((knoten, a))
         elif ziel is not None:
             g = self._starr(knoten, ziel, kid)
@@ -307,7 +317,7 @@ class _Aufbau:
         """Freigaben am Gelenkglied (lokal: x quer, z längs des Stabs, y quer)."""
         if a.art == "fest":
             return {}
-        if a.art == "gelenkig":
+        if a.art in ("gelenkig", "gleitend"):  # gleitend: die Verschiebung längs der Fläche gibt das Auflager frei
             return {"Rx": True, "Ry": True}
         achse = a.achse if a.achse is not None else s.achse
         achse = np.asarray(achse, dtype=float) / max(float(np.linalg.norm(achse)), 1e-12)

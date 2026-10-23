@@ -276,6 +276,8 @@ def lasten_anzeige(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
         if last.paar:
             e["gegen"] = list(last.gegen)
             e["paar"] = True
+        if last.id:  # Last aus der App (Simulation)
+            e["id"] = last.id
         out.append(e)
     return out
 

@@ -79,6 +79,32 @@ def _werkstoff(m: Any, katalog: Any, name: str) -> dict[str, Any] | None:
             "nu_angenommen": w.nu is None}
 
 
+def lager_nachbar(m: Any, x: str) -> Any:
+    """Ausdrücklich gesetztes Lager (``simulation.zuordnung.Lager``) zum Nachbarnamen „Lager: …“, sonst None."""
+    if not str(x).startswith("Lager: "):
+        return None
+    return next((L for L in getattr(m, "lager_explizit", None) or [] if L.name == x and L.netz is not None), None)
+
+
+def lager_npz(L: Any, datei: str) -> int:
+    pos, tri = L.netz
+    tri = np.asarray(tri, dtype=np.int64)
+    used = np.unique(tri) if len(tri) else np.zeros(0, dtype=np.int64)
+    remap = np.full(len(pos), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    np.savez(datei, pos=np.asarray(pos, dtype=np.float64)[used], tri=remap[tri].astype(np.int64))
+    return int(len(tri))
+
+
+def lager_schluessel(L: Any) -> str:
+    pos, tri = L.netz
+    P = np.asarray(pos, float)[np.asarray(tri, np.int64)].reshape(-1, 3) if len(tri) else np.zeros((0, 3))
+    d = {"art": L.art, "komp": L.komponenten, "n": len(P),
+         "m": _r(P.mean(axis=0).tolist()) if len(P) else None, "lo": _r(P.min(axis=0).tolist()) if len(P) else None,
+         "hi": _r(P.max(axis=0).tolist()) if len(P) else None}
+    return hashlib.sha1(json.dumps(d, sort_keys=True).encode()).hexdigest()[:16]
+
+
 def _toleranz(m: Any, a: str, b: str) -> float:
     e = m.kanten.get(frozenset((a, b))) or {}
     return TOL_SPIEL if e.get("kontakt") == "spiel" else TOL_BERUEHRT
@@ -262,7 +288,17 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
         lo, hi = np.asarray(k.bmin) - RAND_MM, np.asarray(k.bmax) + RAND_MM
         brauche = set(f["lager"]) | {l["kontakt_mit"] for l in f["lasten"] if l.get("kontakt_mit")}
         for x in sorted(brauche):
-            if x in T["nachbarn"] or x not in st.koerper:
+            if x in T["nachbarn"]:
+                continue
+            L = lager_nachbar(m, x)
+            if L is not None:  # ausdrücklich gesetztes Lager (Simulation): seine Fläche ist das „Nachbarnetz“
+                datei = os.path.join(ordner, f"nachbar_{T['id']}_{len(T['nachbarn'])}.npz")
+                n_tri = lager_npz(L, datei)
+                T["nachbarn"][x] = {"datei": datei, "tol": TOL_BERUEHRT, "schluessel": lager_schluessel(L),
+                                    "dreiecke": n_tri, "komponenten": L.komponenten,
+                                    "normale": None if L.normale is None else [float(c) for c in L.normale]}
+                continue
+            if x not in st.koerper:
                 continue
             o = st.koerper[x]
             pos = np.asarray(o.pos, dtype=float)

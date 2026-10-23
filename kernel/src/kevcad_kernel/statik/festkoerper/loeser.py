@@ -232,8 +232,17 @@ class Netz:
         B[comp == 2, 5], B[comp == 0, 5] = -x[comp == 2], z[comp == 0]
         return B
 
-    def feste_dofs(self, facetten: np.ndarray) -> np.ndarray:
-        return np.unique(self.basis.get_dofs(facets=self.rand_index[facetten]).all())
+    def feste_dofs(self, facetten: np.ndarray, komponenten: list[int] | None = None) -> np.ndarray:
+        """Freiheitsgrade der Randfacetten; ``komponenten`` (0 = x, 1 = y, 2 = z): nur diese Richtungen (gleitendes
+        Lager, Simulation)."""
+        dofs = np.unique(self.basis.get_dofs(facets=self.rand_index[facetten]).all())
+        if komponenten is None:
+            return dofs
+        comp = np.full(self.N, -1, dtype=np.int64)
+        for c in range(3):
+            comp[self.basis.nodal_dofs[c]] = c
+            comp[self.basis.edge_dofs[c]] = c
+        return dofs[np.isin(comp[dofs], komponenten)]
 
     def loese(self, K: sp.csr_matrix, fest: np.ndarray, lasten: list[np.ndarray], abbruch: Any = None,
               duenn: bool = False) -> tuple[list[np.ndarray], dict[str, Any]]:

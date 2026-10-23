@@ -113,10 +113,21 @@ def tragende_nachbarn(m: StatikModell, name: str, koerper: dict[str, Any], ohne:
         x = e["b"] if e["a"] == name else e["a"]
         if x not in koerper or x in ohne:
             continue
+        if m.kontakt_aus(name, x):  # abgeleitetes Lager in der App ausgeschaltet (Simulation)
+            continue
         o = koerper[x]
         lo, hi = np.maximum(k.bmin, o.bmin), np.minimum(k.bmax, o.bmax)
         ve = x in m.teile and m.teile[x].verbindungselement
         nach.append((ve, (lo + hi) / 2, x))
+    # ausdrücklich gesetzte Lager am Teil (Simulation, st.lager): Lagerfläche bzw. -punkt hält wie ein Nachbar
+    for L in m.lager_von(name):
+        if L.name in ohne:
+            continue
+        p = L.punkt if L.punkt is not None else (np.asarray(k.bmin) + np.asarray(k.bmax)) / 2
+        if L.netz is not None and len(L.netz[1]):
+            P, T = L.netz
+            p = np.asarray(P, float)[np.asarray(T)].reshape(-1, 3).mean(axis=0)
+        nach.append((False, np.asarray(p, float), L.name))
     feste = [(p, x) for ve, p, x in nach if not ve] or [(p, x) for _, p, x in nach]
     if not feste:
         return None, []

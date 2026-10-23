@@ -40,6 +40,7 @@ class Last:
     # auf diese Teile. Beim Kippen, Rutschen und Abheben des Ganzen heben sich beide auf; Stabwerk, Bauteile und
     # Festkörper bekommen jede Seite auf ihre Teile.
     gegen: list[str] = field(default_factory=list)
+    id: str | None = None  # Last aus der App (Simulation): Kennung in simulation.json
 
     @property
     def paar(self) -> bool:
@@ -52,6 +53,8 @@ class Last:
         if self.gegen:
             out["gegen"] = list(self.gegen)
             out["paar"] = True
+        if self.id:
+            out["id"] = self.id
         return out
 
 
@@ -84,6 +87,7 @@ class Szenario:
     beschreibung: str = ""
     zeile: int | None = None
     ablauf: dict[str, Any] | None = None  # S2 (Dynamik): geschwindigkeit, bremsen, dauer, animation, antrieb, …
+    untergrund: str | None = None  # eigener Boden zum Rutschen (Lastfall aus der App), sonst der des Modells
 
     @property
     def feld(self) -> np.ndarray:
@@ -113,7 +117,7 @@ class Szenario:
         """Einzellasten mit Stoßfaktor."""
         if abs(self.stoss_faktor - 1.0) < 1e-12:
             return list(self.lasten)
-        return [Last(l.teile, l.kraft * self.stoss_faktor, l.punkt, l.kg, l.zeile, l.text, list(l.gegen))
+        return [Last(l.teile, l.kraft * self.stoss_faktor, l.punkt, l.kg, l.zeile, l.text, list(l.gegen), l.id)
                 for l in self.lasten]
 
     def kurz(self) -> dict[str, Any]:
@@ -125,7 +129,8 @@ class Szenario:
                 "lasten": [l.kurz() for l in self.lasten], "ziel": self.ziel_fuer(False),
                 "ziel_druck": self.ziel_fuer(True), "durchbiegung": f"L/{self.durchbiegung:g}",
                 "beschreibung": self.beschreibung or None, "zeile": self.zeile,
-                **({"ablauf": dict(self.ablauf)} if self.ablauf else {})}
+                **({"ablauf": dict(self.ablauf)} if self.ablauf else {}),
+                **({"untergrund": self.untergrund} if self.untergrund else {})}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -188,6 +193,8 @@ def szenario_aus(d: dict[str, Any], quelle: str = "agent") -> Szenario:
         s.ziel = float(d["ziel"])
     if d.get("durchbiegung"):
         s.durchbiegung = float(str(d["durchbiegung"]).replace("L/", "") or DURCHBIEGUNG)
+    if d.get("untergrund"):
+        s.untergrund = str(d["untergrund"])
     for l in d.get("lasten") or []:
         s.lasten.append(last_aus(l))
     ab = ablauf_aus(d)
@@ -262,7 +269,7 @@ def last_aus(l: dict[str, Any]) -> Last:
         raise ValueError("Kraftpaar: gegen= muss ein anderes Teil sein als das belastete (Kraft und Gegenkraft auf "
                          "demselben Teil heben sich auf)")
     return Last([str(t) for t in teile], kraft, _vec(l.get("punkt")), float(kg) if kg is not None else None,
-                l.get("zeile"), str(l.get("text") or ""), gegen)
+                l.get("zeile"), str(l.get("text") or ""), gegen, str(l["id"]) if l.get("id") else None)
 
 
 def aus_modell(ereignisse: list[dict[str, Any]]) -> tuple[list[Szenario], dict[str, Any]]:
@@ -305,6 +312,12 @@ def aus_modell(ereignisse: list[dict[str, Any]]) -> tuple[list[Szenario], dict[s
                         s.dynamisch = True
             elif was == "untergrund":
                 einstellungen["untergrund"] = e.get("material")
+            elif was == "lager":  # st.lager (PLAN-SIMULATION.md): gilt in allen Szenarien
+                for t in e.get("teile") or []:
+                    n = len(einstellungen.setdefault("lager", [])) + 1
+                    einstellungen["lager"].append({"id": f"M{n}", "teil": str(t), "art": e.get("art") or "fest",
+                                                   "auf": e.get("auf"), "ort": dict(e.get("ort") or {}),
+                                                   "zeile": e.get("zeile")})
             elif was == "ziel":
                 einstellungen["ziel"] = {k: e.get(k) for k in ("sicherheit", "durchbiegung") if e.get(k) is not None}
         except ValueError as exc:
