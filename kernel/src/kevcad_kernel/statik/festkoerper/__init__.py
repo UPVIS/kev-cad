@@ -27,8 +27,8 @@ VERSION = 1  # Rechenstand: ändert er sich, gelten alte Einträge im Zwischensp
 
 GRENZEN_S3 = [
     "Festkörper (S3) linear-elastisch mit kleinen Verformungen: kein Fließen, kein Kontakt mit Abheben, Lagerflächen "
-    "fest eingespannt (wie verklebt), Schrauben und Gewinde nicht einzeln (Kontakt und Plastizität mit CalculiX "
-    "bewusst nicht).",
+    "fest eingespannt (wie verklebt), Schrauben und Gewinde nicht einzeln (Kontakt, Klemmkraft, Plastizität und "
+    "Beulen rechnet Stufe 4 mit CalculiX: festigkeit(…, verfahren=\"ccx\")).",
     "Druckteile mit voller Füllung gerechnet; quer zur Schicht weicher (E-Modul Z aus dem Katalog) und schwächer "
     "(Anteil quer_zur_schicht), Wände, Füllmuster und Nähte nicht einzeln.",
     "Spannungsspitzen an scharfen Innenkanten und am Rand der Einspannung hängen vom Netz ab; Kev CAD nimmt den "

@@ -307,6 +307,7 @@ def test_reibschluss_rutschgrenze(tmp_path):
     assert p["kraft_n"] == pytest.approx(Fk, rel=0.25)  # Knotenflächen grob, die Summe genau prüft die Traglast
     assert r["kontakt"]["klemmungen"][0]["achse"] == pytest.approx([0, 0, -1], abs=1e-6)
     tr = r["traglast"]
+    print({k: v for k, v in tr.items() if k != "kurve"}, *tr.get("kurve", [])[-14:], sep="\n")
     assert tr["kriterium"] == "rutschen"
     assert tr["faktor"] == pytest.approx(mu * Fk / Fq, rel=0.02)
     assert not r["rutscht"] and r["sicherheit"] == tr["faktor"]
@@ -480,3 +481,139 @@ def test_hertz_kugel_auf_platte(tmp_path, monkeypatch):
           f"({a / a_h - 1:+.1%}), Kraft aus dem Druck {r['kontakt']['paare'][0]['kraft_n']:.0f} N, Annäherung auf 2a "
           f"{annaeherung:.4f} gegen {soll:.4f} mm ({annaeherung / soll - 1:+.1%}), δ Hertz {delta_h:.4f} mm, "
           f"{r['netz']}, {dauer:.1f} s")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Rechenprozess, Laufzeit, MCP
+
+
+def test_klemmschraube_aus_den_verbindungen_und_lager_ohne_klemmteile(tmp_path):
+    """Sterngriffklemme wie im Kugelschieber: Einsatz eingeschmolzen (formschluss) und dieselbe Paarung als
+    Schraubverbindung mit Schraube und Scheibe; die Klemmung wird gefunden, ihre Teile sind kein Lager."""
+    from types import SimpleNamespace
+
+    from kevcad_kernel.statik.ccx.auftrag import KLEMM_N_JE_MM, _klemmungen, verbindungsart
+
+    teile = {n: SimpleNamespace(gewinde_d=6.0 if "Schraube" in n else None) for n in
+             ("Halter", "Einsatz M6", "Sterngriffschraube M6", "Scheibe 6,4", "Rohr", "Rahmen")}
+    m = SimpleNamespace(teile=teile, kulisse=set(), verbindungen=[
+        {"a": "Einsatz M6", "b": "Halter", "art": "formschluss", "mit": []},
+        {"a": "Halter", "b": "Einsatz M6", "art": "schraube", "mit": ["Sterngriffschraube M6", "Scheibe 6,4"]},
+        {"a": "Halter", "b": "Rahmen", "art": "schraube", "mit": []}],
+        kanten={frozenset(("Halter", "Einsatz M6")): {"a": "Halter", "b": "Einsatz M6", "verbinde": "schraube"},
+                frozenset(("Halter", "Rohr")): {"a": "Halter", "b": "Rohr", "gelenk": "schiebe", "festgestellt": True},
+                frozenset(("Halter", "Rahmen")): {"a": "Halter", "b": "Rahmen", "verbinde": "schraube"}})
+    st = SimpleNamespace(modell=m)
+    kl = _klemmungen(st, "Halter", {}, [])
+    assert len(kl) == 1 and kl[0]["kopf"] == ["Scheibe 6,4"] and kl[0]["mutter"] == ["Einsatz M6"]
+    assert kl[0]["kraft"] == pytest.approx(KLEMM_N_JE_MM * 6) and "handfest" in kl[0]["quelle"]
+    assert _klemmungen(st, "Halter", {"klemmkraft": 400}, [])[0]["kraft"] == 400
+    assert verbindungsart(m, "Halter", "Rohr", []) == ("kontakt", "Gelenk (schiebe) mit Bereich")
+    assert verbindungsart(m, "Halter", "Rahmen", [])[0] == "fest"
+    assert verbindungsart(m, "Halter", "Rahmen", [{"a": {"Halter"}, "b": {"Rahmen"}}])[0] == "kontakt"
+    m.kulisse = {"Wand"}
+    assert verbindungsart(m, "Halter", "Wand", [], {"Halter": "an die Wand geschraubt"})[0] == "fest"
+
+
+HALTER_S4 = '''
+from build123d import *
+from kevcad import lager, show, befestigt
+import kevcad.statik as st
+
+show(Pos(-5, 0, 100) * Box(10, 200, 200), "Kulisse/Wand", kulisse=True)
+arm = Pos(40, 0, 100) * Box(80, 20, 8)
+show(lager.druckteil(arm, "Wandhalter (Druck)", material="petg", ausrichtung="-x"), "Wandhalter (Druck)",
+     material="petg")
+befestigt("Wandhalter (Druck)", grund="an die Wand geschraubt")
+st.szenario("Haken 2 kg")
+st.last("Wandhalter (Druck)", kraft=(0, 0, -20), punkt=(78, 0, 100))
+st.festigkeit("Wandhalter (Druck)", kontakt=True)
+st.kontakt("Wandhalter (Druck)", "Gibt es nicht")
+'''
+
+
+@pytest.fixture
+def env():
+    import shutil
+    import tempfile
+
+    from app_testutil import FakeApp, make_runtime
+
+    tmp = Path(tempfile.mkdtemp(prefix="kcs4", dir=tempfile.gettempdir()))
+    os.environ["KEVCAD_FESTKOERPER_CACHE"] = str(tmp / "fem-cache")
+    sock = str(tmp / "k.sock")
+    rt = make_runtime(sock)
+    assert rt.wait_worker_ready(240), "Rechenprozess nicht bereit"
+    app = FakeApp(sock)
+    app.wait_for(lambda h: h["type"] == "HELLO")
+    yield {"rt": rt, "app": app, "tmp": tmp}
+    app.close()
+    rt.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+@mit_ccx
+def test_laufzeit_st_festigkeit_im_hintergrund_und_mcp_werkzeug(env):
+    """model.py meldet den Wandhalter für Stufe 4 an: nach dem Lauf rechnet erst S3, dann CalculiX im Hintergrund;
+    STATICS trägt das Teil mit verfahren "ccx", STATICS_FIELD die Zusatzwerte; festigkeit(verfahren="ccx") kommt aus
+    dem Zwischenspeicher; ein unbekanntes Teil in st.kontakt wird ein Befund."""
+    from test_festkoerper import _projekt_mit_petg
+
+    rt, app = env["rt"], env["app"]
+    _projekt_mit_petg(rt, env["tmp"] / "Halter")
+    assert rt.model_write(HALTER_S4)["ok"]
+    start = app.mark()
+    res = rt.run()
+    assert res["ok"], res
+    _, _, fertig, _ = app.wait_for(lambda h: h["type"] == "STATICS" and any(
+        any(t.get("verfahren") == "ccx" for t in (e.get("festkoerper") or {}).get("teile") or [])
+        and (e.get("festkoerper") or {}).get("stand") == "done" for e in h["szenarien"]), start=start, timeout=300)
+    assert not check_statics_message(fertig)
+    e = next(e for e in fertig["szenarien"] if e["name"] == "Haken 2 kg")
+    t = e["festkoerper"]["teile"][0]
+    assert t["verfahren"] == "ccx" and t["ampel"] == "rot" and t["kriterium"] == "schicht"
+    assert t["sicherheit_last"] == pytest.approx(1.87, rel=0.05)  # an der Wand befestigt: fest wie S3
+    assert any(g.startswith("CalculiX (S4)") for g in fertig["grenzen"])
+    _, _, fh, payload = app.wait_for(lambda h: h["type"] == "STATICS_FIELD" and h.get("verfahren") == "ccx",
+                                     start=start, timeout=60)
+    assert not check_statics_feld(fh, payload) and fh["zusatz"] == list(STATIK_FELD_ZUSATZ)
+    assert fh["feld"] == t["feld"]
+    check = app.wait_for(lambda h: h["type"] == "CHECK" and any(b.get("art") == "statik_szenario" and
+                                                                 "st.kontakt" in b.get("text", "")
+                                                                 for b in h.get("befunde") or []),
+                         start=start, timeout=30)[2]
+    assert check["state"] in ("done", "teilweise")
+    t0 = time.perf_counter()
+    f = rt.festigkeit("Wandhalter (Druck)", "Haken 2 kg", verfahren="ccx", kontakt=True)
+    assert f["ok"] and f["verfahren"] == "ccx", f
+    assert f["teile"][0]["aus_speicher"] and time.perf_counter() - t0 < 30
+    from kevcad_kernel.statik.bericht import festkoerper_text
+
+    text = festkoerper_text(f)
+    assert "(CalculiX, S4)" in text and "CalculiX-Prozess" in text and "Grenzen:" in text
+    assert rt.festigkeit_abbrechen()["ok"]
+
+
+def test_mcp_festigkeit_stufe4():
+    import anyio
+    from mcp_testutil import start_server, with_client
+
+    server, fake = start_server()
+    try:
+        def call(name, args=None):
+            return anyio.run(with_client, server.url, lambda c: c.call_tool(name, args or {}))
+
+        call("run")
+        res = call("festigkeit", {"teil": "Wandhalter (Druck)", "szenario": "Haken 2 kg (Kontakt)",
+                                  "verfahren": "ccx", "plastisch": True, "klemmkraft": 480})
+        text = res.content[0].text
+        assert not res.is_error and "(CalculiX, S4)" in text and "Klemmkraft 480 N" in text, text
+        assert "CalculiX-Prozess" in text
+        args = fake.calls_of("festigkeit")[-1][0]
+        assert args[:4] == ("Wandhalter (Druck)", "Haken 2 kg (Kontakt)", False, False)
+        assert args[4] == {"verfahren": "ccx", "plastisch": True, "klemmkraft": 480.0}
+        # ohne Stufe-4-Angaben wie bisher (Stufe 3)
+        call("festigkeit", {"teil": "Wandhalter (Druck)", "szenario": "Haken 2 kg"})
+        assert len(fake.calls_of("festigkeit")[-1][0]) == 4
+    finally:
+        server.stop_thread()

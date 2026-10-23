@@ -48,9 +48,59 @@ ANFANG_KONTAKT = 0.002  # erstes Inkrement mit Kontakt: 0,2 % der Last (höchste
 RUTSCH_ANTEIL = 0.05  # tragen die Federn mehr als 5 % der Last, hält der Kontakt den Körper nicht
 KONTAKT_FAKTOR = 2.0  # Druck-Strafsteifigkeit = Faktor · E (weicherer Werkstoff) je mm
 HAFT_TEILER = 50.0  # Haftsteifigkeit = Druck-Strafsteifigkeit / Teiler
-SUCH_MM = 1.0  # Kontaktzone: Randflächen bis so weit vom Partner (dazu die Toleranz des Paars)
+SUCH_MM = 0.3  # Kontaktzone: zugewandte Randflächen bis so weit vom Partner (dazu die Toleranz des Paars)
 TRAG_MAX = 50.0
 SCHLUPF_MM = 0.1  # ein frei gelagerter Körper, der sich so weit mehr bewegt als linear erwartet, rutscht
+SPRUNG = ("rutschen",)  # Kriterien, die springen statt zu wachsen
+TRAG_GENAU = 0.02  # Traglast: eine Klammer schmaler als 2 % des Faktors genügt
+TRAG_LAEUFE = 3  # höchstens so viele Läufe der Laststeigerung (grob, dann in der Klammer fein)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Kontaktzonen
+
+
+def zugewandt(punkte: np.ndarray, normalen: np.ndarray, pos: np.ndarray, tri: np.ndarray, tol: float,
+              cos_max: float = -0.5) -> np.ndarray:
+    """Indizes der Randflächen (Mitte ``punkte``, äußere Normale ``normalen``), die höchstens ``tol`` vom Netz (pos,
+    tri) entfernt sind und dem nächsten Dreieck zugewandt (Normalen gegeneinander, cos < ``cos_max``). Ohne die
+    Richtungsprüfung kämen Stirn- und Innenflächen dazu (etwa die Innenwand eines Rohrs), die nie berühren, aber
+    CalculiX mit Kontaktelementen bremsen."""
+    from scipy.spatial import cKDTree
+
+    from kevcad_kernel.statik.festkoerper.kontakt import STUECK, punkt_dreieck
+
+    P = np.asarray(punkte, float)
+    if len(P) == 0 or len(tri) == 0:
+        return np.zeros(0, dtype=np.int64)
+    Tr = np.asarray(pos, float)[np.asarray(tri, dtype=np.int64)]
+    nt = np.cross(Tr[:, 1] - Tr[:, 0], Tr[:, 2] - Tr[:, 0])
+    nt /= np.maximum(np.linalg.norm(nt, axis=1), 1e-300)[:, None]
+    mitte = Tr.mean(axis=1)
+    radius = np.max(np.linalg.norm(Tr - mitte[:, None, :], axis=2), axis=1) + tol
+    listen = cKDTree(P).query_ball_point(mitte, radius)
+    laengen = np.fromiter((len(x) for x in listen), dtype=np.int64, count=len(listen))
+    if laengen.sum() == 0:
+        return np.zeros(0, dtype=np.int64)
+    ti = np.repeat(np.arange(len(Tr)), laengen)
+    pi = np.fromiter((i for x in listen for i in x), dtype=np.int64, count=int(laengen.sum()))
+    best = np.full(len(P), np.inf)
+    best_t = np.full(len(P), -1, dtype=np.int64)
+    for s0 in range(0, len(ti), STUECK):
+        a, b = ti[s0:s0 + STUECK], pi[s0:s0 + STUECK]
+        dd = punkt_dreieck(P[b], Tr[a, 0], Tr[a, 1], Tr[a, 2])
+        o = np.lexsort((dd, b))  # je Punkt das nächste Dreieck zuerst
+        b_o, a_o, d_o = b[o], a[o], dd[o]
+        erst = np.ones(len(b_o), dtype=bool)
+        erst[1:] = b_o[1:] != b_o[:-1]
+        bb, aa, dmin = b_o[erst], a_o[erst], d_o[erst]
+        besser = dmin < best[bb]
+        best[bb[besser]] = dmin[besser]
+        best_t[bb[besser]] = aa[besser]
+    ok = np.isfinite(best) & (best <= tol)
+    idx = np.where(ok)[0]
+    cos = np.einsum("ij,ij->i", np.asarray(normalen, float)[idx], nt[best_t[idx]])
+    return idx[cos < cos_max]
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -287,11 +337,9 @@ class Fall:
                 self.hinweise.append(f"Kontakt mit {x}: keine Kontaktzone gefunden")
                 continue
             nx = netze[i].N
-            from kevcad_kernel.statik.festkoerper import kontakt as kt
-
-            dm = kt.abstand(nx.rand_mitte, N.p, N.rand, SUCH_MM + 2.0)
-            ms = np.where(np.isfinite(dm))[0]
+            ms = zugewandt(nx.rand_mitte, nx.rand_normale, N.p, N.rand[sl], SUCH_MM + 1.0)
             if len(ms) == 0:
+                self.hinweise.append(f"Kontakt mit {x}: keine zugewandten Flächen am Partner")
                 continue
             mu = float((verb.get(x) or {}).get("reibwert") or 0.0)
             d.kontakte.append(Kontakt(f"C{len(d.kontakte)}", (0, *tn.oberflaeche(K0, sl)),
@@ -641,6 +689,7 @@ def auswerten_traglast(fall: Fall, ordner: Path, name: str, stufen: list[tuple[f
         frei[:] = True
     kurve = []
     kriterien: dict[str, float] = {}
+    klammern: dict[str, tuple[float, float]] = {}
     vorher = None
     for ink in inks:
         lam = faktor(ink["zeit"])
@@ -680,22 +729,32 @@ def auswerten_traglast(fall: Fall, ordner: Path, name: str, stufen: list[tuple[f
             if kr not in kriterien and v >= 1.0:
                 if vorher is None:
                     kriterien[kr] = lam
+                    klammern[kr] = (0.0, lam)
                 else:
                     lam0, v0 = vorher[0], vorher[1].get(kr, 0.0)
-                    kriterien[kr] = lam0 + (lam - lam0) * (1.0 - v0) / max(v - v0, 1e-12)
+                    klammern[kr] = (lam0, lam)
+                    if kr in SPRUNG:  # Sprung (Rutschen): Mitte der Klammer, die Werte dazwischen sind nicht linear
+                        kriterien[kr] = 0.5 * (lam0 + lam)
+                    else:
+                        kriterien[kr] = lam0 + (lam - lam0) * (1.0 - v0) / max(v - v0, 1e-12)
         vorher = (lam, werte)
     letzt = kurve[-1]["faktor"] if kurve else 0.0
     if kriterien:
         kr, lam_t = min(kriterien.items(), key=lambda kv: kv[1])
+        klammer = klammern[kr]
         art = {"dehnung": "Grenzdehnung", "schicht": "Schichtfuge", "bruch": "Festigkeit",
                "rutschen": "Rutschen"}[kr]
     elif gestoppt or (kurve and letzt < lam_max * 0.999):
+        vor = kurve[-2]["faktor"] if len(kurve) >= 2 else 0.0
         kr, lam_t, art = "kollaps", letzt, "Kollaps (keine Gleichgewichtslage)"
+        klammer = (letzt, letzt + max(letzt - vor, 0.02 * max(letzt, 1e-6)))
     else:
         kr, lam_t, art = "nicht_erreicht", lam_max, f"bis {lam_max:g} kein Versagen"
+        klammer = (lam_max, lam_max)
     return {"faktor": round(float(lam_t), 4), "kriterium": kr, "text": art, "lastfaktor_max": lam_max,
             "erreicht": round(float(letzt), 4), "gestoppt": gestoppt, "kurve": kurve[-60:],
-            "kriterien": {k_: round(v, 4) for k_, v in kriterien.items()}}
+            "kriterien": {k_: round(v, 4) for k_, v in kriterien.items()},
+            "klammer": [round(float(klammer[0]), 5), round(float(klammer[1]), 5)]}
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -734,7 +793,8 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
             dd = kt.abstand(N.rand_mitte, z["pos"], z["tri"], max(float(nb["tol"]), SUCH_MM + float(nb["tol"])))
         beruehrt[x] = np.where(dd <= float(nb["tol"]))[0]
         if x in (T.get("koerper") or {}):
-            zone[x] = np.where(np.isfinite(dd))[0]
+            with np.load(nb["datei"]) as z:
+                zone[x] = zugewandt(N.rand_mitte, N.rand_normale, z["pos"], z["tri"], SUCH_MM + float(nb["tol"]))
     koerper_netze: dict[str, Any] = {}
     for x, info in (T.get("koerper") or {}).items():
         schritt(0.04, f"vernetzen: {x.rsplit('/', 1)[-1]}")
@@ -766,7 +826,7 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
             ziel = float(f["ziel"])
             info["konvergenz"] = {"code": r1["code"], "inkremente": r1["inkremente"], "fehler": r1["fehler"][:3],
                                   "warnungen": r1["warnungen"][:5]}
-            # Traglast: zweiter Lauf, Rampe bis lam_max; dann fein um den gefundenen Faktor
+            # Traglast: zweiter Lauf, Rampe bis lam_max; dann fein in der Klammer des maßgebenden Kriteriums
             if info.get("rutscht"):  # hält schon unter der Last nicht (die Halte-Federn tragen): keine Laststeigerung
                 info["traglast"] = {"faktor": 0.0, "kriterium": "rutschen", "text": "rutscht schon unter der Last",
                                     "lastfaktor_max": 1.0, "erreicht": 1.0, "gestoppt": None, "kurve": [],
@@ -778,12 +838,15 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
                 lam_max = float(opt.get("lastfaktor_max") or min(TRAG_MAX, max(2.0, 3.0 * ziel, 3.0 * lam_el)))
                 u_last = max(info["verformung_max_mm"], 1e-3)
                 tr = None
-                for lauf_nr, stufen in enumerate(([(0.0, lam_max, 0.08)], None)):
-                    if stufen is None:  # fein: bis 85 % zügig, dann in Schritten von 0,5 % bis 115 %
-                        if tr is None or tr["kriterium"] == "nicht_erreicht" or tr["faktor"] <= 0:
+                stufen = [(0.0, lam_max, 0.05)]
+                for lauf_nr in range(TRAG_LAEUFE):
+                    if lauf_nr:  # in der Klammer des vorigen Laufs fein: zügig bis an ihren Anfang, dann 16 Schritte
+                        if tr is None or tr["kriterium"] == "nicht_erreicht":
                             break
-                        la = tr["faktor"]
-                        stufen = [(0.0, 0.85 * la, 0.5), (0.85 * la, 1.15 * la, 0.05)]
+                        lo, hi = tr["klammer"]
+                        if hi <= lo or (hi - lo) <= TRAG_GENAU * max(hi, 1e-9):
+                            break
+                        stufen = ([(0.0, lo, 0.5)] if lo > 0 else []) + [(lo, hi * 1.001, 1.0 / 16)]
                     fall.baue("traglast", stufen)
                     grenze = max(0.02 * fall.groesse, 8.0 * u_last * stufen[-1][1])
 
@@ -798,7 +861,7 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
                         return None
 
                     def ft(x: float, text: str, a=a0, b=a1, nr=lauf_nr) -> None:
-                        schritt(a + (b - a) * (0.45 + 0.25 * nr + 0.25 * x), f"Traglast {text}")
+                        schritt(a + (b - a) * (0.45 + 0.18 * nr + 0.18 * x), f"Traglast {text}")
 
                     name_t = f"traglast{lauf_nr}"
                     r2 = fall.rechne(arbeit, name_t, ft, stopp=stopp)
@@ -807,8 +870,9 @@ def rechne_teil(T: dict[str, Any], opt: dict[str, Any], fein: bool, ablage: Path
                         break
                     neu = auswerten_traglast(fall, arbeit, name_t, stufen, r2["gestoppt"])
                     neu["inkremente"] = r2["inkremente"]
+                    neu["laeufe"] = lauf_nr + 1
                     if tr is not None and neu["kriterium"] == "nicht_erreicht":
-                        break  # fein nicht erreicht: grob gilt
+                        break  # in der Klammer nicht erreicht: der vorige Lauf gilt
                     tr = neu
                 if tr is not None:
                     info["traglast"] = tr
