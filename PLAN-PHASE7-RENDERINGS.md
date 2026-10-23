@@ -172,7 +172,7 @@ Tests: Kernel 889 grün, 1 übersprungen (echter Blender-Lauf, mit `KEVCAD_BLEND
 
 | Nr. | Entscheidung | Begründung |
 |---|---|---|
-| R14 | **Bodenschatten im Schnellbild auf der CPU** (`KevCADCore/Render/BodenSchatten.swift`) statt der Schattenmaske aus zwei weiteren RealityKit-Durchgängen (R7): je Licht des Fotos (Studio: Hauptlicht 18°, Kante 13°, Aufheller 18°, Decke 27°, Himmel 60°; mit HDRI Sonne 4° und Himmel) die Dreiecke des Produkts längs des Lichts auf den Boden projizieren und rastern (höchstens 768 Zellen je Seite), daraus weiche Schatten wie bei einer Flächenleuchte (PCSS: mittlerer Verdecker im Suchfenster, Halbschatten t · tan Winkel, Deckung über Summentabellen in O(1) je Zelle); seitliche Lichter mit der tiefsten Fläche (am Fuß hart), Decke und Himmel mit der höchsten (wie Umgebungsverdeckung), dazu ein Kontaktschatten aus allem bis 4 % der Modellgröße über dem Boden. Die Teile werfen in RealityKit weiter Schatten aufeinander. Gewichte und Stärke an Fotos derselben Szene abgeglichen | RealityKit hat keine Flächenlichter, keine Umgebungsverdeckung und auf dem Mac keinen Schattenfänger; die Schattenkarte eines Richtungslichts gibt weder den Kontaktschatten noch den mit dem Abstand weicher werdenden Halbschatten. Die CPU-Rechnung ist in 50 ms fertig (1600 × 1000, Release) und spart zwei RealityKit-Bilder je Aufnahme |
+| R14 | **Bodenschatten im Schnellbild auf der CPU** (`KevCADCore/Render/BodenSchatten.swift`) statt der Schattenmaske aus zwei weiteren RealityKit-Durchgängen (R7): je Licht des Fotos (Studio: Hauptlicht 18°, Kante 13°, Aufheller 18°, Decke 27°, Himmel 60°; mit HDRI Sonne 4° und Himmel) die Dreiecke des Produkts längs des Lichts auf den Boden projizieren und rastern (höchstens 768 Zellen je Seite), daraus weiche Schatten wie bei einer Flächenleuchte (PCSS: mittlerer Verdecker im Suchfenster, Halbschatten t · tan Winkel, Deckung über Summentabellen in O(1) je Zelle); seitliche Lichter mit der tiefsten Fläche (am Fuß hart), Decke und Himmel mit der höchsten (wie Umgebungsverdeckung), dazu ein Kontaktschatten aus allem bis 4 % der Modellgröße über dem Boden. Die Teile werfen in RealityKit weiter Schatten aufeinander. Gewichte und Stärke an Fotos derselben Szene abgeglichen (weißes und dunkles PLA, siehe Abnahme): Kante deutlich schwächer, als ihre Leistung erwarten ließe; helle Teile werfen Licht zurück und heben bis zu 70 % der Verdeckung von oben (Decke, Himmel, Kontakt) auf, nach ihrer mittleren Helligkeit | RealityKit hat keine Flächenlichter, keine Umgebungsverdeckung und auf dem Mac keinen Schattenfänger; die Schattenkarte eines Richtungslichts gibt weder den Kontaktschatten noch den mit dem Abstand weicher werdenden Halbschatten. Die CPU-Rechnung ist in 50 ms fertig (1600 × 1000, Release) und spart zwei RealityKit-Bilder je Aufnahme |
 | R15 | **Parallele Ansicht echt orthografisch:** `ansicht="aktuell"` bei paralleler Projektion im Viewer: RealityKit `OrthographicCameraComponent` (`scale` ist die halbe sichtbare Höhe, gemessen), Blender Kamera `ORTHO` mit `ortho_scale` (vertikal); die Kamera meldet `projection: orthographic` und `ortho_height_mm`; das Auge rückt hinter die Hüllkugel, der Hintergrund aus einer HDRI ist dann einfarbig in Blickrichtung (wie in Blender) | Zeichnungsähnliche Bilder (Schnitt, Ansicht von vorn) brauchen parallele Kanten; gleiche sichtbare Höhe wie im Viewer |
 | R16 | **Schichtlinien quer zur Druckrichtung:** Die Druckprüfung legt die Aufbaurichtung in Weltlage ab (`CHECK.druck.teile[n].ausrichtung.oben_welt`), der Kernel gibt sie als `druck_oben` je Teil mit (`RENDER_REQ.teile`, Blender-Material); RealityKit projiziert v längs dieser Richtung (`schichtUV`, Deck- und Bettflächen ohne Linien), Blender nimmt sin(2π (p · oben) / h) | Dieselbe Ausrichtung wie Druckvorschau und Druckprüfung (vorgegeben mit `lager.druckteil(…, ausrichtung=…)` oder automatisch) |
 | R17 | **Bild fertig, auch wenn RealityKit es nicht meldet:** Jedes Bild setzt nach dem Rendern ein GPU-Ereignis (`MTLSharedEvent`, `actionsAfterRender`); fertig ist es mit dem Ereignis oder der Meldung `onComplete`, was zuerst kommt. Kommt keins binnen 12 s, steht ein Befund im Protokoll (geplant, GPU fertig, gemeldet, auf welchem Faden, ob der Hauptfaden frei war), der Renderer wird verworfen und die App versucht es einmal neu (`phasen.wiederholt`); scheitert auch das, geht der Fehler mit Befund an den Kernel. Statt drei Durchgängen mit je zwei Bildern ist es nur noch einer (R14), höchstens 24 s je Versuch, zwei Versuche bleiben unter der Frist des Kernels (60 s) | Ursache nicht gefunden: In allen Läufen kam die Meldung abseits des Hauptfadens (`gemeldet ja (abseits des Hauptfadens)`), ein blockierter Hauptfaden scheidet als Ursache also aus; der Fehler ließ sich nicht nachstellen. Das Ereignis macht den Weg unabhängig von der Meldung, der Befund zeigt beim nächsten Auftreten, woran es lag |
@@ -192,4 +192,32 @@ Nachweise (Tests in `RenderTests`: `testRealityKitOrthografisch`, `testBodenScha
 
 ## Abnahme der Restpunkte (Testvariante „Kev CAD Test sr“, 23.10.2026)
 
-ABNAHME_TABELLE
+Probe im Scratchpad: zwei Blöcke 60 × 40 × 40 mm (`ausrichtung="-z"` und `"-x"`) und ein Turm 30 × 30 × 120 mm,
+PLA, Studio, Produktansicht, 1600 × 1000, Schnellbild und Foto mit derselben Kamera. Bodenhelligkeit linear
+(sRGB entzerrt), bezogen auf den Hintergrund; gemessen an Weltpunkten, die in beide Bilder projiziert werden.
+
+Schatten des Turms längs des Hauptlichts (Abstand vom Fuß):
+
+| Abstand | 22 mm | 30 mm | 45 mm | 70 mm | 100 mm | 130 mm | 160 mm |
+|---|---|---|---|---|---|---|---|
+| weiß, Schnellbild | 0,66 | 0,67 | 0,68 | 0,72 | 0,78 | 0,87 | 0,94 |
+| weiß, Foto | 0,72 | 0,71 | 0,72 | 0,78 | 0,84 | 0,88 | 0,94 |
+| dunkel, Schnellbild | 0,64 | 0,67 | 0,67 | 0,72 | 0,78 | 0,87 | 0,94 |
+| dunkel, Foto | 0,59 | 0,62 | 0,65 | 0,74 | 0,82 | 0,87 | 0,93 |
+
+Boden vor der Vorderkante des flachen Blocks (Kontaktschatten):
+
+| Abstand | 0,5 mm | 1 mm | 2 mm | 4 mm | 7 mm | 10 mm | 15 mm | 25 mm |
+|---|---|---|---|---|---|---|---|---|
+| weiß, Schnellbild | 0,76 | 0,79 | 0,85 | 0,90 | 0,93 | 0,94 | 0,95 | 0,96 |
+| weiß, Foto | 0,99 | 1,00 | 0,99 | 0,99 | 0,98 | 0,97 | 0,96 | 0,92 |
+| dunkel, Schnellbild | 0,71 | 0,74 | 0,80 | 0,86 | 0,89 | 0,91 | 0,93 | 0,95 |
+| dunkel, Foto | 0,73 | 0,74 | 0,73 | 0,75 | 0,76 | 0,77 | 0,79 | 0,81 |
+
+| Punkt | Ergebnis |
+|---|---|
+| Schatten (R14) | Der Schlagschatten des Turms liegt in Lage, Länge und Verlauf beim Foto, bei weißem und dunklem PLA höchstens 0,07 daneben; vorher war er im Schnellbild deutlich schwächer und weicher. Grenze: Vor hellen Teilen hellt das Foto den Boden durch Rückstrahlung bis an die Kante auf (0,99), das Schnellbild bleibt mit Kontaktschatten dunkler (0,76); die Rückstrahlung heller Teile mildert das nur. Vor dunklen Teilen ist das Foto weiter draußen dunkler (0,81 gegen 0,95 bei 25 mm), weil dort nichts zurückstrahlt |
+| Zeit | Schnellbild 0,8 bis 1,1 s (Schatten 0,05 s), Foto 23 bis 28 s |
+| Parallel (R15) | Viewer auf parallele Projektion (`view(projection="orthographic")`), `render(ansicht="aktuell")` schnell und als Foto: beide mit parallelen Kanten, gleichem Ausschnitt, Kamera mit `projection: orthographic` |
+| Schichtlinien (R16) | Block `-z` waagrechte Linien, Block `-x` senkrechte, Turm waagrecht; Bettseite des seitlichen Blocks ohne Linien; im Foto ebenso |
+| Bildmeldung (R17) | In allen Aufnahmen kam `onComplete` abseits des Hauptfadens, kein Befund, keine Wiederholung nötig |
