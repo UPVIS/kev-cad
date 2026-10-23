@@ -75,6 +75,8 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
                              "text": f"{n}: Schnitt nicht gerechnet ({type(exc).__name__})"}
                     if b is None or (gegenseite and b.get("sicherheit") is None):
                         continue  # Gegenstück ohne Festigkeitswerte (Ball, Zukaufteil): kein graues Urteil
+                    if last.flaeche and not gegenseite and last.flaeche.get("teil") in (None, n):
+                        b["flaeche_last"] = dict(last.flaeche)  # Simulation: FEM verteilt sie über die ganze Fläche
                     if last.paar:
                         b["kraftpaar"] = {"gegen": list(last.teile if gegenseite else last.gegen),
                                           "gegenkraft": bool(gegenseite)}
@@ -278,6 +280,8 @@ def lasten_anzeige(m: StatikModell, sz: Szenario) -> list[dict[str, Any]]:
             e["paar"] = True
         if last.id:  # Last aus der App (Simulation)
             e["id"] = last.id
+        if last.flaeche:  # Simulation: Last auf der ganzen Fläche
+            e["flaeche"] = dict(last.flaeche)
         out.append(e)
     return out
 

@@ -382,3 +382,51 @@ def test_druck_auf_der_ganzen_flaeche_in_der_fem(tmp_path):
     oben_u = float(U[np.abs(P[:, 2] - 20) < 1e-3, 2].mean())
     assert oben_u < 0
     print(f"Druck: Lagerkraft {r['lagerkraefte']['Lager: B']} N, Senkung oben {oben_u:.5f} mm")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Vom Modell bis zur FEM: gelenkige Lager aus model.py, Last auf der ganzen Fläche aus der App
+
+BALKEN = '''
+from build123d import *
+from kevcad import lager, show
+import kevcad.statik as st
+
+form = Pos(100, 0, 110) * Box(200, 20, 20)
+show(lager.druckteil(form, "Balken", material="petg", ausrichtung="-z"), "Balken", material="petg")
+st.lager("Balken", flaeche=form.faces().sort_by(Axis.X)[0], art="gelenkig")
+st.lager("Balken", flaeche=form.faces().sort_by(Axis.X)[-1], art="gelenkig")
+st.szenario("Leer")
+'''
+
+
+def test_gelenkig_und_flaechenlast_vom_modell_bis_zur_fem(tmp_path, monkeypatch):
+    from test_festkoerper import _auftrag_und_prozess
+
+    monkeypatch.setenv("KEVCAD_FESTKOERPER_CACHE", str(tmp_path / "fem-cache"))
+    laufe(tmp_path, BALKEN, strikt=False)
+    k = anbindung.LETZTER.koerper["Balken"]
+    oben = next(i for i, f in enumerate(k.flaechen) if f.get("t") == "plane" and (f.get("n") or [0, 0, 0])[2] > 0.99)
+    ort = {"flaeche": oben, "punkt": [60, 0, 120], "normale": [0, 0, 1], "signatur": dict(k.flaechen[oben])}
+    _sim(tmp_path, [{"name": "Druck oben", "lasten": [{"teil": "Balken", "ort": ort, "verteilung": "flaeche",
+                                                       "richtung": {"art": "normale"}, "betrag": 0.025,
+                                                       "einheit": "N/mm2"}]}])
+    _, check, _ = laufe(tmp_path, BALKEN, run=2, strikt=False)
+    e = szenario(check, "Druck oben")
+    last = e["lasten"][0]
+    assert last["flaeche"]["index"] == oben and last["flaeche"]["druck"] == pytest.approx(0.025)
+    assert last["kraft"] == pytest.approx([0, 0, -100.0], abs=0.01) and last["punkt"][0] == pytest.approx(100, abs=0.1)
+    sim = check["statik"]["simulation"]
+    assert sim["zustand"]["lasten"]["L1"]["flaeche_mm2"] == pytest.approx(4000.0, rel=1e-3)
+    b = next(b for b in e["bauteile"] if b["teil"] == "Balken")
+    assert b["flaeche_last"]["druck"] == pytest.approx(0.025)
+    a, out, dauer = _auftrag_und_prozess(tmp_path, {"szenarien": ["Druck oben"]})
+    r = out["faelle"][0]
+    assert r["stand"] == "done", r
+    assert r["lagerarten"] == {"Lager: M1": "gelenkig", "Lager: M2": "gelenkig"}
+    assert r["lastflaechen_mm2"][0] == pytest.approx(4000.0, rel=0.01)
+    for x in ("Lager: M1", "Lager: M2"):
+        assert r["lagerkraefte"][x][2] == pytest.approx(50.0 + 0.5 * float(np.linalg.norm(r["eigengewicht_n"])),
+                                                        abs=0.5)
+    print(f"Balken gelenkig, Druck 0,025 N/mm² auf der Oberseite: Lager {r['lagerkraefte']}, Sicherheit "
+          f"{r['sicherheit']}, {dauer:.1f} s")
