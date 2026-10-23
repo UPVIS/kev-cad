@@ -244,6 +244,9 @@ st.kontakt("Halter (Druck)", "Rohr", reibwert=0.3, klemmkraft=600)   # Paar hebt
 st.festigkeit("Halter (Druck)", plastisch=True)                      # dieses Teil mit CalculiX nachrechnen
 ```
 
+`st.kontakt` nimmt Teile, Gruppen ("Halter/") und die Kulisse ("Kulisse/Tisch"); ein unbekannter Name wird ein
+Befund in der Prüfung.
+
 - **Kontakt** (`kontakt=True`, Standard mit `verfahren="ccx"`): Verbindungen mit `klemmung`, `steck`, `aufliegen`,
   Gelenke, bloße Berührung oder Spiel werden Kontaktpaare (Fläche zu Fläche, Haftreibwert der Paarung aus
   `reibwerte.json`, sonst 0,3); `schraube`, `kleben`, `formschluss` und an der Umgebung `befestigt(…)` bleiben fest.
@@ -255,9 +258,10 @@ st.festigkeit("Halter (Druck)", plastisch=True)                      # dieses Te
 - **Plastizität** (`plastisch=True`): Metalle von Rp0,2 auf Rm (Verfestigung bei angenommener Gleichmaßdehnung),
   Druckteile ideal plastisch ab der Zugfestigkeit, ihre Schichtfuge bleibt spröde (Näherung). Danach wird entlastet:
   **bleibende Verformung**.
-- **Traglast** (Standard mit Kontakt oder Plastizität): Last steigt bis zum Versagen – Grenzdehnung 5 % (Metall) bzw.
-  2 % (Druckteil), Bruch der Schichtfuge, Rutschen, Kollaps. Bei Stufe 4 **ist die Sicherheit dieser Lastfaktor**
-  (gleiche Ziele wie sonst). Fließt das Teil schon unter der Last (über 0,2 %), ist es mindestens gelb; rutscht ein
+- **Traglast** (Standard mit Plastizität, sonst `traglast=True`, etwa für die Rutschgrenze einer Klemmung): Last
+  steigt bis zum Versagen – Grenzdehnung 5 % (Metall) bzw. 2 % (Druckteil), Bruch der Schichtfuge, Rutschen,
+  Kollaps. Bei Stufe 4 **ist die Sicherheit dieser Lastfaktor** (gleiche Ziele wie sonst); ohne Traglast die
+  Sicherheit unter Last. Fließt das Teil schon unter der Last (über 0,2 %), ist es mindestens gelb; rutscht ein
   Partner schon unter der Last, rot („Klemmkraft erhöhen oder Formschluss“).
 - **Beulen** (`beulen=True`): erster Beulfaktor (linear, CalculiX `*BUCKLE`), zählt, wenn er kleiner ist.
 - **Ergebnis** zusätzlich je Teil: Kontaktdruck, tragender Anteil der Fläche, Klaffen, Schlupf, Reibung genutzt,

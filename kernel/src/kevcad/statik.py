@@ -366,7 +366,7 @@ def festigkeit(teil: Any, kontakt: bool = True, plastisch: bool = False, traglas
                szenario: str | None = None) -> None:
     """Stufe 4: ``teil`` (Name, Gruppe oder Form) nach jedem Lauf im Hintergrund mit CalculiX nachrechnen: Kontakt mit
     Abheben und Gleiten (``kontakt``), elastisch-plastisch (``plastisch``), Traglast (``traglast``, Standard: mit
-    Kontakt oder Plastizität), Beulfaktor (``beulen``). ``szenario``: nur dieses (sonst alle mit Last)."""
+    Plastizität), Beulfaktor (``beulen``). ``szenario``: nur dieses (sonst alle mit Last)."""
     if not _teile(teil):
         raise ValueError("statik.festigkeit: Teil angeben")
     _melde({"was": "festigkeit", "teile": _teile(teil), "kontakt": bool(kontakt), "plastisch": bool(plastisch),

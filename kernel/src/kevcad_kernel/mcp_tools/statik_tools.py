@@ -199,13 +199,13 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
           "per mm thread diameter); bars that load the part are modelled as clipped bodies with the forces of both "
           "sides from the frame model; plastisch=true: elastic-plastic (metals Rp0.2 to Rm with hardening, printed "
           "parts ideally plastic with brittle layer interface), permanent deformation after unloading; traglast "
-          "(default with contact or plasticity): load factor until failure (strain limit 5 % metals, 2 % prints, "
-          "layer interface, sliding, collapse) - with ccx the safety factor IS this load factor; beulen=true: first "
-          "buckling factor (*BUCKLE). Answer additionally: contact pressure, gap opening (Klaffen), slip, plastic "
-          "strain, permanent deformation; the viewer can colour contact pressure and plastic strain. In model.py "
-          "st.kontakt(a, b, reibwert=, klemmkraft=) and st.festigkeit(teil, plastisch=...) make it run after every "
-          "run. If CalculiX is not available (external disk UPVIS ULTRA not connected) the tool says so; S0-S3 keep "
-          "working.", annotations["additive"])
+          "(default with plasticity, traglast=true e.g. for the slip limit of a clamp): load factor until failure "
+          "(strain limit 5 % metals, 2 % prints, layer interface, sliding, collapse) - with ccx the safety factor "
+          "IS this load factor; beulen=true: first buckling factor (*BUCKLE). Answer additionally: contact "
+          "pressure, gap opening (Klaffen), slip, plastic strain, permanent deformation; the viewer can colour "
+          "contact pressure and plastic strain. In model.py st.kontakt(a, b, reibwert=, klemmkraft=) and "
+          "st.festigkeit(teil, plastisch=...) make it run after every run. If CalculiX is not available (external "
+          "disk UPVIS ULTRA not connected) the tool says so; S0-S3 keep working.", annotations["additive"])
     async def festigkeit(
         teil: Annotated[str | None, Field(description="Part or group, e.g. 'Wandhalter (Druck)'; omit for all parts "
                                                       "with load")] = None,
@@ -223,7 +223,7 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
                                                           "(default true with ccx)")] = None,
         plastisch: Annotated[bool | None, Field(description="S4: elastic-plastic material")] = None,
         traglast: Annotated[bool | None, Field(description="S4: increase the load until failure (default with "
-                                                           "contact or plasticity)")] = None,
+                                                           "plasticity)")] = None,
         beulen: Annotated[bool | None, Field(description="S4: first buckling factor")] = None,
         klemmkraft: Annotated[float | None, Field(description="S4: clamping force of the clamp screws in N")] = None,
         reibwert: Annotated[float | None, Field(description="S4: friction coefficient for all contact pairs "
