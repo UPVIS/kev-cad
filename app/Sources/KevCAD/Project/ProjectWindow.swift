@@ -274,7 +274,7 @@ struct ProjectWindow: View {
                 }
                 .frame(minWidth: 0, maxWidth: .infinity)
                 .clipped()
-                if versionen.zeigeLeiste {  // Versionen: Seitenleiste rechts neben dem Viewport
+                if versionen.zeigeLeiste && state.bereich == .modell {  // Versionen: Seitenleiste neben dem Viewport
                     Divider()
                     VersionenLeiste(model: model, store: model.versionen, zustand: versionen)
                         .fixedSize(horizontal: true, vertical: false)

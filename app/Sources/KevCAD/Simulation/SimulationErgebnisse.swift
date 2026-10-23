@@ -30,7 +30,7 @@ struct SimulationErgebnisAnsicht: View {
                         }
                         Divider()
                         befunde(sz)
-                            .frame(width: 300)
+                            .frame(width: 250)
                     }
                 } else {
                     Text(store.auswahl == nil ? "Kein Lastfall gewählt"
@@ -101,28 +101,28 @@ struct SimulationErgebnisAnsicht: View {
     private func tabelle(_ sz: StatikSzenario) -> some View {
         Table(zeilen(sz), selection: $zustand.tabellenAuswahl, sortOrder: $zustand.sortierung) {
             TableColumn("", value: \.ampelSort) { z in AmpelPunkt(ampel: z.ampel) }
-                .width(18)
+                .width(14)
             TableColumn("Teil", value: \.name) { z in Text(z.kurzName).help(z.name) }
-                .width(min: 120, ideal: 180)
+                .width(min: 80, ideal: 140)
             TableColumn("Nachweis", value: \.nachweis.rawValue) { z in Text(z.nachweis.rawValue) }
-                .width(60)
-            TableColumn("Kriterium", value: \.kriterium) { z in Text(z.kriterium) }
-                .width(min: 80, ideal: 120)
+                .width(56)
+            TableColumn("Kriterium", value: \.kriterium) { z in Text(z.kriterium).help(z.text) }
+                .width(min: 60, ideal: 96)
             TableColumn("Sicherheit", value: \.sicherheitSort) { z in
                 Text(z.sicherheit.map(StatikZahl.sf) ?? "–").monospacedDigit()
             }
-            .width(70)
+            .width(62)
             TableColumn("Ziel") { z in Text(z.ziel.map { KevFormat.number($0, digits: 0) } ?? "–").monospacedDigit() }
-                .width(36)
+                .width(30)
             TableColumn("Ausnutzung", value: \.ausnutzung) { z in
                 Text(KevFormat.number(z.ausnutzung, digits: 2)).monospacedDigit()
                     .foregroundStyle(z.ausnutzung > 1 ? (z.ausnutzung > 2 ? .red : .orange) : .primary)
             }
-            .width(72)
+            .width(66)
             TableColumn("Verformung", value: \.verformungSort) { z in
                 Text(z.verformungMm.map { "\(KevFormat.number($0, digits: 2)) mm" } ?? "–").monospacedDigit()
             }
-            .width(78)
+            .width(70)
         }
         .onChange(of: zustand.tabellenAuswahl) { _, id in
             guard let id, let z = SimErgebnis.zeilen(sz).first(where: { $0.id == id }), let teil = z.teil else { return }

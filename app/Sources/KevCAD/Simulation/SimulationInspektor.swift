@@ -21,6 +21,7 @@ struct SimulationInspektor: View {
             }
             .pickerStyle(.segmented)
             .labelStyle(.iconOnly)
+            .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
             .help("Lastfall · Kräfte · Lager · Rechnen · Topologie")
@@ -119,7 +120,7 @@ struct LastfallEditor: View {
                         }
                         .disabled((e ?? l).neigungGrad <= 0)
                         HStack(spacing: 4) {
-                            Text("Beschleunigung")
+                            Text("Beschl.").help("Beschleunigung in m/s²")
                             Spacer()
                             ForEach(0..<3, id: \.self) { i in
                                 TextField(["x", "y", "z"][i], value: achse(i, l),

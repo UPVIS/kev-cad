@@ -186,6 +186,7 @@ func simKurz(_ name: String) -> String {
 /// Kraft als Text: „294 N (0; 0; −294)“.
 func simKraftText(_ f: SIMD3<Float>) -> String {
     let b = Double(simd_length(f))
-    return "\(KevFormat.number(b, digits: b < 10 ? 1 : 0)) N (" + [f.x, f.y, f.z]
-        .map { KevFormat.number(Double($0), digits: 0) }.joined(separator: "; ") + ")"
+    let stellen = b < 100 ? 1 : 0
+    return "\(KevFormat.number(b, digits: stellen)) N (" + [f.x, f.y, f.z]
+        .map { KevFormat.number(Double($0), digits: stellen) }.joined(separator: "; ") + ")"
 }

@@ -56,6 +56,48 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                            # eigen
   Parameter in kg (`param("nutzlast", 30)`, auch `zuladung`, `traglast`, `fachlast`, `sitzlast`), verteilt auf die
   obersten Teile, wenn model.py keine eigenen Lasten hat.
 
+## Lager
+
+Ohne Angabe leitet Kev CAD die Lager aus den Kontakten ab: Teile auf dem Boden bzw. der Kulisse, `befestigt`,
+`verbinde(…, boden)`, im Bauteil-Nachweis und in der FEM die tragenden Nachbarn. Ausdrücklich:
+
+```python
+st.lager("Halter", flaeche=halter.faces().sort_by(Axis.X)[0])          # Fläche fest eingespannt (Standard)
+st.lager("Rahmen/Rohr", punkt=(0, 0, 30), art="gelenkig")               # Punkt; am Stab ein Gelenk
+st.lager("Schlitten", flaeche=3, art="gleitend")                        # hält nur senkrecht zur Fläche
+st.lager("Fuß")                                                         # ganzes Teil
+```
+
+- `art`: `"fest"` (eingespannt), `"gelenkig"` (hält, dreht frei), `"gleitend"` (hält nur senkrecht zur Fläche, auf
+  die nächste Weltachse gerundet). `flaeche` als Nummer wie im Viewer bzw. aus `selection` oder als build123d-Fläche.
+- Lager gelten in allen Szenarien: am Stab ein Auflager am nächsten Achspunkt, an anderen Teilen ist der Starrkörper
+  geerdet (seine Gruppe kippt und rutscht nicht), im Bauteil-Nachweis und in der FEM hält die Lagerfläche (gleitend nur
+  senkrecht), die Topologie nimmt sie wie Kontaktflächen. Ein Teil mit ausdrücklichem Lager verliert sein abgeleitetes
+  Bodenlager; nur gleitende Lager halten ein Teil nicht (FEM meldet „nur gleitende Lager“).
+- Nachgewiesen (`test_simulation.py`): Rohr auf gelenkig und gleitend wie der Träger auf zwei Stützen (F L³ / 48 E I),
+  beidseitig fest (F L³ / 192 E I), Kragarm (F L³ / 3 E I) je unter 2 %; Halter an einer Lagerfläche in der FEM wie an
+  der Wand (1,84 gegen Hand 1,86).
+
+## Lastfälle aus der App (Bereich „Simulation“)
+
+Kevin legt im Bereich „Simulation“ (⌘4) Lastfälle, Kräfte (per Klick auf eine Fläche, Richtung entlang der Normale,
+einer Achse oder frei, Betrag in N oder kg, Kraftpaar) und Lager per Klick an; sie liegen in
+`<projekt>/simulation.json` neben model.py und gehören zu jedem Lauf (und zu den Versionen). Agent und App teilen sie:
+
+- **`statik`**, **`szenario_rechnen`**, **`festigkeit`**, **`dynamik`** sehen die Lastfälle der App unter ihrem Namen
+  (`quelle: "app"`). Heißt einer wie ein Szenario aus model.py, gewinnt die App (Hinweis im Ergebnis).
+- **`simulation_liste`** zeigt Lastfälle, Kräfte mit Teil, Fläche, Punkt, Richtung, Betrag und Zustand (`ok`, `neu` =
+  nach einer Modelländerung einer anderen Fläche zugeordnet, `fehlt` = nicht mehr zuordenbar, zählt nicht mit), Lager,
+  abgeleitete Lager und die Topologie-Einstellungen.
+- **`simulation_aendern(ops)`** ändert wie Kevins Klicks (`lastfall_neu`, `lastfall_setzen`, `lastfall_kopieren` auch
+  aus model.py, `last_setzen` mit `ort: {flaeche, punkt, normale}`, `richtung: {art: normale | achse | frei}`, `betrag`,
+  `einheit`, `lager_setzen`, `abgeleitet` …) und rechnet sofort neu. Nur auf Kevins Wunsch: seine Klicks sind seine
+  Entscheidungen. Fehlt eine Kraft nach einer Modelländerung (`fehlt`), Kevin fragen, statt sie still neu zu setzen.
+- **`simulation_rechnen(was, lastfall)`**: `rechnen`, `festigkeit`, `ablauf`, `grenze` mit `grenze="last"` (bis zum
+  wievielfachen der Kräfte hält es: Ziel, Bruch, Kippen, Rutschen), `"neigung"` (wie steil), `"geschwindigkeit"` (wie
+  schnell, über den Ablauf). Last und Neigung sucht S0/S1, nicht die FEM: das dazusagen.
+- Soll ein Lastfall dauerhaft im Code stehen, in model.py eintragen und den der App löschen lassen (Kevin fragen).
+
 ## Urteile (T5)
 
 - **Ziel**: statisch Sicherheit 2, dynamisch (Beschleunigung, Stoß) 3, Druckteile das Doppelte (4 bzw. 6).

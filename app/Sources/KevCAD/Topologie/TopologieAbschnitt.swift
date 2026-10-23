@@ -108,6 +108,7 @@ struct TopologieStandAnsicht: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .help("Vorher/Nachher: Spannungsfarben (Ausnutzung grün → gelb → rot) am Ausgangsteil bzw. am Ergebnis")
             HStack {
                 Button {
