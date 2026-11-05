@@ -89,6 +89,9 @@ def main() -> int:
 
     tessellate_shape(build123d.Box(1, 1, 1), cache=None)  # OCCT-Vernetzung einmal anwärmen
     CACHE.clear()
+    from kevcad_kernel import gedaechtnis
+
+    gedaechtnis.installieren()  # Rechengedächtnis (aus mit KEVCAD_GEDAECHTNIS=0)
     runner = Runner(emit)
     emit({"type": "READY", "pid": os.getpid(), "build123d": build123d.__version__,
           "python": sys.version.split()[0], "import_s": round(time.perf_counter() - t0, 2)})

@@ -300,6 +300,12 @@ def profil(kopie: Path, katalog: Path, args) -> int:
 
     from kevcad_kernel.runner import Runner
 
+    try:  # wie im Rechenprozess (worker.py); aus mit --ohne-gedaechtnis
+        from kevcad_kernel import gedaechtnis
+
+        print(f"Rechengedächtnis: {'an' if gedaechtnis.installieren() else 'aus'}")
+    except ImportError:  # ältere Kernel-Fassung
+        pass
     r = Runner(lambda h, p=b"": None)
     msg = {"run": 1, "path": str(kopie / "model.py"), "catalog": {"own": str(katalog)}, "inventar_regel": True}
     t = time.perf_counter()

@@ -453,18 +453,23 @@ def _purge_user_modules() -> None:
                 delattr(sys.modules[eltern], kind)
 
 
-def _zeiten(zeiten: dict[str, float], state: dict[str, Any], t_lauf: float) -> dict[str, float]:
+def _zeiten(zeiten: dict[str, float], state: dict[str, Any], t_lauf: float) -> dict[str, Any]:
     """Phasen eines Laufs im Rechenprozess in ms (``RUN_DONE.zeiten_ms``).
 
     ``skript`` ist der ganze Lauf; ``modell`` die Ausführung von model.py samt aller ``show()``, darin enthalten
     ``tessellierung`` (Vernetzung neuer Formen), ``serialisierung`` (BRep-Binärform und PART-Kopf) und ``senden``
     (Rahmen an die Laufzeit). Danach ``animation``, ``bom``, ``kameras`` und ``bedingungen``; davor ``katalog`` und
     ``module`` (eigene Module neu laden lassen)."""
-    out = {k: round(v, 1) for k, v in zeiten.items()}
+    from kevcad_kernel import gedaechtnis
+
+    out: dict[str, Any] = {k: round(v, 1) for k, v in zeiten.items()}
     out["tessellierung"] = round(float(state.get("tess_ms") or 0.0), 1)
     out["serialisierung"] = round(float(state.get("ser_ms") or 0.0), 1)
     out["senden"] = round(float(state.get("send_ms") or 0.0), 1)
     out["skript"] = round((time.perf_counter() - t_lauf) * 1000, 1)
+    stat = gedaechtnis.statistik()  # Treffer, neu, gesparte Rechenzeit … (None, wenn aus)
+    if stat is not None:
+        out["gedaechtnis"] = stat
     return out
 
 
@@ -749,6 +754,9 @@ class Runner:
     def run(self, msg: dict[str, Any]) -> dict[str, Any]:
         t_lauf = time.perf_counter()
         zeiten: dict[str, float] = {}  # Phasen des Laufs in ms (RUN_DONE.zeiten_ms, siehe _zeiten)
+        from kevcad_kernel import gedaechtnis
+
+        gedaechtnis.lauf_beginn()
         run = int(msg["run"])
         path = str(msg["path"])
         source = msg.get("code")

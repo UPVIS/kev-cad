@@ -51,13 +51,12 @@ def _abstand(fa: Any, fb: Any, grenze: float) -> tuple[float, np.ndarray | None]
     grob = float(np.linalg.norm(gap))
     if grob > grenze + 1e-6:
         return grob, None
-    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from kevcad_kernel.gedaechtnis import abstand
 
-    d = BRepExtrema_DistShapeShape(fa.wrapped, fb.wrapped)
-    if not d.IsDone() or d.NbSolution() == 0:
+    erg = abstand(fa.wrapped, fb.wrapped)  # BRepExtrema_DistShapeShape, gemerkt je Inhalt (V2-1)
+    if erg is None:
         return grob, None
-    p = d.PointOnShape1(1)
-    return float(d.Value()), np.array([p.X(), p.Y(), p.Z()])
+    return erg[0], np.array(erg[1])
 
 
 def _form(b: Bezug) -> Any:
