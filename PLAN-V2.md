@@ -26,7 +26,7 @@ Drei Maßstäbe für jede Entscheidung:
 | V3 | Start ohne Dialog direkt in ein leeres Projekt. Alte Projekte über ein Overlay, das man wegschiebt. | Kevin |
 | V4 | Grundansicht: nur Gruppen und Objekte. Stückliste, Zuschnitt, Druck, Zeichnungen und Animation erscheinen auf Zuruf als Kacheln. | Kevin |
 | V5 | Zwei Modi: **Fokus** (ultraminimal, Fenster schmal am Bildschirmrand neben dem Chat) und **Werkstatt** (mehr Informationen, von Hand nachjustieren). | Kevin |
-| V6 | Eigene Oberfläche mit eigenen Gestaltungswerten und Bausteinen statt macOS-Standardbausteinen. Tastatur, Zugänglichkeit und Bildtakt bleiben auf dem Niveau einer guten Mac-App. Die Richtung wählt Kevin aus drei Entwürfen. | Kevin |
+| V6 | Eigene Oberfläche mit eigenen Gestaltungswerten und Bausteinen statt macOS-Standardbausteinen. Tastatur, Zugänglichkeit und Bildtakt bleiben auf dem Niveau einer guten Mac-App. Gewählt ist **Graphit** (`docs/v2-entwurf/`), dazu aus Sucher der rote Rahmen um den Viewer, solange Kevin spricht, und nummerierte Kacheln; Zeichnungsblätter im Stil Reißbrett. | Kevin, 05.11.2026: „Wir folgen hier mal deinen Empfehlungen“ |
 | V7 | Keine Manipulatoren. Änderungen macht der Agent, in der Werkstatt auch über Felder. Umbenennen bleibt. | Kevin |
 | V8 | Steuerung wie Blender: Tastenbelegung, Hinweisleiste, Isolieren mit `/`. | Kevin |
 | V9 | Live statt hingeworfen: Teile erscheinen, sobald sie fertig sind. Die Schritte des Agenten laufen knapp mit (Agentenspur), Maße und Befunde zeigen sich kurz am Teil. | Kevin |
@@ -78,9 +78,9 @@ Jeder Lauf schickt alle Teile neu an die App:
 |---|---|---|---|---|
 | V2-1 Tempo im Kernel | Rechengedächtnis je Operation (Booleans, Aufräumen, Volumen, Hüllquader, Abstände), Leerlauf entfernt, `run` wartet höchstens `warten_s` auf die Prüfung, Nachlauf aus dem Auftragsfaden, Zeiten je Phase | Kernel | – | fertig, auf `v2` (`31618fd`) |
 | V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | läuft |
-| V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Kevins Wahl aus dem Gestaltungsentwurf | Entwurf läuft |
+| V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | läuft |
 | V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | läuft |
-| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | als Nächstes: Protokoll entwerfen |
+| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) läuft, V2-5b (App-Seite) danach |
 | V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | Erkennung kann vorher starten |
 | V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | später |
 | V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | zuletzt |
@@ -154,6 +154,8 @@ und Bezug als Anweisung zum Agenten.
 
 ## 8. Fragen an Kevin
 
-1. Darf Kev CAD wieder auf dem Mac mini bauen? Dann laufen zwei Swift-Pakete gleichzeitig.
-2. Welche Gestaltungsrichtung (nach dem Entwurf)?
-3. Wortlaut mit Signatur über sein Team oder nur Apples Erkennung?
+1. Darf Kev CAD wieder auf dem Mac mini bauen? Dann laufen zwei Swift-Pakete gleichzeitig. Bis zu seinem ausdrücklichen
+   Ja bleibt alles auf dem MacBook.
+2. Wortlaut mit Signatur über sein Team oder nur Apples Erkennung?
+
+Entschieden: Gestaltungsrichtung Graphit mit zwei Teilen aus Sucher (05.11.2026, siehe V6).
