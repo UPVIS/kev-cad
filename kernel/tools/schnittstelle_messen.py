@@ -99,7 +99,6 @@ def leitung() -> dict[str, Any]:
 
 def statisch(skill: Path | None = None) -> dict[str, Any]:
     import anyio
-
     from kevcad_kernel.mcp_tools import INSTRUCTIONS
     from kevcad_kernel.server import build_server
 
@@ -213,31 +212,42 @@ def vermessen(res: Any, dauer_s: float) -> dict[str, Any]:
 
 
 def szenarien(namen: set[str], param: tuple[str, float], teile: list[str]) -> list[tuple[str, str, dict]]:
-    """(Bezeichnung, Werkzeug, Argumente) je Fassung der Schnittstelle."""
+    """(Bezeichnung, Werkzeug, Argumente) je Fassung der Schnittstelle. Die neue Fassung (V2-2) folgt dem empfohlenen
+    Ablauf: nach dem ersten Lauf mit fertiger Prüfung einmal pruefen, danach sind die Befunde bekannt."""
     neu = "projekt" in namen  # V2-2
     pname, pwert = param
     a, b = (teile + ["?", "?"])[:2]
-    out = [
+    if not neu:
+        return [
+            ("run kalt", "run", {}),
+            ("run unverändert", "run", {}),
+            (f"run Parameter {pname}={pwert:g}", "run", {"params": {pname: pwert}}),
+            ("status nach den Läufen", "status", {}),
+            ("Teile (alle)", "parts", {}),
+            ("Messen, ein Teil", "measure", {"refs": [a], "show": False}),
+            ("Messen, zwei Teile", "measure", {"refs": [a, b], "show": False}),
+            ("Prüfen", "pruefen", {}),
+            ("Stückliste", "bom", {}),
+        ]
+    return [
         ("run kalt", "run", {}),
-        ("run unverändert", "run", {}),
+        ("run unverändert, Befunde zum ersten Mal", "run", {}),
+        ("Prüfen", "pruefen", {}),
+        ("run unverändert, alles bekannt", "run", {}),
         (f"run Parameter {pname}={pwert:g}", "run", {"params": {pname: pwert}}),
+        (f"run Parameter {pname}={pwert:g} mit detail teile", "run", {"params": {pname: pwert}, "detail": "teile"}),
         ("status nach den Läufen", "status", {}),
         ("Teile (alle)", "parts", {}),
+        ("Teile einer Baugruppe", "parts", {"filter": "Kamerahalter"}),
         ("Messen, ein Teil", "measure", {"refs": [a], "show": False}),
         ("Messen, zwei Teile", "measure", {"refs": [a, b], "show": False}),
-        ("Prüfen", "pruefen", {}),
-        ("Stückliste", "parts" if neu else "bom", {"stueckliste": True} if neu else {}),
+        ("Stückliste", "parts", {"stueckliste": True}),
     ]
-    if neu:
-        out.insert(4, (f"run Parameter {pname}={pwert:g}, detail teile", "run",
-                       {"params": {pname: pwert}, "detail": "teile"}))
-    return out
 
 
 async def antworten(rt: Any, app: App, kopie: Path, args: argparse.Namespace) -> list[dict[str, Any]]:
-    from mcp import Client
-
     from kevcad_kernel.server import build_server
+    from mcp import Client
 
     mcp = build_server(rt)
     ergebnisse: list[dict[str, Any]] = []
@@ -307,6 +317,9 @@ def dynamisch(args: argparse.Namespace) -> dict[str, Any]:
         if app is not None:
             app.schliessen()
         rt.close()
+        pool = getattr(rt, "_pool", None)
+        if pool is not None:  # wie messen.py: Bauplan und Blätter des letzten Laufs schreiben sonst nach dem Löschen
+            pool.shutdown(wait=True)
         if not args.behalten:
             shutil.rmtree(arbeit, ignore_errors=True)
         else:
@@ -333,8 +346,9 @@ def bericht(st: dict[str, Any], dyn: dict[str, Any] | None) -> str:
         f"| tools/list ({wl['anzahl']} Werkzeuge, JSON kompakt) | {z(wl['zeichen'])} | {z(tokens(wl['zeichen']))} |",
     ]
     if roh.get("tools_list"):
-        zeilen.append(f"| tools/list über HTTP (Antwortkörper) | {z(roh['tools_list'])} | {z(tokens(roh['tools_list']))} |")
-        zeilen.append(f"| initialize über HTTP (mit Anweisungen) | {z(roh['initialize'])} | {z(tokens(roh['initialize']))} |")
+        for name, key in (("tools/list über HTTP (Antwortkörper)", "tools_list"),
+                          ("initialize über HTTP (mit Anweisungen)", "initialize")):
+            zeilen.append(f"| {name} | {z(roh[key])} | {z(tokens(roh[key]))} |")
     zeilen += [
         f"| Skill SKILL.md | {z(st['skill']['SKILL.md'])} | {z(tokens(st['skill']['SKILL.md']))} |",
         f"| Skill gesamt ({len(st['skill']['dateien'])} Dateien) | {z(st['skill']['gesamt'])} | "
