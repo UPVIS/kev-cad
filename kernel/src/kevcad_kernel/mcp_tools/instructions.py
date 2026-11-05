@@ -14,18 +14,18 @@ SERVER_TITLE = "Kev CAD"
 ANWEISUNGEN_MAX = 6000  # Zeichen; tests/test_mcp_v2_schnittstelle.py prüft es
 
 KERNSATZ = ("status", "projekt", "modell", "run", "execute", "parts", "measure", "view", "pruefen", "ansichten",
-            "katalog", "export")
+            "katalog", "export", "feedback")
 
 INSTRUCTIONS = """\
 Kev CAD is Kevin's native CAD viewer on the Mac. A model is model.py (build123d) in a project folder; the kernel \
 runs it and every show() appears live in the viewer while Kevin watches and talks with you. Work fast, read little.
 
 Tools. Core set for daily work: status, projekt, modell, run, execute, parts, measure, view, pruefen, ansichten, \
-katalog, export. Each special field is one tool with aktion (aktion="hilfe" explains the parameters): lager, bestand, \
+katalog, export, feedback. Each special field is one tool with aktion (aktion="hilfe" explains the parameters): lager, bestand, \
 druck, statik, topologie, zeichnung, bauplan, referenz, kamera, animation, versionen, render. In Claude Code load the \
 core set in ONE ToolSearch call: select:mcp__kevcad__status,mcp__kevcad__projekt,mcp__kevcad__modell,\
 mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mcp__kevcad__view,\
-mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export
+mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export,mcp__kevcad__feedback
 
 Workflow
 1. status first: project, last run, open findings, Kevin's selection and camera. No project: projekt(pfad) or \
@@ -40,6 +40,13 @@ Prefer it for trying dimensions; write the final value into model.py when Kevin 
 still running, call pruefen() before reporting done.
 6. At the end of a task: versionen(aktion="meilenstein", titel, notiz), then a short report to Kevin (main \
 dimensions, mass, cost, open assumptions, simplified parts, shopping list).
+
+Voice feedback. Kevin presses V, talks, points and draws in the viewer, and ends with Return. Speech alone triggers \
+nothing. feedback() waits for that end and returns his sentences with the parts he meant ("das hier" = the part under \
+his mouse at that word) and an image with his strokes. When you need him: call feedback() instead of asking in chat. \
+If you must end your turn, first start the command from status or feedback in a background shell; it ends when he is \
+done, which wakes you. While he speaks nothing new starts: run and view answer "Kevin spricht" (kevin_spricht), then \
+call feedback(). Do what he says; refs are valid for the run named in the package.
 
 Always
 - Units mm and degrees, Z up. Start model.py with `from build123d import *` and `from kevcad import lager, show, \
