@@ -25,8 +25,10 @@ def vernetze_oberflaeche(punkte: np.ndarray, dreiecke: np.ndarray, h: float, fae
     """Tetraeder (erster Ordnung) in einem geschlossenen Oberflächennetz; der Rand bleibt genau dieses Netz."""
     import gmsh
 
+    from kevcad_kernel.statik.festkoerper.netz import gmsh_starten
+
     t0 = time.perf_counter()
-    gmsh.initialize(["-noenv"], readConfigFiles=False)
+    gmsh_starten()
     try:
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("General.NumThreads", int(faeden))
