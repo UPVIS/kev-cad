@@ -116,7 +116,7 @@ Die App teilt Teile mit mehr als 16.000 Dreiecken oder Kantensegmenten selbst au
 
 | cmd | args |
 |---|---|
-| `view` | `standard` (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`, `iso_front_left`, `iso_back_right`, `iso_back_left`) oder null, `projection` (`perspective` \| `orthographic` \| null), `display` (`shaded_edges` \| `shaded` \| `wireframe` \| `xray` \| null), `fit` (bool) |
+| `view` | `standard` (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`, `iso_front_left`, `iso_back_right`, `iso_back_left`) oder null, `projection` (`perspective` \| `orthographic` \| null), `display` (`solid` \| `material` \| `technical` \| `xray` \| `wireframe` \| null; ältere Werte `shaded_edges` und `shaded` gehen weiter), `fit` (bool) |
 | `focus` | `refs` (Liste), `animate` (bool) |
 | `visibility` | `mode`: `show` \| `hide` \| `isolate` \| `show_all`, `refs` (Teile) |
 | `highlight` | `refs`, `color` (RGBA oder null für Standard), `label` (Text oder null), `clear` (bool, vorherige entfernen) |

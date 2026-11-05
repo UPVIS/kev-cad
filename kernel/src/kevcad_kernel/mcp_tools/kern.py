@@ -33,7 +33,8 @@ StandardView = Literal[
     "top", "bottom", "front", "back", "left", "right", "iso", "iso_front_left", "iso_back_right", "iso_back_left"
 ]
 Projection = Literal["perspective", "orthographic"]
-Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
+Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]  # Bilder außerhalb des Fensters (ansichten)
+ViewDisplay = Literal["solid", "material", "technical", "xray", "wireframe", "shaded_edges", "shaded"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv", "pdf"]
 KatalogArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
                      "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil", "material"]
@@ -451,7 +452,9 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
     async def view(
         standard: Annotated[StandardView | None, Field(description="Standard view direction")] = None,
         projection: Annotated[Projection | None, Field(description="Camera projection")] = None,
-        display: Annotated[Display | None, Field(description="Display style")] = None,
+        display: Annotated[ViewDisplay | None, Field(description=(
+            "Display style in Kevin's viewer: solid, material (physically based), technical (white parts, outlines), "
+            "xray, wireframe"))] = None,
         fit: Annotated[bool, Field(description="Zoom so that all visible parts fit")] = False,
         explode: Annotated[float | None, Field(ge=0, le=1, description="Explosion factor 0 (assembled) .. 1")] = None,
         focus: Annotated[list[str] | None, Field(description="Move the camera (animated) to these parts/elements")]

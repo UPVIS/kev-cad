@@ -32,7 +32,7 @@ StandardView = Literal[
     "top", "bottom", "front", "back", "left", "right", "iso", "iso_front_left", "iso_back_right", "iso_back_left"
 ]
 Projection = Literal["perspective", "orthographic"]
-Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]
+Display = Literal["shaded_edges", "shaded", "wireframe", "xray", "solid", "material", "technical"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
                    "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil"]
@@ -44,7 +44,7 @@ VIEW_NAMES = {
     "iso_back_left": "isometrisch hinten links",
 }
 DISPLAY_NAMES = {"shaded_edges": "schattiert mit Kanten", "shaded": "schattiert", "wireframe": "Drahtgitter",
-                 "xray": "Röntgen"}
+                 "xray": "Röntgen", "solid": "Solid", "material": "Material", "technical": "Technisch"}
 PROJECTION_NAMES = {"perspective": "perspektivisch", "orthographic": "parallel (orthographisch)"}
 KIND_NAMES = {"dimension": "ein Maß", "label": "eine Beschriftung", "arrow": "einen Pfeil"}
 

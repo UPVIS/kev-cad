@@ -63,7 +63,7 @@ Control what Kevin sees, several things in one call (applied in this order): vis
 
 - `standard` ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso' | 'iso_front_left' | 'iso_back_right' | 'iso_back_left', optional): Standard view direction
 - `projection` ('perspective' | 'orthographic', optional): Camera projection
-- `display` ('shaded_edges' | 'shaded' | 'wireframe' | 'xray', optional): Display style
+- `display` ('shaded_edges' | 'shaded' | 'wireframe' | 'xray' | 'solid' | 'material' | 'technical', optional): Display style in Kevin's viewer: solid, material (physically based), technical (white parts, outlines), xray, wireframe
 - `fit` (boolean, optional, Vorgabe False): Zoom so that all visible parts fit
 - `explode` (number, optional): Explosion factor 0 (assembled) .. 1
 - `focus` (list[string], optional): Move the camera (animated) to these parts/elements
