@@ -130,6 +130,7 @@ def verstoesse(plan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             "schwere": schwere, "schritt": sa["id"], "ort": None, "wert": {"vor": sb["id"]},
             "text": f"„{sa.get('titel')}“ soll vor „{sb.get('titel')}“ kommen ({r.get('grund') or 'Vorgabe'}, "
                     f"{r.get('quelle')}), steht aber dahinter.",
-            "loesung": f"Schritt {sa['id']} vor {sb['id']} verschieben (bauplan_bearbeiten verschieben) oder die "
+            "loesung": f"Schritt {sa['id']} vor {sb['id']} verschieben (bauplan(aktion='bearbeiten'), op verschieben) "
+                       f"oder die "
                        "Reihenfolge-Regel löschen, wenn sie nicht mehr gilt."})
     return out

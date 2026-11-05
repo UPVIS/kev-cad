@@ -1317,5 +1317,5 @@ def als_warnungen(ergebnis: dict, max_anzahl: int = 8, mit_hinweisen: bool = Fal
         zeilen.append(f"Druck {h['schwere'].capitalize()}: {h['text']}{ort}")
     if len(zeilen) > max_anzahl:
         rest = len(zeilen) - max_anzahl
-        zeilen = zeilen[:max_anzahl] + [f"… {rest} weitere (druckpruefung zeigt alle)"]
+        zeilen = zeilen[:max_anzahl] + [f"… {rest} weitere (druck(aktion='pruefung') zeigt alle)"]
     return zeilen

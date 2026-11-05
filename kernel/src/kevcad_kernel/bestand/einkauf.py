@@ -556,7 +556,8 @@ def zeile_kurz(e: dict[str, Any]) -> str:
     if not n:
         return "Einkaufsliste: nichts zu kaufen, alles aus dem Bestand des Projekts"
     return (f"Einkaufsliste: {anzahl(n, 'Position', 'Positionen')}"
-            + (f", ≈ {euro(e['summe'])}" if e["summe"] is not None else "") + " (Details mit einkaufsliste)")
+            + (f", ≈ {euro(e['summe'])}" if e["summe"] is not None else "") + " (Details mit "
+                                                                              "bestand(aktion='einkaufsliste'))")
 
 
 def dateiname(projekt: str) -> str:

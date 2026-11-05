@@ -110,7 +110,8 @@ def register_statik_tools(t: Any, svc: Any, tool: Callable[..., Any], annotation
           "pair from the catalog. Result: traffic light and numbers (tipping reserve = deceleration at which it "
           "lifts / scenario deceleration, lift in mm, tilt angle, ball displacement and rise, speed limit at which "
           "the ball jumps out, sliding limit with locked wheels mu*g, contact forces, hand check a = g*b/h), shown "
-          "in the app's statics section and as animation 'Ablauf: <name>' in the timeline (animation_abspielen). "
+          "in the app's statics section and as animation 'Ablauf: <name>' in the timeline "
+          "(animation(aktion='abspielen')). "
           "geschwindigkeit in m/s, bremsen in m/s² or 'abrupt' (stop in 0.1 s) or 'anprall' (0.02 s); or "
           "animation='Fahrt' to take the speed profile from an animation. Always state the limits: rigid bodies, "
           "simplified friction, no deformation.", annotations["additive"])

@@ -205,7 +205,7 @@ def _klemmungen(st: Any, teil: str, opt: dict[str, Any], deklariert: list[dict[s
             if teil in dk["a"] | dk["b"] and dk.get("klemmkraft") is not None:
                 kraft, quelle = float(dk["klemmkraft"]), "st.kontakt(…, klemmkraft=) in model.py"
         if opt.get("klemmkraft") is not None:
-            kraft, quelle = float(opt["klemmkraft"]), "festigkeit(…, klemmkraft=)"
+            kraft, quelle = float(opt["klemmkraft"]), "statik(aktion='festigkeit', …, klemmkraft=)"
         out.append({"schraube": schrauben[0] if schrauben else None, "kopf": kopf, "mutter": mutter,
                     "kraft": kraft, "d": d, "quelle": quelle})
     return out
@@ -269,7 +269,7 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
                         if dk.get("reibwert") is not None:
                             mu, mu_quelle = float(dk["reibwert"]), "st.kontakt in model.py"
                 if opt.get("reibwert") is not None:
-                    mu, mu_quelle = float(opt["reibwert"]), "festigkeit(…, reibwert=)"
+                    mu, mu_quelle = float(opt["reibwert"]), "statik(aktion='festigkeit', …, reibwert=)"
                 T["verbindungen"][x] = {"art": art, "quelle": quelle, "reibwert": mu, "reibwert_quelle": mu_quelle,
                                         "spiel": next((dk.get("spiel") for dk in deklariert if dk.get("spiel")
                                                        is not None and ((name in dk["a"] and x in dk["b"]) or

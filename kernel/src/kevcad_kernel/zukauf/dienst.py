@@ -60,7 +60,7 @@ class ZukaufDienst:
             ids = [r["id"] for r in self.catalog.items() if r.get("art") in ZUKAUF_ARTEN]
             close = difflib.get_close_matches(zid, ids, n=3, cutoff=0.5)
             return None, (f"Zukaufteil {zid!r} gibt es nicht" + (f"; meinten Sie {', '.join(close)}?" if close else
-                                                                  " (zukauf_liste zeigt alle)"))
+                                                                  " (lager(aktion='zukauf_liste') zeigt alle)"))
         if it.get("art") not in ZUKAUF_ARTEN:
             return None, f"{zid!r} ist ein Lagerteil ({it.get('name')}), kein Zukaufteil"
         return it, None
@@ -173,8 +173,9 @@ class ZukaufDienst:
         if not felder and (url or gtin) and not mpn:
             what = "dem Link" if url else "der EAN"
             return {"ok": False, "error": f"Mit {what} allein kennt Kev CAD das Teil nicht (es lädt keine Shop-Seiten). "
-                                          "Die Seite selbst lesen und das HTML an zukauf_html geben oder die Felder "
-                                          "(name, hersteller, mpn, masse, preis …) an zukauf_anlegen."}
+                                          "Die Seite selbst lesen und das HTML an lager(aktion='zukauf_html') geben "
+                                          "oder die Felder "
+                                          "(name, hersteller, mpn, masse, preis …) an lager(aktion='zukauf_anlegen')."}
         entry, notes = ze.entwurf(felder, url=url, mpn=mpn, gtin=gtin, hersteller=hersteller)
         if gtin and not ze.gtin_ok(gtin):
             notes.append(f"EAN {gtin!r} hat eine falsche Prüfziffer – bitte prüfen")
@@ -266,7 +267,7 @@ class ZukaufDienst:
             if datei is None:
                 return {"ok": False, "error": f"Keine neue STEP- oder ZIP-Datei der letzten {minuten:g} Minuten in "
                                               f"{dl.downloads_dir()}: Kevin bitten, das CAD herunterzuladen (Links aus "
-                                              "cad_suchen), dann erneut cad_uebernehmen"}
+                                              "lager(aktion='cad_suchen')), dann erneut lager(aktion='cad_uebernehmen')"}
         try:
             base = self._base_dir(entry)
         except CatalogError as exc:

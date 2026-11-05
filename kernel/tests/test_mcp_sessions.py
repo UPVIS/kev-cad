@@ -69,10 +69,10 @@ def test_sessions_from_header_via_http():
         anyio.run(_call, url, A, "status", {})  # nur lesend: dabei, aber nicht aktiv
         assert wait_for(lambda: any(s and s[0]["session_id"] == A for s in fake.sessions), 3), fake.sessions
         assert not any(x["aktiv"] for s in fake.sessions for x in s), "status ist nur lesend"
-        anyio.run(_call, url, A, "focus", {"refs": ["Halter/Lasche"]})
+        anyio.run(_call, url, A, "view", {"focus": ["Halter/Lasche"]})
         assert wait_for(lambda: any(s and s[0]["aktiv"] and s[0]["session_id"] == A for s in fake.sessions), 3)
         assert any(s and s[0].get("taetigkeit") for s in fake.sessions)
-        anyio.run(_call, url, None, "focus", {"refs": ["Halter/Lasche"]})  # ohne Kopf: keine Sitzung
+        anyio.run(_call, url, None, "view", {"focus": ["Halter/Lasche"]})  # ohne Kopf: keine Sitzung
         assert all(x["session_id"] in (A, B) for s in fake.sessions for x in s)
         # Nach dem Ende der Verbindungen fallen die Sitzungen aus der Liste
         assert wait_for(lambda: fake.sessions[-1] == [], 5), fake.sessions[-3:]

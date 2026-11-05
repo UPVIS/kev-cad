@@ -317,7 +317,7 @@ class ReferenzRestMixin:
         if not kurz.get("angelegt"):
             hinweise.append("Das Netz ist nicht am Modell angelegt (System von Object Capture bzw. des Scans: Boden "
                             "z = 0, Mitte x = y = 0); die Abweichung enthält auch den Lagefehler. Erst "
-                            "referenz_vermessen, dann liegt es am Modell.")
+                            "referenz(aktion='vermessen'), dann liegt es am Modell.")
         wenig = [t["teil"] for t in liste if (t.get("abgedeckt") or 0) < 0.3]
         if wenig:
             hinweise.append(f"Kaum Referenz in der Nähe (unter 30 % abgedeckt): {', '.join(wenig[:6])}")
@@ -361,7 +361,8 @@ class ReferenzRestMixin:
             raise ReferenzFehler(f"referenz.json von {n} ist nicht lesbar")
         if meta.get("art") == "scan":
             raise ReferenzFehler(f"{n} ist ein Scan vom iPhone: LiDAR und ARKit machen ihn metrisch, der Maßstab "
-                                 "steht schon. Weicht ein Maß ab, lieber neu scannen oder referenz_vermessen mit "
+                                 "steht schon. Weicht ein Maß ab, lieber neu scannen oder "
+                                 "referenz(aktion='vermessen') mit "
                                  "bekannte_masse.")
         if (punkte is None) == (not kante):
             raise ReferenzFehler("Entweder punkte (zwei Punkte am Netz) oder kante (benanntes Maß) angeben")

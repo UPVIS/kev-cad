@@ -905,7 +905,7 @@ class VersionenRuntimeMixin:
 
     def _archiv_oder_fehler(self) -> Versionsarchiv | dict[str, Any]:
         if self._project is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         self._nachlauf_warten_ausserhalb()  # V2-1: Versionen früherer Läufe entstehen im Hintergrund
         archiv = self._archiv
         if archiv is None:

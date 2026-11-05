@@ -266,7 +266,8 @@ def finde(basis: Path, wunsch: str | None) -> Path:
         raise ScanFehler(f"{p} gibt es nicht oder ist weder Ordner noch ZIP")
     alle = liste(basis)
     if not alle:
-        raise ScanFehler(f"Noch keine Scans in {basis}. Kev Scan sendet per WLAN, oder scan_importieren mit dem "
+        raise ScanFehler(f"Noch keine Scans in {basis}. Kev Scan sendet per WLAN, oder "
+                         f"referenz(aktion='scan_importieren') mit dem "
                          "Pfad eines ZIPs (AirDrop, Downloads).")
     if not wunsch or str(wunsch).lower() in ("letzter", "neuester", "latest"):
         return basis / alle[0]["id"]

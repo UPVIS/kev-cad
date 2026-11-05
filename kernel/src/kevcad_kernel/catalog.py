@@ -380,7 +380,7 @@ def validate_item(entry: Any, material_ids: set[str] | None = None, deep: bool =
         close = difflib.get_close_matches(mat, sorted(material_ids), n=3, cutoff=0.5)
         errors.append(f"{who}: Material {mat!r} gibt es im Katalog nicht"
                       + (f"; meinten Sie {', '.join(repr(c) for c in close)}?" if close
-                         else " (erst mit material_define anlegen)"))
+                         else " (erst mit lager(aktion='material_vorschlagen') anlegen)"))
     masse = entry.get("masse")
     if optik:
         errors.extend(validate_optik(entry))

@@ -2,7 +2,7 @@
 
 import anyio
 import pytest
-from mcp_testutil import start_server, texts, with_client
+from mcp_testutil import griff_werkzeuge, start_server, texts, with_client
 
 
 @pytest.fixture
@@ -21,15 +21,19 @@ def test_run_mentions_bom_and_inventory_violations(srv):
     res = call(server.url, "run")
     assert res.is_error is False
     summary = texts(res)[0]
-    assert "Stückliste: 3 Positionen, 7 Teile, 17,04 kg, 39,74 € (Richtpreise, Stand 2026-10)" in summary
-    assert "Hinweis Stückliste: Halter: Eigenteil ohne Preis" in summary
+    # V2-2: run nennt die Summen in einer Zeile, die Hinweise der Stückliste stehen in parts(stueckliste=true)
+    assert "Stückliste: 3 Positionen, 17,04 kg, 39,74 € (Details: parts(stueckliste=true))." in summary
     fake.violations = ["Halter/Lasche", "Grundplatte"]
     res = call(server.url, "run")
     assert res.is_error is True
-    summary = texts(res)[0]
-    assert summary.startswith("Inventar-Regel: 2 Teile sind nicht aus dem Inventar: Halter/Lasche, Grundplatte – "
-                              "passendes Lagerteil mit stock_search suchen")
+    zeilen = texts(res)[0].splitlines()
+    assert zeilen[1].startswith("Inventar-Regel: 2 Teile sind nicht aus dem Inventar: Halter/Lasche, Grundplatte – "
+                                "passendes Lagerteil mit katalog suchen")
     assert res.structured_content["inventar_verstoesse"] == ["Halter/Lasche", "Grundplatte"]
+    res = call(server.url, "run")  # bekannte Verstöße nur noch gezählt, der Lauf bleibt ein Fehler
+    assert res.is_error is True
+    assert "Inventar-Regel: 2 bekannte Verstöße weiter offen (Halter/Lasche, Grundplatte)." in texts(res)[0]
+    assert "passendes Lagerteil" not in texts(res)[0]
 
 
 def test_stock_tools_text(srv):
@@ -52,13 +56,15 @@ def test_stock_tools_text(srv):
                                                        "material": "stahl-s235"}})
     text = texts(res)[0]
     assert "als Vorschlag im eigenen Katalog" in text and "wartet auf Kevins Freigabe" in text
-    assert "freigabe_anfragen" in text
+    assert "lager(aktion='freigabe', ids=[" in text
     res = call(server.url, "stock_define", {"entry": {"id": "rohr-y", "art": "rohr"}, "ebene": "projekt"})
     assert res.is_error is True and "masse.s fehlt" in texts(res)[0]
     assert fake.calls_of("stock_define")[1][0][1] == "projekt"
-    tools = {t.name: t for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
+    tools = griff_werkzeuge(server)
     assert tools["stock_define"].input_schema["properties"]["ebene"]["enum"] == ["eigen", "projekt"]
     assert not [n for n in tools if "inventar" in n or "regel" in n]  # kein Werkzeug schaltet die Inventar-Regel
+    oeffentlich = {t.name for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
+    assert not [n for n in oeffentlich if "inventar" in n or "regel" in n]
 
 
 def test_material_and_delete_tools(srv):
@@ -94,6 +100,7 @@ def test_bom_tool(srv):
 
 def test_status_shows_inventory_rule(srv):
     server, fake = srv
-    assert "Inventar-Regel: an (nur Lagerteile und Druckteile)" in texts(call(server.url, "status"))[0]
+    # V2-2: das Lagebild nennt die Regel nur, wenn sie aus ist oder Verstöße hat
+    assert "Inventar-Regel" not in texts(call(server.url, "status"))[0]
     fake.violations = ["Klotz"]
-    assert "Inventar-Regel: an (nur Lagerteile und Druckteile), 1 Verstoß: Klotz" in texts(call(server.url, "status"))[0]
+    assert "Inventar-Regel: 1 Verstoß: Klotz" in texts(call(server.url, "status"))[0]

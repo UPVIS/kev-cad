@@ -64,7 +64,7 @@ from kevcad_kernel.zukauf.dienst import ZukaufDienst
 from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 
 APP_NOT_CONNECTED = "App nicht verbunden"
-NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
+NO_PROJECT = "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
 RUN_WARTEN_S = 3.0  # V2-1: so lange wartet run höchstens auf die Prüfung, dann rechnet sie im Hintergrund weiter
 VERSION_TITEL_WARTEN_S = 60.0  # run(titel=…) wartet so lange auf die Version des Laufs (Versionen-Faden)

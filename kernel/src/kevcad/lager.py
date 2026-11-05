@@ -81,7 +81,7 @@ def released_material(name: str, *, druckbar: bool = False, cat: Catalog | None 
         tips = cat.material_suggestions(str(name))
         raise MaterialError(f"Material {name!r} gibt es im Katalog nicht"
                             + (f". Meinten Sie {', '.join(repr(t) for t in tips)}?" if tips else "")
-                            + " Freigegebene Materialien zeigt material_list; fehlt eins, Kevin fragen.")
+                            + " Freigegebene Materialien zeigt katalog(art='material'); fehlt eins, Kevin fragen.")
     if not is_free(mat):
         raise MaterialError(f"Material {mat['id']!r} ist vorgeschlagen und {WARTET}.")
     if druckbar and mat.get("druckbar") is not True:
@@ -350,7 +350,7 @@ def teil(auswahl: str, /, *, material: str | None = None, **masse: Any) -> Lager
     tips = list(dict.fromkeys(close + [h["id"] for h in hits]))[:5]
     raise LagerError(f"Lagerteil {auswahl!r} gibt es nicht."
                      + (f" Meinten Sie: {', '.join(repr(t) for t in tips)}?" if tips else
-                        " lager.suche(\"…\") oder stock_search zeigt, was es gibt."))
+                        " lager.suche(\"…\") oder katalog zeigt, was es gibt."))
 
 
 def _by_art(cat: Catalog, art: str, material: str | None, masse: dict[str, Any]) -> Lagerteil:
@@ -402,7 +402,7 @@ def _by_art(cat: Catalog, art: str, material: str | None, masse: dict[str, Any])
     near = sorted(rows, key=distance)[:5]
     listing = "; ".join(f"{r['id']} ({_masse_text(r)})" for r in near)
     raise LagerError(f"Kein Lagerteil {art} mit {want}. Ähnlich: {listing}. Neues Lagerteil nur auf Kevins Wunsch "
-                     "mit stock_define anlegen.")
+                     "mit lager(aktion='teil_vorschlagen') anlegen.")
 
 
 def _released(cat: Catalog, entry: dict[str, Any]) -> Lagerteil:

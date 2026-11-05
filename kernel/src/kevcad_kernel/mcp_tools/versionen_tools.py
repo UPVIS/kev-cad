@@ -76,7 +76,7 @@ def liste_text(res: dict[str, Any], limit: int) -> str:
             continue
         lines.append(version_zeile(v))
     if len(vs) > limit:
-        lines.append("… ältere Versionen mit versionen(limit=…) abrufen")
+        lines.append("… ältere Versionen mit versionen(aktion='liste', limit=…) abrufen")
     if len(varianten) > 1:
         lines.append("Varianten: " + ", ".join(f"{v['name']}{' (aktuell)' if v.get('aktuell') else ''}"
                                              for v in varianten))
@@ -103,7 +103,8 @@ def register_versionen_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
           "Version history of the open project (like Onshape/Fusion): every successful run that changed a project "
           "file is a version V<n> with time, who made it (Kevin or an agent), parts, mass, cost, check result and "
           "parameters; named milestones; variants (branches). Dense series of runs are summarized. Use the V numbers "
-          "with version_wiederherstellen, versionen_vergleichen and meilenstein.", READ_ONLY)
+          "with versionen(aktion='wiederherstellen'), versionen(aktion='vergleichen') and "
+          "versionen(aktion='meilenstein').", READ_ONLY)
     async def versionen(
         limit: Annotated[int, Field(ge=1, le=500, description="Show at most this many newest versions")] = 30,
         variante: Annotated[str | None, Field(description="Variant name; omit for the current one")] = None,

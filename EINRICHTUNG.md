@@ -151,7 +151,7 @@ Alle sind freiwillig. Fehlt eines, meldet die betroffene Funktion das klar; alle
 
 | Programm | Wofür | Einrichten |
 |---|---|---|
-| **Bambu Studio** | Druckexport als fertig geslictes Bambu-Projekt (`druck_export`, Druckvorschau mit echter Zeit) | von bambulab.com nach `/Applications/BambuStudio.app`, sonst `KEVCAD_BAMBU_APP` setzen. Die Druckregeln sind auf einen Bambu Lab P1P zugeschnitten |
+| **Bambu Studio** | Druckexport als fertig geslictes Bambu-Projekt (`druck(aktion="export")`, Druckvorschau mit echter Zeit) | von bambulab.com nach `/Applications/BambuStudio.app`, sonst `KEVCAD_BAMBU_APP` setzen. Die Druckregeln sind auf einen Bambu Lab P1P zugeschnitten |
 | **Blender** | Renderings in Fotoqualität (`render(qualitaet="foto")`, Cycles); „Schnell“ geht ohne | von blender.org nach `/Applications/Blender.app`, sonst `KEVCAD_BLENDER` |
 | **CalculiX** | Statik Stufe 4: Kontakt, Plastizität, Traglast, Beulen (`festigkeit(verfahren="ccx")`); Stufe 0 bis 3 gehen ohne | siehe unten |
 | **PromptDA-Gewichte** | Auswertung von iPhone-Scans | laden beim ersten Scan von selbst (Hugging Face, rund 1,4 GB) |

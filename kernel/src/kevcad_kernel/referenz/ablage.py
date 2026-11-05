@@ -163,7 +163,8 @@ def finde(projekt: Path, name: str | None) -> str:
         if len(alle) == 1:
             return alle[0]
         raise ReferenzFehler("Welche Referenz? " + (f"Vorhanden: {', '.join(alle)}." if alle else
-                                                    "Im Projekt gibt es noch keine (referenz_video oder referenz_fotos)."))
+                                                    "Im Projekt gibt es noch keine (referenz(aktion='video') oder "
+                                                    "referenz(aktion='fotos'))."))
     if name in alle:
         return name
     tief = {a.lower(): a for a in alle}

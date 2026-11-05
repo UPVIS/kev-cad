@@ -8,6 +8,45 @@ Filament fragen, Abschnitt 11a). Zahlen mit Quelle in eckigen Klammern (Liste am
 **EW** = Erfahrungswert, nicht direkt belegt, bewusst vorsichtig. Die Daten stehen auch maschinenlesbar in
 `kevcad_kernel/druck/regeln.py`.
 
+
+## Kurzfassung (Kevin, 21.10.2026, immer beachten)
+
+Drucker: Bambu Lab **P1P** (offen, ohne Gehäuse und Kammer; von Kevin am 21.10.2026 bestätigt), Bauraum
+256 × 256 × 250 mm (vorne links 18 × 28 mm gesperrt), Düse 0,4 mm, Schicht 0,2 mm. Standardmaterial PLA oder PETG; ABS, ASA, PC und PA nur mit
+Einhausung. Die Druckausrichtung beim Konstruieren
+mitdenken und im Bericht nennen. Kurzfassung; das ganze Regelwerk mit Zahlen, Quellen und geprüften build123d-Rezepten
+(Tropfenbohrung, Bettfase, Passungen, Gewindeeinsatz, Muttertasche, Opferschicht, Schnapphaken, Teilung) steht in
+[3d-druck.md](3d-druck.md), vor jedem Druckteil lesen:
+
+- **Wände** als Vielfache der Linienbreite (~0,42 mm): mindestens 1,2 mm, tragend 2–3 mm; Merkmale nicht unter 0,8 mm.
+- **Überhänge** bis 45° ohne Stütze; Unterseiten fasen statt runden; Brücken höchstens ~15 mm.
+- **Waagrechte Bohrungen** als Tropfenform (Spitze nach oben); Bohrungen drucken etwa 0,1–0,2 mm zu klein, Ø vorhalten.
+- **Bettseite** mit Fase 0,4–0,6 mm gegen Elefantenfuß; eine ebene, große Auflagefläche einplanen.
+- **Spiel** je Seite: Presspassung 0,1, Spielpassung 0,2, beweglich/Print-in-Place 0,3–0,5 mm.
+- **Gewinde**: Gewindeeinsätze (Tasche nach Herstellermaß, z. B. M3 Ø 4,0–4,2 mm) oder eingeschlossene Muttern
+  (Sechskant +0,2–0,3 mm, Einführschräge); Kernlöcher für Schrauben direkt ins Teil etwa 0,8 × d.
+- **Gegenbohrungen und Senkungen**, die nach unten zeigen, mit Opferschicht (0,2 mm) drucken, sonst Stütze nötig.
+- **Festigkeit**: Last längs der Schichten führen, nicht quer (Schichtfugen sind die Schwachstelle); Innenkanten
+  verrunden; Schnapphaken in Schichtrichtung legen.
+- **Verzug** bei ABS/ASA/PA: große ebene Flächen und spitze Ecken vermeiden, Ecken verrunden.
+- **Z-Maße** möglichst als Vielfache von 0,2 mm; Schrift mindestens 0,6 mm erhaben, Strich ab 0,8 mm.
+- **Größer als der Bauraum**: teilen, mit Passstiften oder Schwalbenschwanz und ebenen Fügeflächen.
+
+**Druckprüfung bei jedem Lauf:** Jedes Teil aus `lager.druckteil(...)` prüft der Kernel nach jedem `run` automatisch
+für den P1P (Prüfer „druck“ der gemeinsamen Prüfung, Befunde `druck_*` mit ids `dr1`, `dr2` …, Teil, Fläche
+`Teil#f<n>`, Ort und Abhilfe). **Fehler** (Export gesperrt) nur aus harten Gründen: passt nicht in den Bauraum (samt
+Sperrfläche vorne links), Harzdruck, Material nur mit gehärteter Düse (CF). Überhänge, Brücken, Auskragungen,
+waagrechte Bohrungen, dünne Wände, Verzug sind **Warnungen** (beheben oder Kevin begründen), der Rest **Hinweise**
+(abwägen). `run` nennt neue Fehler und Warnungen (gleichartige zusammengefasst, bekannte gezählt); die gewählte
+Ausrichtung je Druckteil mit Begründung und
+**`druck(aktion="pruefung")`** (alle Teile) bzw. `druck(aktion="pruefung", teil="…")` liefert die Einzelheiten: Ausrichtung, Fläche auf
+dem Bett, Kennzahlen (Maße auf dem Bett, Schichten, Stützfläche, Auflage, Volumen), alle Hinweise mit Referenzen und
+die Materialeinstellungen. Die Ausrichtung wählt die Prüfung selbst; muss die Hauptlast in die Schichtebene, mit
+`lager.druckteil(form, name, material="petg", ausrichtung="-z")` vorgeben (`"+x"` usw. = diese Seite aufs Bett,
+ebene Flächennummer, Vektor oder `Rot(...)`, bezogen auf die Form, wie sie an `druckteil` geht). Unveränderte Teile
+kommen aus dem Zwischenspeicher; der Live-Aufbau wartet nie auf die Prüfung. Kevin die Ausrichtung neuer Druckteile
+nennen.
+
 ## 1 Drucker
 
 | Größe | Wert |
@@ -277,24 +316,24 @@ Kevin, 22.10.2026: „Wenn ich etwas zum Drucken anweise oder abfrage, fragst du
 Projektdatei liefert die passenden Custom Presets zum Filament mit.“
 
 - **Vor jedem Drucken, jedem Druckexport und jeder Druckabfrage Kevin fragen, welches Filament im Drucker ist.**
-  `filament_liste` zeigt seine Filamente, das zuletzt für das Projekt gewählte und die Spulen im Bestand. Das zuletzt
-  benutzte ist nur der Vorschlag, nie stillschweigend genommen. Ohne `filament` schreibt `druck_export` nichts und
+  `druck(aktion="filamente")` zeigt seine Filamente, das zuletzt für das Projekt gewählte und die Spulen im Bestand. Das zuletzt
+  benutzte ist nur der Vorschlag, nie stillschweigend genommen. Ohne `filament` schreibt `druck(aktion="export")` nichts und
   antwortet „Frag Kevin nach dem Filament“ mit Vorschlägen (zuletzt gewählt, Spulen, alle Filamente des Materials).
 - **Kevins Filamentliste** (nicht der Katalog, keine Freigabe): `~/Library/Application Support/de.upvis.kevcad/
   filamente.json`; Startbestand Polymaker PolyLite PETG gelb, Bambu Lab PETG Basic, Amazon Basics PLA. Je Filament
   Hersteller, Produkt, Material, Farbe, Durchmesser und ein **Preset**: Bambu-Studio-Profil als Basis (System oder
-  Kevins Benutzerprofil, nur gelesen) plus Abweichungen. Neue Filamente nur auf Kevins Wunsch mit `filament_define`.
+  Kevins Benutzerprofil, nur gelesen) plus Abweichungen. Neue Filamente nur auf Kevins Wunsch mit `druck(aktion="filament_neu")`.
 - **Abweichungen nur belegt**, je mit Quelle: das offizielle Herstellerprofil für den P1P mit anderen Werten oder
   Kevins getestete Werte (mit Datum). Datenblattbereiche für andere Geschwindigkeiten sind kein Grund. Schlüssel
   `duese`, `duese_erste_schicht`, `bett`, `bett_erste_schicht`, `luefter_min`, `luefter_max`, `max_volumen`, `fluss`.
 - **Im 3MF:** Das Preset geht vollständig als Filamentprofil ins Bambu-Projekt, sprechend benannt („Polymaker
   PolyLite PETG gelb (Kev CAD)“), mit dem Systemprofil als Elternteil; Bambu Studio führt es als Projekt-Preset. Die
   Temperatur kommt im G-Code an (geprüft am 22.10.2026: `M109 S255`, Testfilament mit 238 °C: `M109 S238`).
-  `druck_export` nennt Filament, Preset, Basisprofil, Abweichungen mit Quelle und die Temperaturen; Kevin das sagen.
+  `druck(aktion="export")` nennt Filament, Preset, Basisprofil, Abweichungen mit Quelle und die Temperaturen; Kevin das sagen.
 - **Druckvorschau:** rechnet vorher mit einem angenommenen Filament (kevcad.json `druck.filament`, zuletzt für das
   Projekt gewählt, Spule im Bestand, erstes der Liste) und zeigt es an (`summe.material[]`: `filament_id`,
   `filament_quelle`, `filament_detail`, `temperaturen`).
-- **Spulen** im Bestand verweisen auf ein Filament der Liste: `bestand_eintragen(filament="…", gramm=…)`.
+- **Spulen** im Bestand verweisen auf ein Filament der Liste: `bestand(aktion="eintragen", filament="…", gramm=…)`.
 - Seit 22.10.2026 nimmt Kev CAD auch die Vorlagen der Bambu-Profile (`include`) mit, etwa den Start-G-Code des P1P.
   Vorher stand in jedem geslicten G-Code und in den Projekt-Einstellungen jedes 3MF der allgemeine Start-G-Code mit
   fester Düsentemperatur 205 °C (für PETG viel zu kalt).
@@ -507,7 +546,7 @@ halter -= [Pos(x, 0, 16) * einsatz_tasche("M3") for x in (-13, 13)]      # zwei 
 ## 15 Prüfung im Kernel
 
 Läuft bei jedem `run` automatisch für jedes `lager.druckteil(...)` (Prüfer „druck“, Befunde `druck_<art>`);
-`druckpruefung` zeigt das Ergebnis, `lager.druckteil(..., ausrichtung="-z")` gibt die Lage vor. Im Lauf sind nur
+`druck(aktion="pruefung")` zeigt das Ergebnis, `lager.druckteil(..., ausrichtung="-z")` gibt die Lage vor. Im Lauf sind nur
 Bauraum, Harzdruck und CF ohne gehärtete Düse Fehler (Export gesperrt), eine zu kleine Bohrung ist dort eine Warnung.
 Von Hand, etwa in `execute`:
 
@@ -543,7 +582,7 @@ Höhe, Schichten, Abmessungen, Bauraum-Ausnutzung, Masse voll, Laufzeit) und `dr
 ## 16 Druckvorschau
 
 Nach jedem Lauf zeigt Kev CAD neben der Stückliste, was die Druckteile im Druck bedeuten (Panel „Druck“, MCP
-`druckvorschau`): je Material Gramm, Meter und Euro, Druckzeit je Platte und gesamt (mit Plattenwechsel), Platten mit
+`druck(aktion="vorschau")`): je Material Gramm, Meter und Euro, Druckzeit je Platte und gesamt (mit Plattenwechsel), Platten mit
 der Anordnung (gleiche Teile zusammen, ein Material je Platte, Sperrzone vorn links frei), Kosten mit Strom und
 Risikoaufschlag, je Gruppe gleicher Teile die empfohlenen Einstellungen mit Begründung und die Hinweise aus der
 Druckpraxis (Trocknen, Verzug, Brim, Stützen-Nacharbeit, AMS-Spülmenge, Düsenverschleiß bei CF, Erfolgsrisiko).
@@ -568,13 +607,13 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   die Lenksperren erst nach dem Nachmessen). Sie stehen in der Druckvorschau als eigene Gruppe „… (später)“ mit
   Filament und Zeit, liegen aber auf keiner Platte, zählen nicht in der Summe und kommen nicht ins 3MF. Druckprüfung,
   Stückliste, Einkauf und Bauplan bleiben. Zum Drucken `spaeter` wieder weglassen. Nicht mit `gedruckt=True`
-  (das heißt: schon gedruckt). Für einen einmaligen Export ohne bestimmte Teile reicht `druck_export(ohne=[…])`.
+  (das heißt: schon gedruckt). Für einen einmaligen Export ohne bestimmte Teile reicht `druck(aktion="export", ohne=[…])`.
 - **Was die Vorschau sagt:** Kevin in einem Satz nennen, was neu dazukommt (z. B. „2 Platten PETG, 6 h 40 min,
   4,80 €; die Lenksperre braucht Stützen“). Warnungen der Vorschau (Stützen, Verzug, Trocknen) wie Hinweise der
   Druckprüfung behandeln: wenn möglich konstruktiv lösen (Fase statt Überhang, größere Auflage).
-- **Einstellungen festlegen:** nur auf Kevins Wunsch `druck_einstellen(teil, einstellungen={…}, zweck=…)`; gespeichert
+- **Einstellungen festlegen:** nur auf Kevins Wunsch `druck(aktion="einstellen", teil, einstellungen={…}, zweck=…)`; gespeichert
   in `<projekt>/druck.json` (gehört zu den Versionen), in der App mit „von Kevin“ bzw. „vom Agenten“.
-- **3MF:** `druck_export(ziel=None, platten=None, teile=None, ohne=None, filament={…})` schreibt die Platten als
+- **3MF:** `druck(aktion="export", ziel=None, platten=None, teile=None, ohne=None, filament={…})` schreibt die Platten als
   Bambu-Studio-Projekt mit Profilen, dem Preset des gewählten Filaments und Einstellungen je Teil (je Material eine
   Datei); gedruckt wird nichts. Vorher Kevin nach dem Filament fragen (Abschnitt 11a). Die
   Objekte heißen in Bambu Studio wie die Teile aus `show()` (lange Namen ohne die mittleren Baugruppen, Ersatzteile
@@ -589,8 +628,8 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
   Einstellung mit Begründung
   (`teile[].begruendung_je`, `objekte_einstellungen`). Vor der Ausgabe slict Bambu Studio die Datei; nur ohne Warnung
   ist sie `druckfertig`. **Der Agent stellt nichts von Hand nach**; Abweichungen nur auf Kevins Wunsch mit
-  `druck_einstellen` (gehen vor). Meldet der Export „NICHT druckfertig“, das Modell oder die Ausrichtung korrigieren.
-- **Teile auswählen:** `druck_export(ohne=["Kugelschieber/Lenksperren"])` (alles unter der Baugruppe),
+  `druck(aktion="einstellen")` (gehen vor). Meldet der Export „NICHT druckfertig“, das Modell oder die Ausrichtung korrigieren.
+- **Teile auswählen:** `druck(aktion="export", ohne=["Kugelschieber/Lenksperren"])` (alles unter der Baugruppe),
   `ohne=["g3"]` oder `ohne=["Lenksperre (Druck)"]` (Gruppe der Vorschau), `teile=[…]` für nur diese Teile; `ohne`
   gewinnt. Die übrigen Teile bleiben an ihrer Stelle (Lücken sind in Ordnung, Bambu Studio lädt und slict das), leere
   Platten fallen weg, das Ergebnis nennt unter `weggelassen`, was fehlt (auch die Teile „später“). Unbekannte Namen
@@ -645,3 +684,16 @@ Erst eine Schätzung (unter 1 s), danach rechnet Bambu Studio im Hintergrund nac
 - [NOP] nophead, Polyholes – https://hydraraptor.blogspot.com/2011/02/polyholes.html
 - [RJG] Schwindmaße gängiger Kunststoffe (Spritzguss) – https://rjcmold.com/wp-content/uploads/Shrinkage-Rates-for-Common-Plastics.pdf
 - Tropfenform-Standard (45°): BOSL2 – https://github.com/BelfrySCAD/BOSL2/wiki/shapes3d.scad
+
+## Drucken auf dem P1P (Phase 8)
+
+Kevins Entscheidung (22.10.2026): Weg A. Kev CAD slict die Platten der Druckvorschau mit Bambu Studio fertig und öffnet
+sie dort; Kevin klickt in Bambu Studio „Platte drucken“ und „Senden“, die Handy-App bleibt. Ein Material je Auftrag
+(P1P ohne AMS).
+
+- `druck(aktion="drucker")` liest den Stand (nur lesend): Verbindung, Fortschritt, Schicht, Restzeit, Temperaturen, Fehler,
+  letzter Auftrag. Seriennummer und Zugangscode stehen nie darin; frag Kevin nie danach, er trägt sie in der App ein.
+- `druck(aktion="drucken", platten=[1], grund="…")` nur, wenn Kevin ausdrücklich drucken will. Es öffnet in Kev CAD den Dialog
+  „Drucken …“; es geschieht nichts, bis Kevin dort klickt. Nie zum Testen, nie aus eigenem Antrieb.
+- Starten, Pausieren oder Abbrechen am Drucker gibt es für den Agenten nicht. Weg B (direkt im LAN) ist gesperrt,
+  solange der Drucker nicht im LAN-only-Modus mit Developer Mode läuft.
