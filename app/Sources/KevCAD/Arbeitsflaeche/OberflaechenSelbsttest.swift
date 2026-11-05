@@ -236,9 +236,9 @@ enum OberflaechenSelbsttest {
         // 7. An den Rand und zurück
         let vorher = session.projectWindow?.frame
         ms = await haenger(0.33) { a?.setzeRand(.rechts) }
-        let schmal = session.projectWindow?.frame
         let einpassen = await haenger(0.7) {}
         notiere(String(format: "nach dem Rand, Modell einpassen: längste Pause %.0f ms", einpassen))
+        let schmal = session.projectWindow?.frame
         pruefe(abs((schmal?.width ?? 0) - GA.schmal) < 2, String(format: "am rechten Rand, %.0f pt breit", schmal?.width ?? 0))
         pruefe(ms < 250, String(format: "an den Rand: längste Pause %.0f ms", ms))
         await foto("09-rand")

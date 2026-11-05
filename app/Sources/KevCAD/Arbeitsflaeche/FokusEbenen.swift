@@ -12,6 +12,11 @@ struct FokusEbenen: View {
     let viewer: CGRect
     let schmal: Bool
 
+    /// Platz unten für Hinweisleiste und Zeitleiste des Viewers.
+    private var untenFrei: CGFloat {
+        (model.viewer.hinweisleiste ? 38 : 0) + (model.animation.hasAnimation ? 40 : 0) + GA.l
+    }
+
     private var leer: Bool {
         if model.isRunning || !model.parts.isEmpty { return false }
         if case .failed = model.run { return false }
@@ -51,24 +56,25 @@ struct FokusEbenen: View {
                         model.oberflaechenActions?.setzeSprechen(!oberflaeche.spricht)
                     }
                     Spacer()
-                    TastenHinweis(tasten: ["?"], text: "Tasten")
+                    if !model.viewer.hinweisleiste { TastenHinweis(tasten: ["?"], text: "Tasten") }
                 }
             }
             .padding(.horizontal, GA.l)
-            .padding(.bottom, model.animation.hasAnimation ? 84 : 40)  // über Zeitleiste und Maßstab des Viewers
+            .padding(.bottom, untenFrei)
         } else {
             ZStack(alignment: .bottomTrailing) {
                 if oberflaeche.spricht || oberflaeche.sprechText != nil {
                     LiveText(oberflaeche: oberflaeche, schmal: false)
                         .frame(maxWidth: max(320, min(860, viewer.width - 680)))
                         .frame(maxWidth: .infinity)
-                        .padding(.bottom, 54)
+                        .padding(.bottom, untenFrei)
                 }
                 SpurAnsicht(model: model, spur: spur)
                     .frame(width: 310, alignment: .leading)
                     .padding(.trailing, 26)
-                    .padding(.bottom, 64)
+                    .padding(.bottom, untenFrei)
             }
+            .frame(maxWidth: .infinity, alignment: .bottomTrailing)
         }
     }
 }

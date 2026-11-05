@@ -131,7 +131,7 @@ struct AufnahmeKnopf: View {
             .shadow(color: GF.befund.opacity(0.35), radius: 3)
         }
         .buttonStyle(KevKnopfStil(form: .rund, an: laeuft))
-        .help(laeuft ? "Video beenden (⌥⌘V)" : "Video aufnehmen (⌥⌘V)")
+        .help(laeuft ? "Video läuft" : "Video: Drehung um das Ziel (⇧⌥⌘V)")
         .accessibilityLabel(laeuft ? "Video beenden" : "Video aufnehmen")
     }
 }
