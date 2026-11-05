@@ -159,16 +159,18 @@ Die Tasten des Viewers stehen in `Commands.swift` und gehören zu V2-4.
 
 ## 8. Messwerte
 
-Selbsttest `KEVCAD_SELFTEST=oberflaeche`, Kugelschieber Variante B (134 Teile), Release, Rechner stark ausgelastet
-(Last 50, 05.11.2026):
+Selbsttest `KEVCAD_SELFTEST=oberflaeche`, Kugelschieber Variante B (134 Teile), Release. „Vorher“ ist der erste Lauf,
+„jetzt“ der letzte (05.11.2026). Der Rechner war in allen Läufen stark ausgelastet (Last 50 bis 176).
 
 | Was | vorher | jetzt |
 |---|---|---|
-| Fenster da (Wanduhr) | 6,65 s | 1,34 bis 2,83 s |
-| Rechenzeit des Hauptfadens bis zum Fenster | nicht gemessen | 0,66 bis 1,12 s |
-| Fokus ↔ Werkstatt mit drei Kacheln | 1651 ms | 93 und 101 ms |
-| an den Rand, zurück | 11994 ms, 123 ms | 129 ms, 171 ms |
-| Kachel Stückliste öffnen, zweites Mal | 10087 ms | 331 ms, 157 ms |
-| Kachel Material groß, zweites Mal | 15555 ms | 648 ms, 383 ms |
+| Fenster da (Wanduhr) | 6,65 s | 1,74 s |
+| Rechenzeit des Hauptfadens bis zum Fenster | nicht gemessen | 0,90 s |
+| leeres Projekt offen (Kernel bereit plus 0,35 s) | 13,5 s | 6,8 s |
+| Fokus → Werkstatt, Werkstatt → Fokus mit drei Kacheln | 1651 ms in eine Richtung | 52 ms, 75 ms |
+| an den Rand, zurück | 11994 ms, 123 ms | 81 ms, 84 ms |
+| Kachel Stückliste öffnen, zweites Mal | 10087 ms | 244 ms, 114 ms |
+| Kachel Material groß, zweites Mal | 15555 ms | 391 ms, 293 ms |
 
-Ohne fremde Last ist der Start nicht gemessen; der Wert bis zum Fenster liegt dann nahe der Rechenzeit.
+Gemessen wird die längste Pause des Hauptfadens. Ohne fremde Last ist der Start nicht gemessen; die Zeit bis zum Fenster
+liegt dann nahe der Rechenzeit.
