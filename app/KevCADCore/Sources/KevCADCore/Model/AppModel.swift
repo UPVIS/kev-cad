@@ -183,10 +183,11 @@ public final class AppModel: ObservableObject {
     @Published public var downloadOffer: DownloadOffer?
     @Published public var zukaufActivity: ZukaufActivity = .idle
     @Published public var watchedDownloads: URL?
-    /// Zwangsbedingungen (additiv, PLAN-BEDINGUNGEN.md): Bericht des letzten Laufs (CONSTRAINTS) und ob die Symbole
-    /// am Teil im Viewport stehen (umschalten über ConstraintActions).
+    /// Zwangsbedingungen (additiv, PLAN-BEDINGUNGEN.md): Bericht des letzten Laufs (CONSTRAINTS) und ob alle Symbole
+    /// am Teil im Viewport stehen (umschalten über ConstraintActions). Aus zeigt der Viewer nur verletzte Bedingungen
+    /// und Fehler: Bei einem Modell mit vielen Bedingungen verdecken die Symbole sonst das Modell.
     @Published public var constraints: ConstraintReport?
-    @Published public var showConstraintSymbols = true
+    @Published public var showConstraintSymbols = false
     /// Phase 5 (additiv): Animation (Zeitleiste) als eigenes Objekt, damit das Abspielen nicht das ganze Fenster neu
     /// zeichnet; Aktionen über `actions as? AnimationActions`.
     public let animation = AnimationModel()

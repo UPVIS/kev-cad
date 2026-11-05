@@ -96,6 +96,11 @@ final class ConstraintTests: XCTestCase {
         let c = try loadedController()
         c.handle(.constraints(report()))
         XCTAssertEqual(c.model.constraints?.items.count, 2)
+        // Vorgabe: nur, was Arbeit macht (verletzte Bedingungen), erfüllte verdecken sonst das Modell
+        XCTAssertFalse(c.model.showConstraintSymbols)
+        XCTAssertTrue(badges(c).contains { $0 == ("◎", true) })
+        XCTAssertFalse(badges(c).contains { $0 == ("⊤", false) })
+        c.setConstraintSymbolsVisible(true)
         let b = badges(c)
         XCTAssertEqual(b.count, 3)
         XCTAssertTrue(b.contains { $0 == ("◎", true) })  // verletzt: gefüllt
@@ -110,7 +115,7 @@ final class ConstraintTests: XCTestCase {
 
         c.setConstraintSymbolsVisible(false)
         XCTAssertFalse(c.model.showConstraintSymbols)
-        XCTAssertTrue(badges(c).isEmpty)
+        XCTAssertFalse(badges(c).contains { $0 == ("⊤", false) })
         c.setConstraintSymbolsVisible(true)
         XCTAssertEqual(badges(c).count, 3)
 
