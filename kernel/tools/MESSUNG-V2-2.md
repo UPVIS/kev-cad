@@ -51,3 +51,50 @@ Beobachtungen:
   Werten mitkommen.
 - `status` nach einem Lauf trägt im JSON-Block das ganze letzte Laufergebnis samt aller Teile.
 - In Claude Code kostet jedes der 95 Werkzeuge eine eigene ToolSearch-Runde, bevor es benutzt werden kann.
+
+## Nachher (V2-2, Stand 4a2ef93)
+
+Gemessen am 05.11.2026 spätabends mit derselben Kopie und Parameteränderung, Rechner wieder unter Last eines anderen
+Agenten (Zeiten deshalb nicht vergleichbar, die Zeichen schon). Die neue Abfolge folgt dem empfohlenen Ablauf: nach dem
+ersten Lauf mit fertiger Prüfung einmal `pruefen`, danach gelten die Befunde als bekannt.
+
+| Was | vorher | nachher | Budget |
+|---|---:|---:|---:|
+| Anweisungen des Servers | 29.809 | 4.784 | 6.000 |
+| tools/list (Werkzeuge) | 131.021 (95) | 31.784 (24) | – |
+| initialize über HTTP | 30.458 | 5.129 | – |
+| Skill SKILL.md (wird beim Auslösen geladen) | 83.629 | 9.558 | – |
+| Skill gesamt (Themen-Dateien nur bei Bedarf) | 167.862 (4 Dateien) | 206.467 (14 Dateien) | – |
+
+| Antwort (Text, den das Modell liest) | vorher | nachher | Budget |
+|---|---:|---:|---:|
+| status ohne Projekt | 514 | 130 | – |
+| Projekt öffnen | 431 | 224 | – |
+| run kalt (134 Teile) | 67.447 | 1.449 | 8.000 |
+| run unverändert, Befunde zum ersten Mal | 120.670 | 2.683 | – |
+| pruefen | 160.339 | 14.120 | – |
+| run unverändert, alles bekannt | – | 490 | 1.500 |
+| run Parameter `laufrolle_l` 100 → 90 (20 Teile geändert) | 67.398 | 2.389 | 4.000 |
+| dieselbe mit `detail="teile"` (auf Abruf) | – | 15.355 | – |
+| status nach den Läufen | 54.396 | 352 | – |
+| parts, alle 134 Teile | 73.713 | 15.349 | – |
+| parts, eine Baugruppe (29 Teile) | – | 5.405 | – |
+| measure, ein Teil | 489 | 88 | – |
+| measure, zwei Teile | 380 | 144 | – |
+| Stückliste | 28.465 | 7.416 | – |
+
+Strukturierte Daten (`structuredContent`, gehen mit über die Leitung): run kalt 52.758 → 3.051, pruefen 137.860 →
+8.471, status 53.895 → 548, parts 60.373 → 13.
+
+Was die Zahlen ausmacht:
+
+- Kein JSON-Block mehr neben dem Text (Kernsatz immer, Fachwerkzeuge auf Wunsch mit `daten=true`).
+- `run` vergleicht mit dem letzten Lauf, den der Agent gesehen hat: unveränderte Teile nur als Zahl, bekannte
+  Befunde gezählt, gleichartige Befunde zusammengefasst (beim Kugelschieber 12 gleiche Gewindeeinsatz-Warnungen in
+  einer Zeile mit „Ebenso 11× bei …“), der erste Lauf mit Baugruppen und Parametern statt 134 Teilezeilen.
+- Werkzeugliste: 12 Werkzeuge im Kernsatz, je Fachbereich eines mit `aktion`, Schemas ohne pydantic-Ballast (`title`
+  je Feld, `default: null`, `anyOf` mit `null`, zusammen gut 10 % der Liste).
+- In Claude Code lädt ein einziger ToolSearch-Aufruf den Kernsatz (Zeile in den Anweisungen und in SKILL.md).
+
+Zum Vergleich der Zeiten: Eine Parameteränderung (`run(params=…)`) ändert model.py nicht und braucht mit dem
+Rechengedächtnis rund 2 s Rechenzeit im Modell (V2-1); die Antwort nennt genau die geänderten Teile mit Unterschied.
