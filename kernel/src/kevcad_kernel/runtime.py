@@ -113,6 +113,7 @@ class Job:
     # V2-1: Die Version eines Laufs entsteht im Versionen-Faden; gesetzt, sobald sie fertig (oder nicht nötig) ist
     versionen_fertig: threading.Event = field(default_factory=threading.Event)
     version: dict[str, Any] | None = None
+    dokumente: Any = None  # Future: Bauplan, Blätter und ihr Nachtrag in die Version fertig (vor versionen_fertig gesetzt)
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -1112,12 +1113,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 speichern = not job.params
                 hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
                                self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, DOCS
-                self._versionen_dokumente_nach_lauf(job, hintergrund)
+                job.dokumente = self._versionen_dokumente_nach_lauf(job, hintergrund)
             finally:
                 for w in info.get("warnings") or []:
                     self._log(f"[versionen] Lauf {job.run}: {w}")
-                # erst nach dem Anstoßen von Bauplan und Blättern (wie früher job.done): wer danach Dateien in
-                # dokumente/ ändert, kommt der Hintergrundrechnung dieses Laufs nicht in die Quere
+                # erst nach dem Anstoßen von Bauplan und Blättern (wie früher job.done); sie rechnen danach im Pool
+                # weiter und werden nachgetragen, job.dokumente ist erfüllt, wenn das fertig ist
                 job.versionen_fertig.set()
 
         for faden, fn in ((self._nachlauf, nachlauf), (self._ver_faden, versionen)):
