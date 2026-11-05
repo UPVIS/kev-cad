@@ -59,7 +59,7 @@ Exact measurement in the kernel (OCCT). Without refs: what Kevin has selected, w
 
 ### view
 
-Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay.
+Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking.
 
 - `standard` ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso' | 'iso_front_left' | 'iso_back_right' | 'iso_back_left', optional): Standard view direction
 - `projection` ('perspective' | 'orthographic', optional): Camera projection
@@ -78,6 +78,7 @@ Control what Kevin sees, several things in one call (applied in this order): vis
 - `dazu` (boolean, optional, Vorgabe False): hervorheben: keep earlier highlights instead of replacing them
 - `anmerkung` (object, optional): Draw {art: 'dimension'|'arrow'|'label', punkte: [[x,y,z], ...] in mm, text?, id?}; a dimension without text shows the distance
 - `entfernen` (boolean | 'hervorhebungen' | 'anmerkungen' | list[string], optional, Vorgabe False): First remove: true = highlights and annotations, 'hervorhebungen' or 'anmerkungen' only those, a list = these annotation ids
+- `dauer_s` (number, optional): hervorheben, anmerkung: fade out after this many seconds
 - `animate` (boolean, optional, Vorgabe True): Animate the focus move so Kevin can follow
 
 ### pruefen
