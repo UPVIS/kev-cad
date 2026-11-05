@@ -63,6 +63,8 @@ struct SpurEintrag: Identifiable, Equatable {
     var dauer: String?
     /// Was das Werkzeug tut, wenn `text` die Absicht des Agenten ist (Hilfetext).
     var werkzeug: String?
+    /// Zeile zum Ende dieses Laufs: entfällt, sobald der Schritt des Agenten den Lauf selbst nennt.
+    var lauf: Int?
 }
 
 /// Agentenspur: die Schritte des Agenten mit Zeiten (V2-5, `AppModel.agentenspur`), dazu das Ende jedes Laufs und die
@@ -139,9 +141,8 @@ final class AgentenSpur: ObservableObject {
         switch r {
         case .finished(let run, let ms, let teile, _):
             guard teile > 0 else { return }  // der Lauf eines leeren Projekts sagt nichts
-            guard !schritte.contains(where: { $0.phasen?["run"]?.intValue == run }) else { return }  // steht schon im Schritt
             dazu(SpurEintrag(text: "Lauf \(run) fertig: \(KevFormat.count(teile, one: "Teil", many: "Teile")), \(Self.dauerText(Double(ms)))",
-                             zeit: Date(), art: .info))
+                             zeit: Date(), art: .info, lauf: run))
         case .failed(let run, let message, let line, _):
             guard !message.contains("anderes Projekt") else { return }  // abgebrochen, kein Fehler
             let wo = line.map { " in Zeile \($0)" } ?? ""
@@ -159,7 +160,8 @@ final class AgentenSpur: ObservableObject {
     /// Schritte und Ereignisse nach Zeit, der laufende Schritt bleibt der letzte.
     private func neuAufbauen() {
         let eigene = schritte.compactMap(Self.eintrag)
-        let basis = (schritte.isEmpty ? zeilen : eigene) + ereignisse
+        let laeufe = Set(schritte.compactMap { $0.phasen?["run"]?.intValue })
+        let basis = (schritte.isEmpty ? zeilen : eigene) + ereignisse.filter { $0.lauf.map { !laeufe.contains($0) } ?? true }
         let sortiert = basis.sorted { a, b in
             if (a.art == .jetzt) != (b.art == .jetzt) { return b.art == .jetzt }
             return a.zeit < b.zeit

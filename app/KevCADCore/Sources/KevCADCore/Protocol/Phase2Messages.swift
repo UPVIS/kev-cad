@@ -269,6 +269,9 @@ public struct BOMMessage: Sendable {
 public struct CatalogMessage: Sendable {
     public var replyTo: String?
     public var catalog: Catalog
+    /// V2-5: Prüfsumme des Inhalts. `unveraendert`: Sie ist gleich der aus der Anfrage, der Inhalt kam nicht mit.
+    public var stand: String? = nil
+    public var unveraendert = false
 
     public init(replyTo: String? = nil, catalog: Catalog) {
         self.replyTo = replyTo
@@ -277,7 +280,10 @@ public struct CatalogMessage: Sendable {
 
     public static func decode(_ header: Data) throws -> CatalogMessage {
         let json = try JSONDecoder().decode(JSONValue.self, from: header)
-        return CatalogMessage(replyTo: json["reply_to"]?.stringValue, catalog: Catalog(json: json))
+        var m = CatalogMessage(replyTo: json["reply_to"]?.stringValue, catalog: Catalog(json: json))
+        m.stand = json["stand"]?.stringValue
+        m.unveraendert = json["unveraendert"]?.boolValue ?? false
+        return m
     }
 }
 
@@ -306,14 +312,17 @@ public struct CatalogRequestMessage: OutgoingRequest {
     public var id: String
     public var query: String?
     public var art: String?
+    /// V2-5: `stand` der letzten Antwort; ist er noch gültig, schickt der Kernel den Katalog (rund 250 KB) nicht neu.
+    public var stand: String?
 
-    public init(id: String, query: String? = nil, art: String? = nil) {
+    public init(id: String, query: String? = nil, art: String? = nil, stand: String? = nil) {
         self.id = id
         self.query = query
         self.art = art
+        self.stand = stand
     }
 
-    enum CodingKeys: String, CodingKey { case type, seq, id, query, art }
+    enum CodingKeys: String, CodingKey { case type, seq, id, query, art, stand }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -322,6 +331,7 @@ public struct CatalogRequestMessage: OutgoingRequest {
         try c.encode(id, forKey: .id)
         try c.encode(query, forKey: .query)  // null = ohne Suche
         try c.encode(art, forKey: .art)
+        try c.encodeIfPresent(stand, forKey: .stand)
     }
 }
 

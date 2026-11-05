@@ -391,6 +391,7 @@ public final class AppController: AppActions {
                 }
                 model.agentConnected = false
                 model.agentActivity = nil
+                inArbeitEnde(nil)
             case .part(let record):
                 handlePart(record)
             case .message(let m):
@@ -494,8 +495,9 @@ public final class AppController: AppActions {
         case .partSame(let m):  // V2-5 (AppController+Live.swift)
             applyPartSame(m)
         case .runEnd(let e):
-            if let teile = e.teile { teileNachLauf(teile) }  // V2-5: alles andere entfernen
-            scene.setInArbeit(nil)
+            inhaltWechseln()  // V2-5: Inhalte tauschen, dann alles entfernen, was nicht mehr dazugehört
+            if let teile = e.teile { teileNachLauf(teile) }
+            inArbeitEnde(nil)
             scene.endRun(e.run)
             letzterLaufZeitpunkt = Date()
             model.run = .finished(
@@ -523,7 +525,8 @@ public final class AppController: AppActions {
                 log(.warning, "Nicht aus dem Inventar: " + e.inventarVerstoesse.joined(separator: ", "))
             }
         case .runError(let e):
-            scene.setInArbeit(nil)
+            inhaltWechseln()
+            inArbeitEnde(nil)
             scene.endRun(e.run)
             deltaLaufEnde()
             // Den Reparaturhinweis des Kernels an die Meldung hängen (RunState hat kein eigenes Feld dafür)
@@ -600,7 +603,7 @@ public final class AppController: AppActions {
         case .simulationJob(let j):
             applySimulationJob(j)
         case .inArbeit(let m):  // V2-5 (AppController+Live.swift)
-            scene.setInArbeit(m.teil)
+            inArbeitMelden(m.teil)
         case .agentSpur(let m):
             model.agentenspur.setzen(m.schritte)
         case .agentSchritt(let m):

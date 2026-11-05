@@ -10,6 +10,9 @@ final class LiveZustand {
     /// Ein Delta-Lauf dunkelt seine offenen Teile erst nach dieser Zeit ab: Ein unveränderter Lauf bleibt ganz ruhig.
     static let abdunkelnNachS: TimeInterval = 2.0
 
+    /// IN_ARBEIT kommt nach 0,3 s ohne Teil; markiert wird erst nach dieser Zeit mehr: Ein schneller Lauf bleibt ruhig.
+    var inArbeitNachS: TimeInterval = 0.4
+
     /// Fähigkeiten des Kernels aus HELLO.
     var kernelFaehigkeiten: Set<String> = []
     /// Inhalte je Teil (der Kernel führt dieselbe Liste).
@@ -23,6 +26,13 @@ final class LiveZustand {
     var bildGeaendert = false
     var teileGeaendert = false
 
+    /// PART_SAME eines anderen Inhalts, der erst zum Laufende angezeigt wird (Teilname → Inhalt mit dem neuen Lauf): Zeigt
+    /// model.py ein Teil im Lauf mehrmals (Zwischenstände), wäre sonst jeder Lauf ein Sprung hin und zurück.
+    var offeneWechsel: [String: PartRecord] = [:]
+    /// Teil aus IN_ARBEIT, dessen Markierung noch aussteht.
+    var inArbeitWartet: String?
+    /// `stand` der letzten Antwort auf das stille Nachladen des Katalogs.
+    var katalogStand: String?
     /// Letzter Treffer unter der Maus (fürs Lagebild); nil, wenn die Maus nicht über einem Teil steht.
     var maus: MausStand?
     /// Maße und Hervorhebungen mit `dauer_s` (Schlüssel: Kennung).
@@ -64,6 +74,7 @@ final class LiveZustand {
     func teilWeg(_ name: String) {
         inhalte.vergessen(name)
         nachgefragt.remove(name)
+        offeneWechsel[name] = nil
     }
 
     func projektGewechselt(_ statik: StatikStore) { statik.feldVorrat = [:] }
@@ -79,6 +90,8 @@ extension AppController {
         live.deltaLauf = nil
         live.nachzufragen = []
         live.nachgefragt = []
+        live.offeneWechsel = [:]
+        live.katalogStand = nil
         model.statik.feldVorrat = [:]
     }
 
@@ -95,14 +108,15 @@ extension AppController {
     func teilGekommen(_ record: PartRecord) {
         live.inhalte.merken(record)
         live.nachgefragt.remove(record.name)
+        live.offeneWechsel[record.name] = nil
         scene.setStale(record.name, false)
-        if scene.inArbeit == record.name { scene.setInArbeit(nil) }
+        inArbeitEnde(record.name)
     }
 
     /// PART_SAME (PROTOCOL.md, „Delta“). Fehlt der Inhalt, bleibt das alte Teil dunkel stehen, bis der Kernel es neu
     /// geschickt hat: lieber kurz dunkel als ein falsches Teil.
     func applyPartSame(_ m: PartSameMessage) {
-        if scene.inArbeit == m.name { scene.setInArbeit(nil) }
+        inArbeitEnde(m.name)
         guard var gespeichert = live.inhalte.zeigen(m.name, m.inhalt) else {
             log(.warning, "Inhalt \(m.inhalt) von \(m.name) fehlt, fordere das Teil neu an")
             nachfragen(m.name)
@@ -110,12 +124,46 @@ extension AppController {
             return
         }
         if scene.record(m.name)?.header.inhalt == m.inhalt {
+            live.offeneWechsel[m.name] = nil
             if scene.confirm(m.name, run: m.run) { live.bildGeaendert = true }
             live.teileGeaendert = true
         } else {
             gespeichert.header.run = m.run  // ein früherer Inhalt: Kopf und Netz tauschen, nichts wird übertragen
-            handlePart(gespeichert)
+            guard scene.record(m.name) != nil else {  // ein Teil, das gerade fehlt, springt nicht
+                handlePart(gespeichert)
+                return
+            }
+            live.offeneWechsel[m.name] = gespeichert
         }
+    }
+
+    /// Laufende: Offene Wechsel anzeigen, in der Reihenfolge der Szene.
+    func inhaltWechseln() {
+        guard !live.offeneWechsel.isEmpty else { return }
+        let wechsel = live.offeneWechsel
+        live.offeneWechsel = [:]
+        for n in scene.order { if let r = wechsel[n] { handlePart(r) } }
+    }
+
+    /// IN_ARBEIT: Das Teil wird markiert, wenn es nicht gleich kommt.
+    func inArbeitMelden(_ teil: String) {
+        live.inArbeitWartet = teil
+        guard live.inArbeitNachS > 0 else {
+            scene.setInArbeit(teil)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + live.inArbeitNachS) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.live.inArbeitWartet == teil else { return }
+                self.scene.setInArbeit(teil)
+            }
+        }
+    }
+
+    /// Markierung beenden: für dieses Teil, das gekommen ist, oder (nil) für alle.
+    func inArbeitEnde(_ teil: String?) {
+        if teil == nil || live.inArbeitWartet == teil { live.inArbeitWartet = nil }
+        if let aktuell = scene.inArbeit, teil == nil || aktuell == teil { scene.setInArbeit(nil) }
     }
 
     private func nachfragen(_ name: String) {
@@ -256,9 +304,19 @@ extension AppController {
                 "offset": .number(Double(ebene.distance)),
             ])
         } ?? .null
-        felder["animation"] = model.animation.selected.map { name in
-            .object(["name": .string(name), "zeit": .number(model.animation.time), "spielt": .bool(model.animation.playing)])
+        let bewegt = model.animation.posed || model.animation.playing  // ein nur geladener Clip ändert das Bild nicht
+        felder["animation"] = model.animation.selected.flatMap { name in
+            bewegt ? .object(["name": .string(name), "zeit": .number(model.animation.time), "spielt": .bool(model.animation.playing)]) : nil
         } ?? .null
+        if AppInfo.isTestVariant {  // Selbsttest (kernel/tools/live_selbsttest.py): was die Szene getan hat
+            let z = scene.statistik
+            felder["statistik"] = .object([
+                "koerper_gebaut": .number(Double(z.koerperGebaut)), "aufleuchten": .number(Double(z.aufleuchten)),
+                "weitergaben": .number(Double(z.weitergaben)), "teile": .number(Double(scene.order.count)),
+                "spur": .number(Double(model.agentenspur.schritte.count)),
+                "marken": .number(Double(befundMarken().count)),
+            ])
+        }
         return felder
     }
 
@@ -387,13 +445,20 @@ extension AppController {
     // MARK: Befunde am Teil
 
     static let maxBefundMarken = 24
+    /// Mehr Warnungen zeigen nur noch die ausgewählten Teile: Dutzende Marken wären keine Hilfe, sondern Unruhe.
+    static let maxWarnMarken = 6
 
-    /// Fehler und Warnungen der Prüfung als kleine Marke am Teil, Fehler zuerst, je Ort nur eine.
+    /// Befunde der Prüfung als kleine Marke am Teil, Fehler zuerst, je Ort nur eine. Hinweise bleiben in der Liste.
     func befundMarken() -> [OverlayPrimitive] {
         guard model.befundMarkenSichtbar, let p = model.pruefung else { return [] }
         var out: [OverlayPrimitive] = []
         var orte = Set<SIMD3<Int32>>()
-        let befunde = p.befunde.filter { $0.schwere != .hinweis }.sorted { ($0.schwere == .fehler ? 0 : 1) < ($1.schwere == .fehler ? 0 : 1) }
+        var warnungen = p.befunde.filter { $0.schwere == .warnung }
+        if warnungen.count > Self.maxWarnMarken {
+            let gewaehlt = Set(scene.selection.map(\.part))
+            warnungen = warnungen.filter { !gewaehlt.isDisjoint(with: $0.teile) }
+        }
+        let befunde = p.befunde.filter { $0.schwere == .fehler } + warnungen
         for b in befunde {
             guard out.count < Self.maxBefundMarken else { break }
             let teile = b.teile.filter { scene.record($0) != nil }

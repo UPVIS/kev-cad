@@ -11,6 +11,8 @@ extension AppController: PruefActions {
 
     func applyCheck(_ c: CheckMessage) {
         let e = c.ergebnis
+        // V2-5: Ein unveränderter Lauf rührt das Bild nicht an
+        let gleicheKoerper = model.pruefung?.geometrie == e.geometrie && scene.ghostBodies.isEmpty == e.geometrie.isEmpty
         switch e.zustand {
         case .running:
             // die Befunde des letzten Laufs bleiben stehen, bis das neue Ergebnis da ist (kein Flackern)
@@ -33,7 +35,7 @@ extension AppController: PruefActions {
                 log(.warning, "Prüfung Lauf \(e.run): \(e.bandText)")
             }
         }
-        updateSchnittkoerper()
+        if !gleicheKoerper { updateSchnittkoerper() }
         updateParts()
         refreshOverlay()  // V2-5: Marken der Befunde am Teil
     }

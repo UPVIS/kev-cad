@@ -17,7 +17,7 @@ public final class StatikStore: ObservableObject {
     @Published public var felder: [String: StatikFeld] = [:]
     /// V2-5 (delta-1): je Paar aus Szenario und Teil die letzten 4 Felder, auch über Läufe hinweg; gezeigt wird das, dessen
     /// Schlüssel STATICS nennt. Der Kernel schickt ein Feld nicht noch einmal, solange es hier steht.
-    public var feldVorrat: [String: [StatikFeld]] = [:]
+    @Published public var feldVorrat: [String: [StatikFeld]] = [:]
     /// Stufe 4: Wert, nach dem die Felder gefärbt werden (`StatikFeldWert`): "ausnutzung" (Standard) oder ein
     /// Zusatzwert ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf"). Gilt, solange ein gezeigtes Feld ihn trägt.
     @Published public var feldWert: String = StatikFeldWert.ausnutzung

@@ -237,6 +237,43 @@ final class LiveTests: XCTestCase {
         XCTAssertEqual(c.live.inhalte.schluessel("A"), ["a2", "a1"])
     }
 
+    func testZwischenstandImLaufFlackertNicht() throws {
+        let (c, _) = try verbunden()
+        // model.py zeigt A erst als Zwischenstand, dann fertig; beides kennt die App
+        c.handle([.part(try teil("A", "zwischen", z: 2)), .part(try teil("A", "fertig", z: 9))])
+        let vorher = c.scene.statistik
+        c.handle([try laufStart(2), gleich(2, "A", "zwischen"), gleich(2, "A", "fertig"), try laufEnde(2, ["A"])])
+        XCTAssertEqual(c.scene.statistik, vorher, "der gezeigte Inhalt kam gleich wieder: nichts passiert")
+        XCTAssertEqual(c.scene.record("A")?.header.inhalt, "fertig")
+        XCTAssertEqual(c.scene.record("A")?.run, 2)
+        XCTAssertEqual(c.live.inhalte.schluessel("A"), ["zwischen", "fertig"], "wie die Liste des Kernels")
+        // bleibt der andere Inhalt stehen, kommt er zum Laufende; ein neues Teil geht vor
+        c.handle([try laufStart(3), gleich(3, "A", "zwischen")])
+        XCTAssertEqual(c.scene.record("A")?.header.inhalt, "fertig", "noch nicht im Lauf")
+        c.handle([try laufEnde(3, ["A"])])
+        XCTAssertEqual(c.scene.record("A")?.header.inhalt, "zwischen")
+        c.handle([try laufStart(4), gleich(4, "A", "fertig"), .part(try teil("A", "neu", run: 4, z: 20)), try laufEnde(4, ["A"])])
+        XCTAssertEqual(c.scene.record("A")?.header.inhalt, "neu")
+    }
+
+    func testStillesNachladenDesKatalogsBehaeltDenStand() throws {
+        let (c, g) = try verbunden()
+        c.refreshCatalogQuietly()
+        let erste = try XCTUnwrap(try g.koepfe("CATALOG_REQ").last)
+        XCTAssertNil(erste["stand"], "ohne Stand kommt der Katalog ganz")
+        let id = try XCTUnwrap(erste["id"]?.stringValue)
+        c.handle([try nachricht(#"{"type":"CATALOG","reply_to":"\#(id)","stand":"abc","materials":[],"items":[],"arten":[]}"#)])
+        let katalog = try XCTUnwrap(c.model.catalog)
+        c.lastQuietCatalog = nil
+        c.refreshCatalogQuietly()
+        let zweite = try XCTUnwrap(try g.koepfe("CATALOG_REQ").last)
+        XCTAssertEqual(zweite["stand"]?.stringValue, "abc")
+        let id2 = try XCTUnwrap(zweite["id"]?.stringValue)
+        c.handle([try nachricht(#"{"type":"CATALOG","reply_to":"\#(id2)","stand":"abc","unveraendert":true}"#)])
+        XCTAssertEqual(c.model.catalog?.items.count, katalog.items.count, "der Katalog bleibt stehen")
+        XCTAssertEqual(c.live.katalogStand, "abc")
+    }
+
     func testFehlenderInhaltHeiltSichUndZeigtNichtsFalsches() throws {
         let (c, g) = try verbunden()
         c.handle([.part(try teil("A", "a1"))])
@@ -346,6 +383,7 @@ final class LiveAnzeigeTests: XCTestCase {
 
     private func verbunden() throws -> AppController {
         let c = AppController(model: AppModel())
+        c.live.inArbeitNachS = 0
         c.handle([.connected])
         c.handle([try nachricht(#"{"type":"HELLO","seq":1,"protocol":1,"faehigkeiten":["delta-1","in-arbeit-1","spur-1","lage-1","live-masse-1"]}"#)])
         return c
@@ -485,6 +523,15 @@ final class LiveAnzeigeTests: XCTestCase {
         XCTAssertTrue(gefuellt)
         c.setVisibility(["Halter/Lasche"], visible: false)
         XCTAssertEqual(c.befundMarken().count, 1, "ausgeblendete Teile tragen keine Marke")
+        c.setVisibility(["Halter/Lasche"], visible: true)
+        // Viele Warnungen: Marken nur an den ausgewählten Teilen, Fehler immer
+        c.model.pruefung?.befunde += (0..<7).map {
+            PruefBefund(id: "w\($0)", art: "kippen", teile: ["Halter/Grundplatte"], schwere: .warnung, text: "w",
+                        ort: SIMD3(100 + Float($0) * 50, 0, 0))
+        }
+        XCTAssertEqual(c.befundMarken().count, 1, "nur der Fehler")
+        c.applySelection([.part("Halter/Grundplatte")])
+        XCTAssertEqual(c.befundMarken().count, 9, "Fehler und alle acht Warnungen des ausgewählten Teils")
         c.model.befundMarkenSichtbar = false
         XCTAssertTrue(c.befundMarken().isEmpty)
     }

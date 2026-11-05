@@ -14,17 +14,6 @@ public enum IncomingEvent: Sendable {
     case basisFehlt(String, String)
 }
 
-/// Rahmen und Bytes eines Nachrichtentyps seit dem Start (ganze Rahmen mit Kopf und Nutzlast).
-public struct EmpfangsZaehler: Equatable, Sendable {
-    public var rahmen = 0
-    public var bytes = 0
-
-    mutating func zaehlen(_ n: Int) {
-        rahmen += 1
-        bytes += n
-    }
-}
-
 /// Unix-Socket-Client zum Kernel (POSIX + Dispatch). Verbindet sich wiederholt, bis der Kernel lauscht, und nach
 /// einem Abbruch erneut. Lesen, Dekodieren und das Vorbereiten der Geometrie laufen auf einer eigenen Warteschlange;
 /// die Ereignisse kommen gebündelt und in Reihenfolge auf dem Hauptthread an.
@@ -39,8 +28,6 @@ public final class KernelConnection: @unchecked Sendable {
     private var readBuffer = [UInt8](repeating: 0, count: 256 * 1024)
     /// V2-5: Basen für WIE_ZUVOR, je Verbindung, nur auf dem Lesefaden.
     private let wieZuvor = WieZuvorSpeicher()
-    /// Rahmen und Bytes je Typ seit dem Start (Messung), nur auf dem Lesefaden.
-    private var empfangen: [String: EmpfangsZaehler] = [:]
 
     /// Ereignisse auf dem Hauptthread.
     public var onEvents: (@MainActor ([IncomingEvent]) -> Void)?
@@ -79,9 +66,6 @@ public final class KernelConnection: @unchecked Sendable {
 
     /// Für Tests: wartet, bis alles bisher Eingereihte verarbeitet ist.
     public func sync() { queue.sync {} }
-
-    /// Rahmen und Bytes je Nachrichtentyp, die bisher angekommen sind (für Messungen).
-    public func empfangsZaehler() -> [String: EmpfangsZaehler] { queue.sync { empfangen } }
 
     // MARK: Verbinden
 
@@ -205,12 +189,11 @@ public final class KernelConnection: @unchecked Sendable {
         }
     }
 
-    /// Rahmen vom Kernel: zählen, WIE_ZUVOR wieder aufbauen, dekodieren.
+    /// Rahmen vom Kernel: WIE_ZUVOR wieder aufbauen, dekodieren.
     private func annehmen(_ frame: Frame) -> IncomingEvent {
         guard let env = try? JSONDecoder().decode(MessageEnvelope.self, from: frame.header) else {
             return Self.decode(frame)
         }
-        empfangen[env.type, default: EmpfangsZaehler()].zaehlen(8 + frame.header.count + frame.payload.count)
         switch wieZuvor.empfangen(frame, envelope: env) {
         case .rahmen(let f, let e):
             return Self.decode(f, envelope: e)
