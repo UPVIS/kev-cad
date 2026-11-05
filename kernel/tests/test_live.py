@@ -177,6 +177,10 @@ def test_weiche_felder_animation_projekt():
     assert lv.filtern(feld, b"x", 1) is not None
     assert lv.filtern({**feld, "run": 2}, b"x", 2) is None, "gleicher Schlüssel: nicht noch einmal"
     assert lv.filtern({**feld, "run": 3, "feld": "k2"}, b"y", 3) is not None
+    assert lv.filtern({**feld, "run": 4, "feld": "k1"}, b"x", 3) is None, "zurück zu k1: die App hat es noch"
+    for i, k in enumerate(("k3", "k4", "k5")):
+        assert lv.filtern({**feld, "run": 5 + i, "feld": k}, b"z", 3) is not None
+    assert lv.filtern({**feld, "run": 9, "feld": "k2"}, b"y", 3) is not None, "k2 ist verdrängt (4 je Paar)"
     assert lv.filtern({**feld, "teil": "U"}, b"x", 4) is not None, "anderes Paar"
     assert lv.filtern({"type": "PROJECT", "path": "/a"}, b"", 5) is not None
     assert lv.filtern({"type": "PROJECT", "path": "/b"}, b"", 6) is not None
@@ -399,7 +403,6 @@ def rahmen(app: FakeApp, start: int) -> list[tuple[dict, bytes]]:
 
 
 def test_ohne_faehigkeit_alles_wie_bisher(env):
-    rt = env["rt"]
     app = verbinden(env, faehigkeiten=None)
     hello = next(h for _, h, _ in app.frames if h["type"] == "HELLO")
     assert hello["faehigkeiten"] == ALLE

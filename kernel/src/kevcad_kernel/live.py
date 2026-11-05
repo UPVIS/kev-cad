@@ -97,7 +97,7 @@ class LiveVerbindung:
         self.gemeldet = False  # HELLO_APP da (Fähigkeiten bekannt)
         self.teile: dict[str, list[str]] = {}  # Name → Inhalte, die die App hält (der gezeigte zuletzt)
         self.delta_lauf: int | None = None  # Lauf, dessen RUN_START mit delta: true ging
-        self.felder: dict[tuple[str, str], Any] = {}  # (szenario, teil) → Schlüssel des zuletzt geschickten Felds
+        self.felder: dict[tuple[str, str], list[Any]] = {}  # (szenario, teil) → Schlüssel der Felder der App
         self.anim: dict[str, str] = {}  # Name → Prüfsumme des zuletzt geschickten ANIM_DEF
         self.kollisionen: dict[str, str] = {}  # Name → Prüfsumme des zuletzt geschickten ANIM_COLLISIONS
         self.basen: dict[str, collections.deque[_Basis]] = {}
@@ -198,10 +198,15 @@ class LiveVerbindung:
         elif art == "STATICS_FIELD":
             paar = (str(header.get("szenario")), str(header.get("teil")))
             feld = header.get("feld")
-            if darf and feld and self.felder.get(paar) == feld:
+            liste = self.felder.setdefault(paar, [])
+            weg = darf and bool(feld) and feld in liste
+            if feld in liste:
+                liste.remove(feld)
+            liste.append(feld)
+            del liste[:-TEIL_INHALTE]  # wie die App: je Paar die letzten Felder
+            if weg:
                 self.zaehler["STATICS_FIELD weg"] += 1
                 return None
-            self.felder[paar] = feld
         elif art == "ANIM_DEF":
             name = str(header.get("name"))
             pruef = _pruefsumme(header, payload, ohne=("seq", "run"))

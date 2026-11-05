@@ -1202,11 +1202,11 @@ Teil, das model.py in einem Lauf mehrmals zeigt (Zwischenstände), oder ein Maß
 | `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Das Teil zeigt den Inhalt `inhalt`, den die App schon hat: Ist es der gezeigte, setzt sie nur die Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Sonst tauscht sie Kopf und Netz gegen den gespeicherten Inhalt (Kopf mit `run`). Fehlt ihr der Inhalt, fragt sie das Teil mit `PARTS_REQ` nach. |
 | `PARTS_REQ` | App → Kernel | `teile` (Namen oder null = alle) | Der Kernel schickt jedes genannte Teil als vollständiges `PART_UPSERT` (nie als `PART_SAME`), für unbekannte Namen `PART_REMOVE`. |
 
-**Statikfelder (`STATICS_FIELD`):** Mit `delta-1` hält die App je Paar (`szenario`, `teil`) das zuletzt empfangene Feld,
-auch über Läufe hinweg, bis ein neues Feld für dasselbe Paar kommt, ein `PROJECT` mit anderem `path` kommt oder die
-Verbindung endet. Sie zeigt es, wenn das neueste `STATICS` für das Paar denselben Schlüssel `feld` nennt; `run` zählt
-dann nicht. Der Kernel schickt ein Feld nicht noch einmal, wenn diese Verbindung für das Paar zuletzt denselben
-Schlüssel bekommen hat.
+**Statikfelder (`STATICS_FIELD`):** Mit `delta-1` hält die App je Paar (`szenario`, `teil`) die letzten 4 empfangenen
+Felder (nach ihrem Schlüssel `feld`; ein fünftes verdrängt das älteste), auch über Läufe hinweg, bis ein `PROJECT` mit
+anderem `path` kommt oder die Verbindung endet. Sie zeigt das Feld, dessen Schlüssel das neueste `STATICS` für das
+Paar nennt; `run` zählt dann nicht. Der Kernel führt dieselbe Liste je Verbindung und schickt ein Feld nicht noch
+einmal, solange die App seinen Schlüssel für das Paar hat (auch nach einem Maß, das hin und her wechselt).
 
 **Animationen:** Ein `ANIM_DEF`, das ohne `run` und `seq` samt Nutzlast gleich dem zuletzt geschickten mit diesem Namen
 ist, geht nicht noch einmal; die App behält die Animation mit Kollisionen und Abspielstand (der Clip behält seine alte
