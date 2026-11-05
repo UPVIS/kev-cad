@@ -2166,5 +2166,245 @@
    "platten": 1.2
   },
   "run_zeile": "Einkaufsliste: 6 Positionen, ≈ 76,63 € (Details mit einkaufsliste)"
+ },
+ "live": {
+  "frames": [
+   {
+    "file": "live_hello.frame",
+    "type": "HELLO",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_hello_app.frame",
+    "type": "HELLO_APP",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "live_run_start.frame",
+    "type": "RUN_START",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_part_upsert.frame",
+    "type": "PART_UPSERT",
+    "payload_bytes": 156,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_part_same.frame",
+    "type": "PART_SAME",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_in_arbeit.frame",
+    "type": "IN_ARBEIT",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_run_end.frame",
+    "type": "RUN_END",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_check_basis.frame",
+    "type": "CHECK",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_wie_zuvor.frame",
+    "type": "WIE_ZUVOR",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_nochmal.frame",
+    "type": "NOCHMAL",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "live_parts_req.frame",
+    "type": "PARTS_REQ",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "live_version_bild_req.frame",
+    "type": "VERSION_BILD_REQ",
+    "payload_bytes": 116,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_agent_spur.frame",
+    "type": "AGENT_SPUR",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_agent_schritt.frame",
+    "type": "AGENT_SCHRITT",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_agent_schritt_ende.frame",
+    "type": "AGENT_SCHRITT",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_agent_schritt_fehler.frame",
+    "type": "AGENT_SCHRITT",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_lage_req.frame",
+    "type": "LAGE_REQ",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_lage.frame",
+    "type": "LAGE",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "live_lage_parallel.frame",
+    "type": "LAGE",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "live_view_annotate_param.frame",
+    "type": "VIEW_CMD",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_view_highlight_dauer.frame",
+    "type": "VIEW_CMD",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   }
+  ],
+  "kernel_faehigkeiten": [
+   "delta-1",
+   "in-arbeit-1",
+   "spur-1",
+   "lage-1",
+   "live-masse-1"
+  ],
+  "nachrichten": {
+   "PART_SAME": "delta-1",
+   "WIE_ZUVOR": "delta-1",
+   "IN_ARBEIT": "in-arbeit-1",
+   "AGENT_SPUR": "spur-1",
+   "AGENT_SCHRITT": "spur-1",
+   "LAGE_REQ": "lage-1"
+  },
+  "felder": [
+   {
+    "type": "PART_UPSERT",
+    "feld": "inhalt",
+    "faehigkeit": "delta-1"
+   },
+   {
+    "type": "RUN_START",
+    "feld": "delta",
+    "faehigkeit": "delta-1"
+   },
+   {
+    "type": "RUN_END",
+    "feld": "teile",
+    "faehigkeit": "delta-1"
+   }
+  ],
+  "wie_zuvor_arten": [
+   "CHECK",
+   "STATICS",
+   "CONSTRAINTS",
+   "BOM",
+   "PRINT_PREVIEW",
+   "SIM",
+   "DOCS",
+   "VERSIONEN"
+  ],
+  "wie_zuvor_basen": 6,
+  "teil_inhalte": 4,
+  "part_upsert_inhalt": "2b96d824aeddc04a",
+  "wie_zuvor": {
+   "basis_file": "live_check_basis.frame",
+   "file": "live_wie_zuvor.frame",
+   "ergebnis": {
+    "type": "CHECK",
+    "run": 8,
+    "state": "done",
+    "duration_ms": 911.5,
+    "message": null,
+    "zusammenfassung": "1 Durchdringung",
+    "zaehler": {
+     "fehler": 1,
+     "warnung": 0,
+     "hinweis": 0
+    },
+    "befunde": [
+     {
+      "id": "du1",
+      "art": "durchdringung",
+      "teile": [
+       "Halter/Lasche",
+       "Halter/Grundplatte"
+      ],
+      "schwere": "fehler",
+      "wert": {
+       "volumen": 200.0,
+       "tiefe": 2.0,
+       "achse": [
+        0,
+        0,
+        1
+       ]
+      },
+      "ort": [
+       20,
+       5,
+       0
+      ],
+      "text": "Halter/Lasche und Halter/Grundplatte durchdringen sich: 200 mm³, Tiefe etwa 2 mm.",
+      "loesung": "Halter/Lasche um 2,2 mm in +Z verschieben",
+      "geometrie": null
+     }
+    ],
+    "geometrie": [],
+    "stand": {
+     "boden_z": 0.0,
+     "boden_erklaert": true,
+     "gruppen": []
+    },
+    "seq": 41
+   }
+  },
+  "version_bild": {
+   "aus_szene": [
+    "Halter/Lasche"
+   ],
+   "mit_netz": [
+    "Halter/Grundplatte"
+   ],
+   "payload_bytes": 116
+  },
+  "spur_ids": [
+   "s-12",
+   "s-13"
+  ]
  }
 }

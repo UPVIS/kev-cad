@@ -45,6 +45,7 @@ from kevcad_kernel.druck.vorschau_laufzeit import DruckvorschauRuntime
 from kevcad_kernel.druck.gedruckt import GedrucktAnbindung
 from kevcad_kernel.freigabe import FreigabeAnbindung
 from kevcad_kernel.kamera import CameraRuntime
+from kevcad_kernel.live import LiveRuntime  # V2-5: Weiche je Verbindung, Agentenspur, Lagebild, Live-Maße
 from kevcad_kernel.project import Project, ProjectError, new_project, open_project
 from kevcad_kernel.statik.laufzeit import StatikRuntime  # Statik Stufe 1: statik, szenario_rechnen, STATICS
 from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime  # Statik Stufe 2: dynamik, Ablauf als Animation
@@ -53,7 +54,7 @@ from kevcad_kernel.topologie.laufzeit import TopologieRuntime  # Topologieoptimi
 from kevcad_kernel.simulation.laufzeit import SimulationRuntime  # Bereich „Simulation“ (PLAN-SIMULATION.md)
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
-from kevcad_kernel.protocol import PROTOCOL_VERSION
+from kevcad_kernel.protocol import KERNEL_FAEHIGKEITEN, LIVE_APP_NACHRICHTEN, PROTOCOL_VERSION
 from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
 from kevcad_kernel.render.laufzeit import RenderRuntime  # Phase 7: Renderings
 from kevcad_kernel.scan.laufzeit import ScanRuntimeMixin  # Scan mit dem iPhone (SCAN.md, PLAN-SCAN.md)
@@ -114,6 +115,7 @@ class Job:
     versionen_fertig: threading.Event = field(default_factory=threading.Event)
     version: dict[str, Any] | None = None
     dokumente: Any = None  # Future: Bauplan, Blätter und ihr Nachtrag in die Version fertig (vor versionen_fertig gesetzt)
+    live: dict[str, Any] = field(default_factory=dict)  # V2-5: Reihenfolge des vorigen Laufs, gekommene Teile …
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -124,7 +126,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
                     StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime, ScanRuntimeMixin,
-                    TopologieRuntime, SimulationRuntime):
+                    TopologieRuntime, SimulationRuntime, LiveRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -188,6 +190,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._druckvorschau_init()  # Druckvorschau (DRUCKVORSCHAU.md)
         self._referenz_init()  # Phase 4: Referenzen (referenz/laufzeit.py)
         self._scan_init()  # Scan mit dem iPhone: Empfänger (scan/laufzeit.py), nur mit App-Variante
+        self._live_init()  # V2-5: Agentenspur, Lagebild, Live-Maße (live.py)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
         self._link.start()
@@ -302,6 +305,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             zeiten["zurueck"] = round((time.perf_counter() - job.started) * 1000, 1)
             zeiten["pruefung"] = self._pruefung_ms(job.run)
             result = {**result, "zeiten_ms": zeiten}
+        self._live_phasen(result)  # V2-5: Zeitpunkte des Laufs in die Agentenspur
         return result
 
     def _pruefung_ms(self, run: int) -> float | None:
@@ -366,7 +370,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
 
     def view_command(self, cmd: str, args: dict[str, Any], timeout_s: float = 10) -> dict[str, Any]:
-        args = dict(args or {})
+        args = self._live_view_vorher(cmd, dict(args or {}))  # V2-5: annotate mit dauer_s braucht eine id
         if not self._link.connected:
             return {"ok": False, "error": APP_NOT_CONNECTED}
         bad = self._check_view_refs(cmd, args)
@@ -378,6 +382,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         ok = bool(reply.get("ok", True))
         if ok and cmd == "visibility":
             self._apply_visibility(args)
+        self._live_view_nachher(cmd, args, ok)  # V2-5: ältere Apps: Maß mit dauer_s selbst wieder entfernen
         out = {"ok": ok}
         if reply.get("message"):
             out["message" if ok else "error"] = reply["message"]
@@ -952,6 +957,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         job.generation = self._worker.generation
         self._topologie_lauf_beginn(job.run)  # Topologie: Aufrufe aus model.py ab hier gehören zu diesem Lauf
         self._set_state("busy", f"Lauf {job.run} rechnet")
+        self._live_lauf_beginn(job)  # V2-5: Reihenfolge des vorigen Laufs für IN_ARBEIT
         self._send_app({"type": "RUN_START", "run": job.run, "file_hash": job.file_hash, "params": job.params,
                         "slow_ms": job.slow_ms})
         self._fk_abbrechen_intern()  # Statik S3: FEM des alten Laufs beenden, der neue Lauf hat die Kerne
@@ -959,7 +965,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                                   "params": job.params, "slow_ms": job.slow_ms, "deviation": deviation,
                                   "angular": angular, "catalog": self._catalog_dirs(),
                                   "inventar_regel": self._inventory_rule(reload=True)})
-        finished = sent and job.finished.wait(job.timeout_s)
+        finished = sent and self._live_warten(job)  # wie job.finished.wait(job.timeout_s), dazu IN_ARBEIT (V2-5)
         duration_ms = int(round((time.perf_counter() - job.started) * 1000))
         final = job.final or {}
 
@@ -1023,7 +1029,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                                 "triangles": sum(r.counts.get("tri", 0) for r in records),
                                 "warnings": final.get("warnings") or [], "params": final.get("params") or {},
                                 "inventar_regel": bool(final.get("inventar_regel", False)),
-                                "inventar_verstoesse": violations})
+                                "inventar_verstoesse": violations,
+                                "teile": [r.name for r in records]})  # V2-5 (delta-1): alle Teile nach dem Lauf
                 t_run_end = time.perf_counter()
                 if isinstance(final.get("bom"), dict):
                     bom = self._bestand_bom({"run": job.run, **final["bom"]})  # Zuschnitt mit Bestand, Einkauf
@@ -1054,6 +1061,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
             anim_senden = self._anim_vorbereiten(job, result)  # Phase 5: abgelegt (animation_liste gilt), Senden später
             self._nachlauf_starten(job, result, anim_senden)
+            self._live_masse_nach_lauf(job, final.get("params") or {})  # V2-5: geänderte Maße kurz am Teil
+            self._live_lauf_ende(job)
         else:  # RUN_FAILED
             error = dict(final.get("error") or {"message": "Unbekannter Fehler"})
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error.get("message", ""),
@@ -1304,7 +1313,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             app_len = int(header.get("app_len", 0))
             app_header = dict(header.get("app") or {})
             app_payload, brep = payload[:app_len], payload[app_len:]
+            # V2-5: Inhaltsschlüssel (Form, Lage, Angaben); die Weiche schickt Unverändertes als PART_SAME
+            app_header["inhalt"] = self._live_inhalt(str(header.get("key", "")), app_header, app_payload)
             with self._app_lock:
+                alt = self.scene.get(header["name"])
+                self._live_teil(job, header["name"], alt.header.get("inhalt") if alt is not None else None,
+                                app_header["inhalt"])
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
@@ -1372,7 +1386,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 state, message = self._state
                 agent = dict(self._agent)
             conn.send({"type": "HELLO", "protocol": PROTOCOL_VERSION, "kernel_version": kevcad_kernel.__version__,
-                       "build123d": _b123d_version(), "mcp_port": self.mcp_port})
+                       "build123d": _b123d_version(), "mcp_port": self.mcp_port,
+                       "faehigkeiten": list(KERNEL_FAEHIGKEITEN)})  # V2-5
             if proj is not None:
                 conn.send({"type": "PROJECT", **proj.info()})
             conn.send({"type": "STATUS", "state": state, "message": message})
@@ -1476,8 +1491,10 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _on_app_message(self, conn: AppConnection, header: dict[str, Any], payload: bytes) -> None:
         kind = header.get("type")
         reply_to = header.get("reply_to")
+        if kind == "LAGE":  # V2-5: Lagebild merken (auch eine verspätete Antwort hilft beim nächsten Mal)
+            self._live_lage_merken(header)
         if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES", "DOC_EXPORT_RES", "RENDER_RES",
-                    "RENDER_SCENE") and reply_to:
+                    "RENDER_SCENE", "LAGE") and reply_to:
             with self._lock:
                 slot = self._pending.pop(str(reply_to), None)
             if slot is not None:
@@ -1486,8 +1503,11 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 slot["event"].set()
             return
         if kind == "HELLO_APP":
-            conn.info = {k: header.get(k) for k in ("app_version", "bundle_id")}
+            conn.info = {k: header.get(k) for k in ("app_version", "bundle_id", "faehigkeiten")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+            self._live_hello_app(conn, header)  # V2-5: Fähigkeiten an die Weiche, Agentenspur
+        elif kind in LIVE_APP_NACHRICHTEN:  # V2-5: PARTS_REQ, NOCHMAL (LAGE ist eine Antwort, siehe oben)
+            self._live_app_message(conn, kind, header)
         elif kind == "CAMERA_SUGGEST":
             self.camera_suggest_from_app(header)
         elif kind == "SELECTION":

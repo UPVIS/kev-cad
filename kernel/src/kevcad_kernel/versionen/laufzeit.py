@@ -657,8 +657,12 @@ class VersionenRuntimeMixin:
             return False
         eintraege = []
         for header, payload in teile:
+            # V2-5: mit dem Inhaltsschlüssel ersetzt die Weiche Netze, die die App gerade hat, durch Verweise
+            meta = {"teil": header.get("name"), "farbe": header.get("color")}
+            if header.get("inhalt"):
+                meta["inhalt"] = header["inhalt"]
             try:
-                eintraege.append(({"teil": header.get("name"), "farbe": header.get("color")}, netz(header, payload)))
+                eintraege.append((meta, netz(header, payload)))
             except Exception:  # noqa: BLE001 - fehlerhafte Geometrie auslassen
                 continue
         return self._versionen_bild_netze(archiv, nr, eintraege)

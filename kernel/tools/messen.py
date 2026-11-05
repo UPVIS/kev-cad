@@ -10,13 +10,15 @@ Aufruf (aus dem Repo, mit der Umgebung des Kernels):
     ... --warten-s 3            an run weitergeben (wie lange run höchstens auf die Prüfung wartet)
     ... --profil                statt der Laufzeit: Runner.run im Prozess, kalt, warm, warm mit Abtastung
     ... --json datei.json       alle Ergebnisse (Zeiten, zeiten_ms, Rahmen) als JSON
+    ... --faehigkeiten delta-1,spur-1   die App-Attrappe meldet diese V2-Fähigkeiten in HELLO_APP (PROTOCOL.md, V2-5)
 
 Läufe: ``kalt`` (erster Lauf nach dem Start), ``gleich`` (ohne Änderung), ``kommentar`` (Kommentar am Ende von
 model.py), ``param:NAME=WERT`` (run mit params), ``ersetze:ALT=NEU`` (erste Fundstelle in model.py ersetzen).
 
 Nach jedem Lauf wartet das Werkzeug auf das Prüfergebnis und bis die Laufzeit nichts mehr zu tun hat, damit sich die
-Läufe nicht überlagern. Spalten: Teile im Viewer (erstes bis letztes PART_UPSERT), RUN_END, Rückkehr von ``run``,
-Prüfung fertig (CHECK mit Ergebnis), alles in Sekunden ab dem Aufruf von ``run``.
+Läufe nicht überlagern. Spalten: Teile im Viewer (erstes bis letztes PART_UPSERT bzw. PART_SAME), RUN_END, Rückkehr
+von ``run``, Prüfung fertig (CHECK mit Ergebnis), alles in Sekunden ab dem Aufruf von ``run``, dazu die Übertragung zur
+App (ganze Rahmen: Kopf und Nutzlast) vom Aufruf bis zum Ende des Laufs samt Nachlauf.
 """
 
 from __future__ import annotations
@@ -57,27 +59,35 @@ def kopieren(projekt: Path, katalog: Path | None) -> tuple[Path, Path]:
     os.environ.setdefault("KEVCAD_BAMBU_APP", str(druck / "kein-bambu-studio.app"))  # kein Slicen nebenbei
     os.environ.setdefault("KEVCAD_FESTKOERPER_CACHE", str(druck / "festkoerper"))
     os.environ.setdefault("KEVCAD_FILAMENTE", str(druck / "filamente.json"))
+    os.environ.setdefault("KEVCAD_DRUCKER_SSDP", "0")  # keine Druckersuche: kein fester UDP-Port, keine Störung
     return arbeit, kopie
 
 
 class AppAttrappe:
     """Minimale App am Socket: sammelt Rahmen mit Empfangszeit und beantwortet Anfragen, auf die die Laufzeit wartet
-    (Ansicht, Bild, Vorschaubild der Versionen)."""
+    (Ansicht, Bild, Vorschaubild der Versionen). V2-5: baut WIE_ZUVOR wie eine App mit delta-1 zur Nachricht auf
+    (Bedingungen wie „CHECK fertig“ sehen die aufgebaute Nachricht); gezählt wird, was auf dem Draht ging."""
 
     PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
-    def __init__(self, pfad: str) -> None:
+    def __init__(self, pfad: str, faehigkeiten: list[str] | None = None) -> None:
         from kevcad_kernel.protocol import encode_frame
 
         self._encode = encode_frame
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(pfad)
-        self.frames: list[tuple[float, dict, int]] = []  # (Zeit, Kopf, Größe der Nutzlast)
+        # (Zeit, Kopf (WIE_ZUVOR aufgebaut), Größe der Nutzlast, Größe des ganzen Rahmens, Typ auf dem Draht)
+        self.frames: list[tuple[float, dict, int, int, str]] = []
+        self.basen: dict[str, collections.deque] = {}  # V2-5: Basen für WIE_ZUVOR je Art
+        self.basis_fehlt = 0
         self.cond = threading.Condition()
         self.seq = 0
         self._send_lock = threading.Lock()
         threading.Thread(target=self._lesen, daemon=True).start()
-        self.senden({"type": "HELLO_APP", "app_version": "messen", "bundle_id": "de.upvis.kevcad.messen"})
+        hallo = {"type": "HELLO_APP", "app_version": "messen", "bundle_id": "de.upvis.kevcad.messen"}
+        if faehigkeiten:
+            hallo["faehigkeiten"] = list(faehigkeiten)
+        self.senden(hallo)
 
     def senden(self, kopf: dict, nutz: bytes = b"") -> None:
         with self._send_lock:
@@ -96,8 +106,12 @@ class AppAttrappe:
             if not data:
                 break
             for h, p in leser.feed(data):
+                # Kopf wie encode_frame ihn schreibt: so zählt der ganze Rahmen, nicht nur die Nutzlast
+                kopf = len(json.dumps(h, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+                draht, ganz, nutz = h.get("type"), 8 + kopf + len(p), len(p)
+                h = self._aufbauen(h)
                 with self.cond:
-                    self.frames.append((time.perf_counter(), h, len(p)))
+                    self.frames.append((time.perf_counter(), h, nutz, ganz, draht))
                     self.cond.notify_all()
                 art = h.get("type")
                 if art == "VIEW_CMD":
@@ -106,6 +120,30 @@ class AppAttrappe:
                     self.senden({"type": "SCREENSHOT_RES", "reply_to": h["id"], "ok": True,
                                  "width": h.get("width", 1), "height": h.get("height", 1), "camera": {},
                                  "mm_per_px": None}, self.PNG)
+                elif art == "LAGE_REQ":  # V2-5: Lagebild (Werte einer festen Ansicht)
+                    self.senden({"type": "LAGE", "reply_to": h["id"], "zeit": time.time(), "ms": 0.1,
+                                 "kamera": {"position": [0, -1000, 500], "ziel": [0, 0, 0],
+                                            "richtung": [0, 0.894, -0.447], "oben": [0, 0.447, 0.894],
+                                            "abstand": 1118.0, "projektion": "perspective", "fov": 30.0,
+                                            "ortho_hoehe": None, "ansicht": None, "durch": None},
+                                 "sichtbar": [], "verborgen": [], "isoliert": None,
+                                 "auswahl": {"run": None, "refs": []}, "maus": None})
+
+    def _aufbauen(self, h: dict) -> dict:
+        """WIE_ZUVOR wie eine App mit delta-1 aufbauen und Basen führen (PROTOCOL.md, V2-5)."""
+        from kevcad_kernel.protocol import WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, wie_zuvor_aufbauen
+
+        if h.get("type") == "WIE_ZUVOR":
+            basis = next((b for b in self.basen.get(h.get("art"), ()) if b[0] == h.get("basis")), None)
+            if basis is None:
+                self.basis_fehlt += 1
+                return h
+            h = wie_zuvor_aufbauen(h, basis[1])
+        art = h.get("type")
+        if art in WIE_ZUVOR_ARTEN and not h.get("reply_to"):
+            self.basen.setdefault(art, collections.deque(maxlen=WIE_ZUVOR_BASEN)).append(
+                (h.get("seq"), {k: v for k, v in h.items() if k != "seq"}))
+        return h
 
     def marke(self) -> int:
         with self.cond:
@@ -115,7 +153,7 @@ class AppAttrappe:
         ende = time.monotonic() + timeout
         with self.cond:
             while True:
-                for t, h, _ in self.frames[start:]:
+                for t, h, *_ in self.frames[start:]:
                     if pred(h):
                         return t, h
                 rest = ende - time.monotonic()
@@ -123,7 +161,7 @@ class AppAttrappe:
                     return None
                 self.cond.wait(min(rest, 0.5))
 
-    def seit(self, start: int) -> list[tuple[float, dict, int]]:
+    def seit(self, start: int) -> list[tuple[float, dict, int, int, str]]:
         with self.cond:
             return list(self.frames[start:])
 
@@ -176,13 +214,17 @@ def lauf_messen(rt, app: AppAttrappe, kopie: Path, art: str, args) -> dict:
     time.sleep(args.pause_s)
     frames = app.seit(start)
     arten: dict[str, list] = {}
-    for t, h, n in frames:
-        e = arten.setdefault(h.get("type"), [0, 0, None, None])
+    teil_zeiten = []  # Teile im Viewer: neu geschickt (PART_UPSERT) oder bestätigt (PART_SAME, V2-5)
+    for t, h, n, ganz, draht in frames:
+        e = arten.setdefault(draht, [0, 0, None, None, 0])
         e[0] += 1
         e[1] += n
         e[2] = t - t0 if e[2] is None else e[2]
         e[3] = t - t0
-    teile = arten.get("PART_UPSERT")
+        e[4] += ganz
+        if h.get("type") in ("PART_UPSERT", "PART_SAME") and h.get("run") == run:
+            teil_zeiten.append(t - t0)
+    teile = [None, None, min(teil_zeiten), max(teil_zeiten)] if teil_zeiten else None
     run_end = arten.get("RUN_END")
     out = {
         "lauf": art, "run": run, "ok": res.get("ok"),
@@ -195,22 +237,27 @@ def lauf_messen(rt, app: AppAttrappe, kopie: Path, art: str, args) -> dict:
         "pruefung_endstand_s": (endstand[0] - t0) if endstand else None,
         "pruefung_im_ergebnis": (res.get("pruefung") or {}).get("state"),
         "zeiten_ms": res.get("zeiten_ms"),
-        "rahmen": {k: {"anzahl": v[0], "mb": round(v[1] / 1e6, 3), "erster_s": round(v[2], 3),
-                       "letzter_s": round(v[3], 3)} for k, v in arten.items()},
+        "rahmen": {k: {"anzahl": v[0], "mb": round(v[1] / 1e6, 3), "kb_gesamt": round(v[4] / 1e3, 1),
+                       "erster_s": round(v[2], 3), "letzter_s": round(v[3], 3)} for k, v in arten.items()},
+        "kb_gesamt": round(sum(v[4] for v in arten.values()) / 1e3, 1),
+        "basis_fehlt": app.basis_fehlt,  # V2-5: WIE_ZUVOR ohne Basis bei der App (muss 0 bleiben)
         "fehler": (res.get("error") or {}).get("message") if not res.get("ok") else None,
     }
     return out
 
 
 def tabelle(ergebnisse: list[dict]) -> str:
-    zeilen = ["| Lauf | Teile im Viewer | RUN_END | `run()` kehrt zurück | Prüfung fertig |",
-              "|---|---|---|---|---|"]
+    zeilen = ["| Lauf | Teile im Viewer | RUN_END | `run()` kehrt zurück | Prüfung fertig | Übertragung |",
+              "|---|---|---|---|---|---|"]
     for e in ergebnisse:
         teile = f"{_s(e['teile_erst_s'])} bis {_s(e['teile_letzt_s'])} s" if e["teile_erst_s"] is not None else "–"
         pr = f"{_s(e['pruefung_s'])} s ({e['pruefung_state']})" if e["pruefung_s"] is not None else "–"
         if e.get("pruefung_endstand_s") is not None:
             pr += f", Endstand {_s(e['pruefung_endstand_s'])} s"
-        zeilen.append(f"| {e['lauf']} | {teile} | {_s(e['run_end_s'])} s | {_s(e['zurueck_s'])} s | {pr} |")
+        kb = e.get("kb_gesamt")
+        uebertragung = "–" if kb is None else (f"{kb / 1000:.2f} MB" if kb >= 1000 else f"{kb:.1f} KB")
+        zeilen.append(f"| {e['lauf']} | {teile} | {_s(e['run_end_s'])} s | {_s(e['zurueck_s'])} s | {pr} | "
+                      f"{uebertragung} |")
     return "\n".join(zeilen)
 
 
@@ -257,7 +304,8 @@ def messen(args) -> int:
         if not rt.wait_worker_ready(300):
             raise SystemExit("Rechenprozess startet nicht")
         print(f"Rechenprozess bereit nach {time.perf_counter() - t0:.1f} s", flush=True)
-        app = AppAttrappe(str(arbeit / "k.sock"))
+        faeh = [f.strip() for f in (args.faehigkeiten or "").split(",") if f.strip()]
+        app = AppAttrappe(str(arbeit / "k.sock"), faeh or None)
         app.warte(lambda h: h.get("type") == "HELLO", 10)
         res = rt.project_open(str(kopie))
         if not res.get("ok"):
@@ -267,11 +315,12 @@ def messen(args) -> int:
         for art in [a.strip() for a in args.laeufe.split(",") if a.strip()]:
             e = lauf_messen(rt, app, kopie, art, args)
             ergebnisse.append(e)
-            rahmen = ", ".join(f"{k} {v['anzahl']}× {v['mb']:.2f} MB" for k, v in e["rahmen"].items()
-                               if v["mb"] >= 0.05)
+            rahmen = ", ".join(f"{k} {v['anzahl']}× {v['kb_gesamt']:.1f} KB"
+                               for k, v in sorted(e["rahmen"].items(), key=lambda kv: -kv[1]["kb_gesamt"])
+                               if v["kb_gesamt"] >= 1.0)
             print(f"{art}: Lauf {e['run']} ok={e['ok']} {e['teile']} Teile, zurück nach {e['zurueck_s']:.2f} s, "
-                  f"Prüfung {e['pruefung_state']} nach {_s(e['pruefung_s'])} s; Rahmen: {rahmen}"
-                  + (f"; Fehler: {e['fehler']}" if e["fehler"] else ""), flush=True)
+                  f"Prüfung {e['pruefung_state']} nach {_s(e['pruefung_s'])} s; Übertragung {e['kb_gesamt']:.1f} KB: "
+                  f"{rahmen}" + (f"; Fehler: {e['fehler']}" if e["fehler"] else ""), flush=True)
     finally:
         if app is not None:
             app.schliessen()
@@ -291,7 +340,8 @@ def messen(args) -> int:
         print(text)
     if args.json:
         Path(args.json).write_text(json.dumps({"projekt": str(projekt), "laeufe": ergebnisse,
-                                               "gedaechtnis": not args.ohne_gedaechtnis}, ensure_ascii=False,
+                                               "gedaechtnis": not args.ohne_gedaechtnis,
+                                               "faehigkeiten": args.faehigkeiten}, ensure_ascii=False,
                                               indent=1), encoding="utf-8")
     return 0
 
@@ -381,6 +431,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--warm", type=int, default=2, help="--profil: so viele Läufe vor dem abgetasteten")
     ap.add_argument("--top", type=int, default=60, help="--profil: so viele Zeilen inklusive")
     ap.add_argument("--json", default=None, help="Ergebnisse zusätzlich als JSON-Datei")
+    ap.add_argument("--faehigkeiten", default=None,
+                    help="V2-Fähigkeiten der App-Attrappe, durch Komma getrennt (etwa delta-1,in-arbeit-1,spur-1)")
     ap.add_argument("--log", action="store_true", help="Meldungen der Laufzeit auf stderr")
     ap.add_argument("--behalten", action="store_true", help="Arbeitsordner nicht löschen")
     return messen(ap.parse_args(argv))
