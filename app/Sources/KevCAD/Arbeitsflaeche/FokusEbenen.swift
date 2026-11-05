@@ -158,7 +158,7 @@ struct LiveText: View {
                     .lineLimit(schmal ? 4 : 3)
                     .truncationMode(.head)
             } else if oberflaeche.spricht {
-                Text("Sprich einfach, der Text erscheint hier.")
+                Text(sprache.startet ? "Das Mikrofon geht gerade an …" : "Sprich einfach, der Text erscheint hier.")
                     .font(schmal ? GS.liveTextSchmal : GS.liveText)
                     .foregroundStyle(GF.rauch)
                     .multilineTextAlignment(.center)

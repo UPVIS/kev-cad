@@ -135,6 +135,10 @@ def main() -> int:
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     port = int(info["KevCADPort"])
     prozess = info["CFBundleExecutable"]
+    # Nur die Begrüßung bei Wortlaut: Das Mikrofon bleibt zu
+    hallo = subprocess.run([str(app / "Contents/MacOS" / prozess)], env={**os.environ, "KEVCAD_SELFTEST": "wortlaut"},
+                           capture_output=True, text=True, timeout=30)
+    print(hallo.stdout.strip() or f"Wortlaut: kein Ergebnis (Ausgang {hallo.returncode})", flush=True)
     arbeit, kopie = kopieren(Path(args.projekt).expanduser(), Path(args.katalog).expanduser() if args.katalog else KATALOG)
     ausgabe = Path(tempfile.mkdtemp(prefix="fb-selbsttest-", dir=arbeit))
     ton = ausgabe / "sprache.aiff"

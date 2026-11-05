@@ -20,6 +20,8 @@ public final class SprachStore: ObservableObject {
     @Published public internal(set) var pegel: Float = 0
     /// ↩ ist gedrückt, das Paket entsteht gerade.
     @Published public internal(set) var schickt = false
+    /// Das Mikrofon geht gerade an: Was Kevin jetzt sagt, hört die Erkennung womöglich nicht.
+    @Published public internal(set) var startet = false
 
     public init() {}
 }
@@ -133,6 +135,7 @@ public final class SprachSteuerung {
     }
 
     private func tonStarten() {
+        controller?.model.sprache.startet = true
         let vorher = stoppen
         let e = erkennung
         Task {
@@ -246,7 +249,10 @@ public final class SprachSteuerung {
             zwischenstand = nil
             satzBeginn = nil
             textZeigen()
+        case .zustand(.hoert):
+            c.model.sprache.startet = false
         case .zustand(.fehler(let meldung)):
+            c.model.sprache.startet = false
             c.viewer.zeige(meldung)
             if offen, !schliesst, gesagt.isEmpty, zwischenstand == nil, (sitzung?.striche.isEmpty ?? true) {
                 verwerfen()
@@ -463,6 +469,7 @@ public final class SprachSteuerung {
         controller?.model.sprache.text = nil
         controller?.model.sprache.pegel = 0
         controller?.model.sprache.schickt = false
+        controller?.model.sprache.startet = false
         controller?.refreshOverlay()
     }
 

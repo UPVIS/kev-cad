@@ -84,6 +84,8 @@ public final class WortlautErkennung: Spracherkennung {
     /// Wer nach Pegel laut ist, spricht noch: Der erste Zwischenstand kommt erst nach rund einer halben Sekunde.
     static let lautAb: Float = 0.2
     static let lautNachklangS = 0.45
+    /// Antwortet der Dienst so lange nicht, hört der Rückfall zu (das Sprachmodell laden meldet er selbst).
+    var startFristS = 4.0
 
     enum Meldung: Sendable {
         case pegel(Float)
@@ -126,6 +128,13 @@ public final class WortlautErkennung: Spracherkennung {
         offenerSatz = nil
         setzen(.startet)
         verbinden()
+        let nummer = versuch
+        let frist = startFristS
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(frist))
+            guard let self, self.gewollt, self.versuch == nummer, self.zustand == .startet else { return }
+            self.beenden("Wortlaut antwortet nicht.")
+        }
     }
 
     /// Der Dienst verwirft beim Stoppen einen angefangenen Satz. Spricht Kevin noch oder fehlt das Ende des Satzes, läuft

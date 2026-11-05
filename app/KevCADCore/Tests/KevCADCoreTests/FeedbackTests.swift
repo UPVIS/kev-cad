@@ -333,6 +333,22 @@ final class WortlautErkennungTests: XCTestCase {
         XCTAssertTrue(zustaende.contains(.fehler("Wortlaut hört gerade für Tessera mit.")))
     }
 
+    func testDienstOhneAntwortGiltNachDerFristAlsFehler() async {
+        let w = WortlautErkennung(verbinder: { _ in
+            final class Stumm: WortlautVerbindung {
+                var dienst: (any SprachdienstProtocol)? { nil }
+                func schliessenNachStopp() {}
+                func abbrechen() {}
+            }
+            return Stumm()
+        })
+        w.startFristS = 0.02
+        w.beiEreignis = { [weak self] in self?.ereignisse.append($0) }
+        w.starten()
+        await bis { zustaende.contains(.fehler("Wortlaut antwortet nicht.")) }
+        XCTAssertTrue(zustaende.contains(.fehler("Wortlaut antwortet nicht.")))
+    }
+
     func testSatzBekommtZeitenAusLatenzUndZwischenstaenden() async {
         let w = await gestartet()
         w.empfangen(.zwischenstand("Mach das", 7), leitung: w.leitung)
