@@ -95,6 +95,7 @@ def test_beispiel_und_rahmen_sind_gueltig():
 @pytest.mark.parametrize("aendern, teil", [
     (lambda p: p.update(format="x"), "format"),
     (lambda p: p.update(name="anders"), "name"),
+    (lambda p: p.update(wortzeiten="genau"), "wortzeiten"),
     (lambda p: p["worte"][0].update(satz=9), "satz"),
     (lambda p: p["saetze"][0]["bezuege"][1].update(strich=9), "Strich"),
     (lambda p: p["saetze"][0]["bezuege"].extend([p["saetze"][0]["bezuege"][0]] * 6), "Zeiger"),

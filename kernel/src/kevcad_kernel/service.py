@@ -80,7 +80,7 @@ class KernelService(Protocol):
     # Projekt
     def status(self) -> dict[str, Any]:
         """{"project": {"path","name","model"} | None, "kernel": "ready"|"busy"|"error", "app_connected": bool,
-        "last_run": RunResult | None, "selection": {"run", "refs"}}"""
+        "last_run": RunResult | None, "selection": {"run", "refs"}, "feedback": feedback_stand()}"""
 
     def project_open(self, path: str) -> dict[str, Any]:
         """Öffnet einen Projektordner (legt nichts an). {"ok", "path", "name", "model", "error"?}"""

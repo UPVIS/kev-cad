@@ -639,6 +639,21 @@ final class SprachSitzungTests: XCTestCase {
         XCTAssertEqual(staende(gesendet()).count, 3, "ohne Sitzung gibt es nichts zu melden")
     }
 
+    func testWaehrendKevinSprichtBleibtDieKamera() throws {
+        let c = AppController(model: AppModel())
+        c.sprache.erkennungFabrik = { TestErkennung() }
+        let events = try FrameReader().feed(Fixtures.data("stream.bin")).map(KernelConnection.decode)
+        c.handle(Array(events.prefix(2)))  // HELLO, PROJECT
+        c.oberflaeche(.sprechen(true))
+        XCTAssertTrue(c.sprache.spricht)
+        let vorher = c.viewport.camera
+        c.handle(Array(events[2..<7]))  // ein Lauf mit Teilen; ohne Sitzung passt die Ansicht sich ein
+        XCTAssertFalse(c.scene.isEmpty, "die Teile erscheinen")
+        XCTAssertEqual(c.viewport.camera.position, vorher.position)
+        XCTAssertEqual(c.viewport.camera.distance, vorher.distance)
+        c.oberflaeche(.sprechenVerwerfen)
+    }
+
     func testEingabeTasteGehoertDerOffenenSitzung() async throws {
         let (c, _, _, _) = try aufbau()
         c.oberflaeche(.sprechen(true))

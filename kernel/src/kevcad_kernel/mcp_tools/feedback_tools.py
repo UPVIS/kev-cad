@@ -128,7 +128,7 @@ def register_feedback_tool(tool: Callable[..., Any], t: Any, svc: KernelService,
         if res.get("leer"):
             return fmt.result("Noch nichts abgeholt, es gibt kein früheres Feedback.", {"leer": True}, json_block=False)
         paket = res["paket"]
-        text = feedback_text(paket, _aktueller_lauf(svc))
+        text = feedback_text(paket, await t.work(None, _aktueller_lauf, svc))
         if res.get("offen"):
             text += f"\nDanach wartet noch {fmt.plural(int(res['offen']), 'Feedback', 'Feedbacks')}: feedback()."
         text += f"\nEinzelheiten (Wörter, Mausweg, Striche): {res.get('json_pfad')}"

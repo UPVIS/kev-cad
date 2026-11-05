@@ -126,7 +126,7 @@ struct Hinweisleiste: View {
         }
         if oberflaeche.spricht {
             out.insert(contentsOf: [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
-                                    Eintrag(tasten: ["V"], maus: nil, text: "Anhalten"),
+                                    Eintrag(tasten: ["V"], maus: nil, text: "Aufhören"),
                                     Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")], at: min(1, out.count))
         } else if model.measureMode {
             out.insert(Eintrag(tasten: ["Esc"], maus: nil, text: "Ende"), at: min(2, out.count))

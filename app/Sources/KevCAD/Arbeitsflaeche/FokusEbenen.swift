@@ -135,6 +135,7 @@ struct LiveText: View {
     let schmal: Bool
 
     private var titel: String {
+        if sprache.schickt { return "Geht an den Agenten" }
         if oberflaeche.spricht { return "Du sprichst" }
         return oberflaeche.sitzungOffen ? "Angehalten" : "Gesagt"
     }
@@ -162,7 +163,7 @@ struct LiveText: View {
                     .foregroundStyle(GF.rauch)
                     .multilineTextAlignment(.center)
             }
-            if oberflaeche.sitzungOffen {
+            if oberflaeche.sitzungOffen && !sprache.schickt {
                 HStack(spacing: schmal ? 14 : 22) {
                     Button {
                         actions?.sprechenFertig()

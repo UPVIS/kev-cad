@@ -18,6 +18,8 @@ public final class SprachStore: ObservableObject {
     @Published public internal(set) var text: String?
     /// Lautstärke 0…1
     @Published public internal(set) var pegel: Float = 0
+    /// ↩ ist gedrückt, das Paket entsteht gerade.
+    @Published public internal(set) var schickt = false
 
     public init() {}
 }
@@ -149,6 +151,7 @@ public final class SprachSteuerung {
         melden(.aus, grund: .fertig)
         c.viewport.zeichnen = false
         c.model.oberflaeche.ausfuehren(.sprechen(false))  // der rote Rahmen geht sofort
+        c.model.sprache.schickt = true
         let e = erkennung
         let letzte = stoppen
         let abschluss = Task {
@@ -459,6 +462,7 @@ public final class SprachSteuerung {
         controller?.viewport.zeichnen = false
         controller?.model.sprache.text = nil
         controller?.model.sprache.pegel = 0
+        controller?.model.sprache.schickt = false
         controller?.refreshOverlay()
     }
 
