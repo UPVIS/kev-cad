@@ -276,6 +276,9 @@ def messen(args) -> int:
         if app is not None:
             app.schliessen()
         rt.close()
+        pool = getattr(rt, "_pool", None)
+        if pool is not None:  # Bauplan und Blätter des letzten Laufs schreiben sonst nach dem Löschen nach
+            pool.shutdown(wait=True)
         if not args.behalten:
             shutil.rmtree(arbeit, ignore_errors=True)
         else:
