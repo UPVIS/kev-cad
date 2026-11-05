@@ -141,10 +141,10 @@ und Bezug als Anweisung zum Agenten.
 
 ## 7. Offene Punkte und Risiken
 
-- **Tests:** 16 Statik- und Simulationstests mit CalculiX scheitern im vollen Lauf aus einer Agenten-Shell mit
-  `UnicodeDecodeError` (ASCII). Auf der Basis `f136caa` ist das genauso. Einzeln laufen sie grün, auch unter
-  `LANG=C.UTF-8` (`test_statik4.py::test_hertz_kugel_auf_platte`, 05.11.2026). Vermutlich stellt etwas im vollen Lauf die
-  Locale des Testprozesses um. Das klärt V2-8 (Testsuite sauber).
+- **Tests:** Die volle Suite läuft auf dem Mini grün (`tools/fern/mini.sh` setzt seit V2-4 UTF-8). Offen für V2-8: 16
+  Statik- und Simulationstests mit CalculiX scheiterten im vollen Lauf aus einer Agenten-Shell am MacBook mit
+  `UnicodeDecodeError` (ASCII); dort ist der volle Lauf seither nicht wiederholt. Abbrüche mit Ausgang 141 kamen von
+  `gmsh.initialize`, das SIGPIPE zurücksetzt (behoben, `gmsh_starten`).
 - **Gedächtnis:** Es hängt an build123d 0.13.0 und schaltet sich bei einer anderen Fassung selbst ab (Prüfsumme der
   Quelle). Bei einem Update von build123d die nachgebauten Methoden in `gedaechtnis.py` prüfen.
 - **Nachlauf im Hintergrund:** Bauplan, Blätter und Versionen entstehen nach `run` im Hintergrund. Wer `dokumente/`

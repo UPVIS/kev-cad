@@ -10,6 +10,8 @@ Teilgröße. Kleine Löcher und Rundungen verfeinert Gmsh über die Krümmung
 
 from __future__ import annotations
 
+import ctypes
+import signal
 import time
 from typing import Any
 
@@ -22,6 +24,16 @@ MAX_TET_FEIN = 40_000
 KRUEMMUNG = 18
 KRUEMMUNG_FEIN = 32
 TET_JE_H3 = 5.0  # Tetraeder je h³ Volumen (gemessen an Quadern, Gmsh HXT)
+
+
+def gmsh_starten() -> None:
+    """``gmsh.initialize`` ohne fremde Konfiguration. gmsh setzt dabei SIGPIPE auf die Vorgabe zurück; Python ignoriert
+    es sonst, und ein Schreiben auf einen geschlossenen Socket beendet dann den ganzen Prozess ohne Meldung (im vollen
+    Testlauf kam so Ausgang 141, 05.11.2026). Über libc, weil ``signal.signal`` nur im Hauptfaden geht."""
+    import gmsh
+
+    gmsh.initialize(["-noenv"], readConfigFiles=False)
+    ctypes.CDLL(None).signal(int(signal.SIGPIPE), ctypes.c_void_p(1))  # SIG_IGN
 
 
 def netzgroesse(volumen: float, flaeche: float, groesse: float, fein: bool = False,
@@ -44,7 +56,7 @@ def vernetze(brep: str, fein: bool = False, h_vorgabe: float | None = None, faed
     import gmsh
 
     t0 = time.perf_counter()
-    gmsh.initialize(["-noenv"], readConfigFiles=False)
+    gmsh_starten()
     try:
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("General.NumThreads", int(faeden))
