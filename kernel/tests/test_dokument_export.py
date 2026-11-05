@@ -145,8 +145,7 @@ def test_mcp_werkzeug():
             return anyio.run(with_client, server.url, lambda c: c.call_tool(name, args or {}))
 
         tools = {t.name: t for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
-        beschreibung = tools["dokument_export"].description
-        assert "only when Kevin explicitly asks to print" in beschreibung and "never on your own" in beschreibung
+        assert "drucken=true opens the print dialog, only when Kevin explicitly asks" in tools["export"].description
         res = call("dokument_export", {"bausteine": ["deckblatt", "stueckliste", "bauplan"]})
         assert res.is_error is not True
         text = texts(res)[0]

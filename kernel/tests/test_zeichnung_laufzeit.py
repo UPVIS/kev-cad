@@ -243,7 +243,7 @@ def test_mcp_zeichnungswerkzeuge():
         res = _call(server.url, "zeichnung_erstellen", {"teile": ["Gestell/Seitenstange"]})
         assert res.is_error is False
         text = texts(res)[0]
-        assert "3× Ø4,2" in text and "zeichnung_bild" in text
+        assert "3× Ø4,2" in text and "zeichnung(aktion='bild')" in text
         assert fake.calls_of("drawing_create")[-1] == ((["Gestell/Seitenstange"], "teil", None), {})
         res = _call(server.url, "zeichnung_bearbeiten", {"blatt": "seitenstange", "ops": [
             {"op": "mass_neu", "art": "linear", "ansicht": "v1",

@@ -1977,7 +1977,7 @@
    "stangen": 0.6,
    "platten": 1.2
   },
-  "run_zeile": "Einkaufsliste: 6 Positionen, ≈ 76,63 € (Details mit einkaufsliste)"
+  "run_zeile": "Einkaufsliste: 6 Positionen, ≈ 76,63 € (Details mit bestand(aktion='einkaufsliste'))"
  },
  "freigabe": {
   "frames": [
@@ -2165,7 +2165,7 @@
    "stangen": 0.6,
    "platten": 1.2
   },
-  "run_zeile": "Einkaufsliste: 6 Positionen, ≈ 76,63 € (Details mit einkaufsliste)"
+  "run_zeile": "Einkaufsliste: 6 Positionen, ≈ 76,63 € (Details mit bestand(aktion='einkaufsliste'))"
  },
  "live": {
   "frames": [

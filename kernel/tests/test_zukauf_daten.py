@@ -151,7 +151,7 @@ def test_normteil_umleiten():
     red = umleiten("DIN 912 M5x16", cat)  # fehlt im Test-Katalog, gibt es in bd_warehouse
     assert red["stock_id"] is None and red["vorschlag"]["masse"] == {"typ": "SocketHeadCapScrew", "norm": "iso4762",
                                                                      "groesse": "M5-0.8"}
-    assert "stock_define" in red["text"]
+    assert "teil_vorschlagen" in red["text"]
 
 
 # --------------------------------------------------------------------------------------------- Katalog-Ebenen

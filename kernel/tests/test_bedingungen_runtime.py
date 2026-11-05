@@ -132,7 +132,7 @@ def test_mcp_werkzeug_bedingungen(env):
         run, alle, teil, falsch = anyio.run(with_client, server.url, go)
     finally:
         server.stop_thread()
-    assert run.is_error and "Bedingungen:" in texts(run)[0] and "Luft 2 mm" in texts(run)[0]
+    assert run.is_error and "Neue Befunde" in texts(run)[0] and "Luft 2 mm" in texts(run)[0]
     text = texts(alle)[0]
     assert alle.is_error and "Klotz.unten auf Tisch.oben" in text and "verletzt" in text and "Befunde:" in text
     assert "Klotz: bestimmt" in texts(teil)[0]
