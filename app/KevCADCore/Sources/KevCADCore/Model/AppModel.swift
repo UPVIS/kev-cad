@@ -224,6 +224,9 @@ public final class AppModel: ObservableObject {
     /// Simulation (additiv, PLAN-SIMULATION.md): Lastfälle, Kräfte und Lager aus der App, Aufträge, Ergebnistabelle
     /// (Aktionen: `actions as? SimulationActions`).
     public let simulation = SimulationStore()
+    /// Viewer V2 (additiv): Darstellung, Hinweisleiste, Menüs im Viewport, lokale Ansicht, Meldungen, Aufnahmen
+    /// (Aktionen: `actions as? ViewerActions`, Belegung in Viewer/Tastenbelegung.swift).
+    public let viewer = ViewerStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

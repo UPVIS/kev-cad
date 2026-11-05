@@ -55,7 +55,13 @@ public final class AppController: AppActions {
     // Szene
     private var fitOnFirstPart = true
     private var fitAtRunEnd = false
-    var measurePending: [ElementRef] = []
+    var measurePending: [ElementRef] = [] {
+        didSet { if measurePending.isEmpty { messZiele = [] } }
+    }
+    /// V2 Messen: Ziele der laufenden Messung (Element oder Fangpunkt), Fangpunkt und Vorschau unter der Maus.
+    var messZiele: [MessZiel] = []
+    var aktuellerFang: Fangpunkt?
+    var messVorschau: MessVorschau?
     var annotations: [(id: String, item: OverlayPrimitive)] = []
     var highlightLabels: [Int: String] = [:]
     private var animationTimer: Timer?
@@ -63,6 +69,16 @@ public final class AppController: AppActions {
     private var projectSeenSinceHello = false
     /// Lokale Ansicht (Taste /): vorherige Sichtbarkeit und Kamera, solange sie aktiv ist.
     var localView: (hidden: Set<String>, camera: CameraState)?
+    /// V2 Viewer: Darstellung vor Röntgen (⌥Z schaltet dorthin zurück).
+    var vorRoentgen: ShadingModus?
+    /// V2 Viewer: Mitschnitt der Navigation (Kameras je Bild), siehe AppController+Aufnahme.swift.
+    var mitschnitt: NavigationsMitschnitt?
+    /// V2 Viewer: unsichtbarer Renderer für Bildschirmfoto und Video (gleiches Bild wie der Viewport).
+    var offline: OfflineAnsicht?
+    /// V2 Viewer: Selbsttest KEVCAD_SELFTEST=viewer läuft (ViewerSelbsttest.swift).
+    var viewerSelbsttestLaeuft = false
+    /// Zeitpunkt der letzten Nachricht vom Kernel (Selbsttest: Bildzeiten erst messen, wenn er ruht).
+    var letzteKernelNachricht: CFTimeInterval = 0
     var navCancellables = Set<AnyCancellable>()
     /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
     var pendingRestore: SavedSession?
@@ -122,6 +138,7 @@ public final class AppController: AppActions {
         }
         installSimulationGriff()  // Simulation: Pfeil-Griff einer freien Kraft ziehen
         installNavigation()
+        installViewer()  // V2: Belegung, Hinweisleiste, Messen beim Darüberfahren, Darstellung
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
         connection.onEvents = { [weak self] events in self?.handle(events) }
@@ -349,6 +366,7 @@ public final class AppController: AppActions {
     // MARK: Ereignisse
 
     func handle(_ events: [IncomingEvent]) {
+        letzteKernelNachricht = CACurrentMediaTime()
         for e in events {
             switch e {
             case .connected:
@@ -430,6 +448,7 @@ public final class AppController: AppActions {
             }
             requestBOMAfterConnect()
             druckerNachHello()  // Phase 8: Drucker-Einstellungen an den Kernel (PRINTER_CONFIG)
+            viewerSelbsttestProjektOeffnen()  // V2: KEVCAD_SELFTEST=viewer
             quietCatalogOff = false
         case .status(let s):
             switch s.state {
@@ -477,6 +496,7 @@ public final class AppController: AppActions {
             fitOnFirstPart = false
             log(.info, "Lauf \(e.run) fertig: \(scene.order.count) Teile, \(model.triangleCount) Dreiecke, \(e.durationMs) ms")
             scheduleSelfTestIfRequested()
+            viewerSelbsttestPlanen()  // V2: KEVCAD_SELFTEST=viewer
             for w in e.warnings { log(.warning, w) }
             if !e.inventarVerstoesse.isEmpty {
                 log(.warning, "Nicht aus dem Inventar: " + e.inventarVerstoesse.joined(separator: ", "))
@@ -689,15 +709,8 @@ public final class AppController: AppActions {
         // Wie Blenders Objektmodus: im Teilemodus wählt ein Klick das ganze Teil; Messen braucht immer Elemente
         if !model.measureMode, model.selectionMode == .parts, let r = ref { ref = r.partRef }
         if model.measureMode {
-            guard let ref else { return }
-            measurePending.append(ref)
-            applySelection(measurePending)
-            if measurePending.count >= 2 {
-                let refs = measurePending
-                measurePending = []
-                measure(refs)
-            }
-            updateMeasureHint()
+            // V2: gefangener Punkt (Ecke, Kantenmitte, Kreismitte) vor Element (AppController+Messen.swift)
+            messKlick(ref)
             return
         }
         var refs = scene.selection
@@ -715,7 +728,7 @@ public final class AppController: AppActions {
     func applySelection(_ refs: [ElementRef], notifyKernel: Bool = true) {
         scene.setSelection(refs)
         model.selection = scene.selection.compactMap { r in scene.record(r.part)?.selectionItem(for: r) }
-        viewport.controller.selectedBodyIDs = scene.outlinedBodyIDs
+        viewport.controller.selectedBodyIDs = umrissKoerper  // V2: Schalter „Umriss der Auswahl“
         if notifyKernel { send(SelectionMessage(run: scene.latestRun, refs: scene.selection.map(\.string))) }
         refreshOverlay()
     }
@@ -733,11 +746,13 @@ public final class AppController: AppActions {
     func updateMeasureHint() {
         guard model.measureMode else {
             viewport.hint = nil
+            viewport.eingabe.messZiele = 0
             return
         }
         viewport.hint =
             measurePending.isEmpty
             ? "Messen: erstes Element anklicken" : "Messen: zweites Element anklicken (\(measurePending[0].string))"
+        viewport.eingabe.messZiele = measurePending.count
     }
 
     func measure(_ refs: [ElementRef]) {
@@ -789,6 +804,7 @@ public final class AppController: AppActions {
         items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
         items.append(contentsOf: cameraOverlayItems())
         items.append(contentsOf: massstabOverlay())  // Phase 4: Punkte des Werkzeugs „Maßstab setzen“
+        items.append(contentsOf: messVorschauItems())  // V2: Messen beim Darüberfahren, Fangpunkte
         return items
     }
 

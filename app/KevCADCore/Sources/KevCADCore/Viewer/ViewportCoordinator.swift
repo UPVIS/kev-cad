@@ -38,6 +38,35 @@ public final class ViewportCoordinator: ObservableObject {
     public private(set) weak var mtkView: MTKView?
     private var cancellables = Set<AnyCancellable>()
 
+    // MARK: V2: Eingabe, Kamerafahrten, Mauspunkt
+
+    /// Was Maus und Tastatur gerade tun (Hinweisleiste).
+    public let eingabe = ViewerEingabe()
+    /// Taste im Viewport, die einem Befehl der Belegung entspricht (Ziffernblock, ^, ? …); true = ausgeführt.
+    public var onBefehl: ((ViewerBefehl) -> Bool)?
+    /// Element unter der Maus hat sich geändert (Treffer, Weltpunkt auf der Fläche, Mausposition oben links); nil-Treffer
+    /// = nichts unter der Maus oder Maus außerhalb.
+    public var onHover: ((PickResult?, SIMD3<Float>?, CGPoint?) -> Void)?
+    /// Eine Kamerafahrt ist am Ziel angekommen.
+    public var onFahrtEnde: (() -> Void)?
+    /// Jedes Bild der Navigation (Mitschnitt): Kamera nach der Änderung.
+    public var onKameraGesetzt: ((CameraState) -> Void)?
+    /// Laufende weiche Fahrt (Kamerafahrt.swift).
+    var fahrt: Kamerafahrt?
+    var fahrtLink: CADisplayLink?
+    var fahrtTakt: FahrtTakt?
+    /// Letzter Treffer unter der Maus: Weltpunkt und Mausposition (Eingabeebene, Ursprung unten links), Zeitpunkt.
+    var mausPunkt: (welt: SIMD3<Float>, maus: CGPoint, zeit: CFTimeInterval)?
+    /// Drehpunkt der laufenden Drehung (Punkt unter der Maus beim Beginn); nil = Ansichtsmittelpunkt.
+    var drehZentrum: SIMD3<Float>?
+    /// Die Eingabeebene über dem MTKView (für einen neuen Treffertest nach einer Kamerafahrt).
+    weak var eingabeView: NavigationInputView?
+    /// Letzte Mausposition über dem Viewport (Eingabeebene, Ursprung unten links); nil = Maus außerhalb.
+    public internal(set) var letzteMaus: CGPoint?
+
+    /// Treffertest unter der Maus neu anstoßen (die Szene hat sich unter dem Mauszeiger bewegt).
+    public func hoverAuffrischen() { eingabeView?.hoverTest() }
+
     /// Größe des Viewports in Punkten (von der Eingabeebene gemeldet), für Schwenken und Strahlen.
     var viewSize: CGSize = CGSize(width: 1200, height: 800)
     /// Die aktuelle Parallelprojektion stammt von einer Achsansicht und endet beim Drehen (Blender „Auto Perspective“).
@@ -103,11 +132,11 @@ public final class ViewportCoordinator: ObservableObject {
 
     public var camera: CameraState { controller.cameraState }
 
-    /// Kamera so einpassen, dass `bounds` aus der aktuellen Richtung ganz zu sehen ist.
+    /// Kamera so einpassen, dass `bounds` aus der aktuellen Richtung ganz zu sehen ist (weich, rund 0,2 s).
     public func fit(_ bounds: BoundingBox?, animated: Bool, padding: Float = 1.12) {
         guard let bounds else { return }
-        let target = Self.fitted(controller.cameraState, to: bounds, aspect: aspectRatio, padding: padding)
-        controller.animateTo(target, duration: animated ? 0.45 : 0)
+        let target = Self.fitted(fahrt?.ziel ?? controller.cameraState, to: bounds, aspect: aspectRatio, padding: padding)
+        fahre(zu: target, dauer: animated ? ViewerStil.kamerafahrt * 1.25 : 0)
     }
 
     /// Wie `CameraState.fit`, mit Mindestgröße (ein Punkt hat keine Ausdehnung) und genug Abstand bei
@@ -129,11 +158,11 @@ public final class ViewportCoordinator: ObservableObject {
     public func apply(
         rotation: simd_quatf?, orthographic: Bool?, fitTo bounds: BoundingBox?, animated: Bool
     ) {
-        var cam = controller.cameraState
+        var cam = fahrt?.ziel ?? controller.cameraState
         if let rotation { cam.rotation = rotation }
         if let orthographic { cam = Self.withProjection(cam, orthographic: orthographic) }
         if let bounds { cam = Self.fitted(cam, to: bounds, aspect: aspectRatio) }
-        controller.animateTo(cam, duration: animated ? 0.4 : 0)
+        fahre(zu: cam, dauer: animated ? ViewerStil.kamerafahrt * 1.25 : 0)
     }
 
     /// Projektion wechseln und dabei den sichtbaren Ausschnitt am Drehpunkt erhalten.
