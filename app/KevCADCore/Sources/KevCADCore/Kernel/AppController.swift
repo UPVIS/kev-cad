@@ -84,6 +84,10 @@ public final class AppController: AppActions {
     var pendingRestore: SavedSession?
     /// Spiegel aufs iPhone (MIRROR.md), siehe AppController+Mirror.swift.
     public internal(set) var mirror: MirrorService?
+    /// V2-5: Was die App je Verbindung für das Live-Protokoll führt, siehe AppController+Live.swift.
+    let live = LiveZustand()
+    /// Für Tests: bekommt jeden Rahmen, der an den Kernel geht.
+    var sendeBeobachter: ((Frame) -> Void)?
     /// Phase 5: Animation (Spieler, Video), siehe AppController+Animation.swift.
     lazy var animationRuntime = AnimationRuntime(player: makeAnimationPlayer())
 
@@ -310,7 +314,9 @@ public final class AppController: AppActions {
         outSeq += 1
         m.seq = outSeq
         do {
-            connection.send(try m.frame(payload: payload).encoded)
+            let frame = try m.frame(payload: payload)
+            sendeBeobachter?(frame)
+            connection.send(frame.encoded)
             return true
         } catch {
             log(.error, "Nachricht \(M.type) ließ sich nicht kodieren: \(error)")
@@ -391,8 +397,11 @@ public final class AppController: AppActions {
                 handle(m)
             case .invalid(let type, let reason):
                 log(.error, "Nachricht \(type) nicht lesbar: \(reason)")
+            case .basisFehlt(let art, let grund):
+                basisFehlt(art: art, grund: grund)
             }
         }
+        liveStapelEnde()  // V2-5: bestätigte Teile einmal je Stapel anzeigen, fehlende Inhalte nachfragen
     }
 
     static var appVersion: String {
@@ -424,6 +433,7 @@ public final class AppController: AppActions {
                 log(.warning, "Kernel spricht Protokoll \(v), die App Protokoll 1")
             }
             model.kernelState = .ready
+            neueVerbindung(h)  // V2-5: Inhalte, Felder und Basen gelten je Verbindung
             log(
                 .info,
                 "Kernel bereit: Version \(h.kernelVersion ?? "?"), build123d \(h.build123d ?? "?"), MCP-Port \(h.mcpPort.map(String.init) ?? "?")"
@@ -463,19 +473,28 @@ public final class AppController: AppActions {
         case .runStart(let r):
             model.run = .running(run: r.run, step: nil, stepIndex: 0)
             if model.kernelState == .ready { model.kernelState = .busy }
-            scene.beginRun(r.run)
             fitAtRunEnd = fitOnFirstPart || scene.isEmpty
-            clearSelectionState()
+            if r.delta == true {
+                deltaLaufBeginn(r.run)  // V2-5: Bild und Auswahl bleiben stehen, offene Teile dunkeln erst später ab
+            } else {
+                live.deltaLauf = nil
+                scene.beginRun(r.run)
+                clearSelectionState()
+            }
             startAnimationTimerIfNeeded()
         case .step(let s):
             model.run = .running(run: s.run, step: s.text, stepIndex: s.index)
         case .partUpsert(let head, let geo):
             handlePart(PartRecord(header: head, geometry: geo))
         case .partRemove(let r):
+            live.teilWeg(r.name)
             scene.remove(r.name)
             updateParts()
             refreshOverlay()
+        case .partSame(let m):  // V2-5 (AppController+Live.swift)
+            applyPartSame(m)
         case .runEnd(let e):
+            if let teile = e.teile { teileNachLauf(teile) }  // V2-5: alles andere entfernen
             scene.endRun(e.run)
             letzterLaufZeitpunkt = Date()
             model.run = .finished(
@@ -495,6 +514,7 @@ public final class AppController: AppActions {
             }
             fitOnFirstPart = false
             log(.info, "Lauf \(e.run) fertig: \(scene.order.count) Teile, \(model.triangleCount) Dreiecke, \(e.durationMs) ms")
+            deltaLaufEnde()  // V2-5: Auswahl zum neuen Lauf melden
             scheduleSelfTestIfRequested()
             viewerSelbsttestPlanen()  // V2: KEVCAD_SELFTEST=viewer
             for w in e.warnings { log(.warning, w) }
@@ -503,6 +523,7 @@ public final class AppController: AppActions {
             }
         case .runError(let e):
             scene.endRun(e.run)
+            deltaLaufEnde()
             // Den Reparaturhinweis des Kernels an die Meldung hängen (RunState hat kein eigenes Feld dafür)
             let message = e.hint.map { e.message + "\nHinweis: " + $0 } ?? e.message
             model.run = .failed(run: e.run, message: message, line: e.line, excerpt: e.excerpt)
@@ -576,6 +597,8 @@ public final class AppController: AppActions {
             applySimulation(s)
         case .simulationJob(let j):
             applySimulationJob(j)
+        case .inArbeit, .agentSpur, .agentSchritt, .lageAnfrage:
+            break
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -613,6 +636,7 @@ public final class AppController: AppActions {
         if model.project?.path.standardizedFileURL != url.standardizedFileURL {
             // Anderes Projekt: Szene leeren, beim ersten Lauf alles einpassen
             scene.removeAll()
+            live.projektGewechselt(model.statik)  // V2-5: Felder gelten je Projekt
             fitOnFirstPart = true
             clearSelectionState()
             model.measurements = []
@@ -644,8 +668,9 @@ public final class AppController: AppActions {
         if p.inventarRegel != nil { adoptInventarRegel(p, project: url) }
     }
 
-    private func handlePart(_ record: PartRecord) {
-        scene.upsert(record)
+    func handlePart(_ record: PartRecord) {
+        teilGekommen(record)  // V2-5: Inhalt merken, Nachfrage erledigt
+        if scene.upsert(record), live.deltaLauf != nil { elementeVerwerfen(record.name) }
         updateParts()
         if fitOnFirstPart {
             viewport.fit(scene.visibleBounds(), animated: false)
@@ -733,7 +758,7 @@ public final class AppController: AppActions {
         refreshOverlay()
     }
 
-    private func clearSelectionState() {
+    func clearSelectionState() {
         measurePending = []
         if !scene.selection.isEmpty || !model.selection.isEmpty {
             scene.setSelection([])

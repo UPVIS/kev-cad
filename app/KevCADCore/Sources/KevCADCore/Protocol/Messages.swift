@@ -30,11 +30,13 @@ public struct HelloMessage: Decodable, Sendable {
     public var kernelVersion: String?
     public var build123d: String?
     public var mcpPort: Int?
+    /// V2-5: was der Kernel kann (fehlt bei älteren Kerneln).
+    public var faehigkeiten: [String]?
 
     enum CodingKeys: String, CodingKey {
         case protocolVersion = "protocol"
         case kernelVersion = "kernel_version"
-        case build123d
+        case build123d, faehigkeiten
         case mcpPort = "mcp_port"
     }
 }
@@ -81,9 +83,11 @@ public struct RunStartMessage: Decodable, Sendable {
     public var fileHash: String?
     public var params: JSONValue?
     public var slowMs: Int?
+    /// V2-5 (delta-1): In diesem Lauf kommt, was die App schon hat, als PART_SAME.
+    public var delta: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case run, params
+        case run, params, delta
         case fileHash = "file_hash"
         case slowMs = "slow_ms"
     }
@@ -191,9 +195,11 @@ public struct PartUpsertHeader: Decodable, Sendable {
     public var inventar: String?
     /// Phase 3: Zukaufteil, wenn das Teil aus `lager.zukauf(...).verbauen(...)` stammt.
     public var zukauf: ZukaufPartInfo?
+    /// V2-5: Inhaltsschlüssel (Form, Lage, Angaben); gleich heißt gleiche Geometrie und gleiche Angaben.
+    public var inhalt: String?
 
     enum CodingKeys: String, CodingKey {
-        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar, zukauf
+        case run, name, color, material, bbox, props, counts, faces, edges, transform, stock, inventar, zukauf, inhalt
     }
 
     /// Inventar-Regel verletzt.
@@ -233,6 +239,7 @@ public struct PartUpsertHeader: Decodable, Sendable {
         stock = (try? c.decodeIfPresent(JSONValue.self, forKey: .stock)).flatMap { StockInfo(json: $0) }
         inventar = try? c.decodeIfPresent(String.self, forKey: .inventar)
         zukauf = (try? c.decodeIfPresent(JSONValue.self, forKey: .zukauf)).flatMap { ZukaufPartInfo(json: $0) }
+        inhalt = try? c.decodeIfPresent(String.self, forKey: .inhalt)
     }
 
     /// Lineares RGBA, Vorgabe hellgrau.
@@ -269,9 +276,11 @@ public struct RunEndMessage: Decodable, Sendable {
     public var params: JSONValue?
     /// Phase 2, Inventar-Regel: Teile, die weder Lagerteil noch gekennzeichnetes Druckteil sind.
     public var inventarVerstoesse: [String]
+    /// V2-5 (delta-1): Namen aller Teile nach dem Lauf; die App entfernt alles andere.
+    public var teile: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case run, parts, triangles, warnings, params
+        case run, parts, triangles, warnings, params, teile
         case durationMs = "duration_ms"
         case inventarVerstoesse = "inventar_verstoesse"
     }
@@ -285,6 +294,7 @@ public struct RunEndMessage: Decodable, Sendable {
         warnings = (try? c.decodeIfPresent([String].self, forKey: .warnings)) ?? []
         params = try? c.decodeIfPresent(JSONValue.self, forKey: .params)
         inventarVerstoesse = (try? c.decodeIfPresent([String].self, forKey: .inventarVerstoesse)) ?? []
+        teile = try? c.decodeIfPresent([String].self, forKey: .teile)
     }
 }
 
@@ -555,6 +565,16 @@ public enum KernelMessage: Sendable {
     case simulation(SimStand)
     /// Simulation (additiv): SIM_JOB, Stand eines Auftrags (Rechnen, Festigkeit, Ablauf, Grenze).
     case simulationJob(SimJob)
+    /// V2-5 (delta-1): Das Teil zeigt einen Inhalt, den die App schon hat.
+    case partSame(PartSameMessage)
+    /// V2-5 (in-arbeit-1): Teil, das der Kernel als Nächstes erwartet.
+    case inArbeit(InArbeitMessage)
+    /// V2-5 (spur-1): ganze Agentenspur nach HELLO_APP.
+    case agentSpur(AgentSpurMessage)
+    /// V2-5 (spur-1): ganzer aktueller Stand eines Schritts.
+    case agentSchritt(AgentSchrittMessage)
+    /// V2-5 (lage-1): Der Kernel fragt, was gerade zu sehen ist.
+    case lageAnfrage(LageRequestMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -599,6 +619,11 @@ public enum KernelMessage: Sendable {
         case .topologieFeld: return "TOPO_FIELD"
         case .simulation: return "SIM"
         case .simulationJob: return "SIM_JOB"
+        case .partSame: return "PART_SAME"
+        case .inArbeit: return "IN_ARBEIT"
+        case .agentSpur: return "AGENT_SPUR"
+        case .agentSchritt: return "AGENT_SCHRITT"
+        case .lageAnfrage: return "LAGE_REQ"
         case .unknown(let t, _): return t
         }
     }
@@ -628,8 +653,12 @@ public enum KernelMessage: Sendable {
 
     /// Liest einen Rahmen. Geometrie wird dabei vollständig dekodiert und geprüft.
     public static func decode(_ frame: Frame) throws -> KernelMessage {
+        try decode(frame, envelope: try JSONDecoder().decode(MessageEnvelope.self, from: frame.header))
+    }
+
+    /// Wie `decode(_:)` mit schon gelesenem Umschlag (große Köpfe nur einmal parsen).
+    public static func decode(_ frame: Frame, envelope env: MessageEnvelope) throws -> KernelMessage {
         let dec = JSONDecoder()
-        let env = try dec.decode(MessageEnvelope.self, from: frame.header)
         let h = frame.header
         switch env.type {
         case "HELLO": return .hello(try dec.decode(HelloMessage.self, from: h))
@@ -677,6 +706,11 @@ public enum KernelMessage: Sendable {
         case "TOPO_FIELD": return .topologieFeld(try TopologieFeld.decode(header: h, payload: frame.payload))
         case "SIM": return .simulation(try SimStand.decode(h))
         case "SIM_JOB": return .simulationJob(try SimJob.decode(h))
+        case "PART_SAME": return .partSame(try dec.decode(PartSameMessage.self, from: h))
+        case "IN_ARBEIT": return .inArbeit(try dec.decode(InArbeitMessage.self, from: h))
+        case "AGENT_SPUR": return .agentSpur(try dec.decode(AgentSpurMessage.self, from: h))
+        case "AGENT_SCHRITT": return .agentSchritt(try dec.decode(AgentSchrittMessage.self, from: h))
+        case "LAGE_REQ": return .lageAnfrage(try dec.decode(LageRequestMessage.self, from: h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

@@ -27,6 +27,7 @@
 #   KEVCAD_FERN=mini    nie hier: ohne Mini Ausgang 255
 #   KEVCAD_FERN_HOST    anderer ssh-Name (Vorgabe mac-mini; mac-mini-ts über Tailscale)
 #   KEVCAD_FERN_FRIST   Frist eines Laufs auf dem Mini in Sekunden (3600)
+#   KEVCAD_TESTS_SWIFT  tests: nur Swift-Tests mit diesem Filter, ohne pytest (kurze Runden; zum Schluss voll laufen lassen)
 #   KEVCAD_FERN_SRC, KEVCAD_FERN_OUT   andere Quelle bzw. Ablage statt build/ (Proben; mit KEVCAD_FERN=mini schreibt fern.sh
 #                       dann nichts in die Quelle, solange dort das App-Symbol aktuell ist)
 # Zeiten je Aufruf: ~/Library/Logs/Kev CAD/fern.tsv (Beginn, Art, Kürzel, Rechner, Ausgang, gesamt, hin, Mini, zurück).
@@ -49,7 +50,7 @@ BUILD_LOCK=/tmp/vb-xcodebuild.lock
 LOGDIR="$HOME/Library/Logs/Kev CAD"
 INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 
-usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=${1:-}
 [ $# -gt 0 ] && shift
@@ -235,6 +236,7 @@ echo "==> fern: $MODE${NAME:+ $NAME} für $ID auf dem Mac mini (hochgeladen in $
 
 remote_cmd="cd $REMOTE/auftrag/$(q "$JOB_ID") && exec env KEVCAD_FERN_ID=$(q "$ID") KEVCAD_BUILD_NUMBER=$(q "$BUILD_NUMBER")"
 remote_cmd="$remote_cmd KEVCAD_COMMIT_ID=$(q "$COMMIT") KEVCAD_APP_REPO=$(q "$APP_REPO") KEVCAD_FERN_FRIST=$(q "${KEVCAD_FERN_FRIST:-3600}")"
+remote_cmd="$remote_cmd KEVCAD_TESTS_SWIFT=$(q "${KEVCAD_TESTS_SWIFT:-}")"
 remote_cmd="$remote_cmd /bin/bash tools/fern/mini.sh $(q "$JOB_ID") $KIND $(q "$NAME")"
 # Herzschlag in stdin: Endet dieses fern.sh, endet er, und der Mini gibt den Auftrag samt Plätzen auf (tools/fern/mini.sh).
 T_REMOTE=$(now)

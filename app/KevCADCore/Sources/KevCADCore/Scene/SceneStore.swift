@@ -15,6 +15,13 @@ public struct SceneHighlight: Sendable {
     public var overlayColor: SIMD4<Float> { SceneStore.srgb(color) }
 }
 
+/// Zähler der Szene (Messung, V2-5): ein unveränderter Lauf darf keinen davon erhöhen.
+public struct SzenenStatistik: Equatable, Sendable {
+    public var koerperGebaut = 0
+    public var aufleuchten = 0
+    public var weitergaben = 0
+}
+
 /// Die Szene: Teile nach Namen, ihr Zustand (Sichtbarkeit, Auswahl, Hervorhebung, Explosion, Darstellung) und die
 /// daraus gebauten `ViewportBody`. Körper werden nur neu gebaut, wenn sich Geometrie oder Flächenfarben ändern;
 /// Farbe, Sichtbarkeit und Lage ändert der Viewport ohne neues Hochladen.
@@ -49,6 +56,10 @@ public final class SceneStore {
     public private(set) var highlights: [SceneHighlight] = []
     /// Während eines Laufs: Teile mit kleinerer Laufnummer werden abgedunkelt.
     public private(set) var dimBelowRun: Int?
+    /// V2-5: Teile, deren Inhalt die App beim Kernel nachgefragt hat (bis er kommt, abgedunkelt).
+    public private(set) var veraltet: Set<String> = []
+    /// Was die Szene getan hat (Messung): gebaute Körper, Aufleuchten, Weitergaben an den Viewport.
+    public private(set) var statistik = SzenenStatistik()
     /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
     public private(set) var inventoryWarnings: Set<String> = []
     /// Prüfung: rote, durchscheinende Schnittkörper (immer obenauf, nicht anklickbar), siehe AppController+Pruefung.
@@ -139,6 +150,7 @@ public final class SceneStore {
             // Gleiche Geometrie: nur Kopfwerte übernehmen, Körper behalten
             var r = old
             r.header = record.header
+            r.gleichSeit = nil
             parts[name] = r
             updateAssemblyCenter()
             applyProps(name, now: now)
@@ -148,7 +160,10 @@ public final class SceneStore {
         parts[name] = record
         // Auswahl und Hervorhebung auf Elemente, die es nicht mehr gibt, verwerfen
         selection.removeAll { $0.part == name && !record.contains($0) }
-        if flash { flashStart[name] = now }
+        if flash {
+            flashStart[name] = now
+            statistik.aufleuchten += 1
+        }
         updateAssemblyCenter()
         rebuildBodies(name)
         if explodeFactor != 0 { for n in order { applyProps(n, now: now) } } else { applyProps(name, now: now) }
@@ -164,6 +179,7 @@ public final class SceneStore {
         edgeBodies.removeValue(forKey: name)
         styleSignature.removeValue(forKey: name)
         flashStart.removeValue(forKey: name)
+        veraltet.remove(name)
         hidden.remove(name)
         isolated?.removeAll { $0 == name }
         selection.removeAll { $0.part == name }
@@ -181,6 +197,7 @@ public final class SceneStore {
         styleSignature = [:]
         bodyOwner = [:]
         flashStart = [:]
+        veraltet = []
         hidden = []
         isolated = nil
         selection = []
@@ -245,8 +262,48 @@ public final class SceneStore {
 
     public func endRun(_ run: Int?, now: CFTimeInterval = CACurrentMediaTime()) {
         if let run { latestRun = max(latestRun, run) }
+        guard dimBelowRun != nil else { return }  // V2-5: nichts abgedunkelt, nichts neu zu zeichnen
         dimBelowRun = nil
         for n in order { applyProps(n, now: now) }
+        publish()
+    }
+
+    // MARK: Lauf mit Delta (V2-5)
+
+    /// Lauf mit `delta: true`: Alles bleibt zunächst unverändert stehen; ein schneller Lauf lässt das Bild in Ruhe.
+    public func beginDeltaRun(_ run: Int) { latestRun = max(latestRun, run) }
+
+    /// Die noch nicht bestätigten Teile eines laufenden Delta-Laufs abdunkeln (er dauert länger als gewöhnlich).
+    public func dimOpenParts(run: Int, now: CFTimeInterval = CACurrentMediaTime()) {
+        guard dimBelowRun != run else { return }
+        dimBelowRun = run
+        for n in order where (parts[n]?.run ?? run) < run { applyProps(n, now: now) }
+        publish()
+    }
+
+    /// PART_SAME des gezeigten Inhalts: Das Teil gilt für diesen Lauf; Geometrie, Kopf, Sichtbarkeit, Auswahl und
+    /// Hervorhebung bleiben. Ohne `publish`: `true`, wenn sich am Bild etwas geändert hat (`publishChanges()` danach).
+    @discardableResult
+    public func confirm(_ name: String, run: Int, now: CFTimeInterval = CACurrentMediaTime()) -> Bool {
+        guard var r = parts[name] else { return false }
+        let warDunkel = dimBelowRun.map { r.run < $0 } ?? false
+        if r.gleichSeit == nil { r.gleichSeit = r.run }
+        r.header.run = run
+        parts[name] = r
+        latestRun = max(latestRun, run)
+        guard warDunkel else { return false }
+        applyProps(name, now: now)
+        return true
+    }
+
+    /// Geänderte Teile nach `confirm` an den Viewport geben (einmal je Stapel).
+    public func publishChanges() { publish() }
+
+    /// V2-5: Inhalt eines Teils ist nachgefragt (bis er kommt, abgedunkelt).
+    public func setStale(_ name: String, _ an: Bool) {
+        guard parts[name] != nil, veraltet.contains(name) != an else { return }
+        if an { veraltet.insert(name) } else { veraltet.remove(name) }
+        applyProps(name)
         publish()
     }
 
@@ -707,6 +764,7 @@ public final class SceneStore {
 
     private func rebuildBodies(_ name: String) {
         guard let rec = parts[name] else { return }
+        statistik.koerperGebaut += 1
         for b in partBodies[name] ?? [] { bodyOwner.removeValue(forKey: b.id) }
         let map = faceStyles(for: name)
         styleSignature[name] = Self.signature(map)
@@ -763,7 +821,7 @@ public final class SceneStore {
         guard let rec = parts[name] else { return .zero }
         var c = Self.linear(rec.header.colorVector)
         var rgb = farbmodus == .technisch ? Self.technischFarbe : SIMD3(c.x, c.y, c.z)
-        if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor }
+        if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor } else if veraltet.contains(name) { rgb *= Self.dimFactor }
         if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
         if collisionParts.contains(name) { rgb = rgb + (Self.collisionColor - rgb) * 0.8 }
         if let t = vergleichTints[name] { rgb = rgb + (t - rgb) * 0.7 }  // Versionen: geändert oder neu
@@ -832,6 +890,7 @@ public final class SceneStore {
     }
 
     private func publish() {
+        statistik.weitergaben += 1
         var out: [ViewportBody] = []
         out.reserveCapacity(bodies.count + 4)
         for n in order { out.append(contentsOf: partBodies[n] ?? []) }

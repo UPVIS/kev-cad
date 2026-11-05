@@ -101,7 +101,7 @@ extension AppController: VersionenActions {
         let w = max(16, min(b.width, 2048)), h = max(16, min(b.height, 2048))
         var boxen: [BoundingBox] = []
         var bodies: [ViewportBody] = []
-        for (i, t) in b.teile.enumerated() where t.netz.triangleCount > 0 {
+        for (i, t) in versionsbildTeile(b).enumerated() where t.netz.triangleCount > 0 {  // V2-5: Netze aus der Szene
             let n = t.netz
             var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
             var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)

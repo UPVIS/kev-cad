@@ -127,6 +127,7 @@ final class ConnectionTests: XCTestCase {
                     messageCount += 1
                     if messageCount == total { allMessages.fulfill() }
                 case .invalid(let t, let r): XCTFail("ungültig \(t): \(r)")
+                case .basisFehlt: break
                 }
             }
         }

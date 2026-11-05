@@ -15,6 +15,9 @@ public final class StatikStore: ObservableObject {
     @Published public var kontaktpfeile = true
     /// Stufe 3: Felder der Festkörper-FEM je Szenario und Teil (`StatikFeld.key`), nur des laufenden Laufs.
     @Published public var felder: [String: StatikFeld] = [:]
+    /// V2-5 (delta-1): je Paar aus Szenario und Teil die letzten 4 Felder, auch über Läufe hinweg; gezeigt wird das, dessen
+    /// Schlüssel STATICS nennt. Der Kernel schickt ein Feld nicht noch einmal, solange es hier steht.
+    public var feldVorrat: [String: [StatikFeld]] = [:]
     /// Stufe 4: Wert, nach dem die Felder gefärbt werden (`StatikFeldWert`): "ausnutzung" (Standard) oder ein
     /// Zusatzwert ("kontaktdruck", "plast_dehnung", "klaffen", "schlupf"). Gilt, solange ein gezeigtes Feld ihn trägt.
     @Published public var feldWert: String = StatikFeldWert.ausnutzung
@@ -25,10 +28,21 @@ public final class StatikStore: ObservableObject {
     public func felder(fuer sz: StatikSzenario) -> [StatikFeld] {
         guard let fk = sz.festkoerper else { return [] }
         return fk.teile.compactMap { t in
-            guard t.stand == "done", let k = t.feld, let f = felder[StatikFeld.key(sz.name, t.teil)], f.schluessel == k
-            else { return nil }
+            guard t.stand == "done", let k = t.feld else { return nil }
+            let key = StatikFeld.key(sz.name, t.teil)
+            if let f = feldVorrat[key]?.last(where: { $0.schluessel == k }) { return f }
+            guard let f = felder[key], f.schluessel == k else { return nil }
             return f
         }
+    }
+
+    /// V2-5 (delta-1): Feld merken; ein fünftes je Paar verdrängt das älteste.
+    public func feldMerken(_ f: StatikFeld) {
+        var liste = feldVorrat[f.key] ?? []
+        liste.removeAll { $0.schluessel == f.schluessel }
+        liste.append(f)
+        if liste.count > LiveGrenzen.teilInhalte { liste.removeFirst(liste.count - LiveGrenzen.teilInhalte) }
+        feldVorrat[f.key] = liste
     }
 
     /// Stufe 4: wählbare Werte für den Farbverlauf der Felder des Szenarios: die Ausnutzung und die Zusatzwerte, die
