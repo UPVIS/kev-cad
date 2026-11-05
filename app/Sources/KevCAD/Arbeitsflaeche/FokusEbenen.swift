@@ -36,6 +36,14 @@ struct FokusEbenen: View {
                 StartZeile(model: model, schmal: schmal)
                     .frame(width: viewer.width, height: viewer.height * 0.62)
             }
+            // Text im Bild bleibt über hellen Teilen lesbar: weicher Verlauf statt Tafel
+            if oberflaeche.spricht || !spur.eintraege.isEmpty {
+                LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 170 + untenFrei)
+                    .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             unten
                 .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
         }
