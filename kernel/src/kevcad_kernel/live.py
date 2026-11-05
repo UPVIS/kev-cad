@@ -560,8 +560,9 @@ class LiveRuntime:
                                              "id": aid, "dauer_s": PARAM_ANZEIGE_S})
 
     def _live_view_vorher(self, cmd: str, args: dict[str, Any]) -> dict[str, Any]:
-        """view_command: ``annotate`` mit ``dauer_s`` braucht eine id (zum Entfernen bei älteren Apps)."""
-        if cmd == "annotate" and args.get("dauer_s") and not args.get("id"):
+        """view_command: ``annotate`` mit ``dauer_s`` braucht eine id (zum Entfernen bei älteren Apps), ``highlight`` mit
+        ``dauer_s`` ebenso (die App entfernt nach Ablauf nur diese Hervorhebung)."""
+        if cmd in ("annotate", "highlight") and args.get("dauer_s") and not args.get("id"):
             args = {**args, "id": f"a-{next(self._annotations)}"}  # type: ignore[attr-defined]
         return args
 

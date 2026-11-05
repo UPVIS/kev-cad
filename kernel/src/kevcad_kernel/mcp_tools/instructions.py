@@ -11,7 +11,7 @@ from __future__ import annotations
 
 SERVER_NAME = "kevcad"
 SERVER_TITLE = "Kev CAD"
-ANWEISUNGEN_MAX = 6000  # Zeichen; tests/test_mcp_budget.py prüft es
+ANWEISUNGEN_MAX = 6000  # Zeichen; tests/test_mcp_v2_schnittstelle.py prüft es
 
 KERNSATZ = ("status", "projekt", "modell", "run", "execute", "parts", "measure", "view", "pruefen", "ansichten",
             "katalog", "export")
@@ -49,6 +49,8 @@ show(part, "Gruppe/Teil") with speaking German names, the same name again replac
 every run (parts, measure without refs = Kevin's selection, execute).
 - Kevin watches the viewer: never send him images unless he asks. For your own analysis a few small views are \
 fine when they lead to a better decision (ansichten, pruefen(bilder=true)); never send these to Kevin.
+- Kevin sees your steps live. Pass absicht="few German words" with a tool call when the step is not obvious; show a \
+dimension you mention for a moment with view(anmerkung=..., dauer_s=4).
 
 Inventory rule (on by default)
 - Build only from the inventory: every shown part comes from lager.teil(id).verbauen(...) (show with the SAME \

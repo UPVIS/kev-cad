@@ -403,10 +403,13 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         color: Annotated[str | list[float] | None, Field(description="Highlight color")] = None,
         label: Annotated[str | None, Field(description="Short text shown next to the highlight")] = None,
         clear: Annotated[bool, Field(description="Remove previous highlights first")] = True,
+        dauer_s: Annotated[float | None, Field(gt=0, le=600, description="Fade out after this many seconds")] = None,
     ) -> CallToolResult:
         clean = check_refs(refs, minimum=0 if clear else 1)
         rgba = parse_color(color)
         args = {"refs": clean, "color": rgba, "label": label, "clear": clear}
+        if dauer_s is not None:
+            args["dauer_s"] = float(dauer_s)
         if not clean:
             return await t.view_cmd("entfernt Hervorhebungen", "highlight", args, "Hervorhebungen entfernt.")
         return await t.view_cmd(f"hebt {short_refs(clean)} hervor", "highlight", args,
@@ -480,6 +483,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         points: Annotated[list[list[float]], Field(description="Points [[x, y, z], ...] in mm")],
         text: Annotated[str | None, Field(description="Text to show")] = None,
         id: Annotated[str | None, Field(description="Own id to remove it later; generated if omitted")] = None,
+        dauer_s: Annotated[float | None, Field(gt=0, le=600, description="Fade out after this many seconds")] = None,
     ) -> CallToolResult:
         pts = check_points(points, 1 if kind == "label" else 2)
         if kind == "label" and not text:
@@ -488,6 +492,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             text = f"{fmt.num(math.dist(pts[0], pts[1]), 2)} mm"
         ann_id = id or f"agent-{next(t._annotation_ids)}"
         args = {"kind": kind, "points": pts, "text": text, "id": ann_id}
+        if dauer_s is not None:
+            args["dauer_s"] = float(dauer_s)
         res = await t.view_cmd(f"zeigt {KIND_NAMES[kind]}", "annotate", args,
                                f"{cap(KIND_NAMES[kind])} eingeblendet" + (f": {text}" if text else "")
                                + f" (id {ann_id}).")

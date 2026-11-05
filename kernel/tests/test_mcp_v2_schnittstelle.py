@@ -167,3 +167,58 @@ def test_status_lagebild(env):
     assert "Sichtbar nur: Klotz (6 ausgeblendet)" in t
     assert status.structured_content["auswahl"] == ["Klotz", "Gestell/Platte 1#f0"]
     aufrufe(env, ("view", {"sichtbarkeit": "alle"}))
+
+
+LAGE = {"zeit": 1793452991.2, "ms": 1.5,
+        "kamera": {"position": [600.0, -800.0, 500.0], "ziel": [120.0, 0.0, 60.0], "richtung": [-0.4, 0.7, -0.6],
+                   "oben": [-0.3, 0.5, 0.8], "abstand": 1118.0, "projektion": "perspective", "fov": 30.0,
+                   "ortho_hoehe": None, "ansicht": None, "durch": "Kamera/FX6"},
+        "viewport": {"breite": 1280, "hoehe": 800}, "sichtbar": ["Klotz"], "verborgen": ["Stifte/Stift 1"],
+        "isoliert": None, "auswahl": {"run": 1, "refs": []},
+        "maus": {"teil": "Klotz", "ref": "Klotz#f3", "punkt": [0.0, 60.0, 12.0], "normale": [0, 0, 1],
+                 "bild": [640, 380]},
+        "darstellung": "wireframe", "schnitt": None, "explosion": 0.0, "animation": None}
+
+
+def test_status_aus_dem_lagebild():
+    """status nimmt Kamera, Maus und Sichtbarkeit aus dem Lagebild der App (lage-1), ohne Bild von der App."""
+    tmp = Path(tempfile.mkdtemp(prefix="kcv22l", dir=tempfile.gettempdir()))
+    sock = str(tmp / "k.sock")
+    rt = make_runtime(sock)
+    rt.versionen_warten_s = 0.0
+    app = None
+    try:
+        assert rt.wait_worker_ready(240)
+        app = FakeApp(sock, faehigkeiten=["lage-1", "live-masse-1"], lage=LAGE)
+        app.wait_for(lambda h: h["type"] == "HELLO")
+        path = tmp / "Klein"
+        assert rt.project_new(str(path), "empty")["ok"]
+        settings = json.loads((path / "kevcad.json").read_text())
+        (path / "kevcad.json").write_text(json.dumps({**settings, "inventar_regel": False}))
+        assert rt.model_write(CODE)["ok"]
+        assert rt.wait_idle(60)
+        umgebung = {"rt": rt, "app": app, "path": path, "mcp": build_server(rt)}
+        aufrufe(umgebung, ("run", {}))
+        status, = aufrufe(umgebung, ("status", {}))
+        t = text(status)
+        assert "Ansicht: Blick" in t and "Abstand 1118 mm" in t, t
+        assert "Blick durch Kamera/FX6" in t and "Maus auf Klotz#f3 bei (0; 60; 12)" in t, t
+        assert "Darstellung wireframe" in t, t
+        assert "(1 ausgeblendet)" in t and "Stifte/Stift 1," not in t, t
+        assert status.structured_content["maus"]["teil"] == "Klotz"
+        assert not [h for _t, h, _p in app.frames if h["type"] == "SCREENSHOT_REQ"]
+
+        # Maß nur für einen Moment: dauer_s geht an die App, eine Hervorhebung bekommt dafür eine id
+        kurz, = aufrufe(umgebung, ("view", {"anmerkung": {"art": "dimension", "punkte": [[0, 0, 0], [0, 0, 40]]},
+                                            "hervorheben": ["Klotz"], "dauer_s": 4}))
+        assert not kurz.is_error, text(kurz)
+        befehle = {h["cmd"]: h for _t, h, _p in app.frames if h["type"] == "VIEW_CMD"}
+        assert befehle["annotate"]["args"]["dauer_s"] == 4 and befehle["annotate"]["args"]["id"]
+        assert befehle["highlight"]["args"]["dauer_s"] == 4 and befehle["highlight"]["args"]["id"]
+        falsch, = aufrufe(umgebung, ("view", {"standard": "iso", "dauer_s": 4}))
+        assert falsch.is_error and "dauer_s" in text(falsch)
+    finally:
+        if app is not None:
+            app.close()
+        rt.close()
+        shutil.rmtree(tmp, ignore_errors=True)

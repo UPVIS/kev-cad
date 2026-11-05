@@ -68,6 +68,40 @@ def kamera_text(cam: dict[str, Any] | None) -> str:
     return "Ansicht: " + ", ".join(bits)
 
 
+def lage_kamera(k: Any) -> dict[str, Any] | None:
+    """Kamera aus dem Lagebild (LAGE, PROTOCOL.md) in den Feldern, die ``kamera_text`` und ``status`` kennen."""
+    if not isinstance(k, dict) or not k:
+        return None
+    return {"view": k.get("ansicht"), "direction": k.get("richtung"), "projection": k.get("projektion"),
+            "target": k.get("ziel"), "distance": k.get("abstand"), "ortho_height_mm": k.get("ortho_hoehe")}
+
+
+def lage_zeilen(lage: dict[str, Any]) -> list[str]:
+    """Was das Lagebild über die Kamera hinaus sagt: Blick durch eine Kamera, Teil unter der Maus, was vom Üblichen
+    abweicht (Darstellung, Schnitt, Explosion, Animation)."""
+    zeilen: list[str] = []
+    kamera = lage.get("kamera") if isinstance(lage.get("kamera"), dict) else {}
+    if kamera.get("durch"):
+        zeilen.append(f"Blick durch {kamera['durch']}")
+    maus = lage.get("maus") if isinstance(lage.get("maus"), dict) else None
+    if maus:
+        ort = f" bei {fmt.vec(maus['punkt'], 0)}" if isinstance(maus.get("punkt"), list) else ""
+        zeilen.append(f"Maus auf {maus.get('ref') or maus.get('teil')}{ort}")
+    anders: list[str] = []
+    if lage.get("darstellung") not in (None, "shaded_edges"):
+        anders.append(f"Darstellung {lage['darstellung']}")
+    if lage.get("schnitt"):
+        anders.append("Schnitt an")
+    if isinstance(lage.get("explosion"), (int, float)) and lage["explosion"] > 0:
+        anders.append(f"Explosion {fmt.num(lage['explosion'], 2)}")
+    anim = lage.get("animation") if isinstance(lage.get("animation"), dict) else None
+    if anim:
+        anders.append(f"Animation {anim.get('name')}" + (" läuft" if anim.get("spielt") else ""))
+    if anders:
+        zeilen.append(" · ".join(anders))
+    return zeilen
+
+
 def teil_zeile(p: dict[str, Any], *, voll: bool = False) -> str:
     """Eine Zeile je Teil: Hüllmaß, Masse, Lager/Druck/Material, Mitte; ``voll`` mit Hüllquader, Volumen, Fläche."""
     bb = p.get("bbox") or {}
@@ -200,22 +234,38 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             zeilen.append("Auswahl: nichts")
         data["auswahl"] = refs
 
-        # Kamera: die App liefert sie heute nur mit einem Bild (SCREENSHOT_RES.camera); ein winziges genügt
+        # Was Kevin sieht: das Lagebild der App (lage-1, unter 50 ms). Ältere Apps nennen die Kamera nur mit einem Bild
+        # (SCREENSHOT_RES.camera); dafür genügt ein winziges.
+        lage: dict[str, Any] | None = None
         if app and project:
-            shot = await t.work(None, svc.screenshot, 16, 16, "current", None, True, KAMERA_ABFRAGE_S)
-            cam = shot.get("camera") if isinstance(shot, dict) and shot.get("ok") else None
+            lagebild = getattr(svc, "lagebild", None)
+            antwort = await t.work(None, lagebild) if lagebild else None
+            lage = antwort if isinstance(antwort, dict) and antwort.get("quelle") == "app" else None
+            if lage:
+                cam = lage_kamera(lage.get("kamera"))
+            else:
+                shot = await t.work(None, svc.screenshot, 16, 16, "current", None, True, KAMERA_ABFRAGE_S)
+                cam = shot.get("camera") if isinstance(shot, dict) and shot.get("ok") else None
             text = kamera_text(cam)
             if text:
                 zeilen.append(text)
                 data["kamera"] = {k: cam.get(k) for k in ("view", "projection", "target", "direction", "distance",
                                                           "ortho_height_mm")}
+            if lage:
+                zeilen.extend(lage_zeilen(lage))
+                data["maus"] = lage.get("maus")
 
-        # Sichtbarkeit (wie der Kernel sie kennt: Befehle über view; Klicks im Teilebaum meldet die App noch nicht)
+        # Sichtbarkeit: vom Lagebild, sonst wie der Kernel sie kennt (Befehle über view; Klicks im Teilebaum fehlen dann)
         if teile:
             aktuell = await t.work(None, svc.parts)
             aktuell = aktuell if isinstance(aktuell, list) else teile
-            versteckt = [str(p.get("name")) for p in aktuell if p.get("visible") is False]
-            sichtbar = [str(p.get("name")) for p in aktuell if p.get("visible") is not False]
+            if lage and isinstance(lage.get("verborgen"), list):
+                weg = {str(n) for n in lage["verborgen"]}
+                versteckt = [str(p.get("name")) for p in aktuell if str(p.get("name")) in weg]
+                sichtbar = [str(p.get("name")) for p in aktuell if str(p.get("name")) not in weg]
+            else:
+                versteckt = [str(p.get("name")) for p in aktuell if p.get("visible") is False]
+                sichtbar = [str(p.get("name")) for p in aktuell if p.get("visible") is not False]
             if not versteckt:
                 zeilen.append(f"Sichtbar: alle {len(aktuell)} Teile")
             elif len(sichtbar) <= 6:
@@ -395,7 +445,8 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
     @tool("view", "Ansicht",
           "Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit "
           "with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight "
-          "refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay.",
+          "refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. "
+          "dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking.",
           VIEWER)
     async def view(
         standard: Annotated[StandardView | None, Field(description="Standard view direction")] = None,
@@ -427,6 +478,8 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         entfernen: Annotated[bool | Literal["hervorhebungen", "anmerkungen"] | list[str], Field(description=(
             "First remove: true = highlights and annotations, 'hervorhebungen' or 'anmerkungen' only those, a list = "
             "these annotation ids"))] = False,
+        dauer_s: Annotated[float | None, Field(gt=0, le=600, description=(
+            "hervorheben, anmerkung: fade out after this many seconds"))] = None,
         animate: Annotated[bool, Field(description="Animate the focus move so Kevin can follow")] = True,
     ) -> CallToolResult:
         schritte: list[tuple[str, dict[str, Any]]] = []
@@ -463,7 +516,7 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             schritte.append(("focus", {"refs": focus, "animate": animate}))
         if hervorheben:
             schritte.append(("highlight", {"refs": hervorheben, "color": farbe, "label": beschriftung,
-                                           "clear": not dazu}))
+                                           "clear": not dazu, "dauer_s": dauer_s}))
         elif farbe is not None or beschriftung is not None:
             raise ToolInputError("farbe und beschriftung gehören zu hervorheben.")
         if anmerkung is not None:
@@ -477,7 +530,9 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             punkte = anmerkung.get("punkte") or []
             art = anmerkung.get("art") or ("label" if len(punkte) == 1 else "dimension")
             schritte.append(("annotate", {"kind": art, "points": punkte, "text": anmerkung.get("text"),
-                                          "id": anmerkung.get("id")}))
+                                          "id": anmerkung.get("id"), "dauer_s": dauer_s}))
+        if dauer_s is not None and not hervorheben and anmerkung is None:
+            raise ToolInputError("dauer_s gehört zu hervorheben oder anmerkung.")
         if not schritte:
             raise ToolInputError("Nichts zu tun: etwa standard, focus, sichtbarkeit, schnitt oder hervorheben angeben.")
         texte: list[str] = []

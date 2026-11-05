@@ -68,8 +68,8 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Maßänderung: erste geänderte Teile im Viewer | unter 1 s | 0,2 s für das erste, 1,7 s für das letzte Teil |
 | Maßänderung: `run()` zurück | unter 2,5 s | 5,1 s (2,2 s mit `warten_s=0`) |
 | unveränderter Lauf: `run()` zurück | unter 1,5 s | 2,3 s |
-| Antwort von `run`: unverändert / kleine Änderung / erster Lauf mit 134 Teilen | 1.500 / 4.000 / 8.000 Zeichen | 116.200 Zeichen |
-| Server-Anweisungen | höchstens 6.000 Zeichen | 29.617 Zeichen |
+| Antwort von `run`: unverändert / kleine Änderung / erster Lauf mit 134 Teilen | 1.500 / 4.000 / 8.000 Zeichen | 490 / 2.389 / 1.449 Zeichen |
+| Server-Anweisungen | höchstens 6.000 Zeichen | rund 5.000 Zeichen |
 | Übertragung je unverändertem Lauf | unter 50 KB | 11,3 MB; mit `delta-1` 44 KB (Kernel fertig, App V2-5b offen) |
 | App-Start bis bedienbares leeres Projekt | unter 1 s | offen |
 | Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | offen, V2-4 misst |
@@ -81,10 +81,10 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Paket | Inhalt | Strang | hängt ab von | Stand |
 |---|---|---|---|---|
 | V2-1 Tempo im Kernel | Rechengedächtnis je Operation (Booleans, Aufräumen, Volumen, Hüllquader, Abstände), Leerlauf entfernt, `run` wartet höchstens `warten_s` auf die Prüfung, Nachlauf aus dem Auftragsfaden, Zeiten je Phase | Kernel | – | fertig, auf `v2` (`31618fd`) |
-| V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | läuft |
+| V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | fertig, auf `v2` (`541e1fc`), Zahlen in `kernel/tools/MESSUNG-V2-2.md` |
 | V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | läuft |
 | V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | läuft |
-| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) fertig auf Zweig `t3/e9a0b183`, V2-5b (App-Seite) als Nächstes |
+| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) fertig, auf `v2` (`0388a41`); V2-5b (App-Seite) als Nächstes |
 | V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | Erkennung kann vorher starten |
 | V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | später |
 | V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | zuletzt |
