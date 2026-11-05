@@ -96,7 +96,7 @@ def abweichung_text(a: dict[str, Any], name: str | None = None, alle: bool = Tru
                   + (" (fest)" if a.get("skala_fest") else " (automatisch)"))
     if a.get("angelegt") is False:
         zeilen.append("Achtung: Netz nicht am Modell angelegt, der Lagefehler steckt in den Zahlen (erst "
-                      "referenz_vermessen).")
+                      "referenz(aktion='vermessen')).")
     return zeilen
 
 
@@ -150,7 +150,8 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
     @tool("referenzen", "Referenzen",
           "References of the open project (photos or phone videos of the real object in <project>/referenzen/): state "
           "and progress of Object Capture and measurements, reference mesh size, measured dimensions with sigma. "
-          "name + warten_s waits until the running job of that reference is done (use it after referenz_video).",
+          "name + warten_s waits until the running job of that reference is done (use it after "
+          "referenz(aktion='video')).",
           READ_ONLY)
     async def referenzen(
         name: Annotated[str | None, Field(description="Reference name (folder name), or None for all")] = None,
@@ -163,8 +164,9 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             return fmt.error_result(err, res)
         liste = res.get("referenzen") or []
         if not liste:
-            return fmt.result("Keine Referenzen im Projekt. Video: referenz_video(pfad, masz={\"laenge\": …}); "
-                              "Fotos: referenz_fotos(pfade); dann referenz_vermessen.", res)
+            return fmt.result("Keine Referenzen im Projekt. Video: referenz(aktion='video', pfad=…, masz={\"laenge\": "
+                              "…}); "
+                              "Fotos: referenz(aktion='fotos', pfade=…); dann referenz(aktion='vermessen').", res)
         zeilen = [f"{fmt.plural(len(liste), 'Referenz', 'Referenzen')}:"] + [eintrag_text(r) for r in liste]
         for r in liste:
             if r.get("messung_ergebnis") and (name or len(liste) == 1):
@@ -187,7 +189,7 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "{'laenge': mm} (longest horizontal extent), or 'breite', 'hoehe', 'grund_laenge', 'grund_breite'. "
           "auflage=true when the object lies on a support that ends up in the mesh (wooden disk, table). von/bis "
           "(seconds) use only a part of the video (e.g. before the object was turned over). Returns at once; then "
-          "referenzen(name, warten_s=…) to wait. Object must stay still during the video.", ADDITIVE)
+          "referenz(aktion='liste', name=…, warten_s=…) to wait. Object must stay still during the video.", ADDITIVE)
     async def referenz_video(
         pfad: Annotated[str, Field(description="Absolute path of the video (.mov/.mp4)")],
         masz: Annotated[dict[str, float] | None, Field(description="Known dimension for the scale, e.g. "
@@ -207,12 +209,14 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         if res.get("referenz"):
             return fmt.result(eintrag_text(res["referenz"]), res)
         return fmt.result(f"Object Capture läuft für die Referenz {res.get('name')} (Ordner {res.get('ordner')}). "
-                          f"Fortschritt sieht Kevin in der App; warten mit referenzen(\"{res.get('name')}\", "
+                          f"Fortschritt sieht Kevin in der App; warten mit referenz(aktion='liste', "
+                          f"name=\"{res.get('name')}\", "
                           "warten_s=300).", res)
 
     @tool("referenz_fotos", "Referenz aus Fotos",
           "Add photos of the real object as a reference (copied in working size to <project>/referenzen/<name>/fotos). "
-          "Cameras and dimensions follow with referenz_vermessen (2 to 3 views about 90 degrees apart over a corner, "
+          "Cameras and dimensions follow with referenz(aktion='vermessen') (2 to 3 views about 90 degrees apart over "
+          "a corner, "
           "plus one from higher or lower, are enough; studio photos on white are most precise).", ADDITIVE)
     async def referenz_fotos(
         pfade: Annotated[list[str], Field(description="Absolute paths of the photos (JPEG, PNG, HEIC)")],
@@ -223,7 +227,8 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         if err:
             return fmt.error_result(err, res)
         return fmt.result(f"Referenz {res.get('name')}: {fmt.plural(len(res.get('fotos') or []), 'Foto', 'Fotos')} "
-                          f"abgelegt. Weiter mit referenz_vermessen(\"{res.get('name')}\", freie_masse=[…]).", res)
+                          f"abgelegt. Weiter mit referenz(aktion='vermessen', quelle=\"{res.get('name')}\", "
+                          f"freie_masse=[…]).", res)
 
     @tool("referenz_vermessen", "Maße aus Referenz",
           "Measure the free param() dimensions of model.py from a reference (video or photos) with fotomess: model.py "
@@ -266,7 +271,8 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "Show Kevin a reference photo in the app's photo view: the photo seen through its fitted camera behind the "
           "current model (updates live after every run), with model opacity (deckkraft 0..1) and mode 'ueberlagern' "
           "(overlay) or 'differenz' (red = only in the photo, blue = only in the model; needs the mask from "
-          "referenz_vermessen). foto: 1-based number or image name; satz 'messung' (fotomess, default) or 'capture' "
+          "referenz(aktion='vermessen')). foto: 1-based number or image name; satz 'messung' (fotomess, default) or "
+          "'capture' "
           "(Object Capture frames). Returns the silhouette overlap (IoU). bild_zeigen=true also returns the image to "
           "you (only when you need to look; Kevin does not want unnecessary screenshots). aus=true closes it.", VIEWER)
     async def referenz_fotoansicht(
@@ -298,7 +304,8 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "every run (about 1 s); this call waits for the current state. zeigen=true switches on the color map in "
           "Kevin's viewer (auf='modell': colors on the model parts, auf='referenz': colors on the reference mesh) "
           "with a legend in mm. skala_mm fixes the legend range, grenze_mm the coverage limit (0 = automatic again). "
-          "Use it after referenz_vermessen (the mesh is then aligned to the model) to see where the model still "
+          "Use it after referenz(aktion='vermessen') (the mesh is then aligned to the model) to see where the model "
+          "still "
           "differs from the real object.", VIEWER)
     async def referenz_abweichung(
         name: Annotated[str | None, Field(description="Reference name (default: the only one)")] = None,
@@ -335,7 +342,7 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "'hoehe' | 'grund_laenge' | 'grund_breite' (hull of the mesh) or the name of a measured param, plus the "
           "real distance mm. Mesh, point cloud, Object Capture cameras and report scale with it; the measurement "
           "scales too when kante names a measured dimension. Not for iPhone scans (already metric). Afterwards "
-          "referenz_vermessen again if the model was measured against the old scale.", ADDITIVE)
+          "referenz(aktion='vermessen') again if the model was measured against the old scale.", ADDITIVE)
     async def referenz_massstab(
         mm: Annotated[float, Field(gt=0, description="Real distance in mm")],
         name: Annotated[str | None, Field(description="Reference name (default: the only one)")] = None,
@@ -353,7 +360,8 @@ def register_referenz_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             zeilen.append(f"Punkte am Netz: ({', '.join(fmt.num(x, 1) for x in a)}) und "
                           f"({', '.join(fmt.num(x, 1) for x in b)}) mm")
         if res.get("messung_skaliert"):
-            zeilen.append("Die Vermessung ist mitskaliert; beim nächsten referenz_vermessen gilt das Maß als bekannt.")
+            zeilen.append("Die Vermessung ist mitskaliert; beim nächsten referenz(aktion='vermessen') gilt das Maß "
+                          "als bekannt.")
         for h in res.get("hinweise") or []:
             zeilen.append(f"Hinweis: {h}")
         return fmt.result("\n".join(zeilen), res)

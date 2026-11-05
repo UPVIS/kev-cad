@@ -583,7 +583,7 @@ class DruckvorschauRuntime:
 
     def druckvorschau(self, detail: bool = False) -> dict[str, Any]:
         if self._project is None:  # type: ignore[attr-defined]
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         v = self._dv_aktuell()
         return {"ok": True, **(v if detail else vs.kurz(v))}
 
@@ -715,7 +715,7 @@ class DruckvorschauRuntime:
                 f = fl.finde(e)
                 if f is None:
                     fehler.append(f"Filament {e!r} gibt es nicht in Kevins Liste (vorhanden: "
-                                  + ", ".join(fl.vorschlaege_ids(str(e))) + "; neues mit filament_define)")
+                                  + ", ".join(fl.vorschlaege_ids(str(e))) + "; neues mit druck(aktion='filament_neu'))")
                     continue
                 mat_f = str(f.get("material") or "").lower()
                 kand = je_mat.get(mat_f) or [mat_f]
@@ -739,7 +739,7 @@ class DruckvorschauRuntime:
             if f is None:
                 fehler.append(f"Filament {angaben[k]!r} gibt es nicht in Kevins Liste (vorhanden für {mat.upper()}: "
                               + (", ".join(fl.vorschlaege_ids(angaben[k], mat)) or "keins") + "; neues mit "
-                              "filament_define)")
+                              "druck(aktion='filament_neu'))")
                 continue
             if str(f.get("material") or "").lower() != mat:
                 fehler.append(f"Filament {f.get('id')!r} ist {str(f.get('material')).upper()}, die Platten brauchen "
@@ -776,14 +776,14 @@ class DruckvorschauRuntime:
                 z = f"zuletzt gewählt {v_['zuletzt']}" if v_["zuletzt"] else "noch keins gewählt"
                 sp = ", ".join(f"{s_['kennung']} {s_.get('name') or ''} → {s_.get('filament') or '?'}"
                                for s_ in v_["spulen"]) or "keine"
-                li = ", ".join(f"{x['id']} ({x['name']})" for x in v_["liste"]) or "keins (erst filament_define)"
+                li = ", ".join(f"{x['id']} ({x['name']})" for x in v_["liste"]) or "keins (erst druck(aktion='filament_neu'))"
                 teile.append(f"{k.upper()}: {z}; Spulen im Bestand: {sp}; Filamente: {li}")
                 bsp = v_["zuletzt"] or (v_["liste"][0]["id"] if v_["liste"] else "…")
                 beispiel.append(f'"{k}": "{bsp}"')
             return out, {"ok": False, "filament_frage": True, "vorschlaege": vorschlaege, "platten": [],
                          "error": "Frag Kevin nach dem Filament, bevor du exportierst (es wurde nichts geschrieben). "
                                   "Nimm nie stillschweigend das zuletzt benutzte. Vorschläge: " + " | ".join(teile)
-                                  + ". Dann druck_export(filament={" + ", ".join(beispiel) + "}) mit Kevins Antwort."}
+                                  + ". Dann druck(aktion='export', filament={" + ", ".join(beispiel) + "}) mit Kevins Antwort."}
         return out, None
 
     def _druck_export(self, ziel: str | None = None, platten: list[int] | None = None,

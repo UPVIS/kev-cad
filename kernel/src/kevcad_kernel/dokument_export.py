@@ -132,7 +132,7 @@ class DokumentExportDienst:
         zusätzlich den Druckdialog. {"ok", "pfad", "seiten", "bausteine", "formate", "ms", "gedruckt", "hinweise"}"""
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         try:
             liste, optionen = normalisiere(bausteine)
         except BausteinFehler as exc:

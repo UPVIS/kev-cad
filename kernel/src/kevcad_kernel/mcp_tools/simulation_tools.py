@@ -42,7 +42,8 @@ def register_simulation_tools(t: Any, svc: Any, tool: Callable[..., Any], annota
           "Also the scenarios from model.py (an app load case with the same name replaces the model.py one), "
           "supports from st.lager, derived supports (floor contact 'boden:<part>', carrying contacts "
           "'kontakt:<part>|<neighbour>', with 'aktiv'), topology settings per printed part and the running job. "
-          "The app load cases are part of every run: 'statik', 'szenario_rechnen', 'festigkeit' and 'dynamik' see them "
+          "The app load cases are part of every run: statik(aktion='ergebnis'), 'szenario', 'festigkeit' and "
+          "'dynamik' see them "
           "under their names.", annotations["read_only"])
     async def simulation_liste() -> CallToolResult:
         res = await t.work("liest die Lastfälle der Simulation", svc.simulation_liste)
@@ -81,7 +82,8 @@ def register_simulation_tools(t: Any, svc: Any, tool: Callable[..., Any], annota
           annotations["additive"])
     async def simulation_aendern(
         ops: Annotated[list[dict[str, Any]], Field(description="Operations, see the tool description")],
-        basis: Annotated[int | None, Field(description="Expected 'stand' from simulation_liste (rejects if changed)")]
+        basis: Annotated[int | None, Field(description="Expected 'stand' from statik(aktion='simulation') (rejects if "
+                                                       "changed)")]
         = None,
     ) -> CallToolResult:
         res = await t.work("ändert die Lastfälle der Simulation", svc.simulation_aendern, ops, basis, "agent")

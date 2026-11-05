@@ -144,7 +144,7 @@ def pruefe(erg: Ergebnis, schritt: str | None = None) -> list[dict[str, Any]]:
             if v >= 0.5 or (tt is not None and tt.rolle == "vm"):
                 continue  # Verbindungsmittel zeigt der Stapel der Explosion; gemeldet werden Hauptteile
             alt = (bild.get("besser") or {}).get(t)
-            loesung = ("Blickrichtung ändern (bauplan_bearbeiten bild): von "
+            loesung = ("Blickrichtung ändern (bauplan(aktion='bearbeiten'), op bild): von "
                        + _auge_text(alt["auge"]) + f" ist es zu {round(alt['sichtbarkeit'] * 100)} % sichtbar"
                        if alt else "Explosion vergrößern oder den Schritt teilen, damit das Teil frei steht")
             befunde.setdefault(s["id"], []).append({

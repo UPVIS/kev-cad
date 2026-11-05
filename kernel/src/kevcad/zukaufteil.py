@@ -123,8 +123,9 @@ class Zukaufteil:
             if quelle in ze.CAD_MIT_DATEI and cad.get("datei"):
                 path = (self._base_dir() / str(cad["datei"])).resolve()
                 if not path.is_file():
-                    _warn(f"{self.name}: CAD-Datei {cad['datei']} fehlt – Ersatzkörper (vereinfacht); mit cad_suchen "
-                          "und cad_uebernehmen neu holen")
+                    _warn(f"{self.name}: CAD-Datei {cad['datei']} fehlt – Ersatzkörper (vereinfacht); mit "
+                          f"lager(aktion='cad_suchen') "
+                          "und lager(aktion='cad_uebernehmen') neu holen")
                     shape = zc.ersatzkoerper(self.eintrag)
                 else:
                     achsen = not isinstance(self.eintrag.get("einbaupunkt"), dict) or \
@@ -237,7 +238,8 @@ def finden(auswahl: str | None = None, /, *, mpn: str | None = None, hersteller:
     close = difflib.get_close_matches(str(want), ids, n=3, cutoff=0.5)
     raise LagerError(f"Zukaufteil {want!r} gibt es nicht im Katalog."
                      + (f" Meinten Sie: {', '.join(repr(c) for c in close)}?" if close else "")
-                     + " Neue Zukaufteile legt zukauf_anlegen an (als Vorschlag für Kevin); zukauf_liste zeigt alle.")
+                     + " Neue Zukaufteile legt lager(aktion='zukauf_anlegen') an (als Vorschlag für Kevin); "
+                       "lager(aktion='zukauf_liste') zeigt alle.")
 
 
 def _released(entry: dict[str, Any], cat: Catalog) -> Zukaufteil:

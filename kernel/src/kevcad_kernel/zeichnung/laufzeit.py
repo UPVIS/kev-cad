@@ -386,7 +386,7 @@ class ZeichnungRuntimeMixin:
     def drawings(self) -> dict[str, Any]:
         ordner = self._z_ordner()
         if ordner is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         out = []
         for pfad, blatt, fehler in dok.alle(ordner.parent.parent):
             if blatt is None:
@@ -411,7 +411,7 @@ class ZeichnungRuntimeMixin:
             vorhanden = ", ".join(p.stem for p in sorted(ordner.glob("*.json"))) if ordner.is_dir() else ""
             return {"ok": False, "error": f"Blatt {blatt_id!r} gibt es nicht" + (f" (vorhanden: {vorhanden})"
                                                                                  if vorhanden else
-                                                                                 "; erst zeichnung_erstellen")}
+                                                                                 "; erst zeichnung(aktion='erstellen')")}
         try:
             blatt = dok.lade(pfad)
         except dok.BlattFehler as exc:
@@ -441,7 +441,7 @@ class ZeichnungRuntimeMixin:
         (DRAWING_CREATE) bekommt ACK und DOCS mit ``reply_to``."""
         ordner = self._z_ordner()
         if ordner is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         if art not in ("teil", "baugruppe", "zusammenbau"):
             return {"ok": False, "error": f"art {art!r} unbekannt (teil, baugruppe, zusammenbau)"}
         fmt, ausr = _format(format)

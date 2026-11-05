@@ -296,7 +296,7 @@ def auswerten(html: str, url: str | None = None) -> dict[str, Any]:
         zu_pruefen.append("Preis brutto oder netto")
     if not quellen:
         hinweise.append("Keine strukturierten Produktdaten gefunden (kein JSON-LD, Microdata oder Open Graph): Felder "
-                        "selbst von der Seite ablesen und an zukauf_anlegen übergeben")
+                        "selbst von der Seite ablesen und an lager(aktion='zukauf_anlegen') übergeben")
     return {"felder": felder, "quellen": quellen, "zu_pruefen": zu_pruefen, "hinweise": hinweise}
 
 

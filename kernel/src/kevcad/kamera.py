@@ -188,7 +188,7 @@ def _find(art: str, wunsch: Any) -> dict[str, Any]:
     if isinstance(wunsch, dict) and wunsch.get("art") == art:
         return wunsch
     if not isinstance(wunsch, str) or not wunsch.strip():
-        raise KameraError(f"{what}: id aus dem Katalog angeben (kamera_katalog bzw. stock_search mit art {art!r})")
+        raise KameraError(f"{what}: id aus dem Katalog angeben (kamera(aktion='katalog') bzw. katalog mit art {art!r})")
     cat = _catalog()
     key = wunsch.strip()
     it = cat.item(key)

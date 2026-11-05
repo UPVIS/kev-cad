@@ -48,7 +48,7 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
 
     @tool("bestand_eintragen", "Bestand eintragen",
           "Record what Kevin says he has for THIS project, ONLY after Kevin stated it (never guess or invent stock). "
-          "id: catalog stock id (stock_search). ganze: number of whole bars/sheets (sets the count; object {anzahl, "
+          "id: catalog stock id (katalog). ganze: number of whole bars/sheets (sets the count; object {anzahl, "
           "laenge} or {anzahl, b, h} for a non-standard size). reste: offcuts to ADD, bars as lengths in mm (e.g. "
           "[430, 610, 180]) or {laenge, ort}, sheets as [b, h] or {b, h, ort}; each gets a new id. reste_entfernen: "
           "offcut ids to remove. reste_ersetzen=true replaces all offcuts of this item by reste. stueck: piece goods "
@@ -62,7 +62,7 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "ids S-0001…; kennung (e.g. 'S-0002') with gramm/ort/… updates one spool; spulen_entfernen removes spools. "
           "Once the project tracks filament, the shopping list adds whole spools for what the print preview needs "
           "beyond the stock. grund: Kevin's statement. Every change is "
-          "booked (undo with buchung_rueckgaengig) and listed in the answer; repeat that list to Kevin.", WRITES)
+          "booked (undo with bestand(aktion='rueckgaengig')) and listed in the answer; repeat that list to Kevin.", WRITES)
     async def bestand_eintragen(
         grund: Annotated[str, Field(min_length=1, description="Kevin's statement this entry is based on")],
         id: Annotated[str | None, Field(description="Stock id from the catalog (not for filament)")] = None,
@@ -91,7 +91,8 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         = None,
         kennung: Annotated[str | None, Field(description="Filament: spool id to update, e.g. 'S-0002'")] = None,
         spulen_entfernen: Annotated[list[str] | None, Field(description="Filament: spool ids to remove")] = None,
-        filament: Annotated[str | None, Field(description="Filament: id from Kevin's filament list (filament_liste), "
+        filament: Annotated[str | None, Field(description="Filament: id from Kevin's filament list "
+                                                          "(druck(aktion='filamente')), "
                                                           "fills material, name, manufacturer, colour")] = None,
     ) -> CallToolResult:
         was = id or (f"Filament {material}" if material else f"Spule {kennung}" if kennung else "Filament")
@@ -105,7 +106,7 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         b = res.get("buchung") or {}
         text = "\n".join([f"Bestand eingetragen ({b.get('id')}, {b.get('art')}):", *_lines(res),
                           "Zuschnitt und Einkaufsliste sind neu geplant. Kevin jede Änderung nennen; rückgängig mit "
-                          f"buchung_rueckgaengig(\"{b.get('id')}\")."])
+                          f"bestand(aktion='rueckgaengig', id=\"{b.get('id')}\")."])
         return fmt.result(text, res)
 
     @tool("einkaufsliste", "Einkaufsliste",
@@ -145,7 +146,7 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "current cut plan against this project's stock: planned offcuts and whole bars/sheets are removed, new "
           "offcuts (from the minimum length) are added with new ids, piece goods are deducted, and (if the project "
           "tracks filament) the filament of print plates not yet booked as printed. Never call it on your "
-          "own initiative. grund: Kevin's words. Reversible with buchung_rueckgaengig.", WRITES)
+          "own initiative. grund: Kevin's words. Reversible with bestand(aktion='rueckgaengig').", WRITES)
     async def gebaut_buchen(
         grund: Annotated[str, Field(min_length=1, description="Kevin's words that the project is built")],
     ) -> CallToolResult:
@@ -156,7 +157,7 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         b = res.get("buchung") or {}
         fil = [f"Filament: {x}" for x in res.get("filament_text") or []]
         text = "\n".join([f"Gebaut gebucht ({b.get('id')}): {b.get('zusammenfassung')}", *_lines(res), *fil,
-                          f"Rückgängig mit buchung_rueckgaengig(\"{b.get('id')}\")."])
+                          f"Rückgängig mit bestand(aktion='rueckgaengig', id=\"{b.get('id')}\")."])
         return fmt.result(text, res)
 
     @tool("gedruckt_buchen", "Gedruckt buchen",
@@ -165,8 +166,9 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
           "or only platten (plate numbers). Partly used spools first (least filament first), or spule first if "
           "Kevin names the spool he used; whatever the stock does not cover counts as printed from bought spools, "
           "and the rest of the last bought spool becomes a new spool. Each plate is booked once per run; "
-          "gebaut_buchen later skips booked plates. Needs filament in the project stock (bestand_eintragen with "
-          "material). grund: Kevin's words. Reversible with buchung_rueckgaengig.", WRITES)
+          "bestand(aktion='gebaut') later skips booked plates. Needs filament in the project stock "
+          "(bestand(aktion='eintragen') with "
+          "material). grund: Kevin's words. Reversible with bestand(aktion='rueckgaengig').", WRITES)
     async def gedruckt_buchen(
         grund: Annotated[str, Field(min_length=1, description="Kevin's words that the parts are printed")],
         platten: Annotated[list[int] | None, Field(description="Plate numbers of the print preview; omit for all "
@@ -181,14 +183,14 @@ def register_bestand_tools(tool: Callable[..., Any], t: Any, svc: KernelService)
         text = "\n".join([f"Gedruckt gebucht ({b.get('id')}, Platten {', '.join(map(str, res.get('platten') or []))}"
                           f"): {b.get('zusammenfassung')}",
                           *[f"- {x}" for x in res.get("filament_text") or []], *_lines(res),
-                          f"Rückgängig mit buchung_rueckgaengig(\"{b.get('id')}\")."])
+                          f"Rückgängig mit bestand(aktion='rueckgaengig', id=\"{b.get('id')}\")."])
         return fmt.result(text, res)
 
     @tool("buchung_rueckgaengig", "Buchung rückgängig",
           "Undo one stock booking of this project by its id (e.g. 'B-0004'), as a new reverse booking. Fails with a "
           "clear message if later bookings already used the same offcuts.", WRITES)
     async def buchung_rueckgaengig(
-        id: Annotated[str, Field(description="Booking id, e.g. 'B-0004' (see bestand_liste)")],
+        id: Annotated[str, Field(description="Booking id, e.g. 'B-0004' (see bestand(aktion='liste'))")],
     ) -> CallToolResult:
         res = await t.work(f"macht Buchung {id} rückgängig", svc.buchung_rueckgaengig, id)
         err = fmt.service_error(res)

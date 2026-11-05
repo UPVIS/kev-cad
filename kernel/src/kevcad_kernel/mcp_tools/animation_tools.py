@@ -50,8 +50,9 @@ def run_note(res: dict[str, Any]) -> list[str]:
     anims = res.get("animationen") or []
     if not anims:
         return []
-    lines = [f"Animationen: {', '.join(str(a.get('name')) for a in anims)} (Zeitleiste in der App; animation_abspielen, "
-             "kollision_pruefen, animation_video)"]
+    lines = [f"Animationen: {', '.join(str(a.get('name')) for a in anims)} (Zeitleiste in der App; "
+             f"animation(aktion='abspielen'), "
+             "animation(aktion='kollision'), animation(aktion='video'))"]
     for a in anims:
         for w in (a.get("warnungen") or [])[:5]:
             lines.append(f"Hinweis Animation: {w}")
@@ -120,7 +121,8 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
     @tool("animation_video", "Animation als Video",
           "Render an animation as video into <project>/output/animationen/ (H.264 MP4, or ProRes 422 .mov with "
           "format='prores'), frame by frame offscreen. Without kamera: from the viewer camera (or the camera move "
-          "from anim.ansicht), 16:9. With kamera (name from kamera_liste, e.g. 'FX6'): through that camera with its "
+          "from anim.ansicht), 16:9. With kamera (name from kamera(aktion='liste'), e.g. 'FX6'): through that camera "
+          "with its "
           "angle of view and the aspect ratio of its format; a camera attached with .an(part) rides along with the "
           "animated part. breite in px, fps defaults to the animation's. Returns the file path. Takes a while for long "
           "animations; progress shows in the app.", ADDITIVE)
@@ -128,7 +130,8 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         name: Annotated[str | None, Field(description="Animation name; omit for the current/first one")] = None,
         breite: Annotated[int, Field(ge=64, le=7680, description="Video width in px")] = 1920,
         fps: Annotated[float | None, Field(ge=1, le=120, description="Frame rate; default from the animation")] = None,
-        kamera: Annotated[str | None, Field(description="Camera name from kamera_liste (e.g. 'FX6'); omit for the "
+        kamera: Annotated[str | None, Field(description="Camera name from kamera(aktion='liste') (e.g. 'FX6'); omit "
+                                                        "for the "
                                                         "viewer camera")] = None,
         format: Annotated[Literal["mp4", "prores"], Field(description="mp4 = H.264, prores = ProRes 422")] = "mp4",  # noqa: A002
     ) -> CallToolResult:

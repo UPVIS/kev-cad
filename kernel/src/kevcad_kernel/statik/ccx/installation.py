@@ -48,7 +48,7 @@ LIESMICH = """CalculiX für Kev CAD (Statik Stufe 4) - BITTE NICHT LÖSCHEN
 
 Wofür: CalculiX (Programm ccx) rechnet in Kev CAD die Statik Stufe 4: Kontakt mit Abheben und Gleiten
 (Klemmungen, aufliegende Teile, Bolzen in Bohrungen), Plastizität (Fließen, bleibende Verformung, Traglast)
-und Beulen. Kev CAD ruft es nur als eigenes Programm auf (MCP-Werkzeug festigkeit mit verfahren="ccx").
+und Beulen. Kev CAD ruft es nur als eigenes Programm auf (MCP-Werkzeug statik mit aktion="festigkeit", verfahren="ccx").
 
 Wer nutzt es: Kev CAD (Kevins CAD-Viewer, ~/Applications/Tools/Kev CAD.app) und seine Testvarianten.
 Fehlt der Ordner oder die Platte, laufen S0 bis S3 weiter; Stufe 4 meldet dann "CalculiX nicht verfügbar".

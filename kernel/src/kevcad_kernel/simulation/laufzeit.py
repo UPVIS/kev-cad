@@ -643,7 +643,7 @@ class SimulationRuntime:
         """Lastfälle, Lasten, Lager und Topologie-Einstellungen aus der App (simulation.json) mit Zustand, dazu die
         Szenarien und Lager aus model.py und die abgeleiteten Lager."""
         if self._sim_projekt() is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen."}
         statik_warten = getattr(self, "_statik_warten", None)
         if statik_warten is not None:
             statik_warten()

@@ -34,7 +34,7 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
           "warping on the open printer, brim, support removal, AMS purge, nozzle wear with CF, success risk). Values "
           "are a fast estimate right after each run and are replaced by Bambu Studio's slicer results in the "
           "background (stand: schaetzung | slicer | gemischt, slicer.zustand, abweichung = how far the estimate was "
-          "off). Printability findings stay in druckpruefung. detail=true adds the plate outlines.",
+          "off). Printability findings stay in druck(aktion='pruefung'). detail=true adds the plate outlines.",
           annotations["read_only"])
     async def druckvorschau(
         detail: Annotated[bool, Field(description="Include the convex outline of every part on its plate")] = False,
@@ -89,7 +89,8 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
           "Write the arranged plates of the print preview as a 3MF project for Bambu Studio (Kevin's Bambu Lab P1P "
           "0.4 profile, the chosen filament's preset per material, settings per part). ALWAYS ASK KEVIN WHICH "
           "FILAMENT before calling this (also when he only asks about printing): filament = one entry of his list "
-          "per material, e.g. {'petg': 'polymaker-polylite-petg-gelb'} (filament_liste shows the list); when parts "
+          "per material, e.g. {'petg': 'polymaker-polylite-petg-gelb'} (druck(aktion='filamente') shows the list); "
+          "when parts "
           "of one material have different colours (lager.druckteil(..., farbe=...)), one file per colour and one "
           "filament per colour class, e.g. {'petg/gelb': ..., 'petg/schwarz': ...}. Without "
           "filament nothing is written and the result is an error 'Frag Kevin nach dem Filament' with suggestions "
@@ -124,7 +125,8 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
         filament: Annotated[dict[str, str] | list[str] | str | None,
                             Field(description="Kevin's answer: per material (or colour class like 'petg/gelb' when "
                                               "a material has parts in several colours) one filament id from "
-                                              "filament_liste, e.g. {'petg': 'polymaker-polylite-petg-gelb'}; "
+                                              "druck(aktion='filamente'), e.g. {'petg': "
+                                              "'polymaker-polylite-petg-gelb'}; "
                                               "required")] = None,
     ) -> CallToolResult:
         if isinstance(filament, str) and filament.strip().lower() == "vorschau":
@@ -163,7 +165,7 @@ def register_druckvorschau_tools(t: Any, svc: Any, tool: Callable[..., Any], ann
           "diameter and the Bambu Studio preset each one prints with (base profile such as 'PolyLite PETG @BBL P1P' "
           "plus documented deviations with source), the resolved temperatures, the filament last chosen for this "
           "project and the spools in stock with their filament. Use it to ask Kevin which filament before "
-          "druck_export. material filters (e.g. 'petg').", annotations["read_only"])
+          "druck(aktion='export'). material filters (e.g. 'petg').", annotations["read_only"])
     async def filament_liste(
         material: Annotated[str | None, Field(description="Material id, e.g. 'petg'; omit for all")] = None,
     ) -> CallToolResult:

@@ -87,7 +87,7 @@ def run_zeilen(kurz: dict[str, Any] | None, befunde: bool = True) -> tuple[list[
     hinweise = [b for b in befunde if b.get("schwere") == "hinweis"]
     if hinweise:
         zeilen.append(f"- {mehrzahl(len(hinweise), 'Hinweis', 'Hinweise')} (Freiheitsgrade, ungeprüft): mit "
-                      "bedingungen ansehen")
+                      "pruefen(thema='bedingungen') ansehen")
     rest = int(kurz.get("befunde_gesamt") or 0) - len(befunde)
     if rest > 0:
         zeilen.append(f"- und {rest} weitere Befunde (bedingungen)")
@@ -157,6 +157,7 @@ def bericht_text(rep: dict[str, Any], teil: str | None = None, alle: bool = Fals
     offen = rep.get("bewegungsraum_im_hintergrund")
     if offen:  # Prüftempo: Bewegungsraum noch nicht fertig, Endstand folgt
         zeilen.insert(1, f"Bewegungsraum: {mehrzahl(len(offen), 'Gelenk', 'Gelenke')} noch nicht geprüft (Zeitlimit), "
-                         "wird im Hintergrund fertig gerechnet; bedingungen() später erneut oder pruefen() wartet auf "
+                         "wird im Hintergrund fertig gerechnet; pruefen(thema='bedingungen') später erneut oder "
+                         "pruefen() wartet auf "
                          "den Endstand.")
     return "\n".join(zeilen)

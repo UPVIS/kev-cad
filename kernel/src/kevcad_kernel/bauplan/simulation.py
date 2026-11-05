@@ -216,7 +216,8 @@ class Simulation:
                     "reihenfolge", [el.get("haupt") or teile[0], *frueher[:3]], "fehler",
                     f"{name} kommt {e_txt} nicht mehr an seinen Platz: {', '.join(frueher[:3])} (Schritt "
                     f"{von_schritt[q0][0]}) ist schon montiert und im Weg ({de_num(tiefe, 1)} mm).",
-                    f"{name} vor Schritt {von_schritt[q0][0]} einbauen (bauplan_bearbeiten: verschieben) oder "
+                    f"{name} vor Schritt {von_schritt[q0][0]} einbauen (bauplan(aktion='bearbeiten'), op verschieben) "
+                    f"oder "
                     f"{q0.rsplit('/', 1)[-1]} später montieren.", s["id"], ort,
                     {"tiefe": tiefe, "vor_schritt": von_schritt[q0][1]}))
                 return

@@ -673,7 +673,7 @@ def _befunde(erg: dict[str, Any], hintergrund: bool = False) -> list[dict[str, A
             out.append(_befund(pruefung="bewegungsraum", teile=erg["teile"][:1], schwere="hinweis",
                                text=f"{erg['name']}: Weg erst teilweise geprüft (Zeitlimit des Laufs), wird im "
                                     "Hintergrund fertig gerechnet", art=erg["art"], bedingung=erg.get("bedingung"),
-                               loesung="pruefen(warten=true) bzw. bedingungen() zeigt den Endstand"))
+                               loesung="pruefen(warten=true) bzw. pruefen(thema='bedingungen') zeigt den Endstand"))
         else:
             out.append(_befund(pruefung="bewegungsraum", teile=erg["teile"][:1], schwere="hinweis",
                                text=f"{erg['name']}: Weg nur teilweise geprüft (Zeitlimit)", art=erg["art"],
@@ -736,7 +736,8 @@ def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
                 befunde.append(_befund(pruefung="bewegungsraum", teile=bew.teile[:1], schwere="hinweis",
                                        text=f"{bew.name}: noch nicht geprüft (Zeitlimit des Laufs), wird im "
                                             "Hintergrund fertig gerechnet",
-                                       loesung="pruefen(warten=true) bzw. bedingungen() zeigt den Endstand",
+                                       loesung="pruefen(warten=true) bzw. pruefen(thema='bedingungen') zeigt den "
+                                               "Endstand",
                                        bedingung=bew.bedingung))
             else:
                 befunde.append(_befund(pruefung="bewegungsraum", teile=bew.teile[:1], schwere="hinweis",
