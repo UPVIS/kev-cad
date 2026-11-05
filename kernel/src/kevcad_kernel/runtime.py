@@ -66,6 +66,9 @@ from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
+RUN_WARTEN_S = 3.0  # V2-1: so lange wartet run höchstens auf die Prüfung, dann rechnet sie im Hintergrund weiter
+VERSION_TITEL_WARTEN_S = 60.0  # run(titel=…) wartet so lange auf die Version des Laufs (Versionen-Faden)
+NACHLAUF_WARTEN_S = 60.0  # Aufgaben der Versionen warten so lange auf den Nachlauf früherer Läufe
 
 
 def _log(line: str) -> None:
@@ -105,6 +108,12 @@ class Job:
     animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
     teile: list = field(default_factory=list)  # Versionen: Teile eines Schattenlaufs (Name, Schlüssel, Kopf, Nutzlast)
     fn: Any = None  # Versionen: Aufgabe für kind "aufgabe"
+    t_teil_erst: float | None = None  # perf_counter, als das erste bzw. letzte Teil an die App ging (zeiten_ms)
+    t_teil_letzt: float | None = None
+    # V2-1: Die Version eines Laufs entsteht im Versionen-Faden; gesetzt, sobald sie fertig (oder nicht nötig) ist
+    versionen_fertig: threading.Event = field(default_factory=threading.Event)
+    version: dict[str, Any] | None = None
+    dokumente: Any = None  # Future: Bauplan, Blätter und ihr Nachtrag in die Version fertig (vor versionen_fertig gesetzt)
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -149,7 +158,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
         self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
-        self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
+        self._lauf_start: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter beim Start (unter _lock)
+        self._pruef_ankunft: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter, als sein Prüfergebnis ankam
+        self.pruef_warten_s = 120.0  # obere Grenze für run(warten_s=…): so lange wartet run höchstens auf die Prüfung
         self.bedingungen_warten_s = 60.0  # so lange wartet bedingungen() auf den Bewegungsraum im Hintergrund
         self.catalog = Catalog(own=own_dir(socket_path))
         self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
@@ -161,6 +172,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._ids = itertools.count(1)
         self._annotations = itertools.count(1)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
+        # V2-1: Nachlauf eines Laufs nach RUN_END, BOM und CONSTRAINTS, außerhalb des Auftragsfadens, je ein Faden und
+        # damit in der Reihenfolge der Läufe: Druckvorschau, Referenz, Animationen an die App (kevcad-nachlauf) und
+        # Versionen samt Blättern und Bauplan (kevcad-versionen, Git darf dauern, ohne den nächsten Lauf aufzuhalten)
+        self._nachlauf = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="kevcad-nachlauf")
+        self._ver_faden = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="kevcad-versionen")
+        self._nachlauf_offen: collections.deque[concurrent.futures.Future] = collections.deque(maxlen=64)
+        self.versionen_warten_s = 0.0  # run ohne titel wartet so lange auf die Version (0: mitnehmen, was fertig ist)
         self._zeichnung_init()  # Phase 6: Zeichnungen
         self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
@@ -256,19 +274,43 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
 
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
-            titel: str | None = None) -> dict[str, Any]:
+            titel: str | None = None, warten_s: float | None = None) -> dict[str, Any]:
+        """Siehe KernelService.run. ``warten_s``: so lange höchstens auf die Prüfung warten (Vorgabe
+        ``RUN_WARTEN_S``, 0 = gar nicht, nie länger als ``pruef_warten_s``)."""
         job = self._submit_run(params, slow_ms, timeout_s, source="agent")
         if isinstance(job, dict):
             return job
         job.done.wait()
         result = job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
         if result.get("ok") and job.run:
-            check = fuer_ergebnis(self._pruef.warte(job.run, self.pruef_warten_s))
+            warten = RUN_WARTEN_S if warten_s is None else float(warten_s)
+            warten = min(max(0.0, warten), self.pruef_warten_s)
+            check = fuer_ergebnis(self._pruef.warte(job.run, warten))
             if check is not None:
                 result = {**result, "pruefung": check}
+        if result.get("ok") and job.run:
+            # V2-1: die Version entsteht im Versionen-Faden; mit titel auf sie warten, sonst mitnehmen, was fertig ist
+            job.versionen_fertig.wait(VERSION_TITEL_WARTEN_S if titel else max(0.0, self.versionen_warten_s))
+            if job.version is not None:
+                result = {**result, "version": job.version}
+            elif not job.versionen_fertig.is_set():
+                result = {**result, "version": {"ausstehend": True}}
         if titel:  # Versionen: Titel des Agenten für die Version dieses Laufs (versionen/laufzeit.py)
             result = self._versionen_agent_titel(result, titel)
+        if job.started and isinstance(result.get("zeiten_ms"), dict):
+            zeiten = dict(result["zeiten_ms"])
+            zeiten["zurueck"] = round((time.perf_counter() - job.started) * 1000, 1)
+            zeiten["pruefung"] = self._pruefung_ms(job.run)
+            result = {**result, "zeiten_ms": zeiten}
         return result
+
+    def _pruefung_ms(self, run: int) -> float | None:
+        """Zeitpunkt (ms ab Start des Laufs), zu dem das Prüfergebnis von Lauf ``run`` ankam, oder None."""
+        with self._lock:
+            start, fertig = self._lauf_start.get(run), self._pruef_ankunft.get(run)
+        if start is None or fertig is None:
+            return None
+        return round((fertig - start) * 1000, 1)
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         with self._lock:
@@ -672,6 +714,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._fk_abbrechen_intern()  # Statik S3: laufenden FEM-Prozess beenden
         self._scan_schliessen()  # Scan: Empfänger und Bonjour beenden, laufende Auswertung abbrechen
         self._fail_pending("Kernel wird beendet")
+        self._nachlauf_abwarten(10.0)  # V2-1: die Version des letzten Laufs noch schreiben
+        self._nachlauf.shutdown(wait=False, cancel_futures=True)
+        self._ver_faden.shutdown(wait=False, cancel_futures=True)
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
 
@@ -688,12 +733,17 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             return dict(self._settings)
 
     def wait_idle(self, timeout: float = 60.0) -> bool:
-        """Wartet, bis keine Läufe mehr anstehen (für Tests)."""
+        """Wartet, bis keine Läufe mehr anstehen und ihr Nachlauf (Versionen, Animationen) fertig ist (für Tests)."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             with self._jobs_cond:
-                if not self._jobs and self._current is None:
-                    return True
+                leer = not self._jobs and self._current is None
+            if leer:
+                if not self._nachlauf_abwarten(max(0.0, deadline - time.monotonic())):
+                    return False
+                with self._jobs_cond:  # inzwischen ein neuer Auftrag (Auto-Lauf)? dann weiter warten
+                    if not self._jobs and self._current is None:
+                        return True
             time.sleep(0.02)
         return False
 
@@ -827,6 +877,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 job = self._jobs.popleft()
                 self._current = job
             try:
+                if job.kind in ("schatten", "aufgabe"):
+                    self._nachlauf_abwarten()  # V2-1: Versionen früherer Läufe zuerst (gleiche Dateien, gleiches Git)
                 if job.kind == "run":
                     job.result = self._run_job(job)
                 elif job.kind == "schatten":
@@ -843,6 +895,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             finally:
                 with self._jobs_cond:
                     self._current = None
+                if job.kind != "run" or not (job.result or {}).get("ok"):
+                    job.versionen_fertig.set()  # nur erfolgreiche Läufe legen eine Version an (_nachlauf_starten)
                 job.done.set()
 
     def _spawn_worker(self) -> None:
@@ -890,8 +944,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         with self._lock:
             self._run_no += 1
             job.run = self._run_no
+            job.started = time.perf_counter()
+            self._lauf_start[job.run] = job.started
+            for alt in [k for k in self._lauf_start if k < job.run - 50]:
+                self._lauf_start.pop(alt, None)
+                self._pruef_ankunft.pop(alt, None)
         job.generation = self._worker.generation
-        job.started = time.perf_counter()
         self._topologie_lauf_beginn(job.run)  # Topologie: Aufrufe aus model.py ab hier gehören zu diesem Lauf
         self._set_state("busy", f"Lauf {job.run} rechnet")
         self._send_app({"type": "RUN_START", "run": job.run, "file_hash": job.file_hash, "params": job.params,
@@ -933,6 +991,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                                                                     ("message", "line", "excerpt", "traceback")},
                             "hint": hint})
             result = self._result(job, ok=False, duration_ms=duration_ms, final=final, error=error)
+            result["zeiten_ms"] = self._zeiten_ms(job, final)
             self._finish(job, result)
             if final.get("type") != "CLOSED":
                 self._restart_worker_async()
@@ -944,8 +1003,10 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error["message"], "line": None,
                             "excerpt": "", "traceback": ""})
             result = self._result(job, ok=False, duration_ms=duration_ms, final=final, error=error)
+            result["zeiten_ms"] = self._zeiten_ms(job, final)
             self._set_state("ready", "bereit")
             return result
+        t_run_end = t_kern = None
         if final.get("type") == "RUN_DONE":
             shown = set(final.get("shown") or [])
             with self._app_lock:
@@ -963,6 +1024,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                                 "warnings": final.get("warnings") or [], "params": final.get("params") or {},
                                 "inventar_regel": bool(final.get("inventar_regel", False)),
                                 "inventar_verstoesse": violations})
+                t_run_end = time.perf_counter()
                 if isinstance(final.get("bom"), dict):
                     bom = self._bestand_bom({"run": job.run, **final["bom"]})  # Zuschnitt mit Bestand, Einkauf
                     with self._lock:
@@ -987,26 +1049,113 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            t_kern = time.perf_counter()
             with self._lock:
                 self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
-            self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
-            self._referenz_nach_lauf(job.run)  # Phase 4: Abweichung zum Referenznetz im Hintergrund
-            self._anim_publish(job, result)
-            # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
-            # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
-            self._versionen_nach_lauf(job, result)  # Versionen: neue Version bei Änderung (ohne Git: save_version)
-            speichern = not job.params
-            hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
-                           self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, danach DOCS
-            self._versionen_dokumente_nach_lauf(job, hintergrund)
+            anim_senden = self._anim_vorbereiten(job, result)  # Phase 5: abgelegt (animation_liste gilt), Senden später
+            self._nachlauf_starten(job, result, anim_senden)
         else:  # RUN_FAILED
             error = dict(final.get("error") or {"message": "Unbekannter Fehler"})
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error.get("message", ""),
                             "line": error.get("line"), "excerpt": error.get("excerpt", ""),
                             "traceback": error.get("traceback", ""), "hint": error.get("hint", "")})
             result = self._result(job, ok=False, duration_ms=duration_ms, final=final, error=error)
+        result["zeiten_ms"] = self._zeiten_ms(job, final, t_run_end=t_run_end, t_kern=t_kern,
+                                              t_ende=time.perf_counter())
         self._finish(job, result)
         return result
+
+    def _zeiten_ms(self, job: Job, final: dict[str, Any], *, t_run_end: float | None = None,
+                   t_kern: float | None = None, t_ende: float | None = None) -> dict[str, Any]:
+        """``zeiten_ms`` des Laufergebnisses und von runs.jsonl: die Phasen aus dem Rechenprozess (Dauer, siehe
+        ``runner._zeiten``), dazu Zeitpunkte ab dem Start des Laufs (RUN_START): ``erstes_teil`` und ``letztes_teil``
+        (an die App geschickt), ``run_end``, ``kern`` (RUN_END, BOM und CONSTRAINTS verschickt, das Ergebnis steht)
+        und als Dauer ``nachlauf`` (Auftragsfaden danach). ``zurueck`` und ``pruefung`` setzt ``run`` dazu."""
+        def ab_start(t: float | None) -> float | None:
+            return round((t - job.started) * 1000, 1) if t is not None and job.started else None
+
+        out: dict[str, Any] = dict(final.get("zeiten_ms") or {})
+        out.update({"erstes_teil": ab_start(job.t_teil_erst), "letztes_teil": ab_start(job.t_teil_letzt),
+                    "run_end": ab_start(t_run_end), "kern": ab_start(t_kern)})
+        if t_kern is not None and t_ende is not None:
+            out["nachlauf"] = round((t_ende - t_kern) * 1000, 1)
+        return out
+
+    def _nachlauf_starten(self, job: Job, result: dict[str, Any], anim_senden: Any) -> None:
+        """V2-1: Was nach RUN_END, BOM und CONSTRAINTS kommt, läuft außerhalb des Auftragsfadens; der nächste Lauf
+        wartet nicht darauf. Teile und Stückliste werden jetzt festgehalten (der nächste Lauf ändert die Szene).
+
+        - kevcad-nachlauf: Druckvorschau (Reglerwerte des Laufs, ihre Rechnung hat einen eigenen Faden), Referenz
+          (Abweichung zum Netz im Hintergrund), ANIM_REMOVE/ANIM_DEF an die App. Ein Faden: Animationen eines Laufs
+          gehen immer vor denen des nächsten an die App; ist der nächste Lauf schon fertig, bleiben sie weg.
+        - kevcad-versionen: Version (Git) des Laufs, danach Bauplan und Blätter (sie gehören zur Version des Laufs
+          und tragen ihre Nummer im Schriftfeld) und das Nachtragen in die Version. Ein Faden: die Reihenfolge der
+          Läufe bleibt; Aufgaben der Versionen (Wiederherstellen, Meilenstein, Liste) warten auf ihn."""
+        teile = [(r.name, r.key, r.header, r.payload) for r in self.scene.records() if not r.name.startswith("Skizze/")]
+        with self._lock:
+            bom = self._bom
+
+        def nachlauf() -> None:
+            self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
+            self._referenz_nach_lauf(job.run)  # Phase 4: Abweichung zum Referenznetz im Hintergrund
+            if self._run_end_run <= job.run:  # neuerer Lauf schon fertig: er schickt seine eigenen Animationen
+                anim_senden()
+
+        def versionen() -> None:
+            info = {"params": dict(result.get("params") or {}), "steps": list(result.get("steps") or [])}
+            try:
+                # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in
+                # sie nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
+                self._versionen_nach_lauf(job, info, teile=teile, bom=bom)  # neue Version bei Änderung
+                job.version = info.get("version")
+                if job.version is not None:
+                    result["version"] = job.version  # für den Auftrag (auto, App) und status
+                speichern = not job.params
+                hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
+                               self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, DOCS
+                job.dokumente = self._versionen_dokumente_nach_lauf(job, hintergrund)
+            finally:
+                for w in info.get("warnings") or []:
+                    self._log(f"[versionen] Lauf {job.run}: {w}")
+                # erst nach dem Anstoßen von Bauplan und Blättern (wie früher job.done); sie rechnen danach im Pool
+                # weiter und werden nachgetragen, job.dokumente ist erfüllt, wenn das fertig ist
+                job.versionen_fertig.set()
+
+        for faden, fn in ((self._nachlauf, nachlauf), (self._ver_faden, versionen)):
+            try:
+                self._nachlauf_offen.append(faden.submit(self._nachlauf_schuetzen, fn, job))
+            except RuntimeError:  # Laufzeit wird beendet
+                job.versionen_fertig.set()
+
+    def _nachlauf_schuetzen(self, fn: Any, job: Job) -> None:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 - der Nachlauf eines Laufs darf den nächsten nicht kippen
+            import traceback
+
+            self._log(f"[kernel] Nachlauf von Lauf {job.run} fehlgeschlagen:\n{traceback.format_exc(limit=8)}")
+
+    def _nachlauf_abwarten(self, timeout: float = NACHLAUF_WARTEN_S) -> bool:
+        """Wartet, bis der Nachlauf aller bisherigen Läufe fertig ist (Versionen, Animationen). True, wenn fertig."""
+        ende = time.monotonic() + timeout
+        for f in list(self._nachlauf_offen):
+            rest = ende - time.monotonic()
+            if rest <= 0:
+                return False
+            try:
+                f.result(rest)
+            except concurrent.futures.TimeoutError:
+                return False
+            except Exception:  # noqa: BLE001 - schon protokolliert
+                pass
+        return True
+
+    def _nachlauf_warten_ausserhalb(self) -> None:
+        """Vor Aufgaben und Abfragen der Versionen: auf den Nachlauf früherer Läufe warten, außer im Nachlauf selbst
+        (der Faden wartete sonst auf sich)."""
+        name = threading.current_thread().name
+        if not (name.startswith("kevcad-versionen") or name.startswith("kevcad-nachlauf")):
+            self._nachlauf_abwarten()
 
     def _result(self, job: Job, *, ok: bool, duration_ms: int, final: dict[str, Any],
                 error: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1069,7 +1218,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             err = result.get("error") or {}
             proj.log_run({"run": job.run, "ok": result.get("ok"), "source": job.source,
                           "duration_ms": result.get("duration_ms"), "parts": len(result.get("parts") or []),
-                          "file_hash": job.file_hash, "error": err.get("message"), "line": err.get("line")})
+                          "file_hash": job.file_hash, "error": err.get("message"), "line": err.get("line"),
+                          "zeiten_ms": result.get("zeiten_ms")})
 
     def _exec_job(self, job: Job) -> dict[str, Any]:
         err = self._ensure_worker()
@@ -1110,6 +1260,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if kind == "CHECK_DONE":  # kommt nach RUN_DONE, wenn der Lauf schon abgeschlossen ist
             app_len = int(header.get("app_len", 0))
             check = dict(header.get("app") or {})
+            self._pruefung_protokollieren(check)
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
             self._dynamik_nach_lauf(statik)  # Statik S2: Abläufe aus model.py im Hintergrund (eigener Prozess)
             self._festkoerper_nach_lauf(statik)  # Statik S3: Festkörper-FEM für Teile mit Last (eigener Prozess)
@@ -1157,12 +1308,37 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+            jetzt = time.perf_counter()
+            if job.t_teil_erst is None:
+                job.t_teil_erst = jetzt
+            job.t_teil_letzt = jetzt
         elif kind == "ANIM":
             if header.get("run") == job.run:
                 job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
+
+    def _pruefung_protokollieren(self, check: dict[str, Any]) -> None:
+        """zeiten_ms: Ankunft des Prüfergebnisses merken und als eigene Zeile in runs.jsonl schreiben (``art``
+        "pruefung"; der Lauf selbst steht schon dort, ``run`` kehrt nicht mehr erst nach der Prüfung zurück)."""
+        run = int(check.get("run") or 0)
+        state = str(check.get("state") or "")
+        if state not in ("done", "failed", "teilweise"):
+            return
+        jetzt = time.perf_counter()
+        with self._lock:
+            start = self._lauf_start.get(run)
+            if start is None:
+                return  # Schattenlauf der Versionen oder zu alt
+            erstes = run not in self._pruef_ankunft
+            if erstes:
+                self._pruef_ankunft[run] = jetzt
+        proj = self._project
+        if proj is not None:
+            proj.log_run({"run": run, "art": "pruefung", "state": state,
+                          "zeiten_ms": {"pruefung": round((jetzt - start) * 1000, 1),
+                                        "pruefung_dauer": check.get("duration_ms")}})
 
     def _on_worker_exit(self, gen: int, code: int | None) -> None:
         if self._closed:

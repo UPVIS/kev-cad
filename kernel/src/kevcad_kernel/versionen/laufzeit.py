@@ -7,7 +7,8 @@ Nutzt die Bausteine der Laufzeit (``_project``, ``scene``, ``_bom``, ``_pruef``,
 - ``_versionen_projekt(proj, same)`` beim Öffnen eines Projekts (legt das Repo an, übernimmt alte Stände),
 - ``_versionen_nach_lauf(job, result)`` nach jedem erfolgreichen Lauf (statt ``save_version``), vor der
   Hintergrundrechnung der Dokumente,
-- ``_versionen_dokumente_nach_lauf(job, hintergrund)`` mit den Futures der Hintergrundrechnung (Blätter, Bauplan),
+- ``_versionen_dokumente_nach_lauf(job, hintergrund)`` mit den Futures der Hintergrundrechnung (Blätter, Bauplan);
+  gibt ein Future zurück, das nach dem Nachtrag erfüllt ist (``Job.dokumente``),
 - ``_versionen_pruefung(check)`` bei jedem fertigen CHECK,
 - ``_versionen_app_message(kind, header)`` für die App-Nachrichten dieses Abschnitts,
 - ``_versionen_on_connect(conn)`` beim Verbinden der App,
@@ -45,6 +46,7 @@ import itertools
 import shutil
 import threading
 import time
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
@@ -186,17 +188,23 @@ class VersionenRuntimeMixin:
         agent = bool(self._agent.get("connected")) and time.monotonic() - self._agent_seen < AGENT_AKTIV_S
         return ("agent", self._versionen_sitzung()) if agent else ("kevin", None)
 
-    def _versionen_nach_lauf(self, job: Any, result: dict[str, Any]) -> None:
-        """Im Auftragsfaden nach einem erfolgreichen Lauf: Version anlegen (bei Änderung) oder die aktuelle
-        aktualisieren; Daten, Netze und Vorschaubild im Hintergrund."""
+    def _versionen_nach_lauf(self, job: Any, result: dict[str, Any], teile: list | None = None,
+                             bom: dict[str, Any] | None = None) -> None:
+        """Nach einem erfolgreichen Lauf (V2-1: im Versionen-Faden der Laufzeit, in der Reihenfolge der Läufe):
+        Version anlegen (bei Änderung) oder die aktuelle aktualisieren; Daten, Netze und Vorschaubild im Hintergrund.
+        ``teile`` und ``bom``: Stand bei RUN_END (der nächste Lauf ändert die Szene schon); ``result`` bekommt
+        ``version`` und bei Fehlern ``warnings``."""
         proj = self._project
         archiv = self._archiv
         if proj is None or str(proj.model) != job.path:
             return
         self._ver_aktiv = time.monotonic()
-        teile = [(r.name, r.key, r.header, r.payload) for r in self.scene.records() if not r.name.startswith("Skizze/")]
-        with self._lock:
-            bom = self._bom
+        if teile is None:
+            teile = [(r.name, r.key, r.header, r.payload) for r in self.scene.records()
+                     if not r.name.startswith("Skizze/")]
+        if bom is None:
+            with self._lock:
+                bom = self._bom
         self._ver_aktuell = {"run": job.run, "params": dict(result.get("params") or {}), "bom": bom}
         if archiv is None or archiv.projekt != proj.path:
             return
@@ -399,23 +407,31 @@ class VersionenRuntimeMixin:
         except RuntimeError:  # Laufzeit wird beendet
             pass
 
-    def _versionen_dokumente_nach_lauf(self, job: Any, hintergrund: list[Any]) -> None:
+    def _versionen_dokumente_nach_lauf(self, job: Any, hintergrund: list[Any]) -> Future:
         """Im Auftragsfaden, gleich nach dem Start der Hintergrundrechnung von ``job`` (Futures von Blättern und
         Bauplan; ihr Ergebnis False heißt: nicht alles gespeichert, weil ein neuerer Lauf begann). Sind alle fertig und
-        gehört ihr Ergebnis noch zur Version dieses Laufs, wird nachgetragen."""
+        gehört ihr Ergebnis noch zur Version dieses Laufs, wird nachgetragen. Rückgabe (V2-1): Future, erfüllt, sobald
+        Blätter, Bauplan und ihr Nachtrag fertig sind (danach schreibt nichts von diesem Lauf mehr in dokumente/)."""
+        fertig: Future = Future()
         archiv = self._archiv
         with self._ver_nt_lock:
             nt = self._ver_nachtrag
-            if job.params or nt is None or nt.get("lauf") != job.run or archiv is None:
-                return
+            nachtragen = not (job.params or nt is None or nt.get("lauf") != job.run or archiv is None)
         offen = [f for f in hintergrund if f is not None]
+
+        def zum_schluss(voll: bool) -> None:
+            if nachtragen:
+                self._nachtrag_starten(archiv, job.run, voll, fertig)
+            else:
+                fertig.set_result(None)
+
         if not offen:
-            self._nachtrag_starten(archiv, job.run, True)
-            return
+            zum_schluss(True)
+            return fertig
         zustand = {"rest": len(offen), "voll": True}
         sperre = threading.Lock()
 
-        def fertig(f: Any) -> None:
+        def eins_fertig(f: Any) -> None:
             try:
                 ok = f.cancelled() or f.result() is not False
             except Exception:  # noqa: BLE001 - eine gescheiterte Rechnung speichert nichts mehr
@@ -425,16 +441,21 @@ class VersionenRuntimeMixin:
                 zustand["rest"] -= 1
                 letzte = zustand["rest"] == 0
             if letzte:
-                self._nachtrag_starten(archiv, job.run, bool(zustand["voll"]))
+                zum_schluss(bool(zustand["voll"]))
 
         for f in offen:
-            f.add_done_callback(fertig)
+            f.add_done_callback(eins_fertig)
+        return fertig
 
-    def _nachtrag_starten(self, archiv: Versionsarchiv, lauf: int, voll: bool) -> None:
+    def _nachtrag_starten(self, archiv: Versionsarchiv, lauf: int, voll: bool, fertig: Future | None = None) -> None:
         try:
-            self._pool.submit(self._versionen_nachtragen, archiv, lauf, voll)
+            nt = self._pool.submit(self._versionen_nachtragen, archiv, lauf, voll)
         except RuntimeError:  # Laufzeit wird beendet
-            pass
+            if fertig is not None:
+                fertig.set_result(None)
+            return
+        if fertig is not None:
+            nt.add_done_callback(lambda _f: fertig.set_result(None))
 
     def _versionen_nachtragen(self, archiv: Versionsarchiv, lauf: int, voll: bool) -> None:
         with self._ver_nt_lock:
@@ -885,6 +906,7 @@ class VersionenRuntimeMixin:
     def _archiv_oder_fehler(self) -> Versionsarchiv | dict[str, Any]:
         if self._project is None:
             return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+        self._nachlauf_warten_ausserhalb()  # V2-1: Versionen früherer Läufe entstehen im Hintergrund
         archiv = self._archiv
         if archiv is None:
             return {"ok": False, "error": "Versionen werden noch geladen."}

@@ -97,6 +97,7 @@ def test_lauf_legt_version_an_mit_kennzahlen_und_bild(env):
     (p / "model.py").write_text(CODE2)
     job = rt._submit_run(None, 0, 60, source="auto")
     job.done.wait(60)
+    job.versionen_fertig.wait(60)  # V2-1: Version im Versionen-Faden
     assert job.result["version"]["nr"] == 2
     vs = rt.versionen()["versionen"]
     assert [x["nr"] for x in vs] == [2, 1] and vs[0]["wer"] == "kevin" and vs[0]["kennzahlen"]["teile"] == 3
@@ -277,6 +278,7 @@ def test_titel_automatisch_vom_agenten_und_kevins_meilenstein(env):
     (p / "model.py").write_text(CODE2.replace("Cylinder(3, 8)", "Cylinder(4, 8)"))
     job = rt._submit_run(None, 0, 60, source="auto")
     job.done.wait(60)
+    job.versionen_fertig.wait(60)  # V2-1: Version im Versionen-Faden
     assert job.result["version"]["nr"] == 3 and job.result["version"]["titel"] == "Stift geändert"
     res = rt.run(titel="Stift dicker")
     assert res["version"]["nr"] == 3 and not res["version"]["neu"] and "hinweis" not in res["version"]

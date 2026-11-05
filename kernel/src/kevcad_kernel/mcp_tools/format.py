@@ -217,6 +217,8 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         data = {"ok": False, "run": run_no, "error": err}
         if res.get("steps"):
             data["steps"] = res["steps"]
+        if isinstance(res.get("zeiten_ms"), dict):  # Phasen des Laufs (runtime._zeiten_ms)
+            data["zeiten_ms"] = res["zeiten_ms"]
         return "\n".join(parts), data, True
 
     parts = res.get("parts") or []
@@ -263,6 +265,8 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
     }
     if bom:
         data["bom"] = bom
+    if isinstance(res.get("zeiten_ms"), dict):  # Phasen des Laufs (runtime._zeiten_ms)
+        data["zeiten_ms"] = res["zeiten_ms"]
     version = res.get("version") if isinstance(res.get("version"), dict) else None
     if version:  # Versionen: Titel der neuen Version (Agent vor Automatik)
         data["version"] = version

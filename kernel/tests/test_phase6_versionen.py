@@ -137,6 +137,9 @@ def _app_lauf(rt) -> dict:
     job = rt._submit_run(None, 0, 120, source="app")
     assert job.done.wait(120)
     assert job.result["ok"], job.result
+    assert job.versionen_fertig.wait(120)  # V2-1: die Version entsteht im Versionen-Faden
+    if job.dokumente is not None:  # Bauplan, Blätter und Nachtrag des Laufs; die Tests ändern danach dokumente/
+        job.dokumente.result(120)
     return job.result
 
 

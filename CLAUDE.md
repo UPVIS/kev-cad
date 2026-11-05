@@ -8,7 +8,8 @@ Regeln unten zu Mac mini, `tools/fern.sh`, zweitem Monitor, Sperrdatei und autom
 Rechnern; die Verträge und Code-Regeln gelten überall.
 
 Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10, Arbeitspakete, AP0-Ergebnis),
-[PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine).
+[PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine). Für den Umbau zu V2
+(KI-first, Zweig `v2`): [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete V2-1 bis V2-8).
 
 ## Aufbau
 
@@ -100,9 +101,11 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
   entlastet das MacBook). Dort gibt es zwei Bauplätze mit warmen Bauordnern und einen Testplatz, gewartet wird in einer
   Schlange; mehrere Agenten können also gleichzeitig aufrufen. Die Test-App kommt nach `build/` und läuft hier wie
   gewohnt. `./build.sh` direkt nur als Rückfall, wenn `tools/fern.sh` es nicht selbst tut.
-  **Seit 22.10.2026 mittags ist der Mac mini nicht mehr verfügbar** (Kevin: „alles auf dem MacBook“): Die Datei
-  `~/.kevcad-nur-macbook` ist gesetzt, `tools/fern.sh` und das automatische Update bauen deshalb hier unter der Sperre.
-  Weiter `tools/fern.sh` aufrufen; parallel höchstens zwei Agenten mit Builds.
+  **Seit 05.11.2026 bauen Mini und MacBook wieder beide** (Kevin: „Mini und MacBook können gerne beide bauen, das würde
+  ich mich nicht einschränken auf eins“; vom 22.10. bis 05.11.2026 lief alles auf dem MacBook). `~/.kevcad-nur-macbook`
+  ist entfernt. `tools/fern.sh testbau` nimmt einen freien Bauplatz des Mini und baut hier, wenn dort beide belegt sind
+  und die Sperre frei ist. Kernel-Tests über `tools/fern.sh tests` (Testplatz auf dem Mini); einige Tests nutzen feste
+  Ports, lokal deshalb nie zwei volle Testläufe gleichzeitig. Bis zu drei Agenten mit Builds.
 - **Lokal nur einzeln:** Der Mac hat 16 GB. Jedes lokale `xcodebuild` (also jedes `./build.sh`) läuft unter der mit
   VoiceBridge gemeinsamen Sperre: `lockf -k /tmp/vb-xcodebuild.lock ./build.sh --test …`, vorher
   `memory_pressure | tail -1` prüfen und unter 25 % freiem Speicher warten. `tools/fern.sh` und das automatische Update

@@ -225,12 +225,14 @@ class FakeService:
         return {"ok": True, "path": self.project["model"], "bytes": len(code.encode())}
 
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
-            titel: str | None = None) -> dict[str, Any]:
+            titel: str | None = None, warten_s: float | None = None) -> dict[str, Any]:
         extra: dict[str, Any] = {}
         if titel is not None:
             extra["titel"] = titel
         if timeout_s != 120:
             extra["timeout_s"] = timeout_s
+        if warten_s is not None:
+            extra["warten_s"] = warten_s
         self._record("run", params, slow_ms, **extra)
         self.run_no += 1
         if self.fail_run:

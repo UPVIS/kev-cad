@@ -47,8 +47,9 @@ try:  # OCP 8: Sammlungsklassen liegen in OCP.collections
     from OCP.collections import (
         IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher as TopTools_IndexedDataMapOfShapeListOfShape,
     )
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as TopTools_IndexedMapOfShape
 except ImportError:  # OCP 7
-    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape, TopTools_IndexedMapOfShape
 
 # Ohne den Zwischenspeicher von ocp-tessellate (wir halten selbst einen, sonst läge alles doppelt im Speicher)
 _tessellate_raw = getattr(_ocp_tessellate, "__wrapped__", _ocp_tessellate)
@@ -460,6 +461,34 @@ def _weiche_normalen(positions: np.ndarray, triangles: np.ndarray, normals: np.n
     return out.astype(np.float32)
 
 
+def _netzfreier_zustand(topo: TopoDS_Shape) -> list[tuple[TopoDS_Shape, bool, bool]] | None:
+    """Vor dem Vernetzen: Flags (Checked, Modified) aller Flächen und Kanten, wenn die Form noch kein Netz hat (sonst
+    None: dann bleibt alles, wie es OCCT hinterlässt)."""
+    loc = TopLoc_Location()
+    zustand = []
+    for art in (TopAbs_FACE, TopAbs_EDGE):
+        m = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(topo, art, m)
+        for i in range(1, m.Extent() + 1):
+            s = m.FindKey(i)
+            if art == TopAbs_FACE and BRep_Tool.Triangulation_s(TopoDS.Face(s), loc) is not None:
+                return None
+            zustand.append((s, s.Checked(), s.Modified()))
+    return zustand
+
+
+def _zustand_zurueck(topo: TopoDS_Shape, zustand: list[tuple[TopoDS_Shape, bool, bool]]) -> None:
+    """Nach dem Auslesen: Netz wieder entfernen und die Flags von vorher setzen. Das Netz zu speichern setzt an den
+    Flächen ``Modified`` und damit Checked auf False, beides steht in der Binärform; die Geometrie ändert sich nicht.
+    So ist eine gezeigte Form danach Bit für Bit dieselbe wie vorher, wie in einem Lauf, in dem der Zwischenspeicher
+    das Teil schon kannte (gleiche Schlüssel im Rechengedächtnis, V2-1), und spätere Rechnungen (Hüllquader ohne
+    ``optimal``, ``tessellate`` im Bewegungsraum) finden kein Netz aus einem früheren Lauf vor."""
+    BRepTools.Clean_s(topo)
+    for s, checked, modified in zustand:
+        s.Modified(modified)  # Modified(True) setzt Checked zurück: erst Modified, dann Checked
+        s.Checked(checked)
+
+
 def tessellate_shape(
     shape: Shape,
     deviation: float = DEFAULT_DEVIATION,
@@ -495,6 +524,7 @@ def tessellate_shape(
 
     # Dreiecke (ocp-tessellate vernetzt mit BRepMesh und liest die Dreiecke je Fläche aus)
     quality = mesh_quality(bb.size.X, bb.size.Y, bb.size.Z, deviation)
+    zustand = _netzfreier_zustand(topo) if faces else None
     if faces:
         t = _tessellate_raw(topo, key, deviation=deviation, quality=quality, angular_tolerance=angular,
                             compute_faces=True, compute_edges=False)
@@ -541,6 +571,8 @@ def tessellate_shape(
         faces=face_meta,
         edges=edge_meta,
     )
+    if zustand is not None:
+        _zustand_zurueck(topo, zustand)
     center = [(a + b) / 2 for a, b in zip(bbox["min"], bbox["max"])]
     props = shape_props(shape, center)
     result = Tessellation(geometry, bbox, props, key, (time.perf_counter() - t0) * 1000, False)

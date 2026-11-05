@@ -195,12 +195,13 @@ def finden(auswahl: str | None = None, /, *, mpn: str | None = None, hersteller:
            gtin: str | None = None) -> Zukaufteil:
     """Zukaufteil nach id, nach Herstellernummer (mit Hersteller) oder nach GTIN; sonst LagerError mit Vorschlägen."""
     cat = katalog()
-    rows = [r for r in cat.items() if r.get("art") in ZUKAUF_ARTEN]
     if auswahl is not None:
         key = str(auswahl).strip()
         it = cat.item(key)
         if it is not None and it.get("art") in ZUKAUF_ARTEN:
-            return _released(it, cat)
+            return _released(it, cat)  # der häufige Fall: ohne Kopie des ganzen Katalogs (items)
+    rows = [r for r in cat.items() if r.get("art") in ZUKAUF_ARTEN]
+    if auswahl is not None:
         if it is not None:
             raise LagerError(f"{key!r} ist ein Lagerteil ({it.get('name')}), kein Zukaufteil: lager.teil({key!r})")
         from kevcad_kernel.zukauf.normteile import umleiten

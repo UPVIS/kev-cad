@@ -37,7 +37,8 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
         return "", False
     state = check.get("state")
     if state == "running":
-        return ("Prüfung: läuft noch (" + (check.get("message") or "") + "); Ergebnis mit pruefen abrufen."), False
+        return ("Prüfung: läuft noch im Hintergrund, das Ergebnis kommt nach. Vor dem Fertigmelden "
+                "pruefen(warten=true) aufrufen und jeden Befund beheben."), False
     if state == "cancelled":
         return "Prüfung: abgebrochen, weil ein neuerer Lauf kam.", False
     if state == "failed":

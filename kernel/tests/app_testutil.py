@@ -103,4 +103,8 @@ def catalog_env(own: Path | None = None):
 
 def make_runtime(sock: str, own: Path | None = None, **kwargs) -> KernelRuntime:
     with catalog_env(own):
-        return KernelRuntime(sock, 47999, **{"auto_run": False, "run_timeout_s": 60, **kwargs})
+        rt = KernelRuntime(sock, 47999, **{"auto_run": False, "run_timeout_s": 60, **kwargs})
+    # V2-1: die Version eines Laufs entsteht im Hintergrund; die Tests prüfen sie im Ergebnis von run, also wartet run
+    # hier auf sie (Kevin und der Agent bekommen das Ergebnis ohne Warten, test_tempo.py prüft das)
+    rt.versionen_warten_s = 60.0
+    return rt

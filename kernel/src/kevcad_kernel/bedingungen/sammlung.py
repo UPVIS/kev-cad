@@ -20,9 +20,20 @@ _EIGENE = tuple(os.path.realpath(p) for p in (
 ))
 
 
+_EIGEN: dict[str, bool] = {}  # absoluter Dateiname → _eigen (realpath kostet je Aufruf viele lstat)
+
+
 def _eigen(dateiname: str) -> bool:
+    bekannt = _EIGEN.get(dateiname)
+    if bekannt is not None:
+        return bekannt
     real = os.path.realpath(dateiname)
-    return any(real.startswith(d + os.sep) for d in _EIGENE)
+    eigen = any(real.startswith(d + os.sep) for d in _EIGENE)
+    if os.path.isabs(dateiname):  # relative Namen hängen vom Arbeitsordner ab
+        if len(_EIGEN) > 50_000:
+            _EIGEN.clear()
+        _EIGEN[dateiname] = eigen
+    return eigen
 
 
 def aufrufstelle() -> tuple[str | None, int | None]:

@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from . import anbindung  # registriert die Prüffunktion „bedingungen“ in der gemeinsamen Prüfung
+from . import anbindung, geometrie  # anbindung registriert die Prüffunktion „bedingungen“ in der gemeinsamen Prüfung
 from .pruefung import pruefen
 from .sammlung import Sammlung
 
@@ -52,9 +52,10 @@ def pruefe_bedingungen(sammlung: Sammlung, state: dict[str, Any], projekt: str |
             netze[name] = (g.positions, g.triangles, g.normals)
     try:
         # Bewegungsraum erst in der Prüfung nach RUN_DONE (anbindung.py), damit RUN_END nicht wartet
-        bericht = json_tauglich(pruefen(sammlung, formen, netze=netze, schluessel=schluessel, projekt=projekt,
-                                        boxen=boxen, zeitlimit_s=ZEITLIMIT_S, bewegungsraum=False,
-                                        kulisse=set(state.get("kulisse") or ())))
+        with geometrie.flaechen_merken():  # V2-1: dieselben Flächen nur einmal auswerten
+            bericht = json_tauglich(pruefen(sammlung, formen, netze=netze, schluessel=schluessel, projekt=projekt,
+                                            boxen=boxen, zeitlimit_s=ZEITLIMIT_S, bewegungsraum=False,
+                                            kulisse=set(state.get("kulisse") or ())))
         anbindung.merke(sammlung, formen, schluessel, boxen, projekt, bericht)
         return bericht
     except Exception as exc:  # noqa: BLE001

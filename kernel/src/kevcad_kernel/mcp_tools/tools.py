@@ -388,6 +388,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         timeout_s: Annotated[float | None, Field(ge=10, le=RUN_TIMEOUT_MAX_S, description=(
             "Time limit for executing model.py in seconds (default 120, at most 900). Raise it only for large "
             "models whose run was refused for the time limit; the check after the run has its own limit"))] = None,
+        warten_s: Annotated[float | None, Field(ge=0, le=120, description=(
+            "Wait at most this long for the built-in check after the run (default 3 s, 0 = do not wait). If it is "
+            "still running, run says so and it finishes in the background: call pruefen() before reporting done"))
+                            ] = None,
     ) -> CallToolResult:
         activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
         extra: dict[str, Any] = {}
@@ -395,6 +399,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             extra["titel"] = titel.strip()
         if timeout_s is not None:
             extra["timeout_s"] = float(timeout_s)
+        if warten_s is not None:
+            extra["warten_s"] = float(warten_s)
         res = await t.work(activity, svc.run, params, slow_ms, **extra)
         summary, data, failed = fmt.run_summary(res)
         return fmt.result(summary, data, error=failed)
