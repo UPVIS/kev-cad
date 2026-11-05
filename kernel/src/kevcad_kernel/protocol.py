@@ -6,6 +6,8 @@ KevCADCore; Änderungen nur zusammen mit PROTOCOL.md, den Testdateien und dem Sw
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import struct
 from dataclasses import dataclass, field
@@ -663,11 +665,14 @@ def pack_netze(eintraege: list[tuple[dict[str, Any], dict[str, np.ndarray]]]) ->
     return koepfe, b"".join(teile)
 
 
-def unpack_netze(koepfe: list[dict[str, Any]], payload: bytes) -> list[dict[str, np.ndarray]]:
-    """Gegenstück zu pack_netze."""
+def unpack_netze(koepfe: list[dict[str, Any]], payload: bytes) -> list[dict[str, np.ndarray] | None]:
+    """Gegenstück zu pack_netze; None für Köpfe mit ``aus_szene`` (V2-5, das Netz hat die App)."""
     out = []
     offset = 0
     for k in koepfe:
+        if k.get("aus_szene"):  # V2-5 (delta-1): Netz aus der Szene der App, ohne Anteil an der Nutzlast
+            out.append(None)
+            continue
         n: dict[str, np.ndarray] = {}
         for name, dtype, key, per in NETZ_ARRAYS:
             count = (int(k[key]) + 1 if name == "edge_offsets" else int(k[key])) * per
@@ -2532,3 +2537,454 @@ def sim_job_beispiel(stand: str = "done") -> dict[str, Any]:
                          "hinweis": "S0 und S1 gesucht, dazu die Festkörper-FEM (zwei Lösungen, überlagert; "
                                     "Probe bei 1,24)", "ms": 812.0},
             "meldung": None, "ms": 905.0}
+
+
+# =====================================================================================================================
+# V2-5 Live (PROTOCOL.md, Abschnitt „V2-5 Live“): Fähigkeiten, Delta, In Arbeit, Agentenspur, Lagebild, Live-Maße.
+# Die Weiche je Verbindung (was eine App bekommt) steht in live.py; hier stehen Format, Schlüssel, Strukturpatch,
+# Prüfen und die Beispiele für die Testdateien (tools/make_live_fixtures.py).
+# =====================================================================================================================
+
+FAEHIGKEIT_DELTA = "delta-1"
+FAEHIGKEIT_IN_ARBEIT = "in-arbeit-1"
+FAEHIGKEIT_SPUR = "spur-1"
+FAEHIGKEIT_LAGE = "lage-1"
+FAEHIGKEIT_LIVE_MASSE = "live-masse-1"
+#: was der Kernel kann (HELLO.faehigkeiten)
+KERNEL_FAEHIGKEITEN: tuple[str, ...] = (FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_SPUR, FAEHIGKEIT_LAGE,
+                                        FAEHIGKEIT_LIVE_MASSE)
+#: neue Nachrichten Kernel → App und die Fähigkeit, die eine App dafür gemeldet haben muss
+LIVE_NACHRICHTEN: dict[str, str] = {
+    "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
+    "AGENT_SPUR": FAEHIGKEIT_SPUR, "AGENT_SCHRITT": FAEHIGKEIT_SPUR, "LAGE_REQ": FAEHIGKEIT_LAGE,
+}
+#: neue Felder bestehender Nachrichten Kernel → App: (type, Feld) → Fähigkeit
+LIVE_FELDER: dict[tuple[str, str], str] = {
+    ("PART_UPSERT", "inhalt"): FAEHIGKEIT_DELTA, ("RUN_START", "delta"): FAEHIGKEIT_DELTA,
+    ("RUN_END", "teile"): FAEHIGKEIT_DELTA,
+}
+#: neue Nachrichten App → Kernel
+LIVE_APP_NACHRICHTEN: tuple[str, ...] = ("LAGE", "PARTS_REQ", "NOCHMAL")
+#: Arten, die als WIE_ZUVOR kommen können (große JSON-Nachrichten, die sich zwischen Läufen kaum ändern)
+WIE_ZUVOR_ARTEN: tuple[str, ...] = ("CHECK", "STATICS", "CONSTRAINTS", "BOM", "PRINT_PREVIEW", "SIM", "DOCS",
+                                    "VERSIONEN")
+WIE_ZUVOR_BASEN = 6  # so viele Rahmen je Art merken sich beide Seiten als mögliche Basis
+WIE_ZUVOR_ANTEIL = 0.5  # ein WIE_ZUVOR geht nur, wenn es höchstens so groß ist wie dieser Anteil der vollen Nachricht
+SPUR_LAENGE = 50  # Schritte der Agentenspur, die Kernel und App halten
+SPUR_STAENDE: tuple[str, ...] = ("laeuft", "ok", "fehler")
+SPUR_FELDER: tuple[str, ...] = ("id", "werkzeug", "text", "absicht", "sitzung", "beginn", "ende", "dauer_ms", "stand",
+                                "fehler")
+SPUR_TEXT_MAX = 200  # absicht und fehler höchstens so viele Zeichen
+IN_ARBEIT_NACH_S = 0.3  # IN_ARBEIT, wenn so lange kein Teil kam (und höchstens so oft)
+LAGE_WARTEN_S = 0.2  # so lange wartet der Kernel auf LAGE, dann nimmt er, was er selbst weiß
+LAGE_KAMERA_FELDER: tuple[str, ...] = ("position", "ziel", "richtung", "oben", "abstand", "projektion", "fov",
+                                       "ortho_hoehe", "ansicht", "durch")
+ANNOTATE_ARTEN: tuple[str, ...] = ("mass", "param", "hinweis")
+_INHALT_OHNE = frozenset(("type", "seq", "run", "faces", "edges", "inhalt"))
+_HEX = frozenset("0123456789abcdef")
+
+
+def kanonisch(wert: Any) -> str:
+    """JSON-Text zum Vergleichen: Schlüssel sortiert, kompakt; unterscheidet 1, 1.0 und true."""
+    return json.dumps(wert, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def inhalt_schluessel(key: str, header: dict[str, Any], payload: bytes | None = None) -> str:
+    """Inhaltsschlüssel eines Teils (``PART_UPSERT.inhalt``, 16 Hex-Zeichen): SHA-1 über den Tessellierungs-Schlüssel
+    ``key`` (Form, Lage und Genauigkeit, aus dem Rechenprozess) und den Kopf ohne type, seq, run, faces, edges und
+    inhalt (Farbe, Material, Hüllquader, Masse, Lager, Druck, Zukauf, Kulisse, Inventar …). ``faces`` und ``edges``
+    folgen aus der Form. Ohne ``key`` zählen stattdessen die Nutzlast und beide Listen."""
+    h = hashlib.sha1()
+    if key:
+        h.update(b"form:" + key.encode("utf-8"))
+    else:
+        h.update(b"netz:" + hashlib.sha1(payload or b"").digest())
+        h.update(kanonisch([header.get("faces"), header.get("edges")]).encode("utf-8"))
+    h.update(b"\n")
+    h.update(kanonisch({k: v for k, v in header.items() if k not in _INHALT_OHNE}).encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def part_same(run: int, name: str, inhalt: str) -> dict[str, Any]:
+    """PART_SAME (delta-1): Teil ``name`` ist in Lauf ``run`` unverändert."""
+    return {"type": "PART_SAME", "run": int(run), "name": str(name), "inhalt": str(inhalt)}
+
+
+class _PatchZuGross(Exception):
+    pass
+
+
+def strukturpatch(alt: Any, neu: Any, grenze: float | None = None) -> tuple[list[Any], list[Any]] | None:
+    """Änderung von ``alt`` nach ``neu`` als (``setzen``, ``weg``) für WIE_ZUVOR. Pfade bestehen aus Schlüsseln (Text)
+    und Listenstellen (Zahl). Rekursiv in Objekte (nur mit Text-Schlüsseln) und in Listen gleicher Länge; alles
+    andere wird ganz ersetzt. ``grenze``: höchstens so viele Byte JSON, sonst None. Gleichheit nach ``==``; was danach
+    noch abweicht (1 gegen 1.0 gegen true in sonst gleichen Teilen), findet die Probe in ``live.py``."""
+    setzen: list[Any] = []
+    weg: list[Any] = []
+    rest = [float("inf") if grenze is None else float(grenze)]
+
+    def kosten(n: int) -> None:
+        rest[0] -= n
+        if rest[0] < 0:
+            raise _PatchZuGross
+
+    def setze(pfad: list[Any], wert: Any) -> None:
+        kosten(len(kanonisch([pfad, wert])) + 1)
+        setzen.append([pfad, wert])
+
+    def gehe(a: Any, b: Any, pfad: list[Any]) -> None:
+        if type(a) is type(b) and a == b:
+            return
+        if isinstance(a, dict) and isinstance(b, dict) and all(isinstance(k, str) for k in a) \
+                and all(isinstance(k, str) for k in b):
+            for k, v in b.items():
+                if k in a:
+                    gehe(a[k], v, pfad + [k])
+                else:
+                    setze(pfad + [k], v)
+            for k in a:
+                if k not in b:
+                    kosten(len(kanonisch(pfad + [k])) + 1)
+                    weg.append(pfad + [k])
+            return
+        if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+            for i, (x, y) in enumerate(zip(a, b)):
+                gehe(x, y, pfad + [i])
+            return
+        setze(pfad, b)
+
+    try:
+        gehe(alt, neu, [])
+    except _PatchZuGross:
+        return None
+    return setzen, weg
+
+
+def patch_anwenden(basis: dict[str, Any], setzen: list[Any], weg: list[Any], *, kopieren: bool = True
+                   ) -> dict[str, Any]:
+    """WIE_ZUVOR aufbauen: Kopie der Basis, ``setzen`` der Reihe nach, dann ``weg``. Ungültige Pfade: ValueError."""
+    out = copy.deepcopy(basis) if kopieren else basis
+
+    def eltern(pfad: list[Any]) -> tuple[Any, Any]:
+        if not isinstance(pfad, list) or not pfad:
+            raise ValueError(f"WIE_ZUVOR: Pfad {pfad!r} ungültig")
+        ziel: Any = out
+        for p in pfad[:-1]:
+            if isinstance(ziel, dict) and isinstance(p, str) and p in ziel:
+                ziel = ziel[p]
+            elif isinstance(ziel, list) and isinstance(p, int) and not isinstance(p, bool) and 0 <= p < len(ziel):
+                ziel = ziel[p]
+            else:
+                raise ValueError(f"WIE_ZUVOR: Pfad {pfad!r} passt nicht zur Basis")
+        return ziel, pfad[-1]
+
+    for paar in setzen:
+        if not isinstance(paar, list) or len(paar) != 2:
+            raise ValueError(f"WIE_ZUVOR: setzen-Eintrag {paar!r} ungültig")
+        ziel, letzter = eltern(paar[0])
+        if isinstance(ziel, dict) and isinstance(letzter, str):
+            ziel[letzter] = copy.deepcopy(paar[1])
+        elif isinstance(ziel, list) and isinstance(letzter, int) and not isinstance(letzter, bool) \
+                and 0 <= letzter < len(ziel):
+            ziel[letzter] = copy.deepcopy(paar[1])
+        else:
+            raise ValueError(f"WIE_ZUVOR: Pfad {paar[0]!r} passt nicht zur Basis")
+    for pfad in weg:
+        ziel, letzter = eltern(pfad)
+        if not isinstance(ziel, dict) or not isinstance(letzter, str) or letzter not in ziel:
+            raise ValueError(f"WIE_ZUVOR: weg {pfad!r} passt nicht zur Basis")
+        del ziel[letzter]
+    return out
+
+
+def wie_zuvor(art: str, basis: int, setzen: list[Any], weg: list[Any]) -> dict[str, Any]:
+    """Kopf von WIE_ZUVOR (ohne seq; keine Nutzlast)."""
+    return {"type": "WIE_ZUVOR", "art": art, "basis": int(basis), "setzen": setzen, "weg": weg}
+
+
+def wie_zuvor_aufbauen(wz: dict[str, Any], basis_kopf: dict[str, Any]) -> dict[str, Any]:
+    """Rahmen aus WIE_ZUVOR und dem Kopf der Basis (ohne seq): was die App daraus macht, mit seq des WIE_ZUVOR."""
+    out = patch_anwenden({k: v for k, v in basis_kopf.items() if k != "seq"}, list(wz.get("setzen") or []),
+                         list(wz.get("weg") or []))
+    out["type"] = wz["art"]
+    if "seq" in wz:
+        out["seq"] = wz["seq"]
+    return out
+
+
+def netz_bytes(kopf: dict[str, Any]) -> int:
+    """Byte eines Netzes in der Nutzlast von pack_netze (0 bei ``aus_szene``)."""
+    if kopf.get("aus_szene"):
+        return 0
+    return 4 * (int(kopf["vert"]) * 6 + int(kopf["tri"]) * 3 + int(kopf["epts"]) * 3 + int(kopf["edge"]) + 1)
+
+
+def _ist_inhalt(x: Any) -> bool:
+    return isinstance(x, str) and len(x) == 16 and set(x) <= _HEX
+
+
+def _zahl(x: Any) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _punkt(x: Any) -> bool:
+    return isinstance(x, list) and len(x) == 3 and all(_zahl(v) for v in x)
+
+
+def _namen(x: Any) -> bool:
+    return isinstance(x, list) and all(isinstance(n, str) for n in x)
+
+
+def _check_pfad(pfad: Any) -> bool:
+    return isinstance(pfad, list) and len(pfad) > 0 and all(
+        isinstance(p, str) or (isinstance(p, int) and not isinstance(p, bool) and p >= 0) for p in pfad)
+
+
+def check_spur_schritt(s: Any) -> list[str]:
+    """Probleme eines Schritts der Agentenspur (leer = gut)."""
+    if not isinstance(s, dict):
+        return ["Schritt ist kein Objekt"]
+    out = []
+    if not isinstance(s.get("id"), str) or not s["id"]:
+        out.append("Schritt ohne id")
+    if not isinstance(s.get("werkzeug"), str):
+        out.append(f"Schritt {s.get('id')}: werkzeug fehlt")
+    if s.get("stand") not in SPUR_STAENDE:
+        out.append(f"Schritt {s.get('id')}: stand {s.get('stand')!r} unbekannt")
+    if not _zahl(s.get("beginn")):
+        out.append(f"Schritt {s.get('id')}: beginn fehlt")
+    for k in ("ende", "dauer_ms"):
+        if s.get(k) is not None and not _zahl(s[k]):
+            out.append(f"Schritt {s.get('id')}: {k} keine Zahl")
+    if s.get("stand") != "laeuft" and (s.get("ende") is None or s.get("dauer_ms") is None):
+        out.append(f"Schritt {s.get('id')}: fertig, aber ohne ende/dauer_ms")
+    for k in ("text", "absicht", "sitzung", "fehler"):
+        if s.get(k) is not None and not isinstance(s[k], str):
+            out.append(f"Schritt {s.get('id')}: {k} kein Text")
+    for k in ("absicht", "fehler"):
+        if isinstance(s.get(k), str) and len(s[k]) > SPUR_TEXT_MAX:
+            out.append(f"Schritt {s.get('id')}: {k} länger als {SPUR_TEXT_MAX} Zeichen")
+    if s.get("stand") == "fehler" and not s.get("fehler"):
+        out.append(f"Schritt {s.get('id')}: stand fehler ohne Meldung")
+    if s.get("phasen") is not None and not isinstance(s["phasen"], dict):
+        out.append(f"Schritt {s.get('id')}: phasen kein Objekt")
+    return out
+
+
+def check_live_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
+    """Probleme einer Nachricht oder eines neuen Felds aus V2-5 (leer = gut). Andere Nachrichten: leer."""
+    art = header.get("type")
+    out: list[str] = []
+    if art in ("HELLO", "HELLO_APP"):
+        f = header.get("faehigkeiten")
+        if f is not None and not _namen(f):
+            out.append(f"{art}: faehigkeiten keine Liste von Texten")
+    elif art == "PART_SAME":
+        if not isinstance(header.get("run"), int) or not isinstance(header.get("name"), str):
+            out.append("PART_SAME: run oder name fehlt")
+        if not _ist_inhalt(header.get("inhalt")):
+            out.append("PART_SAME: inhalt kein Schlüssel aus 16 Hex-Zeichen")
+        if payload:
+            out.append("PART_SAME mit Nutzlast")
+    elif art == "PART_UPSERT":
+        if "inhalt" in header and not _ist_inhalt(header["inhalt"]):
+            out.append("PART_UPSERT: inhalt kein Schlüssel aus 16 Hex-Zeichen")
+    elif art == "RUN_START":
+        if "delta" in header and not isinstance(header["delta"], bool):
+            out.append("RUN_START: delta kein Wahrheitswert")
+    elif art == "RUN_END":
+        if "teile" in header and not _namen(header["teile"]):
+            out.append("RUN_END: teile keine Liste von Namen")
+    elif art == "WIE_ZUVOR":
+        if header.get("art") not in WIE_ZUVOR_ARTEN:
+            out.append(f"WIE_ZUVOR: art {header.get('art')!r} nicht erlaubt")
+        if not isinstance(header.get("basis"), int):
+            out.append("WIE_ZUVOR: basis fehlt")
+        setzen, weg = header.get("setzen"), header.get("weg")
+        if not isinstance(setzen, list) or not all(isinstance(p, list) and len(p) == 2 and _check_pfad(p[0])
+                                                    for p in setzen):
+            out.append("WIE_ZUVOR: setzen ungültig")
+        if not isinstance(weg, list) or not all(_check_pfad(p) for p in weg):
+            out.append("WIE_ZUVOR: weg ungültig")
+        if payload:
+            out.append("WIE_ZUVOR mit Nutzlast")
+    elif art == "NOCHMAL":
+        if header.get("art") not in WIE_ZUVOR_ARTEN:
+            out.append(f"NOCHMAL: art {header.get('art')!r} nicht erlaubt")
+    elif art == "PARTS_REQ":
+        if header.get("teile") is not None and not _namen(header.get("teile")):
+            out.append("PARTS_REQ: teile weder null noch Liste von Namen")
+    elif art == "IN_ARBEIT":
+        if not isinstance(header.get("run"), int) or not isinstance(header.get("teil"), str):
+            out.append("IN_ARBEIT: run oder teil fehlt")
+        if header.get("nach") is not None and not isinstance(header["nach"], str):
+            out.append("IN_ARBEIT: nach weder Text noch null")
+        if not _zahl(header.get("ms")):
+            out.append("IN_ARBEIT: ms fehlt")
+    elif art == "AGENT_SPUR":
+        schritte = header.get("schritte")
+        if not isinstance(schritte, list) or len(schritte) > SPUR_LAENGE:
+            out.append(f"AGENT_SPUR: schritte keine Liste mit höchstens {SPUR_LAENGE} Einträgen")
+        else:
+            for s in schritte:
+                out += check_spur_schritt(s)
+    elif art == "AGENT_SCHRITT":
+        out += check_spur_schritt(header.get("schritt"))
+    elif art == "LAGE_REQ":
+        if not isinstance(header.get("id"), str):
+            out.append("LAGE_REQ: id fehlt")
+    elif art == "LAGE":
+        if not isinstance(header.get("reply_to"), str):
+            out.append("LAGE: reply_to fehlt")
+        if not _zahl(header.get("zeit")):
+            out.append("LAGE: zeit fehlt")
+        k = header.get("kamera")
+        if k is not None:
+            if not isinstance(k, dict) or set(k) != set(LAGE_KAMERA_FELDER):
+                out.append(f"LAGE: kamera braucht genau {', '.join(LAGE_KAMERA_FELDER)}")
+            else:
+                for f in ("position", "ziel", "richtung", "oben"):
+                    if not _punkt(k[f]):
+                        out.append(f"LAGE: kamera.{f} kein Punkt")
+                if k["projektion"] not in ("perspective", "orthographic"):
+                    out.append("LAGE: kamera.projektion unbekannt")
+        for f in ("sichtbar", "verborgen"):
+            if not _namen(header.get(f)):
+                out.append(f"LAGE: {f} keine Liste von Namen")
+        if header.get("isoliert") is not None and not _namen(header["isoliert"]):
+            out.append("LAGE: isoliert weder null noch Liste")
+        aw = header.get("auswahl")
+        if not isinstance(aw, dict) or not _namen(aw.get("refs")):
+            out.append("LAGE: auswahl braucht refs")
+        m = header.get("maus")
+        if m is not None and (not isinstance(m, dict) or not isinstance(m.get("teil"), str)
+                              or (m.get("punkt") is not None and not _punkt(m["punkt"]))):
+            out.append("LAGE: maus braucht teil und punkt (oder null)")
+    elif art == "VIEW_CMD" and header.get("cmd") in ("annotate", "highlight"):
+        a = header.get("args") or {}
+        if "dauer_s" in a and (not _zahl(a["dauer_s"]) or a["dauer_s"] <= 0):
+            out.append("VIEW_CMD: dauer_s muss eine Zahl über 0 sein")
+        if header.get("cmd") == "annotate" and "art" in a and a["art"] not in ANNOTATE_ARTEN:
+            out.append(f"VIEW_CMD annotate: art {a['art']!r} unbekannt")
+        if header.get("cmd") == "highlight" and "id" in a and not isinstance(a["id"], str):
+            out.append("VIEW_CMD highlight: id kein Text")
+    elif art == "VERSION_BILD_REQ":
+        koepfe = header.get("teile") or []
+        for k in koepfe:
+            if k.get("aus_szene") and (not _ist_inhalt(k.get("inhalt")) or not isinstance(k.get("teil"), str)
+                                       or any(f in k for f in ("vert", "tri", "epts", "edge"))):
+                out.append(f"VERSION_BILD_REQ: Kopf {k.get('teil')!r} aus der Szene braucht teil und inhalt, "
+                           "keine Zählwerte")
+        try:
+            erwartet = sum(netz_bytes(k) for k in koepfe)
+        except (KeyError, TypeError, ValueError):
+            out.append("VERSION_BILD_REQ: Kopf ohne Zählwerte")
+        else:
+            if erwartet != len(payload):
+                out.append(f"VERSION_BILD_REQ: Nutzlast {len(payload)} Byte, erwartet {erwartet}")
+    return out
+
+
+def live_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
+    """Beispiele für die Testdateien (Name, Kopf mit seq, Nutzlast, Richtung ``kernel`` | ``app``)."""
+    tri_geo = PartGeometry(
+        positions=np.array([[0, 0, 0], [40, 0, 0], [0, 20, 0]], np.float32),
+        normals=np.array([[0, 0, 1]] * 3, np.float32),
+        triangles=np.array([[0, 1, 2]], np.uint32), tri_face=np.array([0], np.int32),
+        edge_points=np.array([[0, 0, 0], [40, 0, 0]], np.float32), edge_offsets=np.array([0, 2], np.uint32),
+        vertices=np.array([[0, 0, 0], [40, 0, 0], [0, 20, 0]], np.float32),
+        faces=[{"t": "plane", "a": 400.0, "n": [0, 0, 1], "c": [13.3333, 6.6667, 0]}],
+        edges=[{"t": "line", "l": 40.0}])
+    kopf, nutz = pack_part(run=8, name="Halter/Lasche", geometry=tri_geo, color=(0.72, 0.75, 0.79, 1.0),
+                           bbox={"min": [0, 0, 0], "max": [40, 20, 0]},
+                           props={"volume": 0.0, "area": 400.0, "center": [13.3333, 6.6667, 0.0]},
+                           material="aluminium", seq=12)
+    kopf["inhalt"] = inhalt_schluessel("0f3a5c1e9b7d2a4c6e8f0a1b3c5d7e9f1a2b3c4d:0.1:0.2", kopf)
+    faehig = list(KERNEL_FAEHIGKEITEN)
+    schritt_laeuft = {"id": "s-12", "werkzeug": "run", "text": "führt model.py aus", "absicht": "Laufrolle auf 90 mm",
+                      "sitzung": "3f2a9c1b77", "beginn": 1793452991.123, "ende": None, "dauer_ms": None,
+                      "stand": "laeuft", "fehler": None}
+    schritt_ok = {**schritt_laeuft, "ende": 1793452993.456, "dauer_ms": 2333.0, "stand": "ok",
+                  "phasen": {"run": 8, "erstes_teil": 210.0, "letztes_teil": 1400.0, "run_end": 1450.0,
+                             "pruefung": 2300.0, "zurueck": 2310.0}}
+    schritt_fehler = {"id": "s-13", "werkzeug": "measure", "text": "misst Lasche ↔ Grundplatte", "absicht": None,
+                      "sitzung": None, "beginn": 1793452995.0, "ende": 1793452995.08, "dauer_ms": 80.0,
+                      "stand": "fehler", "fehler": "Teil 'Halter/Lasch' gibt es nicht. Meinten Sie 'Halter/Lasche'?"}
+    befund = {"id": "du1", "art": "durchdringung", "teile": ["Halter/Lasche", "Halter/Grundplatte"],
+              "schwere": "fehler", "wert": {"volumen": 200.0, "tiefe": 2.0, "achse": [0, 0, 1]}, "ort": [20, 5, 0],
+              "text": "Halter/Lasche und Halter/Grundplatte durchdringen sich: 200 mm³, Tiefe etwa 2 mm.",
+              "loesung": "Halter/Lasche um 2,2 mm in +Z verschieben", "geometrie": None}
+    check_alt, _ = pack_check(run=7, state="done", seq=40, ergebnis={
+        "dauer_ms": 954.8, "zusammenfassung": "1 Durchdringung", "zaehler": {"fehler": 1, "warnung": 0, "hinweis": 0},
+        "befunde": [befund], "stand": {"boden_z": 0.0, "boden_erklaert": True, "gruppen": []}})
+    check_neu, _ = pack_check(run=8, state="done", seq=41, ergebnis={
+        "dauer_ms": 911.5, "zusammenfassung": "1 Durchdringung", "zaehler": {"fehler": 1, "warnung": 0, "hinweis": 0},
+        "befunde": [befund], "stand": {"boden_z": 0.0, "boden_erklaert": True, "gruppen": []}})
+    gepatcht = strukturpatch({k: v for k, v in check_alt.items() if k != "seq"},
+                             {k: v for k, v in check_neu.items() if k != "seq"})
+    assert gepatcht is not None
+    wz = {**wie_zuvor("CHECK", 40, *gepatcht), "seq": 41}
+    netz_eintrag = ({"teil": "Halter/Grundplatte", "farbe": [0.5, 0.5, 0.5, 1.0]},
+                    {"positions": tri_geo.positions, "normals": tri_geo.normals, "triangles": tri_geo.triangles,
+                     "edge_points": tri_geo.edge_points, "edge_offsets": tri_geo.edge_offsets})
+    koepfe, netze = pack_netze([netz_eintrag])
+    bild_koepfe = [{"teil": "Halter/Lasche", "farbe": [0.72, 0.75, 0.79, 1.0], "inhalt": kopf["inhalt"],
+                    "aus_szene": True}] + koepfe
+    lage = {"type": "LAGE", "seq": 9, "reply_to": "k-41", "zeit": 1793452991.2, "ms": 2.1,
+            "kamera": {"position": [612.0, -880.0, 540.0], "ziel": [120.0, 0.0, 60.0],
+                       "richtung": [-0.3854, 0.6894, -0.6131], "oben": [-0.2994, 0.5355, 0.7895], "abstand": 1276.3,
+                       "projektion": "perspective", "fov": 30.0, "ortho_hoehe": None, "ansicht": None,
+                       "durch": None},
+            "viewport": {"breite": 1280, "hoehe": 800},
+            "sichtbar": ["Halter/Grundplatte", "Halter/Lasche"], "verborgen": ["Deckel"], "isoliert": None,
+            "auswahl": {"run": 8, "refs": ["Halter/Lasche#f0"]},
+            "maus": {"teil": "Halter/Lasche", "ref": "Halter/Lasche#f0", "punkt": [12.0, 4.0, 0.0],
+                     "normale": [0.0, 0.0, 1.0], "bild": [640, 380]},
+            "darstellung": "shaded_edges", "schnitt": None, "explosion": 0.0,
+            "animation": {"name": "Fahrt", "zeit": 1.25, "spielt": False}}
+    lage_parallel = {"type": "LAGE", "seq": 10, "reply_to": "k-42", "zeit": 1793452992.0, "ms": 1.4,
+                     "kamera": {"position": [20.0, 10.0, 1000.0], "ziel": [20.0, 10.0, 0.0],
+                                "richtung": [0.0, 0.0, -1.0], "oben": [0.0, 1.0, 0.0], "abstand": 1000.0,
+                                "projektion": "orthographic", "fov": None, "ortho_hoehe": 240.0, "ansicht": "top",
+                                "durch": None},
+                     "viewport": {"breite": 900, "hoehe": 600}, "sichtbar": ["Halter/Lasche"], "verborgen": [],
+                     "isoliert": ["Halter/Lasche"], "auswahl": {"run": None, "refs": []}, "maus": None,
+                     "darstellung": "wireframe", "schnitt": {"axis": "z", "offset": 5.0}, "explosion": 0.25,
+                     "animation": None}
+    return [
+        ("live_hello", {"type": "HELLO", "seq": 1, "protocol": PROTOCOL_VERSION, "kernel_version": "0.1.0",
+                        "build123d": "0.13.0", "mcp_port": 47823, "faehigkeiten": faehig}, b"", "kernel"),
+        ("live_hello_app", {"type": "HELLO_APP", "seq": 1, "app_version": "2.0", "bundle_id": "de.upvis.kevcad",
+                            "faehigkeiten": faehig}, b"", "app"),
+        ("live_run_start", {"type": "RUN_START", "seq": 11, "run": 8, "file_hash": "5a0c1f9e2b7d", "params":
+                            {"laufrolle_l": 90.0}, "slow_ms": 0, "delta": True}, b"", "kernel"),
+        ("live_part_upsert", kopf, nutz, "kernel"),
+        ("live_part_same", {**part_same(8, "Halter/Grundplatte", "9c1d2e3f4a5b6c7d"), "seq": 13}, b"", "kernel"),
+        ("live_in_arbeit", {"type": "IN_ARBEIT", "seq": 14, "run": 8, "teil": "Halter/Lasche",
+                            "nach": "Halter/Grundplatte", "ms": 640.5}, b"", "kernel"),
+        ("live_run_end", {"type": "RUN_END", "seq": 15, "run": 8, "duration_ms": 2370, "parts": 2, "triangles": 13,
+                          "warnings": [], "params": {"laufrolle_l": 90.0}, "inventar_regel": True,
+                          "inventar_verstoesse": [], "teile": ["Halter/Grundplatte", "Halter/Lasche"]}, b"", "kernel"),
+        ("live_check_basis", check_alt, b"", "kernel"),
+        ("live_wie_zuvor", wz, b"", "kernel"),
+        ("live_nochmal", {"type": "NOCHMAL", "seq": 4, "art": "CHECK"}, b"", "app"),
+        ("live_parts_req", {"type": "PARTS_REQ", "seq": 5, "teile": ["Halter/Lasche"]}, b"", "app"),
+        ("live_version_bild_req", {"type": "VERSION_BILD_REQ", "seq": 42, "id": "k-17", "nr": 12, "width": 480,
+                                   "height": 320, "view": "iso", "teile": bild_koepfe}, netze, "kernel"),
+        ("live_agent_spur", {"type": "AGENT_SPUR", "seq": 3, "schritte": [schritt_ok, schritt_fehler]}, b"",
+         "kernel"),
+        ("live_agent_schritt", {"type": "AGENT_SCHRITT", "seq": 20, "schritt": schritt_laeuft}, b"", "kernel"),
+        ("live_agent_schritt_ende", {"type": "AGENT_SCHRITT", "seq": 21, "schritt": schritt_ok}, b"", "kernel"),
+        ("live_agent_schritt_fehler", {"type": "AGENT_SCHRITT", "seq": 22, "schritt": schritt_fehler}, b"",
+         "kernel"),
+        ("live_lage_req", {"type": "LAGE_REQ", "seq": 23, "id": "k-41"}, b"", "kernel"),
+        ("live_lage", lage, b"", "app"),
+        ("live_lage_parallel", lage_parallel, b"", "app"),
+        ("live_view_annotate_param", {"type": "VIEW_CMD", "seq": 24, "id": "k-43", "cmd": "annotate",
+                                      "args": {"kind": "label", "points": [[20.0, 10.0, 25.0]],
+                                               "text": "laufrolle_l 80 → 90 mm", "id": "p-3", "art": "param",
+                                               "dauer_s": 4.0}}, b"", "kernel"),
+        ("live_view_highlight_dauer", {"type": "VIEW_CMD", "seq": 25, "id": "k-44", "cmd": "highlight",
+                                       "args": {"refs": ["Halter/Lasche"], "color": None, "label": None,
+                                                "clear": False, "id": "p-3", "dauer_s": 4.0}}, b"", "kernel"),
+    ]
