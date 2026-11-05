@@ -194,7 +194,7 @@ public final class ViewerStore: ObservableObject {
 /// jedem Druck auf eine Sondertaste ändert und sonst andere Ansichten neu zeichnen ließe.
 @MainActor
 public final class ViewerEingabe: ObservableObject {
-    public enum Navigation: Equatable, Sendable { case drehen, verschieben, zoomen, rahmen, griff }
+    public enum Navigation: Equatable, Sendable { case drehen, verschieben, zoomen, rahmen, griff, strich }
 
     @Published public internal(set) var mods: TastenMods = []
     @Published public internal(set) var navigation: Navigation?

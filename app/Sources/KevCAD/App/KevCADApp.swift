@@ -14,6 +14,7 @@ struct KevCADApp: App {
 
     init() {
         Startzeiten.marke("App.init")
+        if WindowHook.versteckt { NSApplication.shared.setActivationPolicy(.accessory) }  // kein Symbol im Dock
         // Nur eine Instanz je Variante: läuft schon eine (Tools-Stapel, Start durch die Claude-Brücke), diese nach vorn
         // holen und selbst gleich wieder beenden. Zwei Instanzen würden sich Socket und MCP-Port streitig machen.
         let me = NSRunningApplication.current

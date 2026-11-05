@@ -27,6 +27,8 @@ public enum ViewerStil {
     public static let massVorschau = SIMD4<Float>(0.95, 0.55, 0.05, 1)
     /// Fangpunkt (Ecke, Kantenmitte, Kreismitte) unter der Maus.
     public static let fangpunkt = SIMD4<Float>(1.0, 0.78, 0.1, 1)
+    /// Kevins Striche beim Sprechen (Lichtblau wie sein Text, V2-6).
+    public static let strich = SIMD4<Float>(0.56, 0.78, 1.0, 1)
 
     // MARK: Schrift
 

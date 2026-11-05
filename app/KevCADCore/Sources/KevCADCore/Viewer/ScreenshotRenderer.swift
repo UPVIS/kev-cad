@@ -20,17 +20,28 @@ public final class ScreenshotRenderer {
         public var mmPerPixel: Double?
     }
 
-    public func render(
+    /// Nur das Bild, ohne Überlagerung und ohne PNG (V2-6: Die Striche kommen später darauf, im Hintergrund).
+    public func renderBild(
         bodies: [ViewportBody], camera: CameraState, width: Int, height: Int, displayMode: DisplayMode,
-        lighting: LightingConfiguration = .threePoint, overlay: [OverlayPrimitive] = []
-    ) -> Result? {
+        lighting: LightingConfiguration = .threePoint
+    ) -> CGImage? {
         let w = max(16, min(width, 8192)), h = max(16, min(height, 8192))
         if renderer == nil { renderer = OffscreenRenderer() }
         guard let renderer else { return nil }
         let options = OffscreenRenderOptions(
             width: w, height: h, cameraState: camera, displayMode: displayMode, lightingConfiguration: lighting,
             backgroundColor: backgroundColor, showGrid: false, showAxes: false, msaaSampleCount: 4)
-        guard let base = renderer.render(bodies: bodies, options: options) else { return nil }
+        return renderer.render(bodies: bodies, options: options)
+    }
+
+    public func render(
+        bodies: [ViewportBody], camera: CameraState, width: Int, height: Int, displayMode: DisplayMode,
+        lighting: LightingConfiguration = .threePoint, overlay: [OverlayPrimitive] = []
+    ) -> Result? {
+        let w = max(16, min(width, 8192)), h = max(16, min(height, 8192))
+        guard let base = renderBild(bodies: bodies, camera: camera, width: w, height: h, displayMode: displayMode,
+                                    lighting: lighting)
+        else { return nil }
         let image = overlay.isEmpty ? base : (Self.composite(base, overlay: overlay, camera: camera) ?? base)
         guard let png = Self.pngData(image) else { return nil }
         let mm = camera.isOrthographic ? Double(camera.orthographicScale) / Double(h) : nil
@@ -38,7 +49,7 @@ public final class ScreenshotRenderer {
     }
 
     /// Überlagerung in das Bild zeichnen.
-    static func composite(_ image: CGImage, overlay: [OverlayPrimitive], camera: CameraState) -> CGImage? {
+    nonisolated static func composite(_ image: CGImage, overlay: [OverlayPrimitive], camera: CameraState) -> CGImage? {
         let w = image.width, h = image.height
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
             let ctx = CGContext(
@@ -55,7 +66,7 @@ public final class ScreenshotRenderer {
         return ctx.makeImage()
     }
 
-    public static func pngData(_ image: CGImage) -> Data? {
+    nonisolated public static func pngData(_ image: CGImage) -> Data? {
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil)
         else { return nil }

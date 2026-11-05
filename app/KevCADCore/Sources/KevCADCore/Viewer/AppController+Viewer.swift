@@ -14,7 +14,11 @@ extension AppController: ViewerActions {
             self.ausfuehren(befehl)
             return true
         }
-        viewport.onHover = { [weak self] pick, welt, bildpunkt in self?.hoverGeaendert(pick, welt, bildpunkt) }
+        viewport.onHover = { [weak self] pick, welt, bildpunkt in
+            self?.hoverGeaendert(pick, welt, bildpunkt)
+            self?.sprache.maus(pick, welt, bildpunkt)  // V2-6: Worauf zeigt Kevin beim Sprechen?
+        }
+        viewport.onStrich = { [weak self] e in self?.sprache.strich(e) }
         darstellungAnwenden()
     }
 
@@ -63,18 +67,24 @@ extension AppController: ViewerActions {
         case .schnitt: schnittUmschalten()
         case .explosion: setExplode(model.explodeFactor > 0 ? 0 : 1)
         case .messen: setMeasureMode(!model.measureMode)
-        case .messungAbschliessen: messungAbschliessen()
+        case .messungAbschliessen:
+            if sprache.offen { sprache.fertig() } else { messungAbschliessen() }  // ↩ gehört der offenen Sitzung
         case .bildschirmfoto: bildschirmfoto(viewer.fotoGroesse)
         case .video: videoDrehung()
         case .navigationAufnehmen: navigationAufnehmen()
+        case .sprechen: oberflaeche(.sprechen(!model.oberflaeche.spricht))
+        case .sprechenFertig: sprache.fertig()
+        case .sprechenVerwerfen: sprache.verwerfen()
         case .tastenuebersicht: viewer.tastenuebersicht.toggle()
         case .hinweisleiste: viewer.hinweisleiste.toggle()
         }
     }
 
-    /// Esc: Menü, Übersicht, Werkzeug, Messen, sonst Auswahl.
+    /// Esc: Sitzung, Menü, Übersicht, Werkzeug, Messen, sonst Auswahl.
     func abbrechen() {
-        if viewer.menue != nil {
+        if sprache.offen {
+            sprache.verwerfen()
+        } else if viewer.menue != nil {
             viewer.menue = nil
         } else if viewer.tastenuebersicht {
             viewer.tastenuebersicht = false

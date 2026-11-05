@@ -26,7 +26,7 @@ extension AppController {
 
     /// Nach HELLO: Projekt des Selbsttests öffnen.
     func viewerSelbsttestProjektOeffnen() {
-        guard Self.viewerSelbsttestGewuenscht, model.project == nil,
+        guard Self.viewerSelbsttestGewuenscht || Self.sprachSelbsttestGewuenscht, model.project == nil,
             let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
         else { return }
         openProject(at: URL(fileURLWithPath: p, isDirectory: true))
@@ -46,7 +46,7 @@ extension AppController {
 
     /// Warten, bis der Kernel `ruhe` Sekunden nichts mehr geschickt hat (Prüfung und Statik kommen nach dem Lauf),
     /// höchstens `bis` Sekunden; gibt die gewartete Zeit zurück.
-    private func kernelRuhe(_ ruhe: Double = 3, bis: Double = 120) async -> Double {
+    func kernelRuhe(_ ruhe: Double = 3, bis: Double = 120) async -> Double {
         let t0 = CACurrentMediaTime()
         while CACurrentMediaTime() - letzteKernelNachricht < ruhe && CACurrentMediaTime() - t0 < bis {
             await pause(0.25)
@@ -310,7 +310,7 @@ extension AppController {
     }
 
     /// Eine Umdrehung in `sekunden` im Bildschirmtakt; Bildzeiten aus dem Renderer.
-    private func drehungMessen(sekunden: Double) async -> String? {
+    func drehungMessen(sekunden: Double) async -> String? {
         guard let renderer = viewport.renderer, let view = viewport.mtkView else { return nil }
         let sammler = BildzeitSammler()
         renderer.onFrameTiming = { sammler.zeiten.append($0) }

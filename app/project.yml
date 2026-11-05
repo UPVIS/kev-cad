@@ -57,6 +57,8 @@ targets:
         LSApplicationCategoryType: public.app-category.graphics-design
         LSMinimumSystemVersion: "15.0"
         NSHighResolutionCapable: true
+        NSMicrophoneUsageDescription: Nach einem Druck auf V hört Kev CAD zu und macht aus deinen Worten Text für den Agenten.
+        NSSpeechRecognitionUsageDescription: Die Spracherkennung läuft auf diesem Mac, dein Ton verlässt den Rechner nicht.
         NSHumanReadableCopyright: "© 2026 Kevin Schwed"
         KevCADRepo: $(KEVCAD_REPO)
         KevCADPort: $(KEVCAD_PORT)
