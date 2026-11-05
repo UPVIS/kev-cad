@@ -825,7 +825,6 @@ struct AxisGizmo: View {
     @ObservedObject var viewport: ViewportController
     let coordinator: ViewportCoordinator
     @State private var hovering = false
-    @State private var lastDrag: CGSize = .zero
 
     private let size: CGFloat = 92
     private var radius: CGFloat { size / 2 - 13 }
@@ -895,19 +894,11 @@ struct AxisGizmo: View {
             .frame(width: size, height: size)
             .contentShape(Circle())
             .onHover { hovering = $0 }
+            // V2: kein Ziehgriff mehr (gedreht wird mit Maus, Trackpad und Tasten); ein Klick auf eine Achse wählt die
+            // Ansicht von dieser Seite, wie die Ziffern 1, 3, 7
             .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in
-                        let d = CGSize(width: g.translation.width - lastDrag.width,
-                                       height: g.translation.height - lastDrag.height)
-                        lastDrag = g.translation
-                        if hypot(g.translation.width, g.translation.height) > 3 {
-                            coordinator.navOrbit(dx: Float(d.width), dy: Float(-d.height))
-                        }
-                    }
+                SpatialTapGesture()
                     .onEnded { g in
-                        defer { lastDrag = .zero }
-                        guard hypot(g.translation.width, g.translation.height) <= 3 else { return }
                         // Klick: nächste Achse (vorderste zuerst), wie Blender
                         let hit = balls().reversed().first { b in
                             hypot(b.point.x - g.location.x, b.point.y - g.location.y) <= 11
@@ -915,14 +906,8 @@ struct AxisGizmo: View {
                         if let hit { coordinator.navAxisView(hit.view) }
                     }
             )
-            .help("Ziehen: drehen · Achse anklicken: Ansicht von dieser Seite")
+            .help("Achse anklicken: Ansicht von dieser Seite (wie 1, 3, 7)")
 
-            GizmoButton(symbol: "plus.magnifyingglass", help: "Ziehen: zoomen") { d in
-                coordinator.navZoom(factor: exp(Float(d.height) * BlenderNav.zoomPerPoint))
-            }
-            GizmoButton(symbol: "hand.raised", help: "Ziehen: schwenken") { d in
-                coordinator.navPan(dx: Float(d.width), dy: Float(-d.height))
-            }
             Button {
                 coordinator.navToggleProjection()
             } label: {
@@ -936,31 +921,5 @@ struct AxisGizmo: View {
             .help(viewport.cameraState.isOrthographic
                 ? "Parallel (5: Perspektive)" : "Perspektive (5: Parallel)")
         }
-    }
-}
-
-/// Runder Knopf unter dem Gizmo, der beim Ziehen eine Bewegung meldet (Zoomen, Schwenken).
-private struct GizmoButton: View {
-    let symbol: String
-    let help: String
-    let onDrag: (CGSize) -> Void
-    @State private var last: CGSize = .zero
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 13, weight: .medium))
-            .frame(width: 28, height: 28)
-            .background(Circle().fill(Color.black.opacity(0.28)))
-            .foregroundStyle(.white.opacity(0.9))
-            .contentShape(Circle())
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { g in
-                        onDrag(CGSize(width: g.translation.width - last.width, height: g.translation.height - last.height))
-                        last = g.translation
-                    }
-                    .onEnded { _ in last = .zero }
-            )
-            .help(help)
     }
 }
