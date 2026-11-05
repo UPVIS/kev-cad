@@ -244,8 +244,21 @@ struct FrameRenderTargets {
 
 // MARK: - ViewportRenderer
 
+/// Kev CAD: Zeiten eines Bildes im Viewport (Selbsttest Bildzeiten).
+public struct ViewportFrameTiming: Sendable {
+    /// Kodieren auf dem Hauptfaden (ms), vom Beginn von `encodeFrame` bis `commit`.
+    public var cpuMilliseconds: Double
+    /// Rechenzeit der GPU (ms), aus dem Befehlspuffer.
+    public var gpuMilliseconds: Double
+    /// Zeitpunkt, zu dem das Bild auf dem Bildschirm erschien (CACurrentMediaTime), 0 = unbekannt.
+    public var presentedTime: CFTimeInterval
+}
+
 @MainActor
 public final class ViewportRenderer: NSObject, MTKViewDelegate, Sendable {
+    /// Kev CAD: Zeiten jedes angezeigten Bildes (nur im Viewport, nicht offscreen); nil = nicht messen. Wird auf dem
+    /// Hauptfaden aufgerufen, sobald GPU-Zeit und Anzeigezeit feststehen.
+    public var onFrameTiming: (@MainActor @Sendable (ViewportFrameTiming) -> Void)?
 
 
     // MARK: - Properties
@@ -1165,6 +1178,7 @@ public final class ViewportRenderer: NSObject, MTKViewDelegate, Sendable {
     func encodeFrame(into targets: FrameRenderTargets) {
         guard let controller = controller else { return }
         let renderPassDescriptor = targets.mainPassDescriptor
+        let kevFrameStart = CACurrentMediaTime()  // Kev CAD: Bildzeiten
 
         let cameraState = controller.cameraState
         let drawableSize = targets.size
@@ -2602,6 +2616,13 @@ public final class ViewportRenderer: NSObject, MTKViewDelegate, Sendable {
         if let presentable = targets.presentable {
             commandBuffer.present(presentable)
         }
+        // Kev CAD: Bildzeiten (CPU bis hier, GPU und Anzeige aus den Rückmeldungen)
+        if let report = onFrameTiming, let drawable = targets.presentable {
+            let cpu = (CACurrentMediaTime() - kevFrameStart) * 1000
+            let box = KevFrameTimingBox(cpu: cpu)
+            drawable.addPresentedHandler { d in box.setPresented(d.presentedTime, report) }
+            commandBuffer.addCompletedHandler { cb in box.setGPU((cb.gpuEndTime - cb.gpuStartTime) * 1000, report) }
+        }
         commandBuffer.commit()
     }
 
@@ -3210,3 +3231,36 @@ public final class ViewportRenderer: NSObject, MTKViewDelegate, Sendable {
     }
 }
 
+
+/// Kev CAD: sammelt GPU- und Anzeigezeit eines Bildes (kommen auf verschiedenen Fäden) und meldet beide zusammen.
+final class KevFrameTimingBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private let cpu: Double
+    private var gpu: Double?
+    private var presented: CFTimeInterval?
+
+    init(cpu: Double) { self.cpu = cpu }
+
+    func setGPU(_ ms: Double, _ report: @escaping @MainActor @Sendable (ViewportFrameTiming) -> Void) {
+        lock.lock()
+        gpu = ms
+        let fertig = presented
+        lock.unlock()
+        if let fertig { send(ms, fertig, report) }
+    }
+
+    func setPresented(_ t: CFTimeInterval, _ report: @escaping @MainActor @Sendable (ViewportFrameTiming) -> Void) {
+        lock.lock()
+        presented = t
+        let fertig = gpu
+        lock.unlock()
+        if let fertig { send(fertig, t, report) }
+    }
+
+    private func send(
+        _ gpu: Double, _ t: CFTimeInterval, _ report: @escaping @MainActor @Sendable (ViewportFrameTiming) -> Void
+    ) {
+        let timing = ViewportFrameTiming(cpuMilliseconds: cpu, gpuMilliseconds: gpu, presentedTime: t)
+        DispatchQueue.main.async { MainActor.assumeIsolated { report(timing) } }
+    }
+}
