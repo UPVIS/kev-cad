@@ -39,7 +39,8 @@ struct FokusEbenen: View {
             // Text im Bild bleibt über hellen Teilen lesbar: weicher Verlauf statt Tafel
             if oberflaeche.spricht || !spur.eintraege.isEmpty {
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 170 + untenFrei)
+                    .frame(height: 170)
+                    .padding(.bottom, untenFrei - GA.l)  // endet über Hinweisleiste und Zeitleiste
                     .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
