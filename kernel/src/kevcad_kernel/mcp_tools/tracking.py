@@ -19,12 +19,22 @@ sie für die Dauer der Anfrage in die Kontextvariable ``claude_session`` (die We
 und weiß, welche Sitzungen noch verbunden sind. Je Sitzung zählen der letzte verändernde Werkzeugaufruf (alles außer
 nur lesenden Werkzeugen) und die Tätigkeit; aktiv ist genau die Sitzung mit dem letzten verändernden Aufruf der
 letzten 10 Minuten.
+
+V2-5 Agentenspur (PROTOCOL.md, „V2-5 Live“): ``AgentTracker`` macht aus jedem Werkzeugaufruf (``tools/call``) einen
+Schritt mit Werkzeug, Sitzung, Beginn, Ende, Dauer und Ergebnis (``ok``/``fehler``, aus der Antwort gelesen) und meldet
+ihn über ``trail`` (``KernelService.agent_schritt``). Das Argument ``absicht`` nimmt er vor der Prüfung der Argumente
+heraus (jedes Werkzeug nimmt es so an, keines sieht es) und legt es in den Schritt. Für die Dauer der Anfrage steht der
+Schritt in der Kontextvariablen ``live.aktueller_schritt``: ``ActivityTracker`` hängt so die deutsche Kurzbeschreibung
+an, ``run`` die Phasen des Laufs.
 """
 
 from __future__ import annotations
 
 import contextvars
+import itertools
+import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -33,6 +43,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import anyio
+
+from kevcad_kernel.live import SchrittBezug, aktueller_schritt
 
 log = logging.getLogger(__name__)
 
@@ -160,6 +172,9 @@ class ActivityTracker:
         self._next = 0
 
     def begin(self, text: str) -> int:
+        bezug = aktueller_schritt.get()  # V2-5: Beschreibung an den Schritt der Agentenspur
+        if bezug is not None:
+            bezug.ereignis(text=text)
         with self._lock:
             self._next += 1
             token = self._next
@@ -193,9 +208,11 @@ class AgentTracker:
 
     def __init__(self, notify: Callable[[bool], None], *, path: str = "/mcp", grace_s: float = 5.0,
                  idle_s: float = 30 * 60, stateless_s: float = 10 * 60, poll_s: float = 1.0,
-                 board: SessionBoard | None = None) -> None:
+                 board: SessionBoard | None = None, trail: Callable[[dict[str, Any]], None] | None = None) -> None:
         self._notify = notify
         self.board = board
+        self._trail = trail  # V2-5: Schritte der Agentenspur (KernelService.agent_schritt)
+        self._schritt_nr = itertools.count(1)
         self._claude_of: dict[str, str] = {}  # MCP-Sitzung → Claude-Sitzung
         self._claude_stateless: dict[str, float] = {}  # Claude-Sitzung ohne MCP-Sitzung → zuletzt gesehen
         self._path = path.rstrip("/") or "/"
@@ -262,6 +279,52 @@ class AgentTracker:
             except Exception:
                 log.exception("set_agent_connected fehlgeschlagen")
 
+    # Agentenspur -------------------------------------------------------------------------------------------------------
+
+    async def _werkzeugaufruf(self, scope: dict[str, Any], receive: Callable[..., Any], claude: str | None
+                              ) -> tuple[dict[str, Any], Callable[..., Any], _Schritt | None]:
+        """Liest den Körper einer POST-Anfrage; bei ``tools/call`` nimmt es ``absicht`` aus den Argumenten und beginnt
+        einen Schritt. Zurück kommen Scope und receive, die der Anwendung den (ggf. gekürzten) Körper liefern."""
+        stuecke: list[bytes] = []
+        danach: list[dict[str, Any]] = []
+        while True:
+            msg = await receive()
+            if msg.get("type") != "http.request":
+                danach.append(msg)  # etwa http.disconnect: danach weiterreichen
+                break
+            stuecke.append(msg.get("body") or b"")
+            if not msg.get("more_body", False):
+                break
+        koerper = b"".join(stuecke)
+        neu, aufruf = werkzeug_aus_anfrage(koerper)
+        if neu is not koerper:
+            kopf = [(k, v) for k, v in scope.get("headers") or [] if k.lower() != b"content-length"]
+            scope = {**scope, "headers": kopf + [(b"content-length", str(len(neu)).encode("latin-1"))]}
+        schritt = None
+        if aufruf is not None and self._trail is not None:
+            schritt = _Schritt(f"s-{next(self._schritt_nr)}", self._trail)
+            await self._melden(schritt.beginn(aufruf["name"], aufruf.get("absicht"), claude))
+        geliefert = False
+
+        async def lesen() -> dict[str, Any]:
+            nonlocal geliefert
+            if not geliefert:
+                geliefert = True
+                return {"type": "http.request", "body": neu, "more_body": False}
+            if danach:
+                return danach.pop(0)
+            return await receive()
+
+        return scope, lesen, schritt
+
+    async def _melden(self, ereignis: dict[str, Any] | None) -> None:
+        if ereignis is None or self._trail is None:
+            return
+        try:
+            await anyio.to_thread.run_sync(self._trail, ereignis)
+        except Exception:  # die Spur darf nie ein Werkzeug scheitern lassen
+            log.exception("agent_schritt fehlgeschlagen")
+
     async def watch(self) -> None:
         """Prüft regelmäßig, ob Sitzungen abgelaufen sind. Läuft neben dem HTTP-Server."""
         while True:
@@ -296,6 +359,8 @@ class AgentTracker:
         is_get = method == "GET"
         session = self._sessions.get(sid) if sid else None
         stateless = sid is None and method == "POST"
+        schritt: _Schritt | None = None
+        schritt_token: contextvars.Token[SchrittBezug | None] | None = None
 
         if session is not None:
             session.last_seen = time.monotonic()
@@ -314,12 +379,22 @@ class AgentTracker:
                 for key, value in message.get("headers") or []:
                     if key.lower() == SESSION_HEADER:
                         status["new_sid"] = value.decode("latin-1")
+            elif schritt is not None and message.get("type") == "http.response.body":
+                schritt.antwort(message.get("body") or b"")
             await send(message)
 
         try:
+            if method == "POST":  # V2-5: Werkzeugaufruf als Schritt der Agentenspur, absicht herausnehmen
+                scope, receive, schritt = await self._werkzeugaufruf(scope, receive, claude)
+            schritt_token = aktueller_schritt.set(schritt.bezug if schritt is not None else None)
             await app(scope, receive, watch_send)
         finally:
             claude_session.reset(token)
+            if schritt_token is not None:
+                aktueller_schritt.reset(schritt_token)
+            if schritt is not None:
+                with anyio.CancelScope(shield=True):
+                    await self._melden(schritt.ende(status.get("code")))
             now = time.monotonic()
             if session is not None:
                 session.last_seen = now
@@ -346,3 +421,103 @@ class AgentTracker:
                     log.info("MCP-Sitzung %s beendet", sid[:8])
             with anyio.CancelScope(shield=True):
                 await self._push()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# V2-5 Agentenspur: Anfrage und Antwort eines Werkzeugaufrufs lesen
+# ---------------------------------------------------------------------------------------------------------------------
+
+ANFRAGE_MAX = 8 << 20  # größere Anfragen werden nicht gelesen (kein Schritt, absicht bleibt)
+_KOPF_MAX = 1 << 16
+_TEXT = re.compile(rb'"text"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def werkzeug_aus_anfrage(koerper: bytes) -> tuple[bytes, dict[str, Any] | None]:
+    """(Körper ohne ``absicht``, {"name", "absicht"} des Werkzeugaufrufs oder None). Unverändert zurück (dasselbe
+    Objekt), wenn nichts herauszunehmen ist. Mehrere Aufrufe in einer Liste: nur ``absicht`` herausnehmen."""
+    if not koerper or len(koerper) > ANFRAGE_MAX or b'"tools/call"' not in koerper:
+        return koerper, None
+    try:
+        daten = json.loads(koerper)
+    except ValueError:
+        return koerper, None
+    aufrufe = daten if isinstance(daten, list) else [daten]
+    gefunden: dict[str, Any] | None = None
+    geaendert = False
+    for m in aufrufe:
+        if not isinstance(m, dict) or m.get("method") != "tools/call" or not isinstance(m.get("params"), dict):
+            continue
+        args = m["params"].get("arguments")
+        absicht = None
+        if isinstance(args, dict) and "absicht" in args:
+            absicht = args.pop("absicht")
+            geaendert = True
+        if isinstance(daten, dict):
+            gefunden = {"name": str(m["params"].get("name") or "?"),
+                        "absicht": absicht if isinstance(absicht, str) else None}
+    if geaendert:
+        koerper = json.dumps(daten, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return koerper, gefunden
+
+
+def ergebnis_aus_antwort(code: int | None, kopf: bytes, schwanz: bytes, gesamt: int) -> tuple[bool, str | None]:
+    """(ok, Fehlertext) aus der Antwort auf tools/call: JSON-RPC-Fehler, ``isError`` oder HTTP-Fehler. Ganz gelesen,
+    wenn die Antwort in ``kopf`` passt; sonst über den Schluss (``isError`` steht am Ende) und den ersten Text."""
+    if code is not None and code >= 400:
+        return False, f"HTTP {code}"
+    if code is None and not gesamt:
+        return False, "ohne Antwort beendet (abgebrochen)"
+    if gesamt and gesamt <= len(kopf):
+        try:
+            daten = json.loads(kopf)
+        except ValueError:
+            daten = None
+        if daten is not None:
+            for m in daten if isinstance(daten, list) else [daten]:
+                if not isinstance(m, dict):
+                    continue
+                if isinstance(m.get("error"), dict):
+                    return False, str(m["error"].get("message") or "Fehler")
+                erg = m.get("result")
+                if isinstance(erg, dict) and erg.get("isError"):
+                    texte = [c.get("text") for c in erg.get("content") or [] if isinstance(c, dict) and c.get("text")]
+                    return False, texte[0] if texte else "Fehler"
+            return True, None
+    ende = schwanz.replace(b" ", b"")
+    anfang = kopf[:400].replace(b" ", b"")
+    if b'"isError":true' in ende or b'"error":{' in anfang:
+        m = _TEXT.search(kopf) or re.search(rb'"message"\s*:\s*"((?:[^"\\]|\\.)*)"', kopf)
+        if m is not None:
+            try:
+                return False, json.loads(b'"' + m.group(1) + b'"')
+            except ValueError:
+                return False, m.group(1).decode("utf-8", "replace")
+        return False, "Fehler"
+    return True, None
+
+
+class _Schritt:
+    """Ein Werkzeugaufruf in der Agentenspur: Beginn, Antwort mitlesen, Ende."""
+
+    def __init__(self, sid: str, melden: Callable[[dict[str, Any]], None]) -> None:
+        self.id = sid
+        self.bezug = SchrittBezug(sid, melden)
+        self._t0 = time.monotonic()
+        self._kopf = bytearray()
+        self._schwanz = b""
+        self._gesamt = 0
+
+    def beginn(self, werkzeug: str, absicht: str | None, sitzung: str | None) -> dict[str, Any]:
+        return {"id": self.id, "werkzeug": werkzeug, "absicht": absicht, "sitzung": sitzung,
+                "beginn": round(time.time(), 3), "stand": "laeuft"}
+
+    def antwort(self, stueck: bytes) -> None:
+        if len(self._kopf) < _KOPF_MAX:
+            self._kopf.extend(stueck[:_KOPF_MAX - len(self._kopf)])
+        self._schwanz = (self._schwanz + stueck)[-1024:]
+        self._gesamt += len(stueck)
+
+    def ende(self, code: int | None) -> dict[str, Any]:
+        ok, fehler = ergebnis_aus_antwort(code, bytes(self._kopf), self._schwanz, self._gesamt)
+        return {"id": self.id, "stand": "ok" if ok else "fehler", "fehler": fehler, "ende": round(time.time(), 3),
+                "dauer_ms": round((time.monotonic() - self._t0) * 1000, 1)}

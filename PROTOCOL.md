@@ -1166,8 +1166,8 @@ Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_mes
 | `live-masse-1` | Maße und Hervorhebungen mit Ablaufzeit (`dauer_s`), geänderte Maße nach `run(params)` am Teil |
 
 - `HELLO_APP` ist der erste Rahmen der App; die Fähigkeiten gelten ab dort. Den Anfangsstand nach dem Verbinden schickt
-  der Kernel vollständig wie bisher (er beginnt vor `HELLO_APP`) und merkt sich dabei, was die App bekommen hat. Mit
-  `spur-1` folgt auf `HELLO_APP` die ganze Agentenspur (`AGENT_SPUR`).
+  der Kernel vollständig wie bisher, ohne neue Felder (er beginnt vor `HELLO_APP`, kennt die App also noch nicht), und
+  merkt sich dabei, was die App bekommen hat. Mit `spur-1` folgt auf `HELLO_APP` die ganze Agentenspur (`AGENT_SPUR`).
 - Alles, was eine Seite sich merkt (Teile, Felder, Animationen, Basen für `WIE_ZUVOR`), gilt für eine Verbindung. Eine
   neue Verbindung (neues `HELLO`) beginnt leer.
 - Gemessen am Kugelschieber (134 Teile, `kernel/tools/messen.py`, ganze Rahmen): ein unveränderter Lauf schickte
@@ -1193,7 +1193,7 @@ heißt gleiche Geometrie und gleiche Angaben; `faces` und `edges` folgen aus der
 
 | type | Richtung | Felder | Wirkung |
 |---|---|---|---|
-| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Teil unverändert: Die App setzt nur seine Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Hat die App das Teil nicht oder mit anderem `inhalt`, fragt sie es mit `PARTS_REQ` nach. |
+| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Teil unverändert: Die App setzt nur seine Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Hat die App das Teil ohne `inhalt` (aus dem Anfangsstand), übernimmt sie den `inhalt`. Hat sie das Teil nicht oder mit anderem `inhalt`, fragt sie es mit `PARTS_REQ` nach. |
 | `PARTS_REQ` | App → Kernel | `teile` (Namen oder null = alle) | Der Kernel schickt jedes genannte Teil als vollständiges `PART_UPSERT` (nie als `PART_SAME`), für unbekannte Namen `PART_REMOVE`. |
 
 **Statikfelder (`STATICS_FIELD`):** Mit `delta-1` hält die App je Paar (`szenario`, `teil`) das zuletzt empfangene Feld,
@@ -1217,9 +1217,9 @@ höchstens halb so groß ist (zwischen zwei unveränderten Läufen ändern sich 
  "weg": [["im_hintergrund"]]}
 ```
 
-- `basis`: `seq` eines früheren Rahmens der Art `art` auf dieser Verbindung, vollständig empfangen oder selbst aus
-  `WIE_ZUVOR` aufgebaut. Beide Seiten merken sich je Art die letzten 6 solcher Rahmen (Kopf ohne `seq`, Nutzlast);
-  ältere nennt der Kernel nie.
+- `basis`: `seq` eines früheren Rahmens der Art `art` ohne `reply_to` auf dieser Verbindung, vollständig empfangen
+  (auch im Anfangsstand) oder selbst aus `WIE_ZUVOR` aufgebaut. Beide Seiten merken sich je Art die letzten 6 solcher
+  Rahmen (Kopf ohne `seq`, Nutzlast); ältere nennt der Kernel nie.
 - Aufbau: Kopf der Basis kopieren, jedes Paar `[pfad, wert]` aus `setzen` der Reihe nach anwenden, dann jeden Pfad aus
   `weg` entfernen. Ein Pfad besteht aus Schlüsseln (Text) und Listenstellen (Zahl ab 0); der letzte Schritt setzt
   einen Schlüssel (auch neu) bzw. ersetzt eine vorhandene Listenstelle. Listen mit geänderter Länge kommen ganz.
