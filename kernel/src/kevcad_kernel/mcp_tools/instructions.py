@@ -50,7 +50,9 @@ walls in multiples of the 0.42 mm line width, overhangs up to 45°, teardrop hor
 clearances, inserts and nut traps, layer direction for strength, build volume 256 × 256 × 250 mm.
 
 Built-in check (Prüfung, after every run)
-- Every run is checked automatically; `run` waits for the result. Parts that interpenetrate (overlap volume above \
+- Every run is checked automatically; `run` waits up to 3 s for the result (`warten_s`), then returns and the check \
+finishes in the background. If `run` says the check is still running, call `pruefen()` (it waits for the final \
+result) before reporting done. Parts that interpenetrate (overlap volume above \
 0.001 mm³ and 0.01 mm depth; touching is fine) are findings with a concrete fix each. Fasteners are no exception \
 (washer ↔ washer, head ↔ washer, screw in a through hole). The only automatic exception is real thread engagement \
 (screw in a nut or in a core/tapped hole, same axis, overlap only within the thread depth).

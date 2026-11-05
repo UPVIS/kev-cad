@@ -138,7 +138,7 @@ class PruefStand:
                     if z == "teilweise":
                         return dict(self.header)  # type: ignore[arg-type]
                     return {"type": "CHECK", "run": run, "state": "running", "befunde": [],
-                            "message": "Prüfung läuft noch"}
+                            "message": "Prüfung läuft noch im Hintergrund"}
                 self._cond.wait(min(rest, 0.5))
 
     def letztes(self) -> tuple[dict[str, Any] | None, bytes]:

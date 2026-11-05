@@ -66,6 +66,7 @@ from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
+RUN_WARTEN_S = 3.0  # V2-1: so lange wartet run höchstens auf die Prüfung, dann rechnet sie im Hintergrund weiter
 
 
 def _log(line: str) -> None:
@@ -153,7 +154,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
         self._lauf_start: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter beim Start (unter _lock)
         self._pruef_ankunft: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter, als sein Prüfergebnis ankam
-        self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
+        self.pruef_warten_s = 120.0  # obere Grenze für run(warten_s=…): so lange wartet run höchstens auf die Prüfung
         self.bedingungen_warten_s = 60.0  # so lange wartet bedingungen() auf den Bewegungsraum im Hintergrund
         self.catalog = Catalog(own=own_dir(socket_path))
         self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
@@ -260,14 +261,18 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
 
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
-            titel: str | None = None) -> dict[str, Any]:
+            titel: str | None = None, warten_s: float | None = None) -> dict[str, Any]:
+        """Siehe KernelService.run. ``warten_s``: so lange höchstens auf die Prüfung warten (Vorgabe
+        ``RUN_WARTEN_S``, 0 = gar nicht, nie länger als ``pruef_warten_s``)."""
         job = self._submit_run(params, slow_ms, timeout_s, source="agent")
         if isinstance(job, dict):
             return job
         job.done.wait()
         result = job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
         if result.get("ok") and job.run:
-            check = fuer_ergebnis(self._pruef.warte(job.run, self.pruef_warten_s))
+            warten = RUN_WARTEN_S if warten_s is None else float(warten_s)
+            warten = min(max(0.0, warten), self.pruef_warten_s)
+            check = fuer_ergebnis(self._pruef.warte(job.run, warten))
             if check is not None:
                 result = {**result, "pruefung": check}
         if titel:  # Versionen: Titel des Agenten für die Version dieses Laufs (versionen/laufzeit.py)
