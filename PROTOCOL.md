@@ -1172,7 +1172,7 @@ Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_mes
 - Alles, was eine Seite sich merkt (Teile, Felder, Animationen, Basen für `WIE_ZUVOR`), gilt für eine Verbindung. Eine
   neue Verbindung (neues `HELLO`) beginnt leer.
 - Gemessen am Kugelschieber (134 Teile, `kernel/tools/messen.py`, ganze Rahmen): ein unveränderter Lauf schickte
-  11,3 MB an die App, mit `delta-1` rund 30 KB (Einzelheiten in `kernel/tools/MESSUNG.md`).
+  11,3 MB an die App, mit `delta-1` 44 KB (Einzelheiten in `kernel/tools/MESSUNG.md`).
 
 ### Delta (`delta-1`)
 
