@@ -129,7 +129,10 @@ extension ViewportRenderer {
     /// the same `encodeFrame(into:)`. Render more than one frame to warm up TAA history.
     ///
     /// - Returns: Row-major BGRA8 bytes, or `nil` if the targets or command buffers cannot be made.
-    func renderHeadlessBGRA(
+    ///
+    /// Kev CAD: öffentlich, damit Bildschirmfotos und Videos genau wie der Viewport aussehen (Verdeckung, Kanten,
+    /// Umriss, Umgebungsbild).
+    public func renderHeadlessBGRA(
         width: Int,
         height: Int,
         backgroundColor: SIMD4<Float>,
@@ -167,7 +170,7 @@ extension ViewportRenderer {
     }
 
     /// Renders `frameCount` frames off-screen and returns the last one as a `CGImage`.
-    func renderHeadless(
+    public func renderHeadless(
         width: Int,
         height: Int,
         backgroundColor: SIMD4<Float>,
