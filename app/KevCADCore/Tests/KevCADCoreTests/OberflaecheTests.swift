@@ -135,12 +135,11 @@ final class EntwurfAblageTests: XCTestCase {
         XCTAssertFalse(ablage.istLeer(p))
     }
 
-    @MainActor
     func testAufraeumenLoeschtLeereAusserDemOffenen() throws {
         let a = try anlegen(Date(timeIntervalSince1970: 1_000_000))
         let b = try anlegen(Date(timeIntervalSince1970: 2_000_000))
         let weg = ablage.aufraeumen(ausser: [b])
-        XCTAssertEqual(weg.map { RecentProjects.normalizedPath($0) }, [RecentProjects.normalizedPath(a)])
+        XCTAssertEqual(weg.map { $0.deletingLastPathComponent().lastPathComponent }, [a.deletingLastPathComponent().lastPathComponent])
         XCTAssertFalse(FileManager.default.fileExists(atPath: a.deletingLastPathComponent().path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
         XCTAssertTrue(ablage.loeschenWennLeer(b))
