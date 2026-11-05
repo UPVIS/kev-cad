@@ -284,7 +284,7 @@ public final class SprachSteuerung {
             p.teil = ref.part
             p.ref = ref.string
             p.run = c.scene.latestRun
-            p.punkt = welt.map(Self.zahlen)
+            p.punkt = (welt ?? c.scene.worldAnchor(of: ref)).map(Self.zahlen)  // Kanten und Ecken: ihr Ankerpunkt
             p.normale = c.viewport.surfaceNormal(of: pick).map(Self.zahlen)
         }
         return p

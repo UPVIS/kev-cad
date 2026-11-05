@@ -337,7 +337,14 @@ extension AppController {
         renderer.onFrameTiming = nil
         let zeiten = sammler.zeiten
         let angezeigt = zeiten.map(\.presentedTime).filter { $0 > 0 }.sorted()
-        guard angezeigt.count > 10 else { return "zu wenige Bilder (\(angezeigt.count))" }
+        guard angezeigt.count > 10 else {
+            // Hinter dem Schreibtisch (KEVCAD_TEST_VERSTECKT) wird nichts angezeigt, gezeichnet aber schon
+            let s = zeiten.map(\.cpuMilliseconds).sorted(), g = zeiten.map(\.gpuMilliseconds).sorted()
+            guard !s.isEmpty else { return "keine Bilder" }
+            return String(format: "%d Bilder in %.1f s, nicht angezeigt; Hauptfaden je Bild Median %.2f ms, GPU Median %.2f ms, "
+                + "Takt des Hauptfadens max %.1f ms", zeiten.count, sekunden, s[s.count / 2], g[g.count / 2],
+                taktAbstaende.dropFirst().max() ?? 0)
+        }
         var abstaende: [Double] = []
         for i in 1..<angezeigt.count { abstaende.append((angezeigt[i] - angezeigt[i - 1]) * 1000) }
         func q(_ a: [Double], _ p: Double) -> Double {

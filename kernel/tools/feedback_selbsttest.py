@@ -201,6 +201,7 @@ def main() -> int:
         print(f"Wort als Text nach Wortende: Median {statistics.median(latenz):.0f} ms, 90 % {q[8]:.0f} ms, "
               f"max {max(latenz):.0f} ms, {len(latenz)} Wörter (Budget 300)")
     if bericht.get("drehen"):
+        print(f"Drehen ohne Sitzung: {bericht.get('drehen_ohne_sitzung')}")
         print(f"Drehen während des Sprechens: {bericht['drehen']}")
     print(f"Paket: {bericht.get('datei')}")
     if not os.environ.get("KEVCAD_BEHALTEN"):

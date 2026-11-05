@@ -33,9 +33,11 @@ struct SprachSelbsttestBericht: Codable {
     var worte = 0
     var wortLatenzMs: [Double] = []
     var drehen: String?
+    var drehenOhneSitzung: String?
 
     enum CodingKeys: String, CodingKey {
         case ok, pruefungen, ziele, paket, datei, worte, drehen
+        case drehenOhneSitzung = "drehen_ohne_sitzung"
         case fertigUnix = "fertig_unix"
         case paketUnix = "paket_unix"
         case wortLatenzMs = "wort_latenz_ms"
@@ -121,6 +123,10 @@ extension AppController {
         var fertigPaket: (URL, FeedbackPaket)?
         sprache.beiZwischenstand = { zwischen.append(($0, $1)) }
         sprache.beiPaket = { fertigPaket = ($0, $1) }
+
+        // Vergleich für das Drehen während des Sprechens
+        bericht.drehenOhneSitzung = await drehungMessen(sekunden: 2)
+        await sprachPause(0.3)
 
         // Hauptlauf
         oberflaeche(.sprechen(true))
