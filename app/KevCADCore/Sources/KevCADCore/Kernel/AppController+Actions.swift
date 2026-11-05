@@ -163,7 +163,12 @@ extension AppController {
     public func setMeasureMode(_ on: Bool) {
         model.measureMode = on
         measurePending = []
+        messVorschau = nil
+        aktuellerFang = nil
+        viewport.eingabe.unterMaus = nil
         updateMeasureHint()
+        refreshOverlay()
+        if on { viewport.hoverAuffrischen() }  // Vorschau sofort für das Element unter der Maus
     }
 
     public func clearMeasurements() {

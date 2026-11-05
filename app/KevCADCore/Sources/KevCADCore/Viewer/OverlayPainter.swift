@@ -126,8 +126,9 @@ public enum OverlayPainter {
         }
         // Beschriftungen nicht übereinander: eine verdeckte rutscht nach unten
         var placed: [CGRect] = []
+        let rand = CGRect(origin: .zero, size: projector.size).insetBy(dx: 4 * scale, dy: 4 * scale)
         for (p, text, color) in labels {
-            placed.append(drawLabel(text, at: p, color: color, in: ctx, scale: scale, avoid: placed))
+            placed.append(drawLabel(text, at: p, color: color, in: ctx, scale: scale, avoid: placed, innerhalb: rand))
         }
         ctx.restoreGState()
     }
@@ -135,7 +136,8 @@ public enum OverlayPainter {
     /// Beschriftung mit hellem Kasten, mittig um `p`.
     @discardableResult
     static func drawLabel(
-        _ text: String, at p: CGPoint, color: SIMD4<Float>, in ctx: CGContext, scale: CGFloat, avoid: [CGRect] = []
+        _ text: String, at p: CGPoint, color: SIMD4<Float>, in ctx: CGContext, scale: CGFloat, avoid: [CGRect] = [],
+        innerhalb rand: CGRect? = nil
     ) -> CGRect {
         let font = CTFontCreateUIFontForLanguage(.system, 12 * scale, nil)
             ?? CTFontCreateWithName("Helvetica" as CFString, 12 * scale, nil)
@@ -153,6 +155,11 @@ public enum OverlayPainter {
             height: ascent + descent + 2 * padY)
         for _ in 0..<8 where avoid.contains(where: { $0.intersects(box) }) {
             box.origin.y += box.height + 3 * scale
+        }
+        // V2: Beschriftung nicht über den Bildrand hinaus (Maße am Rand bleiben lesbar)
+        if let rand, rand.width > box.width, rand.height > box.height {
+            box.origin.x = min(max(box.minX, rand.minX), rand.maxX - box.width)
+            box.origin.y = min(max(box.minY, rand.minY), rand.maxY - box.height)
         }
         let path = CGPath(roundedRect: box, cornerWidth: 4 * scale, cornerHeight: 4 * scale, transform: nil)
         ctx.addPath(path)
