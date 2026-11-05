@@ -10,6 +10,7 @@ Rechnern; die Verträge und Code-Regeln gelten überall.
 Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10, Arbeitspakete, AP0-Ergebnis),
 [PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine). Für den Umbau zu V2
 (KI-first, Zweig `v2`): [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete V2-1 bis V2-8).
+Oberfläche: [OBERFLAECHE.md](OBERFLAECHE.md) (Gestaltungswerte, Entwurf, Fokus und Werkstatt, Kacheln, Tasten).
 
 ## Aufbau
 
@@ -19,7 +20,7 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 | `app/KevCADCore/` | Swift-Paket ohne Oberfläche: Protokoll, Kernel-Verbindung, Szene, Viewport, Modell, Spiegel-Dienst (`Mirror/`). Mit `swift test` testbar |
 | `app/KevCADCore/Sources/KevCADWire/` | plattformneutral (macOS, iOS) für den Spiegel aufs iPhone ([MIRROR.md](MIRROR.md)): Rahmen, Geometrie, Körperteilung, Netzformat, Spiegel-Nachrichten. VoiceBridge bindet es über `Package.swift` im Wurzelordner ein; KevCADCore reicht es weiter |
 | `mirror-fixtures/` | Testdateien des Spiegels für Kev CAD und VoiceBridge |
-| `app/Sources/KevCAD/` | SwiftUI-App: Fenster, Leisten, Projekte, Menüs |
+| `app/Sources/KevCAD/` | SwiftUI-App: Hauptfenster (`Arbeitsflaeche/`), Gestaltungswerte und Bausteine (`Gestaltung/`), Menüs, Kachelinhalte |
 | `app/project.yml` | XcodeGen; `app/KevCAD.xcodeproj` wird erzeugt und ist nicht im Git |
 | `skill/kev-cad/` | Modellierleitfaden für den Agenten |
 | `spikes/ap0/` | Viewer- und Kerneltest (abgeschlossen, nur Nachschlagen) |

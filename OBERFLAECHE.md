@@ -103,7 +103,10 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
 - **Agentenspur**: bis V2-5 aus der Tätigkeitszeile (`agentActivity`), dem Ende jedes Laufs und den Befunden der
   Prüfung. Höchstens sechs Einträge.
 - Der Viewer wird nie neu angelegt: Er steht an fester Stelle im Ansichtsbaum, nur sein Rahmen wechselt (ohne
-  Animation). Verdeckt (Werkstatt ohne Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`).
+  Animation). Er kommt erst nach dem ersten Bild dazu, damit Metal das Fenster nicht aufhält. Verdeckt (Werkstatt ohne
+  Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`).
+- Die Werkstatt bleibt nach dem ersten Öffnen eingehängt und wird im Fokus nur ausgeblendet, mit den Maßen von zuletzt.
+  So baut das Umschalten keine Tabellen ab und auf, und beim Schieben an den Rand wird nichts neu vermessen.
 
 ## 5. Kacheln
 
@@ -119,6 +122,13 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
 - Wer `ProjectWindowState.bereich` setzt (Sprünge aus Stückliste, Teilebaum, Menüs, Selbsttests), holt die passende
   Kachel nach vorn; umgekehrt folgt `bereich` der aktiven Kachel, damit die Kürzel der Bereiche passen.
 - Alles über `OberflaechenActions` (Befehle `Oberflaechenbefehl`), damit Sprache (V2-6) und Agent (V2-7) es auslösen.
+- Drei Regeln gegen lange Pausen (gemessen bis 15 s, wenn eine davon fehlt): Das Hauptfenster beobachtet das Modell
+  nicht, sonst wertet jede Protokollzeile alles neu aus. Rahmen von Kacheln werden nie animiert, sonst vermisst SwiftUI
+  Tabellen in jedem Animationsschritt neu. `KachelInhalt` ist `Equatable` (nur Art und Breite zählen), denn seine
+  Closures sind bei jeder Auswertung neu. Änderungen an Größe oder Modell gehören in Teilansichten, nie in `@State` des
+  Hauptfensters.
+- Eingebettete Ansichten nehmen `SuchFeld` statt `.searchable` (das setzt sein Feld in die Fensterleiste) und keine
+  `.toolbar`-Einträge.
 
 ## 6. An den Rand
 
@@ -126,3 +136,39 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
 rechten bzw. linken Rand, und zeigt den Fokus (unter 640 pt rückt er zusammen: ohne Gliederung, Agent und Sprechknopf
 unten). Noch einmal stellt Größe, Lage und Modus von vorher wieder her. Die Bewegung läuft 0,3 s über die
 Fensteranimation von AppKit. Beim Beenden geht das Fenster ohne Animation zurück.
+
+## 7. Menüs und Tasten
+
+Menüleiste: Ablage, Bearbeiten, Darstellung, Modell, Kacheln, Agent, Fenster, Hilfe (vorher 15 Menüs). Versionen,
+Animation, Simulation, Material, Dokumente und Bauplan sind Untermenüs von Modell (`ModellUntermenues`); ihre Kürzel
+gelten weiter.
+
+| Taste | Wirkung |
+|---|---|
+| ⌘1, ⌘2 | Fokus, Werkstatt |
+| ⌃⌥→, ⌃⌥← | schmal an den rechten bzw. linken Rand, noch einmal zurück |
+| ⌘N, ⌘O, ⇧⌘O | neues leeres Projekt, Öffnen, letzte Projekte zeigen |
+| ⇧⌘S | Entwurf sichern bzw. Projekt umbenennen |
+| ⌃⌘1 bis ⌃⌘8 | Kachel Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details |
+| ⌥⌘1 bis ⌥⌘4 | Kachel 1 bis 4 groß und zurück |
+| ⇧⌘W | aktive Kachel schließen |
+| V | Sprechen an und aus (im Zeichnungsblatt bleibt V das Auswahlwerkzeug) |
+| esc | Startübersicht wegschieben, Sprechen verwerfen, sonst wie bisher |
+
+Die Tasten des Viewers stehen in `Commands.swift` und gehören zu V2-4.
+
+## 8. Messwerte
+
+Selbsttest `KEVCAD_SELFTEST=oberflaeche`, Kugelschieber Variante B (134 Teile), Release, Rechner stark ausgelastet
+(Last 50, 05.11.2026):
+
+| Was | vorher | jetzt |
+|---|---|---|
+| Fenster da (Wanduhr) | 6,65 s | 1,34 bis 2,83 s |
+| Rechenzeit des Hauptfadens bis zum Fenster | nicht gemessen | 0,66 bis 1,12 s |
+| Fokus ↔ Werkstatt mit drei Kacheln | 1651 ms | 93 und 101 ms |
+| an den Rand, zurück | 11994 ms, 123 ms | 129 ms, 171 ms |
+| Kachel Stückliste öffnen, zweites Mal | 10087 ms | 331 ms, 157 ms |
+| Kachel Material groß, zweites Mal | 15555 ms | 648 ms, 383 ms |
+
+Ohne fremde Last ist der Start nicht gemessen; der Wert bis zum Fenster liegt dann nahe der Rechenzeit.
