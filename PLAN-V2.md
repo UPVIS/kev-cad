@@ -122,9 +122,11 @@ und Bezug als Anweisung zum Agenten.
 ## 6. Parallel arbeiten
 
 - **Python** (Kernel, MCP) läuft parallel, solange der Speicher reicht (16 GB, andere Sitzungen laufen mit).
-- **Swift-Bauten** laufen auf dem MacBook nacheinander unter der gemeinsamen Sperre `/tmp/vb-xcodebuild.lock`, höchstens
-  zwei Bau-Agenten gleichzeitig. Der Mac mini ist für Kev CAD seit dem 22.10.2026 gesperrt (`~/.kevcad-nur-macbook`).
-  Ob er wieder dazukommt, entscheidet Kevin.
+- **Swift-Bauten** laufen seit 05.11.2026 wieder auf Mac mini und MacBook (Kevin: „Mini und MacBook können gerne beide
+  bauen“). Der Mini hat zwei Bauplätze; sind beide belegt, baut `tools/fern.sh testbau` hier unter der gemeinsamen
+  Sperre `/tmp/vb-xcodebuild.lock`. Bis zu drei Bau-Agenten gleichzeitig.
+- **Kernel-Tests** voll nur über `tools/fern.sh tests` (Testplatz auf dem Mini) oder lokal einzeln: Einige Tests nutzen
+  feste Ports (etwa 40146, 47999), zwei volle Läufe gleichzeitig auf einem Rechner stören sich.
 - **Verträge zuerst:** Pakete, die Kernel und App zugleich betreffen (V2-5, V2-6), beginnen mit einem Protokollentwurf
   in `PROTOCOL.md` samt Testdateien. Danach arbeitet je ein Agent an jeder Seite.
 - **Zusammenführen:** Jedes Paket hat einen eigenen Zweig. Der Hauptagent prüft es und führt es auf `v2` zusammen.
@@ -154,8 +156,7 @@ und Bezug als Anweisung zum Agenten.
 
 ## 8. Fragen an Kevin
 
-1. Darf Kev CAD wieder auf dem Mac mini bauen? Dann laufen zwei Swift-Pakete gleichzeitig. Bis zu seinem ausdrücklichen
-   Ja bleibt alles auf dem MacBook.
-2. Wortlaut mit Signatur über sein Team oder nur Apples Erkennung?
+1. Wortlaut mit Signatur über sein Team oder nur Apples Erkennung?
 
-Entschieden: Gestaltungsrichtung Graphit mit zwei Teilen aus Sucher (05.11.2026, siehe V6).
+Entschieden (05.11.2026): Gestaltungsrichtung Graphit mit zwei Teilen aus Sucher (siehe V6); Mac mini und MacBook bauen
+beide (siehe Abschnitt 6).
