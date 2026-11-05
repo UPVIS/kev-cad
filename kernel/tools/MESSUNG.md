@@ -114,8 +114,16 @@ des Protokolls und war nicht Teil von V2-1.
 ### Tests
 
 Volle Testsuite (`kernel/tests`) auf `6b2030e`: 1107 bestanden, 16 fehlgeschlagen, 1 übersprungen (18 min). Dieselben 16
-schlagen auf der Basis `f136caa` fehl: CalculiX-Tests (Simulation, Statik Stufe 3 und 4) mit `UnicodeDecodeError`, weil
-die Agenten-Shell `LANG=C.UTF-8` setzt, das macOS nicht kennt (Python liest die Ausgabe dann als ASCII); mit
-`LANG=de_DE.UTF-8` laufen sie durch (Stichprobe 2 von 2). Auf der Basis kamen 8 Druck-Tests dazu, in denen Bambu Studio
-nicht antwortete; im Lauf auf `6b2030e` liefen sie durch. Neu sind `test_gedaechtnis.py` (15 Tests) und
-`test_tempo.py` (7 Tests).
+schlagen auf der Basis `f136caa` fehl: CalculiX-Tests (Simulation, Statik Stufe 3 und 4) mit `UnicodeDecodeError`
+(ASCII-Codec im Testprozess). An `LANG=C.UTF-8` allein liegt es nicht: Python meldet darunter UTF-8, und
+`test_statik4.py::test_hertz_kugel_auf_platte` läuft einzeln auch mit `LANG=C.UTF-8` grün (nachgeprüft 05.11.2026).
+Vermutlich stellt im vollen Lauf etwas die Locale des Testprozesses um; offen (PLAN-V2.md, Abschnitt 7). Auf der Basis
+kamen 8 Druck-Tests dazu, in denen Bambu Studio nicht antwortete; im Lauf auf `6b2030e` liefen sie durch. Neu sind
+`test_gedaechtnis.py` (15 Tests) und `test_tempo.py` (7 Tests).
+
+### Werkzeuge zum Messen
+
+- cProfile sieht die Zeit in OCP-Methoden nicht (C++-Erweiterung ohne Python-Rahmen) und verfälscht durch den eigenen
+  Aufwand: Ein Lauf mit Millionen Aufrufen wirkt deutlich langsamer, die OCCT-Zeit verschwindet in den Aufrufern. Für
+  OCCT-Arbeit die Abtastung des Hauptfadens nehmen (`messen.py --profil`, alle 1 ms) oder Wanduhr-Hüllen um die
+  verdächtigen Aufrufe.
