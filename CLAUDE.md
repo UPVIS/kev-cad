@@ -85,6 +85,7 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
 | App-Kern | `app/KevCADCore/Sources/KevCADCore/{Protocol,Kernel,Scene,Viewer}/`, Tests dazu |
 | Oberfläche | `app/Sources/KevCAD/`, `app/KevCADCore/Sources/KevCADCore/Project/`, Tests dazu |
 | Statik | `kernel/src/kevcad_kernel/statik/`, `kernel/src/kevcad/statik.py`, `mcp_tools/statik_tools.py`, `app/KevCADCore/Sources/KevCADCore/Statik/`, `app/Sources/KevCAD/Statik/`, `test_statik.py`, `StatikTests.swift` (PLAN-STATIK.md) |
+| Sprach-Feedback | `kernel/src/kevcad_kernel/feedback*.py`, `mcp_tools/feedback_tools.py`, `app/KevCADCore/Sources/KevCADCore/Sprache/`, `test_feedback.py`, `FeedbackTests.swift` (PROTOCOL.md, „V2-6 Sprach-Feedback“) |
 | Simulation | `kernel/src/kevcad_kernel/simulation/`, `mcp_tools/simulation_tools.py`, `app/KevCADCore/Sources/KevCADCore/Simulation/`, `app/Sources/KevCAD/Simulation/`, `test_simulation.py`, `SimulationTests.swift` (PLAN-SIMULATION.md) |
 
 Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussbericht, statt sie still zu machen.
