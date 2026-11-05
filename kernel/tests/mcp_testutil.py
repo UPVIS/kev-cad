@@ -22,7 +22,7 @@ BRIDGE_EXE = Path(sys.executable).parent / "kevcad-mcp"
 # V2-2: Kernsatz und je Fachbereich ein Werkzeug mit aktion (die 95 bisherigen Werkzeuge sind Griffe dahinter)
 EXPECTED_TOOLS = {
     "status", "projekt", "modell", "run", "execute", "parts", "measure", "view", "pruefen", "ansichten", "katalog",
-    "export",
+    "export", "feedback",
     "lager", "bestand", "druck", "statik", "topologie", "zeichnung", "bauplan", "referenz", "kamera", "animation",
     "versionen", "render",
 }
