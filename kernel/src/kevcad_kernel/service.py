@@ -24,6 +24,7 @@ class PartSummary(TypedDict, total=False):
     edges: int
     triangles: int
     visible: bool
+    key: str  # V2-2 (additiv): Formschlüssel aus dem Rechenprozess; run erkennt daran geänderte Teile
 
 
 class RunError(TypedDict, total=False):

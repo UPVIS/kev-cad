@@ -79,6 +79,7 @@ class PartRecord:
             "triangles": c.get("tri", 0),
             "visible": self.visible,
             "run": self.run,
+            "key": self.key,  # V2-2: Formschlüssel, damit run geänderte Teile auch bei gleichem Hüllmaß erkennt
         }
         for key in ("stock", "druckteil", "inventar"):  # Phase 2: Lagerteil, Druckteil, Inventar-Regel
             if self.header.get(key):
