@@ -41,8 +41,12 @@ public enum AppInfo {
         repoDirectory?.appendingPathComponent("kernel/.venv/bin/kevcad-kernel")
     }
 
-    /// Standardordner für Projekte.
+    /// Standardordner für Projekte. `KEVCAD_PROJECTS_DIR` setzt einen anderen (wie beim MCP-Server; Testvarianten
+    /// schreiben so nicht in Kevins ~/Documents/Kev CAD).
     public static var projectsDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Kev CAD", isDirectory: true)
+        if let eigen = ProcessInfo.processInfo.environment["KEVCAD_PROJECTS_DIR"], !eigen.isEmpty {
+            return URL(fileURLWithPath: (eigen as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Kev CAD", isDirectory: true)
     }
 }

@@ -35,8 +35,11 @@ struct MaterialBereich: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
-        // Gleicher Platzhalter in allen Abschnitten: ein wechselnder baut die Werkzeugleiste jedes Mal neu auf
-        .searchable(text: $material.suche, placement: .toolbar, prompt: "Material durchsuchen")
+        // V2-3: Suchfeld in der Kachel, nicht in der Fensterleiste (dort steht die Kopfleiste)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SuchFeld(text: $material.suche, prompt: "Material durchsuchen")
+                .padding(GA.s)
+        }
         .onAppear {
             if model.catalog == nil { model.catalogActions?.requestCatalog(query: nil, art: nil) }
             if model.bom == nil, model.kernelState == .ready { model.catalogActions?.requestBOM() }

@@ -68,13 +68,10 @@ enum ExportDialogFenster {
     }
 }
 
-/// Menüpunkte: Ablage › Dokumente exportieren … (⇧⌘E); Menü „Bauplan“ mit Durchspielen (⌥⌘← ⌥⌘→ ⌥⌘.) und dem Sprung
-/// zu Bauplan und Berichten im Bereich Dokumente. ⌘P und ⌥⌘P gehören den Blättern (P6-A1).
+/// Menüpunkt: Ablage › Dokumente exportieren … (⇧⌘E). ⌘P und ⌥⌘P gehören den Blättern (P6-A1).
 struct DokumenteExportCommands: Commands {
     @ObservedObject var session: AppSession
     @ObservedObject var model: AppModel
-    @ObservedObject var bauplan: BauplanStore
-    @FocusedObject private var window: ProjectWindowState?
 
     var body: some Commands {
         CommandGroup(after: .importExport) {
@@ -82,7 +79,17 @@ struct DokumenteExportCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(model.project == nil || model.exportActions == nil)
         }
-        CommandMenu("Bauplan") {
+    }
+}
+
+/// Untermenü „Bauplan“ im Menü „Modell“: Durchspielen (⌥⌘← ⌥⌘→ ⌥⌘.) und der Sprung zu Bauplan und Berichten.
+struct BauplanMenue: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var bauplan: BauplanStore
+    @FocusedObject private var window: ProjectWindowState?
+
+    var body: some View {
+        Group {
             Button("Bauplan zeigen") { zeige(.bauplan) }
                 .disabled(window == nil || model.project == nil)
             Button("Berichte zeigen") { zeige(.berichte) }

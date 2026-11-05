@@ -224,6 +224,9 @@ public final class AppModel: ObservableObject {
     /// Simulation (additiv, PLAN-SIMULATION.md): Lastfälle, Kräfte und Lager aus der App, Aufträge, Ergebnistabelle
     /// (Aktionen: `actions as? SimulationActions`).
     public let simulation = SimulationStore()
+    /// V2-3 (additiv, OBERFLAECHE.md): Modus, Kacheln, Startübersicht, Sprechen, Fenster am Rand (Aktionen:
+    /// `oberflaechenActions`).
+    public let oberflaeche = OberflaechenStore()
     /// Viewer V2 (additiv): Darstellung, Hinweisleiste, Menüs im Viewport, lokale Ansicht, Meldungen, Aufnahmen
     /// (Aktionen: `actions as? ViewerActions`, Belegung in Viewer/Tastenbelegung.swift).
     public let viewer = ViewerStore()
