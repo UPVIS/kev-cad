@@ -20,7 +20,7 @@ struct Kopfleiste: View {
                 ],
                 auswahl: oberflaeche.modus
             ) { m in
-                withAnimation(GB.standard) { model.oberflaechenActions?.setzeModus(m) }
+                model.oberflaechenActions?.setzeModus(m)
             }
             .fixedSize()
             Spacer(minLength: GA.s)

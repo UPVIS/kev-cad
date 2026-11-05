@@ -58,6 +58,8 @@ final class AppSession: ObservableObject {
     let fensterRandSteuerung = FensterRand()
     /// Fläche des Viewers im Fenster (Punkte, oben links), für `viewerKlickBeobachten`.
     var viewerRahmen: CGRect = .zero
+    /// Fenstergröße beim letzten Blick auf die Werkstatt; im Fokus behalten die ausgeblendeten Kacheln diese Maße.
+    var werkstattGroesse: CGSize?
     var viewerKlickMonitor: Any?
     /// Abos der V2-Oberfläche (Entwurf beim Start, Modus und Kacheln merken).
     var oberflaechenAbos: Set<AnyCancellable> = []

@@ -61,7 +61,9 @@ struct Arbeitsgeometrie: Equatable {
 /// Oberfläche (V6), Kacheln (V4), Fenster am Rand. Liest AppModel, ruft AppActions und OberflaechenActions.
 struct Hauptfenster: View {
     @EnvironmentObject private var session: AppSession
-    @ObservedObject var model: AppModel
+    /// Nicht beobachtet: Jede Änderung am Modell (auch jede Protokollzeile) ließe sonst das ganze Fenster samt
+    /// Kacheln neu auswerten. Die Teilansichten beobachten selbst, was sie brauchen.
+    let model: AppModel
     @ObservedObject var oberflaeche: OberflaechenStore
     @StateObject private var state = ProjectWindowState()
     @StateObject private var versionen = VersionenZustand()
@@ -69,9 +71,9 @@ struct Hauptfenster: View {
     @StateObject private var parameter = ParameterVerlauf()
     @StateObject private var spur = AgentenSpur()
     @State private var suche = ""
-    @State private var geometrie: Arbeitsgeometrie?
     /// Der Viewer kommt erst nach dem ersten Bild dazu: Metal einzurichten soll das Fenster nicht aufhalten.
     @State private var viewerAn = false
+    @State private var werkstattAn = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -81,15 +83,25 @@ struct Hauptfenster: View {
         GeometryReader { geo in
             let g = Arbeitsgeometrie(groesse: geo.size, modus: oberflaeche.modus, kacheln: oberflaeche.kacheln,
                                      gross: oberflaeche.gross)
+            let imFokus = oberflaeche.modus == .fokus
+            // Im Fokus behält die ausgeblendete Werkstatt ihre Maße: Kacheln werden beim Schieben an den Rand nicht
+            // neu vermessen
+            let w = imFokus ? Arbeitsgeometrie(groesse: session.werkstattGroesse ?? geo.size, modus: .werkstatt,
+                                               kacheln: oberflaeche.kacheln, gross: oberflaeche.gross) : g
             ZStack(alignment: .topLeading) {
                 GraphitGrund()
                 if viewerAn { viewerFlaeche(g) }
-                if oberflaeche.modus == .fokus {
+                if imFokus {
                     FokusEbenen(model: model, oberflaeche: oberflaeche, spur: spur, viewer: g.viewer, schmal: g.schmal)
                         .transition(.opacity)
-                } else {
-                    werkstatt(g)
-                        .transition(.opacity)
+                }
+                // Einmal geöffnet bleibt die Werkstatt eingehängt: Schwere Kacheln abzubauen und neu aufzubauen kostet
+                // bei jedem Umschalten Sekunden, Ausblenden nichts
+                if viewerAn && (werkstattAn || !imFokus) {
+                    werkstatt(w)
+                        .opacity(imFokus ? 0 : 1)
+                        .allowsHitTesting(!imFokus)
+                        .accessibilityHidden(imFokus)
                 }
                 if oberflaeche.uebersicht {
                     uebersicht(g)
@@ -99,14 +111,13 @@ struct Hauptfenster: View {
                     .frame(width: geo.size.width, height: GA.kopf)
                     .position(x: geo.size.width / 2, y: GA.ampelMitte)
             }
-            .onAppear {
-                geometrie = g
-                session.viewerRahmen = g.viewer
-            }
+            // Nur Merkwerte ohne Beobachtung: Eine Größenänderung darf das Fenster nicht neu auswerten
+            .onAppear { session.viewerRahmen = g.viewer }
             .onChange(of: g) { _, neu in
-                geometrie = neu
                 session.viewerRahmen = neu.viewer
+                if !imFokus { session.werkstattGroesse = neu.groesse }
             }
+            .onChange(of: g.viewerSichtbar) { _, s in session.controller?.viewport.mtkView?.isPaused = !s }
         }
         .ignoresSafeArea()
         .environment(\.colorScheme, .dark)
@@ -124,15 +135,15 @@ struct Hauptfenster: View {
         .modifier(FreigabeDialogModifier(model: model, state: state))  // Vorschläge freigeben
         .modifier(ReferenzDialoge(model: model, state: state))  // Phase 4: Referenz hinzufügen, Vermessen
         .environment(\.materialNavigation, navigation)
+        // Rahmen von Kacheln werden nie animiert: Schwere Tabellen würden in jedem Animationsschritt neu vermessen
+        // (gemessen bis 15 s Pause). Der Modus blendet nur.
         .animation(GB.standard, value: oberflaeche.modus)
-        .animation(GB.standard, value: oberflaeche.kacheln)
-        .animation(GB.standard, value: oberflaeche.gross)
         .animation(GB.standard, value: oberflaeche.uebersicht)
         .onAppear(perform: erscheinen)
         .onChange(of: oberflaeche.aktiv) { _, a in bereichAngleichen(a) }
-        .onChange(of: oberflaeche.modus) { _, _ in bereichAngleichen(oberflaeche.aktiv) }
-        .onChange(of: geometrie?.viewerSichtbar) { _, s in
-            session.controller?.viewport.mtkView?.isPaused = s == false
+        .onChange(of: oberflaeche.modus) { _, m in
+            if m == .werkstatt { werkstattAn = true }
+            bereichAngleichen(oberflaeche.aktiv)
         }
         .onChange(of: oberflaeche.kacheln.contains(.simulation)) { _, an in
             model.simulationActions?.setSimulationAktiv(an)  // Kräfte und Lager per Klick im Viewer
@@ -148,7 +159,7 @@ struct Hauptfenster: View {
         .onReceive(model.bauplan.$zeige3D.dropFirst()) { _ in
             model.oberflaechenActions?.oberflaeche(.kachelAktiv(.modell))
         }
-        .onChange(of: model.project?.path) { _, _ in  // anderes Projekt, andere Blätter
+        .onReceive(model.$project.map { $0?.path }.removeDuplicates().dropFirst()) { _ in  // andere Blätter
             dokumente.bearbeiter.vergessen()
             dokumente.auswahl = nil
             dokumente.markiert = []
@@ -205,41 +216,11 @@ struct Hauptfenster: View {
             KachelFlaeche(model: model, oberflaeche: oberflaeche, state: state, versionen: versionen,
                           dokumente: dokumente, rahmen: g.kacheln, navigation: navigation, zeigeIm3D: zeigeIm3D)
             if let z = g.statuszeile {
-                Statuszeile(
-                    spricht: oberflaeche.spricht, gesagt: oberflaeche.zuletztGesagt,
-                    agent: spur.jetzt?.text ?? spur.eintraege.last?.text, stand: standText, standFarbe: standFarbe
-                ) {
-                    model.oberflaechenActions?.setzeSprechen(!oberflaeche.spricht)
-                }
-                .frame(width: z.width, height: z.height)
+                WerkstattStatus(model: model, oberflaeche: oberflaeche, spur: spur)
+                    .frame(width: z.width, height: z.height)
                 .position(x: z.midX, y: z.midY)
             }
         }
-    }
-
-    private var standText: String {
-        switch model.kernelState {
-        case .stopped, .starting: return "Kernel startet"
-        case .failed(let m): return "Kernel: \(m)"
-        case .ready, .busy: break
-        }
-        switch model.run {
-        case .running(let run, let step, _): return "Lauf \(run)" + (step.map { " · \($0)" } ?? "")
-        case .failed(let run, _, let line, _): return "Lauf \(run): Fehler" + (line.map { " in Zeile \($0)" } ?? "")
-        case .finished(let run, _, let teile, _): return "Lauf \(run) · \(KevFormat.count(teile, one: "Teil", many: "Teile"))"
-        case .idle: return model.project == nil ? "Kein Projekt" : "Bereit"
-        }
-    }
-
-    private var standFarbe: Color {
-        switch model.kernelState {
-        case .failed: return GF.befund
-        case .stopped, .starting: return GF.rauch
-        case .ready, .busy: break
-        }
-        if case .failed = model.run { return GF.befund }
-        if case .running = model.run { return GF.agent }
-        return Color(red: 0.42, green: 0.78, blue: 0.5)
     }
 
     // MARK: Startübersicht
@@ -348,6 +329,47 @@ struct Hauptfenster: View {
             model?.actions?.focus(on: teile)
         }
         state.dokumenteZustand = dokumente
+    }
+}
+
+/// Statuszeile der Werkstatt (eigene Ansicht: nur sie beobachtet Lauf und Kernel).
+private struct WerkstattStatus: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var oberflaeche: OberflaechenStore
+    @ObservedObject var spur: AgentenSpur
+
+    var body: some View {
+        Statuszeile(
+            spricht: oberflaeche.spricht, gesagt: oberflaeche.zuletztGesagt,
+            agent: spur.jetzt?.text ?? spur.eintraege.last?.text, stand: standText, standFarbe: standFarbe
+        ) {
+            model.oberflaechenActions?.setzeSprechen(!oberflaeche.spricht)
+        }
+    }
+
+    private var standText: String {
+        switch model.kernelState {
+        case .stopped, .starting: return "Kernel startet"
+        case .failed(let m): return "Kernel: \(m)"
+        case .ready, .busy: break
+        }
+        switch model.run {
+        case .running(let run, let step, _): return "Lauf \(run)" + (step.map { " · \($0)" } ?? "")
+        case .failed(let run, _, let line, _): return "Lauf \(run): Fehler" + (line.map { " in Zeile \($0)" } ?? "")
+        case .finished(let run, _, let teile, _): return "Lauf \(run) · \(KevFormat.count(teile, one: "Teil", many: "Teile"))"
+        case .idle: return model.project == nil ? "Kein Projekt" : "Bereit"
+        }
+    }
+
+    private var standFarbe: Color {
+        switch model.kernelState {
+        case .failed: return GF.befund
+        case .stopped, .starting: return GF.rauch
+        case .ready, .busy: break
+        }
+        if case .failed = model.run { return GF.befund }
+        if case .running = model.run { return GF.agent }
+        return Color(red: 0.42, green: 0.78, blue: 0.5)
     }
 }
 

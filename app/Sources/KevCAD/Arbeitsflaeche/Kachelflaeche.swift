@@ -112,12 +112,13 @@ enum KachelAnordnung {
 /// Kachelfläche der Werkstatt. Die Kachel „Modell“ ist durchsichtig: Der Viewer liegt darunter (er wird nie neu
 /// angelegt, nur verschoben). Alle anderen Kacheln betten die vorhandenen Ansichten ein.
 struct KachelFlaeche: View {
-    @EnvironmentObject private var session: AppSession
-    @ObservedObject var model: AppModel
+    // Beobachtet nur die Oberfläche: Eine Änderung am Modell soll die schweren Ansichten nicht neu vermessen. Was im
+    // Kopf einer Kachel vom Modell abhängt, steht in `KachelKopfZusatz`.
+    let model: AppModel
     @ObservedObject var oberflaeche: OberflaechenStore
-    @ObservedObject var state: ProjectWindowState
-    @ObservedObject var versionen: VersionenZustand
-    @ObservedObject var dokumente: DokumenteZustand
+    let state: ProjectWindowState
+    let versionen: VersionenZustand
+    let dokumente: DokumenteZustand
     let rahmen: [KachelArt: CGRect]
     let navigation: MaterialNavigation
     let zeigeIm3D: ([String]) -> Void
@@ -140,15 +141,35 @@ struct KachelFlaeche: View {
         let nummer = oberflaeche.nummer(art) ?? 0
         let gross = oberflaeche.gross == art
         return KachelRahmen(
-            nummer: nummer, titel: art.titel, untertitel: untertitel(art), aktiv: oberflaeche.aktiv == art,
+            nummer: nummer, titel: art.titel, aktiv: oberflaeche.aktiv == art,
             gross: gross, durchsichtig: art == .modell,
             vergroessern: { model.oberflaechenActions?.vergroessereKachel(gross ? nil : art) },
             schliessen: { model.oberflaechenActions?.schliesseKachel(art) },
             antippen: { if oberflaeche.aktiv != art { model.oberflaechenActions?.oberflaeche(.kachelAktiv(art)) } },
-            zusatz: { zusatz(art) },
+            zusatz: { KachelKopfZusatz(art: art, model: model, dokumente: dokumente) },
             inhalt: { KachelInhalt(art: art, breit: breite >= 880 || gross, model: model, state: state,
                                    versionen: versionen, dokumente: dokumente, navigation: navigation,
-                                   zeigeIm3D: zeigeIm3D) })
+                                   zeigeIm3D: zeigeIm3D)
+                .equatable() })
+    }
+
+}
+
+/// Rechts neben dem Titel einer Kachel: Untertitel (gewähltes Teil, Blatt 1 von 2 …) und Blattmenü.
+private struct KachelKopfZusatz: View {
+    let art: KachelArt
+    @ObservedObject var model: AppModel
+    @ObservedObject var dokumente: DokumenteZustand
+
+    var body: some View {
+        if let t = untertitel(art) {
+            Text(t)
+                .font(GS.klein)
+                .foregroundStyle(GF.rauch)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        zusatz(art)
     }
 
     private func untertitel(_ art: KachelArt) -> String? {
@@ -201,12 +222,18 @@ struct KachelFlaeche: View {
 }
 
 /// Inhalt einer Kachel: die vorhandenen Ansichten der Bereiche, eingebettet statt neu geschrieben.
-private struct KachelInhalt: View {
+///
+/// Gleich, solange Art und Breite gleich sind: Die Closures von außen sind bei jeder Auswertung neu, und SwiftUI baute
+/// sonst bei jeder Änderung an Kacheln oder Fenstergröße alle Tabellen neu auf (gemessen bis 7 s Pause). Was sich im
+/// Inhalt ändert, beobachten die Ansichten selbst.
+private struct KachelInhalt: View, Equatable {
+    static func == (a: KachelInhalt, b: KachelInhalt) -> Bool { a.art == b.art && a.breit == b.breit }
+
     let art: KachelArt
     let breit: Bool
-    @ObservedObject var model: AppModel
-    @ObservedObject var state: ProjectWindowState
-    @ObservedObject var versionen: VersionenZustand
+    let model: AppModel
+    let state: ProjectWindowState
+    let versionen: VersionenZustand
     @ObservedObject var dokumente: DokumenteZustand
     let navigation: MaterialNavigation
     let zeigeIm3D: ([String]) -> Void
@@ -230,15 +257,19 @@ private struct KachelInhalt: View {
                 }
             }
         case .stueckliste:
-            if breit {
-                MaterialStuecklisteAnsicht(model: model, material: state.materialZustand, daten: model.materialDaten,
-                                           navigation: navigation, zeigeIm3D: zeigeIm3D)
-            } else {
-                StuecklisteKompaktTabelle(model: model, daten: model.materialDaten, navigation: navigation)
+            MaterialDatenKachel(model: model) { daten in
+                if breit {
+                    MaterialStuecklisteAnsicht(model: model, material: state.materialZustand, daten: daten,
+                                               navigation: navigation, zeigeIm3D: zeigeIm3D)
+                } else {
+                    StuecklisteKompaktTabelle(model: model, daten: daten, navigation: navigation)
+                }
             }
         case .zuschnitt:
-            MaterialZuschnittAnsicht(model: model, material: state.materialZustand, daten: model.materialDaten,
-                                     navigation: navigation)
+            MaterialDatenKachel(model: model) { daten in
+                MaterialZuschnittAnsicht(model: model, material: state.materialZustand, daten: daten,
+                                         navigation: navigation)
+            }
         case .ansicht:
             ZweiteAnsichtKachel(model: model)
         case .material:
@@ -285,6 +316,28 @@ private struct KachelInhalt: View {
         case .berichte: BerichteInspektor(model: model)
         default: BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
         }
+    }
+}
+
+/// Stückliste und Zuschnitt: `materialDaten` nur neu, wenn sich Stückliste, Bestand oder Katalog ändern, nicht bei jeder
+/// Änderung am Modell. `@Published` meldet vor dem Setzen, deshalb liest die Kachel erst im nächsten Takt.
+private struct MaterialDatenKachel<Inhalt: View>: View {
+    let model: AppModel
+    @ViewBuilder let inhalt: (MaterialDaten) -> Inhalt
+    @State private var daten: MaterialDaten?
+
+    var body: some View {
+        Group {
+            if let daten { inhalt(daten) } else { Color.clear }
+        }
+        .onAppear { daten = model.materialDaten }
+        .onReceive(model.$bom.dropFirst()) { _ in neu() }
+        .onReceive(model.$bestandZustand.dropFirst()) { _ in neu() }
+        .onReceive(model.$catalog.dropFirst()) { _ in neu() }
+    }
+
+    private func neu() {
+        DispatchQueue.main.async { daten = model.materialDaten }
     }
 }
 
