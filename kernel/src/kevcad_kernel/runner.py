@@ -441,6 +441,21 @@ def _purge_user_modules() -> None:
                 delattr(sys.modules[eltern], kind)
 
 
+def _zeiten(zeiten: dict[str, float], state: dict[str, Any], t_lauf: float) -> dict[str, float]:
+    """Phasen eines Laufs im Rechenprozess in ms (``RUN_DONE.zeiten_ms``).
+
+    ``skript`` ist der ganze Lauf; ``modell`` die Ausführung von model.py samt aller ``show()``, darin enthalten
+    ``tessellierung`` (Vernetzung neuer Formen), ``serialisierung`` (BRep-Binärform und PART-Kopf) und ``senden``
+    (Rahmen an die Laufzeit). Danach ``animation``, ``bom``, ``kameras`` und ``bedingungen``; davor ``katalog`` und
+    ``module`` (eigene Module neu laden lassen)."""
+    out = {k: round(v, 1) for k, v in zeiten.items()}
+    out["tessellierung"] = round(float(state.get("tess_ms") or 0.0), 1)
+    out["serialisierung"] = round(float(state.get("ser_ms") or 0.0), 1)
+    out["senden"] = round(float(state.get("send_ms") or 0.0), 1)
+    out["skript"] = round((time.perf_counter() - t_lauf) * 1000, 1)
+    return out
+
+
 class _Capture(io.StringIO):
     """stdout des Modells sammeln (begrenzt)."""
 
@@ -653,14 +668,18 @@ class Runner:
         if sketch:
             color = (color[0], color[1], color[2], 0.5)
 
+        t_ser = time.perf_counter()
         brep = serialize_shape(shape.wrapped)
+        ser_s = time.perf_counter() - t_ser
         tess = tessellate_shape(shape, deviation, angular, brep=brep)
         props = dict(tess.props)
         density = mat.density if mat is not None else None
         if density is not None:
             props["mass"] = round(props["volume"] * density * 1e-6, 6)  # mm³ · kg/m³ · 1e-6 = g
+        t_ser = time.perf_counter()
         header, payload = pack_part(run=run, name=name, geometry=tess.geometry, color=color, bbox=tess.bbox,
                                     props=props, material=mat.display if mat is not None else None)
+        state["ser_ms"] = state.get("ser_ms", 0.0) + (ser_s + time.perf_counter() - t_ser) * 1000
         header.pop("seq", None)
         if single is not None:
             if single.art == "zukaufteil":
@@ -701,9 +720,11 @@ class Runner:
             state["formen"][name] = (shape, tess)
         state["tess_ms"] += tess.tess_ms
         state["cached"] += int(tess.cached)
+        t_send = time.perf_counter()
         self.emit({"type": "PART", "run": run, "name": name, "key": tess.key, "cached": tess.cached,
                    "tess_ms": round(tess.tess_ms, 2), "density": density, "app_len": len(payload), "app": header},
                   payload + brep)
+        state["send_ms"] = state.get("send_ms", 0.0) + (time.perf_counter() - t_send) * 1000
 
     @staticmethod
     def _uninstall() -> None:
@@ -712,6 +733,8 @@ class Runner:
     # -- Lauf ----------------------------------------------------------------------------------------------------------
 
     def run(self, msg: dict[str, Any]) -> dict[str, Any]:
+        t_lauf = time.perf_counter()
+        zeiten: dict[str, float] = {}  # Phasen des Laufs in ms (RUN_DONE.zeiten_ms, siehe _zeiten)
         run = int(msg["run"])
         path = str(msg["path"])
         source = msg.get("code")
@@ -738,10 +761,12 @@ class Runner:
         if not schatten:
             self.inventar = strict
         catalog = None
+        t_phase = time.perf_counter()
         try:
             catalog = self._catalog(msg, project)
         except Exception as exc:  # noqa: BLE001 - ohne Katalog rechnen, aber Bescheid geben
             state["warnings"].append(f"Katalog nicht geladen: {type(exc).__name__}: {exc}")
+        zeiten["katalog"] = (time.perf_counter() - t_phase) * 1000
         ns: dict[str, Any] = {"__name__": "__main__", "__file__": path, "__builtins__": builtins}
         out = _Capture()
         t0 = time.perf_counter()
@@ -753,7 +778,9 @@ class Runner:
 
         erfassung = self._erfassung = Erfassung()
         try:
+            t_phase = time.perf_counter()
             _purge_user_modules()
+            zeiten["module"] = (time.perf_counter() - t_phase) * 1000
             with contextlib.suppress(OSError):
                 os.chdir(project)
             sys.path.insert(0, project)
@@ -763,6 +790,7 @@ class Runner:
             from kevcad_kernel.huellen import zwischenspeicher
 
             # Hüllquader je Form und Lage merken (huellen.py): Ausbauprüfungen in model.py fragen sie hundertfach
+            t_phase = time.perf_counter()
             with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(out), zwischenspeicher():
                 warnings.simplefilter("always")
                 try:
@@ -773,6 +801,7 @@ class Runner:
                         error = _error_dict(exc, path, source, ns)
                 except Exception as exc:  # noqa: BLE001
                     error = _error_dict(exc, path, source, ns)
+            zeiten["modell"] = (time.perf_counter() - t_phase) * 1000
             for w in caught[:MAX_WARNINGS]:
                 state["warnings"].append(f"{w.category.__name__}: {w.message}")
         finally:
@@ -783,11 +812,13 @@ class Runner:
                 os.chdir(old_cwd)
         anim_names: list[str] = []
         if error is None and state.get("animations"):
+            t_phase = time.perf_counter()
             try:  # Körper von Kameras an Teilen fahren mit ihrem Teil (Zusammenspiel Kamera und Animation)
                 kameras.koerper_folgen(state["animations"], state["shown"], state.get("tokens", {}))
             except Exception as exc:  # noqa: BLE001 - darf die Animation nicht verhindern
                 state["warnings"].append(f"Kamerakörper fahren nicht mit: {type(exc).__name__}: {exc}")
             error, anim_names = self._animations(run, state, path, source, erfassung)
+            zeiten["animation"] = (time.perf_counter() - t_phase) * 1000
         if not schatten:
             self.ns = ns
             self.ns_project = project
@@ -815,20 +846,27 @@ class Runner:
             result["inventar_verstoesse"] = [sp.name for sp in parts if not sp.pieces] if strict else []
             if state.get("kulisse"):  # Umgebung, weder Stückliste noch Inventar-Regel
                 result["kulisse"] = [n for n in state["shown"] if n in state["kulisse"]]
+            t_phase = time.perf_counter()
             try:
                 result["bom"] = build_bom(register.pieces, parts, inventar_regel=strict)
             except Exception as exc:  # noqa: BLE001 - Stückliste darf den Lauf nicht kippen
                 result["warnings"].append(f"Stückliste nicht erstellt: {type(exc).__name__}: {exc}")
+            zeiten["bom"] = (time.perf_counter() - t_phase) * 1000
+            t_phase = time.perf_counter()
             try:  # Phase 5: Kameras (CAMERA_UPSERT nach dem Lauf)
                 result["cameras"] = kameras.resolve(state.get("locations", {}), state.get("tokens", {}),
                                                     state["shown"], result["warnings"].append)
             except Exception as exc:  # noqa: BLE001
                 result["warnings"].append(f"Kameras nicht übernommen: {type(exc).__name__}: {exc}")
+            zeiten["kameras"] = (time.perf_counter() - t_phase) * 1000
             if not schatten:
                 self._zu_pruefen = (run, erfassung, list(state["shown"]))  # Prüfung nach RUN_DONE (pruefe)
+            t_phase = time.perf_counter()
             bericht = pruefe_bedingungen(sammlung, state, project)
+            zeiten["bedingungen"] = (time.perf_counter() - t_phase) * 1000
             if bericht is not None:
                 result["bedingungen"] = bericht
+        result["zeiten_ms"] = _zeiten(zeiten, state, t_lauf)
         return result
 
     def _animations(self, run: int, state: dict[str, Any], path: str, source: str,

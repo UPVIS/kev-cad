@@ -105,6 +105,8 @@ class Job:
     animations: list = field(default_factory=list)  # Phase 5: ANIM-Nachrichten des Rechenprozesses (Kopf, Nutzlast)
     teile: list = field(default_factory=list)  # Versionen: Teile eines Schattenlaufs (Name, Schlüssel, Kopf, Nutzlast)
     fn: Any = None  # Versionen: Aufgabe für kind "aufgabe"
+    t_teil_erst: float | None = None  # perf_counter, als das erste bzw. letzte Teil an die App ging (zeiten_ms)
+    t_teil_letzt: float | None = None
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -149,6 +151,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._constraints: dict[str, Any] | None = None  # Bericht der Bedingungen des letzten erfolgreichen Laufs
         self._pruef = PruefStand()  # Prüfung nach jedem Lauf (Durchdringungen …), siehe pruefung/anbindung.py
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
+        self._lauf_start: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter beim Start (unter _lock)
+        self._pruef_ankunft: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter, als sein Prüfergebnis ankam
         self.pruef_warten_s = 120.0  # so lange wartet run auf das Prüfergebnis
         self.bedingungen_warten_s = 60.0  # so lange wartet bedingungen() auf den Bewegungsraum im Hintergrund
         self.catalog = Catalog(own=own_dir(socket_path))
@@ -268,7 +272,20 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 result = {**result, "pruefung": check}
         if titel:  # Versionen: Titel des Agenten für die Version dieses Laufs (versionen/laufzeit.py)
             result = self._versionen_agent_titel(result, titel)
+        if job.started and isinstance(result.get("zeiten_ms"), dict):
+            zeiten = dict(result["zeiten_ms"])
+            zeiten["zurueck"] = round((time.perf_counter() - job.started) * 1000, 1)
+            zeiten["pruefung"] = self._pruefung_ms(job.run)
+            result = {**result, "zeiten_ms": zeiten}
         return result
+
+    def _pruefung_ms(self, run: int) -> float | None:
+        """Zeitpunkt (ms ab Start des Laufs), zu dem das Prüfergebnis von Lauf ``run`` ankam, oder None."""
+        with self._lock:
+            start, fertig = self._lauf_start.get(run), self._pruef_ankunft.get(run)
+        if start is None or fertig is None:
+            return None
+        return round((fertig - start) * 1000, 1)
 
     def execute(self, code: str, timeout_s: float = 60) -> dict[str, Any]:
         with self._lock:
@@ -890,8 +907,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         with self._lock:
             self._run_no += 1
             job.run = self._run_no
+            job.started = time.perf_counter()
+            self._lauf_start[job.run] = job.started
+            for alt in [k for k in self._lauf_start if k < job.run - 50]:
+                self._lauf_start.pop(alt, None)
+                self._pruef_ankunft.pop(alt, None)
         job.generation = self._worker.generation
-        job.started = time.perf_counter()
         self._topologie_lauf_beginn(job.run)  # Topologie: Aufrufe aus model.py ab hier gehören zu diesem Lauf
         self._set_state("busy", f"Lauf {job.run} rechnet")
         self._send_app({"type": "RUN_START", "run": job.run, "file_hash": job.file_hash, "params": job.params,
@@ -933,6 +954,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                                                                     ("message", "line", "excerpt", "traceback")},
                             "hint": hint})
             result = self._result(job, ok=False, duration_ms=duration_ms, final=final, error=error)
+            result["zeiten_ms"] = self._zeiten_ms(job, final)
             self._finish(job, result)
             if final.get("type") != "CLOSED":
                 self._restart_worker_async()
@@ -944,8 +966,10 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error["message"], "line": None,
                             "excerpt": "", "traceback": ""})
             result = self._result(job, ok=False, duration_ms=duration_ms, final=final, error=error)
+            result["zeiten_ms"] = self._zeiten_ms(job, final)
             self._set_state("ready", "bereit")
             return result
+        t_run_end = t_kern = None
         if final.get("type") == "RUN_DONE":
             shown = set(final.get("shown") or [])
             with self._app_lock:
@@ -963,6 +987,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                                 "warnings": final.get("warnings") or [], "params": final.get("params") or {},
                                 "inventar_regel": bool(final.get("inventar_regel", False)),
                                 "inventar_verstoesse": violations})
+                t_run_end = time.perf_counter()
                 if isinstance(final.get("bom"), dict):
                     bom = self._bestand_bom({"run": job.run, **final["bom"]})  # Zuschnitt mit Bestand, Einkauf
                     with self._lock:
@@ -987,6 +1012,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     if fertig is not None:
                         self._send_app(fertig, fertig_payload)
             result = self._result(job, ok=True, duration_ms=duration_ms, final=final)
+            t_kern = time.perf_counter()
             with self._lock:
                 self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
             self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
@@ -1005,8 +1031,26 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                             "line": error.get("line"), "excerpt": error.get("excerpt", ""),
                             "traceback": error.get("traceback", ""), "hint": error.get("hint", "")})
             result = self._result(job, ok=False, duration_ms=duration_ms, final=final, error=error)
+        result["zeiten_ms"] = self._zeiten_ms(job, final, t_run_end=t_run_end, t_kern=t_kern,
+                                              t_ende=time.perf_counter())
         self._finish(job, result)
         return result
+
+    def _zeiten_ms(self, job: Job, final: dict[str, Any], *, t_run_end: float | None = None,
+                   t_kern: float | None = None, t_ende: float | None = None) -> dict[str, Any]:
+        """``zeiten_ms`` des Laufergebnisses und von runs.jsonl: die Phasen aus dem Rechenprozess (Dauer, siehe
+        ``runner._zeiten``), dazu Zeitpunkte ab dem Start des Laufs (RUN_START): ``erstes_teil`` und ``letztes_teil``
+        (an die App geschickt), ``run_end``, ``kern`` (RUN_END, BOM und CONSTRAINTS verschickt, das Ergebnis steht)
+        und als Dauer ``nachlauf`` (Auftragsfaden danach). ``zurueck`` und ``pruefung`` setzt ``run`` dazu."""
+        def ab_start(t: float | None) -> float | None:
+            return round((t - job.started) * 1000, 1) if t is not None and job.started else None
+
+        out: dict[str, Any] = dict(final.get("zeiten_ms") or {})
+        out.update({"erstes_teil": ab_start(job.t_teil_erst), "letztes_teil": ab_start(job.t_teil_letzt),
+                    "run_end": ab_start(t_run_end), "kern": ab_start(t_kern)})
+        if t_kern is not None and t_ende is not None:
+            out["nachlauf"] = round((t_ende - t_kern) * 1000, 1)
+        return out
 
     def _result(self, job: Job, *, ok: bool, duration_ms: int, final: dict[str, Any],
                 error: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1069,7 +1113,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             err = result.get("error") or {}
             proj.log_run({"run": job.run, "ok": result.get("ok"), "source": job.source,
                           "duration_ms": result.get("duration_ms"), "parts": len(result.get("parts") or []),
-                          "file_hash": job.file_hash, "error": err.get("message"), "line": err.get("line")})
+                          "file_hash": job.file_hash, "error": err.get("message"), "line": err.get("line"),
+                          "zeiten_ms": result.get("zeiten_ms")})
 
     def _exec_job(self, job: Job) -> dict[str, Any]:
         err = self._ensure_worker()
@@ -1110,6 +1155,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if kind == "CHECK_DONE":  # kommt nach RUN_DONE, wenn der Lauf schon abgeschlossen ist
             app_len = int(header.get("app_len", 0))
             check = dict(header.get("app") or {})
+            self._pruefung_protokollieren(check)
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
             self._dynamik_nach_lauf(statik)  # Statik S2: Abläufe aus model.py im Hintergrund (eigener Prozess)
             self._festkoerper_nach_lauf(statik)  # Statik S3: Festkörper-FEM für Teile mit Last (eigener Prozess)
@@ -1157,12 +1203,37 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 self.scene.upsert(name=header["name"], run=job.run, key=str(header.get("key", "")),
                                   header=app_header, payload=app_payload, brep=brep, density=header.get("density"))
                 self._send_app(app_header, app_payload)
+            jetzt = time.perf_counter()
+            if job.t_teil_erst is None:
+                job.t_teil_erst = jetzt
+            job.t_teil_letzt = jetzt
         elif kind == "ANIM":
             if header.get("run") == job.run:
                 job.animations.append((header, payload))
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
+
+    def _pruefung_protokollieren(self, check: dict[str, Any]) -> None:
+        """zeiten_ms: Ankunft des Prüfergebnisses merken und als eigene Zeile in runs.jsonl schreiben (``art``
+        "pruefung"; der Lauf selbst steht schon dort, ``run`` kehrt nicht mehr erst nach der Prüfung zurück)."""
+        run = int(check.get("run") or 0)
+        state = str(check.get("state") or "")
+        if state not in ("done", "failed", "teilweise"):
+            return
+        jetzt = time.perf_counter()
+        with self._lock:
+            start = self._lauf_start.get(run)
+            if start is None:
+                return  # Schattenlauf der Versionen oder zu alt
+            erstes = run not in self._pruef_ankunft
+            if erstes:
+                self._pruef_ankunft[run] = jetzt
+        proj = self._project
+        if proj is not None:
+            proj.log_run({"run": run, "art": "pruefung", "state": state,
+                          "zeiten_ms": {"pruefung": round((jetzt - start) * 1000, 1),
+                                        "pruefung_dauer": check.get("duration_ms")}})
 
     def _on_worker_exit(self, gen: int, code: int | None) -> None:
         if self._closed:
