@@ -67,6 +67,8 @@ APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst project_open oder project_new aufrufen."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
 RUN_WARTEN_S = 3.0  # V2-1: so lange wartet run höchstens auf die Prüfung, dann rechnet sie im Hintergrund weiter
+VERSION_TITEL_WARTEN_S = 60.0  # run(titel=…) wartet so lange auf die Version des Laufs (Versionen-Faden)
+NACHLAUF_WARTEN_S = 60.0  # Aufgaben der Versionen warten so lange auf den Nachlauf früherer Läufe
 
 
 def _log(line: str) -> None:
@@ -108,6 +110,9 @@ class Job:
     fn: Any = None  # Versionen: Aufgabe für kind "aufgabe"
     t_teil_erst: float | None = None  # perf_counter, als das erste bzw. letzte Teil an die App ging (zeiten_ms)
     t_teil_letzt: float | None = None
+    # V2-1: Die Version eines Laufs entsteht im Versionen-Faden; gesetzt, sobald sie fertig (oder nicht nötig) ist
+    versionen_fertig: threading.Event = field(default_factory=threading.Event)
+    version: dict[str, Any] | None = None
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -166,6 +171,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._ids = itertools.count(1)
         self._annotations = itertools.count(1)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kevcad-app")
+        # V2-1: Nachlauf eines Laufs nach RUN_END, BOM und CONSTRAINTS, außerhalb des Auftragsfadens, je ein Faden und
+        # damit in der Reihenfolge der Läufe: Druckvorschau, Referenz, Animationen an die App (kevcad-nachlauf) und
+        # Versionen samt Blättern und Bauplan (kevcad-versionen, Git darf dauern, ohne den nächsten Lauf aufzuhalten)
+        self._nachlauf = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="kevcad-nachlauf")
+        self._ver_faden = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="kevcad-versionen")
+        self._nachlauf_offen: collections.deque[concurrent.futures.Future] = collections.deque(maxlen=64)
+        self.versionen_warten_s = 0.0  # run ohne titel wartet so lange auf die Version (0: mitnehmen, was fertig ist)
         self._zeichnung_init()  # Phase 6: Zeichnungen
         self._versionen_init()
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
@@ -275,6 +287,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             check = fuer_ergebnis(self._pruef.warte(job.run, warten))
             if check is not None:
                 result = {**result, "pruefung": check}
+        if result.get("ok") and job.run:
+            # V2-1: die Version entsteht im Versionen-Faden; mit titel auf sie warten, sonst mitnehmen, was fertig ist
+            job.versionen_fertig.wait(VERSION_TITEL_WARTEN_S if titel else max(0.0, self.versionen_warten_s))
+            if job.version is not None:
+                result = {**result, "version": job.version}
+            elif not job.versionen_fertig.is_set():
+                result = {**result, "version": {"ausstehend": True}}
         if titel:  # Versionen: Titel des Agenten für die Version dieses Laufs (versionen/laufzeit.py)
             result = self._versionen_agent_titel(result, titel)
         if job.started and isinstance(result.get("zeiten_ms"), dict):
@@ -694,6 +713,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._fk_abbrechen_intern()  # Statik S3: laufenden FEM-Prozess beenden
         self._scan_schliessen()  # Scan: Empfänger und Bonjour beenden, laufende Auswertung abbrechen
         self._fail_pending("Kernel wird beendet")
+        self._nachlauf_abwarten(10.0)  # V2-1: die Version des letzten Laufs noch schreiben
+        self._nachlauf.shutdown(wait=False, cancel_futures=True)
+        self._ver_faden.shutdown(wait=False, cancel_futures=True)
         self._link.close()
         self._pool.shutdown(wait=False, cancel_futures=True)
 
@@ -710,12 +732,17 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             return dict(self._settings)
 
     def wait_idle(self, timeout: float = 60.0) -> bool:
-        """Wartet, bis keine Läufe mehr anstehen (für Tests)."""
+        """Wartet, bis keine Läufe mehr anstehen und ihr Nachlauf (Versionen, Animationen) fertig ist (für Tests)."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             with self._jobs_cond:
-                if not self._jobs and self._current is None:
-                    return True
+                leer = not self._jobs and self._current is None
+            if leer:
+                if not self._nachlauf_abwarten(max(0.0, deadline - time.monotonic())):
+                    return False
+                with self._jobs_cond:  # inzwischen ein neuer Auftrag (Auto-Lauf)? dann weiter warten
+                    if not self._jobs and self._current is None:
+                        return True
             time.sleep(0.02)
         return False
 
@@ -849,6 +876,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 job = self._jobs.popleft()
                 self._current = job
             try:
+                if job.kind in ("schatten", "aufgabe"):
+                    self._nachlauf_abwarten()  # V2-1: Versionen früherer Läufe zuerst (gleiche Dateien, gleiches Git)
                 if job.kind == "run":
                     job.result = self._run_job(job)
                 elif job.kind == "schatten":
@@ -865,6 +894,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             finally:
                 with self._jobs_cond:
                     self._current = None
+                if job.kind != "run" or not (job.result or {}).get("ok"):
+                    job.versionen_fertig.set()  # nur erfolgreiche Läufe legen eine Version an (_nachlauf_starten)
                 job.done.set()
 
     def _spawn_worker(self) -> None:
@@ -1020,16 +1051,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             t_kern = time.perf_counter()
             with self._lock:
                 self._regler = dict(job.params or {})  # Szene zeigt einen Reglerstand, wenn Parameter überschrieben
-            self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
-            self._referenz_nach_lauf(job.run)  # Phase 4: Abweichung zum Referenznetz im Hintergrund
-            self._anim_publish(job, result)
-            # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in sie
-            # nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
-            self._versionen_nach_lauf(job, result)  # Versionen: neue Version bei Änderung (ohne Git: save_version)
-            speichern = not job.params
-            hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
-                           self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, danach DOCS
-            self._versionen_dokumente_nach_lauf(job, hintergrund)
+            anim_senden = self._anim_vorbereiten(job, result)  # Phase 5: abgelegt (animation_liste gilt), Senden später
+            self._nachlauf_starten(job, result, anim_senden)
         else:  # RUN_FAILED
             error = dict(final.get("error") or {"message": "Unbekannter Fehler"})
             self._send_app({"type": "RUN_ERROR", "run": job.run, "message": error.get("message", ""),
@@ -1056,6 +1079,82 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if t_kern is not None and t_ende is not None:
             out["nachlauf"] = round((t_ende - t_kern) * 1000, 1)
         return out
+
+    def _nachlauf_starten(self, job: Job, result: dict[str, Any], anim_senden: Any) -> None:
+        """V2-1: Was nach RUN_END, BOM und CONSTRAINTS kommt, läuft außerhalb des Auftragsfadens; der nächste Lauf
+        wartet nicht darauf. Teile und Stückliste werden jetzt festgehalten (der nächste Lauf ändert die Szene).
+
+        - kevcad-nachlauf: Druckvorschau (Reglerwerte des Laufs, ihre Rechnung hat einen eigenen Faden), Referenz
+          (Abweichung zum Netz im Hintergrund), ANIM_REMOVE/ANIM_DEF an die App. Ein Faden: Animationen eines Laufs
+          gehen immer vor denen des nächsten an die App; ist der nächste Lauf schon fertig, bleiben sie weg.
+        - kevcad-versionen: Version (Git) des Laufs, danach Bauplan und Blätter (sie gehören zur Version des Laufs
+          und tragen ihre Nummer im Schriftfeld) und das Nachtragen in die Version. Ein Faden: die Reihenfolge der
+          Läufe bleibt; Aufgaben der Versionen (Wiederherstellen, Meilenstein, Liste) warten auf ihn."""
+        teile = [(r.name, r.key, r.header, r.payload) for r in self.scene.records() if not r.name.startswith("Skizze/")]
+        with self._lock:
+            bom = self._bom
+
+        def nachlauf() -> None:
+            self._druckvorschau_lauf(job.run, job.params)  # Druckvorschau: Lauf abgeschlossen (Reglerwerte)
+            self._referenz_nach_lauf(job.run)  # Phase 4: Abweichung zum Referenznetz im Hintergrund
+            if self._run_end_run <= job.run:  # neuerer Lauf schon fertig: er schickt seine eigenen Animationen
+                anim_senden()
+
+        def versionen() -> None:
+            info = {"params": dict(result.get("params") or {}), "steps": list(result.get("steps") or [])}
+            try:
+                # Versionen zuerst: die Hintergrundrechnung der Dokumente gehört zur Version dieses Laufs und wird in
+                # sie nachgetragen (versionen/laufzeit.py); mit überschriebenen Parametern speichert sie nichts
+                self._versionen_nach_lauf(job, info, teile=teile, bom=bom)  # neue Version bei Änderung
+                job.version = info.get("version")
+                if job.version is not None:
+                    result["version"] = job.version  # für den Auftrag (auto, App) und status
+                speichern = not job.params
+                hintergrund = [self._bauplan_nach_lauf(job.run, result, speichern=speichern),  # Phase 6: Bauplan
+                               self._zeichnung_nach_lauf(job.run, speichern=speichern)]  # Phase 6: Blätter, DOCS
+                self._versionen_dokumente_nach_lauf(job, hintergrund)
+            finally:
+                for w in info.get("warnings") or []:
+                    self._log(f"[versionen] Lauf {job.run}: {w}")
+                # erst nach dem Anstoßen von Bauplan und Blättern (wie früher job.done): wer danach Dateien in
+                # dokumente/ ändert, kommt der Hintergrundrechnung dieses Laufs nicht in die Quere
+                job.versionen_fertig.set()
+
+        for faden, fn in ((self._nachlauf, nachlauf), (self._ver_faden, versionen)):
+            try:
+                self._nachlauf_offen.append(faden.submit(self._nachlauf_schuetzen, fn, job))
+            except RuntimeError:  # Laufzeit wird beendet
+                job.versionen_fertig.set()
+
+    def _nachlauf_schuetzen(self, fn: Any, job: Job) -> None:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 - der Nachlauf eines Laufs darf den nächsten nicht kippen
+            import traceback
+
+            self._log(f"[kernel] Nachlauf von Lauf {job.run} fehlgeschlagen:\n{traceback.format_exc(limit=8)}")
+
+    def _nachlauf_abwarten(self, timeout: float = NACHLAUF_WARTEN_S) -> bool:
+        """Wartet, bis der Nachlauf aller bisherigen Läufe fertig ist (Versionen, Animationen). True, wenn fertig."""
+        ende = time.monotonic() + timeout
+        for f in list(self._nachlauf_offen):
+            rest = ende - time.monotonic()
+            if rest <= 0:
+                return False
+            try:
+                f.result(rest)
+            except concurrent.futures.TimeoutError:
+                return False
+            except Exception:  # noqa: BLE001 - schon protokolliert
+                pass
+        return True
+
+    def _nachlauf_warten_ausserhalb(self) -> None:
+        """Vor Aufgaben und Abfragen der Versionen: auf den Nachlauf früherer Läufe warten, außer im Nachlauf selbst
+        (der Faden wartete sonst auf sich)."""
+        name = threading.current_thread().name
+        if not (name.startswith("kevcad-versionen") or name.startswith("kevcad-nachlauf")):
+            self._nachlauf_abwarten()
 
     def _result(self, job: Job, *, ok: bool, duration_ms: int, final: dict[str, Any],
                 error: dict[str, Any] | None = None) -> dict[str, Any]:

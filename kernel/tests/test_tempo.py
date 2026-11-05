@@ -129,6 +129,36 @@ def test_version_im_hintergrund_und_mit_titel(env):
     assert rt.versionen()["versionen"][0]["titel"] == "Stift dicker"
 
 
+def test_naechster_lauf_wartet_nicht_auf_die_version(env, monkeypatch):
+    rt = env["rt"]
+    p = projekt(env)
+    assert rt.run()["ok"]
+    assert rt.wait_idle(60)
+    echt = rt._versionen_nach_lauf
+    reihenfolge: list[int] = []
+    sperre = threading.Lock()
+
+    def langsam(job, result, **kw):
+        time.sleep(1.5)
+        with sperre:
+            reihenfolge.append(job.run)
+        return echt(job, result, **kw)
+
+    monkeypatch.setattr(rt, "_versionen_nach_lauf", langsam)
+    t0 = time.perf_counter()
+    (p / "model.py").write_text(CODE.replace("Box(b, 10, 5)", "Box(b, 12, 5)"))
+    r1 = rt.run()
+    (p / "model.py").write_text(CODE.replace("Box(b, 10, 5)", "Box(b, 14, 5)"))
+    r2 = rt.run()
+    dauer = time.perf_counter() - t0
+    assert r1["ok"] and r2["ok"]
+    assert dauer < 2.6, dauer  # zwei Läufe, ohne zweimal 1,5 s auf die Versionen zu warten
+    assert rt.wait_idle(60)
+    assert reihenfolge == [r1["run"], r2["run"]]  # Versionen in der Reihenfolge der Läufe
+    nrs = [v["nr"] for v in rt.versionen()["versionen"][:2]]
+    assert nrs[0] == nrs[1] + 1
+
+
 def test_animation_folgt_dem_lauf(env):
     rt, app = env["rt"], env["app"]
     projekt(env, CODE + """from kevcad import animation

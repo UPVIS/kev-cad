@@ -169,6 +169,12 @@ class AnimationRuntimeMixin:
 
     def _anim_publish(self, job: Any, result: dict[str, Any]) -> None:
         """Nach RUN_END und BOM eines erfolgreichen Laufs: neue Animationen ablegen und an die App schicken."""
+        self._anim_vorbereiten(job, result)()
+
+    def _anim_vorbereiten(self, job: Any, result: dict[str, Any]) -> Any:
+        """Wie ``_anim_publish``, aber nur ablegen (Zusammenfassung im Ergebnis, ``animation_liste`` gilt sofort);
+        zurück kommt die Funktion, die ANIM_REMOVE/ANIM_DEF an die App schickt (V2-1: im Nachlauf-Faden, in der
+        Reihenfolge der Läufe)."""
         new = []
         for header, payload in getattr(job, "animations", []) or []:
             try:
@@ -176,16 +182,20 @@ class AnimationRuntimeMixin:
             except Exception as exc:  # noqa: BLE001
                 result.setdefault("warnings", []).append(f"Animation nicht gelesen: {type(exc).__name__}: {exc}")
         removed = self.anim_hub.replace(new)
-        with self._app_lock:  # type: ignore[attr-defined]
-            for name in removed:
-                self._send_app({"type": "ANIM_REMOVE", "name": name})  # type: ignore[attr-defined]
-            for a in new:
-                self._send_app({"type": "ANIM_DEF", **a.header}, a.payload)  # type: ignore[attr-defined]
-                if a.kollisionen is not None:
-                    self._send_app({"type": "ANIM_COLLISIONS", **a.kollisionen})  # type: ignore[attr-defined]
         if new:
             cams = self._anim_cameras()
             result["animationen"] = [a.summary(cams) for a in new]
+
+        def senden() -> None:
+            with self._app_lock:  # type: ignore[attr-defined]
+                for name in removed:
+                    self._send_app({"type": "ANIM_REMOVE", "name": name})  # type: ignore[attr-defined]
+                for a in new:
+                    self._send_app({"type": "ANIM_DEF", **a.header}, a.payload)  # type: ignore[attr-defined]
+                    if a.kollisionen is not None:
+                        self._send_app({"type": "ANIM_COLLISIONS", **a.kollisionen})  # type: ignore[attr-defined]
+
+        return senden
 
     def _anim_project_changed(self) -> None:
         for name in self.anim_hub.clear():

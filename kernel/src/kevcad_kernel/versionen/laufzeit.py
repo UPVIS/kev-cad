@@ -186,17 +186,23 @@ class VersionenRuntimeMixin:
         agent = bool(self._agent.get("connected")) and time.monotonic() - self._agent_seen < AGENT_AKTIV_S
         return ("agent", self._versionen_sitzung()) if agent else ("kevin", None)
 
-    def _versionen_nach_lauf(self, job: Any, result: dict[str, Any]) -> None:
-        """Im Auftragsfaden nach einem erfolgreichen Lauf: Version anlegen (bei Änderung) oder die aktuelle
-        aktualisieren; Daten, Netze und Vorschaubild im Hintergrund."""
+    def _versionen_nach_lauf(self, job: Any, result: dict[str, Any], teile: list | None = None,
+                             bom: dict[str, Any] | None = None) -> None:
+        """Nach einem erfolgreichen Lauf (V2-1: im Versionen-Faden der Laufzeit, in der Reihenfolge der Läufe):
+        Version anlegen (bei Änderung) oder die aktuelle aktualisieren; Daten, Netze und Vorschaubild im Hintergrund.
+        ``teile`` und ``bom``: Stand bei RUN_END (der nächste Lauf ändert die Szene schon); ``result`` bekommt
+        ``version`` und bei Fehlern ``warnings``."""
         proj = self._project
         archiv = self._archiv
         if proj is None or str(proj.model) != job.path:
             return
         self._ver_aktiv = time.monotonic()
-        teile = [(r.name, r.key, r.header, r.payload) for r in self.scene.records() if not r.name.startswith("Skizze/")]
-        with self._lock:
-            bom = self._bom
+        if teile is None:
+            teile = [(r.name, r.key, r.header, r.payload) for r in self.scene.records()
+                     if not r.name.startswith("Skizze/")]
+        if bom is None:
+            with self._lock:
+                bom = self._bom
         self._ver_aktuell = {"run": job.run, "params": dict(result.get("params") or {}), "bom": bom}
         if archiv is None or archiv.projekt != proj.path:
             return
@@ -885,6 +891,7 @@ class VersionenRuntimeMixin:
     def _archiv_oder_fehler(self) -> Versionsarchiv | dict[str, Any]:
         if self._project is None:
             return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+        self._nachlauf_warten_ausserhalb()  # V2-1: Versionen früherer Läufe entstehen im Hintergrund
         archiv = self._archiv
         if archiv is None:
             return {"ok": False, "error": "Versionen werden noch geladen."}
