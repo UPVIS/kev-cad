@@ -1,4 +1,7 @@
+import AppKit
 import Foundation
+import OCCTSwiftViewport
+import QuartzCore
 import simd
 
 /// V2-5: Was die App für das Live-Protokoll führt (PROTOCOL.md, „V2-5 Live“). Alles gilt für eine Verbindung.
@@ -19,6 +22,39 @@ final class LiveZustand {
     /// Bestätigte Teile haben das Bild geändert (einmal je Stapel weitergeben) bzw. stehen noch nicht in `model.parts`.
     var bildGeaendert = false
     var teileGeaendert = false
+
+    /// Letzter Treffer unter der Maus (fürs Lagebild); nil, wenn die Maus nicht über einem Teil steht.
+    var maus: MausStand?
+    /// Maße und Hervorhebungen mit `dauer_s` (Schlüssel: Kennung).
+    var anmerkungAblauf: [String: Ablauf] = [:]
+    var hervorhebungAblauf: [String: Ablauf] = [:]
+    var ablaufTimer: Timer?
+
+    struct MausStand {
+        var pick: PickResult
+        var welt: SIMD3<Float>?
+        /// Bildpunkt, Ursprung oben links
+        var bild: CGPoint
+    }
+
+    /// Ablauf einer Anzeige; in den letzten `ausblendenS` Sekunden wird sie sanft durchsichtig.
+    struct Ablauf {
+        static let ausblendenS: CFTimeInterval = 0.5
+        var ende: CFTimeInterval
+
+        func deckkraft(_ now: CFTimeInterval) -> Float {
+            Float(max(0, min(1, (ende - now) / Self.ausblendenS)))
+        }
+    }
+
+    /// Nächster Zeitpunkt, zu dem sich an den Anzeigen etwas ändert (im Ausblenden 30-mal je Sekunde).
+    func naechsterAblauf(_ now: CFTimeInterval) -> CFTimeInterval? {
+        let alle = Array(anmerkungAblauf.values) + Array(hervorhebungAblauf.values)
+        return alle.map { a in
+            let beginn = a.ende - Ablauf.ausblendenS
+            return now < beginn ? beginn : min(a.ende, now + 1.0 / 30)
+        }.min()
+    }
 
     /// Beide Seiten können `delta-1`.
     var deltaAktiv: Bool {
@@ -60,11 +96,13 @@ extension AppController {
         live.inhalte.merken(record)
         live.nachgefragt.remove(record.name)
         scene.setStale(record.name, false)
+        if scene.inArbeit == record.name { scene.setInArbeit(nil) }
     }
 
     /// PART_SAME (PROTOCOL.md, „Delta“). Fehlt der Inhalt, bleibt das alte Teil dunkel stehen, bis der Kernel es neu
     /// geschickt hat: lieber kurz dunkel als ein falsches Teil.
     func applyPartSame(_ m: PartSameMessage) {
+        if scene.inArbeit == m.name { scene.setInArbeit(nil) }
         guard var gespeichert = live.inhalte.zeigen(m.name, m.inhalt) else {
             log(.warning, "Inhalt \(m.inhalt) von \(m.name) fehlt, fordere das Teil neu an")
             nachfragen(m.name)
@@ -163,5 +201,209 @@ extension AppController {
                 edgePoints: g.edgePoints, edgeOffsets: g.edgeOffsets)
             return neu
         }
+    }
+    // MARK: Lagebild (lage-1)
+
+    /// Letzten Treffer unter der Maus merken: Das Lagebild rendert und pickt nichts.
+    func mausMerken(_ pick: PickResult?, _ welt: SIMD3<Float>?, _ bildpunkt: CGPoint?) {
+        guard let pick, let bildpunkt else {
+            live.maus = nil
+            return
+        }
+        live.maus = LiveZustand.MausStand(pick: pick, welt: welt, bild: bildpunkt)
+    }
+
+    /// LAGE_REQ: aus dem, was die App ohnehin weiß, ohne zu rendern.
+    func lageBeantworten(_ r: LageRequestMessage) {
+        let t0 = CACurrentMediaTime()
+        let felder = lagebild()
+        send(LageMessage(
+            replyTo: r.id, zeit: Date().timeIntervalSince1970, ms: ((CACurrentMediaTime() - t0) * 10000).rounded() / 10,
+            felder: felder))
+    }
+
+    /// Felder von LAGE ohne `reply_to`, `zeit` und `ms` (PROTOCOL.md, „Lagebild“).
+    func lagebild() -> [String: JSONValue] {
+        func p(_ v: SIMD3<Float>) -> JSONValue { .array([v.x, v.y, v.z].map { .number(Double($0)) }) }
+        func namen(_ n: [String]) -> JSONValue { .array(n.map(JSONValue.string)) }
+        let c = viewport.camera
+        let groesse = viewport.viewSize
+        var felder: [String: JSONValue] = [
+            "kamera": .object([
+                "position": p(c.position), "ziel": p(c.pivot), "richtung": p(c.viewDirection), "oben": p(c.upVector),
+                "abstand": .number(Double(c.distance)), "projektion": .string(c.isOrthographic ? "orthographic" : "perspective"),
+                "fov": c.isOrthographic ? .null : .number(Double(c.fieldOfView)),
+                "ortho_hoehe": c.isOrthographic ? .number(Double(c.orthographicScale)) : .null,
+                "ansicht": ViewportCoordinator.nearestStandardName(c).map(JSONValue.string) ?? .null,
+                "durch": cameras.activeView.map { .string($0.hasPrefix("Kamera/") ? $0 : "Kamera/" + $0) } ?? .null,
+            ]),
+            "viewport": .object(["breite": .number(groesse.width.rounded()), "hoehe": .number(groesse.height.rounded())]),
+            "sichtbar": namen(teileImBild()),
+            "verborgen": namen(scene.order.filter { !scene.isVisible($0) }),
+            "isoliert": scene.isolated.map(namen) ?? .null,
+            "auswahl": .object([
+                "run": scene.selection.isEmpty ? .null : .number(Double(scene.latestRun)),
+                "refs": namen(scene.selection.map(\.string)),
+            ]),
+            "darstellung": .string(lageDarstellung),
+            "explosion": .number(Double(scene.explodeFactor)),
+        ]
+        felder["maus"] = lageMaus(p) ?? .null
+        felder["schnitt"] = scene.section.map { ebene in
+            let n = -ebene.normal
+            return .object([
+                "axis": MirrorService.axisName(n).map(JSONValue.string) ?? .null, "normal": p(n),
+                "offset": .number(Double(ebene.distance)),
+            ])
+        } ?? .null
+        felder["animation"] = model.animation.selected.map { name in
+            .object(["name": .string(name), "zeit": .number(model.animation.time), "spielt": .bool(model.animation.playing)])
+        } ?? .null
+        return felder
+    }
+
+    /// Name der Darstellung wie in `VIEW_CMD view` (`display`).
+    private var lageDarstellung: String {
+        switch model.viewer.shading {
+        case .material, .technisch: return model.viewer.shading.protokollName
+        default: return MirrorService.protocolName(model.displayStyle)
+        }
+    }
+
+    private func lageMaus(_ p: (SIMD3<Float>) -> JSONValue) -> JSONValue? {
+        guard let m = live.maus, let ref = scene.resolve(m.pick) else { return nil }
+        return .object([
+            "teil": .string(ref.part), "ref": .string(ref.string), "punkt": m.welt.map(p) ?? .null,
+            "normale": viewport.surfaceNormal(of: m.pick).map(p) ?? .null,
+            "bild": .array([.number(m.bild.x.rounded()), .number(m.bild.y.rounded())]),
+        ])
+    }
+
+    /// Teile, die gerade im Bild sind: nicht ausgeblendet, Hüllquader im Sichtbereich.
+    func teileImBild() -> [String] {
+        let c = viewport.camera
+        let g = viewport.viewSize
+        let seiten = g.height > 0 ? Float(g.width / g.height) : 1
+        let vp = c.projectionMatrix(aspectRatio: seiten, near: 0.01, far: 1e7) * c.viewMatrix
+        return scene.order.filter { n in
+            guard scene.isVisible(n), !scene.animationHidden.contains(n), let b = scene.worldBounds(of: .part(n)) else {
+                return false
+            }
+            return Self.imSichtbereich(b, vp)
+        }
+    }
+
+    /// Liegt der Quader nicht ganz hinter einer Seite des Sichtbereichs? Prüft in homogenen Koordinaten, damit Ecken
+    /// hinter der Kamera nicht täuschen.
+    static func imSichtbereich(_ b: BoundingBox, _ vp: simd_float4x4) -> Bool {
+        var links = true, rechts = true, unten = true, oben = true, hinten = true
+        for i in 0..<8 {
+            let q = SIMD3<Float>(i & 1 == 0 ? b.min.x : b.max.x, i & 2 == 0 ? b.min.y : b.max.y, i & 4 == 0 ? b.min.z : b.max.z)
+            let k = vp * SIMD4(q, 1)
+            if k.x >= -k.w { links = false }
+            if k.x <= k.w { rechts = false }
+            if k.y >= -k.w { unten = false }
+            if k.y <= k.w { oben = false }
+            if k.w > 0 { hinten = false }
+        }
+        return !(links || rechts || unten || oben || hinten)
+    }
+
+    // MARK: Live-Maße (live-masse-1)
+
+    /// Farbe nach `annotate.art`: Maß wie eine Messung, geänderter Wert im Akzent, sonst wie bisher.
+    static func anmerkungsFarbe(_ art: String?) -> SIMD4<Float> {
+        switch art {
+        case "mass": return measureColor
+        case "param": return ViewerStil.massParameter
+        default: return annotationColor
+        }
+    }
+
+    /// `annotate` mit `dauer_s`: die Anmerkung blendet nach dieser Zeit sanft aus; ohne bleibt sie stehen.
+    func anmerkungLaeuftAb(_ id: String, nach dauer: Double?, now: CFTimeInterval = CACurrentMediaTime()) {
+        guard let dauer, dauer > 0 else {
+            live.anmerkungAblauf[id] = nil
+            return
+        }
+        live.anmerkungAblauf[id] = LiveZustand.Ablauf(ende: now + dauer)
+        ablaufPlanen(now)
+    }
+
+    /// `highlight` mit `id` und `dauer_s`: nur diese Hervorhebung geht nach Ablauf.
+    func hervorhebungLaeuftAb(_ kennung: String, nach dauer: Double, now: CFTimeInterval = CACurrentMediaTime()) {
+        live.hervorhebungAblauf[kennung] = LiveZustand.Ablauf(ende: now + dauer)
+        ablaufPlanen(now)
+    }
+
+    /// Hervorhebung mit ihrer Beschriftung entfernen.
+    func hervorhebungEntfernen(_ kennung: String) {
+        live.hervorhebungAblauf[kennung] = nil
+        for h in scene.highlights where h.kennung == kennung {
+            if let a = highlightLabels.removeValue(forKey: h.id) { annotations.removeAll { $0.id == a } }
+        }
+        scene.removeHighlight(kennung: kennung)
+    }
+
+    /// Anmerkungen fürs Bild; die mit Ablauf werden in den letzten Augenblicken durchsichtig.
+    func anmerkungenMitAblauf(now: CFTimeInterval = CACurrentMediaTime()) -> [OverlayPrimitive] {
+        annotations.map { a in
+            guard let ablauf = live.anmerkungAblauf[a.id] else { return a.item }
+            return a.item.mitDeckkraft(ablauf.deckkraft(now))
+        }
+    }
+
+    private func ablaufPlanen(_ now: CFTimeInterval) {
+        live.ablaufTimer?.invalidate()
+        live.ablaufTimer = nil
+        guard let t = live.naechsterAblauf(now) else { return }
+        live.ablaufTimer = Timer.scheduledTimer(withTimeInterval: max(0.005, t - now), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.ablaufSchritt() }
+        }
+    }
+
+    /// Anzeigen nachführen: Abgelaufene entfernen, Ausblendende neu zeichnen.
+    func ablaufSchritt(now: CFTimeInterval = CACurrentMediaTime()) {
+        var ueberlagerung = false
+        for (id, a) in live.anmerkungAblauf where a.deckkraft(now) < 1 {
+            ueberlagerung = true
+            if a.ende <= now {
+                live.anmerkungAblauf[id] = nil
+                annotations.removeAll { $0.id == id }
+            }
+        }
+        for (kennung, a) in live.hervorhebungAblauf where a.deckkraft(now) < 1 {
+            ueberlagerung = true
+            if a.ende <= now {
+                hervorhebungEntfernen(kennung)
+            } else {
+                scene.setHighlightDeckkraft(kennung, a.deckkraft(now))
+            }
+        }
+        if ueberlagerung { refreshOverlay() }
+        ablaufPlanen(now)
+    }
+
+    // MARK: Befunde am Teil
+
+    static let maxBefundMarken = 24
+
+    /// Fehler und Warnungen der Prüfung als kleine Marke am Teil, Fehler zuerst, je Ort nur eine.
+    func befundMarken() -> [OverlayPrimitive] {
+        guard model.befundMarkenSichtbar, let p = model.pruefung else { return [] }
+        var out: [OverlayPrimitive] = []
+        var orte = Set<SIMD3<Int32>>()
+        let befunde = p.befunde.filter { $0.schwere != .hinweis }.sorted { ($0.schwere == .fehler ? 0 : 1) < ($1.schwere == .fehler ? 0 : 1) }
+        for b in befunde {
+            guard out.count < Self.maxBefundMarken else { break }
+            let teile = b.teile.filter { scene.record($0) != nil }
+            guard teile.isEmpty || teile.contains(where: scene.isVisible) else { continue }
+            guard let ort = b.ort ?? teile.first(where: scene.isVisible).flatMap({ scene.worldAnchor(of: .part($0)) }) else {
+                continue
+            }
+            guard orte.insert(SIMD3<Int32>((ort / 5).rounded(.down))).inserted else { continue }
+            out.append(.badge(point: ort, text: "!", color: b.schwere == .fehler ? Self.constraintError : Self.constraintWarning, filled: true))
+        }
+        return out
     }
 }

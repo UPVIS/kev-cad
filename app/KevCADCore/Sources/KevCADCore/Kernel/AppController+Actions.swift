@@ -363,12 +363,15 @@ extension AppController {
             }
             let (known, missing) = scene.expand(list)
             let color = a["color"]?.vector4
-            let h = scene.addHighlight(refs: known, color: color, label: a["label"]?.stringValue, clear: clear)
+            let kennung = a["id"]?.stringValue
+            if let kennung { hervorhebungEntfernen(kennung) }  // V2-5: gleiche Kennung ersetzt
+            let h = scene.addHighlight(refs: known, color: color, label: a["label"]?.stringValue, clear: clear, kennung: kennung)
             if let label = h.label, !label.isEmpty, let first = known.first, let p = scene.worldAnchor(of: first) {
                 let id = "hl-\(h.id)"
                 annotations.append((id, .label(point: p, text: label, color: h.overlayColor)))
                 highlightLabels[h.id] = id
             }
+            if let kennung, let dauer = a["dauer_s"]?.doubleValue, dauer > 0 { hervorhebungLaeuftAb(kennung, nach: dauer) }
             refreshOverlay()
             startAnimationTimerIfNeeded()
             if known.isEmpty { return (false, "Unbekannte Referenz: \(missing.joined(separator: ", "))") }
@@ -409,18 +412,19 @@ extension AppController {
                     return (true, id)
                 }
                 let t = text.isEmpty ? "\(GermanFormat.mm(Double(simd_distance(pts[0], pts[1]))))" : text
-                item = .dimension(a: pts[0], b: pts[1], text: t, color: Self.annotationColor)
+                item = .dimension(a: pts[0], b: pts[1], text: t, color: Self.anmerkungsFarbe(a["art"]?.stringValue))
             case "arrow":
                 guard pts.count >= 2 else { return (false, "Pfeil braucht zwei Punkte") }
-                item = .arrow(from: pts[0], to: pts[1], text: text, color: Self.annotationColor)
+                item = .arrow(from: pts[0], to: pts[1], text: text, color: Self.anmerkungsFarbe(a["art"]?.stringValue))
             case "label":
                 guard let p = pts.first else { return (false, "Beschriftung braucht einen Punkt") }
-                item = .label(point: p, text: text, color: Self.annotationColor)
+                item = .label(point: p, text: text, color: Self.anmerkungsFarbe(a["art"]?.stringValue))
             default:
                 return (false, "Unbekannte Art \(kind)")
             }
             annotations.removeAll { $0.id == id }
             annotations.append((id, item))
+            anmerkungLaeuftAb(id, nach: a["dauer_s"]?.doubleValue)  // V2-5: ohne dauer_s bleibt sie stehen
             refreshOverlay()
             return (true, id)
 

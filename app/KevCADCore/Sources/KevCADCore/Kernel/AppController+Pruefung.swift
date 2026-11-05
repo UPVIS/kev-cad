@@ -35,6 +35,7 @@ extension AppController: PruefActions {
         }
         updateSchnittkoerper()
         updateParts()
+        refreshOverlay()  // V2-5: Marken der Befunde am Teil
     }
 
     /// Schnittkörper aus dem letzten Ergebnis in die Szene legen (oder entfernen).

@@ -495,6 +495,7 @@ public final class AppController: AppActions {
             applyPartSame(m)
         case .runEnd(let e):
             if let teile = e.teile { teileNachLauf(teile) }  // V2-5: alles andere entfernen
+            scene.setInArbeit(nil)
             scene.endRun(e.run)
             letzterLaufZeitpunkt = Date()
             model.run = .finished(
@@ -522,6 +523,7 @@ public final class AppController: AppActions {
                 log(.warning, "Nicht aus dem Inventar: " + e.inventarVerstoesse.joined(separator: ", "))
             }
         case .runError(let e):
+            scene.setInArbeit(nil)
             scene.endRun(e.run)
             deltaLaufEnde()
             // Den Reparaturhinweis des Kernels an die Meldung hängen (RunState hat kein eigenes Feld dafür)
@@ -597,8 +599,14 @@ public final class AppController: AppActions {
             applySimulation(s)
         case .simulationJob(let j):
             applySimulationJob(j)
-        case .inArbeit, .agentSpur, .agentSchritt, .lageAnfrage:
-            break
+        case .inArbeit(let m):  // V2-5 (AppController+Live.swift)
+            scene.setInArbeit(m.teil)
+        case .agentSpur(let m):
+            model.agentenspur.setzen(m.schritte)
+        case .agentSchritt(let m):
+            model.agentenspur.aktualisieren(m.schritt)
+        case .lageAnfrage(let r):
+            lageBeantworten(r)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -825,7 +833,8 @@ public final class AppController: AppActions {
                 items.append(.label(point: p, text: m.text, color: Self.measureColor))
             }
         }
-        items.append(contentsOf: annotations.map(\.item))
+        items.append(contentsOf: anmerkungenMitAblauf())  // V2-5: Maße mit dauer_s blenden sanft aus
+        items.append(contentsOf: befundMarken())  // V2-5: Befunde der Prüfung als Marke am Teil
         items.append(contentsOf: constraintOverlay())  // Zwangsbedingungen
         items.append(contentsOf: cameraOverlayItems())
         items.append(contentsOf: massstabOverlay())  // Phase 4: Punkte des Werkzeugs „Maßstab setzen“

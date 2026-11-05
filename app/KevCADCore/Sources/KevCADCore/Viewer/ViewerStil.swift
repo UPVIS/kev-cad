@@ -23,6 +23,8 @@ public enum ViewerStil {
     public static let akzent = Color(.sRGB, red: 0.33, green: 0.62, blue: 1.0, opacity: 1)
     /// Messungen: Linien, Beschriftung, Fangpunkte (wie bisher das Grün der Messungen).
     public static let mass = SIMD4<Float>(0.0, 0.55, 0.45, 1)
+    /// Geänderter Wert am Teil nach `run(params)` (V2-5): der Akzent des Viewers.
+    public static let massParameter = SIMD4<Float>(0.33, 0.62, 1.0, 1)
     /// Vorschau beim Darüberfahren im Messmodus.
     public static let massVorschau = SIMD4<Float>(0.95, 0.55, 0.05, 1)
     /// Fangpunkt (Ecke, Kantenmitte, Kreismitte) unter der Maus.

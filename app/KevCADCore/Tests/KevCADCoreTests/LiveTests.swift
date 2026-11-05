@@ -325,3 +325,167 @@ final class LiveTests: XCTestCase {
         XCTAssertEqual(teile.map { $0.netz.triangleCount > 0 }, [true, true])
     }
 }
+
+// MARK: - Lagebild, In Arbeit, Live-Maße, Agentenspur, Befunde
+
+@MainActor
+final class LiveAnzeigeTests: XCTestCase {
+    private func nachricht(_ kopf: String) throws -> IncomingEvent {
+        .message(try KernelMessage.decode(Frame(header: Data(kopf.utf8))))
+    }
+
+    private func teil(_ name: String, _ inhalt: String, run: Int = 1, z: Float = 0) throws -> PartRecord {
+        var (h, g) = try Fixtures.part("live_part_upsert.frame")
+        h.name = name
+        h.run = run
+        h.inhalt = inhalt
+        h.bbox = BBox(min: [0, 0, Double(z)], max: [40, 20, Double(z) + 1])
+        for i in stride(from: 2, to: g.positions.count, by: 3) { g.positions[i] += z }
+        return PartRecord(header: h, geometry: g)
+    }
+
+    private func verbunden() throws -> AppController {
+        let c = AppController(model: AppModel())
+        c.handle([.connected])
+        c.handle([try nachricht(#"{"type":"HELLO","seq":1,"protocol":1,"faehigkeiten":["delta-1","in-arbeit-1","spur-1","lage-1","live-masse-1"]}"#)])
+        return c
+    }
+
+    private func befehl(_ cmd: String, _ args: JSONValue) -> ViewCommandMessage { ViewCommandMessage(id: "k-1", cmd: cmd, args: args) }
+
+    func testLagebildHatGenauDieFelderDerTestdatei() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("Halter/Lasche", "a1")), .part(try teil("Deckel", "b1", z: 30))])
+        c.setVisibility(["Deckel"], visible: false)
+        c.applySelection([.face("Halter/Lasche", 0)])
+        c.viewport.viewSize = CGSize(width: 900, height: 600)
+        c.viewport.fit(c.scene.visibleBounds(), animated: false)
+        var gesendet: [Frame] = []
+        c.sendeBeobachter = { gesendet.append($0) }
+        c.handle([.message(.lageAnfrage(LageRequestMessage(id: "k-41")))])
+        let kopf = try JSONDecoder().decode(JSONValue.self, from: try XCTUnwrap(gesendet.first).header)
+        let muster = try JSONDecoder().decode(JSONValue.self, from: Fixtures.frame("live_lage.frame").header)
+        XCTAssertEqual(Set(try XCTUnwrap(kopf.objectValue).keys), Set(try XCTUnwrap(muster.objectValue).keys))
+        XCTAssertEqual(Set(try XCTUnwrap(kopf["kamera"]?.objectValue).keys), Set(try XCTUnwrap(muster["kamera"]?.objectValue).keys))
+        XCTAssertEqual(kopf["reply_to"]?.stringValue, "k-41")
+        XCTAssertEqual(kopf["sichtbar"]?.stringList, ["Halter/Lasche"])
+        XCTAssertEqual(kopf["verborgen"]?.stringList, ["Deckel"])
+        XCTAssertEqual(kopf["viewport"]?["breite"]?.intValue, 900)
+        XCTAssertEqual(kopf["auswahl"]?["refs"]?.stringList, ["Halter/Lasche#f0"])
+        XCTAssertEqual(kopf["maus"], .null)
+        XCTAssertLessThan(try XCTUnwrap(kopf["ms"]?.doubleValue), 50)
+    }
+
+    func testTeilAusserhalbDesBildesIstNichtSichtbar() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("Nah", "a1")), .part(try teil("Weit", "b1", z: 100_000))])
+        c.viewport.viewSize = CGSize(width: 900, height: 600)
+        c.viewport.fit(c.scene.worldBounds(of: .part("Nah")), animated: false)
+        XCTAssertEqual(c.teileImBild(), ["Nah"])
+    }
+
+    func testInArbeitMarkiertBisDasTeilKommt() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("A", "a1")), .part(try teil("B", "b1", z: 3))])
+        let vorher = c.scene.displayColor("A", now: 0, includeFlash: false)
+        c.handle([try nachricht(#"{"type":"RUN_START","run":2,"delta":true}"#),
+                  .message(.inArbeit(InArbeitMessage(run: 2, teil: "A")))])
+        XCTAssertEqual(c.scene.inArbeit, "A")
+        XCTAssertNotEqual(c.scene.displayColor("A", now: 0, includeFlash: false), vorher)
+        c.handle([.message(.partSame(PartSameMessage(run: 2, name: "A", inhalt: "a1")))])
+        XCTAssertNil(c.scene.inArbeit, "die Markierung endet mit PART_SAME")
+        XCTAssertEqual(c.scene.displayColor("A", now: 0, includeFlash: false), vorher)
+        c.handle([.message(.inArbeit(InArbeitMessage(run: 2, teil: "B")))])
+        c.handle([.part(try teil("B", "b2", run: 2, z: 8))])
+        XCTAssertNil(c.scene.inArbeit, "oder mit PART_UPSERT")
+        c.handle([.message(.inArbeit(InArbeitMessage(run: 2, teil: "A")))])
+        c.handle([try nachricht(#"{"type":"RUN_ERROR","run":2,"message":"kaputt","excerpt":""}"#)])
+        XCTAssertNil(c.scene.inArbeit, "alle enden mit dem Laufende")
+    }
+
+    func testMassMitDauerBlendetSanftAus() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("A", "a1"))])
+        guard case .viewCommand(let v) = try Fixtures.message("live_view_annotate_param.frame") else { return XCTFail() }
+        XCTAssertTrue(c.performViewCommand(v).0)
+        XCTAssertEqual(c.annotations.map(\.id), ["p-3"])
+        let ende = try XCTUnwrap(c.live.anmerkungAblauf["p-3"]?.ende)
+        XCTAssertEqual(ende - CACurrentMediaTime(), 4, accuracy: 0.5)
+        func deckkraft(_ now: CFTimeInterval) -> Float? {
+            guard case .label(_, _, let f)? = c.anmerkungenMitAblauf(now: now).first else { return nil }
+            return f.w
+        }
+        XCTAssertEqual(deckkraft(ende - 1), 1)
+        XCTAssertEqual(try XCTUnwrap(deckkraft(ende - 0.25)), 0.5, accuracy: 0.01)
+        c.ablaufSchritt(now: ende + 0.01)
+        XCTAssertTrue(c.annotations.isEmpty)
+        XCTAssertNil(c.live.anmerkungAblauf["p-3"])
+    }
+
+    func testHervorhebungMitDauerGehtAlleinUndClearBleibt() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("Halter/Lasche", "a1")), .part(try teil("B", "b1", z: 3))])
+        XCTAssertTrue(c.performViewCommand(befehl("highlight", ["refs": ["B"], "label": "bleibt"])).0)
+        guard case .viewCommand(let v) = try Fixtures.message("live_view_highlight_dauer.frame") else { return XCTFail() }
+        XCTAssertTrue(c.performViewCommand(v).0)
+        XCTAssertEqual(c.scene.highlights.count, 2)
+        let ende = try XCTUnwrap(c.live.hervorhebungAblauf["p-3"]?.ende)
+        c.ablaufSchritt(now: ende - 0.25)
+        XCTAssertEqual(c.scene.highlights.first { $0.kennung == "p-3" }?.deckkraft ?? 0, 0.5, accuracy: 0.01)
+        c.ablaufSchritt(now: ende + 0.01)
+        XCTAssertEqual(c.scene.highlights.map(\.label), ["bleibt"], "nur diese Hervorhebung geht")
+        XCTAssertEqual(c.annotations.count, 1, "die Beschriftung der anderen bleibt")
+        // gleiche Kennung ersetzt; clear entfernt wie bisher alles
+        XCTAssertTrue(c.performViewCommand(v).0)
+        XCTAssertTrue(c.performViewCommand(v).0)
+        XCTAssertEqual(c.scene.highlights.filter { $0.kennung == "p-3" }.count, 1)
+        XCTAssertTrue(c.performViewCommand(befehl("highlight", ["clear": true])).0)
+        XCTAssertTrue(c.scene.highlights.isEmpty)
+        c.ablaufSchritt(now: CACurrentMediaTime() + 10)  // abgelaufene Kennung ohne Hervorhebung stört nicht
+    }
+
+    func testAgentenspurHaeltFuenfzigUndErsetztNachID() throws {
+        let c = try verbunden()
+        c.handle([.message(try Fixtures.message("live_agent_spur.frame"))])
+        XCTAssertEqual(c.model.agentenspur.schritte.map(\.id), try XCTUnwrap(try Fixtures.expected()["live"]?["spur_ids"]?.stringList))
+        c.handle([.message(try Fixtures.message("live_agent_schritt.frame"))])
+        XCTAssertEqual(c.model.agentenspur.schritte.first?.stand, .laeuft, "gleiche id ersetzt den Stand")
+        XCTAssertEqual(c.model.agentenspur.laufend?.absicht, "Laufrolle auf 90 mm")
+        c.handle([.message(try Fixtures.message("live_agent_schritt_ende.frame"))])
+        let fertig = try XCTUnwrap(c.model.agentenspur.schritte.first)
+        XCTAssertEqual(fertig.stand, .ok)
+        XCTAssertEqual(fertig.dauerMs, 2333)
+        XCTAssertEqual(fertig.phasen?["run"]?.intValue, 8)
+        XCTAssertNil(c.model.agentenspur.laufend)
+        c.handle([.message(try Fixtures.message("live_agent_schritt_fehler.frame"))])
+        XCTAssertEqual(c.model.agentenspur.schritte.last?.stand, .fehler)
+        for k in 0..<60 {
+            c.model.agentenspur.aktualisieren(AgentSchritt(id: "n-\(k)", werkzeug: "run", beginn: Double(k)))
+        }
+        XCTAssertEqual(c.model.agentenspur.schritte.count, 50)
+        XCTAssertEqual(c.model.agentenspur.schritte.first?.id, "n-10")
+    }
+
+    func testBefundeSindMarkenAmTeil() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("Halter/Lasche", "a1")), .part(try teil("Halter/Grundplatte", "b1", z: 3))])
+        c.model.pruefung = PruefErgebnis(
+            run: 1, zustand: .done,
+            befunde: [
+                PruefBefund(id: "1", art: "durchdringung", teile: ["Halter/Lasche"], schwere: .fehler, text: "x", ort: SIMD3(1, 2, 3)),
+                PruefBefund(id: "2", art: "kippen", teile: ["Halter/Grundplatte"], schwere: .warnung, text: "y"),
+                PruefBefund(id: "3", art: "zart", teile: ["Halter/Grundplatte"], schwere: .hinweis, text: "z"),
+                PruefBefund(id: "4", art: "weg", teile: ["Gibt/Es/Nicht"], schwere: .fehler, text: "w"),
+            ])
+        let marken = c.befundMarken()
+        XCTAssertEqual(marken.count, 2, "Hinweise und Befunde ohne Ort stehen nur in der Liste")
+        guard case .badge(let p, let text, _, let gefuellt) = marken[0] else { return XCTFail() }
+        XCTAssertEqual(p, SIMD3(1, 2, 3))
+        XCTAssertEqual(text, "!")
+        XCTAssertTrue(gefuellt)
+        c.setVisibility(["Halter/Lasche"], visible: false)
+        XCTAssertEqual(c.befundMarken().count, 1, "ausgeblendete Teile tragen keine Marke")
+        c.model.befundMarkenSichtbar = false
+        XCTAssertTrue(c.befundMarken().isEmpty)
+    }
+}

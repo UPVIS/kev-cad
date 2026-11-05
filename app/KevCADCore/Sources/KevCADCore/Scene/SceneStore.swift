@@ -10,6 +10,10 @@ public struct SceneHighlight: Sendable {
     public var refs: [ElementRef]
     public var color: SIMD4<Float>
     public var label: String?
+    /// V2-5 (live-masse-1): Kennung aus `highlight.id`; damit lässt sich genau diese Hervorhebung entfernen.
+    public var kennung: String? = nil
+    /// V2-5: 1 = voll, sinkt beim Ausblenden auf 0.
+    public var deckkraft: Float = 1
 
     /// Farbe für die 2D-Überlagerung (CoreGraphics arbeitet in sRGB).
     public var overlayColor: SIMD4<Float> { SceneStore.srgb(color) }
@@ -58,6 +62,10 @@ public final class SceneStore {
     public private(set) var dimBelowRun: Int?
     /// V2-5: Teile, deren Inhalt die App beim Kernel nachgefragt hat (bis er kommt, abgedunkelt).
     public private(set) var veraltet: Set<String> = []
+    /// V2-5 (in-arbeit-1): Teil, das der Kernel als Nächstes erwartet (dezent markiert, bis es kommt).
+    public private(set) var inArbeit: String?
+    /// Lichtblau wie der Akzent des Viewers, linear.
+    static let inArbeitFarbe = SIMD3<Float>(0.09, 0.34, 1.0)
     /// Was die Szene getan hat (Messung): gebaute Körper, Aufleuchten, Weitergaben an den Viewport.
     public private(set) var statistik = SzenenStatistik()
     /// Phase 2: Teile, die die Inventar-Regel verletzen (rot eingefärbt).
@@ -180,6 +188,7 @@ public final class SceneStore {
         styleSignature.removeValue(forKey: name)
         flashStart.removeValue(forKey: name)
         veraltet.remove(name)
+        if inArbeit == name { inArbeit = nil }
         hidden.remove(name)
         isolated?.removeAll { $0 == name }
         selection.removeAll { $0.part == name }
@@ -198,6 +207,7 @@ public final class SceneStore {
         bodyOwner = [:]
         flashStart = [:]
         veraltet = []
+        inArbeit = nil
         hidden = []
         isolated = nil
         selection = []
@@ -298,6 +308,15 @@ public final class SceneStore {
 
     /// Geänderte Teile nach `confirm` an den Viewport geben (einmal je Stapel).
     public func publishChanges() { publish() }
+
+    /// V2-5: Teil markieren, das der Kernel als Nächstes erwartet (nil = keins).
+    public func setInArbeit(_ name: String?) {
+        guard inArbeit != name else { return }
+        let alt = inArbeit
+        inArbeit = name
+        for n in [alt, name].compactMap({ $0 }) where parts[n] != nil { applyProps(n) }
+        publish()
+    }
 
     /// V2-5: Inhalt eines Teils ist nachgefragt (bis er kommt, abgedunkelt).
     public func setStale(_ name: String, _ an: Bool) {
@@ -529,7 +548,7 @@ public final class SceneStore {
 
     @discardableResult
     public func addHighlight(
-        refs: [ElementRef], color: SIMD4<Float>?, label: String?, clear: Bool,
+        refs: [ElementRef], color: SIMD4<Float>?, label: String?, clear: Bool, kennung: String? = nil,
         now: CFTimeInterval = CACurrentMediaTime()
     ) -> SceneHighlight {
         var touched = Set(refs.map(\.part))
@@ -539,7 +558,7 @@ public final class SceneStore {
         }
         let h = SceneHighlight(
             id: nextHighlightID, refs: refs.filter { isValid($0) }, color: color ?? Self.defaultHighlightColor,
-            label: label)
+            label: label, kennung: kennung)
         nextHighlightID += 1
         highlights.append(h)
         pulseStart = now
@@ -558,6 +577,33 @@ public final class SceneStore {
         for n in touched where parts[n] != nil {
             rebuildBodiesIfStyleChanged(n)
             applyProps(n)
+        }
+        publish()
+    }
+
+    /// V2-5: Hervorhebung mit dieser Kennung sanft ausblenden (1 = voll, 0 = aus); die anderen bleiben.
+    public func setHighlightDeckkraft(_ kennung: String, _ deckkraft: Float, now: CFTimeInterval = CACurrentMediaTime()) {
+        var touched = Set<String>()
+        for i in highlights.indices where highlights[i].kennung == kennung {
+            highlights[i].deckkraft = max(0, min(deckkraft, 1))
+            touched.formUnion(highlights[i].refs.map(\.part))
+        }
+        guard !touched.isEmpty else { return }
+        for n in touched where parts[n] != nil {
+            rebuildBodiesIfStyleChanged(n)
+            applyProps(n, now: now)
+        }
+        publish()
+    }
+
+    /// V2-5: Nur die Hervorhebung mit dieser Kennung entfernen.
+    public func removeHighlight(kennung: String, now: CFTimeInterval = CACurrentMediaTime()) {
+        let weg = highlights.filter { $0.kennung == kennung }
+        guard !weg.isEmpty else { return }
+        highlights.removeAll { $0.kennung == kennung }
+        for n in Set(weg.flatMap { $0.refs.map(\.part) }) where parts[n] != nil {
+            rebuildBodiesIfStyleChanged(n)
+            applyProps(n, now: now)
         }
         publish()
     }
@@ -694,7 +740,11 @@ public final class SceneStore {
                 break
             }
         }
-        for h in highlights { for r in h.refs { add(r, h.overlayColor) } }
+        for h in highlights {
+            var farbe = h.overlayColor
+            farbe.w *= h.deckkraft
+            for r in h.refs { add(r, farbe) }
+        }
         for r in selection { add(r, Self.selectionLineColor) }
         return out
     }
@@ -742,7 +792,7 @@ public final class SceneStore {
         var map: [Int: SIMD4<Float>] = [:]
         for h in highlights {
             for r in h.refs where r.part == name && r.kind == .face {
-                map[r.index] = SIMD4(h.color.x, h.color.y, h.color.z, 0.85 * pulseFactor)
+                map[r.index] = SIMD4(h.color.x, h.color.y, h.color.z, 0.85 * pulseFactor * h.deckkraft)
             }
         }
         for r in selection where r.part == name && r.kind == .face { map[r.index] = Self.selectionFaceColor }
@@ -822,6 +872,7 @@ public final class SceneStore {
         var c = Self.linear(rec.header.colorVector)
         var rgb = farbmodus == .technisch ? Self.technischFarbe : SIMD3(c.x, c.y, c.z)
         if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor } else if veraltet.contains(name) { rgb *= Self.dimFactor }
+        if inArbeit == name { rgb = rgb + (Self.inArbeitFarbe - rgb) * 0.3 }
         if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
         if collisionParts.contains(name) { rgb = rgb + (Self.collisionColor - rgb) * 0.8 }
         if let t = vergleichTints[name] { rgb = rgb + (t - rgb) * 0.7 }  // Versionen: geändert oder neu
@@ -832,7 +883,7 @@ public final class SceneStore {
         }
         for h in highlights where h.refs.contains(where: { $0.part == name && $0.kind == .part }) {
             let hc = SIMD3(h.color.x, h.color.y, h.color.z)
-            rgb = rgb + (hc - rgb) * (0.6 * pulseFactor)
+            rgb = rgb + (hc - rgb) * (0.6 * pulseFactor * h.deckkraft)
         }
         if selection.contains(where: { $0.part == name && $0.kind == .part }) {
             let s = SIMD3(Self.selectionLineColor.x, Self.selectionLineColor.y, Self.selectionLineColor.z)

@@ -195,6 +195,10 @@ public final class AppModel: ObservableObject {
     /// Prüfung (additiv): Ergebnis nach jedem Lauf (CHECK) und ob die roten Schnittkörper zu sehen sind.
     @Published public var pruefung: PruefErgebnis?
     @Published public var schnittkoerperSichtbar = true
+    /// V2-5: Befunde als kleine Marke am Teil im Viewer.
+    @Published public var befundMarkenSichtbar = true
+    /// V2-5 (spur-1): Schritte des Agenten mit Zeiten, als eigenes Objekt: Sie sollen nicht das ganze Fenster neu zeichnen.
+    public let agentenspur = AgentenspurStore()
     /// Versionen (additiv): Versionsleiste, Meilensteine, Vergleich, Varianten (Aktionen: `versionenActions`).
     public let versionen = VersionenStore()
     /// Bestand (additiv, BESTAND.md): Bestand des Projekts, Buchungen, Zuschnitt mit Resten und Einkaufsliste.

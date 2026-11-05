@@ -12,7 +12,7 @@ public enum LiveFaehigkeit {
     public static let liveMasse = "live-masse-1"
 
     /// Was diese App dem Kernel meldet. Was hier steht, muss auf der App-Seite vollständig funktionieren.
-    public static let app: [String] = [delta]
+    public static let app: [String] = [delta, inArbeit, spur, lage, liveMasse]
 }
 
 /// Grenzen, die Kernel und App gleich führen (`protocol.py`).
@@ -188,5 +188,40 @@ public struct NochmalMessage: OutgoingMessage {
         try c.encode(Self.type, forKey: .type)
         try c.encode(seq, forKey: .seq)
         try c.encode(art, forKey: .art)
+    }
+}
+
+/// LAGE: was gerade zu sehen ist, Antwort auf LAGE_REQ. `felder` trägt alles außer `reply_to`, `zeit` und `ms`.
+public struct LageMessage: OutgoingMessage {
+    public static let type = "LAGE"
+    public var seq = 0
+    public var replyTo: String
+    public var zeit: Double
+    public var ms: Double
+    public var felder: [String: JSONValue]
+
+    public init(replyTo: String, zeit: Double, ms: Double, felder: [String: JSONValue]) {
+        self.replyTo = replyTo
+        self.zeit = zeit
+        self.ms = ms
+        self.felder = felder
+    }
+
+    private struct Schluessel: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(_ s: String) { stringValue = s }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Schluessel.self)
+        try c.encode(Self.type, forKey: Schluessel("type"))
+        try c.encode(seq, forKey: Schluessel("seq"))
+        try c.encode(replyTo, forKey: Schluessel("reply_to"))
+        try c.encode(zeit, forKey: Schluessel("zeit"))
+        try c.encode(ms, forKey: Schluessel("ms"))
+        for (k, v) in felder { try c.encode(v, forKey: Schluessel(k)) }
     }
 }
