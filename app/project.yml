@@ -19,6 +19,18 @@ settings:
     KEVCAD_PORT: "47823"
     KEVCAD_BUILD: "1"
     KEVCAD_COMMIT: ""
+    # Xcode-Zwischenspeicher (Regel xcode-compilation-cache): Übersetzungen aus dem Cache, auch in neuen Bauordnern und
+    # anderen Arbeitskopien (Pfade herausgerechnet), ohne Code-Abdeckung. Gilt so nur für das App-Ziel; build.sh setzt
+    # dasselbe auf der Befehlszeile, damit es auch die Paketziele (KevCADCore, OCCTSwiftViewport) erfasst, und legt den
+    # Speicher auf UPVIS ULTRA.
+    COMPILATION_CACHE_ENABLE_CACHING: YES
+    CLANG_ENABLE_CODE_COVERAGE: NO
+    SWIFT_ENABLE_PREFIX_MAPPING: YES
+    CLANG_ENABLE_PREFIX_MAPPING: YES
+    SWIFT_ENABLE_PROJECT_PREFIX_MAPPING: YES
+    CLANG_ENABLE_PROJECT_PREFIX_MAPPING: YES
+    SWIFT_OTHER_PREFIX_MAPPINGS: "$(OBJROOT)/GeneratedModuleMaps=/^gmm $(MODULE_CACHE_DIR)=/^mcache"
+    CLANG_OTHER_PREFIX_MAPPINGS: "$(OBJROOT)/GeneratedModuleMaps=/^gmm $(MODULE_CACHE_DIR)=/^mcache"
 targets:
   KevCAD:
     type: application

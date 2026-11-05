@@ -45,6 +45,8 @@ export PATH="$ROOT/werkzeuge/xcodegen/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sb
 ulimit -n 10240 2>/dev/null
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 export UV_CACHE_DIR="$ROOT/cache/uv"
+# Xcode-Zwischenspeicher (build.sh): auf dem Mini unter cache/, nicht in Xcodes Vorgabe auf der Systemplatte
+export KEVCAD_CAS_PATH="$ROOT/cache/xcode-cas"
 mkdir -p "$QUEUE/bau" "$QUEUE/test" "$TREES" "$RESULTS" "$JOBS" "$SOURCES" "$HOMES" "$RUNNING" "$LOGS"
 
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
