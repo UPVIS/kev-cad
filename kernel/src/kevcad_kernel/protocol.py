@@ -3020,7 +3020,8 @@ FEEDBACK_KAMERA_JE_S = 5
 FEEDBACK_BILD_LAENGE_MAX = 1600
 FEEDBACK_ZEIGEWOERTER = ("hier", "da", "dort", "dahin", "hierhin", "dorthin", "das", "dies", "diese", "dieser", "dieses",
                          "diesem", "diesen")
-FEEDBACK_ERKENNUNGEN = ("apple-dictation", "apple-speech", "test", "wortlaut-parakeet")
+FEEDBACK_ERKENNUNGEN = ("wortlaut-parakeet", "apple-dictation", "apple-speech", "test")
+FEEDBACK_WORTZEITEN = ("ton", "geschaetzt")
 _FEEDBACK_NAME = re.compile(r"fb-\d{8}-\d{6}(-\d+)?")
 
 
@@ -3101,6 +3102,8 @@ def check_feedback_paket(p: Any) -> list[str]:
         out.append("dauer_s fehlt")
     if not isinstance(p.get("spracherkennung"), str):
         out.append("spracherkennung fehlt")
+    if p.get("wortzeiten") not in FEEDBACK_WORTZEITEN:
+        out.append(f"wortzeiten {p.get('wortzeiten')!r} unbekannt")
     projekt = p.get("projekt")
     if not isinstance(projekt, dict) or not isinstance(projekt.get("pfad"), str):
         out.append("projekt fehlt")
@@ -3199,7 +3202,8 @@ def feedback_beispiel() -> dict[str, Any]:
               "punkt": [120.0, 4.0, 62.5], "normale": [0.0, 0.0, 1.0], "bild": [640, 380]}
     return {
         "format": FEEDBACK_FORMAT, "name": "fb-20261105-223011", "erstellt": "2026-11-05T22:30:11+01:00",
-        "uhr_start": 1793480977.25, "dauer_s": 9.5, "spracherkennung": "apple-dictation",
+        "uhr_start": 1793480977.25, "dauer_s": 9.5, "spracherkennung": "wortlaut-parakeet",
+        "wortzeiten": "geschaetzt",
         "projekt": {"name": "Halter", "pfad": "/Users/kevin/Documents/Kev CAD/Halter"}, "run": 7,
         "abschnitte": [{"von": 0.0, "bis": 3.5}, {"von": 5.5, "bis": 9.5}],
         "worte": [{"text": t, "von": a, "bis": b, "satz": s} for t, a, b, s in worte],

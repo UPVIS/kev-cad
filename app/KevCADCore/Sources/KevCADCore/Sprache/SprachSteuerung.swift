@@ -54,11 +54,17 @@ public final class SprachSteuerung {
     /// Selbsttest: jeder Zwischenstand mit Uptime; das Paket, sobald es geschrieben ist.
     var beiZwischenstand: ((String, Double) -> Void)?
     var beiPaket: ((URL, FeedbackPaket) -> Void)?
+    /// Tests: eigene Erkennung statt Wortlaut, und was an den Kernel geht.
+    var erkennungFabrik: (() -> any Spracherkennung)?
+    var gesendet: ((any OutgoingMessage) -> Void)?
 
     public var offen: Bool { sitzung != nil }
     public var spricht: Bool { stand == .spricht }
-    /// So lange höchstens wartet ↩ auf die letzten Wörter (Budget: Paket beim Agenten unter 1 s).
-    static let letzteWorteS = 0.55
+    /// So lange höchstens wartet ↩ auf die letzten Wörter (Budget: Paket beim Agenten unter 1 s). Wortlaut schließt einen
+    /// Satz nach 0,6 s Stille ab; drückt Kevin ↩ gleich nach dem letzten Wort, ist der Satz damit gerade noch da.
+    static let letzteWorteS = 0.7
+    /// V hält an: Hier wartet niemand, der Satz darf zu Ende kommen.
+    static let satzAbwartenS = 1.5
 
     private var jetzt: Double { ProcessInfo.processInfo.systemUptime }
 
@@ -93,7 +99,7 @@ public final class SprachSteuerung {
         zwischenstand = nil
         satzBeginn = nil
         c.model.sprache.text = nil
-        erkennung = neueErkennung()
+        erkennung = erkennungFabrik?() ?? neueErkennung()
         erkennung?.beiEreignis = { [weak self] e in self?.ereignis(e) }
         c.model.oberflaeche.ausfuehren(.sprechen(true))
         c.viewport.zeichnen = true
@@ -105,17 +111,19 @@ public final class SprachSteuerung {
     /// Mikrofon aus, Sitzung offen.
     private func anhalten() {
         guard let c = controller, stand == .spricht else { return }
-        sitzung?.mikrofonAus(t: uhr())
+        let t = uhr()
+        sitzung?.mikrofonAus(t: t)
         c.model.oberflaeche.ausfuehren(.sprechen(false))
         c.viewport.zeichnen = false
         melden(.pause)
         let e = erkennung
-        stoppen = Task { await e?.anhalten() }
+        stoppen = Task { await e?.anhalten(hoechstens: Self.satzAbwartenS) }
     }
 
     private func weiter() {
         guard let c = controller else { return }
-        sitzung?.mikrofonAn(t: uhr())
+        let t = uhr()
+        sitzung?.mikrofonAn(t: t)
         c.model.oberflaeche.ausfuehren(.sprechen(true))
         c.viewport.zeichnen = true
         melden(.spricht)
@@ -145,7 +153,7 @@ public final class SprachSteuerung {
         let letzte = stoppen
         let abschluss = Task {
             await letzte?.value
-            await e?.anhalten()
+            await e?.anhalten(hoechstens: Self.letzteWorteS)
         }
         // Der Agent darf gleich weiterarbeiten: Die Lage steht jetzt fest
         let roh = c.feedbackBild()
@@ -153,7 +161,7 @@ public final class SprachSteuerung {
         let run = c.scene.latestRun
         let erstellt = Date()
         Task { [weak self] in
-            await Self.warten(auf: abschluss, hoechstens: Self.letzteWorteS)
+            await Self.warten(auf: abschluss, hoechstens: Self.letzteWorteS + 0.05)
             await self?.schreiben(ende: ende, lage: lage, run: run, erstellt: erstellt, bild: roh)
         }
     }
@@ -163,7 +171,7 @@ public final class SprachSteuerung {
         guard let c = controller, sitzung != nil, !schliesst else { return }
         melden(.aus, grund: .verworfen)
         let e = erkennung
-        Task { await e?.anhalten() }
+        Task { await e?.anhalten(hoechstens: 0) }
         aufraeumen()
         c.model.oberflaeche.ausfuehren(.sprechenVerwerfen)
     }
@@ -171,44 +179,39 @@ public final class SprachSteuerung {
     /// Neuer Kernel: Er kennt die offene Sitzung noch nicht.
     func nachVerbindung() {
         guard let s = sitzung, stand != .aus else { return }
-        controller?.send(FeedbackStandMessage(sitzung: s.id, stand: stand, seit: standSeit))
+        senden(FeedbackStandMessage(sitzung: s.id, stand: stand, seit: standSeit))
+    }
+
+    private func senden<M: OutgoingMessage>(_ m: M) {
+        gesendet?(m)
+        controller?.send(m)
     }
 
     private func melden(_ neu: FeedbackStand, grund: FeedbackGrund? = nil) {
         guard let s = sitzung else { return }
         stand = neu
         standSeit = Date().timeIntervalSince1970
-        controller?.send(FeedbackStandMessage(sitzung: s.id, stand: neu, seit: standSeit, grund: grund))
+        senden(FeedbackStandMessage(sitzung: s.id, stand: neu, seit: standSeit, grund: grund))
     }
 
+    /// Am Mac zuerst Wortlaut, Apples Erkennung als Rückfall. Selbsttests und Demomodus fragen nie nach dem Mikrofon; der
+    /// Testeingang liest eine Datei.
     private func neueErkennung() -> any Spracherkennung {
         let env = ProcessInfo.processInfo.environment
-        var erkennung: any Spracherkennung = TestErkennung()
-        // Selbsttests und Demomodus fragen nie nach dem Mikrofon; der Testeingang liest eine Datei
-        let tonDatei = AppInfo.isTestVariant ? env["KEVCAD_SPRACHE_TONDATEI"].flatMap { $0.isEmpty ? nil : $0 } : nil
-        if tonDatei != nil || (env["KEVCAD_SELFTEST"] == nil && !AppInfo.isDemoMode) {
+        let kontext = Fachwoerter.kontext(teile: controller?.scene.order ?? [])
+        func apple(_ tonDatei: URL?) -> any Spracherkennung {
             if #available(macOS 26.0, *) {
-                let apple = AppleErkennung(tonDatei: tonDatei.map { URL(fileURLWithPath: $0) })
-                apple.kontext = kontext()
-                erkennung = apple
-            } else {
-                erkennung = KeineErkennung()
+                let e = AppleErkennung(tonDatei: tonDatei)
+                e.kontext = kontext
+                return e
             }
+            return KeineErkennung()
         }
-        return erkennung
-    }
-
-    /// Die letzten Namensteile der Teile und die Maße: Die Erkennung hört sie so eher.
-    private func kontext() -> [String] {
-        guard let c = controller else { return [] }
-        var woerter: [String] = []
-        var gesehen = Set<String>()
-        for name in c.scene.order {
-            let letzter = name.split(separator: "/").last.map(String.init) ?? name
-            let wort = letzter.trimmingCharacters(in: .decimalDigits.union(.whitespaces))
-            if !wort.isEmpty, gesehen.insert(wort).inserted { woerter.append(wort) }
+        if AppInfo.isTestVariant, let pfad = env["KEVCAD_SPRACHE_TONDATEI"], !pfad.isEmpty {
+            return apple(URL(fileURLWithPath: pfad))
         }
-        return woerter
+        if env["KEVCAD_SELFTEST"] != nil || AppInfo.isDemoMode { return TestErkennung() }
+        return ErkennungMitRueckfall(erste: WortlautErkennung(), rueckfall: { apple(nil) })
     }
 
     // MARK: Erkennung
@@ -219,19 +222,24 @@ public final class SprachSteuerung {
         case .pegel(let p):
             c.model.sprache.pegel = p
         case .zwischenstand(let t):
-            if satzBeginn == nil { satzBeginn = uhr() }
+            if satzBeginn == nil { satzBeginn = max(0, uhr() - 0.4) }  // der erste Zwischenstand kommt so viel später
             zwischenstand = t
             beiZwischenstand?(t, jetzt)
             textZeigen()
         case .satz(let text, let worte, let von, let bis):
-            let ohneZeit = satzBeginn ?? uhr()
-            sitzung?.satz(
-                text: text, von: von.map { sitzung?.zeit(uptime: $0) ?? 0 } ?? ohneZeit,
-                bis: bis.map { sitzung?.zeit(uptime: $0) ?? 0 } ?? uhr(),
-                worte: worte.map {
-                    .init(text: $0.text, von: sitzung?.zeit(uptime: $0.von) ?? 0, bis: sitzung?.zeit(uptime: $0.bis) ?? 0)
-                })
+            guard let s = sitzung else { return }
+            let jetztUhr = uhr()
+            let beginn = von.map(s.zeit(uptime:)) ?? satzBeginn ?? jetztUhr
+            let ende = bis.map(s.zeit(uptime:)) ?? jetztUhr
+            let rohWorte = worte.map {
+                FeedbackSitzung.RohWort(text: $0.text, von: s.zeit(uptime: $0.von), bis: s.zeit(uptime: $0.bis))
+            }
+            sitzung?.satz(text: text, von: beginn, bis: ende, worte: rohWorte)
             gesagt.append(text)
+            zwischenstand = nil
+            satzBeginn = nil
+            textZeigen()
+        case .verworfen:
             zwischenstand = nil
             satzBeginn = nil
             textZeigen()
@@ -240,6 +248,11 @@ public final class SprachSteuerung {
             if offen, !schliesst, gesagt.isEmpty, zwischenstand == nil, (sitzung?.striche.isEmpty ?? true) {
                 verwerfen()
             }
+        case .zustand(.rueckfall(let grund)):
+            // Ohne Wortlaut ist das der normale Weg, das braucht keine Meldung
+            if Wortlaut.installiert { c.viewer.zeige("\(grund) Es hört jetzt Apples Spracherkennung zu.") }
+        case .zustand(.pausiert):
+            c.viewer.zeige("Du diktierst gerade in Wortlaut, danach hört Kev CAD wieder zu.")
         case .zustand(.laedt(let meldung)):
             c.viewer.zeige(meldung)
         case .zustand:
@@ -261,7 +274,8 @@ public final class SprachSteuerung {
     /// Mausprobe aus dem Treffertest unter der Maus; `bildpunkt` nil: Die Maus hat den Viewer verlassen.
     func maus(_ pick: PickResult?, _ welt: SIMD3<Float>?, _ bildpunkt: CGPoint?) {
         guard sitzung != nil else { return }
-        sitzung?.maus(probe(t: uhr(), pick, welt, bildpunkt))
+        let p = probe(t: uhr(), pick, welt, bildpunkt)
+        sitzung?.maus(p)
     }
 
     private func probe(t: Double, _ pick: PickResult?, _ welt: SIMD3<Float>?, _ bildpunkt: CGPoint?) -> FeedbackPaket.MausProbe {
@@ -323,18 +337,21 @@ public final class SprachSteuerung {
         switch e {
         case .beginn:
             strichAnker = nil
-            sitzung?.strichBeginnen(t: uhr(), run: c.scene.latestRun, kamera: c.lageKamera())
+            let t = uhr()
+            sitzung?.strichBeginnen(t: t, run: c.scene.latestRun, kamera: c.lageKamera())
         case .punkt(let eingabe, let bild, let zeit, let treffer, let welt):
             let t = sitzung?.zeit(uptime: zeit) ?? 0
-            let ref = treffer.flatMap(c.scene.resolve)
+            let ref = treffer.flatMap { c.scene.resolve($0) }
             if welt != nil { strichAnker = welt }
             let ort = welt ?? c.viewport.weltpunkt(eingabe, durch: strichAnker ?? c.viewport.camera.pivot) ?? .zero
             sitzung?.strichPunkt(
                 .init(t: t, bild: [Double(bild.x.rounded()), Double(bild.y.rounded())], welt: Self.zahlen(ort),
                       ref: ref?.string), teil: ref?.part)
-            sitzung?.maus(probe(t: t, treffer, welt, bild))
+            let p = probe(t: t, treffer, welt, bild)
+            sitzung?.maus(p)
         case .ende:
-            sitzung?.strichEnden(t: uhr())
+            let t = uhr()
+            sitzung?.strichEnden(t: t)
             c.refreshOverlay()
         }
     }
@@ -360,7 +377,10 @@ public final class SprachSteuerung {
         guard let c = controller, let s = sitzung, let projekt else { return }
         var sitzung = s
         if let rest = zwischenstand, !rest.isEmpty {  // ↩ kam vor dem endgültigen Ergebnis
-            sitzung.satz(text: rest, von: satzBeginn ?? ende, bis: ende, worte: [], vorlaeufig: true)
+            let von = satzBeginn ?? ende
+            let worte = Wortzeiten.schaetzen(text: rest, von: von, bis: ende, stuetzen: [])
+                .map { FeedbackSitzung.RohWort(text: $0.text, von: $0.von, bis: $0.bis) }
+            sitzung.satz(text: rest, von: von, bis: ende, worte: worte, vorlaeufig: true)
         }
         let (saetze, _) = sitzung.saetzeMitBezuegen(run: run)
         let text = (gesagt + (zwischenstand.map { [$0] } ?? [])).joined(separator: " ")
@@ -376,7 +396,7 @@ public final class SprachSteuerung {
         let eintrag = bild.map { FeedbackPaket.Bild(datei: name + ".jpg", breite: $0.image.width, hoehe: $0.image.height) }
         let paket = sitzung.paket(
             name: name, erstellt: erstellt, dauer: ende, spracherkennung: erkennung?.kennung ?? "test",
-            projekt: .init(name: projekt.name, pfad: projekt.path.path), run: run, ende: lage, bild: eintrag)
+            wortzeiten: erkennung?.wortzeiten ?? "ton", projekt: .init(name: projekt.name, pfad: projekt.path.path), run: run, ende: lage, bild: eintrag)
         let overlay = Self.strichItems(paket.striche) + Self.nummern(paket.saetze)
         // Kevin ist fertig: Die Oberfläche ist frei, bevor die Datei liegt
         c.model.oberflaeche.ausfuehren(.sprechText(text))
@@ -392,7 +412,7 @@ public final class SprachSteuerung {
         }.value
         switch ergebnis {
         case .success(let datei):
-            c.send(FeedbackPaketMessage(sitzung: sitzungID, name: name, datei: datei.path, saetze: paket.saetze.count,
+            senden(FeedbackPaketMessage(sitzung: sitzungID, name: name, datei: datei.path, saetze: paket.saetze.count,
                                         striche: paket.striche.count, dauerS: paket.dauerS))
             c.log(.info, "Feedback \(name): \(paket.saetze.count) Sätze, \(paket.striche.count) Striche")
             beiPaket?(datei, paket)

@@ -1370,7 +1370,7 @@ Eine Sitzung läuft von V bis ↩ oder esc.
 | V | keine Sitzung | Sitzung beginnt, die Uhr läuft, das Mikrofon ist an (`spricht`) |
 | V | `spricht` | Mikrofon aus, die Sitzung bleibt offen (`pause`); Text, Striche und Uhr bleiben |
 | V | `pause` | Mikrofon wieder an (`spricht`), dieselbe Sitzung |
-| ↩ | offen | Mikrofon aus, letzte Wörter fertig erkennen, Paket schreiben (`aus`, `fertig`) |
+| ↩ | offen | Paket schreiben (`aus`, `fertig`). Wortlaut verwirft beim Stoppen einen angefangenen Satz: Ist noch einer unterwegs, läuft das Mikrofon höchstens 0,7 s weiter, bis er fertig ist; sonst zählt der letzte Zwischenstand (`vorlaeufig`) |
 | esc | offen | alles verwerfen, nichts wird geschrieben (`aus`, `verworfen`) |
 
 Sprache allein löst nichts aus.
@@ -1388,7 +1388,8 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
   "erstellt": "2026-11-05T22:30:11+01:00",
   "uhr_start": 1793480977.25,        // Unix-Zeit von Uhrzeit 0; alle Zeiten im Paket sind Sekunden ab hier
   "dauer_s": 34.2,                   // bis ↩
-  "spracherkennung": "apple-dictation",  // apple-dictation | apple-speech | test | später wortlaut-parakeet
+  "spracherkennung": "wortlaut-parakeet",  // wortlaut-parakeet | apple-dictation | apple-speech | test
+  "wortzeiten": "geschaetzt",        // ton: aus dem Ton gemessen; geschaetzt: siehe „Eine Uhr“
   "projekt": {"name": "Halter", "pfad": "/Users/…/Halter"},
   "run": 7,                          // Lauf beim Abschließen
   "abschnitte": [{"von": 0.0, "bis": 12.3}, {"von": 15.0, "bis": 34.2}],  // Mikrofon an
@@ -1418,8 +1419,10 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
 }
 ```
 
-- **Eine Uhr:** Alle Zeiten sind Sekunden ab `uhr_start`, gemessen mit einer monotonen Uhr (Pausen laufen mit).
-  Wortzeiten stammen aus dem Ton, die Zeit null des Tons ist der erste Abtastwert des Abschnitts.
+- **Eine Uhr:** Alle Zeiten sind Sekunden ab `uhr_start`, gemessen mit einer monotonen Uhr (Pausen laufen mit). Apples
+  Erkennung nennt Wortzeiten aus dem Ton (Zeit null ist der erste Abtastwert des Abschnitts). Wortlaut nennt nur Beginn
+  und Ende des Satzes: Die Wörter verteilen sich dazwischen nach dem Takt der Zwischenstände, je Zwischenstand 0,25 s
+  früher als seine Ankunft, dazwischen nach Länge (`wortzeiten: "geschaetzt"`, auf rund 0,3 s genau).
 - **`bild`-Punkte** sind Punkte der Ansicht, Ursprung links oben, wie `LAGE.maus.bild`.
 - **`mausweg`:** höchstens 10 Proben je Sekunde, dazu jede Änderung des Teils oder Elements unter der Maus. Steht die
   Maus still, gilt die letzte Probe weiter. `teil`, `ref`, `punkt`, `normale` sind null, wenn die Maus neben dem Modell

@@ -1,19 +1,22 @@
 import Foundation
 
-// V2-6: Naht für die Spracherkennung. Heute Apples Erkennung auf dem Gerät (`AppleErkennung`), im Test ein Skript
-// (`TestErkennung`). Wortlaut (Parakeet, Kevins XPC-Dienst) lässt sich hier einstecken, sobald Kev CAD mit seinem Team
-// signiert ist. Alle Zeiten sind `ProcessInfo.systemUptime`, wie im Sichtung-Vorbild; die Sitzung rechnet sie auf ihre
-// Uhr um.
+// V2-6: Quelle für gesprochenen Text. Am Mac zuerst Wortlaut (`WortlautErkennung`); fehlt er, ist er belegt oder weist ab,
+// hört Apples Erkennung zu (`AppleErkennung`, `ErkennungMitRueckfall`). Im Test ein Skript (`TestErkennung`). Alle Zeiten
+// sind `ProcessInfo.systemUptime`, wie im Vorbild Sichtung; die Sitzung rechnet sie auf ihre Uhr um.
 
 /// Stand der Erkennung, für die Oberfläche.
 public enum SprachZustand: Equatable, Sendable {
     case aus
     case startet
     case hoert
-    /// Vorübergehend nicht (das Sprachpaket lädt).
+    /// Kevin diktiert in Wortlaut; danach geht es weiter.
+    case pausiert
+    /// Vorübergehend nicht (das Sprachpaket lädt, Wortlaut hat kein Mikrofon). Der Satz ist für die Oberfläche.
     case laedt(String)
-    /// Ohne Zutun beendet (kein Zugriff, keine Sprache, kein Mikrofon). Der Satz ist für die Oberfläche.
+    /// Ohne Zutun beendet (Dienst fehlt, belegt, abgewiesen, kein Zugriff). Der Satz ist für die Oberfläche.
     case fehler(String)
+    /// Die erste Quelle ist ausgefallen, jetzt hört der Rückfall zu.
+    case rueckfall(String)
 }
 
 /// Ein erkanntes Wort mit Zeiten aus dem Ton.
@@ -36,32 +39,37 @@ public enum SprachEreignis: Sendable {
     case zwischenstand(String)
     /// Endgültig: Text, Wörter mit Zeiten (leer, wenn die Quelle keine kennt), Anfang und Ende des Sprechens.
     case satz(text: String, worte: [SprachWort], von: Double?, bis: Double?)
+    /// Der angefangene Satz gilt nicht mehr.
+    case verworfen
     case zustand(SprachZustand)
 }
 
 /// Eine Quelle für gesprochenen Text. Sie meldet alles auf dem Hauptfaden.
 @MainActor
 public protocol Spracherkennung: AnyObject {
-    /// Fürs Paket: `apple-dictation`, `apple-speech`, `test`, später `wortlaut-parakeet`.
+    /// Fürs Paket: `wortlaut-parakeet`, `apple-dictation`, `apple-speech`, `test`.
     var kennung: String { get }
+    /// Fürs Paket: `ton` (aus dem Ton gemessen) oder `geschaetzt`.
+    var wortzeiten: String { get }
     var beiEreignis: ((SprachEreignis) -> Void)? { get set }
     /// Hört zu, bis `anhalten` kommt. Darf nach `anhalten` wieder gerufen werden (nächster Abschnitt).
     func starten()
-    /// Hört auf und meldet die letzten Wörter; endet, wenn nichts mehr kommt.
-    func anhalten() async
+    /// Hört auf und meldet die letzten Wörter; endet, wenn nichts mehr kommt, spätestens nach rund `s` Sekunden.
+    func anhalten(hoechstens s: Double) async
 }
 
 /// Für Selbsttests und den Demomodus: kein Mikrofon, keine Rechteabfrage. Sätze kommen über `sagen`.
 @MainActor
 public final class TestErkennung: Spracherkennung {
     public let kennung = "test"
+    public let wortzeiten = "ton"
     public var beiEreignis: ((SprachEreignis) -> Void)?
 
     public init() {}
 
     public func starten() { beiEreignis?(.zustand(.hoert)) }
 
-    public func anhalten() async { beiEreignis?(.zustand(.aus)) }
+    public func anhalten(hoechstens s: Double) async { beiEreignis?(.zustand(.aus)) }
 
     /// Spricht `text` über `dauer` Sekunden: Zwischenstände Wort für Wort, dann der Satz mit gleichmäßigen Zeiten.
     public func sagen(_ text: String, dauer: Double) async {
@@ -83,9 +91,60 @@ public final class TestErkennung: Spracherkennung {
 @MainActor
 final class KeineErkennung: Spracherkennung {
     let kennung = "keine"
+    let wortzeiten = "ton"
     var beiEreignis: ((SprachEreignis) -> Void)?
 
-    func starten() { beiEreignis?(.zustand(.fehler("Die Spracherkennung braucht macOS 26."))) }
+    func starten() { beiEreignis?(.zustand(.fehler("Apples Spracherkennung braucht macOS 26."))) }
 
-    func anhalten() async {}
+    func anhalten(hoechstens s: Double) async {}
+}
+
+/// Zuerst `erste`; meldet sie einen Fehler, solange zugehört werden soll, übernimmt der Rückfall bis zum Ende der Sitzung.
+/// Die nächste Sitzung versucht es wieder zuerst mit `erste`: Belegt ist meist nur für den Moment.
+@MainActor
+public final class ErkennungMitRueckfall: Spracherkennung {
+    private let erste: any Spracherkennung
+    private let rueckfall: () -> any Spracherkennung
+    private var aktiv: any Spracherkennung
+    private var zuhoeren = false
+
+    public var kennung: String { aktiv.kennung }
+    public var wortzeiten: String { aktiv.wortzeiten }
+    public var beiEreignis: ((SprachEreignis) -> Void)?
+
+    public init(erste: any Spracherkennung, rueckfall: @escaping () -> any Spracherkennung) {
+        self.erste = erste
+        self.rueckfall = rueckfall
+        aktiv = erste
+        anbinden(erste)
+    }
+
+    public func starten() {
+        zuhoeren = true
+        aktiv.starten()
+    }
+
+    public func anhalten(hoechstens s: Double) async {
+        zuhoeren = false
+        await aktiv.anhalten(hoechstens: s)
+    }
+
+    private func anbinden(_ quelle: any Spracherkennung) {
+        quelle.beiEreignis = { [weak self, weak quelle] e in
+            guard let self, let quelle, quelle === self.aktiv else { return }
+            self.empfangen(e, von: quelle)
+        }
+    }
+
+    private func empfangen(_ e: SprachEreignis, von quelle: any Spracherkennung) {
+        if case .zustand(.fehler(let grund)) = e, quelle === erste, zuhoeren {
+            let neu = rueckfall()
+            aktiv = neu
+            anbinden(neu)
+            beiEreignis?(.zustand(.rueckfall(grund)))
+            neu.starten()
+            return
+        }
+        beiEreignis?(e)
+    }
 }

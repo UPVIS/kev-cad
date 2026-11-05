@@ -293,8 +293,8 @@ public struct FeedbackSitzung: Sendable {
     }
 
     /// Das fertige Paket. `dauer` in Sekunden der Uhr; offene Striche und Abschnitte schließt es selbst.
-    public func paket(name: String, erstellt: Date, dauer: Double, spracherkennung: String, projekt: Paket.Projekt,
-                      run: Int, ende: JSONValue, bild: Paket.Bild?) -> Paket {
+    public func paket(name: String, erstellt: Date, dauer: Double, spracherkennung: String, wortzeiten: String = "ton",
+                      projekt: Paket.Projekt, run: Int, ende: JSONValue, bild: Paket.Bild?) -> Paket {
         var s = self
         s.strichEnden(t: dauer)
         s.mikrofonAus(t: dauer)
@@ -303,7 +303,8 @@ public struct FeedbackSitzung: Sendable {
         iso.timeZone = .current
         return Paket(
             format: FeedbackGrenzen.format, name: name, erstellt: iso.string(from: erstellt), uhrStart: uhrStart,
-            dauerS: dauer, spracherkennung: spracherkennung, projekt: projekt, run: run, abschnitte: s.abschnitte,
+            dauerS: dauer, spracherkennung: spracherkennung, wortzeiten: wortzeiten, projekt: projekt, run: run,
+            abschnitte: s.abschnitte,
             worte: worte, saetze: saetze, striche: s.striche, mausweg: s.mausweg, kameraVerlauf: s.kameraVerlauf,
             auswahlVerlauf: s.auswahlVerlauf, ende: ende, bild: bild)
     }

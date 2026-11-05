@@ -4,7 +4,8 @@
  "erstellt": "2026-11-05T22:30:11+01:00",
  "uhr_start": 1793480977.25,
  "dauer_s": 9.5,
- "spracherkennung": "apple-dictation",
+ "spracherkennung": "wortlaut-parakeet",
+ "wortzeiten": "geschaetzt",
  "projekt": {
   "name": "Halter",
   "pfad": "/Users/kevin/Documents/Kev CAD/Halter"

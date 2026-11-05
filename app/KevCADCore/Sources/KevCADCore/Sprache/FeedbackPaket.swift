@@ -280,6 +280,8 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
     public var uhrStart: Double
     public var dauerS: Double
     public var spracherkennung: String
+    /// `ton`: gemessen; `geschaetzt`: aus dem Takt der Zwischenstände (Wortlaut nennt keine Zeiten je Wort).
+    public var wortzeiten: String
     public var projekt: Projekt
     public var run: Int
     public var abschnitte: [Abschnitt]
@@ -293,7 +295,8 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
     public var bild: Bild?
 
     enum CodingKeys: String, CodingKey {
-        case format, name, erstellt, spracherkennung, projekt, run, abschnitte, worte, saetze, striche, mausweg, ende, bild
+        case format, name, erstellt, spracherkennung, wortzeiten, projekt, run, abschnitte, worte, saetze, striche, mausweg
+        case ende, bild
         case uhrStart = "uhr_start"
         case dauerS = "dauer_s"
         case kameraVerlauf = "kamera_verlauf"
@@ -308,6 +311,7 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
         try c.encode(uhrStart, forKey: .uhrStart)
         try c.encode(dauerS, forKey: .dauerS)
         try c.encode(spracherkennung, forKey: .spracherkennung)
+        try c.encode(wortzeiten, forKey: .wortzeiten)
         try c.encode(projekt, forKey: .projekt)
         try c.encode(run, forKey: .run)
         try c.encode(abschnitte, forKey: .abschnitte)

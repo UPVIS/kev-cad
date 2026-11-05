@@ -3,7 +3,8 @@ import CoreMedia
 import Foundation
 import Speech
 
-// V2-6: Apples Spracherkennung auf dem Gerät (SpeechAnalyzer), Vorbild `AppleQuelle` in Sichtung. Die Diktaterkennung
+// V2-6: Apples Spracherkennung auf dem Gerät (SpeechAnalyzer), der Rückfall hinter Wortlaut. Vorbild `AppleQuelle` in
+// Sichtung. Die Diktaterkennung
 // liefert nach knapp einer Sekunde Text und schließt Sätze an Pausen; das genaue Modell (SpeechTranscriber) arbeitet in
 // Schüben und ist nur Rückfall. Ton kommt vom Mikrofon oder, im Selbsttest, aus einer Datei in Echtzeit.
 
@@ -11,6 +12,7 @@ import Speech
 @MainActor
 final class AppleErkennung: Spracherkennung {
     private(set) var kennung = "apple-dictation"
+    let wortzeiten = "ton"
     var beiEreignis: ((SprachEreignis) -> Void)?
 
     enum Fehler: LocalizedError {
@@ -55,7 +57,7 @@ final class AppleErkennung: Spracherkennung {
         anlauf = Task { [weak self] in await self?.hochfahren() }
     }
 
-    func anhalten() async {
+    func anhalten(hoechstens s: Double) async {
         guard laeuft else { return }
         laeuft = false
         await anlauf?.value
@@ -122,7 +124,7 @@ final class AppleErkennung: Spracherkennung {
             if !kontext.isEmpty {
                 // Kontext hilft nur, er ist keine Bedingung
                 let zusammenhang = AnalysisContext()
-                zusammenhang.contextualStrings[.general] = Array(kontext.prefix(200))
+                zusammenhang.contextualStrings[.general] = kontext
                 try? await analyzer.setContext(zusammenhang)
             }
             self.analyzer = analyzer
