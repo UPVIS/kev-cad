@@ -16,7 +16,7 @@ from app_testutil import FakeApp, make_runtime
 
 from kevcad_kernel.live import Agentenspur, LiveVerbindung
 from kevcad_kernel.protocol import (
-    KERNEL_FAEHIGKEITEN, WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, encode_frame, inhalt_schluessel, kanonisch, pack_check,
+    KERNEL_FAEHIGKEITEN, TEIL_INHALTE, WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, encode_frame, kanonisch, pack_check,
     unpack_netze, wie_zuvor_aufbauen,
 )
 
@@ -30,10 +30,12 @@ NEU = {"PART_SAME", "WIE_ZUVOR", "IN_ARBEIT", "AGENT_SPUR", "AGENT_SCHRITT", "LA
 
 
 class AppSicht:
-    """Teile (Name → (inhalt, run)) und Basen für WIE_ZUVOR, wie eine App mit delta-1 sie führt (PROTOCOL.md)."""
+    """Teile (Name → gezeigter (inhalt, run)), die letzten Inhalte je Teil und Basen für WIE_ZUVOR, wie eine App mit
+    delta-1 sie führt (PROTOCOL.md)."""
 
     def __init__(self) -> None:
         self.teile: dict[str, tuple[str | None, int]] = {}
+        self.inhalte: dict[str, list[str]] = {}
         self.reihenfolge: list[str] = []
         self.basen: dict[str, collections.deque] = {}
         self.letzte: dict[str, dict] = {}
@@ -53,22 +55,35 @@ class AppSicht:
             if h["name"] not in self.teile:
                 self.reihenfolge.append(h["name"])
             self.teile[h["name"]] = (h.get("inhalt"), h["run"])
+            self._zeige(h["name"], h.get("inhalt"))
         elif t == "PART_SAME":
-            alt = self.teile.get(h["name"])
-            if alt is None or (alt[0] is not None and alt[0] != h["inhalt"]):
+            if h["inhalt"] not in self.inhalte.get(h["name"], ()):
                 self.anfragen.append([h["name"]])
             else:
                 self.teile[h["name"]] = (h["inhalt"], h["run"])
+                self._zeige(h["name"], h["inhalt"])
         elif t == "PART_REMOVE":
             self.teile.pop(h["name"], None)
+            self.inhalte.pop(h["name"], None)
             if h["name"] in self.reihenfolge:
                 self.reihenfolge.remove(h["name"])
         elif t == "RUN_END" and "teile" in h:
             for n in list(self.teile):
                 if n not in h["teile"]:
                     del self.teile[n]
+                    self.inhalte.pop(n, None)
             self.reihenfolge = [n for n in self.reihenfolge if n in self.teile]
         return h
+
+    def _zeige(self, name: str, inhalt: str | None) -> None:
+        if not inhalt:
+            self.inhalte.pop(name, None)
+            return
+        liste = self.inhalte.setdefault(name, [])
+        if inhalt in liste:
+            liste.remove(inhalt)
+        liste.append(inhalt)
+        del liste[:-TEIL_INHALTE]
 
 
 # =====================================================================================================================
@@ -131,6 +146,28 @@ def test_weiche_delta_teile():
     # Teil aus einem Lauf ohne delta (Verbindung mitten im Lauf): vollständig
     lv.delta_lauf = None
     assert lv.filtern(_teil("A", 3, a)[0], b"", 22)[0]["type"] == "PART_UPSERT"
+
+
+def test_weiche_wechselnde_inhalte_und_anfangsstand():
+    """Ein Teil, das model.py in einem Lauf mehrmals zeigt (Kugelschieber: Rollwagen/Rahmen dreimal), kostet ab dem
+    zweiten Lauf nichts mehr; ein fünfter Inhalt verdrängt den ältesten. Vor HELLO_APP bleibt inhalt drin."""
+    lv = LiveVerbindung()
+    h, p = _teil("R", 0, "0" * 16)
+    assert lv.filtern(h, p, 1)[0]["inhalt"] == "0" * 16, "Anfangsstand vor HELLO_APP: mit inhalt"
+    lv.melden(["delta-1"])
+    a, b, c, d, e = ("a" * 16, "b" * 16, "c" * 16, "d" * 16, "e" * 16)
+    rahmen = [({"type": "RUN_START", "run": 1}, b"")] + [_teil("R", 1, x) for x in (a, b, c)] + \
+             [({"type": "RUN_START", "run": 2}, b"")] + [_teil("R", 2, x) for x in (a, b, c)]
+    typen = [x[0]["type"] for x in _durch(lv, rahmen, start=2)]
+    assert typen == ["RUN_START"] + ["PART_UPSERT"] * 3 + ["RUN_START"] + ["PART_SAME"] * 3
+    assert lv.teile["R"] == ["0" * 16, a, b, c]
+    rahmen = [({"type": "RUN_START", "run": 3}, b""), _teil("R", 3, d), _teil("R", 3, e), _teil("R", 3, "0" * 16),
+              _teil("R", 3, a)]
+    typen = [x[0]["type"] for x in _durch(lv, rahmen, start=20)]
+    assert typen == ["RUN_START", "PART_UPSERT", "PART_UPSERT", "PART_UPSERT", "PART_UPSERT"], "ältester verdrängt"
+    assert lv.teile["R"] == [d, e, "0" * 16, a] and len(lv.teile["R"]) == TEIL_INHALTE
+    lv.filtern({"type": "PART_REMOVE", "run": 3, "name": "R"}, b"", 30)
+    assert "R" not in lv.teile
 
 
 def test_weiche_felder_animation_projekt():

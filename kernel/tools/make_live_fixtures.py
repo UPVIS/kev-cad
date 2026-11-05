@@ -15,8 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from kevcad_kernel.protocol import (  # noqa: E402
-    KERNEL_FAEHIGKEITEN, LIVE_FELDER, LIVE_NACHRICHTEN, WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, check_live_message,
-    encode_frame, live_beispiele, netz_bytes, wie_zuvor_aufbauen,
+    KERNEL_FAEHIGKEITEN, LIVE_FELDER, LIVE_NACHRICHTEN, TEIL_INHALTE, WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN,
+    check_live_message, encode_frame, live_beispiele, netz_bytes, wie_zuvor_aufbauen,
 )
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
@@ -43,6 +43,7 @@ def main() -> None:
         "felder": [{"type": t, "feld": f, "faehigkeit": k} for (t, f), k in LIVE_FELDER.items()],
         "wie_zuvor_arten": list(WIE_ZUVOR_ARTEN),
         "wie_zuvor_basen": WIE_ZUVOR_BASEN,
+        "teil_inhalte": TEIL_INHALTE,
         # erwartete Werte für die Tests beider Seiten
         "part_upsert_inhalt": koepfe["live_part_upsert"]["inhalt"],
         "wie_zuvor": {"basis_file": "live_check_basis.frame", "file": "live_wie_zuvor.frame", "ergebnis": aufgebaut},

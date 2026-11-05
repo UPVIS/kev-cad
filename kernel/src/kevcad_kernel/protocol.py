@@ -2569,6 +2569,7 @@ LIVE_APP_NACHRICHTEN: tuple[str, ...] = ("LAGE", "PARTS_REQ", "NOCHMAL")
 WIE_ZUVOR_ARTEN: tuple[str, ...] = ("CHECK", "STATICS", "CONSTRAINTS", "BOM", "PRINT_PREVIEW", "SIM", "DOCS",
                                     "VERSIONEN")
 WIE_ZUVOR_BASEN = 6  # so viele Rahmen je Art merken sich beide Seiten als mögliche Basis
+TEIL_INHALTE = 4  # so viele verschiedene Inhalte je Teilname halten App und Kernel (PART_SAME)
 WIE_ZUVOR_ANTEIL = 0.5  # ein WIE_ZUVOR geht nur, wenn es höchstens so groß ist wie dieser Anteil der vollen Nachricht
 SPUR_LAENGE = 50  # Schritte der Agentenspur, die Kernel und App halten
 SPUR_STAENDE: tuple[str, ...] = ("laeuft", "ok", "fehler")

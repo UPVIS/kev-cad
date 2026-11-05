@@ -59,12 +59,14 @@ def kopieren(projekt: Path, katalog: Path | None) -> tuple[Path, Path]:
     os.environ.setdefault("KEVCAD_BAMBU_APP", str(druck / "kein-bambu-studio.app"))  # kein Slicen nebenbei
     os.environ.setdefault("KEVCAD_FESTKOERPER_CACHE", str(druck / "festkoerper"))
     os.environ.setdefault("KEVCAD_FILAMENTE", str(druck / "filamente.json"))
+    os.environ.setdefault("KEVCAD_DRUCKER_SSDP", "0")  # keine Druckersuche: kein fester UDP-Port, keine Störung
     return arbeit, kopie
 
 
 class AppAttrappe:
     """Minimale App am Socket: sammelt Rahmen mit Empfangszeit und beantwortet Anfragen, auf die die Laufzeit wartet
-    (Ansicht, Bild, Vorschaubild der Versionen)."""
+    (Ansicht, Bild, Vorschaubild der Versionen). V2-5: baut WIE_ZUVOR wie eine App mit delta-1 zur Nachricht auf
+    (Bedingungen wie „CHECK fertig“ sehen die aufgebaute Nachricht); gezählt wird, was auf dem Draht ging."""
 
     PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
@@ -74,8 +76,10 @@ class AppAttrappe:
         self._encode = encode_frame
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(pfad)
-        # (Zeit, Kopf, Größe der Nutzlast, Größe des ganzen Rahmens)
-        self.frames: list[tuple[float, dict, int, int]] = []
+        # (Zeit, Kopf (WIE_ZUVOR aufgebaut), Größe der Nutzlast, Größe des ganzen Rahmens, Typ auf dem Draht)
+        self.frames: list[tuple[float, dict, int, int, str]] = []
+        self.basen: dict[str, collections.deque] = {}  # V2-5: Basen für WIE_ZUVOR je Art
+        self.basis_fehlt = 0
         self.cond = threading.Condition()
         self.seq = 0
         self._send_lock = threading.Lock()
@@ -104,8 +108,10 @@ class AppAttrappe:
             for h, p in leser.feed(data):
                 # Kopf wie encode_frame ihn schreibt: so zählt der ganze Rahmen, nicht nur die Nutzlast
                 kopf = len(json.dumps(h, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+                draht, ganz, nutz = h.get("type"), 8 + kopf + len(p), len(p)
+                h = self._aufbauen(h)
                 with self.cond:
-                    self.frames.append((time.perf_counter(), h, len(p), 8 + kopf + len(p)))
+                    self.frames.append((time.perf_counter(), h, nutz, ganz, draht))
                     self.cond.notify_all()
                 art = h.get("type")
                 if art == "VIEW_CMD":
@@ -123,6 +129,22 @@ class AppAttrappe:
                                  "sichtbar": [], "verborgen": [], "isoliert": None,
                                  "auswahl": {"run": None, "refs": []}, "maus": None})
 
+    def _aufbauen(self, h: dict) -> dict:
+        """WIE_ZUVOR wie eine App mit delta-1 aufbauen und Basen führen (PROTOCOL.md, V2-5)."""
+        from kevcad_kernel.protocol import WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, wie_zuvor_aufbauen
+
+        if h.get("type") == "WIE_ZUVOR":
+            basis = next((b for b in self.basen.get(h.get("art"), ()) if b[0] == h.get("basis")), None)
+            if basis is None:
+                self.basis_fehlt += 1
+                return h
+            h = wie_zuvor_aufbauen(h, basis[1])
+        art = h.get("type")
+        if art in WIE_ZUVOR_ARTEN and not h.get("reply_to"):
+            self.basen.setdefault(art, collections.deque(maxlen=WIE_ZUVOR_BASEN)).append(
+                (h.get("seq"), {k: v for k, v in h.items() if k != "seq"}))
+        return h
+
     def marke(self) -> int:
         with self.cond:
             return len(self.frames)
@@ -131,7 +153,7 @@ class AppAttrappe:
         ende = time.monotonic() + timeout
         with self.cond:
             while True:
-                for t, h, _, _ in self.frames[start:]:
+                for t, h, *_ in self.frames[start:]:
                     if pred(h):
                         return t, h
                 rest = ende - time.monotonic()
@@ -139,7 +161,7 @@ class AppAttrappe:
                     return None
                 self.cond.wait(min(rest, 0.5))
 
-    def seit(self, start: int) -> list[tuple[float, dict, int, int]]:
+    def seit(self, start: int) -> list[tuple[float, dict, int, int, str]]:
         with self.cond:
             return list(self.frames[start:])
 
@@ -193,8 +215,8 @@ def lauf_messen(rt, app: AppAttrappe, kopie: Path, art: str, args) -> dict:
     frames = app.seit(start)
     arten: dict[str, list] = {}
     teil_zeiten = []  # Teile im Viewer: neu geschickt (PART_UPSERT) oder bestätigt (PART_SAME, V2-5)
-    for t, h, n, ganz in frames:
-        e = arten.setdefault(h.get("type"), [0, 0, None, None, 0])
+    for t, h, n, ganz, draht in frames:
+        e = arten.setdefault(draht, [0, 0, None, None, 0])
         e[0] += 1
         e[1] += n
         e[2] = t - t0 if e[2] is None else e[2]
@@ -218,6 +240,7 @@ def lauf_messen(rt, app: AppAttrappe, kopie: Path, art: str, args) -> dict:
         "rahmen": {k: {"anzahl": v[0], "mb": round(v[1] / 1e6, 3), "kb_gesamt": round(v[4] / 1e3, 1),
                        "erster_s": round(v[2], 3), "letzter_s": round(v[3], 3)} for k, v in arten.items()},
         "kb_gesamt": round(sum(v[4] for v in arten.values()) / 1e3, 1),
+        "basis_fehlt": app.basis_fehlt,  # V2-5: WIE_ZUVOR ohne Basis bei der App (muss 0 bleiben)
         "fehler": (res.get("error") or {}).get("message") if not res.get("ok") else None,
     }
     return out

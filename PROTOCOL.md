@@ -1150,8 +1150,9 @@ Kernel nach `output/renders/.vorschau/` und die App zeigt sie nur im Dialog.
 
 Rein additiv (PLAN-V2.md, Paket V2-5); `protocol` bleibt 1. Jede Neuerung gilt nur, wenn beide Seiten sie können:
 Der Kernel nennt seine Fähigkeiten in `HELLO.faehigkeiten`, die App ihre in `HELLO_APP.faehigkeiten`. Eine App ohne
-`faehigkeiten` bekommt alles wie bisher: keine neuen Typen, keine neuen Felder (außer `HELLO.faehigkeiten`, das ältere
-Apps übergehen). Die Weiche sitzt je Verbindung im Kernel (`kevcad_kernel/live.py`, `LiveVerbindung`, aufgerufen in
+`faehigkeiten` bekommt alles wie bisher: keine neuen Typen und, sobald ihr `HELLO_APP` da ist, keine neuen Felder
+(davor kennt der Kernel sie nicht: `HELLO.faehigkeiten` und `PART_UPSERT.inhalt` im Anfangsstand übergehen ältere
+Apps). Die Weiche sitzt je Verbindung im Kernel (`kevcad_kernel/live.py`, `LiveVerbindung`, aufgerufen in
 `AppConnection.send`): Die Laufzeit erzeugt jede Nachricht mit den neuen Feldern, die Weiche nimmt sie für ältere Apps
 heraus und ersetzt für neue Apps Unverändertes durch kurze Nachrichten. Referenz in `protocol.py` (Abschnitt „V2-5
 Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_message`, `live_beispiele`), Testdateien
@@ -1166,8 +1167,8 @@ Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_mes
 | `live-masse-1` | Maße und Hervorhebungen mit Ablaufzeit (`dauer_s`), geänderte Maße nach `run(params)` am Teil |
 
 - `HELLO_APP` ist der erste Rahmen der App; die Fähigkeiten gelten ab dort. Den Anfangsstand nach dem Verbinden schickt
-  der Kernel vollständig wie bisher, ohne neue Felder (er beginnt vor `HELLO_APP`, kennt die App also noch nicht), und
-  merkt sich dabei, was die App bekommen hat. Mit `spur-1` folgt auf `HELLO_APP` die ganze Agentenspur (`AGENT_SPUR`).
+  der Kernel vollständig wie bisher, die Teile schon mit `inhalt` (er beginnt vor `HELLO_APP`), und merkt sich dabei,
+  was die App bekommen hat. Mit `spur-1` folgt auf `HELLO_APP` die ganze Agentenspur (`AGENT_SPUR`).
 - Alles, was eine Seite sich merkt (Teile, Felder, Animationen, Basen für `WIE_ZUVOR`), gilt für eine Verbindung. Eine
   neue Verbindung (neues `HELLO`) beginnt leer.
 - Gemessen am Kugelschieber (134 Teile, `kernel/tools/messen.py`, ganze Rahmen): ein unveränderter Lauf schickte
@@ -1180,12 +1181,17 @@ Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_mes
 (also mit Farbe, Material, Hüllquader, Masse, `stock`, `druckteil`, `zukauf`, `kulisse`, `inventar`). Gleicher Schlüssel
 heißt gleiche Geometrie und gleiche Angaben; `faces` und `edges` folgen aus der Form.
 
+**Inhalte je Teil:** Die App hält je Teilname die letzten 4 verschiedenen Inhalte (Kopf und Netz, nach `inhalt`), den
+zuletzt gezeigten zuletzt; `PART_UPSERT` und `PART_SAME` machen einen Inhalt zum gezeigten, ein fünfter verdrängt den
+ältesten, `PART_REMOVE` vergisst alle Inhalte des Namens. Der Kernel führt dieselbe Liste je Verbindung. So kostet ein
+Teil, das model.py in einem Lauf mehrmals zeigt (Zwischenstände), oder ein Maß, das hin und her wechselt, nichts mehr.
+
 **Ablauf eines Laufs:**
 
-1. `RUN_START.delta: true`: In diesem Lauf schickt der Kernel dieser App unveränderte Teile nicht neu. Fehlt das Feld
-   (etwa weil die Verbindung mitten im Lauf entstand), gilt der Lauf wie bisher.
-2. Je gezeigtem Teil, in der Reihenfolge von `show()`: Hat die App zuletzt dasselbe Teil (gleicher Name, gleicher
-   `inhalt`) bekommen, kommt `PART_SAME`; sonst `PART_UPSERT` mit `inhalt`.
+1. `RUN_START.delta: true`: In diesem Lauf schickt der Kernel dieser App Inhalte, die sie schon hat, nicht neu. Fehlt
+   das Feld (etwa weil die Verbindung mitten im Lauf entstand), gilt der Lauf wie bisher.
+2. Je gezeigtem Teil, in der Reihenfolge von `show()`: Hat die App diesen Inhalt des Teils (gleicher Name, `inhalt`
+   unter ihren letzten 4), kommt `PART_SAME`; sonst `PART_UPSERT` mit `inhalt`.
 3. Teile, die es im Lauf nicht mehr gibt: `PART_REMOVE` wie bisher, vor `RUN_END`.
 4. `RUN_END.teile`: Namen aller Teile nach diesem Lauf, in Reihenfolge. Die App entfernt jedes Teil, das nicht in der
    Liste steht (sollte durch `PART_REMOVE` schon weg sein; die Liste stellt es sicher).
@@ -1193,7 +1199,7 @@ heißt gleiche Geometrie und gleiche Angaben; `faces` und `edges` folgen aus der
 
 | type | Richtung | Felder | Wirkung |
 |---|---|---|---|
-| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Teil unverändert: Die App setzt nur seine Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Hat die App das Teil ohne `inhalt` (aus dem Anfangsstand), übernimmt sie den `inhalt`. Hat sie das Teil nicht oder mit anderem `inhalt`, fragt sie es mit `PARTS_REQ` nach. |
+| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Das Teil zeigt den Inhalt `inhalt`, den die App schon hat: Ist es der gezeigte, setzt sie nur die Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Sonst tauscht sie Kopf und Netz gegen den gespeicherten Inhalt (Kopf mit `run`). Fehlt ihr der Inhalt, fragt sie das Teil mit `PARTS_REQ` nach. |
 | `PARTS_REQ` | App → Kernel | `teile` (Namen oder null = alle) | Der Kernel schickt jedes genannte Teil als vollständiges `PART_UPSERT` (nie als `PART_SAME`), für unbekannte Namen `PART_REMOVE`. |
 
 **Statikfelder (`STATICS_FIELD`):** Mit `delta-1` hält die App je Paar (`szenario`, `teil`) das zuletzt empfangene Feld,
@@ -1236,10 +1242,10 @@ höchstens halb so groß ist (zwischen zwei unveränderten Läufen ändern sich 
 | `NOCHMAL` | App → Kernel | `art` | Der Kernel schickt die neueste Nachricht dieser Art vollständig. |
 
 **Versionsbild:** `VERSION_BILD_REQ` geht wie bisher nur für eine neue Version ohne Bild. Mit `delta-1` steht jedes
-Teil, das die App in diesem Moment mit demselben `inhalt` hat, als Kopf `{"teil", "farbe", "inhalt", "aus_szene":
-true}` ohne Zählwerte und ohne Anteil an der Nutzlast: Die App nimmt das Netz beim Empfang des Rahmens aus ihrer Szene
-(spätere Rahmen können das Teil schon ersetzen, gezeichnet wird der Stand beim Empfang). Alle anderen Köpfe tragen
-ihr Netz wie bisher (`vert`, `tri`, `epts`, `edge`, Netze hintereinander).
+Teil, dessen `inhalt` die App in diesem Moment unter ihren letzten 4 Inhalten des Teils hat, als Kopf `{"teil",
+"farbe", "inhalt", "aus_szene": true}` ohne Zählwerte und ohne Anteil an der Nutzlast: Die App nimmt das Netz beim
+Empfang des Rahmens aus diesem Speicher (spätere Rahmen können ihn schon ändern). Alle anderen Köpfe tragen ihr Netz
+wie bisher (`vert`, `tri`, `epts`, `edge`, Netze hintereinander).
 
 ### In Arbeit (`in-arbeit-1`)
 

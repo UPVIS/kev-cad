@@ -3,10 +3,11 @@
 - ``LiveVerbindung``: die Weiche je App-Verbindung. ``AppConnection.send`` ruft ``filtern`` unter der Sperre der
   Verbindung, also genau in der Reihenfolge, in der die Rahmen auf den Draht gehen. Die Laufzeit erzeugt jede
   Nachricht mit den neuen Feldern (``PART_UPSERT.inhalt``, ``RUN_END.teile``, Netzköpfe mit ``inhalt``); die Weiche
-  nimmt sie für Apps ohne ``delta-1`` heraus, lässt neue Nachrichtentypen nur zu Apps mit der passenden Fähigkeit und
-  ersetzt für Apps mit ``delta-1`` Unverändertes: ``PART_SAME`` statt ``PART_UPSERT``, Statikfelder und Animationen
-  gar nicht, große JSON-Nachrichten als ``WIE_ZUVOR``, Netze im Versionsbild durch Verweise auf die Szene. Sie merkt
-  sich dafür, was die App von dieser Verbindung schon hat.
+  nimmt sie für Apps ohne ``delta-1`` heraus (sobald deren HELLO_APP da ist), lässt neue Nachrichtentypen nur zu Apps
+  mit der passenden Fähigkeit und ersetzt für Apps mit ``delta-1``, was sie schon haben: ``PART_SAME`` statt
+  ``PART_UPSERT`` (die App hält je Teil die letzten ``TEIL_INHALTE`` Inhalte), Statikfelder und Animationen gar
+  nicht, große JSON-Nachrichten als ``WIE_ZUVOR``, Netze im Versionsbild durch Verweise. Sie merkt sich dafür, was die
+  App von dieser Verbindung schon hat.
 - ``Agentenspur``: die letzten 50 Schritte des Agenten (``AGENT_SCHRITT``, ``AGENT_SPUR``).
 - ``aktueller_schritt``: Kontextvariable mit dem Schritt der laufenden MCP-Anfrage (gesetzt von der MCP-Hülle in
   ``mcp_tools/tracking.py``); die Tätigkeitsanzeige und ``run`` hängen darüber Text und Phasen an den Schritt.
@@ -28,9 +29,9 @@ from typing import Any, Callable
 
 from kevcad_kernel.protocol import (
     FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_LAGE, FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_SPUR, IN_ARBEIT_NACH_S,
-    KERNEL_FAEHIGKEITEN, LAGE_WARTEN_S, LIVE_NACHRICHTEN, SPUR_FELDER, SPUR_LAENGE, SPUR_TEXT_MAX, WIE_ZUVOR_ANTEIL,
-    WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, inhalt_schluessel, kanonisch, netz_bytes, part_same, patch_anwenden,
-    strukturpatch, wie_zuvor,
+    KERNEL_FAEHIGKEITEN, LAGE_WARTEN_S, LIVE_NACHRICHTEN, SPUR_FELDER, SPUR_LAENGE, SPUR_TEXT_MAX, TEIL_INHALTE,
+    WIE_ZUVOR_ANTEIL, WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, inhalt_schluessel, kanonisch, netz_bytes, part_same,
+    patch_anwenden, strukturpatch, wie_zuvor,
 )
 
 PARAM_ANZEIGE_S = 4.0  # so lange zeigt die App ein geändertes Maß am Teil
@@ -94,7 +95,7 @@ class LiveVerbindung:
     def __init__(self) -> None:
         self.faehigkeiten: frozenset[str] = frozenset()
         self.gemeldet = False  # HELLO_APP da (Fähigkeiten bekannt)
-        self.teile: dict[str, str] = {}  # Name → inhalt, was die App hält
+        self.teile: dict[str, list[str]] = {}  # Name → Inhalte, die die App hält (der gezeigte zuletzt)
         self.delta_lauf: int | None = None  # Lauf, dessen RUN_START mit delta: true ging
         self.felder: dict[tuple[str, str], Any] = {}  # (szenario, teil) → Schlüssel des zuletzt geschickten Felds
         self.anim: dict[str, str] = {}  # Name → Prüfsumme des zuletzt geschickten ANIM_DEF
@@ -118,6 +119,22 @@ class LiveVerbindung:
     @property
     def delta(self) -> bool:
         return FAEHIGKEIT_DELTA in self.faehigkeiten
+
+    @property
+    def alt(self) -> bool:
+        """Ältere App: HELLO_APP ohne delta-1 (vorher kennt der Kernel die App nicht und lässt die Felder drin)."""
+        return self.gemeldet and not self.delta
+
+    def hat_inhalt(self, name: Any, inhalt: Any) -> bool:
+        return bool(inhalt) and inhalt in self.teile.get(name, ())
+
+    def _zeige(self, name: str, inhalt: str) -> None:
+        """Wie die App: ``inhalt`` wird der gezeigte Inhalt von ``name``, höchstens TEIL_INHALTE bleiben."""
+        liste = self.teile.setdefault(name, [])
+        if inhalt in liste:
+            liste.remove(inhalt)
+        liste.append(inhalt)
+        del liste[:-TEIL_INHALTE]
 
     # -- Abfragen der Laufzeit -----------------------------------------------------------------------------------------
 
@@ -149,16 +166,19 @@ class LiveVerbindung:
         darf = delta and not vollstaendig
         if art == "PART_UPSERT":
             name, inhalt = header.get("name"), header.get("inhalt")
-            if darf and inhalt and self.delta_lauf is not None and header.get("run") == self.delta_lauf \
-                    and self.teile.get(name) == inhalt:
+            if darf and self.delta_lauf is not None and header.get("run") == self.delta_lauf \
+                    and self.hat_inhalt(name, inhalt):
+                self._zeige(name, inhalt)
                 self.zaehler["PART_SAME"] += 1
                 return part_same(header["run"], name, inhalt), b""
             if isinstance(name, str):
-                self.teile[name] = inhalt or ""
+                if inhalt:
+                    self._zeige(name, inhalt)
+                else:
+                    self.teile.pop(name, None)  # ohne Schlüssel: nichts, worauf PART_SAME sich beziehen könnte
             if delta:
                 self.zaehler["PART_UPSERT"] += 1
-                return header, payload
-            return _ohne(header, "inhalt"), payload
+            return (_ohne(header, "inhalt") if self.alt else header), payload
         if art == "PART_REMOVE":
             self.teile.pop(header.get("name"), None)
         elif art == "RUN_START":
@@ -167,7 +187,7 @@ class LiveVerbindung:
                 return {**header, "delta": True}, payload
             self.delta_lauf = None
         elif art == "RUN_END":
-            if not delta:
+            if self.alt:
                 return _ohne(header, "teile"), payload
         elif art == "PROJECT":
             pfad = header.get("path")
@@ -258,15 +278,15 @@ class LiveVerbindung:
             n = netz_bytes(k)
             stueck = payload[offset:offset + n]
             offset += n
-            if darf and k.get("inhalt") and self.teile.get(k.get("teil")) == k["inhalt"]:
+            if darf and self.hat_inhalt(k.get("teil"), k.get("inhalt")):
                 neue.append({**{kk: vv for kk, vv in k.items() if kk not in ("vert", "tri", "epts", "edge")},
                              "aus_szene": True})
                 self.zaehler["Netze aus der Szene"] += 1
             else:
-                neue.append(k if self.delta else _ohne(k, "inhalt"))
+                neue.append(_ohne(k, "inhalt") if self.alt else k)
                 stuecke.append(stueck)
         if offset != len(payload):  # passt nicht zusammen: so lassen, wie es ist (ohne die neuen Felder)
-            return {**header, "teile": [k if self.delta else _ohne(k, "inhalt") for k in koepfe]}, payload
+            return {**header, "teile": [_ohne(k, "inhalt") if self.alt else k for k in koepfe]}, payload
         return {**header, "teile": neue}, b"".join(stuecke)
 
 

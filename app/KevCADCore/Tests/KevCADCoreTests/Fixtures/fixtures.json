@@ -2339,6 +2339,7 @@
    "VERSIONEN"
   ],
   "wie_zuvor_basen": 6,
+  "teil_inhalte": 4,
   "part_upsert_inhalt": "2b96d824aeddc04a",
   "wie_zuvor": {
    "basis_file": "live_check_basis.frame",
