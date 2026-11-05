@@ -84,6 +84,11 @@ public final class SceneStore {
     /// Phase 3: Zukaufteile als Ersatzkörper (`zukauf.cad: "vereinfacht"`), halbtransparent mit Kanten.
     public private(set) var simplifiedParts: Set<String> = []
     static let simplifiedAlpha: Float = 0.45
+    /// V2: lokale Ansicht mit Hauch (/): diese Teile bleiben als durchscheinender Hauch stehen, ohne Kanten, nicht
+    /// anklickbar.
+    public private(set) var hauchTeile: Set<String> = []
+    static let hauchAlpha: Float = 0.07
+    static let hauchFarbe = SIMD3<Float>(0.55, 0.58, 0.62)
     /// Phase 5: Lage je Teil aus der Animation (Ruhelage → aktuelles Bild), zusätzlich zur Basislage; leer = Ruhelage.
     public private(set) var animationTransforms: [String: simd_float4x4] = [:]
     /// Phase 5: von der Animation ausgeblendete Teile (`sichtbar`) und Teile einer Kollision im aktuellen Bild (rot).
@@ -315,6 +320,14 @@ public final class SceneStore {
     // MARK: Zukaufteile (Phase 3)
 
     /// Ersatzkörper halbtransparent zeichnen (ohne Wirkung, wenn gleich).
+    /// V2: Teile als Hauch zeigen (lokale Ansicht); leer = keiner.
+    public func setHauch(_ names: Set<String>) {
+        let touched = names.symmetricDifference(hauchTeile)
+        hauchTeile = names
+        for n in touched where parts[n] != nil { applyProps(n) }
+        publish()
+    }
+
     public func setSimplifiedParts(_ names: Set<String>) {
         guard names != simplifiedParts else { return }
         let touched = names.symmetricDifference(simplifiedParts)
@@ -747,6 +760,10 @@ public final class SceneStore {
         if simplifiedParts.contains(name) { c.w = min(c.w, Self.simplifiedAlpha) }
         if topologieBlass.contains(name) && animationTransforms.isEmpty { c.w = min(c.w, Self.topologieBlassAlpha) }
         if displayStyle == .xray { c.w = min(c.w, Self.xrayAlpha) }
+        if hauchTeile.contains(name) {
+            let g = c
+            c = SIMD4(SIMD3(g.x, g.y, g.z) + (Self.hauchFarbe - SIMD3(g.x, g.y, g.z)) * 0.6, min(g.w, Self.hauchAlpha))
+        }
         return c
     }
 
@@ -756,18 +773,19 @@ public final class SceneStore {
         let visible = !hidden.contains(name) && !animationHidden.contains(name) && !istStatikVerdeckt(name)
             && !istTopologieVerdeckt(name)
         let transform = worldTransform(name)
+        let hauch = hauchTeile.contains(name)
         for i in list.indices {
             list[i].color = color
             list[i].isVisible = visible
             list[i].transform = transform
-            list[i].isPickable = !teileNichtAnklickbar
+            list[i].isPickable = !teileNichtAnklickbar && !hauch
         }
         partBodies[name] = list
         if var edges = edgeBodies[name] {
             let ec = Self.xrayEdgeColor(color)
             for i in edges.indices {
                 edges[i].color = ec
-                edges[i].isVisible = visible
+                edges[i].isVisible = visible && !hauch
                 edges[i].transform = transform
             }
             edgeBodies[name] = edges

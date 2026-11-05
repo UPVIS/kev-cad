@@ -74,22 +74,34 @@ extension AppController: NavigationActions {
         setVisibility(scene.order.filter { !selected.contains($0) && scene.isVisible($0) }, visible: false)
     }
 
-    /// Wie Blenders lokale Ansicht: nur die Auswahl zeigen und einpassen; ein zweites Mal stellt alles wieder her.
+    /// Wie Blenders lokale Ansicht: nur die Auswahl zeigen und einpassen; ein zweites Mal stellt Sichtbarkeit und
+    /// Kamera wieder her. Mit Hauch (Vorgabe, `AppModel.viewer.hauch`) bleiben die übrigen Teile durchscheinend stehen.
     public func toggleLocalView() {
         if let saved = localView {
             localView = nil
+            scene.setHauch([])
             scene.showAll()
             if !saved.hidden.isEmpty { scene.setVisible(Array(saved.hidden), false) }
             updateParts()
             refreshOverlay()
             viewport.smoothCamera(saved.camera, duration: 0.25)
+            model.viewer.lokaleAnsicht = false
             return
         }
         let selected = Array(selectedPartNames)
         guard !selected.isEmpty else { return }
-        localView = (scene.hidden, viewport.camera)
-        isolate(selected)
+        localView = (scene.hidden, viewport.kameraZiel)
+        if model.viewer.hauch {
+            let keep = Set(selected)
+            scene.setVisible(selected, true)
+            scene.setHauch(Set(scene.order.filter { !keep.contains($0) && scene.isVisible($0) }))
+            updateParts()
+            refreshOverlay()
+        } else {
+            isolate(selected)
+        }
         viewSelected()
+        model.viewer.lokaleAnsicht = true
     }
 
     public func setSelectionMode(_ mode: SelectionMode) {
