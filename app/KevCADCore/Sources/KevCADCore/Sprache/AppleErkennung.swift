@@ -277,6 +277,7 @@ final class TonNull: @unchecked Sendable {
 
 /// Holt den Ton vom Mikrofon, wandelt ihn ins Format der Erkennung und misst den Pegel. Der Abgriff läuft auf dem
 /// Tonfaden; alles, was er anfasst, liegt hinter einer Sperre.
+@available(macOS 26.0, *)
 final class TonEingang: @unchecked Sendable {
     enum Fehler: LocalizedError {
         case keinMikrofon
