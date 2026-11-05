@@ -1,11 +1,9 @@
 import KevCADCore
 import SwiftUI
 
-/// Menüs des Strangs „Material“:
-/// - Darstellung (oben): Bereich wechseln ⌘1 3D-Modell, ⌘2 Dokumente, ⌘3 Material; Schnellansichten unter dem Viewport
-///   einzeln auf- und zuklappen (⌃⌘1 Stückliste, ⌃⌘2 Zuschnitt, ⌃⌘3 Druck), alle aufklappen (⌃⌘9), alle einklappen
-///   (⌃⌘0), Schnellansichten umschalten (⇧⌘B: alles zu bzw. das zuletzt Offene wieder auf).
-/// - Material: die Abschnitte des Bereichs, Bestand erfassen, Gebaut …, Einkaufsliste, Zukaufteil, Bericht, Katalog.
+/// Menü „Material“: die Abschnitte des Bereichs (als Kachel), Bestand erfassen, Gebaut …, Einkaufsliste, Zukaufteil,
+/// Bericht, Katalog. Bereiche und Schnellansichten gibt es seit V2-3 nicht mehr: Fokus und Werkstatt (⌘1, ⌘2) und
+/// Kacheln (⌃⌘1 bis ⌃⌘8) stehen in OberflaechenCommands.
 struct MaterialCommands: Commands {
     @ObservedObject var session: AppSession
     @ObservedObject var model: AppModel
@@ -18,42 +16,6 @@ struct MaterialCommands: Commands {
     var body: some Commands {
         // Einmal je Auswertung der Menüs (sie laufen bei jeder Änderung am Modell)
         let d = model.materialDaten
-        let sichtbar = SchnellansichtenBereich.sichtbar(d)
-        CommandGroup(before: .sidebar) {
-            ForEach(ProjektBereich.allCases, id: \.self) { b in
-                Button(b.titel) { window?.zeige(b) }
-                    .keyboardShortcut(b.kuerzel, modifiers: .command)
-                    .disabled(!bereit)
-            }
-            Divider()
-            Menu("Schnellansichten") {
-                ForEach(Schnellansicht.allCases) { a in
-                    Toggle(a.titel, isOn: Binding(
-                        get: { window?.schnell.istOffen(a) ?? false },
-                        set: { _ in withAnimation(.snappy(duration: 0.22)) { window?.schnell.umschalten(a) } }))
-                        .keyboardShortcut(Self.kuerzel(a), modifiers: [.command, .control])
-                        .disabled(!bereit || !sichtbar.contains(a))
-                }
-                Divider()
-                Button("Alle aufklappen") {
-                    withAnimation(.snappy(duration: 0.22)) { window?.schnell.alleAuf(sichtbar) }
-                }
-                .keyboardShortcut("9", modifiers: [.command, .control])
-                .disabled(!bereit)
-                Button("Alle einklappen") {
-                    withAnimation(.snappy(duration: 0.22)) { window?.schnell.alleZu() }
-                }
-                .keyboardShortcut("0", modifiers: [.command, .control])
-                .disabled(!bereit)
-            }
-            Button(!(window?.schnell.offene(sichtbar).isEmpty ?? true)
-                   ? "Schnellansichten einklappen" : "Schnellansichten aufklappen") {
-                withAnimation(.snappy(duration: 0.22)) { window?.schnell.allesUmschalten(sichtbar) }
-            }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-            .disabled(!bereit)
-            Divider()
-        }
         CommandMenu("Material") {
             ForEach(MaterialAbschnitt.allCases) { a in
                 Button(a.titel) {
