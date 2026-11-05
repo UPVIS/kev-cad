@@ -78,10 +78,12 @@ def ruhe(z: Zaehler, s: float = 3.0, bis: float = 120.0) -> None:
 
 
 def statistik(rt) -> dict:
-    lage = rt.lagebild(1.0)
-    if lage.get("quelle") != "app":
-        raise SystemExit(f"Kein LAGE von der App: {lage}")
-    return lage.get("statistik") or {}
+    """Zähler der App; unter Last kann ihr Hauptfaden gerade beschäftigt sein (die Antwortzeit misst ``lage_messen``)."""
+    for _ in range(30):
+        lage = rt.lagebild(1.0)
+        if lage.get("quelle") == "app":
+            return lage.get("statistik") or {}
+    raise SystemExit(f"Kein LAGE von der App: {lage}")
 
 
 def differenz(a: dict, b: dict) -> dict:
@@ -136,7 +138,7 @@ def lage_messen(rt, anzahl: int) -> dict:
 
 def foto(name: str, ziel: str) -> None:
     """Fensterbild der Testvariante (screencapture -l), die Fensternummer holt ein kleines Swift-Skript."""
-    skript = Path(ziel).with_suffix(".swift")
+    skript = Path(ziel).with_name("fenster.swift")
     skript.write_text(f"""import CoreGraphics
 let l = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as! [[String: Any]]
 let w = l.filter {{ ($0["kCGWindowOwnerName"] as? String) == "{name}" && ($0["kCGWindowLayer"] as? Int) == 0 }}
@@ -164,6 +166,7 @@ def main() -> int:
     ap.add_argument("--json", default=None)
     ap.add_argument("--behalten", action="store_true")
     ap.add_argument("--foto", default=None, help="Fensterbild zum eigenen Ansehen (PNG), Kevin bekommt es nicht")
+    ap.add_argument("--nur-bild", default=None, help="nur Fensterbilder PFAD-1…3.png vor und nach den Läufen, keine Prüfungen")
     args = ap.parse_args()
 
     app_pfad = Path(args.app).resolve()
@@ -185,6 +188,7 @@ def main() -> int:
 
     ergebnis: dict = {"projekt": projekt.name, "laeufe": [], "pruefungen": {}}
     fehler: list[str] = []
+    durch = False
 
     def pruefe(ok: bool, text: str) -> None:
         ergebnis["pruefungen"][text] = bool(ok)
@@ -216,6 +220,24 @@ def main() -> int:
             raise SystemExit(f"Projekt nicht geöffnet: {res}")
         rt.wait_idle(60)
         time.sleep(1)
+
+        if args.nur_bild:  # zum eigenen Ansehen: Bild vor und nach einem unveränderten Lauf und einer Änderung
+            ruhe(z, 2.0, 60)
+            rt.view_command("view", {"standard": "iso", "fit": True})
+            time.sleep(3)
+            foto(name, f"{args.nur_bild}-1.png")
+            rt.run(timeout_s=600)
+            rt.wait_idle(120)
+            ruhe(z, 2.0, 60)
+            foto(name, f"{args.nur_bild}-2.png")
+            if args.param:
+                pname, _, wert = args.param.partition("=")
+                rt.run(params={pname: float(wert)}, timeout_s=600)
+                rt.wait_idle(120)
+                ruhe(z, 2.0, 60)
+                foto(name, f"{args.nur_bild}-3.png")
+            durch = True
+            return 0
 
         kalt = lauf(rt, z, "kalt")
         ergebnis["laeufe"].append(kalt)
@@ -312,6 +334,7 @@ def main() -> int:
             rt.view_command("highlight", {"refs": [teil.name], "dauer_s": 8})
             time.sleep(2.5)
             foto(name, args.foto)
+        durch = True
     finally:
         subprocess.run(["pkill", "-x", name], check=False)
         time.sleep(1)
@@ -321,10 +344,14 @@ def main() -> int:
             print("\n".join(zeilen[-12:]), flush=True)
         if args.json:
             Path(args.json).write_text(json.dumps(ergebnis, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"\n{len(fehler)} Fehler" if fehler else "\nAlles bestanden", flush=True)
+        if not durch:
+            fehler.append("abgebrochen")
+        print(f"\n{len(fehler)} Fehler: {fehler}" if fehler else "\nAlles bestanden", flush=True)
         if server is not None:
             server.stop()
-        rt.close()
+        schluss = threading.Thread(target=rt.close, daemon=True)  # beendet den Rechenprozess; kann unter Last hängen
+        schluss.start()
+        schluss.join(15)
         if args.behalten:
             print(f"Arbeitsordner: {arbeit}", flush=True)
         else:

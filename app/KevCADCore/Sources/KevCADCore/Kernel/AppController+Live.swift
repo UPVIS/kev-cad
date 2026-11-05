@@ -304,7 +304,7 @@ extension AppController {
                 "offset": .number(Double(ebene.distance)),
             ])
         } ?? .null
-        let bewegt = model.animation.posed || model.animation.playing  // ein nur geladener Clip ändert das Bild nicht
+        let bewegt = model.animation.playing || (model.animation.posed && model.animation.time > 0)  // nur geladen: Ruhelage
         felder["animation"] = model.animation.selected.flatMap { name in
             bewegt ? .object(["name": .string(name), "zeit": .number(model.animation.time), "spielt": .bool(model.animation.playing)]) : nil
         } ?? .null
