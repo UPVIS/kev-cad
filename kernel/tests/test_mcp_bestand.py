@@ -3,7 +3,7 @@ Schemas)."""
 
 import anyio
 import pytest
-from mcp_testutil import start_server, texts, with_client
+from mcp_testutil import griff_werkzeuge, start_server, texts, with_client
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def test_bestand_werkzeuge(srv):
     text = texts(res)[0]
     assert res.is_error is False and text.startswith("Bestand eingetragen (B-0001, eintrag):")
     assert "- ALFER-Rundrohr 12 × 1 (rohr-alfer-12x1): Rest R-0002 (610 mm) dazu" in text
-    assert "Kevin jede Änderung nennen" in text and 'buchung_rueckgaengig("B-0001")' in text
+    assert "Kevin jede Änderung nennen" in text and "bestand(aktion='rueckgaengig', id=\"B-0001\")" in text
     (args, _), = fake.calls_of("bestand_eintragen")
     assert args == ("rohr-alfer-12x1", 2, [430.0, 610.0, 180.0], None, None, None, False,
                     "Kevin: 2 Stangen, Reste 430, 610, 180")
@@ -48,7 +48,7 @@ def test_bestand_werkzeuge(srv):
 
     res = call(server.url, "gebaut_buchen", {"grund": "Kevin: ist gebaut"})
     text = texts(res)[0]
-    assert text.startswith("Gebaut gebucht (B-0002): 2 Reste weg") and 'buchung_rueckgaengig("B-0002")' in text
+    assert text.startswith("Gebaut gebucht (B-0002): 2 Reste weg") and 'bestand(aktion=\'rueckgaengig\', id="B-0002")' in text
     assert call(server.url, "gebaut_buchen", {}).is_error is True  # grund ist Pflicht
     # Filament (Strang „Bestand Stufe 2“): ohne id, mit material
     res = call(server.url, "bestand_eintragen", {"material": "petg", "gramm": 640, "spule": "Bambu PETG Basic schwarz",
@@ -70,7 +70,7 @@ def test_bestand_werkzeuge(srv):
 
 def test_bestand_schemas_und_hinweise(srv):
     server, _ = srv
-    tools = {t.name: t for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
+    tools = griff_werkzeuge(server)
     eintragen = tools["bestand_eintragen"]
     # id ist seit Strang „Bestand Stufe 2“ optional: Filament kommt mit material statt id
     assert set(eintragen.input_schema["required"]) == {"grund"}
@@ -83,8 +83,9 @@ def test_bestand_schemas_und_hinweise(srv):
     assert tools["bestand_liste"].annotations.read_only_hint is True
     assert tools["buchung_rueckgaengig"].input_schema["required"] == ["id"]
     instructions = anyio.run(with_client, server.url, lambda c: _instructions(c))
-    assert "Stock on hand and shopping list (Bestand, per project)" in instructions
-    assert "`gebaut_buchen` only when Kevin explicitly says" in instructions
+    assert "booking built or printed" in instructions and "entering" in instructions
+    oeffentlich = {t.name: t for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
+    assert "book built or printed only on his explicit word" in oeffentlich["bestand"].description
 
 
 async def _instructions(c):

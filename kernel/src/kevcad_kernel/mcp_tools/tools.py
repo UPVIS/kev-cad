@@ -208,108 +208,37 @@ def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, 
     return wrapper
 
 
-def _unbekannte_ablehnen(mcp: MCPServer, name: str) -> None:
-    """Unbekannte Argumente eines Werkzeugs ablehnen statt still zu verwerfen (KevCup, 22.10.2026: run(timeout_s=400)
-    verschwand ohne Meldung). Die MCP-Bibliothek prüft die Argumente mit einem pydantic-Modell, das zusätzliche Felder
-    ignoriert; hier bekommt es ``extra="forbid"``, und das Schema sagt ``additionalProperties: false``. Ein
-    Tippfehler im Namen kommt so als Fehler mit dem Feldnamen zurück („Extra inputs are not permitted“)."""
-    from pydantic import ConfigDict
-
-    manager = getattr(mcp, "_tool_manager", None)
-    werkzeug = manager.get_tool(name) if manager is not None and hasattr(manager, "get_tool") else None
-    meta = getattr(werkzeug, "fn_metadata", None)
-    modell = getattr(meta, "arg_model", None)
-    if werkzeug is None or modell is None or modell.model_config.get("extra") == "forbid":
-        return
-    streng = type(modell.__name__, (modell,), {"__module__": modell.__module__,
-                                                "model_config": ConfigDict(**{**modell.model_config,
-                                                                              "extra": "forbid"})})
-    meta.arg_model = streng
-    werkzeug.parameters = {**werkzeug.parameters, "additionalProperties": False}
-
-
 def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard | None = None) -> KevcadTools:
     """Registriert alle Werkzeuge am Server und liefert das Werkzeug-Objekt (für Tests). ``board`` führt die
     Claude-Sitzungen; jeder Aufruf eines nicht nur lesenden Werkzeugs zählt als verändernd."""
+    from .fach import fach_werkzeuge
+    from .griffe import Griffe, schlank, streng_machen
+    from .kern import register_kern_tools
+    from .laufbericht import Gedaechtnis
+
     t = KevcadTools(service, board)
     svc = service
+    # V2-2: die bisherigen Werkzeuge kommen in die interne Ablage (Griffe); am Server stehen nur der Kernsatz
+    # (kern.py) und je Fachbereich ein Werkzeug mit aktion (fach.py), die beide die Griffe rufen
+    griffe = Griffe()
+    tool = griffe.dekorator(_guard)
+    t.griffe = griffe
+    t.gedaechtnis = Gedaechtnis()
+    mcp.kevcad_tools = t  # für Tests und Werkzeuge: Griffe (Schemas der bisherigen Funktionen) und Gedächtnis
 
-    def tool(name: str, title: str, description: str, annotations: ToolAnnotations) -> Callable[..., Any]:
+    def anmelden(name: str, title: str, description: str, annotations: ToolAnnotations) -> Callable[..., Any]:
+        """Werkzeug des Kernsatzes am Server: Fehlerschutz, Sitzungstafel, unbekannte Argumente abgelehnt."""
+
         def deco(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaitable[CallToolResult]]:
             wrapped = _tracked(_guard(fn), t.board, mutating=not annotations.read_only_hint)
             mcp.add_tool(wrapped, name=name, title=title, description=description, annotations=annotations,
                          structured_output=False)
-            _unbekannte_ablehnen(mcp, name)
+            streng_machen(mcp._tool_manager.get_tool(name))
             return wrapped
 
         return deco
 
     # ----------------------------------------------------------------------------------------------------- Projekt
-
-    @tool("status", "Status",
-          "Current state: open project (folder, model.py path), kernel state, app connection, summary of the last "
-          "run and Kevin's current selection. Call this first.", READ_ONLY)
-    async def status() -> CallToolResult:
-        res = await t.work("schaut auf den Stand", svc.status)
-        project = res.get("project") or None
-        lines = []
-        if project:
-            lines.append(f"Projekt {project.get('name', '?')}: {project.get('path', '?')}")
-            if project.get("model"):
-                lines.append(f"model.py: {project['model']}")
-        else:
-            lines.append("Kein Projekt offen: project_open(path) oder project_new(path) aufrufen.")
-        kernel = {"ready": "bereit", "busy": "rechnet", "error": "Fehler"}.get(res.get("kernel"), res.get("kernel"))
-        app = "verbunden" if res.get("app_connected") else "nicht verbunden (Ansicht, Bilder und Auswahl gehen nicht)"
-        lines.append(f"Kernel: {kernel} · App: {app}")
-        last = res.get("last_run")
-        if isinstance(last, dict) and last:
-            if last.get("ok") is False:
-                err = last.get("error") or {}
-                msg = err.get("message") if isinstance(err, dict) else err
-                line = err.get("line") if isinstance(err, dict) else None
-                lines.append(f"Letzter Lauf {last.get('run', '?')}: Fehler" + (f" in Zeile {line}" if line else "")
-                             + f": {msg}")
-            else:
-                n = len(last.get("parts") or [])
-                lines.append(f"Letzter Lauf {last.get('run', '?')}: erfolgreich, {fmt.plural(n, 'Teil', 'Teile')}"
-                             + (f", {fmt.ms_text(last['duration_ms'])}" if last.get("duration_ms") is not None
-                                else ""))
-        else:
-            lines.append("Noch kein Lauf.")
-        sel = res.get("selection") or {}
-        refs = sel.get("refs") or []
-        if refs:
-            lines.append(f"Auswahl (Lauf {sel.get('run', '?')}): {short_refs(refs, 6)}")
-        else:
-            lines.append("Auswahl: nichts")
-        inv = res.get("inventar") if isinstance(res.get("inventar"), dict) else None
-        if inv is not None and project:
-            if inv.get("regel", True):
-                bad = inv.get("verstoesse") or []
-                lines.append("Inventar-Regel: an (nur Lagerteile und Druckteile)"
-                             + (f", {fmt.plural(len(bad), 'Verstoß', 'Verstöße')}: {short_refs(bad, 6)}" if bad else ""))
-            else:
-                lines.append("Inventar-Regel: aus (von Kevin für dieses Projekt abgeschaltet)")
-        pr = res.get("pruefung") if isinstance(res.get("pruefung"), dict) else None
-        if pr is not None and project:
-            if pr.get("laeuft"):
-                lines.append(f"Prüfung: läuft für Lauf {pr['laeuft']}")
-            elif pr.get("state") in ("done", "teilweise"):
-                hinten = []
-                if pr.get("hintergrund"):
-                    hinten.append("Bewegungsraum wird im Hintergrund fertig gerechnet")
-                if pr.get("statik_hintergrund"):
-                    hinten.append("Statik (Ablauf, Festkörper) rechnet im Hintergrund")
-                if pr.get("state") == "teilweise" and not hinten:
-                    hinten.append("Bewegungsraum nicht vollständig geprüft")
-                lines.append(f"Prüfung (Lauf {pr.get('run', '?')}): "
-                             + (pr.get("zusammenfassung") or "in Ordnung, keine Befunde")
-                             + (f"; {', '.join(hinten)} (pruefen wartet darauf)" if hinten else ""))
-        data = dict(res)
-        if isinstance(last, dict) and last.get("parts"):
-            data["last_run"] = {**last, "parts": [fmt.part_data(p) for p in last["parts"]]}
-        return fmt.result("\n".join(lines), data)
 
     @tool("project_open", "Projekt öffnen",
           "Open an existing Kev CAD project folder (it contains model.py). A bare name or relative path resolves to "
@@ -371,40 +300,6 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     # -------------------------------------------------------------------------------------------------------- Lauf
 
-    @tool("run", "Modell ausführen",
-          "Execute model.py of the open project; parts stream live into the viewer. Returns every part with bounding "
-          "box size, volume (mm³) and mass (g), the steps, warnings and param() values. On failure (isError) the "
-          "line, a code excerpt and a hint. params overrides param() values for this run; slow_ms > 0 pauses after "
-          "each step()/show() so Kevin can watch the build (e.g. 400). A run that changed a project file becomes a "
-          "version; titel names it in Kevin's words (give one for larger changes).", ADDITIVE)
-    async def run(
-        params: Annotated[dict[str, float] | None,
-                          Field(description="Overrides for param() values by name, e.g. {\"breite\": 140}")] = None,
-        slow_ms: Annotated[int, Field(ge=0, le=10000, description="Slow motion pause in ms per step, 0 = off")] = 0,
-        titel: Annotated[str | None, Field(max_length=160, description=(
-            "Short German description of this change in Kevin's words, e.g. 'Laufrollen auf Kugellager umgestellt'. "
-            "Becomes the title of the new version; the automatic title (what changed) stays below it. Give one for "
-            "larger changes, omit it for small fixes."))] = None,
-        timeout_s: Annotated[float | None, Field(ge=10, le=RUN_TIMEOUT_MAX_S, description=(
-            "Time limit for executing model.py in seconds (default 120, at most 900). Raise it only for large "
-            "models whose run was refused for the time limit; the check after the run has its own limit"))] = None,
-        warten_s: Annotated[float | None, Field(ge=0, le=120, description=(
-            "Wait at most this long for the built-in check after the run (default 3 s, 0 = do not wait). If it is "
-            "still running, run says so and it finishes in the background: call pruefen() before reporting done"))
-                            ] = None,
-    ) -> CallToolResult:
-        activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
-        extra: dict[str, Any] = {}
-        if titel and titel.strip():
-            extra["titel"] = titel.strip()
-        if timeout_s is not None:
-            extra["timeout_s"] = float(timeout_s)
-        if warten_s is not None:
-            extra["warten_s"] = float(warten_s)
-        res = await t.work(activity, svc.run, params, slow_ms, **extra)
-        summary, data, failed = fmt.run_summary(res)
-        return fmt.result(summary, data, error=failed)
-
     @tool("execute", "Python ausführen",
           "Run Python in the namespace of the last run (all model.py variables, build123d imported) to inspect "
           "geometry, e.g. `print(platte.bounding_box())` or `[round(f.area, 2) for f in platte.faces()]`. Objects "
@@ -426,22 +321,6 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         if value not in (None, "None", ""):
             parts.append(f"Ergebnis: {value}")
         return fmt.result("\n".join(parts) or "Ausgeführt, keine Ausgabe.", res)
-
-    @tool("parts", "Teile",
-          "Parts of the last run as a tree: bounding box (min/max/size in mm), volume mm³, area mm², mass g, "
-          "material, color, face/edge/triangle counts, visibility. Use the names as references.", READ_ONLY)
-    async def parts() -> CallToolResult:
-        res = await t.work("liest die Teileliste", svc.parts)
-        if isinstance(res, dict):  # falls die Laufzeit einen Fehler meldet
-            err = fmt.service_error(res)
-            if err:
-                return fmt.error_result(f"Teile nicht verfügbar: {err}", res)
-            res = res.get("parts") or []
-        items = list(res or [])
-        if not items:
-            return fmt.result("Keine Teile. Erst run aufrufen (und in model.py show() benutzen).", {"parts": []})
-        summary = f"{fmt.plural(len(items), 'Teil', 'Teile')}:\n{fmt.parts_tree(items)}"
-        return fmt.result(summary, {"parts": items})
 
     # ---------------------------------------------------------------------------------------------------- Ansicht
 
@@ -592,49 +471,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     # ------------------------------------------------------------------------------------------ Messen und Auswahl
 
-    @tool("selection", "Auswahl",
-          "What Kevin has currently selected in the viewer: references with their properties (type, area, length, "
-          "radius, position, ...). Empty if nothing is selected.", READ_ONLY)
-    async def selection() -> CallToolResult:
-        res = await t.work("liest die Auswahl", svc.selection)
-        err = fmt.service_error(res)
-        if err:
-            return fmt.error_result(f"Auswahl nicht lesbar: {err}", res)
-        refs = res.get("refs") or []
-        if not refs:
-            return fmt.result("Kevin hat nichts ausgewählt.", res)
-        details = res.get("details") or []
-        lines = [f"Kevin hat {fmt.plural(len(refs), 'Element', 'Elemente')} ausgewählt (Lauf {res.get('run', '?')}):"]
-        by_ref = {}
-        for d in details:
-            if isinstance(d, dict) and d.get("refs"):
-                by_ref[d["refs"][0]] = d
-        for ref in refs:
-            d = by_ref.get(ref)
-            lines.append("- " + (fmt.measure_line(d) if d else ref))
-        return fmt.result("\n".join(lines), res)
-
-    @tool("measure", "Messen",
-          "Exact measurement in the kernel (OCCT). One ref: its properties (face area/normal/radius, edge "
-          "length/radius, vertex position, part bbox/volume/mass). Two refs: minimum distance with dx/dy/dz and both "
-          "points, angle, distance of parallel faces or axes. show=true also draws it in the viewer.", ADDITIVE)
-    async def measure(
-        refs: Annotated[list[str], Field(description="One or two references of the current run")],
-        show: Annotated[bool, Field(description="Draw the measurement in the viewer")] = True,
-    ) -> CallToolResult:
-        refs = check_refs(refs, maximum=2)
-        activity = f"misst Abstand {refs[0]} ↔ {refs[1]}" if len(refs) == 2 else f"misst {refs[0]}"
-        res = await t.work(activity, svc.measure, refs, show)
-        err = fmt.service_error(res)
-        if err:
-            return fmt.error_result(f"Messung nicht möglich: {err}", res)
-        summary = fmt.measure_line(res) + (" (im Viewer eingeblendet)" if show else "")
-        return fmt.result(summary, res)
-
     @tool("annotate", "Anmerkung",
           "Draw an annotation in the viewer: 'dimension' (2 points; text defaults to the measured distance), "
           "'arrow' (from point 1 to point 2, optional text) or 'label' (1 point + text). Points are world "
-          "coordinates in mm. Returns the id for clear_annotations.", ADDITIVE)
+          "coordinates in mm. Returns the id for view(entfernen=…).", ADDITIVE)
     async def annotate(
         kind: Annotated[Literal["dimension", "label", "arrow"], Field(description="Kind of annotation")],
         points: Annotated[list[list[float]], Field(description="Points [[x, y, z], ...] in mm")],
@@ -708,12 +548,12 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             what += f" (art {art})"
         if not items:
             text = (f"Keine Lagerteile für {what}. Andere Wörter oder nur ein Maß versuchen; neue Lagerteile nur auf "
-                    "Kevins Wunsch mit stock_define anlegen.")
+                    "Kevins Wunsch mit lager(aktion='teil_vorschlagen') anlegen.")
             return fmt.result(text, res)
         head = f"{fmt.plural(total, 'Lagerteil', 'Lagerteile')} für {what}" + (
             f", die ersten {len(items)}:" if total > len(items) else ":")
         text = head + "\n" + fmt.stock_table(items)
-        text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit stock_get."
+        text += "\nIn model.py: lager.teil(\"<id>\").verbauen(...); Details mit katalog(id=…)."
         if any(it.get("art") == "zukaufteil" for it in items):
             text += " Zukaufteile (art zukaufteil): lager.zukauf(\"<id>\").verbauen(\"Name\")."
         return fmt.result(text, res)
@@ -722,7 +562,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
           "Details of one stock item by id: dimensions, material and density, cross section area, kg per meter "
           "(table or computed), bar length, price with source and date, and a usage example for model.py.", READ_ONLY)
     async def stock_get(
-        id: Annotated[str, Field(description="Stock id from stock_search")],
+        id: Annotated[str, Field(description="Stock id from katalog")],
     ) -> CallToolResult:
         res = await t.work(f"liest Lagerteil {id}", svc.stock_get, id)
         err = fmt.service_error(res)
@@ -733,9 +573,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     @tool("stock_define", "Lagerteil vorschlagen",
           "Propose a new stock item for Kevin's own catalog (ebene 'eigen') or the project catalog ('projekt'). Only "
           "when Kevin asks for it. It is stored with status 'vorgeschlagen' and cannot be used in model.py until "
-          "Kevin releases it (ask with freigabe_anfragen); released entries cannot be changed here. entry "
+          "Kevin releases it (ask with lager(aktion='freigabe')); released entries cannot be changed here. entry "
           "follows KATALOG.md: id (lowercase, hyphens), art, name (German, '33,7 × 2'), norm, masse (mm), material "
-          "(material id, see material_list), optional kg_je_m, stangenlaenge (mm), platte [b, h], preis {je_m | "
+          "(material id, see katalog(art='material')), optional kg_je_m, stangenlaenge (mm), platte [b, h], preis "
+          "{je_m | "
           "je_m2 | je_stueck, quelle, stand 'YYYY-MM'}, tags. Validated; errors list every problem.", WRITES)
     async def stock_define(
         entry: Annotated[dict[str, Any], Field(description="Stock item as in KATALOG.md")],
@@ -751,7 +592,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         lines = [f"Lagerteil {item.get('id')} ({item.get('name')}) als Vorschlag im {where} gespeichert: "
                  f"{res.get('datei')}",
                  "Es wartet auf Kevins Freigabe; bis dahin lässt es sich nicht verbauen. Mit "
-                 f"freigabe_anfragen([\"{item.get('id')}\"], grund) öffnest du den Dialog im Projektfenster."]
+                 f"lager(aktion='freigabe', ids=[\"{item.get('id')}\"], grund) öffnest du den Dialog im Projektfenster."]
         lines.append(fmt.stock_detail({**res, "beispiel": None}).split("\n", 1)[-1])
         for note in res.get("hinweise") or []:
             lines.append(f"Hinweis: {note}")
@@ -777,8 +618,8 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
     @tool("material_define", "Material vorschlagen",
           "Propose a new material for Kevin's own catalog ('eigen') or the project catalog ('projekt'). Only when "
           "Kevin asks for it. Stored with status 'vorgeschlagen'; usable only after Kevin releases it (ask with "
-          "freigabe_anfragen). entry: id, name, gruppe (Stahl, Edelstahl, Aluminium, Holz, Kunststoff, ...), dichte "
-          "g/cm³, farbe sRGB hex, optional metallisch/rauheit 0..1, druckbar (true for 3D printing filament), "
+          "lager(aktion='freigabe')). entry: id, name, gruppe (Stahl, Edelstahl, Aluminium, Holz, Kunststoff, ...), "
+          "dichte g/cm³, farbe sRGB hex, optional metallisch/rauheit 0..1, druckbar (true for 3D printing filament), "
           "preis_je_kg with preis_quelle and preis_stand 'YYYY-MM', aliase (lowercase).", WRITES)
     async def material_define(
         entry: Annotated[dict[str, Any], Field(description="Material as in KATALOG.md")],
@@ -793,7 +634,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         lines = [f"Material {mat.get('id')} ({mat.get('name')}, {fmt.num(mat.get('dichte'), 3)} g/cm³) als Vorschlag "
                  f"gespeichert: {res.get('datei')}",
                  "Es wartet auf Kevins Freigabe; bis dahin lässt es sich nicht benutzen. Mit "
-                 f"freigabe_anfragen([\"{mat.get('id')}\"], grund) öffnest du den Dialog im Projektfenster."]
+                 f"lager(aktion='freigabe', ids=[\"{mat.get('id')}\"], grund) öffnest du den Dialog im Projektfenster."]
         for note in res.get("hinweise") or []:
             lines.append(f"Hinweis: {note}")
         return fmt.result("\n".join(lines), res)
@@ -814,8 +655,10 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         return fmt.result(str(res.get("message") or f"{id} gelöscht."), res)
 
     @tool("freigabe_anfragen", "Freigabe anfragen",
-          "Ask Kevin to release proposals (stock items, materials, purchased parts from stock_define, material_define, "
-          "zukauf_anlegen) right in the project window: opens the dialog 'Vorschläge freigeben' with a preview of the "
+          "Ask Kevin to release proposals (stock items, materials, purchased parts from "
+          "lager(aktion='teil_vorschlagen'), lager(aktion='material_vorschlagen'), "
+          "lager(aktion='zukauf_anlegen')) right in the project window: opens the dialog 'Vorschläge freigeben' with "
+          "a preview of the "
           "data, the link and a 'Freigeben' button per entry and for all. Use it instead of telling Kevin to open the "
           "stock catalog, and whenever Kevin says in the chat that something is released ('freigegeben'): a chat "
           "answer releases nothing, only his click does. This tool never releases anything itself. It waits up to "
@@ -844,7 +687,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
             wie = ("Kevin hat den Dialog geschlossen" if res.get("dialog") == "geschlossen"
                    else f"der Dialog ist nach {fmt.num(res.get('gewartet_s'), 0)} s noch offen")
             lines.append(f"Offen: {', '.join(offen)} ({wie}). Nicht verbauen, bis Kevin freigibt; später erneut "
-                         "freigabe_anfragen oder stock_get.")
+                         "lager(aktion='freigabe') oder katalog(id=…).")
         if res.get("schon_frei"):
             lines.append(f"Schon vorher frei: {', '.join(res['schon_frei'])}.")
         if frei:
@@ -975,4 +818,9 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
 
     register_render_tools(tool, t, svc)
 
+    # V2-2: was der Agent sieht
+    register_kern_tools(mcp, t, svc, griffe, t.gedaechtnis, anmelden)
+    fach_werkzeuge(mcp, griffe, t.board, _guard)
+    for eintrag in mcp._tool_manager.list_tools():  # veröffentlichte Schemas ohne Ballast (geprüft wird voll)
+        eintrag.parameters = schlank(eintrag.parameters)
     return t
