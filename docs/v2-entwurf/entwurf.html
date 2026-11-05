@@ -1,0 +1,2434 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kev CAD V2 Entwurf</title>
+<meta name="description" content="Drei Gestaltungsrichtungen für Kev CAD V2 (Graphit, Reißbrett, Sucher) mit je fünf Zuständen.">
+<style>
+/* ==========================================================================
+   Seite um die Bühne (Umschalter), dann die Bühne selbst mit drei Richtungen.
+   ========================================================================== */
+:root {
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --seite: #26272a;
+  --seite-text: #e9e7e3;
+  --seite-text2: #9b9994;
+  --seite-linie: rgba(255, 255, 255, .1);
+  --seite-aktiv: #f2f0ec;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --seite: #dedfe1; --seite-text: #1d1e20; --seite-text2: #5f6166; --seite-linie: rgba(0, 0, 0, .12); --seite-aktiv: #1d1e20; }
+}
+:root[data-theme="dark"] { --seite: #26272a; --seite-text: #e9e7e3; --seite-text2: #9b9994; --seite-linie: rgba(255, 255, 255, .1); --seite-aktiv: #f2f0ec; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--seite); color: var(--seite-text); font: 13px/1.4 var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+
+.kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 14px 20px 10px; }
+.kopf-titel { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-right: auto; }
+.kopf-titel b { font-size: 15px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; }
+.kopf-titel span { color: var(--seite-text2); }
+.schalter { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 9px; background: var(--seite-linie); }
+.schalter button { border: 0; background: none; padding: 6px 11px; border-radius: 7px; cursor: pointer; color: var(--seite-text2); white-space: nowrap; }
+.schalter button:hover { color: var(--seite-text); }
+.schalter button[aria-pressed="true"] { background: var(--seite-aktiv); color: var(--seite); }
+.schalter button:focus-visible { outline: 2px solid #6aa8ff; outline-offset: 1px; }
+.kopf-idee { flex-basis: 100%; margin: 0; color: var(--seite-text2); max-width: 980px; }
+.kopf-idee b { color: var(--seite-text); font-weight: 600; }
+.rahmen { padding: 6px 20px 28px; }
+.buehne-halter { position: relative; margin: 0 auto; overflow: hidden; border-radius: 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 18px 50px rgba(0, 0, 0, .35); }
+.buehne-halter > .buehne { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+@media (max-width: 640px) { .kopf { padding: 12px 16px 8px; } .rahmen { padding: 6px 16px 20px; } .buehne-halter { border-radius: 8px; } }
+.ohne-webgl { position: absolute; inset: auto 16px 16px auto; padding: 8px 12px; background: #000c; color: #fff; border-radius: 8px; font-size: 12px; z-index: 50; }
+
+/* Nur Bühne (für Bilder) und Übersicht */
+body.nur-buehne .kopf { display: none; }
+body.nur-buehne { background: #000; overflow: hidden; }
+body.nur-buehne .rahmen { padding: 0; }
+body.nur-buehne .buehne-halter { width: 1440px; height: 900px; margin: 0; border-radius: 0; box-shadow: none; }
+body.nur-buehne #buehne { border-radius: 0; box-shadow: none; transform: none; }
+.uebersicht { display: none; }
+body.zeige-uebersicht .kopf, body.zeige-uebersicht .rahmen { display: none; }
+body.zeige-uebersicht { background: #202124; }
+body.zeige-uebersicht .uebersicht { display: grid; grid-template-columns: repeat(3, 720px); gap: 24px; padding: 24px; }
+.uebersicht figure { margin: 0; }
+.uebersicht figcaption { color: #ecebe8; font: 600 15px/1.3 var(--sans); padding: 0 2px 10px; display: flex; gap: 10px; align-items: baseline; }
+.uebersicht figcaption span { color: #9d9b97; font-weight: 400; font-size: 13px; }
+.uebersicht .zelle { position: relative; width: 720px; height: 450px; border-radius: 10px; overflow: hidden; }
+.uebersicht .zelle > .buehne { transform: scale(.5); transform-origin: 0 0; position: absolute; }
+
+/* ==========================================================================
+   Bühne: gemeinsame Bausteine
+   ========================================================================== */
+.buehne { position: relative; width: 1440px; height: 900px; overflow: hidden; font: 13px/1.4 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-variant-numeric: tabular-nums; }
+.buehne * { box-sizing: border-box; }
+.buehne svg { overflow: visible; }
+.vp { position: absolute; overflow: hidden; }
+.v3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ueber { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.marken { position: absolute; inset: 0; pointer-events: none; }
+.marke { position: absolute; white-space: nowrap; }
+.ampel { display: flex; gap: 8px; }
+.ampel i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #ff5f57; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .28); }
+.ampel i:nth-child(2) { background: #febc2e; }
+.ampel i:nth-child(3) { background: #28c840; }
+.ikon { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.still *, .still *::before, .still *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .buehne *, .buehne *::before, .buehne *::after { animation: none !important; transition: none !important; } }
+@keyframes atmen { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes pegel { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+@keyframes blinken { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes ring { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.8); opacity: 0; } }
+
+/* Desktop im Zustand c (schmal am Rand) */
+.desk { position: absolute; inset: 0; }
+.chat { position: absolute; left: 16px; top: 16px; bottom: 16px; width: 936px; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.chat-kopf { height: 46px; display: flex; align-items: center; gap: 16px; padding: 0 16px; flex: none; }
+.chat-kopf b { font-weight: 600; font-size: 13px; }
+.chat-verlauf { flex: 1; padding: 26px 64px; display: flex; flex-direction: column; gap: 18px; overflow: hidden; }
+.chat-du { align-self: flex-end; max-width: 560px; padding: 10px 14px; border-radius: 16px 16px 4px 16px; font-size: 14px; line-height: 1.45; }
+.chat-er { max-width: 640px; font-size: 14px; line-height: 1.55; }
+.chat-er p { margin: 0 0 8px; }
+.chat-eingabe { margin: 0 64px 22px; height: 46px; border-radius: 23px; display: flex; align-items: center; padding: 0 18px; gap: 10px; font-size: 14px; flex: none; }
+.chat-eingabe span { flex: 1; }
+.schmal { position: absolute; right: 12px; top: 16px; bottom: 16px; width: 460px; border-radius: 12px; overflow: hidden; }
+
+/* ==========================================================================
+   Richtung Graphit: Der Viewer als Fotostudio. Die Oberfläche tritt zurück,
+   Text steht direkt im Bild. Kevin spricht in Lichtblau, der Agent in Messing.
+   ========================================================================== */
+.r-graphit {
+  --g-hell: #4a4d53; --g-mitte: #2e3034; --g-tief: #191a1d;
+  --g-kreide: #efede9; --g-asche: #a9a7a2; --g-rauch: #77756f;
+  --g-blau: #8fc6ff; --g-messing: #dcb878; --g-koralle: #ff7b69;
+  --g-insel: rgba(31, 32, 35, .74); --g-linie: rgba(255, 255, 255, .075); --g-feld: rgba(255, 255, 255, .055);
+  color: var(--g-kreide);
+  background: radial-gradient(120% 95% at 56% 40%, var(--g-hell) 0%, var(--g-mitte) 44%, var(--g-tief) 100%);
+}
+.r-graphit .schatten-t { text-shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 0 18px rgba(0, 0, 0, .25); }
+.g-oben { position: absolute; left: 20px; top: 16px; display: flex; align-items: center; gap: 18px; z-index: 5; }
+.g-projekt { font-size: 13px; font-weight: 600; letter-spacing: -.005em; display: flex; align-items: center; gap: 6px; }
+.g-projekt small { font-weight: 400; color: var(--g-rauch); font-size: 12px; }
+.g-modus { display: flex; padding: 2px; border-radius: 999px; background: rgba(255, 255, 255, .06); }
+.g-modus span { padding: 4px 11px; border-radius: 999px; font-size: 12px; color: var(--g-asche); }
+.g-modus span.an { background: rgba(255, 255, 255, .13); color: var(--g-kreide); }
+.g-aktionen { position: absolute; right: 18px; top: 12px; display: flex; gap: 8px; z-index: 5; }
+.g-knopf { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .065); color: rgba(239, 237, 233, .88); corner-shape: squircle; }
+.g-knopf .rec { width: 11px; height: 11px; border-radius: 50%; background: var(--g-koralle); box-shadow: 0 0 0 3px rgba(255, 123, 105, .18); }
+.g-liste { position: absolute; left: 22px; top: 92px; width: 212px; z-index: 4; font-size: 13px; }
+.g-zeile { display: flex; align-items: center; height: 27px; color: rgba(239, 237, 233, .86); gap: 8px; }
+.g-zeile b { font-weight: 450; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-zeile em { font-style: normal; color: var(--g-rauch); font-size: 12px; }
+.g-zeile .pfeil { width: 10px; color: var(--g-rauch); display: grid; place-items: center; }
+.g-zeile .pfeil .ikon { width: 10px; height: 10px; stroke-width: 2; }
+.g-zeile.befund::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--g-koralle); }
+.g-zeile.kind { padding-left: 17px; height: 25px; font-size: 12.5px; color: var(--g-asche); }
+.g-zeile.markiert { color: var(--g-blau); }
+.g-zeile.markiert::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--g-blau); box-shadow: 0 0 8px var(--g-blau); }
+.g-zeile.gewaehlt { background: rgba(143, 198, 255, .13); border-radius: 7px; color: var(--g-kreide); margin: 0 -8px; padding-right: 8px; }
+.g-zeile.gewaehlt.kind { padding-left: 25px; }
+
+.g-untertitel { position: absolute; left: 50%; transform: translateX(-50%); bottom: 64px; width: 860px; text-align: center; z-index: 6; }
+.g-status { display: inline-flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--g-blau); margin-bottom: 12px; }
+.g-pegel { display: flex; gap: 3px; align-items: center; height: 16px; }
+.g-pegel i { width: 3px; height: 16px; border-radius: 2px; background: var(--g-blau); transform-origin: center; animation: pegel 1s ease-in-out infinite; }
+.g-pegel i:nth-child(2) { animation-delay: -.3s; } .g-pegel i:nth-child(3) { animation-delay: -.6s; } .g-pegel i:nth-child(4) { animation-delay: -.15s; } .g-pegel i:nth-child(5) { animation-delay: -.45s; }
+.still .g-pegel i:nth-child(1) { transform: scaleY(.45); } .still .g-pegel i:nth-child(2) { transform: scaleY(.8); } .still .g-pegel i:nth-child(3) { transform: scaleY(1); } .still .g-pegel i:nth-child(4) { transform: scaleY(.6); } .still .g-pegel i:nth-child(5) { transform: scaleY(.35); }
+.g-text { font-size: 27px; line-height: 1.34; font-weight: 400; letter-spacing: -.012em; color: var(--g-kreide); text-wrap: balance; }
+.g-text .laeuft { color: var(--g-rauch); }
+.g-text .cursor { display: inline-block; width: 2px; height: 1.05em; background: var(--g-blau); vertical-align: -.16em; margin-left: 3px; animation: blinken 1s steps(1) infinite; }
+.g-dabei { margin-top: 12px; font-size: 12px; color: var(--g-asche); }
+.g-dabei b { color: var(--g-kreide); font-weight: 500; }
+.g-hinweise { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; justify-content: center; gap: 22px; font-size: 12px; color: var(--g-asche); z-index: 6; }
+.g-hinweise span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.r-graphit kbd { font: 500 11px/1 var(--sans); min-width: 20px; height: 20px; padding: 0 6px; display: inline-grid; place-items: center; border-radius: 6px; color: var(--g-kreide); background: rgba(255, 255, 255, .08); box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .14), 0 1px 0 rgba(0, 0, 0, .35); }
+.g-spur { position: absolute; right: 26px; bottom: 96px; width: 310px; z-index: 5; font-size: 12.5px; }
+.g-spur h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--g-messing); }
+.g-spur ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.g-spur li { display: grid; grid-template-columns: 16px 1fr; gap: 6px; color: var(--g-asche); line-height: 1.35; }
+.g-spur li::before { content: ""; width: 9px; height: 5px; border-left: 1.5px solid var(--g-messing); border-bottom: 1.5px solid var(--g-messing); transform: rotate(-45deg) translate(1px, 3px); opacity: .9; }
+.g-spur li.alt { opacity: .5; }
+.g-spur li.befund { color: var(--g-kreide); }
+.g-spur li.befund::before { border: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--g-koralle); transform: translate(1px, 5px); }
+.g-spur li.jetzt { color: var(--g-messing); }
+.g-spur li.jetzt::before { border: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--g-messing); transform: translate(1px, 5px); animation: atmen 1.6s ease-in-out infinite; }
+/* Marken im Bild */
+.g-mass { font-size: 12px; font-weight: 600; color: #2a2116; background: var(--g-messing); padding: 2px 7px; border-radius: 6px; transform: translate(-50%, -50%); box-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+.g-mass.leise { background: rgba(26, 27, 30, .82); color: var(--g-messing); box-shadow: inset 0 0 0 1px rgba(220, 184, 120, .45); }
+.g-zeiger { font-size: 12px; color: var(--g-kreide); background: rgba(24, 25, 28, .82); padding: 4px 9px; border-radius: 8px; display: flex; gap: 7px; align-items: center; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
+.g-zeiger::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--g-blau); }
+.g-befund { font-size: 12px; color: var(--g-kreide); background: rgba(24, 25, 28, .84); padding: 6px 10px 6px 9px; border-radius: 9px; display: flex; gap: 8px; align-items: center; box-shadow: inset 0 0 0 1px rgba(255, 123, 105, .45), 0 4px 16px rgba(0, 0, 0, .3); }
+.g-befund b { color: var(--g-koralle); font-weight: 600; }
+.g-puls { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 1.5px solid var(--g-koralle); }
+.g-puls::after { content: ""; position: absolute; inset: -1.5px; border-radius: 50%; border: 1.5px solid var(--g-koralle); animation: ring 1.8s ease-out infinite; }
+.still .g-puls::after { display: none; }
+
+/* Graphit: Werkstatt */
+.g-spalte { position: absolute; left: 14px; top: 58px; bottom: 14px; width: 278px; border-radius: 18px; background: var(--g-insel); box-shadow: inset 0 0 0 1px var(--g-linie); padding: 14px 16px; display: flex; flex-direction: column; gap: 18px; overflow: hidden; corner-shape: squircle; }
+.g-spalte .g-liste { position: static; width: auto; }
+.g-abschnitt h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--g-asche); display: flex; justify-content: space-between; }
+.g-abschnitt h4 span { font-weight: 400; color: var(--g-rauch); }
+.g-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.g-name .ikon { color: var(--g-rauch); width: 14px; height: 14px; }
+.g-felder { display: grid; grid-template-columns: 92px 1fr; gap: 6px 10px; align-items: center; font-size: 12.5px; }
+.g-felder dt { color: var(--g-asche); }
+.g-felder dd { margin: 0; height: 26px; border-radius: 7px; background: var(--g-feld); display: flex; align-items: center; justify-content: space-between; padding: 0 9px; color: var(--g-kreide); }
+.g-felder dd small { color: var(--g-rauch); font-size: 11.5px; }
+.g-felder dd.neu { box-shadow: inset 0 0 0 1px rgba(220, 184, 120, .55); }
+.g-felder dd.neu small { color: var(--g-messing); }
+.g-reihe { display: flex; gap: 8px; margin-top: 12px; }
+.g-reihe span { flex: 1; height: 28px; border-radius: 8px; background: rgba(255, 255, 255, .075); display: grid; place-items: center; font-size: 12px; color: var(--g-kreide); }
+.g-kacheln { position: absolute; left: 304px; right: 14px; top: 58px; bottom: 76px; }
+.g-kachel { position: absolute; border-radius: 18px; background: rgba(255, 255, 255, .03); box-shadow: inset 0 0 0 1px var(--g-linie); overflow: hidden; corner-shape: squircle; }
+.g-kachel.modell { background: radial-gradient(110% 90% at 55% 38%, rgba(255, 255, 255, .07), rgba(255, 255, 255, .0) 60%), rgba(255, 255, 255, .02); }
+.g-kachel > header { position: absolute; left: 0; right: 0; top: 0; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px; z-index: 3; }
+.g-kachel > header b { font-size: 13px; font-weight: 600; }
+.g-kachel > header span { color: var(--g-rauch); font-size: 12px; flex: 1; }
+.g-kachel > header .ikon { color: var(--g-rauch); width: 15px; height: 15px; }
+.g-kachel .vp { left: 0; right: 0; top: 0; bottom: 0; }
+.g-papier { position: absolute; left: 12px; right: 12px; top: 42px; bottom: 12px; border-radius: 8px; background: #f1f0ec; overflow: hidden; }
+.g-tabelle { position: absolute; left: 6px; right: 6px; top: 42px; bottom: 6px; font-size: 12px; }
+.g-tabelle table { width: 100%; border-collapse: collapse; }
+.g-tabelle th { text-align: left; font-weight: 500; color: var(--g-rauch); font-size: 11.5px; padding: 0 8px 6px; }
+.g-tabelle td { padding: 0 8px; height: 20px; color: rgba(239, 237, 233, .88); white-space: nowrap; }
+.g-tabelle tbody tr:nth-child(odd) td { background: rgba(255, 255, 255, .025); }
+.g-tabelle td:first-child, .g-tabelle th:first-child { text-align: right; width: 34px; color: var(--g-rauch); }
+.g-tabelle td.n { text-align: right; width: 44px; }
+.g-tabelle td.m { color: var(--g-asche); }
+.g-tabelle tr.neu td { color: var(--g-messing); }
+.g-tabelle tfoot td { color: var(--g-asche); padding-top: 8px; height: 30px; }
+.g-tabelle tfoot b { color: var(--g-kreide); font-weight: 600; }
+.g-sprech { position: absolute; left: 304px; right: 14px; bottom: 14px; height: 50px; display: flex; align-items: center; gap: 14px; padding: 0 16px; }
+.g-mikro { display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 14px 0 6px; border-radius: 999px; background: rgba(255, 255, 255, .07); font-size: 12.5px; color: var(--g-kreide); white-space: nowrap; }
+.g-mikro i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(143, 198, 255, .16); color: var(--g-blau); }
+.g-zuletzt { font-size: 12.5px; color: var(--g-asche); flex: 1; min-width: 0; display: flex; gap: 16px; white-space: nowrap; overflow: hidden; }
+.g-zuletzt q { color: var(--g-blau); quotes: "„" "“"; }
+.g-zuletzt .agent { color: var(--g-messing); overflow: hidden; text-overflow: ellipsis; }
+
+/* Graphit: schmal, Start, Tasten */
+.r-graphit .desk { background: radial-gradient(90% 90% at 70% 30%, #34363b, #1c1d20); }
+.r-graphit .chat { background: #232427; box-shadow: 0 0 0 .5px rgba(255, 255, 255, .12), 0 20px 50px rgba(0, 0, 0, .45); color: #e8e6e2; }
+.r-graphit .chat-kopf { border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.r-graphit .chat-du { background: #3a3c41; }
+.r-graphit .chat-er { color: #d9d7d3; }
+.r-graphit .chat-eingabe { background: #2e3034; color: #8f8d89; }
+.r-graphit .schmal { background: radial-gradient(130% 90% at 50% 38%, var(--g-hell) 0%, var(--g-mitte) 46%, var(--g-tief) 100%); box-shadow: 0 0 0 .5px rgba(255, 255, 255, .14), 0 20px 50px rgba(0, 0, 0, .5); }
+.schmal .g-oben { left: 16px; top: 14px; gap: 12px; }
+.schmal .g-aktionen { right: 12px; top: 10px; }
+.g-schmal-unten { position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 6; display: grid; gap: 10px; }
+.g-agentzeile { font-size: 13px; color: var(--g-messing); display: flex; align-items: center; gap: 8px; }
+.g-agentzeile::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--g-messing); animation: atmen 1.6s ease-in-out infinite; }
+.g-agentzeile small { color: var(--g-rauch); font-size: 12px; margin-left: auto; }
+.g-leise { color: var(--g-rauch); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+.g-start { position: absolute; left: 0; right: 0; top: 250px; text-align: center; z-index: 3; }
+.g-start h2 { margin: 0; font-size: 38px; font-weight: 300; letter-spacing: -.02em; color: rgba(239, 237, 233, .94); }
+.g-start p { margin: 12px 0 0; font-size: 15px; color: var(--g-asche); }
+.g-start p kbd { margin: 0 2px; }
+.g-regal { position: absolute; left: 50%; transform: translateX(-50%); bottom: 22px; width: 1124px; border-radius: 22px; background: rgba(28, 29, 32, .8); box-shadow: inset 0 0 0 1px var(--g-linie), 0 30px 70px rgba(0, 0, 0, .45); padding: 16px 18px 18px; z-index: 7; corner-shape: squircle; backdrop-filter: blur(18px); }
+.g-regal header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.g-regal header b { font-size: 14px; font-weight: 600; flex: 1; }
+.g-regal header span { height: 28px; padding: 0 12px; border-radius: 8px; background: rgba(255, 255, 255, .07); display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--g-kreide); }
+.g-karten { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.g-karte { border-radius: 14px; background: rgba(255, 255, 255, .04); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); corner-shape: squircle; }
+.g-karte.zuletzt { box-shadow: inset 0 0 0 1.5px rgba(143, 198, 255, .55); }
+.g-karte .vp { position: relative; height: 150px; background: radial-gradient(100% 90% at 50% 35%, #44474d, #26282b); }
+.g-karte div.txt { padding: 9px 12px 11px; }
+.g-karte b { display: block; font-size: 13px; font-weight: 600; }
+.g-karte small { color: var(--g-rauch); font-size: 12px; }
+.g-regal footer { margin-top: 12px; font-size: 12px; color: var(--g-rauch); text-align: center; }
+.g-schleier { position: absolute; inset: 0; background: rgba(17, 18, 20, .5); z-index: 6; backdrop-filter: blur(3px); }
+.g-tasten { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); width: 1060px; border-radius: 26px; background: rgba(33, 34, 37, .9); box-shadow: inset 0 0 0 1px var(--g-linie), 0 40px 90px rgba(0, 0, 0, .5); padding: 26px 30px 24px; z-index: 7; corner-shape: squircle; }
+.g-tasten header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px; }
+.g-tasten header b { font-size: 22px; font-weight: 600; letter-spacing: -.015em; }
+.g-tasten header span { color: var(--g-asche); font-size: 13.5px; flex: 1; }
+.g-tasten header em { font-style: normal; font-size: 12px; color: var(--g-asche); display: inline-flex; gap: 6px; align-items: center; }
+.g-tgruppen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px 34px; }
+.g-tgruppe h4 { margin: 0 0 10px; font-size: 12.5px; font-weight: 600; color: var(--g-messing); }
+.g-tgruppe.agent h4 { color: var(--g-blau); }
+.g-tgruppe dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; font-size: 13px; }
+.g-tgruppe dt { display: flex; gap: 4px; justify-content: flex-end; }
+.g-tgruppe dd { margin: 0; color: rgba(239, 237, 233, .86); }
+.r-graphit .g-hinweise.hervor { bottom: 14px; padding: 9px 18px; left: 50%; right: auto; transform: translateX(-50%); border-radius: 14px; background: rgba(24, 25, 28, .86); box-shadow: inset 0 0 0 1px rgba(220, 184, 120, .4); }
+
+/* ==========================================================================
+   Richtung Reißbrett: Arbeiten wie am Zeichenbrett. Helles Blatt, Tusche,
+   Kevin markiert mit Rotstift, der Agent antwortet in Blau und trägt jede
+   Änderung mit Index ein. Befunde sind gelb schraffiert.
+   ========================================================================== */
+.r-reiss {
+  --p-papier: #eceff2; --p-bogen: #ffffff; --p-raster: #dbe2e8; --p-tusche: #16202b; --p-blei: #5a6673; --p-blei2: #8b96a1;
+  --p-rot: #d23b2e; --p-blau: #2856c4; --p-gelb: #f0b400; --p-linie: #c8d0d8;
+  color: var(--p-tusche); background: var(--p-papier);
+}
+.p-kopf { position: absolute; left: 0; right: 0; top: 0; height: 46px; display: flex; align-items: center; gap: 20px; padding: 0 16px 0 20px; }
+.p-kopf .p-projekt { font-weight: 600; font-size: 13px; }
+.p-kopf .p-projekt small { font-weight: 400; color: var(--p-blei2); margin-left: 6px; font-size: 12px; }
+.p-tabs { display: flex; gap: 16px; height: 46px; align-items: stretch; }
+.p-tabs span { display: flex; align-items: center; font-size: 12.5px; color: var(--p-blei); box-shadow: inset 0 -2px 0 transparent; }
+.p-tabs span.an { color: var(--p-tusche); box-shadow: inset 0 -2px 0 var(--p-tusche); font-weight: 500; }
+.p-werkzeuge { margin-left: auto; display: flex; gap: 4px; }
+.p-werkzeuge span { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 4px; font-size: 12.5px; color: var(--p-blei); }
+.p-werkzeuge span .ikon { width: 15px; height: 15px; color: var(--p-tusche); }
+.p-werkzeuge .rec { width: 9px; height: 9px; border-radius: 50%; background: var(--p-rot); }
+.p-blatt { position: absolute; left: 14px; right: 14px; top: 48px; bottom: 46px; background: var(--p-bogen); box-shadow: 0 0 0 1px rgba(22, 32, 43, .08), 0 1px 3px rgba(22, 32, 43, .08); }
+.p-rand { position: absolute; inset: 14px; border: 1.4px solid var(--p-tusche); pointer-events: none; z-index: 2; }
+.p-zonen { position: absolute; inset: 0; pointer-events: none; z-index: 2; font: 9.5px/1 var(--mono); color: var(--p-blei2); }
+.p-zonen span { position: absolute; }
+.p-blatt .vp { left: 15px; top: 15px; right: 15px; bottom: 15px; }
+.p-baum { position: absolute; left: 34px; top: 34px; width: 214px; z-index: 4; font-size: 12.5px; }
+.p-baum h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 600; color: var(--p-blei); display: flex; justify-content: space-between; }
+.p-baum h4 span { font: 10.5px var(--mono); color: var(--p-blei2); font-weight: 400; }
+.p-knoten { position: relative; display: flex; align-items: center; height: 24px; padding-left: 16px; gap: 6px; }
+.p-knoten::before { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; border-left: 1px solid var(--p-linie); }
+.p-knoten::after { content: ""; position: absolute; left: 4px; top: 12px; width: 8px; border-top: 1px solid var(--p-linie); }
+.p-knoten:last-child::before { bottom: 12px; }
+.p-knoten b { font-weight: 450; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-knoten em { font: 10.5px var(--mono); font-style: normal; color: var(--p-blei2); }
+.p-knoten.kind { margin-left: 16px; font-size: 12px; color: var(--p-blei); height: 22px; }
+.p-knoten.kind::after { top: 11px; }
+.p-knoten.markiert { color: var(--p-rot); }
+.p-knoten.markiert b { font-weight: 550; }
+.p-knoten.markiert b::after { content: ""; display: block; height: 1.5px; margin-top: 1px; width: 92%; background: var(--p-rot); opacity: .75; border-radius: 1px; transform: rotate(-.6deg); }
+.p-knoten.gewaehlt { background: #fdecea; }
+.p-knoten.gewaehlt b { color: var(--p-rot); }
+.p-notiz { position: absolute; right: 34px; top: 40px; width: 302px; z-index: 4; }
+.p-notiz-kopf { display: flex; align-items: center; gap: 8px; color: var(--p-rot); font-size: 11.5px; font-weight: 600; margin-bottom: 8px; }
+.p-welle { display: flex; gap: 2px; align-items: center; height: 14px; }
+.p-welle i { width: 2px; height: 14px; background: var(--p-rot); border-radius: 1px; animation: pegel 1.1s ease-in-out infinite; }
+.p-welle i:nth-child(2) { animation-delay: -.4s; } .p-welle i:nth-child(3) { animation-delay: -.7s; } .p-welle i:nth-child(4) { animation-delay: -.2s; }
+.still .p-welle i:nth-child(1) { transform: scaleY(.5); } .still .p-welle i:nth-child(2) { transform: scaleY(1); } .still .p-welle i:nth-child(3) { transform: scaleY(.7); } .still .p-welle i:nth-child(4) { transform: scaleY(.4); }
+.p-handschrift { font-size: 20px; line-height: 1.42; font-style: italic; color: var(--p-rot); letter-spacing: -.005em; }
+.p-handschrift .laeuft { opacity: .5; }
+.p-handschrift .cursor { display: inline-block; width: 1.5px; height: 1em; background: var(--p-rot); vertical-align: -.12em; margin-left: 2px; animation: blinken 1s steps(1) infinite; }
+.p-beilagen { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--p-linie); font-size: 12px; color: var(--p-blei); display: grid; gap: 3px; }
+.p-beilagen b { color: var(--p-tusche); font-weight: 500; }
+.p-tasten-jetzt { margin-top: 10px; display: flex; gap: 14px; font-size: 12px; color: var(--p-blei); }
+.r-reiss kbd { font: 500 10.5px/1 var(--mono); min-width: 19px; height: 19px; padding: 0 5px; display: inline-grid; place-items: center; border: 1px solid var(--p-tusche); border-bottom-width: 2px; border-radius: 3px; color: var(--p-tusche); background: #fff; margin-right: 5px; }
+.p-aenderungen { position: absolute; right: 34px; bottom: 112px; width: 382px; z-index: 4; font-size: 12px; background: var(--p-bogen); }
+.p-aenderungen table, .p-schriftfeld table { width: 100%; border-collapse: collapse; }
+.p-aenderungen caption { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--p-blei); padding-bottom: 5px; }
+.p-aenderungen td { border: 1px solid var(--p-tusche); padding: 0 7px; height: 21px; white-space: nowrap; }
+.p-aenderungen td:first-child { width: 26px; text-align: center; font: 11px var(--mono); color: var(--p-blau); }
+.p-aenderungen td:last-child { width: 30px; text-align: center; color: var(--p-blau); font-weight: 600; }
+.p-aenderungen tr.befund td:last-child { color: #9a6c00; }
+.p-aenderungen tr.befund td:nth-child(2) { background: repeating-linear-gradient(-45deg, rgba(240, 180, 0, .22) 0 4px, transparent 4px 8px); }
+.p-aenderungen tr.jetzt td { color: var(--p-blau); font-style: italic; }
+.p-schriftfeld { position: absolute; right: 29px; bottom: 29px; width: 392px; z-index: 4; background: var(--p-bogen); font-size: 11px; }
+.p-schriftfeld td { border: 1px solid var(--p-tusche); padding: 3px 7px; vertical-align: top; height: 34px; }
+.p-schriftfeld td small { display: block; font-size: 9.5px; color: var(--p-blei2); margin-bottom: 1px; }
+.p-schriftfeld td b { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.p-schriftfeld td span { font-family: var(--mono); font-size: 11px; }
+.p-legende { position: absolute; left: 20px; right: 20px; bottom: 0; height: 46px; display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--p-blei); }
+.p-legende strong { color: var(--p-tusche); font-weight: 600; font-size: 11.5px; }
+.p-legende span { display: inline-flex; align-items: center; }
+.p-legende .rechts { margin-left: auto; }
+/* Marken im Bild */
+.p-mass { font: 12px/1 var(--mono); color: var(--p-blau); background: rgba(255, 255, 255, .92); padding: 1px 3px; transform: translate(-50%, -50%); }
+.p-mass.senkrecht { transform: translate(-50%, -50%) rotate(-90deg); }
+.p-hinweis { font-size: 12px; color: var(--p-blau); background: rgba(255, 255, 255, .94); padding: 2px 5px; }
+.p-hinweis.rot { color: var(--p-rot); }
+.p-befund { font-size: 12px; color: var(--p-tusche); background: var(--p-gelb); padding: 5px 9px 5px 7px; display: flex; align-items: center; gap: 7px; box-shadow: 0 0 0 1px var(--p-tusche); }
+.p-befund svg { width: 15px; height: 15px; }
+
+/* Reißbrett: Werkstatt (Leuchttisch) */
+.p-seite { position: absolute; left: 14px; top: 52px; bottom: 50px; width: 284px; display: flex; flex-direction: column; gap: 20px; }
+.p-seite .p-baum { position: static; width: auto; }
+.p-form h4 { margin: 0 0 8px; font-size: 11.5px; font-weight: 600; color: var(--p-blei); display: flex; justify-content: space-between; }
+.p-form h4 span { font: 10.5px var(--mono); color: var(--p-blei2); font-weight: 400; }
+.p-form .p-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; color: var(--p-rot); }
+.p-form .p-name .ikon { width: 14px; height: 14px; color: var(--p-blei2); }
+.p-form dl { margin: 0; display: grid; grid-template-columns: 98px 1fr; gap: 0 10px; font-size: 12.5px; }
+.p-form dt { color: var(--p-blei); height: 26px; display: flex; align-items: center; }
+.p-form dd { margin: 0; height: 26px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--p-linie); font-family: var(--mono); font-size: 12px; }
+.p-form dd s { color: var(--p-blei2); }
+.p-form dd .delta { margin-left: auto; color: var(--p-blau); font-size: 10.5px; display: inline-flex; align-items: center; gap: 2px; }
+.p-form dd.neu { color: var(--p-blau); }
+.p-knoepfe { display: flex; gap: 8px; margin-top: 12px; }
+.p-knoepfe span { flex: 1; height: 28px; border: 1px solid var(--p-tusche); border-radius: 3px; display: grid; place-items: center; font-size: 12px; background: #fff; }
+.p-tisch { position: absolute; left: 312px; right: 14px; top: 52px; bottom: 50px; }
+.p-bogen { position: absolute; background: var(--p-bogen); box-shadow: 0 0 0 1px rgba(22, 32, 43, .1), 0 2px 4px rgba(22, 32, 43, .06), 0 14px 30px rgba(22, 32, 43, .07); }
+.p-bogen > header { position: absolute; left: 0; right: 0; top: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; z-index: 3; border-bottom: 1px solid var(--p-linie); background: #fff; }
+.p-bogen > header b { font-size: 12px; font-weight: 600; }
+.p-bogen > header span { font-size: 11.5px; color: var(--p-blei2); flex: 1; }
+.p-bogen > header .ikon { width: 14px; height: 14px; color: var(--p-blei); }
+.p-bogen .vp { left: 0; right: 0; top: 33px; bottom: 0; }
+.p-titelstreifen { position: absolute; left: 0; right: 0; bottom: 0; height: 25px; display: flex; border-top: 1.2px solid var(--p-tusche); font: 10.5px/1 var(--mono); color: var(--p-tusche); background: #fff; z-index: 3; }
+.p-titelstreifen span { display: flex; align-items: center; padding: 0 8px; border-left: 1px solid var(--p-tusche); white-space: nowrap; }
+.p-titelstreifen span:first-child { border-left: 0; flex: 1; font-family: var(--sans); font-size: 11.5px; }
+.p-titelstreifen .tn { font-style: normal; }
+.p-titelstreifen b { font-weight: 600; }
+.p-stueckliste { position: absolute; left: 14px; right: 14px; top: 44px; bottom: 12px; font-size: 11.5px; }
+.p-stueckliste table { width: 100%; border-collapse: collapse; }
+.p-stueckliste th { font-size: 10.5px; font-weight: 600; text-align: left; border: 1px solid var(--p-tusche); padding: 3px 6px; background: #f6f7f8; }
+.p-stueckliste td { border: 1px solid var(--p-tusche); border-top-color: var(--p-linie); border-bottom-color: var(--p-linie); padding: 0 6px; height: 20.5px; white-space: nowrap; }
+.p-stueckliste td.n, .p-stueckliste td.pos { text-align: right; font-family: var(--mono); font-size: 11px; }
+.p-stueckliste td.m { font-family: var(--mono); font-size: 11px; color: var(--p-blei); }
+.p-stueckliste tr.neu td { color: var(--p-blau); }
+.p-stueckliste tfoot td { border: 1px solid var(--p-tusche); height: 24px; font-weight: 600; }
+.p-sprech { position: absolute; left: 312px; right: 14px; bottom: 0; height: 50px; display: flex; align-items: center; gap: 18px; font-size: 12.5px; color: var(--p-blei); white-space: nowrap; overflow: hidden; }
+.p-sprech .mic { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 8px; border: 1px solid var(--p-tusche); border-radius: 15px; color: var(--p-tusche); background: #fff; }
+.p-sprech .mic i { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--p-rot); color: #fff; }
+.p-sprech q { color: var(--p-rot); font-style: italic; quotes: "„" "“"; }
+.p-sprech .agent { color: var(--p-blau); }
+
+/* Reißbrett: schmal, Start, Tasten */
+.r-reiss .desk { background: linear-gradient(160deg, #e6e9ec, #d3d8dd); }
+.r-reiss .chat { background: #fbfbfc; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .14), 0 18px 46px rgba(30, 40, 50, .16); color: #1f2328; }
+.r-reiss .chat-kopf { border-bottom: 1px solid #e7e9ec; }
+.r-reiss .chat-du { background: #eceef1; }
+.r-reiss .chat-er { color: #2a2f35; }
+.r-reiss .chat-eingabe { background: #fff; box-shadow: inset 0 0 0 1px #dfe2e6; color: #8b9097; }
+.r-reiss .schmal { background: var(--p-papier); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .16), 0 18px 46px rgba(30, 40, 50, .2); }
+.schmal .p-kopf { gap: 14px; padding: 0 12px 0 16px; }
+.schmal .p-blatt { left: 10px; right: 10px; }
+.schmal .p-rand { inset: 10px; }
+.p-schmal-unten { position: absolute; left: 24px; right: 24px; bottom: 24px; z-index: 4; background: #fff; }
+.p-start { position: absolute; left: 0; right: 0; top: 250px; text-align: center; z-index: 4; }
+.p-start h2 { margin: 0; font-size: 32px; font-weight: 400; letter-spacing: -.015em; }
+.p-start p { margin: 10px 0 0; color: var(--p-blei); font-size: 14.5px; }
+.p-schublade { position: absolute; right: 14px; top: 48px; bottom: 46px; width: 452px; background: #fbfbfc; box-shadow: -1px 0 0 var(--p-tusche), -18px 0 40px rgba(22, 32, 43, .12); z-index: 8; padding: 22px 24px 18px 40px; display: flex; flex-direction: column; }
+.p-griff { position: absolute; left: -1px; top: 50%; transform: translate(-100%, -50%); width: 26px; height: 148px; background: #fbfbfc; border: 1px solid var(--p-tusche); border-right: 0; border-radius: 6px 0 0 6px; display: flex; align-items: center; justify-content: center; }
+.p-griff span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11.5px; color: var(--p-blei); letter-spacing: .01em; display: flex; gap: 8px; align-items: center; }
+.p-schublade h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.p-schublade > p { margin: 0 0 16px; color: var(--p-blei); font-size: 12.5px; }
+.p-mappe { display: grid; grid-template-columns: 150px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--p-linie); align-items: center; }
+.p-mappe .vp { position: relative; height: 112px; background: #fff; box-shadow: 0 0 0 1px var(--p-tusche); }
+.p-mappe b { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 3px; }
+.p-mappe small { display: block; color: var(--p-blei); font-size: 12px; }
+.p-mappe code { display: block; margin-top: 6px; font: 10.5px var(--mono); color: var(--p-blei2); }
+.p-mappe.zuletzt b { color: var(--p-rot); }
+.p-schublade footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--p-blei); }
+.p-schublade footer span.knopf { height: 30px; padding: 0 12px; border: 1px solid var(--p-tusche); border-radius: 3px; display: inline-flex; align-items: center; color: var(--p-tusche); background: #fff; }
+.p-schleier { position: absolute; inset: 0; background: rgba(236, 239, 242, .7); z-index: 7; }
+.p-legendblatt { position: absolute; left: 50%; top: 70px; transform: translateX(-50%); width: 1080px; height: 690px; background: #fff; box-shadow: 0 0 0 1px rgba(22, 32, 43, .12), 0 30px 70px rgba(22, 32, 43, .18); z-index: 8; padding: 40px 46px; }
+.p-legendblatt .p-rand { inset: 16px; }
+.p-legendblatt h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.p-legendblatt > p { margin: 4px 0 22px; color: var(--p-blei); font-size: 13px; }
+.p-legspalten { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 36px; }
+.p-leggruppe { margin-bottom: 18px; }
+.p-leggruppe h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; padding-bottom: 4px; border-bottom: 1.4px solid var(--p-tusche); }
+.p-leggruppe.agent h4 { color: var(--p-rot); border-color: var(--p-rot); }
+.p-leggruppe dl { margin: 0; display: grid; grid-template-columns: 112px 1fr; font-size: 12.5px; }
+.p-leggruppe dt, .p-leggruppe dd { margin: 0; height: 27px; display: flex; align-items: center; border-bottom: 1px solid var(--p-linie); }
+.p-leggruppe dd { color: var(--p-tusche); }
+.p-legendblatt .p-schriftfeld { right: 16px; bottom: 16px; }
+
+/* ==========================================================================
+   Richtung Sucher: Der Viewer als Kameramonitor. Spricht Kevin, geht das Bild
+   auf Sendung (Tally-Rahmen). Der Agent schreibt mit Timecode in Cyan, Befunde
+   zeigen Zebra. Die Werkstatt ist ein Multiviewer.
+   ========================================================================== */
+.r-sucher {
+  --s-schiefer: #12161b; --s-gehaeuse: #191e24; --s-rand: #29313a; --s-anzeige: #d4dce3; --s-daemmer: #7d8a96; --s-matt: #4c5763;
+  --s-tally: #ff4b3e; --s-welle: #41d1e5; --s-zebra: #f4d13f;
+  color: var(--s-anzeige); background: var(--s-schiefer);
+}
+.s-leiste { position: absolute; left: 0; right: 0; top: 0; height: 40px; background: var(--s-gehaeuse); border-bottom: 1px solid var(--s-rand); display: flex; align-items: center; gap: 16px; padding: 0 12px 0 18px; z-index: 6; }
+.s-leiste .s-projekt { font-weight: 600; font-size: 13px; }
+.s-segment { display: flex; }
+.s-segment span { height: 24px; padding: 0 10px; display: grid; place-items: center; font: 11px var(--mono); color: var(--s-daemmer); border: 1px solid var(--s-rand); }
+.s-segment span + span { border-left: 0; }
+.s-segment span.an { background: var(--s-anzeige); color: var(--s-schiefer); border-color: var(--s-anzeige); font-weight: 600; }
+.s-tally { display: inline-flex; align-items: center; gap: 8px; height: 24px; padding: 0 10px; background: var(--s-tally); color: #fff; font: 600 11px var(--mono); }
+.s-tally::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: atmen 1.2s ease-in-out infinite; }
+.s-tally.aus { background: transparent; color: var(--s-daemmer); box-shadow: inset 0 0 0 1px var(--s-rand); }
+.s-tally.aus::before { background: var(--s-matt); animation: none; }
+.s-mitte { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; }
+.s-tc { font: 12px var(--mono); color: var(--s-anzeige); letter-spacing: .02em; }
+.s-rechts { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.s-status { font: 11px var(--mono); color: var(--s-daemmer); display: inline-flex; gap: 6px; align-items: center; margin-right: 8px; }
+.s-status::before { content: ""; width: 6px; height: 6px; background: var(--s-welle); }
+.s-taste { height: 26px; padding: 0 9px; border: 1px solid var(--s-rand); display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--s-anzeige); }
+.s-taste .ikon { width: 14px; height: 14px; }
+.s-taste .rec { width: 9px; height: 9px; border-radius: 50%; background: var(--s-tally); }
+.s-bild { position: absolute; left: 0; right: 0; top: 40px; bottom: 34px; background: radial-gradient(90% 85% at 55% 45%, #1b2128, #12161b 70%, #0d1014); }
+.s-bild .vp { inset: 0; }
+.s-ecken { position: absolute; inset: 14px; pointer-events: none; z-index: 3; }
+.s-ecken i { position: absolute; width: 22px; height: 22px; border-color: rgba(212, 220, 227, .45); border-style: solid; border-width: 0; }
+.s-ecken i:nth-child(1) { left: 0; top: 0; border-left-width: 2px; border-top-width: 2px; }
+.s-ecken i:nth-child(2) { right: 0; top: 0; border-right-width: 2px; border-top-width: 2px; }
+.s-ecken i:nth-child(3) { left: 0; bottom: 0; border-left-width: 2px; border-bottom-width: 2px; }
+.s-ecken i:nth-child(4) { right: 0; bottom: 0; border-right-width: 2px; border-bottom-width: 2px; }
+.s-ecken.live i { border-color: var(--s-tally); }
+.s-sendung { position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--s-tally); pointer-events: none; z-index: 3; }
+.s-mittelmarke { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; pointer-events: none; z-index: 2; }
+.s-mittelmarke::before, .s-mittelmarke::after { content: ""; position: absolute; background: rgba(212, 220, 227, .28); }
+.s-mittelmarke::before { left: 6px; top: 0; width: 2px; height: 14px; }
+.s-mittelmarke::after { top: 6px; left: 0; height: 2px; width: 14px; }
+.s-spuren { position: absolute; left: 30px; top: 34px; width: 214px; z-index: 4; font-size: 12.5px; }
+.s-spuren h4 { margin: 0 0 6px; font: 10.5px var(--mono); color: var(--s-daemmer); font-weight: 400; display: flex; justify-content: space-between; }
+.s-spur { display: flex; align-items: center; height: 24px; gap: 8px; padding-left: 10px; position: relative; }
+.s-spur::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; background: var(--s-matt); }
+.s-spur b { font-weight: 500; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-spur em { font: 10.5px var(--mono); font-style: normal; color: var(--s-daemmer); }
+.s-spur.kind { margin-left: 12px; font-size: 12px; color: #aab5bf; height: 22px; }
+.s-spur.kind::before { background: var(--s-rand); }
+.s-spur.markiert { color: #fff; }
+.s-spur.markiert::before { background: var(--s-tally); }
+.s-spur.gewaehlt { background: rgba(212, 220, 227, .1); color: #fff; }
+.s-spur.gewaehlt::before { background: var(--s-anzeige); }
+.s-log { position: absolute; left: 30px; bottom: 22px; width: 400px; z-index: 4; font: 11.5px/1.55 var(--mono); }
+.s-log div { display: flex; gap: 12px; color: #aab5bf; white-space: nowrap; }
+.s-log div span { color: var(--s-matt); flex: none; }
+.s-log div.alt { opacity: .55; }
+.s-log div.befund { color: var(--s-zebra); }
+.s-log div.jetzt { color: var(--s-welle); }
+.s-log div.jetzt::after { content: ""; width: 7px; height: 13px; background: var(--s-welle); margin-left: -6px; align-self: center; animation: blinken 1s steps(1) infinite; }
+.s-caption { position: absolute; left: 50%; transform: translateX(-50%); bottom: 54px; width: 720px; text-align: center; z-index: 5; }
+.s-caption p { display: inline; margin: 0; font-size: 22px; line-height: 1.5; font-weight: 600; color: #fff; background: rgba(0, 0, 0, .74); padding: 3px 10px; -webkit-box-decoration-break: clone; box-decoration-break: clone; letter-spacing: -.005em; }
+.s-caption .laeuft { color: #8d99a5; }
+.s-caption .cursor { display: inline-block; width: 2px; height: 1em; background: var(--s-tally); vertical-align: -.15em; margin-left: 3px; animation: blinken 1s steps(1) infinite; }
+.s-dabei { margin-top: 10px; font: 11px var(--mono); color: var(--s-daemmer); display: flex; gap: 14px; justify-content: center; }
+.s-dabei b { color: var(--s-anzeige); font-weight: 400; }
+.s-fuss { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: var(--s-gehaeuse); border-top: 1px solid var(--s-rand); display: flex; align-items: center; gap: 18px; padding: 0 18px; font-size: 12px; color: var(--s-daemmer); z-index: 6; white-space: nowrap; }
+.s-fuss > span { display: inline-flex; align-items: center; gap: 6px; }
+.s-fuss .rechts { margin-left: auto; }
+.r-sucher kbd { font: 500 10.5px/1 var(--mono); height: 19px; min-width: 19px; padding: 0 5px; display: inline-grid; place-items: center; color: var(--s-anzeige); border: 1px solid #3a4550; background: #20272e; border-radius: 2px; }
+/* Marken im Bild */
+.s-osd { font: 11.5px/1 var(--mono); color: var(--s-welle); background: rgba(0, 0, 0, .78); padding: 4px 6px; transform: translate(-50%, -50%); }
+.s-osd.links { transform: translate(0, -50%); }
+.s-osd.rot { color: #fff; background: var(--s-tally); }
+.s-fokus-text { font: 11px var(--mono); color: #fff; background: var(--s-tally); padding: 3px 6px; }
+.s-befund { font: 11.5px/1.3 var(--mono); color: var(--s-zebra); background: rgba(0, 0, 0, .82); padding: 6px 8px; display: flex; gap: 10px; align-items: center; box-shadow: inset 0 0 0 1px rgba(244, 209, 63, .5); }
+.s-befund i { width: 18px; height: 12px; background: repeating-linear-gradient(-45deg, var(--s-zebra) 0 3px, #000 3px 6px); flex: none; }
+/* Sucher: Werkstatt (Multiviewer) */
+.s-seite { position: absolute; left: 0; top: 40px; bottom: 34px; width: 286px; background: var(--s-gehaeuse); border-right: 1px solid var(--s-rand); padding: 16px 16px; display: flex; flex-direction: column; gap: 18px; z-index: 4; }
+.s-seite .s-spuren { position: static; width: auto; }
+.s-menue h4 { margin: 0 0 8px; font: 10.5px var(--mono); color: var(--s-daemmer); font-weight: 400; display: flex; justify-content: space-between; }
+.s-menue .s-name { font-size: 16px; font-weight: 600; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; color: #fff; }
+.s-menue .s-name .ikon { width: 13px; height: 13px; color: var(--s-daemmer); }
+.s-menue dl { margin: 0; display: grid; grid-template-columns: 96px 1fr; gap: 4px 8px; font-size: 12px; align-items: center; }
+.s-menue dt { color: var(--s-daemmer); }
+.s-menue dd { margin: 0; height: 25px; border: 1px solid var(--s-rand); display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font: 11.5px var(--mono); color: var(--s-anzeige); background: #151a1f; }
+.s-menue dd small { color: var(--s-matt); font-size: 10.5px; }
+.s-menue dd.neu { border-color: rgba(65, 209, 229, .6); }
+.s-menue dd.neu small { color: var(--s-welle); }
+.s-knoepfe { display: flex; gap: 6px; margin-top: 10px; }
+.s-knoepfe span { flex: 1; height: 26px; border: 1px solid var(--s-rand); display: grid; place-items: center; font: 11px var(--mono); color: var(--s-anzeige); }
+.s-multi { position: absolute; left: 286px; right: 0; top: 40px; bottom: 34px; background: #07090b; }
+.s-kachel { position: absolute; overflow: hidden; background: var(--s-schiefer); }
+.s-kachel .vp { inset: 0; }
+.s-kachel .s-etikett { position: absolute; left: 0; bottom: 0; z-index: 4; display: flex; align-items: stretch; height: 22px; font: 11px var(--mono); }
+.s-kachel .s-etikett b { background: #000; color: var(--s-anzeige); font-weight: 400; padding: 0 8px; display: grid; place-items: center; }
+.s-kachel .s-etikett span { background: rgba(0, 0, 0, .55); color: var(--s-daemmer); padding: 0 8px; display: grid; place-items: center; }
+.s-kachel .s-etikett em { font-style: normal; background: var(--s-welle); color: #00191d; padding: 0 7px; display: grid; place-items: center; font-weight: 600; }
+.s-kachel.aktiv::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--s-anzeige); pointer-events: none; z-index: 5; }
+.s-kachel.frisch::before { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 1px rgba(65, 209, 229, .7); pointer-events: none; z-index: 5; }
+.s-papier { position: absolute; inset: 10px 10px 30px; background: #eef0f2; }
+.s-tabelle { position: absolute; inset: 12px 12px 30px; font-size: 12px; }
+.s-tabelle table { width: 100%; border-collapse: collapse; }
+.s-tabelle th { font: 10.5px var(--mono); color: var(--s-daemmer); font-weight: 400; text-align: left; padding: 0 6px 6px; border-bottom: 1px solid var(--s-rand); }
+.s-tabelle td { padding: 0 6px; height: 21px; border-bottom: 1px solid #1c232a; white-space: nowrap; color: #c4cdd5; }
+.s-tabelle td.n, .s-tabelle td.pos { text-align: right; font: 11px var(--mono); color: var(--s-daemmer); }
+.s-tabelle td.m { font: 11px var(--mono); color: var(--s-daemmer); }
+.s-tabelle tr.neu td { color: var(--s-welle); }
+.s-tabelle tfoot td { border-bottom: 0; color: var(--s-anzeige); height: 26px; font: 11px var(--mono); }
+.s-sprech { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: var(--s-gehaeuse); border-top: 1px solid var(--s-rand); display: flex; align-items: center; gap: 16px; padding: 0 18px; font-size: 12px; color: var(--s-daemmer); z-index: 6; white-space: nowrap; overflow: hidden; }
+.s-sprech q { color: #fff; quotes: "„" "“"; }
+.s-sprech .agent { color: var(--s-welle); font-family: var(--mono); font-size: 11.5px; }
+/* Sucher: schmal, Start, Tasten */
+.r-sucher .desk { background: radial-gradient(80% 90% at 70% 30%, #1d232a, #0e1115); }
+.r-sucher .chat { background: #1a1d21; box-shadow: 0 0 0 .5px rgba(255, 255, 255, .1), 0 20px 50px rgba(0, 0, 0, .5); color: #e4e7ea; }
+.r-sucher .chat-kopf { border-bottom: 1px solid #262a30; }
+.r-sucher .chat-du { background: #2c3138; }
+.r-sucher .chat-er { color: #cfd5da; }
+.r-sucher .chat-eingabe { background: #23272c; color: #7f8891; }
+.r-sucher .schmal { background: var(--s-schiefer); box-shadow: 0 0 0 .5px rgba(255, 255, 255, .14), 0 20px 50px rgba(0, 0, 0, .55); }
+.schmal .s-leiste { gap: 10px; padding: 0 10px 0 14px; }
+.s-ablage { position: absolute; left: 0; top: 40px; bottom: 34px; width: 486px; background: var(--s-gehaeuse); border-right: 1px solid var(--s-rand); z-index: 8; padding: 18px 22px; box-shadow: 18px 0 40px rgba(0, 0, 0, .35); display: flex; flex-direction: column; }
+.s-ablage header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.s-ablage header b { font-size: 14px; font-weight: 600; flex: 1; }
+.s-clips { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.s-clip .vp { position: relative; height: 140px; background: radial-gradient(90% 85% at 50% 40%, #1d242b, #101318); box-shadow: inset 0 0 0 1px var(--s-rand); }
+.s-clip .vp .tc { position: absolute; right: 6px; bottom: 6px; font: 10px var(--mono); color: var(--s-anzeige); background: rgba(0, 0, 0, .7); padding: 2px 4px; z-index: 2; }
+.s-clip b { display: block; margin-top: 7px; font-size: 12.5px; font-weight: 600; }
+.s-clip small { font: 10.5px var(--mono); color: var(--s-daemmer); }
+.s-clip.zuletzt .vp { box-shadow: inset 0 0 0 2px var(--s-anzeige); }
+.s-ablage footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--s-daemmer); }
+.s-zuschieben { position: absolute; right: -1px; top: 50%; transform: translate(100%, -50%); width: 24px; height: 120px; background: var(--s-gehaeuse); border: 1px solid var(--s-rand); border-left: 0; display: grid; place-items: center; z-index: 9; }
+.s-zuschieben span { writing-mode: vertical-rl; font: 10.5px var(--mono); color: var(--s-daemmer); }
+.s-leer { position: absolute; left: 486px; right: 0; top: 40%; text-align: center; z-index: 4; }
+.s-leer code { font: 12px var(--mono); color: var(--s-daemmer); }
+.s-leer p { margin: 10px 0 0; font-size: 16px; color: var(--s-anzeige); }
+.s-schleier { position: absolute; inset: 40px 0 34px; background: rgba(8, 10, 12, .62); z-index: 7; }
+.s-belegung { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); width: 1300px; background: var(--s-gehaeuse); box-shadow: 0 0 0 1px var(--s-rand), 0 30px 80px rgba(0, 0, 0, .6); z-index: 8; padding: 22px 26px 22px; }
+.s-belegung header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 16px; }
+.s-belegung header b { font-size: 18px; font-weight: 600; }
+.s-belegung header span { color: var(--s-daemmer); font-size: 13px; flex: 1; }
+.s-tastatur { display: grid; gap: 6px; }
+.s-reihe { display: flex; gap: 6px; }
+.s-key { height: 54px; border: 1px solid #2f3842; background: #151a1f; padding: 5px 6px; display: flex; flex-direction: column; justify-content: space-between; font: 11px/1.1 var(--mono); color: var(--s-matt); flex: none; }
+.s-key b { font-weight: 500; color: #8996a2; font-size: 12px; }
+.s-key small { font-family: var(--sans); font-size: 10.5px; line-height: 1.1; color: var(--s-anzeige); }
+.s-key.ansicht { border-color: rgba(65, 209, 229, .7); background: rgba(65, 209, 229, .08); }
+.s-key.ansicht b { color: var(--s-welle); }
+.s-key.werkzeug { border-color: rgba(212, 220, 227, .55); background: rgba(212, 220, 227, .06); }
+.s-key.werkzeug b { color: #fff; }
+.s-key.agent { border-color: var(--s-tally); background: rgba(255, 75, 62, .14); }
+.s-key.agent b { color: #ff8a80; }
+.s-legende2 { display: flex; gap: 26px; margin-top: 16px; font-size: 12px; color: var(--s-daemmer); align-items: center; }
+.s-legende2 span { display: inline-flex; align-items: center; gap: 8px; }
+.s-legende2 i { width: 14px; height: 10px; border: 1px solid; }
+.s-maus { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 22px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--s-rand); font-size: 12px; }
+.s-maus div { display: flex; flex-direction: column; gap: 3px; }
+.s-maus code { font: 11px var(--mono); color: var(--s-welle); }
+.s-maus span { color: var(--s-anzeige); }
+
+</style>
+</head>
+<body>
+<header class="kopf">
+  <div class="kopf-titel"><b>Kev CAD V2</b><span>Gestaltungsentwurf vom 05.11.2026, drei Richtungen</span></div>
+  <div class="schalter" id="richtungen" role="group" aria-label="Richtung"></div>
+  <div class="schalter" id="zustaende" role="group" aria-label="Zustand"></div>
+  <p class="kopf-idee" id="idee"></p>
+</header>
+<main class="rahmen"><div class="buehne-halter" id="halter"><div id="buehne" class="buehne" role="img"></div></div></main>
+<div class="uebersicht" id="uebersicht"></div>
+<script>
+/* ==========================================================================
+   3D-Ansicht für den Entwurf: kleines WebGL2-Rendering echter Geometrie
+   (Nutprofile, Platte, Lenkrollen, Schrauben) mit Flächen und Kanten wie in
+   einem CAD-Viewer. Jede Richtung bringt ihren eigenen Stil mit.
+   ========================================================================== */
+const KC = (() => {
+  'use strict';
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+  // 4x4-Matrizen, spaltenweise wie in GL
+  function mmul(a, b) {
+    const o = new Float32Array(16);
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+      let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s;
+    }
+    return o;
+  }
+  function ident() { const m = new Float32Array(16); m[0] = m[5] = m[10] = m[15] = 1; return m; }
+  function T(x, y, z) { const m = ident(); m[12] = x; m[13] = y; m[14] = z; return m; }
+  function Rot(axis, deg) {
+    const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), m = ident();
+    if (axis === 'x') { m[5] = c; m[6] = s; m[9] = -s; m[10] = c; }
+    else if (axis === 'y') { m[0] = c; m[2] = -s; m[8] = s; m[10] = c; }
+    else { m[0] = c; m[1] = s; m[4] = -s; m[5] = c; }
+    return m;
+  }
+  const M = (...ms) => ms.reduce((a, b) => mmul(a, b));
+  const xf = (m, p) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
+  const xfn = (m, n) => norm([m[0] * n[0] + m[4] * n[1] + m[8] * n[2], m[1] * n[0] + m[5] * n[1] + m[9] * n[2], m[2] * n[0] + m[6] * n[1] + m[10] * n[2]]);
+  function proj(m, p) {
+    const x = p[0], y = p[1], z = p[2];
+    const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+    return [(m[0] * x + m[4] * y + m[8] * z + m[12]) / w, (m[1] * x + m[5] * y + m[9] * z + m[13]) / w, (m[2] * x + m[6] * y + m[10] * z + m[14]) / w, w];
+  }
+  function lookAt(eye, target, up) {
+    const f = norm(sub(target, eye)), s = norm(cross(f, up)), u = cross(s, f);
+    return new Float32Array([s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -dot(s, eye), -dot(u, eye), dot(f, eye), 1]);
+  }
+  function perspective(fovy, asp, n, f) {
+    const t = 1 / Math.tan(fovy / 2), nf = 1 / (n - f);
+    return new Float32Array([t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) * nf, -1, 0, 0, 2 * f * n * nf, 0]);
+  }
+  function ortho(l, r, b, t, n, f) {
+    return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
+  }
+
+  // ---------------------------------------------------------------- Netze
+  class Mesh {
+    constructor() { this.p = []; this.n = []; this.i = []; this.e = []; }
+    v(p, n) { this.p.push(p[0], p[1], p[2]); this.n.push(n[0], n[1], n[2]); return this.p.length / 3 - 1; }
+    edge(a, b) { this.e.push(a[0], a[1], a[2], b[0], b[1], b[2]); }
+    add(o) {
+      const off = this.p.length / 3;
+      for (let k = 0; k < o.p.length; k++) { this.p.push(o.p[k]); this.n.push(o.n[k]); }
+      for (let k = 0; k < o.i.length; k++) this.i.push(o.i[k] + off);
+      for (let k = 0; k < o.e.length; k++) this.e.push(o.e[k]);
+      return this;
+    }
+    at(m) {
+      const r = new Mesh();
+      for (let k = 0; k < this.p.length; k += 3) {
+        const p = xf(m, [this.p[k], this.p[k + 1], this.p[k + 2]]);
+        const n = xfn(m, [this.n[k], this.n[k + 1], this.n[k + 2]]);
+        r.p.push(p[0], p[1], p[2]); r.n.push(n[0], n[1], n[2]);
+      }
+      r.i = this.i.slice();
+      for (let k = 0; k < this.e.length; k += 6) {
+        const a = xf(m, [this.e[k], this.e[k + 1], this.e[k + 2]]), b = xf(m, [this.e[k + 3], this.e[k + 4], this.e[k + 5]]);
+        r.e.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+      }
+      return r;
+    }
+    bbox() {
+      const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+      for (let k = 0; k < this.p.length; k += 3) for (let a = 0; a < 3; a++) {
+        lo[a] = Math.min(lo[a], this.p[k + a]); hi[a] = Math.max(hi[a], this.p[k + a]);
+      }
+      return [lo, hi];
+    }
+  }
+
+  // Ohren abschneiden: einfaches Polygon gegen den Uhrzeigersinn in Dreiecke zerlegen
+  function earcut(pts) {
+    const idx = pts.map((_, k) => k), tris = [];
+    const ar = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const inside = (p, a, b, c) => ar(a, b, p) > 1e-9 && ar(b, c, p) > 1e-9 && ar(c, a, p) > 1e-9;
+    let guard = 0;
+    while (idx.length > 3 && guard++ < 20000) {
+      let cut = false;
+      for (let k = 0; k < idx.length; k++) {
+        const i0 = idx[(k + idx.length - 1) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length];
+        const a = pts[i0], b = pts[i1], c = pts[i2];
+        if (ar(a, b, c) <= 1e-9) continue;
+        let ok = true;
+        for (const j of idx) { if (j === i0 || j === i1 || j === i2) continue; if (inside(pts[j], a, b, c)) { ok = false; break; } }
+        if (!ok) continue;
+        tris.push(i0, i1, i2); idx.splice(k, 1); cut = true; break;
+      }
+      if (!cut) break;
+    }
+    if (idx.length === 3) tris.push(idx[0], idx[1], idx[2]);
+    return tris;
+  }
+
+  const circle = (r, seg) => Array.from({ length: seg }, (_, k) => { const a = k / seg * Math.PI * 2; return [Math.cos(a) * r, Math.sin(a) * r]; });
+  const rect = (w, h) => [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+
+  // Prisma entlang z (z0 bis z1) aus einem Umriss gegen den Uhrzeigersinn
+  function prism(pts, z0, z1, o = {}) {
+    const m = new Mesh(), n = pts.length;
+    for (let k = 0; k < n; k++) {
+      const a = pts[k], b = pts[(k + 1) % n];
+      let na, nb;
+      if (o.smooth) { na = norm([a[0], a[1], 0]); nb = norm([b[0], b[1], 0]); }
+      else { const d = [b[0] - a[0], b[1] - a[1]]; na = nb = norm([d[1], -d[0], 0]); }
+      const i0 = m.v([a[0], a[1], z0], na), i1 = m.v([b[0], b[1], z0], nb), i2 = m.v([b[0], b[1], z1], nb), i3 = m.v([a[0], a[1], z1], na);
+      m.i.push(i0, i1, i2, i0, i2, i3);
+    }
+    const tri = earcut(pts), top = [], bot = [];
+    for (const p of pts) { top.push(m.v([p[0], p[1], z1], [0, 0, 1])); bot.push(m.v([p[0], p[1], z0], [0, 0, -1])); }
+    for (let k = 0; k < tri.length; k += 3) {
+      if (o.capTop !== false) m.i.push(top[tri[k]], top[tri[k + 1]], top[tri[k + 2]]);
+      if (o.capBot !== false) m.i.push(bot[tri[k]], bot[tri[k + 2]], bot[tri[k + 1]]);
+    }
+    for (let k = 0; k < n; k++) {
+      const a = pts[k], b = pts[(k + 1) % n];
+      m.edge([a[0], a[1], z0], [b[0], b[1], z0]); m.edge([a[0], a[1], z1], [b[0], b[1], z1]);
+    }
+    const sharp = o.sharp === 'all' ? pts.map((_, k) => k) : (o.sharp || []);
+    for (const k of sharp) { const p = pts[k]; m.edge([p[0], p[1], z0], [p[0], p[1], z1]); }
+    return m;
+  }
+  const box = (sx, sy, sz) => prism(rect(sx, sy), -sz / 2, sz / 2, { sharp: 'all' });
+  const cyl = (r, z0, z1, seg = 40) => prism(circle(r, seg), z0, z1, { smooth: true });
+
+  function tube(ro, ri, z0, z1, seg = 48) {
+    const m = new Mesh(), O = circle(ro, seg), I = circle(ri, seg);
+    for (let k = 0; k < seg; k++) {
+      const a = O[k], b = O[(k + 1) % seg], c = I[k], d = I[(k + 1) % seg];
+      const na = norm([a[0], a[1], 0]), nb = norm([b[0], b[1], 0]);
+      let q = [m.v([a[0], a[1], z0], na), m.v([b[0], b[1], z0], nb), m.v([b[0], b[1], z1], nb), m.v([a[0], a[1], z1], na)];
+      m.i.push(q[0], q[1], q[2], q[0], q[2], q[3]);
+      const nc = mul(norm([c[0], c[1], 0]), -1), nd = mul(norm([d[0], d[1], 0]), -1);
+      q = [m.v([c[0], c[1], z0], nc), m.v([d[0], d[1], z0], nd), m.v([d[0], d[1], z1], nd), m.v([c[0], c[1], z1], nc)];
+      m.i.push(q[0], q[2], q[1], q[0], q[3], q[2]);
+      for (const [z, nz] of [[z0, -1], [z1, 1]]) {
+        q = [m.v([a[0], a[1], z], [0, 0, nz]), m.v([b[0], b[1], z], [0, 0, nz]), m.v([d[0], d[1], z], [0, 0, nz]), m.v([c[0], c[1], z], [0, 0, nz])];
+        m.i.push(q[0], q[1], q[2], q[0], q[2], q[3]);
+      }
+      m.edge([a[0], a[1], z0], [b[0], b[1], z0]); m.edge([a[0], a[1], z1], [b[0], b[1], z1]);
+      m.edge([c[0], c[1], z0], [d[0], d[1], z0]); m.edge([c[0], c[1], z1], [d[0], d[1], z1]);
+    }
+    return m;
+  }
+
+  function sphere(r, seg = 48, rings = 28) {
+    const m = new Mesh(), rows = [];
+    for (let j = 0; j <= rings; j++) {
+      const th = j / rings * Math.PI, row = [];
+      for (let k = 0; k <= seg; k++) {
+        const ph = k / seg * Math.PI * 2, n = [Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph), Math.cos(th)];
+        row.push(m.v(mul(n, r), n));
+      }
+      rows.push(row);
+    }
+    for (let j = 0; j < rings; j++) for (let k = 0; k < seg; k++) {
+      const a = rows[j][k], b = rows[j + 1][k], c = rows[j + 1][k + 1], d = rows[j][k + 1];
+      m.i.push(a, b, c, a, c, d);
+    }
+    return m;
+  }
+
+  // Aluprofil 30 × 30 Nut 8 im Querschnitt (vereinfacht, mit Fase und T-Nut)
+  function nutProfil() {
+    const t = [[-14, 15], [-4.1, 15], [-4.1, 12.7], [-8.1, 12.7], [-8.1, 10.6], [-5, 7.4], [5, 7.4], [8.1, 10.6], [8.1, 12.7], [4.1, 12.7], [4.1, 15], [14, 15]];
+    const flag = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1];
+    const pts = [], sh = [];
+    for (let s = 0; s < 4; s++) {
+      const a = -s * Math.PI / 2, c = Math.round(Math.cos(a)), si = Math.round(Math.sin(a));
+      t.forEach((p, k) => { pts.push([c * p[0] - si * p[1], si * p[0] + c * p[1]]); sh.push(flag[k]); });
+    }
+    pts.reverse(); sh.reverse();
+    return { pts, sharp: sh.map((v, k) => v ? k : -1).filter(k => k >= 0) };
+  }
+  const PROFIL = nutProfil();
+  const profil = len => prism(PROFIL.pts, 0, len, { sharp: PROFIL.sharp });
+  const winkel = (a, b, t, len) => prism([[0, 0], [a, 0], [a, t], [t, t], [t, b], [0, b]], 0, len, { sharp: 'all' });
+
+  // ---------------------------------------------------------------- Farben
+  const lin = hex => { const v = parseInt(hex.slice(1), 16); return [(v >> 16) / 255, (v >> 8 & 255) / 255, (v & 255) / 255].map(c => Math.pow(c, 2.2)); };
+  const srgb = hex => { const v = parseInt(hex.slice(1), 16); return [(v >> 16) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]; };
+
+  // ---------------------------------------------------------------- WebGL
+  const VS_MESH = `#version 300 es
+in vec3 aP; in vec3 aN; uniform mat4 uVP; out vec3 vP; out vec3 vN;
+void main(){ vP=aP; vN=aN; gl_Position=uVP*vec4(aP,1.0); }`;
+  const FS_MESH = `#version 300 es
+precision highp float;
+in vec3 vP; in vec3 vN;
+uniform vec3 uEye; uniform vec3 uVdir; uniform float uOrtho;
+uniform vec3 uBase; uniform float uRough; uniform float uMetal;
+uniform vec3 uSky; uniform vec3 uGnd; uniform vec3 uK; uniform vec3 uKc; uniform vec3 uF; uniform vec3 uFc; uniform vec3 uRim;
+uniform float uExp; uniform float uSat; uniform float uGooch; uniform vec3 uCool; uniform vec3 uWarm;
+uniform float uFlat; uniform vec3 uFlatc; uniform vec4 uHi; uniform vec4 uZeb; uniform float uA;
+out vec4 o;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+void main(){
+  vec3 n=normalize(vN);
+  vec3 v= uOrtho>0.5 ? -uVdir : normalize(uEye-vP);
+  if(dot(n,v)<0.0) n=-n;
+  float nv=max(dot(n,v),0.0);
+  vec3 base=uBase;
+  vec3 amb=mix(uGnd,uSky,n.z*0.5+0.5);
+  float kd=max(dot(n,uK),0.0), kw=max((dot(n,uK)+0.3)/1.3,0.0), fd=max(dot(n,uF),0.0);
+  vec3 dif=base*(amb+uKc*mix(kd,kw,0.45)+uFc*fd);
+  vec3 h=normalize(uK+v);
+  float sh=mix(260.0,9.0,uRough);
+  float sp=pow(max(dot(n,h),0.0),sh)*(sh+8.0)/30.0*kd;
+  vec3 f0=mix(vec3(0.04),base,uMetal);
+  vec3 F=f0+(1.0-f0)*pow(1.0-nv,5.0);
+  vec3 r=reflect(-v,n);
+  float t=smoothstep(-0.3,0.7,r.z);
+  vec3 env=mix(uGnd*0.55,uSky*1.35,t);
+  float sb=smoothstep(0.78,0.97,dot(r,uK))*mix(1.9,0.45,uRough);
+  float sb2=smoothstep(0.85,0.99,dot(r,uF))*mix(0.8,0.2,uRough);
+  env+=sb*uKc+sb2*uFc;
+  vec3 refl=env*F;
+  vec3 col=mix(dif+refl*0.22*(1.0-uRough), dif*0.18+refl, uMetal)+uKc*sp*F;
+  col+=uRim*pow(1.0-nv,4.0)*0.9;
+  col=aces(col*uExp);
+  float l=dot(col,vec3(0.2126,0.7152,0.0722));
+  col=mix(vec3(l),col,uSat);
+  col=pow(col,vec3(1.0/2.2));
+  if(uGooch>0.0){
+    float g=(dot(n,uK)+1.0)*0.5;
+    vec3 bs=pow(base,vec3(1.0/2.2));
+    vec3 gc=mix(uCool*0.62+bs*0.38, uWarm*0.5+bs*0.5, g);
+    gc+=vec3(pow(max(dot(n,h),0.0),60.0))*0.35*(1.0-uRough);
+    gc=mix(gc,gc*0.86,pow(1.0-nv,3.0));
+    col=mix(col,gc,uGooch);
+  }
+  col=mix(col,uFlatc,uFlat);
+  float hf=uHi.a*(0.22+0.78*pow(1.0-nv,1.6));
+  col=mix(col,uHi.rgb,clamp(hf,0.0,1.0));
+  if(uZeb.a>0.0){ float s=step(0.5,fract((gl_FragCoord.x+gl_FragCoord.y)/uZeb.a)); col=mix(col,uZeb.rgb,s*0.85); }
+  o=vec4(col*uA,uA);
+}`;
+  const VS_EDGE = `#version 300 es
+in vec3 aA; in vec3 aB; in vec2 aS; uniform mat4 uVP; uniform vec2 uPx; uniform float uW; uniform float uBias;
+void main(){
+  vec4 a=uVP*vec4(aA,1.0), b=uVP*vec4(aB,1.0);
+  vec2 sa=a.xy/a.w*uPx*0.5, sb=b.xy/b.w*uPx*0.5;
+  vec2 d=sb-sa; float L=length(d); d= L>1e-5 ? d/L : vec2(1.0,0.0);
+  vec2 nr=vec2(-d.y,d.x);
+  vec4 p= aS.y<0.5 ? a : b;
+  vec2 s= aS.y<0.5 ? sa : sb;
+  s+=d*(aS.y<0.5?-0.5:0.5)*uW*0.5;
+  s+=nr*aS.x*uW*0.5;
+  gl_Position=vec4(s/(uPx*0.5)*p.w, p.z-uBias*p.w, p.w);
+}`;
+  const FS_EDGE = `#version 300 es
+precision highp float; uniform vec4 uC; out vec4 o; void main(){ o=vec4(uC.rgb*uC.a,uC.a); }`;
+  const VS_GND = `#version 300 es
+in vec3 aP; uniform mat4 uVP; out vec2 vW; void main(){ vW=aP.xy; gl_Position=uVP*vec4(aP,1.0); }`;
+  const FS_GND = `#version 300 es
+precision highp float;
+in vec2 vW;
+uniform vec4 uSb[24]; uniform vec4 uSp[24]; uniform int uNs;
+uniform vec3 uFloor; uniform float uFloorA; uniform vec2 uC; uniform float uFade;
+uniform vec3 uGridc; uniform vec4 uGrid; uniform float uShadowA;
+out vec4 o;
+float sdb(vec2 p, vec2 b, float r){ vec2 d=abs(p)-b+r; return length(max(d,0.0))+min(max(d.x,d.y),0.0)-r; }
+float line(vec2 p, float s){ vec2 q=p/s; vec2 g=abs(fract(q-0.5)-0.5)/fwidth(q); return 1.0-min(min(g.x,g.y),1.0); }
+void main(){
+  float lit=1.0;
+  for(int i=0;i<24;i++){ if(i>=uNs) break; vec4 s=uSb[i], q=uSp[i];
+    float d=sdb(vW-s.xy, s.zw, min(q.z, min(s.z,s.w)));
+    float a=1.0-smoothstep(-q.x*0.6, q.x, d);
+    lit*=1.0-a*q.y; }
+  float rr=length(vW-uC);
+  float fade=1.0-smoothstep(uFade*0.25,uFade,rr);
+  float fa=uFloorA*fade;
+  vec3 col=uFloor*fa; float al=fa;
+  float ga=0.0;
+  if(uGrid.x>0.0){ ga=max(line(vW,uGrid.x)*uGrid.z, line(vW,uGrid.y)*uGrid.w)*(1.0-smoothstep(uFade*0.15,uFade*0.9,rr)); }
+  col=uGridc*ga+col*(1.0-ga); al=ga+al*(1.0-ga);
+  float sa=(1.0-lit)*uShadowA*(0.35+0.65*fade);
+  col=col*(1.0-sa); al=sa+al*(1.0-sa);
+  o=vec4(col,al);
+}`;
+
+  let gl = null, canvas = null, P = {}, ok = false;
+  function compile(vs, fs) {
+    const mk = (t, s) => { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh; };
+    const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let k = 0; k < n; k++) { const info = gl.getActiveUniform(p, k); const name = info.name.replace(/\[0\]$/, ''); u[name] = gl.getUniformLocation(p, info.name); }
+    return { p, u };
+  }
+  function init() {
+    if (gl) return ok;
+    canvas = document.createElement('canvas');
+    gl = canvas.getContext('webgl2', { antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true });
+    if (!gl) return (ok = false);
+    try {
+      P.mesh = compile(VS_MESH, FS_MESH); P.edge = compile(VS_EDGE, FS_EDGE); P.gnd = compile(VS_GND, FS_GND);
+      ok = true;
+    } catch (e) { console.error(e); ok = false; }
+    return ok;
+  }
+
+  function buf(data, target = gl.ARRAY_BUFFER) { const b = gl.createBuffer(); gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); return b; }
+
+  // Szene einmal hochladen
+  function upload(scene) {
+    if (scene._gpu) return scene._gpu;
+    const items = [];
+    for (const part of scene.parts) for (const piece of part.pieces) {
+      const m = piece.mesh;
+      const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+      buf(new Float32Array(m.p)); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+      buf(new Float32Array(m.n)); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+      buf(new Uint32Array(m.i), gl.ELEMENT_ARRAY_BUFFER);
+      gl.bindVertexArray(null);
+      let evao = null, ecount = 0;
+      if (m.e.length && piece.edges !== false) {
+        const nE = m.e.length / 6, A = new Float32Array(nE * 4 * 3), B = new Float32Array(nE * 4 * 3), S = new Float32Array(nE * 4 * 2), I = new Uint32Array(nE * 6);
+        for (let k = 0; k < nE; k++) {
+          const a = m.e.slice(k * 6, k * 6 + 3), b = m.e.slice(k * 6 + 3, k * 6 + 6);
+          const sv = [[-1, 0], [1, 0], [1, 1], [-1, 1]];
+          for (let j = 0; j < 4; j++) { A.set(a, (k * 4 + j) * 3); B.set(b, (k * 4 + j) * 3); S.set(sv[j], (k * 4 + j) * 2); }
+          I.set([k * 4, k * 4 + 1, k * 4 + 2, k * 4, k * 4 + 2, k * 4 + 3], k * 6);
+        }
+        evao = gl.createVertexArray(); gl.bindVertexArray(evao);
+        buf(A); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        buf(B); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+        buf(S); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
+        buf(I, gl.ELEMENT_ARRAY_BUFFER);
+        gl.bindVertexArray(null); ecount = nE * 6;
+      }
+      items.push({ part, mat: piece.mat, vao, count: m.i.length, evao, ecount, edgeAlpha: piece.edgeAlpha == null ? 1 : piece.edgeAlpha });
+    }
+    const g = gl.createVertexArray(); gl.bindVertexArray(g);
+    const c = scene.center || [0, 0], R = 6000;
+    buf(new Float32Array([c[0] - R, c[1] - R, 0, c[0] + R, c[1] - R, 0, c[0] + R, c[1] + R, 0, c[0] - R, c[1] - R, 0, c[0] + R, c[1] + R, 0, c[0] - R, c[1] + R, 0]));
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
+    scene._gpu = { items, gnd: g };
+    return scene._gpu;
+  }
+
+  // Kamera: Richtung aus Azimut und Höhe, Abstand und Bildverschiebung so, dass der Hüllquader in das Zielrechteck passt
+  function camera(view, bb) {
+    const W = view.w, H = view.h, asp = W / H, c = view.cam || {};
+    const az = (c.az ?? -38) * Math.PI / 180, el = (c.el ?? 24) * Math.PI / 180;
+    const dir = c.dir ? norm(c.dir) : [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
+    const up = Math.abs(dir[2]) > 0.98 ? [c.upX ?? 0, c.upY ?? 1, 0] : [0, 0, 1];
+    const [lo, hi] = bb;
+    const ctr = c.target || [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+    const corners = [];
+    for (let k = 0; k < 8; k++) corners.push([k & 1 ? hi[0] : lo[0], k & 2 ? hi[1] : lo[1], k & 4 ? hi[2] : lo[2]]);
+    const fr = view.fit || [0.1, 0.1, 0.9, 0.9];
+    const want = { x0: fr[0] * 2 - 1, x1: fr[2] * 2 - 1, y0: 1 - fr[3] * 2, y1: 1 - fr[1] * 2 };
+    let V, Pm, eye, extra = { ortho: !!c.ortho, vdir: mul(dir, -1) };
+    if (c.ortho) {
+      eye = add(ctr, mul(dir, 5000));
+      V = lookAt(eye, ctr, up);
+      let lx = 1e9, hx = -1e9, ly = 1e9, hy = -1e9;
+      for (const p of corners) { const q = xf(V, p); lx = Math.min(lx, q[0]); hx = Math.max(hx, q[0]); ly = Math.min(ly, q[1]); hy = Math.max(hy, q[1]); }
+      let s; // Welt-mm je Pixel
+      if (c.mmPerPx) s = c.mmPerPx;
+      else s = Math.max((hx - lx) / ((want.x1 - want.x0) / 2 * W), (hy - ly) / ((want.y1 - want.y0) / 2 * H));
+      const cxw = (lx + hx) / 2, cyw = (ly + hy) / 2;
+      const ndcCx = (want.x0 + want.x1) / 2, ndcCy = (want.y0 + want.y1) / 2;
+      const halfW = W / 2 * s, halfH = H / 2 * s;
+      const l = cxw - halfW - ndcCx * halfW, b = cyw - halfH - ndcCy * halfH;
+      Pm = ortho(l, l + 2 * halfW, b, b + 2 * halfH, 1, 20000);
+      extra.mmPerPx = s;
+    } else {
+      const fov = (c.fov ?? 30) * Math.PI / 180;
+      const rad = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2;
+      let d = c.dist || rad / Math.sin(fov / 2) * 1.05, sx = 0, sy = 0;
+      for (let it = 0; it < 8; it++) {
+        eye = add(ctr, mul(dir, d));
+        V = lookAt(eye, ctr, up);
+        Pm = perspective(fov, asp, Math.max(10, d - rad * 3), d + rad * 4);
+        const VP = mmul(Pm, V);
+        let lx = 1e9, hx = -1e9, ly = 1e9, hy = -1e9;
+        for (const p of corners) { const q = proj(VP, p); lx = Math.min(lx, q[0]); hx = Math.max(hx, q[0]); ly = Math.min(ly, q[1]); hy = Math.max(hy, q[1]); }
+        const f = Math.max((hx - lx) / (want.x1 - want.x0), (hy - ly) / (want.y1 - want.y0));
+        sx = (want.x0 + want.x1) / 2 - (lx + hx) / 2; sy = (want.y0 + want.y1) / 2 - (ly + hy) / 2;
+        if (c.dist) break;
+        d *= f * (c.zoom || 1);
+        if (Math.abs(f - 1) < 0.002) break;
+      }
+      for (let k = 0; k < 4; k++) { Pm[k * 4] += sx * Pm[k * 4 + 3]; Pm[k * 4 + 1] += sy * Pm[k * 4 + 3]; }
+    }
+    const VP = mmul(Pm, V);
+    // Licht relativ zur Kamera
+    const right = [V[0], V[4], V[8]], upv = [V[1], V[5], V[9]], back = [V[2], V[6], V[10]];
+    const toW = v => norm(add(add(mul(right, v[0]), mul(upv, v[1])), mul(back, v[2])));
+    return { VP, eye, toW, ...extra };
+  }
+
+  // Ein Bild rendern und in das Ziel-Canvas kopieren. Gibt eine Projektion für Überlagerungen zurück.
+  function render(scene, view, target) {
+    const dpr = view.dpr || window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(view.w * dpr)), H = Math.max(1, Math.round(view.h * dpr));
+    target.width = W; target.height = H;
+    const bb = view.box || scene.bbox;
+    const cam = camera(view, bb);
+    const project = p => { const q = proj(cam.VP, p); return [(q[0] + 1) / 2 * view.w, (1 - q[1]) / 2 * view.h, q[2]]; };
+    if (!init()) return { project, failed: true, cam };
+    const st = view.style;
+    canvas.width = W; canvas.height = H;
+    gl.viewport(0, 0, W, H);
+    const cc = st.clear || [0, 0, 0, 0];
+    gl.clearColor(cc[0], cc[1], cc[2], cc[3]); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    const G = upload(scene);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    // Boden mit Schatten und Raster
+    if (st.floor && !cam.ortho) {
+      const u = P.gnd.u; gl.useProgram(P.gnd.p); gl.depthMask(false);
+      gl.uniformMatrix4fv(u.uVP, false, cam.VP);
+      const sh = (st.shadows === false ? [] : scene.shadows).slice(0, 24);
+      const sb = new Float32Array(96), sp = new Float32Array(96);
+      sh.forEach((s, k) => { sb.set([s.x, s.y, s.hx, s.hy], k * 4); sp.set([s.blur, s.a, s.r || 0, 0], k * 4); });
+      gl.uniform4fv(u.uSb, sb); gl.uniform4fv(u.uSp, sp); gl.uniform1i(u.uNs, sh.length);
+      gl.uniform3fv(u.uFloor, srgb(st.floor.color)); gl.uniform1f(u.uFloorA, st.floor.alpha);
+      gl.uniform2fv(u.uC, scene.center || [0, 0]); gl.uniform1f(u.uFade, st.floor.fade || 1800);
+      gl.uniform1f(u.uShadowA, st.floor.shadow ?? 0.6);
+      const g = st.grid;
+      gl.uniform4fv(u.uGrid, g ? [g.major, g.minor, g.majorA, g.minorA] : [0, 0, 0, 0]);
+      gl.uniform3fv(u.uGridc, srgb(g ? g.color : '#000000'));
+      gl.bindVertexArray(G.gnd); gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.depthMask(true);
+    }
+
+    const hide = view.hide || new Set();
+    const ghost = view.ghost || {}, hi = view.hi || {}, zeb = view.zebra || {};
+    const key = cam.toW(st.key || [-0.5, 0.75, 0.55]), fill = cam.toW(st.fill || [0.75, 0.05, 0.6]);
+    const mu = P.mesh.u;
+    const meshPass = (items, alphaFor) => {
+      gl.useProgram(P.mesh.p);
+      gl.uniformMatrix4fv(mu.uVP, false, cam.VP);
+      gl.uniform3fv(mu.uEye, cam.eye); gl.uniform3fv(mu.uVdir, cam.vdir); gl.uniform1f(mu.uOrtho, cam.ortho ? 1 : 0);
+      gl.uniform3fv(mu.uSky, lin(st.sky)); gl.uniform3fv(mu.uGnd, lin(st.gnd));
+      gl.uniform3fv(mu.uK, key); gl.uniform3fv(mu.uKc, mul(lin(st.keyC || '#ffffff'), st.keyI ?? 1.6));
+      gl.uniform3fv(mu.uF, fill); gl.uniform3fv(mu.uFc, mul(lin(st.fillC || '#ffffff'), st.fillI ?? 0.35));
+      gl.uniform3fv(mu.uRim, mul(lin(st.rimC || '#ffffff'), st.rimI ?? 0));
+      gl.uniform1f(mu.uExp, st.exposure ?? 1); gl.uniform1f(mu.uSat, st.sat ?? 1);
+      gl.uniform1f(mu.uGooch, st.gooch || 0); gl.uniform3fv(mu.uCool, srgb(st.cool || '#7f93b3')); gl.uniform3fv(mu.uWarm, srgb(st.warm || '#fff6e6'));
+      gl.uniform1f(mu.uFlat, st.flat || 0); gl.uniform3fv(mu.uFlatc, srgb(st.flatC || '#ffffff'));
+      for (const it of items) {
+        const m = it.mat, id = it.part.id;
+        const tint = st.tint ? st.tint(m) : null;
+        gl.uniform3fv(mu.uBase, lin(tint || m.c)); gl.uniform1f(mu.uRough, m.r); gl.uniform1f(mu.uMetal, m.m);
+        const h = hi[id]; gl.uniform4fv(mu.uHi, h ? [...srgb(h[0]), h[1]] : [0, 0, 0, 0]);
+        const z = zeb[id]; gl.uniform4fv(mu.uZeb, z ? [...srgb(z), 10 * dpr] : [0, 0, 0, 0]);
+        const a = alphaFor(it);
+        gl.uniform1f(mu.uA, a);
+        if (ghost[id]) { gl.uniform4fv(mu.uHi, [...srgb(ghost[id][0]), 0.55]); }
+        gl.bindVertexArray(it.vao); gl.drawElements(gl.TRIANGLES, it.count, gl.UNSIGNED_INT, 0);
+      }
+    };
+    const edgePass = (items, colorFor, widthFor) => {
+      const u = P.edge.u; gl.useProgram(P.edge.p); gl.depthMask(false);
+      gl.uniformMatrix4fv(u.uVP, false, cam.VP); gl.uniform2fv(u.uPx, [W, H]); gl.uniform1f(u.uBias, cam.ortho ? 0.0004 : 0.00012);
+      for (const it of items) {
+        if (!it.evao) continue;
+        const c = colorFor(it); if (!c) continue;
+        gl.uniform4fv(u.uC, c); gl.uniform1f(u.uW, widthFor(it) * dpr);
+        gl.bindVertexArray(it.evao); gl.drawElements(gl.TRIANGLES, it.ecount, gl.UNSIGNED_INT, 0);
+      }
+      gl.depthMask(true);
+    };
+    const solid = G.items.filter(it => !hide.has(it.part.id) && !ghost[it.part.id]);
+    const ghosts = G.items.filter(it => !hide.has(it.part.id) && ghost[it.part.id]);
+    gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.2, 2.0);
+    meshPass(solid, () => 1);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    const ec = st.edge || { color: '#000000', a: 0.5, w: 1 };
+    const ecol = srgb(ec.color);
+    edgePass(solid, it => {
+      const h = hi[it.part.id];
+      if (h && ec.hiEdges !== false) return [...srgb(h[0]), Math.min(1, (ec.hiA ?? 0.9))];
+      return [...ecol, ec.a * it.edgeAlpha * (it.mat.edge ?? 1)];
+    }, it => (hi[it.part.id] && ec.hiEdges !== false) ? (ec.hiW || ec.w * 1.8) : ec.w);
+    if (ghosts.length) {
+      gl.depthMask(false);
+      meshPass(ghosts, it => ghost[it.part.id][1] ?? 0.4);
+      gl.depthMask(true);
+      gl.disable(gl.DEPTH_TEST);
+      edgePass(ghosts, it => [...srgb(ghost[it.part.id][0]), 0.28], () => ec.w);
+      gl.enable(gl.DEPTH_TEST);
+      edgePass(ghosts, it => [...srgb(ghost[it.part.id][0]), 0.95], () => Math.max(ec.w, 1.2));
+    }
+    gl.bindVertexArray(null);
+    const ctx = target.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(canvas, 0, 0);
+    return { project, cam };
+  }
+
+  return { Mesh, prism, box, cyl, tube, sphere, profil, winkel, circle, rect, T, Rot, M, xf, render, init, lin, srgb, norm, add, sub, mul };
+})();
+
+/* ==========================================================================
+   Modell: Kamerawagen aus Nutprofilen 30 × 30, Multiplexplatte, vier
+   Lenkrollen Ø 100, Schiebebügel mit Griffrohr Ø 25, Winkeln und Schrauben.
+   Maße in mm, Z nach oben, vorne = +X, links = +Y.
+   ========================================================================== */
+const SZENE = (() => {
+  'use strict';
+  const { T, Rot, M } = KC;
+  const S = (x, y, z) => { const m = M(T(0, 0, 0)); m[0] = x; m[5] = y; m[10] = z; return m; };
+  const basis = (cx, cy, cz, t) => { const m = T(t[0], t[1], t[2]); m[0] = cx[0]; m[1] = cx[1]; m[2] = cx[2]; m[4] = cy[0]; m[5] = cy[1]; m[6] = cy[2]; m[8] = cz[0]; m[9] = cz[1]; m[10] = cz[2]; return m; };
+
+  const MAT = {
+    alu: { c: '#c2c8cf', r: 0.34, m: 0.9 },
+    rohr: { c: '#cfd4da', r: 0.22, m: 0.95 },
+    birke: { c: '#bfa47e', r: 0.74, m: 0, edge: 0.75 },
+    gummi: { c: '#2a2c30', r: 0.8, m: 0 },
+    nabe: { c: '#a5abb2', r: 0.5, m: 0 },
+    stahl: { c: '#a9adb2', r: 0.4, m: 0.85 },
+    schraube: { c: '#c3c6ca', r: 0.3, m: 0.9 },
+    inbus: { c: '#1b1d20', r: 0.6, m: 0.1, edge: 0 },
+    petg: { c: '#454a51', r: 0.55, m: 0 },
+    polster: { c: '#2c2e32', r: 0.9, m: 0 },
+    pedal: { c: '#596068', r: 0.6, m: 0 },
+    blau: { c: '#2c5d9e', r: 0.5, m: 0 },
+    kiste: { c: '#8b9198', r: 0.6, m: 0 },
+    lila: { c: '#5b2d8a', r: 0.22, m: 0 },
+    ring: { c: '#8d949c', r: 0.38, m: 0.75 },
+    signal: { c: '#cc7b42', r: 0.5, m: 0 },
+  };
+
+  // Drehkörper aus einem Profil (r, z), außen glatt, entlang des Profils facettiert
+  function lathe(prof, seg = 32, edgeAt = []) {
+    const m = new KC.Mesh();
+    for (let k = 0; k < prof.length - 1; k++) {
+      const [r0, z0] = prof[k], [r1, z1] = prof[k + 1];
+      const d = [r1 - r0, z1 - z0], l = Math.hypot(d[0], d[1]) || 1, nr = d[1] / l, nz = -d[0] / l;
+      for (let s = 0; s < seg; s++) {
+        const a0 = s / seg * Math.PI * 2, a1 = (s + 1) / seg * Math.PI * 2;
+        const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+        const n0 = [nr * c0, nr * s0, nz], n1 = [nr * c1, nr * s1, nz];
+        const i0 = m.v([r0 * c0, r0 * s0, z0], n0), i1 = m.v([r0 * c1, r0 * s1, z0], n1), i2 = m.v([r1 * c1, r1 * s1, z1], n1), i3 = m.v([r1 * c0, r1 * s0, z1], n0);
+        m.i.push(i0, i1, i2, i0, i2, i3);
+      }
+    }
+    for (const k of edgeAt) {
+      const [r, z] = prof[k]; if (r < 0.01) continue;
+      for (let s = 0; s < seg; s++) {
+        const a0 = s / seg * Math.PI * 2, a1 = (s + 1) / seg * Math.PI * 2;
+        m.edge([r * Math.cos(a0), r * Math.sin(a0), z], [r * Math.cos(a1), r * Math.sin(a1), z]);
+      }
+    }
+    return m;
+  }
+  // abgerundetes Rechteck als Umriss, mit Kanten nur an den geraden Stücken
+  function rrect(w, h, r, n = 5) {
+    const pts = [], sharp = [];
+    const cs = [[w / 2 - r, -h / 2 + r, -90], [w / 2 - r, h / 2 - r, 0], [-w / 2 + r, h / 2 - r, 90], [-w / 2 + r, -h / 2 + r, 180]];
+    for (const [cx, cy, a0] of cs) for (let k = 0; k <= n; k++) {
+      const a = (a0 + k / n * 90) * Math.PI / 180;
+      if (k === 0 || k === n) sharp.push(pts.length);
+      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+    }
+    return { pts, sharp };
+  }
+
+  const linsenkopf = () => lathe([[0, 0], [5.25, 0], [5.25, 0.5], [4.9, 1.7], [3.9, 2.8], [2.2, 3.3], [0, 3.3]], 24, [1]);
+  const zylinderkopf = () => lathe([[0, 0], [5, 0], [5, 5.4], [4.6, 6], [0, 6]], 24, [1, 3]);
+  const inbus = (z, r = 2) => KC.prism(KC.circle(r, 6), z, z + 0.12);
+
+  function wagen(o = {}) {
+    const griff = o.griff ?? 960, strebe = o.strebe ?? 520;
+    const parts = [];
+    const add = (id, gruppe, name, pieces) => { parts.push({ id, gruppe, name, pieces }); };
+    const P = (mesh, mat, extra = {}) => ({ mesh, mat, ...extra });
+
+    // Rahmen
+    add('laengs-l', 'Rahmen', 'Längsprofil links', [P(KC.profil(600).at(M(T(-300, 185, 145), Rot('y', 90))), MAT.alu)]);
+    add('laengs-r', 'Rahmen', 'Längsprofil rechts', [P(KC.profil(600).at(M(T(-300, -185, 145), Rot('y', 90))), MAT.alu)]);
+    add('quer-v', 'Rahmen', 'Querprofil vorne', [P(KC.profil(340).at(M(T(285, -170, 145), Rot('x', -90))), MAT.alu)]);
+    add('quer-h', 'Rahmen', 'Querprofil hinten', [P(KC.profil(340).at(M(T(-285, -170, 145), Rot('x', -90))), MAT.alu)]);
+    // Deckplatte
+    add('platte', 'Deckplatte', 'Deckplatte Multiplex 12', [P(KC.box(600, 400, 12).at(T(0, 0, 166)), MAT.birke)]);
+
+    // Lenkrollen
+    const rolle = (id, name, cx, cy, bremse) => {
+      const xw = cx - 30, pieces = [];
+      pieces.push(P(KC.box(80, 60, 4).at(T(cx, cy, 128)), MAT.stahl));
+      pieces.push(P(lathe([[0, 113], [30, 113], [32, 115.5], [32, 121], [27, 124], [27, 126], [0, 126]], 32, [1, 3, 4]).at(T(cx, cy, 0)), MAT.stahl));
+      pieces.push(P(KC.box(58, 46, 4).at(T(cx - 12, cy, 111)), MAT.stahl));
+      for (const s of [-1, 1]) pieces.push(P(KC.box(44, 3, 70).at(T(xw, cy + s * 19.5, 76)), MAT.stahl));
+      const achse = M(T(xw, cy, 50), Rot('x', -90));
+      pieces.push(P(lathe([[28, -16], [45, -16], [48.6, -13.5], [50, -8], [50, 8], [48.6, 13.5], [45, 16], [28, 16]], 56, [1, 6]).at(achse), MAT.gummi));
+      pieces.push(P(lathe([[0, -17.5], [23, -17.5], [28, -14], [28, 14], [23, 17.5], [0, 17.5]], 40, [1, 4]).at(achse), MAT.nabe));
+      for (const s of [-1, 1]) pieces.push(P(KC.prism(KC.circle(6.5, 6), 0, 4, { sharp: 'all' }).at(M(achse, T(0, 0, s > 0 ? 21 : -25))), MAT.stahl));
+      if (bremse) {
+        pieces.push(P(KC.box(34, 40, 4).at(T(xw - 58, cy, 98)), MAT.pedal));
+        pieces.push(P(KC.box(26, 8, 4).at(T(xw - 34, cy, 100)), MAT.pedal));
+      }
+      add(id, 'Lenkrollen', name, pieces);
+    };
+    rolle('rolle-vl', 'Lenkrolle vorne links', 240, 185, true);
+    rolle('rolle-vr', 'Lenkrolle vorne rechts', 240, -185, true);
+    rolle('rolle-hl', 'Lenkrolle hinten links', -240, 185, false);
+    rolle('rolle-hr', 'Lenkrolle hinten rechts', -240, -185, false);
+
+    // Schiebebügel
+    const hS = griff - 30 - 130;
+    if (o.buegel !== false) {
+      add('stuetze-l', 'Schiebebügel', 'Stütze links', [P(KC.profil(hS).at(T(-270, 215, 130)), MAT.alu)]);
+      add('stuetze-r', 'Schiebebügel', 'Stütze rechts', [P(KC.profil(hS).at(T(-270, -215, 130)), MAT.alu)]);
+      if (o.strebeDa !== false) add('strebe', 'Schiebebügel', 'Querstrebe', [P(KC.profil(400).at(M(T(-270, -200, strebe), Rot('x', -90))), MAT.alu)]);
+      const kl = rrect(40, 40, 6);
+      add('klemme-l', 'Schiebebügel', 'Klemme links', [P(KC.prism(kl.pts, griff - 30, griff + 20, { sharp: kl.sharp }).at(T(-270, 215, 0)), MAT.petg)]);
+      add('klemme-r', 'Schiebebügel', 'Klemme rechts', [P(KC.prism(kl.pts, griff - 30, griff + 20, { sharp: kl.sharp }).at(T(-270, -215, 0)), MAT.petg)]);
+      if (o.griffDa !== false) {
+        const ax = M(T(-270, 0, griff), Rot('x', -90));
+        add('rohr', 'Schiebebügel', 'Griffrohr Ø 25', [P(KC.tube(12.5, 10.5, -265, 265, 40).at(ax), MAT.rohr)]);
+        add('polster', 'Schiebebügel', 'Griffpolster', [P(lathe([[12.5, -185], [16, -182], [16, 182], [12.5, 185]], 40, [1, 2]).at(ax), MAT.polster)]);
+      }
+    }
+
+    // Verbinder: Winkel am Rahmen und an der Querstrebe
+    const W = (len) => KC.winkel(28, 28, 4, len);
+    if (o.buegel !== false) {
+      add('winkel-1', 'Verbinder', 'Winkel Rahmen links', [P(W(26).at(T(-255, 200, 132)), MAT.alu)]);
+      add('winkel-2', 'Verbinder', 'Winkel Rahmen rechts', [P(W(26).at(M(T(-255, -200, 132), S(1, -1, 1))), MAT.alu)]);
+      if (o.strebeDa !== false) {
+        add('winkel-3', 'Verbinder', 'Winkel Strebe links', [P(W(26).at(basis([0, -1, 0], [0, 0, 1], [1, 0, 0], [-283, 200, strebe + 15])), MAT.alu)]);
+        add('winkel-4', 'Verbinder', 'Winkel Strebe rechts', [P(W(26).at(basis([0, 1, 0], [0, 0, 1], [1, 0, 0], [-283, -200, strebe + 15])), MAT.alu)]);
+      }
+    }
+
+    // Schrauben
+    const sch = [];
+    for (const [x, y] of [[-285, -185], [-285, 185], [285, -185], [285, 185], [0, -185], [0, 185], [-285, 0], [285, 0]]) {
+      sch.push(P(linsenkopf().at(T(x, y, 172)), MAT.schraube), P(inbus(3.28).at(T(x, y, 172)), MAT.inbus, { edges: false }));
+    }
+    if (o.buegel !== false) for (const s of [-1, 1]) {
+      const kopf = (m) => { sch.push(P(zylinderkopf().at(m), MAT.schraube), P(inbus(5.95, 2.4).at(m), MAT.inbus, { edges: false })); };
+      kopf(M(T(-241, s * 204, 145), Rot('x', s > 0 ? -90 : 90)));
+      kopf(M(T(-251, s * 214, 145), Rot('y', 90)));
+      if (o.strebeDa !== false) {
+        kopf(T(-270, s * 186, strebe + 19));
+        kopf(M(T(-270, s * 196, strebe + 29), Rot('x', s > 0 ? 90 : -90)));
+      }
+    }
+    add('schrauben', 'Befestigung', 'Schrauben M6', sch);
+
+    // Hüllquader
+    const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    for (const p of parts) for (const pc of p.pieces) { const [a, b] = pc.mesh.bbox(); for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a[k]); hi[k] = Math.max(hi[k], b[k]); } }
+    lo[2] = 0;
+
+    const shadows = [
+      { x: 0, y: 0, hx: 300, hy: 200, blur: 150, a: 0.42, r: 40 },
+      { x: 0, y: 0, hx: 255, hy: 160, blur: 70, a: 0.28, r: 30 },
+      { x: -270, y: 0, hx: 22, hy: 230, blur: 150, a: 0.08 },
+      { x: -270, y: 215, hx: 15, hy: 15, blur: 40, a: 0.3 },
+      { x: -270, y: -215, hx: 15, hy: 15, blur: 40, a: 0.3 },
+    ];
+    for (const [cx, cy] of [[240, 185], [240, -185], [-240, 185], [-240, -185]]) {
+      shadows.push({ x: cx - 30, y: cy, hx: 12, hy: 15, blur: 9, a: 0.85, r: 6 });
+      shadows.push({ x: cx - 30, y: cy, hx: 40, hy: 26, blur: 46, a: 0.32, r: 20 });
+    }
+
+    const anker = {
+      griff: [-270, 0, griff], griffR: [-270, -265, griff], griffL: [-270, 265, griff],
+      klemmeR: [-270, -215, griff + 20],
+      strebe: [-255, -40, strebe], strebeR: [-255, -170, strebe], strebeL: [-255, 150, strebe],
+      befund: [210, -203, 98], rolleVR: [210, -185, 50],
+      platte: [150, -60, 172], platteEcke: [300, -200, 172],
+      boden: [-270, -300, 0], stuetzeR: [-270, -215, 600],
+    };
+    return { parts, bbox: [lo, hi], center: [0, 0], shadows, anker, griff, strebe };
+  }
+
+  // Kleine Szenen für die Liste der letzten Projekte
+  function kugelschieber() {
+    const s = wagen({ buegel: false });
+    s.parts.push({ id: 'kugel', gruppe: 'Kugel', name: 'Bowlingball', pieces: [{ mesh: KC.sphere(108, 48, 28).at(T(470, 0, 108)), mat: MAT.lila }] });
+    for (const y of [-70, 70]) s.parts.push({ id: 'stange' + y, gruppe: 'Rahmen', name: 'Stange', pieces: [{ mesh: KC.tube(6, 5, 0, 120, 24).at(M(T(300, y, 150), Rot('y', 90))), mat: MAT.rohr }] });
+    s.bbox = [[-300, -230, 0], [580, 230, 220]];
+    s.shadows.push({ x: 470, y: 0, hx: 40, hy: 40, blur: 60, a: 0.5, r: 40 });
+    return s;
+  }
+  function rollwagen() {
+    const s = wagen({ buegel: false });
+    s.parts = s.parts.filter(p => p.gruppe === 'Lenkrollen');
+    s.parts.push({ id: 'wanne', gruppe: 'Wagen', name: 'Rollwagen', pieces: [{ mesh: KC.box(610, 410, 34).at(T(0, 0, 147)), mat: MAT.blau }] });
+    s.parts.push({ id: 'kiste', gruppe: 'Kiste', name: 'Eurobehälter', pieces: [{ mesh: KC.box(600, 400, 220).at(T(0, 0, 274)), mat: MAT.kiste }] });
+    s.bbox = [[-305, -205, 0], [305, 205, 384]];
+    return s;
+  }
+  function stargate() {
+    const parts = [];
+    parts.push({ id: 'ring', gruppe: 'Ring', name: 'Ring', pieces: [{ mesh: KC.tube(330, 262, -35, 35, 96).at(M(T(0, 0, 380), Rot('y', 90))), mat: MAT.ring }] });
+    const ch = [];
+    for (let k = 0; k < 9; k++) {
+      const a = (90 + k * 40) * Math.PI / 180;
+      ch.push({ mesh: KC.box(44, 50, 36).at(M(T(36, Math.cos(a) * 315, 380 + Math.sin(a) * 315), Rot('x', k * 40))), mat: MAT.signal });
+    }
+    parts.push({ id: 'chevrons', gruppe: 'Ring', name: 'Chevrons', pieces: ch });
+    parts.push({ id: 'fuss', gruppe: 'Sockel', name: 'Sockel', pieces: [{ mesh: KC.box(160, 420, 40).at(T(0, 0, 20)), mat: MAT.petg }] });
+    return { parts, bbox: [[-60, -360, 0], [60, 360, 720]], center: [0, 0], shadows: [{ x: 0, y: 0, hx: 80, hy: 210, blur: 60, a: 0.45, r: 10 }, { x: 0, y: 0, hx: 40, hy: 300, blur: 220, a: 0.2 }], anker: {} };
+  }
+
+  // Teile und Gruppen für Listen
+  const GRUPPEN = [
+    { name: 'Rahmen', n: 4 }, { name: 'Deckplatte', n: 1 }, { name: 'Lenkrollen', n: 4 },
+    { name: 'Schiebebügel', n: 7 }, { name: 'Verbinder', n: 4 }, { name: 'Schrauben und Muttern', n: 64 },
+  ];
+  return { wagen, kugelschieber, rollwagen, stargate, MAT, GRUPPEN };
+})();
+
+/* ==========================================================================
+   Gemeinsame Bausteine der Zustände: Daten, Symbole, Überlagerungen im Bild,
+   technische Zeichnung aus Parallelansichten.
+   ========================================================================== */
+const G = (() => {
+  'use strict';
+  const SC = {};
+  const BAU = {
+    vor: () => SZENE.wagen({ griff: 960, strebe: 520 }),
+    nach: () => SZENE.wagen({ griff: 1040, strebe: 500 }),
+    bau: () => SZENE.wagen({ griff: 960, strebe: 520, strebeDa: false }),
+    kugel: () => SZENE.kugelschieber(),
+    roll: () => SZENE.rollwagen(),
+    gate: () => SZENE.stargate(),
+    leer: () => ({ parts: [], bbox: [[-300, -265, 0], [300, 265, 1050]], center: [0, 0], shadows: [], anker: {} }),
+  };
+  const szene = k => SC[k] || (SC[k] = BAU[k]());
+
+  const STIL = {
+    graphit: { sky: '#b9c1cb', gnd: '#4a4641', keyC: '#fff3e2', keyI: 2.0, fillC: '#cfe0ff', fillI: 0.5, rimC: '#cfe2ff', rimI: 0.2, exposure: 0.96, sat: 1.0, edge: { color: '#0a0b0d', a: 0.5, w: 0.9, hiA: 0.95, hiW: 1.5 }, floor: { color: '#6b6965', alpha: 0.3, fade: 1500, shadow: 0.85 } },
+    reiss: { gooch: 1, cool: '#8ea6c8', warm: '#ffffff', sky: '#ffffff', gnd: '#cccccc', edge: { color: '#16202b', a: 0.95, w: 1.2, hiA: 1, hiW: 2.1 }, floor: { color: '#ffffff', alpha: 0, fade: 2200, shadow: 0.2 }, grid: { major: 100, minor: 20, majorA: 0.55, minorA: 0.2, color: '#cdd6de' } },
+    sucher: { sky: '#a9b6c4', gnd: '#252a31', keyC: '#ffffff', keyI: 2.0, fillC: '#9fd8ff', fillI: 0.4, rimC: '#7fd6ff', rimI: 0.2, exposure: 1.05, sat: 0.85, edge: { color: '#04060a', a: 0.6, w: 0.85, hiA: 1, hiW: 1.7 }, floor: { color: '#1d232a', alpha: 0, fade: 1700, shadow: 0.75 }, grid: { major: 100, minor: 0, majorA: 0.3, minorA: 0, color: '#3a4652' } },
+    zeichnung: { flat: 1, flatC: '#ffffff', sky: '#ffffff', gnd: '#ffffff', edge: { color: '#151515', a: 1, w: 0.85 } },
+  };
+  const FARBE = {
+    graphit: { kevin: '#8fc6ff', agent: '#dcb878', befund: '#ff7b69' },
+    reiss: { kevin: '#d23b2e', agent: '#2856c4', befund: '#f0b400' },
+    sucher: { kevin: '#ff4b3e', agent: '#41d1e5', befund: '#f4d13f' },
+  };
+
+  // ------------------------------------------------------------ Texte
+  const T = {
+    projekt: 'Kamerawagen',
+    gesagt: 'Den Griff hätte ich gern höher, so ungefähr bis hier, wo der Strich ist. Und die Querstrebe',
+    laeuft: 'zwei Zentimeter tiefer, damit',
+    dabei: [['Ansicht', 'deine'], ['Teile', '84'], ['Zeiger', 'Querstrebe'], ['Striche', '2']],
+    spur: [
+      { t: 'Rahmen aus vier Profilen 30 × 30', tc: '00:03:12' },
+      { t: 'Deckplatte 12 mm, acht Schrauben M6', tc: '00:04:40' },
+      { t: 'Vier Lenkrollen Ø 100, vorne mit Feststeller', tc: '00:05:58' },
+      { t: 'Schiebebügel mit Griffrohr Ø 25', tc: '00:07:21' },
+      { t: 'Prüfung: Rolle vorne rechts stößt beim Drehen ans Profil', tc: '00:07:44', befund: true },
+      { t: 'Wartet, bis du fertig bist', tc: '00:08:05', jetzt: true },
+    ],
+    nachher: [
+      'Griff auf 1040 mm, Stützen jetzt 880 mm lang',
+      'Querstrebe 20 mm tiefer, jetzt auf 500 mm',
+      'Rolle vorne rechts 8 mm nach innen, Befund gelöst',
+      'Zeichnung Blatt 1 und Stückliste erstellt',
+    ],
+    zuruf: 'Zeig mir die Zeichnung und die Stückliste rechts untereinander.',
+    befund: 'Rolle stößt beim Drehen ans Profil',
+    befundWert: '1,2 mm',
+    bauSchritt: 'Setzt das Griffrohr Ø 25 auf 960 mm',
+    chatDu: 'Bau mir einen Kamerawagen aus 30er-Profilen, 60 × 40 cm, mit Schiebebügel und einer Platte oben drauf. Rollen Ø 100, vorne mit Bremse.',
+    chatEr: ['Mache ich. Ich baue im Kev-CAD-Fenster Schritt für Schritt, du kannst jederzeit reinsprechen oder auf Teile zeigen.', 'Rahmen, Platte und Rollen stehen. Gerade kommt der Schiebebügel dazu.'],
+  };
+  const PROJEKTE = [
+    { name: 'Kamerawagen', wann: 'heute, 14:32', szene: 'nach', teile: 84, tc: '00:08:05', cam: { az: -50, el: 20, fov: 28 } },
+    { name: 'Kugelschieber Variante B', wann: '22.10.2026', szene: 'kugel', teile: 132, tc: '02:41:10', cam: { az: -42, el: 24, fov: 28 } },
+    { name: 'Rollwagen Scanprüfung', wann: '23.10.2026', szene: 'roll', teile: 11, tc: '00:22:47', cam: { az: -40, el: 26, fov: 28 } },
+    { name: 'Stargate Atlantis', wann: '18.10.2026', szene: 'gate', teile: 23, tc: '01:05:31', cam: { az: -28, el: 12, fov: 28 } },
+  ];
+  const STUECKLISTE = [
+    [1, 2, 'Aluprofil 30 × 30 Nut 8', '600 mm', 'Aluminium'],
+    [2, 2, 'Aluprofil 30 × 30 Nut 8', '340 mm', 'Aluminium'],
+    [3, 2, 'Aluprofil 30 × 30 Nut 8', '880 mm', 'Aluminium', true],
+    [4, 1, 'Aluprofil 30 × 30 Nut 8', '400 mm', 'Aluminium'],
+    [5, 1, 'Multiplexplatte Birke', '600 × 400 × 12', 'Holz'],
+    [6, 2, 'Lenkrolle mit Feststeller', 'Ø 100', 'Stahl, Gummi'],
+    [7, 2, 'Lenkrolle', 'Ø 100', 'Stahl, Gummi'],
+    [8, 1, 'Alurohr', 'Ø 25 × 2, 530 mm', 'Aluminium'],
+    [9, 1, 'Griffpolster', 'Ø 32, 370 mm', 'Schaumstoff'],
+    [10, 2, 'Klemme Griffrohr', 'Druckteil', 'PETG'],
+    [11, 4, 'Winkel 30 Nut 8', '28 × 28', 'Aluminium'],
+    [12, 8, 'Linsenkopfschraube ISO 7380', 'M6 × 12', 'Stahl'],
+    [13, 24, 'Zylinderschraube DIN 912', 'M6 × 12', 'Stahl'],
+    [14, 32, 'Hammermutter Nut 8', 'M6', 'Stahl'],
+  ];
+  const BAUM = [
+    { name: 'Rahmen', n: 4 }, { name: 'Deckplatte', n: 1 }, { name: 'Lenkrollen', n: 4 },
+    { name: 'Schiebebügel', n: 7, kinder: ['Stütze links', 'Stütze rechts', 'Querstrebe', 'Griffrohr Ø 25', 'Griffpolster', 'Klemme links', 'Klemme rechts'] },
+    { name: 'Verbinder', n: 4 }, { name: 'Schrauben und Muttern', n: 64 },
+  ];
+  const TASTEN = [
+    { gruppe: 'Ansicht', zeilen: [[['Mitteltaste'], 'ziehen: drehen'], [['⇧', 'Mitteltaste'], 'schwenken'], [['Rad'], 'zoomen'], [['1', '3', '7'], 'vorne, rechts, oben'], [['⌃', '1'], 'Gegenseite'], [['5'], 'Perspektive oder parallel'], [['F'], 'auf die Auswahl'], [['⇧', 'C'], 'alles zeigen']] },
+    { gruppe: 'Auswahl und Sichtbarkeit', zeilen: [[['Klick'], 'Teil wählen'], [['⇧', 'Klick'], 'dazunehmen'], [['⇥'], 'Teile oder Flächen'], [['A'], 'alles wählen'], [['H'], 'ausblenden'], [['⇧', 'H'], 'die anderen ausblenden'], [['⌥', 'H'], 'alles wieder zeigen'], [['/'], 'isolieren']] },
+    { gruppe: 'Mit dem Agenten', agent: true, zeilen: [[['V'], 'sprechen an oder aus'], [['D'], 'halten und ins Bild zeichnen'], [['↩'], 'fertig, der Agent legt los'], [['esc'], 'verwerfen']] },
+    { gruppe: 'Werkzeuge', zeilen: [[['M'], 'messen'], [['S'], 'Schnitt'], [['E'], 'Explosion'], [['Leertaste'], 'Animation abspielen']] },
+    { gruppe: 'Aufnahme', zeilen: [[['⌘', '⌥', 'S'], 'Bildschirmfoto'], [['⌘', '⌥', 'V'], 'Video starten oder stoppen']] },
+    { gruppe: 'Fenster', zeilen: [[['⌘', '1'], 'Fokus'], [['⌘', '2'], 'Werkstatt'], [['⌃', '⌥', '→'], 'schmal an den rechten Rand'], [['?'], 'diese Übersicht']] },
+  ];
+
+  // ------------------------------------------------------------ Symbole
+  const IK = {
+    foto: '<rect x="1.75" y="4.25" width="12.5" height="9" rx="2"/><circle cx="8" cy="8.75" r="2.5"/><path d="M5.6 4.25 6.5 2.6h3l.9 1.65"/>',
+    messen: '<path d="m2.2 11.3 9.1-9.1 2.5 2.5-9.1 9.1z"/><path d="m4.9 8.6 1.3 1.3M6.8 6.7l1.3 1.3M8.7 4.8 10 6.1"/>',
+    isolieren: '<circle cx="8" cy="8" r="5.8" stroke-dasharray="1.8 2.2"/><circle cx="8" cy="8" r="2.1" fill="currentColor" stroke="none"/>',
+    rand: '<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.6"/><path d="M10.25 2.75v10.5"/><path d="M4.3 8h3.6M6.4 6.3 8.1 8 6.4 9.7"/>',
+    stift: '<path d="m3 13 .9-3.4L10.4 3.1l2.5 2.5-6.5 6.5z"/><path d="m9.3 4.2 2.5 2.5"/>',
+    gross: '<path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9.2 6.8M2.5 13.5l4.3-4.3"/>',
+    zu: '<path d="m4.2 4.2 7.6 7.6M11.8 4.2l-7.6 7.6"/>',
+    mikro: '<rect x="5.75" y="1.75" width="4.5" height="8" rx="2.25"/><path d="M3.4 7.6a4.6 4.6 0 0 0 9.2 0M8 12.2v2"/>',
+    ordner: '<path d="M1.9 4.4v8.1c0 .6.4 1 1 1h10.2c.6 0 1-.4 1-1V6.1c0-.6-.4-1-1-1H8L6.6 3.4H2.9c-.6 0-1 .4-1 1z"/>',
+    runter: '<path d="m4 6 4 4 4-4"/>',
+    rechts: '<path d="m6 4 4 4-4 4"/>',
+    links: '<path d="m10 4-4 4 4 4"/>',
+    auge: '<path d="M1.5 8S4 3.6 8 3.6 14.5 8 14.5 8 12 12.4 8 12.4 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
+    ziel: '<circle cx="8" cy="8" r="2.4"/><path d="M8 1.6v2.8M8 11.6v2.8M1.6 8h2.8M11.6 8h2.8"/>',
+    mehr: '<circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1" fill="currentColor" stroke="none"/>',
+    warn: '<path d="M8 2.2 14.3 13.4H1.7z" fill="currentColor" stroke="none"/><path d="M8 6.4v3.5M8 11.6v.2" stroke="#fff" stroke-width="1.6"/>',
+    tasten: '<rect x="1.75" y="4" width="12.5" height="8" rx="1.5"/><path d="M4.2 6.6h.1M6.7 6.6h.1M9.2 6.6h.1M11.7 6.6h.1M5 9.4h6"/>',
+  };
+  const ikon = (n, cls = '') => `<svg class="ikon ${cls}" viewBox="0 0 16 16" aria-hidden="true">${IK[n]}</svg>`;
+  const ampel = () => '<div class="ampel" aria-hidden="true"><i></i><i></i><i></i></div>';
+  const kbd = k => `<kbd>${k}</kbd>`;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  // ------------------------------------------------------------ Überlagerungen
+  const NS = 'http://www.w3.org/2000/svg';
+  function ueber(vp) {
+    let svg = vp.querySelector(':scope > svg.ueber');
+    if (!svg) { svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'ueber'); vp.appendChild(svg); }
+    let lay = vp.querySelector(':scope > .marken');
+    if (!lay) { lay = document.createElement('div'); lay.className = 'marken'; vp.appendChild(lay); }
+    return {
+      svg, lay,
+      el(tag, attrs = {}, parent = svg) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; },
+      marke(x, y, html, cls = '', style = {}) {
+        const d = document.createElement('div'); d.className = 'marke ' + cls; d.innerHTML = html;
+        d.style.left = x.toFixed(1) + 'px'; d.style.top = y.toFixed(1) + 'px'; Object.assign(d.style, style); lay.appendChild(d); return d;
+      },
+    };
+  }
+  const f1 = n => n.toFixed(1);
+  const pt = p => f1(p[0]) + ' ' + f1(p[1]);
+  function glatt(P) {
+    if (P.length < 3) return 'M' + P.map(pt).join(' L');
+    let d = 'M' + pt(P[0]);
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2;
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      d += ` C${pt(c1)} ${pt(c2)} ${pt(p2)}`;
+    }
+    return d;
+  }
+  function zufall(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+  // Handstrich: Punkte im Bild, leicht unruhig
+  function hand(P, amp = 1.2, seed = 7) {
+    const r = zufall(seed), out = [];
+    for (let i = 0; i < P.length; i++) {
+      const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+      const w = (r() - 0.5) * 2 * amp;
+      out.push([P[i][0] - dy / l * w, P[i][1] + dx / l * w]);
+    }
+    return out;
+  }
+  const linie3d = (project, a, b, n) => Array.from({ length: n + 1 }, (_, k) => { const t = k / n; return project([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]); });
+
+  // Kevins Strich auf Griffhöhe 1040 und sein Pfeil an der Querstrebe; liefert Bildpunkte zurück
+  function kevinsStriche(o, p, s) {
+    const roh = Array.from({ length: 15 }, (_, k) => { const t = k / 14; return p([-258, -238 + 388 * t, 1034 + 9 * t + 6 * Math.sin(Math.PI * t)]); });
+    const strich = hand(roh, 0.7, 11);
+    strich.push([strich[strich.length - 1][0] + 7, strich[strich.length - 1][1] - 6]);
+    const a = p([-255, 246, 552]), b = p([-255, 246, 482]);
+    const bog = hand([[a[0] + 6, a[1] - 14], [a[0] + 15, a[1] + 14], [b[0] + 14, b[1] - 2]], 0.5, 5);
+    const spitze = [[b[0] + 6, b[1] - 11], [b[0] + 14, b[1] - 1], [b[0] + 21, b[1] - 12]];
+    for (const P of [strich, bog]) {
+      if (s.unter) o.el('path', { d: glatt(P), fill: 'none', ...s.unter });
+      o.el('path', { d: glatt(P), fill: 'none', ...s.linie });
+      if (s.textur) o.el('path', { d: glatt(P.map(q => [q[0] + 0.7, q[1] + 0.6])), fill: 'none', ...s.textur });
+    }
+    if (s.unter) o.el('path', { d: 'M' + spitze.map(pt).join(' L'), fill: 'none', ...s.unter });
+    o.el('path', { d: 'M' + spitze.map(pt).join(' L'), fill: 'none', ...s.linie });
+    return { strichEnde: strich[strich.length - 2], strichAnfang: strich[0], bogen: bog };
+  }
+  // Zeigespur: Mausweg beim Sprechen, vom Griff zur Querstrebe
+  function zeigespur(o, p, farbe, opts = {}) {
+    const P = [[-262, 110, 1012], [-262, 70, 930], [-262, 30, 820], [-262, 0, 700], [-262, -30, 600], [-256, -40, 534]].map(p);
+    const n = 46, d = glatt(P);
+    const pfad = o.el('path', { d, fill: 'none', stroke: 'none' });
+    const L = pfad.getTotalLength();
+    for (let k = 0; k < n; k++) {
+      const q = pfad.getPointAtLength(L * k / (n - 1));
+      o.el('circle', { cx: f1(q.x), cy: f1(q.y), r: opts.r || 1.6, fill: farbe, 'fill-opacity': (0.08 + 0.75 * Math.pow(k / (n - 1), 1.6)).toFixed(2) });
+    }
+    return P[P.length - 1];
+  }
+  // Mauszeiger (macOS-Pfeil)
+  function mauszeiger(o, x, y, s = 1) {
+    const g = o.el('g', { transform: `translate(${f1(x)} ${f1(y)}) scale(${s})` });
+    o.el('path', { d: 'M0 0 L0 16.5 L4.2 12.6 L7 18.8 L9.6 17.6 L6.9 11.6 L12.4 11.4 Z', fill: '#111', stroke: '#fff', 'stroke-width': 1.2, 'stroke-linejoin': 'round' }, g);
+  }
+  function pfeilspitze(o, a, b, farbe, gr = 7, breite = 2.6) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
+    const p1 = [b[0] - ux * gr + uy * breite, b[1] - uy * gr - ux * breite], p2 = [b[0] - ux * gr - uy * breite, b[1] - uy * gr + ux * breite];
+    o.el('path', { d: `M${pt(b)} L${pt(p1)} L${pt(p2)} Z`, fill: farbe });
+  }
+  // Maßlinie nach Norm (Maßhilfslinien, Pfeile, Text parallel zur Linie)
+  function massNorm(o, a, b, text, opt = {}) {
+    const farbe = opt.farbe || '#16202b', off = opt.off || 0;
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
+    const A = [a[0] + nx * off, a[1] + ny * off], B = [b[0] + nx * off, b[1] + ny * off];
+    if (opt.hilfe !== false && off !== 0) {
+      const ext = Math.sign(off) * 4;
+      o.el('path', { d: `M${pt([a[0] + nx * (Math.sign(off) * 3), a[1] + ny * (Math.sign(off) * 3)])} L${pt([A[0] + nx * ext, A[1] + ny * ext])} M${pt([b[0] + nx * (Math.sign(off) * 3), b[1] + ny * (Math.sign(off) * 3)])} L${pt([B[0] + nx * ext, B[1] + ny * ext])}`, stroke: farbe, 'stroke-width': opt.hw || 0.7, fill: 'none', 'stroke-opacity': 0.85 });
+    }
+    o.el('path', { d: `M${pt(A)} L${pt(B)}`, stroke: farbe, 'stroke-width': opt.w || 0.9, fill: 'none' });
+    pfeilspitze(o, B, A, farbe, opt.gr || 7, opt.br || 2.2); pfeilspitze(o, A, B, farbe, opt.gr || 7, opt.br || 2.2);
+    let ang = Math.atan2(dy, dx) * 180 / Math.PI; while (ang > 45) ang -= 180; while (ang <= -135) ang += 180;
+    const m = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+    const ts = opt.ts || 11, side = opt.textSeite || 1;
+    const tx = m[0] - Math.sin(ang * Math.PI / 180) * -(ts * 0.75) * side, ty = m[1] + Math.cos(ang * Math.PI / 180) * -(ts * 0.75) * side;
+    const t = o.el('text', { x: f1(tx), y: f1(ty), 'text-anchor': 'middle', 'dominant-baseline': 'central', transform: `rotate(${f1(ang)} ${f1(tx)} ${f1(ty)})`, fill: opt.textFarbe || farbe, 'font-size': ts, 'font-family': opt.font || 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace' });
+    t.textContent = text;
+    if (opt.halo) t.setAttribute('style', `paint-order: stroke; stroke: ${opt.halo}; stroke-width: 4px; stroke-linejoin: round;`);
+    return { A, B, m: [tx, ty], ang };
+  }
+
+  // ------------------------------------------------------------ Zeichnung (Vorder- und Seitenansicht)
+  // Baut in `box` zwei Parallelansichten mit gleichem Maßstab und zeichnet Maße. Liefert die Liste der Ansichten.
+  function zeichnung(box, scene, opt = {}) {
+    const W = box.clientWidth, H = box.clientHeight;
+    const [lo, hi] = scene.bbox;
+    const vorn = { w: hi[0] - lo[0], h: hi[2] - lo[2] }, seite = { w: hi[1] - lo[1], h: hi[2] - lo[2] };
+    const L = opt.links ?? 58, R = opt.rechts ?? 22, O = opt.oben ?? 30, U = opt.unten ?? 46, gap = opt.gap ?? 84;
+    const s = Math.min((W - L - R - gap) / (vorn.w + seite.w), (H - O - U) / vorn.h);
+    const pad = 6;
+    const hV = vorn.h * s, xV = L, yV = O + (H - O - U - hV) / 2;
+    const xS = xV + vorn.w * s + gap;
+    const mk = (x, y, w, h) => {
+      const vp = document.createElement('div'); vp.className = 'vp';
+      Object.assign(vp.style, { left: (x - pad) + 'px', top: (y - pad) + 'px', width: (w + 2 * pad) + 'px', height: (h + 2 * pad) + 'px', overflow: 'visible' });
+      const c = document.createElement('canvas'); c.className = 'v3d'; vp.appendChild(c); box.appendChild(vp); return vp;
+    };
+    const vpV = mk(xV, yV, vorn.w * s, hV), vpS = mk(xS, yV, seite.w * s, hV);
+    const fit = [pad / (vorn.w * s + 2 * pad), pad / (hV + 2 * pad), 1 - pad / (vorn.w * s + 2 * pad), 1 - pad / (hV + 2 * pad)];
+    const fitS = [pad / (seite.w * s + 2 * pad), pad / (hV + 2 * pad), 1 - pad / (seite.w * s + 2 * pad), 1 - pad / (hV + 2 * pad)];
+    const ansichten = [
+      { el: vpV, scene, cam: { ortho: true, dir: [0, -1, 0], mmPerPx: 1 / s }, fit, style: STIL.zeichnung },
+      { el: vpS, scene, cam: { ortho: true, dir: [-1, 0, 0], mmPerPx: 1 / s }, fit: fitS, style: STIL.zeichnung },
+    ];
+    // Maße zeichnen, sobald die Ansichten gerendert sind
+    const nachher = (rV, rS) => {
+      const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'ueber'); box.appendChild(svg);
+      const o = { svg, el(tag, attrs = {}, parent = svg) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; } };
+      const ox = vpV.offsetLeft, oy = vpV.offsetTop, sx = vpS.offsetLeft, sy = vpS.offsetTop;
+      const V = q => { const r = rV.project(q); return [r[0] + ox, r[1] + oy]; };
+      const S = q => { const r = rS.project(q); return [r[0] + sx, r[1] + sy]; };
+      const tinte = '#1a1d21', ak = opt.akzent || '#2856c4';
+      const g = scene.griff, st = scene.strebe;
+      // Mittellinien
+      const mitte = (P, r) => o.el('path', { d: `M${f1(P[0] - r)} ${f1(P[1])} H${f1(P[0] + r)} M${f1(P[0])} ${f1(P[1] - r)} V${f1(P[1] + r)}`, stroke: tinte, 'stroke-width': 0.5, 'stroke-dasharray': '7 2 1.5 2', fill: 'none' });
+      for (const x of [210, -270]) mitte(V([x, 0, 50]), 50 * s + 5);
+      mitte(V([-270, 0, g]), 12.5 * s + 6);
+      const ml = S([0, 280, g]), mr = S([0, -280, g]);
+      o.el('path', { d: `M${pt(ml)} L${pt(mr)}`, stroke: tinte, 'stroke-width': 0.5, 'stroke-dasharray': '9 2 1.5 2' });
+      const ms = opt.ts || 10.5;
+      const norm = (a, b, t, off, extra = {}) => massNorm(o, a, b, t, { farbe: tinte, off, ts: ms, gr: 6, br: 1.9, w: 0.7, hw: 0.5, halo: '#fff', ...extra });
+      norm(V([-300, 0, 0]), V([300, 0, 0]), '600', 22);
+      const m1 = norm(V([-300, 0, 0]), V([-300, 0, g]), String(g), -38, { textFarbe: ak });
+      const m2 = norm(V([-300, 0, 0]), V([-300, 0, st]), String(st), -16, { textFarbe: ak });
+      norm(S([0, 265, g]), S([0, -265, g]), '530', -16);
+      norm(S([0, 200, 130]), S([0, -200, 130]), '400', 34);
+      // Durchmesser der Rolle mit Hinweislinie
+      const r0 = V([210 + 35, 0, 85]), r1 = [r0[0] + 26, r0[1] - 30];
+      o.el('path', { d: `M${pt(r0)} L${pt(r1)} H${f1(r1[0] + 30)}`, stroke: tinte, 'stroke-width': 0.6, fill: 'none' });
+      const tt = o.el('text', { x: f1(r1[0] + 2), y: f1(r1[1] - 4), fill: tinte, 'font-size': ms, 'font-family': 'ui-monospace, "SF Mono", Menlo, monospace' }); tt.textContent = 'Ø 100';
+      // Änderungsmarken an den geänderten Maßen
+      const marke = (m, idx) => {
+        const x = m.m[0] - 14, y = m.m[1] - 22;
+        if (opt.marke === 'dreieck') {
+          o.el('path', { d: `M${f1(x)} ${f1(y - 7)} L${f1(x + 8)} ${f1(y + 6)} L${f1(x - 8)} ${f1(y + 6)} Z`, fill: '#fff', stroke: ak, 'stroke-width': 1 });
+          const t = o.el('text', { x: f1(x), y: f1(y + 3.2), 'text-anchor': 'middle', fill: ak, 'font-size': 8.5, 'font-family': 'ui-monospace, Menlo, monospace' }); t.textContent = idx;
+        } else {
+          o.el('circle', { cx: f1(x + 4), cy: f1(y + 4), r: 3.2, fill: ak });
+        }
+      };
+      if (opt.marke) { marke(m1, 'g'); marke(m2, 'h'); }
+      // Ansichtsnamen
+      for (const [x, y, t] of [[xV + vorn.w * s / 2, yV + hV + 40, 'Vorderansicht'], [xS + seite.w * s / 2, yV + hV + 40, 'Seitenansicht von links']]) {
+        if (!opt.namen) continue;
+        const e = o.el('text', { x: f1(x), y: f1(y), 'text-anchor': 'middle', fill: '#6c7680', 'font-size': 10, 'font-family': '-apple-system, BlinkMacSystemFont, sans-serif' }); e.textContent = t;
+      }
+    };
+    return { ansichten, nachher };
+  }
+
+  // Lage eines Elements relativ zu einem Bezug (ohne CSS-Skalierung der Bühne)
+  function lage(el, bezug) {
+    const auf = e => { let x = 0, y = 0; while (e) { x += e.offsetLeft; y += e.offsetTop; e = e.offsetParent; } return [x, y]; };
+    const a = auf(el), b = auf(bezug);
+    return { x: a[0] - b[0], y: a[1] - b[1], w: el.offsetWidth, h: el.offsetHeight };
+  }
+
+  // Tabellenzeilen der Stückliste
+  function stueckzeilen(cols, max = 99) {
+    return STUECKLISTE.slice(0, max).map(r => `<tr class="${r[5] ? 'neu' : ''}">` + cols.map(c => {
+      if (c === 'pos') return `<td class="pos">${r[0]}</td>`;
+      if (c === 'n') return `<td class="n">${r[1]}</td>`;
+      if (c === 'name') return `<td>${esc(r[2])}</td>`;
+      if (c === 'mass') return `<td class="m">${esc(r[3])}</td>`;
+      if (c === 'stoff') return `<td class="m">${esc(r[4])}</td>`;
+      return '';
+    }).join('') + '</tr>').join('');
+  }
+
+  return { szene, STIL, FARBE, T, PROJEKTE, STUECKLISTE, BAUM, TASTEN, ikon, ampel, kbd, esc, ueber, glatt, hand, linie3d, kevinsStriche, zeigespur, mauszeiger, pfeilspitze, massNorm, zeichnung, stueckzeilen, lage, f1, pt };
+})();
+
+/* ==========================================================================
+   Richtung Graphit
+   ========================================================================== */
+const GRAPHIT = (() => {
+  'use strict';
+  const { T, ikon, ampel, kbd, esc } = G;
+  const F = G.FARBE.graphit;
+  const KAM = { az: -50, el: 20, fov: 28 };
+
+  const oben = (modus = 'Fokus', name = T.projekt, zusatz = '') => `
+    <div class="g-oben schatten-t">${ampel()}
+      <div class="g-projekt">${esc(name)}${zusatz ? ` <small>${zusatz}</small>` : ikon('runter')}</div>
+      <div class="g-modus"><span class="${modus === 'Fokus' ? 'an' : ''}">Fokus</span><span class="${modus === 'Werkstatt' ? 'an' : ''}">Werkstatt</span></div>
+    </div>`;
+  const aktionen = (alle = true) => `
+    <div class="g-aktionen">
+      <span class="g-knopf" title="Bildschirmfoto">${ikon('foto')}</span>
+      <span class="g-knopf" title="Video aufnehmen"><i class="rec"></i></span>
+      ${alle ? `<span class="g-knopf" title="Messen">${ikon('messen')}</span>
+      <span class="g-knopf" title="Isolieren">${ikon('isolieren')}</span>
+      <span class="g-knopf" title="Schmal an den Rand">${ikon('rand')}</span>` : ''}
+    </div>`;
+  const liste = (o = {}) => G.BAUM.map(g => {
+    const offen = g.kinder && o.offen;
+    const cls = ['g-zeile', o.befund && g.name === 'Lenkrollen' ? 'befund' : ''].join(' ');
+    let h = `<div class="${cls}"><span class="pfeil">${ikon(offen ? 'runter' : 'rechts')}</span><b>${esc(g.name)}</b><em>${g.n}</em></div>`;
+    if (offen) h += g.kinder.map(k => {
+      const c = ['g-zeile kind', (o.markiert || []).includes(k) ? 'markiert' : '', o.gewaehlt === k ? 'gewaehlt' : ''].join(' ');
+      return `<div class="${c}"><b>${esc(k)}</b></div>`;
+    }).join('');
+    return h;
+  }).join('');
+  const spur = () => `<div class="g-spur schatten-t"><h3>Agent</h3><ol>${T.spur.map((s, k) => `<li class="${s.befund ? 'befund' : ''} ${s.jetzt ? 'jetzt' : ''} ${k < 2 ? 'alt' : ''}">${esc(s.t)}</li>`).join('')}</ol></div>`;
+  const hinweise = (items, cls = '') => `<div class="g-hinweise schatten-t ${cls}">${items.map(([k, t]) => `<span>${k.map(kbd).join('')} ${esc(t)}</span>`).join('')}</div>`;
+  const RUHE = [[['Mitteltaste'], 'drehen'], [['⇧'], 'schwenken'], [['Rad'], 'zoomen'], [['F'], 'Auswahl'], [['/'], 'isolieren'], [['M'], 'messen'], [['V'], 'sprechen'], [['?'], 'alle Tasten']];
+
+  // Messing-Maß mit Endpunkten und Wert in der Mitte
+  function mass(o, a, b, text) {
+    o.el('path', { d: `M${G.pt(a)} L${G.pt(b)}`, stroke: F.agent, 'stroke-width': 1.1, fill: 'none' });
+    for (const q of [a, b]) o.el('circle', { cx: G.f1(q[0]), cy: G.f1(q[1]), r: 2.7, fill: F.agent });
+    return o.marke((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, text, 'g-mass');
+  }
+
+  // a: Fokus, Kevin spricht und zeigt
+  function a() {
+    return {
+      html: `
+      <div class="vp" data-v="haupt" style="inset:0"><canvas class="v3d"></canvas></div>
+      ${oben()}${aktionen()}
+      <div class="g-liste schatten-t">${liste({ offen: true, markiert: ['Querstrebe', 'Griffrohr Ø 25'], befund: true })}</div>
+      ${spur()}
+      <div class="g-untertitel schatten-t">
+        <div class="g-status"><span class="g-pegel"><i></i><i></i><i></i><i></i><i></i></span>Du sprichst</div>
+        <div class="g-text">${esc(T.gesagt)} <span class="laeuft">${esc(T.laeuft)}</span><span class="cursor"></span></div>
+        <div class="g-dabei">Mit dabei: <b>deine Ansicht</b>, <b>84 Teile</b>, der Zeiger auf <b>Querstrebe</b> und <b>2 Striche</b></div>
+      </div>
+      ${hinweise([[['↩'], 'fertig'], [['D'], 'halten und zeichnen'], [['Klick'], 'Teil zeigen'], [['esc'], 'verwerfen']])}`,
+      views: [{ id: 'haupt', scene: 'vor', cam: KAM, fit: [0.335, 0.075, 0.705, 0.79], style: 'graphit', hi: { strebe: [F.kevin, 0.5], rohr: [F.kevin, 0.5], polster: [F.kevin, 0.32], 'rolle-vr': [F.befund, 0.42] } }],
+      after(R) {
+        const v = R.haupt, p = v.project, o = G.ueber(v.el), sc = v.scene;
+        const ks = G.kevinsStriche(o, p, {
+          unter: { stroke: F.kevin, 'stroke-width': 8, 'stroke-opacity': 0.16, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+          linie: { stroke: F.kevin, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+        });
+        const z = G.zeigespur(o, p, F.kevin, { r: 1.7 });
+        o.el('circle', { cx: G.f1(z[0]), cy: G.f1(z[1]), r: 10, fill: 'none', stroke: F.kevin, 'stroke-width': 1.5, 'stroke-opacity': 0.85 });
+        G.mauszeiger(o, z[0] + 3, z[1] + 3);
+        o.marke(z[0] - 8, z[1] + 30, 'Querstrebe, 520 mm hoch', 'g-zeiger');
+        const m = mass(o, p([-270, -310, 0]), p([-270, -310, 960]), '960');
+        const e1 = p([-270, -268, 960]), e2 = p([-270, -310, 960]);
+        o.el('path', { d: `M${G.pt(e1)} L${G.pt(e2)}`, stroke: F.agent, 'stroke-width': 0.9, 'stroke-dasharray': '2 3', fill: 'none' });
+        const se = ks.strichAnfang;
+        o.el('path', { d: `M${G.pt([se[0] - 6, se[1]])} L${G.pt([se[0] - 40, se[1] - 1])}`, stroke: F.agent, 'stroke-width': 0.9, 'stroke-dasharray': '2 3', fill: 'none' });
+        o.marke(se[0] - 66, se[1] - 1, '≈ 1040', 'g-mass leise');
+        const bf = p(sc.anker.befund);
+        o.marke(bf[0], bf[1], '', 'g-puls');
+        o.marke(bf[0] + 30, bf[1] + 22, `<b>${T.befundWert}</b> ${esc(T.befund)}`, 'g-befund');
+      },
+    };
+  }
+
+  // b: Werkstatt mit Kacheln
+  function b() {
+    const zeilen = G.stueckzeilen(['pos', 'n', 'name', 'mass']);
+    return {
+      html: `
+      ${oben('Werkstatt')}${aktionen()}
+      <aside class="g-spalte">
+        <section class="g-abschnitt"><h4>Objekte <span>84</span></h4><div class="g-liste">${liste({ offen: true, gewaehlt: 'Querstrebe' })}</div></section>
+        <section class="g-abschnitt">
+          <div class="g-name">Querstrebe ${ikon('stift')}</div>
+          <dl class="g-felder">
+            <dt>Profil</dt><dd>30 × 30 Nut 8</dd>
+            <dt>Länge</dt><dd>400 <small>mm</small></dd>
+            <dt>Höhe</dt><dd class="neu">500 <small>vorher 520</small></dd>
+            <dt>Werkstoff</dt><dd>Aluminium</dd>
+            <dt>Masse</dt><dd>0,34 <small>kg</small></dd>
+          </dl>
+          <div class="g-reihe"><span>Isolieren</span><span>Zeigen</span></div>
+        </section>
+        <section class="g-abschnitt"><h4>Maße des Wagens</h4>
+          <dl class="g-felder">
+            <dt>Griffhöhe</dt><dd class="neu">1040 <small>vorher 960</small></dd>
+            <dt>Breite</dt><dd>600 <small>mm</small></dd>
+            <dt>Tiefe</dt><dd>400 <small>mm</small></dd>
+            <dt>Rollen</dt><dd>Ø 100 <small>mm</small></dd>
+          </dl>
+        </section>
+      </aside>
+      <div class="g-kacheln">
+        <section class="g-kachel modell" style="left:0;top:0;width:592px;bottom:0">
+          <header><b>Modell</b><span>Querstrebe gewählt</span>${ikon('gross')}</header>
+          <div class="vp" data-v="modell"><canvas class="v3d"></canvas></div>
+        </section>
+        <section class="g-kachel" style="left:604px;right:0;top:0;height:372px">
+          <header><b>Zeichnung</b><span>Blatt 1 von 2, eben erstellt</span>${ikon('gross')}${ikon('zu')}</header>
+          <div class="g-papier"><div class="zeichnung" data-z="z1" style="position:absolute;inset:0"></div>
+            <div style="position:absolute;right:10px;bottom:9px;font:10.5px/1.35 var(--mono);color:#3b3f45;text-align:right">Kamerawagen, Gesamtansicht<br>Maßstab 1:10, 05.11.2026</div></div>
+        </section>
+        <section class="g-kachel" style="left:604px;right:0;top:384px;bottom:0">
+          <header><b>Stückliste</b><span>14 Positionen, eben erstellt</span>${ikon('gross')}${ikon('zu')}</header>
+          <div class="g-tabelle"><table><thead><tr><th>Pos.</th><th style="text-align:right">Stück</th><th>Benennung</th><th>Maße</th></tr></thead><tbody>${zeilen}</tbody>
+          <tfoot><tr><td></td><td colspan="3"><b>84 Teile</b>, 7,8 kg, etwa 125 €</td></tr></tfoot></table></div>
+        </section>
+      </div>
+      <div class="g-sprech">
+        <span class="g-mikro"><i>${ikon('mikro')}</i>V drücken und sprechen</span>
+        <div class="g-zuletzt"><q>${esc(T.zuruf)}</q><span class="agent">Liegen rechts. Griff auf 1040 mm, Querstrebe auf 500 mm.</span></div>
+      </div>`,
+      views: [{ id: 'modell', scene: 'nach', cam: { az: -50, el: 20, fov: 28 }, fit: [0.17, 0.1, 0.83, 0.93], style: 'graphit', hi: { strebe: [F.kevin, 0.45] } }],
+      zeichnungen: [{ id: 'z1', scene: 'nach', opt: { akzent: '#9a6b16', marke: 'punkt', links: 60, unten: 44, oben: 30 } }],
+      after(R) {
+        const v = R.modell, p = v.project, o = G.ueber(v.el);
+        const a1 = p([-262, -150, 172]), b1 = p([-262, -150, 485]);
+        o.el('path', { d: `M${G.pt(a1)} L${G.pt(b1)}`, stroke: F.kevin, 'stroke-width': 1.2, fill: 'none' });
+        for (const q of [a1, b1]) o.el('circle', { cx: G.f1(q[0]), cy: G.f1(q[1]), r: 3, fill: F.kevin });
+        o.marke((a1[0] + b1[0]) / 2, (a1[1] + b1[1]) / 2, '313', 'g-mass', { background: F.kevin, color: '#0f2236' });
+      },
+    };
+  }
+
+  // c: Fokus schmal am Bildschirmrand, der Agent baut gerade
+  function c() {
+    return {
+      html: `
+      <div class="desk">
+        <section class="chat">
+          <div class="chat-kopf">${ampel()}<b>Chat</b></div>
+          <div class="chat-verlauf">
+            <div class="chat-du">${esc(T.chatDu)}</div>
+            <div class="chat-er">${T.chatEr.map(t => `<p>${esc(t)}</p>`).join('')}</div>
+          </div>
+          <div class="chat-eingabe"><span>Nachricht</span>${ikon('mikro')}</div>
+        </section>
+        <section class="schmal">
+          <div class="vp" data-v="schmal" style="inset:0"><canvas class="v3d"></canvas></div>
+          ${oben()}
+          <div class="g-aktionen"><span class="g-knopf" title="Bildschirmfoto">${ikon('foto')}</span><span class="g-knopf" title="Video aufnehmen"><i class="rec"></i></span></div>
+          <div class="g-schmal-unten schatten-t">
+            <div class="g-agentzeile">${esc(T.bauSchritt)}<small>Schritt 4 von 5</small></div>
+            <div class="g-leise"><span class="g-mikro"><i>${ikon('mikro')}</i>V drücken und sprechen</span><span>${kbd('?')} Tasten</span></div>
+          </div>
+        </section>
+      </div>`,
+      views: [{ id: 'schmal', scene: 'bau', cam: { az: -50, el: 20, fov: 28 }, fit: [0.1, 0.1, 0.9, 0.84], style: 'graphit', ghost: { rohr: [F.agent, 0.35], polster: [F.agent, 0.3] } }],
+      after(R) {
+        const v = R.schmal, p = v.project, o = G.ueber(v.el);
+        mass(o, p([-270, -310, 0]), p([-270, -310, 960]), '960 mm');
+        const e1 = p([-270, -268, 960]), e2 = p([-270, -310, 960]);
+        o.el('path', { d: `M${G.pt(e1)} L${G.pt(e2)}`, stroke: F.agent, 'stroke-width': 0.9, 'stroke-dasharray': '2 3', fill: 'none' });
+        const t = p([-270, 120, 975]);
+        o.marke(t[0], t[1] - 24, 'Ø 25', 'g-mass');
+      },
+    };
+  }
+
+  // d: Start im leeren Projekt mit den letzten Projekten
+  function d() {
+    const karten = G.PROJEKTE.map((pr, k) => `<div class="g-karte ${k === 0 ? 'zuletzt' : ''}"><div class="vp" data-v="karte${k}"><canvas class="v3d"></canvas></div><div class="txt"><b>${esc(pr.name)}</b><small>${pr.wann}</small></div></div>`).join('');
+    return {
+      html: `
+      <div class="vp" data-v="leer" style="inset:0"><canvas class="v3d"></canvas></div>
+      ${oben('Fokus', 'Neues Projekt', 'noch nicht gesichert')}${aktionen(false)}
+      <div class="g-start schatten-t"><h2>Was soll entstehen?</h2><p>Drück ${kbd('V')} und sag es, oder schreib es im Chat. Der Agent baut hier Schritt für Schritt mit.</p></div>
+      <section class="g-regal">
+        <header><b>Zuletzt geöffnet</b><span>${ikon('ordner')}Ordner öffnen …</span><span>${ikon('runter')}Wegschieben</span></header>
+        <div class="g-karten">${karten}</div>
+        <footer>Ein Klick ins Leere oder esc schiebt die Liste weg.</footer>
+      </section>`,
+      views: [{ id: 'leer', scene: 'leer', cam: KAM, fit: [0.3, 0.1, 0.7, 0.62], style: 'graphit' },
+        ...G.PROJEKTE.map((pr, k) => ({ id: 'karte' + k, scene: pr.szene, cam: pr.cam, fit: [0.18, 0.1, 0.82, 0.92], style: 'graphit' }))],
+    };
+  }
+
+  // e: Hinweisleiste und Tastenübersicht
+  function e() {
+    const spalte = idx => idx.map(i => {
+      const gr = G.TASTEN[i];
+      return `<div class="g-tgruppe ${gr.agent ? 'agent' : ''}"><h4>${esc(gr.gruppe)}</h4><dl>${gr.zeilen.map(([k, t]) => `<dt>${k.map(kbd).join('')}</dt><dd>${esc(t)}</dd>`).join('')}</dl></div>`;
+    }).join('<div style="height:20px"></div>');
+    return {
+      html: `
+      <div class="vp" data-v="haupt" style="inset:0"><canvas class="v3d"></canvas></div>
+      ${oben()}${aktionen()}
+      <div class="g-liste schatten-t">${liste({})}</div>
+      <div class="g-schleier"></div>
+      <section class="g-tasten">
+        <header><b>Tasten</b><span>Steuerung wie in Blender. Mit ? blendest du diese Übersicht ein und aus.</span><em>${kbd('esc')} schließen</em></header>
+        <div class="g-tgruppen"><div>${spalte([0, 4])}</div><div>${spalte([1, 3])}</div><div>${spalte([2, 5])}</div></div>
+      </section>
+      ${hinweise(RUHE, 'hervor').replace('class="g-hinweise', 'style="z-index:8" class="g-hinweise')}`,
+      views: [{ id: 'haupt', scene: 'nach', cam: KAM, fit: [0.335, 0.075, 0.705, 0.83], style: 'graphit' }],
+    };
+  }
+
+  return { a, b, c, d, e };
+})();
+
+/* ==========================================================================
+   Richtung Reißbrett
+   ========================================================================== */
+const REISS = (() => {
+  'use strict';
+  const { T, ikon, ampel, kbd, esc } = G;
+  const F = G.FARBE.reiss;
+  const KAM = { az: -50, el: 20, fov: 28 };
+
+  const kopf = (modus = 'Fokus', name = T.projekt, zusatz = '', voll = true) => `
+    <header class="p-kopf">${ampel()}
+      <span class="p-projekt">${esc(name)}${zusatz ? `<small>${zusatz}</small>` : ''}</span>
+      <nav class="p-tabs"><span class="${modus === 'Fokus' ? 'an' : ''}">Fokus</span><span class="${modus === 'Werkstatt' ? 'an' : ''}">Werkstatt</span></nav>
+      <div class="p-werkzeuge">
+        <span>${ikon('foto')}${voll ? 'Foto' : ''}</span><span><i class="rec"></i>${voll ? 'Video' : ''}</span>
+        ${voll ? `<span>${ikon('messen')}Messen</span><span>${ikon('isolieren')}Isolieren</span><span>${ikon('rand')}An den Rand</span>` : ''}
+      </div>
+    </header>`;
+  // Rahmen mit Planquadraten wie auf einem Zeichenblatt
+  const zonen = (w, h, nx = 8, ny = 6) => {
+    let s = '';
+    for (let i = 0; i < nx; i++) {
+      const x = 15 + (w - 30) * (i + 0.5) / nx;
+      s += `<span style="left:${x.toFixed(0)}px;top:3px">${i + 1}</span><span style="left:${x.toFixed(0)}px;bottom:3px">${i + 1}</span>`;
+    }
+    for (let j = 0; j < ny; j++) {
+      const y = 15 + (h - 30) * (j + 0.5) / ny - 5;
+      s += `<span style="left:4px;top:${y.toFixed(0)}px">${'ABCDEF'[j]}</span><span style="right:4px;top:${y.toFixed(0)}px">${'ABCDEF'[j]}</span>`;
+    }
+    let t = '';
+    for (let i = 1; i < nx; i++) { const x = 15 + (w - 30) * i / nx; t += `M${x.toFixed(1)} 9V15M${x.toFixed(1)} ${h - 15}V${h - 9}`; }
+    for (let j = 1; j < ny; j++) { const y = 15 + (h - 30) * j / ny; t += `M9 ${y.toFixed(1)}H15M${w - 15} ${y.toFixed(1)}H${w - 9}`; }
+    return `<div class="p-rand"></div><div class="p-zonen">${s}<svg style="position:absolute;inset:0;width:100%;height:100%"><path d="${t}" stroke="#16202b" stroke-width="1" fill="none"/></svg></div>`;
+  };
+  const baum = (o = {}) => `<h4>Baugruppe <span>84 Teile</span></h4>` + G.BAUM.map(g => {
+    let h = `<div class="p-knoten"><b>${esc(g.name)}</b><em>${g.n}</em></div>`;
+    if (g.kinder && o.offen) h += g.kinder.map(k => `<div class="p-knoten kind ${(o.markiert || []).includes(k) ? 'markiert' : ''} ${o.gewaehlt === k ? 'gewaehlt' : ''}"><b>${esc(k)}</b></div>`).join('');
+    return h;
+  }).join('');
+  const schriftfeld = (o = {}) => `
+    <div class="p-schriftfeld" ${o.style ? `style="${o.style}"` : ''}><table>
+      <tr><td colspan="2" rowspan="2" style="width:52%"><small>Benennung</small><b>${esc(o.name || T.projekt)}</b></td><td><small>Datum</small><span>05.11.2026</span></td><td><small>Teile</small><span>${o.teile ?? 84}</span></td></tr>
+      <tr><td><small>Bearbeiter</small><span>K. Schwed</span></td><td><small>Stand</small><span>${o.stand || 'f'}</span></td></tr>
+    </table></div>`;
+  const legende = (items, titel = 'Jetzt') => `<footer class="p-legende"><strong>${titel}</strong>${items.map(([k, t]) => `<span>${k.map(kbd).join('')}${esc(t)}</span>`).join('')}<span class="rechts">${kbd('?')}alle Tasten</span></footer>`;
+
+  // Kreuz als Zeiger, Hinweislinie
+  function kreuz(o, x, y, farbe) {
+    const d = `M${G.f1(x - 16)} ${G.f1(y)} H${G.f1(x - 5)} M${G.f1(x + 5)} ${G.f1(y)} H${G.f1(x + 16)} M${G.f1(x)} ${G.f1(y - 16)} V${G.f1(y - 5)} M${G.f1(x)} ${G.f1(y + 5)} V${G.f1(y + 16)}`;
+    o.el('path', { d, stroke: '#fff', 'stroke-width': 4.2, fill: 'none', 'stroke-linecap': 'round' });
+    o.el('circle', { cx: G.f1(x), cy: G.f1(y), r: 8, fill: 'none', stroke: '#fff', 'stroke-width': 3.6 });
+    o.el('path', { d, stroke: farbe, 'stroke-width': 1.5, fill: 'none', 'stroke-linecap': 'round' });
+    o.el('circle', { cx: G.f1(x), cy: G.f1(y), r: 8, fill: 'none', stroke: farbe, 'stroke-width': 1.3 });
+  }
+  const stift = { linie: { stroke: F.kevin, 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-opacity': 0.92 }, textur: { stroke: F.kevin, 'stroke-width': 1, 'stroke-linecap': 'round', 'stroke-opacity': 0.35 } };
+
+  // a: Fokus, Kevin spricht und zeigt
+  function a() {
+    const spur = T.spur.map((s, k) => `<tr class="${s.befund ? 'befund' : ''} ${s.jetzt ? 'jetzt' : ''}"><td>${'abcdef'[k]}</td><td>${esc(s.jetzt ? 'wartet, bis du fertig bist' : s.t.replace('Prüfung: Rolle vorne rechts stößt beim Drehen ans Profil', 'Prüfung: ein Befund an der Rolle vorne rechts'))}</td><td>${s.befund ? '!' : s.jetzt ? '…' : '✓'}</td></tr>`).join('');
+    return {
+      html: `
+      ${kopf()}
+      <div class="p-blatt">
+        <div class="vp" data-v="haupt"><canvas class="v3d"></canvas></div>
+        ${zonen(1412, 806)}
+        <div class="p-baum">${baum({ offen: true, markiert: ['Querstrebe', 'Griffrohr Ø 25'] })}</div>
+        <aside class="p-notiz" data-notiz>
+          <div class="p-notiz-kopf"><span class="p-welle"><i></i><i></i><i></i><i></i></span>Du sprichst</div>
+          <div class="p-handschrift">${esc(T.gesagt)} <span class="laeuft">${esc(T.laeuft)}</span><span class="cursor"></span></div>
+          <div class="p-beilagen"><span>Geht mit: <b>deine Ansicht</b>, <b>84 Teile</b>,</span><span>der Zeiger auf <b>Querstrebe</b>, <b>2 Striche</b></span></div>
+        </aside>
+        <div class="p-aenderungen"><table><caption>Änderungen</caption>${spur}</table></div>
+        ${schriftfeld()}
+      </div>
+      ${legende([[['↩'], 'fertig'], [['D'], 'halten und zeichnen'], [['Klick'], 'Teil zeigen'], [['esc'], 'verwerfen']])}`,
+      views: [{ id: 'haupt', scene: 'vor', cam: KAM, fit: [0.335, 0.05, 0.665, 0.87], style: 'reiss', hi: { strebe: [F.kevin, 0.28], rohr: [F.kevin, 0.28], polster: [F.kevin, 0.2] }, zebra: { 'rolle-vr': F.befund } }],
+      after(R, buehne) {
+        const v = R.haupt, p = v.project, o = G.ueber(v.el), sc = v.scene;
+        const ks = G.kevinsStriche(o, p, stift);
+        const z = G.zeigespur(o, p, F.kevin, { r: 1.3 });
+        kreuz(o, z[0], z[1], F.kevin);
+        // Hinweislinie von der Randnotiz zum Zeiger
+        const n = G.lage(buehne.querySelector('[data-notiz]'), v.el);
+        const n0 = [n.x - 10, n.y + 52];
+        const leit = `M${G.pt(n0)} C${G.pt([n0[0] - 140, n0[1] + 10])} ${G.pt([z[0] + 170, z[1] - 70])} ${G.pt([z[0] + 12, z[1] - 20])}`;
+        o.el('path', { d: leit, stroke: '#fff', 'stroke-width': 3.4, fill: 'none', 'stroke-opacity': 0.9 });
+        o.el('path', { d: leit, stroke: F.kevin, 'stroke-width': 1.1, fill: 'none', 'stroke-dasharray': '4 3' });
+        o.el('circle', { cx: G.f1(n0[0]), cy: G.f1(n0[1]), r: 2.4, fill: F.kevin });
+        // Maße in Blau nach Norm
+        const fu = p([-270, -265, 0]), gr = p([-270, -265, 960]);
+        G.massNorm(o, fu, gr, '960', { farbe: F.agent, off: -46, ts: 12, halo: '#fff' });
+        const sa = ks.strichAnfang;
+        o.el('path', { d: `M${G.pt([sa[0] - 4, sa[1]])} L${G.pt([sa[0] - 30, sa[1] - 16])} H${G.f1(sa[0] - 70)}`, stroke: F.agent, 'stroke-width': 0.8, fill: 'none' });
+        o.marke(sa[0] - 70, sa[1] - 26, '≈ 1040', 'p-hinweis', { fontFamily: 'var(--mono)' });
+        o.marke(z[0] - 98, z[1] + 20, 'Querstrebe, Höhe 520', 'p-hinweis');
+        // Befund: schraffiert, Kästchen mit Hinweislinie
+        const bf = p(sc.anker.befund), ziel = [bf[0] - 64, bf[1] + 62];
+        o.el('path', { d: `M${G.pt([bf[0] - 4, bf[1] + 6])} L${G.pt(ziel)} H${G.f1(ziel[0] - 10)}`, stroke: '#16202b', 'stroke-width': 0.9, fill: 'none' });
+        o.el('circle', { cx: G.f1(bf[0] - 4), cy: G.f1(bf[1] + 6), r: 2.2, fill: '#16202b' });
+        o.marke(ziel[0] - 10, ziel[1] - 13, `<svg viewBox="0 0 16 16">${'<path d="M8 2.2 14.3 13.4H1.7z" fill="#16202b"/><path d="M8 6.6v3.4M8 11.4v.3" stroke="#f0b400" stroke-width="1.7" stroke-linecap="round"/>'}</svg>${esc(T.befund)}, ${T.befundWert}`, 'p-befund', { transform: 'translateX(-100%)' });
+      },
+    };
+  }
+
+  // b: Werkstatt, Bögen auf dem Leuchttisch
+  function b() {
+    const zeilen = G.stueckzeilen(['pos', 'n', 'name', 'mass', 'stoff']);
+    const delta = i => `<span class="delta"><svg width="11" height="10" viewBox="0 0 11 10"><path d="M5.5 .8 10.2 9.2H.8z" fill="#fff" stroke="#2856c4"/><text x="5.5" y="8" text-anchor="middle" font-size="6.5" fill="#2856c4" font-family="Menlo, monospace">${i}</text></svg>${i === 'g' ? 'Griff' : 'Strebe'}</span>`;
+    return {
+      html: `
+      ${kopf('Werkstatt')}
+      <aside class="p-seite">
+        <div class="p-baum">${baum({ offen: true, gewaehlt: 'Querstrebe' })}</div>
+        <div class="p-form"><h4>Eigenschaften <span>Pos. 4</span></h4>
+          <div class="p-name">Querstrebe ${ikon('stift')}</div>
+          <dl><dt>Profil</dt><dd>30 × 30 Nut 8</dd><dt>Länge</dt><dd>400 mm</dd><dt>Höhe</dt><dd class="neu">500 mm <s>520</s>${delta('h')}</dd><dt>Werkstoff</dt><dd>Aluminium</dd><dt>Masse</dt><dd>0,34 kg</dd></dl>
+          <div class="p-knoepfe"><span>Isolieren</span><span>Zeigen</span></div>
+        </div>
+        <div class="p-form"><h4>Maße des Wagens</h4>
+          <dl><dt>Griffhöhe</dt><dd class="neu">1040 mm <s>960</s>${delta('g')}</dd><dt>Breite</dt><dd>600 mm</dd><dt>Tiefe</dt><dd>400 mm</dd><dt>Rollen</dt><dd>Ø 100 mm</dd></dl>
+        </div>
+      </aside>
+      <div class="p-tisch">
+        <section class="p-bogen" style="left:0;top:0;width:604px;bottom:0">
+          <header><b>Modell</b><span>Querstrebe gewählt</span>${ikon('gross')}</header>
+          <div class="vp" data-v="modell"><canvas class="v3d"></canvas></div>
+        </section>
+        <section class="p-bogen" style="left:618px;right:0;top:0;height:404px">
+          <header><b>Zeichnung</b><span>Blatt 1 von 2, Gesamtansicht</span>${ikon('gross')}${ikon('zu')}</header>
+          <div class="zeichnung" data-z="z1" style="position:absolute;left:0;right:0;top:33px;bottom:25px"></div>
+          <div class="p-titelstreifen"><span><i class="tn"><b>Kamerawagen</b>, Gesamtansicht</i></span><span>1:10</span><span>05.11.2026</span><span>K. Schwed</span><span>Stand h</span></div>
+        </section>
+        <section class="p-bogen" style="left:618px;right:0;top:418px;bottom:0">
+          <header><b>Stückliste</b><span>14 Positionen, Stand h</span>${ikon('gross')}${ikon('zu')}</header>
+          <div class="p-stueckliste"><table><thead><tr><th style="text-align:right">Pos.</th><th style="text-align:right">Stück</th><th>Benennung</th><th>Maße</th><th>Werkstoff</th></tr></thead><tbody>${zeilen}</tbody>
+          <tfoot><tr><td></td><td class="n">84</td><td colspan="3">Teile, 7,8 kg, etwa 125 €</td></tr></tfoot></table></div>
+        </section>
+      </div>
+      <footer class="p-sprech"><span class="mic"><i>${ikon('mikro')}</i>V drücken und sprechen</span><q>${esc(T.zuruf)}</q><span class="agent">g und h eingetragen, Zeichnung und Stückliste liegen rechts.</span></footer>`,
+      views: [{ id: 'modell', scene: 'nach', cam: { az: -50, el: 20, fov: 28 }, fit: [0.2, 0.06, 0.8, 0.95], style: 'reiss', hi: { strebe: [F.kevin, 0.26] } }],
+      zeichnungen: [{ id: 'z1', scene: 'nach', opt: { akzent: F.agent, marke: 'dreieck', links: 60, unten: 52, oben: 26, namen: true } }],
+      after(R) {
+        const v = R.modell, p = v.project, o = G.ueber(v.el);
+        G.massNorm(o, p([-262, -150, 172]), p([-262, -150, 485]), '313', { farbe: F.kevin, off: 0, ts: 12, halo: '#fff', hilfe: false });
+      },
+    };
+  }
+
+  // c: schmal am Bildschirmrand, der Agent baut in Blau
+  function c() {
+    return {
+      html: `
+      <div class="desk">
+        <section class="chat">
+          <div class="chat-kopf">${ampel()}<b>Chat</b></div>
+          <div class="chat-verlauf"><div class="chat-du">${esc(T.chatDu)}</div><div class="chat-er">${T.chatEr.map(t => `<p>${esc(t)}</p>`).join('')}</div></div>
+          <div class="chat-eingabe"><span>Nachricht</span>${ikon('mikro')}</div>
+        </section>
+        <section class="schmal">
+          ${kopf('Fokus', T.projekt, '', false)}
+          <div class="p-blatt">
+            <div class="vp" data-v="schmal"><canvas class="v3d"></canvas></div>
+            ${zonen(440, 774, 3, 6)}
+            <div class="p-schmal-unten"><div class="p-aenderungen" style="position:static;width:auto"><table>
+              <tr><td>c</td><td>Vier Lenkrollen Ø 100</td><td>✓</td></tr>
+              <tr class="jetzt"><td>d</td><td>${esc(T.bauSchritt)}</td><td>…</td></tr></table></div></div>
+          </div>
+          ${legende([[['V'], 'sprechen']], 'Jetzt').replace('<span class="rechts">', '<span class="rechts" style="margin-left:auto">')}
+        </section>
+      </div>`,
+      views: [{ id: 'schmal', scene: 'bau', cam: { az: -50, el: 20, fov: 28 }, fit: [0.17, 0.06, 0.83, 0.8], style: 'reiss', ghost: { rohr: [F.agent, 0.3], polster: [F.agent, 0.24] } }],
+      after(R) {
+        const v = R.schmal, p = v.project, o = G.ueber(v.el);
+        G.massNorm(o, p([-270, -265, 0]), p([-270, -265, 960]), '960', { farbe: F.agent, off: -40, ts: 12, halo: '#fff' });
+        const t = p([-270, 120, 985]);
+        o.el('path', { d: `M${G.pt([t[0], t[1] - 4])} L${G.pt([t[0] + 22, t[1] - 30])} H${G.f1(t[0] + 50)}`, stroke: F.agent, 'stroke-width': 0.8, fill: 'none' });
+        o.marke(t[0] + 24, t[1] - 46, 'Ø 25', 'p-hinweis', { fontFamily: 'var(--mono)' });
+      },
+    };
+  }
+
+  // d: Start im leeren Blatt, Schublade mit den letzten Projekten
+  function d() {
+    const mappen = G.PROJEKTE.map((pr, k) => `<div class="p-mappe ${k === 0 ? 'zuletzt' : ''}"><div class="vp" data-v="karte${k}"><canvas class="v3d"></canvas></div><div><b>${esc(pr.name)}</b><small>${pr.wann}</small><code>${pr.teile} Teile</code></div></div>`).join('');
+    return {
+      html: `
+      ${kopf('Fokus', 'Neues Projekt', 'noch nicht gesichert')}
+      <div class="p-blatt">
+        <div class="vp" data-v="leer"><canvas class="v3d"></canvas></div>
+        ${zonen(1412, 806)}
+        <div class="p-start" style="right:452px"><h2>Was soll entstehen?</h2><p>Drück ${kbd('V')} und sag es, oder schreib es im Chat. Der Agent zeichnet hier mit.</p></div>
+        ${schriftfeld({ name: 'ohne Namen', teile: 0, stand: '–', style: 'right:481px' })}
+      </div>
+      <aside class="p-schublade">
+        <div class="p-griff"><span>${ikon('links')}Wegschieben</span></div>
+        <h3>Zuletzt geöffnet</h3><p>Ein Klick aufs leere Blatt oder esc schiebt die Liste weg.</p>
+        ${mappen}
+        <footer><span class="knopf">${ikon('ordner')}&nbsp;Ordner öffnen …</span><span>4 von 6</span></footer>
+      </aside>
+      ${legende([[['V'], 'sprechen'], [['⌘', 'O'], 'Ordner öffnen']], 'Jetzt')}`,
+      views: [{ id: 'leer', scene: 'leer', cam: KAM, fit: [0.08, 0.1, 0.62, 0.82], style: 'reiss' },
+        ...G.PROJEKTE.map((pr, k) => ({ id: 'karte' + k, scene: pr.szene, cam: pr.cam, fit: [0.12, 0.08, 0.88, 0.92], style: { ...G.STIL.reiss, grid: null } }))],
+    };
+  }
+
+  // e: Tastenlegende
+  function e() {
+    const spalte = idx => idx.map(i => {
+      const gr = G.TASTEN[i];
+      return `<div class="p-leggruppe ${gr.agent ? 'agent' : ''}"><h4>${esc(gr.gruppe)}</h4><dl>${gr.zeilen.map(([k, t]) => `<dt>${k.map(kbd).join('')}</dt><dd>${esc(t)}</dd>`).join('')}</dl></div>`;
+    }).join('');
+    return {
+      html: `
+      ${kopf()}
+      <div class="p-blatt">
+        <div class="vp" data-v="haupt"><canvas class="v3d"></canvas></div>
+        ${zonen(1412, 806)}
+        <div class="p-baum">${baum({})}</div>
+      </div>
+      <div class="p-schleier"></div>
+      <section class="p-legendblatt">
+        <div class="p-rand"></div>
+        <h2>Tastenlegende</h2><p>Gesteuert wird wie in Blender. Mit ? blendest du die Legende ein und aus, esc schließt sie.</p>
+        <div class="p-legspalten"><div>${spalte([0, 4])}</div><div>${spalte([1, 3])}</div><div>${spalte([2, 5])}</div></div>
+        ${schriftfeld({ name: 'Tastenlegende', teile: '–', stand: 'f' })}
+      </section>
+      ${legende([[['Mitteltaste'], 'drehen'], [['⇧'], 'schwenken'], [['Rad'], 'zoomen'], [['F'], 'Auswahl'], [['/'], 'isolieren'], [['M'], 'messen'], [['V'], 'sprechen']], 'Gerade nützlich').replace('class="p-legende"', 'class="p-legende" style="z-index:9"')}`,
+      views: [{ id: 'haupt', scene: 'nach', cam: KAM, fit: [0.335, 0.05, 0.665, 0.9], style: 'reiss' }],
+    };
+  }
+
+  return { a, b, c, d, e };
+})();
+
+/* ==========================================================================
+   Richtung Sucher
+   ========================================================================== */
+const SUCHER = (() => {
+  'use strict';
+  const { T, ikon, ampel, kbd, esc } = G;
+  const F = G.FARBE.sucher;
+  const KAM = { az: -50, el: 20, fov: 28 };
+
+  const leiste = (o = {}) => `
+    <header class="s-leiste">${ampel()}
+      <span class="s-projekt">${esc(o.name || T.projekt)}</span>
+      <div class="s-segment"><span class="${o.modus === 'Werkstatt' ? '' : 'an'}">Fokus</span><span class="${o.modus === 'Werkstatt' ? 'an' : ''}">Werkstatt</span></div>
+      ${o.schmal ? '' : `<div class="s-mitte">${o.tally || '<span class="s-tally aus">Bereit</span>'}<span class="s-tc">${o.tc || '00:09:31:04'}</span></div>`}
+      <div class="s-rechts">${o.schmal ? '' : '<span class="s-status">Kernel bereit</span>'}
+        <span class="s-taste">${ikon('foto')}${o.schmal ? '' : 'Foto'}</span><span class="s-taste"><i class="rec"></i>${o.schmal ? '' : 'Aufnahme'}</span>${o.schmal ? '' : `<span class="s-taste" title="Schmal an den Rand">${ikon('rand')}</span>`}</div>
+    </header>`;
+  const spuren = (o = {}) => `<h4><span>Objekte</span><span>84</span></h4>` + G.BAUM.map(g => {
+    let h = `<div class="s-spur ${o.markiert && g.name === 'Schiebebügel' ? 'markiert' : ''}"><b>${esc(g.name)}</b><em>${g.n}</em></div>`;
+    if (g.kinder && o.offen) h += g.kinder.map(k => `<div class="s-spur kind ${(o.markiert || []).includes(k) ? 'markiert' : ''} ${o.gewaehlt === k ? 'gewaehlt' : ''}"><b>${esc(k)}</b></div>`).join('');
+    return h;
+  }).join('');
+  const fuss = (items, rechts = true) => `<footer class="s-fuss">${items.map(([k, t]) => `<span>${k.map(kbd).join('')} ${esc(t)}</span>`).join('')}${rechts ? `<span class="rechts">${kbd('?')} alle Tasten</span>` : ''}</footer>`;
+  const ecken = live => `<div class="s-ecken ${live ? 'live' : ''}"><i></i><i></i><i></i><i></i></div>`;
+  const RUHE = [[['Mitteltaste'], 'drehen'], [['⇧'], 'schwenken'], [['Rad'], 'zoomen'], [['F'], 'Auswahl'], [['/'], 'isolieren'], [['M'], 'messen'], [['V'], 'sprechen']];
+
+  // OSD-Maß: Linie mit Querstrichen, Wert im schwarzen Kasten
+  function osd(o, a, b, text, farbe = F.agent) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * 6, ny = dx / l * 6;
+    o.el('path', { d: `M${G.pt(a)} L${G.pt(b)} M${G.pt([a[0] - nx, a[1] - ny])} L${G.pt([a[0] + nx, a[1] + ny])} M${G.pt([b[0] - nx, b[1] - ny])} L${G.pt([b[0] + nx, b[1] + ny])}`, stroke: farbe, 'stroke-width': 1.2, fill: 'none' });
+    return o.marke((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, text, 's-osd');
+  }
+  function fokusbox(o, x, y, w, h, farbe) {
+    const c = 9, d = [];
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const X = x + sx * w, Y = y + sy * h;
+      d.push(`M${G.f1(X)} ${G.f1(Y - sy * c)} L${G.f1(X)} ${G.f1(Y)} L${G.f1(X - sx * c)} ${G.f1(Y)}`);
+    }
+    o.el('path', { d: d.join(' '), stroke: farbe, 'stroke-width': 2, fill: 'none' });
+  }
+
+  // a: Fokus, Kevin spricht: das Bild ist auf Sendung
+  function a() {
+    const log = T.spur.map((s, k) => `<div class="${k < 2 ? 'alt' : ''} ${s.befund ? 'befund' : ''} ${s.jetzt ? 'jetzt' : ''}"><span>${s.tc}</span>${esc(s.jetzt ? 'wartet, bis du fertig bist' : s.befund ? 'Prüfung: 1 Befund an Rolle vorne rechts' : s.t)}</div>`).join('');
+    return {
+      html: `
+      ${leiste({ tally: '<span class="s-tally">Du sprichst</span>', tc: '00:00:07:12' })}
+      <div class="s-bild">
+        <div class="vp" data-v="haupt"><canvas class="v3d"></canvas></div>
+        <div class="s-sendung"></div>${ecken(true)}<div class="s-mittelmarke"></div>
+        <div class="s-spuren">${spuren({ offen: true, markiert: ['Querstrebe', 'Griffrohr Ø 25'] })}</div>
+        <div class="s-log">${log}</div>
+        <div class="s-caption"><p>${esc(T.gesagt)} <span class="laeuft">${esc(T.laeuft)}</span><span class="cursor"></span></p>
+          <div class="s-dabei"><span>Geht mit:</span><span><b>Ansicht</b></span><span><b>84</b> Teile</span><span>Zeiger <b>Querstrebe</b></span><span><b>2</b> Striche</span></div></div>
+      </div>
+      ${fuss([[['↩'], 'fertig'], [['D'], 'halten und zeichnen'], [['Klick'], 'Teil zeigen'], [['esc'], 'verwerfen']])}`,
+      views: [{ id: 'haupt', scene: 'vor', cam: KAM, fit: [0.335, 0.06, 0.665, 0.79], style: 'sucher', hi: { strebe: [F.kevin, 0.3], rohr: [F.kevin, 0.3], polster: [F.kevin, 0.22] }, zebra: { 'rolle-vr': F.befund } }],
+      after(R) {
+        const v = R.haupt, p = v.project, o = G.ueber(v.el), sc = v.scene;
+        const ks = G.kevinsStriche(o, p, { unter: { stroke: '#000', 'stroke-width': 5, 'stroke-opacity': 0.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, linie: { stroke: F.kevin, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } });
+        const z = G.zeigespur(o, p, F.kevin, { r: 1.5 });
+        fokusbox(o, z[0], z[1], 34, 20, F.kevin);
+        o.marke(z[0] - 34, z[1] - 44, 'Querstrebe  520', 's-fokus-text');
+        G.mauszeiger(o, z[0] + 4, z[1] + 4, 0.9);
+        osd(o, p([-270, -310, 0]), p([-270, -310, 960]), '960');
+        const e1 = p([-270, -268, 960]), e2 = p([-270, -310, 960]);
+        o.el('path', { d: `M${G.pt(e1)} L${G.pt(e2)}`, stroke: F.agent, 'stroke-width': 1, 'stroke-dasharray': '3 3', fill: 'none' });
+        const sa = ks.strichAnfang;
+        o.el('path', { d: `M${G.pt([sa[0] - 6, sa[1]])} L${G.pt([sa[0] - 38, sa[1]])}`, stroke: F.agent, 'stroke-width': 1, fill: 'none' });
+        o.marke(sa[0] - 40, sa[1], '≈ 1040', 's-osd', { transform: 'translate(-100%,-50%)' });
+        const bf = p(sc.anker.befund);
+        o.el('path', { d: `M${G.pt([bf[0] + 4, bf[1] + 2])} L${G.pt([bf[0] + 70, bf[1] + 54])} H${G.f1(bf[0] + 86)}`, stroke: F.befund, 'stroke-width': 1.2, fill: 'none' });
+        o.marke(bf[0] + 86, bf[1] + 40, `<i></i><span>Befund 1,2 mm<br><span style="color:#d4dce3">${esc(T.befund)}</span></span>`, 's-befund');
+      },
+    };
+  }
+
+  // b: Werkstatt als Multiviewer
+  function b() {
+    const zeilen = G.stueckzeilen(['pos', 'n', 'name', 'mass']);
+    return {
+      html: `
+      ${leiste({ modus: 'Werkstatt' })}
+      <aside class="s-seite">
+        <div class="s-spuren">${spuren({ offen: true, gewaehlt: 'Querstrebe' })}</div>
+        <div class="s-menue"><h4><span>Auswahl</span><span>Pos. 4</span></h4>
+          <div class="s-name">Querstrebe ${ikon('stift')}</div>
+          <dl><dt>Profil</dt><dd>30 × 30 Nut 8</dd><dt>Länge</dt><dd>400 <small>mm</small></dd><dt>Höhe</dt><dd class="neu">500 <small>war 520</small></dd><dt>Werkstoff</dt><dd>Aluminium</dd><dt>Masse</dt><dd>0,34 <small>kg</small></dd></dl>
+          <div class="s-knoepfe"><span>Isolieren</span><span>Zeigen</span></div>
+        </div>
+        <div class="s-menue"><h4><span>Maße des Wagens</span></h4>
+          <dl><dt>Griffhöhe</dt><dd class="neu">1040 <small>war 960</small></dd><dt>Breite</dt><dd>600 <small>mm</small></dd><dt>Tiefe</dt><dd>400 <small>mm</small></dd><dt>Rollen</dt><dd>Ø 100 <small>mm</small></dd></dl>
+        </div>
+      </aside>
+      <div class="s-multi">
+        <section class="s-kachel aktiv" style="left:0;top:0;width:576px;height:412px">
+          <div class="vp" data-v="modell"><canvas class="v3d"></canvas></div><div class="s-mittelmarke"></div>
+          <div class="s-etikett"><b>1</b><span>Modell</span></div>
+        </section>
+        <section class="s-kachel" style="left:578px;right:0;top:0;height:412px">
+          <div class="vp" data-v="oben"><canvas class="v3d"></canvas></div>
+          <div class="s-etikett"><b>2</b><span>Ansicht oben, parallel</span></div>
+        </section>
+        <section class="s-kachel frisch" style="left:0;top:414px;width:576px;bottom:0">
+          <div class="s-papier"><div class="zeichnung" data-z="z1" style="position:absolute;inset:0"></div>
+            <div style="position:absolute;right:8px;bottom:7px;font:10px/1.3 var(--mono);color:#3b4148;text-align:right">Kamerawagen, Blatt 1 von 2<br>Maßstab 1:10, 05.11.2026</div></div>
+          <div class="s-etikett"><b>3</b><span>Zeichnung</span><em>neu</em></div>
+        </section>
+        <section class="s-kachel frisch" style="left:578px;right:0;top:414px;bottom:0">
+          <div class="s-tabelle"><table><thead><tr><th style="text-align:right">Pos</th><th style="text-align:right">Stk</th><th>Benennung</th><th>Maße</th></tr></thead><tbody>${zeilen}</tbody>
+          <tfoot><tr><td></td><td class="n" style="color:#d4dce3">84</td><td colspan="2">Teile  7,8 kg  etwa 125 €</td></tr></tfoot></table></div>
+          <div class="s-etikett"><b>4</b><span>Stückliste</span><em>neu</em></div>
+        </section>
+      </div>
+      <footer class="s-sprech">${kbd('V')} sprechen <q>${esc(T.zuruf)}</q><span class="agent">00:09:31 Zeichnung auf 3, Stückliste auf 4, Befund gelöst</span></footer>`,
+      views: [
+        { id: 'modell', scene: 'nach', cam: { az: -50, el: 20, fov: 28 }, fit: [0.14, 0.05, 0.86, 0.93], style: 'sucher', hi: { strebe: [F.kevin, 0.3] } },
+        { id: 'oben', scene: 'nach', cam: { ortho: true, dir: [0, 0, 1] }, fit: [0.12, 0.1, 0.88, 0.86], style: { ...G.STIL.sucher, floor: { color: '#1d232a', alpha: 0, fade: 1700, shadow: 0 } }, hi: { strebe: [F.kevin, 0.3] } },
+      ],
+      zeichnungen: [{ id: 'z1', scene: 'nach', opt: { akzent: '#0f8aa0', marke: 'punkt', links: 60, unten: 46, oben: 26 } }],
+      after(R) {
+        const v = R.modell, p = v.project, o = G.ueber(v.el);
+        osd(o, p([-262, -150, 172]), p([-262, -150, 485]), '313', F.kevin).classList.add('rot');
+        const w = R.oben, q = w.project, o2 = G.ueber(w.el);
+        osd(o2, q([-300, -240, 0]), q([300, -240, 0]), '600');
+        osd(o2, q([330, -265, 0]), q([330, 265, 0]), '530');
+      },
+    };
+  }
+
+  // c: schmal am Rand, der Agent baut
+  function c() {
+    return {
+      html: `
+      <div class="desk">
+        <section class="chat">
+          <div class="chat-kopf">${ampel()}<b>Chat</b></div>
+          <div class="chat-verlauf"><div class="chat-du">${esc(T.chatDu)}</div><div class="chat-er">${T.chatEr.map(t => `<p>${esc(t)}</p>`).join('')}</div></div>
+          <div class="chat-eingabe"><span>Nachricht</span>${ikon('mikro')}</div>
+        </section>
+        <section class="schmal">
+          ${leiste({ schmal: true })}
+          <div class="s-bild">
+            <div class="vp" data-v="schmal"><canvas class="v3d"></canvas></div>${ecken(false)}
+            <div style="position:absolute;left:28px;top:26px;z-index:4;display:flex;gap:8px;align-items:center"><span class="s-tally" style="background:#41d1e5;color:#00191d">Agent baut</span><span class="s-tc">00:07:18:02</span></div>
+            <div class="s-log" style="width:auto;right:24px;left:40px;bottom:22px">
+              <div class="alt"><span>00:05:58</span>Vier Lenkrollen Ø 100</div>
+              <div class="jetzt"><span>00:07:18</span>${esc(T.bauSchritt)}</div></div>
+          </div>
+          ${fuss([[['V'], 'sprechen']])}
+        </section>
+      </div>`,
+      views: [{ id: 'schmal', scene: 'bau', cam: { az: -50, el: 20, fov: 28 }, fit: [0.17, 0.1, 0.83, 0.82], style: 'sucher', ghost: { rohr: [F.agent, 0.32], polster: [F.agent, 0.26] } }],
+      after(R) {
+        const v = R.schmal, p = v.project, o = G.ueber(v.el);
+        osd(o, p([-270, -310, 0]), p([-270, -310, 960]), '960');
+        const e1 = p([-270, -268, 960]), e2 = p([-270, -310, 960]);
+        o.el('path', { d: `M${G.pt(e1)} L${G.pt(e2)}`, stroke: F.agent, 'stroke-width': 1, 'stroke-dasharray': '3 3', fill: 'none' });
+        const t = p([-270, 120, 975]);
+        o.marke(t[0], t[1] - 22, 'Ø 25', 's-osd');
+      },
+    };
+  }
+
+  // d: Start im leeren Projekt, Ablage mit den letzten Projekten
+  function d() {
+    const clips = G.PROJEKTE.map((pr, k) => `<div class="s-clip ${k === 0 ? 'zuletzt' : ''}"><div class="vp" data-v="karte${k}"><canvas class="v3d"></canvas><span class="tc">${pr.tc}</span></div><b>${esc(pr.name)}</b><small>${pr.wann}  ${pr.teile} Teile</small></div>`).join('');
+    return {
+      html: `
+      ${leiste({ name: 'Neues Projekt', tc: '00:00:00:00' })}
+      <div class="s-bild">
+        <div class="vp" data-v="leer"><canvas class="v3d"></canvas></div>${ecken(false)}
+      </div>
+      <div class="s-leer"><code>Kein Modell</code><p>Drück ${kbd('V')} und sag, was entstehen soll. Oder schreib es im Chat.</p></div>
+      <aside class="s-ablage">
+        <div class="s-zuschieben"><span>‹ Wegschieben</span></div>
+        <header><b>Zuletzt geöffnet</b><span class="s-taste">${ikon('ordner')}Ordner öffnen</span></header>
+        <div class="s-clips">${clips}</div>
+        <footer><span>Klick ins Bild oder ${kbd('esc')} schiebt die Ablage weg</span></footer>
+      </aside>
+      ${fuss([[['V'], 'sprechen'], [['⌘', 'O'], 'Ordner öffnen']])}`,
+      views: [{ id: 'leer', scene: 'leer', cam: KAM, fit: [0.45, 0.12, 0.9, 0.86], style: 'sucher' },
+        ...G.PROJEKTE.map((pr, k) => ({ id: 'karte' + k, scene: pr.szene, cam: pr.cam, fit: [0.16, 0.1, 0.84, 0.9], style: { ...G.STIL.sucher, grid: null } }))],
+    };
+  }
+
+  // e: Tastenbelegung auf der gezeichneten Tastatur
+  const REIHEN = [
+    [['esc', 1.5], ...Array.from({ length: 12 }, (_, i) => ['F' + (i + 1), 1, 'fn']), ['⏻', 1, 'fn']],
+    [['^', 1], ['1', 1], ['2', 1], ['3', 1], ['4', 1], ['5', 1], ['6', 1], ['7', 1], ['8', 1], ['9', 1], ['0', 1], ['ß', 1], ['´', 1], ['⌫', 1.5]],
+    [['⇥', 1.5], ...'QWERTZUIOPÜ+'.split('').map(k => [k, 1]), ['↩', 1]],
+    [['⇪', 1.75], ...'ASDFGHJKLÖÄ#'.split('').map(k => [k, 1]), ['↩', 0.75, 'leer']],
+    [['⇧', 1.25], ...'<YXCVBNM,.-'.split('').map(k => [k, 1]), ['⇧', 2.25]],
+    [['fn', 1], ['⌃', 1], ['⌥', 1], ['⌘', 1.25], ['Leertaste', 5], ['⌘', 1.25], ['⌥', 1], ['←', 1], ['↑↓', 1], ['→', 1]],
+  ];
+  const BEL = {
+    esc: ['agent', 'verwerfen'], '1': ['ansicht', 'vorne'], '2': ['ansicht', 'drehen'], '3': ['ansicht', 'rechts'], '4': ['ansicht', 'drehen'], '5': ['ansicht', 'parallel'],
+    '6': ['ansicht', 'drehen'], '7': ['ansicht', 'oben<br>⇧ isolieren'], '8': ['ansicht', 'drehen'], '9': ['ansicht', 'Gegenseite'], '0': ['ansicht', 'Kamera'],
+    'ß': ['werkzeug', '⇧ alle Tasten'], '+': ['ansicht', 'zoomen'], '-': ['ansicht', 'zoomen'], '⇥': ['werkzeug', 'Teile oder Flächen'],
+    E: ['werkzeug', 'Explosion'], A: ['werkzeug', 'alles wählen'], S: ['werkzeug', 'Schnitt'], D: ['agent', 'halten: zeichnen'], F: ['ansicht', 'Auswahl'],
+    H: ['werkzeug', 'ausblenden'], M: ['werkzeug', 'messen'], C: ['ansicht', '⇧ alles zeigen'], V: ['agent', 'sprechen'], '↩': ['agent', 'fertig'], Leertaste: ['werkzeug', 'Animation abspielen'],
+  };
+  function e() {
+    const u = 80, g = 6;
+    const tastatur = REIHEN.map((reihe, ri) => `<div class="s-reihe">${reihe.map(([k, n, art]) => {
+      const w = n * u + (n - 1) * g, b = BEL[k] && art !== 'leer' && !(k === '↩' && ri === 3) ? BEL[k] : null;
+      const h = ri === 0 ? 'height:34px;' : '';
+      return `<div class="s-key ${b ? b[0] : ''}" style="width:${w}px;${h}${art === 'fn' || art === 'leer' ? 'opacity:.45' : ''}"><b>${esc(k)}</b>${b ? `<small>${b[1]}</small>` : ''}</div>`;
+    }).join('')}</div>`).join('');
+    return {
+      html: `
+      ${leiste()}
+      <div class="s-bild"><div class="vp" data-v="haupt"><canvas class="v3d"></canvas></div>${ecken(false)}</div>
+      <div class="s-schleier"></div>
+      <section class="s-belegung">
+        <header><b>Tastenbelegung</b><span>Gesteuert wird wie in Blender. Auf deutscher Tastatur ist / gleich ⇧7 und ? gleich ⇧ß.</span>${kbd('esc')}</header>
+        <div class="s-tastatur">${tastatur}</div>
+        <div class="s-legende2"><span><i style="border-color:#41d1e5;background:rgba(65,209,229,.12)"></i>Ansicht</span><span><i style="border-color:#d4dce3"></i>Auswahl und Werkzeuge</span><span><i style="border-color:#ff4b3e;background:rgba(255,75,62,.18)"></i>Mit dem Agenten</span><span style="margin-left:auto">${kbd('⌘')}${kbd('⌥')}${kbd('S')} Bildschirmfoto&nbsp;&nbsp; ${kbd('⌘')}${kbd('⌥')}${kbd('V')} Video</span></div>
+        <div class="s-maus">
+          <div><code>Mitteltaste ziehen</code><span>drehen</span></div>
+          <div><code>⇧ und Mitteltaste</code><span>schwenken</span></div>
+          <div><code>Rad oder kneifen</code><span>zoomen</span></div>
+          <div><code>Zwei Finger</code><span>drehen, mit ⇧ schwenken</span></div>
+        </div>
+      </section>
+      ${fuss(RUHE).replace('class="s-fuss"', 'class="s-fuss" style="z-index:9"')}`,
+      views: [{ id: 'haupt', scene: 'nach', cam: KAM, fit: [0.335, 0.06, 0.665, 0.9], style: 'sucher' }],
+    };
+  }
+
+  return { a, b, c, d, e };
+})();
+
+/* ==========================================================================
+   Seite: Umschalter für Richtung und Zustand, Bildmodus (?bild) für die PNG,
+   Übersicht (?uebersicht) mit allen drei Richtungen nebeneinander.
+   ========================================================================== */
+(() => {
+  'use strict';
+  const RICHTUNGEN = {
+    graphit: { name: 'Graphit', mod: GRAPHIT, cls: 'r-graphit', kurz: 'Der Viewer als Fotostudio',
+      idee: '<b>Graphit.</b> Der Viewer wird zum Fotostudio, die Oberfläche tritt zurück. Im Fokus steht Text direkt im Bild, Tafeln gibt es erst in der Werkstatt. Was du sagst und zeigst, erscheint in Lichtblau, was der Agent tut, in Messing.' },
+    reiss: { name: 'Reißbrett', mod: REISS, cls: 'r-reiss', kurz: 'Arbeiten wie am Zeichenbrett',
+      idee: '<b>Reißbrett.</b> Gearbeitet wird wie am Zeichenbrett, auf hellem Blatt mit Tusche und Maßen nach Norm. Du markierst mit dem Rotstift, der Agent antwortet in Blau und trägt jede Änderung mit einem Index ein. Befunde sind gelb schraffiert.' },
+    sucher: { name: 'Sucher', mod: SUCHER, cls: 'r-sucher', kurz: 'Der Viewer als Kameramonitor',
+      idee: '<b>Sucher.</b> Der Viewer verhält sich wie ein Kameramonitor. Sobald du sprichst, geht das Bild mit rotem Rahmen auf Sendung, der Agent schreibt mit Timecode mit, und Befunde zeigen Zebra. Die Werkstatt ist ein Multiviewer.' },
+  };
+  const ZUSTAENDE = [['a', 'Fokus beim Sprechen'], ['b', 'Werkstatt mit Kacheln'], ['c', 'Fokus schmal am Rand'], ['d', 'Start mit letzten Projekten'], ['e', 'Tasten']];
+  const q = new URLSearchParams(location.search);
+  const BILD = q.has('bild'), UEB = q.has('uebersicht'), STILL = BILD || UEB || q.has('still');
+
+  const lesen = () => {
+    const [r, z] = (location.hash.slice(1) || '').split('/');
+    return { r: RICHTUNGEN[r] ? r : 'graphit', z: ZUSTAENDE.some(e => e[0] === z) ? z : 'a' };
+  };
+
+  function rendern(buehne, scr, skala) {
+    const dpr = Math.max(1, (window.devicePixelRatio || 1) * skala);
+    const res = {};
+    for (const v of scr.views || []) {
+      const el = buehne.querySelector(`[data-v="${v.id}"]`); if (!el) continue;
+      const cv = el.querySelector('canvas'), w = el.clientWidth, h = el.clientHeight;
+      const scene = G.szene(v.scene);
+      const style = typeof v.style === 'string' ? G.STIL[v.style] : v.style;
+      const r = KC.render(scene, { w, h, dpr, cam: v.cam, fit: v.fit, style, hi: v.hi, ghost: v.ghost, zebra: v.zebra, hide: v.hide ? new Set(v.hide) : undefined }, cv);
+      res[v.id] = { el, project: r.project, w, h, scene };
+    }
+    for (const z of scr.zeichnungen || []) {
+      const box = buehne.querySelector(`[data-z="${z.id}"]`); if (!box) continue;
+      const zz = G.zeichnung(box, G.szene(z.scene), z.opt || {});
+      const rr = zz.ansichten.map(a => KC.render(a.scene, { w: a.el.clientWidth, h: a.el.clientHeight, dpr, cam: a.cam, fit: a.fit, style: a.style }, a.el.querySelector('canvas')));
+      zz.nachher(rr[0], rr[1]);
+    }
+    if (scr.after) scr.after(res, buehne);
+    if (!KC.init()) {
+      const n = document.createElement('div'); n.className = 'ohne-webgl';
+      n.textContent = 'Das 3D-Modell braucht WebGL 2. Dieser Browser bietet es nicht an, deshalb bleibt die Bildfläche leer.';
+      buehne.appendChild(n);
+    }
+  }
+  function zeigen(buehne, r, z, skala) {
+    const R = RICHTUNGEN[r], scr = R.mod[z]();
+    buehne.className = `buehne ${R.cls} z-${z}${STILL ? ' still' : ''}`;
+    buehne.setAttribute('aria-label', `Entwurf ${R.name}, ${ZUSTAENDE.find(e => e[0] === z)[1]}`);
+    buehne.innerHTML = scr.html;
+    rendern(buehne, scr, skala);
+  }
+
+  const halter = document.getElementById('halter'), buehne = document.getElementById('buehne');
+  function skala() {
+    if (BILD) return 1;
+    const el = halter.parentElement, cs = getComputedStyle(el);
+    const verf = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return Math.min(1, verf / 1440);
+  }
+  function aktualisieren() {
+    const { r, z } = lesen(), s = skala();
+    if (!BILD) {
+      halter.style.width = (1440 * s) + 'px'; halter.style.height = (900 * s) + 'px';
+      buehne.style.transform = `scale(${s})`;
+    }
+    zeigen(buehne, r, z, s);
+    document.querySelectorAll('[data-richtung]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.richtung === r)));
+    document.querySelectorAll('[data-zustand]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.zustand === z)));
+    document.getElementById('idee').innerHTML = RICHTUNGEN[r].idee;
+    window.__fertig = true;
+  }
+  function setze(r, z) { const a = lesen(); location.hash = `${r || a.r}/${z || a.z}`; }
+
+  // Umschalter
+  const rs = document.getElementById('richtungen'), zs = document.getElementById('zustaende');
+  for (const [k, R] of Object.entries(RICHTUNGEN)) {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.richtung = k; b.textContent = R.name;
+    b.addEventListener('click', () => setze(k, null)); rs.appendChild(b);
+  }
+  for (const [k, name] of ZUSTAENDE) {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.zustand = k; b.textContent = `${k}  ${name}`;
+    b.addEventListener('click', () => setze(null, k)); zs.appendChild(b);
+  }
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const keys = Object.keys(RICHTUNGEN), { r, z } = lesen();
+    if (['1', '2', '3'].includes(e.key)) setze(keys[+e.key - 1], null);
+    else if (ZUSTAENDE.some(x => x[0] === e.key)) setze(null, e.key);
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const i = ZUSTAENDE.findIndex(x => x[0] === z), n = ZUSTAENDE.length;
+      setze(null, ZUSTAENDE[(i + (e.key === 'ArrowRight' ? 1 : n - 1)) % n][0]);
+    }
+  });
+  window.addEventListener('hashchange', aktualisieren);
+  let t = 0;
+  window.addEventListener('resize', () => { if (BILD || UEB) return; clearTimeout(t); t = setTimeout(aktualisieren, 180); });
+
+  if (UEB) {
+    document.body.classList.add('zeige-uebersicht');
+    const box = document.getElementById('uebersicht'), z = q.get('uebersicht') || 'a';
+    for (const [k, R] of Object.entries(RICHTUNGEN)) {
+      const fig = document.createElement('figure');
+      fig.innerHTML = `<figcaption>${R.name}<span>${R.kurz}</span></figcaption><div class="zelle"><div class="buehne"></div></div>`;
+      box.appendChild(fig);
+      zeigen(fig.querySelector('.buehne'), k, ZUSTAENDE.some(e => e[0] === z) ? z : 'a', 0.5);
+    }
+    window.__fertig = true;
+  } else {
+    if (BILD) document.body.classList.add('nur-buehne');
+    aktualisieren();
+  }
+})();
+
+</script>
+</body>
+</html>
