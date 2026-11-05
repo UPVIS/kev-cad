@@ -30,6 +30,10 @@ Gleiche Ergebnisse, ob gemerkt oder nicht, und in jedem Lauf dieselben:
   werden (Warnung von build123d), wird das Ergebnis nicht gemerkt.
 - Andere Operationen (Section, Splitter) und die Abkürzungen von build123d (leere Werkzeugliste) laufen wie bisher.
 
+Dazu Zahlen je Inhalt einer Form (``inhalt``: Binärform ohne Netz, im Lauf je Form und Lage gemerkt): Volumen
+(``compute_volume``), Hüllquader (``bounding_box`` im Standardaufruf; ``AddOptimal`` kostet auf Torus- und
+Freiformflächen Millisekunden, beim Kugelschieber 0,2 s je Lauf) und kleinste Abstände (``abstand``, Bedingungen).
+
 Ein: ``installieren()`` im Rechenprozess (worker.py). Aus mit ``KEVCAD_GEDAECHTNIS=0``; Größe mit
 ``KEVCAD_GEDAECHTNIS_MB`` (Vorgabe 256, LRU nach Bytes). Läuft eine andere Fassung von build123d als die, nach der
 ``_bool_op`` hier nachgebaut ist, bleibt es aus (Prüfsumme der Quelle).
@@ -59,7 +63,10 @@ QUELLEN = {
     "Shape.intersect": "d969d374d3228e2a38456a32632acc0c4fc7f9dc",
     "Compound._intersect": "1dc196d4929a9d4182aa5c6dfa1dc4894db88c55",
     "Shape.compute_volume": None,  # nur Vorspann nachgebaut, gerechnet wird mit dem Original
+    "Shape.bounding_box": "59a4e73fc96dcf3aadedce4b9a5adcdc50b3cc8a",  # gerechnet wird mit dem Original
 }
+# Nicht ersetzt, aber vorausgesetzt: BoundBox(shape) entfernt das Netz und nimmt AddOptimal ohne Formtoleranz
+ABHAENGIG = {"BoundBox.__init__": "ef03fb7a09c9523f31e115ff3a08263ad58547e0"}
 
 
 def _an() -> bool:
@@ -340,6 +347,40 @@ def _compute_volume(self: Any) -> float:
     WERTE.put(key, wert)
     _zaehle(werte_neu=1)
     return wert
+
+
+def _bounding_box(self: Any, tolerance: float | None = None, optimal: bool = True) -> Any:
+    """``Shape.bounding_box`` mit Gedächtnis für den Standardaufruf (ohne Toleranz, ``optimal=True``), wie build123d
+    0.13.0. Der Hüllquader hängt dann nur an Geometrie und Lage: build123d entfernt vorher jedes Netz
+    (``BRepTools.Clean``) und rechnet ``AddOptimal`` ohne Formtoleranz. Wie ``huellen.py`` (im Lauf je Form und Lage),
+    hier über die Läufe hinweg je Inhalt; der Treffer ist eine genaue Kopie des ``Bnd_Box`` (Ecken, Lücke) und behält den
+    Nebeneffekt (Netz entfernen). Auf Torus- und Freiformflächen kostet ``AddOptimal`` Millisekunden, der Schlüssel
+    einen Bruchteil davon."""
+    topo = getattr(self, "wrapped", None)
+    if tolerance is not None or not optimal or topo is None:
+        return _original["bounding_box"](self, tolerance, optimal)
+    from build123d.geometry import BoundBox
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepTools import BRepTools
+
+    t0 = time.perf_counter()
+    key = ("huelle", inhalt(topo))
+    wert = WERTE.get(key)
+    if wert is not None:
+        BRepTools.Clean_s(topo)  # wie build123d: ein vorhandenes Netz entfernen
+        box = Bnd_Box()
+        if wert[0] is not None:
+            box.Add(wert[0])  # in einen leeren Bnd_Box: genaue Kopie
+        _zaehle(werte_treffer=1, aufwand_ms=(time.perf_counter() - t0) * 1000)
+        return BoundBox(box)
+    bb = _original["bounding_box"](self, tolerance, optimal)
+    kopie = None
+    if bb.wrapped is not None:
+        kopie = Bnd_Box()
+        kopie.Add(bb.wrapped)
+    WERTE.put(key, (kopie,))
+    _zaehle(werte_neu=1)
+    return bb
 
 
 def abstand(a: Any, b: Any) -> tuple[float, tuple[float, float, float]] | None:
@@ -769,7 +810,6 @@ def _clean(self: Any) -> Any:
         return self
     if _ErinnerteHistorie is None:
         _ErinnerteHistorie = _historie_klasse()
-    from build123d.topology.history import ShapeHistory
     from build123d.topology.shape_core import downcast
     from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
 
@@ -941,6 +981,14 @@ def installieren(log: Callable[[str], None] | None = None) -> bool:
                 melden(f"[gedaechtnis] aus: {name} dieser build123d-Fassung ist nicht die nachgebaute (Prüfsumme "
                        f"{ist[:12]} statt {soll[:12]})")
                 return False
+        from build123d.geometry import BoundBox
+
+        for name, attr in (("BoundBox.__init__", BoundBox.__init__),):
+            ist = hashlib.sha1(inspect.getsource(attr).encode()).hexdigest()
+            if ist != ABHAENGIG[name]:
+                melden(f"[gedaechtnis] aus: {name} dieser build123d-Fassung ist nicht die vorausgesetzte (Prüfsumme "
+                       f"{ist[:12]} statt {ABHAENGIG[name][:12]})")
+                return False
     except Exception as exc:  # noqa: BLE001
         melden(f"[gedaechtnis] aus: build123d nicht lesbar ({exc!r})")
         return False
@@ -948,6 +996,7 @@ def installieren(log: Callable[[str], None] | None = None) -> bool:
         _original[name] = attr
         setattr(klasse, attr_name, ersatz)
     _original["compute_volume"] = _original["Shape.compute_volume"]
+    _original["bounding_box"] = _original["Shape.bounding_box"]
     _original["clean"] = _original["Shape.clean"]
     _installiert = True
     _stat_reset()
@@ -965,6 +1014,7 @@ def _ziele() -> dict[str, tuple[type, str, Any, Any]]:
         "Compound._intersect": (composite.Compound, "_intersect", composite.Compound._intersect, _compound_intersect),
         "Shape.compute_volume": (shape_core.Shape, "compute_volume", shape_core.Shape.compute_volume,
                                  _compute_volume),
+        "Shape.bounding_box": (shape_core.Shape, "bounding_box", shape_core.Shape.bounding_box, _bounding_box),
     }
 
 

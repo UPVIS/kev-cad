@@ -13,7 +13,6 @@ from build123d import (
     Mode,
     Pos,
     Select,
-    Solid,
     fillet,
 )
 from build123d.topology import shape_core
@@ -182,11 +181,14 @@ def test_quelle_von_build123d_passt():
     import hashlib
     import inspect
 
+    from build123d.geometry import BoundBox
+
     gd.entfernen()
     for name, (_, _, original, _) in gd._ziele().items():
         soll = gd.QUELLEN.get(name)
         if soll is not None:
             assert hashlib.sha1(inspect.getsource(original).encode()).hexdigest() == soll, name
+    assert hashlib.sha1(inspect.getsource(BoundBox.__init__).encode()).hexdigest() == gd.ABHAENGIG["BoundBox.__init__"]
 
 
 def test_schnittmenge_und_clean(mit_gedaechtnis):
@@ -235,3 +237,44 @@ def test_volumen_und_abstand(mit_gedaechtnis):
     assert gd.inhalt(b.wrapped) != vorher
     d2 = gd.abstand(a.wrapped, b.wrapped)
     assert abs(d2[0] - 30.0) < 1e-9
+
+
+def test_huellquader(mit_gedaechtnis, monkeypatch):
+    """Hüllquader je Inhalt (V2-1): gleich wie build123d (Ecken und Lücke), auch als Treffer; der Treffer entfernt ein
+    Netz wie build123d; Toleranz und ``optimal=False`` gehen an build123d; verschoben ist ein anderer Inhalt."""
+    from build123d import Torus
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.TopLoc import TopLoc_Location
+
+    def teil():
+        return Pos(3, 4, 5) * Torus(20, 4)
+
+    def werte(bb):
+        return (*bb.min, *bb.max, bb.wrapped.GetGap())
+
+    def vernetzt():
+        t = teil()
+        BRepMesh_IncrementalMesh(t.wrapped, 0.5)
+        assert BRep_Tool.Triangulation_s(t.faces()[0].wrapped, TopLoc_Location()) is not None
+        return t
+
+    gd.entfernen()
+    ohne = werte(teil().bounding_box())
+    ohne_tol = werte(teil().bounding_box(tolerance=0.5, optimal=False))
+    assert gd.installieren()
+    gd.lauf_beginn()
+    a, b, c, d, e = teil(), teil(), vernetzt(), vernetzt(), teil()  # Formen zuerst (Torus richtet sich am Hüllquader aus)
+    gerechnet: list[int] = []
+    echt = gd._original["bounding_box"]
+    monkeypatch.setitem(gd._original, "bounding_box", lambda *x: gerechnet.append(1) or echt(*x))
+    assert werte(a.bounding_box()) == ohne and len(gerechnet) == 1  # gerechnet und gemerkt
+    assert werte(b.bounding_box()) == ohne and len(gerechnet) == 1  # gleicher Inhalt: Treffer
+    assert werte(c.bounding_box()) == ohne and len(gerechnet) == 2  # das Netz setzt Flags: eigener Inhalt
+    assert werte(d.bounding_box()) == ohne and len(gerechnet) == 2  # Treffer
+    assert BRep_Tool.Triangulation_s(d.faces()[0].wrapped, TopLoc_Location()) is None  # wie build123d entfernt
+    assert werte(e.bounding_box(tolerance=0.5, optimal=False)) == ohne_tol and len(gerechnet) == 3
+    weiter = teil()
+    weiter.move(Pos(10, 0, 0))
+    bb = weiter.bounding_box()
+    assert abs(bb.min.X - (ohne[0] + 10)) < 1e-9 and abs(bb.max.X - (ohne[3] + 10)) < 1e-9
