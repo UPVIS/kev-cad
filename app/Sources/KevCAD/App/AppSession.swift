@@ -19,7 +19,8 @@ enum CatalogFocus: Hashable {
     case material(String)
 }
 
-/// Zentrale der Oberfläche: hält AppModel, App-Kern bzw. Demo, „Zuletzt geöffnet“ und steuert, welches Fenster offen ist.
+/// Zentrale der Oberfläche: hält AppModel, App-Kern bzw. Demo, „Zuletzt geöffnet“, den Entwurf (leeres Projekt ohne
+/// Dialog, V2-3) und das Hauptfenster.
 ///
 /// Vertrag (CLAUDE.md): Die Oberfläche liest `AppModel` und ruft nur `AppActions`. Im Demomodus ist `actions` die
 /// eigene `DemoActions`, sonst der `AppController` des App-Kerns.
@@ -40,6 +41,27 @@ final class AppSession: ObservableObject {
     /// Phase 3: Auftrag für das Fenster „Zukaufteil hinzufügen …“ (wird dort verbraucht), siehe ZukaufSession.swift.
     @Published var zukaufRequest: ZukaufDialogRequest?
 
+    /// V2-3: kurze Meldung in der Kopfleiste (Umbenennen ging nicht, Name entsteht im Code …).
+    @Published var meldung: Meldung?
+    /// V2-3: Menü „Benennen …“ (⇧⌘S) bittet die Kopfleiste, den Projektnamen zu bearbeiten (zählt hoch).
+    @Published var umbenennenAnfrage = 0
+
+    struct Meldung: Equatable {
+        var text: String
+        var fehler: Bool
+        var zeit = Date()
+    }
+
+    /// V2-3: Ablage der Entwürfe dieser Variante (Application Support, nicht ~/Documents).
+    let entwuerfe = EntwurfAblage.standard
+    /// Beim Start ein leeres Projekt anlegen (nicht beim Wiederherstellen nach einem Update, nicht im Demomodus und
+    /// nicht bei Selbsttests, die ihr eigenes Projekt öffnen).
+    var startEntwurfErlaubt = false
+    var letztesProjekt: URL?
+    let fensterRandSteuerung = FensterRand()
+    /// Abos der V2-Oberfläche (Entwurf beim Start, Modus und Kacheln merken).
+    var oberflaechenAbos: Set<AnyCancellable> = []
+
     weak var projectWindow: NSWindow? {
         didSet { keyboard.projectWindow = projectWindow }
     }
@@ -52,6 +74,9 @@ final class AppSession: ObservableObject {
     init() {
         let model = AppModel()
         self.model = model
+        // Vor controller.start(): der App-Kern löscht die Marke beim Wiederherstellen nach einem Update
+        let wiederherstellen = !AppInfo.isDemoMode && AppController.wiederherstellenAngefordert
+        AppSession.oberflaecheVorbelegen(model.oberflaeche)
         if AppInfo.isDemoMode {
             let config = DemoConfiguration.fromEnvironment()
             controller = config.metalViewport ? AppController(model: model) : nil
@@ -74,10 +99,20 @@ final class AppSession: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] project in self?.projectChanged(project) }
             .store(in: &cancellables)
-        if let project = model.project { recents.note(project.path, name: project.name) }
+        if let project = model.project, !entwuerfe.enthaelt(project.path) {
+            recents.note(project.path, name: project.name)
+        }
+        letztesProjekt = model.project?.path
         keyboard.install()
         Self.applyAppearanceOverride()
         DokumenteSelfTest.projektOeffnenWennVerlangt(self)  // Phase 6: Selbsttest startet mit offenem Projekt
+        entwurfVorbereiten(wiederherstellen: wiederherstellen)
+        oberflaecheMerken()
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.beimBeenden() }
+        }
     }
 
     /// `KEVCAD_APPEARANCE=light` oder `dark` erzwingt das Erscheinungsbild (für Fensterbilder in beiden Varianten).
@@ -92,14 +127,13 @@ final class AppSession: ObservableObject {
 
     private var launched = false
 
-    /// Einmal beim ersten Erscheinen des Willkommensfensters: ist schon ein Projekt offen, gleich zum Projektfenster.
-    /// Gibt `true` zurück, wenn das Willkommensfenster unsichtbar bleiben soll.
+    /// Einmal beim ersten Erscheinen des Hauptfensters: Protokoll und Lagerkatalog für den Demomodus.
+    @discardableResult
     func launchFinished() -> Bool {
         guard !launched else { return false }
         launched = true
         if demo?.config.openLog == true { showLog() }
         guard model.project != nil else { return false }
-        showProjectWindow()
         if let config = demo?.config, config.start == .catalog {
             // Nach dem Projektfenster öffnen, damit der Lagerkatalog vorne liegt
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
@@ -121,14 +155,14 @@ final class AppSession: ObservableObject {
         dismissWindowAction = dismissWindow
     }
 
+    /// Seit V2-3 gibt es kein Willkommensfenster mehr: Das Hauptfenster zeigt das leere Projekt mit der Startübersicht.
     func showWelcome() {
-        openWindowAction?(id: WindowID.welcome)
+        showProjectWindow()
+        model.oberflaechenActions?.zeigeUebersicht(true)
     }
 
     func showProjectWindow() {
-        guard model.project != nil else { return showWelcome() }
         openWindowAction?(id: WindowID.project)
-        dismissWindowAction?(id: WindowID.welcome)
     }
 
     func showLog() {
@@ -143,21 +177,31 @@ final class AppSession: ObservableObject {
     }
 
     private func projectChanged(_ project: ProjectInfo?) {
+        let vorher = letztesProjekt
+        letztesProjekt = project?.path
         if let project {
-            recents.note(project.path, name: project.name)
+            if entwuerfe.enthaelt(project.path) {
+                entwuerfe.merken(project.path)  // Inhalt beim Anlegen, um später „leer“ zu erkennen
+            } else {
+                recents.note(project.path, name: project.name)
+                model.oberflaechenActions?.zeigeUebersicht(false)
+            }
             showProjectWindow()
-        } else {
-            showWelcome()
-            dismissWindowAction?(id: WindowID.project)
+        }
+        // Der Entwurf von eben bleibt leer: weg damit, sobald der Kernel das andere Projekt offen hat
+        if let v = vorher, entwuerfe.enthaelt(v),
+           project.map({ RecentProjects.normalizedPath($0.path) }) != RecentProjects.normalizedPath(v)
+        {
+            let ablage = entwuerfe
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { ablage.loeschenWennLeer(v) }
         }
     }
 
     // MARK: Projekte
 
-    /// Formular „Neues Projekt“ zeigen (im Willkommensfenster).
+    /// Bisheriger Einstieg „Neues Projekt …“: seit V2-3 ohne Formular ein leeres Projekt.
     func requestNewProject() {
-        newProjectRequested = true
-        showWelcome()
+        neuesProjekt()
     }
 
     /// Ordner für ein neues Projekt: unter `AppInfo.projectsDirectory`, ohne Namenskollision.

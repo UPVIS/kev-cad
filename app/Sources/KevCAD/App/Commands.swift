@@ -32,10 +32,13 @@ struct KevCADCommands: Commands {
     var body: some Commands {
         // Ablage
         CommandGroup(replacing: .newItem) {
-            Button("Neues Projekt …") { session.requestNewProject() }
+            Button("Neues Projekt") { session.neuesProjekt() }  // V2-3: ohne Formular
                 .keyboardShortcut("n")
             Button("Öffnen …") { session.presentOpenPanel() }
                 .keyboardShortcut("o")
+            Button(session.istEntwurf ? "Sichern unter …" : "Umbenennen …") { session.umbenennenAnfrage += 1 }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!hasProject)
             Menu("Zuletzt geöffnet") {
                 ForEach(recents.items) { item in
                     Button(item.isMissing ? "\(item.name) (fehlt)" : item.name) { session.openRecent(item) }
@@ -147,7 +150,12 @@ struct KevCADCommands: Commands {
                 ))
                 .keyboardShortcut(.tab, modifiers: [])
                 Button("Abbrechen") {
-                    if model.simulation.werkzeug != .keins, let sim = model.actions as? SimulationActions {
+                    if model.oberflaeche.uebersicht {  // V2-3: Startübersicht wegschieben
+                        model.oberflaechenActions?.zeigeUebersicht(false)
+                    } else if model.oberflaeche.spricht {  // V2-3: Sprechen verwerfen
+                        model.oberflaechenActions?.oberflaeche(.sprechText(nil))
+                        model.oberflaechenActions?.setzeSprechen(false)
+                    } else if model.simulation.werkzeug != .keins, let sim = model.actions as? SimulationActions {
                         sim.setSimulationWerkzeug(.keins)  // Simulation: Werkzeug (Kraft, Lager, Schutz) beenden
                     } else if model.measureMode {
                         model.actions?.setMeasureMode(false)

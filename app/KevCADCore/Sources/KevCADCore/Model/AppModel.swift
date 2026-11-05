@@ -224,6 +224,9 @@ public final class AppModel: ObservableObject {
     /// Simulation (additiv, PLAN-SIMULATION.md): Lastfälle, Kräfte und Lager aus der App, Aufträge, Ergebnistabelle
     /// (Aktionen: `actions as? SimulationActions`).
     public let simulation = SimulationStore()
+    /// V2-3 (additiv, OBERFLAECHE.md): Modus, Kacheln, Startübersicht, Sprechen, Fenster am Rand (Aktionen:
+    /// `oberflaechenActions`).
+    public let oberflaeche = OberflaechenStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?
