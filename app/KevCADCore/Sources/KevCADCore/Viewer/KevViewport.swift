@@ -10,28 +10,36 @@ public struct KevViewport: View {
     /// Phase 5: Kameras (Rahmen beim Blick durch eine Kamera)
     private let cameras: CameraStore
     private let onCameraResize: (CGSize) -> Void
+    /// V2: Hinweisleiste, Kreismenüs, Tastenübersicht, Meldungen (beobachten selbst, was sie brauchen)
+    private let model: AppModel
 
     public init(controller: AppController) {
         // Nur der Viewport-Zustand wird beobachtet, nicht AppModel (sonst baut jede Protokollzeile die Ansicht neu)
         self._coordinator = ObservedObject(wrappedValue: controller.viewport)
         self.cameras = controller.model.cameras
+        self.model = controller.model
         self.onCameraResize = { [weak controller] size in controller?.cameraViewportResized(size) }
     }
 
     public var body: some View {
         // Hinweise (Messmodus usw.) zeichnet die Oberfläche; `coordinator.hint` liefert den Schritt dafür.
-        ZStack(alignment: .top) {
-            MetalViewportView(controller: coordinator.controller, bodies: $coordinator.bodies)
-                .background(MTKViewProbe { [weak c = coordinator] view in c?.attach(view) })
-            // Maus und Trackpad wie in Blender (BlenderNavigation.swift); das Paket bekommt keine Mausereignisse mehr
-            NavigationInputLayer(coordinator: coordinator)
-            OverlayCanvas(coordinator: coordinator, viewport: coordinator.controller)
-                .allowsHitTesting(false)
-            CameraFrameOverlay(store: cameras, onResize: onCameraResize)
-            AxisGizmo(viewport: coordinator.controller, coordinator: coordinator)
-                .padding(.top, 10)
-                .padding(.trailing, 12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                MetalViewportView(controller: coordinator.controller, bodies: $coordinator.bodies)
+                    .background(MTKViewProbe { [weak c = coordinator] view in c?.attach(view) })
+                // Maus und Trackpad wie in Blender (BlenderNavigation.swift); das Paket bekommt keine Mausereignisse mehr
+                NavigationInputLayer(coordinator: coordinator)
+                OverlayCanvas(coordinator: coordinator, viewport: coordinator.controller)
+                    .allowsHitTesting(false)
+                CameraFrameOverlay(store: cameras, onResize: onCameraResize)
+                AxisGizmo(viewport: coordinator.controller, coordinator: coordinator)
+                    .padding(.top, 10)
+                    .padding(.trailing, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                // Auf die Größe des Viewports begrenzt: nichts darin darf ihn breiter machen
+                ViewerOberflaeche(viewer: model.viewer, model: model, coordinator: coordinator, groesse: geo.size)
+                    .frame(width: geo.size.width, height: geo.size.height)
+            }
         }
     }
 }

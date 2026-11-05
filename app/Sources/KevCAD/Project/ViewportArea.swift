@@ -152,7 +152,8 @@ struct ViewportArea: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .padding(.bottom, 14)
+        // Viewer V2: unten liegt die Hinweisleiste des Viewports (KevCADCore), die Kapseln stehen darüber
+        .padding(.bottom, session.controller != nil ? 46 : 14)
         .padding(.horizontal, 16)
     }
 
