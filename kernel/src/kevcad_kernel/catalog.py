@@ -14,6 +14,7 @@ Die Klasse ist threadsicher und lädt neu, sobald sich eine der Dateien ändert 
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import difflib
 import json
@@ -22,6 +23,7 @@ import os
 import re
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -716,6 +718,7 @@ class Catalog:
         self._einsatz: dict[tuple[str, str], dict[str, Any]] = {}  # Statik: (Größe, Material) → Auszugkraft
         self.warnings: list[str] = []
         self.loaded_at = 0.0
+        self._halten = 0  # 1: Stand festgehalten (halten), refresh liest die Dateien erst mit force
 
     # -- Konfiguration -------------------------------------------------------------------------------------------------
 
@@ -733,7 +736,9 @@ class Catalog:
                 self._own = Path(own)
             if project != "unchanged":
                 self._project = Path(project) if project else None
-            # Die Signatur enthält die Ordner: der nächste Zugriff lädt bei Bedarf neu
+            # Die Signatur enthält die Ordner: der nächste Zugriff lädt bei Bedarf neu (ein festgehaltener Stand gilt
+            # mit neuen Ordnern nicht mehr)
+            self._halten = 0
 
     def set_project(self, project: str | Path | None) -> None:
         self.configure(project=project)
@@ -772,8 +777,11 @@ class Catalog:
         return (str(self._builtin), str(self._own), str(self._project), tuple(sig))
 
     def refresh(self, force: bool = False) -> bool:
-        """Neu laden, wenn sich Dateien geändert haben. True, wenn neu geladen wurde."""
+        """Neu laden, wenn sich Dateien geändert haben. True, wenn neu geladen wurde. Ist der Stand festgehalten
+        (``festhalten``), liest erst ``force`` die Dateien wieder."""
         with self._lock:
+            if not force and self._halten and self._sig is not None:
+                return False
             files = self._files()
             sig = self._signature(files)
             if not force and sig == self._sig:
@@ -781,6 +789,29 @@ class Catalog:
             self._load(files)
             self._sig = sig
             return True
+
+    def halten(self) -> None:
+        """Einmal prüfen, ob sich Dateien geändert haben, und diesen Stand behalten, bis ``loslassen`` kommt: Zugriffe
+        fragen dann keine Ordner und Dateien mehr ab (im Rechenprozess vorher gut 300-mal je Lauf, rund 15 % der
+        Laufzeit). Der Rechenprozess hält so je Lauf einen Stand; Änderungen am Katalog wirken beim nächsten Lauf.
+        Schreiben (``save``, ``delete``) lädt weiter sofort neu."""
+        with self._lock:
+            self._halten = 0
+            self.refresh()
+            self._halten = 1
+
+    def loslassen(self) -> None:
+        with self._lock:
+            self._halten = 0
+
+    @contextlib.contextmanager
+    def festhalten(self) -> Iterator[None]:
+        """``halten`` für die Dauer eines Blocks."""
+        self.halten()
+        try:
+            yield
+        finally:
+            self.loslassen()
 
     def _load(self, files: list[tuple[str, Path]]) -> None:
         materials: dict[str, dict[str, Any]] = {}

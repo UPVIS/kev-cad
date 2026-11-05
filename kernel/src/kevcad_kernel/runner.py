@@ -313,13 +313,25 @@ _LIB_DIRS = tuple(
 _OWN_DIRS = (os.path.realpath(os.path.dirname(kevcad.__file__)), os.path.realpath(os.path.dirname(__file__)))
 
 
+_USER_FILE: dict[str, bool] = {}  # absoluter Dateiname → _is_user_file (realpath kostet je Aufruf viele lstat)
+
+
 def _is_user_file(filename: str) -> bool:
     if not filename or filename.startswith("<"):
         return False
+    known = _USER_FILE.get(filename)
+    if known is not None:
+        return known
     real = os.path.realpath(filename)
     if any(real.startswith(d + os.sep) for d in _OWN_DIRS):
-        return False
-    return not any(real.startswith(d + os.sep) or real == d for d in _LIB_DIRS)
+        eigen = False
+    else:
+        eigen = not any(real.startswith(d + os.sep) or real == d for d in _LIB_DIRS)
+    if os.path.isabs(filename):  # relative Namen hängen vom Arbeitsordner ab (der Lauf wechselt ihn)
+        if len(_USER_FILE) > 50_000:
+            _USER_FILE.clear()
+        _USER_FILE[filename] = eigen
+    return eigen
 
 
 def user_traceback(exc: BaseException, model_path: str) -> tuple[int | None, str]:
@@ -500,13 +512,15 @@ class Runner:
         self._pruef_lauf = None  # pruefung.lauf.PruefLauf mit Zwischenspeicher über Läufe hinweg
 
     def _catalog(self, msg: dict[str, Any], project: str | None) -> Catalog:
-        """Katalog mit den Ordnern aus der Laufzeit (Nachricht ``catalog``) und dem Projekt des Laufs."""
+        """Katalog mit den Ordnern aus der Laufzeit (Nachricht ``catalog``) und dem Projekt des Laufs. Einmal je Lauf
+        (und je ``execute``) gelesen und bis zum nächsten festgehalten (``Catalog.halten``): die Prüfung nach dem Lauf
+        und das Fertigrechnen im Hintergrund sehen denselben Stand wie model.py."""
         dirs = msg.get("catalog") or {}
         if self.catalog is None:
             self.catalog = Catalog(builtin=dirs.get("builtin"), own=dirs.get("own"), project=project)
         else:
             self.catalog.configure(builtin=dirs.get("builtin"), own=dirs.get("own"), project=project)
-        self.catalog.refresh()
+        self.catalog.halten()
         return self.catalog
 
     # -- Hooks ---------------------------------------------------------------------------------------------------------
