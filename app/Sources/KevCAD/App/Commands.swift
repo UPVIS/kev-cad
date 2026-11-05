@@ -42,10 +42,13 @@ struct KevCADCommands: Commands {
     var body: some Commands {
         // Ablage
         CommandGroup(replacing: .newItem) {
-            Button("Neues Projekt …") { session.requestNewProject() }
+            Button("Neues Projekt") { session.neuesProjekt() }  // V2-3: ohne Formular
                 .keyboardShortcut("n")
             Button("Öffnen …") { session.presentOpenPanel() }
                 .keyboardShortcut("o")
+            Button(session.istEntwurf ? "Sichern unter …" : "Umbenennen …") { session.umbenennenAnfrage += 1 }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!hasProject)
             Menu("Zuletzt geöffnet") {
                 ForEach(recents.items) { item in
                     Button(item.isMissing ? "\(item.name) (fehlt)" : item.name) { session.openRecent(item) }
@@ -171,7 +174,12 @@ struct KevCADCommands: Commands {
                 ))
                 .tastenkuerzel(.elementModus)
                 Button("Abbrechen") {
-                    if let viewer {
+                    if model.oberflaeche.uebersicht {  // V2-3: Startübersicht wegschieben
+                        model.oberflaechenActions?.zeigeUebersicht(false)
+                    } else if model.oberflaeche.spricht {  // V2-3: Sprechen verwerfen
+                        model.oberflaechenActions?.oberflaeche(.sprechText(nil))
+                        model.oberflaechenActions?.setzeSprechen(false)
+                    } else if let viewer {
                         viewer.ausfuehren(.abbrechen)  // Menü, Übersicht, Werkzeug, Messen, Auswahl
                     } else if model.measureMode {
                         model.actions?.setMeasureMode(false)
@@ -248,6 +256,8 @@ struct KevCADCommands: Commands {
             Toggle("Zeitlupe", isOn: Binding(get: { model.slowMotion }, set: { model.actions?.setSlowMotion($0) }))
                 .disabled(!hasProject)
             Divider()
+            ModellUntermenues(session: session, model: model)  // V2-3: statt eigener Menüs in der Menüleiste
+            Divider()
             Button("Kernel neu starten") { model.actions?.restartKernel() }
                 .keyboardShortcut("k", modifiers: [.command, .option])
         }
@@ -262,7 +272,6 @@ struct KevCADCommands: Commands {
                 set: { if $0 != model.viewer.hinweisleiste { viewer?.ausfuehren(.hinweisleiste) } }))
                 .tastenkuerzel(.hinweisleiste)
             Divider()
-            Button("Befehl für Claude Code kopieren") { session.copyClaudeCommand() }
             Button("Protokoll zeigen") { session.showLog() }
         }
     }
@@ -281,7 +290,7 @@ struct DemoCommands: Commands {
                 Button("Agent verbinden oder trennen") { demo.toggleAgent() }
                 Button("Kernel-Absturz simulieren") { demo.simulateKernelCrash() }
                 Divider()
-                Button("Projekt schließen (zum Willkommensfenster)") { demo.closeProject() }
+                Button("Projekt schließen") { demo.closeProject() }
             }
         }
     }

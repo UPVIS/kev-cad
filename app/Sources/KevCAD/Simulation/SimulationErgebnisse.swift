@@ -268,17 +268,17 @@ struct SimulationToolbar: ToolbarContent {
     }
 }
 
-/// Menü „Simulation“ (⌘4 wechselt in den Bereich, siehe Darstellung).
-struct SimulationCommands: Commands {
+/// Untermenü „Simulation“ im Menü „Modell“ (V2-3).
+struct SimulationMenue: View {
     @ObservedObject var model: AppModel
     @FocusedObject private var window: ProjectWindowState?
 
     private var actions: SimulationActions? { model.simulationActions }
     private var bereit: Bool { window != nil && model.project != nil && actions != nil }
 
-    var body: some Commands {
-        CommandMenu("Simulation") {
-            Button("Bereich Simulation") { window?.zeige(.simulation) }
+    var body: some View {
+        Group {
+            Button("Kachel Simulation") { window?.zeige(.simulation) }
                 .disabled(window == nil || model.project == nil)
             Divider()
             Button("Neuer Lastfall") {

@@ -29,7 +29,10 @@ struct DokumenteSeitenleiste: View {
             }
         }
         .listStyle(.sidebar)
-        .searchable(text: $suche, placement: .sidebar, prompt: "Blätter filtern")
+        .safeAreaInset(edge: .top, spacing: 0) {  // V2-3: nicht in die Fensterleiste
+            SuchFeld(text: $suche, prompt: "Blätter filtern")
+                .padding(GA.s)
+        }
         .contextMenu(forSelectionType: String.self) { zeilen in
             kontextmenue(zeilen)
         } primaryAction: { zeilen in

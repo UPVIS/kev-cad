@@ -6,6 +6,9 @@ struct ViewportArea: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
     @ObservedObject var state: ProjectWindowState
+    /// V2-3: Das Hauptfenster zeigt Agent und leeres Projekt selbst (Agentenspur, „Was soll entstehen?“).
+    var zeigeAgent = true
+    var zeigeLeer = true
 
     var body: some View {
         viewport
@@ -143,7 +146,7 @@ struct ViewportArea: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if model.agentConnected, let activity = model.agentActivity {
+            if zeigeAgent, model.agentConnected, let activity = model.agentActivity {
                 Pill(symbol: "sparkle", tint: .accentColor) {
                     Text("Agent \(activity)")
                 } trailing: {
@@ -161,7 +164,7 @@ struct ViewportArea: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if model.parts.isEmpty && !model.isRunning {
+        if zeigeLeer && model.parts.isEmpty && !model.isRunning {
             VStack(spacing: 10) {
                 Image(systemName: "cube.transparent")
                     .font(.system(size: 44, weight: .light))

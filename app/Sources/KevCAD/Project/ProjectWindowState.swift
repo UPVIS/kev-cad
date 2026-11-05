@@ -38,7 +38,12 @@ final class ProjectWindowState: ObservableObject {
 
     /// Phase 6: 3D-Bereich oder Bereich „Dokumente“ (Zeichnungen, Bauplan, Berichte). Im Bereich Dokumente sind die
     /// einbuchstabigen Kürzel des 3D-Bereichs aus (siehe KevCADCommands).
-    @Published var bereich: ProjektBereich = .modell
+    @Published var bereich: ProjektBereich = .modell {
+        didSet { if bereich != oldValue { beimBereichswechsel?(bereich) } }
+    }
+    /// V2-3: Das Hauptfenster zeigt Bereiche als Kacheln. Wer `bereich` setzt (Menüs, Sprünge aus Stückliste und
+    /// Teilebaum, Selbsttests), holt damit die passende Kachel nach vorn.
+    var beimBereichswechsel: ((ProjektBereich) -> Void)?
     /// Zustand des Bereichs Dokumente in diesem Fenster (für Teilebaum: „Zeichnung anlegen“).
     weak var dokumenteZustand: DokumenteZustand?
 
