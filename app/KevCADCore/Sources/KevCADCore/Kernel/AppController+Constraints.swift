@@ -62,8 +62,11 @@ extension AppController: ConstraintActions {
     }
 
     /// Symbole der Bedingungen (nur sichtbare Teile) und Befunde ohne eigene Bedingung (Bewegungsraum, Befestigung).
+    /// Ohne den Schalter „Bedingungen am Teil“ nur, was Arbeit macht: verletzte Bedingungen und Fehler. Beim Durchspielen
+    /// des Bauplans gar nichts, weil die Symbole auch zu noch nicht montierten Teilen gehören.
     func constraintOverlay() -> [OverlayPrimitive] {
-        guard model.showConstraintSymbols, let report = model.constraints else { return [] }
+        guard let report = model.constraints, model.bauplan.durchspielen == nil else { return [] }
+        let alle = model.showConstraintSymbols
         let known = Set(scene.order)
         func sichtbar(_ teile: [String]) -> Bool {
             let vorhanden = teile.filter { known.contains($0) }
@@ -74,6 +77,7 @@ extension AppController: ConstraintActions {
         // verletzte zuerst, damit sie bei vielen Bedingungen sicher zu sehen sind
         let sorted = report.items.sorted { ($0.stand == .verletzt ? 0 : 1) < ($1.stand == .verletzt ? 0 : 1) }
         for item in sorted {
+            guard alle || item.stand == .verletzt else { continue }
             guard count < Self.maxConstraintSymbols, let p = item.punkte.first, sichtbar(item.teile) else { continue }
             let color = Self.constraintColor(item)
             if item.stand == .verletzt, item.punkte.count >= 2, simd_distance(item.punkte[0], item.punkte[1]) > 1e-3 {
@@ -83,7 +87,7 @@ extension AppController: ConstraintActions {
                               filled: item.stand == .verletzt))
             count += 1
         }
-        for f in report.findings where f.bedingung == nil && f.schwere != .hinweis {
+        for f in report.findings where f.bedingung == nil && (alle ? f.schwere != .hinweis : f.schwere == .fehler) {
             guard count < Self.maxConstraintSymbols, let p = f.ort, sichtbar(f.teile) else { continue }
             out.append(.badge(point: p, text: "!", color: f.schwere == .fehler ? Self.constraintError
                                 : Self.constraintWarning, filled: true))

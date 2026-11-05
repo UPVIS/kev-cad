@@ -17,7 +17,8 @@ enum BedingungenSchalter {
         setzen(model, !model.showConstraintSymbols)
     }
 
-    /// Beim Öffnen des Projektfensters die gemerkte Wahl übernehmen (ohne gemerkte Wahl bleiben sie sichtbar).
+    /// Beim Öffnen des Projektfensters die gemerkte Wahl übernehmen (ohne gemerkte Wahl stehen nur verletzte
+    /// Bedingungen und Fehler am Teil).
     static func wiederherstellen(_ model: AppModel) {
         guard let an = UserDefaults.standard.object(forKey: schluessel) as? Bool, an != model.showConstraintSymbols
         else { return }
