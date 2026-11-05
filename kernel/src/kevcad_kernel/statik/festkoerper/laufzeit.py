@@ -590,5 +590,5 @@ class FestkoerperRuntime:
                 hinweise.append(f"Im Ablauf von {e['name']!r} trifft keine Kontaktkraft"
                                 + (f" das Teil {teil!r}" if teil else " ein einzelnes Teil"))
         if not any(isinstance(e.get("ablauf"), dict) for e in voll.get("szenarien") or []):
-            hinweise.append("Kein Ablauf gerechnet: erst dynamik(…) aufrufen")
+            hinweise.append("Kein Ablauf gerechnet: erst statik(aktion='dynamik', …) aufrufen")
         return lasten, hinweise

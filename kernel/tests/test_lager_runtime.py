@@ -243,15 +243,16 @@ def test_mcp_tools_against_runtime(p2):
     assert "vierkantrohr-en10219-40x40x3" in search and "8,00 €/m" in search and "frei" in search
     assert "Querschnitt 253,8 mm²" in texts(r["get"])[0] and "1,99 kg/m (Tabelle)" in texts(r["get"])[0]
     run = texts(r["run"])[0]
-    assert r["run"].is_error and run.startswith("Inventar-Regel: 1 Teil ist nicht aus dem Inventar: Hilfsklotz")
-    assert "Stückliste: 5 Positionen, 17 Teile" in run
+    assert r["run"].is_error and run.splitlines()[1].startswith(
+        "Inventar-Regel: 1 Teil ist nicht aus dem Inventar: Hilfsklotz")
+    assert "Stückliste: 5 Positionen" in run
     bom = texts(r["bom"])[0]
     assert "Zuschnitt (Sägeschnitt 3 mm):" in bom
     assert "kaufen Stange 1 (6.000 mm): 842 + 842 + 842 + 842 + 800 + 800 + 600; neuer Rest" in bom
     assert texts(r["csv"])[0].startswith("Stückliste;")
     define = texts(r["define"])[0]
     assert not r["define"].is_error and "als Vorschlag" in define and "wartet auf Kevins Freigabe" in define
-    assert "freigabe_anfragen" in define
+    assert "lager(aktion='freigabe', ids=[" in define
     assert "petg" in texts(r["mats"])[0] and "ja" in texts(r["mats"])[0]
     assert not r["delete"].is_error
     assert r["export"].is_error and "Export verweigert" in texts(r["export"])[0]

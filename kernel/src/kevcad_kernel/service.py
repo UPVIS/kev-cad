@@ -24,6 +24,7 @@ class PartSummary(TypedDict, total=False):
     edges: int
     triangles: int
     visible: bool
+    key: str  # V2-2 (additiv): Formschlüssel aus dem Rechenprozess; run erkennt daran geänderte Teile
 
 
 class RunError(TypedDict, total=False):
@@ -123,7 +124,12 @@ class KernelService(Protocol):
 
     # Ansicht (geht über die App, siehe VIEW_CMD in PROTOCOL.md)
     def view_command(self, cmd: str, args: dict[str, Any], timeout_s: float = 10) -> dict[str, Any]:
-        """{"ok", "message"?}; {"ok": False, "error": "App nicht verbunden"} wenn keine App da ist."""
+        """{"ok", "message"?}; {"ok": False, "error": "App nicht verbunden"} wenn keine App da ist.
+
+        V2-5 (live-masse-1): ``annotate`` und ``highlight`` nehmen ``dauer_s`` (Sekunden, dann blendet die App das
+        Maß bzw. die Hervorhebung aus), ``annotate`` zusätzlich ``art`` (``mass`` | ``param`` | ``hinweis``),
+        ``highlight`` eine ``id``. Ein ``annotate`` mit ``dauer_s`` bekommt eine ``id``, falls keine da ist; älteren
+        Apps schickt der Dienst danach selbst ``clear_annotations``."""
 
     def screenshot(self, width: int = 1280, height: int = 800, source: str = "current", view: str | None = None,
                    hide_overlays: bool = False, timeout_s: float = 15) -> Screenshot:
@@ -570,6 +576,32 @@ class KernelService(Protocol):
         """Claude-Sitzungen, die Kev CAD bedienen (MIRROR.md, „Sitzungen“): je ``session_id``, ``aktiv``, ``seit``,
         ``taetigkeit``, optional ``zuletzt``; geht an die App im Rahmen AGENT als ``sessions``. Optional: der
         MCP-Server ruft es nur, wenn der Dienst es anbietet."""
+
+    # V2-5 Live (PROTOCOL.md, Abschnitt „V2-5 Live“). Optional: die MCP-Seite ruft sie nur, wenn der Dienst sie
+    # anbietet (getattr), damit Attrappen ohne sie weiter funktionieren.
+    def lagebild(self, warten_s: float = 0.2) -> dict[str, Any]:
+        """Was Kevin gerade sieht. Fragt die App (LAGE_REQ, Fähigkeit ``lage-1``) und wartet höchstens ``warten_s``
+        (Vorgabe 0,2 s, höchstens 5 s); ohne Antwort liefert er, was der Kernel selbst weiß. Immer ``ok: True``.
+
+        Von der App (``quelle: "app"``): ``antwort_ms``, ``zeit``, ``ms``, ``kamera`` {``position``, ``ziel``,
+        ``richtung``, ``oben``, ``abstand``, ``projektion``, ``fov``, ``ortho_hoehe``, ``ansicht``, ``durch``},
+        ``viewport``, ``sichtbar`` (Teile im Bild), ``verborgen``, ``isoliert``, ``auswahl`` {``run``, ``refs``},
+        ``maus`` ({``teil``, ``ref``, ``punkt``, ``normale``, ``bild``} oder None), ``darstellung``, ``schnitt``,
+        ``explosion``, ``animation``.
+        Vom Kernel (``quelle: "kernel"``): ``grund`` (warum nicht von der App), ``auswahl`` (aus SELECTION),
+        ``verborgen`` (nur, was der Agent ausgeblendet hat; ``verborgen_quelle``), ``teile`` (Anzahl), ``kamera`` und
+        ``kamera_alter_s`` aus dem letzten LAGE der App (auch einem verspäteten) oder None, ``sichtbar`` und ``maus``
+        None."""
+
+    def agent_schritt(self, ereignis: dict[str, Any]) -> None:
+        """Agentenspur: ein Ereignis zu einem Schritt (``id`` Pflicht). Ein neuer Schritt braucht ``werkzeug``;
+        weitere Felder ``text`` (die erste Beschreibung bleibt), ``absicht``, ``sitzung``, ``beginn``, ``ende``,
+        ``dauer_ms``, ``stand`` (``laeuft`` | ``ok`` | ``fehler``), ``fehler``, ``phasen`` (werden ergänzt). Der Dienst
+        hält die letzten 50 Schritte und schickt jeden neuen Stand als AGENT_SCHRITT an Apps mit ``spur-1``. Die
+        MCP-Hülle (tracking.py) ruft es für jeden Werkzeugaufruf; es blockiert nie lange."""
+
+    def agentenspur(self) -> list[dict[str, Any]]:
+        """Die letzten 50 Schritte der Agentenspur, älteste zuerst (Felder wie ``AGENT_SCHRITT.schritt``)."""
 
     def close(self) -> None: ...
 

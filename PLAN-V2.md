@@ -26,7 +26,7 @@ Drei Maßstäbe für jede Entscheidung:
 | V3 | Start ohne Dialog direkt in ein leeres Projekt. Alte Projekte über ein Overlay, das man wegschiebt. | Kevin |
 | V4 | Grundansicht: nur Gruppen und Objekte. Stückliste, Zuschnitt, Druck, Zeichnungen und Animation erscheinen auf Zuruf als Kacheln. | Kevin |
 | V5 | Zwei Modi: **Fokus** (ultraminimal, Fenster schmal am Bildschirmrand neben dem Chat) und **Werkstatt** (mehr Informationen, von Hand nachjustieren). | Kevin |
-| V6 | Eigene Oberfläche mit eigenen Gestaltungswerten und Bausteinen statt macOS-Standardbausteinen. Tastatur, Zugänglichkeit und Bildtakt bleiben auf dem Niveau einer guten Mac-App. Die Richtung wählt Kevin aus drei Entwürfen. | Kevin |
+| V6 | Eigene Oberfläche mit eigenen Gestaltungswerten und Bausteinen statt macOS-Standardbausteinen. Tastatur, Zugänglichkeit und Bildtakt bleiben auf dem Niveau einer guten Mac-App. Gewählt ist **Graphit** (`docs/v2-entwurf/`), dazu aus Sucher der rote Rahmen um den Viewer, solange Kevin spricht, und nummerierte Kacheln; Zeichnungsblätter im Stil Reißbrett. | Kevin, 05.11.2026: „Wir folgen hier mal deinen Empfehlungen“ |
 | V7 | Keine Manipulatoren. Änderungen macht der Agent, in der Werkstatt auch über Felder. Umbenennen bleibt. | Kevin |
 | V8 | Steuerung wie Blender: Tastenbelegung, Hinweisleiste, Isolieren mit `/`. | Kevin |
 | V9 | Live statt hingeworfen: Teile erscheinen, sobald sie fertig sind. Die Schritte des Agenten laufen knapp mit (Agentenspur), Maße und Befunde zeigen sich kurz am Teil. | Kevin |
@@ -57,6 +57,10 @@ Jeder Lauf schickt alle Teile neu an die App:
 - 1,53 MB Animation
 - bei einer neuen Version zusätzlich 5,9 MB Versionsbild
 
+Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändertem Lauf; dazu kommen große JSON-Köpfe
+(Prüfung 404 KB, Statik bis 198 KB, Bedingungen 86 KB). Mit `delta-1` (V2-5) 44 KB, Einzelheiten in
+`kernel/tools/MESSUNG.md`.
+
 ## 4. Budgets
 
 | Was | Ziel | Stand |
@@ -64,11 +68,11 @@ Jeder Lauf schickt alle Teile neu an die App:
 | Maßänderung: erste geänderte Teile im Viewer | unter 1 s | 0,2 s für das erste, 1,7 s für das letzte Teil |
 | Maßänderung: `run()` zurück | unter 2,5 s | 5,1 s (2,2 s mit `warten_s=0`) |
 | unveränderter Lauf: `run()` zurück | unter 1,5 s | 2,3 s |
-| Antwort von `run`: unverändert / kleine Änderung / erster Lauf mit 134 Teilen | 1.500 / 4.000 / 8.000 Zeichen | 116.200 Zeichen |
-| Server-Anweisungen | höchstens 6.000 Zeichen | 29.617 Zeichen |
-| Übertragung je unverändertem Lauf | unter 50 KB | rund 10 MB |
+| Antwort von `run`: unverändert / kleine Änderung / erster Lauf mit 134 Teilen | 1.500 / 4.000 / 8.000 Zeichen | 490 / 2.389 / 1.449 Zeichen |
+| Server-Anweisungen | höchstens 6.000 Zeichen | rund 5.000 Zeichen |
+| Übertragung je unverändertem Lauf | unter 50 KB | 11,3 MB; mit `delta-1` 44 KB (Kernel fertig, App V2-5b offen) |
 | App-Start bis bedienbares leeres Projekt | unter 1 s | offen |
-| Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | offen, V2-4 misst |
+| Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | am 60-Hz-Monitor 58 bis 60 Bilder/s, Technisch 41 (Hänger auf dem Hauptfaden); ohne Bildschirmtakt 383 bis 469 Bilder/s ohne SSAO, 153 bis 216 mit; 120 Hz noch nicht gemessen |
 | Sprach-Feedback: Wort erscheint als Text | unter 0,3 s | offen |
 | Feedback-Paket beim Agenten nach Ende des Sprechens | unter 1 s | offen |
 
@@ -77,15 +81,18 @@ Jeder Lauf schickt alle Teile neu an die App:
 | Paket | Inhalt | Strang | hängt ab von | Stand |
 |---|---|---|---|---|
 | V2-1 Tempo im Kernel | Rechengedächtnis je Operation (Booleans, Aufräumen, Volumen, Hüllquader, Abstände), Leerlauf entfernt, `run` wartet höchstens `warten_s` auf die Prüfung, Nachlauf aus dem Auftragsfaden, Zeiten je Phase | Kernel | – | fertig, auf `v2` (`31618fd`) |
-| V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | läuft |
-| V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Kevins Wahl aus dem Gestaltungsentwurf | Entwurf läuft |
-| V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | läuft |
-| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | als Nächstes: Protokoll entwerfen |
+| V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | fertig, auf `v2` (`541e1fc`), Zahlen in `kernel/tools/MESSUNG-V2-2.md` |
+| V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | läuft |
+| V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | fertig, auf `v2` (`d255717`); offen: Hänger auf dem Hauptfaden, Messung an 120 Hz, echte Eingaben von Kevin prüfen |
+| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) fertig, auf `v2` (`0388a41`); V2-5b (App-Seite) als Nächstes |
 | V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | Erkennung kann vorher starten |
 | V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | später |
 | V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | zuletzt |
 
 ### V2-5 Live (Entwurf, das Paket legt es fest)
+
+Festgelegt in PROTOCOL.md, Abschnitt „V2-5 Live“ (V2-5a); Befunde am Teil und die Spiegelung aufs iPhone sind dort noch
+nicht enthalten.
 
 - **Delta-Übertragung:** Der Kernel kennt je Teil den Inhaltsschlüssel (Tessellierungs-Schlüssel) und die Attribute, die
   er zuletzt geschickt hat. Unveränderte Teile schickt er nicht neu. Am Laufende nennt er die Liste der Teile, die es
@@ -122,9 +129,11 @@ und Bezug als Anweisung zum Agenten.
 ## 6. Parallel arbeiten
 
 - **Python** (Kernel, MCP) läuft parallel, solange der Speicher reicht (16 GB, andere Sitzungen laufen mit).
-- **Swift-Bauten** laufen auf dem MacBook nacheinander unter der gemeinsamen Sperre `/tmp/vb-xcodebuild.lock`, höchstens
-  zwei Bau-Agenten gleichzeitig. Der Mac mini ist für Kev CAD seit dem 22.10.2026 gesperrt (`~/.kevcad-nur-macbook`).
-  Ob er wieder dazukommt, entscheidet Kevin.
+- **Swift-Bauten** laufen seit 05.11.2026 wieder auf Mac mini und MacBook (Kevin: „Mini und MacBook können gerne beide
+  bauen“). Der Mini hat zwei Bauplätze; sind beide belegt, baut `tools/fern.sh testbau` hier unter der gemeinsamen
+  Sperre `/tmp/vb-xcodebuild.lock`. Bis zu drei Bau-Agenten gleichzeitig.
+- **Kernel-Tests** voll nur über `tools/fern.sh tests` (Testplatz auf dem Mini) oder lokal einzeln: Einige Tests nutzen
+  feste Ports (etwa 40146, 47999), zwei volle Läufe gleichzeitig auf einem Rechner stören sich.
 - **Verträge zuerst:** Pakete, die Kernel und App zugleich betreffen (V2-5, V2-6), beginnen mit einem Protokollentwurf
   in `PROTOCOL.md` samt Testdateien. Danach arbeitet je ein Agent an jeder Seite.
 - **Zusammenführen:** Jedes Paket hat einen eigenen Zweig. Der Hauptagent prüft es und führt es auf `v2` zusammen.
@@ -154,6 +163,7 @@ und Bezug als Anweisung zum Agenten.
 
 ## 8. Fragen an Kevin
 
-1. Darf Kev CAD wieder auf dem Mac mini bauen? Dann laufen zwei Swift-Pakete gleichzeitig.
-2. Welche Gestaltungsrichtung (nach dem Entwurf)?
-3. Wortlaut mit Signatur über sein Team oder nur Apples Erkennung?
+1. Wortlaut mit Signatur über sein Team oder nur Apples Erkennung?
+
+Entschieden (05.11.2026): Gestaltungsrichtung Graphit mit zwei Teilen aus Sucher (siehe V6); Mac mini und MacBook bauen
+beide (siehe Abschnitt 6).

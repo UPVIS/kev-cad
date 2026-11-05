@@ -86,8 +86,9 @@ class FreigabeAnbindung:
         wanted = [str(i).strip() for i in (ids or []) if str(i).strip()]
         wanted = list(dict.fromkeys(wanted))
         if not wanted:
-            return {"ok": False, "error": "ids fehlt: die ids der Vorschläge angeben (stock_define, material_define, "
-                                          "zukauf_anlegen)"}
+            return {"ok": False, "error": "ids fehlt: die ids der Vorschläge angeben "
+                                          "(lager(aktion='teil_vorschlagen'), lager(aktion='material_vorschlagen'), "
+                                          "lager(aktion='zukauf_anlegen'))"}
         eintraege: list[dict[str, Any]] = []
         schon_frei: list[str] = []
         fehler: list[str] = []

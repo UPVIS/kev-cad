@@ -479,8 +479,8 @@ def test_mcp_werkzeuge():
             return anyio.run(with_client, server.url, lambda c: c.call_tool(name, args or {}))
 
         tools = {t.name: t for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
-        assert {"bauplan", "bauplan_bearbeiten", "bauplan_pruefen"} <= set(tools)
-        assert "workshop" in tools["bauplan"].description and "never invent" in tools["bauplan_bearbeiten"].description
+        assert "bauplan" in tools and "bauplan_bearbeiten" not in tools  # ein Werkzeug mit aktion (V2-2)
+        assert "Step-by-step build instructions" in tools["bauplan"].description
         res = call("bauplan")
         text = texts(res)[0]
         assert res.is_error is True  # Beispiel hat einen Fehler (Werkzeugzugang)

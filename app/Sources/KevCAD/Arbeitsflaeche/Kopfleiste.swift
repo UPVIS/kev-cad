@@ -28,7 +28,7 @@ struct Kopfleiste: View {
                 MeldungsZeile(meldung: meldung)
                     .transition(.opacity)
             }
-            Aktionen(model: model, oberflaeche: oberflaeche, schmal: schmal)
+            Aktionen(model: model, viewer: model.viewer, oberflaeche: oberflaeche, schmal: schmal)
         }
         .padding(.leading, GA.ampel)
         .padding(.trailing, GA.m)
@@ -137,33 +137,33 @@ private struct ProjektMenue: View {
     }
 }
 
-/// Knöpfe rechts oben. Im schmalen Fenster nur Foto, Video und „zurück vom Rand“.
+/// Knöpfe rechts oben. Im schmalen Fenster nur Foto, Video und „zurück vom Rand“. Foto, Video, Messen und Isolieren
+/// sind Befehle des Viewers (V2-4); der Demomodus kennt sie nicht und nimmt die einfachen Aktionen.
 private struct Aktionen: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var viewer: ViewerStore
     @ObservedObject var oberflaeche: OberflaechenStore
     let schmal: Bool
-    @ObservedObject private var platzhalter = ViewerPlatzhalter.shared
 
-    private var nav: NavigationActions? { model.actions as? NavigationActions }
+    private var v: ViewerActions? { model.actions as? ViewerActions }
 
     var body: some View {
         HStack(spacing: GA.s) {
             SymbolKnopf(symbol: "camera", titel: "Bildschirmfoto", taste: "⌥⌘S") {
-                model.actions?.saveScreenshot()
+                if let v { v.ausfuehren(.bildschirmfoto) } else { model.actions?.saveScreenshot() }
             }
             .disabled(model.project == nil)
-            AufnahmeKnopf(laeuft: platzhalter.videoLaeuft) {
-                platzhalter.videoUmschalten(model)
-            }
+            AufnahmeKnopf(laeuft: viewer.aufnahme != .keine) { v?.ausfuehren(.video) }
+                .disabled(model.parts.isEmpty || v == nil)
             if !schmal {
                 SymbolKnopf(symbol: "ruler", titel: "Messen", taste: "M", an: model.measureMode) {
-                    model.toggleMeasureMode()
+                    if let v { v.ausfuehren(.messen) } else { model.toggleMeasureMode() }
                 }
                 .disabled(model.project == nil)
-                SymbolKnopf(symbol: "scope", titel: "Isolieren", taste: "/") {
-                    if let nav { nav.toggleLocalView() } else { model.isolateSelection() }
+                SymbolKnopf(symbol: "scope", titel: "Isolieren", taste: "/", an: viewer.lokaleAnsicht) {
+                    if let v { v.ausfuehren(.isolieren) } else { model.isolateSelection() }
                 }
-                .disabled(model.selection.isEmpty)
+                .disabled(model.selection.isEmpty && !viewer.lokaleAnsicht)
             }
             SymbolKnopf(
                 symbol: oberflaeche.rand == nil ? "rectangle.righthalf.inset.filled" : "macwindow",
@@ -191,20 +191,5 @@ private struct MeldungsZeile: View {
         }
         .frame(maxWidth: 420, alignment: .trailing)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Platzhalter für Funktionen, die der Viewer-Strang V2-4 liefert (Video mit einem Klick). Bis dahin merkt er sich nur
-/// den Zustand und schreibt eine Zeile ins Protokoll.
-@MainActor
-final class ViewerPlatzhalter: ObservableObject {
-    static let shared = ViewerPlatzhalter()
-    @Published private(set) var videoLaeuft = false
-
-    func videoUmschalten(_ model: AppModel) {
-        videoLaeuft.toggle()
-        model.append(LogLine(level: .warning, text: videoLaeuft
-            ? "Video aufnehmen: Platzhalter, die Aufnahme kommt mit V2-4"
-            : "Video beendet (Platzhalter bis V2-4)"))
     }
 }

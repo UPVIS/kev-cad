@@ -85,7 +85,7 @@ def pruef_text(check: dict[str, Any] | None, max_befunde: int = 25, hinweise: bo
         zeilen.append("Einbaubarkeit: Teile so konstruieren, dass sie sich nacheinander einsetzen lassen. Erklärungen "
                       "nur, wo sie stimmen: Zukaufteil montage(\"Gruppe\", baugruppe=True), Clip montage(teil, "
                       "schnappt=True), beim Druck eingelegte Mutter montage(teil, eingedruckt=True); "
-                      "montage_reihenfolge zeigt die Reihenfolge.")
+                      "pruefen(thema='montage') zeigt die Reihenfolge.")
     return "\n".join(zeilen), bool(fehler)
 
 
@@ -105,7 +105,7 @@ def hintergrund_text(check: dict[str, Any]) -> str:
         n = len(offen)
         namen = ", ".join(o.split(" ", 1)[-1].rsplit("/", 1)[-1] for o in offen[:4]) + (" …" if len(offen) > 4 else "")
         zeilen.append(f"Bewegungsraum: {n} {'Gelenk' if n == 1 else 'Gelenke'} noch nicht geprüft (Zeitlimit), wird "
-                      f"im Hintergrund fertig gerechnet; bedingungen() bzw. pruefen() zeigt den Endstand"
+                      f"im Hintergrund fertig gerechnet; pruefen(thema='bedingungen') bzw. pruefen() zeigt den Endstand"
                       + (f" ({namen})" if namen else "") + ". Erst danach fertig melden.")
     elif not statik or check.get("message"):  # Fertigrechnen gescheitert: es kommt nichts mehr nach
         zeilen.append(f"Bewegungsraum nicht vollständig geprüft: "

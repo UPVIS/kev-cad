@@ -45,6 +45,11 @@ export PATH="$ROOT/werkzeuge/xcodegen/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sb
 ulimit -n 10240 2>/dev/null
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 export UV_CACHE_DIR="$ROOT/cache/uv"
+# Xcode-Zwischenspeicher (build.sh): auf dem Mini unter cache/, nicht in Xcodes Vorgabe auf der Systemplatte
+export KEVCAD_CAS_PATH="$ROOT/cache/xcode-cas"
+# UTF-8 wie auf dem MacBook: ohne Spracheinstellung lesen Python-Tests Dateien und Prozessausgaben als ASCII und
+# scheitern an Umlauten (05.11.2026: 9 Kernel-Tests mit UnicodeDecodeError, auf dem MacBook alle grün)
+export LANG="${LANG:-en_US.UTF-8}" LC_ALL="${LC_ALL:-en_US.UTF-8}" PYTHONUTF8=1
 mkdir -p "$QUEUE/bau" "$QUEUE/test" "$TREES" "$RESULTS" "$JOBS" "$SOURCES" "$HOMES" "$RUNNING" "$LOGS"
 
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }

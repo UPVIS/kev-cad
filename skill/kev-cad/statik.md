@@ -2,7 +2,50 @@
 
 Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, und ob sie unnötig schwer ist
 (PLAN-STATIK.md, Strang „Statik Stufe 1“). Das Ergebnis steht im Laufergebnis (eine Zeile „Statik: …“), ausführlich
-über `statik` und im Inspektor der App (Abschnitt „Statik“, Farbverlauf grün → gelb → rot, Verformung als Geist).
+über `statik(aktion="ergebnis")` und im Inspektor der App (Abschnitt „Statik“, Farbverlauf grün → gelb → rot, Verformung als Geist).
+
+
+## Überblick (Kevin, 22.10.2026)
+
+Nach jedem Lauf rechnet Kev CAD Lastszenarien: Eigengewicht, auf Rollen das Bremsen, eine Nutzlast aus einem
+Parameter in kg und Kevins eigene aus model.py (`import kevcad.statik as st`, `st.szenario("…")`,
+`st.last(teil, kg=30)` oder `kraft=(fx, fy, fz)` mit `punkt=`; drückt ein Teil gegen ein anderes, als Kraftpaar mit
+`gegen="Teil"`, sonst kippt oder rutscht das Ganze scheinbar). Rahmen aus Lagerteilen rechnet es als Stabwerk
+(Spannung, Durchbiegung, Knicken), belastete Halter und Druckteile als Kragträger (quer zur Schicht nur ein Teil der
+Festigkeit), dazu Kippen je Richtung, Rutschen und Schraubenlast. Jedes Szenario bekommt eine Ampel gegen das Ziel
+(statisch 2, dynamisch 3, Druckteile das Doppelte); rot und gelb sind Befunde `statik_*` (sperren den Export nicht).
+Auf „hält das, wenn …?“ mit **`statik(aktion="szenario")`** antworten (unter einer Sekunde, ohne neuen Lauf, im Viewer
+gezeigt), Überblick mit **`statik(aktion="ergebnis")`**. Vorschläge für leichtere oder stärkere Profile kommen nur aus dem Lager. Immer
+die Grenzen dazusagen: vereinfacht (Balken, linear-elastisch, Verbinder starr), kein Ersatz für einen Statiker bei
+sicherheitsrelevanten Dingen. Teile mit Last (Druckteile, Halter, Verbinder) rechnet Kev CAD zusätzlich als
+Festkörper-FEM im Hintergrund; Einzelheiten mit **`statik(aktion="festigkeit")`** (Farbverlauf auf dem Netz, Sicherheit je Drucklage).
+Rutscht die Klemmung, hebt etwas ab, fließt Metall oder beult ein Blech: **`statik(aktion="festigkeit", …, verfahren="ccx")`**
+(Stufe 4, CalculiX: Kontakt mit Klemmkraft, `plastisch=True`, Traglast, `beulen=True`; in model.py `st.kontakt`,
+`st.festigkeit`). Einzelheiten, API und Urteile: [statik.md](statik.md).
+
+Lager setzt `st.lager(teil, flaeche=…|punkt=…, art="fest"|"gelenkig"|"gleitend", szenario=…, gleiten=…)`
+ausdrücklich (sonst aus den Kontakten abgeleitet): je Lastfall oder für alle, gleitend in der Fläche (genau senkrecht
+gehalten) oder wie auf einer Schiene entlang einer Achse oder Kante, gelenkig in der FEM wie ein RBE3 (Fläche hält im
+Mittel und dreht frei). Lastfälle, Kräfte und Lager, die Kevin im Bereich „Simulation“ (⌘4) per Klick anlegt, liegen in
+`simulation.json` und gehören zu jedem Lauf: `statik(aktion="ergebnis")` und `statik(aktion="szenario")` sehen sie, **`statik(aktion="simulation")`** zeigt
+sie mit Zustand (nach Modelländerungen neu zugeordnet oder nicht mehr zuordenbar), **`statik(aktion="simulation_aendern")`** ändert sie
+nur auf Kevins Wunsch (auch Lasten auf der ganzen Fläche, Druck in N/mm²), **`statik(aktion="simulation_rechnen")`** rechnet wie seine
+Knöpfe (auch „Grenze suchen“: wie viel Last, wie steil, wie schnell; Last und Neigung wahlweise mit der FEM,
+`verfahren="fem"`). Einzelheiten: [statik.md](statik.md), Abschnitte „Lager“ und „Lastfälle aus der App“.
+
+Material sparen an einem Druckteil („mach den Halter leichter“, „Topologie optimieren wie implicit“): in model.py
+**`topologie.optimieren(teil, szenario=…, behalten=0.4)`** hinter `lager.druckteil(…)` (oder MCP
+**`topologie(aktion="optimieren")`**, Ergebnis mit **`topologie(aktion="ergebnis")`**). Rechnet im Hintergrund (etwa eine Minute), Lager
+und Lasten aus der Statik, Bohrungen und Lastflächen bleiben massiv; danach Kennzahlen vorher → nachher (Volumen,
+Filament, Druckzeit, Sicherheit) nennen und dazusagen: Näherung, kein Festigkeitsnachweis. Übernehmen als Variante
+(`topologie(aktion="uebernehmen")`) nur auf Kevins Wunsch. Einzelheiten: [statik.md](statik.md), Abschnitt „Topologie
+optimieren“.
+
+Bewegung über der Zeit (Stufe 2, MuJoCo im eigenen Prozess): „Was passiert, wenn ich mit 1 m/s schiebe und abrupt
+bremse?“ → **`statik(aktion="dynamik", name=…, geschwindigkeit=1, bremsen="abrupt")`**; „wie schnell darf ich schieben, ohne dass der
+Ball herausspringt?“ → **`statik(aktion="grenze")`**. Antwort mit Kippreserve, Abheben in mm, ob die Ladung bleibt (mit
+Grenzgeschwindigkeit), Rutschgrenze, Handrechnung a = g·b/h und den Grenzen (Starrkörper, Reibung vereinfacht, keine
+Verformung); Kevin sieht den Ablauf als Animation „Ablauf: …“ in der Zeitleiste.
 
 ## Was gerechnet wird
 
@@ -48,7 +91,7 @@ st.ziel(sicherheit=2.5, durchbiegung="L/300")                            # eigen
   Die Kraft wirkt auf das Teil, die Gegenkraft am selben Punkt auf `gegen`. Beim Kippen, Rutschen und Abheben des
   Ganzen heben sich beide auf; Stabwerk, Kragträger und Festkörper bekommen jede Seite auf ihre Teile (ein geerdetes
   Gegenstück wie der Ball auf dem Boden trägt seine Seite selbst). Im Ergebnis steht die Last mit `gegen` und
-  `paar`, im Viewer als zwei gegeneinander gerichtete violette Pfeile (äußere Lasten blau). In `szenario_rechnen`:
+  `paar`, im Viewer als zwei gegeneinander gerichtete violette Pfeile (äußere Lasten blau). In `statik(aktion="szenario")`:
   `lasten=[{"teil": "…", "kraft": [100, 0, 0], "gegen": "Bowlingball"}]`.
 - **Lastpunkt angeben**, wo er nicht die Mitte des Teils ist (Haken, Konsole): `punkt=(x, y, z)`. Bei Halter-Teilen
   rechnet Kev CAD den Hebel von der Einspannung (Berührung mit dem Gegenstück) bis zu diesem Punkt.
@@ -73,7 +116,7 @@ st.lager("Fuß")                                                         # ganze
 
 - `art`: `"fest"` (eingespannt), `"gelenkig"` (hält, dreht frei), `"gleitend"` (gleitet in der Fläche und hält nur
   senkrecht zu ihr, genau entlang ihrer Normale, auch schräg; mit `gleiten` nur entlang dieser Richtung frei wie auf
-  einer Schiene, quer dazu in beide Richtungen gehalten). `flaeche` als Nummer wie im Viewer bzw. aus `selection` oder
+  einer Schiene, quer dazu in beide Richtungen gehalten). `flaeche` als Nummer wie im Viewer bzw. aus `measure()` ohne refs oder
   als build123d-Fläche.
 - Lager gelten in allen Szenarien, mit `szenario=` nur in den genannten (je Lagermenge rechnet Kev CAD ein eigenes
   Statikmodell; STATICS zeigt je Szenario `lager`). Am Stab ein Auflager am nächsten Achspunkt (gleitend als Pendelstab
@@ -99,12 +142,12 @@ Kevin legt im Bereich „Simulation“ (⌘4) Lastfälle, Kräfte (per Klick auf
 einer Achse oder frei, Betrag in N oder kg, Kraftpaar) und Lager per Klick an; sie liegen in
 `<projekt>/simulation.json` neben model.py und gehören zu jedem Lauf (und zu den Versionen). Agent und App teilen sie:
 
-- **`statik`**, **`szenario_rechnen`**, **`festigkeit`**, **`dynamik`** sehen die Lastfälle der App unter ihrem Namen
+- **`statik(aktion="ergebnis")`**, **`statik(aktion="szenario")`**, **`statik(aktion="festigkeit")`**, **`statik(aktion="dynamik")`** sehen die Lastfälle der App unter ihrem Namen
   (`quelle: "app"`). Heißt einer wie ein Szenario aus model.py, gewinnt die App (Hinweis im Ergebnis).
-- **`simulation_liste`** zeigt Lastfälle, Kräfte mit Teil, Fläche, Punkt, Richtung, Betrag und Zustand (`ok`, `neu` =
+- **`statik(aktion="simulation")`** zeigt Lastfälle, Kräfte mit Teil, Fläche, Punkt, Richtung, Betrag und Zustand (`ok`, `neu` =
   nach einer Modelländerung einer anderen Fläche zugeordnet, `fehlt` = nicht mehr zuordenbar, zählt nicht mit), Lager,
   abgeleitete Lager und die Topologie-Einstellungen.
-- **`simulation_aendern(ops)`** ändert wie Kevins Klicks (`lastfall_neu`, `lastfall_setzen`, `lastfall_kopieren` auch
+- **`statik(aktion="simulation_aendern", ops=…)`** ändert wie Kevins Klicks (`lastfall_neu`, `lastfall_setzen`, `lastfall_kopieren` auch
   aus model.py, `last_setzen` mit `ort: {flaeche, punkt, normale}`, `richtung: {art: normale | achse | frei}`, `betrag`,
   `einheit` N | kg | N/mm2, `verteilung` punkt | flaeche, `lager_setzen` mit `szenarien` und `gleiten`, `abgeleitet` …)
   und rechnet sofort neu. Nur auf Kevins Wunsch: seine Klicks sind seine Entscheidungen. Fehlt eine Kraft nach einer
@@ -114,7 +157,7 @@ einer Achse oder frei, Betrag in N oder kg, Kraftpaar) und Lager per Klick an; s
   „Normale“) senkrecht auf jedes Stück der Fläche, Kraft = Druck × Fläche (auf gekrümmten Flächen die Summe übers Netz).
 - **Untergrund je Lastfall** (`untergrund`, auch `st.szenario(…, untergrund="eiche")`): gilt fürs Rutschen in S0, die
   Grenze „wie steil“ und den Ablauf (Reibung am Boden in S2, Rutschgrenze μ · g mit dem Reibwert dieses Bodens).
-- **`simulation_rechnen(was, lastfall)`**: `rechnen`, `festigkeit`, `ablauf`, `grenze` mit `grenze="last"` (bis zum
+- **`statik(aktion="simulation_rechnen", was=…, lastfall=…)`**: `rechnen`, `festigkeit`, `ablauf`, `grenze` mit `grenze="last"` (bis zum
   wievielfachen der Kräfte hält es: Ziel, Bruch, Kippen, Rutschen), `"neigung"` (wie steil), `"geschwindigkeit"` (wie
   schnell, über den Ablauf). `verfahren="s0s1"` (Standard, Millisekunden) oder `"fem"`: dazu die Festkörper-FEM der
   Teile mit Last (Grundfälle einmal gerechnet und im Zwischenspeicher, je Teil durch Halbieren über ihre Überlagerung,
@@ -141,9 +184,9 @@ einer Achse oder frei, Betrag in N oder kg, Kraftpaar) und Lager per Klick an; s
 
 ## Werkzeuge
 
-- `statik()` – alle Szenarien mit Ampel und Kennzahlen; `statik(szenario="…")` – Stäbe, Lager, Kippen je Richtung,
+- `statik(aktion="ergebnis")` – alle Szenarien mit Ampel und Kennzahlen; `statik(aktion="ergebnis", szenario="…")` – Stäbe, Lager, Kippen je Richtung,
   Rutschen, Schrauben; die App zeigt dann dieses Szenario.
-- `szenario_rechnen(name, lasten=[{"teil": "…", "kg": 30}], beschleunigung=…, neigung=…, richtung=…, stoss=…)` – „Hält
+- `statik(aktion="szenario", name=…, lasten=[{"teil": "…", "kg": 30}], beschleunigung=…, neigung=…, richtung=…, stoss=…)` – „Hält
   das, wenn …?“ ohne neuen Lauf, in unter einer Sekunde, im Viewer gezeigt. Soll das Szenario bleiben, in model.py
   eintragen.
 - Antwort an Kevin immer mit Ampel, Sicherheit, Spannung oder Durchbiegung, Kippreserve und **den Grenzen**: vereinfacht
@@ -184,9 +227,9 @@ st.szenario("Rampe", geschwindigkeit=0.5, neigung=5, richtung="+x")        # auf
   `dyn_ladung` (der Ball bleibt, bleibt knapp oder springt heraus, mit der Geschwindigkeit, ab der er herausspringt);
   `dyn_rutschen` (mit blockierten Rädern rutscht er ab μ · g). Dazu die **Handrechnung** a = g · b / h gegen die
   Simulation ohne Ladung bei anhaltender Verzögerung (Plausibilität, typisch innerhalb weniger Prozent).
-- **Werkzeuge**: `dynamik(name, geschwindigkeit, bremsen, …)` und `dynamik_grenze(ohne="ball"|"kippen"|"beides",
-  bremsen="abrupt")`; `szenario_rechnen(…, dynamik=True)` ist dasselbe. Kevin sieht den Ablauf im Statik-Abschnitt
-  („Ablauf zeigen“) und als Animation „Ablauf: <Name>“ in der Zeitleiste (`animation_abspielen`), mit Kontaktkräften als
+- **Werkzeuge**: `statik(aktion="dynamik", name=…, geschwindigkeit, bremsen, …)` und `statik(aktion="grenze", ohne="ball"|"kippen"|"beides",
+  bremsen="abrupt")`; `statik(aktion="szenario", …, dynamik=True)` ist dasselbe. Kevin sieht den Ablauf im Statik-Abschnitt
+  („Ablauf zeigen“) und als Animation „Ablauf: <Name>“ in der Zeitleiste (`animation(aktion="abspielen")`), mit Kontaktkräften als
   Pfeilen.
 - **Grenzen, immer dazusagen**: Starrkörper (keine Verformung, kein Federn der Rohre), Stöße ohne Rückprall, Reibung
   nach Coulomb mit einem Wert je Paarung (fehlt die Paarung im Katalog: 0,3 angenommen), Räder ohne Lagerreibung,
@@ -197,8 +240,8 @@ st.szenario("Rampe", geschwindigkeit=0.5, neigung=5, richtung="+x")        # auf
 
 Teile mit Last, die das Stabwerk als starr nimmt oder S0 als Kragträger nachweist (gedruckte Halter, Konsolen,
 Platten, Verbinder zwischen Rohren), rechnet Kev CAD zusätzlich als Volumen: nach jedem Lauf im Hintergrund (nur
-Szenarien mit Last, die am stärksten ausgelasteten acht Teile), nach `szenario_rechnen` und `dynamik` für das neue
-Szenario, und mit `festigkeit` auf Anfrage. Einige Sekunden je Teil; gleiche Teile und Lasten kommen aus dem
+Szenarien mit Last, die am stärksten ausgelasteten acht Teile), nach `statik(aktion="szenario")` und `statik(aktion="dynamik")` für das neue
+Szenario, und mit `statik(aktion="festigkeit")` auf Anfrage. Einige Sekunden je Teil; gleiche Teile und Lasten kommen aus dem
 Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
 
 - **Lager** sind die Kontaktflächen zu den tragenden Nachbarn (dieselben wie beim Kragträger: Wand, Platte, Rohr;
@@ -207,13 +250,13 @@ Zwischenspeicher (Bruchteil einer Sekunde). Der Lauf wartet nie darauf.
   bzw. Kontaktfläche zum Stab), bei **Verbindern zwischen Stäben** (im Stabwerk starr, etwa Schlitten oder
   Eckverbinder) Kraft und Moment jedes Stabs am Anschluss aus dem Stabwerk (nach Steifigkeit verteilt), gehalten vom
   Stab mit der größten Kraft; beide Seiten eines Kraftpaars auf ihren Teilen; immer das
-  Eigengewicht; mit `festigkeit(…, ablauf=True)` alle Kontaktkräfte auf das Teil im Bild mit der größten Summe aus dem
+  Eigengewicht; mit `statik(aktion="festigkeit", …, ablauf=True)` alle Kontaktkräfte auf das Teil im Bild mit der größten Summe aus dem
   Ablauf des Szenarios (Ball an der Fangrolle, Boden), zurückgerechnet in die Ruhelage.
 - **Druckteile**: steifer und fester in der Schicht; quer dazu `e_modul_z` und `quer_zur_schicht` aus dem Katalog. Das
   Schichtkriterium (Zug und Schub in der Schichtfuge gegen q · Festigkeit) gilt neben von Mises, Ziel 4 statisch. Das
   Urteil `festkoerper` ersetzt den Kragträger und nennt die **Sicherheit in jeder Drucklage** (`ausrichtung="-z"`,
   `"-y"`, `"-x"`) als FEM-Beleg für „drehen oder verstärken“. Unbekannte Drucklage: überall abgemindert.
-- `festigkeit(teil="…", szenario="…")` – Ergebnis je Teil: Ampel, Sicherheit gegen das Ziel, maßgebendes Kriterium,
+- `statik(aktion="festigkeit", teil="…", szenario="…")` – Ergebnis je Teil: Ampel, Sicherheit gegen das Ziel, maßgebendes Kriterium,
   Ort der größten Ausnutzung (Welt), Spannung, größte Verschiebung, Kragträger S0 zum Vergleich, Netz und Zeit. Die App
   zeigt das Teil mit **Farbverlauf auf dem Netz** (Bänder der Ausnutzung, grün bis 1, gelb bis 2, darüber rot) und die
   Verformung überhöht als Geist. `fein=True` für Spannungsspitzen an Löchern und Rundungen (langsamer),
@@ -231,10 +274,10 @@ aufliegende Teile (hebt es ab?), Bolzen in der Bohrung, Fließen von Metall (ble
 dünne Bleche und Profile unter Druck (beult es?). Dasselbe Werkzeug, dieselben Lasten und Lager wie Stufe 3:
 
 ```python
-festigkeit(teil="Kugelschieber/Stangenhalter vorn links (Druck)", szenario="Ball drückt 100 N auf den Fänger",
+statik(aktion="festigkeit", teil="Kugelschieber/Stangenhalter vorn links (Druck)", szenario="Ball drückt 100 N auf den Fänger",
            verfahren="ccx")                              # Kontakt (Standard) mit Klemmkraft und Traglast
-festigkeit(teil="Konsole", verfahren="ccx", plastisch=True)          # dazu elastisch-plastisch
-festigkeit(teil="Blechwinkel", verfahren="ccx", kontakt=False, beulen=True)   # erster Beulfaktor
+statik(aktion="festigkeit", teil="Konsole", verfahren="ccx", plastisch=True)          # dazu elastisch-plastisch
+statik(aktion="festigkeit", teil="Blechwinkel", verfahren="ccx", kontakt=False, beulen=True)   # erster Beulfaktor
 ```
 
 In model.py (dann rechnet es nach jedem Lauf im Hintergrund, nach Stufe 3):
@@ -270,7 +313,7 @@ Befund in der Prüfung.
 - **Dauer**: Sekunden bis wenige Minuten je Teil (Kontakt ist nichtlinear; die Traglast rechnet zwei weitere Läufe).
   Gleiche Fälle kommen aus dem Zwischenspeicher. `abbrechen=True` beendet auch CalculiX.
 - **CalculiX** liegt auf der externen Platte UPVIS ULTRA (`#PROGRAMME_DO-NOT-DELETE#/Kev CAD/calculix`). Fehlt die
-  Platte, meldet `festigkeit` „CalculiX nicht verfügbar (externe Platte UPVIS ULTRA nicht angeschlossen)“; S0 bis S3
+  Platte, meldet `statik(aktion="festigkeit")` „CalculiX nicht verfügbar (externe Platte UPVIS ULTRA nicht angeschlossen)“; S0 bis S3
   laufen weiter. Sag Kevin das, statt es zu umgehen.
 - **Grenzen, immer dazusagen**: kleine Verformungen, Kontakt nach dem Strafverfahren; Partner nur als Zuschnitt um das
   Teil, ohne Rückwirkung auf das Stabwerk; Klemmkraft angenommen, wenn nicht angegeben; isotrope Plastizität (keine
@@ -301,10 +344,10 @@ show(Pos(0, 0, 10) * halter, "Halter")
   („Fix the bolts“), und es entstehen Arme zu den Schrauben wie im Reel. Mit `"kontakt"` trägt die Auflage alles; die
   Schraubenaugen bindet Kev CAD dann mit einem Steg an (Hinweis im Ergebnis), sie fallen nie als Inseln ab.
   Nachgerechnet wird immer mit den Lagern der Statik. In der App: Schalter „Schrauben halten“.
-- **MCP:** `topologie_optimieren(teil, szenario, behalten, schutz, ueberhang, fein, steg, lager)` startet im Hintergrund
-  (`warten=true` wartet, `abbrechen=true` beendet), `topologie_ergebnis(warten_s=…)` liefert Fortschritt bzw. Kennzahlen
+- **MCP:** `topologie(aktion="optimieren", teil=…, szenario=…, behalten=…, schutz=…, ueberhang=…, fein=…, steg=…, lager=…)` startet im Hintergrund
+  (`warten=true` wartet, `abbrechen=true` beendet), `topologie(aktion="ergebnis", warten_s=…)` liefert Fortschritt bzw. Kennzahlen
   vorher → nachher (Volumen, Masse, Filament, Druckzeit, größte Spannung, Sicherheit mit Ampel, Verformung, dünnster
-  Steg), `topologie_uebernehmen()` legt **auf Kevins Wunsch** eine Variante an und trägt die Zeile in model.py ein.
+  Steg), `topologie(aktion="uebernehmen")` legt **auf Kevins Wunsch** eine Variante an und trägt die Zeile in model.py ein.
   In der App: Inspektor, Abschnitt „Optimieren“ (Schieber „Behalten“, Lastfall, Start, Abbruch, Vorher/Nachher mit
   Spannungsfarben, „Als Variante übernehmen“).
 - **Schutzzonen von selbst:** Bohrungen mit Wandring (max(Steg, 0,6 r), ganze Tiefe), Gewindeeinsätze (Sacklöcher mit
@@ -326,7 +369,7 @@ show(Pos(0, 0, 10) * halter, "Halter")
 ## Was die Statik braucht
 
 - Materialien mit `mechanik` im Katalog (KATALOG.md, Abschnitt „Mechanik“). Ohne Werte: „nicht nachgewiesen“, nie
-  Werte erfinden; fehlt etwas, Kevin fragen und ggf. mit `material_define` vorschlagen (Quelle angeben). Seit
+  Werte erfinden; fehlt etwas, Kevin fragen und ggf. mit `lager(aktion="material_vorschlagen")` vorschlagen (Quelle angeben). Seit
   22.10.2026 haben auch Multiplex, MDF, Spanplatte, Messing, Kupfer und alle Druckmaterialien außer Harz Werte (PA
   vorsichtig nass); Stahl auf Beton haftet mit 0,2.
 - Gewindeeinsätze in Druckteilen: den Einsatz als Teil zeigen (Name mit „Gewindeeinsatz“, z. B. „Halter/Gewindeeinsatz
@@ -344,10 +387,10 @@ show(Pos(0, 0, 10) * halter, "Halter")
   im Stabwerk nicht starr, sondern eine **Drehfeder** aus Geometrie und E-Modul: Bettung in der Bohrung
   (E · L_b³ / 12) und Biegung des Halters bis zu seinem Lager. So teilt sich das Moment einer auskragenden Stange nach
   Steifigkeit zwischen Halter und Rohr, und Kragträger und Festkörper des Halters bekommen genau dieses Moment.
-  `statik(szenario=…)` nennt die Federn je Anschluss (`modell.anschluesse[].feder`). Ohne Spiel gerechnet: Sitzt das
+  `statik(aktion="ergebnis", szenario=…)` nennt die Federn je Anschluss (`modell.anschluesse[].feder`). Ohne Spiel gerechnet: Sitzt das
   Rohr mit Spiel in der Bohrung, kippt es erst ein wenig, bevor der Halter trägt (das rechnet die Statik nicht).
 - **Verbinder zwischen Stäben** (Schlitten, Eckverbinder, im Stabwerk starr): Die Kraft je Anschluss kommt aus dem
   Stabwerk, statisch unbestimmt nach Steifigkeit verteilt (zwei gleiche Schlitten an einer Querstange: je die Hälfte).
   Damit weist Kev CAD jeden Verbinder als Kragträger nach (gehalten vom Stab mit der größten Kraft) und rechnet ihn als
-  Festkörper; `statik(szenario=…)` nennt die Kräfte je Verbinder und Stab.
+  Festkörper; `statik(aktion="ergebnis", szenario=…)` nennt die Kräfte je Verbinder und Stab.
 - Stäbe nur aus `lager.teil(…).verbauen(…)` (Stangenware). Selbst gezeichnete Rohre sind Bauteile, keine Stäbe.

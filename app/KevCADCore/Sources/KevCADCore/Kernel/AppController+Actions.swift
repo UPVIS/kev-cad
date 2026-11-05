@@ -119,7 +119,7 @@ extension AppController {
 
     // MARK: Darstellung
 
-    public func setDisplayStyle(_ style: DisplayStyle) { applyDisplayStyle(style) }
+    public func setDisplayStyle(_ style: DisplayStyle) { darstellungUebernehmen(style) }
 
     public func setSection(enabled: Bool, axis: String, offset: Double) {
         applySection(enabled: enabled, normal: Self.axisVector(axis), offset: Float(offset))
@@ -163,7 +163,12 @@ extension AppController {
     public func setMeasureMode(_ on: Bool) {
         model.measureMode = on
         measurePending = []
+        messVorschau = nil
+        aktuellerFang = nil
+        viewport.eingabe.unterMaus = nil
         updateMeasureHint()
+        refreshOverlay()
+        if on { viewport.hoverAuffrischen() }  // Vorschau sofort für das Element unter der Maus
     }
 
     public func clearMeasurements() {
@@ -299,8 +304,13 @@ extension AppController {
             case let p?: return (false, "Unbekannte Projektion \(p)")
             }
             if let d = a["display"]?.stringValue {
-                guard let style = Self.displayStyle(protocolName: d) else { return (false, "Unbekannte Darstellung \(d)") }
-                applyDisplayStyle(style)
+                // V2: zusätzlich die Darstellungsarten des Viewers (solid, material, technical)
+                if let modus = ShadingModus.allCases.first(where: { $0.protokollName == d }), Self.displayStyle(protocolName: d) == nil {
+                    setShading(modus)
+                } else {
+                    guard let style = Self.displayStyle(protocolName: d) else { return (false, "Unbekannte Darstellung \(d)") }
+                    darstellungUebernehmen(style)
+                }
             }
             let fit = a["fit"]?.boolValue ?? false
             viewport.apply(rotation: rotation, orthographic: ortho, fitTo: fit ? scene.visibleBounds() : nil, animated: true)

@@ -74,7 +74,7 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
             n = len(m.get("schritte") or [])
             teile.append(f"Montage: {n} Schritte" + (", vollständig" if m.get("vollstaendig") else
                                                      f", nicht einbaubar: {', '.join((m.get('offen') or [])[:6])}")
-                         + " (Liste mit montage_reihenfolge).")
+                         + " (Liste mit pruefen(thema='montage')).")
         if res.get("laeuft"):
             teile.append(f"Hinweis: eine neuere Prüfung (Lauf {res['laeuft']}) läuft noch.")
         if res.get("state") == "teilweise" and warten:
@@ -86,7 +86,7 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
                              "Rechenprozess neu gestartet): erneut run aufrufen.")
             else:
                 teile.append("Ablauf bzw. Festkörper dieses Laufs wurden nicht fertig (neuerer Lauf oder abgebrochen): "
-                             "statik() bzw. festigkeit() rechnen sie auf Wunsch.")
+                             "statik(aktion='ergebnis') bzw. statik(aktion='festigkeit') rechnen sie auf Wunsch.")
         extra: list[Any] = []
         if bilder:
             kandidaten = [b for b in res.get("befunde") or [] if b.get("ort") and b.get("schwere") != "hinweis"][:3]

@@ -1,4 +1,5 @@
 import AppKit
+import KevCADCore
 
 /// Sorgt dafür, dass einbuchstabige Tastenkürzel (1 bis 0, F, H, I, M, S, E, Umschalt-H, Esc, Leertaste, Pfeile) nicht
 /// feuern, solange ein Textfeld den Fokus hat; die Pfeiltasten der Animation auch nicht in Listen (Teilebaum, Stückliste).
@@ -8,12 +9,12 @@ import AppKit
 /// Hat ein Textfeld den Fokus, schickt er solche Tasten direkt an das Fenster, also an das Textfeld, und am Menü vorbei.
 @MainActor
 final class KeyboardGuard {
-    /// Tasten, die als einbuchstabige Kürzel belegt sind (ohne Befehls-, Control- und Wahltaste).
-    static let plainShortcutKeys: Set<String> = [
-        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "f", "h", "i", "m", "s", "e",
+    /// Tasten, die als einbuchstabige Kürzel belegt sind (ohne Befehls-, Control- und Wahltaste): die des Viewers aus
+    /// der Belegung (Tastenbelegung.swift, einzige Quelle) und die übrigen Bereiche.
+    static let plainShortcutKeys: Set<String> = Tastenbelegung.einfacheZeichen.union([
         " ", arrowLeft, arrowRight,  // Phase 5: Animation (Leertaste, Pfeil links/rechts)
         "v", "d", "n",  // Phase 6: Werkzeuge im Bereich Dokumente (Auswählen, Maß, Notiz)
-    ]
+    ])
     static let arrowLeft = String(UnicodeScalar(UInt16(NSLeftArrowFunctionKey))!)
     static let arrowRight = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)
     static let escapeKeyCode: UInt16 = 53

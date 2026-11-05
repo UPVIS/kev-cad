@@ -16,7 +16,7 @@ lochabstand = param("lochabstand", 80)  # Abstand der beiden Löcher
 schelle_h = param("schelle_h", 30)  # Höhe der Schelle
 wand = param("wand", 4)  # Wandstärke der Schelle
 
-flach = lager.teil("flach", b=40, s=5, material="stahl-s235")  # Lagerteile: erst stock_search, dann lager.teil
+flach = lager.teil("flach", b=40, s=5, material="stahl-s235")  # Lagerteile: erst katalog, dann lager.teil
 rohr = lager.teil("rohr-en10220-42.4x2.0")
 breite, blech = flach.masse["b"], flach.masse["s"]
 rohr_d = rohr.masse["d"]

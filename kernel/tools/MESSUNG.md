@@ -127,3 +127,32 @@ kamen 8 Druck-Tests dazu, in denen Bambu Studio nicht antwortete; im Lauf auf `6
   Aufwand: Ein Lauf mit Millionen Aufrufen wirkt deutlich langsamer, die OCCT-Zeit verschwindet in den Aufrufern. Für
   OCCT-Arbeit die Abtastung des Hauptfadens nehmen (`messen.py --profil`, alle 1 ms) oder Wanduhr-Hüllen um die
   verdächtigen Aufrufe.
+
+## Messung V2-5a (Delta-Übertragung)
+
+Stand 05.11.2026 spätabends, Kopie von „Kugelschieber Variante B“ und Katalog, ein frischer Rechenprozess. `messen.py`
+zählt seit V2-5a ganze Rahmen (Kopf und Nutzlast), die App-Attrappe meldet die Fähigkeiten aus PROTOCOL.md, Abschnitt
+„V2-5 Live“:
+
+```
+kernel/.venv/bin/python -u kernel/tools/messen.py "<Projekt>" --katalog "<Katalog>" \
+    --laeufe kalt,gleich,kommentar,param:laufrolle_l=90,gleich,param:laufrolle_l=90 \
+    --faehigkeiten delta-1,in-arbeit-1,spur-1,lage-1,live-masse-1 --json messung.json
+```
+
+Die Zeiten taugen hier nicht zum Vergleich: Der Rechner stand unter Last anderer Agenten. Die Bytes schon.
+
+| Lauf | vorher | mit `delta-1` | was bleibt |
+|---|---|---|---|
+| kalt | 18,71 MB | 11,14 MB | alles einmal; das Versionsbild schrumpft von 5,9 MB auf 19 KB (Netze aus der Szene) |
+| gleich | 11,33 MB | **44 KB** (Budget 50 KB) | `WIE_ZUVOR` 18 KB, `PART_SAME` 17 KB, `RUN_END` 6 KB |
+| Kommentar | 17,25 MB | 53 KB | dazu das Versionsbild (19 KB) |
+| Parameter `laufrolle_l = 90` | 12,61 MB | 4,47 MB | 20 Teile 1,0 MB, Statikfelder 1,6 MB, Animation 1,5 MB |
+| zurück auf „gleich“ | 11,38 MB | 1,76 MB | fast nur `ANIM_DEF` (1,5 MB); Teile und Felder kommen aus den letzten 4 Inhalten |
+| wieder Parameter | – | 1,72 MB | ebenso |
+
+- Unverändert heißt: alle 136 Teile als `PART_SAME`, keine Nutzlast. Die Weiche prüft vor jedem `WIE_ZUVOR`, dass der
+  Aufbau genau den neuen Kopf ergibt, sonst geht die Nachricht vollständig.
+- Eine Animation merkt sich die Weiche nur einmal je Name, deshalb kostet ein Maß, das hin und her wechselt, jedes Mal
+  1,5 MB. Lohnt sich erst, wenn es im Alltag stört.
+- Eine App ohne `faehigkeiten` bekommt alles wie bisher; `test_live.py` prüft das mit der alten Attrappe.

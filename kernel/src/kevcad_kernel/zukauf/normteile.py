@@ -100,7 +100,7 @@ def umleiten(text: str | None, catalog: Any) -> dict[str, Any] | None:
     out: dict[str, Any] = {"normteil": info, "stock_id": None, "treffer": [], "beispiel": None, "vorschlag": None}
     if info["groesse"] is None:
         out["text"] = (f"{info['anzeige']} ist ein Normteil, aber die Größe fehlt (z. B. M6). Normteile kommen aus dem "
-                       "Lagerkatalog (stock_search), nicht als Zukaufteil.")
+                       "Lagerkatalog (katalog), nicht als Zukaufteil.")
         return out
     rows = [r for r in catalog.items(info["art"]) if str((r.get("masse") or {}).get("norm", "")).lower() == info["norm"]
             and str((r.get("masse") or {}).get("groesse", "")).split("-")[0].upper() == info["groesse"].upper()]
@@ -146,7 +146,8 @@ def umleiten(text: str | None, catalog: Any) -> dict[str, Any] | None:
                         "masse": {"typ": info["typ"], "norm": info["norm"], "groesse": groesse},
                         "material": material}
     out["text"] = (f"{info['anzeige']} {name} ist ein Normteil (bd_warehouse {info['typ']} {groesse}), fehlt aber im "
-                   f"Lagerkatalog. Auf Kevins Wunsch mit stock_define als Lagerteil vorschlagen (Eintrag in "
+                   f"Lagerkatalog. Auf Kevins Wunsch mit lager(aktion='teil_vorschlagen') als Lagerteil vorschlagen "
+                   f"(Eintrag in "
                    "\"vorschlag\"), nicht als Zukaufteil.")
     return out
 

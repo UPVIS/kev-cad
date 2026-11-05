@@ -438,7 +438,8 @@ class BestandAnbindung:
         if data is None:
             return {"ok": False, "error": f"bestand.json ist fehlerhaft, erst reparieren: {fehler}"}
         if not fuehrt_filament(data):
-            return {"ok": False, "error": "Das Projekt führt kein Filament: erst Spulen eintragen (bestand_eintragen mit "
+            return {"ok": False, "error": "Das Projekt führt kein Filament: erst Spulen eintragen "
+                                          "(bestand(aktion='eintragen') mit "
                                           "material und gramm) oder mit anzahl=0 festhalten, dass keins da ist."}
         if spule and not any(s.get("kennung") == spule for s in spulen(data)):
             return {"ok": False, "error": f"Spule {spule} gibt es nicht (vorhanden: "
@@ -712,7 +713,7 @@ class BestandAnbindung:
             hits, _ = self.catalog.search(pid, limit=3)  # type: ignore[attr-defined]
             tip = ", ".join(h["id"] for h in hits)
             return {"ok": False, "error": f"Lagerteil {pid!r} gibt es im Katalog nicht"
-                                          + (f"; Treffer: {tip}" if tip else " (stock_search benutzen)")}
+                                          + (f"; Treffer: {tip}" if tip else " (katalog benutzen)")}
         art = item.get("art")
         platte = art == "platte"
         vorher = (data.get("posten") or {}).get(pid)

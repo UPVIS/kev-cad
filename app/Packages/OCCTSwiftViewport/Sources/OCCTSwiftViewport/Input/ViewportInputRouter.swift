@@ -1,0 +1,133 @@
+// ViewportInputRouter.swift
+// ViewportKit
+//
+// Central interpretation of ViewportInputEvent into camera actions. This is the
+// single entry point platform layers (and synthetic / XR / test input) feed; it
+// owns gesture-action resolution, sign conventions, and the zoom curve so the
+// translation layer stays a thin native->event adapter.
+
+import Foundation
+import simd
+
+extension ViewportController {
+
+    /// Interprets a portable input event and applies it to the camera.
+    ///
+    /// The platform layer is responsible only for translating native input into
+    /// `ViewportInputEvent` (delta math, gesture arbitration) and for any lifecycle
+    /// glue it already owns (e.g. dynamic-pivot scheduling). All *interpretation*
+    /// (which `GestureAction` a drag maps to, the orbit X-axis inversion, the
+    /// drag-to-zoom curve) lives here, so the meaning is identical regardless of
+    /// the input source.
+    public func dispatch(_ event: ViewportInputEvent) {
+        onInputEvent?(event)
+
+        switch event {
+        case .dragChanged(let delta, let modifiers):
+            apply(dragDelta: delta, modifiers: modifiers)
+
+        case .dragEnded(let velocity, _):
+            endDrag(velocity: velocity)
+
+        case .twoFingerPanChanged(let translation):
+            handlePan(
+                translation: CGSize(
+                    width: CGFloat(translation.x),
+                    height: CGFloat(translation.y)))
+
+        case .twoFingerPanEnded(let velocity):
+            endPan(
+                velocity: CGSize(
+                    width: CGFloat(velocity.x),
+                    height: CGFloat(velocity.y)))
+
+        case .pinchChanged(let scale):
+            handleZoom(magnification: CGFloat(scale))
+
+        case .pinchAtChanged(let scale, let centerNDC, let aspectRatio):
+            handleZoom(
+                magnification: CGFloat(scale), centerNormalized: centerNDC, aspectRatio: aspectRatio
+            )
+
+        case .pinchEnded:
+            break
+
+        case .rotateChanged(let radians):
+            handleRoll(angle: CGFloat(radians))
+
+        case .rotateEnded:
+            break
+
+        case .scroll(let delta, let cursorNDC, let aspectRatio):
+            handleScrollZoom(
+                delta: CGFloat(delta),
+                cursorNormalized: cursorNDC,
+                aspectRatio: aspectRatio)
+
+        case .tap(_, let count):
+            if count >= 2 { reset(animated: true) }
+        }
+    }
+
+    // MARK: - Drag interpretation
+
+    /// Resolves the action for a primary drag. macOS uses modifier-aware
+    /// `dragAction(for:)`; iOS (no modifiers) uses `singleFingerDrag`.
+    private func resolvedDragAction(_ modifiers: ViewportModifierKeys) -> GestureAction {
+        #if os(macOS)
+            return configuration.gestureConfiguration.dragAction(for: modifiers)
+        #else
+            return configuration.gestureConfiguration.singleFingerDrag
+        #endif
+    }
+
+    private func apply(dragDelta delta: SIMD2<Float>, modifiers: ViewportModifierKeys) {
+        switch resolvedDragAction(modifiers) {
+        case .orbit:
+            activeInputDragMode = .orbit
+            // Negate X so left/right drag rotates the model under the pointer; the invert flags let a
+            // consumer flip either axis to taste (object-follows-finger vs camera-orbits).
+            let cfg = configuration.gestureConfiguration
+            let sx: CGFloat = cfg.invertOrbitHorizontal ? 1 : -1
+            let sy: CGFloat = cfg.invertOrbitVertical ? -1 : 1
+            handleOrbit(
+                translation: CGSize(
+                    width: sx * CGFloat(delta.x),
+                    height: sy * CGFloat(delta.y)))
+        case .pan:
+            activeInputDragMode = .pan
+            handlePan(
+                translation: CGSize(
+                    width: CGFloat(delta.x),
+                    height: CGFloat(delta.y)))
+        case .zoom:
+            activeInputDragMode = .zoom
+            handleZoom(magnification: CGFloat(1.0 + delta.y * 0.02))
+        default:
+            // .select / .focusOnPoint / .resetView / .none don't drive a drag;
+            // leave activeInputDragMode unchanged (matches the historical handler).
+            break
+        }
+    }
+
+    private func endDrag(velocity: SIMD2<Float>) {
+        switch activeInputDragMode {
+        case .orbit:
+            let cfg = configuration.gestureConfiguration
+            let sx: CGFloat = cfg.invertOrbitHorizontal ? 1 : -1
+            let sy: CGFloat = cfg.invertOrbitVertical ? -1 : 1
+            endOrbit(
+                velocity: CGSize(
+                    width: sx * CGFloat(velocity.x),
+                    height: sy * CGFloat(velocity.y)))
+        case .pan:
+            endPan(
+                velocity: CGSize(
+                    width: CGFloat(velocity.x),
+                    height: CGFloat(velocity.y)))
+        case .zoom:
+            break
+        }
+        activeInputDragMode = .orbit
+    }
+}

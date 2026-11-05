@@ -52,7 +52,7 @@ class ReferenzRuntimeMixin(ReferenzRestMixin):
         """{"ok", "projekt", "referenzen": [Eintrag wie REF_LIST + "capture", "messung_ergebnis"?], "werkzeuge"}"""
         proj = self._project
         if proj is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         if name:
             try:
                 name = ablage.finde(proj.path, name)
@@ -113,7 +113,7 @@ class ReferenzRuntimeMixin(ReferenzRestMixin):
             laeuft = self._ref_laeufe.get(schluessel)
             if laeuft is not None:
                 return {"ok": False, "error": f"Für die Referenz {n} läuft schon {laeuft['art']}; erst abwarten "
-                                              "(referenzen(name, warten_s=…))."}
+                                              "(referenz(aktion='liste', name=…, warten_s=…))."}
         ordner = ablage.ordner(proj.path, n)
         aus = ordner / ablage.CAPTURE
         try:
@@ -208,7 +208,7 @@ class ReferenzRuntimeMixin(ReferenzRestMixin):
                                             "fotos": [Path(k).name for k in kopiert], "erstellt": ablage.jetzt()})
         self._ref_liste_senden(sofort=True)
         return {"ok": True, "name": n, "ordner": str(ablage.ordner(proj.path, n)), "fotos": kopiert,
-                "hinweis": "Kameras und Maße gibt es nach referenz_vermessen."}
+                "hinweis": "Kameras und Maße gibt es nach referenz(aktion='vermessen')."}
 
     def referenz_vermessen(self, quelle: str | None = None, freie_masse: list[str] | None = None,
                            bekannte_masse: dict[str, float] | None = None, bilder: int = 8,
@@ -400,7 +400,8 @@ class ReferenzRuntimeMixin(ReferenzRestMixin):
                     ablage.schreibe_meta(projekt, n, meta)
                     self._ref_liste_senden(sofort=True)
                 return n, meta
-            raise ReferenzFehler("Fotos zuerst mit referenz_fotos ablegen, dann den Namen der Referenz angeben.")
+            raise ReferenzFehler("Fotos zuerst mit referenz(aktion='fotos') ablegen, dann den Namen der Referenz "
+                                 "angeben.")
         n = ablage.finde(projekt, quelle)
         meta = ablage.lese_meta(projekt, n)
         if meta is None:

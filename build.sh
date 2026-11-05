@@ -193,21 +193,67 @@ else
   APP_REPO="${KEVCAD_APP_REPO:-$REPO}"
 fi
 
+# Xcode-Zwischenspeicher (Regel xcode-compilation-cache, 05.11.2026): Übersetzungen kommen aus einem gemeinsamen
+# Speicher, auch in einem neuen Bauordner oder einer anderen Arbeitskopie (alle Pfade herausgerechnet). Die Einstellungen
+# stehen hier auf der Befehlszeile, weil nur sie auch für die Paketziele (KevCADCore, OCCTSwiftViewport) gelten; die
+# Werte in app/project.yml wirken nur auf das App-Ziel. Speicher auf UPVIS ULTRA, wenn angeschlossen (sonst Xcodes
+# Vorgabe), anderer Ort mit KEVCAD_CAS_PATH; ganz ohne mit KEVCAD_OHNE_CACHE=1 (etwa nach einem beschädigten Speicher).
+# KEVCAD_CACHE_BERICHT=1 zählt Treffer und Neuübersetzungen.
+CACHE_ARGS=()
+CAS_PATH=""
+CAS_INFO=""
+cache_args() {
+  if [ "${KEVCAD_OHNE_CACHE:-0}" = "1" ]; then
+    CACHE_ARGS=(COMPILATION_CACHE_ENABLE_CACHING=NO)
+    CAS_INFO="ohne Zwischenspeicher"
+    return
+  fi
+  # Die Repo-Wurzel braucht es für die Paketziele: ihr Arbeitsverzeichnis ist app/KevCAD.xcodeproj, das keine andere
+  # Zuordnung trifft; ohne sie übersetzt jede Arbeitskopie KevCADCore, KevCADWire und OCCTSwiftViewport neu (gemessen
+  # 05.11.2026). Leerzeichen („Kev CAD“): Xcode trennt die Liste vor dem Einsetzen von $(…), dort also nichts tun (ein
+  # :quote ließe einen Backslash im Pfad stehen); im ausgeschriebenen Pfad der Wurzel mit Backslash schützen.
+  local map='$(OBJROOT)/GeneratedModuleMaps=/^gmm $(MODULE_CACHE_DIR)=/^mcache '"${REPO// /\\ }"'=/^repo'
+  CACHE_ARGS=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO
+    SWIFT_ENABLE_PREFIX_MAPPING=YES CLANG_ENABLE_PREFIX_MAPPING=YES
+    SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES CLANG_ENABLE_PROJECT_PREFIX_MAPPING=YES
+    "SWIFT_OTHER_PREFIX_MAPPINGS=$map" "CLANG_OTHER_PREFIX_MAPPINGS=$map")
+  CAS_PATH="${KEVCAD_CAS_PATH:-}"
+  if [ -z "$CAS_PATH" ] && [ -d "/Volumes/UPVIS ULTRA/_cache" ]; then
+    CAS_PATH="/Volumes/UPVIS ULTRA/_cache/xcode-cas/kevcad"
+  fi
+  if [ -n "$CAS_PATH" ]; then
+    mkdir -p "$CAS_PATH" 2>/dev/null || true
+    CACHE_ARGS+=("COMPILATION_CACHE_CAS_PATH=$CAS_PATH")
+    CAS_INFO="Zwischenspeicher $CAS_PATH"
+  else
+    CAS_INFO="Zwischenspeicher (Xcode-Vorgabe)"
+  fi
+  [ "${KEVCAD_CACHE_BERICHT:-0}" = "1" ] && CACHE_ARGS+=(COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES)
+  return 0
+}
+
 echo "==> Xcode-Projekt erzeugen"
 command -v xcodegen >/dev/null || { echo "xcodegen fehlt (brew install xcodegen)"; exit 1; }
 xcodegen generate --spec app/project.yml --quiet
 
-echo "==> Kompiliere ($APP_NAME)"
+cache_args
+echo "==> Kompiliere ($APP_NAME)${CAS_INFO:+, $CAS_INFO}"
 mkdir -p "$BUILD"
 LOG="$BUILD/xcodebuild.log"
 if ! xcodebuild -project app/KevCAD.xcodeproj -scheme KevCAD -configuration Release \
   -destination "platform=macOS,arch=arm64" -derivedDataPath "$BUILD/DerivedData" \
   KEVCAD_APP_NAME="$APP_NAME" KEVCAD_BUNDLE_ID="$BUNDLE_ID" KEVCAD_REPO="$APP_REPO" KEVCAD_PORT="$PORT" \
-  KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" \
+  KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" ${CACHE_ARGS[@]+"${CACHE_ARGS[@]}"} \
   build -quiet > "$LOG" 2>&1; then
   grep -E "error:|\*\* BUILD FAILED" "$LOG" | grep -v "^Failed frontend" | head -30
+  if grep -qE "OnDiskCAS|CAS cannot be initialized|Xcode build system has crashed" "$LOG"; then
+    echo "Der Zwischenspeicher ($CAS_PATH) scheint beschädigt: Ordner umbenennen oder einmal mit KEVCAD_OHNE_CACHE=1 bauen."
+  fi
   echo "Build fehlgeschlagen, vollständiges Protokoll: $LOG"
   exit 1
+fi
+if [ "${KEVCAD_CACHE_BERICHT:-0}" = "1" ]; then
+  echo "Zwischenspeicher: $(grep -ciE 'cache hit|replay' "$LOG") Treffer, $(grep -ci 'cache miss' "$LOG") neu übersetzt"
 fi
 
 SRC="$BUILD/DerivedData/Build/Products/Release/$APP_NAME.app"

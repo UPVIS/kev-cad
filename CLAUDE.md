@@ -102,9 +102,11 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
   entlastet das MacBook). Dort gibt es zwei Bauplätze mit warmen Bauordnern und einen Testplatz, gewartet wird in einer
   Schlange; mehrere Agenten können also gleichzeitig aufrufen. Die Test-App kommt nach `build/` und läuft hier wie
   gewohnt. `./build.sh` direkt nur als Rückfall, wenn `tools/fern.sh` es nicht selbst tut.
-  **Seit 22.10.2026 mittags ist der Mac mini nicht mehr verfügbar** (Kevin: „alles auf dem MacBook“): Die Datei
-  `~/.kevcad-nur-macbook` ist gesetzt, `tools/fern.sh` und das automatische Update bauen deshalb hier unter der Sperre.
-  Weiter `tools/fern.sh` aufrufen; parallel höchstens zwei Agenten mit Builds.
+  **Seit 05.11.2026 bauen Mini und MacBook wieder beide** (Kevin: „Mini und MacBook können gerne beide bauen, das würde
+  ich mich nicht einschränken auf eins“; vom 22.10. bis 05.11.2026 lief alles auf dem MacBook). `~/.kevcad-nur-macbook`
+  ist entfernt. `tools/fern.sh testbau` nimmt einen freien Bauplatz des Mini und baut hier, wenn dort beide belegt sind
+  und die Sperre frei ist. Kernel-Tests über `tools/fern.sh tests` (Testplatz auf dem Mini); einige Tests nutzen feste
+  Ports, lokal deshalb nie zwei volle Testläufe gleichzeitig. Bis zu drei Agenten mit Builds.
 - **Lokal nur einzeln:** Der Mac hat 16 GB. Jedes lokale `xcodebuild` (also jedes `./build.sh`) läuft unter der mit
   VoiceBridge gemeinsamen Sperre: `lockf -k /tmp/vb-xcodebuild.lock ./build.sh --test …`, vorher
   `memory_pressure | tail -1` prüfen und unter 25 % freiem Speicher warten. `tools/fern.sh` und das automatische Update
@@ -112,7 +114,12 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
 - **Mac mini:** ssh-Name `mac-mini` (Benutzer core), alles für Kev CAD unter `~/KevCAD-Bau`, nie in fremden Ordnern
   (Tessera, VoiceBridge). Die Metal-Toolchain ist dort installiert (Shader übersetzt der Mini selbst); fehlt sie nach einem
   Xcode-Update, meldet fern.sh das, baut lokal und `tools/fern.sh einrichten` holt sie ohne Passwort nach.
-- Der Viewport ist OCCTSwiftViewport, festgenagelt auf Commit `d9984ad`. Auflagen aus AP0: Picking einschalten,
-  Körper über 16.000 Dreiecke oder Kantensegmente aufteilen, `preferredFramesPerSecond` selbst auf 120 setzen.
+- Der Viewport ist OCCTSwiftViewport, Stand `d9984ad`, als lokale Kopie in `app/Packages/OCCTSwiftViewport` mit
+  kleinen, markierten Änderungen (Liste in `KEVCAD-AENDERUNGEN.md` dort; nur ergänzen, nie still ändern). Auflagen aus
+  AP0: Picking einschalten, Körper über 16.000 Dreiecke oder Kantensegmente aufteilen, `preferredFramesPerSecond` selbst
+  auf 120 setzen.
+- Viewer V2: Die Belegung von Tasten, Maus und Trackpad steht nur in `Viewer/Tastenbelegung.swift` (Menüs, Viewport,
+  Hinweisleiste und Tastenübersicht lesen dort); Gestaltungswerte der Überlagerungen in `Viewer/ViewerStil.swift`.
+  Selbsttest: `KEVCAD_SELFTEST=viewer` (Zustände mit Fotos, Bildzeiten beim Drehen).
 - ocp-tessellate liefert degenerierte Kanten mit; vor dem Nummerieren herausfiltern (`BRep_Tool.Degenerated_s`).
 - Commit-Nachrichten auf Deutsch, je Arbeitspaket mindestens ein Commit.

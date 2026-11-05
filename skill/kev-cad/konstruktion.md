@@ -59,9 +59,9 @@ Material, Maschine und Belastung begründen. Die Zahlen für Kevins Drucker (Bam
 | Regel | Werkzeug in Kev CAD |
 |---|---|
 | 1 Anforderungen | Kopfkommentar in model.py mit Anforderungen, Annahmen (markiert) und offenen Fragen; Parameter mit Grenzen |
-| 2, 3, 5, 12 Prinzip, Weglassen, Verbindungen | Lagerkatalog (`stock_search`), Normteile, Zukaufteile; Zwangsbedingungen für Verbindungen |
-| 4 Gesamtaufwand | Stückliste (`bom`) mit Kosten, Zuschnitt und Verschnitt, Druckteile mit Filament; später Druckvorschau mit Druckzeit |
-| 6, 8, 9, 10, 11 Material, Orientierung, Druck, Wände, Passungen | [3d-druck.md](3d-druck.md) und die Druckprüfung: läuft bei jedem `run` für jedes `lager.druckteil` mit (Befunde `druck_*`, Ausrichtung mit Begründung im Laufergebnis); `druckpruefung` liefert die Einzelheiten |
+| 2, 3, 5, 12 Prinzip, Weglassen, Verbindungen | Lagerkatalog (`katalog`), Normteile, Zukaufteile; Zwangsbedingungen für Verbindungen |
+| 4 Gesamtaufwand | Stückliste (`parts(stueckliste=true)`) mit Kosten, Zuschnitt und Verschnitt, Druckteile mit Filament; später Druckvorschau mit Druckzeit |
+| 6, 8, 9, 10, 11 Material, Orientierung, Druck, Wände, Passungen | [3d-druck.md](3d-druck.md) und die Druckprüfung: läuft bei jedem `run` für jedes `lager.druckteil` mit (Befunde `druck_*`, Ausrichtung mit Begründung im Laufergebnis); `druck(aktion="pruefung")` liefert die Einzelheiten |
 | 7 Kräfte | Prüfung Standsicherheit; später Statik (PLAN-STATIK.md); bis dahin Handrechnung als Schätzung kennzeichnen |
 | 13 Montage | Prüfung Einbaubarkeit, `check_motion.py` und `bewegungen.json`, Werkzeugzugang |
 | 14 Fehler, Quetschstellen | Bewegungsraum über den ganzen Weg, scharfe Kanten an Griffstellen brechen |
@@ -74,7 +74,7 @@ Material, Maschine und Belastung begründen. Die Zahlen für Kevins Drucker (Bam
   Zusammenfassen oder Teilen besser?
 - Druckteile von Anfang an mit Orientierung, Wandlinien und Passungen nach 3d-druck.md. Die Druckprüfung läuft bei
   jedem `run` mit: Fehler (Bauraum, Harz, CF ohne gehärtete Düse) und Warnungen beheben, Hinweise abwägen; die
-  Einzelheiten (Ausrichtung, Kennzahlen, alle Hinweise) mit `druckpruefung`.
+  Einzelheiten (Ausrichtung, Kennzahlen, alle Hinweise) mit `druck(aktion="pruefung")`.
 - Im Bericht an Kevin: Annahmen, offene Fragen, was nachgewiesen ist und was nur geschätzt.
 
 ## Design-Review („prüfe das Design kritisch“)
@@ -82,7 +82,7 @@ Material, Maschine und Belastung begründen. Die Zahlen für Kevins Drucker (Bam
 Auf Kevins Wunsch, am Ende jeder größeren Aufgabe als Kurzfassung (die drei wichtigsten Punkte) und vor einem
 Meilenstein „fertig“ als volle Fassung. Das vorliegende Design kritisch prüfen und hinsichtlich Einfachheit,
 Zuverlässigkeit, Fertigung, Montage und Gesamtaufwand verbessern; auch das zugrunde liegende Konzept hinterfragen.
-Daten zuerst aus Kev CAD holen (`parts`, `bom`, Prüfbefunde, Druckprüfung, Bewegungsprüfung), dann bewerten.
+Daten zuerst aus Kev CAD holen (`parts`, `parts(stueckliste=true)`, Prüfbefunde, Druckprüfung, Bewegungsprüfung), dann bewerten.
 
 Ausgabe:
 

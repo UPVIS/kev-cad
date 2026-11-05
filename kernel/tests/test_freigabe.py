@@ -12,7 +12,7 @@ from pathlib import Path
 import anyio
 import pytest
 from app_testutil import FakeApp, make_runtime
-from mcp_testutil import start_server, texts, with_client
+from mcp_testutil import griff_werkzeuge, start_server, texts, with_client
 
 from kevcad_kernel.protocol import check_freigabe_message
 
@@ -127,10 +127,11 @@ def test_mcp_text():
         assert args == (["rohr-a", "rohr-offen"], "Für die Führung", None)
         res = call(server.url, "freigabe_anfragen", {"ids": ["gibtsnicht"]})
         assert res.is_error is True and texts(res)[0].startswith("Freigabe nicht angefragt")
+        assert "never releases anything itself" in griff_werkzeuge(server)["freigabe_anfragen"].description
         tools = {t.name: t for t in anyio.run(with_client, server.url, lambda c: c.list_tools()).tools}
-        assert "never releases anything itself" in tools["freigabe_anfragen"].description
+        assert "never releases anything itself" in tools["lager"].description
         instructions = anyio.run(with_client, server.url, _instructions)
-        assert "freigabe_anfragen" in instructions and "never tell him to open the stock catalog" in instructions
+        assert 'lager(aktion="freigabe"' in instructions and "releases nothing" in instructions
     finally:
         server.stop_thread()
 

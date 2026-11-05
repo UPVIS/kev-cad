@@ -48,7 +48,7 @@ lochabstand = param("lochabstand", 80)  # Abstand der beiden Löcher
 schelle_h = param("schelle_h", 30)  # Höhe der Schelle
 wand = param("wand", 4)  # Wandstärke der Schelle
 
-flach = lager.teil("flach", b=40, s=5, material="stahl-s235")  # Lagerteile: erst stock_search, dann lager.teil
+flach = lager.teil("flach", b=40, s=5, material="stahl-s235")  # Lagerteile: erst katalog, dann lager.teil
 rohr = lager.teil("rohr-en10220-42.4x2.0")
 breite, blech = flach.masse["b"], flach.masse["s"]
 rohr_d = rohr.masse["d"]
@@ -85,7 +85,7 @@ befestigt("Halter/Grundplatte", grund="an der Wand verschraubt")
 EMPTY_MODEL = '''"""Neues Modell. Alle Maße in mm, Z nach oben.
 
 Parameter oben mit param(), Bauschritte mit step(), jedes Teil mit show(objekt, "Name"). Inventar-Regel: Teile kommen
-aus dem Lager (stock_search, dann lager.teil(...).verbauen(...)) oder sind 3D-Druckteile (lager.druckteil(...)).
+aus dem Lager (katalog, dann lager.teil(...).verbauen(...)) oder sind 3D-Druckteile (lager.druckteil(...)).
 """
 
 from build123d import *
@@ -221,7 +221,7 @@ def open_project(path: str | Path) -> Project:
     if not p.is_dir():
         raise ProjectError(f"{str(p)!r} ist kein Ordner.")
     if not (p / MODEL).is_file():
-        raise ProjectError(f"Im Ordner {str(p)!r} fehlt {MODEL}. Neues Projekt mit project_new anlegen.")
+        raise ProjectError(f"Im Ordner {str(p)!r} fehlt {MODEL}. Neues Projekt mit projekt(pfad, neu=true) anlegen.")
     p = p.resolve()
     settings, warnings = _read_settings(p)
     return Project(path=p, settings=settings, warnings=warnings)
@@ -234,7 +234,7 @@ def new_project(path: str | Path, template: str = "example") -> Project:
     if p.exists() and not p.is_dir():
         raise ProjectError(f"{str(p)!r} gibt es schon und ist kein Ordner.")
     if (p / MODEL).exists():
-        raise ProjectError(f"In {str(p)!r} liegt schon ein {MODEL}; zum Öffnen project_open benutzen.")
+        raise ProjectError(f"In {str(p)!r} liegt schon ein {MODEL}; zum Öffnen projekt(pfad) benutzen.")
     if p.exists() and any(c for c in p.iterdir() if c.name not in (".DS_Store",)):
         raise ProjectError(f"Der Ordner {str(p)!r} ist nicht leer. Bitte einen neuen oder leeren Ordner angeben.")
     try:

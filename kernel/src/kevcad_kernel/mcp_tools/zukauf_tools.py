@@ -60,10 +60,12 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "from a shop link, manufacturer part number (mpn) or EAN/GTIN. Kev CAD never loads shop pages itself: read "
           "the page with your own tools first and pass what you found in felder (name, hersteller, mpn, gtin, url, "
           "bild, preis {je_stueck, waehrung, brutto, stand}, masse {l, b, h} or {d, l} in mm, gewicht in g, material, "
-          "einbaupunkt, bezugspunkte) – or pass the page HTML to zukauf_html instead. Standard parts like 'ISO 4762 "
+          "einbaupunkt, bezugspunkte) – or pass the page HTML to lager(aktion='zukauf_html') instead. Standard parts "
+          "like 'ISO 4762 "
           "M6x20' are redirected to the stock catalog (no purchased part). The entry is a proposal (status "
-          "'vorgeschlagen') until Kevin releases it (freigabe_anfragen); ebene 'projekt' (default) or 'eigen' for "
-          "parts used in many projects. Without CAD it appears as a simplified box/cylinder; next call cad_suchen.",
+          "'vorgeschlagen') until Kevin releases it (lager(aktion='freigabe')); ebene 'projekt' (default) or 'eigen' "
+          "for parts used in many projects. Without CAD it appears as a simplified box/cylinder; next call "
+          "lager(aktion='cad_suchen').",
           WRITES)
     async def zukauf_anlegen(
         url: Annotated[str | None, Field(description="Product page URL")] = None,
@@ -87,7 +89,7 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             if res.get("beispiel"):
                 text += f"\nIn model.py:\n{res['beispiel']}"
             if res.get("vorschlag"):
-                text += "\nVorschlag für stock_define (nur auf Kevins Wunsch) in \"vorschlag\"."
+                text += "\nVorschlag für lager(aktion='teil_vorschlagen') (nur auf Kevins Wunsch) in \"vorschlag\"."
             return fmt.result(text, res)
         if not res.get("angelegt"):
             return fmt.result(res.get("text", "Nicht angelegt."), res)
@@ -95,20 +97,22 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         lines = [res.get("text") or f"{item.get('id')} angelegt", f"Datei: {res.get('datei')}"]
         if item.get("status") == "vorgeschlagen":
             lines.append("Es wartet auf Kevins Freigabe; bis dahin lässt es sich nicht verbauen. Mit "
-                         f"freigabe_anfragen([\"{item.get('id')}\"], grund) öffnest du den Dialog im Projektfenster.")
+                         f"lager(aktion='freigabe', ids=[\"{item.get('id')}\"], grund) öffnest du den Dialog im "
+                         f"Projektfenster.")
         if res.get("zu_pruefen"):
             lines.append("Von Kevin bestätigen lassen: " + ", ".join(res["zu_pruefen"]))
         for note in res.get("hinweise") or []:
             lines.append(f"Hinweis: {note}")
         lines.append(f"In model.py: lager.zukauf({item.get('id')!r}).verbauen(\"{item.get('name')}\"). Ohne CAD "
-                     f"erscheint es vereinfacht; cad_suchen(\"{item.get('id')}\") sucht das Hersteller-Modell.")
+                     f"erscheint es vereinfacht; lager(aktion='cad_suchen', id=\"{item.get('id')}\") sucht das "
+                     f"Hersteller-Modell.")
         return fmt.result("\n".join(lines), res)
 
     @tool("zukauf_html", "Shop-Seite auswerten",
           "Extract product data from the HTML of a shop page that YOU fetched (browser or web fetch tool): JSON-LD, "
           "Microdata, RDFa and Open Graph give name, brand, mpn, EAN, price (gross/net), image, dimensions and weight. "
           "Returns the fields and a draft entry plus what Kevin must confirm. anlegen=true also creates the proposal "
-          "(same as zukauf_anlegen). Kev CAD does not fetch pages and does not bypass bot protection.", ADDITIVE)
+          "(same as lager(aktion='zukauf_anlegen')). Kev CAD does not fetch pages and does not bypass bot protection.", ADDITIVE)
     async def zukauf_html(
         url: Annotated[str | None, Field(description="URL of the page the HTML comes from")],
         html: Annotated[str, Field(description="Full HTML source of the product page")],
@@ -150,11 +154,12 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         if isinstance(created, dict) and created.get("ok") and created.get("angelegt"):
             item = created.get("item") or {}
             lines.append(f"Angelegt als {item.get('id')} (Vorschlag, wartet auf Kevins Freigabe). Weiter mit "
-                         f"cad_suchen(\"{item.get('id')}\").")
+                         f"lager(aktion='cad_suchen', id=\"{item.get('id')}\").")
         elif isinstance(created, dict) and created.get("text"):
             lines.append(created["text"])
         elif not anlegen and not res.get("normteil"):
-            lines.append("Felder prüfen, fehlende ergänzen und mit zukauf_anlegen(url, felder=…) anlegen.")
+            lines.append("Felder prüfen, fehlende ergänzen und mit lager(aktion='zukauf_anlegen', url=…, felder=…) "
+                         "anlegen.")
         if err:
             return fmt.error_result("\n".join(lines + [f"Nicht angelegt: {err}"]), res)
         return fmt.result("\n".join(lines), res)
@@ -162,7 +167,8 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
     @tool("cad_suchen", "CAD suchen",
           "Find the manufacturer CAD model (STEP) for a purchased part: returns links (product page, manufacturer "
           "portal like MISUMI, item, igus, McMaster, 3Dfindit/CADENAS, web search). There is no automatic CAD source: "
-          "ask Kevin to download the STEP or ZIP with his account, then call cad_uebernehmen. The app watches "
+          "ask Kevin to download the STEP or ZIP with his account, then call lager(aktion='cad_uebernehmen'). The app "
+          "watches "
           "~/Downloads meanwhile.", ADDITIVE)
     async def cad_suchen(
         id: Annotated[str, Field(description="Zukaufteil id")],
@@ -176,7 +182,7 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             lines.append("Links zum Herunterladen (Kevin mit seinem Konto):")
             lines.append(_links_text(res.get("cad_links") or []))
             lines.append(f"Kevin bitten, die STEP-Datei (oder ein ZIP mit STEP) herunterzuladen; danach "
-                         f"cad_uebernehmen(\"{id}\") ohne Pfad.")
+                         f"lager(aktion='cad_uebernehmen', id=\"{id}\") ohne Pfad.")
         for note in res.get("hinweise") or []:
             lines.append(f"Hinweis: {note}")
         return fmt.result("\n".join(x for x in lines if x), res)
@@ -204,7 +210,7 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         lines.append(f"Datei: {res.get('datei')}")
         item = res.get("item") or {}
         if item.get("status") == "vorgeschlagen":
-            lines.append("Das Teil wartet noch auf Kevins Freigabe (freigabe_anfragen öffnet den Dialog im "
+            lines.append("Das Teil wartet noch auf Kevins Freigabe (lager(aktion='freigabe') öffnet den Dialog im "
                          "Projektfenster).")
         lines.append("Jetzt run aufrufen; das Teil erscheint mit dem Hersteller-Modell.")
         return fmt.result("\n".join(lines), res)
@@ -223,7 +229,7 @@ def register_zukauf_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
         items = res.get("items") or []
         if not items:
             return fmt.result("Keine Zukaufteile" + (f" für „{query}“." if query else " im Katalog.")
-                              + " Neue mit zukauf_anlegen (oder zukauf_html).", res)
+                              + " Neue mit lager(aktion='zukauf_anlegen' oder 'zukauf_html').", res)
         text = f"{fmt.plural(len(items), 'Zukaufteil', 'Zukaufteile')}:\n{zukauf_tabelle(items)}"
         text += "\nIn model.py: lager.zukauf(\"<id>\").verbauen(\"Name\")."
         return fmt.result(text, res)

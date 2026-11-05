@@ -184,7 +184,7 @@ def test_lager_error_in_model_points_to_line(tmp_path):
     res, _ = run_model(tmp_path, HEAD + "\nrohr = lager.teil('vierkantrohr', a=45, s=3)\n")
     assert res["type"] == "RUN_FAILED"
     assert res["error"]["line"] == 4 and "Kein Lagerteil vierkantrohr" in res["error"]["message"]
-    assert "stock_search" in res["error"]["hint"]
+    assert "katalog" in res["error"]["hint"]
 
 
 # ------------------------------------------------------------------------------------------------------ Abnahme
@@ -272,7 +272,7 @@ def test_inventory_rule_materials_only_from_catalog(tmp_path):
     res, _ = run_model(tmp_path, HEAD + "\nshow(Box(1, 1, 1), 'X', material='messing')\n")
     assert res["type"] == "RUN_FAILED" and res["error"]["line"] == 4
     assert "Material 'messing' gibt es im Katalog nicht" in res["error"]["message"]
-    assert "material_list" in res["error"]["hint"] or "material_list" in res["error"]["message"]
+    assert "katalog(art='material')" in res["error"]["hint"] + res["error"]["message"]
     res, _ = run_model(tmp_path, HEAD + "show(Box(1, 1, 1), 'X', material='stahl-s253')\n")
     assert res["type"] == "RUN_FAILED" and "stahl-s235" in res["error"]["message"]
 

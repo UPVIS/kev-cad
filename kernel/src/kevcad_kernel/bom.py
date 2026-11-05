@@ -695,7 +695,7 @@ def inventory_text(violations: list[str]) -> str:
     n = len(violations)
     names = ", ".join(violations[:8]) + (" …" if n > 8 else "")
     teile = "1 Teil ist" if n == 1 else f"{n} Teile sind"
-    return (f"Inventar-Regel: {teile} nicht aus dem Inventar: {names} – passendes Lagerteil mit stock_search suchen "
+    return (f"Inventar-Regel: {teile} nicht aus dem Inventar: {names} – passendes Lagerteil mit katalog suchen "
             "und verbauen, als Druckteil kennzeichnen (lager.druckteil) oder Kevin bitten, das Lagerteil anzulegen.")
 
 

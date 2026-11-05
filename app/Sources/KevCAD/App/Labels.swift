@@ -39,15 +39,15 @@ extension StandardViewName {
         }
     }
 
-    /// Blender-Belegung (Ziffernblock oder Zahlenreihe): 1 vorne, 3 rechts, 7 oben, mit Strg die Gegenseite.
-    var blenderKey: (key: KeyEquivalent, modifiers: EventModifiers)? {
+    /// Befehl der Belegung (Tastenbelegung.swift: 1 vorne, 3 rechts, 7 oben, mit Strg die Gegenseite).
+    var befehl: ViewerBefehl? {
         switch self {
-        case .front: return ("1", [])
-        case .back: return ("1", .control)
-        case .right: return ("3", [])
-        case .left: return ("3", .control)
-        case .top: return ("7", [])
-        case .bottom: return ("7", .control)
+        case .front: return .vorne
+        case .back: return .hinten
+        case .right: return .rechts
+        case .left: return .links
+        case .top: return .oben
+        case .bottom: return .unten
         default: return nil
         }
     }

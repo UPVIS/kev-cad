@@ -16,6 +16,8 @@ struct KevCADCommands: Commands {
     private var hasSelection: Bool { !model.selection.isEmpty }
     /// Blender-Befehle des App-Kerns (im Demomodus nicht vorhanden).
     private var nav: NavigationActions? { model.actions as? NavigationActions }
+    /// Viewer V2: Befehle der Belegung (Tastenbelegung.swift), Darstellung, Bild und Video.
+    private var viewer: ViewerActions? { model.actions as? ViewerActions }
 
     private func axisView(_ view: StandardViewName) {
         if let nav { nav.axisView(view) } else { model.actions?.setStandardView(view) }
@@ -23,6 +25,14 @@ struct KevCADCommands: Commands {
 
     private func viewSelected() {
         if let nav { nav.viewSelected() } else { model.fitSelection() }
+    }
+
+    /// Zweit- und Drittbelegungen für „Auswahl einrahmen“ und „Alles einrahmen“ (F, Komma, Umschalt-C).
+    private var zweitTasten: [(String, Taste, ViewerBefehl)] {
+        [ViewerBefehl.auswahlEinrahmen, .allesEinrahmen].flatMap { b -> [(String, Taste, ViewerBefehl)] in
+            guard let bel = Tastenbelegung.belegung(b) else { return [] }
+            return bel.tasten.dropFirst().filter { $0.keyEquivalent != nil }.map { ("\(bel.titel) (\($0.anzeige))", $0, b) }
+        }
     }
 
     private func viewAll() {
@@ -71,30 +81,43 @@ struct KevCADCommands: Commands {
                 }
             }
             .disabled(!hasProject || model.parts.isEmpty)
-            Button("Bild speichern") { model.actions?.saveScreenshot() }
-                .keyboardShortcut("s", modifiers: [.command, .option])
-                .disabled(!hasProject)
+            Button("Bildschirmfoto (PNG)") {
+                if let viewer { viewer.bildschirmfoto(model.viewer.fotoGroesse) } else { model.actions?.saveScreenshot() }
+            }
+            .tastenkuerzel(.bildschirmfoto)
+            .disabled(!hasProject)
+            Button("Bildschirmfoto in 4K") { viewer?.bildschirmfoto(.uhd4k) }
+                .disabled(!hasProject || viewer == nil)
+            Button("Video: Drehung um das Ziel") { viewer?.videoDrehung() }
+                .tastenkuerzel(.video)
+                .disabled(!hasProject || viewer == nil || model.parts.isEmpty)
+            Button(model.viewer.aufnahme.laeuft ? "Navigation aufnehmen beenden" : "Navigation aufnehmen") {
+                viewer?.navigationAufnehmen()
+            }
+            .tastenkuerzel(.navigationAufnehmen)
+            .disabled(!hasProject || viewer == nil)
         }
 
         // Darstellung
         CommandGroup(before: .toolbar) {
             Group {
                 // Ansicht wie in Blender (Ziffernblock oder Zahlenreihe)
-                ForEach(StandardViewName.menuOrder.filter { $0.blenderKey != nil }, id: \.self) { view in
+                // Belegung aus Tastenbelegung.swift (einzige Quelle; Ziffernblock oder Zahlenreihe)
+                ForEach(StandardViewName.menuOrder.filter { $0.befehl != nil }, id: \.self) { view in
                     Button(view.title) { axisView(view) }
-                        .keyboardShortcut(view.blenderKey!.key, modifiers: view.blenderKey!.modifiers)
+                        .tastenkuerzel(view.befehl!)
                 }
                 Button("Gegenseite") { nav?.viewOpposite() }
-                    .keyboardShortcut("9", modifiers: [])
+                    .tastenkuerzel(.gegenseite)
                 // Phase 5: Kameras wie in Blender (Ziffernblock oder Zahlenreihe 0)
                 Button("Durch Kamera schauen (an/aus)") {
                     model.cameraActions?.toggleCameraView()
                 }
-                .keyboardShortcut("0", modifiers: [])
+                .tastenkuerzel(.kameraBlick)
                 Button("Aktive Kamera auf Ansicht setzen") { model.cameraActions?.setActiveCameraToView() }
-                    .keyboardShortcut("0", modifiers: [.control, .option])
+                    .tastenkuerzel(.kameraAufAnsicht)
                 Button(model.orthographic ? "Perspektive" : "Parallelprojektion") { nav?.toggleProjection() }
-                    .keyboardShortcut("5", modifiers: [])
+                    .tastenkuerzel(.projektion)
                 Menu("Isometrisch") {
                     ForEach([StandardViewName.iso] + StandardViewName.extraIsoOrder, id: \.self) { view in
                         Button(view.title) { model.actions?.setStandardView(view) }
@@ -102,95 +125,114 @@ struct KevCADCommands: Commands {
                 }
                 Menu("Drehen, Schwenken, Zoomen") {
                     Button("Nach links drehen") { nav?.orbitStep(yaw: -15, pitch: 0) }
-                        .keyboardShortcut("4", modifiers: [])
+                        .tastenkuerzel(.drehenLinks)
                     Button("Nach rechts drehen") { nav?.orbitStep(yaw: 15, pitch: 0) }
-                        .keyboardShortcut("6", modifiers: [])
+                        .tastenkuerzel(.drehenRechts)
                     Button("Nach oben drehen") { nav?.orbitStep(yaw: 0, pitch: -15) }
-                        .keyboardShortcut("8", modifiers: [])
+                        .tastenkuerzel(.drehenHoch)
                     Button("Nach unten drehen") { nav?.orbitStep(yaw: 0, pitch: 15) }
-                        .keyboardShortcut("2", modifiers: [])
+                        .tastenkuerzel(.drehenRunter)
                     Divider()
                     Button("Nach links schwenken") { nav?.panStep(x: -0.1, y: 0) }
-                        .keyboardShortcut("4", modifiers: .control)
+                        .tastenkuerzel(.schwenkenLinks)
                     Button("Nach rechts schwenken") { nav?.panStep(x: 0.1, y: 0) }
-                        .keyboardShortcut("6", modifiers: .control)
+                        .tastenkuerzel(.schwenkenRechts)
                     Button("Nach oben schwenken") { nav?.panStep(x: 0, y: 0.1) }
-                        .keyboardShortcut("8", modifiers: .control)
+                        .tastenkuerzel(.schwenkenHoch)
                     Button("Nach unten schwenken") { nav?.panStep(x: 0, y: -0.1) }
-                        .keyboardShortcut("2", modifiers: .control)
+                        .tastenkuerzel(.schwenkenRunter)
                     Divider()
                     Button("Heranzoomen") { nav?.zoomStep(1) }
-                        .keyboardShortcut("+", modifiers: [])
+                        .tastenkuerzel(.zoomRein)
                     Button("Herauszoomen") { nav?.zoomStep(-1) }
-                        .keyboardShortcut("-", modifiers: [])
+                        .tastenkuerzel(.zoomRaus)
                     Divider()
-                    Button("Auswahl zentrieren (Punkt)") { viewSelected() }
-                        .keyboardShortcut(".", modifiers: [])
-                    Button("Auswahl zentrieren (F)") { viewSelected() }
-                        .keyboardShortcut("f", modifiers: [])
-                    Button("Alles zeigen (Umschalt-C)") { viewAll() }
-                        .keyboardShortcut("c", modifiers: .shift)
+                    // Zweit- und Drittbelegungen aus der Tabelle (F, Komma, Umschalt-C)
+                    ForEach(zweitTasten, id: \.0) { titel, taste, befehl in
+                        Button(titel) { befehl == .allesEinrahmen ? viewAll() : viewSelected() }
+                            .keyboardShortcut(taste.keyEquivalent!, modifiers: taste.mods.swiftUI)
+                    }
                 }
+                Button("Ansichtsmenü (^ über dem Viewport)") { viewer?.menueOeffnen(.ansicht) }
+                    .disabled(viewer == nil)
                 Divider()
-                Button(hasSelection ? "Auswahl zentrieren" : "Alles zentrieren") { viewSelected() }
-                    .keyboardShortcut(",", modifiers: [])
-                Button("Alles zeigen") { viewAll() }
-                    .keyboardShortcut(.home, modifiers: [])
+                Button(hasSelection ? "Auswahl einrahmen" : "Alles einrahmen") { viewSelected() }
+                    .tastenkuerzel(.auswahlEinrahmen)
+                Button("Alles einrahmen") { viewAll() }
+                    .tastenkuerzel(.allesEinrahmen)
                 Divider()
                 Button("Alles auswählen") { nav?.selectAll() }
-                    .keyboardShortcut("a", modifiers: [])
+                    .tastenkuerzel(.allesAuswaehlen)
                 Button("Auswahl aufheben") { model.clearSelection() }
-                    .keyboardShortcut("a", modifiers: .option)
+                    .tastenkuerzel(.auswahlAufheben)
                     .disabled(!inProject || !hasSelection)
                 Button("Auswahl umkehren") { nav?.invertSelection() }
-                    .keyboardShortcut("i", modifiers: .control)
+                    .tastenkuerzel(.auswahlUmkehren)
                 Toggle("Flächen und Kanten auswählen", isOn: Binding(
                     get: { model.selectionMode == .elements },
                     set: { nav?.setSelectionMode($0 ? .elements : .parts) }
                 ))
-                .keyboardShortcut(.tab, modifiers: [])
+                .tastenkuerzel(.elementModus)
                 Button("Abbrechen") {
                     if model.oberflaeche.uebersicht {  // V2-3: Startübersicht wegschieben
                         model.oberflaechenActions?.zeigeUebersicht(false)
                     } else if model.oberflaeche.spricht {  // V2-3: Sprechen verwerfen
                         model.oberflaechenActions?.oberflaeche(.sprechText(nil))
                         model.oberflaechenActions?.setzeSprechen(false)
-                    } else if model.simulation.werkzeug != .keins, let sim = model.actions as? SimulationActions {
-                        sim.setSimulationWerkzeug(.keins)  // Simulation: Werkzeug (Kraft, Lager, Schutz) beenden
+                    } else if let viewer {
+                        viewer.ausfuehren(.abbrechen)  // Menü, Übersicht, Werkzeug, Messen, Auswahl
                     } else if model.measureMode {
                         model.actions?.setMeasureMode(false)
                     } else {
                         model.clearSelection()
                     }
                 }
-                .keyboardShortcut(.escape, modifiers: [])
+                .tastenkuerzel(.abbrechen)
                 Divider()
                 Button("Ausblenden") { model.hideSelection() }
-                    .keyboardShortcut("h", modifiers: [])
+                    .tastenkuerzel(.ausblenden)
                     .disabled(!inProject || !hasSelection)
                 Button("Andere ausblenden") { nav?.hideUnselected() }
-                    .keyboardShortcut("h", modifiers: .shift)
+                    .tastenkuerzel(.andereAusblenden)
                     .disabled(!inProject || !hasSelection)
                 Button("Alles einblenden") { model.actions?.showAll() }
-                    .keyboardShortcut("h", modifiers: .option)
-                Button("Lokale Ansicht") { nav?.toggleLocalView() }
-                    .keyboardShortcut("/", modifiers: [])
-                Divider()
-                Picker("Darstellung", selection: Binding(
-                    get: { model.displayStyle }, set: { model.actions?.setDisplayStyle($0) }
-                )) {
-                    ForEach(DisplayStyle.allCases, id: \.self) { style in Text(style.title).tag(style) }
+                    .tastenkuerzel(.allesEinblenden)
+                Button(model.viewer.lokaleAnsicht ? "Lokale Ansicht beenden" : "Isolieren (lokale Ansicht)") {
+                    nav?.toggleLocalView()
                 }
+                .tastenkuerzel(.isolieren)
+                Toggle("Übrige Teile als Hauch", isOn: Binding(
+                    get: { model.viewer.hauch }, set: { viewer?.setHauch($0) }))
+                Divider()
+                Menu("Darstellung") {
+                    ForEach(ShadingModus.allCases, id: \.self) { m in
+                        Toggle(m.titel, isOn: Binding(
+                            get: { model.viewer.shading == m }, set: { _ in viewer?.setShading(m) }))
+                    }
+                    Divider()
+                    ForEach(ShadingOption.allCases, id: \.self) { o in
+                        Toggle(o.titel, isOn: Binding(
+                            get: { o.istAn(model.viewer.optionen) }, set: { viewer?.setShadingOption(o, $0) }))
+                    }
+                }
+                .disabled(viewer == nil)
+                Button("Darstellung wählen …") { viewer?.menueOeffnen(.darstellung) }
+                    .tastenkuerzel(.shadingMenue)
+                    .disabled(viewer == nil)
+                Toggle("Röntgen", isOn: Binding(
+                    get: { model.viewer.shading == .roentgen }, set: { _ in viewer?.ausfuehren(.roentgen) }))
+                    .tastenkuerzel(.roentgen)
+                    .disabled(viewer == nil)
                 Toggle("Messen", isOn: Binding(get: { model.measureMode }, set: { model.actions?.setMeasureMode($0) }))
-                    .keyboardShortcut("m", modifiers: [])
+                    .tastenkuerzel(.messen)
                 Toggle("Schnitt", isOn: Binding(
                     get: { model.sectionEnabled }, set: { _ in window?.toggleSection(model) }
                 ))
-                .keyboardShortcut("s", modifiers: [])
+                .tastenkuerzel(.schnitt)
                 Toggle("Explosion", isOn: Binding(
                     get: { model.explodeFactor > 0 }, set: { _ in window?.toggleExplode(model) }
                 ))
-                .keyboardShortcut("e", modifiers: [])
+                .tastenkuerzel(.explosion)
                 Toggle("Bedingungen am Teil", isOn: Binding(
                     get: { model.showConstraintSymbols },
                     set: { BedingungenSchalter.setzen(model, $0) }
@@ -222,6 +264,14 @@ struct KevCADCommands: Commands {
 
         // Hilfe
         CommandGroup(replacing: .help) {
+            Button("Tastenübersicht") { viewer?.ausfuehren(.tastenuebersicht) }
+                .tastenkuerzel(.tastenuebersicht)
+                .disabled(!inProject || viewer == nil)
+            Toggle("Hinweisleiste im Viewport", isOn: Binding(
+                get: { model.viewer.hinweisleiste },
+                set: { if $0 != model.viewer.hinweisleiste { viewer?.ausfuehren(.hinweisleiste) } }))
+                .tastenkuerzel(.hinweisleiste)
+            Divider()
             Button("Protokoll zeigen") { session.showLog() }
         }
     }

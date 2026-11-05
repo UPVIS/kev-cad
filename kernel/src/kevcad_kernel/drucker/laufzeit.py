@@ -77,7 +77,7 @@ class DruckerRuntimeMixin:
                                           f"{err or reply.get('message') or 'abgelehnt'}"}
         return {"ok": True, "auftrag": a.id, "zustand": "wartet", "weg": a.weg, "platten": list(a.platten),
                 "meldung": "Der Dialog „Drucken …“ ist in Kev CAD offen. Es geschieht nichts, bis Kevin dort "
-                           "bestätigt; den Stand zeigt drucker_status."}
+                           "bestätigt; den Stand zeigt druck(aktion='drucker')."}
 
     # =================================================================================================================
     # App

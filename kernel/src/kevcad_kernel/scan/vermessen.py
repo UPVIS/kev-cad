@@ -23,7 +23,8 @@ def kameras(ref_ordner: Path) -> dict[str, Any]:
     try:
         return json.loads(datei.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise ReferenzFehler(f"Scan nicht ausgewertet ({datei.name} fehlt): erst scan_importieren abwarten") from exc
+        raise ReferenzFehler(f"Scan nicht ausgewertet ({datei.name} fehlt): erst referenz(aktion='scan_importieren') "
+                             f"abwarten") from exc
 
 
 def bilder_waehlen(eintraege: list[dict[str, Any]], anzahl: int) -> list[dict[str, Any]]:

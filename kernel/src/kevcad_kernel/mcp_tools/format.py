@@ -245,7 +245,7 @@ def run_summary(res: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
         lines.append(f"Warnung: {w}")
     bom = res.get("bom") if isinstance(res.get("bom"), dict) else None
     if bom:
-        lines.append(f"Stückliste: {bom_totals_line(bom.get('totals') or {})} (Details mit bom)")
+        lines.append(f"Stückliste: {bom_totals_line(bom.get('totals') or {})} (Details mit parts(stueckliste=true))")
         for w in (bom.get("warnings") or [])[:5]:
             lines.append(f"Hinweis Stückliste: {w}")
         einkauf = bom.get("einkauf") if isinstance(bom.get("einkauf"), dict) else None
@@ -401,7 +401,7 @@ def stock_detail(res: dict[str, Any]) -> str:
     it = res.get("item") or {}
     mat = res.get("material") or {}
     lines = [f"{it.get('name', '?')} ({it.get('id', '?')}), Ebene {it.get('ebene', '?')}"
-             + (", vorgeschlagen – wartet auf Kevins Freigabe (freigabe_anfragen)" if it.get("status") == "vorgeschlagen"
+             + (", vorgeschlagen – wartet auf Kevins Freigabe (lager(aktion='freigabe'))" if it.get("status") == "vorgeschlagen"
                 else "")]
     lines.append(f"Art {it.get('art', '?')}" + (f", Norm {it['norm']}" if it.get("norm") else "")
                  + f", Maße: {masse_short(it)}")

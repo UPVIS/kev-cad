@@ -177,6 +177,29 @@ if [ "${KEVCAD_FERN:-}" = lokal ] || [ -e "$HOME/.kevcad-nur-macbook" ]; then
 fi
 mini_reachable || fallback "nicht erreichbar ($HOST)"
 
+# Beide Rechner bauen (Kevin, 05.11.2026: „Mini und MacBook können gerne beide bauen“). Sind auf dem Mini beide Bauplätze
+# belegt, wartet ein testbau nicht in seiner Schlange, sondern läuft hier, wenn die Bausperre gerade frei ist und mindestens
+# 25 % Speicher frei sind. tests bleiben auf dem Mini (einige Kernel-Tests nutzen feste Ports, dort gibt es einen
+# Testplatz), release ebenso (Installationsbau wie bisher).
+mini_full() {
+  local info
+  info=$(mini "s=\$(ls -td $REMOTE/quelle/*/tools/fern/mini.sh 2>/dev/null | head -1);
+    [ -n \"\$s\" ] && KEVCAD_FERN_WACHE=0 /bin/bash \"\$s\" status" 2>/dev/null) || return 1
+  case "$info" in *"Plätze:"*) ;; *) return 1 ;; esac
+  case "$info" in *"a: frei;"*|*"b: frei;"*) return 1 ;; esac
+  return 0
+}
+here_free() {
+  local free
+  lockf -k -t 0 "$BUILD_LOCK" true 2>/dev/null || return 1
+  free=$(memory_pressure 2>/dev/null | tail -1 | grep -oE '[0-9]+' | tail -1)
+  [ -n "$free" ] && [ "$free" -ge 25 ]
+}
+if [ "$MODE" = testbau ] && [ "${KEVCAD_FERN:-}" != mini ] && mini_full && here_free; then
+  echo "==> Mac mini: beide Bauplätze belegt, $MODE läuft hier auf dem MacBook (Sperre frei, Speicher reicht)." >&2
+  run_local
+fi
+
 APP_TEST="Kev CAD Test${NAME:+ $NAME}"
 JOB_ID="$ID-$(date +%Y%m%d-%H%M%S)-$$"
 case "$MODE" in tests) KIND=tests ;; testbau) KIND=testbau ;; release) KIND=bundle ;; esac

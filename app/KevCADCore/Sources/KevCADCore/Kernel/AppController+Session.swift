@@ -50,7 +50,7 @@ extension AppController {
 
     func applyRestoredView(_ saved: SavedSession) {
         pendingRestore = nil
-        if let style = saved.displayStyle.flatMap(DisplayStyle.init(rawValue:)) { applyDisplayStyle(style) }
+        if let style = saved.displayStyle.flatMap(DisplayStyle.init(rawValue:)) { darstellungUebernehmen(style) }
         if let mode = saved.selectionMode.flatMap(SelectionMode.init(rawValue:)) { model.selectionMode = mode }
         let known = (saved.hidden ?? []).filter { scene.record($0) != nil }
         if !known.isEmpty { setVisibility(known, visible: false) }

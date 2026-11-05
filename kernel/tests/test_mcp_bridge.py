@@ -47,21 +47,22 @@ def test_bridge_forwards_tools_calls_images_and_errors(srv):
             "info": c.server_info,
             "tools": (await c.list_tools()).tools,
             "run": await c.call_tool("run", {"params": {"breite": 99}}),
-            "shot": await c.call_tool("screenshot", {"width": 320, "height": 200}),
-            "focus": await c.call_tool("focus", {"refs": ["Halter/Lasche"]}),
+            "shot": await c.call_tool("ansichten", {"kevin": True, "width": 320, "height": 200}),
+            "focus": await c.call_tool("view", {"focus": ["Halter/Lasche"]}),
         }
         out["connected_during"] = list(fake.connected)
         fake.png = BIG_PNG
-        out["big"] = await c.call_tool("screenshot", {"width": 1200, "height": 900})
+        out["big"] = await c.call_tool("ansichten", {"kevin": True, "width": 1200, "height": 900})
         fake.fail_run = True
         out["fail"] = await c.call_tool("run", {})
-        out["invalid"] = await c.call_tool("measure", {"refs": []})
+        out["invalid"] = await c.call_tool("view", {"focus": []})
         out["unknown"] = await c.call_tool("gibtsnicht", {})
         return out
 
     direct_tools, direct_run = anyio.run(lambda: _with(server.url, direct))
     assert wait_for(lambda: fake.connected == [True, False], 5), fake.connected
     fake.connected.clear()
+    server.mcp.kevcad_tools.gedaechtnis.vergessen(alle=True)  # run berichtet sonst nur den Unterschied
     r = anyio.run(lambda: _with(bridge_params(server.port), via_bridge))
 
     assert {t.name for t in r["tools"]} == EXPECTED_TOOLS
@@ -75,7 +76,8 @@ def test_bridge_forwards_tools_calls_images_and_errors(srv):
     assert run.is_error is False
     # gleiche Inhalte wie direkt (bis auf die Laufnummer)
     assert texts(run)[0] == texts(direct_run)[0].replace("Lauf 1", "Lauf 2")
-    assert run.structured_content["parts"] == direct_run.structured_content["parts"]
+    ohne_lauf = lambda d: {k: v for k, v in d.items() if k != "run"}  # noqa: E731
+    assert ohne_lauf(run.structured_content) == ohne_lauf(direct_run.structured_content)
 
     shot = r["shot"]
     images = [b for b in shot.content if b.type == "image"]
@@ -90,7 +92,7 @@ def test_bridge_forwards_tools_calls_images_and_errors(srv):
     assert len(big) == 1 and base64.b64decode(big[0].data) == BIG_PNG
 
     assert r["fail"].is_error and "Zeile 12" in texts(r["fail"])[0]
-    assert r["invalid"].is_error and "Mindestens eine Referenz" in texts(r["invalid"])[0]
+    assert r["invalid"].is_error and "Nichts zu tun" in texts(r["invalid"])[0]
     assert r["unknown"].is_error and "Unknown tool" in texts(r["unknown"])[0]
 
     # Agent in der App: verbunden, solange die Brücke läuft; getrennt, wenn Claude Code sie beendet

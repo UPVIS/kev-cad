@@ -4,24 +4,19 @@ import QuartzCore
 import SwiftUI
 import simd
 
-// Steuerung wie in Blender (Standardbelegung, Z oben, Drehen im Turntable-Stil um den Ansichtsmittelpunkt):
+// Steuerung wie in Blender (Standardbelegung, Z oben, Drehen im Turntable-Stil). Die vollständige Belegung von Maus,
+// Trackpad und Tastatur steht in Tastenbelegung.swift (einzige Quelle, auch für Hinweisleiste und Übersicht); hier wird
+// sie ausgewertet:
 //
-// | Eingabe                                   | Wirkung                                          |
-// |-------------------------------------------|--------------------------------------------------|
-// | Mittlere Maustaste ziehen                 | drehen                                           |
-// | Umschalt + mittlere Maustaste             | schwenken                                        |
-// | Strg + mittlere Maustaste                 | zoomen (nach oben = näher)                       |
-// | Mausrad                                   | zoomen; Strg + Rad schwenkt waagrecht, Umschalt senkrecht |
-// | Trackpad mit zwei Fingern                 | drehen; mit Umschalt schwenken, mit Strg zoomen  |
-// | Trackpad zusammenziehen/spreizen          | zoomen                                           |
-// | Wahltaste + linke Maustaste (3-Tasten-Emulation) | wie mittlere Maustaste                    |
-// | Wahltaste + mittlere Maustaste klicken    | Ansicht auf den Punkt unter der Maus zentrieren  |
-// | Linke Maustaste klicken                   | auswählen; Umschalt fügt hinzu/entfernt; Klick ins Leere hebt auf |
-// | Linke Maustaste ziehen                    | Rahmen aufziehen; Umschalt erweitert, Strg zieht ab |
-// | Rechte Maustaste                          | Kontextmenü                                      |
+// - Mittlere Maustaste: drehen um den Punkt unter der Maus; mit Umschalt schwenken, mit Strg zoomen. Wahltaste + linke
+//   Maustaste wie mittlere (3-Tasten-Emulation). Wahltaste + mittlere Maustaste klicken: Ansicht auf den Punkt.
+// - Mausrad und Zoomgeste: zoomen zur Mausposition; Strg + Rad schwenkt waagrecht, Umschalt senkrecht.
+// - Trackpad mit zwei Fingern: drehen (um den Punkt unter der Maus), mit Umschalt schwenken, mit Strg zoomen.
+// - Linke Maustaste: auswählen (Umschalt ergänzt), ziehen: Rahmen (Umschalt erweitert, Strg zieht ab).
+// - Rechte Maustaste: Kontextmenü.
+// - Tasten bei Fokus oder Maus über dem Viewport: Ziffernblock und Zahlenreihe („Numpad emulieren“), ^ Ansichtsmenü.
 //
-// Kein Einrasten auf Standardansichten, kein Nachlaufen. Die Tastatur (Ziffernblock bzw. Zahlenreihe, Komma, Pos1 …)
-// belegt die Oberfläche über NavigationActions.
+// Kein Einrasten auf Standardansichten, kein Nachlaufen.
 
 enum BlenderNav {
     /// Blender: 0,4° je Punkt (view_rotate_sensitivity_turntable).
@@ -32,6 +27,8 @@ enum BlenderNav {
     static let zoomPerPoint: Float = 0.01
     /// Ab so vielen Punkten Bewegung ist ein Klick ein Ziehen.
     static let dragThreshold: CGFloat = 3
+    /// So lange gilt der zuletzt getroffene Punkt unter der Maus als aktuell (Drehpunkt, Zoomziel).
+    static let mausPunktGueltig: CFTimeInterval = 0.6
 }
 
 // MARK: - Kamera
@@ -46,14 +43,19 @@ extension ViewportCoordinator {
 
     /// Kamera sofort setzen (laufende Fahrt abbrechen, sonst überschreibt sie die Eingabe).
     func setCamera(_ c: CameraState) {
-        controller.cameraController.cancelAnimation()
+        if fahrt != nil { fahrtAbbrechen() } else { controller.cameraController.cancelAnimation() }
         controller.animateTo(c, duration: 0)
+        onKameraGesetzt?(c)
     }
 
-    /// Kamera mit Blenders „Smooth View“ (0,2 s) setzen.
-    func smoothCamera(_ c: CameraState, duration: Float = 0.2) {
-        controller.animateTo(c, duration: duration)
+    /// Kamera mit Blenders „Smooth View“ (rund 0,2 s) setzen.
+    func smoothCamera(_ c: CameraState, duration: Double = ViewerStil.kamerafahrt) {
+        fahre(zu: c, dauer: duration)
     }
+
+    /// Ausgangspunkt für schrittweise Befehle: das Ziel einer laufenden Fahrt, sonst die aktuelle Kamera (zweimal 1
+    /// schnell hintereinander landet so nicht auf halbem Weg).
+    var kameraZiel: CameraState { fahrt?.ziel ?? controller.cameraState }
 
     /// Automatische Parallelprojektion einer Achsansicht beim Drehen wieder aufheben (Blender „Auto Perspective“).
     private func leaveAutoOrtho(_ c: inout CameraState) {
@@ -61,15 +63,22 @@ extension ViewportCoordinator {
         autoOrtho = false
     }
 
-    /// Drehen um den Drehpunkt: waagrecht um die Welt-Z-Achse, senkrecht um die Querachse der Ansicht.
+    /// Drehen: waagrecht um die Welt-Z-Achse, senkrecht um die Querachse der Ansicht, beides durch den Drehpunkt der
+    /// laufenden Drehung (Punkt unter der Maus beim Beginn), sonst um den Ansichtsmittelpunkt.
     /// `dx`, `dy` in Punkten, `dy` positiv nach oben (wie Mausbewegung).
     public func navOrbit(dx: Float, dy: Float) {
         var c = controller.cameraState
         leaveAutoOrtho(&c)
         let s = BlenderNav.orbitPerPoint
         let yaw = simd_quatf(angle: -dx * s, axis: SIMD3<Float>(0, 0, 1))
-        let pitch = simd_quatf(angle: dy * s, axis: SIMD3<Float>(1, 0, 0))
-        c.rotation = simd_normalize(yaw * c.rotation * pitch)
+        let pitch = simd_quatf(angle: dy * s, axis: simd_normalize(c.rightVector))
+        let r = simd_normalize(yaw * pitch)
+        c.rotation = simd_normalize(r * c.rotation)
+        if let p = drehZentrum {
+            // Starre Drehung des ganzen Kamerastativs um p: der Punkt unter der Maus bleibt, wo er ist
+            c.pivot = p + r.act(c.pivot - p)
+        }
+        mausPunkt = nil
         setCamera(c)
     }
 
@@ -78,24 +87,48 @@ extension ViewportCoordinator {
         var c = controller.cameraState
         let w = worldPerPoint(c)
         c.pivot -= c.rightVector * (dx * w) + c.upVector * (dy * w)
+        mausPunkt = nil
         setCamera(c)
     }
 
-    /// Zoomen um den Drehpunkt; `factor` < 1 = näher heran.
-    public func navZoom(factor: Float) {
+    /// Zoomen; `factor` < 1 = näher heran. Mit `zu` (Punkt der Eingabeebene, Ursprung unten links) bleibt der Punkt
+    /// unter der Maus stehen (Blender „Zoom to Mouse Position“): die Kamera wird um ihn gestreckt.
+    public func navZoom(factor: Float, zu maus: CGPoint? = nil) {
         guard factor.isFinite, factor > 0 else { return }
         var c = controller.cameraState
+        let alt = c
         if c.isOrthographic {
             c.orthographicScale = min(max(c.orthographicScale * factor, 0.001), 1e7)
         } else {
             c.distance = min(max(c.distance * factor, 0.01), 1e7)
         }
+        if let maus, let q = zoomZiel(maus, alt) {
+            // tatsächlicher Faktor nach den Grenzen
+            let f = c.isOrthographic ? c.orthographicScale / alt.orthographicScale : c.distance / alt.distance
+            c.pivot = q + (alt.pivot - q) * f
+            // Der Punkt bleibt unter der Maus: für die nächste Raste weiter gültig
+            if mausPunkt?.welt == q { mausPunkt?.zeit = CACurrentMediaTime() } else { mausPunkt = nil }
+        } else {
+            mausPunkt = nil
+        }
         setCamera(c)
+    }
+
+    /// Punkt, um den gezoomt wird: perspektivisch der Treffer unter der Maus (falls frisch), sonst der Punkt der
+    /// Drehpunktebene unter der Maus; parallel immer die Drehpunktebene.
+    private func zoomZiel(_ maus: CGPoint, _ c: CameraState) -> SIMD3<Float>? {
+        if !c.isOrthographic, let mp = mausPunkt, CACurrentMediaTime() - mp.zeit < BlenderNav.mausPunktGueltig,
+            hypot(mp.maus.x - maus.x, mp.maus.y - maus.y) < 4,
+            simd_dot(mp.welt - c.position, c.viewDirection) > c.distance * 0.02
+        {
+            return mp.welt
+        }
+        return weltpunkt(maus, durch: c.pivot)
     }
 
     /// Ziffernblock 1/3/7 (mit Strg Gegenseite): Blickrichtung, Drehpunkt und Abstand bleiben, automatisch parallel.
     public func navAxisView(_ view: StandardView) {
-        var c = controller.cameraState
+        var c = kameraZiel
         c.rotation = view.rotation
         if !c.isOrthographic {
             c = Self.withProjection(c, orthographic: true)
@@ -104,16 +137,16 @@ extension ViewportCoordinator {
         smoothCamera(c)
     }
 
-    /// Ziffernblock 5.
+    /// Ziffernblock 5: Perspektive und parallel, gleitend.
     public func navToggleProjection() {
-        let c = controller.cameraState
+        let c = kameraZiel
         autoOrtho = false
-        smoothCamera(Self.withProjection(c, orthographic: !c.isOrthographic), duration: 0.15)
+        smoothCamera(Self.withProjection(c, orthographic: !c.isOrthographic))
     }
 
     /// Ziffernblock 9: Gegenseite. Oben/unten werden getauscht, sonst um 180° um Z gedreht.
     public func navOpposite() {
-        var c = controller.cameraState
+        var c = kameraZiel
         let look = c.viewDirection
         if abs(look.z) > 0.999 {
             c.rotation = simd_normalize(c.rotation * simd_quatf(angle: .pi, axis: SIMD3<Float>(0, 1, 0)))
@@ -125,7 +158,7 @@ extension ViewportCoordinator {
 
     /// Ziffernblock 4/6/8/2: Schritte in Grad.
     public func navOrbitStep(yaw: Float, pitch: Float) {
-        var c = controller.cameraState
+        var c = kameraZiel
         leaveAutoOrtho(&c)
         let q = simd_quatf(angle: yaw * .pi / 180, axis: SIMD3<Float>(0, 0, 1))
         let p = simd_quatf(angle: pitch * .pi / 180, axis: SIMD3<Float>(1, 0, 0))
@@ -135,15 +168,26 @@ extension ViewportCoordinator {
 
     /// Strg + Ziffernblock: schwenken um einen Anteil der Bildhöhe (positiv x = Ansicht nach rechts).
     public func navPanStep(x: Float, y: Float) {
-        var c = controller.cameraState
+        var c = kameraZiel
         let h = worldPerPoint(c) * Float(max(viewSize.height, 1))
         c.pivot += c.rightVector * (x * h) + c.upVector * (y * h)
         smoothCamera(c, duration: 0.12)
     }
 
+    /// + und - (Tastatur): zoomen um den Drehpunkt, weich.
+    public func navZoomStep(factor: Float) {
+        var c = kameraZiel
+        if c.isOrthographic {
+            c.orthographicScale = min(max(c.orthographicScale * factor, 0.001), 1e7)
+        } else {
+            c.distance = min(max(c.distance * factor, 0.01), 1e7)
+        }
+        smoothCamera(c, duration: 0.12)
+    }
+
     /// Kamera auf einen Punkt zentrieren (Blender: Wahltaste + mittlere Maustaste), Richtung und Abstand bleiben.
     public func navCenter(on point: SIMD3<Float>) {
-        var c = controller.cameraState
+        var c = kameraZiel
         c.pivot = point
         c.panOffset = .zero
         smoothCamera(c)
@@ -340,9 +384,24 @@ final class NavigationInputView: NSView {
         case griff
     }
 
-    private var mode: Mode = .idle
+    private var mode: Mode = .idle {
+        didSet { meldeNavigation() }
+    }
     private var last = CGPoint.zero
     private let boxLayer = CAShapeLayer()
+    private var tracking: NSTrackingArea?
+    private var monitore: [Any] = []
+    /// Letzte Mausposition im Viewport (Ursprung unten links); nil = Maus außerhalb.
+    private var maus: CGPoint? {
+        didSet { coordinator?.letzteMaus = maus }
+    }
+    /// Läuft gerade ein Treffertest unter der Maus? Höchstens einer zugleich, der nächste folgt der Maus nach.
+    private var hoverLaeuft = false
+    private var hoverNochmal = false
+    /// Trackpad: läuft eine Geste mit zwei Fingern (Drehpunkt wird zu Beginn gesetzt)?
+    private var trackpadGeste = false
+    /// Zählt Drehungen, damit eine späte Trefferantwort keine neuere Drehung verstellt.
+    private var drehToken = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -370,6 +429,40 @@ final class NavigationInputView: NSView {
         coordinator?.viewSize = newSize
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let t = NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        for m in monitore { NSEvent.removeMonitor(m) }
+        monitore = []
+        guard window != nil else { return }
+        // Sondertasten für die Hinweisleiste (flagsChanged erreicht sonst nur den Fokus)
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] e in
+            nonisolated(unsafe) let e = e
+            MainActor.assumeIsolated { self?.coordinator?.eingabe.mods = TastenMods(e.modifierFlags) }
+            return e
+        }) { monitore.append(m) }
+        // Tasten, die nur der Viewport kennt (^ Ansichtsmenü, ? Übersicht), wirken wie in Blender, solange die Maus
+        // über dem Viewport steht, auch ohne Fokus; Menükürzel und Textfelder gehen vor.
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
+            nonisolated(unsafe) let e = e
+            let verbraucht = MainActor.assumeIsolated { self?.tasteUeberViewport(e) ?? false }
+            return verbraucht ? nil : e
+        }) { monitore.append(m) }
+    }
+
+    deinit {
+        for m in monitore { NSEvent.removeMonitor(m) }
+    }
+
     private func point(_ event: NSEvent) -> CGPoint { convert(event.locationInWindow, from: nil) }
 
     /// Navigationsart aus den Sondertasten (wie mittlere Maustaste in Blender).
@@ -377,6 +470,47 @@ final class NavigationInputView: NSView {
         if flags.contains(.shift) { return .pan }
         if flags.contains(.control) || flags.contains(.command) { return .zoom }
         return .orbit
+    }
+
+    private func meldeNavigation() {
+        let n: ViewerEingabe.Navigation?
+        switch mode {
+        case .orbit: n = .drehen
+        case .pan: n = .verschieben
+        case .zoom: n = .zoomen
+        case .boxSelect: n = .rahmen
+        case .griff: n = .griff
+        default: n = nil
+        }
+        if coordinator?.eingabe.navigation != n { coordinator?.eingabe.navigation = n }
+    }
+
+    /// Drehung beginnt: Drehpunkt ist der Punkt unter der Maus (letzter Treffer, sonst ein neuer Treffertest; bis
+    /// dessen Antwort da ist, ein Bild später, dreht die Ansicht um ihren Mittelpunkt).
+    private func beginneDrehung(bei p: CGPoint) {
+        guard let c = coordinator else { return }
+        c.drehZentrum = nil
+        drehToken += 1
+        let token = drehToken
+        if let mp = c.mausPunkt, CACurrentMediaTime() - mp.zeit < BlenderNav.mausPunktGueltig,
+            hypot(mp.maus.x - p.x, mp.maus.y - p.y) < 6
+        {
+            c.drehZentrum = mp.welt
+            return
+        }
+        c.pickPoint(p, in: self) { [weak self] result in
+            guard let self, self.drehToken == token, let c = self.coordinator, let result,
+                let w = c.surfacePoint(of: result, at: p, in: self)
+            else { return }
+            c.drehZentrum = w
+        }
+    }
+
+    /// Drehung zu Ende: der nächste Beginn sucht seinen Punkt neu.
+    private func endeDrehung() {
+        drehToken += 1
+        coordinator?.drehZentrum = nil
+        hoverTest()
     }
 
     private func apply(_ dx: CGFloat, _ dy: CGFloat) {
@@ -389,10 +523,54 @@ final class NavigationInputView: NSView {
         }
     }
 
+    // Maus bewegt: Treffertest unter der Maus (Messen, Drehpunkt, Zoomziel)
+
+    override func mouseEntered(with event: NSEvent) {
+        coordinator?.eingabe.mausImViewport = true
+        coordinator?.eingabe.mods = TastenMods(event.modifierFlags)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        maus = nil
+        coordinator?.eingabe.mausImViewport = false
+        coordinator?.onHover?(nil, nil, nil)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let p = point(event)
+        maus = p
+        if coordinator?.eingabe.mausImViewport == false { coordinator?.eingabe.mausImViewport = true }
+        hoverTest()
+    }
+
+    func hoverTest() {
+        guard let p = maus, let c = coordinator, case .idle = mode else { return }
+        if hoverLaeuft {
+            hoverNochmal = true
+            return
+        }
+        hoverLaeuft = true
+        c.pickPoint(p, in: self) { [weak self] result in
+            guard let self, let c = self.coordinator else { return }
+            self.hoverLaeuft = false
+            let welt = result.flatMap { c.surfacePoint(of: $0, at: p, in: self) }
+            if let welt { c.mausPunkt = (welt, p, CACurrentMediaTime()) }
+            if self.maus != nil {
+                // Bildpunkt oben links für die Überlagerung
+                c.onHover?(result, welt, CGPoint(x: p.x, y: self.bounds.height - p.y))
+            }
+            if self.hoverNochmal {
+                self.hoverNochmal = false
+                self.hoverTest()
+            }
+        }
+    }
+
     // Linke Maustaste: auswählen, Rahmen; mit Wahltaste wie mittlere Maustaste
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        coordinator?.fahrtAbbrechen()
         let p = point(event)
         last = p
         let flags = event.modifierFlags
@@ -403,6 +581,7 @@ final class NavigationInputView: NSView {
         }
         if flags.contains(.option) {
             mode = navMode(flags)
+            if case .orbit = mode { beginneDrehung(bei: p) }
         } else {
             mode = .pendingSelect(start: p, modifiers: flags)
         }
@@ -410,6 +589,7 @@ final class NavigationInputView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let p = point(event)
+        maus = p
         defer { last = p }
         switch mode {
         case .pendingSelect(let start, let flags):
@@ -452,6 +632,7 @@ final class NavigationInputView: NSView {
             break
         }
         mode = .idle
+        endeDrehung()
     }
 
     private func drawBox(from a: CGPoint, to b: CGPoint) {
@@ -470,17 +651,25 @@ final class NavigationInputView: NSView {
     override func otherMouseDown(with event: NSEvent) {
         guard event.buttonNumber == 2 else { return }
         window?.makeFirstResponder(self)
+        coordinator?.fahrtAbbrechen()
         let p = point(event)
         last = p
         mode = event.modifierFlags.contains(.option) ? .pendingCenter(start: p) : navMode(event.modifierFlags)
+        if case .orbit = mode { beginneDrehung(bei: p) }
     }
 
     override func otherMouseDragged(with event: NSEvent) {
         let p = point(event)
+        maus = p
         defer { last = p }
         if case .pendingCenter(let start) = mode {
             // Wahltaste + mittlere Maustaste gezogen: Blender dreht dann normal
-            if hypot(p.x - start.x, p.y - start.y) > BlenderNav.dragThreshold { mode = .orbit } else { return }
+            if hypot(p.x - start.x, p.y - start.y) > BlenderNav.dragThreshold {
+                mode = .orbit
+                beginneDrehung(bei: start)
+            } else {
+                return
+            }
         }
         apply(p.x - last.x, p.y - last.y)
     }
@@ -496,6 +685,7 @@ final class NavigationInputView: NSView {
             }
         }
         mode = .idle
+        endeDrehung()
     }
 
     // Rechte Maustaste: Kontextmenü
@@ -514,24 +704,44 @@ final class NavigationInputView: NSView {
         // Nachlauf des Trackpads ignorieren: kein Weiterdrehen nach dem Loslassen
         if !event.momentumPhase.isEmpty { return }
         let flags = event.modifierFlags
+        let p = point(event)
+        maus = p
         if event.hasPreciseScrollingDeltas {
+            // Geste mit zwei Fingern: zu Beginn Drehpunkt unter der Maus setzen
+            if event.phase.contains(.began) || (!trackpadGeste && event.phase.isEmpty == false) {
+                trackpadGeste = true
+                c.fahrtAbbrechen()
+                if !flags.contains(.shift), !flags.contains(.control), !flags.contains(.command) {
+                    beginneDrehung(bei: p)
+                }
+            }
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                trackpadGeste = false
+                endeDrehung()
+                if c.eingabe.navigation != nil { c.eingabe.navigation = nil }
+                return
+            }
             // Fingerbewegung wie Mausbewegung behandeln, unabhängig von „natürlichem Scrollen“
             let sign: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
             let dx = event.scrollingDeltaX * sign
             let dy = -event.scrollingDeltaY * sign
             if flags.contains(.shift) {
+                c.eingabe.navigation = .verschieben
                 c.navPan(dx: Float(dx), dy: Float(dy))
             } else if flags.contains(.control) || flags.contains(.command) {
-                c.navZoom(factor: exp(-Float(dy) * BlenderNav.zoomPerPoint))
+                c.eingabe.navigation = .zoomen
+                c.navZoom(factor: exp(-Float(dy) * BlenderNav.zoomPerPoint), zu: p)
             } else {
+                c.eingabe.navigation = .drehen
                 c.navOrbit(dx: Float(dx), dy: Float(dy))
             }
             return
         }
-        // Mausrad: eine Raste = ein Zoomschritt; Strg schwenkt waagrecht, Umschalt senkrecht
+        // Mausrad: eine Raste = ein Zoomschritt zur Mausposition; Strg schwenkt waagrecht, Umschalt senkrecht
         let raw = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.scrollingDeltaX
         let device = event.isDirectionInvertedFromDevice ? -raw : raw
         guard device != 0 else { return }
+        c.fahrtAbbrechen()
         let steps = device > 0 ? 1 : -1
         let pagePoints = Float(max(bounds.height, 1)) * 0.06
         if flags.contains(.control) {
@@ -539,21 +749,57 @@ final class NavigationInputView: NSView {
         } else if flags.contains(.shift) {
             c.navPan(dx: 0, dy: Float(steps) * pagePoints)
         } else {
-            c.navZoom(factor: steps > 0 ? 1 / BlenderNav.wheelStep : BlenderNav.wheelStep)
+            c.navZoom(factor: steps > 0 ? 1 / BlenderNav.wheelStep : BlenderNav.wheelStep, zu: p)
         }
     }
 
     override func magnify(with event: NSEvent) {
-        coordinator?.navZoom(factor: 1 / max(0.2, 1 + Float(event.magnification)))
+        let p = point(event)
+        coordinator?.fahrtAbbrechen()
+        coordinator?.eingabe.navigation = event.phase.contains(.ended) ? nil : .zoomen
+        coordinator?.navZoom(factor: 1 / max(0.2, 1 + Float(event.magnification)), zu: p)
     }
 
     override func rotate(with event: NSEvent) {}
 
-    // Ziffernblock: falls die Menükürzel eine Taste nicht abfangen (externe Tastatur), hier direkt auswerten
+    // Tasten: Ziffernblock und Zahlenreihe („Numpad emulieren“), ^, ? … aus der Belegung. Menükürzel kommen vorher
+    // dran; hier landet, was das Menü nicht nimmt (Ziffernblock-Codes, Taste links der 1, Bereiche ohne Menü).
 
     override func keyDown(with event: NSEvent) {
+        if befehl(event) { return }
         if coordinator?.onNumpadKey?(event.keyCode, event.modifierFlags) == true { return }
         super.keyDown(with: event)
+    }
+
+    private func befehl(_ event: NSEvent) -> Bool {
+        guard let c = coordinator,
+            let b = Tastenbelegung.befehl(
+                keyCode: event.keyCode, zeichen: event.charactersIgnoringModifiers, flags: event.modifierFlags)
+        else { return false }
+        return c.onBefehl?(b) ?? false
+    }
+
+    /// Lokaler Monitor: Tasten, die nur der Viewport kennt, wenn die Maus über ihm steht.
+    private func tasteUeberViewport(_ event: NSEvent) -> Bool {
+        guard let w = window, event.window === w, maus != nil, !isHiddenOrHasHiddenAncestor,
+            !Self.istTexteingabe(w.firstResponder), w.attachedSheet == nil
+        else { return false }
+        let ohneMenue: Bool
+        if Tastenbelegung.linksVon1Codes.contains(event.keyCode) {
+            ohneMenue = true
+        } else if event.characters == "?" {
+            ohneMenue = true
+        } else {
+            ohneMenue = false
+        }
+        guard ohneMenue else { return false }
+        return befehl(event)
+    }
+
+    static func istTexteingabe(_ r: NSResponder?) -> Bool {
+        if let t = r as? NSTextView { return t.isEditable || t.isFieldEditor }
+        if let f = r as? NSTextField { return f.isEditable }
+        return false
     }
 }
 
@@ -563,11 +809,13 @@ struct NavigationInputLayer: NSViewRepresentable {
     func makeNSView(context: Context) -> NavigationInputView {
         let v = NavigationInputView()
         v.coordinator = coordinator
+        coordinator.eingabeView = v
         return v
     }
 
     func updateNSView(_ nsView: NavigationInputView, context: Context) {
         nsView.coordinator = coordinator
+        coordinator.eingabeView = nsView
     }
 }
 
@@ -577,7 +825,6 @@ struct AxisGizmo: View {
     @ObservedObject var viewport: ViewportController
     let coordinator: ViewportCoordinator
     @State private var hovering = false
-    @State private var lastDrag: CGSize = .zero
 
     private let size: CGFloat = 92
     private var radius: CGFloat { size / 2 - 13 }
@@ -647,19 +894,11 @@ struct AxisGizmo: View {
             .frame(width: size, height: size)
             .contentShape(Circle())
             .onHover { hovering = $0 }
+            // V2: kein Ziehgriff mehr (gedreht wird mit Maus, Trackpad und Tasten); ein Klick auf eine Achse wählt die
+            // Ansicht von dieser Seite, wie die Ziffern 1, 3, 7
             .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in
-                        let d = CGSize(width: g.translation.width - lastDrag.width,
-                                       height: g.translation.height - lastDrag.height)
-                        lastDrag = g.translation
-                        if hypot(g.translation.width, g.translation.height) > 3 {
-                            coordinator.navOrbit(dx: Float(d.width), dy: Float(-d.height))
-                        }
-                    }
+                SpatialTapGesture()
                     .onEnded { g in
-                        defer { lastDrag = .zero }
-                        guard hypot(g.translation.width, g.translation.height) <= 3 else { return }
                         // Klick: nächste Achse (vorderste zuerst), wie Blender
                         let hit = balls().reversed().first { b in
                             hypot(b.point.x - g.location.x, b.point.y - g.location.y) <= 11
@@ -667,14 +906,8 @@ struct AxisGizmo: View {
                         if let hit { coordinator.navAxisView(hit.view) }
                     }
             )
-            .help("Ziehen: drehen · Achse anklicken: Ansicht von dieser Seite")
+            .help("Achse anklicken: Ansicht von dieser Seite (wie 1, 3, 7)")
 
-            GizmoButton(symbol: "plus.magnifyingglass", help: "Ziehen: zoomen") { d in
-                coordinator.navZoom(factor: exp(Float(d.height) * BlenderNav.zoomPerPoint))
-            }
-            GizmoButton(symbol: "hand.raised", help: "Ziehen: schwenken") { d in
-                coordinator.navPan(dx: Float(d.width), dy: Float(-d.height))
-            }
             Button {
                 coordinator.navToggleProjection()
             } label: {
@@ -688,31 +921,5 @@ struct AxisGizmo: View {
             .help(viewport.cameraState.isOrthographic
                 ? "Parallel (5: Perspektive)" : "Perspektive (5: Parallel)")
         }
-    }
-}
-
-/// Runder Knopf unter dem Gizmo, der beim Ziehen eine Bewegung meldet (Zoomen, Schwenken).
-private struct GizmoButton: View {
-    let symbol: String
-    let help: String
-    let onDrag: (CGSize) -> Void
-    @State private var last: CGSize = .zero
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 13, weight: .medium))
-            .frame(width: 28, height: 28)
-            .background(Circle().fill(Color.black.opacity(0.28)))
-            .foregroundStyle(.white.opacity(0.9))
-            .contentShape(Circle())
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { g in
-                        onDrag(CGSize(width: g.translation.width - last.width, height: g.translation.height - last.height))
-                        last = g.translation
-                    }
-                    .onEnded { _ in last = .zero }
-            )
-            .help(help)
     }
 }

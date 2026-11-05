@@ -46,7 +46,7 @@ Auto-Lauf: Der Kernel beobachtet `model.py` des offenen Projekts selbst und star
 
 | type | Felder | Nutzlast |
 |---|---|---|
-| `HELLO` | `protocol: 1`, `kernel_version`, `build123d`, `mcp_port` | – |
+| `HELLO` | `protocol: 1`, `kernel_version`, `build123d`, `mcp_port`, `faehigkeiten` (V2-5, siehe „V2-5 Live“) | – |
 | `STATUS` | `state`: `ready` \| `busy` \| `error`, `message` | – |
 | `PROJECT` | `path`, `name`, `model` (Pfad zu model.py), optional `reply_to` | – |
 | `RUN_START` | `run`, `file_hash`, `params` (Objekt), `slow_ms` | – |
@@ -116,7 +116,7 @@ Die App teilt Teile mit mehr als 16.000 Dreiecken oder Kantensegmenten selbst au
 
 | cmd | args |
 |---|---|
-| `view` | `standard` (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`, `iso_front_left`, `iso_back_right`, `iso_back_left`) oder null, `projection` (`perspective` \| `orthographic` \| null), `display` (`shaded_edges` \| `shaded` \| `wireframe` \| `xray` \| null), `fit` (bool) |
+| `view` | `standard` (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`, `iso_front_left`, `iso_back_right`, `iso_back_left`) oder null, `projection` (`perspective` \| `orthographic` \| null), `display` (`solid` \| `material` \| `technical` \| `xray` \| `wireframe` \| null; ältere Werte `shaded_edges` und `shaded` gehen weiter), `fit` (bool) |
 | `focus` | `refs` (Liste), `animate` (bool) |
 | `visibility` | `mode`: `show` \| `hide` \| `isolate` \| `show_all`, `refs` (Teile) |
 | `highlight` | `refs`, `color` (RGBA oder null für Standard), `label` (Text oder null), `clear` (bool, vorherige entfernen) |
@@ -146,7 +146,7 @@ Antwort: `ACK` mit `ok` und optional `message`.
 
 | type | Felder | Antwort |
 |---|---|---|
-| `HELLO_APP` | `app_version`, `bundle_id` | – (Kernel schickt `HELLO` usw.) |
+| `HELLO_APP` | `app_version`, `bundle_id`, optional `faehigkeiten` (V2-5, siehe „V2-5 Live“) | – (Kernel schickt `HELLO` usw.) |
 | `PROJECT_OPEN` | `id`, `path` (Projektordner) | `PROJECT` mit `reply_to` |
 | `PROJECT_NEW` | `id`, `path` (neuer Ordner), `template` (`empty` \| `example`) | `PROJECT` mit `reply_to` |
 | `RUN_REQ` | `id`, `params` (Objekt oder null), `slow_ms` (0 = normal) | `ACK`, dann `RUN_*` |
@@ -1145,3 +1145,200 @@ gehen nicht ins Bild. `ansicht`: `aktuell` (Viewer-Kamera; eine parallele Projek
 derselben sichtbaren Höhe, RealityKit `OrthographicCameraComponent`, Blender Kamera `ORTHO` mit `ortho_scale`), `produkt` (3/4-Ansicht vorn rechts, 24° von oben, 22° Bildwinkel, eingepasst) oder eine
 Standardansicht (26°, eingepasst); `kamera` (Phase 5) hat Vorrang. Vorschau-Aufträge (`vorschau: true`) schreibt der
 Kernel nach `output/renders/.vorschau/` und die App zeigt sie nur im Dialog.
+
+## V2-5 Live
+
+Rein additiv (PLAN-V2.md, Paket V2-5); `protocol` bleibt 1. Jede Neuerung gilt nur, wenn beide Seiten sie können:
+Der Kernel nennt seine Fähigkeiten in `HELLO.faehigkeiten`, die App ihre in `HELLO_APP.faehigkeiten`. Eine App ohne
+`faehigkeiten` bekommt alles wie bisher: keine neuen Typen und, sobald ihr `HELLO_APP` da ist, keine neuen Felder
+(davor kennt der Kernel sie nicht: `HELLO.faehigkeiten` und `PART_UPSERT.inhalt` im Anfangsstand übergehen ältere
+Apps). Die Weiche sitzt je Verbindung im Kernel (`kevcad_kernel/live.py`, `LiveVerbindung`, aufgerufen in
+`AppConnection.send`): Die Laufzeit erzeugt jede Nachricht mit den neuen Feldern, die Weiche nimmt sie für ältere Apps
+heraus und ersetzt für neue Apps Unverändertes durch kurze Nachrichten. Referenz in `protocol.py` (Abschnitt „V2-5
+Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_message`, `live_beispiele`), Testdateien
+`live_*.frame` und Abschnitt `live` in `fixtures.json` aus `kernel/tools/make_live_fixtures.py` (nicht in `stream.bin`).
+
+| Fähigkeit | Inhalt |
+|---|---|
+| `delta-1` | Teile, Statikfelder, Animationen und große JSON-Nachrichten nur bei Änderung, Versionsbild aus der Szene |
+| `in-arbeit-1` | `IN_ARBEIT`: welches Teil der Kernel gerade rechnet (erwartet) |
+| `spur-1` | Agentenspur: `AGENT_SPUR`, `AGENT_SCHRITT` |
+| `lage-1` | Lagebild: `LAGE_REQ` (Kernel) → `LAGE` (App) |
+| `live-masse-1` | Maße und Hervorhebungen mit Ablaufzeit (`dauer_s`), geänderte Maße nach `run(params)` am Teil |
+
+- `HELLO_APP` ist der erste Rahmen der App; die Fähigkeiten gelten ab dort. Den Anfangsstand nach dem Verbinden schickt
+  der Kernel vollständig wie bisher, die Teile schon mit `inhalt` (er beginnt vor `HELLO_APP`), und merkt sich dabei,
+  was die App bekommen hat. Mit `spur-1` folgt auf `HELLO_APP` die ganze Agentenspur (`AGENT_SPUR`).
+- Alles, was eine Seite sich merkt (Teile, Felder, Animationen, Basen für `WIE_ZUVOR`), gilt für eine Verbindung. Eine
+  neue Verbindung (neues `HELLO`) beginnt leer.
+- Gemessen am Kugelschieber (134 Teile, `kernel/tools/messen.py`, ganze Rahmen): ein unveränderter Lauf schickte
+  11,3 MB an die App, mit `delta-1` 44 KB (Einzelheiten in `kernel/tools/MESSUNG.md`).
+
+### Delta (`delta-1`)
+
+**Inhaltsschlüssel:** `PART_UPSERT.inhalt` (16 Hex-Zeichen) ist SHA-1 über den Tessellierungs-Schlüssel des Teils
+(Form, Lage und Genauigkeit, aus dem Rechenprozess) und den Kopf ohne `type`, `seq`, `run`, `faces`, `edges`, `inhalt`
+(also mit Farbe, Material, Hüllquader, Masse, `stock`, `druckteil`, `zukauf`, `kulisse`, `inventar`). Gleicher Schlüssel
+heißt gleiche Geometrie und gleiche Angaben; `faces` und `edges` folgen aus der Form.
+
+**Inhalte je Teil:** Die App hält je Teilname die letzten 4 verschiedenen Inhalte (Kopf und Netz, nach `inhalt`), den
+zuletzt gezeigten zuletzt; `PART_UPSERT` und `PART_SAME` machen einen Inhalt zum gezeigten, ein fünfter verdrängt den
+ältesten, `PART_REMOVE` vergisst alle Inhalte des Namens. Der Kernel führt dieselbe Liste je Verbindung. So kostet ein
+Teil, das model.py in einem Lauf mehrmals zeigt (Zwischenstände), oder ein Maß, das hin und her wechselt, nichts mehr.
+
+**Ablauf eines Laufs:**
+
+1. `RUN_START.delta: true`: In diesem Lauf schickt der Kernel dieser App Inhalte, die sie schon hat, nicht neu. Fehlt
+   das Feld (etwa weil die Verbindung mitten im Lauf entstand), gilt der Lauf wie bisher.
+2. Je gezeigtem Teil, in der Reihenfolge von `show()`: Hat die App diesen Inhalt des Teils (gleicher Name, `inhalt`
+   unter ihren letzten 4), kommt `PART_SAME`; sonst `PART_UPSERT` mit `inhalt`.
+3. Teile, die es im Lauf nicht mehr gibt: `PART_REMOVE` wie bisher, vor `RUN_END`.
+4. `RUN_END.teile`: Namen aller Teile nach diesem Lauf, in Reihenfolge. Die App entfernt jedes Teil, das nicht in der
+   Liste steht (sollte durch `PART_REMOVE` schon weg sein; die Liste stellt es sicher).
+5. `RUN_ERROR`: alles bleibt stehen wie bisher.
+
+| type | Richtung | Felder | Wirkung |
+|---|---|---|---|
+| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Das Teil zeigt den Inhalt `inhalt`, den die App schon hat: Ist es der gezeigte, setzt sie nur die Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Sonst tauscht sie Kopf und Netz gegen den gespeicherten Inhalt (Kopf mit `run`). Fehlt ihr der Inhalt, fragt sie das Teil mit `PARTS_REQ` nach. |
+| `PARTS_REQ` | App → Kernel | `teile` (Namen oder null = alle) | Der Kernel schickt jedes genannte Teil als vollständiges `PART_UPSERT` (nie als `PART_SAME`), für unbekannte Namen `PART_REMOVE`. |
+
+**Statikfelder (`STATICS_FIELD`):** Mit `delta-1` hält die App je Paar (`szenario`, `teil`) die letzten 4 empfangenen
+Felder (nach ihrem Schlüssel `feld`; ein fünftes verdrängt das älteste), auch über Läufe hinweg, bis ein `PROJECT` mit
+anderem `path` kommt oder die Verbindung endet. Sie zeigt das Feld, dessen Schlüssel das neueste `STATICS` für das
+Paar nennt; `run` zählt dann nicht. Der Kernel führt dieselbe Liste je Verbindung und schickt ein Feld nicht noch
+einmal, solange die App seinen Schlüssel für das Paar hat (auch nach einem Maß, das hin und her wechselt).
+
+**Animationen:** Ein `ANIM_DEF`, das ohne `run` und `seq` samt Nutzlast gleich dem zuletzt geschickten mit diesem Namen
+ist, geht nicht noch einmal; die App behält die Animation mit Kollisionen und Abspielstand (der Clip behält seine alte
+Laufnummer). Geht ein `ANIM_DEF` neu, folgt auch `ANIM_COLLISIONS` neu (die App verwirft die alten Kollisionen wie
+bisher). `ANIM_COLLISIONS` ohne `reply_to` geht sonst nur bei Änderung. `ANIM_REMOVE` wie bisher.
+
+**Große JSON-Nachrichten (`WIE_ZUVOR`):** `CHECK`, `STATICS`, `CONSTRAINTS`, `BOM`, `PRINT_PREVIEW`, `SIM`, `DOCS` und
+`VERSIONEN` ohne `reply_to` schickt der Kernel als Änderung gegenüber einer früheren Nachricht derselben Art, wenn das
+höchstens halb so groß ist (zwischen zwei unveränderten Läufen ändern sich dort nur Laufnummer und Zeiten):
+
+```json
+{"type": "WIE_ZUVOR", "seq": 812, "art": "CHECK", "basis": 790,
+ "setzen": [[["run"], 7], [["duration_ms"], 612.4], [["statik", "szenarien", 0, "kennzahlen", "knicken"], 27.1]],
+ "weg": [["im_hintergrund"]]}
+```
+
+- `basis`: `seq` eines früheren Rahmens der Art `art` ohne `reply_to` auf dieser Verbindung, vollständig empfangen
+  (auch im Anfangsstand) oder selbst aus `WIE_ZUVOR` aufgebaut. Beide Seiten merken sich je Art die letzten 6 solcher
+  Rahmen (Kopf ohne `seq`, Nutzlast); ältere nennt der Kernel nie.
+- Aufbau: Kopf der Basis kopieren, jedes Paar `[pfad, wert]` aus `setzen` der Reihe nach anwenden, dann jeden Pfad aus
+  `weg` entfernen. Ein Pfad besteht aus Schlüsseln (Text) und Listenstellen (Zahl ab 0); der letzte Schritt setzt
+  einen Schlüssel (auch neu) bzw. ersetzt eine vorhandene Listenstelle. Listen mit geänderter Länge kommen ganz.
+  Dann `type` = `art`, `seq` = `seq` des `WIE_ZUVOR`, Nutzlast = die der Basis.
+- Den aufgebauten Rahmen verarbeitet die App genau wie einen empfangenen Rahmen der Art `art`; er zählt auch als Basis
+  für später. Der Kernel prüft vor dem Senden, dass der Aufbau genau den neuen Kopf ergibt (gleiche JSON-Werte, auch
+  Ganzzahl gegen Kommazahl und Zahl gegen Wahrheitswert), und dass die Nutzlast gleich der der Basis ist; sonst geht
+  die Nachricht vollständig.
+- Kennt die App die Basis nicht (Fehler), verwirft sie das `WIE_ZUVOR` und schickt `NOCHMAL`.
+
+| type | Richtung | Felder | Wirkung |
+|---|---|---|---|
+| `WIE_ZUVOR` | Kernel → App | `art`, `basis`, `setzen`, `weg` | siehe oben, keine Nutzlast |
+| `NOCHMAL` | App → Kernel | `art` | Der Kernel schickt die neueste Nachricht dieser Art vollständig. |
+
+**Versionsbild:** `VERSION_BILD_REQ` geht wie bisher nur für eine neue Version ohne Bild. Mit `delta-1` steht jedes
+Teil, dessen `inhalt` die App in diesem Moment unter ihren letzten 4 Inhalten des Teils hat, als Kopf `{"teil",
+"farbe", "inhalt", "aus_szene": true}` ohne Zählwerte und ohne Anteil an der Nutzlast: Die App nimmt das Netz beim
+Empfang des Rahmens aus diesem Speicher (spätere Rahmen können ihn schon ändern). Alle anderen Köpfe tragen ihr Netz
+wie bisher (`vert`, `tri`, `epts`, `edge`, Netze hintereinander).
+
+### In Arbeit (`in-arbeit-1`)
+
+| type | Richtung | Felder |
+|---|---|---|
+| `IN_ARBEIT` | Kernel → App | `run`, `teil` (das Teil, das der Kernel als Nächstes erwartet), `nach` (zuletzt gekommenes Teil oder null), `ms` (seit Laufbeginn) |
+
+- Kommt während eines Laufs, wenn 0,3 s lang kein Teil kam, danach höchstens alle 0,3 s und nur, wenn sich `teil`
+  ändert. `teil` ist das erste Teil des vorigen Laufs (in dessen Reihenfolge), das in diesem Lauf noch nicht kam: das,
+  woran model.py gerade rechnet, wenn die Reihenfolge gleich bleibt. Ohne vorigen Lauf oder wenn alle schon da sind,
+  kommt nichts.
+- Die Markierung eines Teils endet mit seinem `PART_SAME` bzw. `PART_UPSERT`, alle enden mit `RUN_END` bzw.
+  `RUN_ERROR`. Die übrigen noch nicht bestätigten Teile eines Laufs mit `delta: true` sind „offen“ (wie bisher
+  abgedunkelt).
+
+### Agentenspur (`spur-1`)
+
+Statt einer Zeile (`AGENT.activity`, bleibt) die Schritte des Agenten mit Zeiten. Ein Schritt ist ein Werkzeugaufruf.
+
+| type | Richtung | Felder |
+|---|---|---|
+| `AGENT_SPUR` | Kernel → App | `schritte` (die letzten 50, älteste zuerst); nach `HELLO_APP` mit `spur-1` |
+| `AGENT_SCHRITT` | Kernel → App | `schritt` (ganzer aktueller Stand eines Schritts); bei Beginn, Beschreibung, Phasen und Ende |
+
+```json
+{"id": "s-12", "werkzeug": "run", "text": "führt model.py aus", "absicht": "Laufrolle auf 90 mm",
+ "sitzung": "3f2a9c1b77", "beginn": 1793452991.123, "ende": 1793452993.456, "dauer_ms": 2333, "stand": "ok",
+ "fehler": null, "phasen": {"run": 7, "erstes_teil": 210.0, "letztes_teil": 1400.0, "run_end": 1450.0,
+                             "pruefung": 2300.0, "zurueck": 2310.0}}
+```
+
+- `stand`: `laeuft` | `ok` | `fehler`; `fehler` ist die erste Zeile der Meldung (höchstens 200 Zeichen) oder null.
+  `beginn` und `ende` in Sekunden Unix-Zeit, `ende` und `dauer_ms` null, solange der Schritt läuft.
+- `text`: die deutsche Kurzbeschreibung der Tätigkeitsanzeige (die erste, die das Werkzeug setzt), null bis dahin.
+- `absicht`: optionaler Text des Agenten (höchstens 200 Zeichen). Jedes Werkzeug nimmt das Argument `absicht` an; die
+  MCP-Hülle nimmt es vor der Prüfung der Argumente heraus (das Werkzeug sieht es nie). Ob es im Schema steht,
+  entscheiden die Werkzeuge (V2-2).
+- `sitzung`: Claude-Sitzung aus dem Kopf `x-claude-code-session-id` oder null.
+- `phasen` (optional, nur `run`): Laufnummer und Zeitpunkte in ms ab Laufbeginn (wie `zeiten_ms` des Laufergebnisses).
+- Die App ersetzt einen Schritt mit derselben `id` und hält höchstens 50.
+
+### Lagebild (`lage-1`)
+
+Der Kernel fragt die App, was Kevin gerade sieht (für `status` in V2-2 und das Sprach-Feedback in V2-6). Nichts wird
+dauernd geschickt.
+
+| type | Richtung | Felder |
+|---|---|---|
+| `LAGE_REQ` | Kernel → App | `id` |
+| `LAGE` | App → Kernel | `reply_to`, `zeit` (Unix-Zeit s), `ms` (Zeit der App für die Antwort), `kamera`, `viewport`, `sichtbar`, `verborgen`, `isoliert`, `auswahl`, `maus`, `darstellung`, `schnitt`, `explosion`, `animation` |
+
+```json
+{"type": "LAGE", "reply_to": "k-41", "zeit": 1793452991.2, "ms": 2.1,
+ "kamera": {"position": [612.0, -880.0, 540.0], "ziel": [120.0, 0.0, 60.0], "richtung": [-0.39, 0.71, -0.59],
+            "oben": [-0.26, 0.47, 0.84], "abstand": 1118.0, "projektion": "perspective", "fov": 30.0,
+            "ortho_hoehe": null, "ansicht": null, "durch": null},
+ "viewport": {"breite": 1280, "hoehe": 800},
+ "sichtbar": ["Halter/Grundplatte", "Halter/Lasche"], "verborgen": ["Deckel"], "isoliert": null,
+ "auswahl": {"run": 7, "refs": ["Halter/Lasche#f3"]},
+ "maus": {"teil": "Halter/Lasche", "ref": "Halter/Lasche#f3", "punkt": [120.0, 4.0, 62.5], "normale": [0, 0, 1],
+          "bild": [640, 380]},
+ "darstellung": "shaded_edges", "schnitt": null, "explosion": 0.0, "animation": null}
+```
+
+- `kamera`: Lage und Ziel in mm, `richtung` (Einheitsvektor von der Kamera zum Ziel), `oben`, `abstand` (mm),
+  `projektion` `perspective` | `orthographic`, `fov` (vertikal, Grad, nur perspektivisch), `ortho_hoehe` (sichtbare
+  Höhe in mm, nur parallel), `ansicht` (Standardansicht wie in `VIEW_CMD view`, wenn die Kamera genau so steht, sonst
+  null), `durch` (`Kamera/<name>` beim Blick durch eine Kamera, sonst null).
+- `viewport`: Größe der Ansicht in Punkten. `sichtbar`: Teile, die gerade im Bild sind (nicht ausgeblendet, Hüllquader
+  im Sichtbereich). `verborgen`: ausgeblendete Teile (auch durch Isolieren). `isoliert`: Liste oder null.
+- `maus`: Teil und Fläche bzw. Kante unter dem Mauszeiger (`ref` wie im Protokoll, Laufnummer wie `auswahl.run`),
+  Punkt auf der Oberfläche und Normale in Weltkoordinaten, `bild` in Punkten (Ursprung links oben); null, wenn die Maus
+  nicht über einem Teil steht. `animation`: `{name, zeit, spielt}` oder null.
+- Die App antwortet in unter 50 ms. Ohne Antwort nach 200 ms (oder ohne `lage-1`) liefert der Kernel, was er selbst
+  weiß (`KernelService.lagebild`, `quelle: "kernel"`): Auswahl (`SELECTION`), vom Agenten ausgeblendete Teile, die
+  Kamera aus dem letzten `LAGE` mit ihrem Alter. Eine verspätete Antwort merkt er sich für das nächste Mal.
+
+### Live-Maße (`live-masse-1`)
+
+Die vorhandenen `VIEW_CMD`-Befehle bekommen optionale Felder:
+
+| cmd | zusätzlich |
+|---|---|
+| `annotate` | `dauer_s` (die App blendet das Maß nach so vielen Sekunden aus, sanft), `art` (`mass` \| `param` \| `hinweis`, Darstellung) |
+| `highlight` | `id` (Kennung dieser Hervorhebung), `dauer_s` (die App entfernt nach so vielen Sekunden nur diese Hervorhebung; `clear` behält seine Bedeutung) |
+
+- Ältere Apps übergehen die Felder. Für sie entfernt der Kernel ein `annotate` mit `dauer_s` selbst wieder
+  (`clear_annotations` mit der `id` nach `dauer_s`); eine Hervorhebung bleibt dort stehen wie bisher.
+- **Maßänderung am Teil:** Nach einem erfolgreichen Lauf, dessen `param()`-Werte sich gegenüber dem vorigen Lauf
+  desselben Projekts geändert haben (`run(params=…)`, Regler, geänderte Vorgabe in model.py), schickt der Kernel einer
+  App mit `live-masse-1` ein `annotate` (`kind: "label"`, `art: "param"`, `text` etwa „laufrolle_l 80 → 90 mm“, `id`
+  „p-…“, `dauer_s` 4) über den geänderten Teilen (Mitte oben ihres gemeinsamen Hüllquaders; Teile, deren Name den
+  Parameter enthält, gehen vor) und ein `highlight` dieser Teile (`id` gleich, `dauer_s` 4, höchstens 24 Teile). Die
+  Einheit rät der Kernel aus dem Namen (Winkel °, Anzahl ohne, sonst mm). Ohne geänderte Teile kommt nichts.
+- Der Agent zeigt so auch selbst kurz ein Maß („2 cm vom Rand“): `annotate` mit `dauer_s` über
+  `KernelService.view_command`.
