@@ -1,0 +1,246 @@
+import AppKit
+import Darwin
+import KevCADCore
+import QuartzCore
+import SwiftUI
+
+/// Selbsttest der neuen Oberfläche (V2-3) in der Testvariante (`KEVCAD_SELFTEST=oberflaeche`), ohne Maus- und
+/// Tastatureingaben: alles über `OberflaechenActions`, wie es später Sprache und Agent auslösen.
+///
+/// Misst die Zeit vom Prozessstart bis zum bedienbaren Fenster und bis zum leeren Projekt, die längste Pause des
+/// Hauptfadens beim Umschalten Fokus/Werkstatt, beim Öffnen von Kacheln und beim Schieben an den Rand. Fotografiert
+/// jeden Zustand (mit `KEVCAD_SELFTEST_FOTO_AUSSEN=1` von außen per `screencapture -l`, Auftrag in
+/// `foto-auftrag.txt`). `KEVCAD_SELFTEST_PROJEKT` öffnet danach ein Projekt mit Teilen. Ergebnis in
+/// `selftest-oberflaeche.txt` unter `KEVCAD_SELFTEST_AUSGABE`; `KEVCAD_SELFTEST_QUIT=1` beendet die App danach.
+@MainActor
+enum OberflaechenSelbsttest {
+    private static var started = false
+    /// Zeitpunkte relativ zum Prozessstart (Sekunden).
+    static var erschienen: Double?
+    static var bedienbar: Double?
+
+    private static var env: [String: String] { ProcessInfo.processInfo.environment }
+    private static var gewuenscht: Bool { AppInfo.isTestVariant && env["KEVCAD_SELFTEST"] == "oberflaeche" }
+
+    static var ausgabe: URL {
+        if let p = env["KEVCAD_SELFTEST_AUSGABE"], !p.isEmpty { return URL(fileURLWithPath: p, isDirectory: true) }
+        return AppInfo.supportDirectory.appendingPathComponent("selftest-oberflaeche", isDirectory: true)
+    }
+
+    /// Sekunden seit dem Start dieses Prozesses (Startzeit aus dem Kernel, nicht aus der App).
+    static func seitStart() -> Double {
+        var info = kinfo_proc()
+        var groesse = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, 4, &info, &groesse, nil, 0) == 0 else { return -1 }
+        let s = info.kp_proc.p_un.__p_starttime
+        let start = Double(s.tv_sec) + Double(s.tv_usec) / 1_000_000
+        return Date().timeIntervalSince1970 - start
+    }
+
+    /// Hauptfenster erschienen: Zeit festhalten, nach dem ersten Bild noch einmal (bedienbar).
+    static func fensterErschienen() {
+        guard erschienen == nil else { return }
+        erschienen = seitStart()
+        DispatchQueue.main.async { DispatchQueue.main.async { bedienbar = seitStart() } }
+    }
+
+    static func runIfRequested(_ session: AppSession) {
+        guard !started, gewuenscht else { return }
+        started = true
+        Task { await run(session) }
+    }
+
+    private static func run(_ session: AppSession) async {
+        let model = session.model
+        let o = model.oberflaeche
+        var zeilen: [String] = []
+        var ok = true
+        try? FileManager.default.createDirectory(at: ausgabe, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: ausgabe.appendingPathComponent("foto-auftrag.txt"))
+        func pruefe(_ b: Bool, _ text: String) {
+            ok = ok && b
+            let z = "\(b ? "OK    " : "FEHLER") \(text)"
+            zeilen.append(z)
+            model.append(LogLine(level: b ? .info : .error, text: "Selbsttest Oberfläche: \(z)"))
+        }
+        func notiere(_ text: String) {
+            zeilen.append("       \(text)")
+            model.append(LogLine(text: "Selbsttest Oberfläche: \(text)"))
+        }
+        func warte(_ s: Double, _ bedingung: () -> Bool) async -> Bool {
+            let ende = Date().addingTimeInterval(s)
+            while Date() < ende {
+                if bedingung() { return true }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            return bedingung()
+        }
+        func pause(_ s: Double) async { try? await Task.sleep(for: .milliseconds(Int(s * 1000))) }
+        func foto(_ name: String) async {
+            await pause(0.45)
+            guard let w = session.projectWindow else { return }
+            if env["KEVCAD_SELFTEST_FOTO_AUSSEN"] == "1" {
+                let auftrag = ausgabe.appendingPathComponent("foto-auftrag.txt")
+                let zeile = "\(w.windowNumber) \(name)\n"
+                if let h = try? FileHandle(forWritingTo: auftrag) {
+                    h.seekToEndOfFile()
+                    h.write(Data(zeile.utf8))
+                    try? h.close()
+                } else {
+                    try? zeile.write(to: auftrag, atomically: true, encoding: .utf8)
+                }
+                let ziel = ausgabe.appendingPathComponent(name + ".png")
+                _ = await warte(10) { FileManager.default.fileExists(atPath: ziel.path) }
+                return
+            }
+            guard let v = w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return }
+            v.cacheDisplay(in: v.bounds, to: rep)
+            if let d = rep.representation(using: .png, properties: [:]) {
+                try? d.write(to: ausgabe.appendingPathComponent(name + ".png"))
+            }
+        }
+        /// Längste Pause des Hauptfadens (ms), während `aktion` läuft und `dauer` Sekunden danach.
+        func haenger(_ dauer: Double, _ aktion: () -> Void) async -> Double {
+            let messer = HaengerMesser()
+            messer.start()
+            aktion()
+            await pause(dauer)
+            return messer.stop()
+        }
+        let a = model.oberflaechenActions
+
+        // 1. Start
+        _ = await warte(10) { erschienen != nil && bedienbar != nil }
+        if let e = erschienen, let b = bedienbar {
+            pruefe(b < 1.0, String(format: "Fenster erschienen nach %.2f s, bedienbar nach %.2f s (Ziel unter 1 s)", e, b))
+        }
+        if session.demo == nil {
+            let bereit = await warte(60) { model.kernelState == .ready || model.kernelState == .busy }
+            notiere(String(format: "Kernel bereit nach %.2f s", seitStart()))
+            pruefe(bereit, "Kernel meldet sich")
+            let entwurf = await warte(20) { session.istEntwurf && model.project != nil }
+            pruefe(entwurf, String(format: "leeres Projekt (Entwurf) offen nach %.2f s: %@", seitStart(),
+                                   model.project?.path.path ?? "keins"))
+            if let p = model.project?.path {
+                pruefe(EntwurfAblage.standard.hatMarke(p), "Entwurf ist gemerkt (.kevcad/entwurf.json)")
+                pruefe(!p.path.contains("/Documents/"), "Entwurf liegt nicht in ~/Documents")
+            }
+        }
+        await foto("01-start")
+
+        // 2. Übersicht wegschieben, Fokus leer
+        a?.zeigeUebersicht(false)
+        pruefe(!o.uebersicht, "Startübersicht weggeschoben")
+        await foto("02-fokus-leer")
+
+        // 3. Projekt mit Teilen
+        if let pfad = env["KEVCAD_SELFTEST_PROJEKT"], !pfad.isEmpty {
+            let alt = model.project?.path
+            session.openProject(at: URL(fileURLWithPath: pfad, isDirectory: true))
+            let offen = await warte(60) { model.project?.path.lastPathComponent == URL(fileURLWithPath: pfad).lastPathComponent }
+            pruefe(offen, "Projekt geöffnet: \(URL(fileURLWithPath: pfad).lastPathComponent)")
+            if model.parts.isEmpty { model.actions?.runModel() }
+            let teile = await warte(240) { !model.parts.isEmpty && !model.isRunning }
+            pruefe(teile, "Teile da: \(model.parts.count)")
+            if let alt, EntwurfAblage.standard.enthaelt(alt) {
+                let weg = await warte(5) { !FileManager.default.fileExists(atPath: alt.path) }
+                pruefe(weg, "leerer Entwurf nach dem Wechsel weggeräumt")
+            }
+        }
+        await foto("03-fokus")
+
+        // 4. Werkstatt
+        var ms = await haenger(0.8) { a?.setzeModus(.werkstatt) }
+        pruefe(o.modus == .werkstatt, "Werkstatt an")
+        pruefe(ms < 250, String(format: "Umschalten Fokus → Werkstatt: längste Pause %.0f ms", ms))
+        if let erst = model.parts.first { model.actions?.select([erst.id]) }
+        await foto("04-werkstatt")
+
+        // 5. Kacheln
+        ms = await haenger(1.2) {
+            a?.zeigeKachel(.zeichnung)
+            a?.zeigeKachel(.stueckliste)
+        }
+        pruefe(o.kacheln == [.modell, .zeichnung, .stueckliste], "drei Kacheln: \(o.kacheln.map(\.rawValue))")
+        pruefe(o.nummer(.stueckliste) == 3, "Stückliste ist Kachel 3")
+        notiere(String(format: "Kacheln öffnen: längste Pause %.0f ms", ms))
+        await foto("05-kacheln-3")
+        a?.zeigeKachel(.ansicht)
+        await pause(1.0)
+        pruefe(o.kacheln.count == 4, "vier Kacheln")
+        await foto("06-kacheln-4")
+        a?.vergroessereKachel(.zeichnung)
+        pruefe(o.gross == .zeichnung, "Kachel 2 groß")
+        await foto("07-gross")
+        a?.vergroessereKachel(nil)
+        a?.schliesseKachel(.ansicht)
+        pruefe(o.kacheln.count == 3 && o.gross == nil, "Kachel geschlossen, wieder eingeordnet")
+
+        // 6. Zurück in den Fokus, Sprechen
+        ms = await haenger(0.8) { a?.setzeModus(.fokus) }
+        pruefe(ms < 250, String(format: "Umschalten Werkstatt → Fokus: längste Pause %.0f ms", ms))
+        a?.setzeSprechen(true)
+        a?.oberflaeche(.sprechText("Den Griff hätte ich gern höher, so ungefähr bis hier, wo der Strich ist."))
+        pruefe(o.spricht, "Sprechen an (roter Rahmen)")
+        await foto("08-sprechen")
+        a?.setzeSprechen(false)
+        pruefe(o.zuletztGesagt?.hasPrefix("Den Griff") == true, "Gesagtes bleibt für die Statuszeile")
+
+        // 7. An den Rand und zurück
+        let vorher = session.projectWindow?.frame
+        ms = await haenger(1.0) { a?.setzeRand(.rechts) }
+        let schmal = session.projectWindow?.frame
+        pruefe(abs((schmal?.width ?? 0) - GA.schmal) < 2, String(format: "am rechten Rand, %.0f pt breit", schmal?.width ?? 0))
+        pruefe(ms < 250, String(format: "an den Rand: längste Pause %.0f ms", ms))
+        await foto("09-rand")
+        ms = await haenger(1.0) { a?.setzeRand(nil) }
+        let zurueck = session.projectWindow?.frame
+        pruefe(zurueck == vorher, "zurück vom Rand: Größe und Lage wie vorher")
+        pruefe(ms < 250, String(format: "zurück vom Rand: längste Pause %.0f ms", ms))
+        await foto("10-zurueck")
+
+        // 8. Übersicht wieder zeigen
+        a?.zeigeUebersicht(true)
+        await foto("11-uebersicht")
+        a?.zeigeUebersicht(false)
+
+        zeilen.append(ok ? "ERGEBNIS: bestanden" : "ERGEBNIS: FEHLER")
+        try? zeilen.joined(separator: "\n").appending("\n")
+            .write(to: ausgabe.appendingPathComponent("selftest-oberflaeche.txt"), atomically: true, encoding: .utf8)
+        if env["KEVCAD_SELFTEST_QUIT"] == "1" {
+            await pause(0.5)
+            NSApp.terminate(nil)
+        }
+    }
+}
+
+/// Misst die längste Pause zwischen zwei Takten eines 4-ms-Zeitgebers auf dem Hauptfaden.
+@MainActor
+final class HaengerMesser {
+    private var zeitgeber: Timer?
+    private var letzter = CACurrentMediaTime()
+    private var groesste: Double = 0
+
+    func start() {
+        letzter = CACurrentMediaTime()
+        groesste = 0
+        let t = Timer(timeInterval: 0.004, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let jetzt = CACurrentMediaTime()
+                self.groesste = max(self.groesste, jetzt - self.letzter)
+                self.letzter = jetzt
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        zeitgeber = t
+    }
+
+    /// Längste Pause in Millisekunden.
+    func stop() -> Double {
+        zeitgeber?.invalidate()
+        zeitgeber = nil
+        return max(groesste, CACurrentMediaTime() - letzter) * 1000
+    }
+}
