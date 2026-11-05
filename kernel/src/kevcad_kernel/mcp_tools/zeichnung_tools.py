@@ -65,7 +65,8 @@ def register_zeichnung_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
             return fmt.error_result(f"Zeichnungen nicht lesbar: {err}", res)
         blaetter = res.get("blaetter") or []
         if not blaetter:
-            return fmt.result("Noch keine Zeichnungen. zeichnung_erstellen legt Blätter für alle gefertigten Teile und "
+            return fmt.result("Noch keine Zeichnungen. zeichnung(aktion='erstellen') legt Blätter für alle "
+                              "gefertigten Teile und "
                               "den Zusammenbau an.", res)
         lines = [f"{fmt.plural(len(blaetter), 'Blatt', 'Blätter')} in {res.get('ordner')}:"]
         lines += [_blatt_zeile(b) for b in blaetter]
@@ -77,7 +78,8 @@ def register_zeichnung_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
           "pockets, chamfers, radii, bar length and miter, insert and nut pockets). Without teile: one sheet per bill "
           "of materials position of every manufactured part (bar stock, plates, 3D prints) plus the assembly sheet "
           "with item balloons and parts list. Existing sheets keep Kevin's edits and are recomputed. Check every sheet "
-          "with zeichnung_bild afterwards and fix missing or wrong dimensions with zeichnung_bearbeiten.", ADDITIVE)
+          "with zeichnung(aktion='bild') afterwards and fix missing or wrong dimensions with "
+          "zeichnung(aktion='bearbeiten').", ADDITIVE)
     async def zeichnung_erstellen(
         teile: Annotated[list[str] | None, Field(description="Part names or group prefixes; omit for all manufactured "
                                                             "parts plus the assembly")] = None,
@@ -107,7 +109,7 @@ def register_zeichnung_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
             lines += _pruef_text(b.get("pruefung") or [])
             for h in b.get("hinweise") or []:
                 lines.append(f"  Hinweis: {h}")
-        lines.append("Als Nächstes jedes Blatt mit zeichnung_bild prüfen (nicht an Kevin schicken).")
+        lines.append("Als Nächstes jedes Blatt mit zeichnung(aktion='bild') prüfen (nicht an Kevin schicken).")
         return fmt.result("\n".join(lines), res)
 
     @tool("zeichnung_bearbeiten", "Zeichnung bearbeiten",
@@ -122,7 +124,7 @@ def register_zeichnung_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
           "{op:'format', wert:'A3', ausrichtung}; {op:'notiz', text, lage, zeiger}; {op:'notiz_loeschen', id}; "
           "{op:'schriftfeld', feld, wert}; {op:'auto', ansichten, masse, zuruecksetzen}; "
           "{op:'unterdrueckung_aufheben', index}. Feature ids (bohrung:1, lochbild:1, seite:x-, ende:a, tasche:1, "
-          "fase:1, radius:1 …) are listed in the result of zeichnung_erstellen and zeichnungen.", WRITES)
+          "fase:1, radius:1 …) are listed in the result of zeichnung(aktion='erstellen') and zeichnung(aktion='liste').", WRITES)
     async def zeichnung_bearbeiten(
         blatt: Annotated[str, Field(description="Sheet id, e.g. 'seitenstange-links-rohr-1'")],
         ops: Annotated[list[dict[str, Any]], Field(description="Operations, applied in order")],

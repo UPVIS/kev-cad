@@ -67,7 +67,7 @@ class RenderRuntime:
                             vorschau: bool) -> tuple[dict[str, Any] | None, str | None]:
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
-            return None, "Kein Projekt offen. Erst project_open oder project_new aufrufen."
+            return None, "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."
         if not self._link.connected:  # type: ignore[attr-defined]
             return None, "App nicht verbunden"
         if not self.scene.records():  # type: ignore[attr-defined]

@@ -90,10 +90,10 @@ def druck_zeilen(druck: dict[str, Any] | None) -> list[str]:
             zeilen.append(f"- Ausrichtung {name}: {a.get('text')} ({art}). {a.get('begruendung') or ''}".rstrip())
     hinweise = " und alle Hinweise" if s["hinweis"] else ""
     if len(teile) <= MAX_TEILE_IM_LAUF:
-        zeilen.append(f"Kennzahlen, Materialeinstellungen{hinweise}: druckpruefung.")
+        zeilen.append(f"Kennzahlen, Materialeinstellungen{hinweise}: druck(aktion='pruefung').")
     else:
         zeilen.append(f"Ausrichtung und Begründung je Teil stehen im Ergebnis (pruefung.druck); Kennzahlen{hinweise} "
-                      "mit druckpruefung oder druckpruefung(teil=…).")
+                      "mit druck(aktion='pruefung') oder druck(aktion='pruefung', teil=…).")
     return zeilen
 
 

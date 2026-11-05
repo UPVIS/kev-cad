@@ -68,8 +68,9 @@ class KevcadHTTPServer:
         # Claude-Sitzungen (MIRROR.md): Werkzeuge melden Aufrufe, der Tracker meldet, welche noch verbunden sind
         self.board = SessionBoard(getattr(service, "set_agent_sessions", None))
         self.mcp = build_server(service, self.board)
+        # V2-5: Werkzeugaufrufe als Schritte der Agentenspur, wenn der Dienst sie annimmt
         self.tracker = AgentTracker(service.set_agent_connected, path=MCP_PATH, board=self.board,
-                                    **(tracker_options or {}))
+                                    trail=getattr(service, "agent_schritt", None), **(tracker_options or {}))
         # JSON-Antworten statt SSE: Werkzeugergebnisse kommen als ein Stück. So stoßen große Bilder nicht an
         # Größengrenzen für SSE-Ereignisse in Clients (das Python-Paket erlaubt dort nur 1 MiB).
         app = self.mcp.streamable_http_app(host=host, streamable_http_path=MCP_PATH, json_response=True,

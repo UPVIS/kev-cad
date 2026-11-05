@@ -17,22 +17,38 @@ TEST_CATALOG = Path(__file__).resolve().parent / "katalog_test"
 
 
 class FakeApp:
-    """Minimale App: verbindet sich, sammelt Rahmen mit Empfangszeit, beantwortet VIEW_CMD und SCREENSHOT_REQ."""
+    """Minimale App: verbindet sich, sammelt Rahmen mit Empfangszeit, beantwortet VIEW_CMD und SCREENSHOT_REQ.
 
-    def __init__(self, path: str, answer: bool = True) -> None:
+    V2-5: ``faehigkeiten`` meldet die App in HELLO_APP (ohne: alles wie bisher); ``lage`` ist die Antwort auf
+    LAGE_REQ (None: keine Antwort), ``lage_verzoegerung_s`` verzögert sie."""
+
+    def __init__(self, path: str, answer: bool = True, faehigkeiten: list[str] | None = None,
+                 lage: dict | None = None, lage_verzoegerung_s: float = 0.0) -> None:
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(path)
         self.frames: list[tuple[float, dict, bytes]] = []
         self.cond = threading.Condition()
         self.answer = answer
+        self.lage = lage
+        self.lage_verzoegerung_s = lage_verzoegerung_s
         self.seq = 0
         self.closed = False
+        self._send_lock = threading.Lock()
+        self._zu = False
         threading.Thread(target=self._read, daemon=True).start()
-        self.send({"type": "HELLO_APP", "app_version": "test", "bundle_id": "de.upvis.kevcad.pytest"})
+        hallo = {"type": "HELLO_APP", "app_version": "test", "bundle_id": "de.upvis.kevcad.pytest"}
+        if faehigkeiten is not None:
+            hallo["faehigkeiten"] = list(faehigkeiten)
+        self.send(hallo)
 
     def send(self, header: dict, payload: bytes = b"") -> None:
-        self.seq += 1
-        self.sock.sendall(encode_frame({**header, "seq": self.seq}, payload))
+        with self._send_lock:
+            self.seq += 1
+            try:
+                self.sock.sendall(encode_frame({**header, "seq": self.seq}, payload))
+            except OSError:
+                if not self._zu:  # nach close(): späte Antworten (etwa auf VERSION_BILD_REQ) still verwerfen
+                    raise
 
     def _read(self) -> None:
         reader = FrameReader()
@@ -56,6 +72,12 @@ class FakeApp:
                 elif self.answer and h["type"] == "VERSION_BILD_REQ":  # Versionen: Vorschaubild
                     self.send({"type": "SCREENSHOT_RES", "reply_to": h["id"], "ok": True, "width": h["width"],
                                "height": h["height"], "camera": {}, "mm_per_px": None}, PNG)
+                elif h["type"] == "LAGE_REQ" and self.lage is not None:  # V2-5: Lagebild
+                    antwort = {"type": "LAGE", "reply_to": h["id"], **self.lage}
+                    if self.lage_verzoegerung_s > 0:
+                        threading.Timer(self.lage_verzoegerung_s, self.send, args=(antwort,)).start()
+                    else:
+                        self.send(antwort)
         self.closed = True
 
     def wait_for(self, pred, timeout: float = 30.0, start: int = 0):
@@ -79,6 +101,7 @@ class FakeApp:
             return [h for _, h, _ in self.frames[start:]]
 
     def close(self) -> None:
+        self._zu = True
         self.sock.close()
 
 

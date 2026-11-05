@@ -344,6 +344,9 @@ def main() -> None:
     import make_freigabe_fixtures  # Freigabe im Projektfenster (FREIGABE_ANFRAGE, FREIGABE_GESCHLOSSEN): Abschnitt freigabe
 
     make_freigabe_fixtures.main()
+    import make_live_fixtures  # V2-5 Live (PART_SAME, WIE_ZUVOR, Agentenspur, Lagebild …): Abschnitt live
+
+    make_live_fixtures.main()
 
 
 if __name__ == "__main__":

@@ -359,7 +359,7 @@ def test_hintergrund_mit_fakeapp_erst_teilweise_dann_done(laufzeit):
     assert teil["im_hintergrund"] == ["drehgelenk Klappe"]
     text, _, _ = run_summary({**res, "pruefung": fuer_ergebnis(teil)})  # so liest es der Agent bei teilweise
     assert "Bewegungsraum: 1 Gelenk noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet" in text
-    assert "bedingungen() bzw. pruefen() zeigt den Endstand" in text
+    assert "pruefen(thema='bedingungen') bzw. pruefen() zeigt den Endstand" in text
     assert not [b for b in teil["befunde"] if b["art"] == "bewegungsraum" and b["schwere"] != "hinweis"]
     weg = [b for b in done["befunde"] if b["art"] == "bewegungsraum"]
     assert weg and weg[0]["schwere"] == "fehler" and weg[0]["teile"] == ["Klappe", "Rahmen"]
@@ -416,7 +416,7 @@ def test_run_timeout_s_ueber_mcp(srv):
         return {t.name: t.input_schema for t in (await c.list_tools()).tools}
 
     s = anyio.run(with_client, server.url, schema)
-    assert s["run"]["properties"]["timeout_s"]["anyOf"][0]["maximum"] == 900
+    assert s["run"]["properties"]["timeout_s"]["maximum"] == 900
     assert s["run"]["additionalProperties"] is False
 
 

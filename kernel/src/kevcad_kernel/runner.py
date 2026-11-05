@@ -188,7 +188,7 @@ def material_info(value: Any, catalog: Catalog | None, strict: bool = False) -> 
     if strict:
         if not isinstance(value, str):
             raise kevcad.lager.MaterialError(f"Material {value!r}: Inventar-Regel – nur Materialien aus dem Katalog "
-                                             "(id oder Alias als Text, siehe material_list)")
+                                             "(id oder Alias als Text, siehe katalog(art='material'))")
         return catalog_matinfo(*_strict_entry(value, catalog))
     if isinstance(value, str) and catalog is not None:
         entry = catalog.find_material(value)
@@ -356,13 +356,15 @@ def hint_for(exc: BaseException, ns: dict[str, Any] | None = None) -> str:
     msg = str(exc)
     name = type(exc).__name__
     if name == "MaterialError":
-        return ("Nur freigegebene Materialien aus dem Katalog (material_list). Fehlt eins: Kevin fragen und erst nach "
+        return ("Nur freigegebene Materialien aus dem Katalog (katalog(art='material')). Fehlt eins: Kevin fragen und "
+                "erst nach "
                 "seiner Freigabe benutzen; Teile aus dem Lager tragen ihr Material schon.")
     if name == "LagerError":
         if "Freigabe" in msg:
-            return ("Der Eintrag ist nur vorgeschlagen und von Kevin freizugeben: mit freigabe_anfragen([id], grund) "
+            return ("Der Eintrag ist nur vorgeschlagen und von Kevin freizugeben: mit lager(aktion='freigabe', "
+                    "ids=[id], grund) "
                     "den Freigabedialog im Projektfenster öffnen; Kevin gibt ihn dort mit einem Klick frei.")
-        return "Lagerteile mit stock_search suchen und mit lager.teil(id) holen; Maße wie im Katalog angeben."
+        return "Lagerteile mit katalog suchen und mit lager.teil(id) holen; Maße wie im Katalog angeben."
     if isinstance(exc, IndentationError):
         return "Einrückung prüfen: Blöcke mit 4 Leerzeichen einrücken, Tabs und Leerzeichen nicht mischen."
     if isinstance(exc, SyntaxError):

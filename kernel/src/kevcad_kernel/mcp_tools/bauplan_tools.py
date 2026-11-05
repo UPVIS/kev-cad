@@ -121,7 +121,7 @@ def register_bauplan_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "simulated: insertion path free, tool access to the fasteners, stability of the partial assembly, order, "
           "visibility of the new parts in the step image; findings come with a fix. Saved as "
           "<project>/dokumente/bauplan.json; steps with fest=true and texts from agent or Kevin survive new runs. "
-          "After generating, rewrite the step texts with bauplan_bearbeiten (op 'text'). " + SCHREIBEN, ADDITIVE)
+          "After generating, rewrite the step texts with bauplan(aktion='bearbeiten') (op 'text'). " + SCHREIBEN, ADDITIVE)
     async def bauplan(
         neu: Annotated[bool, Field(description="Regenerate even if the plan of this run exists (fixed steps and "
                                                "texts from agent/Kevin are kept)")] = False,

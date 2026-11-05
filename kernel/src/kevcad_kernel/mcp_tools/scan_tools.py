@@ -70,7 +70,7 @@ def register_scan_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "Scans received from Kevin's iPhone app Kev Scan (LiDAR depth, ARKit camera poses, high-res photos), stored "
           "in ~/Documents/Kev CAD/Scans/<date>_<name>/: id, name, photo and video frame counts, size, whether a box "
           "was set, and the references they were imported into. Also the receiver state (port, Bonjour name). "
-          "Next step: scan_importieren(id).", READ_ONLY)
+          "Next step: referenz(aktion='scan_importieren', scan=id).", READ_ONLY)
     async def scans() -> CallToolResult:
         res = await t.work("liest die Scans", svc.scans)
         err = fmt.service_error(res)
@@ -82,7 +82,7 @@ def register_scan_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
                 if e.get("laeuft") else "Empfänger läuft nicht (nur Import aus Datei)")
         if not liste:
             return fmt.result(f"Keine Scans in {res.get('ordner')}. {kopf}. Kev Scan sendet per WLAN; ohne WLAN das ZIP "
-                              "per AirDrop schicken und scan_importieren(pfad) aufrufen.", res)
+                              "per AirDrop schicken und referenz(aktion='scan_importieren', scan=…) aufrufen.", res)
         zeilen = [f"{fmt.plural(len(liste), 'Scan', 'Scans')} in {res.get('ordner')} (neueste zuerst). {kopf}."]
         zeilen += [scan_zeile(s) for s in liste]
         if not res.get("kevscan"):
@@ -96,11 +96,14 @@ def register_scan_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
           "them with the ARKit poses (TSDF, ~2 mm voxels) into a mesh in mm with Z up and the floor at z = 0, shown "
           "semi-transparent in the viewer like an Object Capture mesh. Runs in the background (Large: about 2 s per "
           "image on the M2 Pro, a typical scan 2 to 4 min; schnell: 1 to 2 min); warten_s waits for the "
-          "result. scan: id or name from `scans`, 'letzter' / None for the newest, or a path to a scan folder or "
-          ".kevscan.zip (AirDrop, Downloads). Afterwards referenz_vermessen(name) fits the param() dimensions with the "
+          "result. scan: id or name from referenz(aktion='scans'), 'letzter' / None for the newest, or a path to a "
+          "scan folder or "
+          ".kevscan.zip (AirDrop, Downloads). Afterwards referenz(aktion='vermessen', quelle=name) fits the param() "
+          "dimensions with the "
           "known cameras and the measured depth (no known dimension needed: the scan is metric).", ADDITIVE)
     async def scan_importieren(
-        scan: Annotated[str | None, Field(description="Scan id/name from `scans`, 'letzter', or a folder/ZIP path")]
+        scan: Annotated[str | None, Field(description="Scan id/name from referenz(aktion='scans'), 'letzter', or a "
+                                                      "folder/ZIP path")]
         = None,
         name: Annotated[str | None, Field(description="Reference name (default: name of the scan)")] = None,
         schnell: Annotated[bool, Field(description="Quick preview: Small model, fewer frames")] = False,
@@ -115,11 +118,12 @@ def register_scan_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None:
             zeilen = [f"Scan {res.get('scan')} ist als Referenz {res.get('name')} im Projekt "
                       f"({'Vorschau, Small-Modell' if schnell else 'PromptDA Large'})."]
             zeilen += bericht_text(res.get("bericht"))
-            zeilen.append(f"Weiter: referenz_vermessen(\"{res.get('name')}\", freie_masse=[…]) misst die Maße mit den "
+            zeilen.append(f"Weiter: referenz(aktion='vermessen', quelle=\"{res.get('name')}\", freie_masse=[…]) misst "
+                          f"die Maße mit den "
                           "bekannten Kameras und der Tiefe.")
             return fmt.result("\n".join(zeilen), res)
         if ref.get("zustand") == "fehler":
             return fmt.error_result(f"Auswertung fehlgeschlagen: {ref.get('meldung')}", res)
         return fmt.result(f"Auswertung läuft für die Referenz {res.get('name')} (Scan {res.get('scan')}, "
                           f"{'schnell' if schnell else 'genau'}). Fortschritt sieht Kevin in der App; warten mit "
-                          f"referenzen(\"{res.get('name')}\", warten_s=300).", res)
+                          f"referenz(aktion='liste', name=\"{res.get('name')}\", warten_s=300).", res)

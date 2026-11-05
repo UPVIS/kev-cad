@@ -657,8 +657,12 @@ class VersionenRuntimeMixin:
             return False
         eintraege = []
         for header, payload in teile:
+            # V2-5: mit dem Inhaltsschlüssel ersetzt die Weiche Netze, die die App gerade hat, durch Verweise
+            meta = {"teil": header.get("name"), "farbe": header.get("color")}
+            if header.get("inhalt"):
+                meta["inhalt"] = header["inhalt"]
             try:
-                eintraege.append(({"teil": header.get("name"), "farbe": header.get("color")}, netz(header, payload)))
+                eintraege.append((meta, netz(header, payload)))
             except Exception:  # noqa: BLE001 - fehlerhafte Geometrie auslassen
                 continue
         return self._versionen_bild_netze(archiv, nr, eintraege)
@@ -905,7 +909,7 @@ class VersionenRuntimeMixin:
 
     def _archiv_oder_fehler(self) -> Versionsarchiv | dict[str, Any]:
         if self._project is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         self._nachlauf_warten_ausserhalb()  # V2-1: Versionen früherer Läufe entstehen im Hintergrund
         archiv = self._archiv
         if archiv is None:

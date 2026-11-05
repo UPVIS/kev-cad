@@ -512,7 +512,7 @@ class TopologieRuntime:
                              timeout_s: float = PROZESS_S) -> dict[str, Any]:
         """Topologieoptimierung eines Druckteils starten (im Hintergrund; ``warten`` = bis zum Ergebnis)."""
         if self._tp_projekt() is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen."}
         statik_warten = getattr(self, "_statik_warten", None)
         if statik_warten is not None:
             statik_warten()
@@ -538,7 +538,7 @@ class TopologieRuntime:
         start = self._tp_starten(wunsch, "agent")
         if not warten:
             return {**start, "text": f"{wunsch['teil']}: Topologieoptimierung läuft im Hintergrund (Szenario "
-                                     f"{wunsch['szenario']!r}); Ergebnis mit topologie_ergebnis(warten_s=…)"}
+                                     f"{wunsch['szenario']!r}); Ergebnis mit topologie(aktion='ergebnis', warten_s=…)"}
         return self.topologie_ergebnis(warten_s=timeout_s)
 
     def topologie_ergebnis(self, warten_s: float = 0.0) -> dict[str, Any]:

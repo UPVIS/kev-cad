@@ -47,7 +47,7 @@ def register_drucker_tools(t: Any, svc: Any, tool: Callable[..., Any], annotatio
           "his click Kev CAD slices the plates with Bambu Studio and opens the .gcode.3mf in Bambu Studio, where "
           "Kevin presses print. Way 'b' (direct) is locked unless Kevin switched the printer to LAN-only + developer "
           "mode and chose way B. platten: plate numbers of the print preview (druckvorschau), omit for all. grund: one "
-          "short German sentence shown in the dialog (why you ask). Follow progress with drucker_status.",
+          "short German sentence shown in the dialog (why you ask). Follow progress with druck(aktion='drucker').",
           ASKS_KEVIN)
     async def drucken(
         platten: Annotated[list[int] | None, Field(description="Plate numbers from druckvorschau; omit for all")] = None,

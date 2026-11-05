@@ -51,7 +51,7 @@ class BauplanDienst:
         """Prüfstand des Laufs (wartet auf die Prüfung, sie liefert die Gewindeeingriffe), sonst der letzte."""
         proj = self._project  # type: ignore[attr-defined]
         if proj is None:
-            raise RuntimeError("Kein Projekt offen. Erst project_open oder project_new aufrufen.")
+            raise RuntimeError("Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an).")
         if run is None:
             raise RuntimeError("Noch kein erfolgreicher Lauf: erst run aufrufen.")
         check = self._pruef.warte(run, warten_s)  # type: ignore[attr-defined]

@@ -6,6 +6,9 @@
 - ``seq`` zählt je Verbindung ab 1 (Reihenfolge der Warteschlange = Reihenfolge auf dem Draht).
 - Eine neue Verbindung wird erst nach ``activate()`` zur aktuellen; bis dahin schickt die Laufzeit über
   ``conn.send`` den Anfangsstand (HELLO, PROJECT, STATUS, Teile), damit nichts dazwischenrutscht.
+- V2-5 (PROTOCOL.md, „V2-5 Live“): Jeder Rahmen geht vor dem Senden durch die Weiche der Verbindung
+  (``live.LiveVerbindung``), unter derselben Sperre wie ``seq``: Sie entfernt neue Felder für ältere Apps und ersetzt
+  für Apps mit ``delta-1`` Unverändertes durch kurze Nachrichten (oder lässt es weg).
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from kevcad_kernel.live import LiveVerbindung
 from kevcad_kernel.protocol import FrameReader, encode_frame
 
 MAX_QUEUED_BYTES = 1 << 30
@@ -37,6 +41,21 @@ class AppConnection:
         self._queued = 0
         self.closed = False
         self.info: dict[str, Any] = {}
+        self.live = LiveVerbindung()  # V2-5: Fähigkeiten der App und was sie schon hat
+
+    # -- V2-5: Fähigkeiten und Stand der Weiche (unter derselben Sperre wie das Senden) --------------------------------
+
+    def set_faehigkeiten(self, faehigkeiten: list[str]) -> None:
+        with self._lock:
+            self.live.melden(faehigkeiten)
+
+    def live_vergessen(self, namen: list[str]) -> None:
+        with self._lock:
+            self.live.vergessen(namen)
+
+    def live_neueste(self, art: str) -> tuple[dict[str, Any], bytes] | None:
+        with self._lock:
+            return self.live.neueste(art)
 
     def start_writer(self) -> None:
         threading.Thread(target=self._write_loop, name=f"app-write-{self.number}", daemon=True).start()
@@ -44,12 +63,23 @@ class AppConnection:
     def start_reader(self) -> None:
         threading.Thread(target=self._read_loop, name=f"app-read-{self.number}", daemon=True).start()
 
-    def send(self, header: dict[str, Any], payload: bytes = b"") -> bool:
+    def send(self, header: dict[str, Any], payload: bytes = b"", *, vollstaendig: bool = False) -> bool:
+        """Rahmen in die Warteschlange; True auch, wenn die Weiche ihn bewusst weglässt (die App hat ihn schon oder
+        kann ihn nicht). ``vollstaendig``: nichts weglassen oder ersetzen (V2-5, Antwort auf NOCHMAL)."""
         with self._lock:
             if self.closed:
                 return False
-            self._seq += 1
-            data = encode_frame({**header, "seq": self._seq}, payload)
+            seq = self._seq + 1
+            try:
+                gefiltert = self.live.filtern(header, payload, seq, vollstaendig=vollstaendig)
+            except Exception as exc:  # noqa: BLE001 - die Weiche darf das Senden nie verhindern
+                self.link._log(f"[app] V2-5-Weiche bei {header.get('type')}: {exc!r}")
+                gefiltert = (header, payload)
+            if gefiltert is None:
+                return True
+            header, payload = gefiltert
+            self._seq = seq
+            data = encode_frame({**header, "seq": seq}, payload)
             if self._queued + len(data) > MAX_QUEUED_BYTES:
                 overflow = True
             else:

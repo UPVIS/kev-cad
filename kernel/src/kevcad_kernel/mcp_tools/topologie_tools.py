@@ -36,7 +36,8 @@ def register_topologie_tools(t: Any, svc: Any, tool: Callable[..., Any], annotat
           "warten=true. Afterwards the result is re-analysed with the solid FEM (safety vs target 4 for printed "
           "parts) and the print check, with key figures before and after (volume, mass, filament, print time, max "
           "stress, safety, deflection). abbrechen=true stops a running optimization. The result is stored in the "
-          "project (topologie/<part>-<key>.brep); to use it, call topologie_uebernehmen (creates a variant) or write "
+          "project (topologie/<part>-<key>.brep); to use it, call topologie(aktion='uebernehmen') (creates a variant) "
+          "or write "
           "topologie.optimieren(part, ...) into model.py. Always say: approximation, not a structural verification.",
           annotations["additive"])
     async def topologie_optimieren(

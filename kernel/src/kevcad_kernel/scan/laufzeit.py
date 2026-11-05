@@ -103,7 +103,7 @@ class ScanRuntimeMixin:
         """Scan auswerten (eigener Prozess) und als Referenz ``<projekt>/referenzen/<name>/`` anlegen."""
         proj = self._project
         if proj is None:
-            return {"ok": False, "error": "Kein Projekt offen. Erst project_open oder project_new aufrufen."}
+            return {"ok": False, "error": "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."}
         try:
             ordner = ablage.finde(self._scan_basis, scan)
         except ScanFehler as exc:
@@ -122,7 +122,7 @@ class ScanRuntimeMixin:
             laeuft = self._ref_laeufe.get(schluessel)
         if laeuft is not None:
             return {"ok": False, "error": f"Für die Referenz {n} läuft schon {laeuft['art']}; erst abwarten "
-                                          "(referenzen(name, warten_s=…))."}
+                                          "(referenz(aktion='liste', name=…, warten_s=…))."}
         ref = ref_ablage.ordner(proj.path, n)
         aus = ref / ref_ablage.CAPTURE
         meta = ref_ablage.lese_meta(proj.path, n) or {"art": "scan", "quelle": str(kern), "erstellt": ref_ablage.jetzt()}
