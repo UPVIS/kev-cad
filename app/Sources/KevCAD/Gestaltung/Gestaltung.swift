@@ -126,7 +126,7 @@ enum Gestaltung {
         static let zeileKind: CGFloat = 25
         static let einzug: CGFloat = 17
         static let feld: CGFloat = 26
-        static let feldTitel: CGFloat = 92
+        static let feldTitel: CGFloat = 78
         static let knopf: CGFloat = 30
         static let knopfText: CGFloat = 28
         static let taste: CGFloat = 20

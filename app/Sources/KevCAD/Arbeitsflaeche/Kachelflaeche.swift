@@ -35,7 +35,7 @@ extension KachelArt {
     var bereich: ProjektBereich {
         switch self {
         case .zeichnung: return .dokumente
-        case .material, .stueckliste, .zuschnitt: return .material
+        case .material: return .material
         case .simulation: return .simulation
         default: return .modell
         }
@@ -217,7 +217,7 @@ private struct KachelInhalt: View {
             Color.clear
         case .zeichnung:
             HStack(spacing: 0) {
-                if breit {
+                if breit || dokumente.auswahl == nil {
                     DokumenteSeitenleiste(model: model, store: model.dokumente, zustand: dokumente)
                         .frame(width: 230)
                     Divider()

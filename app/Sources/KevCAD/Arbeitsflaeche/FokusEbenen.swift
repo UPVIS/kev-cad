@@ -55,7 +55,7 @@ struct FokusEbenen: View {
                 }
             }
             .padding(.horizontal, GA.l)
-            .padding(.bottom, GA.m)
+            .padding(.bottom, model.animation.hasAnimation ? 84 : 40)  // über Zeitleiste und Maßstab des Viewers
         } else {
             ZStack(alignment: .bottomTrailing) {
                 if oberflaeche.spricht || oberflaeche.sprechText != nil {

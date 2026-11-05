@@ -146,3 +146,18 @@ extension Color {
             opacity: Double(max(0.15, color.w)))
     }
 }
+
+/// Kleines farbiges Etikett.
+struct Badge: View {
+    var text: String
+    var color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.14)))
+    }
+}

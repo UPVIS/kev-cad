@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 
 /// Kennungen der Fenster (SwiftUI-Szenen).
 enum WindowID {
-    static let welcome = "welcome"
     static let project = "project"
     static let log = "log"
     static let catalog = "catalog"
@@ -33,8 +32,6 @@ final class AppSession: ObservableObject {
     let recents: RecentProjects
     let keyboard = KeyboardGuard()
 
-    /// Willkommensfenster soll das Formular „Neues Projekt“ zeigen.
-    @Published var newProjectRequested = false
     /// Das Fenster Lagerkatalog soll diesen Eintrag bzw. Abschnitt zeigen (wird dort verbraucht).
     @Published var catalogFocus: CatalogFocus?
     @Published var catalogSectionRequest: CatalogSection?
@@ -59,13 +56,15 @@ final class AppSession: ObservableObject {
     var startEntwurfErlaubt = false
     var letztesProjekt: URL?
     let fensterRandSteuerung = FensterRand()
+    /// Fläche des Viewers im Fenster (Punkte, oben links), für `viewerKlickBeobachten`.
+    var viewerRahmen: CGRect = .zero
+    var viewerKlickMonitor: Any?
     /// Abos der V2-Oberfläche (Entwurf beim Start, Modus und Kacheln merken).
     var oberflaechenAbos: Set<AnyCancellable> = []
 
     weak var projectWindow: NSWindow? {
         didSet { keyboard.projectWindow = projectWindow }
     }
-    weak var welcomeWindow: NSWindow?
 
     private(set) var openWindowAction: OpenWindowAction?
     private var dismissWindowAction: DismissWindowAction?
@@ -107,6 +106,7 @@ final class AppSession: ObservableObject {
         Self.applyAppearanceOverride()
         DokumenteSelfTest.projektOeffnenWennVerlangt(self)  // Phase 6: Selbsttest startet mit offenem Projekt
         entwurfVorbereiten(wiederherstellen: wiederherstellen)
+        Startzeiten.marke("Sitzung angelegt")
         oberflaecheMerken()
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
@@ -155,12 +155,6 @@ final class AppSession: ObservableObject {
         dismissWindowAction = dismissWindow
     }
 
-    /// Seit V2-3 gibt es kein Willkommensfenster mehr: Das Hauptfenster zeigt das leere Projekt mit der Startübersicht.
-    func showWelcome() {
-        showProjectWindow()
-        model.oberflaechenActions?.zeigeUebersicht(true)
-    }
-
     func showProjectWindow() {
         openWindowAction?(id: WindowID.project)
     }
@@ -199,22 +193,9 @@ final class AppSession: ObservableObject {
 
     // MARK: Projekte
 
-    /// Bisheriger Einstieg „Neues Projekt …“: seit V2-3 ohne Formular ein leeres Projekt.
-    func requestNewProject() {
-        neuesProjekt()
-    }
-
     /// Ordner für ein neues Projekt: unter `AppInfo.projectsDirectory`, ohne Namenskollision.
     func proposedFolder(for name: String) -> URL {
         ProjectLocator.uniqueFolder(named: name, in: AppInfo.projectsDirectory)
-    }
-
-    func createProject(named name: String, template: ProjectTemplate) {
-        let folder = proposedFolder(for: name)
-        try? FileManager.default.createDirectory(at: AppInfo.projectsDirectory, withIntermediateDirectories: true)
-        model.append(LogLine(text: "Neues Projekt „\(folder.lastPathComponent)“ (\(template.title)) unter "
-            + KevFormat.abbreviatedPath(folder.path)))
-        actions?.newProject(at: folder, template: template.rawValue)
     }
 
     /// Öffnet einen Projektordner nach Prüfung auf `model.py`.
@@ -280,7 +261,7 @@ final class AppSession: ObservableObject {
     }
 
     private func run(_ alert: NSAlert, completion: @escaping (NSApplication.ModalResponse) -> Void) {
-        if let window = NSApp.keyWindow ?? welcomeWindow ?? projectWindow {
+        if let window = NSApp.keyWindow ?? projectWindow {
             alert.beginSheetModal(for: window, completionHandler: completion)
         } else {
             completion(alert.runModal())
@@ -330,20 +311,6 @@ enum ProjectTemplate: String, CaseIterable, Identifiable {
     case empty
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .example: return "Beispiel"
-        case .empty: return "Leer"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .example: return "Wandhalter mit Grundplatte, Lasche und Bohrungen zum Ausprobieren"
-        case .empty: return "Nur das Grundgerüst von model.py"
-        }
-    }
 }
 
 // MARK: Gemeinsame Befehle der Oberfläche (rufen nur AppActions)

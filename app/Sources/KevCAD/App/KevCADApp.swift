@@ -13,6 +13,7 @@ struct KevCADApp: App {
     @StateObject private var session = AppSession()
 
     init() {
+        Startzeiten.marke("App.init")
         // Nur eine Instanz je Variante: läuft schon eine (Tools-Stapel, Start durch die Claude-Brücke), diese nach vorn
         // holen und selbst gleich wieder beenden. Zwei Instanzen würden sich Socket und MCP-Port streitig machen.
         let me = NSRunningApplication.current
@@ -48,14 +49,9 @@ struct KevCADApp: App {
             StockCommands(session: session, model: session.model)
             BestandCommands(model: session.model)
             ZukaufCommands(session: session, model: session.model)
-            AnimationCommands(model: session.model, animation: session.model.animation)
-            VersionenCommands(model: session.model, store: session.model.versionen)
-            DokumenteCommands(model: session.model)  // Phase 6: Menü Dokumente, PDF, Drucken
-            MaterialCommands(session: session, model: session.model)  // Menü Material
-            // Phase 6, P6-A2: Dokumente exportieren (⇧⌘E), Durchspielen
-            DokumenteExportCommands(session: session, model: session.model, bauplan: session.model.bauplan)
+            DokumenteCommands(model: session.model)  // Ablage › Drucken
+            DokumenteExportCommands(session: session, model: session.model)  // Dokumente exportieren (⇧⌘E)
             RenderCommands(model: session.model)  // Phase 7: Rendern … (⌥⌘R)
-            SimulationCommands(model: session.model)  // Menü Simulation: Lastfälle, Kräfte, Lager, Rechnen
         }
 
         Window("Protokoll", id: WindowID.log) {

@@ -1,9 +1,9 @@
 import KevCADCore
 import SwiftUI
 
-/// Menü „Dokumente“ und Drucken: Zoom (⌘9 einpassen, ⌘0 1:1, ⌘+ ⌘−), Werkzeuge (V, D, N, nur im Bereich Dokumente),
+/// Untermenü „Dokumente“ im Menü „Modell“: Zoom (⌘9 einpassen, ⌘0 1:1, ⌘+ ⌘−), Werkzeuge (V, D, N, nur im Bereich Dokumente),
 /// Als PDF sichern (⌥⌘P), Drucken (⌘P). Den Bereich wechseln ⌘1, ⌘2, ⌘3 im Menü „Darstellung“ (MaterialCommands).
-struct DokumenteCommands: Commands {
+struct DokumenteMenue: View {
     @ObservedObject var model: AppModel
     @FocusedObject private var window: ProjectWindowState?
     @FocusedObject private var zustand: DokumenteZustand?
@@ -11,8 +11,8 @@ struct DokumenteCommands: Commands {
     private var imBereich: Bool { window?.bereich == .dokumente && model.project != nil }
     private var mitBlatt: Bool { imBereich && zustand?.blattID != nil }
 
-    var body: some Commands {
-        CommandMenu("Dokumente") {
+    var body: some View {
+        Group {
             Group {
                 Button("Blatt einpassen") { zustand?.ausfuehren(.einpassen) }
                     .keyboardShortcut("9", modifiers: .command)
@@ -24,7 +24,8 @@ struct DokumenteCommands: Commands {
                     .keyboardShortcut("-", modifiers: .command)
                 Divider()
                 Button("Auswählen") { zustand?.setzeWerkzeug(.auswahl) }
-                    .keyboardShortcut("v", modifiers: [])
+                    // V gehört außerhalb des Blatts dem Sprechen (OberflaechenCommands)
+                    .keyboardShortcut(mitBlatt ? KeyboardShortcut("v", modifiers: []) : nil)
                 Button("Maß hinzufügen") { zustand?.setzeWerkzeug(.mass) }
                     .keyboardShortcut("d", modifiers: [])
                 Button("Notiz hinzufügen") { zustand?.setzeWerkzeug(.notiz) }
@@ -48,10 +49,20 @@ struct DokumenteCommands: Commands {
                 .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(!mitBlatt)
         }
+    }
+}
+
+/// Ablage › Drucken (⌘P) für das gezeigte Zeichnungsblatt.
+struct DokumenteCommands: Commands {
+    @ObservedObject var model: AppModel
+    @FocusedObject private var window: ProjectWindowState?
+    @FocusedObject private var zustand: DokumenteZustand?
+
+    var body: some Commands {
         CommandGroup(replacing: .printItem) {
             Button("Drucken …") { zustand?.drucken?() }
                 .keyboardShortcut("p", modifiers: .command)
-                .disabled(!mitBlatt)
+                .disabled(window?.bereich != .dokumente || model.project == nil || zustand?.blattID == nil)
         }
     }
 }

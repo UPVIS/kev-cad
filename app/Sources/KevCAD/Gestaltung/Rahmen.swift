@@ -53,12 +53,15 @@ struct KachelRahmen<Zusatz: View, Inhalt: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             kopf
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { antippen() })
             if durchsichtig {
                 Spacer(minLength: 0)
             } else {
                 inhalt()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    .simultaneousGesture(TapGesture().onEnded { antippen() })
             }
         }
         .background {
@@ -69,7 +72,6 @@ struct KachelRahmen<Zusatz: View, Inhalt: View>: View {
             form.strokeBorder(aktiv ? GF.kevin.opacity(0.45) : GF.linie, lineWidth: aktiv ? 1.5 : 1)
                 .allowsHitTesting(false)
         }
-        .simultaneousGesture(TapGesture().onEnded { antippen() })
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Kachel \(nummer), \(titel)")
     }

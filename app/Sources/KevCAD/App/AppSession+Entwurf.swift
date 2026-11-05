@@ -212,6 +212,25 @@ extension AppSession {
         fensterRandSteuerung.anwenden(rand, fenster: projectWindow)
     }
 
+    /// Ein Klick in den Viewer macht in der Werkstatt das Modell zur aktiven Kachel (der Viewer ist eine Metal-Ansicht
+    /// und meldet Klicks nicht an SwiftUI). Das Ereignis läuft unverändert weiter.
+    func viewerKlickBeobachten() {
+        guard viewerKlickMonitor == nil else { return }
+        viewerKlickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            nonisolated(unsafe) let event = event
+            MainActor.assumeIsolated {
+                guard let self, let w = self.projectWindow, event.window === w, let v = w.contentView else { return }
+                let o = self.model.oberflaeche
+                guard o.modus == .werkstatt, o.aktiv != .modell, o.kacheln.contains(.modell) else { return }
+                let p = CGPoint(x: event.locationInWindow.x, y: v.bounds.height - event.locationInWindow.y)
+                if self.viewerRahmen.contains(p) {
+                    self.model.oberflaechenActions?.oberflaeche(.kachelAktiv(.modell))
+                }
+            }
+            return event
+        }
+    }
+
     /// Beim Beenden: Fenster nicht schmal zurücklassen, leeren Entwurf wegräumen.
     func beimBeenden() {
         fensterRandSteuerung.sofortZurueck(projectWindow)

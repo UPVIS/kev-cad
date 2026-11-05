@@ -68,8 +68,8 @@ private struct ProjektTitel: View {
                     .foregroundStyle(GF.kreide)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: schmal ? 150 : 300, alignment: .leading)
-                    .layoutPriority(1)
+                    .frame(maxWidth: schmal ? 150 : nil, alignment: .leading)
+                    .fixedSize(horizontal: !schmal, vertical: false)
                     .onTapGesture(count: 2) { beginnen() }
                     .help("Doppelklick: Projekt benennen")
                     .accessibilityLabel("Projekt \(session.projektTitel)")

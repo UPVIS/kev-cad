@@ -173,7 +173,7 @@ struct Eigenschaften: View {
                 ForEach(namen, id: \.self) { n in
                     if let w = verlauf.werte[n] {
                         EigenschaftsFeld(
-                            titel: n, wert: Self.zahl(w), einheit: "mm",
+                            titel: n, wert: Self.zahl(w),
                             vorher: verlauf.vorher[n].map { Self.zahl($0) },
                             hilfe: "param(\"\(n)\") in model.py") { text in
                                 session.parameterSetzen(n, text: text)

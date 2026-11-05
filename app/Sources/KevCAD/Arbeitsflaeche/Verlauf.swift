@@ -114,11 +114,13 @@ final class AgentenSpur: ObservableObject {
     private func lauf(_ r: RunState) {
         switch r {
         case .finished(let run, let ms, let teile, _):
+            guard teile > 0 else { return }  // der Lauf eines leeren Projekts sagt nichts
             let dauer = ms >= 1000 ? String(format: "%.1f s", Double(ms) / 1000).replacingOccurrences(of: ".", with: ",")
                 : "\(ms) ms"
             dazu(SpurEintrag(text: "Lauf \(run) fertig: \(KevFormat.count(teile, one: "Teil", many: "Teile")), \(dauer)",
                              zeit: Date(), art: .info))
         case .failed(let run, let message, let line, _):
+            guard !message.contains("anderes Projekt") else { return }  // abgebrochen, kein Fehler
             let wo = line.map { " in Zeile \($0)" } ?? ""
             dazu(SpurEintrag(text: "Lauf \(run): Fehler\(wo): \(message)", zeit: Date(), art: .befund))
         default:

@@ -18,6 +18,8 @@ enum OberflaechenSelbsttest {
     /// Zeitpunkte relativ zum Prozessstart (Sekunden).
     static var erschienen: Double?
     static var bedienbar: Double?
+    /// Läuft vom ersten Bild an: Wann war der Hauptfaden zuletzt länger blockiert?
+    private static let startMesser = HaengerMesser()
 
     private static var env: [String: String] { ProcessInfo.processInfo.environment }
     private static var gewuenscht: Bool { AppInfo.isTestVariant && env["KEVCAD_SELFTEST"] == "oberflaeche" }
@@ -28,7 +30,7 @@ enum OberflaechenSelbsttest {
     }
 
     /// Sekunden seit dem Start dieses Prozesses (Startzeit aus dem Kernel, nicht aus der App).
-    static func seitStart() -> Double {
+    nonisolated static func seitStart() -> Double {
         var info = kinfo_proc()
         var groesse = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
@@ -42,6 +44,8 @@ enum OberflaechenSelbsttest {
     static func fensterErschienen() {
         guard erschienen == nil else { return }
         erschienen = seitStart()
+        Startzeiten.marke("Fenster erschienen")
+        if gewuenscht { startMesser.start() }
         DispatchQueue.main.async { DispatchQueue.main.async { bedienbar = seitStart() } }
     }
 
@@ -109,12 +113,21 @@ enum OberflaechenSelbsttest {
             return messer.stop()
         }
         let a = model.oberflaechenActions
+        // Modus und Kacheln sind gemerkt: jeder Lauf beginnt gleich
+        a?.ordneKacheln([.modell])
+        a?.setzeModus(.fokus)
 
         // 1. Start
         _ = await warte(10) { erschienen != nil && bedienbar != nil }
         if let e = erschienen, let b = bedienbar {
             pruefe(b < 1.0, String(format: "Fenster erschienen nach %.2f s, bedienbar nach %.2f s (Ziel unter 1 s)", e, b))
         }
+        await pause(3)
+        let pause0 = startMesser.stop()
+        notiere(String(format: "längste Pause im Start nach dem ersten Bild: %.0f ms, frei seit %.2f s", pause0,
+                       seitStart() - startMesser.seitLetzterLangerPause))
+        notiere(Startzeiten.marken.map { String(format: "%@ %.2f s", $0.0, $0.1) }.joined(separator: " · "))
+        notiere("Menüleiste: " + (NSApp.mainMenu?.items.map(\.title).joined(separator: " | ") ?? "keine"))
         if session.demo == nil {
             let bereit = await warte(60) { model.kernelState == .ready || model.kernelState == .busy }
             notiere(String(format: "Kernel bereit nach %.2f s", seitStart()))
@@ -150,21 +163,31 @@ enum OberflaechenSelbsttest {
         }
         await foto("03-fokus")
 
+        /// Wer bekommt Klicks mitten im Viewer? Eine Ebene der Oberfläche darf sie nicht schlucken.
+        func treffer() -> String {
+            guard let w = session.projectWindow, let f = w.contentView?.superview else { return "kein Fenster" }
+            let r = session.viewerRahmen
+            let t = f.hitTest(NSPoint(x: r.midX, y: f.bounds.height - r.midY))
+            return t.map { String(describing: type(of: $0)) } ?? "nichts"
+        }
+        notiere("Klick im Viewer (Fokus): \(treffer())")
+
         // 4. Werkstatt
         var ms = await haenger(0.8) { a?.setzeModus(.werkstatt) }
         pruefe(o.modus == .werkstatt, "Werkstatt an")
         pruefe(ms < 250, String(format: "Umschalten Fokus → Werkstatt: längste Pause %.0f ms", ms))
         if let erst = model.parts.first { model.actions?.select([erst.id]) }
+        notiere("Klick im Viewer (Werkstatt): \(treffer())")
         await foto("04-werkstatt")
 
         // 5. Kacheln
-        ms = await haenger(1.2) {
-            a?.zeigeKachel(.zeichnung)
-            a?.zeigeKachel(.stueckliste)
-        }
+        ms = await haenger(1.0) { a?.zeigeKachel(.zeichnung) }
+        notiere(String(format: "Kachel Zeichnung öffnen: längste Pause %.0f ms", ms))
+        ms = await haenger(1.0) { a?.zeigeKachel(.stueckliste) }
+        notiere(String(format: "Kachel Stückliste öffnen: längste Pause %.0f ms", ms))
+        await pause(0.5)
         pruefe(o.kacheln == [.modell, .zeichnung, .stueckliste], "drei Kacheln: \(o.kacheln.map(\.rawValue))")
         pruefe(o.nummer(.stueckliste) == 3, "Stückliste ist Kachel 3")
-        notiere(String(format: "Kacheln öffnen: längste Pause %.0f ms", ms))
         await foto("05-kacheln-3")
         a?.zeigeKachel(.ansicht)
         await pause(1.0)
@@ -176,6 +199,10 @@ enum OberflaechenSelbsttest {
         a?.vergroessereKachel(nil)
         a?.schliesseKachel(.ansicht)
         pruefe(o.kacheln.count == 3 && o.gross == nil, "Kachel geschlossen, wieder eingeordnet")
+        ms = await haenger(1.5) { a?.vergroessereKachel(.material) }
+        notiere(String(format: "Kachel Material groß: längste Pause %.0f ms", ms))
+        await foto("07b-material")
+        a?.schliesseKachel(.material)
 
         // 6. Zurück in den Fokus, Sprechen
         ms = await haenger(0.8) { a?.setzeModus(.fokus) }
@@ -215,12 +242,25 @@ enum OberflaechenSelbsttest {
     }
 }
 
+/// Zeitmarken des Starts (Sekunden seit Prozessstart), nur für den Selbsttest.
+enum Startzeiten {
+    nonisolated(unsafe) static var marken: [(String, Double)] = []
+
+    static func marke(_ name: String) {
+        marken.append((name, OberflaechenSelbsttest.seitStart()))
+    }
+}
+
 /// Misst die längste Pause zwischen zwei Takten eines 4-ms-Zeitgebers auf dem Hauptfaden.
 @MainActor
 final class HaengerMesser {
     private var zeitgeber: Timer?
     private var letzter = CACurrentMediaTime()
     private var groesste: Double = 0
+    private var letzteLange: Double?
+
+    /// Sekunden seit dem Ende der letzten Pause über 100 ms.
+    var seitLetzterLangerPause: Double { letzteLange.map { CACurrentMediaTime() - $0 } ?? 0 }
 
     func start() {
         letzter = CACurrentMediaTime()
@@ -230,6 +270,7 @@ final class HaengerMesser {
                 guard let self else { return }
                 let jetzt = CACurrentMediaTime()
                 self.groesste = max(self.groesste, jetzt - self.letzter)
+                if jetzt - self.letzter > 0.1 { self.letzteLange = jetzt }
                 self.letzter = jetzt
             }
         }

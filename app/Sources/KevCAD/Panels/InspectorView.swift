@@ -13,6 +13,7 @@ struct InspectorView: View {
 
     var body: some View {
         Form {
+            CameraTreeSection(store: model.cameras, actions: model.cameraActions)  // Phase 5: Kameras (Liste)
             CameraInspectorSection(store: model.cameras, actions: model.cameraActions)  // Phase 5: Kameras
             selectionSection
             propertiesSection

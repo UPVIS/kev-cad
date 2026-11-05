@@ -70,6 +70,8 @@ struct Hauptfenster: View {
     @StateObject private var spur = AgentenSpur()
     @State private var suche = ""
     @State private var geometrie: Arbeitsgeometrie?
+    /// Der Viewer kommt erst nach dem ersten Bild dazu: Metal einzurichten soll das Fenster nicht aufhalten.
+    @State private var viewerAn = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -81,7 +83,7 @@ struct Hauptfenster: View {
                                      gross: oberflaeche.gross)
             ZStack(alignment: .topLeading) {
                 GraphitGrund()
-                viewerFlaeche(g)
+                if viewerAn { viewerFlaeche(g) }
                 if oberflaeche.modus == .fokus {
                     FokusEbenen(model: model, oberflaeche: oberflaeche, spur: spur, viewer: g.viewer, schmal: g.schmal)
                         .transition(.opacity)
@@ -97,8 +99,14 @@ struct Hauptfenster: View {
                     .frame(width: geo.size.width, height: GA.kopf)
                     .position(x: geo.size.width / 2, y: GA.ampelMitte)
             }
-            .onAppear { geometrie = g }
-            .onChange(of: g) { _, neu in geometrie = neu }
+            .onAppear {
+                geometrie = g
+                session.viewerRahmen = g.viewer
+            }
+            .onChange(of: g) { _, neu in
+                geometrie = neu
+                session.viewerRahmen = neu.viewer
+            }
         }
         .ignoresSafeArea()
         .environment(\.colorScheme, .dark)
@@ -129,7 +137,14 @@ struct Hauptfenster: View {
         .onChange(of: oberflaeche.kacheln.contains(.simulation)) { _, an in
             model.simulationActions?.setSimulationAktiv(an)  // Kräfte und Lager per Klick im Viewer
         }
-        .onChange(of: oberflaeche.rand) { _, r in session.fensterRand(r) }
+        .onChange(of: oberflaeche.rand) { _, r in
+            session.fensterRand(r)
+            guard r != nil else { return }
+            // Im schmalen Fenster das Modell neu einpassen, sobald die Bewegung zu Ende ist
+            DispatchQueue.main.asyncAfter(deadline: .now() + GB.rand + 0.05) {
+                (model.actions as? NavigationActions)?.viewAll()
+            }
+        }
         .onReceive(model.bauplan.$zeige3D.dropFirst()) { _ in
             model.oberflaechenActions?.oberflaeche(.kachelAktiv(.modell))
         }
@@ -159,6 +174,10 @@ struct Hauptfenster: View {
             AnimationTimeline(model: model, animation: model.animation)  // nur mit Animation
         }
         .modifier(VersionenBlaetter(model: model, zustand: versionen))
+        .onAppear {
+            Startzeiten.marke("Viewer eingehängt")
+            DispatchQueue.main.async { Startzeiten.marke("Viewer steht") }
+        }
         .frame(width: g.viewer.width, height: g.viewer.height)
         .clipShape(ecken)
         .overlay { Sprechrahmen(an: oberflaeche.spricht, radius: g.viewerEcke) }
@@ -246,10 +265,13 @@ struct Hauptfenster: View {
     private func erscheinen() {
         OberflaechenSelbsttest.fensterErschienen()  // Startzeit messen (nur der Selbsttest liest sie)
         session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { viewerAn = true }
+        session.viewerKlickBeobachten()
         parameter.beobachten(model)
         spur.beobachten(model)
         state.beimBereichswechsel = { [weak model] b in
-            guard let a = model?.oberflaechenActions else { return }
+            guard let model, let a = model.oberflaechenActions else { return }
+            if model.oberflaeche.aktiv?.bereich == b { return }  // Kachel und Bereich passen schon
             switch b {
             case .modell: a.oberflaeche(.kachelAktiv(.modell))
             case .dokumente: a.zeigeKachel(.zeichnung)
@@ -362,32 +384,6 @@ private struct WerkstattSpalte: View {
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
         .background(form.fill(GF.insel))
         .overlay(form.strokeBorder(GF.linie, lineWidth: 1))
-    }
-}
-
-/// Kleines Suchfeld für die Gliederung.
-private struct SuchFeld: View {
-    @Binding var text: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(GF.rauch)
-            TextField("Teile filtern", text: $text)
-                .textFieldStyle(.plain)
-                .font(GS.text)
-                .foregroundStyle(GF.kreide)
-            if !text.isEmpty {
-                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(GF.rauch)
-                    .accessibilityLabel("Filter leeren")
-            }
-        }
-        .padding(.horizontal, 8)
-        .frame(height: GA.feld)
-        .background(RoundedRectangle(cornerRadius: GR.feld, style: .continuous).fill(GF.feld))
     }
 }
 

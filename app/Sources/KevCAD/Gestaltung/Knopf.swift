@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 // Grundbausteine (1): Knöpfe, Umschalter Fokus/Werkstatt, Tastenkappe. Selbst gezeichnet, aber echte SwiftUI-Knöpfe:
-// Tastatursteuerung (Tab, Leertaste), Fokusring und VoiceOver bleiben erhalten.
+// Tastatursteuerung (Tab, Leertaste), Fokusring des Systems und VoiceOver bleiben erhalten.
 
 typealias GF = Gestaltung.Farbe
 typealias GS = Gestaltung.Schrift
@@ -42,13 +42,11 @@ private struct KnopfKoerper<Label: View>: View {
     let farbe: Color?
     @State private var hover = false
     @Environment(\.isEnabled) private var aktiv
-    @Environment(\.isFocused) private var fokus
 
     var body: some View {
         inhalt
             .foregroundStyle(farbe ?? GF.kreide)
             .background { flaeche }
-            .overlay { if fokus { umriss.stroke(GF.kevin, lineWidth: 2) } }
             .contentShape(umriss)
             .opacity(aktiv ? 1 : 0.4)
             .onHover { hover = $0 }

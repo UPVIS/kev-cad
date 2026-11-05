@@ -1,10 +1,10 @@
 import KevCADCore
 import SwiftUI
 
-/// Menü „Animation“ mit den Tasten wie in Blender: Leertaste abspielen/anhalten, ← und → ein Bild, Umschalt+← und
+/// Untermenü „Animation“ im Menü „Modell“ (V2-3) mit den Tasten wie in Blender: Leertaste abspielen/anhalten, ← und → ein Bild, Umschalt+← und
 /// Umschalt+→ an Anfang und Ende. Die Tasten wirken nur im Projektfenster mit Animation; in Textfeldern und Listen
 /// gehen sie dorthin (KeyboardGuard).
-struct AnimationCommands: Commands {
+struct AnimationMenue: View {
     @ObservedObject var model: AppModel
     @ObservedObject var animation: AnimationModel
     @FocusedObject private var window: ProjectWindowState?
@@ -14,8 +14,8 @@ struct AnimationCommands: Commands {
         window != nil && window?.bereich == .modell && animation.hasAnimation && actions != nil
     }
 
-    var body: some Commands {
-        CommandMenu("Animation") {
+    var body: some View {
+        Group {
             Group {
                 Button(animation.playing ? "Anhalten" : "Abspielen") { actions?.togglePlayback() }
                     .keyboardShortcut(.space, modifiers: [])

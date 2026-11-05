@@ -183,6 +183,7 @@ struct EigenschaftsFeld: View {
                     .font(GS.wert)
                     .foregroundStyle(GF.kreide)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .truncationMode(.middle)
                     .accessibilityLabel(titel)
                     .accessibilityValue(einheit.map { "\(wert) \($0)" } ?? wert)
@@ -221,6 +222,34 @@ struct EigenschaftsFeld: View {
             return
         }
         aendern(t)
+    }
+}
+
+/// Kleines Suchfeld in Spalten und Kacheln. `.searchable` setzt sein Feld in die Fensterleiste, wo im Hauptfenster die
+/// Kopfleiste steht; eingebettete Ansichten nehmen deshalb dieses Feld.
+struct SuchFeld: View {
+    @Binding var text: String
+    var prompt = "Teile filtern"
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(GF.rauch)
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .font(GS.text)
+                .foregroundStyle(GF.kreide)
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(GF.rauch)
+                    .accessibilityLabel("Suche leeren")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: GA.feld)
+        .background(RoundedRectangle(cornerRadius: GR.feld, style: .continuous).fill(GF.feld))
     }
 }
 

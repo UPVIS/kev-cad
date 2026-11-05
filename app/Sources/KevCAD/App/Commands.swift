@@ -214,13 +214,14 @@ struct KevCADCommands: Commands {
             Toggle("Zeitlupe", isOn: Binding(get: { model.slowMotion }, set: { model.actions?.setSlowMotion($0) }))
                 .disabled(!hasProject)
             Divider()
+            ModellUntermenues(session: session, model: model)  // V2-3: statt eigener Menüs in der Menüleiste
+            Divider()
             Button("Kernel neu starten") { model.actions?.restartKernel() }
                 .keyboardShortcut("k", modifiers: [.command, .option])
         }
 
         // Hilfe
         CommandGroup(replacing: .help) {
-            Button("Befehl für Claude Code kopieren") { session.copyClaudeCommand() }
             Button("Protokoll zeigen") { session.showLog() }
         }
     }
@@ -239,7 +240,7 @@ struct DemoCommands: Commands {
                 Button("Agent verbinden oder trennen") { demo.toggleAgent() }
                 Button("Kernel-Absturz simulieren") { demo.simulateKernelCrash() }
                 Divider()
-                Button("Projekt schließen (zum Willkommensfenster)") { demo.closeProject() }
+                Button("Projekt schließen") { demo.closeProject() }
             }
         }
     }

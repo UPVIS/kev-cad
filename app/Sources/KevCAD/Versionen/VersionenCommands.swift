@@ -1,10 +1,10 @@
 import KevCADCore
 import SwiftUI
 
-/// Menü „Versionen“. Kürzel nach macOS-Art, ohne Konflikt mit den Blender-Tasten (Buchstaben, Ziffern, 0, Leertaste,
+/// Untermenü „Versionen“ im Menü „Modell“ (V2-3). Kürzel nach macOS-Art, ohne Konflikt mit den Blender-Tasten (Buchstaben, Ziffern, 0, Leertaste,
 /// Pfeile): ⌘S Meilenstein setzen, ⌥⌘V Versionsleiste, ⌥⌘U mit der vorherigen Version vergleichen (Unterschiede),
 /// ⇧⌘U Vergleich beenden, ⌥⌘Z vorherige Version wiederherstellen.
-struct VersionenCommands: Commands {
+struct VersionenMenue: View {
     @ObservedObject var model: AppModel
     @ObservedObject var store: VersionenStore
     @FocusedObject private var zustand: VersionenZustand?
@@ -18,8 +18,8 @@ struct VersionenCommands: Commands {
         return s.versionen.dropFirst(i + 1).first
     }
 
-    var body: some Commands {
-        CommandMenu("Versionen") {
+    var body: some View {
+        Group {
             Button("Meilenstein setzen …") { zustand?.meilensteinSetzen() }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(!hatVersionen)

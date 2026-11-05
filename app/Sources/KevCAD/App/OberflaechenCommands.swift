@@ -1,6 +1,21 @@
 import KevCADCore
 import SwiftUI
 
+/// Untermenüs des Menüs „Modell“: Was früher je ein eigenes Menü in der Menüleiste war.
+struct ModellUntermenues: View {
+    @ObservedObject var session: AppSession
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Menu("Versionen") { VersionenMenue(model: model, store: model.versionen) }
+        Menu("Animation") { AnimationMenue(model: model, animation: model.animation) }
+        Menu("Simulation") { SimulationMenue(model: model) }
+        Menu("Material") { MaterialMenue(session: session, model: model) }
+        Menu("Dokumente") { DokumenteMenue(model: model) }
+        Menu("Bauplan") { BauplanMenue(model: model, bauplan: model.bauplan) }
+    }
+}
+
 /// Menüs der V2-Oberfläche (OBERFLAECHE.md, Abschnitt 7):
 /// - Darstellung (oben): Fokus ⌘1, Werkstatt ⌘2, schmal an den rechten bzw. linken Rand ⌃⌥→ / ⌃⌥←, letzte Projekte
 ///   ⇧⌘O.
@@ -80,7 +95,7 @@ struct OberflaechenCommands: Commands {
 
         CommandMenu("Agent") {
             Button(oberflaeche.spricht ? "Sprechen beenden" : "Sprechen") { a?.setzeSprechen(!oberflaeche.spricht) }
-                .keyboardShortcut("v", modifiers: [])
+                .keyboardShortcut(imBlatt ? nil : KeyboardShortcut("v", modifiers: []))
                 .disabled(!vorne || imBlatt)
             Divider()
             Button("Befehl für Claude Code kopieren") { session.copyClaudeCommand() }
