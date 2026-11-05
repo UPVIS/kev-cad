@@ -173,3 +173,36 @@ fahrt.bewege("Stift", nach=(0, 10, 0), von=0, bis=1)
     app.wait_for(lambda h: h["type"] == "ANIM_DEF" and h.get("name") == "Fahrt", start=start)
     types = [h["type"] for h in app.since(start) if h["type"] in ("RUN_END", "ANIM_DEF")]
     assert types.index("RUN_END") < types.index("ANIM_DEF")
+
+
+def test_flaechen_merken_gleich_als_kopie_und_nur_im_faden():
+    """Flächendaten während der Prüfung der Bedingungen (V2-1): gleiche Werte wie ohne Speicher, jede Rückgabe eine
+    eigene Kopie, umgekehrte Fläche ein eigener Eintrag, andere Fäden und die Zeit nach dem Block ohne Speicher."""
+    import numpy as np
+    from build123d import Box, Cylinder, Face, Pos
+
+    from kevcad_kernel.bedingungen import geometrie as geo
+
+    teil = Box(40, 40, 10) - Pos(5, 0, 0) * Cylinder(3, 20)
+
+    def gleich(a, b):
+        return a.keys() == b.keys() and all(np.array_equal(np.asarray(a[k]), np.asarray(b[k])) for k in a)
+
+    ohne = [geo._flaeche_daten(f) for f in teil.faces()]
+    with geo.flaechen_merken():
+        mit = [geo._flaeche_daten(f) for f in teil.faces()]  # neue Python-Objekte für dieselben Flächen
+        assert all(gleich(a, b) for a, b in zip(ohne, mit))
+        eben = next(i for i, d in enumerate(mit) if d["typ"] == "ebene")
+        mit[eben]["n"][:] = 0.0  # Kopie: ändert nichts am Gemerkten
+        assert gleich(geo._flaeche_daten(teil.faces()[eben]), ohne[eben])
+        rueck = Face(teil.faces()[eben].wrapped.Reversed())  # andere Orientierung: eigener Eintrag
+        assert gleich(geo._flaeche_daten(rueck), geo._flaeche_daten_rechnen(rueck))
+        drin: list = []
+        t = threading.Thread(target=lambda: drin.append(getattr(geo._GEMERKT, "speicher", None)))
+        t.start()
+        t.join()
+        assert drin == [None]
+        with geo.flaechen_merken():  # verschachtelt: der äußere Block gilt weiter
+            pass
+        assert geo._GEMERKT.speicher
+    assert getattr(geo._GEMERKT, "speicher", None) is None

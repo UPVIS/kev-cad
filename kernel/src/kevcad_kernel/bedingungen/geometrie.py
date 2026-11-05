@@ -17,8 +17,10 @@ Bezüge entstehen über Namen und Auswahlen, nie über Flächennummern (PLAN-BED
 
 from __future__ import annotations
 
+import contextlib
 import math
-from collections.abc import Callable, Iterable
+import threading
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -317,8 +319,46 @@ def als_form(obj: Any) -> Any:
     return obj if isinstance(obj, Shape) else None
 
 
+# Flächendaten während der Prüfung der Bedingungen nach dem Lauf (V2-1): Bezüge und Schraubenprüfung werten dieselbe
+# Fläche (gleiche TShape, Lage und Orientierung, ``IsEqual``) immer wieder aus, beim Kugelschieber 1318-mal für 341
+# Flächen. Nur im Faden, der ``flaechen_merken`` betreten hat, und nur bis zum Ende des Blocks: dort entstehen keine
+# Formen mehr, die Flächen ändern sich also nicht. Jeder Aufruf bekommt eine eigene Kopie der Daten.
+_GEMERKT = threading.local()
+
+
+@contextlib.contextmanager
+def flaechen_merken() -> Iterator[None]:
+    """Flächendaten in diesem Faden bis zum Ende des Blocks merken (verschachtelt: der äußere Block gilt)."""
+    if getattr(_GEMERKT, "speicher", None) is not None:
+        yield
+        return
+    _GEMERKT.speicher = {}
+    try:
+        yield
+    finally:
+        _GEMERKT.speicher = None
+
+
+def _kopie(daten: dict[str, Any]) -> dict[str, Any]:
+    return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in daten.items()}
+
+
 def _flaeche_daten(face: Any) -> dict[str, Any]:
     """Ebene, Zylinder, Kugel oder Kegel einer Fläche mit Lage (Welt), Normale, Radius."""
+    speicher = getattr(_GEMERKT, "speicher", None)
+    if speicher is None:
+        return _flaeche_daten_rechnen(face)
+    w = face.wrapped
+    eimer = speicher.setdefault(hash(w), [])
+    for w2, daten in eimer:
+        if w2.IsEqual(w):
+            return _kopie(daten)
+    daten = _flaeche_daten_rechnen(face)
+    eimer.append((w, daten))
+    return _kopie(daten)
+
+
+def _flaeche_daten_rechnen(face: Any) -> dict[str, Any]:
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_Cone, GeomAbs_Cylinder, GeomAbs_Plane, GeomAbs_Sphere
 
