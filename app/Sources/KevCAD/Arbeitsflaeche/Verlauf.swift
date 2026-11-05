@@ -51,30 +51,48 @@ final class ParameterVerlauf: ObservableObject {
     }
 }
 
-/// Ein Schritt der Agentenspur.
+/// Eine Zeile der Agentenspur.
 struct SpurEintrag: Identifiable, Equatable {
     enum Art: Equatable { case fertig, jetzt, befund, info }
 
-    let id = UUID()
+    var id = UUID().uuidString
     var text: String
     var zeit: Date
     var art: Art
+    /// Dauer eines fertigen Schritts (Text); ein laufender zählt ab `zeit`.
+    var dauer: String?
+    /// Was das Werkzeug tut, wenn `text` die Absicht des Agenten ist (Hilfetext).
+    var werkzeug: String?
 }
 
-/// Agentenspur bis V2-5: entsteht aus der Tätigkeitszeile des Agenten (`AppModel.agentActivity`), dem Ende jedes
-/// Laufs und den Befunden der Prüfung. V2-5 ersetzt das durch echte Schritte mit Zeiten.
+/// Agentenspur: die Schritte des Agenten mit Zeiten (V2-5, `AppModel.agentenspur`), dazu das Ende jedes Laufs und die
+/// Befunde der Prüfung. Ältere Kernel melden keine Schritte; dann entsteht sie aus der Tätigkeitszeile
+/// (`AppModel.agentActivity`).
 @MainActor
 final class AgentenSpur: ObservableObject {
     static let hoechstens = 6
 
     @Published private(set) var eintraege: [SpurEintrag] = []
     private var abos: Set<AnyCancellable> = []
+    /// Lauf-Ende und Befunde, zwischen die Schritte einsortiert (nach Zeit)
+    private var ereignisse: [SpurEintrag] = []
+    private var schritte: [AgentSchritt] = []
+    /// Tätigkeitszeile, falls der Kernel keine Schritte meldet
+    private var zeilen: [SpurEintrag] = []
 
     /// Was der Agent gerade tut (für die schmale Ansicht).
     var jetzt: SpurEintrag? { eintraege.last { $0.art == .jetzt } }
 
     func beobachten(_ model: AppModel) {
         guard abos.isEmpty else { return }
+        model.agentenspur.$schritte
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] s in
+                self?.schritte = s
+                self?.neuAufbauen()
+            }
+            .store(in: &abos)
         model.$agentActivity
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -98,26 +116,31 @@ final class AgentenSpur: ObservableObject {
             .map { $0?.path.path }
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] _ in self?.eintraege = [] }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.ereignisse = []
+                self.zeilen = []
+                self.neuAufbauen()
+            }
             .store(in: &abos)
     }
 
     private func taetigkeit(_ t: String?) {
-        var e = eintraege
+        var e = zeilen
         if let i = e.lastIndex(where: { $0.art == .jetzt }) { e[i].art = .fertig }
         if let t, !t.isEmpty {
             e.append(SpurEintrag(text: Self.satzAnfang(t), zeit: Date(), art: .jetzt))
         }
-        eintraege = Array(e.suffix(Self.hoechstens))
+        zeilen = Array(e.suffix(Self.hoechstens))
+        neuAufbauen()
     }
 
     private func lauf(_ r: RunState) {
         switch r {
         case .finished(let run, let ms, let teile, _):
             guard teile > 0 else { return }  // der Lauf eines leeren Projekts sagt nichts
-            let dauer = ms >= 1000 ? String(format: "%.1f s", Double(ms) / 1000).replacingOccurrences(of: ".", with: ",")
-                : "\(ms) ms"
-            dazu(SpurEintrag(text: "Lauf \(run) fertig: \(KevFormat.count(teile, one: "Teil", many: "Teile")), \(dauer)",
+            guard !schritte.contains(where: { $0.phasen?["run"]?.intValue == run }) else { return }  // steht schon im Schritt
+            dazu(SpurEintrag(text: "Lauf \(run) fertig: \(KevFormat.count(teile, one: "Teil", many: "Teile")), \(Self.dauerText(Double(ms)))",
                              zeit: Date(), art: .info))
         case .failed(let run, let message, let line, _):
             guard !message.contains("anderes Projekt") else { return }  // abgebrochen, kein Fehler
@@ -129,14 +152,39 @@ final class AgentenSpur: ObservableObject {
     }
 
     private func dazu(_ e: SpurEintrag) {
-        var neu = eintraege
-        // Der laufende Schritt bleibt der letzte
-        if let i = neu.lastIndex(where: { $0.art == .jetzt }) {
-            neu.insert(e, at: i)
-        } else {
-            neu.append(e)
+        ereignisse = Array((ereignisse + [e]).suffix(Self.hoechstens))
+        neuAufbauen()
+    }
+
+    /// Schritte und Ereignisse nach Zeit, der laufende Schritt bleibt der letzte.
+    private func neuAufbauen() {
+        let eigene = schritte.compactMap(Self.eintrag)
+        let basis = (schritte.isEmpty ? zeilen : eigene) + ereignisse
+        let sortiert = basis.sorted { a, b in
+            if (a.art == .jetzt) != (b.art == .jetzt) { return b.art == .jetzt }
+            return a.zeit < b.zeit
         }
-        eintraege = Array(neu.suffix(Self.hoechstens))
+        let neu = Array(sortiert.suffix(Self.hoechstens))
+        if neu != eintraege { eintraege = neu }
+    }
+
+    /// Ein Schritt als Zeile: Absicht vor der Beschreibung. Abfragen ohne Text bleiben knapp außen vor.
+    static func eintrag(_ s: AgentSchritt) -> SpurEintrag? {
+        guard let text = s.absicht ?? s.text ?? s.fehler else { return nil }
+        let art: SpurEintrag.Art
+        switch s.stand {
+        case .laeuft: art = .jetzt
+        case .ok: art = .fertig
+        case .fehler: art = .befund
+        }
+        return SpurEintrag(
+            id: s.id, text: satzAnfang(s.stand == .fehler ? s.fehler ?? text : text), zeit: Date(timeIntervalSince1970: s.beginn),
+            art: art, dauer: s.dauerMs.map(dauerText), werkzeug: s.absicht == nil ? nil : s.text)
+    }
+
+    /// „2,3 s“ bzw. „640 ms“.
+    static func dauerText(_ ms: Double) -> String {
+        ms >= 1000 ? String(format: "%.1f s", ms / 1000).replacingOccurrences(of: ".", with: ",") : "\(Int(ms.rounded())) ms"
     }
 
     /// „rechnet model.py“ wird „Rechnet model.py“.
