@@ -8,9 +8,9 @@ options:
 packages:
   KevCADCore:
     path: KevCADCore
+  # Lokale Kopie von d9984ad mit den Änderungen für den Viewer V2 (Packages/OCCTSwiftViewport/KEVCAD-AENDERUNGEN.md)
   OCCTSwiftViewport:
-    url: https://github.com/SecondMouseAU/OCCTSwiftViewport.git
-    revision: d9984ad46a9195f8eb91897e6cd4cf2a4e553bd0
+    path: Packages/OCCTSwiftViewport
 settings:
   base:
     KEVCAD_APP_NAME: Kev CAD

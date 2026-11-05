@@ -15,10 +15,10 @@ let package = Package(
         .library(name: "KevCADWire", targets: ["KevCADWire"]),
     ],
     dependencies: [
-        // Durch AP0 geprüfter Stand (21.10.2026), siehe PLAN-MVP.md Abschnitt 12
-        .package(
-            url: "https://github.com/SecondMouseAU/OCCTSwiftViewport.git",
-            revision: "d9984ad46a9195f8eb91897e6cd4cf2a4e553bd0")
+        // Lokale Kopie des durch AP0 geprüften Stands d9984ad (PLAN-MVP.md Abschnitt 12) mit kleinen Änderungen für
+        // den Viewer V2 (Darstellung zur Laufzeit, Umgebungsverdeckung, Bildzeiten): app/Packages/OCCTSwiftViewport,
+        // Liste der Änderungen dort in KEVCAD-AENDERUNGEN.md
+        .package(path: "../Packages/OCCTSwiftViewport")
     ],
     targets: [
         .target(

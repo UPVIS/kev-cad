@@ -89,6 +89,10 @@ public final class SceneStore {
     public private(set) var hauchTeile: Set<String> = []
     static let hauchAlpha: Float = 0.07
     static let hauchFarbe = SIMD3<Float>(0.55, 0.58, 0.62)
+    /// V2: Farben je Darstellung (Material: Metall glänzt; Technisch: Teile weiß).
+    public enum Farbmodus: Sendable { case normal, material, technisch }
+    public private(set) var farbmodus: Farbmodus = .normal
+    static let technischFarbe = SIMD3<Float>(0.86, 0.86, 0.87)
     /// Phase 5: Lage je Teil aus der Animation (Ruhelage → aktuelles Bild), zusätzlich zur Basislage; leer = Ruhelage.
     public private(set) var animationTransforms: [String: simd_float4x4] = [:]
     /// Phase 5: von der Animation ausgeblendete Teile (`sichtbar`) und Teile einer Kollision im aktuellen Bild (rot).
@@ -320,6 +324,26 @@ public final class SceneStore {
     // MARK: Zukaufteile (Phase 3)
 
     /// Ersatzkörper halbtransparent zeichnen (ohne Wirkung, wenn gleich).
+    /// V2: Farben und Oberflächen je Darstellung.
+    public func setFarbmodus(_ m: Farbmodus) {
+        guard m != farbmodus else { return }
+        farbmodus = m
+        for n in order { applyProps(n) }
+        publish()
+    }
+
+    /// Rauheit und Metallanteil für die Darstellung „Material“ nach dem Materialnamen aus model.py bzw. dem Katalog.
+    nonisolated static func pbr(_ material: String?) -> (rauheit: Float, metall: Float) {
+        let m = (material ?? "").lowercased()
+        let metalle = ["alu", "stahl", "edelstahl", "messing", "kupfer", "zink", "verzinkt", "metall", "inox", "v2a",
+                       "v4a", "s235", "s355", "eisen", "titan", "bronze", "chrom"]
+        if metalle.contains(where: m.contains) { return (0.32, 1) }
+        let holz = ["holz", "buche", "birke", "eiche", "fichte", "kiefer", "mdf", "multiplex", "osb", "sperrholz"]
+        if holz.contains(where: m.contains) { return (0.78, 0) }
+        if ["gummi", "tpu", "epdm", "silikon"].contains(where: m.contains) { return (0.9, 0) }
+        return (0.42, 0)
+    }
+
     /// V2: Teile als Hauch zeigen (lokale Ansicht); leer = keiner.
     public func setHauch(_ names: Set<String>) {
         let touched = names.symmetricDifference(hauchTeile)
@@ -738,7 +762,7 @@ public final class SceneStore {
     func displayColor(_ name: String, now: CFTimeInterval, includeFlash: Bool = true) -> SIMD4<Float> {
         guard let rec = parts[name] else { return .zero }
         var c = Self.linear(rec.header.colorVector)
-        var rgb = SIMD3(c.x, c.y, c.z)
+        var rgb = farbmodus == .technisch ? Self.technischFarbe : SIMD3(c.x, c.y, c.z)
         if let dim = dimBelowRun, rec.run < dim { rgb *= Self.dimFactor }
         if inventoryWarnings.contains(name) { rgb = rgb + (Self.inventoryWarningColor - rgb) * 0.55 }
         if collisionParts.contains(name) { rgb = rgb + (Self.collisionColor - rgb) * 0.8 }
@@ -774,11 +798,15 @@ public final class SceneStore {
             && !istTopologieVerdeckt(name)
         let transform = worldTransform(name)
         let hauch = hauchTeile.contains(name)
+        let pbr: (rauheit: Float, metall: Float) =
+            farbmodus == .material ? Self.pbr(parts[name]?.header.material) : (0.55, Self.metallic(nil))
         for i in list.indices {
             list[i].color = color
             list[i].isVisible = visible
             list[i].transform = transform
             list[i].isPickable = !teileNichtAnklickbar && !hauch
+            list[i].roughness = pbr.rauheit
+            list[i].metallic = pbr.metall
         }
         partBodies[name] = list
         if var edges = edgeBodies[name] {

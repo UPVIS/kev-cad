@@ -110,7 +110,12 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
 - **Mac mini:** ssh-Name `mac-mini` (Benutzer core), alles für Kev CAD unter `~/KevCAD-Bau`, nie in fremden Ordnern
   (Tessera, VoiceBridge). Die Metal-Toolchain ist dort installiert (Shader übersetzt der Mini selbst); fehlt sie nach einem
   Xcode-Update, meldet fern.sh das, baut lokal und `tools/fern.sh einrichten` holt sie ohne Passwort nach.
-- Der Viewport ist OCCTSwiftViewport, festgenagelt auf Commit `d9984ad`. Auflagen aus AP0: Picking einschalten,
-  Körper über 16.000 Dreiecke oder Kantensegmente aufteilen, `preferredFramesPerSecond` selbst auf 120 setzen.
+- Der Viewport ist OCCTSwiftViewport, Stand `d9984ad`, als lokale Kopie in `app/Packages/OCCTSwiftViewport` mit
+  kleinen, markierten Änderungen (Liste in `KEVCAD-AENDERUNGEN.md` dort; nur ergänzen, nie still ändern). Auflagen aus
+  AP0: Picking einschalten, Körper über 16.000 Dreiecke oder Kantensegmente aufteilen, `preferredFramesPerSecond` selbst
+  auf 120 setzen.
+- Viewer V2: Die Belegung von Tasten, Maus und Trackpad steht nur in `Viewer/Tastenbelegung.swift` (Menüs, Viewport,
+  Hinweisleiste und Tastenübersicht lesen dort); Gestaltungswerte der Überlagerungen in `Viewer/ViewerStil.swift`.
+  Selbsttest: `KEVCAD_SELFTEST=viewer` (Zustände mit Fotos, Bildzeiten beim Drehen).
 - ocp-tessellate liefert degenerierte Kanten mit; vor dem Nummerieren herausfiltern (`BRep_Tool.Degenerated_s`).
 - Commit-Nachrichten auf Deutsch, je Arbeitspaket mindestens ein Commit.

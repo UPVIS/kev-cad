@@ -1,0 +1,494 @@
+// ViewportConfiguration.swift
+// ViewportKit
+//
+// Master configuration for viewport behavior and appearance.
+
+import Foundation
+import simd
+
+// MARK: - Edge Line Style
+
+/// Dash pattern kind for edge lines.
+public enum EdgeLineDashKind: UInt32, Sendable, Hashable {
+    case solid
+    case dashed
+    case dotted
+    case dashDot
+}
+
+/// Dash pattern for edge lines.
+public struct EdgeLineDashPattern: Sendable, Hashable {
+    /// Pattern kind.
+    public var kind: EdgeLineDashKind
+    /// Dash length in world units.
+    public var dashLength: Float
+    /// Gap length in world units.
+    public var gapLength: Float
+    /// Dot length in world units.
+    public var dotLength: Float
+    /// Phase offset in world units.
+    public var phase: Float
+
+    public init(
+        dashLength: Float = 0,
+        gapLength: Float = 0,
+        dotLength: Float = 2,
+        phase: Float = 0
+    ) {
+        self.kind = dashLength > 0 ? .dashed : .solid
+        self.dashLength = dashLength
+        self.gapLength = gapLength
+        self.dotLength = dotLength
+        self.phase = phase
+    }
+
+    public init(
+        kind: EdgeLineDashKind,
+        dashLength: Float,
+        gapLength: Float,
+        dotLength: Float = 2,
+        phase: Float = 0
+    ) {
+        self.kind = kind
+        self.dashLength = dashLength
+        self.gapLength = gapLength
+        self.dotLength = dotLength
+        self.phase = phase
+    }
+
+    /// Solid line (no dash).
+    public static let solid = EdgeLineDashPattern()
+
+    /// Standard dashed line.
+    public static let dashed = EdgeLineDashPattern(
+        kind: .dashed, dashLength: 10, gapLength: 5)
+
+    /// Dotted line, rendered as very short square-ended dashes (`dashLength`/`gapLength`);
+    /// round dots are not supported and `dotLength` is unused for this kind.
+    public static let dotted = EdgeLineDashPattern(
+        kind: .dotted, dashLength: 2, gapLength: 3, dotLength: 2)
+
+    /// Dash-dot line.
+    public static let dashDot = EdgeLineDashPattern(
+        kind: .dashDot, dashLength: 8, gapLength: 3, dotLength: 2)
+}
+
+/// Configuration for edge/wireframe line rendering.
+public struct EdgeLineConfiguration: Sendable {
+    /// Line width in pixels (1.0 = default thin line).
+    public var width: Float
+    /// Dash pattern for edges.
+    public var dashPattern: EdgeLineDashPattern
+    /// Whether to use quad-expanded lines (true) or native Metal lines (false).
+    /// Quad expansion enables variable width and dash patterns.
+
+    public var useQuadExpansion: Bool
+
+    public init(
+        width: Float = 1.0,
+        dashPattern: EdgeLineDashPattern = .solid,
+        useQuadExpansion: Bool = true
+    ) {
+        self.width = width
+        self.dashPattern = dashPattern
+        self.useQuadExpansion = useQuadExpansion
+    }
+
+    /// Default thin solid lines.
+    public static let `default` = EdgeLineConfiguration()
+
+    /// Bold lines for selection highlighting.
+    public static let bold = EdgeLineConfiguration(width: 3.0)
+
+    /// Dashed lines for construction/hidden geometry.
+    public static let dashed = EdgeLineConfiguration(dashPattern: .dashed)
+}
+
+// MARK: - Grid Style
+
+/// Rendering style for the ground grid.
+public enum GridStyle: Sendable {
+    /// Solid plane (default).
+    case plane
+    /// Adaptive dot grid that snaps spacing levels based on zoom.
+    case dots
+}
+
+// MARK: - Axis Style
+
+/// Rendering style for coordinate axes.
+public enum AxisStyle: Sendable {
+    /// Fixed world-space radius (default).
+    case cylinder
+    /// Radius auto-scales with camera distance to maintain constant screen width.
+    case constantScreenWidth
+}
+
+// MARK: - Rendering Quality
+
+/// Rendering quality level controlling tessellation and shading fidelity.
+public enum RenderingQuality: Sendable {
+    /// Finer CPU tessellation + crease-aware normal smoothing.
+    case standard
+    /// Standard + GPU hardware tessellation with PN triangles (Apple3+).
+    case enhanced
+    /// Enhanced + mesh shaders with per-meshlet culling (Apple9+ / M3+, falls back to enhanced).
+    case maximum
+}
+
+/// Master configuration for a viewport.
+///
+/// ViewportConfiguration aggregates all settings for camera behavior,
+/// gesture handling, display modes, and lighting.
+public struct ViewportConfiguration: Sendable {
+
+    // MARK: - Camera Settings
+
+    /// Initial camera state when viewport loads.
+    public var initialCameraState: CameraState
+
+    /// Rotation style (arcball or turntable).
+    public var rotationStyle: RotationStyle
+
+    /// Minimum distance from pivot.
+    public var minDistance: Float
+
+    /// Maximum distance from pivot.
+    public var maxDistance: Float
+
+    /// Default field of view in degrees.
+    public var defaultFieldOfView: Float
+
+    // MARK: - Gesture Settings
+
+    /// Gesture configuration.
+    public var gestureConfiguration: GestureConfiguration
+
+    // MARK: - Display Settings
+
+    /// Display mode for geometry.
+    public var displayMode: DisplayMode
+
+    /// Lighting configuration.
+    public var lightingConfiguration: LightingConfiguration
+
+    /// Whether to show the ViewCube.
+    public var showViewCube: Bool
+
+    /// ViewCube position.
+    public var viewCubePosition: ViewCubePosition
+
+    /// Whether to show the screen-space orientation gnomon (HUD corner axes).
+    public var showOrientationGnomon: Bool
+
+    /// Whether to show the screen-space scale bar (HUD).
+    public var showScaleBar: Bool
+
+    /// Unit suffix appended to the scale bar's number, e.g. `"mm"`.
+    ///
+    /// Empty (the default) shows the number on its own. Purely a label: it does not convert
+    /// or scale the value, which is always in the scene's own world units.
+    public var scaleBarUnitLabel: String
+
+    /// Whether to show coordinate axes.
+    public var showAxes: Bool
+
+    /// Axis length in world units.
+    public var axisLength: Float
+
+    /// Axis radius (or base radius for screen-space style).
+    public var axisRadius: Float
+
+    /// Rendering style for coordinate axes.
+    public var axisStyle: AxisStyle
+
+    /// Whether to show ground grid.
+    public var showGrid: Bool
+
+    /// Rendering style for the ground grid.
+    public var gridStyle: GridStyle
+
+    /// Grid plane size in world units (for `.plane` style).
+    public var gridSize: Float
+
+    /// Fundamental grid unit in world units (for `.dots` style).
+    public var gridBaseSpacing: Float
+
+    /// Subdivision factor between spacing levels (for `.dots` style).
+    public var gridSubdivisions: Int
+
+    /// Background color (platform-agnostic).
+    public var backgroundColor: SIMD4<Float>
+
+    /// Kev CAD: Im Dunkelmodus nimmt der Viewport sonst immer Dunkelgrau; false = immer `backgroundColor`
+    /// (Darstellung „Technisch“ auf hellem Grund).
+    public var backgroundFollowsAppearance: Bool = true
+
+    // MARK: - Anti-Aliasing
+
+    /// MSAA sample count: 1 for no anti-aliasing, 4 for 4x.
+    ///
+    /// Must be 1 or 4. The value reaches the Metal pipeline and render-target descriptors
+    /// without validation here, so an unsupported count surfaces as a pipeline-creation
+    /// failure rather than a checked error.
+    public var msaaSampleCount: Int
+
+    // MARK: - Edge Silhouettes
+
+    /// Whether screen-space edge silhouettes are enabled.
+    public var enableSilhouettes: Bool
+
+    /// Silhouette edge thickness (1.0 = normal, 2.0 = thick).
+    public var silhouetteThickness: Float
+
+    /// Silhouette edge darkness (0 = invisible, 1 = fully dark).
+    public var silhouetteIntensity: Float
+
+    // MARK: - Edge Lines
+
+    /// Configuration for edge/wireframe line rendering (width, dash pattern, quad expansion).
+    public var edgeLineConfiguration: EdgeLineConfiguration
+
+    /// Whether to skip bodies whose world-space bounds fall wholly outside the view (issue #42).
+    ///
+    /// On by default, since off-screen bodies are not visible anyway and skipping them is the
+    /// main lever on large scenes. Two carve-outs: bodies with no `boundingBox` are never
+    /// culled, and the shadow pass ignores the camera frustum entirely, because an off-screen
+    /// caster can still shadow visible geometry.
+    public var enableFrustumCulling: Bool
+
+    /// Whether each body's normals get crease-aware smoothing as its buffers are built (#48).
+    ///
+    /// Meshes that arrive with per-face (flat) normals cannot be rounded by Phong
+    /// tessellation. Smoothing averages normals across shared vertices, keeping hard edges via
+    /// `normalSmoothingCreaseAngle`, so `.enhanced` tessellation yields smooth silhouettes.
+    /// Off by default, on in `.cadHighQuality`. Computed once per body and cached, not per
+    /// frame.
+    public var autoSmoothNormals: Bool
+
+    /// Angle in radians above which `autoSmoothNormals` leaves an edge sharp.
+    ///
+    /// Edges whose adjacent faces differ by more than this keep their crease; anything flatter
+    /// gets its normals averaged. Defaults to roughly 30°.
+    public var normalSmoothingCreaseAngle: Float
+
+    // MARK: - Picking
+
+    /// Configuration for GPU-accelerated picking.
+    public var pickingConfiguration: PickingConfiguration
+
+    // MARK: - Depth of Field
+
+    /// Whether post-process depth of field is enabled.
+    public var enableDepthOfField: Bool
+
+    /// DoF aperture (smaller = shallower depth of field).
+    public var dofAperture: Float
+
+    /// DoF focal distance (0 = autofocus on selection or scene center).
+    public var dofFocalDistance: Float
+
+    /// Maximum blur radius in pixels for DoF.
+    public var dofMaxBlurRadius: Float
+
+    // MARK: - Rendering Quality
+
+    /// Rendering quality level (tessellation, normal smoothing, mesh shaders).
+    public var renderingQuality: RenderingQuality
+
+    /// Maximum tessellation factor for hardware tessellation (1-64, default 16).
+    public var tessellationMaxFactor: Int
+
+    /// Whether tessellation adapts to screen-space edge length.
+    public var adaptiveTessellation: Bool
+
+    // MARK: - Temporal Anti-Aliasing
+
+    /// Whether temporal anti-aliasing is enabled.
+    public var enableTAA: Bool
+
+    /// TAA history blend factor (0 = no history, 1 = full history).
+    public var taaBlendFactor: Float
+
+    // MARK: - Dynamic Pivot
+
+    /// Configuration for automatic orbit-pivot adjustment.
+    public var dynamicPivotConfiguration: DynamicPivotConfiguration
+
+    // MARK: - Initialization
+
+    /// Creates a viewport configuration with default settings.
+    public init(
+        initialCameraState: CameraState = .isometric,
+        rotationStyle: RotationStyle = .turntable,
+        minDistance: Float = 0.1,
+        maxDistance: Float = 10000,
+        defaultFieldOfView: Float = 45,
+        gestureConfiguration: GestureConfiguration = .default,
+        displayMode: DisplayMode = .shaded,
+        lightingConfiguration: LightingConfiguration = .threePoint,
+        showViewCube: Bool = true,
+        viewCubePosition: ViewCubePosition = .bottomTrailing,
+        showAxes: Bool = false,
+        axisLength: Float = 2.0,
+        axisRadius: Float = 0.02,
+        axisStyle: AxisStyle = .cylinder,
+        showGrid: Bool = true,
+        gridStyle: GridStyle = .plane,
+        gridSize: Float = 100.0,
+        gridBaseSpacing: Float = 1.0,
+        gridSubdivisions: Int = 10,
+        backgroundColor: SIMD4<Float> = SIMD4<Float>(0.95, 0.95, 0.95, 1.0),
+        msaaSampleCount: Int = 4,
+        enableSilhouettes: Bool = true,
+        silhouetteThickness: Float = 1.0,
+        silhouetteIntensity: Float = 0.7,
+        edgeLineConfiguration: EdgeLineConfiguration = .default,
+        enableFrustumCulling: Bool = true,
+        autoSmoothNormals: Bool = false,
+        normalSmoothingCreaseAngle: Float = 0.524,
+        pickingConfiguration: PickingConfiguration = .init(),
+        enableDepthOfField: Bool = false,
+        dofAperture: Float = 2.8,
+        dofFocalDistance: Float = 0,
+        dofMaxBlurRadius: Float = 8.0,
+        renderingQuality: RenderingQuality = .standard,
+        tessellationMaxFactor: Int = 32,
+        adaptiveTessellation: Bool = true,
+        enableTAA: Bool = false,
+        taaBlendFactor: Float = 0.9,
+        dynamicPivotConfiguration: DynamicPivotConfiguration = .default,
+        showOrientationGnomon: Bool = false,
+        showScaleBar: Bool = false,
+        scaleBarUnitLabel: String = ""
+    ) {
+        self.initialCameraState = initialCameraState
+        self.rotationStyle = rotationStyle
+        self.minDistance = minDistance
+        self.maxDistance = maxDistance
+        self.defaultFieldOfView = defaultFieldOfView
+        self.gestureConfiguration = gestureConfiguration
+        self.displayMode = displayMode
+        self.lightingConfiguration = lightingConfiguration
+        self.showViewCube = showViewCube
+        self.viewCubePosition = viewCubePosition
+        self.showAxes = showAxes
+        self.axisLength = axisLength
+        self.axisRadius = axisRadius
+        self.axisStyle = axisStyle
+        self.showGrid = showGrid
+        self.gridStyle = gridStyle
+        self.gridSize = gridSize
+        self.gridBaseSpacing = gridBaseSpacing
+        self.gridSubdivisions = gridSubdivisions
+        self.backgroundColor = backgroundColor
+        self.msaaSampleCount = msaaSampleCount
+        self.enableSilhouettes = enableSilhouettes
+        self.silhouetteThickness = silhouetteThickness
+        self.silhouetteIntensity = silhouetteIntensity
+        self.edgeLineConfiguration = edgeLineConfiguration
+        self.enableFrustumCulling = enableFrustumCulling
+        self.autoSmoothNormals = autoSmoothNormals
+        self.normalSmoothingCreaseAngle = normalSmoothingCreaseAngle
+        self.pickingConfiguration = pickingConfiguration
+        self.enableDepthOfField = enableDepthOfField
+        self.dofAperture = dofAperture
+        self.dofFocalDistance = dofFocalDistance
+        self.dofMaxBlurRadius = dofMaxBlurRadius
+        self.renderingQuality = renderingQuality
+        self.tessellationMaxFactor = tessellationMaxFactor
+        self.adaptiveTessellation = adaptiveTessellation
+        self.enableTAA = enableTAA
+        self.taaBlendFactor = taaBlendFactor
+        self.dynamicPivotConfiguration = dynamicPivotConfiguration
+        self.showOrientationGnomon = showOrientationGnomon
+        self.showScaleBar = showScaleBar
+        self.scaleBarUnitLabel = scaleBarUnitLabel
+    }
+
+    // MARK: - Presets
+
+    /// Configuration optimized for CAD applications.
+    public static let cad = ViewportConfiguration(
+        rotationStyle: .turntable,
+        showViewCube: true,
+        showAxes: true,
+        showGrid: true
+    )
+
+    /// Configuration optimized for model viewing.
+    public static let modelViewer = ViewportConfiguration(
+        rotationStyle: .arcball,
+        showViewCube: false,
+        showAxes: false,
+        showGrid: false
+    )
+
+    /// Configuration for architectural visualization.
+    public static let architectural = ViewportConfiguration(
+        initialCameraState: StandardView.isometricFrontRight.cameraState(distance: 50),
+        rotationStyle: .turntable,
+        displayMode: .shaded,
+        lightingConfiguration: .architectural,
+        showViewCube: true,
+        showGrid: true
+    )
+
+    /// Configuration tuned for large / many-body scenes on mobile (issue #42).
+    ///
+    /// Disables the per-frame whole-scene passes that dominate cost on big models
+    /// (directional shadow map, SSAO, MSAA, silhouettes), giving a discoverable
+    /// fast path instead of hand-assembling the levers. Keep this for dense scenes
+    /// (thousands of bodies / hundreds of thousands of triangles) on iPhone / iPad;
+    /// see the README "Scaling" section for batching guidance and recommended body
+    /// counts.
+    public static let performance: ViewportConfiguration = {
+        var lighting = LightingConfiguration.threePoint
+        lighting.shadowsEnabled = false
+        lighting.enableSSAO = false
+        return ViewportConfiguration(
+            rotationStyle: .turntable,
+            lightingConfiguration: lighting,
+            showViewCube: true,
+            showAxes: true,
+            showGrid: true,
+            msaaSampleCount: 1,
+            enableSilhouettes: false,
+            renderingQuality: .standard
+        )
+    }()
+
+    /// CAD configuration tuned for smooth round geometry (issue #48).
+    ///
+    /// Enables the GPU's screen-space-adaptive PN-triangle (Phong) tessellation
+    /// (`renderingQuality = .enhanced`), so curved surfaces (cylinder and cone
+    /// silhouettes, filleted faces) stay smooth at any zoom without the consumer
+    /// pre-tessellating finely. Tessellation refines by projected size and surface
+    /// curvature each frame, so it doesn't waste triangles on small / distant parts.
+    ///
+    /// - Note: This is the smoothness counterpart to `.performance`. Tessellation
+    ///   adds GPU work, so prefer `.performance` for very large many-body scenes
+    ///   (see #42). Smooth silhouettes need reasonable per-vertex normals on the
+    ///   input mesh; OCCT meshes provide these. Requires an Apple3+ GPU (falls back
+    ///   to un-tessellated rendering otherwise).
+    public static let cadHighQuality = ViewportConfiguration(
+        rotationStyle: .turntable,
+        showViewCube: true,
+        showAxes: true,
+        showGrid: true,
+        autoSmoothNormals: true,
+        renderingQuality: .enhanced,
+        tessellationMaxFactor: 48,
+        adaptiveTessellation: true
+    )
+}
+
+// MARK: - ViewCube Position
+
+/// Position of the ViewCube overlay.
+public enum ViewCubePosition: String, CaseIterable, Sendable {
+    case topLeading
+    case topTrailing
+    case bottomLeading
+    case bottomTrailing
+}
