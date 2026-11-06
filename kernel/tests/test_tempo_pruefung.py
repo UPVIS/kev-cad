@@ -397,6 +397,26 @@ def test_abwarten_hilft_lesern_einer_spaeteren_pruefung():
     assert not th.is_alive() and time.perf_counter() - t0 < 5
 
 
+def test_spiel_genau_an_der_grenze_haengt_nicht_an_der_reihenfolge(monkeypatch):
+    """Ein Spiel von nominal genau 0,5 mm misst OCCT je nach Reihenfolge knapp darüber oder darunter; die Reihenfolge hängt
+    am Formschlüssel und damit etwa am Rechengedächtnis. Gefunden im Kugelschieber (laufrolle_l=90)."""
+    from build123d import Box, Pos
+
+    from kevcad_kernel.pruefung import kollision
+    from kevcad_kernel.pruefung.befund import BERUEHR_TOL
+    from kevcad_kernel.pruefung.koerper import koerper_aus_form
+
+    a = koerper_aus_form("A", Box(10, 10, 10))
+    b = koerper_aus_form("B", Pos(10 + BERUEHR_TOL, 0, 0) * Box(10, 10, 10))
+    for abstand in (BERUEHR_TOL - 3e-14, BERUEHR_TOL + 3e-14):
+        monkeypatch.setattr(kollision, "abstand", lambda _p, _q, d=abstand: d)
+        paar = kollision.pruefe_paar(a, b)
+        assert paar is not None and paar.kontakt and paar.art == "spiel", abstand
+    monkeypatch.setattr(kollision, "abstand", lambda _p, _q: BERUEHR_TOL + 0.01)
+    paar = kollision.pruefe_paar(a, b)
+    assert paar is None or not paar.kontakt
+
+
 def test_reihenfolge_der_pruefungen():
     from kevcad_kernel.pruefung import pruefer
 

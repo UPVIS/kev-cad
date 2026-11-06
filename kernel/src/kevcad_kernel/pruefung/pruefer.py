@@ -217,7 +217,7 @@ def pruefe_durchdringungen(ctx: PruefKontext) -> list[dict[str, Any]]:
     ks = list(ctx.koerper.values())
     out: list[dict[str, Any]] = []
     neu0 = ctx.cache.neu
-    for i, j in kandidaten_paare(ks, bf.BERUEHR_TOL):
+    for i, j in kandidaten_paare(ks, bf.BERUEHR_GRENZE):
         ctx.abbrechen()
         a, b = ks[i], ks[j]
         p = pruefe_paar(a, b, ctx.cache)

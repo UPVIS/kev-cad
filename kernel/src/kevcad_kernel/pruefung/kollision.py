@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from kevcad_kernel import gewinde as _gw
-from kevcad_kernel.pruefung.befund import BERUEHR_TOL, BERUEHRT_TOL, TIEFE_MIN, VOLUMEN_MIN
+from kevcad_kernel.pruefung.befund import BERUEHR_GRENZE, BERUEHR_TOL, BERUEHRT_TOL, TIEFE_MIN, VOLUMEN_MIN
 from kevcad_kernel.pruefung.koerper import Koerper, form_schluessel, lage_von
 
 
@@ -39,7 +39,7 @@ class Paar:
 
     @property
     def kontakt(self) -> bool:
-        return self.abstand is not None and self.abstand <= BERUEHR_TOL
+        return self.abstand is not None and self.abstand <= BERUEHR_GRENZE
 
     @property
     def art(self) -> str | None:
@@ -213,7 +213,7 @@ def pruefe_paar(a: Koerper, b: Koerper, cache: PaarCache | None = None, mit_netz
     import time
 
     ext = _hull_ueberlappung(a, b)
-    if np.any(ext < -BERUEHR_TOL):
+    if np.any(ext < -BERUEHR_GRENZE):
         return None
     # Schlüssel: Form a, Form b, Lage von b relativ zu a (Reihenfolge nach Formschlüssel)
     swap = (a.form, a.name) > (b.form, b.name)
@@ -310,7 +310,7 @@ def _rechne_paar(p: Koerper, q: Koerper, ext: np.ndarray, mit_netz: bool) -> dic
                                        (nrm.astype(np.float64) @ inv[:3, :3].T).astype(np.float32), tri)
                     return out
     d = abstand(p_form, q_form)
-    out["abstand"] = d if d is not None and d <= BERUEHR_TOL else None
+    out["abstand"] = d if d is not None and d <= BERUEHR_GRENZE else None
     return out
 
 

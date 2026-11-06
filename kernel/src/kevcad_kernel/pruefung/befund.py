@@ -23,6 +23,9 @@ from kevcad_kernel.bom import de_num
 
 # Toleranzen (mm)
 BERUEHR_TOL = 0.5  # Abstand bis hierhin gilt als Verbindung (Auflage, Führung mit Spiel)
+# … samt Rundungsrauschen: Ein genau so großes Spiel misst OCCT je nach Reihenfolge der Formen als 0,49999999999997 oder
+# 0,50000000000003; welche zuerst kommt, hängt am Formschlüssel, ein Kontakt darf daran nicht hängen (V2-1b)
+BERUEHR_GRENZE = BERUEHR_TOL + 1e-9
 BERUEHRT_TOL = 0.05  # bis hierhin „berührt“, darüber bis BERUEHR_TOL „Spielpassung“
 BODEN_TOL = 0.5  # so nah am Boden gilt als aufliegend
 TIEFE_MIN = 0.01  # Durchdringungen ab dieser Tiefe …
