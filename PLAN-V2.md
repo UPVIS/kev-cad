@@ -91,6 +91,8 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | fertig, auf `v2`, Zahlen in `kernel/tools/MESSUNG-V2-6.md`; offen: Prüfung mit Mikrofon durch Kevin |
 | V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | fertig, auf `v2`; „Dokumente exportieren“ bleibt ein Blatt (drei feste Spalten, in einer Kachel enger als im Blatt) |
 | V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | fertig bis zur Abnahme, Liste in `ABNAHME-V2.md`, Zahlen in `kernel/tools/MESSUNG.md` |
+| V2-9 Leisten statt Modi | nach Kevins erstem Test: linke und rechte Leiste als Symbol (V5), Kopfleiste ohne Grund über dem Viewer, Darstellung wie in Blender als Schnellknöpfe (V8), ⌘1/⌘2 Leisten, ⌘3 nur das Modell | Oberfläche, Protokoll additiv | V2-3, V2-7 | fertig, auf `v2` (`08706ba`); Selbsttest der Kacheln ohne Fehler, alle Wechsel unter 100 ms |
+| Aufbau-Videos | `animation(aktion="aufbau")`: Teile erscheinen Schritt für Schritt, Orbit, feste Ansichten, Schnitt, Nahaufnahmen, Striche vor Schritten, feste Landezeiten auf Schlägen der Musik; Zeitplan als JSON | Kernel, MCP | V2-7 | fertig, auf `v2` (`8b4a0de`, `15cb3bd`); Demo FPV-Drohne in `Kev CAD Abnahme/FPV Demo` |
 
 ### V2-5 Live (Entwurf, das Paket legt es fest)
 
