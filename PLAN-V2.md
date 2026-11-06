@@ -37,14 +37,14 @@ Drei Maßstäbe für jede Entscheidung:
 ## 3. Messwerte
 
 Kugelschieber Variante B (134 Teile), gemessen mit `kernel/tools/messen.py`, Einzelheiten in `kernel/tools/MESSUNG.md`.
-„Vorher“ ist main `f136caa`, „jetzt“ ist V2-1 mit `warten_s` 3.
+„Vorher“ ist main `f136caa`, „V2-1“ der Stand mit `warten_s` 3, „jetzt“ V2-1b bei einer Last um 20.
 
-| Lauf | `run()` vorher | `run()` jetzt | alle Teile im Viewer (jetzt) |
-|---|---|---|---|
-| erster Lauf | 29,9 s | 11,8 s | 7,1 s |
-| nichts geändert | 7,9 s | 2,3 s | 1,4 s |
-| nur Kommentar | 7,7 s | 2,3 s | 1,3 s |
-| Maß geändert (28 von 599 Booleans neu) | 15,6 s | 5,1 s (2,2 s mit `warten_s=0`) | 1,7 s |
+| Lauf | `run()` vorher | `run()` V2-1 | `run()` jetzt | alle Teile im Viewer (jetzt) |
+|---|---|---|---|---|
+| erster Lauf | 29,9 s | 11,8 s | 11,6 s (erstes Prüfergebnis 11,9 statt 30 s) | 7,3 s |
+| nichts geändert | 7,9 s | 2,3 s | 1,4 s | 1,0 s |
+| nur Kommentar | 7,7 s | 2,3 s | 1,2 s | 0,9 s |
+| Maß geändert (34 von 634 Operationen neu) | 15,6 s | 5,1 s | 2,3 s (mit Durchdringung, Bedingungen und Stand) | 1,5 s |
 
 Schnittstelle auf main:
 - **Werkzeuge:** 95, `tools/list` hat 137.092 Zeichen.
@@ -65,14 +65,14 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 
 | Was | Ziel | Stand |
 |---|---|---|
-| Maßänderung: erste geänderte Teile im Viewer | unter 1 s | 0,2 s für das erste, 1,7 s für das letzte Teil |
-| Maßänderung: `run()` zurück | unter 2,5 s | 5,1 s (2,2 s mit `warten_s=0`) |
-| unveränderter Lauf: `run()` zurück | unter 1,5 s | 2,3 s |
+| Maßänderung: erste geänderte Teile im Viewer | unter 1 s | 0,15 s für das erste, 1,5 s für das letzte Teil |
+| Maßänderung: `run()` zurück | unter 2,5 s | 2,3 s bei Last um 20, 2,8 s bei Last um 40 |
+| unveränderter Lauf: `run()` zurück | unter 1,5 s | 1,4 s bei Last um 20, 1,6 s bei Last um 40 |
 | Antwort von `run`: unverändert / kleine Änderung / erster Lauf mit 134 Teilen | 1.500 / 4.000 / 8.000 Zeichen | 490 / 2.389 / 1.449 Zeichen |
 | Server-Anweisungen | höchstens 6.000 Zeichen | rund 5.000 Zeichen |
 | Übertragung je unverändertem Lauf | unter 50 KB | 32 KB mit echter App (V2-5b, `kernel/tools/live_selbsttest.py`), vorher 11,3 MB |
 | Lagebild: Antwort der App | unter 50 ms | in Ruhe Median 9 ms, 95 % unter 19 ms; während eines Laufs Median 13 ms, 95 % unter 39 ms (die App selbst unter 1 ms) |
-| App-Start bis bedienbares leeres Projekt | unter 1 s | Fenster nach 1,74 s unter fremder Last, Rechenzeit des Hauptfadens 0,90 s; ohne Last noch nicht gemessen; der Kernel ist rund 6 s später bereit |
+| App-Start bis bedienbares leeres Projekt | unter 1 s | Fenster nach 1,74 s unter fremder Last, Rechenzeit des Hauptfadens 0,90 s; ohne Last noch nicht gemessen; `status` nennt das leere Projekt 0,8 bis 1,7 s nach dem Start des Kernels (`kernel/tools/messen_start.py`) |
 | Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | am 60-Hz-Monitor 58 bis 60 Bilder/s, Technisch 41 (Hänger auf dem Hauptfaden); ohne Bildschirmtakt 383 bis 469 Bilder/s ohne SSAO, 153 bis 216 mit; 120 Hz noch nicht gemessen |
 | Sprach-Feedback: Wort erscheint als Text | unter 0,3 s, Vorschlag rund 0,6 s | Apple-Rückfall im Median 450 bis 480 ms; Wortlaut rechnet im Takt von 0,4 s, also rechnerisch 0,2 bis 0,6 s, mit Mikrofon noch nicht gemessen |
 | Feedback-Paket beim Agenten nach Ende des Sprechens | unter 1 s | 142 bis 450 ms; 873 bis 993 ms, wenn noch ein Satz unterwegs ist |

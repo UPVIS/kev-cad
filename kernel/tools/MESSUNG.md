@@ -214,3 +214,105 @@ Gefunden hat der Selbsttest, was die App-Attrappe nicht sehen konnte:
 
 Selbstheilung am echten Paar: Ein `PART_SAME` mit unbekanntem Inhalt holt das Teil über `PARTS_REQ` neu, ein `WIE_ZUVOR`
 mit unbekannter Basis die Nachricht über `NOCHMAL`.
+
+## Messung V2-1b (Tempo nachziehen)
+
+Stand 06.11.2026, MacBook (M2 Pro, 16 GB) mit anderen Agenten daneben. Vorher und nachher deshalb im Wechsel: je Runde erst
+die Basis `45fe2c5`, dann dieser Stand, zwei Runden, Last 10 bis 57 (Runde 2 beim neuen Stand 20). Beide Spalten zeigen
+Runde 1 / Runde 2. Kopie von „Kugelschieber Variante B“ und Katalog, je Stand ein frischer Rechenprozess:
+
+```
+kernel/.venv/bin/python -u kernel/tools/messen.py "<Projekt>" --laeufe kalt,gleich,kommentar,gleich,param:laufrolle_l=90,gleich,param:laufrolle_l=95 \
+    --faehigkeiten delta-1,in-arbeit-1,spur-1,lage-1,live-masse-1 --pruef-max-s 45 --json messung.json
+PYTHONPATH=<Basis>/kernel/src kernel/.venv/bin/python -u <Basis>/kernel/tools/messen.py …   # dieselben Läufe mit der Basis
+```
+
+| Lauf | Teile im Viewer | RUN_END | `run()` zurück | erstes Prüfergebnis |
+|---|---|---|---|---|
+| kalt | 7,40 / 9,40 → 7,73 / 7,26 s | 9,07 / 11,21 → 9,44 / 8,85 s | 12,13 / 14,39 → 12,35 / 11,56 s | 30,40 / 34,58 → **13,26 / 11,89 s** |
+| gleich | 1,30 / 1,29 → 1,11 / 0,96 s | 1,61 / 1,63 → 1,34 / 1,18 s | 2,25 / 2,29 → **1,44 / 1,37 s** | wie `run()` |
+| Kommentar | 1,30 / 1,34 → 1,02 / 0,89 s | 1,61 / 1,64 → 1,25 / 1,10 s | 2,29 / 2,30 → **1,55 / 1,19 s** | 2,29 / 2,30 → 1,58 / 1,31 s |
+| `laufrolle_l = 90` | 1,82 / 1,79 → 1,64 / 1,47 s | 2,25 / 2,22 → 1,99 / 1,79 s | 5,38 / 5,24 → **2,43 / 2,30 s** | 11,31 / 11,60 → 2,51 / 2,30 s |
+| `laufrolle_l = 95` | 1,92 / 4,86 → 2,05 / 1,53 s | 2,36 / 5,29 → 2,42 / 1,85 s | 5,44 / 8,34 → **2,86 / 2,35 s** | 12,12 / 14,78 → 2,97 / 2,36 s |
+
+Budgets: unveränderter Lauf unter 1,5 s und Maßänderung unter 2,5 s sind bei einer Last um 20 erreicht. Unter stärkerer Last
+reißt die Maßänderung: Mit Last 30 bis 50 steht RUN_END bei 2,4 s, `run` kehrt nach 2,8 s zurück. Der Zwischenstand ist dann
+noch unterwegs, `run` sagt das (`running`) und nennt vorläufig die Befunde der Bedingungen.
+
+Was nach einer Maßänderung in welcher Stufe kommt (`laufrolle_l = 90`, Last 28, ab dem Start des Laufs):
+
+| Zeit | Zustand | was da ist |
+|---|---|---|
+| 2,1 s | `running` | RUN_END |
+| 2,7 s | `teilweise` | Durchdringung, Bedingungen, Stand; offen: Druck, Montage, Statik, Bewegungsraum |
+| 7,2 s | `teilweise` | dazu Druck, Montage, Statik; offen: 8 Wege des Bewegungsraums, Ablauf und Festkörper |
+| 11,8 s | `teilweise` | dazu der Bewegungsraum; offen: Ablauf und Festkörper |
+| 32 s | `done` | Endstand |
+
+### Start des Kernels
+
+`kernel/tools/messen_start.py` startet den Kernel wie die App, wartet auf „bereit“, legt nach 0,35 s den Entwurf an und fragt
+über MCP, bis `status` ihn nennt. Sekunden ab dem Start des Prozesses, je 5 Läufe im Wechsel, Last 16 bis 19:
+
+| | Basis | jetzt |
+|---|---|---|
+| Socket offen | 2,3 bis 8,0 s | 0,4 bis 1,2 s |
+| „bereit“ | 4,4 bis 10,7 s | 0,4 bis 1,3 s |
+| `status` nennt das Projekt | **4,7 bis 11,2 s** | **0,8 bis 1,7 s** |
+| erster Lauf im leeren Projekt fertig | 4,9 bis 11,4 s | 2,2 bis 5,3 s |
+
+Woran es lag: Der Elternprozess lud build123d über `kevcad_kernel.druck` (2,0 s) und startete den Rechenprozess erst danach,
+der es noch einmal lud; „bereit“ kam erst mit dem Rechenprozess. Jetzt lädt der Elternprozess beim Start weder build123d noch
+OCP, scipy oder pandas (0,4 statt 2,8 s Importe; ein Test hält das fest), meldet „bereit“ sofort (ein Lauf wartet selbst auf den
+Rechenprozess) und lädt build123d erst, wenn der Rechenprozess bereit ist: Der Import hält die GIL, App und MCP kämen sonst
+nicht dran (Projekt nach 3,6 statt 1,4 s). `import build123d` braucht ohne `sklearn` 1,2 statt 2,0 s; sklearn nutzt build123d
+nur für `DBSCAN` beim Netz-zu-B-Rep, der Stellvertreter in `schnellstart.py` lädt es beim ersten Aufruf.
+
+### Was der warme Lauf jetzt kostet
+
+Wanduhr-Hüllen im Prozess, Last um 30, ms (die Abtastung täuscht hier: OCP-Aufrufe halten die GIL, sie sieht vor allem, wo
+die GIL frei wird):
+
+| | V2-1 | jetzt |
+|---|---|---|
+| `modell` | 1380 | 1100 |
+| davon `Shape.moved` (1065 Aufrufe) | 181 | 31 |
+| `chamfer` / `fillet` | 112 / 48 | 14 / 4 |
+| Booleans (489 Aufrufe; 174 Schlüssel, Rest Ergebnisse lesen) | 385 | 385 |
+| Bedingungen nach dem Lauf | 240 | 150 |
+| Statik in der Prüfung | 540 bis 680 | 7 bis 12 |
+| Prüfung gesamt | 600 | 90 |
+
+`Shape.moved` kopierte die ganze B-Rep und ersetzte die Kopie im nächsten Schritt. Der Garbage Collector zählt nicht:
+abgeschaltet, mit hoher Schwelle oder `gc.freeze()` gemessen im Wechsel kein Unterschied über 2 %.
+
+### Bauplan im Hintergrund
+
+Ab der zweiten Maßänderung kostete jeder Lauf 2,6 bis 3,1 s mehr (`senden` statt 15 ms; der Rechenprozess wartete auf den
+Lesefaden der Laufzeit). Ursache war der Bauplan des vorigen Laufs im Elternprozess (13 s Python und OCCT): Er hielt die GIL.
+Sein Ergebnis hätte er nicht mehr speichern dürfen (`_lauf_aktuell`). Jetzt endet er, sobald ein neuer Lauf beginnt
+(`bauplan/wege.py`: `halt`, `Ueberholt`). Ohne Wirkung war `sys.setswitchinterval(0.0005)`: lange OCP-Aufrufe geben die GIL
+nicht ab.
+
+### Gleichheit
+
+`kernel/tools/gedaechtnis_nachweis.py` auf Kopien aller fünf Projekte, jetzt mit vier Läufen (dazu ein Lauf mit Parameter),
+der Prüfung in Stufen im Prozess mit Gedächtnis und am Stück ohne, und verglichen werden zusätzlich die Montagefolge und die
+Ampeln der Statik. Bestanden: keine Abweichung an Geometrie (außer 4,3e-16 bei Stargate wie in V2-1), Warnungen, Parametern,
+Stückliste, Bedingungen, Befunden, Montage und Statik. Der vorgegebene Parameter ändert in drei Projekten keine Form, deshalb
+zusätzlich für den Kugelschieber mit `--parameter laufrolle_l=90` (34 Operationen neu): ebenfalls bestanden, Lauf 7,24 → 1,82 s.
+
+Dabei fiel auf: Der Parameterlauf wich schon auf der Basis ab, und zwar im Kontaktgraph. Bowlingball und Schieberolle haben
+nominal genau 0,5 mm Abstand, also die Grenze `BERUEHR_TOL`. OCCT misst das je nach Reihenfolge der Formen als knapp
+darüber oder darunter, und die Reihenfolge hängt am Formschlüssel. `BERUEHR_GRENZE` nimmt das Rundungsrauschen (1e-9 mm) mit
+hinein. Am Kugelschieber ändert das gegenüber der Basis nur die Reihenfolge der Teile in einem Hinweis: Der Ball gehört jetzt
+in allen Läufen zur großen Gruppe, die Menge der 51 bzw. 54 Befunde bleibt gleich.
+
+Die Statik gerechnet streut für sich: Die Knicklast kommt aus ARPACK mit einem Zufallsvektor (2525 und 2416 in zwei Läufen).
+Ein Treffer im Gedächtnis macht sie stabiler, nicht ungenauer.
+
+### Tests
+
+Volle Suite über `tools/fern.sh tests` auf dem Mac mini (Stand wie unten im Bericht). Die Testsuite rechnet die Prüfung am
+Stück (`KEVCAD_PRUEF_STUFEN=0` in `conftest.py`, Stufen hängen an der Uhr); `test_tempo_pruefung.py` schaltet sie ein.
+Die Laufzeit-Tests von Bauplan, Statik, Druck, Bedingungen, Live und Prüftempo laufen auch mit `KEVCAD_PRUEF_STUFEN=1` grün.
