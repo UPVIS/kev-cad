@@ -39,6 +39,7 @@ VORNE_S = 0.7  # Stufen: so lange darf die Prüfung samt Bewegungsraum dauern, b
 KLEIN_S = 0.2  # Stufen: darunter bleibt es bei einem CHECK (die erste Stufe und die letzte Prüfung waren so kurz) …
 KLEIN_TEILE = 40  # … und das Modell hat weniger Teile
 HINTEN_ZEITEN = ("druck", "druckvorschau", "montage", "statik", "bewegungsraum")
+STAENDE_MERKEN = 8  # wie viele geprüfte Stände der Teile (wie die Statik, statik/merken.py)
 
 
 def stufen_an() -> bool:
@@ -50,7 +51,7 @@ class PruefLauf:
         self.cache = PaarCache()
         self.koerper: dict[tuple[str, str], Koerper] = {}
         self.stand_cache: dict = {}
-        self._stand: frozenset[tuple[str, str]] | None = None  # Teile der letzten Prüfung (Stufen)
+        self._staende: list[frozenset[tuple[str, str]]] = []  # Teile der letzten Prüfungen, neueste zuletzt (Stufen)
         self._hinten_ms = 0.0  # längste Dauer von Montage, Statik und Bewegungsraum bisher (Stufen)
         # teilweises Ergebnis zum Fertigrechnen: (Lauf, Ergebnis, Schnittkörper, Fortsetzungen)
         self._offen: tuple[int, dict[str, Any], list, dict[str, Fortsetzung]] | None = None
@@ -76,10 +77,10 @@ class PruefLauf:
         return out
 
     def _zwischenstand_noetig(self, ks: list[Koerper], dauer_s: float) -> bool:
-        """Lohnt ein Zwischenstand? Nur wenn sich ein Teil geändert hat (sonst kommt der Rest aus dem Zwischenspeicher)
-        und das Modell nicht klein ist. Eine falsche Antwort kostet nichts am Ergebnis: ein CHECK mehr oder weniger."""
-        stand = frozenset((k.name, k.key) for k in ks)
-        if stand == self._stand:
+        """Lohnt ein Zwischenstand? Nur bei einem neuen Stand der Teile (ein schon geprüfter kommt aus dem Zwischenspeicher,
+        auch der vor einer Maßänderung) und wenn das Modell nicht klein ist. Eine falsche Antwort kostet nichts am Ergebnis:
+        ein CHECK mehr oder weniger."""
+        if frozenset((k.name, k.key) for k in ks) in self._staende:
             return False
         return dauer_s >= KLEIN_S or self._hinten_ms >= KLEIN_S * 1000 or len(ks) >= KLEIN_TEILE
 
@@ -112,7 +113,8 @@ class PruefLauf:
                               stufe if stufen else None)
             zeiten = erg.get("zeiten_ms") or {}
             self._hinten_ms = max(self._hinten_ms, sum(float(zeiten.get(k) or 0.0) for k in HINTEN_ZEITEN))
-            self._stand = frozenset((k.name, k.key) for k in ks)
+            stand = frozenset((k.name, k.key) for k in ks)
+            self._staende = [s for s in self._staende if s != stand][-(STAENDE_MERKEN - 1):] + [stand]
         except Abgebrochen as exc:
             header, payload = pack_check(run=run, state="cancelled", message=f"Prüfung abgebrochen: {exc}")
         except Exception as exc:  # noqa: BLE001 - die Prüfung darf den Rechenprozess nicht kippen

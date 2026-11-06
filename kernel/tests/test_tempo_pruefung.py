@@ -318,6 +318,8 @@ def test_unveraendert_kein_zwischenstand(tmp_path, stufen):
     assert not lauf.zwischen  # alles aus dem Zwischenspeicher: ein CHECK reicht
     lauf(TISCH.replace("L, B, H = 800, 500, 700", "L, B, H = 800, 500, 720"))
     assert len(lauf.zwischen) == 1
+    lauf()  # zurück auf einen schon geprüften Stand (Regler hin und her): wieder alles aus dem Zwischenspeicher
+    assert not lauf.zwischen
 
 
 def test_kleines_modell_ohne_zwischenstand(tmp_path, monkeypatch):
