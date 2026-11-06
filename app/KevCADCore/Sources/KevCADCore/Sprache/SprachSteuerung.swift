@@ -69,6 +69,9 @@ public final class SprachSteuerung {
     static let letzteWorteS = 0.7
     /// V hält an: Hier wartet niemand, der Satz darf zu Ende kommen.
     static let satzAbwartenS = 1.5
+    /// Läuft die Erkennung noch an (Apples Modell lädt, unter Last Sekunden), steckt das Gesagte noch im Ton. Lieber warten,
+    /// als Kevins Worte zu verlieren.
+    static let kaltstartS = 12.0
 
     private var jetzt: Double { ProcessInfo.processInfo.systemUptime }
 
@@ -166,8 +169,9 @@ public final class SprachSteuerung {
         let lage = c.feedbackLage()
         let run = c.scene.latestRun
         let erstellt = Date()
+        let frist = c.model.sprache.startet ? Self.kaltstartS : Self.letzteWorteS + 0.05
         Task { [weak self] in
-            await Self.warten(auf: abschluss, hoechstens: Self.letzteWorteS + 0.05)
+            await Self.warten(auf: abschluss, hoechstens: frist)
             await self?.schreiben(ende: ende, lage: lage, run: run, erstellt: erstellt, bild: roh)
         }
     }

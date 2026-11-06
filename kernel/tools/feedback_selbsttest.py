@@ -150,7 +150,7 @@ def main() -> int:
            "KEVCAD_SPRACHE_TONDATEI": str(ton), "KEVCAD_SPRACHE_SKRIPT": str(ausgabe / "skript.json"),
            "KEVCAD_TEST_VERSTECKT": "1", "KEVCAD_PROJECTS_DIR": str(arbeit),
            **{k: os.environ[k] for k in ENV_NAMEN if k in os.environ}}
-    befehl = ["open", "-g", "-n"]
+    befehl = ["open", "-g", "-n", "--stdout", str(ausgabe / "app.log"), "--stderr", str(ausgabe / "app.log")]
     for k, v in env.items():
         befehl += ["--env", f"{k}={v}"]
     subprocess.run([*befehl, str(app)], check=True)
