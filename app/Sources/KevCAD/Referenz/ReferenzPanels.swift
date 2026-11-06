@@ -540,7 +540,7 @@ struct ReferenzDialoge: ViewModifier {
                         state.referenzDateien ?? [], name: name, masz: masz, auflage: auflage, von: von, bis: bis,
                         einstellung: einstellung)
                     state.referenzDateien = nil
-                    state.showInspector = true
+                    model.oberflaechenActions?.zeigeKachel(.details)
                 } abbrechen: {
                     state.referenzDateien = nil
                 }

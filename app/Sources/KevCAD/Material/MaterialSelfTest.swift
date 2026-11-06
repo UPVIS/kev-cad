@@ -1,10 +1,10 @@
 import AppKit
 import KevCADCore
 
-/// Selbsttest „Material“ in der Testvariante (`KEVCAD_SELFTEST=material`): Schnellansichten auf- und zuklappen, Höhe
-/// ziehen, gemerkten Zustand prüfen, „In Material öffnen“, alle Abschnitte des Bereichs „Material“ zeigen (hell und
-/// dunkel), Auswahl in beide Richtungen mit dem 3D-Bereich, Abhaken und Teilen der Einkaufsliste, CSV, Dialoge
-/// „Gebaut …“ und „Erfassen“, Sprung zum Bericht und zurück, gleiche Summen in Bereich und Bericht. Ohne Maus- und
+/// Selbsttest „Material“ in der Testvariante (`KEVCAD_SELFTEST=material`): Kacheln Stückliste und Zuschnitt öffnen,
+/// Sprung in die Kachel Material, alle Abschnitte zeigen, Auswahl in beide Richtungen mit dem Modell, Abhaken und Teilen
+/// der Einkaufsliste, CSV, Dialoge „Gebaut …“ und „Erfassen“, Sprung zum Bericht und zurück, gleiche Summen in Kachel und
+/// Bericht. Ohne Maus- und
 /// Tastatureingaben; Fensterbilder mit `KEVCAD_SELFTEST_FOTO_AUSSEN=1` von außen (`screencapture -l`, Auftrag in
 /// `foto-auftrag.txt`), sonst über `cacheDisplay`. `KEVCAD_SELFTEST_PROJEKT` öffnet ein Projekt, Ausgabe in
 /// `KEVCAD_SELFTEST_AUSGABE` (sonst im Datenordner), Ergebnis in `selftest-material.txt`.
@@ -15,7 +15,7 @@ enum MaterialSelfTest {
         AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "material"
     }
 
-    /// Aus dem Willkommensfenster: das Projekt öffnen, sobald der Kernel bereit ist; das Projektfenster startet den Test.
+    /// Beim Start: das Projekt öffnen, sobald der Kernel bereit ist; das Hauptfenster startet den Test.
     static func projektOeffnen(_ session: AppSession) {
         guard gewuenscht, session.demo == nil,
               let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
@@ -124,46 +124,21 @@ enum MaterialSelfTest {
               && quellen.material.zuschnitte.count == daten.zuschnitte.count,
               "Bericht liest dieselben Daten: Einkauf \(daten.kennzahlen.einkaufText), \(daten.zuschnitte.count) Zuschnitte")
 
-        // 2. Schnellansichten
-        state.zeige(.modell)
-        state.schnell.alleZu()
+        // 2. Kacheln Stückliste und Zuschnitt: Das Menü bzw. der Agent öffnet sie, die Werkstatt kommt dazu
+        let flaeche = model.oberflaeche
+        model.oberflaechenActions?.zeigeKachel(.stueckliste)
+        check(await wait(3) { flaeche.modus == .werkstatt && flaeche.kacheln.contains(.stueckliste) },
+              "Kachel Stückliste offen, Werkstatt vorn")
         await pause(1)
-        let sichtbar = SchnellansichtenBereich.sichtbar(daten)
-        check(state.schnell.offene(sichtbar).isEmpty, "Alle eingeklappt: \(sichtbar.map(\.titel).joined(separator: ", "))")
-        await foto("01-schnell-alle-zu")
-        state.schnell.oeffne(.stueckliste)
-        await pause(1)
-        check(state.schnell.offene(sichtbar) == [.stueckliste], "Stückliste allein offen")
-        await foto("02-schnell-stueckliste")
-        if sichtbar.contains(.zuschnitt) {
-            state.schnell.oeffne(.zuschnitt)
+        await foto("01-kachel-stueckliste")
+        if !daten.zuschnitte.isEmpty || !daten.stueckgut.isEmpty {
+            model.oberflaechenActions?.zeigeKachel(.zuschnitt)
+            check(await wait(3) { flaeche.kacheln.contains(.zuschnitt) }, "Kachel Zuschnitt offen")
             await pause(1)
-            check(state.schnell.offene(sichtbar) == [.stueckliste, .zuschnitt], "Stückliste und Zuschnitt zusammen offen")
-            await foto("03-schnell-beide")
-            state.schnell.schliesse(.stueckliste)
-            await pause(1)
-            check(state.schnell.offene(sichtbar) == [.zuschnitt], "Zuschnitt allein offen")
-            await foto("04-schnell-zuschnitt")
-            state.schnell.oeffne(.stueckliste)
+            await foto("02-kachel-zuschnitt")
         }
-        state.schnell.setzeHoehe(.stueckliste, Schnellansicht.stueckliste.standardHoehe)
-        state.schnell.setzeHoehe(.zuschnitt, Schnellansicht.zuschnitt.standardHoehe)
-        let vorher = state.schnell.hoehe(.stueckliste)
-        let start = state.schnell.verteilt(sichtbar, platz: 900)
-        state.schnell.ziehe(.stueckliste, dy: -60, start: start, sichtbar: sichtbar, platz: 900)
-        check(abs(state.schnell.hoehe(.stueckliste) - vorher) > 1,
-              "Höhe gezogen: \(Int(vorher)) → \(Int(state.schnell.hoehe(.stueckliste))) pt")
-        let gemerkt = SchnellansichtenZustand.aus(UserDefaults.standard.data(forKey: ProjectWindowState.schnellSchluessel))
-        check(gemerkt == state.schnell, "Zustand gemerkt (Einstellungen)")
-        let offenVorher = state.schnell.offen
-        state.schnell.allesUmschalten(sichtbar)
-        check(state.schnell.offene(sichtbar).isEmpty, "Umschalten: alles zu")
-        state.schnell.allesUmschalten(sichtbar)
-        check(state.schnell.offen == offenVorher, "Umschalten: wieder wie vorher")
-        await pause(1)
-        await foto("05-schnell-gezogen")
 
-        // 3. Auswahl im 3D → Zeile; „In Material öffnen“ an dieselbe Stelle
+        // 3. Auswahl im Modell → Zeile; Sprung in die Kachel Material an dieselbe Stelle
         // Nur Positionen, deren Teile im Modell stehen (der Ersatz-Kernel schickt eine Stückliste ohne passende Teile)
         let imModell = Set(model.parts.map(\.id))
         let mitTeilen = daten.positionen.filter { !$0.teile.isEmpty && Set($0.teile).isSubset(of: imModell) }
@@ -242,11 +217,7 @@ enum MaterialSelfTest {
             await pause(1.2)
             await foto("30-dunkel-\(a.rawValue)")
         }
-        state.zeige(.modell)
-        await pause(1)
-        await foto("31-dunkel-schnell")
         session.projectWindow?.appearance = nil
-        state.zeige(.material)
 
         // 5. Einkaufsliste: abhaken, teilen, CSV
         material.abschnitt = .einkauf
@@ -311,11 +282,6 @@ enum MaterialSelfTest {
         await pause(1)
         check(state.bereich == .material && material.abschnitt == .einkauf, "Aus dem Bericht zurück in Material › Einkaufsliste")
 
-        // 8. 3D-Bereich mit offenen Schnellansichten zum Schluss
-        state.zeige(.modell)
-        state.schnell.alleAuf(sichtbar)
-        await pause(1.5)
-        await foto("60-schnell-alle-auf")
         fertig(lines, messwerte, passed)
     }
 

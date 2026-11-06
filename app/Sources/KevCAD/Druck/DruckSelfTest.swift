@@ -2,8 +2,8 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Testfenster der Druckvorschau: Schnellansicht oben, volle Ansicht darunter, so wie der Material-Strang beide einbaut.
-/// Nur für den Selbsttest (die Testvariante legt es auf den zweiten Monitor).
+/// Testfenster der Druckvorschau mit der vollen Ansicht. Nur für den Selbsttest (die Testvariante legt es auf den zweiten
+/// Monitor; mit `KEVCAD_TEST_VERSTECKT` liegt es hinter dem Schreibtischbild).
 @MainActor
 enum DruckTestFenster {
     private(set) static var fenster: NSWindow?
@@ -18,12 +18,8 @@ enum DruckTestFenster {
                          styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         w.title = "Druckvorschau (Test)"
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: VStack(spacing: 0) {
-            DruckKompakt(model: model)
-                .background(.bar)
-            Divider()
-            DruckAnsicht(model: model)
-        })
+        w.contentView = NSHostingView(rootView: DruckAnsicht(model: model))
+        WindowHook.verstecken(w)
         fenster = w
         platzieren(w)
         w.orderFrontRegardless()
@@ -65,7 +61,7 @@ enum DruckSelfTest {
         return AppInfo.supportDirectory.appendingPathComponent("selftest-druck", isDirectory: true)
     }
 
-    /// Aus dem Willkommensfenster: das Projekt öffnen, sobald der Kernel bereit ist.
+    /// Beim Start: das Projekt öffnen, sobald der Kernel bereit ist.
     static func projektOeffnen(_ session: AppSession) {
         guard gewuenscht, session.demo == nil,
               let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
@@ -187,7 +183,7 @@ enum DruckSelfTest {
         check(!vomKernel || namen.isSubset(of: bekannte),
               "Teilenamen der Platten im Modell: \(namen.intersection(bekannte).count) von \(namen.count)")
 
-        // 2. Testfenster: Schnellansicht und volle Ansicht mit Druckerleiste
+        // 2. Testfenster: volle Ansicht mit Druckerleiste
         let fenster = DruckTestFenster.zeige(model: model)
         ui.auswahl = nil
         ui.nebeneinander = false
@@ -211,14 +207,16 @@ enum DruckSelfTest {
             check(await wait(3) { ui.platte == p }, "und blättert zu Platte \(p ?? 0)")
         }
 
-        // 4. Bambu Studio rechnet nach (echter Kernel): Wechsel Schätzung → Slicer mit Hinweis
+        // 4. Bambu Studio rechnet nach (echter Kernel): Wechsel Schätzung → Slicer mit Hinweis. Mit kurzer Wartezeit läuft
+        // der Test ohne Bambu Studio (Mac mini): Dann bleibt es bei der Schätzung, das ist kein Fehler.
+        let slicerWarten = Double(env["KEVCAD_SELFTEST_SLICER_WARTEN"] ?? "") ?? 900
         if vomKernel {
             let tSlicer = Date()
-            let fertigGerechnet = await wait(Double(env["KEVCAD_SELFTEST_SLICER_WARTEN"] ?? "") ?? 900) {
+            let fertigGerechnet = await wait(slicerWarten) {
                 druck.vorschau?.stand == .slicer && druck.vorschau?.slicer.laeuft == false
             }
             let v = druck.vorschau
-            check(fertigGerechnet, "Bambu Studio: \(v?.stand.titel ?? "?"), \(v?.slicer.meldung ?? v?.slicer.zustand.rawValue ?? "–")"
+            check(fertigGerechnet || slicerWarten < 60, "Bambu Studio: \(v?.stand.titel ?? "?"), \(v?.slicer.meldung ?? v?.slicer.zustand.rawValue ?? "–")"
                   + " nach \(Int(Date().timeIntervalSince(tSlicer))) s")
             messwerte["slicer_s"] = Int(Date().timeIntervalSince(tSlicer))
             if let a = druck.aenderung {
@@ -262,7 +260,9 @@ enum DruckSelfTest {
             await pause(1)
             await foto(fenster, "03-vorgabe-von-kevin")
             // Bambu Studio rechnet die geänderte Gruppe nach
-            let nach = await wait(300) { druck.vorschau?.gruppe(g.gruppe)?.stand == .slicer && druck.vorschau?.slicer.laeuft == false }
+            let nach = await wait(min(300, slicerWarten)) {
+                druck.vorschau?.gruppe(g.gruppe)?.stand == .slicer && druck.vorschau?.slicer.laeuft == false
+            }
             info("geänderte Gruppe nachgerechnet: \(nach ? "ja" : "nein"), \(druck.vorschau.map { DruckFormat.zeit($0.summe.zeitMitWechselS) } ?? "–")")
             t = Date()
             model.druckActions?.druckZuruecksetzen(ziel, schluessel: ["waende"])
@@ -272,7 +272,7 @@ enum DruckSelfTest {
             check(zurueck && druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende == w0,
                   "Zurücksetzen: Wände wieder \(druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende ?? -1), ohne Vorgabe "
                   + "(\(Int(Date().timeIntervalSince(t) * 1000)) ms)")
-            _ = await wait(300) { druck.vorschau?.slicer.laeuft == false }
+            _ = await wait(min(300, slicerWarten)) { druck.vorschau?.slicer.laeuft == false }
         }
 
         // 6. Als 3MF sichern (je Material eine Datei)
@@ -314,7 +314,7 @@ enum DruckSelfTest {
             _ = await wait(10) { model.drucker.dialog == nil }
         }
 
-        // 8. Bereich Material: Abschnitt „Druckteile“ und Schnellansicht „Druck“, hell und dunkel
+        // 8. Kachel Material: Abschnitt „Druckteile“, hell und dunkel; Kachel Druck
         DruckTestFenster.fenster?.orderOut(nil)
         if let state, let w = projektFenster() {
             state.materialZustand.zeige(.druck)
@@ -325,23 +325,13 @@ enum DruckSelfTest {
             await pause(1.5)
             await foto(w, "07-material-druckteile-dunkel")
             w.appearance = nil
-            state.zeige(.modell)
-            var s = state.schnell
-            s.offen = [.druck]
-            state.schnell = s
+            model.oberflaechenActions?.zeigeKachel(.druck)
             await pause(2)
-            await foto(w, "08-schnellansicht-druck-hell")
-            w.appearance = NSAppearance(named: .darkAqua)
-            await pause(1.5)
-            await foto(w, "09-schnellansicht-druck-dunkel")
-            w.appearance = nil
-            s.offen = []
-            state.schnell = s
-            await pause(1.5)
-            await foto(w, "10-schnellansicht-eingeklappt")
-            check(true, "Bereich Material und Schnellansicht gezeigt")
+            await foto(w, "08-kachel-druck")
+            check(model.oberflaeche.kacheln.contains(.druck) && model.oberflaeche.kacheln.contains(.material),
+                  "Kacheln Material und Druck gezeigt")
         } else {
-            info("kein Projektfenster: Bereich Material nicht geprüft")
+            info("kein Hauptfenster: Kachel Material nicht geprüft")
         }
 
         // 9. Bericht-Baustein

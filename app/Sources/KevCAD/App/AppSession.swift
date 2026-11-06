@@ -302,13 +302,6 @@ final class AppSession: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.claudeCommand, forType: .string)
     }
-
-    static var versionText: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "Version \(version) (\(build))"
-    }
 }
 
 /// Vorlage für neue Projekte (Werte laut PROTOCOL.md `PROJECT_NEW.template`).

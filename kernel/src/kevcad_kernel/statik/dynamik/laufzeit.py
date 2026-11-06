@@ -140,7 +140,7 @@ class DynamikRuntime:
                 # eigener Prozess, abbrechbar (Simulation: „Abbrechen“ beendet ihn, ``_dyn_abbrechen``)
                 proc = subprocess.Popen([sys.executable, "-m", "kevcad_kernel.statik.dynamik.prozess",
                                          str(ordner / "auftrag.json")], stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, text=True, env=env)
+                                        stderr=subprocess.PIPE, text=True, env=env, encoding="utf-8", errors="replace")
                 self.__dict__["_dyn_proc"] = proc
                 try:
                     _, stderr = proc.communicate(timeout=timeout_s)

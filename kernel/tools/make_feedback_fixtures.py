@@ -34,10 +34,10 @@ def main() -> None:
     assert not probleme, probleme
     (ZIEL / "feedback_beispiel.json").write_text(json.dumps(paket, indent=1, ensure_ascii=False), encoding="utf-8")
     path = ZIEL / "fixtures.json"
-    data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["feedback"] = {"frames": frames, "format": FEEDBACK_FORMAT, "nachrichten": list(FEEDBACK_NACHRICHTEN),
                         "zeigewoerter": list(FEEDBACK_ZEIGEWOERTER), "paket": "feedback_beispiel.json"}
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(frames)} Testdateien für V2-6 Sprach-Feedback nach {ZIEL}")
 
 

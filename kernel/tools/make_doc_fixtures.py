@@ -133,9 +133,9 @@ def main() -> None:
         "drawing_create": {k: create[k] for k in ("id", "art", "teile", "format")},
     }
     pfad = ZIEL / "fixtures.json"
-    alles = json.loads(pfad.read_text()) if pfad.exists() else {}
+    alles = json.loads(pfad.read_text(encoding="utf-8")) if pfad.exists() else {}
     alles["dokumente"] = erwartet
-    pfad.write_text(json.dumps(alles, indent=1, ensure_ascii=False))
+    pfad.write_text(json.dumps(alles, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"Zeichnungs-Testdateien nach {ZIEL}: {len(header['masse'])} Maße, {len(payload)} Byte Nutzlast")
 
 

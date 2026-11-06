@@ -7,9 +7,6 @@ import SwiftUI
 /// vorne, und die einbuchstabigen Kürzel sind abgeschaltet.
 @MainActor
 final class ProjectWindowState: ObservableObject {
-    @Published var showInspector = true
-    @Published var showExplode = false
-    @Published var searchText = ""
     /// Fehlerband für diesen Lauf weggeklickt.
     @Published var dismissedErrorRun: Int?
     /// Band „Nicht aus dem Inventar“ für diese Verstöße weggeklickt.
@@ -47,33 +44,11 @@ final class ProjectWindowState: ObservableObject {
     /// Zustand des Bereichs Dokumente in diesem Fenster (für Teilebaum: „Zeichnung anlegen“).
     weak var dokumenteZustand: DokumenteZustand?
 
-    /// Bereich „Material“ in diesem Fenster (Menü, Sprünge aus den Schnellansichten). Ein eigenes beobachtbares Objekt,
+    /// Bereich „Material“ in diesem Fenster (Menü, Sprünge aus Stückliste und Berichten). Ein eigenes beobachtbares Objekt,
     /// das dieses hier nicht weiterreicht: Auswahl, Suche und Abschnitt zeichnen nicht das ganze Fenster neu.
     let materialZustand = MaterialZustand()
     /// Bereich „Simulation“ (⌘4) in diesem Fenster: Reiter des Inspektors, Ergebnistabelle, Umbenennen.
     let simulationZustand = SimulationZustand()
-
-    // MARK: Schnellansichten (Strang „Material“)
-
-    /// Schnellansichten unter dem Viewport: welche offen sind und wie hoch; bleibt über Neustarts so, wie er zuletzt war.
-    @Published var schnell: SchnellansichtenZustand = ProjectWindowState.geladeneSchnellansichten() {
-        didSet { if schnell != oldValue { UserDefaults.standard.set(schnell.daten, forKey: Self.schnellSchluessel) } }
-    }
-    /// Die Stückliste hat sich in diesem Fenster schon einmal von selbst geöffnet (nur beim ersten Mal).
-    var bomAutoShown = false
-
-    static let schnellSchluessel = "schnellansichten"
-
-    /// Gemerkter Zustand; beim ersten Start mit dem Strang „Material“ aus der bisherigen Stückliste übernommen.
-    static func geladeneSchnellansichten() -> SchnellansichtenZustand {
-        let d = UserDefaults.standard
-        if let z = SchnellansichtenZustand.aus(d.data(forKey: schnellSchluessel)) { return z }
-        var z = SchnellansichtenZustand()
-        if d.bool(forKey: "showBOM") { z.oeffne(.stueckliste) }
-        let h = d.double(forKey: "bomHeight")
-        if h >= 160 { z.setzeHoehe(.stueckliste, h - 66) }
-        return z
-    }
 
     /// Bereich wechseln (⌘1, ⌘2, ⌘3, ⌘4), mit der gewohnten Animation.
     func zeige(_ b: ProjektBereich) {

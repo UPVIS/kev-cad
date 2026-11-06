@@ -53,7 +53,8 @@ def vision(pfade, ordner=None):
     ordner = Path(ordner or CACHE / "vision")
     ordner.mkdir(parents=True, exist_ok=True)
     pfade = [str(p) for p in pfade]
-    erg = subprocess.run([str(hilfsprogramm()), "maske", str(ordner)] + pfade, check=True, capture_output=True, text=True)
+    erg = subprocess.run([str(hilfsprogramm()), "maske", str(ordner)] + pfade, check=True, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace")
     out = {}
     for zeile in erg.stdout.splitlines():
         d = json.loads(zeile)
@@ -67,7 +68,8 @@ def vision(pfade, ordner=None):
 
 
 def video_meta(pfad):
-    erg = subprocess.run([str(hilfsprogramm()), "meta", str(pfad)], check=True, capture_output=True, text=True)
+    erg = subprocess.run([str(hilfsprogramm()), "meta", str(pfad)], check=True, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace")
     return json.loads(erg.stdout.strip().splitlines()[-1])
 
 

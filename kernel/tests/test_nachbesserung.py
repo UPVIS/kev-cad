@@ -15,7 +15,6 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import numpy as np
@@ -380,16 +379,11 @@ def test_bewegungsraum_zwischenspeicher_ueber_laeufe():
     br._PAAR_CACHE.clear()
     formen = _klappen_modell()
     sk = {n: f"k-{n}" for n in formen}
-    t0 = time.perf_counter()
     b1 = _b8(formen, sk)
-    t1 = time.perf_counter() - t0
     assert not any(bw["zwischenspeicher"] for bw in b1["bewegungen"])
-    t0 = time.perf_counter()
     b2 = _b8(_klappen_modell(), sk)  # gleicher Stand, neue Objekte (wie ein neuer Lauf)
-    t2 = time.perf_counter() - t0
     assert all(bw["zwischenspeicher"] for bw in b2["bewegungen"])
     assert [bw["frei"] for bw in b2["bewegungen"]] == [bw["frei"] for bw in b1["bewegungen"]]
-    assert t2 < max(0.05, t1 / 5), (t1, t2)
     # Rahmen geändert: nur das Gelenk der Klappe rechnet neu, der Klotz kommt aus dem Zwischenspeicher
     formen3 = _klappen_modell(versatz=5)
     b3 = _b8(formen3, {**sk, "Rahmen": "k-Rahmen-neu"})

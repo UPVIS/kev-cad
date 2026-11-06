@@ -5,9 +5,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import anyio
+from mcp_testutil import start_server, texts, with_client
+
 from kevcad_kernel.mcp_tools import TOOL_NAMES
 from kevcad_kernel.mcp_tools.fach import FAECHER, direkt
-from kevcad_kernel.mcp_tools.zuordnung import KERN, KERN_TEXT, alte_namen, tabelle, uebersetzen, werkzeuge_md
+from kevcad_kernel.mcp_tools.zuordnung import (
+    KERN,
+    KERN_TEXT,
+    alte_namen,
+    alter_aufruf,
+    tabelle,
+    uebersetzen,
+    werkzeuge_md,
+)
 
 SKILL = Path(__file__).resolve().parents[2] / "skill" / "kev-cad"
 
@@ -75,3 +86,44 @@ def test_skill_schlank_mit_verzeichnis():
     for datei in sorted(p.name for p in SKILL.glob("*.md") if p.name != "SKILL.md"):
         assert f"]({datei})" in skill, f"{datei} fehlt im Verzeichnis von SKILL.md"
     assert "select:mcp__kevcad__status," in skill
+
+
+def test_alter_aufruf_nennt_den_neuen_aufruf():
+    antwort = alter_aufruf("stock_search", {"query": "Alu Ø12"})
+    assert "katalog(suche=\"Alu Ø12\")" in antwort and "Nichts wurde ausgeführt" in antwort
+    assert "versionen(aktion=\"variante_wechseln\"" in alter_aufruf("variante", {"aktion": "wechseln", "id": "v2"})
+
+
+def test_alter_aufruf_nur_fuer_alte_namen():
+    assert alter_aufruf("gibtsnicht", {}) is None
+    for name in TOOL_NAMES:  # Namen, die es weiter gibt, gehen normal durch
+        assert alter_aufruf(name, {}) is None
+
+
+def test_alter_aufruf_fuer_jeden_alten_namen():
+    weg = [n for n in alte_namen() if n not in TOOL_NAMES]
+    assert len(weg) > 60
+    for name in weg:
+        antwort = alter_aufruf(name, {"refs": ["A"], "query": "x"})
+        neu, _ = uebersetzen(name, {})
+        assert f"{neu}(" in antwort, name
+
+
+def test_alter_aufruf_kuerzt_lange_argumente_und_uebersteht_falsche():
+    antwort = alter_aufruf("model_write", {"code": "x = 1\n" * 1000})
+    assert len(antwort) < 500 and "modell(code=" in antwort
+    assert "view(" in alter_aufruf("highlight", {"refs": 5})  # falscher Typ: Kurzform statt Absturz
+
+
+def test_server_nennt_den_neuen_aufruf():
+    """Eine alte Brücke reicht den Namen an den neuen Kernel durch: Auch der Server antwortet mit dem neuen Aufruf."""
+    server, _ = start_server()
+    try:
+        async def go(c):
+            return await c.call_tool("stock_search", {"query": "Alu"}), await c.call_tool("gibtsnicht", {})
+
+        alt, fremd = anyio.run(lambda: with_client(server.url, go, alt=False))
+    finally:
+        server.stop_thread()
+    assert alt.is_error and 'katalog(suche="Alu")' in texts(alt)[0]
+    assert fremd.is_error and "Unknown tool" in texts(fremd)[0]

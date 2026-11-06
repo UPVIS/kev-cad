@@ -16,7 +16,7 @@ enum BauplanExportSelfTest {
         AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "bauplan-export"
     }
 
-    /// Aus dem Willkommensfenster: das Projekt öffnen, sobald der Kernel bereit ist; das Projektfenster startet den Test.
+    /// Beim Start: das Projekt öffnen, sobald der Kernel bereit ist; das Hauptfenster startet den Test.
     static func projektOeffnen(_ session: AppSession) {
         guard gewuenscht, session.demo == nil,
               let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty

@@ -147,16 +147,23 @@ def test_notiz_mit_zeiger_auf_kante(env):
     assert rt.run()["ok"]
 
 
-def _nach_lauf(env, **kw) -> dict:
-    """Lauf und warten, bis Blätter und Bauplan im Hintergrund fertig sind (DOCS mit diesem Lauf)."""
-    app = env["app"]
+def _nach_lauf(env, params=None) -> dict:
+    """Lauf und warten, bis Blätter und Bauplan im Hintergrund fertig sind und in der Version stehen. Das DOCS allein genügt
+    nicht: Auch der Bauplan schickt es, mit den Blättern von zuletzt. Unter Last kam es vor der Rechnung der Blätter an,
+    und test_unveraendert_wird_nichts_neu_gerechnet las noch die Laufnummer des Laufs davor."""
+    rt, app = env["rt"], env["app"]
     start = app.mark()
-    res = env["rt"].run(**kw)
+    job = rt._submit_run(params, 0, 120, source="app")
+    assert job.done.wait(120)
+    res = job.result
     assert res["ok"], res.get("error")
     app.wait_for(lambda h: h["type"] == "DOCS" and h.get("run") == res["run"] and h.get("blaetter"), start=start,
                  timeout=60)
     app.wait_for(lambda h: h["type"] == "DOCS" and (h.get("bauplan") or {}).get("run") == res["run"], start=start,
                  timeout=120)
+    assert job.versionen_fertig.wait(120)
+    if job.dokumente is not None:
+        job.dokumente.result(120)
     return res
 
 

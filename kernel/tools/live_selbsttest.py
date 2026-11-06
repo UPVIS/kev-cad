@@ -151,7 +151,8 @@ let w = l.filter {{ ($0["kCGWindowOwnerName"] as? String) == "{name}" && ($0["kC
     }}
 print(w?["kCGWindowNumber"] ?? "")
 """, encoding="utf-8")
-    nummer = subprocess.run(["swift", str(skript)], capture_output=True, text=True).stdout.strip()
+    nummer = subprocess.run(["swift", str(skript)], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace").stdout.strip()
     if nummer:
         subprocess.run(["screencapture", "-l", nummer, "-o", "-x", ziel], check=False)
     print(f"Fensterbild: {ziel} (Fenster {nummer or 'nicht gefunden'})", flush=True)
@@ -359,7 +360,8 @@ def main() -> int:
         subprocess.run(["pkill", "-x", name], check=False)
         time.sleep(1)
         if log.exists():
-            zeilen = [l for l in log.read_text(errors="replace").splitlines() if "[error]" in l or "[warning]" in l]
+            zeilen = [l for l in log.read_text(errors="replace",
+                                               encoding="utf-8").splitlines() if "[error]" in l or "[warning]" in l]
             ergebnis["app_meldungen"] = zeilen[-20:]
             print("\n".join(zeilen[-12:]), flush=True)
         if args.json:

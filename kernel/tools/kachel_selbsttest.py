@@ -289,7 +289,8 @@ def main() -> int:
         subprocess.run(["pkill", "-x", name], check=False)
         time.sleep(1)
         if log.exists():
-            zeilen = [z for z in log.read_text(errors="replace").splitlines() if "[error]" in z or "[warning]" in z]
+            zeilen = [z for z in log.read_text(errors="replace",
+                                               encoding="utf-8").splitlines() if "[error]" in z or "[warning]" in z]
             ergebnis["app_meldungen"] = zeilen[-20:]
             print("\n".join(zeilen[-12:]), flush=True)
         if args.json:

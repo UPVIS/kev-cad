@@ -26,8 +26,9 @@ extension AppController {
 
     /// Nach HELLO: Projekt des Selbsttests öffnen.
     func viewerSelbsttestProjektOeffnen() {
-        guard Self.viewerSelbsttestGewuenscht || Self.sprachSelbsttestGewuenscht, model.project == nil,
-            let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
+        let selbsttest = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"]
+        guard Self.viewerSelbsttestGewuenscht || Self.sprachSelbsttestGewuenscht || (AppInfo.isTestVariant && selbsttest == "core"),
+            model.project == nil, let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
         else { return }
         openProject(at: URL(fileURLWithPath: p, isDirectory: true))
     }
@@ -331,8 +332,14 @@ extension AppController {
         }
         let link = view.displayLink(target: takt, selector: #selector(SelbsttestTakt.tick(_:)))
         link.add(to: .main, forMode: .common)
+        let protokoll = HauptfadenProtokoll()
+        hauptfadenProtokoll = protokoll
+        protokoll.start()
         await pause(sekunden)
         link.invalidate()
+        protokoll.stop()
+        hauptfadenProtokoll = nil
+        let lange = protokoll.bericht
         await pause(0.25)
         renderer.onFrameTiming = nil
         let zeiten = sammler.zeiten
@@ -343,7 +350,7 @@ extension AppController {
             guard !s.isEmpty else { return "keine Bilder" }
             return String(format: "%d Bilder in %.1f s, nicht angezeigt; Hauptfaden je Bild Median %.2f ms, GPU Median %.2f ms, "
                 + "Takt des Hauptfadens max %.1f ms", zeiten.count, sekunden, s[s.count / 2], g[g.count / 2],
-                taktAbstaende.dropFirst().max() ?? 0)
+                taktAbstaende.dropFirst().max() ?? 0) + lange
         }
         var abstaende: [Double] = []
         for i in 1..<angezeigt.count { abstaende.append((angezeigt[i] - angezeigt[i - 1]) * 1000) }
@@ -360,7 +367,60 @@ extension AppController {
                 + "Hauptfaden je Bild Median %.2f ms, 95 %% %.2f ms; GPU Median %.2f ms, 95 %% %.2f ms; "
                 + "Takt des Hauptfadens max %.1f ms",
             fps, q(abstaende, 0.5), q(abstaende, 0.95), abstaende.max() ?? 0, ueber, abstaende.count,
-            q(cpu, 0.5), q(cpu, 0.95), q(gpu, 0.5), q(gpu, 0.95), takte.max() ?? 0)
+            q(cpu, 0.5), q(cpu, 0.95), q(gpu, 0.5), q(gpu, 0.95), takte.max() ?? 0) + lange
+    }
+}
+
+/// Selbsttest: Arbeitsstücke des Hauptfadens über 30 ms und was darin lief. Ein Arbeitsstück ist die Zeit zwischen
+/// Aufwachen und Einschlafen der Hauptschleife (ohne `sample`, das die Zeiten verfälscht). Kernel-Nachrichten nennen sich
+/// selbst; steht nichts dabei, war es Oberfläche (SwiftUI, AppKit, Core Animation) oder Zeichnen.
+@MainActor
+final class HauptfadenProtokoll {
+    private var beobachter: CFRunLoopObserver?
+    private var beginn: CFTimeInterval = 0
+    private var nachrichten: [String] = []
+    private var lange: [(ms: Double, was: String)] = []
+
+    func start() {
+        let o = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.afterWaiting.rawValue | CFRunLoopActivity.beforeWaiting.rawValue, true, 0
+        ) { [weak self] _, aktivitaet in
+            MainActor.assumeIsolated { self?.wechsel(aktivitaet) }
+        }
+        beobachter = o
+        CFRunLoopAddObserver(CFRunLoopGetMain(), o, .commonModes)
+    }
+
+    func stop() {
+        if let beobachter { CFRunLoopRemoveObserver(CFRunLoopGetMain(), beobachter, .commonModes) }
+        beobachter = nil
+    }
+
+    private func wechsel(_ a: CFRunLoopActivity) {
+        let jetzt = CACurrentMediaTime()
+        if a == .afterWaiting {
+            beginn = jetzt
+            nachrichten.removeAll(keepingCapacity: true)
+        } else if beginn > 0, (jetzt - beginn) * 1000 > 30 {
+            lange.append(((jetzt - beginn) * 1000, nachrichten.isEmpty ? "Oberfläche" : nachrichten.joined(separator: " ")))
+        }
+    }
+
+    func merke(_ events: [IncomingEvent]) {
+        for e in events {
+            switch e {
+            case .part: nachrichten.append("Teil")
+            case .message(let m): nachrichten.append(m.typeName)
+            default: nachrichten.append("Verbindung")
+            }
+        }
+    }
+
+    /// Die fünf längsten Stücke, sonst leer.
+    var bericht: String {
+        guard !lange.isEmpty else { return "; kein Arbeitsstück über 30 ms" }
+        let top = lange.sorted { $0.ms > $1.ms }.prefix(5).map { String(format: "%.0f ms %@", $0.ms, String($0.was.prefix(60))) }
+        return "; \(lange.count) Arbeitsstücke über 30 ms: " + top.joined(separator: ", ")
     }
 }
 

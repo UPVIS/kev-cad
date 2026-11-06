@@ -90,6 +90,8 @@ public final class AppController: AppActions {
     var viewerSelbsttestLaeuft = false
     /// Zeitpunkt der letzten Nachricht vom Kernel (Selbsttest: Bildzeiten erst messen, wenn er ruht).
     var letzteKernelNachricht: CFTimeInterval = 0
+    /// Selbsttest: lange Arbeitsstücke des Hauptfadens, solange Bildzeiten gemessen werden (ViewerSelbsttest.swift).
+    var hauptfadenProtokoll: HauptfadenProtokoll?
     var navCancellables = Set<AnyCancellable>()
     /// Nach einem automatischen Update wiederherzustellen (Projekt, Kamera, Darstellung), bis der erste Lauf fertig ist.
     var pendingRestore: SavedSession?
@@ -385,6 +387,7 @@ public final class AppController: AppActions {
 
     func handle(_ events: [IncomingEvent]) {
         letzteKernelNachricht = CACurrentMediaTime()
+        hauptfadenProtokoll?.merke(events)
         for e in events {
             switch e {
             case .connected:

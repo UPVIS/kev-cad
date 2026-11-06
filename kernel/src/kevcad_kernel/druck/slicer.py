@@ -605,7 +605,7 @@ def schreibe_modifier_stl(m: dict[str, Any], pfad: Path, z_korrektur: float = 0.
 def _sperre(abbruch: threading.Event | None):
     """Rechnerweit höchstens ein Slicer (Dateisperre); wartet, bricht bei ``abbruch`` ab."""
     pfad = cache_ordner() / "slicer.lock"
-    f = open(pfad, "a+")
+    f = open(pfad, "a+", encoding="utf-8")
     try:
         while True:
             try:
@@ -813,9 +813,9 @@ def anordnen(objekte: list[tuple[Path, int]], ordner: Path, abbruch: threading.E
     e = {"schicht_mm": 0.2}
     pr = schreibe_profile(ordner, e, [filament or FILAMENTE["pla"][-1]], drucker, platte)
     if abstand_mm is not None:
-        d = json.loads(pr.prozess.read_text())
+        d = json.loads(pr.prozess.read_text(encoding="utf-8"))
         d["min_object_distance"] = f"{abstand_mm:g}"
-        pr.prozess.write_text(json.dumps(d))
+        pr.prozess.write_text(json.dumps(d), encoding="utf-8")
     ziel = ordner / "anordnung.3mf"
     ziel.unlink(missing_ok=True)
     args = [*_profil_args(pr), "--arrange", "1", "--allow-rotations",
@@ -1142,7 +1142,7 @@ def pruefe_3mf(pfad: Path, ordner: Path, abbruch: threading.Event | None = None)
     ordner.mkdir(parents=True, exist_ok=True)
     with _sperre(abbruch):
         r = subprocess.run(["nice", "-n", "15", str(exe), "--info", str(pfad)], cwd=str(ordner), capture_output=True,
-                           text=True, timeout=120)
+                           text=True, timeout=120, encoding="utf-8", errors="replace")
     n = len(re.findall(r"^number_of_facets\s*=", r.stdout, flags=re.M))
     if r.returncode != 0 or n == 0:
         raise SlicerFehler(f"Bambu Studio kann das 3MF nicht laden ({r.returncode}): {r.stdout[-300:]}")

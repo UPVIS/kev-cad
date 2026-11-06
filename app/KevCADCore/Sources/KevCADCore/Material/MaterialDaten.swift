@@ -1,14 +1,14 @@
 import Foundation
 
 // Material (Strang „Material“, 22.10.2026): eine Datenquelle für alles, was Stückliste, Zuschnitt, Bestand,
-// Einkaufsliste, Zukauf- und Druckteile zeigt: der Bereich „Material“, die Schnellansichten unter dem Viewport und die
+// Einkaufsliste, Zukauf- und Druckteile zeigt: die Kacheln Material, Stückliste und Zuschnitt und die
 // Berichte in „Dokumente“ lesen dieselben Positionen, Gruppen, Kennzeichen, Summen und Texte. Gebaut aus der Stückliste
 // (BOM), ihrem Bestandsteil (BOM.cuts mit Quellen, Einkaufsliste, Stückgut), dem Projektbestand und dem Katalog. Rein
 // lesend und ohne SwiftUI, damit die Summen überall gleich sind und sich testen lassen.
 
 // MARK: - Gruppen und Kennzeichen
 
-/// Gruppe einer Position in fester Reihenfolge (Tabellen, Schnellansicht, Bericht).
+/// Gruppe einer Position in fester Reihenfolge (Tabellen, Bericht).
 public enum MaterialGruppe: Int, CaseIterable, Comparable, Identifiable, Sendable {
     case stangen, platten, normteile, zukauf, druckteile, eigenteile, weitere
 
@@ -428,7 +428,7 @@ public struct FilamentBestand: Equatable, Sendable {
 
 // MARK: - Kennzahlen
 
-/// Das Wichtigste auf einen Blick (Übersicht, Köpfe der Schnellansichten, Deckblatt, Seitenleisten).
+/// Das Wichtigste auf einen Blick (Übersicht, Deckblatt, Seitenleisten).
 public struct MaterialKennzahlen: Equatable, Sendable {
     public var teile = 0
     public var positionen = 0
@@ -506,7 +506,7 @@ public struct MaterialKennzahlen: Equatable, Sendable {
 
 // MARK: - Zuschnitt
 
-/// Verschnitt einheitlich gerechnet (Schnellansicht, Material, Bericht): was weder Teil noch verwertbarer Rest ist
+/// Verschnitt einheitlich gerechnet (Material, Bericht): was weder Teil noch verwertbarer Rest ist
 /// (Sägeschnitte und Reste unter dem Mindestrest), bezogen auf die verplante Länge bzw. Fläche aller Quellen.
 public enum MaterialZuschnitt {
     /// Kennung dieser Definition im Protokoll (`BOM.cuts[i].verschnitt_definition`, BESTAND.md): der Kernel rechnet

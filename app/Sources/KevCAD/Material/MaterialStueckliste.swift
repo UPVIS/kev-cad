@@ -2,9 +2,8 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-// Stückliste als Tabelle: groß im Bereich „Material“ (Bild, Gruppen, Suche, Sortierung, Spalten wählbar) und kompakt in
-// der Schnellansicht unter dem Viewport (wie die bisherige Stückliste). Beide lesen MaterialDaten und teilen Kontextmenü,
-// Zellen und Texte.
+// Stückliste als Tabelle: groß mit Bild, Gruppen, Suche, Sortierung und wählbaren Spalten, kompakt in einer schmalen
+// Kachel. Beide lesen MaterialDaten und teilen Kontextmenü, Zellen und Texte.
 
 extension MaterialPosition {
     // Sortierschlüssel (KeyPathComparator braucht Comparable)
@@ -335,7 +334,7 @@ struct GruppenKopf: View {
     }
 }
 
-// MARK: - Kompakt (Schnellansicht)
+// MARK: - Kompakt (schmale Kachel Stückliste)
 
 /// Stückliste kompakt wie bisher unter dem Viewport: eine Zeile je Position, Kennzeichen hinter dem Namen.
 struct StuecklisteKompaktTabelle: View {

@@ -237,7 +237,7 @@ def erzeuge(ziel: str | Path, *, fotos: int = 10, video: int = 30, breite: int =
         if video:
             r = subprocess.run([FFMPEG, "-v", "error", "-y", "-framerate", "10", "-i", str(Path(tmp) / "%06d.png"),
                                 "-c:v", "libx264", "-crf", "14", "-pix_fmt", "yuv420p", str(ordner / "rgb.mp4")],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
             if r.returncode != 0:
                 raise RuntimeError(f"ffmpeg: {r.stderr[-400:]}")
     if video:

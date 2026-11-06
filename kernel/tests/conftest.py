@@ -7,6 +7,7 @@ auch für Rechenprozesse, die Tests starten.
 
 from __future__ import annotations
 
+import locale
 import os
 import shutil
 import tempfile
@@ -31,6 +32,14 @@ os.environ["KEVCAD_FESTKOERPER_CACHE"] = str(_DRUCK / "festkoerper")
 os.environ["KEVCAD_FILAMENTE"] = str(_DRUCK / "filamente.json")
 # V2-1b: Prüfung am Stück, wie die Tests sie erwarten (Stufen hängen an der Uhr); test_tempo_pruefung.py schaltet sie ein
 os.environ.setdefault("KEVCAD_PRUEF_STUFEN", "0")
+
+
+@pytest.fixture(autouse=True)
+def _locale_zurueck():
+    """lib3mf stellt beim Schreiben einer 3MF den ganzen Prozess auf die Locale C um. Ohne dieses Zurücksetzen lasen alle
+    späteren Tests ohne feste Kodierung ASCII, und im vollen Lauf am MacBook scheiterten 16 CalculiX-Tests daran."""
+    yield
+    locale.setlocale(locale.LC_ALL, "")
 
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001

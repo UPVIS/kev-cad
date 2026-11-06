@@ -2,11 +2,13 @@
 
 ``uebersetzen(name, argumente)`` macht aus einem alten Aufruf den neuen (Werkzeug und Argumente). Die Tests der
 Fachlogik rufen darüber weiter mit den alten Namen, und ``tabelle()`` erzeugt die Übersicht im Skill
-(skill/kev-cad/werkzeuge.md; ein Test prüft, dass beide übereinstimmen).
+(skill/kev-cad/werkzeuge.md; ein Test prüft, dass beide übereinstimmen). ``alter_aufruf(name, argumente)`` ist die Antwort
+für Agentensitzungen, die nach dem Update noch alte Namen rufen (Server und stdio-Brücke, V2-8).
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -169,17 +171,43 @@ def alte_namen() -> list[str]:
     return sorted(set(KERN) | set(fach_eintraege()))
 
 
+def _kurzform(alt: str) -> str:
+    """Neuer Aufruf als Kurzform ohne Werte, wie in der Tabelle des Skills."""
+    if alt in KERN_TEXT:
+        return KERN_TEXT[alt]
+    werkzeug, aktion = fach_eintraege()[alt]
+    return f"{werkzeug}(aktion=\"{aktion}\")" if aktion else f"{werkzeug}(…)"
+
+
+def _wert(v: Any) -> str:
+    """Argument für die Antwort; langer Text (etwa der Quelltext von model_write) bleibt nur angedeutet."""
+    text = json.dumps(v, ensure_ascii=False)
+    return text if len(text) <= 80 else text[:60] + " …"
+
+
+def alter_aufruf(name: str, argumente: dict[str, Any] | None = None) -> str | None:
+    """Antwort auf den Aufruf eines Werkzeugs, das es seit V2-2 nicht mehr gibt; ``None``, wenn ``name`` keiner dieser
+    alten Namen ist. Nennt den neuen Aufruf mit den übergebenen Argumenten, führt ihn aber nicht aus: Der Agent soll
+    sehen, was sich geändert hat, und ein Aufruf mit Folgen läuft nicht ohne sein Zutun unter neuem Namen."""
+    from . import TOOL_NAMES
+
+    if name in TOOL_NAMES or name not in alte_namen():
+        return None
+    try:
+        neu, args = uebersetzen(name, argumente)
+        aufruf = f"{neu}({', '.join(f'{k}={_wert(v)}' for k, v in args.items())})"
+    except (TypeError, AttributeError, KeyError):  # Argumente, die auch das alte Werkzeug abgelehnt hätte
+        aufruf = _kurzform(name)
+    return (f"„{name}“ heißt seit Kev CAD V2 anders. Neuer Aufruf: {aufruf}. Nichts wurde ausgeführt. Kennt deine "
+            "Sitzung den neuen Namen noch nicht, den MCP-Server kevcad neu verbinden (/mcp) oder eine neue Sitzung "
+            "beginnen; die Übersicht aller Namen steht im Skill kev-cad, Datei werkzeuge.md.")
+
+
 def tabelle() -> str:
     """Markdown-Tabelle alt → neu für den Skill."""
     zeilen = ["| bis V2-1 | ab V2-2 |", "|---|---|"]
-    fach = fach_eintraege()
     for alt in alte_namen():
-        if alt in KERN_TEXT:
-            neu = KERN_TEXT[alt]
-        else:
-            werkzeug, aktion = fach[alt]
-            neu = f"{werkzeug}(aktion=\"{aktion}\")" if aktion else f"{werkzeug}(…)"
-        zeilen.append(f"| `{alt}` | `{neu}` |")
+        zeilen.append(f"| `{alt}` | `{_kurzform(alt)}` |")
     return "\n".join(zeilen)
 
 

@@ -137,10 +137,6 @@ enum SimulationSelfTest {
         check(await aendern([SimOp.lastfallNeu(name)]), "Lastfall „\(name)“ angelegt (SIM_EDIT)")
         check(await wait(20) { st.stand?.lastfall(name) != nil }, "Lastfall in SIM")
         actions.waehleLastfall(name)
-        // Fensterleiste: der Untertitel folgt der Auswahl sofort (Punkt 10)
-        let soll = "Simulation · \(name)"
-        check(await wait(1) { session.projectWindow?.subtitle == soll },
-              "Untertitel folgt sofort: „\(session.projectWindow?.subtitle ?? "–")“")
         zustand.reiter = .kraefte
 
         // 3. Kraft per Klick auf die Oberseite des Stegs (Normale +z), 2 kg
@@ -331,9 +327,9 @@ enum SimulationSelfTest {
         await simulation2(session, state, controller: controller, teil: teil, name: name, oben: oben, unten: unten,
                           check: check, wait: wait, foto: foto, aendern: aendern, jobFertig: jobFertig)
 
-        // 14. Zurück im 3D-Bereich: Kräfte und Lager verschwinden aus dem Viewer
-        state.zeige(.modell)
-        check(await wait(5) { !st.aktiv && controller.scene.simulationBodies.isEmpty }, "3D-Bereich ohne Simulationskörper")
+        // 14. Kachel Simulation zu: Kräfte und Lager verschwinden aus dem Viewer
+        session.model.oberflaechenActions?.schliesseKachel(.simulation)
+        check(await wait(5) { !st.aktiv && controller.scene.simulationBodies.isEmpty }, "Viewer ohne Simulationskörper")
         fertig(lines, passed)
     }
 
@@ -354,7 +350,7 @@ enum SimulationSelfTest {
 extension SimulationSelfTest {
     /// Schritte der zweiten Ausbaustufe: Lager je Lastfall, gleitend entlang einer Kante, gelenkiges Lager im
     /// Bolzenloch mit Festigkeit (FEM), Last auf der ganzen Fläche als Druck, Grenze mit FEM, Pfeil-Griff (Kugel, Ring,
-    /// Einrasten), Pfeile bildschirmfest, Untertitel. Läuft in einem eigenen Lastfall „Selbsttest Gelenk“.
+    /// Einrasten), Pfeile bildschirmfest. Läuft in einem eigenen Lastfall „Selbsttest Gelenk“.
     // swiftlint:disable:next function_body_length function_parameter_count cyclomatic_complexity
     static func simulation2(_ session: AppSession, _ state: ProjectWindowState, controller: AppController,
                             teil: String, name: String, oben: Int, unten: Int,
@@ -376,8 +372,6 @@ extension SimulationSelfTest {
         check(await aendern([SimOp.lastfallNeu(gelenk)]), "Lastfall „\(gelenk)“ angelegt")
         _ = await wait(20) { st.stand?.lastfall(gelenk) != nil }
         actions.waehleLastfall(gelenk)
-        check(await wait(1) { session.projectWindow?.subtitle == "Simulation · \(gelenk)" },
-              "Untertitel folgt dem Lastfallwechsel sofort: „\(session.projectWindow?.subtitle ?? "–")“")
 
         // a) Lager je Lastfall: das feste Lager auf der Unterseite gilt nur noch in „name“
         if var a1 = st.stand?.lager.first(where: { $0.teil == teil && $0.art == .fest }) {

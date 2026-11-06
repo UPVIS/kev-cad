@@ -89,15 +89,6 @@ public enum PartTree {
         nodes.flatMap { [$0.id] + allIDs($0.children ?? []) }
     }
 
-    /// Sucht einen Knoten nach ID.
-    public static func node(_ id: String, in nodes: [PartTreeNode]) -> PartTreeNode? {
-        for node in nodes {
-            if node.id == id { return node }
-            if let found = self.node(id, in: node.children ?? []) { return found }
-        }
-        return nil
-    }
-
     /// Teilname aus einer Referenz: "Halter/Lasche#f12" → "Halter/Lasche".
     public static func partID(fromRef ref: String) -> String {
         if let hash = ref.firstIndex(of: "#") { return String(ref[..<hash]) }
@@ -108,16 +99,5 @@ public enum PartTree {
     public static func partIDs(fromRefs refs: [String]) -> [String] {
         var seen: Set<String> = []
         return refs.map(partID(fromRef:)).filter { seen.insert($0).inserted }
-    }
-
-    /// Löst Knoten-IDs (auch Gruppen) in die enthaltenen Teile auf.
-    public static func expandToParts(_ ids: [String], in nodes: [PartTreeNode]) -> [String] {
-        var seen: Set<String> = []
-        var result: [String] = []
-        for id in ids {
-            let parts = node(id, in: nodes)?.partIDs ?? [id]
-            for part in parts where seen.insert(part).inserted { result.append(part) }
-        }
-        return result
     }
 }

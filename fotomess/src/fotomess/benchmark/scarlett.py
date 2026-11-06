@@ -42,9 +42,9 @@ def kennzahlen():
     ABLAGE.mkdir(parents=True, exist_ok=True)
     datei = ABLAGE / "kennzahlen.json"
     if datei.exists():
-        return json.loads(datei.read_text())
+        return json.loads(datei.read_text(encoding="utf-8"))
     k = video.bewerten(VIDEO, 6.0, 640, farbbereich=ROT)
-    datei.write_text(json.dumps(k))
+    datei.write_text(json.dumps(k), encoding="utf-8")
     return k
 
 

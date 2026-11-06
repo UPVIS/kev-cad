@@ -9,7 +9,8 @@ Rechnern; die Verträge und Code-Regeln gelten überall.
 
 Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10, Arbeitspakete, AP0-Ergebnis),
 [PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine). Für den Umbau zu V2
-(KI-first, Zweig `v2`): [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete V2-1 bis V2-8).
+(KI-first, Zweig `v2`): [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete V2-1 bis V2-8) und
+[ABNAHME-V2.md](ABNAHME-V2.md) (Abend mit Kevin, Wechsel nach `main`, Rückweg).
 Oberfläche: [OBERFLAECHE.md](OBERFLAECHE.md) (Gestaltungswerte, Entwurf, Fokus und Werkstatt, Kacheln, Tasten).
 
 ## Aufbau
@@ -38,6 +39,9 @@ tools/fern.sh testbau ui   # Testvariante "Kev CAD Test ui" dort bauen, nach bui
 tools/fern.sh release      # Installationsbau dort, App, Kernel und Skill hier installieren (wie ./build.sh)
 tools/fern.sh status       # Plätze, Schlange und Speicher auf dem Mini
 tools/fern.sh einrichten   # Mini prüfen bzw. vorbereiten (xcodegen, uv, Metal-Toolchain, Xcode-Fassung)
+tools/fern/selbsttests.sh "build/Kev CAD Test ui.app" "<Projekt>" [Tests …]   # Selbsttests der App auf dem Mini
+tools/fern/kachel-selbsttest.sh "build/Kev CAD Test ui.app" "<Projekt>"       # Kacheln und Fläche über MCP, auf dem Mini
+tools/abnahme.sh           # Testvariante „abnahme“ für Kevin, mit Kopien von Katalog und Projekt
 ```
 
 Lokal nur als Rückfall (fern.sh nimmt diesen Weg selbst, wenn der Mini fehlt):
@@ -60,8 +64,10 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
   `.githooks/post-commit` bzw. `post-merge` im Hintergrund `tools/auto-update.sh`: Es baut aus einer sauberen
   Arbeitskopie von main (`~/Library/Application Support/de.upvis.kevcad/build-src`) über `tools/fern.sh release` auf
   dem Mac mini (fehlt er, hier unter der Sperre) und installiert hier `Kev CAD.app` nach `~/Applications/Tools`
-  (Tools-Stapel im Dock), Kernel und Skill nach `~/Library/Application Support/de.upvis.kevcad/install`. Protokoll:
-  `~/Library/Logs/Kev CAD/update.log`. Probe ohne Kevins App: `KEVCAD_UPDATE_PROBE=<Ordner> KEVCAD_UPDATE_REF=<Zweig>`.
+  (Tools-Stapel im Dock), Kernel und Skill nach `~/Library/Application Support/de.upvis.kevcad/install`. Signiert wird
+  immer hier auf dem MacBook mit Kevins Team (`tools/signatur.sh`; der Mini hat die Identität nicht, ohne sie ad hoc).
+  Protokoll: `~/Library/Logs/Kev CAD/update.log`. Probe ohne Kevins App: `KEVCAD_UPDATE_PROBE=<Ordner>
+  KEVCAD_UPDATE_REF=<Zweig>`.
 - Die installierte App, der MCP-Server `kevcad` und der Skill `kev-cad` nutzen nur diese installierte Kopie, nie den
   Arbeitsstand des Repos. Entwicklung daher auf Zweigen bzw. in Arbeitskopien und erst fertig nach `main`.
 - Hooks sind aktiv über `git config core.hooksPath .githooks` (nach einem frischen Klon einmal setzen).
@@ -75,6 +81,8 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
 - `app/KevCADCore/Sources/KevCADCore/Model/AppModel.swift` (`AppModel`, `AppActions`): Vertrag zwischen App-Kern und
   Oberfläche. Die Oberfläche liest `AppModel` und ruft nur `AppActions`; sie setzt keine `@Published`-Werte selbst.
 - Öffentliche Signaturen von `AppController(model:)`, `start()`, `KevViewport(controller:)` bleiben stabil.
+- `kernel/src/kevcad_kernel/mcp_tools/zuordnung.py`: Namen der Werkzeuge von vor V2-2. Server und Brücke antworten darauf
+  mit dem neuen Aufruf (`alter_aufruf`), `skill/kev-cad/werkzeuge.md` entsteht daraus.
 
 ## Zuständigkeiten (für parallele Arbeit)
 
@@ -122,6 +130,10 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
   auf 120 setzen.
 - Viewer V2: Die Belegung von Tasten, Maus und Trackpad steht nur in `Viewer/Tastenbelegung.swift` (Menüs, Viewport,
   Hinweisleiste und Tastenübersicht lesen dort); Gestaltungswerte der Überlagerungen in `Viewer/ViewerStil.swift`.
-  Selbsttest: `KEVCAD_SELFTEST=viewer` (Zustände mit Fotos, Bildzeiten beim Drehen).
+  Selbsttest: `KEVCAD_SELFTEST=viewer` (Zustände mit Fotos, Bildzeiten beim Drehen, lange Arbeitsstücke des Hauptfadens).
+- **Selbsttests der App:** `tools/fern/selbsttests.sh` fährt alle auf dem Mini, denn manche öffnen Dialoge und Nebenfenster.
+  `viewer` braucht ein gezeichnetes Bild: `kernel/tools/selbsttests.py … viewer --hier` am MacBook, Fenster versteckt.
+- **Text immer mit `encoding="utf-8"`:** lib3mf stellt beim Schreiben einer 3MF den ganzen Prozess auf die Locale `C` um; danach
+  liest Python ohne feste Kodierung ASCII. `kernel/tests/test_kodierung.py` prüft das für Dateien und Prozessausgaben.
 - ocp-tessellate liefert degenerierte Kanten mit; vor dem Nummerieren herausfiltern (`BRep_Tool.Degenerated_s`).
 - Commit-Nachrichten auf Deutsch, je Arbeitspaket mindestens ein Commit.

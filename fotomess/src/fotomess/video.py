@@ -23,7 +23,7 @@ from .modell import CACHE
 
 def info(pfad):
     r = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", str(pfad)],
-                       check=True, capture_output=True, text=True)
+                       check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     d = json.loads(r.stdout)
     v = next(s for s in d["streams"] if s.get("codec_type") == "video")
     w, h = int(v["width"]), int(v["height"])

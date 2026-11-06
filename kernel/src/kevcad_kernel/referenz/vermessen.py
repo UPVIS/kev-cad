@@ -39,7 +39,7 @@ def _zeilen(cmd: list[str], *, env: dict[str, str] | None = None, cwd: str | Non
             bei_zeile: Callable[[dict[str, Any]], None] | None = None, timeout_s: float = 1800) -> tuple[int, list, str]:
     """Prozess starten, stdout zeilenweise als JSON lesen. Rückgabe (Exitcode, Ereignisse, stderr-Ende)."""
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, env=env,
-                            cwd=cwd)
+                            cwd=cwd, encoding="utf-8", errors="replace")
     fehler: list[str] = []
 
     def lies_err() -> None:
@@ -90,7 +90,8 @@ def varianten_bauen(*, modell: Path, frei: list[str], bekannt: dict[str, float],
 
 def speicher_frei() -> int | None:
     try:
-        out = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=20).stdout
+        out = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=20,
+                             encoding="utf-8", errors="replace").stdout
         m = re.search(r"free percentage:\s*(\d+)%", out)
         return int(m.group(1)) if m else None
     except (OSError, subprocess.SubprocessError):

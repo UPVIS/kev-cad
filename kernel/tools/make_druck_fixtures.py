@@ -139,9 +139,9 @@ def main() -> None:
         "material_filament_id": {m["material"]: m["filament_id"] for m in v["summe"]["material"]},
     }
     path = ZIEL / "fixtures.json"
-    data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["druck"] = erwartet
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(files)} Druckvorschau-Testdateien nach {ZIEL}: {v['summe']['platten']} Platten, "
           f"{len(v['teile'])} Gruppen, {v['summe']['kosten']} €")
 

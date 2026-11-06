@@ -110,7 +110,7 @@ enum Gestaltung {
         /// Abstand der Inseln und Kacheln zum Fensterrand und zueinander
         static let rand: CGFloat = 14
         /// Kopfleiste oben (Ampel, Projekt, Modus, Knöpfe). macOS 26 setzt die Ampel bei versteckter Titelleiste auf
-        /// 16 pt Höhe; die Kopfleiste richtet ihre Mitte daran aus (gemessen am Willkommensfenster, 05.11.2026).
+        /// 16 pt Höhe; die Kopfleiste richtet ihre Mitte daran aus (gemessen am 05.11.2026).
         static let kopf: CGFloat = 32
         /// Mitte der Ampel von oben
         static let ampelMitte: CGFloat = 16
