@@ -77,7 +77,10 @@ install_bundle() {
   mkdir -p "$INSTALL_ROOT"
   rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
     "$src/kernel/" "$INSTALL_ROOT/kernel/"
-  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev)
+  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev --compile-bytecode)
+  # Einmal laden: Der erste Import nach einem Update kostete sonst beim nächsten Start der App rund 50 s (gemessen unter
+  # Last), und ein kaputter Kernel fällt schon hier auf.
+  "$INSTALL_ROOT/kernel/.venv/bin/kevcad-kernel" check 2>&1 | tail -1 || echo "Achtung: Kernel lädt nicht"
   rsync -a --delete "$src/skill/" "$INSTALL_ROOT/skill/"
   # Phase 4: kevcad-capture (Object Capture) und fotomess mit eigener Umgebung (Abhängigkeiten aus uv.lock)
   rsync -a --delete "$src/bin/" "$INSTALL_ROOT/bin/"

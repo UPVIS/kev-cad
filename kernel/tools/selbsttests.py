@@ -97,7 +97,8 @@ def main() -> int:
             "KEVCAD_SELFTEST_PROJEKT": str(kopie), "KEVCAD_PROJECTS_DIR": str(arbeit),
             "KEVCAD_DOWNLOADS_DIR": str(arbeit / "downloads"),
             **{k: v for k, v in os.environ.items() if k.startswith(("KEVCAD_DRUCK", "KEVCAD_BAMBU", "KEVCAD_FESTKOERPER",
-                                                                    "KEVCAD_FILAMENTE", "KEVCAD_CATALOG"))},
+                                                                    "KEVCAD_FILAMENTE", "KEVCAD_CATALOG",
+                                                                    "KEVCAD_SELFTEST_FOTO"))},
             **{k: v for k, v in mehr.items() if k != "PROJEKT"},
         }
         if args.hier:

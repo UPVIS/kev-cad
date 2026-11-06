@@ -207,14 +207,16 @@ enum DruckSelfTest {
             check(await wait(3) { ui.platte == p }, "und blättert zu Platte \(p ?? 0)")
         }
 
-        // 4. Bambu Studio rechnet nach (echter Kernel): Wechsel Schätzung → Slicer mit Hinweis
+        // 4. Bambu Studio rechnet nach (echter Kernel): Wechsel Schätzung → Slicer mit Hinweis. Mit kurzer Wartezeit läuft
+        // der Test ohne Bambu Studio (Mac mini): Dann bleibt es bei der Schätzung, das ist kein Fehler.
+        let slicerWarten = Double(env["KEVCAD_SELFTEST_SLICER_WARTEN"] ?? "") ?? 900
         if vomKernel {
             let tSlicer = Date()
-            let fertigGerechnet = await wait(Double(env["KEVCAD_SELFTEST_SLICER_WARTEN"] ?? "") ?? 900) {
+            let fertigGerechnet = await wait(slicerWarten) {
                 druck.vorschau?.stand == .slicer && druck.vorschau?.slicer.laeuft == false
             }
             let v = druck.vorschau
-            check(fertigGerechnet, "Bambu Studio: \(v?.stand.titel ?? "?"), \(v?.slicer.meldung ?? v?.slicer.zustand.rawValue ?? "–")"
+            check(fertigGerechnet || slicerWarten < 60, "Bambu Studio: \(v?.stand.titel ?? "?"), \(v?.slicer.meldung ?? v?.slicer.zustand.rawValue ?? "–")"
                   + " nach \(Int(Date().timeIntervalSince(tSlicer))) s")
             messwerte["slicer_s"] = Int(Date().timeIntervalSince(tSlicer))
             if let a = druck.aenderung {
@@ -258,7 +260,9 @@ enum DruckSelfTest {
             await pause(1)
             await foto(fenster, "03-vorgabe-von-kevin")
             // Bambu Studio rechnet die geänderte Gruppe nach
-            let nach = await wait(300) { druck.vorschau?.gruppe(g.gruppe)?.stand == .slicer && druck.vorschau?.slicer.laeuft == false }
+            let nach = await wait(min(300, slicerWarten)) {
+                druck.vorschau?.gruppe(g.gruppe)?.stand == .slicer && druck.vorschau?.slicer.laeuft == false
+            }
             info("geänderte Gruppe nachgerechnet: \(nach ? "ja" : "nein"), \(druck.vorschau.map { DruckFormat.zeit($0.summe.zeitMitWechselS) } ?? "–")")
             t = Date()
             model.druckActions?.druckZuruecksetzen(ziel, schluessel: ["waende"])
@@ -268,7 +272,7 @@ enum DruckSelfTest {
             check(zurueck && druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende == w0,
                   "Zurücksetzen: Wände wieder \(druck.vorschau?.gruppe(g.gruppe)?.einstellungen.waende ?? -1), ohne Vorgabe "
                   + "(\(Int(Date().timeIntervalSince(t) * 1000)) ms)")
-            _ = await wait(300) { druck.vorschau?.slicer.laeuft == false }
+            _ = await wait(min(300, slicerWarten)) { druck.vorschau?.slicer.laeuft == false }
         }
 
         // 6. Als 3MF sichern (je Material eine Datei)
