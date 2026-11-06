@@ -214,3 +214,63 @@ Gefunden hat der Selbsttest, was die App-Attrappe nicht sehen konnte:
 
 Selbstheilung am echten Paar: Ein `PART_SAME` mit unbekanntem Inhalt holt das Teil über `PARTS_REQ` neu, ein `WIE_ZUVOR`
 mit unbekannter Basis die Nachricht über `NOCHMAL`.
+
+## Messung V2-8 (Oberfläche, Tests, Installation)
+
+Stand 06.11.2026. Kugelschieber Variante B (134 Teile) als Kopie.
+
+**Drehen im Viewer** (`kernel/tools/selbsttests.py … viewer --hier`, Fenster hinter dem Schreibtischbild, MacBook unter Last
+130 bis 190). Neu im Bericht: Arbeitsstücke des Hauptfadens über 30 ms mit dem, was darin lief (`HauptfadenProtokoll`, ein
+Beobachter der Hauptschleife, ohne `sample`).
+
+| Darstellung | Bilder in 3 s | Hauptfaden je Bild | GPU je Bild | längster Takt | Stücke über 30 ms |
+|---|---|---|---|---|---|
+| wie bisher | 357 | 1,16 ms | 6,01 ms | 26 ms | keins |
+| Solid ohne Verdeckung, ohne Kanten | 370 | 0,95 ms | 5,56 ms | 21 ms | keins |
+| Solid ohne Verdeckung | 359 | 1,18 ms | 5,28 ms | 26 ms | 39 ms |
+| Solid mit Verdeckung und Kantenbetonung | 362 | 1,19 ms | 5,63 ms | 29 ms | 39 ms |
+| Solid mit allem und Schatten | 343 | 1,47 ms | 6,97 ms | 21 ms | 65 und 37 ms |
+| Material mit Verdeckung | 357 | 1,18 ms | 5,54 ms | 17 ms | 56 ms |
+| Technisch | 361 | 1,17 ms | 5,72 ms | 20 ms | keins |
+
+Die 850 ms in „Technisch“ aus V2-4 kommen nicht wieder, auch nicht unter dreimal so hoher Last. Damals liefen Teile, Statik und
+Animation nach jedem Lauf noch ganz an die App; seit V2-5 kommt in Ruhe nichts mehr. Kein Stück enthält eine Kernel-Nachricht.
+Hauptfaden und GPU kommen zusammen auf gut 7 ms je Bild, die 35 bis 42 Bilder/s von V2-5b entstanden also nach dem Zeichnen.
+V2-3 hatte über den Viewer eine `.clipShape` gelegt: eine Formmaske, für die das Fenstersystem jedes Bild erst abseits
+zusammensetzen muss. Die Ecken setzt jetzt die Metal-Ebene selbst. Ob das die Ursache war, zeigt nur ein Monitor: Hinter dem
+Schreibtischbild und auf dem Mini kommt kein Bild an.
+
+**Kacheln** (`tools/fern/kachel-selbsttest.sh`, Mac mini, längste Pause des Hauptfadens, 54 von 54 Prüfungen):
+
+| Was | V2-7 | V2-8 |
+|---|---|---|
+| Kachel 2 groß (Zeichnung) | 118 bis 142 ms | 60 ms |
+| alle einordnen | 66 ms | 42 ms |
+| Kachel zweites Mal: Stückliste, Zeichnung, Material | 103, 29, 65 ms | 83, 85, 91 ms |
+| Kachel zweites Mal: Rendern, Simulation | 146, 132 ms | 141, 119 ms |
+
+Die Nebenspalten bauen sich jetzt eine Sekunde nach dem Öffnen auf; das Öffnen selbst bleibt unter der Grenze von 300 ms.
+
+**Start** (`KEVCAD_SELFTEST=oberflaeche`, Mac mini ohne fremde Last): Fenster nach 0,19 s, bedienbar nach 0,20 s, Rechenzeit
+des Hauptfadens 0,14 s. Der Kernel brauchte dort beim ersten Start einer neuen Umgebung 46 s, gut 50 s am MacBook unter Last:
+Das ist der erste Import ohne Bytecode. Seit V2-8 übersetzt `uv sync --compile-bytecode` beim Installieren, und `build.sh` lädt den
+Kernel einmal.
+
+**Tests** (`tools/fern.sh tests`, Mac mini): vier volle Läufe, 465 Swift-Tests und rund 1200 Kernel-Tests. Der erste scheiterte an
+einer Zeitgrenze unter Last (`test_bewegungsraum_zwischenspeicher_ueber_laeufe`, die Grenze ist entfernt, die Prüfung auf den
+Zwischenspeicher bleibt), die drei übrigen waren grün, in 7 Minuten je Lauf.
+
+- **Locale:** `lib3mf` setzt beim Schreiben `setlocale(LC_ALL, "C")` (nachgestellt: `locale.getencoding()` wird `US-ASCII`). Der alte
+  Stand scheitert danach an `test_hertz_kugel_auf_platte` mit `UnicodeDecodeError`. Mit Rücksetzen nach jedem Test laufen 3MF und
+  CalculiX im selben Prozess ohne `PYTHONUTF8` durch.
+- **test_unveraendert_wird_nichts_neu_gerechnet:** Auch der Bauplan schickt ein DOCS, mit den Blättern von zuletzt. Mit künstlich
+  verzögertem Nachtrag schlägt der alte Test in zwei von drei Läufen fehl (`blatt.kopf["run"]` noch vom Lauf davor). Der Test wartet
+  jetzt auf das Future `job.dokumente`.
+- **test_gleitende_lager_schraeg_in_der_fem:** Gmsh rechnet mit vier Fäden, jeder Lauf hat ein anderes Netz (12.003 bis 12.138
+  Freiheitsgrade). In 50 Läufen waren die Lagerkräfte exakt und die Meldung gleich. Der Fehler trat in vier vollen Läufen nicht auf.
+
+**Installation** (`KEVCAD_UPDATE_PROBE`, `KEVCAD_UPDATE_REF`, Zweig dieses Pakets): Paket auf dem Mini in 70 s, gesamt 94 s. App mit
+„Developer ID Application: KEVIN SCHWED (2GX7UC98J6)“, `codesign --verify --deep --strict` in Ordnung, Skill mit allen 16 Dateien
+gleich dem Repo, `kevcad-kernel check` läuft, `kevcad-mcp`, `kevcad-feedback`, fotomess und scan vorhanden. Über die installierte
+Brücke: 25 Werkzeuge, 5.989 Zeichen Anweisungen, `stock_search` antwortet mit `katalog(suche=…)`. KevCADWire baut wie in VoiceBridge über
+das `Package.swift` im Wurzelordner für macOS und iOS.
