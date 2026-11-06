@@ -66,6 +66,10 @@ from kevcad_kernel.zukauf.dienst import ZukaufDienst
 from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 
 APP_NOT_CONNECTED = "App nicht verbunden"
+# I-2 (PLAN-IPAD.md): Nachrichten, mit denen ein Gerät zum aktiven wird, weil Kevin dort gerade arbeitet. Anmeldung,
+# Vorgaben beim Verbinden und Antworten zählen nicht. AKTIV schickt eine App, die nur bedient wird (Drehen, Zeigen).
+GERAET_BEDIENT = frozenset({"AKTIV", "SELECTION", "RUN_REQ", "MEASURE_REQ", "PROJECT_OPEN", "PROJECT_NEW", "EXPORT_REQ",
+                            "CAMERA_SUGGEST", "FEEDBACK_STAND", "FEEDBACK_PAKET"})
 NO_PROJECT = "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
 # V2-1b: So lange wartet run auf die Prüfung, dann rechnet sie im Hintergrund weiter. Das Budget einer Maßänderung ist
@@ -233,6 +237,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 "kernel": state,
                 "message": message,
                 "app_connected": self._link.connected,
+                "geraete": self._link.geraete(),  # I-2: Mac und iPad, das aktive zuerst bedient
                 "last_run": self._last_result,
                 "selection": dict(self._selection),
                 "settings": dict(self._settings),
@@ -415,7 +420,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         bad = self._check_view_refs(cmd, args)
         if bad:
             return {"ok": False, "error": bad}
-        reply, _payload, error = self._request({"type": "VIEW_CMD", "cmd": cmd, "args": args}, timeout_s)
+        # I-2: Alle Geräte zeigen dasselbe; es zählt die erste Bestätigung
+        reply, _payload, error = self._request({"type": "VIEW_CMD", "cmd": cmd, "args": args}, timeout_s, an="alle")
         if error:
             return {"ok": False, "error": error}
         ok = bool(reply.get("ok", True))
@@ -1411,11 +1417,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # App
     # =================================================================================================================
 
-    def _send_app(self, header: dict[str, Any], payload: bytes = b"") -> bool:
+    def _send_app(self, header: dict[str, Any], payload: bytes = b"", *, an: AppConnection | None = None) -> bool:
+        """An alle Apps (Antworten nur an die fragende, app_link.py); ``an``: nur an diese Verbindung."""
         if header.get("type") == "CHECK":
             header = check_fuer_app(header)
         with self._app_lock:
-            return self._link.send(header, payload)
+            return self._link.send(header, payload, an=an)
 
     def _set_state(self, state: str, message: str) -> None:
         with self._lock:
@@ -1468,25 +1475,42 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._log(f"[kernel] App verbunden ({len(self.scene.records())} Teile geschickt)")
 
     def _on_app_disconnect(self, conn: AppConnection) -> None:
-        self._log("[kernel] App getrennt")
-        self._fail_pending("App-Verbindung getrennt")
-        self._feedback_verbindung_weg()  # V2-6
+        rest = len(self._link.verbindungen)
+        self._log(f"[kernel] App getrennt (Nr. {conn.number}{f', noch {rest} verbunden' if rest else ''})")
+        self._fail_pending("App-Verbindung getrennt", conn)
+        # V2-6: Ohne das Gerät, an dem Kevin spricht, spricht niemand mehr (I-2: nur dieses Gerät zählt)
+        if not self._link.connected or getattr(self, "_fb_conn", None) is conn:
+            self._feedback_verbindung_weg()
 
-    def _fail_pending(self, message: str) -> None:
+    def _fail_pending(self, message: str, conn: AppConnection | None = None) -> None:
+        """Offene Anfragen an die App beenden: alle (Kernel endet) oder die an ``conn`` (I-2: dieses Gerät ist weg);
+        Anfragen an alle Geräte erst, wenn keins mehr verbunden ist."""
         with self._lock:
-            pending = list(self._pending.values())
-            self._pending.clear()
+            if conn is None:
+                pending = list(self._pending.values())
+                self._pending.clear()
+            else:
+                ohne_app = not self._link.connected
+                weg = [rid for rid, slot in self._pending.items()
+                       if slot.get("conn") is conn or (slot.get("conn") is None and ohne_app)]
+                pending = [self._pending.pop(rid) for rid in weg]
         for slot in pending:
             slot["error"] = message
             slot["event"].set()
 
-    def _request(self, header: dict[str, Any], timeout_s: float,
-                 payload: bytes = b"") -> tuple[dict[str, Any], bytes, str | None]:
+    def _request(self, header: dict[str, Any], timeout_s: float, payload: bytes = b"", *,
+                 an: str = "aktiv") -> tuple[dict[str, Any], bytes, str | None]:
+        """Anfrage an die App, wartet auf die Antwort. I-2: ``an="aktiv"`` fragt nur das aktive Gerät (Bilder, Lagebild,
+        Dialoge), ``an="alle"`` alle Geräte (Ansicht), dann zählt die erste Antwort."""
         rid = f"k-{next(self._ids)}"
-        slot: dict[str, Any] = {"event": threading.Event(), "reply": None, "payload": b"", "error": None}
+        ziel = self._link.aktiv if an == "aktiv" else None
+        if an == "aktiv" and ziel is None:
+            return {}, b"", APP_NOT_CONNECTED
+        slot: dict[str, Any] = {"event": threading.Event(), "reply": None, "payload": b"", "error": None,
+                                "conn": ziel}
         with self._lock:
             self._pending[rid] = slot
-        if not self._send_app({**header, "id": rid}, payload):
+        if not self._send_app({**header, "id": rid}, payload, an=ziel):
             with self._lock:
                 self._pending.pop(rid, None)
             return {}, b"", APP_NOT_CONNECTED
@@ -1542,23 +1566,47 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if kind in ("ACK", "SCREENSHOT_RES", "ERROR", "ANIM_VIDEO_RES", "DOC_EXPORT_RES", "RENDER_RES",
                     "RENDER_SCENE", "LAGE") and reply_to:
             with self._lock:
-                slot = self._pending.pop(str(reply_to), None)
+                slot = self._pending.get(str(reply_to))
+                # I-2: Antworten nur vom gefragten Gerät (bei Anfragen an alle: die erste); ist es weg, zählt jede
+                gefragt = None if slot is None else slot.get("conn")
+                if slot is not None and (gefragt is None or gefragt is conn or gefragt.closed):
+                    self._pending.pop(str(reply_to), None)
+                else:
+                    slot = None
             if slot is not None:
                 slot["reply"] = header
                 slot["payload"] = payload
                 slot["event"].set()
             return
+        if kind in GERAET_BEDIENT:  # I-2: an diesem Gerät arbeitet Kevin gerade
+            self._link.bedient(conn)
+        if isinstance(kind, str) and kind.startswith("FEEDBACK_"):
+            self._fb_conn = conn  # I-2: Gerät, an dem gesprochen wird (Trennen beendet nur dessen Sitzung)
         if kind == "HELLO_APP":
-            conn.info = {k: header.get(k) for k in ("app_version", "bundle_id", "faehigkeiten")}
+            conn.info = {k: header.get(k) for k in ("app_version", "bundle_id", "faehigkeiten", "geraet")}
             self._log(f"[kernel] App meldet sich: {conn.info}")
+            # I-2: Dasselbe Gerät meldet sich neu (Neustart der App, neue Netzverbindung): Es ersetzt seine alte
+            # Verbindung. Apps ohne Gerätekennung (vor I-2) gelten je Bundle-ID als ein Gerät, wie bisher.
+            geraet = header.get("geraet")
+            if isinstance(geraet, dict) and isinstance(geraet.get("id"), str) and geraet["id"]:
+                schluessel = f"geraet:{geraet['id']}"
+            else:
+                schluessel = f"app:{header.get('bundle_id') or ''}"
+            self._link.gleiches_geraet_ersetzen(conn, schluessel)
             self._live_hello_app(conn, header)  # V2-5: Fähigkeiten an die Weiche, Agentenspur
         elif kind in LIVE_APP_NACHRICHTEN:  # V2-5: PARTS_REQ, NOCHMAL (LAGE ist eine Antwort, siehe oben)
             self._live_app_message(conn, kind, header)
+        elif kind == "AKTIV":
+            pass  # I-2: nur das aktive Gerät setzen (oben)
         elif kind == "CAMERA_SUGGEST":
             self.camera_suggest_from_app(header)
         elif kind == "SELECTION":
             with self._lock:
                 self._selection = {"run": header.get("run"), "refs": list(header.get("refs") or [])}
+        elif kind == "SETTINGS" and header.get("anlass") == "start" and any(
+                c is not conn for c in self._link.verbindungen):
+            # I-2: Die Vorgaben eines Geräts, das sich dazu verbindet, überschreiben nicht, was am anderen gilt
+            self._log(f"[kernel] SETTINGS beim Verbinden von Nr. {conn.number} übergangen: ein anderes Gerät ist da")
         elif kind == "SETTINGS":
             was = bool(self._settings.get("auto_run"))
             self.configure(auto_run=header.get("auto_run"), slow_ms=header.get("slow_ms"))

@@ -10,9 +10,11 @@ Version 1 (21.10.2026). Verbindlich für `kernel/src/kevcad_kernel/protocol.py` 
 
 - Unix-Socket. Der **Kernel-Server lauscht**, die App verbindet sich. Pfad: `AppInfo.kernelSocket`
   (`~/Library/Application Support/<bundle-id>/kernel.sock`), dem Kernel als `--socket` übergeben.
-- Eine Verbindung, beide Richtungen. Sobald die App sich verbindet (nicht erst nach `HELLO_APP`), schickt der Kernel
-  `HELLO`, `PROJECT` (falls offen), `STATUS`, `AGENT` und
+- Je App eine Verbindung, beide Richtungen. Sobald die App sich verbindet (nicht erst nach `HELLO_APP`), schickt der
+  Kernel `HELLO`, `PROJECT` (falls offen), `STATUS`, `AGENT` und
   ein `PART_UPSERT` für jedes aktuelle Teil, damit die App den vollen Stand hat.
+- Seit I-2 (PLAN-IPAD.md) bedient der Kernel mehrere Apps zugleich (Mac-App und iPad, das die Mac-App durchreicht).
+  Regeln im Abschnitt „I-2 Mehrere Geräte“ am Ende.
 - Einheiten: Millimeter, Grad für Winkel. Koordinatensystem rechtshändig, **Z nach oben** (wie build123d).
 
 ## Rahmen
@@ -1544,3 +1546,38 @@ Kevin.**
   sobald der Stand endet.
 - `view_command` mit `view`, `focus`, `visibility`, `section` oder `explode` und `project_open`, `project_new` des
   Agenten antworten ebenso, ohne die App zu fragen. Anmerkungen, Hervorhebungen und die Agentenspur bleiben sichtbar.
+
+## I-2 Mehrere Geräte
+
+Stand 06.11.2026 (PLAN-IPAD.md, Paket I-2). Der Kernel nimmt mehrere App-Verbindungen zugleich an. Das iPad kommt nicht
+selbst an den Unix-Socket: Die Mac-App reicht seine Rahmen über eine eigene Verbindung unverändert durch (Eingang und
+Kopplung folgen in I-2b). Für den Kernel ist jedes Gerät eine App-Verbindung wie die Mac-App.
+
+**Wer was bekommt**
+
+| Nachricht | geht an |
+|---|---|
+| Zustand (alles ohne `reply_to`: HELLO, PROJECT, STATUS, AGENT, RUN_*, PART_*, Prüfung, Stückliste …) | alle Verbindungen; die V2-5-Weiche (`delta-1`) führt ihren Stand je Verbindung |
+| Antwort (`reply_to`) | nur die Verbindung, die gefragt hat. Der Kernel stellt beim Lesen jeder `id` (Text) die Nummer der Verbindung voran (`"3:abc"`) und nimmt sie beim Antworten wieder ab; die App sieht ihre eigene `id`. Ist die fragende Verbindung weg, geht die Antwort an niemanden |
+| `PROJECT` als Antwort auf PROJECT_OPEN/PROJECT_NEW | die fragende Verbindung mit `reply_to`, alle anderen ohne (Zustand) |
+| Anfragen des Kernels, die genau eine Antwort brauchen (SCREENSHOT_REQ, LAGE_REQ, RENDER_*, DOC_EXPORT_REQ, ANIM_VIDEO_REQ, VERSION_BILD_REQ, Dialoge wie FREIGABE_ANFRAGE und PRINT_JOB_ASK) | nur das **aktive Gerät**; Antworten anderer Verbindungen auf diese `id` zählen nicht |
+| VIEW_CMD und ANIM_SEEK | alle Verbindungen (alle zeigen dasselbe); es zählt die erste Bestätigung |
+
+**Aktives Gerät:** die Verbindung, die zuletzt dazukam oder an der Kevin zuletzt etwas getan hat: `SELECTION`,
+`RUN_REQ`, `MEASURE_REQ`, `PROJECT_OPEN`, `PROJECT_NEW`, `EXPORT_REQ`, `CAMERA_SUGGEST`, `FEEDBACK_STAND`,
+`FEEDBACK_PAKET` oder die neue Nachricht `AKTIV`. Trennt sich das aktive Gerät, wird das zuletzt verbundene der übrigen
+aktiv. `status` (MCP) nennt die Geräte unter `geraete` (`nr`, `art`, `name`, `app`, `aktiv`).
+
+**App → Kernel, neu und additiv**
+
+| type / Feld | Bedeutung |
+|---|---|
+| `HELLO_APP.geraet` | optional `{"id": "…", "art": "mac" \| "ipad", "name": "iPad von Kevin"}`. `id` bleibt je Gerät und App gleich (über Neustarts). Meldet sich dieselbe `id` neu, trennt der Kernel die alte Verbindung. Ohne `geraet` (Apps vor I-2) gilt die Bundle-ID als Gerät: Eine neue Verbindung derselben App ersetzt die alte wie bisher |
+| `AKTIV` | ohne Felder: Kevin bedient dieses Gerät (Drehen, Zeigen, Tippen), höchstens einmal je Sekunde. Keine Antwort |
+| `SETTINGS.anlass` | optional `"start"` (Vorgaben beim Verbinden) oder fehlt (Kevin hat etwas geändert). Mit `"start"` übergeht der Kernel die Nachricht, wenn schon ein anderes Gerät verbunden ist: Ein dazukommendes iPad stellt nicht Auto-Lauf oder Inventar-Regel des Mac um |
+
+**Trennen:** Offene Anfragen an das getrennte Gerät enden sofort mit „App-Verbindung getrennt“; Anfragen an alle erst,
+wenn kein Gerät mehr verbunden ist. Eine laufende Sprachsitzung (V2-6) endet nur, wenn das Gerät geht, an dem gesprochen
+wird. Mehr als 8 Verbindungen trennt der Kernel (die älteste, die nicht aktiv ist).
+
+Tests: `kernel/tests/test_mehrere_geraete.py`.

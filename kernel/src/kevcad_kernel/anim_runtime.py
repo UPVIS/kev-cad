@@ -281,7 +281,9 @@ class AnimationRuntimeMixin:
                                           f"{a.dauer:g} s)"}
         if not self._link.connected:  # type: ignore[attr-defined]
             return {"ok": False, "error": APP_NOT_CONNECTED}
-        reply, _, error = self._request({"type": "ANIM_SEEK", "name": a.name, "zeit": float(zeit)}, 10)  # type: ignore[attr-defined]
+        # I-2: alle Geräte zeigen denselben Zeitpunkt
+        reply, _, error = self._request({"type": "ANIM_SEEK", "name": a.name, "zeit": float(zeit)}, 10,  # type: ignore[attr-defined]
+                                        an="alle")
         if error:
             return {"ok": False, "error": error}
         if not reply.get("ok", True):

@@ -1,6 +1,10 @@
 """Unix-Socket zur App (PROTOCOL.md): der Kernel lauscht, die App verbindet sich.
 
-- Immer nur eine App-Verbindung; eine neue ersetzt die alte.
+- Mehrere App-Verbindungen zugleich (PLAN-IPAD.md, I-2): die Mac-App und jedes iPad, das die Mac-App durchreicht.
+  Zustand geht an alle Verbindungen, Antworten nur an die fragende (die ``id`` einer Anfrage bekommt beim Lesen die
+  Nummer der Verbindung vorangestellt, ``send`` nimmt sie beim Antworten wieder ab), gezielte Anfragen des Kernels an
+  das aktive Gerät (zuletzt verbunden oder bedient). Meldet sich ein Gerät mit derselben Kennung neu, ersetzt die neue
+  Verbindung die alte.
 - Senden ist threadsicher und blockiert nie: Rahmen gehen in eine Warteschlange, ein eigener Faden schreibt. Hängt die
   App so lange, dass mehr als ``MAX_QUEUED_BYTES`` warten, wird die Verbindung getrennt.
 - ``seq`` zählt je Verbindung ab 1 (Reihenfolge der Warteschlange = Reihenfolge auf dem Draht).
@@ -28,6 +32,9 @@ from kevcad_kernel.protocol import FrameReader, encode_frame
 
 MAX_QUEUED_BYTES = 1 << 30
 SOCKET_PATH_MAX = 103  # macOS: sun_path hat 104 Byte inklusive Nullbyte
+MAX_VERBINDUNGEN = 8  # mehr Geräte sind nicht vorgesehen; darüber fliegt die älteste nicht aktive Verbindung
+# Antworten, die zugleich Zustand sind: Die fragende Verbindung bekommt sie mit reply_to, alle anderen ohne
+ZUSTAND_ANTWORTEN = frozenset({"PROJECT"})
 
 
 class AppConnection:
@@ -121,6 +128,9 @@ class AppConnection:
                     self.link._log(f"[app] Ungültiger Rahmen von der App: {exc!r}")
                     break
                 for header, payload in frames:
+                    rid = header.get("id")
+                    if isinstance(rid, str):  # I-2: Antwort findet so zur fragenden Verbindung zurück
+                        header["id"] = f"{self.number}:{rid}"
                     try:
                         self.link._on_message(self, header, payload)
                     except Exception as exc:  # noqa: BLE001
@@ -156,7 +166,8 @@ class AppLink:
         self._on_disconnect = on_disconnect or (lambda conn: None)
         self._log = log or (lambda line: print(line, file=sys.stderr, flush=True))
         self._server: socket.socket | None = None
-        self._conn: AppConnection | None = None
+        self._conns: list[AppConnection] = []  # aktivierte Verbindungen in der Reihenfolge des Verbindens
+        self._aktiv: AppConnection | None = None  # zuletzt bedient: bekommt gezielte Anfragen (Bild, Lagebild)
         self._lock = threading.RLock()
         self._closing = False
         self._count = 0
@@ -186,9 +197,10 @@ class AppLink:
     def close(self) -> None:
         with self._lock:
             self._closing = True
-            conn, self._conn = self._conn, None
+            conns, self._conns = list(self._conns), []
+            self._aktiv = None
             srv, self._server = self._server, None
-        if conn is not None:
+        for conn in conns:
             conn.close()
         if srv is not None:
             with contextlib.suppress(OSError):
@@ -213,43 +225,109 @@ class AppLink:
             with self._lock:
                 self._count += 1
                 conn = AppConnection(sock, self, self._count)
-                old = self._conn
-            if old is not None:
-                old.close()
             conn.start_writer()
             try:
                 self._on_connect(conn)  # schickt den Anfangsstand und ruft activate()
             except Exception as exc:  # noqa: BLE001
                 self._log(f"[app] Fehler beim Verbinden: {exc!r}")
-            if not conn.closed and self._conn is not conn:
+            if not conn.closed and conn not in self._conns:
                 self.activate(conn)
             conn.start_reader()
 
     # -- Verbindung ----------------------------------------------------------------------------------------------------
 
     def activate(self, conn: AppConnection) -> None:
+        """Verbindung nimmt ab jetzt am Zustand teil und wird das aktive Gerät: Wer eine App öffnet, arbeitet dort (wie
+        vor I-2, als die neue Verbindung die alte ersetzte)."""
+        ueberzaehlig: AppConnection | None = None
         with self._lock:
-            if not conn.closed and not self._closing:
-                self._conn = conn
+            if conn.closed or self._closing or conn in self._conns:
+                return
+            self._conns.append(conn)
+            self._aktiv = conn
+            if len(self._conns) > MAX_VERBINDUNGEN:
+                ueberzaehlig = next((c for c in self._conns if c is not self._aktiv and c is not conn), None)
+        if ueberzaehlig is not None:
+            self._log(f"[app] Mehr als {MAX_VERBINDUNGEN} Verbindungen: Nr. {ueberzaehlig.number} getrennt")
+            ueberzaehlig.close()
 
     def _closed(self, conn: AppConnection) -> None:
         with self._lock:
-            if self._conn is not conn:
+            if conn not in self._conns:
                 return
-            self._conn = None
+            self._conns.remove(conn)
+            if self._aktiv is conn:
+                self._aktiv = self._conns[-1] if self._conns else None
         self._on_disconnect(conn)
+
+    def bedient(self, conn: AppConnection) -> None:
+        """Kevin hat an diesem Gerät etwas getan: Es wird das aktive Gerät."""
+        with self._lock:
+            if conn in self._conns and not conn.closed:
+                self._aktiv = conn
+
+    def gleiches_geraet_ersetzen(self, conn: AppConnection, schluessel: str) -> None:
+        """Ein Gerät meldet sich neu (Neustart der App, neue Netzverbindung): ältere Verbindungen desselben Schlüssels
+        (Gerätekennung, ohne sie die Bundle-ID) trennen, damit nichts doppelt ankommt."""
+        with self._lock:
+            conn.info["schluessel"] = schluessel
+            alt = [c for c in self._conns if c is not conn and c.info.get("schluessel") == schluessel]
+        for c in alt:
+            self._log(f"[app] {schluessel} meldet sich neu: alte Verbindung Nr. {c.number} getrennt")
+            c.close()
 
     @property
     def connected(self) -> bool:
-        conn = self._conn
-        return conn is not None and not conn.closed
+        with self._lock:
+            return any(not c.closed for c in self._conns)
 
     @property
     def connection(self) -> AppConnection | None:
-        return self._conn
+        """Das aktive Gerät (zuletzt bedient); None ohne Verbindung."""
+        with self._lock:
+            conn = self._aktiv
+        return conn if conn is not None and not conn.closed else None
 
-    def send(self, header: dict[str, Any], payload: bytes = b"") -> bool:
-        conn = self._conn
-        if conn is None:
-            return False
-        return conn.send(header, payload)
+    aktiv = connection
+
+    @property
+    def verbindungen(self) -> list[AppConnection]:
+        with self._lock:
+            return [c for c in self._conns if not c.closed]
+
+    def geraete(self) -> list[dict[str, Any]]:
+        """Verbundene Geräte für das Lagebild (Nummer, Art, Name, App, aktiv)."""
+        with self._lock:
+            conns = [c for c in self._conns if not c.closed]
+            aktiv = self._aktiv
+        aus: list[dict[str, Any]] = []
+        for c in conns:
+            g = c.info.get("geraet") if isinstance(c.info.get("geraet"), dict) else {}
+            aus.append({"nr": c.number, "art": g.get("art") or "mac", "name": g.get("name"),
+                        "app": c.info.get("bundle_id"), "aktiv": c is aktiv})
+        return aus
+
+    def send(self, header: dict[str, Any], payload: bytes = b"", *, an: AppConnection | None = None) -> bool:
+        """Rahmen an die Apps. ``an``: nur diese Verbindung. Sonst: Antworten (``reply_to`` mit Verbindungsnummer) an die
+        fragende Verbindung, alles andere an alle."""
+        if an is not None:
+            return an in self.verbindungen and an.send(header, payload)
+        rt = header.get("reply_to")
+        if isinstance(rt, str):
+            nr, sep, original = rt.partition(":")
+            if sep and nr.isdigit():
+                conns = self.verbindungen
+                ziel = next((c for c in conns if c.number == int(nr)), None)
+                if ziel is None:
+                    return False  # die fragende Verbindung ist weg: die Antwort gehört niemand anderem
+                ok = ziel.send({**header, "reply_to": original}, payload)
+                if header.get("type") in ZUSTAND_ANTWORTEN:
+                    rest = {k: v for k, v in header.items() if k != "reply_to"}
+                    for c in conns:
+                        if c is not ziel:
+                            c.send(rest, payload)
+                return ok
+        ok = False
+        for conn in self.verbindungen:
+            ok = conn.send(header, payload) or ok
+        return ok

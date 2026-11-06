@@ -20,10 +20,11 @@ class FakeApp:
     """Minimale App: verbindet sich, sammelt Rahmen mit Empfangszeit, beantwortet VIEW_CMD und SCREENSHOT_REQ.
 
     V2-5: ``faehigkeiten`` meldet die App in HELLO_APP (ohne: alles wie bisher); ``lage`` ist die Antwort auf
-    LAGE_REQ (None: keine Antwort), ``lage_verzoegerung_s`` verzögert sie."""
+    LAGE_REQ (None: keine Antwort), ``lage_verzoegerung_s`` verzögert sie. I-2: ``geraet`` (Kennung, Art, Name) für
+    Tests mit mehreren Geräten."""
 
     def __init__(self, path: str, answer: bool = True, faehigkeiten: list[str] | None = None,
-                 lage: dict | None = None, lage_verzoegerung_s: float = 0.0) -> None:
+                 lage: dict | None = None, lage_verzoegerung_s: float = 0.0, geraet: dict | None = None) -> None:
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(path)
         self.frames: list[tuple[float, dict, bytes]] = []
@@ -39,6 +40,8 @@ class FakeApp:
         hallo = {"type": "HELLO_APP", "app_version": "test", "bundle_id": "de.upvis.kevcad.pytest"}
         if faehigkeiten is not None:
             hallo["faehigkeiten"] = list(faehigkeiten)
+        if geraet is not None:  # I-2: Kennung, Art und Name des Geräts (Mac, iPad)
+            hallo["geraet"] = dict(geraet)
         self.send(hallo)
 
     def send(self, header: dict, payload: bytes = b"") -> None:
