@@ -1371,7 +1371,7 @@ nummeriert 1 bis 4 in dieser Reihenfolge.
 - Reihenfolge der Wirkung wie in der Tabelle, `modus` nach den Kacheln. Unbekannte Werte: `ACK` mit `ok: false`, und die
   App ändert nichts (sie prüft alle Angaben, bevor sie etwas umsetzt).
 - Kommt im Fokus eine andere Kachel als `modell` dazu, wechselt die App in die Werkstatt; am Rand bleibt das Fenster
-  schmal, die Kacheln stehen dann übereinander. `zeigen` schiebt die Startübersicht weg. Eine fünfte Kachel verdrängt
+  schmal, die Kacheln stehen dann übereinander. Jeder Befehl schiebt die Startübersicht weg. Eine fünfte Kachel verdrängt
   die älteste außer dem Modell. `animation` bringt `modell` mit, denn die Bewegung sieht man dort.
 - `blatt` öffnet die Kachel `zeichnung`, `ansicht` die Kachel `ansicht`, wenn sie zu ist. Beides gilt nur, wenn es so ein
   Blatt bzw. so eine Ansicht gibt.

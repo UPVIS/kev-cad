@@ -167,6 +167,7 @@ struct Hauptfenster: View {
         .onReceive(model.$project.map { $0?.path }.removeDuplicates().dropFirst()) { _ in  // andere Blätter
             dokumente.bearbeiter.vergessen()
             dokumente.auswahl = nil
+            model.oberflaechenActions?.oberflaeche(.blatt(nil))
             dokumente.markiert = []
             dokumente.element = nil
         }

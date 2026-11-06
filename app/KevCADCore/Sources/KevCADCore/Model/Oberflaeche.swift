@@ -323,6 +323,7 @@ public struct FlaecheAuftrag: Equatable, Sendable {
             return .success(out)
         }
         let vorher = Set(zustand.kacheln)
+        tu(.uebersicht(false))  // die Startübersicht läge sonst über dem, was der Agent zeigt
 
         if let r = a["rand"]?.stringValue {
             if r == "aus" {
@@ -336,14 +337,12 @@ public struct FlaecheAuftrag: Equatable, Sendable {
         switch kacheln("ordnen") {
         case .failure(let f): return .failure(f)
         case .success(let liste?):
-            tu(.uebersicht(false))
             tu(.kachelnOrdnen(liste))
         case .success(nil): break
         }
         switch kacheln("zeigen") {
         case .failure(let f): return .failure(f)
         case .success(let liste?):
-            tu(.uebersicht(false))
             for k in liste { tu(.kachelZeigen(k)) }
         case .success(nil): break
         }
@@ -368,7 +367,6 @@ public struct FlaecheAuftrag: Equatable, Sendable {
             if g.stringValue == "aus" {
                 tu(.kachelGross(nil))
             } else if let k = kachel(g) {
-                tu(.uebersicht(false))
                 tu(.kachelGross(k))
             } else {
                 return .failure(.init("Kachel \(g.anzeige) gibt es nicht"))
@@ -377,10 +375,7 @@ public struct FlaecheAuftrag: Equatable, Sendable {
         if let n = a["ansicht"]?.stringValue {
             guard standardAnsichten.contains(n) else { return .failure(.init("Unbekannte Ansicht \(n)")) }
             tu(.zweiteAnsicht(n))
-            if !auftrag.stand.kacheln.contains(.ansicht) {
-                tu(.uebersicht(false))
-                tu(.kachelZeigen(.ansicht))
-            }
+            if !auftrag.stand.kacheln.contains(.ansicht) { tu(.kachelZeigen(.ansicht)) }
         }
         if let b = a["blatt"], b != .null {
             guard let blaetter, !blaetter.isEmpty else { return .failure(.init("Noch keine Zeichnungsblätter da")) }
@@ -396,10 +391,7 @@ public struct FlaecheAuftrag: Equatable, Sendable {
                 return .failure(.init("Blatt \(b.anzeige) gibt es nicht (\(blaetter.count) Blätter)"))
             }
             tu(.blatt(treffer.id))
-            if !auftrag.stand.kacheln.contains(.zeichnung) {
-                tu(.uebersicht(false))
-                tu(.kachelZeigen(.zeichnung))
-            }
+            if !auftrag.stand.kacheln.contains(.zeichnung) { tu(.kachelZeigen(.zeichnung)) }
         }
         if let m = a["modus"]?.stringValue {
             guard let modus = ArbeitsModus(rawValue: m) else { return .failure(.init("Unbekannter Modus \(m)")) }
