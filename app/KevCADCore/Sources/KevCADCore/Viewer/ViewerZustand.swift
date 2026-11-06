@@ -175,6 +175,8 @@ public final class ViewerStore: ObservableObject {
     @Published public var meldung: ViewerMeldung?
     @Published public var aufnahme: AufnahmeZustand = .keine
     @Published public var fotoGroesse: FotoGroesse = .doppelt
+    /// Platz oben im Viewport, über dem die Kopfleiste des Fensters schwebt (V2-9); der Achsenwürfel rückt darunter.
+    @Published public var obenFrei: CGFloat = 0
 
     static let hinweisKey = "viewer.hinweisleiste"
     static let hauchKey = "viewer.hauch"

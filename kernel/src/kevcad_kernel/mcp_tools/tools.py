@@ -268,20 +268,24 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
                           res)
 
     @tool("flaeche", "Oberfläche",
-          "Result tiles, mode and window edge of Kev CAD (PROTOCOL.md, Fläche).", VIEWER)
+          "Result tiles, sidebars and window edge of Kev CAD (PROTOCOL.md, Fläche).", VIEWER)
     async def flaeche(
         rand: Annotated[Literal["links", "rechts", "aus"] | None, Field(description="Window at the screen edge")] = None,
         ordnen: Annotated[list[Kachel] | None, Field(description="Exactly these tiles in this order")] = None,
         zeigen: Annotated[list[Kachel] | None, Field(description="Add these tiles or bring them to the front")] = None,
         schliessen: Annotated[list[Kachel | int] | Literal["alle"] | None, Field(description="Close tiles")] = None,
         gross: Annotated[Kachel | int | Literal["aus"] | None, Field(description="One tile fills the area")] = None,
-        modus: Annotated[Literal["fokus", "werkstatt"] | None, Field(description="Mode")] = None,
-        zeitleiste: Annotated[bool | None, Field(description="Timeline over the viewer in Fokus")] = None,
+        modus: Annotated[Literal["fokus", "werkstatt"] | None, Field(description=(
+            "Older: fokus = viewer alone, werkstatt = tiles and right sidebar"))] = None,
+        leiste_links: Annotated[bool | None, Field(description="Left sidebar with the objects")] = None,
+        leiste_rechts: Annotated[bool | None, Field(description="Right sidebar with properties and parameters")] = None,
+        zeitleiste: Annotated[bool | None, Field(description="Timeline over the viewer while it is alone")] = None,
         ansicht: Annotated[StandardView | None, Field(description="View direction of the second view")] = None,
         blatt: Annotated[int | str | None, Field(description="Sheet number, id or title")] = None,
     ) -> CallToolResult:
         args = {k: v for k, v in (("rand", rand), ("ordnen", ordnen), ("zeigen", zeigen), ("schliessen", schliessen),
-                                  ("gross", gross), ("modus", modus), ("zeitleiste", zeitleiste), ("ansicht", ansicht),
+                                  ("gross", gross), ("modus", modus), ("leiste_links", leiste_links),
+                                  ("leiste_rechts", leiste_rechts), ("zeitleiste", zeitleiste), ("ansicht", ansicht),
                                   ("blatt", blatt)) if v is not None}
         res = await t.work("stellt die Oberfläche ein", svc.view_command, "flaeche", args)
         err = fmt.service_error(res)

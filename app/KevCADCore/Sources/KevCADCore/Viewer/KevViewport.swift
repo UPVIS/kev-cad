@@ -32,15 +32,27 @@ public struct KevViewport: View {
                 OverlayCanvas(coordinator: coordinator, viewport: coordinator.controller)
                     .allowsHitTesting(false)
                 CameraFrameOverlay(store: cameras, onResize: onCameraResize)
-                AxisGizmo(viewport: coordinator.controller, coordinator: coordinator)
-                    .padding(.top, 10)
-                    .padding(.trailing, 12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                GizmoLage(viewer: model.viewer) {
+                    AxisGizmo(viewport: coordinator.controller, coordinator: coordinator)
+                }
                 // Auf die Größe des Viewports begrenzt: nichts darin darf ihn breiter machen
                 ViewerOberflaeche(viewer: model.viewer, model: model, coordinator: coordinator, groesse: geo.size)
                     .frame(width: geo.size.width, height: geo.size.height)
             }
         }
+    }
+}
+
+/// Achsenwürfel oben rechts, unter der schwebenden Kopfleiste des Fensters (`ViewerStore.obenFrei`).
+private struct GizmoLage<Inhalt: View>: View {
+    @ObservedObject var viewer: ViewerStore
+    @ViewBuilder let inhalt: () -> Inhalt
+
+    var body: some View {
+        inhalt()
+            .padding(.top, 10 + viewer.obenFrei)
+            .padding(.trailing, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
 }
 

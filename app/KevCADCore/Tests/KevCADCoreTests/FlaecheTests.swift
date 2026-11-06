@@ -37,7 +37,7 @@ final class FlaecheTests: XCTestCase {
         let a = try auftrag(try args(#"{"zeigen": ["druck"]}"#), z)
         XCTAssertEqual(a.stand.kacheln, [.modell, .stueckliste, .zuschnitt, .druck])
         XCTAssertEqual(a.gewichen, [.zeichnung])
-        XCTAssertEqual(a.meldung, "Werkstatt: 1 Modell, 2 Stückliste, 3 Zuschnitt, 4 Druck; Zeichnung musste weichen")
+        XCTAssertEqual(a.meldung, "Kacheln 1 Modell, 2 Stückliste, 3 Zuschnitt, 4 Druck · Objekte links, Eigenschaften rechts; Zeichnung musste weichen")
     }
 
     func testAmRandBleibtDieWerkstattNachDemZurueckkommen() {
@@ -75,11 +75,37 @@ final class FlaecheTests: XCTestCase {
         XCTAssertEqual(a.gewichen, [], "geschlossen ist nicht gewichen")
         a = try auftrag(try args(#"{"gross": 3}"#), z)
         XCTAssertEqual(a.stand.gross, .druck)
-        XCTAssertEqual(a.meldung, "Werkstatt: 1 Modell, 2 Zeichnung, 3 Druck (groß)")
+        XCTAssertEqual(a.meldung, "Kacheln 1 Modell, 2 Zeichnung, 3 Druck (groß) · Objekte links, Eigenschaften rechts")
         a = try auftrag(try args(#"{"schliessen": "alle", "modus": "fokus"}"#), z)
         XCTAssertEqual(a.stand.kacheln, [])
         XCTAssertEqual(a.stand.modus, .fokus)
-        XCTAssertEqual(a.meldung, "Fokus")
+        XCTAssertEqual(a.meldung, "Viewer allein · Objekte links")
+    }
+
+    /// V2-9: Leisten unabhängig von den Kacheln; das Modell groß heißt Viewer allein, die Kacheln bleiben offen.
+    func testLeistenUndModellGross() throws {
+        var z = OberflaechenZustand(kacheln: [.modell, .druck])
+        XCTAssertTrue(z.kachelflaeche)
+        XCTAssertTrue(z.leisteLinks)
+        XCTAssertFalse(z.leisteRechts)
+        z.anwenden(.kachelGross(.modell))
+        XCTAssertFalse(z.kachelflaeche, "das Modell groß füllt das Fenster")
+        XCTAssertEqual(z.kacheln, [.modell, .druck])
+        z.anwenden(.leisteRechts(true))
+        z.anwenden(.leisteLinks(false))
+        XCTAssertEqual(z.kurztext, "Viewer allein (1 weitere Kacheln eingeklappt) · Eigenschaften rechts")
+        let a = try auftrag(try args(#"{"leiste_links": true, "leiste_rechts": false, "gross": "aus"}"#), z)
+        XCTAssertTrue(a.stand.leisteLinks)
+        XCTAssertFalse(a.stand.leisteRechts)
+        XCTAssertTrue(a.stand.kachelflaeche)
+        XCTAssertEqual(FlaecheAuftrag.aus(try args(#"{"leiste_links": "ja"}"#), zustand: z, blaetter: nil),
+                       .failure(FlaecheFehler("leiste_links ist kein Wahrheitswert")))
+        // Übergang: fokus macht das Modell groß, ohne Kacheln zu schließen
+        var alt = OberflaechenZustand(kacheln: [.modell, .zeichnung])
+        alt.anwenden(.modus(.fokus))
+        XCTAssertEqual(alt.gross, .modell)
+        XCTAssertEqual(alt.kacheln, [.modell, .zeichnung])
+        XCTAssertEqual(alt.modus, .fokus)
     }
 
     func testFalscheAngabenAendernNichts() throws {

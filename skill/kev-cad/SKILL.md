@@ -25,7 +25,7 @@ Kernsatz für die tägliche Arbeit. In Claude Code alle dreizehn mit EINEM ToolS
 | `execute(code)` | Python im Namensraum des letzten Laufs (Geometrie untersuchen, ohne model.py zu ändern) |
 | `parts(filter, stueckliste)` | Teile kurz oder je Baugruppe ausführlich; Stückliste mit Zuschnitt und Einkauf |
 | `measure(refs, show)` | exakt messen; ohne refs Kevins Auswahl („das hier“, „diese Bohrung“) |
-| `view(…)` | Kamera, Darstellung, Fokus, Sichtbarkeit, Schnitt, Hervorheben, Anmerkungen, Kacheln und Modus in einem Aufruf |
+| `view(…)` | Kamera, Darstellung, Fokus, Sichtbarkeit, Schnitt, Hervorheben, Anmerkungen, Kacheln und Leisten in einem Aufruf |
 | `pruefen(thema)` | Prüfergebnis im Endstand; `thema="bedingungen"` oder `"montage"` |
 | `ansichten(…)` | Bilder zur eigenen Analyse; `kevin=true` genau Kevins Ansicht (nur auf seinen Wunsch) |
 | `katalog(suche, art, id)` | Lagerteile suchen, ein Teil im Detail, `art="material"` für Materialien |

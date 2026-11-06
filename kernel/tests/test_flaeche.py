@@ -152,6 +152,15 @@ def test_fokus_steht_knapp_im_status():
         == "Fläche: Fokus, Zeitleiste an, Fenster am linken Rand"
     assert flaeche_zeile({"modus": "werkstatt", "kacheln": []}) == "Fläche: Werkstatt, keine Kachel"
     assert flaeche_zeile(None) is None
+    # V2-9: Leisten statt Modi
+    assert flaeche_zeile({"modus": "fokus", "leiste_links": True, "leiste_rechts": False, "kacheln": ["modell"],
+                          "zeitleiste": False}) == "Fläche: Viewer allein, Objekte links"
+    assert flaeche_zeile({"modus": "werkstatt", "leiste_links": False, "leiste_rechts": True,
+                          "kacheln": ["modell", "druck"], "gross": None, "rand": "rechts", "zeitleiste": False}) \
+        == "Fläche: 1 Modell, 2 Druck, Eigenschaften rechts, Fenster am rechten Rand"
+    assert flaeche_zeile({"modus": "fokus", "leiste_links": False, "leiste_rechts": False,
+                          "kacheln": ["modell", "druck"], "gross": "modell", "zeitleiste": True}) \
+        == "Fläche: Viewer allein (1 Kacheln eingeklappt), Zeitleiste an, keine Leiste"
 
 
 def test_aeltere_app_bekommt_klaren_fehler_und_keinen_befehl(tmp):

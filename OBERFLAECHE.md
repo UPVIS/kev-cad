@@ -46,15 +46,15 @@ Richtung tauscht diese Datei und drei eigens gezeichnete Bausteine: `GraphitGrun
 
 | Baustein | Datei | Zweck |
 |---|---|---|
-| `KevKnopfStil` (`rund`, `text`, `breit`, `leise`), `SymbolKnopf`, `AufnahmeKnopf` | Gestaltung/Knopf.swift | Knöpfe; echte SwiftUI-Knöpfe, daher Tastatur, Fokusring (Lichtblau) und VoiceOver |
-| `ModusUmschalter` | Gestaltung/Knopf.swift | Fokus/Werkstatt, auch Blickrichtung der zweiten Ansicht |
+| `KevKnopfStil` (`rund`, `kopf`, `text`, `breit`, `leise`), `SymbolKnopf`, `AufnahmeKnopf` | Gestaltung/Knopf.swift | Knöpfe; echte SwiftUI-Knöpfe, daher Tastatur, Fokusring (Lichtblau) und VoiceOver |
+| `ModusUmschalter` | Gestaltung/Knopf.swift | Blickrichtung der zweiten Ansicht (bis V2-9 auch Fokus/Werkstatt) |
 | `Tastenkappe`, `TastenHinweis` | Gestaltung/Knopf.swift | Tasten in Hinweisen, mit gesprochenem Namen für VoiceOver |
 | `GliederungsZeile` | Gestaltung/Zeilen.swift | Zeile der Gliederung: Pfeil, Name, Anzahl, Punkt bei Befund oder Markierung, Umbenennen im Feld |
 | `EigenschaftsFeld` | Gestaltung/Zeilen.swift | Titel, Wert, Einheit oder „vorher …“ in Messing; bearbeitbar mit Zeilenschalter, esc verwirft |
 | `AbschnittTitel` | Gestaltung/Zeilen.swift | Überschrift in Spalten und Karten |
 | `KachelRahmen`, `KachelNummer` | Gestaltung/Rahmen.swift | Kachel mit Nummer, Titel, Untertitel, „groß“, „schließen“; durchsichtig für den Viewer |
 | `OverlayKarte` | Gestaltung/Rahmen.swift | Karte über allem (Startübersicht), mit Unschärfe dahinter |
-| `Statuszeile`, `SprechKnopf` | Gestaltung/Rahmen.swift | Zeile unten in der Werkstatt: Sprechen, zuletzt Gesagtes, Agent, Stand |
+| `Statuszeile`, `SprechKnopf` | Gestaltung/Rahmen.swift | Zeile mit Sprechen, zuletzt Gesagtem, Agent und Stand; seit V2-9 nur im Gestaltungsmuster, der Sprechknopf im schmalen Fenster |
 | `GraphitGrund`, `Sprechrahmen`, `AtmenderPunkt` | Gestaltung/Rahmen.swift | Grund des Fensters, roter Rahmen beim Sprechen, Punkt „läuft gerade“ |
 
 Text, der direkt im Bild steht, bekommt `textImBild()` (weicher Schatten). Die Musterseite aller Bausteine zeigt die App
@@ -86,13 +86,27 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   Entwurf an.
 - `KEVCAD_PROJECTS_DIR` setzt den Projektordner für App und Kernel (Testvarianten schreiben so nicht in Kevins Ordner).
 
-## 4. Fokus und Werkstatt
+## 4. Viewer, Leisten und Kopfleiste
 
-- **Fokus** (⌘1): Viewer über die ganze Fläche unter der Kopfleiste. Links die Gliederung leise im Bild, unten Kevins
-  Live-Text (sobald er spricht), rechts unten die Agentenspur. Keine Tafeln. Die Zeitleiste steht nur auf Zuruf (⌃⌘T,
-  `view(zeitleiste=true)`) oder beim Abspielen über dem Viewer; sie liegt darüber, damit der Viewer seine Größe behält.
-- **Werkstatt** (⌘2): links eine Spalte mit Objekten (Suche ab 13 Teilen) und Eigenschaften der Auswahl, rechts die
-  Kachelfläche, unten die Statuszeile.
+Seit V2-9 (Kevin, 06.11.2026: „den Unterschied zwischen Fokus und Werkstatt müssen wir nicht machen … Es gibt ja eine
+linke und eine rechte Seitebar“) gibt es keine Modi mehr. `OberflaechenZustand` führt `leisteLinks`, `leisteRechts` und die
+Kacheln; ob Kacheln nebeneinander stehen (`kachelflaeche`), folgt daraus: andere Kacheln als das Modell offen und das Modell
+nicht groß. `modus` ist nur noch abgeleitet (für ältere Agenten und LAGE), `.modus(.fokus)` bzw. `.modus(.werkstatt)` gehen
+weiter.
+
+- **Viewer allein**: Er reicht bis an die Oberkante, die Kopfleiste schwebt ohne eigenen Grund darüber. Links die
+  Gliederung leise im Bild (linke Leiste an), unten Kevins Live-Text (sobald er spricht), rechts unten die Agentenspur. Keine
+  Tafeln. Die Zeitleiste steht nur auf Zuruf (⌃⌘T, `view(zeitleiste=true)`) oder beim Abspielen über dem Viewer; sie liegt
+  darüber, damit der Viewer seine Größe behält. Der Achsenwürfel rückt unter die Kopfleiste (`ViewerStore.obenFrei`).
+- **Kacheln nebeneinander**: links die Objekte als Spalte (linke Leiste an, Suche ab 13 Teilen), daneben die Kachelfläche.
+  Live-Text und Agentenspur stehen über der Kachel „Modell“, fehlt sie, über der Kachelfläche. Keine Statuszeile mehr.
+- **Rechte Leiste** (in beiden Fällen): Eigenschaften der Auswahl und Maße des Modells als Insel rechts; der Viewer endet
+  davor, damit Einpassen und Achsenwürfel frei bleiben. Leisten brauchen ein Fenster ab 760 pt.
+- **Kopfleiste**: neben der Ampel Schalter der linken Leiste und Projektname, rechts die Darstellung wie in Blender
+  (Röntgen als Schalter, Drahtgitter, Solid, Material, Technisch, Optionen im Pfeil; ab 900 pt), Foto, Video, Messen,
+  Isolieren, An den Rand, ganz außen „Kacheln nebeneinander“ (nur mit weiteren Kacheln) und der Schalter der rechten
+  Leiste. Jede Gruppe liegt in einer Kapsel (`GF.insel`), damit sie auch über dem weißen Grund von Technisch lesbar ist. Die
+  Knöpfe darin sind 26 pt (`KnopfForm.kopf`). Leere Stellen ziehen das Fenster (`FensterZiehen`), ein Doppelklick zoomt.
 - **Gliederung**: nur Gruppen und Objekte. Klick wählt, ⇧ oder ⌘ nimmt dazu, Doppelklick oder Zeilenschalter benennt
   um, ↑ ↓ wandern, ← → klappen. Gruppen mit gewählten Teilen öffnen sich von selbst. Umbenennen ändert die Namen in
   model.py (`ModellQuelle.benenneUm`): genau die Zeichenketten in `show()`, `verbauen(name=…)`, `befestigt(…)`; entsteht
@@ -112,10 +126,11 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   schickt alles an den Agenten, esc verwirft es. ↩ wirkt im ganzen Fenster, nur Textfelder und Dialoge gehen vor. Während
   Kevin spricht, passt ein Lauf die Ansicht nicht ein. Erkannt wird mit Wortlaut, Rückfall ist Apples Erkennung.
 - Der Viewer wird nie neu angelegt: Er steht an fester Stelle im Ansichtsbaum, nur sein Rahmen wechselt (ohne
-  Animation). Er kommt erst nach dem ersten Bild dazu, damit Metal das Fenster nicht aufhält. Verdeckt (Werkstatt ohne
-  Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`). Seine runden Ecken in der Werkstatt setzt die Metal-Ebene
+  Animation). Er kommt erst nach dem ersten Bild dazu, damit Metal das Fenster nicht aufhält. Verdeckt (Kacheln ohne
+  Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`). Seine runden Ecken neben Kacheln setzt die Metal-Ebene
   selbst (`cornerRadius`), kein `.clipShape`: Eine Formmaske zwingt das Fenstersystem, jedes Bild abseits zusammenzusetzen.
-- Die Werkstatt bleibt nach dem ersten Öffnen eingehängt und wird im Fokus nur ausgeblendet, mit den Maßen von zuletzt.
+- Die Kachelfläche bleibt nach dem ersten Öffnen eingehängt und wird ohne Kacheln nur ausgeblendet, mit den Maßen von
+  zuletzt.
   So baut das Umschalten keine Tabellen ab und auf, und beim Schieben an den Rand wird nichts neu vermessen.
 
 ## 5. Kacheln
@@ -138,8 +153,8 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   Richtung und nach jedem Kamerabefehl des Agenten: `view(focus=…)` zeigt dasselbe Ziel aus ihrer Richtung,
   `view(standard=…)` oder `fit` wieder alles. Ein zweiter echter Viewport hätte auf dem Hauptfaden gezeichnet und alle
   Körper ein zweites Mal hochgeladen; dafür bleibt die Ansicht ein Bild ohne Maus.
-- Der Agent stellt die Fläche über `view` (PROTOCOL.md, „Fläche“, `VIEW_CMD flaeche`), Skill `kacheln.md`. Eine Kachel im
-  Fokus führt in die Werkstatt; am Rand bleibt das Fenster schmal und die Kacheln stehen übereinander.
+- Der Agent stellt die Fläche über `view` (PROTOCOL.md, „Fläche“, `VIEW_CMD flaeche`), Skill `kacheln.md`. Eine Kachel holt
+  die Kachelfläche dazu; am Rand bleibt das Fenster schmal und die Kacheln stehen übereinander.
 - Wer `ProjectWindowState.bereich` setzt (Sprünge aus Stückliste, Teilebaum, Menüs, Selbsttests), holt die passende
   Kachel nach vorn; umgekehrt folgt `bereich` der aktiven Kachel, damit die Kürzel der Bereiche passen.
 - Alles über `OberflaechenActions` (Befehle `Oberflaechenbefehl`), damit Sprache (V2-6) und Agent (V2-7) es auslösen.
@@ -157,8 +172,8 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
 ## 6. An den Rand
 
 ⌃⌥→ bzw. ⌃⌥← (oder der Knopf oben rechts): Das Fenster wird 460 pt breit, so hoch wie der sichtbare Bildschirm, am
-rechten bzw. linken Rand, und zeigt den Fokus (unter 640 pt rückt er zusammen: ohne Gliederung, Agent und Sprechknopf
-unten). Noch einmal stellt Größe, Lage und Modus von vorher wieder her. Die Bewegung läuft 0,3 s über die
+rechten bzw. linken Rand, und zeigt den Viewer allein ohne rechte Leiste (unter 640 pt rückt er zusammen: ohne Gliederung,
+Agent und Sprechknopf unten). Noch einmal stellt Größe, Lage, rechte Leiste und Kacheln von vorher wieder her. Die Bewegung läuft 0,3 s über die
 Fensteranimation von AppKit. Beim Beenden geht das Fenster ohne Animation zurück.
 
 ## 7. Menüs und Tasten
@@ -169,12 +184,13 @@ gelten weiter.
 
 | Taste | Wirkung |
 |---|---|
-| ⌘1, ⌘2 | Fokus, Werkstatt |
+| ⌘1, ⌘2 | Objekte links, Eigenschaften rechts ein und aus |
+| ⌘3 | nur das Modell bzw. Kacheln wieder nebeneinander (nur mit weiteren Kacheln) |
 | ⌃⌥→, ⌃⌥← | schmal an den rechten bzw. linken Rand, noch einmal zurück |
 | ⌘N, ⌘O, ⇧⌘O | neues leeres Projekt, Öffnen, letzte Projekte zeigen |
 | ⇧⌘S | Entwurf sichern bzw. Projekt umbenennen |
 | ⌃⌘1 bis ⌃⌘0 | Kachel Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details, Druck, Animation; Bauplan und Rendern im Menü (⌥⌘R) |
-| ⌃⌘T | Zeitleiste im Fokus zeigen und ausblenden |
+| ⌃⌘T | Zeitleiste über dem Viewer zeigen und ausblenden |
 | ⌥⌘1 bis ⌥⌘4 | Kachel 1 bis 4 groß und zurück |
 | ⇧⌘W | aktive Kachel schließen |
 | V | Sprechen an und aus; aus hält an, die Sitzung bleibt offen (im Zeichnungsblatt bleibt V das Auswahlwerkzeug) |

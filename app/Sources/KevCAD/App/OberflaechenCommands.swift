@@ -17,8 +17,8 @@ struct ModellUntermenues: View {
 }
 
 /// Menüs der V2-Oberfläche (OBERFLAECHE.md, Abschnitt 7):
-/// - Darstellung (oben): Fokus ⌘1, Werkstatt ⌘2, schmal an den rechten bzw. linken Rand ⌃⌥→ / ⌃⌥←, letzte Projekte
-///   ⇧⌘O.
+/// - Darstellung (oben): Objekte links ⌘1, Eigenschaften rechts ⌘2, Kacheln nebeneinander bzw. nur das Modell ⌘3
+///   (V2-9 statt Fokus und Werkstatt), schmal an den rechten bzw. linken Rand ⌃⌥→ / ⌃⌥←, letzte Projekte ⇧⌘O.
 /// - Kacheln: Kachel zeigen (⌃⌘1 bis ⌃⌘0), Kachel 1 bis 4 groß (⌥⌘1 bis ⌥⌘4), alle einordnen, aktive schließen ⇧⌘W.
 /// - Agent: Sprechen V (nicht in Textfeldern, nicht im Zeichnungsblatt; dort ist V das Auswahlwerkzeug), Fertig, Verwerfen.
 /// Alles ruft `OberflaechenActions`, wie später Sprache und Agent.
@@ -47,12 +47,21 @@ struct OberflaechenCommands: Commands {
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            Button("Fokus") { a?.setzeModus(.fokus) }
-                .keyboardShortcut("1", modifiers: .command)
-                .disabled(!vorne)
-            Button("Werkstatt") { a?.setzeModus(.werkstatt) }
-                .keyboardShortcut("2", modifiers: .command)
-                .disabled(!vorne)
+            Button(oberflaeche.leisteLinks ? "Objekte ausblenden" : "Objekte einblenden") {
+                a?.setzeLeisteLinks(!oberflaeche.leisteLinks)
+            }
+            .keyboardShortcut("1", modifiers: .command)
+            .disabled(!vorne)
+            Button(oberflaeche.leisteRechts ? "Eigenschaften ausblenden" : "Eigenschaften einblenden") {
+                a?.setzeLeisteRechts(!oberflaeche.leisteRechts)
+            }
+            .keyboardShortcut("2", modifiers: .command)
+            .disabled(!vorne)
+            Button(oberflaeche.kachelflaeche ? "Nur das Modell" : "Kacheln nebeneinander") {
+                a?.vergroessereKachel(oberflaeche.kachelflaeche ? .modell : nil)
+            }
+            .keyboardShortcut("3", modifiers: .command)
+            .disabled(!vorne || !oberflaeche.kacheln.contains { $0 != .modell })
             Divider()
             Button(oberflaeche.rand == .rechts ? "Zurück vom rechten Rand" : "Schmal an den rechten Rand") {
                 a?.setzeRand(oberflaeche.rand == .rechts ? nil : .rechts)
@@ -82,7 +91,7 @@ struct OberflaechenCommands: Commands {
             Button("Modell") { a?.zeigeKachel(.modell) }
                 .disabled(!vorne)
             Divider()
-            Button(oberflaeche.zeitleiste ? "Zeitleiste im Fokus ausblenden" : "Zeitleiste im Fokus zeigen") {
+            Button(oberflaeche.zeitleiste ? "Zeitleiste im Viewer ausblenden" : "Zeitleiste im Viewer zeigen") {
                 a?.oberflaeche(.zeitleiste(!oberflaeche.zeitleiste))
             }
             .keyboardShortcut("t", modifiers: [.command, .control])
@@ -104,7 +113,7 @@ struct OberflaechenCommands: Commands {
                 if let aktiv = oberflaeche.aktiv { a?.schliesseKachel(aktiv) }
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
-            .disabled(oberflaeche.aktiv == nil || oberflaeche.modus != .werkstatt)
+            .disabled(oberflaeche.aktiv == nil || !oberflaeche.kachelflaeche)
         }
 
         CommandMenu("Agent") {

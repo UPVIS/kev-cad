@@ -8,7 +8,7 @@ import SwiftUI
 /// Tastatureingaben: alles über `OberflaechenActions`, wie es später Sprache und Agent auslösen.
 ///
 /// Misst die Zeit vom Prozessstart bis zum bedienbaren Fenster und bis zum leeren Projekt, die längste Pause des
-/// Hauptfadens beim Umschalten Fokus/Werkstatt, beim Öffnen von Kacheln und beim Schieben an den Rand. Fotografiert
+/// Hauptfadens beim Umschalten der Leisten und Kacheln, beim Öffnen von Kacheln und beim Schieben an den Rand. Fotografiert
 /// jeden Zustand (mit `KEVCAD_SELFTEST_FOTO_AUSSEN=1` von außen per `screencapture -l`, Auftrag in
 /// `foto-auftrag.txt`). `KEVCAD_SELFTEST_PROJEKT` öffnet danach ein Projekt mit Teilen. Ergebnis in
 /// `selftest-oberflaeche.txt` unter `KEVCAD_SELFTEST_AUSGABE`; `KEVCAD_SELFTEST_QUIT=1` beendet die App danach.
@@ -113,9 +113,10 @@ enum OberflaechenSelbsttest {
             return messer.stop()
         }
         let a = model.oberflaechenActions
-        // Modus und Kacheln sind gemerkt: jeder Lauf beginnt gleich
+        // Leisten und Kacheln sind gemerkt: jeder Lauf beginnt gleich
         a?.ordneKacheln([.modell])
-        a?.setzeModus(.fokus)
+        a?.setzeLeisteLinks(true)
+        a?.setzeLeisteRechts(false)
 
         // 1. Start
         _ = await warte(10) { erschienen != nil && bedienbar != nil }
@@ -147,7 +148,7 @@ enum OberflaechenSelbsttest {
         }
         await foto("01-start")
 
-        // 2. Übersicht wegschieben, Fokus leer
+        // 2. Übersicht wegschieben, Viewer leer
         a?.zeigeUebersicht(false)
         pruefe(!o.uebersicht, "Startübersicht weggeschoben")
         await foto("02-fokus-leer")
@@ -175,15 +176,15 @@ enum OberflaechenSelbsttest {
             let t = f.hitTest(NSPoint(x: r.midX, y: f.bounds.height - r.midY))
             return t.map { String(describing: type(of: $0)) } ?? "nichts"
         }
-        notiere("Klick im Viewer (Fokus): \(treffer())")
+        notiere("Klick im Viewer (allein): \(treffer())")
 
-        // 4. Werkstatt
-        var ms = await haenger(0.8) { a?.setzeModus(.werkstatt) }
-        pruefe(o.modus == .werkstatt, "Werkstatt an")
-        notiere(String(format: "Werkstatt zum ersten Mal aufbauen: längste Pause %.0f ms", ms))
+        // 4. Rechte Leiste (Eigenschaften)
+        var ms = await haenger(0.8) { a?.setzeLeisteRechts(true) }
+        pruefe(o.leisteRechts, "Eigenschaften rechts an")
+        notiere(String(format: "Rechte Leiste zum ersten Mal aufbauen: längste Pause %.0f ms", ms))
         if let erst = model.parts.first { model.actions?.select([erst.id]) }
-        notiere("Klick im Viewer (Werkstatt): \(treffer())")
-        await foto("04-werkstatt")
+        notiere("Klick im Viewer (mit rechter Leiste): \(treffer())")
+        await foto("04-leiste-rechts")
 
         // 5. Kacheln
         ms = await haenger(1.0) { a?.zeigeKachel(.zeichnung) }
@@ -219,12 +220,15 @@ enum OberflaechenSelbsttest {
         a?.schliesseKachel(.material)
         await pause(0.5)
 
-        // 6. Zurück in den Fokus, Sprechen
-        ms = await haenger(0.8) { a?.setzeModus(.fokus) }
-        pruefe(ms < 250, String(format: "Umschalten Werkstatt → Fokus mit Kacheln: längste Pause %.0f ms", ms))
-        ms = await haenger(0.8) { a?.setzeModus(.werkstatt) }
-        pruefe(ms < 250, String(format: "Umschalten Fokus → Werkstatt mit Kacheln: längste Pause %.0f ms", ms))
-        a?.setzeModus(.fokus)
+        // 6. Nur das Modell und zurück, Sprechen
+        ms = await haenger(0.8) { a?.vergroessereKachel(.modell) }
+        pruefe(!o.kachelflaeche, "nur das Modell, Kacheln eingeklappt")
+        pruefe(ms < 250, String(format: "Umschalten Kacheln → nur das Modell: längste Pause %.0f ms", ms))
+        ms = await haenger(0.8) { a?.vergroessereKachel(nil) }
+        pruefe(o.kachelflaeche, "Kacheln wieder nebeneinander")
+        pruefe(ms < 250, String(format: "Umschalten nur das Modell → Kacheln: längste Pause %.0f ms", ms))
+        a?.vergroessereKachel(.modell)
+        a?.setzeLeisteRechts(false)
         await pause(0.5)
         a?.setzeSprechen(true)
         a?.oberflaeche(.sprechText("Den Griff hätte ich gern höher, so ungefähr bis hier, wo der Strich ist."))

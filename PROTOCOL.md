@@ -1374,10 +1374,13 @@ nummeriert 1 bis 4 in dieser Reihenfolge.
 | `flaeche` | alles optional: `rand` (`links` \| `rechts` \| `aus`), `ordnen` (Liste von Kacheln: genau diese, Reihenfolge = Nummern), `zeigen` (Liste: anfügen oder nach vorn holen, die letzte wird aktiv), `schliessen` (Liste von Kacheln oder Nummern, oder `alle`), `gross` (Kachel, Nummer oder `aus`), `modus` (`fokus` \| `werkstatt`), `zeitleiste` (bool), `ansicht` (Standardansicht wie in `view`: Blickrichtung der Kachel `ansicht`), `blatt` (Nummer ab 1, Kennung oder Titel: Blatt der Kachel `zeichnung`) |
 | `projekt_name` | `name`: siehe unten |
 
-- Reihenfolge der Wirkung wie in der Tabelle, `modus` nach den Kacheln. Unbekannte Werte: `ACK` mit `ok: false`, und die
-  App ändert nichts (sie prüft alle Angaben, bevor sie etwas umsetzt).
-- Kommt im Fokus eine andere Kachel als `modell` dazu, wechselt die App in die Werkstatt; am Rand bleibt das Fenster
-  schmal, die Kacheln stehen dann übereinander. Jeder Befehl schiebt die Startübersicht weg. Eine fünfte Kachel verdrängt
+- Reihenfolge der Wirkung wie in der Tabelle, `modus` und die Leisten nach den Kacheln. Unbekannte Werte: `ACK` mit
+  `ok: false`, und die App ändert nichts (sie prüft alle Angaben, bevor sie etwas umsetzt).
+- **Leisten statt Modi (V2-9, additiv):** `leiste_links` (Objekte) und `leiste_rechts` (Eigenschaften und Maße des
+  Modells), je `true` oder `false`. Kacheln stehen nebeneinander, sobald mehr als das Modell offen ist und das Modell
+  nicht groß ist; sonst füllt der Viewer das Fenster. `modus` bleibt als Übergang: `fokus` macht das Modell groß und
+  schließt die rechte Leiste (die übrigen Kacheln bleiben offen), `werkstatt` ordnet alle Kacheln ein und öffnet die
+  rechte Leiste. Am Rand bleibt das Fenster schmal, die Kacheln stehen dann übereinander. Jeder Befehl schiebt die Startübersicht weg. Eine fünfte Kachel verdrängt
   die älteste außer dem Modell. `animation` bringt `modell` mit, denn die Bewegung sieht man dort.
 - `blatt` öffnet die Kachel `zeichnung`, `ansicht` die Kachel `ansicht`, wenn sie zu ist. Beides gilt nur, wenn es so ein
   Blatt bzw. so eine Ansicht gibt.
@@ -1385,10 +1388,12 @@ nummeriert 1 bis 4 in dieser Reihenfolge.
   steht sie dort von selbst. In der Werkstatt ist sie die Kachel `animation`.
 - `ACK.message`: knapp der neue Stand, etwa „Werkstatt: 1 Modell, 2 Druck“; verdrängte Kacheln stehen dahinter.
 
-`LAGE.flaeche` (immer vollständig):
+`LAGE.flaeche` (immer vollständig; `leiste_links` und `leiste_rechts` seit V2-9, `modus` daraus abgeleitet:
+`werkstatt`, wenn Kacheln nebeneinander stehen oder die rechte Leiste offen ist):
 
 ```json
-"flaeche": {"modus": "werkstatt", "kacheln": ["modell", "zeichnung", "druck"], "gross": null, "aktiv": "druck",
+"flaeche": {"modus": "werkstatt", "leiste_links": true, "leiste_rechts": false,
+            "kacheln": ["modell", "zeichnung", "druck"], "gross": null, "aktiv": "druck",
             "rand": null, "zeitleiste": false, "ansicht": "top",
             "blatt": {"id": "b-2", "titel": "Rohr", "nr": 2, "von": 5}}
 ```

@@ -128,6 +128,8 @@ enum Gestaltung {
         static let feld: CGFloat = 26
         static let feldTitel: CGFloat = 78
         static let knopf: CGFloat = 30
+        /// Knöpfe in den Kapseln der schwebenden Kopfleiste (V2-9)
+        static let kopfKnopf: CGFloat = 26
         static let knopfText: CGFloat = 28
         static let taste: CGFloat = 20
         static let kachelKopf: CGFloat = 40

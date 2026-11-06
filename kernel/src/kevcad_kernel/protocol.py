@@ -2803,8 +2803,9 @@ def _flaeche_args_fehler(a: dict[str, Any]) -> list[str]:
         out.append(f"VIEW_CMD flaeche: modus {a['modus']!r} unbekannt")
     if "rand" in a and a["rand"] not in (*RAENDER, "aus"):
         out.append(f"VIEW_CMD flaeche: rand {a['rand']!r} unbekannt")
-    if "zeitleiste" in a and not isinstance(a["zeitleiste"], bool):
-        out.append("VIEW_CMD flaeche: zeitleiste kein Wahrheitswert")
+    for feld in ("zeitleiste", "leiste_links", "leiste_rechts"):
+        if feld in a and not isinstance(a[feld], bool):
+            out.append(f"VIEW_CMD flaeche: {feld} kein Wahrheitswert")
     return out
 
 
@@ -2825,6 +2826,9 @@ def _lage_flaeche_fehler(f: Any) -> list[str]:
         out.append(f"LAGE: flaeche.rand {f['rand']!r} unbekannt")
     if not isinstance(f.get("zeitleiste"), bool):
         out.append("LAGE: flaeche.zeitleiste kein Wahrheitswert")
+    for feld in ("leiste_links", "leiste_rechts"):  # V2-9, fehlen bei Apps davor
+        if feld in f and not isinstance(f[feld], bool):
+            out.append(f"LAGE: flaeche.{feld} kein Wahrheitswert")
     return out
 
 

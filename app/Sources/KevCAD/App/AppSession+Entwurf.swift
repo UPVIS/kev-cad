@@ -162,21 +162,27 @@ extension AppSession {
         }
     }
 
-    // MARK: Modus und Kacheln merken
+    // MARK: Leisten und Kacheln merken
 
-    static let modusSchluessel = "oberflaeche.modus"
+    static let leistenSchluessel = "oberflaeche.leisten"
+    static let grossSchluessel = "oberflaeche.gross"
     static let kachelSchluessel = "oberflaeche.kacheln"
     static let ansichtSchluessel = "kachel.ansicht"
 
-    /// Modus und Kacheln wie beim letzten Beenden.
+    /// Leisten und Kacheln wie beim letzten Beenden. Ohne gemerkte Leisten (erster Start nach V2-9) wie das ruhige Bild:
+    /// Objekte links, rechte Leiste zu, Kacheln eingeklappt.
     static func oberflaecheVorbelegen(_ store: OberflaechenStore) {
         let d = UserDefaults.standard
-        let modus = d.string(forKey: modusSchluessel).flatMap(ArbeitsModus.init(rawValue:)) ?? .fokus
         let kacheln = (d.stringArray(forKey: kachelSchluessel) ?? [KachelArt.modell.rawValue])
             .compactMap(KachelArt.init(rawValue:))
-        store.vorbelegen(modus: modus, kacheln: kacheln, zweiteAnsicht: d.string(forKey: ansichtSchluessel).flatMap {
+        let ansicht = d.string(forKey: ansichtSchluessel).flatMap {
             standardAnsichten.contains($0) ? $0 : nil  // früher Namen der Viewport-Bibliothek
-        })
+        }
+        let leisten = d.stringArray(forKey: leistenSchluessel)
+        let gross = leisten == nil ? (kacheln.count > 1 ? KachelArt.modell : nil)
+            : d.string(forKey: grossSchluessel).flatMap(KachelArt.init(rawValue:))
+        store.vorbelegen(leisteLinks: leisten?.contains("links") ?? true, leisteRechts: leisten?.contains("rechts") ?? false,
+                         kacheln: kacheln, gross: gross, zweiteAnsicht: ansicht)
     }
 
     func oberflaecheMerken() {
@@ -188,19 +194,29 @@ extension AppSession {
             .store(in: &oberflaechenAbos)
     }
 
+    /// Was gemerkt wird (am Rand der Stand davor), als Werte zum Vergleichen.
+    nonisolated static func merkWerte(_ z: OberflaechenZustand) -> (leisten: [String], gross: String, kacheln: [String]) {
+        let rechts = z.vorRand?.leisteRechts ?? z.leisteRechts
+        let gross = z.rand != nil ? z.vorRand?.gross : z.gross
+        var leisten: [String] = []
+        if z.leisteLinks { leisten.append("links") }
+        if rechts { leisten.append("rechts") }
+        return (leisten, gross?.rawValue ?? "", z.kacheln.map { $0.rawValue })
+    }
+
     /// Was sich gemerkt wird, als ein Text (zum Vergleichen).
     nonisolated static func merkSchluessel(_ z: OberflaechenZustand) -> String {
-        let modus: ArbeitsModus = z.modusVorRand ?? z.modus
-        let kacheln: [String] = z.kacheln.map { $0.rawValue }
-        return modus.rawValue + "|" + kacheln.joined(separator: ",") + "|" + z.zweiteAnsicht
+        let w = merkWerte(z)
+        return w.leisten.joined(separator: ",") + "|" + w.gross + "|" + w.kacheln.joined(separator: ",") + "|"
+            + z.zweiteAnsicht
     }
 
     private func oberflaecheSichern() {
         let z = model.oberflaeche.zustand
-        let modus: ArbeitsModus = z.modusVorRand ?? z.modus
-        let kacheln: [String] = z.kacheln.map { $0.rawValue }
-        UserDefaults.standard.set(modus.rawValue, forKey: Self.modusSchluessel)
-        UserDefaults.standard.set(kacheln, forKey: Self.kachelSchluessel)
+        let w = Self.merkWerte(z)
+        UserDefaults.standard.set(w.leisten, forKey: Self.leistenSchluessel)
+        UserDefaults.standard.set(w.gross, forKey: Self.grossSchluessel)
+        UserDefaults.standard.set(w.kacheln, forKey: Self.kachelSchluessel)
         UserDefaults.standard.set(z.zweiteAnsicht, forKey: Self.ansichtSchluessel)
     }
 
@@ -228,7 +244,7 @@ extension AppSession {
             MainActor.assumeIsolated {
                 guard let self, let w = self.projectWindow, event.window === w, let v = w.contentView else { return }
                 let o = self.model.oberflaeche
-                guard o.modus == .werkstatt, o.aktiv != .modell, o.kacheln.contains(.modell) else { return }
+                guard o.kachelflaeche, o.aktiv != .modell, o.kacheln.contains(.modell) else { return }
                 let p = CGPoint(x: event.locationInWindow.x, y: v.bounds.height - event.locationInWindow.y)
                 if self.viewerRahmen.contains(p) {
                     self.model.oberflaechenActions?.oberflaeche(.kachelAktiv(.modell))

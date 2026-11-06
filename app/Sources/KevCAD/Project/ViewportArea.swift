@@ -9,6 +9,10 @@ struct ViewportArea: View {
     /// V2-3: Das Hauptfenster zeigt Agent und leeres Projekt selbst (Agentenspur, „Was soll entstehen?“).
     var zeigeAgent = true
     var zeigeLeer = true
+    /// V2-9: Platz oben, über dem die Kopfleiste des Fensters schwebt; die Bänder beginnen darunter.
+    var obenFrei: CGFloat = 0
+    /// V2-9: Platz links für die Gliederung im Bild; die Bänder stehen daneben statt darüber.
+    var linksFrei: CGFloat = 0
 
     var body: some View {
         viewport
@@ -111,8 +115,9 @@ struct ViewportArea: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.leading, 16 + linksFrei)
+        .padding(.trailing, 16)
+        .padding(.top, 12 + obenFrei)
     }
 
     // MARK: Unten: Messen, Agent

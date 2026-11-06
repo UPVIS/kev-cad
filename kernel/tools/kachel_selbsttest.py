@@ -8,9 +8,9 @@ im Lagebild von Testvarianten).
     tools/fern.sh testbau k7
     tools/fern/kachel-selbsttest.sh "build/Kev CAD Test k7.app" "$HOME/Documents/Kev CAD/Kugelschieber Variante B"
 
-Geprüft wird: Eine Kachel im Fokus führt in die Werkstatt, Lagebild und ``status`` nennen Modus, Kacheln, große Kachel und
-Rand; jede Kachel geht beim zweiten Öffnen in unter 300 ms auf; Umschalten Fokus/Werkstatt, groß und Rand ohne Pause über
-100 ms; die zweite Ansicht rechnet, folgt einem Kamerabefehl und lässt den Hauptfaden frei; ``projekt(name=…)`` zieht das
+Geprüft wird: Eine Kachel holt die Kachelfläche dazu, Lagebild und ``status`` nennen Kacheln, Leisten, große Kachel und
+Rand; jede Kachel geht beim zweiten Öffnen in unter 300 ms auf; Leisten, „nur das Modell“, groß und Rand ohne Pause über
+100 ms; ältere Aufrufe mit ``modus`` wirken weiter (V2-9); die zweite Ansicht rechnet, folgt einem Kamerabefehl und lässt den Hauptfaden frei; ``projekt(name=…)`` zieht das
 Projekt um. Das Skript fährt den Test auf dem Mac mini: Dort liegt kein Fenster auf Kevins Hauptbildschirm und fremde Last
 verfälscht die Zeiten nicht. Der Viewer zeichnet dort nicht auf den Bildschirm (kein Bild je Takt), die Fensterbilder
 (``VIEW_CMD test_foto``, nur Testvarianten) zeigen deshalb die Oberfläche ohne das Modell.
@@ -133,21 +133,37 @@ def main() -> int:
         rt.wait_idle(120)
         time.sleep(8)  # Prüfung, Statik, Nachlauf
         print(f"Lauf {res.get('run')}: {len(res.get('parts') or [])} Teile", flush=True)
-        ruf("view", kacheln=["modell"], kacheln_nur=True, modus="fokus", rand="aus")
+        ruf("view", kacheln=["modell"], kacheln_nur=True, leiste_links=True, leiste_rechts=False, rand="aus")
 
-        # 1. Fokus, dann kommt eine Kachel
+        # 1. Viewer allein, Leisten, dann kommt eine Kachel
         f = lage()["flaeche"]
-        pruefe(f["modus"] == "fokus", f"Start im Fokus: {f}")
+        pruefe(f["modus"] == "fokus" and f.get("leiste_links") is True and f.get("leiste_rechts") is False,
+               f"Start: Viewer allein, Objekte links: {f}")
         text = ruf("status")
-        pruefe("Fläche: Fokus" in text, "status nennt den Fokus")
-        bild("01-fokus")
+        pruefe("Fläche: Viewer allein, Objekte links" in text, "status nennt Viewer und linke Leiste")
+        bild("01-allein")
+        ms = pause(lambda: ruf("view", leiste_rechts=True))
+        ergebnis["umschalten"]["rechte Leiste zum ersten Mal"] = ms
+        f = lage()["flaeche"]
+        pruefe(f.get("leiste_rechts") is True and f["kacheln"] == ["modell"], f"rechte Leiste an: {f}")
+        text = ruf("status")
+        pruefe("Objekte links, Eigenschaften rechts" in text, "status nennt beide Leisten")
+        bild("01b-leiste-rechts")
+        ruf("view", display="technical")
+        time.sleep(0.6)
+        bild("01c-technisch")
+        ruf("view", display="solid", leiste_links=False, leiste_rechts=False)
+        time.sleep(0.4)
+        pruefe("keine Leiste" in ruf("status"), "status nennt: keine Leiste")
+        bild("01d-ohne-leisten")
+        ruf("view", leiste_links=True)
         ms = pause(lambda: ruf("view", kacheln=["stueckliste"]))
-        ergebnis["umschalten"]["erste Kachel im Fokus (Werkstatt zum ersten Mal)"] = ms
+        ergebnis["umschalten"]["erste Kachel (Kachelfläche zum ersten Mal)"] = ms
         f = lage()["flaeche"]
-        pruefe(f["modus"] == "werkstatt" and f["kacheln"] == ["modell", "stueckliste"] and f["aktiv"] == "stueckliste",
-               f"Kachel im Fokus führt in die Werkstatt: {f}")
+        pruefe(f["kacheln"] == ["modell", "stueckliste"] and f["aktiv"] == "stueckliste" and f["modus"] == "werkstatt",
+               f"Kachel holt die Kachelfläche dazu: {f}")
         text = ruf("status")
-        pruefe("Fläche: Werkstatt, 1 Modell, 2 Stückliste" in text, "status nennt Werkstatt und Kacheln")
+        pruefe("Fläche: 1 Modell, 2 Stückliste, Objekte links" in text, "status nennt Kacheln und Leiste")
         bild("02-stueckliste")
 
         # 2. Jede Kachel: erstes und zweites Öffnen
@@ -181,11 +197,24 @@ def main() -> int:
         ruf("view", kachel_zu=[3])
         f = lage()["flaeche"]
         pruefe(f["kacheln"] == ["modell", "zeichnung", "druck"] and f["gross"] is None, f"Kachel 3 geschlossen: {f['kacheln']}")
-        for name_, modus in (("Werkstatt → Fokus", "fokus"), ("Fokus → Werkstatt", "werkstatt"),
-                             ("Werkstatt → Fokus, 2. Mal", "fokus"), ("Fokus → Werkstatt, 2. Mal", "werkstatt")):
-            ms = pause(lambda m=modus: ruf("view", modus=m), 0.8)
+        for name_, argumente in (("Kacheln → nur das Modell", {"kachel_gross": "modell"}),
+                                 ("nur das Modell → Kacheln", {"kachel_gross": "aus"}),
+                                 ("rechte Leiste an", {"leiste_rechts": True}),
+                                 ("rechte Leiste aus", {"leiste_rechts": False}),
+                                 ("Kacheln → nur das Modell, 2. Mal", {"kachel_gross": "modell"}),
+                                 ("nur das Modell → Kacheln, 2. Mal", {"kachel_gross": "aus"})):
+            ms = pause(lambda a=argumente: ruf("view", **a), 0.8)
             ergebnis["umschalten"][name_] = ms
             pruefe(ms < GRENZE_UMSCHALTEN_MS, f"{name_}: {ms:.0f} ms")
+        f = lage()["flaeche"]
+        pruefe(f["gross"] is None and len(f["kacheln"]) == 3, f"Kacheln wieder nebeneinander: {f}")
+        ruf("view", modus="werkstatt")  # ältere Agenten: Werkstatt = Kacheln und rechte Leiste
+        f = lage()["flaeche"]
+        pruefe(f.get("leiste_rechts") is True and f["modus"] == "werkstatt", f"modus=werkstatt wirkt weiter: {f}")
+        ruf("view", modus="fokus")
+        f = lage()["flaeche"]
+        pruefe(f.get("leiste_rechts") is False and f["gross"] == "modell", f"modus=fokus wirkt weiter: {f}")
+        ruf("view", kachel_gross="aus")
 
         # 4. Blatt wechseln
         ruf("view", kacheln=["modell", "zeichnung"], kacheln_nur=True)
@@ -223,8 +252,8 @@ def main() -> int:
         print(f"       Lauf mit offener zweiter Ansicht: längste Pause {ms:.0f} ms", flush=True)
         ruf("view", fit=True)
 
-        # 6. Rand: Fokus schmal, Zeitleiste auf Zuruf, Kacheln am Rand, zurück
-        ruf("view", kacheln=["modell"], kacheln_nur=True, modus="fokus")
+        # 6. Rand: Viewer schmal, Zeitleiste auf Zuruf, Kacheln am Rand, zurück
+        ruf("view", kacheln=["modell"], kacheln_nur=True, leiste_rechts=True)
         time.sleep(0.6)
         ms = pause(lambda: ruf("view", rand="rechts"), 1.2)
         ergebnis["umschalten"]["an den Rand"] = ms
@@ -233,6 +262,7 @@ def main() -> int:
                f"am rechten Rand, Viewer {l['viewport']['breite']} pt breit")
         text = ruf("status")
         pruefe("Fenster am rechten Rand" in text, "status nennt den Rand")
+        pruefe(l["flaeche"].get("leiste_rechts") is False, "am Rand ist die rechte Leiste zu")
         bild("08-rand")
         ruf("view", zeitleiste=True)
         time.sleep(0.6)
@@ -242,7 +272,8 @@ def main() -> int:
         ruf("view", kacheln=["druck"])
         time.sleep(1.2)
         f = lage()["flaeche"]
-        pruefe(f["modus"] == "werkstatt" and f["rand"] == "rechts", f"Kachel am Rand: Werkstatt, Fenster bleibt schmal: {f}")
+        pruefe(f["kacheln"] == ["modell", "druck"] and f["gross"] is None and f["rand"] == "rechts",
+               f"Kachel am Rand: Kacheln übereinander, Fenster bleibt schmal: {f}")
         bild("10-rand-druck")
         ruf("view", kacheln=["modell", "animation"], kacheln_nur=True)
         time.sleep(1.2)
@@ -250,15 +281,16 @@ def main() -> int:
         ms = pause(lambda: ruf("view", rand="aus"), 1.2)
         ergebnis["umschalten"]["zurück vom Rand"] = ms
         f = lage()["flaeche"]
-        pruefe(f["rand"] is None and f["modus"] == "werkstatt", f"zurück vom Rand: {f}")
+        pruefe(f["rand"] is None and f.get("leiste_rechts") is True and f["gross"] is None,
+               f"zurück vom Rand: rechte Leiste wieder an, Kacheln nebeneinander: {f}")
         bild("12-animation")
-        ruf("view", kacheln=["modell"], kacheln_nur=True, modus="fokus")
+        ruf("view", kacheln=["modell"], kacheln_nur=True, leiste_rechts=False)
         text = ruf("animation", aktion="abspielen")
         time.sleep(1.0)
         a = lage().get("animation")
         print(f"       abspielen: {text[:120]} · Lagebild {a}", flush=True)
         if a and a.get("spielt"):
-            bild("13-fokus-spielt")
+            bild("13-allein-spielt")
             ruf("animation", aktion="abspielen", an=False)
 
         # Bauplan: erzeugen lassen, dann ansehen

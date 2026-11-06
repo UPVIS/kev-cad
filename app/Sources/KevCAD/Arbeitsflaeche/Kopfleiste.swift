@@ -2,38 +2,140 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Kopfleiste des Hauptfensters: Platz für die Ampel, Projektname (Doppelklick benennt um, Pfeil öffnet das
-/// Projektmenü), Umschalter Fokus/Werkstatt; rechts Foto, Video, Messen, Isolieren, An den Rand.
+/// Kopfleiste des Hauptfensters (V2-9): schwebt ohne eigenen Grund über dem Viewer. Neben der Ampel der Schalter der
+/// linken Leiste und der Projektname (Doppelklick benennt um, Pfeil öffnet das Projektmenü); rechts die Darstellung wie
+/// in Blender (Röntgen, Drahtgitter, Solid, Material, Technisch, Optionen), Foto, Video, Messen, Isolieren, An den Rand
+/// und ganz außen der Schalter der rechten Leiste. Jede Gruppe liegt in einer eigenen Kapsel und bleibt so auf hellem
+/// wie dunklem Bild lesbar.
 struct Kopfleiste: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
     @ObservedObject var oberflaeche: OberflaechenStore
-    let schmal: Bool
+    /// Breite des Fensters
+    let breite: CGFloat
+
+    private var schmal: Bool { breite < GA.schmalAb }
+    /// Leisten brauchen Platz neben dem Viewer (wie `Arbeitsgeometrie`)
+    private var leisten: Bool { breite >= 760 }
+    private var darstellung: Bool { breite >= 900 }
+    private var a: OberflaechenActions? { model.oberflaechenActions }
+    private var weitereKacheln: Bool { oberflaeche.kacheln.contains { $0 != .modell } }
 
     var body: some View {
-        HStack(spacing: schmal ? GA.m : GA.l) {
-            ProjektTitel(model: model, schmal: schmal)
-            ModusUmschalter(
-                optionen: [
-                    ModusUmschalter<ArbeitsModus>.Option(wert: .fokus, titel: "Fokus", hilfe: "Fokus: nur Modell und Agent (⌘1)"),
-                    ModusUmschalter<ArbeitsModus>.Option(wert: .werkstatt, titel: "Werkstatt", hilfe: "Werkstatt: Eigenschaften und Kacheln (⌘2)"),
-                ],
-                auswahl: oberflaeche.modus
-            ) { m in
-                model.oberflaechenActions?.setzeModus(m)
+        HStack(spacing: GA.s) {
+            HStack(spacing: 2) {
+                if leisten {
+                    SymbolKnopf(symbol: "sidebar.left", titel: oberflaeche.leisteLinks ? "Objekte ausblenden" : "Objekte einblenden",
+                                taste: "⌘1", an: oberflaeche.leisteLinks, form: .kopf) {
+                        a?.setzeLeisteLinks(!oberflaeche.leisteLinks)
+                    }
+                }
+                ProjektTitel(model: model, schmal: schmal)
+                    .padding(.leading, leisten ? 4 : 8)
             }
-            .fixedSize()
+            .kopfKapsel()
             Spacer(minLength: GA.s)
             if let meldung = session.meldung {
                 MeldungsZeile(meldung: meldung)
+                    .kopfKapsel()
                     .transition(.opacity)
             }
+            if darstellung {
+                Darstellung(viewer: model.viewer, v: model.actions as? ViewerActions)
+                    .kopfKapsel()
+            }
             Aktionen(model: model, viewer: model.viewer, oberflaeche: oberflaeche, schmal: schmal)
+                .kopfKapsel()
+            if leisten {
+                HStack(spacing: 2) {
+                    if weitereKacheln {
+                        SymbolKnopf(symbol: "square.grid.2x2", titel: oberflaeche.kachelflaeche ? "Nur das Modell" : "Kacheln nebeneinander",
+                                    taste: "⌘3", an: oberflaeche.kachelflaeche, form: .kopf) {
+                            a?.vergroessereKachel(oberflaeche.kachelflaeche ? .modell : nil)
+                        }
+                    }
+                    SymbolKnopf(symbol: "sidebar.right",
+                                titel: oberflaeche.leisteRechts ? "Eigenschaften ausblenden" : "Eigenschaften einblenden",
+                                taste: "⌘2", an: oberflaeche.leisteRechts, form: .kopf) {
+                        a?.setzeLeisteRechts(!oberflaeche.leisteRechts)
+                    }
+                }
+                .kopfKapsel()
+            }
         }
         .padding(.leading, GA.ampel)
         .padding(.trailing, GA.m)
         .frame(height: GA.kopf)
         .animation(GB.standard, value: session.meldung)
+    }
+}
+
+private extension View {
+    /// Kapsel einer Gruppe in der Kopfleiste: dunkle Insel, damit Knöpfe und Text auch über hellem Bild lesbar sind.
+    func kopfKapsel() -> some View {
+        padding(2)
+            .frame(minHeight: GA.kopfKnopf + 4)
+            .background(Capsule(style: .continuous).fill(GF.insel))
+            .overlay(Capsule(style: .continuous).strokeBorder(GF.linie, lineWidth: 1))
+    }
+}
+
+/// Darstellung wie in Blender: Röntgen als Schalter, die Schattierung als Gruppe, daneben die Optionen. Röntgen schaltet
+/// wie ⌥Z auf die Darstellung davor zurück.
+private struct Darstellung: View {
+    @ObservedObject var viewer: ViewerStore
+    let v: ViewerActions?
+
+    private static let gruppe: [ShadingModus] = [.drahtgitter, .solid, .material, .technisch]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            SymbolKnopf(symbol: ShadingModus.roentgen.symbol, titel: "Röntgen", taste: "⌥Z",
+                        an: viewer.shading == .roentgen, form: .kopf) {
+                v?.ausfuehren(.roentgen)
+            }
+            Rectangle().fill(GF.linie).frame(width: 1, height: 16)
+                .padding(.horizontal, 3)
+                .accessibilityHidden(true)
+            ForEach(Self.gruppe, id: \.self) { m in
+                SymbolKnopf(symbol: m.symbol, titel: m.titel, an: viewer.shading == m, form: .kopf) {
+                    v?.setShading(m)
+                }
+            }
+            DarstellungsOptionen(viewer: viewer, v: v)
+        }
+        .disabled(v == nil)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Darstellung")
+    }
+}
+
+/// Pfeil neben der Darstellung: Schalter für Umgebungsverdeckung, Kantenbetonung, Schatten, Umriss und Kanten.
+private struct DarstellungsOptionen: View {
+    @ObservedObject var viewer: ViewerStore
+    let v: ViewerActions?
+
+    var body: some View {
+        Menu {
+            Section("Gilt in Solid, Material und Technisch") {
+                ForEach(ShadingOption.allCases, id: \.self) { o in
+                    Toggle(o.titel, isOn: Binding(get: { o.istAn(viewer.optionen) },
+                                                  set: { v?.setShadingOption(o, $0) }))
+                }
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(GF.asche)
+                .frame(width: 16, height: GA.kopfKnopf)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Optionen der Darstellung")
+        .accessibilityLabel("Optionen der Darstellung")
     }
 }
 
@@ -148,19 +250,19 @@ private struct Aktionen: View {
     private var v: ViewerActions? { model.actions as? ViewerActions }
 
     var body: some View {
-        HStack(spacing: GA.s) {
-            SymbolKnopf(symbol: "camera", titel: "Bildschirmfoto", taste: "⌥⌘S") {
+        HStack(spacing: 2) {
+            SymbolKnopf(symbol: "camera", titel: "Bildschirmfoto", taste: "⌥⌘S", form: .kopf) {
                 if let v { v.ausfuehren(.bildschirmfoto) } else { model.actions?.saveScreenshot() }
             }
             .disabled(model.project == nil)
-            AufnahmeKnopf(laeuft: viewer.aufnahme != .keine) { v?.ausfuehren(.video) }
+            AufnahmeKnopf(laeuft: viewer.aufnahme != .keine, form: .kopf) { v?.ausfuehren(.video) }
                 .disabled(model.parts.isEmpty || v == nil)
             if !schmal {
-                SymbolKnopf(symbol: "ruler", titel: "Messen", taste: "M", an: model.measureMode) {
+                SymbolKnopf(symbol: "ruler", titel: "Messen", taste: "M", an: model.measureMode, form: .kopf) {
                     if let v { v.ausfuehren(.messen) } else { model.toggleMeasureMode() }
                 }
                 .disabled(model.project == nil)
-                SymbolKnopf(symbol: "scope", titel: "Isolieren", taste: "/", an: viewer.lokaleAnsicht) {
+                SymbolKnopf(symbol: "scope", titel: "Isolieren", taste: "/", an: viewer.lokaleAnsicht, form: .kopf) {
                     if let v { v.ausfuehren(.isolieren) } else { model.isolateSelection() }
                 }
                 .disabled(model.selection.isEmpty && !viewer.lokaleAnsicht)
@@ -168,7 +270,7 @@ private struct Aktionen: View {
             SymbolKnopf(
                 symbol: oberflaeche.rand == nil ? "rectangle.righthalf.inset.filled" : "macwindow",
                 titel: oberflaeche.rand == nil ? "An den Rand" : "Zurück vom Rand", taste: "⌃⌥→",
-                an: oberflaeche.rand != nil
+                an: oberflaeche.rand != nil, form: .kopf
             ) {
                 model.oberflaechenActions?.setzeRand(oberflaeche.rand == nil ? .rechts : nil)
             }
@@ -189,6 +291,7 @@ private struct MeldungsZeile: View {
                 .lineLimit(2)
                 .truncationMode(.tail)
         }
+        .padding(.horizontal, 10)
         .frame(maxWidth: 420, alignment: .trailing)
         .accessibilityElement(children: .combine)
     }

@@ -1,10 +1,12 @@
 import KevCADCore
 import SwiftUI
 
-/// Was im Fokus über dem Viewer steht (V5, Zustände a und c im Entwurf): links die Gliederung, in der Mitte die
-/// Startzeile des leeren Projekts, unten Kevins Live-Text, rechts unten die Agentenspur. Keine Tafeln, nur Text im
-/// Bild. Im schmalen Fenster stehen Agent und Sprechknopf unten untereinander. Die Zeitleiste kommt nur auf Zuruf oder
-/// solange eine Animation läuft (V2-7); sie liegt über dem Viewer, damit dessen Größe gleich bleibt.
+/// Was über dem Viewer steht (V5, Zustände a und c im Entwurf): links die Gliederung, in der Mitte die Startzeile des
+/// leeren Projekts, unten Kevins Live-Text, rechts unten die Agentenspur. Keine Tafeln, nur Text im Bild. Im schmalen
+/// Fenster stehen Agent und Sprechknopf unten untereinander. Die Zeitleiste kommt nur auf Zuruf oder solange eine
+/// Animation läuft (V2-7); sie liegt über dem Viewer, damit dessen Größe gleich bleibt.
+/// Seit V2-9 liegt sie auch neben Kacheln über der Kachel „Modell“ (ohne Gliederung und Zeitleiste, die dort Spalte und
+/// Kachel sind) und, wenn das Modell nicht zu sehen ist, als reiner Text über der Kachelfläche.
 struct FokusEbenen: View {
     @ObservedObject var model: AppModel
     @ObservedObject var oberflaeche: OberflaechenStore
@@ -13,8 +15,17 @@ struct FokusEbenen: View {
     /// Fläche des Viewers im Fenster
     let viewer: CGRect
     let schmal: Bool
+    /// Platz oben, über dem die Kopfleiste schwebt (ohne Kacheln reicht der Viewer bis an die Oberkante)
+    var obenFrei: CGFloat = 0
+    /// Gliederung links im Bild (ohne Kacheln, solange die linke Leiste an ist)
+    var gliederung = true
+    var zeitleisteErlaubt = true
+    /// Startzeile des leeren Projekts (nur über dem Viewer, nicht über anderen Kacheln)
+    var startZeile = true
 
-    private var zeitleisteAn: Bool { animation.hasAnimation && (oberflaeche.zeitleiste || animation.playing) }
+    private var zeitleisteAn: Bool {
+        zeitleisteErlaubt && animation.hasAnimation && (oberflaeche.zeitleiste || animation.playing)
+    }
 
     /// Platz unten für die Hinweisleiste des Viewers
     private var hinweisFrei: CGFloat { model.viewer.hinweisleiste ? 38 : 0 }
@@ -32,14 +43,19 @@ struct FokusEbenen: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Bleibt eingehängt und wird nur ausgeblendet: Neben Kacheln ist die Gliederung die linke Spalte, und ein
+            // Neuaufbau beim Zurückschalten kostete über 100 ms (Selbsttest V2-9)
             if !schmal && !model.parts.isEmpty {
-                Gliederung(model: model, imBild: true, maxHoehe: max(120, viewer.height * 0.6))
+                Gliederung(model: model, imBild: true, maxHoehe: max(120, (viewer.height - obenFrei) * 0.6))
                     .frame(width: GA.gliederung)
                     .padding(.leading, GA.xl)
-                    .padding(.top, GA.xl)
+                    .padding(.top, obenFrei + GA.l)
                     .frame(width: viewer.width, height: viewer.height, alignment: .topLeading)
+                    .opacity(gliederung ? 1 : 0)
+                    .allowsHitTesting(gliederung)
+                    .accessibilityHidden(!gliederung)
             }
-            if leer {
+            if startZeile && leer {
                 StartZeile(model: model, schmal: schmal)
                     .frame(width: viewer.width, height: viewer.height * 0.62)
             }

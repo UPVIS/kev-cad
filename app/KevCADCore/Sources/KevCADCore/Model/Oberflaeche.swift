@@ -1,15 +1,19 @@
 import Foundation
 
 // V2-3 (OBERFLAECHE.md): Zustand der neuen Oberfläche, den Sprache (V2-6) und Agent (V2-7, `VIEW_CMD flaeche`) auslösen:
-// Modus, Kacheln, Startübersicht, Sprechen, Fenster am Rand.
+// Leisten, Kacheln, Startübersicht, Sprechen, Fenster am Rand.
+//
+// V2-9 (Kevin nach dem ersten Test, 06.11.2026): Fokus und Werkstatt sind keine Modi mehr. Links und rechts gibt es je
+// eine Leiste (Objekte bzw. Eigenschaften), Kacheln gehen unabhängig davon auf und zu. Ohne weitere Kachel oder mit dem
+// Modell groß füllt der Viewer das Fenster.
 //
 // Vertrag wie bei AppModel: Die Oberfläche liest `AppModel.oberflaeche` und ruft `OberflaechenActions`. Geändert wird
 // der Zustand nur über `OberflaechenStore.ausfuehren(_:)`, und das ruft allein die Umsetzung der Aktionen (App-Kern bzw.
 // Demomodus). Jeder Befehl ist ein Wert (`Oberflaechenbefehl`), damit ihn später auch eine Nachricht des Kernels oder
 // die Spracherkennung auslösen kann.
 
-/// Fokus: ultraminimal, nur Viewer, Gliederung, Live-Text und Agentenspur. Werkstatt: Gliederung mit Eigenschaften
-/// und Kachelfläche.
+/// Nur noch Übergang für ältere Agenten und das Lagebild (`modus`): Fokus heißt Viewer allein ohne rechte Leiste,
+/// Werkstatt heißt Kacheln eingeordnet und rechte Leiste an.
 public enum ArbeitsModus: String, CaseIterable, Codable, Sendable {
     case fokus, werkstatt
 }
@@ -47,7 +51,12 @@ public enum Bildschirmrand: String, CaseIterable, Codable, Sendable {
 
 /// Ein Auftrag an die Oberfläche.
 public enum Oberflaechenbefehl: Equatable, Sendable {
+    /// Übergang: Fokus = Modell groß, rechte Leiste zu; Werkstatt = Kacheln eingeordnet, rechte Leiste auf.
     case modus(ArbeitsModus)
+    /// Linke Leiste (Objekte) zeigen oder ausblenden.
+    case leisteLinks(Bool)
+    /// Rechte Leiste (Eigenschaften und Maße des Modells) zeigen oder ausblenden.
+    case leisteRechts(Bool)
     /// Kachel öffnen (hinten anfügen) oder, wenn schon offen, nach vorn holen; sie wird die aktive.
     case kachelZeigen(KachelArt)
     case kachelSchliessen(KachelArt)
@@ -81,7 +90,10 @@ public enum Oberflaechenbefehl: Equatable, Sendable {
 public struct OberflaechenZustand: Equatable, Sendable {
     public static let hoechstensKacheln = 4
 
-    public var modus: ArbeitsModus = .fokus
+    /// Linke Leiste: Objekte (über dem Viewer leise, neben Kacheln als Spalte)
+    public var leisteLinks = true
+    /// Rechte Leiste: Eigenschaften der Auswahl und Maße des Modells
+    public var leisteRechts = false
     public var kacheln: [KachelArt] = [.modell]
     public var gross: KachelArt?
     public var aktiv: KachelArt?
@@ -93,8 +105,20 @@ public struct OberflaechenZustand: Equatable, Sendable {
     public var sprechText: String?
     public var zuletztGesagt: String?
     public var rand: Bildschirmrand?
-    /// Modus vor dem Rand: Zurück vom Rand stellt ihn wieder her.
-    public var modusVorRand: ArbeitsModus?
+    /// Vor dem Rand: rechte Leiste und große Kachel; zurück vom Rand stellt sie wieder her.
+    public var vorRand: VorRand?
+
+    public struct VorRand: Equatable, Sendable {
+        public var leisteRechts: Bool
+        public var gross: KachelArt?
+    }
+
+    /// Kacheln stehen nebeneinander: Es ist mehr als das Modell offen, und das Modell ist nicht groß. Sonst füllt der
+    /// Viewer das Fenster.
+    public var kachelflaeche: Bool { kacheln.contains { $0 != .modell } && gross != .modell }
+
+    /// Übergang für ältere Agenten und das Lagebild.
+    public var modus: ArbeitsModus { kachelflaeche || leisteRechts ? .werkstatt : .fokus }
     /// Zeitleiste im Fokus auf Zuruf
     public var zeitleiste = false
     /// Blickrichtung der zweiten Ansicht
@@ -102,23 +126,41 @@ public struct OberflaechenZustand: Equatable, Sendable {
     /// Gewähltes Blatt der Kachel Zeichnung
     public var blatt: String?
 
-    public init(modus: ArbeitsModus = .fokus, kacheln: [KachelArt] = [.modell], uebersicht: Bool = false) {
-        self.modus = modus
+    public init(leisteLinks: Bool = true, leisteRechts: Bool = false, kacheln: [KachelArt] = [.modell],
+                gross: KachelArt? = nil, uebersicht: Bool = false) {
+        self.leisteLinks = leisteLinks
+        self.leisteRechts = leisteRechts
         self.kacheln = Self.bereinigt(kacheln)
+        self.gross = gross.flatMap { self.kacheln.contains($0) ? $0 : nil }
         self.uebersicht = uebersicht
+    }
+
+    /// Übergang: wie früher mit einem Modus.
+    public init(modus: ArbeitsModus, kacheln: [KachelArt] = [.modell], uebersicht: Bool = false) {
+        self.init(kacheln: kacheln, uebersicht: uebersicht)
+        anwenden(.modus(modus))
     }
 
     public mutating func anwenden(_ befehl: Oberflaechenbefehl) {
         switch befehl {
         case .modus(let m):
-            wechsle(zu: m)
-            if m == .werkstatt && kacheln.isEmpty { kacheln = [.modell] }
+            if m == .werkstatt {
+                if kacheln.isEmpty { kacheln = [.modell] }
+                if gross == .modell { gross = nil }
+                leisteRechts = true
+            } else {
+                if kacheln.contains(where: { $0 != .modell }) || gross != nil { einreihen(.modell); gross = .modell }
+                leisteRechts = false
+            }
+        case .leisteLinks(let an):
+            leisteLinks = an
+        case .leisteRechts(let an):
+            leisteRechts = an
         case .kachelZeigen(let a):
             if a == .animation { einreihen(.modell) }  // die Bewegung sieht man im Modell
             einreihen(a)
             if gross != nil && gross != a { gross = nil }
             aktiv = a
-            if a != .modell { wechsle(zu: .werkstatt) }
         case .kachelSchliessen(let a):
             kacheln.removeAll { $0 == a }
             if gross == a { gross = nil }
@@ -128,7 +170,6 @@ public struct OberflaechenZustand: Equatable, Sendable {
                 if !kacheln.contains(a) { anwenden(.kachelZeigen(a)) }
                 gross = a
                 aktiv = a
-                wechsle(zu: .werkstatt)
             } else {
                 gross = nil
             }
@@ -136,7 +177,6 @@ public struct OberflaechenZustand: Equatable, Sendable {
             kacheln = Self.bereinigt(liste.contains(.animation) && !liste.contains(.modell) ? [.modell] + liste : liste)
             gross = nil
             if let a = aktiv, !kacheln.contains(a) { aktiv = kacheln.first }
-            if kacheln.contains(where: { $0 != .modell }) { wechsle(zu: .werkstatt) }
         case .kachelAktiv(let a):
             aktiv = a.flatMap { kacheln.contains($0) ? $0 : nil }
         case .uebersicht(let an):
@@ -159,13 +199,21 @@ public struct OberflaechenZustand: Equatable, Sendable {
             sitzungOffen = false
         case .rand(let r):
             if let r {
-                if rand == nil { modusVorRand = modus }
+                // Am Rand ist das Fenster schmal: nur der Viewer, ohne rechte Leiste
+                if rand == nil {
+                    vorRand = VorRand(leisteRechts: leisteRechts, gross: gross)
+                    leisteRechts = false
+                    if kachelflaeche { gross = .modell }
+                }
                 rand = r
-                modus = .fokus
             } else if rand != nil {
                 rand = nil
-                if let m = modusVorRand { modus = m }
-                modusVorRand = nil
+                if let v = vorRand {
+                    leisteRechts = leisteRechts || v.leisteRechts
+                    // Hat am Rand jemand die Kacheln geändert (der Agent), gilt das weiter
+                    if gross == .modell { gross = v.gross }
+                }
+                vorRand = nil
             }
         case .zeitleiste(let an):
             zeitleiste = an
@@ -174,12 +222,6 @@ public struct OberflaechenZustand: Equatable, Sendable {
         case .blatt(let id):
             blatt = id
         }
-    }
-
-    /// Am Rand gilt ein neuer Modus auch nach dem Zurückkommen: Sonst verschwänden Kacheln, die der Agent dort öffnet.
-    private mutating func wechsle(zu m: ArbeitsModus) {
-        modus = m
-        if rand != nil { modusVorRand = m }
     }
 
     /// Kachel hinten anfügen, wenn sie noch nicht offen ist; eine fünfte verdrängt die älteste.
@@ -196,17 +238,23 @@ public struct OberflaechenZustand: Equatable, Sendable {
 
     public func kachel(nummer n: Int) -> KachelArt? { n >= 1 && n <= kacheln.count ? kacheln[n - 1] : nil }
 
-    /// Stand in einem Satz für den Agenten: „Werkstatt: 1 Modell, 2 Druck (groß), Fenster am rechten Rand“.
+    /// Stand in einem Satz für den Agenten: „Kacheln 1 Modell, 2 Druck (groß) · Objekte links · Fenster am rechten Rand“.
     public var kurztext: String {
-        var t = modus == .fokus ? "Fokus" : "Werkstatt"
-        if modus == .werkstatt {
+        var teile: [String] = []
+        if kachelflaeche {
             let liste = kacheln.enumerated().map { "\($0.offset + 1) \($0.element.titel)" + (gross == $0.element ? " (groß)" : "") }
-            t += ": " + (liste.isEmpty ? "keine Kachel" : liste.joined(separator: ", "))
-        } else if zeitleiste {
-            t += ", Zeitleiste an"
+            teile.append("Kacheln " + liste.joined(separator: ", "))
+        } else {
+            let weitere = kacheln.filter { $0 != .modell }.count
+            teile.append("Viewer allein" + (weitere > 0 ? " (\(weitere) weitere Kacheln eingeklappt)" : "")
+                         + (zeitleiste ? ", Zeitleiste an" : ""))
         }
-        if let r = rand { t += ", Fenster am \(r == .rechts ? "rechten" : "linken") Rand" }
-        return t
+        var leisten: [String] = []
+        if leisteLinks { leisten.append("Objekte links") }
+        if leisteRechts { leisten.append("Eigenschaften rechts") }
+        teile.append(leisten.isEmpty ? "keine Leiste" : leisten.joined(separator: ", "))
+        if let r = rand { teile.append("Fenster am \(r == .rechts ? "rechten" : "linken") Rand") }
+        return teile.joined(separator: " · ")
     }
 
     /// Ohne Doppelte, höchstens vier.
@@ -231,6 +279,9 @@ public final class OberflaechenStore: ObservableObject {
     }
 
     public var modus: ArbeitsModus { zustand.modus }
+    public var leisteLinks: Bool { zustand.leisteLinks }
+    public var leisteRechts: Bool { zustand.leisteRechts }
+    public var kachelflaeche: Bool { zustand.kachelflaeche }
     public var kacheln: [KachelArt] { zustand.kacheln }
     public var gross: KachelArt? { zustand.gross }
     public var aktiv: KachelArt? { zustand.aktiv }
@@ -253,7 +304,16 @@ public final class OberflaechenStore: ObservableObject {
         if neu != zustand { zustand = neu }
     }
 
-    /// Gemerkter Modus und gemerkte Kacheln beim Start (vor dem ersten Erscheinen der Oberfläche).
+    /// Gemerkte Leisten und Kacheln beim Start (vor dem ersten Erscheinen der Oberfläche).
+    public func vorbelegen(leisteLinks: Bool, leisteRechts: Bool, kacheln: [KachelArt], gross: KachelArt?,
+                           zweiteAnsicht: String? = nil) {
+        var z = OberflaechenZustand(leisteLinks: leisteLinks, leisteRechts: leisteRechts, kacheln: kacheln, gross: gross,
+                                    uebersicht: zustand.uebersicht)
+        if let zweiteAnsicht { z.zweiteAnsicht = zweiteAnsicht }
+        zustand = z
+    }
+
+    /// Übergang: wie früher mit einem Modus.
     public func vorbelegen(modus: ArbeitsModus, kacheln: [KachelArt], zweiteAnsicht: String? = nil) {
         var z = OberflaechenZustand(modus: modus, kacheln: kacheln, uebersicht: zustand.uebersicht)
         if let zweiteAnsicht { z.zweiteAnsicht = zweiteAnsicht }
@@ -270,6 +330,8 @@ public protocol OberflaechenActions: AnyObject {
 
 extension OberflaechenActions {
     public func setzeModus(_ modus: ArbeitsModus) { oberflaeche(.modus(modus)) }
+    public func setzeLeisteLinks(_ an: Bool) { oberflaeche(.leisteLinks(an)) }
+    public func setzeLeisteRechts(_ an: Bool) { oberflaeche(.leisteRechts(an)) }
     public func zeigeKachel(_ art: KachelArt) { oberflaeche(.kachelZeigen(art)) }
     public func schliesseKachel(_ art: KachelArt) { oberflaeche(.kachelSchliessen(art)) }
     public func vergroessereKachel(_ art: KachelArt?) { oberflaeche(.kachelGross(art)) }
@@ -396,6 +458,14 @@ public struct FlaecheAuftrag: Equatable, Sendable {
         if let m = a["modus"]?.stringValue {
             guard let modus = ArbeitsModus(rawValue: m) else { return .failure(.init("Unbekannter Modus \(m)")) }
             tu(.modus(modus))
+        }
+        let leisten: [(String, (Bool) -> Oberflaechenbefehl)] = [
+            ("leiste_links", Oberflaechenbefehl.leisteLinks), ("leiste_rechts", Oberflaechenbefehl.leisteRechts),
+        ]
+        for (feld, befehl) in leisten {
+            guard let v = a[feld], v != .null else { continue }
+            guard let an = v.boolValue else { return .failure(.init("\(feld) ist kein Wahrheitswert")) }
+            tu(befehl(an))
         }
         if let z = a["zeitleiste"], z != .null {
             guard let an = z.boolValue else { return .failure(.init("zeitleiste ist kein Wahrheitswert")) }

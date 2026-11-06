@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// Grundbausteine (1): Knöpfe, Umschalter Fokus/Werkstatt, Tastenkappe. Selbst gezeichnet, aber echte SwiftUI-Knöpfe:
+// Grundbausteine (1): Knöpfe, Umschalter, Tastenkappe. Selbst gezeichnet, aber echte SwiftUI-Knöpfe:
 // Tastatursteuerung (Tab, Leertaste), Fokusring des Systems und VoiceOver bleiben erhalten.
 
 typealias GF = Gestaltung.Farbe
@@ -12,8 +12,10 @@ typealias GB = Gestaltung.Bewegung
 
 /// Form eines Knopfs.
 enum KnopfForm {
-    /// runder Symbolknopf 34 × 34 (Foto, Video, Messen …)
+    /// runder Symbolknopf 30 × 30
     case rund
+    /// runder Symbolknopf 26 × 26 in den Kapseln der Kopfleiste (Foto, Video, Messen, Darstellung …)
+    case kopf
     /// Text mit Symbol, 28 hoch („Ordner öffnen …“)
     case text
     /// Text über die ganze Breite, 28 hoch („Isolieren“, „Zeigen“)
@@ -60,6 +62,9 @@ private struct KnopfKoerper<Label: View>: View {
         case .rund:
             label.font(.system(size: 14, weight: .medium))
                 .frame(width: GA.knopf, height: GA.knopf)
+        case .kopf:
+            label.font(.system(size: 12.5, weight: .medium))
+                .frame(width: GA.kopfKnopf, height: GA.kopfKnopf)
         case .text:
             label.font(GS.text)
                 .padding(.horizontal, GA.m)
@@ -78,15 +83,15 @@ private struct KnopfKoerper<Label: View>: View {
     private var grund: Color {
         if gedrueckt { return GF.knopfGedrueckt }
         if an { return GF.knopfAn }
-        if hover && aktiv { return form == .leise ? GF.knopf : GF.knopfHover }
-        return form == .leise ? .clear : GF.knopf
+        if hover && aktiv { return form == .leise || form == .kopf ? GF.knopf : GF.knopfHover }
+        return form == .leise || form == .kopf ? .clear : GF.knopf
     }
 
     private var flaeche: some View { umriss.fill(grund) }
 
     private var umriss: AnyShape {
         switch form {
-        case .rund: return AnyShape(Circle())
+        case .rund, .kopf: return AnyShape(Circle())
         case .text, .breit: return AnyShape(RoundedRectangle(cornerRadius: GR.knopfText, style: .continuous))
         case .leise: return AnyShape(RoundedRectangle(cornerRadius: GR.taste, style: .continuous))
         }
@@ -100,13 +105,14 @@ struct SymbolKnopf: View {
     var taste: String?
     var an = false
     var farbe: Color?
+    var form: KnopfForm = .rund
     let aktion: () -> Void
 
     var body: some View {
         Button(action: aktion) {
             Image(systemName: symbol)
         }
-        .buttonStyle(KevKnopfStil(form: .rund, an: an, farbe: farbe))
+        .buttonStyle(KevKnopfStil(form: form, an: an, farbe: farbe))
         .help(taste.map { "\(titel) (\($0))" } ?? titel)
         .accessibilityLabel(titel)
         .accessibilityAddTraits(an ? .isSelected : [])
@@ -116,21 +122,23 @@ struct SymbolKnopf: View {
 /// Knopf „Video aufnehmen“: roter Punkt wie im Entwurf.
 struct AufnahmeKnopf: View {
     let laeuft: Bool
+    var form: KnopfForm = .rund
     let aktion: () -> Void
 
     var body: some View {
         Button(action: aktion) {
             Group {
                 if laeuft {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous).frame(width: 10, height: 10)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous).frame(width: form == .kopf ? 9 : 10,
+                                                                                height: form == .kopf ? 9 : 10)
                 } else {
-                    Circle().frame(width: 11, height: 11)
+                    Circle().frame(width: form == .kopf ? 10 : 11, height: form == .kopf ? 10 : 11)
                 }
             }
             .foregroundStyle(GF.befund)
             .shadow(color: GF.befund.opacity(0.35), radius: 3)
         }
-        .buttonStyle(KevKnopfStil(form: .rund, an: laeuft))
+        .buttonStyle(KevKnopfStil(form: form, an: laeuft))
         .help(laeuft ? "Video läuft" : "Video: Drehung um das Ziel (⇧⌥⌘V)")
         .accessibilityLabel(laeuft ? "Video beenden" : "Video aufnehmen")
     }

@@ -85,11 +85,31 @@ def lage_kamera(k: Any) -> dict[str, Any] | None:
 
 
 def flaeche_zeile(f: Any) -> str | None:
-    """„Fläche: Werkstatt, 1 Modell, 2 Druck (2 groß), Blatt 2 von 5, Fenster am rechten Rand“ aus ``LAGE.flaeche``."""
+    """„Fläche: 1 Modell, 2 Druck (groß), Blatt 2 von 5, Objekte links, Fenster am rechten Rand“ aus ``LAGE.flaeche``.
+    Apps vor V2-9 nennen statt der Leisten nur den Modus (Fokus, Werkstatt)."""
     if not isinstance(f, dict) or not f.get("modus"):
         return None
-    teile = ["Werkstatt" if f["modus"] == "werkstatt" else "Fokus"]
     kacheln = [str(k) for k in f.get("kacheln") or []]
+    if "leiste_links" in f or "leiste_rechts" in f:
+        nebeneinander = any(k != "modell" for k in kacheln) and f.get("gross") != "modell"
+        if nebeneinander:
+            teile = [f"{i} {KACHEL_TITEL.get(k, k)}" + (" (groß)" if k == f.get("gross") else "")
+                     for i, k in enumerate(kacheln, 1)]
+            blatt = f.get("blatt") if isinstance(f.get("blatt"), dict) else None
+            if blatt:
+                teile.append(f"Blatt {blatt.get('nr')} von {blatt.get('von')}")
+        else:
+            weitere = sum(1 for k in kacheln if k != "modell")
+            teile = ["Viewer allein" + (f" ({weitere} Kacheln eingeklappt)" if weitere else "")]
+            if f.get("zeitleiste"):
+                teile.append("Zeitleiste an")
+        leisten = [t for feld, t in (("leiste_links", "Objekte links"), ("leiste_rechts", "Eigenschaften rechts"))
+                   if f.get(feld)]
+        teile.append(", ".join(leisten) if leisten else "keine Leiste")
+        if f.get("rand"):
+            teile.append(f"Fenster am {'rechten' if f['rand'] == 'rechts' else 'linken'} Rand")
+        return "Fläche: " + ", ".join(teile)
+    teile = ["Werkstatt" if f["modus"] == "werkstatt" else "Fokus"]
     if f["modus"] == "werkstatt":
         teile += [f"{i} {KACHEL_TITEL.get(k, k)}" + (" (groß)" if k == f.get("gross") else "")
                   for i, k in enumerate(kacheln, 1)] or ["keine Kachel"]
@@ -508,8 +528,9 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
           "with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight "
           "refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. "
           "dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking. Result "
-          "tiles side by side (up to 4, numbered, Kevin says \"Kachel 2 groß\"): kacheln, kachel_gross, kachel_zu; a "
-          "tile in Fokus switches to Werkstatt. modus, rand, zeitleiste, zweite_ansicht and blatt arrange the rest.",
+          "tiles side by side (up to 4, numbered, Kevin says \"Kachel 2 groß\"): kacheln, kachel_gross, kachel_zu; "
+          "kachel_gross modell = viewer alone. leiste_links (objects), leiste_rechts (properties), rand, zeitleiste, "
+          "zweite_ansicht and blatt arrange the rest.",
           VIEWER)
     async def view(
         standard: Annotated[StandardView | None, Field(description="Standard view direction")] = None,
@@ -551,18 +572,24 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             "ansicht = second view, material, simulation, versionen, details, render, modell = the viewer"))] = None,
         kacheln_nur: Annotated[bool, Field(description="kacheln: exactly these, numbered in this order")] = False,
         kachel_gross: Annotated[Kachel | int | Literal["aus"] | None, Field(description=(
-            "This tile (name or number 1-4) fills the area; aus = all side by side again"))] = None,
+            "This tile (name or number 1-4) fills the area; modell = the viewer alone, other tiles folded away; "
+            "aus = all side by side again"))] = None,
         kachel_zu: Annotated[list[Kachel | int] | Literal["alle"] | None, Field(description="Close tiles")] = None,
+        leiste_links: Annotated[bool | None, Field(description="Left sidebar with the objects")] = None,
+        leiste_rechts: Annotated[bool | None, Field(description=(
+            "Right sidebar with properties and the model's parameters"))] = None,
         modus: Annotated[Literal["fokus", "werkstatt"] | None, Field(description=(
-            "fokus = only the viewer, werkstatt = tiles and properties"))] = None,
+            "Older: fokus = viewer alone, werkstatt = tiles and right sidebar"))] = None,
         rand: Annotated[Literal["links", "rechts", "aus"] | None, Field(description=(
             "Window narrow at this screen edge next to the chat; aus = back"))] = None,
-        zeitleiste: Annotated[bool | None, Field(description="Timeline over the viewer in Fokus")] = None,
+        zeitleiste: Annotated[bool | None, Field(description=(
+            "Timeline over the viewer while it is alone (with tiles it is the tile animation)"))] = None,
         zweite_ansicht: Annotated[StandardView | None, Field(description="Direction of tile ansicht")] = None,
         blatt: Annotated[int | str | None, Field(description="Sheet in tile zeichnung: number, id or title")] = None,
     ) -> CallToolResult:
         schritte: list[tuple[str, dict[str, Any]]] = []
         flaeche: dict[str, Any] = {"rand": rand, "gross": kachel_gross, "schliessen": kachel_zu, "modus": modus,
+                                   "leiste_links": leiste_links, "leiste_rechts": leiste_rechts,
                                    "zeitleiste": zeitleiste, "ansicht": zweite_ansicht, "blatt": blatt}
         if kacheln_nur and not kacheln:
             raise ToolInputError("kacheln_nur gehört zu kacheln, z. B. kacheln=[\"modell\", \"druck\"].")

@@ -33,17 +33,21 @@ Tab für Flächen und Kanten, S für den Schnitt, E für die Explosion und M zum
 Wert schon beim Darüberfahren. ? zeigt alle Tasten. Tippst du in ein Textfeld, landen die Buchstaben dort und kein Befehl
 feuert.
 
-**3. Fokus.** ⌘1 zeigt nur den Viewer: links leise die Gliederung, rechts unten die Agentenspur, keine Tafeln. ⌃⌥→ schiebt
-das Fenster schmal an den rechten Rand neben deinen Chat, noch einmal stellt Größe und Lage wieder her. Der Viewer flackert
-dabei nicht und baut nichts neu auf.
+**3. Viewer und Kopfleiste.** Der Viewer reicht bis an die Oberkante, die Kopfleiste liegt ohne eigenen Grund darüber:
+links der Schalter für die Objekte und der Projektname, rechts die Darstellung wie in Blender (Röntgen, Drahtgitter, Solid,
+Material, Technisch und die Optionen im Pfeil), Foto, Video, Messen, Isolieren, An den Rand und ganz außen der Schalter für
+die Eigenschaften. Auf hellem Bild (Technisch) bleibt alles lesbar. Leere Stellen der Kopfleiste ziehen das Fenster, ein
+Doppelklick zoomt es. Links steht leise die Gliederung, rechts unten die Agentenspur. ⌃⌥→ schiebt das Fenster schmal an den
+rechten Rand neben deinen Chat, noch einmal stellt Größe und Lage wieder her. Der Viewer flackert dabei nicht.
 
-**4. Werkstatt.** ⌘2 zeigt links Objekte und Eigenschaften, rechts die Kacheln und unten die Statuszeile. Klick wählt ein Teil,
-ein Doppelklick benennt es um, und der neue Name steht danach in model.py. Änderst du unter „Maße des Modells“ einen Wert,
-landet er ebenfalls in model.py, und „vorher …“ zeigt den alten Wert.
+**4. Leisten.** ⌘1 schaltet die Objekte links, ⌘2 die Eigenschaften rechts, dasselbe tun die beiden Symbole oben. Rechts
+wählt ein Klick ein Teil, ein Doppelklick benennt es um, und der neue Name steht danach in model.py. Änderst du unter „Maße
+des Modells“ einen Wert, landet er ebenfalls in model.py, und „vorher …“ zeigt den alten Wert.
 
 **5. Kacheln.** ⌃⌘1 bis ⌃⌘0 öffnen Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details,
 Druck und Animation, Bauplan und Rendern stehen im Menü Kacheln. Höchstens vier sind offen und nummeriert, eine fünfte
-verdrängt die älteste. ⌥⌘2 macht Kachel 2 groß und wieder klein, ⇧⌘W schließt die aktive. Ein Wechsel soll sofort wirken.
+verdrängt die älteste. ⌥⌘2 macht Kachel 2 groß und wieder klein, ⇧⌘W schließt die aktive. ⌘3 (oder das Kachelsymbol oben rechts) zeigt nur
+das Modell und holt die Kacheln wieder zurück. Ein Wechsel soll sofort wirken.
 Die Zeichnung zeigt groß Seitenleiste und Inspektor. Buche im Menü Modell › Material einmal „Gebaut …“: Oben erscheint das Band
 mit „Rückgängig“, das beim Umbau kurz verloren gegangen war.
 

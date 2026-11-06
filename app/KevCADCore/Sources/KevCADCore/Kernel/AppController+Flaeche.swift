@@ -58,7 +58,8 @@ extension AppController {
                              "von": .number(Double(liste.count))])
         }
         return .object([
-            "modus": .string(z.modus.rawValue), "kacheln": .array(z.kacheln.map { .string($0.rawValue) }),
+            "modus": .string(z.modus.rawValue), "leiste_links": .bool(z.leisteLinks), "leiste_rechts": .bool(z.leisteRechts),
+            "kacheln": .array(z.kacheln.map { .string($0.rawValue) }),
             "gross": text(z.gross?.rawValue), "aktiv": text(z.aktiv?.rawValue), "rand": text(z.rand?.rawValue),
             "zeitleiste": .bool(z.zeitleiste), "ansicht": .string(z.zweiteAnsicht), "blatt": blatt,
         ])
