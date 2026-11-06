@@ -68,11 +68,14 @@ from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
-# V2-1b: So lange wartet run auf die Prüfung, dann rechnet sie im Hintergrund weiter. Nach einem kurzen Lauf nur kurz: Der
-# Zwischenstand kommt nach einer kleinen Änderung binnen einer knappen Sekunde, und Kevin soll nicht warten. Nach einem
-# langen Lauf etwas länger (ein Anteil der Laufzeit), damit der Agent die Befunde im Ergebnis von run hat
+# V2-1b: So lange wartet run auf die Prüfung, dann rechnet sie im Hintergrund weiter. Das Budget einer Maßänderung ist
+# ``RUN_ZIEL_S`` für den ganzen Aufruf: Solange die Zeit reicht, wartet run bis dahin (kleine Modelle haben dann ihre ganze
+# Prüfung im Ergebnis), sonst nur kurz. Nach einem langen Lauf (kalt, große Änderung) ein Anteil der Laufzeit, damit der
+# Agent die ersten Befunde im Ergebnis hat
 RUN_WARTEN_S = 3.0
-RUN_WARTEN_MIN_S = 0.7
+RUN_WARTEN_MIN_S = 0.4
+RUN_ZIEL_S = 2.4
+RUN_LANG_S = 3.0
 RUN_WARTEN_ANTEIL = 0.3
 VERSION_TITEL_WARTEN_S = 60.0  # run(titel=…) wartet so lange auf die Version des Laufs (Versionen-Faden)
 NACHLAUF_WARTEN_S = 60.0  # Aufgaben der Versionen warten so lange auf den Nachlauf früherer Läufe
@@ -328,12 +331,14 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         return result
 
     def _run_warten(self, job: Job) -> float:
-        """Vorgabe für ``run(warten_s=…)``: ein Anteil der Laufzeit, mindestens ``RUN_WARTEN_MIN_S``, höchstens
-        ``RUN_WARTEN_S``."""
+        """Vorgabe für ``run(warten_s=…)``, siehe ``RUN_ZIEL_S``."""
         if self.run_warten_s is not None:
             return self.run_warten_s
         dauer = time.perf_counter() - job.started if job.started else 0.0
-        return min(RUN_WARTEN_S, max(RUN_WARTEN_MIN_S, RUN_WARTEN_ANTEIL * dauer))
+        warten = max(RUN_WARTEN_MIN_S, RUN_ZIEL_S - dauer)
+        if dauer > RUN_LANG_S:
+            warten = max(warten, RUN_WARTEN_ANTEIL * dauer)
+        return min(RUN_WARTEN_S, warten)
 
     def _pruefung_ms(self, run: int) -> float | None:
         """Zeitpunkt (ms ab Start des Laufs), zu dem das Prüfergebnis von Lauf ``run`` ankam, oder None."""

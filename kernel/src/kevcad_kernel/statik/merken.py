@@ -3,8 +3,10 @@
 Der Lauf rechnet die Statik nach jeder Prüfung neu, auch wenn sich nichts geändert hat (Kugelschieber 0,55 s). Hier steht
 das Ergebnis von ``anbindung.rechne_gruppen`` je Fingerabdruck der Eingabe:
 
-- alle Statikmodelle mit allen Feldern (ohne die Rechenzeit ``ms``), über ``pickle`` Wert für Wert. Was sich nicht
-  serialisieren lässt, bekommt keinen Fingerabdruck und wird gerechnet wie bisher,
+- alle Statikmodelle mit allen Feldern (ohne die Rechenzeit ``ms``), über ``pickle`` Wert für Wert, je Feld einzeln (das
+  Format hängt daran, welche Objekte sich die Felder teilen: Zwei gleiche Stände unterschieden sich sonst schon dadurch,
+  dass ein Text einmal geteilt ist). Was sich nicht serialisieren lässt, bekommt keinen Fingerabdruck und wird gerechnet
+  wie bisher,
 - die Szenarien samt der Zuordnung Szenario → Modell,
 - der Stand des Katalogs (``Catalog._sig``: Ordner, Dateien, Änderungszeit, Größe; der Katalog lädt genau danach neu),
 - je Körper Name, Weltschlüssel (Inhalt der Form samt Netzgenauigkeit), Formschlüssel, Lage, Masse, Volumen und Angaben,
@@ -68,12 +70,16 @@ def fingerabdruck(modelle: dict[str, Any], szen: list[Any], katalog: Any, koerpe
         return None  # Katalog ohne bekannten Stand: lieber rechnen
     reihen = _reihen(modelle, szen, m0)
     zuordnung = [next(i for i, x in enumerate(reihen) if x is modelle.get(sz.name, m0)) for sz in szen]
+    h = hashlib.blake2b(FORMAT.encode(), digest_size=24)
     try:
-        daten = pickle.dumps((FORMAT, [dataclasses.replace(m, ms=0.0) for m in reihen], szen, zuordnung, sig,
-                              _koerper_stand(koerper)), protocol=pickle.HIGHEST_PROTOCOL)
+        for wert in (*(getattr(m, f.name) for m in reihen for f in dataclasses.fields(m) if f.name != "ms"), szen,
+                     zuordnung, sig, _koerper_stand(koerper)):
+            daten = pickle.dumps(wert, protocol=pickle.HIGHEST_PROTOCOL)
+            h.update(len(daten).to_bytes(8, "little"))
+            h.update(daten)
     except Exception:  # noqa: BLE001 - was sich nicht serialisieren lässt, hat keinen vollständigen Fingerabdruck
         return None
-    return hashlib.blake2b(daten, digest_size=24).digest()
+    return h.digest()
 
 
 def gemerkt(modelle: dict[str, Any], szen: list[Any], katalog: Any, koerper: dict[str, Any] | None, m0: Any,

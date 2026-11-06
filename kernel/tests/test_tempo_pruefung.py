@@ -81,6 +81,15 @@ def test_treffer_liefert_dasselbe_ergebnis_und_stellt_das_modell_wieder_her(tmp_
     assert all(a.feder is not None for a in anbindung.LETZTER.modell.anschluesse)
 
 
+def test_gleicher_stand_trifft_auch_mit_anders_geteilten_objekten(speicher):
+    """Ein gleicher Stand aus einem neuen Lauf hat dieselben Werte in neuen Objekten; pickle schreibt geteilte Objekte
+    aber als Verweis. Darf nicht zum Fehltreffer werden."""
+    text = "Teil " + str(1)
+    a = _modell(kulisse={text}, rollend={text})  # dasselbe Objekt in zwei Feldern
+    b = _modell(kulisse={"Teil " + str(1)}, rollend={"Teil " + str(1)})
+    assert merken.fingerabdruck({}, [], Katalog(), {}, a) == merken.fingerabdruck({}, [], Katalog(), {}, b)
+
+
 def test_treffer_ist_eine_eigene_kopie(tmp_path, speicher):
     lauf = Lauf(tmp_path, TISCH)
     vorlage = _ohne_zeiten(lauf()["statik"])
@@ -458,16 +467,20 @@ def test_pruefen_wartet_auf_den_rest_nach_kurzem_run(laufzeit):
 
 
 def test_run_warten_nach_der_dauer_des_laufs(laufzeit):
-    from kevcad_kernel.runtime import RUN_WARTEN_MIN_S, RUN_WARTEN_S, Job
+    from kevcad_kernel.runtime import RUN_WARTEN_MIN_S, RUN_WARTEN_S, RUN_ZIEL_S, Job
 
     rt = laufzeit["rt"]
     job = Job(kind="run", code="", source="agent", timeout_s=1)
-    job.started = time.perf_counter() - 1.0
-    assert rt._run_warten(job) == RUN_WARTEN_MIN_S
-    job.started = time.perf_counter() - 8.0
-    assert 2.3 < rt._run_warten(job) < RUN_WARTEN_S
-    job.started = time.perf_counter() - 60.0
-    assert rt._run_warten(job) == RUN_WARTEN_S
+
+    def warten(dauer: float) -> float:
+        job.started = time.perf_counter() - dauer
+        return rt._run_warten(job)
+
+    assert 1.3 < warten(1.0) <= RUN_ZIEL_S - 1.0  # kurzer Lauf: bis zum Budget (kleine Modelle: ganze Prüfung im Ergebnis)
+    assert warten(1.9) < 0.6  # Maßänderung am großen Modell: zusammen unter 2,5 s
+    assert warten(2.5) == RUN_WARTEN_MIN_S
+    assert 2.3 < warten(8.0) < RUN_WARTEN_S  # langer Lauf: ein Anteil der Laufzeit
+    assert warten(60.0) == RUN_WARTEN_S
     rt.run_warten_s = 3.0
     try:
         assert rt._run_warten(job) == 3.0
