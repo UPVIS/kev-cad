@@ -16,13 +16,14 @@ Das baut die Testfassung „Kev CAD Test abnahme“, legt Kopien von Katalog und
 `~/Documents/Kev CAD Abnahme` und startet die App. Zum Schluss steht im Terminal, wie du einen Agenten mit dieser
 Fassung verbindest. Weil sie neu signiert ist, fragt macOS beim ersten Sprechen nach Mikrofon und Spracherkennung.
 
-Öffne für die Punkte 2 bis 5 den Kugelschieber aus der Startübersicht, damit du ein großes Modell vor dir hast.
+Öffne für die Punkte 2 bis 5 mit ⌘O den Kugelschieber aus diesem Ordner, damit du ein großes Modell vor dir hast.
 
 ## Durchspielen
 
 **1. Start.** Das Fenster steht in etwa einer Sekunde, ohne Dialog. Du siehst „Neues Projekt · noch nicht gesichert“ und
-„Was soll entstehen?“, darüber die Karte „Zuletzt geöffnet“. Mit esc schiebst du sie weg, mit ⇧⌘O holst du sie zurück.
-⌘N legt ohne Formular ein neues leeres Projekt an, ein Doppelklick auf den Titel benennt es.
+„Was soll entstehen?“. Sobald die Fassung ein Projekt kennt, liegt beim Start die Karte „Zuletzt geöffnet“ darüber; mit esc
+schiebst du sie weg, mit ⇧⌘O holst du sie zurück. ⌘N legt ohne Formular ein neues leeres Projekt an, ein Doppelklick auf den
+Titel benennt es.
 
 **2. Maus und Tasten.** Das Modell dreht sich um den Punkt unter der Maus, wenn du mit der mittleren Taste oder mit ⌥ und
 der linken Taste ziehst, auf dem Trackpad mit zwei Fingern. ⇧ dazu verschiebt, das Rad zoomt zur Maus. Beim Drehen darf
