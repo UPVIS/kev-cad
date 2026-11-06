@@ -944,50 +944,8 @@ struct NavigationInputLayer: NSViewRepresentable {
         coordinator.eingabeView = nsView
     }
 }
-#else
-/// iPad: Eingabeebene über dem MTKView. Bisher meldet sie nur die Größe des Viewports (Schwenken, Strahlen und
-/// Bildpunkte rechnen damit) und lässt Berührungen durch; bis dahin gelten die Gesten des Pakets. Berührungen, Zeiger,
-/// Kontextmenü und Tastatur nach dieser Belegung folgen in I-3, der Stift in I-4.
-final class NavigationInputView: UIView {
-    weak var coordinator: ViewportCoordinator?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .clear
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) wird nicht benutzt") }
-
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        coordinator?.viewSize = bounds.size
-    }
-
-    /// Treffertest unter dem Zeiger (Messen, Drehpunkt, Zoomziel). iPad: folgt in I-3.
-    func hoverTest() {}
-
-    /// Eingabe an oder aus (zweiter Viewer). iPad: folgt in I-3.
-    func aktivGeaendert() {}
-}
-
-struct NavigationInputLayer: UIViewRepresentable {
-    let coordinator: ViewportCoordinator
-
-    func makeUIView(context: Context) -> NavigationInputView {
-        let v = NavigationInputView()
-        v.coordinator = coordinator
-        coordinator.eingabeView = v
-        return v
-    }
-
-    func updateUIView(_ uiView: NavigationInputView, context: Context) {
-        uiView.coordinator = coordinator
-        coordinator.eingabeView = uiView
-    }
-}
 #endif
+// iPad: Eingabeebene mit Touch, Stift, Trackpad und Tastatur in TouchNavigation.swift (I-3b).
 
 // MARK: - Achsen-Gizmo (wie Blenders Navigationsgizmo oben rechts)
 
