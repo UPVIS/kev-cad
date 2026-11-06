@@ -22,6 +22,11 @@ public final class AppController: AppActions {
 
     let process = KernelProcess()
     let connection = KernelConnection()
+    #if os(macOS)
+    /// I-2b: Eingang für gekoppelte iPads (AppController+Kopplung.swift) und die Liste der Kopplungen.
+    var ipadEingang: IPadEingang?
+    let kopplungen = MacKopplungen()
+    #endif
     let screenshots = ScreenshotRenderer()
     /// V2-6: Sprach-Feedback (Sprache/SprachSteuerung.swift).
     public let sprache = SprachSteuerung()
@@ -61,7 +66,7 @@ public final class AppController: AppActions {
     private var unknownTypesLogged = Set<String>()
 
     // Prozessüberwachung
-    private var running = false
+    private(set) var running = false
     private var crashTimes: [Date] = []
     private var restartWork: DispatchWorkItem?
     private var connectWatchdog: DispatchWorkItem?
@@ -186,6 +191,10 @@ public final class AppController: AppActions {
             return
         }
         model.kernelState = .starting
+        #if os(iOS)
+        // I-2b: Das iPad hat keinen eigenen Kernel, es verbindet sich über die Mac-App (PLAN-IPAD.md, I1 und I8)
+        startUeberMac()
+        #else
         let socket = AppInfo.kernelSocket.path
         if ProcessInfo.processInfo.environment["KEVCAD_KERNEL_EXTERNAL"] == "1" {
             log(.info, "Kernel wird extern gestartet, verbinde mit \(socket)")
@@ -200,8 +209,10 @@ public final class AppController: AppActions {
             }
         }
         connection.open(path: socket)
+        ipadEingangStarten()  // I-2b: nur mit gekoppeltem iPad bleibt ein Port offen
         armWatchdog()
         restoreSessionIfRequested()
+        #endif
     }
 
     /// Beendet Kernel und Verbindung.
@@ -213,6 +224,9 @@ public final class AppController: AppActions {
     private func stopInternal(clearState: Bool) {
         running = false
         restartWork?.cancel()
+        #if os(macOS)
+        ipadEingangStoppen()
+        #endif
         restartWork = nil
         connectWatchdog?.cancel()
         connectWatchdog = nil
@@ -399,15 +413,18 @@ public final class AppController: AppActions {
             case .connected:
                 connected = true
                 log(.info, "Mit Kernel verbunden")
-                send(HelloAppMessage(appVersion: Self.appVersion, bundleID: AppInfo.bundleID))
+                send(HelloAppMessage(appVersion: Self.appVersion, bundleID: AppInfo.bundleID, geraet: helloGeraet()))
                 // Ohne Inventar-Regel: Die App kennt das Projekt des Kernels hier noch nicht, ihr Wert wäre nur die
                 // Vorgabe "an" und schaltete eine abgeschaltete Regel still wieder ein (06.11.2026, FPV Demo).
-                sendSettings(mitInventar: false)
+                // I-2: als Vorgabe beim Verbinden, damit sie ein schon verbundenes Gerät nicht umstellt.
+                sendSettings(mitInventar: false, anlass: "start")
+                kopplungVerbunden(true)
             case .disconnected(let reason):
                 let was = connected
                 connected = false
                 helloReceived = false
                 failAllPending(reason)
+                kopplungVerbunden(false, grund: reason)
                 if was { log(.warning, "Verbindung zum Kernel getrennt: \(reason)") }
                 if running {
                     if case .failed = model.kernelState {} else { model.kernelState = .starting }
@@ -750,9 +767,10 @@ public final class AppController: AppActions {
 
     /// Einstellungen an den Kernel. Die Inventar-Regel geht nur mit, solange die App ein Projekt kennt (sonst ist ihr
     /// Wert die Vorgabe, nicht die Regel des Projekts).
-    func sendSettings(mitInventar: Bool = true) {
+    func sendSettings(mitInventar: Bool = true, anlass: String? = nil) {
         let regel: Bool? = mitInventar && model.project != nil ? model.inventarRegel : nil
-        send(SettingsMessage(autoRun: model.autoRun, slowMs: model.slowMotion ? Self.slowMotionMs : 0, inventarRegel: regel))
+        send(SettingsMessage(autoRun: model.autoRun, slowMs: model.slowMotion ? Self.slowMotionMs : 0, inventarRegel: regel,
+                             anlass: anlass))
     }
 
     // MARK: Animation

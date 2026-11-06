@@ -1549,9 +1549,11 @@ Kevin.**
 
 ## I-2 Mehrere Geräte
 
-Stand 06.11.2026 (PLAN-IPAD.md, Paket I-2). Der Kernel nimmt mehrere App-Verbindungen zugleich an. Das iPad kommt nicht
-selbst an den Unix-Socket: Die Mac-App reicht seine Rahmen über eine eigene Verbindung unverändert durch (Eingang und
-Kopplung folgen in I-2b). Für den Kernel ist jedes Gerät eine App-Verbindung wie die Mac-App.
+Stand 06.11.2026 (PLAN-IPAD.md, Pakete I-2a und I-2b). Der Kernel nimmt mehrere App-Verbindungen zugleich an. Das iPad
+kommt nicht selbst an den Unix-Socket: Die Mac-App lauscht für gekoppelte iPads (TLS mit einem Schlüssel je Gerät aus
+der Kopplung per QR-Code, Bonjour `_kevcad._tcp`, Port MCP-Port + 2, also 47825 bei der Installation; ohne Kopplung
+kein offener Port) und reicht jede Verbindung Byte für Byte über einen eigenen Unix-Socket an den Kernel durch
+(`KevCADCore/Netz/IPadEingang.swift`). Für den Kernel ist jedes Gerät eine App-Verbindung wie die Mac-App.
 
 **Wer was bekommt**
 
@@ -1572,7 +1574,7 @@ aktiv. `status` (MCP) nennt die Geräte unter `geraete` (`nr`, `art`, `name`, `a
 
 | type / Feld | Bedeutung |
 |---|---|
-| `HELLO_APP.geraet` | optional `{"id": "…", "art": "mac" \| "ipad", "name": "iPad von Kevin"}`. `id` bleibt je Gerät und App gleich (über Neustarts). Meldet sich dieselbe `id` neu, trennt der Kernel die alte Verbindung. Ohne `geraet` (Apps vor I-2) gilt die Bundle-ID als Gerät: Eine neue Verbindung derselben App ersetzt die alte wie bisher |
+| `HELLO_APP.geraet` | optional `{"id": "…", "art": "mac" \| "ipad", "name": "iPad von Kevin"}`, das iPad dazu `kopplung` (Kennung seiner Kopplung; der Eingang der Mac-App trägt damit Name und letzte Verbindung in seine Geräteliste ein). `id` bleibt je Gerät und App gleich (über Neustarts). Meldet sich dieselbe `id` neu, trennt der Kernel die alte Verbindung. Ohne `geraet` (Apps vor I-2) gilt die Bundle-ID als Gerät: Eine neue Verbindung derselben App ersetzt die alte wie bisher |
 | `AKTIV` | ohne Felder: Kevin bedient dieses Gerät (Drehen, Zeigen, Tippen), höchstens einmal je Sekunde. Keine Antwort |
 | `SETTINGS.anlass` | optional `"start"` (Vorgaben beim Verbinden) oder fehlt (Kevin hat etwas geändert). Mit `"start"` übergeht der Kernel die Nachricht, wenn schon ein anderes Gerät verbunden ist: Ein dazukommendes iPad stellt nicht Auto-Lauf oder Inventar-Regel des Mac um |
 

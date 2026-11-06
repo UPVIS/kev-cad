@@ -32,15 +32,20 @@ public struct HelloAppMessage: OutgoingMessage {
     public var bundleID: String
     /// V2-5: was die App kann (PROTOCOL.md, „V2-5 Live“).
     public var faehigkeiten: [String]
+    /// I-2 (PROTOCOL.md, „I-2 Mehrere Geräte“): `id`, `art` (`mac`, `ipad`), `name`; das iPad dazu `kopplung` (Kennung
+    /// seiner Kopplung, für die Geräteliste am Mac). nil = nicht mitschicken (Apps vor I-2).
+    public var geraet: [String: String]?
 
-    public init(appVersion: String, bundleID: String, faehigkeiten: [String] = LiveFaehigkeit.app) {
+    public init(appVersion: String, bundleID: String, faehigkeiten: [String] = LiveFaehigkeit.app,
+                geraet: [String: String]? = nil) {
         self.appVersion = appVersion
         self.bundleID = bundleID
         self.faehigkeiten = faehigkeiten
+        self.geraet = geraet
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, seq, faehigkeiten
+        case type, seq, faehigkeiten, geraet
         case appVersion = "app_version"
         case bundleID = "bundle_id"
     }
@@ -52,6 +57,7 @@ public struct HelloAppMessage: OutgoingMessage {
         try c.encode(appVersion, forKey: .appVersion)
         try c.encode(bundleID, forKey: .bundleID)
         try c.encode(faehigkeiten, forKey: .faehigkeiten)
+        try c.encodeIfPresent(geraet, forKey: .geraet)
     }
 }
 
@@ -187,15 +193,19 @@ public struct SettingsMessage: OutgoingMessage {
     public var slowMs: Int
     /// Phase 2: Inventar-Regel des offenen Projekts (nil = nicht mitschicken).
     public var inventarRegel: Bool?
+    /// I-2: "start" für die Vorgaben beim Verbinden (der Kernel übergeht sie, wenn schon ein anderes Gerät verbunden
+    /// ist); nil = Kevin hat etwas geändert.
+    public var anlass: String?
 
-    public init(autoRun: Bool, slowMs: Int, inventarRegel: Bool? = nil) {
+    public init(autoRun: Bool, slowMs: Int, inventarRegel: Bool? = nil, anlass: String? = nil) {
         self.autoRun = autoRun
         self.slowMs = slowMs
         self.inventarRegel = inventarRegel
+        self.anlass = anlass
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, seq
+        case type, seq, anlass
         case autoRun = "auto_run"
         case slowMs = "slow_ms"
         case inventarRegel = "inventar_regel"
@@ -208,6 +218,7 @@ public struct SettingsMessage: OutgoingMessage {
         try c.encode(autoRun, forKey: .autoRun)
         try c.encode(slowMs, forKey: .slowMs)
         try c.encodeIfPresent(inventarRegel, forKey: .inventarRegel)
+        try c.encodeIfPresent(anlass, forKey: .anlass)
     }
 }
 

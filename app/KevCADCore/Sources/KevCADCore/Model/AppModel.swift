@@ -238,6 +238,9 @@ public final class AppModel: ObservableObject {
     /// Viewer V2 (additiv): Darstellung, Hinweisleiste, Menüs im Viewport, lokale Ansicht, Meldungen, Aufnahmen
     /// (Aktionen: `actions as? ViewerActions`, Belegung in Viewer/Tastenbelegung.swift).
     public let viewer = ViewerStore()
+    /// I-2b (additiv, PLAN-IPAD.md): Kopplung von Mac und iPad, gekoppelte Geräte, QR-Code, Verbindung zum Mac
+    /// (Aktionen: `actions as? KopplungsActions`).
+    public let kopplung = KopplungsStore()
 
     /// Vom App-Kern gesetzt; die Oberfläche ruft darüber alle Aktionen auf.
     public weak var actions: AppActions?

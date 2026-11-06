@@ -72,15 +72,22 @@ final class ControllerTests: XCTestCase {
         if env["KEVCAD_KERNEL_CMD"] != nil || env["KEVCAD_DEMO"] == "1" || env["KEVCAD_KERNEL_EXTERNAL"] == "1" {
             throw XCTSkip("Umgebung setzt einen Kernel")
         }
+        #if os(macOS)
         let c = AppController(model: AppModel())
         c.start()
         guard case .failed(let msg) = c.model.kernelState else { return XCTFail("\(c.model.kernelState)") }
-        #if os(macOS)
         XCTAssertTrue(msg.contains("uv sync"), msg)
-        #else
-        XCTAssertTrue(msg.contains("iPad"), msg)  // dort startet kein Kernel (KernelProcess.swift)
-        #endif
         XCTAssertTrue(c.model.log.contains { $0.level == .error })
+        #else
+        // iPad (I-2b): kein eigener Kernel; ohne Kopplung wartet die App auf den QR-Code des Mac, ohne Fehler
+        PadKopplung.loeschen()
+        let c = AppController(model: AppModel())
+        c.start()
+        XCTAssertEqual(c.model.kernelState, .starting)
+        XCTAssertNil(c.model.kopplung.macName)
+        XCTAssertTrue(c.model.log.contains { $0.text.contains("gekoppelt") })
+        XCTAssertFalse(c.model.log.contains { $0.level == .error })
+        #endif
         c.stop()
         XCTAssertEqual(c.model.kernelState, .stopped)
     }

@@ -58,6 +58,9 @@ CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO
   SWIFT_ENABLE_PREFIX_MAPPING=YES CLANG_ENABLE_PREFIX_MAPPING=YES
   SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES CLANG_ENABLE_PROJECT_PREFIX_MAPPING=YES
   "SWIFT_OTHER_PREFIX_MAPPINGS=$map" "CLANG_OTHER_PREFIX_MAPPINGS=$map")
+# Tests suchen ihre Testdateien über #filePath (WireTestSupport, Fixtures): Mit herausgerechneten Pfaden zeigte das auf
+# /^src (Regel xcode-compilation-cache, „Preis der Projekt-Zuordnung“). Testbauten deshalb ohne Zuordnung.
+[ "$AKTION" = test ] && CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO)
 [ -n "$CAS" ] && CACHE+=("COMPILATION_CACHE_CAS_PATH=$CAS")
 
 start=$(date +%s)

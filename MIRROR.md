@@ -29,6 +29,8 @@ Kev CAD spricht nur die erste Strecke. VoiceBridge reicht Kopf und Nutzlast unve
   kommt: über den direkten Kanal (TLS-PSK plus Handschlag) oder über CloudKit mit Geräte-Unterschrift wie beim
   `AgentCommand`. Kev CAD nimmt `CMD` ausschließlich über diesen Socket an und vertraut ihm. Kev CAD öffnet keinen
   zweiten Eingang für Befehle (kein Netzwerkport, kein HTTP).
+  Seit I-2b (PLAN-IPAD.md) hat die Mac-App einen eigenen TLS-Eingang nur für gekoppelte iPads (Kev CAD für iPad,
+  Schlüssel je Gerät aus dem QR-Code); er reicht an den Kernel durch und hat mit dem Spiegel nichts zu tun.
 - **Der volle Projektpfad verlässt den Mac nicht.** `project.path` steht nur in `HELLO`; VoiceBridge reicht davon nur
   `name` weiter, weder aufs iPhone noch in die iCloud. `SCENE` trägt nur `project.name`.
 - Mehrere gleichzeitige Verbindungen sind erlaubt, jede bekommt den vollen Stand.
