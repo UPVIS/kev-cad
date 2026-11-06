@@ -69,7 +69,12 @@ extension AppController {
     /// Die Kachel meldet ihre Größe in Pixeln (nil: zu, dann rechnet nichts mehr).
     public func zweiteAnsichtGroesse(_ pixel: CGSize?) {
         zweiteAnsichtPixel = pixel
-        if pixel != nil { zweiteAnsichtNeu() }
+        if pixel != nil {
+            zweiteAnsichtNeu()
+        } else {
+            zweiteAnsichtAuftrag?.cancel()
+            zweiteAnsichtRechner.freigeben()
+        }
     }
 
     /// Die zweite Ansicht folgt einem Kamerabefehl des Agenten: Sie bleibt in ihrer Richtung und zeigt dasselbe Ziel.
@@ -194,6 +199,14 @@ final class ZweiteAnsichtRechner: @unchecked Sendable {
     private let sperre = NSLock()
     private var stand = 0
     private var renderer: OffscreenRenderer?
+
+    /// Kachel zu: Die Puffer der Körper belegen sonst weiter Grafikspeicher.
+    func freigeben() {
+        sperre.lock()
+        stand += 1
+        sperre.unlock()
+        schlange.async { [self] in renderer = nil }
+    }
 
     /// `fertig` läuft auf dem Hauptfaden; mit nil, wenn das Bild nicht ging oder überholt ist.
     func rechne(bodies: [ViewportBody], camera: CameraState, breite: Int, hoehe: Int, lighting: LightingConfiguration,

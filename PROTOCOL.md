@@ -1326,7 +1326,8 @@ dauernd geschickt.
   Punkt auf der Oberfläche und Normale in Weltkoordinaten, `bild` in Punkten (Ursprung links oben); null, wenn die Maus
   nicht über einem Teil steht. `animation`: `{name, zeit, spielt}` oder null.
 - Testvarianten der App legen `statistik` dazu (gebaute Körper, Aufleuchten, Weitergaben an den Viewport, Teile,
-  Schritte der Spur, Marken), für `kernel/tools/live_selbsttest.py`.
+  Schritte der Spur, Marken), für `kernel/tools/live_selbsttest.py`; für `kernel/tools/kachel_selbsttest.py` auch
+  `pause_ms` (längste Pause des Hauptfadens seit dem letzten Lagebild) und `zweite_ansicht` (fertige Bilder).
 - Die App antwortet in unter 50 ms. Ohne Antwort nach 200 ms (oder ohne `lage-1`) liefert der Kernel, was er selbst
   weiß (`KernelService.lagebild`, `quelle: "kernel"`): Auswahl (`SELECTION`), vom Agenten ausgeblendete Teile, die
   Kamera aus dem letzten `LAGE` mit ihrem Alter. Eine verspätete Antwort merkt er sich für das nächste Mal.
@@ -1389,6 +1390,9 @@ nummeriert 1 bis 4 in dieser Reihenfolge.
 - `kacheln` in der Reihenfolge der Nummern, auch die, die der Fokus gerade nicht zeigt. `gross`, `aktiv`, `rand`:
   Text oder null. `ansicht`: Blickrichtung der zweiten Ansicht wie in `view`. `blatt`: nur mit offener Kachel `zeichnung`
   und gewähltem Blatt, sonst null.
+
+Testvarianten kennen dazu `VIEW_CMD test_foto` (`pfad`): Bild der Oberfläche als PNG, ohne Bildschirmaufnahme und ohne
+den Viewer, für den Selbsttest auf dem Mac mini.
 
 **Projekt benennen (`projekt_name`):** `args`: `name` (Text). Die App macht dasselbe wie Kevin mit einem Doppelklick auf
 den Titel: Ein Entwurf zieht nach `~/Documents/Kev CAD/<name>` (`KEVCAD_PROJECTS_DIR`), ein benanntes Projekt wird im

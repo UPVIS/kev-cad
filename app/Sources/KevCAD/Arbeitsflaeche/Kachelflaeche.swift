@@ -48,11 +48,11 @@ enum KachelAnordnung {
         -> [KachelArt: CGRect]
     {
         if kacheln.contains(.animation), gross == nil || gross == .animation || gross == .modell {
-            let rest = kacheln.filter { $0 != .animation }
+            let rest = kacheln.filter { $0 != .animation && (gross == nil || $0 == .modell) }
             if rest.isEmpty { return [.animation: f] }
             let h = zeitleisteHoehe(breite: f.width)
             let oben = CGRect(x: f.minX, y: f.minY, width: f.width, height: max(1, f.height - h - a))
-            var r = rahmen(gross == nil ? rest : rest.filter { $0 == .modell }, gross: nil, in: oben, abstand: a)
+            var r = rahmen(rest, gross: nil, in: oben, abstand: a)
             r[.animation] = CGRect(x: f.minX, y: f.maxY - h, width: f.width, height: h)
             return r
         }

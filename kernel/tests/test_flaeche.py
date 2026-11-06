@@ -192,6 +192,7 @@ def test_projekt_benennen_und_kevin_benennt_um(tmp):
         assert not benannt.is_error, text(benannt)
         assert f"Projekt heißt jetzt Kugelschieber: {neu}" in text(benannt) and str(neu / "model.py") in text(benannt)
         assert "Achtung" not in text(danach), "die eigene Änderung ist kein Hinweis"
+        assert rt.wait_idle(60) and rt.status()["last_run"], "nach dem Umzug steht das Modell gleich wieder da, auch ohne Auto-Lauf"
 
         # Kevin benennt im Fenster um: Die App zieht den Ordner um und öffnet das Projekt am neuen Ort
         um = tmp / "Kugelbahn"

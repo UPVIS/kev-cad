@@ -23,14 +23,14 @@ Grundansicht“ heißt: Es gibt ihn noch, aber nicht mehr ständig im Bild, sond
 | `PartTreeView` (Panels/) | Systemliste mit Suche, Kameras, Kontextmenü | wird **Gliederung**: eigene Zeilen nur mit Gruppen und Objekten, Anzahl, Punkt bei Befund, Doppelklick benennt um; Kameras in der Werkstatt |
 | `InspectorView` (Panels/) | Kameras, Auswahl, Eigenschaften, Lagerteil, Zukauf, Bedingungen, Referenzen, Statik, Topologie, Messungen, Projekt | fliegt aus der Grundansicht; die Werkstatt zeigt **Eigenschaften** neu (Name, Werte, Maße mit „vorher“); der ganze Inspektor wird Kachel **Details** |
 | `StatusBar` (Panels/) | Kernel, Lauf, Teile, Dreiecke, Agent | wird Baustein **Statuszeile** der Werkstatt; im Fokus steht nur die Agentenspur |
-| `SchnellansichtenBereich` (Material/) | Stückliste, Zuschnitt und Druck kompakt unter dem Viewport | wird Kachel (**Stückliste**, **Zuschnitt**) |
+| `SchnellansichtenBereich` (Material/) | Stückliste, Zuschnitt und Druck kompakt unter dem Viewport | wird Kachel (**Stückliste**, **Zuschnitt**, **Druck**) |
 | Bereich Material (`MaterialBereich`, `MaterialSeitenleiste`, `MaterialInspektor`, `MaterialToolbar`) | Übersicht, Stückliste, Zuschnitt, Einkauf, Bestand, Zukauf, Druck | wird Kachel **Material** (ganz eingebettet) |
 | Bereich Dokumente (`DokumenteBereich`, `DokumenteSeitenleiste`, `BlattInspektor`, `BauplanInspektor`, `BerichteInspektor`, `DokumenteToolbar`) | Zeichnungsblätter, Bauplan, Berichte | wird Kachel **Zeichnung** (Blatt, Bauplan und Berichte über das Menü der Kachel; Seitenleiste und Inspektor in der Kachel) |
 | Bereich Simulation (`SimulationSeitenleiste`, `SimulationInspektor`, `SimulationErgebnisAnsicht`, `SimulationToolbar`) | Lastfälle, Kräfte, Lager, Rechnen, Ergebnisse | wird Kachel **Simulation**; die Werkzeugleiste für Kräfte und Lager bleibt im Viewer |
 | `VersionenLeiste`, `VariantenMenu`, `VergleichKarte` (Versionen/) | Seitenleiste neben dem Viewport, Variantenmenü in der Titelleiste, Vergleich im Viewport | Leiste wird Kachel **Versionen**; Varianten im Projektmenü; die Vergleichskarte bleibt im Viewer |
-| `AnimationTimeline` (Animation/) | Zeitleiste unter dem Viewport, nur mit Animation | bleibt unter dem Viewer (Kachel in V2-7) |
+| `AnimationTimeline` (Animation/) | Zeitleiste unter dem Viewport, nur mit Animation | Kachel **Animation** (Streifen unten); im Fokus über dem Viewer, auf Zuruf oder beim Abspielen |
 | Bänder `ErrorBanner`, `InventoryBanner`, `FreigabeBand`, `PruefBanner`, `ZukaufBanner`, `ScanBand`, `BuchungsBand` | oben im Viewport | bleiben oben im Viewer; Befunde am Teil kommen mit V2-5 |
-| Dialoge: Gebaut, Bestand erfassen, Gedruckt, Spule, Freigabe, Referenz hinzufügen, Vermessen, Maßstab, Rendern, Drucken, Drucker-Einstellungen, Dokumente exportieren, Meilenstein, Variante | Blätter und Dialoge | bleiben vorerst (V2-7 macht daraus Kacheln) |
+| Dialoge: Gebaut, Bestand erfassen, Gedruckt, Spule, Freigabe, Referenz hinzufügen, Vermessen, Maßstab, Rendern, Drucken, Drucker-Einstellungen, Dokumente exportieren, Meilenstein, Variante | Blätter und Dialoge | Rendern ist seit V2-7 die Kachel **Rendern**; die übrigen bleiben Blätter und Dialoge, was davon wegfällt, entscheidet V2-8 |
 | `LogWindow`, `CatalogWindow`, `ZukaufDialogWindow` | eigene Fenster | bleiben Nebenfenster |
 | `FotoAnsichtOverlay`, `AbweichungLegende`, `MassstabLeiste`, `DurchspielenLeiste`, `SimulationWerkzeugLeiste` | im Viewport | bleiben im Viewer |
 | Menüs: `KevCADCommands`, `MaterialCommands`, `DokumenteCommands`, `DokumenteExportCommands`, `AnimationCommands`, `VersionenCommands`, `StockCommands`, `BestandCommands`, `ZukaufCommands`, `RenderCommands`, `SimulationCommands`, `SidebarCommands`, `InspectorCommands` | Ablage, Darstellung (Bereiche ⌘1 bis ⌘4, Schnellansichten ⌃⌘1 bis ⌃⌘3, Blender-Tasten), Modell, Dokumente, Material, Animation, Versionen, Simulation, Hilfe | neu geordnet, siehe Abschnitt 7 |
@@ -89,7 +89,8 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
 ## 4. Fokus und Werkstatt
 
 - **Fokus** (⌘1): Viewer über die ganze Fläche unter der Kopfleiste. Links die Gliederung leise im Bild, unten Kevins
-  Live-Text (sobald er spricht), rechts unten die Agentenspur. Keine Tafeln.
+  Live-Text (sobald er spricht), rechts unten die Agentenspur. Keine Tafeln. Die Zeitleiste steht nur auf Zuruf (⌃⌘T,
+  `view(zeitleiste=true)`) oder beim Abspielen über dem Viewer; sie liegt darüber, damit der Viewer seine Größe behält.
 - **Werkstatt** (⌘2): links eine Spalte mit Objekten (Suche ab 13 Teilen) und Eigenschaften der Auswahl, rechts die
   Kachelfläche, unten die Statuszeile.
 - **Gliederung**: nur Gruppen und Objekte. Klick wählt, ⇧ oder ⌘ nimmt dazu, Doppelklick oder Zeilenschalter benennt
@@ -118,18 +119,31 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
 
 ## 5. Kacheln
 
-- Arten: Modell, Zeichnung, Stückliste, Zuschnitt, zweite Ansicht, Material, Simulation, Versionen, Details. Höchstens
-  vier zugleich, nummeriert 1 bis 4; eine fünfte verdrängt die älteste außer dem Modell.
+- Arten: Modell, Zeichnung, Bauplan, Stückliste, Zuschnitt, Druck, Animation, zweite Ansicht, Material, Simulation,
+  Versionen, Details, Rendern. Höchstens vier zugleich, nummeriert 1 bis 4; eine fünfte verdrängt die älteste außer dem
+  Modell. Die Animation bringt das Modell mit, denn die Bewegung sieht man dort.
 - Anordnung: eine füllt alles; zwei nebeneinander (im Hochformat übereinander); drei mit der ersten links groß und zwei
-  rechts übereinander; vier im Raster. Eine große Kachel füllt die Fläche allein.
-- Eingebettet statt neu geschrieben: Zeichnung = `DokumenteBereich` (breit mit Seitenleiste und Inspektor),
-  Stückliste = `StuecklisteKompaktTabelle` bzw. groß `MaterialStuecklisteAnsicht`, Zuschnitt = `MaterialZuschnittAnsicht`,
-  Material = `MaterialBereich` mit Seitenleiste und Inspektor, Simulation = Seitenleiste, Ergebnisse, Inspektor,
-  Versionen = `VersionenLeiste`, Details = `InspectorView`. Die zweite Ansicht ist bis V2-4 ein Bild einer
-  Standardansicht (`AppController.zweiteAnsicht`), neu gerechnet nach jedem Lauf.
+  rechts übereinander; vier im Raster. Eine große Kachel füllt die Fläche allein. Die Animation ist ein Streifen unten
+  über die ganze Breite, darüber der Rest; groß bleibt sie mit dem Modell zusammen, und auch ein großes Modell behält sie.
+  Unter 760 pt Breite steht die Zeitleiste in zwei Zeilen, im Fenster am Rand fehlt nichts.
+- Eingebettet statt neu geschrieben: Zeichnung = `DokumenteBereich` (breit mit Seitenleiste und Inspektor; Blätter
+  wechseln im Kopf der Kachel, das Blatt bleibt hell und liegt auf Planquadraten wie auf einem Zeichenbrett), Bauplan =
+  `BauplanBereich` (breit mit Inspektor), Stückliste = `StuecklisteKompaktTabelle` bzw. groß `MaterialStuecklisteAnsicht`,
+  Zuschnitt = `MaterialZuschnittAnsicht`, Druck = `DruckAnsicht` (Platten ab 640 pt Breite, „Drucken …“ öffnet nur den
+  Dialog), Animation = `AnimationTimeline`, Material = `MaterialBereich` mit Seitenleiste und Inspektor, Simulation =
+  Seitenleiste, Ergebnisse, Inspektor, Versionen = `VersionenLeiste`, Details = `InspectorView`, Rendern = `RenderDialog`.
+- Zweite Ansicht: ein Bild einer Standardansicht, gerechnet auf einer eigenen Warteschlange (`ZweiteAnsichtRechner`,
+  `OffscreenRenderer` ist dafür nicht mehr an den Hauptfaden gebunden). Es entsteht nach jedem Lauf, bei neuer Größe oder
+  Richtung und nach jedem Kamerabefehl des Agenten: `view(focus=…)` zeigt dasselbe Ziel aus ihrer Richtung,
+  `view(standard=…)` oder `fit` wieder alles. Ein zweiter echter Viewport hätte auf dem Hauptfaden gezeichnet und alle
+  Körper ein zweites Mal hochgeladen; dafür bleibt die Ansicht ein Bild ohne Maus.
+- Der Agent stellt die Fläche über `view` (PROTOCOL.md, „Fläche“, `VIEW_CMD flaeche`), Skill `kacheln.md`. Eine Kachel im
+  Fokus führt in die Werkstatt; am Rand bleibt das Fenster schmal und die Kacheln stehen übereinander.
 - Wer `ProjectWindowState.bereich` setzt (Sprünge aus Stückliste, Teilebaum, Menüs, Selbsttests), holt die passende
   Kachel nach vorn; umgekehrt folgt `bereich` der aktiven Kachel, damit die Kürzel der Bereiche passen.
 - Alles über `OberflaechenActions` (Befehle `Oberflaechenbefehl`), damit Sprache (V2-6) und Agent (V2-7) es auslösen.
+- Ist eine Kachel groß, bleiben die übrigen in ihrer letzten Größe eingehängt und nur ausgeblendet: „alle einordnen“ baut
+  nichts neu auf (gemessen 107 statt 53 ms).
 - Drei Regeln gegen lange Pausen (gemessen bis 15 s, wenn eine davon fehlt): Das Hauptfenster beobachtet das Modell
   nicht, sonst wertet jede Protokollzeile alles neu aus. Rahmen von Kacheln werden nie animiert, sonst vermisst SwiftUI
   Tabellen in jedem Animationsschritt neu. `KachelInhalt` ist `Equatable` (nur Art und Breite zählen), denn seine
@@ -157,7 +171,8 @@ gelten weiter.
 | ⌃⌥→, ⌃⌥← | schmal an den rechten bzw. linken Rand, noch einmal zurück |
 | ⌘N, ⌘O, ⇧⌘O | neues leeres Projekt, Öffnen, letzte Projekte zeigen |
 | ⇧⌘S | Entwurf sichern bzw. Projekt umbenennen |
-| ⌃⌘1 bis ⌃⌘8 | Kachel Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details |
+| ⌃⌘1 bis ⌃⌘0 | Kachel Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details, Druck, Animation; Bauplan und Rendern im Menü (⌥⌘R) |
+| ⌃⌘T | Zeitleiste im Fokus zeigen und ausblenden |
 | ⌥⌘1 bis ⌥⌘4 | Kachel 1 bis 4 groß und zurück |
 | ⇧⌘W | aktive Kachel schließen |
 | V | Sprechen an und aus; aus hält an, die Sitzung bleibt offen (im Zeichnungsblatt bleibt V das Auswahlwerkzeug) |
@@ -183,3 +198,25 @@ Selbsttest `KEVCAD_SELFTEST=oberflaeche`, Kugelschieber Variante B (134 Teile), 
 
 Gemessen wird die längste Pause des Hauptfadens. Ohne fremde Last ist der Start nicht gemessen; die Zeit bis zum Fenster
 liegt dann nahe der Rechenzeit.
+
+### V2-7: Kacheln vom Agenten
+
+Selbsttest `kernel/tools/kachel_selbsttest.py` (`tools/fern/kachel-selbsttest.sh`): echter Kernel, echte Testvariante,
+Kugelschieber Variante B, die Befehle kommen als `view` über MCP; gemessen wird die längste Pause des Hauptfadens im
+Lagebild der Testvariante. Mac mini (M4), ohne fremde Last. Der Viewer zeichnet dort nicht auf den Bildschirm, die Pausen
+enthalten also den Aufbau der Oberfläche, nicht das Zeichnen des Modells.
+
+| Was | längste Pause |
+|---|---|
+| Kachel öffnen, zweites Mal: Stückliste, Zuschnitt, Zeichnung, Bauplan, Druck | 103, 50, 29, 89, 60 ms |
+| Kachel öffnen, zweites Mal: Animation, zweite Ansicht, Material, Simulation | 35, 30, 65, 132 ms |
+| Kachel öffnen, zweites Mal: Versionen, Details, Rendern | 34, 80, 146 ms |
+| Werkstatt zum ersten Mal über eine Kachel im Fokus | 155 ms |
+| Fokus → Werkstatt, Werkstatt → Fokus | 38 bis 66 ms |
+| Kachel 2 groß, alle einordnen | 142, 66 ms |
+| an den Rand, zurück | 59, 88 ms |
+| zweite Ansicht: andere Richtung, Kamerabefehl, ganzer Lauf | 40, 38, 39 ms |
+
+Bilder der Fenster liefert im Test `VIEW_CMD test_foto` (ohne Viewer): `screencapture` geht über ssh nicht. Fallen beim Bau:
+`EmptyView()` in `ViewThatFits` ist kein Kandidat, die letzte echte Ansicht wird dann erzwungen und macht die Kachel breiter
+als das Fenster (Kopf der Druckvorschau am Rand).

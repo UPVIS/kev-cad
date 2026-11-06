@@ -6,13 +6,14 @@ Lagebild der App sagt, was wirklich offen ist. Die App misst die längste Pause 
 im Lagebild von Testvarianten).
 
     tools/fern.sh testbau k7
-    kernel/.venv/bin/python -u kernel/tools/kachel_selbsttest.py "build/Kev CAD Test k7.app" \
-        "$HOME/Documents/Kev CAD/Kugelschieber Variante B" --json kacheln.json --fotos fotos/
+    tools/fern/kachel-selbsttest.sh "build/Kev CAD Test k7.app" "$HOME/Documents/Kev CAD/Kugelschieber Variante B"
 
 Geprüft wird: Eine Kachel im Fokus führt in die Werkstatt, Lagebild und ``status`` nennen Modus, Kacheln, große Kachel und
 Rand; jede Kachel geht beim zweiten Öffnen in unter 300 ms auf; Umschalten Fokus/Werkstatt, groß und Rand ohne Pause über
 100 ms; die zweite Ansicht rechnet, folgt einem Kamerabefehl und lässt den Hauptfaden frei; ``projekt(name=…)`` zieht das
-Projekt um. Ohne zweiten Monitor gehört der Test auf den Mac mini, damit kein Fenster auf Kevins Hauptbildschirm liegt.
+Projekt um. Das Skript fährt den Test auf dem Mac mini: Dort liegt kein Fenster auf Kevins Hauptbildschirm und fremde Last
+verfälscht die Zeiten nicht. Der Viewer zeichnet dort nicht auf den Bildschirm (kein Bild je Takt), die Fensterbilder
+(``VIEW_CMD test_foto``, nur Testvarianten) zeigen deshalb die Oberfläche ohne das Modell.
 """
 
 from __future__ import annotations
@@ -278,6 +279,11 @@ def main() -> int:
         pruefe(str(ziel) in text, f"projekt(name=…) nennt den neuen Pfad: {text[:160]}")
         pruefe((ziel / "model.py").is_file() and not kopie.exists(), "Projekt liegt am neuen Ort")
         pruefe(rt.projekt_kurz()["name"] == "Kachel Selbsttest", "Kernel hat das Projekt am neuen Ort offen")
+        res = rt.run(timeout_s=600)
+        rt.wait_idle(120)
+        time.sleep(2)
+        teile = len(lage()["sichtbar"]) + len(lage()["verborgen"])
+        pruefe(bool(res.get("ok")) and teile > 0, f"Lauf am neuen Ort, die App zeigt Teile ({teile})")
         durch = True
     finally:
         subprocess.run(["pkill", "-x", name], check=False)

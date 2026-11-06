@@ -781,6 +781,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _set_project(self, proj: Project, reply_to: str | None = None) -> None:
         with self._lock:
             same = self._project is not None and self._project.path == proj.path
+            alt = self._project.path if self._project is not None else None
             self._project = proj
             if not same:
                 self._last_hash = None
@@ -820,7 +821,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
                 self._send_app(status)
         self._versionen_projekt(proj, same)  # Versionen: Repo anlegen, alte Stände übernehmen
-        if self._settings.get("auto_run") and (not same or self._last_result is None):
+        umgezogen = not same and alt is not None and not Path(alt).exists()  # umbenannt: das Modell steht gleich wieder da
+        if umgezogen or (self._settings.get("auto_run") and (not same or self._last_result is None)):
             self._submit_run(None, int(self._settings.get("slow_ms") or 0), self.run_timeout_s, source="auto")
 
     # =================================================================================================================
