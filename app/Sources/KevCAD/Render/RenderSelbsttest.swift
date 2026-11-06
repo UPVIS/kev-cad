@@ -72,7 +72,7 @@ enum RenderSelbsttest {
 
         // Dialog mit Vorschau
         let stand0 = store.vorschauStand
-        RenderUI.shared.offen = true
+        model.oberflaechenActions?.zeigeKachel(.render)
         check(await wait(60) { store.vorschauStand > stand0 && !store.vorschauLaeuft }, "Vorschau im Dialog (Studio)")
         try? await Task.sleep(for: .milliseconds(400))
         foto("01-dialog-vorschau")
@@ -105,7 +105,7 @@ enum RenderSelbsttest {
         }
         try? await Task.sleep(for: .milliseconds(400))
         foto("03-dialog-fertig")
-        RenderUI.shared.offen = false
+        model.oberflaechenActions?.schliesseKachel(.render)
         lines.append(passed ? "ERGEBNIS: bestanden" : "ERGEBNIS: FEHLER")
         try? lines.joined(separator: "\n").write(to: ausgabe.appendingPathComponent("selftest-render.txt"),
                                                 atomically: true, encoding: .utf8)

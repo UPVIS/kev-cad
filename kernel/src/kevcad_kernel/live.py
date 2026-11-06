@@ -25,10 +25,12 @@ import re
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from kevcad_kernel.protocol import (
-    FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_LAGE, FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_SPUR, IN_ARBEIT_NACH_S,
+    FAEHIGKEIT_DELTA, FAEHIGKEIT_FLAECHE, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_LAGE, FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_SPUR,
+    FLAECHE_BEFEHLE, FLAECHE_FEHLT, IN_ARBEIT_NACH_S,
     KERNEL_FAEHIGKEITEN, LAGE_WARTEN_S, LIVE_NACHRICHTEN, SPUR_FELDER, SPUR_LAENGE, SPUR_TEXT_MAX, TEIL_INHALTE,
     WIE_ZUVOR_ANTEIL, WIE_ZUVOR_ARTEN, WIE_ZUVOR_BASEN, inhalt_schluessel, kanonisch, netz_bytes, part_same,
     patch_anwenden, strukturpatch, wie_zuvor,
@@ -558,6 +560,30 @@ class LiveRuntime:
                                             "id": aid, "art": "param", "dauer_s": PARAM_ANZEIGE_S})
         self._send_view_nowait("highlight", {"refs": ziel, "color": None, "label": None, "clear": False,  # type: ignore
                                              "id": aid, "dauer_s": PARAM_ANZEIGE_S})
+
+    def _live_flaeche_fehlt(self, cmd: str) -> str | None:
+        """view_command: Fehlertext, wenn eine ältere App einen Befehl von V2-7 bekäme."""
+        return FLAECHE_FEHLT if cmd in FLAECHE_BEFEHLE and not self._live_hat(FAEHIGKEIT_FLAECHE) else None
+
+    def projekt_benennen(self, name: str, warten_s: float = 15.0) -> dict[str, Any]:
+        """Siehe KernelService.projekt_benennen."""
+        res = self.view_command("projekt_name", {"name": name}, warten_s)  # type: ignore[attr-defined]
+        if not res.get("ok"):
+            return res
+        ziel = Path(str(res.get("message") or "")).resolve()
+        ende = time.monotonic() + warten_s
+        while True:  # die App öffnet das Projekt am neuen Ort (PROJECT_OPEN), erst dann gilt der neue Pfad
+            info = self.projekt_kurz()
+            if info and Path(str(info.get("path"))).resolve() == ziel:
+                return {"ok": True, **info}
+            if time.monotonic() >= ende:
+                return {"ok": False, "error": f"Die App hat das Projekt nach {ziel} verschoben, aber nicht geöffnet."}
+            time.sleep(0.05)
+
+    def projekt_kurz(self) -> dict[str, Any] | None:
+        """Siehe KernelService.projekt_kurz. Ohne Sperre: Nach jedem Werkzeug gerufen, darf es nie auf einen Lauf warten."""
+        proj = self._project  # type: ignore[attr-defined]
+        return proj.info() if proj is not None else None
 
     def _live_view_vorher(self, cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         """view_command: ``annotate`` mit ``dauer_s`` braucht eine id (zum Entfernen bei älteren Apps), ``highlight`` mit

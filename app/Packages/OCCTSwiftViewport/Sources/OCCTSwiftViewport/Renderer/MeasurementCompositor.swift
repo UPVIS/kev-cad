@@ -11,7 +11,7 @@ import CoreText
 import Foundation
 import simd
 
-@MainActor
+// Kev CAD: nicht an den Hauptfaden gebunden (siehe OffscreenRenderer).
 internal enum MeasurementCompositor {
 
     /// Draws measurement annotations over `baseImage`, producing a new image of the same size.

@@ -1,6 +1,6 @@
 import Foundation
 
-// V2-3 (OBERFLAECHE.md): Zustand der neuen Oberfläche, den Sprache (V2-6) und Agent (V2-7) später auslösen sollen:
+// V2-3 (OBERFLAECHE.md): Zustand der neuen Oberfläche, den Sprache (V2-6) und Agent (V2-7, `VIEW_CMD flaeche`) auslösen:
 // Modus, Kacheln, Startübersicht, Sprechen, Fenster am Rand.
 //
 // Vertrag wie bei AppModel: Die Oberfläche liest `AppModel.oberflaeche` und ruft `OberflaechenActions`. Geändert wird
@@ -14,11 +14,30 @@ public enum ArbeitsModus: String, CaseIterable, Codable, Sendable {
     case fokus, werkstatt
 }
 
-/// Was eine Kachel der Werkstatt zeigt. Jede Art gibt es höchstens einmal.
+/// Was eine Kachel der Werkstatt zeigt. Jede Art gibt es höchstens einmal. Die Namen sind Teil des Protokolls (`KACHELN`
+/// in protocol.py, PROTOCOL.md, „Fläche“).
 public enum KachelArt: String, CaseIterable, Codable, Sendable, Identifiable {
-    case modell, zeichnung, stueckliste, zuschnitt, ansicht, material, simulation, versionen, details
+    case modell, zeichnung, bauplan, stueckliste, zuschnitt, druck, animation, ansicht, material, simulation, versionen, details, render
 
     public var id: String { rawValue }
+
+    public var titel: String {
+        switch self {
+        case .modell: return "Modell"
+        case .zeichnung: return "Zeichnung"
+        case .bauplan: return "Bauplan"
+        case .stueckliste: return "Stückliste"
+        case .zuschnitt: return "Zuschnitt"
+        case .druck: return "Druck"
+        case .animation: return "Animation"
+        case .ansicht: return "Zweite Ansicht"
+        case .material: return "Material"
+        case .simulation: return "Simulation"
+        case .versionen: return "Versionen"
+        case .details: return "Details"
+        case .render: return "Rendern"
+        }
+    }
 }
 
 /// Bildschirmrand für das schmale Fenster neben dem Chat.
@@ -50,6 +69,12 @@ public enum Oberflaechenbefehl: Equatable, Sendable {
     case sprechenVerwerfen
     /// Fenster schmal an einen Bildschirmrand oder zurück (nil).
     case rand(Bildschirmrand?)
+    /// Zeitleiste im Fokus zeigen (V2-7); beim Abspielen steht sie dort von selbst, in der Werkstatt ist sie eine Kachel.
+    case zeitleiste(Bool)
+    /// Blickrichtung der zweiten Ansicht, Name wie in `VIEW_CMD view`.
+    case zweiteAnsicht(String)
+    /// Blatt der Kachel Zeichnung (Kennung); nil, wenn keins gewählt ist.
+    case blatt(String?)
 }
 
 /// Reine Logik des Zustands, ohne Beobachtung (testbar, auch für den Demomodus und spätere Nachrichten).
@@ -70,6 +95,12 @@ public struct OberflaechenZustand: Equatable, Sendable {
     public var rand: Bildschirmrand?
     /// Modus vor dem Rand: Zurück vom Rand stellt ihn wieder her.
     public var modusVorRand: ArbeitsModus?
+    /// Zeitleiste im Fokus auf Zuruf
+    public var zeitleiste = false
+    /// Blickrichtung der zweiten Ansicht
+    public var zweiteAnsicht = "top"
+    /// Gewähltes Blatt der Kachel Zeichnung
+    public var blatt: String?
 
     public init(modus: ArbeitsModus = .fokus, kacheln: [KachelArt] = [.modell], uebersicht: Bool = false) {
         self.modus = modus
@@ -80,18 +111,14 @@ public struct OberflaechenZustand: Equatable, Sendable {
     public mutating func anwenden(_ befehl: Oberflaechenbefehl) {
         switch befehl {
         case .modus(let m):
-            modus = m
+            wechsle(zu: m)
             if m == .werkstatt && kacheln.isEmpty { kacheln = [.modell] }
         case .kachelZeigen(let a):
-            if !kacheln.contains(a) {
-                kacheln.append(a)
-                if kacheln.count > Self.hoechstensKacheln, let weg = Self.verdraengt(kacheln, neu: a) {
-                    kacheln.removeAll { $0 == weg }
-                }
-            }
+            if a == .animation { einreihen(.modell) }  // die Bewegung sieht man im Modell
+            einreihen(a)
             if gross != nil && gross != a { gross = nil }
             aktiv = a
-            if a != .modell { modus = .werkstatt }
+            if a != .modell { wechsle(zu: .werkstatt) }
         case .kachelSchliessen(let a):
             kacheln.removeAll { $0 == a }
             if gross == a { gross = nil }
@@ -101,15 +128,15 @@ public struct OberflaechenZustand: Equatable, Sendable {
                 if !kacheln.contains(a) { anwenden(.kachelZeigen(a)) }
                 gross = a
                 aktiv = a
-                modus = .werkstatt
+                wechsle(zu: .werkstatt)
             } else {
                 gross = nil
             }
         case .kachelnOrdnen(let liste):
-            kacheln = Self.bereinigt(liste)
+            kacheln = Self.bereinigt(liste.contains(.animation) && !liste.contains(.modell) ? [.modell] + liste : liste)
             gross = nil
             if let a = aktiv, !kacheln.contains(a) { aktiv = kacheln.first }
-            if kacheln.contains(where: { $0 != .modell }) { modus = .werkstatt }
+            if kacheln.contains(where: { $0 != .modell }) { wechsle(zu: .werkstatt) }
         case .kachelAktiv(let a):
             aktiv = a.flatMap { kacheln.contains($0) ? $0 : nil }
         case .uebersicht(let an):
@@ -140,6 +167,27 @@ public struct OberflaechenZustand: Equatable, Sendable {
                 if let m = modusVorRand { modus = m }
                 modusVorRand = nil
             }
+        case .zeitleiste(let an):
+            zeitleiste = an
+        case .zweiteAnsicht(let name):
+            zweiteAnsicht = name
+        case .blatt(let id):
+            blatt = id
+        }
+    }
+
+    /// Am Rand gilt ein neuer Modus auch nach dem Zurückkommen: Sonst verschwänden Kacheln, die der Agent dort öffnet.
+    private mutating func wechsle(zu m: ArbeitsModus) {
+        modus = m
+        if rand != nil { modusVorRand = m }
+    }
+
+    /// Kachel hinten anfügen, wenn sie noch nicht offen ist; eine fünfte verdrängt die älteste.
+    private mutating func einreihen(_ a: KachelArt) {
+        guard !kacheln.contains(a) else { return }
+        kacheln.append(a)
+        if kacheln.count > Self.hoechstensKacheln, let weg = Self.verdraengt(kacheln, neu: a) {
+            kacheln.removeAll { $0 == weg }
         }
     }
 
@@ -147,6 +195,19 @@ public struct OberflaechenZustand: Equatable, Sendable {
     public func nummer(_ art: KachelArt) -> Int? { kacheln.firstIndex(of: art).map { $0 + 1 } }
 
     public func kachel(nummer n: Int) -> KachelArt? { n >= 1 && n <= kacheln.count ? kacheln[n - 1] : nil }
+
+    /// Stand in einem Satz für den Agenten: „Werkstatt: 1 Modell, 2 Druck (groß), Fenster am rechten Rand“.
+    public var kurztext: String {
+        var t = modus == .fokus ? "Fokus" : "Werkstatt"
+        if modus == .werkstatt {
+            let liste = kacheln.enumerated().map { "\($0.offset + 1) \($0.element.titel)" + (gross == $0.element ? " (groß)" : "") }
+            t += ": " + (liste.isEmpty ? "keine Kachel" : liste.joined(separator: ", "))
+        } else if zeitleiste {
+            t += ", Zeitleiste an"
+        }
+        if let r = rand { t += ", Fenster am \(r == .rechts ? "rechten" : "linken") Rand" }
+        return t
+    }
 
     /// Ohne Doppelte, höchstens vier.
     static func bereinigt(_ liste: [KachelArt]) -> [KachelArt] {
@@ -179,6 +240,9 @@ public final class OberflaechenStore: ObservableObject {
     public var sprechText: String? { zustand.sprechText }
     public var zuletztGesagt: String? { zustand.zuletztGesagt }
     public var rand: Bildschirmrand? { zustand.rand }
+    public var zeitleiste: Bool { zustand.zeitleiste }
+    public var zweiteAnsicht: String { zustand.zweiteAnsicht }
+    public var blatt: String? { zustand.blatt }
 
     public func nummer(_ art: KachelArt) -> Int? { zustand.nummer(art) }
 
@@ -190,8 +254,10 @@ public final class OberflaechenStore: ObservableObject {
     }
 
     /// Gemerkter Modus und gemerkte Kacheln beim Start (vor dem ersten Erscheinen der Oberfläche).
-    public func vorbelegen(modus: ArbeitsModus, kacheln: [KachelArt]) {
-        zustand = OberflaechenZustand(modus: modus, kacheln: kacheln, uebersicht: zustand.uebersicht)
+    public func vorbelegen(modus: ArbeitsModus, kacheln: [KachelArt], zweiteAnsicht: String? = nil) {
+        var z = OberflaechenZustand(modus: modus, kacheln: kacheln, uebersicht: zustand.uebersicht)
+        if let zweiteAnsicht { z.zweiteAnsicht = zweiteAnsicht }
+        zustand = z
     }
 }
 
@@ -213,6 +279,146 @@ extension OberflaechenActions {
     public func sprechenVerwerfen() { oberflaeche(.sprechenVerwerfen) }
     public func setzeRand(_ rand: Bildschirmrand?) { oberflaeche(.rand(rand)) }
     public func zeigeUebersicht(_ an: Bool) { oberflaeche(.uebersicht(an)) }
+}
+
+/// Standardansichten wie in `VIEW_CMD view`.
+public let standardAnsichten: Set<String> = [
+    "top", "bottom", "front", "back", "left", "right", "iso", "iso_front_left", "iso_back_right", "iso_back_left",
+]
+
+/// Antwort auf `VIEW_CMD flaeche` (PROTOCOL.md, „Fläche“): die Befehle für die Oberfläche und der Stand danach, oder was an
+/// den Angaben nicht stimmt. Reine Rechnung: Erst wenn alles passt, setzt der Aufrufer etwas um.
+public struct FlaecheAuftrag: Equatable, Sendable {
+    public var befehle: [Oberflaechenbefehl] = []
+    public var stand: OberflaechenZustand
+    /// Kacheln, die dabei weichen mussten
+    public var gewichen: [KachelArt] = []
+
+    public var meldung: String {
+        stand.kurztext + (gewichen.isEmpty ? "" : "; \(gewichen.map(\.titel).joined(separator: ", ")) musste weichen")
+    }
+
+    /// `blaetter`: Kennung und Titel der Blätter in der Reihenfolge der Übersicht, nil, solange sie noch nicht da ist.
+    public static func aus(_ a: JSONValue, zustand: OberflaechenZustand,
+                           blaetter: [(id: String, titel: String)]?) -> Result<FlaecheAuftrag, FlaecheFehler> {
+        var auftrag = FlaecheAuftrag(stand: zustand)
+        func tu(_ b: Oberflaechenbefehl) {
+            auftrag.befehle.append(b)
+            auftrag.stand.anwenden(b)
+        }
+        func kachel(_ v: JSONValue) -> KachelArt? {
+            if let n = v.doubleValue { return auftrag.stand.kachel(nummer: Int(n)) }
+            return v.stringValue.flatMap(KachelArt.init(rawValue:))
+        }
+        func kacheln(_ feld: String) -> Result<[KachelArt]?, FlaecheFehler> {
+            guard let v = a[feld], v != .null else { return .success(nil) }
+            guard let liste = v.arrayValue else { return .failure(.init("\(feld) ist keine Liste von Kacheln")) }
+            var out: [KachelArt] = []
+            for e in liste {
+                guard let k = e.stringValue.flatMap(KachelArt.init(rawValue:)) else {
+                    return .failure(.init("Unbekannte Kachel in \(feld): \(e.anzeige)"))
+                }
+                out.append(k)
+            }
+            return .success(out)
+        }
+        let vorher = Set(zustand.kacheln)
+        tu(.uebersicht(false))  // die Startübersicht läge sonst über dem, was der Agent zeigt
+
+        if let r = a["rand"]?.stringValue {
+            if r == "aus" {
+                tu(.rand(nil))
+            } else if let rand = Bildschirmrand(rawValue: r) {
+                tu(.rand(rand))
+            } else {
+                return .failure(.init("Unbekannter Rand \(r)"))
+            }
+        }
+        switch kacheln("ordnen") {
+        case .failure(let f): return .failure(f)
+        case .success(let liste?):
+            tu(.kachelnOrdnen(liste))
+        case .success(nil): break
+        }
+        switch kacheln("zeigen") {
+        case .failure(let f): return .failure(f)
+        case .success(let liste?):
+            for k in liste { tu(.kachelZeigen(k)) }
+        case .success(nil): break
+        }
+        if let z = a["schliessen"], z != .null {
+            if z.stringValue == "alle" {
+                for k in auftrag.stand.kacheln { tu(.kachelSchliessen(k)) }
+            } else if let liste = z.arrayValue {
+                // Nummern gelten für den Stand vor dem Schließen: „schließ 2 und 3“ meint die Kacheln, die Kevin sieht
+                var weg: [KachelArt] = []
+                for e in liste {
+                    guard let k = kachel(e), auftrag.stand.kacheln.contains(k) else {
+                        return .failure(.init("Kachel \(e.anzeige) ist nicht offen"))
+                    }
+                    weg.append(k)
+                }
+                for k in weg { tu(.kachelSchliessen(k)) }
+            } else {
+                return .failure(.init("schliessen ist weder alle noch eine Liste"))
+            }
+        }
+        if let g = a["gross"], g != .null {
+            if g.stringValue == "aus" {
+                tu(.kachelGross(nil))
+            } else if let k = kachel(g) {
+                tu(.kachelGross(k))
+            } else {
+                return .failure(.init("Kachel \(g.anzeige) gibt es nicht"))
+            }
+        }
+        if let n = a["ansicht"]?.stringValue {
+            guard standardAnsichten.contains(n) else { return .failure(.init("Unbekannte Ansicht \(n)")) }
+            tu(.zweiteAnsicht(n))
+            if !auftrag.stand.kacheln.contains(.ansicht) { tu(.kachelZeigen(.ansicht)) }
+        }
+        if let b = a["blatt"], b != .null {
+            guard let blaetter, !blaetter.isEmpty else { return .failure(.init("Noch keine Zeichnungsblätter da")) }
+            let treffer: (id: String, titel: String)?
+            if let n = b.doubleValue {
+                treffer = Int(n) >= 1 && Int(n) <= blaetter.count ? blaetter[Int(n) - 1] : nil
+            } else {
+                let t = b.stringValue ?? ""
+                treffer = blaetter.first { $0.id == t } ?? blaetter.first { $0.titel.localizedCaseInsensitiveCompare(t) == .orderedSame }
+                    ?? blaetter.first { $0.titel.localizedCaseInsensitiveContains(t) }
+            }
+            guard let treffer else {
+                return .failure(.init("Blatt \(b.anzeige) gibt es nicht (\(blaetter.count) Blätter)"))
+            }
+            tu(.blatt(treffer.id))
+            if !auftrag.stand.kacheln.contains(.zeichnung) { tu(.kachelZeigen(.zeichnung)) }
+        }
+        if let m = a["modus"]?.stringValue {
+            guard let modus = ArbeitsModus(rawValue: m) else { return .failure(.init("Unbekannter Modus \(m)")) }
+            tu(.modus(modus))
+        }
+        if let z = a["zeitleiste"], z != .null {
+            guard let an = z.boolValue else { return .failure(.init("zeitleiste ist kein Wahrheitswert")) }
+            tu(.zeitleiste(an))
+        }
+        auftrag.gewichen = KachelArt.allCases.filter { vorher.contains($0) && !auftrag.stand.kacheln.contains($0) }
+            .filter { k in !auftrag.befehle.contains(.kachelSchliessen(k)) && a["ordnen"] == nil }
+        return .success(auftrag)
+    }
+}
+
+public struct FlaecheFehler: Error, Equatable, Sendable {
+    public var text: String
+    public init(_ text: String) { self.text = text }
+}
+
+extension JSONValue {
+    /// Wert für eine Meldung: Text ohne Anführungszeichen, Zahl ohne Nachkommastellen.
+    fileprivate var anzeige: String {
+        if let s = stringValue { return s }
+        if let d = doubleValue { return d == d.rounded() ? String(Int(d)) : String(d) }
+        return "?"
+    }
 }
 
 extension AppModel {

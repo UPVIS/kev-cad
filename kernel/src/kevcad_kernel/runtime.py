@@ -384,6 +384,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         args = self._live_view_vorher(cmd, dict(args or {}))  # V2-5: annotate mit dauer_s braucht eine id
         if not self._link.connected:
             return {"ok": False, "error": APP_NOT_CONNECTED}
+        veraltet = self._live_flaeche_fehlt(cmd)  # V2-7: Kacheln und Benennen braucht eine App mit flaeche-1
+        if veraltet:
+            return {"ok": False, "error": veraltet}
         bad = self._check_view_refs(cmd, args)
         if bad:
             return {"ok": False, "error": bad}
@@ -778,6 +781,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _set_project(self, proj: Project, reply_to: str | None = None) -> None:
         with self._lock:
             same = self._project is not None and self._project.path == proj.path
+            alt = self._project.path if self._project is not None else None
             self._project = proj
             if not same:
                 self._last_hash = None
@@ -817,7 +821,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             for status in self.zukauf.offene_status():  # Zukaufteile, die auf ihr CAD warten
                 self._send_app(status)
         self._versionen_projekt(proj, same)  # Versionen: Repo anlegen, alte Stände übernehmen
-        if self._settings.get("auto_run") and (not same or self._last_result is None):
+        umgezogen = not same and alt is not None and not Path(alt).exists()  # umbenannt: das Modell steht gleich wieder da
+        if umgezogen or (self._settings.get("auto_run") and (not same or self._last_result is None)):
             self._submit_run(None, int(self._settings.get("slow_ms") or 0), self.run_timeout_s, source="auto")
 
     # =================================================================================================================

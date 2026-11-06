@@ -22,6 +22,15 @@ public final class AppController: AppActions {
     let screenshots = ScreenshotRenderer()
     /// V2-6: Sprach-Feedback (Sprache/SprachSteuerung.swift).
     public let sprache = SprachSteuerung()
+    /// V2-7: zweite Ansicht (AppController+Flaeche.swift): rechnet daneben; Größe in Pixeln, solange die Kachel offen ist,
+    /// Ziel des letzten Kamerabefehls, wartender Auftrag.
+    let zweiteAnsichtRechner = ZweiteAnsichtRechner()
+    var zweiteAnsichtPixel: CGSize?
+    var zweiteAnsichtZiel: [String] = []
+    var zweiteAnsichtAuftrag: DispatchWorkItem?
+    let pausenMesser = HaengerMesser()
+    /// V2-7: benennt das offene Projekt wie der Doppelklick auf den Titel (setzt die Oberfläche, `VIEW_CMD projekt_name`).
+    public var projektBenennen: ((String) -> Result<URL, FlaecheFehler>)?
     /// Phase 4: Zwischenstand der Fotoansicht (AppController+Referenz.swift).
     let fotoSpeicher = FotoAbgleichSpeicher()
     /// Phase 4: Körper der Farbkarte je Feld und Spanne (AppController+Referenz.swift), damit häufige REF_LIST nicht
@@ -520,6 +529,7 @@ public final class AppController: AppActions {
                 fitAtRunEnd = false
             }
             fitOnFirstPart = false
+            zweiteAnsichtNeu()  // V2-7
             log(.info, "Lauf \(e.run) fertig: \(scene.order.count) Teile, \(model.triangleCount) Dreiecke, \(e.durationMs) ms")
             deltaLaufEnde()  // V2-5: Auswahl zum neuen Lauf melden
             scheduleSelfTestIfRequested()
@@ -545,10 +555,16 @@ public final class AppController: AppActions {
             model.agentActivity = a.connected ? a.activity : nil
             mirror?.updateAgents(a.sessions)
         case .viewCommand(let v):
+            if let (ok, message) = performFlaecheCommand(v) {  // V2-7: ändert nichts an der Kamera
+                if !ok { log(.warning, "Ansichtsbefehl \(v.cmd): \(message ?? "fehlgeschlagen")") }
+                send(AckOutMessage(replyTo: v.id, ok: ok, message: message))
+                break
+            }
             mirror?.noteAgentCommand()
             let (ok, message) = performViewCommand(v)
             if !ok { log(.warning, "Ansichtsbefehl \(v.cmd): \(message ?? "fehlgeschlagen")") }
             send(AckOutMessage(replyTo: v.id, ok: ok, message: message))
+            if ok { zweiteAnsichtFolgt(v) }
         case .screenshotRequest(let s):
             answerScreenshot(s)
         case .measureResponse(let m):

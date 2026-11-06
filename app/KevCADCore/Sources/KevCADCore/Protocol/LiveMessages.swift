@@ -10,9 +10,10 @@ public enum LiveFaehigkeit {
     public static let spur = "spur-1"
     public static let lage = "lage-1"
     public static let liveMasse = "live-masse-1"
+    public static let flaeche = "flaeche-1"
 
     /// Was diese App dem Kernel meldet. Was hier steht, muss auf der App-Seite vollständig funktionieren.
-    public static let app: [String] = [delta, inArbeit, spur, lage, liveMasse]
+    public static let app: [String] = [delta, inArbeit, spur, lage, liveMasse, flaeche]
 }
 
 /// Grenzen, die Kernel und App gleich führen (`protocol.py`).

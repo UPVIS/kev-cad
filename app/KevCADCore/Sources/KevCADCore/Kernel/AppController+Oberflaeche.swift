@@ -1,11 +1,9 @@
-import CoreGraphics
 import Foundation
 import OCCTSwiftViewport
 
-// V2-3 (OBERFLAECHE.md): Aktionen der Oberfläche und das Bild für die Kachel „zweite Ansicht“.
-//
-// Die Befehle ändern den Zustand in `AppModel.oberflaeche`; Sprechen steuert die Sitzung (V2-6, SprachSteuerung). Später
-// meldet V2-7 hier Kacheln und Modus an den Kernel.
+// V2-3 (OBERFLAECHE.md): Aktionen der Oberfläche. Die Befehle ändern den Zustand in `AppModel.oberflaeche`; Sprechen
+// steuert die Sitzung (V2-6, SprachSteuerung), der Agent stellt die Fläche über `VIEW_CMD flaeche`
+// (AppController+Flaeche.swift).
 
 extension AppController: OberflaechenActions {
     public func oberflaeche(_ befehl: Oberflaechenbefehl) {
@@ -16,27 +14,11 @@ extension AppController: OberflaechenActions {
         case .sprechText(let t):
             model.sprache.text = t
             model.oberflaeche.ausfuehren(befehl)
+        case .zweiteAnsicht:
+            model.oberflaeche.ausfuehren(befehl)
+            zweiteAnsichtNeu()
         default: model.oberflaeche.ausfuehren(befehl)
         }
-    }
-
-    /// Bild einer Standardansicht, eingepasst auf alles Sichtbare, ohne Kevins Kamera, Darstellung und Auswahl zu
-    /// ändern (Kachel „zweite Ansicht“). Platzhalter, bis V2-4 eine zweite, lebende Ansicht liefert. Rechnet auf dem
-    /// Hauptfaden (eigener Offscreen-Renderer mit dunklem Grund); die Oberfläche ruft es nur nach einem Lauf und bei
-    /// einer neuen Größe der Kachel.
-    public func zweiteAnsicht(_ ansicht: StandardViewName, breite: Int, hoehe: Int) -> CGImage? {
-        guard !scene.isEmpty else { return nil }
-        let w = max(16, min(breite, 2048)), h = max(16, min(hoehe, 2048))
-        let name = Self.protokollName(ansicht)
-        var camera = Self.ansichtKamera(.object(["standard": .string(name)]), scene: scene,
-                                        aspect: Float(w) / Float(h))
-        if ansicht != .iso && ansicht != .isoFrontLeft && ansicht != .isoBackLeft && ansicht != .isoBackRight {
-            camera.isOrthographic = true
-        }
-        let r = zweiteAnsichtRenderer.render(
-            bodies: scene.snapshotBodies(), camera: camera, width: w, height: h, displayMode: .shadedWithEdges,
-            lighting: viewport.controller.lightingConfiguration, overlay: [])
-        return r?.image
     }
 
     static func protokollName(_ v: StandardViewName) -> String {
@@ -53,20 +35,6 @@ extension AppController: OberflaechenActions {
         case .isoBackLeft: return "iso_back_left"
         }
     }
-}
-
-/// Eigener Renderer für die zweite Ansicht (dunkler Grund wie Graphit), getrennt von den Bildern für den Agenten.
-@MainActor
-private enum ZweiteAnsichtSpeicher {
-    static let renderer: ScreenshotRenderer = {
-        let r = ScreenshotRenderer()
-        r.backgroundColor = SIMD4<Float>(0.18, 0.19, 0.20, 1)
-        return r
-    }()
-}
-
-extension AppController {
-    fileprivate var zweiteAnsichtRenderer: ScreenshotRenderer { ZweiteAnsichtSpeicher.renderer }
 }
 
 extension AppController {

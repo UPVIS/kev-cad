@@ -20,6 +20,7 @@ Jede Änderung ist im Code mit „Kev CAD“ markiert. Die öffentliche Schnitts
 | `Renderer/ViewportRenderer.swift` | `SSAOParamsSwift` um vier Werte am Ende ergänzt und befüllt; der Nachbearbeitungsdurchgang läuft auch nur für die Kantenbetonung; ohne `enableSSAO` keine Verdunklung mehr (das Original gab die Stärke immer mit, sobald Silhouetten an waren) |
 | `Renderer/ViewportRendererHeadless.swift` | `renderHeadless` und `renderHeadlessBGRA` öffentlich (Bildschirmfoto und Video mit genau dem Bild des Viewports) |
 | `Renderer/ViewportRenderer.swift` (Bildzeiten) | `onFrameTiming`: je angezeigtem Bild CPU-Zeit auf dem Hauptfaden, GPU-Zeit und Anzeigezeitpunkt (Selbsttest `KEVCAD_SELFTEST=viewer`); ohne Abnehmer keine Kosten |
+| `Renderer/OffscreenRenderer.swift`, `Renderer/ShadowMapManager.swift`, `Renderer/MeasurementCompositor.swift` | nicht mehr `@MainActor` (V2-7): Die zweite Ansicht rechnet ihr Bild auf einer eigenen Warteschlange, `render` wartet sonst auf dem Hauptfaden auf die GPU. Eine Instanz gehört einem Faden |
 | `Renderer/Shaders.metal` | `SSAOParams` passend ergänzt; neue Verdeckung und Kantenbetonung aus der Krümmung der Tiefe (Abweichung der Mitte von der Ebene durch zwei gegenüberliegende Nachbarn: perspektivisch harmonisches Mittel, parallel arithmetisch), Tiefe auch für Parallelprojektion richtig linearisiert; die alte SSAO und die Tiefen-Unschärfemaske bleiben für `kevAORadiusPixels = 0` |
 
 Aktualisieren auf einen neueren Stand des Originals: Quellen neu kopieren, die Stellen mit „Kev CAD“ übertragen, mit

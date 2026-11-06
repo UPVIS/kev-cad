@@ -2,43 +2,25 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Offen/zu für den Dialog „Rendern …“ (Menü, Werkzeugleiste, Selbsttest).
-@MainActor
-final class RenderUI: ObservableObject {
-    static let shared = RenderUI()
-    @Published var offen = false
-}
-
-/// Menüeintrag „Rendern …“ (⌥⌘R) unter „Ablage“ neben „Bild speichern“.
+/// Menüeintrag „Rendern …“ (⌥⌘R) unter „Ablage“ neben „Bild speichern“: öffnet die Kachel.
 struct RenderCommands: Commands {
     @ObservedObject var model: AppModel
 
     var body: some Commands {
         CommandGroup(after: .importExport) {
-            Button("Rendern …") { RenderUI.shared.offen = true }
+            Button("Rendern …") { model.oberflaechenActions?.zeigeKachel(.render) }
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(model.project == nil || model.parts.isEmpty)
         }
     }
 }
 
-/// Hängt den Dialog an das Projektfenster.
-struct RenderDialoge: ViewModifier {
-    @ObservedObject var model: AppModel
-    @ObservedObject private var ui = RenderUI.shared
-
-    func body(content: Content) -> some View {
-        content.sheet(isPresented: $ui.offen) { RenderDialog(model: model, store: model.render) }
-    }
-}
-
-/// Dialog „Rendern …“ (Phase 7): Szene, Größe, Qualität, Hintergrund, Ansicht, Vorschau; laufende und fertige Aufträge
+/// Kachel „Rendern“ (Phase 7, V2-7): Szene, Größe, Qualität, Hintergrund, Ansicht, Vorschau; laufende und fertige Aufträge
 /// mit Fortschritt, „Im Finder zeigen“ und „Teilen“. Schnell rendert RealityKit in der App, Foto Blender im Hintergrund.
 struct RenderDialog: View {
     @ObservedObject var model: AppModel
     @ObservedObject var store: RenderStore
     @ObservedObject private var kameras: CameraStore
-    @Environment(\.dismiss) private var dismiss
     @State private var vorschauAuftrag: DispatchWorkItem?
 
     init(model: AppModel, store: RenderStore) {
@@ -50,38 +32,39 @@ struct RenderDialog: View {
     private var actions: RenderActions? { model.renderActions }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Rendern", systemImage: "camera.aperture").font(.title2.weight(.semibold))
-                Spacer()
-                Text(store.qualitaet == "foto" ? "Blender Cycles, im Hintergrund" : "RealityKit, in Sekunden")
-                    .foregroundStyle(.secondary).font(.callout)
-            }
-            HStack(alignment: .top, spacing: 18) {
-                vorschau
-                einstellungen.frame(width: 300)
-            }
-            if !store.auftraege.isEmpty {
-                Divider()
-                auftraege
-            }
-            if let m = store.meldung {
-                Label(m, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
-            }
-            HStack {
-                Text("Bilder landen in output/renders/ des Projekts.").foregroundStyle(.secondary).font(.callout)
-                Spacer()
-                Button("Schließen") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(store.qualitaet == "foto" ? "Foto rendern" : "Rendern") {
-                    store.meldung = nil
-                    actions?.renderStarten()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        vorschau.frame(minWidth: 400)
+                        einstellungen.frame(width: 300)
+                    }
+                    VStack(alignment: .leading, spacing: 14) {
+                        vorschau
+                        einstellungen
+                    }
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(model.project == nil || model.parts.isEmpty)
+                if !store.auftraege.isEmpty {
+                    Divider()
+                    auftraege
+                }
+                if let m = store.meldung {
+                    Label(m, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
+                }
+                HStack {
+                    Text(store.qualitaet == "foto" ? "Blender Cycles rechnet im Hintergrund." : "RealityKit rechnet in Sekunden.")
+                        .foregroundStyle(.secondary).font(.callout)
+                    Spacer()
+                    Button(store.qualitaet == "foto" ? "Foto rendern" : "Rendern") {
+                        store.meldung = nil
+                        actions?.renderStarten()
+                    }
+                    .disabled(model.project == nil || model.parts.isEmpty)
+                }
+                Text("Bilder landen in output/renders/ des Projekts.").foregroundStyle(.secondary).font(.callout)
             }
+            .padding(GA.l)
         }
-        .padding(20)
-        .frame(width: 900)
         .onAppear { vorschauBald(sofort: true) }
         .onChange(of: store.szene) { _, _ in vorschauBald() }
         .onChange(of: store.hintergrund) { _, _ in vorschauBald() }
@@ -105,7 +88,8 @@ struct RenderDialog: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
         }
-        .frame(width: 540, height: 340)
+        .frame(maxWidth: .infinity)
+        .frame(height: 340)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
     }

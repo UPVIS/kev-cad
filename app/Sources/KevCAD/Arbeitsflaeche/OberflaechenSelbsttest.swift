@@ -274,38 +274,3 @@ enum Startzeiten {
         marken.append((name, OberflaechenSelbsttest.seitStart(), rechenzeit))
     }
 }
-
-/// Misst die längste Pause zwischen zwei Takten eines 4-ms-Zeitgebers auf dem Hauptfaden.
-@MainActor
-final class HaengerMesser {
-    private var zeitgeber: Timer?
-    private var letzter = CACurrentMediaTime()
-    private var groesste: Double = 0
-    private var letzteLange: Double?
-
-    /// Sekunden seit dem Ende der letzten Pause über 100 ms.
-    var seitLetzterLangerPause: Double { letzteLange.map { CACurrentMediaTime() - $0 } ?? 0 }
-
-    func start() {
-        letzter = CACurrentMediaTime()
-        groesste = 0
-        let t = Timer(timeInterval: 0.004, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let jetzt = CACurrentMediaTime()
-                self.groesste = max(self.groesste, jetzt - self.letzter)
-                if jetzt - self.letzter > 0.1 { self.letzteLange = jetzt }
-                self.letzter = jetzt
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        zeitgeber = t
-    }
-
-    /// Längste Pause in Millisekunden.
-    func stop() -> Double {
-        zeitgeber?.invalidate()
-        zeitgeber = nil
-        return max(groesste, CACurrentMediaTime() - letzter) * 1000
-    }
-}

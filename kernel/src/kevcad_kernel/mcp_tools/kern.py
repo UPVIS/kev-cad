@@ -26,6 +26,7 @@ from . import format as fmt
 from .feedback_tools import hintergrund_befehl, register_feedback_tool, stand_text
 from .griffe import Griffe, ohne_json
 from .laufbericht import Gedaechtnis, bericht, gruppe
+from .tools import Kachel, ToolInputError
 from .tracking import claude_session
 
 KERN_NAMEN: tuple[str, ...] = ("status", "projekt", "modell", "run", "execute", "parts", "measure", "view", "pruefen",
@@ -38,6 +39,10 @@ Projection = Literal["perspective", "orthographic"]
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray"]  # Bilder außerhalb des Fensters (ansichten)
 ViewDisplay = Literal["solid", "material", "technical", "xray", "wireframe", "shaded_edges", "shaded"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv", "pdf"]
+KACHEL_TITEL = {"modell": "Modell", "zeichnung": "Zeichnung", "bauplan": "Bauplan", "stueckliste": "Stückliste",
+                "zuschnitt": "Zuschnitt", "druck": "Druck", "animation": "Animation", "ansicht": "Zweite Ansicht",
+                "material": "Material", "simulation": "Simulation", "versionen": "Versionen", "details": "Details",
+                "render": "Rendern"}
 KatalogArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
                      "nutprofil", "holz", "platte", "schraube", "mutter", "scheibe", "zukaufteil", "material"]
 RUN_TIMEOUT_MAX_S = 900.0
@@ -79,10 +84,32 @@ def lage_kamera(k: Any) -> dict[str, Any] | None:
             "target": k.get("ziel"), "distance": k.get("abstand"), "ortho_height_mm": k.get("ortho_hoehe")}
 
 
+def flaeche_zeile(f: Any) -> str | None:
+    """„Fläche: Werkstatt, 1 Modell, 2 Druck (2 groß), Blatt 2 von 5, Fenster am rechten Rand“ aus ``LAGE.flaeche``."""
+    if not isinstance(f, dict) or not f.get("modus"):
+        return None
+    teile = ["Werkstatt" if f["modus"] == "werkstatt" else "Fokus"]
+    kacheln = [str(k) for k in f.get("kacheln") or []]
+    if f["modus"] == "werkstatt":
+        teile += [f"{i} {KACHEL_TITEL.get(k, k)}" + (" (groß)" if k == f.get("gross") else "")
+                  for i, k in enumerate(kacheln, 1)] or ["keine Kachel"]
+        blatt = f.get("blatt") if isinstance(f.get("blatt"), dict) else None
+        if blatt:
+            teile.append(f"Blatt {blatt.get('nr')} von {blatt.get('von')}")
+    elif f.get("zeitleiste"):
+        teile.append("Zeitleiste an")
+    if f.get("rand"):
+        teile.append(f"Fenster am {'rechten' if f['rand'] == 'rechts' else 'linken'} Rand")
+    return "Fläche: " + ", ".join(teile)
+
+
 def lage_zeilen(lage: dict[str, Any]) -> list[str]:
     """Was das Lagebild über die Kamera hinaus sagt: Blick durch eine Kamera, Teil unter der Maus, was vom Üblichen
-    abweicht (Darstellung, Schnitt, Explosion, Animation)."""
+    abweicht (Darstellung, Schnitt, Explosion, Animation), Modus und Kacheln."""
     zeilen: list[str] = []
+    flaeche = flaeche_zeile(lage.get("flaeche"))
+    if flaeche:
+        zeilen.append(flaeche)
     kamera = lage.get("kamera") if isinstance(lage.get("kamera"), dict) else {}
     if kamera.get("durch"):
         zeilen.append(f"Blick durch {kamera['durch']}")
@@ -154,7 +181,7 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
     @tool("status", "Lagebild",
           "Shared picture of the situation, call it first and whenever you lose track: open project and model.py "
           "path, kernel and app, last run in one line, open findings, Kevin's selection with values, his camera "
-          "(named view or direction, target, distance) and what is hidden or isolated.", READ_ONLY)
+          "(named view or direction, target, distance), what is hidden or isolated, mode and open tiles.", READ_ONLY)
     async def status() -> CallToolResult:
         res = await t.work("schaut auf den Stand", svc.status)
         project = res.get("project") or None
@@ -265,6 +292,8 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             if lage:
                 zeilen.extend(lage_zeilen(lage))
                 data["maus"] = lage.get("maus")
+                if lage.get("flaeche"):
+                    data["flaeche"] = lage["flaeche"]
 
         # Sichtbarkeit: vom Lagebild, sonst wie der Kernel sie kennt (Befehle über view; Klicks im Teilebaum fehlen dann)
         if teile:
@@ -292,13 +321,30 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
 
     @tool("projekt", "Projekt",
           "Open an existing project folder (with model.py), or create one with neu=true (vorlage 'example' writes a "
-          "small sample model, 'empty' only the imports). A bare name means ~/Documents/Kev CAD/<name>.", WRITES)
+          "small sample model, 'empty' only the imports). A bare name means ~/Documents/Kev CAD/<name>. name=... "
+          "alone names the open project (a draft moves to ~/Documents/Kev CAD/<name>, the result gives the new path).",
+          WRITES)
     async def projekt(
-        pfad: Annotated[str, Field(description="Project folder: absolute path, ~/..., or a bare project name")],
+        pfad: Annotated[str | None, Field(description="Project folder: absolute path, ~/..., or a bare project name")]
+        = None,
         neu: Annotated[bool, Field(description="Create a new project instead of opening one")] = False,
         vorlage: Annotated[Literal["example", "empty"], Field(description="neu: starting content of model.py")]
         = "example",
+        name: Annotated[str | None, Field(min_length=1, max_length=120, description=(
+            "Name for the open project; not together with pfad"))] = None,
     ) -> CallToolResult:
+        if name is not None:
+            if pfad is not None or neu:
+                raise ToolInputError("name benennt das offene Projekt und steht ohne pfad und neu.")
+            res = await t.work(f"benennt das Projekt {name}", svc.projekt_benennen, name)
+            err = fmt.service_error(res)
+            if err:
+                return fmt.error_result(f"Projekt nicht benannt: {err}")
+            return fmt.result(f"Projekt heißt jetzt {res.get('name')}: {res.get('path')}\nmodel.py: {res.get('model')}",
+                              {k: res.get(k) for k in ("name", "path", "model")}, json_block=False)
+        if pfad is None:
+            raise ToolInputError("pfad fehlt: projekt(pfad) öffnet, projekt(pfad, neu=true) legt an, projekt(name=…) "
+                                 "benennt das offene Projekt.")
         if neu:
             res = await griffe.aufrufen("project_new", {"path": pfad, "template": vorlage}, aufruf="projekt")
         else:
@@ -461,7 +507,9 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
           "Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit "
           "with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight "
           "refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. "
-          "dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking.",
+          "dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking. Result "
+          "tiles side by side (up to 4, numbered, Kevin says \"Kachel 2 groß\"): kacheln, kachel_gross, kachel_zu; a "
+          "tile in Fokus switches to Werkstatt. modus, rand, zeitleiste, zweite_ansicht and blatt arrange the rest.",
           VIEWER)
     async def view(
         standard: Annotated[StandardView | None, Field(description="Standard view direction")] = None,
@@ -498,8 +546,30 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         dauer_s: Annotated[float | None, Field(gt=0, le=600, description=(
             "hervorheben, anmerkung: fade out after this many seconds"))] = None,
         animate: Annotated[bool, Field(description="Animate the focus move so Kevin can follow")] = True,
+        kacheln: Annotated[list[Kachel] | None, Field(description=(
+            "Show these tiles (added to the open ones). zeichnung, bauplan, stueckliste, zuschnitt, druck, animation, "
+            "ansicht = second view, material, simulation, versionen, details, render, modell = the viewer"))] = None,
+        kacheln_nur: Annotated[bool, Field(description="kacheln: exactly these, numbered in this order")] = False,
+        kachel_gross: Annotated[Kachel | int | Literal["aus"] | None, Field(description=(
+            "This tile (name or number 1-4) fills the area; aus = all side by side again"))] = None,
+        kachel_zu: Annotated[list[Kachel | int] | Literal["alle"] | None, Field(description="Close tiles")] = None,
+        modus: Annotated[Literal["fokus", "werkstatt"] | None, Field(description=(
+            "fokus = only the viewer, werkstatt = tiles and properties"))] = None,
+        rand: Annotated[Literal["links", "rechts", "aus"] | None, Field(description=(
+            "Window narrow at this screen edge next to the chat; aus = back"))] = None,
+        zeitleiste: Annotated[bool | None, Field(description="Timeline over the viewer in Fokus")] = None,
+        zweite_ansicht: Annotated[StandardView | None, Field(description="Direction of tile ansicht")] = None,
+        blatt: Annotated[int | str | None, Field(description="Sheet in tile zeichnung: number, id or title")] = None,
     ) -> CallToolResult:
         schritte: list[tuple[str, dict[str, Any]]] = []
+        flaeche: dict[str, Any] = {"rand": rand, "gross": kachel_gross, "schliessen": kachel_zu, "modus": modus,
+                                   "zeitleiste": zeitleiste, "ansicht": zweite_ansicht, "blatt": blatt}
+        if kacheln_nur and not kacheln:
+            raise ToolInputError("kacheln_nur gehört zu kacheln, z. B. kacheln=[\"modell\", \"druck\"].")
+        if kacheln:
+            flaeche["ordnen" if kacheln_nur else "zeigen"] = kacheln
+        if any(v is not None for v in flaeche.values()):  # zuerst: Einpassen und Fahrten gelten für die neue Fläche
+            schritte.append(("flaeche", flaeche))
         if entfernen:
             if isinstance(entfernen, list):
                 schritte.append(("clear_annotations", {"ids": list(entfernen)}))
@@ -551,12 +621,13 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         if dauer_s is not None and not hervorheben and anmerkung is None:
             raise ToolInputError("dauer_s gehört zu hervorheben oder anmerkung.")
         if not schritte:
-            raise ToolInputError("Nichts zu tun: etwa standard, focus, sichtbarkeit, schnitt oder hervorheben angeben.")
+            raise ToolInputError("Nichts zu tun: etwa standard, focus, sichtbarkeit, schnitt, hervorheben oder kacheln "
+                                 "angeben.")
         texte: list[str] = []
         daten: list[Any] = []
         for griff, args in schritte:
             res = await griffe.aufrufen(griff, {k: v for k, v in args.items() if v is not None or griff == "view"},
-                                        aufruf=f"view ({griff})")
+                                        aufruf=f"view ({griff})")  # griff „flaeche“: Kacheln und Modus (V2-7)
             if res.is_error:
                 vorher = (" Davor erledigt: " + " ".join(texte)) if texte else ""
                 return fmt.error_result(erster_text(res) + vorher)
