@@ -62,6 +62,7 @@ class Strich:
     punkte: list[tuple[float, float, float]]
     dauer: float
     radius: float
+    wunsch_von: float | None = None
     vor: int = 0  # Index des Schritts, vom Plan gesetzt
     von: float = 0.0  # Zeiten, vom Plan gesetzt
     bis: float = 0.0
@@ -75,6 +76,7 @@ class Schritt:
     titel: str
     zeit: float = 0.0
     landet: float = 0.0
+    wunsch_landet: float | None = None  # feste Zeit aus dem Wunsch (etwa auf einen Schlag der Musik)
 
 
 @dataclass
@@ -148,17 +150,25 @@ def _titel(teile: list[str]) -> str:
     return "/".join(gemeinsam) if gemeinsam else f"{teile[0]} und {len(teile) - 1} weitere"
 
 
-def schritte_aufloesen(eintraege: list[str] | None, teile: list[str]) -> list[Schritt]:
-    """Schritte aus Kevins bzw. des Agenten Liste (Teilname, Baugruppe als Präfix, Muster mit * und ?); was keiner nennt,
-    kommt in der Reihenfolge von show() zum Schluss. Ohne Liste: in der Reihenfolge von show(), aufeinanderfolgende Teile
-    derselben Baugruppe zusammen, Teile ohne Baugruppe einzeln."""
+def schritte_aufloesen(eintraege: list[Any] | None, teile: list[str]) -> list[Schritt]:
+    """Schritte aus Kevins bzw. des Agenten Liste (Teilname, Baugruppe als Präfix, Muster mit * und ?; oder
+    {"auf": …, "landet": s} mit fester Zeit); was keiner nennt, kommt in der Reihenfolge von show() zum Schluss. Ohne
+    Liste: in der Reihenfolge von show(), aufeinanderfolgende Teile derselben Baugruppe zusammen, Teile ohne Baugruppe
+    einzeln."""
     if not teile:
         raise AufbauFehler("Das Modell zeigt keine Teile, die sich aufbauen ließen")
     if eintraege:
         rest = list(teile)
         out: list[Schritt] = []
-        for e in eintraege:
-            e = str(e).strip().strip("/")
+        for roh in eintraege:
+            landet = None
+            if isinstance(roh, dict):
+                e = roh.get("auf") or roh.get("teile")
+                if roh.get("landet") is not None:
+                    landet = _zahl(roh, "landet", 0.0, 0.0, 3600.0)
+            else:
+                e = roh
+            e = str(e or "").strip().strip("/")
             if not e:
                 raise AufbauFehler("Ein Schritt ist leer")
             treffer = [t for t in rest if _trifft(e, t)]
@@ -167,7 +177,7 @@ def schritte_aufloesen(eintraege: list[str] | None, teile: list[str]) -> list[Sc
                 if schon:
                     raise AufbauFehler(f"Schritt {e!r}: alle Teile darunter kommen schon in früheren Schritten")
                 raise AufbauFehler(f"Schritt {e!r}: kein gezeigtes Teil heißt so oder liegt darunter")
-            out.append(Schritt(teile=treffer, titel=e))
+            out.append(Schritt(teile=treffer, titel=e, wunsch_landet=landet))
             rest = [t for t in rest if t not in treffer]
         if rest:
             out.append(Schritt(teile=rest, titel=_titel(rest)))
@@ -318,13 +328,16 @@ def plan(wunsch: dict[str, Any], teile: list[str], huellen: dict[str, tuple[list
             raise AufbauFehler(f"zeichnen[{i}]: vor={vor!r} passt zu keinem Schritt")
         ds = _zahl(z, "dauer_s", 1.4, 0.3, 10.0)
         r = _zahl(z, "radius", max(0.8, radius * 0.006), 0.2, 20.0)
-        striche.append(Strich(ziel=vor, punkte=_punkte(z.get("punkte"), f"zeichnen[{i}]"), dauer=ds, radius=r))
+        von = _zahl(z, "von", 0.0, 0.0, 3600.0) if z.get("von") is not None else None
+        striche.append(Strich(ziel=vor, punkte=_punkte(z.get("punkte"), f"zeichnen[{i}]"), dauer=ds, radius=r,
+                              wunsch_von=von))
 
     start_s = _zahl(wunsch, "start_s", 0.4, 0.0, 30.0)
     halten_s = _zahl(wunsch, "halten_s", max(1.5, 0.12 * dauer), 0.0, 120.0)
     strichzeit = sum(s.dauer + STRICH_PAUSE_S for s in striche)
+    fest = any(s.wunsch_landet is not None for s in schritte)
     e = 0.6
-    for _ in range(2):  # Einflug hängt vom Abstand der Schritte ab und umgekehrt
+    for _ in range(0 if fest else 2):  # Einflug hängt vom Abstand der Schritte ab und umgekehrt
         frei = dauer - halten_s - e - start_s - strichzeit
         if frei < 0:
             raise AufbauFehler(f"dauer {dauer:g} s reicht nicht: Vorlauf {start_s:g} s, Halten {halten_s:g} s und "
@@ -339,17 +352,21 @@ def plan(wunsch: dict[str, Any], teile: list[str], huellen: dict[str, tuple[list
     for a_, b_ in zip(striche, striche[1:]):
         if a_.vor == b_.vor:
             raise AufbauFehler(f"zeichnen: vor {b_.ziel!r} steht schon ein Strich (Schritt {schritte[a_.vor].titel!r})")
-    t = start_s
     nach_strich = {s.vor: s for s in striche}
-    for k, s in enumerate(schritte):
-        st = nach_strich.get(k)
-        if st is not None:
-            st.von, st.bis = t, t + st.dauer
-            t = st.bis + STRICH_PAUSE_S
-        s.zeit, s.landet = t, t + e
-        if st is not None:
-            st.weg = min(dauer, s.landet + STRICH_NACHLAUF_S)
-        t += abstand
+    if fest:
+        e = _zahl(wunsch, "einflug_s", 0.5, 0.0, 5.0) if einflug != "keiner" else 0.0
+        _feste_zeiten(schritte, nach_strich, e, dauer)
+    else:
+        t = start_s
+        for k, s in enumerate(schritte):
+            st = nach_strich.get(k)
+            if st is not None:
+                st.von, st.bis = t, t + st.dauer
+                t = st.bis + STRICH_PAUSE_S
+            s.zeit, s.landet = t, t + e
+            if st is not None:
+                st.weg = min(dauer, s.landet + STRICH_NACHLAUF_S)
+            t += abstand
 
     # Einflug: Abstand zur Ruhelage zu Beginn (das Teil landet in seiner Ruhelage)
     versatz: dict[str, tuple[float, float, float]] = {}
@@ -421,6 +438,44 @@ def plan(wunsch: dict[str, Any], teile: list[str], huellen: dict[str, tuple[list
     return Plan(name=name, dauer=dauer, fps=fps, bildwinkel=bildwinkel, einflug=einflug, einflug_s=e,
                 schritte=schritte, striche=striche, fahrten=fahrten, mitte=tuple(float(v) for v in mitte),  # type: ignore[arg-type]
                 radius=radius, versatz=versatz)
+
+
+def _feste_zeiten(schritte: list[Schritt], nach_strich: dict[int, Strich], e: float, dauer: float) -> None:
+    """Schritte mit ``landet`` aus dem Wunsch landen genau dann (etwa auf einem Schlag der Musik); Schritte ohne Zeit
+    liegen gleichmäßig zwischen ihren Nachbarn, am Rand im Abstand der nächsten festen Schritte. Striche enden vor ihrem
+    Teil, ohne ``von`` gerade rechtzeitig."""
+    fix = [(k, s.wunsch_landet) for k, s in enumerate(schritte) if s.wunsch_landet is not None]
+    for (k0, t0), (k1, t1) in zip(fix, fix[1:]):
+        if t1 <= t0:
+            raise AufbauFehler(f"landet {t1:g} s für {schritte[k1].titel!r} liegt nicht nach {t0:g} s")
+    luecke = (fix[-1][1] - fix[0][1]) / (fix[-1][0] - fix[0][0]) if len(fix) > 1 else 1.0
+    for k, s in enumerate(schritte):
+        if s.wunsch_landet is not None:
+            s.landet = s.wunsch_landet
+            continue
+        vor = [f for f in fix if f[0] < k]
+        nach = [f for f in fix if f[0] > k]
+        if vor and nach:
+            (ka, ta), (kb, tb) = vor[-1], nach[0]
+            s.landet = ta + (tb - ta) * (k - ka) / (kb - ka)
+        elif vor:
+            s.landet = vor[-1][1] + luecke * (k - vor[-1][0])
+        else:
+            s.landet = nach[0][1] - luecke * (nach[0][0] - k)
+    for k, s in enumerate(schritte):
+        s.zeit = s.landet - e
+        if s.zeit < -1e-9 or s.landet > dauer + 1e-9:
+            raise AufbauFehler(f"Schritt {s.titel!r} landet bei {s.landet:.2f} s, außerhalb von {e:g} bis {dauer:g} s")
+        if k and s.landet <= schritte[k - 1].landet:
+            raise AufbauFehler(f"Schritt {s.titel!r} landet nicht nach {schritte[k - 1].titel!r}")
+        st = nach_strich.get(k)
+        if st is not None:
+            st.von = st.wunsch_von if st.wunsch_von is not None else s.zeit - STRICH_PAUSE_S - st.dauer
+            st.bis = st.von + st.dauer
+            if st.von < -1e-9 or st.bis > s.zeit + 1e-9:
+                raise AufbauFehler(f"Strich vor {s.titel!r} ({st.von:.2f} bis {st.bis:.2f} s) passt nicht vor das "
+                                   f"Erscheinen bei {s.zeit:.2f} s")
+            st.weg = min(dauer, s.landet + STRICH_NACHLAUF_S)
 
 
 def _fahrt_titel(w: str) -> str:
@@ -540,6 +595,7 @@ def erzeugen(wunsch: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
             show(form, n, color=STRICH_FARBE, kulisse=True)
             st.namen.append(n)
         erlaubt_ueberlappung(st.namen, sorted(ziel), grund="Strich im Aufbau-Video zeigt, wo das Teil hinkommt")
+        erlaubt_ueberlappung(st.namen, st.namen, grund="Stücke eines Strichs greifen an den Knicken ineinander")
     vorhanden = {a.name for a in state.get("animations", [])}
     for f in p.fahrten:
         name = animationsname(p.name, f.titel)

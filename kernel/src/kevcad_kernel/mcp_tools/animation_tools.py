@@ -164,14 +164,16 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         blickwinkel: Annotated[list[Blickwinkel] | None, Field(description=(
             "One video per entry: orbit (circles once, see umdrehungen), iso, vorne, rechts, oben … (fixed view with "
             "slow drift), schnitt (one video cutting between the other entries)"))] = None,
-        schritte: Annotated[list[str] | None, Field(description=(
-            "Order of the build: part names, assembly prefixes ('Drohne/Rahmen') or patterns ('Drohne/Motor *'); "
-            "parts not named follow at the end. Default: show() order, parts of one assembly together"))] = None,
+        schritte: Annotated[list[str | dict[str, Any]] | None, Field(description=(
+            "Order of the build: part names, assembly prefixes ('Drohne/Rahmen') or patterns ('Drohne/Motor *'), or "
+            "{auf, landet: s} to land a step at a fixed time (on a beat of the music); steps without a time sit "
+            "evenly between. Parts not named follow at the end. Default: show() order, parts of one assembly "
+            "together"))] = None,
         einflug: Annotated[Literal["oben", "explosion", "keiner"], Field(description=(
             "How parts arrive: oben = drop in from above, explosion = from outside towards the centre, keiner = "
             "appear"))] = "oben",
         zeichnen: Annotated[list[dict[str, Any]] | None, Field(description=(
-            "Strokes before steps: [{vor, punkte, dauer_s?, radius?}]"))] = None,
+            "Strokes before steps: [{vor, punkte, dauer_s?, radius?, von?}]"))] = None,
         details: Annotated[list[dict[str, Any]] | None, Field(description=(
             "Extra close-up videos with the same timing: [{auf: part, assembly or pattern, richtung?: iso|vorne|…|"
             "orbit, titel?, rand? (1.3 = a little room around it)}], e.g. where a stroke is drawn"))] = None,
@@ -180,6 +182,9 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         wechsel_s: Annotated[float, Field(ge=0.8, le=60, description="schnitt: seconds per angle")] = 3.0,
         halten_s: Annotated[float | None, Field(ge=0, le=120, description=(
             "Finished model at the end, default 12 % of dauer_s, at least 1.5 s"))] = None,
+        einflug_s: Annotated[float | None, Field(ge=0, le=5, description=(
+            "Seconds a part takes to fly in; default from the spacing of the steps (0.5 with fixed times)"))] = None,
+        start_s: Annotated[float | None, Field(ge=0, le=30, description="Empty start before the first part")] = None,
         name: Annotated[str, Field(min_length=1, max_length=60, description="Name of the animations and files")]
         = "Aufbau",
         breite: Annotated[int, Field(ge=64, le=7680, description="Video width in px (16:9)")] = 1920,
@@ -195,8 +200,9 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
             wunsch["zeichnen"] = list(zeichnen)
         if details:
             wunsch["details"] = list(details)
-        if halten_s is not None:
-            wunsch["halten_s"] = halten_s
+        for key, wert in (("halten_s", halten_s), ("einflug_s", einflug_s), ("start_s", start_s)):
+            if wert is not None:
+                wunsch[key] = wert
         res = await t.work("rendert das Aufbau-Video", svc.aufbau_video, wunsch, breite, fps, format)
         if not res.get("videos"):
             return fmt.error_result(f"Aufbau-Video nicht erstellt: {res.get('error') or 'unbekannter Fehler'}", res)

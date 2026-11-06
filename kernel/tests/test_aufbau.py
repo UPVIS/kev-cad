@@ -50,6 +50,24 @@ def test_zeitplan_endet_mit_halten_und_kulisse_bleibt_draussen():
         plan({"dauer": 3, "halten_s": 3}, TEILE, HUELLEN)
 
 
+def test_feste_landezeiten_auf_schlaegen_und_strich_davor():
+    schritte = [{"auf": "Drohne/Rahmen", "landet": 2.78}, "Drohne/Motor 1", {"auf": "Drohne/Motor 2", "landet": 6.46},
+                {"auf": "Drohne/GoPro", "landet": 9.68}]
+    z = {"vor": "Drohne/GoPro", "punkte": [[0, 0, 30], [50, 0, 30]], "dauer_s": 1.6}
+    p = plan({"dauer": 12, "schritte": schritte, "einflug_s": 0.5, "zeichnen": [z]}, TEILE, HUELLEN,
+             ausgenommen={"Boden"})
+    landet = [round(s.landet, 3) for s in p.schritte]
+    assert landet == [2.78, 4.62, 6.46, 9.68]  # ohne Zeit: mitten zwischen den Nachbarn
+    assert p.schritte[0].zeit == pytest.approx(2.28)
+    st = p.striche[0]
+    assert st.bis == pytest.approx(9.68 - 0.5 - 0.25) and st.von == pytest.approx(st.bis - 1.6)
+    with pytest.raises(AufbauFehler, match="nicht nach"):
+        plan({"dauer": 12, "schritte": [{"auf": "Drohne/Rahmen", "landet": 5}, {"auf": "Drohne/GoPro", "landet": 4}]},
+             TEILE, HUELLEN)
+    with pytest.raises(AufbauFehler, match="passt nicht vor"):
+        plan({"dauer": 12, "schritte": schritte, "zeichnen": [{**z, "von": 9.0}]}, TEILE, HUELLEN)
+
+
 def test_viele_teile_werden_zusammengelegt():
     teile = [f"Schraube {i}" for i in range(300)]
     huellen = {t: ([i, 0, 0], [i + 1, 1, 1]) for i, t in enumerate(teile)}

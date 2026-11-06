@@ -91,10 +91,13 @@ animation(aktion="aufbau", dauer_s=20, blickwinkel=["orbit", "iso", "schnitt"],
   der Schnitt rückt auf das nächste Teil, das erscheint (`wechsel_s`).
 - `schritte`: Teilname, Baugruppe als Präfix oder Muster mit `*`; Ungenanntes kommt am Ende. Ohne Liste in der Reihenfolge
   von `show()`, Teile einer Baugruppe zusammen. Sehr viele Schritte werden zusammengelegt (mindestens 0,08 s Abstand).
+  Mit Musik: `{"auf": "Drohne/Motor *", "landet": 7.38}` lässt den Schritt genau auf einem Schlag landen (Schläge aus
+  `hf-beats`), Schritte ohne Zeit liegen gleichmäßig dazwischen; `einflug_s` (Vorgabe dann 0,5) ist die Flugzeit davor.
 - `einflug`: `oben` (fällt von oben ein), `explosion` (von außen zur Mitte), `keiner`. Kulisse steht von Anfang an.
 - `details`: weitere Videos mit denselben Zeiten, die Kamera auf eine Baugruppe gerichtet, etwa dorthin, wo gezeichnet
   wird: `[{"auf": "Drohne/O4/Antenne*", "richtung": "iso_hinten_links"}]`.
-- `zeichnen`: vor einem Schritt entsteht ein Strich in Kevins Lichtblau, wie wenn er beim Sprechen zeichnet, dann kommt
+- `zeichnen`: vor einem Schritt entsteht ein Strich in Kevins Lichtblau (ohne `von` endet er gerade, bevor das Teil
+  erscheint), wie wenn er beim Sprechen zeichnet, dann kommt
   das Teil dazu. Punkte in mm auf der Fläche, der Strich hebt sich selbst etwas ab.
 - Die Antwort nennt die Videos und den Zeitplan (wann welcher Schritt erscheint), zusätzlich als
   `output/animationen/<name>_zeitplan.json`: Daraus setzt man im Schnitt Texte genau auf die Teile.
