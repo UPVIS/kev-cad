@@ -14,9 +14,9 @@ angenommen“).
 
 | Was | Budget | Messung |
 |---|---|---|
-| ↩ bis Paket beim Agenten (`feedback`, wartet über MCP) | unter 1 s | 142, 184, 243 ms |
-| ↩ bis Datei geschrieben | | 138, 165, 207 ms |
-| ↩ bis Hintergrundbefehl `kevcad-feedback` endet | | 172, 456 ms |
+| ↩ bis Paket beim Agenten (`feedback`, wartet über MCP) | unter 1 s | 142, 184, 240, 243 ms |
+| ↩ bis Datei geschrieben | | 138, 165, 207, 242 ms |
+| ↩ bis Hintergrundbefehl `kevcad-feedback` endet | | 172, 237, 456 ms |
 | wie oben, ↩ 0,5 s nach dem Weitersprechen (die Erkennung läuft neu an) | unter 1 s | 873, 992, 993 ms |
 | Wort als Text nach Wortende, Apple-Rückfall, je Lauf | unter 0,3 s | Median 448 bis 473 ms, 90 % 915 bis 1647 ms, schlechtester Wert 1857 ms |
 | `run` während Kevin spricht antwortet | | 4 bis 7 ms |
@@ -42,3 +42,7 @@ Drehen im Viewer, 2 s, ohne Sitzung gegen während des Sprechens (Bilder, Hauptf
 | Technisch | 109, 146; 1,28, 1,25 ms | 164, 169; 1,23, 1,15 ms |
 
 Im Rahmen der Streuung unter Last gleich: Solange niemand spricht, läuft kein neuer Code im Bildtakt.
+
+Rechenzeit des Hauptfadens bis zum Fenster (`KEVCAD_SELFTEST=oberflaeche`, im Wechsel, Last 130 bis 220): Basis 1,89 und
+1,00 s, V2-6 0,83 und 0,93 s. Das Laden von Speech.framework kostet 6 ms. Unter Last 380 schlug die Grenze dieses
+Selbsttests einmal an (3,66 s), die Basis überschritt sie bei Last 165 ebenso.

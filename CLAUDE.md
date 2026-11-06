@@ -97,7 +97,8 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
 - **Tests mit Oberfläche:** nur die Testvariante, im Hintergrund starten (`open -g -n "build/Kev CAD Test.app"`), ihr
   Fenster liegt auf dem zweiten Monitor. Danach beenden (`pkill -x "Kev CAD Test"`). Keine simulierten Maus- oder
   Tastatureingaben auf dem Hauptbildschirm; falls doch nötig, Mauszeiger und vorderes Programm wiederherstellen.
-  Fensterbilder mit `screencapture -l <Fensternummer> -o -x datei.png`.
+  Fensterbilder mit `screencapture -l <Fensternummer> -o -x datei.png`. Ohne zweiten Monitor `open -g -n --env
+  KEVCAD_TEST_VERSTECKT=1 …`: Das Fenster liegt hinter dem Schreibtischbild, zeichnet und trifft weiter, ohne Dock-Symbol.
 - Kernel-Tests nutzen eigene Sockets im Temp-Ordner und eigene Ports (nicht 47823/47824).
 - **Bauen und Testen auf dem Mac mini:** Agenten bauen und testen nur über `tools/fern.sh` (Kevin, 22.10.2026: der Mini
   entlastet das MacBook). Dort gibt es zwei Bauplätze mit warmen Bauordnern und einen Testplatz, gewartet wird in einer
