@@ -57,6 +57,7 @@ def test_bridge_forwards_tools_calls_images_and_errors(srv):
         out["fail"] = await c.call_tool("run", {})
         out["invalid"] = await c.call_tool("view", {"focus": []})
         out["unknown"] = await c.call_tool("gibtsnicht", {})
+        out["alt"] = await c.call_tool("stock_search", {"query": "Alu"})
         return out
 
     direct_tools, direct_run = anyio.run(lambda: _with(server.url, direct))
@@ -94,6 +95,7 @@ def test_bridge_forwards_tools_calls_images_and_errors(srv):
     assert r["fail"].is_error and "Zeile 12" in texts(r["fail"])[0]
     assert r["invalid"].is_error and "Nichts zu tun" in texts(r["invalid"])[0]
     assert r["unknown"].is_error and "Unknown tool" in texts(r["unknown"])[0]
+    assert r["alt"].is_error and 'katalog(suche="Alu")' in texts(r["alt"])[0]
 
     # Agent in der App: verbunden, solange die Brücke läuft; getrennt, wenn Claude Code sie beendet
     assert r["connected_during"] == [True]
@@ -211,16 +213,18 @@ def test_bridge_reports_unavailable_app():
         t0 = time.monotonic()
         tools = (await c.list_tools()).tools
         res = await c.call_tool("status", {})
-        return tools, res, time.monotonic() - t0
+        return tools, res, time.monotonic() - t0, await c.call_tool("bestand_liste", {})
 
     params = bridge_params(port, KEVCAD_LAUNCH_CMD="echo 'Anwendung nicht gefunden' >&2; exit 1",
                            KEVCAD_START_TIMEOUT="2", KEVCAD_LIST_WAIT="2")
-    tools, res, elapsed = anyio.run(lambda: _with(params, go))
+    tools, res, elapsed, alt = anyio.run(lambda: _with(params, go))
     assert {t.name for t in tools} == EXPECTED_TOOLS  # eingebaute Liste
     assert res.is_error
     text = texts(res)[0]
     assert "Kev CAD läuft nicht – bitte starten" in text and "Anwendung nicht gefunden" in text
     assert elapsed < 10
+    # Alte Namen beantwortet die Brücke selbst, auch ohne App
+    assert alt.is_error and "heißt seit Kev CAD V2 anders" in texts(alt)[0]
 
 
 def test_bridge_config_from_env():

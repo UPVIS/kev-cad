@@ -2,9 +2,9 @@ import KevCADCore
 import SwiftUI
 
 // Druckvorschau (DRUCKVORSCHAU.md, Abschnitt „App“): gemeinsamer Zustand der Ansichten (Auswahl, gezeigte Platte),
-// Farben und kleine Bausteine für `DruckAnsicht` und `DruckKompakt`.
+// Farben und kleine Bausteine für `DruckAnsicht`.
 
-/// Zustand, den volle Ansicht, Schnellansicht und Selbsttest teilen. Die Auswahl im 3D-Bereich bleibt die Wahrheit:
+/// Zustand, den Ansicht und Selbsttest teilen. Die Auswahl im 3D-Bereich bleibt die Wahrheit:
 /// Ein Klick hier wählt dort aus, eine Auswahl dort wählt hier Gruppe und Platte.
 @MainActor
 final class DruckUI: ObservableObject {
@@ -236,36 +236,6 @@ struct DruckZahl: View {
         }
         .fixedSize()
         .help(hilfe ?? "")
-    }
-}
-
-/// „von Kevin“ an einem fest vorgegebenen Wert, mit Zurücksetzen.
-struct DruckVorgabeMarke: View {
-    var quelle: DruckQuelle
-    var zuruecksetzen: (() -> Void)?
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "pin.fill").font(.system(size: 8, weight: .semibold))
-            Text(quelle.titel)
-            if let zuruecksetzen {
-                Button(action: zuruecksetzen) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Zurücksetzen: wieder die Empfehlung des Kernels")
-            }
-        }
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(Color.kevAkzent)
-        .padding(.leading, 6)
-        .padding(.trailing, zuruecksetzen == nil ? 6 : 2)
-        .padding(.vertical, 1)
-        .background(Capsule().fill(Color.kevAkzent.opacity(0.12)))
-        .fixedSize()
     }
 }
 

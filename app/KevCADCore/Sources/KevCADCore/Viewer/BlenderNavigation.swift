@@ -174,17 +174,6 @@ extension ViewportCoordinator {
         smoothCamera(c, duration: 0.12)
     }
 
-    /// + und - (Tastatur): zoomen um den Drehpunkt, weich.
-    public func navZoomStep(factor: Float) {
-        var c = kameraZiel
-        if c.isOrthographic {
-            c.orthographicScale = min(max(c.orthographicScale * factor, 0.001), 1e7)
-        } else {
-            c.distance = min(max(c.distance * factor, 0.01), 1e7)
-        }
-        smoothCamera(c, duration: 0.12)
-    }
-
     /// Kamera auf einen Punkt zentrieren (Blender: Wahltaste + mittlere Maustaste), Richtung und Abstand bleiben.
     public func navCenter(on point: SIMD3<Float>) {
         var c = kameraZiel

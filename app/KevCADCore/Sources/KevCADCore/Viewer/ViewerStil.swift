@@ -38,9 +38,6 @@ public enum ViewerStil {
     public static let schriftFett = Font.system(size: 11.5, weight: .semibold)
     public static let schriftTaste = Font.system(size: 10.5, weight: .medium, design: .rounded)
     public static let schriftTitel = Font.system(size: 13, weight: .semibold)
-    /// Maßbeschriftung im Bild (CoreText, Punkte vor Skalierung).
-    public static let massSchriftgroesse: CGFloat = 12
-
     // MARK: Maße
 
     public static let radiusLeiste: CGFloat = 8

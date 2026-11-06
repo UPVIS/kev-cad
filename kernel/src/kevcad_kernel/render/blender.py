@@ -60,7 +60,8 @@ def zeitlimit_s(breite: int, hoehe: int, samples: int, dreiecke: int) -> float:
 def freier_speicher_prozent() -> int | None:
     """„System-wide memory free percentage“ aus ``memory_pressure`` (macOS) oder None."""
     try:
-        out = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=10).stdout
+        out = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=10,
+                             encoding="utf-8", errors="replace").stdout
     except (OSError, subprocess.SubprocessError):
         return None
     m = _SPEICHER.search(out)
@@ -164,7 +165,7 @@ class BlenderLauf:
         env.pop("PYTHONPATH", None)  # Blender bringt sein eigenes Python mit
         env.pop("PYTHONHOME", None)
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-                                     env=env, start_new_session=True)
+                                     env=env, start_new_session=True, encoding="utf-8", errors="replace")
         wache = threading.Timer(self.zeitlimit, lambda: self.abbrechen(f"Zeitlimit {self.zeitlimit:.0f} s"))
         wache.daemon = True
         wache.start()

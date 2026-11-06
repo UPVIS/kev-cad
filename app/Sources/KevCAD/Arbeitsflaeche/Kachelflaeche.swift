@@ -279,26 +279,16 @@ private struct KachelInhalt: View, Equatable {
             Color.clear
         case .zeichnung:
             HStack(spacing: 0) {
-                if breit || dokumente.auswahl == nil {
+                NebenSpalte(an: breit || dokumente.auswahl == nil, breite: 230, kante: .trailing) {
                     DokumenteSeitenleiste(model: model, store: model.dokumente, zustand: dokumente)
-                        .frame(width: 230)
-                    Divider()
                 }
                 DokumenteBereich(model: model, store: model.dokumente, zustand: dokumente)
-                if breit {
-                    Divider()
-                    dokumenteInspektor
-                        .frame(width: 280)
-                }
+                NebenSpalte(an: breit, breite: 280, kante: .leading) { dokumenteInspektor }
             }
         case .bauplan:
             HStack(spacing: 0) {
                 BauplanBereich(model: model)
-                if breit {
-                    Divider()
-                    BauplanInspektor(model: model)
-                        .frame(width: 280)
-                }
+                NebenSpalte(an: breit, breite: 280, kante: .leading) { BauplanInspektor(model: model) }
             }
         case .stueckliste:
             MaterialDatenKachel(model: model) { daten in
@@ -327,18 +317,14 @@ private struct KachelInhalt: View, Equatable {
                                 store: model.zweiteAnsicht)
         case .material:
             HStack(spacing: 0) {
-                if breit {
+                NebenSpalte(an: breit, breite: 220, kante: .trailing) {
                     MaterialSeitenleiste(model: model, material: state.materialZustand, navigation: navigation)
-                        .frame(width: 220)
-                    Divider()
                 }
                 MaterialBereich(model: model, material: state.materialZustand, navigation: navigation,
                                 zeigeIm3D: zeigeIm3D)
-                if breit {
-                    Divider()
+                NebenSpalte(an: breit, breite: 280, kante: .leading) {
                     MaterialInspektor(model: model, material: state.materialZustand, navigation: navigation,
                                       zeigeIm3D: zeigeIm3D)
-                        .frame(width: 280)
                 }
             }
         case .simulation:
@@ -368,6 +354,35 @@ private struct KachelInhalt: View, Equatable {
         case .bauplan: BauplanInspektor(model: model)
         case .berichte: BerichteInspektor(model: model)
         default: BlattInspektor(model: model, store: model.dokumente, zustand: dokumente)
+        }
+    }
+}
+
+/// Seitenleiste oder Inspektor einer breiten Kachel. Sie baut sich kurz nach dem Öffnen unsichtbar auf und behält ihre
+/// Breite: „Kachel groß“ gibt ihr nur noch Platz, statt Listen neu aufzubauen (gemessen 118 bis 142 ms, Grenze 100 ms).
+private struct NebenSpalte<Inhalt: View>: View {
+    let an: Bool
+    let breite: CGFloat
+    let kante: HorizontalEdge
+    @ViewBuilder let inhalt: () -> Inhalt
+    @State private var vorgebaut = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if an || vorgebaut {
+                if kante == .leading { Divider() }
+                inhalt().frame(width: breite)
+                if kante == .trailing { Divider() }
+            }
+        }
+        .frame(width: an ? breite + 1 : 0, alignment: kante == .leading ? .leading : .trailing)
+        .clipped()
+        .opacity(an ? 1 : 0)
+        .allowsHitTesting(an)
+        .accessibilityHidden(!an)
+        .task {
+            try? await Task.sleep(for: .seconds(1))
+            vorgebaut = true
         }
     }
 }

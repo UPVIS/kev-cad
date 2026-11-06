@@ -1,6 +1,6 @@
 import Foundation
 
-// Druckvorschau im Bereich „Material“: Die Kennzahlen der Druckteile (Seitenleiste, Übersicht, Schnellansicht) kommen,
+// Druckvorschau im Bereich „Material“: Die Kennzahlen der Druckteile (Seitenleiste, Übersicht) kommen,
 // sobald eine Vorschau da ist, aus ihr statt aus der Stückliste. Die Stückliste rechnet Vollkörper mal Dichte; die
 // Vorschau kennt Wände, Füllung und Stützen, dazu Zeit, Platten und Kosten samt Strom.
 

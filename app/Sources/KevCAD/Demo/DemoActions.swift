@@ -174,7 +174,7 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
         }
     }
 
-    /// Nur Demo: zurück zum Willkommensfenster.
+    /// Nur Demo: zurück zum leeren Fenster.
     func closeProject() {
         runTask?.cancel()
         model.project = nil

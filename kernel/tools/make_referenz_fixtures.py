@@ -47,7 +47,7 @@ def main() -> None:
             arr = unpack_ref_netz(kopf, nutz)
             erwartet[name + "_nutzlast"] = {"positions": arr["positions"].round(4).tolist(),
                                             "triangles": arr["triangles"].tolist()}
-    (ZIEL / "referenz_fixtures.json").write_text(json.dumps(erwartet, indent=1, ensure_ascii=False))
+    (ZIEL / "referenz_fixtures.json").write_text(json.dumps(erwartet, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(referenz_beispiele())} Referenz-Rahmen nach {ZIEL}")
 
 

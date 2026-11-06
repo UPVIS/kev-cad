@@ -2,7 +2,7 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Abschnitt des Bereichs „Material“ (Seitenleiste, Menü, Sprung aus Schnellansichten und Berichten).
+/// Abschnitt des Bereichs „Material“ (Seitenleiste, Menü, Sprung aus Berichten).
 enum MaterialAbschnitt: String, CaseIterable, Identifiable {
     case uebersicht, stueckliste, zuschnitt, bestand, einkauf, zukauf, druck
 
@@ -60,7 +60,7 @@ final class MaterialZustand: ObservableObject {
     }
     /// Gewählte Positionen (Stückliste, Zukauf, Druck, Zuschnitt): wirkt in beide Richtungen mit 3D und Teilebaum.
     @Published var auswahl: Set<Int> = []
-    /// Lagerteil, zu dem der Zuschnitt scrollen soll (Sprung aus der Schnellansicht oder dem Bestand).
+    /// Lagerteil, zu dem der Zuschnitt scrollen soll (Sprung aus dem Bestand).
     @Published var zuschnittFokus: String?
     /// Position, zu der die Stückliste scrollen soll.
     @Published var stuecklisteFokus: Int?
@@ -151,8 +151,8 @@ final class MaterialBilderSpeicher: ObservableObject {
     }
 }
 
-/// Sprünge zwischen den Bereichen für Ansichten außerhalb des Bereichs „Material“ (Berichte, Bauplan, Inspektor,
-/// Schnellansichten): gesetzt vom Projektfenster, sonst nil (dann bleiben die Knöpfe aus).
+/// Sprünge zwischen den Bereichen für Ansichten außerhalb des Bereichs „Material“ (Berichte, Bauplan, Details,
+/// Stückliste): gesetzt vom Hauptfenster, sonst nil (dann bleiben die Knöpfe aus).
 struct MaterialNavigation {
     var zeige: @MainActor (MaterialAbschnitt, Int?, String?) -> Void
     var bericht: @MainActor (ExportBausteinArt) -> Void

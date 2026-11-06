@@ -61,7 +61,7 @@ def bauform(key):
 def referenz():
     """Referenzmaße (kueche.P), Kameras und Haubenwinkel aus dem Bündelausgleich."""
     _, _, kueche = _importe()
-    E = json.loads((MESSUNG / "netz_buendel.json").read_text())
+    E = json.loads((MESSUNG / "netz_buendel.json").read_text(encoding="utf-8"))
     kams = {k: Kamera.aus_fotocad(c, k) for k, c in E["kameras"].items()}
     return dict(kueche.P), kams, {k: float(v) for k, v in E["haube"].items()}
 

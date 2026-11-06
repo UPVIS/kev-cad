@@ -2,13 +2,14 @@ import AppKit
 import KevCADCore
 
 /// Selbsttest im Demomodus (`KEVCAD_SELFTEST=keys`): prüft, dass einbuchstabige Kürzel nicht feuern, solange ein
-/// Textfeld den Fokus hat. Die Tastendrücke entstehen nur im eigenen Prozess; die App bleibt im Hintergrund.
+/// Textfeld den Fokus hat, und dass jede Taste der Belegung auf einem Menüpunkt liegt. Die Tastendrücke entstehen nur im
+/// eigenen Prozess; die App bleibt im Hintergrund.
 ///
 /// Weil eine Hintergrund-App keine Menükürzel ausführt, prüft der Test den Weg dorthin:
-/// - Suchfeld mit Fokus: H, 1, E landen im Feld, keine Aktion, und der `KeyboardGuard` hat alle drei abgefangen.
-///   Ein lokaler Monitor, der `nil` zurückgibt, beendet die Verarbeitung, bevor AppKit Menükürzel prüft.
-/// - Ohne Textfeld: der `KeyboardGuard` lässt die Tasten durch, und im Menü liegen die Befehle mit genau diesen
-///   Tasten ohne Zusatztaste.
+/// - Textfeld mit Fokus: H, 1, E landen im Feld, keine Aktion, und der `KeyboardGuard` hat alle drei abgefangen.
+///   Ein lokaler Monitor, der `nil` zurückgibt, beendet die Verarbeitung, bevor AppKit Menükürzel prüft. Das Feld legt der
+///   Test selbst an: Das Suchfeld der Werkstatt gibt es erst ab 13 Teilen, und dafür ist es ein Feld wie jedes andere.
+/// - Ohne Textfeld: der `KeyboardGuard` lässt die Tasten durch, und im Menü liegen die Befehle mit genau diesen Tasten.
 /// Ergebnis im Protokoll und in `<Datenordner>/selftest-keys.txt`.
 @MainActor
 enum SelfTest {
@@ -37,13 +38,16 @@ enum SelfTest {
         window.makeKey()
         lines.append("App aktiv: \(NSApp.isActive) (Hintergrundstart, Menükürzel selbst daher nicht auslösbar)")
 
-        guard let field = findSearchField(in: window.contentView?.superview ?? window.contentView) else {
-            finish(lines + ["FEHLER Suchfeld im Projektfenster nicht gefunden"], passed: false)
+        guard let inhalt = window.contentView else {
+            finish(lines + ["FEHLER Fenster ohne Inhalt"], passed: false)
             return
         }
+        let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 200, height: 24))
+        inhalt.addSubview(field)
+        defer { field.removeFromSuperview() }
         let guardian = session.keyboard
 
-        // 1. Suchfeld hat den Fokus.
+        // 1. Ein Textfeld hat den Fokus.
         window.makeFirstResponder(field)
         demo.select(["Grundplatte"])
         var mark = demo.calls.count
@@ -52,12 +56,12 @@ enum SelfTest {
         send("1", keyCode: 18, to: window)
         send("e", keyCode: 14, to: window)
         let calls = Array(demo.calls[mark...])
-        check(field.stringValue == "h1e", "Suchfeld: getippt „\(field.stringValue)“ (erwartet „h1e“)")
-        check(calls.isEmpty, "Suchfeld: keine Aktion ausgelöst (\(calls.isEmpty ? "keine" : calls.joined(separator: ", ")))")
+        check(field.stringValue == "h1e", "Textfeld: getippt „\(field.stringValue)“ (erwartet „h1e“)")
+        check(calls.isEmpty, "Textfeld: keine Aktion ausgelöst (\(calls.isEmpty ? "keine" : calls.joined(separator: ", ")))")
         check(guardian.bypassCount - bypassed == 3,
-              "Suchfeld: \(guardian.bypassCount - bypassed) von 3 Tasten am Menü vorbei ans Feld geleitet")
+              "Textfeld: \(guardian.bypassCount - bypassed) von 3 Tasten am Menü vorbei ans Feld geleitet")
         for _ in 0..<3 { send("\u{7F}", keyCode: 51, to: window) }
-        check(field.stringValue.isEmpty, "Suchfeld mit Rückschritt geleert")
+        check(field.stringValue.isEmpty, "Textfeld mit Rückschritt geleert")
 
         // 2. Kein Textfeld im Fokus: Tasten gehen den normalen Weg zu den Menükürzeln.
         window.makeFirstResponder(nil)
@@ -69,22 +73,25 @@ enum SelfTest {
         let fired = Array(demo.calls[mark...])
         if !fired.isEmpty { lines.append("       (ausgelöst: \(fired.joined(separator: ", ")))") }
 
-        let expected: [(String, NSEvent.ModifierFlags, String)] = [
-            ("1", [], "Oben"), ("2", [], "Vorne"), ("3", [], "Rechts"), ("4", [], "Hinten"), ("5", [], "Links"),
-            ("6", [], "Unten"), ("7", [], "Isometrisch"), ("f", [], "einpassen"), ("h", [], "Ausblenden"),
-            ("i", [], "Isolieren"), ("h", .shift, "Alles einblenden"), ("m", [], "Messen"), ("s", [], "Schnitt"),
-            ("e", [], "Explosion"), ("\u{1B}", [], "Auswahl aufheben"), ("r", .command, "Neu rechnen"),
-        ]
+        // 3. Jede Taste der Belegung liegt auf einem Menüpunkt (dieselbe Quelle wie Viewport und Hinweisleiste)
         let items = menuItems(NSApp.mainMenu)
-        for (key, modifiers, title) in expected {
+        for befehl in ViewerBefehl.allCases {
+            guard let taste = Tastenbelegung.menuTaste(befehl), let key = taste.keyEquivalent else { continue }
+            var modifiers: NSEvent.ModifierFlags = []
+            if taste.mods.contains(.umschalt) { modifiers.insert(.shift) }
+            if taste.mods.contains(.strg) { modifiers.insert(.control) }
+            if taste.mods.contains(.wahl) { modifiers.insert(.option) }
+            if taste.mods.contains(.befehl) { modifiers.insert(.command) }
+            let zeichen = String(key.character).lowercased()
             let found = items.contains {
-                $0.keyEquivalent.lowercased() == key
+                $0.keyEquivalent.lowercased() == zeichen
                     && $0.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == modifiers
-                    && $0.title.contains(title)
             }
-            let shown = key == "\u{1B}" ? "Esc" : (modifiers.contains(.shift) ? "⇧" : "")
-                + (modifiers.contains(.command) ? "⌘" : "") + (key == "\u{1B}" ? "" : key.uppercased())
-            check(found, "Menü: „\(title)“ auf \(shown)")
+            // Sonderzeichen wie / übersetzt AppKit je nach Tastatur (deutsch ⇧7); dann zählt, dass der Punkt eine Taste trägt
+            let titel = Tastenbelegung.alle.first { $0.befehl == befehl }?.titel ?? ""
+            let uebersetzt = !found && !(key.character.isLetter || key.character.isNumber)
+                && items.contains { $0.title == titel && !$0.keyEquivalent.isEmpty }
+            check(found || uebersetzt, "Menü: \(titel) auf \(zeichen == "\u{1B}" ? "Esc" : zeichen.uppercased())")
         }
 
         demo.showAll()
@@ -115,14 +122,5 @@ enum SelfTest {
     private static func menuItems(_ menu: NSMenu?) -> [NSMenuItem] {
         guard let menu else { return [] }
         return menu.items.flatMap { [$0] + menuItems($0.submenu) }
-    }
-
-    private static func findSearchField(in view: NSView?) -> NSSearchField? {
-        guard let view else { return nil }
-        if let field = view as? NSSearchField { return field }
-        for subview in view.subviews {
-            if let found = findSearchField(in: subview) { return found }
-        }
-        return nil
     }
 }

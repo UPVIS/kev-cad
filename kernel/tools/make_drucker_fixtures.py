@@ -125,9 +125,9 @@ def main() -> None:
         "config": eintrag,
     }
     path = ZIEL / "fixtures.json"
-    data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["drucker"] = erwartet
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(files)} Drucker-Testdateien nach {ZIEL}")
 
 

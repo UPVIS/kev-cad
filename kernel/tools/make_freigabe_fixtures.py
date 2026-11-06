@@ -27,9 +27,9 @@ def main() -> None:
         (ZIEL / f"{name}.frame").write_bytes(encode_frame(header, b""))
         files.append({"file": f"{name}.frame", "type": header["type"], "payload_bytes": 0})
     path = ZIEL / "fixtures.json"
-    data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["freigabe"] = {"frames": files, "anfrage": anfrage, "geschlossen": geschlossen}
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(files)} Freigabe-Testdateien nach {ZIEL}")
 
 

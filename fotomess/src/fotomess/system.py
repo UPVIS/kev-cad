@@ -10,7 +10,8 @@ import time
 def speicher_frei():
     """Freier Arbeitsspeicher in Prozent laut memory_pressure (None, wenn nicht ermittelbar)."""
     try:
-        out = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=20).stdout
+        out = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=20,
+                             encoding="utf-8", errors="replace").stdout
         m = re.search(r"free percentage:\s*(\d+)%", out)
         return int(m.group(1)) if m else None
     except Exception:

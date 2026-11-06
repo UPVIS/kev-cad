@@ -140,7 +140,8 @@ class CaptureLauf:
         self.abgebrochen = False
 
     def start(self) -> None:
-        self.proc = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        self.proc = subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
+                                     encoding="utf-8", errors="replace")
         threading.Thread(target=self._lies_stderr, name="kevcad-capture-err", daemon=True).start()
         threading.Thread(target=self._lies, name="kevcad-capture", daemon=True).start()
 

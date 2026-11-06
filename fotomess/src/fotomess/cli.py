@@ -142,12 +142,12 @@ def main():
     if len(sys.argv) < 3 or sys.argv[1] != "vermessen":
         print(__doc__)
         raise SystemExit(2)
-    auftrag = json.loads(Path(sys.argv[2]).read_text())
+    auftrag = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
     ablage = Path(auftrag.get("ablage", Path(sys.argv[2]).with_suffix("")))
     erg = vermessen_auftrag(auftrag, ablage)
     text = json.dumps(erg, indent=1, ensure_ascii=False, default=float)
     if len(sys.argv) > 3:
-        Path(sys.argv[3]).write_text(text)
+        Path(sys.argv[3]).write_text(text, encoding="utf-8")
     print(text)
 
 

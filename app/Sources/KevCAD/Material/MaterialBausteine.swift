@@ -2,7 +2,7 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-// Gemeinsame Bausteine des Bereichs „Material“ und der Schnellansichten: Kennzeichen, Vorschaubild, Kennzahlen,
+// Gemeinsame Bausteine der Kacheln Material, Stückliste und Zuschnitt: Kennzeichen, Vorschaubild, Kennzahlen,
 // Abschnittskopf. Farben und Texte kommen aus der gemeinsamen Datenquelle (MaterialDaten), damit Bildschirm und Bericht
 // gleich aussehen.
 

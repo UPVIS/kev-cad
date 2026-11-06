@@ -127,12 +127,6 @@ extension AppController {
 
     public func setExplode(_ factor: Double) { applyExplode(factor) }
 
-    func applyDisplayStyle(_ style: DisplayStyle) {
-        scene.setDisplayStyle(style)
-        viewport.controller.displayMode = scene.viewportDisplayMode
-        model.displayStyle = style
-    }
-
     func applySection(enabled: Bool, normal: SIMD3<Float>?, offset: Float) {
         scene.setSection(normal: enabled ? normal : nil, offset: offset)
         viewport.controller.clipPlanes = scene.section.map { [$0] } ?? []

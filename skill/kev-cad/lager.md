@@ -16,7 +16,7 @@ Standard für jedes Projekt: **Gebaut wird nur aus dem Inventar.**
 - Nichts erfinden. Fehlt ein Teil oder Material: erst `katalog` mit anderen Wörtern, dann Kevin fragen. Nur auf
   seinen Wunsch mit `lager(aktion="teil_vorschlagen")` bzw. `lager(aktion="material_vorschlagen")` vorschlagen. Ein Vorschlag wartet auf Kevins Freigabe und
   lässt sich vorher nicht verbauen. **Freigabe anfragen:** `lager(aktion="freigabe", ids=["id", …], grund="wofür")` öffnet im
-  Projektfenster den Dialog „Vorschläge freigeben“ (Daten, Link, „Freigeben“ je Eintrag und für alle), wartet auf
+  Hauptfenster den Dialog „Vorschläge freigeben“ (Daten, Link, „Freigeben“ je Eintrag und für alle), wartet auf
   Kevins Klick (Standard 120 s) und meldet, was freigegeben, abgelehnt oder offen ist. Nie „bitte im Lagerkatalog
   freigeben“ schreiben. Schreibt Kevin im Chat „freigegeben“, ist damit nichts freigegeben: dann ebenfalls
   `lager(aktion="freigabe")` aufrufen, er klickt nur noch. Das Werkzeug gibt nie selbst frei. Freigegebene Einträge ändert
@@ -130,7 +130,7 @@ Ablauf, wenn Kevin einen Link, eine Herstellernummer oder eine EAN nennt:
    Felder an `lager(aktion="zukauf_anlegen", url=…, felder={name, hersteller, mpn, gtin, preis {je_stueck, waehrung, brutto}, masse {l,
    b, h} bzw. {d, l}, gewicht, bild})`. Preis immer mit brutto/netto wie im Shop. Kevin Hersteller, Nummer, Preis und
    Maße bestätigen lassen (`zu_pruefen` in der Antwort). Das Teil ist ein **Vorschlag**, bis Kevin es freigibt
-   (`lager(aktion="freigabe", ids=[id], grund)` öffnet den Dialog im Projektfenster); vorher lässt es sich nicht verbauen.
+   (`lager(aktion="freigabe", ids=[id], grund)` öffnet den Dialog im Hauptfenster); vorher lässt es sich nicht verbauen.
 4. **CAD suchen:** `lager(aktion="cad_suchen", id=…)` liefert Links (Produktseite, Herstellerportal, 3Dfindit, Websuche); eine
    automatische CAD-Quelle gibt es nicht (TraceParts ist seit dem 22.10.2026 stillgelegt, Kevins Entscheidung):
    **Kevin bitten, das STEP (oder ein ZIP mit STEP) mit seinem Konto herunterzuladen.** Die App beobachtet derweil

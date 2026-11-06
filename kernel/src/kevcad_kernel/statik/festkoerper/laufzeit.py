@@ -103,7 +103,7 @@ class FestkoerperRuntime:
                  else "kevcad_kernel.statik.festkoerper.prozess")
         proc = subprocess.Popen([sys.executable, "-m", modul, job["auftrag"], str(ergebnis)],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
-                                start_new_session=True)
+                                start_new_session=True, encoding="utf-8", errors="replace")
         z["proc"] = proc
         fehler: list[str] = []
 

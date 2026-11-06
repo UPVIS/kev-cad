@@ -54,6 +54,7 @@ from mcp_types import (
 
 import kevcad_kernel
 from kevcad_kernel.mcp_tools import INSTRUCTIONS, SERVER_NAME, SERVER_TITLE
+from kevcad_kernel.mcp_tools.zuordnung import alter_aufruf
 
 log = logging.getLogger("kevcad_kernel.bridge")
 
@@ -438,6 +439,8 @@ class Bridge:
     async def _call_tool(self, ctx: Any, params: CallToolRequestParams) -> CallToolResult:
         assert self.upstream is not None
         name, arguments = params.name, params.arguments or {}
+        if (antwort := alter_aufruf(name, arguments)) is not None:  # Name von vor V2-2: dafür die App nicht starten
+            return error_result(antwort)
         try:
             return await self.upstream.call(lambda c: c.call_tool(name, arguments),
                                             wait_s=self.cfg.start_timeout + 15)

@@ -7,6 +7,7 @@ auch für Rechenprozesse, die Tests starten.
 
 from __future__ import annotations
 
+import locale
 import os
 import shutil
 import tempfile
@@ -29,6 +30,14 @@ os.environ["KEVCAD_BAMBU_APP"] = str(_DRUCK / "kein-bambu-studio.app")
 os.environ["KEVCAD_FESTKOERPER_CACHE"] = str(_DRUCK / "festkoerper")
 # Kevins Filamentliste (druck/filamente.py): nie seine Datei lesen oder anlegen
 os.environ["KEVCAD_FILAMENTE"] = str(_DRUCK / "filamente.json")
+
+
+@pytest.fixture(autouse=True)
+def _locale_zurueck():
+    """lib3mf stellt beim Schreiben einer 3MF den ganzen Prozess auf die Locale C um. Ohne dieses Zurücksetzen lasen alle
+    späteren Tests ohne feste Kodierung ASCII, und im vollen Lauf am MacBook scheiterten 16 CalculiX-Tests daran."""
+    yield
+    locale.setlocale(locale.LC_ALL, "")
 
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001

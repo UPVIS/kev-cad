@@ -151,7 +151,7 @@ Antwort: `ACK` mit `ok` und optional `message`.
 | `PROJECT_NEW` | `id`, `path` (neuer Ordner), `template` (`empty` \| `example`) | `PROJECT` mit `reply_to` |
 | `RUN_REQ` | `id`, `params` (Objekt oder null), `slow_ms` (0 = normal) | `ACK`, dann `RUN_*` |
 | `MEASURE_REQ` | `id`, `refs` (1 oder 2), `run`, `show` (bool) | `MEASURE_RES` |
-| `SELECTION` | `run`, `refs` (Liste, kann leer sein) | – (Kernel merkt sich die Auswahl für MCP `selection`) |
+| `SELECTION` | `run`, `refs` (Liste, kann leer sein) | – (Kernel merkt sich die Auswahl für MCP `measure` ohne `refs`) |
 | `SETTINGS` | `auto_run` (bool), `slow_ms` (Zeitlupe für Läufe aus der App, 0 = aus) | – |
 | `EXPORT_REQ` | `id`, `formats` (`step`, `stl`, `3mf`, `glb`), `parts` (Liste oder null) | `EXPORT_RES` |
 | `SCREENSHOT_RES` | `reply_to`, `ok`, `width`, `height`, `camera` (Objekt), `mm_per_px` (nur orthographisch, sonst null) | PNG |
@@ -256,12 +256,12 @@ im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
 `EXPORT_REQ.formats` kennt zusätzlich `bom_csv` (Stückliste und Zuschnitt als CSV, Semikolon, deutsche Zahlen, UTF-8
 mit BOM für Excel).
 
-### Freigabe im Projektfenster (Strang „Feinschliff 2“, 22.10.2026)
+### Freigabe im Hauptfenster (Strang „Feinschliff 2“, 22.10.2026)
 
-Rein additiv. Vorschläge von Claude gibt Kevin jetzt auch direkt im Projektfenster frei: Band „3 Vorschläge warten auf
+Rein additiv. Vorschläge von Claude gibt Kevin jetzt auch direkt im Hauptfenster frei: Band „3 Vorschläge warten auf
 Freigabe“ und Dialog „Vorschläge freigeben“ (Vorschau der Daten, Link, „Freigeben“ je Eintrag und für alle). Freigeben
 bleibt `CATALOG_SAVE` mit `status: "frei"` wie im Lagerkatalog, einer nach dem anderen und erst nach der Bestätigung im
-neu geladenen Katalog; Fehler bleiben im Dialog stehen. MCP `freigabe_anfragen(ids, grund, warten_s)` öffnet den Dialog
+neu geladenen Katalog; Fehler bleiben im Dialog stehen. MCP `lager(aktion="freigabe", ids, grund, warten_s)` öffnet den Dialog
 und gibt selbst nichts frei; es wartet (Standard 120 s, höchstens 900 s), bis Kevin alles entschieden oder den Dialog
 geschlossen hat, und liest das Ergebnis aus dem Katalog (frei, nicht mehr vorhanden = abgelehnt, weiter vorgeschlagen =
 offen). Umsetzung: `kernel/src/kevcad_kernel/freigabe.py`, App `Model/Freigabe.swift` und
@@ -273,7 +273,7 @@ offen). Umsetzung: `kernel/src/kevcad_kernel/freigabe.py`, App `Model/Freigabe.s
 | `FREIGABE_GESCHLOSSEN` | App → Kernel | `anfrage`, `freigegeben`, `abgelehnt`, `offen` (Listen der ids) | – |
 
 Eine neue Anfrage ersetzt eine offene (die App meldet die alte als geschlossen). Ältere Apps antworten nicht mit `ACK`;
-`freigabe_anfragen` meldet dann nach 10 s „Dialog nicht geöffnet“.
+`lager(aktion="freigabe")` meldet dann nach 10 s „Dialog nicht geöffnet“.
 
 ## Phase 3: Zukaufteile
 
@@ -332,7 +332,7 @@ Ergänzt bei der Zusammenführung (21.10.2026, additiv):
   `show()`.
 
 Kev CAD lädt Shop-Seiten nie selbst (PLAN-PHASE3-ZUKAUF.md, Z1): Daten kommen von Claude über MCP oder aus Kevins
-Eingabe im Dialog. CAD-Dateien kommen aus `~/Downloads` (Kevin lädt sie über die Links von `cad_suchen` herunter);
+Eingabe im Dialog. CAD-Dateien kommen aus `~/Downloads` (Kevin lädt sie über die Links von `lager(aktion="cad_suchen")` herunter);
 eine automatische CAD-Quelle gibt es nicht, die TraceParts-API ist seit dem 22.10.2026 stillgelegt.
 
 ## Prüfung
@@ -357,7 +357,7 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   weiteres `CHECK` mit demselben `run` und `state: "done"`, das das teilweise vollständig ersetzt (ohne
   `im_hintergrund`). Kommt vorher ein neuer Lauf, bleibt es beim teilweisen Ergebnis des alten. Ältere Apps lesen
   einen unbekannten `state` als `done` und ersetzen es beim zweiten `CHECK`; die App zeigt im Prüfband und im
-  Inspektor „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
+  Kachel Details „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
 - `statik_im_hintergrund` (additiv, 22.10.2026, PLAN-STATIK.md T34): Rechnen nach dem Lauf noch ein Ablauf (Stufe 2)
   oder der Festkörper (Stufe 3), ist das `CHECK` ebenfalls `teilweise` und nennt sie hier (etwa
   `"Ablauf „Bremsen aus 1 m/s“"`, `"Festkörper „Haken 2 kg“ (2 Teile)"`). Sind sie fertig (oder abgebrochen), folgt
@@ -526,7 +526,7 @@ Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
 
 | type | Felder | Antwort |
 |---|---|---|
-| `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera_info`, `kamera_vorschlag_aus_ansicht`) |
+| `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera(aktion="info")`, `kamera(aktion="vorschlag")`) |
 
 ### Kameras und Animation
 
@@ -540,7 +540,7 @@ Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
   fahren (`folge`), außer eine Spur bewegt den Körper dort schon. Rig-Zubehör hängt nicht an der Kamera und braucht
   eine eigene Spur.
 - `CAMERA_SUGGEST` (Strg+Alt+0) rechnet die Ansicht in die Ruhelage zurück, wenn die Kamera gerade bewegt steht.
-- MCP: `animation_liste` und die Zusammenfassung von `run` nennen je Animation unter `kameras` die Kameras, deren Teil
+- MCP: `animation(aktion="liste")` und die Zusammenfassung von `run` nennen je Animation unter `kameras` die Kameras, deren Teil
   sich darin bewegt.
 
 ## Zwangsbedingungen (CONSTRAINTS)
@@ -752,7 +752,7 @@ nicht zur Stückliste (R4). Umsetzung: `kernel/src/kevcad_kernel/referenz/`, Pac
 
 - `art` (additiv, 22.10.2026): `video`, `fotos` oder `scan` (Kev Scan vom iPhone, SCAN.md). Bei `scan` ist `quelle` der
   Scan-Ordner, die Auswertung läuft als `laeuft: "capture"` (Text „Scan: …“), das Netz kommt als `REF_UPSERT` mit
-  `quelle: "kevscan"` im System des Scans (Boden z = 0, Mitte x = y = 0), bis `referenz_vermessen` es über `lage` an
+  `quelle: "kevscan"` im System des Scans (Boden z = 0, Mitte x = y = 0), bis `referenz(aktion="vermessen")` es über `lage` an
   das Modell legt; Satz `capture` in `REF_PHOTOS` sind die Bilder mit den Kameras aus ARKit.
 - `zustand`: `leer` (nichts gerechnet), `rechnet` (`laeuft`: `capture` oder `messung`, `fortschritt` 0…1, `text`),
   `fertig`, `fehler` (`meldung`). `fotos`: Zahl der Fotos mit eingepasster Kamera (sonst der abgelegten Fotos).
@@ -789,7 +789,7 @@ Rest von Phase 4 (Zweig `rest-referenz`); ältere Gegenseiten ignorieren die neu
 | `REF_DEVIATION` | Kernel → App | `referenz`, `run`, `auf` (`modell` \| `referenz`), `teil` (Teilname bei `modell`, sonst null), `feld` (Schlüssel), `punkte` (n), `dreiecke` (m), `grenze_mm`, `kennzahlen` | n × 3 f32 Punkte (Welt, mm), m × 3 u32 Dreiecke, n f32 Abstand in mm (positiv = die Referenz liegt außerhalb des Modells, negativ = innerhalb, NaN = keine Referenz in der Nähe); little-endian, ohne Lücken |
 | `REF_SCALE` | App → Kernel | `id`, `referenz`, `mm` (echtes Maß), dazu `punkte` (zwei Punkte [x, y, z] am Referenznetz, Welt, mm, wie im Viewer) oder `kante` (`laenge`, `breite`, `hoehe`, `grund_laenge`, `grund_breite` der Hülle oder Name eines gemessenen param) | `ACK` mit `message`, dann `REF_LIST`, `REF_UPSERT`, `REF_PHOTOS`, `REF_RESULT`, `REF_DEVIATION` |
 | `SCAN_LIST` | Kernel → App | `scans` (höchstens 30, neueste zuerst: `id`, `name`, `empfangen`, `erstellt`, `geraet`, `fotos`, `videobilder`, `objekt`, `groesse_mb`, `vorschau`, `zustand` (`neu` \| `uebernommen`), `referenzen` [{`projekt`, `name`, `stand`, `schnell`}]), `empfaenger` {`laeuft`, `port`, `name`, `dienst`}, `ordner`, `neu` (Kennung des gerade per WLAN empfangenen Scans, sonst null); beim Verbinden, nach jedem Empfang und nach jeder Übernahme | – |
-| `SCAN_IMPORT` | App → Kernel | `id`, `scan` (Kennung aus `SCAN_LIST`), `name` (oder null), `schnell` (bool) – Kevins Klick „Scan übernehmen“, wie MCP `scan_importieren` | `ACK`, dann `REF_LIST` mit dem Fortschritt, am Ende `SCAN_LIST` |
+| `SCAN_IMPORT` | App → Kernel | `id`, `scan` (Kennung aus `SCAN_LIST`), `name` (oder null), `schnell` (bool) – Kevins Klick „Scan übernehmen“, wie MCP `referenz(aktion="scan_importieren")` | `ACK`, dann `REF_LIST` mit dem Fortschritt, am Ende `SCAN_LIST` |
 
 - **Abweichung:** Der Kernel rechnet nach jedem Lauf, nach einem neuen Netz, einer neuen Lage und einem neuen Maßstab
   im Hintergrund, je Referenz mit Netz: `auf: "modell"` je Teil (ohne Kulisse) die fein unterteilte Oberfläche des
@@ -808,7 +808,7 @@ Rest von Phase 4 (Zweig `rest-referenz`); ältere Gegenseiten ignorieren die neu
   `kennzahlen…`}], `referenz` {`feld`, `kennzahlen…`}; `massstab` (null oder {`faktor` über alle Schritte, `mm`,
   `ist_mm`, `quelle` `punkte` \| `kante` \| `messung`, `kante`, `stand`}); `phase` (laufende Scan-Auswertung: „Einlesen“,
   „Bilder wählen“, „Bilder holen“, „Tiefe (PromptDA)“, „Verschmelzen (TSDF)“, „Netz erzeugen“, „Masken“, „Bericht“).
-- `VIEW_CMD referenz_abweichung` {`name`, `auf`, `an`}: der Agent (MCP `referenz_abweichung(zeigen=true)`) schaltet die
+- `VIEW_CMD referenz_abweichung` {`name`, `auf`, `an`}: der Agent (MCP `referenz(aktion="abweichung", zeigen=true)`) schaltet die
   Farbkarte ein bzw. aus.
 - **Maßstab:** skaliert um den Ursprung des Referenzsystems (Boden bleibt z = 0): `capture/netz_mm.obj`, PLY-Dateien,
   `poses.json` (`aligned`), `kameras.json`, `bericht.json`, die Maße in `referenz.json`; die Vermessung
@@ -870,7 +870,7 @@ an die App (und im Versionsarchiv) bleibt die Kurzfassung (`statik`: `stand`, `a
   das Feld.
 
 App → Kernel: nur `STATICS_CANCEL` (Stufe 3, siehe „Festkörper“). Die App wählt Szenarien selbst; neue Szenarien rechnet
-der Agent mit MCP `szenario_rechnen`, Kevin legt sie im Bereich „Simulation“ an (Abschnitt „Simulation“, `SIM_EDIT`).
+der Agent mit MCP `statik(aktion="szenario")`, Kevin legt sie in der Kachel Simulation an (Abschnitt „Simulation“, `SIM_EDIT`).
 
 ### Ablauf (Stufe 2, additiv)
 
@@ -915,8 +915,8 @@ erneut mit `"done"` (oder `"failed"` mit `meldung`). Das Szenario trägt dann di
 
 Teile mit Last, die das Stabwerk als starr bzw. als Kragträger behandelt (Druckteile, Platten, Verbinder), rechnet der
 Kernel zusätzlich als Volumen-FEM in einem eigenen Prozess (`statik/festkoerper/`, Gmsh, scikit-fem, pyamg): nach jedem
-Lauf im Hintergrund (nur Szenarien mit Last), nach `szenario_rechnen` und `dynamik` für das neue Szenario und auf
-Anfrage (MCP `festigkeit`). Erst kommt `STATICS` mit `festkoerper.stand: "laeuft"` (Fortschritt alle 0,3 s), dann
+Lauf im Hintergrund (nur Szenarien mit Last), nach `statik(aktion="szenario")` und `statik(aktion="dynamik")` für das neue Szenario und auf
+Anfrage (MCP `statik(aktion="festigkeit")`). Erst kommt `STATICS` mit `festkoerper.stand: "laeuft"` (Fortschritt alle 0,3 s), dann
 erneut mit `"done"` (oder `"failed"` mit `meldung`, `"abgebrochen"`). Das Szenario trägt dann je gerechnetem Teil ein
 Urteil `festkoerper` statt des Kragträger-Urteils `bauteil`, die Ausnutzung des Teils in `teile` (mit `fem: true`) und
 ein Feld `festkoerper`:
@@ -957,7 +957,7 @@ ein Feld `festkoerper`:
 
 ### CalculiX (Stufe 4, additiv)
 
-Teile, die der Agent mit `festigkeit(…, verfahren="ccx")` rechnet oder die model.py mit `st.festigkeit(teil, …)`
+Teile, die der Agent mit `statik(aktion="festigkeit", …, verfahren="ccx")` rechnet oder die model.py mit `st.festigkeit(teil, …)`
 anmeldet (dann im Hintergrund nach dem Festkörper der Stufe 3), rechnet der Kernel mit CalculiX (eigenes Programm,
 GPL, `statik/ccx/`): Kontakt mit Abheben und Gleiten, Klemmkraft, Plastizität, Traglast, Beulen. Sie stehen wie Stufe 3
 im Feld `festkoerper` des Szenarios und ersetzen dort das Ergebnis der Stufe 3 desselben Teils (Urteil `festkoerper`,
@@ -1030,11 +1030,11 @@ alten. Packen und Prüfen in `protocol.py` (`pack_topo`, `check_topo_message`, `
 
 ## Simulation
 
-Rein additiv (PLAN-SIMULATION.md, 23.10.2026); ältere Gegenseiten ignorieren die Typen. Bereich „Simulation“ (⌘4) der
+Rein additiv (PLAN-SIMULATION.md, 23.10.2026); ältere Gegenseiten ignorieren die Typen. Kachel Simulation der
 App: Lastfälle, Kräfte und Lager, die Kevin per Klick anlegt, liegen in `<projekt>/simulation.json` (Format in
 `kernel/src/kevcad_kernel/simulation/datei.py`) und kommen bei jedem Lauf zu den Szenarien aus model.py dazu (gleicher
-Name: die App gewinnt). Der Agent sieht und ändert dieselben Daten (MCP `simulation_liste`, `simulation_aendern`,
-`simulation_rechnen`). Packen und Prüfen in `protocol.py` (`pack_sim`, `check_sim_message`, `pack_sim_job`,
+Name: die App gewinnt). Der Agent sieht und ändert dieselben Daten (MCP `statik` mit `aktion` `simulation`,
+`simulation_aendern`, `simulation_rechnen`). Packen und Prüfen in `protocol.py` (`pack_sim`, `check_sim_message`, `pack_sim_job`,
 `check_sim_job`, `check_sim_app`, Beispiele `sim_beispiel`, `sim_job_beispiel`), Testdateien `sim.frame`,
 `sim_job.frame`, `sim_job_laeuft.frame` und `sim.json` aus `tools/make_simulation_fixtures.py`.
 
@@ -1043,7 +1043,7 @@ Name: die App gewinnt). Der Agent sieht und ändert dieselben Daten (MCP `simula
 | `SIM` | Kernel → App | `run`, `stand` (Zähler von simulation.json), `datei`, `vorhanden`, `lastfaelle`, `modell`, `lager`, `modell_lager`, `abgeleitet`, `topologie`, `hinweise`, `fehler`, `job`, `reply_to` optional; nach jedem Lauf (nach STATICS), nach jeder Änderung, beim Verbinden, auf `SIM_REQ` | – |
 | `SIM_JOB` | Kernel → App | `auftrag`, `was` (`rechnen` \| `festigkeit` \| `ablauf` \| `grenze`), `lastfall`, `teil`, `grenze` (`last` \| `neigung` \| `geschwindigkeit`), `von` (`app` \| `agent`), `stand` (`laeuft` \| `done` \| `failed` \| `abgebrochen`), `fortschritt` (0…1 oder null), `text`, `ergebnis`, `meldung`, `ms`; beim Start, bei Fortschritt (FEM, Ablauf; höchstens alle 0,4 s) und am Ende | – |
 | `SIM_REQ` | App → Kernel | `id` | `SIM` mit `reply_to` |
-| `SIM_EDIT` | App → Kernel | `id`, `basis` (erwarteter `stand`, optional), `ops` (Liste von Operationen wie MCP `simulation_aendern`) | `ACK` (`message`: Meldungen bzw. Fehler; alles oder nichts), danach `STATICS` (alles mit dem letzten Modell neu gerechnet) und `SIM` |
+| `SIM_EDIT` | App → Kernel | `id`, `basis` (erwarteter `stand`, optional), `ops` (Liste von Operationen wie MCP `statik(aktion="simulation_aendern")`) | `ACK` (`message`: Meldungen bzw. Fehler; alles oder nichts), danach `STATICS` (alles mit dem letzten Modell neu gerechnet) und `SIM` |
 | `SIM_RUN` | App → Kernel | `id`, `was`, `lastfall`, `teil`, `fein`, `grenze`, `verfahren` (additiv: `s0s1` \| `fem`) | `ACK` (`message`: Nummer des Auftrags), danach `SIM_JOB` |
 | `SIM_CANCEL` | App → Kernel | `seq`, `id` optional | `SIM_JOB` mit `stand: "abgebrochen"` |
 
@@ -1096,7 +1096,7 @@ m/s², `dauer`, `animation`, `angriff` `boden` \| mm, `fahrtrichtung`, `antrieb`
   gelten), `untergrund` (eigener Boden des Szenarios); `lasten[j].flaeche` {`teil`, `index`, `flaeche_mm2`, `druck`}
   bei einer Last auf der ganzen Fläche.
 
-Operationen (`ops`, wie `simulation_aendern`): `lastfall_neu` (`name` und Felder), `lastfall_setzen` (`name`,
+Operationen (`ops`, wie `statik(aktion="simulation_aendern")`): `lastfall_neu` (`name` und Felder), `lastfall_setzen` (`name`,
 `felder`), `lastfall_kopieren` (`von` App oder model.py, `name`), `lastfall_umbenennen` (`name`, `neu`),
 `lastfall_loeschen` (`name`), `last_setzen` (`lastfall`, `last` ohne `id` = neu), `last_loeschen` (`lastfall`, `id`),
 `lager_setzen` (`lager`), `lager_loeschen` (`id`), `abgeleitet` (`id`, `aktiv`), `topologie` (`teil`, `einstellungen`).

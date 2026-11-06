@@ -234,7 +234,7 @@ def slicen(eingaben: list[Path], name: str, *, einstellungen: list[Path] | None 
         log(f"[drucker] Bambu Studio slict {len(eingaben)} Datei(en)")
         try:
             proc = subprocess.Popen(cmd, cwd=tmp, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, errors="replace", start_new_session=True)
+                                    text=True, errors="replace", start_new_session=True, encoding="utf-8")
         except OSError as exc:
             raise SlicenFehler(f"Bambu Studio startet nicht: {exc}") from None
         ende = time.monotonic() + zeitlimit_s

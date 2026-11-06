@@ -85,7 +85,7 @@ def git_verfuegbar() -> tuple[bool, str]:
             else:
                 try:
                     r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=20,
-                                       env=_basis_env())
+                                       env=_basis_env(), encoding="utf-8", errors="replace")
                     _git_ok = r.returncode == 0 and r.stdout.startswith("git version")
                     _git_meldung = "" if _git_ok else GIT_FEHLT
                 except (OSError, subprocess.SubprocessError):
@@ -101,7 +101,8 @@ def _echtes_git(exe: str) -> str:
     if exe != "/usr/bin/git" or not shutil.which("xcrun"):
         return exe
     try:
-        r = subprocess.run(["xcrun", "--find", "git"], capture_output=True, text=True, timeout=10, env=_basis_env())
+        r = subprocess.run(["xcrun", "--find", "git"], capture_output=True, text=True, timeout=10, env=_basis_env(),
+                           encoding="utf-8", errors="replace")
         echt = r.stdout.strip()
         if r.returncode == 0 and echt and os.access(echt, os.X_OK):
             return echt

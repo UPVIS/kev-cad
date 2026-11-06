@@ -33,7 +33,8 @@ BLOCK = 1 << 20
 
 def rechnername() -> str:
     try:
-        r = subprocess.run(["scutil", "--get", "ComputerName"], capture_output=True, text=True, timeout=3)
+        r = subprocess.run(["scutil", "--get", "ComputerName"], capture_output=True, text=True, timeout=3,
+                           encoding="utf-8", errors="replace")
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip()
     except (OSError, subprocess.SubprocessError):

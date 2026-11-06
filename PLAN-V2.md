@@ -1,6 +1,6 @@
 # Kev CAD · Plan V2 (KI-first)
 
-Stand 05.11.2026. Arbeitszweig `v2` (Arbeitskopie `.claude/worktrees/v2`). V2 geht erst als Ganzes nach `main`, wenn
+Stand 06.11.2026. Arbeitszweig `v2` (Arbeitskopie `.claude/worktrees/v2`). V2 geht erst als Ganzes nach `main`, wenn
 Kevin es abgenommen hat. Bis dahin bleibt seine installierte Fassung unberührt.
 
 ## 1. Ziel
@@ -72,8 +72,9 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Server-Anweisungen | höchstens 6.000 Zeichen | rund 5.000 Zeichen |
 | Übertragung je unverändertem Lauf | unter 50 KB | 32 KB mit echter App (V2-5b, `kernel/tools/live_selbsttest.py`), vorher 11,3 MB |
 | Lagebild: Antwort der App | unter 50 ms | in Ruhe Median 9 ms, 95 % unter 19 ms; während eines Laufs Median 13 ms, 95 % unter 39 ms (die App selbst unter 1 ms) |
-| App-Start bis bedienbares leeres Projekt | unter 1 s | Fenster nach 1,74 s unter fremder Last, Rechenzeit des Hauptfadens 0,90 s; ohne Last noch nicht gemessen; der Kernel ist rund 6 s später bereit |
-| Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | am 60-Hz-Monitor 58 bis 60 Bilder/s, Technisch 41 (Hänger auf dem Hauptfaden); ohne Bildschirmtakt 383 bis 469 Bilder/s ohne SSAO, 153 bis 216 mit; 120 Hz noch nicht gemessen |
+| App-Start bis bedienbares leeres Projekt | unter 1 s | ohne fremde Last (Mac mini) Fenster nach 0,19 s, Hauptfaden 0,14 s; unter Last am MacBook 1,7 bis 3,6 s; der Kernel ist rund 6 s später bereit, nach einem Update lädt er seit V2-8 schon beim Installieren |
+| Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | gezeichnet rund 120 Bilder/s, auch unter Last 130 bis 190 (Hauptfaden 1,2 ms, GPU 6 ms je Bild, keine Pause über 65 ms); ohne Bildschirmtakt 144 bis 477 Bilder/s; am Monitor nach V2-8 noch nicht gemessen, vorher 35 bis 60 (siehe Abschnitt 7) |
+| Kachel groß, alle einordnen | unter 100 ms | 50 bis 60 ms, 35 bis 42 ms (vorher 118 bis 142 ms, 66 ms) |
 | Sprach-Feedback: Wort erscheint als Text | unter 0,3 s, Vorschlag rund 0,6 s | Apple-Rückfall im Median 450 bis 480 ms; Wortlaut rechnet im Takt von 0,4 s, also rechnerisch 0,2 bis 0,6 s, mit Mikrofon noch nicht gemessen |
 | Feedback-Paket beim Agenten nach Ende des Sprechens | unter 1 s | 142 bis 450 ms; 873 bis 993 ms, wenn noch ein Satz unterwegs ist |
 
@@ -83,12 +84,12 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 |---|---|---|---|---|
 | V2-1 Tempo im Kernel | Rechengedächtnis je Operation (Booleans, Aufräumen, Volumen, Hüllquader, Abstände), Leerlauf entfernt, `run` wartet höchstens `warten_s` auf die Prüfung, Nachlauf aus dem Auftragsfaden, Zeiten je Phase | Kernel | – | fertig, auf `v2` (`31618fd`) |
 | V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | fertig, auf `v2` (`541e1fc`), Zahlen in `kernel/tools/MESSUNG-V2-2.md` |
-| V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | fertig, auf `v2` (`ed36826`), Einzelheiten in `OBERFLAECHE.md`; offen: Klicks, Tasten und Benennen von Hand prüfen, Startzeit ohne fremde Last messen |
-| V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | fertig, auf `v2` (`d255717`); offen: Hänger auf dem Hauptfaden, Messung an 120 Hz, echte Eingaben von Kevin prüfen |
-| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) fertig, auf `v2` (`0388a41`); V2-5b (App-Seite) fertig, auf `v2` (`961b405`), Zahlen in `kernel/tools/MESSUNG.md`; offen: Bildrate rund 40 statt 58 bis 60 Bilder/s, sporadischer Test `test_gleitende_lager_schraeg_in_der_fem` |
+| V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | fertig, auf `v2` (`ed36826`), Einzelheiten in `OBERFLAECHE.md`; Klicks, Tasten und Benennen prüft Kevin in der Abnahme |
+| V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | fertig, auf `v2` (`d255717`); Bildrate am Monitor und echte Eingaben prüft Kevin in der Abnahme |
+| V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) fertig, auf `v2` (`0388a41`); V2-5b (App-Seite) fertig, auf `v2` (`961b405`), Zahlen in `kernel/tools/MESSUNG.md` |
 | V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | fertig, auf `v2`, Zahlen in `kernel/tools/MESSUNG-V2-6.md`; offen: Prüfung mit Mikrofon durch Kevin |
-| V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | fertig, auf `v2`; offen: „Kachel groß“ 118 bis 142 ms statt unter 100 ms, Dokumente exportieren bleibt vorerst ein Blatt |
-| V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | zuletzt |
+| V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | fertig, auf `v2`; „Dokumente exportieren“ bleibt ein Blatt (drei feste Spalten, in einer Kachel enger als im Blatt) |
+| V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | fertig bis zur Abnahme, Liste in `ABNAHME-V2.md`, Zahlen in `kernel/tools/MESSUNG.md` |
 
 ### V2-5 Live (Entwurf, das Paket legt es fest)
 
@@ -144,10 +145,15 @@ und Bezug als Anweisung zum Agenten.
 
 ## 7. Offene Punkte und Risiken
 
-- **Tests:** Die volle Suite läuft auf dem Mini grün (`tools/fern/mini.sh` setzt seit V2-4 UTF-8). Offen für V2-8: 16
-  Statik- und Simulationstests mit CalculiX scheiterten im vollen Lauf aus einer Agenten-Shell am MacBook mit
-  `UnicodeDecodeError` (ASCII); dort ist der volle Lauf seither nicht wiederholt. Abbrüche mit Ausgang 141 kamen von
-  `gmsh.initialize`, das SIGPIPE zurücksetzt (behoben, `gmsh_starten`).
+- **Tests:** Die volle Suite läuft auf dem Mini grün (zuletzt viermal hintereinander, auch mit dem Endstand). Die 16 Statik- und Simulationstests
+  mit CalculiX scheiterten am MacBook, weil lib3mf beim Schreiben einer 3MF den ganzen Prozess auf die Locale `C` stellt
+  und Python danach ohne feste Kodierung ASCII liest; deshalb nur im vollen Lauf und nie auf dem Mini, wo `PYTHONUTF8=1`
+  gilt (behoben, `test_kodierung.py`). Abbrüche mit Ausgang 141 kamen von `gmsh.initialize`, das SIGPIPE zurücksetzt
+  (behoben, `gmsh_starten`). `test_gleitende_lager_schraeg_in_der_fem` ist nicht mehr aufgetreten, seine Ursache aber nicht
+  gefunden: 50 Läufe mit je neuem Netz gaben die Lagerkräfte exakt; ein neuer Fehlschlag sollte seine Meldung sichern.
+- **Bildrate am Monitor:** Gezeichnet wird mit rund 120 Bildern/s, der Hauptfaden pausiert nicht. Die 35 bis 42 Bilder/s
+  von V2-5b kamen also nach dem Zeichnen zustande. Beseitigt ist der Hauptverdacht, die Formmaske über dem Viewer aus V2-3;
+  ob das reicht, zeigt erst ein Monitor (ABNAHME-V2.md).
 - **Gedächtnis:** Es hängt an build123d 0.13.0 und schaltet sich bei einer anderen Fassung selbst ab (Prüfsumme der
   Quelle). Bei einem Update von build123d die nachgebauten Methoden in `gedaechtnis.py` prüfen.
 - **Nachlauf im Hintergrund:** Bauplan, Blätter und Versionen entstehen nach `run` im Hintergrund. Wer `dokumente/`
@@ -160,8 +166,9 @@ und Bezug als Anweisung zum Agenten.
   - dazu die Statik der Prüfung mit 0,54 s
 
   Nächste Kandidaten: Fasen und Verrundungen ins Gedächtnis, Verschiebungen ohne Kopie, Statik je Modell merken.
-- **Werkzeugnamen:** Neue Namen aus V2-2 brechen laufende Agentensitzungen, sobald V2 nach main geht. Den Übergang plant
-  V2-8.
+- **Werkzeugnamen:** Laufende Agentensitzungen rufen nach dem Wechsel nach main noch die alten Namen. Server und Brücke
+  antworten mit dem neuen Aufruf, ausführen tun sie ihn nicht. Der Client kennt die neuen Werkzeuge erst nach `/mcp` oder in
+  einer neuen Sitzung.
 - **Fast Mode:** Fast Mode für Agenten greift nur mit Nutzungsguthaben auf claude.ai. Das entscheidet Kevin.
 
 ## 8. Fragen an Kevin

@@ -191,7 +191,7 @@ class ScanRuntimeMixin:
         stderr: list[str] = []
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
-                                    env=env, cwd=str(ks))
+                                    env=env, cwd=str(ks), encoding="utf-8", errors="replace")
             self._scan_prozesse[schluessel] = proc
 
             def lies_err() -> None:

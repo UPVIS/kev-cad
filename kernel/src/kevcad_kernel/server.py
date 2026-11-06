@@ -22,10 +22,12 @@ from urllib.parse import parse_qs
 import anyio
 import uvicorn
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 import kevcad_kernel
 from kevcad_kernel.mcp_tools import INSTRUCTIONS, SERVER_NAME, SERVER_TITLE, register_tools
 from kevcad_kernel.mcp_tools.tracking import AgentTracker, SessionBoard
+from kevcad_kernel.mcp_tools.zuordnung import alter_aufruf
 from kevcad_kernel.protocol import FEEDBACK_HTTP_PFAD, FEEDBACK_HTTP_WARTEN_MAX_S
 from kevcad_kernel.service import KernelService, create_service
 
@@ -35,9 +37,19 @@ HOST = "127.0.0.1"
 MCP_PATH = "/mcp"
 
 
+class KevcadMCPServer(MCPServer):
+    """Laufende Agentensitzungen rufen nach dem Update auf V2 noch die alten Namen: Sie bekommen den neuen Aufruf statt
+    „Unknown tool“ (V2-8)."""
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
+        if self._tool_manager.get_tool(name) is None and (antwort := alter_aufruf(name, arguments)) is not None:
+            raise ToolError(antwort)
+        return await super().call_tool(name, arguments, context)
+
+
 def build_server(service: KernelService, board: SessionBoard | None = None) -> MCPServer:
     """MCP-Server „kevcad“ mit allen Werkzeugen, gebunden an ``service`` (``board``: Claude-Sitzungen)."""
-    mcp: MCPServer = MCPServer(
+    mcp: MCPServer = KevcadMCPServer(
         SERVER_NAME,
         title=SERVER_TITLE,
         instructions=INSTRUCTIONS,

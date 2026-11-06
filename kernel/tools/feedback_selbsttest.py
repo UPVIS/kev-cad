@@ -45,7 +45,8 @@ ENV_NAMEN = ("KEVCAD_CATALOG_DIR", "KEVCAD_DRUCK_CACHE", "KEVCAD_DRUCK_ABGLEICH"
 
 def ton_erzeugen(ziel: Path, stimme: str) -> float:
     subprocess.run(["say", "-v", stimme, "-r", "170", "-o", str(ziel), TEXT], check=True)
-    aus = subprocess.run(["afinfo", str(ziel)], check=True, capture_output=True, text=True).stdout
+    aus = subprocess.run(["afinfo", str(ziel)], check=True, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace").stdout
     for zeile in aus.splitlines():
         if "estimated duration" in zeile:
             return float(zeile.split(":")[1].split()[0])
@@ -137,13 +138,13 @@ def main() -> int:
     prozess = info["CFBundleExecutable"]
     # Nur die Begrüßung bei Wortlaut: Das Mikrofon bleibt zu
     hallo = subprocess.run([str(app / "Contents/MacOS" / prozess)], env={**os.environ, "KEVCAD_SELFTEST": "wortlaut"},
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace")
     print(hallo.stdout.strip() or f"Wortlaut: kein Ergebnis (Ausgang {hallo.returncode})", flush=True)
     arbeit, kopie = kopieren(Path(args.projekt).expanduser(), Path(args.katalog).expanduser() if args.katalog else KATALOG)
     ausgabe = Path(tempfile.mkdtemp(prefix="fb-selbsttest-", dir=arbeit))
     ton = ausgabe / "sprache.aiff"
     dauer = ton_erzeugen(ton, args.stimme)
-    (ausgabe / "skript.json").write_text(json.dumps(skript(dauer, args.pause)))
+    (ausgabe / "skript.json").write_text(json.dumps(skript(dauer, args.pause)), encoding="utf-8")
     print(f"Ton {dauer:.1f} s, Projekt {kopie}, Port {port}", flush=True)
 
     env = {"KEVCAD_SELFTEST": "sprache", "KEVCAD_SELFTEST_PROJEKT": str(kopie), "KEVCAD_SELFTEST_AUSGABE": str(ausgabe),
@@ -168,7 +169,7 @@ def main() -> int:
                 time.sleep(0.25)
         hintergrund = subprocess.Popen(
             [sys.executable, "-m", "kevcad_kernel.feedback_cli", "--port", str(port), "--warten-s", str(args.frist_s)],
-            stdout=subprocess.PIPE, text=True)
+            stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
         hintergrund_ende: dict = {}
 
         def warten() -> None:
@@ -184,7 +185,7 @@ def main() -> int:
         ende = time.monotonic() + 30
         while not bericht_datei.exists() and time.monotonic() < ende:
             time.sleep(0.1)
-        bericht = json.loads(bericht_datei.read_text()) if bericht_datei.exists() else {}
+        bericht = json.loads(bericht_datei.read_text(encoding="utf-8")) if bericht_datei.exists() else {}
     finally:
         subprocess.run(["pkill", "-x", prozess], check=False)
 

@@ -7,7 +7,7 @@ Teil des Skills kev-cad. Werkstattzeichnungen, Bauanleitung, PDF aus Bausteinen 
 Werkstattzeichnungen nach ISO 128/129-1 (Projektionsmethode 1, Schriftfeld ISO 7200, Allgemeintoleranz ISO 2768-m)
 entstehen aus dem Modell; die Maße hängen an erkannten Merkmalen (Bohrung, Lochbild, Langloch, Tasche, Fase, Radius,
 Stange mit Gehrung, Einsatz- und Muttertasche) und überleben Änderungen am Modell. Blätter liegen unter
-`<Projekt>/dokumente/zeichnungen/<id>.json`, Kevin sieht und bearbeitet sie in der App (Bereich „Dokumente“).
+`<Projekt>/dokumente/zeichnungen/<id>.json`, Kevin sieht und bearbeitet sie in der App (Kachel Zeichnung).
 
 Ablauf:
 
@@ -37,7 +37,7 @@ Gewindestift, Gewindeeinsatz auf derselben Achse); fehlt es, steht nur der Durch
 
 Kev CAD erzeugt aus dem Modell eine Bauanleitung zum Ausdrucken (Kevin, 22.10.2026: „was muss wann gemacht werden,
 was muss wie montiert werden … alle Löcher, die gebohrt werden“). Datei `<projekt>/dokumente/bauplan.json`, in der
-App im Bereich „Dokumente“ mit Strichbild je Schritt; Vertrag in DOKUMENTE.md.
+App in der Kachel Bauplan mit Strichbild je Schritt; Vertrag in DOKUMENTE.md.
 
 - **Erzeugen:** `bauplan(aktion="zeigen")` (bei neuem Lauf rechnet Kev CAD einen vorhandenen Bauplan selbst nach). Fünf Abschnitte:
   Material (Einkauf, Bestand), Zuschnitt (je Stange mit Gehrung), Bearbeiten (Bohrbild je Teil mit Ø und Lage ab

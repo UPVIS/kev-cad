@@ -316,9 +316,9 @@ def main() -> None:
     (ZIEL / "constraints.frame").write_bytes(encode_frame({**constraints_example(), "seq": 17}))
     alt = ZIEL / "fixtures.json"
     if alt.exists():  # Abschnitte anderer Generatoren (dokumente: make_doc_fixtures.py) bleiben erhalten
-        for k, v in json.loads(alt.read_text()).items():
+        for k, v in json.loads(alt.read_text(encoding="utf-8")).items():
             expected.setdefault(k, v)
-    (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
+    (ZIEL / "fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(frames)} Rahmen nach {ZIEL}")
     import make_pruef_fixtures  # Prüfung (CHECK): eigene Dateien, stream.bin bleibt gleich
 

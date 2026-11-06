@@ -53,9 +53,9 @@ def main() -> None:
         "spur_ids": [s["id"] for s in koepfe["live_agent_spur"]["schritte"]],
     }
     path = ZIEL / "fixtures.json"
-    data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["live"] = live
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(frames)} Testdateien für V2-5 Live nach {ZIEL}")
 
 

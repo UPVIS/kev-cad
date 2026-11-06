@@ -77,7 +77,10 @@ install_bundle() {
   mkdir -p "$INSTALL_ROOT"
   rsync -a --delete --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude tests --exclude tools \
     "$src/kernel/" "$INSTALL_ROOT/kernel/"
-  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev)
+  (cd "$INSTALL_ROOT/kernel" && uv sync -q --frozen --no-dev --compile-bytecode)
+  # Einmal laden: Der erste Import nach einem Update kostete sonst beim nächsten Start der App rund 50 s (gemessen unter
+  # Last), und ein kaputter Kernel fällt schon hier auf.
+  "$INSTALL_ROOT/kernel/.venv/bin/kevcad-kernel" check 2>&1 | tail -1 || echo "Achtung: Kernel lädt nicht"
   rsync -a --delete "$src/skill/" "$INSTALL_ROOT/skill/"
   # Phase 4: kevcad-capture (Object Capture) und fotomess mit eigener Umgebung (Abhängigkeiten aus uv.lock)
   rsync -a --delete "$src/bin/" "$INSTALL_ROOT/bin/"
@@ -173,16 +176,17 @@ echo "==> scan-Umgebung (Kev Scan auswerten)"
 
 if [ "$MODE" = "--core-tests" ]; then
   echo "==> Tests KevCADCore"
-  # Zusammenfassung von XCTest und Fehlerzeilen; der Exit-Code von swift test kommt über pipefail durch
+  # Zusammenfassung von XCTest und Fehlerzeilen; der Exit-Code von swift test kommt über pipefail durch. Alle Zeilen
+  # bleiben stehen: `tail` schnitt früher den Namen eines gescheiterten Tests ab. „Executed …“ ist nur die Summe.
   # KEVCAD_TESTS_SWIFT=<Filter>: nur diese Swift-Tests, ohne pytest (kurze Runden; der volle Lauf bleibt ohne Filter)
   if [ -n "${KEVCAD_TESTS_SWIFT:-}" ]; then
     (cd app/KevCADCore && swift test --filter "$KEVCAD_TESTS_SWIFT" 2>&1 \
-      | { grep -E "error:|failed|Executed [0-9]+ tests" || true; } | tail -40)
+      | { grep -E "error:|failed|Executed [0-9]+ tests" || true; })
     exit $?
   fi
-  (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; } | tail -15)
+  (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; })
   echo "==> Tests Kernel"
-  (cd kernel && .venv/bin/python -m pytest -q)
+  (cd kernel && PYTHONUTF8=1 .venv/bin/python -m pytest -q)
   exit 0
 fi
 

@@ -32,7 +32,9 @@ extension AppController {
         if let content = window.contentView {
             let center = mtk.convert(CGPoint(x: mtk.bounds.midX, y: mtk.bounds.midY), to: nil)
             let hit = content.hitTest(content.superview?.convert(center, from: nil) ?? center)
-            log(hit === mtk ? .info : .error, "Selbsttest: Klick in der Mitte trifft \(hit === mtk ? "das MTKView" : String(describing: hit))")
+            // Die Eingaben nimmt seit V2-4 NavigationInputView über dem MTKView an
+            let trifft = hit === mtk || hit is NavigationInputView
+            log(trifft ? .info : .error, "Selbsttest: Klick in der Mitte trifft \(trifft ? "den Viewer" : String(describing: hit))")
         }
         let size = mtk.bounds.size
         let scale = size.width > 0 ? mtk.drawableSize.width / size.width : 2

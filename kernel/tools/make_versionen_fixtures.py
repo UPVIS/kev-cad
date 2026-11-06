@@ -121,7 +121,7 @@ def main() -> None:
     for name, (header, payload) in frames.items():
         (ZIEL / f"{name}.frame").write_bytes(encode_frame(header, payload))
     expected = {name: header for name, (header, _) in frames.items()}
-    (ZIEL / "versionen_fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
+    (ZIEL / "versionen_fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(frames)} Versionsrahmen nach {ZIEL} (Gruppen: {[g['text'] for g in gruppen]})")
 
 

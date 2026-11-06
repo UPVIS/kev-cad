@@ -28,8 +28,8 @@ enum RestDruckSelbsttest {
         return AppInfo.supportDirectory.appendingPathComponent("selftest-restdruck", isDirectory: true)
     }
 
-    /// Beim Start (Begrüßungsfenster): das Projekt aus `KEVCAD_SELFTEST_PROJEKT` öffnen, sobald der Kernel bereit ist;
-    /// der Test selbst läuft im Projektfenster.
+    /// Beim Start: das Projekt aus `KEVCAD_SELFTEST_PROJEKT` öffnen, sobald der Kernel bereit ist;
+    /// der Test selbst läuft im Hauptfenster.
     static func projektOeffnen(_ session: AppSession) {
         guard gewuenscht, session.demo == nil,
               let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
