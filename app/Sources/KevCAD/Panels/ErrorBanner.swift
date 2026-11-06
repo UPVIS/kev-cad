@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -27,8 +31,10 @@ struct ErrorBanner: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
-                Button("model.py öffnen", action: openModel)
-                    .help("model.py im Standard-Editor öffnen (⌥⌘O)")
+                if AppSession.kannDateienOeffnen {  // iPad: folgt in I-8
+                    Button("model.py öffnen", action: openModel)
+                        .help("model.py im Standard-Editor öffnen (⌥⌘O)")
+                }
                 Button("Neu rechnen", action: rerun)
                     .buttonStyle(.borderedProminent)
                     .help("Neu rechnen (⌘R)")

@@ -1,19 +1,10 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
-
-/// Menüeintrag „Rendern …“ (⌥⌘R) unter „Ablage“ neben „Bild speichern“: öffnet die Kachel.
-struct RenderCommands: Commands {
-    @ObservedObject var model: AppModel
-
-    var body: some Commands {
-        CommandGroup(after: .importExport) {
-            Button("Rendern …") { model.oberflaechenActions?.zeigeKachel(.render) }
-                .keyboardShortcut("r", modifiers: [.command, .option])
-                .disabled(model.project == nil || model.parts.isEmpty)
-        }
-    }
-}
 
 /// Kachel „Rendern“ (Phase 7, V2-7): Szene, Größe, Qualität, Hintergrund, Ansicht, Vorschau; laufende und fertige Aufträge
 /// mit Fortschritt, „Im Finder zeigen“ und „Teilen“. Schnell rendert RealityKit in der App, Foto Blender im Hintergrund.
@@ -78,8 +69,8 @@ struct RenderDialog: View {
     private var vorschau: some View {
         ZStack {
             Schachbrett().opacity(0.5)
-            if let url = store.vorschauBild, let bild = NSImage(contentsOf: url) {
-                Image(nsImage: bild).resizable().aspectRatio(contentMode: .fit).id(store.vorschauStand)
+            if let url = store.vorschauBild, let bild = PlattformBild.laden(url) {
+                Image(plattformBild: bild).resizable().aspectRatio(contentMode: .fit).id(store.vorschauStand)
             } else {
                 Text("Vorschau").foregroundStyle(.secondary)
             }

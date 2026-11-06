@@ -50,7 +50,7 @@ struct Eigenschaften: View {
                     .foregroundStyle(GF.kreide)
                     .focused($nameFokus)
                     .onSubmit { benennen(id, gruppe: gruppe) }
-                    .onExitCommand { nameBearbeiten = false }
+                    .beiEsc { nameBearbeiten = false }
                     .onChange(of: nameFokus) { _, f in if !f && nameBearbeiten { benennen(id, gruppe: gruppe) } }
             } else {
                 Text(titel)

@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Combine
 import KevCADCore
 import SwiftUI
@@ -132,10 +136,12 @@ struct Hauptfenster: View {
                     .padding(.top, GA.kopf + GA.unterKopf + GA.s)
                     .padding(.horizontal, GA.m)
                     .frame(width: geo.size.width, alignment: .top)
+                #if os(macOS)
                 // Der Viewer reicht bis an die Oberkante; leere Stellen der Kopfleiste ziehen trotzdem das Fenster
                 FensterZiehen()
                     .frame(width: geo.size.width, height: GA.kopf + GA.unterKopf)
                     .position(x: geo.size.width / 2, y: (GA.kopf + GA.unterKopf) / 2)
+                #endif
                 Kopfleiste(model: model, oberflaeche: oberflaeche, breite: geo.size.width)
                     .frame(width: geo.size.width, height: GA.kopf)
                     .position(x: geo.size.width / 2, y: GA.ampelMitte)
@@ -153,13 +159,19 @@ struct Hauptfenster: View {
             }
             .onChange(of: g.viewerSichtbar) { _, s in session.controller?.viewport.mtkView?.isPaused = !s }
         }
-        .ignoresSafeArea()
+        #if os(macOS)
+        .ignoresSafeArea()  // Der Viewer reicht bis unter die (versteckte) Titelleiste
+        #endif
+        // iPad: Das Hauptfenster bleibt zwischen Statusleiste und Home-Balken (Grund darunter: KevCADPad). Viewer bis unter
+        // die Statusleiste, Kopfleiste und Bänder darunter folgen mit I-3b.
         .environment(\.colorScheme, .dark)
         .frame(minWidth: 420, minHeight: 480)
+        #if os(macOS)
         .background(WindowHook(placement: .large) { fenster in
             session.projectWindow = fenster
             session.fensterEinrichten(fenster)
         })
+        #endif
         .focusedSceneObject(state)
         .focusedSceneObject(versionen)
         .focusedSceneObject(dokumente)
@@ -303,7 +315,8 @@ struct Hauptfenster: View {
         BedingungenSchalter.wiederherstellen(model)
         dokumenteVerbinden()
         session.launchFinished()
-        // Selbsttests wie im bisherigen Projektfenster (öffnen ihr Projekt selbst)
+        #if os(macOS)
+        // Selbsttests wie im bisherigen Projektfenster (öffnen ihr Projekt selbst). iPad: folgen in I-9.
         BauplanExportSelfTest.projektOeffnen(session)
         DruckSelfTest.projektOeffnen(session)
         DruckerSelbsttest.projektOeffnen(session)
@@ -325,13 +338,16 @@ struct Hauptfenster: View {
         MaterialSelfTest.runIfRequested(session, state: state, material: material)
         SimulationSelfTest.runIfRequested(session, state: state)
         OberflaechenSelbsttest.runIfRequested(session)
+        #endif
     }
 
     /// Bereich der bisherigen Oberfläche passend zur aktiven Kachel (Menübefehle der Bereiche, Tastenkürzel).
     private func bereichAngleichen(_ a: KachelArt?) {
         let b: ProjektBereich = oberflaeche.kachelflaeche ? (a?.bereich ?? .modell) : .modell
         if state.bereich != b { state.bereich = b }
+        #if os(macOS)
         if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
+        #endif
     }
 
     /// Auswahl der Kachel Zeichnung: Der Bauplan hat seine eigene Kachel, die Zeichnung behält dann ihr Blatt. Das gewählte
@@ -452,7 +468,9 @@ private struct RechteSpalte: View {
     }
 }
 
+#if os(macOS)
 /// Fläche hinter der Kopfleiste, die das Fenster zieht (der Viewer darunter würde sonst drehen); ein Doppelklick zoomt.
+/// Nur am Mac: Auf dem iPad bewegt das System die Fenster (Stage Manager).
 private struct FensterZiehen: NSViewRepresentable {
     final class Flaeche: NSView {
         override var mouseDownCanMoveWindow: Bool { true }
@@ -464,3 +482,4 @@ private struct FensterZiehen: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { Flaeche() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
+#endif

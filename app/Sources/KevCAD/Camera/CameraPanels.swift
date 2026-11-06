@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -93,8 +97,7 @@ private struct CameraRow: View {
                 actions?.setActiveCameraToView()
             }
             Button("Namen kopieren") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(cam.displayName, forType: .string)
+                Zwischenablage.setzen(cam.displayName)
             }
         }
         .help("\(cam.name) · \(cam.kameraName) · \(cam.objektivName ?? "ohne Objektiv") · Doppelklick: durch die Kamera schauen")

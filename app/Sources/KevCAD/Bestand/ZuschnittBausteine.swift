@@ -290,7 +290,7 @@ struct PlattenZeichnung: View {
                 .frame(width: CGFloat(b * skala), height: CGFloat(h * skala))
             ForEach(Array(quelle.resteNeu.enumerated()), id: \.offset) { _, r in
                 Rectangle()
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(Color.bedienGrund)
                     .overlay(
                         Rectangle().strokeBorder(
                             ZuschnittFarbe.restNeu.color, style: StrokeStyle(lineWidth: 1.2, dash: [4, 2])))

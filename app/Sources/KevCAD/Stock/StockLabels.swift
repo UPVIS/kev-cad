@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -84,9 +88,16 @@ extension Color {
 
     /// sRGB-Hex für das Formular.
     var hexString: String {
+        #if os(macOS)
         let c = NSColor(self).usingColorSpace(.sRGB) ?? .gray
         let r = Int((c.redComponent * 255).rounded()), g = Int((c.greenComponent * 255).rounded())
         let b = Int((c.blueComponent * 255).rounded())
+        #else
+        var rot: CGFloat = 0.5, gruen: CGFloat = 0.5, blau: CGFloat = 0.5, deckung: CGFloat = 1
+        UIColor(self).getRed(&rot, green: &gruen, blue: &blau, alpha: &deckung)
+        let r = Int((min(max(rot, 0), 1) * 255).rounded()), g = Int((min(max(gruen, 0), 1) * 255).rounded())
+        let b = Int((min(max(blau, 0), 1) * 255).rounded())
+        #endif
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 }
@@ -123,7 +134,7 @@ struct ArtTile: View {
 }
 
 /// Text in die Zwischenablage.
+@MainActor
 func copyToPasteboard(_ text: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
+    Zwischenablage.setzen(text)
 }

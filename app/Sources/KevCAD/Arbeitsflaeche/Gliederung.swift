@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -52,7 +56,10 @@ struct Gliederung: View {
         .focusable()
         .focused($fokus)
         .focusEffectDisabled()
+        #if os(macOS)
         .onMoveCommand { richtung in wandern(richtung, zeilen: zeilen, gewaehlt: gewaehlt) }
+        #endif
+        // iPad: Pfeiltasten einer Hardware-Tastatur folgen in I-3b
         .onKeyPress(.return) {
             guard bearbeitet == nil, let z = zeilen.first(where: { istGewaehlt($0, gewaehlt) }) else { return .ignored }
             bearbeitet = z.id
@@ -101,10 +108,7 @@ struct Gliederung: View {
         }
         Button("Alles einblenden") { model.actions?.showAll() }
         Divider()
-        Button("Namen kopieren") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(k.partIDs.joined(separator: "\n"), forType: .string)
-        }
+        Button("Namen kopieren") { Zwischenablage.setzen(k.partIDs.joined(separator: "\n")) }
     }
 
     /// Höhe aller sichtbaren Zeilen.
@@ -178,6 +182,7 @@ struct Gliederung: View {
         model.actions?.select(teile)
     }
 
+    #if os(macOS)
     private func wandern(_ richtung: MoveCommandDirection, zeilen: [Zeile], gewaehlt: Set<String>) {
         guard bearbeitet == nil, !zeilen.isEmpty else { return }
         let jetzt = zeilen.firstIndex { istGewaehlt($0, gewaehlt) }
@@ -199,6 +204,7 @@ struct Gliederung: View {
         }
         model.actions?.select(zeilen[ziel].knoten.partIDs)
     }
+    #endif
 }
 
 /// Zeilen im Bild (Fokus): Schatten für die Lesbarkeit über dem Modell.

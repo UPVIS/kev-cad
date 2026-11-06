@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import CoreTransferable
 import KevCADCore
 import SwiftUI
@@ -26,7 +30,9 @@ enum BlattAusgabe {
         return "\(model.project?.name ?? "Kev CAD") – Zeichnungen"
     }
 
-    /// „Als PDF sichern …“: Sichern-Dialog am Fenster, Vorgabe output/ im Projektordner.
+    #if os(macOS)
+    /// „Als PDF sichern …“: Sichern-Dialog am Fenster, Vorgabe output/ im Projektordner. Nur am Mac; iPad: Sichern und
+    /// Drucken folgen in I-8 (Teilen geht dort schon über `BlattPDFDatei`).
     static func pdfSichern(_ ids: [String], model: AppModel, fenster: NSWindow?, melde: @escaping (String, Bool) -> Void) {
         guard !ids.isEmpty else { return }
         Task { @MainActor in
@@ -73,6 +79,7 @@ enum BlattAusgabe {
             BlattDruck.drucken(zs, titel: titel(zs, model: model), fenster: fenster)
         }
     }
+    #endif
 }
 
 /// PDF der Blätter zum Teilen (ShareLink): entsteht erst, wenn ein Dienst gewählt ist.

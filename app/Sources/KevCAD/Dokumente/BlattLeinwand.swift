@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import QuartzCore
 import SwiftUI
@@ -32,6 +36,9 @@ final class BlattMesswerte {
     }
 }
 
+#if os(macOS)
+// Leinwand und Kontextmenü über AppKit. iPad: Ansehen über `BlattLeinwandView` (BlattAnsicht.swift), Bearbeiten mit
+// Finger und Stift folgt in I-8.
 /// Die Blattansicht als AppKit-Ansicht: zeichnet mit `BlattZeichner` (derselben Funktion wie PDF und Druck), zoomt und
 /// verschiebt (Trackpad, Pinch, Mausrad), wählt aus und bearbeitet (Maße ziehen, neue Maße, Notizen, Ansichten).
 ///
@@ -1122,10 +1129,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         needsDisplay = true
     }
 
-    static func zeiger(_ n: BlattNotiz) -> ZeichnungsKlick? {
-        guard let z = n.zeiger, let p = z["punkt"]?.doubles, p.count >= 2 else { return nil }
-        return ZeichnungsKlick(ansicht: z["ansicht"]?.stringValue, punkt: CGPoint(x: p[0], y: p[1]))
-    }
+    static func zeiger(_ n: BlattNotiz) -> ZeichnungsKlick? { BlattWerte.zeiger(n) }
 
     private func ansichtLage(_ id: String, _ z: Zeichnung) -> CGPoint? {
         if let l = z.blatt.ansicht(id)?.lage { return l }
@@ -1480,16 +1484,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     }
 
     /// Zahlenfelder als Zahl, leere Felder als null.
-    static func schriftfeldWert(_ feld: String, _ text: String) -> JSONValue {
-        let t = text.trimmingCharacters(in: .whitespaces)
-        if t.isEmpty { return .null }
-        if ["masse_g", "stueckzahl", "blatt_nr", "blatt_anzahl"].contains(feld),
-           let d = Double(t.replacingOccurrences(of: ",", with: "."))
-        {
-            return .number(d)
-        }
-        return .string(t)
-    }
+    static func schriftfeldWert(_ feld: String, _ text: String) -> JSONValue { BlattWerte.schriftfeldWert(feld, text) }
 }
 
 /// Menüpunkt mit Block.
@@ -1505,6 +1500,28 @@ final class BlattMenuePunkt: NSMenuItem {
     required init(coder: NSCoder) { fatalError("init(coder:) nicht benutzt") }
 
     @objc private func ausloesen() { block() }
+}
+#endif
+
+/// Werte, die Leinwand und Inspektor dem Kernel schicken (gemeinsam für Mac und iPad).
+enum BlattWerte {
+    /// Zeiger einer Notiz als Klick auf das Blatt (Ansicht und Punkt), nil ohne Zeiger.
+    static func zeiger(_ n: BlattNotiz) -> ZeichnungsKlick? {
+        guard let z = n.zeiger, let p = z["punkt"]?.doubles, p.count >= 2 else { return nil }
+        return ZeichnungsKlick(ansicht: z["ansicht"]?.stringValue, punkt: CGPoint(x: p[0], y: p[1]))
+    }
+
+    /// Wert eines Schriftfelds: Zahlen als Zahl (Masse, Stückzahl, Blattnummern), leer als null, sonst Text.
+    static func schriftfeldWert(_ feld: String, _ text: String) -> JSONValue {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.isEmpty { return .null }
+        if ["masse_g", "stueckzahl", "blatt_nr", "blatt_anzahl"].contains(feld),
+           let d = Double(t.replacingOccurrences(of: ",", with: "."))
+        {
+            return .number(d)
+        }
+        return .string(t)
+    }
 }
 
 /// Eingabe in der Sprechblase: ein Textfeld (Notiz, Schriftfeld) bzw. Maßtext mit Toleranz.

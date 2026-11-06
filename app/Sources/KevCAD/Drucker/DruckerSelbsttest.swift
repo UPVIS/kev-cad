@@ -1,3 +1,6 @@
+// Selbsttest der Testvariante, bisher nur am Mac (Fenster, Ereignisse, Bildschirmfotos über AppKit).
+// iPad: Selbsttests im iPad-Simulator folgen in I-9.
+#if os(macOS)
 import AppKit
 import KevCADCore
 import SwiftUI
@@ -201,3 +204,4 @@ enum DruckerSelbsttest {
         try? text.write(to: ausgabe.appendingPathComponent("selftest-drucker.txt"), atomically: true, encoding: .utf8)
     }
 }
+#endif

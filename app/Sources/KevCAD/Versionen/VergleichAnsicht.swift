@@ -325,7 +325,7 @@ struct CodeDiffView: View {
                     }
                     .padding(.vertical, 6)
                 }
-                .background(Color(nsColor: .textBackgroundColor))
+                .background(Color.textfeldGrund)
             }
         }
     }

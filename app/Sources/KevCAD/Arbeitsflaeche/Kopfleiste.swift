@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -162,7 +166,7 @@ private struct ProjektTitel: View {
                     .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(GF.feldFokus))
                     .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(GF.kevin.opacity(0.6)))
                     .onSubmit { fertig() }
-                    .onExitCommand { bearbeiten = false }
+                    .beiEsc { bearbeiten = false }
                     .onChange(of: fokus) { _, f in if !f && bearbeiten { fertig() } }
             } else {
                 Text(session.projektTitel)
@@ -216,13 +220,17 @@ private struct ProjektMenue: View {
                 .disabled(model.project == nil)
             Divider()
             Button("Neues Projekt") { session.neuesProjekt() }
-            Button("Öffnen …") { session.presentOpenPanel() }
+            if AppSession.kannOrdnerWaehlen {  // iPad: Projekte aus der iCloud folgen in I-7
+                Button("Öffnen …") { session.presentOpenPanel() }
+            }
             Button("Letzte Projekte zeigen") { model.oberflaechenActions?.zeigeUebersicht(true) }
-            Divider()
-            Button("Im Finder zeigen") { session.revealProjectInFinder() }
-                .disabled(model.project == nil)
-            Button("model.py im Editor öffnen") { session.openModelInEditor() }
-                .disabled(model.project == nil)
+            if AppSession.kannDateienOeffnen {  // iPad: Teilen-Blatt folgt in I-8
+                Divider()
+                Button("Im Finder zeigen") { session.revealProjectInFinder() }
+                    .disabled(model.project == nil)
+                Button("model.py im Editor öffnen") { session.openModelInEditor() }
+                    .disabled(model.project == nil)
+            }
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))

@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -127,7 +131,7 @@ struct MaterialZukaufAnsicht: View {
 private struct ZukaufKarte: View {
     @ObservedObject var model: AppModel
     let position: MaterialPosition
-    let bild: NSImage?
+    let bild: PlattformBild?
     let gewaehlt: Bool
     var zeigeIm3D: ([String]) -> Void
     var waehle: () -> Void

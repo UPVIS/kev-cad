@@ -287,7 +287,7 @@ struct ExportDialog: View {
                     }
                     .padding(16)
                 }
-                .background(Color(nsColor: .underPageBackgroundColor))
+                .background(Color.seitenGrund)
             } else {
                 ContentUnavailableView(vorschauLaeuft ? "Seiten werden gesetzt …" : "Keine Seiten",
                                        systemImage: "doc.on.doc")
@@ -335,10 +335,10 @@ struct ExportDialog: View {
                 Label("\(KevFormat.count(e.seiten, one: "Seite", many: "Seiten")) in \(KevFormat.number(Double(e.ms) / 1000, digits: 1)) s"
                       + (e.gedruckt.map { " · \($0)" } ?? ""), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                if let p = e.pfad {
-                    Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
+                if let p = e.pfad, Dateiablage.kannImFinderZeigen {  // iPad: Teilen-Blatt folgt in I-8
+                    Button("Im Finder zeigen") { Dateiablage.imFinderZeigen([p]) }
                         .buttonStyle(.link)
-                    Button("Öffnen") { NSWorkspace.shared.open(p) }
+                    Button("Öffnen") { Dateiablage.oeffnen(p) }
                         .buttonStyle(.link)
                 }
             } else if let f = fehler {
@@ -378,7 +378,10 @@ struct ExportDialog: View {
         }
     }
 
+    /// Am Mac: Ort wählen (Sichern-Dialog am Fenster), dann das PDF schreiben. Den Dialog öffnet auf dem iPad noch nichts;
+    /// iPad: Sichern über das Teilen-Blatt folgt in I-8.
     private func sichern() {
+        #if os(macOS)
         Task { @MainActor in
             guard let url = await ExportDialogFenster.speicherOrt(model: model, name: "\(model.project?.name ?? "Kev CAD") – Dokumente")
             else { return }
@@ -391,6 +394,7 @@ struct ExportDialog: View {
                 fehler = (error as? ExportFehler)?.description ?? error.localizedDescription
             }
         }
+        #endif
     }
 
     private func drucken() {

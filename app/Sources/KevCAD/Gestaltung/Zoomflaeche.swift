@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 // V2-10 (Kevin, 06.11.2026: „dass man auch beliebig die anderen Ansichten, egal welche das sind, zoomen kann“): Zoom und
@@ -145,20 +149,26 @@ private final class ZoomRad: ObservableObject {
     var vergroessert: () -> Bool = { false }
     private var monitor: Any?
 
+    /// Mausrad und Trackpad am Mac. iPad: Zoomen mit zwei Fingern folgt mit der Berührung in I-3b.
     func an() {
+        #if os(macOS)
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
             nonisolated(unsafe) let e = e
             let verbraucht = MainActor.assumeIsolated { self?.rad(e) ?? false }
             return verbraucht ? nil : e
         }
+        #endif
     }
 
     func aus() {
+        #if os(macOS)
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        #endif
     }
 
+    #if os(macOS)
     private func rad(_ e: NSEvent) -> Bool {
         guard let p = zeiger else { return false }
         let g = groesse
@@ -174,4 +184,5 @@ private final class ZoomRad: ObservableObject {
         }
         return false
     }
+    #endif
 }

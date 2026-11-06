@@ -1,4 +1,12 @@
+#if os(macOS)
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
+#else
+import UIKit
+#endif
 import Combine
 import KevCADCore
 import SwiftUI
@@ -19,18 +27,22 @@ enum CatalogFocus: Hashable {
 }
 
 /// Zentrale der Oberfläche: hält AppModel, App-Kern bzw. Demo, „Zuletzt geöffnet“, den Entwurf (leeres Projekt ohne
-/// Dialog, V2-3) und das Hauptfenster.
+/// Dialog, V2-3) und das Hauptfenster. Gemeinsam für Mac und iPad (PLAN-IPAD.md, I2); was nur am Mac geht (Fenster,
+/// Ablagedialoge, Tastaturwächter), steht hinter `#if os(macOS)`.
 ///
 /// Vertrag (CLAUDE.md): Die Oberfläche liest `AppModel` und ruft nur `AppActions`. Im Demomodus ist `actions` die
-/// eigene `DemoActions`, sonst der `AppController` des App-Kerns.
+/// eigene `DemoActions`, sonst (und im Demo-Lauf des App-Kerns, `KEVCAD_DEMO_VIEWPORT=kern`) der `AppController`.
 @MainActor
 final class AppSession: ObservableObject {
     let model: AppModel
-    /// App-Kern. Im Demomodus nur vorhanden, wenn `KEVCAD_DEMO_VIEWPORT=metal` gesetzt ist (dann nicht gestartet).
+    /// App-Kern. Im Demomodus nur vorhanden, wenn `KEVCAD_DEMO_VIEWPORT=metal` gesetzt ist (dann nicht gestartet) oder
+    /// `kern` (dann gestartet: Demo-Lauf des App-Kerns, Vorgabe auf dem iPad bis zur Verbindung mit dem Mac).
     let controller: AppController?
     let demo: DemoActions?
     let recents: RecentProjects
+    #if os(macOS)
     let keyboard = KeyboardGuard()
+    #endif
 
     /// Das Fenster Lagerkatalog soll diesen Eintrag bzw. Abschnitt zeigen (wird dort verbraucht).
     @Published var catalogFocus: CatalogFocus?
@@ -55,7 +67,9 @@ final class AppSession: ObservableObject {
     /// nicht bei Selbsttests, die ihr eigenes Projekt öffnen).
     var startEntwurfErlaubt = false
     var letztesProjekt: URL?
+    #if os(macOS)
     let fensterRandSteuerung = FensterRand()
+    #endif
     /// Fläche des Viewers im Fenster (Punkte, oben links), für `viewerKlickBeobachten`.
     var viewerRahmen: CGRect = .zero
     /// Fenstergröße beim letzten Blick auf die Werkstatt; im Fokus behalten die ausgeblendeten Kacheln diese Maße.
@@ -64,9 +78,11 @@ final class AppSession: ObservableObject {
     /// Abos der V2-Oberfläche (Entwurf beim Start, Modus und Kacheln merken).
     var oberflaechenAbos: Set<AnyCancellable> = []
 
+    #if os(macOS)
     weak var projectWindow: NSWindow? {
         didSet { keyboard.projectWindow = projectWindow }
     }
+    #endif
 
     private(set) var openWindowAction: OpenWindowAction?
     private var dismissWindowAction: DismissWindowAction?
@@ -78,8 +94,8 @@ final class AppSession: ObservableObject {
         // Vor controller.start(): der App-Kern löscht die Marke beim Wiederherstellen nach einem Update
         let wiederherstellen = !AppInfo.isDemoMode && AppController.wiederherstellenAngefordert
         AppSession.oberflaecheVorbelegen(model.oberflaeche)
-        if AppInfo.isDemoMode {
-            let config = DemoConfiguration.fromEnvironment()
+        let demoConfig = AppInfo.isDemoMode ? DemoConfiguration.fromEnvironment() : nil
+        if let config = demoConfig, !config.kernDemo {
             controller = config.metalViewport ? AppController(model: model) : nil
             let demo = DemoActions(model: model, config: config)
             model.actions = demo
@@ -87,10 +103,12 @@ final class AppSession: ObservableObject {
             recents = DemoData.makeRecents()
             demo.start()
         } else {
+            // Mit Kernel, oder Demo-Lauf des App-Kerns (KEVCAD_DEMO_VIEWPORT=kern): echte Geometrie über den Weg der
+            // Kernel-Nachrichten, die Aktionen kommen vom App-Kern. Die Liste „Zuletzt geöffnet“ ist dann die der Demo.
             let controller = AppController(model: model)
             self.controller = controller
             demo = nil
-            recents = RecentProjects()
+            recents = demoConfig != nil ? DemoData.makeRecents() : RecentProjects()
             controller.start()
         }
 
@@ -108,19 +126,23 @@ final class AppSession: ObservableObject {
             recents.note(project.path, name: project.name)
         }
         letztesProjekt = model.project?.path
+        #if os(macOS)
         keyboard.install()
         Self.applyAppearanceOverride()
         DokumenteSelfTest.projektOeffnenWennVerlangt(self)  // Phase 6: Selbsttest startet mit offenem Projekt
+        #endif
+        // iPad: Selbsttests der Oberfläche folgen in I-9
         entwurfVorbereiten(wiederherstellen: wiederherstellen)
         Startzeiten.marke("Sitzung angelegt")
         oberflaecheMerken()
         NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+            forName: PlattformApp.wirdBeendet, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.beimBeenden() }
         }
     }
 
+    #if os(macOS)
     /// `KEVCAD_APPEARANCE=light` oder `dark` erzwingt das Erscheinungsbild (für Fensterbilder in beiden Varianten).
     private static func applyAppearanceOverride() {
         let value = ProcessInfo.processInfo.environment["KEVCAD_APPEARANCE"]?.lowercased()
@@ -128,6 +150,7 @@ final class AppSession: ObservableObject {
         guard let name else { return }
         DispatchQueue.main.async { NSApplication.shared.appearance = NSAppearance(named: name) }
     }
+    #endif
 
     var actions: AppActions? { model.actions }
 
@@ -165,6 +188,8 @@ final class AppSession: ObservableObject {
         openWindowAction?(id: WindowID.project)
     }
 
+    /// Protokoll als eigenes Fenster (am Mac). iPad: Protokoll, Lagerkatalog und Zukaufteil als Blatt folgen in I-8; bis
+    /// dahin öffnen `showLog`, `showCatalog` und der Zukauf-Dialog dort nichts (es gibt keine Szene dafür).
     func showLog() {
         openWindowAction?(id: WindowID.log)
     }
@@ -212,7 +237,7 @@ final class AppSession: ObservableObject {
             showProjectWindow()
             return
         }
-        if demo == nil, let problem = ProjectLocator.check(folder) {
+        if !AppInfo.isDemoMode, let problem = ProjectLocator.check(folder) {
             presentProblem(problem, folder: folder)
             return
         }
@@ -221,6 +246,7 @@ final class AppSession: ObservableObject {
 
     func openRecent(_ item: RecentProject) {
         if item.isMissing {
+            #if os(macOS)
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "„\(item.name)“ wurde nicht gefunden"
@@ -231,12 +257,31 @@ final class AppSession: ObservableObject {
             run(alert) { [weak self] response in
                 if response == .alertFirstButtonReturn { self?.recents.remove(item.url) }
             }
+            #else
+            // iPad: Rückfrage „Entfernen?“ folgt mit den Projekten in I-7; bis dahin bleibt der Eintrag stehen.
+            melde("„\(item.name)“ wurde nicht gefunden.", fehler: true)
+            #endif
             return
         }
         openProject(at: item.url)
     }
 
+    /// Kann die App einen Projektordner über einen Dialog wählen lassen („Öffnen …“)? Am Mac ja, auf dem iPad folgt das
+    /// mit den Projekten in der iCloud (I-7).
+    static var kannOrdnerWaehlen: Bool {
+        #if os(macOS)
+        true
+        #else
+        false
+        #endif
+    }
+
+    /// Kann die App Dateien des Projekts mit anderen Programmen öffnen oder im Dateimanager zeigen (model.py im Editor,
+    /// Projektordner im Finder)? Am Mac ja; auf dem iPad gehen Dateien über das Teilen-Blatt (iPad: folgt in I-8).
+    static var kannDateienOeffnen: Bool { Dateiablage.kannImFinderZeigen }
+
     func presentOpenPanel() {
+        #if os(macOS)
         let panel = NSOpenPanel()
         panel.title = "Projekt öffnen"
         panel.message = "Projektordner mit model.py wählen"
@@ -251,9 +296,12 @@ final class AppSession: ObservableObject {
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in self?.openProject(at: url) }
         }
+        #endif
+        // iPad: Projektordner wählen folgt in I-7 (iCloud und Projekte); der Knopf steht dort nicht (kannOrdnerWaehlen)
     }
 
     private func presentProblem(_ problem: ProjectLocator.Problem, folder: URL) {
+        #if os(macOS)
         let alert = NSAlert()
         alert.alertStyle = .warning
         switch problem {
@@ -264,8 +312,12 @@ final class AppSession: ObservableObject {
         alert.informativeText = problem.errorDescription ?? ""
         alert.addButton(withTitle: "OK")
         run(alert) { _ in }
+        #else
+        melde(problem.errorDescription ?? "Dieser Ordner ist kein Kev-CAD-Projekt.", fehler: true)
+        #endif
     }
 
+    #if os(macOS)
     private func run(_ alert: NSAlert, completion: @escaping (NSApplication.ModalResponse) -> Void) {
         if let window = NSApp.keyWindow ?? projectWindow {
             alert.beginSheetModal(for: window, completionHandler: completion)
@@ -273,21 +325,23 @@ final class AppSession: ObservableObject {
             completion(alert.runModal())
         }
     }
+    #endif
 
     // MARK: Datei und Ausgabe
 
+    /// model.py im Standard-Editor öffnen; auf dem iPad gibt es dafür keinen Weg (iPad: folgt in I-8, Teilen).
     func openModelInEditor() {
         guard let file = model.project?.modelFile else { return }
-        NSWorkspace.shared.open(file)
+        Dateiablage.oeffnen(file)
     }
 
     func revealProjectInFinder() {
         guard let project = model.project else { return }
         let output = project.path.appendingPathComponent("output", isDirectory: true)
         if FileManager.default.fileExists(atPath: output.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([output])
+            Dateiablage.imFinderZeigen([output])
         } else {
-            NSWorkspace.shared.activateFileViewerSelecting([project.path])
+            Dateiablage.imFinderZeigen([project.path])
         }
     }
 
@@ -299,8 +353,7 @@ final class AppSession: ObservableObject {
     }
 
     func copyClaudeCommand() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Self.claudeCommand, forType: .string)
+        Zwischenablage.setzen(Self.claudeCommand)
     }
 }
 

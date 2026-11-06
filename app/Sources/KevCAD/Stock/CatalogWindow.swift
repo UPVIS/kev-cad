@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -49,7 +53,9 @@ struct CatalogWindow: View {
             }
         }
         .frame(minWidth: 940, minHeight: 540)
+        #if os(macOS)
         .background(WindowHook(placement: .trailing(width: 1140, height: 720)))
+        #endif
         .navigationTitle("Lagerkatalog")
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
@@ -75,7 +81,9 @@ struct CatalogWindow: View {
             load(force: false)
             consumeFocus()
             openDemoFormIfRequested()
-            FreigabeSelfTest.runIfRequested(session)
+            #if os(macOS)
+            FreigabeSelfTest.runIfRequested(session)  // iPad: Selbsttests folgen in I-9
+            #endif
         }
         .alert("Freigabe fehlgeschlagen", isPresented: Binding(
             get: { approvalError != nil }, set: { if !$0 { approvalError = nil } })

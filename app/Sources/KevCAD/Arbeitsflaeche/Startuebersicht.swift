@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import ImageIO
 import KevCADCore
 import SwiftUI
@@ -44,13 +48,15 @@ struct Startuebersicht: View {
     var body: some View {
         let liste = eintraege
         OverlayKarte(titel: "Zuletzt geöffnet", fuss: "Ein Klick ins Leere oder esc schiebt die Liste weg.") {
-            Button {
-                session.presentOpenPanel()
-            } label: {
-                Label("Ordner öffnen …", systemImage: "folder")
+            if AppSession.kannOrdnerWaehlen {  // iPad: Projekte aus der iCloud folgen in I-7
+                Button {
+                    session.presentOpenPanel()
+                } label: {
+                    Label("Ordner öffnen …", systemImage: "folder")
+                }
+                .buttonStyle(KevKnopfStil(form: .text))
+                .help("Projektordner mit model.py öffnen (⌘O)")
             }
-            .buttonStyle(KevKnopfStil(form: .text))
-            .help("Projektordner mit model.py öffnen (⌘O)")
             Button(action: wegschieben) {
                 Label("Wegschieben", systemImage: "chevron.down")
             }

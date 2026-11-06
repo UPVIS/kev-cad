@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -62,7 +66,9 @@ struct LogWindow: View {
                 if let last = lines.last { proxy.scrollTo(last.id, anchor: .bottom) }
             }
         }
+        #if os(macOS)
         .onCopyCommand { [NSItemProvider(object: copyText() as NSString)] }
+        #endif
         .searchable(text: $search, placement: .toolbar, prompt: "Protokoll durchsuchen")
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -78,8 +84,7 @@ struct LogWindow: View {
                 }
                 .help("Automatisch zur neuesten Zeile springen")
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(copyText(), forType: .string)
+                    Zwischenablage.setzen(copyText())
                 } label: {
                     Label("Kopieren", systemImage: "doc.on.doc")
                 }
@@ -89,7 +94,9 @@ struct LogWindow: View {
         .navigationTitle("Protokoll")
         .navigationSubtitle(subtitle)
         .frame(minWidth: 560, minHeight: 300)
+        #if os(macOS)
         .background(WindowHook(placement: .trailing(width: 860, height: 520)))
+        #endif
         .onAppear { session.attach(openWindow: openWindow, dismissWindow: dismissWindow) }
     }
 

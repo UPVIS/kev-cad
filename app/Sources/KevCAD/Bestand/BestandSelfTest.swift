@@ -1,3 +1,6 @@
+// Selbsttest der Testvariante, bisher nur am Mac (Fenster, Ereignisse, Bildschirmfotos über AppKit).
+// iPad: Selbsttests im iPad-Simulator folgen in I-9.
+#if os(macOS)
 import AppKit
 import KevCADCore
 
@@ -171,3 +174,4 @@ enum BestandSelfTest {
         }
     }
 }
+#endif

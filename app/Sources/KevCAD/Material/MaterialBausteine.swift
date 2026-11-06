@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -52,7 +56,7 @@ struct KennzeichenReihe: View {
 
 /// Vorschaubild einer Position wie im Bericht (isometrisch auf weißem Grund), sonst das Symbol der Art.
 struct PositionsBild: View {
-    var bild: NSImage?
+    var bild: PlattformBild?
     var art: String
     var groesse: CGFloat = 40
     var tint: Color = .secondary
@@ -62,7 +66,7 @@ struct PositionsBild: View {
             RoundedRectangle(cornerRadius: groesse * 0.2, style: .continuous)
                 .fill(bild == nil ? AnyShapeStyle(tint.opacity(0.10)) : AnyShapeStyle(Color.white))
             if let bild {
-                Image(nsImage: bild)
+                Image(plattformBild: bild)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()

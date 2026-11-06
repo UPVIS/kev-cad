@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -13,7 +17,9 @@ struct ZukaufDialogWindow: View {
     var body: some View {
         ZukaufDialog(model: model, request: request) { dismissWindow(id: WindowID.zukauf) }
             .id(request.id)
+            #if os(macOS)
             .background(WindowHook(placement: .centered))
+            #endif
             .onAppear {
                 session.attach(openWindow: openWindow, dismissWindow: dismissWindow)
                 consume()
@@ -102,7 +108,7 @@ struct ZukaufDialog: View {
                         .font(.title3)
                         .onSubmit(next)
                     Button {
-                        if let s = NSPasteboard.general.string(forType: .string) { inputText = s }
+                        if let s = Zwischenablage.text { inputText = s }
                     } label: {
                         Label("Einfügen", systemImage: "doc.on.clipboard")
                     }

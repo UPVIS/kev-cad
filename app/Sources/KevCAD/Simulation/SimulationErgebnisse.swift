@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -41,7 +45,7 @@ struct SimulationErgebnisAnsicht: View {
             }
         }
         .frame(height: zustand.ergebnisOffen ? 250 : 30)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.fensterGrund)
     }
 
     private var kopf: some View {

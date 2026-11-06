@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -179,7 +183,7 @@ struct MaterialEinkaufAnsicht: View {
                         .split(separator: "\n").filter { $0.hasPrefix("- ") || $0.hasPrefix("  ") }.joined(separator: "\n"))
                 }
                 if zeilen.count == 1, let link = zeilen[0].position.link {
-                    Button("Bezugsquelle öffnen") { NSWorkspace.shared.open(link) }
+                    Button("Bezugsquelle öffnen") { Dateiablage.oeffnen(link) }
                     Button("Link kopieren") { copyToPasteboard(link.absoluteString) }
                 }
                 if zeilen.count == 1, zeilen[0].art == .lager, model.catalog?.item(zeilen[0].position.id) != nil {
@@ -441,7 +445,7 @@ enum EinkaufExport {
             try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
             try MaterialText.einkaufCSV(model.materialDaten).write(to: datei, atomically: true, encoding: .utf8)
             model.append(LogLine(text: "Einkaufsliste gesichert: \(datei.path)"))
-            if zeigen { NSWorkspace.shared.activateFileViewerSelecting([datei]) }
+            if zeigen { Dateiablage.imFinderZeigen([datei]) }
             return datei
         } catch {
             model.append(LogLine(level: .error, text: "Einkaufsliste nicht gesichert: \(error.localizedDescription)"))

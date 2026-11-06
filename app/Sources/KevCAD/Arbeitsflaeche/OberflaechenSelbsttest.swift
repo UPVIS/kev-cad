@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Darwin
 import KevCADCore
 import QuartzCore
@@ -49,6 +53,11 @@ enum OberflaechenSelbsttest {
         DispatchQueue.main.async { DispatchQueue.main.async { bedienbar = seitStart() } }
     }
 
+}
+
+// Ablauf des Selbsttests: bisher nur am Mac (Fensterbilder, Fenster an den Rand). iPad: folgt in I-9.
+#if os(macOS)
+extension OberflaechenSelbsttest {
     static func runIfRequested(_ session: AppSession) {
         guard !started, gewuenscht else { return }
         started = true
@@ -267,6 +276,7 @@ enum OberflaechenSelbsttest {
         }
     }
 }
+#endif
 
 /// Zeitmarken des Starts (Sekunden seit Prozessstart), nur für den Selbsttest.
 enum Startzeiten {

@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 // Grundbausteine (1): Knöpfe, Umschalter, Tastenkappe. Selbst gezeichnet, aber echte SwiftUI-Knöpfe:

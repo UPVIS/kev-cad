@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -57,6 +61,7 @@ extension AppSession {
 
     /// Dateiauswahl für ein CAD (STEP, STP, ZIP); ruft `assignCAD`.
     func chooseCADFile(for teil: String) {
+        #if os(macOS)
         let panel = NSOpenPanel()
         panel.title = "CAD-Datei für „\(zukaufName(teil))“"
         panel.message = "STEP-Datei des Herstellers wählen (auch als ZIP)"
@@ -70,6 +75,8 @@ extension AppSession {
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in self?.model.zukaufActions?.assignCAD(file: url, to: teil) }
         }
+        #endif
+        // iPad: CAD-Datei wählen (Dateien-App) folgt in I-8
     }
 
     /// Ein Fenster per id öffnen (über das `openWindow`, das jedes Fenster bei `attach` meldet).

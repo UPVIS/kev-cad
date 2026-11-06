@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -231,9 +235,8 @@ private struct SzenarioDetail: View {
                 .help("Im Viewer zeigen")
                 .contextMenu {
                     Button("Text kopieren") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString([u.text, u.loesung].filter { !$0.isEmpty }
-                            .joined(separator: "\n"), forType: .string)
+                        Zwischenablage.setzen([u.text, u.loesung].filter { !$0.isEmpty }
+                            .joined(separator: "\n"))
                     }
                 }
             }

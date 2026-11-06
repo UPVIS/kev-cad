@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -122,11 +126,11 @@ final class MaterialZustand: ObservableObject {
 /// Vorschaubilder je Teil (wie im Bericht), nachgeladen vom App-Kern und im Fenster gehalten.
 @MainActor
 final class MaterialBilderSpeicher: ObservableObject {
-    @Published private(set) var bilder: [String: NSImage] = [:]
+    @Published private(set) var bilder: [String: PlattformBild] = [:]
     private var geladenFuer: Int?
     private var laeuft = false
 
-    func bild(_ p: MaterialPosition) -> NSImage? {
+    func bild(_ p: MaterialPosition) -> PlattformBild? {
         for t in p.teile { if let b = bilder[t] { return b } }
         return nil
     }
@@ -141,7 +145,7 @@ final class MaterialBilderSpeicher: ObservableObject {
         Task { @MainActor in
             let neu = await actions.materialBilder(namen)
             var b = self.bilder
-            for (name, cg) in neu { b[name] = NSImage(cgImage: cg, size: NSSize(width: cg.width / 2, height: cg.height / 2)) }
+            for (name, cg) in neu { b[name] = PlattformBild.ausCG(cg, punkte: CGSize(width: cg.width / 2, height: cg.height / 2)) }
             self.bilder = b
             self.geladenFuer = run
             self.laeuft = false

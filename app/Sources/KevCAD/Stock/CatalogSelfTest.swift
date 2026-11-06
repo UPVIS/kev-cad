@@ -1,3 +1,6 @@
+// Selbsttest der Testvariante, bisher nur am Mac (Fenster, Ereignisse, Bildschirmfotos über AppKit).
+// iPad: Selbsttests im iPad-Simulator folgen in I-9.
+#if os(macOS)
 import AppKit
 import KevCADCore
 
@@ -120,3 +123,4 @@ enum CatalogSelfTest {
         FileHandle.standardError.write(Data("[selbsttest-katalog]\n\(text)".utf8))
     }
 }
+#endif

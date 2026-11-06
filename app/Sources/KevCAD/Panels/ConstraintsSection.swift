@@ -163,10 +163,9 @@ private struct ConstraintRow: View {
         .help("Im Viewer zeigen")
         .contextMenu {
             Button("Text kopieren") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(
+                Zwischenablage.setzen(
                     ([item.text, "Soll \(item.soll)", "Ist \(item.ist)"] + [item.loesung].compactMap { $0 })
-                        .joined(separator: "\n"), forType: .string)
+                        .joined(separator: "\n"))
             }
         }
     }

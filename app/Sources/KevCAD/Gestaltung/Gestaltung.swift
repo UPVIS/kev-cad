@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Gestaltungswerte der Oberfläche von Kev CAD V2 (OBERFLAECHE.md, Abschnitt 2).

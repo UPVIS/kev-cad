@@ -67,7 +67,7 @@ struct ViewportArea: View {
         } else if let demo = session.demo {
             DemoViewport(model: model, demo: demo)
         } else {
-            Color(nsColor: .windowBackgroundColor)
+            Color.fensterGrund
         }
     }
 

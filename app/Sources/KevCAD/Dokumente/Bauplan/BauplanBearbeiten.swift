@@ -26,7 +26,7 @@ struct BauplanTextBlatt: View {
                     .frame(minHeight: 110)
                     .scrollContentBackground(.hidden)
                     .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.textfeldGrund))
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -36,7 +36,7 @@ struct BauplanTextBlatt: View {
                     .frame(minHeight: 80)
                     .scrollContentBackground(.hidden)
                     .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.textfeldGrund))
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
             }
             HStack {

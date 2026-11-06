@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -34,7 +38,7 @@ struct MaterialBereich: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.fensterGrund)
         // V2-3: Suchfeld in der Kachel, nicht in der Fensterleiste (dort steht die Kopfleiste)
         .safeAreaInset(edge: .top, spacing: 0) {
             SuchFeld(text: $material.suche, prompt: "Material durchsuchen")

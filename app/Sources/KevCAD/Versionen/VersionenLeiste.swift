@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -38,7 +42,7 @@ struct VersionenLeiste: View {
             fuss
         }
         .frame(width: VersionenZustand.breite)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.bedienGrund)
         .onAppear { if store.stand == nil { actions?.requestVersionen() } }
     }
 
@@ -224,8 +228,7 @@ struct VersionenLeiste: View {
         }
         Divider()
         Button("Commit \(v.commit.prefix(10)) kopieren") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString("V\(v.nr) \(v.commit)", forType: .string)
+            Zwischenablage.setzen("V\(v.nr) \(v.commit)")
         }
     }
 
@@ -429,9 +432,9 @@ struct Vorschaubild: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
+                .fill(Color.fensterGrund)
             if let img = VorschauCache.shared.bild(url) {
-                Image(nsImage: img)
+                Image(plattformBild: img)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: groesse.width, height: groesse.height)

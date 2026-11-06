@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -73,8 +77,7 @@ struct GliederungsZeile: View {
         .gesture(TapGesture(count: 2).onEnded { if !bearbeiten { umbenennenBeginnen() } })
         .simultaneousGesture(TapGesture().onEnded {
             guard !bearbeiten else { return }
-            let flags = NSEvent.modifierFlags
-            waehlen(flags.contains(.shift) || flags.contains(.command))
+            waehlen(auswahlErweitern)
         })
         .accessibilityElement(children: bearbeiten ? .contain : .ignore)
         .accessibilityLabel(titel)
@@ -101,7 +104,7 @@ struct GliederungsZeile: View {
                     DispatchQueue.main.async { feldFokus = true }
                 }
                 .onSubmit { fertig(entwurf) }
-                .onExitCommand { umbenennen(nil) }
+                .beiEsc { umbenennen(nil) }
                 .onChange(of: feldFokus) { _, f in if !f && bearbeiten { fertig(entwurf) } }
         } else {
             Text(titel)
@@ -172,7 +175,7 @@ struct EigenschaftsFeld: View {
                     .foregroundStyle(GF.kreide)
                     .focused($fokus)
                     .onSubmit { uebernehmen(aendern) }
-                    .onExitCommand {
+                    .beiEsc {
                         text = wert
                         fokus = false
                     }

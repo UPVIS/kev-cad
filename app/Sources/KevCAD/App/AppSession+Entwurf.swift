@@ -1,4 +1,10 @@
+#if os(macOS)
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
+#endif
 import Combine
 import KevCADCore
 import SwiftUI
@@ -17,6 +23,9 @@ extension AppSession {
         return entwuerfe.enthaelt(p.path)
     }
 
+    /// Demo-Lauf des App-Kerns (`KEVCAD_DEMO_VIEWPORT=kern`, Vorgabe auf dem iPad bis I-2b): Demomodus ohne `DemoActions`.
+    var kernDemo: Bool { AppInfo.isDemoMode && demo == nil }
+
     /// Name in der Kopfleiste: „Neues Projekt“ beim Entwurf, sonst der Projektname.
     var projektTitel: String {
         guard let p = model.project, !entwuerfe.enthaelt(p.path) else { return EntwurfAblage.projektName }
@@ -27,10 +36,11 @@ extension AppSession {
 
     func entwurfVorbereiten(wiederherstellen: Bool) {
         let selbsttest = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"]
-        startEntwurfErlaubt = demo == nil && !wiederherstellen && (selbsttest == nil || selbsttest == "oberflaeche")
+        startEntwurfErlaubt = !AppInfo.isDemoMode && !wiederherstellen && (selbsttest == nil || selbsttest == "oberflaeche")
         // Leere Entwürfe früherer Sitzungen weg (nur Ordnerliste und Prüfsummen weniger kleiner Dateien)
         entwuerfe.aufraeumen()
-        if !wiederherstellen && demo?.config.isFrozen != true
+        // Im Demo-Lauf des App-Kerns ist das Projekt schon offen: keine Übersicht darüber
+        if !wiederherstellen && demo?.config.isFrozen != true && !kernDemo
             && (!recents.items.isEmpty || !entwuerfe.mitInhalt().isEmpty)
         {
             model.oberflaechenActions?.zeigeUebersicht(true)
@@ -59,7 +69,7 @@ extension AppSession {
         model.oberflaechenActions?.zeigeUebersicht(false)
         showProjectWindow()
         if let p = model.project, entwuerfe.enthaelt(p.path), entwuerfe.istLeer(p.path) { return }
-        if demo != nil {
+        if AppInfo.isDemoMode {
             actions?.newProject(at: proposedFolder(for: EntwurfAblage.projektName), template: ProjectTemplate.empty.rawValue)
             return
         }
@@ -79,7 +89,7 @@ extension AppSession {
     func projektUmziehen(_ eingabe: String) -> Result<URL, FlaecheFehler> {
         guard let p = model.project else { return .failure(.init("Es ist kein Projekt offen.")) }
         let name = ProjectLocator.sanitizedName(eingabe)
-        guard demo == nil else { return .failure(.init("Im Demomodus bleibt der Name, wie er ist.")) }
+        guard !AppInfo.isDemoMode else { return .failure(.init("Im Demomodus bleibt der Name, wie er ist.")) }
         if model.isRunning {
             return .failure(.init("Der Lauf ist noch nicht fertig. Danach klappt das Benennen."))
         }
@@ -222,6 +232,7 @@ extension AppSession {
 
     // MARK: Fenster
 
+    #if os(macOS)
     /// Hauptfenster einrichten: dunkel (Graphit), Platz für die Ampel in der Kopfleiste.
     func fensterEinrichten(_ fenster: NSWindow) {
         fenster.appearance = NSAppearance(named: .darkAqua)
@@ -230,14 +241,20 @@ extension AppSession {
         fenster.backgroundColor = NSColor(srgbRed: 0.098, green: 0.102, blue: 0.114, alpha: 1)  // Graphit „tief“
     }
 
-    /// Fenster an den Rand bzw. zurück (folgt `oberflaeche.rand`).
+    #endif
+
+    /// Fenster an den Rand bzw. zurück (folgt `oberflaeche.rand`). Auf dem iPad verschiebt die App keine Fenster: Dort
+    /// verhalten sich schmale Fenster in Stage Manager und im geteilten Bildschirm wie „An den Rand“ (PLAN-IPAD.md, 4.6).
     func fensterRand(_ rand: Bildschirmrand?) {
+        #if os(macOS)
         fensterRandSteuerung.anwenden(rand, fenster: projectWindow)
+        #endif
     }
 
     /// Ein Klick in den Viewer macht in der Werkstatt das Modell zur aktiven Kachel (der Viewer ist eine Metal-Ansicht
     /// und meldet Klicks nicht an SwiftUI). Das Ereignis läuft unverändert weiter.
     func viewerKlickBeobachten() {
+        #if os(macOS)
         guard viewerKlickMonitor == nil else { return }
         viewerKlickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             nonisolated(unsafe) let event = event
@@ -252,11 +269,15 @@ extension AppSession {
             }
             return event
         }
+        #endif
+        // iPad: Tippen in den Viewer macht das Modell zur aktiven Kachel, folgt mit der Berührung im Viewer in I-3b
     }
 
     /// Beim Beenden: Fenster nicht schmal zurücklassen, leeren Entwurf wegräumen.
     func beimBeenden() {
+        #if os(macOS)
         fensterRandSteuerung.sofortZurueck(projectWindow)
+        #endif
         if let p = model.project, entwuerfe.enthaelt(p.path) { entwuerfe.loeschenWennLeer(p.path) }
     }
 }

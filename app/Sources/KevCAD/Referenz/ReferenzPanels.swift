@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -44,6 +48,7 @@ enum ReferenzDateien {
     /// Dialog „Video oder Fotos wählen“.
     @MainActor
     static func waehlen() -> [URL] {
+        #if os(macOS)
         let panel = NSOpenPanel()
         panel.title = "Referenz hinzufügen"
         panel.message = "Ein Handyvideo des Gegenstands oder einige Fotos wählen"
@@ -51,6 +56,10 @@ enum ReferenzDateien {
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie, .jpeg, .png, .heic, .tiff]
         return panel.runModal() == .OK ? passend(panel.urls) : []
+        #else
+        // iPad: Video und Fotos aus Kamera und Fotos-App wählen folgt in I-8 (Vorbild ios/KevScan)
+        return []
+        #endif
     }
 }
 

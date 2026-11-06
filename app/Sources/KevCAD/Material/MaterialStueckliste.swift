@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -50,9 +54,9 @@ struct PositionsMenue: View {
                 Button("Im Lagerkatalog zeigen") { session.showCatalog(focus: .item(id)) }
             }
             if let url = p.line.zukauf?.url {
-                Button("Produktseite öffnen") { NSWorkspace.shared.open(url) }
+                Button("Produktseite öffnen") { Dateiablage.oeffnen(url) }
             } else if let url = p.link {
-                Button("Bezugsquelle öffnen") { NSWorkspace.shared.open(url) }
+                Button("Bezugsquelle öffnen") { Dateiablage.oeffnen(url) }
             }
             if let navigation, let id = p.stockID, p.gruppe == .stangen || p.gruppe == .platten {
                 Button("Im Zuschnitt zeigen") { navigation.zeige(.zuschnitt, p.pos, id) }

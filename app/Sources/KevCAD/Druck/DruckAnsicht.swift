@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -29,7 +33,7 @@ struct DruckAnsicht: View {
             if let v = druck.vorschau, !v.gedruckt.isEmpty { gedrucktLeiste(v) }
             inhalt
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.bedienGrund)
         .onAppear {
             ui.pruefe(druck.vorschau)
             if druck.vorschau == nil { model.druckActions?.druckvorschauAnfordern() }
@@ -134,7 +138,9 @@ struct DruckAnsicht: View {
         return t.joined(separator: "\n")
     }
 
+    @ViewBuilder
     private func exportKnopf(_ v: Druckvorschau) -> some View {
+        #if os(macOS)
         Menu {
             Button("Alle Platten als 3MF sichern …") { exportieren([], v) }
             if v.platten.count > 1 {
@@ -154,8 +160,11 @@ struct DruckAnsicht: View {
         .disabled(model.druckActions == nil || v.platten.isEmpty || druck.export.laeuftGerade)
         .help("Ohne Drucken: die angeordneten Platten als 3MF für Bambu Studio sichern, je Material eine Datei, mit "
               + "dem Preset des gewählten Filaments. Zum Drucken „Drucken …“ in der Druckerleiste.")
+        #endif
+        // iPad: 3MF sichern (Ort wählen über das Teilen-Blatt) folgt in I-8
     }
 
+    #if os(macOS)
     /// Ziel und Filament wählen und PRINT_EXPORT_REQ senden (Strang „Druckexport 2“: der Kernel schreibt ohne
     /// Filament nichts; der Dialog zeigt je Material Kevins Filamente, vorausgewählt das angenommene der Vorschau).
     private func exportieren(_ platten: [Int], _ v: Druckvorschau) {
@@ -185,6 +194,7 @@ struct DruckAnsicht: View {
             senden(panel.runModal())
         }
     }
+    #endif
 
     // MARK: Bänder (Änderung, Export, Fehler)
 
@@ -364,7 +374,7 @@ struct DruckListe: View {
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 4)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.97))
+        .background(Color.bedienGrund.opacity(0.97))
     }
 
     private func hinweisZahl(_ h: [DruckpraxisHinweis]) -> String {
@@ -830,12 +840,14 @@ struct DruckBambuKnoepfe: View {
         .disabled(DruckStore.bambuStudio == nil)
         .help(DruckStore.bambuStudio == nil ? "Bambu Studio ist nicht unter /Applications installiert"
               : "\(pfad.lastPathComponent) in Bambu Studio öffnen")
-        Button {
-            NSWorkspace.shared.activateFileViewerSelecting([pfad])
-        } label: {
-            if kompakt { Image(systemName: "folder") } else { Text("Im Finder zeigen") }
+        if Dateiablage.kannImFinderZeigen {  // iPad: Teilen-Blatt folgt in I-8
+            Button {
+                Dateiablage.imFinderZeigen([pfad])
+            } label: {
+                if kompakt { Image(systemName: "folder") } else { Text("Im Finder zeigen") }
+            }
+            .help("Im Finder zeigen")
         }
-        .help("Im Finder zeigen")
     }
 }
 
@@ -872,6 +884,7 @@ struct DruckExportDateiZeile: View {
     }
 }
 
+#if os(macOS)
 /// Filament je Material im Sichern-Dialog des 3MF-Exports (Strang „Druckexport 2“): je Material eine Auswahl aus
 /// Kevins Filamentliste (`druckvorschau.filamente`), vorausgewählt das Filament, mit dem die Vorschau rechnet.
 @MainActor
@@ -937,3 +950,4 @@ final class ExportFilamentAuswahl {
         return out
     }
 }
+#endif

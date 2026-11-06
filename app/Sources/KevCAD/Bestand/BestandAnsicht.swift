@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -194,9 +198,9 @@ struct BestandAnsicht: View {
             } description: {
                 Text(fehler)
             } actions: {
-                if let datei = model.bestandZustand.datei {
+                if let datei = model.bestandZustand.datei, Dateiablage.kannImFinderZeigen {  // iPad: Teilen folgt in I-8
                     Button("Im Finder zeigen") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: datei)])
+                        Dateiablage.imFinderZeigen([URL(fileURLWithPath: datei)])
                     }
                 }
                 Button("Erneut laden") { model.bestandActions?.requestBestand() }
@@ -708,10 +712,10 @@ private struct ResteAbschnitt: View {
         let name = model.lagerteilName(posten.id)
         var e = BestandErfassung(form: posten.form)
         if posten.form == .stange {
-            guard let l = BestandText.laengen(schnell) else { return NSSound.beep() }
+            guard let l = BestandText.laengen(schnell) else { return fehlerSignal() }
             e.resteLaengen = l
         } else {
-            guard let r = BestandText.rechtecke(schnell) else { return NSSound.beep() }
+            guard let r = BestandText.rechtecke(schnell) else { return fehlerSignal() }
             e.resteFlaechen = r.map { ZuschnittFlaeche(b: $0.b, h: $0.h) }
         }
         model.bestandActions?.saveBestandPosten(
@@ -811,7 +815,7 @@ private struct MindestrestZeile: View {
             if posten.mindestrestMM != nil { PostenAenderung(model: model, posten: posten).mindestrest(nil) }
             return
         }
-        guard let v = KevFormat.parseNumber(t), v >= 0 else { return NSSound.beep() }
+        guard let v = KevFormat.parseNumber(t), v >= 0 else { return fehlerSignal() }
         if v != posten.mindestrestMM { PostenAenderung(model: model, posten: posten).mindestrest(v) }
     }
 }
@@ -872,9 +876,9 @@ private struct StueckAbschnitt: View {
     }
 
     private func hinzu() {
-        guard let l = KevFormat.parseNumber(neueLaenge), l > 0 else { return NSSound.beep() }
+        guard let l = KevFormat.parseNumber(neueLaenge), l > 0 else { return fehlerSignal() }
         let n = Int(KevFormat.parseNumber(neueAnzahl) ?? 1)
-        guard n > 0 else { return NSSound.beep() }
+        guard n > 0 else { return fehlerSignal() }
         aenderung.stueck(laenge: l, delta: n)
         neueLaenge = ""
         neueAnzahl = ""
@@ -896,7 +900,7 @@ private struct StueckFeld: View {
             .onSubmit {
                 guard let v = KevFormat.parseNumber(text), v >= 0, v == v.rounded() else {
                     text = String(anzahl)
-                    return NSSound.beep()
+                    return fehlerSignal()
                 }
                 if Int(v) != anzahl { setzen(Int(v)) }
             }

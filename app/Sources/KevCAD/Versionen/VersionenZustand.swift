@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -50,13 +54,13 @@ struct VarianteDialogDaten: Identifiable {
 @MainActor
 final class VorschauCache {
     static let shared = VorschauCache()
-    private var bilder: [String: (Date, NSImage)] = [:]
+    private var bilder: [String: (Date, PlattformBild)] = [:]
 
-    func bild(_ url: URL?) -> NSImage? {
+    func bild(_ url: URL?) -> PlattformBild? {
         guard let url else { return nil }
         let datum = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         if let (d, img) = bilder[url.path], d == datum { return img }
-        guard let img = NSImage(contentsOf: url) else { return nil }
+        guard let img = PlattformBild.laden(url) else { return nil }
         if bilder.count > 600 { bilder.removeAll() }
         bilder[url.path] = (datum, img)
         return img

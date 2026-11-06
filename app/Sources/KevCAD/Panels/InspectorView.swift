@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 import simd
@@ -410,8 +414,7 @@ private struct MeasurementRow: View {
         .padding(.vertical, 2)
         .contextMenu {
             Button("Text kopieren") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(item.text, forType: .string)
+                Zwischenablage.setzen(item.text)
             }
             if model.canRemoveSingleMeasurement {
                 Button("Löschen") { model.removeMeasurement(item.id) }
@@ -421,9 +424,9 @@ private struct MeasurementRow: View {
     }
 }
 
+@MainActor
 private func copy(_ text: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
+    Zwischenablage.setzen(text)
 }
 
 extension AppModel {

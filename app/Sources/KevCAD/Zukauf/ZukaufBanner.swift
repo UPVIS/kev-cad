@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -75,12 +79,14 @@ struct ZukaufBanner: View {
                     .fixedSize()
                     .help("Zu welchem wartenden Zukaufteil die Datei gehört")
                 }
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([offer.file])
-                } label: {
-                    Image(systemName: "folder")
+                if Dateiablage.kannImFinderZeigen {  // iPad: Teilen-Blatt folgt in I-8
+                    Button {
+                        Dateiablage.imFinderZeigen([offer.file])
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .help("Im Finder zeigen")
                 }
-                .help("Im Finder zeigen")
                 Button("Nein") { model.zukaufActions?.declineDownload() }
                     .help("Diese Datei nicht übernehmen; Kev CAD wartet weiter")
                 Button("Übernehmen") { model.zukaufActions?.acceptDownload(for: teil) }

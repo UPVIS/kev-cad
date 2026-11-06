@@ -30,7 +30,7 @@ struct FotoAnsichtOverlay: View {
                 .background(Color.black.opacity(0.92))
             }
             .transition(.opacity)
-            .onExitCommand { actions?.fotoansichtSchliessen() }
+            .beiEsc { actions?.fotoansichtSchliessen() }
         }
     }
 

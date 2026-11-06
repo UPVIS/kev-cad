@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -27,7 +31,7 @@ struct DokumenteBereich: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Color.seitenGrund)
         .onAppear {
             verbinden()
             if store.uebersicht == nil, model.kernelState == .ready { model.dokumenteActions?.dokumenteAnfordern() }
@@ -45,6 +49,7 @@ struct DokumenteBereich: View {
         let model = self.model
         let zustand = self.zustand
         let session = self.session
+        #if os(macOS)
         zustand.pdfSichern = {
             BlattAusgabe.pdfSichern(zustand.markierteBlaetter(model.dokumente), model: model,
                                     fenster: session.projectWindow) { t, f in zustand.melde(t, fehler: f) }
@@ -53,6 +58,9 @@ struct DokumenteBereich: View {
             BlattAusgabe.drucken(zustand.markierteBlaetter(model.dokumente), model: model,
                                  fenster: session.projectWindow) { t, f in zustand.melde(t, fehler: f) }
         }
+        #else
+        _ = (model, zustand, session)  // iPad: Sichern als PDF und Drucken folgen in I-8
+        #endif
     }
 
     /// Ohne Auswahl: das zuletzt gezeigte Blatt dieses Projekts, sonst der Zusammenbau, sonst das erste Blatt. Nach

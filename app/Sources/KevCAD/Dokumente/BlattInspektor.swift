@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -286,7 +290,7 @@ private struct NotizAbschnitt: View {
     private func uebernehmen() {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, t != n.text else { return }
-        bearbeite([.notizLoeschen(id: n.id), .notiz(text: t, lage: n.lage, zeiger: BlattLeinwand.zeiger(n))])
+        bearbeite([.notizLoeschen(id: n.id), .notiz(text: t, lage: n.lage, zeiger: BlattWerte.zeiger(n))])
     }
 }
 
@@ -322,6 +326,6 @@ private struct SchriftfeldAbschnitt: View {
 
     private func uebernehmen(_ feld: String) {
         guard let t = werte[feld], t != z.blatt.schriftfeldText(feld) else { return }
-        bearbeite([.schriftfeld(feld: feld, wert: BlattLeinwand.schriftfeldWert(feld, t))])
+        bearbeite([.schriftfeld(feld: feld, wert: BlattWerte.schriftfeldWert(feld, t))])
     }
 }

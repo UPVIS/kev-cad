@@ -10,6 +10,9 @@ import simd
 ///   Bei `running`, `finished` und `error` bleibt der Zustand stehen, damit Fensterbilder reproduzierbar sind.
 /// - `KEVCAD_DEMO_VIEWPORT=metal` zeigt den echten KevViewport mit einem nicht gestarteten AppController statt der
 ///   Demovorschau.
+/// - `KEVCAD_DEMO_VIEWPORT=kern` (I-3a, Vorgabe auf dem iPad bis zur Verbindung mit dem Mac): Demo-Lauf des App-Kerns
+///   im echten KevViewport. Der Wandhalter baut sich mit echter Geometrie über den Weg der Kernel-Nachrichten auf, die
+///   Aktionen kommen vom App-Kern (Auswahl, Ansichten, Sichtbarkeit wirken wirklich). `KEVCAD_DEMO_STATE` gilt hier nicht.
 /// - `KEVCAD_DEMO_LOG=1` öffnet beim Start auch das Protokoll.
 /// - `KEVCAD_SELFTEST=keys` prüft nach dem Start, dass einbuchstabige Kürzel im Suchfeld nicht feuern.
 /// - Nur bei festen Zuständen: `KEVCAD_DEMO_SECTION=1` (Schnitt in Z durch die Mitte), `KEVCAD_DEMO_EXPLODE=0.5`,
@@ -26,6 +29,8 @@ struct DemoConfiguration {
 
     var start: Start = .welcome
     var metalViewport = false
+    /// Demo-Lauf des App-Kerns statt `DemoActions` (`KEVCAD_DEMO_VIEWPORT=kern`).
+    var kernDemo = false
     var openLog = false
     var selfTest: String?
     var section = false
@@ -43,6 +48,7 @@ struct DemoConfiguration {
         var config = DemoConfiguration()
         config.start = env["KEVCAD_DEMO_STATE"].flatMap { Start(rawValue: $0.lowercased()) } ?? .welcome
         config.metalViewport = env["KEVCAD_DEMO_VIEWPORT"]?.lowercased() == "metal"
+        config.kernDemo = env["KEVCAD_DEMO_VIEWPORT"]?.lowercased() == "kern"
         config.openLog = env["KEVCAD_DEMO_LOG"] == "1"
         config.selfTest = env["KEVCAD_SELFTEST"]
         config.section = env["KEVCAD_DEMO_SECTION"] == "1"

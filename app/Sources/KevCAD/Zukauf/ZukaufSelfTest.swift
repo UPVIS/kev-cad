@@ -1,4 +1,3 @@
-import AppKit
 import KevCADCore
 import SwiftUI
 
@@ -6,6 +5,10 @@ extension Notification.Name {
     /// Nur Selbsttest: der offene Dialog „Zukaufteil hinzufügen …“ soll wie mit „Hinzufügen“ sichern.
     static let zukaufSelfTestSubmit = Notification.Name("KevCADZukaufSelfTestSubmit")
 }
+
+// Ablauf des Selbsttests, bisher nur am Mac (Fenster über AppKit). iPad: Selbsttests folgen in I-9.
+#if os(macOS)
+import AppKit
 
 /// Selbsttest Zukaufteile in der Testvariante, mit dem Ersatz-Kernel (`fake_kernel.py --zukauf`) oder dem echten
 /// Kernel: `KEVCAD_SELFTEST=zukauf`, `KEVCAD_DOWNLOADS_DIR=<Temp-Ordner>` (nie das echte Downloads),
@@ -185,3 +188,4 @@ extension AppSession {
         NSApp.windows.first { $0.title == "Zukaufteil hinzufügen" }?.close()
     }
 }
+#endif

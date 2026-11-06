@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import KevCADCore
 import SwiftUI
 
@@ -89,12 +93,15 @@ struct DokumenteSeitenleiste: View {
         let reihenfolge = store.uebersicht?.blaetter.map(\.id) ?? []
         let ids = reihenfolge.filter { blaetter.contains($0) }
         if !ids.isEmpty {
+            #if os(macOS)
             Button(ids.count == 1 ? "Als PDF sichern …" : "\(ids.count) Blätter als PDF sichern …") {
                 BlattAusgabe.pdfSichern(ids, model: model, fenster: session.projectWindow) { t, f in zustand.melde(t, fehler: f) }
             }
             Button(ids.count == 1 ? "Drucken …" : "\(ids.count) Blätter drucken …") {
                 BlattAusgabe.drucken(ids, model: model, fenster: session.projectWindow) { t, f in zustand.melde(t, fehler: f) }
             }
+            #endif
+            // iPad: Sichern und Drucken folgen in I-8; Teilen geht schon
             let fertig = ids.compactMap { store.zeichnung($0) }
             if fertig.count == ids.count {
                 ShareLink(item: BlattPDFDatei(zeichnungen: fertig, name: BlattPDF.dateiname(fertig, projekt: model.project?.name)),

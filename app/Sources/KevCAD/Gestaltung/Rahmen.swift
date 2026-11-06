@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 // Grundbausteine (3): Grund des Fensters, Kachelrahmen mit Nummer, Overlay-Karte, Statuszeile, Sprechrahmen, Punkte.

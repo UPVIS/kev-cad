@@ -149,6 +149,7 @@ struct BerichteAnsicht: View {
                 }
                 .help("Dieselben Daten am Bildschirm: Material › \(MaterialAbschnitt(bericht: bericht).titel) (⌘3)")
             }
+            #if os(macOS)
             Button { drucken() } label: { Label("Drucken …", systemImage: "printer") }
                 .help("Diesen Bericht drucken (1:1, ohne Skalierung)")
                 .disabled(dokument?.seiten.isEmpty != false)
@@ -161,6 +162,8 @@ struct BerichteAnsicht: View {
                 Label("Exportieren …", systemImage: "square.and.arrow.up.on.square")
             }
             .help("Dokumente exportieren: Bausteine zusammenstellen (⇧⌘E)")
+            #endif
+            // iPad: Drucken, Sichern als PDF und Exportieren folgen mit dem Teilen-Blatt in I-8
         }
         .labelStyle(.iconOnly)
         .padding(.horizontal, 14)
@@ -179,13 +182,14 @@ struct BerichteAnsicht: View {
         }
     }
 
+    #if os(macOS)
     private func sichern() {
         Task { @MainActor in
             guard let url = await ExportDialogFenster.speicherOrt(model: model, name: "\(model.project?.name ?? "Kev CAD") – \(bericht.titel)")
             else { return }
             do {
                 _ = try await model.exportActions?.exportPDF(vorlage, nach: url)
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+                Dateiablage.imFinderZeigen([url])
             } catch {
                 ExportDialogFenster.fehler(error)
             }
@@ -201,6 +205,7 @@ struct BerichteAnsicht: View {
             }
         }
     }
+    #endif
 }
 
 /// Seiten wie Papier auf grauem Grund, untereinander, mit Schatten und Seitenzahl.
@@ -229,7 +234,7 @@ struct SeitenVorschau: View {
                 .padding(28)
                 .frame(minWidth: geo.size.width)
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(Color.seitenGrund)
         }
     }
 }
