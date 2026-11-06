@@ -26,8 +26,9 @@ extension AppController {
 
     /// Nach HELLO: Projekt des Selbsttests öffnen.
     func viewerSelbsttestProjektOeffnen() {
-        guard Self.viewerSelbsttestGewuenscht || Self.sprachSelbsttestGewuenscht, model.project == nil,
-            let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
+        let selbsttest = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"]
+        guard Self.viewerSelbsttestGewuenscht || Self.sprachSelbsttestGewuenscht || (AppInfo.isTestVariant && selbsttest == "core"),
+            model.project == nil, let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
         else { return }
         openProject(at: URL(fileURLWithPath: p, isDirectory: true))
     }

@@ -106,7 +106,9 @@ def main() -> int:
         (arbeit / "downloads").mkdir(exist_ok=True)
         # Die Testvariante kennt den Ordner dieses Kernels nicht (gebaut auf einem Bauplatz): Er läuft hier neben ihr
         prozess = None
-        if kernel:
+        if kernel and args.hier and kernel == ECHT:
+            pass  # am Rechner dieser Arbeitskopie startet die App ihren Kernel selbst (core startet ihn auch neu)
+        elif kernel:
             umgebung["KEVCAD_KERNEL_EXTERNAL"] = "1"
             socket = daten / "kernel.sock"
             socket.unlink(missing_ok=True)

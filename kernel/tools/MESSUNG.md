@@ -233,6 +233,9 @@ Beobachter der Hauptschleife, ohne `sample`).
 | Material mit Verdeckung | 357 | 1,18 ms | 5,54 ms | 17 ms | 56 ms |
 | Technisch | 361 | 1,17 ms | 5,72 ms | 20 ms | keins |
 
+Nach dem Entfernen der Formmaske, Last 20 bis 30: 376 bis 387 Bilder in 3 s, Hauptfaden 0,83 bis 1,32 ms, GPU 3,7 bis 5,3 ms, längstes
+Stück 48 ms (eine Nachricht CHECK), sonst höchstens 34 ms.
+
 Die 850 ms in „Technisch“ aus V2-4 kamen nicht wieder, auch nicht unter deutlich höherer Last; was damals lief, lässt sich nicht
 mehr feststellen. Kein Stück enthält eine Kernel-Nachricht, alle sind Oberfläche und liegen unter 65 ms. Hauptfaden und GPU kommen
 zusammen auf gut 7 ms je Bild, die 35 bis 42 Bilder/s von V2-5b entstanden also nach dem Zeichnen.
