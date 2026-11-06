@@ -315,6 +315,28 @@ def test_werkzeug_gibt_text_und_bild(env, projekt):
     assert res.structured_content["saetze"] == 2
 
 
+def test_werkzeug_bringt_das_lagebild_mit(env, projekt):
+    """K5 (PLAN-PIPELINE.md): Nach Kevins Sätzen steht das Lagebild mit Lauf, Prüfstand und Gliederung von model.py im
+    Ergebnis, damit der Agent ohne status und modell(gliederung) ändern kann."""
+    (projekt / "model.py").write_text(
+        'from build123d import *\nfrom kevcad import param, show, step\nbreite = param("breite", 20)  # außen\n'
+        'step("Klotz")\nshow(Box(breite, 10, 5), "Klotz")\n', encoding="utf-8")
+    assert env["rt"].run()["ok"]
+    paket_schreiben(projekt)
+    t = text(aufruf(env, "feedback", warten_s=0))
+    assert "Lagebild" in t and "Letzter Lauf" in t and "Prüfung" in t
+    assert "Z3 breite = 20  # außen" in t and "Z5 Klotz" in t, t
+    assert t.index("Kevin ist fertig") < t.index("Lagebild"), "Kevins Sätze zuerst"
+
+
+def test_lagebild_ohne_lesbares_modell_bleibt_beim_stand(env, projekt):
+    from kevcad_kernel.mcp_tools.feedback_tools import lagebild_text
+
+    (projekt / "model.py").write_text("def kaputt(:\n", encoding="utf-8")
+    t = lagebild_text(env["rt"])
+    assert "Lagebild" in t and "Parameter" not in t
+
+
 def test_werkzeug_bei_zeitablauf_nennt_stand_und_befehl(env, projekt):
     stand(env, "pause")
     res = aufruf(env, "feedback", warten_s=0)

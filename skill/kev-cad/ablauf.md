@@ -33,8 +33,9 @@ Teil des Skills kev-cad (Verzeichnis in SKILL.md). Der Ablauf einer Aufgabe in K
    vergleichen, wichtige Sollmaße mit `measure` nachmessen, `parts(stueckliste=true)` für Stückliste und Zuschnitt,
    `pruefen(thema="bedingungen")` für Bedingungen, Freiheitsgrade, Befestigung und Bewegungsraum. Kevin keine
    Screenshots schicken; Bilder nur zur eigenen Analyse (siehe [ansicht.md](ansicht.md)).
-8. Meilenstein setzen (gilt immer): nach dem letzten erfolgreichen Lauf der Aufgabe
-   `versionen(aktion="meilenstein", titel="Kurzer Titel", notiz="Ein, zwei Sätze, was sich geändert hat und warum")`.
+8. Meilenstein setzen (gilt immer): der letzte `run` der Aufgabe bekommt `meilenstein="Kurzer Titel"` und
+   `notiz="Ein, zwei Sätze, was sich geändert hat und warum"`; er setzt ihn, wenn der Lauf fehlerfrei ist. Für einen
+   schon gerechneten Stand geht weiter `versionen(aktion="meilenstein", titel=…, notiz=…)`.
 9. Kevin kurz berichten: was gebaut ist, Hauptmaße, Masse, Kosten (Richtpreise), offene Annahmen, vereinfachte
    Zukaufteile, Einkaufsliste. Bei Bedarf `view(focus=…, hervorheben=…)` oder `view(anmerkung=…)`, damit er es im
    Viewer sieht.
@@ -53,7 +54,8 @@ Vorschaubild, Zeit, wer (Kevin oder Agent), Teilen, Masse, Kosten und Prüfstand
   „+ Flügelschraube M4 (4×)“, „Rahmen, Schlitten geändert“, „Code aufgeräumt (ohne Wirkung)“). Bei größeren
   Änderungen `run(titel="Laufrollen auf Kugellager umgestellt")` in Kevins Worten mitgeben: Das wird der Titel der
   Version, der automatische steht darunter. Kleine Korrekturen brauchen keinen.
-- **Am Ende jeder Aufgabe ein Meilenstein:** `versionen(aktion="meilenstein", titel=…, notiz=…)` mit kurzem deutschem Titel
+- **Am Ende jeder Aufgabe ein Meilenstein:** am letzten `run(meilenstein=…, notiz=…)` oder einzeln mit
+  `versionen(aktion="meilenstein", titel=…, notiz=…)`, mit kurzem deutschem Titel
   („Stangenhalter mit Gewindeeinsätzen“) und einer Notiz in ein, zwei Sätzen. Erst nach dem letzten erfolgreichen
   Lauf, nicht auf einen kaputten Stand. Hat Kevin die Version selbst benannt, bleibt sein Name (`versionen(aktion="meilenstein")`
   meldet das, dein Titel steht dann darunter); `ersetzen=true` nur, wenn Kevin ausdrücklich darum bittet.

@@ -23,9 +23,18 @@ Kevin ist fertig: 2 Sätze, 1 Strich, 0:34 (fb-20261105-223011, Lauf 7)
 2. [0:06] „Und den Rest lass so.“
 Im Bild: 12 Teile, 3 ausgeblendet
 Einzelheiten (Wörter, Mausweg, Striche): …/feedback/fb-20261105-223011.json
+
+Lagebild (status und Gliederung, beim Abholen erhoben): Projekt Wandhalter
+Letzter Lauf 7: ok, 12 Teile
+Prüfung (Lauf 7): 2 Hinweise
+model.py (…/model.py): 84 Zeilen, 2913 Zeichen
+Parameter (5):
+  Z9 hoehe = 60  # Lasche
+…
 ```
 
-Dazu ein Bild der Ansicht mit seinen Strichen und einer Nummer je Satz am Zeiger.
+Dazu ein Bild der Ansicht mit seinen Strichen und einer Nummer je Satz am Zeiger. Das Lagebild darunter ersetzt `status`
+und `modell(gliederung=true)`: gleich ändern (`modell(setze=…)` oder die Zeilen lesen, die du brauchst), dann `run`.
 
 - „Das hier“, „da“, „dieser“ meinen das Teil unter der Maus in diesem Moment: Das steht in der Zeile unter dem Satz.
 - Refs gelten für den genannten Lauf. Lief das Modell seitdem neu, stimmen die Teilnamen weiter, Flächen und Kanten

@@ -38,6 +38,43 @@ def zeit_text(t: Any) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
+def lagebild_text(svc: KernelService) -> str:
+    """Lagebild zum Feedback (PLAN-PIPELINE.md, K5): offenes Projekt, letzter Lauf, Prüfstand und die Gliederung von
+    model.py, damit der Agent nach Kevins Sätzen gleich ändern kann, ohne erst ``status`` und ``modell(gliederung)``
+    aufzurufen (gemessen: eine Runde weniger, bei Änderungen am großen Modell 10 s schneller). Leer ohne Projekt."""
+    try:
+        res = svc.status()
+    except Exception:  # noqa: BLE001 - das Lagebild ist eine Beigabe, das Feedback zählt
+        return ""
+    projekt = res.get("project") if isinstance(res.get("project"), dict) else None
+    if not projekt:
+        return ""
+    zeilen = [f"Lagebild (status und Gliederung, beim Abholen erhoben): Projekt {projekt.get('name', '?')}"]
+    last = res.get("last_run") if isinstance(res.get("last_run"), dict) else None
+    if last and last.get("ok") is False:
+        err = last.get("error") if isinstance(last.get("error"), dict) else {"message": last.get("error")}
+        zeilen.append(f"Letzter Lauf {last.get('run', '?')}: Fehler"
+                      + (f" in Zeile {err.get('line')}" if err.get("line") else "") + f": {err.get('message')}")
+    elif last:
+        zeilen.append(f"Letzter Lauf {last.get('run', '?')}: ok, "
+                      + fmt.plural(len(last.get("parts") or []), "Teil", "Teile"))
+    pr = res.get("pruefung") if isinstance(res.get("pruefung"), dict) else None
+    if pr is not None:
+        z = pr.get("zaehler") or {}
+        zahl = ", ".join(f"{z[k]} {n}" for k, n in (("fehler", "Fehler"), ("warnung", "Warnungen"),
+                                                      ("hinweis", "Hinweise")) if z.get(k))
+        zeilen.append(f"Prüfung (Lauf {pr.get('run', '?')}): " + (zahl or "keine Befunde"))
+    try:
+        quelle = svc.model_read()
+        if quelle.get("ok") and isinstance(quelle.get("code"), str):
+            from . import modell_quelle as mq
+
+            zeilen.append(mq.gliederung_text(mq.gliederung(quelle["code"]), str(quelle.get("path"))))
+    except (SyntaxError, ValueError):  # model.py gerade nicht lesbar: dann nur der Stand
+        pass
+    return "\n".join(zeilen)
+
+
 def _bezug_text(b: dict[str, Any], striche: dict[Any, dict[str, Any]]) -> str:
     if b.get("art") == "strich":
         s = striche.get(b.get("strich")) or {}
@@ -132,6 +169,8 @@ def register_feedback_tool(tool: Callable[..., Any], t: Any, svc: KernelService,
         if res.get("offen"):
             text += f"\nDanach wartet noch {fmt.plural(int(res['offen']), 'Feedback', 'Feedbacks')}: feedback()."
         text += f"\nEinzelheiten (Wörter, Mausweg, Striche): {res.get('json_pfad')}"
+        if lage := await t.work(None, lagebild_text, svc):
+            text += "\n\n" + lage
         extra: list[Any] = []
         if res.get("bild"):
             extra.append(ImageContent(type="image", data=base64.b64encode(res["bild"]).decode("ascii"),

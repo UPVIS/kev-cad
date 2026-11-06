@@ -86,7 +86,10 @@ def test_werkzeuge_md_im_skill_stimmt():
 def test_skill_schlank_mit_verzeichnis():
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     koerper = skill.split("\n---\n", 1)[1]
-    assert len(koerper) <= 8000, len(koerper)
+    # 10.000 statt 8.000 seit dem Pipeline-Experiment (PLAN-PIPELINE.md, 06.11.2026): SKILL.md trägt Ablauf, Konstruktions-
+    # und Druckregeln selbst, damit 3d-druck.md, modell.md und konstruktion.md (zusammen rund 70.000 Zeichen) für eine
+    # gewöhnliche Aufgabe nicht mehr gelesen werden; gemessen 0,76-fache Eingabe bei gleicher Zeit und Qualität.
+    assert len(koerper) <= 10000, len(koerper)
     for datei in sorted(p.name for p in SKILL.glob("*.md") if p.name != "SKILL.md"):
         assert f"]({datei})" in skill, f"{datei} fehlt im Verzeichnis von SKILL.md"
     assert "select:mcp__kevcad__status," in skill
