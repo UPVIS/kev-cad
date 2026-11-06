@@ -8,9 +8,9 @@ Regeln unten zu Mac mini, `tools/fern.sh`, zweitem Monitor, Sperrdatei und autom
 Rechnern; die Verträge und Code-Regeln gelten überall.
 
 Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10, Arbeitspakete, AP0-Ergebnis),
-[PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine). Für den Umbau zu V2
-(KI-first, Zweig `v2`): [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete V2-1 bis V2-8) und
-[ABNAHME-V2.md](ABNAHME-V2.md) (Abend mit Kevin, Wechsel nach `main`, Rückweg).
+[PROTOCOL.md](PROTOCOL.md) (Kernel ↔ App), [RECHERCHE.md](RECHERCHE.md) (Herkunft der Bausteine). V2 (KI-first) ist seit
+06.11.2026 der Stand auf `main`: [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete) und
+[ABNAHME-V2.md](ABNAHME-V2.md) (Abnahme, Wechsel nach `main`, Rückweg).
 Oberfläche: [OBERFLAECHE.md](OBERFLAECHE.md) (Gestaltungswerte, Entwurf, Fokus und Werkstatt, Kacheln, Tasten).
 
 ## Aufbau
@@ -69,7 +69,13 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
   Protokoll: `~/Library/Logs/Kev CAD/update.log`. Probe ohne Kevins App: `KEVCAD_UPDATE_PROBE=<Ordner>
   KEVCAD_UPDATE_REF=<Zweig>`.
 - Die installierte App, der MCP-Server `kevcad` und der Skill `kev-cad` nutzen nur diese installierte Kopie, nie den
-  Arbeitsstand des Repos. Entwicklung daher auf Zweigen bzw. in Arbeitskopien und erst fertig nach `main`.
+  Arbeitsstand des Repos.
+- **Immer direkt auf `main` arbeiten** (Kevin, 06.11.2026: „dass wir immer jetzt in Main arbeiten, also nicht irgendwie
+  getrennt … alles auf jeden Fall immer direkt in Main zusammenführen“). Keine Zweige, die auf eine Abnahme warten. Weil
+  jeder Commit auf `main` sich bei Kevin installiert, nur geprüfte Stände committen (Tests, bei Oberfläche die
+  Testvariante); Halbfertiges bleibt uncommittet. Arbeiten zwei Agenten parallel, nimmt jeder eine kurze Arbeitskopie und
+  bringt jeden geprüften Schritt sofort nach `main` (rebase, dann fast-forward). Nach GitHub (öffentlich) nur auf Kevins
+  Wort pushen.
 - Hooks sind aktiv über `git config core.hooksPath .githooks` (nach einem frischen Klon einmal setzen).
 - Eine Instanz je Variante: ein zweiter Start holt die laufende App nach vorn und beendet sich.
 
