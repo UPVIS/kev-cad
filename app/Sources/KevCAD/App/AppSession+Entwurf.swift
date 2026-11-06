@@ -71,15 +71,17 @@ extension AppSession {
     /// Gibt dem Projekt einen Namen. Ein Entwurf zieht dabei nach ~/Documents/Kev CAD (bzw. `KEVCAD_PROJECTS_DIR`), ein
     /// benanntes Projekt wird im selben Ordner umbenannt. Danach öffnet der Kernel es am neuen Ort.
     func projektBenennen(_ eingabe: String) {
-        guard let p = model.project else { return }
+        if case .failure(let f) = projektUmziehen(eingabe) { melde(f.text, fehler: true) }
+    }
+
+    /// Dasselbe für Kevin (Doppelklick auf den Titel, ⇧⌘S) und den Agenten (`VIEW_CMD projekt_name`): neuer Ort oder der Grund,
+    /// warum es nicht ging.
+    func projektUmziehen(_ eingabe: String) -> Result<URL, FlaecheFehler> {
+        guard let p = model.project else { return .failure(.init("Es ist kein Projekt offen.")) }
         let name = ProjectLocator.sanitizedName(eingabe)
-        guard demo == nil else {
-            melde("Im Demomodus bleibt der Name, wie er ist.", fehler: true)
-            return
-        }
+        guard demo == nil else { return .failure(.init("Im Demomodus bleibt der Name, wie er ist.")) }
         if model.isRunning {
-            melde("Der Lauf ist noch nicht fertig. Danach klappt das Benennen.", fehler: true)
-            return
+            return .failure(.init("Der Lauf ist noch nicht fertig. Danach klappt das Benennen."))
         }
         do {
             let neu: URL
@@ -87,7 +89,7 @@ extension AppSession {
                 neu = try entwuerfe.uebernehmen(p.path, name: name, nach: AppInfo.projectsDirectory)
             } else {
                 neu = try EntwurfAblage.umbenennen(p.path, name: name)
-                if RecentProjects.normalizedPath(neu) == RecentProjects.normalizedPath(p.path) { return }
+                if RecentProjects.normalizedPath(neu) == RecentProjects.normalizedPath(p.path) { return .success(p.path) }
                 recents.remove(p.path)
             }
             model.append(LogLine(text: "Projekt heißt jetzt „\(neu.lastPathComponent)“: "
@@ -96,8 +98,9 @@ extension AppSession {
                 + KevFormat.abbreviatedPath(neu.deletingLastPathComponent().path), fehler: false)
             letztesProjekt = neu
             actions?.openProject(at: neu)
+            return .success(neu)
         } catch {
-            melde("Benennen ging nicht: \(error.localizedDescription)", fehler: true)
+            return .failure(.init("Benennen ging nicht: \(error.localizedDescription)"))
         }
     }
 
@@ -163,6 +166,7 @@ extension AppSession {
 
     static let modusSchluessel = "oberflaeche.modus"
     static let kachelSchluessel = "oberflaeche.kacheln"
+    static let ansichtSchluessel = "kachel.ansicht"
 
     /// Modus und Kacheln wie beim letzten Beenden.
     static func oberflaecheVorbelegen(_ store: OberflaechenStore) {
@@ -170,7 +174,9 @@ extension AppSession {
         let modus = d.string(forKey: modusSchluessel).flatMap(ArbeitsModus.init(rawValue:)) ?? .fokus
         let kacheln = (d.stringArray(forKey: kachelSchluessel) ?? [KachelArt.modell.rawValue])
             .compactMap(KachelArt.init(rawValue:))
-        store.vorbelegen(modus: modus, kacheln: kacheln)
+        store.vorbelegen(modus: modus, kacheln: kacheln, zweiteAnsicht: d.string(forKey: ansichtSchluessel).flatMap {
+            standardAnsichten.contains($0) ? $0 : nil  // früher Namen der Viewport-Bibliothek
+        })
     }
 
     func oberflaecheMerken() {
@@ -186,7 +192,7 @@ extension AppSession {
     nonisolated static func merkSchluessel(_ z: OberflaechenZustand) -> String {
         let modus: ArbeitsModus = z.modusVorRand ?? z.modus
         let kacheln: [String] = z.kacheln.map { $0.rawValue }
-        return modus.rawValue + "|" + kacheln.joined(separator: ",")
+        return modus.rawValue + "|" + kacheln.joined(separator: ",") + "|" + z.zweiteAnsicht
     }
 
     private func oberflaecheSichern() {
@@ -195,6 +201,7 @@ extension AppSession {
         let kacheln: [String] = z.kacheln.map { $0.rawValue }
         UserDefaults.standard.set(modus.rawValue, forKey: Self.modusSchluessel)
         UserDefaults.standard.set(kacheln, forKey: Self.kachelSchluessel)
+        UserDefaults.standard.set(z.zweiteAnsicht, forKey: Self.ansichtSchluessel)
     }
 
     // MARK: Fenster

@@ -373,6 +373,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         args = self._live_view_vorher(cmd, dict(args or {}))  # V2-5: annotate mit dauer_s braucht eine id
         if not self._link.connected:
             return {"ok": False, "error": APP_NOT_CONNECTED}
+        veraltet = self._live_flaeche_fehlt(cmd)  # V2-7: Kacheln und Benennen braucht eine App mit flaeche-1
+        if veraltet:
+            return {"ok": False, "error": veraltet}
         bad = self._check_view_refs(cmd, args)
         if bad:
             return {"ok": False, "error": bad}

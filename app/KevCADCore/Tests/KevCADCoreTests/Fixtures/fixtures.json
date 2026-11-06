@@ -2294,6 +2294,18 @@
     "type": "VIEW_CMD",
     "payload_bytes": 0,
     "richtung": "kernel"
+   },
+   {
+    "file": "live_view_flaeche.frame",
+    "type": "VIEW_CMD",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "live_view_projekt_name.frame",
+    "type": "VIEW_CMD",
+    "payload_bytes": 0,
+    "richtung": "kernel"
    }
   ],
   "kernel_faehigkeiten": [
@@ -2301,7 +2313,8 @@
    "in-arbeit-1",
    "spur-1",
    "lage-1",
-   "live-masse-1"
+   "live-masse-1",
+   "flaeche-1"
   ],
   "nachrichten": {
    "PART_SAME": "delta-1",

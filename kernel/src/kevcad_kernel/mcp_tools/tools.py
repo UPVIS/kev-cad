@@ -18,9 +18,10 @@ from typing import Annotated, Any, Literal
 
 import anyio
 from mcp.server.mcpserver import MCPServer
-from mcp_types import CallToolResult, ToolAnnotations
+from mcp_types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
+from kevcad_kernel.protocol import KACHELN
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
@@ -32,6 +33,7 @@ StandardView = Literal[
     "top", "bottom", "front", "back", "left", "right", "iso", "iso_front_left", "iso_back_right", "iso_back_left"
 ]
 Projection = Literal["perspective", "orthographic"]
+Kachel = Literal[*KACHELN]  # V2-7: Kacheln der Werkstatt
 Display = Literal["shaded_edges", "shaded", "wireframe", "xray", "solid", "material", "technical"]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "bom_csv", "einkaufsliste_csv"]
 StockArt = Literal["rohr", "vierkantrohr", "rechteckrohr", "flach", "rund", "vierkant", "winkel", "u_profil",
@@ -196,14 +198,24 @@ def _guard(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaita
     return wrapper
 
 
-def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, *,
-             mutating: bool) -> Callable[..., Awaitable[CallToolResult]]:
-    """Meldet jeden Aufruf mit der Claude-Sitzung der Anfrage an die Sitzungstafel."""
+def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, service: KernelService | None = None,
+             *, mutating: bool, name: str = "") -> Callable[..., Awaitable[CallToolResult]]:
+    """Meldet jeden Aufruf mit der Claude-Sitzung der Anfrage an die Sitzungstafel. Hat Kevin das Projekt umbenannt oder
+    ein anderes geöffnet, beginnt das nächste Ergebnis dieser Sitzung mit dem neuen Pfad (PROTOCOL.md, „Fläche“)."""
+    kurz = getattr(service, "projekt_kurz", None)
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> CallToolResult:
-        board.tool_called(claude_session.get(), mutating)
-        return await fn(*args, **kwargs)
+        session = claude_session.get()
+        board.tool_called(session, mutating)
+        res = await fn(*args, **kwargs)
+        info = kurz() if kurz else None
+        if isinstance(info, dict) and board.projekt_gesehen(session, str(info.get("path")), selbst=name == "projekt"):
+            hinweis = (f"Achtung, das offene Projekt ist jetzt „{info.get('name')}“: model.py liegt unter "
+                       f"{info.get('model')}. Alte Pfade gelten nicht mehr.")
+            return CallToolResult(content=[TextContent(type="text", text=hinweis), *res.content],
+                                  structured_content=res.structured_content, is_error=res.is_error)
+        return res
 
     return wrapper
 
@@ -230,7 +242,7 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         """Werkzeug des Kernsatzes am Server: Fehlerschutz, Sitzungstafel, unbekannte Argumente abgelehnt."""
 
         def deco(fn: Callable[..., Awaitable[CallToolResult]]) -> Callable[..., Awaitable[CallToolResult]]:
-            wrapped = _tracked(_guard(fn), t.board, mutating=not annotations.read_only_hint)
+            wrapped = _tracked(_guard(fn), t.board, svc, mutating=not annotations.read_only_hint, name=name)
             mcp.add_tool(wrapped, name=name, title=title, description=description, annotations=annotations,
                          structured_output=False)
             streng_machen(mcp._tool_manager.get_tool(name))
@@ -254,6 +266,28 @@ def register_tools(mcp: MCPServer, service: KernelService, board: SessionBoard |
         return fmt.result(f"Projekt {res.get('name', Path(full).name)} geöffnet: {res.get('path', full)}\n"
                           f"model.py: {res.get('model', '?')}\nAls Nächstes run aufrufen, um das Modell zu bauen.",
                           res)
+
+    @tool("flaeche", "Oberfläche",
+          "Result tiles, mode and window edge of Kev CAD (PROTOCOL.md, Fläche).", VIEWER)
+    async def flaeche(
+        rand: Annotated[Literal["links", "rechts", "aus"] | None, Field(description="Window at the screen edge")] = None,
+        ordnen: Annotated[list[Kachel] | None, Field(description="Exactly these tiles in this order")] = None,
+        zeigen: Annotated[list[Kachel] | None, Field(description="Add these tiles or bring them to the front")] = None,
+        schliessen: Annotated[list[Kachel | int] | Literal["alle"] | None, Field(description="Close tiles")] = None,
+        gross: Annotated[Kachel | int | Literal["aus"] | None, Field(description="One tile fills the area")] = None,
+        modus: Annotated[Literal["fokus", "werkstatt"] | None, Field(description="Mode")] = None,
+        zeitleiste: Annotated[bool | None, Field(description="Timeline over the viewer in Fokus")] = None,
+        ansicht: Annotated[StandardView | None, Field(description="View direction of the second view")] = None,
+        blatt: Annotated[int | str | None, Field(description="Sheet number, id or title")] = None,
+    ) -> CallToolResult:
+        args = {k: v for k, v in (("rand", rand), ("ordnen", ordnen), ("zeigen", zeigen), ("schliessen", schliessen),
+                                  ("gross", gross), ("modus", modus), ("zeitleiste", zeitleiste), ("ansicht", ansicht),
+                                  ("blatt", blatt)) if v is not None}
+        res = await t.work("stellt die Oberfläche ein", svc.view_command, "flaeche", args)
+        err = fmt.service_error(res)
+        if err:
+            return fmt.error_result(f"Oberfläche nicht gestellt: {err}", {"args": args})
+        return fmt.result(str(res.get("message") or "Oberfläche gestellt."), {"args": args})
 
     @tool("project_new", "Projekt anlegen",
           "Create a new project folder with model.py and open it. template 'example' writes a small sample model, "

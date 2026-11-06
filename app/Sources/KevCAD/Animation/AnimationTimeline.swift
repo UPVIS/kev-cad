@@ -1,11 +1,12 @@
 import KevCADCore
 import SwiftUI
 
-// Phase 5 (Strang ANI): Zeitleiste unter dem Viewport. Liest AnimationModel, ruft AnimationActions
-// (`model.actions as? AnimationActions`). Unsichtbar, solange das Modell keine Animation hat.
+// Phase 5 (Strang ANI), V2-7: Zeitleiste in der Kachel „Animation“ und im Fokus über dem Viewer. Liest AnimationModel,
+// ruft AnimationActions (`model.actions as? AnimationActions`).
 
 /// Zeitleiste: Animationsauswahl, Abspielen, Bild für Bild, Schleife, Geschwindigkeit, Schieber mit Kollisionsmarken,
-/// Zeit und Bild, Kamerafahrt, Kollisionsprüfung, Video, Bewegung zurücksetzen.
+/// Zeit und Bild, Kamerafahrt, Kollisionsprüfung, Video, Bewegung zurücksetzen. Ist es zu schmal für eine Zeile
+/// (Fenster am Rand, 460 pt), steht sie in zwei Zeilen und nichts fällt weg.
 struct AnimationTimeline: View {
     @ObservedObject var model: AppModel
     @ObservedObject var animation: AnimationModel
@@ -14,24 +15,40 @@ struct AnimationTimeline: View {
 
     var body: some View {
         if animation.hasAnimation {
-            VStack(spacing: 0) {
-                Divider()
-                HStack(spacing: 10) {
-                    picker
-                    transport
-                    AnimationTrack(animation: animation, clock: animation.clock) { actions?.seekAnimation(to: $0) }
-                        .frame(minWidth: 180)
-                    AnimationTimeLabel(animation: animation, clock: animation.clock)
-                    tools
+            VStack(spacing: 4) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        picker.fixedSize()
+                        transport
+                        track.frame(minWidth: 180)
+                        AnimationTimeLabel(animation: animation, clock: animation.clock)
+                        tools
+                    }
+                    VStack(spacing: 4) {
+                        HStack(spacing: 8) {
+                            picker.frame(maxWidth: .infinity, alignment: .leading)
+                            AnimationTimeLabel(animation: animation, clock: animation.clock).fixedSize()
+                            tools.fixedSize()
+                        }
+                        HStack(spacing: 8) {
+                            transport.fixedSize()
+                            track
+                        }
+                    }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
                 AnimationInfoRow(animation: animation, clock: animation.clock)
             }
-            .background(.bar)
             .controlSize(.small)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else {
+            Text(model.parts.isEmpty ? "Noch keine Teile im Modell." : "Dieses Modell hat noch keine Animation. Sag dem Agenten einfach, was sich bewegen soll.")
+                .font(GS.text)
+                .foregroundStyle(GF.rauch)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var track: some View {
+        AnimationTrack(animation: animation, clock: animation.clock) { actions?.seekAnimation(to: $0) }
     }
 
     // MARK: Teile
@@ -54,7 +71,6 @@ struct AnimationTimeline: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
         .help(animation.entries.count > 1 ? "Animation wählen (\(animation.entries.count) im Modell)"
               : "Animation aus model.py")
     }

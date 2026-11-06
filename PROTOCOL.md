@@ -1165,6 +1165,7 @@ Live“: `inhalt_schluessel`, `strukturpatch`, `patch_anwenden`, `check_live_mes
 | `spur-1` | Agentenspur: `AGENT_SPUR`, `AGENT_SCHRITT` |
 | `lage-1` | Lagebild: `LAGE_REQ` (Kernel) → `LAGE` (App) |
 | `live-masse-1` | Maße und Hervorhebungen mit Ablaufzeit (`dauer_s`), geänderte Maße nach `run(params)` am Teil |
+| `flaeche-1` | Oberfläche steuern (V2-7): Kacheln, Modus, Rand über `VIEW_CMD flaeche`, Projekt benennen über `VIEW_CMD projekt_name`, Feld `flaeche` in `LAGE` |
 
 - `HELLO_APP` ist der erste Rahmen der App; die Fähigkeiten gelten ab dort. Den Anfangsstand nach dem Verbinden schickt
   der Kernel vollständig wie bisher, die Teile schon mit `inhalt` (er beginnt vor `HELLO_APP`), und merkt sich dabei,
@@ -1300,7 +1301,7 @@ dauernd geschickt.
 | type | Richtung | Felder |
 |---|---|---|
 | `LAGE_REQ` | Kernel → App | `id` |
-| `LAGE` | App → Kernel | `reply_to`, `zeit` (Unix-Zeit s), `ms` (Zeit der App für die Antwort), `kamera`, `viewport`, `sichtbar`, `verborgen`, `isoliert`, `auswahl`, `maus`, `darstellung`, `schnitt`, `explosion`, `animation` |
+| `LAGE` | App → Kernel | `reply_to`, `zeit` (Unix-Zeit s), `ms` (Zeit der App für die Antwort), `kamera`, `viewport`, `sichtbar`, `verborgen`, `isoliert`, `auswahl`, `maus`, `darstellung`, `schnitt`, `explosion`, `animation`, mit `flaeche-1` auch `flaeche` (siehe dort) |
 
 ```json
 {"type": "LAGE", "reply_to": "k-41", "zeit": 1793452991.2, "ms": 2.1,
@@ -1349,3 +1350,52 @@ Die vorhandenen `VIEW_CMD`-Befehle bekommen optionale Felder:
   Einheit rät der Kernel aus dem Namen (Winkel °, Anzahl ohne, sonst mm). Ohne geänderte Teile kommt nichts.
 - Der Agent zeigt so auch selbst kurz ein Maß („2 cm vom Rand“): `annotate` mit `dauer_s` über
   `KernelService.view_command`.
+
+### Fläche (`flaeche-1`, V2-7)
+
+Der Agent stellt die Oberfläche auf Zuruf: Ergebnisse als Kacheln nebeneinander, Modus, Fenster am Rand (PLAN-V2.md,
+Paket V2-7; Oberfläche in OBERFLAECHE.md, Abschnitte 4 und 5). Die App setzt alles über `OberflaechenActions` um, wie
+Menü und Tasten. Eine App ohne `flaeche-1` bekommt den Befehl nicht: Der Kernel antwortet dem Werkzeug selbst mit einem
+Fehler (`FLAECHE_FEHLT`, sie muss aktualisiert werden).
+
+Kacheln (`protocol.py`, `KACHELN`): `modell`, `zeichnung`, `bauplan`, `stueckliste`, `zuschnitt`, `druck`, `animation`,
+`ansicht` (zweite Ansicht), `material`, `simulation`, `versionen`, `details`, `render`. Höchstens vier zugleich,
+nummeriert 1 bis 4 in dieser Reihenfolge.
+
+| cmd | args |
+|---|---|
+| `flaeche` | alles optional: `rand` (`links` \| `rechts` \| `aus`), `ordnen` (Liste von Kacheln: genau diese, Reihenfolge = Nummern), `zeigen` (Liste: anfügen oder nach vorn holen, die letzte wird aktiv), `schliessen` (Liste von Kacheln oder Nummern, oder `alle`), `gross` (Kachel, Nummer oder `aus`), `modus` (`fokus` \| `werkstatt`), `zeitleiste` (bool), `ansicht` (Standardansicht wie in `view`: Blickrichtung der Kachel `ansicht`), `blatt` (Nummer ab 1, Kennung oder Titel: Blatt der Kachel `zeichnung`) |
+| `projekt_name` | `name`: siehe unten |
+
+- Reihenfolge der Wirkung wie in der Tabelle, `modus` nach den Kacheln. Unbekannte Werte: `ACK` mit `ok: false`, und die
+  App ändert nichts (sie prüft alle Angaben, bevor sie etwas umsetzt).
+- Kommt im Fokus eine andere Kachel als `modell` dazu, wechselt die App in die Werkstatt; am Rand bleibt das Fenster
+  schmal, die Kacheln stehen dann übereinander. `zeigen` schiebt die Startübersicht weg. Eine fünfte Kachel verdrängt
+  die älteste außer dem Modell. `animation` bringt `modell` mit, denn die Bewegung sieht man dort.
+- `blatt` öffnet die Kachel `zeichnung`, `ansicht` die Kachel `ansicht`, wenn sie zu ist. Beides gilt nur, wenn es so ein
+  Blatt bzw. so eine Ansicht gibt.
+- `zeitleiste` gilt für den Fokus: `true` zeigt die Zeitleiste über dem Viewer, bis sie mit `false` geht. Beim Abspielen
+  steht sie dort von selbst. In der Werkstatt ist sie die Kachel `animation`.
+- `ACK.message`: knapp der neue Stand, etwa „Werkstatt: 1 Modell, 2 Druck“; verdrängte Kacheln stehen dahinter.
+
+`LAGE.flaeche` (immer vollständig):
+
+```json
+"flaeche": {"modus": "werkstatt", "kacheln": ["modell", "zeichnung", "druck"], "gross": null, "aktiv": "druck",
+            "rand": null, "zeitleiste": false, "ansicht": "top",
+            "blatt": {"id": "b-2", "titel": "Rohr", "nr": 2, "von": 5}}
+```
+
+- `kacheln` in der Reihenfolge der Nummern, auch die, die der Fokus gerade nicht zeigt. `gross`, `aktiv`, `rand`:
+  Text oder null. `ansicht`: Blickrichtung der zweiten Ansicht wie in `view`. `blatt`: nur mit offener Kachel `zeichnung`
+  und gewähltem Blatt, sonst null.
+
+**Projekt benennen (`projekt_name`):** `args`: `name` (Text). Die App macht dasselbe wie Kevin mit einem Doppelklick auf
+den Titel: Ein Entwurf zieht nach `~/Documents/Kev CAD/<name>` (`KEVCAD_PROJECTS_DIR`), ein benanntes Projekt wird im
+selben Ordner umbenannt, danach öffnet sie es am neuen Ort (`PROJECT_OPEN`). `ACK` kommt, sobald die Datei verschoben ist,
+`message` ist der neue Pfad; `ok: false` mit Grund (Lauf läuft, Name vergeben, Demomodus). Der Kernel wartet danach auf
+das `PROJECT` mit dem neuen Pfad.
+
+**Umbenennen durch Kevin:** Der Kernel merkt sich je Claude-Sitzung den Projektpfad, den sie zuletzt in einem Ergebnis
+gesehen hat. Hat sich der Pfad geändert, ohne dass diese Sitzung es ausgelöst hat, beginnt ihr nächstes Ergebnis mit einem
+Hinweis auf Namen und neuen Pfad von model.py (`mcp_tools/tracking.py`).

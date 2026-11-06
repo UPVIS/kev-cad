@@ -19,7 +19,7 @@ struct ModellUntermenues: View {
 /// Menüs der V2-Oberfläche (OBERFLAECHE.md, Abschnitt 7):
 /// - Darstellung (oben): Fokus ⌘1, Werkstatt ⌘2, schmal an den rechten bzw. linken Rand ⌃⌥→ / ⌃⌥←, letzte Projekte
 ///   ⇧⌘O.
-/// - Kacheln: Kachel zeigen (⌃⌘1 bis ⌃⌘8), Kachel 1 bis 4 groß (⌥⌘1 bis ⌥⌘4), alle einordnen, aktive schließen ⇧⌘W.
+/// - Kacheln: Kachel zeigen (⌃⌘1 bis ⌃⌘0), Kachel 1 bis 4 groß (⌥⌘1 bis ⌥⌘4), alle einordnen, aktive schließen ⇧⌘W.
 /// - Agent: Sprechen V (nicht in Textfeldern, nicht im Zeichnungsblatt; dort ist V das Auswahlwerkzeug).
 /// Alles ruft `OberflaechenActions`, wie später Sprache und Agent.
 struct OberflaechenCommands: Commands {
@@ -32,10 +32,12 @@ struct OberflaechenCommands: Commands {
     /// Hauptfenster vorne
     private var vorne: Bool { window != nil }
     /// Im Zeichnungsblatt gehört V dem Auswahlwerkzeug.
-    private var imBlatt: Bool { window?.bereich == .dokumente }
+    private var imBlatt: Bool { window?.bereich == .dokumente && oberflaeche.aktiv != .bauplan }
 
+    /// Die ersten zehn haben ⌃⌘1 bis ⌃⌘0.
     static let kachelReihe: [KachelArt] = [
-        .stueckliste, .zuschnitt, .zeichnung, .ansicht, .material, .simulation, .versionen, .details,
+        .stueckliste, .zuschnitt, .zeichnung, .ansicht, .material, .simulation, .versionen, .details, .druck, .animation,
+        .bauplan, .render,
     ]
 
     var body: some Commands {
@@ -68,11 +70,18 @@ struct OberflaechenCommands: Commands {
         CommandMenu("Kacheln") {
             ForEach(Array(Self.kachelReihe.enumerated()), id: \.element) { i, art in
                 Button(art.titel) { a?.zeigeKachel(art) }
-                    .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control])
+                    .keyboardShortcut(i < 10 ? KeyboardShortcut(KeyEquivalent(Character(String((i + 1) % 10))),
+                                                                modifiers: [.command, .control]) : nil)
                     .disabled(!vorne || model.project == nil)
             }
             Button("Modell") { a?.zeigeKachel(.modell) }
                 .disabled(!vorne)
+            Divider()
+            Button(oberflaeche.zeitleiste ? "Zeitleiste im Fokus ausblenden" : "Zeitleiste im Fokus zeigen") {
+                a?.oberflaeche(.zeitleiste(!oberflaeche.zeitleiste))
+            }
+            .keyboardShortcut("t", modifiers: [.command, .control])
+            .disabled(!vorne || !model.animation.hasAnimation)
             Divider()
             ForEach(1...4, id: \.self) { n in
                 let art = n <= oberflaeche.kacheln.count ? oberflaeche.kacheln[n - 1] : nil

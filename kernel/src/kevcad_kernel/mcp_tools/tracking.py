@@ -87,6 +87,18 @@ class SessionBoard:
         self._running: dict[int, tuple[str, str]] = {}  # Token → (Sitzung, Tätigkeit)
         self._next = 0
         self._pushed: list[dict[str, Any]] | None = None
+        self._projekte: dict[str, str] = {}  # Sitzung ("" ohne Kennung) → Projektpfad aus ihrem letzten Ergebnis
+
+    def projekt_gesehen(self, session: str | None, pfad: str | None, *, selbst: bool = False) -> bool:
+        """Nach jedem Werkzeug: merkt den Projektpfad für diese Sitzung. True, wenn er sich geändert hat, ohne dass die
+        Sitzung es ausgelöst hat (``selbst``): Kevin hat umbenannt oder ein anderes Projekt geöffnet. Der erste Blick
+        einer Sitzung zählt nicht als Änderung."""
+        if not pfad:
+            return False
+        with self._lock:
+            alt = self._projekte.get(session or "")
+            self._projekte[session or ""] = pfad
+        return alt is not None and alt != pfad and not selbst
 
     def seen(self, session: str) -> None:
         with self._lock:

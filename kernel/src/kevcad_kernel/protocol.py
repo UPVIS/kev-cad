@@ -2550,9 +2550,10 @@ FAEHIGKEIT_IN_ARBEIT = "in-arbeit-1"
 FAEHIGKEIT_SPUR = "spur-1"
 FAEHIGKEIT_LAGE = "lage-1"
 FAEHIGKEIT_LIVE_MASSE = "live-masse-1"
+FAEHIGKEIT_FLAECHE = "flaeche-1"  # V2-7: Kacheln, Modus, Rand (PROTOCOL.md, „Fläche“)
 #: was der Kernel kann (HELLO.faehigkeiten)
 KERNEL_FAEHIGKEITEN: tuple[str, ...] = (FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_SPUR, FAEHIGKEIT_LAGE,
-                                        FAEHIGKEIT_LIVE_MASSE)
+                                        FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FLAECHE)
 #: neue Nachrichten Kernel → App und die Fähigkeit, die eine App dafür gemeldet haben muss
 LIVE_NACHRICHTEN: dict[str, str] = {
     "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
@@ -2581,6 +2582,14 @@ LAGE_WARTEN_S = 0.2  # so lange wartet der Kernel auf LAGE, dann nimmt er, was e
 LAGE_KAMERA_FELDER: tuple[str, ...] = ("position", "ziel", "richtung", "oben", "abstand", "projektion", "fov",
                                        "ortho_hoehe", "ansicht", "durch")
 ANNOTATE_ARTEN: tuple[str, ...] = ("mass", "param", "hinweis")
+#: V2-7: Kacheln der Werkstatt (App: ``KachelArt``), Befehle mit ``flaeche-1``
+KACHELN: tuple[str, ...] = ("modell", "zeichnung", "bauplan", "stueckliste", "zuschnitt", "druck", "animation",
+                            "ansicht", "material", "simulation", "versionen", "details", "render")
+MODI: tuple[str, ...] = ("fokus", "werkstatt")
+RAENDER: tuple[str, ...] = ("links", "rechts")
+FLAECHE_BEFEHLE: tuple[str, ...] = ("flaeche", "projekt_name")
+FLAECHE_FEHLT = ("Diese App kennt die Kacheln noch nicht (ältere Fassung ohne flaeche-1). Kevin muss Kev CAD "
+                 "aktualisieren; bis dahin bleibt die Oberfläche, wie sie ist.")
 _INHALT_OHNE = frozenset(("type", "seq", "run", "faces", "edges", "inhalt"))
 _HEX = frozenset("0123456789abcdef")
 
@@ -2772,6 +2781,51 @@ def check_spur_schritt(s: Any) -> list[str]:
     return out
 
 
+def _kachel_oder_nummer(wert: Any) -> bool:
+    return wert in KACHELN or (isinstance(wert, int) and not isinstance(wert, bool) and 1 <= wert <= 4)
+
+
+def _flaeche_args_fehler(a: dict[str, Any]) -> list[str]:
+    """Probleme der Felder von ``VIEW_CMD flaeche`` (PROTOCOL.md, „Fläche“)."""
+    out: list[str] = []
+    for feld in ("ordnen", "zeigen"):
+        if feld in a and (not isinstance(a[feld], list) or any(k not in KACHELN for k in a[feld])):
+            out.append(f"VIEW_CMD flaeche: {feld} ist keine Liste von Kacheln")
+    z = a.get("schliessen")
+    if z is not None and z != "alle" and (not isinstance(z, list) or not all(_kachel_oder_nummer(k) for k in z)):
+        out.append("VIEW_CMD flaeche: schliessen ist weder alle noch eine Liste von Kacheln oder Nummern")
+    g = a.get("gross")
+    if g is not None and g != "aus" and not _kachel_oder_nummer(g):
+        out.append(f"VIEW_CMD flaeche: gross {g!r} unbekannt")
+    if "modus" in a and a["modus"] not in MODI:
+        out.append(f"VIEW_CMD flaeche: modus {a['modus']!r} unbekannt")
+    if "rand" in a and a["rand"] not in (*RAENDER, "aus"):
+        out.append(f"VIEW_CMD flaeche: rand {a['rand']!r} unbekannt")
+    if "zeitleiste" in a and not isinstance(a["zeitleiste"], bool):
+        out.append("VIEW_CMD flaeche: zeitleiste kein Wahrheitswert")
+    return out
+
+
+def _lage_flaeche_fehler(f: Any) -> list[str]:
+    """Probleme von ``LAGE.flaeche`` (fehlt das Feld, ist es eine App ohne ``flaeche-1``)."""
+    if not isinstance(f, dict):
+        return ["LAGE: flaeche kein Objekt"]
+    out: list[str] = []
+    if f.get("modus") not in MODI:
+        out.append(f"LAGE: flaeche.modus {f.get('modus')!r} unbekannt")
+    k = f.get("kacheln")
+    if not isinstance(k, list) or len(k) > 4 or any(x not in KACHELN for x in k):
+        out.append("LAGE: flaeche.kacheln ist keine Liste von höchstens vier Kacheln")
+    for feld in ("gross", "aktiv"):
+        if f.get(feld) is not None and f[feld] not in KACHELN:
+            out.append(f"LAGE: flaeche.{feld} {f[feld]!r} unbekannt")
+    if f.get("rand") is not None and f["rand"] not in RAENDER:
+        out.append(f"LAGE: flaeche.rand {f['rand']!r} unbekannt")
+    if not isinstance(f.get("zeitleiste"), bool):
+        out.append("LAGE: flaeche.zeitleiste kein Wahrheitswert")
+    return out
+
+
 def check_live_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
     """Probleme einer Nachricht oder eines neuen Felds aus V2-5 (leer = gut). Andere Nachrichten: leer."""
     art = header.get("type")
@@ -2861,6 +2915,8 @@ def check_live_message(header: dict[str, Any], payload: bytes = b"") -> list[str
         if m is not None and (not isinstance(m, dict) or not isinstance(m.get("teil"), str)
                               or (m.get("punkt") is not None and not _punkt(m["punkt"]))):
             out.append("LAGE: maus braucht teil und punkt (oder null)")
+        if "flaeche" in header:
+            out.extend(_lage_flaeche_fehler(header["flaeche"]))
     elif art == "VIEW_CMD" and header.get("cmd") in ("annotate", "highlight"):
         a = header.get("args") or {}
         if "dauer_s" in a and (not _zahl(a["dauer_s"]) or a["dauer_s"] <= 0):
@@ -2869,6 +2925,11 @@ def check_live_message(header: dict[str, Any], payload: bytes = b"") -> list[str
             out.append(f"VIEW_CMD annotate: art {a['art']!r} unbekannt")
         if header.get("cmd") == "highlight" and "id" in a and not isinstance(a["id"], str):
             out.append("VIEW_CMD highlight: id kein Text")
+    elif art == "VIEW_CMD" and header.get("cmd") == "flaeche":
+        out.extend(_flaeche_args_fehler(header.get("args") or {}))
+    elif art == "VIEW_CMD" and header.get("cmd") == "projekt_name":
+        if not isinstance((header.get("args") or {}).get("name"), str):
+            out.append("VIEW_CMD projekt_name: name fehlt")
     elif art == "VERSION_BILD_REQ":
         koepfe = header.get("teile") or []
         for k in koepfe:
@@ -2942,7 +3003,10 @@ def live_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
             "maus": {"teil": "Halter/Lasche", "ref": "Halter/Lasche#f0", "punkt": [12.0, 4.0, 0.0],
                      "normale": [0.0, 0.0, 1.0], "bild": [640, 380]},
             "darstellung": "shaded_edges", "schnitt": None, "explosion": 0.0,
-            "animation": {"name": "Fahrt", "zeit": 1.25, "spielt": False}}
+            "animation": {"name": "Fahrt", "zeit": 1.25, "spielt": False},
+            "flaeche": {"modus": "werkstatt", "kacheln": ["modell", "zeichnung", "druck"], "gross": None,
+                        "aktiv": "druck", "rand": None, "zeitleiste": False, "ansicht": "top",
+                        "blatt": {"id": "b-2", "titel": "Rohr", "nr": 2, "von": 5}}}
     lage_parallel = {"type": "LAGE", "seq": 10, "reply_to": "k-42", "zeit": 1793452992.0, "ms": 1.4,
                      "kamera": {"position": [20.0, 10.0, 1000.0], "ziel": [20.0, 10.0, 0.0],
                                 "richtung": [0.0, 0.0, -1.0], "oben": [0.0, 1.0, 0.0], "abstand": 1000.0,
@@ -2951,7 +3015,9 @@ def live_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
                      "viewport": {"breite": 900, "hoehe": 600}, "sichtbar": ["Halter/Lasche"], "verborgen": [],
                      "isoliert": ["Halter/Lasche"], "auswahl": {"run": None, "refs": []}, "maus": None,
                      "darstellung": "wireframe", "schnitt": {"axis": "z", "offset": 5.0}, "explosion": 0.25,
-                     "animation": None}
+                     "animation": None,
+                     "flaeche": {"modus": "fokus", "kacheln": ["modell"], "gross": None, "aktiv": None,
+                                 "rand": "rechts", "zeitleiste": True, "ansicht": "top", "blatt": None}}
     return [
         ("live_hello", {"type": "HELLO", "seq": 1, "protocol": PROTOCOL_VERSION, "kernel_version": "0.1.0",
                         "build123d": "0.13.0", "mcp_port": 47823, "faehigkeiten": faehig}, b"", "kernel"),
@@ -2988,4 +3054,10 @@ def live_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
         ("live_view_highlight_dauer", {"type": "VIEW_CMD", "seq": 25, "id": "k-44", "cmd": "highlight",
                                        "args": {"refs": ["Halter/Lasche"], "color": None, "label": None,
                                                 "clear": False, "id": "p-3", "dauer_s": 4.0}}, b"", "kernel"),
+        ("live_view_flaeche", {"type": "VIEW_CMD", "seq": 26, "id": "k-45", "cmd": "flaeche",
+                               "args": {"rand": "aus", "ordnen": ["modell", "zeichnung"], "zeigen": ["druck"],
+                                        "schliessen": [2], "gross": "druck", "modus": "werkstatt",
+                                        "zeitleiste": False, "ansicht": "front", "blatt": 2}}, b"", "kernel"),
+        ("live_view_projekt_name", {"type": "VIEW_CMD", "seq": 27, "id": "k-46", "cmd": "projekt_name",
+                                    "args": {"name": "Kugelschieber"}}, b"", "kernel"),
     ]

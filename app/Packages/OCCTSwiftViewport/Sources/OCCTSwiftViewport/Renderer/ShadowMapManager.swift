@@ -5,7 +5,7 @@
 
 import Metal
 
-@MainActor
+// Kev CAD: nicht an den Hauptfaden gebunden, der OffscreenRenderer rechnet die zweite Ansicht daneben.
 final class ShadowMapManager {
 
     private let device: MTLDevice

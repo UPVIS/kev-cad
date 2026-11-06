@@ -122,8 +122,10 @@ public enum OffscreenRenderError: Error, Sendable {
 // MARK: - OffscreenRenderer
 
 /// Headless Metal renderer that renders [ViewportBody] to CGImage without MTKView.
-@MainActor
-public final class OffscreenRenderer: Sendable {
+///
+/// Kev CAD: nicht an den Hauptfaden gebunden (die zweite Ansicht rechnet daneben). Eine Instanz gehört immer genau einem
+/// Faden bzw. einer Warteschlange; sie selbst ist nicht threadsicher.
+public final class OffscreenRenderer: @unchecked Sendable {
 
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue

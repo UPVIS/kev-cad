@@ -3,19 +3,26 @@ import SwiftUI
 
 /// Was im Fokus über dem Viewer steht (V5, Zustände a und c im Entwurf): links die Gliederung, in der Mitte die
 /// Startzeile des leeren Projekts, unten Kevins Live-Text, rechts unten die Agentenspur. Keine Tafeln, nur Text im
-/// Bild. Im schmalen Fenster stehen Agent und Sprechknopf unten untereinander.
+/// Bild. Im schmalen Fenster stehen Agent und Sprechknopf unten untereinander. Die Zeitleiste kommt nur auf Zuruf oder
+/// solange eine Animation läuft (V2-7); sie liegt über dem Viewer, damit dessen Größe gleich bleibt.
 struct FokusEbenen: View {
     @ObservedObject var model: AppModel
     @ObservedObject var oberflaeche: OberflaechenStore
     @ObservedObject var spur: AgentenSpur
+    @ObservedObject var animation: AnimationModel
     /// Fläche des Viewers im Fenster
     let viewer: CGRect
     let schmal: Bool
 
-    /// Platz unten für Hinweisleiste und Zeitleiste des Viewers.
-    private var untenFrei: CGFloat {
-        (model.viewer.hinweisleiste ? 38 : 0) + (model.animation.hasAnimation ? 40 : 0) + GA.l
-    }
+    private var zeitleisteAn: Bool { animation.hasAnimation && (oberflaeche.zeitleiste || animation.playing) }
+
+    /// Platz unten für die Hinweisleiste des Viewers
+    private var hinweisFrei: CGFloat { model.viewer.hinweisleiste ? 38 : 0 }
+
+    private var zeitleisteHoehe: CGFloat { KachelAnordnung.zeitleisteHoehe(breite: viewer.width) - GA.kachelKopf }
+
+    /// Platz unten für Hinweisleiste und Zeitleiste.
+    private var untenFrei: CGFloat { hinweisFrei + (zeitleisteAn ? zeitleisteHoehe + GA.s : 0) + GA.l }
 
     private var leer: Bool {
         if model.isRunning || !model.parts.isEmpty { return false }
@@ -47,7 +54,18 @@ struct FokusEbenen: View {
             }
             unten
                 .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
+            if zeitleisteAn {
+                AnimationTimeline(model: model, animation: animation)
+                    .padding(EdgeInsets(top: GA.s, leading: GA.m, bottom: GA.s, trailing: GA.m))
+                    .background(RoundedRectangle(cornerRadius: GR.insel, style: .continuous).fill(GF.insel))
+                    .overlay(RoundedRectangle(cornerRadius: GR.insel, style: .continuous).strokeBorder(GF.linie, lineWidth: 1))
+                    .padding(.horizontal, GA.m)
+                    .padding(.bottom, hinweisFrei + GA.s)
+                    .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
+                    .transition(.opacity)
+            }
         }
+        .animation(GB.standard, value: zeitleisteAn)
         .frame(width: viewer.width, height: viewer.height, alignment: .topLeading)
         .offset(x: viewer.minX, y: viewer.minY)
     }

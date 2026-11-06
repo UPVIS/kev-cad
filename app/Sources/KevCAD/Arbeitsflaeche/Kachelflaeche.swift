@@ -3,26 +3,16 @@ import KevCADCore
 import SwiftUI
 
 extension KachelArt {
-    var titel: String {
-        switch self {
-        case .modell: return "Modell"
-        case .zeichnung: return "Zeichnung"
-        case .stueckliste: return "Stückliste"
-        case .zuschnitt: return "Zuschnitt"
-        case .ansicht: return "Zweite Ansicht"
-        case .material: return "Material"
-        case .simulation: return "Simulation"
-        case .versionen: return "Versionen"
-        case .details: return "Details"
-        }
-    }
-
     var symbol: String {
         switch self {
         case .modell: return "cube"
         case .zeichnung: return "doc.text"
+        case .bauplan: return "list.number"
         case .stueckliste: return "list.bullet.rectangle"
         case .zuschnitt: return "ruler"
+        case .druck: return "printer"
+        case .animation: return "film"
+        case .render: return "camera.aperture"
         case .ansicht: return "square.split.2x1"
         case .material: return "shippingbox"
         case .simulation: return "gauge.with.needle"
@@ -34,36 +24,38 @@ extension KachelArt {
     /// Bereich der bisherigen Oberfläche, der zu dieser Kachel gehört (für Menübefehle und Selbsttests).
     var bereich: ProjektBereich {
         switch self {
-        case .zeichnung: return .dokumente
+        case .zeichnung, .bauplan: return .dokumente
         case .material: return .material
         case .simulation: return .simulation
         default: return .modell
-        }
-    }
-
-    /// Tastenkürzel ⌃⌘ plus Ziffer im Menü „Kacheln“.
-    var kuerzel: KeyEquivalent? {
-        switch self {
-        case .zeichnung: return "d"
-        case .stueckliste: return "b"
-        case .zuschnitt: return "u"
-        case .ansicht: return "a"
-        case .material: return "m"
-        case .simulation: return "i"
-        case .versionen: return "v"
-        case .details: return "e"
-        case .modell: return nil
         }
     }
 }
 
 /// Anordnung der Kacheln wie in einem Fenstermanager: eine füllt alles, zwei nebeneinander (im Hochformat
 /// übereinander), drei mit der ersten groß links und zwei rechts übereinander, vier im Raster. Eine große Kachel füllt
-/// die Fläche allein.
+/// die Fläche allein. Die Animation ist eine Zeitleiste: ein Streifen unten über die ganze Breite, darüber der Rest; groß
+/// bleibt sie mit dem Modell zusammen, weil man die Bewegung dort sieht.
 enum KachelAnordnung {
+    /// Höhe des Streifens: Unter dieser Breite steht die Zeitleiste zweizeilig.
+    static let zeitleisteEinzeiligAb: CGFloat = 760
+
+    static func zeitleisteHoehe(breite: CGFloat) -> CGFloat {
+        GA.kachelKopf + (breite >= zeitleisteEinzeiligAb ? 60 : 100)
+    }
+
     static func rahmen(_ kacheln: [KachelArt], gross: KachelArt?, in f: CGRect, abstand a: CGFloat = GA.rand)
         -> [KachelArt: CGRect]
     {
+        if kacheln.contains(.animation), gross == nil || gross == .animation || gross == .modell {
+            let rest = kacheln.filter { $0 != .animation }
+            if rest.isEmpty { return [.animation: f] }
+            let h = zeitleisteHoehe(breite: f.width)
+            let oben = CGRect(x: f.minX, y: f.minY, width: f.width, height: max(1, f.height - h - a))
+            var r = rahmen(gross == nil ? rest : rest.filter { $0 == .modell }, gross: nil, in: oben, abstand: a)
+            r[.animation] = CGRect(x: f.minX, y: f.maxY - h, width: f.width, height: h)
+            return r
+        }
         if let g = gross, kacheln.contains(g) { return [g: f] }
         var r: [KachelArt: CGRect] = [:]
         let quer = f.width >= f.height * 1.1
@@ -187,6 +179,9 @@ private struct KachelKopfZusatz: View {
                 return "Blatt \(i + 1) von \(u.blaetter.count)"
             }
             return KevFormat.count(u.blaetter.count, one: "Blatt", many: "Blätter")
+        case .bauplan:
+            guard let n = model.dokumente.uebersicht?.bauplan?.schritte, n > 0 else { return nil }
+            return KevFormat.count(n, one: "Schritt", many: "Schritte")
         case .stueckliste:
             guard let bom = model.bom else { return nil }
             return KevFormat.count(bom.totals.positionen, one: "Position", many: "Positionen")
@@ -198,12 +193,16 @@ private struct KachelKopfZusatz: View {
     @ViewBuilder
     private func zusatz(_ art: KachelArt) -> some View {
         if art == .zeichnung, let u = model.dokumente.uebersicht, !u.blaetter.isEmpty {
+            if u.blaetter.count > 1 {
+                BlattSchritt(symbol: "chevron.left", hilfe: "Voriges Blatt") { blattWechseln(u, um: -1) }
+                BlattSchritt(symbol: "chevron.right", hilfe: "Nächstes Blatt") { blattWechseln(u, um: 1) }
+            }
             Menu {
                 ForEach(u.blaetter) { b in
                     Button(b.titel) { dokumente.waehle(.blatt(b.id)) }
                 }
                 Divider()
-                Button("Bauplan") { dokumente.waehle(.bauplan) }
+                Button("Bauplan") { model.oberflaechenActions?.zeigeKachel(.bauplan) }
                 Button("Berichte") { dokumente.waehle(.berichte) }
             } label: {
                 Image(systemName: "chevron.down")
@@ -218,6 +217,32 @@ private struct KachelKopfZusatz: View {
             .fixedSize()
             .help("Blatt wählen")
         }
+    }
+
+    private func blattWechseln(_ u: DocsUebersicht, um schritt: Int) {
+        let i = dokumente.blattID.flatMap { id in u.blaetter.firstIndex { $0.id == id } } ?? -schritt
+        let neu = (i + schritt + u.blaetter.count) % u.blaetter.count
+        dokumente.waehle(.blatt(u.blaetter[neu].id))
+    }
+}
+
+/// Voriges oder nächstes Blatt im Kopf der Kachel.
+private struct BlattSchritt: View {
+    let symbol: String
+    let hilfe: String
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(GF.asche)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(hilfe)
+        .accessibilityLabel(hilfe)
     }
 }
 
@@ -256,6 +281,15 @@ private struct KachelInhalt: View, Equatable {
                         .frame(width: 280)
                 }
             }
+        case .bauplan:
+            HStack(spacing: 0) {
+                BauplanBereich(model: model)
+                if breit {
+                    Divider()
+                    BauplanInspektor(model: model)
+                        .frame(width: 280)
+                }
+            }
         case .stueckliste:
             MaterialDatenKachel(model: model) { daten in
                 if breit {
@@ -270,8 +304,17 @@ private struct KachelInhalt: View, Equatable {
                 MaterialZuschnittAnsicht(model: model, material: state.materialZustand, daten: daten,
                                          navigation: navigation)
             }
+        case .druck:
+            DruckAnsicht(model: model, eingebettet: true)
+        case .animation:
+            AnimationTimeline(model: model, animation: model.animation)
+                .padding(EdgeInsets(top: 4, leading: GA.m, bottom: GA.s, trailing: GA.m))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        case .render:
+            RenderDialog(model: model, store: model.render)
         case .ansicht:
-            ZweiteAnsichtKachel(model: model)
+            ZweiteAnsichtKachel(actions: model.oberflaechenActions, oberflaeche: model.oberflaeche,
+                                store: model.zweiteAnsicht)
         case .material:
             HStack(spacing: 0) {
                 if breit {
@@ -341,54 +384,46 @@ private struct MaterialDatenKachel<Inhalt: View>: View {
     }
 }
 
-/// Kachel „zweite Ansicht“: eine Standardansicht des Modells als Bild, nach jedem Lauf neu gerechnet. Platzhalter,
-/// bis V2-4 eine zweite, lebende Ansicht liefert.
+/// Kachel „zweite Ansicht“: eine Standardansicht des Modells als Bild. Der App-Kern rechnet es im Hintergrund, nach jedem
+/// Lauf und jedem Kamerabefehl des Agenten; der Hauptfaden wartet nie darauf.
 private struct ZweiteAnsichtKachel: View {
     @EnvironmentObject private var session: AppSession
-    @ObservedObject var model: AppModel
-    @AppStorage("kachel.ansicht") private var ansicht = StandardViewName.top.rawValue
-    @State private var bild: CGImage?
-    @State private var groesse: CGSize = .zero
+    let actions: OberflaechenActions?
+    @ObservedObject var oberflaeche: OberflaechenStore
+    @ObservedObject var store: ZweiteAnsichtStore
 
-    private static let wahl: [(StandardViewName, String)] = [
-        (.top, "Oben"), (.front, "Vorn"), (.right, "Rechts"), (.left, "Links"), (.back, "Hinten"), (.iso, "Iso"),
+    private static let wahl: [(String, String)] = [
+        ("top", "Oben"), ("front", "Vorn"), ("right", "Rechts"), ("left", "Links"), ("back", "Hinten"), ("iso", "Iso"),
     ]
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topTrailing) {
-                if let bild {
+                if let bild = store.bild {
                     Image(decorative: bild, scale: 2)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
-                    Text(model.parts.isEmpty ? "Noch keine Teile" : "Ansicht wird gerechnet …")
+                    Text(store.rechnet ? "Ansicht wird gerechnet …" : "Noch keine Teile")
                         .font(GS.text)
                         .foregroundStyle(GF.rauch)
                         .frame(width: geo.size.width, height: geo.size.height)
                 }
                 ModusUmschalter(
-                    optionen: Self.wahl.map { ModusUmschalter<String>.Option(wert: $0.0.rawValue, titel: $0.1) }, auswahl: ansicht,
-                    beschriftung: "Blickrichtung"
-                ) { ansicht = $0 }
+                    optionen: Self.wahl.map { ModusUmschalter<String>.Option(wert: $0.0, titel: $0.1) },
+                    auswahl: oberflaeche.zweiteAnsicht, beschriftung: "Blickrichtung"
+                ) { actions?.oberflaeche(.zweiteAnsicht($0)) }
                 .padding(10)
             }
-            .onAppear { groesse = geo.size; rechnen() }
-            .onChange(of: geo.size) { _, s in
-                groesse = s
-                rechnen()
-            }
+            .onAppear { melden(geo.size) }
+            .onChange(of: geo.size) { _, s in melden(s) }
+            .onDisappear { session.controller?.zweiteAnsichtGroesse(nil) }
         }
-        .onChange(of: ansicht) { _, _ in rechnen() }
-        .onChange(of: model.run) { _, r in if case .finished = r { rechnen() } }
-        .onChange(of: model.parts.count) { _, _ in rechnen() }
     }
 
-    private func rechnen() {
-        guard let c = session.controller, groesse.width > 20, groesse.height > 20,
-              let v = StandardViewName(rawValue: ansicht)
-        else { return }
-        bild = c.zweiteAnsicht(v, breite: Int(groesse.width * 2), hoehe: Int(groesse.height * 2))
+    private func melden(_ s: CGSize) {
+        guard s.width > 20, s.height > 20 else { return }
+        session.controller?.zweiteAnsichtGroesse(CGSize(width: s.width * 2, height: s.height * 2))
     }
 }

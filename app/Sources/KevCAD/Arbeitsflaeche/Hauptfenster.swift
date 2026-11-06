@@ -93,7 +93,8 @@ struct Hauptfenster: View {
                 GraphitGrund()
                 if viewerAn { viewerFlaeche(g) }
                 if imFokus {
-                    FokusEbenen(model: model, oberflaeche: oberflaeche, spur: spur, viewer: g.viewer, schmal: g.schmal)
+                    FokusEbenen(model: model, oberflaeche: oberflaeche, spur: spur, animation: model.animation,
+                                viewer: g.viewer, schmal: g.schmal)
                         .transition(.opacity)
                 }
                 // Einmal geöffnet bleibt die Werkstatt eingehängt: Schwere Kacheln abzubauen und neu aufzubauen kostet
@@ -131,7 +132,6 @@ struct Hauptfenster: View {
         .focusedSceneObject(versionen)
         .focusedSceneObject(dokumente)
         .modifier(DruckerDialoge(model: model))  // Phase 8: „Drucken …“ und Drucker-Einstellungen
-        .modifier(RenderDialoge(model: model))  // Phase 7: „Rendern …“
         .modifier(BestandDialoge(model: model))  // Gebaut, Erfassen, Band nach einer Buchung
         .modifier(FreigabeDialogModifier(model: model, state: state))  // Vorschläge freigeben
         .modifier(ReferenzDialoge(model: model, state: state))  // Phase 4: Referenz hinzufügen, Vermessen
@@ -146,6 +146,10 @@ struct Hauptfenster: View {
             if m == .werkstatt { werkstattAn = true }
             bereichAngleichen(oberflaeche.aktiv)
         }
+        .onChange(of: oberflaeche.blatt) { _, id in  // der Agent wechselt das Blatt
+            if let id, dokumente.blattID != id { dokumente.waehle(.blatt(id)) }
+        }
+        .onChange(of: dokumente.auswahl) { _, a in dokumenteFolgen(a) }
         .onChange(of: oberflaeche.kacheln.contains(.simulation)) { _, an in
             model.simulationActions?.setSimulationAktiv(an)  // Kräfte und Lager per Klick im Viewer
         }
@@ -170,21 +174,18 @@ struct Hauptfenster: View {
 
     // MARK: Viewer
 
-    /// Der Viewer samt Bändern, Zeitleiste, Vergleich und Durchspielen. Er bleibt an derselben Stelle im Ansichtsbaum
-    /// und ändert nur seinen Rahmen, ohne Animation: Die Metal-Ansicht wird so nie neu angelegt.
+    /// Der Viewer samt Bändern, Vergleich und Durchspielen. Er bleibt an derselben Stelle im Ansichtsbaum und ändert nur
+    /// seinen Rahmen, ohne Animation: Die Metal-Ansicht wird so nie neu angelegt.
     private func viewerFlaeche(_ g: Arbeitsgeometrie) -> some View {
         let ecken = UnevenRoundedRectangle(
             cornerRadii: .init(topLeading: 0, bottomLeading: g.viewerEcke, bottomTrailing: g.viewerEcke, topTrailing: 0),
             style: .continuous)
-        return VStack(spacing: 0) {
-            ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false)
-                .overlay(alignment: .bottomLeading) {  // Versionen: laufender Vergleich
-                    VergleichKarte(model: model, store: model.versionen, zustand: versionen)
-                        .padding(14)
-                }
-                .overlay(alignment: .bottom) { DurchspielenLeiste(model: model) }  // Bauplan durchspielen
-            AnimationTimeline(model: model, animation: model.animation)  // nur mit Animation
-        }
+        return ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false)
+            .overlay(alignment: .bottomLeading) {  // Versionen: laufender Vergleich
+                VergleichKarte(model: model, store: model.versionen, zustand: versionen)
+                    .padding(14)
+            }
+            .overlay(alignment: .bottom) { DurchspielenLeiste(model: model) }  // Bauplan durchspielen
         .modifier(VersionenBlaetter(model: model, zustand: versionen))
         .onAppear {
             Startzeiten.marke("Viewer eingehängt")
@@ -292,6 +293,20 @@ struct Hauptfenster: View {
         let b: ProjektBereich = oberflaeche.modus == .fokus ? .modell : (a?.bereich ?? .modell)
         if state.bereich != b { state.bereich = b }
         if b == .modell { session.projectWindow?.makeFirstResponder(nil) }
+    }
+
+    /// Auswahl der Kachel Zeichnung: Der Bauplan hat seine eigene Kachel, die Zeichnung behält dann ihr Blatt. Das gewählte
+    /// Blatt steht im Zustand der Oberfläche, damit der Agent es im Lagebild sieht.
+    private func dokumenteFolgen(_ a: DokumentAuswahl?) {
+        switch a {
+        case .bauplan?:
+            model.oberflaechenActions?.zeigeKachel(.bauplan)
+            dokumente.auswahl = oberflaeche.blatt.map { .blatt($0) }
+        case .blatt(let id)?:
+            if oberflaeche.blatt != id { model.oberflaechenActions?.oberflaeche(.blatt(id)) }
+        default:
+            break
+        }
     }
 
     /// Sprünge in den Bereich „Material“ und zu den Berichten (Stückliste, Inspektor, Bauplan).
@@ -420,7 +435,7 @@ private struct KeineKachel: View {
                 .font(GS.karteTitel)
                 .foregroundStyle(GF.asche)
             HStack(spacing: 8) {
-                ForEach([KachelArt.modell, .zeichnung, .stueckliste, .zuschnitt], id: \.self) { a in
+                ForEach([KachelArt.modell, .zeichnung, .stueckliste, .druck], id: \.self) { a in
                     Button { model.oberflaechenActions?.zeigeKachel(a) } label: { Label(a.titel, systemImage: a.symbol) }
                         .buttonStyle(KevKnopfStil(form: .text))
                 }

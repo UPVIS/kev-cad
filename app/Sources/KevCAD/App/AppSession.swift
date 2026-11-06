@@ -94,6 +94,10 @@ final class AppSession: ObservableObject {
             controller.start()
         }
 
+        controller?.projektBenennen = { [weak self] name in
+            self?.projektUmziehen(name) ?? .failure(FlaecheFehler("Diese Sitzung ist beendet."))
+        }
+
         model.$project
             .dropFirst()
             .removeDuplicates { $0?.path == $1?.path }

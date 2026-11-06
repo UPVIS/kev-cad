@@ -308,6 +308,7 @@ extension AppController {
         felder["animation"] = model.animation.selected.flatMap { name in
             bewegt ? .object(["name": .string(name), "zeit": .number(model.animation.time), "spielt": .bool(model.animation.playing)]) : nil
         } ?? .null
+        felder["flaeche"] = lageFlaeche()  // V2-7
         if AppInfo.isTestVariant {  // Selbsttest (kernel/tools/live_selbsttest.py): was die Szene getan hat
             let z = scene.statistik
             felder["statistik"] = .object([
@@ -315,6 +316,8 @@ extension AppController {
                 "weitergaben": .number(Double(z.weitergaben)), "teile": .number(Double(scene.order.count)),
                 "spur": .number(Double(model.agentenspur.schritte.count)),
                 "marken": .number(Double(befundMarken().count)),
+                // V2-7: längste Pause des Hauptfadens seit dem letzten Lagebild, fertige Bilder der zweiten Ansicht
+                "pause_ms": .number(hauptfadenPause().rounded()), "zweite_ansicht": .number(Double(model.zweiteAnsicht.fertig)),
             ])
         }
         return felder

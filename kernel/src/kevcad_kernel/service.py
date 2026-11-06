@@ -85,6 +85,16 @@ class KernelService(Protocol):
     def project_open(self, path: str) -> dict[str, Any]:
         """Öffnet einen Projektordner (legt nichts an). {"ok", "path", "name", "model", "error"?}"""
 
+    def projekt_benennen(self, name: str, warten_s: float = 15.0) -> dict[str, Any]:
+        """Dem offenen Projekt einen Namen geben (V2-7, ``VIEW_CMD projekt_name``): Ein Entwurf zieht nach ~/Documents/Kev
+        CAD/<name>, ein benanntes Projekt wird umbenannt; die App macht das, damit es dem Doppelklick auf den Titel
+        gleicht. Wartet, bis das Projekt am neuen Ort offen ist. {"ok", "name", "path", "model"}"""
+        raise NotImplementedError
+
+    def projekt_kurz(self) -> dict[str, Any] | None:
+        """{"name", "path", "model"} des offenen Projekts oder None; billig, wartet auf nichts."""
+        raise NotImplementedError
+
     def project_new(self, path: str, template: str = "example") -> dict[str, Any]:
         """Legt einen Projektordner mit model.py an (template "empty" oder "example") und öffnet ihn."""
 
