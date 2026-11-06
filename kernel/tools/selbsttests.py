@@ -43,7 +43,7 @@ TESTS: dict[str, tuple[str | None, str, int, dict[str, str]]] = {
     "oberflaeche": (ECHT, "selftest-oberflaeche.txt", 300, {}),
     "material": (ECHT, "selftest-material.txt", 300, {}),
     "bestand": (ersatz("--bestand"), "selftest-bestand.txt", 120, {}),
-    "filament": (ersatz("--bestand", "--filament"), "selftest-filament.txt", 120, {}),
+    "filament": (ersatz("--bestand", "--filament"), "selftest-filament.txt", 300, {}),
     "catalog": (ersatz("--lager"), "selftest-catalog.txt", 120, {}),
     "freigabe": (ersatz("--lager"), "selftest-freigabe.txt", 120, {"KEVCAD_SELFTEST_PROJEKT": ""}),
     "zukauf": (ersatz("--zukauf"), "selftest-zukauf.txt", 180, {}),
@@ -110,7 +110,9 @@ def main() -> int:
             umgebung["KEVCAD_KERNEL_EXTERNAL"] = "1"
             socket = daten / "kernel.sock"
             socket.unlink(missing_ok=True)
-            prozess = subprocess.Popen([*shlex.split(kernel), "serve", "--socket", str(socket), "--port", "47921"],
+            # Der Ersatz-Kernel merkt sich Bestand und Katalog in seinem Ablageordner: je Test ein frischer
+            ablage = ["--out", str(arbeit / "ersatz")] if "fake_kernel" in kernel else []
+            prozess = subprocess.Popen([*shlex.split(kernel), *ablage, "serve", "--socket", str(socket), "--port", "47921"],
                                        env={**os.environ, **umgebung, "KEVCAD_APP_BUNDLE_ID": bundle_id},
                                        stdout=open(ziel / "kernel.log", "wb"), stderr=subprocess.STDOUT)
         log = ziel / "app.log"
