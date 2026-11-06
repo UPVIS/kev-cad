@@ -233,9 +233,9 @@ Beobachter der Hauptschleife, ohne `sample`).
 | Material mit Verdeckung | 357 | 1,18 ms | 5,54 ms | 17 ms | 56 ms |
 | Technisch | 361 | 1,17 ms | 5,72 ms | 20 ms | keins |
 
-Die 850 ms in „Technisch“ aus V2-4 kommen nicht wieder, auch nicht unter dreimal so hoher Last. Damals liefen Teile, Statik und
-Animation nach jedem Lauf noch ganz an die App; seit V2-5 kommt in Ruhe nichts mehr. Kein Stück enthält eine Kernel-Nachricht.
-Hauptfaden und GPU kommen zusammen auf gut 7 ms je Bild, die 35 bis 42 Bilder/s von V2-5b entstanden also nach dem Zeichnen.
+Die 850 ms in „Technisch“ aus V2-4 kamen nicht wieder, auch nicht unter deutlich höherer Last; was damals lief, lässt sich nicht
+mehr feststellen. Kein Stück enthält eine Kernel-Nachricht, alle sind Oberfläche und liegen unter 65 ms. Hauptfaden und GPU kommen
+zusammen auf gut 7 ms je Bild, die 35 bis 42 Bilder/s von V2-5b entstanden also nach dem Zeichnen.
 V2-3 hatte über den Viewer eine `.clipShape` gelegt: eine Formmaske, für die das Fenstersystem jedes Bild erst abseits
 zusammensetzen muss. Die Ecken setzt jetzt die Metal-Ebene selbst. Ob das die Ursache war, zeigt nur ein Monitor: Hinter dem
 Schreibtischbild und auf dem Mini kommt kein Bild an.
