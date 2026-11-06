@@ -308,6 +308,10 @@ darüber oder darunter, und die Reihenfolge hängt am Formschlüssel. `BERUEHR_G
 hinein. Am Kugelschieber ändert das gegenüber der Basis nur die Reihenfolge der Teile in einem Hinweis: Der Ball gehört jetzt
 in allen Läufen zur großen Gruppe, die Menge der 51 bzw. 54 Befunde bleibt gleich.
 
+Offen: Ein Durchlauf für den Kugelschieber meldete bei einer Last von rund 600 (fremde Prozesse) „nicht bestanden“. Der Lauf
+mit Parameter war sauber, welcher der drei anderen abwich und worin, ist nicht festgehalten (Ausgabe gefiltert). Derselbe Stand
+bestand davor und danach. Vermutung, nicht belegt: ein Zeitlimit (die Montage bricht nach 60 s ab).
+
 Die Statik gerechnet streut für sich: Die Knicklast kommt aus ARPACK mit einem Zufallsvektor (2525 und 2416 in zwei Läufen).
 Ein Treffer im Gedächtnis macht sie stabiler, nicht ungenauer.
 
