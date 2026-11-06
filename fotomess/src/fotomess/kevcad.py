@@ -222,11 +222,11 @@ def _kennzahlen(video, farbe, ablage, von=None, bis=None):
     schl = hashlib.sha1(repr((str(video), st.st_size, int(st.st_mtime), farbe)).encode()).hexdigest()[:12]
     datei = Path(ablage) / f"kennzahlen-{schl}.json"
     if datei.exists():
-        k = json.loads(datei.read_text())
+        k = json.loads(datei.read_text(encoding="utf-8"))
     else:
         k = V.bewerten(video, 6.0, 640, farbbereich=tuple(farbe) if farbe else None)
         datei.parent.mkdir(parents=True, exist_ok=True)
-        datei.write_text(json.dumps(k))
+        datei.write_text(json.dumps(k), encoding="utf-8")
     if von is not None or bis is not None:
         a, b = von if von is not None else -1e9, bis if bis is not None else 1e9
         k = [e for e in k if a <= e["t"] <= b]
@@ -579,7 +579,7 @@ def vermessen_kevcad(auftrag):
                        "kameras_bewegt": _kameras_bewegt(A)}
     ziel = ablage / "messung.json"
     tmp = ziel.with_suffix(".tmp")
-    tmp.write_text(json.dumps(out, indent=1, ensure_ascii=False, default=float))
+    tmp.write_text(json.dumps(out, indent=1, ensure_ascii=False, default=float), encoding="utf-8")
     tmp.replace(ziel)
     return ziel
 
@@ -627,7 +627,7 @@ def main(argv=None):
     os.dup2(2, 1)
     sys.stdout = sys.stderr
     try:
-        auftrag = json.loads(Path(args[0]).read_text())
+        auftrag = json.loads(Path(args[0]).read_text(encoding="utf-8"))
         ziel = vermessen_kevcad(auftrag)
     except Exception as exc:  # noqa: BLE001
         import traceback

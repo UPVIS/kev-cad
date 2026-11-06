@@ -259,7 +259,7 @@ def main() -> None:
     for name, header in (("bom_material", mat_bom), ("print_material", mat_vorschau)):
         (ZIEL / f"{name}.frame").write_bytes(encode_frame(header, b""))
     path = ZIEL / "fixtures.json"
-    data = json.loads(path.read_text()) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["bestand"] = erwartet
     data["material"] = material_erwartet(mat_bom, mat_vorschau)
     # Strang „Rest Druck“: Einkaufsliste je Material und Farbe
@@ -267,7 +267,7 @@ def main() -> None:
     for name, header in (("bom_material_farbe", f_bom), ("print_material_farbe", f_vorschau)):
         (ZIEL / f"{name}.frame").write_bytes(encode_frame(header, b""))
     data["material_farbe"] = material_erwartet(f_bom, f_vorschau, "material_farbe")
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     lines = [f"{len(files)} Bestand-Testdateien nach {ZIEL}",
              f"Rohr: {rohr['aus_bestand']}, kaufen {rohr['kaufen']}, neue Reste {rohr['neue_reste']}",
              f"Einkauf: {[(e['menge'], e['einheit'], e['benennung']) for e in bom['einkaufsliste']]}, "

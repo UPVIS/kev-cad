@@ -32,12 +32,12 @@ ERG = AUSGABE / "benchmark"
 
 def _speichere(name, d):
     ERG.mkdir(parents=True, exist_ok=True)
-    (ERG / f"{name}.json").write_text(json.dumps(d, indent=1, ensure_ascii=False, default=float))
+    (ERG / f"{name}.json").write_text(json.dumps(d, indent=1, ensure_ascii=False, default=float), encoding="utf-8")
 
 
 def _lade(name):
     p = ERG / f"{name}.json"
-    return json.loads(p.read_text()) if p.exists() else None
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 # ---------------------------------------------------------------------------------------------- Küche
@@ -187,7 +187,7 @@ def objectcapture(n):
     Kamerazentren)."""
     from ..kamera import log_so3
     pfad = Path.home() / "Library/Caches/de.upvis.kevcad.testdaten/rollwagen/poses.json"
-    P = json.loads(pfad.read_text())
+    P = json.loads(pfad.read_text(encoding="utf-8"))
     cams = P["cameras"]
     # unter ihren Bildern dieselbe Auswahl wie sonst (Schärfe, Objekt ganz im Bild, über den Weg verteilt)
     from . import rollwagen as RW
@@ -327,7 +327,7 @@ def tabelle_scarlett():
         p = WURZEL / "build" / "capture" / lauf / "bericht.json"
         if not p.exists():
             continue
-        b = json.loads(p.read_text())
+        b = json.loads(p.read_text(encoding="utf-8"))
         r, h, gk = b["rekonstruktion"], b["huellmass_mm"], b["grundkoerper_mm"]
         tz = r["times"]
         gesamt = tz["reconstruction_s"] + tz.get("extraction_s", 0) + b["nachbearbeitung_s"]

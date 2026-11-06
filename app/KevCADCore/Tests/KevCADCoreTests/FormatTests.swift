@@ -150,7 +150,6 @@ final class PartTreeTests: XCTestCase {
         XCTAssertEqual(
             PartTree.partIDs(fromRefs: ["A#f1", "A#e2", "B", "A"]), ["A", "B"])
         let tree = PartTree.build([part("A"), part("G/B"), part("G/C")])
-        XCTAssertEqual(PartTree.expandToParts(["G", "A", "G/B"], in: tree), ["G/B", "G/C", "A"])
         XCTAssertEqual(PartTree.allIDs(tree), ["A", "G", "G/B", "G/C"])
     }
 }

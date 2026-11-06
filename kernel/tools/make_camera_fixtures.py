@@ -45,7 +45,7 @@ def main() -> None:
     for name, header in frames.items():
         (ZIEL / f"{name}.frame").write_bytes(encode_frame(header))
     expected = {name: header for name, header in frames.items()}
-    (ZIEL / "camera_fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False))
+    (ZIEL / "camera_fixtures.json").write_text(json.dumps(expected, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(frames)} Kamera-Rahmen nach {ZIEL}")
 
 

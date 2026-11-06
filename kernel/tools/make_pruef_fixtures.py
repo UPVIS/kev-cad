@@ -60,7 +60,7 @@ def main() -> None:
         "statik": {"run": 3, "state": "teilweise", "statik_im_hintergrund": statik_offen,
                    "befunde": len(erg_statik["befunde"]), "letzter": "statik_dyn_kippen"},
     }
-    (ZIEL / "check.json").write_text(json.dumps(erwartet, indent=1, ensure_ascii=False))
+    (ZIEL / "check.json").write_text(json.dumps(erwartet, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"CHECK-Testdateien nach {ZIEL}: {header['zusammenfassung']}, {len(payload)} Byte Nutzlast")
 
 

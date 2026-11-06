@@ -22,8 +22,8 @@ Kev CAD spricht nur die erste Strecke. VoiceBridge reicht Kopf und Nutzlast unve
 - macOS begrenzt Socket-Pfade auf 104 Byte (`sun_path`). Der Pfad der installierten App hat 73 Byte; Namen von
   Testvarianten kurz halten.
 - Ordner 0700, Socket 0600. Kev CAD prüft die Gegenstelle mit `getpeereid` auf dieselbe UID und trennt sonst sofort.
-  Eine Prüfung der Codesignatur ist in Version 1 nicht vorgesehen (Kev CAD ist ad hoc signiert, VoiceBridge mit Team-ID;
-  eine einseitige Prüfung wäre später möglich). Seit Version 1.1 prüft Kev CAD die Signatur der Gegenstelle für die
+  Eine Prüfung der Codesignatur ist in Version 1 nicht vorgesehen (Kev CAD war damals ad hoc signiert, VoiceBridge mit Team-ID;
+  seit V2 trägt die App auf Kevins MacBook ebenfalls sein Team, `tools/signatur.sh`, auf fremden Rechnern bleibt es ad hoc). Seit Version 1.1 prüft Kev CAD die Signatur der Gegenstelle für die
   Freigabe (Abschnitt „Freigabe vom iPhone“): Nur die VoiceBridge-App bekommt `FREIGABE` und darf `freigabe` schicken.
 - **Vertrauensgrenze ist VoiceBridge.** VoiceBridge reicht ein `CMD` nur weiter, wenn es von einem gekoppelten iPhone
   kommt: über den direkten Kanal (TLS-PSK plus Handschlag) oder über CloudKit mit Geräte-Unterschrift wie beim
@@ -188,7 +188,7 @@ HELLO bleibt 1, Kev CAD nennt im HELLO zusätzlich das Merkmal `freigabe-1`.
 
 **Grundsatz:** Freigeben darf nur Kevin selbst. Eine Antwort im Agenten-Chat oder eine von einem Agenten weitergegebene
 Nachricht zählt nie. Die Freigabe vom iPhone läuft deshalb **am Agenten vorbei**, direkt zwischen der VoiceBridge-App
-und Kev CAD über diesen Socket. MCP hat keinen Weg, eine Freigabe zu setzen: `freigabe_anfragen` öffnet nur den Dialog
+und Kev CAD über diesen Socket. MCP hat keinen Weg, eine Freigabe zu setzen: `lager(aktion="freigabe")` öffnet nur den Dialog
 und wartet.
 
 | type | Richtung | prio | Felder |
@@ -198,8 +198,8 @@ und wartet.
 | `CMD` mit `op: "freigabe"` | VB → KC | zustand | `id` (des Befehls), `args`: `anfrage_id`, `nonce`, `id` (Katalog-ID), `entscheidung` |
 | `CMD_RES` | KC → VB | zustand | wie bisher plus `status` (nur bei `freigabe`) |
 
-**FREIGABE:** geht hinaus, sobald ein Agent `freigabe_anfragen` aufruft und der Dialog „Vorschläge freigeben“ im
-Projektfenster aufgeht (kurz danach, sobald der Katalog nachgeladen ist).
+**FREIGABE:** geht hinaus, sobald ein Agent `lager(aktion="freigabe")` aufruft und der Dialog „Vorschläge freigeben“ im
+Hauptfenster aufgeht (kurz danach, sobald der Katalog nachgeladen ist).
 
 - **Ohne Miete:** an jede verbundene Gegenstelle, die die Prüfung unten besteht und ihr HELLO geschickt hat, wie `HELLO`
   und `AGENTS`, auch ohne `WATCH`. Nach dem HELLO von Kev CAD kommen alle noch offenen Anfragen, sobald die Prüfung
@@ -210,7 +210,7 @@ Projektfenster aufgeht (kurz danach, sobald der Katalog nachgeladen ist).
 - `eintraege`: die noch offenen Vorschläge, je `{id, kind, name, art, kurz, link, grund, projekt}`. `kind` `teil` oder
   `material`; `art` wie im Katalog (`rohr`, `zukaufteil` …, bei Materialien `material`); `kurz` die Kurzdaten in einer
   Zeile (Maße, Preis, Händler, z. B. „d 16 · s 1 mm · 4,20 €/m · ALFER“). `link` **nur `https`**, sonst fehlt das Feld.
-  `grund` (Text oder null) wie in `freigabe_anfragen`; `projekt` nur der Projektname (oder null), **nie ein Pfad**.
+  `grund` (Text oder null) wie in `lager(aktion="freigabe")`; `projekt` nur der Projektname (oder null), **nie ein Pfad**.
 - Eine neue Anfrage ersetzt eine offene (die alte endet mit `grund: "zurueckgezogen"`). Eine neue Epoche beendet alle.
 
 **FREIGABE_ENDE:** Die Karte auf dem iPhone verschwindet sofort. Mit `id` ist nur dieser Eintrag erledigt (`ergebnis`
@@ -224,10 +224,10 @@ Projektfenster aufgeht (kurz danach, sobald der Katalog nachgeladen ist).
 | `zurueckgezogen` | eine neue Anfrage hat diese ersetzt |
 
 **CMD freigabe:** eine Entscheidung je Eintrag, `entscheidung` `frei` oder `abgelehnt`. Kev CAD führt sie aus wie
-Kevins Klick: Freigeben über dieselbe Freigabe wie der Dialog im Projektfenster (`CATALOG_SAVE` mit `status: "frei"`,
+Kevins Klick: Freigeben über dieselbe Freigabe wie der Dialog im Hauptfenster (`CATALOG_SAVE` mit `status: "frei"`,
 erst nach der Bestätigung im neu geladenen Katalog), mit dem Vermerk `freigegeben_von: "Kevin (iPhone)"` und
 `freigegeben_am` (ISO 8601, UTC) im Katalogeintrag; Ablehnen löscht den Vorschlag (`CATALOG_DELETE`, ebenfalls
-bestätigt). Der Dialog am Mac aktualisiert sich, `freigabe_anfragen` meldet dem Agenten das Ergebnis wie bisher.
+bestätigt). Der Dialog am Mac aktualisiert sich, `lager(aktion="freigabe")` meldet dem Agenten das Ergebnis wie bisher.
 `CMD_RES` kommt erst nach der Bestätigung (Zeitlimit 45 s), danach `FREIGABE_ENDE` mit `id` an alle.
 
 | status | ok | Bedeutung |

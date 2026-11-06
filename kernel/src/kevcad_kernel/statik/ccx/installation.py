@@ -129,7 +129,8 @@ def umgebung(ccx: str, faeden: int = 4) -> dict[str, str]:
 
 def version(ccx: str) -> str | None:
     try:
-        r = subprocess.run([ccx, "-v"], capture_output=True, text=True, timeout=30, env=umgebung(ccx, 1))
+        r = subprocess.run([ccx, "-v"], capture_output=True, text=True, timeout=30, env=umgebung(ccx, 1),
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.TimeoutExpired):
         return None
     for zeile in (r.stdout + r.stderr).splitlines():
@@ -170,7 +171,7 @@ def probe(ccx: str) -> dict[str, Any]:
         (Path(d) / "probe.inp").write_text(PROBE_INP, encoding="utf-8")
         try:
             r = subprocess.run([ccx, "-i", "probe"], cwd=d, capture_output=True, text=True, timeout=60,
-                               env=umgebung(ccx, 1))
+                               env=umgebung(ccx, 1), encoding="utf-8", errors="replace")
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {"ok": False, "meldung": f"ccx startet nicht: {exc}"}
         ok = r.returncode == 0 and (Path(d) / "probe.frd").exists()
@@ -236,12 +237,12 @@ def einrichten(melde: Callable[[str], None] | None = None) -> dict[str, Any]:
     melde("CalculiX von conda-forge einrichten")
     befehl = [str(mm), "create", "-y", "-q", "--no-rc", "-r", str(wurzel), "-p", str(o / "env"), "-c", KANAL,
               "--override-channels", *PAKETE]
-    r = subprocess.run(befehl, capture_output=True, text=True, timeout=900, env=env)
+    r = subprocess.run(befehl, capture_output=True, text=True, timeout=900, env=env, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         return {"ok": False, "ccx": None, "ordner": str(o), "einrichtbar": True,
                 "meldung": f"CalculiX nicht eingerichtet (micromamba Code {r.returncode}): {(r.stderr or r.stdout)[-800:]}"}
     subprocess.run([str(mm), "clean", "-y", "-q", "--tarballs", "-r", str(wurzel)], capture_output=True, text=True,
-                   timeout=120, env=env)
+                   timeout=120, env=env, encoding="utf-8", errors="replace")
     f = finde()
     if not f["ok"]:
         return f

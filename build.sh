@@ -173,14 +173,15 @@ echo "==> scan-Umgebung (Kev Scan auswerten)"
 
 if [ "$MODE" = "--core-tests" ]; then
   echo "==> Tests KevCADCore"
-  # Zusammenfassung von XCTest und Fehlerzeilen; der Exit-Code von swift test kommt über pipefail durch
+  # Zusammenfassung von XCTest und Fehlerzeilen; der Exit-Code von swift test kommt über pipefail durch. Alle Zeilen
+  # bleiben stehen: `tail` schnitt früher den Namen eines gescheiterten Tests ab. „Executed …“ ist nur die Summe.
   # KEVCAD_TESTS_SWIFT=<Filter>: nur diese Swift-Tests, ohne pytest (kurze Runden; der volle Lauf bleibt ohne Filter)
   if [ -n "${KEVCAD_TESTS_SWIFT:-}" ]; then
     (cd app/KevCADCore && swift test --filter "$KEVCAD_TESTS_SWIFT" 2>&1 \
-      | { grep -E "error:|failed|Executed [0-9]+ tests" || true; } | tail -40)
+      | { grep -E "error:|failed|Executed [0-9]+ tests" || true; })
     exit $?
   fi
-  (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; } | tail -15)
+  (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; })
   echo "==> Tests Kernel"
   (cd kernel && .venv/bin/python -m pytest -q)
   exit 0

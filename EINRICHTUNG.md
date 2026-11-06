@@ -153,7 +153,7 @@ Alle sind freiwillig. Fehlt eines, meldet die betroffene Funktion das klar; alle
 |---|---|---|
 | **Bambu Studio** | Druckexport als fertig geslictes Bambu-Projekt (`druck(aktion="export")`, Druckvorschau mit echter Zeit) | von bambulab.com nach `/Applications/BambuStudio.app`, sonst `KEVCAD_BAMBU_APP` setzen. Die Druckregeln sind auf einen Bambu Lab P1P zugeschnitten |
 | **Blender** | Renderings in Fotoqualität (`render(qualitaet="foto")`, Cycles); „Schnell“ geht ohne | von blender.org nach `/Applications/Blender.app`, sonst `KEVCAD_BLENDER` |
-| **CalculiX** | Statik Stufe 4: Kontakt, Plastizität, Traglast, Beulen (`festigkeit(verfahren="ccx")`); Stufe 0 bis 3 gehen ohne | siehe unten |
+| **CalculiX** | Statik Stufe 4: Kontakt, Plastizität, Traglast, Beulen (`statik(aktion="festigkeit", verfahren="ccx")`); Stufe 0 bis 3 gehen ohne | siehe unten |
 | **PromptDA-Gewichte** | Auswertung von iPhone-Scans | laden beim ersten Scan von selbst (Hugging Face, rund 1,4 GB) |
 
 **CalculiX** kommt von conda-forge in einen eigenen Ordner. Bei Kevin liegt der auf einer externen Platte; auf
@@ -187,7 +187,7 @@ KEVSCAN_TEAM=<Team-ID> KEVSCAN_BUNDLE_ID=com.<name>.kevscan tools/kevscan.sh all
 
 Die Team-ID steht in Xcode unter Settings > Accounts > (Konto) > Team. Prüfen: `tools/kevscan.sh alles` endet mit
 „Auf dem iPhone installiert.“; danach in Kev Scan einen Scan aufnehmen und senden. Er erscheint in Kev CAD unter
-„Referenzen“ und im MCP-Werkzeug `scans`. iPhone und Mac müssen im selben WLAN sein (Bonjour `_kevscan._tcp`).
+„Referenzen“ und über `referenz(aktion="scans")`. iPhone und Mac müssen im selben WLAN sein (Bonjour `_kevscan._tcp`).
 Vertrag und Format: [SCAN.md](SCAN.md).
 
 ## 7 Aktualisieren
@@ -242,7 +242,7 @@ Für den MCP-Server bzw. den Kernel. Keine ist nötig.
 | macOS: „Kev CAD kann nicht geöffnet werden“ | Kommt nur vor, wenn die App von einem anderen Rechner kopiert wurde (ad hoc signiert, Quarantäne). Selbst bauen oder `xattr -dr com.apple.quarantine ~/Applications/Tools/"Kev CAD.app"` |
 | MCP: `app_connected: false` | App starten (`open ~/Applications/Tools/"Kev CAD.app"`); läuft sie, den Agenten neu verbinden. Port 47823 belegt: `lsof -i :47823` |
 | MCP-Werkzeuge fehlen im Client | Pfad im Client-Eintrag ausgeschrieben? Den Client nach der Änderung neu starten |
-| `scan_importieren`: PromptDA-Gewichte | Der erste Scan lädt sie aus dem Netz; ohne Netz geht nur die LiDAR-Tiefe |
+| `referenz(aktion="scan_importieren")`: PromptDA-Gewichte | Der erste Scan lädt sie aus dem Netz; ohne Netz geht nur die LiDAR-Tiefe |
 | Statik Stufe 4: „CalculiX nicht verfügbar“ | CalculiX einrichten (Abschnitt 5) |
 | `tools/kevscan.sh`: „No Account for Team“ | `KEVSCAN_TEAM` und `KEVSCAN_BUNDLE_ID` setzen (Abschnitt 6) |
 

@@ -182,10 +182,7 @@ struct Hauptfenster: View {
     /// Der Viewer samt Bändern, Vergleich und Durchspielen. Er bleibt an derselben Stelle im Ansichtsbaum und ändert nur
     /// seinen Rahmen, ohne Animation: Die Metal-Ansicht wird so nie neu angelegt.
     private func viewerFlaeche(_ g: Arbeitsgeometrie) -> some View {
-        let ecken = UnevenRoundedRectangle(
-            cornerRadii: .init(topLeading: 0, bottomLeading: g.viewerEcke, bottomTrailing: g.viewerEcke, topTrailing: 0),
-            style: .continuous)
-        return ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false)
+        ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false)
             .overlay(alignment: .bottomLeading) {  // Versionen: laufender Vergleich
                 VergleichKarte(model: model, store: model.versionen, zustand: versionen)
                     .padding(14)
@@ -194,16 +191,30 @@ struct Hauptfenster: View {
         .modifier(VersionenBlaetter(model: model, zustand: versionen))
         .onAppear {
             Startzeiten.marke("Viewer eingehängt")
-            DispatchQueue.main.async { Startzeiten.marke("Viewer steht") }
+            DispatchQueue.main.async {
+                Startzeiten.marke("Viewer steht")
+                viewerEcken(g.viewerEcke)
+            }
         }
+        .onChange(of: g.viewerEcke) { _, r in viewerEcken(r) }
         .frame(width: g.viewer.width, height: g.viewer.height)
-        .clipShape(ecken)
+        .clipped()
         .overlay { Sprechrahmen(an: oberflaeche.spricht, radius: g.viewerEcke) }
         .position(x: g.viewer.midX, y: g.viewer.midY)
         .opacity(g.viewerSichtbar ? 1 : 0)
         .allowsHitTesting(g.viewerSichtbar)
         .accessibilityHidden(!g.viewerSichtbar)
         .transaction { $0.animation = nil }
+    }
+
+    /// Untere Ecken des Viewers in der Werkstatt, auf der Metal-Ebene selbst: `.clipShape` legte eine Formmaske über den
+    /// Viewer, und das Fenstersystem musste jedes Bild erst abseits zusammensetzen.
+    private func viewerEcken(_ radius: CGFloat) {
+        guard let ebene = session.controller?.viewport.mtkView?.layer else { return }
+        ebene.cornerRadius = radius
+        ebene.cornerCurve = .continuous
+        ebene.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        ebene.masksToBounds = radius > 0
     }
 
     // MARK: Werkstatt

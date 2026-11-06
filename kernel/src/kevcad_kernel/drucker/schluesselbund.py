@@ -62,7 +62,7 @@ def lesen(drucker_id: str, *, ausfuehren: Callable[..., subprocess.CompletedProc
     run = ausfuehren or subprocess.run
     try:
         res = run([SECURITY, "find-generic-password", "-s", DIENST, "-a", konto, "-w"], capture_output=True,
-                  text=True, timeout=10, check=False)
+                  text=True, timeout=10, check=False, encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         raise SchluesselbundFehler("Schlüsselbund nicht lesbar (security lief nicht)") from None
     if res.returncode != 0:

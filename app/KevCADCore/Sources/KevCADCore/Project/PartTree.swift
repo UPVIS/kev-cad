@@ -109,15 +109,4 @@ public enum PartTree {
         var seen: Set<String> = []
         return refs.map(partID(fromRef:)).filter { seen.insert($0).inserted }
     }
-
-    /// Löst Knoten-IDs (auch Gruppen) in die enthaltenen Teile auf.
-    public static func expandToParts(_ ids: [String], in nodes: [PartTreeNode]) -> [String] {
-        var seen: Set<String> = []
-        var result: [String] = []
-        for id in ids {
-            let parts = node(id, in: nodes)?.partIDs ?? [id]
-            for part in parts where seen.insert(part).inserted { result.append(part) }
-        }
-        return result
-    }
 }

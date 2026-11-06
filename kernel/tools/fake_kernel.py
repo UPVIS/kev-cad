@@ -487,7 +487,7 @@ class FakeKernel:
         self.view("visibility", {"mode": "show_all", "refs": None})
         self.view("xyz", {})  # unbekannter Befehl: die App antwortet mit ok=false
         self.send({"type": "AGENT", "connected": True, "activity": None})
-        (self.out / "fertig.txt").write_text("Vorführung abgeschlossen\n")
+        (self.out / "fertig.txt").write_text("Vorführung abgeschlossen\n", encoding="utf-8")
         log("Vorführung abgeschlossen")
 
     # Empfang ------------------------------------------------------------------------------------------------------
@@ -559,7 +559,7 @@ class FakeKernel:
             if header.get("ok") and payload:
                 (self.out / f"{name}.png").write_bytes(payload)
             meta = {k: v for k, v in header.items() if k not in ("type", "seq")}
-            (self.out / f"{name}.json").write_text(json.dumps(meta, indent=1, ensure_ascii=False))
+            (self.out / f"{name}.json").write_text(json.dumps(meta, indent=1, ensure_ascii=False), encoding="utf-8")
             log(f"Bild {name}: {header.get('width')} × {header.get('height')}, {len(payload) // 1024} kB, "
                 f"mm/px {header.get('mm_per_px')}")
             ev = self.acks.pop(rid, None)

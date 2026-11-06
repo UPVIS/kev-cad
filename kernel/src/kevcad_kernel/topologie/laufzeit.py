@@ -188,7 +188,8 @@ class TopologieRuntime:
         z = self._tp
         t0 = time.perf_counter()
         proc = subprocess.Popen([sys.executable, "-m", "kevcad_kernel.topologie.prozess", auftrag, str(ergebnis)],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                                encoding="utf-8", errors="replace")
         z["proc"] = proc
         fehler: list[str] = []
 

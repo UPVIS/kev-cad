@@ -94,6 +94,7 @@ public final class KernelProcess {
         p.arguments = cmd.arguments
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONUTF8"] = "1"  // fremde Pakete bleiben bei UTF-8, auch wenn lib3mf die Locale des Prozesses umstellt
         env["KEVCAD_APP_BUNDLE_ID"] = AppInfo.bundleID
         env.removeValue(forKey: "KEVCAD_KERNEL_CMD")
         p.environment = env

@@ -32,10 +32,10 @@ def main() -> None:
            "phasen": {"bauplan_ms": 0, "blaetter_ms": 410, "bilder_ms": 760, "seiten_ms": 95, "pdf_ms": 520}}
     (ZIEL / "doc_export_res.frame").write_bytes(encode_frame(res))
     fx = ZIEL / "fixtures.json"
-    daten = json.loads(fx.read_text()) if fx.exists() else {}
+    daten = json.loads(fx.read_text(encoding="utf-8")) if fx.exists() else {}
     daten["export"] = {"bausteine": list(DOC_EXPORT_BAUSTEINE), "req": req, "res": res,
                        "frames": ["doc_export_req.frame", "doc_export_res.frame"]}
-    fx.write_text(json.dumps(daten, indent=1, ensure_ascii=False))
+    fx.write_text(json.dumps(daten, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"Export-Testdateien nach {ZIEL}")
 
 

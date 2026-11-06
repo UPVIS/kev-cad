@@ -199,7 +199,7 @@ class ReferenzRuntimeMixin(ReferenzRestMixin):
         for p in dateien:
             out = ziel / (p.stem + ".jpg")
             r = subprocess.run(["sips", "-Z", "1920", "-s", "format", "jpeg", str(p), "--out", str(out)],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
             if r.returncode != 0 or not out.is_file():
                 shutil.copy2(p, ziel / p.name)
                 out = ziel / p.name

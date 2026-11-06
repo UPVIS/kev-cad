@@ -4,11 +4,11 @@ import SwiftUI
 
 /// Wo ein Fenster der Testvariante auf dem zweiten Monitor liegt.
 enum TestPlacement {
-    /// großes Fenster oben links (Projektfenster)
+    /// großes Fenster oben links (Hauptfenster)
     case large
-    /// in der Mitte, Größe aus dem Inhalt (Willkommensfenster)
+    /// in der Mitte, Größe aus dem Inhalt (Dialog Zukaufteil)
     case centered
-    /// rechts neben dem Projektfenster (Protokoll)
+    /// rechts neben dem Hauptfenster (Protokoll, Lagerkatalog)
     case trailing(width: CGFloat, height: CGFloat)
 }
 

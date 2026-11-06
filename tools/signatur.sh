@@ -13,6 +13,13 @@ kevcad_identitaet() {
   echo "${id:--}"
 }
 
+# Scheitert die Identität (Schlüsselbund gesperrt, Zertifikat abgelaufen), lieber ad hoc als ein abgebrochenes Update:
+# Die App läuft, nur Wortlaut hört nicht zu und Apples Erkennung springt ein.
 kevcad_signieren() {
-  codesign --force --deep --sign "$(kevcad_identitaet)" --timestamp=none "$1" >/dev/null 2>&1
+  local id
+  id=$(kevcad_identitaet)
+  codesign --force --deep --sign "$id" --timestamp=none "$1" >/dev/null 2>&1 && return 0
+  [ "$id" = "-" ] && return 1
+  echo "Achtung: Signatur mit „$id“ gescheitert, signiere ad hoc" >&2
+  codesign --force --deep --sign - --timestamp=none "$1" >/dev/null 2>&1
 }

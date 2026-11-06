@@ -123,7 +123,8 @@ def projekt_pruefen(projekt: Path, args) -> list[dict]:
                 env = dict(os.environ, KEVCAD_GEDAECHTNIS="1" if mit is True else "0")
                 cmd = [sys.executable, "-u", __file__, "--unterprozess", str(kopie), str(arbeit / "katalog"),
                        "1" if regel else "0", "0" if args.ohne_pruefung else "1"]
-                p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=args.timeout_s)
+                p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=args.timeout_s,
+                                   encoding="utf-8", errors="replace")
                 zeile = [z for z in p.stdout.splitlines() if z.startswith("{")]
                 if p.returncode != 0 or not zeile:
                     raise SystemExit(f"{projekt.name}: Unterprozess gescheitert ({p.returncode}):\n{p.stderr[-3000:]}")

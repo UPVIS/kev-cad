@@ -73,9 +73,9 @@ def main() -> None:
         "frames": ["bauplan.frame", "docs_bauplan.frame", *anfragen],
     }
     fx = ZIEL / "fixtures.json"
-    daten = json.loads(fx.read_text()) if fx.exists() else {}
+    daten = json.loads(fx.read_text(encoding="utf-8")) if fx.exists() else {}
     daten["bauplan"] = erwartet
-    fx.write_text(json.dumps(daten, indent=1, ensure_ascii=False))
+    fx.write_text(json.dumps(daten, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"Bauplan-Testdateien nach {ZIEL}: {len(payload)} Byte Nutzlast, {len(header['bilder'])} Bilder")
 
 

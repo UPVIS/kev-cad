@@ -121,7 +121,7 @@ class Auftrag:
 def oeffne_in_bambu_studio(datei: Path, app: Path = BAMBU_APP) -> None:
     """``open -a BambuStudio <datei>``: Studio öffnet die .gcode.3mf in der Vorschau (neues Fenster, wenn es läuft)."""
     res = subprocess.run(["/usr/bin/open", "-a", str(app), str(datei)], capture_output=True, text=True, timeout=30,
-                         check=False)
+                         check=False, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         raise RuntimeError((res.stderr or res.stdout or "open fehlgeschlagen").strip()[:200])
 

@@ -80,7 +80,7 @@ public final class RecentProjects: ObservableObject {
         save()
     }
 
-    /// Prüft erneut, welche Ordner fehlen (z. B. wenn das Willkommensfenster erscheint).
+    /// Prüft erneut, welche Ordner fehlen (z. B. wenn die Startübersicht erscheint).
     public func refresh() {
         let updated = items.map { item -> RecentProject in
             var item = item

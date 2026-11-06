@@ -61,7 +61,7 @@ enum DruckSelfTest {
         return AppInfo.supportDirectory.appendingPathComponent("selftest-druck", isDirectory: true)
     }
 
-    /// Aus dem Willkommensfenster: das Projekt öffnen, sobald der Kernel bereit ist.
+    /// Beim Start: das Projekt öffnen, sobald der Kernel bereit ist.
     static func projektOeffnen(_ session: AppSession) {
         guard gewuenscht, session.demo == nil,
               let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
