@@ -14,12 +14,15 @@ public typealias PlattformFarbe = NSColor
 public typealias PlattformView = NSView
 /// Sondertasten eines Ereignisses: NSEvent.ModifierFlags am Mac (unverändert), UIKeyModifierFlags auf dem iPad.
 public typealias PlattformTastenFlags = NSEvent.ModifierFlags
+/// Bild der Oberfläche: NSImage am Mac, UIImage auf dem iPad (seit I-3a).
+public typealias PlattformBild = NSImage
 #else
 import UIKit
 
 public typealias PlattformFarbe = UIColor
 public typealias PlattformView = UIView
 public typealias PlattformTastenFlags = UIKeyModifierFlags
+public typealias PlattformBild = UIImage
 
 extension UIKeyModifierFlags {
     /// Wahltaste unter dem Namen des Mac (UIKit nennt sie `alternate`), damit Auswertungen im Kern auf beiden Seiten
@@ -71,11 +74,11 @@ extension PlattformView {
     }
 }
 
-/// Zustand der App selbst.
+/// Zustand der App selbst (öffentlich seit I-3a, auch die Oberfläche nimmt diesen Weg).
 @MainActor
-enum PlattformApp {
+public enum PlattformApp {
     /// Mitteilung kurz vor dem Beenden der App.
-    static var wirdBeendet: Notification.Name {
+    public static var wirdBeendet: Notification.Name {
         #if os(macOS)
         NSApplication.willTerminateNotification
         #else
@@ -84,11 +87,32 @@ enum PlattformApp {
     }
 
     /// Zeigt die Ansicht (ohne Ansicht: die App) gerade das dunkle Erscheinungsbild?
-    static func istDunkel(_ view: PlattformView?) -> Bool {
+    public static func istDunkel(_ view: PlattformView?) -> Bool {
         #if os(macOS)
         (view?.effectiveAppearance ?? NSApp.effectiveAppearance).bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         #else
         (view?.traitCollection ?? UITraitCollection.current).userInterfaceStyle == .dark
+        #endif
+    }
+}
+
+extension PlattformBild {
+    /// Bild aus einer Datei; nil, wenn sie fehlt oder kein Bild ist (am Mac `NSImage(contentsOf:)`).
+    public static func laden(_ url: URL) -> PlattformBild? {
+        #if os(macOS)
+        NSImage(contentsOf: url)
+        #else
+        UIImage(contentsOfFile: url.path)
+        #endif
+    }
+
+    /// Bild aus einem CGImage mit der Größe in Punkten (am Mac `NSImage(cgImage:size:)`; auf dem iPad bestimmt der
+    /// Maßstab die Größe in Punkten).
+    public static func ausCG(_ cg: CGImage, punkte: CGSize) -> PlattformBild {
+        #if os(macOS)
+        NSImage(cgImage: cg, size: punkte)
+        #else
+        UIImage(cgImage: cg, scale: punkte.width > 0 ? CGFloat(cg.width) / punkte.width : 1, orientation: .up)
         #endif
     }
 }
