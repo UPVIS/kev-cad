@@ -41,6 +41,10 @@ enum PadStart {
 /// Hauptfenster auf dem iPad: die gemeinsame Oberfläche zwischen Statusleiste und Home-Balken (am Mac reicht sie bis
 /// unter die Titelleiste), die Statusleiste hell darüber. Solange die App ohne Mac läuft, sagt das ein kleiner Hinweis in
 /// der Mitte der Statusleiste.
+///
+/// Darum hält das Hauptfenster auf dem iPad die Ränder des Systems selbst ein (kein `ignoresSafeArea`): Ein Abstand
+/// (`padding`) von außen hält ein `ignoresSafeArea` im Inneren nicht auf, es reicht trotzdem bis an den Bildschirmrand, und
+/// ein `GeometryReader` mit `ignoresSafeArea` meldet keine Ränder mehr (beides am Simulator gesehen, I-3a).
 struct PadHauptfenster: View {
     @ObservedObject var session: AppSession
 

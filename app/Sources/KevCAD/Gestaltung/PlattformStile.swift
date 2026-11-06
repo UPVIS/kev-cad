@@ -15,6 +15,9 @@ import UIKit
 // Stile, die SwiftUI nur am Mac kennt (Haken, Optionsfelder, Verweis, randloses Menü, Zeilen im Wechsel), bekommen auf dem
 // iPad ein Gegenstück unter demselben Namen. So schreibt die gemeinsame Oberfläche sie einmal, und am Mac gilt unverändert
 // der Stil von SwiftUI. Vorbild ist `option` für die Wahltaste im Kern (KevCADCore/Plattform).
+//
+// Das geht nur für Stile, die SwiftUI auf dem iPad als nicht verfügbar führt (der Übersetzer nimmt dann das Gegenstück).
+// Kennt SwiftUI den Stil dort nur als veraltet (`.borderlessButton`), wird der Aufruf mehrdeutig: dafür kein Gegenstück.
 
 #if os(iOS)
 /// Haken statt Schalter, wie die Checkbox am Mac (`.toggleStyle(.checkbox)`).
