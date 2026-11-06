@@ -473,3 +473,72 @@ def test_run_warten_nach_der_dauer_des_laufs(laufzeit):
         assert rt._run_warten(job) == 3.0
     finally:
         rt.run_warten_s = None
+
+
+# -- Start des Kernels -------------------------------------------------------------------------------------------------
+
+
+def _im_neuen_prozess(code: str) -> None:
+    import subprocess
+    import sys
+
+    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert p.returncode == 0, p.stderr[-2000:]
+
+
+def test_elternprozess_startet_ohne_build123d():
+    """Der Kernel öffnet Socket und MCP, ohne build123d zu laden (2 s); das tut er, wenn der Rechenprozess bereit ist."""
+    _im_neuen_prozess("""
+import sys
+import kevcad_kernel.server, kevcad_kernel.runtime
+schwer = [m for m in ("build123d", "OCP", "scipy", "sklearn", "pandas") if m in sys.modules]
+assert not schwer, schwer
+import kevcad_kernel.druck
+assert "OCP" not in sys.modules
+assert callable(kevcad_kernel.druck.pruefe_druckteil) and kevcad_kernel.druck.SCHWEREN  # auf Abruf
+assert "OCP" in sys.modules
+""")
+
+
+def test_build123d_ohne_sklearn_verhaelt_sich_wie_immer():
+    _im_neuen_prozess("""
+import sys
+from kevcad_kernel.schnellstart import build123d_laden
+b = build123d_laden()
+assert "sklearn" not in sys.modules and "sklearn.cluster" not in sys.modules
+assert b.Box(1, 2, 3).volume == 6
+from build123d import brep_from_stl
+modell = brep_from_stl.DBSCAN(eps=0.5, min_samples=1)  # lädt sklearn beim ersten Aufruf
+from sklearn.cluster import DBSCAN  # das echte Paket, nicht der Stellvertreter
+assert type(modell) is DBSCAN and "sklearn" in sys.modules
+import sklearn
+assert sklearn.__version__
+""")
+
+
+def test_nach_sklearn_laedt_build123d_normal():
+    _im_neuen_prozess("""
+import sklearn.cluster
+from kevcad_kernel.schnellstart import build123d_laden
+b = build123d_laden()
+from build123d import brep_from_stl
+import sklearn.cluster as c
+assert brep_from_stl.DBSCAN is c.DBSCAN
+""")
+
+
+def test_projekt_oeffnen_wartet_nicht_auf_den_rechenprozess(tmp_path):
+    """Bereit heißt: Projekte gehen. Ein Lauf wartet selbst auf den Rechenprozess."""
+    sock = str(tmp_path / "k.sock")
+    rt = make_runtime(sock)
+    try:
+        st = rt.status()
+        assert st["kernel"] == "ready", st
+        assert rt.project_new(str(tmp_path / "P"), "empty")["ok"]
+        assert rt.status()["project"] is not None
+        rt.set_inventory_rule(False)
+        rt.model_write("from build123d import *\nfrom kevcad import show\nshow(Box(1, 2, 3), 'K')\n")
+        res = rt.run()
+        assert res["ok"], res.get("error")
+    finally:
+        rt.close()

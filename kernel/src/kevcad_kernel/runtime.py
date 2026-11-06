@@ -211,6 +211,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             t.start()
         if start_worker:
             self._spawn_worker()
+            # V2-1b: Projekte lassen sich öffnen, solange der Rechenprozess noch lädt, und ein Lauf wartet auf ihn
+            # (_ensure_worker): So hat die App ihr leeres Projekt und der Agent sein status, ohne auf build123d zu warten
+            self._set_state("ready", "bereit, Rechenprozess startet")
 
     # =================================================================================================================
     # KernelService: Projekt
@@ -1777,8 +1780,16 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                         self._log(f"[kernel] Auto-Lauf: {exc!r}")
 
     def _warm_parent(self) -> None:
-        """build123d und die Messfunktionen im Elternprozess vorladen, damit das erste Messen schnell ist."""
+        """build123d und die Messfunktionen im Elternprozess vorladen, damit das erste Messen schnell ist. Erst wenn der
+        Rechenprozess bereit ist (V2-1b): Der Import hält die GIL, App und MCP kämen sonst beim Start nicht dran; Messen
+        gibt es ohnehin erst nach einem Lauf."""
         try:
+            self._worker.wait_ready(WORKER_START_TIMEOUT_S)
+            if self._closed:
+                return
+            from kevcad_kernel.schnellstart import build123d_laden
+
+            build123d_laden()
             import kevcad_kernel.export  # noqa: F401
             import kevcad_kernel.measure  # noqa: F401
             from kevcad_kernel.bestand import vorladen

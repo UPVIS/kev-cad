@@ -82,7 +82,9 @@ def main() -> int:
             _write_all(proto_fd, data)
 
     t0 = time.perf_counter()
-    import build123d
+    from kevcad_kernel.schnellstart import build123d_laden
+
+    build123d = build123d_laden()
 
     from kevcad_kernel.runner import Runner
     from kevcad_kernel.tessellate import CACHE, tessellate_shape
