@@ -1,0 +1,5 @@
+{
+ "beschreibung": "Übernahmekandidat: Aufbau wie baseline (Skill kev-cad als Projekt-Skill, alle Werkzeuge), aber SKILL.md als Kompaktleitfaden mit Ablauf in wenigen Runden und Experiment-Kernel K1 bis K3 (samt angepassten MCP-Anweisungen)",
+ "kernel_src": "@pipeline-k4:kernel/src",
+ "skill": "benchmark/varianten/skill-neu"
+}

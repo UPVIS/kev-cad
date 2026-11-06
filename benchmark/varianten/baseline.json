@@ -1,0 +1,5 @@
+{
+ "beschreibung": "Bestehende Pipeline (main 28788c7, Tag pipeline-baseline): Claude Code als claude -p, MCP-Server kevcad über HTTP, Skill kev-cad, model.py in Python mit build123d. Ohne Kevins globale Regeln, ohne Hooks, ohne Bash und Web.",
+ "skill": "@pipeline-baseline:skill/kev-cad",
+ "kernel_src": "@pipeline-baseline:kernel/src"
+}

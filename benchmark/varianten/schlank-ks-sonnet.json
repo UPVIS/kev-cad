@@ -1,0 +1,12 @@
+{
+ "beschreibung": "wie schlank-k-sonnet, dazu das Lagebild im Auftrag (status und bei vorhandenem Modell die Gliederung, abgefragt beim Absenden wie ein Hook): spart die erste Runde",
+ "append_system_prompt": "benchmark/varianten/kompakt-leitfaden-ks.md",
+ "referenz": "@pipeline-baseline:skill/kev-cad",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "kernel_src": "@pipeline-k1k3:kernel/src",
+ "modell": "sonnet",
+ "lagebild_im_auftrag": true
+}

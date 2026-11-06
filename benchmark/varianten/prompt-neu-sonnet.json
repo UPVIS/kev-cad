@@ -1,0 +1,13 @@
+{
+ "beschreibung": "Startrunden isoliert: Leitfaden wie skill-neu (SKILL.md-Körper) im Systemprompt statt als Skill, kevcad-Werkzeuge sofort geladen (kein ToolSearch), Lagebild im Auftrag, Kernel K1 bis K4, Sonnet",
+ "append_system_prompt": "benchmark/varianten/prompt-neu.md",
+ "referenz": "benchmark/varianten/skill-neu",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "kernel_src": "@pipeline-k4:kernel/src",
+ "modell": "sonnet",
+ "lagebild_im_auftrag": true,
+ "lagebild_kopf": true
+}

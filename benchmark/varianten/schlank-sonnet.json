@@ -1,0 +1,11 @@
+{
+ "beschreibung": "wie schlank, Modell Sonnet statt Opus",
+ "append_system_prompt": "benchmark/varianten/kompakt-leitfaden.md",
+ "referenz": "@pipeline-baseline:skill/kev-cad",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "modell": "sonnet",
+ "kernel_src": "@pipeline-baseline:kernel/src"
+}

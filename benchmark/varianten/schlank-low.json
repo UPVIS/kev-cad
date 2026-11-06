@@ -1,0 +1,11 @@
+{
+ "beschreibung": "wie schlank, Denktiefe niedrig (--effort low)",
+ "append_system_prompt": "benchmark/varianten/kompakt-leitfaden.md",
+ "referenz": "@pipeline-baseline:skill/kev-cad",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "effort": "low",
+ "kernel_src": "@pipeline-baseline:kernel/src"
+}

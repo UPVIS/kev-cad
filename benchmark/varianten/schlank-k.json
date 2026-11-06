@@ -1,0 +1,10 @@
+{
+ "beschreibung": "wie schlank, dazu der Experiment-Kernel K1 bis K3: run(meilenstein=…) setzt den Meilenstein im selben Aufruf, modell(setze=…) ändert param()-Vorgaben ohne Lesen, modell(gliederung=true) gibt großen Modellen eine Gliederung statt der ganzen Datei",
+ "append_system_prompt": "benchmark/varianten/kompakt-leitfaden-k.md",
+ "referenz": "@pipeline-baseline:skill/kev-cad",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "kernel_src": "@pipeline-k1k3:kernel/src"
+}

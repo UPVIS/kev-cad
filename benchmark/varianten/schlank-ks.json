@@ -1,0 +1,11 @@
+{
+ "beschreibung": "wie schlank-k, dazu das Lagebild im Auftrag (status und bei vorhandenem Modell die Gliederung, abgefragt beim Absenden wie ein Hook): spart die erste Runde; Modell Opus",
+ "append_system_prompt": "benchmark/varianten/kompakt-leitfaden-ks.md",
+ "referenz": "@pipeline-baseline:skill/kev-cad",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "kernel_src": "@pipeline-k1k3:kernel/src",
+ "lagebild_im_auftrag": true
+}

@@ -1,0 +1,6 @@
+{
+ "beschreibung": "wie skill-neu, Modell Sonnet",
+ "kernel_src": "@pipeline-k4:kernel/src",
+ "skill": "benchmark/varianten/skill-neu",
+ "modell": "sonnet"
+}

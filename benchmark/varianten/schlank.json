@@ -1,0 +1,10 @@
+{
+ "beschreibung": "Gleiche Pipeline und gleicher Kernel wie baseline, aber schlanker Kontext: der Kern des Skills (Ablauf, API, Druckregeln, Inventar) als Leitfaden im Systemprompt statt Skill-Aufruf und Lesen von 3d-druck.md und modell.md; Ablauf auf wenige Runden ausgelegt (planen, schreiben und rechnen in einer Runde, Meilenstein mit dem Bericht). Eingebaute Werkzeuge nur Read, Write, Edit; der volle Skill liegt zum Nachschlagen bereit.",
+ "append_system_prompt": "benchmark/varianten/kompakt-leitfaden.md",
+ "referenz": "@pipeline-baseline:skill/kev-cad",
+ "claude_args": [
+  "--tools",
+  "Read,Write,Edit"
+ ],
+ "kernel_src": "@pipeline-baseline:kernel/src"
+}

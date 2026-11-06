@@ -1,0 +1,1454 @@
+{
+"Rollwagen/Rahmen": {
+"box": [
+-305.0,
+-549.0,
+120.6,
+305.0,
+-139.0,
+164.6
+],
+"vol": 1278415.344
+},
+"Rollwagen/Lenkrolle 1/Gabel": {
+"box": [
+210.5,
+-233.5,
+33.0,
+316.0,
+-170.5,
+120.6
+],
+"vol": 79406.271
+},
+"Rollwagen/Lenkrolle 1/Rad": {
+"box": [
+218.0,
+-218.0,
+0.0,
+318.0,
+-186.0,
+100.0
+],
+"vol": 107300.057
+},
+"Rollwagen/Lenkrolle 1/Felge": {
+"box": [
+231.0,
+-220.5,
+13.0,
+305.0,
+-183.5,
+87.0
+],
+"vol": 123642.154
+},
+"Rollwagen/Lenkrolle 1/Schraube": {
+"box": [
+232.0,
+-212.0,
+120.6,
+252.0,
+-192.0,
+148.6
+],
+"vol": 3537.433
+},
+"Rollwagen/Lenkrolle 2/Gabel": {
+"box": [
+210.5,
+-517.5,
+33.0,
+316.0,
+-454.5,
+120.6
+],
+"vol": 79406.271
+},
+"Rollwagen/Lenkrolle 2/Rad": {
+"box": [
+218.0,
+-502.0,
+0.0,
+318.0,
+-470.0,
+100.0
+],
+"vol": 107300.057
+},
+"Rollwagen/Lenkrolle 2/Felge": {
+"box": [
+231.0,
+-504.5,
+13.0,
+305.0,
+-467.5,
+87.0
+],
+"vol": 123642.154
+},
+"Rollwagen/Lenkrolle 2/Schraube": {
+"box": [
+232.0,
+-496.0,
+120.6,
+252.0,
+-476.0,
+148.6
+],
+"vol": 3537.433
+},
+"Rollwagen/Lenkrolle 3/Gabel": {
+"box": [
+-316.0,
+-233.5,
+33.0,
+-210.5,
+-170.5,
+120.6
+],
+"vol": 79406.271
+},
+"Rollwagen/Lenkrolle 3/Rad": {
+"box": [
+-318.0,
+-218.0,
+0.0,
+-218.0,
+-186.0,
+100.0
+],
+"vol": 107300.057
+},
+"Rollwagen/Lenkrolle 3/Felge": {
+"box": [
+-305.0,
+-220.5,
+13.0,
+-231.0,
+-183.5,
+87.0
+],
+"vol": 123642.154
+},
+"Rollwagen/Lenkrolle 3/Schraube": {
+"box": [
+-252.0,
+-212.0,
+120.6,
+-232.0,
+-192.0,
+148.6
+],
+"vol": 3537.433
+},
+"Rollwagen/Lenkrolle 3/Feststeller": {
+"box": [
+-352.0,
+-222.0,
+101.6,
+-316.0,
+-182.0,
+104.6
+],
+"vol": 4227.292
+},
+"Rollwagen/Lenkrolle 4/Gabel": {
+"box": [
+-316.0,
+-517.5,
+33.0,
+-210.5,
+-454.5,
+120.6
+],
+"vol": 79406.271
+},
+"Rollwagen/Lenkrolle 4/Rad": {
+"box": [
+-318.0,
+-502.0,
+0.0,
+-218.0,
+-470.0,
+100.0
+],
+"vol": 107300.057
+},
+"Rollwagen/Lenkrolle 4/Felge": {
+"box": [
+-305.0,
+-504.5,
+13.0,
+-231.0,
+-467.5,
+87.0
+],
+"vol": 123642.154
+},
+"Rollwagen/Lenkrolle 4/Schraube": {
+"box": [
+-252.0,
+-496.0,
+120.6,
+-232.0,
+-476.0,
+148.6
+],
+"vol": 3537.433
+},
+"Rollwagen/Lenkrolle 4/Feststeller": {
+"box": [
+-352.0,
+-506.0,
+101.6,
+-316.0,
+-466.0,
+104.6
+],
+"vol": 4227.292
+},
+"Rollwagen/Lenkrolle 1/Lenksperre (Druck)": {
+"box": [
+186.5,
+-227.4,
+70.0,
+234.0,
+-176.6,
+140.4
+],
+"vol": 82448.143
+},
+"Rollwagen/Lenkrolle 1/Gewindeeinsatz M6": {
+"box": [
+190.05,
+-206.1,
+127.7,
+198.25,
+-197.9,
+140.4
+],
+"vol": 421.325
+},
+"Rollwagen/Lenkrolle 1/Scheibe 6,4x18": {
+"box": [
+185.15,
+-211.0,
+144.6,
+203.15,
+-193.0,
+146.2
+],
+"vol": 355.679
+},
+"Rollwagen/Lenkrolle 1/Sterngriffschraube M6x25": {
+"box": [
+178.15,
+-218.0,
+121.2,
+209.4441,
+-186.0,
+164.2
+],
+"vol": 10783.781
+},
+"Rollwagen/Lenkrolle 2/Lenksperre (Druck)": {
+"box": [
+186.5,
+-511.4,
+70.0,
+234.0,
+-460.6,
+140.4
+],
+"vol": 82448.143
+},
+"Rollwagen/Lenkrolle 2/Gewindeeinsatz M6": {
+"box": [
+190.05,
+-490.1,
+127.7,
+198.25,
+-481.9,
+140.4
+],
+"vol": 421.325
+},
+"Rollwagen/Lenkrolle 2/Scheibe 6,4x18": {
+"box": [
+185.15,
+-495.0,
+144.6,
+203.15,
+-477.0,
+146.2
+],
+"vol": 355.679
+},
+"Rollwagen/Lenkrolle 2/Sterngriffschraube M6x25": {
+"box": [
+178.15,
+-502.0,
+121.2,
+209.4441,
+-470.0,
+164.2
+],
+"vol": 10783.781
+},
+"Rollwagen/Lenkrolle 3/Lenksperre (Druck)": {
+"box": [
+-234.0,
+-227.4,
+70.0,
+-186.5,
+-176.6,
+140.4
+],
+"vol": 82448.143
+},
+"Rollwagen/Lenkrolle 3/Gewindeeinsatz M6": {
+"box": [
+-198.25,
+-206.1,
+127.7,
+-190.05,
+-197.9,
+140.4
+],
+"vol": 421.325
+},
+"Rollwagen/Lenkrolle 3/Scheibe 6,4x18": {
+"box": [
+-203.15,
+-211.0,
+144.6,
+-185.15,
+-193.0,
+146.2
+],
+"vol": 355.679
+},
+"Rollwagen/Lenkrolle 3/Sterngriffschraube M6x25": {
+"box": [
+-209.4441,
+-218.0,
+121.2,
+-178.15,
+-186.0,
+164.2
+],
+"vol": 10783.781
+},
+"Rollwagen/Lenkrolle 4/Lenksperre (Druck)": {
+"box": [
+-234.0,
+-511.4,
+70.0,
+-186.5,
+-460.6,
+140.4
+],
+"vol": 82448.143
+},
+"Rollwagen/Lenkrolle 4/Gewindeeinsatz M6": {
+"box": [
+-198.25,
+-490.1,
+127.7,
+-190.05,
+-481.9,
+140.4
+],
+"vol": 421.325
+},
+"Rollwagen/Lenkrolle 4/Scheibe 6,4x18": {
+"box": [
+-203.15,
+-495.0,
+144.6,
+-185.15,
+-477.0,
+146.2
+],
+"vol": 355.679
+},
+"Rollwagen/Lenkrolle 4/Sterngriffschraube M6x25": {
+"box": [
+-209.4441,
+-502.0,
+121.2,
+-178.15,
+-470.0,
+164.2
+],
+"vol": 10783.781
+},
+"Kugelschieber/Seitenstange links (Rohr 1)": {
+"box": [
+-268.0,
+-258.0,
+26.2357,
+732.0,
+-246.0,
+38.2357
+],
+"vol": 34557.519
+},
+"Kugelschieber/Seitenstange rechts (Rohr 2)": {
+"box": [
+-268.0,
+-442.0,
+26.2357,
+732.0,
+-430.0,
+38.2357
+],
+"vol": 34557.519
+},
+"Kugelschieber/Querstange hinten (Rohr 3)": {
+"box": [
+518.3228,
+-426.5,
+20.7172,
+530.3228,
+-261.5,
+32.7172
+],
+"vol": 5701.991
+},
+"Kugelschieber/Querstange vorn (Rohr 3)": {
+"box": [
+701.3713,
+-426.5,
+20.7172,
+713.3713,
+-261.5,
+32.7172
+],
+"vol": 5701.991
+},
+"Kugelschieber/Schieberolle (Druck)": {
+"box": [
+507.6057,
+-389.0,
+10.0,
+541.04,
+-299.0,
+43.4343
+],
+"vol": 41169.889
+},
+"Kugelschieber/Fangrolle (Druck)": {
+"box": [
+690.6541,
+-389.0,
+10.0,
+724.0885,
+-299.0,
+43.4343
+],
+"vol": 41169.889
+},
+"Kugelschieber/Schieberschlitten links (Druck)": {
+"box": [
+506.3228,
+-298.7,
+15.6857,
+542.3228,
+-243.0,
+50.8857
+],
+"vol": 34982.411
+},
+"Kugelschieber/Schieberschlitten rechts (Druck)": {
+"box": [
+506.3228,
+-445.0,
+15.6857,
+542.3228,
+-389.3,
+50.8857
+],
+"vol": 34982.411
+},
+"Kugelschieber/Fängerschlitten links (Druck)": {
+"box": [
+689.3713,
+-298.7,
+15.6857,
+725.3713,
+-243.0,
+50.8857
+],
+"vol": 34648.222
+},
+"Kugelschieber/Fängerschlitten rechts (Druck)": {
+"box": [
+689.3713,
+-445.0,
+15.6857,
+725.3713,
+-389.3,
+50.8857
+],
+"vol": 34648.222
+},
+"Kugelschieber/Stangenhalter vorn links (Druck)": {
+"box": [
+230.0,
+-261.0,
+23.8857,
+270.0,
+-235.5,
+140.4
+],
+"vol": 70602.309
+},
+"Kugelschieber/Stangenhalter vorn rechts (Druck)": {
+"box": [
+230.0,
+-452.5,
+23.8857,
+270.0,
+-427.0,
+140.4
+],
+"vol": 70602.309
+},
+"Kugelschieber/Stangenhalter hinten links (Druck)": {
+"box": [
+-270.0,
+-261.0,
+23.8857,
+-230.0,
+-235.5,
+140.4
+],
+"vol": 70602.309
+},
+"Kugelschieber/Stangenhalter hinten rechts (Druck)": {
+"box": [
+-270.0,
+-452.5,
+23.8857,
+-230.0,
+-427.0,
+140.4
+],
+"vol": 70602.309
+},
+"Kugelschieber/Gewindeeinsatz M6 vorn links": {
+"box": [
+245.9,
+-248.2,
+40.5857,
+254.1,
+-235.5,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 vorn links": {
+"box": [
+241.0,
+-262.6,
+35.6857,
+259.0,
+-261.0,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 vorn links": {
+"box": [
+234.0,
+-280.6,
+28.6857,
+265.2941,
+-237.6,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Schraube M6x16 1 vorn links": {
+"box": [
+235.0,
+-256.0,
+130.2,
+245.0,
+-246.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 1 vorn links": {
+"box": [
+231.0,
+-260.0,
+144.6,
+249.0,
+-242.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 1 vorn links": {
+"box": [
+235.9,
+-255.1,
+127.7,
+244.1,
+-246.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Schraube M6x16 2 vorn links": {
+"box": [
+255.0,
+-256.0,
+130.2,
+265.0,
+-246.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 2 vorn links": {
+"box": [
+251.0,
+-260.0,
+144.6,
+269.0,
+-242.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 2 vorn links": {
+"box": [
+255.9,
+-255.1,
+127.7,
+264.1,
+-246.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Gewindeeinsatz M6 vorn rechts": {
+"box": [
+245.9,
+-452.5,
+40.5857,
+254.1,
+-439.8,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 vorn rechts": {
+"box": [
+241.0,
+-427.0,
+35.6857,
+259.0,
+-425.4,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 vorn rechts": {
+"box": [
+234.7059,
+-450.4,
+28.6857,
+266.0,
+-407.4,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Schraube M6x16 1 vorn rechts": {
+"box": [
+235.0,
+-442.0,
+130.2,
+245.0,
+-432.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 1 vorn rechts": {
+"box": [
+231.0,
+-446.0,
+144.6,
+249.0,
+-428.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 1 vorn rechts": {
+"box": [
+235.9,
+-441.1,
+127.7,
+244.1,
+-432.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Schraube M6x16 2 vorn rechts": {
+"box": [
+255.0,
+-442.0,
+130.2,
+265.0,
+-432.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 2 vorn rechts": {
+"box": [
+251.0,
+-446.0,
+144.6,
+269.0,
+-428.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 2 vorn rechts": {
+"box": [
+255.9,
+-441.1,
+127.7,
+264.1,
+-432.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Gewindeeinsatz M6 hinten links": {
+"box": [
+-254.1,
+-248.2,
+40.5857,
+-245.9,
+-235.5,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 hinten links": {
+"box": [
+-259.0,
+-262.6,
+35.6857,
+-241.0,
+-261.0,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 hinten links": {
+"box": [
+-266.0,
+-280.6,
+28.6857,
+-234.7059,
+-237.6,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Schraube M6x16 1 hinten links": {
+"box": [
+-265.0,
+-256.0,
+130.2,
+-255.0,
+-246.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 1 hinten links": {
+"box": [
+-269.0,
+-260.0,
+144.6,
+-251.0,
+-242.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 1 hinten links": {
+"box": [
+-264.1,
+-255.1,
+127.7,
+-255.9,
+-246.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Schraube M6x16 2 hinten links": {
+"box": [
+-245.0,
+-256.0,
+130.2,
+-235.0,
+-246.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 2 hinten links": {
+"box": [
+-249.0,
+-260.0,
+144.6,
+-231.0,
+-242.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 2 hinten links": {
+"box": [
+-244.1,
+-255.1,
+127.7,
+-235.9,
+-246.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Gewindeeinsatz M6 hinten rechts": {
+"box": [
+-254.1,
+-452.5,
+40.5857,
+-245.9,
+-439.8,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 hinten rechts": {
+"box": [
+-259.0,
+-427.0,
+35.6857,
+-241.0,
+-425.4,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 hinten rechts": {
+"box": [
+-265.2941,
+-450.4,
+28.6857,
+-234.0,
+-407.4,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Schraube M6x16 1 hinten rechts": {
+"box": [
+-265.0,
+-442.0,
+130.2,
+-255.0,
+-432.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 1 hinten rechts": {
+"box": [
+-269.0,
+-446.0,
+144.6,
+-251.0,
+-428.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 1 hinten rechts": {
+"box": [
+-264.1,
+-441.1,
+127.7,
+-255.9,
+-432.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Schraube M6x16 2 hinten rechts": {
+"box": [
+-245.0,
+-442.0,
+130.2,
+-235.0,
+-432.0,
+152.2
+],
+"vol": 923.628
+},
+"Kugelschieber/Scheibe 6,4x18 2 hinten rechts": {
+"box": [
+-249.0,
+-446.0,
+144.6,
+-231.0,
+-428.0,
+146.2
+],
+"vol": 355.679
+},
+"Kugelschieber/Gewindeeinsatz M6 2 hinten rechts": {
+"box": [
+-244.1,
+-441.1,
+127.7,
+-235.9,
+-432.9,
+140.4
+],
+"vol": 421.325
+},
+"Kugelschieber/Gewindeeinsatz M6 Schieber links": {
+"box": [
+520.2228,
+-268.5,
+40.5857,
+528.4228,
+-255.8,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 Schieber links": {
+"box": [
+515.3228,
+-243.0,
+35.6857,
+533.3228,
+-241.4,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 Schieber links": {
+"box": [
+509.0287,
+-266.4,
+28.6857,
+540.3228,
+-223.4,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Gewindeeinsatz M6 Schieber rechts": {
+"box": [
+520.2228,
+-432.2,
+40.5857,
+528.4228,
+-419.5,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 Schieber rechts": {
+"box": [
+515.3228,
+-446.6,
+35.6857,
+533.3228,
+-445.0,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 Schieber rechts": {
+"box": [
+508.3228,
+-464.6,
+28.6857,
+539.6169,
+-421.6,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Gewindeeinsatz M6 Fänger links": {
+"box": [
+703.2713,
+-268.5,
+40.5857,
+711.4713,
+-255.8,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 Fänger links": {
+"box": [
+698.3713,
+-243.0,
+35.6857,
+716.3713,
+-241.4,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 Fänger links": {
+"box": [
+692.0772,
+-266.4,
+28.6857,
+723.3713,
+-223.4,
+60.6857
+],
+"vol": 10783.781
+},
+"Kugelschieber/Gewindeeinsatz M6 Fänger rechts": {
+"box": [
+703.2713,
+-432.2,
+40.5857,
+711.4713,
+-419.5,
+48.7857
+],
+"vol": 421.325
+},
+"Kugelschieber/Scheibe 6,4x18 Fänger rechts": {
+"box": [
+698.3713,
+-446.6,
+35.6857,
+716.3713,
+-445.0,
+53.6857
+],
+"vol": 355.679
+},
+"Kugelschieber/Sterngriffschraube M6x25 Fänger rechts": {
+"box": [
+691.3713,
+-464.6,
+28.6857,
+722.6654,
+-421.6,
+60.6857
+],
+"vol": 10783.781
+},
+"Bowlingball": {
+"box": [
+505.0,
+-452.5,
+0.0,
+722.0,
+-235.5,
+217.0
+],
+"vol": 5285062.115
+},
+"Kamerahalter/Kameraträger (Druck)": {
+"box": [
+253.9821,
+-389.0,
+43.4,
+295.5,
+-299.0,
+140.4
+],
+"vol": 330976.037
+},
+"Kamerahalter/Kopfschraube 3⁄8 Zoll (Druck)": {
+"box": [
+154.9821,
+-353.0,
+37.4,
+172.9821,
+-335.0,
+56.9
+],
+"vol": 2165.376
+},
+"Kamerahalter/Scheibe M6 Winkel hinten 1": {
+"box": [
+247.3821,
+-350.0,
+59.4,
+248.9821,
+-338.0,
+71.4
+],
+"vol": 129.484
+},
+"Kamerahalter/Schraube M6x50 Winkel 1": {
+"box": [
+241.3821,
+-349.0,
+60.4,
+297.3821,
+-339.0,
+70.4
+],
+"vol": 1884.956
+},
+"Kamerahalter/Scheibe M6 Winkel vorn 1": {
+"box": [
+288.7,
+-350.0,
+59.4,
+290.3,
+-338.0,
+71.4
+],
+"vol": 129.484
+},
+"Kamerahalter/Mutter M6 Winkel 1": {
+"box": [
+290.3,
+-349.7735,
+60.4,
+295.5,
+-338.2265,
+70.4
+],
+"vol": 397.319
+},
+"Kamerahalter/Scheibe M6 Winkel hinten 2": {
+"box": [
+247.3821,
+-350.0,
+89.4,
+248.9821,
+-338.0,
+101.4
+],
+"vol": 129.484
+},
+"Kamerahalter/Schraube M6x50 Winkel 2": {
+"box": [
+241.3821,
+-349.0,
+90.4,
+297.3821,
+-339.0,
+100.4
+],
+"vol": 1884.956
+},
+"Kamerahalter/Scheibe M6 Winkel vorn 2": {
+"box": [
+288.7,
+-350.0,
+89.4,
+290.3,
+-338.0,
+101.4
+],
+"vol": 129.484
+},
+"Kamerahalter/Mutter M6 Winkel 2": {
+"box": [
+290.3,
+-349.7735,
+90.4,
+295.5,
+-338.2265,
+100.4
+],
+"vol": 397.319
+},
+"Kamerahalter/Schraube M6x16 Träger 1": {
+"box": [
+258.4821,
+-324.0,
+130.2,
+268.4821,
+-314.0,
+152.2
+],
+"vol": 923.628
+},
+"Kamerahalter/Scheibe 6,4x18 Träger 1": {
+"box": [
+254.4821,
+-328.0,
+144.6,
+272.4821,
+-310.0,
+146.2
+],
+"vol": 355.679
+},
+"Kamerahalter/Gewindeeinsatz M6 Träger 1": {
+"box": [
+259.3821,
+-323.1,
+127.7,
+267.5821,
+-314.9,
+140.4
+],
+"vol": 421.325
+},
+"Kamerahalter/Schraube M6x16 Träger 2": {
+"box": [
+258.4821,
+-374.0,
+130.2,
+268.4821,
+-364.0,
+152.2
+],
+"vol": 923.628
+},
+"Kamerahalter/Scheibe 6,4x18 Träger 2": {
+"box": [
+254.4821,
+-378.0,
+144.6,
+272.4821,
+-360.0,
+146.2
+],
+"vol": 355.679
+},
+"Kamerahalter/Gewindeeinsatz M6 Träger 2": {
+"box": [
+259.3821,
+-373.1,
+127.7,
+267.5821,
+-364.9,
+140.4
+],
+"vol": 421.325
+},
+"Kamerahalter/Schraube M6x16 Träger 3": {
+"box": [
+281.0,
+-324.0,
+130.2,
+291.0,
+-314.0,
+152.2
+],
+"vol": 923.628
+},
+"Kamerahalter/Scheibe 6,4x18 Träger 3": {
+"box": [
+277.0,
+-328.0,
+144.6,
+295.0,
+-310.0,
+146.2
+],
+"vol": 355.679
+},
+"Kamerahalter/Gewindeeinsatz M6 Träger 3": {
+"box": [
+281.9,
+-323.1,
+127.7,
+290.1,
+-314.9,
+140.4
+],
+"vol": 421.325
+},
+"Kamerahalter/Schraube M6x16 Träger 4": {
+"box": [
+281.0,
+-374.0,
+130.2,
+291.0,
+-364.0,
+152.2
+],
+"vol": 923.628
+},
+"Kamerahalter/Scheibe 6,4x18 Träger 4": {
+"box": [
+277.0,
+-378.0,
+144.6,
+295.0,
+-360.0,
+146.2
+],
+"vol": 355.679
+},
+"Kamerahalter/Gewindeeinsatz M6 Träger 4": {
+"box": [
+281.9,
+-373.1,
+127.7,
+290.1,
+-364.9,
+140.4
+],
+"vol": 421.325
+},
+"Kamerahalter/Balkenwinkel": {
+"box": [
+103.9821,
+-364.0,
+43.4,
+253.9821,
+-324.0,
+118.4
+],
+"vol": 42621.376
+},
+"Kamerahalter/Gegenplatte": {
+"box": [
+285.7,
+-361.75,
+50.4,
+288.7,
+-326.25,
+110.4
+],
+"vol": 6184.728
+},
+"Kamerahalter/Fluidkopf Komodo K5S/Basis": {
+"box": [
+131.4821,
+-376.5,
+48.4,
+196.4821,
+-311.5,
+58.4
+],
+"vol": 32466.491
+},
+"Kamerahalter/Fluidkopf Komodo K5S/Schwenkteil": {
+"box": [
+131.4821,
+-376.5,
+58.4,
+200.4821,
+-311.5,
+84.9978
+],
+"vol": 48213.416
+},
+"Kamerahalter/Fluidkopf Komodo K5S/Neigeteil": {
+"box": [
+132.9821,
+-376.0,
+74.4,
+194.9821,
+-309.0,
+140.3301
+],
+"vol": 192764.975
+},
+"Kamerahalter/Fluidkopf Komodo K5S/Plattenaufnahme": {
+"box": [
+112.2993,
+-376.0,
+130.3368,
+225.1707,
+-304.0,
+157.8818
+],
+"vol": 65637.206
+},
+"Kamerahalter/Fluidkopf Komodo K5S/Schnellwechselplatte": {
+"box": [
+119.2296,
+-370.0,
+139.0084,
+219.581,
+-318.0,
+160.1282
+],
+"vol": 43020.0
+},
+"Kamera Pocket 6K Pro/Gehäuse": {
+"box": [
+85.1846,
+-414.0,
+155.4577,
+193.8145,
+-273.7,
+283.2515
+],
+"vol": 1361767.42
+},
+"Kamera Pocket 6K Pro/Handgriff": {
+"box": [
+78.6944,
+-453.5,
+155.3061,
+179.8748,
+-414.0,
+269.5466
+],
+"vol": 365549.221
+},
+"Kamera Pocket 6K Pro/Monitor": {
+"box": [
+74.3302,
+-413.7,
+167.2387,
+96.2124,
+-278.5,
+262.7802
+],
+"vol": 140344.413
+},
+"Kamera Pocket 6K Pro/Bajonett": {
+"box": [
+184.4915,
+-377.0,
+183.966,
+196.8029,
+-311.0,
+249.9981
+],
+"vol": 4863.185
+},
+"Kamera Pocket 6K Pro/Objektiv": {
+"box": [
+181.9159,
+-383.0,
+164.7534,
+317.4493,
+-305.0,
+253.2702
+],
+"vol": 553132.192
+}
+}

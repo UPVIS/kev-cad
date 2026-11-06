@@ -1,0 +1,8 @@
+{
+ "beschreibung": "wie skill-neu-sonnet, dazu das Lagebild im Auftrag (status und Gliederung beim Absenden, wie ein Hook oder das Feedback-Paket es liefern würde), mit einer Kopfzeile, dass es nicht noch einmal abgefragt werden muss",
+ "kernel_src": "@pipeline-k4:kernel/src",
+ "skill": "benchmark/varianten/skill-neu",
+ "modell": "sonnet",
+ "lagebild_im_auftrag": true,
+ "lagebild_kopf": true
+}
