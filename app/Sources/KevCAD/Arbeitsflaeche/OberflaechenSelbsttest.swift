@@ -230,7 +230,8 @@ enum OberflaechenSelbsttest {
         a?.oberflaeche(.sprechText("Den Griff hätte ich gern höher, so ungefähr bis hier, wo der Strich ist."))
         pruefe(o.spricht, "Sprechen an (roter Rahmen)")
         await foto("08-sprechen")
-        a?.sprechenVerwerfen()
+        a?.setzeSprechen(false)
+        a?.sprechenVerwerfen()  // die Sitzung bleibt sonst offen
         pruefe(o.zuletztGesagt?.hasPrefix("Den Griff") == true, "Gesagtes bleibt für die Statuszeile")
 
         // 7. An den Rand und zurück
