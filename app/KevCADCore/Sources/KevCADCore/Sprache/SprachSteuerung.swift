@@ -516,7 +516,7 @@ public struct FeedbackRohbild: @unchecked Sendable {
 }
 
 extension AppController {
-    /// Kamera in den Feldern von LAGE.kamera (PROTOCOL.md).
+    /// Kamera in den Feldern von LAGE.kamera (PROTOCOL.md), ohne den Rest des Lagebilds: Sie geht zehnmal je Sekunde durch.
     func lageKamera() -> JSONValue {
         let c = viewport.camera
         func v(_ p: SIMD3<Float>) -> JSONValue { .array(SprachSteuerung.zahlen(p).map(JSONValue.number)) }
@@ -526,58 +526,16 @@ extension AppController {
             "fov": c.isOrthographic ? .null : .number(Double(c.fieldOfView)),
             "ortho_hoehe": c.isOrthographic ? .number(Double(c.orthographicScale)) : .null,
             "ansicht": ViewportCoordinator.nearestStandardName(c).map(JSONValue.string) ?? .null,
-            "durch": cameras.activeView.map { .string("Kamera/\($0)") } ?? .null,
+            "durch": cameras.activeView.map { .string($0.hasPrefix("Kamera/") ? $0 : "Kamera/" + $0) } ?? .null,
         ])
     }
 
-    /// Lage beim Abschließen, Felder wie LAGE ohne Kopf und Maus.
+    /// Lage beim Abschließen: das Lagebild (V2-5) ohne Maus und ohne Zahlen für den Selbsttest.
     func feedbackLage() -> JSONValue {
-        let groesse = viewport.viewSize
-        let projector = OverlayProjector(camera: viewport.camera, size: groesse)
-        let bild = CGRect(origin: .zero, size: groesse)
-        var sichtbar: [String] = []
-        var verborgen: [String] = []
-        for name in scene.order {
-            guard scene.isVisible(name) else {
-                verborgen.append(name)
-                continue
-            }
-            if let b = scene.worldBounds(of: .part(name)), !Self.imBild(b, projector, bild) { continue }
-            sichtbar.append(name)
-        }
-        let anim = model.animation
-        var animation = JSONValue.null
-        if anim.posed, let aktuell = anim.current {
-            animation = .object(["name": .string(aktuell.name), "zeit": .number(anim.time), "spielt": .bool(anim.playing)])
-        }
-        func namen(_ n: [String]) -> JSONValue { .array(n.map(JSONValue.string)) }
-        return .object([
-            "kamera": lageKamera(),
-            "viewport": .object(["breite": .number(groesse.width), "hoehe": .number(groesse.height)]),
-            "sichtbar": namen(sichtbar), "verborgen": namen(verborgen),
-            "isoliert": model.viewer.lokaleAnsicht ? namen(sichtbar) : .null,
-            "auswahl": .object(["run": .number(Double(scene.latestRun)), "refs": namen(scene.selection.map(\.string))]),
-            "darstellung": .string(model.viewer.shading.rawValue),
-            "schnitt": model.sectionEnabled ? .object(["an": .bool(true)]) : .null,
-            "explosion": .number(model.explodeFactor), "animation": animation,
-        ])
-    }
-
-    /// Liegt der Hüllquader ganz oder teilweise im Bild?
-    private static func imBild(_ b: BoundingBox, _ p: OverlayProjector, _ bild: CGRect) -> Bool {
-        var punkte: [CGPoint] = []
-        for x in [b.min.x, b.max.x] {
-            for y in [b.min.y, b.max.y] {
-                for z in [b.min.z, b.max.z] {
-                    // Hinter der Kamera lässt sich nichts projizieren: im Zweifel zählt das Teil als im Bild
-                    guard let s = p.project(SIMD3(x, y, z)) else { return true }
-                    punkte.append(s)
-                }
-            }
-        }
-        let xs = punkte.map(\.x), ys = punkte.map(\.y)
-        let huelle = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
-        return huelle.intersects(bild)
+        var felder = lagebild()
+        felder["maus"] = nil
+        felder["statistik"] = nil
+        return .object(felder)
     }
 
     /// Bild der Ansicht, längste Seite höchstens 1600 Pixel, ohne Überlagerung (die Striche kommen danach darauf).

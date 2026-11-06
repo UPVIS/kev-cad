@@ -14,7 +14,7 @@ angenommen“).
 
 | Was | Budget | Messung |
 |---|---|---|
-| ↩ bis Paket beim Agenten (`feedback`, wartet über MCP) | unter 1 s | 142, 184, 240, 243 ms |
+| ↩ bis Paket beim Agenten (`feedback`, wartet über MCP) | unter 1 s | 142, 184, 240, 243 ms, nach dem Merge mit V2-5b bei Last 120 450 ms |
 | ↩ bis Datei geschrieben | | 138, 165, 207, 242 ms |
 | ↩ bis Hintergrundbefehl `kevcad-feedback` endet | | 172, 237, 456 ms |
 | wie oben, ↩ 0,5 s nach dem Weitersprechen (die Erkennung läuft neu an) | unter 1 s | 873, 992, 993 ms |
