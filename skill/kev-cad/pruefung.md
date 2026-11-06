@@ -5,14 +5,19 @@ Teil des Skills kev-cad. Was die eingebaute Prüfung nach jedem Lauf prüft und 
 ## Prüfen vor dem Fertigmelden (Kevin, 21.10.2026, gilt immer)
 
 Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst (Durchdringung, Schweben, Standsicherheit,
-Einbaubarkeit). `run` wartet seit V2-1 höchstens `warten_s` (Vorgabe 3 s) auf das Ergebnis: Ist die Prüfung bis dahin
-fertig, stehen ihre neuen Befunde in der Antwort; sonst sagt `run` „Prüfung läuft noch im Hintergrund“, nennt
-vorläufig die Befunde der Bedingungen, und die Prüfung rechnet ohne neuen Lauf weiter (Kevin sieht sie im Prüfband).
-`pruefen()` wartet auf den Endstand und zeigt alles samt Stand und Montage. Befunde beheben, nicht nur melden:
+Einbaubarkeit). `run` wartet höchstens `warten_s` auf das Ergebnis (Vorgabe nach der Dauer des Laufs: bis rund 2,4 s
+ab dem Start des Laufs, mindestens 0,4 s, nach einem langen Lauf bis 3 s). Ist die Prüfung bis dahin fertig, stehen ihre
+neuen Befunde in der Antwort. Nach einer Änderung an einem größeren Modell kommt sie in Stufen: erst Durchdringung,
+Bedingungen und Stand, dann Druck, Montage, Statik und Bewegungsraum („Druck, Montage, Statik und Bewegungsraum rechnen
+noch im Hintergrund“, Zustand `teilweise`). Ist auch die erste Stufe noch nicht da, sagt `run` „Prüfung läuft noch im Hintergrund“
+und nennt vorläufig die Befunde der Bedingungen. Die Prüfung rechnet in jedem Fall ohne neuen Lauf weiter (Kevin sieht sie
+im Prüfband). `pruefen()` wartet auf den Endstand und zeigt alles samt Stand und Montage. Befunde beheben, nicht nur
+melden:
 
 - **Vor dem Fertigmelden auf den Endstand warten** (Prüftempo, 22.10.2026; V2-1): Sagt `run` „Prüfung läuft noch im
-  Hintergrund“ oder schafft der Bewegungsraum das Zeitlimit eines Laufs nicht („Bewegungsraum: 2 Gelenke noch nicht
-  geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet“, Zustand `teilweise`), ist das kein fertiges Ergebnis.
+  Hintergrund“, „… rechnen noch im Hintergrund“ oder schafft der Bewegungsraum sein Zeitlimit nicht („Bewegungsraum: 2
+  Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet“, Zustand `teilweise`), ist das kein
+  fertiges Ergebnis.
   Kev CAD rechnet ohne neuen Lauf weiter; `pruefen()` (wartet standardmäßig, `warten=true`) bzw.
   `pruefen(thema="bedingungen")` zeigt den Endstand. Erst wenn dort keine Fehler mehr stehen, fertig melden. Nicht
   einfach `run` wiederholen, das verwirft das Fertigrechnen und beginnt von vorn.

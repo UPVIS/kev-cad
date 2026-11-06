@@ -47,7 +47,7 @@ Auto-Lauf: Der Kernel beobachtet `model.py` des offenen Projekts selbst und star
 | type | Felder | Nutzlast |
 |---|---|---|
 | `HELLO` | `protocol: 1`, `kernel_version`, `build123d`, `mcp_port`, `faehigkeiten` (V2-5, siehe „V2-5 Live“) | – |
-| `STATUS` | `state`: `ready` \| `busy` \| `error`, `message` | – |
+| `STATUS` | `state`: `ready` \| `busy` \| `error`, `message`. `ready` heißt: Projekte lassen sich öffnen; beim Start kommt es, bevor der Rechenprozess geladen ist (V2-1b, ein Lauf wartet selbst auf ihn) | – |
 | `PROJECT` | `path`, `name`, `model` (Pfad zu model.py), optional `reply_to` | – |
 | `RUN_START` | `run`, `file_hash`, `params` (Objekt), `slow_ms` | – |
 | `STEP` | `run`, `index` (ab 1), `text` | – |
@@ -368,6 +368,12 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   auf Anfrage gerechneten. Bloßer Fortschritt schickt kein neues `CHECK`. Ältere Apps sehen ein `teilweise` ohne
   `im_hintergrund` und ersetzen es beim nächsten `CHECK`; die App zeigt im Prüfband „Statik: … rechnet noch, Befunde
   folgen …“.
+- Stufen (additiv, V2-1b): Nach einer Änderung an einem nicht kleinen Modell kommt vor Druck, Montage, Statik und
+  Bewegungsraum ein Zwischenstand: ein `CHECK` mit `state: "teilweise"` ohne `druck`, `montage` und `statik`, dessen Befunde
+  Durchdringung, Bedingungen und Stand abdecken. Der Rest folgt mit demselben `run`, zuletzt `done`. In der Nachricht an die App
+  stehen offene Prüfungen bei `statik_im_hintergrund` (`"Druck"`, `"Montage"`, `"Statik"`, `"Bewegungsraum"`), `im_hintergrund`
+  nennt weiter nur Wege; so zeigt das Prüfband „Statik: 4 Rechnungen laufen noch, Befunde folgen …“. Intern und für den Agenten
+  (`pruefen`, Laufergebnis) stehen sie bei `im_hintergrund`.
 - Befund:
 
 ```json

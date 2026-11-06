@@ -17,10 +17,16 @@ sperren den Export, gleich aus welcher Quelle.
 Kommt eine Prüfung im Zeitlimit des Laufs nicht ganz durch (Bewegungsraum), legt sie in ``ctx.hintergrund`` eine
 ``Fortsetzung`` ab: Das Ergebnis geht dann als ``state: "teilweise"`` hinaus, und der Rechenprozess rechnet den Rest
 fertig (``pruefung/lauf.py``, ``PruefLauf.fertig_rechnen``), ersetzt die Befunde dieser Arten und schickt ``done``.
+
+Stufen (V2-1b): Die Prüfungen laufen in fester Reihenfolge (``ordnen``), die für den nächsten Schritt wichtigen zuerst. Vor
+der ersten aus ``HINTEN`` (Druck, Montage, Statik, Bewegungsraum: nach einer Maßänderung Sekunden) ruft ``pruefe`` die
+Funktion ``zwischenstand``; so erfahren Agent und App Durchdringungen, Bedingungen und Stand, während der Rest rechnet.
+Gerechnet wird davon unabhängig alles.
 """
 
 from __future__ import annotations
 
+import copy
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -76,6 +82,7 @@ class PruefKontext:
     zeiten: dict[str, float] = field(default_factory=dict)
     stand_cache: dict = field(default_factory=dict)
     hintergrund: dict[str, Fortsetzung] = field(default_factory=dict)  # Name der Prüfung → Rest fürs Fertigrechnen
+    beginn: float = field(default_factory=time.perf_counter)  # Start der Prüfung (Zeitbudget der Stufen)
 
     # -- Erklärungen ---------------------------------------------------------------------------------------------
 
@@ -110,6 +117,9 @@ class PruefKontext:
 
 PruefFunktion = Callable[[PruefKontext], list[dict[str, Any]]]
 PRUEFUNGEN: list[tuple[str, PruefFunktion]] = []
+# Prüfungen hinter dem Zwischenstand und ihre Namen in CHECK.im_hintergrund (siehe Modulbeschreibung)
+HINTEN = {"druck": "Druck", "montage": "Montage", "statik": "Statik", "bewegungsraum": "Bewegungsraum"}
+Zwischenstand = Callable[[Callable[[], tuple[dict[str, Any], list]], list[str], float], None]
 
 
 def registriere(name: str, fn: PruefFunktion, nach: str | None = None) -> None:
@@ -126,6 +136,11 @@ def registriere(name: str, fn: PruefFunktion, nach: str | None = None) -> None:
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Durchdringung
+
+
+def ordnen(reihenfolge: tuple[str, ...]) -> None:
+    """Prüfungen in diese Reihenfolge bringen (was nicht genannt ist, bleibt dahinter)."""
+    PRUEFUNGEN.sort(key=lambda p: reihenfolge.index(p[0]) if p[0] in reihenfolge else len(reihenfolge))
 
 
 def kandidaten_paare(koerper: list[Koerper], pad: float) -> list[tuple[int, int]]:
@@ -202,7 +217,7 @@ def pruefe_durchdringungen(ctx: PruefKontext) -> list[dict[str, Any]]:
     ks = list(ctx.koerper.values())
     out: list[dict[str, Any]] = []
     neu0 = ctx.cache.neu
-    for i, j in kandidaten_paare(ks, bf.BERUEHR_TOL):
+    for i, j in kandidaten_paare(ks, bf.BERUEHR_GRENZE):
         ctx.abbrechen()
         a, b = ks[i], ks[j]
         p = pruefe_paar(a, b, ctx.cache)
@@ -302,20 +317,45 @@ def lade_erweiterungen() -> None:
 
 def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, optionen: dict[str, Any] | None = None,
            cache: PaarCache | None = None, abbrechen: Callable[[], None] | None = None,
-           stand_cache: dict | None = None) -> tuple[dict[str, Any], list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+           stand_cache: dict | None = None, zwischenstand: Zwischenstand | None = None
+           ) -> tuple[dict[str, Any], list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
     """Alle registrierten Prüfungen; liefert (Ergebnis, Schnittkörper). Bricht mit ``Abgebrochen`` ab, wenn
-    ``abbrechen`` das verlangt (neuerer Auftrag)."""
+    ``abbrechen`` das verlangt (neuerer Auftrag). ``zwischenstand(stand, offen, dauer_s)``: Aufruf vor der ersten
+    Prüfung aus ``HINTEN``; ``stand()`` liefert (Ergebnis, Schnittkörper) des bisherigen Stands."""
     t0 = time.perf_counter()
     lade_erweiterungen()
     aktiv = (optionen or {}).get("pruefungen")
     volumen = [k for k in koerper if k.volumen > 1e-6 and len(k.tri)]
     ctx = PruefKontext(koerper={k.name: k for k in volumen}, erklaerungen=dict(erklaerungen or {}),
                        optionen=dict(optionen or {}), cache=cache if cache is not None else PaarCache(),
-                       abbrechen=abbrechen or (lambda: None), stand_cache=stand_cache if stand_cache is not None else {})
+                       abbrechen=abbrechen or (lambda: None), stand_cache=stand_cache if stand_cache is not None else {},
+                       beginn=t0)
     befunde: list[dict[str, Any]] = []
-    for name, fn in PRUEFUNGEN:
-        if aktiv is not None and name not in aktiv:
+
+    def ergebnis(alle: list[dict[str, Any]], geo: list) -> tuple[dict[str, Any], list]:
+        fertig, geometrie = abschliessen(alle, geo)
+        return {
+            "befunde": fertig,
+            "zusammenfassung": bf.zusammenfassung(fertig),
+            "zaehler": bf.zaehler(fertig),
+            "teile": len(volumen),
+            "ohne_volumen": [k.name for k in koerper if k not in volumen],
+            **ctx.ergebnis,
+            "zeiten_ms": {k: round(v, 1) for k, v in ctx.zeiten.items()},
+            "dauer_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }, geometrie
+
+    def laeuft(name: str) -> bool:
+        return aktiv is None or name in aktiv or (name == "bewegungsraum" and "bedingungen" in aktiv)
+
+    for i, (name, fn) in enumerate(PRUEFUNGEN):
+        if not laeuft(name):
             continue
+        if zwischenstand is not None and name in HINTEN:
+            offen = [HINTEN[n] for n, _ in PRUEFUNGEN[i:] if n in HINTEN and laeuft(n)]
+            zwischenstand(lambda: ergebnis(copy.deepcopy(befunde), list(ctx.geometrie)), offen,
+                          time.perf_counter() - t0)
+            zwischenstand = None
         try:
             befunde += list(fn(ctx) or [])
         except Abgebrochen:
@@ -327,20 +367,10 @@ def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, o
                                   f"Prüfung „{name}“ ist fehlgeschlagen: {type(exc).__name__}: {exc}",
                                   "Bitte melden; die übrigen Prüfungen sind gelaufen."))
             ctx.ergebnis.setdefault("fehler", []).append(traceback.format_exc(limit=6))
-    befunde, geometrie = abschliessen(befunde, ctx.geometrie)
-    ergebnis = {
-        "befunde": befunde,
-        "zusammenfassung": bf.zusammenfassung(befunde),
-        "zaehler": bf.zaehler(befunde),
-        "teile": len(volumen),
-        "ohne_volumen": [k.name for k in koerper if k not in volumen],
-        **ctx.ergebnis,
-        "zeiten_ms": {k: round(v, 1) for k, v in ctx.zeiten.items()},
-        "dauer_ms": round((time.perf_counter() - t0) * 1000, 1),
-    }
+    erg, geometrie = ergebnis(befunde, ctx.geometrie)
     if ctx.hintergrund:  # nicht ins Protokoll: PruefLauf nimmt es heraus (Fertigrechnen im Hintergrund)
-        ergebnis["_hintergrund"] = dict(ctx.hintergrund)
-    return ergebnis, geometrie
+        erg["_hintergrund"] = dict(ctx.hintergrund)
+    return erg, geometrie
 
 
 def abschliessen(befunde: list[dict[str, Any]], geo_alt: list[tuple[np.ndarray, np.ndarray, np.ndarray]]

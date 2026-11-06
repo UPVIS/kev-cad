@@ -511,18 +511,35 @@ def standard_ebene(teil: Any, name: str) -> Bezug:
     return _aus_flaechen(faces, name, teil)
 
 
-def bohrungen_von(teil: Any) -> list[Bezug]:
-    """Alle Bohrungen (nach innen gewölbte Zylinderflächen), koaxiale Teilflächen gleichen Radius zusammengefasst,
-    sortiert nach Lage (x, y, z)."""
+def _innenzylinder(teil: Any) -> list[tuple[Any, dict[str, Any]]]:
+    """Nach innen gewölbte Zylinderflächen eines Teils mit ihren Daten. Mit dem Rechengedächtnis über Läufe hinweg je Inhalt
+    der Form gemerkt (V2-1b): gleicher Inhalt heißt gleiche Flächen in gleicher Reihenfolge und Lage."""
     from build123d import GeomType
 
-    gruppen: list[tuple[list[Any], list[dict[str, Any]]]] = []
-    for f in teil.faces():
+    from kevcad_kernel import gedaechtnis
+
+    faces = teil.faces()
+    key = ("innenzylinder", gedaechtnis.inhalt(teil.wrapped)) if gedaechtnis.aktiv() else None
+    gemerkt = gedaechtnis.WERTE.get(key) if key is not None else None
+    if gemerkt is not None:
+        return [(faces[i], _kopie(info)) for i, info in gemerkt]
+    daten = []
+    for i, f in enumerate(faces):
         if f.geom_type != GeomType.CYLINDER:
             continue
         info = _flaeche_daten(f)
-        if not info.get("innen"):
-            continue
+        if info.get("innen"):
+            daten.append((i, info))
+    if key is not None:
+        gedaechtnis.WERTE.put(key, [(i, _kopie(info)) for i, info in daten])
+    return [(faces[i], info) for i, info in daten]
+
+
+def bohrungen_von(teil: Any) -> list[Bezug]:
+    """Alle Bohrungen (nach innen gewölbte Zylinderflächen), koaxiale Teilflächen gleichen Radius zusammengefasst,
+    sortiert nach Lage (x, y, z)."""
+    gruppen: list[tuple[list[Any], list[dict[str, Any]]]] = []
+    for f, info in _innenzylinder(teil):
         for faces, infos in gruppen:
             i0 = infos[0]
             off = info["p0"] - i0["p0"]

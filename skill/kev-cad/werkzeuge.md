@@ -35,7 +35,7 @@ Execute model.py; parts stream live into Kevin's viewer. Returns what you need n
 - `titel` (string, optional): Short German description of a larger change in Kevin's words; becomes the title of the new version
 - `slow_ms` (integer, optional, Vorgabe 0): Slow motion pause in ms per step, 0 = off
 - `timeout_s` (number, optional): Time limit for model.py in seconds (default 120, at most 900); raise only after a time-limit failure
-- `warten_s` (number, optional): Wait at most this long for the built-in check (default 3 s, 0 = not at all); if it still runs, call pruefen() before reporting done
+- `warten_s` (number, optional): Wait at most this long for the built-in check (default 0.4 to 3 s, depending on the run time; 0 = not at all); if it still runs, call pruefen() before reporting done
 
 ### execute
 

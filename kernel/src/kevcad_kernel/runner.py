@@ -924,9 +924,11 @@ class Runner:
 
     # -- Prüfung -------------------------------------------------------------------------------------------------------
 
-    def pruefe(self, run: int, abbrechen: Callable[[], None] | None = None) -> tuple[dict[str, Any], bytes]:
+    def pruefe(self, run: int, abbrechen: Callable[[], None] | None = None,
+               zwischenstand: Callable[[dict[str, Any], bytes], None] | None = None) -> tuple[dict[str, Any], bytes]:
         """Prüft den Stand des Laufs ``run`` (Durchdringungen …), siehe kevcad_kernel/pruefung/lauf.py. Liefert Kopf
-        und Nutzlast der Nachricht CHECK."""
+        und Nutzlast der Nachricht CHECK; ``zwischenstand(kopf, nutzlast)`` bekommt in Stufen den Stand vor Montage,
+        Statik und Bewegungsraum."""
         from kevcad_kernel.pruefung.lauf import PruefLauf
         from kevcad_kernel.protocol import pack_check
 
@@ -940,7 +942,8 @@ class Runner:
         # Statik (statik/anbindung.py): Katalog (Werkstoffe, Reibwerte, leichtere Lagerteile) und Parameter des Laufs
         return self._pruef_lauf.pruefe(run, daten[1], daten[2], abbrechen,
                                        optionen={"projekt": getattr(self, "_projekt_pfad", None),
-                                                 "katalog": self.catalog, "params": dict(self.params), "run": run})
+                                                 "katalog": self.catalog, "params": dict(self.params), "run": run},
+                                       zwischenstand=zwischenstand)
 
     def fertig_rechnen(self, run: int, abbrechen: Callable[[], None] | None = None
                        ) -> tuple[dict[str, Any], bytes] | None:

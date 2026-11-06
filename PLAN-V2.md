@@ -37,14 +37,14 @@ Drei Maßstäbe für jede Entscheidung:
 ## 3. Messwerte
 
 Kugelschieber Variante B (134 Teile), gemessen mit `kernel/tools/messen.py`, Einzelheiten in `kernel/tools/MESSUNG.md`.
-„Vorher“ ist main `f136caa`, „jetzt“ ist V2-1 mit `warten_s` 3.
+„Vorher“ ist main `f136caa`, „V2-1“ der Stand mit `warten_s` 3, „jetzt“ V2-1b bei einer Last um 20.
 
-| Lauf | `run()` vorher | `run()` jetzt | alle Teile im Viewer (jetzt) |
-|---|---|---|---|
-| erster Lauf | 29,9 s | 11,8 s | 7,1 s |
-| nichts geändert | 7,9 s | 2,3 s | 1,4 s |
-| nur Kommentar | 7,7 s | 2,3 s | 1,3 s |
-| Maß geändert (28 von 599 Booleans neu) | 15,6 s | 5,1 s (2,2 s mit `warten_s=0`) | 1,7 s |
+| Lauf | `run()` vorher | `run()` V2-1 | `run()` jetzt | alle Teile im Viewer (jetzt) |
+|---|---|---|---|---|
+| erster Lauf | 29,9 s | 11,8 s | 11,6 s (erstes Prüfergebnis 11,9 statt 30 s) | 7,3 s |
+| nichts geändert | 7,9 s | 2,3 s | 1,4 s | 1,0 s |
+| nur Kommentar | 7,7 s | 2,3 s | 1,2 s | 0,9 s |
+| Maß geändert (34 von 634 Operationen neu) | 15,6 s | 5,1 s | 2,3 s (mit Durchdringung, Bedingungen und Stand) | 1,5 s |
 
 Schnittstelle auf main:
 - **Werkzeuge:** 95, `tools/list` hat 137.092 Zeichen.
@@ -65,14 +65,14 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 
 | Was | Ziel | Stand |
 |---|---|---|
-| Maßänderung: erste geänderte Teile im Viewer | unter 1 s | 0,2 s für das erste, 1,7 s für das letzte Teil |
-| Maßänderung: `run()` zurück | unter 2,5 s | 5,1 s (2,2 s mit `warten_s=0`) |
-| unveränderter Lauf: `run()` zurück | unter 1,5 s | 2,3 s |
+| Maßänderung: erste geänderte Teile im Viewer | unter 1 s | 0,15 s für das erste, 1,5 s für das letzte Teil |
+| Maßänderung: `run()` zurück | unter 2,5 s | 2,3 s bei Last um 20, 2,8 s bei Last um 40 |
+| unveränderter Lauf: `run()` zurück | unter 1,5 s | 1,4 s bei Last um 20, 1,6 s bei Last um 40 |
 | Antwort von `run`: unverändert / kleine Änderung / erster Lauf mit 134 Teilen | 1.500 / 4.000 / 8.000 Zeichen | 490 / 2.389 / 1.449 Zeichen |
 | Server-Anweisungen | höchstens 6.000 Zeichen | rund 5.000 Zeichen |
 | Übertragung je unverändertem Lauf | unter 50 KB | 32 KB mit echter App (V2-5b, `kernel/tools/live_selbsttest.py`), vorher 11,3 MB |
 | Lagebild: Antwort der App | unter 50 ms | in Ruhe Median 9 ms, 95 % unter 19 ms; während eines Laufs Median 13 ms, 95 % unter 39 ms (die App selbst unter 1 ms) |
-| App-Start bis bedienbares leeres Projekt | unter 1 s | ohne fremde Last (Mac mini) Fenster nach 0,19 s, Hauptfaden 0,14 s; unter Last am MacBook 1,7 bis 3,6 s; der Kernel ist rund 6 s später bereit, nach einem Update lädt er seit V2-8 schon beim Installieren |
+| App-Start bis bedienbares leeres Projekt | unter 1 s | ohne fremde Last (Mac mini) Fenster nach 0,19 s, Hauptfaden 0,14 s; unter Last am MacBook 1,7 bis 3,6 s; `status` nennt das leere Projekt 0,8 bis 1,7 s nach dem Start des Kernels (`kernel/tools/messen_start.py`); nach einem Update lädt er seit V2-8 schon beim Installieren |
 | Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | gezeichnet rund 120 Bilder/s, auch unter Last 130 bis 190 (Hauptfaden 1,2 ms, GPU 6 ms je Bild, keine Pause über 65 ms); ohne Bildschirmtakt 144 bis 477 Bilder/s; am Monitor nach V2-8 noch nicht gemessen, vorher 35 bis 60 (siehe Abschnitt 7) |
 | Kachel groß, alle einordnen | unter 100 ms | 50 bis 60 ms, 35 bis 42 ms (vorher 118 bis 142 ms, 66 ms) |
 | Sprach-Feedback: Wort erscheint als Text | unter 0,3 s, Vorschlag rund 0,6 s | Apple-Rückfall im Median 450 bis 480 ms; Wortlaut rechnet im Takt von 0,4 s, also rechnerisch 0,2 bis 0,6 s, mit Mikrofon noch nicht gemessen |
@@ -83,6 +83,7 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Paket | Inhalt | Strang | hängt ab von | Stand |
 |---|---|---|---|---|
 | V2-1 Tempo im Kernel | Rechengedächtnis je Operation (Booleans, Aufräumen, Volumen, Hüllquader, Abstände), Leerlauf entfernt, `run` wartet höchstens `warten_s` auf die Prüfung, Nachlauf aus dem Auftragsfaden, Zeiten je Phase | Kernel | – | fertig, auf `v2` (`31618fd`) |
+| V2-1b Tempo nachziehen | Fasen und Verrundungen im Gedächtnis, `moved` ohne Kopie der B-Rep, Statik je Modell gemerkt, Prüfung in Stufen (Zwischenstand nach Durchdringung, Bedingungen und Stand), Bewegungsraum zuletzt, `run` wartet nach der Dauer des Laufs, Bauplan im Hintergrund wird von einem neuen Lauf abgelöst, Kernel startet ohne build123d im Elternprozess | Kernel | V2-1 | fertig, Zahlen in `kernel/tools/MESSUNG.md` |
 | V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | fertig, auf `v2` (`541e1fc`), Zahlen in `kernel/tools/MESSUNG-V2-2.md` |
 | V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | fertig, auf `v2` (`ed36826`), Einzelheiten in `OBERFLAECHE.md`; Klicks, Tasten und Benennen prüft Kevin in der Abnahme |
 | V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | fertig, auf `v2` (`d255717`); Bildrate am Monitor und echte Eingaben prüft Kevin in der Abnahme |
@@ -158,14 +159,12 @@ und Bezug als Anweisung zum Agenten.
   Quelle). Bei einem Update von build123d die nachgebauten Methoden in `gedaechtnis.py` prüfen.
 - **Nachlauf im Hintergrund:** Bauplan, Blätter und Versionen entstehen nach `run` im Hintergrund. Wer `dokumente/`
   direkt nach einem Lauf ändert, kann damit kollidieren.
-- **Warmer Lauf 2,3 s:** Den Rest kostet model.py selbst:
-  - Gedächtnis-Aufwand 0,39 s
-  - Verschiebungen mit Kopie der B-Rep 0,2 s
-  - Fasen und Verrundungen 0,15 s
-  - Zukaufteile 0,15 s
-  - dazu die Statik der Prüfung mit 0,54 s
-
-  Nächste Kandidaten: Fasen und Verrundungen ins Gedächtnis, Verschiebungen ohne Kopie, Statik je Modell merken.
+- **Warmer Lauf:** Mit V2-1b rund 1,3 s; das meiste kostet jetzt model.py selbst (Binärformen für Schlüssel und Ergebnisse
+  der 634 gemerkten Operationen rund 0,35 s, Zukaufteile, Python-Logik des Modells). Weiter ginge es nur mit Schlüsseln aus
+  dem Inhalt der Eingaben statt ihrer Binärform; das braucht einen Nachweis, dass gemeinsam benutzte Teilformen das Ergebnis
+  nicht ändern.
+- **Prüfung in Stufen:** Nach einer Maßänderung ist nur der Zwischenstand schnell. Montage, Statik und Bewegungsraum rechnen
+  weiter Sekunden im Hintergrund; `pruefen()` wartet darauf.
 - **Werkzeugnamen:** Laufende Agentensitzungen rufen nach dem Wechsel nach main noch die alten Namen. Server und Brücke
   antworten mit dem neuen Aufruf, ausführen tun sie ihn nicht. Der Client kennt die neuen Werkzeuge erst nach `/mcp` oder in
   einer neuen Sitzung.

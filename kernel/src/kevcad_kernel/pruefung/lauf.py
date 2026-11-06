@@ -12,10 +12,19 @@ Teilweise (Prüftempo, 22.10.2026): Legt eine Prüfung eine ``Fortsetzung`` ab (
 Laufs), geht das Ergebnis als ``state: "teilweise"`` mit ``im_hintergrund`` (offene Wege) hinaus. Der Rechenprozess
 ruft danach ``fertig_rechnen`` auf, sobald nichts anderes ansteht: Es rechnet den Rest ohne Zeitlimit, ersetzt die
 Befunde der betroffenen Arten und liefert dasselbe Ergebnis vollständig als ``done`` (gleicher Lauf).
+
+Stufen (V2-1b): Hat sich ein Teil geändert und ist das Modell nicht klein, geht vor Druck, Montage, Statik und Bewegungsraum
+ein Zwischenstand hinaus, ebenfalls ``teilweise``, mit ``im_hintergrund`` ["Druck", "Montage", "Statik", "Bewegungsraum"].
+Agent und App sehen Durchdringungen, Bedingungen und Stand, während die Prüfung im selben Aufruf weiterrechnet; aus dem
+Zwischenspeicher kommt sonst alles im ersten Anlauf, dann bleibt es bei einem ``CHECK``. Wer das Ergebnis einer späteren
+Prüfung braucht, wartet mit ``PruefStand.abwarten``. Der Bewegungsraum bekommt in Stufen nur den Rest des Budgets ``VORNE_S``,
+was er nicht schafft, rechnet ``fertig_rechnen``. Am Inhalt ändert das nichts: Gerechnet wird dasselbe, der Endstand ist
+derselbe. Aus mit ``KEVCAD_PRUEF_STUFEN=0``.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -26,6 +35,15 @@ from kevcad_kernel.pruefung.pruefer import Abgebrochen, Fortsetzung, abschliesse
 # Prüfungen, die nach jedem Lauf laufen (None = alle registrierten: erklaerungen, durchdringung, bedingungen aus
 # bedingungen/anbindung.py, stand, montage)
 AKTIV: tuple[str, ...] | None = None
+VORNE_S = 0.7  # Stufen: so lange darf die Prüfung samt Bewegungsraum dauern, bevor der Rest in den Hintergrund geht
+KLEIN_S = 0.2  # Stufen: darunter bleibt es bei einem CHECK (die erste Stufe und die letzte Prüfung waren so kurz) …
+KLEIN_TEILE = 40  # … und das Modell hat weniger Teile
+HINTEN_ZEITEN = ("druck", "druckvorschau", "montage", "statik", "bewegungsraum")
+STAENDE_MERKEN = 8  # wie viele geprüfte Stände der Teile (wie die Statik, statik/merken.py)
+
+
+def stufen_an() -> bool:
+    return os.environ.get("KEVCAD_PRUEF_STUFEN", "1").strip().lower() not in ("0", "aus", "false", "nein", "no")
 
 
 class PruefLauf:
@@ -33,6 +51,8 @@ class PruefLauf:
         self.cache = PaarCache()
         self.koerper: dict[tuple[str, str], Koerper] = {}
         self.stand_cache: dict = {}
+        self._staende: list[frozenset[tuple[str, str]]] = []  # Teile der letzten Prüfungen, neueste zuletzt (Stufen)
+        self._hinten_ms = 0.0  # längste Dauer von Montage, Statik und Bewegungsraum bisher (Stufen)
         # teilweises Ergebnis zum Fertigrechnen: (Lauf, Ergebnis, Schnittkörper, Fortsetzungen)
         self._offen: tuple[int, dict[str, Any], list, dict[str, Fortsetzung]] | None = None
 
@@ -56,17 +76,45 @@ class PruefLauf:
             self.stand_cache.clear()
         return out
 
+    def _zwischenstand_noetig(self, ks: list[Koerper], dauer_s: float) -> bool:
+        """Lohnt ein Zwischenstand? Nur bei einem neuen Stand der Teile (ein schon geprüfter kommt aus dem Zwischenspeicher,
+        auch der vor einer Maßänderung) und wenn das Modell nicht klein ist. Eine falsche Antwort kostet nichts am Ergebnis:
+        ein CHECK mehr oder weniger."""
+        if frozenset((k.name, k.key) for k in ks) in self._staende:
+            return False
+        return dauer_s >= KLEIN_S or self._hinten_ms >= KLEIN_S * 1000 or len(ks) >= KLEIN_TEILE
+
     def pruefe(self, run: int, erfassung: Any, shown: list[str], abbrechen: Callable[[], None] | None = None,
-               optionen: dict[str, Any] | None = None) -> tuple[dict[str, Any], bytes]:
-        """Kopf und Nutzlast von CHECK (ohne seq)."""
+               optionen: dict[str, Any] | None = None,
+               zwischenstand: Callable[[dict[str, Any], bytes], None] | None = None) -> tuple[dict[str, Any], bytes]:
+        """Kopf und Nutzlast von CHECK (ohne seq). ``zwischenstand(kopf, nutzlast)``: Stufen, siehe Modulbeschreibung."""
         from kevcad_kernel.protocol import pack_check
 
         daten = erfassung.ergebnis(shown)
         opt = {"pruefungen": AKTIV, **(optionen or {})}
         self._offen = None
+        ks: list[Koerper] = []
+
+        def stufe(stand: Callable[[], tuple[dict[str, Any], list]], offen: list[str], dauer_s: float) -> None:
+            if zwischenstand is None or not self._zwischenstand_noetig(ks, dauer_s):
+                return
+            if not _bedingungen.wege_da():
+                offen = [o for o in offen if o != "Bewegungsraum"]
+            kopf, nutz = self._kopf(run, "teilweise", *stand(), offen)
+            kopf.pop("seq", None)
+            zwischenstand(kopf, nutz)
+
+        stufen = zwischenstand is not None and stufen_an()
+        if stufen:
+            opt["vorne_s"] = VORNE_S
         try:
             ks = self.koerper_fuer(erfassung, shown, daten.get("teile") or {})
-            erg, geo = pruefe(ks, daten.get("erklaerungen") or {}, opt, self.cache, abbrechen, self.stand_cache)
+            erg, geo = pruefe(ks, daten.get("erklaerungen") or {}, opt, self.cache, abbrechen, self.stand_cache,
+                              stufe if stufen else None)
+            zeiten = erg.get("zeiten_ms") or {}
+            self._hinten_ms = max(self._hinten_ms, sum(float(zeiten.get(k) or 0.0) for k in HINTEN_ZEITEN))
+            stand = frozenset((k.name, k.key) for k in ks)
+            self._staende = [s for s in self._staende if s != stand][-(STAENDE_MERKEN - 1):] + [stand]
         except Abgebrochen as exc:
             header, payload = pack_check(run=run, state="cancelled", message=f"Prüfung abgebrochen: {exc}")
         except Exception as exc:  # noqa: BLE001 - die Prüfung darf den Rechenprozess nicht kippen
@@ -178,3 +226,13 @@ _registriere("statik", _statik.pruefe)
 
 if AKTIV is not None and "statik" not in AKTIV:
     AKTIV = (*AKTIV, "statik")
+
+# Bewegungsraum zuletzt (V2-1b): Er dauert nach einer Änderung am längsten, und nichts hängt von ihm ab
+from kevcad_kernel.bedingungen import anbindung as _bedingungen  # noqa: E402
+from kevcad_kernel.pruefung.pruefer import ordnen as _ordnen  # noqa: E402
+
+_registriere("bewegungsraum", _bedingungen.pruefe_bewegungsraum)
+# Reihenfolge (Stufen): Stand liest nur Kontakte, Druck liest weder Stand noch Bedingungen; Montage braucht Stand, die Statik
+# Stand und Druck, deshalb erst die Stufe bis zum Zwischenstand, dann der Rest
+_ordnen(("erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "druckvorschau", "gedruckt", "montage", "statik",
+         "bewegungsraum"))

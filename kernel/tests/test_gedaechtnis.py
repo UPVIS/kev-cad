@@ -6,13 +6,18 @@ import warnings
 
 import pytest
 from build123d import (
+    Axis,
     Box,
     BuildPart,
+    Color,
     Compound,
     Cylinder,
+    Location,
     Mode,
+    Plane,
     Pos,
     Select,
+    chamfer,
     fillet,
 )
 from build123d.topology import shape_core
@@ -278,3 +283,192 @@ def test_huellquader(mit_gedaechtnis, monkeypatch):
     weiter.move(Pos(10, 0, 0))
     bb = weiter.bounding_box()
     assert abs(bb.min.X - (ohne[0] + 10)) < 1e-9 and abs(bb.max.X - (ohne[3] + 10)) < 1e-9
+
+
+# -- V2-1b: Verschieben ohne Kopie der B-Rep, Fasen und Verrundungen --------------------------------------------------
+
+
+def test_moved_wie_build123d(mit_gedaechtnis):
+    """Gleiches Ergebnis wie das Original: Form geteilt mit der Quelle (``Moved``), Attribute kopiert, Kinder eigene
+    Kopien, Historie und Herkunft als Verweis."""
+    a = Pos(1, 2, 3) * (Box(10, 10, 10) - Cylinder(2, 20))
+    a.label, a.color = "Teil", Color(1, 0, 0)
+    kinder = Compound(label="Gruppe", children=[Box(1, 1, 1), Pos(5, 0, 0) * Box(1, 1, 1)])
+    ziel = Location((3, 4, 5), (10, 20, 30))
+    faelle = [(a, ziel), (kinder, ziel), (a, Plane.XZ)]
+    mit = [f.moved(l) for f, l in faelle]
+    gd.entfernen()
+    ohne = [f.moved(l) for f, l in faelle]
+    assert gd.installieren()
+    for f, m, o in zip((a, kinder, a), mit, ohne):
+        assert type(m) is type(o) and m.label == o.label and str(m.color) == str(o.color)
+        assert m.wrapped.IsPartner(f.wrapped) and o.wrapped.IsPartner(f.wrapped)
+        assert schreiben(m.wrapped) == schreiben(o.wrapped)
+        assert m._history is f._history and m.topo_path == f.topo_path
+        assert sorted(m.__dict__) == sorted(o.__dict__)
+        assert [c.label for c in m.children] == [c.label for c in o.children]
+        for c_m, c_o, c_f in zip(m.children, o.children, f.children):
+            assert schreiben(c_m.wrapped) == schreiben(c_o.wrapped) and not c_m.wrapped.IsPartner(c_f.wrapped)
+    # Attribute sind Kopien: Änderungen an der Kopie gehen nicht auf das Original
+    b = a.moved(ziel)
+    b.color = Color(0, 1, 0)
+    assert str(a.color) != str(b.color)
+    with pytest.raises(ValueError):
+        Compound().moved(ziel)
+
+
+def _kanten_faelle():
+    def koerper():
+        return Box(30, 20, 10) - Cylinder(4, 20)
+
+    return [
+        ("verrundung", lambda: _fillet_von(koerper, 1.5)),
+        ("fase", lambda: _fase_von(koerper, 1.0, None)),
+        ("fase zwei Maße", lambda: _fase_von(koerper, 1.0, 2.0)),
+        ("fase mit Fläche", lambda: _fase_flaeche(koerper, 1.0, 0.5)),
+        ("verschoben", lambda: _fillet_von(lambda: Pos(5, 6, 7) * koerper(), 1.0)),
+        ("Funktion", lambda: chamfer(koerper().edges().filter_by(Axis.Z), 0.7)),
+    ]
+
+
+def _fillet_von(koerper, r):
+    k = koerper()
+    return k.fillet(r, k.edges().filter_by(Axis.Z))
+
+
+def _fase_von(koerper, a, b):
+    k = koerper()
+    return k.chamfer(a, b, k.edges().filter_by(Axis.Z))
+
+
+def _fase_flaeche(koerper, a, b):
+    k = koerper()
+    f = k.faces().sort_by(Axis.Z)[-1]
+    return k.chamfer(a, b, f.edges(), f)
+
+
+def test_fasen_und_verrundungen_wie_ohne(mit_gedaechtnis):
+    for name, f in _kanten_faelle():
+        gd.entfernen()
+        ohne = f()
+        assert gd.installieren()
+        gd.lauf_beginn()
+        neu = f()
+        neu_stat = gd.statistik()
+        treffer = f()
+        assert gd.statistik()["treffer"] > neu_stat["treffer"], name
+        assert type(neu) is type(ohne) and type(treffer) is type(ohne), name
+        assert _geometrie(neu) == _geometrie(ohne), name
+        assert schreiben(treffer.wrapped) == schreiben(neu.wrapped), name
+        assert not treffer.wrapped.IsPartner(neu.wrapped), name
+        assert treffer.is_valid, name
+
+
+def test_fase_fehltreffer_bei_anderer_eingabe(mit_gedaechtnis):
+    gd.lauf_beginn()
+
+    def faelle(k):
+        z = k.edges().filter_by(Axis.Z)
+        return z, k.edges().filter_by(Axis.X)
+
+    k = Box(30, 20, 10)
+    z, x = faelle(k)
+    r1 = k.fillet(1, z)
+    assert gd.statistik()["neu"] == 1
+    r2 = k.fillet(2, z)  # anderes Maß
+    r3 = k.fillet(1, x)  # andere Kanten
+    r4 = k.fillet(1, z[:2])  # weniger Kanten
+    assert gd.statistik()["neu"] == 4 and gd.statistik()["treffer"] == 0
+    assert len({round(r.volume, 6) for r in (r1, r2, r3, r4)}) == 4
+    k2 = Box(30, 20, 11)  # anderer Körper
+    k2.fillet(1, k2.edges().filter_by(Axis.Z))
+    k3 = Pos(1, 0, 0) * k  # andere Lage
+    k3.fillet(1, k3.edges().filter_by(Axis.Z))
+    assert gd.statistik()["neu"] == 6 and gd.statistik()["treffer"] == 0
+    k.fillet(1, list(reversed(z)))  # andere Reihenfolge: anderer Schlüssel, gleiche Geometrie
+    k.chamfer(1, None, z)  # Fase mit demselben Maß ist etwas anderes
+    assert gd.statistik()["treffer"] == 0
+    k.fillet(1, z)
+    assert gd.statistik()["treffer"] == 1
+
+
+def test_eingabe_der_verrundung_bleibt_unveraendert(mit_gedaechtnis):
+    k = Box(30, 20, 10) - Cylinder(4, 20)
+    vorher = (schreiben(k.wrapped), k.wrapped.Free())
+    k.fillet(1, k.edges().filter_by(Axis.Z))
+    k.fillet(1, k.edges().filter_by(Axis.Z))
+    assert (schreiben(k.wrapped), k.wrapped.Free()) == vorher
+
+
+def test_fehlschlag_der_verrundung_wird_nicht_gemerkt(mit_gedaechtnis):
+    k = Box(30, 20, 10)
+    gd.lauf_beginn()
+    eintraege = len(gd.SPEICHER)
+    for _ in range(2):
+        with pytest.raises(ValueError, match="fillet"):
+            k.fillet(50, k.edges())
+    assert len(gd.SPEICHER) == eintraege
+    with pytest.raises(ValueError):  # Kante eines anderen Körpers: Meldung wie bei build123d
+        k.chamfer(1, None, Box(5, 5, 5).edges(), Box(5, 5, 5).faces()[0])
+    fremd = Box(1, 2, 3).edges()[0]
+    with pytest.raises(Exception):  # noqa: B017 - OCCT meldet eine fremde Kante mit eigener Ausnahme
+        k.chamfer(1, None, [fremd])
+    assert gd.statistik()["umgangen"] >= 1
+
+
+def test_auswahl_nach_fase_wie_ohne(mit_gedaechtnis):
+    def zahlen():
+        k = Box(20, 20, 20)
+        r = k.fillet(2, k.edges().filter_by(Axis.Z))
+        last, neu = r.faces(Select.LAST), r.faces(Select.NEW)
+        c = r.chamfer(1, None, r.edges().group_by(Axis.Z)[-1])
+        return (len(last), len(neu), round(sum(f.area for f in last), 6), len(c.faces(Select.NEW)),
+                len(c.edges(Select.LAST)))
+
+    gd.entfernen()
+    ohne = zahlen()
+    assert gd.installieren()
+    assert zahlen() == ohne  # gerechnet: übersetzte Historie
+    assert zahlen() == ohne  # Treffer: Historie nachgerechnet
+    assert gd.statistik().get("historie_abweichend") in (None, 0)
+
+
+def test_aus_laesst_fasen_und_moved_in_ruhe(monkeypatch):
+    from build123d.topology import three_d
+
+    gd.entfernen()
+    original = (shape_core.Shape.moved, three_d.Mixin3D.chamfer, three_d.Mixin3D.fillet)
+    assert gd.installieren()
+    assert shape_core.Shape.moved is not original[0]
+    gd.entfernen()
+    assert (shape_core.Shape.moved, three_d.Mixin3D.chamfer, three_d.Mixin3D.fillet) == original
+
+
+def test_bohrungen_gemerkt_je_inhalt(mit_gedaechtnis, monkeypatch):
+    from kevcad_kernel.bedingungen import geometrie as bg
+
+    def platte(d=5.0):
+        return Box(40, 30, 10) - Pos(-10, 0, 0) * Cylinder(d / 2, 20) - Pos(10, 0, 0) * Cylinder(d / 2, 20)
+
+    def kennzahlen(teil):
+        return [(b.name, tuple(round(float(c), 6) for c in b.p), round(float(b.r), 6)) for b in bg.bohrungen_von(teil)]
+
+    gd.entfernen()
+    ohne = kennzahlen(platte())
+    assert gd.installieren()
+    gd.lauf_beginn()
+    neu = kennzahlen(platte())
+    treffer = platte()
+    gerechnet = []
+    original = bg._flaeche_daten_rechnen
+    monkeypatch.setattr(bg, "_flaeche_daten_rechnen", lambda f: gerechnet.append(f) or original(f))
+    zahlen = kennzahlen(treffer)
+    assert zahlen == neu == ohne and len(zahlen) == 2
+    assert not [f for f in gerechnet if str(f.geom_type) == "GeomType.CYLINDER"]  # Zylinder aus dem Gedächtnis
+    teil_flaechen = treffer.faces()  # die Flächen gehören zum Teil dieses Laufs, nicht zu dem, das gerechnet hat
+    for f, _ in bg._innenzylinder(treffer):
+        assert any(f.wrapped.IsSame(g.wrapped) for g in teil_flaechen)
+    verschoben = Pos(5, 0, 0) * platte()  # gleiche Form, andere Lage: anderer Inhalt
+    assert kennzahlen(verschoben)[0][1][0] == pytest.approx(-5)
+    assert kennzahlen(platte(6.0))[0][2] == pytest.approx(3)  # anderes Maß
+    assert gerechnet  # Fehltreffer rechnen

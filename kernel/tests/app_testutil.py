@@ -130,4 +130,6 @@ def make_runtime(sock: str, own: Path | None = None, **kwargs) -> KernelRuntime:
     # V2-1: die Version eines Laufs entsteht im Hintergrund; die Tests prüfen sie im Ergebnis von run, also wartet run
     # hier auf sie (Kevin und der Agent bekommen das Ergebnis ohne Warten, test_tempo.py prüft das)
     rt.versionen_warten_s = 60.0
+    # V2-1b: run wartet in den Tests wie früher 3 s auf die Prüfung (test_tempo_pruefung.py prüft die Vorgabe)
+    rt.run_warten_s = 3.0
     return rt

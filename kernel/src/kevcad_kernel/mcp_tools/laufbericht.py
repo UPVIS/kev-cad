@@ -222,7 +222,10 @@ def befund_text(b: dict[str, Any], *, loesung: bool = True) -> str:
 
 def befunde_des_laufs(res: dict[str, Any]) -> tuple[list[dict[str, Any]], str, bool]:
     """(Befunde, Prüfstand, vorläufig?). Mit fertiger Prüfung stehen dort alle Befunde (auch die der Bedingungen);
-    läuft sie noch, sind es vorläufig die Befunde der Bedingungen aus dem Lauf."""
+    läuft sie noch, sind es vorläufig die Befunde der Bedingungen aus dem Lauf. Vorläufig ist auch ein Zwischenstand
+    (V2-1b): Was von Druck, Montage oder Statik fehlt, ist noch nicht gerechnet, nicht behoben."""
+    from kevcad_kernel.pruefung.befund import OFFENE_PRUEFUNGEN
+
     pr = res.get("pruefung") if isinstance(res.get("pruefung"), dict) else None
     state = (pr or {}).get("state") or ("keine" if pr is None else "?")
     if pr is not None and state in ("done", "teilweise"):
@@ -230,7 +233,7 @@ def befunde_des_laufs(res: dict[str, Any]) -> tuple[list[dict[str, Any]], str, b
         if state == "teilweise":  # Hinweise „wird im Hintergrund gerechnet“ stehen im Prüfstand
             befunde = [b for b in befunde if not (b.get("art") == "bewegungsraum" and b.get("schwere") == "hinweis"
                                                   and "im Hintergrund" in str(b.get("text") or ""))]
-        return befunde, state, False
+        return befunde, state, any(o in OFFENE_PRUEFUNGEN for o in pr.get("im_hintergrund") or ())
     bed = res.get("bedingungen") if isinstance(res.get("bedingungen"), dict) else None
     return list((bed or {}).get("befunde") or []), state, True
 

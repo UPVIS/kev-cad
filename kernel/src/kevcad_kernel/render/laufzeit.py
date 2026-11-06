@@ -113,6 +113,7 @@ class RenderRuntime:
         pruef = getattr(self, "_pruef", None)
         if pruef is None:
             return {}
+        pruef.abwarten("Druck", 30.0)
         check, _ = pruef.letztes()
         teile = ((check or {}).get("druck") or {}).get("teile") or {}
         out = {}
