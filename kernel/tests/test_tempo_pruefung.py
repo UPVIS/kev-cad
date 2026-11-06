@@ -1,18 +1,25 @@
 """V2-1b „Tempo im Kernel nachziehen“, Prüfung nach dem Lauf. Gedächtnis der Statik (statik/merken.py): Treffer,
-Fehltreffer bei jeder geänderten Eingabe, abgeschaltet, Fehler werden nicht gemerkt."""
+Fehltreffer bei jeder geänderten Eingabe, abgeschaltet, Fehler werden nicht gemerkt. Prüfung in Stufen: Zwischenstand,
+gleicher Endstand, run sagt, was offen ist, pruefen wartet darauf."""
 
 from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
+import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from app_testutil import FakeApp, make_runtime
 from test_statik import TISCH, laufe
 
 from kevcad_kernel.catalog import builtin_dir
+from kevcad_kernel.pruefung import lauf as pruef_lauf
 from kevcad_kernel.runner import Runner
 from kevcad_kernel.statik import merken
 
@@ -232,3 +239,237 @@ def test_speicher_begrenzt(speicher):
         speicher.gemerkt({}, [], Katalog(), {}, _modell(boden_z=float(i)), lambda: {"stand": "done"})
     assert len(speicher._speicher) == speicher.MAXIMUM
     assert laufe  # Helfer aus test_statik bleibt die gemeinsame Vorlage
+
+
+# -- Prüfung in Stufen (pruefung/lauf.py) ---------------------------------------------------------------------------------
+
+
+def _befunde(check: dict) -> list:
+    return sorted((b["art"], b["schwere"], tuple(b["teile"]), b["text"]) for b in check.get("befunde") or [])
+
+
+@pytest.fixture
+def stufen(monkeypatch):
+    """Stufen wie im Rechenprozess, auch für ein kleines Modell."""
+    monkeypatch.setenv("KEVCAD_PRUEF_STUFEN", "1")
+    monkeypatch.setattr(pruef_lauf, "KLEIN_TEILE", 1)
+
+
+class Gestuft(Lauf):
+    """Wie ``Lauf``, aber die Prüfung mit Zwischenstand; ``zwischen`` sammelt, was vorab hinausging."""
+
+    def __call__(self, code: str | None = None, params: dict | None = None) -> dict:
+        self.run += 1
+        res = self.runner.run({"run": self.run, "path": str(self.ordner / "model.py"), "code": code or self.code,
+                               "params": params or {}, "inventar_regel": True,
+                               "catalog": {"builtin": str(builtin_dir()), "own": str(self.ordner / "eigen")}})
+        assert res["type"] == "RUN_DONE", res.get("error")
+        self.zwischen: list[dict] = []
+        check, _ = self.runner.pruefe(self.run, zwischenstand=lambda kopf, nutz: self.zwischen.append(kopf))
+        while check["state"] == "teilweise":
+            fertig = self.runner.fertig_rechnen(self.run)
+            if fertig is None:
+                break
+            check = fertig[0]
+        return check
+
+
+def test_zwischenstand_und_gleicher_endstand(tmp_path, stufen):
+    """Der Zwischenstand kommt vor Montage und Statik, der Endstand ist derselbe wie am Stück."""
+    bezug = Lauf(tmp_path, TISCH)()
+    lauf = Gestuft(tmp_path, TISCH)
+    end = lauf()
+    assert len(lauf.zwischen) == 1
+    z = lauf.zwischen[0]
+    assert z["state"] == "teilweise" and z["im_hintergrund"][:2] == ["Montage", "Statik"], z.get("im_hintergrund")
+    assert "montage" not in z and "statik" not in z and "stand" in z
+    assert z["run"] == lauf.run and "seq" not in z
+    assert end["state"] == "done" and "im_hintergrund" not in end
+    assert _befunde(end) == _befunde(bezug)
+    assert end["zusammenfassung"] == bezug["zusammenfassung"] and end["zaehler"] == bezug["zaehler"]
+    assert end["montage"]["schritte"] == bezug["montage"]["schritte"]
+
+
+def test_unveraendert_kein_zwischenstand(tmp_path, stufen):
+    lauf = Gestuft(tmp_path, TISCH)
+    lauf()
+    assert len(lauf.zwischen) == 1
+    lauf()
+    assert not lauf.zwischen  # alles aus dem Zwischenspeicher: ein CHECK reicht
+    lauf(TISCH.replace("L, B, H = 800, 500, 700", "L, B, H = 800, 500, 720"))
+    assert len(lauf.zwischen) == 1
+
+
+def test_kleines_modell_ohne_zwischenstand(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEVCAD_PRUEF_STUFEN", "1")
+    monkeypatch.setattr(pruef_lauf, "KLEIN_S", 100.0)  # Uhr aus dem Spiel nehmen
+    lauf = Gestuft(tmp_path, TISCH)
+    assert lauf()["state"] == "done" and not lauf.zwischen
+
+
+def test_ohne_schalter_keine_stufen(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEVCAD_PRUEF_STUFEN", "0")
+    monkeypatch.setattr(pruef_lauf, "KLEIN_TEILE", 1)
+    lauf = Gestuft(tmp_path, TISCH)
+    lauf()
+    assert not lauf.zwischen
+
+
+def test_neuer_auftrag_bricht_nach_dem_zwischenstand_ab(tmp_path, stufen):
+    from kevcad_kernel.pruefung.pruefer import Abgebrochen
+
+    lauf = Lauf(tmp_path, TISCH)
+    r = lauf.runner
+    res = r.run({"run": 1, "path": str(tmp_path / "model.py"), "code": TISCH, "params": {}, "inventar_regel": True,
+                 "catalog": {"builtin": str(builtin_dir()), "own": str(tmp_path / "eigen")}})
+    assert res["type"] == "RUN_DONE"
+    zwischen = []
+
+    def abbrechen() -> None:
+        if zwischen:
+            raise Abgebrochen("neuer Lauf")
+
+    check, _ = r.pruefe(1, abbrechen=abbrechen, zwischenstand=lambda k, n: zwischen.append(k))
+    assert zwischen and check["state"] == "cancelled"
+    assert r.fertig_rechnen(1) is None  # nichts offen: Das teilweise Ergebnis bleibt das letzte
+
+
+def test_kurzer_text_nennt_was_noch_kommt():
+    from kevcad_kernel.pruefung.text import hintergrund_text
+
+    text = hintergrund_text({"im_hintergrund": ["Montage", "Statik", "Bewegungsraum"]})
+    assert text.startswith("Montage, Statik und Bewegungsraum rechnen noch im Hintergrund")
+    assert "pruefen() wartet darauf" in text and "Gelenk" not in text
+    text = hintergrund_text({"im_hintergrund": ["drehgelenk Klappe"]})
+    assert text.startswith("Bewegungsraum: 1 Gelenk noch nicht geprüft")
+    text = hintergrund_text({"im_hintergrund": ["Statik", "drehgelenk Klappe"]})
+    assert text.startswith("Statik rechnet noch") and "1 Gelenk" in text
+    assert "nicht vollständig" in hintergrund_text({"im_hintergrund": [], "message": "Fehler"})
+
+
+def test_app_sieht_offene_pruefungen_als_rechnungen():
+    from kevcad_kernel.pruefung.anbindung import check_fuer_app
+
+    kopf = {"type": "CHECK", "im_hintergrund": ["Montage", "drehgelenk Klappe"], "statik_im_hintergrund": ["Ablauf A"]}
+    app = check_fuer_app(kopf)
+    assert app["im_hintergrund"] == ["drehgelenk Klappe"]
+    assert app["statik_im_hintergrund"] == ["Montage", "Ablauf A"]
+    assert kopf["im_hintergrund"] == ["Montage", "drehgelenk Klappe"]  # das Original bleibt für den Agenten
+    nur_wege = {"type": "CHECK", "im_hintergrund": ["drehgelenk Klappe"]}
+    assert check_fuer_app(nur_wege) is nur_wege
+
+
+def test_gemerkter_weg_zaehlt_auch_nach_dem_zeitlimit(tmp_path, monkeypatch):
+    """Nach dem Zeitlimit rechnet der Bewegungsraum nichts mehr, nimmt aber, was er schon weiß: ein unveränderter Lauf
+    bleibt dadurch ``done``, auch wenn die Zeit knapp ist."""
+    from test_prueftempo import KLAPPEN
+
+    from kevcad_kernel.bedingungen import anbindung
+
+    (tmp_path / "model.py").write_text(KLAPPEN, encoding="utf-8")
+    r = Runner(lambda h, p=b"": None)
+    msg = {"path": str(tmp_path / "model.py"), "params": {}, "inventar_regel": False}
+    assert r.run({**msg, "run": 1})["type"] == "RUN_DONE"
+    voll, _ = r.pruefe(1)
+    assert voll["state"] == "done" and any(b["art"] == "bewegungsraum" for b in voll["befunde"])
+    monkeypatch.setattr(anbindung, "ZEITLIMIT_S", 0.0)
+    assert r.run({**msg, "run": 2})["type"] == "RUN_DONE"
+    zweit, _ = r.pruefe(2)
+    assert zweit["state"] == "done" and _befunde(zweit) == _befunde(voll)
+
+
+# -- Laufzeit: run wartet kurz, pruefen wartet auf den Rest --------------------------------------------------------------
+
+
+VIELE = """from build123d import *
+from kevcad import show, param
+b = param("b", 20)
+for i in range(42):
+    show(Pos(i * 30, 0, 2.5) * Box(b, 10, 5), f"Platte {i}")
+"""
+
+
+@pytest.fixture(scope="module")
+def laufzeit():
+    alt = os.environ.get("KEVCAD_PRUEF_STUFEN")
+    os.environ["KEVCAD_PRUEF_STUFEN"] = "1"  # der Rechenprozess erbt es beim Start
+    tmp = Path(tempfile.mkdtemp(prefix="kcstufen", dir=tempfile.gettempdir()))
+    sock = str(tmp / "k.sock")
+    rt = make_runtime(sock)
+    rt.run_warten_s = None  # Vorgabe wie für den Agenten
+    assert rt.wait_worker_ready(240)
+    app = FakeApp(sock)
+    app.wait_for(lambda h: h["type"] == "HELLO")
+    assert rt.project_new(str(tmp / "Viele"), "empty")["ok"]
+    assert rt.model_write(VIELE)["ok"]
+    assert rt.set_inventory_rule(False)["ok"]
+    assert rt.wait_idle(60)
+    yield {"rt": rt, "app": app}
+    app.close()
+    rt.close()
+    os.environ["KEVCAD_PRUEF_STUFEN"] = alt or "0"
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_lauf_erst_zwischenstand_dann_endstand(laufzeit):
+    rt, app = laufzeit["rt"], laufzeit["app"]
+    start = app.mark()
+    res = rt.run(warten_s=60)
+    assert res["ok"], res.get("error")
+    assert res["pruefung"]["state"] in ("teilweise", "done")
+    _, _, teil, _ = app.wait_for(lambda h: h["type"] == "CHECK" and h.get("run") == res["run"]
+                                 and h.get("state") == "teilweise", start=start, timeout=30)
+    _, _, done, _ = app.wait_for(lambda h: h["type"] == "CHECK" and h.get("run") == res["run"]
+                                 and h.get("state") == "done", start=start, timeout=60)
+    # die App liest offene Prüfungen als Rechnungen, nicht als Gelenke
+    assert teil["statik_im_hintergrund"][:2] == ["Montage", "Statik"] and not teil["im_hintergrund"]
+    assert "im_hintergrund" not in done and "statik_im_hintergrund" not in done
+    assert isinstance(done.get("montage"), dict)
+    # pruefen wartet und liefert den Endstand
+    p = rt.pruefen(endstand=True)
+    assert p["ok"] and p["state"] == "done" and p["run"] == res["run"]
+
+
+def test_lauf_ohne_aenderung_ein_check(laufzeit):
+    rt, app = laufzeit["rt"], laufzeit["app"]
+    assert rt.run(warten_s=60)["ok"]
+    assert rt.wait_idle(60)
+    rt.pruefen(endstand=True)
+    start = app.mark()
+    res = rt.run(warten_s=60)
+    assert res["ok"] and res["pruefung"]["state"] == "done", res.get("pruefung")
+    app.wait_for(lambda h: h["type"] == "CHECK" and h.get("run") == res["run"] and h.get("state") == "done",
+                 start=start, timeout=30)
+    assert not [h for h in app.since(start) if h["type"] == "CHECK" and h.get("state") == "teilweise"]
+
+
+def test_pruefen_wartet_auf_den_rest_nach_kurzem_run(laufzeit):
+    """run kehrt zurück, bevor die Prüfung fertig ist, und sagt das; pruefen() liefert danach den Endstand."""
+    rt = laufzeit["rt"]
+    res = rt.run(params={"b": 21.0}, warten_s=0)
+    assert res["ok"] and res["pruefung"]["state"] in ("running", "teilweise", "done"), res.get("pruefung")
+    if res["pruefung"]["state"] != "done":
+        from kevcad_kernel.mcp_tools.laufbericht import befunde_des_laufs, pruefstand_zeile
+
+        befunde, state, _ = befunde_des_laufs(res)
+        assert "pruefen()" in pruefstand_zeile(res, state, befunde)
+    p = rt.pruefen(endstand=True)
+    assert p["ok"] and p["state"] == "done" and p["run"] == res["run"]
+
+
+def test_run_warten_nach_der_dauer_des_laufs(laufzeit):
+    from kevcad_kernel.runtime import RUN_WARTEN_MIN_S, RUN_WARTEN_S, Job
+
+    rt = laufzeit["rt"]
+    job = Job(kind="run", code="", source="agent", timeout_s=1)
+    job.started = time.perf_counter() - 1.0
+    assert rt._run_warten(job) == RUN_WARTEN_MIN_S
+    job.started = time.perf_counter() - 8.0
+    assert 2.3 < rt._run_warten(job) < RUN_WARTEN_S
+    job.started = time.perf_counter() - 60.0
+    assert rt._run_warten(job) == RUN_WARTEN_S
+    rt.run_warten_s = 3.0
+    try:
+        assert rt._run_warten(job) == 3.0
+    finally:
+        rt.run_warten_s = None

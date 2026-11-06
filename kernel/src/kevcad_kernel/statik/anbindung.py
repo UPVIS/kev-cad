@@ -288,7 +288,7 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     _lager_hinweise(vorb.lager, szen, einst)
     # V2-1b: gleiche Modelle, Szenarien, Körper und gleicher Katalog: Ergebnis aus dem Gedächtnis (statik/merken.py)
     erg = merken.gemerkt(modelle, szen, katalog, ctx.koerper, m,
-                         lambda: rechne_gruppen(modelle, szen, katalog, ctx.koerper, m))
+                         lambda: rechne_gruppen(modelle, szen, katalog, ctx.koerper, m, abbrechen=ctx.abbrechen))
     erg["simulation"] = simulation_ergebnis(m, vorb, erg, einst, modelle)
     ctx.abbrechen()
     s4 = stufe4_aus(ereignisse, m)

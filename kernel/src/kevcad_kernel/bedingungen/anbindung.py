@@ -5,13 +5,14 @@ Ablauf im Rechenprozess:
 1. Während des Laufs (vor RUN_DONE) prüft ``lauf.pruefe_bedingungen`` die Bedingungen, Freiheitsgrade und die
    Befestigung (schnell) und legt den Stand hier ab (``merke``). Daraus entsteht die Nachricht CONSTRAINTS.
 2. Nach RUN_DONE läuft die gemeinsame Prüfung (``pruefung/lauf.py``). Die hier registrierte Prüffunktion
-   ``bedingungen`` gibt die Befunde aus Schritt 1 im Format der Prüfung zurück und prüft zusätzlich den Bewegungsraum
-   (B8, kann Sekunden dauern, deshalb nicht vor RUN_END). So sperren verletzte Bedingungen, nicht befestigte Teile und
-   blockierte Bewegungswege den Export wie Durchdringungen, an einer Stelle.
-3. Erreicht der Bewegungsraum das Zeitlimit des Laufs (``ZEITLIMIT_S``), legt die Prüffunktion eine ``Fortsetzung``
-   ab: Das Ergebnis geht als ``teilweise`` hinaus, der Rechenprozess rechnet die offenen Wege danach ohne Zeitlimit
-   fertig (unterbrechbar, jeder Auftrag geht vor) und schickt dasselbe Ergebnis mit dem vollständigen Bewegungsraum als
-   ``done`` (Prüftempo, 22.10.2026: ein teilweises Ergebnis darf nicht für fertig gehalten werden).
+   ``bedingungen`` gibt die Befunde aus Schritt 1 im Format der Prüfung zurück. Ganz am Ende prüft ``bewegungsraum``
+   die Wege (B8, kann Sekunden dauern, deshalb nicht vor RUN_END und nach allem anderen). So sperren verletzte
+   Bedingungen, nicht befestigte Teile und blockierte Bewegungswege den Export wie Durchdringungen, an einer Stelle.
+3. Erreicht der Bewegungsraum sein Zeitlimit (``ZEITLIMIT_S``, in Stufen das Budget ``vorne_s`` der Prüfung), legt die
+   Prüffunktion eine ``Fortsetzung`` ab: Das Ergebnis geht als ``teilweise`` hinaus, der Rechenprozess rechnet die
+   offenen Wege danach ohne Zeitlimit fertig (unterbrechbar, jeder Auftrag geht vor) und schickt dasselbe Ergebnis mit
+   dem vollständigen Bewegungsraum als ``done`` (Prüftempo, 22.10.2026: ein teilweises Ergebnis darf nicht für fertig
+   gehalten werden).
 """
 
 from __future__ import annotations
@@ -82,20 +83,43 @@ def als_pruefbefund(b: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _stand_passt(ctx: PruefKontext, stand: Stand) -> bool:
+    namen = set(ctx.koerper)
+    if stand.sammlung is None or stand.bericht is None:
+        return False
+    return not namen or namen <= set(stand.formen) | {n for n in namen if n.startswith("Skizze/")}  # sonst anderer Lauf
+
+
 def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
-    """Prüffunktion „bedingungen“ der gemeinsamen Prüfung (registriert nach „durchdringung“)."""
+    """Prüffunktion „bedingungen“ der gemeinsamen Prüfung (registriert nach „durchdringung“): die Befunde aus dem Lauf."""
     t0 = time.perf_counter()
     stand = STAND
-    if stand.sammlung is None or stand.bericht is None:
+    if not _stand_passt(ctx, stand):
         return []
-    namen = set(ctx.koerper)
-    if namen and not namen <= set(stand.formen) | {n for n in namen if n.startswith("Skizze/")}:
-        return []  # Stand eines anderen Laufs
     # Modelle ganz ohne Bedingungen: der Sammelhinweis „ohne Angabe, wie befestigt“ bleibt in CONSTRAINTS und
     # bedingungen, die gemeinsame Prüfung bleibt dort still (bestehende Modelle; Entscheidung bei Kevin)
     ohne = not stand.sammlung.bedingungen
     out = [als_pruefbefund(b) for b in stand.bericht.get("befunde") or []
            if not (ohne and b.get("unterart") == "ohne_angabe")]
+    ctx.zeiten["bedingungen"] = (time.perf_counter() - t0) * 1000
+    return out
+
+
+def zeitlimit(ctx: PruefKontext) -> float:
+    """Zeitlimit des Bewegungsraums: ``ZEITLIMIT_S``, in Stufen nur der Rest des Budgets ``vorne_s`` der Prüfung, damit
+    das Ergebnis von Montage und Statik nicht auf die Wege wartet (ein kleines Modell kommt trotzdem ganz durch)."""
+    vorne = ctx.optionen.get("vorne_s")
+    if vorne is None:
+        return ZEITLIMIT_S
+    return min(ZEITLIMIT_S, max(0.05, float(vorne) - (time.perf_counter() - ctx.beginn)))
+
+
+def pruefe_bewegungsraum(ctx: PruefKontext) -> list[dict[str, Any]]:
+    """Prüffunktion „bewegungsraum“ (registriert in pruefung/lauf.py, ganz am Ende)."""
+    t0 = time.perf_counter()
+    stand = STAND
+    if not _stand_passt(ctx, stand):
+        return []
     from .bewegungsraum import bewegungen_pruefen
 
     ctx.abbrechen()
@@ -105,9 +129,9 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     sammlung, aufgeloest, formen = stand.sammlung, dict(stand.sammlung.aufgeloest or {}), dict(stand.formen)
     schluessel, projekt, boxen = dict(stand.schluessel), stand.projekt, dict(stand.boxen)
     bewegungen, bew_befunde = bewegungen_pruefen(
-        sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt, zeitlimit_s=ZEITLIMIT_S, boxen=boxen,
+        sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt, zeitlimit_s=zeitlimit(ctx), boxen=boxen,
         abbrechen=ctx.abbrechen, offen=offen)
-    out += [als_pruefbefund(b) for b in bew_befunde]
+    out = [als_pruefbefund(b) for b in bew_befunde]
     if bewegungen:
         ctx.ergebnis["bewegungen"] = bewegungen
     if offen:
@@ -117,7 +141,7 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
             return [als_pruefbefund(b) for b in befunde], {"bewegungen": alle}
 
         ctx.hintergrund["bewegungsraum"] = Fortsetzung(arten={"bewegungsraum"}, offen=list(offen), rechne=rechne)
-    ctx.zeiten["bedingungen"] = (time.perf_counter() - t0) * 1000
+    ctx.zeiten["bewegungsraum"] = (time.perf_counter() - t0) * 1000
     return out
 
 

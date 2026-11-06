@@ -353,7 +353,9 @@ def _frei(werte: list[float], blockiert: set[float]) -> list[list[float]]:
 
 
 def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str],
-                    zeitlimit_s: float | None, abbrechen: Any = None) -> dict[str, Any]:
+                    zeitlimit_s: float | None, abbrechen: Any = None, nur_gemerkt: bool = False
+                    ) -> dict[str, Any] | None:
+    """Ergebnis eines Wegs. ``nur_gemerkt``: None, wenn er nicht im Zwischenspeicher steht (nichts wird gerechnet)."""
     t0 = time.perf_counter()
     werte = bew.werte()
     lagen_liste = np.array([bew.lage(w) for w in werte])
@@ -393,6 +395,8 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
     hit = _CACHE.get(key)
     if hit is not None:
         return {**hit, "zwischenspeicher": True}
+    if nur_gemerkt:
+        return None
     lagen = {n: lagen_liste for n in bewegt}
     paare = [(m, s) for m in bewegt for s in statisch]
     fn = _kollisionsfunktion()
@@ -728,6 +732,12 @@ def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
     hintergrund = offen is not None
     for bew in liste:
         rest = None if zeitlimit_s is None else zeitlimit_s - (time.perf_counter() - t0)
+        gemerkt = pruefe_bewegung(bew, formen, schluessel, 0.0, nur_gemerkt=True) if rest is not None and rest <= 0 \
+            else None  # ein gemerkter Weg kostet nichts: auch nach dem Zeitlimit nehmen
+        if gemerkt is not None:
+            ergebnisse.append(gemerkt)
+            befunde.extend(_befunde(gemerkt, hintergrund))
+            continue
         if rest is not None and rest <= 0:
             from .pruefung import _befund
 

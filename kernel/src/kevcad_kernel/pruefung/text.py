@@ -96,18 +96,27 @@ def _nur_offen(b: dict[str, Any]) -> bool:
 
 
 def hintergrund_text(check: dict[str, Any]) -> str:
-    """„Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund fertig gerechnet; …“ und/oder
-    „Statik: Festkörper „Bremsen“ rechnet im Hintergrund, seine Befunde kommen nach; …“ (T34)."""
-    offen = list(check.get("im_hintergrund") or [])
+    """„Montage und Statik rechnen noch …“, „Bewegungsraum: 2 Gelenke noch nicht geprüft (Zeitlimit), wird im Hintergrund
+    fertig gerechnet; …“ und/oder „Statik: Festkörper „Bremsen“ rechnet im Hintergrund, seine Befunde kommen nach; …“
+    (T34)."""
+    from kevcad_kernel.pruefung.befund import OFFENE_PRUEFUNGEN
+
+    alle = list(check.get("im_hintergrund") or [])
+    pruefungen = [o for o in alle if o in OFFENE_PRUEFUNGEN]
+    offen = [o for o in alle if o not in OFFENE_PRUEFUNGEN]
     statik = list(check.get("statik_im_hintergrund") or [])
     zeilen = []
+    if pruefungen:
+        namen = ", ".join(pruefungen[:-1]) + (" und " if len(pruefungen) > 1 else "") + pruefungen[-1]
+        zeilen.append(f"{namen} {'rechnet' if len(pruefungen) == 1 else 'rechnen'} noch im Hintergrund, ihre Befunde "
+                      "kommen nach; pruefen() wartet darauf. Erst danach fertig melden.")
     if offen:
         n = len(offen)
         namen = ", ".join(o.split(" ", 1)[-1].rsplit("/", 1)[-1] for o in offen[:4]) + (" …" if len(offen) > 4 else "")
         zeilen.append(f"Bewegungsraum: {n} {'Gelenk' if n == 1 else 'Gelenke'} noch nicht geprüft (Zeitlimit), wird "
                       f"im Hintergrund fertig gerechnet; pruefen(thema='bedingungen') bzw. pruefen() zeigt den Endstand"
                       + (f" ({namen})" if namen else "") + ". Erst danach fertig melden.")
-    elif not statik or check.get("message"):  # Fertigrechnen gescheitert: es kommt nichts mehr nach
+    elif not pruefungen and (not statik or check.get("message")):  # Fertigrechnen gescheitert: es kommt nichts mehr nach
         zeilen.append(f"Bewegungsraum nicht vollständig geprüft: "
                       f"{check.get('message') or 'Fertigrechnen abgebrochen'}.")
     if statik:

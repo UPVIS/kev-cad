@@ -412,8 +412,10 @@ class _Aufbau:
 
 
 def rechne(m: StatikModell, szenarien: list[Szenario], knicken: bool = True,
-           ersatz: dict[str, tuple[Querschnitt, Werkstoff]] | None = None) -> dict[str, S1Ergebnis]:
-    """Alle Szenarien in einem Modell (ein Gleichungssystem, je Szenario ein Lastfall)."""
+           ersatz: dict[str, tuple[Querschnitt, Werkstoff]] | None = None, abbrechen: Any = None
+           ) -> dict[str, S1Ergebnis]:
+    """Alle Szenarien in einem Modell (ein Gleichungssystem, je Szenario ein Lastfall). ``abbrechen`` darf zwischen den
+    Szenarien mit einer Ausnahme unterbrechen."""
     t0 = time.perf_counter()
     out: dict[str, S1Ergebnis] = {}
     if not m.staebe or not szenarien:
@@ -444,6 +446,8 @@ def rechne(m: StatikModell, szenarien: list[Szenario], knicken: bool = True,
             out[sz.name] = S1Ergebnis(sz.name, False, meldung=f"Stabwerk nicht gerechnet: {text}")
         return out
     for sz in szenarien:
+        if abbrechen is not None:
+            abbrechen()
         t1 = time.perf_counter()
         e = _auswerten(b, sz)
         if knicken:

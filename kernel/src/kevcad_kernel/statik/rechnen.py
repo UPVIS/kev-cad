@@ -36,11 +36,13 @@ def _modellgroesse(m: StatikModell) -> float:
 
 def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerper: dict[str, Any] | None = None,
                  s1: bool = True, alternativen: bool = True, aktiv: str | None = None,
-                 alt_szenarien: list[Szenario] | None = None) -> dict[str, Any]:
+                 alt_szenarien: list[Szenario] | None = None, abbrechen: Any = None) -> dict[str, Any]:
     """S0 und S1 für alle Szenarien. ``alt_szenarien``: nur mit diesen nach leichteren oder stärkeren Lagerteilen
-    suchen (Szenario auf Anfrage: schneller), sonst mit allen."""
+    suchen (Szenario auf Anfrage: schneller), sonst mit allen. ``abbrechen`` darf zwischen den Schritten mit einer
+    Ausnahme unterbrechen (ein neuer Lauf wartet sonst auf die ganze Statik)."""
     from kevcad_kernel.statik import stabwerk
 
+    halt = abbrechen or (lambda: None)
     t0 = time.perf_counter()
     rollen = auf_rollen(m)
     s1erg: dict[str, Any] = {}
@@ -50,12 +52,14 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
         from kevcad_kernel.statik import feder
 
         feder.setze(m, koerper)  # Drehfedern an Druckteilen statt starrer Einspannung (T35)
-        s1erg = stabwerk.rechne(m, szenarien)
+        halt()
+        s1erg = stabwerk.rechne(m, szenarien, abbrechen=halt)
         t_s1 = (time.perf_counter() - t) * 1000
     groesse = _modellgroesse(m)
     out_sz = []
     vereinfacht: list[str] = list(m.hinweise)
     for sz in szenarien:
+        halt()
         r1 = s1erg.get(sz.name)
         s0 = stufe0.rechne(m, sz, katalog, rollen, koerper,
                            traeger_auch=bool(m.staebe) and (r1 is None or not r1.ok))  # einfache Träger als Ersatz
@@ -101,6 +105,7 @@ def rechne_alles(m: StatikModell, szenarien: list[Szenario], katalog: Any, koerp
     # Vorschläge aus dem Inventar
     ueber: list[dict[str, Any]] = []
     if alternativen and s1erg:
+        halt()
         t = time.perf_counter()
         try:
             fuer = alt_szenarien or szenarien

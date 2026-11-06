@@ -53,7 +53,7 @@ from kevcad_kernel.statik.dynamik.laufzeit import DynamikRuntime  # Statik Stufe
 from kevcad_kernel.statik.festkoerper.laufzeit import FestkoerperRuntime  # Statik Stufe 3: festigkeit, FEM
 from kevcad_kernel.topologie.laufzeit import TopologieRuntime  # Topologieoptimierung (PLAN-TOPOLOGIE.md)
 from kevcad_kernel.simulation.laufzeit import SimulationRuntime  # Bereich „Simulation“ (PLAN-SIMULATION.md)
-from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
+from kevcad_kernel.pruefung.anbindung import PruefStand, check_fuer_app, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
 from kevcad_kernel.protocol import KERNEL_FAEHIGKEITEN, LIVE_APP_NACHRICHTEN, PROTOCOL_VERSION, kanonisch
 from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
@@ -68,7 +68,12 @@ from kevcad_kernel.zeichnung.laufzeit import ZeichnungRuntimeMixin
 APP_NOT_CONNECTED = "App nicht verbunden"
 NO_PROJECT = "Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an)."
 WORKER_START_TIMEOUT_S = 240.0  # erster Import von build123d in frischer Umgebung dauert bis ~50 s
-RUN_WARTEN_S = 3.0  # V2-1: so lange wartet run höchstens auf die Prüfung, dann rechnet sie im Hintergrund weiter
+# V2-1b: So lange wartet run auf die Prüfung, dann rechnet sie im Hintergrund weiter. Nach einem kurzen Lauf nur kurz: Der
+# Zwischenstand kommt nach einer kleinen Änderung binnen einer knappen Sekunde, und Kevin soll nicht warten. Nach einem
+# langen Lauf etwas länger (ein Anteil der Laufzeit), damit der Agent die Befunde im Ergebnis von run hat
+RUN_WARTEN_S = 3.0
+RUN_WARTEN_MIN_S = 0.7
+RUN_WARTEN_ANTEIL = 0.3
 VERSION_TITEL_WARTEN_S = 60.0  # run(titel=…) wartet so lange auf die Version des Laufs (Versionen-Faden)
 NACHLAUF_WARTEN_S = 60.0  # Aufgaben der Versionen warten so lange auf den Nachlauf früherer Läufe
 
@@ -164,6 +169,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._lauf_start: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter beim Start (unter _lock)
         self._pruef_ankunft: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter, als sein Prüfergebnis ankam
         self.pruef_warten_s = 120.0  # obere Grenze für run(warten_s=…): so lange wartet run höchstens auf die Prüfung
+        self.run_warten_s: float | None = None  # Vorgabe von run; None: nach der Dauer des Laufs (``_run_warten``)
         self.bedingungen_warten_s = 60.0  # so lange wartet bedingungen() auf den Bewegungsraum im Hintergrund
         self.catalog = Catalog(own=own_dir(socket_path))
         self.zukauf = ZukaufDienst(self)  # Phase 3: Zukaufteile
@@ -285,8 +291,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
 
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
             titel: str | None = None, warten_s: float | None = None) -> dict[str, Any]:
-        """Siehe KernelService.run. ``warten_s``: so lange höchstens auf die Prüfung warten (Vorgabe
-        ``RUN_WARTEN_S``, 0 = gar nicht, nie länger als ``pruef_warten_s``)."""
+        """Siehe KernelService.run. ``warten_s``: so lange höchstens auf die Prüfung warten (Vorgabe ``_run_warten``,
+        0 = gar nicht, nie länger als ``pruef_warten_s``). Ist die Prüfung dann nicht fertig, steht das im Ergebnis
+        (``running`` oder ``teilweise``), und ``pruefen()`` wartet darauf."""
         if sperre := self.feedback_sperre():  # V2-6: Solange Kevin spricht, beginnt kein neuer Lauf
             return sperre
         job = self._submit_run(params, slow_ms, timeout_s, source="agent")
@@ -295,7 +302,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         job.done.wait()
         result = job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
         if result.get("ok") and job.run:
-            warten = RUN_WARTEN_S if warten_s is None else float(warten_s)
+            warten = self._run_warten(job) if warten_s is None else float(warten_s)
             warten = min(max(0.0, warten), self.pruef_warten_s)
             check = fuer_ergebnis(self._pruef.warte(job.run, warten))
             if check is not None:
@@ -316,6 +323,14 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             result = {**result, "zeiten_ms": zeiten}
         self._live_phasen(result)  # V2-5: Zeitpunkte des Laufs in die Agentenspur
         return result
+
+    def _run_warten(self, job: Job) -> float:
+        """Vorgabe für ``run(warten_s=…)``: ein Anteil der Laufzeit, mindestens ``RUN_WARTEN_MIN_S``, höchstens
+        ``RUN_WARTEN_S``."""
+        if self.run_warten_s is not None:
+            return self.run_warten_s
+        dauer = time.perf_counter() - job.started if job.started else 0.0
+        return min(RUN_WARTEN_S, max(RUN_WARTEN_MIN_S, RUN_WARTEN_ANTEIL * dauer))
 
     def _pruefung_ms(self, run: int) -> float | None:
         """Zeitpunkt (ms ab Start des Laufs), zu dem das Prüfergebnis von Lauf ``run`` ankam, oder None."""
@@ -1385,6 +1400,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
 
     def _send_app(self, header: dict[str, Any], payload: bytes = b"") -> bool:
+        if header.get("type") == "CHECK":
+            header = check_fuer_app(header)
         with self._app_lock:
             return self._link.send(header, payload)
 
@@ -1422,7 +1439,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._bauplan_on_connect(conn)
             check, check_payload = self._pruef.letztes()
             if check is not None:
-                conn.send(check, check_payload)
+                conn.send(check_fuer_app(check), check_payload)
             self._statik_on_connect(conn)  # Statik: letztes STATICS
             self._festkoerper_on_connect(conn)  # Statik S3: Felder (STATICS_FIELD) des letzten Laufs
             self._topologie_on_connect(conn)  # Topologie: letzter Stand (TOPO) und Netze (TOPO_FIELD)

@@ -386,8 +386,8 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             "Time limit for model.py in seconds (default 120, at most 900); raise only after a time-limit failure"))]
         = None,
         warten_s: Annotated[float | None, Field(ge=0, le=120, description=(
-            "Wait at most this long for the built-in check (default 3 s, 0 = not at all); if it still runs, call "
-            "pruefen() before reporting done"))] = None,
+            "Wait at most this long for the built-in check (default about a third of the run time, 0.7 to 3 s; 0 = "
+            "not at all); if it still runs, call pruefen() before reporting done"))] = None,
     ) -> CallToolResult:
         activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
         extra: dict[str, Any] = {}

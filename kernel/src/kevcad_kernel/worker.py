@@ -24,7 +24,7 @@ Rechenprozess → Eltern:
 | ``STEP`` | ``run``, ``index``, ``text`` | – |
 | ``PART`` | ``run``, ``name``, ``key`` (Formschlüssel), ``cached``, ``tess_ms``, ``density``, ``app`` (Kopf des PART_UPSERT ohne seq), ``app_len`` | Nutzlast des PART_UPSERT, danach BRep-Binärform |
 | ``RUN_DONE`` / ``RUN_FAILED`` | ``run``, ``shown``, ``steps``, ``warnings``, ``params``, ``stdout``, ``duration_ms``, ``error`` (nur FAILED) | – |
-| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist; mit ``app.state`` "teilweise" folgt später ein zweites ``CHECK_DONE`` desselben Laufs mit "done" (Bewegungsraum im Hintergrund fertig gerechnet) | Nutzlast von CHECK |
+| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist; mit ``app.state`` "teilweise" folgt später ein weiteres ``CHECK_DONE`` desselben Laufs (Zwischenstand vor Montage und Statik, Bewegungsraum im Hintergrund), zuletzt mit "done" | Nutzlast von CHECK |
 | ``EXEC_RES`` | ``ok``, ``result``, ``stdout``, ``shown``, ``warnings``, ``error``/``line``/``excerpt``/``hint`` | – |
 """
 
@@ -176,8 +176,12 @@ def main() -> int:
                     result = runner.run(header)
                     emit(result)
                     if result.get("type") == "RUN_DONE" and header.get("pruefen", True):
+                        def zwischenstand(kopf: dict[str, Any], nutzlast: bytes, run: int = header["run"]) -> None:
+                            emit({"type": "CHECK_DONE", "run": run, "app": kopf, "app_len": len(nutzlast)}, nutzlast)
+
                         try:
-                            check, nutz = runner.pruefe(int(header["run"]), abbrechen=neuer_auftrag)
+                            check, nutz = runner.pruefe(int(header["run"]), abbrechen=neuer_auftrag,
+                                                        zwischenstand=zwischenstand)
                         except Exception as exc:  # noqa: BLE001 - der Lauf ist schon gemeldet
                             check, nutz = {"type": "CHECK", "run": header["run"], "state": "failed",
                                            "message": f"Prüfung fehlgeschlagen: {type(exc).__name__}: {exc}",

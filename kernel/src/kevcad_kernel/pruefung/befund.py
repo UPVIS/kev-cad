@@ -83,6 +83,11 @@ def nummerieren(befunde: list[dict[str, Any]]) -> None:
         b["id"] = f"{k}{zaehler[k]}"
 
 
+# V2-1b: Prüfungen, die nach einer Änderung noch rechnen, wenn der Zwischenstand hinausgeht (CHECK.im_hintergrund, neben
+# den Namen der offenen Wege)
+OFFENE_PRUEFUNGEN = ("Montage", "Statik", "Bewegungsraum")
+
+
 def sortieren(befunde: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rang = {s: i for i, s in enumerate(SCHWEREN)}
     art = {a: i for i, a in enumerate(ART_ORDNUNG)}

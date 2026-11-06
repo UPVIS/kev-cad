@@ -23,7 +23,7 @@ import threading
 import time
 from typing import Any
 
-from kevcad_kernel.pruefung.befund import offen as offene_befunde
+from kevcad_kernel.pruefung.befund import OFFENE_PRUEFUNGEN, offen as offene_befunde
 
 ENDZUSTAENDE = ("done", "failed", "cancelled")
 ERGEBNIS = ("done", "failed", "teilweise")  # Zustände mit Ergebnis (teilweise: Bewegungsraum rechnet noch)
@@ -171,6 +171,17 @@ class PruefStand:
             if self.statik_hintergrund is not None:
                 out = {**(out or {}), "statik_hintergrund": self.statik_hintergrund}
             return out
+
+
+def check_fuer_app(check: dict[str, Any]) -> dict[str, Any]:
+    """CHECK für die App: ``im_hintergrund`` nennt dort nur Wege (Text „2 Gelenke werden fertig gerechnet“). Offene
+    Prüfungen (Montage, Statik) stehen deshalb bei ``statik_im_hintergrund`` („Statik: 2 Rechnungen laufen noch …“)."""
+    alle = check.get("im_hintergrund")
+    if not alle or not any(o in OFFENE_PRUEFUNGEN for o in alle):
+        return check
+    offen = [o for o in alle if o in OFFENE_PRUEFUNGEN]
+    return {**check, "im_hintergrund": [o for o in alle if o not in OFFENE_PRUEFUNGEN],
+            "statik_im_hintergrund": offen + list(check.get("statik_im_hintergrund") or [])}
 
 
 def fuer_ergebnis(check: dict[str, Any] | None) -> dict[str, Any] | None:
