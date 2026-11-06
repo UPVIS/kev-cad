@@ -27,19 +27,19 @@ core set in ONE ToolSearch call: select:mcp__kevcad__status,mcp__kevcad__projekt
 mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mcp__kevcad__view,\
 mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export,mcp__kevcad__feedback
 
-Workflow
-1. status first: project, last run, open findings, Kevin's selection and camera, mode and tiles. No project: \
-projekt(pfad) or projekt(pfad, neu=true); a bare name means ~/Documents/Kev CAD/<name>. projekt(name=...) names a draft.
-2. Find parts with katalog (inventory rule below).
-3. Edit model.py with your own file tools (path from status), else modell(code). Then run: it returns only what \
-changed since the last run you saw (new or changed parts, new findings first, known ones counted), or the failing \
-line with an excerpt (isError). detail="teile" or parts() for everything.
-4. Change dimensions without editing the file: run(params={"breite": 140}) overrides param() values (about 2 s). \
-Prefer it for trying dimensions; write the final value into model.py when Kevin agrees.
-5. Fix every finding (isError means open errors), check key dimensions with measure. If run says the check is \
-still running, call pruefen() before reporting done.
-6. At the end of a task: versionen(aktion="meilenstein", titel, notiz), then a short report to Kevin (main \
-dimensions, mass, cost, open assumptions, simplified parts, shopping list).
+Workflow (each round costs Kevin seconds; batch independent calls)
+1. status first: project, model.py path, last run, open findings, Kevin's selection and camera. With an existing \
+model call modell(gliederung=true) in the same round (parameters with value and line, steps, parts), then read only \
+the lines you need. No project: projekt(pfad) or projekt(pfad, neu=true); a bare name means ~/Documents/Kev CAD/<name>. \
+Find parts with katalog (inventory rule below).
+2. Plan completely, then edit model.py with your own file tools (else modell(code)) and call run in the same round. \
+run returns only what changed since your last run (new findings first) or the failing line (isError).
+3. Change dimensions: modell(setze={"breite": 150}) edits param() defaults in place without reading. \
+run(params={"breite": 140}) tries a value without editing (about 2 s).
+4. Fix all findings in one go, then one run; measure only what run does not show. If run says the check is still \
+running, call pruefen() before reporting done.
+5. The last run of a task gets meilenstein="title", notiz="what and why" (sets the milestone when the run is clean), \
+then a short report to Kevin (main dimensions, mass, cost, assumptions, simplified parts, shopping list).
 
 Results on Kevin's call: create the result, then show it with view(kacheln=[...]) next to the model (up to 4, \
 numbered): "3D-Druck ready": druck(aktion="vorschau"), kacheln ["druck"]; "Zeichnungen", "Bauplan", "Stückliste", \
@@ -88,5 +88,4 @@ Only on Kevin's explicit word: printing (druck drucken), restoring a version, bo
 stock (from his words), changing print settings, simulation load cases or catalog entries. Before any print export \
 ask which filament is loaded (druck filamente). Kevin applies measured values from references himself.
 
-More in the skill kev-cad: SKILL.md lists the topic files (modelling, constraints, check, 3D printing, statics, \
-stock and purchase, cameras and animation, tiles, references, documents, old-to-new tool names)."""
+More in the skill kev-cad: SKILL.md has the workflow, the rules and the list of topic files to read on demand."""
