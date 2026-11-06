@@ -131,30 +131,47 @@ Systemeinstellung „Nur mit Apple Pencil zeichnen“ gilt; ohne Stift zeichnet 
 
 ### 4.4 Werkzeugkranz
 
+Vorbild ist das Kreismenü von Feather 2.0 (Kevin, 06.11.2026, Reel von feather_3d: „die UI für den Stift am Ende,
+insbesondere das zirkuläre Menü, finde ich ziemlich geil als Idee“). Dort erscheint an der Stiftspitze eine kleine,
+milchig durchscheinende Scheibe; innen liegen weiche Farbpillen um die aktuelle Farbe, am Rand kleine Symbole. Für einen
+Wert verwandelt sie sich fließend in ein Ziffernblatt mit Teilstrichen, der Stift kreist am Rand, und die Mitte zeigt
+den Wert dunkel hinterlegt („28/32“, „0.1x“). Neben der Scheibe klappt bei Bedarf ein schmales Blatt mit Reglern auf.
+
 ```
-                        Sprechen / Senden
-          Agent                                Ansichten
-    Kacheln              ( Abbrechen )              Farbe
-          Sichtbarkeit                         Darstellung
-                             Messen
+                         Sprechen / Senden
+              Agent         ·  ●  ·        Ansichten
+                         ●         ●
+          Kacheln      ●   ( Farbe )  ●    Darstellung        innen: Strichfarben als Pillen,
+                         ●         ●                         Mitte: aktuelle Farbe bzw. Wert
+              Sichtbarkeit  ·  ●  ·        Messen
+                              …
 ```
 
-- Er erscheint an der Stiftspitze (Schwebeposition), sonst am letzten Berührpunkt. Erste Ebene acht Felder, die zweite
-  als äußerer Ring.
-- Gewählt wird durch Tippen auf das Feld oder durch Wischen in die Richtung, auch ohne hinzusehen (wie Blenders
-  Kreismenüs). Am Pencil Pro dreht Rollen die Wahl, die Haptik meldet jedes Feld.
-- Belegung:
-  - **Sprechen / Senden** (oben): ohne Sitzung startet es, in der Sitzung schickt es ab. „Doppeltippen, nach oben“ ist
-    die Hauptschleife.
-  - **Ansichten:** Vorne, Oben, Rechts, Iso, Gegenseite, Alles einrahmen, Zweite Ansicht, Schnitt.
-  - **Farbe:** Strichfarbe Rot, Gelb, Grün, Blau, Weiß. Kevin kann sie beim Sprechen nennen („die rote Linie“), das Paket
-    trägt sie.
-  - **Darstellung:** wie Z am Mac (Schattiert, mit Kanten, Röntgen, Explosion).
-  - **Messen.**
-  - **Sichtbarkeit:** Isolieren, Ausblenden, Alles einblenden, Teil oder Element.
-  - **Kacheln:** Druck, Zeichnung, Bauplan, Stückliste, Animation, Statik, Versionen, Rendern.
-  - **Agent:** Neu rechnen, Prüfen, Bild an den Agenten, Meilenstein.
-- Die Felder kommen aus dem Befehlskatalog; Kevin kann sie später umlegen. Am Mac öffnet Q denselben Kranz an der Maus.
+- **Form:** runde Scheibe, rund 170 pt, an der Stiftspitze (Schwebeposition), sonst am letzten Berührpunkt. Material
+  milchig durchscheinend in den Graphit-Farben mit weichem Schatten; kein Rahmen, keine Beschriftungen außer dem Wert in
+  der Mitte und einem kurzen Namen beim Darüberfahren.
+- **Innen:** die Strichfarben Rot, Gelb, Grün, Blau, Weiß als weiche Pillen um die aktuelle Farbe. Kevin kann sie beim
+  Sprechen nennen („die rote Linie“), das Paket trägt sie.
+- **Außenring:** acht kleine Symbole. Oben **Sprechen / Senden** (ohne Sitzung startet es, in der Sitzung schickt es ab;
+  „Doppeltippen, nach oben“ ist die Hauptschleife), dann **Ansichten** (Vorne, Oben, Rechts, Iso, Gegenseite, Alles
+  einrahmen, Zweite Ansicht), **Darstellung** (wie Z am Mac), **Messen**, **Sichtbarkeit** (Isolieren, Ausblenden,
+  Alles einblenden, Teil oder Element), **Kacheln** (Druck, Zeichnung, Bauplan, Stückliste, Animation, Statik,
+  Versionen, Rendern), **Agent** (Neu rechnen, Prüfen, Bild an den Agenten, Meilenstein) und **mehr** (…). Ein Feld mit
+  Unterpunkten öffnet einen zweiten Ring.
+- **Drehregler:** Für stufenlose Werte verwandelt sich die Scheibe in ein Ziffernblatt mit Teilstrichen; der Stift
+  kreist am Rand, die Mitte zeigt den Wert dunkel hinterlegt. Gilt für Explosion („40 %“), Schnittebene („120 mm“),
+  Zeit der Animation („2,4 s“), Strichbreite, Deckkraft beim Röntgen und den Zoom der zweiten Ansicht. Später auch für
+  Maße: Teil antippen, Parameter wählen, drehen („Breite 120 → 140 mm“, ein Teilstrich ein Millimeter), der Kernel
+  rechnet live über `run(params)`. Das ist ein Feld wie in den Eigenschaften, kein Manipulator (V7 bleibt).
+- **Wählen:** Tippen auf das Feld oder in die Richtung wischen, auch ohne hinzusehen (wie Blenders Kreismenüs).
+  Abheben übernimmt, Wischen in die Mitte oder ein Tipp daneben bricht ab. Übergänge morphen (Feld → Wert →
+  Drehregler) statt hart zu wechseln.
+- **Seitenblatt:** Wo es mehr als einen Wert gibt (Darstellung, Licht beim Rendern), klappt neben der Scheibe ein
+  schmales Blatt mit Reglern auf, wie Feathers „Adjust“.
+- **Pencil Pro:** Drücken öffnet, Rollen dreht den Regler ohne Kreisen, Haptik meldet jeden Teilstrich und jedes Feld.
+  Pencil 2 (Kevins iPad): Doppeltippen öffnet, Teilstriche nur sichtbar.
+- **Am Mac:** Q öffnet denselben Kranz an der Maus; der Drehregler folgt dem Mausrad oder dem Kreisen der Maus.
+- Die Felder kommen aus dem Befehlskatalog; Kevin kann sie später umlegen.
 
 ### 4.5 Sprechen
 
