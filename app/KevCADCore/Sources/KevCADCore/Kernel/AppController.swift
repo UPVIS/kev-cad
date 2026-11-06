@@ -394,7 +394,9 @@ public final class AppController: AppActions {
                 connected = true
                 log(.info, "Mit Kernel verbunden")
                 send(HelloAppMessage(appVersion: Self.appVersion, bundleID: AppInfo.bundleID))
-                sendSettings()
+                // Ohne Inventar-Regel: Die App kennt das Projekt des Kernels hier noch nicht, ihr Wert wäre nur die
+                // Vorgabe "an" und schaltete eine abgeschaltete Regel still wieder ein (06.11.2026, FPV Demo).
+                sendSettings(mitInventar: false)
             case .disconnected(let reason):
                 let was = connected
                 connected = false
@@ -740,9 +742,11 @@ public final class AppController: AppActions {
         scene.setSimplifiedParts(Set(model.parts.filter { $0.zukauf?.isSimplified == true }.map(\.id)))
     }
 
-    func sendSettings() {
-        send(SettingsMessage(
-            autoRun: model.autoRun, slowMs: model.slowMotion ? Self.slowMotionMs : 0, inventarRegel: model.inventarRegel))
+    /// Einstellungen an den Kernel. Die Inventar-Regel geht nur mit, solange die App ein Projekt kennt (sonst ist ihr
+    /// Wert die Vorgabe, nicht die Regel des Projekts).
+    func sendSettings(mitInventar: Bool = true) {
+        let regel: Bool? = mitInventar && model.project != nil ? model.inventarRegel : nil
+        send(SettingsMessage(autoRun: model.autoRun, slowMs: model.slowMotion ? Self.slowMotionMs : 0, inventarRegel: regel))
     }
 
     // MARK: Animation

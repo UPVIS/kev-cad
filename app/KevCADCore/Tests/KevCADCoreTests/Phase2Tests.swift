@@ -503,4 +503,26 @@ final class Phase2ControllerTests: XCTestCase {
             JSONSerialization.jsonObject(with: SettingsMessage(autoRun: true, slowMs: 0).encodedHeader()) as? [String: Any])
         XCTAssertNil(old["inventar_regel"])
     }
+
+    /// Beim Verbinden und ohne bekanntes Projekt geht die Inventar-Regel nicht mit: Der Wert der App wäre dann nur die
+    /// Vorgabe "an" und schaltete eine abgeschaltete Regel im Projekt des Kernels wieder ein (06.11.2026, FPV Demo).
+    func testSettingsOnConnectLeaveInventoryRuleAlone() throws {
+        let c = AppController(model: AppModel())
+        var settings: [[String: Any]] = []
+        c.sendeBeobachter = { frame in
+            if let head = try? JSONSerialization.jsonObject(with: frame.header) as? [String: Any],
+               head["type"] as? String == "SETTINGS" {
+                settings.append(head)
+            }
+        }
+        c.handle([.connected])
+        XCTAssertEqual(settings.count, 1)
+        XCTAssertNil(settings.last?["inventar_regel"], "beim Verbinden ohne Regel")
+        c.handle([.message(try Fixtures.message("hello.frame"))])
+        c.setAutoRun(false)
+        XCTAssertNil(settings.last?["inventar_regel"], "noch kein Projekt: ohne Regel")
+        c.handle([try message(#"{"type":"PROJECT","path":"/tmp/kevcad-inventar-3","name":"x","inventar_regel":false}"#)])
+        c.setAutoRun(true)
+        XCTAssertEqual(settings.last?["inventar_regel"] as? Bool, false, "mit Projekt geht dessen Regel mit")
+    }
 }

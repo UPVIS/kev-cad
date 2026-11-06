@@ -1562,8 +1562,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif kind == "SETTINGS":
             was = bool(self._settings.get("auto_run"))
             self.configure(auto_run=header.get("auto_run"), slow_ms=header.get("slow_ms"))
-            if isinstance(header.get("inventar_regel"), bool):
-                self._pool.submit(self.set_inventory_rule, header["inventar_regel"])
+            # Die Regel gilt nur für das Projekt, das beim Eintreffen offen ist. Der Pool arbeitet sie später ab; ohne
+            # diese Bindung schrieb eine Vorgabe der App von vor dem Öffnen in das gerade geöffnete Projekt (06.11.2026:
+            # FPV Demo stand nach dem Start der Testvariante wieder auf "inventar_regel": true).
+            ziel = self._project
+            if isinstance(header.get("inventar_regel"), bool) and ziel is not None:
+                self._pool.submit(self.set_inventory_rule, header["inventar_regel"], ziel.path)
             if not was and self._settings.get("auto_run"):
                 self._pool.submit(self._auto_check)
         elif kind == "BOM_REQ":
@@ -1701,12 +1705,16 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             proj.reload_settings()
         return proj.inventar_regel
 
-    def set_inventory_rule(self, enabled: bool) -> dict[str, Any]:
+    def set_inventory_rule(self, enabled: bool, nur_fuer: Path | None = None) -> dict[str, Any]:
         """Nur für die App (SETTINGS.inventar_regel): schreibt die Regel in kevcad.json des offenen Projekts und rechnet
-        mit Auto-Lauf neu. Bewusst kein MCP-Werkzeug: abschalten darf nur Kevin."""
+        mit Auto-Lauf neu. Bewusst kein MCP-Werkzeug: abschalten darf nur Kevin. `nur_fuer`: nur, wenn noch dieses
+        Projekt offen ist (die App meinte das Projekt, das beim Eintreffen der Nachricht offen war)."""
         proj = self._project
         if proj is None:
             return {"ok": False, "error": NO_PROJECT}
+        if nur_fuer is not None and Path(proj.path).resolve() != Path(nur_fuer).resolve():
+            self._log(f"[kernel] Inventar-Regel aus der App verworfen: galt für {Path(nur_fuer).name}, offen ist {proj.name}")
+            return {"ok": False, "error": "Projekt inzwischen gewechselt"}
         if proj.inventar_regel == bool(enabled) and "inventar_regel" in proj.settings:
             return {"ok": True, "inventar_regel": proj.inventar_regel}
         try:

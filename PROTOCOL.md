@@ -201,7 +201,10 @@ im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
   nie bei Kulisse).
 - `RUN_END.inventar_regel` (bool): ob die Regel in diesem Lauf galt.
 - `RUN_END.inventar_verstoesse`: Liste der Teilnamen, die weder verbaut noch Druckteil sind (leer = alles gut).
-- `SETTINGS.inventar_regel` (App → Kernel, bool): Kevins Projekteinstellung, der Kernel schreibt sie in `kevcad.json`.
+- `SETTINGS.inventar_regel` (App → Kernel, bool): Kevins Projekteinstellung, der Kernel schreibt sie in `kevcad.json`
+  des Projekts, das beim Eintreffen der Nachricht offen ist (ist keins offen oder bis zum Schreiben ein anderes, verwirft
+  er sie). Die App schickt das Feld nur, wenn sie ein Projekt kennt, also nie in den Einstellungen gleich nach dem
+  Verbinden: Dort wäre ihr Wert nur die Vorgabe „an“.
 - Katalogeinträge in `CATALOG` tragen `status` (`frei` | `vorgeschlagen`); Freigabe = `CATALOG_SAVE` mit
   `status: "frei"`, Ablehnen = `CATALOG_DELETE`.
 

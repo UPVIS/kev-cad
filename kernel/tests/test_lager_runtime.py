@@ -207,6 +207,21 @@ def test_inventory_rule_export_and_settings(p2):
     assert rt.run()["inventar_verstoesse"] == ["Klotz"]
 
 
+def test_inventory_rule_only_for_project_open_on_arrival(p2):
+    """SETTINGS.inventar_regel gilt nur für das Projekt, das beim Eintreffen offen war (06.11.2026: eine verspätete
+    Vorgabe der App schaltete die Regel im gerade geöffneten FPV Demo wieder ein)."""
+    rt = p2["rt"]
+    alt = new_project(p2, HEAD + "show(Box(5, 5, 5), 'A')\n")
+    neu = new_project(p2, HEAD + "show(Box(5, 5, 5), 'B')\n")
+    (neu / "kevcad.json").write_text(json.dumps({"version": 1, "inventar_regel": False}), encoding="utf-8")
+    assert rt.project_open(str(neu))["ok"]
+    res = rt.set_inventory_rule(True, alt)
+    assert res["ok"] is False and "gewechselt" in res["error"]
+    assert json.loads((neu / "kevcad.json").read_text())["inventar_regel"] is False
+    assert rt.set_inventory_rule(True, neu)["ok"]
+    assert json.loads((neu / "kevcad.json").read_text())["inventar_regel"] is True
+
+
 def test_execute_knows_lager(p2):
     rt = p2["rt"]
     new_project(p2, HEAD + "r = lager.teil('rohr-en10220-42.4x2.0')\nshow(r.verbauen(laenge=50, name='R'), 'R')\n")
