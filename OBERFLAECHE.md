@@ -219,7 +219,7 @@ enthalten also den Aufbau der Oberfläche, nicht das Zeichnen des Modells.
 | an den Rand, zurück | 59, 88 ms |
 | zweite Ansicht: andere Richtung, Kamerabefehl, ganzer Lauf | 40, 38, 39 ms |
 
-V2-8: Kachel 2 groß 60 ms, alle einordnen 42 ms (Nebenspalten vorgebaut), Zahlen in `kernel/tools/MESSUNG.md`.
+V2-8: Kachel 2 groß 50 bis 60 ms, alle einordnen 35 bis 42 ms (Nebenspalten vorgebaut), Zahlen in `kernel/tools/MESSUNG.md`.
 
 Bilder der Fenster liefert im Test `VIEW_CMD test_foto` (ohne Viewer): `screencapture` geht über ssh nicht. Fallen beim Bau:
 `EmptyView()` in `ViewThatFits` ist kein Kandidat, die letzte echte Ansicht wird dann erzwungen und macht die Kachel breiter

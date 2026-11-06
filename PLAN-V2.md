@@ -74,7 +74,7 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Lagebild: Antwort der App | unter 50 ms | in Ruhe Median 9 ms, 95 % unter 19 ms; während eines Laufs Median 13 ms, 95 % unter 39 ms (die App selbst unter 1 ms) |
 | App-Start bis bedienbares leeres Projekt | unter 1 s | ohne fremde Last (Mac mini) Fenster nach 0,19 s, Hauptfaden 0,14 s; unter Last am MacBook 1,7 bis 3,6 s; der Kernel ist rund 6 s später bereit, nach einem Update lädt er seit V2-8 schon beim Installieren |
 | Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | gezeichnet rund 120 Bilder/s, auch unter Last 130 bis 190 (Hauptfaden 1,2 ms, GPU 6 ms je Bild, keine Pause über 65 ms); ohne Bildschirmtakt 144 bis 477 Bilder/s; am Monitor nach V2-8 noch nicht gemessen, vorher 35 bis 60 (siehe Abschnitt 7) |
-| Kachel groß, alle einordnen | unter 100 ms | 60 ms, 42 ms (vorher 118 bis 142 ms, 66 ms) |
+| Kachel groß, alle einordnen | unter 100 ms | 50 bis 60 ms, 35 bis 42 ms (vorher 118 bis 142 ms, 66 ms) |
 | Sprach-Feedback: Wort erscheint als Text | unter 0,3 s, Vorschlag rund 0,6 s | Apple-Rückfall im Median 450 bis 480 ms; Wortlaut rechnet im Takt von 0,4 s, also rechnerisch 0,2 bis 0,6 s, mit Mikrofon noch nicht gemessen |
 | Feedback-Paket beim Agenten nach Ende des Sprechens | unter 1 s | 142 bis 450 ms; 873 bis 993 ms, wenn noch ein Satz unterwegs ist |
 

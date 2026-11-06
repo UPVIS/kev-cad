@@ -243,16 +243,18 @@ V2-3 hatte über den Viewer eine `.clipShape` gelegt: eine Formmaske, für die d
 zusammensetzen muss. Die Ecken setzt jetzt die Metal-Ebene selbst. Ob das die Ursache war, zeigt nur ein Monitor: Hinter dem
 Schreibtischbild und auf dem Mini kommt kein Bild an.
 
-**Kacheln** (`tools/fern/kachel-selbsttest.sh`, Mac mini, längste Pause des Hauptfadens, 54 von 54 Prüfungen):
+**Kacheln** (`tools/fern/kachel-selbsttest.sh`, Mac mini, längste Pause des Hauptfadens, zwei Läufe, je 54 von 54 Prüfungen):
 
 | Was | V2-7 | V2-8 |
 |---|---|---|
-| Kachel 2 groß (Zeichnung) | 118 bis 142 ms | 60 ms |
-| alle einordnen | 66 ms | 42 ms |
-| Kachel zweites Mal: Stückliste, Zeichnung, Material | 103, 29, 65 ms | 83, 85, 91 ms |
-| Kachel zweites Mal: Rendern, Simulation | 146, 132 ms | 141, 119 ms |
+| Kachel 2 groß (Zeichnung) | 118 bis 142 ms | 50, 60 ms |
+| alle einordnen | 66 ms | 35, 42 ms |
+| Kachel zweites Mal: Stückliste, Zeichnung, Material | 103, 29, 65 ms | 83 bis 117, 85 bis 90, 83 bis 91 ms |
+| Kachel zweites Mal: Rendern, Simulation | 146, 132 ms | 141, 105 bis 119 ms |
+| an den Rand, zurück | 59, 88 ms | 107 bis 137, 65 bis 86 ms |
 
-Die Nebenspalten bauen sich jetzt eine Sekunde nach dem Öffnen auf; das Öffnen selbst bleibt unter der Grenze von 300 ms.
+Die Nebenspalten bauen sich jetzt eine Sekunde nach dem Öffnen auf, das liegt im Messfenster und erklärt die Zeichnung; das Öffnen
+bleibt unter der Grenze von 300 ms. „An den Rand“ ist langsamer als in V2-7, der Grund ist offen; eine Grenze gibt es dafür nicht.
 
 **Start** (`KEVCAD_SELFTEST=oberflaeche`, Mac mini ohne fremde Last): Fenster nach 0,19 s, bedienbar nach 0,20 s, Rechenzeit
 des Hauptfadens 0,14 s. Der Kernel brauchte dort beim ersten Start einer neuen Umgebung 46 s, gut 50 s am MacBook unter Last:
