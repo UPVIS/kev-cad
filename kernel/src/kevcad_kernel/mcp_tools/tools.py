@@ -202,14 +202,14 @@ def _tracked(fn: Callable[..., Awaitable[CallToolResult]], board: SessionBoard, 
              *, mutating: bool, name: str = "") -> Callable[..., Awaitable[CallToolResult]]:
     """Meldet jeden Aufruf mit der Claude-Sitzung der Anfrage an die Sitzungstafel. Hat Kevin das Projekt umbenannt oder
     ein anderes geöffnet, beginnt das nächste Ergebnis dieser Sitzung mit dem neuen Pfad (PROTOCOL.md, „Fläche“)."""
-    kurz = getattr(service, "projekt_kurz", None)
+    kurz = getattr(type(service), "projekt_kurz", None)  # an der Klasse: Der Dienst der Brücke meldet sonst „läuft nicht“
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> CallToolResult:
         session = claude_session.get()
         board.tool_called(session, mutating)
         res = await fn(*args, **kwargs)
-        info = kurz() if kurz else None
+        info = kurz(service) if kurz else None
         if isinstance(info, dict) and board.projekt_gesehen(session, str(info.get("path")), selbst=name == "projekt"):
             hinweis = (f"Achtung, das offene Projekt ist jetzt „{info.get('name')}“: model.py liegt unter "
                        f"{info.get('model')}. Alte Pfade gelten nicht mehr.")

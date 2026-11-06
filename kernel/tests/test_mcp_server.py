@@ -62,7 +62,7 @@ def test_tool_list_complete_with_schemas(srv):
         assert tool.title, tool.name
         assert tool.annotations is not None, tool.name
     schema = {n: t.input_schema for n, t in by_name.items()}
-    assert schema["projekt"]["required"] == ["pfad"]
+    assert "required" not in schema["projekt"] and {"pfad", "name"} <= set(schema["projekt"]["properties"])
     assert "required" not in schema["modell"] and "required" not in schema["measure"]
     assert schema["export"]["required"] == ["formats"]
     assert schema["export"]["properties"]["formats"]["items"]["enum"] == ["step", "stl", "3mf", "glb", "bom_csv",
