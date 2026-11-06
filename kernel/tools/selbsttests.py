@@ -34,10 +34,10 @@ def ersatz(*schalter: str) -> str:
     return " ".join(shlex.quote(t) for t in teile)
 
 
-# Test → (Kernel, Ergebnisdatei, Frist in s, weitere Umgebung). Kernel None heißt Demomodus. Nicht dabei, weil sie mehr
-# brauchen als ein Projekt: drucker (Attrappe und echter Schlüsselbund), restdruck (Projekt mit Spulen und Resten),
-# massstab (Referenznetz), sprache (kernel/tools/feedback_selbsttest.py), core (nur Protokoll, mit --hier von Hand),
-# wortlaut (Kevins Dienst, ohne Fenster).
+# Test → (Kernel, Ergebnisdatei, Frist in s, weitere Umgebung). Kernel None heißt Demomodus; ohne Ergebnisdatei steht das
+# Ergebnis nur im Protokoll der App. Nicht dabei, weil sie mehr brauchen als ein Projekt: drucker (Attrappe und echter
+# Schlüsselbund), restdruck (Projekt mit Spulen und Resten), massstab (Referenznetz), sprache
+# (kernel/tools/feedback_selbsttest.py), wortlaut (Kevins Dienst, ohne Fenster).
 TESTS: dict[str, tuple[str | None, str, int, dict[str, str]]] = {
     "keys": (None, "selftest-keys.txt", 40, {"KEVCAD_DEMO": "1", "KEVCAD_DEMO_STATE": "bom"}),
     "oberflaeche": (ECHT, "selftest-oberflaeche.txt", 300, {}),
@@ -55,7 +55,9 @@ TESTS: dict[str, tuple[str | None, str, int, dict[str, str]]] = {
     "render": (ECHT, "selftest-render.txt", 300, {}),
     "simulation": (ECHT, "selftest-simulation.txt", 420, {"PROJEKT": str(KERNEL.parent / "samples/winkelhalter")}),
     "viewer": (ECHT, "selftest-viewer.txt", 480, {}),  # nur mit --hier
+    "core": (ECHT, "", 90, {}),  # nur mit --hier: Klick und Treffer brauchen ein gezeichnetes Bild
 }
+HIER = {"viewer", "core"}
 
 
 def main() -> int:
@@ -82,13 +84,14 @@ def main() -> int:
     katalog = Path(args.katalog).expanduser() if args.katalog else KATALOG
 
     ergebnisse: dict[str, str] = {}
-    for test in args.tests or [t for t in TESTS if t != "viewer"]:
+    for test in args.tests or [t for t in TESTS if t not in HIER]:
         kernel, datei, frist, mehr = TESTS[test]
         ziel = ausgabe / test
         shutil.rmtree(ziel, ignore_errors=True)
         ziel.mkdir()
         arbeit, kopie = kopieren(Path(mehr.get("PROJEKT", projekt)), katalog)
-        (daten / datei).unlink(missing_ok=True)
+        if datei:
+            (daten / datei).unlink(missing_ok=True)
         umgebung = {
             "KEVCAD_SELFTEST": test, "KEVCAD_SELFTEST_AUSGABE": str(ziel), "KEVCAD_SELFTEST_QUIT": "1",
             "KEVCAD_SELFTEST_PROJEKT": str(kopie), "KEVCAD_PROJECTS_DIR": str(arbeit),
@@ -118,7 +121,7 @@ def main() -> int:
         subprocess.run([*befehl, str(app)], check=True)
         bericht = None
         while time.monotonic() - t0 < frist:
-            for ort in (ziel / datei, daten / datei):
+            for ort in (ziel / datei, daten / datei) if datei else ():
                 if ort.exists() and ort.stat().st_size > 0:
                     bericht = ort
             if bericht:
@@ -134,7 +137,12 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 prozess.kill()
         dauer = time.monotonic() - t0
-        if bericht is None:
+        if not datei:
+            zeilen = [z for z in log.read_text(encoding="utf-8", errors="replace").splitlines() if "Selbsttest" in z]
+            ergebnisse[test] = f"{len(zeilen)} Zeilen im Protokoll"
+            for z in zeilen[-30:]:
+                print("   ", z[:220], flush=True)
+        elif bericht is None:
             ergebnisse[test] = f"kein Bericht nach {dauer:.0f} s"
         else:
             text = bericht.read_text(encoding="utf-8")

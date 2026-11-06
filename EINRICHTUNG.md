@@ -116,7 +116,7 @@ ln -sfn "$HOME/Library/Application Support/de.upvis.kevcad/install/skill/kev-cad
 ```
 
 Prüfen: `claude mcp list` zeigt `kevcad` als verbunden. In einer neuen Sitzung ruft der Agent das Werkzeug `status`
-auf und bekommt `"kernel": "ready"` und `"app_connected": true`, sobald die App läuft. Erster Auftrag zum Ausprobieren:
+auf und liest „Kernel bereit · App verbunden“, sobald die App läuft. Erster Auftrag zum Ausprobieren:
 
 > Leg in Kev CAD ein Projekt Regalwinkel an und bau einen Winkel aus 4-mm-Stahlblech mit zwei Bohrungen.
 
@@ -208,7 +208,7 @@ git config core.hooksPath .githooks
 ## 8 Tests
 
 ```bash
-./build.sh --core-tests        # swift test (KevCADCore) und pytest (Kernel), rund 20 Minuten
+./build.sh --core-tests        # swift test (KevCADCore) und pytest (Kernel), je nach Rechner 8 bis 20 Minuten
 cd fotomess && uv run pytest   # Vermessen
 ```
 
@@ -240,7 +240,7 @@ Für den MCP-Server bzw. den Kernel. Keine ist nötig.
 | `xcode-select: error: tool 'xcodebuild' requires Xcode` | Xcode installieren, dann `sudo xcode-select -s /Applications/Xcode.app` |
 | Kompilieren scheitert, Details in `build/xcodebuild.log` | Xcode aktualisieren. Der Viewport OCCTSwiftViewport liegt als Kopie in `app/Packages` und braucht kein Netz |
 | macOS: „Kev CAD kann nicht geöffnet werden“ | Kommt nur vor, wenn die App von einem anderen Rechner kopiert wurde (ad hoc signiert, Quarantäne). Selbst bauen oder `xattr -dr com.apple.quarantine ~/Applications/Tools/"Kev CAD.app"` |
-| MCP: `app_connected: false` | App starten (`open ~/Applications/Tools/"Kev CAD.app"`); läuft sie, den Agenten neu verbinden. Port 47823 belegt: `lsof -i :47823` |
+| MCP: „App nicht verbunden“ | App starten (`open ~/Applications/Tools/"Kev CAD.app"`); läuft sie, den Agenten neu verbinden. Port 47823 belegt: `lsof -i :47823` |
 | MCP-Werkzeuge fehlen im Client | Pfad im Client-Eintrag ausgeschrieben? Den Client nach der Änderung neu starten |
 | `referenz(aktion="scan_importieren")`: PromptDA-Gewichte | Der erste Scan lädt sie aus dem Netz; ohne Netz geht nur die LiDAR-Tiefe |
 | Statik Stufe 4: „CalculiX nicht verfügbar“ | CalculiX einrichten (Abschnitt 5) |
