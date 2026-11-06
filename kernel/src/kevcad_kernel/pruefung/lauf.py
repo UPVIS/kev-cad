@@ -13,12 +13,13 @@ Laufs), geht das Ergebnis als ``state: "teilweise"`` mit ``im_hintergrund`` (off
 ruft danach ``fertig_rechnen`` auf, sobald nichts anderes ansteht: Es rechnet den Rest ohne Zeitlimit, ersetzt die
 Befunde der betroffenen Arten und liefert dasselbe Ergebnis vollständig als ``done`` (gleicher Lauf).
 
-Stufen (V2-1b): Hat sich ein Teil geändert und ist das Modell nicht klein, geht vor Montage, Statik und Bewegungsraum ein
-Zwischenstand hinaus, ebenfalls ``teilweise``, mit ``im_hintergrund`` ["Montage", "Statik", "Bewegungsraum"]. Agent und App
-sehen Durchdringungen, Bedingungen, Druck und Stand, während die Prüfung im selben Aufruf weiterrechnet; aus dem
-Zwischenspeicher kommt sonst alles im ersten Anlauf, dann bleibt es bei einem ``CHECK``. Der Bewegungsraum bekommt in
-Stufen nur den Rest des Budgets ``VORNE_S``, was er nicht schafft, rechnet ``fertig_rechnen``. Am Inhalt ändert das nichts:
-Gerechnet wird dasselbe, der Endstand ist derselbe. Aus mit ``KEVCAD_PRUEF_STUFEN=0``.
+Stufen (V2-1b): Hat sich ein Teil geändert und ist das Modell nicht klein, geht vor Druck, Montage, Statik und Bewegungsraum
+ein Zwischenstand hinaus, ebenfalls ``teilweise``, mit ``im_hintergrund`` ["Druck", "Montage", "Statik", "Bewegungsraum"].
+Agent und App sehen Durchdringungen, Bedingungen und Stand, während die Prüfung im selben Aufruf weiterrechnet; aus dem
+Zwischenspeicher kommt sonst alles im ersten Anlauf, dann bleibt es bei einem ``CHECK``. Wer das Ergebnis einer späteren
+Prüfung braucht, wartet mit ``PruefStand.abwarten``. Der Bewegungsraum bekommt in Stufen nur den Rest des Budgets ``VORNE_S``,
+was er nicht schafft, rechnet ``fertig_rechnen``. Am Inhalt ändert das nichts: Gerechnet wird dasselbe, der Endstand ist
+derselbe. Aus mit ``KEVCAD_PRUEF_STUFEN=0``.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ AKTIV: tuple[str, ...] | None = None
 VORNE_S = 0.7  # Stufen: so lange darf die Prüfung samt Bewegungsraum dauern, bevor der Rest in den Hintergrund geht
 KLEIN_S = 0.2  # Stufen: darunter bleibt es bei einem CHECK (die erste Stufe und die letzte Prüfung waren so kurz) …
 KLEIN_TEILE = 40  # … und das Modell hat weniger Teile
-HINTEN_ZEITEN = ("montage", "statik", "bewegungsraum")
+HINTEN_ZEITEN = ("druck", "druckvorschau", "montage", "statik", "bewegungsraum")
 
 
 def stufen_an() -> bool:
@@ -226,5 +227,10 @@ if AKTIV is not None and "statik" not in AKTIV:
 
 # Bewegungsraum zuletzt (V2-1b): Er dauert nach einer Änderung am längsten, und nichts hängt von ihm ab
 from kevcad_kernel.bedingungen import anbindung as _bedingungen  # noqa: E402
+from kevcad_kernel.pruefung.pruefer import ordnen as _ordnen  # noqa: E402
 
 _registriere("bewegungsraum", _bedingungen.pruefe_bewegungsraum)
+# Reihenfolge (Stufen): Stand liest nur Kontakte, Druck liest weder Stand noch Bedingungen; Montage braucht Stand, die Statik
+# Stand und Druck, deshalb erst die Stufe bis zum Zwischenstand, dann der Rest
+_ordnen(("erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "druckvorschau", "gedruckt", "montage", "statik",
+         "bewegungsraum"))

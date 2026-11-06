@@ -85,7 +85,7 @@ def nummerieren(befunde: list[dict[str, Any]]) -> None:
 
 # V2-1b: Prüfungen, die nach einer Änderung noch rechnen, wenn der Zwischenstand hinausgeht (CHECK.im_hintergrund, neben
 # den Namen der offenen Wege)
-OFFENE_PRUEFUNGEN = ("Montage", "Statik", "Bewegungsraum")
+OFFENE_PRUEFUNGEN = ("Druck", "Montage", "Statik", "Bewegungsraum")
 
 
 def sortieren(befunde: list[dict[str, Any]]) -> list[dict[str, Any]]:

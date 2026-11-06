@@ -290,8 +290,8 @@ def test_zwischenstand_und_gleicher_endstand(tmp_path, stufen):
     end = lauf()
     assert len(lauf.zwischen) == 1
     z = lauf.zwischen[0]
-    assert z["state"] == "teilweise" and z["im_hintergrund"] == ["Montage", "Statik"], z.get("im_hintergrund")
-    assert "montage" not in z and "statik" not in z and "stand" in z
+    assert z["state"] == "teilweise" and z["im_hintergrund"] == ["Druck", "Montage", "Statik"], z.get("im_hintergrund")
+    assert "montage" not in z and "statik" not in z and "druck" not in z and "stand" in z
     assert z["run"] == lauf.run and "seq" not in z
     assert end["state"] == "done" and "im_hintergrund" not in end
     assert _befunde(end) == _befunde(bezug)
@@ -307,7 +307,7 @@ def test_zwischenstand_nennt_den_bewegungsraum_nur_mit_wegen(tmp_path, stufen):
     assert r.run({"run": 1, "path": str(tmp_path / "model.py"), "params": {}, "inventar_regel": False})["type"] == "RUN_DONE"
     zwischen: list[dict] = []
     r.pruefe(1, zwischenstand=lambda k, n: zwischen.append(k))
-    assert zwischen and zwischen[0]["im_hintergrund"] == ["Montage", "Statik", "Bewegungsraum"]
+    assert zwischen and zwischen[0]["im_hintergrund"] == ["Druck", "Montage", "Statik", "Bewegungsraum"]
 
 
 def test_unveraendert_kein_zwischenstand(tmp_path, stufen):
@@ -352,6 +352,55 @@ def test_neuer_auftrag_bricht_nach_dem_zwischenstand_ab(tmp_path, stufen):
     check, _ = r.pruefe(1, abbrechen=abbrechen, zwischenstand=lambda k, n: zwischen.append(k))
     assert zwischen and check["state"] == "cancelled"
     assert r.fertig_rechnen(1) is None  # nichts offen: Das teilweise Ergebnis bleibt das letzte
+
+
+def test_abwarten_hilft_lesern_einer_spaeteren_pruefung():
+    """Bauplan, Druckprüfung und statik() lesen, was erst nach dem Zwischenstand kommt: Sie warten darauf."""
+    import threading
+
+    from kevcad_kernel.pruefung.anbindung import PruefStand
+
+    st = PruefStand()
+    st.erwarte(7)
+    st.fertig({"type": "CHECK", "run": 7, "state": "teilweise", "befunde": [],
+               "im_hintergrund": ["Druck", "Statik"]}, b"")
+    assert st.warte(7, 0.0)["state"] == "teilweise"  # run nimmt den Zwischenstand
+    wartet = []
+
+    def leser() -> None:
+        st.abwarten("Statik", 10)
+        wartet.append(st.letztes()[0])
+
+    t = threading.Thread(target=leser)
+    t.start()
+    time.sleep(0.05)
+    assert not wartet
+    st.fertig({"type": "CHECK", "run": 7, "state": "teilweise", "befunde": [], "druck": {},
+               "im_hintergrund": ["Statik"]}, b"")
+    st.abwarten("Druck", 0.0)  # Druck ist jetzt da, kein Warten
+    time.sleep(0.05)
+    assert not wartet  # Statik steht noch aus
+    st.fertig({"type": "CHECK", "run": 7, "state": "done", "befunde": [], "statik": {}}, b"")
+    t.join(5)
+    assert wartet and wartet[0]["state"] == "done"
+    st.abwarten("Statik", 0.0)  # nichts mehr offen
+    # ein neuerer Lauf bricht das Warten ab
+    st.erwarte(8)
+    st.fertig({"type": "CHECK", "run": 8, "state": "teilweise", "befunde": [], "im_hintergrund": ["Statik"]}, b"")
+    t0 = time.perf_counter()
+    th = threading.Thread(target=lambda: st.abwarten("Statik", 10))
+    th.start()
+    st.fertig({"type": "CHECK", "run": 8, "state": "cancelled"}, b"")
+    th.join(5)
+    assert not th.is_alive() and time.perf_counter() - t0 < 5
+
+
+def test_reihenfolge_der_pruefungen():
+    from kevcad_kernel.pruefung import pruefer
+
+    namen = [n for n, _ in pruefer.PRUEFUNGEN]
+    assert namen == ["erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "druckvorschau", "gedruckt",
+                     "montage", "statik", "bewegungsraum"]
 
 
 def test_kurzer_text_nennt_was_noch_kommt():
@@ -442,7 +491,7 @@ def test_lauf_erst_zwischenstand_dann_endstand(laufzeit):
     _, _, done, _ = app.wait_for(lambda h: h["type"] == "CHECK" and h.get("run") == res["run"]
                                  and h.get("state") == "done", start=start, timeout=60)
     # die App liest offene Prüfungen als Rechnungen, nicht als Gelenke
-    assert teil["statik_im_hintergrund"] == ["Montage", "Statik"] and not teil["im_hintergrund"]
+    assert teil["statik_im_hintergrund"] == ["Druck", "Montage", "Statik"] and not teil["im_hintergrund"]
     assert "im_hintergrund" not in done and "statik_im_hintergrund" not in done
     assert isinstance(done.get("montage"), dict)
     # pruefen wartet und liefert den Endstand

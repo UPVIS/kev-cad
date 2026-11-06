@@ -368,11 +368,11 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   auf Anfrage gerechneten. Bloßer Fortschritt schickt kein neues `CHECK`. Ältere Apps sehen ein `teilweise` ohne
   `im_hintergrund` und ersetzen es beim nächsten `CHECK`; die App zeigt im Prüfband „Statik: … rechnet noch, Befunde
   folgen …“.
-- Stufen (additiv, V2-1b): Nach einer Änderung an einem nicht kleinen Modell kommt vor Montage, Statik und Bewegungsraum ein
-  Zwischenstand: ein `CHECK` mit `state: "teilweise"` ohne `montage` und `statik`, dessen Befunde Durchdringung, Bedingungen,
-  Druck und Stand abdecken. Bewegungsraum, Montage und Statik folgen mit demselben `run`, zuletzt `done`. In der Nachricht an
-  die App stehen offene Prüfungen bei `statik_im_hintergrund` (`"Montage"`, `"Statik"`, `"Bewegungsraum"`), `im_hintergrund`
-  nennt weiter nur Wege; so zeigt das Prüfband „Statik: 3 Rechnungen laufen noch, Befunde folgen …“. Intern und für den Agenten
+- Stufen (additiv, V2-1b): Nach einer Änderung an einem nicht kleinen Modell kommt vor Druck, Montage, Statik und
+  Bewegungsraum ein Zwischenstand: ein `CHECK` mit `state: "teilweise"` ohne `druck`, `montage` und `statik`, dessen Befunde
+  Durchdringung, Bedingungen und Stand abdecken. Der Rest folgt mit demselben `run`, zuletzt `done`. In der Nachricht an die App
+  stehen offene Prüfungen bei `statik_im_hintergrund` (`"Druck"`, `"Montage"`, `"Statik"`, `"Bewegungsraum"`), `im_hintergrund`
+  nennt weiter nur Wege; so zeigt das Prüfband „Statik: 4 Rechnungen laufen noch, Befunde folgen …“. Intern und für den Agenten
   (`pruefen`, Laufergebnis) stehen sie bei `im_hintergrund`.
 - Befund:
 

@@ -54,7 +54,7 @@ class BauplanDienst:
             raise RuntimeError("Kein Projekt offen. Erst projekt(pfad) aufrufen (neu=true legt eins an).")
         if run is None:
             raise RuntimeError("Noch kein erfolgreicher Lauf: erst run aufrufen.")
-        check = self._pruef.warte(run, warten_s)  # type: ignore[attr-defined]
+        check = self._pruef.warte(run, warten_s, pruefung="Druck")  # type: ignore[attr-defined]
         if check is None or check.get("state") not in ("done", "failed", "teilweise"):
             check, _ = self._pruef.letztes()  # type: ignore[attr-defined]
         return check

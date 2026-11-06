@@ -18,9 +18,10 @@ Kommt eine Prüfung im Zeitlimit des Laufs nicht ganz durch (Bewegungsraum), leg
 ``Fortsetzung`` ab: Das Ergebnis geht dann als ``state: "teilweise"`` hinaus, und der Rechenprozess rechnet den Rest
 fertig (``pruefung/lauf.py``, ``PruefLauf.fertig_rechnen``), ersetzt die Befunde dieser Arten und schickt ``done``.
 
-Stufen (V2-1b): Die Prüfungen laufen in fester Reihenfolge, die schnellen zuerst. Vor der ersten aus ``HINTEN`` (Montage,
-Statik, Bewegungsraum: nach einer Maßänderung Sekunden) ruft ``pruefe`` die Funktion ``zwischenstand``; so erfahren
-Agent und App Durchdringungen und Bedingungen, während der Rest rechnet. Gerechnet wird davon unabhängig alles.
+Stufen (V2-1b): Die Prüfungen laufen in fester Reihenfolge (``ordnen``), die für den nächsten Schritt wichtigen zuerst. Vor
+der ersten aus ``HINTEN`` (Druck, Montage, Statik, Bewegungsraum: nach einer Maßänderung Sekunden) ruft ``pruefe`` die
+Funktion ``zwischenstand``; so erfahren Agent und App Durchdringungen, Bedingungen und Stand, während der Rest rechnet.
+Gerechnet wird davon unabhängig alles.
 """
 
 from __future__ import annotations
@@ -117,7 +118,7 @@ class PruefKontext:
 PruefFunktion = Callable[[PruefKontext], list[dict[str, Any]]]
 PRUEFUNGEN: list[tuple[str, PruefFunktion]] = []
 # Prüfungen hinter dem Zwischenstand und ihre Namen in CHECK.im_hintergrund (siehe Modulbeschreibung)
-HINTEN = {"montage": "Montage", "statik": "Statik", "bewegungsraum": "Bewegungsraum"}
+HINTEN = {"druck": "Druck", "montage": "Montage", "statik": "Statik", "bewegungsraum": "Bewegungsraum"}
 Zwischenstand = Callable[[Callable[[], tuple[dict[str, Any], list]], list[str], float], None]
 
 
@@ -135,6 +136,11 @@ def registriere(name: str, fn: PruefFunktion, nach: str | None = None) -> None:
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Durchdringung
+
+
+def ordnen(reihenfolge: tuple[str, ...]) -> None:
+    """Prüfungen in diese Reihenfolge bringen (was nicht genannt ist, bleibt dahinter)."""
+    PRUEFUNGEN.sort(key=lambda p: reihenfolge.index(p[0]) if p[0] in reihenfolge else len(reihenfolge))
 
 
 def kandidaten_paare(koerper: list[Koerper], pad: float) -> list[tuple[int, int]]:

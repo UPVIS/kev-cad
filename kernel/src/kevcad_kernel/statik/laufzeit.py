@@ -215,9 +215,7 @@ class StatikRuntime:
     # -- KernelService -------------------------------------------------------------------------------------------------
 
     def _statik_warten(self) -> None:
-        stand = self._pruef  # type: ignore[attr-defined]
-        if stand.erwartet is not None:
-            stand.warte(stand.erwartet, WARTEN_S)
+        self._pruef.abwarten("Statik", WARTEN_S)  # type: ignore[attr-defined]
 
     def statik(self, szenario: str | None = None) -> dict[str, Any]:
         """Ergebnis der Statik des letzten Laufs: alle Szenarien mit Ampel und Kennzahlen oder eines ausführlich."""

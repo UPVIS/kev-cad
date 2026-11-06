@@ -112,12 +112,14 @@ class PruefStand:
 
     # -- Abfragen --------------------------------------------------------------------------------------------------
 
-    def warte(self, run: int, timeout: float, endstand: bool = False, statik: bool = True) -> dict[str, Any] | None:
+    def warte(self, run: int, timeout: float, endstand: bool = False, statik: bool = True,
+              pruefung: str | None = None) -> dict[str, Any] | None:
         """Wartet auf die Prüfung von Lauf ``run``. Ergebnis (CHECK-Kopf) oder ein Kopf mit ``state`` "cancelled" /
         "running" (Zeitlimit) bzw. None, wenn der Lauf gar nicht geprüft wird. Ein teilweises Ergebnis (Bewegungsraum
         oder Statik rechnen im Hintergrund) kommt sofort zurück; mit ``endstand`` wird auf das fertige gewartet, solange
         daran gerechnet wird (sonst bleibt es teilweise, etwa nach einem neueren Lauf). ``statik=False``: nur auf den
-        Bewegungsraum warten, nicht auf Ablauf und Festkörper (Export, Bedingungen)."""
+        Bewegungsraum warten, nicht auf Ablauf und Festkörper (Export, Bedingungen). ``pruefung``: ein teilweises
+        Ergebnis gilt erst, wenn es diese Prüfung (``OFFENE_PRUEFUNGEN``) nicht mehr als offen nennt (Stufen)."""
         ende = time.monotonic() + max(0.0, timeout)
         with self._cond:
             while True:
@@ -128,7 +130,8 @@ class PruefStand:
                 if z in ("done", "failed") and eigenes:
                     return dict(self.header)  # type: ignore[arg-type]
                 rechnet = self.hintergrund == run or (statik and self.statik_hintergrund == run)
-                if z == "teilweise" and eigenes and (not endstand or not rechnet):
+                offen = pruefung is not None and eigenes and pruefung in (self.header.get("im_hintergrund") or ())
+                if z == "teilweise" and eigenes and (not endstand or not rechnet) and not offen:
                     return dict(self.header)  # type: ignore[arg-type]
                 if z in ENDZUSTAENDE or (z == "teilweise" and not eigenes):
                     return {"type": "CHECK", "run": run, "state": "cancelled", "befunde": [],
@@ -140,6 +143,16 @@ class PruefStand:
                     return {"type": "CHECK", "run": run, "state": "running", "befunde": [],
                             "message": "Prüfung läuft noch im Hintergrund"}
                 self._cond.wait(min(rest, 0.5))
+
+    def abwarten(self, pruefung: str, timeout: float) -> None:
+        """Für Leser des Ergebnisses einer Prüfung (``OFFENE_PRUEFUNGEN``): warten, solange sie für den laufenden Lauf noch
+        aussteht, also bis die Prüfung dieses Laufs da ist und sie nicht mehr als offen nennt."""
+        with self._cond:
+            run = self.erwartet
+            if run is None and self.header is not None and pruefung in (self.header.get("im_hintergrund") or ()):
+                run = int(self.header.get("run") or 0)
+        if run is not None:
+            self.warte(run, timeout, pruefung=pruefung)
 
     def letztes(self) -> tuple[dict[str, Any] | None, bytes]:
         with self._cond:

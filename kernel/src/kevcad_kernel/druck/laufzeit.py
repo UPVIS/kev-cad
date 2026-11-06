@@ -19,9 +19,7 @@ class DruckRuntime:
         from kevcad_kernel.druck.bericht import druck_auszug
 
         stand = self._pruef  # type: ignore[attr-defined]
-        laeuft = stand.erwartet
-        if laeuft is not None:
-            stand.warte(laeuft, WARTEN_S)
+        stand.abwarten("Druck", WARTEN_S)
         check, _ = stand.letztes()
         try:
             namen = list(self.scene.names())  # type: ignore[attr-defined]

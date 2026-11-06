@@ -8,8 +8,8 @@ Nichts darf physikalisch unmöglich sein. Kev CAD prüft jeden Lauf selbst (Durc
 Einbaubarkeit). `run` wartet höchstens `warten_s` auf das Ergebnis (Vorgabe nach der Dauer des Laufs: bis rund 2,4 s
 ab dem Start des Laufs, mindestens 0,4 s, nach einem langen Lauf bis 3 s). Ist die Prüfung bis dahin fertig, stehen ihre
 neuen Befunde in der Antwort. Nach einer Änderung an einem größeren Modell kommt sie in Stufen: erst Durchdringung,
-Bedingungen, Druck und Stand, dann Montage, Statik und Bewegungsraum („Montage, Statik und Bewegungsraum rechnen noch im
-Hintergrund“, Zustand `teilweise`). Ist auch die erste Stufe noch nicht da, sagt `run` „Prüfung läuft noch im Hintergrund“
+Bedingungen und Stand, dann Druck, Montage, Statik und Bewegungsraum („Druck, Montage, Statik und Bewegungsraum rechnen
+noch im Hintergrund“, Zustand `teilweise`). Ist auch die erste Stufe noch nicht da, sagt `run` „Prüfung läuft noch im Hintergrund“
 und nennt vorläufig die Befunde der Bedingungen. Die Prüfung rechnet in jedem Fall ohne neuen Lauf weiter (Kevin sieht sie
 im Prüfband). `pruefen()` wartet auf den Endstand und zeigt alles samt Stand und Montage. Befunde beheben, nicht nur
 melden:
