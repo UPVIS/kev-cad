@@ -176,12 +176,11 @@ kernel/.venv/bin/python -u kernel/tools/live_selbsttest.py "build/Kev CAD Test l
 | Parameter `laufrolle_l = 90` | 12,61 MB | 4,47 MB | 20 von 134 Teilen 1,0 MB, Statikfelder 1,6 MB, `ANIM_DEF` 1,5 MB |
 | zurück auf den alten Wert | 11,38 MB | 1,76 MB | fast nur `ANIM_DEF`; die 20 Teile kommen ohne Netz aus dem Speicher der App |
 
-| Was die App im unveränderten Lauf tut | vorher | jetzt |
+| Was die App im unveränderten Lauf tut | vorher (aus dem Code hergeleitet) | jetzt (gemessen) |
 |---|---|---|
-| Körper neu gebaut | 0 (gleiche Prüfsumme), aber 134 Köpfe und Stücke neu gerechnet | 0 |
-| Teile leuchten auf | 0 | 0 |
-| Weitergaben an den Viewport | mehrere hundert (eine je Teil, dazu Abdunkeln) | **0** |
-| Teile, die model.py mehrmals zeigt | sprangen zwischen den Ständen | bleiben stehen (Wechsel erst zum Laufende) |
+| Körper neu gebaut | 3 (Zwischenstände eines Teils, das model.py dreimal zeigt) | 0 |
+| Teile leuchten auf | 3 | 0 |
+| Weitergaben an den Viewport | rund 140 (eine je Teil, dazu Beginn und Ende des Laufs) und die Schritte des Aufleuchtens | **0** |
 
 Bei einer Parameteränderung baut die App genau die 20 geänderten Teile neu, beim Rückweg tauscht sie genau diese 20 aus
 dem Speicher. `run()` kehrt im unveränderten Lauf nach 2,5 s zurück, das letzte Teil steht nach 1,5 s (Last um 60).
@@ -195,6 +194,17 @@ dem Speicher. `run()` kehrt im unveränderten Lauf nach 2,5 s zurück, das letzt
 
 Das Budget von 50 ms hält bei normaler Last. Unter schwerer Last (über 100) kamen einzelne Antworten erst nach 100 bis
 970 ms: Dann ist der Hauptfaden der App kurz belegt. Über 200 ms nimmt der Kernel seinen eigenen Stand.
+
+**Viewer** (`KEVCAD_SELFTEST=viewer`, Stand `v2` und V2-5b je zweimal im Wechsel, gleiche Kopie, Last 25 bis 65, 0 Fehler in
+allen vier Läufen):
+
+| | Bilder/s über die sieben Darstellungen | Hauptfaden je Bild, Median | GPU je Bild, Median (Darstellung „wie bisher“) |
+|---|---|---|---|
+| `v2` | 37 bis 41, 38 bis 41 | 1,17 und 1,23 ms | 8,0 und 3,5 ms |
+| V2-5b | 35 bis 38, 38 bis 42 | 1,21 und 1,09 ms | 7,6 und 3,4 ms |
+
+Kein Unterschied über die Streuung hinaus; V2-5b ändert am Zeichnen je Bild nichts. Beide liegen unter den 58 bis 60
+Bildern/s aus V2-4. Ob das an der Last oder an V2-3 liegt, ist hier nicht geklärt.
 
 Gefunden hat der Selbsttest, was die App-Attrappe nicht sehen konnte:
 
