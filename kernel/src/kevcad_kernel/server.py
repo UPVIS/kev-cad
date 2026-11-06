@@ -9,6 +9,7 @@ MCP-Server „kevcad“ auf ``http://127.0.0.1:<port>/mcp`` betreiben, bei SIGTE
 
 from __future__ import annotations
 
+import json
 import logging
 import signal
 import socket
@@ -16,6 +17,7 @@ import sys
 import threading
 import time
 from typing import Any
+from urllib.parse import parse_qs
 
 import anyio
 import uvicorn
@@ -24,6 +26,7 @@ from mcp.server.mcpserver import MCPServer
 import kevcad_kernel
 from kevcad_kernel.mcp_tools import INSTRUCTIONS, SERVER_NAME, SERVER_TITLE, register_tools
 from kevcad_kernel.mcp_tools.tracking import AgentTracker, SessionBoard
+from kevcad_kernel.protocol import FEEDBACK_HTTP_PFAD, FEEDBACK_HTTP_WARTEN_MAX_S
 from kevcad_kernel.service import KernelService, create_service
 
 log = logging.getLogger("kevcad_kernel.server")
@@ -44,6 +47,43 @@ def build_server(service: KernelService, board: SessionBoard | None = None) -> M
     )
     register_tools(mcp, service, board)
     return mcp
+
+
+def feedback_route(app: Any, service: KernelService) -> Any:
+    """``GET /feedback/warten?warten_s=S`` für den Hintergrundbefehl ``kevcad-feedback`` (V2-6): wartet, holt nichts ab."""
+
+    async def antwort(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        try:
+            warten = float(parse_qs(scope.get("query_string", b"").decode()).get("warten_s", ["60"])[0])
+        except ValueError:
+            warten = 60.0
+        warten = max(0.0, min(warten, FEEDBACK_HTTP_WARTEN_MAX_S))
+        abbruch = threading.Event()
+        daten: dict[str, Any] = {}
+        async with anyio.create_task_group() as tg:
+
+            async def trennung() -> None:
+                while (await receive())["type"] != "http.disconnect":
+                    pass
+                abbruch.set()
+
+            tg.start_soon(trennung)
+            daten = await anyio.to_thread.run_sync(service.feedback_warten, warten, abbruch, abandon_on_cancel=True)
+            if daten.get("da") and daten.get("name"):
+                daten = {**daten, **await anyio.to_thread.run_sync(service.feedback_kurz, daten["name"])}
+            tg.cancel_scope.cancel()
+        koerper = json.dumps(daten, ensure_ascii=False).encode()
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(koerper)).encode())]})
+        await send({"type": "http.response.body", "body": koerper})
+
+    async def asgi(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") == "http" and scope.get("path") == FEEDBACK_HTTP_PFAD and hasattr(service, "feedback_warten"):
+            await antwort(scope, receive, send)
+        else:
+            await app(scope, receive, send)
+
+    return asgi
 
 
 def bind_socket(host: str, port: int) -> socket.socket:
@@ -75,7 +115,7 @@ class KevcadHTTPServer:
         # Größengrenzen für SSE-Ereignisse in Clients (das Python-Paket erlaubt dort nur 1 MiB).
         app = self.mcp.streamable_http_app(host=host, streamable_http_path=MCP_PATH, json_response=True,
                                            session_idle_timeout=self.tracker.idle_s)
-        self.app = self.tracker.wrap(app)
+        self.app = feedback_route(self.tracker.wrap(app), service)
         self.sock = sock if sock is not None else bind_socket(host, port)
         self.port: int = self.sock.getsockname()[1]
         config = uvicorn.Config(self.app, host=host, port=self.port, log_level=log_level, log_config=None,

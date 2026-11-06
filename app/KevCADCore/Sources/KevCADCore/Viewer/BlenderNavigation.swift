@@ -378,6 +378,9 @@ final class NavigationInputView: NSView {
         case idle
         case pendingSelect(start: CGPoint, modifiers: NSEvent.ModifierFlags)
         case boxSelect(start: CGPoint, modifiers: NSEvent.ModifierFlags)
+        /// V2-6: Maustaste beim Sprechen gedrückt: Ein Klick wählt aus, Ziehen zeichnet
+        case pendingStrich(start: CGPoint, modifiers: NSEvent.ModifierFlags)
+        case strich
         case orbit, pan, zoom
         case pendingCenter(start: CGPoint)
         /// Griff im Viewer ziehen (Simulation: Pfeil einer Kraft drehen)
@@ -389,6 +392,12 @@ final class NavigationInputView: NSView {
     }
     private var last = CGPoint.zero
     private let boxLayer = CAShapeLayer()
+    /// V2-6: Strich, der gerade entsteht, ohne Umweg über die Überlagerung (jede Mausbewegung ein Stück).
+    private let strichLayer = CAShapeLayer()
+    private var strichPfad: CGMutablePath?
+    private var strichPickLaeuft = false
+    private var strichNaechster: (punkt: CGPoint, zeit: Double)?
+    private var strichEndeOffen = false
     private var tracking: NSTrackingArea?
     private var monitore: [Any] = []
     /// Letzte Mausposition im Viewport (Ursprung unten links); nil = Maus außerhalb.
@@ -412,6 +421,14 @@ final class NavigationInputView: NSView {
         boxLayer.lineDashPattern = [4, 3]
         boxLayer.isHidden = true
         layer?.addSublayer(boxLayer)
+        strichLayer.fillColor = nil
+        strichLayer.strokeColor = CGColor(srgbRed: CGFloat(ViewerStil.strich.x), green: CGFloat(ViewerStil.strich.y),
+                                          blue: CGFloat(ViewerStil.strich.z), alpha: 1)
+        strichLayer.lineWidth = 3
+        strichLayer.lineCap = .round
+        strichLayer.lineJoin = .round
+        strichLayer.isHidden = true
+        layer?.addSublayer(strichLayer)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) wird nicht benutzt") }
@@ -480,6 +497,7 @@ final class NavigationInputView: NSView {
         case .zoom: n = .zoomen
         case .boxSelect: n = .rahmen
         case .griff: n = .griff
+        case .strich: n = .strich
         default: n = nil
         }
         if coordinator?.eingabe.navigation != n { coordinator?.eingabe.navigation = n }
@@ -582,6 +600,8 @@ final class NavigationInputView: NSView {
         if flags.contains(.option) {
             mode = navMode(flags)
             if case .orbit = mode { beginneDrehung(bei: p) }
+        } else if coordinator?.zeichnen == true, flags.intersection([.shift, .control, .command]).isEmpty {
+            mode = .pendingStrich(start: p, modifiers: flags)
         } else {
             mode = .pendingSelect(start: p, modifiers: flags)
         }
@@ -599,6 +619,14 @@ final class NavigationInputView: NSView {
             }
         case .boxSelect(let start, _):
             drawBox(from: start, to: p)
+        case .pendingStrich(let start, _):
+            if hypot(p.x - start.x, p.y - start.y) > BlenderNav.dragThreshold {
+                mode = .strich
+                strichBeginnen(start)
+                strichZiehen(p)
+            }
+        case .strich:
+            strichZiehen(p)
         case .griff:
             coordinator?.griffModifiers = event.modifierFlags  // Simulation: ⌘ schaltet das Einrasten ab
             coordinator?.onGriffZiehen?(p)
@@ -610,7 +638,7 @@ final class NavigationInputView: NSView {
     override func mouseUp(with event: NSEvent) {
         let p = point(event)
         switch mode {
-        case .pendingSelect(_, let flags):
+        case .pendingSelect(_, let flags), .pendingStrich(_, let flags):
             coordinator?.pickPoint(p, in: self) { [weak self] result in
                 guard let self, let c = self.coordinator else { return }
                 if let punkt = c.onClickPunkt {
@@ -619,6 +647,8 @@ final class NavigationInputView: NSView {
                 }
                 c.onClick?(result, flags)
             }
+        case .strich:
+            strichBeenden(p)
         case .boxSelect(let start, let flags):
             boxLayer.isHidden = true
             let rect = CGRect(
@@ -633,6 +663,84 @@ final class NavigationInputView: NSView {
         }
         mode = .idle
         endeDrehung()
+    }
+
+    // Strich beim Sprechen (V2-6): Die Linie folgt der Maus sofort. Treffer holt immer nur eine Anfrage zugleich, die
+    // nächste nimmt die neueste Stelle (wie hoverTest): So bleibt der Hauptfaden frei, der Strich hat rund einen Punkt je
+    // Bild. Das Ende kommt erst nach dem letzten Treffer.
+
+    private func strichBeginnen(_ p: CGPoint) {
+        let pfad = CGMutablePath()
+        pfad.move(to: p)
+        strichPfad = pfad
+        strichNaechster = nil
+        strichEndeOffen = false
+        strichZeigen()
+        coordinator?.onStrich?(.beginn)
+        strichTreffer(p, ProcessInfo.processInfo.systemUptime)
+    }
+
+    private func strichZiehen(_ p: CGPoint) {
+        strichPfad?.addLine(to: p)
+        strichZeigen()
+        strichTreffer(p, ProcessInfo.processInfo.systemUptime)
+    }
+
+    private func strichBeenden(_ p: CGPoint) {
+        strichEndeOffen = true
+        strichTreffer(p, ProcessInfo.processInfo.systemUptime)
+    }
+
+    private func strichZeigen() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        strichLayer.frame = bounds
+        strichLayer.path = strichPfad
+        strichLayer.isHidden = false
+        CATransaction.commit()
+    }
+
+    private func strichTreffer(_ p: CGPoint, _ zeit: Double) {
+        guard let c = coordinator else { return }
+        guard !strichPickLaeuft else {
+            strichNaechster = (p, zeit)
+            return
+        }
+        strichPickLaeuft = true
+        c.pickPoint(p, in: self) { [weak self] result in
+            guard let self, let c = self.coordinator else { return }
+            self.strichPickLaeuft = false
+            let welt = result.flatMap { c.surfacePoint(of: $0, at: p, in: self) }
+            c.onStrich?(.punkt(eingabe: p, bild: CGPoint(x: p.x, y: self.bounds.height - p.y), zeit: zeit, treffer: result,
+                               welt: welt))
+            if let n = self.strichNaechster {
+                self.strichNaechster = nil
+                self.strichTreffer(n.punkt, n.zeit)
+            } else if self.strichEndeOffen {
+                self.strichEndeOffen = false
+                c.onStrich?(.ende)  // die fertige Linie zeichnet ab jetzt die Überlagerung
+                self.strichPfad = nil
+                self.strichLayer.isHidden = true
+            }
+        }
+    }
+
+    /// Selbsttest (V2-6): derselbe Weg wie mit der Maus, ohne simulierte Eingaben. Punkte mit Ursprung unten links.
+    func testMaus(_ p: CGPoint) {
+        maus = p
+        hoverTest()
+    }
+
+    func testStrichBeginnen(_ p: CGPoint) {
+        mode = .strich
+        strichBeginnen(p)
+    }
+
+    func testStrichZiehen(_ p: CGPoint) { strichZiehen(p) }
+
+    func testStrichBeenden(_ p: CGPoint) {
+        strichBeenden(p)
+        mode = .idle
     }
 
     private func drawBox(from a: CGPoint, to b: CGPoint) {

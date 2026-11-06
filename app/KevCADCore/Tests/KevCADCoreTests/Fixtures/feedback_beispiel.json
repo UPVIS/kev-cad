@@ -1,0 +1,505 @@
+{
+ "format": "kevcad-feedback/1",
+ "name": "fb-20261105-223011",
+ "erstellt": "2026-11-05T22:30:11+01:00",
+ "uhr_start": 1793480977.25,
+ "dauer_s": 9.5,
+ "spracherkennung": "wortlaut-parakeet",
+ "wortzeiten": "geschaetzt",
+ "projekt": {
+  "name": "Halter",
+  "pfad": "/Users/kevin/Documents/Kev CAD/Halter"
+ },
+ "run": 7,
+ "abschnitte": [
+  {
+   "von": 0.0,
+   "bis": 3.5
+  },
+  {
+   "von": 5.5,
+   "bis": 9.5
+  }
+ ],
+ "worte": [
+  {
+   "text": "Mach",
+   "von": 1.2,
+   "bis": 1.46,
+   "satz": 1
+  },
+  {
+   "text": "das",
+   "von": 1.5,
+   "bis": 1.7,
+   "satz": 1
+  },
+  {
+   "text": "hier",
+   "von": 1.75,
+   "bis": 2.1,
+   "satz": 1
+  },
+  {
+   "text": "höher.",
+   "von": 2.15,
+   "bis": 2.6,
+   "satz": 1
+  },
+  {
+   "text": "Und",
+   "von": 6.1,
+   "bis": 6.3,
+   "satz": 2
+  },
+  {
+   "text": "den",
+   "von": 6.35,
+   "bis": 6.5,
+   "satz": 2
+  },
+  {
+   "text": "Rest",
+   "von": 6.55,
+   "bis": 6.9,
+   "satz": 2
+  },
+  {
+   "text": "lass",
+   "von": 6.95,
+   "bis": 7.2,
+   "satz": 2
+  },
+  {
+   "text": "so.",
+   "von": 7.25,
+   "bis": 7.5,
+   "satz": 2
+  }
+ ],
+ "saetze": [
+  {
+   "nr": 1,
+   "text": "Mach das hier höher.",
+   "von": 1.2,
+   "bis": 2.6,
+   "vorlaeufig": false,
+   "kamera": {
+    "position": [
+     612.0,
+     -880.0,
+     540.0
+    ],
+    "ziel": [
+     120.0,
+     0.0,
+     60.0
+    ],
+    "richtung": [
+     -0.39,
+     0.71,
+     -0.59
+    ],
+    "oben": [
+     -0.26,
+     0.47,
+     0.84
+    ],
+    "abstand": 1118.0,
+    "projektion": "perspective",
+    "fov": 30.0,
+    "ortho_hoehe": null,
+    "ansicht": null,
+    "durch": null
+   },
+   "auswahl": {
+    "run": 7,
+    "refs": [
+     "Halter/Lasche"
+    ]
+   },
+   "bezuege": [
+    {
+     "art": "zeiger",
+     "t": 1.6,
+     "bis": 2.4,
+     "wort": "hier",
+     "teil": "Halter/Lasche",
+     "ref": "Halter/Lasche#f3",
+     "run": 7,
+     "punkt": [
+      120.0,
+      4.0,
+      62.5
+     ],
+     "normale": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "bild": [
+      640,
+      380
+     ]
+    },
+    {
+     "art": "strich",
+     "strich": 1,
+     "t": 1.9,
+     "bis": 2.5,
+     "teile": [
+      "Halter/Lasche"
+     ]
+    }
+   ]
+  },
+  {
+   "nr": 2,
+   "text": "Und den Rest lass so.",
+   "von": 6.1,
+   "bis": 7.5,
+   "vorlaeufig": false,
+   "kamera": {
+    "position": [
+     700.0,
+     -700.0,
+     600.0
+    ],
+    "ziel": [
+     120.0,
+     0.0,
+     60.0
+    ],
+    "richtung": [
+     -0.5,
+     0.6,
+     -0.62
+    ],
+    "oben": [
+     -0.26,
+     0.47,
+     0.84
+    ],
+    "abstand": 1050.0,
+    "projektion": "perspective",
+    "fov": 30.0,
+    "ortho_hoehe": null,
+    "ansicht": null,
+    "durch": null
+   },
+   "auswahl": {
+    "run": 7,
+    "refs": []
+   },
+   "bezuege": []
+  }
+ ],
+ "striche": [
+  {
+   "nr": 1,
+   "t": 1.9,
+   "bis": 2.5,
+   "run": 7,
+   "teile": [
+    "Halter/Lasche"
+   ],
+   "laenge_mm": 84.5,
+   "kamera": {
+    "position": [
+     612.0,
+     -880.0,
+     540.0
+    ],
+    "ziel": [
+     120.0,
+     0.0,
+     60.0
+    ],
+    "richtung": [
+     -0.39,
+     0.71,
+     -0.59
+    ],
+    "oben": [
+     -0.26,
+     0.47,
+     0.84
+    ],
+    "abstand": 1118.0,
+    "projektion": "perspective",
+    "fov": 30.0,
+    "ortho_hoehe": null,
+    "ansicht": null,
+    "durch": null
+   },
+   "punkte": [
+    {
+     "t": 1.9,
+     "bild": [
+      612,
+      402
+     ],
+     "welt": [
+      118.0,
+      4.0,
+      60.0
+     ],
+     "ref": "Halter/Lasche#f3"
+    },
+    {
+     "t": 2.5,
+     "bild": [
+      690,
+      330
+     ],
+     "welt": [
+      190.0,
+      4.0,
+      88.0
+     ],
+     "ref": "Halter/Lasche#f3"
+    }
+   ]
+  },
+  {
+   "nr": 2,
+   "t": 8.0,
+   "bis": 8.4,
+   "run": 7,
+   "teile": [],
+   "laenge_mm": 40.0,
+   "kamera": {
+    "position": [
+     700.0,
+     -700.0,
+     600.0
+    ],
+    "ziel": [
+     120.0,
+     0.0,
+     60.0
+    ],
+    "richtung": [
+     -0.5,
+     0.6,
+     -0.62
+    ],
+    "oben": [
+     -0.26,
+     0.47,
+     0.84
+    ],
+    "abstand": 1050.0,
+    "projektion": "perspective",
+    "fov": 30.0,
+    "ortho_hoehe": null,
+    "ansicht": null,
+    "durch": null
+   },
+   "punkte": [
+    {
+     "t": 8.0,
+     "bild": [
+      100,
+      100
+     ],
+     "welt": [
+      40.0,
+      0.0,
+      200.0
+     ],
+     "ref": null
+    },
+    {
+     "t": 8.4,
+     "bild": [
+      140,
+      100
+     ],
+     "welt": [
+      80.0,
+      0.0,
+      200.0
+     ],
+     "ref": null
+    }
+   ]
+  }
+ ],
+ "mausweg": [
+  {
+   "t": 0.4,
+   "bild": [
+    300,
+    200
+   ],
+   "teil": null,
+   "ref": null,
+   "run": null,
+   "punkt": null,
+   "normale": null
+  },
+  {
+   "t": 1.6,
+   "bild": [
+    640,
+    380
+   ],
+   "teil": "Halter/Lasche",
+   "ref": "Halter/Lasche#f3",
+   "run": 7,
+   "punkt": [
+    120.0,
+    4.0,
+    62.5
+   ],
+   "normale": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "t": 2.4,
+   "bild": null,
+   "teil": null,
+   "ref": null,
+   "run": null,
+   "punkt": null,
+   "normale": null
+  }
+ ],
+ "kamera_verlauf": [
+  {
+   "t": 0.0,
+   "kamera": {
+    "position": [
+     612.0,
+     -880.0,
+     540.0
+    ],
+    "ziel": [
+     120.0,
+     0.0,
+     60.0
+    ],
+    "richtung": [
+     -0.39,
+     0.71,
+     -0.59
+    ],
+    "oben": [
+     -0.26,
+     0.47,
+     0.84
+    ],
+    "abstand": 1118.0,
+    "projektion": "perspective",
+    "fov": 30.0,
+    "ortho_hoehe": null,
+    "ansicht": null,
+    "durch": null
+   }
+  },
+  {
+   "t": 5.6,
+   "kamera": {
+    "position": [
+     700.0,
+     -700.0,
+     600.0
+    ],
+    "ziel": [
+     120.0,
+     0.0,
+     60.0
+    ],
+    "richtung": [
+     -0.5,
+     0.6,
+     -0.62
+    ],
+    "oben": [
+     -0.26,
+     0.47,
+     0.84
+    ],
+    "abstand": 1050.0,
+    "projektion": "perspective",
+    "fov": 30.0,
+    "ortho_hoehe": null,
+    "ansicht": null,
+    "durch": null
+   }
+  }
+ ],
+ "auswahl_verlauf": [
+  {
+   "t": 0.0,
+   "run": 7,
+   "refs": [
+    "Halter/Lasche"
+   ]
+  },
+  {
+   "t": 6.0,
+   "run": 7,
+   "refs": []
+  }
+ ],
+ "ende": {
+  "kamera": {
+   "position": [
+    700.0,
+    -700.0,
+    600.0
+   ],
+   "ziel": [
+    120.0,
+    0.0,
+    60.0
+   ],
+   "richtung": [
+    -0.5,
+    0.6,
+    -0.62
+   ],
+   "oben": [
+    -0.26,
+    0.47,
+    0.84
+   ],
+   "abstand": 1050.0,
+   "projektion": "perspective",
+   "fov": 30.0,
+   "ortho_hoehe": null,
+   "ansicht": null,
+   "durch": null
+  },
+  "viewport": {
+   "breite": 1280,
+   "hoehe": 800
+  },
+  "sichtbar": [
+   "Halter/Grundplatte",
+   "Halter/Lasche"
+  ],
+  "verborgen": [
+   "Deckel"
+  ],
+  "isoliert": null,
+  "auswahl": {
+   "run": 7,
+   "refs": []
+  },
+  "darstellung": "shaded_edges",
+  "schnitt": null,
+  "explosion": 0.0,
+  "animation": null
+ },
+ "bild": {
+  "datei": "fb-20261105-223011.jpg",
+  "breite": 1280,
+  "hoehe": 800
+ }
+}

@@ -80,7 +80,7 @@ class KernelService(Protocol):
     # Projekt
     def status(self) -> dict[str, Any]:
         """{"project": {"path","name","model"} | None, "kernel": "ready"|"busy"|"error", "app_connected": bool,
-        "last_run": RunResult | None, "selection": {"run", "refs"}}"""
+        "last_run": RunResult | None, "selection": {"run", "refs"}, "feedback": feedback_stand()}"""
 
     def project_open(self, path: str) -> dict[str, Any]:
         """Öffnet einen Projektordner (legt nichts an). {"ok", "path", "name", "model", "error"?}"""
@@ -602,6 +602,21 @@ class KernelService(Protocol):
 
     def agentenspur(self) -> list[dict[str, Any]]:
         """Die letzten 50 Schritte der Agentenspur, älteste zuerst (Felder wie ``AGENT_SCHRITT.schritt``)."""
+
+    # V2-6 Sprach-Feedback (PROTOCOL.md, Abschnitt „V2-6 Sprach-Feedback“, feedback.py)
+    def feedback_stand(self) -> dict[str, Any]:
+        """{"stand": "spricht"|"pause"|"aus", "sitzung", "seit_s", "offen" (Anzahl), "name" (ältestes offenes Paket)}"""
+
+    def feedback_warten(self, warten_s: float, abbruch: Any = None) -> dict[str, Any]:
+        """Wartet höchstens ``warten_s`` auf ein offenes Paket, ohne es abzuholen. ``abbruch``: threading.Event, das
+        das Warten beendet. {"da": bool, **feedback_stand()}"""
+
+    def feedback_holen(self, nochmal: bool = False) -> dict[str, Any]:
+        """Ältestes offenes Paket abholen; mit ``nochmal`` das zuletzt abgeholte. {"ok", "name", "paket", "bild"
+        (JPEG oder None), "bild_pfad", "json_pfad", "offen"} oder {"ok": True, "leer": True}"""
+
+    def feedback_kurz(self, name: str) -> dict[str, Any]:
+        """{"saetze", "striche"} eines Pakets, ohne es abzuholen."""
 
     def close(self) -> None: ...
 

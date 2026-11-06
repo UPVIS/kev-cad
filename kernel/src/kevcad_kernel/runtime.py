@@ -43,6 +43,7 @@ from kevcad_kernel.druck.laufzeit import DruckRuntime
 from kevcad_kernel.drucker.laufzeit import DruckerRuntimeMixin  # Phase 8: Drucken auf dem P1P
 from kevcad_kernel.druck.vorschau_laufzeit import DruckvorschauRuntime
 from kevcad_kernel.druck.gedruckt import GedrucktAnbindung
+from kevcad_kernel.feedback import SPERRE_ANSICHT, FeedbackRuntime
 from kevcad_kernel.freigabe import FreigabeAnbindung
 from kevcad_kernel.kamera import CameraRuntime
 from kevcad_kernel.live import LiveRuntime  # V2-5: Weiche je Verbindung, Agentenspur, Lagebild, Live-Maße
@@ -126,7 +127,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                     ZeichnungRuntimeMixin, VersionenRuntimeMixin, DokumentExportDienst, DruckvorschauRuntime,
                     DruckerRuntimeMixin, FreigabeAnbindung, GedrucktAnbindung, ReferenzRuntimeMixin,
                     StatikRuntime, DynamikRuntime, RenderRuntime, FestkoerperRuntime, ScanRuntimeMixin,
-                    TopologieRuntime, SimulationRuntime, LiveRuntime):
+                    TopologieRuntime, SimulationRuntime, LiveRuntime, FeedbackRuntime):
     """Fassade für die MCP-Werkzeuge (KernelService) und Gegenstelle der App. Bestand je Projekt: bestand/anbindung.py.
     Phase 5: Animation (``AnimationRuntimeMixin``) und Kameras (``CameraRuntime``); Druckprüfung (``DruckRuntime``);
     Prüfung: pruefen, ansichten (``PruefDienst``, pruefung/dienst.py); Phase 6: Bauplan (``BauplanDienst``) und
@@ -186,6 +187,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._worker = WorkerClient(self._on_worker_message, self._on_worker_exit, log=self._log)
         self._bestand_init()
         self._freigabe_init()  # Freigabe im Projektfenster (freigabe.py)
+        self._feedback_init()  # V2-6 Sprach-Feedback (feedback.py)
         self._drucker_init()  # Phase 8: Drucken (drucker/laufzeit.py)
         self._druckvorschau_init()  # Druckvorschau (DRUCKVORSCHAU.md)
         self._referenz_init()  # Phase 4: Referenzen (referenz/laufzeit.py)
@@ -227,9 +229,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                              "verstoesse": list(self._violations)},
                 "bedingungen": dict((self._constraints or {}).get("summe") or {}),
                 "pruefung": self._pruef.kurz(),
+                "feedback": self.feedback_stand(),
             }
 
     def project_open(self, path: str, reply_to: str | None = None) -> dict[str, Any]:
+        if reply_to is None and (sperre := self.feedback_sperre()):  # vom Agenten, nicht aus der App
+            return sperre
         try:
             proj = open_project(path)
         except ProjectError as exc:
@@ -241,6 +246,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         return out
 
     def project_new(self, path: str, template: str = "example", reply_to: str | None = None) -> dict[str, Any]:
+        if reply_to is None and (sperre := self.feedback_sperre()):  # vom Agenten, nicht aus der App
+            return sperre
         try:
             proj = new_project(path, template)
         except ProjectError as exc:
@@ -280,6 +287,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             titel: str | None = None, warten_s: float | None = None) -> dict[str, Any]:
         """Siehe KernelService.run. ``warten_s``: so lange höchstens auf die Prüfung warten (Vorgabe
         ``RUN_WARTEN_S``, 0 = gar nicht, nie länger als ``pruef_warten_s``)."""
+        if sperre := self.feedback_sperre():  # V2-6: Solange Kevin spricht, beginnt kein neuer Lauf
+            return sperre
         job = self._submit_run(params, slow_ms, timeout_s, source="agent")
         if isinstance(job, dict):
             return job
@@ -370,6 +379,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     # =================================================================================================================
 
     def view_command(self, cmd: str, args: dict[str, Any], timeout_s: float = 10) -> dict[str, Any]:
+        if cmd in SPERRE_ANSICHT and (sperre := self.feedback_sperre()):  # V2-6: Die Ansicht gehört Kevin
+            return sperre
         args = self._live_view_vorher(cmd, dict(args or {}))  # V2-5: annotate mit dauer_s braucht eine id
         if not self._link.connected:
             return {"ok": False, "error": APP_NOT_CONNECTED}
@@ -1425,6 +1436,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _on_app_disconnect(self, conn: AppConnection) -> None:
         self._log("[kernel] App getrennt")
         self._fail_pending("App-Verbindung getrennt")
+        self._feedback_verbindung_weg()  # V2-6
 
     def _fail_pending(self, message: str) -> None:
         with self._lock:
@@ -1534,6 +1546,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif kind in BESTAND_ANFRAGEN:
             self._pool.submit(self._bestand_anfrage_sicher, header)
         elif self._freigabe_app_message(kind, header):  # FREIGABE_GESCHLOSSEN
+            pass
+        elif self._feedback_app_message(kind, header):  # V2-6: FEEDBACK_STAND, FEEDBACK_PAKET
             pass
         elif self._anim_app_message(kind, header):
             pass
@@ -1693,7 +1707,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
 
     def _auto_check(self) -> None:
         proj = self._project
-        if proj is None or not self._settings.get("auto_run"):
+        if proj is None or not self._settings.get("auto_run") or self.kevin_spricht:  # V2-6: holt er danach nach
             return
         try:
             code = proj.model.read_text(encoding="utf-8")

@@ -176,9 +176,8 @@ struct KevCADCommands: Commands {
                 Button("Abbrechen") {
                     if model.oberflaeche.uebersicht {  // V2-3: Startübersicht wegschieben
                         model.oberflaechenActions?.zeigeUebersicht(false)
-                    } else if model.oberflaeche.spricht {  // V2-3: Sprechen verwerfen
-                        model.oberflaechenActions?.oberflaeche(.sprechText(nil))
-                        model.oberflaechenActions?.setzeSprechen(false)
+                    } else if model.oberflaeche.sitzungOffen {  // V2-6: Sitzung verwerfen
+                        model.oberflaechenActions?.sprechenVerwerfen()
                     } else if let viewer {
                         viewer.ausfuehren(.abbrechen)  // Menü, Übersicht, Werkzeug, Messen, Auswahl
                     } else if model.measureMode {

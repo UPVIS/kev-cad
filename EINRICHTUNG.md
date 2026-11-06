@@ -263,5 +263,8 @@ Rechnern ignorieren:
     in der App frei.
 - Texte für Agenten und in der Oberfläche sprechen den Nutzer als „Kevin“ an. Das ist nur Text; die Funktionen sind
   dieselben.
+- Sprach-Feedback (Taste V): Ohne Kevins Wortlaut hört Apples Spracherkennung zu (macOS 26). Eine ad hoc signierte Fassung
+  fragt dann nach jedem neuen Bau wieder nach dem Mikrofon, denn macOS merkt sich das Recht an der Signatur. Abhilfe ist
+  eine eigene Identität in `KEVCAD_SIGNATUR` (`tools/signatur.sh`).
 - Bundle-IDs beginnen mit `de.upvis`. Für die Mac-App spielt das keine Rolle (ad hoc signiert); für Kev Scan setzt man
   eine eigene Kennung (Abschnitt 6).

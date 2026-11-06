@@ -4,12 +4,20 @@ import OCCTSwiftViewport
 
 // V2-3 (OBERFLAECHE.md): Aktionen der Oberfläche und das Bild für die Kachel „zweite Ansicht“.
 //
-// Die Befehle ändern heute nur den Zustand in `AppModel.oberflaeche`. Später setzt hier V2-6 die Spracherkennung an
-// (`.sprechen`) und V2-7 meldet Kacheln und Modus an den Kernel.
+// Die Befehle ändern den Zustand in `AppModel.oberflaeche`; Sprechen steuert die Sitzung (V2-6, SprachSteuerung). Später
+// meldet V2-7 hier Kacheln und Modus an den Kernel.
 
 extension AppController: OberflaechenActions {
     public func oberflaeche(_ befehl: Oberflaechenbefehl) {
-        model.oberflaeche.ausfuehren(befehl)
+        switch befehl {
+        case .sprechen(let an): sprache.umschalten(an: an)
+        case .sprechenFertig: sprache.fertig()
+        case .sprechenVerwerfen: sprache.verwerfen()
+        case .sprechText(let t):
+            model.sprache.text = t
+            model.oberflaeche.ausfuehren(befehl)
+        default: model.oberflaeche.ausfuehren(befehl)
+        }
     }
 
     /// Bild einer Standardansicht, eingepasst auf alles Sichtbare, ohne Kevins Kamera, Darstellung und Auswahl zu

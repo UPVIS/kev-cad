@@ -232,6 +232,9 @@ public final class AppModel: ObservableObject {
     /// V2-3 (additiv, OBERFLAECHE.md): Modus, Kacheln, Startübersicht, Sprechen, Fenster am Rand (Aktionen:
     /// `oberflaechenActions`).
     public let oberflaeche = OberflaechenStore()
+    /// V2-6 (additiv): Live-Text und Pegel beim Sprechen (Sitzung: `AppController.sprache`, Aktionen:
+    /// `oberflaechenActions`).
+    public let sprache = SprachStore()
     /// Viewer V2 (additiv): Darstellung, Hinweisleiste, Menüs im Viewport, lokale Ansicht, Meldungen, Aufnahmen
     /// (Aktionen: `actions as? ViewerActions`, Belegung in Viewer/Tastenbelegung.swift).
     public let viewer = ViewerStore()

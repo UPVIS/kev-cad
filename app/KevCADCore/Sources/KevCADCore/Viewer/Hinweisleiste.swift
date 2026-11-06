@@ -8,6 +8,7 @@ struct Hinweisleiste: View {
     @ObservedObject var eingabe: ViewerEingabe
     @ObservedObject var model: AppModel
     @ObservedObject var viewer: ViewerStore
+    @ObservedObject var oberflaeche: OberflaechenStore
     @ObservedObject var viewport: ViewportController
     let groesse: CGSize
     let actions: ViewerActions?
@@ -103,9 +104,17 @@ struct Hinweisleiste: View {
             case .griff:
                 return [Eintrag(tasten: [], maus: .links, text: "Griff ziehen"),
                         Eintrag(tasten: ["⌘"], maus: nil, text: "ohne Einrasten")]
+            case .strich:
+                return [Eintrag(tasten: [], maus: .links, text: "Strich zeichnen"),
+                        Eintrag(tasten: ["Loslassen"], maus: nil, text: "Ende")]
             }
         }
-        let zustand: MausBelegung.Zustand = model.measureMode ? .messen : .auswahl
+        if oberflaeche.sitzungOffen && !oberflaeche.spricht {  // angehalten, die Sitzung ist offen
+            return [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
+                    Eintrag(tasten: ["V"], maus: nil, text: "Weitersprechen"),
+                    Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")]
+        }
+        let zustand: MausBelegung.Zustand = oberflaeche.spricht ? .sprechen : model.measureMode ? .messen : .auswahl
         let mods = eingabe.mods.subtracting(.befehl)
         var out: [Eintrag] = []
         for m in Tastenbelegung.maus where m.mods == mods && (m.zustand == .immer || m.zustand == zustand) {
@@ -115,7 +124,11 @@ struct Hinweisleiste: View {
             out.append(Eintrag(tasten: m.mods.isEmpty ? [] : [m.mods.zeichen], maus: m.geraet,
                                text: m.kurz ?? m.wirkung))
         }
-        if model.measureMode {
+        if oberflaeche.spricht {
+            out.insert(contentsOf: [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
+                                    Eintrag(tasten: ["V"], maus: nil, text: "Aufhören"),
+                                    Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")], at: min(1, out.count))
+        } else if model.measureMode {
             out.insert(Eintrag(tasten: ["Esc"], maus: nil, text: "Ende"), at: min(2, out.count))
             if eingabe.messZiele == 1 {
                 out.insert(Eintrag(tasten: ["↩"], maus: nil, text: "Allein messen"), at: min(1, out.count))

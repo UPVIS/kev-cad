@@ -37,7 +37,7 @@ struct FokusEbenen: View {
                     .frame(width: viewer.width, height: viewer.height * 0.62)
             }
             // Text im Bild bleibt über hellen Teilen lesbar: weicher Verlauf statt Tafel
-            if oberflaeche.spricht || !spur.eintraege.isEmpty {
+            if oberflaeche.sitzungOffen || !spur.eintraege.isEmpty {
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
                     .frame(height: 170)
                     .padding(.bottom, untenFrei - GA.l)  // endet über Hinweisleiste und Zeitleiste
@@ -56,8 +56,9 @@ struct FokusEbenen: View {
     private var unten: some View {
         if schmal {
             VStack(alignment: .leading, spacing: 10) {
-                if oberflaeche.spricht || oberflaeche.sprechText != nil {
-                    LiveText(oberflaeche: oberflaeche, schmal: true)
+                if oberflaeche.sitzungOffen || oberflaeche.sprechText != nil {
+                    LiveText(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions,
+                             schmal: true)
                 }
                 AgentZeile(model: model, spur: spur)
                 HStack {
@@ -72,8 +73,9 @@ struct FokusEbenen: View {
             .padding(.bottom, untenFrei)
         } else {
             ZStack(alignment: .bottomTrailing) {
-                if oberflaeche.spricht || oberflaeche.sprechText != nil {
-                    LiveText(oberflaeche: oberflaeche, schmal: false)
+                if oberflaeche.sitzungOffen || oberflaeche.sprechText != nil {
+                    LiveText(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions,
+                             schmal: false)
                         .frame(maxWidth: max(320, min(860, viewer.width - 680)))
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, untenFrei)
@@ -124,20 +126,31 @@ private struct StartZeile: View {
     }
 }
 
-/// Zone für Kevins Live-Text: Pegel und „Du sprichst“, der Text groß wie ein Untertitel, darunter die Tasten.
+/// Zone für Kevins Live-Text: Pegel und Stand, der Text groß wie ein Untertitel, darunter die Tasten. Sie beobachtet
+/// `SprachStore`, damit nicht jedes Wort das Hauptfenster neu auswertet.
 struct LiveText: View {
     @ObservedObject var oberflaeche: OberflaechenStore
+    @ObservedObject var sprache: SprachStore
+    let actions: OberflaechenActions?
     let schmal: Bool
+
+    private var titel: String {
+        if sprache.schickt { return "Geht an den Agenten" }
+        if oberflaeche.spricht { return "Du sprichst" }
+        return oberflaeche.sitzungOffen ? "Angehalten" : "Gesagt"
+    }
+
+    private var text: String? { sprache.text ?? oberflaeche.sprechText }
 
     var body: some View {
         VStack(spacing: schmal ? 8 : 12) {
             HStack(spacing: 10) {
-                Pegel(an: oberflaeche.spricht)
-                Text(oberflaeche.spricht ? "Du sprichst" : "Gesagt")
+                Pegel(an: oberflaeche.spricht, wert: sprache.pegel)
+                Text(titel)
                     .font(GS.text)
                     .foregroundStyle(GF.kevin)
             }
-            if let t = oberflaeche.sprechText, !t.isEmpty {
+            if let t = text, !t.isEmpty {
                 Text(t)
                     .font(schmal ? GS.liveTextSchmal : GS.liveText)
                     .foregroundStyle(GF.kreide)
@@ -145,31 +158,47 @@ struct LiveText: View {
                     .lineLimit(schmal ? 4 : 3)
                     .truncationMode(.head)
             } else if oberflaeche.spricht {
-                Text("Sprich einfach, der Text erscheint hier.")
+                Text(sprache.startet ? "Das Mikrofon geht gerade an …" : "Sprich einfach, der Text erscheint hier.")
                     .font(schmal ? GS.liveTextSchmal : GS.liveText)
                     .foregroundStyle(GF.rauch)
                     .multilineTextAlignment(.center)
             }
-            if oberflaeche.spricht && !schmal {
-                HStack(spacing: 22) {
-                    TastenHinweis(tasten: ["↩"], text: "fertig")
-                    TastenHinweis(tasten: ["V"], text: "aufhören")
-                    TastenHinweis(tasten: ["esc"], text: "verwerfen")
+            if oberflaeche.sitzungOffen && !sprache.schickt {
+                HStack(spacing: schmal ? 14 : 22) {
+                    Button {
+                        actions?.sprechenFertig()
+                    } label: {
+                        TastenHinweis(tasten: ["↩"], text: "fertig")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Text, Zeiger und Striche gehen an den Agenten")
+                    Button {
+                        actions?.setzeSprechen(!oberflaeche.spricht)
+                    } label: {
+                        TastenHinweis(tasten: ["V"], text: oberflaeche.spricht ? "aufhören" : "weiter")
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        actions?.sprechenVerwerfen()
+                    } label: {
+                        TastenHinweis(tasten: ["esc"], text: "verwerfen")
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(.top, 4)
+                .padding(.top, schmal ? 0 : 4)
             }
         }
         .textImBild()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(oberflaeche.spricht ? "Du sprichst" : "Zuletzt gesagt")
-        .accessibilityValue(oberflaeche.sprechText ?? "")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(titel)
+        .accessibilityValue(text ?? "")
     }
 }
 
-/// Pegel in Lichtblau, solange Kevin spricht.
+/// Pegel in Lichtblau: folgt der Lautstärke, solange Kevin spricht.
 private struct Pegel: View {
     let an: Bool
-    @State private var phase = false
+    let wert: Float
     private let staerken: [CGFloat] = [0.45, 0.8, 1, 0.6, 0.35]
 
     var body: some View {
@@ -178,13 +207,11 @@ private struct Pegel: View {
                 Capsule()
                     .fill(GF.kevin)
                     .frame(width: 3, height: 16)
-                    .scaleEffect(y: an ? (phase ? staerken[i] : 1.1 - staerken[i]) : 0.3, anchor: .center)
-                    .animation(an ? .easeInOut(duration: 0.42 + Double(i) * 0.07).repeatForever(autoreverses: true)
-                                  : .default, value: phase)
+                    .scaleEffect(y: an ? max(0.2, staerken[i] * (0.3 + CGFloat(wert) * 1.1)) : 0.2, anchor: .center)
             }
         }
         .frame(height: 16)
-        .onAppear { phase = true }
+        .animation(.easeOut(duration: 0.1), value: wert)
         .accessibilityHidden(true)
     }
 }

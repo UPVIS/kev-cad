@@ -97,7 +97,8 @@ struct Tastenuebersicht: View {
         // Maus und Trackpad zuerst
         let maus = Tastenbelegung.maus.filter { passt([$0.wirkung, $0.eingabe]) }.map { m in
             Zeile(id: m.id, tasten: m.mods.isEmpty ? [] : [m.mods.zeichen], maus: m.geraet, titel: m.wirkung,
-                  erklaerung: m.eingabe + (m.zustand == .messen ? " · im Messmodus" : ""))
+                  erklaerung: m.eingabe + (m.zustand == .messen ? " · im Messmodus"
+                                           : m.zustand == .sprechen ? " · beim Sprechen" : ""))
         }
         if !maus.isEmpty { out.append(("Maus und Trackpad", maus)) }
         for g in BelegungsGruppe.allCases {
