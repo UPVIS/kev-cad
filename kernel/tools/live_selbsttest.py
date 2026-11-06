@@ -279,9 +279,13 @@ def main() -> int:
         m = z.marke()
         version = lauf(rt, z, "kommentar")
         ergebnis["laeufe"].append(version)
+        ende = time.monotonic() + 90  # die Version entsteht im Nachlauf, unter Last deutlich nach RUN_END
+        png: list[Path] = []
+        while time.monotonic() < ende and not png:
+            png = [p for p in (kopie / ".kevcad/versionen/bilder").glob("*.png") if p.stat().st_mtime >= beginn - 1]
+            time.sleep(0.5)
         bilder = [(h, n) for _, a, n, h in z.seit(m) if a == "VERSION_BILD_REQ"]
         aus_szene = sum(1 for h, _ in bilder for k in h.get("teile") or [] if k.get("aus_szene"))
-        png = [p for p in (kopie / ".kevcad/versionen/bilder").glob("*.png") if p.stat().st_mtime >= beginn - 1]
         pruefe(bool(bilder) and aus_szene > 0,
                f"Versionsbild nimmt {aus_szene} Netze aus der Szene ({sum(n for _, n in bilder) / 1000:.1f} KB)")
         pruefe(bool(png) and png[0].stat().st_size > 2000, f"die App liefert das Vorschaubild ({len(png)} PNG)")
