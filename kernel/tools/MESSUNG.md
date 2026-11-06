@@ -259,11 +259,11 @@ bleibt unter der Grenze von 300 ms. „An den Rand“ ist langsamer als in V2-7,
 **Start** (`KEVCAD_SELFTEST=oberflaeche`, Mac mini ohne fremde Last): Fenster nach 0,19 s, bedienbar nach 0,20 s, Rechenzeit
 des Hauptfadens 0,14 s. Der Kernel brauchte dort beim ersten Start einer neuen Umgebung 46 s, gut 50 s am MacBook unter Last:
 Das ist der erste Import ohne Bytecode. Seit V2-8 übersetzt `uv sync --compile-bytecode` beim Installieren, und `build.sh` lädt den
-Kernel einmal.
+Kernel einmal; danach dauert der Import in der frischen Installation 3,8 s statt 53 s.
 
-**Tests** (`tools/fern.sh tests`, Mac mini): vier volle Läufe, 465 Swift-Tests und rund 1200 Kernel-Tests. Der erste scheiterte an
+**Tests** (`tools/fern.sh tests`, Mac mini): fünf volle Läufe, 465 Swift-Tests und rund 1200 Kernel-Tests. Der erste scheiterte an
 einer Zeitgrenze unter Last (`test_bewegungsraum_zwischenspeicher_ueber_laeufe`, die Grenze ist entfernt, die Prüfung auf den
-Zwischenspeicher bleibt), die drei übrigen waren grün, in 7 Minuten je Lauf.
+Zwischenspeicher bleibt), die vier übrigen waren grün, in 7 Minuten je Lauf.
 
 - **Locale:** `lib3mf` setzt beim Schreiben `setlocale(LC_ALL, "C")` (nachgestellt: `locale.getencoding()` wird `US-ASCII`). Der alte
   Stand scheitert danach an `test_hertz_kugel_auf_platte` mit `UnicodeDecodeError`. Mit Rücksetzen nach jedem Test laufen 3MF und
@@ -272,9 +272,9 @@ Zwischenspeicher bleibt), die drei übrigen waren grün, in 7 Minuten je Lauf.
   verzögertem Nachtrag schlägt der alte Test in zwei von drei Läufen fehl (`blatt.kopf["run"]` noch vom Lauf davor). Der Test wartet
   jetzt auf das Future `job.dokumente`.
 - **test_gleitende_lager_schraeg_in_der_fem:** Gmsh rechnet mit vier Fäden, jeder Lauf hat ein anderes Netz (12.003 bis 12.138
-  Freiheitsgrade). In 50 Läufen waren die Lagerkräfte exakt und die Meldung gleich. Der Fehler trat in vier vollen Läufen nicht auf.
+  Freiheitsgrade). In 50 Läufen waren die Lagerkräfte exakt und die Meldung gleich. Der Fehler trat in fünf vollen Läufen nicht auf.
 
-**Installation** (`KEVCAD_UPDATE_PROBE`, `KEVCAD_UPDATE_REF`, Zweig dieses Pakets): Paket auf dem Mini in 70 s, gesamt 94 s. App mit
+**Installation** (`KEVCAD_UPDATE_PROBE`, `KEVCAD_UPDATE_REF`, Zweig dieses Pakets): gesamt 130 s, davon 65 s auf dem Mini. App mit
 „Developer ID Application: KEVIN SCHWED (2GX7UC98J6)“, `codesign --verify --deep --strict` in Ordnung, Skill mit allen 16 Dateien
 gleich dem Repo, `kevcad-kernel check` läuft, `kevcad-mcp`, `kevcad-feedback`, fotomess und scan vorhanden. Über die installierte
 Brücke: 25 Werkzeuge, 5.989 Zeichen Anweisungen, `stock_search` antwortet mit `katalog(suche=…)`. KevCADWire baut wie in VoiceBridge über

@@ -145,7 +145,7 @@ und Bezug als Anweisung zum Agenten.
 
 ## 7. Offene Punkte und Risiken
 
-- **Tests:** Die volle Suite läuft auf dem Mini grün (zuletzt viermal hintereinander). Die 16 Statik- und Simulationstests
+- **Tests:** Die volle Suite läuft auf dem Mini grün (zuletzt viermal hintereinander, auch mit dem Endstand). Die 16 Statik- und Simulationstests
   mit CalculiX scheiterten am MacBook, weil lib3mf beim Schreiben einer 3MF den ganzen Prozess auf die Locale `C` stellt
   und Python danach ohne feste Kodierung ASCII liest; deshalb nur im vollen Lauf und nie auf dem Mini, wo `PYTHONUTF8=1`
   gilt (behoben, `test_kodierung.py`). Abbrüche mit Ausgang 141 kamen von `gmsh.initialize`, das SIGPIPE zurücksetzt
