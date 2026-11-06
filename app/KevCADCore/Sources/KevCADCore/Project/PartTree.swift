@@ -89,15 +89,6 @@ public enum PartTree {
         nodes.flatMap { [$0.id] + allIDs($0.children ?? []) }
     }
 
-    /// Sucht einen Knoten nach ID.
-    public static func node(_ id: String, in nodes: [PartTreeNode]) -> PartTreeNode? {
-        for node in nodes {
-            if node.id == id { return node }
-            if let found = self.node(id, in: node.children ?? []) { return found }
-        }
-        return nil
-    }
-
     /// Teilname aus einer Referenz: "Halter/Lasche#f12" → "Halter/Lasche".
     public static func partID(fromRef ref: String) -> String {
         if let hash = ref.firstIndex(of: "#") { return String(ref[..<hash]) }
