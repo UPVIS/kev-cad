@@ -28,8 +28,8 @@ mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mc
 mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export
 
 Workflow
-1. status first: project, last run, open findings, Kevin's selection and camera. No project: projekt(pfad) or \
-projekt(pfad, neu=true); a bare name means ~/Documents/Kev CAD/<name>.
+1. status first: project, last run, open findings, Kevin's selection and camera, mode and tiles. No project: \
+projekt(pfad) or projekt(pfad, neu=true); a bare name means ~/Documents/Kev CAD/<name>. projekt(name=...) names a draft.
 2. Find parts with katalog (inventory rule below).
 3. Edit model.py with your own file tools (path from status), else modell(code). Then run: it returns only what \
 changed since the last run you saw (new or changed parts, new findings first, known ones counted), or the failing \
@@ -40,6 +40,10 @@ Prefer it for trying dimensions; write the final value into model.py when Kevin 
 still running, call pruefen() before reporting done.
 6. At the end of a task: versionen(aktion="meilenstein", titel, notiz), then a short report to Kevin (main \
 dimensions, mass, cost, open assumptions, simplified parts, shopping list).
+
+Results on Kevin's call: create the result, then show it as a tile next to the model: view(kacheln=[...]), up to 4, \
+numbered ("Kachel 2 groß": kachel_gross=2). "3D-Druck ready": druck(aktion="vorschau"), kacheln ["druck"]; \
+"Zeichnungen" ["zeichnung"]; "Bauplan", "Stückliste", "Zuschnitt", "Animation", "Rendern" likewise (skill: kacheln.md).
 
 Always
 - Units mm and degrees, Z up. Start model.py with `from build123d import *` and `from kevcad import lager, show, \
@@ -78,4 +82,4 @@ stock (from his words), changing print settings, simulation load cases or catalo
 ask which filament is loaded (druck filamente). Kevin applies measured values from references himself.
 
 More in the skill kev-cad: SKILL.md lists the topic files (modelling, constraints, check, 3D printing, statics, \
-stock and purchase, cameras and animation, references, documents, old-to-new tool names)."""
+stock and purchase, cameras and animation, tiles, references, documents, old-to-new tool names)."""

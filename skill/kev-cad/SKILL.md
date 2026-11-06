@@ -18,14 +18,14 @@ Kernsatz für die tägliche Arbeit. In Claude Code alle zwölf mit EINEM ToolSea
 
 | Werkzeug | Wofür |
 |---|---|
-| `status()` | Lagebild: Projekt, letzter Lauf, offene Befunde, Kevins Auswahl mit Werten, seine Kamera, Ausgeblendetes |
-| `projekt(pfad, neu=false)` | Projekt öffnen oder anlegen (bloßer Name: `~/Documents/Kev CAD/<Name>`) |
+| `status()` | Lagebild: Projekt, letzter Lauf, offene Befunde, Kevins Auswahl mit Werten, seine Kamera, Ausgeblendetes, Modus und Kacheln |
+| `projekt(pfad, neu=false, name)` | Projekt öffnen oder anlegen (bloßer Name: `~/Documents/Kev CAD/<Name>`); `name` allein benennt das offene Projekt |
 | `modell(code=None)` | model.py lesen oder ganz schreiben (nur ohne eigene Dateiwerkzeuge) |
 | `run(params, detail, titel)` | ausführen; antwortet nur mit dem, was sich seit deinem letzten Lauf geändert hat |
 | `execute(code)` | Python im Namensraum des letzten Laufs (Geometrie untersuchen, ohne model.py zu ändern) |
 | `parts(filter, stueckliste)` | Teile kurz oder je Baugruppe ausführlich; Stückliste mit Zuschnitt und Einkauf |
 | `measure(refs, show)` | exakt messen; ohne refs Kevins Auswahl („das hier“, „diese Bohrung“) |
-| `view(…)` | Kamera, Darstellung, Fokus, Sichtbarkeit, Schnitt, Hervorheben, Anmerkungen in einem Aufruf |
+| `view(…)` | Kamera, Darstellung, Fokus, Sichtbarkeit, Schnitt, Hervorheben, Anmerkungen, Kacheln und Modus in einem Aufruf |
 | `pruefen(thema)` | Prüfergebnis im Endstand; `thema="bedingungen"` oder `"montage"` |
 | `ansichten(…)` | Bilder zur eigenen Analyse; `kevin=true` genau Kevins Ansicht (nur auf seinen Wunsch) |
 | `katalog(suche, art, id)` | Lagerteile suchen, ein Teil im Detail, `art="material"` für Materialien |
@@ -83,6 +83,7 @@ Parameter, `daten=true` hängt die Rohdaten als JSON an. Einzelheiten und die Zu
 | [3d-druck.md](3d-druck.md) | du ein Druckteil konstruierst, exportierst oder drucken sollst |
 | [statik.md](statik.md) | Kevin fragt, ob etwas hält, kippt, sich biegt; Dynamik, FEM, Topologie |
 | [ansicht.md](ansicht.md) | du messen, Kevin etwas zeigen, Bilder zur Analyse oder ein Rendering brauchst |
+| [kacheln.md](kacheln.md) | Kevin ein Ergebnis auf Zuruf sehen will: „3D-Druck ready“, „Zeichnungen“, „Animation“, „Stückliste“, „Kachel 2 groß“ |
 | [kamera-animation.md](kamera-animation.md) | Kameras (FX6 & Co.) oder Animationen und Videos im Spiel sind |
 | [referenz.md](referenz.md) | Kevin ein Video, Fotos oder einen Scan des echten Gegenstands gibt |
 | [dokumente.md](dokumente.md) | Zeichnungen, Bauplan, PDF oder Dateiexport gefragt sind |

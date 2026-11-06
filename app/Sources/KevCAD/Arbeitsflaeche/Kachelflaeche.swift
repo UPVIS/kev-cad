@@ -115,18 +115,28 @@ struct KachelFlaeche: View {
     let navigation: MaterialNavigation
     let zeigeIm3D: ([String]) -> Void
 
+    /// Letzter Rahmen je Kachel: Während eine andere groß ist, bleiben die übrigen in dieser Größe eingehängt und nur
+    /// ausgeblendet, damit „alle einordnen“ nichts neu aufbaut.
+    @State private var zuletzt: [KachelArt: CGRect] = [:]
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(oberflaeche.kacheln) { art in
-                if let r = rahmen[art] {
+                if let r = rahmen[art] ?? zuletzt[art] {
+                    let sichtbar = rahmen[art] != nil
                     kachel(art, breite: r.width)
                         .frame(width: r.width, height: r.height)
                         .position(x: r.midX, y: r.midY)
+                        .opacity(sichtbar ? 1 : 0)
+                        .allowsHitTesting(sichtbar)
+                        .accessibilityHidden(!sichtbar)
                         .transition(.opacity)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { zuletzt = rahmen }
+        .onChange(of: rahmen) { _, neu in zuletzt.merge(neu) { _, n in n } }
     }
 
     private func kachel(_ art: KachelArt, breite: CGFloat) -> some View {

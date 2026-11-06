@@ -64,33 +64,50 @@ struct DruckAnsicht: View {
     // MARK: Kopf
 
     private var kopf: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 8) {
-                if !eingebettet {
-                    Image(systemName: "printer.fill").foregroundStyle(Color.kevAkzent)
-                    Text("3D-Druck").font(.headline)
+        ViewThatFits(in: .horizontal) {
+            kopfZeile(alle: true)
+            kopfZeile(alle: false)
+            // Schmal (Kachel im Fenster am Rand): die Summen in einer eigenen Zeile
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 16) {
+                    stand
+                    Spacer(minLength: 8)
+                    if let v = druck.vorschau, !v.istLeer { exportKnopf(v) }
                 }
-                if let v = druck.vorschau, !v.istLeer {
-                    DruckStandMarke(vorschau: v)
-                    if model.isRunning {
-                        ProgressView().controlSize(.mini).help("Lauf läuft, die Vorschau folgt")
-                    }
-                }
+                if let v = druck.vorschau, !v.istLeer { summen(v, alle: false) }
             }
-            .fixedSize()
+            .padding(.vertical, 8)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 50)
+        .background(.bar)
+    }
+
+    private func kopfZeile(alle: Bool) -> some View {
+        HStack(spacing: 16) {
+            stand
             Spacer(minLength: 8)
             if let v = druck.vorschau, !v.istLeer {
-                ViewThatFits(in: .horizontal) {
-                    summen(v, alle: true)
-                    summen(v, alle: false)
-                    EmptyView()
-                }
+                summen(v, alle: alle)
                 exportKnopf(v)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-        .background(.bar)
+    }
+
+    private var stand: some View {
+        HStack(spacing: 8) {
+            if !eingebettet {
+                Image(systemName: "printer.fill").foregroundStyle(Color.kevAkzent)
+                Text("3D-Druck").font(.headline)
+            }
+            if let v = druck.vorschau, !v.istLeer {
+                DruckStandMarke(vorschau: v)
+                if model.isRunning {
+                    ProgressView().controlSize(.mini).help("Lauf läuft, die Vorschau folgt")
+                }
+            }
+        }
+        .fixedSize()
     }
 
     private func summen(_ v: Druckvorschau, alle: Bool) -> some View {

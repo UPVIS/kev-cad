@@ -115,6 +115,10 @@ struct BauplanMenue: View {
     }
 
     private func zeige(_ a: DokumentAuswahl) {
+        if a == .bauplan {  // eigene Kachel
+            model.oberflaechenActions?.zeigeKachel(.bauplan)
+            return
+        }
         withAnimation(.snappy(duration: 0.2)) { window?.bereich = .dokumente }
         window?.dokumenteZustand?.waehle(a)
     }

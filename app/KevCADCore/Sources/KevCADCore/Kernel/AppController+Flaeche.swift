@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import OCCTSwiftViewport
@@ -26,9 +27,23 @@ extension AppController {
             case .success(let pfad): return (true, pfad.path)
             case .failure(let f): return (false, f.text)
             }
+        case "test_foto" where AppInfo.isTestVariant:
+            return fensterbild(nach: v.args["pfad"]?.stringValue ?? "")
         default:
             return nil
         }
+    }
+
+    /// Testvarianten: Bild der Oberfläche ohne Bildschirmaufnahme (der Viewer bleibt darin leer), für Selbsttests auf einem
+    /// Rechner ohne Berechtigung dafür (kernel/tools/kachel_selbsttest.py).
+    private func fensterbild(nach pfad: String) -> (Bool, String?) {
+        guard let v = (NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible })?.contentView,
+              let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)
+        else { return (false, "kein Fenster") }
+        v.cacheDisplay(in: v.bounds, to: rep)
+        guard let d = rep.representation(using: .png, properties: [:]), (try? d.write(to: URL(fileURLWithPath: pfad))) != nil
+        else { return (false, "Bild nicht geschrieben") }
+        return (true, nil)
     }
 
     /// `LAGE.flaeche`.

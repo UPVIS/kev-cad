@@ -8,16 +8,17 @@ In Claude Code mit einem ToolSearch-Aufruf laden: `select:mcp__kevcad__status,mc
 
 ### status
 
-Shared picture of the situation, call it first and whenever you lose track: open project and model.py path, kernel and app, last run in one line, open findings, Kevin's selection with values, his camera (named view or direction, target, distance) and what is hidden or isolated.
+Shared picture of the situation, call it first and whenever you lose track: open project and model.py path, kernel and app, last run in one line, open findings, Kevin's selection with values, his camera (named view or direction, target, distance), what is hidden or isolated, mode and open tiles.
 
 
 ### projekt
 
-Open an existing project folder (with model.py), or create one with neu=true (vorlage 'example' writes a small sample model, 'empty' only the imports). A bare name means ~/Documents/Kev CAD/<name>.
+Open an existing project folder (with model.py), or create one with neu=true (vorlage 'example' writes a small sample model, 'empty' only the imports). A bare name means ~/Documents/Kev CAD/<name>. name=... alone names the open project (a draft moves to ~/Documents/Kev CAD/<name>, the result gives the new path).
 
-- `pfad` (string): Project folder: absolute path, ~/..., or a bare project name
+- `pfad` (string, optional): Project folder: absolute path, ~/..., or a bare project name
 - `neu` (boolean, optional, Vorgabe False): Create a new project instead of opening one
 - `vorlage` ('example' | 'empty', optional, Vorgabe 'example'): neu: starting content of model.py
+- `name` (string, optional): Name for the open project; not together with pfad
 
 ### modell
 
@@ -59,7 +60,7 @@ Exact measurement in the kernel (OCCT). Without refs: what Kevin has selected, w
 
 ### view
 
-Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking.
+Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking. Result tiles side by side (up to 4, numbered, Kevin says "Kachel 2 groß"): kacheln, kachel_gross, kachel_zu; a tile in Fokus switches to Werkstatt. modus, rand, zeitleiste, zweite_ansicht and blatt arrange the rest.
 
 - `standard` ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso' | 'iso_front_left' | 'iso_back_right' | 'iso_back_left', optional): Standard view direction
 - `projection` ('perspective' | 'orthographic', optional): Camera projection
@@ -80,6 +81,15 @@ Control what Kevin sees, several things in one call (applied in this order): vis
 - `entfernen` (boolean | 'hervorhebungen' | 'anmerkungen' | list[string], optional, Vorgabe False): First remove: true = highlights and annotations, 'hervorhebungen' or 'anmerkungen' only those, a list = these annotation ids
 - `dauer_s` (number, optional): hervorheben, anmerkung: fade out after this many seconds
 - `animate` (boolean, optional, Vorgabe True): Animate the focus move so Kevin can follow
+- `kacheln` (list['modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render'], optional): Show these tiles (added to the open ones). zeichnung, bauplan, stueckliste, zuschnitt, druck, animation, ansicht = second view, material, simulation, versionen, details, render, modell = the viewer
+- `kacheln_nur` (boolean, optional, Vorgabe False): kacheln: exactly these, numbered in this order
+- `kachel_gross` ('modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render' | integer | string, optional): This tile (name or number 1-4) fills the area; aus = all side by side again
+- `kachel_zu` (list['modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render' | integer] | string, optional): Close tiles
+- `modus` ('fokus' | 'werkstatt', optional): fokus = only the viewer, werkstatt = tiles and properties
+- `rand` ('links' | 'rechts' | 'aus', optional): Window narrow at this screen edge next to the chat; aus = back
+- `zeitleiste` (boolean, optional): Timeline over the viewer in Fokus
+- `zweite_ansicht` ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso' | 'iso_front_left' | 'iso_back_right' | 'iso_back_left', optional): Direction of tile ansicht
+- `blatt` (integer | string, optional): Sheet in tile zeichnung: number, id or title
 
 ### pruefen
 

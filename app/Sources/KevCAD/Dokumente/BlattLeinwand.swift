@@ -416,6 +416,32 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     static let auswahlFarbe = NSColor.controlAccentColor
 
+    /// Zeichenbrett um das helle Blatt (Stil Reißbrett, V2-7): leise Planquadrate im Abstand von 10 mm. Zu klein gezoomt
+    /// würden sie flimmern, dann bleibt die Fläche frei.
+    private func planquadrate(_ ctx: CGContext, in r: NSRect) {
+        let schritt = 10 * skala
+        guard schritt >= 6 else { return }
+        let weg = CGMutablePath()
+        var x = ursprung.x + ((r.minX - ursprung.x) / schritt).rounded(.down) * schritt
+        while x <= r.maxX {
+            weg.move(to: CGPoint(x: x, y: r.minY))
+            weg.addLine(to: CGPoint(x: x, y: r.maxY))
+            x += schritt
+        }
+        var y = ursprung.y + ((r.minY - ursprung.y) / schritt).rounded(.down) * schritt
+        while y <= r.maxY {
+            weg.move(to: CGPoint(x: r.minX, y: y))
+            weg.addLine(to: CGPoint(x: r.maxX, y: y))
+            y += schritt
+        }
+        ctx.saveGState()
+        ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.05))
+        ctx.setLineWidth(1)
+        ctx.addPath(weg)
+        ctx.strokePath()
+        ctx.restoreGState()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let t0 = CACurrentMediaTime()
@@ -423,6 +449,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         ctx.fill(dirtyRect)
         guard let z = zeichnung else { return }
         let blatt = papier
+        planquadrate(ctx, in: dirtyRect)
         // Papier mit Schatten (bleibt in Hell und Dunkel weiß)
         ctx.saveGState()
         ctx.setShadow(offset: CGSize(width: 0, height: -3), blur: 14, color: CGColor(gray: 0, alpha: 0.32))
