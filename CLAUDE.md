@@ -85,6 +85,7 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
 | App-Kern | `app/KevCADCore/Sources/KevCADCore/{Protocol,Kernel,Scene,Viewer}/`, Tests dazu |
 | Oberfläche | `app/Sources/KevCAD/`, `app/KevCADCore/Sources/KevCADCore/Project/`, Tests dazu |
 | Statik | `kernel/src/kevcad_kernel/statik/`, `kernel/src/kevcad/statik.py`, `mcp_tools/statik_tools.py`, `app/KevCADCore/Sources/KevCADCore/Statik/`, `app/Sources/KevCAD/Statik/`, `test_statik.py`, `StatikTests.swift` (PLAN-STATIK.md) |
+| Sprach-Feedback | `kernel/src/kevcad_kernel/feedback*.py`, `mcp_tools/feedback_tools.py`, `app/KevCADCore/Sources/KevCADCore/Sprache/`, `test_feedback.py`, `FeedbackTests.swift` (PROTOCOL.md, „V2-6 Sprach-Feedback“) |
 | Simulation | `kernel/src/kevcad_kernel/simulation/`, `mcp_tools/simulation_tools.py`, `app/KevCADCore/Sources/KevCADCore/Simulation/`, `app/Sources/KevCAD/Simulation/`, `test_simulation.py`, `SimulationTests.swift` (PLAN-SIMULATION.md) |
 
 Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussbericht, statt sie still zu machen.
@@ -96,7 +97,8 @@ Wer eine Vertragsdatei ändern muss, beschreibt die Änderung im Abschlussberich
 - **Tests mit Oberfläche:** nur die Testvariante, im Hintergrund starten (`open -g -n "build/Kev CAD Test.app"`), ihr
   Fenster liegt auf dem zweiten Monitor. Danach beenden (`pkill -x "Kev CAD Test"`). Keine simulierten Maus- oder
   Tastatureingaben auf dem Hauptbildschirm; falls doch nötig, Mauszeiger und vorderes Programm wiederherstellen.
-  Fensterbilder mit `screencapture -l <Fensternummer> -o -x datei.png`.
+  Fensterbilder mit `screencapture -l <Fensternummer> -o -x datei.png`. Ohne zweiten Monitor `open -g -n --env
+  KEVCAD_TEST_VERSTECKT=1 …`: Das Fenster liegt hinter dem Schreibtischbild, zeichnet und trifft weiter, ohne Dock-Symbol.
 - Kernel-Tests nutzen eigene Sockets im Temp-Ordner und eigene Ports (nicht 47823/47824).
 - **Bauen und Testen auf dem Mac mini:** Agenten bauen und testen nur über `tools/fern.sh` (Kevin, 22.10.2026: der Mini
   entlastet das MacBook). Dort gibt es zwei Bauplätze mit warmen Bauordnern und einen Testplatz, gewartet wird in einer

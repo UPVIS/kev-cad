@@ -104,6 +104,12 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   fertige mit Dauer, der laufende zählt mit. Dazu das Ende jedes Laufs, den kein Schritt nennt, und die Befunde der
   Prüfung; ältere Kernel liefern nur die Tätigkeitszeile (`agentActivity`). Höchstens sechs Einträge. Das Hauptfenster
   hält `AgentenSpur` mit `@State`, nur die Spur-Ansichten beobachten sie.
+- **Sprechen** (V2-6, Vertrag in PROTOCOL.md, „V2-6 Sprach-Feedback“, Steuerung `Sprache/SprachSteuerung.swift`): V beginnt
+  eine Sitzung, der Rahmen wird rot, der Text läuft unten mit (`AppModel.sprache`, eigener Speicher, damit nicht jedes Wort
+  das Hauptfenster auswertet). Solange Kevin spricht, zeichnet Ziehen mit der linken Maustaste einen Strich aufs Modell;
+  Klicken wählt weiter aus, Drehen bleibt bei der mittleren Taste und ⌥ links. V hält an und lässt die Sitzung offen, ↩
+  schickt alles an den Agenten, esc verwirft es. ↩ wirkt im ganzen Fenster, nur Textfelder und Dialoge gehen vor. Während
+  Kevin spricht, passt ein Lauf die Ansicht nicht ein. Erkannt wird mit Wortlaut, Rückfall ist Apples Erkennung.
 - Der Viewer wird nie neu angelegt: Er steht an fester Stelle im Ansichtsbaum, nur sein Rahmen wechselt (ohne
   Animation). Er kommt erst nach dem ersten Bild dazu, damit Metal das Fenster nicht aufhält. Verdeckt (Werkstatt ohne
   Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`).
@@ -154,8 +160,9 @@ gelten weiter.
 | ⌃⌘1 bis ⌃⌘8 | Kachel Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details |
 | ⌥⌘1 bis ⌥⌘4 | Kachel 1 bis 4 groß und zurück |
 | ⇧⌘W | aktive Kachel schließen |
-| V | Sprechen an und aus (im Zeichnungsblatt bleibt V das Auswahlwerkzeug) |
-| esc | Startübersicht wegschieben, Sprechen verwerfen, sonst wie bisher |
+| V | Sprechen an und aus; aus hält an, die Sitzung bleibt offen (im Zeichnungsblatt bleibt V das Auswahlwerkzeug) |
+| ↩ | Sitzung offen: fertig, an den Agenten schicken; sonst wie bisher |
+| esc | Startübersicht wegschieben, Sitzung verwerfen, sonst wie bisher |
 
 Die Tasten des Viewers stehen in `Commands.swift` und gehören zu V2-4.
 

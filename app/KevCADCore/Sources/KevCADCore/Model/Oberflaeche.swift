@@ -59,10 +59,14 @@ public enum Oberflaechenbefehl: Equatable, Sendable {
     case kachelAktiv(KachelArt?)
     /// Startübersicht der letzten Projekte zeigen oder wegschieben.
     case uebersicht(Bool)
-    /// Kevin spricht (roter Rahmen um den Viewer). Die Erkennung selbst kommt mit V2-6.
+    /// Kevin spricht (roter Rahmen um den Viewer); `false` hält an, die Sitzung bleibt offen.
     case sprechen(Bool)
-    /// Was Kevin gerade sagt, Wort für Wort (V2-6 liefert es); nil leert die Zone.
+    /// Was Kevin gesagt hat; nil leert die Zone.
     case sprechText(String?)
+    /// ↩: Die Sitzung endet, das Paket geht zum Agenten.
+    case sprechenFertig
+    /// esc: Die Sitzung endet ohne Paket.
+    case sprechenVerwerfen
     /// Fenster schmal an einen Bildschirmrand oder zurück (nil).
     case rand(Bildschirmrand?)
     /// Zeitleiste im Fokus zeigen (V2-7); beim Abspielen steht sie dort von selbst, in der Werkstatt ist sie eine Kachel.
@@ -83,6 +87,8 @@ public struct OberflaechenZustand: Equatable, Sendable {
     public var aktiv: KachelArt?
     public var uebersicht = false
     public var spricht = false
+    /// Sitzung von V bis ↩ oder esc: Sie bleibt offen, wenn Kevin mit V anhält.
+    public var sitzungOffen = false
     /// Live-Text, solange Kevin spricht; danach steht er als `zuletztGesagt` in der Statuszeile.
     public var sprechText: String?
     public var zuletztGesagt: String?
@@ -139,8 +145,18 @@ public struct OberflaechenZustand: Equatable, Sendable {
             if !an, spricht, let t = sprechText, !t.isEmpty { zuletztGesagt = t }
             if !an { sprechText = nil }
             spricht = an
+            if an { sitzungOffen = true }
         case .sprechText(let t):
             sprechText = t
+        case .sprechenFertig:
+            if let t = sprechText, !t.isEmpty { zuletztGesagt = t }
+            sprechText = nil
+            spricht = false
+            sitzungOffen = false
+        case .sprechenVerwerfen:
+            sprechText = nil
+            spricht = false
+            sitzungOffen = false
         case .rand(let r):
             if let r {
                 if rand == nil { modusVorRand = modus }
@@ -220,6 +236,7 @@ public final class OberflaechenStore: ObservableObject {
     public var aktiv: KachelArt? { zustand.aktiv }
     public var uebersicht: Bool { zustand.uebersicht }
     public var spricht: Bool { zustand.spricht }
+    public var sitzungOffen: Bool { zustand.sitzungOffen }
     public var sprechText: String? { zustand.sprechText }
     public var zuletztGesagt: String? { zustand.zuletztGesagt }
     public var rand: Bildschirmrand? { zustand.rand }
@@ -258,6 +275,8 @@ extension OberflaechenActions {
     public func vergroessereKachel(_ art: KachelArt?) { oberflaeche(.kachelGross(art)) }
     public func ordneKacheln(_ arten: [KachelArt]) { oberflaeche(.kachelnOrdnen(arten)) }
     public func setzeSprechen(_ an: Bool) { oberflaeche(.sprechen(an)) }
+    public func sprechenFertig() { oberflaeche(.sprechenFertig) }
+    public func sprechenVerwerfen() { oberflaeche(.sprechenVerwerfen) }
     public func setzeRand(_ rand: Bildschirmrand?) { oberflaeche(.rand(rand)) }
     public func zeigeUebersicht(_ an: Bool) { oberflaeche(.uebersicht(an)) }
 }

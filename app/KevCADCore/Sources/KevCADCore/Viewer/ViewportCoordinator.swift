@@ -47,6 +47,10 @@ public final class ViewportCoordinator: ObservableObject {
     /// Element unter der Maus hat sich geändert (Treffer, Weltpunkt auf der Fläche, Mausposition oben links); nil-Treffer
     /// = nichts unter der Maus oder Maus außerhalb.
     public var onHover: ((PickResult?, SIMD3<Float>?, CGPoint?) -> Void)?
+    /// V2-6: Kevin spricht: Ziehen mit der linken Maustaste zeichnet statt einen Rahmen aufzuziehen.
+    public var zeichnen = false
+    /// V2-6: Strich im Viewer (Beginn, je Treffer ein Punkt, Ende).
+    public var onStrich: ((StrichEreignis) -> Void)?
     /// Eine Kamerafahrt ist am Ziel angekommen.
     public var onFahrtEnde: (() -> Void)?
     /// Jedes Bild der Navigation (Mitschnitt): Kamera nach der Änderung.

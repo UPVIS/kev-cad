@@ -2314,6 +2314,7 @@
    "spur-1",
    "lage-1",
    "live-masse-1",
+   "feedback-1",
    "flaeche-1"
   ],
   "nachrichten": {
@@ -2419,5 +2420,50 @@
    "s-12",
    "s-13"
   ]
+ },
+ "feedback": {
+  "frames": [
+   {
+    "file": "feedback_stand_spricht.frame",
+    "type": "FEEDBACK_STAND",
+    "richtung": "app"
+   },
+   {
+    "file": "feedback_stand_pause.frame",
+    "type": "FEEDBACK_STAND",
+    "richtung": "app"
+   },
+   {
+    "file": "feedback_stand_aus.frame",
+    "type": "FEEDBACK_STAND",
+    "richtung": "app"
+   },
+   {
+    "file": "feedback_paket.frame",
+    "type": "FEEDBACK_PAKET",
+    "richtung": "app"
+   }
+  ],
+  "format": "kevcad-feedback/1",
+  "nachrichten": [
+   "FEEDBACK_STAND",
+   "FEEDBACK_PAKET"
+  ],
+  "zeigewoerter": [
+   "hier",
+   "da",
+   "dort",
+   "dahin",
+   "hierhin",
+   "dorthin",
+   "das",
+   "dies",
+   "diese",
+   "dieser",
+   "dieses",
+   "diesem",
+   "diesen"
+  ],
+  "paket": "feedback_beispiel.json"
  }
 }

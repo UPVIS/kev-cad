@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import struct
 from dataclasses import dataclass, field
 from typing import Any
@@ -2550,10 +2551,11 @@ FAEHIGKEIT_IN_ARBEIT = "in-arbeit-1"
 FAEHIGKEIT_SPUR = "spur-1"
 FAEHIGKEIT_LAGE = "lage-1"
 FAEHIGKEIT_LIVE_MASSE = "live-masse-1"
+FAEHIGKEIT_FEEDBACK = "feedback-1"  # V2-6 (Abschnitt „V2-6 Sprach-Feedback“)
 FAEHIGKEIT_FLAECHE = "flaeche-1"  # V2-7: Kacheln, Modus, Rand (PROTOCOL.md, „Fläche“)
 #: was der Kernel kann (HELLO.faehigkeiten)
 KERNEL_FAEHIGKEITEN: tuple[str, ...] = (FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_SPUR, FAEHIGKEIT_LAGE,
-                                        FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FLAECHE)
+                                        FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FEEDBACK, FAEHIGKEIT_FLAECHE)
 #: neue Nachrichten Kernel → App und die Fähigkeit, die eine App dafür gemeldet haben muss
 LIVE_NACHRICHTEN: dict[str, str] = {
     "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
@@ -3060,4 +3062,264 @@ def live_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
                                         "zeitleiste": False, "ansicht": "front", "blatt": 2}}, b"", "kernel"),
         ("live_view_projekt_name", {"type": "VIEW_CMD", "seq": 27, "id": "k-46", "cmd": "projekt_name",
                                     "args": {"name": "Kugelschieber"}}, b"", "kernel"),
+    ]
+
+
+# =====================================================================================================================
+# V2-6 Sprach-Feedback (PROTOCOL.md, Abschnitt „V2-6 Sprach-Feedback“): Nachrichten, Paketformat, Prüfen, Beispiele für
+# die Testdateien (tools/make_feedback_fixtures.py). Warten und Abholen stehen in feedback.py.
+# =====================================================================================================================
+
+FEEDBACK_FORMAT = "kevcad-feedback/1"
+FEEDBACK_ABGEHOLT_FORMAT = "kevcad-feedback-abgeholt/1"
+FEEDBACK_ORDNER = "feedback"
+FEEDBACK_ABGEHOLT = "abgeholt.json"
+FEEDBACK_STAENDE = ("spricht", "pause", "aus")
+FEEDBACK_GRUENDE = ("fertig", "verworfen")
+FEEDBACK_NACHRICHTEN = ("FEEDBACK_STAND", "FEEDBACK_PAKET")
+FEEDBACK_WARTEN_S = 600.0  # Vorgabe von feedback(warten_s)
+FEEDBACK_WARTEN_MAX_S = 1800.0  # unter der Lesezeit der Brücke (bridge.LESEZEIT_S)
+FEEDBACK_HTTP_WARTEN_MAX_S = 300.0  # je Anfrage an /feedback/warten
+FEEDBACK_HTTP_PFAD = "/feedback/warten"
+#: Bezüge: Fenster um den Satz, Mindestdauer eines Zeigers, Suche um ein Zeigewort, Zeiger je Satz
+FEEDBACK_ZEIGER_VOR_S = 0.5
+FEEDBACK_ZEIGER_NACH_S = 0.3
+FEEDBACK_ZEIGER_MIN_S = 0.25
+FEEDBACK_ZEIGEWORT_SUCHE_S = 0.4
+FEEDBACK_ZEIGER_JE_SATZ = 6
+FEEDBACK_MAUS_JE_S = 10
+FEEDBACK_KAMERA_JE_S = 5
+FEEDBACK_BILD_LAENGE_MAX = 1600
+FEEDBACK_ZEIGEWOERTER = ("hier", "da", "dort", "dahin", "hierhin", "dorthin", "das", "dies", "diese", "dieser", "dieses",
+                         "diesem", "diesen")
+FEEDBACK_ERKENNUNGEN = ("wortlaut-parakeet", "apple-dictation", "apple-speech", "test")
+FEEDBACK_WORTZEITEN = ("ton", "geschaetzt")
+_FEEDBACK_NAME = re.compile(r"fb-\d{8}-\d{6}(-\d+)?")
+
+
+def feedback_name_ok(name: Any) -> bool:
+    return isinstance(name, str) and _FEEDBACK_NAME.fullmatch(name) is not None
+
+
+def check_feedback_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
+    """Probleme einer Nachricht aus V2-6 (leer = gut). Andere Nachrichten: leer."""
+    art = header.get("type")
+    if art not in FEEDBACK_NACHRICHTEN:
+        return []
+    out: list[str] = []
+    if not isinstance(header.get("sitzung"), str) or not header["sitzung"]:
+        out.append(f"{art}: sitzung fehlt")
+    if payload:
+        out.append(f"{art} mit Nutzlast")
+    if art == "FEEDBACK_STAND":
+        if header.get("stand") not in FEEDBACK_STAENDE:
+            out.append(f"FEEDBACK_STAND: stand {header.get('stand')!r} unbekannt")
+        if not _zahl(header.get("seit")):
+            out.append("FEEDBACK_STAND: seit fehlt")
+        grund = header.get("grund")
+        if header.get("stand") == "aus":
+            if grund not in FEEDBACK_GRUENDE:
+                out.append(f"FEEDBACK_STAND: grund {grund!r} unbekannt")
+        elif grund is not None:
+            out.append("FEEDBACK_STAND: grund nur bei aus")
+    else:
+        if not feedback_name_ok(header.get("name")):
+            out.append(f"FEEDBACK_PAKET: name {header.get('name')!r} ungültig")
+        if not isinstance(header.get("datei"), str) or not header["datei"].endswith(".json"):
+            out.append("FEEDBACK_PAKET: datei ist kein Pfad zu einer JSON-Datei")
+        for feld in ("saetze", "striche"):
+            if not isinstance(header.get(feld), int):
+                out.append(f"FEEDBACK_PAKET: {feld} fehlt")
+        if not _zahl(header.get("dauer_s")):
+            out.append("FEEDBACK_PAKET: dauer_s fehlt")
+    return out
+
+
+def _vec(v: Any, n: int = 3) -> bool:
+    return isinstance(v, list) and len(v) == n and all(_zahl(x) for x in v)
+
+
+def _check_zeiger(q: dict[str, Any], wo: str) -> list[str]:
+    """Felder, die Mausproben und Zeiger gemeinsam haben: Teil und Punkt gibt es nur zusammen."""
+    out = []
+    if q.get("teil") is not None:
+        if not isinstance(q["teil"], str) or not isinstance(q.get("ref"), str):
+            out.append(f"{wo}: teil oder ref ungültig")
+        if not isinstance(q.get("run"), int):
+            out.append(f"{wo}: run fehlt")
+        if q.get("punkt") is not None and not _vec(q["punkt"]):
+            out.append(f"{wo}: punkt ungültig")
+        if q.get("normale") is not None and not _vec(q["normale"]):
+            out.append(f"{wo}: normale ungültig")
+    if q.get("bild") is not None and not _vec(q["bild"], 2):
+        out.append(f"{wo}: bild ungültig")
+    return out
+
+
+def check_feedback_paket(p: Any) -> list[str]:
+    """Probleme eines Pakets ``kevcad-feedback/1`` (leer = gut). Zeiten liegen innerhalb der Sitzung und steigen nicht
+    rückwärts; alles andere prüft nur die Form."""
+    if not isinstance(p, dict):
+        return ["Paket ist kein Objekt"]
+    out: list[str] = []
+    if p.get("format") != FEEDBACK_FORMAT:
+        out.append(f"format {p.get('format')!r} unbekannt")
+    if not feedback_name_ok(p.get("name")):
+        out.append(f"name {p.get('name')!r} ungültig")
+    if not isinstance(p.get("erstellt"), str):
+        out.append("erstellt fehlt")
+    if not _zahl(p.get("uhr_start")):
+        out.append("uhr_start fehlt")
+    if not _zahl(p.get("dauer_s")) or p["dauer_s"] < 0:
+        out.append("dauer_s fehlt")
+    if not isinstance(p.get("spracherkennung"), str):
+        out.append("spracherkennung fehlt")
+    if p.get("wortzeiten") not in FEEDBACK_WORTZEITEN:
+        out.append(f"wortzeiten {p.get('wortzeiten')!r} unbekannt")
+    projekt = p.get("projekt")
+    if not isinstance(projekt, dict) or not isinstance(projekt.get("pfad"), str):
+        out.append("projekt fehlt")
+    if not isinstance(p.get("run"), int):
+        out.append("run fehlt")
+    for feld in ("abschnitte", "worte", "saetze", "striche", "mausweg", "kamera_verlauf", "auswahl_verlauf"):
+        if not isinstance(p.get(feld), list):
+            out.append(f"{feld} keine Liste")
+    if out:
+        return out
+    dauer = float(p["dauer_s"]) + 1e-6
+    for a in p["abschnitte"]:
+        if not (_zahl(a.get("von")) and _zahl(a.get("bis")) and 0 <= a["von"] <= a["bis"] <= dauer):
+            out.append(f"abschnitt {a!r} ungültig")
+    nummern = {s.get("nr") for s in p["saetze"]}
+    for w in p["worte"]:
+        if not (isinstance(w.get("text"), str) and _zahl(w.get("von")) and _zahl(w.get("bis"))):
+            out.append(f"wort {w!r} ungültig")
+        elif w.get("satz") not in nummern:
+            out.append(f"wort {w.get('text')!r}: satz {w.get('satz')!r} fehlt")
+    striche = {s.get("nr") for s in p["striche"]}
+    for s in p["saetze"]:
+        wo = f"satz {s.get('nr')}"
+        if not (isinstance(s.get("nr"), int) and isinstance(s.get("text"), str) and _zahl(s.get("von"))
+                and _zahl(s.get("bis")) and s["von"] <= s["bis"]):
+            out.append(f"{wo}: nr, text, von oder bis ungültig")
+        if not isinstance(s.get("vorlaeufig"), bool):
+            out.append(f"{wo}: vorlaeufig fehlt")
+        if not isinstance(s.get("kamera"), dict):
+            out.append(f"{wo}: kamera fehlt")
+        auswahl = s.get("auswahl")
+        if not isinstance(auswahl, dict) or not isinstance(auswahl.get("refs"), list):
+            out.append(f"{wo}: auswahl fehlt")
+        bezuege = s.get("bezuege")
+        if not isinstance(bezuege, list):
+            out.append(f"{wo}: bezuege fehlt")
+            continue
+        zeiger = [b for b in bezuege if b.get("art") == "zeiger"]
+        if len(zeiger) > FEEDBACK_ZEIGER_JE_SATZ:
+            out.append(f"{wo}: mehr als {FEEDBACK_ZEIGER_JE_SATZ} Zeiger")
+        for b in bezuege:
+            if b.get("art") == "zeiger":
+                if not isinstance(b.get("teil"), str):
+                    out.append(f"{wo}: Zeiger ohne teil")
+                out += _check_zeiger(b, f"{wo}, Zeiger")
+            elif b.get("art") == "strich":
+                if b.get("strich") not in striche:
+                    out.append(f"{wo}: Strich {b.get('strich')!r} fehlt")
+            else:
+                out.append(f"{wo}: Bezug {b.get('art')!r} unbekannt")
+    for s in p["striche"]:
+        wo = f"strich {s.get('nr')}"
+        if not (isinstance(s.get("nr"), int) and _zahl(s.get("t")) and _zahl(s.get("bis")) and s["t"] <= s["bis"]):
+            out.append(f"{wo}: nr, t oder bis ungültig")
+        if not isinstance(s.get("teile"), list) or not _zahl(s.get("laenge_mm")):
+            out.append(f"{wo}: teile oder laenge_mm fehlt")
+        if not isinstance(s.get("kamera"), dict):
+            out.append(f"{wo}: kamera fehlt")
+        punkte = s.get("punkte")
+        if not isinstance(punkte, list) or not punkte:
+            out.append(f"{wo}: keine Punkte")
+            continue
+        for q in punkte:
+            if not (_zahl(q.get("t")) and _vec(q.get("bild"), 2) and _vec(q.get("welt"))):
+                out.append(f"{wo}: Punkt {q!r} ungültig")
+    for liste, feld in ((p["mausweg"], "mausweg"), (p["kamera_verlauf"], "kamera_verlauf"),
+                        (p["auswahl_verlauf"], "auswahl_verlauf")):
+        t = -1.0
+        for q in liste:
+            if not _zahl(q.get("t")) or q["t"] < t or q["t"] > dauer:
+                out.append(f"{feld}: Zeit {q.get('t')!r} ungültig")
+                break
+            t = q["t"]
+    for q in p["mausweg"]:
+        out += _check_zeiger(q, "mausweg")
+    if not isinstance(p.get("ende"), dict):
+        out.append("ende fehlt")
+    bild = p.get("bild")
+    if bild is not None and not (isinstance(bild, dict) and isinstance(bild.get("datei"), str)
+                                 and isinstance(bild.get("breite"), int) and isinstance(bild.get("hoehe"), int)):
+        out.append("bild ungültig")
+    return out
+
+
+def feedback_beispiel() -> dict[str, Any]:
+    """Volles Beispielpaket für die Testdateien: zwei Sätze, Zeigewort, Strich auf einem Teil und in der Bildebene."""
+    kamera = {"position": [612.0, -880.0, 540.0], "ziel": [120.0, 0.0, 60.0], "richtung": [-0.39, 0.71, -0.59],
+              "oben": [-0.26, 0.47, 0.84], "abstand": 1118.0, "projektion": "perspective", "fov": 30.0,
+              "ortho_hoehe": None, "ansicht": None, "durch": None}
+    kamera2 = {**kamera, "position": [700.0, -700.0, 600.0], "richtung": [-0.5, 0.6, -0.62], "abstand": 1050.0}
+    lasche, lasche_f = "Halter/Lasche", "Halter/Lasche#f3"
+    worte = [("Mach", 1.2, 1.46, 1), ("das", 1.5, 1.7, 1), ("hier", 1.75, 2.1, 1), ("höher.", 2.15, 2.6, 1),
+             ("Und", 6.1, 6.3, 2), ("den", 6.35, 6.5, 2), ("Rest", 6.55, 6.9, 2), ("lass", 6.95, 7.2, 2),
+             ("so.", 7.25, 7.5, 2)]
+    zeiger = {"art": "zeiger", "t": 1.6, "bis": 2.4, "wort": "hier", "teil": lasche, "ref": lasche_f, "run": 7,
+              "punkt": [120.0, 4.0, 62.5], "normale": [0.0, 0.0, 1.0], "bild": [640, 380]}
+    return {
+        "format": FEEDBACK_FORMAT, "name": "fb-20261105-223011", "erstellt": "2026-11-05T22:30:11+01:00",
+        "uhr_start": 1793480977.25, "dauer_s": 9.5, "spracherkennung": "wortlaut-parakeet",
+        "wortzeiten": "geschaetzt",
+        "projekt": {"name": "Halter", "pfad": "/Users/kevin/Documents/Kev CAD/Halter"}, "run": 7,
+        "abschnitte": [{"von": 0.0, "bis": 3.5}, {"von": 5.5, "bis": 9.5}],
+        "worte": [{"text": t, "von": a, "bis": b, "satz": s} for t, a, b, s in worte],
+        "saetze": [
+            {"nr": 1, "text": "Mach das hier höher.", "von": 1.2, "bis": 2.6, "vorlaeufig": False, "kamera": kamera,
+             "auswahl": {"run": 7, "refs": [lasche]},
+             "bezuege": [zeiger, {"art": "strich", "strich": 1, "t": 1.9, "bis": 2.5, "teile": [lasche]}]},
+            {"nr": 2, "text": "Und den Rest lass so.", "von": 6.1, "bis": 7.5, "vorlaeufig": False,
+             "kamera": kamera2, "auswahl": {"run": 7, "refs": []}, "bezuege": []},
+        ],
+        "striche": [
+            {"nr": 1, "t": 1.9, "bis": 2.5, "run": 7, "teile": [lasche], "laenge_mm": 84.5, "kamera": kamera,
+             "punkte": [{"t": 1.9, "bild": [612, 402], "welt": [118.0, 4.0, 60.0], "ref": lasche_f},
+                        {"t": 2.5, "bild": [690, 330], "welt": [190.0, 4.0, 88.0], "ref": lasche_f}]},
+            {"nr": 2, "t": 8.0, "bis": 8.4, "run": 7, "teile": [], "laenge_mm": 40.0, "kamera": kamera2,
+             "punkte": [{"t": 8.0, "bild": [100, 100], "welt": [40.0, 0.0, 200.0], "ref": None},
+                        {"t": 8.4, "bild": [140, 100], "welt": [80.0, 0.0, 200.0], "ref": None}]},
+        ],
+        "mausweg": [
+            {"t": 0.4, "bild": [300, 200], "teil": None, "ref": None, "run": None, "punkt": None, "normale": None},
+            {"t": 1.6, "bild": [640, 380], "teil": lasche, "ref": lasche_f, "run": 7, "punkt": [120.0, 4.0, 62.5],
+             "normale": [0.0, 0.0, 1.0]},
+            {"t": 2.4, "bild": None, "teil": None, "ref": None, "run": None, "punkt": None, "normale": None},
+        ],
+        "kamera_verlauf": [{"t": 0.0, "kamera": kamera}, {"t": 5.6, "kamera": kamera2}],
+        "auswahl_verlauf": [{"t": 0.0, "run": 7, "refs": [lasche]}, {"t": 6.0, "run": 7, "refs": []}],
+        "ende": {"kamera": kamera2, "viewport": {"breite": 1280, "hoehe": 800}, "sichtbar": ["Halter/Grundplatte", lasche],
+                 "verborgen": ["Deckel"], "isoliert": None, "auswahl": {"run": 7, "refs": []},
+                 "darstellung": "shaded_edges", "schnitt": None, "explosion": 0.0, "animation": None},
+        "bild": {"datei": "fb-20261105-223011.jpg", "breite": 1280, "hoehe": 800},
+    }
+
+
+def feedback_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
+    """Rahmen für die Testdateien: (Name, Kopf, Nutzlast, Richtung)."""
+    return [
+        ("feedback_stand_spricht", {"type": "FEEDBACK_STAND", "seq": 9, "sitzung": "s-1793480977",
+                                    "stand": "spricht", "seit": 1793480977.25, "grund": None}, b"", "app"),
+        ("feedback_stand_pause", {"type": "FEEDBACK_STAND", "seq": 10, "sitzung": "s-1793480977", "stand": "pause",
+                                  "seit": 1793480980.75, "grund": None}, b"", "app"),
+        ("feedback_stand_aus", {"type": "FEEDBACK_STAND", "seq": 11, "sitzung": "s-1793480977", "stand": "aus",
+                                "seit": 1793480986.75, "grund": "fertig"}, b"", "app"),
+        ("feedback_paket", {"type": "FEEDBACK_PAKET", "seq": 12, "sitzung": "s-1793480977",
+                            "name": "fb-20261105-223011",
+                            "datei": "/Users/kevin/Documents/Kev CAD/Halter/feedback/fb-20261105-223011.json",
+                            "saetze": 2, "striche": 2, "dauer_s": 9.5}, b"", "app"),
     ]

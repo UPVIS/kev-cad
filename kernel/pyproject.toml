@@ -24,6 +24,7 @@ dependencies = [
 [project.scripts]
 kevcad-kernel = "kevcad_kernel.cli:main"
 kevcad-mcp = "kevcad_kernel.bridge:main"
+kevcad-feedback = "kevcad_kernel.feedback_cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-timeout"]

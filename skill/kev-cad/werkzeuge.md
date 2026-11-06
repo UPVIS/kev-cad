@@ -4,7 +4,7 @@ Teil des Skills kev-cad. Erzeugt aus den Werkzeugen selbst mit `kernel/.venv/bin
 
 ## Kernsatz
 
-In Claude Code mit einem ToolSearch-Aufruf laden: `select:mcp__kevcad__status,mcp__kevcad__projekt,mcp__kevcad__modell,mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mcp__kevcad__view,mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export`
+In Claude Code mit einem ToolSearch-Aufruf laden: `select:mcp__kevcad__status,mcp__kevcad__projekt,mcp__kevcad__modell,mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mcp__kevcad__view,mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export,mcp__kevcad__feedback`
 
 ### status
 
@@ -136,6 +136,13 @@ Write files into <project>/output/: step, stl, 3mf, glb (parts limits them to th
 - `bausteine` (list, optional): pdf: building blocks in order (names or {art, spalten, auswahl}); empty = all
 - `ziel` (string, optional): pdf: target path (relative = inside output/)
 - `drucken` (boolean, optional, Vorgabe False): pdf: open the print dialog; only on Kevin's explicit wish
+
+### feedback
+
+Wait until Kevin has finished speaking and return his voice feedback: his sentences with what he pointed at (part, face, 3D point) or drew at that moment, plus an image with his strokes. Returns at once if a package is waiting, else waits up to warten_s. Time running out is no error: it says what he is doing. nochmal=true returns the last package again.
+
+- `warten_s` (number, optional, Vorgabe 600.0): Seconds to wait for Kevin; 0 only looks
+- `nochmal` (boolean, optional, Vorgabe False): Return the last fetched package again
 
 ## Fachwerkzeuge
 

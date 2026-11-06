@@ -20,6 +20,8 @@ public final class AppController: AppActions {
     let process = KernelProcess()
     let connection = KernelConnection()
     let screenshots = ScreenshotRenderer()
+    /// V2-6: Sprach-Feedback (Sprache/SprachSteuerung.swift).
+    public let sprache = SprachSteuerung()
     /// V2-7: zweite Ansicht (AppController+Flaeche.swift): rechnet daneben; Größe in Pixeln, solange die Kachel offen ist,
     /// Ziel des letzten Kamerabefehls, wartender Auftrag.
     let zweiteAnsichtRechner = ZweiteAnsichtRechner()
@@ -152,6 +154,7 @@ public final class AppController: AppActions {
         installSimulationGriff()  // Simulation: Pfeil-Griff einer freien Kraft ziehen
         installNavigation()
         installViewer()  // V2: Belegung, Hinweisleiste, Messen beim Darüberfahren, Darstellung
+        sprache.controller = self
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
         connection.onEvents = { [weak self] events in self?.handle(events) }
@@ -468,6 +471,7 @@ public final class AppController: AppActions {
             }
             requestBOMAfterConnect()
             druckerNachHello()  // Phase 8: Drucker-Einstellungen an den Kernel (PRINTER_CONFIG)
+            sprache.nachVerbindung()  // V2-6: der neue Kernel kennt die offene Sitzung noch nicht
             viewerSelbsttestProjektOeffnen()  // V2: KEVCAD_SELFTEST=viewer
             quietCatalogOff = false
         case .status(let s):
@@ -520,7 +524,7 @@ public final class AppController: AppActions {
             if let restore = pendingRestore {
                 applyRestoredView(restore)
                 fitAtRunEnd = false
-            } else if fitAtRunEnd && cameras.activeView == nil {  // Blick durch eine Kamera nicht verstellen
+            } else if fitAtRunEnd && cameras.activeView == nil && !sprache.spricht {  // Blick durch eine Kamera nicht verstellen
                 viewport.fit(scene.visibleBounds(), animated: true)
                 fitAtRunEnd = false
             }
@@ -530,6 +534,7 @@ public final class AppController: AppActions {
             deltaLaufEnde()  // V2-5: Auswahl zum neuen Lauf melden
             scheduleSelfTestIfRequested()
             viewerSelbsttestPlanen()  // V2: KEVCAD_SELFTEST=viewer
+            sprachSelbsttestPlanen()  // V2-6: KEVCAD_SELFTEST=sprache
             for w in e.warnings { log(.warning, w) }
             if !e.inventarVerstoesse.isEmpty {
                 log(.warning, "Nicht aus dem Inventar: " + e.inventarVerstoesse.joined(separator: ", "))
@@ -699,7 +704,9 @@ public final class AppController: AppActions {
         teilGekommen(record)  // V2-5: Inhalt merken, Nachfrage erledigt
         if scene.upsert(record), live.deltaLauf != nil { elementeVerwerfen(record.name) }
         updateParts()
-        if fitOnFirstPart {
+        if sprache.spricht {
+            // V2-6: Die Kamera gehört Kevin, solange er spricht
+        } else if fitOnFirstPart {
             viewport.fit(scene.visibleBounds(), animated: false)
             fitOnFirstPart = false
             fitAtRunEnd = true
@@ -858,6 +865,7 @@ public final class AppController: AppActions {
         items.append(contentsOf: cameraOverlayItems())
         items.append(contentsOf: massstabOverlay())  // Phase 4: Punkte des Werkzeugs „Maßstab setzen“
         items.append(contentsOf: messVorschauItems())  // V2: Messen beim Darüberfahren, Fangpunkte
+        items.append(contentsOf: sprache.overlay())  // V2-6: Kevins Striche
         return items
     }
 

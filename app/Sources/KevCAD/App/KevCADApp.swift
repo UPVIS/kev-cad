@@ -14,6 +14,22 @@ struct KevCADApp: App {
 
     init() {
         Startzeiten.marke("App.init")
+        if WindowHook.versteckt { NSApplication.shared.setActivationPolicy(.accessory) }  // kein Symbol im Dock
+        // Selbsttest: nur die Begrüßung bei Wortlaut, ohne Mikrofon und ohne Fenster; Ergebnis auf stdout
+        if AppInfo.isTestVariant, ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "wortlaut" {
+            NSApplication.shared.setActivationPolicy(.prohibited)
+            WortlautErkennung.begruessung { text in
+                print("Wortlaut: \(text)")
+                fflush(stdout)
+                exit(text.contains("angenommen") ? 0 : 1)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                print("Wortlaut: keine Antwort nach 10 s")
+                fflush(stdout)
+                exit(2)
+            }
+            dispatchMain()
+        }
         // Nur eine Instanz je Variante: läuft schon eine (Tools-Stapel, Start durch die Claude-Brücke), diese nach vorn
         // holen und selbst gleich wieder beenden. Zwei Instanzen würden sich Socket und MCP-Port streitig machen.
         let me = NSRunningApplication.current

@@ -36,6 +36,7 @@ struct WindowHook: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window, window !== placedWindow else { return }
             placedWindow = window
+            WindowHook.verstecken(window)
             onWindow(window)
             // SwiftUI setzt die Startgröße erst nach dem ersten Layout; danach verschieben.
             DispatchQueue.main.async { [placement] in
@@ -44,8 +45,21 @@ struct WindowHook: NSViewRepresentable {
         }
     }
 
+    /// `KEVCAD_TEST_VERSTECKT=1` (nur Testvariante, Tests ohne zweiten Monitor): Das Fenster liegt hinter dem
+    /// Schreibtischbild. Niemand sieht es, Klicks gehen daran vorbei, und es zeichnet weiter (Vorbild Sichtung).
+    static var versteckt: Bool {
+        AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_TEST_VERSTECKT"] == "1"
+    }
+
+    static func verstecken(_ window: NSWindow) {
+        guard versteckt else { return }
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        window.ignoresMouseEvents = true
+        window.collectionBehavior.insert([.transient, .ignoresCycle, .stationary])
+    }
+
     static func place(_ window: NSWindow, _ placement: TestPlacement) {
-        guard AppInfo.isTestVariant else { return }
+        guard AppInfo.isTestVariant, !versteckt else { return }
         let screens = NSScreen.screens
         guard screens.count > 1 else { return }
         let frame = screens[1].visibleFrame

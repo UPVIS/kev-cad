@@ -27,8 +27,8 @@ struct ViewerOberflaeche: View {
                 }
                 if viewer.hinweisleiste {
                     Hinweisleiste(
-                        eingabe: coordinator.eingabe, model: model, viewer: viewer, viewport: coordinator.controller,
-                        groesse: groesse, actions: actions)
+                        eingabe: coordinator.eingabe, model: model, viewer: viewer, oberflaeche: model.oberflaeche,
+                        viewport: coordinator.controller, groesse: groesse, actions: actions)
                 }
             }
             .padding(.horizontal, 10)

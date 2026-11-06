@@ -1,9 +1,10 @@
-"""Kernsatz der MCP-Werkzeuge (V2-2): die zwölf Werkzeuge der täglichen Arbeit.
+"""Kernsatz der MCP-Werkzeuge (V2-2): die Werkzeuge der täglichen Arbeit.
 
 ``status`` (Lagebild), ``projekt``, ``modell``, ``run``, ``execute``, ``parts`` (samt Stückliste), ``measure`` (samt
 Kevins Auswahl), ``view`` (Kamera, Darstellung, Fokus, Sichtbarkeit, Schnitt, Hervorheben, Anmerkungen), ``pruefen``
 (samt Bedingungen und Montage), ``ansichten`` (samt Kevins Bild), ``katalog`` (Lagerteile und Materialien),
-``export`` (samt PDF). Die Fachbereiche haben je ein Werkzeug mit ``aktion`` (fach.py).
+``export`` (samt PDF), ``feedback`` (Kevins Sprach-Feedback, feedback_tools.py). Die Fachbereiche haben je ein Werkzeug
+mit ``aktion`` (fach.py).
 
 Wo eine bisherige Funktion passt, rufen die Werkzeuge ihren Griff (griffe.py) und lassen den JSON-Block weg, den die
 Griffe für Clients ohne ``structuredContent`` anhängen: Der Agent liest nur den Text, die Daten stehen weiter in
@@ -22,13 +23,14 @@ from pydantic import Field
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
+from .feedback_tools import hintergrund_befehl, register_feedback_tool, stand_text
 from .griffe import Griffe, ohne_json
 from .laufbericht import Gedaechtnis, bericht, gruppe
 from .tools import Kachel, ToolInputError
 from .tracking import claude_session
 
 KERN_NAMEN: tuple[str, ...] = ("status", "projekt", "modell", "run", "execute", "parts", "measure", "view", "pruefen",
-                               "ansichten", "katalog", "export")
+                               "ansichten", "katalog", "export", "feedback")
 
 StandardView = Literal[
     "top", "bottom", "front", "back", "left", "right", "iso", "iso_front_left", "iso_back_right", "iso_back_left"
@@ -198,6 +200,14 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
                       + f" · App {'verbunden' if app else 'nicht verbunden (Ansicht, Bilder, Auswahl gehen nicht)'}"
                       + (" · Auto-Lauf an" if settings.get("auto_run") else ""))
         data.update({"kernel": res.get("kernel"), "app": app, "auto_run": bool(settings.get("auto_run"))})
+        feedback = res.get("feedback") if isinstance(res.get("feedback"), dict) else None
+        if feedback:  # V2-6: Spricht Kevin gerade, wartet ein Paket?
+            if text := stand_text(feedback):
+                zeilen.append(text)
+            if app:
+                zeilen.append("Auf Kevin warten: feedback(); im Hintergrund, damit er dich weckt: "
+                              + hintergrund_befehl(getattr(svc, "mcp_port", None)))
+            data["feedback"] = {k: feedback.get(k) for k in ("stand", "offen", "name")}
 
         last = res.get("last_run") if isinstance(res.get("last_run"), dict) else None
         teile = list(last.get("parts") or []) if last else []
@@ -305,6 +315,8 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             data["ausgeblendet"] = len(versteckt)
         return fmt.result("\n".join(zeilen), data, json_block=False)
 
+    register_feedback_tool(tool, t, svc, READ_ONLY)
+
     # ----------------------------------------------------------------------------------------------- Projekt, Modell
 
     @tool("projekt", "Projekt",
@@ -386,6 +398,8 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         if warten_s is not None:
             extra["warten_s"] = float(warten_s)
         res = await t.work(activity, svc.run, params, slow_ms, **extra)
+        if isinstance(res, dict) and res.get("kevin_spricht"):  # V2-6: nichts gestartet
+            return fmt.error_result(res["error"], {"kevin_spricht": True})
         sitzung = claude_session.get()
         text, data, fehler, stand = bericht(res, gedaechtnis.holen(sitzung), detail, params)
         if stand is not None:

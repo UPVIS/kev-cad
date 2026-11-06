@@ -13,8 +13,8 @@ Ein Modell ist `model.py` im Projektordner (build123d, Millimeter, Z nach oben).
 
 ## Werkzeuge
 
-Kernsatz für die tägliche Arbeit. In Claude Code alle zwölf mit EINEM ToolSearch-Aufruf laden:
-`select:mcp__kevcad__status,mcp__kevcad__projekt,mcp__kevcad__modell,mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mcp__kevcad__view,mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export`
+Kernsatz für die tägliche Arbeit. In Claude Code alle dreizehn mit EINEM ToolSearch-Aufruf laden:
+`select:mcp__kevcad__status,mcp__kevcad__projekt,mcp__kevcad__modell,mcp__kevcad__run,mcp__kevcad__execute,mcp__kevcad__parts,mcp__kevcad__measure,mcp__kevcad__view,mcp__kevcad__pruefen,mcp__kevcad__ansichten,mcp__kevcad__katalog,mcp__kevcad__export,mcp__kevcad__feedback`
 
 | Werkzeug | Wofür |
 |---|---|
@@ -30,6 +30,7 @@ Kernsatz für die tägliche Arbeit. In Claude Code alle zwölf mit EINEM ToolSea
 | `ansichten(…)` | Bilder zur eigenen Analyse; `kevin=true` genau Kevins Ansicht (nur auf seinen Wunsch) |
 | `katalog(suche, art, id)` | Lagerteile suchen, ein Teil im Detail, `art="material"` für Materialien |
 | `export(formats)` | STEP, STL, 3MF, GLB, Stückliste, Einkaufsliste, PDF aus Bausteinen |
+| `feedback(warten_s)` | wartet, bis Kevin fertig gesprochen hat; seine Sätze mit dem, worauf er gezeigt hat, und ein Bild ([feedback.md](feedback.md)) |
 
 Je Fachbereich ein Werkzeug mit `aktion`: `lager`, `bestand`, `druck`, `statik`, `topologie`, `zeichnung`,
 `bauplan`, `referenz`, `kamera`, `animation`, `versionen`, dazu `render` (ohne aktion). `aktion="hilfe"` erklärt jeden
@@ -82,6 +83,7 @@ Parameter, `daten=true` hängt die Rohdaten als JSON an. Einzelheiten und die Zu
 | [lager.md](lager.md) | es um Lagerteile, Stückliste, Bestand, Einkaufsliste oder Zukaufteile geht |
 | [3d-druck.md](3d-druck.md) | du ein Druckteil konstruierst, exportierst oder drucken sollst |
 | [statik.md](statik.md) | Kevin fragt, ob etwas hält, kippt, sich biegt; Dynamik, FEM, Topologie |
+| [feedback.md](feedback.md) | Kevin per Sprache mit dir arbeitet: auf ihn warten, sein Feedback lesen, was gilt, während er spricht |
 | [ansicht.md](ansicht.md) | du messen, Kevin etwas zeigen, Bilder zur Analyse oder ein Rendering brauchst |
 | [kacheln.md](kacheln.md) | Kevin ein Ergebnis auf Zuruf sehen will: „3D-Druck ready“, „Zeichnungen“, „Animation“, „Stückliste“, „Kachel 2 groß“ |
 | [kamera-animation.md](kamera-animation.md) | Kameras (FX6 & Co.) oder Animationen und Videos im Spiel sind |

@@ -26,7 +26,7 @@ extension AppController {
 
     /// Nach HELLO: Projekt des Selbsttests öffnen.
     func viewerSelbsttestProjektOeffnen() {
-        guard Self.viewerSelbsttestGewuenscht, model.project == nil,
+        guard Self.viewerSelbsttestGewuenscht || Self.sprachSelbsttestGewuenscht, model.project == nil,
             let p = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_PROJEKT"], !p.isEmpty
         else { return }
         openProject(at: URL(fileURLWithPath: p, isDirectory: true))
@@ -46,7 +46,7 @@ extension AppController {
 
     /// Warten, bis der Kernel `ruhe` Sekunden nichts mehr geschickt hat (Prüfung und Statik kommen nach dem Lauf),
     /// höchstens `bis` Sekunden; gibt die gewartete Zeit zurück.
-    private func kernelRuhe(_ ruhe: Double = 3, bis: Double = 120) async -> Double {
+    func kernelRuhe(_ ruhe: Double = 3, bis: Double = 120) async -> Double {
         let t0 = CACurrentMediaTime()
         while CACurrentMediaTime() - letzteKernelNachricht < ruhe && CACurrentMediaTime() - t0 < bis {
             await pause(0.25)
@@ -310,7 +310,7 @@ extension AppController {
     }
 
     /// Eine Umdrehung in `sekunden` im Bildschirmtakt; Bildzeiten aus dem Renderer.
-    private func drehungMessen(sekunden: Double) async -> String? {
+    func drehungMessen(sekunden: Double) async -> String? {
         guard let renderer = viewport.renderer, let view = viewport.mtkView else { return nil }
         let sammler = BildzeitSammler()
         renderer.onFrameTiming = { sammler.zeiten.append($0) }
@@ -337,7 +337,14 @@ extension AppController {
         renderer.onFrameTiming = nil
         let zeiten = sammler.zeiten
         let angezeigt = zeiten.map(\.presentedTime).filter { $0 > 0 }.sorted()
-        guard angezeigt.count > 10 else { return "zu wenige Bilder (\(angezeigt.count))" }
+        guard angezeigt.count > 10 else {
+            // Hinter dem Schreibtisch (KEVCAD_TEST_VERSTECKT) wird nichts angezeigt, gezeichnet aber schon
+            let s = zeiten.map(\.cpuMilliseconds).sorted(), g = zeiten.map(\.gpuMilliseconds).sorted()
+            guard !s.isEmpty else { return "keine Bilder" }
+            return String(format: "%d Bilder in %.1f s, nicht angezeigt; Hauptfaden je Bild Median %.2f ms, GPU Median %.2f ms, "
+                + "Takt des Hauptfadens max %.1f ms", zeiten.count, sekunden, s[s.count / 2], g[g.count / 2],
+                taktAbstaende.dropFirst().max() ?? 0)
+        }
         var abstaende: [Double] = []
         for i in 1..<angezeigt.count { abstaende.append((angezeigt[i] - angezeigt[i - 1]) * 1000) }
         func q(_ a: [Double], _ p: Double) -> Double {

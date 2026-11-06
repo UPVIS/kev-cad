@@ -25,6 +25,7 @@ AUSSCHLUSS = """\
 /output/
 /.kevcad/
 /bestand.json
+/feedback/
 __pycache__/
 *.pyc
 .DS_Store

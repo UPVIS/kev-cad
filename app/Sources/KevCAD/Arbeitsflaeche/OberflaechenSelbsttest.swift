@@ -231,6 +231,7 @@ enum OberflaechenSelbsttest {
         pruefe(o.spricht, "Sprechen an (roter Rahmen)")
         await foto("08-sprechen")
         a?.setzeSprechen(false)
+        a?.sprechenVerwerfen()  // die Sitzung bleibt sonst offen
         pruefe(o.zuletztGesagt?.hasPrefix("Den Griff") == true, "Gesagtes bleibt für die Statuszeile")
 
         // 7. An den Rand und zurück

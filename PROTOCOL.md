@@ -1399,3 +1399,129 @@ das `PROJECT` mit dem neuen Pfad.
 **Umbenennen durch Kevin:** Der Kernel merkt sich je Claude-Sitzung den Projektpfad, den sie zuletzt in einem Ergebnis
 gesehen hat. Hat sich der Pfad geändert, ohne dass diese Sitzung es ausgelöst hat, beginnt ihr nächstes Ergebnis mit einem
 Hinweis auf Namen und neuen Pfad von model.py (`mcp_tools/tracking.py`).
+
+## V2-6 Sprach-Feedback
+
+Rein additiv (PLAN-V2.md, Paket V2-6); `protocol` bleibt 1. Kevin drückt V, spricht, zeigt und zeichnet, beendet mit ↩.
+Der Agent bekommt ein Paket mit Wörtern, Sätzen und ihren Bezügen. Vorbild ist `sichtung-feedback/1` (Sichtung,
+`FORMAT.md`). Referenz in `protocol.py` (Abschnitt „V2-6 Sprach-Feedback“: `check_feedback_message`,
+`check_feedback_paket`, `feedback_beispiel`, `feedback_beispiele`), Testdateien `feedback_*.frame`,
+`feedback_beispiel.json` und Abschnitt `feedback` in `fixtures.json` aus `kernel/tools/make_feedback_fixtures.py` (nicht
+in `stream.bin`).
+
+Der Kernel nennt `feedback-1` in `HELLO.faehigkeiten`. Die Nachrichten laufen nur von der App zum Kernel; die App
+schickt sie ohne Rücksicht darauf, ein älterer Kernel übergeht sie. Das Paket entsteht auch ohne Kernel und ohne
+wartenden Agenten.
+
+| type | Richtung | Felder | Wirkung |
+|---|---|---|---|
+| `FEEDBACK_STAND` | App → Kernel | `sitzung`, `stand` (`spricht` \| `pause` \| `aus`), `seit` (Unix-Zeit), `grund` (nur bei `aus`: `fertig` \| `verworfen`, sonst null) | Bei jedem Wechsel. Nach einem neuen `HELLO` schickt die App den Stand einer offenen Sitzung noch einmal. Endet die Verbindung, gilt `aus`. |
+| `FEEDBACK_PAKET` | App → Kernel | `sitzung`, `name`, `datei` (absoluter Pfad der JSON-Datei), `saetze`, `striche`, `dauer_s` | Das Paket liegt fertig im Projektordner; wartende Agenten wachen auf. |
+
+### Sitzung
+
+Eine Sitzung läuft von V bis ↩ oder esc.
+
+| Taste | Stand vorher | Wirkung |
+|---|---|---|
+| V | keine Sitzung | Sitzung beginnt, die Uhr läuft, das Mikrofon ist an (`spricht`) |
+| V | `spricht` | Mikrofon aus, die Sitzung bleibt offen (`pause`); Text, Striche und Uhr bleiben |
+| V | `pause` | Mikrofon wieder an (`spricht`), dieselbe Sitzung |
+| ↩ | offen | Paket schreiben (`aus`, `fertig`). Wortlaut verwirft beim Stoppen einen angefangenen Satz: Ist noch einer unterwegs, läuft das Mikrofon höchstens 0,7 s weiter, bis er fertig ist; sonst zählt der letzte Zwischenstand (`vorlaeufig`). Läuft die Erkennung noch an, wartet die App bis zu 12 s auf sie, damit nichts Gesagtes verloren geht |
+| esc | offen | alles verwerfen, nichts wird geschrieben (`aus`, `verworfen`) |
+
+Sprache allein löst nichts aus.
+
+### Paket `kevcad-feedback/1`
+
+Die App schreibt `<projekt>/feedback/<name>.jpg` und danach `<name>.json`, beide atomar (temporäre Datei, dann
+umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, das beim Beginn der Sitzung offen war.
+`name` ist `fb-JJJJMMTT-HHMMSS`, bei gleicher Sekunde mit `-2`, `-3` usw. Der Ordner gehört nicht zu den Versionen.
+
+```jsonc
+{
+  "format": "kevcad-feedback/1",
+  "name": "fb-20261105-223011",
+  "erstellt": "2026-11-05T22:30:11+01:00",
+  "uhr_start": 1793480977.25,        // Unix-Zeit von Uhrzeit 0; alle Zeiten im Paket sind Sekunden ab hier
+  "dauer_s": 34.2,                   // bis ↩
+  "spracherkennung": "wortlaut-parakeet",  // wortlaut-parakeet | apple-dictation | apple-speech | test
+  "wortzeiten": "geschaetzt",        // ton: aus dem Ton gemessen; geschaetzt: siehe „Eine Uhr“
+  "projekt": {"name": "Halter", "pfad": "/Users/…/Halter"},
+  "run": 7,                          // Lauf beim Abschließen
+  "abschnitte": [{"von": 0.0, "bis": 12.3}, {"von": 15.0, "bis": 34.2}],  // Mikrofon an
+  "worte": [{"text": "Mach", "von": 1.2, "bis": 1.46, "satz": 1}],
+  "saetze": [{
+    "nr": 1, "text": "Mach das hier höher.", "von": 1.2, "bis": 3.4,
+    "vorlaeufig": false,             // true: ↩ kam vor dem endgültigen Ergebnis, Text aus dem letzten Zwischenstand
+    "kamera": {},                    // wie LAGE.kamera, Stand beim Beginn des Satzes
+    "auswahl": {"run": 7, "refs": ["Halter/Lasche"]},
+    "bezuege": [
+      {"art": "zeiger", "t": 2.0, "bis": 2.6, "wort": "hier", "teil": "Halter/Lasche", "ref": "Halter/Lasche#f3",
+       "run": 7, "punkt": [120.0, 4.0, 62.5], "normale": [0.0, 0.0, 1.0], "bild": [640, 380]},
+      {"art": "strich", "strich": 1, "t": 2.3, "bis": 3.1, "teile": ["Halter/Lasche"]}
+    ]
+  }],
+  "striche": [{
+    "nr": 1, "t": 2.3, "bis": 3.1, "run": 7, "teile": ["Halter/Lasche"], "laenge_mm": 84.5,
+    "kamera": {},                    // wie LAGE.kamera
+    "punkte": [{"t": 2.3, "bild": [612, 402], "welt": [118.0, 4.0, 60.0], "ref": "Halter/Lasche#f3"}]
+  }],
+  "mausweg": [{"t": 2.0, "bild": [640, 380], "teil": "Halter/Lasche", "ref": "Halter/Lasche#f3", "run": 7,
+               "punkt": [120.0, 4.0, 62.5], "normale": [0.0, 0.0, 1.0]}],
+  "kamera_verlauf": [{"t": 0.0, "kamera": {}}],
+  "auswahl_verlauf": [{"t": 0.0, "run": 7, "refs": []}],
+  "ende": {},                        // Lage beim Abschließen, Felder wie LAGE ohne type, reply_to, zeit, ms, maus
+  "bild": {"datei": "fb-20261105-223011.jpg", "breite": 1280, "hoehe": 800}
+}
+```
+
+- **Eine Uhr:** Alle Zeiten sind Sekunden ab `uhr_start`, gemessen mit einer monotonen Uhr (Pausen laufen mit). Apples
+  Erkennung nennt Wortzeiten aus dem Ton (Zeit null ist der erste Abtastwert des Abschnitts). Wortlaut nennt nur Beginn
+  und Ende des Satzes: Die Wörter verteilen sich dazwischen nach dem Takt der Zwischenstände, je Zwischenstand 0,25 s
+  früher als seine Ankunft, dazwischen nach Länge (`wortzeiten: "geschaetzt"`, auf rund 0,3 s genau).
+- **`bild`-Punkte** sind Punkte der Ansicht, Ursprung links oben, wie `LAGE.maus.bild`.
+- **`mausweg`:** höchstens 10 Proben je Sekunde, dazu jede Änderung des Teils oder Elements unter der Maus. Steht die
+  Maus still, gilt die letzte Probe weiter. `teil`, `ref`, `punkt`, `normale` sind null, wenn die Maus neben dem Modell
+  steht; `bild` ist null, wenn sie den Viewer verlassen hat.
+- **`striche`:** Punkte mit `ref` liegen auf diesem Teil. Punkte ohne `ref` liegen in der Bildebene: `welt` ist der
+  Punkt auf der Ebene quer zur Blickrichtung durch den letzten Treffer des Strichs, ohne Treffer durch das Ziel der
+  Kamera. `teile` nennt die getroffenen Teile, `laenge_mm` die Länge über `welt`.
+- **`kamera_verlauf` und `auswahl_verlauf`:** ein Eintrag beim Beginn, dann je Änderung (Kamera höchstens 5 je Sekunde).
+- **`bezuege`:** Die Mausproben von 0,5 s vor Satzbeginn bis 0,3 s nach Satzende werden je `ref` zu Zeiträumen
+  zusammengefasst. Ein Zeitraum zählt ab 0,25 s, oder wenn ein Zeigewort auf ihn fällt. Zeigewörter sind „hier“, „da“,
+  „dort“, „dahin“, „hierhin“, „dorthin“, „das“, „dies“ und die Formen von „dieser“. Ein Zeigewort zeigt auf das, was
+  zur Mitte des Worts unter der Maus war; war dort nichts, nimmt es die nächste Probe mit Teil innerhalb von 0,4 s.
+  `wort` ist dann das erste solche Wort, sonst null. Je Satz stehen höchstens 6 Zeiger in `bezuege`, in zeitlicher
+  Folge; Zeiger mit Zeigewort gehen vor, dann die längsten. Ein Strich gehört zu dem Satz, mit dem er sich zeitlich am
+  längsten überschneidet, ohne Überschneidung zum nächsten Satz.
+- **Referenzen** gelten für den Lauf `run` daneben. Die Teilnamen bleiben über Läufe gültig, solange model.py sie behält.
+- **`bild`:** Die Ansicht beim Abschließen als JPEG, längste Seite höchstens 1600 Pixel, mit allen Strichen und einer
+  Nummer je Satz am ersten Zeiger.
+
+Nach dem Abholen trägt der Kernel das Paket in `<projekt>/feedback/abgeholt.json` ein:
+`{"format": "kevcad-feedback-abgeholt/1", "pakete": {"fb-20261105-223011": "2026-11-05T22:30:12+01:00"}}`. Pakete, die dort
+fehlen, gelten als offen, auch nach einem Neustart. Nichts wird gelöscht.
+
+### Warten und Abholen
+
+| Weg | Wirkung |
+|---|---|
+| MCP `feedback(warten_s, nochmal)` | Gibt das älteste offene Paket als Text und Bild zurück und trägt es als abgeholt ein. Ohne offenes Paket wartet es, bis eines kommt, höchstens `warten_s` (Vorgabe 600, höchstens 1800). `warten_s=0` wartet nicht. `nochmal=true` liefert das zuletzt abgeholte noch einmal. Bei Zeitablauf: `ok`, kein Fehler, mit dem Stand (spricht, Pause, nichts). Bricht der Agent ab, bleibt das Paket offen. |
+| HTTP `GET /feedback/warten?warten_s=S` auf dem Port des MCP-Servers | Wartet wie oben, höchstens 300 s je Anfrage, holt aber nichts ab. Antwort JSON `{"da": bool, "name", "saetze", "striche", "stand"}`. |
+| `kevcad-feedback [--port N] [--warten-s S]` | Befehl für eine Hintergrund-Shell: Wiederholt die Anfrage oben, übersteht Neustarts von Kev CAD und endet genau dann mit Ausgang 0, wenn ein Paket offen ist (nach `S` Sekunden mit Ausgang 2; ohne `S` wartet er unbegrenzt). |
+| `status` | nennt Sitzung, Stand und die Zahl offener Pakete. |
+
+Die Vorgabe von Claude Code für MCP-Werkzeuge ist 1e8 ms (`MCP_TOOL_TIMEOUT`, geprüft an Version 2026-11-05). Die Grenze
+setzt die Lesezeit der Brücke (1900 s), deshalb höchstens 1800 s.
+
+### Während Kevin spricht
+
+Die Regel gilt im Stand `spricht` (nicht in `pause`): **Nichts Neues beginnt, Laufendes läuft zu Ende, die Kamera gehört
+Kevin.**
+
+- Ein schon laufender Lauf läuft weiter, seine Teile erscheinen. Die App passt dabei die Ansicht nicht ein.
+- Ein neuer Lauf beginnt nicht: `run` antwortet sofort mit `kevin_spricht: true`, ein Auto-Lauf holt der Kernel nach,
+  sobald der Stand endet.
+- `view_command` mit `view`, `focus`, `visibility`, `section` oder `explode` und `project_open`, `project_new` des
+  Agenten antworten ebenso, ohne die App zu fragen. Anmerkungen, Hervorhebungen und die Agentenspur bleiben sichtbar.

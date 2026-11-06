@@ -218,7 +218,7 @@ struct Hauptfenster: View {
             KachelFlaeche(model: model, oberflaeche: oberflaeche, state: state, versionen: versionen,
                           dokumente: dokumente, rahmen: g.kacheln, navigation: navigation, zeigeIm3D: zeigeIm3D)
             if let z = g.statuszeile {
-                WerkstattStatus(model: model, oberflaeche: oberflaeche, spur: spur)
+                WerkstattStatus(model: model, oberflaeche: oberflaeche, sprache: model.sprache, spur: spur)
                     .frame(width: z.width, height: z.height)
                 .position(x: z.midX, y: z.midY)
             }
@@ -352,11 +352,12 @@ struct Hauptfenster: View {
 private struct WerkstattStatus: View {
     @ObservedObject var model: AppModel
     @ObservedObject var oberflaeche: OberflaechenStore
+    @ObservedObject var sprache: SprachStore
     @ObservedObject var spur: AgentenSpur
 
     var body: some View {
         Statuszeile(
-            spricht: oberflaeche.spricht, gesagt: oberflaeche.zuletztGesagt,
+            spricht: oberflaeche.spricht, gesagt: sprache.text ?? oberflaeche.zuletztGesagt,
             agent: spur.jetzt?.text ?? spur.eintraege.last?.text, stand: standText, standFarbe: standFarbe
         ) {
             model.oberflaechenActions?.setzeSprechen(!oberflaeche.spricht)

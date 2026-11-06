@@ -25,6 +25,8 @@ public enum ViewerBefehl: String, CaseIterable, Sendable {
     case messen, messungAbschliessen
     // Aufnahme
     case bildschirmfoto, video, navigationAufnehmen
+    // Sprechen (V2-6)
+    case sprechen, sprechenFertig, sprechenVerwerfen
     // Hilfe
     case tastenuebersicht, hinweisleiste
 }
@@ -122,6 +124,7 @@ public enum BelegungsGruppe: String, CaseIterable, Sendable {
     case darstellung = "Darstellung"
     case messen = "Messen"
     case aufnahme = "Bild und Video"
+    case sprechen = "Sprechen"
     case hilfe = "Hilfe"
 }
 
@@ -144,7 +147,7 @@ public struct MausBelegung: Identifiable, Sendable {
         case links = "Links", mitte = "Mitte", rechts = "Rechts", rad = "Rad", zweiFinger = "2 Finger",
             zusammenziehen = "Zoomgeste"
     }
-    public enum Zustand: Sendable { case immer, auswahl, messen }
+    public enum Zustand: Sendable { case immer, auswahl, messen, sprechen }
 
     public var geraet: Geraet
     public var ziehen: Bool
@@ -244,6 +247,12 @@ public enum Tastenbelegung {
                  tasten: [.z("v", [.befehl, .wahl, .umschalt])], erklaerung: "8 s, 60 Bilder/s, HEVC"),
         Belegung(befehl: .navigationAufnehmen, titel: "Navigation aufnehmen (an/aus)", gruppe: .aufnahme,
                  tasten: [.z("r", [.befehl, .wahl, .umschalt])]),
+        // Sprechen: ↩ und esc teilen sich die Tasten oben, eine offene Sitzung geht dort vor
+        Belegung(befehl: .sprechen, titel: "Sprechen an und aus", gruppe: .sprechen, tasten: [.z("v")],
+                 erklaerung: "aus hält an, die Sitzung bleibt offen"),
+        Belegung(befehl: .sprechenFertig, titel: "Fertig, an den Agenten schicken", gruppe: .sprechen,
+                 tasten: [Taste(.eingabe)], erklaerung: "mit Text, Zeiger und Strichen"),
+        Belegung(befehl: .sprechenVerwerfen, titel: "Sitzung verwerfen", gruppe: .sprechen, tasten: [Taste(.esc)]),
         // Hilfe
         Belegung(befehl: .tastenuebersicht, titel: "Tastenübersicht", gruppe: .hilfe, tasten: [.z("?")]),
         Belegung(befehl: .hinweisleiste, titel: "Hinweisleiste an/aus", gruppe: .hilfe,
@@ -256,6 +265,8 @@ public enum Tastenbelegung {
                      kurz: "Drehen"),
         MausBelegung(geraet: .mitte, ziehen: true, mods: .umschalt, wirkung: "Verschieben", zustand: .immer),
         MausBelegung(geraet: .rad, ziehen: false, mods: [], wirkung: "Zoomen zur Maus", zustand: .immer, kurz: "Zoom"),
+        MausBelegung(geraet: .links, ziehen: true, mods: [], wirkung: "Zeichnen auf dem Modell", zustand: .sprechen,
+                     kurz: "Zeichnen"),
         MausBelegung(geraet: .links, ziehen: false, mods: [], wirkung: "Auswählen", zustand: .auswahl),
         MausBelegung(geraet: .links, ziehen: false, mods: [], wirkung: "Element oder Fangpunkt messen",
                      zustand: .messen, kurz: "Messen"),

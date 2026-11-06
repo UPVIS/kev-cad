@@ -20,7 +20,7 @@ struct ModellUntermenues: View {
 /// - Darstellung (oben): Fokus ⌘1, Werkstatt ⌘2, schmal an den rechten bzw. linken Rand ⌃⌥→ / ⌃⌥←, letzte Projekte
 ///   ⇧⌘O.
 /// - Kacheln: Kachel zeigen (⌃⌘1 bis ⌃⌘0), Kachel 1 bis 4 groß (⌥⌘1 bis ⌥⌘4), alle einordnen, aktive schließen ⇧⌘W.
-/// - Agent: Sprechen V (nicht in Textfeldern, nicht im Zeichnungsblatt; dort ist V das Auswahlwerkzeug).
+/// - Agent: Sprechen V (nicht in Textfeldern, nicht im Zeichnungsblatt; dort ist V das Auswahlwerkzeug), Fertig, Verwerfen.
 /// Alles ruft `OberflaechenActions`, wie später Sprache und Agent.
 struct OberflaechenCommands: Commands {
     @ObservedObject var session: AppSession
@@ -33,6 +33,11 @@ struct OberflaechenCommands: Commands {
     private var vorne: Bool { window != nil }
     /// Im Zeichnungsblatt gehört V dem Auswahlwerkzeug.
     private var imBlatt: Bool { window?.bereich == .dokumente && oberflaeche.aktiv != .bauplan }
+
+    private var sprechTitel: String {
+        if oberflaeche.spricht { return "Sprechen anhalten" }
+        return oberflaeche.sitzungOffen ? "Weitersprechen" : "Sprechen"
+    }
 
     /// Die ersten zehn haben ⌃⌘1 bis ⌃⌘0.
     static let kachelReihe: [KachelArt] = [
@@ -103,9 +108,14 @@ struct OberflaechenCommands: Commands {
         }
 
         CommandMenu("Agent") {
-            Button(oberflaeche.spricht ? "Sprechen beenden" : "Sprechen") { a?.setzeSprechen(!oberflaeche.spricht) }
+            Button(sprechTitel) { a?.setzeSprechen(!oberflaeche.spricht) }
                 .keyboardShortcut(imBlatt ? nil : KeyboardShortcut("v", modifiers: []))
                 .disabled(!vorne || imBlatt)
+            // ↩ und esc wirken im Fenster (SprachSteuerung, Abbrechen): als Menükürzel nähme ↩ Dialogen ihren Standardknopf
+            Button("Fertig, an den Agenten schicken") { a?.sprechenFertig() }
+                .disabled(!oberflaeche.sitzungOffen)
+            Button("Sitzung verwerfen") { a?.sprechenVerwerfen() }
+                .disabled(!oberflaeche.sitzungOffen)
             Divider()
             Button("Befehl für Claude Code kopieren") { session.copyClaudeCommand() }
         }

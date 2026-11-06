@@ -74,8 +74,8 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Lagebild: Antwort der App | unter 50 ms | in Ruhe Median 9 ms, 95 % unter 19 ms; während eines Laufs Median 13 ms, 95 % unter 39 ms (die App selbst unter 1 ms) |
 | App-Start bis bedienbares leeres Projekt | unter 1 s | Fenster nach 1,74 s unter fremder Last, Rechenzeit des Hauptfadens 0,90 s; ohne Last noch nicht gemessen; der Kernel ist rund 6 s später bereit |
 | Drehen im Viewer (134 Teile) | 120 fps, mit SSAO mindestens 60 fps | am 60-Hz-Monitor 58 bis 60 Bilder/s, Technisch 41 (Hänger auf dem Hauptfaden); ohne Bildschirmtakt 383 bis 469 Bilder/s ohne SSAO, 153 bis 216 mit; 120 Hz noch nicht gemessen |
-| Sprach-Feedback: Wort erscheint als Text | unter 0,3 s | offen |
-| Feedback-Paket beim Agenten nach Ende des Sprechens | unter 1 s | offen |
+| Sprach-Feedback: Wort erscheint als Text | unter 0,3 s, Vorschlag rund 0,6 s | Apple-Rückfall im Median 450 bis 480 ms; Wortlaut rechnet im Takt von 0,4 s, also rechnerisch 0,2 bis 0,6 s, mit Mikrofon noch nicht gemessen |
+| Feedback-Paket beim Agenten nach Ende des Sprechens | unter 1 s | 142 bis 450 ms; 873 bis 993 ms, wenn noch ein Satz unterwegs ist |
 
 ## 5. Pakete
 
@@ -86,7 +86,7 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | fertig, auf `v2` (`ed36826`), Einzelheiten in `OBERFLAECHE.md`; offen: Klicks, Tasten und Benennen von Hand prüfen, Startzeit ohne fremde Last messen |
 | V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | fertig, auf `v2` (`d255717`); offen: Hänger auf dem Hauptfaden, Messung an 120 Hz, echte Eingaben von Kevin prüfen |
 | V2-5 Live | Delta-Übertragung, Teile live, Agentenspur, Live-Maße und Befunde am Teil, Lagebild von der App zum Kernel (Einzelheiten unten) | Protokoll, beide Seiten | V2-1, V2-2 | V2-5a (Protokoll und Kernel-Seite) fertig, auf `v2` (`0388a41`); V2-5b (App-Seite) fertig, auf `v2` (`961b405`), Zahlen in `kernel/tools/MESSUNG.md`; offen: Bildrate rund 40 statt 58 bis 60 Bilder/s, sporadischer Test `test_gleitende_lager_schraeg_in_der_fem` |
-| V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | läuft, mit Wortlaut und Apples Erkennung als Rückfall |
+| V2-6 Sprach-Feedback | Spracherkennung, eine gemeinsame Uhr, Zeigen und Zeichnen, Paket mit 3D-Kontext, Werkzeug „auf Feedback warten“ (Einzelheiten unten) | App und MCP | Hülle aus V2-3, Lagebild aus V2-5 | fertig, auf `v2`, Zahlen in `kernel/tools/MESSUNG-V2-6.md`; offen: Prüfung mit Mikrofon durch Kevin |
 | V2-7 Ergebnisse als Kacheln | Druck, Zeichnungen, Animation, Stückliste, Zuschnitt und zweite Ansicht als Kacheln statt eigener Fenster und Dialoge; Anordnen per Sprache und Werkzeug | Oberfläche, MCP | V2-3 | läuft |
 | V2-8 Aufräumen und Abnahme | alte Dialoge und Bereiche raus, Doku und Skill nachziehen, Testsuite sauber, Übergang der Werkzeugnamen, Abnahme mit Kevin, nach main | alle | alle | zuletzt |
 
