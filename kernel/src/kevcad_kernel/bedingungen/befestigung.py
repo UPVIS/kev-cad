@@ -33,6 +33,7 @@ BODEN_TOL = 0.5
 
 
 _BOXEN: dict[int, tuple[np.ndarray, np.ndarray]] = {}  # Hüllquader der gezeigten Formen während einer Prüfung
+_BOHRUNGEN: dict[int, tuple[Any, list[Bezug]]] = {}  # Bohrungen je Form während einer Prüfung (V2-1b; dieselbe Form 5-mal)
 
 
 def _bbox(form: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -65,10 +66,15 @@ def _form(b: Bezug) -> Any:
 
 def _passende_bohrung(form: Any, achse: Bezug, max_versatz: float = 0.5) -> Bezug | None:
     """Bohrung im Teil, die mit der Schraubenachse fluchtet und axial mit dem Schaft überlappt."""
-    try:
-        bohrungen = bohrungen_von(form)
-    except Exception:  # noqa: BLE001
-        return None
+    hit = _BOHRUNGEN.get(id(form))
+    if hit is not None and hit[0] is form:
+        bohrungen = hit[1]
+    else:
+        try:
+            bohrungen = bohrungen_von(form)
+        except Exception:  # noqa: BLE001
+            return None
+        _BOHRUNGEN[id(form)] = (form, bohrungen)
     assert achse.d is not None and achse.t is not None
     beste = None
     for b in bohrungen:
@@ -154,6 +160,7 @@ def befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
     """(Einträge für die Liste, Befunde, Angaben je Teil: befestigt, verbindungen, am_boden). ``kulisse``: Namen der
     Kulissenteile (Umgebung): keine Befestigungspflicht, aber wer darauf steht, ist am Boden."""
     _BOXEN.clear()
+    _BOHRUNGEN.clear()
     for n, f in formen.items():
         if boxen and n in boxen:
             _BOXEN[id(f)] = boxen[n]
@@ -162,6 +169,7 @@ def befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
                                     {n for n in (kulisse or ()) if n in formen})
     finally:
         _BOXEN.clear()
+        _BOHRUNGEN.clear()
 
 
 def _befestigung_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any],
