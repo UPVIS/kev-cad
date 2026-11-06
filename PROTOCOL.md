@@ -249,7 +249,7 @@ im Kernel, Ergebnis von `run`) nennt sie in `kulisse` (Liste der Namen).
 | type | Felder | Antwort |
 |---|---|---|
 | `BOM_REQ` | `id` | `BOM` mit `reply_to` |
-| `CATALOG_REQ` | `id`, `query` (Text oder null), `art` (oder null) | `CATALOG` |
+| `CATALOG_REQ` | `id`, `query` (Text oder null), `art` (oder null), optional `stand` (V2-5) | `CATALOG` mit `stand` (Prüfsumme des Inhalts). Ist `stand` aus der Anfrage noch gültig, kommt nur `{"type": "CATALOG", "reply_to", "stand", "unveraendert": true}` ohne Inhalt: Das stille Nachladen nach jeder Stückliste kostete rund 250 KB je Lauf. |
 | `CATALOG_SAVE` | `id`, `kind` (`teil` \| `material`), `entry` (Objekt laut KATALOG.md), `ebene` (`eigen` \| `projekt`) | `ACK` (danach neues `CATALOG` nur auf Anfrage) |
 | `CATALOG_DELETE` | `id`, `kind`, `entry_id`, `ebene` | `ACK` |
 
@@ -1197,9 +1197,13 @@ Teil, das model.py in einem Lauf mehrmals zeigt (Zwischenstände), oder ein Maß
    Liste steht (sollte durch `PART_REMOVE` schon weg sein; die Liste stellt es sicher).
 5. `RUN_ERROR`: alles bleibt stehen wie bisher.
 
+In einem Lauf mit `delta: true` bleibt die Auswahl der App stehen. Flächen, Kanten und Punkte eines Teils, das neu
+kommt, verwirft sie (sie können etwas anderes meinen), ganze Teile bleiben. Nach `RUN_END` bzw. `RUN_ERROR` schickt sie
+`SELECTION` mit der neuen Laufnummer, wenn etwas ausgewählt ist.
+
 | type | Richtung | Felder | Wirkung |
 |---|---|---|---|
-| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Das Teil zeigt den Inhalt `inhalt`, den die App schon hat: Ist es der gezeigte, setzt sie nur die Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Sonst tauscht sie Kopf und Netz gegen den gespeicherten Inhalt (Kopf mit `run`). Fehlt ihr der Inhalt, fragt sie das Teil mit `PARTS_REQ` nach. |
+| `PART_SAME` | Kernel → App | `run`, `name`, `inhalt` | Das Teil zeigt den Inhalt `inhalt`, den die App schon hat: Ist es der gezeigte, setzt sie nur die Laufnummer auf `run` (es gilt für diesen Lauf, abdunkeln endet); Geometrie, Kopf, Sichtbarkeit, Auswahl und Hervorhebung bleiben. Sonst tauscht sie Kopf und Netz gegen den gespeicherten Inhalt (Kopf mit `run`), und zwar erst zum Laufende: Kommt der gezeigte Inhalt vorher wieder (model.py zeigt ein Teil im Lauf mehrmals), passiert nichts. Fehlt ihr der Inhalt, fragt sie das Teil mit `PARTS_REQ` nach. |
 | `PARTS_REQ` | App → Kernel | `teile` (Namen oder null = alle) | Der Kernel schickt jedes genannte Teil als vollständiges `PART_UPSERT` (nie als `PART_SAME`), für unbekannte Namen `PART_REMOVE`. |
 
 **Statikfelder (`STATICS_FIELD`):** Mit `delta-1` hält die App je Paar (`szenario`, `teil`) die letzten 4 empfangenen
@@ -1259,7 +1263,8 @@ wie bisher (`vert`, `tri`, `epts`, `edge`, Netze hintereinander).
   kommt nichts.
 - Die Markierung eines Teils endet mit seinem `PART_SAME` bzw. `PART_UPSERT`, alle enden mit `RUN_END` bzw.
   `RUN_ERROR`. Die übrigen noch nicht bestätigten Teile eines Laufs mit `delta: true` sind „offen“ (wie bisher
-  abgedunkelt).
+  abgedunkelt, aber erst 2 s nach `RUN_START`: Ein schneller Lauf lässt das Bild in Ruhe). Die App markiert ein Teil aus
+  `IN_ARBEIT` aus demselben Grund erst 0,4 s später.
 
 ### Agentenspur (`spur-1`)
 
@@ -1319,6 +1324,8 @@ dauernd geschickt.
 - `maus`: Teil und Fläche bzw. Kante unter dem Mauszeiger (`ref` wie im Protokoll, Laufnummer wie `auswahl.run`),
   Punkt auf der Oberfläche und Normale in Weltkoordinaten, `bild` in Punkten (Ursprung links oben); null, wenn die Maus
   nicht über einem Teil steht. `animation`: `{name, zeit, spielt}` oder null.
+- Testvarianten der App legen `statistik` dazu (gebaute Körper, Aufleuchten, Weitergaben an den Viewport, Teile,
+  Schritte der Spur, Marken), für `kernel/tools/live_selbsttest.py`.
 - Die App antwortet in unter 50 ms. Ohne Antwort nach 200 ms (oder ohne `lage-1`) liefert der Kernel, was er selbst
   weiß (`KernelService.lagebild`, `quelle: "kernel"`): Auswahl (`SELECTION`), vom Agenten ausgeblendete Teile, die
   Kamera aus dem letzten `LAGE` mit ihrem Alter. Eine verspätete Antwort merkt er sich für das nächste Mal.

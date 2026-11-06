@@ -512,6 +512,24 @@ def test_parts_req_und_nochmal(env):
     assert h["type"] == "BOM", "NOCHMAL: vollständig"
 
 
+def test_katalog_mit_stand(env):
+    app = verbinden(env)
+    m = app.mark()
+    app.send({"type": "CATALOG_REQ", "id": "a-1", "query": None, "art": None})
+    _, _, h, _ = app.wait_for(lambda h: h["type"] == "CATALOG" and h.get("reply_to") == "a-1", 10, m)
+    assert "items" in h and h["stand"] and not h.get("unveraendert")
+    voll = len(json.dumps(h))
+    m = app.mark()
+    app.send({"type": "CATALOG_REQ", "id": "a-2", "query": None, "art": None, "stand": h["stand"]})
+    _, _, k, _ = app.wait_for(lambda h: h["type"] == "CATALOG" and h.get("reply_to") == "a-2", 10, m)
+    assert k["unveraendert"] is True and k["stand"] == h["stand"] and "items" not in k
+    assert len(json.dumps(k)) < voll
+    m = app.mark()
+    app.send({"type": "CATALOG_REQ", "id": "a-3", "query": None, "art": None, "stand": "veraltet"})
+    _, _, k, _ = app.wait_for(lambda h: h["type"] == "CATALOG" and h.get("reply_to") == "a-3", 10, m)
+    assert "items" in k and not k.get("unveraendert")
+
+
 def test_in_arbeit(env):
     app = verbinden(env)
     projekt(env, CODE_LANGSAM)

@@ -273,6 +273,61 @@ final class MirrorServiceTests: XCTestCase {
         XCTAssertTrue(waitUntil { c.receiver.state?.lauf.run == 1 || c.receiver.state?.lauf.run == 2 })
     }
 
+    /// V2-5 (V12): Ein Lauf aus PART_SAME schickt dem iPhone keine Teile, ein geändertes Teil genau eines; wer danach
+    /// zusieht, bekommt die ganze Szene.
+    func testPartSameSchicktNichtsNeuUndLaesstDieSzeneStehen() throws {
+        let c = try watchingClient()
+        let namen = controller.scene.order
+        XCTAssertEqual(namen.count, 2)
+        // Inhalte wie vom Kernel: gleiche Teile mit Schlüssel
+        for n in namen {
+            var r = try XCTUnwrap(controller.scene.record(n))
+            r.header.inhalt = "inhalt-\(n)"
+            controller.handle([.part(r)])
+        }
+        XCTAssertTrue(waitUntil { c.receiver.parts.count == 2 })
+        _ = waitUntil(0.3) { false }
+        let start = c.frames.count
+        func gleich(_ run: Int, _ n: String) -> IncomingEvent {
+            .message(.partSame(PartSameMessage(run: run, name: n, inhalt: "inhalt-\(n)")))
+        }
+        func kopf(_ json: String) throws -> IncomingEvent { .message(try KernelMessage.decode(Frame(header: Data(json.utf8)))) }
+        let liste = namen.map { "\"\($0)\"" }.joined(separator: ",")
+        controller.handle([try kopf(#"{"type":"RUN_START","run":2,"delta":true}"#)] + namen.map { gleich(2, $0) }
+            + [try kopf(#"{"type":"RUN_END","run":2,"duration_ms":5,"parts":2,"triangles":1,"warnings":[],"teile":[\#(liste)]}"#)])
+        XCTAssertTrue(waitUntil { c.receiver.state?.lauf == MirrorRunState(run: 2, laeuft: false) })
+        _ = waitUntil(0.3) { false }
+        XCTAssertEqual(c.headers("PART", from: start).count, 0, "unverändert: nichts neu schicken")
+        XCTAssertEqual(c.headers("SCENE", from: start).count, 0)
+        XCTAssertEqual(c.receiver.parts.count, 2, "und die Szene bleibt stehen")
+
+        // Ein geändertes Teil: genau ein PART, das andere nur bestätigt
+        var neu = try XCTUnwrap(controller.scene.record(namen[0]))
+        neu.header.run = 3
+        neu.header.inhalt = "neu"
+        var g = neu.geometry
+        g.positions[2] += 5
+        let start2 = c.frames.count
+        controller.handle([try kopf(#"{"type":"RUN_START","run":3,"delta":true}"#), .part(PartRecord(header: neu.header, geometry: g)), gleich(3, namen[1]),
+                           try kopf(#"{"type":"RUN_END","run":3,"duration_ms":5,"parts":2,"triangles":1,"warnings":[],"teile":[\#(liste)]}"#)])
+        XCTAssertTrue(waitUntil { c.headers("PART", from: start2).count == 1 })
+        _ = waitUntil(0.3) { false }
+        XCTAssertEqual(c.headers("PART", from: start2).compactMap { $0["name"]?.stringValue }, [namen[0]])
+
+        // Ein früherer Inhalt kommt zurück: wieder genau ein PART, das Netz kennt das iPhone nach Hash schon
+        let start3 = c.frames.count
+        controller.handle([try kopf(#"{"type":"RUN_START","run":4,"delta":true}"#), gleich(4, namen[0]), gleich(4, namen[1]),
+                           try kopf(#"{"type":"RUN_END","run":4,"duration_ms":5,"parts":2,"triangles":1,"warnings":[],"teile":[\#(liste)]}"#)])
+        XCTAssertTrue(waitUntil { c.headers("PART", from: start3).count == 1 })
+
+        // Wer jetzt erst zusieht, bekommt alle Teile
+        let spaet = try TestMirrorClient(path: socketPath)
+        try spaet.send(MirrorHello.client("spät"))
+        try spaet.send(MirrorWatch(dauerS: 60, geraet: "Test 2"))
+        XCTAssertTrue(waitUntil { spaet.receiver.hasScene && spaet.receiver.state != nil })
+        XCTAssertEqual(spaet.receiver.parts.count, 2)
+    }
+
     /// Abspielen der Zeitleiste: animierte Lagen gehen vorerst nicht hinaus, das iPhone zeigt die Ruhelage.
     func testAnimationPoseIsNotMirrored() throws {
         let c = try watchingClient()

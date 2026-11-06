@@ -133,6 +133,7 @@ extension AppController: CatalogActions {
     }
 
     func applyCatalog(_ message: CatalogMessage) {
+        guard !message.unveraendert else { return }  // V2-5: stilles Nachladen, nichts Neues
         let hadCatalog = model.catalog != nil
         model.catalog = message.catalog
         if model.catalogActivity == .loading { model.catalogActivity = .idle }
@@ -261,11 +262,18 @@ extension AppController: CatalogActions {
         let now = Date()
         if let last = lastQuietCatalog, now.timeIntervalSince(last) < 5 { return }
         lastQuietCatalog = now
-        let msg = CatalogRequestMessage(id: nextRequestID(), query: nil, art: nil)
+        let msg = CatalogRequestMessage(id: nextRequestID(), query: nil, art: nil, stand: live.katalogStand)
         request(msg, timeout: Self.catalogTimeout) { [weak self] result in
-            guard let self, case .failure(let e) = result else { return }
-            self.quietCatalogOff = true
-            self.log(.info, "Lagerkatalog im Hintergrund nicht geladen (\(e.message))")
+            guard let self else { return }
+            switch result {
+            case .success(.catalog(let c)):
+                self.live.katalogStand = c.stand
+            case .failure(let e):
+                self.quietCatalogOff = true
+                self.log(.info, "Lagerkatalog im Hintergrund nicht geladen (\(e.message))")
+            default:
+                break
+            }
         }
     }
 

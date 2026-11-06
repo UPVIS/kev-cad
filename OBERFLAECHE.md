@@ -100,8 +100,10 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   `param()`-Werte als Felder. Ein geänderter Wert landet in model.py (`ModellQuelle.setzeParameter`, nur bei genau
   einem `param("name", Zahl)`). „vorher …“ zeigt, was sich im letzten Lauf geändert hat, egal ob durch Kevin oder den
   Agenten.
-- **Agentenspur**: bis V2-5 aus der Tätigkeitszeile (`agentActivity`), dem Ende jedes Laufs und den Befunden der
-  Prüfung. Höchstens sechs Einträge.
+- **Agentenspur**: die Schritte des Agenten aus `AppModel.agentenspur` (V2-5, `spur-1`): Absicht vor der Beschreibung,
+  fertige mit Dauer, der laufende zählt mit. Dazu das Ende jedes Laufs, den kein Schritt nennt, und die Befunde der
+  Prüfung; ältere Kernel liefern nur die Tätigkeitszeile (`agentActivity`). Höchstens sechs Einträge. Das Hauptfenster
+  hält `AgentenSpur` mit `@State`, nur die Spur-Ansichten beobachten sie.
 - Der Viewer wird nie neu angelegt: Er steht an fester Stelle im Ansichtsbaum, nur sein Rahmen wechselt (ohne
   Animation). Er kommt erst nach dem ersten Bild dazu, damit Metal das Fenster nicht aufhält. Verdeckt (Werkstatt ohne
   Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`).

@@ -54,7 +54,7 @@ from kevcad_kernel.topologie.laufzeit import TopologieRuntime  # Topologieoptimi
 from kevcad_kernel.simulation.laufzeit import SimulationRuntime  # Bereich „Simulation“ (PLAN-SIMULATION.md)
 from kevcad_kernel.pruefung.anbindung import PruefStand, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
-from kevcad_kernel.protocol import KERNEL_FAEHIGKEITEN, LIVE_APP_NACHRICHTEN, PROTOCOL_VERSION
+from kevcad_kernel.protocol import KERNEL_FAEHIGKEITEN, LIVE_APP_NACHRICHTEN, PROTOCOL_VERSION, kanonisch
 from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
 from kevcad_kernel.render.laufzeit import RenderRuntime  # Phase 7: Renderings
 from kevcad_kernel.scan.laufzeit import ScanRuntimeMixin  # Scan mit dem iPhone (SCAN.md, PLAN-SCAN.md)
@@ -1611,8 +1611,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 if art is not None and art not in ALLE_ARTEN:
                     self._send_app({"type": "ERROR", "reply_to": rid, "message": f"art {art!r} unbekannt"})
                 else:
-                    self._send_app({"type": "CATALOG", "reply_to": rid,
-                                    **self.catalog_message(header.get("query") or None, art)})
+                    inhalt = self.catalog_message(header.get("query") or None, art)
+                    stand = hashlib.sha1(kanonisch(inhalt).encode("utf-8")).hexdigest()[:16]
+                    if header.get("stand") == stand:  # V2-5: stilles Nachladen, der Katalog ist noch derselbe
+                        self._send_app({"type": "CATALOG", "reply_to": rid, "stand": stand, "unveraendert": True})
+                    else:
+                        self._send_app({"type": "CATALOG", "reply_to": rid, "stand": stand, **inhalt})
             elif kind in ("CATALOG_SAVE", "CATALOG_DELETE"):
                 ebene = header.get("ebene") or "eigen"
                 if kind == "CATALOG_SAVE":
