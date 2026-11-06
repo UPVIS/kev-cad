@@ -357,7 +357,7 @@ Prüfungen (Schweben, Standsicherheit, Einbaubarkeit, Druckregeln, Bedingungen) 
   weiteres `CHECK` mit demselben `run` und `state: "done"`, das das teilweise vollständig ersetzt (ohne
   `im_hintergrund`). Kommt vorher ein neuer Lauf, bleibt es beim teilweisen Ergebnis des alten. Ältere Apps lesen
   einen unbekannten `state` als `done` und ersetzen es beim zweiten `CHECK`; die App zeigt im Prüfband und im
-  Inspektor „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
+  Kachel Details „Bewegungsraum: 2 Gelenke werden fertig gerechnet …“.
 - `statik_im_hintergrund` (additiv, 22.10.2026, PLAN-STATIK.md T34): Rechnen nach dem Lauf noch ein Ablauf (Stufe 2)
   oder der Festkörper (Stufe 3), ist das `CHECK` ebenfalls `teilweise` und nennt sie hier (etwa
   `"Ablauf „Bremsen aus 1 m/s“"`, `"Festkörper „Haken 2 kg“ (2 Teile)"`). Sind sie fertig (oder abgebrochen), folgt
@@ -526,7 +526,7 @@ Kameraansicht. `SCREENSHOT_RES.camera` trägt zusätzlich `name`.
 
 | type | Felder | Antwort |
 |---|---|---|
-| `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera_info`, `kamera_vorschlag_aus_ansicht`) |
+| `CAMERA_SUGGEST` | `name`, `sensor_pos`, `auge`, `blick`, `oben`, `rechts`, `roll` (Grad gegenüber Welt-Z) – aktuelle Ansicht als neue Lage der Kamera (Strg+Alt+0 oder auf `camera_suggest`) | – (Kernel merkt sich den Vorschlag; MCP `kamera(aktion="info")`, `kamera(aktion="vorschlag")`) |
 
 ### Kameras und Animation
 

@@ -30,13 +30,13 @@ Grundansicht“ heißt: Es gibt ihn noch, aber nicht mehr ständig im Bild, sond
 | `VersionenLeiste`, `VariantenMenu`, `VergleichKarte` (Versionen/) | Seitenleiste neben dem Viewport, Variantenmenü in der Titelleiste, Vergleich im Viewport | Leiste wird Kachel **Versionen**; Varianten im Projektmenü; die Vergleichskarte bleibt im Viewer |
 | `AnimationTimeline` (Animation/) | Zeitleiste unter dem Viewport, nur mit Animation | Kachel **Animation** (Streifen unten); im Fokus über dem Viewer, auf Zuruf oder beim Abspielen |
 | Bänder `ErrorBanner`, `InventoryBanner`, `FreigabeBand`, `PruefBanner`, `ZukaufBanner`, `ScanBand`, `BuchungsBand` | oben im Viewport | bleiben oben im Viewer; Befunde am Teil kommen mit V2-5 |
-| Dialoge: Gebaut, Bestand erfassen, Gedruckt, Spule, Freigabe, Referenz hinzufügen, Vermessen, Maßstab, Rendern, Drucken, Drucker-Einstellungen, Dokumente exportieren, Meilenstein, Variante | Blätter und Dialoge | Rendern ist seit V2-7 die Kachel **Rendern**; die übrigen bleiben Blätter und Dialoge, was davon wegfällt, entscheidet V2-8 |
+| Dialoge: Gebaut, Bestand erfassen, Gedruckt, Spule, Freigabe, Referenz hinzufügen, Vermessen, Maßstab, Rendern, Drucken, Drucker-Einstellungen, Dokumente exportieren, Meilenstein, Variante | Blätter und Dialoge | Rendern ist seit V2-7 die Kachel **Rendern**; die übrigen bleiben Blätter und Dialoge (V2-8): kurz und selten, eine Kachel machte sie nur umständlicher. „Dokumente exportieren“ hat drei feste Spalten mit Vorschau und braucht 1000 pt Breite, in einer Kachel wäre es enger als im Blatt |
 | `LogWindow`, `CatalogWindow`, `ZukaufDialogWindow` | eigene Fenster | bleiben Nebenfenster |
 | `FotoAnsichtOverlay`, `AbweichungLegende`, `MassstabLeiste`, `DurchspielenLeiste`, `SimulationWerkzeugLeiste` | im Viewport | bleiben im Viewer |
 | Menüs: `KevCADCommands`, `MaterialCommands`, `DokumenteCommands`, `DokumenteExportCommands`, `AnimationCommands`, `VersionenCommands`, `StockCommands`, `BestandCommands`, `ZukaufCommands`, `RenderCommands`, `SimulationCommands`, `SidebarCommands`, `InspectorCommands` | Ablage, Darstellung (Bereiche ⌘1 bis ⌘4, Schnellansichten ⌃⌘1 bis ⌃⌘3, Blender-Tasten), Modell, Dokumente, Material, Animation, Versionen, Simulation, Hilfe | neu geordnet, siehe Abschnitt 7 |
 | `KeyboardGuard`, `WindowHook` (App/) | einbuchstabige Kürzel nicht in Textfeldern; Testfenster auf den zweiten Monitor | bleiben; `WindowHook` kennt zusätzlich das schmale Fenster am Rand |
 | `DemoActions`, `DemoViewport` (Demo/) | Demomodus ohne Kernel | bleiben, setzen auch die neuen Aktionen um |
-| Selbsttests (`KEVCAD_SELFTEST=…`) | starten aus dem Willkommens- bzw. Projektfenster | bleiben, starten aus dem Hauptfenster |
+| Selbsttests (`KEVCAD_SELFTEST=…`) | starten aus dem Willkommens- bzw. Projektfenster | bleiben, starten aus dem Hauptfenster; alle nacheinander mit `tools/fern/selbsttests.sh` |
 
 ## 2. Gestaltungssystem
 
@@ -113,7 +113,8 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   Kevin spricht, passt ein Lauf die Ansicht nicht ein. Erkannt wird mit Wortlaut, Rückfall ist Apples Erkennung.
 - Der Viewer wird nie neu angelegt: Er steht an fester Stelle im Ansichtsbaum, nur sein Rahmen wechselt (ohne
   Animation). Er kommt erst nach dem ersten Bild dazu, damit Metal das Fenster nicht aufhält. Verdeckt (Werkstatt ohne
-  Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`).
+  Kachel „Modell“, andere Kachel groß) ruht er (`isPaused`). Seine runden Ecken in der Werkstatt setzt die Metal-Ebene
+  selbst (`cornerRadius`), kein `.clipShape`: Eine Formmaske zwingt das Fenstersystem, jedes Bild abseits zusammenzusetzen.
 - Die Werkstatt bleibt nach dem ersten Öffnen eingehängt und wird im Fokus nur ausgeblendet, mit den Maßen von zuletzt.
   So baut das Umschalten keine Tabellen ab und auf, und beim Schieben an den Rand wird nichts neu vermessen.
 
@@ -143,7 +144,8 @@ Größenänderung und verdeckt Klicks. Runde Knöpfe sind deshalb 30 statt 34 pt
   Kachel nach vorn; umgekehrt folgt `bereich` der aktiven Kachel, damit die Kürzel der Bereiche passen.
 - Alles über `OberflaechenActions` (Befehle `Oberflaechenbefehl`), damit Sprache (V2-6) und Agent (V2-7) es auslösen.
 - Ist eine Kachel groß, bleiben die übrigen in ihrer letzten Größe eingehängt und nur ausgeblendet: „alle einordnen“ baut
-  nichts neu auf (gemessen 107 statt 53 ms).
+  nichts neu auf (gemessen 107 statt 53 ms). Seitenleisten und Inspektoren breiter Kacheln (`NebenSpalte`) bauen sich eine
+  Sekunde nach dem Öffnen unsichtbar auf, „groß“ gibt ihnen nur noch Platz.
 - Drei Regeln gegen lange Pausen (gemessen bis 15 s, wenn eine davon fehlt): Das Hauptfenster beobachtet das Modell
   nicht, sonst wertet jede Protokollzeile alles neu aus. Rahmen von Kacheln werden nie animiert, sonst vermisst SwiftUI
   Tabellen in jedem Animationsschritt neu. `KachelInhalt` ist `Equatable` (nur Art und Breite zählen), denn seine

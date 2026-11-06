@@ -2,8 +2,9 @@
 
 Kev CAD ist ein nativer CAD-Viewer für den Mac, den ein KI-Agent über MCP bedient. Der Agent schreibt ein
 parametrisches `model.py` mit [build123d](https://github.com/gumyr/build123d), und Kev CAD baut das Modell Teil für
-Teil live auf. Messen, Ansichten, Schnitte und Export gehen per Klick oder durch den Agenten. Nach jedem Lauf prüft
-Kev CAD die Konstruktion: Durchdringung, Standsicherheit, Einbaubarkeit, Druckbarkeit und Statik.
+Teil live auf. Man spricht mit dem Agenten, zeigt im Viewer auf Teile und sieht ihm beim Arbeiten zu. Messen, Ansichten,
+Schnitte und Export gehen per Klick oder durch den Agenten. Nach jedem Lauf prüft Kev CAD die Konstruktion:
+Durchdringung, Standsicherheit, Einbaubarkeit, Druckbarkeit und Statik.
 
 Entstanden ist es als Kevins eigenes Werkzeug für Werkstatt- und Filmbauten. Es lässt sich aber auf jedem Mac mit
 Apple Silicon bauen.
@@ -12,7 +13,12 @@ Apple Silicon bauen.
 
 - **Modellieren im Gespräch:**
   - `model.py` mit build123d und `param()`-Maßen, Live-Aufbau im Metal-Viewer.
+  - Rechengedächtnis je Operation: Eine Maßänderung per `run(params)` dauert rund zwei Sekunden.
+  - Sprach-Feedback: Taste V, sprechen, zeigen und zeichnen; der Agent bekommt die Sätze mit den gemeinten Teilen.
   - Versionen, Meilensteine und Varianten.
+- **Oberfläche:**
+  - Start direkt in ein leeres Projekt, Modus Fokus (nur der Viewer) und Werkstatt (Kacheln, Eigenschaften).
+  - Bedienung wie in Blender, Kacheln und Ansicht stellt auf Zuruf auch der Agent.
 - **Lager und Einkauf:**
   - Lagerkatalog mit Rohren, Profilen, Platten, Schrauben und Materialien.
   - Zukaufteile per Shop-Link oder Hersteller-CAD.
@@ -39,7 +45,7 @@ Apple Silicon bauen.
 ## Einrichten
 
 Voraussetzungen:
-- Mac mit Apple Silicon und macOS 15 oder neuer.
+- Mac mit Apple Silicon und macOS 15 oder neuer (Sprach-Feedback ab macOS 26).
 - Xcode mit Metal-Toolchain.
 - Homebrew mit `xcodegen` und `librsvg`.
 - [uv](https://docs.astral.sh/uv/).
@@ -65,7 +71,7 @@ Danach in einer neuen Sitzung zum Beispiel: „Leg in Kev CAD ein Projekt Regalw
 
 | Ordner | Inhalt |
 |---|---|
-| `app/` | SwiftUI-App mit dem Metal-Viewport [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport); `app/KevCADCore` ist der testbare Kern ohne Oberfläche |
+| `app/` | SwiftUI-App; `app/KevCADCore` ist der testbare Kern ohne Oberfläche, `app/Packages/OCCTSwiftViewport` eine angepasste Kopie des Metal-Viewports [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) |
 | `kernel/` | Python-Kernel (build123d, ocp-tessellate) mit MCP-Server; `kevcad` ist die API für `model.py` |
 | `skill/kev-cad/` | Leitfaden für den Agenten (Modellieren, 3D-Druck, Statik, Zeichnungen …) |
 | `fotomess/` | Maße eines Modells aus Fotos, Video oder Scan einpassen |
@@ -80,13 +86,15 @@ Verträge zwischen den Teilen:
 - [MIRROR.md](MIRROR.md): Spiegel aufs iPhone.
 - [DRUCKVORSCHAU.md](DRUCKVORSCHAU.md), [BESTAND.md](BESTAND.md), [DOKUMENTE.md](DOKUMENTE.md).
 
-Stand und Geschichte der Phasen: [ROADMAP.md](ROADMAP.md). Pläne je Phase: `PLAN-*.md`. Herkunft der Bausteine:
+Stand und Geschichte der Phasen: [ROADMAP.md](ROADMAP.md). Pläne je Phase: `PLAN-*.md`, der Umbau zu V2 in
+[PLAN-V2.md](PLAN-V2.md), die Oberfläche in [OBERFLAECHE.md](OBERFLAECHE.md). Herkunft der Bausteine:
 [RECHERCHE.md](RECHERCHE.md). Fremde Bausteine und ihre Lizenzen: [DRITTANBIETER.md](DRITTANBIETER.md).
 
 ## Entwickeln
 
 - `./build.sh --core-tests` führt die Tests von KevCADCore (swift test) und Kernel (pytest) aus.
 - `./build.sh --test` baut eine Testvariante, die neben der installierten App laufen kann.
+- `kernel/tools/selbsttests.py` fährt die Selbsttests der App (`KEVCAD_SELFTEST=…`) nacheinander in einer Testvariante.
 - Schnittstellen, die nur gemeinsam geändert werden dürfen, und die Arbeitsregeln für Agenten stehen in
   [CLAUDE.md](CLAUDE.md). Die dortigen Regeln zu Mac mini und Monitoren gelten für Kevins Rechner.
 - Oberfläche, Kommentare und Doku sind auf Deutsch, Bezeichner im Code englisch.

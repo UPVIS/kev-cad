@@ -60,6 +60,8 @@ def main() -> int:
     ap.add_argument("--katalog", default=None)
     ap.add_argument("--ausgabe", default="selbsttests")
     ap.add_argument("--hier", action="store_true", help="auf diesem Rechner, Fenster hinter dem Schreibtischbild")
+    ap.add_argument("--sichtbar", action="store_true", help="auf diesem Rechner, Fenster sichtbar: misst die Bilder je "
+                                                            "Sekunde am Monitor (zweiter Monitor oder Kevins Abnahme)")
     args = ap.parse_args()
 
     app = Path(args.app).resolve()

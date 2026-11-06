@@ -238,7 +238,7 @@ Für den MCP-Server bzw. den Kernel. Keine ist nötig.
 | `uv fehlt` | uv installieren (siehe oben), neues Terminal öffnen |
 | `error: cannot execute tool 'metal' due to missing Metal Toolchain` | `xcodebuild -downloadComponent MetalToolchain` |
 | `xcode-select: error: tool 'xcodebuild' requires Xcode` | Xcode installieren, dann `sudo xcode-select -s /Applications/Xcode.app` |
-| Kompilieren scheitert, Details in `build/xcodebuild.log` | Xcode aktualisieren; das Swift-Paket OCCTSwiftViewport ist auf einen festen Stand gepinnt und lädt beim ersten Bau von GitHub |
+| Kompilieren scheitert, Details in `build/xcodebuild.log` | Xcode aktualisieren. Der Viewport OCCTSwiftViewport liegt als Kopie in `app/Packages` und braucht kein Netz |
 | macOS: „Kev CAD kann nicht geöffnet werden“ | Kommt nur vor, wenn die App von einem anderen Rechner kopiert wurde (ad hoc signiert, Quarantäne). Selbst bauen oder `xattr -dr com.apple.quarantine ~/Applications/Tools/"Kev CAD.app"` |
 | MCP: `app_connected: false` | App starten (`open ~/Applications/Tools/"Kev CAD.app"`); läuft sie, den Agenten neu verbinden. Port 47823 belegt: `lsof -i :47823` |
 | MCP-Werkzeuge fehlen im Client | Pfad im Client-Eintrag ausgeschrieben? Den Client nach der Änderung neu starten |
