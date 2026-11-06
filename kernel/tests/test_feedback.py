@@ -345,6 +345,26 @@ def test_abgebrochenes_warten_laesst_das_paket_offen(env, projekt):
     assert env["rt"].feedback_stand()["offen"] == 1
 
 
+def test_abbruch_ueber_http_laesst_das_paket_offen(env, projekt):
+    """Wie in echt: Der Agent bricht ab, die Anfrage endet; das Warten im Kernel darf danach nichts mehr abholen."""
+    from mcp_testutil import with_client
+
+    server = KevcadHTTPServer(env["rt"], port=0).start_in_thread()
+    try:
+        async def go(c):
+            with anyio.move_on_after(0.3):
+                await c.call_tool("feedback", {"warten_s": 30})
+            await anyio.sleep(1.2)  # das Warten im Kernel läuft jetzt aus
+
+        anyio.run(lambda: with_client(server.url, go, alt=False))
+        paket_schreiben(projekt)
+        melden(env, projekt)
+        time.sleep(0.8)
+        assert env["rt"].feedback_stand()["offen"] == 1, "niemand hat es bekommen, also bleibt es offen"
+    finally:
+        server.stop_thread()
+
+
 def test_grenze_der_wartezeit_liegt_unter_der_lesezeit_der_bruecke():
     from kevcad_kernel.bridge import LESEZEIT_S
 
