@@ -42,11 +42,15 @@ ALT = {
 }
 
 
+# Griffe, die nach V2-1 dazukamen (eigene Aktion eines Fachwerkzeugs, kein Name von früher)
+NEU = {"aufbau_video"}
+
+
 def test_jede_alte_funktion_ist_zugeordnet():
-    assert len(ALT) == 95 and set(alte_namen()) == ALT
+    assert len(ALT) == 95 and set(alte_namen()) == ALT | NEU
     assert set(KERN_TEXT) == set(KERN)
     aktionen = {f.name: {a.name for a in f.aktionen} for f in FAECHER if not direkt(f)}
-    for alt in sorted(ALT):
+    for alt in sorted(ALT | NEU):
         neu, args = uebersetzen(alt, {})
         assert neu in TOOL_NAMES, (alt, neu)
         if neu in aktionen:

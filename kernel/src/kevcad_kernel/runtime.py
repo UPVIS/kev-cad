@@ -125,10 +125,12 @@ class Job:
     version: dict[str, Any] | None = None
     dokumente: Any = None  # Future: Bauplan, Blätter und ihr Nachtrag in die Version fertig (vor versionen_fertig gesetzt)
     live: dict[str, Any] = field(default_factory=dict)  # V2-5: Reihenfolge des vorigen Laufs, gekommene Teile …
+    aufbau: dict[str, Any] | None = None  # Aufbau-Video (aufbau.py): nach model.py Animationen anlegen
 
     @property
     def key(self) -> tuple[str, str, str]:
-        return self.kind, self.file_hash, _params_key(self.params)
+        aufbau = "" if self.aufbau is None else "|aufbau:" + json.dumps(self.aufbau, sort_keys=True, default=str)
+        return self.kind, self.file_hash, _params_key(self.params) + aufbau
 
 
 class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, DruckRuntime, PruefDienst, BauplanDienst,
@@ -870,7 +872,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 "run ohne params).")
 
     def _submit_run(self, params: dict[str, Any] | None, slow_ms: int, timeout_s: float, source: str,
-                    katalog_neu: bool = False):
+                    katalog_neu: bool = False, aufbau: dict[str, Any] | None = None):
         """Lauf einreihen. ``katalog_neu``: der Katalog hat sich geändert (CAD übernommen, Eintrag gesichert); ein schon
         laufender Lauf mit gleichem Dateistand hat den alten Katalog gelesen und zählt dann nicht."""
         proj = self._project
@@ -882,7 +884,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             return {"ok": False, "error": f"model.py nicht lesbar: {exc}"}
         job = Job(kind="run", code=code, source=source, timeout_s=float(timeout_s or self.run_timeout_s),
                   path=str(proj.model), params=dict(params or {}), slow_ms=int(slow_ms or 0),
-                  file_hash=hashlib.sha1(code.encode("utf-8")).hexdigest()[:12])
+                  file_hash=hashlib.sha1(code.encode("utf-8")).hexdigest()[:12], aufbau=aufbau)
         with self._jobs_cond:
             # Gleicher Dateistand mit gleichen Parametern läuft schon oder wartet: auf dessen Ergebnis warten
             cur = self._current
@@ -1000,10 +1002,12 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._send_app({"type": "RUN_START", "run": job.run, "file_hash": job.file_hash, "params": job.params,
                         "slow_ms": job.slow_ms})
         self._fk_abbrechen_intern()  # Statik S3: FEM des alten Laufs beenden, der neue Lauf hat die Kerne
-        sent = self._worker.send({"type": "RUN", "run": job.run, "path": job.path, "code": job.code,
-                                  "params": job.params, "slow_ms": job.slow_ms, "deviation": deviation,
-                                  "angular": angular, "catalog": self._catalog_dirs(),
-                                  "inventar_regel": self._inventory_rule(reload=True)})
+        nachricht = {"type": "RUN", "run": job.run, "path": job.path, "code": job.code, "params": job.params,
+                     "slow_ms": job.slow_ms, "deviation": deviation, "angular": angular,
+                     "catalog": self._catalog_dirs(), "inventar_regel": self._inventory_rule(reload=True)}
+        if job.aufbau is not None:
+            nachricht["aufbau"] = job.aufbau
+        sent = self._worker.send(nachricht)
         finished = sent and self._live_warten(job)  # wie job.finished.wait(job.timeout_s), dazu IN_ARBEIT (V2-5)
         duration_ms = int(round((time.perf_counter() - job.started) * 1000))
         final = job.final or {}

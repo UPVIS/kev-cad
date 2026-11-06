@@ -529,6 +529,20 @@ class FakeService:
                 "width": breite, "height": breite * 9 // 16, "fps": fps or 30.0, "bilder": 241, "format": format,
                 "ms": 12000}
 
+    def aufbau_video(self, wunsch: dict[str, Any], breite: int = 1920, fps: float | None = None,
+                     format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        self._record("aufbau_video", wunsch, breite, fps, format)
+        if not self.app_connected:
+            return {"ok": False, "error": "App nicht verbunden"}
+        name = wunsch.get("name") or "Aufbau"
+        videos = [{"ok": True, "titel": t.capitalize(), "path": f"{self.project['path']}/output/animationen/{name} "
+                   f"{t.capitalize()}.mp4", "width": breite, "height": breite * 9 // 16, "schnitte": []}
+                  for t in (wunsch.get("blickwinkel") or ["orbit"])]
+        plan = {"name": name, "dauer": wunsch.get("dauer", 20.0), "einflug": wunsch.get("einflug", "oben"),
+                "schritte": [{"zeit": 0.4, "landet": 1.0, "titel": "Kugelschieber", "teile": ["Kugelschieber/Rahmen"]}],
+                "striche": [], "videos": []}
+        return {"ok": True, "videos": videos, "zeitplan": plan, "zeitplan_datei": None, "lauf": 3}
+
     def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
         self._record("collision_check", name, schritt)
         return {"ok": True, "name": "Fahrt", "run": self.run_no, "kollisionen": [

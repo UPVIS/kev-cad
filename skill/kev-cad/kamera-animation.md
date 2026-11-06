@@ -75,6 +75,31 @@ Bewegung des Elternteils. Ein unbekanntes Teil oder eine Zeit außerhalb der Dau
 - `animation(aktion="video", name=…, breite=1920)` schreibt ein H.264-MP4 (oder `format="prores"`) nach
   `<Projekt>/output/animationen/` aus der Viewer-Sicht bzw. der Kamerafahrt.
 
+### Aufbau-Video auf Zuruf
+
+„Mach ein Aufbau-Video“, „das Modell soll sich aufbauen“: `animation(aktion="aufbau", …)`. Kein Code in model.py nötig;
+der Kernel rechnet das Modell noch einmal und hängt die Aufbau-Animationen nur für diesen Lauf an.
+
+```python
+animation(aktion="aufbau", dauer_s=20, blickwinkel=["orbit", "iso", "schnitt"],
+          schritte=["Drohne/Rahmen", "Drohne/Motor *", "Drohne/Stack", "Drohne/GoPro"],
+          zeichnen=[{"vor": "Drohne/GoPro", "punkte": [[-30, -20, 52], [30, -20, 52], [30, 20, 52]]}])
+```
+
+- Je Blickwinkel ein MP4 mit denselben Zeiten (wie mehrere Kameras): `orbit` kreist (`umdrehungen`, `hoehe_grad`),
+  `iso`, `vorne`, `rechts`, `oben` … stehen mit leichter Drift, `schnitt` schneidet hart zwischen den übrigen Einträgen,
+  der Schnitt rückt auf das nächste Teil, das erscheint (`wechsel_s`).
+- `schritte`: Teilname, Baugruppe als Präfix oder Muster mit `*`; Ungenanntes kommt am Ende. Ohne Liste in der Reihenfolge
+  von `show()`, Teile einer Baugruppe zusammen. Sehr viele Schritte werden zusammengelegt (mindestens 0,08 s Abstand).
+- `einflug`: `oben` (fällt von oben ein), `explosion` (von außen zur Mitte), `keiner`. Kulisse steht von Anfang an.
+- `details`: weitere Videos mit denselben Zeiten, die Kamera auf eine Baugruppe gerichtet, etwa dorthin, wo gezeichnet
+  wird: `[{"auf": "Drohne/O4/Antenne*", "richtung": "iso_hinten_links"}]`.
+- `zeichnen`: vor einem Schritt entsteht ein Strich in Kevins Lichtblau, wie wenn er beim Sprechen zeichnet, dann kommt
+  das Teil dazu. Punkte in mm auf der Fläche, der Strich hebt sich selbst etwas ab.
+- Die Antwort nennt die Videos und den Zeitplan (wann welcher Schritt erscheint), zusätzlich als
+  `output/animationen/<name>_zeitplan.json`: Daraus setzt man im Schnitt Texte genau auf die Teile.
+- Nach dem nächsten normalen `run` sind die Aufbau-Animationen wieder weg.
+
 ### Kamera und Animation
 
 Eine Kamera mit `an(teil)` fährt mit ihrem Teil: beim Abspielen (Pyramide), beim Blick durch die Kamera (Taste 0

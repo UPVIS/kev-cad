@@ -137,6 +137,9 @@ FAECHER: tuple[Fach, ...] = (
           Aktion("abspielen", "animation_abspielen", "play or stop in the app"),
           Aktion("springen", "animation_springen", "jump to a time"),
           Aktion("video", "animation_video", "MP4 into output/animationen/, optionally through a camera"),
+          Aktion("aufbau", "aufbau_video",
+                 "build-up video on request: parts appear one after another, orbit or several angles, optional "
+                 "strokes; one MP4 per angle plus the timing for captions"),
           Aktion("kollision", "kollision_pruefen", "exact collision check every 3rd frame; solve every penetration"))),
     Fach("versionen", "Versionen",
          "Every successful run that changed a project file is a version V<n>. At the end of every task set a "

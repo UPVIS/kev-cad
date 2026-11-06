@@ -1,5 +1,6 @@
 """MCP-Werkzeuge der Animation (Phase 5, Strang ANI): animation_liste, animation_abspielen, animation_springen,
-animation_video, kollision_pruefen. Sie rufen nur die Phase-5-Methoden von ``KernelService`` (service.py)."""
+animation_video, kollision_pruefen, dazu aufbau_video (Aufbau-Videos, aufbau.py). Sie rufen nur Methoden von
+``KernelService`` (service.py)."""
 
 from __future__ import annotations
 
@@ -12,7 +13,9 @@ from pydantic import Field
 from . import format as fmt
 
 ANIMATION_TOOL_NAMES = ("animation_liste", "animation_abspielen", "animation_springen", "animation_video",
-                        "kollision_pruefen")
+                        "kollision_pruefen", "aufbau_video")
+Blickwinkel = Literal["orbit", "schnitt", "iso", "vorne", "hinten", "rechts", "links", "oben", "iso_vorne_links",
+                      "iso_hinten_rechts", "iso_hinten_links"]
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 VIEWER = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
@@ -146,6 +149,76 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         if res.get("message"):
             text += f"\nHinweis: {res['message']}"
         return fmt.result(text, res)
+
+    @tool("aufbau_video", "Aufbau-Video",
+          "Build-up video on request: the model appears part by part (show() order, or schritte = part names, "
+          "assembly prefixes or patterns with *), each step flies in, the camera orbits or holds a view with a slight "
+          "drift. One MP4 per blickwinkel, all with the same timing, so they can be cut together like several "
+          "cameras; 'schnitt' renders one video with hard cuts between the other angles (on parts appearing). "
+          "zeichnen draws a stroke in Kevin's light blue before a step, as when he draws while speaking: "
+          "[{vor: step or part, punkte: [[x,y,z], …] in mm, dauer_s?}]. Runs model.py once more (Kevin sees it), "
+          "model.py stays unchanged. Returns the video paths and the timing (also as <name>_zeitplan.json next to the "
+          "videos) for captions in an edit.", ADDITIVE)
+    async def aufbau_video(
+        dauer_s: Annotated[float, Field(ge=3, le=600, description="Length of each video in s")] = 20.0,
+        blickwinkel: Annotated[list[Blickwinkel] | None, Field(description=(
+            "One video per entry: orbit (circles once, see umdrehungen), iso, vorne, rechts, oben … (fixed view with "
+            "slow drift), schnitt (one video cutting between the other entries)"))] = None,
+        schritte: Annotated[list[str] | None, Field(description=(
+            "Order of the build: part names, assembly prefixes ('Drohne/Rahmen') or patterns ('Drohne/Motor *'); "
+            "parts not named follow at the end. Default: show() order, parts of one assembly together"))] = None,
+        einflug: Annotated[Literal["oben", "explosion", "keiner"], Field(description=(
+            "How parts arrive: oben = drop in from above, explosion = from outside towards the centre, keiner = "
+            "appear"))] = "oben",
+        zeichnen: Annotated[list[dict[str, Any]] | None, Field(description=(
+            "Strokes before steps: [{vor, punkte, dauer_s?, radius?}]"))] = None,
+        details: Annotated[list[dict[str, Any]] | None, Field(description=(
+            "Extra close-up videos with the same timing: [{auf: part, assembly or pattern, richtung?: iso|vorne|…|"
+            "orbit, titel?, rand? (1.3 = a little room around it)}], e.g. where a stroke is drawn"))] = None,
+        umdrehungen: Annotated[float, Field(ge=-10, le=10, description="Orbit turns over the video")] = 1.0,
+        hoehe_grad: Annotated[float, Field(ge=-60, le=89, description="Orbit elevation in degrees")] = 24.0,
+        wechsel_s: Annotated[float, Field(ge=0.8, le=60, description="schnitt: seconds per angle")] = 3.0,
+        halten_s: Annotated[float | None, Field(ge=0, le=120, description=(
+            "Finished model at the end, default 12 % of dauer_s, at least 1.5 s"))] = None,
+        name: Annotated[str, Field(min_length=1, max_length=60, description="Name of the animations and files")]
+        = "Aufbau",
+        breite: Annotated[int, Field(ge=64, le=7680, description="Video width in px (16:9)")] = 1920,
+        fps: Annotated[float, Field(ge=10, le=60, description="Frame rate")] = 30.0,
+        format: Annotated[Literal["mp4", "prores"], Field(description="mp4 = H.264, prores = ProRes 422")] = "mp4",  # noqa: A002
+    ) -> CallToolResult:
+        wunsch: dict[str, Any] = {"name": name.strip(), "dauer": dauer_s, "fps": fps, "einflug": einflug,
+                                  "blickwinkel": list(blickwinkel or ["orbit"]), "umdrehungen": umdrehungen,
+                                  "hoehe_grad": hoehe_grad, "wechsel_s": wechsel_s}
+        if schritte:
+            wunsch["schritte"] = list(schritte)
+        if zeichnen:
+            wunsch["zeichnen"] = list(zeichnen)
+        if details:
+            wunsch["details"] = list(details)
+        if halten_s is not None:
+            wunsch["halten_s"] = halten_s
+        res = await t.work("rendert das Aufbau-Video", svc.aufbau_video, wunsch, breite, fps, format)
+        if not res.get("videos"):
+            return fmt.error_result(f"Aufbau-Video nicht erstellt: {res.get('error') or 'unbekannter Fehler'}", res)
+        plan = res.get("zeitplan") or {}
+        zeilen = [f"Aufbau-Video aus Lauf {res.get('lauf')}: {len(plan.get('schritte') or [])} Schritte in "
+                  f"{fmt.num(float(plan.get('dauer') or 0), 1)} s, Einflug {plan.get('einflug')}."]
+        for v in res["videos"]:
+            schnitte = v.get("schnitte") or []
+            zusatz = f", Schnitte bei {', '.join(fmt.num(s, 2) + ' s' for s in schnitte)}" if schnitte else ""
+            zeilen.append(f"- {v['titel']}: {v.get('path')} ({v.get('width')} × {v.get('height')} px{zusatz})")
+        for s in (plan.get("schritte") or [])[:40]:
+            zeilen.append(f"  {fmt.num(float(s['zeit']), 2)} s {s['titel']} ({len(s['teile'])} Teile)")
+        if len(plan.get("schritte") or []) > 40:
+            zeilen.append(f"  … {len(plan['schritte']) - 40} weitere Schritte im Zeitplan")
+        for st in plan.get("striche") or []:
+            zeilen.append(f"  Strich vor {st['schritt']}: {fmt.num(float(st['von']), 2)} bis "
+                          f"{fmt.num(float(st['bis']), 2)} s")
+        if res.get("zeitplan_datei"):
+            zeilen.append(f"Zeitplan: {res['zeitplan_datei']}")
+        if res.get("error"):
+            zeilen.append(f"Hinweis: {res['error']}")
+        return fmt.result("\n".join(zeilen), res)
 
     @tool("kollision_pruefen", "Kollisionen prüfen",
           "Check an animation for collisions: every schritt-th frame (and the last) all moving parts against all "

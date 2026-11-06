@@ -8,6 +8,7 @@ auf wenige Aufrufstellen unverändert.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass, field
@@ -343,6 +344,57 @@ class AnimationRuntimeMixin:
                "ms": reply.get("ms") or int((time.perf_counter() - t0) * 1000), "kamera": reply.get("kamera")}
         if reply.get("message"):
             out["message"] = reply["message"]
+        return out
+
+    def aufbau_video(self, wunsch: dict[str, Any], breite: int = 1920, fps: float | None = None,
+                     format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        """Siehe KernelService.aufbau_video. Der Lauf ist ein normaler Lauf mit Wunsch im Gepäck: Kevin sieht ihn im
+        Viewer, die Aufbau-Animationen stehen danach in der Liste, bis der nächste normale Lauf sie ablöst."""
+        if not self._link.connected:  # type: ignore[attr-defined]
+            return {"ok": False, "error": APP_NOT_CONNECTED}
+        if str(format or "mp4").lower() not in VIDEO_FORMATS:
+            return {"ok": False, "error": f"format {format!r} unbekannt (mp4 = H.264, prores = ProRes 422)"}
+        sperre = self.feedback_sperre()  # type: ignore[attr-defined]
+        if sperre:  # V2-6: solange Kevin spricht, beginnt kein Lauf
+            return sperre
+        job = self._submit_run(None, 0, self.run_timeout_s, source="agent", aufbau=dict(wunsch))  # type: ignore[attr-defined]
+        if isinstance(job, dict):
+            return job
+        job.done.wait()
+        res = job.result or {"ok": False, "error": "Lauf ohne Ergebnis beendet"}
+        if not res.get("ok"):
+            err = res.get("error")
+            text = err.get("message") if isinstance(err, dict) else err
+            return {"ok": False, "error": f"Lauf für das Aufbau-Video gescheitert: {text}", "lauf": res.get("run")}
+        plan = (job.final or {}).get("aufbau")
+        if not isinstance(plan, dict):
+            return {"ok": False, "error": "Der Rechenprozess hat keinen Aufbau-Plan geliefert", "lauf": res.get("run")}
+        videos: list[dict[str, Any]] = []
+        fehler: list[str] = []
+        for v in plan.get("videos") or []:
+            r = self.animation_video(v["animation"], breite, None, fps, None, format)
+            if r.get("ok"):
+                videos.append({**r, "titel": v["titel"], "schnitte": v.get("schnitte") or []})
+            else:
+                fehler.append(f"{v['titel']}: {r.get('error')}")
+        datei = None
+        proj = self._project  # type: ignore[attr-defined]
+        if proj is not None:
+            from kevcad_kernel.export import safe_name
+
+            datei = (proj.output_dir / "animationen" / f"{safe_name(str(plan.get('name') or 'Aufbau'))}_zeitplan.json")
+            try:
+                datei.parent.mkdir(parents=True, exist_ok=True)
+                datei.write_text(json.dumps({**plan, "videos": [{k: v[k] for k in ("titel", "path", "schnitte")}
+                                                                for v in videos]}, ensure_ascii=False, indent=2),
+                                 encoding="utf-8")
+            except OSError as exc:
+                fehler.append(f"Zeitplan nicht gespeichert: {exc}")
+                datei = None
+        out: dict[str, Any] = {"ok": bool(videos) and not fehler, "videos": videos, "zeitplan": plan,
+                               "zeitplan_datei": str(datei) if datei else None, "lauf": res.get("run")}
+        if fehler:
+            out["error"] = "; ".join(fehler)
         return out
 
     def collision_check(self, name: str | None = None, schritt: int = 3, toleranz: float = 0.05,

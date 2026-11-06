@@ -60,7 +60,7 @@ Exact measurement in the kernel (OCCT). Without refs: what Kevin has selected, w
 
 ### view
 
-Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking. Result tiles side by side (up to 4, numbered, Kevin says "Kachel 2 groß"): kacheln, kachel_gross, kachel_zu; a tile in Fokus switches to Werkstatt. modus, rand, zeitleiste, zweite_ansicht and blatt arrange the rest.
+Control what Kevin sees, several things in one call (applied in this order): visibility (sichtbarkeit with teile), section, standard view, projection, display, fit, explode, camera focus on refs, highlight refs in a color with a label, draw an annotation, remove highlights and annotations. Omitted values stay. dauer_s shows a highlight or annotation only briefly, e.g. a dimension you mention while talking. Result tiles side by side (up to 4, numbered, Kevin says "Kachel 2 groß"): kacheln, kachel_gross, kachel_zu; kachel_gross modell = viewer alone. leiste_links (objects), leiste_rechts (properties), rand, zeitleiste, zweite_ansicht and blatt arrange the rest.
 
 - `standard` ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso' | 'iso_front_left' | 'iso_back_right' | 'iso_back_left', optional): Standard view direction
 - `projection` ('perspective' | 'orthographic', optional): Camera projection
@@ -83,11 +83,13 @@ Control what Kevin sees, several things in one call (applied in this order): vis
 - `animate` (boolean, optional, Vorgabe True): Animate the focus move so Kevin can follow
 - `kacheln` (list['modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render'], optional): Show these tiles (added to the open ones). zeichnung, bauplan, stueckliste, zuschnitt, druck, animation, ansicht = second view, material, simulation, versionen, details, render, modell = the viewer
 - `kacheln_nur` (boolean, optional, Vorgabe False): kacheln: exactly these, numbered in this order
-- `kachel_gross` ('modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render' | integer | string, optional): This tile (name or number 1-4) fills the area; aus = all side by side again
+- `kachel_gross` ('modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render' | integer | string, optional): This tile (name or number 1-4) fills the area; modell = the viewer alone, other tiles folded away; aus = all side by side again
 - `kachel_zu` (list['modell' | 'zeichnung' | 'bauplan' | 'stueckliste' | 'zuschnitt' | 'druck' | 'animation' | 'ansicht' | 'material' | 'simulation' | 'versionen' | 'details' | 'render' | integer] | string, optional): Close tiles
-- `modus` ('fokus' | 'werkstatt', optional): fokus = only the viewer, werkstatt = tiles and properties
+- `leiste_links` (boolean, optional): Left sidebar with the objects
+- `leiste_rechts` (boolean, optional): Right sidebar with properties and the model's parameters
+- `modus` ('fokus' | 'werkstatt', optional): Older: fokus = viewer alone, werkstatt = tiles and right sidebar
 - `rand` ('links' | 'rechts' | 'aus', optional): Window narrow at this screen edge next to the chat; aus = back
-- `zeitleiste` (boolean, optional): Timeline over the viewer in Fokus
+- `zeitleiste` (boolean, optional): Timeline over the viewer while it is alone (with tiles it is the tile animation)
 - `zweite_ansicht` ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso' | 'iso_front_left' | 'iso_back_right' | 'iso_back_left', optional): Direction of tile ansicht
 - `blatt` (integer | string, optional): Sheet in tile zeichnung: number, id or title
 
@@ -264,6 +266,7 @@ aktion and its parameters (pass them next to aktion; ? = optional):
 - abspielen(name?, an?, schleife?, geschwindigkeit?, von_vorn?): play or stop in the app
 - springen(zeit, name?): jump to a time
 - video(name?, breite?, fps?, kamera?, format?): MP4 into output/animationen/, optionally through a camera
+- aufbau(dauer_s?, blickwinkel?, schritte?, einflug?, zeichnen?, umdrehungen?, hoehe_grad?, wechsel_s?, halten_s?, name?, breite?, fps?, format?): build-up video on request: parts appear one after another, orbit or several angles, optional strokes; one MP4 per angle plus the timing for captions
 - kollision(name?, schritt?): exact collision check every 3rd frame; solve every penetration
 aktion="hilfe" (optional zu="<aktion>") explains every parameter; daten=true adds the raw data as JSON.
 
@@ -299,6 +302,7 @@ Die 95 Werkzeuge bis V2-1 sind seit V2-2 Aktionen der Fachwerkzeuge oder Teil de
 | `animation_video` | `animation(aktion="video")` |
 | `annotate` | `view(anmerkung={art, punkte, text, id})` |
 | `ansichten` | `ansichten(…)` |
+| `aufbau_video` | `animation(aktion="aufbau")` |
 | `bauplan` | `bauplan(aktion="zeigen")` |
 | `bauplan_bearbeiten` | `bauplan(aktion="bearbeiten")` |
 | `bauplan_pruefen` | `bauplan(aktion="pruefen")` |

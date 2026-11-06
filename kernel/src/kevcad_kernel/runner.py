@@ -825,6 +825,8 @@ class Runner:
                         error = _error_dict(exc, path, source, ns)
                 except Exception as exc:  # noqa: BLE001
                     error = _error_dict(exc, path, source, ns)
+                if error is None and isinstance(msg.get("aufbau"), dict):  # Aufbau-Video (aufbau.py): nach model.py
+                    error = self._aufbau(msg["aufbau"], state)
             zeiten["modell"] = (time.perf_counter() - t_phase) * 1000
             for w in caught[:MAX_WARNINGS]:
                 state["warnings"].append(f"{w.category.__name__}: {w.message}")
@@ -860,6 +862,8 @@ class Runner:
         }
         if anim_names:
             result["animations"] = anim_names
+        if state.get("aufbau") is not None:
+            result["aufbau"] = state["aufbau"]
         if error is not None:
             result["type"] = "RUN_FAILED"
             result["error"] = error
@@ -892,6 +896,22 @@ class Runner:
                 result["bedingungen"] = bericht
         result["zeiten_ms"] = _zeiten(zeiten, state, t_lauf)
         return result
+
+    @staticmethod
+    def _aufbau(wunsch: dict[str, Any], state: dict[str, Any]) -> dict[str, Any] | None:
+        """Aufbau-Video: Striche zeigen und je Blickwinkel eine Animation anlegen, solange die Hooks des Laufs stehen.
+        Fehler im Wunsch kommen als Laufsfehler ohne Zeile zurück (model.py ist ja in Ordnung)."""
+        from kevcad_kernel.aufbau import AufbauFehler, erzeugen
+
+        try:
+            state["aufbau"] = erzeugen(wunsch, state)
+        except AufbauFehler as exc:
+            return {"message": f"Aufbau-Video: {exc}", "line": None, "excerpt": "", "traceback": "",
+                    "hint": "Schritte wie in show() benennen (Baugruppe = Präfix vor \"/\", Muster mit *)."}
+        except Exception as exc:  # noqa: BLE001 - der Lauf soll mit Meldung enden, nicht abstürzen
+            return {"message": f"Aufbau-Video nicht angelegt: {type(exc).__name__}: {exc}", "line": None,
+                    "excerpt": "", "traceback": traceback.format_exc(limit=6), "hint": ""}
+        return None
 
     def _animations(self, run: int, state: dict[str, Any], path: str, source: str,
                     erfassung: Any = None) -> tuple[dict[str, Any] | None, list[str]]:

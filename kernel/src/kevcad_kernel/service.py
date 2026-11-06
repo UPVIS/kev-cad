@@ -276,6 +276,12 @@ class KernelService(Protocol):
         "ms", "kamera"}; ``kamera`` None = Viewer-Kamera bzw. Kamerafahrt aus anim.ansicht, sonst eine Kamera aus
         model.py (Kurzname oder „Kamera/<name>“), Höhe dann aus dem Seitenverhältnis ihres Formats."""
 
+    def aufbau_video(self, wunsch: dict[str, Any], breite: int = 1920, fps: float | None = None,
+                     format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+        """Aufbau-Video (aufbau.py): model.py rechnen, danach je Blickwinkel eine Aufbau-Animation anlegen und als Video
+        rendern. ``wunsch``: name, dauer, fps, schritte, einflug, blickwinkel, zeichnen, … (siehe aufbau.plan).
+        {"ok", "videos": [animation_video …], "zeitplan": Plan.zeitplan(), "zeitplan_datei", "lauf"}"""
+
     def collision_check(self, name: str | None = None, schritt: int = 3) -> dict[str, Any]:
         """Kollisionen an jedem ``schritt``-ten Bild. {"ok", "name", "kollisionen": [{"teile", "von", "bis", "zeit",
         "bild", "tiefe", "volumen", "ort"}], "geprueft": {…}}"""
