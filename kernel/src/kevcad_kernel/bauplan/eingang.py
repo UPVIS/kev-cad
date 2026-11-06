@@ -28,6 +28,7 @@ from typing import Any
 
 import numpy as np
 
+from kevcad_kernel.bauplan.wege import halt
 from kevcad_kernel.catalog import KLEINTEILE, STANGENWARE
 from kevcad_kernel.optik import OPTIK_ARTEN
 from kevcad_kernel.pruefung.koerper import Koerper
@@ -194,6 +195,7 @@ class Eingang:
             key = n
             if n in self._kontakt_fertig and name not in self._kontakte.get(n, set()):
                 continue  # schon von der anderen Seite gerechnet: kein Kontakt
+            halt()
             if abstand(t.koerper.shape, u.koerper.shape, KONTAKT_TOL) <= KONTAKT_TOL:
                 self._kontakte.setdefault(name, set()).add(key)
                 self._kontakte.setdefault(key, set()).add(name)

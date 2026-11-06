@@ -13,7 +13,10 @@ Gewindeeingriffe (Schraube im Einsatz oder Kernloch) entlang ihrer Achse.
 
 from __future__ import annotations
 
+import contextlib
 import math
+import threading
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +24,32 @@ import numpy as np
 
 from kevcad_kernel.bauplan import raster as rs
 from kevcad_kernel.pruefung.koerper import Koerper, basis, einheit, richtung_schluessel
+
+
+class Ueberholt(BaseException):
+    """Die Hintergrundrechnung gehört zu einem überholten Lauf (``dienst._bp_erzeugen``). Keine ``Exception``: Stellen, die
+    Fehler einzelner Teile abfangen, sollen sie nicht schlucken."""
+
+
+_ort = threading.local()
+
+
+@contextlib.contextmanager
+def nur_solange(aktuell: Callable[[], bool] | None) -> Iterator[None]:
+    """Im Block rechnet dieser Faden nur, solange ``aktuell()`` wahr ist; ``halt`` wirft sonst ``Ueberholt`` (V2-1b: Der
+    Bauplan läuft im Elternprozess und nimmt dem nächsten Lauf die GIL; sein Ergebnis würde ohnehin verworfen)."""
+    _ort.aktuell = aktuell
+    try:
+        yield
+    finally:
+        _ort.aktuell = None
+
+
+def halt() -> None:
+    aktuell = getattr(_ort, "aktuell", None)
+    if aktuell is not None and not aktuell():
+        raise Ueberholt
+
 
 TOL = 0.05  # mm: Berühren
 MAX_STRAHLEN = 48  # exakte Strahlen je Paar höchstens
@@ -109,6 +138,7 @@ class WegPruefer:
         return self._paar(p, q, d, None, None)
 
     def _paar(self, p: str, q: str, d: np.ndarray, weg: float | None, versatz: Any) -> Sperre | None:
+        halt()
         kp, kq = self.koerper[p], self.koerper[q]
         R = basis(d)
         dkey = richtung_schluessel(d)

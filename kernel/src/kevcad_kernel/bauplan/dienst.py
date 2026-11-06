@@ -93,13 +93,16 @@ class BauplanDienst:
         - ``speichern`` False (Reglerstand: Lauf mit überschriebenen Parametern): rechnen und merken, aber die Datei
           bleibt beim Stand von model.py; None: so, wie die Szene es verlangt.
         - ``lauf``: Hintergrundrechnung dieses Laufs; sie speichert und merkt nur, solange er der neueste ist
-          (``_lauf_aktuell`` der Versionen)."""
+          (``_lauf_aktuell`` der Versionen), und endet mit ``Ueberholt``, sobald ein neuerer Lauf begonnen hat."""
         from kevcad_kernel.bauplan.plan import erzeuge
+        from kevcad_kernel.bauplan.wege import halt, nur_solange
 
         if speichern is None:
             speichern = self._bp_regler() is None
         st = self._bp()
         with st["lock"]:
+            aktuell = getattr(self, "_lauf_aktuell", None)
+            noch_aktuell = (lambda: aktuell(lauf)) if lauf is not None and callable(aktuell) else None
             proj = self._project  # type: ignore[attr-defined]
             run = self._bp_run()
             erg = st["erg"]
@@ -110,7 +113,6 @@ class BauplanDienst:
             t0 = time.perf_counter()
             key = self._bp_schluessel(check)
             datei_stand = _datei_stand(proj.path)
-            aktuell = getattr(self, "_lauf_aktuell", None)
             if (not erzwingen and erg is not None and st["pfad"] == str(proj.path) and st.get("schluessel") == key
                     and st.get("datei") == datei_stand):
                 if self._bp_run() != run or (lauf is not None and callable(aktuell) and not aktuell(lauf)):
@@ -121,8 +123,10 @@ class BauplanDienst:
                 self._log(f"[bauplan] Lauf {run}: Eingaben unverändert, nicht neu gerechnet "  # type: ignore
                           f"({(time.perf_counter() - t0) * 1000:.0f} ms)")
                 return erg
-            ein, alt = self._bp_eingang(check=check)
-            erg = erzeuge(ein, alt)
+            with nur_solange(noch_aktuell):
+                halt()
+                ein, alt = self._bp_eingang(check=check)
+                erg = erzeuge(ein, alt)
             if self._bp_run() != run:  # ein neuerer Lauf kam dazwischen: nicht speichern
                 return erg
             if lauf is not None and callable(aktuell) and not aktuell(lauf):
@@ -332,8 +336,12 @@ class BauplanDienst:
             return None
 
         def arbeit() -> bool:
+            from kevcad_kernel.bauplan.wege import Ueberholt
+
             try:
                 erg = self._bp_erzeugen(speichern=speichern, lauf=run)
+            except Ueberholt:
+                return False  # ein neuerer Lauf hat begonnen, er rechnet seinen eigenen Plan
             except Exception as exc:  # noqa: BLE001 - im Hintergrund nur protokollieren
                 self._log(f"[kernel] Bauplan nicht erneuert: {type(exc).__name__}: {exc}")  # type: ignore
                 return True

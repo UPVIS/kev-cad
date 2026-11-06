@@ -527,14 +527,14 @@ assert brep_from_stl.DBSCAN is c.DBSCAN
 """)
 
 
-def test_projekt_oeffnen_wartet_nicht_auf_den_rechenprozess(tmp_path):
+def test_projekt_oeffnen_wartet_nicht_auf_den_rechenprozess():
     """Bereit heißt: Projekte gehen. Ein Lauf wartet selbst auf den Rechenprozess."""
-    sock = str(tmp_path / "k.sock")
-    rt = make_runtime(sock)
+    tmp = Path(tempfile.mkdtemp(prefix="kcstart", dir=tempfile.gettempdir()))
+    rt = make_runtime(str(tmp / "k.sock"))
     try:
         st = rt.status()
         assert st["kernel"] == "ready", st
-        assert rt.project_new(str(tmp_path / "P"), "empty")["ok"]
+        assert rt.project_new(str(tmp / "P"), "empty")["ok"]
         assert rt.status()["project"] is not None
         rt.set_inventory_rule(False)
         rt.model_write("from build123d import *\nfrom kevcad import show\nshow(Box(1, 2, 3), 'K')\n")
@@ -542,3 +542,71 @@ def test_projekt_oeffnen_wartet_nicht_auf_den_rechenprozess(tmp_path):
         assert res["ok"], res.get("error")
     finally:
         rt.close()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# -- Bauplan im Hintergrund: ein neuer Lauf löst ihn ab ------------------------------------------------------------------
+
+
+def test_halt_bricht_nur_im_block_und_nur_ohne_aktualitaet():
+    from kevcad_kernel.bauplan.wege import Ueberholt, halt, nur_solange
+
+    halt()  # außerhalb: nichts
+    with nur_solange(lambda: True):
+        halt()
+    with nur_solange(None):
+        halt()
+    with pytest.raises(Ueberholt), nur_solange(lambda: False):
+        halt()
+    halt()  # danach wieder nichts
+    assert not issubclass(Ueberholt, Exception)  # „except Exception“ einzelner Teile schluckt ihn nicht
+
+
+def test_neuer_lauf_loest_den_bauplan_im_hintergrund_ab(monkeypatch):
+    """Ein Bauplan im Hintergrund rechnet nur, solange sein Lauf der neueste ist: Er nimmt dem nächsten Lauf sonst die GIL
+    (gemessen 2,6 s), und speichern dürfte er ohnehin nichts mehr."""
+    import threading
+
+    from kevcad_kernel.bauplan import plan
+    from kevcad_kernel.bauplan.wege import halt
+
+    tmp = Path(tempfile.mkdtemp(prefix="kcbp", dir=tempfile.gettempdir()))
+    rt = make_runtime(str(tmp / "k.sock"))
+    original = plan.erzeuge
+    begonnen, beendet = threading.Event(), threading.Event()
+    zustand = {"aktiv": False}
+
+    def langsam(ein, alt=None, zeitlimit_s=90.0):
+        if zustand["aktiv"]:
+            begonnen.set()
+            try:
+                ende = time.monotonic() + 30
+                while time.monotonic() < ende:
+                    halt()
+                    time.sleep(0.01)
+                raise AssertionError("nicht abgelöst")
+            finally:
+                beendet.set()
+        return original(ein, alt, zeitlimit_s)
+
+    monkeypatch.setattr(plan, "erzeuge", langsam)
+    try:
+        assert rt.wait_worker_ready(240)
+        assert rt.project_new(str(tmp / "P"), "empty")["ok"]
+        rt.set_inventory_rule(False)
+        rt.model_write("from build123d import *\nfrom kevcad import show, param\n"
+                       "show(Box(param('b', 20), 10, 5), 'Platte')\n")
+        res = rt.run()
+        assert res["ok"], res.get("error")
+        assert rt.bauplan()["ok"]  # legt den Bauplan an: ab jetzt rechnet er nach jedem Lauf im Hintergrund
+        assert rt.wait_idle(60)
+        zustand["aktiv"] = True
+        assert rt.run(params={"b": 21.0})["ok"]
+        assert begonnen.wait(30)
+        zustand["aktiv"] = False
+        assert rt.run(params={"b": 22.0})["ok"]
+        assert beendet.wait(5), "der alte Bauplan rechnet weiter"
+        assert rt.wait_idle(60)
+    finally:
+        rt.close()
+        shutil.rmtree(tmp, ignore_errors=True)
