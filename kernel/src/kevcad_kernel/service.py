@@ -104,15 +104,16 @@ class KernelService(Protocol):
 
     # Lauf
     def run(self, params: dict[str, float] | None = None, slow_ms: int = 0, timeout_s: float = 120,
-            titel: str | None = None, warten_s: float = 3.0) -> RunResult:
+            titel: str | None = None, warten_s: float | None = None) -> RunResult:
         """Führt model.py aus; Teile gehen dabei live an die App. Läuft für denselben Dateistand schon ein Lauf,
         wird auf dessen Ergebnis gewartet. ``titel`` (additiv): Beschreibung der Änderung in Kevins Worten; wird der
         Titel der Version dieses Laufs (vor dem automatischen, der als Zusatz bleibt).
 
         Kehrt zurück, sobald Teile, RUN_END, Stückliste und Bedingungen da sind und die Prüfung höchstens
-        ``warten_s`` Sekunden gelaufen ist (V2-1; 0 = gar nicht warten). ``pruefung.state`` sagt, ob sie fertig ist
-        (``done``, ``teilweise``, ``failed``) oder im Hintergrund weiterläuft (``running``); sie schickt CHECK wie
-        bisher an die App, den Endstand liefert ``pruefen(warten=True)``. Die Version des Laufs entsteht im
+        ``warten_s`` Sekunden gelaufen ist (V2-1; 0 = gar nicht warten; ohne Angabe nach der Dauer des Laufs, 0,4 bis
+        3 s, V2-1b). ``pruefung.state`` sagt, ob sie fertig ist (``done``, ``failed``), ein Zwischenstand da ist und der
+        Rest im Hintergrund rechnet (``teilweise``, ``im_hintergrund``) oder noch nichts vorliegt (``running``); sie
+        schickt CHECK wie bisher an die App, den Endstand liefert ``pruefen(warten=True)``. Die Version des Laufs entsteht im
         Hintergrund: ``version`` steht im Ergebnis, wenn sie schon fertig ist, mit ``titel`` wird auf sie gewartet.
         ``zeiten_ms``: Phasen des Laufs (runtime._zeiten_ms)."""
 
