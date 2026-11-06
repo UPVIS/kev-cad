@@ -418,6 +418,24 @@ def test_kurzer_text_nennt_was_noch_kommt():
     assert "nicht vollständig" in hintergrund_text({"im_hintergrund": [], "message": "Fehler"})
 
 
+def test_zwischenstand_meldet_nichts_als_behoben():
+    """Was im Zwischenstand fehlt, ist noch nicht gerechnet: nicht „behoben“, und der Agent kennt es weiter."""
+    from kevcad_kernel.mcp_tools.laufbericht import Stand, befund_kennung, befund_schluessel, bericht
+
+    alt = {"art": "statik_festigkeit", "teile": ["Rahmen"], "schwere": "warnung", "text": "Rahmen hält nicht",
+           "loesung": "stärker"}
+    vorher = Stand(run=1, befunde={befund_schluessel(alt)}, befund_arten={befund_kennung(alt)})
+    teil = {"ok": True, "run": 2, "parts": [], "pruefung": {"state": "teilweise", "befunde": [],
+                                                            "im_hintergrund": ["Druck", "Montage", "Statik"]}}
+    text, data, fehler, stand = bericht(teil, vorher)
+    assert data["befunde"]["behoben"] == 0 and "Behoben" not in text and not fehler
+    assert "Montage" in text and "pruefen()" in text
+    assert befund_schluessel(alt) in stand.befunde
+    fertig = {"ok": True, "run": 3, "parts": [], "pruefung": {"state": "done", "befunde": []}}
+    _, data, _, _ = bericht(fertig, stand)
+    assert data["befunde"]["behoben"] == 1  # erst der Endstand sagt es
+
+
 def test_app_sieht_offene_pruefungen_als_rechnungen():
     from kevcad_kernel.pruefung.anbindung import check_fuer_app
 
@@ -526,6 +544,17 @@ def test_pruefen_wartet_auf_den_rest_nach_kurzem_run(laufzeit):
         assert "pruefen()" in pruefstand_zeile(res, state, befunde)
     p = rt.pruefen(endstand=True)
     assert p["ok"] and p["state"] == "done" and p["run"] == res["run"]
+
+
+def test_statik_nach_kurzem_run_ist_die_des_laufs(laufzeit):
+    """statik() liest, was erst nach dem Zwischenstand kommt: Es wartet darauf statt den Stand des vorigen Laufs zu zeigen."""
+    rt = laufzeit["rt"]
+    assert rt.run(params={"b": 23.0}, warten_s=60)["ok"]
+    rt.pruefen(endstand=True)
+    res = rt.run(params={"b": 24.0}, warten_s=0)
+    assert res["ok"]
+    st = rt.statik()
+    assert st["ok"] and st["run"] == res["run"], st
 
 
 def test_run_warten_nach_der_dauer_des_laufs(laufzeit):

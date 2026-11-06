@@ -30,7 +30,7 @@ os.environ["KEVCAD_FESTKOERPER_CACHE"] = str(_DRUCK / "festkoerper")
 # Kevins Filamentliste (druck/filamente.py): nie seine Datei lesen oder anlegen
 os.environ["KEVCAD_FILAMENTE"] = str(_DRUCK / "filamente.json")
 # V2-1b: Prüfung am Stück, wie die Tests sie erwarten (Stufen hängen an der Uhr); test_tempo_pruefung.py schaltet sie ein
-os.environ["KEVCAD_PRUEF_STUFEN"] = "0"
+os.environ.setdefault("KEVCAD_PRUEF_STUFEN", "0")
 
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001

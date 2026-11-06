@@ -82,6 +82,7 @@ Ganze Rahmen gezählt (Kopf und Nutzlast, V2-5a) sind es 11,3 MB je unverändert
 | Paket | Inhalt | Strang | hängt ab von | Stand |
 |---|---|---|---|---|
 | V2-1 Tempo im Kernel | Rechengedächtnis je Operation (Booleans, Aufräumen, Volumen, Hüllquader, Abstände), Leerlauf entfernt, `run` wartet höchstens `warten_s` auf die Prüfung, Nachlauf aus dem Auftragsfaden, Zeiten je Phase | Kernel | – | fertig, auf `v2` (`31618fd`) |
+| V2-1b Tempo nachziehen | Fasen und Verrundungen im Gedächtnis, `moved` ohne Kopie der B-Rep, Statik je Modell gemerkt, Prüfung in Stufen (Zwischenstand nach Durchdringung, Bedingungen und Stand), Bewegungsraum zuletzt, `run` wartet nach der Dauer des Laufs, Bauplan im Hintergrund wird von einem neuen Lauf abgelöst, Kernel startet ohne build123d im Elternprozess | Kernel | V2-1 | fertig, Zahlen in `kernel/tools/MESSUNG.md` |
 | V2-2 Agenten-Schnittstelle | Kernsatz von 10 bis 15 Werkzeugen plus je ein Fachwerkzeug mit `aktion`, knappes Laufergebnis, Anweisungen höchstens 6.000 Zeichen, Skill nach Themen, `status` als Lagebild, Maßänderungen per `run(params)` | MCP | V2-1 | fertig, auf `v2` (`541e1fc`), Zahlen in `kernel/tools/MESSUNG-V2-2.md` |
 | V2-3 Neue Oberfläche | Gestaltungssystem, Start ohne Dialog, Projekt-Overlay, Fokus und Werkstatt, Gliederung nur mit Gruppen und Objekten, Kachelfläche, Fenster an den Rand | Oberfläche | Gestaltungsentwurf (gewählt: Graphit) | fertig, auf `v2` (`ed36826`), Einzelheiten in `OBERFLAECHE.md`; offen: Klicks, Tasten und Benennen von Hand prüfen, Startzeit ohne fremde Last messen |
 | V2-4 Viewer | Xcode-Zwischenspeicher, Steuerung wie Blender, Hinweisleiste, Isolieren, Shading-Modi, Messen mit Vorschau beim Darüberfahren, Bild und Video mit einem Klick, keine Manipulatoren, Bildzeiten | App-Kern | – | fertig, auf `v2` (`d255717`); offen: Hänger auf dem Hauptfaden, Messung an 120 Hz, echte Eingaben von Kevin prüfen |
@@ -152,14 +153,12 @@ und Bezug als Anweisung zum Agenten.
   Quelle). Bei einem Update von build123d die nachgebauten Methoden in `gedaechtnis.py` prüfen.
 - **Nachlauf im Hintergrund:** Bauplan, Blätter und Versionen entstehen nach `run` im Hintergrund. Wer `dokumente/`
   direkt nach einem Lauf ändert, kann damit kollidieren.
-- **Warmer Lauf 2,3 s:** Den Rest kostet model.py selbst:
-  - Gedächtnis-Aufwand 0,39 s
-  - Verschiebungen mit Kopie der B-Rep 0,2 s
-  - Fasen und Verrundungen 0,15 s
-  - Zukaufteile 0,15 s
-  - dazu die Statik der Prüfung mit 0,54 s
-
-  Nächste Kandidaten: Fasen und Verrundungen ins Gedächtnis, Verschiebungen ohne Kopie, Statik je Modell merken.
+- **Warmer Lauf:** Mit V2-1b rund 1,3 s; das meiste kostet jetzt model.py selbst (Binärformen für Schlüssel und Ergebnisse
+  der 634 gemerkten Operationen rund 0,35 s, Zukaufteile, Python-Logik des Modells). Weiter ginge es nur mit Schlüsseln aus
+  dem Inhalt der Eingaben statt ihrer Binärform; das braucht einen Nachweis, dass gemeinsam benutzte Teilformen das Ergebnis
+  nicht ändern.
+- **Prüfung in Stufen:** Nach einer Maßänderung ist nur der Zwischenstand schnell. Montage, Statik und Bewegungsraum rechnen
+  weiter Sekunden im Hintergrund; `pruefen()` wartet darauf.
 - **Werkzeugnamen:** Neue Namen aus V2-2 brechen laufende Agentensitzungen, sobald V2 nach main geht. Den Übergang plant
   V2-8.
 - **Fast Mode:** Fast Mode für Agenten greift nur mit Nutzungsguthaben auf claude.ai. Das entscheidet Kevin.
