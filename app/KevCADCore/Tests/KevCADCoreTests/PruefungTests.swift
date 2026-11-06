@@ -246,5 +246,11 @@ final class PruefungTests: XCTestCase {
         let kamera = AppController.ansichtKamera(a, scene: c.scene, aspect: 1.6)
         XCTAssertEqual(simd_dot(kamera.rotation.act(SIMD3<Float>(0, 0, -1)), simd_normalize(SIMD3<Float>(1, 1, -1))),
                        1, accuracy: 1e-5)
+        // Parallel von vorn: der Maßstab passt zum Modell (vorher blieb er bei 100 mm, nur ein Ausschnitt)
+        let vorn = AppController.ansichtKamera(.object(["standard": .string("front")]), scene: c.scene, aspect: 1.6,
+                                               orthographic: true)
+        let b = try XCTUnwrap(c.scene.visibleBounds())
+        XCTAssertTrue(vorn.isOrthographic)
+        XCTAssertEqual(vorn.orthographicScale, b.diagonalLength * 1.12, accuracy: b.diagonalLength * 0.02)
     }
 }

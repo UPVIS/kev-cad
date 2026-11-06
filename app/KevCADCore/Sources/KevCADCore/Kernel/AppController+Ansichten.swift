@@ -41,7 +41,9 @@ extension AppController {
 
     /// Kamera: Richtung aus `standard` oder `richtung` (Blickrichtung), eingepasst auf `ziel`, `punkt`/`radius` oder
     /// alles Sichtbare.
-    static func ansichtKamera(_ a: JSONValue, scene: SceneStore, aspect: Float) -> CameraState {
+    /// `orthographic`: Projektion vor dem Einpassen setzen. Erst einpassen und danach umschalten ließ den Maßstab bei
+    /// 100 mm stehen (die zweite Ansicht zeigte so nur einen Ausschnitt, gefunden 06.11.2026).
+    static func ansichtKamera(_ a: JSONValue, scene: SceneStore, aspect: Float, orthographic: Bool? = nil) -> CameraState {
         let iso = ViewportCoordinator.standardView(protocolName: "iso")!
         var cam = iso.cameraState(distance: 1000, orthographicScale: 100)
         if let name = a["standard"]?.stringValue, let sv = ViewportCoordinator.standardView(protocolName: name) {
@@ -49,6 +51,7 @@ extension AppController {
         } else if let d = a["richtung"]?.vector3, simd_length(d) > 1e-6 {
             cam.rotation = rotation(blick: d)
         }
+        if let orthographic { cam = ViewportCoordinator.withProjection(cam, orthographic: orthographic) }
         var ziel: BoundingBox?
         if let refs = a["ziel"]?.stringList, !refs.isEmpty {
             ziel = scene.worldBounds(of: scene.expand(refs.compactMap(ElementRef.init)).known)

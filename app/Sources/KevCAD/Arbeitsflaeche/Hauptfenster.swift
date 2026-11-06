@@ -114,7 +114,7 @@ struct Hauptfenster: View {
                 }
                 // Live-Text und Agentenspur stehen immer im Bild: über dem Viewer, sonst über den Kacheln
                 FokusEbenen(model: model, oberflaeche: oberflaeche, spur: spur, animation: model.animation,
-                            viewer: g.viewerSichtbar ? g.viewer : g.kachelFlaeche,
+                            viewer: model.viewer, flaeche: g.viewerSichtbar ? g.viewer : g.kachelFlaeche,
                             schmal: (g.viewerSichtbar ? g.viewer : g.kachelFlaeche).width < GA.schmalAb,
                             obenFrei: kachelModus ? 0 : GA.kopf + GA.unterKopf,
                             gliederung: !kachelModus && oberflaeche.leisteLinks, zeitleisteErlaubt: !kachelModus,
@@ -213,7 +213,8 @@ struct Hauptfenster: View {
         ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false,
                      obenFrei: g.kachelModus ? 0 : GA.kopf + GA.unterKopf,
                      linksFrei: !g.kachelModus && oberflaeche.leisteLinks && g.viewer.width >= GA.schmalAb
-                        ? GA.xl + GA.gliederung : 0)
+                        ? GA.xl + GA.gliederung : 0,
+                     schmal: g.viewer.width < GA.schmalAb)
             .overlay(alignment: .bottomLeading) {  // Versionen: laufender Vergleich
                 VergleichKarte(model: model, store: model.versionen, zustand: versionen)
                     .padding(14)

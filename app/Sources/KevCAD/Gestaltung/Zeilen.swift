@@ -183,7 +183,7 @@ struct EigenschaftsFeld: View {
                     .font(GS.wert)
                     .foregroundStyle(GF.kreide)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.72)
                     .truncationMode(.middle)
                     .accessibilityLabel(titel)
                     .accessibilityValue(einheit.map { "\(wert) \($0)" } ?? wert)

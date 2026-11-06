@@ -107,6 +107,10 @@ weiter.
   Isolieren, An den Rand, ganz außen „Kacheln nebeneinander“ (nur mit weiteren Kacheln) und der Schalter der rechten
   Leiste. Jede Gruppe liegt in einer Kapsel (`GF.insel`), damit sie auch über dem weißen Grund von Technisch lesbar ist. Die
   Knöpfe darin sind 26 pt (`KnopfForm.kopf`). Leere Stellen ziehen das Fenster (`FensterZiehen`), ein Doppelklick zoomt.
+- **Text im Bild bei Technisch**: Gliederung, Startzeile, Live-Text und Agentenspur stehen auf dem weißen Grund auf einer
+  dunklen Insel wie die Kopfleiste (`InselImHellen` in `FokusEbenen.swift`), der dunkle Verlauf unten entfällt dann.
+- **Unten im schmalen Viewer** (Kachel unter 640 pt): links der Sprechknopf (unter 480 pt nur das Mikrofon), die Kapseln
+  des Viewers (Prüfung, Messen) rücken nach rechts (`ViewportArea.schmal`); mittig lagen sie über dem Sprechknopf.
 - **Gliederung**: nur Gruppen und Objekte. Klick wählt, ⇧ oder ⌘ nimmt dazu, Doppelklick oder Zeilenschalter benennt
   um, ↑ ↓ wandern, ← → klappen. Gruppen mit gewählten Teilen öffnen sich von selbst. Umbenennen ändert die Namen in
   model.py (`ModellQuelle.benenneUm`): genau die Zeichenketten in `show()`, `verbauen(name=…)`, `befestigt(…)`; entsteht

@@ -142,7 +142,9 @@ struct Eigenschaften: View {
                 EigenschaftsFeld(titel: "Maße", wert: Self.masse(b.max - b.min), einheit: "mm")
             }
             if let bom = model.bom {
-                EigenschaftsFeld(titel: "Masse", wert: Self.kg(bom.totals.kg), einheit: "kg")
+                // Ohne Werkstoffe (Nachbau, Skizze) kennt die Stückliste keine Masse: dann kein „0,00 kg“, wie bei der
+                // Auswahl mehrerer Teile
+                if bom.totals.kg > 0 { EigenschaftsFeld(titel: "Masse", wert: Self.kg(bom.totals.kg), einheit: "kg") }
                 if let p = bom.totals.preis { EigenschaftsFeld(titel: "Kosten", wert: KevFormat.euro(p)) }
             }
         }
@@ -207,8 +209,10 @@ struct Eigenschaften: View {
         return f.string(from: NSNumber(value: v)) ?? String(v)
     }
 
+    /// Mit schmalen Leerzeichen um „×“: drei Maße passen so ins schmale Feld der rechten Leiste, ohne in der Mitte
+    /// abgeschnitten zu werden („266,9 ×…6,9 × 93,8“, 06.11.2026).
     static func masse(_ d: SIMD3<Float>) -> String {
-        [d.x, d.y, d.z].map { zahl(Double(($0 * 10).rounded() / 10)) }.joined(separator: " × ")
+        [d.x, d.y, d.z].map { zahl(Double(($0 * 10).rounded() / 10)) }.joined(separator: "\u{2009}×\u{2009}")
     }
 
     static func huelle(_ t: [PartNode]) -> SIMD3<Float>? {

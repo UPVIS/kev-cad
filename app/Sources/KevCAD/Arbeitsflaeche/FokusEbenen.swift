@@ -12,8 +12,10 @@ struct FokusEbenen: View {
     @ObservedObject var oberflaeche: OberflaechenStore
     @ObservedObject var spur: AgentenSpur
     @ObservedObject var animation: AnimationModel
-    /// Fläche des Viewers im Fenster
-    let viewer: CGRect
+    /// Darstellung des Viewers: auf dem weißen Grund von Technisch steht Text im Bild auf dunklen Inseln
+    @ObservedObject var viewer: ViewerStore
+    /// Fläche des Viewers im Fenster (oder der Kacheln, wenn das Modell nicht zu sehen ist)
+    let flaeche: CGRect
     let schmal: Bool
     /// Platz oben, über dem die Kopfleiste schwebt (ohne Kacheln reicht der Viewer bis an die Oberkante)
     var obenFrei: CGFloat = 0
@@ -30,10 +32,12 @@ struct FokusEbenen: View {
     /// Platz unten für die Hinweisleiste des Viewers
     private var hinweisFrei: CGFloat { model.viewer.hinweisleiste ? 38 : 0 }
 
-    private var zeitleisteHoehe: CGFloat { KachelAnordnung.zeitleisteHoehe(breite: viewer.width) - GA.kachelKopf }
+    private var zeitleisteHoehe: CGFloat { KachelAnordnung.zeitleisteHoehe(breite: flaeche.width) - GA.kachelKopf }
 
     /// Platz unten für Hinweisleiste und Zeitleiste.
     private var untenFrei: CGFloat { hinweisFrei + (zeitleisteAn ? zeitleisteHoehe + GA.s : 0) + GA.l }
+
+    private var hell: Bool { viewer.shading == .technisch }
 
     private var leer: Bool {
         if model.isRunning || !model.parts.isEmpty { return false }
@@ -46,30 +50,32 @@ struct FokusEbenen: View {
             // Bleibt eingehängt und wird nur ausgeblendet: Neben Kacheln ist die Gliederung die linke Spalte, und ein
             // Neuaufbau beim Zurückschalten kostete über 100 ms (Selbsttest V2-9)
             if !schmal && !model.parts.isEmpty {
-                Gliederung(model: model, imBild: true, maxHoehe: max(120, (viewer.height - obenFrei) * 0.6))
+                Gliederung(model: model, imBild: true, maxHoehe: max(120, (flaeche.height - obenFrei) * 0.6))
                     .frame(width: GA.gliederung)
-                    .padding(.leading, GA.xl)
+                    .modifier(InselImHellen(an: hell))
+                    .padding(.leading, hell ? GA.l : GA.xl)
                     .padding(.top, obenFrei + GA.l)
-                    .frame(width: viewer.width, height: viewer.height, alignment: .topLeading)
+                    .frame(width: flaeche.width, height: flaeche.height, alignment: .topLeading)
                     .opacity(gliederung ? 1 : 0)
                     .allowsHitTesting(gliederung)
                     .accessibilityHidden(!gliederung)
             }
             if startZeile && leer {
                 StartZeile(model: model, schmal: schmal)
-                    .frame(width: viewer.width, height: viewer.height * 0.62)
+                    .modifier(InselImHellen(an: hell))
+                    .frame(width: flaeche.width, height: flaeche.height * 0.62)
             }
             // Text im Bild bleibt über hellen Teilen lesbar: weicher Verlauf statt Tafel
-            if oberflaeche.sitzungOffen || !spur.eintraege.isEmpty {
+            if (oberflaeche.sitzungOffen || !spur.eintraege.isEmpty) && !hell {
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
                     .frame(height: 170)
                     .padding(.bottom, untenFrei - GA.l)  // endet über Hinweisleiste und Zeitleiste
-                    .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
+                    .frame(width: flaeche.width, height: flaeche.height, alignment: .bottom)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
             unten
-                .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
+                .frame(width: flaeche.width, height: flaeche.height, alignment: .bottom)
             if zeitleisteAn {
                 AnimationTimeline(model: model, animation: animation)
                     .padding(EdgeInsets(top: GA.s, leading: GA.m, bottom: GA.s, trailing: GA.m))
@@ -77,13 +83,13 @@ struct FokusEbenen: View {
                     .overlay(RoundedRectangle(cornerRadius: GR.insel, style: .continuous).strokeBorder(GF.linie, lineWidth: 1))
                     .padding(.horizontal, GA.m)
                     .padding(.bottom, hinweisFrei + GA.s)
-                    .frame(width: viewer.width, height: viewer.height, alignment: .bottom)
+                    .frame(width: flaeche.width, height: flaeche.height, alignment: .bottom)
                     .transition(.opacity)
             }
         }
         .animation(GB.standard, value: zeitleisteAn)
-        .frame(width: viewer.width, height: viewer.height, alignment: .topLeading)
-        .offset(x: viewer.minX, y: viewer.minY)
+        .frame(width: flaeche.width, height: flaeche.height, alignment: .topLeading)
+        .offset(x: flaeche.minX, y: flaeche.minY)
     }
 
     @ViewBuilder
@@ -93,10 +99,13 @@ struct FokusEbenen: View {
                 if oberflaeche.sitzungOffen || oberflaeche.sprechText != nil {
                     LiveText(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions,
                              schmal: true)
+                        .modifier(InselImHellen(an: hell))
                 }
-                AgentZeile(model: model, spur: spur)
+                AgentZeile(model: model, spur: spur, hell: hell)
                 HStack {
-                    SprechKnopf(spricht: oberflaeche.spricht) {
+                    // Rechts daneben stehen die Kapseln des Viewers (Prüfung, Messen); in sehr schmalen Kacheln nur
+                    // das Mikrofon, damit beide nebeneinander passen
+                    SprechKnopf(spricht: oberflaeche.spricht, kurz: flaeche.width < 480) {
                         model.oberflaechenActions?.setzeSprechen(!oberflaeche.spricht)
                     }
                     Spacer()
@@ -110,11 +119,12 @@ struct FokusEbenen: View {
                 if oberflaeche.sitzungOffen || oberflaeche.sprechText != nil {
                     LiveText(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions,
                              schmal: false)
-                        .frame(maxWidth: max(320, min(860, viewer.width - 680)))
+                        .modifier(InselImHellen(an: hell))
+                        .frame(maxWidth: max(320, min(860, flaeche.width - 680)))
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, untenFrei)
                 }
-                SpurAnsicht(model: model, spur: spur)
+                SpurAnsicht(model: model, spur: spur, hell: hell)
                     .frame(width: 310, alignment: .leading)
                     .padding(.trailing, 26)
                     .padding(.bottom, untenFrei)
@@ -254,6 +264,7 @@ private struct Pegel: View {
 private struct SpurAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject var spur: AgentenSpur
+    var hell = false
 
     var body: some View {
         if !spur.eintraege.isEmpty || model.agentConnected {
@@ -273,6 +284,7 @@ private struct SpurAnsicht: View {
                 }
             }
             .textImBild()
+            .modifier(InselImHellen(an: hell))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Agentenspur")
         }
@@ -352,6 +364,7 @@ private struct SpurDauer: View {
 private struct AgentZeile: View {
     @ObservedObject var model: AppModel
     @ObservedObject var spur: AgentenSpur
+    var hell = false
 
     var body: some View {
         if let e = spur.jetzt ?? spur.eintraege.last {
@@ -370,7 +383,25 @@ private struct AgentZeile: View {
                 }
             }
             .textImBild()
+            .modifier(InselImHellen(an: hell))
             .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// Auf hellem Bild (Technisch, weißer Grund) steht Text im Bild auf einer dunklen Insel wie die Kopfleiste; auf
+/// dunklem Bild bleibt er frei, nur mit Schatten (V2-9).
+private struct InselImHellen: ViewModifier {
+    let an: Bool
+
+    func body(content: Content) -> some View {
+        if an {
+            content
+                .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+                .background(RoundedRectangle(cornerRadius: GR.insel, style: .continuous).fill(GF.tief.opacity(0.88)))
+                .overlay(RoundedRectangle(cornerRadius: GR.insel, style: .continuous).strokeBorder(GF.linie, lineWidth: 1))
+        } else {
+            content
         }
     }
 }

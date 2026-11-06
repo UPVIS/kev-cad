@@ -114,8 +114,8 @@ extension AppController {
         let name = model.oberflaeche.zweiteAnsicht
         var a: [String: JSONValue] = ["standard": .string(name)]
         if !zweiteAnsichtZiel.isEmpty { a["ziel"] = .array(zweiteAnsichtZiel.map(JSONValue.string)) }
-        var camera = Self.ansichtKamera(.object(a), scene: scene, aspect: Float(w) / Float(h))
-        camera.isOrthographic = !name.hasPrefix("iso")
+        let camera = Self.ansichtKamera(.object(a), scene: scene, aspect: Float(w) / Float(h),
+                                        orthographic: !name.hasPrefix("iso"))
         let store = model.zweiteAnsicht
         store.rechnet = true
         zweiteAnsichtRechner.rechne(

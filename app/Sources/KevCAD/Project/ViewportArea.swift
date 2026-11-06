@@ -13,6 +13,9 @@ struct ViewportArea: View {
     var obenFrei: CGFloat = 0
     /// V2-9: Platz links für die Gliederung im Bild; die Bänder stehen daneben statt darüber.
     var linksFrei: CGFloat = 0
+    /// V2-9: schmaler Viewer (Kachel): Unten links steht der Sprechknopf, die Kapseln unten rücken nach rechts
+    /// (mittig lag „Prüfung in Ordnung“ über „V drücken und sprechen“).
+    var schmal = false
 
     var body: some View {
         viewport
@@ -163,6 +166,7 @@ struct ViewportArea: View {
         // Viewer V2: unten liegt die Hinweisleiste des Viewports (KevCADCore), die Kapseln stehen darüber
         .padding(.bottom, session.controller != nil ? 46 : 14)
         .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: schmal ? .trailing : .center)
     }
 
     // MARK: Leer
