@@ -41,9 +41,10 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
           "(interpenetration, floating, tipping, not assemblable, trapped, tool access, compliant parts, invalid "
           "declarations) with location, values and a fix each, plus stability per group and the assembly summary. "
           "bilder=true adds close-up offscreen images of the worst findings (2-3 directions, x-ray, red overlap "
-          "volume) for your own analysis; Kevin's view does not change. Do not send these images to Kevin. If the "
-          "range of motion of a run hit its time limit (state 'teilweise'), the kernel finishes it in the "
-          "background; warten=true (default) waits for that final result, so call pruefen before reporting done. "
+          "volume) for your own analysis; Kevin's view does not change. Do not send these images to Kevin. After a "
+          "change the assembly check, statics and range of motion may still run in the background when run returns "
+          "(state 'teilweise'); warten=true (default) waits for that final result, so call pruefen before reporting "
+          "done. "
           "The same holds for the statics computed after a run (Ablauf, Festkörper): their findings statik_dyn_* and "
           "statik_festkoerper arrive later in the same check (warnings and notes only, never an export block).",
           READ_ONLY)
@@ -51,7 +52,7 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
         bilder: Annotated[bool, Field(description="Close-up images of up to 3 findings for your own analysis")] = False,
         hinweise: Annotated[bool, Field(description="Also list notes (schwere hinweis)")] = True,
         warten: Annotated[bool, Field(description=(
-            "Wait for the final result when the range of motion is still being finished in the background "
+            "Wait for the final result when the check is still being finished in the background "
             "(state 'teilweise', up to 5 minutes); false returns the current state at once"))] = True,
     ) -> CallToolResult:
         from kevcad_kernel.pruefung.dienst import ansicht_fuer_befund
@@ -79,10 +80,10 @@ def register_pruef_tools(t: Any, svc: KernelService, tool: Callable[..., Any]) -
             teile.append(f"Hinweis: eine neuere Prüfung (Lauf {res['laeuft']}) läuft noch.")
         if res.get("state") == "teilweise" and warten:
             if res.get("hintergrund") == res.get("run") or res.get("statik_hintergrund") == res.get("run"):
-                teile.append("Nach 5 Minuten noch nicht fertig gerechnet (Bewegungsraum bzw. Statik im Hintergrund): "
+                teile.append("Nach 5 Minuten noch nicht fertig gerechnet (Prüfung bzw. Statik im Hintergrund): "
                              "später erneut pruefen.")
             elif res.get("im_hintergrund") or not res.get("statik_im_hintergrund"):
-                teile.append("Der Bewegungsraum dieses Laufs wurde nicht fertig gerechnet (neuerer Lauf oder "
+                teile.append("Die Prüfung dieses Laufs wurde nicht fertig gerechnet (neuerer Lauf oder "
                              "Rechenprozess neu gestartet): erneut run aufrufen.")
             else:
                 teile.append("Ablauf bzw. Festkörper dieses Laufs wurden nicht fertig (neuerer Lauf oder abgebrochen): "

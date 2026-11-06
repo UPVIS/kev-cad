@@ -105,6 +105,20 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     return out
 
 
+def wege_da() -> bool:
+    """Gibt es im Stand des Laufs Wege zu prüfen (Gelenke, bewegungen.json)? Für die Liste der offenen Prüfungen."""
+    from pathlib import Path
+
+    from .arten import Gelenk
+
+    stand = STAND
+    if stand.sammlung is None:
+        return False
+    if any(isinstance(c, Gelenk) for c in stand.sammlung.bedingungen):
+        return True
+    return stand.projekt is not None and (Path(stand.projekt) / "bewegungen.json").is_file()
+
+
 def zeitlimit(ctx: PruefKontext) -> float:
     """Zeitlimit des Bewegungsraums: ``ZEITLIMIT_S``, in Stufen nur der Rest des Budgets ``vorne_s`` der Prüfung, damit
     das Ergebnis von Montage und Statik nicht auf die Wege wartet (ein kleines Modell kommt trotzdem ganz durch)."""

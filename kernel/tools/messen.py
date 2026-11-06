@@ -236,6 +236,10 @@ def lauf_messen(rt, app: AppAttrappe, kopie: Path, art: str, args) -> dict:
         "pruefung_state": ergebnis[1].get("state") if ergebnis else None,
         "pruefung_endstand_s": (endstand[0] - t0) if endstand else None,
         "pruefung_im_ergebnis": (res.get("pruefung") or {}).get("state"),
+        # V2-1b: die Stufen der Prüfung, wie sie bei der App ankamen (Zeit, Zustand, was noch offen ist)
+        "pruefung_stufen": [(round(t - t0, 3), h.get("state"), list(h.get("im_hintergrund") or []),
+                             list(h.get("statik_im_hintergrund") or []))
+                            for t, h, *_ in frames if h.get("type") == "CHECK" and h.get("run") == run],
         "zeiten_ms": res.get("zeiten_ms"),
         "rahmen": {k: {"anzahl": v[0], "mb": round(v[1] / 1e6, 3), "kb_gesamt": round(v[4] / 1e3, 1),
                        "erster_s": round(v[2], 3), "letzter_s": round(v[3], 3)} for k, v in arten.items()},

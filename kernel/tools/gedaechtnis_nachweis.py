@@ -6,12 +6,14 @@ Fläche, Hüllquader auf 1e-6) herauskommen, dazu Warnungen, Parameter, Stückli
     kernel/.venv/bin/python -u kernel/tools/gedaechtnis_nachweis.py "<Projekt>" …  # nur diese
     ... --ohne-pruefung     die Prüfung nach dem Lauf weglassen (schneller)
 
-Je Projekt rechnen drei Prozesse (zweimal KEVCAD_GEDAECHTNIS=0, einmal =1) mit dem Runner wie im Rechenprozess drei
-Läufe: kalt, gleich, nach einer Kommentaränderung. Verglichen wird jeder Lauf mit Gedächtnis gegen den ersten ohne,
-der zweite Prozess ohne Gedächtnis zeigt das Rauschen von OCCT selbst. Die Prüfung zählt mit ihrem Endstand (der
-Bewegungsraum wird fertig gerechnet; was im Zeitlimit eines Laufs fertig wird, hängt an der Uhr). Läuft ein
-Projekt unter der Inventar-Regel nicht durch, rechnet es zusätzlich ohne die Regel (Geometrie trotzdem prüfen).
-Arbeitet nur auf Kopien unter /tmp (messen.kopieren).
+Je Projekt rechnen drei Prozesse (zweimal KEVCAD_GEDAECHTNIS=0, einmal =1) mit dem Runner wie im Rechenprozess vier
+Läufe: kalt, gleich, nach einer Kommentaränderung, mit einem geänderten Parameter (der erste Parameter des Modells,
+5 % mehr). Verglichen wird jeder Lauf mit Gedächtnis gegen den ersten ohne, der Lauf mit Parameter gegen denselben
+Lauf ohne; der zweite Prozess ohne Gedächtnis zeigt das Rauschen von OCCT selbst. Die Prüfung zählt mit ihrem Endstand
+(der Bewegungsraum wird fertig gerechnet; was im Zeitlimit eines Laufs fertig wird, hängt an der Uhr) und läuft im
+Prozess mit Gedächtnis in Stufen wie im Rechenprozess (V2-1b), ohne Gedächtnis am Stück. Verglichen werden dabei Befunde,
+Montagefolge und die Ampeln der Statik. Läuft ein Projekt unter der Inventar-Regel nicht durch, rechnet es zusätzlich
+ohne die Regel (Geometrie trotzdem prüfen). Arbeitet nur auf Kopien unter /tmp (messen.kopieren).
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ EPS = 1e-6
 
 
 def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool) -> dict:
-    """Im Unterprozess: drei Läufe mit dem Runner, je Lauf Teile und Kennwerte."""
+    """Im Unterprozess: vier Läufe mit dem Runner, je Lauf Teile und Kennwerte."""
     import build123d  # noqa: F401
 
     from kevcad_kernel import gedaechtnis
@@ -50,14 +52,22 @@ def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool) -> dict:
 
     r = Runner(emit)
     out = []
-    for i, art in enumerate(("kalt", "gleich", "kommentar"), 1):
+    params: dict[str, float] = {}
+    stufen = gedaechtnis.aktiv()
+    for i, art in enumerate(("kalt", "gleich", "kommentar", "parameter"), 1):
         if art == "kommentar":
             m = projekt / "model.py"
             m.write_text(m.read_text(encoding="utf-8") + "\n# Nachweis: Kommentar\n", encoding="utf-8")
+        if art == "parameter":
+            zahlen = {k: v for k, v in (out[0].get("params") or {}).items() if isinstance(v, (int, float))}
+            if not zahlen:
+                break
+            name = sorted(zahlen)[0]
+            params = {name: round(float(zahlen[name]) * 1.05, 3)}
         teile.clear()
         t = time.perf_counter()
         res = r.run({"run": i, "path": str(projekt / "model.py"), "catalog": {"own": str(katalog)},
-                     "inventar_regel": inventar})
+                     "inventar_regel": inventar, "params": params})
         dauer = time.perf_counter() - t
         bed = res.get("bedingungen") or {}
         bom = res.get("bom") or {}
@@ -67,7 +77,7 @@ def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool) -> dict:
              "bedingungen": bed.get("summe"), "gedaechtnis": (res.get("zeiten_ms") or {}).get("gedaechtnis")}
         if pruefen and res["type"] == "RUN_DONE":
             t = time.perf_counter()
-            check, _ = r.pruefe(i)
+            check, _ = r.pruefe(i, zwischenstand=(lambda _k, _n: None) if stufen else None)
             # Endstand vergleichen: was der Bewegungsraum im Zeitlimit des Laufs schafft, hängt an der Uhr
             while check.get("state") == "teilweise":
                 fertig = r.fertig_rechnen(i)
@@ -77,7 +87,11 @@ def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool) -> dict:
             e["pruefung_s"] = round(time.perf_counter() - t, 2)
             e["pruefung"] = {"state": check.get("state"), "zusammenfassung": check.get("zusammenfassung"),
                              "befunde": sorted(f"{b.get('art')}|{b.get('schwere')}|{','.join(b.get('teile') or [])}"
-                                               for b in check.get("befunde") or [])}
+                                               for b in check.get("befunde") or []),
+                             "montage": [f"{x.get('name')}|{x.get('richtung_text')}"
+                                         for x in (check.get("montage") or {}).get("schritte") or []],
+                             "statik": sorted(f"{x.get('name')}|{x.get('ampel')}"
+                                              for x in (check.get("statik") or {}).get("szenarien") or [])}
         out.append(e)
     return {"laeufe": out}
 
@@ -133,8 +147,9 @@ def projekt_pruefen(projekt: Path, args) -> list[dict]:
         ref = ergebnisse[False][0]
         zeilen = []
         for e in ergebnisse[True]:
-            v = vergleiche(ref, e)
-            v_eigen = vergleiche(ergebnisse[True][0], e)
+            gegen = next(x for x in ergebnisse[False] if x["lauf"] == e["lauf"]) if e["lauf"] == "parameter" else ref
+            v = vergleiche(gegen, e)
+            v_eigen = vergleiche(ergebnisse[True][0] if e["lauf"] != "parameter" else gegen, e)
             zeilen.append({"lauf": e["lauf"], "dauer_ohne_s": next(x["dauer_s"] for x in ergebnisse[False]
                                                                    if x["lauf"] == e["lauf"]),
                            "dauer_mit_s": e["dauer_s"], **v,

@@ -96,6 +96,8 @@ class PruefLauf:
         def stufe(stand: Callable[[], tuple[dict[str, Any], list]], offen: list[str], dauer_s: float) -> None:
             if zwischenstand is None or not self._zwischenstand_noetig(ks, dauer_s):
                 return
+            if not _bedingungen.wege_da():
+                offen = [o for o in offen if o != "Bewegungsraum"]
             kopf, nutz = self._kopf(run, "teilweise", *stand(), offen)
             kopf.pop("seq", None)
             zwischenstand(kopf, nutz)

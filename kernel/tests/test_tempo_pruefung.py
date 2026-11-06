@@ -290,13 +290,24 @@ def test_zwischenstand_und_gleicher_endstand(tmp_path, stufen):
     end = lauf()
     assert len(lauf.zwischen) == 1
     z = lauf.zwischen[0]
-    assert z["state"] == "teilweise" and z["im_hintergrund"][:2] == ["Montage", "Statik"], z.get("im_hintergrund")
+    assert z["state"] == "teilweise" and z["im_hintergrund"] == ["Montage", "Statik"], z.get("im_hintergrund")
     assert "montage" not in z and "statik" not in z and "stand" in z
     assert z["run"] == lauf.run and "seq" not in z
     assert end["state"] == "done" and "im_hintergrund" not in end
     assert _befunde(end) == _befunde(bezug)
     assert end["zusammenfassung"] == bezug["zusammenfassung"] and end["zaehler"] == bezug["zaehler"]
     assert end["montage"]["schritte"] == bezug["montage"]["schritte"]
+
+
+def test_zwischenstand_nennt_den_bewegungsraum_nur_mit_wegen(tmp_path, stufen):
+    from test_prueftempo import KLAPPEN
+
+    (tmp_path / "model.py").write_text(KLAPPEN, encoding="utf-8")
+    r = Runner(lambda h, p=b"": None)
+    assert r.run({"run": 1, "path": str(tmp_path / "model.py"), "params": {}, "inventar_regel": False})["type"] == "RUN_DONE"
+    zwischen: list[dict] = []
+    r.pruefe(1, zwischenstand=lambda k, n: zwischen.append(k))
+    assert zwischen and zwischen[0]["im_hintergrund"] == ["Montage", "Statik", "Bewegungsraum"]
 
 
 def test_unveraendert_kein_zwischenstand(tmp_path, stufen):
@@ -431,7 +442,7 @@ def test_lauf_erst_zwischenstand_dann_endstand(laufzeit):
     _, _, done, _ = app.wait_for(lambda h: h["type"] == "CHECK" and h.get("run") == res["run"]
                                  and h.get("state") == "done", start=start, timeout=60)
     # die App liest offene Prüfungen als Rechnungen, nicht als Gelenke
-    assert teil["statik_im_hintergrund"][:2] == ["Montage", "Statik"] and not teil["im_hintergrund"]
+    assert teil["statik_im_hintergrund"] == ["Montage", "Statik"] and not teil["im_hintergrund"]
     assert "im_hintergrund" not in done and "statik_im_hintergrund" not in done
     assert isinstance(done.get("montage"), dict)
     # pruefen wartet und liefert den Endstand
