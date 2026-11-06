@@ -14,7 +14,7 @@ tools/abnahme.sh
 
 Das baut die Testfassung „Kev CAD Test abnahme“, legt Kopien von Katalog und Kugelschieber nach
 `~/Documents/Kev CAD Abnahme` und startet die App. Zum Schluss steht im Terminal, wie du einen Agenten mit dieser
-Fassung verbindest. Weil sie neu signiert ist, fragt macOS beim ersten Sprechen nach Mikrofon und Spracherkennung.
+Fassung verbindest. Weil sie neu signiert ist, kann macOS beim ersten Sprechen nach Mikrofon und Spracherkennung fragen.
 
 Öffne für die Punkte 2 bis 5 mit ⌘O den Kugelschieber aus diesem Ordner, damit du ein großes Modell vor dir hast.
 
@@ -44,7 +44,7 @@ landet er ebenfalls in model.py, und „vorher …“ zeigt den alten Wert.
 **5. Kacheln.** ⌃⌘1 bis ⌃⌘0 öffnen Stückliste, Zuschnitt, Zeichnung, zweite Ansicht, Material, Simulation, Versionen, Details,
 Druck und Animation, Bauplan und Rendern stehen im Menü Kacheln. Höchstens vier sind offen und nummeriert, eine fünfte
 verdrängt die älteste. ⌥⌘2 macht Kachel 2 groß und wieder klein, ⇧⌘W schließt die aktive. Ein Wechsel soll sofort wirken.
-Die Zeichnung zeigt groß Seitenleiste und Inspektor. Buche in der Kachel Material einmal „Gebaut …“: Oben erscheint das Band
+Die Zeichnung zeigt groß Seitenleiste und Inspektor. Buche im Menü Modell › Material einmal „Gebaut …“: Oben erscheint das Band
 mit „Rückgängig“, das beim Umbau kurz verloren gegangen war.
 
 **6. Sprechen.** Drücke V, der Viewer bekommt einen roten Rahmen, und dein Text läuft unten mit. Sag „das hier“, während die Maus
