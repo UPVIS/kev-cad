@@ -180,10 +180,13 @@ erwartete Warnung „gedruckt geändert“ beim Kugelschieber).
   zwei Runden, bevor der Agent arbeitet; ohne sie (Leitfaden im Systemprompt, Werkzeuge sofort) und mit Lagebild im
   Auftrag 0,61 der Baseline. Opus prüft nach dem Lauf gern noch zweimal nach (`parts`, `execute`), Sonnet nicht.
 - **F Engine:** build123d ist kein Engpass (Lauf 0,02 bis 2,5 s, Kugelschieber nach einer Änderung 2,5 bis 3 s). Bei
-  großen Modellen bremst die **Prüfung**: Kugelschieber nach der Änderung 26 s bis zum Endstand, davon Hauptprüfung
-  10,8 s (Hintergrundblock 5,0, Statik 3,3, Montage 1,4, Durchdringung 0,5, Druck 0,4) und danach rund 15 s Festigkeit
-  (FEM). Die Durchdringung rechnet schon nur Geänderte (52 von 314 Paaren); unverändert kommt alles in 0,1 bis 0,5 s
-  aus dem Gedächtnis. Ein Umstieg auf OCP brächte nichts.
+  großen Modellen bremst die **Prüfung**: Kugelschieber nach der Änderung 26 bis 34 s bis zum Endstand. Die
+  Hauptprüfung endet rund 5 s nach dem Lauf (Statik 3,3, Montage 1,5, Durchdringung 0,5, Druck 0,4); danach rechnet die
+  Festigkeit (FEM) 20 bis 27 s, acht Teile nacheinander und alle 20 Fälle neu, auch die der unveränderten Stangenhalter.
+  Der Hintergrundblock (5 s, der Bewegungsraum) läuft gleichzeitig mit der FEM; `duration_ms` (10,8 s) ist Hauptprüfung
+  plus Hintergrundblock, ohne FEM (berichtigt nach der Analyse in
+  [PLAN-PRUEFUNG-INKREMENTELL.md](PLAN-PRUEFUNG-INKREMENTELL.md)). Die Durchdringung rechnet schon nur Geänderte (52 von
+  314 Paaren); unverändert kommt alles in 0,1 bis 0,5 s aus dem Gedächtnis. Ein Umstieg auf OCP brächte nichts.
 - **G Modell und Denktiefe:** Sonnet ist bei Neubauten deutlich schneller (Platte 19 statt 29 s) und besteht dieselben
   Prüfungen; mit wenigen Runden und Lagebild verschwindet der Unterschied fast (t7: 49 s Opus, 48 s Sonnet). `effort low`
   bei Opus brachte keine Zeit (gleich), nur weniger Ausgabe.
@@ -223,9 +226,10 @@ neu zu starten (7.4 D).
 
 **Offen:**
 
-1. **Prüfung inkrementell (Kevins Wahl als nächstes Paket):** Statik und Festigkeit nur für Szenarien und Teile neu,
-   die eine Änderung berührt; den Hintergrundblock aufschlüsseln. Ziel: Kugelschieber nach einer kleinen Änderung unter
-   5 statt 26 s bis zum Endstand.
+1. **Prüfung inkrementell (Kevins Wahl als nächstes Paket):** analysiert in
+   [PLAN-PRUEFUNG-INKREMENTELL.md](PLAN-PRUEFUNG-INKREMENTELL.md). Rund 85 % der Zeit bis zum Endstand sind die FEM;
+   Schritte A1 bis A4 (FEM früher starten, parallel, direkte Zerlegung, Einheitslastfälle) bringen etwa Faktor 3, alle
+   Schritte unter Last etwa 6 s.
 2. **Startrunden in Kevins Umgebung:** Skill und ToolSearch kosten zwei Runden (7.4 E). Ein eigener CAD-Start
    (Leitfaden im Systemprompt, kevcad-Werkzeuge sofort geladen) brachte 0,61; dafür bräuchte es einen Startweg für
    CAD-Sitzungen in T3 Code. Lagebild bei getippten Aufträgen (Hook) hat Kevin vorerst nicht gewollt.
