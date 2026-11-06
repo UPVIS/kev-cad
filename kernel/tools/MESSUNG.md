@@ -313,9 +313,11 @@ Ein Treffer im Gedächtnis macht sie stabiler, nicht ungenauer.
 
 ### Tests
 
-Volle Suite über `tools/fern.sh tests` auf dem Mac mini (Stand wie unten im Bericht). Die Testsuite rechnet die Prüfung am
-Stück (`KEVCAD_PRUEF_STUFEN=0` in `conftest.py`, Stufen hängen an der Uhr); `test_tempo_pruefung.py` schaltet sie ein.
-Die Laufzeit-Tests von Bauplan, Statik, Druck, Bedingungen, Live und Prüftempo laufen auch mit `KEVCAD_PRUEF_STUFEN=1` grün.
+Volle Suite über `tools/fern.sh tests` auf dem Mac mini, nach dem Zusammenführen mit V2-8: 465 Swift-Tests (einer übersprungen)
+und 1246 Kernel-Tests (23 übersprungen), alle grün, 6:25 min. Neu sind `test_tempo_pruefung.py` (Statik-Gedächtnis, Stufen, Start,
+Bauplan) und in `test_gedaechtnis.py` die Fasen, Verrundungen, `moved` und Innenzylinder. Die Testsuite rechnet die Prüfung am
+Stück (`KEVCAD_PRUEF_STUFEN=0` in `conftest.py`, Stufen hängen an der Uhr); `test_tempo_pruefung.py` schaltet sie ein. Die
+Laufzeit-Tests von Bauplan, Statik, Druck, Bedingungen, Live und Prüftempo laufen auch mit `KEVCAD_PRUEF_STUFEN=1` grün.
 ## Messung V2-8 (Oberfläche, Tests, Installation)
 
 Stand 06.11.2026. Kugelschieber Variante B (134 Teile) als Kopie.
