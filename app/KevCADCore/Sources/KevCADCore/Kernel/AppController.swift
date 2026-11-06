@@ -22,12 +22,13 @@ public final class AppController: AppActions {
     let screenshots = ScreenshotRenderer()
     /// V2-6: Sprach-Feedback (Sprache/SprachSteuerung.swift).
     public let sprache = SprachSteuerung()
-    /// V2-7: zweite Ansicht (AppController+Flaeche.swift): rechnet daneben; Größe in Pixeln, solange die Kachel offen ist,
-    /// Ziel des letzten Kamerabefehls, wartender Auftrag.
-    let zweiteAnsichtRechner = ZweiteAnsichtRechner()
-    var zweiteAnsichtPixel: CGSize?
+    /// V2-10: zweite Ansicht als zweiter Viewer mit eigener Kamera (Viewer/ZweiterViewer.swift,
+    /// AppController+ZweiterViewer.swift) und das Ziel des letzten Kamerabefehls, dem sie folgt.
+    public let zweiterViewer = ZweiterViewer()
     var zweiteAnsichtZiel: [String] = []
-    var zweiteAnsichtAuftrag: DispatchWorkItem?
+    /// V2-10: Blatt der Zeichnung folgt dem, worauf Kevin beim Sprechen zeigt (AppController+Kontext.swift).
+    var kontextAuftrag: DispatchWorkItem?
+    var kontextTeil: String?
     let pausenMesser = HaengerMesser()
     /// V2-7: benennt das offene Projekt wie der Doppelklick auf den Titel (setzt die Oberfläche, `VIEW_CMD projekt_name`).
     public var projektBenennen: ((String) -> Result<URL, FlaecheFehler>)?
@@ -156,6 +157,7 @@ public final class AppController: AppActions {
         installSimulationGriff()  // Simulation: Pfeil-Griff einer freien Kraft ziehen
         installNavigation()
         installViewer()  // V2: Belegung, Hinweisleiste, Messen beim Darüberfahren, Darstellung
+        installZweiterViewer()  // V2-10: zweite Ansicht als zweiter Viewer
         sprache.controller = self
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
@@ -534,7 +536,7 @@ public final class AppController: AppActions {
                 fitAtRunEnd = false
             }
             fitOnFirstPart = false
-            zweiteAnsichtNeu()  // V2-7
+            zweiteAnsichtNachLauf()  // V2-10: beim ersten Lauf mit Teilen einpassen
             log(.info, "Lauf \(e.run) fertig: \(scene.order.count) Teile, \(model.triangleCount) Dreiecke, \(e.durationMs) ms")
             deltaLaufEnde()  // V2-5: Auswahl zum neuen Lauf melden
             scheduleSelfTestIfRequested()
@@ -797,6 +799,7 @@ public final class AppController: AppActions {
         viewport.controller.selectedBodyIDs = umrissKoerper  // V2: Schalter „Umriss der Auswahl“
         if notifyKernel { send(SelectionMessage(run: scene.latestRun, refs: scene.selection.map(\.string))) }
         refreshOverlay()
+        blattZurAuswahl()  // V2-10: das Blatt der Zeichnung folgt der Auswahl
     }
 
     func clearSelectionState() {
@@ -810,15 +813,18 @@ public final class AppController: AppActions {
     }
 
     func updateMeasureHint() {
+        let zweiter = zweiterViewer.coordinator.eingabe
         guard model.measureMode else {
             viewport.hint = nil
             viewport.eingabe.messZiele = 0
+            zweiter.messZiele = 0
             return
         }
         viewport.hint =
             measurePending.isEmpty
             ? "Messen: erstes Element anklicken" : "Messen: zweites Element anklicken (\(measurePending[0].string))"
         viewport.eingabe.messZiele = measurePending.count
+        zweiter.messZiele = measurePending.count
     }
 
     func measure(_ refs: [ElementRef]) {

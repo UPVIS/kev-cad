@@ -84,6 +84,9 @@ public enum Oberflaechenbefehl: Equatable, Sendable {
     case zweiteAnsicht(String)
     /// Blatt der Kachel Zeichnung (Kennung); nil, wenn keins gewählt ist.
     case blatt(String?)
+    /// V2-10: Das Blatt folgt dem, wovon gerade die Rede ist (Auswahl, Kamerabefehl des Agenten, Zeigen beim Sprechen);
+    /// aus = Kevin hält das Blatt fest.
+    case blattFolgt(Bool)
 }
 
 /// Reine Logik des Zustands, ohne Beobachtung (testbar, auch für den Demomodus und spätere Nachrichten).
@@ -119,12 +122,20 @@ public struct OberflaechenZustand: Equatable, Sendable {
 
     /// Übergang für ältere Agenten und das Lagebild.
     public var modus: ArbeitsModus { kachelflaeche || leisteRechts ? .werkstatt : .fokus }
+
+    /// V2-10: Die Kachel „Zweite Ansicht“ ist zu sehen (Kachelfläche an, die Kachel offen, keine andere groß). Sonst bleibt
+    /// ihr Viewer nur eingehängt und nimmt weder Eingaben an noch zeichnet er.
+    public var zweiteAnsichtSichtbar: Bool {
+        kachelflaeche && kacheln.contains(.ansicht) && (gross == nil || gross == .ansicht)
+    }
     /// Zeitleiste im Fokus auf Zuruf
     public var zeitleiste = false
     /// Blickrichtung der zweiten Ansicht
     public var zweiteAnsicht = "top"
     /// Gewähltes Blatt der Kachel Zeichnung
     public var blatt: String?
+    /// V2-10: Das Blatt folgt dem Zusammenhang (Vorgabe); aus, wenn Kevin es festhält.
+    public var blattFolgt = true
 
     public init(leisteLinks: Bool = true, leisteRechts: Bool = false, kacheln: [KachelArt] = [.modell],
                 gross: KachelArt? = nil, uebersicht: Bool = false) {
@@ -221,6 +232,8 @@ public struct OberflaechenZustand: Equatable, Sendable {
             zweiteAnsicht = name
         case .blatt(let id):
             blatt = id
+        case .blattFolgt(let an):
+            blattFolgt = an
         }
     }
 
@@ -294,6 +307,7 @@ public final class OberflaechenStore: ObservableObject {
     public var zeitleiste: Bool { zustand.zeitleiste }
     public var zweiteAnsicht: String { zustand.zweiteAnsicht }
     public var blatt: String? { zustand.blatt }
+    public var blattFolgt: Bool { zustand.blattFolgt }
 
     public func nummer(_ art: KachelArt) -> Int? { zustand.nummer(art) }
 

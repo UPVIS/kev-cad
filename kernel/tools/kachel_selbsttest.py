@@ -246,6 +246,22 @@ def main() -> int:
         pruefe(fokus > nach, "Kamerabefehl rechnet neu")
         pruefe(ms < GRENZE_UMSCHALTEN_MS * 3, f"Kamerabefehl mit zweiter Ansicht: {ms:.0f} ms (Fahrt des Viewers eingeschlossen)")
         bild("07-ansicht")
+
+        # 5b. V2-10: Das Blatt der Zeichnung folgt dem Kamerabefehl des Agenten (Teileblatt eines Teils)
+        teilblatt = next((b for b in rt.drawings().get("blaetter", [])
+                          if (b.get("inhalt") or {}).get("art") == "teil" and (b.get("inhalt") or {}).get("teile")), None)
+        if teilblatt:
+            ruf("view", kacheln=["modell", "zeichnung", "ansicht"], kacheln_nur=True, blatt=1)
+            time.sleep(1.5)
+            ruf("view", focus=[teilblatt["inhalt"]["teile"][0]])
+            time.sleep(1.0)
+            f = lage()["flaeche"]
+            pruefe((f.get("blatt") or {}).get("id") == teilblatt["id"],
+                   f"Blatt folgt dem Kamerabefehl: {teilblatt['id']} (gezeigt {(f.get('blatt') or {}).get('id')})")
+            bild("07b-blatt-folgt")
+            ruf("view", kacheln=["modell", "ansicht"], kacheln_nur=True)
+        else:
+            print("       kein Teileblatt im Projekt: Blattwahl nicht geprüft", flush=True)
         ms = pause(lambda: rt.run(timeout_s=600), 6.0)
         rt.wait_idle(120)
         ergebnis["umschalten"]["Lauf mit zweiter Ansicht"] = ms

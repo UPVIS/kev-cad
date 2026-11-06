@@ -17,23 +17,33 @@ struct DruckPlattenBild: View {
     var klick: (DruckPlattenTeil?, Int) -> Void
     var schwebt: (DruckPlattenTeil?) -> Void
     @Environment(\.colorScheme) private var schema
+    /// V2-10: vergrößern und verschieben (Gestaltung/Zoomflaeche.swift); Treffer rechnen durch den Zoom zurück.
+    @State private var zoom = ZoomZustand()
 
     var body: some View {
         GeometryReader { geo in
             let geom = DruckPlattenGeometrie(bett: vorschau.bett, in: CGRect(origin: .zero, size: geo.size), rand: 1)
-            Canvas { ctx, _ in zeichne(&ctx, geom) }
+            let zurueck = { (p: CGPoint) in zoom.zurueck(p, in: geo.size) }
+            Canvas { ctx, size in
+                ctx.concatenate(zoom.transform(in: size))
+                zeichne(&ctx, geom)
+            }
                 .contentShape(Rectangle())
-                .gesture(SpatialTapGesture(count: 2).onEnded { e in klick(geom.treffer(platte.teile, bei: e.location), 2) })
+                .gesture(SpatialTapGesture(count: 2).onEnded { e in
+                    klick(geom.treffer(platte.teile, bei: zurueck(e.location)), 2)
+                })
                 .simultaneousGesture(SpatialTapGesture(count: 1).onEnded { e in
-                    klick(geom.treffer(platte.teile, bei: e.location), 1)
+                    klick(geom.treffer(platte.teile, bei: zurueck(e.location)), 1)
                 })
                 .onContinuousHover { phase in
                     switch phase {
-                    case .active(let p): schwebt(geom.treffer(platte.teile, bei: p))
+                    case .active(let p): schwebt(geom.treffer(platte.teile, bei: zurueck(p)))
                     case .ended: schwebt(nil)
                     }
                 }
-                .overlay(alignment: .topLeading) { tooltip(geom) }
+                .overlay(alignment: .topLeading) { tooltip(geom, zoom: zoom.transform(in: geo.size)) }
+                .clipped()
+                .zoombar($zoom)
         }
         .aspectRatio(CGFloat(vorschau.bett.breite / vorschau.bett.tiefe), contentMode: .fit)
         .accessibilityElement(children: .ignore)
@@ -123,9 +133,9 @@ struct DruckPlattenBild: View {
     }
 
     @ViewBuilder
-    private func tooltip(_ g: DruckPlattenGeometrie) -> some View {
+    private func tooltip(_ g: DruckPlattenGeometrie, zoom: CGAffineTransform) -> some View {
         if let name = hover, let t = platte.teile.first(where: { $0.name == name }) {
-            let p = g.punkt(t.mitte)
+            let p = g.punkt(t.mitte).applying(zoom)
             let gr = vorschau.gruppe(vonTeil: name)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name.split(separator: "/").last.map(String.init) ?? name).font(.caption.weight(.semibold))

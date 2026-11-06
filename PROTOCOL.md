@@ -1336,7 +1336,8 @@ dauernd geschickt.
   nicht über einem Teil steht. `animation`: `{name, zeit, spielt}` oder null.
 - Testvarianten der App legen `statistik` dazu (gebaute Körper, Aufleuchten, Weitergaben an den Viewport, Teile,
   Schritte der Spur, Marken), für `kernel/tools/live_selbsttest.py`; für `kernel/tools/kachel_selbsttest.py` auch
-  `pause_ms` (längste Pause des Hauptfadens seit dem letzten Lagebild) und `zweite_ansicht` (fertige Bilder).
+  `pause_ms` (längste Pause des Hauptfadens seit dem letzten Lagebild) und `zweite_ansicht` (Bildanforderungen des
+  zweiten Viewers, solange seine Kachel zu sehen ist; bis V2-9 fertige Bilder).
 - Die App antwortet in unter 50 ms. Ohne Antwort nach 200 ms (oder ohne `lage-1`) liefert der Kernel, was er selbst
   weiß (`KernelService.lagebild`, `quelle: "kernel"`): Auswahl (`SELECTION`), vom Agenten ausgeblendete Teile, die
   Kamera aus dem letzten `LAGE` mit ihrem Alter. Eine verspätete Antwort merkt er sich für das nächste Mal.

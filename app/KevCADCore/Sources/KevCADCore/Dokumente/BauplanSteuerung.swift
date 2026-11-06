@@ -44,11 +44,16 @@ extension AppController: BauplanActions {
             + (m.plan.fehlerAnzahl > 0 ? ", \(m.plan.fehlerAnzahl) Fehler aus der Simulation" : ""))
     }
 
-    /// Nach DOCS: hat sich der Bauplan geändert (neuer Lauf), wird ein schon geladener Plan neu angefordert.
+    /// Nach DOCS: hat sich der Bauplan geändert (neuer Lauf), wird ein schon geladener Plan neu angefordert. Ist noch keiner
+    /// geladen, aber die Kachel Bauplan offen, kommt er jetzt: Die Kachel bleibt über einen Projektwechsel eingehängt und
+    /// fragt nur beim ersten Erscheinen (beim Start mit gemerkten Kacheln stand sie sonst bei „Noch kein Bauplan“,
+    /// obwohl ihr Kopf die Schritte schon nannte; 06.11.2026).
     func bauplanNachDocs(_ m: DokumenteMessage) {
-        guard case .docs(let d, _) = m, let kurz = d.bauplan, let plan = model.bauplan.plan,
-              !model.bauplan.laedt
-        else { return }
+        guard case .docs(let d, _) = m, let kurz = d.bauplan, !model.bauplan.laedt else { return }
+        guard let plan = model.bauplan.plan else {
+            if model.oberflaeche.kacheln.contains(.bauplan) { bauplanAnfordern() }
+            return
+        }
         let run = kurz.json["run"]?.intValue
         let schritte = kurz.schritte
         if (run != nil && run != plan.run) || schritte != plan.alleSchritte.count

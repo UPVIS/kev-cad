@@ -61,12 +61,14 @@ extension AppController {
     // MARK: Darüberfahren
 
     func hoverGeaendert(_ pick: PickResult?, _ welt: SIMD3<Float>?, _ bildpunkt: CGPoint?) {
-        mausMerken(pick, welt, bildpunkt)  // V2-5: fürs Lagebild
+        // V2-5: fürs Lagebild, Bildpunkt immer im Bild des Hauptviewers (V2-10: die Maus kann im zweiten stehen)
+        mausMerken(pick, welt, eingabeViewport === viewport || bildpunkt == nil ? bildpunkt : imHauptbild(welt))
+        kontextZeigen(pick)  // V2-10: beim Sprechen folgt das Blatt der Zeichnung dem Teil unter der Maus
         guard model.measureMode else {
             if messVorschau != nil || aktuellerFang != nil {
                 messVorschau = nil
                 aktuellerFang = nil
-                viewport.eingabe.unterMaus = nil
+                unterMausSetzen(nil)
                 refreshOverlay()
             }
             return
@@ -74,7 +76,7 @@ extension AppController {
         guard let pick, let bildpunkt, let ref = scene.resolve(pick) else {
             messVorschau = nil
             aktuellerFang = nil
-            viewport.eingabe.unterMaus = nil
+            unterMausSetzen(nil)
             refreshOverlay()
             return
         }
@@ -97,14 +99,16 @@ extension AppController {
             }
         }
         messVorschau = v
-        viewport.eingabe.unterMaus = v.text
+        unterMausSetzen(v.text)
         refreshOverlay()
     }
 
-    /// Nächster Fangpunkt des Teils unter der Maus innerhalb des Fangradius (Bildschirm, Ursprung oben links).
+    /// Nächster Fangpunkt des Teils unter der Maus innerhalb des Fangradius (Bildschirm, Ursprung oben links), im Viewer
+    /// unter der Maus (V2-10: Haupt- oder zweiter Viewer).
     func fangpunkt(nahe maus: CGPoint, teil: String) -> Fangpunkt? {
         guard let rec = scene.record(teil) else { return nil }
-        let projector = OverlayProjector(camera: viewport.camera, size: viewport.viewSize)
+        let ort = eingabeViewport
+        let projector = OverlayProjector(camera: ort.camera, size: ort.viewSize)
         let m = scene.worldTransform(teil)
         func w(_ p: SIMD3<Float>) -> SIMD3<Float> {
             let v = m * SIMD4(p, 1)

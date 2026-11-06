@@ -64,6 +64,9 @@ struct KachelRahmen<Zusatz: View, Inhalt: View>: View {
                     .simultaneousGesture(TapGesture().onEnded { antippen() })
             }
         }
+        // Verlangt ein Inhalt mehr Höhe, als die Kachel hat, läuft er unten über (und wird abgeschnitten); der Kopf bleibt
+        // oben, statt mit dem Überlauf mittig verschoben zu werden
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background {
             if !durchsichtig { form.fill(Color.white.opacity(0.03)) }
         }

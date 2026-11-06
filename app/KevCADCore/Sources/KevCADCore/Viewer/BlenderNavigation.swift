@@ -422,8 +422,22 @@ final class NavigationInputView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) wird nicht benutzt") }
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool { coordinator?.eingabeAktiv != false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// V2-10: verborgen (Kachel der zweiten Ansicht nicht zu sehen) weder Klicks noch Rad noch Gesten.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        coordinator?.eingabeAktiv == false ? nil : super.hitTest(point)
+    }
+
+    /// Eingabe an oder aus: Verfolgungsbereich neu, Maus vergessen.
+    func aktivGeaendert() {
+        updateTrackingAreas()
+        guard coordinator?.eingabeAktiv == false else { return }
+        if maus != nil { maus = nil }
+        coordinator?.eingabe.mausImViewport = false
+        if window?.firstResponder === self { window?.makeFirstResponder(nil) }
+    }
 
     override func layout() {
         super.layout()
@@ -438,6 +452,8 @@ final class NavigationInputView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
+        tracking = nil
+        guard coordinator?.eingabeAktiv != false else { return }
         let t = NSTrackingArea(
             rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
             owner: self, userInfo: nil)

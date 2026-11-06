@@ -19,22 +19,24 @@ extension AppController: NavigationActions {
 
     // MARK: Ansicht
 
+    // V2-10: Ansichtsbefehle wirken wie in Blender im Viewer unter der Maus (Haupt- oder zweiter Viewer).
+
     public func axisView(_ view: StandardViewName) {
-        viewport.navAxisView(ViewportCoordinator.standardView(view))
+        eingabeViewport.navAxisView(ViewportCoordinator.standardView(view))
     }
 
-    public func viewOpposite() { viewport.navOpposite() }
+    public func viewOpposite() { eingabeViewport.navOpposite() }
 
-    public func toggleProjection() { viewport.navToggleProjection() }
+    public func toggleProjection() { eingabeViewport.navToggleProjection() }
 
     public func orbitStep(yaw: Double, pitch: Double) {
-        viewport.navOrbitStep(yaw: Float(yaw), pitch: Float(pitch))
+        eingabeViewport.navOrbitStep(yaw: Float(yaw), pitch: Float(pitch))
     }
 
-    public func panStep(x: Double, y: Double) { viewport.navPanStep(x: Float(x), y: Float(y)) }
+    public func panStep(x: Double, y: Double) { eingabeViewport.navPanStep(x: Float(x), y: Float(y)) }
 
     public func zoomStep(_ steps: Int) {
-        viewport.navZoom(factor: pow(1 / BlenderNav.wheelStep, Float(steps)))
+        eingabeViewport.navZoom(factor: pow(1 / BlenderNav.wheelStep, Float(steps)))
     }
 
     public func viewSelected() {
@@ -43,11 +45,11 @@ extension AppController: NavigationActions {
             viewAll()
             return
         }
-        viewport.fit(b, animated: true)
+        eingabeViewport.fit(b, animated: true)
     }
 
     public func viewAll() {
-        viewport.fit(scene.visibleBounds(), animated: true)
+        eingabeViewport.fit(scene.visibleBounds(), animated: true)
     }
 
     // MARK: Auswahl und Sichtbarkeit

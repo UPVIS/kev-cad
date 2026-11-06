@@ -56,8 +56,9 @@ private struct GizmoLage<Inhalt: View>: View {
     }
 }
 
-/// Zeichnet die Überlagerung; folgt jeder Kamerabewegung, weil sie den ViewportController beobachtet.
-private struct OverlayCanvas: View {
+/// Zeichnet die Überlagerung; folgt jeder Kamerabewegung, weil sie den ViewportController beobachtet (auch im zweiten
+/// Viewer, ZweiterViewer.swift).
+struct OverlayCanvas: View {
     @ObservedObject var coordinator: ViewportCoordinator
     @ObservedObject var viewport: ViewportController
 

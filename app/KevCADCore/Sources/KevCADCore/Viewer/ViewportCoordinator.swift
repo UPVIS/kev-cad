@@ -72,7 +72,17 @@ public final class ViewportCoordinator: ObservableObject {
     public func hoverAuffrischen() { eingabeView?.hoverTest() }
 
     /// Größe des Viewports in Punkten (von der Eingabeebene gemeldet), für Schwenken und Strahlen.
-    var viewSize: CGSize = CGSize(width: 1200, height: 800)
+    var viewSize: CGSize = CGSize(width: 1200, height: 800) {
+        didSet { if aufAbruf && viewSize != oldValue { neuZeichnen() } }
+    }
+    /// V2-10: nur zeichnen, wenn sich etwas ändert (zweiter Viewer, ZweiterViewer.swift); der Hauptviewer zeichnet
+    /// laufend mit 120 Bildern je Sekunde.
+    public var aufAbruf = false
+    /// V2-10: Maus und Tasten annehmen. Der zweite Viewer bleibt eingehängt, wenn seine Kachel verborgen ist; dann nimmt er
+    /// nichts an (sonst meldete sein Verfolgungsbereich Bewegungen über dem Hauptviewer, der darunter liegt).
+    public var eingabeAktiv = true {
+        didSet { if eingabeAktiv != oldValue { eingabeView?.aktivGeaendert() } }
+    }
     /// Die aktuelle Parallelprojektion stammt von einer Achsansicht und endet beim Drehen (Blender „Auto Perspective“).
     var autoOrtho = false
 
@@ -120,7 +130,18 @@ public final class ViewportCoordinator: ObservableObject {
     func attach(_ view: MTKView) {
         // Auflage aus AP0: das Paket stellt fest 60 Bilder/s ein; für ProMotion 120
         view.preferredFramesPerSecond = 120
+        if aufAbruf {
+            view.isPaused = true
+            view.enableSetNeedsDisplay = true
+            view.needsDisplay = true
+        }
         mtkView = view
+    }
+
+    /// Ein neues Bild anfordern (nur mit `aufAbruf`; sonst zeichnet das MTKView ohnehin laufend).
+    func neuZeichnen() {
+        guard aufAbruf, let v = mtkView else { return }
+        v.needsDisplay = true
     }
 
     // MARK: Überlagerung

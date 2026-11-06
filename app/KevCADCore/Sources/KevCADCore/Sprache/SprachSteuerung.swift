@@ -109,7 +109,7 @@ public final class SprachSteuerung {
         erkennung = erkennungFabrik?() ?? neueErkennung()
         erkennung?.beiEreignis = { [weak self] e in self?.ereignis(e) }
         c.model.oberflaeche.ausfuehren(.sprechen(true))
-        c.viewport.zeichnen = true
+        c.zeichnenSetzen(true)
         melden(.spricht)
         tonStarten()
         probenAn()
@@ -121,7 +121,7 @@ public final class SprachSteuerung {
         let t = uhr()
         sitzung?.mikrofonAus(t: t)
         c.model.oberflaeche.ausfuehren(.sprechen(false))
-        c.viewport.zeichnen = false
+        c.zeichnenSetzen(false)
         melden(.pause)
         let e = erkennung
         stoppen = Task { await e?.anhalten(hoechstens: Self.satzAbwartenS) }
@@ -132,7 +132,7 @@ public final class SprachSteuerung {
         let t = uhr()
         sitzung?.mikrofonAn(t: t)
         c.model.oberflaeche.ausfuehren(.sprechen(true))
-        c.viewport.zeichnen = true
+        c.zeichnenSetzen(true)
         melden(.spricht)
         tonStarten()
     }
@@ -155,7 +155,7 @@ public final class SprachSteuerung {
         sitzung?.strichEnden(t: ende)
         sitzung?.mikrofonAus(t: ende)
         melden(.aus, grund: .fertig)
-        c.viewport.zeichnen = false
+        c.zeichnenSetzen(false)
         c.model.oberflaeche.ausfuehren(.sprechen(false))  // der rote Rahmen geht sofort
         c.model.sprache.schickt = true
         let e = erkennung
@@ -469,7 +469,7 @@ public final class SprachSteuerung {
         gesagt = []
         zwischenstand = nil
         satzBeginn = nil
-        controller?.viewport.zeichnen = false
+        controller?.zeichnenSetzen(false)
         controller?.model.sprache.text = nil
         controller?.model.sprache.pegel = 0
         controller?.model.sprache.schickt = false

@@ -148,7 +148,7 @@ struct KachelFlaeche: View {
             vergroessern: { model.oberflaechenActions?.vergroessereKachel(gross ? nil : art) },
             schliessen: { model.oberflaechenActions?.schliesseKachel(art) },
             antippen: { if oberflaeche.aktiv != art { model.oberflaechenActions?.oberflaeche(.kachelAktiv(art)) } },
-            zusatz: { KachelKopfZusatz(art: art, model: model, dokumente: dokumente) },
+            zusatz: { KachelKopfZusatz(art: art, model: model, oberflaeche: oberflaeche, dokumente: dokumente) },
             inhalt: { KachelInhalt(art: art, breit: breite >= 880 || gross, model: model, state: state,
                                    versionen: versionen, dokumente: dokumente, navigation: navigation,
                                    zeigeIm3D: zeigeIm3D)
@@ -161,6 +161,7 @@ struct KachelFlaeche: View {
 private struct KachelKopfZusatz: View {
     let art: KachelArt
     @ObservedObject var model: AppModel
+    @ObservedObject var oberflaeche: OberflaechenStore
     @ObservedObject var dokumente: DokumenteZustand
 
     var body: some View {
@@ -203,6 +204,21 @@ private struct KachelKopfZusatz: View {
     @ViewBuilder
     private func zusatz(_ art: KachelArt) -> some View {
         if art == .zeichnung, let u = model.dokumente.uebersicht, !u.blaetter.isEmpty {
+            // V2-10: Das Blatt folgt Auswahl, Agent und Zeigen beim Sprechen; die Nadel hält es fest
+            let fest = !oberflaeche.blattFolgt
+            Button {
+                model.oberflaechenActions?.oberflaeche(.blattFolgt(fest))
+            } label: {
+                Image(systemName: fest ? "pin.fill" : "pin")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(fest ? GF.kreide : GF.asche)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(fest ? "Blatt ist festgehalten. Klicken: Blatt folgt wieder dem, wovon die Rede ist"
+                       : "Blatt folgt Auswahl, Agent und Zeigen. Klicken: dieses Blatt festhalten")
+            .accessibilityLabel(fest ? "Blatt festgehalten" : "Blatt folgt dem Zusammenhang")
             if u.blaetter.count > 1 {
                 BlattSchritt(symbol: "chevron.left", hilfe: "Voriges Blatt") { blattWechseln(u, um: -1) }
                 BlattSchritt(symbol: "chevron.right", hilfe: "Nächstes Blatt") { blattWechseln(u, um: 1) }
@@ -313,8 +329,7 @@ private struct KachelInhalt: View, Equatable {
         case .render:
             RenderDialog(model: model, store: model.render)
         case .ansicht:
-            ZweiteAnsichtKachel(actions: model.oberflaechenActions, oberflaeche: model.oberflaeche,
-                                store: model.zweiteAnsicht)
+            ZweiteAnsichtKachel(actions: model.oberflaechenActions, oberflaeche: model.oberflaeche)
         case .material:
             HStack(spacing: 0) {
                 NebenSpalte(an: breit, breite: 220, kante: .trailing) {
@@ -409,46 +424,34 @@ private struct MaterialDatenKachel<Inhalt: View>: View {
     }
 }
 
-/// Kachel „zweite Ansicht“: eine Standardansicht des Modells als Bild. Der App-Kern rechnet es im Hintergrund, nach jedem
-/// Lauf und jedem Kamerabefehl des Agenten; der Hauptfaden wartet nie darauf.
+/// Kachel „zweite Ansicht“ (V2-10): ein zweiter Viewer mit eigener Kamera und denselben Griffen wie der Hauptviewer
+/// (Drehen, Verschieben, Zoomen, Auswählen, Messen, Zeichnen beim Sprechen, Ziffernblock). Der Umschalter stellt eine
+/// Standardrichtung ein und passt ein; danach navigiert Kevin frei. Der Agent stellt die Richtung mit
+/// `view(zweite_ansicht=…)`.
 private struct ZweiteAnsichtKachel: View {
     @EnvironmentObject private var session: AppSession
     let actions: OberflaechenActions?
     @ObservedObject var oberflaeche: OberflaechenStore
-    @ObservedObject var store: ZweiteAnsichtStore
 
     private static let wahl: [(String, String)] = [
         ("top", "Oben"), ("front", "Vorn"), ("right", "Rechts"), ("left", "Links"), ("back", "Hinten"), ("iso", "Iso"),
     ]
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topTrailing) {
-                if let bild = store.bild {
-                    Image(decorative: bild, scale: 2)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                } else {
-                    Text(store.rechnet ? "Ansicht wird gerechnet …" : "Noch keine Teile")
-                        .font(GS.text)
-                        .foregroundStyle(GF.rauch)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
-                ModusUmschalter(
-                    optionen: Self.wahl.map { ModusUmschalter<String>.Option(wert: $0.0, titel: $0.1) },
-                    auswahl: oberflaeche.zweiteAnsicht, beschriftung: "Blickrichtung"
-                ) { actions?.oberflaeche(.zweiteAnsicht($0)) }
-                .padding(10)
+        ZStack(alignment: .topLeading) {
+            if let controller = session.controller {
+                ZweiterViewerAnsicht(controller: controller)
+            } else {
+                Text("Die zweite Ansicht braucht den App-Kern")
+                    .font(GS.text)
+                    .foregroundStyle(GF.rauch)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .onAppear { melden(geo.size) }
-            .onChange(of: geo.size) { _, s in melden(s) }
-            .onDisappear { session.controller?.zweiteAnsichtGroesse(nil) }
+            ModusUmschalter(
+                optionen: Self.wahl.map { ModusUmschalter<String>.Option(wert: $0.0, titel: $0.1) },
+                auswahl: oberflaeche.zweiteAnsicht, beschriftung: "Blickrichtung"
+            ) { actions?.oberflaeche(.zweiteAnsicht($0)) }
+            .padding(10)
         }
-    }
-
-    private func melden(_ s: CGSize) {
-        guard s.width > 20, s.height > 20 else { return }
-        session.controller?.zweiteAnsichtGroesse(CGSize(width: s.width * 2, height: s.height * 2))
     }
 }

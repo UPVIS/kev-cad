@@ -65,66 +65,65 @@ extension AppController {
         ])
     }
 
-    // MARK: Zweite Ansicht
+    // MARK: Zweite Ansicht (V2-10: zweiter Viewer, Viewer/ZweiterViewer.swift)
 
-    /// Die Kachel meldet ihre Größe in Pixeln (nil: zu, dann rechnet nichts mehr).
-    public func zweiteAnsichtGroesse(_ pixel: CGSize?) {
-        zweiteAnsichtPixel = pixel
-        if pixel != nil {
-            zweiteAnsichtNeu()
-        } else {
-            zweiteAnsichtAuftrag?.cancel()
-            zweiteAnsichtRechner.freigeben()
+    /// Die Kachel ist erschienen: Steht ihre Kamera noch nicht, kommt sie in die Richtung der Kachel und wird eingepasst.
+    /// Kurz danach, damit der Viewer seine Größe kennt (sonst passt das Einpassen auf ein falsches Seitenverhältnis).
+    public func zweiteAnsichtErscheint() {
+        guard !zweiterViewer.eingepasst else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in self?.zweiteAnsichtStellen(animiert: false) }
+    }
+
+    /// In die Richtung der Kachel stellen (`OberflaechenZustand.zweiteAnsicht`: Achsansichten parallel, Iso perspektivisch)
+    /// und auf das Ziel des letzten Kamerabefehls bzw. alle sichtbaren Teile einpassen. Ist die Kachel zu, geschieht das
+    /// beim nächsten Erscheinen.
+    func zweiteAnsichtStellen(animiert: Bool) {
+        guard zweiterViewer.aktiv else {
+            zweiterViewer.eingepasst = false
+            return
         }
+        let name = model.oberflaeche.zweiteAnsicht
+        guard let sv = ViewportCoordinator.standardView(protocolName: name) else { return }
+        let parallel = !name.hasPrefix("iso")
+        let bereich = zweiteAnsichtBereich()
+        let z = zweiterViewer.coordinator
+        z.apply(rotation: sv.rotation, orthographic: parallel, fitTo: bereich, animated: animiert)
+        z.autoOrtho = parallel  // wie der Ziffernblock: Drehen kehrt zur Perspektive zurück
+        if bereich != nil { zweiterViewer.eingepasst = true }
+    }
+
+    /// Nach einem Lauf: Bewegt wird die Kamera nur, solange sie noch nie Teile eingepasst hat.
+    func zweiteAnsichtNachLauf() {
+        if zweiterViewer.aktiv && !zweiterViewer.eingepasst { zweiteAnsichtStellen(animiert: false) }
+    }
+
+    /// Ziel des letzten Kamerabefehls, sonst alle sichtbaren Teile.
+    private func zweiteAnsichtBereich() -> BoundingBox? {
+        if !zweiteAnsichtZiel.isEmpty {
+            let refs = scene.expand(zweiteAnsichtZiel.compactMap(ElementRef.init)).known
+            if !refs.isEmpty, let b = scene.worldBounds(of: refs) { return b }
+        }
+        return scene.visibleBounds()
     }
 
     /// Die zweite Ansicht folgt einem Kamerabefehl des Agenten: Sie bleibt in ihrer Richtung und zeigt dasselbe Ziel.
+    /// Sichtbarkeit, Schnitt und Explosion übernimmt sie ohnehin vom Hauptviewer.
     func zweiteAnsichtFolgt(_ v: ViewCommandMessage) {
-        guard zweiteAnsichtPixel != nil else { return }
         switch v.cmd {
         case "focus":
             zweiteAnsichtZiel = v.args["refs"]?.stringList ?? []
+            blattZumKontext(teile: zweiteAnsichtZiel)  // V2-10: Das Blatt der Zeichnung zeigt, wovon der Agent spricht
+        case "highlight":
+            blattZumKontext(teile: v.args["refs"]?.stringList ?? [])
+            return
         case "view":
-            if v.args["fit"]?.boolValue == true || v.args["standard"]?.stringValue != nil { zweiteAnsichtZiel = [] }
-        case "visibility", "section", "explode":
-            break
+            guard v.args["fit"]?.boolValue == true || v.args["standard"]?.stringValue != nil else { return }
+            zweiteAnsichtZiel = []
         default:
             return
         }
-        zweiteAnsichtNeu()
-    }
-
-    /// Neues Bild anfordern (Lauf fertig, andere Größe, andere Richtung, Kamerabefehl). Mehrere Anlässe in Folge ergeben
-    /// ein Bild: Der Auftrag wartet kurz, und der Rechner verwirft, was nicht mehr das Neueste ist.
-    public func zweiteAnsichtNeu() {
-        guard zweiteAnsichtPixel != nil else { return }
-        zweiteAnsichtAuftrag?.cancel()
-        let auftrag = DispatchWorkItem { [weak self] in self?.zweiteAnsichtRechnen() }
-        zweiteAnsichtAuftrag = auftrag
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: auftrag)
-    }
-
-    /// Nur das Zusammenstellen läuft auf dem Hauptfaden (Kopien der Körper teilen ihren Speicher), gerechnet wird daneben.
-    private func zweiteAnsichtRechnen() {
-        guard let px = zweiteAnsichtPixel, !scene.isEmpty else {
-            if scene.isEmpty { model.zweiteAnsicht.setze(nil) }
-            return
-        }
-        let w = max(16, min(Int(px.width), 2048)), h = max(16, min(Int(px.height), 2048))
-        let name = model.oberflaeche.zweiteAnsicht
-        var a: [String: JSONValue] = ["standard": .string(name)]
-        if !zweiteAnsichtZiel.isEmpty { a["ziel"] = .array(zweiteAnsichtZiel.map(JSONValue.string)) }
-        let camera = Self.ansichtKamera(.object(a), scene: scene, aspect: Float(w) / Float(h),
-                                        orthographic: !name.hasPrefix("iso"))
-        let store = model.zweiteAnsicht
-        store.rechnet = true
-        zweiteAnsichtRechner.rechne(
-            bodies: scene.snapshotBodies(), camera: camera, breite: w, hoehe: h,
-            lighting: viewport.controller.lightingConfiguration
-        ) { bild in
-            store.rechnet = false
-            if let bild { store.setze(bild) }
-        }
+        guard zweiterViewer.aktiv, let b = zweiteAnsichtBereich() else { return }
+        zweiterViewer.coordinator.fit(b, animated: true)
     }
 }
 
@@ -175,68 +174,4 @@ public final class HaengerMesser {
         zeitgeber = nil
         return max(groesste, CACurrentMediaTime() - letzter) * 1000
     }
-}
-
-/// Bild der Kachel „zweite Ansicht“ für die Oberfläche.
-@MainActor
-public final class ZweiteAnsichtStore: ObservableObject {
-    @Published public private(set) var bild: CGImage?
-    @Published public internal(set) var rechnet = false
-    /// Zahl der fertigen Bilder (Selbsttest)
-    public private(set) var fertig = 0
-
-    public init() {}
-
-    func setze(_ neu: CGImage?) {
-        bild = neu
-        if neu != nil { fertig += 1 }
-    }
-}
-
-/// Rechnet die zweite Ansicht auf einer eigenen Warteschlange, damit der Hauptfaden frei bleibt (Metal wartet dort auf das
-/// Ende des Bildes). Immer nur das Neueste: Ein Auftrag, der beim Start schon überholt ist, fällt weg.
-final class ZweiteAnsichtRechner: @unchecked Sendable {
-    private let schlange = DispatchQueue(label: "de.upvis.kevcad.zweite-ansicht", qos: .utility)
-    private let sperre = NSLock()
-    private var stand = 0
-    private var renderer: OffscreenRenderer?
-
-    /// Kachel zu: Die Puffer der Körper belegen sonst weiter Grafikspeicher.
-    func freigeben() {
-        sperre.lock()
-        stand += 1
-        sperre.unlock()
-        schlange.async { [self] in renderer = nil }
-    }
-
-    /// `fertig` läuft auf dem Hauptfaden; mit nil, wenn das Bild nicht ging oder überholt ist.
-    func rechne(bodies: [ViewportBody], camera: CameraState, breite: Int, hoehe: Int, lighting: LightingConfiguration,
-                fertig: @escaping @MainActor @Sendable (CGImage?) -> Void) {
-        sperre.lock()
-        stand += 1
-        let meiner = stand
-        sperre.unlock()
-        schlange.async { [self] in
-            sperre.lock()
-            let neu = stand == meiner
-            sperre.unlock()
-            var bild: CGImage?
-            if neu {
-                if renderer == nil { renderer = OffscreenRenderer() }
-                let optionen = OffscreenRenderOptions(
-                    width: breite, height: hoehe, cameraState: camera, displayMode: .shadedWithEdges,
-                    lightingConfiguration: lighting, backgroundColor: SIMD4<Float>(0.18, 0.19, 0.20, 1), showGrid: false,
-                    showAxes: false, msaaSampleCount: 4)
-                bild = renderer?.render(bodies: bodies, options: optionen)
-            }
-            let ergebnis = SendableBild(bild)
-            DispatchQueue.main.async { MainActor.assumeIsolated { fertig(ergebnis.bild) } }
-        }
-    }
-}
-
-/// CGImage gilt in den Metadaten nicht als Sendable, ist aber unveränderlich.
-private struct SendableBild: @unchecked Sendable {
-    let bild: CGImage?
-    init(_ bild: CGImage?) { self.bild = bild }
 }

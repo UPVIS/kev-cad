@@ -7,11 +7,14 @@ struct BauplanBildAnsicht: View {
     let bild: BauplanStrichbild?
     var fehlt: String = "Kein Bild für diesen Schritt"
     @Environment(\.colorScheme) private var scheme
+    /// V2-10: vergrößern und verschieben (Gestaltung/Zoomflaeche.swift); ein anderer Schritt beginnt wieder eingepasst.
+    @State private var zoom = ZoomZustand()
 
     var body: some View {
         GeometryReader { geo in
             if let bild, !bild.leer {
                 Canvas { ctx, size in
+                    ctx.concatenate(zoom.transform(in: size))
                     ctx.withCGContext { cg in
                         // Canvas: Ursprung links oben, y nach unten, Punkte. Papierbreite des Felds ~ 180 mm.
                         let ziel = CGRect(origin: .zero, size: size).insetBy(dx: 10, dy: 10)
@@ -21,6 +24,8 @@ struct BauplanBildAnsicht: View {
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+                .zoombar($zoom, doppelklick: true)
                 .accessibilityLabel("Strichbild des Schritts")
             } else {
                 VStack(spacing: 8) {
@@ -35,6 +40,7 @@ struct BauplanBildAnsicht: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onChange(of: bild?.schritt) { _, _ in zoom = ZoomZustand() }
     }
 }
 

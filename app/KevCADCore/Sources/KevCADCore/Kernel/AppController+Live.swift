@@ -317,7 +317,7 @@ extension AppController {
                 "spur": .number(Double(model.agentenspur.schritte.count)),
                 "marken": .number(Double(befundMarken().count)),
                 // V2-7: längste Pause des Hauptfadens seit dem letzten Lagebild, fertige Bilder der zweiten Ansicht
-                "pause_ms": .number(hauptfadenPause().rounded()), "zweite_ansicht": .number(Double(model.zweiteAnsicht.fertig)),
+                "pause_ms": .number(hauptfadenPause().rounded()), "zweite_ansicht": .number(Double(zweiterViewer.bilder)),
             ])
         }
         return felder

@@ -52,7 +52,9 @@ struct BauplanAnsicht: View {
                 leer
             }
         }
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 480)
+        // Keine Mindesthöhe: In einer Kachel unter 480 pt lief der Inhalt sonst über und schob ihren Kopf unter die
+        // Fensterleiste (06.11.2026)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .overlay(alignment: .bottom) { meldungsLeiste }
         .onAppear {
             if store.plan == nil, !store.laedt { actions?.bauplanAnfordern() }

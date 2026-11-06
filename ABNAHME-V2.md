@@ -95,5 +95,6 @@ Protokoll wie bisher.
 
 **Rückweg.** Der Wechsel lief am 06.11.2026 als Vorlauf (fast-forward) ohne Merge-Commit; der alte Stand trägt das Tag
 `vor-v2`. Gefällt dir V2 im Alltag nicht, setzt `git restore --source=vor-v2 --staged --worktree :/` mit einem Commit auf
-`main` den alten Stand wieder ein, und der Hook installiert wieder die alte Fassung. macOS fragt dann noch einmal nach den Rechten, weil die alte Fassung ad hoc signiert ist.
-Projekte bleiben nutzbar. Entwürfe aus V2 liegen weiter im Datenordner, die alte App zeigt sie nur nicht an.
+`main` den alten Stand wieder ein, und der Hook installiert wieder die alte Fassung. macOS fragt dann noch einmal nach den
+Rechten, weil die alte Fassung ad hoc signiert ist. Projekte bleiben nutzbar. Entwürfe aus V2 liegen weiter im
+Datenordner, die alte App zeigt sie nur nicht an.

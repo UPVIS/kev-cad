@@ -152,11 +152,25 @@ weiter.
   Zuschnitt = `MaterialZuschnittAnsicht`, Druck = `DruckAnsicht` (Platten ab 640 pt Breite, „Drucken …“ öffnet nur den
   Dialog), Animation = `AnimationTimeline`, Material = `MaterialBereich` mit Seitenleiste und Inspektor, Simulation =
   Seitenleiste, Ergebnisse, Inspektor, Versionen = `VersionenLeiste`, Details = `InspectorView`, Rendern = `RenderDialog`.
-- Zweite Ansicht: ein Bild einer Standardansicht, gerechnet auf einer eigenen Warteschlange (`ZweiteAnsichtRechner`,
-  `OffscreenRenderer` ist dafür nicht mehr an den Hauptfaden gebunden). Es entsteht nach jedem Lauf, bei neuer Größe oder
-  Richtung und nach jedem Kamerabefehl des Agenten: `view(focus=…)` zeigt dasselbe Ziel aus ihrer Richtung,
-  `view(standard=…)` oder `fit` wieder alles. Ein zweiter echter Viewport hätte auf dem Hauptfaden gezeichnet und alle
-  Körper ein zweites Mal hochgeladen; dafür bleibt die Ansicht ein Bild ohne Maus.
+- Zweite Ansicht (V2-10, Kevin, 06.11.2026: „beliebig die anderen Ansichten … zoomen … wie in Blender … die gleichen
+  Controls … messen, zeichnen, arbeiten“): ein zweiter Viewer mit eigener Kamera (`ZweiterViewer`,
+  `ZweiterViewerAnsicht`). Körper, Darstellung, Schnitt, Umriss der Auswahl und Überlagerung (Maße, Striche,
+  Anmerkungen) übernimmt er vom Hauptviewer, Maus, Trackpad und Tasten wirken wie dort (`NavigationInputLayer`): drehen,
+  verschieben, zoomen, auswählen, Rahmen, Messen mit Fangpunkten, Zeichnen beim Sprechen, Ziffernblock, Kontextmenü.
+  Auswahl und Messungen sind dieselben wie im Hauptviewer. Tasten wirken wie in Blender im Viewer unter dem Mauszeiger
+  (`AppController.eingabeViewport`); ohne Maus über dem zweiten der Hauptviewer. Der Umschalter (Oben, Vorn, Rechts,
+  Links, Hinten, Iso) stellt eine Richtung ein und passt ein, danach navigiert Kevin frei; die Kamera bleibt beim
+  Schließen erhalten. Kamerabefehle des Agenten: `view(focus=…)` zeigt dasselbe Ziel aus ihrer Richtung, `standard` oder
+  `fit` wieder alles; ein Lauf bewegt sie nicht mehr. Gezeichnet wird nur bei einer Änderung (MTKView angehalten,
+  `aufAbruf`), ein stehender zweiter Viewer kostet also keine Bilder; verborgen (Kachelfläche aus, andere Kachel groß)
+  nimmt er weder Eingaben an noch zeichnet er (`OberflaechenZustand.zweiteAnsichtSichtbar`). Bis V2-9 war die Kachel ein
+  Bild aus dem `OffscreenRenderer`, ohne Maus.
+- Blatt folgt dem Zusammenhang (V2-10, Kevin: „Auch die Zeichnungen sollen dann immer kontextbasiert switchen, während man
+  erklärt“): Ist die Kachel Zeichnung offen, wechselt ihr Blatt zu dem, wovon gerade die Rede ist: Auswahl (Viewer,
+  zweiter Viewer, Objekte, Agent), Kamerabefehle und Hervorhebungen des Agenten, beim Sprechen ein Teil, auf dem die Maus
+  0,6 s bleibt. Ein Teil zeigt sein Teileblatt (gleiche Teile einer Stücklistenposition teilen es), mehrere Teile die
+  engste Baugruppe, sonst den Zusammenbau (`Blattwahl`). Die Nadel im Kopf der Kachel hält das Blatt fest
+  (`Oberflaechenbefehl.blattFolgt`).
 - Der Agent stellt die Fläche über `view` (PROTOCOL.md, „Fläche“, `VIEW_CMD flaeche`), Skill `kacheln.md`. Eine Kachel holt
   die Kachelfläche dazu; am Rand bleibt das Fenster schmal und die Kacheln stehen übereinander.
 - Wer `ProjectWindowState.bereich` setzt (Sprünge aus Stückliste, Teilebaum, Menüs, Selbsttests), holt die passende
@@ -238,9 +252,17 @@ enthalten also den Aufbau der Oberfläche, nicht das Zeichnen des Modells.
 | Kachel 2 groß, alle einordnen | 142, 66 ms |
 | an den Rand, zurück | 59, 88 ms |
 | zweite Ansicht: andere Richtung, Kamerabefehl, ganzer Lauf | 40, 38, 39 ms |
+| V2-10, zweite Ansicht als zweiter Viewer: andere Richtung, Kamerabefehl, ganzer Lauf | 28, 26, 10 ms |
 
 V2-8: Kachel 2 groß 50 bis 60 ms, alle einordnen 35 bis 42 ms (Nebenspalten vorgebaut), Zahlen in `kernel/tools/MESSUNG.md`.
+V2-10 (06.11.2026, FPV-Kopie mit vier Blättern): 64 Prüfungen ohne Fehler, neu „Blatt folgt dem Kamerabefehl“. Weil der
+Viewer auf dem Mini nicht zeichnet, fehlt in den Zahlen das Zeichnen des zweiten Viewers; er zeichnet nur bei Änderungen.
 
 Bilder der Fenster liefert im Test `VIEW_CMD test_foto` (ohne Viewer): `screencapture` geht über ssh nicht. Fallen beim Bau:
 `EmptyView()` in `ViewThatFits` ist kein Kandidat, die letzte echte Ansicht wird dann erzwungen und macht die Kachel breiter
-als das Fenster (Kopf der Druckvorschau am Rand).
+als das Fenster (Kopf der Druckvorschau am Rand). V2-10: Die Kachelfläche bleibt eingehängt, wenn sie verborgen ist; der
+Verfolgungsbereich eines AppKit-Views darin meldet trotz `opacity(0)` und `allowsHitTesting(false)` jede Mausbewegung
+über dem Hauptviewer darunter (deshalb `eingabeAktiv` im zweiten Viewer). Verlangt der Inhalt einer Kachel mehr Höhe, als
+sie hat (der Bauplan hatte `minHeight: 480`), zentrierte die Kachel den Überlauf und schob ihren Kopf unter die
+Fensterleiste; der Rahmen richtet jetzt oben aus. Eine Kachel, die über einen Projektwechsel eingehängt bleibt, fragt nur
+beim ersten Erscheinen nach Daten: Der Bauplan kommt deshalb auch nach DOCS, wenn seine Kachel offen und leer ist.

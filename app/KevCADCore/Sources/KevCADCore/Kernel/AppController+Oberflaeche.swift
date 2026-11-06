@@ -16,7 +16,7 @@ extension AppController: OberflaechenActions {
             model.oberflaeche.ausfuehren(befehl)
         case .zweiteAnsicht:
             model.oberflaeche.ausfuehren(befehl)
-            zweiteAnsichtNeu()
+            zweiteAnsichtStellen(animiert: true)  // V2-10: auch erneut gewählt stellt sie die Richtung wieder her
         default: model.oberflaeche.ausfuehren(befehl)
         }
     }
