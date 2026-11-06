@@ -97,7 +97,7 @@ def lauf(rt, z: Zaehler, name: str, params=None) -> dict:
     res = rt.run(params=params, timeout_s=600)
     t_zurueck = time.perf_counter() - t0
     rt.wait_idle(120)
-    ruhe(z)
+    ruhe(z, 10.0)  # Prüfung und Statik kommen nach dem Lauf und zählen mit
     frames = z.seit(m)
     nach = statistik(rt)
     arten: dict[str, list[int]] = collections.defaultdict(lambda: [0, 0])
@@ -271,6 +271,21 @@ def main() -> int:
                 pruefe(zurueck["teile_neu"] == 0, "alter Wert kommt ohne Netze zurück")
                 pruefe(zurueck["app"]["koerper_gebaut"] == neu["teile_neu"], "die App tauscht genau diese Teile aus dem Speicher")
 
+        # Neue Version: Das Vorschaubild nimmt die Netze aus der Szene der App
+        modell = kopie / "model.py"
+        modell.write_text(modell.read_text(encoding="utf-8") + f"\n# Selbsttest {time.time():.0f}\n", encoding="utf-8")
+        beginn = time.time()
+        rt._ver_letztes_bild = 0.0  # sonst höchstens ein Bild alle drei Minuten
+        m = z.marke()
+        version = lauf(rt, z, "kommentar")
+        ergebnis["laeufe"].append(version)
+        bilder = [(h, n) for _, a, n, h in z.seit(m) if a == "VERSION_BILD_REQ"]
+        aus_szene = sum(1 for h, _ in bilder for k in h.get("teile") or [] if k.get("aus_szene"))
+        png = [p for p in (kopie / ".kevcad/versionen/bilder").glob("*.png") if p.stat().st_mtime >= beginn - 1]
+        pruefe(bool(bilder) and aus_szene > 0,
+               f"Versionsbild nimmt {aus_szene} Netze aus der Szene ({sum(n for _, n in bilder) / 1000:.1f} KB)")
+        pruefe(bool(png) and png[0].stat().st_size > 2000, f"die App liefert das Vorschaubild ({len(png)} PNG)")
+
         # Selbstheilung am echten Paar
         conn = rt._link.connection
         name_teil = rt.scene.records()[0].name
@@ -287,6 +302,7 @@ def main() -> int:
         roh = {k: v for k, v in probe.items() if k not in ("ok", "quelle", "antwort_ms", "statistik")}
         probleme = check_live_message({"type": "LAGE", "reply_to": "x", **roh})
         pruefe(not probleme, f"LAGE entspricht dem Vertrag {probleme or ''}")
+        ruhe(z, 5.0)
         ruhig = lage_messen(rt, 100)
         ergebnis["lage_ruhig"] = ruhig
         print(f"LAGE in Ruhe: {ruhig}", flush=True)

@@ -156,3 +156,51 @@ Die Zeiten taugen hier nicht zum Vergleich: Der Rechner stand unter Last anderer
 - Eine Animation merkt sich die Weiche nur einmal je Name, deshalb kostet ein Maß, das hin und her wechselt, jedes Mal
   1,5 MB. Lohnt sich erst, wenn es im Alltag stört.
 - Eine App ohne `faehigkeiten` bekommt alles wie bisher; `test_live.py` prüft das mit der alten Attrappe.
+
+## Messung V2-5b (echte App)
+
+Stand 06.11.2026 nachts, MacBook mit vielen parallelen Agenten (Last 40 bis 120, zwischendurch über 500). Kernel im Prozess,
+Testvariante der App verbunden, Kopie von „Kugelschieber Variante B“ und Katalog; gezählt wird, was auf den Draht geht
+(ganze Rahmen), was die Szene der App getan hat, meldet ihr LAGE in Testvarianten:
+
+```
+tools/fern.sh testbau live
+kernel/.venv/bin/python -u kernel/tools/live_selbsttest.py "build/Kev CAD Test live.app" "<Projekt>" \
+    --param laufrolle_l=90 --json live.json
+```
+
+| Lauf | vorher (V2-5a, App ohne Fähigkeiten) | jetzt, echte App | was bleibt |
+|---|---|---|---|
+| unverändert | 11,33 MB | **32 KB** (Budget 50 KB) | `PART_SAME` 17 KB, `WIE_ZUVOR` 7 KB, `RUN_END` 6 KB, `STEP` 2 KB |
+| Kommentar (neue Version mit Bild) | 17,25 MB | 54 KB | dazu das Versionsbild 19 KB: alle 134 Netze aus der Szene |
+| Parameter `laufrolle_l = 90` | 12,61 MB | 4,47 MB | 20 von 134 Teilen 1,0 MB, Statikfelder 1,6 MB, `ANIM_DEF` 1,5 MB |
+| zurück auf den alten Wert | 11,38 MB | 1,76 MB | fast nur `ANIM_DEF`; die 20 Teile kommen ohne Netz aus dem Speicher der App |
+
+| Was die App im unveränderten Lauf tut | vorher | jetzt |
+|---|---|---|
+| Körper neu gebaut | 0 (gleiche Prüfsumme), aber 134 Köpfe und Stücke neu gerechnet | 0 |
+| Teile leuchten auf | 0 | 0 |
+| Weitergaben an den Viewport | mehrere hundert (eine je Teil, dazu Abdunkeln) | **0** |
+| Teile, die model.py mehrmals zeigt | sprangen zwischen den Ständen | bleiben stehen (Wechsel erst zum Laufende) |
+
+Bei einer Parameteränderung baut die App genau die 20 geänderten Teile neu, beim Rückweg tauscht sie genau diese 20 aus
+dem Speicher. `run()` kehrt im unveränderten Lauf nach 2,5 s zurück, das letzte Teil steht nach 1,5 s (Last um 60).
+
+**Lagebild** (100 Abfragen in Ruhe, 40 während eines Laufs, gemessen im Kernel vom Senden bis zur Antwort):
+
+| | Median | 95 % | Größtwert | davon die App selbst |
+|---|---|---|---|---|
+| in Ruhe | 9,0 ms | 19,0 ms | 21,2 ms | unter 1 ms |
+| während eines Laufs | 13,1 ms | 38,8 ms | 40,2 ms | unter 1 ms |
+
+Das Budget von 50 ms hält bei normaler Last. Unter schwerer Last (über 100) kamen einzelne Antworten erst nach 100 bis
+970 ms: Dann ist der Hauptfaden der App kurz belegt. Über 200 ms nimmt der Kernel seinen eigenen Stand.
+
+Gefunden hat der Selbsttest, was die App-Attrappe nicht sehen konnte:
+
+- Das stille Nachladen des Katalogs nach jeder Stückliste kostete 250 KB je Lauf (`CATALOG_REQ` nimmt jetzt `stand`).
+- Teile, die model.py in einem Lauf mehrmals zeigt, sprangen hin und her (3 Körper je Lauf).
+- Die Schnittkörper der Prüfung gingen bei jedem Lauf neu an den Viewport, auch ohne Änderung.
+
+Selbstheilung am echten Paar: Ein `PART_SAME` mit unbekanntem Inhalt holt das Teil über `PARTS_REQ` neu, ein `WIE_ZUVOR`
+mit unbekannter Basis die Nachricht über `NOCHMAL`.
