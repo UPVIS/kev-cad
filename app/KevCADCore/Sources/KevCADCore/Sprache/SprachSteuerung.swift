@@ -286,7 +286,7 @@ public final class SprachSteuerung {
 
     /// Mausprobe aus dem Treffertest unter der Maus; `bildpunkt` nil: Die Maus hat den Viewer verlassen.
     func maus(_ pick: PickResult?, _ welt: SIMD3<Float>?, _ bildpunkt: CGPoint?) {
-        guard sitzung != nil else { return }
+        guard sitzung != nil, !schliesst else { return }  // nach ↩ zählt die Maus nicht mehr
         let p = probe(t: uhr(), pick, welt, bildpunkt)
         sitzung?.maus(p)
     }
@@ -319,7 +319,7 @@ public final class SprachSteuerung {
 
     /// Kamera und Auswahl sind Zustand: ein Blick je Takt genügt, gezeichnet wird dabei nichts.
     private func proben() {
-        guard let c = controller, sitzung != nil else { return }
+        guard let c = controller, sitzung != nil, !schliesst else { return }
         let t = uhr()
         sitzung?.kamera(t: t, c.lageKamera())
         sitzung?.auswahl(t: t, run: c.scene.latestRun, refs: c.scene.selection.map(\.string))
@@ -346,7 +346,7 @@ public final class SprachSteuerung {
     // MARK: Striche
 
     func strich(_ e: StrichEreignis) {
-        guard let c = controller, sitzung != nil else { return }
+        guard let c = controller, sitzung != nil, !schliesst else { return }
         switch e {
         case .beginn:
             strichAnker = nil

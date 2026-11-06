@@ -163,8 +163,8 @@ class FeedbackRuntime:
         """Ältestes offenes Paket, als abgeholt eingetragen; mit ``nochmal`` das zuletzt abgeholte.
 
         {"ok", "name", "paket", "bild": bytes | None, "bild_pfad", "json_pfad", "offen": weitere} oder {"ok": True,
-        "leer": True}; bei einem unlesbaren Paket {"ok": False, "error"} (es gilt dann als abgeholt, damit es die
-        folgenden nicht aufhält)."""
+        "leer": True}; bei einem Paket, das sich nicht lesen lässt, {"ok": False, "error"} (es gilt dann als abgeholt,
+        damit es die folgenden nicht aufhält)."""
         ordner = self._fb_ordner()
         if ordner is None:
             return {"ok": False, "error": "Kein Projekt offen."}
@@ -186,9 +186,10 @@ class FeedbackRuntime:
             paket = json.loads(pfad.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             return {"ok": False, "error": f"Feedback {name} nicht lesbar: {exc}", "offen": offen}
+        # Kevins Worte gehen vor: Ein Paket mit Schönheitsfehlern kommt trotzdem an, der Fehler steht im Protokoll
         probleme = check_feedback_paket(paket)
         if probleme:
-            return {"ok": False, "error": f"Feedback {name} ungültig: {'; '.join(probleme[:3])}", "offen": offen}
+            self._log(f"[kernel] Feedback {name}: {'; '.join(probleme[:3])}")  # type: ignore[attr-defined]
         bild, bild_pfad = None, None
         eintrag = paket.get("bild")
         if isinstance(eintrag, dict) and isinstance(eintrag.get("datei"), str):

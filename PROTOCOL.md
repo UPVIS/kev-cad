@@ -1370,7 +1370,7 @@ Eine Sitzung läuft von V bis ↩ oder esc.
 | V | keine Sitzung | Sitzung beginnt, die Uhr läuft, das Mikrofon ist an (`spricht`) |
 | V | `spricht` | Mikrofon aus, die Sitzung bleibt offen (`pause`); Text, Striche und Uhr bleiben |
 | V | `pause` | Mikrofon wieder an (`spricht`), dieselbe Sitzung |
-| ↩ | offen | Paket schreiben (`aus`, `fertig`). Wortlaut verwirft beim Stoppen einen angefangenen Satz: Ist noch einer unterwegs, läuft das Mikrofon höchstens 0,7 s weiter, bis er fertig ist; sonst zählt der letzte Zwischenstand (`vorlaeufig`) |
+| ↩ | offen | Paket schreiben (`aus`, `fertig`). Wortlaut verwirft beim Stoppen einen angefangenen Satz: Ist noch einer unterwegs, läuft das Mikrofon höchstens 0,7 s weiter, bis er fertig ist; sonst zählt der letzte Zwischenstand (`vorlaeufig`). Läuft die Erkennung noch an, wartet die App bis zu 12 s auf sie, damit nichts Gesagtes verloren geht |
 | esc | offen | alles verwerfen, nichts wird geschrieben (`aus`, `verworfen`) |
 
 Sprache allein löst nichts aus.

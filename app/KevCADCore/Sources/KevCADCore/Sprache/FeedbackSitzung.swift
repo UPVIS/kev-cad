@@ -81,10 +81,10 @@ public struct FeedbackSitzung: Sendable {
         guard !sauber.isEmpty else { return }
         for teil in Self.zerlegt(worte) {
             let t = teil.map(\.text).joined(separator: " ")
-            saetze.append(RohSatz(text: t, von: teil[0].von, bis: teil[teil.count - 1].bis, worte: teil,
+            saetze.append(RohSatz(text: t, von: teil[0].von, bis: max(teil[0].von, teil[teil.count - 1].bis), worte: teil,
                                   vorlaeufig: vorlaeufig))
         }
-        if worte.isEmpty { saetze.append(RohSatz(text: sauber, von: von, bis: bis, vorlaeufig: vorlaeufig)) }
+        if worte.isEmpty { saetze.append(RohSatz(text: sauber, von: von, bis: max(von, bis), vorlaeufig: vorlaeufig)) }
     }
 
     /// Wörter an Satzzeichen trennen.

@@ -271,6 +271,12 @@ def test_offene_pakete_ueberleben_einen_neustart(env, projekt):
     assert env["rt"].feedback_holen(nochmal=True)["name"] == NAME, "auch nach einem Neustart"
 
 
+def test_paket_mit_schoenheitsfehler_kommt_trotzdem_an(env, projekt):
+    paket_schreiben(projekt, dauer_s=1.0)  # die Proben liegen hinter dem Ende
+    res = env["rt"].feedback_holen()
+    assert res["ok"] and res["paket"]["saetze"][0]["text"] == "Mach das hier höher."
+
+
 def test_halbe_dateien_gelten_nicht_und_kaputte_halten_nichts_auf(env, projekt):
     rt = env["rt"]
     ordner = projekt / "feedback"

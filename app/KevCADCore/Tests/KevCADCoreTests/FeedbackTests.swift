@@ -602,6 +602,19 @@ final class SprachSitzungTests: XCTestCase {
         XCTAssertFalse(c.model.oberflaeche.sitzungOffen)
     }
 
+    func testNachDemEndeZaehltDieMausNicht() async throws {
+        let (c, t, _, _) = try aufbau()
+        var paket: FeedbackPaket?
+        c.sprache.beiPaket = { paket = $1 }
+        c.oberflaeche(.sprechen(true))
+        await t.sagen("Fertig.", dauer: 0.02)
+        c.oberflaeche(.sprechenFertig)
+        c.sprache.maus(nil, nil, CGPoint(x: 1, y: 2))  // Kevin bewegt die Maus weiter, bevor die Datei liegt
+        await bis { paket != nil }
+        let p = try XCTUnwrap(paket)
+        XCTAssertTrue(p.mausweg.isEmpty)
+    }
+
     func testVerwerfenSchreibtNichts() async throws {
         let (c, t, projekt, gesendet) = try aufbau()
         c.oberflaeche(.sprechen(true))
