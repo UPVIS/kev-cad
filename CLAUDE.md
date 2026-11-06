@@ -12,6 +12,8 @@ Lesen vor der Arbeit: [PLAN-MVP.md](PLAN-MVP.md) (Ziel, Entscheidungen E1–E10,
 06.11.2026 der Stand auf `main`: [PLAN-V2.md](PLAN-V2.md) (Ziel, Entscheidungen V1–V12, Budgets, Pakete) und
 [ABNAHME-V2.md](ABNAHME-V2.md) (Abnahme, Wechsel nach `main`, Rückweg).
 Oberfläche: [OBERFLAECHE.md](OBERFLAECHE.md) (Gestaltungswerte, Entwurf, Fokus und Werkstatt, Kacheln, Tasten).
+iPad: [PLAN-IPAD.md](PLAN-IPAD.md) (Parität Mac und iPad, Bedienung mit Finger und Stift, Kopplung, iCloud, Pakete I-0 bis
+I-10).
 
 ## Aufbau
 
@@ -42,6 +44,8 @@ tools/fern.sh einrichten   # Mini prüfen bzw. vorbereiten (xcodegen, uv, Metal-
 tools/fern/selbsttests.sh "build/Kev CAD Test ui.app" "<Projekt>" [Tests …]   # Selbsttests der App auf dem Mini
 tools/fern/kachel-selbsttest.sh "build/Kev CAD Test ui.app" "<Projekt>"       # Kacheln und Fläche über MCP, auf dem Mini
 tools/abnahme.sh           # Testvariante „abnahme“ für Kevin, mit Kopien von Katalog und Projekt
+tools/ipad-bau.sh kern     # Kern (KevCADCore, KevCADWire, Viewport) für den iPad-Simulator übersetzen; `kern geraet` fürs Gerät
+tools/ipad-bau.sh test     # Kern-Tests im iPad-Simulator (bootet ohne Fenster)
 ```
 
 Lokal nur als Rückfall (fern.sh nimmt diesen Weg selbst, wenn der Mini fehlt):
@@ -78,6 +82,27 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
   Wort pushen.
 - Hooks sind aktiv über `git config core.hooksPath .githooks` (nach einem frischen Klon einmal setzen).
 - Eine Instanz je Variante: ein zweiter Start holt die laufende App nach vorn und beendet sich.
+
+## Mac und iPad (Parität)
+
+Kevin, 06.11.2026: Kev CAD läuft auf Mac und iPad mit voller Feature-Parität, „dass zwischen beiden Versionen immer
+Parallelität herrscht und dass beides immer mitentwickelt wird“. Gleiche Engine, gleiche Sprachsteuerung, gleicher Look;
+nur Bedienung und Oberfläche sind je Gerät zugeschnitten. Plan und Stand: [PLAN-IPAD.md](PLAN-IPAD.md).
+
+- **Eine Engine:** Der Kernel läuft auf dem Mac, das iPad ist ein zweiter Client. Neue Fähigkeiten immer über Kernel,
+  Protokoll und MCP, nie nur in einer Oberfläche.
+- **Ein Code:** KevCADCore, KevCADWire, der Viewport und die Oberfläche in `app/Sources/KevCAD` übersetzen für macOS und
+  iPadOS. AppKit, Prozesse, XPC und Finder nur hinter `#if os(macOS)` oder über die Weichen in
+  `app/KevCADCore/Sources/KevCADCore/Plattform/`; UIKit nur hinter `#if os(iOS)`. Je Plattform eigen ist nur die Hülle
+  (`app/Sources/KevCAD/Mac/` und `app/Sources/KevCADPad/`, entstehen mit I-3).
+- **Jede Änderung für beide Geräte im selben Schritt:** Funktion, Fehlerbehebung, Text, Gestaltung, Tests. Wer eine
+  Hüllen-Datei ändert, zieht das Gegenstück im selben Commit nach oder trägt eine Ausnahme mit Grund in `paritaet.json`
+  ein und nennt sie Kevin. Gilt auch für Unteragenten: ihr Auftrag nennt beide Geräte.
+- **Befehle** stehen im Befehlskatalog (`Tastenbelegung.swift`) mit Auslöser am Mac und am iPad (Taste, Geste, Stift oder
+  Werkzeugkranz); ab I-4 prüft ein Test, dass keiner fehlt.
+- **Vor jedem Commit übersetzen beide Plattformen.** Bis `tools/fern.sh` das selbst tut: `tools/ipad-bau.sh kern` (Kern
+  für den iPad-Simulator, unter der gemeinsamen Sperre, Bauordner auf UPVIS ULTRA); wer im Kern Verhalten ändert, dazu
+  `tools/ipad-bau.sh test`.
 
 ## Schnittstellen (Verträge)
 
