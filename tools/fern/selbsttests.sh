@@ -22,6 +22,7 @@ rsync -az --delete "$APP/" "$HOST:$R/app/${NAME// /\\ }/"
 F=app/KevCADCore/Tests/KevCADCoreTests/Fixtures
 ssh -n "$HOST" "mkdir -p $R/$F"
 rsync -az --delete "$REPO/$F/" "$HOST:$R/$F/"
+rsync -az --delete "$REPO/samples/" "$HOST:$R/samples/"
 rsync -az --exclude .kevcad/cache --exclude output "$PROJEKT/" "$HOST:$R/proj/${PNAME// /\\ }/"
 [ -d "$KATALOG" ] && rsync -az "$KATALOG/" "$HOST:$R/katalog/"
 TESTS="${(j: :)${(q)@}}"
