@@ -8,13 +8,21 @@ import KevCADCore
 /// echten Klick; der Mauszeiger und andere Programme bleiben unberührt). Die Knöpfe findet der Test über ihre
 /// Fokusringe in der Ansichtshierarchie. Ergebnis im Protokoll und in `<Datenordner>/selftest-freigabe.txt`.
 ///
-/// Mit eigenem Katalogordner starten (`KEVCAD_CATALOG_DIR`, darin Vorschläge wie von `stock_define`), dann das Fenster
-/// Lagerkatalog öffnen. Optional: `KEVCAD_SELFTEST_WEG=zeile|details|dialog` (alle über einen Weg),
+/// Mit eigenem Katalogordner starten (`KEVCAD_CATALOG_DIR`, darin Vorschläge wie von `lager(aktion="teil_vorschlagen")`)
+/// oder mit dem Ersatz-Kernel; das Fenster Lagerkatalog öffnet der Test selbst. Optional: `KEVCAD_SELFTEST_WEG=zeile|details|dialog` (alle über einen Weg),
 /// `KEVCAD_SELFTEST_FEHLER=1` (erst eine Freigabe während eines Kernel-Neustarts: muss mit Hinweisfenster scheitern),
 /// `KEVCAD_SELFTEST_PROJEKT=<Ordner>` (mit offenem Projekt und Auto-Lauf).
 @MainActor
 enum FreigabeSelfTest {
     private static var started = false
+
+    /// Beim Start: das Fenster Lagerkatalog öffnen; es startet den Test, sobald es erscheint.
+    static func katalogOeffnen(_ session: AppSession) {
+        guard session.demo == nil, AppInfo.isTestVariant,
+              ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "freigabe"
+        else { return }
+        session.showCatalog(section: .suggestions)
+    }
 
     static func runIfRequested(_ session: AppSession) {
         guard !started, session.demo == nil, AppInfo.isTestVariant,

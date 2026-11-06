@@ -704,7 +704,8 @@ class FakeKernel:
         kind = header.get("kind")
         entry = dict(header.get("entry") or {})
         ebene = header.get("ebene")
-        need = ["id", "art", "name", "masse", "material"] if kind == "teil" else ["id", "name", "gruppe", "dichte", "farbe"]
+        need = (["id", "art", "name", "masse"] + ([] if entry.get("art") == "zukaufteil" else ["material"])
+                if kind == "teil" else ["id", "name", "gruppe", "dichte", "farbe"])
         missing = [k for k in need if entry.get(k) in (None, "", {})]
         if kind not in ("teil", "material"):
             self.send({"type": "ERROR", "reply_to": rid, "message": f"Unbekannte Art {kind!r}"})

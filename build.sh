@@ -183,7 +183,7 @@ if [ "$MODE" = "--core-tests" ]; then
   fi
   (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; })
   echo "==> Tests Kernel"
-  (cd kernel && .venv/bin/python -m pytest -q)
+  (cd kernel && PYTHONUTF8=1 .venv/bin/python -m pytest -q)
   exit 0
 fi
 

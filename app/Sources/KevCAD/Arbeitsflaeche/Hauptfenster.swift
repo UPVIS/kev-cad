@@ -291,6 +291,7 @@ struct Hauptfenster: View {
         DokumenteSelfTest.runIfRequested(session, state: state, zustand: dokumente)
         SelfTest.runIfRequested(session)
         CatalogSelfTest.runIfRequested(session)
+        FreigabeSelfTest.katalogOeffnen(session)
         ZukaufSelfTest.runIfRequested(session)
         BauplanExportSelfTest.runIfRequested(session, state: state, zustand: dokumente)
         DruckSelfTest.runIfRequested(session, state: state)
