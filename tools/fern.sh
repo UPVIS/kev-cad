@@ -34,6 +34,7 @@
 set -uo pipefail
 
 FERN_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$FERN_DIR/signatur.sh"
 # Quelle und Ablage der Ergebnisse; anders nur für Proben (etwa release aus build-src, ohne dort zu schreiben).
 REPO="${KEVCAD_FERN_SRC:-$(cd "$FERN_DIR/.." && pwd)}"
 cd "$REPO" || exit 1
@@ -256,8 +257,8 @@ if [ $rc -eq 0 ]; then
     testbau)
       mkdir -p "$OUT"
       if rsync -az --delete -e "$RSH" "$HOST:$REMOTE/ergebnis/$JOB_ID/app.app/" "$OUT/$APP_TEST.app/"; then
-        # Hier signieren (ad hoc wie build.sh) und bei Launch Services abmelden wie jede Build-Kopie.
-        codesign --force --deep --sign - --timestamp=none "$OUT/$APP_TEST.app" >/dev/null 2>&1
+        # Hier signieren (der Mini hat Kevins Identität nicht) und bei Launch Services abmelden wie jede Build-Kopie.
+        kevcad_signieren "$OUT/$APP_TEST.app"
         /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
           -u "$OUT/$APP_TEST.app" >/dev/null 2>&1
         echo "==> Fertig (vom Mac mini): $OUT/$APP_TEST.app"

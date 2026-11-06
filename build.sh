@@ -43,6 +43,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 REPO="$(pwd)"
 MODE="${1:-}"
+. tools/signatur.sh
 
 APP_NAME="Kev CAD"
 BUNDLE_ID="de.upvis.kevcad"
@@ -99,7 +100,7 @@ install_bundle() {
 
   echo "==> Installiere nach $INSTALL_DIR"
   # Hier signieren: Ein Paket vom Mac mini kommt per rsync, und die Signatur soll zu genau diesen Dateien passen.
-  codesign --force --deep --sign - --timestamp=none "$src/$APP_NAME.app" >/dev/null 2>&1
+  kevcad_signieren "$src/$APP_NAME.app"
   codesign --verify --deep "$src/$APP_NAME.app" || { echo "Signatur der App im Paket ungültig"; exit 1; }
   "$LSREGISTER" -u "$src/$APP_NAME.app" >/dev/null 2>&1 || true
   mkdir -p "$INSTALL_DIR"
@@ -267,7 +268,7 @@ SRC="$BUILD/DerivedData/Build/Products/Release/$APP_NAME.app"
 rm -rf "$BUILD/$APP_NAME.app"
 cp -R "$SRC" "$BUILD/$APP_NAME.app"
 APP="$BUILD/$APP_NAME.app"
-codesign --force --deep --sign - --timestamp=none "$APP" >/dev/null 2>&1
+kevcad_signieren "$APP"
 # Build-Kopien bei Launch Services abmelden, sonst startet `open -b de.upvis.kevcad` womöglich eine davon statt der
 # installierten App.
 "$LSREGISTER" -u "$SRC" >/dev/null 2>&1 || true
