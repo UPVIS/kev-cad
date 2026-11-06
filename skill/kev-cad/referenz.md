@@ -60,7 +60,7 @@ def messmodell(p):                       # p: alle param()-Werte des Grundstands
    werden nicht skaliert. Kevin macht dasselbe in der App mit „Maßstab …“ (zwei Punkte anklicken, Maß eintragen).
 
 - Kevin: Video oder Fotos auf das Fenster ziehen öffnet „Referenz hinzufügen“ (bekanntes Maß, Unterlage, Abschnitt);
-  im Inspektor unter „Referenzen“ Netz mit Deckkraft, „Abweichung“ (Farbkarte auf Modell oder Netz, Legende in mm
+  in der Kachel Details unter „Referenzen“ Netz mit Deckkraft, „Abweichung“ (Farbkarte auf Modell oder Netz, Legende in mm
   unten links im Viewer), „Maßstab …“, „Fotoansicht“ (Foto durch die eingepasste Kamera hinter dem Modell, Differenz
   rot nur Foto, blau nur Modell), „Vermessen …“ und „Maße übernehmen“.
 - macOS fragt beim ersten Zugriff auf Downloads oder ein Wechselmedium, ob Kev CAD darf; bis Kevin antwortet, bricht
@@ -87,7 +87,7 @@ Scan per WLAN an Kev CAD (Bonjour, Ablage `~/Documents/Kev CAD/Scans/<datum>_<na
    lassen.
 
 In der App: Ein neu empfangener Scan erscheint als Band „Neuer Scan empfangen: <Name>“ mit „Scan übernehmen“
-(Schnell oder Genau) ins offene Projekt, dasselbe wie `referenz(aktion="scan_importieren")`; im Inspektor unter „Referenzen“ steht die
+(Schnell oder Genau) ins offene Projekt, dasselbe wie `referenz(aktion="scan_importieren")`; in der Kachel Details unter „Referenzen“ steht die
 Liste der Scans, die laufende Auswertung zeigt „Scan wird ausgewertet …“ mit Phase und Fortschritt.
 
 Ehrliche Grenzen: LiDAR misst nur bis etwa 5 m und schlecht auf Glas, Spiegeln, sehr dunklen und glänzenden Flächen;

@@ -87,7 +87,11 @@ enum SelfTest {
                 $0.keyEquivalent.lowercased() == zeichen
                     && $0.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == modifiers
             }
-            check(found, "Menü: \(befehl.rawValue) auf \(zeichen == "\u{1B}" ? "Esc" : zeichen.uppercased()) \(modifiers.rawValue)")
+            // Sonderzeichen wie / übersetzt AppKit je nach Tastatur (deutsch ⇧7); dann zählt, dass der Punkt eine Taste trägt
+            let titel = Tastenbelegung.alle.first { $0.befehl == befehl }?.titel ?? ""
+            let uebersetzt = !found && !(key.character.isLetter || key.character.isNumber)
+                && items.contains { $0.title == titel && !$0.keyEquivalent.isEmpty }
+            check(found || uebersetzt, "Menü: \(titel) auf \(zeichen == "\u{1B}" ? "Esc" : zeichen.uppercased())")
         }
 
         demo.showAll()

@@ -132,8 +132,9 @@ enum FreigabeSelfTest {
             if way == .dialog { session.dismissZukaufWindow() }
             try? await Task.sleep(for: .milliseconds(500))
         }
-        check(await wait(5) { model.catalog?.suggestionCount == 0 },
-              "keine offenen Vorschläge mehr (\(model.catalog?.suggestionCount ?? -1))")
+        // Nur Teile: Vorschläge für Materialien gibt der Test nicht frei, der Ersatz-Kernel hat einen
+        check(await wait(5) { model.catalog?.items.contains(where: \.vorgeschlagen) == false },
+              "keine offenen Vorschläge für Teile mehr")
         finish(lines, passed)
     }
 

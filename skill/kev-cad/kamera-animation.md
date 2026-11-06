@@ -31,7 +31,7 @@ show(platte.verbauen("Rig/Baseplate", an=fx6.bezugspunkt("stativ_1_4"), bezug="k
   durch die Kamera, mit Formatrahmen und Sicherheitsbereichen), `kamera(aktion="bild", name=…, breite=…)` speichert ein PNG unter
   output/kameras/ und nennt nur den Pfad (Bild nur mit `bild_zeigen=true`, wenn Kevin es hier sehen will),
   `kamera(aktion="vorschlag", name=…)` liefert die setzen-Zeile für Kevins aktuelle Ansicht (in der App Strg+Alt+0).
-- Kevin: Taste 0 schaut durch die gewählte Kamera, noch einmal 0 zurück; Kameras stehen im Teilebaum unter „Kameras“.
+- Kevin: Taste 0 schaut durch die gewählte Kamera, noch einmal 0 zurück; Kameras stehen in der Kachel Details unter „Kameras“.
 - Kevins Kamera ist die FX6 (Tilta-Käfig ES-T20). Objektive, Akkus und Platten im Katalog sind Beispiele, bis Kevin
   seine nennt; fehlt etwas, fragen und erst auf seinen Wunsch per `lager(aktion="teil_vorschlagen")` vorschlagen.
 

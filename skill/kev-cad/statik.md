@@ -2,7 +2,7 @@
 
 Kev CAD rechnet nach jedem Lauf, ob die Konstruktion hält, kippt oder rutscht, und ob sie unnötig schwer ist
 (PLAN-STATIK.md, Strang „Statik Stufe 1“). Das Ergebnis steht im Laufergebnis (eine Zeile „Statik: …“), ausführlich
-über `statik(aktion="ergebnis")` und im Inspektor der App (Abschnitt „Statik“, Farbverlauf grün → gelb → rot, Verformung als Geist).
+über `statik(aktion="ergebnis")` und in der Kachel Details (Abschnitt „Statik“, Farbverlauf grün → gelb → rot, Verformung als Geist).
 
 
 ## Überblick (Kevin, 22.10.2026)
@@ -26,7 +26,7 @@ Rutscht die Klemmung, hebt etwas ab, fließt Metall oder beult ein Blech: **`sta
 Lager setzt `st.lager(teil, flaeche=…|punkt=…, art="fest"|"gelenkig"|"gleitend", szenario=…, gleiten=…)`
 ausdrücklich (sonst aus den Kontakten abgeleitet): je Lastfall oder für alle, gleitend in der Fläche (genau senkrecht
 gehalten) oder wie auf einer Schiene entlang einer Achse oder Kante, gelenkig in der FEM wie ein RBE3 (Fläche hält im
-Mittel und dreht frei). Lastfälle, Kräfte und Lager, die Kevin im Bereich „Simulation“ (⌘4) per Klick anlegt, liegen in
+Mittel und dreht frei). Lastfälle, Kräfte und Lager, die Kevin in der Kachel Simulation (⌃⌘6) per Klick anlegt, liegen in
 `simulation.json` und gehören zu jedem Lauf: `statik(aktion="ergebnis")` und `statik(aktion="szenario")` sehen sie, **`statik(aktion="simulation")`** zeigt
 sie mit Zustand (nach Modelländerungen neu zugeordnet oder nicht mehr zuordenbar), **`statik(aktion="simulation_aendern")`** ändert sie
 nur auf Kevins Wunsch (auch Lasten auf der ganzen Fläche, Druck in N/mm²), **`statik(aktion="simulation_rechnen")`** rechnet wie seine
@@ -136,9 +136,9 @@ st.lager("Fuß")                                                         # ganze
   5 F L³ / (384 E I) plus Schub und Endverdrehung F L² / (24 E I), Würfel in einer schrägen Ecke aus drei gleitenden
   Lagern (Lagerkräfte W cos α und W sin α genau); Halter an einer Lagerfläche wie an der Wand (1,84 gegen Hand 1,86).
 
-## Lastfälle aus der App (Bereich „Simulation“)
+## Lastfälle aus der App (Kachel Simulation)
 
-Kevin legt im Bereich „Simulation“ (⌘4) Lastfälle, Kräfte (per Klick auf eine Fläche, Richtung entlang der Normale,
+Kevin legt in der Kachel Simulation (⌃⌘6) Lastfälle, Kräfte (per Klick auf eine Fläche, Richtung entlang der Normale,
 einer Achse oder frei, Betrag in N oder kg, Kraftpaar) und Lager per Klick an; sie liegen in
 `<projekt>/simulation.json` neben model.py und gehören zu jedem Lauf (und zu den Versionen). Agent und App teilen sie:
 
@@ -348,7 +348,7 @@ show(Pos(0, 0, 10) * halter, "Halter")
   (`warten=true` wartet, `abbrechen=true` beendet), `topologie(aktion="ergebnis", warten_s=…)` liefert Fortschritt bzw. Kennzahlen
   vorher → nachher (Volumen, Masse, Filament, Druckzeit, größte Spannung, Sicherheit mit Ampel, Verformung, dünnster
   Steg), `topologie(aktion="uebernehmen")` legt **auf Kevins Wunsch** eine Variante an und trägt die Zeile in model.py ein.
-  In der App: Inspektor, Abschnitt „Optimieren“ (Schieber „Behalten“, Lastfall, Start, Abbruch, Vorher/Nachher mit
+  In der App: Kachel Details, Abschnitt „Optimieren“ (Schieber „Behalten“, Lastfall, Start, Abbruch, Vorher/Nachher mit
   Spannungsfarben, „Als Variante übernehmen“).
 - **Schutzzonen von selbst:** Bohrungen mit Wandring (max(Steg, 0,6 r), ganze Tiefe), Gewindeeinsätze (Sacklöcher mit
   Einsatzmaß) mit 1,5 × Mindestwand, Last- und Klemmflächen mit einer Haut in Stegdicke. Abschaltbar mit
