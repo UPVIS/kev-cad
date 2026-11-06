@@ -34,6 +34,15 @@ Dazu Zahlen je Inhalt einer Form (``inhalt``: Binärform ohne Netz, im Lauf je F
 (``compute_volume``), Hüllquader (``bounding_box`` im Standardaufruf; ``AddOptimal`` kostet auf Torus- und
 Freiformflächen Millisekunden, beim Kugelschieber 0,2 s je Lauf) und kleinste Abstände (``abstand``, Bedingungen).
 
+V2-1b: Fasen und Verrundungen (``Mixin3D.chamfer``, ``Mixin3D.fillet``) wie die Booleans: Schlüssel aus der Binärform
+des Körpers, den Maßen und den Kanten als Nummern in der Reihenfolge von ``TopExp``, gerechnet auf einer Kopie, zurück
+kommt das Ergebnis aus seiner Binärform, die Historie entsteht erst bei Bedarf. Scheitert die Operation, wird nichts
+gemerkt, die Ausnahme kommt unverändert durch. Kanten, die nicht zum Körper gehören, laufen wie bisher.
+
+``Shape.moved`` macht dasselbe wie build123d, ohne die B-Rep zu kopieren: Das Original kopiert erst die ganze Form
+(``__deepcopy__``) und ersetzt die Kopie im nächsten Schritt durch ``self.wrapped.Moved(loc)``; die Kopie sah nie
+jemand. Alle übrigen Attribute werden kopiert wie dort (rund 1000 Verschiebungen je Lauf beim Kugelschieber).
+
 Ein: ``installieren()`` im Rechenprozess (worker.py). Aus mit ``KEVCAD_GEDAECHTNIS=0``; Größe mit
 ``KEVCAD_GEDAECHTNIS_MB`` (Vorgabe 256, LRU nach Bytes). Läuft eine andere Fassung von build123d als die, nach der
 ``_bool_op`` hier nachgebaut ist, bleibt es aus (Prüfsumme der Quelle).
@@ -64,9 +73,15 @@ QUELLEN = {
     "Compound._intersect": "1dc196d4929a9d4182aa5c6dfa1dc4894db88c55",
     "Shape.compute_volume": None,  # nur Vorspann nachgebaut, gerechnet wird mit dem Original
     "Shape.bounding_box": "59a4e73fc96dcf3aadedce4b9a5adcdc50b3cc8a",  # gerechnet wird mit dem Original
+    "Shape.moved": "e1a17b2350cb8825d0862022fba7673bc201e378",
+    "Mixin3D.chamfer": "5fe2d07935e09241dbb7b20870a44cae4c0b760b",  # gerechnet wird mit dem Original, auf einer Kopie
+    "Mixin3D.fillet": "4836e4c7da0b8eb6020ef84526c4a9c1f771e04a",
 }
-# Nicht ersetzt, aber vorausgesetzt: BoundBox(shape) entfernt das Netz und nimmt AddOptimal ohne Formtoleranz
-ABHAENGIG = {"BoundBox.__init__": "ef03fb7a09c9523f31e115ff3a08263ad58547e0"}
+# Nicht ersetzt, aber vorausgesetzt: BoundBox(shape) entfernt das Netz und nimmt AddOptimal ohne Formtoleranz;
+# Shape.__deepcopy__ ist in ``_moved`` nachgebaut (ohne die Kopie der B-Rep), _make_3d_result gibt die Art des Ergebnisses
+# von chamfer und fillet vor
+ABHAENGIG = {"BoundBox.__init__": "ef03fb7a09c9523f31e115ff3a08263ad58547e0",
+             "Shape.__deepcopy__": "6eebfb00c3795a574d9aa3bc937e41784f2aa5f2", "Mixin3D._make_3d_result": "93aec1536b872cc5c2293fa405267aa25a06ee51"}
 
 
 def _an() -> bool:
@@ -958,6 +973,171 @@ def _compound_intersect(self: Any, other: Any, tolerance: float = 1e-6, include_
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Verschieben ohne Kopie der B-Rep
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def _moved(self: Any, loc: Any) -> Any:
+    """Nachbau von build123d 0.13.0 ``Shape.moved`` samt ``Shape.__deepcopy__``; einziger Unterschied: keine Kopie der
+    B-Rep, die das Original im nächsten Schritt ohnehin durch ``self.wrapped.Moved(loc)`` ersetzt (Modulbeschreibung).
+    Alle anderen Attribute (Kinder, Gelenke, Farbe, ...) werden kopiert wie dort."""
+    import copy
+
+    from build123d.geometry import Plane
+    from build123d.topology.shape_core import downcast
+
+    if isinstance(loc, Plane):
+        loc = loc.location
+    if self._wrapped is None:
+        raise ValueError("Cannot move an empty shape")
+    cls = self.__class__
+    ergebnis = cls.__new__(cls)
+    original = self.wrapped
+    memo: dict[int, Any] = {id(self): ergebnis, id(original): original}  # wird unten ersetzt
+    for key, value in self.__dict__.items():
+        if key in ("topo_path", "_history"):
+            setattr(ergebnis, key, value)
+        else:
+            setattr(ergebnis, key, copy.deepcopy(value, memo))
+        if key == "joints":
+            for joint in ergebnis.joints.values():
+                joint.parent = ergebnis
+    ergebnis.wrapped = downcast(original.Moved(loc.wrapped))
+    return ergebnis
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Fasen und Verrundungen
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+class _Koerper3D:
+    """Das, was ``Mixin3D.chamfer`` und ``fillet`` an ``self`` benutzen; ``self`` selbst kann eine Klasse sein, die sich
+    nicht aus einer Form bauen lässt (``Box``)."""
+
+    def __init__(self, wrapped: Any, make_3d_result: Callable[[Any], Any]) -> None:
+        self.wrapped = wrapped
+        self._make_3d_result = make_3d_result
+
+
+def _nummern(wrapped: Any, art: Any, formen: list[Any]) -> tuple[Any, list[tuple[int, int]]] | None:
+    """Teilformen als (Nummer in der Reihenfolge von ``TopExp``, Orientierung) und die Karte dazu; None, wenn eine nicht
+    zu ``wrapped`` gehört."""
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as IMap
+    from OCP.TopExp import TopExp
+
+    karte = IMap()
+    TopExp.MapShapes_s(wrapped, art, karte)
+    out = []
+    for f in formen:
+        i = karte.FindIndex(f)
+        if i <= 0:
+            return None
+        out.append((i, int(f.Orientation())))
+    return karte, out
+
+
+def _kopie_teilform(wrapped: Any, art: Any, nummer: tuple[int, int]) -> Any:
+    """Teilform ``nummer`` von ``wrapped`` (wie ``_nummern``), als build123d-Form mit ihrer Orientierung."""
+    from build123d.topology.shape_core import Shape, downcast
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as IMap
+    from OCP.TopAbs import TopAbs_Orientation
+    from OCP.TopExp import TopExp
+
+    karte = IMap()
+    TopExp.MapShapes_s(wrapped, art, karte)
+    t = karte.FindKey(nummer[0])
+    return Shape.cast(downcast(t.Oriented(TopAbs_Orientation(nummer[1]))))
+
+
+def _kanten_operation(name: str, self: Any, zahlen: tuple, edge_list: Iterable[Any], face: Any,
+                      rechnen: Callable[[Any, list[Any], Any], Any]) -> Any:
+    """Kern von ``_chamfer`` und ``_fillet``: Schlüssel, Treffer, sonst ``rechnen(körper, kanten, fläche)`` auf einer
+    Kopie, Ergebnis aus der Binärform und Historie auf Abruf (wie ``_boolesch``)."""
+    global _ErinnerteHistorie
+    if _ErinnerteHistorie is None:
+        _ErinnerteHistorie = _historie_klasse()
+    from build123d.topology.three_d import Mixin3D
+    from OCP.TopAbs import TopAbs_ShapeEnum
+
+    t0 = time.perf_counter()
+    kanten = list(edge_list)
+    alt = self.wrapped
+    kanten_art, flaechen_art = TopAbs_ShapeEnum.TopAbs_EDGE, TopAbs_ShapeEnum.TopAbs_FACE
+    k = _nummern(alt, kanten_art, [e.wrapped for e in kanten])
+    f = _nummern(alt, flaechen_art, [face.wrapped]) if face else (None, [])
+    if k is None or f is None:  # gehört nicht zum Körper: so soll es build123d selbst melden
+        _zaehle(umgangen=1)
+        return rechnen(self, kanten, face)
+    nummern, flaeche = k[1], f[1]
+    vorher = schreiben(alt)
+    frei = bool(alt.Free())
+    kopf = f"{FORMAT}|{name}|{zahlen!r}|{nummern!r}|{flaeche!r}|{int(frei)}|".encode()
+    h = hashlib.blake2b(kopf, digest_size=24)
+    h.update(vorher)
+    key = h.digest()
+    schnapp = alt.Located(alt.Location())
+
+    def auf_kopie() -> tuple[Any, Any]:
+        kopie = _kopien_einzeln(vorher, alt)
+        kopie.Free(frei)
+        koerper = _Koerper3D(kopie, Mixin3D._make_3d_result)
+        return kopie, rechnen(koerper, [_kopie_teilform(kopie, kanten_art, n) for n in nummern],
+                              _kopie_teilform(kopie, flaechen_art, flaeche[0]) if flaeche else None)
+
+    eintrag = SPEICHER.get(key)
+    if eintrag is not None:
+        ergebnis = Mixin3D._make_3d_result(lesen(eintrag.blob))
+        _inhalt_merken(ergebnis.wrapped, _digest(eintrag.blob))
+        ziel = ergebnis.wrapped.Located(ergebnis.wrapped.Location())
+
+        def nachrechnen() -> Any:
+            kopie, roh = auf_kopie()
+            if schreiben(roh.wrapped) != eintrag.blob:  # sollte nie sein: dann lieber keine Zuordnung als eine falsche
+                _zaehle(historie_abweichend=1)
+                return _leere_historie()
+            return _uebersetzen(roh._history.wrapped, [kopie], [schnapp], roh.wrapped, ziel)
+
+        _zaehle(treffer=1, gespart_ms=eintrag.rechnen_ms, aufwand_ms=(time.perf_counter() - t0) * 1000)
+        return ergebnis._made_by(_ErinnerteHistorie([alt], [], nachrechnen))
+    t1 = time.perf_counter()
+    kopie, roh = auf_kopie()  # Ausnahmen kommen unverändert durch, gemerkt wird nichts
+    rechnen_ms = (time.perf_counter() - t1) * 1000
+    t2 = time.perf_counter()
+    blob = schreiben(roh.wrapped)
+    SPEICHER.put(key, Eintrag(blob=blob, rechnen_ms=rechnen_ms, art=type(None), einstellungen={}, n_args=1,
+                              aufraeumen=False))
+    ergebnis = Mixin3D._make_3d_result(lesen(blob))
+    _inhalt_merken(ergebnis.wrapped, _digest(blob))
+    ziel = ergebnis.wrapped.Located(ergebnis.wrapped.Location())
+
+    def uebersetzen() -> Any:
+        return _uebersetzen(roh._history.wrapped, [kopie], [schnapp], roh.wrapped, ziel)
+
+    _zaehle(neu=1, rechnen_ms=rechnen_ms, aufwand_ms=(t1 - t0 + time.perf_counter() - t2) * 1000)
+    return ergebnis._made_by(_ErinnerteHistorie([alt], [], uebersetzen))
+
+
+def _chamfer(self: Any, length: float, length2: float | None, edge_list: Iterable[Any], face: Any = None) -> Any:
+    """``Mixin3D.chamfer`` mit Gedächtnis (Modulbeschreibung)."""
+
+    def rechnen(koerper: Any, kanten: list[Any], flaeche: Any) -> Any:
+        return _original["Mixin3D.chamfer"](koerper, length, length2, kanten, flaeche)
+
+    return _kanten_operation("chamfer", self, (float(length), None if length2 is None else float(length2)), edge_list,
+                             face, rechnen)
+
+
+def _fillet(self: Any, radius: float, edge_list: Iterable[Any]) -> Any:
+    """``Mixin3D.fillet`` mit Gedächtnis (Modulbeschreibung)."""
+
+    def rechnen(koerper: Any, kanten: list[Any], _flaeche: Any) -> Any:
+        return _original["Mixin3D.fillet"](koerper, radius, kanten)
+
+    return _kanten_operation("fillet", self, (float(radius),), edge_list, None, rechnen)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Ein und aus
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -982,8 +1162,11 @@ def installieren(log: Callable[[str], None] | None = None) -> bool:
                        f"{ist[:12]} statt {soll[:12]})")
                 return False
         from build123d.geometry import BoundBox
+        from build123d.topology.shape_core import Shape
+        from build123d.topology.three_d import Mixin3D
 
-        for name, attr in (("BoundBox.__init__", BoundBox.__init__),):
+        for name, attr in (("BoundBox.__init__", BoundBox.__init__), ("Shape.__deepcopy__", Shape.__deepcopy__),
+                           ("Mixin3D._make_3d_result", Mixin3D._make_3d_result)):
             ist = hashlib.sha1(inspect.getsource(attr).encode()).hexdigest()
             if ist != ABHAENGIG[name]:
                 melden(f"[gedaechtnis] aus: {name} dieser build123d-Fassung ist nicht die vorausgesetzte (Prüfsumme "
@@ -1005,9 +1188,12 @@ def installieren(log: Callable[[str], None] | None = None) -> bool:
 
 def _ziele() -> dict[str, tuple[type, str, Any, Any]]:
     """Name → (Klasse, Attribut, Original, Ersatz) aller Stellen, die das Gedächtnis ersetzt."""
-    from build123d.topology import composite, shape_core
+    from build123d.topology import composite, shape_core, three_d
 
     return {
+        "Shape.moved": (shape_core.Shape, "moved", shape_core.Shape.moved, _moved),
+        "Mixin3D.chamfer": (three_d.Mixin3D, "chamfer", three_d.Mixin3D.chamfer, _chamfer),
+        "Mixin3D.fillet": (three_d.Mixin3D, "fillet", three_d.Mixin3D.fillet, _fillet),
         "Shape._bool_op": (shape_core.Shape, "_bool_op", shape_core.Shape._bool_op, _bool_op),
         "Shape.clean": (shape_core.Shape, "clean", shape_core.Shape.clean, _clean),
         "Shape.intersect": (shape_core.Shape, "intersect", shape_core.Shape.intersect, _intersect),
@@ -1023,9 +1209,9 @@ def entfernen() -> None:
     global _installiert
     if not _installiert:
         return
-    from build123d.topology import composite, shape_core
+    from build123d.topology import composite, shape_core, three_d
 
-    klassen = {"Shape": shape_core.Shape, "Compound": composite.Compound}
+    klassen = {"Shape": shape_core.Shape, "Compound": composite.Compound, "Mixin3D": three_d.Mixin3D}
     for name in [n for n in _original if "." in n]:
         klasse, attr = name.split(".", 1)
         setattr(klassen[klasse], attr, _original.pop(name))
