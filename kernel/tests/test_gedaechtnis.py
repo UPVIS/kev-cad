@@ -442,3 +442,33 @@ def test_aus_laesst_fasen_und_moved_in_ruhe(monkeypatch):
     assert shape_core.Shape.moved is not original[0]
     gd.entfernen()
     assert (shape_core.Shape.moved, three_d.Mixin3D.chamfer, three_d.Mixin3D.fillet) == original
+
+
+def test_bohrungen_gemerkt_je_inhalt(mit_gedaechtnis, monkeypatch):
+    from kevcad_kernel.bedingungen import geometrie as bg
+
+    def platte(d=5.0):
+        return Box(40, 30, 10) - Pos(-10, 0, 0) * Cylinder(d / 2, 20) - Pos(10, 0, 0) * Cylinder(d / 2, 20)
+
+    def kennzahlen(teil):
+        return [(b.name, tuple(round(float(c), 6) for c in b.p), round(float(b.r), 6)) for b in bg.bohrungen_von(teil)]
+
+    gd.entfernen()
+    ohne = kennzahlen(platte())
+    assert gd.installieren()
+    gd.lauf_beginn()
+    neu = kennzahlen(platte())
+    treffer = platte()
+    gerechnet = []
+    original = bg._flaeche_daten_rechnen
+    monkeypatch.setattr(bg, "_flaeche_daten_rechnen", lambda f: gerechnet.append(f) or original(f))
+    zahlen = kennzahlen(treffer)
+    assert zahlen == neu == ohne and len(zahlen) == 2
+    assert not [f for f in gerechnet if str(f.geom_type) == "GeomType.CYLINDER"]  # Zylinder aus dem Gedächtnis
+    teil_flaechen = treffer.faces()  # die Flächen gehören zum Teil dieses Laufs, nicht zu dem, das gerechnet hat
+    for f, _ in bg._innenzylinder(treffer):
+        assert any(f.wrapped.IsSame(g.wrapped) for g in teil_flaechen)
+    verschoben = Pos(5, 0, 0) * platte()  # gleiche Form, andere Lage: anderer Inhalt
+    assert kennzahlen(verschoben)[0][1][0] == pytest.approx(-5)
+    assert kennzahlen(platte(6.0))[0][2] == pytest.approx(3)  # anderes Maß
+    assert gerechnet  # Fehltreffer rechnen

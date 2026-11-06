@@ -7,8 +7,8 @@ Fläche, Hüllquader auf 1e-6) herauskommen, dazu Warnungen, Parameter, Stückli
     ... --ohne-pruefung     die Prüfung nach dem Lauf weglassen (schneller)
 
 Je Projekt rechnen drei Prozesse (zweimal KEVCAD_GEDAECHTNIS=0, einmal =1) mit dem Runner wie im Rechenprozess vier
-Läufe: kalt, gleich, nach einer Kommentaränderung, mit einem geänderten Parameter (der erste Parameter des Modells,
-5 % mehr). Verglichen wird jeder Lauf mit Gedächtnis gegen den ersten ohne, der Lauf mit Parameter gegen denselben
+Läufe: kalt, gleich, nach einer Kommentaränderung, mit einem geänderten Parameter (``--parameter NAME=WERT``, sonst der
+erste Parameter des Modells, der nicht 0 ist, 5 % mehr). Verglichen wird jeder Lauf mit Gedächtnis gegen den ersten ohne, der Lauf mit Parameter gegen denselben
 Lauf ohne; der zweite Prozess ohne Gedächtnis zeigt das Rauschen von OCCT selbst. Die Prüfung zählt mit ihrem Endstand
 (der Bewegungsraum wird fertig gerechnet; was im Zeitlimit eines Laufs fertig wird, hängt an der Uhr) und läuft im
 Prozess mit Gedächtnis in Stufen wie im Rechenprozess (V2-1b), ohne Gedächtnis am Stück. Verglichen werden dabei Befunde,
@@ -35,7 +35,7 @@ PROJEKTE = Path.home() / "Documents/Kev CAD"
 EPS = 1e-6
 
 
-def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool) -> dict:
+def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool, parameter: str = "") -> dict:
     """Im Unterprozess: vier Läufe mit dem Runner, je Lauf Teile und Kennwerte."""
     import build123d  # noqa: F401
 
@@ -59,11 +59,15 @@ def laeufe(projekt: Path, katalog: Path, inventar: bool, pruefen: bool) -> dict:
             m = projekt / "model.py"
             m.write_text(m.read_text(encoding="utf-8") + "\n# Nachweis: Kommentar\n", encoding="utf-8")
         if art == "parameter":
-            zahlen = {k: v for k, v in (out[0].get("params") or {}).items() if isinstance(v, (int, float))}
-            if not zahlen:
+            zahlen = {k: v for k, v in (out[0].get("params") or {}).items() if isinstance(v, (int, float)) and v}
+            name, _, wert = parameter.partition("=")
+            if name in zahlen:
+                params = {name: float(wert)}
+            elif zahlen:
+                name = sorted(zahlen)[0]
+                params = {name: round(float(zahlen[name]) * 1.05, 3)}
+            else:
                 break
-            name = sorted(zahlen)[0]
-            params = {name: round(float(zahlen[name]) * 1.05, 3)}
         teile.clear()
         t = time.perf_counter()
         res = r.run({"run": i, "path": str(projekt / "model.py"), "catalog": {"own": str(katalog)},
@@ -136,7 +140,7 @@ def projekt_pruefen(projekt: Path, args) -> list[dict]:
             try:
                 env = dict(os.environ, KEVCAD_GEDAECHTNIS="1" if mit is True else "0")
                 cmd = [sys.executable, "-u", __file__, "--unterprozess", str(kopie), str(arbeit / "katalog"),
-                       "1" if regel else "0", "0" if args.ohne_pruefung else "1"]
+                       "1" if regel else "0", "0" if args.ohne_pruefung else "1", args.parameter]
                 p = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=args.timeout_s)
                 zeile = [z for z in p.stdout.splitlines() if z.startswith("{")]
                 if p.returncode != 0 or not zeile:
@@ -167,13 +171,14 @@ def projekt_pruefen(projekt: Path, args) -> list[dict]:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == "--unterprozess":
-        proj, kat, regel, pruefen = argv[1:5]
-        print(json.dumps(laeufe(Path(proj), Path(kat), regel == "1", pruefen == "1"), ensure_ascii=False))
+        proj, kat, regel, pruefen, parameter = argv[1:6]
+        print(json.dumps(laeufe(Path(proj), Path(kat), regel == "1", pruefen == "1", parameter), ensure_ascii=False))
         return 0
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("projekte", nargs="*", help="Projektordner (Vorgabe: alle in ~/Documents/Kev CAD)")
     ap.add_argument("--katalog", default=None)
     ap.add_argument("--ohne-pruefung", action="store_true")
+    ap.add_argument("--parameter", default="", help="NAME=WERT für den Lauf mit geändertem Parameter")
     ap.add_argument("--timeout-s", type=float, default=3600)
     ap.add_argument("--json", default=None)
     args = ap.parse_args(argv)
