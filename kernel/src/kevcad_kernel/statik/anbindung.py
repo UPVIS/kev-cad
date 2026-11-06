@@ -257,6 +257,7 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     if ctx.optionen.get("statik") is False:
         return []
     t0 = time.perf_counter()
+    from kevcad_kernel.statik import merken
     from kevcad_kernel.statik import modell as md
     from kevcad_kernel.statik.rechnen import befunde
 
@@ -285,7 +286,9 @@ def pruefe(ctx: PruefKontext) -> list[dict[str, Any]]:
     szen, einst = szenarien_fuer(ctx.erklaerungen, ctx.optionen.get("params"), m, vorb)
     modelle, _ = modelle_bauen(baue, vorb.lager, szen, m)
     _lager_hinweise(vorb.lager, szen, einst)
-    erg = rechne_gruppen(modelle, szen, katalog, ctx.koerper, m)
+    # V2-1b: gleiche Modelle, Szenarien, Körper und gleicher Katalog: Ergebnis aus dem Gedächtnis (statik/merken.py)
+    erg = merken.gemerkt(modelle, szen, katalog, ctx.koerper, m,
+                         lambda: rechne_gruppen(modelle, szen, katalog, ctx.koerper, m))
     erg["simulation"] = simulation_ergebnis(m, vorb, erg, einst, modelle)
     ctx.abbrechen()
     s4 = stufe4_aus(ereignisse, m)
