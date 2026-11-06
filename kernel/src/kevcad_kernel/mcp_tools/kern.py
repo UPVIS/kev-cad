@@ -199,9 +199,9 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
     # ---------------------------------------------------------------------------------------------------- Lagebild
 
     @tool("status", "Lagebild",
-          "Shared picture of the situation, call it first and whenever you lose track: open project and model.py "
-          "path, kernel and app, last run in one line, open findings, Kevin's selection with values, his camera "
-          "(named view or direction, target, distance), what is hidden or isolated, mode and open tiles.", READ_ONLY)
+          "Shared situation picture; call it first and whenever you lose track: project and model.py path, kernel, "
+          "app, last run, open findings, Kevin's selection with values and camera, hidden parts, mode, tiles.",
+          READ_ONLY)
     async def status() -> CallToolResult:
         res = await t.work("schaut auf den Stand", svc.status)
         project = res.get("project") or None
@@ -374,16 +374,14 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         return ohne_json(res)
 
     @tool("modell", "model.py",
-          "Read model.py of the open project, or overwrite it with code (complete new content). Prefer your own file "
-          "tools when you have them; after writing call run. setze={\"breite\": 140} changes param() defaults in "
-          "the file at exactly those places (no reading needed); gliederung=true lists parameters, steps and shown "
-          "parts with line numbers instead of the whole file (large models).", WRITES)
+          "Read or write model.py of the open project (prefer your own file tools; then run). setze edits param() "
+          "defaults in place without reading; gliederung=true gives an outline instead of the whole file.", WRITES)
     async def modell(
-        code: Annotated[str | None, Field(description="Complete new content of model.py; omit to read it")] = None,
+        code: Annotated[str | None, Field(description="New full content of model.py; omit to read")] = None,
         setze: Annotated[dict[str, float] | None, Field(description=(
-            "Set default values of param() in model.py, e.g. {\"breite\": 140}; numbers only"))] = None,
+            "param() defaults, e.g. {\"breite\": 140}"))] = None,
         gliederung: Annotated[bool, Field(description=(
-            "Outline instead of the whole file: parameters with value, line and comment, steps and show() lines"))]
+            "Outline: parameter lines, steps, show() lines"))]
         = False,
     ) -> CallToolResult:
         # Experiment Pipeline K2/K3 (PLAN-PIPELINE.md): gezielt ändern und lesen, ohne die ganze Datei
@@ -414,31 +412,29 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
     # ---------------------------------------------------------------------------------------------------------- Lauf
 
     @tool("run", "Modell ausführen",
-          "Execute model.py; parts stream live into Kevin's viewer. Returns what you need next: ok or the failing "
-          "line with excerpt and hint (isError), new and changed parts with the difference to the last run you saw "
-          "(unchanged ones only counted), new or changed findings first (known ones counted), check state and times. "
-          "Change dimensions with params (no file edit, about 2 s): run(params={\"breite\": 140}). detail 'teile' "
-          "adds every part, 'voll' everything. A run that changed a project file becomes a version; titel names it "
-          "in Kevin's words.", ADDITIVE)
+          "Execute model.py; parts stream live into Kevin's viewer. Returns ok or the failing line with excerpt and "
+          "hint (isError), parts changed since the last run you saw (unchanged only counted), new findings first, "
+          "check state and times. params try dimensions without editing (about 2 s); detail 'teile' or 'voll' adds "
+          "more; titel names the version; meilenstein on the last run of a task sets the milestone.", ADDITIVE)
     async def run(
         params: Annotated[dict[str, float] | None,
-                          Field(description="Overrides for param() values by name, e.g. {\"breite\": 140}")] = None,
+                          Field(description="param() overrides, e.g. {\"breite\": 140}")] = None,
         detail: Annotated[Literal["kurz", "teile", "voll"],
-                          Field(description="kurz = changes only, teile = plus every part, voll = everything")]
+                          Field(description="kurz changes only, teile plus every part, voll everything")]
         = "kurz",
         titel: Annotated[str | None, Field(max_length=160, description=(
-            "Short German description of a larger change in Kevin's words; becomes the title of the new version"))]
+            "German title of a larger change in Kevin's words; titles the new version"))]
         = None,
         slow_ms: Annotated[int, Field(ge=0, le=10000, description="Slow motion pause in ms per step, 0 = off")] = 0,
         timeout_s: Annotated[float | None, Field(ge=10, le=RUN_TIMEOUT_MAX_S, description=(
-            "Time limit for model.py in seconds (default 120, at most 900); raise only after a time-limit failure"))]
+            "Time limit in s (default 120, max 900); raise only after a timeout"))]
         = None,
         warten_s: Annotated[float | None, Field(ge=0, le=120, description=(
-            "Wait at most this long for the built-in check (default 0.4 to 3 s, depending on the run time; 0 = not at "
-            "all); if it still runs, call pruefen() before reporting done"))] = None,
+            "Max seconds to wait for the built-in check (default 0.4 to 3 s; 0 = none); if it still runs, call "
+            "pruefen() before reporting done"))] = None,
         meilenstein: Annotated[str | None, Field(max_length=160, description=(
-            "Final run of a task: also set the milestone with this German title when the run has no errors"))] = None,
-        notiz: Annotated[str | None, Field(max_length=2000, description="Note for the milestone")] = None,
+            "Last run of a task: German milestone title (set if no errors)"))] = None,
+        notiz: Annotated[str | None, Field(max_length=2000, description="Milestone note")] = None,
     ) -> CallToolResult:
         activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
         extra: dict[str, Any] = {}
