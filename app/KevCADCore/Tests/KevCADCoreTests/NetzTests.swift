@@ -156,6 +156,42 @@ final class NetzTests: XCTestCase {
         XCTAssertEqual(kernel.readFrames(count: 1, timeout: 0.2).count, 0)
     }
 
+    /// Ein neues iPad wird gekoppelt, während der Eingang schon lauscht: Er öffnet auf demselben Port neu (der alte muss
+    /// erst zu sein, sonst scheitert das Binden; gefunden im Kettentest mit dem Simulator), und das neue Gerät kommt herein.
+    func testNeueKopplungWaehrendDerEingangLaeuft() throws {
+        let kernel = TestSocketServer()
+        try kernel.listen()
+        defer { kernel.stop() }
+        let port = UInt16.random(in: 48_100...48_900)
+        let eingang = IPadEingang(port: port, kernelSocket: kernel.path, dienstName: "", macKennung: "mac-test")
+        defer { eingang.stoppen() }
+        var bereit: [UInt16?] = []
+        let erstes = expectation(description: "erster Eingang")
+        let zweites = expectation(description: "zweiter Eingang")
+        eingang.onBereit = { p in
+            bereit.append(p)
+            if bereit.count == 1 { erstes.fulfill() }
+            if bereit.count == 2 { zweites.fulfill() }
+        }
+        let alt = NetzKanal.neuerSchluessel()
+        eingang.starten(schluessel: [("kc-alt", alt)])
+        wait(for: [erstes], timeout: 10)
+        XCTAssertEqual(bereit.first ?? nil, port)
+        let neu = NetzKanal.neuerSchluessel()
+        eingang.starten(schluessel: [("kc-alt", alt), ("kc-neu", neu)])
+        wait(for: [zweites], timeout: 10)
+        XCTAssertEqual(bereit.last ?? nil, port, "derselbe Port nach dem Neustart")
+
+        DispatchQueue.global().async { kernel.acceptAndSend(Data()) }
+        let conn = KernelConnection()
+        let verbunden = expectation(description: "neues iPad verbunden")
+        conn.onEvents = { batch in for e in batch { if case .connected = e { verbunden.fulfill() } } }
+        conn.open(netz: NetzZiel(wege: [.hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)],
+                                 schluessel: neu, kennung: "kc-neu"))
+        wait(for: [verbunden], timeout: 10)
+        conn.close()
+    }
+
     /// Ohne Kopplung bleibt kein Port offen.
     func testOhneKopplungKeinPort() {
         let eingang = IPadEingang(port: 0, kernelSocket: "/tmp/gibt-es-nicht.sock", dienstName: "", macKennung: "m")

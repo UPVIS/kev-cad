@@ -210,6 +210,7 @@ public final class AppController: AppActions {
         }
         connection.open(path: socket)
         ipadEingangStarten()  // I-2b: nur mit gekoppeltem iPad bleibt ein Port offen
+        testKopplungSchreiben()
         armWatchdog()
         restoreSessionIfRequested()
         #endif

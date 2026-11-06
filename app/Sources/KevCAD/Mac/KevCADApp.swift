@@ -89,6 +89,14 @@ struct KevCADApp: App {
         .restorationBehavior(.disabled)
         .keyboardShortcut("k", modifiers: [.command, .shift])
 
+        // I-2b (PLAN-IPAD.md): iPad koppeln (Ablage-Menü): QR-Code und gekoppelte iPads
+        Window("iPad koppeln", id: WindowID.kopplung) {
+            KopplungsFenster(kopplung: session.model.kopplung, aktionen: session.model.actions as? KopplungsActions)
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         // Phase 3: Zukaufteil hinzufügen (Ablage-Menü, Lagerkatalog)
         Window("Zukaufteil hinzufügen", id: WindowID.zukauf) {
             ZukaufDialogWindow(model: session.model)

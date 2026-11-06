@@ -54,6 +54,9 @@ public final class KernelConnection: @unchecked Sendable {
     private var netzZiel: NetzZiel?
     private var netz: NWConnection?
     private var wegIndex = 0
+    /// Zählt Versuche übers Netz, damit eine späte Frist keinen neueren Versuch abbricht.
+    private var netzVersuch = 0
+    private var netzBereit = false
     private var wanted = false
     private var readBuffer = [UInt8](repeating: 0, count: 256 * 1024)
     /// V2-5: Basen für WIE_ZUVOR, je Verbindung, nur auf dem Lesefaden.
@@ -315,10 +318,22 @@ public final class KernelConnection: @unchecked Sendable {
         wegIndex += 1
         let c = NWConnection(to: weg, using: NetzKanal.parameter(schluessel: ziel.schluessel, kennung: ziel.kennung))
         netz = c
+        netzBereit = false
+        netzVersuch += 1
+        let versuch = netzVersuch
+        // Eine Bonjour-Auflösung, die keine Antwort bekommt (Dienst unter anderem Namen, Mac weg), bleibt ohne Fehler im
+        // Aufbau stehen: nach einer Frist den nächsten Weg versuchen (gefunden im Kettentest mit dem Simulator).
+        let frist: Double
+        if case .service = weg { frist = 3 } else { frist = 5 }
+        queue.asyncAfter(deadline: .now() + frist) { [weak self, weak c] in
+            guard let self, let c, self.netz === c, self.netzVersuch == versuch, !self.netzBereit else { return }
+            self.teardown(reason: nil)
+        }
         c.stateUpdateHandler = { [weak self, weak c] zustand in
             guard let self, let c, self.netz === c else { return }
             switch zustand {
             case .ready:
+                self.netzBereit = true
                 self.wegIndex -= 1  // dieser Weg ging: beim nächsten Abbruch zuerst wieder ihn versuchen
                 self.reader = FrameReader()
                 self.wieZuvor.leeren()  // eine neue Verbindung beginnt leer

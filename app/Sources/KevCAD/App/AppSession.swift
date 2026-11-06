@@ -18,6 +18,8 @@ enum WindowID {
     static let project = "project"
     static let log = "log"
     static let catalog = "catalog"
+    /// I-2b: Mac-Fenster „iPad koppeln“ (QR-Code, gekoppelte iPads)
+    static let kopplung = "kopplung"
 }
 
 /// Eintrag, den das Fenster Lagerkatalog beim Öffnen auswählen soll.
@@ -179,6 +181,13 @@ final class AppSession: ObservableObject {
     // MARK: Fenster
 
     /// Jedes Fenster meldet sich beim Erscheinen, damit die Sitzung später Fenster öffnen und schließen kann.
+    #if os(macOS)
+    /// I-2b: Fenster „iPad koppeln“ zeigen (neuer QR-Code beim Öffnen).
+    func ipadKoppelnZeigen() {
+        openWindowAction?(id: WindowID.kopplung)
+    }
+    #endif
+
     func attach(openWindow: OpenWindowAction, dismissWindow: DismissWindowAction) {
         openWindowAction = openWindow
         dismissWindowAction = dismissWindow

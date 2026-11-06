@@ -271,8 +271,9 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-0 Plan und Regel | dieser Plan, Paritätsregel in CLAUDE.md, Hinweis an den Thread „KEV Cad Optimize“ | – | fertig |
 | I-1 Kern für iPadOS | KevCADCore, KevCADWire und Viewport übersetzen für iPadOS (Simulator und Gerät), Plattform-Schicht `KevCADCore/Plattform/`, Mac unverändert | – | fertig: iPad-Simulator und -Gerät bauen, 474 Kern-Tests im iPad-Simulator grün; am Mac 479 Swift-Tests und 1267 Kernel-Tests grün, Testbau gut |
 | I-2a Kernel mit mehreren Geräten | Kernel nimmt mehrere Verbindungen an (Regeln in Abschnitt 3), Antworten an die fragende Verbindung, gezielte Anfragen an das aktive Gerät, `HELLO_APP.geraet`, `AKTIV`, `SETTINGS.anlass`; PROTOCOL.md „I-2 Mehrere Geräte“, `kernel/tests/test_mehrere_geraete.py` | – | fertig (Tests grün) |
-| I-2b Eingang und Kopplung | Eingang fürs iPad in der Mac-App (Network.framework, TLS mit Schlüssel je Gerät wie in VoiceBridge, Bonjour `_kevcad._tcp`), reicht Rahmen an den Kernel durch; Kopplung per QR mit Geräteliste und Widerruf; Verbindung im Kern über Unix-Socket oder TLS; Mac-App meldet `geraet` und `SETTINGS.anlass` | I-1, I-2a | Kern fertig: `KevCADCore/Netz/` (`NetzKanal`, `Kopplung`, `KopplungsSpeicher`, `IPadEingang`, `KopplungsStore`), `KernelConnection.open(netz:)`, `AppController+Kopplung`; Tests `NetzTests` (ganzer Weg über TLS, falscher Schlüssel, kein Port ohne Kopplung). Oberfläche (QR am Mac, Scanner am iPad) folgt mit I-3b |
-| I-3 iPad-App | Ziel `KevCADPad` in `app/project.yml` (iPadOS 26, `de.upvis.kevcad.ipad`), gemeinsame Oberfläche übersetzt, Mac-Hülle nach `Mac/`, Verbindung (Suche, QR), Viewer mit Fingergriffen, Gliederung, Kacheln, Laufanzeige, Befunde, Demo ohne Kernel, Testvariante im Simulator, Selbsttest | I-1, I-2b | offen |
+| I-2b Eingang und Kopplung | Eingang fürs iPad in der Mac-App (Network.framework, TLS mit Schlüssel je Gerät wie in VoiceBridge, Bonjour `_kevcad._tcp`), reicht Rahmen an den Kernel durch; Kopplung per QR mit Geräteliste und Widerruf; Verbindung im Kern über Unix-Socket oder TLS; Mac-App meldet `geraet` und `SETTINGS.anlass` | I-1, I-2a | fertig: Kern (`KevCADCore/Netz/`, `KernelConnection.open(netz:)`, `AppController+Kopplung`), Oberfläche (Ablage › iPad koppeln … mit QR-Code, Code kopieren und Geräteliste; auf dem iPad Blatt mit Scanner, Einsetzen und Beispiel, Anzeige oben), Tests `NetzTests` und Kettentest `tools/ipad-kette.sh` |
+| I-3a iPad-App-Gerüst | Ziel `KevCADPad` in `app/project.yml` (iPadOS 26, `de.upvis.kevcad.ipad`), gemeinsame Oberfläche übersetzt, Mac-Hülle nach `app/Sources/KevCAD/Mac/`, Beispielmodell ohne Kopplung (`KEVCAD_DEMO_VIEWPORT=kern`), `tools/ipad-bau.sh app`, `starten`, `stoppen` | I-1 | fertig: baut für den iPad-Simulator, startet dort im Graphit-Look mit echtem Metal-Viewer; Mac-Testbau und Swift-Tests grün |
+| I-3b Bedienung am iPad | Eingabeebene mit Fingern, Stift, Trackpad und Magic Keyboard (`TouchNavigation.swift`), Kopplung in der Oberfläche; offen: Hinweisleiste mit Gesten statt Maus, Viewer bis unter die Statusleiste, Leertext „Drück V“ fürs iPad, Kontextmenü am Teil, 2 und 3 Finger tippen, Bonjour über die Kennung des Mac statt seines Namens (NWBrowser mit TXT `mac`), Tests der Gesten (XCUITest im Simulator) | I-2b, I-3a | Eingabe und Kopplung fertig, Kettentest im Simulator grün (Mac-Testvariante ↔ iPad über TLS, Modell live auf dem iPad); Rest offen |
 | I-4 Stift und Werkzeugkranz | Schweben, Auswahl, Zeichnen im Raum mit Vorhersage, Strichfarben, Werkzeugkranz (auch am Mac mit Q), Befehlskatalog mit Auslöser je Gerät und Paritätstest | I-3 | offen |
 | I-5 Sprechen am iPad | SpeechAnalyzer, eine Uhr, Paket wie am Mac (mit `geraet` und Farbe), Postausgang, Daumenleiste | I-3, I-4 | offen |
 | I-6 Live-Kopplung | Gemeinsame und Eigene Ansicht, Führung, Live-Striche, Agent spricht das aktive Gerät an, Lagebild je Gerät | I-2b, I-3 | offen |
@@ -294,13 +295,17 @@ Im Code mit „iPad: folgt in I-x“ markiert; jedes Paket arbeitet seine Zeilen
 | I-7 | `AppInfo.projectsDirectory` ist der Dokumente-Ordner der App; Ordnernamen unterscheiden auf dem iPad Groß- und Kleinschreibung (`ProjectLocator.uniqueFolder`) |
 | I-8 | Video (`AnimationVideo`, ffmpeg nur am Mac), Drucken (`exportDrucken`, `BlattDruck`, `ExportDrucker`), Bambu Studio, `DruckerSchluesselbund.speichern`, „Im Finder zeigen“ (wird Teilen), Zukauf (Downloads-Ordner) |
 | I-9 | Selbsttests: `SprachSelbsttest`, Treffertest in `AppController+SelfTest`, Fensterbild in `AppController+Flaeche` |
+| I-3b (aus I-3a) | Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Zoomflächen, Tippen in den Viewer macht ihn nicht zur aktiven Kachel (`viewerKlickBeobachten`), Auswahl erweitern mit Umschalt oder Befehl, Hinweisleiste zeigt Maus statt Gesten, Streifen unter der Statusleiste (Viewer bis unter die Statusleiste) |
+| I-7 (aus I-3a) | „Ordner öffnen“ ist ausgeblendet (`presentOpenPanel`), ein fehlendes Projekt in der Liste meldet sich nur statt „Entfernen?“ zu fragen |
+| I-8 (aus I-3a) | Finder und Editor (`AppSession`, `ErrorBanner`, `Kopfleiste`), „Im Finder zeigen“ ausgeblendet (`BestandAnsicht`, `DruckAnsicht`, `ZukaufBanner`, `ExportDialog`), 3MF sichern, PDF sichern und Drucken (Teilen geht schon), Referenz- und CAD-Dateien wählen, Blätter bearbeiten, Protokoll, Lagerkatalog und Zukauf (keine eigene Szene) |
+| I-9 (aus I-3a) | alle Selbsttests der Oberfläche; Menüs liegen nur in `Mac/`, iPadOS 26 hätte eine Menüleiste (Rückweg über den Befehlskatalog in I-4) |
 
 Bewusst ohne Gegenstück: Die Signaturprüfung der Spiegel-Gegenstelle und der Spiegel-Socket (MIRROR.md) gibt es nur am Mac.
 Tests, die auf dem iPad nicht laufen können (Prozesse, ffmpeg, NSPrintInfo, Unix-Socket des Kernels), sind dort mit
 `#if os(macOS)` ausgenommen; `tools/ipad-bau.sh test` fährt die übrigen im iPad-Simulator.
 
 Reihenfolge: I-1 und I-2a, dann I-2b und I-3 nebeneinander (Mac-Eingang gegen iPad-Hülle), dann I-4 bis I-7; I-8 läuft
-mit jedem Paket mit. Höchstens zwei Agenten zugleich mit voller Denktiefe (Wochenlimit, siehe Gedächtnis).
+mit jedem Paket mit. Den ersten TestFlight-Build gibt es, sobald Kevin den App-Eintrag angelegt hat (I-9). Höchstens zwei Agenten zugleich mit voller Denktiefe (Wochenlimit, siehe Gedächtnis).
 
 ## 9. Parität im Alltag
 
@@ -331,7 +336,24 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 | Referenzen und Scans | ja | I-8 (Kamera und LiDAR des iPad, Vorbild `ios/KevScan`) |
 | Freigaben, Protokoll, Selbsttests | ja | I-8, I-9 |
 
-## 10. Offene Fragen und Risiken
+## 10. Erfahrungen
+
+- **Simulator unter Last (06.11.2026):** Beim ersten Booten standen rund 30 Prozesse des Simulators im Zustand „U“, die
+  Last stieg über 700 und `simctl launch` kam nicht zurück. Herunterfahren und neu booten half; danach dauerte der erste
+  Start einer App bis zu drei Minuten. Vor GUI-Tests `uptime` und `ps -Ao stat,comm | awk '$1 ~ /U/'` ansehen.
+- **Bonjour hängt ohne Fehler:** Eine Verbindung zu `.service(name:…)` blieb im Aufbau stehen, ohne `.waiting` oder
+  `.failed`, als es keinen Dienst unter genau diesem Namen gab. Jeder Weg hat deshalb eine Frist (Bonjour 3 s, Adresse
+  5 s); dauerhaft besser ist die Suche über die Kennung des Mac im TXT-Eintrag (offen, I-3b).
+- **Eingang neu öffnen:** Ein Listener auf demselben Port lässt sich erst öffnen, wenn der alte ganz geschlossen ist
+  (`.cancelled`). `IPadEingang` wartet darauf und versucht es sonst kurz erneut (`testNeueKopplungWaehrendDerEingangLaeuft`).
+- **Einsetzen statt Einfügen:** Der Knopf des Systems zum Einfügen heißt auf Deutsch „Einsetzen“ (`PasteButton`, ohne
+  Abfrage der Zwischenablage); die Anleitung am Mac nennt ihn so. Der Scanner (VisionKit) fehlt im Simulator, das Blatt
+  blendet „Code scannen“ dort aus.
+- **Kettentest ohne Kamera:** Testvarianten am Mac schreiben mit `KEVCAD_TEST_KOPPLUNG_DATEI` einen Kopplungscode, die
+  iPad-App übernimmt ihn in Debug-Bauten über `KEVCAD_PAD_KOPPLUNG`. `tools/ipad-kette.sh` fährt die ganze Strecke und
+  baut über MCP ein Modell.
+
+## 11. Offene Fragen und Risiken
 
 **Entschieden** (Kevin, 06.11.2026: „Zu allem sage ich ja“):
 

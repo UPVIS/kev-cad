@@ -52,6 +52,18 @@ extension AppController: KopplungsActions {
         model.kopplung.eingangPort = nil
     }
 
+    /// Nur Testvarianten (`KEVCAD_TEST_KOPPLUNG_DATEI`): gleich einen Kopplungscode anlegen und als Text in diese Datei
+    /// schreiben, damit ein Test das iPad im Simulator ohne Kamera koppeln kann (tools/ipad-bau.sh koppeln).
+    func testKopplungSchreiben() {
+        guard AppInfo.isTestVariant, let pfad = ProcessInfo.processInfo.environment["KEVCAD_TEST_KOPPLUNG_DATEI"],
+            !pfad.isEmpty
+        else { return }
+        ipadKoppeln()
+        guard let text = try? model.kopplung.code?.text() else { return }
+        try? Data(text.utf8).write(to: URL(fileURLWithPath: pfad), options: .atomic)
+        log(.info, "Test: Kopplungscode nach \(pfad) geschrieben")
+    }
+
     /// Schlüssel neu laden (nach Koppeln oder Entfernen) und den Eingang damit neu starten.
     func ipadEingangErneuern() {
         kopplungen.aufraeumen()
@@ -119,7 +131,14 @@ extension AppController: KopplungsActions {
         model.kopplung.macName = code.name
         model.kopplung.meldung = nil
         log(.info, "Mit \(code.name) gekoppelt")
-        if running { connection.open(netz: NetzZiel(code: code)) }
+        if AppInfo.isDemoMode {
+            // Bis eben lief das Beispielmodell (ohne Kopplung, KevCADPadApp): jetzt mit dem Mac verbinden
+            Self.beispielModus(false)
+            stop()
+            start()
+        } else if running {
+            connection.open(netz: NetzZiel(code: code))
+        }
         return true
     }
 
@@ -129,6 +148,21 @@ extension AppController: KopplungsActions {
         model.kopplung.macName = nil
         model.kopplung.verbunden = false
         log(.info, "Kopplung mit dem Mac gelöst")
+        // Ohne Mac zeigt das iPad wieder das Beispielmodell
+        Self.beispielModus(true)
+        stop()
+        start()
+    }
+
+    /// Beispielmodell ohne Mac an oder aus (Demo-Lauf des App-Kerns, `KEVCAD_DEMO_VIEWPORT=kern`).
+    public static func beispielModus(_ an: Bool) {
+        if an {
+            setenv("KEVCAD_DEMO", "1", 1)
+            setenv("KEVCAD_DEMO_VIEWPORT", "kern", 1)
+            setenv("KEVCAD_DEMO_STATE", "live", 1)
+        } else {
+            for name in ["KEVCAD_DEMO", "KEVCAD_DEMO_VIEWPORT", "KEVCAD_DEMO_STATE"] { unsetenv(name) }
+        }
     }
 }
 #endif

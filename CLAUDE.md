@@ -49,6 +49,7 @@ tools/ipad-bau.sh test     # Kern-Tests im iPad-Simulator (bootet ohne Fenster)
 tools/ipad-bau.sh app      # iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
 tools/ipad-bau.sh starten  # Simulator ohne Simulator.app booten, App im Demomodus starten, Foto build/ipad-start.png
 tools/ipad-bau.sh stoppen  # App beenden, Simulator aus, wenn `starten` ihn gebootet hat (`stoppen immer`: auch sonst)
+tools/ipad-kette.sh        # Kettentest: Mac-Testvariante (versteckt) ↔ iPad im Simulator über TLS, Modell über MCP
 ```
 
 Lokal nur als Rückfall (fern.sh nimmt diesen Weg selbst, wenn der Mini fehlt):

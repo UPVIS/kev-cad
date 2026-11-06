@@ -15,6 +15,9 @@ public final class IPadEingang: @unchecked Sendable {
     private let macKennung: String
     private var listener: NWListener?
     private var durchreichen: [ObjectIdentifier: Durchreiche] = [:]
+    /// Schlüssel für den nächsten Eingang, solange der alte noch schließt (der Port ist erst danach frei).
+    private var wartendeSchluessel: [(kennung: String, schluessel: Data)]?
+    private var versuche = 0
 
     /// Zeile fürs Protokoll der App.
     public var onProtokoll: (@MainActor (String) -> Void)?
@@ -42,6 +45,7 @@ public final class IPadEingang: @unchecked Sendable {
     /// Schließt den Eingang und alle Verbindungen.
     public func stoppen() {
         queue.sync {
+            wartendeSchluessel = nil
             listener?.cancel()
             listener = nil
             for d in durchreichen.values { d.schliessen() }
@@ -50,8 +54,30 @@ public final class IPadEingang: @unchecked Sendable {
     }
 
     private func neuStarten(_ schluessel: [(kennung: String, schluessel: Data)]) {
-        listener?.cancel()
-        listener = nil
+        // Laufende Verbindungen bleiben (eigene NWConnections); nur der Eingang wird mit den neuen Schlüsseln neu geöffnet.
+        // Erst wenn der alte wirklich zu ist, ist sein Port frei (sonst scheitert das Binden, gesehen im Kettentest).
+        if let alt = listener {
+            listener = nil
+            wartendeSchluessel = schluessel
+            alt.stateUpdateHandler = { [weak self] zustand in
+                guard let self else { return }
+                if case .cancelled = zustand, let neu = self.wartendeSchluessel {
+                    self.wartendeSchluessel = nil
+                    self.oeffnen(neu)
+                }
+            }
+            alt.cancel()
+            return
+        }
+        if wartendeSchluessel != nil {
+            wartendeSchluessel = schluessel  // der alte schließt noch: dann gleich mit den neuesten Schlüsseln
+            return
+        }
+        versuche = 0
+        oeffnen(schluessel)
+    }
+
+    private func oeffnen(_ schluessel: [(kennung: String, schluessel: Data)]) {
         guard !schluessel.isEmpty else {
             melde(bereit: nil)
             return
@@ -74,10 +100,22 @@ public final class IPadEingang: @unchecked Sendable {
             guard let self, let l, self.listener === l else { return }
             switch zustand {
             case .ready:
+                self.versuche = 0
                 self.melde(bereit: l.port?.rawValue)
             case .failed(let fehler):
-                self.protokoll("iPad-Eingang gescheitert: \(fehler)")
-                self.melde(bereit: nil)
+                self.listener = nil
+                l.cancel()
+                // Port noch belegt (eben geschlossener Eingang): kurz warten und erneut versuchen
+                if self.versuche < 10 {
+                    self.versuche += 1
+                    self.queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                        guard let self, self.listener == nil, self.wartendeSchluessel == nil else { return }
+                        self.oeffnen(schluessel)
+                    }
+                } else {
+                    self.protokoll("iPad-Eingang gescheitert: \(fehler)")
+                    self.melde(bereit: nil)
+                }
             default:
                 break
             }

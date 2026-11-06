@@ -62,6 +62,10 @@ struct KevCADCommands: Commands {
                 Button("Liste leeren") { recents.clear() }
                     .disabled(recents.items.isEmpty)
             }
+            Divider()
+            // I-2b (PLAN-IPAD.md): QR-Code für Kev CAD auf dem iPad, gekoppelte iPads verwalten
+            Button("iPad koppeln …") { session.ipadKoppelnZeigen() }
+                .disabled(!(model.actions is KopplungsActions))
         }
         CommandGroup(replacing: .saveItem) {
             Button("model.py im Editor öffnen") { session.openModelInEditor() }
