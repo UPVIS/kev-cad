@@ -375,10 +375,38 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
 
     @tool("modell", "model.py",
           "Read model.py of the open project, or overwrite it with code (complete new content). Prefer your own file "
-          "tools when you have them; after writing call run.", WRITES)
+          "tools when you have them; after writing call run. setze={\"breite\": 140} changes param() defaults in "
+          "the file at exactly those places (no reading needed); gliederung=true lists parameters, steps and shown "
+          "parts with line numbers instead of the whole file (large models).", WRITES)
     async def modell(
         code: Annotated[str | None, Field(description="Complete new content of model.py; omit to read it")] = None,
+        setze: Annotated[dict[str, float] | None, Field(description=(
+            "Set default values of param() in model.py, e.g. {\"breite\": 140}; numbers only"))] = None,
+        gliederung: Annotated[bool, Field(description=(
+            "Outline instead of the whole file: parameters with value, line and comment, steps and show() lines"))]
+        = False,
     ) -> CallToolResult:
+        # Experiment Pipeline K2/K3 (PLAN-PIPELINE.md): gezielt ändern und lesen, ohne die ganze Datei
+        from . import modell_quelle as mq
+
+        if setze or gliederung:
+            res = await t.work("liest model.py", svc.model_read)
+            err = fmt.service_error(res)
+            if err:
+                return fmt.error_result(err)
+            quelle = str(res.get("code") or "")
+            if gliederung and not setze:
+                return fmt.result(mq.gliederung_text(mq.gliederung(quelle), str(res.get("path"))), None, json_block=False)
+            neu, meldungen, fehler = mq.setze_parameter(quelle, {k: float(v) for k, v in (setze or {}).items()})
+            if meldungen:
+                w = await t.work("ändert Maße in model.py", svc.model_write, neu)
+                err = fmt.service_error(w)
+                if err:
+                    return fmt.error_result(err)
+            text = "\n".join(["model.py geändert:"] + meldungen if meldungen else ["model.py unverändert."])
+            if fehler:
+                text += "\n" + "\n".join(fehler)
+            return fmt.result(text + "\nDanach run.", None, error=not meldungen, json_block=False)
         if code is None:
             return ohne_json(await griffe.aufrufen("model_read", {}, aufruf="modell"))
         return ohne_json(await griffe.aufrufen("model_write", {"code": code}, aufruf="modell"))
@@ -408,6 +436,9 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         warten_s: Annotated[float | None, Field(ge=0, le=120, description=(
             "Wait at most this long for the built-in check (default 0.4 to 3 s, depending on the run time; 0 = not at "
             "all); if it still runs, call pruefen() before reporting done"))] = None,
+        meilenstein: Annotated[str | None, Field(max_length=160, description=(
+            "Final run of a task: also set the milestone with this German title when the run has no errors"))] = None,
+        notiz: Annotated[str | None, Field(max_length=2000, description="Note for the milestone")] = None,
     ) -> CallToolResult:
         activity = "führt model.py aus" + (" in Zeitlupe" if slow_ms else "")
         extra: dict[str, Any] = {}
@@ -424,6 +455,11 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         text, data, fehler, stand = bericht(res, gedaechtnis.holen(sitzung), detail, params)
         if stand is not None:
             gedaechtnis.merken(sitzung, stand)
+        if meilenstein and meilenstein.strip() and not fehler:  # Experiment K1: Meilenstein im selben Aufruf
+            ms = await t.work("setzt den Meilenstein", svc.meilenstein, meilenstein.strip(), notiz or "")
+            err = fmt.service_error(ms)
+            text += (f"\nMeilenstein nicht gesetzt: {err}" if err
+                     else f"\nMeilenstein „{ms.get('titel') or meilenstein.strip()}“ auf Version {ms.get('version')}")
         return fmt.result(text, data, error=fehler, json_block=False)
 
     @tool("execute", "Python im Modell",
