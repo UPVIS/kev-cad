@@ -266,7 +266,7 @@ aktion and its parameters (pass them next to aktion; ? = optional):
 - abspielen(name?, an?, schleife?, geschwindigkeit?, von_vorn?): play or stop in the app
 - springen(zeit, name?): jump to a time
 - video(name?, breite?, fps?, kamera?, format?): MP4 into output/animationen/, optionally through a camera
-- aufbau(dauer_s?, blickwinkel?, schritte?, einflug?, zeichnen?, details?, umdrehungen?, hoehe_grad?, wechsel_s?, halten_s?, einflug_s?, start_s?, name?, breite?, fps?, format?): build-up video on request: parts appear one after another, orbit or several angles, optional strokes; one MP4 per angle plus the timing for captions
+- aufbau(dauer_s?, blickwinkel?, schritte?, einflug?, zeichnen?, details?, umdrehungen?, hoehe_grad?, wechsel_s?, halten_s?, einflug_s?, start_s?, name?, breite?, hoehe?, fps?, format?): build-up video on request: parts appear one after another, orbit or several angles, optional strokes; one MP4 per angle plus the timing for captions
 - kollision(name?, schritt?): exact collision check every 3rd frame; solve every penetration
 aktion="hilfe" (optional zu="<aktion>") explains every parameter; daten=true adds the raw data as JSON.
 

@@ -25,7 +25,7 @@ import numpy as np
 
 STRICH_PRAEFIX = "Skizze/"
 STRICH_FARBE = "#8FC6FF"  # Kevins Lichtblau in der App (GF.kevin)
-SEITENVERHAELTNIS = 16 / 9  # Video ohne benannte Kamera (animation_video)
+SEITENVERHAELTNIS = 16 / 9  # Vorgabe; Hochformat über wunsch["seitenverhaeltnis"] (Breite / Höhe, 9:16 = 0,5625)
 
 # Azimut in Grad ab +X gegen den Uhrzeigersinn, Höhe in Grad über dem Horizont. Z oben, „vorne“ blickt wie die
 # Standardansicht des Viewers in +Y (Kamera auf der Seite −Y), „iso“ von vorne rechts oben.
@@ -222,7 +222,8 @@ def _richtung_vektor(azimut: float, hoehe: float) -> np.ndarray:
     return np.array([math.cos(h) * math.cos(a), math.cos(h) * math.sin(a), math.sin(h)])
 
 
-def _abstand(ecken: np.ndarray, mitte: np.ndarray, u: np.ndarray, bildwinkel: float) -> float:
+def _abstand(ecken: np.ndarray, mitte: np.ndarray, u: np.ndarray, bildwinkel: float,
+             seiten: float = SEITENVERHAELTNIS) -> float:
     """Abstand, aus dem alle Ecken des Hüllquaders ins Bild passen (Kamera auf mitte + d·u, Blick auf mitte)."""
     f = -u
     rechts = np.cross(f, [0.0, 0.0, 1.0])
@@ -231,19 +232,19 @@ def _abstand(ecken: np.ndarray, mitte: np.ndarray, u: np.ndarray, bildwinkel: fl
     rechts /= np.linalg.norm(rechts)
     oben = np.cross(rechts, f)
     tv = math.tan(math.radians(bildwinkel) / 2)
-    th = tv * SEITENVERHAELTNIS
+    th = tv * seiten
     v = ecken - mitte
     x, y, z = v @ rechts, v @ oben, v @ u
     return float(max(np.max(z + np.abs(x) / th), np.max(z + np.abs(y) / tv)))
 
 
-def _fahrt(titel: str, art: str, zeiten: np.ndarray, mitte: np.ndarray, ecken: np.ndarray, bildwinkel: float,
+def _fahrt(titel: str, art: str, zeiten: np.ndarray, mitte: np.ndarray, ecken: np.ndarray, bildwinkel: float, seiten: float,
            umdrehungen: float, hoehe: float, start: float, drift: float, rand: float) -> list[tuple[float, Any, Any]]:
     del titel
     if art == "orbit":
         dauer = float(zeiten[-1]) if len(zeiten) else 1.0
         azimute = start + 360.0 * umdrehungen * (zeiten / max(dauer, 1e-9))
-        d = max(_abstand(ecken, mitte, _richtung_vektor(a, hoehe), bildwinkel) for a in np.arange(0, 360, 10))
+        d = max(_abstand(ecken, mitte, _richtung_vektor(a, hoehe), bildwinkel, seiten) for a in np.arange(0, 360, 10))
         return [(float(t), tuple(mitte + rand * d * _richtung_vektor(float(a), hoehe)), tuple(mitte))
                 for t, a in zip(zeiten, azimute)]
     az, h = RICHTUNGEN[art]
@@ -252,7 +253,7 @@ def _fahrt(titel: str, art: str, zeiten: np.ndarray, mitte: np.ndarray, ecken: n
         azimute = np.full(len(zeiten), az)
     else:
         azimute = az - drift / 2 + drift * (zeiten / max(dauer, 1e-9))
-    d = max(_abstand(ecken, mitte, _richtung_vektor(float(a), h), bildwinkel) for a in (azimute[0], azimute[-1]))
+    d = max(_abstand(ecken, mitte, _richtung_vektor(float(a), h), bildwinkel, seiten) for a in (azimute[0], azimute[-1]))
     return [(float(t), tuple(mitte + rand * d * _richtung_vektor(float(a), h)), tuple(mitte))
             for t, a in zip(zeiten, azimute)]
 
@@ -402,7 +403,9 @@ def plan(wunsch: dict[str, Any], teile: list[str], huellen: dict[str, tuple[list
     # Schlüsselbilder dicht genug, dass der Orbit auf der Sehne nicht sichtbar näher kommt (höchstens 5° je Schritt)
     takt = max(1.0 / fps, min(KAMERA_TAKT_S, 5.0 / max(1e-6, abs(360.0 * umdrehungen / dauer))))
     zeiten = np.unique(np.concatenate([np.arange(0.0, dauer, takt), [dauer]]))
-    args = dict(mitte=mitte, ecken=ecken, bildwinkel=bildwinkel, umdrehungen=umdrehungen, hoehe=hoehe, start=start,
+    seiten = _zahl(wunsch, "seitenverhaeltnis", SEITENVERHAELTNIS, 0.2, 5.0)
+    args = dict(mitte=mitte, ecken=ecken, bildwinkel=bildwinkel, seiten=seiten, umdrehungen=umdrehungen, hoehe=hoehe,
+                start=start,
                 drift=drift, rand=rand)
     fahrten: list[Kamerafahrt] = []
     for w in winkel:

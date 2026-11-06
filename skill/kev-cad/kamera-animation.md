@@ -99,6 +99,9 @@ animation(aktion="aufbau", dauer_s=20, blickwinkel=["orbit", "iso", "schnitt"],
 - `zeichnen`: vor einem Schritt entsteht ein Strich in Kevins Lichtblau (ohne `von` endet er gerade, bevor das Teil
   erscheint), wie wenn er beim Sprechen zeichnet, dann kommt
   das Teil dazu. Punkte in mm auf der Fläche, der Strich hebt sich selbst etwas ab.
+- Hochformat (Reels, Stories): `breite=1080, hoehe=1920`. Die Kamera rahmt dann nach der schmalen Breite, damit das
+  Modell seitlich nicht angeschnitten wird; Zeiten und Zeitplan bleiben wie im Querformat (beide Fassungen schneiden
+  sich gleich).
 - Die Antwort nennt die Videos und den Zeitplan (wann welcher Schritt erscheint), zusätzlich als
   `output/animationen/<name>_zeitplan.json`: Daraus setzt man im Schnitt Texte genau auf die Teile.
 - Nach dem nächsten normalen `run` sind die Aufbau-Animationen wieder weg.

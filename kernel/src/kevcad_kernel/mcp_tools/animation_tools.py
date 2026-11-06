@@ -187,7 +187,10 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         start_s: Annotated[float | None, Field(ge=0, le=30, description="Empty start before the first part")] = None,
         name: Annotated[str, Field(min_length=1, max_length=60, description="Name of the animations and files")]
         = "Aufbau",
-        breite: Annotated[int, Field(ge=64, le=7680, description="Video width in px (16:9)")] = 1920,
+        breite: Annotated[int, Field(ge=64, le=7680, description="Video width in px")] = 1920,
+        hoehe: Annotated[int | None, Field(ge=16, le=7680, description=(
+            "Video height in px; omit for 16:9. 9:16 for reels: breite 1080, hoehe 1920 (the camera frames for it)"))]
+        = None,
         fps: Annotated[float, Field(ge=10, le=60, description="Frame rate")] = 30.0,
         format: Annotated[Literal["mp4", "prores"], Field(description="mp4 = H.264, prores = ProRes 422")] = "mp4",  # noqa: A002
     ) -> CallToolResult:
@@ -203,7 +206,7 @@ def register_animation_tools(tool: Callable[..., Any], t: Any, svc: Any) -> None
         for key, wert in (("halten_s", halten_s), ("einflug_s", einflug_s), ("start_s", start_s)):
             if wert is not None:
                 wunsch[key] = wert
-        res = await t.work("rendert das Aufbau-Video", svc.aufbau_video, wunsch, breite, fps, format)
+        res = await t.work("rendert das Aufbau-Video", svc.aufbau_video, wunsch, breite, fps, format, hoehe)
         if not res.get("videos"):
             return fmt.error_result(f"Aufbau-Video nicht erstellt: {res.get('error') or 'unbekannter Fehler'}", res)
         plan = res.get("zeitplan") or {}

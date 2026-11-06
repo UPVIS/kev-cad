@@ -530,8 +530,8 @@ class FakeService:
                 "ms": 12000}
 
     def aufbau_video(self, wunsch: dict[str, Any], breite: int = 1920, fps: float | None = None,
-                     format: str = "mp4") -> dict[str, Any]:  # noqa: A002
-        self._record("aufbau_video", wunsch, breite, fps, format)
+                     format: str = "mp4", hoehe: int | None = None) -> dict[str, Any]:  # noqa: A002
+        self._record("aufbau_video", wunsch, breite, fps, format, hoehe)
         if not self.app_connected:
             return {"ok": False, "error": "App nicht verbunden"}
         name = wunsch.get("name") or "Aufbau"

@@ -116,6 +116,14 @@ def test_orbit_abstand_konstant_und_schnitt_auf_bildern():
         plan({"dauer": 10, "blickwinkel": ["seitlich"]}, TEILE, HUELLEN)
 
 
+def test_hochformat_rahmt_nach_der_breite():
+    quer = plan({"dauer": 10, "blickwinkel": ["iso"]}, TEILE, HUELLEN, ausgenommen={"Boden"})
+    hoch = plan({"dauer": 10, "blickwinkel": ["iso"], "seitenverhaeltnis": 9 / 16}, TEILE, HUELLEN,
+                ausgenommen={"Boden"})
+    d = [np.linalg.norm(np.asarray(f.fahrten[0].schluessel[0][1]) - np.asarray(f.mitte)) for f in (quer, hoch)]
+    assert d[1] > d[0] * 1.3  # schmales Bild: weiter weg, damit das breite Modell hineinpasst
+
+
 def test_detail_rahmt_nur_die_baugruppe():
     huellen = {**HUELLEN, "Drohne/GoPro": ([40.0, 30.0, 20.0], [60.0, 50.0, 30.0])}
     p = plan({"dauer": 10, "details": [{"auf": "Drohne/GoPro", "richtung": "iso_hinten_links"}]}, TEILE, huellen,

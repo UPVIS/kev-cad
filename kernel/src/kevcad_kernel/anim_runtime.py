@@ -347,7 +347,7 @@ class AnimationRuntimeMixin:
         return out
 
     def aufbau_video(self, wunsch: dict[str, Any], breite: int = 1920, fps: float | None = None,
-                     format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+                     format: str = "mp4", hoehe: int | None = None) -> dict[str, Any]:  # noqa: A002
         """Siehe KernelService.aufbau_video. Der Lauf ist ein normaler Lauf mit Wunsch im Gepäck: Kevin sieht ihn im
         Viewer, die Aufbau-Animationen stehen danach in der Liste, bis der nächste normale Lauf sie ablöst."""
         if not self._link.connected:  # type: ignore[attr-defined]
@@ -357,7 +357,10 @@ class AnimationRuntimeMixin:
         sperre = self.feedback_sperre()  # type: ignore[attr-defined]
         if sperre:  # V2-6: solange Kevin spricht, beginnt kein Lauf
             return sperre
-        job = self._submit_run(None, 0, self.run_timeout_s, source="agent", aufbau=dict(wunsch))  # type: ignore[attr-defined]
+        wunsch = dict(wunsch)
+        if hoehe:  # Hochformat (9:16) oder anderes Seitenverhältnis: die Kamera rahmt danach
+            wunsch["seitenverhaeltnis"] = max(64, int(breite)) / max(16, int(hoehe))
+        job = self._submit_run(None, 0, self.run_timeout_s, source="agent", aufbau=wunsch)  # type: ignore[attr-defined]
         if isinstance(job, dict):
             return job
         job.done.wait()
@@ -372,7 +375,7 @@ class AnimationRuntimeMixin:
         videos: list[dict[str, Any]] = []
         fehler: list[str] = []
         for v in plan.get("videos") or []:
-            r = self.animation_video(v["animation"], breite, None, fps, None, format)
+            r = self.animation_video(v["animation"], breite, hoehe, fps, None, format)
             if r.get("ok"):
                 videos.append({**r, "titel": v["titel"], "schnitte": v.get("schnitte") or []})
             else:

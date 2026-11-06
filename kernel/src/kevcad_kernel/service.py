@@ -277,7 +277,7 @@ class KernelService(Protocol):
         model.py (Kurzname oder „Kamera/<name>“), Höhe dann aus dem Seitenverhältnis ihres Formats."""
 
     def aufbau_video(self, wunsch: dict[str, Any], breite: int = 1920, fps: float | None = None,
-                     format: str = "mp4") -> dict[str, Any]:  # noqa: A002
+                     format: str = "mp4", hoehe: int | None = None) -> dict[str, Any]:  # noqa: A002
         """Aufbau-Video (aufbau.py): model.py rechnen, danach je Blickwinkel eine Aufbau-Animation anlegen und als Video
         rendern. ``wunsch``: name, dauer, fps, schritte, einflug, blickwinkel, zeichnen, … (siehe aufbau.plan).
         {"ok", "videos": [animation_video …], "zeitplan": Plan.zeitplan(), "zeitplan_datei", "lauf"}"""
