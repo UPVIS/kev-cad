@@ -2,8 +2,8 @@ import KevCADCore
 import SwiftUI
 
 // Zuschnitt (BESTAND.md, Abschnitt „App“): je Stangenware und Platte die Stücke, farbig nach Quelle (Rest, Bestand,
-// kaufen), neue Reste gestrichelt, Verschnitt grau. Dieselben Bausteine zeigen die Schnellansicht „Zuschnitt“ unter dem
-// Viewport (kompakt) und der Abschnitt „Zuschnitt“ im Bereich „Material“ (groß). Die Daten kommen aus MaterialDaten.
+// kaufen), neue Reste gestrichelt, Verschnitt grau. Dieselben Bausteine zeigen die Kachel Zuschnitt und der Abschnitt
+// „Zuschnitt“ der Kachel Material. Die Daten kommen aus MaterialDaten.
 
 /// Darstellungsgröße der Zuschnitt-Bausteine.
 enum ZuschnittGroesse {

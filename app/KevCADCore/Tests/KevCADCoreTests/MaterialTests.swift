@@ -3,8 +3,7 @@ import XCTest
 
 @testable import KevCADCore
 
-/// Strang „Material“: eine Datenquelle für Bereich, Schnellansichten und Berichte (gleiche Summen überall) und der
-/// Zustand der Schnellansichten.
+/// Strang „Material“: eine Datenquelle für Kacheln und Berichte (gleiche Summen überall).
 final class MaterialTests: XCTestCase {
     // MARK: Hilfen
 
@@ -264,95 +263,5 @@ final class MaterialTests: XCTestCase {
         XCTAssertTrue(p.passt(""))
         XCTAssertTrue(d.positionen.contains { $0.passt("alfer 12") })
         XCTAssertFalse(d.positionen.contains { $0.passt("gibtsnicht") })
-    }
-
-    // MARK: Schnellansichten
-
-    func testSchnellansichtenAufUndZu() {
-        var z = SchnellansichtenZustand()
-        let alle = Schnellansicht.allCases
-        XCTAssertTrue(z.offene(alle).isEmpty)
-        z.umschalten(.stueckliste)
-        XCTAssertEqual(z.offene(alle), [.stueckliste])
-        z.umschalten(.zuschnitt)
-        XCTAssertEqual(z.offene(alle), [.stueckliste, .zuschnitt])  // mehrere zugleich, feste Reihenfolge
-        XCTAssertEqual(z.eingeklappte(alle), [.druck])
-        z.umschalten(.stueckliste)
-        XCTAssertEqual(z.offene(alle), [.zuschnitt])  // einzeln zu
-        z.oeffne(.stueckliste)
-        z.alleZu()
-        XCTAssertTrue(z.offene(alle).isEmpty)
-        XCTAssertEqual(z.zuletzt, [.stueckliste, .zuschnitt])
-        z.allesUmschalten(alle)  // das zuletzt Offene wieder auf
-        XCTAssertEqual(z.offene(alle), [.stueckliste, .zuschnitt])
-        z.allesUmschalten(alle)
-        XCTAssertTrue(z.offen.isEmpty)
-        // Ohne Druckteile ist „Druck“ nicht sichtbar, auch wenn sie offen gemerkt ist
-        z.alleAuf(alle)
-        XCTAssertEqual(z.offene([.stueckliste, .zuschnitt]), [.stueckliste, .zuschnitt])
-        // Nichts gemerkt: Umschalten öffnet die Stückliste
-        var leer = SchnellansichtenZustand(zuletzt: [.druck])
-        leer.allesUmschalten([.stueckliste, .zuschnitt])
-        XCTAssertEqual(leer.offene(alle), [.stueckliste])
-    }
-
-    func testSchnellansichtenHoehen() {
-        var z = SchnellansichtenZustand(offen: [.stueckliste, .zuschnitt])
-        z.setzeHoehe(.stueckliste, 300)
-        z.setzeHoehe(.zuschnitt, 100)
-        let alle = Schnellansicht.allCases
-        // genug Platz: wie eingestellt
-        XCTAssertEqual(z.verteilt(alle, platz: 1000), [.stueckliste: 300, .zuschnitt: 100])
-        // zu wenig: im Verhältnis gekürzt (300 : 100 bei 600 Punkten)
-        let halb = z.verteilt(alle, platz: 300)
-        XCTAssertEqual(halb[.stueckliste] ?? 0, 225, accuracy: 1e-9)
-        XCTAssertEqual(halb[.zuschnitt] ?? 0, 75, accuracy: 1e-9)
-        // fiele eine unter die Mindesthöhe, hält sie die, der Rest teilt sich den Platz
-        let k = z.verteilt(alle, platz: 200)
-        XCTAssertEqual((k[.stueckliste] ?? 0) + (k[.zuschnitt] ?? 0), 200, accuracy: 1e-6)
-        XCTAssertEqual(k[.zuschnitt] ?? 0, SchnellansichtenZustand.mindestHoehe, accuracy: 1e-9)
-        XCTAssertEqual(k[.stueckliste] ?? 0, 200 - SchnellansichtenZustand.mindestHoehe, accuracy: 1e-9)
-        // gar kein Platz: gleich verteilt
-        XCTAssertEqual(z.verteilt(alle, platz: 100)[.stueckliste] ?? 0, 50, accuracy: 1e-9)
-        // Grenzen beim Setzen
-        z.setzeHoehe(.druck, 5)
-        XCTAssertEqual(z.hoehe(.druck), SchnellansichtenZustand.mindestHoehe)
-        z.setzeHoehe(.druck, 5000)
-        XCTAssertEqual(z.hoehe(.druck), SchnellansichtenZustand.hoechstHoehe)
-        XCTAssertEqual(SchnellansichtenZustand().hoehe(.stueckliste), Schnellansicht.stueckliste.standardHoehe)
-    }
-
-    func testSchnellansichtenZiehen() {
-        var z = SchnellansichtenZustand(offen: [.stueckliste, .zuschnitt])
-        z.setzeHoehe(.stueckliste, 200)
-        z.setzeHoehe(.zuschnitt, 150)
-        let alle = Schnellansicht.allCases
-        let start = z.verteilt(alle, platz: 800)
-        // Griff über der ersten: nach oben ziehen vergrößert sie gegen den Viewport, die zweite bleibt
-        z.ziehe(.stueckliste, dy: -100, start: start, sichtbar: alle, platz: 800)
-        XCTAssertEqual(z.hoehe(.stueckliste), 300)
-        XCTAssertEqual(z.hoehe(.zuschnitt), 150)
-        // nicht über den Platz hinaus
-        z.ziehe(.stueckliste, dy: -2000, start: start, sichtbar: alle, platz: 800)
-        XCTAssertEqual(z.hoehe(.stueckliste), 650)
-        // Griff zwischen beiden: Höhe wandert, die Summe bleibt
-        z.ziehe(.zuschnitt, dy: -50, start: start, sichtbar: alle, platz: 800)
-        XCTAssertEqual(z.hoehe(.zuschnitt), 200)
-        XCTAssertEqual(z.hoehe(.stueckliste), 150)
-        z.ziehe(.zuschnitt, dy: 500, start: start, sichtbar: alle, platz: 800)
-        XCTAssertEqual(z.hoehe(.zuschnitt), SchnellansichtenZustand.mindestHoehe)
-        XCTAssertEqual(z.hoehe(.stueckliste), 350 - SchnellansichtenZustand.mindestHoehe)
-    }
-
-    func testSchnellansichtenGemerkt() {
-        var z = SchnellansichtenZustand(offen: [.zuschnitt])
-        z.setzeHoehe(.zuschnitt, 222)
-        z.alleZu()
-        let wieder = SchnellansichtenZustand.aus(z.daten)
-        XCTAssertEqual(wieder, z)
-        XCTAssertEqual(wieder?.zuletzt, [.zuschnitt])
-        XCTAssertEqual(wieder?.hoehe(.zuschnitt), 222)
-        XCTAssertNil(SchnellansichtenZustand.aus(nil))
-        XCTAssertNil(SchnellansichtenZustand.aus(Data("kaputt".utf8)))
     }
 }

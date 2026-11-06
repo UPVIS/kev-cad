@@ -62,7 +62,7 @@ final class BestandUI: ObservableObject {
 
     private init() {}
 
-    /// Dialog „Gebaut …“ öffnen (Menü, Material-Bereich, Schnellansicht).
+    /// Dialog „Gebaut …“ öffnen (Menü, Kachel Material).
     func zeigeGebaut() {
         DispatchQueue.main.async { self.gebautDialog = true }
     }

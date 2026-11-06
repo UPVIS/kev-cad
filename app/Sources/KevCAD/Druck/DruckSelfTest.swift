@@ -2,8 +2,8 @@ import AppKit
 import KevCADCore
 import SwiftUI
 
-/// Testfenster der Druckvorschau: Schnellansicht oben, volle Ansicht darunter, so wie der Material-Strang beide einbaut.
-/// Nur für den Selbsttest (die Testvariante legt es auf den zweiten Monitor).
+/// Testfenster der Druckvorschau mit der vollen Ansicht. Nur für den Selbsttest (die Testvariante legt es auf den zweiten
+/// Monitor; mit `KEVCAD_TEST_VERSTECKT` liegt es hinter dem Schreibtischbild).
 @MainActor
 enum DruckTestFenster {
     private(set) static var fenster: NSWindow?
@@ -18,12 +18,8 @@ enum DruckTestFenster {
                          styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         w.title = "Druckvorschau (Test)"
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: VStack(spacing: 0) {
-            DruckKompakt(model: model)
-                .background(.bar)
-            Divider()
-            DruckAnsicht(model: model)
-        })
+        w.contentView = NSHostingView(rootView: DruckAnsicht(model: model))
+        WindowHook.verstecken(w)
         fenster = w
         platzieren(w)
         w.orderFrontRegardless()
@@ -187,7 +183,7 @@ enum DruckSelfTest {
         check(!vomKernel || namen.isSubset(of: bekannte),
               "Teilenamen der Platten im Modell: \(namen.intersection(bekannte).count) von \(namen.count)")
 
-        // 2. Testfenster: Schnellansicht und volle Ansicht mit Druckerleiste
+        // 2. Testfenster: volle Ansicht mit Druckerleiste
         let fenster = DruckTestFenster.zeige(model: model)
         ui.auswahl = nil
         ui.nebeneinander = false
@@ -314,7 +310,7 @@ enum DruckSelfTest {
             _ = await wait(10) { model.drucker.dialog == nil }
         }
 
-        // 8. Bereich Material: Abschnitt „Druckteile“ und Schnellansicht „Druck“, hell und dunkel
+        // 8. Kachel Material: Abschnitt „Druckteile“, hell und dunkel; Kachel Druck
         DruckTestFenster.fenster?.orderOut(nil)
         if let state, let w = projektFenster() {
             state.materialZustand.zeige(.druck)
@@ -325,23 +321,13 @@ enum DruckSelfTest {
             await pause(1.5)
             await foto(w, "07-material-druckteile-dunkel")
             w.appearance = nil
-            state.zeige(.modell)
-            var s = state.schnell
-            s.offen = [.druck]
-            state.schnell = s
+            model.oberflaechenActions?.zeigeKachel(.druck)
             await pause(2)
-            await foto(w, "08-schnellansicht-druck-hell")
-            w.appearance = NSAppearance(named: .darkAqua)
-            await pause(1.5)
-            await foto(w, "09-schnellansicht-druck-dunkel")
-            w.appearance = nil
-            s.offen = []
-            state.schnell = s
-            await pause(1.5)
-            await foto(w, "10-schnellansicht-eingeklappt")
-            check(true, "Bereich Material und Schnellansicht gezeigt")
+            await foto(w, "08-kachel-druck")
+            check(model.oberflaeche.kacheln.contains(.druck) && model.oberflaeche.kacheln.contains(.material),
+                  "Kacheln Material und Druck gezeigt")
         } else {
-            info("kein Projektfenster: Bereich Material nicht geprüft")
+            info("kein Hauptfenster: Kachel Material nicht geprüft")
         }
 
         // 9. Bericht-Baustein

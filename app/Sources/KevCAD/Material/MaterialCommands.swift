@@ -2,8 +2,7 @@ import KevCADCore
 import SwiftUI
 
 /// Untermenü „Material“ im Menü „Modell“: die Abschnitte des Bereichs (als Kachel), Bestand erfassen, Gebaut …, Einkaufsliste, Zukaufteil,
-/// Bericht, Katalog. Bereiche und Schnellansichten gibt es seit V2-3 nicht mehr: Fokus und Werkstatt (⌘1, ⌘2) und
-/// Kacheln (⌃⌘1 bis ⌃⌘8) stehen in OberflaechenCommands.
+/// Bericht, Katalog. Fokus und Werkstatt (⌘1, ⌘2) und Kacheln (⌃⌘1 bis ⌃⌘0) stehen in OberflaechenCommands.
 struct MaterialMenue: View {
     @ObservedObject var session: AppSession
     @ObservedObject var model: AppModel
@@ -52,14 +51,6 @@ struct MaterialMenue: View {
             if let n = model.catalog?.suggestionCount, n > 0 {
                 Button("Vorschläge von Claude prüfen (\(n)) …") { session.showCatalog(section: .suggestions) }
             }
-        }
-    }
-
-    static func kuerzel(_ a: Schnellansicht) -> KeyEquivalent {
-        switch a {
-        case .stueckliste: return "1"
-        case .zuschnitt: return "2"
-        case .druck: return "3"
         }
     }
 }

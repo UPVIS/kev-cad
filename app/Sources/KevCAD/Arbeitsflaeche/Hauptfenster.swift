@@ -109,6 +109,10 @@ struct Hauptfenster: View {
                     uebersicht(g)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                FensterBaender(model: model, state: state, viewerSichtbar: g.viewerSichtbar)
+                    .padding(.top, GA.kopf + GA.unterKopf + GA.s)
+                    .padding(.horizontal, GA.m)
+                    .frame(width: geo.size.width, alignment: .top)
                 Kopfleiste(model: model, oberflaeche: oberflaeche, schmal: g.schmal)
                     .frame(width: geo.size.width, height: GA.kopf)
                     .position(x: geo.size.width / 2, y: GA.ampelMitte)
@@ -346,6 +350,23 @@ struct Hauptfenster: View {
             model?.actions?.focus(on: teile)
         }
         state.dokumenteZustand = dokumente
+    }
+}
+
+/// Bänder über allen Flächen: der Hinweis nach „Gebaut“ mit „Rückgängig“ und, solange der Viewer verdeckt ist, die
+/// Vorschläge zur Freigabe (sonst zeigt sie der Viewer selbst). Eigene Ansicht: nur sie beobachtet das Modell.
+private struct FensterBaender: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var state: ProjectWindowState
+    let viewerSichtbar: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            BuchungsBand(model: model)
+            if !viewerSichtbar, let key = model.vorschlagSchluessel, state.dismissedFreigabe != key {
+                FreigabeBand(model: model, oeffnen: { state.freigabeOffen = true }) { state.dismissedFreigabe = key }
+            }
+        }
     }
 }
 

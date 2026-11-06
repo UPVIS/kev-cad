@@ -220,54 +220,6 @@ enum SimulationOeffnen {
     }
 }
 
-/// Werkzeugleiste im Bereich „Simulation“: Werkzeuge im Viewer, Rechnen, Inspektor.
-struct SimulationToolbar: ToolbarContent {
-    @ObservedObject var model: AppModel
-    @ObservedObject var store: SimulationStore
-    @ObservedObject var state: ProjectWindowState
-
-    private var actions: SimulationActions? { model.simulationActions }
-
-    var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .principal) {
-            Picker("Werkzeug", selection: Binding(get: { store.werkzeug },
-                                                  set: { actions?.setSimulationWerkzeug($0) })) {
-                Label("Auswählen", systemImage: "cursorarrow").tag(SimulationStore.Werkzeug.keins)
-                Label("Kraft setzen", systemImage: "arrow.down.to.line").tag(SimulationStore.Werkzeug.kraft)
-                Label("Lager setzen", systemImage: "triangle.bottomhalf.filled").tag(SimulationStore.Werkzeug.lager)
-                Label("Schutzfläche", systemImage: "shield.lefthalf.filled").tag(SimulationStore.Werkzeug.schutz)
-            }
-            .pickerStyle(.segmented)
-            .labelStyle(.iconOnly)
-            .disabled(actions == nil)
-            .help("Auswählen · Kraft setzen · Lager setzen · Schutzfläche (Topologie); Esc beendet")
-        }
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                actions?.simulationRechnen(was: "rechnen", lastfall: nil, teil: nil, fein: false, grenze: nil)
-            } label: {
-                Label("Rechnen", systemImage: "bolt")
-            }
-            .disabled(actions == nil || store.job?.laeuft == true)
-            .help("Alle Lastfälle mit S0 und S1 rechnen (Millisekunden)")
-            Button {
-                actions?.simulationRechnen(was: "festigkeit", lastfall: store.auswahl, teil: nil, fein: false,
-                                           grenze: nil)
-            } label: {
-                Label("Festigkeit (FEM)", systemImage: "cube.transparent")
-            }
-            .disabled(actions == nil || store.auswahl == nil || store.job?.laeuft == true)
-            .help("Festkörper-FEM für die Teile mit Last im gewählten Lastfall")
-            Button {
-                state.showInspector.toggle()
-            } label: {
-                Label("Inspektor", systemImage: "sidebar.trailing")
-            }
-            .help("Inspektor ein- oder ausblenden")
-        }
-    }
-}
-
 /// Untermenü „Simulation“ im Menü „Modell“ (V2-3).
 struct SimulationMenue: View {
     @ObservedObject var model: AppModel
