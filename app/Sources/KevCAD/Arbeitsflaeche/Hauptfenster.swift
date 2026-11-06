@@ -69,7 +69,8 @@ struct Hauptfenster: View {
     @StateObject private var versionen = VersionenZustand()
     @StateObject private var dokumente = DokumenteZustand()
     @StateObject private var parameter = ParameterVerlauf()
-    @StateObject private var spur = AgentenSpur()
+    /// Nicht beobachtet: Das Hauptfenster zeichnet sich nicht bei jedem Schritt neu, nur die Spur selbst.
+    @State private var spur = AgentenSpur()
     @State private var suche = ""
     /// Der Viewer kommt erst nach dem ersten Bild dazu: Metal einzurichten soll das Fenster nicht aufhalten.
     @State private var viewerAn = false

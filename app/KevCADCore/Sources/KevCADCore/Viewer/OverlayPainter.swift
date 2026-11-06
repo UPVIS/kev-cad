@@ -20,6 +20,21 @@ public enum OverlayPrimitive: Sendable {
     case badge(point: SIMD3<Float>, text: String, color: SIMD4<Float>, filled: Bool)
 }
 
+extension OverlayPrimitive {
+    /// Gleiche Anzeige mit Deckkraft `k` (0 bis 1), zum Ausblenden.
+    public func mitDeckkraft(_ k: Float) -> OverlayPrimitive {
+        func f(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x, c.y, c.z, c.w * k) }
+        switch self {
+        case .polyline(let p, let c, let w): return .polyline(points: p, color: f(c), width: w)
+        case .dot(let p, let c, let r): return .dot(point: p, color: f(c), radius: r)
+        case .dimension(let a, let b, let t, let c): return .dimension(a: a, b: b, text: t, color: f(c))
+        case .arrow(let a, let b, let t, let c): return .arrow(from: a, to: b, text: t, color: f(c))
+        case .label(let p, let t, let c): return .label(point: p, text: t, color: f(c))
+        case .badge(let p, let t, let c, let g): return .badge(point: p, text: t, color: f(c), filled: g)
+        }
+    }
+}
+
 /// Welt → Bildpunkte (Ursprung oben links, y nach unten), passend zur Kamera des Viewports.
 public struct OverlayProjector {
     public let viewProjection: simd_float4x4
@@ -122,13 +137,19 @@ public enum OverlayPainter {
         // Symbole nebeneinander, wenn mehrere am selben Punkt sitzen
         var used: [CGRect] = []
         for (p, text, color, filled) in badges {
+            ctx.saveGState()
+            ctx.setAlpha(CGFloat(color.w))  // V2-5: auch Text und Grund blenden aus
             used.append(drawBadge(text, at: p, color: color, filled: filled, in: ctx, scale: scale, avoid: used))
+            ctx.restoreGState()
         }
         // Beschriftungen nicht übereinander: eine verdeckte rutscht nach unten
         var placed: [CGRect] = []
         let rand = CGRect(origin: .zero, size: projector.size).insetBy(dx: 4 * scale, dy: 4 * scale)
         for (p, text, color) in labels {
+            ctx.saveGState()
+            ctx.setAlpha(CGFloat(color.w))  // V2-5: auch Text und Grund blenden aus
             placed.append(drawLabel(text, at: p, color: color, in: ctx, scale: scale, avoid: placed, innerhalb: rand))
+            ctx.restoreGState()
         }
         ctx.restoreGState()
     }

@@ -30,14 +30,17 @@ public struct HelloAppMessage: OutgoingMessage {
     public var seq = 0
     public var appVersion: String
     public var bundleID: String
+    /// V2-5: was die App kann (PROTOCOL.md, „V2-5 Live“).
+    public var faehigkeiten: [String]
 
-    public init(appVersion: String, bundleID: String) {
+    public init(appVersion: String, bundleID: String, faehigkeiten: [String] = LiveFaehigkeit.app) {
         self.appVersion = appVersion
         self.bundleID = bundleID
+        self.faehigkeiten = faehigkeiten
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, seq
+        case type, seq, faehigkeiten
         case appVersion = "app_version"
         case bundleID = "bundle_id"
     }
@@ -48,6 +51,7 @@ public struct HelloAppMessage: OutgoingMessage {
         try c.encode(seq, forKey: .seq)
         try c.encode(appVersion, forKey: .appVersion)
         try c.encode(bundleID, forKey: .bundleID)
+        try c.encode(faehigkeiten, forKey: .faehigkeiten)
     }
 }
 

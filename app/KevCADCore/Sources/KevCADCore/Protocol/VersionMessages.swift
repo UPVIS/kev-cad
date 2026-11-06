@@ -11,6 +11,8 @@ public struct VersionBildAnfrage: Sendable {
         /// sRGB, wie in model.py
         public var farbe: SIMD4<Float>
         public var netz: VergleichsNetz
+        /// V2-5 (delta-1): Inhalt, dessen Netz die App aus ihrem Speicher nimmt; `netz` ist dann leer.
+        public var ausSzene: String? = nil
     }
 
     public var id: String
@@ -65,7 +67,7 @@ public enum VersionMessage: Sendable {
             let teile = netze.map { kopf, netz in
                 VersionBildAnfrage.Teil(
                     teil: kopf["teil"]?.stringValue ?? netz.teil, farbe: kopf["farbe"]?.vector4 ?? SIMD4(0.72, 0.75, 0.79, 1),
-                    netz: netz)
+                    netz: netz, ausSzene: kopf["aus_szene"]?.boolValue == true ? kopf["inhalt"]?.stringValue : nil)
             }
             return .bildAnfrage(
                 VersionBildAnfrage(
@@ -210,6 +212,10 @@ public enum VersionMessage: Sendable {
         }
         var out: [(JSONValue, VergleichsNetz)] = []
         for k in koepfe {
+            if k["aus_szene"]?.boolValue == true {  // V2-5: ohne Anteil an der Nutzlast, das Netz hat die App
+                out.append((k, VergleichsNetz(teil: k["teil"]?.stringValue ?? "", art: "alt", positions: [], normals: [], triangles: [])))
+                continue
+            }
             let nv = k["vert"]?.intValue ?? 0, nt = k["tri"]?.intValue ?? 0
             let ne = k["epts"]?.intValue ?? 0, nk = k["edge"]?.intValue ?? 0
             let pos = try floats(nv * 3)

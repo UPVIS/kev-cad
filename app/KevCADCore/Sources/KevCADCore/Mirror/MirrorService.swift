@@ -63,6 +63,12 @@ public final class MirrorService {
     private struct PartKey: Equatable {
         var digest: Int
         var run: Int
+
+        /// Ein Teil, das PART_SAME nur bestätigt hat, ist für das iPhone unverändert: Es behält den Lauf, mit dem es kam.
+        init(_ r: PartRecord) {
+            digest = r.digest
+            run = r.gleichSeit ?? r.run
+        }
     }
 
     private enum PartOp {
@@ -298,7 +304,7 @@ public final class MirrorService {
             ops.append(.scene)
             base = [:]
             for name in scene.order {
-                if let r = scene.record(name) { base[name] = PartKey(digest: r.digest, run: r.run) }
+                if let r = scene.record(name) { base[name] = PartKey(r) }
             }
             ensureMeshes(for: scene.order)
             baseline = base
@@ -309,7 +315,7 @@ public final class MirrorService {
         for name in scene.order {
             guard let r = scene.record(name) else { continue }
             seen.insert(name)
-            let key = PartKey(digest: r.digest, run: r.run)
+            let key = PartKey(r)
             if base[name] != key {
                 base[name] = key
                 fresh.append(r)
@@ -350,7 +356,7 @@ public final class MirrorService {
         if baseline == nil || watchers.isEmpty {
             baseline = Dictionary(
                 uniqueKeysWithValues: controller.scene.order.compactMap { n in
-                    controller.scene.record(n).map { (n, PartKey(digest: $0.digest, run: $0.run)) }
+                    controller.scene.record(n).map { (n, PartKey($0)) }
                 })
             baselineProject = controller.model.project?.path.path
             ops = []

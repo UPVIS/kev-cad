@@ -44,8 +44,12 @@ extension AppController: StatikActions {
     /// Stufe 3: Feld eines Teils übernehmen (STATICS_FIELD); gezeigt wird es, sobald STATICS denselben Schlüssel nennt.
     func applyStatikFeld(_ f: StatikFeld) {
         let s = model.statik
-        if let e = s.ergebnis, e.run != f.run { return }
-        s.felder[f.key] = f
+        if live.deltaAktiv {  // V2-5: Felder gelten über Läufe hinweg, STATICS nennt ihren Schlüssel
+            s.feldMerken(f)
+        } else {
+            if let e = s.ergebnis, e.run != f.run { return }
+            s.felder[f.key] = f
+        }
         updateStatikAnzeige()
     }
 

@@ -11,6 +11,9 @@ public struct PartRecord: Sendable {
     /// Lokaler Hüllquader (vor `transform`).
     public var localMin: SIMD3<Float>
     public var localMax: SIMD3<Float>
+    /// V2-5: Lauf, mit dem dieser Stand zuletzt wirklich kam, solange PART_SAME ihn nur bestätigt hat (`header.run` zählt
+    /// dann weiter); nil, solange er frisch ist. Der Spiegel schickt ein bestätigtes Teil nicht noch einmal.
+    public var gleichSeit: Int?
 
     public var name: String { header.name }
     public var run: Int { header.run }

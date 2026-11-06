@@ -61,6 +61,7 @@ extension AppController {
     // MARK: Darüberfahren
 
     func hoverGeaendert(_ pick: PickResult?, _ welt: SIMD3<Float>?, _ bildpunkt: CGPoint?) {
+        mausMerken(pick, welt, bildpunkt)  // V2-5: fürs Lagebild
         guard model.measureMode else {
             if messVorschau != nil || aktuellerFang != nil {
                 messVorschau = nil

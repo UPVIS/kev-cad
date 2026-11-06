@@ -216,7 +216,7 @@ private struct Pegel: View {
     }
 }
 
-/// Agentenspur: was der Agent getan hat und gerade tut (bis V2-5 aus der Tätigkeitszeile).
+/// Agentenspur: was der Agent getan hat und gerade tut, mit Dauer und Absicht (V2-5).
 private struct SpurAnsicht: View {
     @ObservedObject var model: AppModel
     @ObservedObject var spur: AgentenSpur
@@ -258,8 +258,11 @@ private struct SpurZeile: View {
                 .foregroundStyle(farbe)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            SpurDauer(eintrag: eintrag)
         }
         .opacity(alt ? 0.5 : 1)
+        .help(eintrag.werkzeug ?? "")
         .accessibilityElement(children: .combine)
     }
 
@@ -285,6 +288,29 @@ private struct SpurZeile: View {
         case .jetzt: return GF.agent
         case .befund: return GF.kreide
         }
+    }
+}
+
+/// Dauer einer Zeile: fertig fest, laufend zählt sie im Sekundentakt mit (nur diese kleine Ansicht zeichnet sich neu).
+private struct SpurDauer: View {
+    let eintrag: SpurEintrag
+
+    var body: some View {
+        if eintrag.art == .jetzt {
+            TimelineView(.periodic(from: eintrag.zeit, by: 1)) { ctx in
+                let s = ctx.date.timeIntervalSince(eintrag.zeit)
+                if s >= 1 { text("\(Int(s)) s") }
+            }
+        } else if let d = eintrag.dauer {
+            text(d)
+        }
+    }
+
+    private func text(_ t: String) -> some View {
+        Text(t)
+            .font(GS.klein)
+            .monospacedDigit()
+            .foregroundStyle(GF.rauch)
     }
 }
 

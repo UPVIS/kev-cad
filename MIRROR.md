@@ -96,7 +96,9 @@ verworfen und protokolliert, nicht beantwortet.
 Teil: `{"name": "Rollwagen/Lenkrolle 1/Rad", "hash": "9f3c…", "color": [r,g,b,a], "material": "gummi",
 "bbox": {"min": […], "max": […]}, "counts": {"vert": …, "tri": …, "face": …, "edge": …, "epts": …}}`. `color` ist sRGB
 wie in `PART_UPSERT`. Während eines Laufs kommen `PART`-Nachrichten in der Reihenfolge, in der der Kernel die Teile
-zeigt: Die Szene baut sich auf dem iPhone genauso auf wie am Mac.
+zeigt: Die Szene baut sich auf dem iPhone genauso auf wie am Mac. Seit V2-5 kommt ein `PART` nur für Teile, die der
+Kernel wirklich neu geschickt hat; ein Teil, das `PART_SAME` nur bestätigt, geht nicht noch einmal hinaus und behält
+seinen `run`. Empfänger dürfen deshalb nicht erwarten, dass jedes Teil in jedem Lauf vorkommt.
 
 Die Teileliste passt bei großen Baugruppen nicht in einen Kopf (Kugelschieber: 112 Teile, 34 KB). `SCENE` kommt deshalb
 in Seiten, jede höchstens 16 KB Kopf; `run`, `bbox` und `epoche` stehen in jeder Seite gleich. Der Empfänger ersetzt
