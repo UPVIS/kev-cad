@@ -33,3 +33,6 @@ app/Resources/AppIcon.icns
 
 # Aufzeichnungen aus Kevins Projekten bleiben lokal (lassen sich neu erzeugen)
 samples/mirror-recordings/kugelschieber.*
+
+# iPad: App-Symbol, erzeugt von tools/ipad-bau.sh aus app/icon.svg
+app/Sources/KevCADPad/Assets.xcassets/AppIcon.appiconset/AppIcon.png

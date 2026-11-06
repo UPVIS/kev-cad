@@ -46,6 +46,9 @@ tools/fern/kachel-selbsttest.sh "build/Kev CAD Test ui.app" "<Projekt>"       # 
 tools/abnahme.sh           # Testvariante „abnahme“ für Kevin, mit Kopien von Katalog und Projekt
 tools/ipad-bau.sh kern     # Kern (KevCADCore, KevCADWire, Viewport) für den iPad-Simulator übersetzen; `kern geraet` fürs Gerät
 tools/ipad-bau.sh test     # Kern-Tests im iPad-Simulator (bootet ohne Fenster)
+tools/ipad-bau.sh app      # iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
+tools/ipad-bau.sh starten  # Simulator ohne Simulator.app booten, App im Demomodus starten, Foto build/ipad-start.png
+tools/ipad-bau.sh stoppen  # App beenden, Simulator aus, wenn `starten` ihn gebootet hat (`stoppen immer`: auch sonst)
 ```
 
 Lokal nur als Rückfall (fern.sh nimmt diesen Weg selbst, wenn der Mini fehlt):
@@ -93,8 +96,10 @@ nur Bedienung und Oberfläche sind je Gerät zugeschnitten. Plan und Stand: [PLA
   Protokoll und MCP, nie nur in einer Oberfläche.
 - **Ein Code:** KevCADCore, KevCADWire, der Viewport und die Oberfläche in `app/Sources/KevCAD` übersetzen für macOS und
   iPadOS. AppKit, Prozesse, XPC und Finder nur hinter `#if os(macOS)` oder über die Weichen in
-  `app/KevCADCore/Sources/KevCADCore/Plattform/`; UIKit nur hinter `#if os(iOS)`. Je Plattform eigen ist nur die Hülle
-  (`app/Sources/KevCAD/Mac/` und `app/Sources/KevCADPad/`, entstehen mit I-3).
+  `app/KevCADCore/Sources/KevCADCore/Plattform/`; UIKit nur hinter `#if os(iOS)`. Je Plattform eigen ist nur die Hülle:
+  `app/Sources/KevCAD/Mac/` (App-Einstieg, Menübefehle, Fenster, Tastaturwächter) und `app/Sources/KevCADPad/`
+  (iPad-Einstieg, Statusleiste, Demohinweis). Stile, die SwiftUI nur am Mac kennt (Haken, Optionsfelder, Verweis), haben
+  auf dem iPad ein Gegenstück gleichen Namens in `Gestaltung/PlattformStile.swift`.
 - **Jede Änderung für beide Geräte im selben Schritt:** Funktion, Fehlerbehebung, Text, Gestaltung, Tests. Wer eine
   Hüllen-Datei ändert, zieht das Gegenstück im selben Commit nach oder trägt eine Ausnahme mit Grund in `paritaet.json`
   ein und nennt sie Kevin. Gilt auch für Unteragenten: ihr Auftrag nennt beide Geräte.

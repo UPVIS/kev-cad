@@ -1,9 +1,11 @@
-# XcodeGen-Projekt für Kev CAD. Erzeugt app/KevCAD.xcodeproj (nicht im Git), gebaut wird mit ../build.sh.
+# XcodeGen-Projekt für Kev CAD. Erzeugt app/KevCAD.xcodeproj (nicht im Git), gebaut wird mit ../build.sh (Mac, Ziel
+# KevCAD) und tools/ipad-bau.sh (iPad, Ziel KevCADPad, PLAN-IPAD.md).
 name: KevCAD
 options:
   bundleIdPrefix: de.upvis
   deploymentTarget:
     macOS: "15.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 packages:
   KevCADCore:
@@ -19,6 +21,8 @@ settings:
     KEVCAD_PORT: "47823"
     KEVCAD_BUILD: "1"
     KEVCAD_COMMIT: ""
+    # iPad (I-3): Bundle-ID der App; die App-ID „Kev CAD iPad“ gibt es im Team schon (PLAN-IPAD.md, Abschnitt 10)
+    KEVCAD_PAD_BUNDLE_ID: de.upvis.kevcad.ipad
     # Xcode-Zwischenspeicher (Regel xcode-compilation-cache): Übersetzungen aus dem Cache, auch in neuen Bauordnern und
     # anderen Arbeitskopien (Pfade herausgerechnet), ohne Code-Abdeckung. Gilt so nur für das App-Ziel; build.sh setzt
     # dasselbe auf der Befehlszeile, damit es auch die Paketziele (KevCADCore, OCCTSwiftViewport) erfasst, und legt den
@@ -74,3 +78,68 @@ targets:
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_APP_SANDBOX: NO
         GENERATE_INFOPLIST_FILE: NO
+  # iPad-App (PLAN-IPAD.md, I-3): dieselbe Oberfläche wie am Mac (Sources/KevCAD ohne die Mac-Hülle in Mac/), dazu die
+  # iPad-Hülle in Sources/KevCADPad. Das App-Symbol (Assets.xcassets/AppIcon.appiconset/AppIcon.png) erzeugt
+  # tools/ipad-bau.sh aus icon.svg, wie build.sh das Symbol des Mac.
+  KevCADPad:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources/KevCAD
+        excludes:
+          - "Mac/**"
+      - path: Sources/KevCADPad
+      # Schriften für die Zeichnungen (osifont samt Lizenz), wie am Mac flach im Bundle
+      - path: Resources/Fonts
+        buildPhase: resources
+    dependencies:
+      - package: KevCADCore
+      - package: OCCTSwiftViewport
+    info:
+      path: Generated/Info-iPad.plist
+      properties:
+        CFBundleDisplayName: Kev CAD
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: $(KEVCAD_BUILD)
+        KevCADCommit: $(KEVCAD_COMMIT)
+        CFBundleDevelopmentRegion: de
+        LSApplicationCategoryType: public.app-category.graphics-design
+        ITSAppUsesNonExemptEncryption: false
+        # Graphit hat keine helle Fassung (wie das Hauptfenster am Mac)
+        UIUserInterfaceStyle: Dark
+        UILaunchScreen:
+          UIColorName: Graphit
+        # Ein Fenster: Der Metal-Viewer gibt es einmal (am Mac ebenso eine Szene „Window“). Geteilter Bildschirm, Stage
+        # Manager und Fenstergrößen gehen trotzdem.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiresFullScreen: false
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSMicrophoneUsageDescription: Wenn du auf Sprechen tippst, hört Kev CAD zu und macht aus deinen Worten Text für den Agenten.
+        NSSpeechRecognitionUsageDescription: Die Spracherkennung läuft auf diesem iPad, dein Ton verlässt das Gerät nicht.
+        NSCameraUsageDescription: Mit der Kamera liest Kev CAD den QR-Code auf deinem Mac und koppelt sich so mit ihm.
+        NSLocalNetworkUsageDescription: Kev CAD findet deinen Mac im WLAN und verbindet sich mit ihm, weil dort das Modell gerechnet wird.
+        NSBonjourServices:
+          - _kevcad._tcp
+        NSHumanReadableCopyright: "© 2026 Kevin Schwed"
+    settings:
+      base:
+        PRODUCT_NAME: Kev CAD
+        PRODUCT_BUNDLE_IDENTIFIER: $(KEVCAD_PAD_BUNDLE_ID)
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 2GX7UC98J6

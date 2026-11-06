@@ -5,10 +5,19 @@
 #   tools/ipad-bau.sh kern            KevCADCore mit KevCADWire und Viewport für den iPad-Simulator übersetzen
 #   tools/ipad-bau.sh kern geraet     dasselbe für ein echtes iPad (ohne Signatur)
 #   tools/ipad-bau.sh test            Tests des Kerns im iPad-Simulator (ohne Simulatorfenster, Schema KevCADCore-Package)
+#   tools/ipad-bau.sh app             iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
+#   tools/ipad-bau.sh starten         Simulator booten (ohne Simulator.app, kein Fenster), App installieren, im Demomodus
+#                                     starten, Bildschirmfoto nach build/ipad-start.png
+#   tools/ipad-bau.sh stoppen [immer] App beenden; den Simulator herunterfahren, wenn `starten` ihn gebootet hat (lief er
+#                                     schon, etwa für die Tests eines anderen Agenten, bleibt er an; mit `immer` auch dann)
 #
-# Läuft hier unter der gemeinsamen Sperre /tmp/vb-xcodebuild.lock und wartet vorher bis zu 10 Minuten auf 25 % freien
-# Speicher. Bauordner und Xcode-Zwischenspeicher liegen auf UPVIS ULTRA (die Systemplatte ist knapp), ohne die Platte unter
-# build/ipad. Protokoll: build/ipad-<art>-<ziel>.log; Ausgang wie xcodebuild.
+# Simulator: KEVCAD_IPAD_SIM (Vorgabe „iPad Pro 13-inch (M5)“). Umgebung der App beim Start: KEVCAD_IPAD_DEMO (Vorgabe
+# „kern“: Demo-Lauf des App-Kerns mit echter Geometrie; „metal“ oder „aus“ für die anderen Demowege bzw. ohne Vorgabe),
+# KEVCAD_IPAD_WARTEN (Sekunden bis zum Bildschirmfoto, Vorgabe 8).
+#
+# Bauten laufen hier unter der gemeinsamen Sperre /tmp/vb-xcodebuild.lock und warten vorher bis zu 10 Minuten auf 25 %
+# freien Speicher. Bauordner und Xcode-Zwischenspeicher liegen auf UPVIS ULTRA (die Systemplatte ist knapp), ohne die
+# Platte unter build/ipad. Protokoll: build/ipad-<art>-<ziel>.log; Ausgang wie xcodebuild.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
@@ -18,6 +27,29 @@ ART=${1:-}
 ZIEL=${2:-simulator}
 SCHEMA=KevCADCore
 AKTION=build
+SIM_NAME="${KEVCAD_IPAD_SIM:-iPad Pro 13-inch (M5)}"
+PAD_BUNDLE_ID=de.upvis.kevcad.ipad
+PAD_APP="$REPO/build/Kev CAD iPad.app"
+GEBOOTET="$REPO/build/ipad-sim-gebootet"
+
+hilfe() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
+
+# UDID des Simulators mit diesem Namen (der neueste, falls es mehrere Laufzeiten gibt)
+sim_udid() {
+  xcrun simctl list devices available -j | /usr/bin/python3 -c '
+import json, sys
+name = sys.argv[1]
+treffer = [d for laufzeit, ds in json.load(sys.stdin)["devices"].items() for d in ds if d["name"] == name]
+print(treffer[-1]["udid"] if treffer else "")' "$SIM_NAME"
+}
+
+sim_zustand() {
+  xcrun simctl list devices -j | /usr/bin/python3 -c '
+import json, sys
+u = sys.argv[1]
+print(next((d["state"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if d["udid"] == u), ""))' "$1"
+}
+
 case "$ART" in
   kern) ;;
   test)
@@ -25,12 +57,55 @@ case "$ART" in
     SCHEMA=KevCADCore-Package
     AKTION=test
     ZIEL=test ;;
-  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  app)
+    SCHEMA=KevCADPad
+    ZIEL=simulator ;;
+  starten)
+    [ -d "$PAD_APP" ] || { echo "Erst bauen: tools/ipad-bau.sh app"; exit 1; }
+    UDID=$(sim_udid)
+    [ -n "$UDID" ] || { echo "Simulator „${SIM_NAME}“ fehlt (xcrun simctl list devices)"; exit 1; }
+    # Nur simctl: bootet ohne Simulator.app, es erscheint kein Fenster auf Kevins Bildschirm
+    if [ "$(sim_zustand "$UDID")" != "Booted" ]; then
+      echo "==> Simulator „${SIM_NAME}“ booten (ohne Fenster)"
+      xcrun simctl boot "$UDID" || exit 1
+      mkdir -p "$REPO/build" && echo "$UDID" > "$GEBOOTET"
+    else
+      echo "==> Simulator „${SIM_NAME}“ läuft schon"
+    fi
+    xcrun simctl bootstatus "$UDID" > /dev/null || exit 1
+    echo "==> App installieren und starten"
+    xcrun simctl terminate "$UDID" "$PAD_BUNDLE_ID" > /dev/null 2>&1 || true
+    xcrun simctl install "$UDID" "$PAD_APP" || exit 1
+    UMGEBUNG=()
+    case "${KEVCAD_IPAD_DEMO:-kern}" in
+      aus) ;;
+      *) UMGEBUNG=(SIMCTL_CHILD_KEVCAD_DEMO=1 "SIMCTL_CHILD_KEVCAD_DEMO_VIEWPORT=${KEVCAD_IPAD_DEMO:-kern}"
+           SIMCTL_CHILD_KEVCAD_DEMO_STATE=live) ;;
+    esac
+    env ${UMGEBUNG[@]+"${UMGEBUNG[@]}"} xcrun simctl launch "$UDID" "$PAD_BUNDLE_ID" || exit 1
+    sleep "${KEVCAD_IPAD_WARTEN:-8}"
+    FOTO="$REPO/build/ipad-start.png"
+    xcrun simctl io "$UDID" screenshot "$FOTO" > /dev/null 2>&1 || { echo "Bildschirmfoto ging nicht"; exit 1; }
+    echo "==> Bildschirmfoto: $FOTO"
+    exit 0 ;;
+  stoppen)
+    UDID=$(sim_udid)
+    [ -n "$UDID" ] || exit 0
+    xcrun simctl terminate "$UDID" "$PAD_BUNDLE_ID" > /dev/null 2>&1 || true
+    if [ -f "$GEBOOTET" ] || [ "$ZIEL" = immer ]; then
+      echo "==> Simulator „${SIM_NAME}“ herunterfahren"
+      xcrun simctl shutdown "$UDID" > /dev/null 2>&1 || true
+      rm -f "$GEBOOTET"
+    else
+      echo "==> App beendet; der Simulator lief schon vor dem Start und bleibt an (mit „stoppen immer“ auch aus)"
+    fi
+    exit 0 ;;
+  *) hilfe; exit 2 ;;
 esac
 case "$ZIEL" in
   simulator) DEST='generic/platform=iOS Simulator'; EXTRA=() ;;
   geraet) DEST='generic/platform=iOS'; EXTRA=(CODE_SIGNING_ALLOWED=NO) ;;
-  test) DEST="platform=iOS Simulator,name=${KEVCAD_IPAD_SIM:-iPad Pro 13-inch (M5)}"; EXTRA=() ;;
+  test) DEST="platform=iOS Simulator,name=$SIM_NAME"; EXTRA=() ;;
   *) echo "Ziel: simulator oder geraet"; exit 2 ;;
 esac
 
@@ -63,11 +138,39 @@ CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO
 [ "$AKTION" = test ] && CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO)
 [ -n "$CAS" ] && CACHE+=("COMPILATION_CACHE_CAS_PATH=$CAS")
 
+# App-Symbol aus app/icon.svg (wie build.sh das Symbol des Mac): randlos, ohne Transparenz, das iPad rundet selbst ab
+symbol() {
+  local png="app/Sources/KevCADPad/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+  [ ! -f "$png" ] || [ app/icon.svg -nt "$png" ] || return 0
+  command -v rsvg-convert > /dev/null || { echo "rsvg-convert fehlt (brew install librsvg)"; return 1; }
+  sed 's|<rect x="64" y="64" width="896" height="896" rx="200"|<rect x="0" y="0" width="1024" height="1024"|' app/icon.svg \
+    | rsvg-convert -w 1024 -h 1024 -o "$png.tmp.png" || return 1
+  if command -v magick > /dev/null; then
+    magick "$png.tmp.png" -background "#151B24" -alpha remove -alpha off "$png" && rm -f "$png.tmp.png"
+  else
+    mv "$png.tmp.png" "$png"
+  fi
+}
+
 start=$(date +%s)
 echo "==> $ART für iPad ($ZIEL), Protokoll $LOG"
-(cd app/KevCADCore && lockf -k /tmp/vb-xcodebuild.lock xcodebuild -scheme "$SCHEMA" -destination "$DEST" \
-  -derivedDataPath "$DD" "${CACHE[@]}" ${EXTRA[@]+"${EXTRA[@]}"} "$AKTION") > "$LOG" 2>&1
-rc=$?
+if [ "$ART" = app ]; then
+  command -v xcodegen > /dev/null || { echo "xcodegen fehlt (brew install xcodegen)"; exit 1; }
+  symbol || exit 1
+  xcodegen generate --spec app/project.yml --quiet || exit 1
+  BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+  COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+  [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] && COMMIT="$COMMIT+"
+  # Nur arm64: Der Simulator auf dem Mac mit Apple-Chip braucht kein x86_64 (sonst übersetzt alles doppelt)
+  (cd app && lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj -scheme "$SCHEMA" \
+    -configuration Debug -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+    KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" "$AKTION") > "$LOG" 2>&1
+  rc=$?
+else
+  (cd app/KevCADCore && lockf -k /tmp/vb-xcodebuild.lock xcodebuild -scheme "$SCHEMA" -destination "$DEST" \
+    -derivedDataPath "$DD" "${CACHE[@]}" ${EXTRA[@]+"${EXTRA[@]}"} "$AKTION") > "$LOG" 2>&1
+  rc=$?
+fi
 dauer=$(($(date +%s) - start))
 if [ $rc -ne 0 ]; then
   grep -E "error:" "$LOG" | sed -E 's#^.*/(app/)#\1#' | sort -u | head -40
@@ -77,6 +180,11 @@ if [ $rc -ne 0 ]; then
   echo "==> fehlgeschlagen nach ${dauer} s (Ausgang $rc)"
 else
   [ "$AKTION" = test ] && grep -E "Executed [0-9]+ tests|Test run with [0-9]+ tests" "$LOG" | tail -2
-  echo "==> gut, ${dauer} s"
+  if [ "$ART" = app ]; then
+    rm -rf "$PAD_APP"
+    cp -R "$DD/Build/Products/Debug-iphonesimulator/Kev CAD.app" "$PAD_APP" || { rc=1; echo "App fehlt im Bauordner"; }
+    [ $rc -eq 0 ] && echo "==> App: $PAD_APP"
+  fi
+  [ $rc -eq 0 ] && echo "==> gut, ${dauer} s"
 fi
 exit $rc
