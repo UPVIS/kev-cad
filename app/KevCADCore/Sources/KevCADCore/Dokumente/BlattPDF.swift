@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import CoreGraphics
 import Foundation
 import PDFKit
@@ -106,6 +108,7 @@ public final class BlattDruck: NSObject {
         return out
     }
 
+    #if os(macOS)
     /// Druckeinstellungen für einen Auftrag: Papier so groß wie das Blatt, ohne Ränder, nicht skaliert.
     public static func druckInfo(_ a: Auftrag) -> NSPrintInfo {
         let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
@@ -202,8 +205,11 @@ public final class BlattDruck: NSObject {
             abschluss?(false)
         }
     }
+    #endif
+    // iPad: Drucken über AirPrint (1:1 ohne Skalierung, je Format ein Auftrag) folgt in I-8.
 }
 
+#if os(macOS)
 /// Zusatz im Druckdialog: Format, Hinweis auf den 1:1-Druck und auf gemischte Formate.
 final class DruckHinweis: NSViewController, NSPrintPanelAccessorizing {
     private let text: String
@@ -238,3 +244,4 @@ final class DruckHinweis: NSViewController, NSPrintPanelAccessorizing {
 
     func keyPathsForValuesAffectingPreview() -> Set<String> { [] }
 }
+#endif

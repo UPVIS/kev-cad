@@ -1,5 +1,7 @@
 import AVFoundation
+#if os(macOS)
 import AppKit
+#endif
 import Combine
 import CoreVideo
 import Foundation

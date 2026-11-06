@@ -175,6 +175,7 @@ public final class DruckerSchluesselbund: DruckerZugangsSpeicher {
         guard DruckerEintrag.gueltigeID(id) else {
             throw DruckerSchluesselbundFehler(status: errSecParam, was: "Speichern (ungültige Drucker-ID)")
         }
+        #if os(macOS)
         let inhalt = try JSONSerialization.data(withJSONObject: [
             "seriennummer": seriennummer.trimmingCharacters(in: .whitespacesAndNewlines),
             "zugangscode": zugangscode.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -189,6 +190,11 @@ public final class DruckerSchluesselbund: DruckerZugangsSpeicher {
         }
         let s = SecItemAdd(q as CFDictionary, nil)
         guard s == errSecSuccess else { throw DruckerSchluesselbundFehler(status: s, was: "Speichern") }
+        #else
+        // iPad: Den Zugang liest der Kernel am Mac aus dessen Schlüsselbund; ihn über die Verbindung dorthin zu geben folgt
+        // in I-8 (Drucker über den Kernel am Mac). Im Schlüsselbund des iPad nützte er dem Kernel nichts.
+        throw DruckerSchluesselbundFehler(status: errSecUnimplemented, was: "Speichern auf dem iPad")
+        #endif
     }
 
     public func loeschen(id: String) throws {
@@ -206,6 +212,7 @@ public final class DruckerSchluesselbund: DruckerZugangsSpeicher {
         return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess
     }
 
+    #if os(macOS)
     /// Zugriffsliste: diese App und `/usr/bin/security` (Altes Schlüsselbund-API; ohne Team-ID gibt es kein anderes).
     private static func zugriff(id: String) -> SecAccess? {
         var apps: [SecTrustedApplication] = []
@@ -217,6 +224,7 @@ public final class DruckerSchluesselbund: DruckerZugangsSpeicher {
         let s = SecAccessCreate("Kev CAD: Drucker \(id)" as CFString, apps as CFArray, &access)
         return s == errSecSuccess ? access : nil
     }
+    #endif
 }
 
 /// Für Tests: Speicher im Arbeitsspeicher.

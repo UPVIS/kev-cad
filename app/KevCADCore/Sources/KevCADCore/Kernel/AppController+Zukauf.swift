@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 
 // Phase 3 (Z-A): Zukaufteile im App-Kern. ZUKAUF_STATUS pflegt `model.zukaufStatus`; solange ein Teil auf CAD
@@ -12,8 +14,14 @@ extension AppInfo {
         if let path = ProcessInfo.processInfo.environment["KEVCAD_DOWNLOADS_DIR"], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
         }
+        #if os(macOS)
         return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+        #else
+        // iPad: Ordner der App; Zukaufteile per Link aus dem Teilen-Blatt folgen in I-8
+        return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL.documentsDirectory.appendingPathComponent("Downloads", isDirectory: true)
+        #endif
     }
 }
 
@@ -169,8 +177,11 @@ extension AppController: ZukaufActions {
     }
 
     private func requestAttentionForDownload() {
+        #if os(macOS)
         guard Bundle.main.bundleURL.pathExtension == "app", !AppInfo.isTestVariant, !NSApp.isActive else { return }
         NSApp.requestUserAttention(.informationalRequest)
+        #endif
+        // iPad: Die Rückfrage steht in der App; ein Hinweis von außen (Mitteilung) folgt in I-8.
     }
 
     private func showNextOffer() {

@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 
 // Bestand (BESTAND.md): BESTAND übernehmen, Posten und Einstellungen speichern, „Gebaut“ buchen, Buchungen rückgängig

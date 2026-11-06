@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -204,8 +206,9 @@ public final class SprachSteuerung {
         senden(FeedbackStandMessage(sitzung: s.id, stand: neu, seit: standSeit, grund: grund))
     }
 
-    /// Am Mac zuerst Wortlaut, Apples Erkennung als Rückfall. Selbsttests und Demomodus fragen nie nach dem Mikrofon; der
-    /// Testeingang liest eine Datei.
+    /// Am Mac zuerst Wortlaut, Apples Erkennung als Rückfall; auf dem iPad gleich Apples Erkennung (Wortlaut ist eine
+    /// Mac-App; Mikrofon-Freigabe und Bedienung auf dem iPad folgen in I-5). Selbsttests und Demomodus fragen nie nach dem
+    /// Mikrofon; der Testeingang liest eine Datei.
     private func neueErkennung() -> any Spracherkennung {
         let env = ProcessInfo.processInfo.environment
         let kontext = Fachwoerter.kontext(teile: controller?.scene.order ?? [])
@@ -221,7 +224,11 @@ public final class SprachSteuerung {
             return apple(URL(fileURLWithPath: pfad))
         }
         if env["KEVCAD_SELFTEST"] != nil || AppInfo.isDemoMode { return TestErkennung() }
+        #if os(macOS)
         return ErkennungMitRueckfall(erste: WortlautErkennung(), rueckfall: { apple(nil) })
+        #else
+        return apple(nil)
+        #endif
     }
 
     // MARK: Erkennung
@@ -326,15 +333,19 @@ public final class SprachSteuerung {
     }
 
     /// ↩ gilt überall im Fenster, auch wenn der Fokus nicht im Viewer steht. Textfelder und Dialoge gehen vor.
+    /// iPad: ↩ einer Hardware-Tastatur folgt in I-5; bis dahin schickt die Oberfläche über `fertig()`.
     private func tastenAn() {
+        #if os(macOS)
         guard tastenMonitor == nil else { return }
         tastenMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             nonisolated(unsafe) let e = e
             let verbraucht = MainActor.assumeIsolated { self?.taste(e) ?? false }
             return verbraucht ? nil : e
         }
+        #endif
     }
 
+    #if os(macOS)
     private func taste(_ e: NSEvent) -> Bool {
         guard Tastenbelegung.eingabeCodes.contains(e.keyCode), TastenMods(e.modifierFlags).isEmpty,
             let w = e.window, w.attachedSheet == nil, !NavigationInputView.istTexteingabe(w.firstResponder)
@@ -342,6 +353,7 @@ public final class SprachSteuerung {
         fertig()
         return true
     }
+    #endif
 
     // MARK: Striche
 
@@ -458,7 +470,9 @@ public final class SprachSteuerung {
     private func aufraeumen() {
         probenTakt?.invalidate()
         probenTakt = nil
+        #if os(macOS)
         if let m = tastenMonitor { NSEvent.removeMonitor(m) }
+        #endif
         tastenMonitor = nil
         sitzung = nil
         projekt = nil

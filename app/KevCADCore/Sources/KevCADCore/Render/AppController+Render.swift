@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import MetalKit
 import OCCTSwiftViewport
@@ -272,7 +274,8 @@ extension AppController: RenderActions {
     }
 
     public func renderImFinderZeigen(_ url: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        // iPad: kein Finder; das Bild teilen (Teilen-Blatt) folgt in I-8
+        if !Dateiablage.imFinderZeigen([url]) { log(.warning, "Im Finder zeigen geht hier nicht: \(url.lastPathComponent)") }
     }
 
     /// Größe aus dem Dialog; mit Kamera aus model.py die Höhe aus deren Seitenverhältnis.

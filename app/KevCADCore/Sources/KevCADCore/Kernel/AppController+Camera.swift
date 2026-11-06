@@ -1,7 +1,10 @@
+#if os(macOS)
 import AppKit
+#endif
 import Combine
 import Foundation
 import OCCTSwiftViewport
+import QuartzCore
 import simd
 
 // Phase 5, Strang KAM: Kameras im App-Kern. Nachrichten (CAMERA_UPSERT/REMOVE), Pyramiden im Viewport, Blick durch die

@@ -1,6 +1,9 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
+import QuartzCore
 import simd
 
 // AppActions: alles, was die Oberfläche auslösen kann.

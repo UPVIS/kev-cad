@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import OCCTSwiftViewport
 import SwiftUI
 
@@ -69,9 +71,10 @@ struct MeldungsLeiste: View {
             Text(meldung.text)
                 .foregroundStyle(ViewerStil.text)
                 .lineLimit(2)
-            if let datei = meldung.datei {
+            // iPad: kein Finder; Dateien teilen (Teilen-Blatt) folgt in I-8
+            if let datei = meldung.datei, Dateiablage.kannImFinderZeigen {
                 Button("Im Finder zeigen") {
-                    NSWorkspace.shared.activateFileViewerSelecting([datei])
+                    Dateiablage.imFinderZeigen([datei])
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ViewerStil.akzent)

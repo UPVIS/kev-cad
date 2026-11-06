@@ -1,7 +1,10 @@
+#if os(macOS)
 import AppKit
+#endif
 import CoreGraphics
 import Foundation
 import OCCTSwiftViewport
+import QuartzCore
 import simd
 
 // Phase 4: Foto und Video als Referenz im App-Kern (PROTOCOL.md „Phase 4: Referenzen“). Nachrichten REF_*, Netze als

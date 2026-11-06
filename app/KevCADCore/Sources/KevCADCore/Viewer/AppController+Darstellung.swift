@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
 import simd
@@ -34,7 +36,7 @@ extension AppController {
         case .technisch: licht = Self.technischLicht
         default: licht = ViewportCoordinator.zUpLighting
         }
-        let skala = Float(viewport.mtkView?.window?.backingScaleFactor ?? 2)
+        let skala = Float(viewport.mtkView?.bildschirmSkala ?? 2)
         licht.enableSSAO = o.umgebungsverdeckung && flaechen
         licht.ssaoIntensity = modus == .technisch ? 0.35 : 0.6
         licht.kevAORadiusPixels = 16 * skala
@@ -69,8 +71,7 @@ extension AppController {
     /// Hintergrund, den der Viewport gerade zeigt (Dunkelmodus beachtet), für Bildschirmfoto und Video.
     var wirksamerHintergrund: SIMD4<Float> {
         let cfg = viewport.controller.configuration
-        let dunkel = (viewport.mtkView?.effectiveAppearance ?? NSApp.effectiveAppearance)
-            .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let dunkel = PlattformApp.istDunkel(viewport.mtkView)
         return dunkel && cfg.backgroundFollowsAppearance ? Self.hintergrundDunkel : cfg.backgroundColor
     }
 

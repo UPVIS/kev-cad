@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import MetalKit
 import OCCTSwiftViewport
 import SwiftUI
@@ -72,6 +76,7 @@ struct OverlayCanvas: View {
     }
 }
 
+#if os(macOS)
 /// Unsichtbarer Helfer: findet das MTKView, das MetalViewportView anlegt (wie im AP0-Test), damit die App die
 /// Bildrate setzen und Klicks von Ziehbewegungen unterscheiden kann.
 struct MTKViewProbe: NSViewRepresentable {
@@ -86,12 +91,31 @@ struct MTKViewProbe: NSViewRepresentable {
     func updateNSView(_ nsView: ProbeView, context: Context) {
         nsView.onFound = onFound
     }
+}
+#else
+/// Derselbe Helfer auf dem iPad (UIView statt NSView, die Suche in `ProbeView` ist gemeinsam).
+struct MTKViewProbe: UIViewRepresentable {
+    let onFound: (MTKView) -> Void
 
-    final class ProbeView: NSView {
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.onFound = onFound
+        return v
+    }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {
+        uiView.onFound = onFound
+    }
+}
+#endif
+
+extension MTKViewProbe {
+    final class ProbeView: PlattformView {
         var onFound: ((MTKView) -> Void)?
         private var attempts = 0
         private weak var found: MTKView?
 
+        #if os(macOS)
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override func viewDidMoveToWindow() {
@@ -99,6 +123,15 @@ struct MTKViewProbe: NSViewRepresentable {
             attempts = 0
             schedule()
         }
+        #else
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            attempts = 0
+            schedule()
+        }
+        #endif
 
         private func schedule() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.search() }
@@ -130,7 +163,7 @@ struct MTKViewProbe: NSViewRepresentable {
             }
         }
 
-        static func collect(in view: NSView) -> [MTKView] {
+        static func collect(in view: PlattformView) -> [MTKView] {
             var out: [MTKView] = []
             if let m = view as? MTKView { out.append(m) }
             for s in view.subviews { out.append(contentsOf: collect(in: s)) }

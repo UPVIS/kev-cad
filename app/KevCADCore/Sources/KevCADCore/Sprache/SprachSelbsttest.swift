@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
 import QuartzCore
@@ -49,16 +51,22 @@ extension AppController {
         AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "sprache"
     }
 
-    /// Nach dem ersten fertigen Lauf.
+    /// Nach dem ersten fertigen Lauf. Nur am Mac: Zeigen und Striche laufen über die Eingabeebene (iPad: folgt in I-9,
+    /// Selbsttests im iPad-Simulator, sobald Eingabe und Sprechen da sind).
     func sprachSelbsttestPlanen() {
+        #if os(macOS)
         guard Self.sprachSelbsttestGewuenscht, !viewerSelbsttestLaeuft, !model.parts.isEmpty else { return }
         viewerSelbsttestLaeuft = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             await self?.sprachSelbsttest()
         }
+        #else
+        if Self.sprachSelbsttestGewuenscht { log(.warning, "Selbsttest Sprache gibt es auf dem iPad noch nicht") }
+        #endif
     }
 
+    #if os(macOS)
     private func sprachPause(_ s: Double) async { try? await Task.sleep(for: .milliseconds(Int(s * 1000))) }
 
     /// Mitte des Teils in der Ansicht, wenn dort wirklich dieses Teil zu treffen ist (Eingabeebene, unten links).
@@ -213,6 +221,7 @@ extension AppController {
         ansicht.testStrichBeenden(punkte[punkte.count - 1])
         await sprachPause(0.05)
     }
+    #endif
 
     /// Je Wort: Zeit vom Ende des Worts im Ton, bis es als Text da war (ms). Maßstab ist die Zahl der Wörter im Zwischenstand.
     static func wortLatenz(_ paket: FeedbackPaket, null: Double, zwischen: [(text: String, zeit: Double)]) -> [Double] {

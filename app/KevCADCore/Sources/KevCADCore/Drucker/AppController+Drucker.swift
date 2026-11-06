@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 
 // Drucken (Phase 8): Einstellungen an den Kernel (PRINTER_CONFIG nach HELLO und nach jedem Sichern), Status übernehmen
@@ -291,7 +293,8 @@ extension AppController: DruckerActions {
     }
 
     public func druckDateiZeigen(_ datei: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([datei])
+        // iPad: kein Finder; die Datei teilen (Teilen-Blatt) folgt in I-8
+        if !Dateiablage.imFinderZeigen([datei]) { log(.warning, "Im Finder zeigen geht hier nicht: \(datei.lastPathComponent)") }
     }
 }
 

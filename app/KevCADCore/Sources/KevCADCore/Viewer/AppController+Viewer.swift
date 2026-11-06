@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
 import simd
@@ -168,8 +170,6 @@ extension AppController: ViewerActions {
     }
 
     func zwischenablage(_ text: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+        Zwischenablage.setzen(text)
     }
 }

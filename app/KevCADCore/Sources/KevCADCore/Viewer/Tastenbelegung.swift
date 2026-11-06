@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
 // Belegung des Viewers wie in Blender: diese Datei ist die einzige Quelle. Menükürzel (Commands.swift), die Tasten im
@@ -40,7 +42,7 @@ public struct TastenMods: OptionSet, Hashable, Sendable {
     public static let wahl = TastenMods(rawValue: 4)
     public static let befehl = TastenMods(rawValue: 8)
 
-    public init(_ flags: NSEvent.ModifierFlags) {
+    public init(_ flags: PlattformTastenFlags) {
         var m: TastenMods = []
         if flags.contains(.shift) { m.insert(.umschalt) }
         if flags.contains(.control) { m.insert(.strg) }
@@ -319,8 +321,9 @@ public enum Tastenbelegung {
     static let pos1Code: UInt16 = 115
     static let eingabeCodes: Set<UInt16> = [36, 76]
 
-    /// Befehl zu einem Tastendruck im Viewport (Ziffernblock, Zahlenreihe, ^, ?); nil = nicht belegt.
-    public static func befehl(keyCode: UInt16, zeichen: String?, flags: NSEvent.ModifierFlags) -> ViewerBefehl? {
+    /// Befehl zu einem Tastendruck im Viewport (Ziffernblock, Zahlenreihe, ^, ?); nil = nicht belegt. `keyCode` ist der
+    /// Tastencode des Mac (iPad: Tasten einer Hardware-Tastatur kommen als HID-Code, die Zuordnung folgt in I-3).
+    public static func befehl(keyCode: UInt16, zeichen: String?, flags: PlattformTastenFlags) -> ViewerBefehl? {
         var mods = TastenMods(flags)
         let art: Taste.Art
         if linksVon1Codes.contains(keyCode) {

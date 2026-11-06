@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 
 // Phase 2: Stückliste, Lagerkatalog und Neustart nach einem Update (CatalogActions in AppModel.swift).

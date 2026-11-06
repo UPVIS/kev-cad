@@ -325,8 +325,10 @@ final class MirrorFreigabeTests: XCTestCase {
         XCTAssertNil(MirrorGegenstelle.argumente(procargs2: [1, 0]))
     }
 
+    #if os(macOS)
     /// Das Requirement passt zur installierten VoiceBridge (statisch) und zur laufenden App (dynamisch); ihre
-    /// MCP-Prozesse tragen `--mcp` und fallen damit heraus. Ohne VoiceBridge auf diesem Mac übersprungen.
+    /// MCP-Prozesse tragen `--mcp` und fallen damit heraus. Ohne VoiceBridge auf diesem Mac übersprungen. Nur am Mac
+    /// (Signaturprüfung fremder Prozesse, /bin/ps).
     func testRequirementPasstZurInstalliertenVoiceBridge() throws {
         var req: SecRequirement?
         XCTAssertEqual(SecRequirementCreateWithString(MirrorGegenstelle.voiceBridgeRequirement as CFString, [], &req),
@@ -369,6 +371,7 @@ final class MirrorFreigabeTests: XCTestCase {
             XCTAssertEqual(args.contains("--mcp"), parts[1].contains("--mcp"), "PID \(pid): \(args)")
         }
     }
+    #endif
 
     func testVermerkImKatalogeintrag() throws {
         let json = Data(#"{"id":"rohr-alfer-16x1","status":"vorgeschlagen","ebene":"eigen"}"#.utf8)

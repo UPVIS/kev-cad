@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 
 // V2-6: Kev CAD als Kunde von Wortlauts Sprachdienst (Parakeet auf der Neural Engine). Vertrag:
@@ -14,11 +16,16 @@ enum Wortlaut {
     static let anforderung = "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
     static let name = "Kev CAD"
 
+    /// Wortlaut ist eine Mac-App; auf dem iPad gibt es sie nicht (dort hört Apples Erkennung zu).
     static var installiert: Bool {
+        #if os(macOS)
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return ["/Applications/Wortlaut.app", "\(home)/Applications/Wortlaut.app"].contains {
             FileManager.default.fileExists(atPath: $0)
         }
+        #else
+        return false
+        #endif
     }
 }
 
@@ -112,9 +119,11 @@ public final class WortlautErkennung: Spracherkennung {
     private var offenerSatz: (nummer: Int, stuetzen: [Wortzeiten.Stuetze])?
     private var letzterLaut: Double = 0
 
+    #if os(macOS)
     convenience public init() {
         self.init(verbinder: { XPCVerbindung(weiter: $0) })
     }
+    #endif
 
     init(verbinder: @escaping (@escaping @Sendable (Meldung) -> Void) -> any WortlautVerbindung) {
         self.verbinder = verbinder
@@ -321,6 +330,7 @@ public final class WortlautErkennung: Spracherkennung {
         }
     }
 
+    #if os(macOS)
     /// Prüft nur die Begrüßung, ohne das Mikrofon einzuschalten (`KEVCAD_SELFTEST=wortlaut`).
     public nonisolated static func begruessung(_ fertig: @escaping @Sendable (String) -> Void) {
         let v = NSXPCConnection(machServiceName: sprachdienstMachName, options: [])
@@ -340,6 +350,7 @@ public final class WortlautErkennung: Spracherkennung {
             halter.verbindung.invalidate()
         }
     }
+    #endif
 }
 
 private final class SchwacherVerweis: @unchecked Sendable {
@@ -347,6 +358,7 @@ private final class SchwacherVerweis: @unchecked Sendable {
     init(_ quelle: WortlautErkennung) { self.quelle = quelle }
 }
 
+#if os(macOS)
 private final class VerbindungsHalter: @unchecked Sendable {
     let verbindung: NSXPCConnection
     init(_ verbindung: NSXPCConnection) { self.verbindung = verbindung }
@@ -381,6 +393,7 @@ private final class XPCVerbindung: WortlautVerbindung {
 
     func abbrechen() { v.invalidate() }
 }
+#endif
 
 /// Was Wortlaut bei Kev CAD ruft, auf der Schlange der Verbindung.
 final class WortlautEmpfaenger: NSObject, SprachdienstClientProtocol, @unchecked Sendable {

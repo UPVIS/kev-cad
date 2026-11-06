@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import CoreGraphics
 import Foundation
 import OCCTSwiftViewport
@@ -35,8 +37,9 @@ extension AppController {
     }
 
     /// Testvarianten: Bild der Oberfläche ohne Bildschirmaufnahme (der Viewer bleibt darin leer), für Selbsttests auf einem
-    /// Rechner ohne Berechtigung dafür (kernel/tools/kachel_selbsttest.py).
+    /// Rechner ohne Berechtigung dafür (kernel/tools/kachel_selbsttest.py). Nur am Mac (iPad: folgt in I-9).
     private func fensterbild(nach pfad: String) -> (Bool, String?) {
+        #if os(macOS)
         guard let v = (NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible })?.contentView,
               let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)
         else { return (false, "kein Fenster") }
@@ -44,6 +47,9 @@ extension AppController {
         guard let d = rep.representation(using: .png, properties: [:]), (try? d.write(to: URL(fileURLWithPath: pfad))) != nil
         else { return (false, "Bild nicht geschrieben") }
         return (true, nil)
+        #else
+        return (false, "Fensterbild gibt es auf dem iPad noch nicht")
+        #endif
     }
 
     /// `LAGE.flaeche`.

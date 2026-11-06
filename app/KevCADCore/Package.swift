@@ -5,11 +5,15 @@
 // KevCADWire: der plattformneutrale Teil (macOS und iOS) für den Spiegel aufs iPhone (MIRROR.md): Rahmen, Teilgeometrie,
 // Teilung in Viewport-Körper, Netzformat kcad-mesh-1, Spiegel-Nachrichten und Empfängerzustand. Ohne AppKit, ohne
 // Prozesse, ohne Kernel; VoiceBridge bindet nur dieses Produkt ein. KevCADCore hängt davon ab und reicht es weiter.
+//
+// iPadOS (Paket I-1): KevCADCore übersetzt auch für iOS 26 (Apples Spracherkennung und Co. ohne Verfügbarkeitsweichen);
+// Mac-Eigenes steht hinter `#if os(macOS)`, die Weichen in Sources/KevCADCore/Plattform. KevCADWire bleibt über das
+// Paket im Wurzelordner bei iOS 18 (VoiceBridge).
 import PackageDescription
 
 let package = Package(
     name: "KevCADCore",
-    platforms: [.macOS(.v15), .iOS(.v18)],
+    platforms: [.macOS(.v15), .iOS("26.0")],
     products: [
         .library(name: "KevCADCore", targets: ["KevCADCore"]),
         .library(name: "KevCADWire", targets: ["KevCADWire"]),

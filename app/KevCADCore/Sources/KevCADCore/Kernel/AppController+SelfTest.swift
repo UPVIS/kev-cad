@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import MetalKit
 import OCCTSwiftViewport
@@ -29,6 +31,7 @@ extension AppController {
         }
         log(.info, "Selbsttest: MTKView \(Int(mtk.bounds.width)) × \(Int(mtk.bounds.height)) pt, \(mtk.preferredFramesPerSecond) Bilder/s gewünscht")
         // Landet ein Klick in der Bildmitte im MTKView?
+        #if os(macOS)
         if let content = window.contentView {
             let center = mtk.convert(CGPoint(x: mtk.bounds.midX, y: mtk.bounds.midY), to: nil)
             let hit = content.hitTest(content.superview?.convert(center, from: nil) ?? center)
@@ -36,6 +39,9 @@ extension AppController {
             let trifft = hit === mtk || hit is NavigationInputView
             log(trifft ? .info : .error, "Selbsttest: Klick in der Mitte trifft \(trifft ? "den Viewer" : String(describing: hit))")
         }
+        #else
+        _ = window  // iPad: Berührung in der Bildmitte prüfen folgt in I-9 (Selbsttests im iPad-Simulator)
+        #endif
         let size = mtk.bounds.size
         let scale = size.width > 0 ? mtk.drawableSize.width / size.width : 2
         let projector = OverlayProjector(camera: viewport.camera, size: size)

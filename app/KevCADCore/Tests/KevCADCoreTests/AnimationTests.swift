@@ -291,6 +291,8 @@ final class AnimationTests: XCTestCase {
 
     // MARK: Video
 
+    #if os(macOS)
+    /// Nur am Mac: ffmpeg als eigener Prozess (auf dem iPad gibt es keine Videoausgabe über ffmpeg).
     func testShortVideoWithFFmpeg() throws {
         guard AnimationVideoExporter.ffmpegPath() != nil else { throw XCTSkip("ffmpeg fehlt") }
         let s = SceneStore()
@@ -341,6 +343,7 @@ final class AnimationTests: XCTestCase {
             XCTAssertTrue(text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(",5"), text)
         }
     }
+    #endif
 
     func testFFmpegArguments() {
         let mp4 = AnimationVideoExporter.ffmpegArguments(width: 1920, height: 1080, fps: 30, format: "mp4", output: "/a.mp4")

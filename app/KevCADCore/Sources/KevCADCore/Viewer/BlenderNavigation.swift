@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import OCCTSwiftViewport
 import QuartzCore
 import SwiftUI
@@ -189,16 +193,24 @@ extension ViewportCoordinator {
     var renderer: ViewportRenderer? { mtkView?.delegate as? ViewportRenderer }
 
     /// Punkt in der Eingabeebene → Pixel im Zeichenpuffer (Ursprung oben links), wie performPick es erwartet.
-    func pixel(for point: CGPoint, in view: NSView) -> SIMD2<Int>? {
+    func pixel(for point: CGPoint, in view: PlattformView) -> SIMD2<Int>? {
         guard let mtk = mtkView, mtk.bounds.width > 0, mtk.bounds.height > 0 else { return nil }
+        #if os(macOS)
         let p = mtk.convert(point, from: view)
         let ds = mtk.drawableSize
         let x = p.x / mtk.bounds.width * ds.width
         let y = (mtk.isFlipped ? p.y : mtk.bounds.height - p.y) / mtk.bounds.height * ds.height
+        #else
+        // UIKit zählt von oben, die Eingabeebene wie am Mac von unten (Ursprung unten links)
+        let p = mtk.convert(CGPoint(x: point.x, y: view.bounds.height - point.y), from: view)
+        let ds = mtk.drawableSize
+        let x = p.x / mtk.bounds.width * ds.width
+        let y = p.y / mtk.bounds.height * ds.height
+        #endif
         return SIMD2(Int(x), Int(y))
     }
 
-    func pickPoint(_ point: CGPoint, in view: NSView, completion: @escaping @MainActor (PickResult?) -> Void) {
+    func pickPoint(_ point: CGPoint, in view: PlattformView, completion: @escaping @MainActor (PickResult?) -> Void) {
         guard let r = renderer, let px = pixel(for: point, in: view) else {
             completion(nil)
             return
@@ -208,7 +220,7 @@ extension ViewportCoordinator {
         }
     }
 
-    func pickRect(_ rect: CGRect, in view: NSView, completion: @escaping @MainActor ([PickResult]) -> Void) {
+    func pickRect(_ rect: CGRect, in view: PlattformView, completion: @escaping @MainActor ([PickResult]) -> Void) {
         guard let r = renderer,
             let a = pixel(for: CGPoint(x: rect.minX, y: rect.minY), in: view),
             let b = pixel(for: CGPoint(x: rect.maxX, y: rect.maxY), in: view)
@@ -315,7 +327,7 @@ extension ViewportCoordinator {
     }
 
     /// Weltpunkt unter der Maus auf dem getroffenen Dreieck (für „Ansicht auf Mauspunkt zentrieren“).
-    func surfacePoint(of pick: PickResult, at point: CGPoint, in view: NSView) -> SIMD3<Float>? {
+    func surfacePoint(of pick: PickResult, at point: CGPoint, in view: PlattformView) -> SIMD3<Float>? {
         guard pick.kind == .face, let body = bodies.first(where: { $0.id == pick.bodyID }) else { return nil }
         let t = pick.triangleIndex
         guard t >= 0, (t + 1) * 3 <= body.indices.count else { return nil }
@@ -358,6 +370,7 @@ extension ViewportCoordinator {
 
 // MARK: - Eingabeebene
 
+#if os(macOS)
 /// Liegt über dem MTKView und nimmt alle Maus- und Trackpad-Eingaben im Viewport entgegen. Das Paket selbst bekommt
 /// keine Mausereignisse mehr (dort sitzen Einrasten und Nachlaufen).
 final class NavigationInputView: NSView {
@@ -931,6 +944,50 @@ struct NavigationInputLayer: NSViewRepresentable {
         coordinator.eingabeView = nsView
     }
 }
+#else
+/// iPad: Eingabeebene über dem MTKView. Bisher meldet sie nur die Größe des Viewports (Schwenken, Strahlen und
+/// Bildpunkte rechnen damit) und lässt Berührungen durch; bis dahin gelten die Gesten des Pakets. Berührungen, Zeiger,
+/// Kontextmenü und Tastatur nach dieser Belegung folgen in I-3, der Stift in I-4.
+final class NavigationInputView: UIView {
+    weak var coordinator: ViewportCoordinator?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) wird nicht benutzt") }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        coordinator?.viewSize = bounds.size
+    }
+
+    /// Treffertest unter dem Zeiger (Messen, Drehpunkt, Zoomziel). iPad: folgt in I-3.
+    func hoverTest() {}
+
+    /// Eingabe an oder aus (zweiter Viewer). iPad: folgt in I-3.
+    func aktivGeaendert() {}
+}
+
+struct NavigationInputLayer: UIViewRepresentable {
+    let coordinator: ViewportCoordinator
+
+    func makeUIView(context: Context) -> NavigationInputView {
+        let v = NavigationInputView()
+        v.coordinator = coordinator
+        coordinator.eingabeView = v
+        return v
+    }
+
+    func updateUIView(_ uiView: NavigationInputView, context: Context) {
+        uiView.coordinator = coordinator
+        coordinator.eingabeView = uiView
+    }
+}
+#endif
 
 // MARK: - Achsen-Gizmo (wie Blenders Navigationsgizmo oben rechts)
 

@@ -27,21 +27,30 @@ public enum KernelLaunchError: Error, Equatable, CustomStringConvertible {
 /// - Ausgaben gehen zeilenweise an `onOutput`, das Ende an `onExit`.
 /// - Die PID steht in `kernel.pid` im Datenordner; ein übrig gebliebener Kernel einer abgestürzten App wird vor dem
 ///   Start beendet.
+/// - Nur am Mac: Auf dem iPad startet die App keinen Kernel, `start` meldet das als Fehler (iPad: folgt in I-2b, Verbindung
+///   zum Kernel am Mac über das Netz).
 @MainActor
 public final class KernelProcess {
     public var onOutput: ((String, Bool) -> Void)?  // Zeile, ist stderr
     public var onExit: ((Int32, Bool) -> Void)?  // Code (negativ: Signal), erwartet (von stop())
 
+    #if os(macOS)
     private var process: Process?
     private var expectedExit = false
     private var outBuffer = LineBuffer()
     private var errBuffer = LineBuffer()
+    #endif
     public private(set) var startedAt: Date?
 
     public init() {}
 
+    #if os(macOS)
     public var isRunning: Bool { process?.isRunning ?? false }
     public var pid: Int32? { process.map { $0.processIdentifier } }
+    #else
+    public var isRunning: Bool { false }
+    public var pid: Int32? { nil }
+    #endif
 
     // MARK: Befehl
 
@@ -79,6 +88,7 @@ public final class KernelProcess {
 
     // MARK: Start und Ende
 
+    #if os(macOS)
     public func start(socket: String, port: Int) throws {
         if isRunning { return }
         let cmd: KernelCommand
@@ -208,6 +218,19 @@ public final class KernelProcess {
         for _ in 0..<50 where kill(pid, 0) == 0 { usleep(20_000) }
         if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
     }
+    #else
+    // iPad: Prozesse startet eine iPad-App nicht. Der Kernel läuft am Mac, die Verbindung dorthin über das Netz folgt in
+    // I-2b. Bis dahin meldet `start` das ehrlich als Fehler; zu beenden gibt es nichts.
+
+    public func start(socket: String, port: Int) throws {
+        throw KernelLaunchError.launchFailed(
+            "Auf dem iPad startet kein Kernel. Die Verbindung zum Kernel am Mac über das Netz fehlt noch.")
+    }
+
+    public func stop(grace: TimeInterval = 2) {}
+
+    public func stopNow(timeout: TimeInterval = 1.0) {}
+    #endif
 }
 
 /// Zerlegt einen Bytestrom in Zeilen (UTF-8, Zeilenende \n).

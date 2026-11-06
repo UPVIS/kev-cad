@@ -466,6 +466,8 @@ final class DokumenteTests: XCTestCase {
         XCTAssertFalse(roh.contains("Helvetica"))
     }
 
+    #if os(macOS)
+    /// Nur am Mac: Druckeinstellungen (NSPrintInfo); auf dem iPad gibt es noch keinen Druck.
     func testDruckAuftragNichtSkaliert() async throws {
         let z = Self.testblatt(groesse: CGSize(width: 297, height: 210))  // A4 quer
         await MainActor.run {
@@ -478,6 +480,7 @@ final class DokumenteTests: XCTestCase {
             XCTAssertEqual(info.scalingFactor, 1)
         }
     }
+    #endif
 
     /// Zweizeiliger Bohrungshinweis mit Knick („4× Ø8,2 × 13,8 tief“ / „Einsatz M6 × 12,7“, Kameraträger): greifbar auf
     /// beiden Zeilen und auf der Bezugslinie; der Anker zum Verschieben ist der Knick.

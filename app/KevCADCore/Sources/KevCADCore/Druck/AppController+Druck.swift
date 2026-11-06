@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 
 // Druckvorschau (DRUCKVORSCHAU.md): PRINT_PREVIEW übernehmen, Einstellungen senden (PRINT_SETTINGS), Platten als 3MF
@@ -190,6 +192,7 @@ extension AppController: DruckActions {
     }
 
     public func druckInBambuStudioOeffnen(_ datei: URL) {
+        #if os(macOS)
         guard let app = DruckStore.bambuStudio else {
             model.druck.setzeFehler("Bambu Studio ist nicht unter /Applications installiert.")
             return
@@ -208,6 +211,10 @@ extension AppController: DruckActions {
             }
         }
         log(.info, "In Bambu Studio geöffnet: \(datei.lastPathComponent)")
+        #else
+        // iPad: die 3MF weitergeben (Teilen-Blatt) bzw. Drucken über den Kernel am Mac folgt in I-8
+        model.druck.setzeFehler("Bambu Studio gibt es nur am Mac.")
+        #endif
     }
 
     public func druckTeileWaehlen(_ teile: [String], einpassen: Bool) {

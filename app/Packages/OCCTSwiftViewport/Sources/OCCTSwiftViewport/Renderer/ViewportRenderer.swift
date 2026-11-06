@@ -2620,8 +2620,17 @@ public final class ViewportRenderer: NSObject, MTKViewDelegate, Sendable {
         if let report = onFrameTiming, let drawable = targets.presentable {
             let cpu = (CACurrentMediaTime() - kevFrameStart) * 1000
             let box = KevFrameTimingBox(cpu: cpu)
+            #if targetEnvironment(simulator)
+            // Kev CAD (iPad): Der Simulator kennt keine Anzeige-Rückmeldung; dort gilt das Ende der GPU-Arbeit.
+            _ = drawable
+            commandBuffer.addCompletedHandler { cb in
+                box.setGPU((cb.gpuEndTime - cb.gpuStartTime) * 1000, report)
+                box.setPresented(CACurrentMediaTime(), report)
+            }
+            #else
             drawable.addPresentedHandler { d in box.setPresented(d.presentedTime, report) }
             commandBuffer.addCompletedHandler { cb in box.setGPU((cb.gpuEndTime - cb.gpuStartTime) * 1000, report) }
+            #endif
         }
         commandBuffer.commit()
     }

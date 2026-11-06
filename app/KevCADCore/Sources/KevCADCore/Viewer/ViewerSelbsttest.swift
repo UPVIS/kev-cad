@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
 import QuartzCore
@@ -330,7 +332,7 @@ extension AppController {
             // 360° in `sekunden`: 0,4° je Punkt
             self.viewport.navOrbit(dx: Float(360 / 0.4 / sekunden * dt), dy: 0)
         }
-        let link = view.displayLink(target: takt, selector: #selector(SelbsttestTakt.tick(_:)))
+        let link = view.bildschirmtakt(takt, #selector(SelbsttestTakt.tick(_:)))
         link.add(to: .main, forMode: .common)
         let protokoll = HauptfadenProtokoll()
         hauptfadenProtokoll = protokoll

@@ -419,12 +419,14 @@ final class BauplanExportTests: XCTestCase {
         XCTAssertEqual(auftraege.map(\.format), ["A4 hoch", "A3 quer"])
         XCTAssertEqual(auftraege.map(\.seiten).reduce(0, +), pdf.pageCount)
         XCTAssertNotNil(ExportDrucker.hinweis(auftraege))
+        #if os(macOS)  // Druckeinstellungen gibt es nur am Mac (NSPrintInfo)
         let info = ExportDrucker.druckInfo(auftraege[1])
         XCTAssertEqual(info.orientation, .landscape)
         XCTAssertEqual(max(info.paperSize.width, info.paperSize.height), 1190.55, accuracy: 0.1)
         XCTAssertEqual(info.leftMargin, 0)
         XCTAssertEqual(info.scalingFactor, 1)
         XCTAssertNotNil(ExportDrucker.operation(auftraege[0]))
+        #endif
         // Gliederung zeigt auf die erste Seite jedes Bausteins
         let zweiter = try XCTUnwrap(pdf.outlineRoot?.child(at: 1))
         XCTAssertEqual(zweiter.label, doc.bausteinSeiten[1].art.titel)

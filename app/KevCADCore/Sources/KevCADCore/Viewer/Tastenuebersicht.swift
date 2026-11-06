@@ -79,7 +79,7 @@ struct Tastenuebersicht: View {
         .background(RoundedRectangle(cornerRadius: ViewerStil.radiusKarte).fill(ViewerStil.leisteGrund.opacity(0.98)))
         .overlay(RoundedRectangle(cornerRadius: ViewerStil.radiusKarte).strokeBorder(ViewerStil.leisteRand))
         .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
-        .onExitCommand { viewer.tastenuebersicht = false }
+        .beiEsc { viewer.tastenuebersicht = false }
     }
 
     private struct Zeile {

@@ -1,7 +1,10 @@
+#if os(macOS)
 import AppKit
+#endif
 import Combine
 import Foundation
 import OCCTSwiftViewport
+import QuartzCore
 import simd
 
 /// Verbindet AppModel mit dem Kernel (Prozess, Socket, Protokoll), der Szene und dem Viewport.
@@ -119,12 +122,13 @@ public final class AppController: AppActions {
     var approvalCheck: (kind: String, id: String, ebene: CatalogLevel, reloadID: String)?
     /// Phase 3: Zukaufteile (Downloads-Beobachtung, Rückfragen, Namen), siehe AppController+Zukauf.swift.
     let zukaufState = ZukaufControllerState()
-    /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht).
+    /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht). Auf dem iPad ohne Gegenstück im
+    /// Kern (Dateiablage.swift).
     var revealFiles: ([URL]) -> Void = { urls in
         guard Bundle.main.bundleURL.pathExtension == "app", !urls.isEmpty,
               ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == nil
         else { return }
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
+        Dateiablage.imFinderZeigen(urls)
     }
 
     struct PendingRequest {
@@ -163,7 +167,7 @@ public final class AppController: AppActions {
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }
         connection.onEvents = { [weak self] events in self?.handle(events) }
         terminationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+            forName: PlattformApp.wirdBeendet, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.shutdownForTermination() }
         }
@@ -772,7 +776,7 @@ public final class AppController: AppActions {
 
     // MARK: Auswahl und Messen
 
-    func handleClick(_ pick: PickResult?, modifiers: NSEvent.ModifierFlags) {
+    func handleClick(_ pick: PickResult?, modifiers: PlattformTastenFlags) {
         var ref = pick.flatMap { scene.resolve($0) }
         // Wie Blenders Objektmodus: im Teilemodus wählt ein Klick das ganze Teil; Messen braucht immer Elemente
         if !model.measureMode, model.selectionMode == .parts, let r = ref { ref = r.partRef }

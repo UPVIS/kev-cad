@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Combine
 import Foundation
 import OCCTSwiftViewport
@@ -28,8 +30,10 @@ extension AppController {
         let z = zweiterViewer.coordinator
         z.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         z.onBoxSelect = { [weak self] picks, modifiers in self?.handleBoxSelect(picks, modifiers: modifiers) }
+        #if os(macOS)
         z.onContextMenu = { [weak self] in self?.contextMenu() }
         z.onNumpadKey = { [weak self] code, flags in self?.handleNumpadKey(code, flags) ?? false }
+        #endif
         z.onBefehl = { [weak self] befehl in
             guard let self else { return false }
             self.ausfuehren(befehl)

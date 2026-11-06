@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -533,7 +535,7 @@ public final class PBRRenderer {
     func material(_ pbr: RenderPBR) throws -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
         let c = pbr.basisfarbe
-        let farbe = NSColor(srgbRed: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
+        let farbe = PlattformFarbe.srgb(CGFloat(c.x), CGFloat(c.y), CGFloat(c.z))
         m.baseColor = .init(tint: farbe)
         m.metallic = .init(floatLiteral: pbr.metallisch)
         m.roughness = .init(floatLiteral: max(0.04, pbr.rauheit))

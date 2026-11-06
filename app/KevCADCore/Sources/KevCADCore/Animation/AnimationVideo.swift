@@ -78,6 +78,7 @@ public final class AnimationVideoExporter {
             completion(.failure(ExportError(message: "Es läuft schon eine Videoausgabe")))
             return
         }
+        #if os(macOS)
         guard let ffmpeg = Self.ffmpegPath() else {
             completion(.failure(ExportError(message: "ffmpeg nicht gefunden (KEVCAD_FFMPEG setzen oder ffmpeg installieren)")))
             return
@@ -189,6 +190,10 @@ public final class AnimationVideoExporter {
             DispatchQueue.main.async { MainActor.assumeIsolated { render(k + 1) } }
         }
         render(0)
+        #else
+        // iPad: ffmpeg gibt es dort nicht; Videos aus Animationen (etwa über AVAssetWriter) folgen in I-8.
+        completion(.failure(ExportError(message: "Videos aus Animationen gibt es auf dem iPad noch nicht")))
+        #endif
     }
 
     private func renderFrame(bodies: [ViewportBody], camera: CameraState, width: Int, height: Int, job: Job) -> CGImage? {

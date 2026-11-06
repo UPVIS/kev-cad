@@ -1,5 +1,8 @@
+#if os(macOS)
 import AppKit
+#endif
 import Combine
+import Foundation
 import OCCTSwiftViewport
 
 // Blender-Steuerung im App-Kern: Tastaturbefehle (NavigationActions), Rahmenauswahl, Kontextmenü, Auswahlmodus.
@@ -8,8 +11,11 @@ import OCCTSwiftViewport
 extension AppController: NavigationActions {
     func installNavigation() {
         viewport.onBoxSelect = { [weak self] picks, modifiers in self?.handleBoxSelect(picks, modifiers: modifiers) }
+        #if os(macOS)
         viewport.onContextMenu = { [weak self] in self?.contextMenu() }
         viewport.onNumpadKey = { [weak self] code, flags in self?.handleNumpadKey(code, flags) ?? false }
+        #endif
+        // iPad: Kontextmenü (langes Drücken) und Tasten einer Hardware-Tastatur folgen in I-3.
         viewport.controller.$cameraState
             .map(\.isOrthographic)
             .removeDuplicates()
@@ -115,7 +121,7 @@ extension AppController: NavigationActions {
     }
 
     /// Rahmenauswahl: ohne Sondertaste ersetzen, Umschalt erweitert, Strg zieht ab (wie Blender).
-    func handleBoxSelect(_ picks: [PickResult], modifiers: NSEvent.ModifierFlags) {
+    func handleBoxSelect(_ picks: [PickResult], modifiers: PlattformTastenFlags) {
         guard !model.measureMode else { return }
         var found: [ElementRef] = []
         var seen = Set<ElementRef>()
@@ -136,7 +142,8 @@ extension AppController: NavigationActions {
         applySelection(refs)
     }
 
-    /// Ziffernblock wie in Blender (Tastencodes unabhängig vom Tastaturlayout).
+    #if os(macOS)
+    /// Ziffernblock wie in Blender (Tastencodes des Mac, unabhängig vom Tastaturlayout).
     func handleNumpadKey(_ code: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
         let ctrl = flags.contains(.control)
         switch code {
@@ -204,11 +211,14 @@ extension AppController: NavigationActions {
         }
         return menu
     }
+    #endif
 }
 
+#if os(macOS)
 /// Ziel für Menüeinträge mit Closure (vom Menüeintrag über representedObject festgehalten).
 final class MenuClosure: NSObject {
     let action: () -> Void
     init(_ action: @escaping () -> Void) { self.action = action }
     @objc func run() { action() }
 }
+#endif

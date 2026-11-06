@@ -1,4 +1,7 @@
+#if os(macOS)
 import AppKit
+#endif
+import Foundation
 import OCCTSwiftViewport
 import QuartzCore
 import simd
@@ -56,7 +59,7 @@ struct Kamerafahrt {
     }
 }
 
-/// Ziel für den Bildschirmtakt (NSView.displayLink braucht ein NSObject).
+/// Ziel für den Bildschirmtakt (NSView.displayLink bzw. CADisplayLink braucht ein NSObject).
 final class FahrtTakt: NSObject {
     weak var coordinator: ViewportCoordinator?
 
@@ -82,7 +85,7 @@ extension ViewportCoordinator {
         if fahrtLink == nil {
             let takt = FahrtTakt()
             takt.coordinator = self
-            let link = view.displayLink(target: takt, selector: #selector(FahrtTakt.schritt(_:)))
+            let link = view.bildschirmtakt(takt, #selector(FahrtTakt.schritt(_:)))
             link.add(to: .main, forMode: .common)
             fahrtLink = link
             fahrtTakt = takt

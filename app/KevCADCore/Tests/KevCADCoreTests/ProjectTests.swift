@@ -68,8 +68,11 @@ final class ProjectLocatorTests: XCTestCase {
         XCTAssertEqual(ProjectLocator.uniqueFolder(named: "Wandhalter", in: temp).lastPathComponent, "Wandhalter 2")
         _ = try makeProject("Wandhalter 2", withModel: false)
         XCTAssertEqual(ProjectLocator.uniqueFolder(named: "Wandhalter", in: temp).lastPathComponent, "Wandhalter 3")
-        // APFS unterscheidet Groß- und Kleinschreibung nicht: "wandhalter" kollidiert ebenfalls.
+        // APFS unterscheidet Groß- und Kleinschreibung am Mac nicht: "wandhalter" kollidiert ebenfalls. Auf dem iPad
+        // (auch im Simulator) unterscheidet das Dateisystem sie, dort gibt es diese Kollision nicht.
+        #if os(macOS)
         XCTAssertEqual(ProjectLocator.uniqueFolder(named: "wandhalter", in: temp).lastPathComponent, "wandhalter 3")
+        #endif
     }
 
     func testUniqueFolderWithInjectedCheck() {
@@ -103,8 +106,12 @@ final class RecentProjectsTests: XCTestCase {
 
     override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suite)
+        #if os(macOS)
         let file = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Preferences/\(suite!).plist")
+        #else
+        let file = URL.libraryDirectory.appendingPathComponent("Preferences/\(suite!).plist")
+        #endif
         try? FileManager.default.removeItem(at: file)
     }
 

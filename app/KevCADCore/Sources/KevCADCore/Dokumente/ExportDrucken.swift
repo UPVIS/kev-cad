@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import PDFKit
 
 // Drucken (RECHERCHE-PHASE6.md 5.2, DOKUMENTE.md „App“): immer mit `.pageScaleNone` (sonst verkleinert macOS ein
@@ -15,6 +17,7 @@ public struct ExportDruckauftrag {
 
 @MainActor
 public final class ExportDrucker: NSObject {
+    #if os(macOS)
     private var offen: [ExportDruckauftrag] = []
     private weak var fenster: NSWindow?
     private var titel = ""
@@ -22,6 +25,7 @@ public final class ExportDrucker: NSObject {
     private var gedruckt = 0
     /// Läuft gerade (hält sich selbst, bis der letzte Auftrag durch ist).
     private static var aktiv: ExportDrucker?
+    #endif
 
     /// Teilt ein PDF in Aufträge je Seitengröße (Reihenfolge des ersten Auftretens).
     public static func auftraege(_ pdf: PDFDocument) -> [ExportDruckauftrag] {
@@ -51,6 +55,7 @@ public final class ExportDrucker: NSObject {
             + "Jeder Auftrag druckt 1:1 ohne Skalierung."
     }
 
+    #if os(macOS)
     /// Druckeinstellungen eines Auftrags: Papier so groß wie die Seiten, ohne Ränder, Maßstab 1.
     public static func druckInfo(_ a: ExportDruckauftrag) -> NSPrintInfo {
         let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
@@ -117,4 +122,6 @@ public final class ExportDrucker: NSObject {
             MainActor.assumeIsolated { self?.naechster() }
         }
     }
+    #endif
+    // iPad: Drucken über AirPrint (1:1 ohne Skalierung, je Format ein Auftrag) folgt in I-8.
 }

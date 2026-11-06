@@ -21,7 +21,7 @@ struct ViewerMenueOverlay: View {
             }
             .frame(width: groesse.width, height: groesse.height)
             .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            .onExitCommand { viewer.menue = nil }
+            .beiEsc { viewer.menue = nil }
         }
     }
 

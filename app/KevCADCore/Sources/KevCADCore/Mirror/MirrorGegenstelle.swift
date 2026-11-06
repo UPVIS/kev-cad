@@ -26,11 +26,13 @@ public enum MirrorGegenstelle {
     public static let voiceBridgeRequirement =
         #"anchor apple generic and identifier "de.upvis.voicebridge.mac" and certificate leaf[subject.OU] = "2GX7UC98J6""#
 
+    #if os(macOS)
     /// Flags der Signaturprüfung: Standard, also laufender Prozess und Datei auf der Platte. Folge (geprüft am
     /// 22.10.2026): Wurde VoiceBridge auf der Platte ersetzt, scheitert der noch laufende alte Prozess mit
     /// `errSecCSStaticCodeChanged` (−67034), bis er neu startet; das ist gewollt (im Zweifel nein). Die Prüfung im Kernel
     /// (`kSecCSMatchGuestRequirementInKernel`) kann Zertifikatsfelder wie `leaf[subject.OU]` nicht auswerten (−67052).
     public static let pruefFlags: SecCSFlags = []
+    #endif
 
     /// Argument, das die Gegenstelle nicht tragen darf (MCP-Prozesse der Agenten, auch `--mcp=…`).
     public static let verbotenesArgument = "--mcp"
@@ -93,8 +95,10 @@ public enum MirrorGegenstelle {
 
     // MARK: Prüfung
 
-    /// Volle Prüfung gegen ein Requirement (Vorgabe: die VoiceBridge-App).
+    /// Volle Prüfung gegen ein Requirement (Vorgabe: die VoiceBridge-App). Nur am Mac: Auf dem iPad gibt es die
+    /// Signaturprüfung fremder Prozesse nicht, dort ist die Antwort immer nein (den Spiegel stellt ohnehin die Mac-App).
     public static func pruefe(_ token: audit_token_t, requirement: String = voiceBridgeRequirement) -> Urteil {
+        #if os(macOS)
         var tok = token
         let pid = pid(token)
         // Gleichwertig zu SecCodeCreateWithAuditToken, das das öffentliche SDK nicht anbietet: Gast-Code über das
@@ -123,6 +127,9 @@ public enum MirrorGegenstelle {
             return .nein("Signatur der Gegenstelle passt nicht zu VoiceBridge (\(text))", pid: pid)
         }
         return Urteil(erlaubt: true, grund: "VoiceBridge-App (Signatur geprüft)", pid: pid)
+        #else
+        return .nein("Signaturprüfung der Gegenstelle gibt es nur am Mac", pid: pid(token))
+        #endif
     }
 
     /// Argumente eines Prozesses (`argv`, ohne den Programmpfad davor) über `sysctl KERN_PROCARGS2`.

@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
 import XCTest
@@ -73,7 +75,11 @@ final class ControllerTests: XCTestCase {
         let c = AppController(model: AppModel())
         c.start()
         guard case .failed(let msg) = c.model.kernelState else { return XCTFail("\(c.model.kernelState)") }
+        #if os(macOS)
         XCTAssertTrue(msg.contains("uv sync"), msg)
+        #else
+        XCTAssertTrue(msg.contains("iPad"), msg)  // dort startet kein Kernel (KernelProcess.swift)
+        #endif
         XCTAssertTrue(c.model.log.contains { $0.level == .error })
         c.stop()
         XCTAssertEqual(c.model.kernelState, .stopped)
@@ -368,6 +374,8 @@ final class ControllerTests: XCTestCase {
 
 @MainActor
 final class ProcessTests: XCTestCase {
+    // Nur am Mac: Der Kernel ist dort ein eigener Prozess; auf dem iPad startet die App keinen (KernelProcess.swift).
+    #if os(macOS)
     /// Ein Ersatzbefehl über KEVCAD_KERNEL_CMD: Ausgabe kommt zeilenweise an, das Ende wird gemeldet.
     func testProcessOutputAndExit() throws {
         setenv("KEVCAD_KERNEL_CMD", "/bin/echo hallo", 1)
@@ -405,6 +413,15 @@ final class ProcessTests: XCTestCase {
         p.stop()
         wait(for: [done], timeout: 5)
     }
+    #else
+    /// iPad: `start` meldet ehrlich, dass dort kein Kernel startet; nichts läuft.
+    func testStartAufDemIPadMeldetFehler() {
+        let p = KernelProcess()
+        XCTAssertThrowsError(try p.start(socket: "/tmp/x.sock", port: 1))
+        XCTAssertFalse(p.isRunning)
+        XCTAssertNil(p.pid)
+    }
+    #endif
 
     func testLineBuffer() {
         var b = LineBuffer()

@@ -47,6 +47,11 @@ public enum AppInfo {
         if let eigen = ProcessInfo.processInfo.environment["KEVCAD_PROJECTS_DIR"], !eigen.isEmpty {
             return URL(fileURLWithPath: (eigen as NSString).expandingTildeInPath, isDirectory: true)
         }
+        #if os(macOS)
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Kev CAD", isDirectory: true)
+        #else
+        // iPad: der Dokumente-Ordner der App; der iCloud-Ordner „Kev CAD“ folgt in I-7.
+        return URL.documentsDirectory.appendingPathComponent("Kev CAD", isDirectory: true)
+        #endif
     }
 }

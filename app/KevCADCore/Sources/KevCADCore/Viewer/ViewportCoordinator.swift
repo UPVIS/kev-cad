@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Combine
 import MetalKit
 import OCCTSwiftViewport
@@ -16,16 +18,18 @@ public final class ViewportCoordinator: ObservableObject {
     @Published public var hint: String?
 
     /// Ein Klick ohne Ziehen (linke Maustaste): Treffer (oder nil) und die Sondertasten.
-    public var onClick: ((PickResult?, NSEvent.ModifierFlags) -> Void)?
+    public var onClick: ((PickResult?, PlattformTastenFlags) -> Void)?
     /// Wird vor `onClick` gefragt, mit dem Weltpunkt unter der Maus auf dem getroffenen Dreieck (Phase 4: Werkzeug
     /// „Maßstab setzen“); true = der Klick ist verbraucht, `onClick` kommt dann nicht.
-    public var onClickPunkt: ((PickResult?, SIMD3<Float>?, NSEvent.ModifierFlags) -> Bool)?
+    public var onClickPunkt: ((PickResult?, SIMD3<Float>?, PlattformTastenFlags) -> Bool)?
     /// Rahmenauswahl (linke Maustaste ziehen): alle Treffer im Rahmen und die Sondertasten.
-    public var onBoxSelect: (([PickResult], NSEvent.ModifierFlags) -> Void)?
+    public var onBoxSelect: (([PickResult], PlattformTastenFlags) -> Void)?
+    #if os(macOS)
     /// Kontextmenü (rechte Maustaste).
     public var onContextMenu: (() -> NSMenu?)?
-    /// Taste des Ziffernblocks im Viewport (Tastencode, Sondertasten); true = verarbeitet.
+    /// Taste des Ziffernblocks im Viewport (Tastencode des Mac, Sondertasten); true = verarbeitet.
     public var onNumpadKey: ((UInt16, NSEvent.ModifierFlags) -> Bool)?
+    #endif
     /// Griff im Viewer (Simulation: Pfeil-Griff einer Kraft): Maustaste gedrückt an diesem Punkt (Eingabeebene,
     /// Ursprung unten links); true = Griff getroffen, dann folgen `onGriffZiehen` und `onGriffEnde` statt Auswahl
     /// und Drehen.
@@ -33,7 +37,7 @@ public final class ViewportCoordinator: ObservableObject {
     public var onGriffZiehen: ((CGPoint) -> Void)?
     public var onGriffEnde: ((CGPoint) -> Void)?
     /// Sondertasten beim Anfassen und Ziehen des Griffs (additiv; Simulation: ⌘ schaltet das Einrasten ab).
-    public var griffModifiers: NSEvent.ModifierFlags = []
+    public var griffModifiers: PlattformTastenFlags = []
 
     public private(set) weak var mtkView: MTKView?
     private var cancellables = Set<AnyCancellable>()
@@ -133,7 +137,7 @@ public final class ViewportCoordinator: ObservableObject {
         if aufAbruf {
             view.isPaused = true
             view.enableSetNeedsDisplay = true
-            view.needsDisplay = true
+            view.neuZeichnenAnfordern()
         }
         mtkView = view
     }
@@ -141,7 +145,7 @@ public final class ViewportCoordinator: ObservableObject {
     /// Ein neues Bild anfordern (nur mit `aufAbruf`; sonst zeichnet das MTKView ohnehin laufend).
     func neuZeichnen() {
         guard aufAbruf, let v = mtkView else { return }
-        v.needsDisplay = true
+        v.neuZeichnenAnfordern()
     }
 
     // MARK: Überlagerung

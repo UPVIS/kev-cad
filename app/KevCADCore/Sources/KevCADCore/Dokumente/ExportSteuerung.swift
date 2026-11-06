@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import OCCTSwiftViewport
 import PDFKit
@@ -249,6 +251,7 @@ extension AppController: ExportActions {
     }
 
     public func exportDrucken(_ v: ExportVorlage) async throws -> ExportErgebnis {
+        #if os(macOS)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("KevCAD-Druck-\(UUID().uuidString).pdf")
         var e = try await exportPDF(v, nach: url)
         guard let pdf = PDFDocument(url: url) else { throw ExportFehler.pdf("Druck: PDF nicht lesbar") }
@@ -265,6 +268,10 @@ extension AppController: ExportActions {
         if let h = ExportDrucker.hinweis(auftraege) { e.hinweise.append(h) }
         model.export.letztes = e
         return e
+        #else
+        // iPad: Drucken über AirPrint (1:1, je Format ein Auftrag) folgt in I-8
+        throw ExportFehler.pdf("Drucken gibt es auf dem iPad noch nicht")
+        #endif
     }
 
     func exportErgebnis(_ doc: ExportDokument, pfad: URL?, t0: Date) -> ExportErgebnis {
@@ -284,6 +291,7 @@ extension AppController: ExportActions {
                 var e: ExportErgebnis
                 if let ziel = a.ziel {
                     e = try await exportPDF(vorlage, nach: ziel)
+                    #if os(macOS)
                     if a.drucken, let pdf = PDFDocument(url: ziel) {
                         let fenster = NSApp.keyWindow ?? NSApp.mainWindow
                         ExportDrucker.drucke(pdf, titel: model.project?.name ?? "Kev CAD", fenster: fenster)
@@ -291,6 +299,10 @@ extension AppController: ExportActions {
                         e.gedruckt = n > 1 ? "Druckdialog geöffnet (\(n) Aufträge, je Format einer)" : "Druckdialog geöffnet"
                         if let h = ExportDrucker.hinweis(ExportDrucker.auftraege(pdf)) { e.hinweise.append(h) }
                     }
+                    #else
+                    // iPad: Drucken folgt in I-8; das PDF ist geschrieben
+                    if a.drucken { e.hinweise.append("Drucken gibt es auf dem iPad noch nicht, das PDF liegt unter \(ziel.path)") }
+                    #endif
                 } else if a.drucken {
                     e = try await exportDrucken(vorlage)
                 } else {
