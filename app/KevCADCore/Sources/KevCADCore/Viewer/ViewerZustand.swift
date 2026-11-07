@@ -188,14 +188,36 @@ public final class ViewerStore: ObservableObject {
     /// I-3b: „Rückgängig: Auswahl“ bzw. „Wiederholen: Ansicht“ für Menü und Daumenleiste; nil = nichts da.
     @Published public internal(set) var rueckgaengigTitel: String?
     @Published public internal(set) var wiederholenTitel: String?
+    /// I-4: offener Werkzeugkranz (nil = zu). Wo er steht, was markiert ist und der Wert eines Drehreglers.
+    @Published public var kranz: KranzZustand?
+    /// I-4: Farbe der nächsten Striche beim Sprechen (Kranz innen; merkt sich die App).
+    @Published public var strichfarbe: Strichfarbe {
+        didSet { UserDefaults.standard.set(strichfarbe.rawValue, forKey: Self.farbeKey) }
+    }
+    /// I-4: Breite der Striche in Punkten (Drehregler im Kranz unter „Mehr“).
+    @Published public var strichbreite: Double {
+        didSet { UserDefaults.standard.set(strichbreite, forKey: Self.breiteKey) }
+    }
+    /// I-4: Ein Stiftstrich ohne Sitzung beginnt das Sprechen (Vorgabe an; aus: der Stift dreht wie ein Finger).
+    @Published public var stiftSprechen: Bool {
+        didSet { UserDefaults.standard.set(stiftSprechen, forKey: Self.stiftKey) }
+    }
 
     static let hinweisKey = "viewer.hinweisleiste"
     static let hauchKey = "viewer.hauch"
+    static let farbeKey = "viewer.strichfarbe"
+    static let breiteKey = "viewer.strichbreite"
+    static let stiftKey = "viewer.stiftSprechen"
+    /// Bereich der Strichbreite (Punkte).
+    public static let strichbreiten = KranzReglerBereich(min: 1, max: 11, raster: 1)
 
     public init() {
         let d = UserDefaults.standard
         hinweisleiste = d.object(forKey: Self.hinweisKey) as? Bool ?? true
         hauch = d.object(forKey: Self.hauchKey) as? Bool ?? true
+        strichfarbe = (d.string(forKey: Self.farbeKey)).flatMap(Strichfarbe.init(rawValue:)) ?? .blau
+        strichbreite = Self.strichbreiten.klemmen(d.object(forKey: Self.breiteKey) as? Double ?? 3)
+        stiftSprechen = d.object(forKey: Self.stiftKey) as? Bool ?? true
     }
 
     public func zeige(_ text: String, datei: URL? = nil, fehler: Bool = false) {
@@ -244,6 +266,14 @@ public protocol ViewerActions: AnyObject {
     func messungKopieren(_ id: UUID)
     /// Alle Messungen als Text in die Zwischenablage.
     func messungenKopieren()
+    /// I-4: Werkzeugkranz öffnen; `punkt` im Viewport oben links gemessen, nil = an der Maus bzw. der Stiftspitze.
+    func kranzOeffnen(bei punkt: CGPoint?)
+    /// I-4: Was ein Eintrag oder Feld des Kranzes tut (Drehregler öffnen sich, alles andere schließt den Kranz).
+    func kranzAusfuehren(_ aktion: KranzAktion)
+    /// I-4: Wert eines Drehreglers setzen (live, beim Drehen).
+    func kranzRegler(_ regler: KranzRegler, wert: Double)
+    /// I-4: Farbe der nächsten Striche.
+    func setStrichfarbe(_ farbe: Strichfarbe)
 }
 
 /// Maße im Bild ein- und ausblenden (Knopf „Maße“, ⇧M). Eigenes Protokoll, damit es auch der Demomodus anbietet, der

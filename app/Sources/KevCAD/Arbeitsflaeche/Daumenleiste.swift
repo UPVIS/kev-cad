@@ -5,8 +5,8 @@ import SwiftUI
 /// Daumenleiste am iPad (PLAN-IPAD.md 4.5 und 4.6): links unten im Griff des Daumens, der Stift bleibt in der rechten
 /// Hand. Sprechen beginnt, hält an und geht weiter (am Mac V), Senden schickt Text, Zeiger und Striche an den Agenten (am
 /// Mac ↩). Verwerfen steht in der Zeile mit dem Gesagten und als X am roten Rahmen. Darunter Rückgängig und Wiederholen
-/// für Ansicht, Auswahl und Sichtbarkeit (am Mac ⌘Z und ⇧⌘Z, hier auch 2 und 3 Finger tippen). Zeichnen mit dem Finger
-/// und der Werkzeugkranz kommen mit I-4 dazu.
+/// für Ansicht, Auswahl und Sichtbarkeit (am Mac ⌘Z und ⇧⌘Z, hier auch 2 und 3 Finger tippen). „Kranz“ öffnet den
+/// Werkzeugkranz an der letzten Berührung (I-4; mit dem Pencil doppelt tippen, am Mac Q). Zeichnen mit dem Finger folgt.
 struct Daumenleiste: View {
     @ObservedObject var oberflaeche: OberflaechenStore
     @ObservedObject var sprache: SprachStore
@@ -38,6 +38,10 @@ struct Daumenleiste: View {
                     viewerActions?.ausfuehren(.wiederholen)
                 }
             }
+            DaumenKnopf(titel: "Kranz", symbol: "circle.circle", farbe: GF.kreide, gefuellt: false, groesse: 44) {
+                viewerActions?.ausfuehren(.werkzeugkranz)
+            }
+            .accessibilityHint("Farben, Ansichten, Darstellung und mehr; mit dem Pencil doppelt tippen")
         }
         .animation(GB.standard, value: offen)
         .animation(GB.kurz, value: oberflaeche.spricht)

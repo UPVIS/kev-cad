@@ -122,6 +122,8 @@ case "$ART" in
       *) UMGEBUNG+=(SIMCTL_CHILD_KEVCAD_DEMO=1 "SIMCTL_CHILD_KEVCAD_DEMO_VIEWPORT=${KEVCAD_IPAD_DEMO:-kern}"
            SIMCTL_CHILD_KEVCAD_DEMO_STATE=live) ;;
     esac
+    # I-4: Werkzeugkranz beim Start offen zeigen (nur Debug-Bauten), etwa KEVCAD_KRANZ=ansichten
+    [ -n "${KEVCAD_KRANZ:-}" ] && UMGEBUNG+=("SIMCTL_CHILD_KEVCAD_KRANZ=$KEVCAD_KRANZ")
     env "${UMGEBUNG[@]}" xcrun simctl launch "$UDID" "$PAD_BUNDLE_ID" || exit 1
     sleep "${KEVCAD_IPAD_WARTEN:-8}"
     FOTO="$REPO/build/ipad-start.png"

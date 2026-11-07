@@ -42,6 +42,7 @@ extension AppController {
         }
         z.onHover = { [weak self] pick, welt, bildpunkt in self?.zweiterHover(pick, welt, bildpunkt) }
         z.onStrich = { [weak self] e in self?.zweiterStrich(e) }
+        strichStilInstallieren(z)
     }
 
     /// Beim Sprechen zeichnet Ziehen mit der linken Maustaste in beiden Viewern einen Strich.

@@ -22,6 +22,47 @@ public enum FeedbackGrenzen {
     ]
 }
 
+/// Strichfarben aus dem Werkzeugkranz (I-4, PLAN-IPAD.md 4.4). Die Namen sind Teil des Pakets (`protocol.py`,
+/// `FEEDBACK_STRICHFARBEN`); Kevin nennt sie beim Sprechen („die rote Linie“).
+public enum Strichfarbe: String, CaseIterable, Codable, Sendable {
+    case rot, gelb, gruen, blau, weiss
+
+    /// Wie Kevin sie nennt.
+    public var name: String {
+        switch self {
+        case .rot: return "Rot"
+        case .gelb: return "Gelb"
+        case .gruen: return "Grün"
+        case .blau: return "Blau"
+        case .weiss: return "Weiß"
+        }
+    }
+
+    /// Farbe im Viewer und im Bild des Pakets (sRGB 0…1). Blau ist das Lichtblau der Striche von V2-6.
+    public var rgba: SIMD4<Float> {
+        switch self {
+        case .rot: return SIMD4(1.0, 0.36, 0.33, 1)
+        case .gelb: return SIMD4(1.0, 0.84, 0.25, 1)
+        case .gruen: return SIMD4(0.38, 0.86, 0.5, 1)
+        case .blau: return SIMD4(0.56, 0.78, 1.0, 1)
+        case .weiss: return SIMD4(0.97, 0.97, 0.96, 1)
+        }
+    }
+}
+
+/// Gerät, an dem gesprochen bzw. gezeichnet wurde (`FEEDBACK_GERAETE`).
+public enum FeedbackGeraet: String, CaseIterable, Codable, Sendable {
+    case mac, ipad
+
+    public static var hier: FeedbackGeraet {
+        #if os(macOS)
+        return .mac
+        #else
+        return .ipad
+        #endif
+    }
+}
+
 public struct FeedbackPaket: Codable, Equatable, Sendable {
     public struct Projekt: Codable, Equatable, Sendable {
         public var name: String
@@ -186,9 +227,13 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
         public var laengeMm: Double
         public var kamera: JSONValue
         public var punkte: [StrichPunkt]
+        /// I-4: Farbe aus dem Werkzeugkranz (`Strichfarbe`); fehlt in älteren Paketen.
+        public var farbe: String?
+        /// I-4: Gerät, an dem der Strich entstand (`FeedbackGeraet`); fehlt in älteren Paketen.
+        public var geraet: String?
 
         public init(nr: Int, t: Double, bis: Double, run: Int, teile: [String], laengeMm: Double, kamera: JSONValue,
-                    punkte: [StrichPunkt]) {
+                    punkte: [StrichPunkt], farbe: String? = nil, geraet: String? = nil) {
             self.nr = nr
             self.t = t
             self.bis = bis
@@ -197,10 +242,15 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
             self.laengeMm = laengeMm
             self.kamera = kamera
             self.punkte = punkte
+            self.farbe = farbe
+            self.geraet = geraet
         }
 
+        /// Farbe zum Zeichnen; ältere Striche ohne Farbe sind lichtblau.
+        public var strichfarbe: Strichfarbe { farbe.flatMap(Strichfarbe.init(rawValue:)) ?? .blau }
+
         enum CodingKeys: String, CodingKey {
-            case nr, t, bis, run, teile, kamera, punkte
+            case nr, t, bis, run, teile, kamera, punkte, farbe, geraet
             case laengeMm = "laenge_mm"
         }
     }
@@ -293,10 +343,12 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
     public var auswahlVerlauf: [AuswahlProbe]
     public var ende: JSONValue
     public var bild: Bild?
+    /// I-4: Gerät, an dem gesprochen wurde (`FeedbackGeraet`); fehlt in älteren Paketen.
+    public var geraet: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case format, name, erstellt, spracherkennung, wortzeiten, projekt, run, abschnitte, worte, saetze, striche, mausweg
-        case ende, bild
+        case ende, bild, geraet
         case uhrStart = "uhr_start"
         case dauerS = "dauer_s"
         case kameraVerlauf = "kamera_verlauf"
@@ -314,6 +366,7 @@ public struct FeedbackPaket: Codable, Equatable, Sendable {
         try c.encode(wortzeiten, forKey: .wortzeiten)
         try c.encode(projekt, forKey: .projekt)
         try c.encode(run, forKey: .run)
+        try c.encodeIfPresent(geraet, forKey: .geraet)
         try c.encode(abschnitte, forKey: .abschnitte)
         try c.encode(worte, forKey: .worte)
         try c.encode(saetze, forKey: .saetze)

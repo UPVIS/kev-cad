@@ -3100,6 +3100,10 @@ FEEDBACK_ZEIGEWOERTER = ("hier", "da", "dort", "dahin", "hierhin", "dorthin", "d
                          "diesem", "diesen")
 FEEDBACK_ERKENNUNGEN = ("wortlaut-parakeet", "apple-dictation", "apple-speech", "test")
 FEEDBACK_WORTZEITEN = ("ton", "geschaetzt")
+#: I-4 (PLAN-IPAD.md 4.4): Strichfarben aus dem Werkzeugkranz; Kevin nennt sie beim Sprechen („die rote Linie“)
+FEEDBACK_STRICHFARBEN = ("rot", "gelb", "gruen", "blau", "weiss")
+#: Gerät, an dem gesprochen bzw. gezeichnet wurde
+FEEDBACK_GERAETE = ("mac", "ipad")
 _FEEDBACK_NAME = re.compile(r"fb-\d{8}-\d{6}(-\d+)?")
 
 
@@ -3203,6 +3207,8 @@ def check_feedback_paket(p: Any) -> list[str]:
         out.append("projekt fehlt")
     if not isinstance(p.get("run"), int):
         out.append("run fehlt")
+    if p.get("geraet") is not None and p["geraet"] not in FEEDBACK_GERAETE:
+        out.append(f"geraet {p.get('geraet')!r} unbekannt")
     for feld in ("abschnitte", "worte", "saetze", "striche", "mausweg", "kamera_verlauf", "auswahl_verlauf"):
         if not isinstance(p.get(feld), list):
             out.append(f"{feld} keine Liste")
@@ -3256,6 +3262,11 @@ def check_feedback_paket(p: Any) -> list[str]:
             out.append(f"{wo}: teile oder laenge_mm fehlt")
         if not isinstance(s.get("kamera"), dict):
             out.append(f"{wo}: kamera fehlt")
+        # I-4: Farbe und Gerät je Strich; ältere Pakete haben sie nicht
+        if s.get("farbe") is not None and s["farbe"] not in FEEDBACK_STRICHFARBEN:
+            out.append(f"{wo}: farbe {s.get('farbe')!r} unbekannt")
+        if s.get("geraet") is not None and s["geraet"] not in FEEDBACK_GERAETE:
+            out.append(f"{wo}: geraet {s.get('geraet')!r} unbekannt")
         punkte = s.get("punkte")
         if not isinstance(punkte, list) or not punkte:
             out.append(f"{wo}: keine Punkte")
@@ -3298,7 +3309,7 @@ def feedback_beispiel() -> dict[str, Any]:
         "format": FEEDBACK_FORMAT, "name": "fb-20261105-223011", "erstellt": "2026-11-05T22:30:11+01:00",
         "uhr_start": 1793480977.25, "dauer_s": 9.5, "spracherkennung": "wortlaut-parakeet",
         "wortzeiten": "geschaetzt",
-        "projekt": {"name": "Halter", "pfad": "/Users/kevin/Documents/Kev CAD/Halter"}, "run": 7,
+        "projekt": {"name": "Halter", "pfad": "/Users/kevin/Documents/Kev CAD/Halter"}, "run": 7, "geraet": "mac",
         "abschnitte": [{"von": 0.0, "bis": 3.5}, {"von": 5.5, "bis": 9.5}],
         "worte": [{"text": t, "von": a, "bis": b, "satz": s} for t, a, b, s in worte],
         "saetze": [
@@ -3310,9 +3321,11 @@ def feedback_beispiel() -> dict[str, Any]:
         ],
         "striche": [
             {"nr": 1, "t": 1.9, "bis": 2.5, "run": 7, "teile": [lasche], "laenge_mm": 84.5, "kamera": kamera,
+             "farbe": "rot", "geraet": "mac",
              "punkte": [{"t": 1.9, "bild": [612, 402], "welt": [118.0, 4.0, 60.0], "ref": lasche_f},
                         {"t": 2.5, "bild": [690, 330], "welt": [190.0, 4.0, 88.0], "ref": lasche_f}]},
             {"nr": 2, "t": 8.0, "bis": 8.4, "run": 7, "teile": [], "laenge_mm": 40.0, "kamera": kamera2,
+             "farbe": "blau", "geraet": "mac",
              "punkte": [{"t": 8.0, "bild": [100, 100], "welt": [40.0, 0.0, 200.0], "ref": None},
                         {"t": 8.4, "bild": [140, 100], "welt": [80.0, 0.0, 200.0], "ref": None}]},
         ],

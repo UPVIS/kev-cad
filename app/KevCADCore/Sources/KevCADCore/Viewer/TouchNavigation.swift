@@ -15,7 +15,8 @@ import simd
 //   oder Sichtbarkeit zurück, 3 Finger tippen wiederholt (AnsichtsVerlauf.swift). Das Kreismenü der Ansichten bleibt
 //   über ^ und später den Werkzeugkranz (I-4) erreichbar. Vom Rand wischen öffnet die Leisten (iPad-Hülle, RandWischen).
 // - Stift: Schweben zeigt wie die Maus (Hervorhebung, Maß-Vorschau, beim Sprechen „das hier“), Tippen wählt aus,
-//   Ziehen zeichnet beim Sprechen, sonst dreht es. Werkzeugkranz, Strichfarben und Start des Sprechens per Strich: I-4.
+//   Ziehen zeichnet beim Sprechen; ohne Sitzung beginnt ein Strich das Sprechen (I-4, abschaltbar, dann dreht er).
+//   Doppeltippen am Pencil (Pencil Pro: Drücken) öffnet den Werkzeugkranz an der Spitze (I-4, UIPencilInteraction).
 // - Trackpad und Maus: Zeiger zeigt wie die Maus, zwei Finger drehen (⇧ verschieben, ⌃ oder ⌘ zoomen), Zoomgeste zoomt,
 //   der Sekundärklick öffnet das Kontextmenü.
 // - Magic Keyboard: Kürzel des Viewers aus Tastenbelegung.swift (HID-Codes werden den Tastencodes des Mac zugeordnet),
@@ -24,10 +25,11 @@ import simd
 // Hinweisleiste und Übersicht beschreiben diese Gesten aus `Tastenbelegung.gesten`: Wer hier eine Geste ändert oder
 // dazunimmt, trägt sie dort im selben Schritt nach.
 //
-// Noch offen: Werkzeugkranz (I-4).
+// Noch offen: Rollen am Pencil Pro für den Drehregler des Werkzeugkranzes (I-4).
 
 /// Eingabeebene über dem MTKView (Name wie am Mac, damit Koordinator und Viewport auf beiden Seiten gleich bleiben).
-final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate {
+final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate,
+    UIPencilInteractionDelegate {
     weak var coordinator: ViewportCoordinator? {
         didSet { aktivGeaendert() }
     }
@@ -108,6 +110,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         }
         addGestureRecognizer(schweben)
         addInteraction(kontextMenue)
+        addInteraction(UIPencilInteraction(delegate: self))
 
         strichLayer.fillColor = nil
         strichLayer.strokeColor = CGColor(srgbRed: CGFloat(ViewerStil.strich.x), green: CGFloat(ViewerStil.strich.y),
@@ -162,6 +165,11 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         if coordinator?.eingabe.navigation != n { coordinator?.eingabe.navigation = n }
     }
 
+    /// I-4: Dort öffnet der Werkzeugkranz, wenn der Stift nicht schwebt.
+    private func beruehrt(_ g: UIGestureRecognizer) {
+        coordinator?.letzteBeruehrung = eingabePunkt(g.location(in: self))
+    }
+
     private func bedient() {
         if !isFirstResponder { becomeFirstResponder() }  // Tastatur des Magic Keyboard gilt jetzt dem Viewer
         coordinator?.fahrtAbbrechen()
@@ -202,6 +210,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         switch g.state {
         case .began:
             bedient()
+            beruehrt(g)
             letzteVerschiebung = .zero
             let t = g.translation(in: self)
             let start = eingabePunkt(CGPoint(x: g.location(in: self).x - t.x, y: g.location(in: self).y - t.y))
@@ -264,6 +273,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     @objc private func tippenGeste(_ g: UITapGestureRecognizer) {
         guard g.state == .ended, let c = coordinator else { return }
         bedient()
+        beruehrt(g)
         let p = eingabePunkt(g.location(in: self))
         let flags = g.modifierFlags  // ⇧ am Magic Keyboard ergänzt die Auswahl wie am Mac
         c.pickPoint(p, in: self) { [weak self] result in
@@ -373,15 +383,17 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         switch g.state {
         case .began:
             bedient()
+            beruehrt(g)
             let t = g.translation(in: self)
             let start = eingabePunkt(CGPoint(x: g.location(in: self).x - t.x, y: g.location(in: self).y - t.y))
             letzteVerschiebung = .zero
-            if c.zeichnen {
+            // I-4: Ohne laufendes Sprechen beginnt der Strich die Sitzung (Vorgabe, im Kranz abschaltbar); geht das
+            // nicht (abgeschaltet, kein Projekt), dreht der Stift wie ein Finger
+            if c.zeichnen || c.stiftBeginntSprechen?() == true {
                 modus = .strich
                 strichBeginnen(start)
                 strichZiehen(p)
             } else {
-                // I-4: ein Strich ohne Sitzung startet das Sprechen; bis dahin dreht der Stift wie ein Finger
                 modus = .drehen
                 beginneDrehung(bei: start)
             }
@@ -396,6 +408,25 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             if modus == .strich { strichBeenden(p) } else { endeDrehung() }
             modus = .ruht
         }
+    }
+
+    // MARK: Pencil doppelt tippen und drücken (I-4)
+
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+        guard UIPencilInteraction.preferredTapAction != .ignore else { return }  // Kevin hat es in den Einstellungen aus
+        kranzAnDerSpitze(tap.hoverPose?.location)
+    }
+
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+        guard squeeze.phase == .ended, UIPencilInteraction.preferredSqueezeAction != .ignore else { return }
+        kranzAnDerSpitze(squeeze.hoverPose?.location)
+    }
+
+    /// Kranz an der Spitze (sie schwebt), sonst an der letzten Berührung.
+    private func kranzAnDerSpitze(_ ort: CGPoint?) {
+        if let ort { zeiger = eingabePunkt(ort) }
+        _ = coordinator?.onBefehl?(.werkzeugkranz)
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     // Stift schwebt, Trackpad- oder Mauszeiger: zeigt wie die Maus am Mac
@@ -470,6 +501,11 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     // MARK: Strich beim Sprechen (wie am Mac, V2-6)
 
     private func strichBeginnen(_ p: CGPoint) {
+        if let stil = coordinator?.strichStil() {  // I-4: Farbe und Breite aus dem Werkzeugkranz
+            strichLayer.strokeColor = CGColor(srgbRed: CGFloat(stil.farbe.x), green: CGFloat(stil.farbe.y),
+                                              blue: CGFloat(stil.farbe.z), alpha: 1)
+            strichLayer.lineWidth = stil.breite
+        }
         let pfad = CGMutablePath()
         pfad.move(to: CGPoint(x: p.x, y: bounds.height - p.y))
         strichPfad = pfad

@@ -81,12 +81,20 @@ def lagebild_text(svc: KernelService) -> str:
     return "\n".join(zeilen)
 
 
-def _bezug_text(b: dict[str, Any], striche: dict[Any, dict[str, Any]]) -> str:
+#: I-4: Strichfarben und Geräte, wie Kevin sie nennt („die rote Linie“)
+_FARBEN = {"rot": "rot", "gelb": "gelb", "gruen": "grün", "blau": "blau", "weiss": "weiß"}
+_GERAETE = {"mac": "Mac", "ipad": "iPad"}
+
+
+def _bezug_text(b: dict[str, Any], striche: dict[Any, dict[str, Any]], geraet: Any = None) -> str:
     if b.get("art") == "strich":
         s = striche.get(b.get("strich")) or {}
         teile = ", ".join(b.get("teile") or [])
         ort = f"auf {teile}" if teile else "in der Bildebene"
-        return f"Strich {b.get('strich')} {ort}, {fmt.num(s.get('laenge_mm'), 0)} mm"
+        farbe = f" {_FARBEN[s['farbe']]}" if s.get("farbe") in _FARBEN else ""
+        # Gerät nur, wenn der Strich von einem anderen kam als das Gesprochene
+        woher = f" (am {_GERAETE[s['geraet']]})" if s.get("geraet") in _GERAETE and s.get("geraet") != geraet else ""
+        return f"Strich {b.get('strich')}{farbe}{woher} {ort}, {fmt.num(s.get('laenge_mm'), 0)} mm"
     wort = f"„{b['wort']}“ = " if b.get("wort") else ""
     ort = f" bei {fmt.vec(b['punkt'], 0)}" if isinstance(b.get("punkt"), list) else ""
     return f"{wort}{b.get('ref') or b.get('teil')}{ort}"
@@ -96,14 +104,16 @@ def feedback_text(paket: dict[str, Any], aktueller_lauf: int | None = None) -> s
     """Knapper Text für den Agenten: je Satz die Worte und worauf Kevin dabei gezeigt hat."""
     saetze = paket.get("saetze") or []
     striche = {s.get("nr"): s for s in paket.get("striche") or []}
-    kopf = (f"Kevin ist fertig: {fmt.plural(len(saetze), 'Satz', 'Sätze')}, "
+    geraet = paket.get("geraet")
+    am = f" am {_GERAETE[geraet]}" if geraet == "ipad" else ""  # der Mac ist der gewohnte Fall
+    kopf = (f"Kevin ist fertig{am}: {fmt.plural(len(saetze), 'Satz', 'Sätze')}, "
             f"{fmt.plural(len(striche), 'Strich', 'Striche')}, {zeit_text(paket.get('dauer_s'))} "
             f"({paket.get('name')}, Lauf {paket.get('run')})")
     zeilen = [kopf]
     for s in saetze:
         hinweis = " (noch nicht endgültig erkannt)" if s.get("vorlaeufig") else ""
         zeilen.append(f"{s.get('nr')}. [{zeit_text(s.get('von'))}] „{s.get('text')}“{hinweis}")
-        bezuege = [_bezug_text(b, striche) for b in s.get("bezuege") or []]
+        bezuege = [_bezug_text(b, striche, geraet) for b in s.get("bezuege") or []]
         if bezuege:
             zeilen.append("   → " + "; ".join(bezuege))
         refs = (s.get("auswahl") or {}).get("refs") or []
@@ -116,7 +126,7 @@ def feedback_text(paket: dict[str, Any], aktueller_lauf: int | None = None) -> s
         b.get("strich") == nr for satz in saetze for b in satz.get("bezuege") or [])]
     for s in frei:
         zeilen.append("Ohne Satz: " + _bezug_text({"art": "strich", "strich": s.get("nr"), "teile": s.get("teile")},
-                                                  striche))
+                                                  striche, geraet))
     ende = paket.get("ende") if isinstance(paket.get("ende"), dict) else {}
     sichtbar = ende.get("sichtbar")
     if isinstance(sichtbar, list):

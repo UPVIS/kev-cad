@@ -222,6 +222,10 @@ struct KevCADCommands: Commands {
                 Button("Darstellung wählen …") { viewer?.menueOeffnen(.darstellung) }
                     .tastenkuerzel(.shadingMenue)
                     .disabled(viewer == nil)
+                // I-4: derselbe Kranz wie am iPad mit dem Stift, hier an der Maus
+                Button("Werkzeugkranz …") { viewer?.ausfuehren(.werkzeugkranz) }
+                    .tastenkuerzel(.werkzeugkranz)
+                    .disabled(viewer == nil)
                 Toggle("Röntgen", isOn: Binding(
                     get: { model.viewer.shading == .roentgen }, set: { _ in viewer?.ausfuehren(.roentgen) }))
                     .tastenkuerzel(.roentgen)

@@ -128,9 +128,11 @@ public struct FeedbackSitzung: Sendable {
 
     // MARK: Striche
 
-    public mutating func strichBeginnen(t: Double, run: Int, kamera: JSONValue) {
+    /// `farbe` und `geraet` (I-4): aus dem Werkzeugkranz bzw. das Gerät, an dem gezeichnet wird.
+    public mutating func strichBeginnen(t: Double, run: Int, kamera: JSONValue, farbe: Strichfarbe? = nil,
+                                        geraet: FeedbackGeraet? = nil) {
         offenerStrich = Paket.Strich(nr: striche.count + 1, t: t, bis: t, run: run, teile: [], laengeMm: 0,
-                                     kamera: kamera, punkte: [])
+                                     kamera: kamera, punkte: [], farbe: farbe?.rawValue, geraet: geraet?.rawValue)
     }
 
     public mutating func strichPunkt(_ p: Paket.StrichPunkt, teil: String?) {
@@ -294,7 +296,8 @@ public struct FeedbackSitzung: Sendable {
 
     /// Das fertige Paket. `dauer` in Sekunden der Uhr; offene Striche und Abschnitte schließt es selbst.
     public func paket(name: String, erstellt: Date, dauer: Double, spracherkennung: String, wortzeiten: String = "ton",
-                      projekt: Paket.Projekt, run: Int, ende: JSONValue, bild: Paket.Bild?) -> Paket {
+                      projekt: Paket.Projekt, run: Int, ende: JSONValue, bild: Paket.Bild?,
+                      geraet: FeedbackGeraet? = nil) -> Paket {
         var s = self
         s.strichEnden(t: dauer)
         s.mikrofonAus(t: dauer)
@@ -306,6 +309,6 @@ public struct FeedbackSitzung: Sendable {
             dauerS: dauer, spracherkennung: spracherkennung, wortzeiten: wortzeiten, projekt: projekt, run: run,
             abschnitte: s.abschnitte,
             worte: worte, saetze: saetze, striche: s.striche, mausweg: s.mausweg, kameraVerlauf: s.kameraVerlauf,
-            auswahlVerlauf: s.auswahlVerlauf, ende: ende, bild: bild)
+            auswahlVerlauf: s.auswahlVerlauf, ende: ende, bild: bild, geraet: geraet?.rawValue)
     }
 }

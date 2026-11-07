@@ -31,6 +31,8 @@ public enum ViewerBefehl: String, CaseIterable, Sendable {
     case sprechen, sprechenFertig, sprechenVerwerfen
     // Verlauf von Ansicht, Auswahl und Sichtbarkeit (I-3b)
     case rueckgaengig, wiederholen
+    // Werkzeugkranz (I-4)
+    case werkzeugkranz
     // Hilfe
     case tastenuebersicht, hinweisleiste
 }
@@ -130,7 +132,27 @@ public enum BelegungsGruppe: String, CaseIterable, Sendable {
     case aufnahme = "Bild und Video"
     case sprechen = "Sprechen"
     case verlauf = "Rückgängig"
+    case kranz = "Werkzeugkranz"
     case hilfe = "Hilfe"
+}
+
+/// Auslöser eines Befehls am iPad ohne Tastatur (I-4, Befehlskatalog). Der Werkzeugkranz kommt aus
+/// `Tastenbelegung.kranz…` dazu und steht hier nicht noch einmal.
+public enum IPadAusloeser: Hashable, Sendable {
+    /// Finger- oder Stiftgeste aus `Tastenbelegung.gesten`
+    case geste(GestenBelegung.Geste)
+    /// Knopf auf dem Bildschirm (Daumenleiste, Knopf „Maße“ …)
+    case knopf(String)
+    /// bewusst ohne Auslöser am iPad, mit Grund
+    case ausnahme(String)
+
+    public var text: String {
+        switch self {
+        case .geste(let g): return GestenBelegung(geste: g, wirkung: "", zustand: .immer).eingabe
+        case .knopf(let k): return "Knopf „\(k)“"
+        case .ausnahme(let grund): return "nur mit Tastatur: \(grund)"
+        }
+    }
 }
 
 /// Eine Zeile der Belegung: Befehl, Titel und Tasten (die erste ist das Menükürzel).
@@ -141,6 +163,8 @@ public struct Belegung: Identifiable, Sendable {
     public var tasten: [Taste]
     /// Kurze Erklärung für die Übersicht.
     public var erklaerung: String?
+    /// Auslöser am iPad außer dem Werkzeugkranz (Gesten, Knöpfe); die Tasten oben gelten am Magic Keyboard ohnehin.
+    public var ipad: [IPadAusloeser] = []
 
     public var id: ViewerBefehl { befehl }
     public var menuTaste: Taste? { tasten.first { $0.keyEquivalent != nil } }
@@ -192,7 +216,8 @@ public struct GestenBelegung: Identifiable, Sendable {
     public enum Geste: String, Sendable, CaseIterable {
         case einFinger = "1 Finger", zweiFinger = "2 Finger", spreizen = "Spreizen", tippen = "Tippen",
             doppeltTippen = "2× Tippen", halten = "Halten", zweiFingerTippen = "2 Finger tippen",
-            dreiFingerTippen = "3 Finger tippen", randWischen = "Vom Rand", stift = "Stift", schweben = "Schweben"
+            dreiFingerTippen = "3 Finger tippen", randWischen = "Vom Rand", stift = "Stift", schweben = "Schweben",
+            stiftDoppelt = "Stift 2×"
     }
 
     public var geste: Geste
@@ -224,6 +249,7 @@ public struct GestenBelegung: Identifiable, Sendable {
         case .randWischen: return "Vom Rand wischen, zum Rand hin schließt"
         case .stift: return "Stift ziehen"
         case .schweben: return "Stift über dem Glas"
+        case .stiftDoppelt: return "Pencil doppelt tippen (Pencil Pro: drücken)"
         }
     }
 }
@@ -242,27 +268,35 @@ public enum Tastenbelegung {
                  erklaerung: "Blick von der anderen Seite"),
         Belegung(befehl: .projektion, titel: "Perspektive oder parallel", gruppe: .ansicht, tasten: [.z("5")]),
         Belegung(befehl: .auswahlEinrahmen, titel: "Auswahl einrahmen", gruppe: .ansicht,
-                 tasten: [.z("."), .z(","), .z("f")], erklaerung: "ohne Auswahl alles"),
+                 tasten: [.z("."), .z(","), .z("f")], erklaerung: "ohne Auswahl alles", ipad: [.geste(.doppeltTippen)]),
         Belegung(befehl: .allesEinrahmen, titel: "Alles einrahmen", gruppe: .ansicht,
-                 tasten: [Taste(.pos1), .z("c", .umschalt)]),
+                 tasten: [Taste(.pos1), .z("c", .umschalt)], ipad: [.geste(.doppeltTippen)]),
         Belegung(befehl: .ansichtMenue, titel: "Ansichtsmenü", gruppe: .ansicht, tasten: [Taste(.linksVon1)],
                  erklaerung: "Taste links der 1, Maus über dem Viewport"),
         Belegung(befehl: .kameraBlick, titel: "Durch Kamera schauen", gruppe: .ansicht, tasten: [.z("0")]),
         Belegung(befehl: .kameraAufAnsicht, titel: "Aktive Kamera auf Ansicht setzen", gruppe: .ansicht,
                  tasten: [.z("0", [.strg, .wahl])]),
         // Navigation in Schritten
-        Belegung(befehl: .drehenLinks, titel: "Nach links drehen", gruppe: .navigation, tasten: [.z("4")]),
-        Belegung(befehl: .drehenRechts, titel: "Nach rechts drehen", gruppe: .navigation, tasten: [.z("6")]),
-        Belegung(befehl: .drehenHoch, titel: "Nach oben drehen", gruppe: .navigation, tasten: [.z("8")]),
-        Belegung(befehl: .drehenRunter, titel: "Nach unten drehen", gruppe: .navigation, tasten: [.z("2")]),
-        Belegung(befehl: .schwenkenLinks, titel: "Nach links schwenken", gruppe: .navigation, tasten: [.z("4", .strg)]),
+        Belegung(befehl: .drehenLinks, titel: "Nach links drehen", gruppe: .navigation, tasten: [.z("4")],
+                 ipad: [.geste(.einFinger)]),
+        Belegung(befehl: .drehenRechts, titel: "Nach rechts drehen", gruppe: .navigation, tasten: [.z("6")],
+                 ipad: [.geste(.einFinger)]),
+        Belegung(befehl: .drehenHoch, titel: "Nach oben drehen", gruppe: .navigation, tasten: [.z("8")],
+                 ipad: [.geste(.einFinger)]),
+        Belegung(befehl: .drehenRunter, titel: "Nach unten drehen", gruppe: .navigation, tasten: [.z("2")],
+                 ipad: [.geste(.einFinger)]),
+        Belegung(befehl: .schwenkenLinks, titel: "Nach links schwenken", gruppe: .navigation, tasten: [.z("4", .strg)],
+                 ipad: [.geste(.zweiFinger)]),
         Belegung(befehl: .schwenkenRechts, titel: "Nach rechts schwenken", gruppe: .navigation,
-                 tasten: [.z("6", .strg)]),
-        Belegung(befehl: .schwenkenHoch, titel: "Nach oben schwenken", gruppe: .navigation, tasten: [.z("8", .strg)]),
+                 tasten: [.z("6", .strg)], ipad: [.geste(.zweiFinger)]),
+        Belegung(befehl: .schwenkenHoch, titel: "Nach oben schwenken", gruppe: .navigation, tasten: [.z("8", .strg)],
+                 ipad: [.geste(.zweiFinger)]),
         Belegung(befehl: .schwenkenRunter, titel: "Nach unten schwenken", gruppe: .navigation,
-                 tasten: [.z("2", .strg)]),
-        Belegung(befehl: .zoomRein, titel: "Heranzoomen", gruppe: .navigation, tasten: [.z("+")]),
-        Belegung(befehl: .zoomRaus, titel: "Herauszoomen", gruppe: .navigation, tasten: [.z("-")]),
+                 tasten: [.z("2", .strg)], ipad: [.geste(.zweiFinger)]),
+        Belegung(befehl: .zoomRein, titel: "Heranzoomen", gruppe: .navigation, tasten: [.z("+")],
+                 ipad: [.geste(.spreizen)]),
+        Belegung(befehl: .zoomRaus, titel: "Herauszoomen", gruppe: .navigation, tasten: [.z("-")],
+                 ipad: [.geste(.spreizen)]),
         // Auswahl
         Belegung(befehl: .allesAuswaehlen, titel: "Alles auswählen", gruppe: .auswahl, tasten: [.z("a")]),
         Belegung(befehl: .auswahlAufheben, titel: "Auswahl aufheben", gruppe: .auswahl, tasten: [.z("a", .wahl)]),
@@ -270,7 +304,7 @@ public enum Tastenbelegung {
         Belegung(befehl: .elementModus, titel: "Flächen und Kanten auswählen", gruppe: .auswahl,
                  tasten: [Taste(.tab)], erklaerung: "zwischen ganzen Teilen und Elementen wechseln"),
         Belegung(befehl: .abbrechen, titel: "Abbrechen", gruppe: .auswahl, tasten: [Taste(.esc)],
-                 erklaerung: "Messen oder Werkzeug beenden, sonst Auswahl aufheben"),
+                 erklaerung: "Messen oder Werkzeug beenden, sonst Auswahl aufheben", ipad: [.geste(.tippen)]),
         // Sichtbarkeit
         Belegung(befehl: .ausblenden, titel: "Ausblenden", gruppe: .sichtbarkeit, tasten: [.z("h")]),
         Belegung(befehl: .andereAusblenden, titel: "Andere ausblenden", gruppe: .sichtbarkeit,
@@ -292,7 +326,8 @@ public enum Tastenbelegung {
         // Kevin, 07.11.2026: „nicht weiß, wie ich Messungen ein- und ausblende … insbesondere auf dem iPad“. Am iPad
         // ohne Tastatur dieselben Befehle über den Knopf „Maße“ unten im Viewer (ViewportArea, MassePill).
         Belegung(befehl: .masseUmschalten, titel: "Maße ein- und ausblenden", gruppe: .messen,
-                 tasten: [.z("m", .umschalt)], erklaerung: "auch der Knopf „Maße“ unten im Viewer"),
+                 tasten: [.z("m", .umschalt)], erklaerung: "auch der Knopf „Maße“ unten im Viewer",
+                 ipad: [.knopf("Maße")]),
         Belegung(befehl: .masseLoeschen, titel: "Alle Maße löschen", gruppe: .messen, tasten: [.z("m", .wahl)],
                  erklaerung: "Messungen und stehende Einblendungen des Agenten"),
         // Bild und Video
@@ -304,16 +339,22 @@ public enum Tastenbelegung {
                  tasten: [.z("r", [.befehl, .wahl, .umschalt])]),
         // Sprechen: ↩ und esc teilen sich die Tasten oben, eine offene Sitzung geht dort vor
         Belegung(befehl: .sprechen, titel: "Sprechen an und aus", gruppe: .sprechen, tasten: [.z("v")],
-                 erklaerung: "aus hält an, die Sitzung bleibt offen"),
+                 erklaerung: "aus hält an, die Sitzung bleibt offen", ipad: [.knopf("Sprechen")]),
         Belegung(befehl: .sprechenFertig, titel: "Fertig, an den Agenten schicken", gruppe: .sprechen,
-                 tasten: [Taste(.eingabe)], erklaerung: "mit Text, Zeiger und Strichen"),
-        Belegung(befehl: .sprechenVerwerfen, titel: "Sitzung verwerfen", gruppe: .sprechen, tasten: [Taste(.esc)]),
+                 tasten: [Taste(.eingabe)], erklaerung: "mit Text, Zeiger und Strichen", ipad: [.knopf("Senden")]),
+        Belegung(befehl: .sprechenVerwerfen, titel: "Sitzung verwerfen", gruppe: .sprechen, tasten: [Taste(.esc)],
+                 ipad: [.knopf("Verwerfen")]),
         // Rückgängig (I-3b): am Mac über das Menü Bearbeiten, solange der Viewer die Tastatur hat; am iPad auch 2 und 3
         // Finger tippen und die Daumenleiste
         Belegung(befehl: .rueckgaengig, titel: "Ansicht, Auswahl oder Sichtbarkeit zurück", gruppe: .verlauf,
-                 tasten: [.z("z", .befehl)], erklaerung: "am iPad auch 2 Finger tippen"),
+                 tasten: [.z("z", .befehl)], erklaerung: "am iPad auch 2 Finger tippen",
+                 ipad: [.geste(.zweiFingerTippen), .knopf("↶")]),
         Belegung(befehl: .wiederholen, titel: "Wiederholen", gruppe: .verlauf, tasten: [.z("z", [.befehl, .umschalt])],
-                 erklaerung: "am iPad auch 3 Finger tippen"),
+                 erklaerung: "am iPad auch 3 Finger tippen", ipad: [.geste(.dreiFingerTippen), .knopf("↷")]),
+        // Werkzeugkranz (I-4, PLAN-IPAD.md 4.4): am Mac an der Maus, am iPad an der Stiftspitze
+        Belegung(befehl: .werkzeugkranz, titel: "Werkzeugkranz", gruppe: .kranz, tasten: [.z("q")],
+                 erklaerung: "Farben, Ansichten, Darstellung und mehr an der Maus; Rad dreht den Regler",
+                 ipad: [.geste(.stiftDoppelt), .knopf("Kranz")]),
         // Hilfe
         Belegung(befehl: .tastenuebersicht, titel: "Tastenübersicht", gruppe: .hilfe, tasten: [.z("?")]),
         Belegung(befehl: .hinweisleiste, titel: "Hinweisleiste an/aus", gruppe: .hilfe,
@@ -368,12 +409,108 @@ public enum Tastenbelegung {
         GestenBelegung(geste: .zweiFingerTippen, wirkung: "Ansicht, Auswahl oder Sichtbarkeit zurück", zustand: .immer,
                        kurz: "Zurück"),
         GestenBelegung(geste: .dreiFingerTippen, wirkung: "Wiederholen", zustand: .immer),
-        GestenBelegung(geste: .stift, wirkung: "Drehen wie mit einem Finger", zustand: .auswahl, kurz: "Drehen"),
+        // I-4: Ein Strich ohne Sitzung beginnt das Sprechen (abschaltbar im Kranz unter „Mehr“, dann dreht der Stift)
+        GestenBelegung(geste: .stift, wirkung: "Strich: Sprechen beginnt und der Stift zeichnet", zustand: .auswahl,
+                       kurz: "Sprechen"),
+        GestenBelegung(geste: .stiftDoppelt, wirkung: "Werkzeugkranz an der Spitze", zustand: .immer, kurz: "Kranz"),
         GestenBelegung(geste: .schweben, wirkung: "Zeigen wie die Maus: Teil leuchtet, beim Messen die Vorschau",
                        zustand: .immer, kurz: "Zeigen"),
         GestenBelegung(geste: .randWischen, wirkung: "Links die Gliederung, rechts die Eigenschaften (wie ⌘1, ⌘2)",
                        zustand: .immer, kurz: "Leisten"),
     ]
+
+    // MARK: Werkzeugkranz (I-4)
+
+    /// Was ein Feld des Kranzes ohne zweiten Ring direkt tut.
+    public static func kranzDirekt(_ feld: KranzFeld) -> KranzAktion? {
+        feld == .sprechen ? .sprechenOderSenden : nil
+    }
+
+    /// Der zweite Ring eines Felds (leer: das Feld wirkt direkt, `kranzDirekt`). Reihenfolge = Lage im Uhrzeigersinn
+    /// ab oben; bei den Ansichten liegen Oben, Rechts, Unten und Links in ihrer Richtung.
+    public static func kranz(_ feld: KranzFeld) -> [KranzEintrag] {
+        switch feld {
+        case .sprechen:
+            return []
+        case .ansichten:
+            return [.befehl(.oben, "arrow.up.to.line"), .befehl(.hinten, "square.dashed"),
+                    .befehl(.gegenseite, "arrow.triangle.2.circlepath"), .befehl(.rechts, "arrow.right.to.line"),
+                    .befehl(.projektion, "perspective", "Perspektive"), .befehl(.vorne, "square"),
+                    .befehl(.unten, "arrow.down.to.line"), .befehl(.kameraBlick, "camera", "Kamera"),
+                    KranzEintrag("Zweite Ansicht", "rectangle.split.2x1", .kachel(.ansicht)),
+                    .befehl(.links, "arrow.left.to.line"),
+                    .befehl(.allesEinrahmen, "arrow.up.left.and.arrow.down.right"),
+                    .befehl(.auswahlEinrahmen, "scope")]
+        case .darstellung:
+            return ShadingModus.allCases.filter { $0 != .roentgen }.map {
+                KranzEintrag($0.titel, $0.symbol, .darstellung($0))
+            } + [.befehl(.roentgen, ShadingModus.roentgen.symbol, "Röntgen"),
+                 KranzEintrag(KranzRegler.explosion.name, KranzRegler.explosion.symbol, .regler(.explosion)),
+                 KranzEintrag(KranzRegler.schnitt.name, KranzRegler.schnitt.symbol, .regler(.schnitt)),
+                 .befehl(.explosion, "square.stack.3d.up", "Explosion an/aus"),
+                 .befehl(.schnitt, "rectangle.split.1x2", "Schnitt an/aus")]
+        case .messen:
+            return [.befehl(.messen, "ruler", "Messen an/aus"),
+                    .befehl(.messungAbschliessen, "circle.dashed", "Element allein messen"),
+                    .befehl(.masseUmschalten, "eye.slash", "Maße zeigen"),
+                    .befehl(.masseLoeschen, "trash", "Maße löschen")]
+        case .sichtbarkeit:
+            return [.befehl(.isolieren, "circle.circle", "Isolieren"), .befehl(.ausblenden, "eye.slash"),
+                    .befehl(.andereAusblenden, "rectangle.dashed"), .befehl(.allesEinblenden, "eye"),
+                    .befehl(.elementModus, "square.on.square.dashed", "Teil oder Element"),
+                    .befehl(.allesAuswaehlen, "checkmark.circle"),
+                    .befehl(.auswahlUmkehren, "arrow.left.arrow.right"),
+                    .befehl(.auswahlAufheben, "xmark.circle")]
+        case .kacheln:
+            return [(KachelArt.druck, "printer"), (.zeichnung, "doc.richtext"), (.bauplan, "list.number"),
+                    (.stueckliste, "list.bullet.rectangle"), (.animation, "play.circle"), (.simulation, "scalemass"),
+                    (.versionen, "clock.arrow.circlepath"), (.render, "camera.aperture")].map {
+                KranzEintrag($0.0.titel, $0.1, .kachel($0.0))
+            }
+        case .agent:
+            return [KranzEintrag("Neu rechnen", "arrow.clockwise", .neuRechnen),
+                    KranzEintrag("Meilensteine", "flag", .kachel(.versionen)),
+                    .befehl(.sprechenVerwerfen, "xmark", "Sitzung verwerfen")]
+        case .mehr:
+            let breite = KranzRegler.strichbreite
+            return [KranzEintrag(breite.name, breite.symbol, .regler(breite)),
+                    KranzEintrag("Stift startet Sprechen", "pencil.and.scribble", .stiftSprechen),
+                    .befehl(.bildschirmfoto, "camera", "Bildschirmfoto"),
+                    .befehl(.video, "video", "Video"),
+                    .befehl(.navigationAufnehmen, "record.circle", "Navigation aufnehmen"),
+                    .befehl(.kameraAufAnsicht, "camera.viewfinder", "Kamera auf Ansicht"),
+                    .befehl(.hinweisleiste, "text.below.photo", "Hinweisleiste"),
+                    .befehl(.tastenuebersicht, "keyboard", "Tastenübersicht")]
+        }
+    }
+
+    /// Befehle, die ein Feld selbst ersetzt (das Feld öffnet dasselbe wie die Taste am Mac).
+    static func kranzDeckt(_ feld: KranzFeld) -> [ViewerBefehl] {
+        switch feld {
+        case .sprechen: return [.sprechen, .sprechenFertig]
+        case .ansichten: return [.ansichtMenue]
+        case .darstellung: return [.shadingMenue]
+        default: return []
+        }
+    }
+
+    /// Weg im Kranz zu einem Befehl („Kranz › Ansichten › Vorne“); nil, wenn er dort nicht liegt.
+    public static func kranzWeg(_ befehl: ViewerBefehl) -> String? {
+        for f in KranzFeld.allCases {
+            if kranzDeckt(f).contains(befehl) { return "Kranz › \(f.name)" }
+            if let e = kranz(f).first(where: { $0.aktion == .befehl(befehl) }) {
+                return "Kranz › \(f.name) › \(e.name)"
+            }
+        }
+        return nil
+    }
+
+    /// Alle Auslöser am iPad ohne Tastatur (Befehlskatalog): Gesten, Knöpfe, Kranz.
+    public static func ipadAusloeser(_ befehl: ViewerBefehl) -> [String] {
+        var out = (belegung(befehl)?.ipad ?? []).map(\.text)
+        if let weg = kranzWeg(befehl) { out.append(weg) }
+        return out
+    }
 
     public static func belegung(_ befehl: ViewerBefehl) -> Belegung? { alle.first { $0.befehl == befehl } }
 

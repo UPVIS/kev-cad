@@ -38,6 +38,7 @@ struct ViewerOberflaeche: View {
             ViewerMenueOverlay(
                 viewer: viewer, groesse: groesse, actions: actions,
                 orthographisch: coordinator.controller.cameraState.isOrthographic)
+            WerkzeugkranzOverlay(viewer: viewer, oberflaeche: model.oberflaeche, groesse: groesse, actions: actions)
             if viewer.tastenuebersicht {
                 ZStack {
                     Color.black.opacity(0.18)
@@ -52,12 +53,40 @@ struct ViewerOberflaeche: View {
         .animation(.snappy(duration: 0.18), value: viewer.meldung)
         .animation(.snappy(duration: 0.18), value: viewer.menue)
         .animation(.snappy(duration: 0.18), value: viewer.tastenuebersicht)
+        .animation(.snappy(duration: 0.18), value: viewer.kranz != nil)
+        #if DEBUG
+        .task { await kranzVorfuehren() }
+        #endif
         .onChange(of: viewer.hinweisleiste, initial: true) { _, an in
             // Der Maßstab steht in der Hinweisleiste; ohne sie zeigt das Paket seinen eigenen
             coordinator.controller.showScaleBar = !an
         }
     }
 }
+
+#if DEBUG
+extension ViewerOberflaeche {
+    /// I-4, nur in Debug-Bauten: `KEVCAD_KRANZ` zeigt den Werkzeugkranz beim Start offen, für Fotos im Simulator und in
+    /// der Testvariante. Werte: `haupt`, ein Feld (`ansichten`, `darstellung` …) oder `regler:<name>` (`regler:explosion`).
+    @MainActor
+    func kranzVorfuehren() async {
+        guard let wert = ProcessInfo.processInfo.environment["KEVCAD_KRANZ"], !wert.isEmpty else { return }
+        try? await Task.sleep(for: .seconds(2))
+        guard let actions, viewer.kranz == nil else { return }
+        actions.kranzOeffnen(bei: CGPoint(x: groesse.width * 0.62, y: groesse.height * 0.5))
+        if wert.hasPrefix("regler:"), let r = KranzRegler(rawValue: String(wert.dropFirst(7))) {
+            actions.kranzAusfuehren(.regler(r))
+        } else if let f = KranzFeld(rawValue: wert), var k = viewer.kranz {
+            k.ebene = Tastenbelegung.kranz(f).isEmpty ? .haupt : .feld(f)
+            k.markiert = Tastenbelegung.kranz(f).isEmpty ? .feld(KranzFeld.allCases.firstIndex(of: f) ?? 0) : .unter(0)
+            viewer.kranz = k
+        } else if var k = viewer.kranz {
+            k.markiert = .feld(1)
+            viewer.kranz = k
+        }
+    }
+}
+#endif
 
 /// Meldung mit „Im Finder zeigen“, verschwindet nach einigen Sekunden.
 struct MeldungsLeiste: View {

@@ -373,7 +373,8 @@ public final class SprachSteuerung {
         case .beginn:
             strichAnker = nil
             let t = uhr()
-            sitzung?.strichBeginnen(t: t, run: c.scene.latestRun, kamera: c.lageKamera())
+            sitzung?.strichBeginnen(t: t, run: c.scene.latestRun, kamera: c.lageKamera(), farbe: c.viewer.strichfarbe,
+                                    geraet: .hier)
         case .punkt(let eingabe, let bild, let zeit, let treffer, let welt):
             let t = sitzung?.zeit(uptime: zeit) ?? 0
             let ref = treffer.flatMap { c.scene.resolve($0) }
@@ -394,15 +395,16 @@ public final class SprachSteuerung {
     /// Fertige Striche im Viewer; sie folgen der Kamera.
     func overlay() -> [OverlayPrimitive] {
         guard let s = sitzung else { return [] }
-        return Self.strichItems(s.striche)
+        return Self.strichItems(s.striche, breite: CGFloat(controller?.viewer.strichbreite ?? 3))
     }
 
-    static func strichItems(_ striche: [FeedbackPaket.Strich]) -> [OverlayPrimitive] {
+    /// Striche in ihrer Farbe (I-4); `breite` in Punkten aus dem Werkzeugkranz.
+    static func strichItems(_ striche: [FeedbackPaket.Strich], breite: CGFloat = 3) -> [OverlayPrimitive] {
         striche.compactMap { s in
             let punkte = s.punkte.compactMap { p -> SIMD3<Float>? in
                 p.welt.count == 3 ? SIMD3(Float(p.welt[0]), Float(p.welt[1]), Float(p.welt[2])) : nil
             }
-            return punkte.count >= 2 ? .polyline(points: punkte, color: ViewerStil.strich, width: 3) : nil
+            return punkte.count >= 2 ? .polyline(points: punkte, color: s.strichfarbe.rgba, width: breite) : nil
         }
     }
 
@@ -431,8 +433,9 @@ public final class SprachSteuerung {
         let eintrag = bild.map { FeedbackPaket.Bild(datei: name + ".jpg", breite: $0.image.width, hoehe: $0.image.height) }
         let paket = sitzung.paket(
             name: name, erstellt: erstellt, dauer: ende, spracherkennung: erkennung?.kennung ?? "test",
-            wortzeiten: erkennung?.wortzeiten ?? "ton", projekt: .init(name: projekt.name, pfad: projekt.path.path), run: run, ende: lage, bild: eintrag)
-        let overlay = Self.strichItems(paket.striche) + Self.nummern(paket.saetze)
+            wortzeiten: erkennung?.wortzeiten ?? "ton", projekt: .init(name: projekt.name, pfad: projekt.path.path),
+            run: run, ende: lage, bild: eintrag, geraet: .hier)
+        let overlay = Self.strichItems(paket.striche, breite: CGFloat(c.viewer.strichbreite)) + Self.nummern(paket.saetze)
         // Kevin ist fertig: Die Oberfläche ist frei, bevor die Datei liegt
         c.model.oberflaeche.ausfuehren(.sprechText(text))
         c.model.oberflaeche.ausfuehren(.sprechenFertig)

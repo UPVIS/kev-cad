@@ -58,6 +58,13 @@ public final class ViewportCoordinator: ObservableObject {
     public var zeichnen = false
     /// V2-6: Strich im Viewer (Beginn, je Treffer ein Punkt, Ende).
     public var onStrich: ((StrichEreignis) -> Void)?
+    /// I-4: Farbe und Breite des nächsten Strichs (Werkzeugkranz); gefragt bei jedem Strichbeginn.
+    public var strichStil: () -> (farbe: SIMD4<Float>, breite: CGFloat) = { (ViewerStil.strich, 3) }
+    /// I-4: Ein Stiftstrich ohne Sitzung beginnt das Sprechen; true = die Sitzung läuft jetzt, der Strich zeichnet.
+    public var stiftBeginntSprechen: (() -> Bool)?
+    /// I-4: Letzte Berührung mit Finger oder Stift (Eingabeebene, Ursprung unten links): Dort öffnet der Werkzeugkranz,
+    /// wenn kein Zeiger schwebt.
+    public internal(set) var letzteBeruehrung: CGPoint?
     /// Eine Kamerafahrt ist am Ziel angekommen.
     public var onFahrtEnde: (() -> Void)?
     /// Jedes Bild der Navigation (Mitschnitt): Kamera nach der Änderung.

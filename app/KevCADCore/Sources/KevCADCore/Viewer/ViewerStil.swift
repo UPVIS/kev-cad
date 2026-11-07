@@ -29,8 +29,13 @@ public enum ViewerStil {
     public static let massVorschau = SIMD4<Float>(0.95, 0.55, 0.05, 1)
     /// Fangpunkt (Ecke, Kantenmitte, Kreismitte) unter der Maus.
     public static let fangpunkt = SIMD4<Float>(1.0, 0.78, 0.1, 1)
-    /// Kevins Striche beim Sprechen (Lichtblau wie sein Text, V2-6).
+    /// Kevins Striche beim Sprechen (Lichtblau wie sein Text, V2-6); seit I-4 die Vorgabe „Blau“ der Strichfarben.
     public static let strich = SIMD4<Float>(0.56, 0.78, 1.0, 1)
+    /// Werkzeugkranz (I-4): Tönung über dem milchigen Material (Graphit „mitte“), Grund des Werts in der Mitte (Graphit
+    /// „tief“), Sprechen läuft (Rot der Aufnahme).
+    public static let kranzGrund = Color(.sRGB, red: 0.18, green: 0.188, blue: 0.204, opacity: 0.55)
+    public static let kranzWert = Color(.sRGB, red: 0.098, green: 0.102, blue: 0.114, opacity: 0.88)
+    public static let aufnahme = Color(.sRGB, red: 1.0, green: 0.294, blue: 0.243, opacity: 1)
 
     // MARK: Schrift
 

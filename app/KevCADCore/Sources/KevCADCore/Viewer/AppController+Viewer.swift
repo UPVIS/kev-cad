@@ -21,6 +21,7 @@ extension AppController: ViewerActions {
             self?.sprache.maus(pick, welt, bildpunkt)  // V2-6: Worauf zeigt Kevin beim Sprechen?
         }
         viewport.onStrich = { [weak self] e in self?.sprache.strich(e) }
+        strichStilInstallieren(viewport)
         darstellungAnwenden()
     }
 
@@ -29,6 +30,7 @@ extension AppController: ViewerActions {
     public func ausfuehren(_ befehl: ViewerBefehl) {
         // Ein offenes Menü im Viewport schließt jeder Befehl (außer dem, der es öffnet)
         if befehl != .ansichtMenue && befehl != .shadingMenue && viewer.menue != nil { viewer.menue = nil }
+        if befehl != .werkzeugkranz && befehl != .abbrechen && viewer.kranz != nil { viewer.kranz = nil }
         switch befehl {
         case .vorne: axisView(.front)
         case .hinten: axisView(.back)
@@ -86,6 +88,7 @@ extension AppController: ViewerActions {
         case .sprechenVerwerfen: sprache.verwerfen()
         case .rueckgaengig: rueckgaengig()
         case .wiederholen: wiederholen()
+        case .werkzeugkranz: kranzOeffnen(bei: nil)
         case .tastenuebersicht: viewer.tastenuebersicht.toggle()
         case .hinweisleiste: viewer.hinweisleiste.toggle()
         }
@@ -93,7 +96,9 @@ extension AppController: ViewerActions {
 
     /// Esc: Sitzung, Menü, Übersicht, Werkzeug, Messen, sonst Auswahl.
     func abbrechen() {
-        if sprache.offen {
+        if viewer.kranz != nil {
+            kranzSchliessen(zuruecksetzen: true)
+        } else if sprache.offen {
             sprache.verwerfen()
         } else if viewer.menue != nil {
             viewer.menue = nil
@@ -105,6 +110,20 @@ extension AppController: ViewerActions {
             setMeasureMode(false)
         } else {
             select([])
+        }
+    }
+
+    /// I-4: Farbe und Breite der Striche aus dem Kranz, Stift beginnt das Sprechen (Haupt- und zweiter Viewer).
+    func strichStilInstallieren(_ c: ViewportCoordinator) {
+        c.strichStil = { [weak self] in
+            guard let v = self?.viewer else { return (ViewerStil.strich, 3) }
+            return (v.strichfarbe.rgba, CGFloat(v.strichbreite))
+        }
+        c.stiftBeginntSprechen = { [weak self] in
+            // Ohne Sitzung beginnt sie, in der Pause geht sie weiter
+            guard let self, self.viewer.stiftSprechen, !self.sprache.spricht, self.model.project != nil else { return false }
+            self.oberflaeche(.sprechen(true))
+            return self.sprache.spricht
         }
     }
 

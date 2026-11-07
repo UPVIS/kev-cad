@@ -688,6 +688,11 @@ final class NavigationInputView: NSView, NSMenuItemValidation {
     // Bild. Das Ende kommt erst nach dem letzten Treffer.
 
     private func strichBeginnen(_ p: CGPoint) {
+        if let stil = coordinator?.strichStil() {  // I-4: Farbe und Breite aus dem Werkzeugkranz
+            strichLayer.strokeColor = CGColor(srgbRed: CGFloat(stil.farbe.x), green: CGFloat(stil.farbe.y),
+                                              blue: CGFloat(stil.farbe.z), alpha: 1)
+            strichLayer.lineWidth = stil.breite
+        }
         let pfad = CGMutablePath()
         pfad.move(to: p)
         strichPfad = pfad

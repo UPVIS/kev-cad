@@ -1472,6 +1472,7 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
   "wortzeiten": "geschaetzt",        // ton: aus dem Ton gemessen; geschaetzt: siehe „Eine Uhr“
   "projekt": {"name": "Halter", "pfad": "/Users/…/Halter"},
   "run": 7,                          // Lauf beim Abschließen
+  "geraet": "mac",                   // I-4: mac | ipad, Gerät der Sitzung; fehlt in älteren Paketen
   "abschnitte": [{"von": 0.0, "bis": 12.3}, {"von": 15.0, "bis": 34.2}],  // Mikrofon an
   "worte": [{"text": "Mach", "von": 1.2, "bis": 1.46, "satz": 1}],
   "saetze": [{
@@ -1487,6 +1488,7 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
   }],
   "striche": [{
     "nr": 1, "t": 2.3, "bis": 3.1, "run": 7, "teile": ["Halter/Lasche"], "laenge_mm": 84.5,
+    "farbe": "rot", "geraet": "mac", // I-4, siehe unten; fehlen in älteren Paketen
     "kamera": {},                    // wie LAGE.kamera
     "punkte": [{"t": 2.3, "bild": [612, 402], "welt": [118.0, 4.0, 60.0], "ref": "Halter/Lasche#f3"}]
   }],
@@ -1510,6 +1512,12 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
 - **`striche`:** Punkte mit `ref` liegen auf diesem Teil. Punkte ohne `ref` liegen in der Bildebene: `welt` ist der
   Punkt auf der Ebene quer zur Blickrichtung durch den letzten Treffer des Strichs, ohne Treffer durch das Ziel der
   Kamera. `teile` nennt die getroffenen Teile, `laenge_mm` die Länge über `welt`.
+- **`farbe` und `geraet` (I-4, PLAN-IPAD.md 4.4):** Die Farbe, die Kevin im Werkzeugkranz gewählt hat (`rot` | `gelb` |
+  `gruen` | `blau` | `weiss`, `FEEDBACK_STRICHFARBEN`), und das Gerät, an dem der Strich entstand (`mac` | `ipad`,
+  `FEEDBACK_GERAETE`); `geraet` auf oberster Ebene nennt das Gerät der Sitzung. Kevin nennt die Farbe beim Sprechen („die
+  rote Linie“); der Text von `feedback()` nennt sie je Strich („Strich 1 rot auf …“) und das Gerät, wenn ein Strich von
+  einem anderen kam als die Sitzung, sowie „am iPad“ im Kopf. Im Bild hat jeder Strich seine Farbe. Ältere Pakete ohne
+  diese Felder bleiben gültig; ein Strich ohne Farbe ist lichtblau (`blau`).
 - **`kamera_verlauf` und `auswahl_verlauf`:** ein Eintrag beim Beginn, dann je Änderung (Kamera höchstens 5 je Sekunde).
 - **`bezuege`:** Die Mausproben von 0,5 s vor Satzbeginn bis 0,3 s nach Satzende werden je `ref` zu Zeiträumen
   zusammengefasst. Ein Zeitraum zählt ab 0,25 s, oder wenn ein Zeigewort auf ihn fällt. Zeigewörter sind „hier“, „da“,

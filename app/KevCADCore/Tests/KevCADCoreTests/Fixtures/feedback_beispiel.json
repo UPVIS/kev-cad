@@ -11,6 +11,7 @@
   "pfad": "/Users/kevin/Documents/Kev CAD/Halter"
  },
  "run": 7,
+ "geraet": "mac",
  "abschnitte": [
   {
    "von": 0.0,
@@ -232,6 +233,8 @@
     "ansicht": null,
     "durch": null
    },
+   "farbe": "rot",
+   "geraet": "mac",
    "punkte": [
     {
      "t": 1.9,
@@ -296,6 +299,8 @@
     "ansicht": null,
     "durch": null
    },
+   "farbe": "blau",
+   "geraet": "mac",
    "punkte": [
     {
      "t": 8.0,

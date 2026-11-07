@@ -102,6 +102,9 @@ def test_beispiel_und_rahmen_sind_gueltig():
     (lambda p: p["mausweg"][1].update(t=0.1), "mausweg"),
     (lambda p: p["striche"][0].update(punkte=[]), "Punkte"),
     (lambda p: p["abschnitte"].append({"von": 2.0, "bis": 99.0}), "abschnitt"),
+    (lambda p: p["striche"][0].update(farbe="lila"), "farbe"),
+    (lambda p: p["striche"][0].update(geraet="handy"), "geraet"),
+    (lambda p: p.update(geraet="handy"), "geraet"),
 ])
 def test_ungueltige_pakete_fallen_auf(aendern, teil):
     p = copy.deepcopy(feedback_beispiel())
@@ -124,12 +127,33 @@ def test_text_nennt_satz_zeiger_strich_und_bleibt_knapp():
     assert "Kevin ist fertig: 2 Sätze, 2 Striche, 0:09" in text
     assert "„Mach das hier höher.“" in text
     assert "„hier“ = Halter/Lasche#f3 bei (120; 4; 62)" in text or "„hier“ = Halter/Lasche#f3 bei (120; 4; 63)" in text
-    assert "Strich 1 auf Halter/Lasche, 84 mm" in text or "Strich 1 auf Halter/Lasche, 85 mm" in text
+    assert "Strich 1 rot auf Halter/Lasche, 84 mm" in text or "Strich 1 rot auf Halter/Lasche, 85 mm" in text
     assert "ausgewählt: Halter/Lasche" in text
-    assert "Ohne Satz: Strich 2 in der Bildebene" in text
+    assert "Ohne Satz: Strich 2 blau in der Bildebene" in text
     assert "Im Bild: 2 Teile, 1 ausgeblendet" in text
     assert "Refs gelten" not in text
     assert len(text) < 700
+
+
+def test_paket_ohne_farbe_und_geraet_bleibt_gueltig():
+    """I-4: Ältere Pakete (vor den Strichfarben) haben weder Farbe noch Gerät."""
+    p = copy.deepcopy(feedback_beispiel())
+    del p["geraet"]
+    for s in p["striche"]:
+        del s["farbe"], s["geraet"]
+    assert check_feedback_paket(p) == []
+    text = feedback_text(p)
+    assert "Strich 1 auf Halter/Lasche" in text and "Ohne Satz: Strich 2 in der Bildebene" in text
+
+
+def test_text_nennt_ipad_und_fremdes_geraet():
+    p = copy.deepcopy(feedback_beispiel())
+    p["geraet"] = "ipad"
+    p["striche"][1]["farbe"] = "weiss"
+    text = feedback_text(p)
+    assert text.startswith("Kevin ist fertig am iPad: ")
+    assert "Strich 1 rot (am Mac) auf Halter/Lasche" in text
+    assert "Ohne Satz: Strich 2 weiß (am Mac) in der Bildebene" in text
 
 
 def test_text_warnt_bei_neuem_lauf():
