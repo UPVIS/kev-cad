@@ -672,6 +672,37 @@ def _durchbiegung(b: _Aufbau, s: Stab, combo: str, sz: Szenario) -> tuple[float,
 KNICK_DICHT = 2000  # Freiheitsgrade: bis hier dicht (LAPACK), darüber Lanczos mit festem Startvektor
 
 
+KNICK_NULL = 1e-13  # K-Eigenwerte unter diesem Anteil des größten: Mechanismus (Richtung ohne Steifigkeit)
+
+
+def _mechanismus(K: Any, phi: np.ndarray) -> bool:
+    """Liegt die Knickform ``phi`` in einer Richtung, in der K (fast) keine Steifigkeit hat? So eine Richtung (ein Rohr
+    zwischen Gelenken dreht frei um seine Achse) ist kein Knicken: mit ihr kommt je nach Rechenrauschen eine Knicklast
+    nahe 0 heraus (auf dem Mac mini 0, sonst 195; ``test_gleitendes_lager_schraeg_im_stabwerk`` scheiterte so an
+    ``ziel / knick``). Beweglichkeit meldet die Statik getrennt (Mechanismus)."""
+    phi = np.asarray(phi, dtype=float)
+    nk = float(np.linalg.norm(K @ phi))
+    if hasattr(K, "toarray"):
+        kmax = float(abs(K).max()) if K.nnz else 0.0
+    else:
+        kmax = float(np.abs(K).max()) if K.size else 0.0
+    return kmax > 0 and nk <= KNICK_NULL * kmax * float(np.linalg.norm(phi))
+
+
+def _ohne_mechanismen(Kd: np.ndarray, Gd: np.ndarray) -> tuple[float | None, np.ndarray | None]:
+    """Größtes μ von G φ = μ K φ auf dem Unterraum, in dem K steif ist (Mechanismus-Richtungen herausgenommen)."""
+    import scipy.linalg as sla
+
+    kap, Q = np.linalg.eigh(Kd)
+    behalten = kap > KNICK_NULL * float(kap.max())
+    if not behalten.any():
+        return None, None
+    Q = Q[:, behalten]
+    Gr = Q.T @ Gd @ Q
+    w, v = sla.eigh((Gr + Gr.T) / 2, np.diag(kap[behalten]))
+    return float(w[-1]), Q @ v[:, -1]
+
+
 def _kleinste_knicklast(K11: Any, G11: Any) -> tuple[float | None, np.ndarray | None]:
     """Kleinster positiver Lastfaktor λ mit (K − λ G) φ = 0 und seine Form φ, oder (None, None).
 
@@ -695,6 +726,8 @@ def _kleinste_knicklast(K11: Any, G11: Any) -> tuple[float | None, np.ndarray | 
             Kd, Gd = (Kd + Kd.T) / 2, (Gd + Gd.T) / 2  # Rundungsreste der Montage (bis 4e-6) symmetrisch verteilen
             w, v = sla.eigh(Gd, Kd, subset_by_index=[n - 1, n - 1])
             mu, phi = float(w[-1]), v[:, -1]
+            if _mechanismus(Kd, phi):
+                mu, phi = _ohne_mechanismen(Kd, Gd)
         else:
             from scipy.sparse.linalg import eigsh
 
@@ -702,8 +735,10 @@ def _kleinste_knicklast(K11: Any, G11: Any) -> tuple[float | None, np.ndarray | 
             Gs = sps.csc_matrix((G11 + G11.T) / 2)
             v0 = np.random.default_rng(0).standard_normal(n)
             w, v = eigsh(Gs, k=min(6, n - 2), M=Ks, which="LA", v0=v0)
-            i = int(np.argmax(w))
-            mu, phi = float(w[i]), v[:, i]
+            gut = [i for i in np.argsort(-w) if not _mechanismus(Ks, v[:, i])]
+            if not gut:
+                return None, None
+            mu, phi = float(w[gut[0]]), v[:, gut[0]]
     except Exception:  # noqa: BLE001 - K nicht positiv definit (beweglich gelagert): allgemein und dicht, wie bisher
         if n > 900:
             return None, None

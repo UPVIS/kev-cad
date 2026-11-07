@@ -294,7 +294,15 @@ def _durchbiegung(e: dict, name: str = "Rohr") -> float:
 def _rohr(tmp: Path, lager: str, F: float = 200.0, x: float = 500.0, run: int = 1) -> tuple[dict, float, float, float]:
     _, check, _ = laufe(tmp, ROHR.replace("LAGER", lager).replace("FKRAFT", str(F)).replace("XLAST", str(x)),
                         run=run, strikt=False)
-    s = anbindung.LETZTER.modell.staebe["Rohr"]
+    st = anbindung.LETZTER
+    # Diagnose für den seltenen Fehler im vollen Lauf (KeyError 'Rohr'): woher stammt LETZTER, was hat die Statik gebaut
+    if st.modell is None or "Rohr" not in st.modell.staebe:
+        info = {"letzter_projekt": str(st.projekt), "tmp": str(tmp), "letzter_run": st.run,
+                "check_schluessel": sorted(check), "statik": str(check.get("statik"))[:800],
+                "fehler": check.get("fehler"), "zeiten": check.get("zeiten_ms") or (check.get("statistik") or {}),
+                "pruefbefunde": [b.get("text") for b in check.get("befunde") or [] if b.get("art") == "pruefung"]}
+        pytest.fail("LETZTER passt nicht zum Lauf: " + json.dumps(info, ensure_ascii=False, default=str))
+    s = st.modell.staebe["Rohr"]
     EI = float(s.werkstoff.E) * float(s.q.I_lang)
     q = anbindung.LETZTER.modell.teile["Rohr"].masse_kg * G / s.laenge
     return check, EI, q, s.laenge

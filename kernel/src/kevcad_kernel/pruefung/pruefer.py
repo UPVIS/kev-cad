@@ -366,8 +366,14 @@ def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, o
         except Exception as exc:  # noqa: BLE001 - eine fehlerhafte Prüfung soll die anderen nicht verhindern
             import traceback
 
+            # Stelle im Kernel, an der es scheiterte (der CHECK trägt keine Fehlerspur; sonst fehlt sie beim Melden)
+            stelle = ""
+            for fs in reversed(traceback.extract_tb(exc.__traceback__)):
+                if "kevcad" in fs.filename:
+                    stelle = f" ({'/'.join(fs.filename.split('/')[-2:])}:{fs.lineno})"
+                    break
             befunde.append(befund("pruefung", ["Prüfung"], "warnung",
-                                  f"Prüfung „{name}“ ist fehlgeschlagen: {type(exc).__name__}: {exc}",
+                                  f"Prüfung „{name}“ ist fehlgeschlagen: {type(exc).__name__}: {exc}{stelle}",
                                   "Bitte melden; die übrigen Prüfungen sind gelaufen."))
             ctx.ergebnis.setdefault("fehler", []).append(traceback.format_exc(limit=6))
         if nach_statik is not None and name == "statik":

@@ -137,7 +137,7 @@ def bewerte(sz: Szenario, s0: dict[str, Any], s1: Any, bauteile: list[dict[str, 
                                "verformung_mm": round(vmax, 3), "sicherheit": round(sf, 3) if math.isfinite(sf) else None}
         if s1.knicken is not None:
             knick = s1.knicken
-            a = ziel / knick
+            a = ziel / knick if knick > 0 else math.inf  # auf 0 gerundet: knickt schon unter kleinster Last
             amp = ampel_a(a)
             if amp != "gruen":
                 ur.append(urteil("knicken", s1.knick_stab, amp,

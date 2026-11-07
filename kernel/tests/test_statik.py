@@ -208,6 +208,34 @@ def test_knicklast_kleinste_und_deterministisch():
     assert aus[0] == aus[1] and aus[0] != "(None, None)"
 
 
+def test_knicklast_ohne_mechanismus_richtung():
+    """Eine Richtung ohne Steifigkeit (Rohr zwischen Gelenken dreht frei um seine Achse) ist kein Knicken: Koppelt G
+    durch Rechenrauschen minimal an sie, kam eine Knicklast nahe 0 heraus (Mac mini: 0, dann ZeroDivisionError in der
+    Bewertung, ``test_gleitendes_lager_schraeg_im_stabwerk``). Gezählt wird die kleinste Knicklast der steifen Richtungen."""
+    import scipy.sparse as sps
+
+    from kevcad_kernel.statik import stabwerk
+
+    K, G, kleinste = _knick_matrizen(60, 3)
+    n = K.shape[0]
+    Kd = np.zeros((n + 1, n + 1))
+    Kd[:n, :n] = K.toarray()
+    Kd[n, n] = 1e-6 * float(np.abs(Kd).max()) * 1e-12  # Mechanismus: fast keine Steifigkeit
+    Gd = np.zeros((n + 1, n + 1))
+    Gd[:n, :n] = G.toarray()
+    Gd[n, 0] = Gd[0, n] = 1e-9  # Rauschen koppelt an die Mechanismus-Richtung
+    Gd[n, n] = 1e-12
+    lam, phi = stabwerk._kleinste_knicklast(sps.csr_matrix(Kd), sps.csr_matrix(Gd))
+    assert lam == pytest.approx(kleinste, rel=1e-6) and abs(phi[n]) < 1e-6 * np.abs(phi).max()
+    alt = stabwerk.KNICK_DICHT
+    try:
+        stabwerk.KNICK_DICHT = 10  # dünner Weg
+        lam_d, _ = stabwerk._kleinste_knicklast(sps.csr_matrix(Kd), sps.csr_matrix(Gd))
+    finally:
+        stabwerk.KNICK_DICHT = alt
+    assert lam_d == pytest.approx(kleinste, rel=1e-5)
+
+
 def _knick_stuetze() -> tuple[float | None, str | None]:
     """Zwei Rohre als Rahmen auf Druck (für den Test in frischen Prozessen)."""
     m = _modell(L=500, richtung=(0, 0, 1))
