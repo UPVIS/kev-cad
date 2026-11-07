@@ -41,6 +41,8 @@ struct BerichteAnsicht: View {
     @State private var baut = false
     @State private var zoom: CGFloat = 1
     @State private var stand = 0
+    /// iPad: Dialog „Dokumente exportieren“ als Blatt (am Mac ein Fenster)
+    @State private var exportBlatt = false
 
     init(model: AppModel) {
         self.model = model
@@ -162,9 +164,23 @@ struct BerichteAnsicht: View {
                 Label("Exportieren …", systemImage: "square.and.arrow.up.on.square")
             }
             .help("Dokumente exportieren: Bausteine zusammenstellen (⇧⌘E)")
+            #else
+            // iPad: das PDF entsteht am Gerät (CoreGraphics); Teilen bietet Sichern in Dateien, AirDrop und Drucken
+            Button { drucken() } label: { Label("Drucken …", systemImage: "printer") }
+                .disabled(dokument?.seiten.isEmpty != false)
+            Button { teilen() } label: { Label("Als PDF teilen …", systemImage: "square.and.arrow.up") }
+                .disabled(dokument?.seiten.isEmpty != false)
+            Button { exportBlatt = true } label: {
+                Label("Exportieren …", systemImage: "square.and.arrow.up.on.square")
+            }
             #endif
-            // iPad: Drucken, Sichern als PDF und Exportieren folgen mit dem Teilen-Blatt in I-8
         }
+        #if os(iOS)
+        .sheet(isPresented: $exportBlatt) {
+            ExportDialog(model: model, vorauswahl: [bericht]) { exportBlatt = false }
+                .environmentObject(session)
+        }
+        #endif
         .labelStyle(.iconOnly)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -202,6 +218,32 @@ struct BerichteAnsicht: View {
                 _ = try await model.exportActions?.exportDrucken(vorlage)
             } catch {
                 ExportDialogFenster.fehler(error)
+            }
+        }
+    }
+    #else
+    private func drucken() {
+        Task { @MainActor in
+            do {
+                _ = try await model.exportActions?.exportDrucken(vorlage)
+            } catch {
+                session.melde("Drucken ging nicht: \((error as? ExportFehler)?.description ?? error.localizedDescription)",
+                              fehler: true)
+            }
+        }
+    }
+
+    private func teilen() {
+        Task { @MainActor in
+            let name = "\(model.project?.name ?? "Kev CAD") – \(bericht.titel)"
+            do {
+                if let e = try await model.exportActions?.exportPDF(vorlage, nach: ExportDialog.teilOrt(name)),
+                   let p = e.pfad {
+                    Dateiablage.teilen([p])
+                }
+            } catch {
+                session.melde("PDF ging nicht: \((error as? ExportFehler)?.description ?? error.localizedDescription)",
+                              fehler: true)
             }
         }
     }

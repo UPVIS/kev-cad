@@ -113,6 +113,19 @@ enum PadSelbsttest {
             pruefe(url == lokal, "eigene Datei zum Teilen ohne Umweg")
         }
 
+        // 6. Berichte als PDF am Gerät (CoreGraphics, ohne Mac): Stückliste in den Zwischenspeicher
+        if let x = model.exportActions {
+            let ziel = ausgabe.appendingPathComponent("Stueckliste.pdf")
+            let v = ExportVorlage(name: "Stückliste", bausteine: [ExportBausteinWahl(art: .stueckliste)])
+            do {
+                let e = try await x.exportPDF(v, nach: ziel)
+                let groesse = (try? FileManager.default.attributesOfItem(atPath: ziel.path)[.size] as? Int) ?? 0
+                pruefe(e.seiten > 0 && groesse > 1000, "Stückliste als PDF am Gerät: \(e.seiten) Seiten, \(groesse) Byte")
+            } catch {
+                pruefe(false, "Stückliste als PDF am Gerät: \(error)")
+            }
+        }
+
         zeilen.append("ENDE \(ok ? "bestanden" : "nicht bestanden")")
         let bericht = (["Selbsttest Oberfläche iPad"] + zeilen).joined(separator: "\n") + "\n"
         try? bericht.write(to: ausgabe.appendingPathComponent("bericht.txt"), atomically: true, encoding: .utf8)

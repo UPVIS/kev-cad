@@ -1,5 +1,7 @@
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 import Foundation
 import OCCTSwiftViewport
@@ -269,8 +271,26 @@ extension AppController: ExportActions {
         model.export.letztes = e
         return e
         #else
-        // iPad: Drucken über AirPrint (1:1, je Format ein Auftrag) folgt in I-8
-        throw ExportFehler.pdf("Drucken gibt es auf dem iPad noch nicht")
+        // iPad: dasselbe PDF (am Gerät gerechnet, CoreGraphics) an AirPrint; der Druckdialog des Systems wählt Drucker
+        // und Papier. Gemischte Formate gehen in einem Auftrag (am Mac je Format einer).
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "\(model.project?.name ?? "Kev CAD") – Dokumente.pdf")
+        var e = try await exportPDF(v, nach: url)
+        let druck = UIPrintInteractionController.shared
+        let info = UIPrintInfo.printInfo()
+        info.jobName = model.project?.name ?? "Kev CAD"
+        info.outputType = .general
+        druck.printInfo = info
+        druck.printingItem = url
+        druck.present(animated: true) { [weak self] _, fertig, fehler in
+            try? FileManager.default.removeItem(at: url)
+            if let fehler { self?.log(.warning, "Druck: \(fehler.localizedDescription)") }
+            if fertig { self?.log(.info, "Druck abgeschickt") }
+        }
+        e.pfad = nil
+        e.gedruckt = "Druckdialog geöffnet"
+        model.export.letztes = e
+        return e
         #endif
     }
 

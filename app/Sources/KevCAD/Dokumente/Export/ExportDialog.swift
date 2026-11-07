@@ -358,7 +358,9 @@ struct ExportDialog: View {
             Button {
                 sichern()
             } label: {
-                Label("PDF sichern …", systemImage: "arrow.down.doc")
+                // Am iPad: PDF am Gerät, dann das Teilen-Blatt (Sichern in Dateien, AirDrop)
+                Label(Dateiablage.kannImFinderZeigen ? "PDF sichern …" : "PDF teilen …",
+                      systemImage: Dateiablage.kannImFinderZeigen ? "arrow.down.doc" : "square.and.arrow.up")
             }
             .keyboardShortcut(.defaultAction)
             .disabled(vorlage.aktive.isEmpty || aktiv)
@@ -380,8 +382,15 @@ struct ExportDialog: View {
         }
     }
 
-    /// Am Mac: Ort wählen (Sichern-Dialog am Fenster), dann das PDF schreiben. Den Dialog öffnet auf dem iPad noch nichts;
-    /// iPad: Sichern über das Teilen-Blatt folgt in I-8.
+    /// Ort für PDFs zum Teilen auf dem iPad: Zwischenspeicher der App (das Teilen-Blatt sichert in Dateien).
+    static func teilOrt(_ name: String) -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Export", isDirectory: true)
+            .appendingPathComponent(name.replacingOccurrences(of: "/", with: "-") + ".pdf")
+    }
+
+    /// Am Mac: Ort wählen (Sichern-Dialog am Fenster), dann das PDF schreiben. Auf dem iPad entsteht das PDF im
+    /// Zwischenspeicher und geht ans Teilen-Blatt (Sichern in Dateien, AirDrop, Drucken).
     private func sichern() {
         #if os(macOS)
         Task { @MainActor in
@@ -392,6 +401,19 @@ struct ExportDialog: View {
             defer { aktiv = false }
             do {
                 ergebnis = try await model.exportActions?.exportPDF(vorlage, nach: url)
+            } catch {
+                fehler = (error as? ExportFehler)?.description ?? error.localizedDescription
+            }
+        }
+        #else
+        Task { @MainActor in
+            aktiv = true
+            fehler = nil
+            defer { aktiv = false }
+            do {
+                ergebnis = try await model.exportActions?.exportPDF(
+                    vorlage, nach: Self.teilOrt("\(model.project?.name ?? "Kev CAD") – Dokumente"))
+                if let p = ergebnis?.pfad { Dateiablage.teilen([p]) }
             } catch {
                 fehler = (error as? ExportFehler)?.description ?? error.localizedDescription
             }
