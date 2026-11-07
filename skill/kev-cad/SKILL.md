@@ -83,6 +83,8 @@ show(lager.druckteil(bp.part, "Halter/Platte", material="petg"), "Halter/Platte"
 - **Prüfung nach jedem Lauf:** keine Durchdringung, nichts schwebt, alles steht und lässt sich einbauen, Druckregeln.
   Fehler beheben, Warnungen beheben oder begründen, nicht wegerklären ([pruefung.md](pruefung.md)). Teile über
   Bedingungen setzen und befestigen ([bedingungen.md](bedingungen.md)).
+- **Immer zuhören:** vor dem Ende jeder Runde den Befehl aus `status` als Hintergrund-Shell starten
+  (`run_in_background`, `timeout` 7200000), nach jedem Feedback und jedem Ablauf neu ([feedback.md](feedback.md)).
 - **Bilder:** Kevin keine schicken, außer er will eins; zur eigenen Analyse wenige kleine Ansichten.
 - **Nur auf Kevins ausdrückliches Wort:** drucken, Version wiederherstellen, gebaut oder gedruckt buchen, Bestand
   eintragen, Druckeinstellungen, Lastfälle und Katalogeinträge ändern. Vor jedem Druck oder Druckexport nach dem

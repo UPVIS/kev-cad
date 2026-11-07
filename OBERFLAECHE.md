@@ -111,6 +111,9 @@ weiter.
   dunklen Insel wie die Kopfleiste (`InselImHellen` in `FokusEbenen.swift`), der dunkle Verlauf unten entfällt dann.
 - **Unten im schmalen Viewer** (Kachel unter 640 pt): links der Sprechknopf (unter 480 pt nur das Mikrofon), die Kapseln
   des Viewers (Prüfung, Messen) rücken nach rechts (`ViewportArea.schmal`); mittig lagen sie über dem Sprechknopf.
+- **„Prüfung in Ordnung“** mit dem Knopf „Montage“ steht nur 4 s nach einer fertigen Prüfung (Endstand) ohne Befunde,
+  dann blendet die Kapsel aus (Kevin, 07.11.2026: dauerhaft „total irritierend, gerade auch auf dem iPad“). Befunde zeigt
+  weiter das Band oben, bis Kevin es wegklickt.
 - **Gliederung**: nur Gruppen und Objekte. Klick wählt, ⇧ oder ⌘ nimmt dazu, Doppelklick oder Zeilenschalter benennt
   um, ↑ ↓ wandern, ← → klappen. Gruppen mit gewählten Teilen öffnen sich von selbst. Umbenennen ändert die Namen in
   model.py (`ModellQuelle.benenneUm`): genau die Zeichenketten in `show()`, `verbauen(name=…)`, `befestigt(…)`; entsteht

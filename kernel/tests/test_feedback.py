@@ -265,7 +265,7 @@ def test_offene_pakete_ueberleben_einen_neustart(env, projekt):
     paket_schreiben(projekt)
     env["rt"]._fb_zuletzt.clear()
     assert env["rt"].feedback_stand() | {"seit_s": None} == {"stand": "aus", "sitzung": None, "seit_s": None, "offen": 1,
-                                                             "name": NAME}
+                                                             "name": NAME, "zuhoerer": 0, "app": True}
     assert env["rt"].feedback_holen()["name"] == NAME
     env["rt"]._fb_zuletzt.clear()
     assert env["rt"].feedback_holen(nochmal=True)["name"] == NAME, "auch nach einem Neustart"
@@ -434,6 +434,166 @@ def test_hintergrundbefehl_uebersteht_einen_neustart(env, projekt):
         assert ergebnis.get("da")
     finally:
         server.stop_thread()
+
+
+def test_zuhoerer_werden_gezaehlt(env, projekt):
+    """Kevin, 07.11.2026: Das Zuhören darf nicht abreißen. Der Kernel weiß, wer gerade wartet; der Wartende selbst zählt
+    in seiner Antwort nicht mit."""
+    rt = env["rt"]
+    assert rt.feedback_stand()["zuhoerer"] == 0 and rt.feedback_stand()["app"] is True
+    ergebnis: dict[str, Any] = {}
+    faden = threading.Thread(target=lambda: ergebnis.update(rt.feedback_warten(20)))
+    faden.start()
+    ende = time.monotonic() + 5
+    while rt.feedback_stand()["zuhoerer"] != 1:
+        assert time.monotonic() < ende
+        time.sleep(0.01)
+    paket_schreiben(projekt)
+    melden(env, projekt)
+    faden.join(5)
+    assert ergebnis["da"] and ergebnis["zuhoerer"] == 0
+    assert rt.feedback_stand()["zuhoerer"] == 0
+    rt.feedback_holen()
+
+
+def test_zuhoerer_ueber_den_befehl(env, projekt):
+    server = KevcadHTTPServer(env["rt"], port=0).start_in_thread()
+    try:
+        assert feedback_cli.main(["--port", str(server.port), "--zuhoerer"]) == 1, "niemand hört zu"
+        faden = threading.Thread(target=lambda: feedback_cli.warten(server.port, 3))
+        faden.start()
+        ende = time.monotonic() + 5
+        while env["rt"].feedback_stand()["zuhoerer"] != 1:
+            assert time.monotonic() < ende
+            time.sleep(0.01)
+        assert feedback_cli.main(["--port", str(server.port), "--zuhoerer"]) == 0, "der Hintergrundbefehl hört zu"
+        faden.join(6)
+    finally:
+        server.stop_thread()
+    from kevcad_kernel.server import bind_socket
+
+    sock = bind_socket("127.0.0.1", 0)
+    frei = sock.getsockname()[1]
+    sock.close()
+    assert feedback_cli.main(["--port", str(frei), "--zuhoerer"]) == 3, "Kev CAD nicht erreichbar"
+
+
+# Bausteine eines Transkripts von Claude Code (JSON je Zeile, wie es die Sitzungen schreiben)
+def _kevin(text_: str = "Bau mir einen Halter") -> dict:
+    return {"type": "user", "message": {"role": "user", "content": text_}}
+
+
+def _werkzeug(name: str, kennung: str = "toolu_1", **eingabe: Any) -> dict:
+    return {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "id": kennung, "name": name, "input": eingabe}]}}
+
+
+def _ergebnis(kennung: str = "toolu_1") -> dict:
+    return {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": kennung, "content": "ok"}]}}
+
+
+def _hinweis(kennung: str) -> dict:
+    """Die Meldung, mit der ein fertiger Hintergrundbefehl den Agenten weckt."""
+    return {"type": "attachment", "attachment": {
+        "type": "queued_command", "commandMode": "task-notification",
+        "prompt": f"<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>{kennung}</tool-use-id>\n"
+                  "<status>killed</status>\n</task-notification>"}}
+
+
+# Jedes Transkript führt die Werkzeugliste mit, also auch die Namen von Kev CAD (gemessen am 07.11.2026 in Sitzungen
+# anderer Projekte): Sie dürfen nie als Arbeit mit Kev CAD zählen.
+_RAHMEN = ({"type": "api-request-shape", "shape": {"tools": [{"name": "mcp__kevcad__run", "description": "Run"}]}},
+           {"type": "attachment", "attachment": {"type": "deferred_tools_delta", "added": ["mcp__kevcad__status"]}})
+
+
+def _transkript(tmp: Path, *eintraege: dict, name: str = "transkript") -> str:
+    p = tmp / f"{name}.jsonl"
+    p.write_text("".join(json.dumps(e, separators=(",", ":"), ensure_ascii=False) + "\n"
+                         for e in (*_RAHMEN, *eintraege)), encoding="utf-8")
+    return str(p)
+
+
+def test_kev_cad_runde_zaehlt_nur_echte_aufrufe(tmp_path):
+    runde = feedback_cli.kevcad_runde
+    assert runde(_transkript(tmp_path, _kevin(), _werkzeug("mcp__kevcad__run"), _ergebnis(), name="cad"))
+    assert not runde(_transkript(tmp_path, _kevin(), _werkzeug("Read"), _ergebnis(), name="fremd")), \
+        "nur die Werkzeugliste nennt Kev CAD"
+    # ein Blick auf status in einer früheren Runde (etwa beim Entwickeln) hält spätere Runden nicht an
+    assert not runde(_transkript(tmp_path, _kevin(), _werkzeug("mcp__kevcad__status"), _ergebnis(),
+                                 _kevin("Bau die App"), _werkzeug("Bash", "toolu_2", command="make"), name="frueher"))
+    # eingeschobene Hinweise (Skills, Erinnerungen) sind keine Nachricht von Kevin
+    meta = {"type": "user", "isMeta": True, "message": {"role": "user", "content": [{"type": "text", "text": "Skill"}]}}
+    assert runde(_transkript(tmp_path, _kevin(), _werkzeug("mcp__kevcad__feedback"), _ergebnis(), meta,
+                             _werkzeug("Read", "toolu_2"), name="meta"))
+    # Der Zuhörer endet (Zeitgrenze, abgebrochen): Seine Meldung weckt den Agenten, auch wenn Kevin inzwischen
+    # geschrieben hat. Dann muss er neu zuhören.
+    hoeren = _werkzeug("Bash", "toolu_h", command=feedback_cli.befehl(None), run_in_background=True)
+    assert runde(_transkript(tmp_path, _kevin(), hoeren, _ergebnis("toolu_h"), _kevin("Was kostet das?"),
+                             _hinweis("toolu_h"), name="zeitgrenze"))
+    lang = [_werkzeug("Read", f"toolu_r{i}", file_path="x" * 2000) for i in range(40)]
+    alt = _transkript(tmp_path, _kevin(), hoeren, _ergebnis("toolu_h"), _kevin("Was kostet das?"), *lang,
+                      _hinweis("toolu_h"), name="stunden")
+    feedback_cli_ende = feedback_cli.TRANSKRIPT_ENDE
+    try:
+        feedback_cli.TRANSKRIPT_ENDE = 20_000  # der Zuhörer liegt vor dem gelesenen Ende: dann im ganzen Transkript
+        assert b'"id":"toolu_h"' not in feedback_cli._ende_lesen(alt), "nur die Meldung liegt im gelesenen Ende"
+        assert runde(alt)
+    finally:
+        feedback_cli.TRANSKRIPT_ENDE = feedback_cli_ende
+    bau = _werkzeug("Bash", "toolu_b", command="tools/fern.sh testbau", run_in_background=True)
+    assert not runde(_transkript(tmp_path, _kevin(), bau, _ergebnis("toolu_b"), _kevin("Und?"), _hinweis("toolu_b"),
+                                 name="bau")), "ein fertiger Bau ist kein Zuhörer"
+    suche = _werkzeug("Bash", command="grep -rn kevcad-feedback kernel")
+    assert not runde(_transkript(tmp_path, _kevin(), suche, name="suche")), "nur der Befehl im Hintergrund hört zu"
+    leer = tmp_path / "leer.jsonl"
+    leer.write_bytes(b"")
+    assert not runde(None) and not runde(str(tmp_path / "fehlt.jsonl")) and not runde(str(leer))
+
+
+def test_stop_hook_haelt_nur_kev_cad_runden_ohne_zuhoerer_an(tmp_path):
+    niemand = lambda port: {"app": True, "zuhoerer": 0, "offen": 0}  # noqa: E731
+    cad = {"transcript_path": _transkript(tmp_path, _kevin(), _werkzeug("mcp__kevcad__run")), "stop_hook_active": False}
+    antwort = feedback_cli.stop_hook_antwort(cad, 47823, stand_holen=niemand)
+    assert antwort and antwort["decision"] == "block"
+    assert "timeout 7200000" in antwort["reason"] and "kevcad-feedback" in antwort["reason"]
+    assert "am Code von Kev CAD" in antwort["reason"], "Entwickler-Sitzungen dürfen einfach enden"
+    # jemand hört zu, keine App, Kev CAD aus, andere Sitzung, schon einmal angehalten: die Runde darf enden
+    assert feedback_cli.stop_hook_antwort(cad, 1, stand_holen=lambda p: {"app": True, "zuhoerer": 1}) is None
+    assert feedback_cli.stop_hook_antwort(cad, 1, stand_holen=lambda p: {"app": False, "zuhoerer": 0}) is None
+    assert feedback_cli.stop_hook_antwort(cad, 1, stand_holen=lambda p: None) is None
+    andere = {"transcript_path": _transkript(tmp_path, _kevin(), _werkzeug("Read"), name="andere"),
+              "stop_hook_active": False}
+    assert feedback_cli.stop_hook_antwort(andere, 1, stand_holen=niemand) is None
+    assert feedback_cli.stop_hook_antwort({**cad, "stop_hook_active": True}, 1, stand_holen=niemand) is None
+    assert feedback_cli.stop_hook_antwort({}, 1, stand_holen=niemand) is None
+    wartet = feedback_cli.stop_hook_antwort(cad, 1, stand_holen=lambda p: {"app": True, "zuhoerer": 0, "offen": 1,
+                                                                           "name": NAME})
+    assert wartet and "feedback()" in wartet["reason"]
+
+
+def test_stop_hook_ueber_die_befehlszeile(env, projekt, tmp_path, monkeypatch, capsys):
+    import io
+
+    server = KevcadHTTPServer(env["rt"], port=0).start_in_thread()
+    try:
+        cad = _transkript(tmp_path, _kevin(), _werkzeug("mcp__kevcad__feedback"))
+        eingabe = json.dumps({"transcript_path": cad, "stop_hook_active": False})
+        monkeypatch.setattr("sys.stdin", io.StringIO(eingabe))
+        assert feedback_cli.main(["--port", str(server.port), "--stop-hook"]) == 0
+        assert json.loads(capsys.readouterr().out)["decision"] == "block"
+        monkeypatch.setattr("sys.stdin", io.StringIO("kein json"))
+        assert feedback_cli.main(["--port", str(server.port), "--stop-hook"]) == 0
+        assert capsys.readouterr().out == "", "ohne lesbare Eingabe nie festhalten"
+    finally:
+        server.stop_thread()
+
+
+def test_hinweise_nennen_die_zeitgrenze(env, projekt):
+    paket_schreiben(projekt)
+    t = text(aufruf(env, "feedback", warten_s=0))
+    assert "timeout 7200000" in t and "kevcad-feedback" in t, "nach dem Feedback gleich wieder zuhören"
+    env["rt"].feedback_holen(nochmal=True)
 
 
 def test_befehl_nennt_den_port():

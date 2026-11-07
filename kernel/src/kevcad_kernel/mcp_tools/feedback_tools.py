@@ -32,6 +32,12 @@ def hintergrund_befehl(port: int | None) -> str:
     return f'"{programm}"' + (f" --port {port}" if port else "")
 
 
+# Claude Code beendet Hintergrund-Shells nach der Zeitgrenze des Aufrufs (Vorgabe 30 min): ohne den Höchstwert hört
+# nach einer halben Stunde Stille niemand mehr zu (Kevin, 07.11.2026). Der Stop-Hook (kevcad-feedback --stop-hook)
+# hält eine Runde an, die ohne Zuhörer enden will.
+ZEITGRENZE = "run_in_background, timeout 7200000; endet er ohne Feedback, sofort neu starten"
+
+
 def zeit_text(t: Any) -> str:
     """Sekunden als „0:07“."""
     s = int(t) if isinstance(t, (int, float)) else 0
@@ -171,6 +177,8 @@ def register_feedback_tool(tool: Callable[..., Any], t: Any, svc: KernelService,
         text += f"\nEinzelheiten (Wörter, Mausweg, Striche): {res.get('json_pfad')}"
         if lage := await t.work(None, lagebild_text, svc):
             text += "\n\n" + lage
+        text += ("\n\nVor dem Ende deiner Runde wieder zuhören: als Hintergrund-Befehl (" + ZEITGRENZE + "): "
+                 + hintergrund_befehl(getattr(svc, "mcp_port", None)))
         extra: list[Any] = []
         if res.get("bild"):
             extra.append(ImageContent(type="image", data=base64.b64encode(res["bild"]).decode("ascii"),
@@ -192,6 +200,6 @@ def _aktueller_lauf(svc: KernelService) -> int | None:
 def _zeitablauf(stand: dict[str, Any], warten_s: float, svc: KernelService) -> CallToolResult:
     wo = {"spricht": "Kevin spricht noch.", "pause": "Kevin hat die Sitzung noch offen (Pause)."}
     text = f"Noch kein Feedback nach {fmt.num(warten_s, 0)} s. " + wo.get(str(stand.get("stand")), "Kevin spricht nicht.")
-    text += (" Nochmal feedback() aufrufen oder den Zug beenden; zum Aufwecken vorher als Hintergrund-Befehl starten: "
-             + hintergrund_befehl(getattr(svc, "mcp_port", None)))
+    text += (" Nochmal feedback() aufrufen oder den Zug beenden; zum Aufwecken vorher als Hintergrund-Befehl starten ("
+             + ZEITGRENZE + "): " + hintergrund_befehl(getattr(svc, "mcp_port", None)))
     return fmt.result(text, {"da": False, "stand": stand.get("stand")}, json_block=False)

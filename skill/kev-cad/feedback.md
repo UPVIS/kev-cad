@@ -8,9 +8,12 @@ beendet mit ↩. Solange er das nicht tut, gilt nichts davon als Auftrag: Sprach
 - **Du bist in einer Runde:** `feedback()` wartet, bis Kevin fertig ist, und gibt sein Feedback zurück (Vorgabe 600 s,
   höchstens `warten_s=1800`). Läuft die Zeit ab, ist das kein Fehler: Die Antwort sagt, was er gerade tut. Dann noch
   einmal `feedback()`. Für „sag mir, was du willst“ `feedback()` statt einer Frage im Chat, wenn er am Viewer sitzt.
-- **Deine Runde endet:** Starte vorher den Befehl aus `status` als Hintergrund-Shell, ohne Zeitgrenze (in Claude Code
-  `run_in_background`, Zeitgrenze auf den Höchstwert). Er endet genau dann, wenn Feedback da ist, und weckt dich; dann
-  `feedback()`. Der Befehl holt selbst nichts ab. Endet er an deiner Zeitgrenze ohne Feedback, starte ihn neu.
+- **Deine Runde endet: immer zuhören** (Kevin, 07.11.2026: „egal was ist … immer im Hintergrund listening“). Starte
+  vor dem Ende jeder Runde den Befehl aus `status` oder `feedback()` als Hintergrund-Shell mit der längsten Zeitgrenze
+  (in Claude Code `run_in_background`, `timeout` 7200000; die Vorgabe beendet ihn nach 30 Minuten). Er endet genau dann,
+  wenn Feedback da ist, und weckt dich; dann `feedback()`, danach wieder starten. Der Befehl holt selbst nichts ab. Endet
+  er an der Zeitgrenze ohne Feedback, sofort neu starten. Der Stop-Hook `kevcad-feedback --stop-hook` hält eine Runde an,
+  die enden will, während die App verbunden ist und niemand zuhört; `kevcad-feedback --zuhoerer` zeigt, ob jemand wartet.
 - **`status`** nennt, ob Kevin gerade spricht und ob Feedback wartet. Ein offenes Paket liefert `feedback()` sofort,
   auch aus einer früheren Sitzung. `feedback(nochmal=true)` liefert das zuletzt abgeholte noch einmal.
 

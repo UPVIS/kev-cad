@@ -50,6 +50,9 @@ class FeedbackRuntime:
         self._fb_cond = threading.Condition()
         self._fb_stand: dict[str, Any] = {"stand": "aus", "sitzung": None, "seit": None}
         self._fb_zuletzt: dict[str, str] = {}  # Projektpfad → zuletzt abgeholtes Paket
+        # Wer gerade auf Kevin wartet (Hintergrundbefehl kevcad-feedback oder feedback() in einer Runde). Der Stop-Hook
+        # fragt das ab: Endet ein Kev-CAD-Agent seine Runde, ohne dass jemand zuhört, startet er zuerst den Befehl.
+        self._fb_zuhoerer = 0
 
     # -- Nachrichten der App -------------------------------------------------------------------------------------------
 
@@ -128,25 +131,34 @@ class FeedbackRuntime:
         return sorted((n for n in namen if n not in fort), key=_ordnung)
 
     def feedback_stand(self) -> dict[str, Any]:
-        """{"stand": "spricht"|"pause"|"aus", "sitzung", "seit_s", "offen": Anzahl, "name": ältestes offenes Paket}"""
+        """{"stand": "spricht"|"pause"|"aus", "sitzung", "seit_s", "offen": Anzahl, "name": ältestes offenes Paket,
+        "zuhoerer": wie viele gerade warten, "app": App verbunden}"""
         with self._fb_cond:
             stand = dict(self._fb_stand)
+            zuhoerer = self._fb_zuhoerer
         offene = self._fb_offene()
         seit = stand.pop("seit", None)
+        link = getattr(self, "_link", None)
         return {**stand, "seit_s": None if seit is None else max(0.0, round(time.time() - seit, 1)),
-                "offen": len(offene), "name": offene[0] if offene else None}
+                "offen": len(offene), "name": offene[0] if offene else None, "zuhoerer": zuhoerer,
+                "app": bool(getattr(link, "connected", False))}
 
     def feedback_warten(self, warten_s: float, abbruch: threading.Event | None = None) -> dict[str, Any]:
-        """Wartet auf ein offenes Paket, holt es aber nicht ab. {"da": bool, **feedback_stand()}"""
+        """Wartet auf ein offenes Paket, holt es aber nicht ab. {"da": bool, **feedback_stand()}; ``zuhoerer`` zählt
+        die anderen, die gerade warten (ohne diesen Aufruf)."""
         ende = time.monotonic() + max(0.0, float(warten_s))
         with self._fb_cond:
-            while True:
-                if self._fb_offene():
-                    break
-                rest = ende - time.monotonic()
-                if rest <= 0 or (abbruch is not None and abbruch.is_set()):
-                    break
-                self._fb_cond.wait(min(rest, _TAKT_S))
+            self._fb_zuhoerer += 1
+            try:
+                while True:
+                    if self._fb_offene():
+                        break
+                    rest = ende - time.monotonic()
+                    if rest <= 0 or (abbruch is not None and abbruch.is_set()):
+                        break
+                    self._fb_cond.wait(min(rest, _TAKT_S))
+            finally:
+                self._fb_zuhoerer -= 1
         stand = self.feedback_stand()
         return {"da": stand["offen"] > 0, **stand}
 

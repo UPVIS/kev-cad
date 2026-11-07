@@ -16,6 +16,10 @@ struct ViewportArea: View {
     /// V2-9: schmaler Viewer (Kachel): Unten links steht der Sprechknopf, die Kapseln unten rücken nach rechts
     /// (mittig lag „Prüfung in Ordnung“ über „V drücken und sprechen“).
     var schmal = false
+    /// „Prüfung in Ordnung“ steht nur kurz nach einer fertigen Prüfung ohne Befunde (Kevin, 07.11.2026: dauerhaft
+    /// eingeblendet „total irritierend, gerade auch auf dem iPad“). Danach bleibt der Viewport frei.
+    @State private var okSichtbar = false
+    static let okDauer: Duration = .seconds(4)
 
     var body: some View {
         viewport
@@ -42,6 +46,20 @@ struct ViewportArea: View {
             .animation(.snappy(duration: 0.25), value: model.downloadOffer)
             .animation(.snappy(duration: 0.25), value: pruefKey)
             .animation(.snappy(duration: 0.25), value: model.vorschlagSchluessel)
+            .animation(.snappy(duration: 0.25), value: okSichtbar)
+            .task(id: okLauf) {
+                // Neue fertige Prüfung ohne Befunde: kurz bestätigen, dann ausblenden. Ein neuer Lauf bricht das ab.
+                guard okLauf != nil else { okSichtbar = false; return }
+                okSichtbar = true
+                try? await Task.sleep(for: Self.okDauer)
+                if !Task.isCancelled { okSichtbar = false }
+            }
+    }
+
+    /// Lauf, für den „Prüfung in Ordnung“ kurz erscheint: fertige Prüfung (Endstand) ohne Befunde, mit Montageschritten.
+    private var okLauf: Int? {
+        guard pruefKey == nil, let p = model.pruefung, p.zustand == .done, !p.montageSchritte.isEmpty else { return nil }
+        return p.run
     }
 
     // MARK: Prüfung
@@ -139,7 +157,7 @@ struct ViewportArea: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if pruefKey == nil, !state.pruefListeOffen, let p = model.pruefung, !p.montageSchritte.isEmpty {
+            if okSichtbar, pruefKey == nil, !state.pruefListeOffen, let p = model.pruefung, !p.montageSchritte.isEmpty {
                 OhneDurchspielen(store: model.bauplan) {  // dort steht dann die Leiste des Durchspielens
                     Pill(symbol: "checkmark.seal", tint: .green) {
                         Text("Prüfung in Ordnung")

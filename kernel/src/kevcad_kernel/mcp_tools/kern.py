@@ -23,7 +23,7 @@ from pydantic import Field
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
-from .feedback_tools import hintergrund_befehl, register_feedback_tool, stand_text
+from .feedback_tools import ZEITGRENZE, hintergrund_befehl, register_feedback_tool, stand_text
 from .griffe import Griffe, ohne_json
 from .laufbericht import Gedaechtnis, bericht, gruppe
 from .tools import Kachel, ToolInputError
@@ -225,7 +225,7 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
             if text := stand_text(feedback):
                 zeilen.append(text)
             if app:
-                zeilen.append("Auf Kevin warten: feedback(); im Hintergrund, damit er dich weckt: "
+                zeilen.append("Auf Kevin warten: feedback(); im Hintergrund (" + ZEITGRENZE + "), damit er dich weckt: "
                               + hintergrund_befehl(getattr(svc, "mcp_port", None)))
             data["feedback"] = {k: feedback.get(k) for k in ("stand", "offen", "name")}
 
