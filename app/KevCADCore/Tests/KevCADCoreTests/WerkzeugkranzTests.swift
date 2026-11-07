@@ -224,3 +224,20 @@ final class WerkzeugkranzTests: XCTestCase {
         XCTAssertEqual(Strichfarbe.blau.rgba, ViewerStil.strich)
     }
 }
+
+/// Die Deckkraft im Röntgen merkt sich die App wie die Strichbreite (Vorschlag aus I-4, 07.11.2026).
+@MainActor
+final class RoentgenMerkenTests: XCTestCase {
+    func testDeckkraftBleibtNachNeustart() {
+        let d = UserDefaults.standard
+        let vorher = d.object(forKey: ViewerStore.roentgenKey)
+        defer {
+            if let vorher { d.set(vorher, forKey: ViewerStore.roentgenKey) } else { d.removeObject(forKey: ViewerStore.roentgenKey) }
+        }
+        let erster = AppController(model: AppModel())
+        erster.kranzRegler(.roentgen, wert: 0.7)
+        XCTAssertEqual(erster.scene.roentgenDeckkraft, 0.7, accuracy: 1e-6)
+        let zweiter = AppController(model: AppModel())
+        XCTAssertEqual(zweiter.scene.roentgenDeckkraft, 0.7, accuracy: 1e-6, "nach dem Neustart wie zuletzt gewählt")
+    }
+}

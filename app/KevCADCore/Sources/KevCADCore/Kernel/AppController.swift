@@ -158,6 +158,10 @@ public final class AppController: AppActions {
     public init(model: AppModel) {
         self.model = model
         model.actions = self
+        // I-4: zuletzt gewählte Deckkraft im Röntgen (Drehregler im Kranz), wie die Strichbreite gemerkt
+        if let d = UserDefaults.standard.object(forKey: ViewerStore.roentgenKey) as? Double {
+            scene.setRoentgenDeckkraft(Float(d))
+        }
 
         scene.onChange = { [weak self] in
             guard let self else { return }

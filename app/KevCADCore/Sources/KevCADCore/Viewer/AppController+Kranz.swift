@@ -142,6 +142,7 @@ extension AppController {
         case .roentgen:
             if viewer.shading != .roentgen { setShading(.roentgen) }
             scene.setRoentgenDeckkraft(Float(wert))
+            UserDefaults.standard.set(Double(scene.roentgenDeckkraft), forKey: ViewerStore.roentgenKey)
         case .animation: seekAnimation(to: wert)
         case .zoomZweite:
             // Der Kranz hält noch den vorigen Wert (die Ansicht setzt ihn erst nach diesem Aufruf): Zoom als Verhältnis

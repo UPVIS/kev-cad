@@ -208,6 +208,8 @@ public final class ViewerStore: ObservableObject {
     static let farbeKey = "viewer.strichfarbe"
     static let breiteKey = "viewer.strichbreite"
     static let stiftKey = "viewer.stiftSprechen"
+    /// I-4: Deckkraft im Röntgen (Drehregler im Kranz); gilt für die Szene, gemerkt wie die Strichbreite.
+    public static let roentgenKey = "viewer.roentgenDeckkraft"
     /// Bereich der Strichbreite (Punkte).
     public static let strichbreiten = KranzReglerBereich(min: 1, max: 11, raster: 1)
 
