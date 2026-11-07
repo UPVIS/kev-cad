@@ -41,10 +41,11 @@ public enum BlattPDF {
             BlattZeichner.zeichneSeite(z, in: ctx, optionen: optionen)
             ctx.endPDFPage()
         }
+        if inhaltsverzeichnis, zeichnungen.count > 1 {
+            CGPDFContextSetOutline(ctx, gliederung(zeichnungen.map(seitentitel)) as CFDictionary)
+        }
         ctx.closePDF()
-        let roh = out as Data
-        guard inhaltsverzeichnis, zeichnungen.count > 1 else { return roh }
-        return mitInhaltsverzeichnis(roh, titel: zeichnungen.map(seitentitel)) ?? roh
+        return out as Data
     }
 
     /// Eintrag im Inhaltsverzeichnis: „KS-B-003 Seitenstange links“.
@@ -63,19 +64,14 @@ public enum BlattPDF {
         s.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
     }
 
-    /// Inhaltsverzeichnis über PDFKit (PDFOutline), ein Eintrag je Seite.
-    static func mitInhaltsverzeichnis(_ daten: Data, titel: [String]) -> Data? {
-        guard let doc = PDFDocument(data: daten), doc.pageCount == titel.count else { return nil }
-        let wurzel = PDFOutline()
-        for (i, t) in titel.enumerated() {
-            guard let seite = doc.page(at: i) else { continue }
-            let eintrag = PDFOutline()
-            eintrag.label = t
-            eintrag.destination = PDFDestination(page: seite, at: CGPoint(x: 0, y: seite.bounds(for: .mediaBox).height))
-            wurzel.insertChild(eintrag, at: wurzel.numberOfChildren)
+    /// Inhaltsverzeichnis für `CGPDFContextSetOutline`, ein Eintrag je Seite (Seiten 1-basiert). Direkt aus dem
+    /// CoreGraphics-Kontext wie in `ExportDokument`: Der frühere Umweg über PDFKit (`outlineRoot` setzen,
+    /// `dataRepresentation()`) verlor das Inhaltsverzeichnis unter iOS 27 (iPad-Simulator 24A434, 07.11.2026).
+    static func gliederung(_ titel: [String]) -> [String: Any] {
+        let eintraege: [[String: Any]] = titel.enumerated().map { i, t in
+            [kCGPDFOutlineTitle as String: t, kCGPDFOutlineDestination as String: NSNumber(value: i + 1)]
         }
-        doc.outlineRoot = wurzel
-        return doc.dataRepresentation()
+        return [kCGPDFOutlineChildren as String: eintraege]
     }
 
     /// Schreibt die Blätter als PDF nach `url`.
