@@ -377,6 +377,44 @@ final class ControllerTests: XCTestCase {
         c.clearMeasurements()
         XCTAssertTrue(c.annotations.isEmpty)
     }
+
+    /// Kevin, 07.11.2026: Maße ein- und ausblenden (Knopf „Maße“, ⇧M). Kurze Einblendungen des Agenten gehen von selbst
+    /// und bleiben; Löschen (⌥M) nimmt alle stehenden mit und blendet wieder ein.
+    func testMasseEinUndAusblenden() throws {
+        let c = try loadedController()
+        func masse() -> Int {
+            c.viewport.overlayItems.filter { if case .dimension = $0 { return true } else { return false } }.count
+        }
+        func strecke(_ x: Double, _ y: Double, _ z: Double) -> JSONValue {
+            .array([.array([.number(0), .number(0), .number(0)]), .array([.number(x), .number(y), .number(z)])])
+        }
+        c.addMeasurement(MeasureResult(refs: ["A", "B"], run: 1, kind: "distance", values: .object([:]),
+                                       points: [[0, 0, 0], [20, 0, 0]], text: "Abstand 20,000 mm"))
+        _ = c.performViewCommand(ViewCommandMessage(id: "k1", cmd: "annotate", args: .object([
+            "kind": .string("dimension"), "points": strecke(0, 5, 0), "id": .string("stehend")])))
+        _ = c.performViewCommand(ViewCommandMessage(id: "k2", cmd: "annotate", args: .object([
+            "kind": .string("dimension"), "points": strecke(0, 0, 7), "id": .string("kurz"), "dauer_s": .number(8)])))
+        XCTAssertEqual(c.model.viewer.stehendeAnmerkungen, 1, "nur die stehende Einblendung zählt im Knopf")
+        XCTAssertEqual(masse(), 3)
+        c.ausfuehren(.masseUmschalten)
+        XCTAssertFalse(c.model.viewer.masseSichtbar)
+        XCTAssertEqual(masse(), 1, "die kurze Einblendung bleibt, bis sie von selbst geht")
+        XCTAssertEqual(c.model.measurements.count, 1, "ausgeblendet ist nicht gelöscht")
+        // Eine neue Messung will man sehen
+        c.addMeasurement(MeasureResult(refs: ["A", "C"], run: 1, kind: "distance", values: .object([:]),
+                                       points: [[0, 0, 0], [0, 0, 30]], text: "Abstand 30,000 mm"))
+        XCTAssertTrue(c.model.viewer.masseSichtbar)
+        XCTAssertEqual(masse(), 4)
+        c.masseSichtbarSetzen(false)
+        c.ausfuehren(.masseLoeschen)
+        XCTAssertTrue(c.model.measurements.isEmpty && c.annotations.isEmpty)
+        XCTAssertEqual(c.model.viewer.stehendeAnmerkungen, 0)
+        XCTAssertTrue(c.model.viewer.masseSichtbar, "nach dem Löschen ist die nächste Messung wieder zu sehen")
+        // Tasten am Mac (am Magic Keyboard des iPad dieselben, IPadEingabeTests)
+        XCTAssertEqual(Tastenbelegung.befehl(keyCode: 0xFFFF, zeichen: "m", flags: .shift), .masseUmschalten)
+        XCTAssertEqual(Tastenbelegung.befehl(keyCode: 0xFFFF, zeichen: "m", flags: .option), .masseLoeschen)
+        XCTAssertEqual(Tastenbelegung.befehl(keyCode: 0xFFFF, zeichen: "m", flags: []), .messen)
+    }
 }
 
 @MainActor

@@ -27,6 +27,8 @@ final class IPadEingabeTests: XCTestCase {
         XCTAssertEqual(befehl(.keyboardH, "h"), .ausblenden)
         XCTAssertEqual(befehl(.keyboardH, "h", .shift), .andereAusblenden)
         XCTAssertEqual(befehl(.keyboardM, "m"), .messen)
+        XCTAssertEqual(befehl(.keyboardM, "m", .shift), .masseUmschalten)
+        XCTAssertEqual(befehl(.keyboardM, "m", .alternate), .masseLoeschen)
         XCTAssertEqual(befehl(.keyboardV, "v"), .sprechen)
         XCTAssertNil(befehl(.keyboardQ, "q"), "Q ist noch frei (Werkzeugkranz, I-4)")
     }

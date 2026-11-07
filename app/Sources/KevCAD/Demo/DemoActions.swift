@@ -383,6 +383,7 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
     func clearMeasurements() {
         calls.append("clearMeasurements")
         model.measurements = []
+        model.viewer.masseSichtbar = true
     }
 
     func removeMeasurement(id: UUID) {
@@ -448,6 +449,15 @@ final class DemoActions: ObservableObject, AppActions, MeasurementRemoving {
 }
 
 // MARK: - Phase 2: Stückliste und Lagerkatalog
+
+// Knopf „Maße“ im Demomodus (Mac und iPad): ein- und ausblenden wie im echten Viewer.
+extension DemoActions: MasseSichtbarkeit {
+    func masseSichtbarSetzen(_ an: Bool) {
+        calls.append("masseSichtbarSetzen(\(an))")
+        model.viewer.masseSichtbar = an
+        model.objectWillChange.send()  // der Demo-Viewer zeichnet aus dem Modell
+    }
+}
 
 extension DemoActions: CatalogActions {
     func requestBOM() {

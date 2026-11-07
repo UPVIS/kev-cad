@@ -308,6 +308,7 @@ def test_measure_via_service_and_app(env):
     assert res["ok"] and res["text"] == "Abstand 20,000 mm (dx 20,000)"
     _, _, ann, _ = app.wait_for(lambda h: h["type"] == "VIEW_CMD" and h["cmd"] == "annotate")
     assert ann["args"]["kind"] == "dimension" and ann["args"]["text"] == res["text"]
+    assert ann["args"]["dauer_s"] == 8.0, "das Maß des Agenten geht von selbst (Kevin, 07.11.2026)"
     assert rt.measure(["A#f0", "A#f4"])["values"]["angle"] == 90.0
     assert rt.measure(["Zyl#f0"])["values"]["radius"] == 5.0
     assert rt.measure(["Nix"])["ok"] is False

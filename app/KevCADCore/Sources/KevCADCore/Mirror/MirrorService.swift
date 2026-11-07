@@ -501,11 +501,12 @@ public final class MirrorService {
                 axis: Self.axisName(n), normal: [n.x, n.y, n.z].map { Self.round3(Double($0)) },
                 offset: Self.round3(Double(plane.distance)))
         }
-        var masse = c.model.measurements.map { m in
+        // Ausgeblendete Maße (Knopf „Maße“, ⇧M) fehlen auch im Spiegel; kurze Einblendungen mit Ablauf bleiben
+        var masse = (c.viewer.masseSichtbar ? c.model.measurements : []).map { m in
             MirrorMeasure(id: m.id.uuidString, kind: m.kind, points: m.points.map(Self.point), text: m.text)
         }
         let labels = Set(c.highlightLabels.values)
-        for (id, item) in c.annotations where !labels.contains(id) {
+        for (id, item) in c.annotations where !labels.contains(id) && c.anmerkungImBild(id) {
             switch item {
             case .dimension(let a, let b, let text, _):
                 masse.append(MirrorMeasure(id: id, kind: "dimension", points: [Self.point(a), Self.point(b)], text: text))

@@ -114,6 +114,12 @@ weiter.
 - **„Prüfung in Ordnung“** mit dem Knopf „Montage“ steht nur 4 s nach einer fertigen Prüfung (Endstand) ohne Befunde,
   dann blendet die Kapsel aus (Kevin, 07.11.2026: dauerhaft „total irritierend, gerade auch auf dem iPad“). Befunde zeigt
   weiter das Band oben, bis Kevin es wegklickt.
+- **Knopf „Maße“** unten im Viewer (`MassePill`, Mac und iPad gleich): steht, solange Messungen oder stehende
+  Einblendungen des Agenten im Bild sind, mit Zahl („3 Maße“, ausgeblendet „3 Maße ausgeblendet“), Auge (ein- und
+  ausblenden, ⇧M) und Kreuz (alle löschen, ⌥M); im schmalen Viewer nur die Zahl. Am Mac dasselbe im Kontextmenü. Eine
+  neue eigene Messung blendet die Maße wieder ein. Maße, die der Agent mit `measure` zeigt, gehen nach 8 s von selbst
+  und zählen nicht (Kevin, 07.11.2026: „nicht weiß, wie ich Messungen ein- und ausblende … plötzlich da, insbesondere
+  auf dem iPad“). Auf dem iPad ohne Tastatur ist der Knopf der einzige Weg, deshalb größere Tippflächen (34 pt).
 - **Gliederung**: nur Gruppen und Objekte. Klick wählt, ⇧ oder ⌘ nimmt dazu, Doppelklick oder Zeilenschalter benennt
   um, ↑ ↓ wandern, ← → klappen. Gruppen mit gewählten Teilen öffnen sich von selbst. Umbenennen ändert die Namen in
   model.py (`ModellQuelle.benenneUm`): genau die Zeichenketten in `show()`, `verbauen(name=…)`, `befestigt(…)`; entsteht

@@ -82,6 +82,9 @@ RUN_ZIEL_S = 2.4
 RUN_LANG_S = 3.0
 RUN_WARTEN_ANTEIL = 0.3
 VERSION_TITEL_WARTEN_S = 60.0  # run(titel=…) wartet so lange auf die Version des Laufs (Versionen-Faden)
+# measure(show=True) blendet das Maß nur so lange ein (Kevin, 07.11.2026: Messungen waren „plötzlich da“ und blieben
+# stehen, auf dem iPad ohne Weg, sie loszuwerden). Wer ein Maß stehen lassen will, nimmt view(anmerkung) ohne dauer_s.
+MESSUNG_ZEIGEN_S = 8.0
 NACHLAUF_WARTEN_S = 60.0  # Aufgaben der Versionen warten so lange auf den Nachlauf früherer Läufe
 
 
@@ -392,7 +395,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if show:
             aid = f"m-{next(self._annotations)}"
             kind = "dimension" if len(refs) == 2 and len(res.get("points", [])) == 2 else "label"
-            args = {"kind": kind, "points": res.get("points", []), "text": res.get("text", ""), "id": aid}
+            args = {"kind": kind, "points": res.get("points", []), "text": res.get("text", ""), "id": aid,
+                    "dauer_s": MESSUNG_ZEIGEN_S}
             if self._send_view_nowait("annotate", args):
                 result["annotation"] = aid
         return result

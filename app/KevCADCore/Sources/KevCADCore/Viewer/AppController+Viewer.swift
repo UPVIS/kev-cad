@@ -71,6 +71,13 @@ extension AppController: ViewerActions {
         case .messen: setMeasureMode(!model.measureMode)
         case .messungAbschliessen:
             if sprache.offen { sprache.fertig() } else { messungAbschliessen() }  // ↩ gehört der offenen Sitzung
+        case .masseUmschalten:
+            masseSichtbarSetzen(!viewer.masseSichtbar)
+            viewer.zeige(viewer.masseSichtbar ? "Maße eingeblendet" : "Maße ausgeblendet")
+        case .masseLoeschen:
+            let hatte = !model.measurements.isEmpty || viewer.stehendeAnmerkungen > 0
+            clearMeasurements()
+            if hatte { viewer.zeige("Alle Maße gelöscht") }
         case .bildschirmfoto: bildschirmfoto(viewer.fotoGroesse)
         case .video: videoDrehung()
         case .navigationAufnehmen: navigationAufnehmen()

@@ -170,8 +170,12 @@ extension AppController {
 
     public func clearMeasurements() {
         model.measurements = []
-        // Auch die Maße, die der Agent mit measure(show=True) eingeblendet hat (kommen zusätzlich als Anmerkung)
-        removeDimensionAnnotations(matching: nil)
+        // Auch alles, was der Agent eingeblendet hat (measure mit show=True, view mit anmerkung): Maße, Pfeile und
+        // Beschriftungen, so zählt sie auch der Knopf „Maße“. Beschriftungen von Hervorhebungen gehen mit diesen.
+        let beschriftungen = Set(highlightLabels.values)
+        annotations.removeAll { !beschriftungen.contains($0.id) }
+        for id in Array(live.anmerkungAblauf.keys) where !beschriftungen.contains(id) { live.anmerkungAblauf[id] = nil }
+        viewer.masseSichtbar = true  // die nächste Messung ist wieder zu sehen
         refreshOverlay()
     }
 
@@ -272,6 +276,15 @@ extension AppController: MeasurementRemoving {
         }
         model.measurements.removeAll { $0.id == id }
         refreshOverlay()
+    }
+}
+
+// Kevin, 07.11.2026: Maße ein- und ausblenden (Knopf „Maße“ im Viewer, ⇧M), auf Mac und iPad gleich.
+extension AppController: MasseSichtbarkeit {
+    public func masseSichtbarSetzen(_ an: Bool) {
+        guard viewer.masseSichtbar != an else { return }
+        viewer.masseSichtbar = an
+        refreshOverlay()  // ändert die Überlagerung des Viewports, das gleicht auch den Spiegel aufs iPhone ab
     }
 }
 

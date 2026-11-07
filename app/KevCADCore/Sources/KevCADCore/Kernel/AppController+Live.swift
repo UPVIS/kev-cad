@@ -410,10 +410,22 @@ extension AppController {
 
     /// Anmerkungen fürs Bild; die mit Ablauf werden in den letzten Augenblicken durchsichtig.
     func anmerkungenMitAblauf(now: CFTimeInterval = CACurrentMediaTime()) -> [OverlayPrimitive] {
-        annotations.map { a in
+        annotations.filter { anmerkungImBild($0.id) }.map { a in
             guard let ablauf = live.anmerkungAblauf[a.id] else { return a.item }
             return a.item.mitDeckkraft(ablauf.deckkraft(now))
         }
+    }
+
+    /// Ausgeblendete Maße (Knopf „Maße“, ⇧M) nehmen die stehenden Einblendungen mit. Kurze mit Ablauf (measure mit
+    /// show, view mit dauer_s) und die Beschriftungen von Hervorhebungen bleiben im Bild.
+    func anmerkungImBild(_ id: String) -> Bool {
+        viewer.masseSichtbar || live.anmerkungAblauf[id] != nil || highlightLabels.values.contains(id)
+    }
+
+    /// Stehende Einblendungen des Agenten: ohne Ablauf und keine Beschriftung einer Hervorhebung.
+    func stehendeAnmerkungenZaehlen() -> Int {
+        let beschriftungen = Set(highlightLabels.values)
+        return annotations.filter { live.anmerkungAblauf[$0.id] == nil && !beschriftungen.contains($0.id) }.count
     }
 
     private func ablaufPlanen(_ now: CFTimeInterval) {

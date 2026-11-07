@@ -874,6 +874,8 @@ public final class AppController: AppActions {
         model.measurements.append(item)
         // Kam dasselbe Maß schon als Anmerkung (measure mit show=True), die Anmerkung ersetzen
         removeDimensionAnnotations(matching: item.points)
+        // Eine neue Messung will man sehen, auch wenn die Maße gerade ausgeblendet sind
+        if !viewer.masseSichtbar { viewer.masseSichtbar = true }
         log(.info, "Messung: \(r.text)")
         refreshOverlay()
     }
@@ -886,7 +888,7 @@ public final class AppController: AppActions {
     /// Alles, was über dem Bild liegt: Auswahl- und Hervorhebungskanten, Messungen, Anmerkungen.
     func overlayItems() -> [OverlayPrimitive] {
         var items = scene.elementOverlay()
-        for m in model.measurements {
+        for m in model.measurements where viewer.masseSichtbar {  // Knopf „Maße“, ⇧M
             if m.points.count >= 2 {
                 items.append(.dimension(a: m.points[0], b: m.points[1], text: m.text, color: Self.measureColor))
             } else if let p = m.points.first {
@@ -905,5 +907,9 @@ public final class AppController: AppActions {
         return items
     }
 
-    func refreshOverlay() { viewport.setOverlay(overlayItems()) }
+    func refreshOverlay() {
+        let stehend = stehendeAnmerkungenZaehlen()  // für den Knopf „Maße“
+        if viewer.stehendeAnmerkungen != stehend { viewer.stehendeAnmerkungen = stehend }
+        viewport.setOverlay(overlayItems())
+    }
 }

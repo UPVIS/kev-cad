@@ -157,6 +157,7 @@ struct ViewportArea: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            MassePill(model: model, viewer: model.viewer, kompakt: schmal)
             if okSichtbar, pruefKey == nil, !state.pruefListeOffen, let p = model.pruefung, !p.montageSchritte.isEmpty {
                 OhneDurchspielen(store: model.bauplan) {  // dort steht dann die Leiste des Durchspielens
                     Pill(symbol: "checkmark.seal", tint: .green) {
@@ -206,6 +207,62 @@ struct ViewportArea: View {
             .padding(24)
         }
     }
+}
+
+/// Knopf „Maße“ (Kevin, 07.11.2026: „nicht weiß, wie ich Messungen ein- und ausblende … plötzlich da, insbesondere auf
+/// dem iPad“). Steht, solange Messungen oder stehende Einblendungen des Agenten im Bild sind: Auge blendet ein und aus
+/// (⇧M), Kreuz löscht alle (⌥M). Auf dem iPad ohne Tastatur ist er der Weg dorthin, am Mac gibt es dazu Tasten und
+/// Kontextmenü. Kurze Einblendungen mit Ablauf zählen nicht, sie gehen von selbst.
+private struct MassePill: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var viewer: ViewerStore
+    /// Schmaler Viewer (Kachel): nur die Zahl.
+    var kompakt = false
+
+    private var anzahl: Int { model.measurements.count + viewer.stehendeAnmerkungen }
+
+    var body: some View {
+        if anzahl > 0 {
+            Pill(symbol: "ruler", tint: .teal) {
+                Text(titel)
+                    .foregroundStyle(viewer.masseSichtbar ? .primary : .secondary)
+                    .accessibilityLabel(anzahl == 1 ? "1 Maß im Bild" : "\(anzahl) Maße im Bild")
+            } trailing: {
+                HStack(spacing: 2) {
+                    knopf(viewer.masseSichtbar ? "eye.slash" : "eye",
+                          hilfe: viewer.masseSichtbar ? "Maße ausblenden (⇧M)" : "Maße einblenden (⇧M)") {
+                        (model.actions as? MasseSichtbarkeit)?.masseSichtbarSetzen(!viewer.masseSichtbar)
+                    }
+                    knopf("xmark", hilfe: "Alle Maße löschen (⌥M)") { model.actions?.clearMeasurements() }
+                }
+            }
+            .animation(.snappy(duration: 0.2), value: viewer.masseSichtbar)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private var titel: String {
+        if kompakt { return "\(anzahl)" }
+        let n = anzahl == 1 ? "1 Maß" : "\(anzahl) Maße"
+        return viewer.masseSichtbar ? n : n + " ausgeblendet"
+    }
+
+    private func knopf(_ symbol: String, hilfe: String, _ aktion: @escaping () -> Void) -> some View {
+        Button(action: aktion) {
+            Image(systemName: symbol)
+                .frame(minWidth: Self.ziel, minHeight: Self.ziel)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(hilfe)
+        .accessibilityLabel(hilfe)
+    }
+
+    #if os(iOS)
+    static let ziel: CGFloat = 34  // für den Finger
+    #else
+    static let ziel: CGFloat = 20
+    #endif
 }
 
 /// Kapsel mit Glas-Hintergrund für kurze Meldungen im Viewport.

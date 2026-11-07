@@ -516,12 +516,12 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
           "Exact measurement in the kernel (OCCT). Without refs: what Kevin has selected, with its values (use it "
           "when he says 'this', 'here', 'that hole'). One ref: its properties (face area/normal/radius, edge "
           "length/radius, vertex position, part bbox/volume/mass). Two refs: minimum distance with dx/dy/dz and both "
-          "points, angle, distance of parallel faces or axes. show=true also draws it in the viewer.", ADDITIVE)
+          "points, angle, distance of parallel faces or axes. show=true draws it in the viewer for 8 s.", ADDITIVE)
     async def measure(
         refs: Annotated[list[str] | None,
                         Field(description="One or two references of the current run; omit for Kevin's selection")]
         = None,
-        show: Annotated[bool, Field(description="Draw the measurement in the viewer")] = True,
+        show: Annotated[bool, Field(description="Draw it in the viewer for 8 s")] = True,
     ) -> CallToolResult:
         if not refs:
             res = await t.work("liest die Auswahl", svc.selection)
@@ -549,7 +549,7 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
         if len(refs) == 2 and len(punkte) == 2:
             text += f"\nPunkte: {fmt.vec(punkte[0])} ↔ {fmt.vec(punkte[1])}"
         if show:
-            text += " (im Viewer eingeblendet)" if len(refs) == 1 else "\nIm Viewer eingeblendet."
+            text += " (im Viewer kurz eingeblendet)" if len(refs) == 1 else "\nIm Viewer kurz eingeblendet."
         data = {k: res.get(k) for k in ("refs", "run", "kind", "values", "points", "annotation") if k in res}
         return fmt.result(text, data, json_block=False)
 

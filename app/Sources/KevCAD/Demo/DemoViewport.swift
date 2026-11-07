@@ -72,7 +72,7 @@ private struct DemoScene {
         self.size = size
         self.dark = dark
         style = model.displayStyle
-        measurements = model.measurements
+        measurements = model.viewer.masseSichtbar ? model.measurements : []  // Knopf „Maße“
 
         // Kamera aus der Standardansicht
         let (eye, upHint) = Self.camera(demo.standardView)

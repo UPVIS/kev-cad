@@ -201,9 +201,13 @@ extension AppController: NavigationActions {
             guard let self else { return }
             self.setMeasureMode(!self.model.measureMode)
         }
-        add("Alle Maße löschen", enabled: !model.measurements.isEmpty || annotations.contains {
-            if case .dimension = $0.item { return true } else { return false }
-        }) { [weak self] in self?.clearMeasurements() }
+        let hatMasse = !model.measurements.isEmpty || viewer.stehendeAnmerkungen > 0
+        add(viewer.masseSichtbar ? "Maße ausblenden" : "Maße einblenden", "m", .shift, enabled: hatMasse) {
+            [weak self] in self?.ausfuehren(.masseUmschalten)
+        }
+        add("Alle Maße löschen", "m", .option, enabled: hatMasse || !annotations.isEmpty) { [weak self] in
+            self?.ausfuehren(.masseLoeschen)
+        }
         add(model.selectionMode == .parts ? "Flächen und Kanten auswählen" : "Ganze Teile auswählen", "\t") {
             [weak self] in
             guard let self else { return }

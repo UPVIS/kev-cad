@@ -24,7 +24,7 @@ public enum ViewerBefehl: String, CaseIterable, Sendable {
     // Darstellung
     case shadingMenue, roentgen, schnitt, explosion
     // Messen
-    case messen, messungAbschliessen
+    case messen, messungAbschliessen, masseUmschalten, masseLoeschen
     // Aufnahme
     case bildschirmfoto, video, navigationAufnehmen
     // Sprechen (V2-6)
@@ -282,6 +282,12 @@ public enum Tastenbelegung {
                  erklaerung: "Fangen an Ecken, Kantenmitten und Kreismitten"),
         Belegung(befehl: .messungAbschliessen, titel: "Gewähltes Element allein messen", gruppe: .messen,
                  tasten: [Taste(.eingabe)], erklaerung: "Radius und Durchmesser, Länge, Fläche"),
+        // Kevin, 07.11.2026: „nicht weiß, wie ich Messungen ein- und ausblende … insbesondere auf dem iPad“. Am iPad
+        // ohne Tastatur dieselben Befehle über den Knopf „Maße“ unten im Viewer (ViewportArea, MassePill).
+        Belegung(befehl: .masseUmschalten, titel: "Maße ein- und ausblenden", gruppe: .messen,
+                 tasten: [.z("m", .umschalt)], erklaerung: "auch der Knopf „Maße“ unten im Viewer"),
+        Belegung(befehl: .masseLoeschen, titel: "Alle Maße löschen", gruppe: .messen, tasten: [.z("m", .wahl)],
+                 erklaerung: "Messungen und stehende Einblendungen des Agenten"),
         // Bild und Video
         Belegung(befehl: .bildschirmfoto, titel: "Bildschirmfoto (PNG)", gruppe: .aufnahme,
                  tasten: [.z("s", [.befehl, .wahl])], erklaerung: "doppelte Auflösung der Ansicht"),

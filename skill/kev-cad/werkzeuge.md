@@ -57,10 +57,10 @@ Parts of the last run. Without filter: every part in one line (size, mass, stock
 
 ### measure
 
-Exact measurement in the kernel (OCCT). Without refs: what Kevin has selected, with its values (use it when he says 'this', 'here', 'that hole'). One ref: its properties (face area/normal/radius, edge length/radius, vertex position, part bbox/volume/mass). Two refs: minimum distance with dx/dy/dz and both points, angle, distance of parallel faces or axes. show=true also draws it in the viewer.
+Exact measurement in the kernel (OCCT). Without refs: what Kevin has selected, with its values (use it when he says 'this', 'here', 'that hole'). One ref: its properties (face area/normal/radius, edge length/radius, vertex position, part bbox/volume/mass). Two refs: minimum distance with dx/dy/dz and both points, angle, distance of parallel faces or axes. show=true draws it in the viewer for 8 s.
 
 - `refs` (list[string], optional): One or two references of the current run; omit for Kevin's selection
-- `show` (boolean, optional, Vorgabe True): Draw the measurement in the viewer
+- `show` (boolean, optional, Vorgabe True): Draw it in the viewer for 8 s
 
 ### view
 

@@ -179,6 +179,12 @@ public final class ViewerStore: ObservableObject {
     @Published public var fotoGroesse: FotoGroesse = .doppelt
     /// Platz oben im Viewport, über dem die Kopfleiste des Fensters schwebt (V2-9); der Achsenwürfel rückt darunter.
     @Published public var obenFrei: CGFloat = 0
+    /// Messungen und stehende Einblendungen des Agenten im Bild (Kevin, 07.11.2026). Kurze Einblendungen mit Ablauf
+    /// und die Beschriftungen von Hervorhebungen bleiben auch ausgeblendet sichtbar. Setzen über `MasseSichtbarkeit`.
+    @Published public var masseSichtbar = true
+    /// Stehende Einblendungen des Agenten (annotate ohne dauer_s, keine Beschriftung einer Hervorhebung); zählen im
+    /// Knopf „Maße“ mit den Messungen zusammen.
+    @Published public var stehendeAnmerkungen = 0
 
     static let hinweisKey = "viewer.hinweisleiste"
     static let hauchKey = "viewer.hauch"
@@ -235,4 +241,11 @@ public protocol ViewerActions: AnyObject {
     func messungKopieren(_ id: UUID)
     /// Alle Messungen als Text in die Zwischenablage.
     func messungenKopieren()
+}
+
+/// Maße im Bild ein- und ausblenden (Knopf „Maße“, ⇧M). Eigenes Protokoll, damit es auch der Demomodus anbietet, der
+/// `ViewerActions` nicht kennt. Löschen geht über `AppActions.clearMeasurements()`.
+@MainActor
+public protocol MasseSichtbarkeit: AnyObject {
+    func masseSichtbarSetzen(_ an: Bool)
 }
