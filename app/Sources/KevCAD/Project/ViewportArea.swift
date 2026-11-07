@@ -25,9 +25,14 @@ struct ViewportArea: View {
         viewport
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { emptyState }
-            // Phase 4: Video oder Fotos auf den Viewport ziehen = Referenz hinzufügen; Fotoansicht darüber
-            .onDrop(of: [.fileURL], isTargeted: nil) { provider in
-                ReferenzDateien.laden(provider) { urls in if !urls.isEmpty { state.referenzDateien = urls } }
+            // Phase 4: Video oder Fotos auf den Viewport ziehen = Referenz hinzufügen; Fotoansicht darüber.
+            // I-8: Ein Shop-Link (aus Safari oder Chrome gezogen, am iPad auch in Split View) öffnet „Zukaufteil
+            // hinzufügen …“ mit dem Link, auf Mac und iPad gleich.
+            .onDrop(of: [.fileURL, .url], isTargeted: nil) { provider in
+                if ReferenzDateien.laden(provider, fertig: { urls in if !urls.isEmpty { state.referenzDateien = urls } }) {
+                    return true
+                }
+                return ZukaufGezogen.laden(provider) { link in session.showZukaufDialog(.new(input: link)) }
             }
             .overlay { FotoAnsichtOverlay(store: model.referenzen, actions: model.referenzActions) }
             .overlay(alignment: .bottomTrailing) {  // Phase 4: Legende der Farbkarte (unten links steht der Vergleich)

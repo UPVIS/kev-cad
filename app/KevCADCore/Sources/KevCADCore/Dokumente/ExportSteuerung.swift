@@ -271,28 +271,39 @@ extension AppController: ExportActions {
         model.export.letztes = e
         return e
         #else
-        // iPad: dasselbe PDF (am Gerät gerechnet, CoreGraphics) an AirPrint; der Druckdialog des Systems wählt Drucker
-        // und Papier. Gemischte Formate gehen in einem Auftrag (am Mac je Format einer).
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "\(model.project?.name ?? "Kev CAD") – Dokumente.pdf")
+        // iPad: dasselbe PDF (am Gerät gerechnet, CoreGraphics) an AirPrint, je Format ein Auftrag wie am Mac
+        // (`ExportDrucker.drucke`); der Druckdialog des Systems wählt den Drucker, das Papier passt zum Format.
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("KevCAD-Druck-\(UUID().uuidString).pdf")
         var e = try await exportPDF(v, nach: url)
-        let druck = UIPrintInteractionController.shared
-        let info = UIPrintInfo.printInfo()
-        info.jobName = model.project?.name ?? "Kev CAD"
-        info.outputType = .general
-        druck.printInfo = info
-        druck.printingItem = url
-        druck.present(animated: true) { [weak self] _, fertig, fehler in
-            try? FileManager.default.removeItem(at: url)
-            if let fehler { self?.log(.warning, "Druck: \(fehler.localizedDescription)") }
-            if fertig { self?.log(.info, "Druck abgeschickt") }
-        }
+        // aus den Daten laden: PDFKit liest eine Datei sonst erst beim Zeichnen, dann ist sie schon gelöscht
+        let daten = try Data(contentsOf: url)
+        try? FileManager.default.removeItem(at: url)
+        guard let pdf = PDFDocument(data: daten) else { throw ExportFehler.pdf("Druck: PDF nicht lesbar") }
         e.pfad = nil
-        e.gedruckt = "Druckdialog geöffnet"
+        e = padDrucken(pdf, e)
         model.export.letztes = e
         return e
         #endif
     }
+
+    #if os(iOS)
+    /// iPad: PDF über AirPrint drucken, je Format ein Auftrag; trägt Dialog und Hinweis ins Ergebnis ein.
+    func padDrucken(_ pdf: PDFDocument, _ ergebnis: ExportErgebnis) -> ExportErgebnis {
+        var e = ergebnis
+        let auftraege = ExportDrucker.auftraege(pdf)
+        guard !ExportDrucker.laeuft else {
+            e.hinweise.append("Es läuft schon ein Druck; erst den offenen Druckdialog schließen")
+            return e
+        }
+        ExportDrucker.drucke(pdf, titel: model.project?.name ?? "Kev CAD") { [weak self] n in
+            self?.log(.info, "Druck: \(n) von \(auftraege.count) Aufträgen abgeschickt")
+        }
+        e.gedruckt = auftraege.count > 1 ? "Druckdialog geöffnet (\(auftraege.count) Aufträge, je Format einer)"
+            : "Druckdialog geöffnet"
+        if let h = ExportDrucker.hinweis(auftraege) { e.hinweise.append(h) }
+        return e
+    }
+    #endif
 
     func exportErgebnis(_ doc: ExportDokument, pfad: URL?, t0: Date) -> ExportErgebnis {
         ExportErgebnis(
@@ -320,8 +331,8 @@ extension AppController: ExportActions {
                         if let h = ExportDrucker.hinweis(ExportDrucker.auftraege(pdf)) { e.hinweise.append(h) }
                     }
                     #else
-                    // iPad: Drucken folgt in I-8; das PDF ist geschrieben
-                    if a.drucken { e.hinweise.append("Drucken gibt es auf dem iPad noch nicht, das PDF liegt unter \(ziel.path)") }
+                    // iPad: wie am Mac je Format ein AirPrint-Auftrag
+                    if a.drucken, let pdf = PDFDocument(url: ziel) { e = padDrucken(pdf, e) }
                     #endif
                 } else if a.drucken {
                     e = try await exportDrucken(vorlage)

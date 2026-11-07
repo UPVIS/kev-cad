@@ -1,5 +1,7 @@
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 import PDFKit
 
@@ -24,6 +26,16 @@ public final class ExportDrucker: NSObject {
     private var fertig: ((Int) -> Void)?
     private var gedruckt = 0
     /// Läuft gerade (hält sich selbst, bis der letzte Auftrag durch ist).
+    private static var aktiv: ExportDrucker?
+    #else
+    // iPad: dieselbe Folge über AirPrint (`drucke(_:titel:fertig:)` unten)
+    private var offen: [ExportDruckauftrag] = []
+    private var titel = ""
+    private var fertig: ((Int) -> Void)?
+    private var gedruckt = 0
+    private var anzahl = 0
+    /// Papiergröße des laufenden Auftrags (Hochformat), für die Papierwahl.
+    private var papier = CGSize.zero
     private static var aktiv: ExportDrucker?
     #endif
 
@@ -122,6 +134,99 @@ public final class ExportDrucker: NSObject {
             MainActor.assumeIsolated { self?.naechster() }
         }
     }
+    #else
+    /// Läuft gerade ein Druck (Dialog offen oder weitere Aufträge in der Folge)?
+    public static var laeuft: Bool { aktiv != nil }
+
+    /// iPad: AirPrint-Dialog für jeden Auftrag nacheinander, je Format einer wie am Mac. Das Papier wählt
+    /// `bestPaper` passend zum Format, die Seiten gehen 1:1 und mittig aufs Blatt (`PDFSeitenDruck`), quer liegende
+    /// Seiten gedreht auf Papier im Hochformat. `fertig` bekommt die Zahl der gedruckten Aufträge.
+    public static func drucke(_ pdf: PDFDocument, titel: String, fertig: ((Int) -> Void)? = nil) {
+        guard aktiv == nil else { return }
+        let d = ExportDrucker()
+        d.offen = auftraege(pdf)
+        d.anzahl = d.offen.count
+        d.titel = titel
+        d.fertig = fertig
+        aktiv = d
+        d.naechster()
+    }
+
+    private func naechster() {
+        guard !offen.isEmpty else {
+            fertig?(gedruckt)
+            Self.aktiv = nil
+            return
+        }
+        let a = offen.removeFirst()
+        let nr = anzahl - offen.count
+        let c = UIPrintInteractionController.shared
+        let info = UIPrintInfo.printInfo()
+        info.jobName = anzahl > 1 ? "\(titel) – \(a.format) (\(nr)/\(anzahl))" : titel
+        info.outputType = .general
+        info.orientation = .portrait
+        c.printInfo = info
+        c.printingItem = nil
+        c.printingItems = nil
+        c.printPageRenderer = PDFSeitenDruck(a.dokument)
+        c.showsPaperSelectionForLoadedPapers = true
+        papier = CGSize(width: min(a.groessePt.width, a.groessePt.height),
+                        height: max(a.groessePt.width, a.groessePt.height))
+        c.delegate = self
+        c.present(animated: true) { [weak self] c, ok, _ in
+            c.delegate = nil
+            c.printPageRenderer = nil
+            guard let self else { return }
+            if ok {
+                self.gedruckt += 1
+            } else {
+                self.offen = []  // abgebrochen: die übrigen Formate auch nicht
+            }
+            // nächstes Format erst, wenn der Dialog zu ist
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.naechster() } }
+        }
+    }
     #endif
-    // iPad: Drucken über AirPrint (1:1 ohne Skalierung, je Format ein Auftrag) folgt in I-8.
 }
+
+#if os(iOS)
+extension ExportDrucker: UIPrintInteractionControllerDelegate {
+    /// Papier passend zum Format des Auftrags (A4, A3 …); fehlt es am Drucker, das nächstgrößere bzw. beste.
+    public func printInteractionController(_ c: UIPrintInteractionController,
+                                           choosePaper paperList: [UIPrintPaper]) -> UIPrintPaper {
+        UIPrintPaper.bestPaper(forPageSize: papier, withPapersFrom: paperList)
+    }
+}
+
+/// Zeichnet die Seiten eines PDF 1:1 (ein PDF-Punkt = ein Druckpunkt) mittig aufs Papier, ohne Skalierung wie
+/// `.pageScaleNone` am Mac. Liegen Seite und Papier verschieden (quer gegen hoch), wird die Seite um 90° gedreht.
+final class PDFSeitenDruck: UIPrintPageRenderer {
+    private let pdf: PDFDocument
+
+    init(_ pdf: PDFDocument) {
+        self.pdf = pdf
+        super.init()
+    }
+
+    override var numberOfPages: Int { pdf.pageCount }
+
+    override func drawPage(at index: Int, in printableRect: CGRect) {
+        guard let seite = pdf.page(at: index), let ctx = UIGraphicsGetCurrentContext() else { return }
+        let box = seite.bounds(for: .mediaBox)
+        ctx.saveGState()
+        ctx.concatenate(Self.lage(seite: box.size, papier: paperRect))
+        seite.draw(with: .mediaBox, to: ctx)
+        ctx.restoreGState()
+    }
+
+    /// Abbildung von PDF-Koordinaten (Ursprung unten links) auf das Papier (Ursprung oben links): mittig, 1:1,
+    /// gedreht, wenn Seite und Papier verschieden liegen.
+    static func lage(seite: CGSize, papier: CGRect) -> CGAffineTransform {
+        let drehen = (seite.width > seite.height) != (papier.width > papier.height)
+        var t = CGAffineTransform(translationX: papier.midX, y: papier.midY)
+        if drehen { t = t.rotated(by: .pi / 2) }
+        t = t.scaledBy(x: 1, y: -1)
+        return t.translatedBy(x: -seite.width / 2, y: -seite.height / 2)
+    }
+}
+#endif

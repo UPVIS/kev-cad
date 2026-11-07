@@ -39,6 +39,28 @@ struct ZukaufDialogRequest: Identifiable, Equatable {
     static func == (a: ZukaufDialogRequest, b: ZukaufDialogRequest) -> Bool { a.id == b.id }
 }
 
+/// Shop-Link aus einem Ziehen (Viewer) oder Einsetzen: nur Web-Adressen (http, https), keine Dateien.
+enum ZukaufGezogen {
+    /// Web-Adresse als Eingabe für den Dialog, sonst nil.
+    static func eingabe(_ url: URL) -> String? {
+        guard let s = url.scheme?.lowercased(), s == "http" || s == "https", url.host != nil else { return nil }
+        return url.absoluteString
+    }
+
+    /// Lädt die erste Web-Adresse aus den gezogenen Objekten; `false`, wenn keins eine sein kann.
+    static func laden(_ provider: [NSItemProvider], fertig: @escaping @MainActor (String) -> Void) -> Bool {
+        guard let p = provider.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+                && !$0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }) else { return false }
+        _ = p.loadObject(ofClass: URL.self) { url, _ in
+            guard let url, let link = eingabe(url) else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { fertig(link) } }
+        }
+        return true
+    }
+}
+
 extension AppSession {
     /// Fenster „Zukaufteil hinzufügen …“ öffnen (neu, Vorschlag prüfen oder bearbeiten).
     func showZukaufDialog(_ request: ZukaufDialogRequest? = nil) {

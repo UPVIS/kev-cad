@@ -160,9 +160,34 @@ struct DruckAnsicht: View {
         .disabled(model.druckActions == nil || v.platten.isEmpty || druck.export.laeuftGerade)
         .help("Ohne Drucken: die angeordneten Platten als 3MF für Bambu Studio sichern, je Material eine Datei, mit "
               + "dem Preset des gewählten Filaments. Zum Drucken „Drucken …“ in der Druckerleiste.")
+        #else
+        // iPad: Der Kernel schreibt die 3MF in output/ des Projekts am Mac (mit dem angenommenen Filament der Vorschau,
+        // das die Platten schon zeigen); das Band danach bietet „3MF teilen“ (Bambu Handy, Dateien, AirDrop).
+        Menu {
+            Button("Alle Platten als 3MF") { padExport([], v) }
+            if v.platten.count > 1 {
+                Divider()
+                ForEach(v.platten) { p in
+                    Button("Nur Platte \(p.nr) als 3MF") { padExport([p.nr], v) }
+                }
+            }
+        } label: {
+            Label("Als 3MF sichern …", systemImage: "square.and.arrow.down.on.square")
+        } primaryAction: {
+            padExport([], v)
+        }
+        .menuStyle(.button)
+        .fixedSize()
+        .controlSize(.small)
+        .disabled(model.druckActions == nil || v.platten.isEmpty || druck.export.laeuftGerade)
         #endif
-        // iPad: 3MF sichern (Ort wählen über das Teilen-Blatt) folgt in I-8
     }
+
+    #if os(iOS)
+    private func padExport(_ platten: [Int], _ v: Druckvorschau) {
+        model.druckActions?.druckExportieren(platten: platten, nach: nil, filament: v.filamentVorschlag)
+    }
+    #endif
 
     #if os(macOS)
     /// Ziel und Filament wählen und PRINT_EXPORT_REQ senden (Strang „Druckexport 2“: der Kernel schreibt ohne

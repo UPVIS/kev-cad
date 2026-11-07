@@ -175,7 +175,6 @@ public final class DruckerSchluesselbund: DruckerZugangsSpeicher {
         guard DruckerEintrag.gueltigeID(id) else {
             throw DruckerSchluesselbundFehler(status: errSecParam, was: "Speichern (ungültige Drucker-ID)")
         }
-        #if os(macOS)
         let inhalt = try JSONSerialization.data(withJSONObject: [
             "seriennummer": seriennummer.trimmingCharacters(in: .whitespacesAndNewlines),
             "zugangscode": zugangscode.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -185,16 +184,17 @@ public final class DruckerSchluesselbund: DruckerZugangsSpeicher {
         q[kSecValueData as String] = inhalt
         q[kSecAttrLabel as String] = "Kev CAD: Drucker \(id)"
         q[kSecAttrDescription as String] = "Seriennummer und Zugangscode des Bambu-Druckers (nur lesender Status)"
+        #if os(macOS)
         if let access = Self.zugriff(id: id) {
             q[kSecAttrAccess as String] = access
         }
+        #else
+        // iPad: der Schlüsselbund der App, ohne Zugriffsliste (die gibt es nur am Mac); nur auf diesem Gerät, nach dem
+        // ersten Entsperren lesbar. Der Kernel am Mac liest seinen eigenen Schlüsselbund, nicht diesen.
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        #endif
         let s = SecItemAdd(q as CFDictionary, nil)
         guard s == errSecSuccess else { throw DruckerSchluesselbundFehler(status: s, was: "Speichern") }
-        #else
-        // iPad: Den Zugang liest der Kernel am Mac aus dessen Schlüsselbund; ihn über die Verbindung dorthin zu geben folgt
-        // in I-8 (Drucker über den Kernel am Mac). Im Schlüsselbund des iPad nützte er dem Kernel nichts.
-        throw DruckerSchluesselbundFehler(status: errSecUnimplemented, was: "Speichern auf dem iPad")
-        #endif
     }
 
     public func loeschen(id: String) throws {

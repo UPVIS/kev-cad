@@ -59,7 +59,14 @@ struct DokumenteBereich: View {
                                  fenster: session.projectWindow) { t, f in zustand.melde(t, fehler: f) }
         }
         #else
-        _ = (model, zustand, session)  // iPad: Sichern als PDF und Drucken folgen in I-8
+        // iPad: „Als PDF sichern“ wird Teilen (dort „In Dateien sichern“), Drucken über AirPrint
+        _ = session
+        zustand.pdfSichern = {
+            BlattAusgabe.pdfTeilen(zustand.markierteBlaetter(model.dokumente), model: model) { t, f in zustand.melde(t, fehler: f) }
+        }
+        zustand.drucken = {
+            BlattAusgabe.drucken(zustand.markierteBlaetter(model.dokumente), model: model) { t, f in zustand.melde(t, fehler: f) }
+        }
         #endif
     }
 

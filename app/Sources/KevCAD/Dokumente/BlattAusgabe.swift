@@ -31,8 +31,8 @@ enum BlattAusgabe {
     }
 
     #if os(macOS)
-    /// „Als PDF sichern …“: Sichern-Dialog am Fenster, Vorgabe output/ im Projektordner. Nur am Mac; iPad: Sichern und
-    /// Drucken folgen in I-8 (Teilen geht dort schon über `BlattPDFDatei`).
+    /// „Als PDF sichern …“: Sichern-Dialog am Fenster, Vorgabe output/ im Projektordner. Am iPad `pdfTeilen` und
+    /// `drucken` unten (Teilen-Blatt bzw. AirPrint).
     static func pdfSichern(_ ids: [String], model: AppModel, fenster: NSWindow?, melde: @escaping (String, Bool) -> Void) {
         guard !ids.isEmpty else { return }
         Task { @MainActor in
@@ -77,6 +77,41 @@ enum BlattAusgabe {
                 return
             }
             BlattDruck.drucken(zs, titel: titel(zs, model: model), fenster: fenster)
+        }
+    }
+    #else
+    /// iPad, „Als PDF teilen …“: PDF am Gerät schreiben und das Teilen-Blatt öffnen (dort „In Dateien sichern“,
+    /// AirDrop, Mail). Gegenstück zu „Als PDF sichern …“ am Mac.
+    static func pdfTeilen(_ ids: [String], model: AppModel, melde: @escaping (String, Bool) -> Void) {
+        guard !ids.isEmpty else { return }
+        Task { @MainActor in
+            let zs = await sicherstellen(ids, model: model)
+            guard !zs.isEmpty else {
+                melde("Die Blätter sind noch nicht gerechnet", true)
+                return
+            }
+            let ordner = FileManager.default.temporaryDirectory.appendingPathComponent("Kev CAD Teilen", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+                let datei = ordner.appendingPathComponent(BlattPDF.dateiname(zs, projekt: model.project?.name) + ".pdf")
+                try BlattPDF.schreiben(zs, nach: datei, metadaten: .init(titel: titel(zs, model: model)))
+                TeilenBlatt.zeigen([datei], von: .zero)
+            } catch {
+                melde("PDF nicht geschrieben: \(error.localizedDescription)", true)
+            }
+        }
+    }
+
+    /// iPad, „Drucken …“: AirPrint, 1:1 und je Blattformat ein Auftrag wie am Mac.
+    static func drucken(_ ids: [String], model: AppModel, melde: @escaping (String, Bool) -> Void) {
+        guard !ids.isEmpty else { return }
+        Task { @MainActor in
+            let zs = await sicherstellen(ids, model: model)
+            guard !zs.isEmpty else {
+                melde("Die Blätter sind noch nicht gerechnet", true)
+                return
+            }
+            BlattDruck.drucken(zs, titel: titel(zs, model: model))
         }
     }
     #endif

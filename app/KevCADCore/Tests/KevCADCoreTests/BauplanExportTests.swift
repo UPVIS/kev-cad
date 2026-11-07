@@ -426,6 +426,19 @@ final class BauplanExportTests: XCTestCase {
         XCTAssertEqual(info.leftMargin, 0)
         XCTAssertEqual(info.scalingFactor, 1)
         XCTAssertNotNil(ExportDrucker.operation(auftraege[0]))
+        #else  // iPad: Lage auf dem Papier für AirPrint (1:1, mittig, quer auf hoch gedreht)
+        let a4 = CGRect(x: 0, y: 0, width: 595.28, height: 841.89)
+        let hoch = PDFSeitenDruck.lage(seite: a4.size, papier: CGRect(x: 0, y: 0, width: 612, height: 792))
+        let mitte = CGPoint(x: a4.midX, y: a4.midY).applying(hoch)
+        XCTAssertEqual(mitte.x, 306, accuracy: 0.01)
+        XCTAssertEqual(mitte.y, 396, accuracy: 0.01)
+        XCTAssertEqual(CGPoint(x: 0, y: 0).applying(hoch).y - CGPoint(x: 0, y: 10).applying(hoch).y, 10, accuracy: 0.01)
+        let a3quer = CGSize(width: 1190.55, height: 841.89)
+        let gedreht = PDFSeitenDruck.lage(seite: a3quer, papier: CGRect(x: 0, y: 0, width: 841.89, height: 1190.55))
+        let ecke = CGPoint(x: 0, y: 0).applying(gedreht)
+        let rechts = CGPoint(x: 1190.55, y: 841.89).applying(gedreht)
+        XCTAssertEqual(abs(rechts.x - ecke.x), 841.89, accuracy: 0.01)  // quer liegende Seite füllt das Papier hoch aus
+        XCTAssertEqual(abs(rechts.y - ecke.y), 1190.55, accuracy: 0.01)
         #endif
         // Gliederung zeigt auf die erste Seite jedes Bausteins
         let zweiter = try XCTUnwrap(pdf.outlineRoot?.child(at: 1))

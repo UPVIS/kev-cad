@@ -100,8 +100,12 @@ struct DokumenteSeitenleiste: View {
             Button(ids.count == 1 ? "Drucken …" : "\(ids.count) Blätter drucken …") {
                 BlattAusgabe.drucken(ids, model: model, fenster: session.projectWindow) { t, f in zustand.melde(t, fehler: f) }
             }
+            #else
+            // iPad: Sichern geht über „Teilen …“ (In Dateien sichern), Drucken über AirPrint
+            Button(ids.count == 1 ? "Drucken …" : "\(ids.count) Blätter drucken …") {
+                BlattAusgabe.drucken(ids, model: model) { t, f in zustand.melde(t, fehler: f) }
+            }
             #endif
-            // iPad: Sichern und Drucken folgen in I-8; Teilen geht schon
             let fertig = ids.compactMap { store.zeichnung($0) }
             if fertig.count == ids.count {
                 ShareLink(item: BlattPDFDatei(zeichnungen: fertig, name: BlattPDF.dateiname(fertig, projekt: model.project?.name)),

@@ -18,7 +18,8 @@ extension AppInfo {
         return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
         #else
-        // iPad: Ordner der App; Zukaufteile per Link aus dem Teilen-Blatt folgen in I-8
+        // iPad: Ordner der App. Zukaufteile kommen dort per Link (im Dialog einsetzen oder auf den Viewer ziehen); als
+        // Ziel im Teilen-Blatt von Safari bräuchte es eine Teilen-Erweiterung (offen, PLAN-IPAD.md I-8)
         return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL.documentsDirectory.appendingPathComponent("Downloads", isDirectory: true)
         #endif
@@ -181,7 +182,8 @@ extension AppController: ZukaufActions {
         guard Bundle.main.bundleURL.pathExtension == "app", !AppInfo.isTestVariant, !NSApp.isActive else { return }
         NSApp.requestUserAttention(.informationalRequest)
         #endif
-        // iPad: Die Rückfrage steht in der App; ein Hinweis von außen (Mitteilung) folgt in I-8.
+        // iPad: Die Rückfrage steht in der App; die Datei liegt im Downloads-Ordner des Mac, ein Hinweis von außen
+        // (Mitteilung) wäre dort fehl am Platz. Shop-Links kommen am iPad über Einsetzen im Dialog oder Ziehen.
     }
 
     private func showNextOffer() {

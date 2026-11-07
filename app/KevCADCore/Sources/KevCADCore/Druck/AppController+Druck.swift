@@ -212,7 +212,8 @@ extension AppController: DruckActions {
         }
         log(.info, "In Bambu Studio geöffnet: \(datei.lastPathComponent)")
         #else
-        // iPad: die 3MF weitergeben (Teilen-Blatt) bzw. Drucken über den Kernel am Mac folgt in I-8
+        // iPad: kein Bambu Studio; die Knöpfe bieten dort „3MF teilen“ (`DruckBambuKnoepfe`), Drucken geht über den
+        // Kernel am Mac (Druckerleiste)
         model.druck.setzeFehler("Bambu Studio gibt es nur am Mac.")
         #endif
     }

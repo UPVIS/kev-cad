@@ -201,8 +201,20 @@ public final class BlattDruck: NSObject {
             abschluss?(false)
         }
     }
+    #else
+    /// iPad: dieselben Aufträge über AirPrint (`ExportDrucker.drucke`: je Format ein Dialog, Papier passend, 1:1).
+    /// `abschluss(true)`, wenn alle gedruckt wurden.
+    public static func drucken(_ zeichnungen: [Zeichnung], titel: String, abschluss: ((Bool) -> Void)? = nil) {
+        let anzahl = auftraege(zeichnungen).count
+        guard anzahl > 0, !ExportDrucker.laeuft else { return }
+        let daten = BlattPDF.daten(zeichnungen, metadaten: .init(titel: titel), inhaltsverzeichnis: false)
+        guard let pdf = PDFDocument(data: daten) else {
+            abschluss?(false)
+            return
+        }
+        ExportDrucker.drucke(pdf, titel: titel) { n in abschluss?(n == anzahl) }
+    }
     #endif
-    // iPad: Drucken über AirPrint (1:1 ohne Skalierung, je Format ein Auftrag) folgt in I-8.
 }
 
 #if os(macOS)
