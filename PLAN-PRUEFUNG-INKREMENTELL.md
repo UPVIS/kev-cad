@@ -531,3 +531,100 @@ zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Or
   (Verschiebungen innerhalb 1e-10 relativ, Bewertung, Lagerkräfte, Lastflächen und Resultierende gleich); gemerkte
   Einheitsfälle Bit für Bit gleich wie ein frischer Prozess; Fehltreffer bei geändertem Lager, Werkstoff, Schicht, Netz
   und Kontaktfläche.
+
+### Knicklast (S1) deterministisch (07.11.2026, Entscheidung Kevin)
+
+- `statik/stabwerk.py` `_kleinste_knicklast`: statt `eigsh` im Modus „buckling“ mit sigma 1e-3 ohne Startvektor das
+  symmetrische Kehrwertproblem G φ = μ K φ (μ = 1/λ, K nach dem Abziehen der Lager positiv definit), dicht über LAPACK
+  bis 2.000 Freiheitsgrade, darüber `eigsh` mit festem Startvektor; ist K nicht positiv definit, wie bisher allgemein
+  und dicht (bis 900).
+- Befund dabei: Ein fester Startwert allein hätte nur falsche Werte reproduzierbar gemacht. An den 16 Knickproblemen
+  des Kugelschiebers (je Szenario, kalt und nach `laufrolle_l=90`, Matrizen aus dem Rechenprozess aufgezeichnet)
+  konvergierte der alte Aufruf oft nicht: mit vier Startvektoren 2.067 bis 2.675 statt 2.873, 653 bis 875 statt 2.916,
+  3.369 bis 7.213 statt 21.348. Der neue Weg trifft in allen 16 Fällen die dichte allgemeine Lösung (`scipy.linalg.eig`)
+  und braucht 10 bis 30 ms (einmal 160 ms).
+- Tests (`test_statik.py`): kleinste Knicklast dicht und dünn gegen bekannte Eigenwerte (wie am Kugelschieber zwischen
+  2.000 und 30.000), Restgröße der Form, dieselbe Knicklast und derselbe Stab in zwei frischen Prozessen. Die
+  Gleichheitsprobe führt Knicken nicht mehr als bekannte Schwankung, `test_pruefung_inkrementell.py` vergleicht es mit.
+- Offen bleibt die Schwankung beim Rutschen (S0, Gleichstand gleicher Räder nach der Reihenfolge einer Menge).
+
+### Zwei zeitabhängige Tests (07.11.2026)
+
+- `versionen/archiv.py` `_neue_version`: die Zeit vor dem Commit festlegen und Git mitgeben. Vorher stempelte Git selbst
+  und `ts` wich über einen Sekundenwechsel um 1 s von der Zeit im Log ab (`test_nachtragen_in_die_version_des_laufs`).
+- `test_kamera.py`: auf `CAMERA_REMOVE` der zweiten Verbindung warten statt sie vorauszusetzen.
+
+### Ausgangslage für B1 bis B3 (07.11.2026, Stand `bac34d0`)
+
+Wanduhr am Kugelschieber (Messhülle mit `anim_kollision._common` und den Funktionen des Bewegungsraums, Ablage
+`…-b0-uhr`, Last bis 27): nach `laufrolle_l=90` rechnet der Bewegungsraum 9 Wege neu, 5,2 s, davon 881 exakte
+Schnittmengen 4,2 s, Griffraum der vier Schlitten-Sterngriffschrauben 0,8 s, Gewinde 0,09 s. Er läuft nach der Montage im
+Rechenprozess (7,8 → 12,2 s) und bestimmt mit der FEM (Ende 13,0 s) den Endstand.
+
+### B1 Schlüssel aus Form und relativer Lage (07.11.2026)
+
+- `bedingungen/bewegungsraum.py`: je Teil Form mit Drehung und Verschiebung getrennt (`_relativ`, je Weltschlüssel
+  gemerkt; Formschlüssel aus `koerper._FORMEN`). Die Verschiebung geht in die Lagen der Kollisionsfunktion, ihr
+  Paarschlüssel ist damit Form, Drehung und relative Lage; gerechnet wird im um die Verschiebung des ersten Teils
+  versetzten System (Achsen wie die Welt, Tiefe und Ort aus dem achsparallelen Hüllquader bleiben gleich), der Ort geht
+  über die Lage zurück in die Welt. Die Hüllquader der Vorprüfung sind dieselben OCCT-Quader wie bisher, nur einmal je
+  Teil gemerkt.
+- Griffraum (`_griffraum_gemerkt`) ebenso nach Form und Drehung des Bedienteils und der Nachbarn und deren Lage relativ
+  zum Bedienteil; die Namen der Nachbarn kommen beim Treffer aus dem neuen Stand.
+- Gleichstand: Das Bild mit dem größten Schnittvolumen eines Paars (`bei`, `ort`) entscheidet jetzt auf 0,001 mm³ genau,
+  bei Gleichstand das erste. Gleiche Volumen an mehreren Stellen eines Wegs unterscheiden sich sonst nur im Rauschen
+  der Lage, in der die Schnittmenge einmal gerechnet und gemerkt wurde.
+- Der Wegschlüssel bleibt nach Weltschlüsseln: Ergebnisse tragen Weltkoordinaten, und ein Weg mit lauter gemerkten
+  Paaren kostet ohnehin nur Vorprüfung und Nachschlagen.
+- Wirkung am Kugelschieber: nach der Änderung 752 bis 755 statt 881 bis 885 exakte Schnittmengen (−15 %), kalt 1.372
+  statt 1.606 (der Plan schätzte 671 bzw. 1.333; die Drehung im Schlüssel trennt gespiegelt eingebaute Gleichteile).
+  Gleichheitsprobe in allen Schritten gleich (`…-b1`).
+- Tests (`test_nachbesserung.py`): ganz verschobene Baugruppe ohne neue Schnitte, gleiche Kollisionen, Ort um den
+  Versatz verschoben und gleich wie frisch gerechnet; gedrehte Baugruppe mit neuen Einträgen und gleichen Kollisionen;
+  Griffraum einer verschobenen Flügelmutter aus dem Zwischenspeicher mit den neuen Namen, gleich wie frisch.
+
+### B2 und B3 Bewegungsraum in Geometrie-Helfern ab Beginn der Prüfung (07.11.2026)
+
+- `bedingungen/helfer.py`: bis zu 3 Prozesse (spawn, nice 5, Zahl nach Speicher wie die FEM-Teilprozesse,
+  `KEVCAD_GEO_HELFER`: 0 aus, Zahl erzwingt). Der Rechenprozess gibt gleich nach dem Aufbau der Körper die Wege, die
+  nicht im Zwischenspeicher stehen, an die Helfer (`anbindung.vorlauf_starten`, nur echte Läufe mit Stufen; kleine
+  Modelle unter 40 Teilen mit zuletzt unter 0,3 s Bewegungsraum rechnen selbst) und holt die Ergebnisse an der Stelle
+  des Bewegungsraums ab; was dann noch fehlt, kommt wie bisher im Hintergrund.
+- Formen gehen als BRep je Formschlüssel einmal an jeden Helfer; Paar- und Griffraumspeicher bleiben im Helfer, ein Weg
+  geht möglichst wieder an denselben Helfer. Die Ergebnisse je Weg merkt der Rechenprozess unter seinen Schlüsseln.
+  Gerechnet wird mit derselben Funktion an Kopien derselben Formen.
+- Abweichend vom Plan rechnen die Helfer ganze Wege, nicht einzelne Schnittmengen auf Anfrage: Der Rechenprozess hält
+  während Statik und Montage die GIL in langen OCP-Aufrufen, ein Vermittler im Rechenprozess käme kaum zum Zug. Statik-
+  Schnitte und Durchdringung rechnen weiter im Rechenprozess (Zeile „B2 für Statik-Schnitte“ in Abschnitt 7 bleibt offen).
+- Zwei Fallen beim Bau: (1) Ein Auftrag mit vielen Formen füllt den Puffer der Verbindung, und ein frisch gestarteter
+  Helfer liest erst nach dem Laden seiner Module (rund 3 s); das Senden aus dem Rechenprozess hielt die Prüfung so lange
+  an (Zwischenstand bei 5,8 statt 2,6 s). Jetzt sendet ein eigener Faden, und Arbeit bekommen nur Helfer, die schon
+  „bereit“ gemeldet haben. (2) Die Tests schalten die Stufen ab (`conftest.py`), damit auch den Vorlauf; der
+  Laufzeittest setzt sie ausdrücklich.
+- Messung (Netze der Basis, abwechselnd ohne Helfer = Stand B1 und mit Helfern, zwei Runden, Ablagen `…-r1-ohne`,
+  `…-r1-mit`, `…-r2-ohne`, `…-r2-mit`). „Prüfung fertig“ ist das CHECK `done` des Rechenprozesses (alles außer FEM),
+  „Bewegungsraum“ das Ende des letzten neu gerechneten Wegs ab Beginn der Prüfung:
+
+| Runde, Schritt | Variante | Endstand | Prüfung fertig | Bewegungsraum | FEM (Start → Ende) | Last | gleich |
+|---|---|---|---|---|---|---|---|
+| 1, `laufrolle_l=90` | ohne | 12,5 s | 12,5 s | 10,5 s | 5,7 → 10,2 s | 18 → 16 | – |
+| 1, `laufrolle_l=90` | mit | 13,0 s | 8,8 s | 2,7 s | 7,0 → 12,9 s | 27 | ja |
+| 1, `laufrolle_l=95` | ohne | 14,4 s | 14,4 s | 12,2 s | 6,3 → 12,2 s | 16 → 15 | – |
+| 1, `laufrolle_l=95` | mit | 22,2 s | 14,3 s | 4,3 s | 11,6 → 22,1 s | 27 → 35 | ja |
+| 2, `laufrolle_l=90` | ohne | 16,5 s | 15,9 s | 12,7 s | 8,3 → 16,5 s | 40 → 41 | – |
+| 2, `laufrolle_l=90` | mit | 13,1 s | 9,2 s | 2,8 s | 7,1 → 13,1 s | 56 | ja |
+| 2, `laufrolle_l=95` | ohne | 15,5 s | 15,5 s | 13,1 s | 6,8 → 14,7 s | 41 → 42 | – |
+| 2, `laufrolle_l=95` | mit | 12,5 s | 8,1 s | 2,4 s | 6,2 → 12,5 s | 53 → 54 | ja |
+
+  „gleich“: Endstand mit Helfern gegen ohne Helfer mit denselben Netzen (`--vergleich`), in allen Schritten gleich bis
+  auf die bekannte Rutschen-Schwankung (S0). Die Gleichheitsprobe (frischer Prozess, `…-b23`, `…-b23b`) war in allen
+  Schritten gleich.
+- Ergebnis: Der Bewegungsraum ist 2,4 bis 4,3 s nach Beginn der Prüfung fertig (vorher 10,5 bis 13,1 s) und liegt nicht
+  mehr auf dem Weg zum Endstand; die Prüfung ohne FEM endet mit der Montage bei 8,1 bis 9,2 s (unter Last bis 56). Den
+  Endstand bestimmt jetzt die FEM: Start nach der Statik bei 6,2 bis 7,1 s, Dauer 4,4 bis 6,3 s (einmal 10,5 s bei Last
+  35), Endstand 12,5 bis 13,1 s. Die im Plan erwarteten 9,5 s setzten 3,3 s FEM nach der Statik voraus; gemessen dauern
+  die beiden geänderten Schieberschlitten unter dieser Last je 3,5 bis 5,4 s. Weiter senken den Endstand nur Schritte an
+  Statik und FEM (A6, B2 für Statik-Schnitte, B5) oder ein ruhigerer Rechner.
+- Tests (`test_geo_helfer.py`): Helfer gleich wie selbst gerechnet (Kollisionen und Griffraum), toter Helfer (der
+  Rechenprozess rechnet selbst, der nächste Auftrag startet neue), überholter Auftrag, Verteilung, nur bereite Helfer,
+  über die echte Laufzeit mit und ohne Helfer gleich (die Helfer laufen dort als Kinder des Rechenprozesses).
