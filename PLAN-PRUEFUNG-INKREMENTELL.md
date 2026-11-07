@@ -326,6 +326,10 @@ nicht gemessen.
    gedrosselt.
 5. **Schnellere Zerlegung** mit neuer Abhängigkeit (optional, nach A1 bis A4).
 
+**Kevins Entscheidungen (07.11.2026):** A3 und A5 ja („Beides“), A4 als Überlagerung, Parallelität bis 3 FEM- und 3
+Geometrie-Prozesse nach Speicher gedrosselt, Umfang zuerst A0 bis A4, danach messen und über den Rest entscheiden. A5 ist
+freigegeben, kommt aber erst nach A0 bis A4. Die schnellere Zerlegung mit neuer Abhängigkeit (Punkt 5) ist offen.
+
 ## 9. Umsetzungsreihenfolge
 
 A0 → A3 → A1 → A2 → A4 → B1 → A5 → B2 → B3 → A6 → B4 → B5. Je Schritt ein Commit nach Gleichheitsprobe und Tests, auf
