@@ -55,7 +55,7 @@ enum OberflaechenSelbsttest {
 
 }
 
-// Ablauf des Selbsttests: bisher nur am Mac (Fensterbilder, Fenster an den Rand). iPad: folgt in I-9.
+// Ablauf des Selbsttests nur am Mac (Fensterbilder von außen, Fenster an den Rand); das iPad hat PadSelbsttest.
 #if os(macOS)
 extension OberflaechenSelbsttest {
     static func runIfRequested(_ session: AppSession) {

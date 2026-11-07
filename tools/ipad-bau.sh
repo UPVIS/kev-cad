@@ -14,6 +14,8 @@
 #                                     schon, etwa für die Tests eines anderen Agenten, bleibt er an; mit `immer` auch dann)
 #   tools/ipad-bau.sh foto [datei]    starten, Foto, stoppen in einem Zug unter der Simulator-Sperre (für mehrere Agenten
 #                                     zugleich der Weg zum Bild; ohne Datei build/ipad-start.png)
+#   tools/ipad-bau.sh selbsttest      Selbsttest der Oberfläche in der gebauten App (KEVCAD_SELFTEST=pad, Demo-Lauf, ohne
+#                                     Mac) unter der Simulator-Sperre; Bericht und Bilder nach build/ipad-selbsttest/
 #
 # Simulator: KEVCAD_IPAD_SIM (Vorgabe „iPad Pro 13-inch (M5)“). Umgebung der App beim Start: KEVCAD_IPAD_DEMO (Vorgabe
 # „kern“: Demo-Lauf des App-Kerns mit echter Geometrie; „metal“ oder „aus“ für die anderen Demowege bzw. ohne Vorgabe),
@@ -39,7 +41,7 @@ PAD_BUNDLE_ID=de.upvis.kevcad.ipad
 PAD_APP="$REPO/build/Kev CAD iPad.app"
 GEBOOTET="$REPO/build/ipad-sim-gebootet"
 
-hilfe() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+hilfe() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # UDID des Simulators mit diesem Namen (der neueste, falls es mehrere Laufzeiten gibt)
 sim_udid() {
@@ -99,6 +101,29 @@ case "$ART" in
     [ -n "$ziel" ] && cp "$REPO/build/ipad-start.png" "$ziel" && echo "==> Foto: $ziel"
     "$0" stoppen
     exit 0 ;;
+  selbsttest)
+    # Wie foto: unter der Simulator-Sperre starten (mit KEVCAD_SELFTEST=pad), auf den Bericht warten, stoppen
+    if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
+      exec env KEVCAD_IPAD_SIM_GESPERRT=1 lockf -k /tmp/kevcad-ipad-sim.lock "$0" selbsttest
+    fi
+    KEVCAD_IPAD_SELBSTTEST=pad KEVCAD_IPAD_WARTEN=1 "$0" starten > /dev/null || { "$0" stoppen > /dev/null; exit 1; }
+    UDID=$(sim_udid)
+    DATEN=$(xcrun simctl get_app_container "$UDID" "$PAD_BUNDLE_ID" data)
+    BERICHT="$DATEN/Library/Application Support/$PAD_BUNDLE_ID/selftest-pad/bericht.txt"
+    for _ in $(seq 1 120); do
+      grep -q "^ENDE" "$BERICHT" 2>/dev/null && break
+      sleep 1
+    done
+    rm -rf "$REPO/build/ipad-selbsttest"
+    cp -R "$(dirname "$BERICHT")" "$REPO/build/ipad-selbsttest" 2>/dev/null
+    "$0" stoppen > /dev/null
+    if [ -f "$REPO/build/ipad-selbsttest/bericht.txt" ]; then
+      cat "$REPO/build/ipad-selbsttest/bericht.txt"
+      grep -q "^ENDE bestanden" "$REPO/build/ipad-selbsttest/bericht.txt"
+      exit $?
+    fi
+    echo "Kein Bericht nach 120 s (läuft der Selbsttest im Debug-Bau?)"
+    exit 1 ;;
   starten)
     [ -d "$PAD_APP" ] || { echo "Erst bauen: tools/ipad-bau.sh app"; exit 1; }
     UDID=$(sim_udid)
@@ -117,6 +142,7 @@ case "$ART" in
     xcrun simctl install "$UDID" "$PAD_APP" || exit 1
     # Ohne das Blatt zum Koppeln, damit das Foto die Oberfläche zeigt (PadStart.kopplungsBlattBeimStart)
     UMGEBUNG=(SIMCTL_CHILD_KEVCAD_PAD_OHNE_KOPPLUNGSBLATT=1)
+    [ -n "${KEVCAD_IPAD_SELBSTTEST:-}" ] && UMGEBUNG+=("SIMCTL_CHILD_KEVCAD_SELFTEST=$KEVCAD_IPAD_SELBSTTEST")
     case "${KEVCAD_IPAD_DEMO:-kern}" in
       aus) ;;
       *) UMGEBUNG+=(SIMCTL_CHILD_KEVCAD_DEMO=1 "SIMCTL_CHILD_KEVCAD_DEMO_VIEWPORT=${KEVCAD_IPAD_DEMO:-kern}"

@@ -369,6 +369,8 @@ struct Hauptfenster: View {
         MaterialSelfTest.runIfRequested(session, state: state, material: material)
         SimulationSelfTest.runIfRequested(session, state: state)
         OberflaechenSelbsttest.runIfRequested(session)
+        #else
+        PadSelbsttest.runIfRequested(session)  // iPad: Oberfläche ohne Mac-Prozesse (KEVCAD_SELFTEST=pad)
         #endif
     }
 

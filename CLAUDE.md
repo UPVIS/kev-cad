@@ -53,6 +53,7 @@ tools/ipad-bau.sh app      # iPad-App (Ziel KevCADPad) für den Simulator bauen,
 tools/ipad-bau.sh starten  # Simulator ohne Simulator.app booten, App im Demomodus starten, Foto build/ipad-start.png
 tools/ipad-bau.sh stoppen  # App beenden, Simulator aus, wenn `starten` ihn gebootet hat (`stoppen immer`: auch sonst)
 tools/ipad-bau.sh foto [datei]  # starten, Foto, stoppen unter der Simulator-Sperre: so arbeiten mehrere Agenten zugleich
+tools/ipad-bau.sh selbsttest # Selbsttest der Oberfläche in der gebauten iPad-App (ohne Mac), Bericht build/ipad-selbsttest/
 tools/ipad-kette.sh        # Kettentest: Mac-Testvariante (versteckt) ↔ iPad im Simulator über TLS, Modell über MCP
 tools/ipad-testflight.sh   # Archiv fürs iPad, Export, Hochladen zu TestFlight, Gruppe „Kevin“ (`--nur-archiv`: ohne Hochladen)
 tools/ipad-testflight-takt.sh   # TestFlight-Build aus main, wenn sich die App geändert hat (startet das Update selbst, höchstens stündlich)
