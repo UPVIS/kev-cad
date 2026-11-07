@@ -232,6 +232,13 @@ struct KevCADCommands: Commands {
                     .disabled(viewer == nil)
                 Toggle("Messen", isOn: Binding(get: { model.measureMode }, set: { model.actions?.setMeasureMode($0) }))
                     .tastenkuerzel(.messen)
+                Toggle("Maße im Bild", isOn: Binding(
+                    get: { model.viewer.masseSichtbar }, set: { _ in viewer?.ausfuehren(.masseUmschalten) }))
+                    .tastenkuerzel(.masseUmschalten)
+                    .disabled(viewer == nil)
+                Button("Alle Maße löschen") { viewer?.ausfuehren(.masseLoeschen) }
+                    .tastenkuerzel(.masseLoeschen)
+                    .disabled(viewer == nil)
                 Toggle("Schnitt", isOn: Binding(
                     get: { model.sectionEnabled }, set: { _ in window?.toggleSection(model) }
                 ))
