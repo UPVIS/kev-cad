@@ -39,7 +39,7 @@ Bauen und testen über den Mac mini (`tools/fern.sh`, Kopf der Datei; Mini-Seite
 tools/fern.sh tests        # Kern-Tests (swift test und pytest) auf dem Mac mini, Ausgabe live, Ausgang wie dort
 tools/fern.sh testbau ui   # Testvariante "Kev CAD Test ui" dort bauen, nach build/ holen; Kernel ist der dieses Worktrees
 tools/fern.sh release      # Installationsbau dort, App, Kernel und Skill hier installieren (wie ./build.sh)
-tools/fern.sh ipadtests    # Kern-Tests im iPad-Simulator auf dem Mini (ohne iOS-Laufzeit dort: hier, unter der Sperre)
+tools/fern.sh ipadtests    # Kern-Tests im iPad-Simulator auf dem Mini (iOS 27; ohne Mini: hier unter der Sperre, iOS 26)
 tools/fern.sh status       # Plätze, Schlange und Speicher auf dem Mini
 tools/fern.sh einrichten   # Mini prüfen bzw. vorbereiten (xcodegen, uv, Metal-Toolchain, Xcode-Fassung, iPad-Simulator)
 python3 tools/paritaet.py  # Parität Mac/iPad: Hüllen, Mac-Stellen ohne iPad-Zweig, Marken, Befehle (`--kurz` im Testbau)
