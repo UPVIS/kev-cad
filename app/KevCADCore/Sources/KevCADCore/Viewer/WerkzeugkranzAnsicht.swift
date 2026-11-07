@@ -16,7 +16,7 @@ struct WerkzeugkranzOverlay: View {
     let groesse: CGSize
     let actions: ViewerActions?
 
-    #if os(macOS)
+    #if os(macOS)  // nur am Mac: Mausrad am Drehregler; iPad: Kreisen mit Stift oder Finger (gleicher Code)
     @StateObject private var rad = KranzMausrad()
     #endif
     @State private var gezogen = false
@@ -53,7 +53,7 @@ struct WerkzeugkranzOverlay: View {
             .frame(width: groesse.width, height: groesse.height)
             .transition(.opacity.combined(with: .scale(scale: 0.92)))
             .beiEsc { schliessen(zuruecksetzen: true) }
-            #if os(macOS)
+            #if os(macOS)  // nur am Mac: Mausrad, iPad: Kreisen
             .onAppear { rad.an { [self] s in drehenRad(s) } }
             .onDisappear { rad.aus() }
             #endif
@@ -201,7 +201,7 @@ struct WerkzeugkranzOverlay: View {
     }
 }
 
-#if os(macOS)
+#if os(macOS)  // nur am Mac: Mausrad; iPad: Kreisen mit Stift oder Finger
 /// Mausrad, solange der Kranz offen ist: Am Ziffernblatt dreht es den Wert, sonst zoomt es nicht hinter dem Kranz.
 @MainActor
 final class KranzMausrad: ObservableObject {

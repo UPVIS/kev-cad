@@ -194,7 +194,11 @@ def befehle_ohne_ipad(karte: dict) -> tuple[bool, list[str]]:
         stuecke.append((t.group(1), stueck[:schluss.start()] if schluss else stueck))
     if not any(f in s for _, s in stuecke for f in felder):
         return False, []
-    fehlt = [b for b, s in stuecke if not any(f in s for f in felder) and b not in kat.get("nur_mac", {})]
+    # I-4: Auslöser außerhalb der Einträge, etwa die Felder des Werkzeugkranzes (`.befehl(.vorne, …)`): Muster mit dem
+    # Befehl als erster Gruppe, gesucht in der ganzen Datei
+    weitere = {m.group(1) for muster in kat.get("weitere", []) for m in re.finditer(muster, text)}
+    fehlt = [b for b, s in stuecke
+             if not any(f in s for f in felder) and b not in weitere and b not in kat.get("nur_mac", {})]
     return True, fehlt
 
 

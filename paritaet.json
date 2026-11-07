@@ -30,10 +30,11 @@
   "begruendung_muster": "nur am Mac|nur Mac|nur auf dem Mac|nur der Mac|gibt es nur am Mac|am Mac allein|Mac-only|ohne Gegenstück|kein Gegenstück|iPad:|auf dem iPad (nicht|ohne|gibt es|braucht|übernimmt|hat|kommt|geht|liegt)|am iPad (nicht|ohne|gibt es|braucht|übernimmt|hat|kommt|geht)",
   "marken_quellen": ["app/Sources/**/*.swift", "app/KevCADCore/Sources/**/*.swift", "kernel/src/**/*.py", "tools/**/*.sh"],
   "befehlskatalog": {
-    "_hinweis": "Vorbereitet für I-4: Sobald Einträge des Katalogs ein Feld für den iPad-Auslöser tragen, meldet die Prüfung jeden Befehl ohne. Feldnamen hier anpassen, wenn I-4 sie anders nennt.",
+    "_hinweis": "I-4: Einträge tragen `ipad:` (Gesten, Knöpfe); Felder des Werkzeugkranzes (`.befehl(.x` in Tastenbelegung.kranz) und Befehle, die ein Feld selbst ersetzt (`.x: KranzFeld.` in kranzDeckt), zählen über `weitere`. Den genauen Test hat WerkzeugkranzTests.testJederBefehlHatAuslöserAufBeidenGeraeten.",
     "datei": "app/KevCADCore/Sources/KevCADCore/Viewer/Tastenbelegung.swift",
     "eintrag": "Belegung\\(befehl:\\s*\\.(\\w+)",
-    "ipad_felder": ["ipad:", "geste:", "kranz:", "ausloeserIPad:"],
+    "ipad_felder": ["ipad:"],
+    "weitere": ["\\.befehl\\(\\.(\\w+)", "\\.(\\w+): KranzFeld\\."],
     "nur_mac": {}
   }
 }

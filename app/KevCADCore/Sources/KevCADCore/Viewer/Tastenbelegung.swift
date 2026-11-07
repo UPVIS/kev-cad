@@ -484,14 +484,15 @@ public enum Tastenbelegung {
         }
     }
 
-    /// Befehle, die ein Feld selbst ersetzt (das Feld öffnet dasselbe wie die Taste am Mac).
+    /// Befehle, die ein Feld selbst ersetzt (das Feld tut dasselbe wie die Taste am Mac). Als Tabelle, damit auch
+    /// tools/paritaet.py sie findet (`weitere` in paritaet.json).
+    static let kranzDecktTabelle: [ViewerBefehl: KranzFeld] = [
+        .sprechen: KranzFeld.sprechen, .sprechenFertig: KranzFeld.sprechen, .ansichtMenue: KranzFeld.ansichten,
+        .shadingMenue: KranzFeld.darstellung,
+    ]
+
     static func kranzDeckt(_ feld: KranzFeld) -> [ViewerBefehl] {
-        switch feld {
-        case .sprechen: return [.sprechen, .sprechenFertig]
-        case .ansichten: return [.ansichtMenue]
-        case .darstellung: return [.shadingMenue]
-        default: return []
-        }
+        ViewerBefehl.allCases.filter { kranzDecktTabelle[$0] == feld }
     }
 
     /// Weg im Kranz zu einem Befehl („Kranz › Ansichten › Vorne“); nil, wenn er dort nicht liegt.

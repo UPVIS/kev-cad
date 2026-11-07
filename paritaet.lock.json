@@ -7,7 +7,7 @@
    "summe": "b59bf288dd30e8fee4b2bf3f10942b1359436c8fd194729e5fab3ca824c5c98c"
   },
   "app/Sources/KevCAD/Mac/Commands.swift": {
-   "summe": "fd0c5c1151cd1f31034fa4892d1781dcac0fae4edda5b7d5f0b4b325835990b0"
+   "summe": "ce6d8419c7a16fe339b7103cd04d2dc67f58c6606bdbbd68890832bbfacfc449"
   },
   "app/Sources/KevCAD/Mac/DokumenteCommands.swift": {
    "summe": "57d8002988515106d9701ac55f59b04d50ed105ea738e1d038817c94356e39ad"
@@ -110,7 +110,7 @@
    "c1ec556dee9f0cd1"
   ],
   "app/KevCADCore/Sources/KevCADCore/Viewer/BlenderNavigation.swift": [
-   "d82c6687ced10518"
+   "62b1eee957fd8a3b"
   ],
   "app/KevCADCore/Sources/KevCADCore/Viewer/ViewportCoordinator.swift": [
    "dd7676b78eceb61e"

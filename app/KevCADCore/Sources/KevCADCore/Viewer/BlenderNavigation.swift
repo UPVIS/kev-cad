@@ -368,7 +368,7 @@ extension ViewportCoordinator {
     }
 }
 
-// MARK: - Eingabeebene
+// MARK: - Eingabeebene (nur am Mac; iPad: TouchNavigation.swift mit demselben Namen)
 
 #if os(macOS)  // iPad: Eingabeebene in TouchNavigation.swift
 /// Liegt über dem MTKView und nimmt alle Maus- und Trackpad-Eingaben im Viewport entgegen. Das Paket selbst bekommt

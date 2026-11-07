@@ -134,6 +134,21 @@ class ParitaetTests(unittest.TestCase):
         self.assertIn("Befehle ohne Auslöser am iPad (1)", text)
         self.assertIn("  oben", text)
 
+    def test_befehlskatalog_mit_weiteren_ausloesern(self):
+        # I-4: Ein Feld des Werkzeugkranzes zählt als Auslöser am iPad
+        karte = json.loads(json.dumps(KARTE))
+        karte["befehlskatalog"]["weitere"] = ["\\.befehl\\(\\.(\\w+)"]
+        self.schreiben("paritaet.json", json.dumps(karte))
+        katalog = ("static let alle = [\n    Belegung(befehl: .vorne, tasten: [.z(\"1\")], ipad: [.tippen]),\n"
+                   "    Belegung(befehl: .oben, tasten: [.z(\"7\")]),\n]\nlet kranz = [.befehl(.oben, \"x\")]\n")
+        self.schreiben("app/Tasten.swift", katalog)
+        self.lauf("abgleichen", "--alle")
+        self.assertEqual(self.lauf("--kurz")[0], 0)
+        self.schreiben("app/Tasten.swift", katalog.replace(".befehl(.oben", ".befehl(.unten"))
+        rc, text = self.lauf()
+        self.assertEqual(rc, 1)
+        self.assertIn("  oben", text)
+
 
 if __name__ == "__main__":
     unittest.main()
