@@ -11,11 +11,16 @@
 #                                     starten, Bildschirmfoto nach build/ipad-start.png
 #   tools/ipad-bau.sh stoppen [immer] App beenden; den Simulator herunterfahren, wenn `starten` ihn gebootet hat (lief er
 #                                     schon, etwa für die Tests eines anderen Agenten, bleibt er an; mit `immer` auch dann)
+#   tools/ipad-bau.sh foto [datei]    starten, Foto, stoppen in einem Zug unter der Simulator-Sperre (für mehrere Agenten
+#                                     zugleich der Weg zum Bild; ohne Datei build/ipad-start.png)
 #
 # Simulator: KEVCAD_IPAD_SIM (Vorgabe „iPad Pro 13-inch (M5)“). Umgebung der App beim Start: KEVCAD_IPAD_DEMO (Vorgabe
 # „kern“: Demo-Lauf des App-Kerns mit echter Geometrie; „metal“ oder „aus“ für die anderen Demowege bzw. ohne Vorgabe),
 # KEVCAD_IPAD_WARTEN (Sekunden bis zum Bildschirmfoto, Vorgabe 8).
 #
+# Es gibt einen Simulator für alle Arbeitskopien: `test`, `foto` und tools/ipad-kette.sh nehmen dafür die Sperre
+# /tmp/kevcad-ipad-sim.lock (immer vor der Bausperre, nie umgekehrt). `starten` und `stoppen` einzeln nur, wenn kein
+# anderer Agent den Simulator braucht.
 # Bauten laufen hier unter der gemeinsamen Sperre /tmp/vb-xcodebuild.lock und warten vorher bis zu 10 Minuten auf 25 %
 # freien Speicher. Bauordner und Xcode-Zwischenspeicher liegen auf UPVIS ULTRA (die Systemplatte ist knapp), ohne die
 # Platte unter build/ipad. Protokoll: build/ipad-<art>-<ziel>.log; Ausgang wie xcodebuild.
@@ -78,6 +83,16 @@ case "$ART" in
   app)
     SCHEMA=KevCADPad
     ZIEL=simulator ;;
+  foto)
+    # Unter der Simulator-Sperre: starten, Foto kopieren, stoppen (ein anderer Agent wartet so, statt mitten hineinzufunken)
+    if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
+      exec env KEVCAD_IPAD_SIM_GESPERRT=1 lockf -k /tmp/kevcad-ipad-sim.lock "$0" foto "${2:-}"
+    fi
+    "$0" starten || { "$0" stoppen > /dev/null; exit 1; }
+    ziel="${2:-}"
+    [ -n "$ziel" ] && cp "$REPO/build/ipad-start.png" "$ziel" && echo "==> Foto: $ziel"
+    "$0" stoppen
+    exit 0 ;;
   starten)
     [ -d "$PAD_APP" ] || { echo "Erst bauen: tools/ipad-bau.sh app"; exit 1; }
     UDID=$(sim_udid)
@@ -172,7 +187,9 @@ if [ "$ART" = app ]; then
     KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" "$AKTION") > "$LOG" 2>&1
   rc=$?
 else
-  (cd app/KevCADCore && lockf -k /tmp/vb-xcodebuild.lock xcodebuild -scheme "$SCHEMA" -destination "$DEST" \
+  SIM_SPERRE=()
+  [ "$AKTION" = test ] && SIM_SPERRE=(lockf -k /tmp/kevcad-ipad-sim.lock)
+  (cd app/KevCADCore && ${SIM_SPERRE[@]+"${SIM_SPERRE[@]}"} lockf -k /tmp/vb-xcodebuild.lock xcodebuild -scheme "$SCHEMA" -destination "$DEST" \
     -derivedDataPath "$DD" "${CACHE[@]}" ${EXTRA[@]+"${EXTRA[@]}"} "$AKTION") > "$LOG" 2>&1
   rc=$?
 fi

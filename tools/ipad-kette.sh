@@ -9,6 +9,10 @@
 # simctl. Ergebnis und Bild unter build/ipad-kette/. Ausgang 0 nur, wenn das iPad am Eingang verbunden war und das Modell
 # gebaut wurde.
 set -uo pipefail
+# Ein Simulator und eine Mac-Testvariante „ipad“ für alle Arbeitskopien: der ganze Test unter der Simulator-Sperre
+if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
+  exec env KEVCAD_IPAD_SIM_GESPERRT=1 lockf -k /tmp/kevcad-ipad-sim.lock "$0" "$@"
+fi
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO/build/ipad-kette"
 MAC_APP="$REPO/build/Kev CAD Test ipad.app"
