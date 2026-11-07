@@ -714,6 +714,90 @@ def test_lager_eines_stabs_ueber_die_kontaktflaeche(tmp_path):
         assert r["sicherheit"] > 4
 
 
+def _fem(auftrag_pfad: str, ziel: Path) -> dict:
+    r = subprocess.run(PROZESS + [auftrag_pfad, str(ziel)], capture_output=True, text=True, timeout=600)
+    assert r.returncode == 0, r.stderr[-2000:]
+    return json.loads(ziel.read_text())
+
+
+@pytest.mark.parametrize("gleichzeitig", [False, True])
+def test_vorgezogene_einheitsfaelle_treffen_und_gleich_wie_frisch(tmp_path, monkeypatch, gleichzeitig):
+    """A6: Nach einer Änderung an den Haltern rechnet ein vorgezogener FEM-Prozess mit der Geometrie des neuen Laufs
+    und den Lagern des letzten Auftrags Netz, Steifigkeit, Kontaktflächen und Einheitsfälle. Der echte Auftrag nach
+    der Statik findet sie (fertig oder wartend, ``gleichzeitig``) und überlagert nur noch; das Ergebnis ist Bit für Bit
+    dasselbe wie in einem frischen Prozess mit leeren Speichern (nur die Netze geteilt)."""
+    from kevcad_kernel.statik import anbindung
+    from kevcad_kernel.statik.festkoerper import auftrag
+
+    _, check, _ = laufe(tmp_path, STANGE, strikt=False)
+    job1 = auftrag.schreibe(anbindung.LETZTER, {"auto": True})
+    auftrag.merke_auftrag(job1)
+    _fem(job1["auftrag"], tmp_path / "erg1.json")
+    neu = STANGE.replace("Box(40, 30, 40)", "Box(40, 30, 42)")
+    (tmp_path / "zwei").mkdir()
+    laufe(tmp_path / "zwei", neu, strikt=False, run=2)
+    v = auftrag.vorab_starten(dict(anbindung.LETZTER.koerper))
+    assert v is not None and sorted(v["teile"]) == ["Halter links (Druck)", "Halter rechts (Druck)"]
+    if not gleichzeitig:
+        auftrag._VORAB["proc"].wait(300)
+    job2 = auftrag.schreibe(anbindung.LETZTER, {"auto": True})
+    erg2 = _fem(job2["auftrag"], tmp_path / "erg2.json")
+    auftrag._VORAB["proc"].wait(300)
+    assert len(erg2["faelle"]) == 2 and all(r["stand"] == "done" for r in erg2["faelle"])
+    # frisch: leere Speicher, nur die Netze
+    cache = Path(os.environ["KEVCAD_FESTKOERPER_CACHE"])
+    frisch = tmp_path / "frisch"
+    shutil.copytree(cache / "netze", frisch / "netze")
+    monkeypatch.setenv("KEVCAD_FESTKOERPER_CACHE", str(frisch))
+    job3 = auftrag.schreibe(anbindung.LETZTER, {"auto": True})
+    erg3 = _fem(job3["auftrag"], tmp_path / "erg3.json")
+    # Jeder Fall, der frisch über Einheitsfälle läuft, kam vorher aus den vorgezogenen (der rechte Halter findet keine
+    # Kontaktfläche zur Stange und rechnet Fall für Fall, wie schon vor A6)
+    ueber = [i for i, r in enumerate(erg3["faelle"]) if r.get("einheiten")]
+    assert ueber and all(erg3["faelle"][i]["einheiten"]["aus_speicher"] is False for i in ueber)
+    assert all(erg2["faelle"][i]["einheiten"]["aus_speicher"] is True for i in ueber)
+    assert [_ohne_herkunft(r) for r in erg2["faelle"]] == [_ohne_herkunft(r) for r in erg3["faelle"]]
+    for a, b in zip(erg2["faelle"], erg3["faelle"]):
+        fa, fb = _felder(a["feld"]), _felder(b["feld"])
+        assert all(np.array_equal(fa[k], fb[k]) for k in fa)
+    for j in (job1, job2, job3):
+        auftrag.verwerfen(j)
+
+
+def test_vorab_bei_anderer_auswahl_ohne_einfluss(tmp_path, monkeypatch):
+    """A6: Ist ein vorgezogenes Teil im echten Auftrag nicht mehr dabei (andere Auswahl) oder hat es andere Lager,
+    ändert das nichts am Ergebnis: Vorziehen füllt nur Speicher mit vollständigen Schlüsseln."""
+    from kevcad_kernel.statik import anbindung
+    from kevcad_kernel.statik.festkoerper import auftrag
+
+    laufe(tmp_path, STANGE, strikt=False)
+    job1 = auftrag.schreibe(anbindung.LETZTER, {"auto": True})
+    auftrag.merke_auftrag(job1)
+    # Vorlage künstlich verändern: ein Teil mit einem anderen Lager, das es im echten Auftrag nicht gibt
+    vorlage = auftrag._LETZTER_AUFTRAG
+    for T in vorlage["teile"]:
+        for f in T["faelle"]:
+            f["lager"] = ["Stange"]
+    neu = STANGE.replace("Box(40, 30, 40)", "Box(40, 30, 41)")
+    (tmp_path / "zwei").mkdir()
+    laufe(tmp_path / "zwei", neu, strikt=False, run=2)
+    assert auftrag.vorab_starten(dict(anbindung.LETZTER.koerper)) is not None
+    auftrag._VORAB["proc"].wait(300)
+    job2 = auftrag.schreibe(anbindung.LETZTER, {"auto": True, "teile": ["Halter links (Druck)"]})
+    erg2 = _fem(job2["auftrag"], tmp_path / "erg2.json")
+    assert [r["teil"] for r in erg2["faelle"]] == ["Halter links (Druck)"]
+    assert (erg2["faelle"][0].get("einheiten") or {}).get("aus_speicher") is not True  # andere Lager: nichts getroffen
+    cache = Path(os.environ["KEVCAD_FESTKOERPER_CACHE"])
+    frisch = tmp_path / "frisch"
+    shutil.copytree(cache / "netze", frisch / "netze")
+    monkeypatch.setenv("KEVCAD_FESTKOERPER_CACHE", str(frisch))
+    job3 = auftrag.schreibe(anbindung.LETZTER, {"auto": True, "teile": ["Halter links (Druck)"]})
+    erg3 = _fem(job3["auftrag"], tmp_path / "erg3.json")
+    assert _ohne_herkunft(erg2["faelle"][0]) == _ohne_herkunft(erg3["faelle"][0])
+    for j in (job1, job2, job3):
+        auftrag.verwerfen(j)
+
+
 ECKE = '''
 from build123d import *
 from kevcad import lager, show, befestigt

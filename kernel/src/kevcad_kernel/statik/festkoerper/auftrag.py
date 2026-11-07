@@ -128,6 +128,22 @@ def lager_schluessel(L: Any) -> str:
     return hashlib.sha1(json.dumps(d, sort_keys=True).encode()).hexdigest()[:16]
 
 
+def nachbar_npz(o: Any, lo: np.ndarray, hi: np.ndarray, datei: str) -> int:
+    """Netz des Nachbarn ``o`` (Körper der Prüfung), auf den Hüllquader ``lo``/``hi`` zugeschnitten, als npz."""
+    pos = np.asarray(o.pos, dtype=float)
+    tri = np.asarray(o.tri, dtype=np.int64)
+    if len(tri):
+        P = pos[tri]
+        tlo, thi = P.min(axis=1), P.max(axis=1)
+        keep = np.all((thi >= lo) & (tlo <= hi), axis=1)
+        tri = tri[keep]
+    used = np.unique(tri) if len(tri) else np.zeros(0, dtype=np.int64)
+    remap = np.full(len(pos), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    np.savez(datei, pos=pos[used].astype(np.float64), tri=remap[tri].astype(np.int64))
+    return int(len(tri))
+
+
 def _toleranz(m: Any, a: str, b: str) -> float:
     e = m.kanten.get(frozenset((a, b))) or {}
     return TOL_SPIEL if e.get("kontakt") == "spiel" else TOL_BERUEHRT
@@ -309,7 +325,136 @@ def nach_statik(statik: dict[str, Any] | None, run: int) -> dict[str, Any] | Non
     except Exception as exc:  # noqa: BLE001 - die Laufzeit schreibt ihn dann selbst (EXEC)
         print(f"Festkörper: Auftrag nach der Statik nicht geschrieben: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
+    merke_auftrag(job)
     return {**job, "namen": namen}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A6: Einheitslastfälle geänderter Teile vorziehen (PLAN-PRUEFUNG-INKREMENTELL.md)
+
+_LETZTER_AUFTRAG: dict[str, Any] | None = None  # auftrag.json des letzten Auftrags nach der Statik (Aufbau, keine Dateien)
+_VORAB: dict[str, Any] = {"proc": None, "ordner": None}
+VORAB_ENV = "KEVCAD_FEM_VORAB"  # "0": nicht vorziehen (Vergleiche, Tests)
+
+
+def vorab_an() -> bool:
+    return (os.environ.get(VORAB_ENV) or "1").strip().lower() not in ("0", "aus", "false", "nein", "no")
+
+
+def merke_auftrag(job: dict[str, Any] | None) -> None:
+    """Aufbau des Auftrags nach der Statik merken (Teile, Nachbarn, Lager und Lasten je Fall): Vorlage für den
+    vorgezogenen Auftrag des nächsten Laufs."""
+    global _LETZTER_AUFTRAG
+    try:
+        with open(job["auftrag"], encoding="utf-8") as fh:  # type: ignore[index]
+            _LETZTER_AUFTRAG = json.load(fh)
+    except Exception:  # noqa: BLE001 - dann wird nur nichts vorgezogen
+        _LETZTER_AUFTRAG = None
+
+
+def vorab_teile(koerper: dict[str, Any], ordner: str) -> list[dict[str, Any]]:
+    """Teile des letzten Auftrags, deren Form, Lage oder Nachbarn sich geändert haben, mit der Geometrie des neuen Laufs
+    und den Lagern und Lastflächen des letzten: daraus rechnet der FEM-Prozess Netz, Steifigkeit, Kontaktflächen und
+    Einheitslastfälle, die von den Lasten nicht abhängen. Stimmen Lager oder Lastflächen im echten Auftrag nicht mehr
+    überein, trifft er sie nur nicht und rechnet normal; am Ergebnis ändert das nichts (Schlüssel aus allen Eingaben).
+    Ohne Vorlage bleiben: Teile mit ausdrücklich gesetzten Lagern (Simulation), Lasten auf ganzen Flächen und „Grenze
+    suchen“ (ihre Netze stammen nicht aus den Körpern)."""
+    from OCP.BRepTools import BRepTools
+
+    alt = _LETZTER_AUFTRAG
+    out: list[dict[str, Any]] = []
+    if not alt:
+        return out
+    for T in alt.get("teile") or []:
+        k = koerper.get(T["name"])
+        if k is None or T.get("grenze"):
+            continue
+        nachbarn = T.get("nachbarn") or {}
+        if any(str(x).startswith("Lager: ") or "art" in nb for x, nb in nachbarn.items()):
+            continue
+        if any(l.get("flaeche") or l.get("flaeche_datei") for f in T.get("faelle") or [] for l in f.get("lasten") or []):
+            continue
+        if any(x not in koerper for x in nachbarn):
+            continue
+        geaendert = k.key != T.get("schluessel_teil") or any(koerper[x].key != nb.get("schluessel")
+                                                            for x, nb in nachbarn.items())
+        if not geaendert:
+            continue
+        i = len(out)
+        brep = os.path.join(ordner, f"teil_{i}.brep")
+        BRepTools.Write_s(k.shape, brep)
+        lo, hi = np.asarray(k.bmin) - RAND_MM, np.asarray(k.bmax) + RAND_MM
+        neu_nb = {}
+        for j, (x, nb) in enumerate(sorted(nachbarn.items())):
+            datei = os.path.join(ordner, f"nachbar_{i}_{j}.npz")
+            neu_nb[x] = {"datei": datei, "tol": nb.get("tol"), "schluessel": koerper[x].key,
+                         "dreiecke": nachbar_npz(koerper[x], lo, hi, datei)}
+        faelle = [{"id": f"{i}.{j}", "szenario": f.get("szenario"), "teil": T["name"], "lager": list(f.get("lager") or []),
+                   "lasten": [{kk: v for kk, v in l.items() if kk in ("kraft", "moment", "punkt", "kontakt_mit")}
+                              for l in f.get("lasten") or []],
+                   "schluessel": f"vorab-{i}-{j}", "feld": f.get("feld"), "ziel": f.get("ziel")}
+                  for j, f in enumerate(T.get("faelle") or [])]
+        out.append({**{kk: v for kk, v in T.items() if kk not in ("nachbarn", "faelle", "grenze")},
+                    "id": i, "brep": brep, "schluessel_teil": k.key, "volumen": float(k.volumen),
+                    "bmin": [float(c) for c in k.bmin], "bmax": [float(c) for c in k.bmax], "nachbarn": neu_nb,
+                    "faelle": faelle})
+    return out
+
+
+def vorab_abbrechen() -> None:
+    """Laufenden vorgezogenen FEM-Prozess beenden (ein neuer Lauf, ein neuer Vorlauf). Seine Sperren verwaisen; wer auf
+    sie wartet, rechnet dann selbst."""
+    proc = _VORAB.get("proc")
+    if proc is not None and proc.poll() is None:
+        try:
+            os.killpg(proc.pid, 9)
+        except OSError:
+            proc.kill()
+    _VORAB["proc"] = None
+
+
+def vorab_starten(koerper: dict[str, Any]) -> dict[str, Any] | None:
+    """A6: zu Beginn der Prüfung eines echten Laufs (``pruefung/lauf.py``) für geänderte Teile des letzten Auftrags
+    Netz, Steifigkeit, Kontaktflächen und Einheitslastfälle in einem eigenen FEM-Prozess vorziehen, parallel zu Druck
+    und Statik. Nach der Statik findet der echte Auftrag sie im Zwischenspeicher (oder wartet, bis sie fertig sind) und
+    überlagert nur noch. Rückgabe: Ordner und Zahl der Teile, oder None."""
+    import shutil
+    import subprocess
+    import sys
+    import threading
+
+    vorab_abbrechen()
+    if not vorab_an() or not _LETZTER_AUFTRAG:
+        return None
+    ordner = tempfile.mkdtemp(prefix="kevcad-fem-vorab-")
+    try:
+        teile = vorab_teile(koerper, ordner)
+        if not teile:
+            shutil.rmtree(ordner, ignore_errors=True)
+            return None
+        pfad = os.path.join(ordner, "auftrag.json")
+        with open(pfad, "w", encoding="utf-8") as fh:
+            json.dump({"version": VERSION, "fein": bool(_LETZTER_AUFTRAG.get("fein")), "teile": teile, "vorab": True,
+                       "run": _LETZTER_AUFTRAG.get("run")}, fh, ensure_ascii=False)
+        from kevcad_kernel.statik.festkoerper.laufzeit import FAEDEN
+
+        env = dict(os.environ, OMP_NUM_THREADS=str(FAEDEN), OPENBLAS_NUM_THREADS=str(FAEDEN),
+                   VECLIB_MAXIMUM_THREADS=str(FAEDEN), PYTHONUNBUFFERED="1")
+        proc = subprocess.Popen([sys.executable, "-m", "kevcad_kernel.statik.festkoerper.prozess", pfad,
+                                 os.path.join(ordner, "ergebnis.json")], stdout=subprocess.DEVNULL, env=env,
+                                start_new_session=True)
+    except Exception as exc:  # noqa: BLE001 - dann rechnet der echte Auftrag alles selbst
+        print(f"Festkörper: Vorziehen nicht gestartet: {type(exc).__name__}: {exc}", file=sys.stderr)
+        shutil.rmtree(ordner, ignore_errors=True)
+        return None
+    _VORAB["proc"] = proc
+
+    def aufraeumen() -> None:
+        proc.wait()
+        shutil.rmtree(ordner, ignore_errors=True)
+
+    threading.Thread(target=aufraeumen, name="fem-vorab", daemon=True).start()
+    return {"ordner": ordner, "teile": [T["name"] for T in teile], "pid": proc.pid}
 
 
 def verwerfen(job: dict[str, Any] | None) -> None:
@@ -392,20 +537,9 @@ def _schreibe_in(st: Any, wunsch: dict[str, Any], liste: list[dict[str, Any]], o
             if x not in st.koerper:
                 continue
             o = st.koerper[x]
-            pos = np.asarray(o.pos, dtype=float)
-            tri = np.asarray(o.tri, dtype=np.int64)
-            if len(tri):
-                P = pos[tri]
-                tlo, thi = P.min(axis=1), P.max(axis=1)
-                keep = np.all((thi >= lo) & (tlo <= hi), axis=1)
-                tri = tri[keep]
-            used = np.unique(tri) if len(tri) else np.zeros(0, dtype=np.int64)
-            remap = np.full(len(pos), -1, dtype=np.int64)
-            remap[used] = np.arange(len(used))
             datei = os.path.join(ordner, f"nachbar_{T['id']}_{len(T['nachbarn'])}.npz")
-            np.savez(datei, pos=pos[used].astype(np.float64), tri=remap[tri].astype(np.int64))
             T["nachbarn"][x] = {"datei": datei, "tol": _toleranz(m, name, x), "schluessel": o.key,
-                                "dreiecke": int(len(tri))}
+                                "dreiecke": nachbar_npz(o, lo, hi, datei)}
         for last in f["lasten"]:  # Last auf der ganzen Fläche: Netz der B-Rep-Fläche dazu
             fl = last.get("flaeche")
             if fl and fl.get("index") is not None and not last.get("flaeche_datei"):

@@ -351,6 +351,71 @@ def _einheiten_aufraeumen(ordner: Path, max_mb: float = EINHEIT_MAX_MB) -> None:
         summe -= groesse / (1 << 20)
 
 
+VORAB_WARTEN_S = 120.0  # so lange wartet ein Auftrag höchstens auf Einheitsfälle, die ein anderer Prozess rechnet
+
+
+def _arbeit_pfad(pfad: Path) -> Path:
+    return pfad.with_suffix(".arbeit")
+
+
+def _lebt(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _arbeit_nehmen(pfad: Path) -> bool:
+    """Sperre für das Rechnen der Einheitsfälle ``pfad`` (A6: vorgezogener und echter FEM-Prozess rechnen dasselbe nicht
+    zweimal). False, wenn ein lebender Prozess sie hält; eine verwaiste Sperre wird übernommen."""
+    sperre = _arbeit_pfad(pfad)
+    for _ in range(2):
+        try:
+            fd = os.open(sperre, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            if _in_arbeit(pfad):
+                return False
+            try:
+                sperre.unlink()
+            except OSError:
+                pass
+            continue
+        except OSError:
+            return True  # ohne Sperre rechnen (Ordner nicht schreibbar): wie vor A6
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+        return True
+    return False
+
+
+def _arbeit_geben(pfad: Path) -> None:
+    try:
+        if _arbeit_pfad(pfad).read_text(encoding="utf-8").strip() == str(os.getpid()):
+            _arbeit_pfad(pfad).unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def _in_arbeit(pfad: Path) -> bool:
+    """Rechnet gerade ein anderer lebender Prozess die Einheitsfälle ``pfad``?"""
+    try:
+        pid = int(_arbeit_pfad(pfad).read_text(encoding="utf-8").strip() or "0")
+    except (OSError, ValueError):
+        return False
+    return pid > 0 and pid != os.getpid() and _lebt(pid)
+
+
+def _warte_auf_einheit(pfad: Path, max_s: float = VORAB_WARTEN_S) -> dict[str, Any] | None:
+    """Auf Einheitsfälle warten, die ein anderer Prozess rechnet (A6); None, wenn er ohne sie aufhört."""
+    ende = time.monotonic() + max_s
+    while not pfad.exists() and _in_arbeit(pfad) and time.monotonic() < ende:
+        time.sleep(0.05)
+    return _einheit_laden(pfad) if pfad.exists() else None
+
+
 def _flaechen_waehlen(N: Any, T: dict[str, Any], fs: list[dict[str, Any]], beruehrt: dict[str, np.ndarray],
                       groesse: float, h: float, nachbarn: _Nachbarn) -> dict[str, np.ndarray | None] | None:
     """Randdreiecke je Lastfläche der Fälle (Volumen ohne). None, wenn eine Fläche einer Datei oder eine Kontaktfläche
@@ -601,12 +666,26 @@ def _faelle_ueberlagert(N: Any, C: np.ndarray, T: dict[str, Any], fs: list[dict[
 def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: float) -> list[dict[str, Any]]:
     """Alle Fälle eines Teils; Ergebnisse aus dem Zwischenspeicher, wo vorhanden, sonst aus Einheitslastfällen (A4:
     gemerkt oder mit einer Zerlegung frisch gerechnet) bzw. Fall für Fall (AMG, Ersatzflächen)."""
+    gesperrt: list[Path] = []
+    try:
+        return _rechne_teil(T, fein, ablage, von, bis, gesperrt)
+    finally:
+        for pfad in gesperrt:
+            _arbeit_geben(pfad)
+
+
+def _rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: float, gesperrt: list[Path]
+                 ) -> list[dict[str, Any]]:
+    """``rechne_teil``; ``gesperrt`` sammelt die Sperren der Einheitsfälle, die dieser Prozess rechnet (A6). Mit
+    ``T["vorab"]`` (A6, vorgezogen nach dem Zwischenstand) nur Netz, Steifigkeit, Kontaktflächen und Einheitsfälle in
+    den Zwischenspeicher, keine Fälle."""
     t0 = time.perf_counter()
     kurz = T["name"].rsplit("/", 1)[-1]
+    vorab = bool(T.get("vorab"))
     out: list[dict[str, Any]] = []
     offen = []
     mit_sigma = bool(T.get("grenze"))
-    for f in T["faelle"]:
+    for f in T["faelle"] if not vorab else []:
         alt = lies_fall(ablage / "faelle" / f"{f['schluessel']}.npz")
         if alt is not None and mit_sigma and not (ablage / "faelle" / f"{f['schluessel']}.sig.npz").exists():
             alt = None  # Grenze suchen braucht die Spannungen je Knoten
@@ -614,6 +693,8 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
             out.append({**alt, "id": f["id"], "aus_speicher": True})
         else:
             offen.append(f)
+    if vorab:
+        offen = list(T["faelle"])
     if not offen:
         melde(bis, f"{kurz}: aus dem Zwischenspeicher")
         return out
@@ -632,7 +713,21 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
     if ueberlagern:
         for lager, fs in gruppen.items():
             pfad = _einheit_pfad(ablage, T, fein, lager, fs, nachbarn)
-            einheit[lager] = (pfad, _einheit_laden(pfad) if pfad.exists() else None)
+            d = _einheit_laden(pfad) if pfad.exists() else None
+            if d is None:
+                if _arbeit_nehmen(pfad):  # A6: dieser Prozess rechnet sie, ein anderer wartet darauf
+                    gesperrt.append(pfad)
+                elif not vorab:  # ein anderer Prozess (vorgezogen) rechnet sie gerade: warten statt doppelt rechnen
+                    schritt(0.01, "wartet auf vorgezogene Einheitslastfälle")
+                    d = _warte_auf_einheit(pfad)
+                else:
+                    continue  # vorab: rechnet schon ein anderer
+            einheit[lager] = (pfad, d)
+    if vorab:
+        gruppen = {lager: fs for lager, fs in gruppen.items()
+                   if lager in einheit and einheit[lager][1] is None and einheit[lager][0] in gesperrt}
+        if not gruppen:
+            return []
     schritt(0.02, "vernetzen")
     n, netz_gemerkt = _netz(T, fein, ablage)
     t_netz = (time.perf_counter() - t0) * 1000
@@ -664,6 +759,8 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
     for lager, fs in gruppen.items():
         pfad, d = einheit.get(lager) or (None, None)
         arten = {x: _lager_art(T["nachbarn"].get(x, {})) for x in lager}
+        if vorab and d is not None:
+            continue
         if d is not None:  # A4: aus gemerkten Einheitsfällen, ohne Steifigkeit, Kontakte und Zerlegung
             schritt(0.5 + 0.4 * erledigt / max(len(offen), 1), f"aus Einheitslastfällen ({len(fs)} Lastfälle)")
             out += _faelle_ueberlagert(N, C, T, fs, d, lager, arten, V, nachbarn, mit_sigma, netz_info, ablage, t0,
@@ -741,10 +838,18 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
             t_loesen = (time.perf_counter() - t2) * 1000
             if pfad is not None:
                 _einheit_speichern(pfad, d)
+                if pfad in gesperrt:
+                    _arbeit_geben(pfad)
+                    gesperrt.remove(pfad)
+            if vorab:
+                schritt(1.0, f"Einheitslastfälle vorgezogen ({len(d['einheiten'])})")
+                continue
             out += _faelle_ueberlagert(N, C, T, fs, d, lager, arten, V, nachbarn, mit_sigma, netz_info, ablage, t0,
                                        {"netz": t_netz, "steifigkeit": t_k, "loesen": t_loesen}, False)
             erledigt += len(fs)
             schritt(0.5 + 0.45 * erledigt / max(len(offen), 1), f"{erledigt} von {len(offen)} Lastfällen fertig")
+            continue
+        if vorab:  # Fall für Fall (AMG, Ersatzfläche): hängt an den Lasten, nichts vorzuziehen
             continue
         if lose.any():
             for f in fs:
@@ -1121,7 +1226,9 @@ def _leicht(T: dict[str, Any], fein: bool, ablage: Path) -> bool:
         gruppen.setdefault(tuple(sorted(f["lager"])), []).append(f)
     nachbarn = _Nachbarn(T)
     try:
-        return all(_einheit_pfad(ablage, T, fein, lager, fs, nachbarn).exists() for lager, fs in gruppen.items())
+        pfade = [_einheit_pfad(ablage, T, fein, lager, fs, nachbarn) for lager, fs in gruppen.items()]
+        # A6: was ein vorgezogener Prozess gerade rechnet, wartet dieser Prozess ab, statt einen Teilprozess zu starten
+        return all(p.exists() or _in_arbeit(p) for p in pfade)
     except Exception:  # noqa: BLE001
         return False
 
@@ -1209,6 +1316,9 @@ def main(argv: list[str] | None = None) -> int:
                            "beginn": beginn, "zeiten_teile": []}
     teile = auftrag.get("teile") or []
     fein = bool(auftrag.get("fein"))
+    if auftrag.get("vorab"):  # A6: nur Einheitslastfälle vorziehen (``auftrag.vorab_starten``)
+        for T in teile:
+            T["vorab"] = True
     offen = [i for i, T in enumerate(teile) if not _leicht(T, fein, ablage)]
     n = prozesse_zahl(len(offen), *speicher_lage()) if len(offen) >= 2 else 1
     out["prozesse_zahl"] = n
