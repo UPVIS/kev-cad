@@ -92,31 +92,8 @@ struct DateiTeilenKnopf: View {
     }
 }
 
-/// Teilen-Blatt des Systems: am Mac der Teilen-Dienst an der Stelle des Knopfs, auf dem iPad UIActivityViewController
-/// (mit Drucken, Sichern in Dateien, AirDrop und passenden Apps).
+/// Teilen-Blatt des Systems (Weg im Kern: `Dateiablage.teilen`).
 @MainActor
 enum TeilenBlatt {
-    static func zeigen(_ urls: [URL], von rahmen: CGRect) {
-        guard !urls.isEmpty else { return }
-        #if os(macOS)
-        guard let fenster = NSApp.keyWindow ?? NSApp.mainWindow, let inhalt = fenster.contentView else { return }
-        // SwiftUI misst global von oben links, AppKit von unten links
-        let stelle = NSRect(x: rahmen.minX, y: inhalt.bounds.height - rahmen.maxY, width: rahmen.width,
-                            height: rahmen.height)
-        NSSharingServicePicker(items: urls).show(relativeTo: stelle, of: inhalt, preferredEdge: .minY)
-        #else
-        let szenen = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let szene = szenen.first(where: { $0.activationState == .foregroundActive }) ?? szenen.first,
-              let fenster = szene.keyWindow ?? szene.windows.first, var oben = fenster.rootViewController
-        else { return }
-        while let weiter = oben.presentedViewController { oben = weiter }
-        let blatt = UIActivityViewController(activityItems: urls, applicationActivities: nil)
-        if let pop = blatt.popoverPresentationController {
-            pop.sourceView = fenster
-            pop.sourceRect = rahmen.isEmpty
-                ? CGRect(x: fenster.bounds.midX, y: fenster.bounds.midY, width: 1, height: 1) : rahmen
-        }
-        oben.present(blatt, animated: true)
-        #endif
-    }
+    static func zeigen(_ urls: [URL], von rahmen: CGRect) { Dateiablage.teilen(urls, von: rahmen) }
 }

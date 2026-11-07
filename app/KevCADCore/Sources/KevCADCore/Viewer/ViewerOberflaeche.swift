@@ -100,10 +100,10 @@ struct MeldungsLeiste: View {
             Text(meldung.text)
                 .foregroundStyle(ViewerStil.text)
                 .lineLimit(2)
-            // iPad: kein Finder; Dateien teilen (Teilen-Blatt) folgt in I-8
-            if let datei = meldung.datei, Dateiablage.kannImFinderZeigen {
-                Button("Im Finder zeigen") {
-                    Dateiablage.imFinderZeigen([datei])
+            // Am Mac „Im Finder zeigen“; auf dem iPad liegt die Datei im eigenen Zwischenspeicher, dort „Teilen“
+            if let datei = meldung.datei {
+                Button(Dateiablage.kannImFinderZeigen ? "Im Finder zeigen" : "Teilen") {
+                    if !Dateiablage.imFinderZeigen([datei]) { Dateiablage.teilen([datei]) }
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ViewerStil.akzent)

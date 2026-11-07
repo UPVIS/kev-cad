@@ -129,10 +129,19 @@ final class HEVCSchreiber {
 }
 
 extension AppController {
-    /// Ordner für Bilder und Videos: <Projekt>/output (ohne Projekt der Schreibtisch).
+    /// Ordner für Bilder und Videos: <Projekt>/output (ohne Projekt der Schreibtisch). Über das Netz verbunden (iPad)
+    /// liegt das Projekt am Mac, dort kann das Gerät nicht schreiben: Bilder und Videos entstehen dann im eigenen
+    /// Zwischenspeicher je Projekt und gehen über das Teilen-Blatt weiter (I-8).
     func ausgabeOrdner(_ unter: String? = nil) -> URL {
-        var dir = model.project?.path.appendingPathComponent("output", isDirectory: true)
-            ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        var dir: URL
+        if connection.istNetz || !Dateiablage.kannImFinderZeigen {
+            dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Ausgabe/\(Self.safeFileName(model.project?.name ?? "Ohne Projekt"))",
+                                        isDirectory: true)
+        } else {
+            dir = model.project?.path.appendingPathComponent("output", isDirectory: true)
+                ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        }
         if let unter { dir = dir.appendingPathComponent(unter, isDirectory: true) }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir

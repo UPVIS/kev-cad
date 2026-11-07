@@ -257,10 +257,7 @@ extension AppController {
             log(.error, "Bild ließ sich nicht rendern")
             return
         }
-        let dir =
-            model.project?.path.appendingPathComponent("output", isDirectory: true)
-            ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = ausgabeOrdner()  // am iPad der eigene Zwischenspeicher (das Projekt liegt am Mac)
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd-HHmmss"
         let url = dir.appendingPathComponent("Bild-\(f.string(from: Date())).png")

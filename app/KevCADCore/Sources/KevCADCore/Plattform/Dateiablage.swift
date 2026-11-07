@@ -32,6 +32,33 @@ public enum Dateiablage {
         #endif
     }
 
+    /// Teilen-Blatt des Systems für lokale Dateien (auf dem iPad mit Drucken, Dateien, AirDrop), am Mac der Teilen-Dienst.
+    /// `rahmen`: Stelle des Knopfs im Fenster (SwiftUI global), leer = Fenstermitte.
+    public static func teilen(_ urls: [URL], von rahmen: CGRect = .zero) {
+        guard !urls.isEmpty else { return }
+        #if os(macOS)
+        guard let fenster = NSApp.keyWindow ?? NSApp.mainWindow, let inhalt = fenster.contentView else { return }
+        // SwiftUI misst global von oben links, AppKit von unten links
+        let stelle = rahmen.isEmpty
+            ? NSRect(x: inhalt.bounds.midX, y: inhalt.bounds.midY, width: 1, height: 1)
+            : NSRect(x: rahmen.minX, y: inhalt.bounds.height - rahmen.maxY, width: rahmen.width, height: rahmen.height)
+        NSSharingServicePicker(items: urls).show(relativeTo: stelle, of: inhalt, preferredEdge: .minY)
+        #else
+        let szenen = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let szene = szenen.first(where: { $0.activationState == .foregroundActive }) ?? szenen.first,
+              let fenster = szene.keyWindow ?? szene.windows.first, var oben = fenster.rootViewController
+        else { return }
+        while let weiter = oben.presentedViewController { oben = weiter }
+        let blatt = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+        if let pop = blatt.popoverPresentationController {
+            pop.sourceView = fenster
+            pop.sourceRect = rahmen.isEmpty
+                ? CGRect(x: fenster.bounds.midX, y: fenster.bounds.midY, width: 1, height: 1) : rahmen
+        }
+        oben.present(blatt, animated: true)
+        #endif
+    }
+
     /// Kann diese Adresse hier geöffnet werden? Webadressen überall; Dateien nur am Mac (mit dem Standardprogramm). Auf dem
     /// iPad gehen Dateien über das Teilen-Blatt (I-8).
     public static func kannOeffnen(_ url: URL) -> Bool {

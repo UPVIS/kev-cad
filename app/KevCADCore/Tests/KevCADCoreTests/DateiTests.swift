@@ -89,6 +89,20 @@ final class DateiTests: XCTestCase {
         }
     }
 
+    /// Bilder und Videos des Viewers: am Mac ins Projekt, am iPad in den eigenen Zwischenspeicher (das Projekt liegt am Mac).
+    func testAusgabeOrdnerAmGeraet() {
+        let c = AppController(model: AppModel())
+        let pfad = URL(fileURLWithPath: "/Users/kevin/Documents/Kev CAD/Halter")
+        c.model.project = ProjectInfo(path: pfad, name: "Halter", modelFile: pfad.appendingPathComponent("model.py"))
+        let d = c.ausgabeOrdner("videos")
+        #if os(macOS)
+        XCTAssertEqual(d.path, "/Users/kevin/Documents/Kev CAD/Halter/output/videos")
+        #else
+        XCTAssertTrue(d.path.contains("/Caches/Ausgabe/Halter/videos"), d.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: d.path))
+        #endif
+    }
+
     func testLokaleDateiBleibtWoSieIst() async throws {
         let c = AppController(model: AppModel())
         let datei = FileManager.default.temporaryDirectory.appendingPathComponent("kevcad-datei-\(UUID().uuidString).txt")
