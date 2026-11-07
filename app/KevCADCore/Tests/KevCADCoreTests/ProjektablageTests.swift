@@ -48,6 +48,23 @@ final class ProjektablageTests: XCTestCase {
         XCTAssertEqual(Projektablage.kernelPfad(lokal), lokal.path)
     }
 
+    func testNeuesProjektVomIPadOhneICloud() {
+        let lokal = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/X/Documents/Kev CAD")
+        XCTAssertEqual(Projektablage.kernelPfad(lokal.appendingPathComponent("Strebe"), lokalerOrdner: lokal), "Strebe")
+        let anders = URL(fileURLWithPath: "/Users/k/Documents/Kev CAD/Strebe")
+        XCTAssertEqual(Projektablage.kernelPfad(anders, lokalerOrdner: lokal), anders.path)
+    }
+
+    func testPfadVomMacAufDemIPad() {
+        let padOrdner = URL(fileURLWithPath: "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Kev CAD")
+        let wurzel = Projektablage.iCloudWurzel(von: padOrdner)
+        XCTAssertEqual(wurzel?.path, "/private/var/mobile/Library/Mobile Documents")
+        let mac = URL(fileURLWithPath: "/Users/k/Library/Mobile Documents/com~apple~CloudDocs/Kev CAD/Halter")
+        XCTAssertEqual(Projektablage.hierAbgelegt(mac, wurzel: wurzel)?.path, padOrdner.path + "/Halter")
+        XCTAssertNil(Projektablage.hierAbgelegt(URL(fileURLWithPath: "/Users/k/Documents/Kev CAD/Halter"), wurzel: wurzel))
+        XCTAssertNil(Projektablage.hierAbgelegt(mac, wurzel: nil))
+    }
+
     func testKonfliktKopien() {
         XCTAssertEqual(ProjektListe.konfliktKopien(["model.py", "model 2.py", "kevcad.json", "kevcad 3.json"]),
                        ["kevcad 3.json", "model 2.py"])

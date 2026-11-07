@@ -51,9 +51,9 @@ public enum AppInfo {
             umgebung: umgebung, schalter: Projektablage.schalterLesen(in: supportDirectory),
             vorgabe: Projektablage.lokalerOrdner)
         #else
-        let dokumente = URL.documentsDirectory.appendingPathComponent("Kev CAD", isDirectory: true)
         return Projektablage.ordner(
-            umgebung: umgebung, schalter: Projektablage.Schalter(), vorgabe: PadOrdner.projektOrdner() ?? dokumente)
+            umgebung: umgebung, schalter: Projektablage.Schalter(),
+            vorgabe: PadOrdner.projektOrdner() ?? PadOrdner.lokalerOrdner)
         #endif
     }
 }

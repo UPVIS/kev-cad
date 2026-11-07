@@ -20,7 +20,7 @@
   },
   "app/Sources/KevCAD/Mac/KevCADApp.swift": {
    "gegenstueck": "app/Sources/KevCADPad/KevCADPadApp.swift",
-   "gegenstueck_summe": "c7f7f4df48f6e61733f04fecf9782ed0aafe11bcd0bc8a49f8705e24571bfbde",
+   "gegenstueck_summe": "aa35216b3ee956ffa6e8960e584c8a9f4cc13d18c6ee2b7349f9875a7a2e00e7",
    "summe": "623f30f6cf9d5318938c04575452d368760a38461a7b4b2b990f6b0ca4487d49"
   },
   "app/Sources/KevCAD/Mac/KeyboardGuard.swift": {

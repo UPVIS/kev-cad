@@ -226,7 +226,7 @@ private struct ProjektMenue: View {
                 .disabled(model.project == nil)
             Divider()
             Button("Neues Projekt") { session.neuesProjekt() }
-            if AppSession.kannOrdnerWaehlen {  // iPad: Projekte aus der iCloud folgen in I-7
+            if AppSession.kannOrdnerWaehlen {  // iPad: Projektliste mit Ordnerwahl (I-7)
                 Button("Öffnen …") { session.presentOpenPanel() }
             }
             Button("Letzte Projekte zeigen") { model.oberflaechenActions?.zeigeUebersicht(true) }

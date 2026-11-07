@@ -53,8 +53,14 @@ final class AppSession: ObservableObject {
     @Published var zukaufRequest: ZukaufDialogRequest?
     /// iPad: offene Dateiwahl (Dateien-App), gezeigt vom Hauptfenster (`dateienWaehlen`, I-8). Am Mac immer nil.
     @Published var dateiWahl: DateiWahl?
-    /// iPad: Protokoll, Lagerkatalog oder Zukaufteil als Blatt über dem Hauptfenster (am Mac eigene Fenster, I-8).
+    /// iPad: Protokoll, Lagerkatalog oder Zukaufteil als Blatt über dem Hauptfenster (am Mac eigene Fenster, I-8);
+    /// die Projektliste aus der iCloud („Öffnen …“, I-7).
     @Published var padBlatt: PadBlatt?
+    /// iPad: Namensabfrage für ein neues Projekt (I-7). Am Mac entsteht ein Entwurf ohne Namen in der Ablage der App; das
+    /// iPad kann keinen Entwurf beim Mac ablegen, also fragt es den Namen und der Kernel legt das Projekt gleich an.
+    @Published var neuesProjektFragen = false
+    /// iPad: Eintrag aus „Zuletzt geöffnet“, dessen Ordner fehlt; das Hauptfenster fragt „Entfernen?“ (am Mac ein NSAlert).
+    @Published var fehlendesProjekt: RecentProject?
     /// Die zuletzt gezeigte Dateiwahl, bis ihr Ergebnis da ist (SwiftUI schließt den Dialog teils vor dem Ergebnis).
     private var dateiWahlOffen: DateiWahl?
 
@@ -116,7 +122,7 @@ final class AppSession: ObservableObject {
             let controller = AppController(model: model)
             self.controller = controller
             demo = nil
-            recents = demoConfig != nil ? DemoData.makeRecents() : RecentProjects()
+            recents = demoConfig != nil ? DemoData.makeRecents() : RecentProjects(exists: Self.projektordnerVorhanden)
             controller.start()
         }
 
@@ -264,11 +270,21 @@ final class AppSession: ObservableObject {
             showProjectWindow()
             return
         }
-        if !AppInfo.isDemoMode, let problem = ProjectLocator.check(folder) {
+        if !AppInfo.isDemoMode, let problem = Self.pruefen(folder) {
             presentProblem(problem, folder: folder)
             return
         }
         actions?.openProject(at: folder)
+    }
+
+    /// Projektordner vor dem Öffnen prüfen. Auf dem iPad nur, was das Gerät sehen kann (`PadOrdner.pruefpfad`); Ordner des
+    /// Mac außerhalb der iCloud prüft der Kernel beim Öffnen.
+    private static func pruefen(_ folder: URL) -> ProjectLocator.Problem? {
+        #if os(macOS)
+        ProjectLocator.check(folder)
+        #else
+        PadOrdner.pruefpfad(folder).flatMap { ProjectLocator.check($0) }
+        #endif
     }
 
     func openRecent(_ item: RecentProject) {
@@ -285,22 +301,38 @@ final class AppSession: ObservableObject {
                 if response == .alertFirstButtonReturn { self?.recents.remove(item.url) }
             }
             #else
-            // iPad: Rückfrage „Entfernen?“ folgt mit den Projekten in I-7; bis dahin bleibt der Eintrag stehen.
-            melde("„\(item.name)“ wurde nicht gefunden.", fehler: true)
+            fehlendesProjekt = item  // Rückfrage „Entfernen?“ zeigt das Hauptfenster
             #endif
             return
         }
         openProject(at: item.url)
     }
 
-    /// Kann die App einen Projektordner über einen Dialog wählen lassen („Öffnen …“)? Am Mac ja, auf dem iPad folgt das
-    /// mit den Projekten in der iCloud (I-7).
-    static var kannOrdnerWaehlen: Bool {
+    /// Kann die App einen Projektordner wählen lassen („Öffnen …“)? Am Mac über den Dateidialog, auf dem iPad über die
+    /// Projektliste mit Ordnerwahl in der Dateien-App (I-7).
+    static var kannOrdnerWaehlen: Bool { true }
+
+    /// Gibt es den Projektordner noch (für „Zuletzt geöffnet“)? Am Mac der Ordner selbst. Auf dem iPad stehen dort Pfade
+    /// des Mac: geprüft wird, was das iPad sehen kann (iCloud über den gewählten Ordner); der Rest gilt als vorhanden, der
+    /// Kernel am Mac meldet beim Öffnen, wenn er fehlt.
+    nonisolated static func projektordnerVorhanden(_ url: URL) -> Bool {
         #if os(macOS)
-        true
+        RecentProjects.folderExists(url)
         #else
-        false
+        PadOrdner.pruefpfad(url).map(RecentProjects.folderExists) ?? true
         #endif
+    }
+
+    /// Neues Projekt mit Namen vom iPad: Der Kernel legt es am Mac an, im iCloud-Ordner, wenn der Schalter an ist, sonst
+    /// dort, wo es die Mac-App anlegen würde (`Projektablage.kernelPfad`).
+    func neuesProjektAnlegen(_ eingabe: String) {
+        guard AppInfo.isDemoMode || model.kopplung.verbunden else {
+            melde("Neue Projekte legt dein Mac an. Sobald er verbunden ist, geht das.", fehler: true)
+            return
+        }
+        model.oberflaechenActions?.zeigeUebersicht(false)
+        padBlatt = nil
+        actions?.newProject(at: proposedFolder(for: eingabe), template: ProjectTemplate.empty.rawValue)
     }
 
     /// Kann die App Dateien des Projekts mit anderen Programmen öffnen oder im Dateimanager zeigen (model.py im Editor,
@@ -367,6 +399,9 @@ final class AppSession: ObservableObject {
     }
 
     func presentOpenPanel() {
+        #if os(iOS)
+        padBlatt = .projekte  // Projektliste mit Ordnerwahl in der Dateien-App (I-7)
+        #endif
         #if os(macOS)
         let panel = NSOpenPanel()
         panel.title = "Projekt öffnen"
@@ -383,7 +418,6 @@ final class AppSession: ObservableObject {
             Task { @MainActor in self?.openProject(at: url) }
         }
         #endif
-        // iPad: Projektordner wählen folgt in I-7 (iCloud und Projekte); der Knopf steht dort nicht (kannOrdnerWaehlen)
     }
 
     private func presentProblem(_ problem: ProjectLocator.Problem, folder: URL) {
@@ -525,6 +559,6 @@ struct DateiWahl: Identifiable {
 
 /// Blätter auf dem iPad, die am Mac eigene Fenster sind.
 enum PadBlatt: String, Identifiable {
-    case protokoll, lagerkatalog, zukauf
+    case protokoll, lagerkatalog, zukauf, projekte
     var id: String { rawValue }
 }

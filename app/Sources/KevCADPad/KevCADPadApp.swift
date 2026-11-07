@@ -63,8 +63,6 @@ struct PadHauptfenster: View {
     @State private var kopplungZeigen = PadStart.kopplungsBlattBeimStart
     /// Projekte aus iCloud (I-7, Versuch): Schalter in den Einstellungen des iPad (Settings.bundle), Vorgabe aus
     @AppStorage(Projektablage.padSchalterKey) private var iCloudProjekte = false
-    @State private var projekteZeigen = false
-    @State private var projektOrdner = PadOrdner.ordner()
 
     /// Grund unter dem Home-Balken (und unter der Statusleiste, solange Kacheln den Viewer nach unten rücken): der des
     /// Viewers im dunklen Bild (0,12 Grau wie `AppController.hintergrundDunkel`), so schließt der Viewer nahtlos an.
@@ -82,7 +80,7 @@ struct PadHauptfenster: View {
                     // Mit welchem Mac das iPad verbunden ist; ohne Kopplung der Hinweis aufs Beispielmodell
                     HStack(spacing: 8) {
                         if iCloudProjekte {
-                            PadProjekteChip { projekteZeigen = true }
+                            PadProjekteChip { session.padBlatt = .projekte }
                         }
                         PadKopplungsChip(kopplung: session.model.kopplung, aktionen: kopplungsAktionen) { kopplungZeigen = true }
                     }
@@ -100,23 +98,6 @@ struct PadHauptfenster: View {
             PadKopplungsBlatt(kopplung: session.model.kopplung, aktionen: kopplungsAktionen) { kopplungZeigen = false }
                 .presentationDetents([.medium, .large])
                 .presentationBackground(GF.tief)
-        }
-        .sheet(isPresented: $projekteZeigen) {
-            ProjektListeAnsicht(
-                ordner: projektOrdner, verbunden: session.model.kopplung.verbunden,
-                oeffnen: { e in
-                    projekteZeigen = false
-                    session.openProject(at: e.url)
-                },
-                ordnerGewaehlt: { url in
-                    // Der Dialog gibt den Zugriff frei; das Lesezeichen hält ihn über Neustarts
-                    _ = url.startAccessingSecurityScopedResource()
-                    try? PadOrdner.merken(url)
-                    projektOrdner = PadOrdner.ordner() ?? url
-                },
-                schliessen: { projekteZeigen = false })
-            .presentationDetents([.medium, .large])
-            .presentationBackground(GF.tief)
         }
         // Der Mac kennt das iPad nicht mehr (Schlüssel passt nicht): gleich das Blatt zum neu Koppeln
         .onReceive(session.model.kopplung.$meldung.dropFirst()) { meldung in if meldung != nil { kopplungZeigen = true } }

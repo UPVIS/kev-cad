@@ -63,6 +63,38 @@ def projects_dir(ordner_app: Path | None = None) -> Path:
     return LOKAL_ORDNER
 
 
+def _belegt(p: Path) -> bool:
+    """Gibt es den Ordner schon mit Inhalt (oder als Datei)? Ein leerer Ordner taugt noch für ein neues Projekt."""
+    if not p.exists():
+        return False
+    if not p.is_dir():
+        return True
+    return any(c.name != ".DS_Store" for c in p.iterdir())
+
+
+def eindeutig(ziel: Path) -> Path:
+    """Ordner für ein neues Projekt ohne Kollision: „Halter“, sonst „Halter 2“, „Halter 3“ … (wie
+    ``ProjectLocator.uniqueFolder`` in der App)."""
+    if not _belegt(ziel):
+        return ziel
+    n = 2
+    while _belegt(ziel.with_name(f"{ziel.name} {n}")):
+        n += 1
+    return ziel.with_name(f"{ziel.name} {n}")
+
+
+def aufloesen(pfad: str, neu: bool = False) -> str:
+    """Pfad aus PROJECT_OPEN und PROJECT_NEW. Ein bloßer Name (relativ, ohne ``~``) meint den Projektordner dieses Mac
+    (``projects_dir``): So legt das iPad ein Projekt dort an, wo es auch die Mac-App anlegen würde, ohne den Ort zu kennen.
+    Bei ``neu`` bekommt der Name eine Nummer, wenn es den Ordner schon gibt. Absolute Pfade und ``~`` bleiben, wie sie
+    sind."""
+    text = (pfad or "").strip()
+    if not text or text.startswith(("/", "~")):
+        return pfad
+    ziel = projects_dir() / text
+    return str(eindeutig(ziel) if neu else ziel)
+
+
 def in_icloud(pfad: str | Path) -> bool:
     """Liegt der Pfad in der iCloud (iCloud Drive oder Ordner einer App)?"""
     return ICLOUD_MARKE in str(Path(pfad).expanduser()) + "/"

@@ -45,6 +45,19 @@ public enum PadOrdner {
         return url
     }
 
+    /// Projektordner der iPad-App ohne iCloud (Dokumente-Ordner der App). Projekte darunter gibt es nur als Namen: Der
+    /// Kernel legt sie im Projektordner des Mac an (`Projektablage.kernelPfad`).
+    public static var lokalerOrdner: URL { URL.documentsDirectory.appendingPathComponent("Kev CAD", isDirectory: true) }
+
+    /// Wo dieses Gerät einen Projektordner prüfen kann: eigene Pfade wie sie sind, iCloud-Pfade vom Mac unter der
+    /// iCloud-Wurzel des gewählten Ordners. Nil heißt: nicht prüfbar (Ordner auf dem Mac außerhalb der iCloud, oder noch
+    /// kein Ordner gewählt); dann entscheidet der Kernel am Mac beim Öffnen.
+    public static func pruefpfad(_ url: URL, defaults: UserDefaults = .standard) -> URL? {
+        if url.standardizedFileURL.path.hasPrefix(NSHomeDirectory()) { return url }
+        let wurzel = ordner(defaults).flatMap(Projektablage.iCloudWurzel(von:))
+        return Projektablage.hierAbgelegt(url, wurzel: wurzel)
+    }
+
     /// Projektordner der iPad-App: der gewählte iCloud-Ordner, wenn der Schalter an ist; sonst `nil`.
     public static func projektOrdner(_ defaults: UserDefaults = .standard) -> URL? {
         schalterAn(defaults) ? ordner(defaults) : nil

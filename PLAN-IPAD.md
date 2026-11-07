@@ -302,6 +302,12 @@ selbst schreibt; dann neu bewerten.
 - **iPad:** Einstellungen › Kev CAD › „Projekte aus iCloud“. Dann zeigt die Statusleiste „Projekte“; die Liste fragt beim
   ersten Mal nach dem Ordner. Ein Tipp öffnet das Projekt am Mac: Das iPad schickt den Pfad mit `~`
   (`Projektablage.kernelPfad`), der Kernel löst ihn am Mac auf.
+- **Öffnen und Anlegen am iPad** (07.11.2026): „Öffnen …“ (Kopfleiste, Startübersicht) zeigt das Blatt „Projekte“, auch
+  ohne Schalter; die Ordnerwahl in der Dateien-App nimmt einen Ordner mit Projekten (Lesezeichen) oder öffnet ein einzelnes
+  Projekt. „Neues Projekt“ fragt am iPad nach dem Namen; der Kernel legt es am Mac an, mit Schalter im gewählten
+  iCloud-Ordner (`~`-Pfad), sonst als bloßer Name im Projektordner des Mac (`ablage.aufloesen`, bei Kollision „Name 2“).
+  „Zuletzt geöffnet“ führt am iPad die Pfade des Mac: geprüft wird nur, was das iPad sehen kann (iCloud über den gewählten
+  Ordner, `PadOrdner.pruefpfad`); fehlt ein Ordner, fragt das iPad „Entfernen?“ wie der Mac.
 
 **Umzug** (erst nach Kevins Ja; die Scans bleiben lokal):
 

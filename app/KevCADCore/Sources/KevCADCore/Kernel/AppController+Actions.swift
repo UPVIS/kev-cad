@@ -36,12 +36,14 @@ extension AppController {
     }
 
     /// Pfad für PROJECT_OPEN und PROJECT_NEW. Am Mac der Pfad selbst. Auf dem iPad liegt ein Ordner aus iCloud Drive
-    /// unter einem anderen Pfad als am Mac; das iPad schickt ihn mit `~`, der Kernel löst ihn am Mac auf (I-7).
+    /// unter einem anderen Pfad als am Mac; das iPad schickt ihn mit `~`, der Kernel löst ihn am Mac auf. Ein neues
+    /// Projekt im eigenen Projektordner des iPad (ohne iCloud) geht als bloßer Name: Der Kernel legt es dort an, wo es
+    /// auch die Mac-App anlegen würde (I-7).
     static func kernelPfad(_ url: URL) -> String {
         #if os(macOS)
         url.path
         #else
-        Projektablage.kernelPfad(url)
+        Projektablage.kernelPfad(url, lokalerOrdner: PadOrdner.lokalerOrdner)
         #endif
     }
 

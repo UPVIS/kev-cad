@@ -48,7 +48,7 @@ struct Startuebersicht: View {
     var body: some View {
         let liste = eintraege
         OverlayKarte(titel: "Zuletzt geöffnet", fuss: "Ein Klick ins Leere oder esc schiebt die Liste weg.") {
-            if AppSession.kannOrdnerWaehlen {  // iPad: Projekte aus der iCloud folgen in I-7
+            if AppSession.kannOrdnerWaehlen {  // iPad: Projektliste mit Ordnerwahl (I-7)
                 Button {
                     session.presentOpenPanel()
                 } label: {

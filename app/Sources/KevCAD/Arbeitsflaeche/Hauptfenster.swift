@@ -183,11 +183,12 @@ struct Hauptfenster: View {
                       allowsMultipleSelection: session.dateiWahl?.mehrere ?? false) { ergebnis in
             session.dateiWahlBeendet(ergebnis)
         }
-        // iPad: Protokoll, Lagerkatalog und Zukaufteil als Blatt (am Mac eigene Fenster)
+        // iPad: Protokoll, Lagerkatalog, Zukaufteil und Projekte als Blatt (am Mac eigene Fenster bzw. der Dateidialog)
         .sheet(item: $session.padBlatt) { blatt in
             PadBlattAnsicht(blatt: blatt, model: model)
                 .environmentObject(session)
         }
+        .modifier(PadProjektDialoge(session: session))
         #endif
         .focusedSceneObject(state)
         .focusedSceneObject(versionen)
@@ -584,7 +585,44 @@ private struct PadBlattAnsicht: View {
         case .zukauf:
             ZukaufDialog(model: model, request: session.zukaufRequest ?? .new()) { session.padBlatt = nil }
                 .navigationTitle("Zukaufteil hinzufügen")
+        case .projekte:
+            ProjekteBlatt(model: model).navigationTitle("Projekte")
         }
+    }
+}
+
+/// iPad: Name für ein neues Projekt und „Entfernen?“ für ein fehlendes Projekt aus „Zuletzt geöffnet“ (I-7). Am Mac
+/// entsteht ein neues Projekt als Entwurf ohne Namen, und die Rückfrage ist ein NSAlert (`AppSession.openRecent`).
+private struct PadProjektDialoge: ViewModifier {
+    @ObservedObject var session: AppSession
+    @State private var name = ""
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Neues Projekt", isPresented: $session.neuesProjektFragen) {
+                TextField("Name", text: $name)
+                Button("Anlegen") {
+                    session.neuesProjektAnlegen(name)
+                    name = ""
+                }
+                Button("Abbrechen", role: .cancel) { name = "" }
+            } message: {
+                Text("Dein Mac legt das Projekt an, \(Projektablage.inICloud(AppInfo.projectsDirectory) ? "im Ordner „\(AppInfo.projectsDirectory.lastPathComponent)“ in iCloud Drive" : "in seinem Projektordner").")
+            }
+            .confirmationDialog(
+                "„\(session.fehlendesProjekt?.name ?? "")“ wurde nicht gefunden",
+                isPresented: Binding(get: { session.fehlendesProjekt != nil },
+                                     set: { if !$0 { session.fehlendesProjekt = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Entfernen", role: .destructive) {
+                    if let p = session.fehlendesProjekt { session.recents.remove(p.url) }
+                    session.fehlendesProjekt = nil
+                }
+                Button("Behalten", role: .cancel) { session.fehlendesProjekt = nil }
+            } message: {
+                Text("Der Ordner ist nicht mehr da. Soll der Eintrag aus „Zuletzt geöffnet“ entfernt werden?")
+            }
     }
 }
 #endif

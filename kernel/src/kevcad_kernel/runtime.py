@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import kevcad_kernel
+from kevcad_kernel.ablage import aufloesen
 from kevcad_kernel.anim_runtime import AnimationRuntimeMixin
 from kevcad_kernel.app_link import AppConnection, AppLink
 from kevcad_kernel.bauplan.dienst import BauplanDienst
@@ -266,7 +267,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if reply_to is None and (sperre := self.feedback_sperre()):  # vom Agenten, nicht aus der App
             return sperre
         try:
-            proj = open_project(path)
+            proj = open_project(aufloesen(path))  # bloßer Name: im Projektordner dieses Mac (vom iPad, I-7)
         except ProjectError as exc:
             return {"ok": False, "error": str(exc)}
         self._set_project(proj, reply_to)
@@ -279,7 +280,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if reply_to is None and (sperre := self.feedback_sperre()):  # vom Agenten, nicht aus der App
             return sperre
         try:
-            proj = new_project(path, template)
+            proj = new_project(aufloesen(path, neu=True), template)
         except ProjectError as exc:
             return {"ok": False, "error": str(exc)}
         self._set_project(proj, reply_to)

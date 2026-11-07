@@ -97,3 +97,29 @@ def test_versionen_erfassen_link_und_lokale_daten_nicht(wolke):
     pfade = {p for _, p in repo.status()}
     assert "model.py" in pfade
     assert not any(p.startswith(".kevcad") for p in pfade), pfade
+
+
+def test_blosser_name_landet_im_projektordner(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEVCAD_PROJECTS_DIR", str(tmp_path))
+    assert ablage.aufloesen("Halter") == str(tmp_path / "Halter")
+    (tmp_path / "Halter").mkdir()
+    assert ablage.aufloesen("Halter", neu=True) == str(tmp_path / "Halter")  # leerer Ordner taugt
+    (tmp_path / "Halter" / "model.py").write_text("x = 1\n", encoding="utf-8")
+    assert ablage.aufloesen("Halter", neu=True) == str(tmp_path / "Halter 2")
+    assert ablage.aufloesen("Halter") == str(tmp_path / "Halter")  # Öffnen nimmt den Namen, wie er ist
+    assert ablage.aufloesen("~/x") == "~/x" and ablage.aufloesen("/a/b") == "/a/b"
+
+
+def test_neues_projekt_vom_ipad_ueber_den_kernel(tmp_path, monkeypatch):
+    """PROJECT_NEW mit bloßem Namen (vom iPad): Ordner im Projektordner des Mac, bei Kollision mit Nummer."""
+    from types import SimpleNamespace
+
+    from kevcad_kernel.runtime import KernelRuntime
+
+    monkeypatch.setenv("KEVCAD_PROJECTS_DIR", str(tmp_path))
+    rt = SimpleNamespace(_set_project=lambda proj, reply_to: None)
+    a = KernelRuntime.project_new(rt, "Strebe", "empty", reply_to="r1")
+    b = KernelRuntime.project_new(rt, "Strebe", "empty", reply_to="r2")
+    assert a["ok"] and b["ok"], (a, b)
+    assert Path(a["path"]).name == "Strebe" and Path(b["path"]).name == "Strebe 2"
+    assert KernelRuntime.project_open(rt, "Strebe 2", reply_to="r3")["ok"]

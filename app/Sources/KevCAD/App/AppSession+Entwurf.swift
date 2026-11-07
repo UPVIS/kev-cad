@@ -37,6 +37,10 @@ extension AppSession {
     func entwurfVorbereiten(wiederherstellen: Bool) {
         let selbsttest = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"]
         startEntwurfErlaubt = !AppInfo.isDemoMode && !wiederherstellen && (selbsttest == nil || selbsttest == "oberflaeche")
+        #if os(iOS)
+        // iPad: Entwürfe liegen in der Ablage der Mac-App; das iPad zeigt, was der Mac offen hat (I-7)
+        startEntwurfErlaubt = false
+        #endif
         // Leere Entwürfe früherer Sitzungen weg (nur Ordnerliste und Prüfsummen weniger kleiner Dateien)
         entwuerfe.aufraeumen()
         // Im Demo-Lauf des App-Kerns ist das Projekt schon offen: keine Übersicht darüber
@@ -69,6 +73,12 @@ extension AppSession {
         model.oberflaechenActions?.zeigeUebersicht(false)
         showProjectWindow()
         if let p = model.project, entwuerfe.enthaelt(p.path), entwuerfe.istLeer(p.path) { return }
+        #if os(iOS)
+        if !AppInfo.isDemoMode {
+            neuesProjektFragen = true  // iPad: Name eingeben, der Mac legt das Projekt an (I-7)
+            return
+        }
+        #endif
         if AppInfo.isDemoMode {
             actions?.newProject(at: proposedFolder(for: EntwurfAblage.projektName), template: ProjectTemplate.empty.rawValue)
             return

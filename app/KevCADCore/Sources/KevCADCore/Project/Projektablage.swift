@@ -99,10 +99,30 @@ public enum Projektablage {
     }
 
     /// Pfad, unter dem der Kernel am Mac den Ordner findet: iCloud-Ordner mit `~` (der Kernel löst ihn am Mac auf,
-    /// `project.open_project`), alles andere unverändert.
-    public static func kernelPfad(_ url: URL) -> String {
-        guard let rest = iCloudRest(url) else { return url.standardizedFileURL.path }
-        return "~" + iCloudMarke + rest
+    /// `project.open_project`); ein Ordner unter `lokalerOrdner` (der Projektordner des iPad ohne iCloud) als bloßer Name,
+    /// den der Kernel im Projektordner des Mac anlegt bzw. sucht (`ablage.aufloesen`); alles andere unverändert.
+    public static func kernelPfad(_ url: URL, lokalerOrdner: URL? = nil) -> String {
+        if let rest = iCloudRest(url) { return "~" + iCloudMarke + rest }
+        let pfad = url.standardizedFileURL.path
+        if let basis = lokalerOrdner?.standardizedFileURL.path, pfad.hasPrefix(basis + "/") {
+            return String(pfad.dropFirst(basis.count + 1))
+        }
+        return pfad
+    }
+
+    /// Wurzel der iCloud auf diesem Gerät („…/Library/Mobile Documents“), abgelesen an einer Adresse darin.
+    public static func iCloudWurzel(von url: URL) -> URL? {
+        let pfad = url.standardizedFileURL.path
+        guard let r = pfad.range(of: iCloudMarke) else { return nil }
+        return URL(fileURLWithPath: String(pfad[..<r.upperBound]), isDirectory: true)
+    }
+
+    /// Dieselbe iCloud-Datei unter der Wurzel dieses Geräts: ein Pfad vom Mac
+    /// („/Users/k/Library/Mobile Documents/com~apple~CloudDocs/Kev CAD/A“) wird auf dem iPad zu „…/mobile/Library/Mobile
+    /// Documents/com~apple~CloudDocs/Kev CAD/A“. Nil außerhalb der iCloud oder ohne Wurzel.
+    public static func hierAbgelegt(_ url: URL, wurzel: URL?) -> URL? {
+        guard let wurzel, let rest = iCloudRest(url) else { return nil }
+        return wurzel.appendingPathComponent(rest, isDirectory: true)
     }
 }
 
