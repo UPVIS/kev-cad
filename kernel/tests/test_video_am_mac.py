@@ -68,7 +68,9 @@ def test_ohne_mac_ein_hinweis():
     pad = FakeApp(sock, geraet=PAD)
     try:
         pad.wait_for(lambda h: h["type"] == "HELLO")
-        _warten(lambda: len(rt.status()["geraete"]) == 1)
+        # Auf die Art warten, nicht nur auf die Zahl: Bis HELLO_APP verarbeitet ist, zählt eine Verbindung ohne `geraet`
+        # als Mac (Apps vor I-2), und die Anfrage ginge ans iPad (unter Last auf dem Mini so gesehen, 07.11.2026)
+        _warten(lambda: [g["art"] for g in rt.status()["geraete"]] == ["ipad"])
         b = pad.mark()
         ergebnis: dict = {}
         _anfrage(rt, ergebnis).join(10)
