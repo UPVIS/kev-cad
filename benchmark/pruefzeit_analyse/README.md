@@ -19,4 +19,5 @@ Schalter: `KCZ_UHR` (Wanduhr je Funktion), `KCZ_KOERPER` (Form- und Lageschlüss
 `fem_versuch.py <auftrag> <arbeitsordner mit netze/> seq|lu|par4`: Löserversuche an einem gesicherten FEM-Auftrag.
 
 Seit A0 (07.11.2026) im Repo-Werkzeug: `gleichheit.py` ist die Gleichheitsprobe von `benchmark/pruefzeit.py` (Endstand
-inkrementell gegen frischen Kernel mit denselben FEM-Netzen).
+inkrementell gegen frischen Kernel mit denselben FEM-Netzen); `lu_grenze.py` misst SuperLU gegen AMG bei steigender Zahl
+der Freiheitsgrade (A3).

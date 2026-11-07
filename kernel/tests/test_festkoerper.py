@@ -150,11 +150,14 @@ def test_schichtkriterium():
 # Plausibilität gegen Handrechnung
 
 
-def test_kragbalken_gegen_handrechnung(tmp_path):
+@pytest.mark.parametrize("loeser", ["lu", "amg"])
+def test_kragbalken_gegen_handrechnung(tmp_path, monkeypatch, loeser):
     """Kragbalken 100 × 10 × 10 mm aus PLA (Werte aus dem Katalog), an der Wand eingespannt, 100 N am Ende:
-    Durchbiegung F L³ / (3 E I), Biegespannung M / W, je höchstens 5 % Abweichung (feines Netz)."""
+    Durchbiegung F L³ / (3 E I), Biegespannung M / W, je höchstens 5 % Abweichung (feines Netz). Mit beiden Lösern
+    (A3: SuperLU und AMG, über KEVCAD_FEM_LOESER erzwungen)."""
     from build123d import Box, Location
 
+    monkeypatch.setenv("KEVCAD_FEM_LOESER", loeser)
     me = mechanik("pla")
     E, nu = float(me["e_modul"]), float(me.get("querkontraktion") or 0.3)
     L, b, h, F = 100.0, 10.0, 10.0, 100.0
@@ -168,6 +171,7 @@ def test_kragbalken_gegen_handrechnung(tmp_path):
     out, dauer = _rechne(tmp_path, teil, [fall])
     r = out["faelle"][0]
     assert r["stand"] == "done", r
+    assert r["loeser"]["verfahren"] == {"lu": "superlu", "amg": "amg"}[loeser]
     I = b * h ** 3 / 12
     W = b * h ** 2 / 6
     f_hand = F * L ** 3 / (3 * E * I)
@@ -188,11 +192,14 @@ def test_kragbalken_gegen_handrechnung(tmp_path):
           f"{F * 75 / W:.2f}, σmax {r['spannung_max']:.2f} / {F * L / W:.2f} N/mm², {r['netz']}, {dauer:.1f} s")
 
 
-def test_lochplatte_gegen_kerbfaktor(tmp_path):
+@pytest.mark.parametrize("loeser", ["lu", "amg"])
+def test_lochplatte_gegen_kerbfaktor(tmp_path, monkeypatch, loeser):
     """Platte 400 × 100 × 5 mm mit Loch Ø 20 unter Zug: größte Spannung am Lochrand gegen K_t σ_netto mit
-    K_t = 2 + (1 − d/W)³ (Heywood), höchstens 5 % Abweichung."""
+    K_t = 2 + (1 − d/W)³ (Heywood), höchstens 5 % Abweichung. Mit beiden Lösern (A3); kommt AMG an der dünnen Platte
+    nicht unter die Toleranz, rechnet SuperLU nach (wie ohne Vorgabe)."""
     from build123d import Box, Cylinder, Location
 
+    monkeypatch.setenv("KEVCAD_FEM_LOESER", loeser)
     W_, d, t, F = 100.0, 20.0, 5.0, 1000.0
     form = Box(400, W_, t).moved(Location((0, 0, t / 2))) - Cylinder(d / 2, t).moved(Location((0, 0, t / 2)))
     brep = _brep(form, tmp_path / "platte.brep")
@@ -214,6 +221,77 @@ def test_lochplatte_gegen_kerbfaktor(tmp_path):
     assert abs(np.linalg.norm(r["ort"][:2]) - d / 2) < 0.1  # die größte Spannung sitzt am Lochrand
     print(f"Lochplatte: σmax {r['spannung_max']:.3f} / K_t σ_netto {soll:.3f} N/mm² "
           f"({100 * (r['spannung_max'] / soll - 1):+.1f} %), {r['netz']}, {r['loeser']}, {dauer:.1f} s")
+
+
+def test_amg_gegen_superlu_bei_30000_freiheitsgraden(tmp_path, monkeypatch):
+    """A3: Klotz mit Bohrung, rund 30.000 Freiheitsgrade, dasselbe Netz: AMG und SuperLU liefern dieselbe Sicherheit
+    (gerundet) und Verschiebungen innerhalb 1e-6 relativ zum größten Betrag."""
+    from build123d import Box, Cylinder, Location
+
+    form = Box(60, 40, 30).moved(Location((30, 0, 15))) - Cylinder(6, 30).moved(Location((40, 0, 15)))
+    brep = _brep(form, tmp_path / "klotz.brep")
+    w = {"E": 2580.0, "nu": 0.36, "E_z": None, "f": 40.0, "q": None, "name": "PLA"}
+    teil = _teil("Klotz", brep, w, float(form.volume), (0, -20, 0), (60, 20, 30),
+                 {"Wand": {"datei": _wand(tmp_path / "wand.npz", 0.0), "tol": 0.3}}, h_mm=4.6)
+    erg = {}
+    for loeser in ("lu", "amg"):
+        monkeypatch.setenv("KEVCAD_FEM_LOESER", loeser)
+        fall = {"id": "0.0", "szenario": "Last", "teil": "Klotz", "ziel": 2.0, "schluessel": f"klotz-{loeser}",
+                "lasten": [{"kraft": [0, 300.0, -500.0], "moment": [0, 0, 2000.0], "punkt": [60, 0, 15]}],
+                "lager": ["Wand"], "feld": [0, 0, -9.81]}
+        out, _ = _rechne(tmp_path, teil, [fall])
+        r = out["faelle"][0]
+        assert r["stand"] == "done", r
+        assert r["loeser"]["verfahren"] == {"lu": "superlu", "amg": "amg"}[loeser]
+        erg[loeser] = (r, _felder(r["feld"]))
+    (r_lu, f_lu), (r_amg, f_amg) = erg["lu"], erg["amg"]
+    assert 20_000 < r_lu["netz"]["freiheitsgrade"] < 45_000, r_lu["netz"]
+    assert r_lu["netz"]["freiheitsgrade"] == r_amg["netz"]["freiheitsgrade"]  # dasselbe Netz (Zwischenspeicher)
+    assert r_lu["sicherheit"] == r_amg["sicherheit"]
+    v_lu, v_amg = f_lu["verschiebung"].astype(float), f_amg["verschiebung"].astype(float)
+    assert np.max(np.abs(v_lu - v_amg)) <= 1e-6 * np.max(np.abs(v_lu))
+
+
+def test_loeserwahl_nach_groesse_und_speicher(monkeypatch):
+    """A3: SuperLU bis 25.000 freie Freiheitsgrade immer, bis 45.000, wenn der Speicher für die Zerlegung reicht,
+    dünne Teile bis 150.000; sonst AMG. KEVCAD_FEM_LOESER erzwingt einen Löser."""
+    from kevcad_kernel.statik.festkoerper import loeser as L
+
+    monkeypatch.delenv("KEVCAD_FEM_LOESER", raising=False)
+    viel, wenig = 8000.0, 1200.0
+    assert L.lu_erlaubt(20_000, frei_mb=100.0) == (True, "klein")
+    assert L.lu_erlaubt(40_000, frei_mb=viel) == (True, "mittel")
+    assert L.lu_erlaubt(40_000, frei_mb=wenig) == (False, "speicher")
+    assert L.lu_erlaubt(50_000, frei_mb=viel) == (False, "gross")
+    assert L.lu_erlaubt(120_000, duenn=True, frei_mb=wenig) == (True, "duenn")
+    assert L.lu_erlaubt(200_000, duenn=True, frei_mb=viel)[0] is False
+    # Schätzung der Zerlegung: an den Messungen (25.600 → 17,7 Mio. Einträge) und monoton
+    assert 250 < L.lu_bedarf_mb(25_600) < 600 and L.lu_bedarf_mb(45_000) > L.lu_bedarf_mb(30_000)
+    monkeypatch.setenv("KEVCAD_FEM_LOESER", "amg")
+    assert L.lu_erlaubt(1_000, frei_mb=viel) == (False, "erzwungen")
+    monkeypatch.setenv("KEVCAD_FEM_LOESER", "lu")
+    assert L.lu_erlaubt(90_000, frei_mb=1.0) == (True, "erzwungen")
+
+
+def test_amg_reproduzierbar(monkeypatch):
+    """A3: pyamg schätzt den Spektralradius mit einem Zufallsvektor; mit festem Startwert liefern zwei Aufbauten
+    dieselbe Lösung Bit für Bit (sonst schwankte das Ergebnis eines AMG-Teils von Prozess zu Prozess)."""
+    from skfem import MeshTet
+
+    from kevcad_kernel.statik.festkoerper import loeser
+
+    monkeypatch.setenv("KEVCAD_FEM_LOESER", "amg")
+    m = MeshTet.init_tensor(np.linspace(0, 60, 13), np.linspace(0, 20, 6), np.linspace(0, 20, 6))
+    N = loeser.Netz(m.p.T, m.t.T)
+    K = N.steifigkeit(fw.steifigkeit(2580.0, 0.36))
+    fest = N.feste_dofs(np.where(np.abs(N.rand_mitte[:, 0]) < 1e-9)[0])
+    f = N.last_volumen(np.array([0, 0, -1e-3]))
+    np.random.seed(1)  # anderer Zustand vor jedem Aufbau
+    u1, i1 = N.loese(K, fest, [f])
+    np.random.seed(2)
+    u2, i2 = N.loese(K, fest, [f])
+    assert i1["verfahren"] == ["amg"] and i2["verfahren"] == ["amg"]
+    assert np.array_equal(u1[0], u2[0])
 
 
 # ---------------------------------------------------------------------------------------------------------------------

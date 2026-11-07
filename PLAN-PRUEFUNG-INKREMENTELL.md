@@ -374,3 +374,37 @@ zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Or
      Menge (Hash-Zufall je Prozess): „Lenkrolle 3“ gegen „Lenkrolle 1“, gleiche Werte. Nicht Teil von A0 bis A4.
   3. **AMG**: pyamg schätzt den Spektralradius mit einem Zufallsvektor (`np.random`); Residuen und Felder der AMG-Teile
      weichen bis 9e-8 relativ ab, die gerundeten Ausgaben nicht. In A3 behoben (fester Startwert).
+
+### A3 Direkte Zerlegung bis 45.000 Freiheitsgrade (07.11.2026)
+
+- `statik/festkoerper/loeser.py`: SuperLU bis 25.000 freie Freiheitsgrade immer, bis 45.000, wenn nach der geschätzten
+  Zerlegung noch 1 GB Arbeitsspeicher frei bleibt (`lu_erlaubt`, `lu_bedarf_mb`: obere Hülle der gemessenen Einträge von
+  L und U, n · (700 + 0,01 n) zu je 12 Byte, mal 1,5), dünne Teile wie bisher bis 150.000; sonst AMG wie heute.
+  `KEVCAD_FEM_LOESER=lu|amg` erzwingt einen Löser (Tests, Messungen). AMG bekommt einen festen Startwert der
+  Zufallszahlen (pyamg schätzt den Spektralradius mit `np.random`): AMG-Teile sind damit von Prozess zu Prozess gleich.
+- Messung der Grenze (`benchmark/pruefzeit_analyse/lu_grenze.py`, Stangenhalter und Schieberschlitten mit verkleinerter
+  Netzgröße, je Löser ein frischer Prozess, 3 Lastfälle, Last 13 bis 22):
+
+| Freiheitsgrade | SuperLU gesamt (Zerlegung) | AMG gesamt | Spitze SuperLU / AMG | Einträge L+U |
+|---|---|---|---|---|
+| 25.600 | 1,8 s (1,0) | 4,2 s | 0,80 / 0,65 GB | 17,7 Mio. |
+| 39.700 (Schlitten) | 2,6 s (1,5) | 5,1 s | 1,06 / 0,89 GB | 26,0 Mio. |
+| 43.000 | 3,2 s (2,1) | 6,2 s | 1,27 / 1,05 GB | 33,8 Mio. |
+| 48.500 | 4,4 s (3,3) | 7,1 s | 1,45 / 1,16 GB | 44,1 Mio. |
+| 54.900 | 10,5 s (8,9) | 7,3 s | 1,37 / 1,30 GB | 66,8 Mio. |
+| 55.100 (Schlitten) | 7,2 s (5,6) | 7,0 s | 1,61 / 1,26 GB | 55,7 Mio. |
+| 68.100 | 10,4 s (8,8) | 13,4 s | 1,98 / 1,33 GB | 81,2 Mio. |
+
+  Bis rund 50.000 ist SuperLU immer schneller, darüber schwankt die Zerlegung mit der Ordnung stark. Jeder weitere
+  Lastfall kostet SuperLU 0,01 bis 0,03 s, AMG 0,7 bis 1,3 s (70 bis 120 Iterationen). In allen Größen dieselbe
+  Sicherheit (gerundet); Verschiebungen AMG gegen SuperLU höchstens 8,6e-8 relativ.
+- Kugelschieber (Ablage `20261107-065637-a3`, mit den Netzen der Basis, Last 12 bis 26): Endstand nach
+  `laufrolle_l=90` **20,0 s** (Basis 33,2 s), nach `laufrolle_l=95` **19,4 s** (32,4 s); FEM-Prozess 7,3 → 19,9 s
+  (12,6 statt 26 s), alle 8 Teile mit SuperLU (Stangenhalter 1,0 bis 2,0 s, Schieberschlitten 2,0 bis 2,4 s statt 4,1 bis
+  6,4 s). Speicherspitze des FEM-Prozesses 2,1 GB (Basis 1,5 bis 1,8 GB). Kalt 36,8 s (ohne Vernetzen, Netze der Basis).
+- Gleichheitsprobe: in allen Schritten gleich, FEM-Felder genau gleich (vorher bis 9e-8). Gegen die Basis mit denselben
+  Netzen: in allen 20 Fällen gleiche Sicherheit, Spannung, Verformung und Orte; anders sind nur Verfahren, Iterationen und
+  Residuum des Lösers, die Felder um höchstens 9,8e-8 relativ (Toleranz von AMG).
+- Tests: Kragbalken und Lochplatte mit beiden Lösern, AMG gegen SuperLU an einem Klotz mit rund 30.000
+  Freiheitsgraden innerhalb 1e-6, Löserwahl nach Größe und Speicher, AMG Bit für Bit reproduzierbar. Mac mini: 1278
+  bestanden, 23 übersprungen.

@@ -43,8 +43,55 @@ QL = np.array([[_QA, _QB, _QB, _QB], [_QB, _QA, _QB, _QB], [_QB, _QB, _QA, _QB],
 TOL = 1e-7
 MAXITER_AMG = 150  # darüber lohnt SuperLU
 MAXITER = 1000
-LU_KLEIN = 25_000  # bis hierhin immer direkt
+# Löserwahl (A3, PLAN-PRUEFUNG-INKREMENTELL.md, Kevin 07.11.2026): SuperLU bis LU_IMMER freie Freiheitsgrade immer, bis
+# LU_KLEIN, wenn der Speicher für die Zerlegung reicht (lu_erlaubt), dünne Teile bis LU_MAX; sonst AMG. Gemessen an
+# Druckteilen des Kugelschiebers (3 Lastfälle): SuperLU bis rund 50.000 schneller als AMG (48.500: 4,4 gegen 7,1 s),
+# Spitze 1,45 GB; darüber schwankt die Zerlegung stark (55.000: 9 s, 68.000: 2 GB). AMG und SuperLU liefern dieselbe
+# Sicherheit (gerundet), die Verschiebungen weichen um höchstens 1e-7 relativ ab (Toleranz von AMG).
+LU_IMMER = 25_000
+LU_KLEIN = 45_000
 LU_MAX = 150_000  # SuperLU höchstens bis hier (Speicher)
+LU_RESERVE_MB = 1024.0  # so viel Speicher bleibt nach der geschätzten Zerlegung mindestens frei
+LOESER_ENV = "KEVCAD_FEM_LOESER"  # "lu" oder "amg": Löser erzwingen (Tests, Messungen); sonst automatisch
+AMG_SAAT = 20261107  # pyamg schätzt den Spektralradius mit Zufallsvektor (np.random): fest, damit AMG reproduzierbar ist
+
+
+def lu_bedarf_mb(n: int) -> float:
+    """Geschätzter Zusatzspeicher (MB) der Zerlegung für n freie Freiheitsgrade: obere Hülle der gemessenen Einträge
+    von L und U (25.600 → 17,7 Mio., 48.500 → 44 Mio., 68.000 → 81 Mio.) mit n · (700 + 0,01 n), je 12 Byte, mal 1,5 für
+    den Arbeitsspeicher von SuperLU."""
+    return n * (700.0 + 0.01 * n) * 12.0 * 1.5 / (1 << 20)
+
+
+def speicher_frei_mb() -> float | None:
+    """Verfügbarer Arbeitsspeicher (MB, psutil), None wenn unbekannt."""
+    try:
+        import psutil
+
+        return float(psutil.virtual_memory().available) / (1 << 20)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def lu_erlaubt(n: int, duenn: bool = False, frei_mb: float | None = None) -> tuple[bool, str]:
+    """Direkt zerlegen? (ja/nein, Grund). ``frei_mb``: verfügbarer Speicher (sonst gemessen)."""
+    import os
+
+    erzwungen = (os.environ.get(LOESER_ENV) or "").strip().lower()
+    if erzwungen in ("lu", "superlu"):
+        return True, "erzwungen"
+    if erzwungen == "amg":
+        return False, "erzwungen"
+    if n <= LU_IMMER:
+        return True, "klein"
+    if duenn and n <= LU_MAX:
+        return True, "duenn"
+    if n > LU_KLEIN:
+        return False, "gross"
+    frei = speicher_frei_mb() if frei_mb is None else frei_mb
+    if frei is not None and frei < lu_bedarf_mb(n) + LU_RESERVE_MB:
+        return False, "speicher"
+    return True, "mittel"
 
 
 def _grad_formfunktionen(gL: np.ndarray, L: np.ndarray) -> np.ndarray:
@@ -365,9 +412,10 @@ class Netz:
         """Löst K u = f für alle Lastvektoren mit den festen Freiheitsgraden ``fest`` (u = 0), mit ``zwang`` statt
         dessen unter allgemeinen Zwangsbedingungen u = T q (``fest`` steckt dann in T).
 
-        pyamg (Smoothed Aggregation, CG) für gedrungene Teile; bei dünnen, langen Teilen (Platten, Leisten) kommt
-        AMG mit Tetraedern kaum voran, dort und bei kleinen Systemen zerlegt SuperLU direkt (symmetrische Ordnung,
-        ein Mal für alle Lastfälle). Kommt AMG nicht unter die Toleranz, rechnet SuperLU nach (bis ``LU_MAX``)."""
+        SuperLU zerlegt direkt (symmetrische Ordnung, ein Mal für alle Lastfälle) bis ``LU_KLEIN`` freie
+        Freiheitsgrade, wenn der Speicher reicht (``lu_erlaubt``), bei dünnen, langen Teilen (Platten, Leisten; dort
+        kommt AMG mit Tetraedern kaum voran) bis ``LU_MAX``; sonst pyamg (Smoothed Aggregation, CG, fester Startwert
+        der Zufallszahlen). Kommt AMG nicht unter die Toleranz, rechnet SuperLU nach (bis ``LU_MAX``)."""
         t0 = time.perf_counter()
         if zwang is not None:
             T = zwang.T
@@ -392,7 +440,9 @@ class Netz:
             info["lu_ms"] = round((time.perf_counter() - t) * 1000, 1)
             return z
 
-        if len(frei) <= LU_KLEIN or (duenn and len(frei) <= LU_MAX):
+        direkt, grund = lu_erlaubt(len(frei), duenn)
+        info["wahl"] = grund
+        if direkt:
             lu = zerlegen()
         else:
             import pyamg
@@ -401,6 +451,7 @@ class Netz:
             block = T is None and len(frei) % 3 == 0 and bool(
                 np.all(frei.reshape(-1, 3) - frei.reshape(-1, 3)[:, :1] == [0, 1, 2]))
             nah = zwang.restriktion(self.starrkoerper()) if zwang is not None else self.starrkoerper()[frei]
+            np.random.seed(AMG_SAAT)  # Spektralradius: Startvektor aus np.random, sonst je Prozess ein anderes AMG
             ml = pyamg.smoothed_aggregation_solver(sp.bsr_matrix(A, blocksize=(3, 3)) if block else A,
                                                    B=nah, symmetry="symmetric",
                                                    strength="symmetric", max_coarse=300)
