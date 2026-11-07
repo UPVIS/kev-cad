@@ -100,3 +100,10 @@ Einführrichtung je Teil (`pruefen(thema="montage")`; Kevin sieht sie im Prüfba
   `baugruppe=True` (der Baugruppen-Zweig übergeht es). Richtung an der Baugruppe erklären und das Schnappen an dem
   Kind, das die Rastnocke berührt: `montage("Audio/Empfänger", richtung=…, nach="Halter", baugruppe=True)` plus
   `montage("Audio/Empfänger/Blitzschuh", schnappt=True)`. `richtung` ist die Bewegung beim Einsetzen.
+- **`schnappt=True` verdeckt echte Kollisionen** (07.11.2026): Das Teil darf dann jede Berührung mit dem Gegenstück
+  überlappen, auch eine Rampe, die falsch im Kanal liegt. Den Einschubweg deshalb selbst nachmessen: mit `execute`
+  die Kinder des Zukaufteils einzeln an ihre Lage bringen (`lage * kind`, Kinder bewegen sich bei `Pos * baugruppe`
+  nicht mit), in Schritten entlang der Gegenrichtung verschieben und `(kind & halter).volume` ausgeben. Erwartet ist nur
+  die Überschneidung mit der Rastnocke.
+- **`extrude(Plane.YZ * Polygon(...))` folgt der Flächennormale**, und die hängt von der Punktreihenfolge ab: Ein
+  Prisma kann auf der falschen Seite der Ebene landen. Prismen danach über die Bounding Box an ihren Platz schieben.
