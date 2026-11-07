@@ -394,6 +394,10 @@ def test_parallel_bitgleich_wie_nacheinander(tmp_path, monkeypatch):
     nach, par = erg["1"], erg["3"]
     assert par["prozesse_zahl"] == 3 and nach["prozesse_zahl"] == 1
     assert len({z["pid"] for z in par["zeiten_teile"]} - {par["pid"]}) >= 2  # wirklich in Teilprozessen
+    # mit der Fädengrenze der Teilprozesse (sie entstehen erst beim submit; vorher kam sie nie an)
+    from kevcad_kernel.statik.festkoerper.prozess import KIND_FAEDEN
+
+    assert {z["faeden"] for z in par["zeiten_teile"] if z["pid"] != par["pid"]} == {str(KIND_FAEDEN)}
     assert [r["id"] for r in nach["faelle"]] == [r["id"] for r in par["faelle"]]
     for a, b in zip(nach["faelle"], par["faelle"]):
         assert a["stand"] == "done" and _ohne_herkunft(a) == _ohne_herkunft(b)

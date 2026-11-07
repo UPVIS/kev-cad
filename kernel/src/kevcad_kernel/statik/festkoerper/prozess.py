@@ -1074,7 +1074,7 @@ def _teil(T: dict[str, Any], fein: bool, ablage: Path, beginn: float, von: float
     except Exception as exc:  # noqa: BLE001 - ein Teil darf die anderen nicht verhindern
         faelle = _gescheitert(T, exc)
     return {"faelle": faelle, "pid": os.getpid(), "start": round(t0 - beginn, 3), "ende": round(time.time() - beginn, 3),
-            "speicher_mb": _speicher_spitze_mb()}
+            "speicher_mb": _speicher_spitze_mb(), "faeden": os.environ.get("OMP_NUM_THREADS")}
 
 
 def _kind_start() -> None:
@@ -1131,6 +1131,23 @@ def _parallel(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage:
     """Teile ``offen`` (Indizes) auf bis zu n Teilprozesse verteilen, Ergebnis je Index in ``je_teil``; ``fertig(i)``
     nach jedem Teil. ``hier``: leichte Teile, die dieser Prozess rechnet, während die Teilprozesse arbeiten. Rückgabe:
     Indizes, die kein Teilprozess fertig bekam (Pool abgestürzt), die rechnet der Aufrufer."""
+    # Fäden je Teilprozess: Die Umgebung gilt, solange der Pool besteht, denn mit spawn entstehen die Teilprozesse erst
+    # beim submit (zuvor nur um den Bau des Pools gesetzt, kam die Grenze nie an: drei Prozesse mit allen Kernen). Auf
+    # diesen Prozess wirkt sie nicht mehr, numpy und scipy sind hier schon geladen.
+    alt = {k: os.environ.get(k) for k in FAEDEN_VARS}
+    os.environ.update({k: str(KIND_FAEDEN) for k in FAEDEN_VARS})
+    try:
+        return _parallel_pool(teile, offen, fein, ablage, n, beginn, je_teil, fertig, hier)
+    finally:
+        for k, v in alt.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _parallel_pool(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage: Path, n: int, beginn: float,
+                   je_teil: dict[int, dict[str, Any]], fertig: Any, hier: list[int] | None) -> list[int]:
     global _STILL
     import concurrent.futures as cf
     import multiprocessing as mp
@@ -1140,16 +1157,7 @@ def _parallel(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage:
     zeiten = _zeiten_lesen(ablage)
     sch = {i: schaetzung(teile[i], zeiten) for i in offen}
     warte = sorted(offen, key=lambda i: (-sch[i][0], i))
-    alt = {k: os.environ.get(k) for k in FAEDEN_VARS}
-    os.environ.update({k: str(KIND_FAEDEN) for k in FAEDEN_VARS})
-    try:
-        ex = cf.ProcessPoolExecutor(max_workers=n, mp_context=mp.get_context("spawn"), initializer=modul._kind_start)
-    finally:
-        for k, v in alt.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+    ex = cf.ProcessPoolExecutor(max_workers=n, mp_context=mp.get_context("spawn"), initializer=modul._kind_start)
     laufend: dict[Any, int] = {}
     rest: list[int] = []
     kaputt = False
@@ -1224,7 +1232,7 @@ def main(argv: list[str] | None = None) -> int:
         e = je_teil[i]
         out["faelle"] += e["faelle"]
         out["zeiten_teile"].append({"teil": T["name"], "pid": e.get("pid"), "start": e.get("start"),
-                                    "ende": e.get("ende")})
+                                    "ende": e.get("ende"), "faeden": e.get("faeden")})
         if e.get("pid") is not None:
             prozesse[e["pid"]] = max(prozesse.get(e["pid"]) or 0.0, e.get("speicher_mb") or 0.0) or None
         gerechnet = [r for r in e["faelle"] if r.get("stand") == "done" and not r.get("aus_speicher")]
