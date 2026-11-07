@@ -265,6 +265,30 @@ def test_fluegelmutter_mit_wand_daneben():
     assert "kein Griffraum" in fb["text"] and "über der Auflage" in fb["text"] and "nötig 10 mm" in fb["text"]
 
 
+def test_griffraum_gemerkt_nach_relativer_lage():
+    """B1: Der Griffraum einer verschobenen Flügelmutter samt Wand kommt aus dem Zwischenspeicher, mit den Namen der
+    neuen Teile, und gleicht dem frisch gerechneten."""
+    def lauf(versatz, praefix):
+        f = {n: Pos(*versatz) * g for n, g in _fluegel_formen(wand=True).items()}
+        f[f"Wand {praefix}"] = f.pop("Wand")
+        with sammeln() as s:
+            drehgelenk(bezug(f["Mutter"], "achse"), bezug(f["Stift"], "achse"), bereich=(0, 180), schritte=12,
+                       bedienung="fluegel")
+            return pruefen(s, f, schluessel={n: f"{praefix}-{n}" for n in f})["bewegungen"][0]
+
+    for c in (br._CACHE, br._PAAR_CACHE, br._GRIFF_CACHE):
+        c.clear()
+    a = lauf((0, 0, 0), "a")
+    assert len(br._GRIFF_CACHE) == 1 and a["eng"][0]["gegen"] == "Wand a"
+    b = lauf((300, 40, -20), "b")
+    assert len(br._GRIFF_CACHE) == 1  # aus dem Zwischenspeicher
+    assert b["griffraum"] == a["griffraum"] and b["eng"] == [{**a["eng"][0], "gegen": "Wand b"}]
+    for c in (br._CACHE, br._PAAR_CACHE, br._GRIFF_CACHE):
+        c.clear()
+    frisch = lauf((300, 40, -20), "c")
+    assert frisch["griffraum"] == b["griffraum"] and frisch["eng"] == [{**b["eng"][0], "gegen": "Wand c"}]
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # 5. Richtung aus bohrung
 
@@ -391,6 +415,49 @@ def test_bewegungsraum_zwischenspeicher_ueber_laeufe():
     assert neu == {"Klappe": False, "Klotz": True}
 
 
+def _ohne_zeit(bw: dict) -> dict:
+    return {k: v for k, v in bw.items() if k not in ("geprueft_ms", "zwischenspeicher")}
+
+
+def test_bewegungsraum_schluessel_aus_form_und_relativer_lage():
+    """B1 (PLAN-PRUEFUNG-INKREMENTELL.md): Paare nach Form, Drehung und relativer Lage. Eine ganz verschobene
+    Baugruppe rechnet keinen exakten Schnitt neu und kommt zum selben Ergebnis wie frisch gerechnet; eine gedrehte trifft
+    keine Einträge der ungedrehten."""
+    for c in (br._CACHE, br._PAAR_CACHE, br._GRIFF_CACHE):
+        c.clear()
+    b1 = _b8(_klappen_modell(), {n: f"r1-{n}" for n in _klappen_modell()})
+    assert any(bw["kollisionen"] for bw in b1["bewegungen"])
+    n1 = len(br._PAAR_CACHE)
+    assert n1 > 0
+    versatz = np.array([500.0, -30.0, 7.0])
+    verschoben = {n: Pos(*versatz) * f for n, f in _klappen_modell().items()}
+    b2 = _b8(verschoben, {n: f"r2-{n}" for n in verschoben})
+    assert len(br._PAAR_CACHE) == n1  # nichts neu gerechnet
+    for a, b in zip(b1["bewegungen"], b2["bewegungen"]):
+        assert not b["zwischenspeicher"] and a["frei"] == b["frei"]
+        assert [(k["gegen"], k["bereiche"], k["max_volumen"], k["bei"]) for k in a["kollisionen"]] == \
+            [(k["gegen"], k["bereiche"], k["max_volumen"], k["bei"]) for k in b["kollisionen"]]
+        for ka, kb in zip(a["kollisionen"], b["kollisionen"]):
+            assert np.allclose(np.array(kb["ort"]) - versatz, ka["ort"], atol=0.011)
+    # gleich wie frisch gerechnet (leere Zwischenspeicher)
+    for c in (br._CACHE, br._PAAR_CACHE, br._GRIFF_CACHE):
+        c.clear()
+    frisch = _b8(verschoben, {n: f"r3-{n}" for n in verschoben})
+    assert [_ohne_zeit(b) for b in frisch["bewegungen"]] == [_ohne_zeit(b) for b in b2["bewegungen"]]
+    assert frisch["befunde"] == b2["befunde"]
+    # gedreht: andere Schlüssel (die Achsen des Hüllquaders der Schnittmenge drehen mit), gleiche Kollisionen
+    n3 = len(br._PAAR_CACHE)
+    gedreht = {n: Rot(0, 0, 90) * f for n, f in _klappen_modell().items()}
+    b4 = _b8(gedreht, {n: f"r4-{n}" for n in gedreht})
+    assert len(br._PAAR_CACHE) > n3
+    for a, b in zip(frisch["bewegungen"], b4["bewegungen"]):
+        assert a["frei"] == b["frei"]
+        assert [(k["gegen"], k["bereiche"]) for k in a["kollisionen"]] == \
+            [(k["gegen"], k["bereiche"]) for k in b["kollisionen"]]
+        assert [k["max_volumen"] for k in a["kollisionen"]] == \
+            pytest.approx([k["max_volumen"] for k in b["kollisionen"]], rel=1e-6)
+
+
 def test_bewegungsraum_zwischenspeicher_kennt_mitbewegt():
     """KevCup, 22.10.2026: Kommt ein Teil nur zusätzlich in „mitbewegt“, ist das ein anderer Weg. Früher blieb der
     Zwischenspeicher gültig (gleiche Teile insgesamt) und meldete Kollisionen innerhalb der bewegten Gruppe."""
@@ -423,6 +490,7 @@ def test_bewegungsraum_setzt_nach_zeitlimit_fort():
     b1 = _b8(formen, sk, zeitlimit_s=0.03)  # bricht ab: kein Ergebnis je Weg, aber die gerechneten Paare bleiben
     assert any("Zeitlimit" in f["text"] for f in b1["befunde"])
     n1 = len(br._PAAR_CACHE)
+    assert n1 > 0
     _b8(formen, sk, zeitlimit_s=0.03)  # der nächste Lauf setzt fort
     n2 = len(br._PAAR_CACHE)
     assert n2 >= n1 and n2 > 0

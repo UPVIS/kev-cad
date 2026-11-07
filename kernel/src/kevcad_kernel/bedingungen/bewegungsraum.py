@@ -20,7 +20,12 @@ Zwischenspeicher auf zwei Ebenen, beide über Läufe hinweg im Rechenprozess:
   Freiraum und Bedienung. Ein unveränderter Stand kostet nur das Nachschlagen; ändert sich ein Teil, rechnet nur der
   Weg neu, an dem es beteiligt ist.
 - je Teilepaar und relativer Lage (``_PAAR_CACHE``): auch was ein abgebrochener (Zeitlimit) oder geänderter Weg schon
-  gerechnet hat, bleibt erhalten; der nächste Lauf setzt dort fort.
+  gerechnet hat, bleibt erhalten; der nächste Lauf setzt dort fort. Schlüssel (B1, PLAN-PRUEFUNG-INKREMENTELL.md): je
+  Teil Form ohne Lage plus Drehung (``_relativ``), dazu die relative Lage beider Teile. Gerechnet wird im System des
+  ersten Teils, um dessen Verschiebung versetzt (Achsen wie die Welt, denn Tiefe und Ort kommen aus dem achsparallelen
+  Hüllquader der Schnittmenge); so treffen gemeinsam verschobene Teile (Schraube, Einsatz, Scheibe) und gleiche
+  Baugruppen (vier Lenkrollen) denselben Eintrag.
+- je Griffraum (``_GRIFF_CACHE``): ebenso nach Form, Drehung und Lage der Nachbarn relativ zum Bedienteil.
 """
 
 from __future__ import annotations
@@ -73,6 +78,8 @@ class _LRU(OrderedDict):
 _CACHE: _LRU = _LRU(200)  # je Weg: fertiges Ergebnis
 _PAAR_CACHE: _LRU = _LRU(100_000)  # je Teilepaar und relativer Lage: (Volumen, min, max) oder None
 _GEWINDE_CACHE: _LRU = _LRU(2000)  # je Geometriestand: Gewindeeingriff eines Paars in Ruhelage, Drehgriff ja/nein
+_REL_CACHE: _LRU = _LRU(5000)  # je Weltschlüssel: Form mit Drehung ohne Verschiebung (``_Rel``)
+_GRIFF_CACHE: _LRU = _LRU(2000)  # je Griffraum nach Form, Drehung und relativer Lage: (Maße, Platz je Nachbar)
 
 
 @dataclass
@@ -94,6 +101,50 @@ def _box(form: Any) -> tuple[np.ndarray, np.ndarray]:
         return hit
     bb = form.bounding_box()
     return np.array([bb.min.X, bb.min.Y, bb.min.Z]), np.array([bb.max.X, bb.max.Y, bb.max.Z])
+
+
+@dataclass
+class _Rel:
+    """Ein Teil, aufgeteilt in Form mit Drehung (``form``, gedreht um den Ursprung) und Verschiebung ``T`` (4 × 4):
+    Lage in der Welt = T · form. ``sk``: Schlüssel aus Formschlüssel und gerundeter Drehung (None ohne Weltschlüssel,
+    dann bleibt es bei der Form in Weltlage und T = 1). ``box``: Hüllquader von ``form`` (OCCT, wie die
+    Kollisionsfunktion ihn sonst selbst bildet)."""
+
+    form: Any
+    T: np.ndarray
+    sk: str | None
+    box: tuple[np.ndarray, np.ndarray]
+
+
+def _relativ(name: str, form: Any, schluessel: dict[str, str]) -> _Rel:
+    wk = schluessel.get(name)
+    if not wk:
+        lo_hi = form.bounding_box()
+        return _Rel(form, np.eye(4), None, (np.array([lo_hi.min.X, lo_hi.min.Y, lo_hi.min.Z]),
+                                            np.array([lo_hi.max.X, lo_hi.max.Y, lo_hi.max.Z])))
+    hit = _REL_CACHE.get(wk)
+    if hit is not None:
+        return hit
+    from build123d import Location
+    from OCP.TopLoc import TopLoc_Location
+
+    from kevcad_kernel.pruefung.koerper import _FORMEN, form_schluessel, lage_von
+
+    from .geometrie import matrix_trsf
+
+    L = lage_von(form.wrapped)
+    R = L.copy()
+    R[:3, 3] = 0.0
+    T = np.eye(4)
+    T[:3, 3] = L[:3, 3]
+    fk = _FORMEN.get(wk) or form_schluessel(form.wrapped)
+    gedreht = form.located(Location(TopLoc_Location(matrix_trsf(R))))
+    bb = gedreht.bounding_box()
+    dreh = ",".join(f"{x:.6f}" for x in np.round(R[:3, :3].ravel(), 6) + 0.0)  # + 0.0: aus −0 wird 0
+    rel = _Rel(gedreht, T, f"{fk}|{dreh}",
+               (np.array([bb.min.X, bb.min.Y, bb.min.Z]), np.array([bb.max.X, bb.max.Y, bb.max.Z])))
+    _REL_CACHE[wk] = rel
+    return rel
 
 
 def _ecken(lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
@@ -352,6 +403,13 @@ def _frei(werte: list[float], blockiert: set[float]) -> list[list[float]]:
     return out
 
 
+def _groesste(bs: list[Any]) -> Any:
+    """Bild mit dem größten Schnittvolumen, bei Gleichstand auf 0,001 mm³ das erste: Gleiche Volumen an verschiedenen
+    Stellen eines Wegs (Stift in zu engem Schlitz) unterscheiden sich nur im Rundungsrauschen, und das hängt davon ab,
+    in welcher Lage die Schnittmenge einmal gerechnet und gemerkt wurde (B1)."""
+    return max(bs, key=lambda b: round(float(b.volumen), 3))
+
+
 def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str],
                     zeitlimit_s: float | None, abbrechen: Any = None, nur_gemerkt: bool = False
                     ) -> dict[str, Any] | None:
@@ -397,11 +455,17 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
         return {**hit, "zwischenspeicher": True}
     if nur_gemerkt:
         return None
-    lagen = {n: lagen_liste for n in bewegt}
+    # B1: je Teil Form mit Drehung und Verschiebung getrennt; die Verschiebung geht in die Lagen, der Schlüssel des
+    # Zwischenspeichers ist damit Form, Drehung und relative Lage (Ergebnis im um die Verschiebung von a versetzten
+    # System, Ort über die Lage zurück in die Welt)
+    rel = {n: _relativ(n, f, schluessel) for n, f in {**bewegt, **statisch}.items()}
+    lagen = {n: lagen_liste @ rel[n].T for n in bewegt}
+    lagen.update({n: np.repeat(rel[n].T[None], len(werte), axis=0) for n in statisch})
     paare = [(m, s) for m in bewegt for s in statisch]
     fn = _kollisionsfunktion()
-    sk = {n: schluessel[n] for n in {**bewegt, **statisch} if schluessel.get(n)}
-    befunde, stats = fn({**bewegt, **statisch}, lagen, werte, paare=paare, toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN,
+    sk = {n: r.sk for n, r in rel.items() if r.sk}
+    befunde, stats = fn({n: r.form for n, r in rel.items()}, lagen, werte, paare=paare,
+                        huellen={n: r.box for n, r in rel.items()}, toleranz=TOLERANZ, min_volumen=MIN_VOLUMEN,
                         zeitlimit_s=zeitlimit_s, cache=_PAAR_CACHE if sk else None, schluessel=sk,
                         abbrechen=abbrechen)
     kollisionen: dict[tuple[str, str], list[Any]] = {}
@@ -423,7 +487,7 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
     eng: dict[str, list[tuple[float, float]]] = {}
     raum: dict[str, Any] | None = None
     if griffraum and not stats.get("abgebrochen"):
-        raum = _griffraum_pruefen(bew, formen, griff_kand)
+        raum = _griffraum_gemerkt(bew, formen, griff_kand, schluessel)
         for n, platz in raum.pop("eng").items():
             eng[n] = [(w, platz) for w in werte]  # der Griffraum dreht mit: gilt für den ganzen Weg
     elif bew.freiraum and not stats.get("abgebrochen"):
@@ -454,8 +518,8 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
         "frei_um_ist": um_ist, "freiraum": bew.freiraum,
         "kollisionen": [{"gegen": s, "bewegt": m, "bereiche": _bereiche(werte, {werte[b.bild] for b in bs}),
                          "max_volumen": round(max(b.volumen for b in bs), 3),
-                         "bei": werte[max(bs, key=lambda b: b.volumen).bild],
-                         "ort": [round(c, 2) for c in max(bs, key=lambda b: b.volumen).ort],
+                         "bei": werte[_groesste(bs).bild],
+                         "ort": [round(c, 2) for c in _groesste(bs).ort],
                          "schon_in_ruhe": any(abs(werte[b.bild] - bew.ist) < 1e-9 for b in bs)}
                         for (m, s), bs in sorted(kollisionen.items())],
         "eng": [{"gegen": n, "bereiche": _bereiche(werte, {w for w, _ in v}), "min_abstand": round(min(d for _, d in v), 2),
@@ -548,6 +612,54 @@ def _schwerpunkt_auf_achse(bew: Bewegung, form: Any) -> bool:
     oc = c - bew.punkt
     rc = float(np.linalg.norm(oc - d * float(np.dot(oc, d))))
     return len(r) > 0 and rc <= 0.25 * float(r.max())
+
+
+def _griffraum_gemerkt(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[str, Any],
+                       schluessel: dict[str, str]) -> dict[str, Any]:
+    """``_griffraum_pruefen`` mit Zwischenspeicher nach Form und Drehung des Bedienteils und der Nachbarn und ihrer
+    Lage relativ zum Bedienteil (B1): vier gleiche Sterngriffschrauben an gleichen Gegenstücken rechnen einmal. Gerechnet
+    wird im um die Verschiebung des Bedienteils versetzten System; das Ergebnis (Maße entlang und quer zur Achse,
+    Platz je Nachbar) hängt nicht von der Lage in der Welt ab."""
+    from dataclasses import replace
+
+    from build123d import Location
+
+    name0 = bew.teile[0]
+    r0 = _relativ(name0, formen[name0], schluessel)
+    rk = {n: _relativ(n, f, schluessel) for n, f in kandidaten.items()}
+    if r0.sk is None or any(r.sk is None for r in rk.values()):
+        return _griffraum_pruefen(bew, formen, kandidaten)
+    T0 = r0.T[:3, 3]
+    versatz = {n: np.round(r.T[:3, 3] - T0, 4) + 0.0 for n, r in rk.items()}
+    eintraege = sorted(((rk[n].sk, tuple(versatz[n].tolist())), n) for n in rk)
+    key = ("griff", r0.sk, tuple(e for e, _ in eintraege), tuple((np.round(bew.punkt - T0, 4) + 0.0).tolist()),
+           tuple((np.round(bew.richtung, 6) + 0.0).tolist()), bew.freiraum, GRIFF_INNEN, AUFLAGE_TOL, MIN_VOLUMEN)
+    hit = _GRIFF_CACHE.get(key)
+    if hit is None:
+        lo0, hi0 = _box(formen[name0])
+        verschoben = {name0: r0.form}
+        boxen = {name0: (lo0 - T0, hi0 - T0)}
+        for n, r in rk.items():
+            d = r.T[:3, 3] - T0
+            verschoben[n] = r.form.moved(Location(tuple(float(x) for x in d)))
+            lo, hi = _box(kandidaten[n])
+            boxen[n] = (lo - T0, hi - T0)
+        ids = [id(f) for f in verschoben.values()]
+        alt = {i: _BOXEN[i] for i in ids if i in _BOXEN}
+        for n, f in verschoben.items():  # dieselben Hüllquader wie in der Welt (aus der Vernetzung), nur versetzt
+            _BOXEN[id(f)] = boxen[n]
+        try:
+            raum = _griffraum_pruefen(replace(bew, punkt=np.asarray(bew.punkt, float) - T0), verschoben,
+                                      {n: verschoben[n] for n in rk})
+        finally:
+            for i in ids:
+                _BOXEN.pop(i, None)
+            _BOXEN.update(alt)
+        eng = raum.pop("eng")
+        hit = (raum, [eng.get(n) for _, n in eintraege])
+        _GRIFF_CACHE[key] = hit
+    raum, platz = hit
+    return {**raum, "eng": {n: v for (_, n), v in zip(eintraege, platz) if v is not None}}
 
 
 def _griffraum_pruefen(bew: Bewegung, formen: dict[str, Any], kandidaten: dict[str, Any]) -> dict[str, Any]:

@@ -262,6 +262,9 @@ UHR_ZIELE = {
     "kevcad_kernel.statik.s0": ["rechne", "kippen", "rutschen", "lose_teile", "schrauben", "traeger"],
     "kevcad_kernel.statik.bauteil": ["pruefe_last", "schnitte", "_schnitt", "vorschlag_druck", "tragende_nachbarn"],
     "kevcad_kernel.statik.bewertung": ["bewerte", "ueberdimensioniert", "staerker", "alternative"],
+    "kevcad_kernel.anim_kollision": ["_common", "_sphere_free"],
+    "kevcad_kernel.bedingungen.bewegungsraum": ["_griffraum_pruefen", "_gewinde_in_ruhe", "_dreht_um_sich",
+                                                "bewegungen_pruefen", "_gemeinsam"],
     "kevcad_kernel.druck.anbindung": ["_pruefe_form", "_ergebnis_fuer", "_abdruecke_buendeln", "_abdruck_von",
                                       "_teil_info"],
 }

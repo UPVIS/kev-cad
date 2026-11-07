@@ -156,6 +156,7 @@ def _caches_leeren() -> None:
     bw._CACHE.clear()
     bw._PAAR_CACHE.clear()
     bw._GEWINDE_CACHE.clear()
+    bw._GRIFF_CACHE.clear()
 
 
 def _schluessel(check: dict) -> list:
