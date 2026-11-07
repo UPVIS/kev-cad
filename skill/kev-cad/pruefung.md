@@ -96,3 +96,7 @@ Einführrichtung je Teil (`pruefen(thema="montage")`; Kevin sieht sie im Prüfba
   `montage(clip, schnappt=True)` für Schnappverbindungen; `montage(mutter, eingedruckt=True)` für Muttern, die beim
   Druck eingelegt werden (Druckpause); `montage(teil, richtung="-z", nach=[...], werkzeug="inbus 6")` für Richtung,
   Reihenfolge und Werkzeug eigener Teile.
+- **Zukaufteil rastet in ein Druckteil** (Rastzunge im Halter, 07.11.2026): `schnappt=True` wirkt nicht zusammen mit
+  `baugruppe=True` (der Baugruppen-Zweig übergeht es). Richtung an der Baugruppe erklären und das Schnappen an dem
+  Kind, das die Rastnocke berührt: `montage("Audio/Empfänger", richtung=…, nach="Halter", baugruppe=True)` plus
+  `montage("Audio/Empfänger/Blitzschuh", schnappt=True)`. `richtung` ist die Bewegung beim Einsetzen.
