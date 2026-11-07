@@ -25,6 +25,9 @@
 # /tmp/vb-xcodebuild.lock, vorher wartet er auf 25 % freien Speicher (höchstens 10 Minuten).
 #   KEVCAD_FERN=lokal   immer hier (etwa wenn der Mini gebraucht wird); auch die Datei ~/.kevcad-nur-macbook
 #   KEVCAD_FERN=mini    nie hier: ohne Mini Ausgang 255
+#   KEVCAD_FERN_PLATZ_GB  freier Platz auf der Systemplatte, ab dem hier gebaut wird (Vorgabe 15): Ein lokaler Bau legt
+#                       die Python-Umgebungen im Worktree an; mit mehreren Agenten lief die Platte am 07.11.2026 voll.
+#                       Darunter wartet testbau auf einen Platz des Mini, und der Rückfall bricht mit Ausgang 28 ab.
 #   KEVCAD_FERN_HOST    anderer ssh-Name (Vorgabe mac-mini; mac-mini-ts über Tailscale)
 #   KEVCAD_FERN_FRIST   Frist eines Laufs auf dem Mini in Sekunden (3600)
 #   KEVCAD_TESTS_SWIFT  tests: nur Swift-Tests mit diesem Filter, ohne pytest (kurze Runden; zum Schluss voll laufen lassen)
@@ -163,8 +166,20 @@ run_local() {
   exit $rc
 }
 
+# Genug Platz auf der Systemplatte für einen Bau hier (KEVCAD_FERN_PLATZ_GB, Vorgabe 15 GB)?
+platz_hier() {
+  local frei
+  frei=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print int($4 / 1048576)}')
+  [ -z "$frei" ] || [ "$frei" -ge "${KEVCAD_FERN_PLATZ_GB:-15}" ]
+}
+
 fallback() {
   echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (./build.sh unter $BUILD_LOCK)." >&2
+  if ! platz_hier; then
+    echo "==> Systemplatte zu voll für einen Bau hier (unter ${KEVCAD_FERN_PLATZ_GB:-15} GB frei): abgebrochen, später neu starten." >&2
+    log_times 28
+    exit 28
+  fi
   if [ "${KEVCAD_FERN:-}" = mini ]; then
     echo "==> KEVCAD_FERN=mini: kein Rückfall, Auftrag später neu starten." >&2
     log_times 255
@@ -194,6 +209,7 @@ mini_full() {
 here_free() {
   local free
   lockf -k -t 0 "$BUILD_LOCK" true 2>/dev/null || return 1
+  platz_hier || return 1
   free=$(memory_pressure 2>/dev/null | tail -1 | grep -oE '[0-9]+' | tail -1)
   [ -n "$free" ] && [ "$free" -ge 25 ]
 }
