@@ -369,16 +369,16 @@ extension AppController {
     /// Standardansicht wie Kevin oder wechselt die Ansicht und meldet seinen Stand als JSON. Geräte anderer Art
     /// antworten nicht (es zählt die erste Antwort). nil = nicht antworten.
     func testKopplung(_ v: ViewCommandMessage) -> (Bool, String?)? {
+        // `art` steht in jeder Fassung fest: Swift prüft auch Code hinter einem frühen return, und im Release-Bau fürs
+        // iPad fehlte es (TestFlight-Build 5 scheiterte daran, der Debug-Bau im Simulator nicht)
         #if os(macOS)
-        guard AppInfo.isTestVariant else { return (false, "nur in Testvarianten") }
-        let art = "mac"
+        let (erlaubt, art, grund) = (AppInfo.isTestVariant, "mac", "nur in Testvarianten")
+        #elseif DEBUG
+        let (erlaubt, art, grund) = (true, "ipad", "")
         #else
-        #if DEBUG
-        let art = "ipad"
-        #else
-        return (false, "nur in Testbauten")
+        let (erlaubt, art, grund) = (false, "ipad", "nur in Testbauten")
         #endif
-        #endif
+        guard erlaubt else { return (false, grund) }
         guard v.args["art"]?.stringValue == art else { return nil }
         if let m = v.args["modus"]?.stringValue.flatMap(AnsichtModus.init(rawValue:)) { ansichtModus(m) }
         if let name = v.args["ansicht"]?.stringValue {
