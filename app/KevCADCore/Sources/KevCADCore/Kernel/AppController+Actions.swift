@@ -18,7 +18,7 @@ extension AppController {
         }
         whenKernelReady { [weak self] in
             guard let self else { return }
-            let msg = ProjectOpenMessage(id: self.nextRequestID(), path: url.path)
+            let msg = ProjectOpenMessage(id: self.nextRequestID(), path: Self.kernelPfad(url))
             self.request(msg, timeout: 60) { result in self.projectReply(result, action: "öffnen") }
         }
     }
@@ -30,9 +30,19 @@ extension AppController {
         }
         whenKernelReady { [weak self] in
             guard let self else { return }
-            let msg = ProjectNewMessage(id: self.nextRequestID(), path: url.path, template: template)
+            let msg = ProjectNewMessage(id: self.nextRequestID(), path: Self.kernelPfad(url), template: template)
             self.request(msg, timeout: 60) { result in self.projectReply(result, action: "anlegen") }
         }
+    }
+
+    /// Pfad für PROJECT_OPEN und PROJECT_NEW. Am Mac der Pfad selbst. Auf dem iPad liegt ein Ordner aus iCloud Drive
+    /// unter einem anderen Pfad als am Mac; das iPad schickt ihn mit `~`, der Kernel löst ihn am Mac auf (I-7).
+    static func kernelPfad(_ url: URL) -> String {
+        #if os(macOS)
+        url.path
+        #else
+        Projektablage.kernelPfad(url)
+        #endif
     }
 
     private func projectReply(_ result: Result<KernelMessage, RequestError>, action: String) {

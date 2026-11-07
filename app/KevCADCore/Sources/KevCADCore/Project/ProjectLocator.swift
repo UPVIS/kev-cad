@@ -42,9 +42,12 @@ public enum ProjectLocator {
         guard isDirectory.boolValue else { return .notADirectory(folder.path) }
         let model = folder.appendingPathComponent(modelFileName)
         var modelIsDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: model.path, isDirectory: &modelIsDirectory), !modelIsDirectory.boolValue
-        else { return .missingModel(folder.path) }
-        return nil
+        if fileManager.fileExists(atPath: model.path, isDirectory: &modelIsDirectory), !modelIsDirectory.boolValue {
+            return nil
+        }
+        // Noch nicht aus der iCloud geladen: Platzhalter statt model.py (I-7); der Kernel am Mac lädt die Datei beim Lesen
+        if fileManager.fileExists(atPath: folder.appendingPathComponent(ProjektListe.platzhalter).path) { return nil }
+        return .missingModel(folder.path)
     }
 
     public static func isProject(_ url: URL, fileManager: FileManager = .default) -> Bool {

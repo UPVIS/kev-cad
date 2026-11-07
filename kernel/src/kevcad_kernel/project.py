@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kevcad_kernel.ablage import lokale_daten_sicherstellen
+
 MODEL = "model.py"
 SETTINGS = "kevcad.json"
 DEFAULT_SETTINGS: dict[str, Any] = {"version": 1, "unit": "mm", "precision": "normal", "inventar_regel": True}
@@ -223,7 +225,10 @@ def open_project(path: str | Path) -> Project:
     if not (p / MODEL).is_file():
         raise ProjectError(f"Im Ordner {str(p)!r} fehlt {MODEL}. Neues Projekt mit projekt(pfad, neu=true) anlegen.")
     p = p.resolve()
+    hinweis = lokale_daten_sicherstellen(p)  # Projekt in der iCloud: .kevcad bleibt auf diesem Mac (ablage.py)
     settings, warnings = _read_settings(p)
+    if hinweis:
+        warnings.append(hinweis)
     return Project(path=p, settings=settings, warnings=warnings)
 
 
@@ -242,6 +247,7 @@ def new_project(path: str | Path, template: str = "example") -> Project:
         (p / MODEL).write_text(TEMPLATES[template], encoding="utf-8")
         (p / SETTINGS).write_text(json.dumps(DEFAULT_SETTINGS, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         (p / "output").mkdir(exist_ok=True)
+        lokale_daten_sicherstellen(p)
         (p / ".kevcad" / "versions").mkdir(parents=True, exist_ok=True)
         (p / ".kevcad" / "log").mkdir(parents=True, exist_ok=True)
     except OSError as exc:

@@ -60,6 +60,10 @@ enum PadStart {
 struct PadHauptfenster: View {
     @ObservedObject var session: AppSession
     @State private var kopplungZeigen = PadStart.kopplungsBlattBeimStart
+    /// Projekte aus iCloud (I-7, Versuch): Schalter in den Einstellungen des iPad (Settings.bundle), Vorgabe aus
+    @AppStorage(Projektablage.padSchalterKey) private var iCloudProjekte = false
+    @State private var projekteZeigen = false
+    @State private var projektOrdner = PadOrdner.ordner()
 
     /// Grund unter Statusleiste und Home-Balken: der des Viewers im dunklen Bild (0,12 Grau wie
     /// `AppController.hintergrundDunkel`), so schließt der Viewer ohne Kacheln nahtlos an. iPad: Viewer bis unter die
@@ -75,9 +79,14 @@ struct PadHauptfenster: View {
                 .environmentObject(session)
                 .overlay(alignment: .top) {
                     // Mit welchem Mac das iPad verbunden ist; ohne Kopplung der Hinweis aufs Beispielmodell
-                    PadKopplungsChip(kopplung: session.model.kopplung) { kopplungZeigen = true }
-                        .frame(height: max(oben, 20))
-                        .offset(y: -oben)
+                    HStack(spacing: 8) {
+                        if iCloudProjekte {
+                            PadProjekteChip { projekteZeigen = true }
+                        }
+                        PadKopplungsChip(kopplung: session.model.kopplung) { kopplungZeigen = true }
+                    }
+                    .frame(height: max(oben, 20))
+                    .offset(y: -oben)
                 }
         }
         .background(Self.randGrund.ignoresSafeArea())
@@ -87,7 +96,39 @@ struct PadHauptfenster: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(GF.tief)
         }
+        .sheet(isPresented: $projekteZeigen) {
+            ProjektListeAnsicht(
+                ordner: projektOrdner, verbunden: session.model.kopplung.verbunden,
+                oeffnen: { e in
+                    projekteZeigen = false
+                    session.openProject(at: e.url)
+                },
+                ordnerGewaehlt: { url in
+                    // Der Dialog gibt den Zugriff frei; das Lesezeichen hält ihn über Neustarts
+                    _ = url.startAccessingSecurityScopedResource()
+                    try? PadOrdner.merken(url)
+                    projektOrdner = PadOrdner.ordner() ?? url
+                },
+                schliessen: { projekteZeigen = false })
+            .presentationDetents([.medium, .large])
+            .presentationBackground(GF.tief)
+        }
         // Der Mac kennt das iPad nicht mehr (Schlüssel passt nicht): gleich das Blatt zum neu Koppeln
         .onReceive(session.model.kopplung.$meldung.dropFirst()) { meldung in if meldung != nil { kopplungZeigen = true } }
+    }
+}
+
+/// Knopf „Projekte“ in der Statusleiste (I-7, nur mit dem Schalter „Projekte aus iCloud“), im Stil des Kopplungs-Chips.
+struct PadProjekteChip: View {
+    let tippen: () -> Void
+
+    var body: some View {
+        Button(action: tippen) {
+            Label("Projekte", systemImage: "icloud").font(GS.klein).foregroundStyle(GF.asche)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(GF.mitte.opacity(0.6)))
+        }
+        .buttonStyle(.plain)
     }
 }

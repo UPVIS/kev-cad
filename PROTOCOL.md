@@ -149,8 +149,8 @@ Antwort: `ACK` mit `ok` und optional `message`.
 | type | Felder | Antwort |
 |---|---|---|
 | `HELLO_APP` | `app_version`, `bundle_id`, optional `faehigkeiten` (V2-5, siehe „V2-5 Live“) | – (Kernel schickt `HELLO` usw.) |
-| `PROJECT_OPEN` | `id`, `path` (Projektordner) | `PROJECT` mit `reply_to` |
-| `PROJECT_NEW` | `id`, `path` (neuer Ordner), `template` (`empty` \| `example`) | `PROJECT` mit `reply_to` |
+| `PROJECT_OPEN` | `id`, `path` (Projektordner; `~` löst der Kernel am Mac auf, so öffnet das iPad Ordner aus iCloud Drive, I-7) | `PROJECT` mit `reply_to` |
+| `PROJECT_NEW` | `id`, `path` (neuer Ordner, `~` wie bei PROJECT_OPEN), `template` (`empty` \| `example`) | `PROJECT` mit `reply_to` |
 | `RUN_REQ` | `id`, `params` (Objekt oder null), `slow_ms` (0 = normal) | `ACK`, dann `RUN_*` |
 | `MEASURE_REQ` | `id`, `refs` (1 oder 2), `run`, `show` (bool) | `MEASURE_RES` |
 | `SELECTION` | `run`, `refs` (Liste, kann leer sein) | – (Kernel merkt sich die Auswahl für MCP `measure` ohne `refs`) |

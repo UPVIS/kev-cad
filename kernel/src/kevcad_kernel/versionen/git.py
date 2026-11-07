@@ -24,6 +24,8 @@ AUSSCHLUSS = """\
 # Kev CAD: nicht in den Versionen (von Kev CAD verwaltet)
 /output/
 /.kevcad/
+/.kevcad
+/.kevcad.nosync/
 /bestand.json
 /feedback/
 __pycache__/

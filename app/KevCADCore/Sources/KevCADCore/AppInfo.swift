@@ -42,16 +42,18 @@ public enum AppInfo {
     }
 
     /// Standardordner für Projekte. `KEVCAD_PROJECTS_DIR` setzt einen anderen (wie beim MCP-Server; Testvarianten
-    /// schreiben so nicht in Kevins ~/Documents/Kev CAD).
+    /// schreiben so nicht in Kevins ~/Documents/Kev CAD). Sonst entscheidet die Projektablage (I-7, Vorgabe aus): am Mac
+    /// `projektablage.json` im Datenordner, auf dem iPad der Schalter in den Einstellungen mit dem gewählten iCloud-Ordner.
     public static var projectsDirectory: URL {
-        if let eigen = ProcessInfo.processInfo.environment["KEVCAD_PROJECTS_DIR"], !eigen.isEmpty {
-            return URL(fileURLWithPath: (eigen as NSString).expandingTildeInPath, isDirectory: true)
-        }
+        let umgebung = ProcessInfo.processInfo.environment
         #if os(macOS)
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Kev CAD", isDirectory: true)
+        return Projektablage.ordner(
+            umgebung: umgebung, schalter: Projektablage.schalterLesen(in: supportDirectory),
+            vorgabe: Projektablage.lokalerOrdner)
         #else
-        // iPad: der Dokumente-Ordner der App; der iCloud-Ordner „Kev CAD“ folgt in I-7.
-        return URL.documentsDirectory.appendingPathComponent("Kev CAD", isDirectory: true)
+        let dokumente = URL.documentsDirectory.appendingPathComponent("Kev CAD", isDirectory: true)
+        return Projektablage.ordner(
+            umgebung: umgebung, schalter: Projektablage.Schalter(), vorgabe: PadOrdner.projektOrdner() ?? dokumente)
         #endif
     }
 }

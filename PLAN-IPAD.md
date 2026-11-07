@@ -181,7 +181,21 @@ den Wert dunkel hinterlegt („28/32“, „0.1x“). Neben der Scheibe klappt b
    Wörter erscheinen live als Text.
 3. **Abschicken:** Kranz oben, Daumenleiste „Senden“ oder ↩. **Verwerfen:** X am Rahmen oder Esc.
 4. **Erkennung** auf dem Gerät mit Apples SpeechAnalyzer (am Mac der Rückfall hinter Wortlaut). Wortlaut mit Parakeet
-   läuft nur am Mac; ob Parakeet über Core ML aufs iPad kommt, prüft I-5.
+   läuft nur am Mac. **Geprüft am 07.11.2026 (I-7):** Parakeet ginge aufs iPad, der Einbau ist aber kein kleiner Tausch.
+   - Wortlaut (`~/Code Experiments/VoiceRecorder`, `Sources/WortlautSprache/Speech/ParakeetEngine.swift`) nutzt FluidAudio
+     0.17.4 (Apache-2.0, läuft ab iOS 17) mit Parakeet Ultra (603 MB) und TDT v3 (461 MB) als Core ML auf der Neural
+     Engine; Modell CC-BY-4.0, kommerziell erlaubt mit Namensnennung. Apps mit Parakeet über FluidAudio gibt es im App Store.
+   - Deutsch (FLEURS, Wortfehler): Ultra 3,6 %, v3 4,1 bis 5,9 %, Apple 6,3 %. Echtes Streaming auf Deutsch gibt es nur
+     mit einem schwächeren Modell (rund 10 %); Wortlaut erkennt stattdessen alle 0,4 s den ganzen Satz neu.
+   - Versuch am MacBook M2 Pro (ähnlicher Chip wie Kevins iPad), drei deutsche Befehlssätze und 20 s Ton: v3 83 bis 107 ms
+     je Satz, Ultra 79 bis 101 ms, Apple 159 bis 201 ms; je ein bis drei falsche Wörter bei allen dreien (STEP wurde „Deck“
+     bzw. „Stepp“). Speicher alle drei geladen: 116 MB Footprint. Erstes Laden unter Last 72 s (v3) bzw. 121 s (Ultra), auf
+     dem iPhone 16 Pro Max laut FluidAudio 3,4 s.
+   - Einbau hieße: FluidAudio in KevCADCore (verlangt Swift-Tools 6.2), Mikrofonaufnahme fürs iPad, Wortlauts
+     `Dauerhoerer` und `Satzschneider` portieren (rund 39 KB Code), 460 bis 600 MB Modell mitliefern oder nachladen.
+   - **Empfehlung:** SpeechAnalyzer behalten. Parakeet als eigenes Paket vormerken (Klasse `ParakeetErkennung` hinter
+     dem bestehenden Erkenner), erst wenn die Erkennung am iPad im Alltag stört; vorher am echten iPad messen (erster Start,
+     Wartezeit, Speicher).
 5. **Ohne Verbindung** wird die Sitzung lokal fertig und geht los, sobald der Mac wieder da ist (Postausgang wie in
    Sichtung).
 
@@ -232,21 +246,73 @@ zugeordnet). Trackpad: zwei Finger drehen, mit ⇧ verschieben, Zoomgeste wie am
 
 ## 6. iCloud
 
-- **Ort:** iCloud Drive › „Kev CAD“ (Ordner der App, `iCloud.de.upvis.kevcad`, in der Dateien-App sichtbar). Auf dem Mac
-  liegt er unter `~/Library/Mobile Documents/iCloud~de~upvis~kevcad/Documents/`; der Kernel liest dort wie heute in
-  `~/Documents/Kev CAD` (Umgebungsvariable `KEVCAD_PROJECTS_DIR`).
-- **Mit:** `model.py`, `referenzen/`, Versionen, Dokumente und Exporte.
-- **Ohne:** `.kevcad/log` und alle Zwischenspeicher des Kernels; sie ziehen nach `~/Library/Caches/de.upvis.kevcad/` oder
-  bekommen die Endung `.nosync`.
+Stand nach dem Spike vom 07.11.2026 (I-7). Gemessen an diesem MacBook (macOS 26) mit einem kleinen Testordner in iCloud
+Drive; das echte iPad und ein zweiter Mac fehlten im Versuch, was dort gilt, ist als „nicht gemessen“ markiert.
+
+**Ergebnis des Spikes**
+
+| Frage | Ergebnis |
+|---|---|
+| Fragt macOS nach, wenn Kernel oder Agent in iCloud Drive lesen und schreiben? | Nein. Prozesse ohne Sandbox (Kernel, Shell der Agenten; geprüft ohne Festplattenvollzugriff) lesen und schreiben `~/Library/Mobile Documents/com~apple~CloudDocs` ohne Abfrage. |
+| Tempo beim Lauf | Wie lokal: 200 × model.py atomar ersetzen 99 gegen 84 ms, 300 Dateien je 4 KB 44 gegen 46 ms, Git mit 20 Commits 1,9 gegen 2,0 s. Der Lauf selbst rechnet ohnehin im Speicher. |
+| Dateiwächter des Kernels (mtime alle 250 ms) | Geht: Schreiben ändert mtime wie lokal. Auslagern und erneutes Laden ändern mtime nicht, lösen also keinen Lauf aus. |
+| Ausgelagerte Dateien („Mac-Speicher optimieren“) | `brctl evict` macht model.py „dataless“ (`SF_DATALESS`, Größe bleibt sichtbar). Lesen lädt sie still nach: 2,5 s unter Last, Python merkt nichts. Ohne Netz scheitert dieses Lesen (nicht gemessen); Abhilfe: Ordner „Kev CAD“ im Finder und in der Dateien-App auf „Immer behalten“ (Heruntergeladen lassen) stellen. |
+| Hochladen | Unter Last 1 bis 3 min, bis alle Dateien `isUploaded` sind; danach keine Konfliktkopien. Ein Git-Repo mit 80 kleinen Dateien wird Datei für Datei hochgeladen, ohne Zusammenhang. |
+| Ausschlüsse | Namen mit `.nosync` und `.tmp` lässt iCloud aus (`isExcludedFromSync`, Fehler „Excluded From Sync Due To Filename“). Versteckte Ordner (`.kevcad`) werden übertragen. Ein symbolischer Link wird als Link übertragen (`public.symlink`), sein Ziel nicht. |
+| Konflikte und Versionen | iCloud legt bei gleichzeitigen Änderungen Konfliktkopien an („model 2.py“) und führt ältere Fassungen über `NSFileVersion`. Mit einem einzigen Schreiber (Kernel am Mac) entstehen keine; ein zweiter Mac oder Schreiben vom iPad in dieselbe Datei würde sie erzeugen (nicht gemessen). |
+| Ohne Netz | Nicht gemessen. Lokal vorhandene Dateien gehen am Mac weiter, Änderungen laden später hoch; ausgelagerte Dateien fehlen. |
+
+**Zwei Wege verglichen**
+
+| | Ordner in iCloud Drive („Kev CAD“) | Eigener Container `iCloud.de.upvis.kevcad` |
+|---|---|---|
+| Mac | `~/Library/Mobile Documents/com~apple~CloudDocs/Kev CAD`, ohne Berechtigung, ohne Änderung an der Signatur | `~/Library/Mobile Documents/iCloud~de~upvis~kevcad/Documents`; die Mac-App (Developer ID, ohne Profil) bräuchte ein Developer-ID-Profil mit iCloud, sonst legt erst das iPad den Ordner an (Container von iOS-Apps wie Procreate erscheinen am Mac ohne die App) |
+| iPad | Kevin wählt den Ordner einmal in der Dateien-App, die App merkt sich ein Lesezeichen (`PadOrdner`) | voller Zugriff ohne Wahl, `NSMetadataQuery` für Änderungen |
+| Signatur | nichts | Container im Entwicklerkonto anlegen (die App Store Connect API kennt keine iCloud-Container), Fähigkeit iCloud an der App-ID, Berechtigungen in `app/project.yml`; ob `-allowProvisioningUpdates` mit dem Schlüssel (Rolle App-Manager) den Container selbst anlegt, ist ungeprüft |
+| Risiko | Lesezeichen kann veralten (Ordner umbenannt): die App erneuert es oder fragt neu | Fehler in der Signatur stoppen TestFlight-Takt und Mac-Update |
+
+**Empfehlung: Ordner in iCloud Drive.** Er trägt ohne Änderung an Signatur und Profilen, der Kernel arbeitet dort wie in
+`~/Documents`, und das iPad braucht nur eine einmalige Ordnerwahl. Der Container bringt erst etwas, wenn das iPad ohne Mac
+selbst schreibt; dann neu bewerten.
+
+**Was in die iCloud gehört**
+
+- **Mit:** `model.py`, `kevcad.json`, Hilfsdateien neben model.py, `bestand.json`, `druck.json`, `dokumente/`, `output/`,
+  `referenzen/` ohne große Rohdaten, `feedback/`, Notizen.
+- **Ohne:** `.kevcad/` (Git der Versionen, Versionsbilder, Laufprotokoll, Topologie). Liegt ein Projekt in der iCloud, wird
+  `.kevcad` ein Link auf `.kevcad.nosync` daneben (`kernel/src/kevcad_kernel/ablage.py`, beim Öffnen und Anlegen); der Kernel
+  arbeitet unverändert über `.kevcad/`. Ein zweiter Mac bekommt nur den Link, der Kernel legt das Ziel dann an. Übersetzte
+  Hilfsdateien (`__pycache__`) gehen nach `~/Library/Caches/de.upvis.kevcad/pycache`. Zwischenspeicher des Kernels lagen
+  schon vorher unter `~/Library/Caches/de.upvis.kevcad/`.
+- **Versionen sichern** (offen): Git in der iCloud ist unzuverlässig (Datei für Datei, halbe Stände auf dem zweiten Gerät).
+  Vorschlag: Beim Meilenstein schreibt der Kernel ein `git bundle` als eine Datei ins Projekt (`versionen.bundle`); ein
+  anderer Mac stellt die Versionen daraus wieder her. Ebenso ein kleines `vorschau.png` für die Projektliste am iPad
+  (die Liste zeigt es schon, wenn es da ist).
 - **Schreiben** tut nur der Kernel. Das iPad schreibt in Projektordner nur Eigenes (Feedback, Fotos) in eigene
-  Unterordner; Konfliktkopien meldet die App.
-- **iPad ohne Mac:** Projektliste aus dem iCloud-Ordner, das letzte Modell aus dem eigenen Zwischenspeicher, Sprechen und
-  Zeichnen im Postausgang.
-- **Erst prüfen (Spike in I-7):** ob macOS beim Zugriff des Kernels (Kindprozess der App) und der Agenten (Claude Code,
-  T3) auf den iCloud-Ordner nachfragt; ob die Versionen in `.kevcad/git` die iCloud vertragen; was „Mac-Speicher
-  optimieren“ mit ausgelagerten Dateien macht. Die Mac-App braucht dafür ein Profil mit iCloud-Berechtigung
-  (`tools/signatur.sh`, Schlüssel über `asc-mit-schluessel`).
-- **Umzug** von `~/Documents/Kev CAD` (rund 1,1 GB, davon 1 GB Scans) erst nach Kevins Ja.
+  Unterordner mit eindeutigen Namen; Konfliktkopien zeigt die Projektliste (`ProjektListe.konfliktKopien`, `NSFileVersion`).
+- **iPad ohne Mac:** Projektliste aus dem Ordner (Name, letzte Änderung, „noch in der iCloud“, Konflikte, später Vorschau),
+  das letzte Modell aus dem eigenen Zwischenspeicher, Sprechen und Zeichnen im Postausgang. Rechnen und Öffnen gehen nur
+  mit dem Mac.
+
+**Prototyp (Schalter, Vorgabe aus)**
+
+- **Mac:** Datei `~/Library/Application Support/de.upvis.kevcad/projektablage.json` mit `{"ort": "icloud"}` (oder
+  `{"ordner": "…"}`). Dann legen App und MCP neue Projekte in iCloud Drive › Kev CAD an, ein bloßer Projektname meint diesen
+  Ordner. Ohne Datei bleibt alles wie bisher. Öffnen geht wie immer über „Öffnen …“.
+- **iPad:** Einstellungen › Kev CAD › „Projekte aus iCloud“. Dann zeigt die Statusleiste „Projekte“; die Liste fragt beim
+  ersten Mal nach dem Ordner. Ein Tipp öffnet das Projekt am Mac: Das iPad schickt den Pfad mit `~`
+  (`Projektablage.kernelPfad`), der Kernel löst ihn am Mac auf.
+
+**Umzug** (erst nach Kevins Ja; die Scans bleiben lokal):
+
+1. Am Mac den Ordner „Kev CAD“ in iCloud Drive anlegen und im Finder auf „Heruntergeladen lassen“ stellen.
+2. Je Projekt kopieren (nicht verschieben) ohne `.kevcad`; dann `.kevcad` nach `.kevcad.nosync` kopieren und den Link
+   setzen (oder das Projekt einmal öffnen, der Kernel macht das selbst). `Scans/` bleibt in `~/Documents/Kev CAD`.
+3. Prüfen: Prüfsummen aller kopierten Dateien gleich, jedes Projekt öffnet und rechnet, Versionen sind da, nach dem
+   Hochladen keine Konfliktkopien.
+4. Schalter setzen (`projektablage.json`), „Zuletzt geöffnet“ zeigt danach auf die neuen Orte.
+5. Rückweg: Die alten Ordner bleiben zwei Wochen unverändert liegen; Schalter löschen heißt zurück zu `~/Documents/Kev CAD`.
+6. Am iPad einmal den Ordner wählen und dort „Heruntergeladen lassen“ setzen.
 
 ## 7. Budgets
 
@@ -275,9 +341,9 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-3a iPad-App-Gerüst | Ziel `KevCADPad` in `app/project.yml` (iPadOS 26, `de.upvis.kevcad.ipad`), gemeinsame Oberfläche übersetzt, Mac-Hülle nach `app/Sources/KevCAD/Mac/`, Beispielmodell ohne Kopplung (`KEVCAD_DEMO_VIEWPORT=kern`), `tools/ipad-bau.sh app`, `starten`, `stoppen` | I-1 | fertig: baut für den iPad-Simulator, startet dort im Graphit-Look mit echtem Metal-Viewer; Mac-Testbau und Swift-Tests grün |
 | I-3b Bedienung am iPad | Eingabeebene mit Fingern, Stift, Trackpad und Magic Keyboard (`TouchNavigation.swift`), Kopplung in der Oberfläche, Hinweisleiste und Übersicht mit Gesten (`Tastenbelegung.gesten`), Leertext ohne „Drück V“; offen: Viewer bis unter die Statusleiste, Kontextmenü am Teil, 2 und 3 Finger tippen, Bonjour über die Kennung des Mac statt seines Namens (NWBrowser mit TXT `mac`), Tests der Gesten (XCUITest im Simulator) | I-2b, I-3a | Eingabe und Kopplung fertig, Kettentest im Simulator grün (Mac-Testvariante ↔ iPad über TLS, Modell live auf dem iPad); Rest offen |
 | I-4 Stift und Werkzeugkranz | Schweben, Auswahl, Zeichnen im Raum mit Vorhersage, Strichfarben, Werkzeugkranz (auch am Mac mit Q), Befehlskatalog mit Auslöser je Gerät und Paritätstest | I-3 | offen |
-| I-5 Sprechen am iPad | SpeechAnalyzer, eine Uhr, Paket wie am Mac (mit `geraet` und Farbe), Postausgang, Daumenleiste | I-3, I-4 | erster Schritt (07.11.2026): Daumenleiste links unten (Sprechen, Pause, Weiter, Senden), Live-Zeile mit Wörtern statt Tasten, Audio-Sitzung fürs Mikrofon, Paket als Nutzlast über die Kopplung (`FEEDBACK_PAKET.nutzlast`, der Kernel legt es ab), Postausgang ohne Mac; offen: Abnahme am Gerät, `geraet` und Strichfarben im Paket (mit I-4), X am Rahmen, Parakeet am iPad prüfen |
+| I-5 Sprechen am iPad | SpeechAnalyzer, eine Uhr, Paket wie am Mac (mit `geraet` und Farbe), Postausgang, Daumenleiste | I-3, I-4 | erster Schritt (07.11.2026): Daumenleiste links unten (Sprechen, Pause, Weiter, Senden), Live-Zeile mit Wörtern statt Tasten, Audio-Sitzung fürs Mikrofon, Paket als Nutzlast über die Kopplung (`FEEDBACK_PAKET.nutzlast`, der Kernel legt es ab), Postausgang ohne Mac; offen: Abnahme am Gerät, `geraet` und Strichfarben im Paket (mit I-4), X am Rahmen; Parakeet geprüft (4.5: geht, Einbau groß, vorerst SpeechAnalyzer) |
 | I-6 Live-Kopplung | Gemeinsame und Eigene Ansicht, Führung, Live-Striche, Agent spricht das aktive Gerät an, Lagebild je Gerät | I-2b, I-3 | offen |
-| I-7 iCloud | Spike (Zugriff, Versionen, Auslagern), Ordner der App, Zwischenspeicher draußen, Projektliste am iPad, Umzug nach Kevins Ja | I-3 | offen |
+| I-7 iCloud | Spike (Zugriff, Versionen, Auslagern), Ordner der App, Zwischenspeicher draußen, Projektliste am iPad, Umzug nach Kevins Ja | I-3 | Spike fertig (07.11.2026, Abschnitt 6): Empfehlung Ordner in iCloud Drive statt eigenem Container. Prototyp hinter Schaltern (aus): `projektablage.json` am Mac (App und MCP), `.kevcad` bleibt lokal (`ablage.py`), Projektliste am iPad mit Ordnerwahl, Öffnen über den Mac mit `~`-Pfad; Tests `test_ablage.py`, `ProjektablageTests`. Offen: Kevins Ja zum Umzug, Versionen als `git bundle`, `vorschau.png`, Neu anlegen vom iPad, Test am echten iPad |
 | I-8 Volle Parität | Prüfliste in Abschnitt 9 abarbeiten | I-3 | offen |
 | I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); Takt fertig (`tools/ipad-testflight-takt.sh` aus `tools/auto-update.sh`, eigene Arbeitskopie, höchstens stündlich, Testhinweise mit den Änderungen an der App); offen: Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung |
 | I-10 Abnahme | Kevin am echten iPad: Gesten, Stift, Latenz, Kopplung; Learnings in Plan, Skill und Regeln | alle | offen |
@@ -292,11 +358,11 @@ Im Code mit „iPad: folgt in I-x“ markiert; jedes Paket arbeitet seine Zeilen
 | I-3 | iPad-Eingabeebene in `BlenderNavigation.swift` meldet nur die Größe (bis dahin gelten die Gesten der Viewport-Kopie, mit Rollen und Auswahl im Paket statt über `onClick`); kein Kontextmenü, kein Ziffernblock; `Tastenbelegung.befehl(keyCode:)` kennt nur Mac-Tastencodes; `beiEsc` ohne Wirkung. Punkte der Eingabeebene zählen wie am Mac von unten links |
 | I-4 | Stift (Schweben, Zeichnen, Doppeltippen) |
 | I-5 | `SprachSteuerung`: Mikrofon und Bedienung da (Daumenleiste, Audio-Sitzung, Paket als Nutzlast); auf dem iPad hört gleich Apples Erkennung zu, Wortlaut gibt es nur am Mac; Selbsttest Sprache nur am Mac |
-| I-7 | `AppInfo.projectsDirectory` ist der Dokumente-Ordner der App; Ordnernamen unterscheiden auf dem iPad Groß- und Kleinschreibung (`ProjectLocator.uniqueFolder`) |
+| I-7 | `AppInfo.projectsDirectory` ist der Dokumente-Ordner der App, mit dem Schalter „Projekte aus iCloud“ der gewählte Ordner (Prototyp); Ordnernamen unterscheiden auf dem iPad Groß- und Kleinschreibung (`ProjectLocator.uniqueFolder`) |
 | I-8 | Video (`AnimationVideo`, ffmpeg nur am Mac), Drucken (`exportDrucken`, `BlattDruck`, `ExportDrucker`), Bambu Studio, `DruckerSchluesselbund.speichern`, „Im Finder zeigen“ (wird Teilen), Zukauf (Downloads-Ordner) |
 | I-9 | Selbsttests: `SprachSelbsttest`, Treffertest in `AppController+SelfTest`, Fensterbild in `AppController+Flaeche` |
 | I-3b (aus I-3a) | Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Zoomflächen, Tippen in den Viewer macht ihn nicht zur aktiven Kachel (`viewerKlickBeobachten`), Auswahl erweitern mit Umschalt oder Befehl, Streifen unter der Statusleiste (Viewer bis unter die Statusleiste) |
-| I-7 (aus I-3a) | „Ordner öffnen“ ist ausgeblendet (`presentOpenPanel`), ein fehlendes Projekt in der Liste meldet sich nur statt „Entfernen?“ zu fragen |
+| I-7 (aus I-3a) | „Ordner öffnen“ ist ausgeblendet (`presentOpenPanel`; mit dem Schalter wählt die Projektliste den Ordner), ein fehlendes Projekt in der Liste meldet sich nur statt „Entfernen?“ zu fragen |
 | I-8 (aus I-3a) | Finder und Editor (`AppSession`, `ErrorBanner`, `Kopfleiste`), „Im Finder zeigen“ ausgeblendet (`BestandAnsicht`, `DruckAnsicht`, `ZukaufBanner`, `ExportDialog`), 3MF sichern, PDF sichern und Drucken (Teilen geht schon), Referenz- und CAD-Dateien wählen, Blätter bearbeiten, Protokoll, Lagerkatalog und Zukauf (keine eigene Szene) |
 | I-9 (aus I-3a) | alle Selbsttests der Oberfläche; Menüs liegen nur in `Mac/`, iPadOS 26 hätte eine Menüleiste (Rückweg über den Befehlskatalog in I-4) |
 
@@ -362,6 +428,15 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
   `app/icon.svg`, es steht nicht im Git. Build 1 kam aus einer Arbeitskopie, in der es schon lag; der erste Build des
   Takts aus der frischen Kopie scheiterte bei App Store Connect (90023 kein 152-px-Symbol, 90713 kein
   `CFBundleIconName`). `tools/ipad-testflight.sh` ruft seitdem `tools/ipad-bau.sh symbol` vor dem Archiv auf.
+- **iCloud am Mac ohne Abfrage** (07.11.2026, I-7): Prozesse ohne Sandbox lesen und schreiben iCloud Drive ohne
+  Nachfrage von macOS, auch ohne Festplattenvollzugriff. Container von iOS-Apps (Procreate, Goodnotes) liegen am Mac unter
+  `~/Library/Mobile Documents/`, obwohl die App dort fehlt.
+- **iCloud überträgt Datei für Datei** (07.11.2026): Ein Git-Repo kommt so als lose Dateien an, Hochladen dauerte unter
+  Last 1 bis 3 min. `.nosync` und `.tmp` schließt iCloud aus, ein symbolischer Link geht als Link hinüber. Daraus der Link
+  `.kevcad` → `.kevcad.nosync` für Projekte in der iCloud. Prüfen lässt sich das je Datei mit
+  `fileproviderctl evaluate <pfad>` (`isExcludedFromSync`, `isUploaded`); `brctl evict` lagert zum Testen aus.
+- **Git-Ausschluss für Links** (07.11.2026): Das Muster `/.kevcad/` mit Schrägstrich trifft nur Ordner; ein Link `.kevcad`
+  wäre als neue Datei in die Versionen gerutscht. Der Ausschluss nennt deshalb auch `/.kevcad` und `/.kevcad.nosync/`.
 
 ## 11. Offene Fragen und Risiken
 

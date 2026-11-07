@@ -11,7 +11,6 @@ import functools
 import itertools
 import logging
 import math
-import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -69,7 +68,10 @@ class ToolInputError(ValueError):
 
 
 def projects_dir() -> Path:
-    return Path(os.environ.get("KEVCAD_PROJECTS_DIR") or Path.home() / "Documents" / "Kev CAD")
+    """Ordner für bloße Projektnamen: ``KEVCAD_PROJECTS_DIR``, sonst der Schalter der Projektablage (ablage.py)."""
+    from kevcad_kernel.ablage import projects_dir as ablage_ordner
+
+    return ablage_ordner()
 
 
 def resolve_project_path(path: str) -> str:

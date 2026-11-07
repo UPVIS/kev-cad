@@ -28,6 +28,7 @@ from typing import Any
 from build123d import BuildLine, BuildPart, BuildSketch, Color, Compound, Shape
 
 import kevcad
+from kevcad_kernel.ablage import in_icloud, pycache_ordner
 from kevcad_kernel.bedingungen.lauf import pruefe_bedingungen
 from kevcad_kernel.bedingungen.sammlung import Sammlung
 from kevcad_kernel.bom import LagerRegister, Piece, ShownPart, build_bom
@@ -808,6 +809,8 @@ class Runner:
             with contextlib.suppress(OSError):
                 os.chdir(project)
             sys.path.insert(0, project)
+            if project and in_icloud(project):  # Hilfsdateien neben model.py: __pycache__ nicht in die iCloud (I-7)
+                sys.pycache_prefix = str(pycache_ordner())
             self._install(run=run, overrides=overrides, slow_ms=slow_ms, deviation=deviation, angular=angular,
                           sketch=False, state=state, catalog=catalog, register=register, strict=strict,
                           kameras=kameras, sammlung=sammlung)
