@@ -368,9 +368,11 @@ def _klotz_auftrag(tmp: Path, laengen: list[float], h: float) -> Path:
 
 
 def _ohne_herkunft(r: dict) -> dict:
+    """Ergebnis eines Falls ohne Zeiten und Herkunft (Zwischenspeicher von Fall, Netz und Einheitsfällen)."""
     r = {k: v for k, v in r.items() if k not in ("ms", "aus_speicher", "feld")}
-    if isinstance(r.get("netz"), dict):
-        r["netz"] = {k: v for k, v in r["netz"].items() if k != "aus_speicher"}
+    for k in ("netz", "einheiten"):
+        if isinstance(r.get(k), dict):
+            r[k] = {kk: v for kk, v in r[k].items() if kk != "aus_speicher"}
     return r
 
 
@@ -469,6 +471,148 @@ def test_abbruch_beendet_alle_teilprozesse(tmp_path, monkeypatch):
         time.sleep(0.1)
     assert not lebend, lebend
     assert not (tmp_path / "ergebnis.json").exists()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Einheitslastfälle, überlagert (A4)
+
+
+def _flaeche_npz(pfad: Path, x: float, b: float = 30.0) -> str:
+    """Netz einer Fläche in der Ebene x = const mit Normale +x (wie die B-Rep-Fläche am Ende eines Klotzes)."""
+    pos = np.array([[x, -b, -b], [x, b, -b], [x, b, 2 * b], [x, -b, 2 * b]], dtype=float)
+    np.savez(pfad, pos=pos, tri=np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64))
+    return str(pfad)
+
+
+def test_ueberlagerung_gegen_direkte_loesung(tmp_path):
+    """A4: Fälle aus Einheitslastfällen gegen die Lösung je Fall für jede Lastart: Kontaktlast mit Kraft, Moment und
+    anderem Angriffspunkt, Last am Punkt, Last am Schwerpunkt mit Moment, Eigengewicht in drei Richtungen, gleichmäßige
+    Flächenlast, Druck. Verschiebungen innerhalb 1e-10 relativ; Bewertung, Lagerkräfte, Lastflächen und Resultierende
+    (so gerundet, wie ausgegeben) gleich."""
+    from skfem import MeshTet
+
+    from kevcad_kernel.statik.festkoerper import loeser
+    from kevcad_kernel.statik.festkoerper import prozess as P
+
+    L, B, H = 80.0, 20.0, 16.0
+    m = MeshTet.init_tensor(np.linspace(0, L, 17), np.linspace(-B / 2, B / 2, 5), np.linspace(0, H, 5))
+    N = loeser.Netz(m.p.T, m.t.T)
+    C = fw.steifigkeit(2580.0, 0.36)
+    K = N.steifigkeit(C)
+    wand = np.where(np.abs(N.rand_mitte[:, 0]) < 1e-9)[0]
+    ende = np.where(np.abs(N.rand_mitte[:, 0] - L) < 1e-9)[0]
+    fest_dofs = N.feste_dofs(wand)
+    datei = _flaeche_npz(tmp_path / "ende.npz", L)
+    T = {"name": "Prüfklotz", "werkstoff": {"E": 2580.0, "nu": 0.36, "f": 40.0, "q": None, "name": "PLA"},
+         "druckteil": False, "schicht": None, "ausrichtungen": {}, "masse_kg": 0.04, "volumen": L * B * H,
+         "bmin": [0, -B / 2, 0], "bmax": [L, B / 2, H],
+         "nachbarn": {"Stempel": {"datei": datei, "tol": 0.3}, "Wand": {"datei": _wand(tmp_path / "w.npz", 0.0),
+                                                                         "tol": 0.3}}}
+    beruehrt = {"Stempel": ende, "Wand": wand}
+    groesse, h, V = L, 5.0, float(N.vol.sum())
+
+    def fall(i: int, lasten: list, feld: tuple) -> dict:
+        return {"id": f"0.{i}", "szenario": f"S{i}", "schluessel": f"s{i}", "ziel": 2.0, "lasten": lasten,
+                "feld": list(feld), "lager": ["Wand"]}
+
+    faelle = [
+        fall(0, [{"kraft": [10.0, -40.0, 120.0], "moment": [300.0, -150.0, 80.0], "punkt": [L + 5, 3.0, 12.0],
+                  "kontakt_mit": "Stempel"}], (0, 0, -9.81)),
+        fall(1, [{"kraft": [0.0, 25.0, -60.0], "moment": None, "punkt": [40.0, 0.0, H]}], (0, 0, 0)),
+        fall(2, [{"kraft": [0.0, 0.0, -80.0], "moment": [0.0, 500.0, 0.0], "punkt": None}], (3.0, 0, -9.81)),
+        fall(3, [], (9.81, 0, 0)), fall(4, [], (0, 9.81, 0)), fall(5, [], (0, 0, -9.81)),
+        fall(6, [{"kraft": [0.0, 0.0, -50.0], "moment": None, "punkt": None, "flaeche_datei": datei,
+                  "flaeche": {"index": 3}}], (0, 0, 0)),
+        fall(7, [{"kraft": [-64.0, 0.0, 0.0], "moment": None, "punkt": None, "flaeche_datei": datei,
+                  "flaeche": {"index": 3, "druck": 0.2}}], (0, 0, 0)),
+    ]
+    nachbarn = P._Nachbarn(T)
+    flaechen = P._flaechen_waehlen(N, T, faelle, beruehrt, groesse, h, nachbarn)
+    assert flaechen is not None and len(flaechen) == 6  # Volumen, Kontakt, Punkt, alle, Fläche, Druck
+    ldofs = N.facetten_dofs(wand)
+    d = P._einheiten_rechnen(N, K, fest_dofs, None, False, flaechen, ldofs)
+    assert len(d["einheiten"]) == 3 + 6 + 6 + 3 + 3 + 1
+    fest_knoten = np.unique(N.rand[wand])
+    lager_dofs, arten = {"Wand": ldofs}, {"Wand": "fest"}
+    for f in faelle:
+        lv, det = P._lastvektor(N, T, f, beruehrt, groesse, h, V)
+        (u_dir,), info = N.loese(K, fest_dofs, [lv], verfahren="lu")
+        koef, summe, lastflaechen, g = P._koeffizienten(f, T, d, V, nachbarn)
+        u, r, kontrolle, genutzt = P._ueberlagern(d, koef)
+        assert np.max(np.abs(u - u_dir)) <= 1e-10 * np.max(np.abs(u_dir)), f["id"]
+        assert lastflaechen == det["lastflaechen_mm2"] and [round(float(c), 3) for c in summe] == det["kraft_n"]
+        assert round(float(np.linalg.norm(kontrolle - summe)), 6) == det["gleichgewicht_n"]
+        assert P._bewerten(N, u, C, T, f, fest_knoten)[0] == P._bewerten(N, u_dir, C, T, f, fest_knoten)[0], f["id"]
+        r_voll = np.zeros(N.N)
+        r_voll[ldofs] = r
+        assert P.lagerkraefte_aus_r(N, r_voll, lager_dofs, arten, T["nachbarn"]) == \
+            P.lagerkraefte(N, K, u_dir, lv, lager_dofs, arten, T["nachbarn"]), f["id"]
+
+
+def _stempel_teil(tmp: Path, h: float = 5.0, E: float = 2580.0, wand_dx: float = 0.0, stempel_dx: float = 0.0,
+                  schicht: list[float] | None = None) -> dict:
+    """Klotz 60 × 20 × 20 an der Wand (x = 0), Last über einen Stempel am Ende (x = 60)."""
+    from build123d import Box, Location
+
+    brep = tmp / "klotz.brep"
+    if not brep.exists():
+        _brep(Box(60, 20, 20).moved(Location((30, 0, 10))), brep)
+    w = {"E": E, "nu": 0.36, "E_z": 0.8 * E if schicht else None, "f": 40.0, "q": 0.5 if schicht else None,
+         "name": "PETG" if schicht else "PLA"}
+    nachbarn = {"Wand": {"datei": _wand(tmp / f"wand{wand_dx}.npz", wand_dx), "tol": 0.3},
+                "Stempel": {"datei": _flaeche_npz(tmp / f"stempel{stempel_dx}.npz", 60.0 + stempel_dx), "tol": 0.3}}
+    T = _teil("Klotz", str(brep), w, 24000.0, (0, -10, 0), (60, 10, 20), nachbarn, h_mm=h)
+    T["masse_kg"] = 0.03
+    if schicht:
+        T.update({"druckteil": True, "schicht": schicht})
+    return T
+
+
+def _stempel_fall(kraft: float) -> dict:
+    return {"id": "0.0", "szenario": "Druck auf den Stempel", "teil": "Klotz", "ziel": 2.0,
+            "schluessel": f"stempel-{kraft}-{time.time_ns()}", "lager": ["Wand"], "feld": [0, 0, -9.81],
+            "lasten": [{"kraft": [-kraft, 0.2 * kraft, -0.5 * kraft], "moment": [0, 0, 10.0 * kraft],
+                        "punkt": [62.0, 1.0, 12.0], "kontakt_mit": "Stempel"}]}
+
+
+def test_einheitszustand_trifft_und_ist_gleich_wie_frisch(tmp_path, monkeypatch):
+    """A4: Andere Lasten auf demselben Teilzustand kommen aus den gemerkten Einheitsfällen und ergeben Bit für Bit
+    dasselbe wie ein frischer Prozess mit leeren Speichern (nur das Netz geteilt)."""
+    T = _stempel_teil(tmp_path)
+    erster, _ = _rechne(tmp_path, T, [_stempel_fall(100.0)])
+    r1 = erster["faelle"][0]
+    assert r1["stand"] == "done" and r1["einheiten"] == {"zahl": 9, "aus_speicher": False}
+    assert r1["loeser"]["verfahren"] == "superlu"
+    fall = _stempel_fall(140.0)
+    zweiter, _ = _rechne(tmp_path, T, [fall])
+    r2 = zweiter["faelle"][0]
+    assert r2["einheiten"]["aus_speicher"] and r2["sicherheit"] != r1["sicherheit"]
+    frisch = tmp_path / "frisch"
+    shutil.copytree(tmp_path / "fem-cache" / "netze", frisch / "netze")
+    monkeypatch.setenv("KEVCAD_FESTKOERPER_CACHE", str(frisch))
+    (tmp_path / "b").mkdir()
+    dritter, _ = _rechne(tmp_path / "b", T, [fall])
+    r3 = dritter["faelle"][0]
+    assert not r3["einheiten"]["aus_speicher"]
+    assert _ohne_herkunft(r2) == _ohne_herkunft(r3)
+    f2, f3 = _felder(r2["feld"]), _felder(r3["feld"])
+    assert all(np.array_equal(f2[k], f3[k]) for k in f2)
+
+
+@pytest.mark.parametrize("aenderung", ["lager", "werkstoff", "schicht", "netz", "kontaktflaeche"])
+def test_einheitszustand_fehltreffer(tmp_path, aenderung):
+    """A4: Geändertes Lager (Netz des Nachbarn), Werkstoff, Schicht, Netz oder Kontaktfläche der Last: keine gemerkten
+    Einheitsfälle, frisch gerechnet."""
+    basis = {"schicht": {"schicht": [0.0, 0.0, 1.0]}}.get(aenderung, {})
+    _rechne(tmp_path, _stempel_teil(tmp_path, **basis), [_stempel_fall(100.0)])
+    anders = {"lager": {"wand_dx": 0.1}, "werkstoff": {"E": 2000.0}, "schicht": {"schicht": [1.0, 0.0, 0.0]},
+              "netz": {"h": 4.0}, "kontaktflaeche": {"stempel_dx": 0.1}}[aenderung]
+    out, _ = _rechne(tmp_path, _stempel_teil(tmp_path, **anders), [_stempel_fall(120.0)])
+    r = out["faelle"][0]
+    assert r["stand"] == "done" and r["einheiten"]["aus_speicher"] is False, aenderung
+    # ohne Änderung trifft derselbe Ablauf
+    gleich, _ = _rechne(tmp_path, _stempel_teil(tmp_path, **anders), [_stempel_fall(130.0)])
+    assert gleich["faelle"][0]["einheiten"]["aus_speicher"] is True
 
 
 # ---------------------------------------------------------------------------------------------------------------------

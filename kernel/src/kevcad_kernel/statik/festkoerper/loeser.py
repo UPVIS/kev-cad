@@ -271,6 +271,42 @@ class Netz:
 
         return asm(zug, fb)
 
+    def last_flaeche_einheiten(self, facetten: np.ndarray, kraefte: bool = True, momente: bool = True
+                               ) -> tuple[list[tuple[str, np.ndarray]], dict[str, Any]]:
+        """Einheitslastfälle einer Fläche (A4) wie ``last_flaeche``: Kraft 1 N in x, y, z am Schwerpunkt (``F0`` …
+        ``F2``) und Moment 1 Nmm um x, y, z (``M0`` … ``M2``), eine FacetBasis für alle. Liefert die Vektoren und die
+        Geometrie (A, c, J)."""
+        from skfem import FacetBasis, LinearForm, asm
+
+        g = self.flaeche_geometrie(facetten)
+        c = g["c"]
+        fb = FacetBasis(self.mesh, self.basis.elem, facets=self.rand_index[facetten], intorder=3)
+
+        def vektor(a: np.ndarray, omega: np.ndarray) -> np.ndarray:
+            @LinearForm
+            def zug(v, w):
+                x = w.x
+                r = [x[i] - c[i] for i in range(3)]
+                tx = a[0] + omega[1] * r[2] - omega[2] * r[1]
+                ty = a[1] + omega[2] * r[0] - omega[0] * r[2]
+                tz = a[2] + omega[0] * r[1] - omega[1] * r[0]
+                return tx * v[0] + ty * v[1] + tz * v[2]
+
+            return asm(zug, fb)
+
+        out: list[tuple[str, np.ndarray]] = []
+        for i in range(3):
+            e = np.zeros(3)
+            e[i] = 1.0
+            if kraefte:
+                out.append((f"F{i}", vektor(e / max(g["A"], 1e-300), np.zeros(3))))
+        for i in range(3):
+            e = np.zeros(3)
+            e[i] = 1.0
+            if momente:
+                out.append((f"M{i}", vektor(np.zeros(3), np.linalg.lstsq(g["J"], e, rcond=1e-12)[0])))
+        return out, g
+
     def last_druck(self, facetten: np.ndarray, p: float) -> np.ndarray:
         """Druck p (N/mm²) senkrecht auf die Randdreiecke ``facetten``: Zugspannung −p n (n nach außen, je Dreieck
         konstant); auf einer Ebene ist die Resultierende −p A n."""
@@ -408,14 +444,16 @@ class Netz:
         return dofs[np.isin(comp[dofs], komponenten)]
 
     def loese(self, K: sp.csr_matrix, fest: np.ndarray, lasten: list[np.ndarray], abbruch: Any = None,
-              duenn: bool = False, zwang: Zwang | None = None) -> tuple[list[np.ndarray], dict[str, Any]]:
+              duenn: bool = False, zwang: Zwang | None = None,
+              verfahren: str | None = None) -> tuple[list[np.ndarray], dict[str, Any]]:
         """Löst K u = f für alle Lastvektoren mit den festen Freiheitsgraden ``fest`` (u = 0), mit ``zwang`` statt
         dessen unter allgemeinen Zwangsbedingungen u = T q (``fest`` steckt dann in T).
 
         SuperLU zerlegt direkt (symmetrische Ordnung, ein Mal für alle Lastfälle) bis ``LU_KLEIN`` freie
         Freiheitsgrade, wenn der Speicher reicht (``lu_erlaubt``), bei dünnen, langen Teilen (Platten, Leisten; dort
         kommt AMG mit Tetraedern kaum voran) bis ``LU_MAX``; sonst pyamg (Smoothed Aggregation, CG, fester Startwert
-        der Zufallszahlen). Kommt AMG nicht unter die Toleranz, rechnet SuperLU nach (bis ``LU_MAX``)."""
+        der Zufallszahlen). Kommt AMG nicht unter die Toleranz, rechnet SuperLU nach (bis ``LU_MAX``).
+        ``verfahren`` "lu" oder "amg" gibt den Löser vor (A4: Einheitslastfälle immer mit SuperLU)."""
         t0 = time.perf_counter()
         if zwang is not None:
             T = zwang.T
@@ -440,7 +478,10 @@ class Netz:
             info["lu_ms"] = round((time.perf_counter() - t) * 1000, 1)
             return z
 
-        direkt, grund = lu_erlaubt(len(frei), duenn)
+        if verfahren in ("lu", "amg"):
+            direkt, grund = verfahren == "lu", "vorgegeben"
+        else:
+            direkt, grund = lu_erlaubt(len(frei), duenn)
         info["wahl"] = grund
         if direkt:
             lu = zerlegen()

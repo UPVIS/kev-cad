@@ -32,7 +32,7 @@ from typing import Any
 
 import numpy as np
 
-from kevcad_kernel.statik.festkoerper import VERSION
+from kevcad_kernel.statik.festkoerper import RECHENSTAND, VERSION
 
 MAX_TEILE_AUTO = 8
 MAX_TEILE = 24
@@ -419,7 +419,8 @@ def _schreibe_in(st: Any, wunsch: dict[str, Any], liste: list[dict[str, Any]], o
                     last["flaeche_datei"] = datei
         sz = szen_obj[f["szenario"]]
         f["feld"] = [float(c) for c in sz.feld]
-        schl = {"v": VERSION, "teil": k.key, "fein": bool(wunsch.get("fein")), "w": w, "schicht": T["schicht"],
+        schl = {"v": VERSION, "r": RECHENSTAND, "teil": k.key, "fein": bool(wunsch.get("fein")), "w": w,
+                "schicht": T["schicht"],
                 "masse": round(T["masse_kg"], 6), "feld": _r(f["feld"]),
                 "lager": [(x, T["nachbarn"].get(x, {}).get("schluessel"), T["nachbarn"].get(x, {}).get("tol"))
                           for x in sorted(f["lager"])],

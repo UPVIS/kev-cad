@@ -24,6 +24,9 @@ Einheiten: mm, N, N/mm² (MPa).
 from __future__ import annotations
 
 VERSION = 1  # Rechenstand: ändert er sich, gelten alte Einträge im Zwischenspeicher nicht mehr
+# Rechenstand der Fälle (nicht der Netze): 2 = Fälle aus Einheitslastfällen überlagert (A4, PLAN-PRUEFUNG-INKREMENTELL.md);
+# ändert er sich, rechnet jeder Fall neu, die Netze bleiben
+RECHENSTAND = 2
 
 GRENZEN_S3 = [
     "Festkörper (S3) linear-elastisch mit kleinen Verformungen: kein Fließen, kein Kontakt mit Abheben, Lagerflächen "

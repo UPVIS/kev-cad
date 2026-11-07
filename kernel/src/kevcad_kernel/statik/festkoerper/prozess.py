@@ -33,7 +33,7 @@ from typing import Any
 
 import numpy as np
 
-from kevcad_kernel.statik.festkoerper import GRENZEN_S3, VERSION
+from kevcad_kernel.statik.festkoerper import GRENZEN_S3, RECHENSTAND, VERSION
 
 LAST_RADIUS = (0.1, 3.0, 25.0)  # Lastfläche um einen Punkt: Anteil der Teilgröße, mindestens, höchstens (mm)
 FLAECHE_TOL = 0.35  # mm: Randdreiecke einer Lastfläche (Netz der B-Rep-Fläche)
@@ -111,15 +111,21 @@ def lies_fall(pfad: Path) -> dict[str, Any] | None:
         return None
 
 
-def _netz(T: dict[str, Any], fein: bool, ablage: Path) -> tuple[dict[str, Any], bool]:
+def _netz_schluessel(T: dict[str, Any], fein: bool) -> str:
+    """Schlüssel des Netzes eines Teils (Teilstand, Netzeinstellung, Grenzen von Gmsh)."""
     from kevcad_kernel.statik.festkoerper import netz
 
     schl = {"v": VERSION, "teil": T["schluessel_teil"], "fein": fein, "h": T.get("h_mm"),
             "max": [netz.MAX_TET, netz.MAX_TET_FEIN, netz.WAND_ANTEIL, netz.KRUEMMUNG]}
     if T.get("verfeinern"):  # Stufe 4 (additiv): örtliche Verfeinerung, etwa am Punktkontakt
         schl["verfeinern"] = T["verfeinern"]
-    key = hashlib.sha1(json.dumps(schl, sort_keys=True).encode()).hexdigest()[:20]
-    pfad = ablage / "netze" / f"{key}.npz"
+    return hashlib.sha1(json.dumps(schl, sort_keys=True).encode()).hexdigest()[:20]
+
+
+def _netz(T: dict[str, Any], fein: bool, ablage: Path) -> tuple[dict[str, Any], bool]:
+    from kevcad_kernel.statik.festkoerper import netz
+
+    pfad = ablage / "netze" / f"{_netz_schluessel(T, fein)}.npz"
     if pfad.exists():
         try:
             with np.load(pfad) as z:
@@ -207,8 +213,394 @@ def _bewerten(N: Any, u: np.ndarray, C: np.ndarray, T: dict[str, Any], fall: dic
     return info, felder
 
 
+# -- Einheitslastfälle (A4, PLAN-PRUEFUNG-INKREMENTELL.md) -----------------------------------------------------------
+# Teile, die SuperLU löst, rechnet der Prozess über Einheitslastfälle statt Fall für Fall: je Lastfläche Kraft 1 N in
+# x, y, z am Schwerpunkt der Fläche und Moment 1 Nmm um x, y, z (dieselbe RBE3-Verteilung wie ``Netz.last_flaeche``),
+# je Fläche unter Druck der Einheitsdruck, für Volumenlasten (Eigengewicht, Last ohne Punkt) b in x, y, z, für Momente
+# am Schwerpunkt die ganze Oberfläche, alle mit einer Zerlegung. Ein Fall ist die Summe der Einheitsfälle mal ihrer
+# Beiwerte (Kraft, Moment um den Schwerpunkt der Fläche M + (P − c) × F, Druck, b). Die Einheitsfälle (Verschiebungen,
+# Reaktionen an den Lagern, Summen der Lastvektoren) liegen je Teilzustand auf der Platte (``einheiten/``); ändern sich
+# nur die Lasten, setzt der nächste Lauf die Fälle daraus zusammen, ohne Steifigkeit, Kontaktflächen und Zerlegung. Der
+# Schlüssel enthält alles, wovon die Einheitsfälle abhängen: Netz, Werkstoff und Schicht (Steifigkeit), Lager (Netz des
+# Nachbarn bzw. der Lagerfläche, Toleranz, Art), Lastflächen. Gerechnet wird so auch beim ersten Mal: Ein Fall aus
+# gemerkten Einheitsfällen ist Bit für Bit derselbe wie frisch gerechnet; gegen die Lösung je Fall weicht er nur in der
+# Rundung ab. Teile, die AMG löst, und Lastflächen ohne Treffer auf dem Netz (Ersatzfläche um den Punkt) rechnen weiter
+# Fall für Fall.
+
+EINHEIT_ORDNER = "einheiten"
+EINHEIT_FORMAT = 1
+EINHEIT_MAX_MB = 1024.0  # Platz für Einheitszustände; zuerst weg, was am längsten nicht benutzt wurde
+UEBERLAGERN_ENV = "KEVCAD_FEM_UEBERLAGERN"  # "0": Fall für Fall wie vor A4 (Tests, Vergleiche)
+VOL = '["volumen"]'
+ALLE = '["alle"]'
+
+
+def _ueberlagern_an() -> bool:
+    """Einheitslastfälle an? Aus mit ``KEVCAD_FEM_UEBERLAGERN=0`` und wenn AMG erzwungen ist (``KEVCAD_FEM_LOESER``)."""
+    from kevcad_kernel.statik.festkoerper.loeser import LOESER_ENV
+
+    if (os.environ.get(LOESER_ENV) or "").strip().lower() == "amg":
+        return False
+    return (os.environ.get(UEBERLAGERN_ENV) or "1").strip().lower() not in ("0", "aus", "false", "nein", "no")
+
+
+def _datei_schluessel(datei: str) -> str | None:
+    """Inhalt eines Netzes (alle Felder der Datei) als Schlüssel."""
+    try:
+        with np.load(datei) as z:
+            h = hashlib.sha1()
+            for k in sorted(z.files):
+                a = np.ascontiguousarray(z[k])
+                h.update(f"{k}|{a.dtype}|{a.shape}|".encode())
+                h.update(a.tobytes())
+        return h.hexdigest()[:20]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class _Nachbarn:
+    """Schlüssel der Nachbarnetze eines Teils (Inhalt der Datei), je Nachbar einmal gelesen."""
+
+    def __init__(self, T: dict[str, Any]) -> None:
+        self.T = T
+        self._h: dict[str, str | None] = {}
+
+    def __call__(self, x: str) -> str | None:
+        if x not in self._h:
+            nb = self.T["nachbarn"].get(x) or {}
+            self._h[x] = _datei_schluessel(nb["datei"]) if nb.get("datei") else None
+        return self._h[x]
+
+
+def _lager_daten(nb: dict[str, Any]) -> dict[str, Any]:
+    return {k: nb.get(k) for k in ("art", "gelenkig", "gehalten", "komponenten", "drehachsen", "normale")}
+
+
+def _last_schluessel(last: dict[str, Any], T: dict[str, Any], nachbarn: _Nachbarn) -> list[str]:
+    """Lastflächen einer Last, ohne Netz: Fläche einer Datei (gleichmäßig oder Druck), Kontaktfläche zum Nachbarn,
+    Fläche um den Punkt; Last am Schwerpunkt: Volumen und mit Moment die ganze Oberfläche."""
+    if last.get("flaeche_datei"):
+        druck = (last.get("flaeche") or {}).get("druck")
+        return [json.dumps(["druck" if druck else "flaeche", _datei_schluessel(last["flaeche_datei"])])]
+    if last.get("kontakt_mit"):
+        x = last["kontakt_mit"]
+        return [json.dumps(["kontakt", x, nachbarn(x), (T["nachbarn"].get(x) or {}).get("tol")])]
+    if last.get("punkt") is not None:
+        return [json.dumps(["punkt", [repr(float(c)) for c in last["punkt"]]])]
+    M = last.get("moment")
+    return [VOL, ALLE] if M is not None and np.any(np.asarray(M, float) != 0) else [VOL]
+
+
+def _einheit_pfad(ablage: Path, T: dict[str, Any], fein: bool, lager: tuple, fs: list[dict[str, Any]],
+                  nachbarn: _Nachbarn) -> Path:
+    """Datei der Einheitsfälle einer Lagergruppe: Schlüssel aus Netz, Steifigkeit, Lagern und Lastflächen."""
+    w = T["werkstoff"]
+    druckteil = bool(T.get("druckteil"))
+    flaechen = {VOL} | {k for f in fs for last in f["lasten"] for k in _last_schluessel(last, T, nachbarn)}
+    schl = {"f": EINHEIT_FORMAT, "v": VERSION, "r": RECHENSTAND, "netz": _netz_schluessel(T, fein),
+            "w": [w.get("E"), w.get("nu"), w.get("E_z") if druckteil else None],
+            "schicht": T.get("schicht") if druckteil else None,
+            "lager": [[x, nachbarn(x), (T["nachbarn"].get(x) or {}).get("tol"),
+                       _lager_daten(T["nachbarn"].get(x) or {})] for x in lager],
+            "flaechen": sorted(flaechen)}
+    key = hashlib.sha1(json.dumps(schl, sort_keys=True, default=str).encode()).hexdigest()[:24]
+    return ablage / EINHEIT_ORDNER / f"{key}.npz"
+
+
+def _einheit_laden(pfad: Path) -> dict[str, Any] | None:
+    try:
+        with np.load(pfad) as z:
+            info = json.loads(bytes(z["info"]).decode("utf-8"))
+            d = {"U": z["U"], "R": z["R"], "S": z["S"], "ldofs": z["ldofs"], "fest": z["fest"], **info}
+            d["lager_facetten"] = {x: z[f"lager_{i}"] for i, x in enumerate(info["lager"])}
+        if info.get("f") != EINHEIT_FORMAT:
+            return None
+        os.utime(pfad)  # zuletzt benutzt (Aufräumen)
+        return d
+    except Exception:  # noqa: BLE001 - fehlt oder kaputt: neu rechnen
+        return None
+
+
+def _einheit_speichern(pfad: Path, d: dict[str, Any]) -> None:
+    info = {"f": EINHEIT_FORMAT, **{k: d[k] for k in ("einheiten", "flaechen", "residuen", "lose", "zwang", "lager")}}
+    felder = {"U": d["U"], "R": d["R"], "S": d["S"], "ldofs": d["ldofs"], "fest": d["fest"],
+              **{f"lager_{i}": d["lager_facetten"][x] for i, x in enumerate(d["lager"])}}
+    try:
+        _schreibe_npz(pfad, info=np.frombuffer(json.dumps(info).encode("utf-8"), dtype=np.uint8), **felder)
+    except OSError:
+        return
+    _einheiten_aufraeumen(pfad.parent)
+
+
+def _einheiten_aufraeumen(ordner: Path, max_mb: float = EINHEIT_MAX_MB) -> None:
+    """Höchstens ``max_mb`` Einheitszustände: die am längsten nicht benutzten zuerst weg (bis 80 % davon)."""
+    try:
+        dateien = sorted((p.stat().st_mtime, p.stat().st_size, p) for p in ordner.glob("*.npz"))
+    except OSError:
+        return
+    summe = sum(s for _, s, _ in dateien) / (1 << 20)
+    if summe <= max_mb:
+        return
+    for _, groesse, p in dateien:  # die am längsten nicht benutzten zuerst
+        if summe <= 0.8 * max_mb:
+            break
+        try:
+            p.unlink()
+        except OSError:
+            continue
+        summe -= groesse / (1 << 20)
+
+
+def _flaechen_waehlen(N: Any, T: dict[str, Any], fs: list[dict[str, Any]], beruehrt: dict[str, np.ndarray],
+                      groesse: float, h: float, nachbarn: _Nachbarn) -> dict[str, np.ndarray | None] | None:
+    """Randdreiecke je Lastfläche der Fälle (Volumen ohne). None, wenn eine Fläche einer Datei oder eine Kontaktfläche
+    auf dem Netz leer bleibt: dann Fall für Fall wie bisher (Ersatzfläche um den Punkt)."""
+    sel: dict[str, np.ndarray | None] = {VOL: None}
+    for f in fs:
+        for last in f["lasten"]:
+            for k in _last_schluessel(last, T, nachbarn):
+                if k in sel:
+                    continue
+                art = json.loads(k)[0]
+                if art in ("flaeche", "druck"):
+                    s = _flaechen_facetten(N, last["flaeche_datei"])
+                elif art == "kontakt":
+                    s = beruehrt.get(last["kontakt_mit"], np.zeros(0, dtype=np.int64))
+                elif art == "punkt":
+                    s = _lastflaeche(N, np.asarray(last["punkt"], float), groesse, h)
+                else:  # die ganze Oberfläche (Moment einer Last am Schwerpunkt)
+                    s = np.arange(len(N.rand))
+                if len(s) == 0:
+                    return None
+                sel[k] = np.asarray(s, dtype=np.int64)
+    return sel
+
+
+def _einheiten_rechnen(N: Any, K: Any, fest_dofs: np.ndarray, zw: Any, duenn: bool,
+                       flaechen: dict[str, np.ndarray | None], ldofs: np.ndarray) -> dict[str, Any]:
+    """Einheitslastfälle der Flächen mit einer Zerlegung (SuperLU): Verschiebungen ``U`` (m × N), Reaktionen an den
+    Lagern ``R`` (m × Lagerfreiheitsgrade ``ldofs``), Summen der Lastvektoren ``S`` (m × 3), dazu je Fläche A, c bzw.
+    die Resultierende des Einheitsdrucks und die Residuen."""
+    vektoren: list[np.ndarray] = []
+    einheiten: list[list[str]] = []
+    meta: dict[str, Any] = {}
+    for k in sorted(flaechen):
+        sel = flaechen[k]
+        art = json.loads(k)[0]
+        if art == "volumen":
+            for c in range(3):
+                e = np.zeros(3)
+                e[c] = 1.0
+                vektoren.append(N.last_volumen(e))
+                einheiten.append([k, f"b{c}"])
+            continue
+        A = float(N.rand_flaeche_mm2[sel].sum())
+        if art == "druck":
+            vektoren.append(N.last_druck(sel, 1.0))
+            einheiten.append([k, "p"])
+            Fp = -(N.rand_normale[sel] * N.rand_flaeche_mm2[sel, None]).sum(axis=0)
+            meta[k] = {"A": A, "Fp": [float(c) for c in Fp]}
+            continue
+        vs, geo = N.last_flaeche_einheiten(sel, kraefte=art != "alle", momente=art != "flaeche")
+        for name, v in vs:
+            vektoren.append(np.asarray(v, dtype=float).reshape(-1))
+            einheiten.append([k, name])
+        meta[k] = {"A": A, "c": [float(c) for c in geo["c"]]}
+    us, info = N.loese(K, fest_dofs, vektoren, duenn=duenn, zwang=zw, verfahren="lu")
+    U = np.stack(us)
+    R = np.stack([(np.asarray(K @ u).reshape(-1) - f)[ldofs] for u, f in zip(us, vektoren)])
+    S = np.array([[float(f[N.basis.nodal_dofs[c]].sum() + f[N.basis.edge_dofs[c]].sum()) for c in range(3)]
+                  for f in vektoren])
+    return {"U": U, "R": R, "S": S, "ldofs": ldofs, "einheiten": einheiten, "flaechen": meta,
+            "residuen": [float(r) for r in info["residuum"]]}
+
+
+def _koeffizienten(f: dict[str, Any], T: dict[str, Any], d: dict[str, Any], V: float, nachbarn: _Nachbarn
+                   ) -> tuple[np.ndarray, np.ndarray, list[Any], np.ndarray]:
+    """Beiwerte der Einheitsfälle für einen Fall, dazu Resultierende, Lastflächen und Eigengewichtsfeld (wie
+    ``_lastvektor``)."""
+    idx = {(k, name): i for i, (k, name) in enumerate(d["einheiten"])}
+    koef = np.zeros(len(d["einheiten"]))
+    summe = np.zeros(3)
+    b = np.zeros(3)
+    lastflaechen: list[Any] = []
+    for last in f["lasten"]:
+        F = np.asarray(last["kraft"], float)
+        M = np.asarray(last["moment"], float) if last.get("moment") is not None else None
+        P = np.asarray(last["punkt"], float) if last.get("punkt") is not None else None
+        summe += F
+        k = _last_schluessel(last, T, nachbarn)
+        art = json.loads(k[0])[0]
+        if art in ("flaeche", "druck"):
+            m = d["flaechen"][k[0]]
+            druck = (last.get("flaeche") or {}).get("druck")
+            if druck:
+                koef[idx[(k[0], "p")]] += float(druck)
+                summe += float(druck) * np.asarray(m["Fp"], float) - F
+            else:
+                for c in range(3):
+                    koef[idx[(k[0], f"F{c}")]] += F[c]
+            lastflaechen.append(round(float(m["A"]), 1))
+        elif art in ("kontakt", "punkt"):
+            m = d["flaechen"][k[0]]
+            Mc = (np.zeros(3) if M is None else M) + (np.cross(P - np.asarray(m["c"], float), F)
+                                                     if P is not None else 0.0)
+            for c in range(3):
+                koef[idx[(k[0], f"F{c}")]] += F[c]
+                koef[idx[(k[0], f"M{c}")]] += Mc[c]
+            lastflaechen.append(round(float(m["A"]), 1))
+        else:  # am Schwerpunkt: gleichmäßig über das Volumen, ein Moment über die ganze Oberfläche
+            b += F / V
+            if ALLE in k:
+                for c in range(3):
+                    koef[idx[(ALLE, f"M{c}")]] += M[c]  # type: ignore[index]
+            lastflaechen.append(None)
+    g = np.asarray(f.get("feld") or (0, 0, 0), float) * (T["masse_kg"] / max(T["volumen"], 1e-9))
+    b += g
+    summe += g * V
+    for c in range(3):
+        koef[idx[(VOL, f"b{c}")]] += b[c]
+    return koef, summe, lastflaechen, g
+
+
+def _ueberlagern(d: dict[str, Any], koef: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Verschiebung, Reaktionen an den Lagern und Summe des Lastvektors eines Falls aus den Einheitsfällen (in fester
+    Reihenfolge, damit gemerkt und frisch Bit für Bit gleich rechnen)."""
+    U, R, S = d["U"], d["R"], d["S"]
+    u = np.zeros(U.shape[1])
+    r = np.zeros(R.shape[1])
+    kontrolle = np.zeros(3)
+    genutzt = np.flatnonzero(koef)
+    for k in genutzt:
+        u += koef[k] * U[k]
+        r += koef[k] * R[k]
+        kontrolle += koef[k] * S[k]
+    return u, r, kontrolle, genutzt
+
+
+def _lastvektor(N: Any, T: dict[str, Any], f: dict[str, Any], beruehrt: dict[str, np.ndarray], groesse: float,
+                h: float, V: float) -> tuple[np.ndarray, dict[str, Any]]:
+    """Lastvektor eines Falls, Fall für Fall (Teile mit AMG, Ersatzflächen), und seine Angaben."""
+    lv = np.zeros(N.N)
+    summe = np.zeros(3)
+    lastflaechen = []
+    for last in f["lasten"]:
+        F = np.asarray(last["kraft"], float)
+        M = np.asarray(last["moment"], float) if last.get("moment") is not None else None
+        P = np.asarray(last["punkt"], float) if last.get("punkt") is not None else None
+        summe += F
+        if last.get("flaeche_datei"):  # Last auf der ganzen Fläche (simulation2)
+            sel = _flaechen_facetten(N, last["flaeche_datei"])
+            if len(sel) == 0:
+                sel = _lastflaeche(N, P, groesse, h) if P is not None else np.arange(len(N.rand))
+            druck = (last.get("flaeche") or {}).get("druck")
+            if druck:
+                lv += N.last_druck(sel, float(druck))
+                F_ist = -float(druck) * (N.rand_normale[sel] * N.rand_flaeche_mm2[sel, None]).sum(axis=0)
+                summe += F_ist - F  # Resultierende auf dem FEM-Netz (gleich F bis auf die Vernetzung)
+            else:
+                lv += N.last_flaeche(sel, F, None, None)  # gleichmäßig: F / A auf jedem Dreieck
+            lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
+        elif last.get("kontakt_mit"):
+            sel = beruehrt.get(last["kontakt_mit"], np.zeros(0, dtype=np.int64))
+            if len(sel) == 0 and P is not None:
+                sel = _lastflaeche(N, P, groesse, h)
+            lv += N.last_flaeche(sel, F, M, P)
+            lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
+        elif P is not None:
+            sel = _lastflaeche(N, P, groesse, h)
+            lv += N.last_flaeche(sel, F, M, P)
+            lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
+        else:  # am Schwerpunkt: gleichmäßig über das Volumen
+            lv += N.last_volumen(F / V)
+            if M is not None and np.any(M):
+                lv += N.last_flaeche(np.arange(len(N.rand)), np.zeros(3), M, None)
+            lastflaechen.append(None)
+    g = np.asarray(f.get("feld") or (0, 0, 0), float) * (T["masse_kg"] / max(T["volumen"], 1e-9))
+    lv += N.last_volumen(g)
+    summe += g * V
+    kontrolle = np.array([lv[N.basis.nodal_dofs[c]].sum() + lv[N.basis.edge_dofs[c]].sum() for c in range(3)])
+    return lv, {"lastflaechen_mm2": lastflaechen, "kraft_n": [round(float(c), 3) for c in summe],
+                "gleichgewicht_n": round(float(np.linalg.norm(kontrolle - summe)), 6),
+                "eigengewicht_n": [round(float(c), 4) for c in g * V]}
+
+
+def _fall_auswerten(N: Any, C: np.ndarray, T: dict[str, Any], f: dict[str, Any], u: np.ndarray, r_voll: np.ndarray,
+                    det: dict[str, Any], lager: tuple, arten: dict[str, str], fest: np.ndarray,
+                    fest_knoten: np.ndarray, lager_dofs: dict[str, np.ndarray], zwang_info: dict[str, Any] | None,
+                    mit_sigma: bool, netz_info: dict[str, Any], loeser_info: dict[str, Any], ms: dict[str, float],
+                    t0: float, ablage: Path, einheiten: dict[str, Any] | None) -> dict[str, Any]:
+    """Ein gelöster Fall: Bewertung, Lagerkräfte, Angaben, Zwischenspeicher (gleich für Fall für Fall und überlagert)."""
+    t3 = time.perf_counter()
+    kurzinfo, felder = _bewerten(N, u, C, T, f, fest_knoten)
+    kurzinfo.update(det)
+    kurzinfo["lagerkraefte"] = lagerkraefte_aus_r(N, r_voll, lager_dofs, arten, T["nachbarn"])
+    kurzinfo["lagerarten"] = dict(arten)
+    if zwang_info is not None:
+        kurzinfo["zwang"] = dict(zwang_info)
+    if mit_sigma:
+        frei = np.ones(N.n, dtype=bool)
+        frei[fest_knoten] = False
+        _schreibe_npz(ablage / "faelle" / f"{f['schluessel']}.sig.npz",
+                      sigma=N.spannung(u, C).astype(np.float64), frei=frei,
+                      punkte=N.p.astype(np.float32))
+    kurzinfo.update({
+        "stand": "done", "szenario": f["szenario"], "teil": T["name"], "schluessel": f["schluessel"],
+        "lager": list(lager), "lager_aus_last": f.get("lager_aus_last"),
+        "lagerflaeche_mm2": round(float(N.rand_flaeche_mm2[fest].sum()), 1),
+        "lasten": [{k: v for k, v in l.items()} for l in f["lasten"]], "s0": f.get("s0"),
+        "hinweise": f.get("hinweise") or [],
+        "netz": dict(netz_info),
+        "loeser": loeser_info,
+        "ms": {**{k: round(v, 1) for k, v in ms.items()},
+               "auswerten": round((time.perf_counter() - t3) * 1000, 1),
+               "teil": round((time.perf_counter() - t0) * 1000, 1)},
+    })
+    if einheiten is not None:
+        kurzinfo["einheiten"] = einheiten
+    _schreibe_npz(ablage / "faelle" / f"{f['schluessel']}.npz",
+                  info=np.frombuffer(json.dumps(kurzinfo, ensure_ascii=False).encode("utf-8"), dtype=np.uint8),
+                  **felder)
+    return {**kurzinfo, "id": f["id"], "aus_speicher": False, "_felder": felder}
+
+
+def _faelle_ueberlagert(N: Any, C: np.ndarray, T: dict[str, Any], fs: list[dict[str, Any]], d: dict[str, Any],
+                        lager: tuple, arten: dict[str, str], V: float, nachbarn: _Nachbarn, mit_sigma: bool,
+                        netz_info: dict[str, Any], ablage: Path, t0: float, ms: dict[str, float], gemerkt: bool
+                        ) -> list[dict[str, Any]]:
+    """Alle Fälle einer Lagergruppe aus ihren Einheitsfällen."""
+    out = []
+    fest = np.asarray(d["fest"], dtype=np.int64)
+    fest_knoten = np.unique(N.rand[fest])
+    lager_dofs = {x: (N.facetten_dofs(d["lager_facetten"][x]) if len(d["lager_facetten"][x])
+                      else np.zeros(0, dtype=np.int64)) for x in lager}
+    ldofs = np.asarray(d["ldofs"], dtype=np.int64)
+    for f in fs:
+        t2 = time.perf_counter()
+        if d.get("lose"):
+            f.setdefault("hinweise", []).append(f"{int(d['lose'])} Tetraeder ohne Verbindung zum Lager weggelassen")
+        koef, summe, lastflaechen, g = _koeffizienten(f, T, d, V, nachbarn)
+        u, r, kontrolle, genutzt = _ueberlagern(d, koef)
+        r_voll = np.zeros(N.N)
+        r_voll[ldofs] = r
+        det = {"lastflaechen_mm2": lastflaechen, "kraft_n": [round(float(c), 3) for c in summe],
+               "gleichgewicht_n": round(float(np.linalg.norm(kontrolle - summe)), 6),
+               "eigengewicht_n": [round(float(c), 4) for c in g * V]}
+        if len(genutzt):
+            loeser_info = {"verfahren": "superlu", "iterationen": 0,
+                           "residuum": max(float(d["residuen"][k]) for k in genutzt)}
+        else:
+            loeser_info = {"verfahren": "null", "iterationen": 0, "residuum": 0.0}
+        out.append(_fall_auswerten(N, C, T, f, u, r_voll, det, lager, arten, fest, fest_knoten, lager_dofs,
+                                   d.get("zwang"), mit_sigma, netz_info, loeser_info,
+                                   {**ms, "loesen": ms.get("loesen", 0.0) + (time.perf_counter() - t2) * 1000},
+                                   t0, ablage, {"zahl": len(d["einheiten"]), "aus_speicher": gemerkt}))
+    return out
+
+
 def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: float) -> list[dict[str, Any]]:
-    """Alle Fälle eines Teils; Ergebnisse aus dem Zwischenspeicher, wo vorhanden."""
+    """Alle Fälle eines Teils; Ergebnisse aus dem Zwischenspeicher, wo vorhanden, sonst aus Einheitslastfällen (A4:
+    gemerkt oder mit einer Zerlegung frisch gerechnet) bzw. Fall für Fall (AMG, Ersatzflächen)."""
     t0 = time.perf_counter()
     kurz = T["name"].rsplit("/", 1)[-1]
     out: list[dict[str, Any]] = []
@@ -231,6 +623,16 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
     def schritt(anteil: float, text: str) -> None:
         melde(von + (bis - von) * anteil, f"{kurz}: {text}")
 
+    gruppen: dict[tuple, list[dict[str, Any]]] = {}
+    for f in offen:
+        gruppen.setdefault(tuple(sorted(f["lager"])), []).append(f)
+    nachbarn = _Nachbarn(T)
+    ueberlagern = _ueberlagern_an()
+    einheit: dict[tuple, tuple[Path, dict[str, Any] | None]] = {}
+    if ueberlagern:
+        for lager, fs in gruppen.items():
+            pfad = _einheit_pfad(ablage, T, fein, lager, fs, nachbarn)
+            einheit[lager] = (pfad, _einheit_laden(pfad) if pfad.exists() else None)
     schritt(0.02, "vernetzen")
     n, netz_gemerkt = _netz(T, fein, ablage)
     t_netz = (time.perf_counter() - t0) * 1000
@@ -239,24 +641,37 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
     w = T["werkstoff"]
     C = wk.steifigkeit(w["E"], w["nu"], w.get("E_z") if T["druckteil"] else None,
                        T.get("schicht") if T["druckteil"] else None)
-    t1 = time.perf_counter()
-    K = N.steifigkeit(C)
-    t_k = (time.perf_counter() - t1) * 1000
-    schritt(0.45, "Steifigkeit aufgebaut")
     groesse = float(np.max(np.asarray(T["bmax"]) - np.asarray(T["bmin"])))
     duenn = groesse / max(2.0 * T["volumen"] / max(float(N.rand_flaeche_mm2.sum()), 1e-9), 1e-9) > 25
-    # Kontaktflächen je Nachbar (Lager und Lasteinleitung)
+    h = float(n["h"])
+    netz_info = {"knoten": int(N.n), "tetraeder": int(len(N.t)), "freiheitsgrade": int(N.N), "h_mm": round(h, 2),
+                 "fein": fein, "aus_speicher": netz_gemerkt, "duenn": bool(duenn)}
+    K = None
+    t_k = 0.0
     beruehrt: dict[str, np.ndarray] = {}
-    for x, nb in T["nachbarn"].items():
-        with np.load(nb["datei"]) as z:
-            d = kontakt.abstand(N.rand_mitte, z["pos"], z["tri"], float(nb["tol"]))
-        beruehrt[x] = np.where(np.isfinite(d))[0]
-    gruppen: dict[tuple, list[dict[str, Any]]] = {}
-    for f in offen:
-        gruppen.setdefault(tuple(sorted(f["lager"])), []).append(f)
+    if any((einheit.get(lager) or (None, None))[1] is None for lager in gruppen):
+        t1 = time.perf_counter()
+        K = N.steifigkeit(C)
+        t_k = (time.perf_counter() - t1) * 1000
+        schritt(0.45, "Steifigkeit aufgebaut")
+        # Kontaktflächen je Nachbar (Lager und Lasteinleitung)
+        for x, nb in T["nachbarn"].items():
+            with np.load(nb["datei"]) as z:
+                dist = kontakt.abstand(N.rand_mitte, z["pos"], z["tri"], float(nb["tol"]))
+            beruehrt[x] = np.where(np.isfinite(dist))[0]
     erledigt = 0
     V = float(N.vol.sum())
     for lager, fs in gruppen.items():
+        pfad, d = einheit.get(lager) or (None, None)
+        arten = {x: _lager_art(T["nachbarn"].get(x, {})) for x in lager}
+        if d is not None:  # A4: aus gemerkten Einheitsfällen, ohne Steifigkeit, Kontakte und Zerlegung
+            schritt(0.5 + 0.4 * erledigt / max(len(offen), 1), f"aus Einheitslastfällen ({len(fs)} Lastfälle)")
+            out += _faelle_ueberlagert(N, C, T, fs, d, lager, arten, V, nachbarn, mit_sigma, netz_info, ablage, t0,
+                                       {"netz": t_netz, "steifigkeit": t_k, "loesen": 0.0}, True)
+            erledigt += len(fs)
+            schritt(0.5 + 0.45 * erledigt / max(len(offen), 1), f"{erledigt} von {len(offen)} Lastfällen fertig")
+            continue
+        assert K is not None
         fest = np.unique(np.concatenate([beruehrt.get(x, np.zeros(0, dtype=np.int64)) for x in lager])) \
             if lager else np.zeros(0, dtype=np.int64)
         if len(fest) == 0:
@@ -265,17 +680,12 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
                                                                         "gefunden (berühren sie sich?)"})
             continue
         # Lagerarten (simulation2): fest, gleitend (gehaltene Richtungen), gelenkig (RBE3-artig gekoppelt)
-        arten = {x: _lager_art(T["nachbarn"].get(x, {})) for x in lager}
         mit_zwang = any(a != "fest" for a in arten.values())
         voll = [x for x in lager if arten[x] == "fest"]
         # Teile des Netzes ohne Lager (lose Stücke) würden das System singulär machen: weglassen
         komp = loeser.komponenten(N.t, N.n)
         mit_lager = np.unique(komp[np.unique(N.rand[fest])])
         lose = ~np.isin(komp[N.t[:, 0]], mit_lager)
-        if lose.any():
-            for f in fs:
-                f.setdefault("hinweise", []).append(f"{int(lose.sum())} Tetraeder ohne Verbindung zum Lager "
-                                                    "weggelassen")
         if mit_zwang:
             voll_f = np.unique(np.concatenate([beruehrt.get(x, np.zeros(0, dtype=np.int64)) for x in voll])) \
                 if voll else np.zeros(0, dtype=np.int64)
@@ -312,91 +722,50 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
                 for f in fs:
                     out.append({"id": f["id"], "stand": "failed", "meldung": text})
                 continue
+        fest_knoten = np.unique(N.rand[fest])
+        lager_dofs = {x: N.facetten_dofs(beruehrt[x]) if len(beruehrt.get(x, ())) else np.zeros(0, dtype=np.int64)
+                      for x in lager}
+        frei_zahl = int(zw.T.shape[1]) if zw is not None else int(N.N - len(fest_dofs))
+        flaechen = None
+        if ueberlagern and loeser.lu_erlaubt(frei_zahl, duenn)[0]:
+            flaechen = _flaechen_waehlen(N, T, fs, beruehrt, groesse, h, nachbarn)
+        if flaechen is not None:  # A4: Einheitslastfälle mit einer Zerlegung, dann überlagert
+            schritt(0.5 + 0.4 * erledigt / max(len(offen), 1), f"lösen ({len(fs)} Lastfälle, Einheitslastfälle)")
+            t2 = time.perf_counter()
+            ldofs = np.unique(np.concatenate([lager_dofs[x] for x in lager]
+                                             + [np.zeros(0, dtype=np.int64)])).astype(np.int64)
+            d = _einheiten_rechnen(N, K, fest_dofs, zw, duenn, flaechen, ldofs)
+            d.update({"fest": np.asarray(fest, dtype=np.int64), "lager": list(lager),
+                      "lager_facetten": {x: np.asarray(beruehrt.get(x, np.zeros(0)), dtype=np.int64) for x in lager},
+                      "lose": int(lose.sum()), "zwang": dict(zw.info) if zw is not None else None})
+            t_loesen = (time.perf_counter() - t2) * 1000
+            if pfad is not None:
+                _einheit_speichern(pfad, d)
+            out += _faelle_ueberlagert(N, C, T, fs, d, lager, arten, V, nachbarn, mit_sigma, netz_info, ablage, t0,
+                                       {"netz": t_netz, "steifigkeit": t_k, "loesen": t_loesen}, False)
+            erledigt += len(fs)
+            schritt(0.5 + 0.45 * erledigt / max(len(offen), 1), f"{erledigt} von {len(offen)} Lastfällen fertig")
+            continue
+        if lose.any():
+            for f in fs:
+                f.setdefault("hinweise", []).append(f"{int(lose.sum())} Tetraeder ohne Verbindung zum Lager "
+                                                    "weggelassen")
         vektoren, details = [], []
         for f in fs:
-            lv = np.zeros(N.N)
-            summe = np.zeros(3)
-            lastflaechen = []
-            for last in f["lasten"]:
-                F = np.asarray(last["kraft"], float)
-                M = np.asarray(last["moment"], float) if last.get("moment") is not None else None
-                P = np.asarray(last["punkt"], float) if last.get("punkt") is not None else None
-                summe += F
-                if last.get("flaeche_datei"):  # Last auf der ganzen Fläche (simulation2)
-                    sel = _flaechen_facetten(N, last["flaeche_datei"])
-                    if len(sel) == 0:
-                        sel = _lastflaeche(N, P, groesse, n["h"]) if P is not None else np.arange(len(N.rand))
-                    druck = (last.get("flaeche") or {}).get("druck")
-                    if druck:
-                        lv += N.last_druck(sel, float(druck))
-                        F_ist = -float(druck) * (N.rand_normale[sel] * N.rand_flaeche_mm2[sel, None]).sum(axis=0)
-                        summe += F_ist - F  # Resultierende auf dem FEM-Netz (gleich F bis auf die Vernetzung)
-                    else:
-                        lv += N.last_flaeche(sel, F, None, None)  # gleichmäßig: F / A auf jedem Dreieck
-                    lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
-                elif last.get("kontakt_mit"):
-                    sel = beruehrt.get(last["kontakt_mit"], np.zeros(0, dtype=np.int64))
-                    if len(sel) == 0 and P is not None:
-                        sel = _lastflaeche(N, P, groesse, n["h"])
-                    lv += N.last_flaeche(sel, F, M, P)
-                    lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
-                elif P is not None:
-                    sel = _lastflaeche(N, P, groesse, n["h"])
-                    lv += N.last_flaeche(sel, F, M, P)
-                    lastflaechen.append(round(float(N.rand_flaeche_mm2[sel].sum()), 1))
-                else:  # am Schwerpunkt: gleichmäßig über das Volumen
-                    lv += N.last_volumen(F / V)
-                    if M is not None and np.any(M):
-                        lv += N.last_flaeche(np.arange(len(N.rand)), np.zeros(3), M, None)
-                    lastflaechen.append(None)
-            g = np.asarray(f.get("feld") or (0, 0, 0), float) * (T["masse_kg"] / max(T["volumen"], 1e-9))
-            lv += N.last_volumen(g)
-            summe += g * V
-            kontrolle = np.array([lv[N.basis.nodal_dofs[c]].sum() + lv[N.basis.edge_dofs[c]].sum() for c in range(3)])
+            lv, det = _lastvektor(N, T, f, beruehrt, groesse, h, V)
             vektoren.append(lv)
-            details.append({"lastflaechen_mm2": lastflaechen, "kraft_n": [round(float(c), 3) for c in summe],
-                            "gleichgewicht_n": round(float(np.linalg.norm(kontrolle - summe)), 6),
-                            "eigengewicht_n": [round(float(c), 4) for c in g * V]})
+            details.append(det)
         schritt(0.5 + 0.4 * erledigt / max(len(offen), 1), f"lösen ({len(fs)} Lastfälle)")
         t2 = time.perf_counter()
         us, info = N.loese(K, fest_dofs, vektoren, duenn=duenn, zwang=zw)
         t_loesen = (time.perf_counter() - t2) * 1000
-        fest_knoten = np.unique(N.rand[fest])
-        lager_dofs = {x: N.facetten_dofs(beruehrt[x]) if len(beruehrt.get(x, ())) else np.zeros(0, dtype=np.int64)
-                      for x in lager}
         for i, (f, u, det) in enumerate(zip(fs, us, details)):
-            t3 = time.perf_counter()
-            kurzinfo, felder = _bewerten(N, u, C, T, f, fest_knoten)
-            kurzinfo.update(det)
-            kurzinfo["lagerkraefte"] = lagerkraefte(N, K, u, vektoren[i], lager_dofs, arten, T["nachbarn"])
-            kurzinfo["lagerarten"] = dict(arten)
-            if zw is not None:
-                kurzinfo["zwang"] = dict(zw.info)
-            if mit_sigma:
-                frei = np.ones(N.n, dtype=bool)
-                frei[fest_knoten] = False
-                _schreibe_npz(ablage / "faelle" / f"{f['schluessel']}.sig.npz",
-                              sigma=N.spannung(u, C).astype(np.float64), frei=frei,
-                              punkte=N.p.astype(np.float32))
-            kurzinfo.update({
-                "stand": "done", "szenario": f["szenario"], "teil": T["name"], "schluessel": f["schluessel"],
-                "lager": list(lager), "lager_aus_last": f.get("lager_aus_last"),
-                "lagerflaeche_mm2": round(float(N.rand_flaeche_mm2[fest].sum()), 1),
-                "lasten": [{k: v for k, v in l.items()} for l in f["lasten"]], "s0": f.get("s0"),
-                "hinweise": f.get("hinweise") or [],
-                "netz": {"knoten": int(N.n), "tetraeder": int(len(N.t)), "freiheitsgrade": int(N.N),
-                         "h_mm": round(float(n["h"]), 2), "fein": fein, "aus_speicher": netz_gemerkt,
-                         "duenn": bool(duenn)},
-                "loeser": {"verfahren": info["verfahren"][i], "iterationen": info["iterationen"][i],
-                           "residuum": info["residuum"][i]},
-                "ms": {"netz": round(t_netz, 1), "steifigkeit": round(t_k, 1), "loesen": round(t_loesen, 1),
-                       "auswerten": round((time.perf_counter() - t3) * 1000, 1),
-                       "teil": round((time.perf_counter() - t0) * 1000, 1)},
-            })
-            _schreibe_npz(ablage / "faelle" / f"{f['schluessel']}.npz",
-                          info=np.frombuffer(json.dumps(kurzinfo, ensure_ascii=False).encode("utf-8"), dtype=np.uint8),
-                          **felder)
-            out.append({**kurzinfo, "id": f["id"], "aus_speicher": False, "_felder": felder})
+            r_voll = np.asarray(K @ u).reshape(-1) - vektoren[i]
+            loeser_info = {"verfahren": info["verfahren"][i], "iterationen": info["iterationen"][i],
+                           "residuum": info["residuum"][i]}
+            out.append(_fall_auswerten(N, C, T, f, u, r_voll, det, lager, arten, fest, fest_knoten, lager_dofs,
+                                       dict(zw.info) if zw is not None else None, mit_sigma, netz_info, loeser_info,
+                                       {"netz": t_netz, "steifigkeit": t_k, "loesen": t_loesen}, t0, ablage, None))
             erledigt += 1
         schritt(0.5 + 0.45 * erledigt / max(len(offen), 1), f"{erledigt} von {len(offen)} Lastfällen fertig")
     return out
@@ -404,11 +773,16 @@ def rechne_teil(T: dict[str, Any], fein: bool, ablage: Path, von: float, bis: fl
 
 def lagerkraefte(N: Any, K: Any, u: np.ndarray, f: np.ndarray, lager_dofs: dict[str, np.ndarray],
                  arten: dict[str, str], nachbarn: dict[str, Any]) -> dict[str, list[float]]:
-    """Resultierende Lagerkraft je Lager (N, auf das Teil): Reaktion r = K u − f an den Orten seiner Fläche. Teilen
-    sich Lager einen Ort (Kante zwischen zwei Lagerflächen), wird r dort nach ihren gehaltenen Richtungen aufgeteilt
-    (kleinste Quadrate; gleitend nur in seinen Richtungen); ein festes oder gelenkiges Lager an diesem Ort nimmt, was
-    übrig bleibt."""
-    r = np.asarray(K @ u).reshape(-1) - f
+    """Resultierende Lagerkraft je Lager (N, auf das Teil) aus der Reaktion r = K u − f (``lagerkraefte_aus_r``)."""
+    return lagerkraefte_aus_r(N, np.asarray(K @ u).reshape(-1) - f, lager_dofs, arten, nachbarn)
+
+
+def lagerkraefte_aus_r(N: Any, r: np.ndarray, lager_dofs: dict[str, np.ndarray], arten: dict[str, str],
+                       nachbarn: dict[str, Any]) -> dict[str, list[float]]:
+    """Resultierende Lagerkraft je Lager (N, auf das Teil): Reaktion r an den Orten seiner Fläche. Teilen sich Lager
+    einen Ort (Kante zwischen zwei Lagerflächen), wird r dort nach ihren gehaltenen Richtungen aufgeteilt (kleinste
+    Quadrate; gleitend nur in seinen Richtungen); ein festes oder gelenkiges Lager an diesem Ort nimmt, was übrig
+    bleibt. A4: r kommt bei überlagerten Fällen aus den Reaktionen der Einheitsfälle (nur an den Lagern)."""
     trip, ort = N.orte()
     je_ort: dict[int, list[str]] = {}
     for x, d_ in lager_dofs.items():
@@ -724,17 +1098,40 @@ def _kind_teil(T: dict[str, Any], fein: bool, ablage: str, beginn: float) -> dic
     return _teil(T, fein, Path(ablage), beginn, 0.0, 1.0)
 
 
+def _gespeichert(T: dict[str, Any], f: dict[str, Any], ablage: Path) -> bool:
+    return (ablage / "faelle" / f"{f['schluessel']}.npz").exists() and (
+        not T.get("grenze") or (ablage / "faelle" / f"{f['schluessel']}.sig.npz").exists())
+
+
 def _aus_speicher(T: dict[str, Any], ablage: Path) -> bool:
-    """Liegen alle Fälle des Teils im Zwischenspeicher (dann rechnet es dieser Prozess, ohne Teilprozess)?"""
-    sig = bool(T.get("grenze"))
-    return all((ablage / "faelle" / f"{f['schluessel']}.npz").exists()
-               and (not sig or (ablage / "faelle" / f"{f['schluessel']}.sig.npz").exists()) for f in T["faelle"])
+    """Liegen alle Fälle des Teils im Zwischenspeicher?"""
+    return all(_gespeichert(T, f, ablage) for f in T["faelle"])
+
+
+def _leicht(T: dict[str, Any], fein: bool, ablage: Path) -> bool:
+    """Braucht das Teil keine Zerlegung (alle Fälle im Zwischenspeicher oder je Lagergruppe gemerkte Einheitsfälle, A4)?
+    Dann rechnet es der FEM-Prozess selbst, ohne Teilprozess."""
+    offen = [f for f in T["faelle"] if not _gespeichert(T, f, ablage)]
+    if not offen:
+        return True
+    if not _ueberlagern_an():
+        return False
+    gruppen: dict[tuple, list[dict[str, Any]]] = {}
+    for f in offen:
+        gruppen.setdefault(tuple(sorted(f["lager"])), []).append(f)
+    nachbarn = _Nachbarn(T)
+    try:
+        return all(_einheit_pfad(ablage, T, fein, lager, fs, nachbarn).exists() for lager, fs in gruppen.items())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _parallel(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage: Path, n: int, beginn: float,
-              je_teil: dict[int, dict[str, Any]], fertig: Any) -> list[int]:
+              je_teil: dict[int, dict[str, Any]], fertig: Any, hier: list[int] | None = None) -> list[int]:
     """Teile ``offen`` (Indizes) auf bis zu n Teilprozesse verteilen, Ergebnis je Index in ``je_teil``; ``fertig(i)``
-    nach jedem Teil. Rückgabe: Indizes, die kein Teilprozess fertig bekam (Pool abgestürzt), die rechnet der Aufrufer."""
+    nach jedem Teil. ``hier``: leichte Teile, die dieser Prozess rechnet, während die Teilprozesse arbeiten. Rückgabe:
+    Indizes, die kein Teilprozess fertig bekam (Pool abgestürzt), die rechnet der Aufrufer."""
+    global _STILL
     import concurrent.futures as cf
     import multiprocessing as mp
 
@@ -763,6 +1160,14 @@ def _parallel(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage:
                     sch[warte[0]][1], [sch[j][1] for j in laufend.values()])):
                 i = warte.pop(0)
                 laufend[ex.submit(modul._kind_teil, teile[i], fein, str(ablage), beginn)] = i
+            while hier:  # leichte Teile hier, während die Teilprozesse rechnen
+                i = hier.pop(0)
+                _STILL = True
+                try:
+                    je_teil[i] = _teil(teile[i], fein, ablage, beginn, 0.0, 1.0)
+                finally:
+                    _STILL = False
+                fertig(i)
             erledigt, _ = cf.wait(list(laufend), timeout=1.0, return_when=cf.FIRST_COMPLETED)
             for fut in erledigt:
                 i = laufend.pop(fut)
@@ -775,7 +1180,7 @@ def _parallel(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage:
                 except Exception as exc:  # noqa: BLE001 - Übergabe gescheitert: dieses Teil als Fehler
                     je_teil[i] = {"faelle": _gescheitert(teile[i], exc), "pid": None, "start": None, "ende": None}
                 fertig(i)
-        rest += list(laufend.values()) + warte
+        rest += list(laufend.values()) + warte + list(hier or [])
     finally:
         ex.shutdown(wait=not kaputt, cancel_futures=True)
     return rest
@@ -796,7 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
                            "beginn": beginn, "zeiten_teile": []}
     teile = auftrag.get("teile") or []
     fein = bool(auftrag.get("fein"))
-    offen = [i for i, T in enumerate(teile) if not _aus_speicher(T, ablage)]
+    offen = [i for i, T in enumerate(teile) if not _leicht(T, fein, ablage)]
     n = prozesse_zahl(len(offen), *speicher_lage()) if len(offen) >= 2 else 1
     out["prozesse_zahl"] = n
     melde(0.0, f"{len(teile)} Teile" + (f", {n} Prozesse" if n >= 2 else ""))
@@ -809,17 +1214,8 @@ def main(argv: list[str] | None = None) -> int:
                                                   f"({gezaehlt['n']} von {len(teile)} Teilen)")
 
     rest = list(range(len(teile)))
-    if n >= 2:
-        global _STILL
-        _STILL = True  # Teile aus dem Zwischenspeicher hier, ohne eigene Fortschrittszeilen
-        try:
-            for i in [i for i in rest if i not in offen]:
-                je_teil[i] = _teil(teile[i], fein, ablage, beginn, 0.0, 1.0)
-        finally:
-            _STILL = False
-        for i in je_teil:
-            fertig(i)
-        rest = _parallel(teile, offen, fein, ablage, n, beginn, je_teil, fertig)
+    if n >= 2:  # leichte Teile (Zwischenspeicher, gemerkte Einheitsfälle) hier, während die Teilprozesse rechnen
+        rest = _parallel(teile, offen, fein, ablage, n, beginn, je_teil, fertig, [i for i in rest if i not in offen])
     for i in rest:  # nacheinander in diesem Prozess (wie bisher; auch, was ein abgestürzter Pool übrig ließ)
         je_teil[i] = _teil(teile[i], fein, ablage, beginn, i / max(len(teile), 1), (i + 1) / max(len(teile), 1))
     neu_zeiten: dict[str, Any] = {}
