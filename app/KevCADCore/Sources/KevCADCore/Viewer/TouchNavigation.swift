@@ -3,6 +3,7 @@ import OCCTSwiftViewport
 import QuartzCore
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import simd
 
 // I-3b (PLAN-IPAD.md, Abschnitt 4): Eingabeebene des iPad über dem MTKView. Gleiche Wirkung und gleiche Rückrufe des
@@ -51,7 +52,10 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
 
     // Strich beim Sprechen (wie am Mac: die Linie folgt sofort, Treffer immer nur einer zugleich)
     private let strichLayer = CAShapeLayer()
-    private var strichPfad: CGMutablePath?
+    /// I-4: Spur des Strichs mit zusammengefassten und vorhergesagten Punkten (StrichSpur.swift)
+    private let spur = StrichSpur()
+    /// Vorhersage bis zum nächsten Ereignis, gleicher Stil wie der Strich
+    private let vorhersageLayer = CAShapeLayer()
     private var strichPickLaeuft = false
     private var strichNaechster: (punkt: CGPoint, zeit: Double)?
     private var strichEndeOffen = false
@@ -67,7 +71,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     private lazy var kontextMenue = UIContextMenuInteraction(delegate: self)
     /// Wo das Kontextmenü aufging (UIKit, oben links): dort sitzt die kleine Vorschau am Finger.
     private var kontextOrt: CGPoint = .zero
-    private lazy var stift = UIPanGestureRecognizer(target: self, action: #selector(stiftZiehen(_:)))
+    private lazy var stift = StiftZugErkenner(target: self, action: #selector(stiftZiehen(_:)))
     private lazy var schweben = UIHoverGestureRecognizer(target: self, action: #selector(schwebenGeste(_:)))
     private lazy var rollen = UIPanGestureRecognizer(target: self, action: #selector(rollenGeste(_:)))
 
@@ -120,6 +124,11 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         strichLayer.lineJoin = .round
         strichLayer.isHidden = true
         layer.addSublayer(strichLayer)
+        vorhersageLayer.fillColor = nil
+        vorhersageLayer.lineCap = .round
+        vorhersageLayer.lineJoin = .round
+        vorhersageLayer.isHidden = true
+        layer.addSublayer(vorhersageLayer)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) wird nicht benutzt") }
@@ -128,6 +137,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         super.layoutSubviews()
         coordinator?.viewSize = bounds.size
         strichLayer.frame = bounds
+        vorhersageLayer.frame = bounds
     }
 
     /// V2-10: Der zweite Viewer bleibt eingehängt, wenn seine Kachel verborgen ist; dann nimmt er nichts an.
@@ -392,14 +402,14 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             if c.zeichnen || c.stiftBeginntSprechen?() == true {
                 modus = .strich
                 strichBeginnen(start)
-                strichZiehen(p)
+                strichZiehen(p, erkenner: stift)
             } else {
                 modus = .drehen
                 beginneDrehung(bei: start)
             }
         case .changed:
             if modus == .strich {
-                strichZiehen(p)
+                strichZiehen(p, erkenner: stift)
             } else if modus == .drehen {
                 let d = schritt(g)
                 c.navOrbit(dx: d.dx, dy: d.dy)
@@ -502,13 +512,14 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
 
     private func strichBeginnen(_ p: CGPoint) {
         if let stil = coordinator?.strichStil() {  // I-4: Farbe und Breite aus dem Werkzeugkranz
-            strichLayer.strokeColor = CGColor(srgbRed: CGFloat(stil.farbe.x), green: CGFloat(stil.farbe.y),
-                                              blue: CGFloat(stil.farbe.z), alpha: 1)
-            strichLayer.lineWidth = stil.breite
+            let farbe = CGColor(srgbRed: CGFloat(stil.farbe.x), green: CGFloat(stil.farbe.y),
+                                blue: CGFloat(stil.farbe.z), alpha: 1)
+            for l in [strichLayer, vorhersageLayer] {
+                l.strokeColor = farbe
+                l.lineWidth = stil.breite
+            }
         }
-        let pfad = CGMutablePath()
-        pfad.move(to: CGPoint(x: p.x, y: bounds.height - p.y))
-        strichPfad = pfad
+        spur.beginnen(CGPoint(x: p.x, y: bounds.height - p.y))
         strichNaechster = nil
         strichEndeOffen = false
         strichZeigen()
@@ -516,13 +527,20 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         strichTreffer(p, ProcessInfo.processInfo.systemUptime)
     }
 
-    private func strichZiehen(_ p: CGPoint) {
-        strichPfad?.addLine(to: CGPoint(x: p.x, y: bounds.height - p.y))
+    /// I-4: alle zusammengefassten Punkte in die Linie, die Vorhersage bis zum nächsten Ereignis; Treffer wie bisher
+    /// nur für den neuesten Punkt (`p`, Ursprung unten links).
+    private func strichZiehen(_ p: CGPoint, erkenner: StiftZugErkenner) {
+        let echt = erkenner.zusammengefasst.isEmpty ? [CGPoint(x: p.x, y: bounds.height - p.y)] : erkenner.zusammengefasst
+        spur.anfuegen(echt, vorhersage: erkenner.vorhergesagt)
         strichZeigen()
+        spur.latenz(beruehrung: erkenner.zeitstempel, jetzt: ProcessInfo.processInfo.systemUptime)
         strichTreffer(p, ProcessInfo.processInfo.systemUptime)
     }
 
     private func strichBeenden(_ p: CGPoint) {
+        spur.beenden()
+        strichZeigen()
+        coordinator?.strichLatenzMs = spur.latenzAnteil(0.95)
         strichEndeOffen = true
         strichTreffer(p, ProcessInfo.processInfo.systemUptime)
     }
@@ -531,8 +549,11 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         strichLayer.frame = bounds
-        strichLayer.path = strichPfad
+        strichLayer.path = spur.pfad
         strichLayer.isHidden = false
+        vorhersageLayer.frame = bounds
+        vorhersageLayer.path = spur.vorhersagePfad()
+        vorhersageLayer.isHidden = vorhersageLayer.path == nil
         CATransaction.commit()
     }
 
@@ -555,8 +576,8 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             } else if self.strichEndeOffen {
                 self.strichEndeOffen = false
                 c.onStrich?(.ende)  // die fertige Linie zeichnet ab jetzt die Überlagerung
-                self.strichPfad = nil
                 self.strichLayer.isHidden = true
+                self.vorhersageLayer.isHidden = true
             }
         }
     }
@@ -613,6 +634,38 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         case .keyboardNonUSBackslash: return 10  // ISO (deutsch „^“), wie kVK_ISO_Section
         default: return nil
         }
+    }
+}
+
+/// I-4: Stift ziehen mit den zusammengefassten und vorhergesagten Punkten des letzten Ereignisses (Punkte der Ansicht,
+/// oben links) und dem Zeitstempel der Berührung. Sonst ein gewöhnlicher Pan-Erkenner.
+final class StiftZugErkenner: UIPanGestureRecognizer {
+    private(set) var zusammengefasst: [CGPoint] = []
+    private(set) var vorhergesagt: [CGPoint] = []
+    private(set) var zeitstempel: TimeInterval = 0
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        erfassen(touches, event)
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        erfassen(touches, event)
+        super.touchesMoved(touches, with: event)
+    }
+
+    override func reset() {
+        super.reset()
+        zusammengefasst = []
+        vorhergesagt = []
+        zeitstempel = 0
+    }
+
+    private func erfassen(_ touches: Set<UITouch>, _ event: UIEvent) {
+        guard let t = touches.first, let v = view else { return }
+        zusammengefasst = (event.coalescedTouches(for: t) ?? [t]).map { $0.preciseLocation(in: v) }
+        vorhergesagt = (event.predictedTouches(for: t) ?? []).map { $0.preciseLocation(in: v) }
+        zeitstempel = t.timestamp
     }
 }
 
