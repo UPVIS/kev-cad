@@ -72,6 +72,9 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     /// Wo das Kontextmenü aufging (UIKit, oben links): dort sitzt die kleine Vorschau am Finger.
     private var kontextOrt: CGPoint = .zero
     private lazy var stift = StiftZugErkenner(target: self, action: #selector(stiftZiehen(_:)))
+    /// I-4, Pencil Pro: Rollen um die Längsachse beim Schweben dreht einen offenen Drehregler. Hängt am Fenster, weil
+    /// der Werkzeugkranz über dieser Ebene liegt und das Schweben dort ankommt.
+    private lazy var stiftRolle = UIHoverGestureRecognizer(target: self, action: #selector(stiftRolleGeste(_:)))
     private lazy var schweben = UIHoverGestureRecognizer(target: self, action: #selector(schwebenGeste(_:)))
     private lazy var rollen = UIPanGestureRecognizer(target: self, action: #selector(rollenGeste(_:)))
 
@@ -154,6 +157,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool {
         // Verschieben und Zoomen mit zwei Fingern zugleich; Tippen und Doppeltippen nebeneinander (Doppeltippen wählt
         // mit dem ersten Tipp schon aus)
+        if g === stiftRolle || o === stiftRolle { return true }  // stört nichts, liest nur den Winkel
         let paar: Set<ObjectIdentifier> = [ObjectIdentifier(g), ObjectIdentifier(o)]
         return paar == [ObjectIdentifier(zweiFinger), ObjectIdentifier(spreizen)]
             || paar == [ObjectIdentifier(tippen), ObjectIdentifier(doppeltTippen)]
@@ -421,6 +425,22 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     }
 
     // MARK: Pencil doppelt tippen und drücken (I-4)
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        stiftRolle.view?.removeGestureRecognizer(stiftRolle)
+        guard let w = window else { return }
+        stiftRolle.delegate = self
+        stiftRolle.cancelsTouchesInView = false
+        w.addGestureRecognizer(stiftRolle)
+    }
+
+    @objc private func stiftRolleGeste(_ g: UIHoverGestureRecognizer) {
+        switch g.state {
+        case .began, .changed: _ = coordinator?.onStiftRolle?(Double(g.rollAngle))
+        default: _ = coordinator?.onStiftRolle?(nil)
+        }
+    }
 
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
         guard UIPencilInteraction.preferredTapAction != .ignore else { return }  // Kevin hat es in den Einstellungen aus

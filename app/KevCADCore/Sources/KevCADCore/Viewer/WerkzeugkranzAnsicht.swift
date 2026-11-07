@@ -13,6 +13,7 @@ import SwiftUI
 struct WerkzeugkranzOverlay: View {
     @ObservedObject var viewer: ViewerStore
     @ObservedObject var oberflaeche: OberflaechenStore
+    @ObservedObject var render: RenderStore
     let groesse: CGSize
     let actions: ViewerActions?
 
@@ -49,9 +50,20 @@ struct WerkzeugkranzOverlay: View {
                              ausfuehren: ausfuehren, farbeWaehlen: farbeWaehlen)
                     .position(k.mitte)
                     .allowsHitTesting(false)
+                // Seitenblatt mit Reglern neben dem zweiten Ring (nimmt selbst Eingaben an, der Kranz bleibt offen)
+                if case .feld(let f) = k.ebene, let blatt = Tastenbelegung.kranzBlatt(f) {
+                    KranzSeitenblatt(blatt: blatt, viewer: viewer, render: render, actions: actions)
+                        .position(x: KranzGeometrie.blattMitteX(mitte: k.mitte, in: groesse),
+                                  y: min(max(k.mitte.y, KranzSeitenblatt.hoehe / 2 + 8),
+                                         max(KranzSeitenblatt.hoehe / 2 + 8, groesse.height - KranzSeitenblatt.hoehe / 2 - 8)))
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
             }
             .frame(width: groesse.width, height: groesse.height)
             .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            // Haptik je Teilstrich und je Feld: am Pencil Pro im Stift, am iPad und am Trackpad des Mac im Gerät
+            .sensoryFeedback(.alignment, trigger: k.wert)
+            .sensoryFeedback(.selection, trigger: k.markiert)
             .beiEsc { schliessen(zuruecksetzen: true) }
             #if os(macOS)  // nur am Mac: Mausrad, iPad: Kreisen
             .onAppear { rad.an { [self] s in drehenRad(s) } }
@@ -186,9 +198,6 @@ struct WerkzeugkranzOverlay: View {
         guard neu != k.wert else { return }
         k.wert = neu
         actions?.kranzRegler(r, wert: neu)
-        #if os(iOS)
-        UISelectionFeedbackGenerator().selectionChanged()  // Pencil Pro und Finger: jede Raste fühlbar
-        #endif
     }
 
     /// Mausrad am Mac: je Raste ein Teilstrich.
@@ -224,6 +233,71 @@ final class KranzMausrad: ObservableObject {
     }
 }
 #endif
+
+// MARK: Seitenblatt
+
+/// Schmales Blatt mit Reglern neben der Scheibe (PLAN-IPAD.md 4.4, wie Feathers „Adjust“): Schalter der Darstellung und
+/// das Licht beim Rendern. Wirkt sofort; der Kranz bleibt offen, bis Kevin daneben tippt oder etwas wählt.
+struct KranzSeitenblatt: View {
+    static let hoehe: CGFloat = 340
+    let blatt: KranzBlatt
+    @ObservedObject var viewer: ViewerStore
+    @ObservedObject var render: RenderStore
+    let actions: ViewerActions?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            switch blatt {
+            case .darstellung:
+                titel("Darstellung")
+                ForEach(ShadingOption.allCases, id: \.self) { o in
+                    Toggle(isOn: Binding(
+                        get: { o.istAn(viewer.optionen) },
+                        set: { an in
+                            if let actions { actions.setShadingOption(o, an) } else { o.setzen(&viewer.optionen, an) }
+                        })) {
+                        Text(o.titel).lineLimit(1).minimumScaleFactor(0.75)
+                    }
+                }
+                titel("Licht beim Rendern")
+                    .padding(.top, 4)
+                ForEach(RenderStore.szenen, id: \.id) { s in
+                    Button {
+                        render.szene = s.id
+                    } label: {
+                        HStack {
+                            Text(s.titel)
+                            Spacer(minLength: 4)
+                            if render.szene == s.id {
+                                Image(systemName: "checkmark").foregroundStyle(ViewerStil.akzent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(render.szene == s.id ? .isSelected : [])
+                }
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .tint(ViewerStil.akzent)
+        .font(ViewerStil.schrift)
+        .foregroundStyle(ViewerStil.text)
+        .padding(14)
+        .frame(width: KranzGeometrie.blattBreite, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+        .background(RoundedRectangle(cornerRadius: 16).fill(ViewerStil.kranzGrund))
+        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func titel(_ t: String) -> some View {
+        Text(t)
+            .font(ViewerStil.schriftFett)
+            .foregroundStyle(ViewerStil.textLeise)
+    }
+}
 
 // MARK: Zeichnung
 

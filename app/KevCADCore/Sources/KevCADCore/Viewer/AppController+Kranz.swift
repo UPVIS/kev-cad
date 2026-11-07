@@ -77,11 +77,28 @@ extension AppController {
             return (jetzt, KranzReglerBereich(min: unten.rounded(.down), max: oben.rounded(.up), raster: 1))
         case .strichbreite:
             return (viewer.strichbreite, ViewerStore.strichbreiten)
+        case .roentgen:
+            return (Double(scene.roentgenDeckkraft), KranzReglerBereich(min: 0.1, max: 0.9, raster: 0.05))
+        case .animation:
+            return (model.animation.time, KranzReglerBereich(min: 0, max: model.animation.duration, raster: 1.0 / 30))
+        case .zoomZweite:
+            return (0, KranzReglerBereich(min: -2, max: 2, raster: 0.1))
         }
     }
 
     private func reglerOeffnen(_ r: KranzRegler) {
         guard var k = viewer.kranz else { return }
+        // Was es gerade nicht gibt, öffnet kein leeres Ziffernblatt
+        if r == .animation, model.animation.duration <= 0 {
+            viewer.kranz = nil
+            viewer.zeige("Es ist keine Animation geladen.")
+            return
+        }
+        if r == .zoomZweite, !model.oberflaeche.zustand.zweiteAnsichtSichtbar {
+            viewer.kranz = nil
+            viewer.zeige("Die zweite Ansicht ist nicht offen.")
+            return
+        }
         let (wert, bereich) = reglerStand(r)
         k.ebene = .regler(r)
         k.bereich = bereich
@@ -93,11 +110,44 @@ extension AppController {
         viewer.kranz = k
     }
 
+    /// Pencil Pro: Rollen dreht einen offenen Drehregler ohne Kreisen (eine Umdrehung = der ganze Bereich, wie Kreisen).
+    /// `winkel` im Bogenmaß, nil = der Stift ist weg.
+    func kranzRollen(_ winkel: Double?) -> Bool {
+        guard var k = viewer.kranz, case .regler(let r) = k.ebene else { return false }
+        guard let winkel else {
+            k.letzteRolle = nil
+            viewer.kranz = k
+            return false
+        }
+        let grad = winkel * 180 / .pi
+        if let alt = k.letzteRolle {
+            k.roh = KranzGeometrie.reglerWert(k.roh, grad: KranzGeometrie.winkelSchritt(von: alt, nach: grad),
+                                              bereich: k.bereich)
+            let neu = k.bereich.klemmen(k.roh)
+            if neu != k.wert {
+                kranzRegler(r, wert: neu)  // vor dem Setzen: der Zoom rechnet mit dem alten Wert
+                k.wert = neu
+            }
+        }
+        k.letzteRolle = grad
+        viewer.kranz = k
+        return true
+    }
+
     public func kranzRegler(_ regler: KranzRegler, wert: Double) {
         switch regler {
         case .explosion: setExplode(wert)
         case .schnitt: setSection(enabled: true, axis: "z", offset: wert)
         case .strichbreite: viewer.strichbreite = ViewerStore.strichbreiten.klemmen(wert)
+        case .roentgen:
+            if viewer.shading != .roentgen { setShading(.roentgen) }
+            scene.setRoentgenDeckkraft(Float(wert))
+        case .animation: seekAnimation(to: wert)
+        case .zoomZweite:
+            // Der Kranz hält noch den vorigen Wert (die Ansicht setzt ihn erst nach diesem Aufruf): Zoom als Verhältnis
+            let alt = viewer.kranz?.wert ?? 0
+            let z = zweiterViewer.coordinator
+            z.navZoom(factor: Float(pow(2, alt - wert)), zu: CGPoint(x: z.viewSize.width / 2, y: z.viewSize.height / 2))
         }
     }
 }

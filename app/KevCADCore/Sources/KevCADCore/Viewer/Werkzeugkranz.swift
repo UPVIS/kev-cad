@@ -49,12 +49,21 @@ public enum KranzRegler: String, CaseIterable, Sendable {
     case schnitt
     /// Breite der Striche beim Sprechen, in Punkten
     case strichbreite
+    /// Deckkraft der Teile im Röntgen
+    case roentgen
+    /// Zeit der Animation, in Sekunden
+    case animation
+    /// Zoom der zweiten Ansicht (Stufen als Zweierpotenz, 0 = wie beim Öffnen)
+    case zoomZweite
 
     public var name: String {
         switch self {
         case .explosion: return "Explosion"
         case .schnitt: return "Schnitt"
         case .strichbreite: return "Strichbreite"
+        case .roentgen: return "Röntgen-Deckkraft"
+        case .animation: return "Zeit der Animation"
+        case .zoomZweite: return "Zoom zweite Ansicht"
         }
     }
 
@@ -63,6 +72,9 @@ public enum KranzRegler: String, CaseIterable, Sendable {
         case .explosion: return "arrow.up.left.and.arrow.down.right"
         case .schnitt: return "square.split.diagonal"
         case .strichbreite: return "lineweight"
+        case .roentgen: return "square.3.layers.3d"
+        case .animation: return "timeline.selection"
+        case .zoomZweite: return "plus.magnifyingglass"
         }
     }
 
@@ -72,6 +84,9 @@ public enum KranzRegler: String, CaseIterable, Sendable {
         case .explosion: return 20
         case .schnitt: return 40
         case .strichbreite: return 10
+        case .roentgen: return 16
+        case .animation: return 30
+        case .zoomZweite: return 16
         }
     }
 
@@ -81,7 +96,15 @@ public enum KranzRegler: String, CaseIterable, Sendable {
         case .explosion: return "\(Int((wert * 100).rounded())) %"
         case .schnitt: return "\(Int(wert.rounded())) mm"
         case .strichbreite: return "\(Int(wert.rounded())) pt"
+        case .roentgen: return "\(Int((wert * 100).rounded())) %"
+        case .animation: return Self.komma(wert, 1) + " s"
+        case .zoomZweite: return Self.komma(pow(2, wert), 1) + "x"
         }
+    }
+
+    /// Zahl mit Komma wie in deutschen Texten („2,4“).
+    static func komma(_ w: Double, _ stellen: Int) -> String {
+        String(format: "%.\(stellen)f", w).replacingOccurrences(of: ".", with: ",")
     }
 }
 
@@ -154,6 +177,13 @@ public struct KranzEintrag: Identifiable, Equatable, Sendable {
     public var id: String { name }
 }
 
+/// Schmales Blatt mit Reglern neben der Scheibe, wenn ein Feld mehr als einen Wert hat (PLAN-IPAD.md 4.4,
+/// Feathers „Adjust“).
+public enum KranzBlatt: Sendable {
+    /// Schalter der Darstellung und das Licht beim Rendern
+    case darstellung
+}
+
 /// Wo der Kranz gerade steht.
 public enum KranzEbene: Equatable, Sendable {
     /// Scheibe mit Farbpillen und acht Feldern
@@ -192,6 +222,8 @@ public struct KranzZustand: Equatable, Sendable {
     public var startWert: Double = 0
     public var bereich = KranzReglerBereich(min: 0, max: 1)
     public var letzterWinkel: Double?
+    /// Pencil Pro: letzter Rollwinkel in Grad (Rollen dreht den Regler).
+    public var letzteRolle: Double?
 
     public init(mitte: CGPoint) { self.mitte = mitte }
 }
@@ -264,6 +296,18 @@ public enum KranzGeometrie {
             laenge <= 2 * r ? laenge / 2 : min(max(x, r), laenge - r)
         }
         return CGPoint(x: klemmen(p.x, groesse.width), y: klemmen(p.y, groesse.height))
+    }
+
+    /// Breite des Seitenblatts.
+    public static let blattBreite: CGFloat = 220
+
+    /// Mitte (x) des Seitenblatts: rechts neben dem zweiten Ring, wenn dort Platz ist, sonst links; in einem schmalen
+    /// Viewer (Kachel) so weit hinein geschoben, dass es ganz zu sehen bleibt, auch wenn es den Ring dann überdeckt.
+    public static func blattMitteX(mitte: CGPoint, in groesse: CGSize, rand: CGFloat = 8) -> CGFloat {
+        let abstand = unterRadius + 30 + blattBreite / 2
+        let x = mitte.x + abstand + blattBreite / 2 <= groesse.width - rand ? mitte.x + abstand : mitte.x - abstand
+        let lo = blattBreite / 2 + rand, hi = groesse.width - blattBreite / 2 - rand
+        return hi < lo ? groesse.width / 2 : min(max(x, lo), hi)
     }
 
     /// Kleinster Unterschied zweier Winkel (−180…180), positiv im Uhrzeigersinn.

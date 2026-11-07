@@ -447,6 +447,7 @@ public enum Tastenbelegung {
             } + [.befehl(.roentgen, ShadingModus.roentgen.symbol, "Röntgen"),
                  KranzEintrag(KranzRegler.explosion.name, KranzRegler.explosion.symbol, .regler(.explosion)),
                  KranzEintrag(KranzRegler.schnitt.name, KranzRegler.schnitt.symbol, .regler(.schnitt)),
+                 KranzEintrag(KranzRegler.roentgen.name, KranzRegler.roentgen.symbol, .regler(.roentgen)),
                  .befehl(.explosion, "square.stack.3d.up", "Explosion an/aus"),
                  .befehl(.schnitt, "rectangle.split.1x2", "Schnitt an/aus")]
         case .messen:
@@ -475,6 +476,8 @@ public enum Tastenbelegung {
         case .mehr:
             let breite = KranzRegler.strichbreite
             return [KranzEintrag(breite.name, breite.symbol, .regler(breite)),
+                    KranzEintrag(KranzRegler.animation.name, KranzRegler.animation.symbol, .regler(.animation)),
+                    KranzEintrag(KranzRegler.zoomZweite.name, KranzRegler.zoomZweite.symbol, .regler(.zoomZweite)),
                     KranzEintrag("Stift startet Sprechen", "pencil.and.scribble", .stiftSprechen),
                     .befehl(.bildschirmfoto, "camera", "Bildschirmfoto"),
                     .befehl(.video, "video", "Video"),
@@ -483,6 +486,11 @@ public enum Tastenbelegung {
                     .befehl(.hinweisleiste, "text.below.photo", "Hinweisleiste"),
                     .befehl(.tastenuebersicht, "keyboard", "Tastenübersicht")]
         }
+    }
+
+    /// Seitenblatt eines Felds (nil: keins).
+    public static func kranzBlatt(_ feld: KranzFeld) -> KranzBlatt? {
+        feld == .darstellung ? .darstellung : nil
     }
 
     /// Befehle, die ein Feld selbst ersetzt (das Feld tut dasselbe wie die Taste am Mac). Als Tabelle, damit auch

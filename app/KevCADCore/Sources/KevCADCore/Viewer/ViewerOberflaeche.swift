@@ -38,7 +38,8 @@ struct ViewerOberflaeche: View {
             ViewerMenueOverlay(
                 viewer: viewer, groesse: groesse, actions: actions,
                 orthographisch: coordinator.controller.cameraState.isOrthographic)
-            WerkzeugkranzOverlay(viewer: viewer, oberflaeche: model.oberflaeche, groesse: groesse, actions: actions)
+            WerkzeugkranzOverlay(viewer: viewer, oberflaeche: model.oberflaeche, render: model.render, groesse: groesse,
+                                 actions: actions)
             if viewer.tastenuebersicht {
                 ZStack {
                     Color.black.opacity(0.18)

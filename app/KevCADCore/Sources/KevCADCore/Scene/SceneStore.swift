@@ -37,7 +37,8 @@ public final class SceneStore {
     static let flashColor = SIMD3<Float>(1.00, 0.80, 0.25)
     static let flashDuration: CFTimeInterval = 0.6
     static let pulseDuration: CFTimeInterval = 0.9
-    static let xrayAlpha: Float = 0.4
+    /// Deckkraft der Teile im Röntgen (I-4: Drehregler im Werkzeugkranz).
+    public private(set) var roentgenDeckkraft: Float = 0.4
     static let dimFactor: Float = 0.6
 
     // MARK: Inhalt
@@ -351,6 +352,16 @@ public final class SceneStore {
     public func showAll() {
         hidden = []
         isolated = nil
+        for n in order { applyProps(n) }
+        publish()
+    }
+
+    /// Deckkraft im Röntgen setzen (0,05 bis 0,95); wirkt sofort, wenn Röntgen läuft.
+    public func setRoentgenDeckkraft(_ wert: Float) {
+        let neu = min(max(wert, 0.05), 0.95)
+        guard neu != roentgenDeckkraft else { return }
+        roentgenDeckkraft = neu
+        guard displayStyle == .xray else { return }
         for n in order { applyProps(n) }
         publish()
     }
@@ -892,7 +903,7 @@ public final class SceneStore {
         c = SIMD4(rgb, c.w)
         if simplifiedParts.contains(name) { c.w = min(c.w, Self.simplifiedAlpha) }
         if topologieBlass.contains(name) && animationTransforms.isEmpty { c.w = min(c.w, Self.topologieBlassAlpha) }
-        if displayStyle == .xray { c.w = min(c.w, Self.xrayAlpha) }
+        if displayStyle == .xray { c.w = min(c.w, roentgenDeckkraft) }
         if hauchTeile.contains(name) {
             let g = c
             c = SIMD4(SIMD3(g.x, g.y, g.z) + (Self.hauchFarbe - SIMD3(g.x, g.y, g.z)) * 0.6, min(g.w, Self.hauchAlpha))

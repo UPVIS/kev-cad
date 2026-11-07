@@ -119,6 +119,36 @@ final class WerkzeugkranzTests: XCTestCase {
         XCTAssertEqual(KranzRegler.schnitt.text(120.4), "120 mm")
     }
 
+    func testNeueReglerTexteMitKomma() {
+        XCTAssertEqual(KranzRegler.roentgen.text(0.35), "35 %")
+        XCTAssertEqual(KranzRegler.animation.text(2.4), "2,4 s")
+        XCTAssertEqual(KranzRegler.zoomZweite.text(1), "2,0x")
+        XCTAssertEqual(KranzRegler.zoomZweite.text(0), "1,0x")
+    }
+
+    func testSeitenblattRechtsWennPlatzSonstLinks() {
+        let g = CGSize(width: 1400, height: 900)
+        XCTAssertGreaterThan(G.blattMitteX(mitte: CGPoint(x: 400, y: 450), in: g), 400)
+        XCTAssertLessThan(G.blattMitteX(mitte: CGPoint(x: 1200, y: 450), in: g), 1200)
+        // Schmaler Viewer: das Blatt bleibt ganz im Bild
+        let schmal = CGSize(width: 500, height: 900)
+        let x = G.blattMitteX(mitte: CGPoint(x: 250, y: 450), in: schmal)
+        XCTAssertGreaterThanOrEqual(x - G.blattBreite / 2, 8)
+        XCTAssertLessThanOrEqual(x + G.blattBreite / 2, 492)
+        XCTAssertEqual(Tastenbelegung.kranzBlatt(.darstellung), .darstellung)
+        XCTAssertNil(Tastenbelegung.kranzBlatt(.ansichten))
+    }
+
+    @MainActor
+    func testRoentgenDeckkraftBleibtImBereich() {
+        let s = SceneStore()
+        XCTAssertEqual(s.roentgenDeckkraft, 0.4, accuracy: 1e-6)
+        s.setRoentgenDeckkraft(2)
+        XCTAssertEqual(s.roentgenDeckkraft, 0.95, accuracy: 1e-6)
+        s.setRoentgenDeckkraft(0.2)
+        XCTAssertEqual(s.roentgenDeckkraft, 0.2, accuracy: 1e-6)
+    }
+
     // MARK: Befehlskatalog
 
     /// Jeder Befehl hat am Mac eine Taste und am iPad einen Auslöser ohne Tastatur (Geste, Knopf, Kranz) oder eine

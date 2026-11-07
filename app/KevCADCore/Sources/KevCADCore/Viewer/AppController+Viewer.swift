@@ -119,6 +119,7 @@ extension AppController: ViewerActions {
             guard let v = self?.viewer else { return (ViewerStil.strich, 3) }
             return (v.strichfarbe.rgba, CGFloat(v.strichbreite))
         }
+        c.onStiftRolle = { [weak self] w in self?.kranzRollen(w) ?? false }
         c.stiftBeginntSprechen = { [weak self] in
             // Ohne Sitzung beginnt sie, in der Pause geht sie weiter
             guard let self, self.viewer.stiftSprechen, !self.sprache.spricht, self.model.project != nil else { return false }

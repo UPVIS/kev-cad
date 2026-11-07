@@ -65,6 +65,9 @@ public final class ViewportCoordinator: ObservableObject {
     /// I-4: Letzte Berührung mit Finger oder Stift (Eingabeebene, Ursprung unten links): Dort öffnet der Werkzeugkranz,
     /// wenn kein Zeiger schwebt.
     public internal(set) var letzteBeruehrung: CGPoint?
+    /// I-4, Pencil Pro: Rollwinkel des schwebenden Stifts (Bogenmaß), nil = Stift weg. true = ein Drehregler hat ihn
+    /// genommen.
+    public var onStiftRolle: ((Double?) -> Bool)?
     /// I-4: Verzögerung „Stift bis Strich“ des letzten Strichs (95 % der Ereignisse darunter, ms); nil ohne Messung.
     /// Für die Messung am Gerät in I-10 (Budget unter 20 ms).
     public internal(set) var strichLatenzMs: Double?
