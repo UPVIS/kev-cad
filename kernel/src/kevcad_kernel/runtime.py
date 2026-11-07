@@ -1555,10 +1555,14 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
     def _request(self, header: dict[str, Any], timeout_s: float, payload: bytes = b"", *,
                  an: str = "aktiv") -> tuple[dict[str, Any], bytes, str | None]:
         """Anfrage an die App, wartet auf die Antwort. I-2: ``an="aktiv"`` fragt nur das aktive Gerät (Bilder, Lagebild,
-        Dialoge), ``an="alle"`` alle Geräte (Ansicht), dann zählt die erste Antwort."""
+        Dialoge), ``an="alle"`` alle Geräte (Ansicht), dann zählt die erste Antwort. I-8: ``an="mac"`` fragt einen Mac
+        (das aktive Gerät, wenn es einer ist), für Aufträge, die nur die Mac-App kann (Videos ins Projekt)."""
         rid = f"k-{next(self._ids)}"
-        ziel = self._link.aktiv if an == "aktiv" else None
-        if an == "aktiv" and ziel is None:
+        ziel = self._link.aktiv if an == "aktiv" else self._link.mac if an == "mac" else None
+        if an == "mac" and ziel is None and self._link.connected:
+            return {}, b"", ("Kein Mac verbunden: Videos aus Animationen rechnet die Mac-App (am iPad entstehen sie über "
+                             "Animation › Video)")
+        if an in ("aktiv", "mac") and ziel is None:
             return {}, b"", APP_NOT_CONNECTED
         slot: dict[str, Any] = {"event": threading.Event(), "reply": None, "payload": b"", "error": None,
                                 "conn": ziel}

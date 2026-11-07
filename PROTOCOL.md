@@ -1572,7 +1572,8 @@ kein offener Port) und reicht jede Verbindung Byte für Byte über einen eigenen
 | Zustand (alles ohne `reply_to`: HELLO, PROJECT, STATUS, AGENT, RUN_*, PART_*, Prüfung, Stückliste …) | alle Verbindungen; die V2-5-Weiche (`delta-1`) führt ihren Stand je Verbindung |
 | Antwort (`reply_to`) | nur die Verbindung, die gefragt hat. Der Kernel stellt beim Lesen jeder `id` (Text) die Nummer der Verbindung voran (`"3:abc"`) und nimmt sie beim Antworten wieder ab; die App sieht ihre eigene `id`. Ist die fragende Verbindung weg, geht die Antwort an niemanden |
 | `PROJECT` als Antwort auf PROJECT_OPEN/PROJECT_NEW | die fragende Verbindung mit `reply_to`, alle anderen ohne (Zustand) |
-| Anfragen des Kernels, die genau eine Antwort brauchen (SCREENSHOT_REQ, LAGE_REQ, RENDER_*, DOC_EXPORT_REQ, ANIM_VIDEO_REQ, VERSION_BILD_REQ, Dialoge wie FREIGABE_ANFRAGE und PRINT_JOB_ASK) | nur das **aktive Gerät**; Antworten anderer Verbindungen auf diese `id` zählen nicht |
+| Anfragen des Kernels, die genau eine Antwort brauchen (SCREENSHOT_REQ, LAGE_REQ, RENDER_*, DOC_EXPORT_REQ, VERSION_BILD_REQ, Dialoge wie FREIGABE_ANFRAGE und PRINT_JOB_ASK) | nur das **aktive Gerät**; Antworten anderer Verbindungen auf diese `id` zählen nicht |
+| ANIM_VIDEO_REQ (seit I-8, 07.11.2026) | ein **Mac**: das aktive Gerät, wenn es ein Mac ist, sonst der zuletzt verbundene Mac (Apps ohne `geraet` gelten als Mac). Nur die Mac-App rechnet Videos ins Projekt (ffmpeg); das iPad holt ein fertiges Video bei Bedarf über `DATEI_REQ`. Ohne Mac endet `animation(aktion="video")` mit „Kein Mac verbunden …“ |
 | VIEW_CMD und ANIM_SEEK | alle Verbindungen (alle zeigen dasselbe); es zählt die erste Bestätigung |
 
 **Aktives Gerät:** die Verbindung, die zuletzt dazukam oder an der Kevin zuletzt etwas getan hat: `SELECTION`,

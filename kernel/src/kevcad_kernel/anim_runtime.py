@@ -336,7 +336,9 @@ class AnimationRuntimeMixin:
         req = {"type": "ANIM_VIDEO_REQ", "name": a.name, "width": w, "height": h, "fps": rate, "kamera": cam_name,
                "format": fmt, "path": str(path)}
         t0 = time.perf_counter()
-        reply, _, error = self._request(req, timeout)  # type: ignore[attr-defined]
+        # I-8: Videos rechnet immer die Mac-App (ffmpeg, schreibt ins Projekt); ist das iPad aktiv, fragt der Kernel den Mac.
+        # Das iPad holt das fertige Video bei Bedarf über DATEI_REQ.
+        reply, _, error = self._request(req, timeout, an="mac")  # type: ignore[attr-defined]
         if error:
             return {"ok": False, "error": error}
         if not reply.get("ok", False):

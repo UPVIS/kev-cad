@@ -309,6 +309,22 @@ class AppLink:
     aktiv = connection
 
     @property
+    def mac(self) -> AppConnection | None:
+        """Ein Mac für Aufträge, die nur die Mac-App kann (Videos über ffmpeg ins Projekt, I-8): das aktive Gerät, wenn es
+        ein Mac ist, sonst der zuletzt verbundene Mac; None ohne Mac. Apps ohne ``geraet`` (vor I-2) gelten als Mac."""
+        with self._lock:
+            conns = [c for c in self._conns if not c.closed]
+            aktiv = self._aktiv
+
+        def ist_mac(c: AppConnection) -> bool:
+            g = c.info.get("geraet") if isinstance(c.info.get("geraet"), dict) else {}
+            return (g.get("art") or "mac") == "mac"
+
+        if aktiv is not None and not aktiv.closed and ist_mac(aktiv):
+            return aktiv
+        return next((c for c in reversed(conns) if ist_mac(c)), None)
+
+    @property
     def verbindungen(self) -> list[AppConnection]:
         with self._lock:
             return [c for c in self._conns if not c.closed]

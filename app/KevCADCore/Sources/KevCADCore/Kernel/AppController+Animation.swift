@@ -211,14 +211,14 @@ extension AppController: AnimationActions {
                 replyTo: v.id, ok: false, path: nil, frames: 0, milliseconds: 0, message: "Kein Zielpfad"))
             return
         }
-        // Der Zielpfad liegt im Projekt am Mac; das iPad (über das Netz verbunden) kann dort nicht schreiben. Bis der
-        // Kernel solche Aufträge an den Mac gibt (PLAN-IPAD.md, I-8), sagt die Antwort, was zu tun ist.
+        // Der Zielpfad liegt im Projekt am Mac; das iPad (über das Netz verbunden) kann dort nicht schreiben. Der Kernel
+        // gibt solche Aufträge seit I-8 an einen Mac (PROTOCOL.md, „I-2 Mehrere Geräte“); kommt doch einer an (älterer
+        // Kernel), sagt die Antwort, was zu tun ist.
         guard !connection.istNetz else {
             send(AnimationVideoResponseMessage(
                 replyTo: v.id, ok: false, path: nil, frames: 0, milliseconds: 0,
-                message: "Das iPad ist das aktive Gerät und kann nicht ins Projekt am Mac schreiben. Kevin bedient kurz "
-                    + "die Mac-App (dann ist sie aktiv), danach das Video noch einmal anfordern; am iPad entsteht es "
-                    + "über Animation › Video."))
+                message: "Videos ins Projekt rechnet die Mac-App; Kev CAD am Mac aktualisieren. Am iPad entsteht ein "
+                    + "Video über Animation › Video."))
             return
         }
         renderVideo(
