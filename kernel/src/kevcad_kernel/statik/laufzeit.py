@@ -134,6 +134,8 @@ class StatikRuntime:
             if fk.get("stand") == "laeuft":
                 n = len([t for t in fk.get("teile") or [] if t.get("stand") == "laeuft"])
                 offen.append(f"Festkörper „{e['name']}“" + (f" ({n} {'Teil' if n == 1 else 'Teile'})" if n else ""))
+        from kevcad_kernel.bedingungen import anbindung as _arten_b  # noqa: F401 - Texte der Arten (ART_TEXT)
+        from kevcad_kernel.druck import anbindung as _arten_d  # noqa: F401 - Texte der Arten druck_* (ART_TEXT)
         from kevcad_kernel.pruefung import befund as bf
         from kevcad_kernel.statik import anbindung as _arten  # noqa: F401 - Texte der Arten statik_* (ART_TEXT)
         from kevcad_kernel.statik.rechnen import befunde as statik_befunde

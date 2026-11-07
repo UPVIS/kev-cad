@@ -440,3 +440,31 @@ zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Or
   stabwerk` (Statikmodell eines früheren Tests noch in `LETZTER`) und `test_festkoerper::test_laufzeit_hintergrund_
   festigkeit_und_feld` (Festkörper binnen 120 s nicht fertig, passt zum schon bekannten sporadischen Absturz des
   FEM-Prozesses). Der zweite Test nennt bei einem Zeitlimit jetzt den Stand und die Meldung des FEM-Prozesses.
+
+### A2 FEM-Teile parallel (07.11.2026)
+
+- `statik/festkoerper/prozess.py`: Der FEM-Prozess verteilt die Teile eines Auftrags, die nicht ganz aus dem
+  Zwischenspeicher kommen, auf bis zu 3 Teilprozesse (Pool mit `spawn`, je 2 Fäden), längste zuerst (Zeit des letzten
+  Laufs je Teilstand bzw. Teilname aus `zeiten.json` im FEM-Zwischenspeicher, sonst nach Volumen). Zahl nach
+  Speicherdruck (`kern.memorystatus_vm_pressure_level` Warnung oder unter 25 % frei: 2, kritisch oder unter 12 %: 1, dann
+  nacheinander im FEM-Prozess wie bisher), ein weiteres Teil nur, wenn nach `kern.memorystatus_level` frei ist, was es
+  nach Schätzung braucht (150 MB plus 32 kB je Freiheitsgrad), plus 1,5 GB Reserve, abzüglich dessen, was die laufenden
+  noch belegen werden. `KEVCAD_FEM_PROZESSE` erzwingt eine Zahl (Tests, Messungen). Fortschritt meldet der FEM-Prozess je
+  fertigem Teil; die Teilprozesse sind in seiner Prozessgruppe (der Abbruch der Laufzeit beendet alle) und beenden sich
+  selbst, wenn er stirbt. Stürzt der Pool ab, rechnet der FEM-Prozess den Rest selbst.
+- Ergebnis gleich: Jedes Teil rechnet dieselbe Funktion. Gemessen ist das Ergebnis eines Teils mit 1, 2 und 4 Fäden Bit
+  für Bit gleich (Schieberschlitten, 39.700 Freiheitsgrade, SuperLU, je 2,1 bis 2,6 s), und der gesicherte
+  Kugelschieber-Auftrag (8 Teile) nacheinander und mit 3 Prozessen: gleiche Fälle in gleicher Reihenfolge, Ergebnisse und
+  Felder bitgleich.
+- Dazu behoben: Die Laufzeit setzt die Befunde nach dem Festkörper neu zusammen (`_statik_in_check`) und kannte die Texte
+  der Arten von Druck und Bedingungen nur, wenn deren Module zufällig schon geladen waren; je nach Zeitfolge stand dann
+  „12 druck_einsatz_sackloch“ statt „12 Gewindeeinsätze im Sackloch (Druck)“ in der Zusammenfassung. Jetzt lädt sie die
+  Texte immer.
+- Messung (Ablage `20261107-073958-a2`, Netze der Basis, Last 11 bis 21, 32 bis 53 % frei): Endstand nach
+  `laufrolle_l=90` **12,8 s** (A1: 16,0 s): FEM-Prozess 5,6 → 12,8 s mit 3 Prozessen (A1: 10,8 s nacheinander); die Teile
+  selbst brauchen parallel länger (Schieberschlitten 3,3 bis 3,8 s statt 1,8 bis 2,1 s), Speicher je Teilprozess höchstens
+  0,84 GB. Nach `laufrolle_l=95` 16,7 s bei Last 17 bis 21 (Hauptprüfung und jedes Teil 1,5- bis 2-mal so lang wie in
+  Schritt 1). Gleichheitsprobe in allen Schritten gleich; gegen A1 mit denselben Netzen gleich bis auf den Text der
+  Zusammenfassung (siehe oben).
+- Tests: nacheinander gegen 3 Prozesse bitgleich (drei Klötze, gleiche Netze), Verteiler mit gespieltem Speicher,
+  Abbruch beendet alle Teilprozesse. Mac mini: 1291 bestanden, 23 übersprungen.

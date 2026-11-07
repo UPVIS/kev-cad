@@ -87,6 +87,8 @@ def speicher() -> Path:
 
 
 def melde(fortschritt: float, text: str) -> None:
+    if _STILL:
+        return
     print(json.dumps({"fortschritt": round(max(0.0, min(1.0, fortschritt)), 3), "text": text}, ensure_ascii=False),
           flush=True)
 
@@ -543,6 +545,242 @@ def _speicher_spitze_mb() -> float | None:
     return round(r / (1 << 20) if sys.platform == "darwin" else r / 1024, 1)
 
 
+# -- Mehrere Prozesse (A2, PLAN-PRUEFUNG-INKREMENTELL.md) ------------------------------------------------------------
+# Die Teile eines Auftrags sind voneinander unabhängig: Je Teil rechnet ein Teilprozess (Pool, spawn), dieselbe Funktion
+# ``rechne_teil`` wie nacheinander, also dasselbe Ergebnis (die Zahl der Fäden ändert es nicht, gemessen 1, 2 und 4
+# Fäden: bitgleich). Längste Teile zuerst (Zeit des letzten Laufs je Teilstand bzw. Teilname, sonst Größe), ein neues
+# Teil nur, wenn sein geschätzter Speicher frei ist. Die Teilprozesse sind in der Prozessgruppe des FEM-Prozesses: Der
+# Abbruch der Laufzeit (killpg) beendet alle, und stirbt der FEM-Prozess, beenden sie sich selbst.
+
+PROZESSE_MAX = 3  # Kevin 07.11.2026: bis zu 3 FEM-Prozesse, bei Speicherdruck 2 bzw. 1
+PROZESSE_ENV = "KEVCAD_FEM_PROZESSE"  # Zahl erzwingen, ohne Speicherprüfung (Tests, Messungen); 1: nacheinander hier
+KIND_FAEDEN = 2  # Fäden (OMP, BLAS) je Teilprozess
+FAEDEN_VARS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
+MB_JE_FG = 0.032  # Speicherspitze eines Teilprozesses je Freiheitsgrad (A3: 25.600 → 0,80 GB, 48.500 → 1,45 GB)
+MB_GRUND = 150.0
+FG_ANNAHME = 40_000  # ohne Erfahrung mit dem Teil
+RESERVE_MB = 1536.0  # so viel Arbeitsspeicher bleibt beim Verteilen frei
+FREI_STUFEN = ((25.0, 3), (12.0, 2))  # freier Anteil (kern.memorystatus_level, %) → höchstens so viele Prozesse
+ZEITEN_DATEI = "zeiten.json"  # Rechenzeit und Freiheitsgrade je Teilstand und Teilname (Reihenfolge, Speicher)
+ZEITEN_MAX = 400
+_STILL = False  # in Teilprozessen: keine Fortschrittszeilen (der FEM-Prozess meldet je fertigem Teil)
+
+
+def speicher_lage() -> tuple[float | None, int | None]:
+    """(freier Anteil in Prozent, Druckstufe 1 normal, 2 Warnung, 4 kritisch): macOS kern.memorystatus_level und
+    kern.memorystatus_vm_pressure_level, sonst psutil ohne Druckstufe."""
+    frei: float | None = None
+    druck: int | None = None
+    if sys.platform == "darwin":
+        import subprocess
+
+        try:
+            w = subprocess.run(["sysctl", "-n", "kern.memorystatus_level", "kern.memorystatus_vm_pressure_level"],
+                               capture_output=True, text=True, encoding="utf-8", timeout=3).stdout.split()
+            frei, druck = float(w[0]), int(w[1])
+        except Exception:  # noqa: BLE001
+            frei, druck = None, None
+    if frei is None:
+        try:
+            import psutil
+
+            frei = 100.0 - float(psutil.virtual_memory().percent)
+        except Exception:  # noqa: BLE001
+            frei = None
+    return frei, druck
+
+
+def prozesse_zahl(teile: int, frei_prozent: float | None, druck: int | None) -> int:
+    """Wie viele Teilprozesse für ``teile`` zu rechnende Teile: bis ``PROZESSE_MAX``, bei Speicherdruck (Warnung,
+    weniger als 25 % frei) 2, kritisch oder unter 12 % frei 1 (dann nacheinander in diesem Prozess)."""
+    erzwungen = (os.environ.get(PROZESSE_ENV) or "").strip()
+    if erzwungen:
+        try:
+            return max(1, min(int(erzwungen), max(teile, 1)))
+        except ValueError:
+            pass
+    if teile < 2:
+        return 1
+    n = PROZESSE_MAX
+    if druck is not None and druck >= 4:
+        n = 1
+    elif druck is not None and druck >= 2:
+        n = min(n, 2)
+    if frei_prozent is not None:
+        n = min(n, next((k for grenze, k in FREI_STUFEN if frei_prozent >= grenze), 1))
+    return max(1, min(n, teile))
+
+
+def _zeiten_lesen(ablage: Path) -> dict[str, Any]:
+    try:
+        z = json.loads((ablage / ZEITEN_DATEI).read_text(encoding="utf-8"))
+        return z if isinstance(z, dict) else {}
+    except Exception:  # noqa: BLE001 - fehlt oder kaputt: ohne Erfahrung
+        return {}
+
+
+def _zeiten_schreiben(ablage: Path, neu: dict[str, Any]) -> None:
+    if not neu:
+        return
+    z = _zeiten_lesen(ablage)
+    z.update(neu)
+    if len(z) > ZEITEN_MAX:
+        z = dict(sorted(z.items(), key=lambda kv: -float((kv[1] or {}).get("t") or 0.0))[:ZEITEN_MAX])
+    try:
+        ablage.mkdir(parents=True, exist_ok=True)
+        tmp = ablage / f"{ZEITEN_DATEI}.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(z, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, ablage / ZEITEN_DATEI)
+    except OSError:
+        pass
+
+
+def schaetzung(T: dict[str, Any], zeiten: dict[str, Any]) -> tuple[float, float]:
+    """(Sekunden, Speicherspitze MB) eines Teils: aus dem letzten Lauf desselben Teilstands, sonst desselben Teils,
+    sonst aus dem Volumen (nur für die Reihenfolge) und ``FG_ANNAHME``."""
+    e = zeiten.get(f"teil:{T.get('schluessel_teil')}") or zeiten.get(f"name:{T.get('name')}")
+    if isinstance(e, dict) and e.get("s") is not None:
+        s, fg = float(e["s"]), float(e.get("fg") or FG_ANNAHME)
+    else:
+        s, fg = 0.5 + float(T.get("volumen") or 0.0) / 30000.0, float(FG_ANNAHME)
+    return s, MB_GRUND + MB_JE_FG * fg
+
+
+def _kinder_rss_mb() -> float:
+    try:
+        import psutil
+
+        return sum(c.memory_info().rss for c in psutil.Process().children(recursive=True)) / (1 << 20)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def frei_system_mb() -> float | None:
+    """Freier Arbeitsspeicher nach dem System (MB): macOS ``kern.memorystatus_level`` (Anteil frei, wie ihn das System
+    für seinen Speicherdruck rechnet) mal Gesamtspeicher, sonst psutil (verfügbar)."""
+    frei_prozent, _ = speicher_lage()
+    try:
+        import psutil
+
+        vm = psutil.virtual_memory()
+    except Exception:  # noqa: BLE001
+        return None
+    if sys.platform == "darwin" and frei_prozent is not None:
+        return frei_prozent / 100.0 * float(vm.total) / (1 << 20)
+    return float(vm.available) / (1 << 20)
+
+
+def platz(bedarf_mb: float, laufend_mb: list[float], frei_mb: float | None = None,
+          kinder_mb: float | None = None) -> bool:
+    """Darf ein weiteres Teil starten? Frei ist, was das System frei meldet (``frei_system_mb``), abzüglich dessen, was
+    die laufenden Teile nach ihrer Schätzung noch belegen werden; danach bleiben ``RESERVE_MB``."""
+    frei = frei_system_mb() if frei_mb is None else frei_mb
+    if frei is None:
+        return True
+    noch = max(0.0, sum(laufend_mb) - (_kinder_rss_mb() if kinder_mb is None else kinder_mb))
+    return frei - noch >= bedarf_mb + RESERVE_MB
+
+
+def _gescheitert(T: dict[str, Any], exc: BaseException) -> list[dict[str, Any]]:
+    return [{"id": f["id"], "stand": "failed", "szenario": f["szenario"], "teil": T["name"],
+             "meldung": f"nicht gerechnet: {type(exc).__name__}: {exc}", "traceback": traceback.format_exc(limit=6)}
+            for f in T["faelle"]]
+
+
+def _teil(T: dict[str, Any], fein: bool, ablage: Path, beginn: float, von: float, bis: float) -> dict[str, Any]:
+    """Ein Teil rechnen (hier oder im Teilprozess): Fälle (Felder als Pfad), Prozess, Beginn und Ende ab ``beginn``."""
+    t0 = time.time()
+    faelle: list[dict[str, Any]] = []
+    try:
+        for r in rechne_teil(T, fein, ablage, von, bis):
+            felder = r.pop("_felder", None)
+            if felder is not None and r.get("stand") == "done":
+                r["feld"] = str(ablage / "faelle" / f"{r['schluessel']}.npz")
+            faelle.append(r)
+    except Exception as exc:  # noqa: BLE001 - ein Teil darf die anderen nicht verhindern
+        faelle = _gescheitert(T, exc)
+    return {"faelle": faelle, "pid": os.getpid(), "start": round(t0 - beginn, 3), "ende": round(time.time() - beginn, 3),
+            "speicher_mb": _speicher_spitze_mb()}
+
+
+def _kind_start() -> None:
+    """Teilprozess: still, und beenden, sobald der FEM-Prozess nicht mehr lebt."""
+    import threading
+
+    global _STILL
+    _STILL = True
+    eltern = os.getppid()
+
+    def wache() -> None:
+        while True:
+            time.sleep(1.0)
+            if os.getppid() != eltern:
+                os._exit(3)
+
+    threading.Thread(target=wache, name="fem-wache", daemon=True).start()
+
+
+def _kind_teil(T: dict[str, Any], fein: bool, ablage: str, beginn: float) -> dict[str, Any]:
+    return _teil(T, fein, Path(ablage), beginn, 0.0, 1.0)
+
+
+def _aus_speicher(T: dict[str, Any], ablage: Path) -> bool:
+    """Liegen alle Fälle des Teils im Zwischenspeicher (dann rechnet es dieser Prozess, ohne Teilprozess)?"""
+    sig = bool(T.get("grenze"))
+    return all((ablage / "faelle" / f"{f['schluessel']}.npz").exists()
+               and (not sig or (ablage / "faelle" / f"{f['schluessel']}.sig.npz").exists()) for f in T["faelle"])
+
+
+def _parallel(teile: list[dict[str, Any]], offen: list[int], fein: bool, ablage: Path, n: int, beginn: float,
+              je_teil: dict[int, dict[str, Any]], fertig: Any) -> list[int]:
+    """Teile ``offen`` (Indizes) auf bis zu n Teilprozesse verteilen, Ergebnis je Index in ``je_teil``; ``fertig(i)``
+    nach jedem Teil. Rückgabe: Indizes, die kein Teilprozess fertig bekam (Pool abgestürzt), die rechnet der Aufrufer."""
+    import concurrent.futures as cf
+    import multiprocessing as mp
+
+    from kevcad_kernel.statik.festkoerper import prozess as modul  # über den Modulnamen, auch wenn dies __main__ ist
+
+    zeiten = _zeiten_lesen(ablage)
+    sch = {i: schaetzung(teile[i], zeiten) for i in offen}
+    warte = sorted(offen, key=lambda i: (-sch[i][0], i))
+    alt = {k: os.environ.get(k) for k in FAEDEN_VARS}
+    os.environ.update({k: str(KIND_FAEDEN) for k in FAEDEN_VARS})
+    try:
+        ex = cf.ProcessPoolExecutor(max_workers=n, mp_context=mp.get_context("spawn"), initializer=modul._kind_start)
+    finally:
+        for k, v in alt.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    laufend: dict[Any, int] = {}
+    rest: list[int] = []
+    kaputt = False
+    erzwungen = bool((os.environ.get(PROZESSE_ENV) or "").strip())  # Tests, Messungen: ohne Speicherprüfung
+    try:
+        while (warte or laufend) and not kaputt:
+            while warte and len(laufend) < n and (not laufend or erzwungen or platz(
+                    sch[warte[0]][1], [sch[j][1] for j in laufend.values()])):
+                i = warte.pop(0)
+                laufend[ex.submit(modul._kind_teil, teile[i], fein, str(ablage), beginn)] = i
+            erledigt, _ = cf.wait(list(laufend), timeout=1.0, return_when=cf.FIRST_COMPLETED)
+            for fut in erledigt:
+                i = laufend.pop(fut)
+                try:
+                    je_teil[i] = fut.result()
+                except cf.process.BrokenProcessPool:
+                    kaputt = True
+                    rest.append(i)
+                    continue
+                except Exception as exc:  # noqa: BLE001 - Übergabe gescheitert: dieses Teil als Fehler
+                    je_teil[i] = {"faelle": _gescheitert(teile[i], exc), "pid": None, "start": None, "ende": None}
+                fertig(i)
+        rest += list(laufend.values()) + warte
+    finally:
+        ex.shutdown(wait=not kaputt, cancel_futures=True)
+    return rest
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 2:
@@ -557,28 +795,56 @@ def main(argv: list[str] | None = None) -> int:
     out: dict[str, Any] = {"stand": "done", "faelle": [], "pid": os.getpid(), "grenzen": list(GRENZEN_S3),
                            "beginn": beginn, "zeiten_teile": []}
     teile = auftrag.get("teile") or []
-    melde(0.0, f"{len(teile)} Teile")
-    for i, T in enumerate(teile):
-        von, bis = i / max(len(teile), 1), (i + 1) / max(len(teile), 1)
-        t_teil = time.time()
+    fein = bool(auftrag.get("fein"))
+    offen = [i for i, T in enumerate(teile) if not _aus_speicher(T, ablage)]
+    n = prozesse_zahl(len(offen), *speicher_lage()) if len(offen) >= 2 else 1
+    out["prozesse_zahl"] = n
+    melde(0.0, f"{len(teile)} Teile" + (f", {n} Prozesse" if n >= 2 else ""))
+    je_teil: dict[int, dict[str, Any]] = {}
+    gezaehlt = {"n": 0}
+
+    def fertig(i: int) -> None:
+        gezaehlt["n"] += 1
+        melde(gezaehlt["n"] / max(len(teile), 1), f"{teile[i]['name'].rsplit('/', 1)[-1]}: fertig "
+                                                  f"({gezaehlt['n']} von {len(teile)} Teilen)")
+
+    rest = list(range(len(teile)))
+    if n >= 2:
+        global _STILL
+        _STILL = True  # Teile aus dem Zwischenspeicher hier, ohne eigene Fortschrittszeilen
         try:
-            for r in rechne_teil(T, bool(auftrag.get("fein")), ablage, von, bis):
-                felder = r.pop("_felder", None)
-                if felder is not None and r.get("stand") == "done":
-                    r["feld"] = str(ablage / "faelle" / f"{r['schluessel']}.npz")
-                out["faelle"].append(r)
-        except Exception as exc:  # noqa: BLE001 - ein Teil darf die anderen nicht verhindern
-            for f in T["faelle"]:
-                out["faelle"].append({"id": f["id"], "stand": "failed", "szenario": f["szenario"], "teil": T["name"],
-                                      "meldung": f"nicht gerechnet: {type(exc).__name__}: {exc}",
-                                      "traceback": traceback.format_exc(limit=6)})
-        out["zeiten_teile"].append({"teil": T["name"], "pid": os.getpid(), "start": round(t_teil - beginn, 3),
-                                    "ende": round(time.time() - beginn, 3)})
+            for i in [i for i in rest if i not in offen]:
+                je_teil[i] = _teil(teile[i], fein, ablage, beginn, 0.0, 1.0)
+        finally:
+            _STILL = False
+        for i in je_teil:
+            fertig(i)
+        rest = _parallel(teile, offen, fein, ablage, n, beginn, je_teil, fertig)
+    for i in rest:  # nacheinander in diesem Prozess (wie bisher; auch, was ein abgestürzter Pool übrig ließ)
+        je_teil[i] = _teil(teile[i], fein, ablage, beginn, i / max(len(teile), 1), (i + 1) / max(len(teile), 1))
+    neu_zeiten: dict[str, Any] = {}
+    prozesse: dict[Any, float | None] = {os.getpid(): None}
+    for i, T in enumerate(teile):
+        e = je_teil[i]
+        out["faelle"] += e["faelle"]
+        out["zeiten_teile"].append({"teil": T["name"], "pid": e.get("pid"), "start": e.get("start"),
+                                    "ende": e.get("ende")})
+        if e.get("pid") is not None:
+            prozesse[e["pid"]] = max(prozesse.get(e["pid"]) or 0.0, e.get("speicher_mb") or 0.0) or None
+        gerechnet = [r for r in e["faelle"] if r.get("stand") == "done" and not r.get("aus_speicher")]
+        if gerechnet and e.get("start") is not None:
+            fg = (gerechnet[0].get("netz") or {}).get("freiheitsgrade")
+            eintrag = {"s": round(float(e["ende"]) - float(e["start"]), 3), "fg": fg, "t": round(time.time(), 1)}
+            neu_zeiten[f"teil:{T.get('schluessel_teil')}"] = eintrag
+            neu_zeiten[f"name:{T.get('name')}"] = eintrag
+    _zeiten_schreiben(ablage, neu_zeiten)
     if any(T.get("grenze") for T in teile):
         melde(0.97, "Grenze suchen (Halbieren über die überlagerten Spannungen)")
         out["grenze"] = grenzen_suchen(teile, out["faelle"], ablage)
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
     out["speicher_mb"] = _speicher_spitze_mb()
+    prozesse[os.getpid()] = out["speicher_mb"]
+    out["prozesse"] = [{"pid": pid, "speicher_mb": mb} for pid, mb in prozesse.items()]
     melde(1.0, "fertig")
     tmp = argv[1] + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:

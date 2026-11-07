@@ -340,6 +340,138 @@ def test_abbruch_beendet_den_prozess(tmp_path):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Mehrere FEM-Prozesse (A2)
+
+
+def _klotz_auftrag(tmp: Path, laengen: list[float], h: float) -> Path:
+    """Auftrag mit je einem Klotz je Länge (an der Wand x = 0, Last am Ende), Ordner ``tmp``."""
+    from build123d import Box, Location
+
+    w = {"E": 2580.0, "nu": 0.36, "E_z": None, "f": 40.0, "q": None, "name": "PLA"}
+    wand = _wand(tmp / "wand.npz", 0.0)
+    teile = []
+    for i, L in enumerate(laengen):
+        brep = _brep(Box(L, 20, 20).moved(Location((L / 2, 0, 10))), tmp / f"klotz{i}.brep")
+        T = _teil(f"Klötze/Klotz {i}", brep, w, L * 400.0, (0, -10, 0), (L, 10, 20),
+                  {"Wand": {"datei": wand, "tol": 0.3}}, h_mm=h)
+        T["id"] = i
+        T["faelle"] = [{"id": f"{i}.0", "szenario": "Last", "teil": T["name"], "ziel": 2.0, "schluessel": f"klotz{i}-a",
+                        "lasten": [{"kraft": [0, 0, -50.0 * (i + 1)], "moment": None, "punkt": [L, 0, 10]}],
+                        "lager": ["Wand"], "feld": [0, 0, -9.81]},
+                       {"id": f"{i}.1", "szenario": "Quer", "teil": T["name"], "ziel": 2.0, "schluessel": f"klotz{i}-b",
+                        "lasten": [{"kraft": [0, 30.0, 0], "moment": [0, 0, 500.0], "punkt": [L, 0, 10]}],
+                        "lager": ["Wand"], "feld": [0, 0, 0]}]
+        teile.append(T)
+    a = tmp / "auftrag.json"
+    a.write_text(json.dumps({"version": 1, "fein": False, "teile": teile}), encoding="utf-8")
+    return a
+
+
+def _ohne_herkunft(r: dict) -> dict:
+    r = {k: v for k, v in r.items() if k not in ("ms", "aus_speicher", "feld")}
+    if isinstance(r.get("netz"), dict):
+        r["netz"] = {k: v for k, v in r["netz"].items() if k != "aus_speicher"}
+    return r
+
+
+def test_parallel_bitgleich_wie_nacheinander(tmp_path, monkeypatch):
+    """A2: drei Teile nacheinander (ein Prozess) und auf drei Teilprozesse verteilt, mit denselben Netzen: dieselben
+    Fälle in derselben Reihenfolge, Ergebnisse und Felder Bit für Bit gleich; die Teile liefen in Teilprozessen."""
+    auftrag = _klotz_auftrag(tmp_path, [60.0, 90.0, 120.0], 3.0)
+    erg = {}
+    for modus in ("1", "3"):
+        cache = tmp_path / f"cache{modus}"
+        if modus == "3":
+            shutil.copytree(tmp_path / "cache1" / "netze", cache / "netze")
+        monkeypatch.setenv("KEVCAD_FESTKOERPER_CACHE", str(cache))
+        monkeypatch.setenv("KEVCAD_FEM_PROZESSE", modus)
+        r = subprocess.run(PROZESS + [str(auftrag), str(tmp_path / f"erg{modus}.json")], capture_output=True,
+                           text=True, timeout=600)
+        assert r.returncode == 0, r.stderr[-2000:]
+        erg[modus] = json.loads((tmp_path / f"erg{modus}.json").read_text())
+    nach, par = erg["1"], erg["3"]
+    assert par["prozesse_zahl"] == 3 and nach["prozesse_zahl"] == 1
+    assert len({z["pid"] for z in par["zeiten_teile"]} - {par["pid"]}) >= 2  # wirklich in Teilprozessen
+    assert [r["id"] for r in nach["faelle"]] == [r["id"] for r in par["faelle"]]
+    for a, b in zip(nach["faelle"], par["faelle"]):
+        assert a["stand"] == "done" and _ohne_herkunft(a) == _ohne_herkunft(b)
+        fa, fb = _felder(a["feld"]), _felder(b["feld"])
+        assert all(np.array_equal(fa[k], fb[k]) for k in fa)
+    # Zeiten je Teil für die nächste Verteilung (längste zuerst, Speicher)
+    zeiten = json.loads((tmp_path / "cache3" / "zeiten.json").read_text())
+    assert zeiten["name:Klötze/Klotz 2"]["fg"] > zeiten["name:Klötze/Klotz 0"]["fg"] > 0
+
+
+def test_verteiler_nach_speicher(monkeypatch):
+    """A2: bis zu 3 Prozesse, bei Speicherdruck (Warnung, unter 25 % frei) 2, kritisch oder unter 12 % frei 1; ein
+    weiteres Teil nur, wenn nach dem, was die laufenden noch belegen, sein Bedarf und die Reserve frei sind."""
+    from kevcad_kernel.statik.festkoerper import prozess as P
+
+    monkeypatch.delenv("KEVCAD_FEM_PROZESSE", raising=False)
+    assert P.prozesse_zahl(8, 60.0, 1) == 3 and P.prozesse_zahl(2, 60.0, 1) == 2 and P.prozesse_zahl(1, 90.0, 1) == 1
+    assert P.prozesse_zahl(8, 20.0, 1) == 2 and P.prozesse_zahl(8, 60.0, 2) == 2
+    assert P.prozesse_zahl(8, 60.0, 4) == 1 and P.prozesse_zahl(8, 8.0, 1) == 1 and P.prozesse_zahl(8, None, None) == 3
+    monkeypatch.setenv("KEVCAD_FEM_PROZESSE", "2")
+    assert P.prozesse_zahl(8, 5.0, 4) == 2
+    # Platz: 4 GB frei, nichts läuft → ja; ein Teil mit 1,5 GB läuft, hat erst 0,2 GB → nein; hat schon 1,4 GB → ja
+    assert P.platz(1500.0, [], frei_mb=4000.0, kinder_mb=0.0)
+    assert not P.platz(1500.0, [1500.0], frei_mb=4000.0, kinder_mb=200.0)
+    assert P.platz(1500.0, [1500.0], frei_mb=6000.0, kinder_mb=1400.0)
+    # Schätzung: Teilstand, sonst Name, sonst Volumen
+    zeiten = {"teil:abc": {"s": 4.0, "fg": 30000}, "name:Halter": {"s": 2.0, "fg": 20000}}
+    assert P.schaetzung({"schluessel_teil": "abc", "name": "X"}, zeiten) == (4.0, P.MB_GRUND + P.MB_JE_FG * 30000)
+    assert P.schaetzung({"schluessel_teil": "neu", "name": "Halter"}, zeiten)[0] == 2.0
+    s, mb = P.schaetzung({"schluessel_teil": "neu", "name": "Neu", "volumen": 60000.0}, zeiten)
+    assert s == pytest.approx(2.5) and mb == P.MB_GRUND + P.MB_JE_FG * P.FG_ANNAHME
+
+
+def test_abbruch_beendet_alle_teilprozesse(tmp_path, monkeypatch):
+    """A2: Der Abbruch der Laufzeit (killpg auf den FEM-Prozess) beendet auch alle Teilprozesse."""
+    import threading
+
+    import psutil
+
+    from kevcad_kernel.statik.festkoerper.laufzeit import Abgebrochen, FestkoerperRuntime
+
+    auftrag = _klotz_auftrag(tmp_path, [100.0, 120.0, 140.0], 3.0)
+    monkeypatch.setenv("KEVCAD_FEM_PROZESSE", "3")
+    rt = FestkoerperRuntime()
+    fehler: list[BaseException] = []
+
+    def lauf() -> None:
+        try:
+            rt._fk_prozess({"ordner": str(tmp_path), "auftrag": str(auftrag)}, lambda x, t: None, timeout_s=300)
+        except BaseException as exc:  # noqa: BLE001
+            fehler.append(exc)
+
+    t = threading.Thread(target=lauf)
+    t.start()
+    kinder: list[psutil.Process] = []
+    ende = time.monotonic() + 60
+    while time.monotonic() < ende and len(kinder) < 3:
+        p = rt._fk.get("proc")
+        if p is not None:
+            try:
+                kinder = [k for k in psutil.Process(p.pid).children(recursive=True)]
+            except psutil.NoSuchProcess:
+                break
+        time.sleep(0.05)
+    assert len(kinder) >= 2, "keine Teilprozesse gesehen"
+    t0 = time.perf_counter()
+    assert rt._fk_abbrechen_intern()
+    t.join(30)
+    assert not t.is_alive() and time.perf_counter() - t0 < 10
+    assert fehler and isinstance(fehler[0], Abgebrochen)
+    for _ in range(100):
+        lebend = [k for k in kinder if k.is_running() and k.status() != psutil.STATUS_ZOMBIE]
+        if not lebend:
+            break
+        time.sleep(0.1)
+    assert not lebend, lebend
+    assert not (tmp_path / "ergebnis.json").exists()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Aus dem Modell: Druckteil quer zur Schicht, Lager eines Stabs, Zwischenspeicher
 
 
