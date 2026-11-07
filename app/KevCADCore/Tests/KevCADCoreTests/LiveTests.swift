@@ -441,6 +441,32 @@ final class LiveAnzeigeTests: XCTestCase {
         XCTAssertNil(c.scene.inArbeit, "alle enden mit dem Laufende")
     }
 
+    /// Kevin, 07.11.2026: Eine eigene Messung zeigt alte Werte, sobald sich ein gemessenes Teil ändert; dann geht sie.
+    /// Maße an unveränderten Teilen bleiben stehen.
+    func testMessungGehtWennSichDasTeilAendert() throws {
+        let c = try verbunden()
+        c.handle([.part(try teil("A", "a1")), .part(try teil("B", "b1", z: 30))])
+        func messung(_ refs: [String]) {
+            c.addMeasurement(MeasureResult(refs: refs, run: 1, kind: "distance", values: .object([:]),
+                                           points: [[0, 0, 0], [0, 0, 30]], text: "Abstand 30,000 mm"))
+        }
+        messung(["A#f0", "B#f0"])
+        messung(["B#f1"])
+        XCTAssertEqual(c.model.measurements.count, 2)
+        // Lauf 2: A ändert sich, B bleibt gleich
+        c.handle([try nachricht(#"{"type":"RUN_START","run":2,"delta":true}"#), .part(try teil("A", "a2", run: 2)),
+                  .message(.partSame(PartSameMessage(run: 2, name: "B", inhalt: "b1"))),
+                  try nachricht(#"{"type":"RUN_END","run":2,"duration_ms":5,"parts":2,"triangles":1,"warnings":[],"teile":["A","B"]}"#)])
+        XCTAssertEqual(c.model.measurements.map(\.refs), [["B#f1"]], "das Maß an A geht, das an B bleibt")
+        XCTAssertEqual(c.model.viewer.meldung?.text, "1 Maß entfernt: das Teil hat sich geändert")
+        // Lauf 3: B fällt weg
+        c.handle([try nachricht(#"{"type":"RUN_START","run":3,"delta":true}"#),
+                  .message(.partSame(PartSameMessage(run: 3, name: "A", inhalt: "a2"))),
+                  try nachricht(#"{"type":"RUN_END","run":3,"duration_ms":5,"parts":1,"triangles":1,"warnings":[],"teile":["A"]}"#)])
+        XCTAssertTrue(c.model.measurements.isEmpty)
+        XCTAssertTrue(c.messungInhalte.isEmpty)
+    }
+
     func testMassMitDauerBlendetSanftAus() throws {
         let c = try verbunden()
         c.handle([.part(try teil("A", "a1"))])

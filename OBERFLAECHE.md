@@ -120,6 +120,8 @@ weiter.
   neue eigene Messung blendet die Maße wieder ein. Maße, die der Agent mit `measure` zeigt, gehen nach 8 s von selbst
   und zählen nicht (Kevin, 07.11.2026: „nicht weiß, wie ich Messungen ein- und ausblende … plötzlich da, insbesondere
   auf dem iPad“). Auf dem iPad ohne Tastatur ist der Knopf der einzige Weg, deshalb größere Tippflächen (34 pt).
+  Eine eigene Messung geht nach einem Lauf von selbst, wenn sich eines ihrer Teile geändert hat (anderer Inhalt) oder
+  weggefallen ist, mit der Meldung „1 Maß entfernt: das Teil hat sich geändert“; Maße an unveränderten Teilen bleiben.
 - **Gliederung**: nur Gruppen und Objekte. Klick wählt, ⇧ oder ⌘ nimmt dazu, Doppelklick oder Zeilenschalter benennt
   um, ↑ ↓ wandern, ← → klappen. Gruppen mit gewählten Teilen öffnen sich von selbst. Umbenennen ändert die Namen in
   model.py (`ModellQuelle.benenneUm`): genau die Zeichenketten in `show()`, `verbauen(name=…)`, `befestigt(…)`; entsteht

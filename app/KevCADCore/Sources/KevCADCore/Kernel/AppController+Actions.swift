@@ -170,6 +170,7 @@ extension AppController {
 
     public func clearMeasurements() {
         model.measurements = []
+        messungInhalte = [:]
         // Auch alles, was der Agent eingeblendet hat (measure mit show=True, view mit anmerkung): Maße, Pfeile und
         // Beschriftungen, so zählt sie auch der Knopf „Maße“. Beschriftungen von Hervorhebungen gehen mit diesen.
         let beschriftungen = Set(highlightLabels.values)
@@ -275,6 +276,7 @@ extension AppController: MeasurementRemoving {
             removeDimensionAnnotations(matching: m.points)
         }
         model.measurements.removeAll { $0.id == id }
+        messungInhalte[id] = nil
         refreshOverlay()
     }
 }

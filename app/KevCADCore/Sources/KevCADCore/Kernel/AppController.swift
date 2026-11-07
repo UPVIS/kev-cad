@@ -84,6 +84,9 @@ public final class AppController: AppActions {
     var messVorschau: MessVorschau?
     var annotations: [(id: String, item: OverlayPrimitive)] = []
     var highlightLabels: [Int: String] = [:]
+    /// Je Messung der Inhalt (`PartHeader.inhalt`) der gemessenen Teile beim Messen; ändert sich einer, geht das Maß
+    /// (`veralteteMessungenEntfernen`, Kevin, 07.11.2026).
+    var messungInhalte: [UUID: [String: String]] = [:]
     private var animationTimer: Timer?
     var selfTestStarted = false
     private var projectSeenSinceHello = false
@@ -541,6 +544,7 @@ public final class AppController: AppActions {
             if let teile = e.teile { teileNachLauf(teile) }
             inArbeitEnde(nil)
             scene.endRun(e.run)
+            veralteteMessungenEntfernen()
             letzterLaufZeitpunkt = Date()
             model.run = .finished(
                 run: e.run, durationMs: e.durationMs, parts: e.parts > 0 ? e.parts : scene.order.count,
@@ -701,6 +705,7 @@ public final class AppController: AppActions {
             fitOnFirstPart = true
             clearSelectionState()
             model.measurements = []
+            messungInhalte = [:]
             annotations = []
             highlightLabels = [:]
             updateParts()
@@ -872,11 +877,44 @@ public final class AppController: AppActions {
         let item = MeasurementItem(
             refs: r.refs, kind: r.kind, text: r.text, points: r.pointVectors, values: r.values.flattenedNumbers())
         model.measurements.append(item)
+        // Inhalt der gemessenen Teile merken: Ändert sich eines, stimmt das Maß nicht mehr
+        var stand: [String: String] = [:]
+        for teil in Set(item.refs.compactMap { ElementRef($0)?.part }) {
+            if let inhalt = scene.record(teil)?.header.inhalt { stand[teil] = inhalt }
+        }
+        if !stand.isEmpty { messungInhalte[item.id] = stand }
         // Kam dasselbe Maß schon als Anmerkung (measure mit show=True), die Anmerkung ersetzen
         removeDimensionAnnotations(matching: item.points)
         // Eine neue Messung will man sehen, auch wenn die Maße gerade ausgeblendet sind
         if !viewer.masseSichtbar { viewer.masseSichtbar = true }
         log(.info, "Messung: \(r.text)")
+        refreshOverlay()
+    }
+
+    /// Nach einem Lauf: Messungen, deren Teile einen anderen Inhalt haben oder weg sind, zeigen alte Werte und gehen
+    /// (Kevin, 07.11.2026). Maße an unveränderten Teilen bleiben; ohne bekannten Inhalt (ältere Kernel) bleibt alles.
+    func veralteteMessungenEntfernen() {
+        var weg = Set<UUID>()
+        for m in model.measurements {
+            guard let stand = messungInhalte[m.id] else { continue }
+            for (teil, inhalt) in stand {
+                guard let jetzt = scene.record(teil) else {
+                    weg.insert(m.id)
+                    break
+                }
+                if let neu = jetzt.header.inhalt, neu != inhalt {
+                    weg.insert(m.id)
+                    break
+                }
+            }
+        }
+        let noch = Set(model.measurements.map(\.id)).subtracting(weg)
+        messungInhalte = messungInhalte.filter { noch.contains($0.key) }
+        guard !weg.isEmpty else { return }
+        model.measurements.removeAll { weg.contains($0.id) }
+        viewer.zeige(weg.count == 1 ? "1 Maß entfernt: das Teil hat sich geändert"
+                                    : "\(weg.count) Maße entfernt: die Teile haben sich geändert")
+        log(.info, "Messungen entfernt (Teile geändert): \(weg.count)")
         refreshOverlay()
     }
 
