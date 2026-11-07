@@ -23,6 +23,8 @@ public enum KopplungGrenzen {
     /// Schmaler als das (Punkte): Kacheln nebeneinander passen nicht, das Gerät zeigt die geteilten Kacheln dann als große
     /// Kachel (wie `GA.schmalAb` der Oberfläche).
     public static let kachelnNebeneinanderAb: Double = 640
+    /// BLICK höchstens so oft je Sekunde.
+    public static let blickJeS: Double = 10
 }
 
 /// Teile einer ANSICHT; nil = dieser Teil ist nicht dabei (unverändert).
@@ -355,6 +357,41 @@ public struct SprechenLiveMessage: OutgoingMessage, Decodable, Equatable {
     }
 }
 
+/// BLICK: Kamera und Seitenverhältnis eines Geräts für den Rahmen „wo schaut das iPad hin“ in der Eigenen Ansicht.
+/// App → Kernel ohne `von`, Kernel → App mit `von`.
+public struct BlickMessage: OutgoingMessage, Decodable, Equatable {
+    public static let type = "BLICK"
+    public var seq = 0
+    public var kamera: AnsichtStand.Kamera
+    /// Breite durch Höhe der Ansicht
+    public var seiten: Double
+    public var von: Int?
+
+    public init(kamera: AnsichtStand.Kamera, seiten: Double, von: Int? = nil) {
+        self.kamera = kamera
+        self.seiten = seiten
+        self.von = von
+    }
+
+    enum CodingKeys: String, CodingKey { case type, seq, kamera, seiten, von }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(Self.type, forKey: .type)
+        try c.encode(seq, forKey: .seq)
+        try c.encode(kamera, forKey: .kamera)
+        try c.encode(seiten, forKey: .seiten)
+        try c.encodeIfPresent(von, forKey: .von)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kamera = try c.decode(AnsichtStand.Kamera.self, forKey: .kamera)
+        seiten = (try? c.decodeIfPresent(Double.self, forKey: .seiten)) ?? 1.6
+        von = try? c.decodeIfPresent(Int.self, forKey: .von)
+    }
+}
+
 // MARK: - Kernel → App
 
 /// Ein verbundenes Gerät aus GERAETE.
@@ -408,14 +445,16 @@ public enum KopplungNachricht: Sendable {
     case geraete(GeraeteMessage)
     case ansicht(AnsichtMessage)
     case sprechenLive(SprechenLiveMessage)
+    case blick(BlickMessage)
 
-    public static let types: Set<String> = ["GERAETE", "ANSICHT", "SPRECHEN_LIVE"]
+    public static let types: Set<String> = ["GERAETE", "ANSICHT", "SPRECHEN_LIVE", "BLICK"]
 
     public var typeName: String {
         switch self {
         case .geraete: return "GERAETE"
         case .ansicht: return "ANSICHT"
         case .sprechenLive: return "SPRECHEN_LIVE"
+        case .blick: return "BLICK"
         }
     }
 
@@ -424,6 +463,7 @@ public enum KopplungNachricht: Sendable {
         switch type {
         case "GERAETE": return .geraete(try dec.decode(GeraeteMessage.self, from: header))
         case "ANSICHT": return .ansicht(try dec.decode(AnsichtMessage.self, from: header))
+        case "BLICK": return .blick(try dec.decode(BlickMessage.self, from: header))
         default: return .sprechenLive(try dec.decode(SprechenLiveMessage.self, from: header))
         }
     }

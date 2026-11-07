@@ -29,6 +29,17 @@ struct AnsichtTeilenEintraege: View {
                 Text("Eigene Ansicht")
             }
         }
+        if kopplung.modus == .eigen && !kopplung.andere.isEmpty {
+            Button {
+                aktionen?.blickZeigen(!kopplung.blickZeigen)
+            } label: {
+                if kopplung.blickZeigen {
+                    Label(kopplung.blickTitel, systemImage: "checkmark")
+                } else {
+                    Text(kopplung.blickTitel)
+                }
+            }
+        }
         if let text = kopplung.ansichtText {
             Divider()
             Text(text)
@@ -36,7 +47,71 @@ struct AnsichtTeilenEintraege: View {
     }
 }
 
+/// Eigene Ansicht mit eingeschaltetem Blick: Kapsel unten im Viewer mit Aus-Knopf (Kevins Regel „ruhiger Viewer“: was
+/// stehen bleibt, braucht einen sichtbaren Knopf zum Ausblenden; am iPad der einzige Weg ohne Menü).
+struct BlickKapsel: View {
+    @ObservedObject var kopplung: KopplungsStore
+    let aktionen: KopplungsActions?
+    var kompakt = false
+
+    var body: some View {
+        if kopplung.blickSichtbar {
+            Pill(symbol: "viewfinder", tint: .orange) {
+                Text(kompakt ? "Blick" : "Blick: \(kopplung.blickVon.joined(separator: ", "))")
+            } trailing: {
+                Button {
+                    aktionen?.blickZeigen(false)
+                } label: {
+                    Image(systemName: "xmark")
+                        .frame(minWidth: Self.ziel, minHeight: Self.ziel)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Rahmen ausblenden")
+                .accessibilityLabel("Rahmen ausblenden")
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    #if os(iOS)
+    static let ziel: CGFloat = 34  // für den Finger
+    #else
+    static let ziel: CGFloat = 20
+    #endif
+}
+
+/// Beim Sprechen an einem anderen Gerät: was dort gerade gesagt wird, live. Geht mit dem Ende der Sitzung von selbst.
+struct FremderTextKapsel: View {
+    @ObservedObject var kopplung: KopplungsStore
+
+    var body: some View {
+        ForEach(kopplung.fremdeTexte) { t in
+            Pill(symbol: "waveform", tint: .accentColor) {
+                Text("\(t.geraet): „\(Self.ende(t.text))“")
+                    .lineLimit(2)
+                    .truncationMode(.head)
+            } trailing: {
+                EmptyView()
+            }
+            .frame(maxWidth: 520)
+            .transition(.opacity)
+        }
+    }
+
+    /// Die letzten Wörter zählen: lange Texte vorn kürzen.
+    static func ende(_ text: String, hoechstens: Int = 160) -> String {
+        text.count <= hoechstens ? text : "…" + String(text.suffix(hoechstens))
+    }
+}
+
 extension KopplungsStore {
+    /// Menüeintrag für den Rahmen: „Zeigen, wohin iPad von Kevin schaut“.
+    var blickTitel: String {
+        let namen = andere.map(\.anzeigeName)
+        return namen.count == 1 ? "Zeigen, wohin \(namen[0]) schaut" : "Zeigen, wohin die anderen Geräte schauen"
+    }
+
     /// Ganz kurz für Kapsel und Chip: „Gemeinsam · iPad führt“, „Gemeinsam · du führst“, „Eigene Ansicht“.
     var kurzText: String {
         if modus == .eigen { return "Eigene Ansicht" }

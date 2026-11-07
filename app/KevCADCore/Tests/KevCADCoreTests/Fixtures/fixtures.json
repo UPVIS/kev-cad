@@ -2329,7 +2329,8 @@
    "LAGE_REQ": "lage-1",
    "GERAETE": "ansicht-1",
    "ANSICHT": "ansicht-1",
-   "SPRECHEN_LIVE": "ansicht-1"
+   "SPRECHEN_LIVE": "ansicht-1",
+   "BLICK": "ansicht-1"
   },
   "felder": [
    {
@@ -2567,6 +2568,16 @@
     "file": "sprechen_live_ende.frame",
     "type": "SPRECHEN_LIVE",
     "richtung": "kernel"
+   },
+   {
+    "file": "blick.frame",
+    "type": "BLICK",
+    "richtung": "app"
+   },
+   {
+    "file": "blick_weiter.frame",
+    "type": "BLICK",
+    "richtung": "kernel"
    }
   ],
   "faehigkeit": "ansicht-1",
@@ -2577,7 +2588,8 @@
   "nachrichten": [
    "ANSICHT_MODUS",
    "ANSICHT",
-   "SPRECHEN_LIVE"
+   "SPRECHEN_LIVE",
+   "BLICK"
   ],
   "teile": [
    "kamera",
@@ -2616,6 +2628,7 @@
   ],
   "fuehrung_pause_s": 1.0,
   "ansicht_je_s": 60,
-  "sprechen_live_je_s": 20
+  "sprechen_live_je_s": 20,
+  "blick_je_s": 10
  }
 }

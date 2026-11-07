@@ -27,6 +27,15 @@ public final class KopplungsStore: ObservableObject {
     /// Breite des Hauptfensters in Punkten (die Oberfläche misst sie, ohne Beobachtung); 0 = unbekannt. Unter
     /// `KopplungGrenzen.kachelnNebeneinanderAb` zeigt das Gerät geteilte Kacheln als große Kachel.
     public var fensterBreite: Double = 0
+    /// Eigene Ansicht: den Blick der anderen Geräte als dünnen Rahmen im Modell zeigen (auf Wunsch, gemerkt).
+    @Published public internal(set) var blickZeigen: Bool = UserDefaults.standard.bool(forKey: KopplungsStore.blickSchluessel)
+    /// Geräte, deren Blick gerade bekannt ist (Namen, für die Kapsel mit dem Aus-Knopf).
+    @Published public internal(set) var blickVon: [String] = []
+    /// Was auf den anderen Geräten gerade gesprochen wird (Name des Geräts, bisheriger Text).
+    @Published public internal(set) var fremdeTexte: [FremderText] = []
+
+    /// Zeigt der Viewer gerade Rahmen anderer Geräte?
+    public var blickSichtbar: Bool { modus == .eigen && blickZeigen && !blickVon.isEmpty }
 
     public init() {}
 
@@ -53,8 +62,23 @@ public final class KopplungsStore: ObservableObject {
     }
 
     static let modusSchluessel = "kevcad.kopplung.ansicht"
+    static let blickSchluessel = "kevcad.kopplung.blick"
     static var gemerkterModus: AnsichtModus {
         UserDefaults.standard.string(forKey: modusSchluessel).flatMap(AnsichtModus.init(rawValue:)) ?? .gemeinsam
+    }
+}
+
+/// Text, den Kevin gerade an einem anderen Gerät spricht.
+public struct FremderText: Equatable, Identifiable, Sendable {
+    /// Verbindungsnummer des Geräts
+    public var id: Int
+    public var geraet: String
+    public var text: String
+
+    public init(id: Int, geraet: String, text: String) {
+        self.id = id
+        self.geraet = geraet
+        self.text = text
     }
 }
 
@@ -63,6 +87,8 @@ public final class KopplungsStore: ObservableObject {
 public protocol KopplungsActions: AnyObject {
     /// I-6: Gemeinsame oder Eigene Ansicht (beide Geräte).
     func ansichtModus(_ modus: AnsichtModus)
+    /// I-6: In der Eigenen Ansicht den Blick der anderen Geräte als Rahmen zeigen oder ausblenden.
+    func blickZeigen(_ an: Bool)
     #if os(macOS)
     /// Neuen QR-Code für ein iPad zeigen (gilt 10 Minuten für die erste Verbindung).
     func ipadKoppeln()

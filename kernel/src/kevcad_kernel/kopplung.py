@@ -11,6 +11,7 @@ den Geräten live geteilt wird:
 - **Geräte:** ``GERAETE`` an jedes Gerät (mit ``ich``), sobald sich Verbindungen, Ansicht, Führung oder das aktive
   Gerät ändern.
 - **Sprechen:** ``SPRECHEN_LIVE`` (Striche, Zeiger, Text) geht an alle anderen Geräte, auch in der Eigenen Ansicht.
+- **Blick:** ``BLICK`` (Kamera und Seitenverhältnis) für den Rahmen in der Eigenen Ansicht, an alle anderen Geräte.
 
 Nur Verbindungen mit der Fähigkeit ``ansicht-1`` nehmen teil; ältere Apps bekommen nichts davon (Weiche in live.py).
 """
@@ -63,6 +64,8 @@ class Kopplung:
             self.ansicht(conn, header)
         elif art == "SPRECHEN_LIVE":
             self.sprechen(conn, header)
+        elif art == "BLICK":
+            self.blick(conn, header)
 
     def modus(self, conn: AppConnection, modus: Any) -> None:
         if modus not in ANSICHT_MODI:
@@ -115,6 +118,14 @@ class Kopplung:
         weiter = {k: v for k, v in header.items() if k not in ("seq", "id")}
         weiter["von"] = conn.number
         self.zaehler["live"] += 1
+        for c in self._link.verbindungen:
+            if c is not conn and nimmt_teil(c):
+                c.send(weiter)
+
+    def blick(self, conn: AppConnection, header: dict[str, Any]) -> None:
+        """Kamera eines Geräts für den Rahmen „wo schaut das iPad hin“ in der Eigenen Ansicht: an alle anderen Geräte
+        mit ``ansicht-1`` (ob sie ihn zeigen, entscheiden sie)."""
+        weiter = {"type": "BLICK", "kamera": header.get("kamera"), "seiten": header.get("seiten"), "von": conn.number}
         for c in self._link.verbindungen:
             if c is not conn and nimmt_teil(c):
                 c.send(weiter)

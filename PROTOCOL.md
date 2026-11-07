@@ -1663,6 +1663,7 @@ Striche beim Sprechen.
 | `ANSICHT` | Kernel → App | wie oben, dazu `von` (Nummer der Verbindung, die führt) | an alle anderen Geräte der Gemeinsamen Ansicht; die App folgt weich |
 | `GERAETE` | Kernel → App | `geraete`: je Gerät `nr`, `art` (`mac` \| `ipad`), `name`, `app`, `aktiv`, `ansicht` (`gemeinsam` \| `eigen` \| null ohne `ansicht-1`), `fuehrt`, `ich` (dieser Empfänger) | an jedes Gerät, sobald sich für es etwas ändert: Verbindungen, Ansicht, Führung, aktives Gerät |
 | `SPRECHEN_LIVE` | App → Kernel → App | `sitzung`; optional `strich` (`nr`, `punkte` als Weltpunkte in mm, `fertig`), `zeiger` (Weltpunkt unter Maus oder Stift, null daneben), `text` (bisher Gesagtes), `ende` (Sitzung vorbei: alles davon entfernen); vom Kernel mit `von` | an alle anderen Geräte mit `ansicht-1`, auch in der Eigenen Ansicht. Höchstens `SPRECHEN_LIVE_JE_S` (20) je Sekunde, der laufende Strich jeweils ganz (höchstens 2000 Punkte) |
+| `BLICK` | App → Kernel → App | `kamera` (wie der Teil `kamera` einer ANSICHT), `seiten` (Breite durch Höhe der Ansicht); vom Kernel mit `von` | Rahmen „wo schaut das iPad hin“ in der Eigenen Ansicht (seit 07.11.2026). Ein Gerät schickt seinen Blick, solange ein anderes die Eigene Ansicht hat, höchstens `BLICK_JE_S` (10) je Sekunde und nur bei Änderung; der Kernel reicht ihn an alle anderen Geräte mit `ansicht-1`. Gezeigt wird er nur in der Eigenen Ansicht und nur, wenn Kevin ihn eingeschaltet hat (Menü der Ansicht; eine Kapsel unten im Viewer blendet ihn wieder aus). |
 
 **Teile einer ANSICHT** (`ANSICHT_TEILE`; mit `voll` alle):
 

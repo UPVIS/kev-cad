@@ -76,11 +76,13 @@ final class KopplungTests: XCTestCase {
     }
 
     func testRahmenDerAppGleichDenTestdateien() throws {
-        for datei in ["ansicht_voll.frame", "ansicht_kamera.frame", "sprechen_live_strich.frame"] {
+        for datei in ["ansicht_voll.frame", "ansicht_kamera.frame", "sprechen_live_strich.frame", "blick.frame"] {
             let kopf = try Fixtures.frame(datei).header
             var m: any OutgoingMessage
             if datei.hasPrefix("ansicht") {
                 m = try JSONDecoder().decode(AnsichtMessage.self, from: kopf)
+            } else if datei.hasPrefix("blick") {
+                m = try JSONDecoder().decode(BlickMessage.self, from: kopf)
             } else {
                 m = try JSONDecoder().decode(SprechenLiveMessage.self, from: kopf)
             }
@@ -197,6 +199,42 @@ final class KopplungTests: XCTestCase {
         XCTAssertEqual(striche.count, 2, "ein Strich und der Zeiger")
         c.handle(.kopplung(.sprechenLive(SprechenLiveMessage(sitzung: s.sitzung, ende: true, von: 2))))
         XCTAssertTrue(c.fremdesSprechenOverlay().isEmpty)
+    }
+
+    func testBlickDesAnderenGeraetsNurInDerEigenenAnsichtUndAufWunsch() throws {
+        let (c, _) = try verbunden()
+        guard case .kopplung(.geraete(let liste)) = try Fixtures.message("geraete.frame") else { return XCTFail() }
+        c.handle(.kopplung(.geraete(liste)))
+        guard case .kopplung(.blick(var b)) = try Fixtures.message("blick_weiter.frame") else { return XCTFail() }
+        b.von = 1  // das MacBook aus der Geräteliste
+        c.blickZeigen(false)
+        c.handle(.kopplung(.blick(b)))
+        XCTAssertEqual(c.model.kopplung.blickVon, ["MacBook von Kevin"])
+        XCTAssertTrue(c.fremdeBlickeOverlay().isEmpty, "Gemeinsame Ansicht: kein Rahmen")
+        c.ansichtModus(.eigen)
+        XCTAssertTrue(c.fremdeBlickeOverlay().isEmpty, "nur auf Wunsch")
+        XCTAssertFalse(c.model.kopplung.blickSichtbar)
+        c.blickZeigen(true)
+        XCTAssertTrue(c.model.kopplung.blickSichtbar)
+        let rahmen = c.fremdeBlickeOverlay()
+        XCTAssertEqual(rahmen.count, 6, "Rahmen, vier Kanten zum Augpunkt, Name")
+        c.blickZeigen(false)  // der Aus-Knopf der Kapsel
+        XCTAssertTrue(c.fremdeBlickeOverlay().isEmpty)
+        c.ansichtModus(.gemeinsam)
+    }
+
+    func testFremderTextLive() throws {
+        let (c, _) = try verbunden()
+        guard case .kopplung(.geraete(let liste)) = try Fixtures.message("geraete.frame") else { return XCTFail() }
+        c.handle(.kopplung(.geraete(liste)))
+        guard case .kopplung(.sprechenLive(var s)) = try Fixtures.message("sprechen_live_strich.frame") else {
+            return XCTFail()
+        }
+        s.von = 1
+        c.handle(.kopplung(.sprechenLive(s)))
+        XCTAssertEqual(c.model.kopplung.fremdeTexte, [FremderText(id: 1, geraet: "MacBook von Kevin", text: "Mach das hier")])
+        c.handle(.kopplung(.sprechenLive(SprechenLiveMessage(sitzung: s.sitzung, ende: true, von: 1))))
+        XCTAssertTrue(c.model.kopplung.fremdeTexte.isEmpty)
     }
 
     func testGeraeteTextFuerDieOberflaeche() throws {

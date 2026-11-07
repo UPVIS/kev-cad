@@ -312,6 +312,19 @@ def test_sprechen_live_geht_an_die_anderen_geraete(env, paar):
     assert not [h for h in alt.since(s_alt) if h["type"] == "SPRECHEN_LIVE"], "App ohne ansicht-1 bekam Striche"
 
 
+def test_blick_geht_an_die_anderen(env, paar):
+    alt = env["pad"]
+    a, b = paar
+    sb, s_alt = b.mark(), alt.mark()
+    a.send({"type": "BLICK", "kamera": {**KAMERA, "abstand": 333.0}, "seiten": 1.5})
+    _, _, h, _ = b.wait_for(lambda h: h["type"] == "BLICK", start=sb, timeout=3)
+    assert h["kamera"]["abstand"] == 333.0 and h["seiten"] == 1.5 and isinstance(h["von"], int)
+    assert check_ansicht_message(h) == []
+    time.sleep(0.2)
+    assert not [h for h in alt.since(s_alt) if h["type"] == "BLICK"], "App ohne ansicht-1 bekam den Blick"
+    assert check_ansicht_message({"type": "BLICK", "kamera": KAMERA, "seiten": 0})
+
+
 def test_status_nennt_geraete_und_ansicht(env, paar):
     rt = env["rt"]
     a, _b = paar

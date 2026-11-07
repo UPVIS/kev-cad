@@ -163,6 +163,9 @@ struct ViewportArea: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             MassePill(model: model, viewer: model.viewer, kompakt: schmal)
+            // I-6: Rahmen der anderen Geräte (Aus-Knopf) und was dort gerade gesprochen wird
+            BlickKapsel(kopplung: model.kopplung, aktionen: model.actions as? KopplungsActions, kompakt: schmal)
+            FremderTextKapsel(kopplung: model.kopplung)
             if okSichtbar, pruefKey == nil, !state.pruefListeOffen, let p = model.pruefung, !p.montageSchritte.isEmpty {
                 OhneDurchspielen(store: model.bauplan) {  // dort steht dann die Leiste des Durchspielens
                     Pill(symbol: "checkmark.seal", tint: .green) {

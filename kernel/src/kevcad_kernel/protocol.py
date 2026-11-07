@@ -2565,6 +2565,7 @@ LIVE_NACHRICHTEN: dict[str, str] = {
     "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
     "AGENT_SPUR": FAEHIGKEIT_SPUR, "AGENT_SCHRITT": FAEHIGKEIT_SPUR, "LAGE_REQ": FAEHIGKEIT_LAGE,
     "GERAETE": FAEHIGKEIT_ANSICHT, "ANSICHT": FAEHIGKEIT_ANSICHT, "SPRECHEN_LIVE": FAEHIGKEIT_ANSICHT,
+    "BLICK": FAEHIGKEIT_ANSICHT,
 }
 #: neue Felder bestehender Nachrichten Kernel → App: (type, Feld) → Fähigkeit
 LIVE_FELDER: dict[tuple[str, str], str] = {
@@ -3499,7 +3500,9 @@ def datei_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
 
 ANSICHT_MODI: tuple[str, ...] = ("gemeinsam", "eigen")
 #: neue Nachrichten App → Kernel
-ANSICHT_APP_NACHRICHTEN: tuple[str, ...] = ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE")
+ANSICHT_APP_NACHRICHTEN: tuple[str, ...] = ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE", "BLICK")
+#: BLICK (Kamera eines Geräts für den Rahmen in der Eigenen Ansicht) höchstens so oft je Sekunde
+BLICK_JE_S = 10
 #: Teile einer ANSICHT (je Teil nur, wenn er sich geändert hat; mit ``voll`` alle). ``flaeche`` (Leisten und Kacheln)
 #: kam am 07.11.2026 dazu und fehlt bei Apps davor, deshalb verlangt ``voll`` nur ``ANSICHT_TEILE_VOLL``.
 ANSICHT_TEILE: tuple[str, ...] = ("kamera", "sicht", "auswahl", "darstellung", "schnitt", "explosion", "flaeche")
@@ -3562,7 +3565,7 @@ def check_ansicht_message(header: dict[str, Any], payload: bytes = b"") -> list[
     """Probleme einer Nachricht aus I-6 (leer = gut). Andere Nachrichten: leer."""
     art = header.get("type")
     out: list[str] = []
-    if art not in ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE", "GERAETE"):
+    if art not in ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE", "GERAETE", "BLICK"):
         return out
     if payload:
         out.append(f"{art} mit Nutzlast")
@@ -3603,6 +3606,12 @@ def check_ansicht_message(header: dict[str, Any], payload: bytes = b"") -> list[
                 out.append("ANSICHT: schnitt ungültig (normale, abstand)")
         if "explosion" in header and not _zahl(header["explosion"]):
             out.append("ANSICHT: explosion keine Zahl")
+    elif art == "BLICK":
+        out += ["BLICK: " + p for p in check_ansicht_kamera(header.get("kamera"))]
+        if not _zahl(header.get("seiten")) or header["seiten"] <= 0:
+            out.append("BLICK: seiten keine positive Zahl")
+        if "von" in header and not isinstance(header["von"], int):
+            out.append("BLICK: von keine Nummer")
     elif art == "SPRECHEN_LIVE":
         if not isinstance(header.get("sitzung"), str) or not header["sitzung"]:
             out.append("SPRECHEN_LIVE: sitzung fehlt")
@@ -3675,4 +3684,6 @@ def ansicht_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
                                   "zeiger": [121.5, 4.0, 62.0], "text": "Mach das hier"}, b"", "app"),
         ("sprechen_live_ende", {"type": "SPRECHEN_LIVE", "seq": 51, "sitzung": "s-1793480977", "ende": True,
                                 "von": 2}, b"", "kernel"),
+        ("blick", {"type": "BLICK", "seq": 60, "kamera": kamera, "seiten": 1.6}, b"", "app"),
+        ("blick_weiter", {"type": "BLICK", "seq": 61, "kamera": kamera, "seiten": 1.6, "von": 2}, b"", "kernel"),
     ]

@@ -38,11 +38,19 @@ final class LiveKopplung {
     var fremd: [Int: FremdesSprechen] = [:]
     /// Schmales Fenster: diese Kachel zeigt das Gerät groß, obwohl geteilt keine groß ist (geteilt bleibt nil).
     var flaecheAnpassung: KachelArt?
+    /// Blick der anderen Geräte (Kamera, Seitenverhältnis) nach Verbindungsnummer; zuletzt geschickter eigener Blick.
+    var blicke: [Int: (kamera: CameraState, seiten: Double)] = [:]
+    var blickGesendet: BlickMessage?
 
     /// Solange gilt eine Eingabe als „Kevin bedient hier“ (Sekunden).
     static let bedientFenster: CFTimeInterval = 0.35
     /// Ab so langer Pause beginnt ein neuer Griff.
     static let griffPause: CFTimeInterval = 0.5
+}
+
+extension ViewerStil {
+    /// I-6: Rahmen „wo schaut das andere Gerät hin“ (warmes Orange, hebt sich von Strichen und Auswahl ab).
+    static let blickRahmen = SIMD4<Float>(1.0, 0.62, 0.25, 0.9)
 }
 
 /// Was ein anderes Gerät beim Sprechen gerade zeigt.
@@ -71,6 +79,9 @@ extension AppController {
     func kopplungVerbindungWeg() {
         model.kopplung.liveGeraete = []
         liveKopplung.fremd = [:]
+        liveKopplung.blicke = [:]
+        liveKopplung.blickGesendet = nil
+        blickUndTexteMelden()
         liveKopplung.liveSitzung = nil
         kopplungTaktPruefen()
         refreshOverlay()
@@ -85,6 +96,7 @@ extension AppController {
         if connected { send(AnsichtModusMessage(modus: modus)) }
         log(.info, modus == .gemeinsam ? "Gemeinsame Ansicht" : "Eigene Ansicht")
         kopplungTaktPruefen()
+        refreshOverlay()  // der Blick der anderen gilt nur in der Eigenen Ansicht
     }
 
     func handleKopplung(_ k: KopplungNachricht) {
@@ -94,16 +106,22 @@ extension AppController {
             model.kopplung.liveGeraete = g.geraete
             // Geräte, die gegangen sind, nehmen ihre Striche mit
             let da = Set(g.geraete.map(\.nr))
-            if liveKopplung.fremd.keys.contains(where: { !da.contains($0) }) {
+            if liveKopplung.fremd.keys.contains(where: { !da.contains($0) })
+                || liveKopplung.blicke.keys.contains(where: { !da.contains($0) }) {
                 liveKopplung.fremd = liveKopplung.fremd.filter { da.contains($0.key) }
+                liveKopplung.blicke = liveKopplung.blicke.filter { da.contains($0.key) }
                 refreshOverlay()
             }
+            liveKopplung.blickGesendet = nil  // neu dazu oder in die Eigene Ansicht gewechselt: Blick gleich schicken
+            blickUndTexteMelden()
             if vorher.map(\.nr) != g.geraete.map(\.nr) { liveKopplung.liveStriche = [:] }  // neu dazu: alles neu schicken
             kopplungTaktPruefen()
         case .ansicht(let a):
             ansichtUebernehmen(a)
         case .sprechenLive(let m):
             fremdesSprechen(m)
+        case .blick(let b):
+            fremderBlick(b)
         }
     }
 
@@ -150,6 +168,7 @@ extension AppController {
         let k = liveKopplung
         k.tick += 1
         if k.tick % 3 == 0 { sprechenLiveTakt() }  // 20 je Sekunde
+        if k.tick % 6 == 0 { blickTakt() }  // 10 je Sekunde
         guard model.kopplung.teiltMitAnderen else { return }
         let jetzt = CACurrentMediaTime()
         let alles = k.griffOffen || k.tick % 6 == 0 || !k.basis.vollstaendig
@@ -390,7 +409,10 @@ extension AppController {
     func fremdesSprechen(_ m: SprechenLiveMessage) {
         let von = m.von ?? -1
         if m.ende {
-            if liveKopplung.fremd.removeValue(forKey: von) != nil { refreshOverlay() }
+            if liveKopplung.fremd.removeValue(forKey: von) != nil {
+                blickUndTexteMelden()
+                refreshOverlay()
+            }
             return
         }
         var f = liveKopplung.fremd[von].flatMap { $0.sitzung == m.sitzung ? $0 : nil } ?? FremdesSprechen(sitzung: m.sitzung)
@@ -399,12 +421,84 @@ extension AppController {
         if let z = m.zeiger { f.zeiger = z.flatMap(p) }
         if let t = m.text { f.text = t.isEmpty ? nil : t }
         liveKopplung.fremd[von] = f
+        blickUndTexteMelden()
         refreshOverlay()
     }
 
-    /// Striche und Zeiger der anderen Geräte im Viewer (in der Strichfarbe, etwas blasser als die eigenen).
-    func fremdesSprechenOverlay() -> [OverlayPrimitive] {
+    // MARK: Blick der anderen Geräte (Eigene Ansicht)
+
+    public func blickZeigen(_ an: Bool) {
+        guard an != model.kopplung.blickZeigen else { return }
+        model.kopplung.blickZeigen = an
+        UserDefaults.standard.set(an, forKey: KopplungsStore.blickSchluessel)
+        refreshOverlay()
+    }
+
+    /// Eigene Kamera an die anderen, solange eines von ihnen die Eigene Ansicht hat (nur dort gibt es den Rahmen).
+    private func blickTakt() {
+        let k = liveKopplung
+        guard live.kernelFaehigkeiten.contains(LiveFaehigkeit.ansicht),
+              model.kopplung.andere.contains(where: { $0.ansicht == .eigen })
+        else { return }
+        let g = viewport.viewSize
+        let seiten = g.height > 0 ? ((Double(g.width / g.height)) * 1000).rounded() / 1000 : 1.6
+        let b = BlickMessage(kamera: Self.kameraTeil(viewport.camera), seiten: seiten)
+        guard b != k.blickGesendet else { return }
+        send(b)
+        k.blickGesendet = b
+    }
+
+    func fremderBlick(_ b: BlickMessage) {
+        guard let von = b.von, let kam = Self.kameraState(b.kamera, wie: viewport.camera) else { return }
+        let neu = liveKopplung.blicke[von] == nil
+        liveKopplung.blicke[von] = (kam, b.seiten)
+        if neu { blickUndTexteMelden() }
+        if model.kopplung.blickSichtbar { refreshOverlay() }
+    }
+
+    /// Namen der Geräte mit Blick und die fremden Texte für die Oberfläche.
+    func blickUndTexteMelden() {
+        let namen = Dictionary(model.kopplung.liveGeraete.map { ($0.nr, $0.anzeigeName) }, uniquingKeysWith: { a, _ in a })
+        let von = liveKopplung.blicke.keys.sorted().compactMap { namen[$0] }
+        if model.kopplung.blickVon != von { model.kopplung.blickVon = von }
+        let texte = liveKopplung.fremd.keys.sorted().compactMap { nr -> FremderText? in
+            guard let t = liveKopplung.fremd[nr]?.text, !t.isEmpty else { return nil }
+            return FremderText(id: nr, geraet: namen[nr] ?? "Anderes Gerät", text: t)
+        }
+        if model.kopplung.fremdeTexte != texte { model.kopplung.fremdeTexte = texte }
+    }
+
+    /// Rahmen „wo schaut das iPad hin“: Sichtfeld des anderen Geräts in der Ebene seines Drehpunkts, perspektivisch
+    /// mit Kanten zum Augpunkt, dazu sein Name. Nur in der Eigenen Ansicht und nur, wenn Kevin es eingeschaltet hat.
+    func fremdeBlickeOverlay() -> [OverlayPrimitive] {
+        guard model.kopplung.modus == .eigen, model.kopplung.blickZeigen else { return [] }
+        let namen = Dictionary(model.kopplung.liveGeraete.map { ($0.nr, $0.anzeigeName) }, uniquingKeysWith: { a, _ in a })
         var items: [OverlayPrimitive] = []
+        for nr in liveKopplung.blicke.keys.sorted() {
+            guard let b = liveKopplung.blicke[nr] else { continue }
+            items += Self.blickRahmen(b.kamera, seiten: Float(b.seiten), name: namen[nr] ?? "Anderes Gerät")
+        }
+        return items
+    }
+
+    static func blickRahmen(_ c: CameraState, seiten: Float, name: String) -> [OverlayPrimitive] {
+        let farbe = ViewerStil.blickRahmen
+        let h = c.isOrthographic ? c.orthographicScale / 2 : c.distance * tan(c.fieldOfView * .pi / 360)
+        let w = h * max(seiten, 0.1)
+        let mitte = c.pivot, r = c.rightVector, o = c.upVector
+        let ecken = [mitte - r * w + o * h, mitte + r * w + o * h, mitte + r * w - o * h, mitte - r * w - o * h]
+        var items: [OverlayPrimitive] = [.polyline(points: ecken + [ecken[0]], color: farbe, width: 1.5)]
+        if !c.isOrthographic {
+            for e in ecken { items.append(.polyline(points: [c.position, e], color: farbe * SIMD4(1, 1, 1, 0.45), width: 1)) }
+        }
+        items.append(.label(point: ecken[0], text: "Blick \(name)", color: farbe))
+        return items
+    }
+
+    /// Striche und Zeiger der anderen Geräte im Viewer (in der Strichfarbe, etwas blasser als die eigenen), dazu der
+    /// Blick der anderen in der Eigenen Ansicht.
+    func fremdesSprechenOverlay() -> [OverlayPrimitive] {
+        var items: [OverlayPrimitive] = fremdeBlickeOverlay()
         let farbe = ViewerStil.strich * SIMD4(1, 1, 1, 0.75)
         for f in liveKopplung.fremd.values {
             for nr in f.striche.keys.sorted() {
@@ -433,6 +527,7 @@ extension AppController {
         guard erlaubt else { return (false, grund) }
         guard v.args["art"]?.stringValue == art else { return nil }
         if let m = v.args["modus"]?.stringValue.flatMap(AnsichtModus.init(rawValue:)) { ansichtModus(m) }
+        if let b = v.args["blick"]?.boolValue { blickZeigen(b) }
         if let name = v.args["ansicht"]?.stringValue {
             guard let sv = ViewportCoordinator.standardView(protocolName: name) else { return (false, "Unbekannte Ansicht") }
             lokaleEingabe()
@@ -448,6 +543,8 @@ extension AppController {
                 .map { .number((Double($0) * 1e4).rounded() / 1e4) }),
             "latenz_ms": kopplungLatenzMs.map { .number(($0 * 10).rounded() / 10) } ?? .null,
             "messungen": .number(Double(liveKopplung.latenzen.count)),
+            "blick_von": .array(model.kopplung.blickVon.map(JSONValue.string)),
+            "blick_rahmen": .number(Double(fremdeBlickeOverlay().count)),
         ]
         let text = (try? JSONEncoder().encode(JSONValue.object(stand))).flatMap { String(data: $0, encoding: .utf8) }
         return (true, text)
