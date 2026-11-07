@@ -708,6 +708,38 @@ final class SprachSitzungTests: XCTestCase {
         XCTAssertFalse(gesendet().contains { $0 is FeedbackPaketMessage })
     }
 
+    /// I-4: „Bild an den Agenten“ ohne Sitzung: stumm, sofort, ohne Mikrofon und ohne roten Rahmen.
+    func testBildAnDenAgentenOhneSitzung() async throws {
+        let (c, _, projekt, gesendet) = try aufbau()
+        var paket: FeedbackPaket?
+        c.sprache.beiPaket = { paket = $1 }
+        c.kranzAusfuehren(.bildAnAgent)
+        XCTAssertFalse(c.model.oberflaeche.spricht)
+        await bis { paket != nil && !c.sprache.offen }
+        let p = try XCTUnwrap(paket)
+        XCTAssertEqual(p.spracherkennung, "keine")
+        XCTAssertTrue(p.saetze.isEmpty && p.abschnitte.isEmpty && p.striche.isEmpty)
+        XCTAssertEqual(p.geraet, FeedbackGeraet.hier.rawValue)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: projekt.appendingPathComponent("feedback/\(p.name).json").path))
+        XCTAssertFalse(staende(gesendet()).contains("spricht"), "das Mikrofon geht nie an")
+        XCTAssertEqual(gesendet().compactMap { ($0 as? FeedbackPaketMessage)?.name }, [p.name])
+    }
+
+    /// I-4: In einer offenen Sitzung schickt „Bild an den Agenten“ alles ab, auch ohne Wort.
+    func testBildAnDenAgentenSchliesstOffeneSitzung() async throws {
+        let (c, _, _, _) = try aufbau()
+        var paket: FeedbackPaket?
+        c.sprache.beiPaket = { paket = $1 }
+        c.oberflaeche(.sprechen(true))
+        let id = c.sprache.sitzung?.id
+        c.kranzAusfuehren(.bildAnAgent)
+        await bis { paket != nil && !c.sprache.offen }
+        let p = try XCTUnwrap(paket)
+        XCTAssertEqual(p.spracherkennung, "test", "die Erkennung der Sitzung bleibt genannt")
+        XCTAssertEqual(p.uhrStart, Double(id?.dropFirst(2) ?? "0").map { $0 / 1000 } ?? 0, accuracy: 0.01)
+    }
+
     func testVerworfenerSatzVerschwindetAusDemText() async throws {
         let (c, t, _, _) = try aufbau()
         c.oberflaeche(.sprechen(true))

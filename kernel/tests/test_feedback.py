@@ -156,6 +156,15 @@ def test_text_nennt_ipad_und_fremdes_geraet():
     assert "Ohne Satz: Strich 2 weiß (am Mac) in der Bildebene" in text
 
 
+def test_nur_bild_ohne_sprechen():
+    """I-4 „Bild an den Agenten“: Paket ohne Wort und Strich, Erkennung ``keine``."""
+    p = copy.deepcopy(feedback_beispiel())
+    p.update(spracherkennung="keine", abschnitte=[], worte=[], saetze=[], striche=[], mausweg=[])
+    assert check_feedback_paket(p) == []
+    text = feedback_text(p)
+    assert "ohne Sprechen das Bild" in text and "Gesprochen hat er nichts" not in text
+
+
 def test_text_warnt_bei_neuem_lauf():
     assert "Refs gelten für Lauf 7, aktuell ist Lauf 9" in feedback_text(feedback_beispiel(), aktueller_lauf=9)
 

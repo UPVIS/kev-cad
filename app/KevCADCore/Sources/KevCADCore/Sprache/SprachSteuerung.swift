@@ -56,6 +56,8 @@ public final class SprachSteuerung {
     private var schliesst = false
     /// Letzter Treffer des laufenden Strichs (Bildebene für Punkte daneben).
     private var strichAnker: SIMD3<Float>?
+    /// I-4 „Bild an den Agenten“: Das Paket geht auch ohne Wort und ohne Strich hinaus.
+    private var nurBild = false
 
     /// Selbsttest: jeder Zwischenstand mit Uptime; das Paket, sobald es geschrieben ist.
     var beiZwischenstand: ((String, Double) -> Void)?
@@ -98,7 +100,20 @@ public final class SprachSteuerung {
         }
     }
 
-    private func beginnen() {
+    /// I-4 „Bild an den Agenten“ (Werkzeugkranz › Agent): das Viewerbild mit den Strichen als Paket schicken, ohne
+    /// Sprechen. Eine offene Sitzung schließt es mit allem, was sie hat; sonst entsteht eine stumme Sitzung, die sofort
+    /// endet (ohne Mikrofon, `spracherkennung` = `keine`).
+    func bildSenden() {
+        guard !schliesst else { return }
+        if sitzung == nil {
+            beginnen(stumm: true)
+            guard sitzung != nil else { return }
+        }
+        nurBild = true
+        fertig()
+    }
+
+    private func beginnen(stumm: Bool = false) {
         guard let c = controller else { return }
         guard let p = c.model.project else {
             c.viewer.zeige("Dafür braucht es ein offenes Projekt.")
@@ -107,7 +122,7 @@ public final class SprachSteuerung {
         let unix = Date().timeIntervalSince1970
         projekt = p
         var s = FeedbackSitzung(id: "s-\(Int(unix * 1000))", uhrStart: unix, uhrNull: jetzt)
-        s.mikrofonAn(t: 0)
+        if !stumm { s.mikrofonAn(t: 0) }
         s.kamera(t: 0, c.lageKamera())
         s.auswahl(t: 0, run: c.scene.latestRun, refs: c.scene.selection.map(\.string))
         sitzung = s
@@ -115,6 +130,7 @@ public final class SprachSteuerung {
         zwischenstand = nil
         satzBeginn = nil
         c.model.sprache.text = nil
+        if stumm { return }  // kein Mikrofon, kein roter Rahmen: das Paket entsteht gleich
         erkennung = erkennungFabrik?() ?? neueErkennung()
         erkennung?.beiEreignis = { [weak self] e in self?.ereignis(e) }
         c.model.oberflaeche.ausfuehren(.sprechen(true))
@@ -421,8 +437,8 @@ public final class SprachSteuerung {
         }
         let (saetze, _) = sitzung.saetzeMitBezuegen(run: run)
         let text = (gesagt + (zwischenstand.map { [$0] } ?? [])).joined(separator: " ")
-        // Ohne ein Wort und ohne Strich gibt es nichts zu melden
-        guard !saetze.isEmpty || !sitzung.striche.isEmpty else {
+        // Ohne ein Wort und ohne Strich gibt es nichts zu melden, außer Kevin schickt ausdrücklich das Bild
+        guard nurBild || !saetze.isEmpty || !sitzung.striche.isEmpty else {
             aufraeumen()
             c.model.oberflaeche.ausfuehren(.sprechenVerwerfen)
             c.viewer.zeige("Du hast nichts gesagt, deshalb geht nichts an den Agenten.")
@@ -432,7 +448,8 @@ public final class SprachSteuerung {
         let name = FeedbackAblage.name(in: ordner, datum: erstellt)
         let eintrag = bild.map { FeedbackPaket.Bild(datei: name + ".jpg", breite: $0.image.width, hoehe: $0.image.height) }
         let paket = sitzung.paket(
-            name: name, erstellt: erstellt, dauer: ende, spracherkennung: erkennung?.kennung ?? "test",
+            name: name, erstellt: erstellt, dauer: ende,
+            spracherkennung: erkennung?.kennung ?? (nurBild ? "keine" : "test"),
             wortzeiten: erkennung?.wortzeiten ?? "ton", projekt: .init(name: projekt.name, pfad: projekt.path.path),
             run: run, ende: lage, bild: eintrag, geraet: .hier)
         let overlay = Self.strichItems(paket.striche, breite: CGFloat(c.viewer.strichbreite)) + Self.nummern(paket.saetze)
@@ -599,6 +616,7 @@ public final class SprachSteuerung {
         stoppen = nil
         stand = .aus
         schliesst = false
+        nurBild = false
         gesagt = []
         zwischenstand = nil
         satzBeginn = nil

@@ -3101,7 +3101,8 @@ FEEDBACK_KAMERA_JE_S = 5
 FEEDBACK_BILD_LAENGE_MAX = 1600
 FEEDBACK_ZEIGEWOERTER = ("hier", "da", "dort", "dahin", "hierhin", "dorthin", "das", "dies", "diese", "dieser", "dieses",
                          "diesem", "diesen")
-FEEDBACK_ERKENNUNGEN = ("wortlaut-parakeet", "apple-dictation", "apple-speech", "test")
+#: ``keine``: „Bild an den Agenten“ aus dem Werkzeugkranz (I-4), das Paket kommt ohne Sprechen
+FEEDBACK_ERKENNUNGEN = ("wortlaut-parakeet", "apple-dictation", "apple-speech", "test", "keine")
 FEEDBACK_WORTZEITEN = ("ton", "geschaetzt")
 #: I-4 (PLAN-IPAD.md 4.4): Strichfarben aus dem Werkzeugkranz; Kevin nennt sie beim Sprechen („die rote Linie“)
 FEEDBACK_STRICHFARBEN = ("rot", "gelb", "gruen", "blau", "weiss")

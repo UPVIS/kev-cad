@@ -130,6 +130,8 @@ public enum KranzAktion: Equatable, Sendable {
     case neuRechnen
     /// Stift startet das Sprechen (an/aus).
     case stiftSprechen
+    /// Viewerbild mit den Strichen als Paket an den Agenten, ohne Sprechen.
+    case bildAnAgent
 }
 
 /// Ein Eintrag im zweiten Ring.

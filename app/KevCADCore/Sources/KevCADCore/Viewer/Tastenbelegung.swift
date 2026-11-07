@@ -468,7 +468,8 @@ public enum Tastenbelegung {
                 KranzEintrag($0.0.titel, $0.1, .kachel($0.0))
             }
         case .agent:
-            return [KranzEintrag("Neu rechnen", "arrow.clockwise", .neuRechnen),
+            return [KranzEintrag("Bild an den Agenten", "photo.on.rectangle", .bildAnAgent),
+                    KranzEintrag("Neu rechnen", "arrow.clockwise", .neuRechnen),
                     KranzEintrag("Meilensteine", "flag", .kachel(.versionen)),
                     .befehl(.sprechenVerwerfen, "xmark", "Sitzung verwerfen")]
         case .mehr:

@@ -1468,7 +1468,7 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
   "erstellt": "2026-11-05T22:30:11+01:00",
   "uhr_start": 1793480977.25,        // Unix-Zeit von Uhrzeit 0; alle Zeiten im Paket sind Sekunden ab hier
   "dauer_s": 34.2,                   // bis ↩
-  "spracherkennung": "wortlaut-parakeet",  // wortlaut-parakeet | apple-dictation | apple-speech | test
+  "spracherkennung": "wortlaut-parakeet",  // wortlaut-parakeet | apple-dictation | apple-speech | test | keine (I-4: nur Bild)
   "wortzeiten": "geschaetzt",        // ton: aus dem Ton gemessen; geschaetzt: siehe „Eine Uhr“
   "projekt": {"name": "Halter", "pfad": "/Users/…/Halter"},
   "run": 7,                          // Lauf beim Abschließen
@@ -1518,6 +1518,10 @@ umbenennen). Wer die `.json` sieht, findet das Bild schon vor. Projekt ist das, 
   rote Linie“); der Text von `feedback()` nennt sie je Strich („Strich 1 rot auf …“) und das Gerät, wenn ein Strich von
   einem anderen kam als die Sitzung, sowie „am iPad“ im Kopf. Im Bild hat jeder Strich seine Farbe. Ältere Pakete ohne
   diese Felder bleiben gültig; ein Strich ohne Farbe ist lichtblau (`blau`).
+- **Bild an den Agenten (I-4):** Aus dem Werkzeugkranz (Agent) geht das Viewerbild mit den Strichen ohne Sprechen
+  hinaus. Läuft eine Sitzung, schließt es sie mit allem, was sie hat (auch ohne Wort); sonst entsteht eine stumme Sitzung
+  ohne Mikrofon, die sofort endet: `spracherkennung` ist `keine`, `abschnitte`, `worte` und `saetze` sind leer. Der Text
+  von `feedback()` sagt dann, dass Kevin nur das Bild schickt.
 - **`kamera_verlauf` und `auswahl_verlauf`:** ein Eintrag beim Beginn, dann je Änderung (Kamera höchstens 5 je Sekunde).
 - **`bezuege`:** Die Mausproben von 0,5 s vor Satzbeginn bis 0,3 s nach Satzende werden je `ref` zu Zeiträumen
   zusammengefasst. Ein Zeitraum zählt ab 0,25 s, oder wenn ein Zeigewort auf ihn fällt. Zeigewörter sind „hier“, „da“,

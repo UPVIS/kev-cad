@@ -124,7 +124,10 @@ def feedback_text(paket: dict[str, Any], aktueller_lauf: int | None = None) -> s
         if refs:
             zeilen.append("   ausgewählt: " + ", ".join(refs[:ZEIGER_JE_ZEILE])
                           + (f" und {len(refs) - ZEIGER_JE_ZEILE} weitere" if len(refs) > ZEIGER_JE_ZEILE else ""))
-    if not saetze:
+    if not saetze and paket.get("spracherkennung") == "keine":
+        zeilen.append("Er schickt dir ohne Sprechen das Bild seiner Ansicht "
+                      "(Werkzeugkranz › Agent › Bild an den Agenten).")
+    elif not saetze:
         zeilen.append("Gesprochen hat er nichts.")
     frei = [s for nr, s in striche.items() if not any(
         b.get("strich") == nr for satz in saetze for b in satz.get("bezuege") or [])]

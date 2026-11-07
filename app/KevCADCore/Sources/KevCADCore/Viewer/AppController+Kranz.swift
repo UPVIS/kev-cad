@@ -48,6 +48,7 @@ extension AppController {
         case .darstellung(let m): setShading(m)
         case .kachel(let k): oberflaeche(.kachelZeigen(k))
         case .neuRechnen: runModel()
+        case .bildAnAgent: sprache.bildSenden()
         case .stiftSprechen:
             viewer.stiftSprechen.toggle()
             viewer.zeige(viewer.stiftSprechen ? "Ein Stiftstrich beginnt jetzt das Sprechen"
