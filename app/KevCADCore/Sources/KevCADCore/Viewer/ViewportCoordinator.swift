@@ -78,7 +78,17 @@ public final class ViewportCoordinator: ObservableObject {
     /// Drehpunkt der laufenden Drehung (Punkt unter der Maus beim Beginn); nil = Ansichtsmittelpunkt.
     var drehZentrum: SIMD3<Float>?
     /// Die Eingabeebene über dem MTKView (für einen neuen Treffertest nach einer Kamerafahrt).
-    weak var eingabeView: NavigationInputView?
+    weak var eingabeView: NavigationInputView? {
+        didSet { if eingabeView !== oldValue { eingabeBeobachterAnbringen() } }  // I-6, EingabeBeobachter.swift
+    }
+    /// I-6: Kevin bedient diesen Viewer gerade (Maus, Tasten, Finger, Stift), bei jedem Ereignis; nil = niemand fragt.
+    public var onEingabe: (() -> Void)? {
+        didSet { if onEingabe != nil { eingabeBeobachterAnbringen() } }
+    }
+    /// I-6: Kamera zieht einem anderen Gerät nach (Kamerafahrt.swift) und die Beobachter der Eingabe.
+    var folge: KameraFolge?
+    var eingabeBeobachter: AnyObject?
+    var eingabeMonitor: Any?
     /// Letzte Mausposition über dem Viewport (Eingabeebene, Ursprung unten links); nil = Maus außerhalb.
     public internal(set) var letzteMaus: CGPoint?
 

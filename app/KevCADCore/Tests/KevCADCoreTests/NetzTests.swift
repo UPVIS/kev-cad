@@ -20,6 +20,13 @@ final class NetzTests: XCTestCase {
         XCTAssertNil(KopplungsCode.lesen("https://example.com"))
         XCTAssertNil(KopplungsCode.lesen("kevcad://koppeln/kaputt"))
         XCTAssertEqual(NetzKanal.fingerabdruck(code.schluessel).count, 9)
+        // I-6: Das iPad sucht den Dienst über die Kennung des Mac (TXT `mac`), der Name ist nur Rückfall
+        let ziel = NetzZiel(code: code)
+        XCTAssertEqual(ziel.macKennung, "mac-1")
+        guard case .service(let name, let typ, _, _) = ziel.wege.first else { return XCTFail("Bonjour zuerst") }
+        XCTAssertEqual(name, "MacBook Pro von Kevin")
+        XCTAssertEqual(typ, NetzKanal.dienstTyp)
+        XCTAssertEqual(ziel.wege.count, 4)
     }
 
     #if os(macOS)

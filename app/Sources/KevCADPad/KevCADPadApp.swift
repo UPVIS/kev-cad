@@ -84,7 +84,7 @@ struct PadHauptfenster: View {
                         if iCloudProjekte {
                             PadProjekteChip { projekteZeigen = true }
                         }
-                        PadKopplungsChip(kopplung: session.model.kopplung) { kopplungZeigen = true }
+                        PadKopplungsChip(kopplung: session.model.kopplung, aktionen: kopplungsAktionen) { kopplungZeigen = true }
                     }
                     .frame(height: max(oben, 20))
                     .offset(y: -oben)

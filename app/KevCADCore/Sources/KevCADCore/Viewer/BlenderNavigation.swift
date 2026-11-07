@@ -47,6 +47,7 @@ extension ViewportCoordinator {
 
     /// Kamera sofort setzen (laufende Fahrt abbrechen, sonst überschreibt sie die Eingabe).
     func setCamera(_ c: CameraState) {
+        folge = nil  // I-6: eigene Bedienung geht vor dem Nachziehen
         if fahrt != nil { fahrtAbbrechen() } else { controller.cameraController.cancelAnimation() }
         controller.animateTo(c, duration: 0)
         onKameraGesetzt?(c)

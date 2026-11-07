@@ -20,6 +20,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import CallToolResult
 from pydantic import Field
 
+from kevcad_kernel.kopplung import geraete_text
 from kevcad_kernel.service import KernelService
 
 from . import format as fmt
@@ -220,6 +221,10 @@ def register_kern_tools(mcp: MCPServer, t: Any, svc: KernelService, griffe: Grif
                       + f" · App {'verbunden' if app else 'nicht verbunden (Ansicht, Bilder, Auswahl gehen nicht)'}"
                       + (" · Auto-Lauf an" if settings.get("auto_run") else ""))
         data.update({"kernel": res.get("kernel"), "app": app, "auto_run": bool(settings.get("auto_run"))})
+        geraete = res.get("geraete") if isinstance(res.get("geraete"), list) else []
+        if text := geraete_text(geraete):  # I-6: Mac und iPad, aktiv, Gemeinsame oder Eigene Ansicht
+            zeilen.append(text)
+            data["geraete"] = [{k: g.get(k) for k in ("name", "art", "aktiv", "ansicht", "fuehrt")} for g in geraete]
         feedback = res.get("feedback") if isinstance(res.get("feedback"), dict) else None
         if feedback:  # V2-6: Spricht Kevin gerade, wartet ein Paket?
             if text := stand_text(feedback):

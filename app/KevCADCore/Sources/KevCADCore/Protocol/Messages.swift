@@ -577,6 +577,8 @@ public enum KernelMessage: Sendable {
     case lageAnfrage(LageRequestMessage)
     /// I-8 (datei-1): ein Stück einer Datei vom Mac, Antwort auf DATEI_REQ.
     case datei(DateiStueckMessage)
+    /// I-6 (ansicht-1): Geräteliste, Gemeinsame Ansicht, Live-Striche.
+    case kopplung(KopplungNachricht)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -627,6 +629,7 @@ public enum KernelMessage: Sendable {
         case .agentSchritt: return "AGENT_SCHRITT"
         case .lageAnfrage: return "LAGE_REQ"
         case .datei: return "DATEI"
+        case .kopplung(let k): return k.typeName
         case .unknown(let t, _): return t
         }
     }
@@ -716,6 +719,7 @@ public enum KernelMessage: Sendable {
         case "AGENT_SCHRITT": return .agentSchritt(try dec.decode(AgentSchrittMessage.self, from: h))
         case "LAGE_REQ": return .lageAnfrage(try dec.decode(LageRequestMessage.self, from: h))
         case "DATEI": return .datei(try DateiStueckMessage.decode(h, payload: frame.payload))
+        case let t where KopplungNachricht.types.contains(t): return .kopplung(try KopplungNachricht.decode(type: t, header: h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

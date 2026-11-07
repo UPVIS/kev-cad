@@ -22,20 +22,25 @@ public struct NetzZiel: Sendable {
     public var wege: [NWEndpoint]
     public var schluessel: Data
     public var kennung: String
+    /// I-6 (Rest aus I-3b): Kennung der Mac-App (TXT `mac` ihres Bonjour-Dienstes). Mit ihr sucht das iPad den Dienst
+    /// über die Kennung statt über den Namen und findet den Mac so auch nach einer Umbenennung.
+    public var macKennung: String?
 
-    public init(wege: [NWEndpoint], schluessel: Data, kennung: String) {
+    public init(wege: [NWEndpoint], schluessel: Data, kennung: String, macKennung: String? = nil) {
         self.wege = wege
         self.schluessel = schluessel
         self.kennung = kennung
+        self.macKennung = macKennung
     }
 
-    /// Aus einem Kopplungscode: zuerst der Bonjour-Dienst des Mac, dann jede Adresse aus dem Code.
+    /// Aus einem Kopplungscode: zuerst der Bonjour-Dienst des Mac (über seine Kennung gesucht, sonst unter seinem
+    /// Namen), dann jede Adresse aus dem Code.
     public init(code: KopplungsCode) {
         var wege: [NWEndpoint] = [.service(name: code.name, type: NetzKanal.dienstTyp, domain: "local.", interface: nil)]
         if let port = NWEndpoint.Port(rawValue: code.port) {
             wege += code.wege.map { NWEndpoint.hostPort(host: NWEndpoint.Host($0), port: port) }
         }
-        self.init(wege: wege, schluessel: code.schluessel, kennung: code.kennung)
+        self.init(wege: wege, schluessel: code.schluessel, kennung: code.kennung, macKennung: code.mac.isEmpty ? nil : code.mac)
     }
 }
 
@@ -57,6 +62,11 @@ public final class KernelConnection: @unchecked Sendable {
     /// Zählt Versuche übers Netz, damit eine späte Frist keinen neueren Versuch abbricht.
     private var netzVersuch = 0
     private var netzBereit = false
+    /// I-6: Bonjour-Suche nach dem Dienst mit der Kennung des Mac und ihr Ergebnis (gilt bis zum nächsten Abbruch).
+    private var macSuche: NWBrowser?
+    private var gefundenerDienst: NWEndpoint?
+    /// So lange sucht das iPad den Dienst über die Kennung, dann versucht es den Namen.
+    public var macSucheFrist: Double = 2
     private var wanted = false
     private var readBuffer = [UInt8](repeating: 0, count: 256 * 1024)
     /// V2-5: Basen für WIE_ZUVOR, je Verbindung, nur auf dem Lesefaden.
@@ -88,6 +98,7 @@ public final class KernelConnection: @unchecked Sendable {
         queue.async {
             self.netzZiel = ziel
             self.wegIndex = 0
+            self.gefundenerDienst = nil
             self.wanted = true
             if self.netz != nil {
                 self.teardown(reason: "Neues Ziel")  // verbindet danach mit dem neuen Ziel
@@ -106,6 +117,8 @@ public final class KernelConnection: @unchecked Sendable {
             self.wanted = false
             self.retryTimer?.cancel()
             self.retryTimer = nil
+            self.macSuche?.cancel()
+            self.macSuche = nil
             self.teardown(reason: nil)
         }
     }
@@ -121,7 +134,7 @@ public final class KernelConnection: @unchecked Sendable {
     // MARK: Verbinden
 
     private func tryConnect() {
-        guard wanted, fd < 0, netz == nil else { return }
+        guard wanted, fd < 0, netz == nil, macSuche == nil else { return }
         if let ziel = netzZiel {
             netzVerbinden(ziel)
             return
@@ -316,6 +329,54 @@ public final class KernelConnection: @unchecked Sendable {
         }
         let weg = ziel.wege[wegIndex % ziel.wege.count]
         wegIndex += 1
+        // I-6: Den Bonjour-Weg über die Kennung des Mac auflösen (TXT `mac`), nicht über seinen Namen
+        if case .service = weg, let mac = ziel.macKennung {
+            if let gefunden = gefundenerDienst {
+                netzVerbinden(ziel, weg: gefunden)
+            } else {
+                macSuchen(mac) { [weak self] gefunden in
+                    guard let self, self.wanted, self.netz == nil else { return }
+                    self.gefundenerDienst = gefunden
+                    self.netzVerbinden(ziel, weg: gefunden ?? weg)  // nicht gefunden: wie bisher über den Namen
+                }
+            }
+            return
+        }
+        netzVerbinden(ziel, weg: weg)
+    }
+
+    /// Dienst `_kevcad._tcp` mit TXT `mac` = `kennung` suchen; nil nach `macSucheFrist`. Alles auf `queue`.
+    private func macSuchen(_ kennung: String, fertig: @escaping @Sendable (NWEndpoint?) -> Void) {
+        let b = NWBrowser(for: .bonjourWithTXTRecord(type: NetzKanal.dienstTyp, domain: "local."), using: .tcp)
+        macSuche = b
+        let erledigt = Merker()
+        let ende: @Sendable (NWEndpoint?) -> Void = { [weak self, weak b] e in
+            guard !erledigt.wert else { return }
+            erledigt.wert = true
+            b?.browseResultsChangedHandler = nil
+            b?.stateUpdateHandler = nil
+            b?.cancel()
+            if let self, self.macSuche === b { self.macSuche = nil }
+            fertig(e)
+        }
+        b.browseResultsChangedHandler = { ergebnisse, _ in
+            for e in ergebnisse {
+                if case .bonjour(let txt) = e.metadata, txt["mac"] == kennung { return ende(e.endpoint) }
+            }
+        }
+        b.stateUpdateHandler = { zustand in
+            if case .failed = zustand { ende(nil) }
+        }
+        queue.asyncAfter(deadline: .now() + macSucheFrist) { ende(nil) }
+        b.start(queue: queue)
+    }
+
+    /// Schalter für Rückrufe auf derselben Warteschlange.
+    private final class Merker: @unchecked Sendable {
+        var wert = false
+    }
+
+    private func netzVerbinden(_ ziel: NetzZiel, weg: NWEndpoint) {
         let c = NWConnection(to: weg, using: NetzKanal.parameter(schluessel: ziel.schluessel, kennung: ziel.kennung))
         netz = c
         netzBereit = false
@@ -341,8 +402,10 @@ public final class KernelConnection: @unchecked Sendable {
                 self.netzLesen(c)
             case .waiting(let fehler):
                 // Kein Weg (Netz weg, Mac nicht erreichbar): nächsten Weg versuchen statt hier zu warten
+                if case .service = weg { self.gefundenerDienst = nil }  // beim nächsten Mal neu suchen
                 self.teardown(reason: NetzKanal.schluesselPasstNicht(fehler) ? "Schlüssel passt nicht" : nil)
             case .failed(let fehler):
+                if case .service = weg { self.gefundenerDienst = nil }
                 self.teardown(reason: NetzKanal.schluesselPasstNicht(fehler) ? "Schlüssel passt nicht" : "\(fehler)")
             default:
                 break

@@ -30,6 +30,8 @@ public final class AppController: AppActions {
     let screenshots = ScreenshotRenderer()
     /// V2-6: Sprach-Feedback (Sprache/SprachSteuerung.swift).
     public let sprache = SprachSteuerung()
+    /// I-6: Live-Kopplung der Geräte (AppController+LiveKopplung.swift).
+    let liveKopplung = LiveKopplung()
     /// V2-10: zweite Ansicht als zweiter Viewer mit eigener Kamera (Viewer/ZweiterViewer.swift,
     /// AppController+ZweiterViewer.swift) und das Ziel des letzten Kamerabefehls, dem sie folgt.
     public let zweiterViewer = ZweiterViewer()
@@ -428,12 +430,14 @@ public final class AppController: AppActions {
                 // I-2: als Vorgabe beim Verbinden, damit sie ein schon verbundenes Gerät nicht umstellt.
                 sendSettings(mitInventar: false, anlass: "start")
                 kopplungVerbunden(true)
+                kopplungVerbindungSteht()  // I-6: Gemeinsame oder Eigene Ansicht melden
             case .disconnected(let reason):
                 let was = connected
                 connected = false
                 helloReceived = false
                 failAllPending(reason)
                 kopplungVerbunden(false, grund: reason)
+                kopplungVerbindungWeg()
                 if was { log(.warning, "Verbindung zum Kernel getrennt: \(reason)") }
                 if running {
                     if case .failed = model.kernelState {} else { model.kernelState = .starting }
@@ -593,6 +597,10 @@ public final class AppController: AppActions {
             model.agentActivity = a.connected ? a.activity : nil
             mirror?.updateAgents(a.sessions)
         case .viewCommand(let v):
+            if v.cmd == "test_kopplung" {  // I-6, Kettentest: nur das genannte Gerät antwortet
+                if let (ok, message) = testKopplung(v) { send(AckOutMessage(replyTo: v.id, ok: ok, message: message)) }
+                break
+            }
             if let (ok, message) = performFlaecheCommand(v) {  // V2-7: ändert nichts an der Kamera
                 if !ok { log(.warning, "Ansichtsbefehl \(v.cmd): \(message ?? "fehlgeschlagen")") }
                 send(AckOutMessage(replyTo: v.id, ok: ok, message: message))
@@ -671,6 +679,8 @@ public final class AppController: AppActions {
             lageBeantworten(r)
         case .datei:
             break  // I-8: nur als Antwort auf DATEI_REQ (oben); eine verspätete nach Zeitüberschreitung fällt weg
+        case .kopplung(let k):  // I-6 (AppController+LiveKopplung.swift)
+            handleKopplung(k)
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }
@@ -949,6 +959,7 @@ public final class AppController: AppActions {
         items.append(contentsOf: massstabOverlay())  // Phase 4: Punkte des Werkzeugs „Maßstab setzen“
         items.append(contentsOf: messVorschauItems())  // V2: Messen beim Darüberfahren, Fangpunkte
         items.append(contentsOf: sprache.overlay())  // V2-6: Kevins Striche
+        items.append(contentsOf: fremdesSprechenOverlay())  // I-6: Striche und Zeiger der anderen Geräte
         return items
     }
 

@@ -55,7 +55,10 @@ from kevcad_kernel.topologie.laufzeit import TopologieRuntime  # Topologieoptimi
 from kevcad_kernel.simulation.laufzeit import SimulationRuntime  # Bereich „Simulation“ (PLAN-SIMULATION.md)
 from kevcad_kernel.pruefung.anbindung import PruefStand, check_fuer_app, fuer_ergebnis
 from kevcad_kernel.pruefung.dienst import PruefDienst
-from kevcad_kernel.protocol import KERNEL_FAEHIGKEITEN, LIVE_APP_NACHRICHTEN, PROTOCOL_VERSION, kanonisch
+from kevcad_kernel.kopplung import Kopplung
+from kevcad_kernel.protocol import (
+    ANSICHT_APP_NACHRICHTEN, KERNEL_FAEHIGKEITEN, LIVE_APP_NACHRICHTEN, PROTOCOL_VERSION, kanonisch,
+)
 from kevcad_kernel.referenz.laufzeit import ReferenzRuntimeMixin  # Phase 4: Foto und Video als Referenz
 from kevcad_kernel.render.laufzeit import RenderRuntime  # Phase 7: Renderings
 from kevcad_kernel.scan.laufzeit import ScanRuntimeMixin  # Scan mit dem iPhone (SCAN.md, PLAN-SCAN.md)
@@ -216,6 +219,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._live_init()  # V2-5: Agentenspur, Lagebild, Live-Maße (live.py)
         self._link = AppLink(socket_path, self._on_app_connect, self._on_app_message, self._on_app_disconnect,
                              log=self._log)
+        self._kopplung = Kopplung(self._link, self._log)  # I-6: Gemeinsame Ansicht, Geräteliste, Live-Striche
         self._link.start()
         self._threads = [
             threading.Thread(target=self._job_loop, name="kevcad-jobs", daemon=True),
@@ -243,7 +247,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 "kernel": state,
                 "message": message,
                 "app_connected": self._link.connected,
-                "geraete": self._link.geraete(),  # I-2: Mac und iPad, das aktive zuerst bedient
+                "geraete": self._link.geraete(),  # I-2: Mac und iPad; I-6 mit Ansicht und Führung
+                "kopplung": self._kopplung.stand(),  # I-6: Gemeinsame Ansicht
                 "last_run": self._last_result,
                 "selection": dict(self._selection),
                 "settings": dict(self._settings),
@@ -1526,6 +1531,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         rest = len(self._link.verbindungen)
         self._log(f"[kernel] App getrennt (Nr. {conn.number}{f', noch {rest} verbunden' if rest else ''})")
         self._fail_pending("App-Verbindung getrennt", conn)
+        self._kopplung.getrennt(conn)  # I-6: Führung frei, Geräteliste an die übrigen
         # V2-6: Ohne das Gerät, an dem Kevin spricht, spricht niemand mehr (I-2: nur dieses Gerät zählt)
         if not self._link.connected or getattr(self, "_fb_conn", None) is conn:
             self._feedback_verbindung_weg()
@@ -1642,10 +1648,13 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
                 schluessel = f"app:{header.get('bundle_id') or ''}"
             self._link.gleiches_geraet_ersetzen(conn, schluessel)
             self._live_hello_app(conn, header)  # V2-5: Fähigkeiten an die Weiche, Agentenspur
+            self._kopplung.hallo(conn)  # I-6: Gemeinsame Ansicht, Geräteliste an alle
         elif kind in LIVE_APP_NACHRICHTEN:  # V2-5: PARTS_REQ, NOCHMAL (LAGE ist eine Antwort, siehe oben)
             self._live_app_message(conn, kind, header)
         elif kind == "AKTIV":
             pass  # I-2: nur das aktive Gerät setzen (oben)
+        elif kind in ANSICHT_APP_NACHRICHTEN:  # I-6: ANSICHT_MODUS, ANSICHT, SPRECHEN_LIVE
+            self._kopplung.nachricht(conn, kind, header)
         elif kind == "CAMERA_SUGGEST":
             self.camera_suggest_from_app(header)
         elif kind == "SELECTION":

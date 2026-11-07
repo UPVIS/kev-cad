@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import socket
 import sys
@@ -89,9 +90,32 @@ def feedback_route(app: Any, service: KernelService) -> Any:
                     "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(koerper)).encode())]})
         await send({"type": "http.response.body", "body": koerper})
 
+    async def test_ansicht(scope: dict[str, Any], send: Any) -> None:
+        """Nur mit ``KEVCAD_KERNEL_TESTWEG=1`` (Kettentest tools/ipad-kette.sh): ``GET /test/view_cmd?cmd=test_…&args=
+        <JSON>`` schickt einen Testbefehl an die Geräte und antwortet mit dem Ergebnis (I-6: ein Gerät bedienen, den Stand
+        eines Geräts lesen). Andere Befehle als ``test_…`` nimmt der Weg nicht an."""
+        q = parse_qs(scope.get("query_string", b"").decode())
+        cmd = q.get("cmd", [""])[0]
+        try:
+            args = json.loads(q.get("args", ["{}"])[0])
+        except ValueError:
+            args = None
+        if not cmd.startswith("test_") or not isinstance(args, dict):
+            daten: dict[str, Any] = {"ok": False, "error": "nur test_… mit args als JSON-Objekt"}
+        else:
+            daten = await anyio.to_thread.run_sync(service.view_command, cmd, args)
+        koerper = json.dumps(daten, ensure_ascii=False).encode()
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(koerper)).encode())]})
+        await send({"type": "http.response.body", "body": koerper})
+
+    testweg = os.environ.get("KEVCAD_KERNEL_TESTWEG") == "1"
+
     async def asgi(scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope.get("type") == "http" and scope.get("path") == FEEDBACK_HTTP_PFAD and hasattr(service, "feedback_warten"):
             await antwort(scope, receive, send)
+        elif testweg and scope.get("type") == "http" and scope.get("path") == "/test/view_cmd":
+            await test_ansicht(scope, send)
         else:
             await app(scope, receive, send)
 

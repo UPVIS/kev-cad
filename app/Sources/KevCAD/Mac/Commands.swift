@@ -66,6 +66,8 @@ struct KevCADCommands: Commands {
             // I-2b (PLAN-IPAD.md): QR-Code für Kev CAD auf dem iPad, gekoppelte iPads verwalten
             Button("iPad koppeln …") { session.ipadKoppelnZeigen() }
                 .disabled(!(model.actions is KopplungsActions))
+            // I-6: Gemeinsame oder Eigene Ansicht (am iPad am Kopplungs-Chip oben)
+            AnsichtTeilenMenue(kopplung: model.kopplung, aktionen: model.actions as? KopplungsActions)
         }
         CommandGroup(replacing: .saveItem) {
             Button("model.py im Editor öffnen") { session.openModelInEditor() }

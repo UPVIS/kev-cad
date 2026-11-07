@@ -326,7 +326,7 @@ extension AppController {
     }
 
     /// Name der Darstellung wie in `VIEW_CMD view` (`display`).
-    private var lageDarstellung: String {
+    var lageDarstellung: String {
         switch model.viewer.shading {
         case .material, .technisch: return model.viewer.shading.protokollName
         default: return MirrorService.protocolName(model.displayStyle)

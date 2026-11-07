@@ -44,6 +44,12 @@ struct Kopfleiste: View {
                     .kopfKapsel()
                     .transition(.opacity)
             }
+            #if os(macOS)
+            // I-6: Ansicht mit dem iPad teilen. iPad: der Kopplungs-Chip oben übernimmt das.
+            if leisten {
+                GeraeteInsel(kopplung: model.kopplung, aktionen: model.actions as? KopplungsActions)
+            }
+            #endif
             if darstellung {
                 Darstellung(viewer: model.viewer, v: model.actions as? ViewerActions)
                     .kopfKapsel()
@@ -289,6 +295,22 @@ private struct Aktionen: View {
         }
     }
 }
+
+#if os(macOS)
+// iPad: der Kopplungs-Chip oben (KopplungsAnsicht.swift) übernimmt das.
+/// I-6: Kapsel „Ansicht mit dem iPad“, nur solange ein anderes Gerät verbunden ist (beobachtet die Kopplung selbst).
+private struct GeraeteInsel: View {
+    @ObservedObject var kopplung: KopplungsStore
+    let aktionen: KopplungsActions?
+
+    var body: some View {
+        if !kopplung.andere.isEmpty {
+            AnsichtTeilenKapsel(kopplung: kopplung, aktionen: aktionen)
+                .kopfKapsel()
+        }
+    }
+}
+#endif
 
 /// Kurze Meldung in der Kopfleiste (Umbenennen ging nicht, Name entsteht im Code …).
 private struct MeldungsZeile: View {

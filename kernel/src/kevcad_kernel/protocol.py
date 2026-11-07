@@ -2554,14 +2554,16 @@ FAEHIGKEIT_LIVE_MASSE = "live-masse-1"
 FAEHIGKEIT_FEEDBACK = "feedback-1"  # V2-6 (Abschnitt „V2-6 Sprach-Feedback“)
 FAEHIGKEIT_FLAECHE = "flaeche-1"  # V2-7: Kacheln, Modus, Rand (PROTOCOL.md, „Fläche“)
 FAEHIGKEIT_DATEI = "datei-1"  # I-8: Datei ans Gerät (PROTOCOL.md, „I-8 Datei ans Gerät“)
+FAEHIGKEIT_ANSICHT = "ansicht-1"  # I-6: Live-Kopplung der Geräte (PROTOCOL.md, „I-6 Live-Kopplung“)
 #: was der Kernel kann (HELLO.faehigkeiten)
 KERNEL_FAEHIGKEITEN: tuple[str, ...] = (FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_SPUR, FAEHIGKEIT_LAGE,
                                         FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FEEDBACK, FAEHIGKEIT_FLAECHE,
-                                        FAEHIGKEIT_DATEI)
+                                        FAEHIGKEIT_DATEI, FAEHIGKEIT_ANSICHT)
 #: neue Nachrichten Kernel → App und die Fähigkeit, die eine App dafür gemeldet haben muss
 LIVE_NACHRICHTEN: dict[str, str] = {
     "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
     "AGENT_SPUR": FAEHIGKEIT_SPUR, "AGENT_SCHRITT": FAEHIGKEIT_SPUR, "LAGE_REQ": FAEHIGKEIT_LAGE,
+    "GERAETE": FAEHIGKEIT_ANSICHT, "ANSICHT": FAEHIGKEIT_ANSICHT, "SPRECHEN_LIVE": FAEHIGKEIT_ANSICHT,
 }
 #: neue Felder bestehender Nachrichten Kernel → App: (type, Feld) → Fähigkeit
 LIVE_FELDER: dict[tuple[str, str], str] = {
@@ -3440,4 +3442,162 @@ def datei_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
         ("datei_req", {"type": "DATEI_REQ", "seq": 31, "id": "a-31", "pfad": pfad, "ab": 0, "max": 16}, b"", "app"),
         ("datei_stueck", {**erstes, "seq": 40}, nutz1, "kernel"),
         ("datei_stueck_ende", {**zweites, "seq": 41}, nutz2, "kernel"),
+    ]
+
+
+# =====================================================================================================================
+# I-6 Live-Kopplung (PROTOCOL.md, Abschnitt „I-6 Live-Kopplung“; PLAN-IPAD.md, Abschnitt 5): Gemeinsame und Eigene
+# Ansicht, Führung, Live-Striche. Die Weiterleitung steht in kopplung.py; hier Format, Prüfen und Beispiele für die
+# Testdateien (tools/make_kopplung_fixtures.py).
+# =====================================================================================================================
+
+ANSICHT_MODI: tuple[str, ...] = ("gemeinsam", "eigen")
+#: neue Nachrichten App → Kernel
+ANSICHT_APP_NACHRICHTEN: tuple[str, ...] = ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE")
+#: Teile einer ANSICHT (je Teil nur, wenn er sich geändert hat; mit ``voll`` alle)
+ANSICHT_TEILE: tuple[str, ...] = ("kamera", "sicht", "auswahl", "darstellung", "schnitt", "explosion")
+ANSICHT_KAMERA_FELDER: tuple[str, ...] = ("drehung", "ziel", "abstand", "projektion", "fov", "ortho_hoehe")
+#: Nach so langer Ruhe des führenden Geräts darf ein anderes ohne neuen Griff übernehmen (Sekunden)
+FUEHRUNG_PAUSE_S = 1.0
+#: So oft schickt ein Gerät höchstens eine ANSICHT, während Kevin dort bedient (je Sekunde)
+ANSICHT_JE_S = 60
+#: Live-Striche: höchstens so viele Nachrichten je Sekunde und Punkte je Strich
+SPRECHEN_LIVE_JE_S = 20
+SPRECHEN_LIVE_PUNKTE_MAX = 2000
+SPRECHEN_LIVE_TEXT_MAX = 2000
+
+
+def _quaternion(x: Any) -> bool:
+    return isinstance(x, list) and len(x) == 4 and all(_zahl(v) for v in x)
+
+
+def check_ansicht_kamera(k: Any) -> list[str]:
+    if not isinstance(k, dict):
+        return ["kamera kein Objekt"]
+    out: list[str] = []
+    if not _quaternion(k.get("drehung")):
+        out.append("kamera.drehung keine Quaternion [x, y, z, w]")
+    if not _punkt(k.get("ziel")):
+        out.append("kamera.ziel kein Punkt")
+    for feld in ("abstand", "fov", "ortho_hoehe"):
+        if not _zahl(k.get(feld)) or k[feld] <= 0:
+            out.append(f"kamera.{feld} keine positive Zahl")
+    if k.get("projektion") not in ("perspective", "orthographic"):
+        out.append("kamera.projektion ungültig")
+    return out
+
+
+def check_ansicht_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
+    """Probleme einer Nachricht aus I-6 (leer = gut). Andere Nachrichten: leer."""
+    art = header.get("type")
+    out: list[str] = []
+    if art not in ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE", "GERAETE"):
+        return out
+    if payload:
+        out.append(f"{art} mit Nutzlast")
+    if art == "ANSICHT_MODUS":
+        if header.get("modus") not in ANSICHT_MODI:
+            out.append(f"ANSICHT_MODUS: modus {header.get('modus')!r} ungültig")
+    elif art == "ANSICHT":
+        if not _zahl(header.get("t")):
+            out.append("ANSICHT: t fehlt")
+        for feld in ("griff", "voll"):
+            if not isinstance(header.get(feld), bool):
+                out.append(f"ANSICHT: {feld} kein Wahrheitswert")
+        if "von" in header and not isinstance(header["von"], int):
+            out.append("ANSICHT: von keine Nummer")
+        if not any(k in header for k in ANSICHT_TEILE):
+            out.append("ANSICHT ohne Inhalt")
+        if header.get("voll") is True and not all(k in header for k in ANSICHT_TEILE):
+            out.append("ANSICHT: voll, aber nicht alle Teile")
+        if "kamera" in header:
+            out += ["ANSICHT: " + p for p in check_ansicht_kamera(header["kamera"])]
+        if "sicht" in header:
+            s = header["sicht"]
+            if not isinstance(s, dict) or not _namen(s.get("verborgen")) or (
+                    s.get("isoliert") is not None and not _namen(s.get("isoliert"))):
+                out.append("ANSICHT: sicht ungültig (verborgen, isoliert)")
+        if "auswahl" in header:
+            a = header["auswahl"]
+            if not isinstance(a, dict) or not _namen(a.get("refs")) or (
+                    a.get("run") is not None and not isinstance(a.get("run"), int)):
+                out.append("ANSICHT: auswahl ungültig (run, refs)")
+        if "darstellung" in header and not isinstance(header["darstellung"], str):
+            out.append("ANSICHT: darstellung kein Text")
+        if "schnitt" in header and header["schnitt"] is not None:
+            s = header["schnitt"]
+            if not isinstance(s, dict) or not _punkt(s.get("normale")) or not _zahl(s.get("abstand")):
+                out.append("ANSICHT: schnitt ungültig (normale, abstand)")
+        if "explosion" in header and not _zahl(header["explosion"]):
+            out.append("ANSICHT: explosion keine Zahl")
+    elif art == "SPRECHEN_LIVE":
+        if not isinstance(header.get("sitzung"), str) or not header["sitzung"]:
+            out.append("SPRECHEN_LIVE: sitzung fehlt")
+        if "von" in header and not isinstance(header["von"], int):
+            out.append("SPRECHEN_LIVE: von keine Nummer")
+        st = header.get("strich")
+        if st is not None:
+            if not isinstance(st, dict) or not isinstance(st.get("nr"), int) or not isinstance(st.get("fertig"), bool):
+                out.append("SPRECHEN_LIVE: strich ungültig (nr, fertig)")
+            elif not isinstance(st.get("punkte"), list) or not all(_punkt(p) for p in st["punkte"]) \
+                    or len(st["punkte"]) > SPRECHEN_LIVE_PUNKTE_MAX:
+                out.append("SPRECHEN_LIVE: strich.punkte ungültig")
+        if "zeiger" in header and header["zeiger"] is not None and not _punkt(header["zeiger"]):
+            out.append("SPRECHEN_LIVE: zeiger kein Punkt")
+        if "text" in header and (not isinstance(header["text"], str) or len(header["text"]) > SPRECHEN_LIVE_TEXT_MAX):
+            out.append("SPRECHEN_LIVE: text ungültig")
+        if "ende" in header and not isinstance(header["ende"], bool):
+            out.append("SPRECHEN_LIVE: ende kein Wahrheitswert")
+    elif art == "GERAETE":
+        g = header.get("geraete")
+        if not isinstance(g, list) or not g:
+            out.append("GERAETE: geraete fehlt")
+        else:
+            for e in g:
+                if not isinstance(e, dict) or not isinstance(e.get("nr"), int) or e.get("art") not in ("mac", "ipad"):
+                    out.append("GERAETE: Eintrag ohne nr oder art")
+                    continue
+                if e.get("ansicht") is not None and e["ansicht"] not in ANSICHT_MODI:
+                    out.append("GERAETE: ansicht ungültig")
+                for feld in ("aktiv", "fuehrt", "ich"):
+                    if not isinstance(e.get(feld), bool):
+                        out.append(f"GERAETE: {feld} kein Wahrheitswert")
+            if sum(1 for e in g if isinstance(e, dict) and e.get("ich") is True) != 1:
+                out.append("GERAETE: nicht genau ein Eintrag mit ich")
+    return out
+
+
+def ansicht_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
+    """Rahmen für die Testdateien: (Name, Kopf, Nutzlast, Richtung)."""
+    kamera = {"drehung": [0.2797, 0.1159, 0.3647, 0.8806], "ziel": [120.0, 0.0, 60.0], "abstand": 1118.0,
+              "projektion": "perspective", "fov": 30.0, "ortho_hoehe": 240.0}
+    voll = {"type": "ANSICHT", "seq": 31, "t": 1793480990.125, "griff": True, "voll": True, "kamera": kamera,
+            "sicht": {"verborgen": ["Deckel"], "isoliert": None},
+            "auswahl": {"run": 8, "refs": ["Halter/Lasche#f0"]}, "darstellung": "shaded_edges",
+            "schnitt": {"normale": [0.0, 0.0, -1.0], "abstand": 5.0}, "explosion": 0.0}
+    return [
+        ("ansicht_modus", {"type": "ANSICHT_MODUS", "seq": 2, "modus": "gemeinsam"}, b"", "app"),
+        ("ansicht_modus_eigen", {"type": "ANSICHT_MODUS", "seq": 3, "modus": "eigen"}, b"", "app"),
+        ("ansicht_voll", voll, b"", "app"),
+        ("ansicht_kamera", {"type": "ANSICHT", "seq": 32, "t": 1793480990.142, "griff": False, "voll": False,
+                            "kamera": {**kamera, "abstand": 1050.0}}, b"", "app"),
+        ("ansicht_weiter", {**{k: v for k, v in voll.items() if k != "griff"}, "griff": False, "seq": 40, "von": 2},
+         b"", "kernel"),
+        ("ansicht_parallel", {"type": "ANSICHT", "seq": 41, "t": 1793480991.5, "griff": False, "voll": False,
+                              "von": 1, "kamera": {"drehung": [0.0, 0.0, 0.0, 1.0], "ziel": [20.0, 10.0, 0.0],
+                                                   "abstand": 1000.0, "projektion": "orthographic", "fov": 30.0,
+                                                   "ortho_hoehe": 240.0},
+                              "sicht": {"verborgen": [], "isoliert": ["Halter/Lasche"]}, "schnitt": None},
+         b"", "kernel"),
+        ("geraete", {"type": "GERAETE", "seq": 42, "geraete": [
+            {"nr": 1, "art": "mac", "name": "MacBook von Kevin", "app": "de.upvis.kevcad", "aktiv": False,
+             "ansicht": "gemeinsam", "fuehrt": False, "ich": False},
+            {"nr": 2, "art": "ipad", "name": "iPad von Kevin", "app": "de.upvis.kevcad.ipad", "aktiv": True,
+             "ansicht": "gemeinsam", "fuehrt": True, "ich": True}]}, b"", "kernel"),
+        ("sprechen_live_strich", {"type": "SPRECHEN_LIVE", "seq": 50, "sitzung": "s-1793480977",
+                                  "strich": {"nr": 1, "punkte": [[118.0, 4.0, 60.0], [121.5, 4.0, 62.0]],
+                                             "fertig": False},
+                                  "zeiger": [121.5, 4.0, 62.0], "text": "Mach das hier"}, b"", "app"),
+        ("sprechen_live_ende", {"type": "SPRECHEN_LIVE", "seq": 51, "sitzung": "s-1793480977", "ende": True,
+                                "von": 2}, b"", "kernel"),
     ]

@@ -35,6 +35,9 @@ SOCKET_PATH_MAX = 103  # macOS: sun_path hat 104 Byte inklusive Nullbyte
 MAX_VERBINDUNGEN = 8  # mehr Geräte sind nicht vorgesehen; darüber fliegt die älteste nicht aktive Verbindung
 # Antworten, die zugleich Zustand sind: Die fragende Verbindung bekommt sie mit reply_to, alle anderen ohne
 ZUSTAND_ANTWORTEN = frozenset({"PROJECT"})
+# I-6 (Entscheidung I10): Ansichtsbefehle des Agenten gehen an die Geräte der Gemeinsamen Ansicht und an das aktive
+# Gerät, nicht an ein Gerät in der Eigenen Ansicht, an dem Kevin gerade nicht arbeitet. Testbefehle (test_…) an alle.
+NUR_ANSICHT = frozenset({"VIEW_CMD"})
 
 
 class AppConnection:
@@ -168,6 +171,9 @@ class AppLink:
         self._server: socket.socket | None = None
         self._conns: list[AppConnection] = []  # aktivierte Verbindungen in der Reihenfolge des Verbindens
         self._aktiv: AppConnection | None = None  # zuletzt bedient: bekommt gezielte Anfragen (Bild, Lagebild)
+        # I-6 (kopplung.py): führendes Gerät der Gemeinsamen Ansicht; Rückruf, wenn das aktive Gerät wechselt
+        self.fuehrt: AppConnection | None = None
+        self.on_aktiv: Callable[[], None] | None = None
         self._lock = threading.RLock()
         self._closing = False
         self._count = 0
@@ -250,6 +256,7 @@ class AppLink:
         if ueberzaehlig is not None:
             self._log(f"[app] Mehr als {MAX_VERBINDUNGEN} Verbindungen: Nr. {ueberzaehlig.number} getrennt")
             ueberzaehlig.close()
+        self._aktiv_gewechselt()
 
     def _closed(self, conn: AppConnection) -> None:
         with self._lock:
@@ -263,8 +270,19 @@ class AppLink:
     def bedient(self, conn: AppConnection) -> None:
         """Kevin hat an diesem Gerät etwas getan: Es wird das aktive Gerät."""
         with self._lock:
-            if conn in self._conns and not conn.closed:
+            wechsel = conn in self._conns and not conn.closed and self._aktiv is not conn
+            if wechsel:
                 self._aktiv = conn
+        if wechsel:
+            self._aktiv_gewechselt()
+
+    def _aktiv_gewechselt(self) -> None:
+        rueckruf = self.on_aktiv
+        if rueckruf is not None:
+            try:
+                rueckruf()
+            except Exception as exc:  # noqa: BLE001 - die Geräteliste darf das Bedienen nie stören
+                self._log(f"[app] Geräteliste: {exc!r}")
 
     def gleiches_geraet_ersetzen(self, conn: AppConnection, schluessel: str) -> None:
         """Ein Gerät meldet sich neu (Neustart der App, neue Netzverbindung): ältere Verbindungen desselben Schlüssels
@@ -296,16 +314,26 @@ class AppLink:
             return [c for c in self._conns if not c.closed]
 
     def geraete(self) -> list[dict[str, Any]]:
-        """Verbundene Geräte für das Lagebild (Nummer, Art, Name, App, aktiv)."""
+        """Verbundene Geräte für das Lagebild (Nummer, Art, Name, App, aktiv; I-6: Ansicht und ob es führt)."""
         with self._lock:
             conns = [c for c in self._conns if not c.closed]
             aktiv = self._aktiv
+            fuehrt = self.fuehrt
         aus: list[dict[str, Any]] = []
         for c in conns:
             g = c.info.get("geraet") if isinstance(c.info.get("geraet"), dict) else {}
+            ansicht = c.info.get("ansicht")
             aus.append({"nr": c.number, "art": g.get("art") or "mac", "name": g.get("name"),
-                        "app": c.info.get("bundle_id"), "aktiv": c is aktiv})
+                        "app": c.info.get("bundle_id"), "aktiv": c is aktiv,
+                        "ansicht": ansicht if ansicht in ("gemeinsam", "eigen") else None,
+                        "fuehrt": c is fuehrt and ansicht == "gemeinsam"})
         return aus
+
+    def _zeigt_ansicht(self, conn: AppConnection, header: dict[str, Any]) -> bool:
+        """I-6: Bekommt dieses Gerät Ansichtsbefehle des Agenten? Nicht in der Eigenen Ansicht, außer es ist aktiv."""
+        if header.get("type") not in NUR_ANSICHT or str(header.get("cmd") or "").startswith("test_"):
+            return True
+        return conn.info.get("ansicht") != "eigen" or conn is self.connection
 
     def send(self, header: dict[str, Any], payload: bytes = b"", *, an: AppConnection | None = None) -> bool:
         """Rahmen an die Apps. ``an``: nur diese Verbindung. Sonst: Antworten (``reply_to`` mit Verbindungsnummer) an die
@@ -329,5 +357,6 @@ class AppLink:
                 return ok
         ok = False
         for conn in self.verbindungen:
-            ok = conn.send(header, payload) or ok
+            if self._zeigt_ansicht(conn, header):
+                ok = conn.send(header, payload) or ok
         return ok

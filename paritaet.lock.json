@@ -7,7 +7,7 @@
    "summe": "b59bf288dd30e8fee4b2bf3f10942b1359436c8fd194729e5fab3ca824c5c98c"
   },
   "app/Sources/KevCAD/Mac/Commands.swift": {
-   "summe": "ce6d8419c7a16fe339b7103cd04d2dc67f58c6606bdbbd68890832bbfacfc449"
+   "summe": "cf732c49b2750fc259535d04b1bd368137f1be85fc9933edf0b3a4e57e6f0840"
   },
   "app/Sources/KevCAD/Mac/DokumenteCommands.swift": {
    "summe": "57d8002988515106d9701ac55f59b04d50ed105ea738e1d038817c94356e39ad"
@@ -20,7 +20,7 @@
   },
   "app/Sources/KevCAD/Mac/KevCADApp.swift": {
    "gegenstueck": "app/Sources/KevCADPad/KevCADPadApp.swift",
-   "gegenstueck_summe": "75436812145eb58e196f722b2b87f6ca37f4c22a8e9d5f52f195f3088401bbc0",
+   "gegenstueck_summe": "c7f7f4df48f6e61733f04fecf9782ed0aafe11bcd0bc8a49f8705e24571bfbde",
    "summe": "623f30f6cf9d5318938c04575452d368760a38461a7b4b2b990f6b0ca4487d49"
   },
   "app/Sources/KevCAD/Mac/KeyboardGuard.swift": {

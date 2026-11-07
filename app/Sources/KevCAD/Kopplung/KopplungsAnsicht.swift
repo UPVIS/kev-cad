@@ -230,33 +230,51 @@ private struct QRScanner: UIViewControllerRepresentable {
     }
 }
 
-/// Kleine Anzeige oben in der Mitte: mit welchem Mac das iPad verbunden ist; ein Tipp öffnet die Kopplung.
+/// Kleine Anzeige oben in der Mitte: mit welchem Mac das iPad verbunden ist und wie es die Ansicht teilt. Ohne anderes
+/// Gerät öffnet ein Tipp die Kopplung; mit dem Mac verbunden ist es ein Menü (I-6): Gemeinsame oder Eigene Ansicht,
+/// wer führt, und die Kopplung.
 struct PadKopplungsChip: View {
     @ObservedObject var kopplung: KopplungsStore
+    var aktionen: KopplungsActions?
     let tippen: () -> Void
 
     var body: some View {
-        Button(action: tippen) {
-            HStack(spacing: 6) {
-                Circle().fill(punktFarbe).frame(width: 7, height: 7)
-                Text(text).font(GS.klein).foregroundStyle(GF.asche)
+        if kopplung.verbunden && !kopplung.andere.isEmpty {
+            Menu {
+                AnsichtTeilenEintraege(kopplung: kopplung, aktionen: aktionen)
+                Divider()
+                Button("Kopplung …", action: tippen)
+            } label: {
+                chip
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(GF.mitte.opacity(0.6)))
+            .accessibilityLabel(kopplung.ansichtText ?? text)
+        } else {
+            Button(action: tippen) { chip }
+                .buttonStyle(.plain)
+                .accessibilityLabel(text)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(text)
+    }
+
+    private var chip: some View {
+        HStack(spacing: 6) {
+            Circle().fill(punktFarbe).frame(width: 7, height: 7)
+            Text(text).font(GS.klein).foregroundStyle(GF.asche)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(GF.mitte.opacity(0.6)))
     }
 
     private var text: String {
         guard let mac = kopplung.macName else { return "Beispielmodell · Mit dem Mac koppeln" }
-        return kopplung.verbunden ? "Verbunden mit \(mac)" : "Verbinde mit \(mac) …"
+        guard kopplung.verbunden else { return "Verbinde mit \(mac) …" }
+        return kopplung.andere.isEmpty ? "Verbunden mit \(mac)" : "\(mac) · \(kopplung.kurzText)"
     }
 
     private var punktFarbe: Color {
         guard kopplung.macName != nil else { return GF.rauch }
-        return kopplung.verbunden ? Color.green : GF.agent
+        guard kopplung.verbunden else { return GF.agent }
+        return kopplung.teiltMitAnderen ? kopplung.ansichtPunkt : Color.green
     }
 }
 #endif

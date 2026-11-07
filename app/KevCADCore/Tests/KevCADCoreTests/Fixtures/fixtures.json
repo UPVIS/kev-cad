@@ -2316,7 +2316,8 @@
    "live-masse-1",
    "feedback-1",
    "flaeche-1",
-   "datei-1"
+   "datei-1",
+   "ansicht-1"
   ],
   "nachrichten": {
    "PART_SAME": "delta-1",
@@ -2324,7 +2325,10 @@
    "IN_ARBEIT": "in-arbeit-1",
    "AGENT_SPUR": "spur-1",
    "AGENT_SCHRITT": "spur-1",
-   "LAGE_REQ": "lage-1"
+   "LAGE_REQ": "lage-1",
+   "GERAETE": "ansicht-1",
+   "ANSICHT": "ansicht-1",
+   "SPRECHEN_LIVE": "ansicht-1"
   },
   "felder": [
    {
@@ -2496,5 +2500,83 @@
   "faehigkeit": "datei-1",
   "stueck_vorgabe": 4194304,
   "stueck_max": 8388608
+ },
+ "kopplung": {
+  "frames": [
+   {
+    "file": "ansicht_modus.frame",
+    "type": "ANSICHT_MODUS",
+    "richtung": "app"
+   },
+   {
+    "file": "ansicht_modus_eigen.frame",
+    "type": "ANSICHT_MODUS",
+    "richtung": "app"
+   },
+   {
+    "file": "ansicht_voll.frame",
+    "type": "ANSICHT",
+    "richtung": "app"
+   },
+   {
+    "file": "ansicht_kamera.frame",
+    "type": "ANSICHT",
+    "richtung": "app"
+   },
+   {
+    "file": "ansicht_weiter.frame",
+    "type": "ANSICHT",
+    "richtung": "kernel"
+   },
+   {
+    "file": "ansicht_parallel.frame",
+    "type": "ANSICHT",
+    "richtung": "kernel"
+   },
+   {
+    "file": "geraete.frame",
+    "type": "GERAETE",
+    "richtung": "kernel"
+   },
+   {
+    "file": "sprechen_live_strich.frame",
+    "type": "SPRECHEN_LIVE",
+    "richtung": "app"
+   },
+   {
+    "file": "sprechen_live_ende.frame",
+    "type": "SPRECHEN_LIVE",
+    "richtung": "kernel"
+   }
+  ],
+  "faehigkeit": "ansicht-1",
+  "modi": [
+   "gemeinsam",
+   "eigen"
+  ],
+  "nachrichten": [
+   "ANSICHT_MODUS",
+   "ANSICHT",
+   "SPRECHEN_LIVE"
+  ],
+  "teile": [
+   "kamera",
+   "sicht",
+   "auswahl",
+   "darstellung",
+   "schnitt",
+   "explosion"
+  ],
+  "kamera_felder": [
+   "drehung",
+   "ziel",
+   "abstand",
+   "projektion",
+   "fov",
+   "ortho_hoehe"
+  ],
+  "fuehrung_pause_s": 1.0,
+  "ansicht_je_s": 60,
+  "sprechen_live_je_s": 20
  }
 }

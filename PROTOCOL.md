@@ -1618,3 +1618,61 @@ bietet das iPad das Teilen nicht an. Referenz in `protocol.py` (Abschnitt „I-8
   vom Mac. Stimmen Größe und Änderungszeit im ersten Stück, nimmt sie die Datei von dort. Ändert sich die Datei am Mac
   während des Holens, bricht sie ab und meldet das.
 - Am Mac liegt jede Datei, die der Kernel nennt, schon vor; die Mac-App fragt nie.
+
+## I-6 Live-Kopplung
+
+Stand 07.11.2026 (PLAN-IPAD.md, Abschnitt 5 und Paket I-6; Entscheidungen I9 und I10). Rein additiv, `protocol` bleibt 1.
+Kernel und App melden die Fähigkeit `ansicht-1` in `HELLO.faehigkeiten` bzw. `HELLO_APP.faehigkeiten`; nur Apps mit
+`ansicht-1` bekommen die Nachrichten dieses Abschnitts (Weiche in `live.py`) und nehmen an der Gemeinsamen Ansicht teil.
+Referenz in `protocol.py` (Abschnitt „I-6 Live-Kopplung“: `check_ansicht_message`, `ansicht_beispiele`), Weiterleitung in
+`kopplung.py`, Testdateien `ansicht_*.frame`, `geraete.frame`, `sprechen_live_*.frame` und Abschnitt `kopplung` in
+`fixtures.json` aus `kernel/tools/make_kopplung_fixtures.py`.
+
+**Ansicht je Gerät:** `gemeinsam` (Vorgabe für Apps mit `ansicht-1`) oder `eigen`. In der Gemeinsamen Ansicht zeigen alle
+Geräte dieser Art dieselbe Kamera, Sicht, Auswahl, Darstellung, denselben Schnitt und dieselbe Explosion, in beide
+Richtungen. In der Eigenen Ansicht ist jedes Gerät frei; gemeinsam bleiben Modell, Lauf, Befunde, Agentenspur und die
+Striche beim Sprechen.
+
+| type | Richtung | Felder | Wirkung |
+|---|---|---|---|
+| `ANSICHT_MODUS` | App → Kernel | `modus` (`gemeinsam` \| `eigen`) | Nach `HELLO_APP` und bei jedem Wechsel. Wechselt ein Gerät in die Gemeinsame Ansicht, schickt der Kernel ihm sofort den Stand des führenden Geräts (`ANSICHT` mit `voll`). |
+| `ANSICHT` | App → Kernel | `t` (Unix-Zeit s beim Senden), `griff` (Kevin hat an diesem Gerät eben zu bedienen begonnen), `voll` (alle Teile dabei), dazu die Teile, die sich geändert haben (unten) | Nur in der Gemeinsamen Ansicht und nur, was Kevin an diesem Gerät tut (nicht das Nachziehen beim Folgen). Höchstens `ANSICHT_JE_S` (60) je Sekunde. |
+| `ANSICHT` | Kernel → App | wie oben, dazu `von` (Nummer der Verbindung, die führt) | an alle anderen Geräte der Gemeinsamen Ansicht; die App folgt weich |
+| `GERAETE` | Kernel → App | `geraete`: je Gerät `nr`, `art` (`mac` \| `ipad`), `name`, `app`, `aktiv`, `ansicht` (`gemeinsam` \| `eigen` \| null ohne `ansicht-1`), `fuehrt`, `ich` (dieser Empfänger) | an jedes Gerät, sobald sich für es etwas ändert: Verbindungen, Ansicht, Führung, aktives Gerät |
+| `SPRECHEN_LIVE` | App → Kernel → App | `sitzung`; optional `strich` (`nr`, `punkte` als Weltpunkte in mm, `fertig`), `zeiger` (Weltpunkt unter Maus oder Stift, null daneben), `text` (bisher Gesagtes), `ende` (Sitzung vorbei: alles davon entfernen); vom Kernel mit `von` | an alle anderen Geräte mit `ansicht-1`, auch in der Eigenen Ansicht. Höchstens `SPRECHEN_LIVE_JE_S` (20) je Sekunde, der laufende Strich jeweils ganz (höchstens 2000 Punkte) |
+
+**Teile einer ANSICHT** (`ANSICHT_TEILE`; mit `voll` alle):
+
+| Teil | Inhalt |
+|---|---|
+| `kamera` | `drehung` (Quaternion `[x, y, z, w]` der Kamera wie im Viewport), `ziel` (Drehpunkt, mm), `abstand` (mm), `projektion` (`perspective` \| `orthographic`), `fov` (Grad) und `ortho_hoehe` (mm), beide immer, damit ein Wechsel der Projektion den Ausschnitt hält. Andere Seitenverhältnisse zeigen am Rand etwas mehr oder weniger. |
+| `sicht` | `verborgen` (ausgeblendete Teile), `isoliert` (Liste oder null) |
+| `auswahl` | `run`, `refs` wie `SELECTION`. Das folgende Gerät schickt dafür kein `SELECTION`. |
+| `darstellung` | wie `LAGE.darstellung` |
+| `schnitt` | `{"normale": [x, y, z], "abstand": mm}` (Ebene wie im Viewport) oder null |
+| `explosion` | Faktor wie `LAGE.explosion` |
+
+**Führung:** Es führt, wer zuletzt bedient. Der Kernel nimmt eine `ANSICHT` an, wenn das Gerät führt, wenn niemand
+führt, wenn sie `griff` trägt (gleichzeitige Bedienung: der spätere Griff gewinnt) oder wenn das führende Gerät seit
+`FUEHRUNG_PAUSE_S` (1 s) nichts geschickt hat. Sonst verwirft er sie still. Mit der Führung wird das Gerät auch aktiv
+(I-2). Wechselt die Führung, geht `GERAETE` an alle; ein Gerät, das die Führung übernimmt, schickt seine erste `ANSICHT`
+mit `voll`. Wechselt das führende Gerät in die Eigene Ansicht oder trennt es sich, führt niemand, bis das nächste bedient.
+
+**Die App beim Folgen:** Sie stellt die Kamera weich nach (Zeitkonstante rund 25 ms im Bildtakt, ein Sprung über einen
+voller Stand als kurze Fahrt) und übernimmt die anderen Teile sofort. Bedient Kevin am folgenden Gerät, endet das Folgen
+dort sofort (seine Hand geht vor), und seine nächste `ANSICHT` trägt `griff`. Budget (PLAN-IPAD.md, Abschnitt 7): Kamera
+folgt in unter 50 ms im WLAN (Median), unter 150 ms über Tailscale.
+
+**Agent (I10):** `VIEW_CMD` geht an die Geräte der Gemeinsamen Ansicht und an das aktive Gerät, nicht an ein Gerät in
+der Eigenen Ansicht, an dem Kevin gerade nicht arbeitet (Befehle `test_…` der Testvarianten an alle). Lagebild, Bilder
+und Dialoge kommen weiter vom aktiven Gerät. `status` nennt die Geräte mit Ansicht und Führung (`geraete`, `kopplung`)
+und schreibt sie ab zwei Geräten in den Text, ebenso das Lagebild zum Feedback.
+
+**Testweg:** Mit `KEVCAD_KERNEL_TESTWEG=1` in der Umgebung (nur Testläufe) beantwortet der HTTP-Server des Kernels
+`GET /test/view_cmd?cmd=test_…&args=<JSON>` wie `view_command` (nur Befehle `test_…`). Die Testvarianten der App kennen
+`test_kopplung` (`args`: `art` des Geräts, das handelt; optional `ansicht` (Standardansicht, als bediente Kevin sie
+dort), `modus`): `ACK.message` ist JSON mit `modus`, `fuehrt`, `ansicht` (Standardansicht der Kamera oder null),
+`kamera` und `latenz_ms` (Median vom Senden bis zum Folgen). Geräte anderer Art antworten nicht. Kettentest
+`tools/ipad-kette.sh`.
+
+Tests: `kernel/tests/test_mehrere_geraete.py` (Abschnitt I-6), `KopplungTests.swift`.

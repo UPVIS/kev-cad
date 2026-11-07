@@ -56,6 +56,10 @@ def lagebild_text(svc: KernelService) -> str:
     if not projekt:
         return ""
     zeilen = [f"Lagebild (status und Gliederung, beim Abholen erhoben): Projekt {projekt.get('name', '?')}"]
+    from kevcad_kernel.kopplung import geraete_text  # I-6: an welchem Gerät Kevin gesprochen hat, wer welche Ansicht hat
+
+    if text := geraete_text(res.get("geraete") if isinstance(res.get("geraete"), list) else []):
+        zeilen.append(text)
     last = res.get("last_run") if isinstance(res.get("last_run"), dict) else None
     if last and last.get("ok") is False:
         err = last.get("error") if isinstance(last.get("error"), dict) else {"message": last.get("error")}

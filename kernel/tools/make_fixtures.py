@@ -353,6 +353,9 @@ def main() -> None:
     import make_datei_fixtures  # I-8 Datei ans Gerät (DATEI_REQ, DATEI): Abschnitt datei
 
     make_datei_fixtures.main()
+    import make_kopplung_fixtures  # I-6 Live-Kopplung (ANSICHT_MODUS, ANSICHT, GERAETE, SPRECHEN_LIVE): Abschnitt kopplung
+
+    make_kopplung_fixtures.main()
 
 
 if __name__ == "__main__":

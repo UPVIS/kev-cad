@@ -96,13 +96,14 @@ extension ViewportCoordinator {
     /// Laufende Fahrt abbrechen (Eingabe des Nutzers hat Vorrang).
     func fahrtAbbrechen() {
         fahrt = nil
+        folge = nil
         fahrtLink?.isPaused = true
         controller.cameraController.cancelAnimation()
     }
 
     func fahrtSchritt(_ jetzt: CFTimeInterval) {
         guard let f = fahrt else {
-            fahrtLink?.isPaused = true
+            if !folgeSchritt(jetzt) { fahrtLink?.isPaused = true }  // I-6: Kamera eines anderen Geräts
             return
         }
         let t = (jetzt - f.beginn) / max(f.dauer, 1e-3)
@@ -115,5 +116,84 @@ extension ViewportCoordinator {
             onFahrtEnde?()
             hoverAuffrischen()
         }
+    }
+}
+
+// MARK: - I-6: Kamera eines anderen Geräts folgen
+
+/// Weiches Nachziehen zur Kamera des führenden Geräts (PROTOCOL.md, „I-6 Live-Kopplung“): je Bild ein Stück des Wegs
+/// (Zeitkonstante `zeitkonstante`), bis die Kamera praktisch da ist. Neue Ziele ersetzen das alte, ohne neu anzulaufen.
+struct KameraFolge {
+    var ziel: CameraState
+    var letzterSchritt: CFTimeInterval
+
+    /// Zeitkonstante des Nachziehens: nach 25 ms ist rund 63 % des Wegs geschafft.
+    static let zeitkonstante: Double = 0.025
+
+    /// Ist `a` praktisch `b` (unter 0,02° Drehung, 0,05 % Abstand, 0,01 mm Drehpunkt)?
+    static func da(_ a: CameraState, _ b: CameraState) -> Bool {
+        let dreh = 2 * acos(min(1, abs(simd_dot(a.rotation.vector, b.rotation.vector))))
+        let massstab = max(Kamerafahrt.sichthoehe(b), 1e-3)
+        return dreh < 0.02 * .pi / 180 && a.isOrthographic == b.isOrthographic
+            && abs(Kamerafahrt.sichthoehe(a) - Kamerafahrt.sichthoehe(b)) < massstab * 5e-4
+            && simd_distance(a.pivot, b.pivot) < max(0.01, massstab * 1e-4)
+    }
+}
+
+extension ViewportCoordinator {
+    /// Folgt die Kamera gerade einem anderen Gerät?
+    public var folgtGerade: Bool { folge != nil }
+
+    /// Der Kamera eines anderen Geräts folgen. `sofort`: als kurze Fahrt (Eintritt in die Gemeinsame Ansicht, großer
+    /// Sprung), sonst weich im Bildtakt.
+    public func folge(zu ziel: CameraState, sofort: Bool) {
+        if sofort || ziel.isOrthographic != controller.cameraState.isOrthographic {
+            folge = nil
+            fahre(zu: ziel, dauer: sofort ? ViewerStil.kamerafahrt : 0.08)
+            return
+        }
+        fahrt = nil
+        if folge != nil {
+            folge?.ziel = ziel
+        } else {
+            folge = KameraFolge(ziel: ziel, letzterSchritt: CACurrentMediaTime())
+        }
+        guard let view = mtkView else {
+            folge = nil
+            controller.animateTo(ziel, duration: 0)
+            return
+        }
+        if fahrtLink == nil {
+            let takt = FahrtTakt()
+            takt.coordinator = self
+            let link = view.bildschirmtakt(takt, #selector(FahrtTakt.schritt(_:)))
+            link.add(to: .main, forMode: .common)
+            fahrtLink = link
+            fahrtTakt = takt
+        }
+        fahrtLink?.isPaused = false
+    }
+
+    /// Kevin bedient selbst: das Nachziehen sofort beenden.
+    public func folgenAbbrechen() {
+        folge = nil
+    }
+
+    /// Ein Bild des Nachziehens; false, wenn es nichts zu tun gibt.
+    func folgeSchritt(_ jetzt: CFTimeInterval) -> Bool {
+        guard var f = folge else { return false }
+        let dt = max(0, min(jetzt - f.letzterSchritt, 0.1))
+        f.letzterSchritt = jetzt
+        let jetztKamera = controller.cameraState
+        let anteil = Float(1 - exp(-dt / KameraFolge.zeitkonstante))
+        var c = Kamerafahrt.zwischen(jetztKamera, f.ziel, anteil)
+        if KameraFolge.da(c, f.ziel) {
+            c = f.ziel
+            folge = nil
+        } else {
+            folge = f
+        }
+        controller.animateTo(c, duration: 0)
+        return true
     }
 }
