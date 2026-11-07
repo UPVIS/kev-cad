@@ -138,7 +138,7 @@ NAME=${3:-}
 ID=${KEVCAD_FERN_ID:?KEVCAD_FERN_ID fehlt}
 FRIST=${KEVCAD_FERN_FRIST:-3600}
 export KIND KEVCAD_FERN_ID
-case "$KIND" in tests|ipadtests|testbau|bundle) ;; *) echo "mini.sh: unbekannte Art $KIND"; exit 2 ;; esac
+case "$KIND" in tests|ipadtests|ipadrelease|testbau|bundle) ;; *) echo "mini.sh: unbekannte Art $KIND"; exit 2 ;; esac
 
 HELD=""; TICKET=""; JOB_PID=""; TIMER_PID=""; WATCH_PID=""; WAITED=0; T_START=$(date +%s); FINISHING=0
 
@@ -311,6 +311,12 @@ case "$KIND" in
     run tools/ipad-bau.sh test
     rc=$?
     [ $rc -ne 0 ] && tail -40 build/ipad-test-test.log 2>/dev/null | grep -E "error:|failed|Executed" | head -30
+    ;;
+  ipadrelease)
+    # Release fürs echte iPad ohne Signatur (das Archiv für TestFlight signiert das MacBook); prüft nur das Übersetzen
+    echo "==> Mini: iPad-App als Release übersetzen (ohne Signatur)"
+    run tools/ipad-bau.sh release
+    rc=$?
     ;;
   testbau)
     run ./build.sh --test ${NAME:+"$NAME"}

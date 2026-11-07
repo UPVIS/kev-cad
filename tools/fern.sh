@@ -15,6 +15,8 @@
 #                                   installieren wie ./build.sh (tools/auto-update.sh nutzt das)
 #   tools/fern.sh ipadtests [kürzel]  Kern-Tests im iPad-Simulator (tools/ipad-bau.sh test) auf dem Mini, wenn er eine
 #                                   iOS-Laufzeit hat; sonst hier unter der Simulator-Sperre (PLAN-IPAD.md, I-9)
+#   tools/fern.sh ipadrelease [kürzel]  iPad-App als Release fürs echte iPad übersetzen, ohne Signatur (tools/ipad-bau.sh
+#                                   release): vor dem Merge statt tools/ipad-testflight.sh --nur-archiv, das hier baut
 #   tools/fern.sh status            Plätze, Schlange und Speicher auf dem Mini
 #   tools/fern.sh einrichten        Mini vorbereiten oder prüfen: Ordner, xcodegen, uv, Metal-Toolchain, Xcode-Fassung,
 #                                   iPad-Simulator (nur prüfen; laden mit „einrichten ipad“, rund 8 GB auf dem Mini)
@@ -58,13 +60,13 @@ BUILD_LOCK=/tmp/vb-xcodebuild.lock
 LOGDIR="$HOME/Library/Logs/Kev CAD"
 INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=${1:-}
 [ $# -gt 0 ] && shift
 NAME=""; ID_ARG=""
 case "$MODE" in
-  tests|ipadtests) ID_ARG=${1:-} ;;
+  tests|ipadtests|ipadrelease) ID_ARG=${1:-} ;;
   testbau) NAME=${1:-} ;;
   einrichten) EINRICHTEN=${1:-} ;;
   release|status) ;;
@@ -185,9 +187,9 @@ run_local() {
   case "$MODE" in
     tests) cmd=(./build.sh --core-tests) ;;
     testbau) cmd=(./build.sh --test); [ -n "$NAME" ] && cmd+=("$NAME") ;;
-    ipadtests)
-      # ipad-bau.sh nimmt selbst erst die Simulator-, dann die Bausperre (nie umgekehrt) und wartet auf Speicher
-      tools/ipad-bau.sh test
+    ipadtests|ipadrelease)
+      # ipad-bau.sh nimmt selbst die Sperren (Simulator vor Bau, nie umgekehrt) und wartet auf Speicher
+      if [ "$MODE" = ipadtests ]; then tools/ipad-bau.sh test; else tools/ipad-bau.sh release; fi
       rc=$?
       log_times $rc
       exit $rc ;;
@@ -202,7 +204,7 @@ run_local() {
 # Genug Platz auf der Systemplatte für einen Bau hier (KEVCAD_FERN_PLATZ_GB, Vorgabe 15 GB)? iPad-Tests schreiben kaum
 # auf die Systemplatte (Bauordner auf UPVIS ULTRA, nur Testdateien im Simulator): für sie 5 GB (KEVCAD_FERN_PLATZ_IPAD_GB).
 platz_schwelle() {
-  if [ "$MODE" = ipadtests ]; then echo "${KEVCAD_FERN_PLATZ_IPAD_GB:-5}"; else echo "${KEVCAD_FERN_PLATZ_GB:-15}"; fi
+  case "$MODE" in ipadtests|ipadrelease) echo "${KEVCAD_FERN_PLATZ_IPAD_GB:-5}" ;; *) echo "${KEVCAD_FERN_PLATZ_GB:-15}" ;; esac
 }
 platz_hier() {
   local frei
@@ -211,8 +213,8 @@ platz_hier() {
 }
 
 fallback() {
-  if [ "$MODE" = ipadtests ]; then
-    echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (tools/ipad-bau.sh test unter den Sperren)." >&2
+  if [ "$MODE" = ipadtests ] || [ "$MODE" = ipadrelease ]; then
+    echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (tools/ipad-bau.sh unter den Sperren)." >&2
   else
     echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (./build.sh unter $BUILD_LOCK)." >&2
   fi
@@ -265,11 +267,14 @@ fi
 
 APP_TEST="Kev CAD Test${NAME:+ $NAME}"
 JOB_ID="$ID-$(date +%Y%m%d-%H%M%S)-$$"
-case "$MODE" in tests) KIND=tests ;; ipadtests) KIND=ipadtests ;; testbau) KIND=testbau ;; release) KIND=bundle ;; esac
+case "$MODE" in tests) KIND=tests ;; ipadtests) KIND=ipadtests ;; ipadrelease) KIND=ipadrelease ;; testbau) KIND=testbau ;;
+  release) KIND=bundle ;; esac
 
 # Was hier vorbereitet wird: das Symbol (rsvg-convert fehlt dem Mini) und für testbau die Kernel-Umgebung dieses
 # Worktrees, die die Test-App hier startet. Beides ist schnell und baut nichts.
-if [ "$KIND" != tests ] && [ "$KIND" != ipadtests ]; then
+if [ "$KIND" = ipadrelease ]; then
+  tools/ipad-bau.sh symbol || exit 1
+elif [ "$KIND" != tests ] && [ "$KIND" != ipadtests ]; then
   ./build.sh --icon || exit 1
 fi
 if [ "$KIND" = testbau ]; then

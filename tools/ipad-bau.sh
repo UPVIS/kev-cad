@@ -7,6 +7,8 @@
 #   tools/ipad-bau.sh test            Tests des Kerns im iPad-Simulator (ohne Simulatorfenster, Schema KevCADCore-Package)
 #   tools/ipad-bau.sh app             iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
 #   tools/ipad-bau.sh gesten          Gesten-Tests (XCUITest, UITests/KevCADPad) im iPad-Simulator, ohne Simulatorfenster
+#   tools/ipad-bau.sh release         iPad-App als Release für ein echtes iPad übersetzen, ohne Signatur: findet, was sonst
+#                                     erst das Archiv für TestFlight zeigt (Code unter #if DEBUG); tools/fern.sh ipadrelease
 #   tools/ipad-bau.sh symbol          nur das App-Symbol aus app/icon.svg erzeugen (steht nicht im Git)
 #   tools/ipad-bau.sh starten         Simulator booten (ohne Simulator.app, kein Fenster), App installieren, im Demomodus
 #                                     starten, Bildschirmfoto nach build/ipad-start.png
@@ -36,12 +38,13 @@ ART=${1:-}
 ZIEL=${2:-simulator}
 SCHEMA=KevCADCore
 AKTION=build
+KONF=Debug
 SIM_NAME="${KEVCAD_IPAD_SIM:-iPad Pro 13-inch (M5)}"
 PAD_BUNDLE_ID=de.upvis.kevcad.ipad
 PAD_APP="$REPO/build/Kev CAD iPad.app"
 GEBOOTET="$REPO/build/ipad-sim-gebootet"
 
-hilfe() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
+hilfe() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # UDID des Simulators mit diesem Namen (der neueste, falls es mehrere Laufzeiten gibt)
 sim_udid() {
@@ -91,6 +94,11 @@ case "$ART" in
     SCHEMA=KevCADPad
     AKTION=test
     ZIEL=test ;;
+  release)
+    # Wie das Archiv für TestFlight (Release, echtes iPad), aber ohne Signatur und ohne Export: prüft nur das Übersetzen
+    SCHEMA=KevCADPad
+    KONF=Release
+    ZIEL=geraet ;;
   foto)
     # Unter der Simulator-Sperre: starten, Foto kopieren, stoppen (ein anderer Agent wartet so, statt mitten hineinzufunken)
     if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
@@ -218,7 +226,7 @@ start=$(date +%s)
 echo "==> $ART für iPad ($ZIEL), Protokoll $LOG"
 # Kurzfassung der Paritätsprüfung Mac/iPad (tools/paritaet.py); sie hält nichts auf.
 [ -f tools/paritaet.py ] && { python3 tools/paritaet.py --kurz 2>/dev/null || true; }
-if [ "$ART" = app ] || [ "$ART" = gesten ]; then
+if [ "$ART" = app ] || [ "$ART" = gesten ] || [ "$ART" = release ]; then
   command -v xcodegen > /dev/null || { echo "xcodegen fehlt (brew install xcodegen)"; exit 1; }
   symbol || exit 1
   xcodegen generate --spec app/project.yml --quiet || exit 1
@@ -233,8 +241,9 @@ if [ "$ART" = app ] || [ "$ART" = gesten ]; then
     SIM_SPERRE=(lockf -k /tmp/kevcad-ipad-sim.lock)
   fi
   (cd app && ${SIM_SPERRE[@]+"${SIM_SPERRE[@]}"} lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj \
-    -scheme "$SCHEMA" -configuration Debug -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 \
-    ONLY_ACTIVE_ARCH=YES KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" ${NUR[@]+"${NUR[@]}"} "$AKTION") > "$LOG" 2>&1
+    -scheme "$SCHEMA" -configuration "$KONF" -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 \
+    ONLY_ACTIVE_ARCH=YES KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" ${EXTRA[@]+"${EXTRA[@]}"} \
+    ${NUR[@]+"${NUR[@]}"} "$AKTION") > "$LOG" 2>&1
   rc=$?
 else
   SIM_SPERRE=()
