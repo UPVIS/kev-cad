@@ -321,15 +321,29 @@ def verwerfen(job: dict[str, Any] | None) -> None:
 
 
 def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
-    """Ordner mit ``auftrag.json``, BREP je Teil und Nachbarnetzen; Rückgabe: Pfade, Fälle (mit Schlüssel)."""
-    from OCP.BRepTools import BRepTools
-
+    """Ordner mit ``auftrag.json``, BREP je Teil und Nachbarnetzen; Rückgabe: Pfade, Fälle (mit Schlüssel). Scheitert
+    das Schreiben oder wird es abgebrochen, ist der Ordner wieder weg."""
     t0 = time.perf_counter()
     if st.modell is None:
         raise ValueError("Noch kein Statikmodell: erst run aufrufen.")
-    m = st.modell
     liste = faelle(st, wunsch)
     ordner = tempfile.mkdtemp(prefix="kevcad-fem-")
+    try:
+        return _schreibe_in(st, wunsch, liste, ordner, t0)
+    except BaseException:  # auch Abbruch: kein halber Ordner bleibt liegen
+        import shutil
+
+        shutil.rmtree(ordner, ignore_errors=True)
+        raise
+
+
+def _schreibe_in(st: Any, wunsch: dict[str, Any], liste: list[dict[str, Any]], ordner: str, t0: float
+                 ) -> dict[str, Any]:
+    """``schreibe`` in den Ordner ``ordner``; ``auftrag.json`` entsteht zuletzt und atomar (temporäre Datei, dann
+    umbenannt): Liegt sie da, ist der Auftrag vollständig."""
+    from OCP.BRepTools import BRepTools
+
+    m = st.modell
     szen_obj = {s.name: s for s in st.szenarien}
     teile: dict[str, dict[str, Any]] = {}
     nicht: list[dict[str, Any]] = []
@@ -424,8 +438,10 @@ def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
     auftrag = {"version": VERSION, "fein": bool(wunsch.get("fein")), "teile": list(teile.values()),
                "run": st.run}
     pfad = os.path.join(ordner, "auftrag.json")
-    with open(pfad, "w", encoding="utf-8") as fh:
+    tmp = pfad + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(auftrag, fh, ensure_ascii=False)
+    os.replace(tmp, pfad)
     return {"ordner": ordner, "auftrag": pfad, "run": st.run,
             "faelle": [{"id": f["id"], "szenario": f["szenario"], "teil": f["teil"], "schluessel": f["schluessel"],
                         "ziel": f["ziel"], "s0": f.get("s0")} for T in teile.values() for f in T["faelle"]],

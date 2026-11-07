@@ -157,6 +157,66 @@ def test_zwischenstand_nach_der_statik_mit_fem_auftrag(tmp_path, monkeypatch):
         shutil.rmtree(job["ordner"], ignore_errors=True)
 
 
+def test_auftrag_schreiben_hinterlaesst_bei_fehler_nichts(tmp_path, monkeypatch):
+    """Scheitert das Schreiben des FEM-Auftrags mitten drin oder beim Ablegen von auftrag.json (auch ein Abbruch), bleibt
+    kein halber Ordner liegen; auftrag.json entsteht nur ganz (temporäre Datei, dann umbenannt)."""
+    import tempfile
+
+    from kevcad_kernel.statik import anbindung
+
+    monkeypatch.delenv("KEVCAD_PRUEF_STUFEN", raising=False)
+    zwischen, _ = _pruefe_mit_stufen(tmp_path, HALTER.replace("AUSRICHTUNG", '"-x"'))
+    for z in zwischen:
+        fk_auftrag.verwerfen(z.get("festkoerper_auftrag"))
+    ablage = tmp_path / "temp"
+    ablage.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(ablage))
+    wunsch = {"auto": True, "szenarien": ["Haken 2 kg"]}
+    gut = fk_auftrag.schreibe(anbindung.LETZTER, wunsch)
+    assert sorted(p.name for p in Path(gut["ordner"]).iterdir() if p.suffix == ".json") == ["auftrag.json"]
+    fk_auftrag.verwerfen(gut)
+    assert not list(ablage.iterdir())
+
+    def boom(*a: Any, **kw: Any) -> None:
+        raise OSError("Platte voll")
+
+    with monkeypatch.context() as mp:  # mitten drin (BREP geschrieben, Nachbarnetze noch nicht)
+        mp.setattr(fk_auftrag, "lager_nachbar", boom)
+        with pytest.raises(OSError):
+            fk_auftrag.schreibe(anbindung.LETZTER, wunsch)
+    assert not list(ablage.iterdir())
+    with monkeypatch.context() as mp:  # beim Umbenennen von auftrag.json
+        mp.setattr(fk_auftrag.os, "replace", boom)
+        with pytest.raises(OSError):
+            fk_auftrag.schreibe(anbindung.LETZTER, wunsch)
+    assert not list(ablage.iterdir())
+    with monkeypatch.context() as mp:  # Abbruch (KeyboardInterrupt, SystemExit) räumt genauso auf
+        mp.setattr(fk_auftrag, "lager_nachbar", lambda *a, **kw: (_ for _ in ()).throw(KeyboardInterrupt()))
+        with pytest.raises(KeyboardInterrupt):
+            fk_auftrag.schreibe(anbindung.LETZTER, wunsch)
+    assert not list(ablage.iterdir())
+    # nach_statik meldet den Fehler und gibt None (die Laufzeit schreibt den Auftrag dann selbst über EXEC)
+    with monkeypatch.context() as mp:
+        mp.setattr(fk_auftrag, "lager_nachbar", boom)
+        statik = next(z["statik"] for z in zwischen if z.get("festkoerper_auftrag"))
+        assert fk_auftrag.nach_statik(statik, anbindung.LETZTER.run) is None
+    assert not list(ablage.iterdir())
+
+
+def test_schattenlauf_bricht_die_pruefung_nicht_ab():
+    """Ein Lauf der Versionen (schatten) wartet, bis die Prüfung des echten Laufs fertig ist; sonst endete sie
+    abgebrochen, und der Nachlauf nach der Statik (Ablauf, Topologie) fiele weg, obwohl die FEM schon rechnet. Ein neuer
+    echter Lauf und QUIT brechen ab wie bisher, auch hinter einem wartenden Schattenlauf."""
+    from kevcad_kernel.worker import bricht_pruefung_ab
+
+    schatten = ({"type": "RUN", "run": 1_000_000_001, "schatten": True}, b"")
+    assert not bricht_pruefung_ab([])
+    assert not bricht_pruefung_ab([schatten])
+    assert not bricht_pruefung_ab([({"type": "EXEC"}, b""), ({"type": "PING"}, b"")])
+    assert bricht_pruefung_ab([schatten, ({"type": "RUN", "run": 12}, b"")])
+    assert bricht_pruefung_ab([({"type": "QUIT"}, b"")])
+
+
 STAPEL = '''
 from build123d import *
 from kevcad import show

@@ -441,6 +441,13 @@ zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Or
   festigkeit_und_feld` (Festkörper binnen 120 s nicht fertig, passt zum schon bekannten sporadischen Absturz des
   FEM-Prozesses). Der zweite Test nennt bei einem Zeitlimit jetzt den Stand und die Meldung des FEM-Prozesses.
 
+- Nachträge (07.11.2026, nach Abbruch des ersten Agenten am Limit): (1) Ein Lauf der Versionen (`schatten`, etwa ein
+  Vergleich) brach im Rechenprozess die laufende Prüfung des echten Laufs ab wie ein neuer Lauf. Seit A1 rechnete die FEM
+  dann schon, der Lauf endete aber „abgebrochen“ ohne Montage und Bewegungsraum, und Ablauf und Topologie starteten nie.
+  Jetzt wartet ein Schattenlauf, bis die Prüfung fertig ist (`worker.bricht_pruefung_ab`); ein neuer echter Lauf und
+  QUIT brechen ab wie bisher. (2) `auftrag.schreibe` räumt den Ordner bei jedem Fehler und Abbruch weg und legt
+  `auftrag.json` zuletzt und atomar ab (temporäre Datei, dann umbenannt). Tests in `test_pruefung_inkrementell.py`.
+
 ### A2 FEM-Teile parallel (07.11.2026)
 
 - `statik/festkoerper/prozess.py`: Der FEM-Prozess verteilt die Teile eines Auftrags, die nicht ganz aus dem

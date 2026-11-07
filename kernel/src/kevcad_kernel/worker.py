@@ -52,6 +52,14 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[n:]
 
 
+def bricht_pruefung_ab(wartend: Any) -> bool:
+    """Bricht einer der wartenden Aufträge die Prüfung nach einem Lauf ab? Ja für einen neuen Lauf und QUIT. Ein Lauf der
+    Versionen (``schatten``) wartet, bis die Prüfung fertig ist: Bräche er sie ab, endete der echte Lauf ohne Montage
+    und Bewegungsraum, und der Nachlauf nach der Statik (Ablauf, Topologie; A1, PLAN-PRUEFUNG-INKREMENTELL.md) fiele
+    weg, obwohl die FEM schon rechnet. Im Fertigrechnen des Bewegungsraums geht dagegen jeder Auftrag vor."""
+    return any(h.get("type") == "QUIT" or (h.get("type") == "RUN" and not h.get("schatten")) for h, _ in wartend)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Seite des Rechenprozesses
 # ---------------------------------------------------------------------------------------------------------------------
@@ -122,7 +130,7 @@ def main() -> int:
     def neuer_auftrag() -> None:
         """Für die Prüfung nach einem Lauf: neue Rahmen einsammeln; ein neuer Lauf (oder QUIT) bricht sie ab."""
         einsammeln()
-        if ende or any(h.get("type") in ("RUN", "QUIT") for h, _ in wartend):
+        if ende or bricht_pruefung_ab(wartend):
             from kevcad_kernel.pruefung.pruefer import Abgebrochen
 
             raise Abgebrochen("neuer Lauf")
