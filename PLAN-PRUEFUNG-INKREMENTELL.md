@@ -334,3 +334,43 @@ freigegeben, kommt aber erst nach A0 bis A4. Die schnellere Zerlegung mit neuer 
 
 A0 → A3 → A1 → A2 → A4 → B1 → A5 → B2 → B3 → A6 → B4 → B5. Je Schritt ein Commit nach Gleichheitsprobe und Tests, auf
 `main` wie üblich nur Geprüftes.
+
+## 10. Umsetzung
+
+Messungen am Kugelschieber (Kopie, `benchmark/pruefzeit.py`), Schritte kalt, `laufrolle_l=90`, dieselbe Änderung, zurück
+auf die Datei, `laufrolle_l=95`. „Endstand“ ist die Zeit ab Beginn von `run(params=…)` bis `pruefen(endstand=True)`
+zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Ordner je Messung).
+
+### A0 Messwerkzeug (07.11.2026)
+
+- `benchmark/pruefzeit.py`: Zeitleiste je Schritt (Ankunft jedes CHECK aus dem Rechenprozess mit Zustand und offenen
+  Prüfungen, FEM-Auftrag, FEM-Prozess und je Teil Beginn und Ende, Endstand), Systemlast und freier Speicher vorher und
+  nachher, Speicherspitze des FEM-Prozesses. Dafür meldet der FEM-Prozess `beginn`, `zeiten_teile` und `speicher_mb` im
+  Ergebnis (sonst unverändert). Alle Ablagen samt TMPDIR auf UPVIS ULTRA.
+- Gleichheitsprobe `--probe` (`benchmark/pruefzeit_analyse/gleichheit.py`): Nach jedem Schritt rechnet ein frischer Kernel
+  in eigenem Prozess (leere Speicher) denselben Stand (Kopie des Projekts vor dem Schritt) mit denselben Parametern bis zum
+  Endstand und teilt nur die FEM-Netze. Verglichen werden Befunde, Schnittkörper (SHA-1 der Nutzlast), Montage, Stand,
+  Druck, Gewinde, Bedingungen, die volle Statik je Szenario samt Festkörper je Teil (genau) und die FEM-Felder (float32,
+  relativ zum größten Betrag 1e-6). Ungleich: Ausgang 1. `--netze-von` und `--vergleich` vergleichen zwei Stände des
+  Kernels mit denselben Netzen, `--nachvergleich` wertet eine Ablage neu.
+- Basis (Stand `12d6294`, Ablage `20261107-063751-a0-basis`, Last 9 bis 22, 52 bis 72 % Speicher frei):
+
+| Schritt | Endstand | FEM-Prozess | FEM-Spitze |
+|---|---|---|---|
+| kalt | 48,6 s | 22,7 → 48,5 s | 1,3 GB |
+| `laufrolle_l=90` | 33,2 s | 7,0 → 33,1 s (8 Teile nacheinander) | 1,5 GB |
+| dieselbe Änderung | 2,7 s | aus dem Zwischenspeicher | – |
+| zurück auf die Datei | 1,9 s | aus dem Zwischenspeicher | – |
+| `laufrolle_l=95` | 32,4 s | 7,4 → 32,3 s | 1,8 GB |
+
+- Probe der Basis: in allen Schritten gleich bis auf drei Schwankungen, die schon zwischen zwei frischen Prozessen
+  auftreten, also nichts mit Zwischenspeichern zu tun haben. Sie stehen im Ergebnis getrennt unter `bekannt` und lassen
+  die Probe nicht scheitern:
+  1. **Knicken (S1)**: `statik/stabwerk.py` `_knicken` ruft `eigsh` ohne festen Startvektor, mit sigma 1e-3 weit unter
+     den Eigenwerten (alle transformierten Eigenwerte liegen dicht bei 1). Die kleinste Knicklast schwankt von Prozess zu
+     Prozess: 2.594,9 gegen 2.637,4, nach der Änderung 1.191 gegen 846, dazu der Stab, dem sie zugeordnet wird. Nicht Teil
+     von A0 bis A4; Frage an Kevin.
+  2. **Rutschen (S0)**: `statik/s0.py` `rutschen` entscheidet einen Gleichstand gleicher Räder nach der Reihenfolge einer
+     Menge (Hash-Zufall je Prozess): „Lenkrolle 3“ gegen „Lenkrolle 1“, gleiche Werte. Nicht Teil von A0 bis A4.
+  3. **AMG**: pyamg schätzt den Spektralradius mit einem Zufallsvektor (`np.random`); Residuen und Felder der AMG-Teile
+     weichen bis 9e-8 relativ ab, die gerundeten Ausgaben nicht. In A3 behoben (fester Startwert).

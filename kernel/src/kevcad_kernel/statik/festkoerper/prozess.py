@@ -532,6 +532,17 @@ def grenzen_suchen(teile: list[dict[str, Any]], faelle: list[dict[str, Any]], ab
     return out
 
 
+def _speicher_spitze_mb() -> float | None:
+    """Größter belegter Speicher dieses Prozesses bisher (MB; macOS zählt ru_maxrss in Byte, Linux in kB)."""
+    try:
+        import resource
+
+        r = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except Exception:  # noqa: BLE001 - nur eine Angabe
+        return None
+    return round(r / (1 << 20) if sys.platform == "darwin" else r / 1024, 1)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 2:
@@ -539,13 +550,17 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
     t0 = time.perf_counter()
+    beginn = time.time()
     auftrag = json.loads(Path(argv[0]).read_text(encoding="utf-8"))
     ablage = speicher()
-    out: dict[str, Any] = {"stand": "done", "faelle": [], "pid": os.getpid(), "grenzen": list(GRENZEN_S3)}
+    # beginn und zeiten_teile (Wanduhr, s ab beginn) für Zeitleisten (benchmark/pruefzeit.py), speicher_mb: Spitze
+    out: dict[str, Any] = {"stand": "done", "faelle": [], "pid": os.getpid(), "grenzen": list(GRENZEN_S3),
+                           "beginn": beginn, "zeiten_teile": []}
     teile = auftrag.get("teile") or []
     melde(0.0, f"{len(teile)} Teile")
     for i, T in enumerate(teile):
         von, bis = i / max(len(teile), 1), (i + 1) / max(len(teile), 1)
+        t_teil = time.time()
         try:
             for r in rechne_teil(T, bool(auftrag.get("fein")), ablage, von, bis):
                 felder = r.pop("_felder", None)
@@ -557,10 +572,13 @@ def main(argv: list[str] | None = None) -> int:
                 out["faelle"].append({"id": f["id"], "stand": "failed", "szenario": f["szenario"], "teil": T["name"],
                                       "meldung": f"nicht gerechnet: {type(exc).__name__}: {exc}",
                                       "traceback": traceback.format_exc(limit=6)})
+        out["zeiten_teile"].append({"teil": T["name"], "pid": os.getpid(), "start": round(t_teil - beginn, 3),
+                                    "ende": round(time.time() - beginn, 3)})
     if any(T.get("grenze") for T in teile):
         melde(0.97, "Grenze suchen (Halbieren über die überlagerten Spannungen)")
         out["grenze"] = grenzen_suchen(teile, out["faelle"], ablage)
     out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    out["speicher_mb"] = _speicher_spitze_mb()
     melde(1.0, "fertig")
     tmp = argv[1] + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
