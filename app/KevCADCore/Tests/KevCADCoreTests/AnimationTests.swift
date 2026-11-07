@@ -1,5 +1,8 @@
 import Foundation
 import OCCTSwiftViewport
+#if !os(macOS)
+import AVFoundation
+#endif
 import XCTest
 import simd
 
@@ -342,6 +345,41 @@ final class AnimationTests: XCTestCase {
             XCTAssertTrue(text.contains("96,64"), text)
             XCTAssertTrue(text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(",5"), text)
         }
+    }
+    #else
+    /// iPad: dieselben Bilder gehen an AVAssetWriter (I-8); das Video hat Größe, Codec und Bildzahl wie am Mac.
+    func testShortVideoWithAVAssetWriter() async throws {
+        let s = SceneStore()
+        s.upsert(try Fixtures.record("part_box.frame"), flash: false)
+        let clip = AnimationClip(
+            name: "Test", duration: 0.5, fps: 8, frameCount: 5, parts: ["Grundplatte"],
+            matrices: (0..<5).flatMap { k in Self.pack(simd_float4x4(translationX: Float(k) * 3)) })
+        let bounds = try XCTUnwrap(s.visibleBounds())
+        let cam = ViewportCoordinator.fitted(StandardView.isometricFrontRight.cameraState(), to: bounds, aspect: 1.5)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kevcad-video-\(UUID().uuidString)")
+        let out = dir.appendingPathComponent("Test.mp4")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let exporter = AnimationVideoExporter()
+        var progress: [Int] = []
+        let job = AnimationVideoExporter.Job(
+            clip: clip, width: 96, height: 64, fps: 8, format: "mp4", output: out, camera: { _ in cam },
+            bodies: { t in
+                s.setAnimationPose(clip.pose(at: t))
+                return s.snapshotBodies()
+            }, displayMode: .shadedWithEdges, lighting: ViewportCoordinator.zUpLighting)
+        let result = await withCheckedContinuation { fertig in
+            exporter.export(job, progress: { k, _ in progress.append(k) }) { fertig.resume(returning: $0) }
+        }
+        let output = try result.get()
+        XCTAssertEqual(output.frames, 5)
+        XCTAssertEqual(progress, [1, 2, 3, 4, 5])
+        let asset = AVURLAsset(url: out)
+        let spuren = try await asset.loadTracks(withMediaType: .video)
+        let spur = try XCTUnwrap(spuren.first)
+        let groesse = try await spur.load(.naturalSize)
+        XCTAssertEqual(groesse, CGSize(width: 96, height: 64))
+        let dauer = try await asset.load(.duration)
+        XCTAssertEqual(dauer.seconds, 5.0 / 8.0, accuracy: 0.13)
     }
     #endif
 

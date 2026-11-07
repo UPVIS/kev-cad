@@ -2315,7 +2315,8 @@
    "lage-1",
    "live-masse-1",
    "feedback-1",
-   "flaeche-1"
+   "flaeche-1",
+   "datei-1"
   ],
   "nachrichten": {
    "PART_SAME": "delta-1",
@@ -2470,5 +2471,30 @@
    "diesen"
   ],
   "paket": "feedback_beispiel.json"
+ },
+ "datei": {
+  "frames": [
+   {
+    "file": "datei_req.frame",
+    "type": "DATEI_REQ",
+    "payload_bytes": 0,
+    "richtung": "app"
+   },
+   {
+    "file": "datei_stueck.frame",
+    "type": "DATEI",
+    "payload_bytes": 16,
+    "richtung": "kernel"
+   },
+   {
+    "file": "datei_stueck_ende.frame",
+    "type": "DATEI",
+    "payload_bytes": 13,
+    "richtung": "kernel"
+   }
+  ],
+  "faehigkeit": "datei-1",
+  "stueck_vorgabe": 4194304,
+  "stueck_max": 8388608
  }
 }

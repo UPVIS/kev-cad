@@ -344,8 +344,8 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-5 Sprechen am iPad | SpeechAnalyzer, eine Uhr, Paket wie am Mac (mit `geraet` und Farbe), Postausgang, Daumenleiste | I-3, I-4 | erster Schritt (07.11.2026): Daumenleiste links unten (Sprechen, Pause, Weiter, Senden), Live-Zeile mit Wörtern statt Tasten, Audio-Sitzung fürs Mikrofon, Paket als Nutzlast über die Kopplung (`FEEDBACK_PAKET.nutzlast`, der Kernel legt es ab), Postausgang ohne Mac; offen: Abnahme am Gerät, `geraet` und Strichfarben im Paket (mit I-4), X am Rahmen; Parakeet geprüft (4.5: geht, Einbau groß, vorerst SpeechAnalyzer) |
 | I-6 Live-Kopplung | Gemeinsame und Eigene Ansicht, Führung, Live-Striche, Agent spricht das aktive Gerät an, Lagebild je Gerät | I-2b, I-3 | offen |
 | I-7 iCloud | Spike (Zugriff, Versionen, Auslagern), Ordner der App, Zwischenspeicher draußen, Projektliste am iPad, Umzug nach Kevins Ja | I-3 | Spike fertig (07.11.2026, Abschnitt 6): Empfehlung Ordner in iCloud Drive statt eigenem Container. Prototyp hinter Schaltern (aus): `projektablage.json` am Mac (App und MCP), `.kevcad` bleibt lokal (`ablage.py`), Projektliste am iPad mit Ordnerwahl, Öffnen über den Mac mit `~`-Pfad; Tests `test_ablage.py`, `ProjektablageTests`. Offen: Kevins Ja zum Umzug, Versionen als `git bundle`, `vorschau.png`, Neu anlegen vom iPad, Test am echten iPad |
-| I-8 Volle Parität | Prüfliste in Abschnitt 9 abarbeiten | I-3 | offen |
-| I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); Takt fertig (`tools/ipad-testflight-takt.sh` aus `tools/auto-update.sh`, eigene Arbeitskopie, höchstens stündlich, Testhinweise mit den Änderungen an der App); offen: Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung |
+| I-8 Volle Parität | Prüfliste in Abschnitt 9 abarbeiten | I-3 | begonnen (07.11.2026): Datei ans Gerät (PROTOCOL.md „I-8 Datei ans Gerät“, `DATEI_REQ`/`DATEI` in Stücken, Fähigkeit `datei-1`, nur Dateien unter den Wurzeln des Kernels); am iPad „Teilen“ statt „Im Finder zeigen“ (`DateiKnopf`, `DateiTeilenKnopf`, `AppSession.dateienTeilen`): Bestand, 3MF statt Bambu Studio, Dokument-Export, Rendern, Drucken-Dialog, model.py in Kopfleiste und Fehlerband; was der Kern nach einer Aktion im Finder zeigen würde (Export, CSV, Video, Referenz), öffnet am iPad das Teilen-Blatt mit Drucken, Dateien, AirDrop. Video aus Animationen am iPad mit AVAssetWriter statt ffmpeg (H.264 bzw. ProRes, im Zwischenspeicher, dann Teilen). Offen: Zeilen I-8 in der Tabelle unten |
+| I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); Takt fertig (`tools/ipad-testflight-takt.sh` aus `tools/auto-update.sh`, eigene Arbeitskopie, höchstens stündlich, Testhinweise mit den Änderungen an der App); Paritätsprüfung fertig (07.11.2026: `tools/paritaet.py`, `paritaet.json`, Kurzfassung in `tools/fern.sh testbau` und `tools/ipad-bau.sh`, Tests `tools/test_paritaet.py` in `tools/fern.sh tests`; Befehle ohne iPad-Auslöser vorbereitet, aktiv sobald I-4 sie im Katalog führt); Kern-Tests im iPad-Simulator über `tools/fern.sh ipadtests` (der Mini hat noch keine iOS-Laufzeit, bis dahin hier); offen: iOS-Laufzeit auf dem Mini (Kevins Ja), Selbsttests der Oberfläche im iPad-Simulator |
 | I-10 Abnahme | Kevin am echten iPad: Gesten, Stift, Latenz, Kopplung; Learnings in Plan, Skill und Regeln | alle | offen |
 
 ### Offene Stellen auf dem iPad nach I-1
@@ -359,11 +359,11 @@ Im Code mit „iPad: folgt in I-x“ markiert; jedes Paket arbeitet seine Zeilen
 | I-4 | Stift (Schweben, Zeichnen, Doppeltippen) |
 | I-5 | `SprachSteuerung`: Mikrofon und Bedienung da (Daumenleiste, Audio-Sitzung, Paket als Nutzlast); auf dem iPad hört gleich Apples Erkennung zu, Wortlaut gibt es nur am Mac; Selbsttest Sprache nur am Mac |
 | I-7 | `AppInfo.projectsDirectory` ist der Dokumente-Ordner der App, mit dem Schalter „Projekte aus iCloud“ der gewählte Ordner (Prototyp); Ordnernamen unterscheiden auf dem iPad Groß- und Kleinschreibung (`ProjectLocator.uniqueFolder`) |
-| I-8 | Video (`AnimationVideo`, ffmpeg nur am Mac), Drucken (`exportDrucken`, `BlattDruck`, `ExportDrucker`), Bambu Studio, `DruckerSchluesselbund.speichern`, „Im Finder zeigen“ (wird Teilen), Zukauf (Downloads-Ordner) |
+| I-8 | Video auf Wunsch des Agenten (ANIM_VIDEO_REQ geht ans aktive Gerät; ist das das iPad, sagt die Antwort, dass die Mac-App es rechnet; besser: der Kernel gibt solche Aufträge an den Mac), Drucken mit eigenem Dialog (`exportDrucken`, `BlattDruck`, `ExportDrucker`; bis dahin Drucken im Teilen-Blatt), `DruckerSchluesselbund.speichern`, Zukauf (Downloads-Ordner des Mac; am iPad per Link). Erledigt 07.11.2026: „Im Finder zeigen“ wird Teilen, Bambu Studio wird „3MF teilen“, Video aus der Animationskachel mit AVAssetWriter |
 | I-9 | Selbsttests: `SprachSelbsttest`, Treffertest in `AppController+SelfTest`, Fensterbild in `AppController+Flaeche` |
 | I-3b (aus I-3a) | Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Zoomflächen, Tippen in den Viewer macht ihn nicht zur aktiven Kachel (`viewerKlickBeobachten`), Auswahl erweitern mit Umschalt oder Befehl, Streifen unter der Statusleiste (Viewer bis unter die Statusleiste) |
 | I-7 (aus I-3a) | „Ordner öffnen“ ist ausgeblendet (`presentOpenPanel`; mit dem Schalter wählt die Projektliste den Ordner), ein fehlendes Projekt in der Liste meldet sich nur statt „Entfernen?“ zu fragen |
-| I-8 (aus I-3a) | Finder und Editor (`AppSession`, `ErrorBanner`, `Kopfleiste`), „Im Finder zeigen“ ausgeblendet (`BestandAnsicht`, `DruckAnsicht`, `ZukaufBanner`, `ExportDialog`), 3MF sichern, PDF sichern und Drucken (Teilen geht schon), Referenz- und CAD-Dateien wählen, Blätter bearbeiten, Protokoll, Lagerkatalog und Zukauf (keine eigene Szene) |
+| I-8 (aus I-3a) | Berichte und Dokument-Export (`ExportSteuerung` nur am Mac, am iPad weder Drucken noch PDF), Referenz- und CAD-Dateien wählen (braucht den Weg vom Gerät zum Mac), Blätter bearbeiten, Protokoll, Lagerkatalog und Zukauf (keine eigene Szene). Erledigt 07.11.2026: Finder und Editor (`AppSession`, `ErrorBanner`, `Kopfleiste`: model.py teilen), Teilen in `BestandAnsicht`, `DruckAnsicht`, `ExportDialog`, `RenderDialog`, `DruckenDialog`; `ZukaufBanner` bleibt am Mac (Datei in dessen Downloads) |
 | I-9 (aus I-3a) | alle Selbsttests der Oberfläche; Menüs liegen nur in `Mac/`, iPadOS 26 hätte eine Menüleiste (Rückweg über den Befehlskatalog in I-4) |
 
 Bewusst ohne Gegenstück: Die Signaturprüfung der Spiegel-Gegenstelle und der Spiegel-Socket (MIRROR.md) gibt es nur am Mac.
@@ -389,14 +389,14 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 | Auswahl, Elementmodus, Rahmen, Kontextmenü | ja | I-3, Stift I-4 |
 | Messen mit Vorschau | ja | I-3, Schweben I-4 |
 | Darstellung, Schnitt, Explosion, Röntgen | ja | I-3 |
-| Kameras, Bildschirmfoto, Video, Navigation aufnehmen | ja | I-8 |
+| Kameras, Bildschirmfoto, Video, Navigation aufnehmen | ja | Video aus der Animation am iPad (AVAssetWriter, 07.11.2026); Bildschirmfoto und Aufnahme I-8 |
 | Gliederung mit Umbenennen | ja | I-3 |
 | Startübersicht, Projekt neu, öffnen, umbenennen | ja | I-3, iCloud I-7 |
 | Kacheln: Druck, Zeichnung, Bauplan, Stückliste, Zuschnitt, Material, Animation, Statik, Simulation, Rendern, Versionen, Details, zweite Ansicht | ja | I-3 (Fläche), I-8 (Inhalte) |
 | Sprechen mit Zeigen und Zeichnen | ja | I-5 |
 | Werkzeugkranz, Strichfarben | I-4 | I-4 |
 | Kopplung mit dem anderen Gerät | I-6 | I-6 |
-| Export STEP, STL, 3MF, GLB; Dokumente als PDF | ja | I-8 (Teilen-Blatt) |
+| Export STEP, STL, 3MF, GLB; Dokumente als PDF | ja | Teilen-Blatt mit Datei vom Mac (seit 07.11.2026); Dokument-Export und Berichte als PDF I-8 |
 | Drucker (Bambu) | ja | I-8 (über den Kernel am Mac) |
 | Bestand, Lager, Katalog, Zukaufteil per Link | ja | I-8 (Link per Teilen-Blatt aus Safari) |
 | Referenzen und Scans | ja | I-8 (Kamera und LiDAR des iPad, Vorbild `ios/KevScan`) |
@@ -437,6 +437,19 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
   `fileproviderctl evaluate <pfad>` (`isExcludedFromSync`, `isUploaded`); `brctl evict` lagert zum Testen aus.
 - **Git-Ausschluss für Links** (07.11.2026): Das Muster `/.kevcad/` mit Schrägstrich trifft nur Ordner; ein Link `.kevcad`
   wäre als neue Datei in die Versionen gerutscht. Der Ausschluss nennt deshalb auch `/.kevcad` und `/.kevcad.nosync/`.
+- **Paritätsprüfung mit Bestand** (07.11.2026): Im gemeinsamen Code standen 82 Blöcke `#if os(macOS)` ohne `#else`, die
+  nicht nur Importe enthalten; 20 davon nannten schon einen Grund. Statt alle nachträglich zu begründen, hält
+  `paritaet.lock.json` den Bestand (Prüfsumme je Block) fest; gemeldet werden neue und geänderte Blöcke ohne Grund im
+  Kommentar. Eine Marke „iPad: folgt in I-2b“ stand noch nach dem fertigen Paket im Code; solche meldet die Prüfung jetzt
+  als veraltet.
+- **Mini ohne iOS-Laufzeit** (07.11.2026): Der Mac mini hat Xcode 27, aber keine iOS-Laufzeit für den Simulator (rund
+  8 GB; frei waren 17 GB). `tools/fern.sh ipadtests` rechnet deshalb vorerst hier; `tools/fern.sh einrichten ipad` lädt sie
+  nach Kevins Ja.
+- **Skripte nicht ändern, während sie laufen** (07.11.2026): bash liest ein Skript stückweise. Eine Änderung an
+  `tools/fern.sh` während eines Testlaufs ließ ihn nach grünen Tests mit „syntax error“ enden.
+- **Dateien des Mac auf dem iPad** (07.11.2026): Pfade, die der Kernel nennt, gibt es nur am Mac; ein `ShareLink` darauf
+  (Rendern) ging auf dem iPad ins Leere. Jede Datei, die die Oberfläche weitergibt, geht über `DateiActions`: am Mac die
+  Datei selbst, am iPad eine Kopie vom Mac im Zwischenspeicher (Stücke zu 4 MiB, damit Live-Nachrichten dazwischen laufen).
 
 ## 11. Offene Fragen und Risiken
 

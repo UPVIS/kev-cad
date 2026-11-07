@@ -11,6 +11,8 @@ public enum LiveFaehigkeit {
     public static let lage = "lage-1"
     public static let liveMasse = "live-masse-1"
     public static let flaeche = "flaeche-1"
+    /// I-8: Der Kernel liefert Dateien ans Gerät (DATEI_REQ); nur der Kernel meldet sie, die App fragt.
+    public static let datei = DateiAnsGeraet.faehigkeit
 
     /// Was diese App dem Kernel meldet. Was hier steht, muss auf der App-Seite vollständig funktionieren.
     public static let app: [String] = [delta, inArbeit, spur, lage, liveMasse, flaeche]

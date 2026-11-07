@@ -19,9 +19,9 @@ public enum Dateiablage {
         #endif
     }
 
-    /// Markiert die Dateien im Finder; true, wenn das ging. Auf dem iPad gibt es dafür kein Gegenstück im Kern (dort gibt
-    /// die Oberfläche Dateien über das Teilen-Blatt weiter; iPad: folgt in I-8), dann geschieht nichts und die Antwort ist
-    /// false.
+    /// Markiert die Dateien im Finder; true, wenn das ging. Auf dem iPad gibt es dafür kein Gegenstück im Kern: Dort gibt
+    /// die Oberfläche Dateien über das Teilen-Blatt weiter (`AppSession.dateienTeilen`, `DateiKnopf`, I-8); hier geschieht
+    /// dann nichts und die Antwort ist false.
     @discardableResult
     public static func imFinderZeigen(_ urls: [URL]) -> Bool {
         #if os(macOS)
@@ -33,7 +33,7 @@ public enum Dateiablage {
     }
 
     /// Kann diese Adresse hier geöffnet werden? Webadressen überall; Dateien nur am Mac (mit dem Standardprogramm). Auf dem
-    /// iPad öffnen Dateien über das Teilen-Blatt (iPad: folgt in I-8).
+    /// iPad gehen Dateien über das Teilen-Blatt (I-8).
     public static func kannOeffnen(_ url: URL) -> Bool {
         #if os(macOS)
         true

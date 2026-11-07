@@ -1,3 +1,7 @@
+#if !os(macOS)
+import AVFoundation
+import CoreVideo
+#endif
 import CoreGraphics
 import Foundation
 import OCCTSwiftViewport
@@ -5,7 +9,8 @@ import QuartzCore
 import simd
 
 /// Video aus einer Animation (Entscheidung A4): je Bild ein Offscreen-Bild (OffscreenRenderer wie beim
-/// ScreenshotRenderer), roh an ffmpeg gefüttert, H.264 MP4 oder ProRes 422 (.mov).
+/// ScreenshotRenderer), am Mac roh an ffmpeg gefüttert, auf dem iPad an AVAssetWriter (I-8), H.264 MP4 oder ProRes 422
+/// (.mov).
 ///
 /// Gerendert wird Bild für Bild auf dem Hauptthread, jeweils in einem eigenen Durchlauf der Ereignisschleife, damit die
 /// App bedienbar bleibt und den Fortschritt zeigt; das Schreiben an ffmpeg läuft in einer eigenen Warteschlange.
@@ -191,10 +196,128 @@ public final class AnimationVideoExporter {
         }
         render(0)
         #else
-        // iPad: ffmpeg gibt es dort nicht; Videos aus Animationen (etwa über AVAssetWriter) folgen in I-8.
-        completion(.failure(ExportError(message: "Videos aus Animationen gibt es auf dem iPad noch nicht")))
+        exportMitAVFoundation(job, progress: progress, completion: completion)
         #endif
     }
+
+    #if !os(macOS)
+    /// iPad: ffmpeg gibt es dort nicht. Dieselben Bilder gehen an AVAssetWriter (H.264 MP4 bzw. ProRes 422 MOV), wie am
+    /// Mac Bild für Bild auf dem Hauptthread gerendert.
+    private func exportMitAVFoundation(
+        _ job: Job, progress: @escaping (Int, Int) -> Void,
+        completion: @escaping (Result<Output, ExportError>) -> Void
+    ) {
+        let w = max(16, job.width / 2 * 2), h = max(16, job.height / 2 * 2)
+        let frames = Int((job.clip.duration * job.fps).rounded()) + 1
+        let prores = job.format == "prores"
+        let target = job.output
+        let tmp = job.output.deletingLastPathComponent()
+            .appendingPathComponent(".\(job.output.deletingPathExtension().lastPathComponent)-entsteht.\(job.output.pathExtension)")
+        let writer: AVAssetWriter
+        do {
+            try FileManager.default.createDirectory(
+                at: job.output.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: tmp)
+            writer = try AVAssetWriter(outputURL: tmp, fileType: prores ? .mov : .mp4)
+        } catch {
+            completion(.failure(ExportError(message: "Video nicht anlegbar: \(error.localizedDescription)")))
+            return
+        }
+        var settings: [String: Any] = [AVVideoCodecKey: prores ? AVVideoCodecType.proRes422 : AVVideoCodecType.h264,
+                                       AVVideoWidthKey: w, AVVideoHeightKey: h]
+        if !prores {
+            settings[AVVideoCompressionPropertiesKey] = [AVVideoAverageBitRateKey: w * h * 8]
+        }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h,
+        ])
+        guard writer.canAdd(input) else {
+            completion(.failure(ExportError(message: "Videoformat \(job.format) geht auf diesem Gerät nicht")))
+            return
+        }
+        writer.add(input)
+        guard writer.startWriting() else {
+            completion(.failure(ExportError(message: "Video startet nicht: \(writer.error?.localizedDescription ?? "")")))
+            return
+        }
+        writer.startSession(atSourceTime: .zero)
+        running = true
+        cancelled = false
+        let started = CACurrentMediaTime()
+        let zeitbasis = CMTimeScale(max(1, Int32((job.fps * 1000).rounded())))
+
+        func finish(_ result: Result<Output, ExportError>) {
+            running = false
+            completion(result)
+        }
+
+        func abbrechen(_ text: String) {
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: tmp)
+            finish(.failure(ExportError(message: text)))
+        }
+
+        func render(_ k: Int) {
+            if cancelled { return abbrechen("Videoausgabe abgebrochen") }
+            if k >= frames {
+                input.markAsFinished()
+                writer.finishWriting {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard writer.status == .completed else {
+                                return abbrechen("Video nicht geschrieben: \(writer.error?.localizedDescription ?? "")")
+                            }
+                            do {
+                                try? FileManager.default.removeItem(at: target)
+                                try FileManager.default.moveItem(at: tmp, to: target)
+                            } catch {
+                                return finish(.failure(ExportError(message: "Video nicht gespeichert: \(error.localizedDescription)")))
+                            }
+                            let ms = Int((CACurrentMediaTime() - started) * 1000)
+                            finish(.success(Output(path: target.path, frames: frames, milliseconds: ms)))
+                        }
+                    }
+                }
+                return
+            }
+            guard input.isReadyForMoreMediaData else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.005) { MainActor.assumeIsolated { render(k) } }
+                return
+            }
+            let t = min(Double(k) / job.fps, job.clip.duration)
+            guard let image = renderFrame(bodies: job.bodies(t), camera: job.camera(t), width: w, height: h, job: job),
+                  let pool = adaptor.pixelBufferPool, let puffer = Self.pixelBuffer(image, pool: pool, width: w, height: h)
+            else { return abbrechen("Bild \(k) ließ sich nicht rendern") }
+            // Zeit je Bild in Tausendstel Bildern, damit auch 29,97 fps genau bleiben
+            let zeit = CMTime(value: CMTimeValue(k) * 1000, timescale: zeitbasis)
+            guard adaptor.append(puffer, withPresentationTime: zeit) else {
+                return abbrechen("Video nicht geschrieben: \(writer.error?.localizedDescription ?? "Bild \(k)")")
+            }
+            progress(k + 1, frames)
+            DispatchQueue.main.async { MainActor.assumeIsolated { render(k + 1) } }
+        }
+        render(0)
+    }
+
+    /// Bild als BGRA-Puffer aus dem Pool des Schreibers.
+    private static func pixelBuffer(_ image: CGImage, pool: CVPixelBufferPool, width: Int, height: Int) -> CVPixelBuffer? {
+        var puffer: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &puffer) == kCVReturnSuccess, let puffer,
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        CVPixelBufferLockBaseAddress(puffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(puffer, []) }
+        guard let ctx = CGContext(
+            data: CVPixelBufferGetBaseAddress(puffer), width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(puffer), space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return puffer
+    }
+    #endif
 
     private func renderFrame(bodies: [ViewportBody], camera: CameraState, width: Int, height: Int, job: Job) -> CGImage? {
         if renderer == nil { renderer = OffscreenRenderer() }

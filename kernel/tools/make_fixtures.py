@@ -350,6 +350,9 @@ def main() -> None:
     import make_feedback_fixtures  # V2-6 Sprach-Feedback (FEEDBACK_*, Paket): Abschnitt feedback
 
     make_feedback_fixtures.main()
+    import make_datei_fixtures  # I-8 Datei ans Gerät (DATEI_REQ, DATEI): Abschnitt datei
+
+    make_datei_fixtures.main()
 
 
 if __name__ == "__main__":

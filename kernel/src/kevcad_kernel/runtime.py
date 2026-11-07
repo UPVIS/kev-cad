@@ -1674,6 +1674,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._send_app({"type": "BOM", "reply_to": header.get("id"), **bom})
         elif kind == "DOWNLOAD_SEEN":
             self.zukauf.app_download_seen(header)
+        elif kind == "DATEI_REQ":  # I-8: Datei ans Gerät (das iPad teilt, was der Kernel am Mac geschrieben hat)
+            self._pool.submit(self._datei_anfrage, header)
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE", "ZUKAUF_NEU", "ZUKAUF_CAD"):
             self._pool.submit(self._handle_app_request, header)
@@ -1707,6 +1709,23 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             pass
         else:
             self._log(f"[kernel] Unbekannte Nachricht von der App: {kind}")
+
+    def _datei_anfrage(self, header: dict[str, Any]) -> None:
+        """DATEI_REQ (I-8): ein Stück einer Datei unter den Wurzeln des Kernels an die fragende Verbindung."""
+        from kevcad_kernel import datei_teilen
+
+        rid = header.get("id")
+        try:
+            projekt = self._project.path if self._project is not None else None
+            antwort = datei_teilen.stueck(header, datei_teilen.wurzeln(projekt, self.socket_path))
+        except Exception as e:  # noqa: BLE001 - jede Anfrage bekommt eine Antwort
+            antwort = f"Datei holen fehlgeschlagen: {e}"
+        if isinstance(antwort, str):
+            self._log(f"[kernel] DATEI_REQ {header.get('pfad')!r}: {antwort}")
+            self._send_app({"type": "ERROR", "reply_to": rid, "message": antwort})
+        else:
+            kopf, nutz = antwort
+            self._send_app({**kopf, "reply_to": rid}, nutz)
 
     def _handle_app_request(self, header: dict[str, Any]) -> None:
         kind = header.get("type")

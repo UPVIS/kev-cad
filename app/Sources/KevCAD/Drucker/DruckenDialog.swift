@@ -255,8 +255,8 @@ struct DruckenDialog: View {
                          + "Druckerleiste, wenn „Status lesen“ an ist.")
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                 }
-                if let f = e.datei {
-                    Button("Datei im Finder zeigen") { model.druckerActions?.druckDateiZeigen(f) }
+                if let f = e.datei {  // am iPad „Teilen“ (holt die 3MF vom Mac)
+                    DateiKnopf(model: model, datei: f, titelMac: "Datei im Finder zeigen")
                         .buttonStyle(.link)
                 }
             }

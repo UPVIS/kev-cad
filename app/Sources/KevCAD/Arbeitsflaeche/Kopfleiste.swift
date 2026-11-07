@@ -224,11 +224,15 @@ private struct ProjektMenue: View {
                 Button("Öffnen …") { session.presentOpenPanel() }
             }
             Button("Letzte Projekte zeigen") { model.oberflaechenActions?.zeigeUebersicht(true) }
-            if AppSession.kannDateienOeffnen {  // iPad: Teilen-Blatt folgt in I-8
-                Divider()
+            Divider()
+            if AppSession.kannDateienOeffnen {
                 Button("Im Finder zeigen") { session.revealProjectInFinder() }
                     .disabled(model.project == nil)
                 Button("model.py im Editor öffnen") { session.openModelInEditor() }
+                    .disabled(model.project == nil)
+            } else {
+                // iPad: kein Finder und kein Editor; model.py vom Mac holen und über das Teilen-Blatt weitergeben
+                Button("model.py teilen …") { session.openModelInEditor() }
                     .disabled(model.project == nil)
             }
         } label: {

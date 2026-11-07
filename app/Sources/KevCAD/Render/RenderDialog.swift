@@ -157,8 +157,11 @@ struct RenderDialog: View {
                         Button("Abbrechen") { actions?.renderAbbrechen(a.auftrag) }
                     } else if a.zustand == .fertig, let p = a.pfad {
                         let url = URL(fileURLWithPath: p)
+                        #if os(macOS)  // nur am Mac: Finder; am iPad bleibt Teilen
                         Button("Im Finder zeigen") { actions?.renderImFinderZeigen(url) }
-                        ShareLink(item: url) { Label("Teilen", systemImage: "square.and.arrow.up") }
+                        #endif
+                        // Am iPad holt Teilen das Bild vom Mac, wenn Blender es dort gerechnet hat
+                        DateiTeilenKnopf(model: model, dateien: [url])
                     }
                 }
             }

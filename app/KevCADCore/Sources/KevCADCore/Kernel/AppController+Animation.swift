@@ -175,8 +175,13 @@ extension AppController: AnimationActions {
         // Beim Blick durch eine Kamera (Taste 0) entsteht das Video aus ihrer Sicht, im Seitenverhältnis ihres Formats
         let cam = cameras.activeView.flatMap { cameras.camera($0) }
         let suffix = cam.map { "_\(Self.safeFileName($0.displayName))" } ?? ""
-        let url = project.path.appendingPathComponent("output/animationen", isDirectory: true)
-            .appendingPathComponent("\(Self.safeFileName(clip.name))\(suffix).\(ext)")
+        // Am Mac im Projekt; über das Netz verbunden (iPad) liegt das Projekt am Mac, das Video entsteht dann hier im
+        // Zwischenspeicher und geht über das Teilen-Blatt weiter (revealFiles, I-8)
+        let ordner = connection.istNetz
+            ? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Animationen/\(Self.safeFileName(project.name))", isDirectory: true)
+            : project.path.appendingPathComponent("output/animationen", isDirectory: true)
+        let url = ordner.appendingPathComponent("\(Self.safeFileName(clip.name))\(suffix).\(ext)")
         let aspect = cam.map { max($0.seitenverhaeltnis, 0.1) } ?? 16.0 / 9.0
         let height = Int((Double(width) / aspect).rounded()) / 2 * 2
         renderVideo(
@@ -204,6 +209,16 @@ extension AppController: AnimationActions {
         guard !v.path.isEmpty else {
             send(AnimationVideoResponseMessage(
                 replyTo: v.id, ok: false, path: nil, frames: 0, milliseconds: 0, message: "Kein Zielpfad"))
+            return
+        }
+        // Der Zielpfad liegt im Projekt am Mac; das iPad (über das Netz verbunden) kann dort nicht schreiben. Bis der
+        // Kernel solche Aufträge an den Mac gibt (PLAN-IPAD.md, I-8), sagt die Antwort, was zu tun ist.
+        guard !connection.istNetz else {
+            send(AnimationVideoResponseMessage(
+                replyTo: v.id, ok: false, path: nil, frames: 0, milliseconds: 0,
+                message: "Das iPad ist das aktive Gerät und kann nicht ins Projekt am Mac schreiben. Kevin bedient kurz "
+                    + "die Mac-App (dann ist sie aktiv), danach das Video noch einmal anfordern; am iPad entsteht es "
+                    + "über Animation › Video."))
             return
         }
         renderVideo(

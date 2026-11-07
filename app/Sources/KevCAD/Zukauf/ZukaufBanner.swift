@@ -79,7 +79,9 @@ struct ZukaufBanner: View {
                     .fixedSize()
                     .help("Zu welchem wartenden Zukaufteil die Datei gehört")
                 }
-                if Dateiablage.kannImFinderZeigen {  // iPad: Teilen-Blatt folgt in I-8
+                // Nur am Mac: Die Datei liegt in den Downloads des Mac, die der Kernel nicht herausgibt; auf dem iPad
+                // kommen Zukaufteile über den Link (Teilen aus Safari) und das Übernehmen geht ohne Blick in den Ordner.
+                if Dateiablage.kannImFinderZeigen {
                     Button {
                         Dateiablage.imFinderZeigen([offer.file])
                     } label: {

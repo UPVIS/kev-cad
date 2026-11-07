@@ -130,9 +130,9 @@ public final class AppController: AppActions {
     var approvalCheck: (kind: String, id: String, ebene: CatalogLevel, reloadID: String)?
     /// Phase 3: Zukaufteile (Downloads-Beobachtung, Rückfragen, Namen), siehe AppController+Zukauf.swift.
     let zukaufState = ZukaufControllerState()
-    /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht). Auf dem iPad ohne Gegenstück im
-    /// Kern (Dateiablage.swift).
-    var revealFiles: ([URL]) -> Void = { urls in
+    /// Zeigt erzeugte Dateien im Finder (in Tests ersetzt, damit kein Finder aufgeht). Auf dem iPad gibt es keinen
+    /// Finder: Dort setzt die Oberfläche hier das Teilen-Blatt ein (AppSession, I-8), das die Dateien vom Mac holt.
+    public var revealFiles: ([URL]) -> Void = { urls in
         guard Bundle.main.bundleURL.pathExtension == "app", !urls.isEmpty,
               ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == nil
         else { return }
@@ -664,6 +664,8 @@ public final class AppController: AppActions {
             model.agentenspur.aktualisieren(m.schritt)
         case .lageAnfrage(let r):
             lageBeantworten(r)
+        case .datei:
+            break  // I-8: nur als Antwort auf DATEI_REQ (oben); eine verspätete nach Zeitüberschreitung fällt weg
         case .unknown(let type, _):
             if unknownTypesLogged.insert(type).inserted { log(.info, "Unbekannte Nachricht \(type) wird ignoriert") }
         }

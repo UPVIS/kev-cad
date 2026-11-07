@@ -273,9 +273,9 @@ extension AppController: RenderActions {
         send(RenderCancelMessage(id: nextRequestID(), auftrag: auftrag))
     }
 
+    /// Am Mac im Finder, auf dem iPad über das Teilen-Blatt (`revealFiles`, von der Oberfläche gesetzt).
     public func renderImFinderZeigen(_ url: URL) {
-        // iPad: kein Finder; das Bild teilen (Teilen-Blatt) folgt in I-8
-        if !Dateiablage.imFinderZeigen([url]) { log(.warning, "Im Finder zeigen geht hier nicht: \(url.lastPathComponent)") }
+        revealFiles([url])
     }
 
     /// Größe aus dem Dialog; mit Kamera aus model.py die Höhe aus deren Seitenverhältnis.

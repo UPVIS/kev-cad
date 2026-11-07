@@ -114,6 +114,11 @@ final class AppSession: ObservableObject {
             controller.start()
         }
 
+        #if os(iOS)
+        // Kein Finder auf dem iPad: Was der Kern nach einer Aktion im Finder zeigen würde (Export, CSV, Video, Bild,
+        // Referenz, 3MF), geht hier über das Teilen-Blatt, vom Mac geholt (I-8)
+        controller?.revealFiles = { [weak self] urls in self?.dateienTeilen(urls) }
+        #endif
         controller?.projektBenennen = { [weak self] name in
             self?.projektUmziehen(name) ?? .failure(FlaecheFehler("Diese Sitzung ist beendet."))
         }
@@ -286,8 +291,28 @@ final class AppSession: ObservableObject {
     }
 
     /// Kann die App Dateien des Projekts mit anderen Programmen öffnen oder im Dateimanager zeigen (model.py im Editor,
-    /// Projektordner im Finder)? Am Mac ja; auf dem iPad gehen Dateien über das Teilen-Blatt (iPad: folgt in I-8).
+    /// Projektordner im Finder)? Am Mac ja; auf dem iPad gehen Dateien über das Teilen-Blatt (`dateienTeilen`).
     static var kannDateienOeffnen: Bool { Dateiablage.kannImFinderZeigen }
+
+    /// Dateien des Kernels weitergeben: am Mac im Finder zeigen, auf dem iPad vom Mac holen (I-8, PROTOCOL.md „Datei ans
+    /// Gerät“) und das Teilen-Blatt öffnen. Fehler meldet die Kopfleiste.
+    func dateienTeilen(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        #if os(macOS)
+        Dateiablage.imFinderZeigen(urls)
+        #else
+        guard let aktionen = model.actions as? DateiActions else { return }
+        Task { @MainActor [weak self] in
+            var lokal: [URL] = []
+            do {
+                for u in urls { lokal.append(try await aktionen.dateiFuerGeraet(u)) }
+                TeilenBlatt.zeigen(lokal, von: .zero)
+            } catch {
+                self?.melde("Teilen ging nicht: \(error)", fehler: true)
+            }
+        }
+        #endif
+    }
 
     func presentOpenPanel() {
         #if os(macOS)
@@ -338,10 +363,15 @@ final class AppSession: ObservableObject {
 
     // MARK: Datei und Ausgabe
 
-    /// model.py im Standard-Editor öffnen; auf dem iPad gibt es dafür keinen Weg (iPad: folgt in I-8, Teilen).
+    /// model.py im Standard-Editor öffnen; auf dem iPad gibt es keinen Editor dafür, dort geht model.py über das
+    /// Teilen-Blatt weiter (vom Mac geholt).
     func openModelInEditor() {
         guard let file = model.project?.modelFile else { return }
+        #if os(macOS)
         Dateiablage.oeffnen(file)
+        #else
+        dateienTeilen([file])
+        #endif
     }
 
     func revealProjectInFinder() {

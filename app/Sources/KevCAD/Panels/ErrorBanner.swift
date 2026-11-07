@@ -31,9 +31,12 @@ struct ErrorBanner: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
-                if AppSession.kannDateienOeffnen {  // iPad: folgt in I-8
+                if AppSession.kannDateienOeffnen {
                     Button("model.py öffnen", action: openModel)
                         .help("model.py im Standard-Editor öffnen (⌥⌘O)")
+                } else {
+                    // iPad: model.py vom Mac holen und teilen (etwa an einen Editor)
+                    Button("model.py teilen", action: openModel)
                 }
                 Button("Neu rechnen", action: rerun)
                     .buttonStyle(.borderedProminent)

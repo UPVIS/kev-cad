@@ -1585,3 +1585,28 @@ wenn kein Gerät mehr verbunden ist. Eine laufende Sprachsitzung (V2-6) endet nu
 wird. Mehr als 8 Verbindungen trennt der Kernel (die älteste, die nicht aktiv ist).
 
 Tests: `kernel/tests/test_mehrere_geraete.py`.
+
+## I-8 Datei ans Gerät
+
+Stand 07.11.2026 (PLAN-IPAD.md, Paket I-8), rein additiv; `protocol` bleibt 1. Exporte, 3MF, PDF, CSV, Videos und
+`model.py` schreibt der Kernel am Mac. Das iPad hat diese Dateien nicht; zum Teilen (Teilen-Blatt, Drucken, Bambu Handy)
+holt es sie stückweise über seine App-Verbindung. Der Kernel nennt `datei-1` in `HELLO.faehigkeiten`; ohne die Fähigkeit
+bietet das iPad das Teilen nicht an. Referenz in `protocol.py` (Abschnitt „I-8 Datei ans Gerät“: `check_datei_message`,
+`datei_antwort`, `datei_beispiele`), Kernel `datei_teilen.py`, Testdateien `datei_*.frame` und Abschnitt `datei` in
+`fixtures.json` aus `kernel/tools/make_datei_fixtures.py`, Tests `kernel/tests/test_datei_teilen.py` und `DateiTests`.
+
+| type | Richtung | Felder | Wirkung |
+|---|---|---|---|
+| `DATEI_REQ` | App → Kernel | `id`, `pfad` (absolut, wie ihn der Kernel genannt hat), `ab` (Byte, Vorgabe 0), `max` (Byte, Vorgabe 4 MiB, höchstens 8 MiB) | Antwort `DATEI` oder `ERROR` an die fragende Verbindung |
+| `DATEI` | Kernel → App | `reply_to`, `pfad` (aufgelöst), `name`, `groesse` (ganze Datei), `ab`, `laenge`, `geaendert` (Unix-Zeit); Nutzlast: die Bytes `ab` bis `ab + laenge` | ein Stück; die App fragt mit `ab + laenge` weiter, bis `groesse` erreicht ist |
+
+- **Nur unter den Wurzeln des Kernels:** offenes Projekt, Projektordner (`KEVCAD_PROJECTS_DIR`, sonst
+  `~/Documents/Kev CAD`), Datenordner des Kernels (neben dem Socket) und Ordner der Scans. Der Pfad wird vorher aufgelöst
+  (`..`, Verknüpfungen); was danach außerhalb liegt, keine gewöhnliche Datei ist oder fehlt, endet mit `ERROR` und einer
+  Meldung für Kevin („Die Datei gibt es nicht: …“, „Die Datei liegt nicht im Projekt und nicht bei Kev CAD: …“).
+- **Stücke statt eines großen Rahmens:** Ein Video von 200 MB hielte als ein Rahmen alle anderen Nachrichten dieser
+  Verbindung auf. Mit Stücken zu 4 MiB laufen Teile und Befunde dazwischen weiter.
+- **Wiederverwenden:** Die App legt geholte Dateien in ihren Zwischenspeicher (`Caches/Vom Mac/…`) mit der Änderungszeit
+  vom Mac. Stimmen Größe und Änderungszeit im ersten Stück, nimmt sie die Datei von dort. Ändert sich die Datei am Mac
+  während des Holens, bricht sie ab und meldet das.
+- Am Mac liegt jede Datei, die der Kernel nennt, schon vor; die Mac-App fragt nie.

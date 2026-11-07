@@ -575,6 +575,8 @@ public enum KernelMessage: Sendable {
     case agentSchritt(AgentSchrittMessage)
     /// V2-5 (lage-1): Der Kernel fragt, was gerade zu sehen ist.
     case lageAnfrage(LageRequestMessage)
+    /// I-8 (datei-1): ein Stück einer Datei vom Mac, Antwort auf DATEI_REQ.
+    case datei(DateiStueckMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -624,6 +626,7 @@ public enum KernelMessage: Sendable {
         case .agentSpur: return "AGENT_SPUR"
         case .agentSchritt: return "AGENT_SCHRITT"
         case .lageAnfrage: return "LAGE_REQ"
+        case .datei: return "DATEI"
         case .unknown(let t, _): return t
         }
     }
@@ -647,6 +650,7 @@ public enum KernelMessage: Sendable {
         case .drucker(let m): return m.replyTo
         case .statik(let m): return m.replyTo
         case .simulation(let m): return m.replyTo
+        case .datei(let m): return m.replyTo
         default: return nil
         }
     }
@@ -711,6 +715,7 @@ public enum KernelMessage: Sendable {
         case "AGENT_SPUR": return .agentSpur(try dec.decode(AgentSpurMessage.self, from: h))
         case "AGENT_SCHRITT": return .agentSchritt(try dec.decode(AgentSchrittMessage.self, from: h))
         case "LAGE_REQ": return .lageAnfrage(try dec.decode(LageRequestMessage.self, from: h))
+        case "DATEI": return .datei(try DateiStueckMessage.decode(h, payload: frame.payload))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

@@ -2553,9 +2553,11 @@ FAEHIGKEIT_LAGE = "lage-1"
 FAEHIGKEIT_LIVE_MASSE = "live-masse-1"
 FAEHIGKEIT_FEEDBACK = "feedback-1"  # V2-6 (Abschnitt „V2-6 Sprach-Feedback“)
 FAEHIGKEIT_FLAECHE = "flaeche-1"  # V2-7: Kacheln, Modus, Rand (PROTOCOL.md, „Fläche“)
+FAEHIGKEIT_DATEI = "datei-1"  # I-8: Datei ans Gerät (PROTOCOL.md, „I-8 Datei ans Gerät“)
 #: was der Kernel kann (HELLO.faehigkeiten)
 KERNEL_FAEHIGKEITEN: tuple[str, ...] = (FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_SPUR, FAEHIGKEIT_LAGE,
-                                        FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FEEDBACK, FAEHIGKEIT_FLAECHE)
+                                        FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FEEDBACK, FAEHIGKEIT_FLAECHE,
+                                        FAEHIGKEIT_DATEI)
 #: neue Nachrichten Kernel → App und die Fähigkeit, die eine App dafür gemeldet haben muss
 LIVE_NACHRICHTEN: dict[str, str] = {
     "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
@@ -3354,3 +3356,75 @@ def feedback_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
 #: Nutzlast des Beispiels mit Paket: das Beispielpaket als JSON und ein kleinstes JPEG (Anfang und Ende)
 _BEISPIEL_JPEG = b"\xff\xd8\xff\xd9"
 _BEISPIEL_JSON = json.dumps(feedback_beispiel(), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+# =====================================================================================================================
+# I-8 Datei ans Gerät (PROTOCOL.md, Abschnitt „I-8 Datei ans Gerät“): Ein Gerät ohne die Dateien des Mac (das iPad) holt
+# eine Datei, die der Kernel am Mac geschrieben hat (Export, 3MF, PDF, CSV, Video, model.py), stückweise, um sie zu
+# teilen. Freigegeben sind nur Dateien unter den Wurzeln des Kernels (runtime.py, datei_teilen.py).
+# =====================================================================================================================
+
+#: Stückgröße, wenn die App keine nennt, und die größte, die der Kernel schickt (Byte)
+DATEI_STUECK_VORGABE = 4 * 1024 * 1024
+DATEI_STUECK_MAX = 8 * 1024 * 1024
+DATEI_NACHRICHTEN = ("DATEI_REQ", "DATEI")
+
+
+def check_datei_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
+    """Probleme einer Nachricht aus I-8 (leer = gut). Andere Nachrichten: leer."""
+    art = header.get("type")
+    if art not in DATEI_NACHRICHTEN:
+        return []
+    out: list[str] = []
+    if art == "DATEI_REQ":
+        if not isinstance(header.get("id"), str) or not header["id"]:
+            out.append("DATEI_REQ: id fehlt")
+        if not isinstance(header.get("pfad"), str) or not header["pfad"].startswith("/"):
+            out.append("DATEI_REQ: pfad ist kein absoluter Pfad")
+        ab = header.get("ab", 0)
+        if not isinstance(ab, int) or isinstance(ab, bool) or ab < 0:
+            out.append("DATEI_REQ: ab ist keine Zahl ab 0")
+        mx = header.get("max")
+        if mx is not None and (not isinstance(mx, int) or isinstance(mx, bool) or mx <= 0):
+            out.append("DATEI_REQ: max ist keine positive Zahl")
+        if payload:
+            out.append("DATEI_REQ mit Nutzlast")
+        return out
+    for feld in ("reply_to", "pfad", "name"):
+        if not isinstance(header.get(feld), str) or not header[feld]:
+            out.append(f"DATEI: {feld} fehlt")
+    for feld in ("groesse", "ab", "laenge"):
+        v = header.get(feld)
+        if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+            out.append(f"DATEI: {feld} ist keine Zahl ab 0")
+    if not out:
+        if header["laenge"] != len(payload):
+            out.append(f"DATEI: laenge {header['laenge']} passt nicht zur Nutzlast ({len(payload)} Byte)")
+        if header["ab"] + header["laenge"] > header["groesse"]:
+            out.append("DATEI: Stück reicht über das Dateiende")
+        if header["laenge"] > DATEI_STUECK_MAX:
+            out.append("DATEI: Stück größer als erlaubt")
+    if not _zahl(header.get("geaendert")):
+        out.append("DATEI: geaendert fehlt")
+    return out
+
+
+def datei_antwort(reply_to: str, pfad: str, groesse: int, ab: int, daten: bytes,
+                  geaendert: float) -> tuple[dict[str, Any], bytes]:
+    """Kopf und Nutzlast der Antwort DATEI auf DATEI_REQ (ein Stück ab ``ab``)."""
+    kopf = {"type": "DATEI", "reply_to": reply_to, "pfad": pfad, "name": pfad.rsplit("/", 1)[-1],
+            "groesse": int(groesse), "ab": int(ab), "laenge": len(daten), "geaendert": float(geaendert)}
+    return kopf, daten
+
+
+def datei_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
+    """Rahmen für die Testdateien: (Name, Kopf, Nutzlast, Richtung)."""
+    inhalt = b"solid Halter\nendsolid Halter\n"
+    pfad = "/Users/kevin/Documents/Kev CAD/Halter/output/Halter.stl"
+    erstes, nutz1 = datei_antwort("a-31", pfad, len(inhalt), 0, inhalt[:16], 1793480977.5)
+    zweites, nutz2 = datei_antwort("a-32", pfad, len(inhalt), 16, inhalt[16:], 1793480977.5)
+    return [
+        ("datei_req", {"type": "DATEI_REQ", "seq": 31, "id": "a-31", "pfad": pfad, "ab": 0, "max": 16}, b"", "app"),
+        ("datei_stueck", {**erstes, "seq": 40}, nutz1, "kernel"),
+        ("datei_stueck_ende", {**zweites, "seq": 41}, nutz2, "kernel"),
+    ]

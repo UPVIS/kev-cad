@@ -335,11 +335,13 @@ struct ExportDialog: View {
                 Label("\(KevFormat.count(e.seiten, one: "Seite", many: "Seiten")) in \(KevFormat.number(Double(e.ms) / 1000, digits: 1)) s"
                       + (e.gedruckt.map { " · \($0)" } ?? ""), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                if let p = e.pfad, Dateiablage.kannImFinderZeigen {  // iPad: Teilen-Blatt folgt in I-8
-                    Button("Im Finder zeigen") { Dateiablage.imFinderZeigen([p]) }
+                if let p = e.pfad {  // am iPad „Teilen“ (holt das PDF vom Mac; Drucken steht im Teilen-Blatt)
+                    DateiKnopf(model: model, datei: p)
                         .buttonStyle(.link)
+                    #if os(macOS)  // nur am Mac: Öffnen im Standardprogramm; am iPad steht das im Teilen-Blatt
                     Button("Öffnen") { Dateiablage.oeffnen(p) }
                         .buttonStyle(.link)
+                    #endif
                 }
             } else if let f = fehler {
                 Label(f, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).lineLimit(2)

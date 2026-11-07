@@ -198,10 +198,8 @@ struct BestandAnsicht: View {
             } description: {
                 Text(fehler)
             } actions: {
-                if let datei = model.bestandZustand.datei, Dateiablage.kannImFinderZeigen {  // iPad: Teilen folgt in I-8
-                    Button("Im Finder zeigen") {
-                        Dateiablage.imFinderZeigen([URL(fileURLWithPath: datei)])
-                    }
+                if let datei = model.bestandZustand.datei {  // am iPad „Teilen“ (holt die Datei vom Mac)
+                    DateiKnopf(model: model, datei: URL(fileURLWithPath: datei))
                 }
                 Button("Erneut laden") { model.bestandActions?.requestBestand() }
             }

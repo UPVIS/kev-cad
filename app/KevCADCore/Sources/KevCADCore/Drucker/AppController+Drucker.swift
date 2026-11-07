@@ -292,9 +292,9 @@ extension AppController: DruckerActions {
         }
     }
 
+    /// Am Mac im Finder, auf dem iPad über das Teilen-Blatt (`revealFiles`, von der Oberfläche gesetzt).
     public func druckDateiZeigen(_ datei: URL) {
-        // iPad: kein Finder; die Datei teilen (Teilen-Blatt) folgt in I-8
-        if !Dateiablage.imFinderZeigen([datei]) { log(.warning, "Im Finder zeigen geht hier nicht: \(datei.lastPathComponent)") }
+        revealFiles([datei])
     }
 }
 

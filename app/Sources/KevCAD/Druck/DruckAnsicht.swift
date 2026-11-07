@@ -824,13 +824,15 @@ extension String {
     var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }
 
-/// „In Bambu Studio öffnen“ (nur auf Klick) und „Im Finder zeigen“ für eine 3MF-Datei.
+/// „In Bambu Studio öffnen“ (nur auf Klick) und „Im Finder zeigen“ für eine 3MF-Datei. Auf dem iPad gibt es Bambu
+/// Studio nicht: Dort holt „Teilen“ die 3MF vom Mac, das Teilen-Blatt bietet Bambu Handy, Dateien und AirDrop an.
 struct DruckBambuKnoepfe: View {
     @ObservedObject var model: AppModel
     var pfad: URL
     var kompakt = false
 
     var body: some View {
+        #if os(macOS)
         Button {
             model.druckActions?.druckInBambuStudioOeffnen(pfad)
         } label: {
@@ -840,14 +842,11 @@ struct DruckBambuKnoepfe: View {
         .disabled(DruckStore.bambuStudio == nil)
         .help(DruckStore.bambuStudio == nil ? "Bambu Studio ist nicht unter /Applications installiert"
               : "\(pfad.lastPathComponent) in Bambu Studio öffnen")
-        if Dateiablage.kannImFinderZeigen {  // iPad: Teilen-Blatt folgt in I-8
-            Button {
-                Dateiablage.imFinderZeigen([pfad])
-            } label: {
-                if kompakt { Image(systemName: "folder") } else { Text("Im Finder zeigen") }
-            }
-            .help("Im Finder zeigen")
-        }
+        DateiKnopf(model: model, datei: pfad, kompakt: kompakt)
+        #else
+        DateiTeilenKnopf(model: model, dateien: [pfad], titel: "3MF teilen", kompakt: kompakt)
+            .buttonStyle(.borderedProminent)
+        #endif
     }
 }
 
