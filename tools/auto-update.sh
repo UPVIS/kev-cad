@@ -165,6 +165,20 @@ build_and_install() {
   fi
 }
 
+# iPad (PLAN-IPAD.md, I-9): neuer TestFlight-Build im Takt von main, als eigener Hintergrundlauf mit eigener Sperre
+# (tools/ipad-testflight-takt.sh baut nur, wenn sich die App geändert hat, höchstens einmal je Stunde). Gestartet wird
+# eine Kopie des Skripts: Spätere Updates setzen die Arbeitskopie zurück, ein wartender Takt läuft mit seiner Fassung
+# weiter. Abschalten mit KEVCAD_NO_TESTFLIGHT=1 beim Commit oder der Datei testflight.aus in der Ablage.
+ipad_takt() {
+  [ -n "$PROBE" ] && return 0
+  [ "${KEVCAD_NO_TESTFLIGHT:-0}" = "1" ] && return 0
+  [ -f "$SRC/tools/ipad-testflight-takt.sh" ] || return 0
+  cp "$SRC/tools/ipad-testflight-takt.sh" "$SUPPORT/ipad-testflight-takt.sh.neu" \
+    && chmod +x "$SUPPORT/ipad-testflight-takt.sh.neu" \
+    && mv -f "$SUPPORT/ipad-testflight-takt.sh.neu" "$SUPPORT/ipad-testflight-takt.sh" || return 0
+  KEVCAD_REPO="$REPO" nohup "$SUPPORT/ipad-testflight-takt.sh" >/dev/null 2>&1 &
+}
+
 # Läuft schon ein Update, nur vormerken; der laufende Durchgang baut danach noch einmal.
 if ! mkdir "$LOCK" 2>/dev/null; then
   # verwaiste Sperre (älter als 30 min) aufräumen
@@ -219,6 +233,7 @@ while :; do
     rc=$?
     if [ $rc -eq 0 ]; then
       relaunch "$COMMIT"
+      ipad_takt
     else
       notify "Kev CAD: Update fehlgeschlagen" "Stand $COMMIT, Protokoll: ~/Library/Logs/Kev CAD/update.log"
     fi

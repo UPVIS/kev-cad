@@ -8,6 +8,9 @@
 # das Profil selbst an, ohne angemeldetes Xcode. Hochladen braucht den App-Eintrag in App Store Connect (Bundle-ID
 # de.upvis.kevcad.ipad; den legt Kevin einmal im Browser an). Die Build-Nummer ist die höchste dort plus 1.
 # Bauordner, Archiv und Export liegen auf UPVIS ULTRA. Lokal unter der gemeinsamen Sperre.
+# Nach dem Hochladen: Stand merken (testflight.stand in der Ablage der App: Commit, Nummer, Zeit; liest der Takt
+# tools/ipad-testflight-takt.sh) und Testhinweise setzen (Änderungen an der App seit dem letzten Build, oder
+# KEVCAD_PAD_NOTIZ). KEVCAD_PAD_PLATZ=<Name> nimmt eigene Bauordner darunter (der Takt baut aus einer eigenen Arbeitskopie).
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
@@ -16,8 +19,11 @@ BUNDLE_ID="${KEVCAD_PAD_BUNDLE_ID:-de.upvis.kevcad.ipad}"
 TEAM=2GX7UC98J6
 NUR_ARCHIV=0
 [ "${1:-}" = "--nur-archiv" ] && NUR_ARCHIV=1
+STAND="${KEVCAD_PAD_STAND:-$HOME/Library/Application Support/de.upvis.kevcad/testflight.stand}"
+VORHER=""
+[ -f "$STAND" ] && read -r VORHER _ < "$STAND"
 
-BASIS="/Volumes/UPVIS ULTRA/_cache/kevcad-ipad"
+BASIS="/Volumes/UPVIS ULTRA/_cache/kevcad-ipad${KEVCAD_PAD_PLATZ:+/$KEVCAD_PAD_PLATZ}"
 [ -d "/Volumes/UPVIS ULTRA/_cache" ] || BASIS="$REPO/build/ipad"
 ARCHIV="$BASIS/KevCADPad.xcarchive"
 EXPORT="$BASIS/testflight"
@@ -140,4 +146,22 @@ else:
     print("==> Kein Tester in der Gruppe: in App Store Connect › TestFlight › Gruppe „Kevin“ selbst eintragen")
 PYEOF
 fi
+
+# Stand merken: Der Takt baut erst wieder, wenn sich die App danach ändert
+mkdir -p "$(dirname "$STAND")"
+echo "$COMMIT $NR $(date +%s)" > "$STAND"
+
+# Testhinweise in TestFlight: was sich seit dem letzten Build an der App geändert hat
+if [ -n "${KEVCAD_PAD_NOTIZ:-}" ]; then
+  NOTIZ="$KEVCAD_PAD_NOTIZ"
+else
+  if [ -n "$VORHER" ] && git cat-file -e "$VORHER^{commit}" 2>/dev/null; then
+    AENDERUNGEN=$(git log --no-merges --format='- %s' "$VORHER..$COMMIT" -- app Package.swift | head -15)
+  else
+    AENDERUNGEN=$(git log --no-merges --format='- %s' -8 "$COMMIT" -- app Package.swift)
+  fi
+  NOTIZ="Stand $COMMIT vom $(date '+%d.%m.%Y, %H:%M') Uhr."
+  [ -n "$AENDERUNGEN" ] && NOTIZ="$NOTIZ"$'\n\n'"Seit dem letzten Build:"$'\n'"$AENDERUNGEN"
+fi
+python3 -I tools/ipad-testhinweise.py "$APP_ID" "$NR" "$NOTIZ"
 echo "==> Hochgeladen: Build $NR. App Store Connect verarbeitet ihn (meist 5 bis 30 Minuten), danach steht er in TestFlight."

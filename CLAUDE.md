@@ -51,6 +51,7 @@ tools/ipad-bau.sh starten  # Simulator ohne Simulator.app booten, App im Demomod
 tools/ipad-bau.sh stoppen  # App beenden, Simulator aus, wenn `starten` ihn gebootet hat (`stoppen immer`: auch sonst)
 tools/ipad-kette.sh        # Kettentest: Mac-Testvariante (versteckt) ↔ iPad im Simulator über TLS, Modell über MCP
 tools/ipad-testflight.sh   # Archiv fürs iPad, Export, Hochladen zu TestFlight, Gruppe „Kevin“ (`--nur-archiv`: ohne Hochladen)
+tools/ipad-testflight-takt.sh   # TestFlight-Build aus main, wenn sich die App geändert hat (startet das Update selbst, höchstens stündlich)
 ```
 
 Lokal nur als Rückfall (fern.sh nimmt diesen Weg selbst, wenn der Mini fehlt):
@@ -85,6 +86,11 @@ cd kernel && .venv/bin/python tools/mirror_sim.py --socket /tmp/kcsim.sock   # S
   Testvariante); Halbfertiges bleibt uncommittet. Arbeiten zwei Agenten parallel, nimmt jeder eine kurze Arbeitskopie und
   bringt jeden geprüften Schritt sofort nach `main` (rebase, dann fast-forward). Nach GitHub (öffentlich) nur auf Kevins
   Wort pushen.
+- **iPad im selben Takt** (seit 07.11.2026, PLAN-IPAD.md I-9): Nach einem Update mit Änderungen an der App startet
+  `tools/auto-update.sh` den Takt `tools/ipad-testflight-takt.sh`. Er baut aus einer eigenen Arbeitskopie von main
+  (UPVIS ULTRA, `_cache/kevcad-ipad/takt`) einen TestFlight-Build, höchstens einen je Stunde, mit den Änderungen als
+  Testhinweis; TestFlight spielt ihn auf Kevins iPad. Protokoll in `update.log` (Zeilen „iPad:“), letzter Build in
+  `testflight.stand` der Ablage. Abschalten: `KEVCAD_NO_TESTFLIGHT=1` beim Commit oder Datei `testflight.aus` in der Ablage.
 - Hooks sind aktiv über `git config core.hooksPath .githooks` (nach einem frischen Klon einmal setzen).
 - Eine Instanz je Variante: ein zweiter Start holt die laufende App nach vorn und beendet sich.
 

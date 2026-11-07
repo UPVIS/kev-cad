@@ -279,7 +279,7 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-6 Live-Kopplung | Gemeinsame und Eigene Ansicht, Führung, Live-Striche, Agent spricht das aktive Gerät an, Lagebild je Gerät | I-2b, I-3 | offen |
 | I-7 iCloud | Spike (Zugriff, Versionen, Auslagern), Ordner der App, Zwischenspeicher draußen, Projektliste am iPad, Umzug nach Kevins Ja | I-3 | offen |
 | I-8 Volle Parität | Prüfliste in Abschnitt 9 abarbeiten | I-3 | offen |
-| I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); automatischer Takt und Paritätsprüfung offen |
+| I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); Takt fertig (`tools/ipad-testflight-takt.sh` aus `tools/auto-update.sh`, eigene Arbeitskopie, höchstens stündlich, Testhinweise mit den Änderungen an der App); offen: Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung |
 | I-10 Abnahme | Kevin am echten iPad: Gesten, Stift, Latenz, Kopplung; Learnings in Plan, Skill und Regeln | alle | offen |
 
 ### Offene Stellen auf dem iPad nach I-1
@@ -305,7 +305,7 @@ Tests, die auf dem iPad nicht laufen können (Prozesse, ffmpeg, NSPrintInfo, Uni
 `#if os(macOS)` ausgenommen; `tools/ipad-bau.sh test` fährt die übrigen im iPad-Simulator.
 
 Reihenfolge: I-1 und I-2a, dann I-2b und I-3 nebeneinander (Mac-Eingang gegen iPad-Hülle), dann I-4 bis I-7; I-8 läuft
-mit jedem Paket mit. Build 1 steht seit 07.11.2026 in TestFlight (I-9); neue Builds mit `tools/ipad-testflight.sh`, bis der automatische Takt steht. Höchstens zwei Agenten zugleich mit voller Denktiefe (Wochenlimit, siehe Gedächtnis).
+mit jedem Paket mit. Build 1 steht seit 07.11.2026 in TestFlight (I-9); seitdem kommt jede Änderung an der App von selbst nach, höchstens stündlich (Takt). Höchstens zwei Agenten zugleich mit voller Denktiefe (Wochenlimit, siehe Gedächtnis).
 
 ## 9. Parität im Alltag
 
@@ -355,6 +355,9 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 - **TestFlight-Tester je App** (07.11.2026): Apple führt interne Tester je App als eigenen Eintrag; einen Eintrag aus
   Akquise Mobil oder VoiceBridge nimmt die Gruppe von Kev CAD nicht an (409). `tools/ipad-testflight.sh` legt Tester
   deshalb über die Mail-Adresse in der Gruppe an und schickt die Einladung (Regel `apple-app-verteilung.md`).
+- **Takt aus eigener Arbeitskopie** (07.11.2026): Die Arbeitskopie des Mac-Updates springt bei jedem neuen Stand auf main
+  um; ein iPad-Build darin hätte halb alte, halb neue Dateien. Der Takt baut deshalb in `_cache/kevcad-ipad/takt/src`, und
+  das Update startet eine Kopie des Takt-Skripts, damit ein wartender Takt nicht mitten im Lauf umgeschrieben wird.
 
 ## 11. Offene Fragen und Risiken
 
