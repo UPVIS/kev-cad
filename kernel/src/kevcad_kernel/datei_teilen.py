@@ -9,7 +9,6 @@ vorher aufgelöst, damit keine aus einer Wurzel hinausführt.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +16,10 @@ from kevcad_kernel.protocol import DATEI_STUECK_MAX, DATEI_STUECK_VORGABE, datei
 
 
 def projekte_ordner() -> Path:
-    """Wie ``mcp_tools.tools.projects_dir`` (ohne dessen Abhängigkeiten zu laden)."""
-    return Path(os.environ.get("KEVCAD_PROJECTS_DIR") or Path.home() / "Documents" / "Kev CAD")
+    """Projektordner wie für bloße Projektnamen (ablage.py, I-7: lokal, iCloud oder eigener Ordner)."""
+    from kevcad_kernel.ablage import projects_dir
+
+    return projects_dir()
 
 
 def wurzeln(projekt: Path | None, socket_path: str | None) -> list[Path]:

@@ -1600,8 +1600,8 @@ bietet das iPad das Teilen nicht an. Referenz in `protocol.py` (Abschnitt „I-8
 | `DATEI_REQ` | App → Kernel | `id`, `pfad` (absolut, wie ihn der Kernel genannt hat), `ab` (Byte, Vorgabe 0), `max` (Byte, Vorgabe 4 MiB, höchstens 8 MiB) | Antwort `DATEI` oder `ERROR` an die fragende Verbindung |
 | `DATEI` | Kernel → App | `reply_to`, `pfad` (aufgelöst), `name`, `groesse` (ganze Datei), `ab`, `laenge`, `geaendert` (Unix-Zeit); Nutzlast: die Bytes `ab` bis `ab + laenge` | ein Stück; die App fragt mit `ab + laenge` weiter, bis `groesse` erreicht ist |
 
-- **Nur unter den Wurzeln des Kernels:** offenes Projekt, Projektordner (`KEVCAD_PROJECTS_DIR`, sonst
-  `~/Documents/Kev CAD`), Datenordner des Kernels (neben dem Socket) und Ordner der Scans. Der Pfad wird vorher aufgelöst
+- **Nur unter den Wurzeln des Kernels:** offenes Projekt, Projektordner (wie für bloße Projektnamen:
+  `KEVCAD_PROJECTS_DIR`, sonst die Projektablage aus I-7, lokal oder iCloud), Datenordner des Kernels (neben dem Socket) und Ordner der Scans. Der Pfad wird vorher aufgelöst
   (`..`, Verknüpfungen); was danach außerhalb liegt, keine gewöhnliche Datei ist oder fehlt, endet mit `ERROR` und einer
   Meldung für Kevin („Die Datei gibt es nicht: …“, „Die Datei liegt nicht im Projekt und nicht bei Kev CAD: …“).
 - **Stücke statt eines großen Rahmens:** Ein Video von 200 MB hielte als ein Rahmen alle anderen Nachrichten dieser
