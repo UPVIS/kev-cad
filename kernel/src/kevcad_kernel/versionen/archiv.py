@@ -343,10 +343,13 @@ class Versionsarchiv:
         zweig = self.git.zweig()
         vorher = self.git.head()
         text = nachricht(titel, nr=nr, wer=wer, sitzung=sitzung, quelle=quelle, zweig=zweig, lauf=lauf, aus=aus)
-        sha = self.git.commit(text, datum=datum)
+        # Zeit vor dem Commit festlegen und Git mitgeben: sonst stempelt Git selbst, und über einen Sekundenwechsel
+        # hinweg wich ``ts`` um 1 s von der Zeit im Log ab (Nachtragen übernimmt die Zeit aus dem Log)
+        ts = int(datum or time.time())
+        sha = self.git.commit(text, datum=ts)
         self._naechste = nr + 1
         self._liste_cache.clear()
-        return Version(nr=nr, commit=sha, ts=int(datum or time.time()), wer=wer, sitzung=sitzung, quelle=quelle,
+        return Version(nr=nr, commit=sha, ts=ts, wer=wer, sitzung=sitzung, quelle=quelle,
                        titel=titel, zweig=zweig, aus=aus, lauf=lauf, eltern=vorher)
 
     def _vormerken(self) -> bool:

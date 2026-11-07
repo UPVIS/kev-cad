@@ -350,10 +350,11 @@ def test_runtime_sends_cameras_and_renders_camera_images(rt_app):
     start = app2.mark()
     assert rt.model_write(MODEL.replace('name="B"', 'name="C"'))["ok"]
     assert rt.run()["ok"]
-    seen = app2.since(start)
-    assert {"type": "CAMERA_REMOVE", "name": "Kamera/B"}.items() <= next(
-        h for h in seen if h["type"] == "CAMERA_REMOVE").items()
-    assert any(h["type"] == "CAMERA_UPSERT" and h["name"] == "Kamera/C" for h in seen)
+    # Die Nachrichten kommen über den Socket der zweiten Verbindung, nicht mit dem Ende von run: darauf warten statt sie
+    # vorauszusetzen (auf dem Mac mini war CAMERA_REMOVE einmal noch nicht da)
+    _, _, entfernt, _ = app2.wait_for(lambda h: h["type"] == "CAMERA_REMOVE", start=start)
+    assert {"type": "CAMERA_REMOVE", "name": "Kamera/B"}.items() <= entfernt.items()
+    app2.wait_for(lambda h: h["type"] == "CAMERA_UPSERT" and h["name"] == "Kamera/C", start=start)
     app2.close()
 
 
