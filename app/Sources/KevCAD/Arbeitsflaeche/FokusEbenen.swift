@@ -116,6 +116,13 @@ struct FokusEbenen: View {
             .padding(.bottom, untenFrei)
         } else {
             ZStack(alignment: .bottomTrailing) {
+                #if os(iOS)
+                // iPad: Sprechen und Senden im Griff des Daumens (am Mac V und ↩)
+                Daumenleiste(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions)
+                    .padding(.leading, GA.l + 4)
+                    .padding(.bottom, untenFrei)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                #endif
                 if oberflaeche.sitzungOffen || oberflaeche.sprechText != nil {
                     LiveText(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions,
                              schmal: false)
@@ -145,8 +152,8 @@ private struct StartZeile: View {
                 .font(schmal ? GS.startSchmal : GS.start)
                 .foregroundStyle(GF.kreide.opacity(0.94))
             #if os(iOS)
-            // iPad: Sprechen kommt mit der Daumenleiste (PLAN-IPAD.md, I-5); bis dahin führt der Weg über den Chat
-            Text("Schreib es im Chat.")
+            // iPad: Sprechen über die Daumenleiste links unten (PLAN-IPAD.md, I-5)
+            Text("Tipp auf Sprechen und sag es, oder schreib es im Chat.")
                 .font(GS.startZeile)
                 .foregroundStyle(GF.asche)
             #else
@@ -193,6 +200,15 @@ struct LiveText: View {
 
     private var text: String? { sprache.text ?? oberflaeche.sprechText }
 
+    // Am Mac Tastenkappe und Kleinwort („↩ fertig“), am iPad nur das Wort zum Antippen („Senden“)
+    #if os(iOS)
+    private static func taste(_ t: String) -> [String] { [] }
+    private static func wort(_ mac: String, ipad: String) -> String { ipad }
+    #else
+    private static func taste(_ t: String) -> [String] { [t] }
+    private static func wort(_ mac: String, ipad: String) -> String { mac }
+    #endif
+
     var body: some View {
         VStack(spacing: schmal ? 8 : 12) {
             HStack(spacing: 10) {
@@ -219,20 +235,22 @@ struct LiveText: View {
                     Button {
                         actions?.sprechenFertig()
                     } label: {
-                        TastenHinweis(tasten: ["↩"], text: "fertig")
+                        TastenHinweis(tasten: Self.taste("↩"), text: Self.wort("fertig", ipad: "Senden"))
                     }
                     .buttonStyle(.plain)
                     .help("Text, Zeiger und Striche gehen an den Agenten")
                     Button {
                         actions?.setzeSprechen(!oberflaeche.spricht)
                     } label: {
-                        TastenHinweis(tasten: ["V"], text: oberflaeche.spricht ? "aufhören" : "weiter")
+                        TastenHinweis(tasten: Self.taste("V"),
+                                      text: oberflaeche.spricht ? Self.wort("aufhören", ipad: "Pause")
+                                          : Self.wort("weiter", ipad: "Weiter"))
                     }
                     .buttonStyle(.plain)
                     Button {
                         actions?.sprechenVerwerfen()
                     } label: {
-                        TastenHinweis(tasten: ["esc"], text: "verwerfen")
+                        TastenHinweis(tasten: Self.taste("esc"), text: Self.wort("verwerfen", ipad: "Verwerfen"))
                     }
                     .buttonStyle(.plain)
                 }

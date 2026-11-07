@@ -1437,7 +1437,9 @@ wartenden Agenten.
 | type | Richtung | Felder | Wirkung |
 |---|---|---|---|
 | `FEEDBACK_STAND` | App → Kernel | `sitzung`, `stand` (`spricht` \| `pause` \| `aus`), `seit` (Unix-Zeit), `grund` (nur bei `aus`: `fertig` \| `verworfen`, sonst null) | Bei jedem Wechsel. Nach einem neuen `HELLO` schickt die App den Stand einer offenen Sitzung noch einmal. Endet die Verbindung, gilt `aus`. |
-| `FEEDBACK_PAKET` | App → Kernel | `sitzung`, `name`, `datei` (absoluter Pfad der JSON-Datei), `saetze`, `striche`, `dauer_s` | Das Paket liegt fertig im Projektordner; wartende Agenten wachen auf. |
+| `FEEDBACK_PAKET` | App → Kernel | `sitzung`, `name`, `datei` (absoluter Pfad der JSON-Datei) oder `nutzlast` (I-5), `saetze`, `striche`, `dauer_s` | Das Paket liegt fertig im Projektordner; wartende Agenten wachen auf. |
+
+**I-5, Paket als Nutzlast** (PLAN-IPAD.md): Ein Gerät ohne den Projektordner (das iPad, über den Eingang der Mac-App verbunden) schickt statt `datei` die Größen `nutzlast` = `{"json": Bytes, "bild": Bytes}`; die Nutzlast des Rahmens ist das JSON des Pakets und direkt danach das JPEG (`bild` 0 ohne Bild). Der Kernel prüft das Paket wie eine Datei (`check_feedback_paket`), legt es als `<name>.json` und `<name>.jpg` in `feedback/` des Projekts aus dem Paket (`projekt.pfad`, wenn dort ein Projekt mit `model.py` liegt, sonst des offenen) und verfährt danach wie mit einer Datei. Gibt es den Namen dort schon, bekommt das Paket eine Nummer (`-2`), Name und Bilddatei im JSON werden angepasst. `datei` und `nutzlast` zugleich, eine Nutzlast anderer Länge oder ein ungültiges Paket legen nichts ab (Protokoll). Kann das Gerät nicht senden (Mac nicht verbunden), wartet das Paket in seinem Postausgang und geht beim nächsten Verbinden los. Testdatei `feedback_paket_nutzlast.frame`.
 
 ### Sitzung
 

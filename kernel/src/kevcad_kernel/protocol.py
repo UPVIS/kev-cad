@@ -3113,7 +3113,7 @@ def check_feedback_message(header: dict[str, Any], payload: bytes = b"") -> list
     out: list[str] = []
     if not isinstance(header.get("sitzung"), str) or not header["sitzung"]:
         out.append(f"{art}: sitzung fehlt")
-    if payload:
+    if payload and not (art == "FEEDBACK_PAKET" and header.get("nutzlast") is not None):
         out.append(f"{art} mit Nutzlast")
     if art == "FEEDBACK_STAND":
         if header.get("stand") not in FEEDBACK_STAENDE:
@@ -3129,14 +3129,30 @@ def check_feedback_message(header: dict[str, Any], payload: bytes = b"") -> list
     else:
         if not feedback_name_ok(header.get("name")):
             out.append(f"FEEDBACK_PAKET: name {header.get('name')!r} ungültig")
-        if not isinstance(header.get("datei"), str) or not header["datei"].endswith(".json"):
-            out.append("FEEDBACK_PAKET: datei ist kein Pfad zu einer JSON-Datei")
+        nutzlast = header.get("nutzlast")
+        if nutzlast is None:
+            if not isinstance(header.get("datei"), str) or not header["datei"].endswith(".json"):
+                out.append("FEEDBACK_PAKET: datei ist kein Pfad zu einer JSON-Datei")
+        else:
+            # I-5: Gerät ohne den Projektordner (iPad) schickt JSON und Bild mit, der Kernel legt sie ab
+            if header.get("datei") is not None:
+                out.append("FEEDBACK_PAKET: datei und nutzlast zugleich")
+            if not (isinstance(nutzlast, dict) and _ganz(nutzlast.get("json")) and nutzlast["json"] > 0
+                    and _ganz(nutzlast.get("bild")) and nutzlast["bild"] >= 0):
+                out.append("FEEDBACK_PAKET: nutzlast braucht json (über 0) und bild (ab 0) in Bytes")
+            elif len(payload) != nutzlast["json"] + nutzlast["bild"]:
+                out.append(f"FEEDBACK_PAKET: Nutzlast hat {len(payload)} Bytes, angesagt sind "
+                           f"{nutzlast['json'] + nutzlast['bild']}")
         for feld in ("saetze", "striche"):
             if not isinstance(header.get(feld), int):
                 out.append(f"FEEDBACK_PAKET: {feld} fehlt")
         if not _zahl(header.get("dauer_s")):
             out.append("FEEDBACK_PAKET: dauer_s fehlt")
     return out
+
+
+def _ganz(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def _vec(v: Any, n: int = 3) -> bool:
@@ -3326,4 +3342,15 @@ def feedback_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
                             "name": "fb-20261105-223011",
                             "datei": "/Users/kevin/Documents/Kev CAD/Halter/feedback/fb-20261105-223011.json",
                             "saetze": 2, "striche": 2, "dauer_s": 9.5}, b"", "app"),
+        # I-5: vom iPad, das den Projektordner nicht hat: Paket und Bild als Nutzlast
+        ("feedback_paket_nutzlast", {"type": "FEEDBACK_PAKET", "seq": 13, "sitzung": "s-1793480977",
+                                     "name": "fb-20261105-223011",
+                                     "nutzlast": {"json": len(_BEISPIEL_JSON), "bild": len(_BEISPIEL_JPEG)},
+                                     "saetze": 2, "striche": 2, "dauer_s": 9.5},
+         _BEISPIEL_JSON + _BEISPIEL_JPEG, "app"),
     ]
+
+
+#: Nutzlast des Beispiels mit Paket: das Beispielpaket als JSON und ein kleinstes JPEG (Anfang und Ende)
+_BEISPIEL_JPEG = b"\xff\xd8\xff\xd9"
+_BEISPIEL_JSON = json.dumps(feedback_beispiel(), ensure_ascii=False, separators=(",", ":")).encode("utf-8")

@@ -39,6 +39,24 @@ final class FeedbackFormatTests: XCTestCase {
                        try kopf("feedback_paket.frame"))
     }
 
+    /// I-5: Vom iPad kommt das Paket als Nutzlast; Kopf und Nutzlast gleich der Testdatei aus dem Kernel.
+    func testPaketAlsNutzlastGleichDerTestdatei() throws {
+        let rahmen = try Fixtures.frame("feedback_paket_nutzlast.frame")
+        let bild = Data([0xFF, 0xD8, 0xFF, 0xD9])
+        let json = rahmen.payload.prefix(rahmen.payload.count - bild.count)
+        XCTAssertEqual(rahmen.payload.suffix(bild.count), bild)
+        var (m, nutzlast) = FeedbackPaketMessage.mitNutzlast(
+            sitzung: "s-1793480977", name: "fb-20261105-223011", json: Data(json), bild: bild, saetze: 2, striche: 2,
+            dauerS: 9.5)
+        m.seq = 13
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: m.encodedHeader()),
+                       try JSONDecoder().decode(JSONValue.self, from: rahmen.header))
+        XCTAssertEqual(nutzlast, rahmen.payload)
+        XCTAssertNil(m.datei)
+        // Das JSON in der Nutzlast ist ein gültiges Paket
+        XCTAssertEqual(try JSONDecoder().decode(FeedbackPaket.self, from: Data(json)).name, "fb-20261105-223011")
+    }
+
     func testGrenzenGleichDerReferenz() throws {
         let f = try XCTUnwrap(Fixtures.expected()["feedback"])
         XCTAssertEqual(f["format"]?.stringValue, FeedbackGrenzen.format)
@@ -613,6 +631,61 @@ final class SprachSitzungTests: XCTestCase {
         await bis { paket != nil }
         let p = try XCTUnwrap(paket)
         XCTAssertTrue(p.mausweg.isEmpty)
+    }
+
+    /// I-5: Über das Netz (iPad) geht das Paket als Nutzlast hinaus; im Projektordner entsteht nichts.
+    func testUeberDasNetzGehtDasPaketAlsNutzlast() async throws {
+        let (c, t, projekt, _) = try aufbau()
+        c.sprache.paketMitschicken = true
+        var raus: [(FeedbackPaketMessage, Data)] = []
+        c.sprache.versand = { m, n in
+            if let p = m as? FeedbackPaketMessage { raus.append((p, n)) }
+            return true
+        }
+        c.oberflaeche(.sprechen(true))
+        await t.sagen("Mach das hier höher.", dauer: 0.05)
+        c.oberflaeche(.sprechenFertig)
+        await bis { !raus.isEmpty && !c.sprache.offen }
+        let (m, nutzlast) = try XCTUnwrap(raus.first)
+        XCTAssertNil(m.datei)
+        let n = try XCTUnwrap(m.nutzlast)
+        XCTAssertEqual(nutzlast.count, n.json + n.bild)
+        let paket = try JSONDecoder().decode(FeedbackPaket.self, from: Data(nutzlast.prefix(n.json)))
+        XCTAssertEqual(paket.saetze.map(\.text), ["Mach das hier höher."])
+        XCTAssertEqual(paket.name, m.name)
+        XCTAssertEqual(paket.projekt.pfad, projekt.path, "der Kernel am Mac legt es dort ab")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projekt.appendingPathComponent("feedback").path))
+    }
+
+    /// I-5: Ist der Mac nicht da, wartet das Paket im Postausgang und geht beim nächsten Verbinden los.
+    func testOhneVerbindungWartetDasPaketImPostausgang() async throws {
+        let (c, t, _, _) = try aufbau()
+        c.sprache.paketMitschicken = true
+        let ausgang = try ordner()
+        c.sprache.postausgangOrdner = ausgang
+        var verbunden = false
+        var raus: [FeedbackPaketMessage] = []
+        c.sprache.versand = { m, _ in
+            guard verbunden else { return false }
+            if let p = m as? FeedbackPaketMessage { raus.append(p) }
+            return true
+        }
+        func wartend() -> [String] {
+            ((try? FileManager.default.contentsOfDirectory(atPath: ausgang.path)) ?? []).sorted()
+        }
+        c.oberflaeche(.sprechen(true))
+        await t.sagen("Später ankommen.", dauer: 0.05)
+        c.oberflaeche(.sprechenFertig)
+        await bis { !c.sprache.offen && wartend().count == 2 }
+        XCTAssertEqual(wartend().map { ($0 as NSString).pathExtension }, ["kopf", "nutzlast"])
+        XCTAssertTrue(raus.isEmpty)
+        c.sprache.nachVerbindung()  // noch ohne Mac: bleibt liegen
+        XCTAssertEqual(wartend().count, 2)
+        verbunden = true
+        c.sprache.nachVerbindung()
+        XCTAssertEqual(raus.count, 1)
+        XCTAssertNotNil(raus.first?.nutzlast)
+        XCTAssertEqual(wartend(), [], "was hinausging, verlässt den Postausgang")
     }
 
     func testVerwerfenSchreibtNichts() async throws {

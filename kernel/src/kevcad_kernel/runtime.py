@@ -1637,7 +1637,7 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self._pool.submit(self._bestand_anfrage_sicher, header)
         elif self._freigabe_app_message(kind, header):  # FREIGABE_GESCHLOSSEN
             pass
-        elif self._feedback_app_message(kind, header):  # V2-6: FEEDBACK_STAND, FEEDBACK_PAKET
+        elif self._feedback_app_message(kind, header, payload):  # V2-6: FEEDBACK_STAND, FEEDBACK_PAKET (I-5: mit Nutzlast)
             pass
         elif self._anim_app_message(kind, header):
             pass

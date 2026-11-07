@@ -63,6 +63,13 @@ public final class SprachSteuerung {
     /// Tests: eigene Erkennung statt Wortlaut, und was an den Kernel geht.
     var erkennungFabrik: (() -> any Spracherkennung)?
     var gesendet: ((any OutgoingMessage) -> Void)?
+    /// Tests: an Stelle des Kernels, mit Nutzlast; die Rückgabe sagt, ob die Nachricht hinausging.
+    var versand: ((any OutgoingMessage, Data) -> Bool)?
+    /// I-5: Paket als Nutzlast schicken statt als Datei in den Projektordner. Vorgabe (nil): über das Netz verbunden,
+    /// also auf dem iPad, das den Projektordner des Mac nicht hat.
+    var paketMitschicken: Bool?
+    /// Postausgang für Pakete, die nicht hinausgingen (Mac nicht verbunden); Vorgabe in der Ablage der App.
+    var postausgangOrdner: URL?
 
     public var offen: Bool { sitzung != nil }
     public var spricht: Bool { stand == .spricht }
@@ -188,15 +195,18 @@ public final class SprachSteuerung {
         c.model.oberflaeche.ausfuehren(.sprechenVerwerfen)
     }
 
-    /// Neuer Kernel: Er kennt die offene Sitzung noch nicht.
+    /// Neuer Kernel: Er kennt die offene Sitzung noch nicht. Was im Postausgang wartet, geht jetzt los.
     func nachVerbindung() {
+        postausgangLeeren()
         guard let s = sitzung, stand != .aus else { return }
         senden(FeedbackStandMessage(sitzung: s.id, stand: stand, seit: standSeit))
     }
 
-    private func senden<M: OutgoingMessage>(_ m: M) {
+    @discardableResult
+    private func senden<M: OutgoingMessage>(_ m: M, nutzlast: Data = Data()) -> Bool {
         gesendet?(m)
-        controller?.send(m)
+        if let versand { return versand(m, nutzlast) }
+        return controller?.send(m, payload: nutzlast) ?? false
     }
 
     private func melden(_ neu: FeedbackStand, grund: FeedbackGrund? = nil) {
@@ -207,8 +217,8 @@ public final class SprachSteuerung {
     }
 
     /// Am Mac zuerst Wortlaut, Apples Erkennung als Rückfall; auf dem iPad gleich Apples Erkennung (Wortlaut ist eine
-    /// Mac-App; Mikrofon-Freigabe und Bedienung auf dem iPad folgen in I-5). Selbsttests und Demomodus fragen nie nach dem
-    /// Mikrofon; der Testeingang liest eine Datei.
+    /// Mac-App; dort fragt sie beim ersten Sprechen nach dem Mikrofon, I-5). Selbsttests und Demomodus fragen nie nach
+    /// dem Mikrofon; der Testeingang liest eine Datei.
     private func neueErkennung() -> any Spracherkennung {
         let env = ProcessInfo.processInfo.environment
         let kontext = Fachwoerter.kontext(teile: controller?.scene.order ?? [])
@@ -333,7 +343,7 @@ public final class SprachSteuerung {
     }
 
     /// ↩ gilt überall im Fenster, auch wenn der Fokus nicht im Viewer steht. Textfelder und Dialoge gehen vor.
-    /// iPad: ↩ einer Hardware-Tastatur folgt in I-5; bis dahin schickt die Oberfläche über `fertig()`.
+    /// iPad: Senden in Daumenleiste und Live-Zeile, ↩ einer Tastatur über die Eingabeebene (`Tastenbelegung`).
     private func tastenAn() {
         #if os(macOS)
         guard tastenMonitor == nil else { return }
@@ -427,6 +437,11 @@ public final class SprachSteuerung {
         c.model.oberflaeche.ausfuehren(.sprechText(text))
         c.model.oberflaeche.ausfuehren(.sprechenFertig)
         let sitzungID = s.id
+        if paketMitschicken ?? c.connection.istNetz {
+            await mitschicken(paket, bild: bild, overlay: overlay, sitzung: sitzungID)
+            aufraeumen()
+            return
+        }
         let ergebnis: Result<URL, Error> = await Task.detached(priority: .userInitiated) {
             do {
                 let jpeg = bild.flatMap { Self.jpeg($0, overlay: overlay) }
@@ -446,6 +461,107 @@ public final class SprachSteuerung {
             c.viewer.zeige("Das Feedback ließ sich nicht speichern: \(fehler.localizedDescription)", fehler: true)
         }
         aufraeumen()
+    }
+
+    // MARK: Paket als Nutzlast und Postausgang (I-5, PLAN-IPAD.md 4.5)
+
+    /// Paket und Bild als Nutzlast an den Kernel am Mac; geht das nicht, wartet beides im Postausgang.
+    private func mitschicken(_ paket: FeedbackPaket, bild: FeedbackRohbild?, overlay: [OverlayPrimitive],
+                             sitzung: String) async {
+        guard let c = controller else { return }
+        let daten: Result<(Data, Data?), Error> = await Task.detached(priority: .userInitiated) {
+            do {
+                return .success((try paket.json(), bild.flatMap { Self.jpeg($0, overlay: overlay) }))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+        switch daten {
+        case .success(let (json, jpeg)):
+            let (m, nutzlast) = FeedbackPaketMessage.mitNutzlast(
+                sitzung: sitzung, name: paket.name, json: json, bild: jpeg, saetze: paket.saetze.count,
+                striche: paket.striche.count, dauerS: paket.dauerS)
+            if senden(m, nutzlast: nutzlast) {
+                c.log(.info, "Feedback \(paket.name) an den Mac: \(paket.saetze.count) Sätze, \(paket.striche.count) "
+                    + "Striche, \(nutzlast.count / 1024) KB")
+            } else if postausgangAblegen(m, nutzlast: nutzlast) {
+                c.viewer.zeige("Der Mac ist gerade nicht verbunden. Dein Feedback geht los, sobald er wieder da ist.")
+            } else {
+                c.viewer.zeige("Der Mac ist nicht verbunden, das Feedback ist nicht angekommen.", fehler: true)
+            }
+        case .failure(let fehler):
+            c.log(.error, "Feedback nicht gepackt: \(fehler.localizedDescription)")
+            c.viewer.zeige("Das Feedback ließ sich nicht packen: \(fehler.localizedDescription)", fehler: true)
+        }
+    }
+
+    /// Ein wartendes Paket: die Felder der Nachricht und die Größen in der Nutzlast daneben.
+    private struct Wartend: Codable {
+        var sitzung: String
+        var name: String
+        var saetze: Int
+        var striche: Int
+        var dauerS: Double
+        var json: Int
+        var bild: Int
+    }
+
+    /// Postausgang in der Ablage der App (nur auf dem iPad; am Mac liegt das Paket gleich im Projektordner).
+    private var postausgang: URL? {
+        if let postausgangOrdner { return postausgangOrdner }
+        #if os(iOS)
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Postausgang", isDirectory: true)
+        #else
+        return nil
+        #endif
+    }
+
+    /// Je Paket `<name>.kopf` und `<name>.nutzlast`; true, wenn beides liegt.
+    private func postausgangAblegen(_ m: FeedbackPaketMessage, nutzlast: Data) -> Bool {
+        guard let ordner = postausgang, let n = m.nutzlast else { return false }
+        let w = Wartend(sitzung: m.sitzung, name: m.name, saetze: m.saetze, striche: m.striche, dauerS: m.dauerS,
+                        json: n.json, bild: n.bild)
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+            try nutzlast.write(to: ordner.appendingPathComponent(m.name + ".nutzlast"), options: .atomic)
+            try JSONEncoder().encode(w).write(to: ordner.appendingPathComponent(m.name + ".kopf"), options: .atomic)
+            controller?.log(.info, "Feedback \(m.name) wartet im Postausgang")
+            return true
+        } catch {
+            controller?.log(.error, "Postausgang: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Wartende Pakete senden, das älteste zuerst; was hinausging, verlässt den Postausgang. Ohne Verbindung bleibt alles.
+    func postausgangLeeren() {
+        let fm = FileManager.default
+        guard let ordner = postausgang,
+            let dateien = try? fm.contentsOfDirectory(at: ordner, includingPropertiesForKeys: nil)
+        else { return }
+        let koepfe = dateien.filter { $0.pathExtension == "kopf" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for kopf in koepfe {
+            let datei = kopf.deletingPathExtension().appendingPathExtension("nutzlast")
+            guard let w = try? JSONDecoder().decode(Wartend.self, from: Data(contentsOf: kopf)),
+                let nutzlast = try? Data(contentsOf: datei), nutzlast.count == w.json + w.bild
+            else {
+                // Halb geschrieben oder kaputt: Es hielte sonst alles Spätere auf
+                controller?.log(.error, "Postausgang: \(kopf.lastPathComponent) unvollständig, entfernt")
+                try? fm.removeItem(at: kopf)
+                try? fm.removeItem(at: datei)
+                continue
+            }
+            let (m, n) = FeedbackPaketMessage.mitNutzlast(
+                sitzung: w.sitzung, name: w.name, json: Data(nutzlast.prefix(w.json)),
+                bild: w.bild > 0 ? Data(nutzlast.suffix(w.bild)) : nil, saetze: w.saetze, striche: w.striche,
+                dauerS: w.dauerS)
+            guard senden(m, nutzlast: n) else { return }
+            try? fm.removeItem(at: kopf)
+            try? fm.removeItem(at: datei)
+            controller?.log(.info, "Feedback \(w.name) aus dem Postausgang nachgeschickt")
+            controller?.viewer.zeige("Dein Feedback von vorhin ist jetzt beim Mac.")
+        }
     }
 
     /// Eine Nummer je Satz am ersten Zeiger: So findet der Agent im Bild, was welcher Satz meint.

@@ -271,6 +271,76 @@ def test_offene_pakete_ueberleben_einen_neustart(env, projekt):
     assert env["rt"].feedback_holen(nochmal=True)["name"] == NAME, "auch nach einem Neustart"
 
 
+def mit_nutzlast(env, paket: dict[str, Any], bild: bytes = JPEG, name: str = NAME) -> None:
+    """I-5: So schickt das iPad, das den Projektordner nicht hat: Paket und Bild als Nutzlast."""
+    roh = json.dumps(paket, ensure_ascii=False).encode("utf-8")
+    env["app"].send({"type": "FEEDBACK_PAKET", "sitzung": "s-1", "name": name,
+                     "nutzlast": {"json": len(roh), "bild": len(bild)}, "saetze": 2, "striche": 2, "dauer_s": 9.5},
+                    roh + bild)
+
+
+def ipad_paket(projekt: Path, name: str = NAME) -> dict[str, Any]:
+    p = feedback_beispiel()
+    p.update({"name": name, "bild": {"datei": f"{name}.jpg", "breite": 4, "hoehe": 2},
+              "projekt": {"name": projekt.name, "pfad": str(projekt)}})
+    return p
+
+
+def warte_auf_datei(pfad: Path) -> None:
+    ende = time.monotonic() + 5
+    while not pfad.exists():
+        assert time.monotonic() < ende, pfad
+        time.sleep(0.01)
+
+
+def test_paket_vom_ipad_kommt_als_nutzlast_an_und_weckt_wartende(env, projekt):
+    rt = env["rt"]
+    ergebnis: dict[str, Any] = {}
+    faden = threading.Thread(target=lambda: ergebnis.update(rt.feedback_warten(30)))
+    faden.start()
+    time.sleep(0.2)
+    mit_nutzlast(env, ipad_paket(projekt))
+    faden.join(5)
+    assert ergebnis["da"] and ergebnis["name"] == NAME
+    assert (projekt / "feedback" / f"{NAME}.jpg").read_bytes() == JPEG
+    res = rt.feedback_holen()
+    assert res["name"] == NAME and res["bild"] == JPEG and res["paket"]["projekt"]["pfad"] == str(projekt)
+    assert sorted(p.name for p in (projekt / "feedback").iterdir() if p.name.endswith(".tmp")) == []
+
+
+def test_nutzlast_mit_vergebenem_namen_bekommt_eine_nummer(env, projekt):
+    paket_schreiben(projekt)  # das Paket der Mac-App aus derselben Sekunde
+    mit_nutzlast(env, ipad_paket(projekt))
+    zweites = projekt / "feedback" / f"{NAME}-2.json"
+    warte_auf_datei(zweites)
+    daten = json.loads(zweites.read_text(encoding="utf-8"))
+    assert daten["name"] == f"{NAME}-2" and daten["bild"]["datei"] == f"{NAME}-2.jpg"
+    assert (projekt / "feedback" / f"{NAME}-2.jpg").read_bytes() == JPEG
+    assert json.loads((projekt / "feedback" / f"{NAME}.json").read_text(encoding="utf-8"))["name"] == NAME
+
+
+def test_nutzlast_ohne_bild_und_fremder_pfad_landet_im_offenen_projekt(env, projekt):
+    p = ipad_paket(projekt)
+    p["projekt"] = {"name": "Woanders", "pfad": "/gibt/es/nicht"}
+    mit_nutzlast(env, p, bild=b"")
+    datei = projekt / "feedback" / f"{NAME}.json"
+    warte_auf_datei(datei)
+    assert json.loads(datei.read_text(encoding="utf-8"))["bild"] is None, "ohne Bild verweist es auf keine Datei"
+    assert not (projekt / "feedback" / f"{NAME}.jpg").exists()
+
+
+def test_kaputte_nutzlast_legt_nichts_ab(env, projekt):
+    roh = b"{kein json"
+    env["app"].send({"type": "FEEDBACK_PAKET", "sitzung": "s-1", "name": NAME,
+                     "nutzlast": {"json": len(roh), "bild": 0}, "saetze": 0, "striche": 0, "dauer_s": 1.0}, roh)
+    falsch = json.dumps(ipad_paket(projekt) | {"format": "anders/9"}).encode("utf-8")
+    env["app"].send({"type": "FEEDBACK_PAKET", "sitzung": "s-1", "name": NAME,
+                     "nutzlast": {"json": len(falsch), "bild": 0}, "saetze": 0, "striche": 0, "dauer_s": 1.0}, falsch)
+    stand(env, "spricht")  # beide Nachrichten sind durch, wenn der Stand ankommt
+    assert not (projekt / "feedback").exists() or not any((projekt / "feedback").iterdir())
+    assert env["rt"].feedback_stand()["offen"] == 0
+
+
 def test_paket_mit_schoenheitsfehler_kommt_trotzdem_an(env, projekt):
     paket_schreiben(projekt, dauer_s=1.0)  # die Proben liegen hinter dem Ende
     res = env["rt"].feedback_holen()

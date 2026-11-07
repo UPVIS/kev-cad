@@ -2442,6 +2442,11 @@
     "file": "feedback_paket.frame",
     "type": "FEEDBACK_PAKET",
     "richtung": "app"
+   },
+   {
+    "file": "feedback_paket_nutzlast.frame",
+    "type": "FEEDBACK_PAKET",
+    "richtung": "app"
    }
   ],
   "format": "kevcad-feedback/1",

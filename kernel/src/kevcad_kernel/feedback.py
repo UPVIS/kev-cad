@@ -4,6 +4,9 @@ Die App schreibt das Paket selbst nach ``<projekt>/feedback/`` und meldet es mit
 sich den Stand (``FEEDBACK_STAND``), weckt Wartende und führt in ``abgeholt.json``, was der Agent schon hat. Pakete, die
 dort fehlen, sind offen: Sie überleben Neustarts und warten auf den nächsten Agenten, nichts wird gelöscht.
 
+I-5 (PLAN-IPAD.md): Ein Gerät ohne den Projektordner (iPad) schickt Paket und Bild als Nutzlast mit (``nutzlast``);
+dann legt der Kernel beide in den Feedback-Ordner, und alles Weitere läuft wie mit einer Datei der Mac-App.
+
 Während Kevin spricht, beginnt nichts Neues (``feedback_sperre``): Läufe, Ansichtsbefehle und Projektwechsel des Agenten
 antworten sofort, ein Auto-Lauf wartet bis zum Ende des Stands. Laufendes läuft zu Ende.
 
@@ -56,21 +59,79 @@ class FeedbackRuntime:
 
     # -- Nachrichten der App -------------------------------------------------------------------------------------------
 
-    def _feedback_app_message(self, kind: str | None, header: dict[str, Any]) -> bool:
+    def _feedback_app_message(self, kind: str | None, header: dict[str, Any], payload: bytes = b"") -> bool:
         if kind not in FEEDBACK_NACHRICHTEN:
             return False
-        probleme = check_feedback_message(header)
+        probleme = check_feedback_message(header, payload)
         if probleme:
             self._log(f"[kernel] {kind} ungültig: {'; '.join(probleme)}")  # type: ignore[attr-defined]
             return True
         if kind == "FEEDBACK_STAND":
             self._feedback_stand_setzen(str(header["stand"]), str(header["sitzung"]), float(header["seit"]))
         else:
-            self._log(f"[kernel] Feedback {header.get('name')}: {header.get('saetze')} Sätze, "  # type: ignore
+            name = header.get("name")
+            if header.get("nutzlast") is not None:
+                name = self._fb_annehmen(header, payload)
+                if name is None:
+                    return True
+            self._log(f"[kernel] Feedback {name}: {header.get('saetze')} Sätze, "  # type: ignore[attr-defined]
                       f"{header.get('striche')} Striche")
             with self._fb_cond:
                 self._fb_cond.notify_all()
         return True
+
+    def _fb_annehmen(self, header: dict[str, Any], payload: bytes) -> str | None:
+        """I-5: Paket aus der Nutzlast in den Feedback-Ordner legen; Rückgabe ist sein Name, None bei einem Fehler.
+
+        Ziel ist das Projekt aus dem Paket (dort begann die Sitzung, wie am Mac), wenn dort ein Projekt liegt, sonst das
+        offene. Gibt es den Namen schon (zwei Geräte in derselben Sekunde), bekommt das Paket eine Nummer wie am Mac."""
+        groesse = header["nutzlast"]
+        roh = payload[: groesse["json"]]
+        bild = payload[groesse["json"]: groesse["json"] + groesse["bild"]]
+        try:
+            paket = json.loads(roh.decode("utf-8"))
+        except ValueError as exc:  # auch UnicodeDecodeError
+            self._log(f"[kernel] FEEDBACK_PAKET: Paket ist kein JSON ({exc})")  # type: ignore[attr-defined]
+            return None
+        probleme = check_feedback_paket(paket)
+        if probleme:
+            self._log(f"[kernel] FEEDBACK_PAKET: Paket ungültig: {'; '.join(probleme[:3])}")  # type: ignore[attr-defined]
+            return None
+        ordner = self._fb_ordner_fuer(paket)
+        if ordner is None:
+            self._log("[kernel] FEEDBACK_PAKET: kein Projekt offen, Paket verworfen")  # type: ignore[attr-defined]
+            return None
+        stamm = name = str(header["name"])
+        try:
+            ordner.mkdir(parents=True, exist_ok=True)
+            nr = 1
+            while (ordner / f"{name}.json").exists():
+                nr += 1
+                name = f"{stamm}-{nr}"
+            paket["name"] = name
+            if bild:
+                datei = f"{name}.jpg"
+                tmp = ordner / f".{datei}.{os.getpid()}.{threading.get_ident()}.tmp"
+                tmp.write_bytes(bild)
+                os.replace(tmp, ordner / datei)
+                if isinstance(paket.get("bild"), dict):
+                    paket["bild"]["datei"] = datei
+            else:
+                paket["bild"] = None  # ohne Bild verweist das Paket auf keine Datei
+            _schreiben(ordner / f"{name}.json", paket)
+        except OSError as exc:
+            self._log(f"[kernel] FEEDBACK_PAKET: nicht abgelegt ({exc})")  # type: ignore[attr-defined]
+            return None
+        return name
+
+    def _fb_ordner_fuer(self, paket: dict[str, Any]) -> Path | None:
+        """Feedback-Ordner des Projekts aus dem Paket, wenn dort ein Projekt liegt (model.py); sonst des offenen."""
+        pfad = (paket.get("projekt") or {}).get("pfad")
+        if isinstance(pfad, str) and pfad:
+            projekt = Path(pfad)
+            if projekt.is_absolute() and (projekt / "model.py").is_file():
+                return projekt / FEEDBACK_ORDNER
+        return self._fb_ordner()
 
     def _feedback_stand_setzen(self, stand: str, sitzung: str | None, seit: float | None) -> None:
         assert stand in FEEDBACK_STAENDE

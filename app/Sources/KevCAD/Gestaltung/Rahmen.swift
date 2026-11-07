@@ -203,11 +203,19 @@ struct Statuszeile: View {
     }
 }
 
-/// Knopf „V drücken und sprechen“ mit Mikrofon in Lichtblau.
+/// Knopf „V drücken und sprechen“ mit Mikrofon in Lichtblau (am iPad „Sprechen“, ohne Taste).
 struct SprechKnopf: View {
     let spricht: Bool
     var kurz = false
     let aktion: () -> Void
+
+    static func text(spricht: Bool) -> String {
+        #if os(iOS)
+        return spricht ? "Du sprichst · tippen hält an" : "Sprechen"
+        #else
+        return spricht ? "Du sprichst · V beendet" : "V drücken und sprechen"
+        #endif
+    }
 
     var body: some View {
         Button(action: aktion) {
@@ -218,7 +226,7 @@ struct SprechKnopf: View {
                     .frame(width: 26, height: 26)
                     .background(Circle().fill((spricht ? GF.aufnahme : GF.kevin).opacity(0.16)))
                 if !kurz {
-                    Text(spricht ? "Du sprichst · V beendet" : "V drücken und sprechen")
+                    Text(Self.text(spricht: spricht))
                         .font(GS.text)
                         .foregroundStyle(GF.kreide)
                         .lineLimit(1)

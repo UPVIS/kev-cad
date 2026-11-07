@@ -89,22 +89,14 @@ struct Hinweisleiste: View {
     private static let uebersichtTitel = "Gesten"
     private static let uebersichtHilfe = "Alle Gesten und Tasten (?)"
 
-    /// iPad: Gesten statt Maus. Tasten nur dort, wo es ohne Tastatur noch nicht geht (Sprechen startet am iPad bis
-    /// I-5 nur mit V an einer Tastatur).
+    /// iPad: Gesten statt Maus. Sprechen, Senden und Verwerfen stehen als Knöpfe in Daumenleiste und Live-Zeile, die
+    /// Leiste nennt deshalb nur Gesten.
     private var eintraege: [Eintrag] {
         if let n = eingabe.navigation { return Self.gestenWaehrend(n) }
-        if oberflaeche.sitzungOffen && !oberflaeche.spricht {  // angehalten, die Sitzung ist offen
-            return [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
-                    Eintrag(tasten: ["V"], maus: nil, text: "Weitersprechen"),
-                    Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")]
-        }
         let zustand: MausBelegung.Zustand = oberflaeche.spricht ? .sprechen : model.measureMode ? .messen : .auswahl
         var out = Tastenbelegung.gesten.filter { $0.zustand == .immer || $0.zustand == zustand }
             .map { Eintrag(tasten: [$0.geste.rawValue], maus: nil, text: $0.kurz ?? $0.wirkung) }
-        if oberflaeche.spricht {
-            out.insert(contentsOf: [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
-                                    Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")], at: min(1, out.count))
-        } else if model.measureMode, let u = eingabe.unterMaus {
+        if model.measureMode, !oberflaeche.spricht, let u = eingabe.unterMaus {
             out.insert(Eintrag(tasten: [], maus: nil, text: u), at: 0)
         }
         return out

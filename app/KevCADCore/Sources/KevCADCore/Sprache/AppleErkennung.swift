@@ -305,6 +305,12 @@ final class TonEingang: @unchecked Sendable {
     }
 
     func starten() throws {
+        #if os(iOS)
+        // iPad (I-5): Ohne Audio-Sitzung mit Aufnahme liefert der Eingang nichts; am Mac gibt es keine Sitzung
+        let sitzung = AVAudioSession.sharedInstance()
+        try sitzung.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers])
+        try sitzung.setActive(true)
+        #endif
         let eingang = engine.inputNode
         let format = eingang.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw Fehler.keinMikrofon }
@@ -321,6 +327,10 @@ final class TonEingang: @unchecked Sendable {
         sperre.withLock { aktiv = false }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        #if os(iOS)
+        // Andere Apps (Musik) dürfen wieder laut werden
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     private func verarbeiten(_ puffer: AVAudioPCMBuffer, _ zeit: AVAudioTime) {
