@@ -475,3 +475,59 @@ zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Or
   Zusammenfassung (siehe oben).
 - Tests: nacheinander gegen 3 Prozesse bitgleich (drei Klötze, gleiche Netze), Verteiler mit gespieltem Speicher,
   Abbruch beendet alle Teilprozesse. Mac mini: 1291 bestanden, 23 übersprungen.
+- Nachtrag (07.11.2026): Die Fädengrenze kam in den Teilprozessen nie an. Mit `spawn` entstehen sie erst beim `submit`,
+  die Umgebung (`OMP_NUM_THREADS` usw.) war aber nur um den Bau des Pools gesetzt; drei Teilprozesse rechneten so mit allen
+  Kernen neben dem Rechenprozess. Jetzt gilt sie, solange der Pool besteht; `zeiten_teile` nennt die Fäden je Teil, der
+  Test prüft sie. Aufgefallen bei A4: Das Lösen geänderter Teile dauerte dort parallel doppelt so lang wie einzeln.
+
+### A4 Einheitslastfälle, überlagert (07.11.2026)
+
+- `statik/festkoerper/prozess.py`: Teile, die SuperLU löst, rechnet der FEM-Prozess je Lagergruppe über
+  Einheitslastfälle mit einer Zerlegung: je Lastfläche (Kontakt zum Nachbarn, Fläche um einen Punkt) Kraft 1 N in x, y, z
+  am Schwerpunkt der Fläche und Moment 1 Nmm um x, y, z (dieselbe RBE3-Verteilung wie `last_flaeche`,
+  `Netz.last_flaeche_einheiten`), je Fläche mit gleichmäßiger Last nur die drei Kräfte, je Fläche unter Druck der
+  Einheitsdruck, für Volumenlasten (Eigengewicht, Last ohne Punkt) b in x, y, z, für ein Moment am Schwerpunkt die ganze
+  Oberfläche. Ein Fall ist die Summe der Einheitsfälle mal ihrer Beiwerte (Moment um den Schwerpunkt der Fläche
+  M + (P − c) × F); Lagerkräfte aus den Reaktionen der Einheitsfälle an den Lagern. Beim Kugelschieber sind es 9
+  Einheitsfälle je Teil (Kontaktfläche und Volumen).
+- Die Einheitsfälle (Verschiebungen, Reaktionen an den Lagern, Summen der Lastvektoren) liegen je Teilzustand und
+  Lagergruppe in `einheiten/` des FEM-Zwischenspeichers (rund 3 MB je Teil, höchstens 1 GB, zuerst weg, was am längsten
+  nicht benutzt wurde). Schlüssel: Netz, Werkstoff und Schicht, Lager (Inhalt des Nachbarnetzes bzw. der Lagerfläche,
+  Toleranz, Art), Lastflächen (Kontakt mit Inhalt des Nachbarnetzes, Punkt, Flächennetz). Ändern sich nur die Lasten,
+  entfallen Steifigkeit, Kontaktflächen und Zerlegung; solche Teile rechnet der FEM-Prozess selbst, während die
+  Teilprozesse die übrigen rechnen. Gerechnet wird auch beim ersten Mal über die Einheitsfälle, damit gemerkt und frisch
+  Bit für Bit dasselbe herauskommt. Teile, die AMG löst, und Lastflächen ohne Treffer auf dem Netz (Ersatzfläche um den
+  Punkt) rechnen weiter Fall für Fall. `RECHENSTAND` 2 (Schlüssel der Fälle) macht alte Fälle ungültig, die Netze
+  bleiben. `KEVCAD_FEM_UEBERLAGERN=0` schaltet ab (Tests, Vergleiche).
+- Aufwand gemessen an einem gesicherten Auftrag, je Teil einzeln mit 2 Fäden: das erste Mal (Einheitsfälle frisch)
+  Schieberschlitten 3,6 bis 4,8 s statt 3,2 bis 4,6 s (rund 10 % mehr: 9 statt 3 Lastvektoren aufbauen und lösen),
+  Fangrolle gleich; ein Teil aus gemerkten Einheitsfällen 0,1 bis 0,3 s statt 1,8 bis 3,0 s (Stangenhalter).
+- Messung Kugelschieber (Netze der Basis, Schritte kalt, `laufrolle_l=90`, dieselbe Änderung, zurück auf die Datei,
+  `laufrolle_l=95`). Gleicher Stand `f6a192c` abwechselnd ohne A4 (`KEVCAD_FEM_UEBERLAGERN=0`) und mit A4, zwei Runden;
+  dazu A2 wie bisher (`28912d2`, Fädengrenze noch wirkungslos). Endstand in s, in Klammern der FEM-Prozess (Start →
+  Ende):
+
+| Schritt | A2 bisher, 2 Runden | ohne A4, 2 Runden | mit A4, 2 Runden |
+|---|---|---|---|
+| kalt | 58,2 / 37,1 | 32,8 / 32,7 | 34,1 / 33,0 |
+| `laufrolle_l=90` | 13,8 (6,5 → 13,8) / 14,5 (5,9 → 14,5) | 14,7 (6,3 → 14,7) / 20,9 (6,6 → 19,6) | 18,7 (10,9 → 17,6)¹ / **12,0** (5,5 → 9,7) |
+| dieselbe Änderung | 1,8 / 1,5 | 3,8 / 1,6 | 2,0 / 1,5 |
+| zurück auf die Datei | 4,4 / 2,0 | 2,8 / 1,8 | 2,0 / 1,6 |
+| `laufrolle_l=95` | 21,2 (9,4 → 21,2) / 15,8 (5,7 → 15,8) | 17,2 (8,5 → 17,2) / 13,6 (6,0 → 13,6) | 13,4 (6,2 → 12,0) / **12,3** (5,6 → 10,1) |
+
+  ¹ Der Lauf selbst brauchte dort 5,5 statt 2,5 s (Systemlast sprang von 15 auf 50).
+  Gemessen wurden Stände vor dem Rebase auf `main`: `28912d2` entspricht `c7263bd`, `f8de220` entspricht `09a890b`.
+  Ablagen `…-a4-vorher`, `…-a4-vorher2`, `…-a4`, `…-m1-ohne-a4`, `…-m1-mit-a4`, `…-m2-ohne-a4`, `…-m2-mit-a4`.
+  Systemlast 12 bis 50 (andere Agenten, iOS-Simulator); die Spalten liefen abwechselnd. Lastunabhängiger ist die Dauer
+  des FEM-Prozesses nach einer Änderung: ohne A4 7,7 bis 13 s, mit A4 4,2 bis 6,7 s. Mit A4 rechnen die vier
+  Stangenhalter je 0,1 bis 0,3 s im FEM-Prozess selbst; die FEM endet vor der Hauptprüfung, der kritische Pfad ist jetzt
+  der Bewegungsraum im Rechenprozess (Endstand rund 12 s, wie in Abschnitt 7 für A1 bis A4 erwartet).
+- Gleichheitsprobe (Runde 2, mit A4): in allen Schritten gleich (frischer Prozess, leere Speicher, dieselben Netze).
+  Gegen ohne A4 mit denselben Netzen: alle Ausgaben gleich (Befunde, Statik samt Festkörper: Sicherheit, Spannung,
+  Verformung, Orte, Lagerkräfte), die FEM-Felder (float32) genau gleich; anders ist nur das Residuum des Lösers (je
+  Einheitsfall statt je Fall, 1e-11 statt 5e-10). Ebenso A4 vor dem Fädenfix (`f8de220`) gegen A2 bisher (`28912d2`) in allen fünf Schritten.
+- Tests (`test_festkoerper.py`): Überlagerung gegen die Lösung je Fall für Kontaktlast mit Kraft, Moment und anderem
+  Angriffspunkt, Last am Punkt, Last am Schwerpunkt mit Moment, Eigengewicht in drei Richtungen, Flächenlast und Druck
+  (Verschiebungen innerhalb 1e-10 relativ, Bewertung, Lagerkräfte, Lastflächen und Resultierende gleich); gemerkte
+  Einheitsfälle Bit für Bit gleich wie ein frischer Prozess; Fehltreffer bei geändertem Lager, Werkstoff, Schicht, Netz
+  und Kontaktfläche.
