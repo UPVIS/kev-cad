@@ -188,22 +188,45 @@ private struct BlattMeldung: View {
     }
 }
 
+/// Brücke zur Leinwand (AppKit am Mac, UIKit am iPad; dieselbe Klasse `BlattLeinwand`).
 #if os(macOS)
-/// Brücke zur AppKit-Leinwand.
 struct BlattLeinwandView: NSViewRepresentable {
     let zeichnung: Zeichnung?
     @ObservedObject var zustand: DokumenteZustand
     let model: AppModel
     let angefordert: Date?
 
-    func makeNSView(context: Context) -> BlattLeinwand {
+    func makeNSView(context: Context) -> BlattLeinwand { BlattLeinwandView.machen(zustand, model) }
+    func updateNSView(_ v: BlattLeinwand, context: Context) { aktualisieren(v) }
+}
+#else
+struct BlattLeinwandView: UIViewRepresentable {
+    let zeichnung: Zeichnung?
+    @ObservedObject var zustand: DokumenteZustand
+    let model: AppModel
+    let angefordert: Date?
+
+    func makeUIView(context: Context) -> BlattLeinwand {
+        let v = BlattLeinwandView.machen(zustand, model)
+        v.accessibilityLabel = "Zeichnungsblatt"
+        return v
+    }
+
+    func updateUIView(_ v: BlattLeinwand, context: Context) { aktualisieren(v) }
+}
+#endif
+
+extension BlattLeinwandView {
+    @MainActor
+    static func machen(_ zustand: DokumenteZustand, _ model: AppModel) -> BlattLeinwand {
         let v = BlattLeinwand(frame: .zero)
         v.zustand = zustand
         v.model = model
         return v
     }
 
-    func updateNSView(_ v: BlattLeinwand, context: Context) {
+    @MainActor
+    func aktualisieren(_ v: BlattLeinwand) {
         v.zustand = zustand
         v.setze(zeichnung, angefordertSeit: angefordert)
         v.werkzeug = zustand.werkzeug
@@ -214,41 +237,3 @@ struct BlattLeinwandView: NSViewRepresentable {
         }
     }
 }
-#else
-/// iPad: das Blatt nur ansehen, eingepasst und mit demselben `BlattZeichner` wie PDF und Druck. Zoomen, Auswählen und
-/// Bearbeiten (Maße ziehen, Notizen, Ansichten) mit Finger und Stift folgen in I-8.
-struct BlattLeinwandView: View {
-    let zeichnung: Zeichnung?
-    @ObservedObject var zustand: DokumenteZustand
-    let model: AppModel
-    let angefordert: Date?
-
-    var body: some View {
-        Canvas { ctx, groesse in
-            guard let z = zeichnung, z.groesse.width > 0, z.groesse.height > 0 else { return }
-            let rand: CGFloat = 24
-            let skala = max(0.01, min((groesse.width - 2 * rand) / z.groesse.width,
-                                      (groesse.height - 2 * rand) / z.groesse.height))
-            let blatt = CGSize(width: z.groesse.width * skala, height: z.groesse.height * skala)
-            let ecke = CGPoint(x: (groesse.width - blatt.width) / 2, y: (groesse.height - blatt.height) / 2)
-            ctx.withCGContext { cg in
-                // Papier mit Schatten wie am Mac
-                cg.saveGState()
-                cg.setShadow(offset: CGSize(width: 0, height: 3), blur: 14, color: CGColor(gray: 0, alpha: 0.32))
-                cg.setFillColor(CGColor(gray: 1, alpha: 1))
-                cg.fill(CGRect(origin: ecke, size: blatt))
-                cg.restoreGState()
-                // Das Blatt rechnet in mm mit y nach oben (wie PDF): unten links beginnen, y spiegeln
-                cg.saveGState()
-                cg.clip(to: CGRect(origin: ecke, size: blatt))
-                cg.translateBy(x: ecke.x, y: ecke.y + blatt.height)
-                cg.scaleBy(x: skala, y: -skala)
-                BlattZeichner.zeichne(z, in: cg, optionen: .bildschirm)
-                cg.restoreGState()
-            }
-        }
-        .background(Color(white: 0.16))
-        .accessibilityLabel(zeichnung.map { "Zeichnung \($0.blatt.titel)" } ?? "Zeichnung")
-    }
-}
-#endif

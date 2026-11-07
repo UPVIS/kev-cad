@@ -36,15 +36,21 @@ final class BlattMesswerte {
     }
 }
 
+// Eine Leinwand für Mac und iPad (I-8): Zeichnen, Treffer, Gesten und Bearbeiten sind gemeinsam, nur die Eingänge sind
+// je Gerät eigen (Maus, Trackpad und Tastatur am Mac; Finger, Stift, Schweben, Kneifen und Kontextmenü am iPad). Am iPad
+// rechnet die Ansicht wie am Mac mit y nach oben: `draw` spiegelt den Kontext, Berührungen gehen über `oben(_:)`.
 #if os(macOS)
-// Leinwand und Kontextmenü über AppKit. iPad: Ansehen über `BlattLeinwandView` (BlattAnsicht.swift), Bearbeiten mit
-// Finger und Stift folgt in I-8.
-/// Die Blattansicht als AppKit-Ansicht: zeichnet mit `BlattZeichner` (derselben Funktion wie PDF und Druck), zoomt und
+typealias BlattLeinwandBasis = NSView
+#else
+typealias BlattLeinwandBasis = UIView
+#endif
+
+/// Die Blattansicht: zeichnet mit `BlattZeichner` (derselben Funktion wie PDF und Druck), zoomt und
 /// verschiebt (Trackpad, Pinch, Mausrad), wählt aus und bearbeitet (Maße ziehen, neue Maße, Notizen, Ansichten).
 ///
 /// Koordinaten: Die Ansicht ist nicht gespiegelt (y nach oben) wie das Blatt. `ursprung` ist die Lage der Blattecke
 /// links unten in Ansichtspunkten, `skala` Punkte je Blatt-mm.
-final class BlattLeinwand: NSView, NSPopoverDelegate {
+final class BlattLeinwand: BlattLeinwandBasis {
     weak var zustand: DokumenteZustand?
     weak var model: AppModel?
 
@@ -63,7 +69,9 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             schnittStart = nil
             hoverLinie = nil
             hinweisAktualisieren()
+            #if os(macOS)  // nur am Mac: Mauszeiger je Werkzeug
             window?.invalidateCursorRects(for: self)
+            #endif
             needsDisplay = true
         }
     }
@@ -142,6 +150,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     private var rasterMsJeMpx: Double = 0
     private var ersteDarstellungFuer: (blatt: String, seit: Date)?
     private var animation: Timer?
+    #if os(macOS)
     private weak var popover: NSPopover?
 
     override var isFlipped: Bool { false }
@@ -158,10 +167,28 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                                    .cursorUpdate],
             owner: self, userInfo: nil))
     }
+    #else
+    /// iPad: offene Texteingabe (Popover mit `BlattTextEingabeAnsicht`).
+    private weak var eingabe: UIViewController?
+    /// Größe beim letzten Layout (Gegenstück zu `setFrameSize` am Mac).
+    private var letzteGroesse = CGSize.zero
+    /// Umschalt und Wahl der Hardware-Tastatur beim letzten Berühren (Gegenstück zu `NSEvent.modifierFlags`).
+    static var tasten: UIKeyModifierFlags = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = true
+        contentMode = .redraw
+        isMultipleTouchEnabled = true
+        gestenEinrichten()
+    }
+    #endif
 
     required init?(coder: NSCoder) { nil }
 
+    #if os(macOS)
     /// Im Bereich Dokumente bekommt das Blatt die Tastatur (⌫, Pfeile, Esc), nicht die ruhende 3D-Ansicht dahinter.
+    /// iPad: dasselbe in `didMoveToWindow` (Eingänge am Ende der Datei).
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let w = window else { return }
@@ -170,6 +197,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             w.makeFirstResponder(self)
         }
     }
+    #endif
 
     // MARK: Blatt setzen
 
@@ -243,12 +271,16 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     /// 1:1 auf dem Bildschirm: 1 mm auf dem Blatt ist 1 mm auf dem Monitor (aus der physischen Größe des Bildschirms).
     func originalgroesse() {
+        #if os(macOS)
         guard let screen = window?.screen ?? NSScreen.main,
               let nr = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         else { return }
         let mmBreite = CGDisplayScreenSize(nr).width
         guard mmBreite > 50 else { return }
         let s = screen.frame.width / mmBreite
+        #else
+        let s = Self.punkteJeMMBildschirm()
+        #endif
         zoom(auf: s, um: CGPoint(x: bounds.midX, y: bounds.midY), animiert: true)
     }
 
@@ -295,12 +327,13 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     private func ansichtGeaendert() {
         needsDisplay = true
-        let prozent = Int((skala / BlattLeinwand.punkteJeMMBildschirm(window?.screen) * 100).rounded())
+        let prozent = Int((skala / punkteJeMM * 100).rounded())
         if zustand?.anzeige.zoomProzent != prozent {
             DispatchQueue.main.async { [weak self] in self?.zustand?.anzeige.zoomProzent = prozent }
         }
     }
 
+    #if os(macOS)
     /// Bildschirmpunkte je mm bei 100 % (Papiergröße auf dem Monitor).
     static func punkteJeMMBildschirm(_ screen: NSScreen?) -> CGFloat {
         guard let screen = screen ?? NSScreen.main,
@@ -310,9 +343,32 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         return mmBreite > 50 ? screen.frame.width / mmBreite : 72 / 25.4
     }
 
+    private var punkteJeMM: CGFloat { Self.punkteJeMMBildschirm(window?.screen) }
+    private var pixelJePunkt: CGFloat { window?.backingScaleFactor ?? 2 }
+
     override func setFrameSize(_ newSize: NSSize) {
         let alt = bounds.size
         super.setFrameSize(newSize)
+        groesseGeaendert(von: alt, auf: newSize)
+    }
+    #else
+    /// iPad: Punkte je mm bei 100 %. iPadOS nennt die Pixeldichte nicht; die großen iPads haben 264 ppi bei Faktor 2,
+    /// also 132 Punkte je Zoll (iPad mini 163).
+    static func punkteJeMMBildschirm() -> CGFloat { 132 / 25.4 }
+
+    private var punkteJeMM: CGFloat { Self.punkteJeMMBildschirm() }
+    private var pixelJePunkt: CGFloat { window?.screen.scale ?? traitCollection.displayScale }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != letzteGroesse else { return }
+        let alt = letzteGroesse
+        letzteGroesse = bounds.size
+        groesseGeaendert(von: alt, auf: bounds.size)
+    }
+    #endif
+
+    private func groesseGeaendert(von alt: CGSize, auf newSize: CGSize) {
         if eingepasst {
             einpassen(animiert: false)
         } else {
@@ -333,6 +389,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     // MARK: Trackpad, Mausrad
 
+    #if os(macOS)  // iPad: Kneifen und Verschieben mit zwei Fingern in `gestenEinrichten`
     override func magnify(with event: NSEvent) {
         interagiere()
         zoom(faktor: 1 + event.magnification, um: convert(event.locationInWindow, from: nil))
@@ -362,6 +419,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             zoom(faktor: pow(1.6, d), um: p)
         }
     }
+    #endif
 
     /// Während Zoom und Verschieben aus dem Zwischenbild zeichnen, danach wieder scharf.
     func interagiere() {
@@ -387,7 +445,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     /// Blättern mit vielen Linien und Maßen).
     private func zwischenspeicherAnstossen() {
         guard let z = zeichnung, !zwischenspeicherLaeuft else { return }
-        let backing = window?.backingScaleFactor ?? 2
+        let backing = pixelJePunkt
         let wunsch = skala * backing
         let flaeche = z.groesse.width * z.groesse.height
         let pxJeMM = min(wunsch, sqrt(Self.maxPixel / flaeche))
@@ -421,11 +479,15 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     // MARK: Zeichnen
 
+    #if os(macOS)
     static let auswahlFarbe = NSColor.controlAccentColor
+    #else
+    static let auswahlFarbe = UIColor.systemBlue
+    #endif
 
     /// Zeichenbrett um das helle Blatt (Stil Reißbrett, V2-7): leise Planquadrate im Abstand von 10 mm. Zu klein gezoomt
     /// würden sie flimmern, dann bleibt die Fläche frei.
-    private func planquadrate(_ ctx: CGContext, in r: NSRect) {
+    private func planquadrate(_ ctx: CGContext, in r: CGRect) {
         let schritt = 10 * skala
         guard schritt >= 6 else { return }
         let weg = CGMutablePath()
@@ -449,10 +511,25 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         ctx.restoreGState()
     }
 
+    #if os(macOS)
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        zeichne(in: ctx, dirtyRect, grund: NSColor.underPageBackgroundColor.cgColor)
+    }
+    #else
+    /// iPad: Kontext spiegeln, damit wie am Mac y nach oben zeigt.
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.scaleBy(x: 1, y: -1)
+        let dirty = CGRect(x: rect.minX, y: bounds.height - rect.maxY, width: rect.width, height: rect.height)
+        zeichne(in: ctx, dirty, grund: UIColor(white: 0.16, alpha: 1).cgColor)
+    }
+    #endif
+
+    private func zeichne(in ctx: CGContext, _ dirtyRect: CGRect, grund: CGColor) {
         let t0 = CACurrentMediaTime()
-        ctx.setFillColor(NSColor.underPageBackgroundColor.cgColor)
+        ctx.setFillColor(grund)
         ctx.fill(dirtyRect)
         guard let z = zeichnung else { return }
         let blatt = papier
@@ -478,7 +555,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         o.ohneAnsichten = ohneAnsichten
         o.ohneTexte = ohneTexte
         var ausBild = false
-        let backing = window?.backingScaleFactor ?? 2
+        let backing = pixelJePunkt
         // Während Zoom und Verschieben aus dem Zwischenbild, wenn das Rastern des sichtbaren Teils spürbar Zeit kostet
         // (gemessen am Zwischenbild) und das Bild scharf genug ist; in Ruhe immer als Vektor
         let sichtbarMpx = Double(blatt.intersection(dirtyRect).width * blatt.intersection(dirtyRect).height
@@ -777,12 +854,20 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     }
 
     /// ⌥ beim Ziehen des Schnitts: Blick zur anderen Seite als vorgeschlagen.
-    static var schnittUmgekehrt: Bool { NSEvent.modifierFlags.contains(.option) }
+    static var schnittUmgekehrt: Bool { tasteWahl }
+
+    #if os(macOS)
+    static var tasteWahl: Bool { NSEvent.modifierFlags.contains(.option) }
+    static var tasteUmschalt: Bool { NSEvent.modifierFlags.contains(.shift) }
+    #else
+    static var tasteWahl: Bool { tasten.contains(.alternate) }
+    static var tasteUmschalt: Bool { tasten.contains(.shift) }
+    #endif
 
     /// Zweiter Punkt der Schnittlinie; fast waagrecht oder senkrecht (unter 4°) oder mit Umschalt rastet sie ein.
     private func schnittPunkt(_ a: CGPoint, _ m: CGPoint) -> CGPoint {
         let dx = m.x - a.x, dy = m.y - a.y
-        if NSEvent.modifierFlags.contains(.shift) {
+        if Self.tasteUmschalt {
             return abs(dx) >= abs(dy) ? CGPoint(x: m.x, y: a.y) : CGPoint(x: a.x, y: m.y)
         }
         let winkel = abs(atan2(dy, dx)) * 180 / .pi  // 0 … 180
@@ -945,10 +1030,25 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         return best.map { (vid, MassVorschau.kantenzug($0.0, nahe: p)) }
     }
 
-    // MARK: Maus
+    // MARK: Zeiger, Drücken, Ziehen, Loslassen (gemeinsam für Maus, Finger und Stift; `v` in Ansichtspunkten, y oben)
 
-    override func mouseMoved(with event: NSEvent) {
-        let p = mm(convert(event.locationInWindow, from: nil))
+    private enum ZeigerForm { case pfeil, offen, zu, kreuz }
+
+    /// Mauszeiger setzen. Nur am Mac; am iPad zeigt der Zeiger des Systems selbst, was unter ihm liegt.
+    private func zeigerForm(_ f: ZeigerForm) {
+        #if os(macOS)  // nur am Mac: Mauszeiger (iPad: Zeiger des Systems)
+        switch f {
+        case .pfeil: NSCursor.arrow.set()
+        case .offen: NSCursor.openHand.set()
+        case .zu: NSCursor.closedHand.set()
+        case .kreuz: NSCursor.crosshair.set()
+        }
+        #endif
+    }
+
+    /// Zeiger, schwebender Stift oder Trackpad über dem Blatt (ohne gedrückt).
+    func zeigerBewegt(_ v: CGPoint) {
+        let p = mm(v)
         maus = p
         zustand?.anzeige.zeiger = p
         // Neu zeichnen nur, wenn sich die Hervorhebung ändert oder eine Vorschau dem Zeiger folgt
@@ -967,7 +1067,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             if let z = zeichnung {
                 // Zeiger zeigt, was sich ziehen lässt: Maß, Notiz, Ansicht; leeres Papier verschiebt das Blatt
                 let t = treffer(p, in: z)
-                (t != nil ? NSCursor.openHand : NSCursor.arrow).set()
+                zeigerForm(t != nil ? .offen : .pfeil)
                 if t != hoverElement {
                     hoverElement = t
                     neu = true
@@ -979,7 +1079,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         if neu { needsDisplay = true }
     }
 
-    override func mouseExited(with event: NSEvent) {
+    func zeigerWeg() {
         maus = nil
         hoverElement = nil
         zustand?.anzeige.zeiger = nil
@@ -987,28 +1087,21 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         needsDisplay = true
     }
 
-    override func cursorUpdate(with event: NSEvent) {
-        switch werkzeug {
-        case .auswahl: NSCursor.arrow.set()
-        default: NSCursor.crosshair.set()
-        }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        popover?.close()
+    /// Drücken: `klicks` 2 ist ein Doppelklick bzw. Doppeltippen; `schwenken` verschiebt immer das Blatt (⌥ oder
+    /// mittlere Maustaste am Mac).
+    func druecke(_ v: CGPoint, klicks: Int, schwenken: Bool) {
+        schliesseEingabe()
         guard let z = zeichnung else { return }
-        let v = convert(event.locationInWindow, from: nil)
         let p = mm(v)
         gezogen = false
         zug = .zero
-        if event.modifierFlags.contains(.option) && werkzeug == .auswahl || event.buttonNumber == 2 {
+        if schwenken {
             geste = .schwenken(start: v, ursprung0: ursprung)
             return
         }
         switch werkzeug {
         case .auswahl:
-            if event.clickCount == 2 {
+            if klicks == 2 {
                 doppelklick(p, z)
                 return
             }
@@ -1028,7 +1121,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                 geste = .schwenken(start: v, ursprung0: ursprung)
             }
         case .mass:
-            massKlick(p, z, doppelt: event.clickCount == 2)
+            massKlick(p, z, doppelt: klicks == 2)
         case .notiz:
             notizStart = p
             geste = .notizNeu(start: p)
@@ -1048,8 +1141,8 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         }
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        let v = convert(event.locationInWindow, from: nil)
+    /// Ziehen mit gedrückter Taste bzw. aufliegendem Finger; `nurAchse` (Umschalt) rastet waagrecht oder senkrecht ein.
+    func ziehe(_ v: CGPoint, nurAchse: Bool) {
         let p = mm(v)
         maus = p
         zustand?.anzeige.zeiger = p
@@ -1060,15 +1153,15 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             eingepasst = false
             ursprung = CGPoint(x: u0.x + v.x - start.x, y: u0.y + v.y - start.y)
             interagiere()
-            NSCursor.closedHand.set()
+            zeigerForm(.zu)
             ansichtGeaendert()
         case .mass(_, _, let start), .ansicht(_, let start), .notiz(_, let start):
             let d = CGVector(dx: p.x - start.x, dy: p.y - start.y)
             if !gezogen, hypot(d.dx, d.dy) * skala < 3 { return }
-            if !gezogen { NSCursor.closedHand.set() }
+            if !gezogen { zeigerForm(.zu) }
             gezogen = true
             zug = d
-            if event.modifierFlags.contains(.shift) {  // Umschalt: nur waagrecht oder senkrecht
+            if nurAchse {  // Umschalt: nur waagrecht oder senkrecht
                 if abs(d.dx) > abs(d.dy) { zug.dy = 0 } else { zug.dx = 0 }
             }
             needsDisplay = true
@@ -1077,18 +1170,27 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         }
     }
 
-    override func mouseUp(with event: NSEvent) {
+    /// Ein zweiter Finger, das Kontextmenü oder das System hat die Berührung übernommen: nichts übernehmen.
+    func gesteAbbrechen() {
+        if case .notizNeu = geste { notizStart = nil }
+        geste = .keine
+        gezogen = false
+        zug = .zero
+        needsDisplay = true
+    }
+
+    func lasse(_ v: CGPoint) {
         defer {
             geste = .keine
             gezogen = false
             zug = .zero
         }
         guard let z = zeichnung else { return }
-        let p = mm(convert(event.locationInWindow, from: nil))
+        let p = mm(v)
         protokolliere("Loslassen bei \(p), gezogen \(gezogen), Zug \(zug)")
         switch geste {
         case .schwenken:
-            NSCursor.arrow.set()
+            zeigerForm(.pfeil)
         case .mass(let id, let art, _) where gezogen:
             guard let m = z.mass(id) else { return }
             let neu = MassVorschau.verschoben(m, blatt: z.blatt.mass(id), um: zug, text: art == .text)
@@ -1128,6 +1230,37 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         }
         needsDisplay = true
     }
+
+    #if os(macOS)  // Maus am Mac; iPad: Berührung, Stift und Schweben am Ende der Datei
+    override func mouseMoved(with event: NSEvent) {
+        zeigerBewegt(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        zeigerWeg()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        switch werkzeug {
+        case .auswahl: NSCursor.arrow.set()
+        default: NSCursor.crosshair.set()
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        druecke(convert(event.locationInWindow, from: nil), klicks: event.clickCount,
+                schwenken: event.modifierFlags.contains(.option) && werkzeug == .auswahl || event.buttonNumber == 2)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        ziehe(convert(event.locationInWindow, from: nil), nurAchse: event.modifierFlags.contains(.shift))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        lasse(convert(event.locationInWindow, from: nil))
+    }
+    #endif
 
     static func zeiger(_ n: BlattNotiz) -> ZeichnungsKlick? { BlattWerte.zeiger(n) }
 
@@ -1217,7 +1350,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     private func massVorschau(maus m: CGPoint, _ z: Zeichnung) -> MassVorschau.Neu? {
         guard massKlicks.count == 2, let g = z.gruppe(massKlicks[0].ansicht) else { return nil }
-        let frei = NSEvent.modifierFlags.contains(.option)
+        let frei = Self.tasteWahl
         return MassVorschau.neu(
             a: (Self.angesetzt(massKlicks[0]), massKlicks[0].linie), b: (Self.angesetzt(massKlicks[1]), massKlicks[1].linie),
             maus: m, frei: frei, massstab: g.massstab ?? z.blatt.massstab)
@@ -1259,6 +1392,7 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     // MARK: Rückgängig (Menü Bearbeiten, ⌘Z und ⇧⌘Z)
 
+    #if os(macOS)  // iPad: ⌘Z und ⇧⌘Z der Hardware-Tastatur über `keyCommands` am Ende der Datei
     @objc func undo(_ sender: Any?) { zustand?.bearbeiter.rueckgaengig() }
     @objc func redo(_ sender: Any?) { zustand?.bearbeiter.wiederholen() }
 
@@ -1284,10 +1418,35 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
     }
 
     override func keyDown(with event: NSEvent) {
+        let t: Taste?
         switch event.keyCode {
-        case 51, 117:  // Rückschritt, Entfernen
+        case 51, 117: t = .loeschen  // Rückschritt, Entfernen
+        case 53: t = .esc
+        case 123: t = .links
+        case 124: t = .rechts
+        case 125: t = .runter
+        case 126: t = .hoch
+        default:
+            switch event.charactersIgnoringModifiers {
+            case "+", "=": t = .plus
+            case "-": t = .minus
+            default: t = nil
+            }
+        }
+        guard let t, taste(t, umschalt: event.modifierFlags.contains(.shift)) else { return super.keyDown(with: event) }
+    }
+    #endif
+
+    /// Tasten der Leinwand, gleich für die Tastatur am Mac und die Hardware-Tastatur am iPad.
+    enum Taste { case loeschen, esc, links, rechts, runter, hoch, plus, minus }
+
+    /// Führt eine Taste aus; `false`, wenn sie hier nichts tut (dann geht sie weiter an die Responder-Kette).
+    @discardableResult
+    func taste(_ t: Taste, umschalt: Bool) -> Bool {
+        switch t {
+        case .loeschen:
             loeschen()
-        case 53:  // Esc
+        case .esc:
             if massKlicks.isEmpty && notizStart == nil && schnittStart == nil && werkzeug == .auswahl {
                 waehle(nil)
             } else {
@@ -1297,13 +1456,13 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
                 zustand?.setzeWerkzeug(.auswahl)
             }
             needsDisplay = true
-        case 123, 124, 125, 126:  // Pfeile: Auswahl um 1 mm (mit Umschalt 5 mm) verschieben
-            guard element != nil else { return super.keyDown(with: event) }
-            let s: CGFloat = event.modifierFlags.contains(.shift) ? 5 : 1
-            switch event.keyCode {
-            case 123: schubs.dx -= s
-            case 124: schubs.dx += s
-            case 125: schubs.dy -= s
+        case .links, .rechts, .runter, .hoch:  // Pfeile: Auswahl um 1 mm (mit Umschalt 5 mm) verschieben
+            guard element != nil else { return false }
+            let s: CGFloat = umschalt ? 5 : 1
+            switch t {
+            case .links: schubs.dx -= s
+            case .rechts: schubs.dx += s
+            case .runter: schubs.dy -= s
             default: schubs.dy += s
             }
             needsDisplay = true
@@ -1311,13 +1470,12 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
             schubsTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated { self?.schubsSenden() }
             }
-        default:
-            switch event.charactersIgnoringModifiers {
-            case "+", "=": zoom(faktor: 1.25, um: CGPoint(x: bounds.midX, y: bounds.midY), animiert: true)
-            case "-": zoom(faktor: 0.8, um: CGPoint(x: bounds.midX, y: bounds.midY), animiert: true)
-            default: super.keyDown(with: event)
-            }
+        case .plus:
+            zoom(faktor: 1.25, um: CGPoint(x: bounds.midX, y: bounds.midY), animiert: true)
+        case .minus:
+            zoom(faktor: 0.8, um: CGPoint(x: bounds.midX, y: bounds.midY), animiert: true)
         }
+        return true
     }
 
     private func schubsSenden() {
@@ -1378,74 +1536,109 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     // MARK: Kontextmenü
 
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard let z = zeichnung else { return nil }
-        let p = mm(convert(event.locationInWindow, from: nil))
-        let menu = NSMenu()
+    /// Eintrag des Kontextmenüs, gemeinsam für NSMenu (Mac) und UIMenu (iPad).
+    indirect enum MenueEintrag {
+        case knopf(String, destruktiv: Bool = false, @MainActor () -> Void)
+        case trenner
+        case unter(String, [MenueEintrag])
+    }
+
+    /// Einträge für die Stelle `p` (Blatt-mm); wählt das getroffene Element aus.
+    func menueEintraege(at p: CGPoint) -> [MenueEintrag] {
+        guard let z = zeichnung else { return [] }
+        var menu: [MenueEintrag] = []
+        #if os(iOS)  // iPad ohne Tastatur: Rückgängig und Wiederholen oben im Menü (am Mac im Menü Bearbeiten)
+        if let b = zustand?.bearbeiter {
+            if let t = b.rueckgaengigTitel { menu.append(.knopf("Rückgängig: \(t)") { b.rueckgaengig() }) }
+            if let t = b.wiederholenTitel { menu.append(.knopf("Wiederholen: \(t)") { b.wiederholen() }) }
+            if b.rueckgaengigTitel != nil || b.wiederholenTitel != nil { menu.append(.trenner) }
+        }
+        #endif
         let e = treffer(p, in: z)
         if let e { waehle(e) }
         switch e {
         case .mass(let id)?:
             let m = z.mass(id)
-            menu.addItem(BlattMenuePunkt("Maßtext ändern …") { [weak self] in self?.doppelklick(m?.textLage ?? p, z) })
+            menu.append(.knopf("Maßtext ändern …") { [weak self] in self?.doppelklick(m?.textLage ?? p, z) })
             if let b = z.blatt.mass(id), b.fest || b.quelle != "auto" {
                 if b.quelle == "auto" {
-                    menu.addItem(BlattMenuePunkt("Automatisch platzieren") { [weak self] in
+                    menu.append(.knopf("Automatisch platzieren") { [weak self] in
                         self?.bearbeite([.massAendern(id: id, text: nil, toleranz: nil, fest: false)])
                     })
                 }
             }
-            menu.addItem(.separator())
-            menu.addItem(BlattMenuePunkt(m?.quelle == "auto" ? "Maß ausblenden" : "Maß löschen") { [weak self] in
+            menu.append(.trenner)
+            menu.append(.knopf(m?.quelle == "auto" ? "Maß ausblenden" : "Maß löschen", destruktiv: true) { [weak self] in
                 self?.loeschen()
             })
         case .notiz?:
-            menu.addItem(BlattMenuePunkt("Notiz löschen") { [weak self] in self?.loeschen() })
+            menu.append(.knopf("Notiz löschen", destruktiv: true) { [weak self] in self?.loeschen() })
         case .ansicht(let id)?:
             let art = z.gruppe(id)?.art ?? ""
             if art == "schnitt" {
-                menu.addItem(BlattMenuePunkt("Blickrichtung umkehren") { [weak self] in
+                menu.append(.knopf("Blickrichtung umkehren") { [weak self] in
                     self?.bearbeite([.schnittUmkehren(id: id)])
                 })
-                menu.addItem(.separator())
+                menu.append(.trenner)
             }
-            menu.addItem(BlattMenuePunkt("\(ZeichnungText.ansichtArt(art)) löschen …") { [weak self] in self?.loeschen() })
+            menu.append(.knopf("\(ZeichnungText.ansichtArt(art)) löschen …", destruktiv: true) { [weak self] in
+                self?.loeschen()
+            })
         case nil:
             if let s = schriftfeldTreffer(p, z) {
-                menu.addItem(BlattMenuePunkt("\(s.titel) ändern …") { [weak self] in self?.doppelklick(p, z) })
-                menu.addItem(.separator())
+                menu.append(.knopf("\(s.titel) ändern …") { [weak self] in self?.doppelklick(p, z) })
+                menu.append(.trenner)
             }
-            let ansicht = NSMenuItem(title: "Ansicht hier hinzufügen", action: nil, keyEquivalent: "")
-            let sub = NSMenu()
-            for art in ["vorn", "oben", "links", "rechts", "hinten", "unten", "iso"] {
-                sub.addItem(BlattMenuePunkt(ZeichnungText.ansichtArt(art)) { [weak self] in
-                    self?.bearbeite([.ansichtNeu(art: art, lage: p)])
-                })
+            var sub: [MenueEintrag] = ["vorn", "oben", "links", "rechts", "hinten", "unten", "iso"].map { art in
+                .knopf(ZeichnungText.ansichtArt(art)) { [weak self] in self?.bearbeite([.ansichtNeu(art: art, lage: p)]) }
             }
-            sub.addItem(.separator())
-            sub.addItem(BlattMenuePunkt("Schnitt (Linie ziehen)") { [weak self] in
-                self?.zustand?.setzeWerkzeug(.schnitt)
-            })
-            sub.addItem(BlattMenuePunkt("Einzelheit (Kreis aufziehen)") { [weak self] in
-                self?.zustand?.setzeWerkzeug(.einzelheit)
-            })
-            ansicht.submenu = sub
-            menu.addItem(ansicht)
-            menu.addItem(BlattMenuePunkt("Notiz hier …") { [weak self] in
+            sub.append(.trenner)
+            sub.append(.knopf("Schnitt (Linie ziehen)") { [weak self] in self?.zustand?.setzeWerkzeug(.schnitt) })
+            sub.append(.knopf("Einzelheit (Kreis aufziehen)") { [weak self] in self?.zustand?.setzeWerkzeug(.einzelheit) })
+            menu.append(.unter("Ansicht hier hinzufügen", sub))
+            menu.append(.knopf("Notiz hier …") { [weak self] in
                 self?.zeigeEingabe(BlattTextEingabe(zweck: .notiz(lage: p, zeiger: nil), titel: "Notiz", text: "", ort: p))
             })
-            menu.addItem(.separator())
-            menu.addItem(BlattMenuePunkt("Blatt einpassen") { [weak self] in self?.einpassen(animiert: true) })
+            menu.append(.trenner)
+            menu.append(.knopf("Blatt einpassen") { [weak self] in self?.einpassen(animiert: true) })
         }
-        menu.addItem(.separator())
-        menu.addItem(BlattMenuePunkt("Als PDF sichern …") { [weak self] in self?.zustand?.pdfSichern?() })
-        menu.addItem(BlattMenuePunkt("Drucken …") { [weak self] in self?.zustand?.drucken?() })
+        menu.append(.trenner)
+        #if os(macOS)
+        menu.append(.knopf("Als PDF sichern …") { [weak self] in self?.zustand?.pdfSichern?() })
+        #else
+        menu.append(.knopf("Als PDF teilen …") { [weak self] in self?.zustand?.pdfSichern?() })
+        #endif
+        menu.append(.knopf("Drucken …") { [weak self] in self?.zustand?.drucken?() })
         needsDisplay = true
         return menu
     }
 
+    #if os(macOS)  // iPad: UIContextMenuInteraction am Ende der Datei
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let p = mm(convert(event.locationInWindow, from: nil))
+        let eintraege = menueEintraege(at: p)
+        guard !eintraege.isEmpty else { return nil }
+        func bauen(_ liste: [MenueEintrag]) -> NSMenu {
+            let menu = NSMenu()
+            for e in liste {
+                switch e {
+                case .knopf(let titel, _, let block): menu.addItem(BlattMenuePunkt(titel, block))
+                case .trenner: menu.addItem(.separator())
+                case .unter(let titel, let unter):
+                    let punkt = NSMenuItem(title: titel, action: nil, keyEquivalent: "")
+                    punkt.submenu = bauen(unter)
+                    menu.addItem(punkt)
+                }
+            }
+            return menu
+        }
+        return bauen(eintraege)
+    }
+    #endif
+
     // MARK: Texteingabe in einer Sprechblase
 
+    #if os(macOS)
     var eingabeOffen: Bool { popover?.isShown ?? false }
 
     func schliesseEingabe() { popover?.close() }
@@ -1454,7 +1647,6 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         popover?.close()
         let pop = NSPopover()
         pop.behavior = .transient
-        pop.delegate = self
         let ansicht = BlattTextEingabeAnsicht(eingabe: e) { [weak self, weak pop] ergebnis in
             pop?.close()
             guard let self, let ergebnis else { return }
@@ -1465,6 +1657,48 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
         pop.show(relativeTo: CGRect(x: v.x - 2, y: v.y - 2, width: 4, height: 4), of: self, preferredEdge: .maxY)
         popover = pop
     }
+    #else
+    var eingabeOffen: Bool { eingabe?.presentingViewController != nil }
+
+    func schliesseEingabe() {
+        guard let e = eingabe, e.presentingViewController != nil else { return }
+        e.dismiss(animated: true)
+    }
+
+    /// iPad: dieselbe Eingabe als Popover an der Stelle auf dem Blatt (auf kleinen Breiten als Blatt von unten).
+    func zeigeEingabe(_ e: BlattTextEingabe) {
+        schliesseEingabe()
+        guard let vc = naechsterController() else { return }
+        var host: UIHostingController<BlattTextEingabeAnsicht>?
+        let ansicht = BlattTextEingabeAnsicht(eingabe: e) { [weak self] ergebnis in
+            host?.dismiss(animated: true)
+            guard let self, let ergebnis else { return }
+            self.uebernehme(e, ergebnis)
+        }
+        let h = UIHostingController(rootView: ansicht)
+        host = h
+        h.modalPresentationStyle = .popover
+        h.preferredContentSize = h.sizeThatFits(in: CGSize(width: 420, height: 400))
+        let v = unten(punkt(e.ort))
+        h.popoverPresentationController?.sourceView = self
+        h.popoverPresentationController?.sourceRect = CGRect(x: v.x - 2, y: v.y - 2, width: 4, height: 4)
+        vc.present(h, animated: true)
+        eingabe = h
+    }
+
+    private func naechsterController() -> UIViewController? {
+        var r: UIResponder? = self
+        while let n = r?.next {
+            if let vc = n as? UIViewController {
+                var oben = vc
+                while let p = oben.presentedViewController { oben = p }
+                return oben
+            }
+            r = n
+        }
+        return nil
+    }
+    #endif
 
     private func uebernehme(_ e: BlattTextEingabe, _ r: (text: String, toleranz: String)) {
         switch e.zweck {
@@ -1485,8 +1719,163 @@ final class BlattLeinwand: NSView, NSPopoverDelegate {
 
     /// Zahlenfelder als Zahl, leere Felder als null.
     static func schriftfeldWert(_ feld: String, _ text: String) -> JSONValue { BlattWerte.schriftfeldWert(feld, text) }
+
+    #if os(iOS)
+    // MARK: iPad: Finger, Stift, Schweben, Kneifen, Tastatur
+
+    /// Punkt von UIKit (y unten) in Ansichtspunkte mit y oben wie am Mac; `unten` rechnet zurück.
+    func oben(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x, y: bounds.height - p.y) }
+    func unten(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x, y: bounds.height - p.y) }
+
+    /// Ein Finger oder der Stift wirken wie die Maus (Tippen wählt, Ziehen verschiebt Maße, Ansichten und Notizen,
+    /// auf leerem Papier das Blatt, doppelt tippen ändert Text bzw. passt ein). Zwei Finger kneifen und verschieben,
+    /// das Trackpad scrollt, der schwebende Stift hebt wie der Mauszeiger hervor, langes Drücken öffnet das Menü.
+    private func gestenEinrichten() {
+        let kneifen = UIPinchGestureRecognizer(target: self, action: #selector(gekniffen(_:)))
+        kneifen.delegate = self
+        addGestureRecognizer(kneifen)
+        let zwei = UIPanGestureRecognizer(target: self, action: #selector(zweiFinger(_:)))
+        zwei.minimumNumberOfTouches = 2
+        zwei.maximumNumberOfTouches = 2
+        zwei.allowedScrollTypesMask = .all
+        zwei.delegate = self
+        addGestureRecognizer(zwei)
+        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(geschwebt(_:))))
+        addInteraction(UIContextMenuInteraction(delegate: self))
+    }
+
+    @objc private func gekniffen(_ g: UIPinchGestureRecognizer) {
+        guard g.state == .began || g.state == .changed else { return }
+        interagiere()
+        zoom(faktor: g.scale, um: oben(g.location(in: self)))
+        g.scale = 1
+    }
+
+    @objc private func zweiFinger(_ g: UIPanGestureRecognizer) {
+        guard g.state == .began || g.state == .changed else { return }
+        let d = g.translation(in: self)
+        g.setTranslation(.zero, in: self)
+        interagiere()
+        eingepasst = false
+        ursprung.x += d.x
+        ursprung.y -= d.y
+        ansichtGeaendert()
+    }
+
+    @objc private func geschwebt(_ g: UIHoverGestureRecognizer) {
+        switch g.state {
+        case .began, .changed: zeigerBewegt(oben(g.location(in: self)))
+        default: zeigerWeg()
+        }
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        Self.tasten = event?.modifierFlags ?? []
+        if !isFirstResponder { becomeFirstResponder() }
+        guard let t = touches.first, (event?.allTouches?.count ?? 1) == 1 else {
+            gesteAbbrechen()  // zweiter Finger: Kneifen und Verschieben übernehmen
+            return
+        }
+        druecke(oben(t.location(in: self)), klicks: t.tapCount, schwenken: false)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        Self.tasten = event?.modifierFlags ?? []
+        guard let t = touches.first, (event?.allTouches?.count ?? 1) == 1 else { return }
+        ziehe(oben(t.location(in: self)), nurAchse: Self.tasteUmschalt)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let t = touches.first else { return }
+        lasse(oben(t.location(in: self)))
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        gesteAbbrechen()
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    /// Hardware-Tastatur: dieselben Tasten wie am Mac (⌫, Esc, Pfeile, + und −).
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var rest = Set<UIPress>()
+        for p in presses {
+            guard let k = p.key else {
+                rest.insert(p)
+                continue
+            }
+            let t: Taste?
+            switch k.keyCode {
+            case .keyboardDeleteOrBackspace, .keyboardDeleteForward: t = .loeschen
+            case .keyboardEscape: t = .esc
+            case .keyboardLeftArrow: t = .links
+            case .keyboardRightArrow: t = .rechts
+            case .keyboardDownArrow: t = .runter
+            case .keyboardUpArrow: t = .hoch
+            default:
+                switch k.charactersIgnoringModifiers {
+                case "+", "=": t = .plus
+                case "-": t = .minus
+                default: t = nil
+                }
+            }
+            if let t, k.modifierFlags.isDisjoint(with: [.command, .control]), taste(t, umschalt: k.modifierFlags.contains(.shift)) {
+                continue
+            }
+            rest.insert(p)
+        }
+        if !rest.isEmpty { super.pressesBegan(rest, with: event) }
+    }
+
+    /// ⌘Z und ⇧⌘Z nehmen Änderungen am Blatt zurück (am Mac über das Menü Bearbeiten).
+    override var keyCommands: [UIKeyCommand]? {
+        let zurueck = UIKeyCommand(title: "Rückgängig", action: #selector(blattRueckgaengig), input: "z", modifierFlags: .command)
+        let wieder = UIKeyCommand(title: "Wiederholen", action: #selector(blattWiederholen), input: "z",
+                                  modifierFlags: [.command, .shift])
+        zurueck.wantsPriorityOverSystemBehavior = true
+        wieder.wantsPriorityOverSystemBehavior = true
+        return [zurueck, wieder]
+    }
+
+    @objc private func blattRueckgaengig() { zustand?.bearbeiter.rueckgaengig() }
+    @objc private func blattWiederholen() { zustand?.bearbeiter.wiederholen() }
+
+    /// Einträge des Kontextmenüs als UIMenu; Trenner werden zu Gruppen.
+    static func uiMenue(_ liste: [MenueEintrag], titel: String = "") -> UIMenu {
+        var kinder: [UIMenuElement] = []
+        var gruppe: [UIMenuElement] = []
+        for e in liste {
+            switch e {
+            case .knopf(let t, let destruktiv, let block):
+                gruppe.append(UIAction(title: t, attributes: destruktiv ? .destructive : []) { _ in block() })
+            case .trenner:
+                if !gruppe.isEmpty { kinder.append(UIMenu(options: .displayInline, children: gruppe)) }
+                gruppe = []
+            case .unter(let t, let unter):
+                gruppe.append(uiMenue(unter, titel: t))
+            }
+        }
+        if !gruppe.isEmpty { kinder.append(UIMenu(options: .displayInline, children: gruppe)) }
+        return UIMenu(title: titel, children: kinder)
+    }
+
+    /// Kleiner Ring an der Stelle statt des ganzen Blatts als Vorschau des Menüs.
+    fileprivate func menueVorschau(_ i: UIContextMenuInteraction) -> UITargetedPreview {
+        let d: CGFloat = 30
+        let ring = UIView(frame: CGRect(x: 0, y: 0, width: d, height: d))
+        ring.backgroundColor = UIColor(white: 1, alpha: 0.12)
+        ring.layer.cornerRadius = d / 2
+        ring.layer.borderWidth = 2
+        ring.layer.borderColor = Self.auswahlFarbe.cgColor
+        let p = UIPreviewParameters()
+        p.backgroundColor = .clear
+        p.visiblePath = UIBezierPath(ovalIn: ring.bounds)
+        return UITargetedPreview(view: ring, parameters: p, target: UIPreviewTarget(container: self, center: i.location(in: self)))
+    }
+    #endif
 }
 
+#if os(macOS)  // nur am Mac: NSMenu (iPad: `uiMenue`)
 /// Menüpunkt mit Block.
 final class BlattMenuePunkt: NSMenuItem {
     private let block: () -> Void
@@ -1804,3 +2193,37 @@ enum MassVorschau {
 }
 
 private func + (p: CGPoint, v: CGVector) -> CGPoint { CGPoint(x: p.x + v.dx, y: p.y + v.dy) }
+
+#if os(iOS)
+extension BlattLeinwand {
+    /// Wie `NSView.needsDisplay`, damit der gemeinsame Code auf beiden Geräten gleich neu zeichnen lässt.
+    var needsDisplay: Bool {
+        get { false }
+        set { if newValue { setNeedsDisplay() } }
+    }
+}
+
+extension BlattLeinwand: UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate {
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true  // Kneifen und Verschieben zugleich
+    }
+
+    func contextMenuInteraction(_ i: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        gesteAbbrechen()
+        let eintraege = menueEintraege(at: mm(oben(location)))
+        guard !eintraege.isEmpty else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in Self.uiMenue(eintraege) }
+    }
+
+    func contextMenuInteraction(_ i: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+                                highlightPreviewForItemWithIdentifier identifier: any NSCopying) -> UITargetedPreview? {
+        menueVorschau(i)
+    }
+
+    func contextMenuInteraction(_ i: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+                                dismissalPreviewForItemWithIdentifier identifier: any NSCopying) -> UITargetedPreview? {
+        menueVorschau(i)
+    }
+}
+#endif
