@@ -53,6 +53,8 @@ final class AppSession: ObservableObject {
     @Published var zukaufRequest: ZukaufDialogRequest?
     /// iPad: offene Dateiwahl (Dateien-App), gezeigt vom Hauptfenster (`dateienWaehlen`, I-8). Am Mac immer nil.
     @Published var dateiWahl: DateiWahl?
+    /// iPad: Protokoll, Lagerkatalog oder Zukaufteil als Blatt über dem Hauptfenster (am Mac eigene Fenster, I-8).
+    @Published var padBlatt: PadBlatt?
     /// Die zuletzt gezeigte Dateiwahl, bis ihr Ergebnis da ist (SwiftUI schließt den Dialog teils vor dem Ergebnis).
     private var dateiWahlOffen: DateiWahl?
 
@@ -206,17 +208,24 @@ final class AppSession: ObservableObject {
         openWindowAction?(id: WindowID.project)
     }
 
-    /// Protokoll als eigenes Fenster (am Mac). iPad: Protokoll, Lagerkatalog und Zukaufteil als Blatt folgen in I-8; bis
-    /// dahin öffnen `showLog`, `showCatalog` und der Zukauf-Dialog dort nichts (es gibt keine Szene dafür).
+    /// Protokoll als eigenes Fenster am Mac; auf dem iPad gibt es nur eine Szene, dort als Blatt (`padBlatt`).
     func showLog() {
+        #if os(macOS)
         openWindowAction?(id: WindowID.log)
+        #else
+        padBlatt = .protokoll
+        #endif
     }
 
     /// Fenster Lagerkatalog öffnen, auf Wunsch mit einem Eintrag ausgewählt oder einem Abschnitt (Vorschläge).
     func showCatalog(focus: CatalogFocus? = nil, section: CatalogSection? = nil) {
         if let focus { catalogFocus = focus }
         if let section { catalogSectionRequest = section }
+        #if os(macOS)
         openWindowAction?(id: WindowID.catalog)
+        #else
+        padBlatt = .lagerkatalog
+        #endif
     }
 
     private func projectChanged(_ project: ProjectInfo?) {
@@ -512,4 +521,10 @@ struct DateiWahl: Identifiable {
     var typen: [UTType]
     var mehrere: Bool
     var fertig: ([URL]) -> Void
+}
+
+/// Blätter auf dem iPad, die am Mac eigene Fenster sind.
+enum PadBlatt: String, Identifiable {
+    case protokoll, lagerkatalog, zukauf
+    var id: String { rawValue }
 }

@@ -45,7 +45,11 @@ extension AppSession {
         var r = request ?? .new()
         if r.mode == .new, r.ebene == .projekt, model.project == nil { r.ebene = .eigen }
         zukaufRequest = r
+        #if os(macOS)
         showWindow(WindowID.zukauf)
+        #else
+        padBlatt = .zukauf  // iPad: eine Szene, der Dialog als Blatt
+        #endif
     }
 
     /// Vorschlag von Claude (oder vorhandenes Zukaufteil) im Dialog öffnen.

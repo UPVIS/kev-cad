@@ -183,6 +183,11 @@ struct Hauptfenster: View {
                       allowsMultipleSelection: session.dateiWahl?.mehrere ?? false) { ergebnis in
             session.dateiWahlBeendet(ergebnis)
         }
+        // iPad: Protokoll, Lagerkatalog und Zukaufteil als Blatt (am Mac eigene Fenster)
+        .sheet(item: $session.padBlatt) { blatt in
+            PadBlattAnsicht(blatt: blatt, model: model)
+                .environmentObject(session)
+        }
         #endif
         .focusedSceneObject(state)
         .focusedSceneObject(versionen)
@@ -543,3 +548,41 @@ extension View {
         #endif
     }
 }
+
+#if os(iOS)
+/// Inhalt eines Blatts auf dem iPad: dieselben Ansichten wie die Fenster am Mac, mit „Fertig“ oben.
+private struct PadBlattAnsicht: View {
+    @EnvironmentObject private var session: AppSession
+    let blatt: PadBlatt
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        NavigationStack {
+            inhalt
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if blatt != .zukauf {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Fertig") { session.padBlatt = nil }
+                        }
+                    }
+                }
+        }
+        .presentationDetents([.large])
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var inhalt: some View {
+        switch blatt {
+        case .protokoll:
+            LogWindow(model: model).navigationTitle("Protokoll")
+        case .lagerkatalog:
+            CatalogWindow(model: model).navigationTitle("Lagerkatalog")
+        case .zukauf:
+            ZukaufDialog(model: model, request: session.zukaufRequest ?? .new()) { session.padBlatt = nil }
+                .navigationTitle("Zukaufteil hinzufügen")
+        }
+    }
+}
+#endif
