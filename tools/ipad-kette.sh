@@ -9,11 +9,16 @@
 #   KEVCAD_KETTE_NAME=echt   Code unverändert (mit Namen und Adressen) ans iPad
 #
 #   tools/ipad-kette.sh            Voraussetzung: tools/fern.sh testbau ipad und tools/ipad-bau.sh app
+#   tools/ipad-kette.sh --bereiche I-9: statt der Ansicht der Selbsttest der Bereiche am iPad (KEVCAD_SELFTEST=pad-bereiche,
+#                                  `PadSelbsttest.bereiche`): Zeichnung, Bauplan, Druck, Bestand mit Daten vom Kernel am Mac;
+#                                  Bericht und Bilder nach build/ipad-kette/bereiche/
 #
 # Keine Fenster auf Kevins Bildschirm: Die Mac-Testvariante läuft mit KEVCAD_TEST_VERSTECKT=1, der Simulator bootet nur über
 # simctl. Ergebnis und Bild unter build/ipad-kette/. Ausgang 0 nur, wenn das iPad am Eingang verbunden war und das Modell
 # gebaut wurde.
 set -uo pipefail
+BEREICHE=0
+[ "${1:-}" = "--bereiche" ] && BEREICHE=1
 # Ein Simulator und eine Mac-Testvariante „ipad“ für alle Arbeitskopien: der ganze Test unter der Simulator-Sperre
 if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
   exec env KEVCAD_IPAD_SIM_GESPERRT=1 lockf -k /tmp/kevcad-ipad-sim.lock "$0" "$@"
@@ -85,7 +90,14 @@ fi
 xcrun simctl bootstatus "$UDID" > /dev/null || exit 1
 xcrun simctl terminate "$UDID" de.upvis.kevcad.ipad > /dev/null 2>&1
 xcrun simctl install "$UDID" "$PAD_APP" || exit 1
-SIMCTL_CHILD_KEVCAD_PAD_KOPPLUNG="$CODE" SIMCTL_CHILD_KEVCAD_PAD_OHNE_KOPPLUNGSBLATT=1 \
+SELBSTTEST=()  # leer lassen statt KEVCAD_SELFTEST="" (ein leerer Wert zählt in der App schon als Selbsttest)
+if [ "$BEREICHE" = 1 ]; then
+  SELBSTTEST=(SIMCTL_CHILD_KEVCAD_SELFTEST=pad-bereiche)
+  DATEN=$(xcrun simctl get_app_container "$UDID" de.upvis.kevcad.ipad data)
+  BERICHT="$DATEN/Library/Application Support/de.upvis.kevcad.ipad/selftest-pad/bericht.txt"
+  rm -rf "$(dirname "$BERICHT")"  # kein alter Bericht eines früheren Laufs
+fi
+env SIMCTL_CHILD_KEVCAD_PAD_KOPPLUNG="$CODE" SIMCTL_CHILD_KEVCAD_PAD_OHNE_KOPPLUNGSBLATT=1 ${SELBSTTEST[@]+"${SELBSTTEST[@]}"} \
   xcrun simctl launch "$UDID" de.upvis.kevcad.ipad > /dev/null || exit 1
 
 # Warten, bis das iPad am Eingang hängt (Port: MCP-Port der Testvariante + 2)
@@ -128,6 +140,21 @@ grep -q "run -> Lauf" "$OUT/mcp.txt" || { echo "Modell nicht gebaut:"; cat "$OUT
 echo "==> Modell gebaut: $(grep "run ->" "$OUT/mcp.txt" | cut -c1-90)"
 sleep "${KEVCAD_IPAD_WARTEN:-8}"
 xcrun simctl io "$UDID" screenshot "$OUT/ipad.png" > /dev/null 2>&1 && echo "==> Bildschirmfoto: $OUT/ipad.png"
+
+if [ "$BEREICHE" = 1 ]; then
+  # I-9: Selbsttest der Bereiche am iPad abwarten (Blätter erzeugen und rechnen dauert am längsten)
+  for _ in $(seq 1 "${KEVCAD_IPAD_BEREICHE_FRIST:-900}"); do
+    grep -q "^ENDE" "$BERICHT" 2>/dev/null && break
+    sleep 1
+  done
+  rm -rf "$OUT/bereiche"
+  cp -R "$(dirname "$BERICHT")" "$OUT/bereiche" 2>/dev/null
+  [ -f "$OUT/bereiche/bericht.txt" ] || { echo "Kein Bericht des Selbsttests (läuft er im Debug-Bau?)"; exit 1; }
+  cat "$OUT/bereiche/bericht.txt"
+  grep -q "^ENDE bestanden" "$OUT/bereiche/bericht.txt" || { echo "Selbsttest der Bereiche nicht bestanden"; exit 1; }
+  echo "==> Bereiche am iPad mit Daten vom Mac geprüft (Bilder: $OUT/bereiche/)"
+  exit 0
+fi
 
 # I-6: Ansicht in beide Richtungen über den Testweg des Kernels (nur mit KEVCAD_KERNEL_TESTWEG=1)
 "$PY" -I - "$PORT" > "$OUT/ansicht.txt" 2>&1 << 'PYEOF'

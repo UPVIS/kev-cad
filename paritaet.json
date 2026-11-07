@@ -21,6 +21,14 @@
     "app/Sources/KevCAD/Mac/WindowPlacement.swift": "Testfenster auf dem zweiten Monitor; das iPad läuft im Simulator",
     "app/Sources/KevCAD/Mac/ExportFenster.swift": "Dialog Dokumente exportieren als NSWindow-Blatt; am iPad als SwiftUI-Blatt aus dem Bereich Dokumente"
   },
+  "pruefungen_nur_mac": {
+    "_hinweis": "I-9: Selbsttests, die nur am Mac laufen, und womit das iPad dasselbe prüft. Nur Doku, die Prüfung liest den Schlüssel nicht.",
+    "Tastenkürzel über NSEvent (Dokumente-, Viewer-, Oberflächen-Selbsttest)": "NSEvent und Menüs gibt es am iPad nicht; die Hardware-Tastatur geht dort über pressesBegan und keyCommands (BlattLeinwand), Gesten prüft XCUITest (tools/ipad-bau.sh gesten)",
+    "Fenster an den Rand, eigene Fenster (Protokoll, Lagerkatalog, Zukauf)": "Das iPad hat eine Szene; die Fenster sind dort Blätter (padBlatt), PadSelbsttest prüft sie",
+    "Bilder von außen (screencapture, Fensterbild über MCP in AppController+Flaeche)": "Am iPad macht der Selbsttest seine Bilder selbst (drawHierarchy), der Kettentest dazu simctl io screenshot",
+    "Klick in die Bildmitte trifft den Viewer (AppController+SelfTest)": "Am iPad tippen die Gesten-Tests von außen wie ein Finger",
+    "Bereiche mit Daten vom Kernel (Dokumente, Bauplan, Druck, Bestand)": "Am iPad über die Kopplung an eine Mac-Testvariante: tools/ipad-kette.sh --bereiche (PadSelbsttest, Stufe pad-bereiche)"
+  },
   "nur_ipad": {
     "app/Sources/KevCADPad/RandWischen.swift": "Vom Rand wischen öffnet die Leisten (I-3b); am Mac gibt es keinen Rand zum Wischen, dort ⌘1, ⌘2 und die Knöpfe der Kopfleiste",
     "app/Sources/KevCADPad/PadTestZustand.swift": "Zustand für die Gesten-Tests im Simulator (XCUITest, nur Debug); am Mac prüfen die Selbsttests der App direkt am App-Kern"

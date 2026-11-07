@@ -40,7 +40,9 @@ extension AppController {
             log(trifft ? .info : .error, "Selbsttest: Klick in der Mitte trifft \(trifft ? "den Viewer" : String(describing: hit))")
         }
         #else
-        _ = window  // iPad: Berührung in der Bildmitte prüfen folgt in I-9 (Selbsttests im iPad-Simulator)
+        // iPad: Tippen und Gesten auf den Viewer prüfen die Gesten-Tests (XCUITest, `tools/ipad-bau.sh gesten`) von außen,
+        // wie ein Finger; ein Treffertest von innen wäre dort schwächer
+        _ = window
         #endif
         let size = mtk.bounds.size
         let scale = size.width > 0 ? mtk.drawableSize.width / size.width : 2

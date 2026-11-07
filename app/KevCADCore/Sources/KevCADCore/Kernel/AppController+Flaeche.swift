@@ -37,7 +37,8 @@ extension AppController {
     }
 
     /// Testvarianten: Bild der Oberfläche ohne Bildschirmaufnahme (der Viewer bleibt darin leer), für Selbsttests auf einem
-    /// Rechner ohne Berechtigung dafür (kernel/tools/kachel_selbsttest.py). Nur am Mac (iPad: folgt in I-9).
+    /// Rechner ohne Berechtigung dafür (kernel/tools/kachel_selbsttest.py). Nur am Mac; das iPad macht seine Bilder im
+    /// Selbsttest selbst (`PadSelbsttest`, `drawHierarchy`), ohne MCP-Weg von außen.
     private func fensterbild(nach pfad: String) -> (Bool, String?) {
         #if os(macOS)
         guard let v = (NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible })?.contentView,
