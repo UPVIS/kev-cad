@@ -628,3 +628,74 @@ Rechenprozess (7,8 → 12,2 s) und bestimmt mit der FEM (Ende 13,0 s) den Endsta
 - Tests (`test_geo_helfer.py`): Helfer gleich wie selbst gerechnet (Kollisionen und Griffraum), toter Helfer (der
   Rechenprozess rechnet selbst, der nächste Auftrag startet neue), überholter Auftrag, Verteilung, nur bereite Helfer,
   über die echte Laufzeit mit und ohne Helfer gleich (die Helfer laufen dort als Kinder des Rechenprozesses).
+
+### A6 Einheitslastfälle geänderter FEM-Teile vorziehen (07.11.2026)
+
+- `statik/festkoerper/auftrag.py`: Nach der Statik merkt sich der Rechenprozess den Aufbau des FEM-Auftrags
+  (`merke_auftrag`). Gleich nach dem Aufbau der Körper des nächsten Laufs (echte Läufe mit Stufen, `pruefung/lauf.py`)
+  baut er daraus einen vorgezogenen Auftrag (`vorab_teile`): die Teile, deren Form, Lage oder Nachbarn sich geändert
+  haben, mit BRep und Nachbarnetzen des neuen Laufs und den Lagern und Lastflächen des letzten. Ein eigener FEM-Prozess
+  (`vorab_starten`, `"vorab": true`) rechnet daraus Netz, Steifigkeit, Kontaktflächen und Einheitslastfälle, parallel zu
+  Druck und Statik; ein neuer Lauf beendet ihn. Ohne Vorlage bleiben Teile mit ausdrücklichen Lagern (Simulation),
+  Flächenlasten und „Grenze suchen“. `KEVCAD_FEM_VORAB=0` schaltet ab.
+- `statik/festkoerper/prozess.py`: Wer Einheitsfälle rechnet, hält eine Sperrdatei je Einheitszustand mit seiner
+  Prozessnummer (`<schlüssel>.arbeit`); der Auftrag nach der Statik wartet auf eine fremde Sperre, statt doppelt zu
+  rechnen, und nimmt solche Teile in den eigenen Prozess (kein Teilprozess, der nur wartet). Verwaiste Sperren werden
+  übernommen, endet der vorgezogene Prozess ohne Ergebnis, rechnet der Auftrag selbst.
+- Ergebnis: Vorziehen füllt nur den Speicher der Einheitsfälle, deren Schlüssel alle Eingaben enthält. Stimmen Lager
+  oder Lastflächen im echten Auftrag nicht (andere Auswahl der Teile, andere Lager), trifft er nur nicht.
+- Grenze: Fangrolle und Schieberolle rechnen auch nach A6 Fall für Fall (ihre Last trifft auf dem Netz keine
+  Kontaktfläche, die Ersatzfläche um den Lastpunkt hängt am Punkt, der mit der Rolle wandert); sie laufen aber parallel
+  zur Montage und liegen nicht auf dem Weg zum Endstand.
+- Messung (Netze der Basis, abwechselnd ohne Vorziehen und mit, zwei Runden, dazu ein Lauf mit Gleichheitsprobe; Ablagen
+  `…-a6r1-ohne`, `…-a6r1-mit`, `…-a6r2-ohne`, `…-a6r2-mit`, `…-a6-probe`). Die Runden liefen unter sehr hoher Fremdlast
+  (andere Agenten), der Lauf mit Probe bei Last um 20. „Prüfung fertig“ ist das CHECK `done` des Rechenprozesses:
+
+| Lauf, Schritt | Variante | Endstand | Prüfung fertig | FEM (Start → Ende) | Schieberschlitten im Auftrag | Last | gleich |
+|---|---|---|---|---|---|---|---|
+| R1, `laufrolle_l=90` | ohne | 10,9 s | 8,1 s | 6,1 → 10,9 s | 3,9 und 4,3 s | 38 → 35 | – |
+| R1, `laufrolle_l=90` | mit | 9,2 s | 9,1 s | 7,2 → 9,2 s | je 0,16 s | 56 → 54 | ja |
+| R1, `laufrolle_l=95` | ohne | 14,9 s | 11,9 s | 8,0 → 14,8 s | 6,0 und 6,3 s | 33 → 75 | – |
+| R1, `laufrolle_l=95` | mit | 9,6 s | 9,4 s | 7,6 → 9,6 s | je 0,16 s | 54 → 49 | ja |
+| R2, `laufrolle_l=90` | ohne | 23,9 s | 19,8 s | 16,8 → 23,9 s | 3,9 und 4,2 s | 64 → 177 | – |
+| R2, `laufrolle_l=90` | mit | 11,9 s | 11,8 s | 8,9 → 11,9 s | 0,15 und 0,19 s | 128 → 116 | ja |
+| R2, `laufrolle_l=95` | ohne | 16,5 s | 10,7 s | 6,7 → 16,4 s | 7,1 und 8,3 s | 177 → 195 | – |
+| R2, `laufrolle_l=95` | mit | 11,2 s | 10,8 s | 8,0 → 11,2 s | 1,1 und 0,2 s | 107 → 93 | ja |
+| Probe, `laufrolle_l=90` | mit | 8,3 s | 8,3 s | 6,6 → 8,2 s | – | 20 → 19 | ja (Probe) |
+| Probe, `laufrolle_l=95` | mit | 9,1 s | 9,1 s | 7,3 → 9,0 s | – | 18 → 16 | ja (Probe) |
+
+  „gleich“: Endstand mit gegen ohne Vorziehen mit denselben Netzen (`--vergleich`) bzw. Gleichheitsprobe gegen einen
+  frischen Prozess; beides in allen Schritten gleich, erstmals ohne „bekannte Schwankungen“.
+- Ergebnis: Die FEM endet 0,0 bis 0,4 s nach der Montage, der Endstand ist das Ende der Hauptprüfung (Lauf 2,4 s,
+  Durchdringung, Druck, Statik bis 6,6 bis 7,3 s, Montage). Weiter senken ihn nur Schritte an Statik und Montage (B2 für
+  Statik-Schnitte, B4, B5). Der Plan erwartete etwa 6 s bei Last 20, gemessen 8,3 bis 9,1 s.
+- Tests (`test_festkoerper.py`): vorgezogene Einheitsfälle treffen, fertig und während der echte Auftrag schon wartet,
+  Ergebnis Bit für Bit wie frisch; andere Auswahl der Teile bzw. andere Lager ohne Einfluss.
+
+### Geometrie-Helfer im Leerlauf beenden (07.11.2026, Entscheidung Kevin)
+
+- `bedingungen/helfer.py`: Ein Wächterfaden beendet die Helfer nach 10 Minuten ohne Auftrag (`KEVCAD_GEO_HELFER_LEERLAUF_S`),
+  nicht solange ein Auftrag rechnet. Zu Beginn des nächsten echten Laufs startet der Rechenprozess sie wieder
+  (`helfer.aufwecken` in `worker.py`), damit sie während model.py laden.
+- Messung (Leerlauffrist 5 s, 12 s Pause nach jedem Endstand, gegen die Vorgabe, zwei Runden, Ablagen `…-ll1-*`,
+  `…-ll2-*`, Last 25 bis 143): In jedem Schritt neue Helfer. Sie beginnen 0,5 bis 5,7 s nach Prüfbeginn statt 0,1 s und
+  rechnen mehr exakte Schnitte (1.023 bis 1.101 statt 761 bis 905; ihr Paarspeicher ist weg). Der Bewegungsraum ist
+  3,3 bis 13,1 s nach Prüfbeginn fertig statt 2,2 bis 3,3 s. Den Endstand verlängert das um 0,2 bis 1,3 s, einmal unter
+  einem Lastsprung um 7 s; endet die Montage später als der Bewegungsraum, um nichts.
+
+### S0 Rutschen deterministisch (07.11.2026)
+
+- `statik/s0.py` `rutschen`: Bei gleicher Haftung entschied `min` nach der Reihenfolge einer Menge (Hash-Zufall je
+  Prozess); jetzt nach Namen. Test mit sechs Werten für `PYTHONHASHSEED`.
+
+### test_gleitendes_lager_schraeg_im_stabwerk (07.11.2026)
+
+- Ursache: Das Rohr zwischen gelenkigem und schräg gleitendem Lager dreht frei um seine Achse; K hat dort einen
+  Eigenwert von 1e-17 des größten. Koppelt G durch Rechenrauschen minimal an diese Richtung (auf dem Mac mini ja, lokal
+  nicht), kam eine Knicklast nahe 0 heraus, auf 0 gerundet, und `bewertung.py` teilte durch sie. Die Statik scheiterte,
+  `LETZTER` blieb vom Test davor stehen, daher der `KeyError: 'Rohr'`. Gefunden über eine Diagnose im Test und die Stelle
+  im Befund „Prüfung … ist fehlgeschlagen“ (nennt jetzt Datei und Zeile im Kernel).
+- Behoben in `statik/stabwerk.py`: Beim Knicken zählen nur Richtungen, in denen K steif ist (`_mechanismus`,
+  `_ohne_mechanismen`, Schwelle 1e-13); Beweglichkeit meldet die Statik getrennt. Die Bewertung teilt nicht mehr durch
+  eine Knicklast von 0. Am Kugelschieber in allen 16 Knickproblemen dieselbe Knicklast wie vorher. Voller Lauf auf dem
+  Mac mini danach grün (1369 bestanden).
