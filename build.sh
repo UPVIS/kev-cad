@@ -185,6 +185,8 @@ if [ "$MODE" = "--core-tests" ]; then
     exit $?
   fi
   (cd app/KevCADCore && swift test 2>&1 | { grep -E "error:|failed|Executed [0-9]+ tests" || true; })
+  echo "==> Tests Paritätsprüfung (tools/paritaet.py)"
+  PYTHONUTF8=1 kernel/.venv/bin/python -m unittest -q tools/test_paritaet.py 2>&1 | tail -3
   echo "==> Tests Kernel"
   (cd kernel && PYTHONUTF8=1 .venv/bin/python -m pytest -q)
   exit 0

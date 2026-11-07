@@ -138,7 +138,7 @@ NAME=${3:-}
 ID=${KEVCAD_FERN_ID:?KEVCAD_FERN_ID fehlt}
 FRIST=${KEVCAD_FERN_FRIST:-3600}
 export KIND KEVCAD_FERN_ID
-case "$KIND" in tests|testbau|bundle) ;; *) echo "mini.sh: unbekannte Art $KIND"; exit 2 ;; esac
+case "$KIND" in tests|ipadtests|testbau|bundle) ;; *) echo "mini.sh: unbekannte Art $KIND"; exit 2 ;; esac
 
 HELD=""; TICKET=""; JOB_PID=""; TIMER_PID=""; WATCH_PID=""; WAITED=0; T_START=$(date +%s); FINISHING=0
 
@@ -191,6 +191,9 @@ trap 'on_signal PIPE 141' PIPE
 # Werkzeuge prüfen, bevor ein Platz belegt wird
 if ! command -v uv >/dev/null; then
   echo "==> Mini: uv fehlt (~/.local/bin/uv); einrichten mit tools/fern.sh einrichten"; finish 86
+fi
+if [ "$KIND" = ipadtests ] && ! xcrun simctl list runtimes 2>/dev/null | grep -qE '^iOS '; then
+  echo "==> Mini: keine iOS-Laufzeit für den iPad-Simulator; laden mit tools/fern.sh einrichten ipad"; finish 86
 fi
 if [ "$KIND" != tests ]; then
   if ! command -v xcodegen >/dev/null; then
@@ -300,6 +303,14 @@ case "$KIND" in
     echo "==> Mini: Tests laufen (Testplatz)"
     run ./build.sh --core-tests
     rc=$?
+    ;;
+  ipadtests)
+    # Ein Simulator für alle: nur auf dem Testplatz (ipad-bau.sh nimmt dazu die Simulator-Sperre)
+    acquire test
+    echo "==> Mini: Kern-Tests im iPad-Simulator (Testplatz)"
+    run tools/ipad-bau.sh test
+    rc=$?
+    [ $rc -ne 0 ] && tail -40 build/ipad-test-test.log 2>/dev/null | grep -E "error:|failed|Executed" | head -30
     ;;
   testbau)
     run ./build.sh --test ${NAME:+"$NAME"}

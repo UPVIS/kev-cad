@@ -1,0 +1,36 @@
+{
+  "_hinweis": "Parität Mac und iPad (PLAN-IPAD.md, I3). Prüfen: python3 tools/paritaet.py, nach dem Nachziehen: python3 tools/paritaet.py abgleichen <Pfad>. Jede Hüllen-Datei hat ein Gegenstück (paare) oder eine Ausnahme mit Grund (nur_mac, nur_ipad).",
+  "mac_huelle": ["app/Sources/KevCAD/Mac/**/*.swift"],
+  "ipad_huelle": ["app/Sources/KevCADPad/**/*.swift"],
+  "paare": {
+    "app/Sources/KevCAD/Mac/KevCADApp.swift": "app/Sources/KevCADPad/KevCADPadApp.swift"
+  },
+  "nur_mac": {
+    "app/Sources/KevCAD/Mac/Commands.swift": "Menüleiste des Mac; am iPad erreicht man die Befehle über Oberfläche, Gesten und den Befehlskatalog (I-4). Neuer Menübefehl: iPad-Weg im selben Schritt",
+    "app/Sources/KevCAD/Mac/AnimationCommands.swift": "Menü Animation; am iPad Leiste der Animationskachel",
+    "app/Sources/KevCAD/Mac/BestandCommands.swift": "Menüpunkte Bestand; am iPad im Bereich Material",
+    "app/Sources/KevCAD/Mac/DokumenteCommands.swift": "Menü Dokumente; am iPad Werkzeugleiste des Bereichs Dokumente",
+    "app/Sources/KevCAD/Mac/MaterialCommands.swift": "Menü Material; am iPad im Bereich Material",
+    "app/Sources/KevCAD/Mac/OberflaechenCommands.swift": "Untermenüs des Menüs Modell; am iPad Kopfleiste, Kacheln und Befehlskatalog (I-4)",
+    "app/Sources/KevCAD/Mac/RenderCommands.swift": "Menüpunkt Rendern; am iPad Kachel Rendern",
+    "app/Sources/KevCAD/Mac/StockCommands.swift": "Menüpunkte Stückliste; am iPad Kachel Stückliste",
+    "app/Sources/KevCAD/Mac/VersionenCommands.swift": "Menü Versionen; am iPad Versionsleiste",
+    "app/Sources/KevCAD/Mac/ZukaufCommands.swift": "Menüpunkt Zukaufteil; am iPad über das Teilen-Blatt aus Safari (I-8)",
+    "app/Sources/KevCAD/Mac/KeyboardGuard.swift": "NSEvent-Monitor gegen Menükürzel in Textfeldern; UIKit leitet Tasten an Textfelder, kein Gegenstück nötig",
+    "app/Sources/KevCAD/Mac/FensterRand.swift": "Fenster an den Bildschirmrand (AppKit); am iPad übernehmen Stage Manager und geteilter Bildschirm",
+    "app/Sources/KevCAD/Mac/WindowPlacement.swift": "Testfenster auf dem zweiten Monitor; das iPad läuft im Simulator",
+    "app/Sources/KevCAD/Mac/ExportFenster.swift": "Dialog Dokumente exportieren als NSWindow-Blatt; am iPad als SwiftUI-Blatt aus dem Bereich Dokumente"
+  },
+  "nur_ipad": {},
+  "gemeinsam": ["app/Sources/KevCAD/**/*.swift", "app/KevCADCore/Sources/**/*.swift"],
+  "gemeinsam_ohne": ["app/Sources/KevCAD/Mac/"],
+  "begruendung_muster": "nur am Mac|nur Mac|nur auf dem Mac|nur der Mac|gibt es nur am Mac|am Mac allein|Mac-only|ohne Gegenstück|kein Gegenstück|iPad:|auf dem iPad (nicht|ohne|gibt es|braucht|übernimmt|hat|kommt|geht|liegt)|am iPad (nicht|ohne|gibt es|braucht|übernimmt|hat|kommt|geht)",
+  "marken_quellen": ["app/Sources/**/*.swift", "app/KevCADCore/Sources/**/*.swift", "kernel/src/**/*.py", "tools/**/*.sh"],
+  "befehlskatalog": {
+    "_hinweis": "Vorbereitet für I-4: Sobald Einträge des Katalogs ein Feld für den iPad-Auslöser tragen, meldet die Prüfung jeden Befehl ohne. Feldnamen hier anpassen, wenn I-4 sie anders nennt.",
+    "datei": "app/KevCADCore/Sources/KevCADCore/Viewer/Tastenbelegung.swift",
+    "eintrag": "Belegung\\(befehl:\\s*\\.(\\w+)",
+    "ipad_felder": ["ipad:", "geste:", "kranz:", "ausloeserIPad:"],
+    "nur_mac": {}
+  }
+}

@@ -1,0 +1,179 @@
+{
+ "huellen": {
+  "app/Sources/KevCAD/Mac/AnimationCommands.swift": {
+   "summe": "873bdf3fb7a1d4fb00fe46ab7c6d416a59f0ca1ea91455293ca8327074657eb1"
+  },
+  "app/Sources/KevCAD/Mac/BestandCommands.swift": {
+   "summe": "b59bf288dd30e8fee4b2bf3f10942b1359436c8fd194729e5fab3ca824c5c98c"
+  },
+  "app/Sources/KevCAD/Mac/Commands.swift": {
+   "summe": "fd0c5c1151cd1f31034fa4892d1781dcac0fae4edda5b7d5f0b4b325835990b0"
+  },
+  "app/Sources/KevCAD/Mac/DokumenteCommands.swift": {
+   "summe": "57d8002988515106d9701ac55f59b04d50ed105ea738e1d038817c94356e39ad"
+  },
+  "app/Sources/KevCAD/Mac/ExportFenster.swift": {
+   "summe": "0e709a2125725bd311c30ebbe12a58aec8bd9329fd599a3cab58ac4ff3c76547"
+  },
+  "app/Sources/KevCAD/Mac/FensterRand.swift": {
+   "summe": "f413e867371251728faff4a95037ca2a741bee4c8fb6c85d50b94aefee0eed0f"
+  },
+  "app/Sources/KevCAD/Mac/KevCADApp.swift": {
+   "gegenstueck": "app/Sources/KevCADPad/KevCADPadApp.swift",
+   "gegenstueck_summe": "39109e5d6ce6cb23e7e32755a1da6e34b77b950ae01ff40234eda2e8875b71ce",
+   "summe": "623f30f6cf9d5318938c04575452d368760a38461a7b4b2b990f6b0ca4487d49"
+  },
+  "app/Sources/KevCAD/Mac/KeyboardGuard.swift": {
+   "summe": "5285c5e06c491208487dd58788e71aab1dd6897e3322b93f6075fa50bb1ded29"
+  },
+  "app/Sources/KevCAD/Mac/MaterialCommands.swift": {
+   "summe": "f5d7e1f73269efbd04060d80cef24ab5db126b7852525c0186d139dfb22346a1"
+  },
+  "app/Sources/KevCAD/Mac/OberflaechenCommands.swift": {
+   "summe": "61bbcf7865b360aa5f2c9bb44114fd28eae2877d6a2e23636c834803e253c8f2"
+  },
+  "app/Sources/KevCAD/Mac/RenderCommands.swift": {
+   "summe": "148c7f8eaa555ae58ad39b041721808c1f46950946b6f8f16671a1d315d196f0"
+  },
+  "app/Sources/KevCAD/Mac/StockCommands.swift": {
+   "summe": "1a170e8667b1690aec38cd8fda2b92529c1f906444dd92cc7c936507212eb83e"
+  },
+  "app/Sources/KevCAD/Mac/VersionenCommands.swift": {
+   "summe": "20234e9f6e500fc3f240e4743aa1c12d007d48a3157ca1583c5a5b30fdb09bfe"
+  },
+  "app/Sources/KevCAD/Mac/WindowPlacement.swift": {
+   "summe": "86d88c9adbe2b767b906bb816af986c0642d618d2a4e9cd0ddb8b5897a649ca0"
+  },
+  "app/Sources/KevCAD/Mac/ZukaufCommands.swift": {
+   "summe": "57c7ade510069a2dd5579bde34572304e7f9b63ea5c3dffb3778138b1bdba810"
+  }
+ },
+ "mac_stellen": {
+  "app/KevCADCore/Sources/KevCADCore/Dokumente/BlattPDF.swift": [
+   "1dddccce464a194c",
+   "81cae57d5076df51"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Dokumente/ExportDrucken.swift": [
+   "369bd450c2ff518d",
+   "d9c8f9596f6fe31a"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Drucker/DruckerEinstellungen.swift": [
+   "64dfb746fff81b5e"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Kernel/AppController+Kopplung.swift": [
+   "af82da17ab9442f8"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Kernel/AppController+Navigation.swift": [
+   "1b3c13e0455eb103",
+   "bf36e6c4d01cabb3",
+   "ff701cd6507836cf"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Kernel/AppController+Zukauf.swift": [
+   "df2f4d3603b62395"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Kernel/AppController.swift": [
+   "397bde7ba7d3bc18",
+   "9eceb3f554650bed"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Kernel/KernelProcess.swift": [
+   "72cd5c3806fcd4bf"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Mirror/MirrorGegenstelle.swift": [
+   "3ebdf2c79576816b"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Netz/IPadEingang.swift": [
+   "8409e29cd7c02886"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Netz/KopplungsSpeicher.swift": [
+   "1aebc9fd7bfdb327"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Sprache/SprachSelbsttest.swift": [
+   "c3a13bf93753767b"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Sprache/SprachSteuerung.swift": [
+   "887a7618a4d63027",
+   "dd93175d59ba1dca",
+   "fca02750d84fff62"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Sprache/WortlautErkennung.swift": [
+   "1c5c8811b87b2b19",
+   "5c5d477626c5aeb2",
+   "7d75412c2b2732f3"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Viewer/AppController+ZweiterViewer.swift": [
+   "c1ec556dee9f0cd1"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Viewer/BlenderNavigation.swift": [
+   "d82c6687ced10518"
+  ],
+  "app/KevCADCore/Sources/KevCADCore/Viewer/ViewportCoordinator.swift": [
+   "dd7676b78eceb61e"
+  ],
+  "app/KevCADCore/Sources/KevCADWire/Mirror/MirrorTypes.swift": [
+   "b68de2d15dc9efd7"
+  ],
+  "app/Sources/KevCAD/App/AppSession+Entwurf.swift": [
+   "13f12aa95217b410",
+   "2c9d57de3865fc0e",
+   "409d4ba7a008f61f",
+   "482910d186e443e9",
+   "7f230be32d9ed6cc"
+  ],
+  "app/Sources/KevCAD/App/AppSession.swift": [
+   "0aa5e13ff643cc62",
+   "10241d34954abf3a",
+   "2ecd333043449ecf",
+   "8581a5c94d5e9a2c",
+   "a8f0d13a390f11c9",
+   "cfd7441927277814",
+   "d4a089b0c957e425",
+   "e6d0e3ff481aeb16"
+  ],
+  "app/Sources/KevCAD/Arbeitsflaeche/Gliederung.swift": [
+   "1cac4c7b51d7cebf",
+   "224e1b9db48286c9"
+  ],
+  "app/Sources/KevCAD/Arbeitsflaeche/Hauptfenster.swift": [
+   "4ae4642753a1f13e",
+   "6fb0d485c6150af9",
+   "bdf3f37bb7da0362",
+   "fd290f250924feb6"
+  ],
+  "app/Sources/KevCAD/Dokumente/Berichte/BerichteAnsicht.swift": [
+   "5349afa15a5f8fc3",
+   "977b6404fd225819"
+  ],
+  "app/Sources/KevCAD/Dokumente/DokumenteSeitenleiste.swift": [
+   "10fb7ed1935cbdbb"
+  ],
+  "app/Sources/KevCAD/Dokumente/Export/ExportDialog.swift": [
+   "f67fcfabf263a006"
+  ],
+  "app/Sources/KevCAD/Druck/DruckAnsicht.swift": [
+   "0588ab7c33f6770f",
+   "a03c7085989d226f",
+   "a11ee985d483b24b"
+  ],
+  "app/Sources/KevCAD/Gestaltung/Zoomflaeche.swift": [
+   "39322178df58e804",
+   "a767a00be2230160",
+   "f8574f05558f9c68"
+  ],
+  "app/Sources/KevCAD/Kopplung/KopplungsAnsicht.swift": [
+   "3368065bd6667abb"
+  ],
+  "app/Sources/KevCAD/Panels/LogWindow.swift": [
+   "041684e46b32187a",
+   "d1c79a737cde76c1"
+  ],
+  "app/Sources/KevCAD/Stock/CatalogWindow.swift": [
+   "78e07ceb57d61415"
+  ],
+  "app/Sources/KevCAD/Zukauf/ZukaufDialog.swift": [
+   "df59a04178600963"
+  ],
+  "app/Sources/KevCAD/Zukauf/ZukaufSession.swift": [
+   "c09dc65d4bd27fcc"
+  ]
+ }
+}

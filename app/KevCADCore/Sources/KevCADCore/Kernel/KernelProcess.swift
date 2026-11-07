@@ -27,8 +27,8 @@ public enum KernelLaunchError: Error, Equatable, CustomStringConvertible {
 /// - Ausgaben gehen zeilenweise an `onOutput`, das Ende an `onExit`.
 /// - Die PID steht in `kernel.pid` im Datenordner; ein übrig gebliebener Kernel einer abgestürzten App wird vor dem
 ///   Start beendet.
-/// - Nur am Mac: Auf dem iPad startet die App keinen Kernel, `start` meldet das als Fehler (iPad: folgt in I-2b, Verbindung
-///   zum Kernel am Mac über das Netz).
+/// - Nur am Mac: Auf dem iPad startet die App keinen Kernel, `start` meldet das als Fehler; das iPad verbindet sich über
+///   den Eingang der Mac-App mit deren Kernel (I-2b, `AppController.startUeberMac`).
 @MainActor
 public final class KernelProcess {
     public var onOutput: ((String, Bool) -> Void)?  // Zeile, ist stderr

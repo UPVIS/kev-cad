@@ -174,6 +174,8 @@ CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO
 
 start=$(date +%s)
 echo "==> $ART für iPad ($ZIEL), Protokoll $LOG"
+# Kurzfassung der Paritätsprüfung Mac/iPad (tools/paritaet.py); sie hält nichts auf.
+[ -f tools/paritaet.py ] && { python3 tools/paritaet.py --kurz 2>/dev/null || true; }
 if [ "$ART" = app ]; then
   command -v xcodegen > /dev/null || { echo "xcodegen fehlt (brew install xcodegen)"; exit 1; }
   symbol || exit 1

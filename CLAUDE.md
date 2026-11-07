@@ -39,8 +39,10 @@ Bauen und testen über den Mac mini (`tools/fern.sh`, Kopf der Datei; Mini-Seite
 tools/fern.sh tests        # Kern-Tests (swift test und pytest) auf dem Mac mini, Ausgabe live, Ausgang wie dort
 tools/fern.sh testbau ui   # Testvariante "Kev CAD Test ui" dort bauen, nach build/ holen; Kernel ist der dieses Worktrees
 tools/fern.sh release      # Installationsbau dort, App, Kernel und Skill hier installieren (wie ./build.sh)
+tools/fern.sh ipadtests    # Kern-Tests im iPad-Simulator auf dem Mini (ohne iOS-Laufzeit dort: hier, unter der Sperre)
 tools/fern.sh status       # Plätze, Schlange und Speicher auf dem Mini
-tools/fern.sh einrichten   # Mini prüfen bzw. vorbereiten (xcodegen, uv, Metal-Toolchain, Xcode-Fassung)
+tools/fern.sh einrichten   # Mini prüfen bzw. vorbereiten (xcodegen, uv, Metal-Toolchain, Xcode-Fassung, iPad-Simulator)
+python3 tools/paritaet.py  # Parität Mac/iPad: Hüllen, Mac-Stellen ohne iPad-Zweig, Marken, Befehle (`--kurz` im Testbau)
 tools/fern/selbsttests.sh "build/Kev CAD Test ui.app" "<Projekt>" [Tests …]   # Selbsttests der App auf dem Mini
 tools/fern/kachel-selbsttest.sh "build/Kev CAD Test ui.app" "<Projekt>"       # Kacheln und Fläche über MCP, auf dem Mini
 tools/abnahme.sh           # Testvariante „abnahme“ für Kevin, mit Kopien von Katalog und Projekt
@@ -112,11 +114,17 @@ nur Bedienung und Oberfläche sind je Gerät zugeschnitten. Plan und Stand: [PLA
 - **Jede Änderung für beide Geräte im selben Schritt:** Funktion, Fehlerbehebung, Text, Gestaltung, Tests. Wer eine
   Hüllen-Datei ändert, zieht das Gegenstück im selben Commit nach oder trägt eine Ausnahme mit Grund in `paritaet.json`
   ein und nennt sie Kevin. Gilt auch für Unteragenten: ihr Auftrag nennt beide Geräte.
+- **Paritätsprüfung** `python3 tools/paritaet.py` (Kurzfassung in jedem `tools/fern.sh testbau` und `tools/ipad-bau.sh`):
+  meldet Hüllen-Dateien, die nur auf einer Seite geändert wurden, neue Hüllen ohne Zuordnung, neue Blöcke `#if os(macOS)`
+  ohne `#else` und ohne Grund im Kommentar („nur am Mac …“, „iPad: …“), Marken „iPad: folgt in I-x“ je Paket (veraltet,
+  wenn das Paket fertig ist) und ab I-4 Befehle ohne Auslöser am iPad. Vor jedem Commit ohne offene Punkte; nach dem
+  Nachziehen bzw. Prüfen `python3 tools/paritaet.py abgleichen <Pfad> …` (Prüfsummen in `paritaet.lock.json`, nie
+  pauschal `--alle` ohne Durchsicht). Tests: `tools/test_paritaet.py` (laufen in `tools/fern.sh tests` mit).
 - **Befehle** stehen im Befehlskatalog (`Tastenbelegung.swift`) mit Auslöser am Mac und am iPad (Taste, Geste, Stift oder
   Werkzeugkranz); ab I-4 prüft ein Test, dass keiner fehlt.
 - **Vor jedem Commit übersetzen beide Plattformen.** Bis `tools/fern.sh` das selbst tut: `tools/ipad-bau.sh kern` (Kern
   für den iPad-Simulator, unter der gemeinsamen Sperre, Bauordner auf UPVIS ULTRA); wer im Kern Verhalten ändert, dazu
-  `tools/ipad-bau.sh test`.
+  `tools/fern.sh ipadtests` (Mini mit iOS-Laufzeit, sonst hier wie `tools/ipad-bau.sh test`).
 
 ## Schnittstellen (Verträge)
 

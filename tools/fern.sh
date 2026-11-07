@@ -13,8 +13,11 @@
 #                                   Danach wie gewohnt: open -g -n "build/Kev CAD Test ….app"
 #   tools/fern.sh release           Installationsbau auf dem Mini, App, Kernel und Skill holen (Paket build/bundle) und hier
 #                                   installieren wie ./build.sh (tools/auto-update.sh nutzt das)
+#   tools/fern.sh ipadtests [kürzel]  Kern-Tests im iPad-Simulator (tools/ipad-bau.sh test) auf dem Mini, wenn er eine
+#                                   iOS-Laufzeit hat; sonst hier unter der Simulator-Sperre (PLAN-IPAD.md, I-9)
 #   tools/fern.sh status            Plätze, Schlange und Speicher auf dem Mini
-#   tools/fern.sh einrichten        Mini vorbereiten oder prüfen: Ordner, xcodegen, uv, Metal-Toolchain, Xcode-Fassung
+#   tools/fern.sh einrichten        Mini vorbereiten oder prüfen: Ordner, xcodegen, uv, Metal-Toolchain, Xcode-Fassung,
+#                                   iPad-Simulator (nur prüfen; laden mit „einrichten ipad“, rund 8 GB auf dem Mini)
 #
 # Kürzel: Name des Auftrags auf dem Mini, Vorgabe KEVCAD_FERN_ID, sonst der Ordnername des Worktrees. Auf dem Mini liegt
 # alles unter ~/KevCAD-Bau (siehe tools/fern/mini.sh): zwei Bauplätze mit festen, warmen Bäumen, ein Testplatz, Schlange
@@ -54,18 +57,23 @@ BUILD_LOCK=/tmp/vb-xcodebuild.lock
 LOGDIR="$HOME/Library/Logs/Kev CAD"
 INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 
-usage() { sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=${1:-}
 [ $# -gt 0 ] && shift
 NAME=""; ID_ARG=""
 case "$MODE" in
-  tests) ID_ARG=${1:-} ;;
+  tests|ipadtests) ID_ARG=${1:-} ;;
   testbau) NAME=${1:-} ;;
-  release|status|einrichten) ;;
+  einrichten) EINRICHTEN=${1:-} ;;
+  release|status) ;;
   -h|--help|hilfe) usage; exit 0 ;;
   *) usage; exit 2 ;;
 esac
+# Testbau: Kurzfassung der Paritätsprüfung Mac/iPad (PLAN-IPAD.md, I-9); sie hält nichts auf.
+if [ "$MODE" = testbau ] && [ -f tools/paritaet.py ]; then
+  python3 tools/paritaet.py --kurz 2>/dev/null || true
+fi
 ID=${ID_ARG:-${KEVCAD_FERN_ID:-$(basename "$REPO")}}
 ID=$(printf '%s' "$ID" | tr -c 'A-Za-z0-9._-' '_')
 
@@ -128,6 +136,24 @@ if [ "$MODE" = einrichten ]; then
   there=$(mini "xcodebuild -version" 2>/dev/null | tr '\n' ' ')
   echo "MacBook: $here"; echo "Mini:    $there"
   [ "$here" = "$there" ] || echo "Achtung: verschiedene Xcode-Fassungen, die installierte App käme vom Xcode des Mini."
+  echo "==> iPad-Simulator (tools/fern.sh ipadtests)"
+  laufzeit=$(mini "xcrun simctl list runtimes 2>/dev/null | grep -E '^iOS ' | tail -1")
+  frei_gb=$(mini "df -g /System/Volumes/Data | awk 'NR==2 {print \$4}'")
+  if [ -n "$laufzeit" ]; then
+    echo "Mini: $laufzeit"
+  elif [ "${EINRICHTEN:-}" = ipad ]; then
+    # Die iOS-Laufzeit ist rund 8 GB groß; auf dem Mini teilen sich Tessera, VoiceBridge und Kev CAD die Platte.
+    if [ "${frei_gb:-0}" -lt 20 ]; then
+      echo "Mini: nur ${frei_gb:-?} GB frei, für die iOS-Laufzeit (rund 8 GB) braucht es mindestens 20 GB. Nicht geladen."
+      rc=1
+    else
+      echo "lade die iOS-Laufzeit (xcodebuild -downloadPlatform iOS, rund 8 GB) …"
+      mini "xcodebuild -downloadPlatform iOS 2>&1 | tr '\r' '\n' | tail -3; xcrun simctl list runtimes | grep -E '^iOS '" || rc=1
+    fi
+  else
+    echo "Mini: keine iOS-Laufzeit (${frei_gb:-?} GB frei); ipadtests laufen deshalb hier."
+    echo "      Laden mit: tools/fern.sh einrichten ipad (rund 8 GB auf dem Mini)"
+  fi
   exit $rc
 fi
 
@@ -158,6 +184,12 @@ run_local() {
   case "$MODE" in
     tests) cmd=(./build.sh --core-tests) ;;
     testbau) cmd=(./build.sh --test); [ -n "$NAME" ] && cmd+=("$NAME") ;;
+    ipadtests)
+      # ipad-bau.sh nimmt selbst erst die Simulator-, dann die Bausperre (nie umgekehrt) und wartet auf Speicher
+      tools/ipad-bau.sh test
+      rc=$?
+      log_times $rc
+      exit $rc ;;
   esac
   wait_for_memory
   lockf -k "$BUILD_LOCK" "${cmd[@]}"
@@ -174,7 +206,12 @@ platz_hier() {
 }
 
 fallback() {
-  echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (./build.sh unter $BUILD_LOCK)." >&2
+  if [ "$MODE" = ipadtests ]; then
+    echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (tools/ipad-bau.sh test unter den Sperren)." >&2
+  else
+    echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (./build.sh unter $BUILD_LOCK)." >&2
+  fi
+  # Auch iPad-Tests schreiben hier auf die Systemplatte (Simulator), also dieselbe Schwelle
   if ! platz_hier; then
     echo "==> Systemplatte zu voll für einen Bau hier (unter ${KEVCAD_FERN_PLATZ_GB:-15} GB frei): abgebrochen, später neu starten." >&2
     log_times 28
@@ -193,6 +230,10 @@ if [ "${KEVCAD_FERN:-}" = lokal ] || [ -e "$HOME/.kevcad-nur-macbook" ]; then
   run_local
 fi
 mini_reachable || fallback "nicht erreichbar ($HOST)"
+# iPad-Tests brauchen eine iOS-Laufzeit auf dem Mini (tools/fern.sh einrichten ipad); ohne sie laufen sie hier.
+if [ "$MODE" = ipadtests ] && ! mini "xcrun simctl list runtimes 2>/dev/null | grep -qE '^iOS '"; then
+  fallback "keine iOS-Laufzeit für den iPad-Simulator (tools/fern.sh einrichten ipad)"
+fi
 
 # Beide Rechner bauen (Kevin, 05.11.2026: „Mini und MacBook können gerne beide bauen“). Sind auf dem Mini beide Bauplätze
 # belegt, wartet ein testbau nicht in seiner Schlange, sondern läuft hier, wenn die Bausperre gerade frei ist und mindestens
@@ -220,11 +261,11 @@ fi
 
 APP_TEST="Kev CAD Test${NAME:+ $NAME}"
 JOB_ID="$ID-$(date +%Y%m%d-%H%M%S)-$$"
-case "$MODE" in tests) KIND=tests ;; testbau) KIND=testbau ;; release) KIND=bundle ;; esac
+case "$MODE" in tests) KIND=tests ;; ipadtests) KIND=ipadtests ;; testbau) KIND=testbau ;; release) KIND=bundle ;; esac
 
 # Was hier vorbereitet wird: das Symbol (rsvg-convert fehlt dem Mini) und für testbau die Kernel-Umgebung dieses
 # Worktrees, die die Test-App hier startet. Beides ist schnell und baut nichts.
-if [ "$KIND" != tests ]; then
+if [ "$KIND" != tests ] && [ "$KIND" != ipadtests ]; then
   ./build.sh --icon || exit 1
 fi
 if [ "$KIND" = testbau ]; then
