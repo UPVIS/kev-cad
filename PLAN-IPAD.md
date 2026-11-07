@@ -470,6 +470,15 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
   VoiceOver richtig). Zustand für die Tests liefert ein unsichtbarer Text `test.zustand` (`KEVCAD_PAD_UITEST=1`, nur Debug).
 - **Schemata fest im Projekt:** Mit einem Testziel legt Xcode die Schemata nicht mehr von selbst an; `project.yml` nennt
   sie (`scheme:` bei KevCAD und KevCADPad, das iPad-Schema mit `KevCADPadUITests` als Test).
+- **Werkzeugkranz ohne eigene Gesten** (I-4, 07.11.2026): Die Scheibe nimmt selbst keine Eingaben an; eine Fläche über
+  dem ganzen Viewer fängt Tippen, Ziehen und Schweben und rechnet das Ziel aus dem Abstand und der Richtung zur Mitte
+  (`KranzGeometrie.ziel`). So gelten Stift, Finger, Maus und Trackpad gleich, und Wischen über den Rand hinaus wählt
+  weiter nach der Richtung. Der Drehregler sammelt kleine Drehungen ohne Raster (`roh`) und rastet erst beim Anwenden ein,
+  sonst bliebe er bei langsamem Kreisen stehen. Sektorgrenzen liegen genau zwischen zwei Feldern (bei fünf Pillen bei
+  36°, 108°, 180° …): Tests nie genau auf eine Grenze legen.
+- **Pencil-Doppeltippen** (I-4): `UIPencilInteraction(delegate:)` mit `didReceiveTap` (Ort der schwebenden Spitze in
+  `tap.hoverPose`) und `didReceiveSqueeze` für den Pencil Pro; steht die Systemeinstellung auf „Ignorieren“, bleibt der
+  Kranz zu. Im Simulator nicht prüfbar.
 
 ## 11. Offene Fragen und Risiken
 
