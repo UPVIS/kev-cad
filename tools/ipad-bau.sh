@@ -6,6 +6,7 @@
 #   tools/ipad-bau.sh kern geraet     dasselbe für ein echtes iPad (ohne Signatur)
 #   tools/ipad-bau.sh test            Tests des Kerns im iPad-Simulator (ohne Simulatorfenster, Schema KevCADCore-Package)
 #   tools/ipad-bau.sh app             iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
+#   tools/ipad-bau.sh symbol          nur das App-Symbol aus app/icon.svg erzeugen (steht nicht im Git)
 #   tools/ipad-bau.sh starten         Simulator booten (ohne Simulator.app, kein Fenster), App installieren, im Demomodus
 #                                     starten, Bildschirmfoto nach build/ipad-start.png
 #   tools/ipad-bau.sh stoppen [immer] App beenden; den Simulator herunterfahren, wenn `starten` ihn gebootet hat (lief er
@@ -50,7 +51,24 @@ u = sys.argv[1]
 print(next((d["state"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if d["udid"] == u), ""))' "$1"
 }
 
+# App-Symbol aus app/icon.svg (wie build.sh das Symbol des Mac): randlos, ohne Transparenz, das iPad rundet selbst ab.
+# Das PNG steht nicht im Git; jede frische Arbeitskopie (der Takt in tools/ipad-testflight-takt.sh) erzeugt es neu,
+# sonst lehnt App Store Connect den Build ab (90023, 90713: kein Symbol, kein CFBundleIconName).
+symbol() {
+  local png="app/Sources/KevCADPad/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+  [ ! -f "$png" ] || [ app/icon.svg -nt "$png" ] || return 0
+  command -v rsvg-convert > /dev/null || { echo "rsvg-convert fehlt (brew install librsvg)"; return 1; }
+  sed 's|<rect x="64" y="64" width="896" height="896" rx="200"|<rect x="0" y="0" width="1024" height="1024"|' app/icon.svg \
+    | rsvg-convert -w 1024 -h 1024 -o "$png.tmp.png" || return 1
+  if command -v magick > /dev/null; then
+    magick "$png.tmp.png" -background "#151B24" -alpha remove -alpha off "$png" && rm -f "$png.tmp.png"
+  else
+    mv "$png.tmp.png" "$png"
+  fi
+}
+
 case "$ART" in
+  symbol) symbol; exit $? ;;
   kern) ;;
   test)
     # Simulator nur über xcodebuild starten: Er bootet ohne Fenster, Kevins Bildschirm bleibt frei
@@ -138,20 +156,6 @@ CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO
 # /^src (Regel xcode-compilation-cache, „Preis der Projekt-Zuordnung“). Testbauten deshalb ohne Zuordnung.
 [ "$AKTION" = test ] && CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO)
 [ -n "$CAS" ] && CACHE+=("COMPILATION_CACHE_CAS_PATH=$CAS")
-
-# App-Symbol aus app/icon.svg (wie build.sh das Symbol des Mac): randlos, ohne Transparenz, das iPad rundet selbst ab
-symbol() {
-  local png="app/Sources/KevCADPad/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
-  [ ! -f "$png" ] || [ app/icon.svg -nt "$png" ] || return 0
-  command -v rsvg-convert > /dev/null || { echo "rsvg-convert fehlt (brew install librsvg)"; return 1; }
-  sed 's|<rect x="64" y="64" width="896" height="896" rx="200"|<rect x="0" y="0" width="1024" height="1024"|' app/icon.svg \
-    | rsvg-convert -w 1024 -h 1024 -o "$png.tmp.png" || return 1
-  if command -v magick > /dev/null; then
-    magick "$png.tmp.png" -background "#151B24" -alpha remove -alpha off "$png" && rm -f "$png.tmp.png"
-  else
-    mv "$png.tmp.png" "$png"
-  fi
-}
 
 start=$(date +%s)
 echo "==> $ART für iPad ($ZIEL), Protokoll $LOG"

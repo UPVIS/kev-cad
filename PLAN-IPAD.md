@@ -358,6 +358,10 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 - **Takt aus eigener Arbeitskopie** (07.11.2026): Die Arbeitskopie des Mac-Updates springt bei jedem neuen Stand auf main
   um; ein iPad-Build darin hätte halb alte, halb neue Dateien. Der Takt baut deshalb in `_cache/kevcad-ipad/takt/src`, und
   das Update startet eine Kopie des Takt-Skripts, damit ein wartender Takt nicht mitten im Lauf umgeschrieben wird.
+- **Erzeugte Dateien in frischen Arbeitskopien** (07.11.2026): Das App-Symbol erzeugt `tools/ipad-bau.sh` aus
+  `app/icon.svg`, es steht nicht im Git. Build 1 kam aus einer Arbeitskopie, in der es schon lag; der erste Build des
+  Takts aus der frischen Kopie scheiterte bei App Store Connect (90023 kein 152-px-Symbol, 90713 kein
+  `CFBundleIconName`). `tools/ipad-testflight.sh` ruft seitdem `tools/ipad-bau.sh symbol` vor dem Archiv auf.
 
 ## 11. Offene Fragen und Risiken
 

@@ -57,6 +57,8 @@ cat > "$BASIS/ExportOptions.plist" << EOF
 </dict></plist>
 EOF
 
+# Das App-Symbol steht nicht im Git: In einer frischen Arbeitskopie fehlte es, und App Store Connect lehnte Build 2 ab
+tools/ipad-bau.sh symbol || { echo "==> App-Symbol ließ sich nicht erzeugen"; exit 1; }
 xcodegen generate --spec app/project.yml --quiet || exit 1
 rm -rf "$ARCHIV" "$EXPORT"
 # Archiv und Export mit dem Team-Schlüssel (nur für die Dauer des Befehls auf der Platte)

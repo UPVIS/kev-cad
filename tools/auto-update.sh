@@ -166,17 +166,19 @@ build_and_install() {
 }
 
 # iPad (PLAN-IPAD.md, I-9): neuer TestFlight-Build im Takt von main, als eigener Hintergrundlauf mit eigener Sperre
-# (tools/ipad-testflight-takt.sh baut nur, wenn sich die App geändert hat, höchstens einmal je Stunde). Gestartet wird
-# eine Kopie des Skripts: Spätere Updates setzen die Arbeitskopie zurück, ein wartender Takt läuft mit seiner Fassung
-# weiter. Abschalten mit KEVCAD_NO_TESTFLIGHT=1 beim Commit oder der Datei testflight.aus in der Ablage.
+# (tools/ipad-testflight-takt.sh baut nur, wenn sich die App seit dem letzten Build geändert hat, höchstens einmal je
+# Stunde). Angestoßen bei jedem neuen Stand, auch ohne Neubau der Mac-App: So holt der Takt einen gescheiterten Build
+# nach, wenn nur Werkzeuge korrigiert wurden. Gestartet wird eine Kopie des Skripts aus dem Stand von main (nicht aus einer
+# Arbeitskopie); ein wartender Takt läuft so mit seiner Fassung weiter. Abschalten mit KEVCAD_NO_TESTFLIGHT=1 beim Commit
+# oder der Datei testflight.aus in der Ablage.
 ipad_takt() {
   [ -n "$PROBE" ] && return 0
   [ "${KEVCAD_NO_TESTFLIGHT:-0}" = "1" ] && return 0
-  [ -f "$SRC/tools/ipad-testflight-takt.sh" ] || return 0
-  cp "$SRC/tools/ipad-testflight-takt.sh" "$SUPPORT/ipad-testflight-takt.sh.neu" \
-    && chmod +x "$SUPPORT/ipad-testflight-takt.sh.neu" \
-    && mv -f "$SUPPORT/ipad-testflight-takt.sh.neu" "$SUPPORT/ipad-testflight-takt.sh" || return 0
-  KEVCAD_REPO="$REPO" nohup "$SUPPORT/ipad-testflight-takt.sh" >/dev/null 2>&1 &
+  local kopie="$SUPPORT/ipad-testflight-takt.sh"
+  git -C "$REPO" show "$REF:tools/ipad-testflight-takt.sh" > "$kopie.neu" 2>/dev/null && [ -s "$kopie.neu" ] \
+    || { rm -f "$kopie.neu"; return 0; }
+  chmod +x "$kopie.neu" && mv -f "$kopie.neu" "$kopie" || return 0
+  KEVCAD_REPO="$REPO" nohup "$kopie" >/dev/null 2>&1 &
 }
 
 # Läuft schon ein Update, nur vormerken; der laufende Durchgang baut danach noch einmal.
@@ -212,6 +214,7 @@ while :; do
   KIND=$(change_kind)
   if [ "$KIND" = "none" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') $REF $COMMIT: nur Doku/Tests geändert, kein Update nötig" >> "$LOG"
+    ipad_takt
   elif [ "$KIND" = "skill" ]; then
     {
       echo "$(date '+%Y-%m-%d %H:%M:%S') $REF $COMMIT: nur der Skill geändert, kopiere ihn"
@@ -221,6 +224,7 @@ while :; do
       git -C "$SRC" checkout -q --detach "$REF" && git -C "$SRC" reset -q --hard "$REF" \
         && rsync -a --delete "$SRC/skill/" "$SUPPORT/install/skill/"
     } >> "$LOG" 2>&1
+    ipad_takt
   else
     {
       echo
