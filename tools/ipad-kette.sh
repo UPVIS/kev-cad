@@ -12,13 +12,20 @@
 #   tools/ipad-kette.sh --bereiche I-9: statt der Ansicht der Selbsttest der Bereiche am iPad (KEVCAD_SELFTEST=pad-bereiche,
 #                                  `PadSelbsttest.bereiche`): Zeichnung, Bauplan, Druck, Bestand mit Daten vom Kernel am Mac;
 #                                  Bericht und Bilder nach build/ipad-kette/bereiche/
+#   tools/ipad-kette.sh --sprache  I-9: Selbsttest Sprechen am iPad (KEVCAD_SELFTEST=pad-sprache, `SprachSelbsttest`):
+#                                  Sätze aus einem Skript (kein Mikrofon), Zeigen mit dem schwebenden Stift, grüner
+#                                  Stiftstrich; das Paket geht als Nutzlast an den Kernel. Geprüft wird auch dort, über
+#                                  `feedback()` im MCP und die abgelegte Datei: Wörter, Bezüge, Striche mit Farbe und
+#                                  Gerät, Bild. Bericht nach build/ipad-kette/sprache/
 #
 # Keine Fenster auf Kevins Bildschirm: Die Mac-Testvariante läuft mit KEVCAD_TEST_VERSTECKT=1, der Simulator bootet nur über
 # simctl. Ergebnis und Bild unter build/ipad-kette/. Ausgang 0 nur, wenn das iPad am Eingang verbunden war und das Modell
 # gebaut wurde.
 set -uo pipefail
 BEREICHE=0
+SPRACHE=0
 [ "${1:-}" = "--bereiche" ] && BEREICHE=1
+[ "${1:-}" = "--sprache" ] && SPRACHE=1
 # Ein Simulator und eine Mac-Testvariante „ipad“ für alle Arbeitskopien: der ganze Test unter der Simulator-Sperre
 if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
   exec env KEVCAD_IPAD_SIM_GESPERRT=1 lockf -k /tmp/kevcad-ipad-sim.lock "$0" "$@"
@@ -96,6 +103,11 @@ if [ "$BEREICHE" = 1 ]; then
   DATEN=$(xcrun simctl get_app_container "$UDID" de.upvis.kevcad.ipad data)
   BERICHT="$DATEN/Library/Application Support/de.upvis.kevcad.ipad/selftest-pad/bericht.txt"
   rm -rf "$(dirname "$BERICHT")"  # kein alter Bericht eines früheren Laufs
+elif [ "$SPRACHE" = 1 ]; then
+  SELBSTTEST=(SIMCTL_CHILD_KEVCAD_SELFTEST=pad-sprache)
+  DATEN=$(xcrun simctl get_app_container "$UDID" de.upvis.kevcad.ipad data)
+  BERICHT="$DATEN/Library/Application Support/de.upvis.kevcad.ipad/selftest-sprache/bericht.txt"
+  rm -rf "$(dirname "$BERICHT")"
 fi
 env SIMCTL_CHILD_KEVCAD_PAD_KOPPLUNG="$CODE" SIMCTL_CHILD_KEVCAD_PAD_OHNE_KOPPLUNGSBLATT=1 ${SELBSTTEST[@]+"${SELBSTTEST[@]}"} \
   xcrun simctl launch "$UDID" de.upvis.kevcad.ipad > /dev/null || exit 1
@@ -111,7 +123,7 @@ done
 [ "$verbunden" = 1 ] || { echo "iPad hat sich nach ${KEVCAD_IPAD_VERBINDEN:-240} s nicht verbunden"; exit 1; }
 echo "==> iPad am Eingang (Port $EINGANG) nach ${i} s"
 
-"$PY" -I - "$PORT" > "$OUT/mcp.txt" 2>&1 << 'PYEOF'
+"$PY" -I - "$PORT" "$BEREICHE" > "$OUT/mcp.txt" 2>&1 << 'PYEOF'
 import asyncio, sys
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -125,12 +137,18 @@ show(Box(breite, 80, 6), "Ständer/Platte")
 step("Säule")
 show(Cylinder(10, 60).moved(Location((30, 0, 33))), "Ständer/Säule")
 '''
+# --bereiche: dazu ein Druckteil, damit die Druckvorschau Platten hat (Filamentwahl vor dem 3MF, I-8)
+DRUCKTEIL = '''from kevcad import lager
+step("Halter")
+show(lager.druckteil(Box(30, 20, 10).moved(Location((-30, 0, 8))), "Halter", material="petg"), "Ständer/Halter")
+'''
 
 async def main(port: int) -> None:
     async with streamable_http_client(f"http://127.0.0.1:{port}/mcp") as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()
-            for name, args in (("modell", {"code": CODE}), ("run", {})):
+            code = CODE + (DRUCKTEIL if sys.argv[2:] == ["1"] else "")
+            for name, args in (("modell", {"code": code}), ("run", {})):
                 res = await s.call_tool(name, args)
                 print(name, "->", " ".join(getattr(c, "text", "") for c in res.content)[:300].replace("\n", " | "))
 
@@ -153,6 +171,71 @@ if [ "$BEREICHE" = 1 ]; then
   cat "$OUT/bereiche/bericht.txt"
   grep -q "^ENDE bestanden" "$OUT/bereiche/bericht.txt" || { echo "Selbsttest der Bereiche nicht bestanden"; exit 1; }
   echo "==> Bereiche am iPad mit Daten vom Mac geprüft (Bilder: $OUT/bereiche/)"
+  exit 0
+fi
+
+if [ "$SPRACHE" = 1 ]; then
+  # I-9: Selbsttest Sprechen am iPad abwarten (startet 2 s nach dem ersten Lauf, dauert rund 20 s)
+  for _ in $(seq 1 "${KEVCAD_IPAD_SPRACHE_FRIST:-300}"); do
+    grep -q "^ENDE" "$BERICHT" 2>/dev/null && break
+    sleep 1
+  done
+  rm -rf "$OUT/sprache"
+  cp -R "$(dirname "$BERICHT")" "$OUT/sprache" 2>/dev/null
+  [ -f "$OUT/sprache/bericht.txt" ] || { echo "Kein Bericht des Selbsttests Sprechen (läuft er im Debug-Bau?)"; exit 1; }
+  cat "$OUT/sprache/bericht.txt"
+  # Kernel-Seite: Was ist beim Agenten angekommen?
+  "$PY" -I - "$PORT" > "$OUT/sprache/kernel.txt" 2>&1 << 'PYEOF'
+import asyncio, json, re, sys
+from pathlib import Path
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+fehler = []
+def pruefe(bed, text):
+    print(("OK     " if bed else "FEHLER ") + text, flush=True)
+    if not bed:
+        fehler.append(text)
+
+async def main(port: int) -> None:
+    async with streamable_http_client(f"http://127.0.0.1:{port}/mcp") as (r, w):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            res = await s.call_tool("feedback", {"warten_s": 30})
+            text = "\n".join(getattr(c, "text", "") for c in res.content if getattr(c, "type", "") == "text")
+            bilder = sum(1 for c in res.content if getattr(c, "type", "") == "image")
+            print(text, flush=True)
+            pruefe(not res.is_error and "Kevin ist fertig am iPad" in text, "Paket beim Agenten, vom iPad")
+            # Der Selbsttest zeigt beim ersten Satz auf die Platte, beim zweiten auf die Säule
+            pruefe(re.search(r"„[^“]+“ = Ständer/Platte", text) is not None, "Zeigewort trifft die Platte")
+            pruefe(re.search(r"„[^“]+“ = Ständer/Säule", text) is not None, "Zeigewort trifft die Säule")
+            pruefe(re.search(r"Strich \d+ grün auf ", text) is not None, "grüner Strich auf einem Teil")
+            pruefe(bilder >= 1, f"Bild im Ergebnis ({bilder})")
+            m = re.search(r"Einzelheiten \(Wörter, Mausweg, Striche\): (.+\.json)", text)
+            pfad = Path(m.group(1)) if m else None
+            pruefe(pfad is not None and pfad.is_file(), f"Paket abgelegt: {pfad}")
+            if pfad and pfad.is_file():
+                p = json.loads(pfad.read_text(encoding="utf-8"))
+                pruefe(p.get("geraet") == "ipad", f"geraet {p.get('geraet')}")
+                st = p.get("striche") or []
+                pruefe(bool(st) and all(x.get("geraet") == "ipad" for x in st), "Striche vom iPad")
+                pruefe(any(x.get("farbe") == "gruen" for x in st), f"Farben {[x.get('farbe') for x in st]}")
+                pruefe(len(p.get("worte") or []) > 5 and len(p.get("saetze") or []) >= 2,
+                       f"{len(p.get('worte') or [])} Wörter, {len(p.get('saetze') or [])} Sätze")
+                b = p.get("bild") or {}
+                pruefe(bool(b.get("datei")) and (pfad.parent / b["datei"]).is_file(), f"Bild {b.get('datei')}")
+            nochmal = await s.call_tool("feedback", {"warten_s": 0})
+            rest = " ".join(getattr(c, "text", "") for c in nochmal.content)
+            pruefe("Kevin ist fertig" not in rest, "nach esc kein weiteres Paket")
+
+asyncio.run(main(int(sys.argv[1])))
+sys.exit(1 if fehler else 0)
+PYEOF
+  kernel_ok=$?
+  cat "$OUT/sprache/kernel.txt"
+  grep -q "^ENDE bestanden" "$OUT/sprache/bericht.txt" || { echo "Selbsttest Sprechen am iPad nicht bestanden"; exit 1; }
+  [ $kernel_ok = 0 ] || { echo "Paket kam beim Kernel nicht vollständig an"; exit 1; }
+  echo "==> Sprechen am iPad mit Zeigen und Strichen geprüft, Paket beim Kernel am Mac vollständig"
   exit 0
 fi
 

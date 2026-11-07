@@ -27,7 +27,8 @@
     "Fenster an den Rand, eigene Fenster (Protokoll, Lagerkatalog, Zukauf)": "Das iPad hat eine Szene; die Fenster sind dort Blätter (padBlatt), PadSelbsttest prüft sie",
     "Bilder von außen (screencapture, Fensterbild über MCP in AppController+Flaeche)": "Am iPad macht der Selbsttest seine Bilder selbst (drawHierarchy), der Kettentest dazu simctl io screenshot",
     "Klick in die Bildmitte trifft den Viewer (AppController+SelfTest)": "Am iPad tippen die Gesten-Tests von außen wie ein Finger",
-    "Bereiche mit Daten vom Kernel (Dokumente, Bauplan, Druck, Bestand)": "Am iPad über die Kopplung an eine Mac-Testvariante: tools/ipad-kette.sh --bereiche (PadSelbsttest, Stufe pad-bereiche)"
+    "Bereiche mit Daten vom Kernel (Dokumente, Bauplan, Druck, Bestand)": "Am iPad über die Kopplung an eine Mac-Testvariante: tools/ipad-kette.sh --bereiche (PadSelbsttest, Stufe pad-bereiche)",
+    "Sprechen mit Ton aus einer Datei (SprachSelbsttest, Stufe sprache, Apples Erkennung)": "Am iPad derselbe SprachSelbsttest (Stufe pad-sprache) über die Kopplung: tools/ipad-kette.sh --sprache; Sätze aus einem Skript (TestErkennung), weil der Simulator kein Mikrofon hat, Zeigen und Striche über die Eingabeebene, das Paket prüft der Kettentest beim Kernel"
   },
   "nur_ipad": {
     "app/Sources/KevCADPad/RandWischen.swift": "Vom Rand wischen öffnet die Leisten (I-3b); am Mac gibt es keinen Rand zum Wischen, dort ⌘1, ⌘2 und die Knöpfe der Kopfleiste",

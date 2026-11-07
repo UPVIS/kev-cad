@@ -40,6 +40,13 @@ struct DruckAnsicht: View {
         }
         .onChange(of: druck.vorschau) { _, v in ui.pruefe(v) }
         .onChange(of: model.selectedPartIDs) { _, ids in ui.folge(auswahl: ids, vorschau: druck.vorschau) }
+        #if os(iOS)
+        .sheet(item: $ui.exportFilament) { a in
+            ExportFilamentBlatt(wahl: ExportFilamentWahl(a.vorschau, platten: a.platten), platten: a.platten) { f in
+                model.druckActions?.druckExportieren(platten: a.platten, nach: nil, filament: f)
+            }
+        }
+        #endif
     }
 
     /// Strang „Feinschliff 2“: schon gedruckte Teile (nicht in Platten und Summe), Formänderungen hervorgehoben.
@@ -161,8 +168,8 @@ struct DruckAnsicht: View {
         .help("Ohne Drucken: die angeordneten Platten als 3MF für Bambu Studio sichern, je Material eine Datei, mit "
               + "dem Preset des gewählten Filaments. Zum Drucken „Drucken …“ in der Druckerleiste.")
         #else
-        // iPad: Der Kernel schreibt die 3MF in output/ des Projekts am Mac (mit dem angenommenen Filament der Vorschau,
-        // das die Platten schon zeigen); das Band danach bietet „3MF teilen“ (Bambu Handy, Dateien, AirDrop).
+        // iPad: erst das Filament wählen (Blatt, gleiche Texte wie der Sichern-Dialog am Mac), dann schreibt der Kernel
+        // die 3MF in output/ des Projekts am Mac; das Band danach bietet „3MF teilen“ (Bambu Handy, Dateien, AirDrop).
         Menu {
             Button("Alle Platten als 3MF") { padExport([], v) }
             if v.platten.count > 1 {
@@ -184,12 +191,13 @@ struct DruckAnsicht: View {
     }
 
     #if os(iOS)
+    /// Kevins Regel: vor jedem Druck nach dem Filament fragen. Das Blatt (`ExportFilamentBlatt`) sendet nach „Sichern“.
     private func padExport(_ platten: [Int], _ v: Druckvorschau) {
-        model.druckActions?.druckExportieren(platten: platten, nach: nil, filament: v.filamentVorschlag)
+        ui.exportFilament = ExportFilamentAnfrage(platten: platten, vorschau: v)
     }
     #endif
 
-    #if os(macOS)
+    #if os(macOS)  // iPad: padExport mit ExportFilamentBlatt (ohne Sichern-Dialog, Ziel output/ am Mac)
     /// Ziel und Filament wählen und PRINT_EXPORT_REQ senden (Strang „Druckexport 2“: der Kernel schreibt ohne
     /// Filament nichts; der Dialog zeigt je Material Kevins Filamente, vorausgewählt das angenommene der Vorschau).
     private func exportieren(_ platten: [Int], _ v: Druckvorschau) {
@@ -198,8 +206,8 @@ struct DruckAnsicht: View {
         if let ansicht = auswahl.ansicht {
             panel.accessoryView = ansicht
         }
-        panel.title = platten.isEmpty ? "Platten als 3MF sichern" : "Platte \(platten[0]) als 3MF sichern"
-        panel.message = "Je Material entsteht eine eigene Datei (ohne AMS druckt der P1P ein Material je Platte)."
+        panel.title = ExportFilamentWahl.titel(platten)
+        panel.message = ExportFilamentWahl.nachricht
         panel.allowedContentTypes = [UTType(filenameExtension: "3mf") ?? .data]
         panel.canCreateDirectories = true
         let name = model.project?.name ?? "Projekt"
@@ -908,13 +916,34 @@ struct DruckExportDateiZeile: View {
     }
 }
 
-#if os(macOS)
-/// Filament je Material im Sichern-Dialog des 3MF-Exports (Strang „Druckexport 2“): je Material eine Auswahl aus
-/// Kevins Filamentliste (`druckvorschau.filamente`), vorausgewählt das Filament, mit dem die Vorschau rechnet.
-@MainActor
-final class ExportFilamentAuswahl {
-    private var auswahl: [(material: String, knopf: NSPopUpButton, liste: [DruckFilament])] = []
-    private(set) var ansicht: NSView?
+/// Filament je Material für den 3MF-Export (Strang „Druckexport 2“, Kevins Regel: vor jedem Druck nach dem Filament
+/// fragen): je Material Kevins Filamente (`druckvorschau.filamente`), vorausgewählt das, mit dem die Vorschau rechnet.
+/// Am Mac im Sichern-Dialog (`ExportFilamentAuswahl`), am iPad als Blatt (`ExportFilamentBlatt`), mit denselben Texten.
+struct ExportFilamentWahl {
+    struct Zeile: Identifiable {
+        var material: String
+        /// Wie die Vorschau das Material nennt („PETG“)
+        var name: String
+        var liste: [DruckFilament]
+        /// id des vorausgewählten Filaments; nil, wenn die Liste leer ist
+        var vorgewaehlt: String?
+        var id: String { material }
+    }
+
+    var zeilen: [Zeile] = []
+
+    static let kopf = "Filament im Drucker (sein Preset kommt ins 3MF):"
+    static let hinweis = "Vorausgewählt ist das Filament, mit dem die Vorschau rechnet (zuletzt gewählt, Spule im "
+        + "Bestand oder erstes der Liste). Bitte prüfen."
+    static let nachricht = "Je Material entsteht eine eigene Datei (ohne AMS druckt der P1P ein Material je Platte)."
+
+    static func titel(_ platten: [Int]) -> String {
+        platten.isEmpty ? "Platten als 3MF sichern" : "Platte \(platten[0]) als 3MF sichern"
+    }
+
+    static func eintrag(_ f: DruckFilament) -> String { f.name + (f.preset.map { "  ·  Preset „\($0)“" } ?? "") }
+
+    static func leer(_ name: String) -> String { "Kein \(name) in der Filamentliste (erst anlegen)" }
 
     init(_ v: Druckvorschau, platten: [Int]) {
         let gewaehlt = platten.isEmpty ? v.platten : v.platten.filter { platten.contains($0.nr) }
@@ -924,37 +953,60 @@ final class ExportFilamentAuswahl {
         {
             materialien.append(m)
         }
-        guard !materialien.isEmpty else { return }
+        for m in materialien {
+            let liste = v.filamente(fuer: m)
+            let name = v.summe.material.first { $0.material == m }?.name ?? m.uppercased()
+            // Ohne Vorschlag gilt das erste der Liste (so wählt auch das Aufklappmenü am Mac)
+            let vorschlag = v.filamentVorschlag[m].flatMap { id in liste.contains { $0.id == id } ? id : nil }
+            zeilen.append(Zeile(material: m, name: name, liste: liste, vorgewaehlt: vorschlag ?? liste.first?.id))
+        }
+    }
+
+    /// Vorauswahl je Material (Material → id), nur Materialien mit Filamenten.
+    var vorauswahl: [String: String] {
+        var out: [String: String] = [:]
+        for z in zeilen { if let id = z.vorgewaehlt { out[z.material] = id } }
+        return out
+    }
+}
+
+#if os(macOS)
+/// Filament je Material im Sichern-Dialog des 3MF-Exports (`ExportFilamentWahl`).
+@MainActor
+final class ExportFilamentAuswahl {
+    private var auswahl: [(material: String, knopf: NSPopUpButton, liste: [DruckFilament])] = []
+    private(set) var ansicht: NSView?
+
+    init(_ v: Druckvorschau, platten: [Int]) {
+        let wahl = ExportFilamentWahl(v, platten: platten)
+        guard !wahl.zeilen.isEmpty else { return }
         let stapel = NSStackView()
         stapel.orientation = .vertical
         stapel.alignment = .leading
         stapel.spacing = 6
         stapel.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
-        stapel.addArrangedSubview(NSTextField(labelWithString: "Filament im Drucker (sein Preset kommt ins 3MF):"))
-        for m in materialien {
-            let liste = v.filamente(fuer: m)
+        stapel.addArrangedSubview(NSTextField(labelWithString: ExportFilamentWahl.kopf))
+        for z in wahl.zeilen {
             let zeile = NSStackView()
             zeile.orientation = .horizontal
             zeile.spacing = 8
-            let name = v.summe.material.first { $0.material == m }?.name ?? m.uppercased()
-            zeile.addArrangedSubview(NSTextField(labelWithString: "\(name):"))
+            zeile.addArrangedSubview(NSTextField(labelWithString: "\(z.name):"))
             let knopf = NSPopUpButton(frame: .zero, pullsDown: false)
-            if liste.isEmpty {
-                knopf.addItem(withTitle: "Kein \(name) in der Filamentliste (erst anlegen)")
+            if z.liste.isEmpty {
+                knopf.addItem(withTitle: ExportFilamentWahl.leer(z.name))
                 knopf.isEnabled = false
             }
-            for f in liste {
-                knopf.addItem(withTitle: f.name + (f.preset.map { "  ·  Preset „\($0)“" } ?? ""))
+            for f in z.liste {
+                knopf.addItem(withTitle: ExportFilamentWahl.eintrag(f))
             }
-            if let vorschlag = v.filamentVorschlag[m], let i = liste.firstIndex(where: { $0.id == vorschlag }) {
+            if let id = z.vorgewaehlt, let i = z.liste.firstIndex(where: { $0.id == id }) {
                 knopf.selectItem(at: i)
             }
             zeile.addArrangedSubview(knopf)
             stapel.addArrangedSubview(zeile)
-            auswahl.append((m, knopf, liste))
+            auswahl.append((z.material, knopf, z.liste))
         }
-        let hinweis = NSTextField(wrappingLabelWithString: "Vorausgewählt ist das Filament, mit dem die Vorschau "
-            + "rechnet (zuletzt gewählt, Spule im Bestand oder erstes der Liste). Bitte prüfen.")
+        let hinweis = NSTextField(wrappingLabelWithString: ExportFilamentWahl.hinweis)
         hinweis.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         hinweis.textColor = .secondaryLabelColor
         hinweis.preferredMaxLayoutWidth = 460
@@ -972,6 +1024,66 @@ final class ExportFilamentAuswahl {
             if i >= 0, i < a.liste.count { out[a.material] = a.liste[i].id }
         }
         return out
+    }
+}
+#else
+/// iPad: Filament je Material vor dem 3MF-Export als Blatt (`ExportFilamentWahl`, gleiche Texte wie am Mac). „Sichern“
+/// schickt die Wahl an den Kernel, der die 3MF in output/ des Projekts am Mac schreibt.
+struct ExportFilamentBlatt: View {
+    let wahl: ExportFilamentWahl
+    let platten: [Int]
+    let sichern: ([String: String]) -> Void
+    @State private var gewaehlt: [String: String]
+    @Environment(\.dismiss) private var dismiss
+
+    init(wahl: ExportFilamentWahl, platten: [Int], sichern: @escaping ([String: String]) -> Void) {
+        self.wahl = wahl
+        self.platten = platten
+        self.sichern = sichern
+        _gewaehlt = State(initialValue: wahl.vorauswahl)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(ExportFilamentWahl.nachricht).foregroundStyle(.secondary)
+                }
+                Section {
+                    ForEach(wahl.zeilen) { z in
+                        if z.liste.isEmpty {
+                            LabeledContent("\(z.name):", value: ExportFilamentWahl.leer(z.name))
+                        } else {
+                            Picker("\(z.name):", selection: auswahl(z.material)) {
+                                ForEach(z.liste) { f in Text(ExportFilamentWahl.eintrag(f)).tag(f.id) }
+                            }
+                            .accessibilityIdentifier("filament.\(z.material)")
+                        }
+                    }
+                } header: {
+                    Text(ExportFilamentWahl.kopf)
+                } footer: {
+                    Text(ExportFilamentWahl.hinweis)
+                }
+            }
+            .navigationTitle(ExportFilamentWahl.titel(platten))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Sichern") {
+                        sichern(gewaehlt)
+                        dismiss()
+                    }
+                    .disabled(wahl.zeilen.isEmpty || wahl.zeilen.contains { $0.liste.isEmpty })
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func auswahl(_ material: String) -> Binding<String> {
+        Binding(get: { gewaehlt[material] ?? "" }, set: { gewaehlt[material] = $0 })
     }
 }
 #endif

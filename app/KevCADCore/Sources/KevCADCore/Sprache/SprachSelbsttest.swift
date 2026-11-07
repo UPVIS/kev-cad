@@ -10,17 +10,25 @@ import simd
 // KEVCAD_SELFTEST=sprache, Ton aus KEVCAD_SPRACHE_TONDATEI. Das Skript KEVCAD_SPRACHE_SKRIPT nennt Schritte mit Zeiten ab
 // Beginn der Sitzung; Zeigen und Strich laufen über dieselben Wege wie die Maus (echter Treffertest der GPU). Am Ende steht
 // alles in KEVCAD_SELFTEST_AUSGABE/selftest-sprache.json; kernel/tools/feedback_selbsttest.py wartet als Agent mit.
+//
+// iPad (I-9): KEVCAD_SELFTEST=pad-sprache im Debug-Bau, gekoppelt an eine Mac-Testvariante (`tools/ipad-kette.sh
+// --sprache`). Zeigen ist der schwebende Stift, der Strich ein Stiftzug in der Eingabeebene (`TouchNavigation`). Der
+// Simulator hat kein Mikrofon und keine sichere Spracherkennung: Ohne Tondatei spricht ein Skript (`TestErkennung.sagen`,
+// Schritt `sagen`). Das Paket geht als Nutzlast an den Kernel (I-5); was dort ankommt, prüft der Kettentest über MCP.
+// Bericht zusätzlich als `bericht.txt` mit „ENDE bestanden“ bzw. „ENDE nicht bestanden“.
 
 /// Ein Schritt des Skripts.
 struct SprachSkriptSchritt: Codable {
     /// Sekunden ab Beginn der Sitzung
     var t: Double
-    /// `zeigen`, `strich`, `anhalten`, `weiter`, `drehen`, `fertig`
+    /// `zeigen`, `strich`, `anhalten`, `weiter`, `drehen`, `sagen`, `farbe`, `fertig`
     var art: String
     /// Nummer des Ziels (zeigen, strich)
     var ziel: Int?
-    /// Sekunden (drehen)
+    /// Sekunden (drehen, sagen)
     var dauer: Double?
+    /// Gesprochener Satz (sagen, nur ohne Tondatei) bzw. Strichfarbe (farbe, `Strichfarbe`)
+    var text: String?
 }
 
 /// Ergebnis für den Treiber.
@@ -36,9 +44,12 @@ struct SprachSelbsttestBericht: Codable {
     var wortLatenzMs: [Double] = []
     var drehen: String?
     var drehenOhneSitzung: String?
+    /// Gerät (`FeedbackGeraet`) und Strichfarben im Paket (I-4)
+    var geraet: String?
+    var farben: [String] = []
 
     enum CodingKeys: String, CodingKey {
-        case ok, pruefungen, ziele, paket, datei, worte, drehen
+        case ok, pruefungen, ziele, paket, datei, worte, drehen, geraet, farben
         case drehenOhneSitzung = "drehen_ohne_sitzung"
         case fertigUnix = "fertig_unix"
         case paketUnix = "paket_unix"
@@ -48,25 +59,25 @@ struct SprachSelbsttestBericht: Codable {
 
 extension AppController {
     static var sprachSelbsttestGewuenscht: Bool {
-        AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "sprache"
+        #if os(macOS)
+        return AppInfo.isTestVariant && ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "sprache"
+        #elseif DEBUG
+        return ProcessInfo.processInfo.environment["KEVCAD_SELFTEST"] == "pad-sprache"  // iPad: nur im Debug-Bau
+        #else
+        return false
+        #endif
     }
 
-    /// Nach dem ersten fertigen Lauf. Nur am Mac: Zeigen und Striche laufen über die Eingabeebene (iPad: folgt in I-9,
-    /// Selbsttests im iPad-Simulator, sobald Eingabe und Sprechen da sind).
+    /// Nach dem ersten fertigen Lauf. Am Mac über die Maus, am iPad über Stift und Finger der Eingabeebene.
     func sprachSelbsttestPlanen() {
-        #if os(macOS)
         guard Self.sprachSelbsttestGewuenscht, !viewerSelbsttestLaeuft, !model.parts.isEmpty else { return }
         viewerSelbsttestLaeuft = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             await self?.sprachSelbsttest()
         }
-        #else
-        if Self.sprachSelbsttestGewuenscht { log(.warning, "Selbsttest Sprache gibt es auf dem iPad noch nicht") }
-        #endif
     }
 
-    #if os(macOS)
     private func sprachPause(_ s: Double) async { try? await Task.sleep(for: .milliseconds(Int(s * 1000))) }
 
     /// Mitte des Teils in der Ansicht, wenn dort wirklich dieses Teil zu treffen ist (Eingabeebene, unten links).
@@ -105,9 +116,16 @@ extension AppController {
         }
         let ausgabe = env["KEVCAD_SELFTEST_AUSGABE"].map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? AppInfo.supportDirectory.appendingPathComponent("selftest-sprache", isDirectory: true)
+        try? FileManager.default.removeItem(at: ausgabe.appendingPathComponent("bericht.txt"))
         try? FileManager.default.createDirectory(at: ausgabe, withIntermediateDirectories: true)
+        // Ohne Tondatei spricht ein Skript (iPad im Simulator): Sätze kommen über den Schritt `sagen`
+        let mitTon = !(env["KEVCAD_SPRACHE_TONDATEI"] ?? "").isEmpty
+        let farbeVorher = viewer.strichfarbe
 
         _ = await kernelRuhe()
+        // Vergleich für das Drehen während des Sprechens; vor dem Einrahmen, denn die Umdrehung endet nicht genau am
+        // Ausgangsblick (sonst träfe der Punkt eines Ziels danach ein anderes Teil)
+        bericht.drehenOhneSitzung = await drehungMessen(sekunden: 2)
         let teile = scene.order.filter { !$0.hasPrefix("Kulisse/") && scene.isVisible($0) }
         focus(on: teile.isEmpty ? scene.order : teile)
         orbitStep(yaw: 25, pitch: -10)
@@ -116,9 +134,18 @@ extension AppController {
         bericht.ziele = ziele.map(\.name)
         pruefe(ziele.count >= 2, "\(ziele.count) Ziele getroffen: \(ziele.map(\.name).joined(separator: ", "))")
 
-        var schritte: [SprachSkriptSchritt] = [
+        var schritte: [SprachSkriptSchritt] = mitTon ? [
             .init(t: 0.3, art: "zeigen", ziel: 0), .init(t: 2.5, art: "zeigen", ziel: 1),
             .init(t: 3.0, art: "strich", ziel: 1), .init(t: 8.0, art: "fertig"),
+        ] : [
+            // Wie der Ton am Mac: zeigen beim ersten Satz, zeigen und zeichnen (grün) beim zweiten
+            .init(t: 0.2, art: "sagen", dauer: 2.0, text: "Mach das hier etwas höher."),
+            .init(t: 0.3, art: "zeigen", ziel: 0),
+            .init(t: 2.5, art: "sagen", dauer: 2.8, text: "Und diesen Griff hier machst du bitte breiter."),
+            .init(t: 2.6, art: "zeigen", ziel: 1), .init(t: 3.0, art: "farbe", text: "gruen"),
+            .init(t: 3.2, art: "strich", ziel: 1),
+            .init(t: 5.6, art: "sagen", dauer: 1.4, text: "Den Rest lässt du so."),
+            .init(t: 7.6, art: "fertig"),
         ]
         if let pfad = env["KEVCAD_SPRACHE_SKRIPT"], let daten = FileManager.default.contents(atPath: pfad),
             let eigene = try? JSONDecoder().decode([SprachSkriptSchritt].self, from: daten)
@@ -128,13 +155,10 @@ extension AppController {
 
         // Wörter: Wann erscheint jedes als Text?
         var zwischen: [(text: String, zeit: Double)] = []
-        var fertigPaket: (URL, FeedbackPaket)?
+        var fertigPaket: (URL?, FeedbackPaket)?
         sprache.beiZwischenstand = { zwischen.append(($0, $1)) }
         sprache.beiPaket = { fertigPaket = ($0, $1) }
 
-        // Vergleich für das Drehen während des Sprechens
-        bericht.drehenOhneSitzung = await drehungMessen(sekunden: 2)
-        await sprachPause(0.3)
 
         // Hauptlauf
         oberflaeche(.sprechen(true))
@@ -158,6 +182,15 @@ extension AppController {
                 pruefe(sprache.spricht, "V: es geht weiter")
             case "drehen":
                 bericht.drehen = await drehungMessen(sekunden: s.dauer ?? 2)
+            case "sagen":
+                if let text = s.text, let e = sprache.testErkennung {
+                    let dauer = s.dauer ?? 2
+                    Task { await e.sagen(text, dauer: dauer) }  // läuft neben Zeigen und Strich weiter
+                } else if !mitTon {
+                    pruefe(false, "sagen: keine Test-Erkennung in der Sitzung")
+                }
+            case "farbe":
+                if let f = s.text.flatMap(Strichfarbe.init(rawValue:)) { viewer.strichfarbe = f }
             case "fertig":
                 bericht.fertigUnix = Date().timeIntervalSince1970
                 oberflaeche(.sprechenFertig)
@@ -168,21 +201,40 @@ extension AppController {
         let frist = CACurrentMediaTime() + 5
         while fertigPaket == nil, CACurrentMediaTime() < frist { await sprachPause(0.005) }
         bericht.paketUnix = Date().timeIntervalSince1970
-        pruefe(fertigPaket != nil, "↩: Paket geschrieben")
+        pruefe(fertigPaket != nil, "↩: Paket \(fertigPaket.map { $0.0 == nil ? "als Nutzlast an den Mac" : "geschrieben" } ?? "fehlt")")
         pruefe(!model.oberflaeche.sitzungOffen && !sprache.offen && !viewport.zeichnen, "↩: Sitzung zu")
         if let (datei, paket) = fertigPaket {
             bericht.paket = paket.name
-            bericht.datei = datei.path
+            bericht.datei = datei?.path
+            bericht.geraet = paket.geraet
+            bericht.farben = paket.striche.compactMap(\.farbe)
             bericht.worte = paket.worte.count
             bericht.wortLatenzMs = Self.wortLatenz(paket, null: uhrNull, zwischen: zwischen)
             pruefe(paket.worte.count > 5, "\(paket.worte.count) Wörter, \(paket.saetze.count) Sätze")
             pruefe(paket.saetze.contains { $0.bezuege.contains { $0.art == "zeiger" && $0.wort != nil } }, "Zeigewort getroffen")
+            if let erstes = ziele.first?.name, schritte.contains(where: { $0.art == "zeigen" && $0.ziel == 0 }) {
+                let gezeigt = paket.saetze.flatMap(\.bezuege).filter { $0.art == "zeiger" && $0.wort != nil }.compactMap(\.teil)
+                pruefe(gezeigt.contains(erstes), "Zeigewort trifft das gezeigte Teil \(erstes): \(gezeigt)")
+            }
             pruefe(paket.striche.contains { !$0.teile.isEmpty }, "Strich liegt auf einem Teil")
+            let hier = FeedbackGeraet.hier.rawValue
+            pruefe(paket.geraet == hier && paket.striche.allSatisfy { $0.geraet == hier },
+                   "Gerät im Paket und an den Strichen: \(paket.geraet ?? "-")")
+            if let farbe = schritte.last(where: { $0.art == "farbe" })?.text {
+                pruefe(paket.striche.contains { $0.farbe == farbe }, "Strichfarbe \(farbe) im Paket: \(bericht.farben)")
+            }
+            pruefe(paket.bild != nil, "Bild der Ansicht im Paket")
         }
 
         // esc: nichts bleibt
         let vorher = (try? FileManager.default.contentsOfDirectory(atPath: FeedbackAblage.ordner(
             projekt: model.project?.path ?? ausgabe).path)) ?? []
+        var paketeNachEsc = 0  // am iPad liegt nichts im Projektordner: gezählt wird, was hinausgeht
+        let gesendetVorher = sprache.gesendet
+        sprache.gesendet = { m in
+            if m is FeedbackPaketMessage { paketeNachEsc += 1 }
+            gesendetVorher?(m)
+        }
         oberflaeche(.sprechen(true))
         await sprachPause(0.5)
         if let z = ziele.first {
@@ -195,13 +247,18 @@ extension AppController {
         let nachher = (try? FileManager.default.contentsOfDirectory(atPath: FeedbackAblage.ordner(
             projekt: model.project?.path ?? ausgabe).path)) ?? []
         pruefe(!sprache.offen && !model.oberflaeche.sitzungOffen, "esc: Sitzung zu")
-        pruefe(vorher.sorted() == nachher.sorted(), "esc: nichts geschrieben")
+        pruefe(vorher.sorted() == nachher.sorted() && paketeNachEsc == 0, "esc: nichts geschrieben, nichts gesendet")
+        sprache.gesendet = gesendetVorher
+        viewer.strichfarbe = farbeVorher
 
         sprache.beiZwischenstand = nil
         sprache.beiPaket = nil
         if let daten = try? JSONEncoder().encode(bericht) {
             try? daten.write(to: ausgabe.appendingPathComponent("selftest-sprache.json"), options: .atomic)
         }
+        let text = (["Selbsttest Sprache (\(FeedbackGeraet.hier.rawValue))"] + bericht.pruefungen
+            + ["ENDE \(bericht.ok ? "bestanden" : "nicht bestanden")"]).joined(separator: "\n") + "\n"
+        try? text.write(to: ausgabe.appendingPathComponent("bericht.txt"), atomically: true, encoding: .utf8)
         log(.info, "Selbsttest Sprache: \(bericht.ok ? "bestanden" : "FEHLGESCHLAGEN")")
     }
 
@@ -221,7 +278,6 @@ extension AppController {
         ansicht.testStrichBeenden(punkte[punkte.count - 1])
         await sprachPause(0.05)
     }
-    #endif
 
     /// Je Wort: Zeit vom Ende des Worts im Ton, bis es als Text da war (ms). Maßstab ist die Zahl der Wörter im Zwischenstand.
     static func wortLatenz(_ paket: FeedbackPaket, null: Double, zwischen: [(text: String, zeit: Double)]) -> [Double] {

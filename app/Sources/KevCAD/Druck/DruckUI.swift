@@ -20,6 +20,8 @@ final class DruckUI: ObservableObject {
     }
     /// Teil unter der Maus in der Plattenansicht.
     @Published var hover: String?
+    /// iPad: offene Filamentwahl vor dem 3MF-Export (`ExportFilamentBlatt`); am Mac fragt der Sichern-Dialog.
+    @Published var exportFilament: ExportFilamentAnfrage?
 
     private init() {
         nebeneinander = UserDefaults.standard.bool(forKey: "druckPlattenNebeneinander")
@@ -289,4 +291,11 @@ struct DruckHinweisZeile: View {
 extension Druckvorschau {
     /// Fortschrittsanteil des Slicers über die Gruppen (für Animationen), 1 ohne Slicer.
     var signatur: String { "\(run)|\(stand.rawValue)|\(slicer.fertig)|\(summe.zeitMitWechselS)|\(summe.gramm)" }
+}
+
+/// iPad: Platten und Vorschau, für die gerade das Filament gewählt wird (vor „3MF sichern“).
+struct ExportFilamentAnfrage: Identifiable {
+    let id = UUID()
+    var platten: [Int]
+    var vorschau: Druckvorschau
 }

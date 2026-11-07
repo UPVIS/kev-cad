@@ -59,9 +59,12 @@ public final class SprachSteuerung {
     /// I-4 „Bild an den Agenten“: Das Paket geht auch ohne Wort und ohne Strich hinaus.
     private var nurBild = false
 
-    /// Selbsttest: jeder Zwischenstand mit Uptime; das Paket, sobald es geschrieben ist.
+    /// Selbsttest: jeder Zwischenstand mit Uptime; das Paket, sobald es geschrieben ist (Datei im Projektordner) bzw.
+    /// als Nutzlast hinausging (nil, I-5).
     var beiZwischenstand: ((String, Double) -> Void)?
-    var beiPaket: ((URL, FeedbackPaket) -> Void)?
+    var beiPaket: ((URL?, FeedbackPaket) -> Void)?
+    /// Selbsttest ohne Ton (iPad im Simulator, I-9): die Erkennung der laufenden Sitzung, wenn sie ein Skript ist.
+    var testErkennung: TestErkennung? { erkennung as? TestErkennung }
     /// Tests: eigene Erkennung statt Wortlaut, und was an den Kernel geht.
     var erkennungFabrik: (() -> any Spracherkennung)?
     var gesendet: ((any OutgoingMessage) -> Void)?
@@ -504,6 +507,7 @@ public final class SprachSteuerung {
             if senden(m, nutzlast: nutzlast) {
                 c.log(.info, "Feedback \(paket.name) an den Mac: \(paket.saetze.count) Sätze, \(paket.striche.count) "
                     + "Striche, \(nutzlast.count / 1024) KB")
+                beiPaket?(nil, paket)
             } else if postausgangAblegen(m, nutzlast: nutzlast) {
                 c.viewer.zeige("Der Mac ist gerade nicht verbunden. Dein Feedback geht los, sobald er wieder da ist.")
             } else {

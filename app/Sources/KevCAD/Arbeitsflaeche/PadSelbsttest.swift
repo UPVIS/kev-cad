@@ -245,6 +245,22 @@ enum PadSelbsttest {
         pruefe(await warte(120) { model.druck.vorschau != nil },
                "Druckvorschau vom Kernel (PRINT_PREVIEW): \(model.druck.vorschau?.platten.count ?? 0) Platten")
         await foto("b04-druck")
+        // Vor „3MF sichern“ fragt das Blatt nach dem Filament (Kevins Regel, gleiche Texte wie am Mac); der Kettentest
+        // baut dafür ein Druckteil ins Modell
+        pruefe(await warte(60) { !(model.druck.vorschau?.istLeer ?? true) },
+               "Druckvorschau mit Platten: \(model.druck.vorschau?.platten.count ?? 0)")
+        if let v = model.druck.vorschau, !v.istLeer {
+            let wahl = ExportFilamentWahl(v, platten: [])
+            pruefe(!wahl.zeilen.isEmpty && wahl.zeilen.allSatisfy { $0.vorgewaehlt != nil },
+                   "Filamentwahl vor dem 3MF: " + wahl.zeilen.map { z in
+                       "\(z.name) → \(z.liste.first { $0.id == z.vorgewaehlt }?.name ?? "keins")"
+                   }.joined(separator: ", "))
+            DruckUI.shared.exportFilament = ExportFilamentAnfrage(platten: [], vorschau: v)
+            await pause(1.0)
+            await foto("b04-druck-filament")
+            DruckUI.shared.exportFilament = nil
+            await pause(0.8)
+        }
         a?.schliesseKachel(.druck)
 
         // 5. Bestand (BESTAND), gezeigt in der Stückliste

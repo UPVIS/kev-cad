@@ -655,6 +655,26 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         }
     }
 
+    /// Selbsttest Sprechen (I-9): dieselben Wege wie Stift und Finger, ohne simulierte Berührungen. Zeigen ist der
+    /// schwebende Stift, der Strich ein Stiftzug. Punkte mit Ursprung unten links wie am Mac (`BlenderNavigation`).
+    func testMaus(_ p: CGPoint) {
+        zeiger = p
+        hoverTest()
+    }
+
+    func testStrichBeginnen(_ p: CGPoint) {
+        zeiger = nil
+        modus = .strich
+        strichBeginnen(p)
+    }
+
+    func testStrichZiehen(_ p: CGPoint) { strichZiehen(p, erkenner: stift) }
+
+    func testStrichBeenden(_ p: CGPoint) {
+        strichBeenden(p)
+        modus = .ruht
+    }
+
     // MARK: Tastatur (Magic Keyboard)
 
     override var canBecomeFirstResponder: Bool { true }
