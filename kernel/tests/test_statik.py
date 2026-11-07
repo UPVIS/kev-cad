@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -157,6 +158,61 @@ def test_s1_kragarm_einfeld_knicken():
                [Szenario("D", lasten=[Last(["Rohr"], np.array([0, 0, -10.0]), np.array([0, 0, 500.0]))])])
     assert e["D"].knicken == pytest.approx(math.pi ** 2 * 70000 * I / (4 * 500 ** 2) / 10, rel=1e-3)
     assert e["D"].knick_stab == "Rohr"
+
+
+def _knick_matrizen(n: int, seed: int) -> tuple[Any, Any, float]:
+    """K positiv definit und dünn, G symmetrisch mit Eigenwerten λ zwischen rund 2.000 und 30.000 (wie am Kugelschieber,
+    wo eigsh im Modus „buckling“ mit sigma 1e-3 nicht konvergierte). Liefert K, G und die kleinste Knicklast."""
+    import scipy.sparse as sps
+
+    rng = np.random.default_rng(seed)
+    # Steifigkeit eines Balkens aus Federn plus Diagonale: dünn, positiv definit
+    haupt = 4.0 + rng.random(n)
+    neben = -1.0 + 0.1 * rng.random(n - 1)
+    K = sps.diags([neben, haupt, neben], [-1, 0, 1], format="csr") * 1e4
+    lam = 2000.0 + 28000.0 * rng.random(n)
+    lam[rng.integers(n)] = 1999.0  # eine kleinste, knapp darunter
+    # G = K V diag(1/λ) Vᵀ K mit K-orthonormalen V: dann ist (K − λ G) φ = 0 genau für diese λ
+    Kd = K.toarray()
+    L = np.linalg.cholesky(Kd)
+    Q, _ = np.linalg.qr(rng.standard_normal((n, n)))
+    V = np.linalg.solve(L.T, Q)
+    G = Kd @ V @ np.diag(1.0 / lam) @ V.T @ Kd
+    return K, sps.csr_matrix((G + G.T) / 2), float(lam.min())
+
+
+def test_knicklast_kleinste_und_deterministisch():
+    """Knicken (S1): die kleinste Knicklast, dicht wie dünn (über KNICK_DICHT), und in jedem Prozess dieselbe."""
+    import subprocess
+    import sys
+
+    from kevcad_kernel.statik import stabwerk
+
+    K, G, kleinste = _knick_matrizen(300, 1)
+    lam, phi = stabwerk._kleinste_knicklast(K, G)
+    assert lam == pytest.approx(kleinste, rel=1e-8)
+    assert np.linalg.norm((K.toarray() - lam * G.toarray()) @ phi) < 1e-6 * np.linalg.norm(K.toarray() @ phi)
+    alt = stabwerk.KNICK_DICHT
+    try:
+        stabwerk.KNICK_DICHT = 100  # dünner Weg (eigsh mit festem Startvektor)
+        lam_d, _ = stabwerk._kleinste_knicklast(K, G)
+    finally:
+        stabwerk.KNICK_DICHT = alt
+    assert lam_d == pytest.approx(kleinste, rel=1e-6)
+    # Kragstütze in zwei frischen Prozessen: Bit für Bit dieselbe Knicklast und derselbe Stab
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); from test_statik import _knick_stuetze; "
+            "print(repr(_knick_stuetze()))")
+    hier = str(Path(__file__).parent)
+    aus = [subprocess.run([sys.executable, "-c", code, hier], capture_output=True, text=True, check=True,
+                          cwd=hier).stdout.strip().splitlines()[-1] for _ in range(2)]
+    assert aus[0] == aus[1] and aus[0] != "(None, None)"
+
+
+def _knick_stuetze() -> tuple[float | None, str | None]:
+    """Zwei Rohre als Rahmen auf Druck (für den Test in frischen Prozessen)."""
+    m = _modell(L=500, richtung=(0, 0, 1))
+    e = rechne(m, [Szenario("D", lasten=[Last(["Rohr"], np.array([0, 0, -10.0]), np.array([0, 0, 500.0]))])])
+    return e["D"].knicken, e["D"].knick_stab
 
 
 def test_s1_mechanismus_wird_gemeldet_und_s0_rechnet_einfache_traeger():

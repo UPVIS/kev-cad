@@ -32,13 +32,10 @@ FLUECHTIG = {
     "neu_geprueft", "geprueft_ms", "lauf_ok",
 }
 
-# Vorbestehend (gemessen am Stand vor A1, 07.11.2026): Werte, die schon zwischen zwei frischen Prozessen schwanken,
+# Vorbestehend (gemessen am Stand vor A1, 07.11.2026; Knicken ist seit 07.11.2026 deterministisch, stabwerk.py): Werte, die schon zwischen zwei frischen Prozessen schwanken,
 # also nichts mit Zwischenspeichern zu tun haben. Sie stehen im Ergebnis unter ``bekannt`` und lassen die Probe nicht
 # scheitern; ihr Grund steht dabei.
 BEKANNT = [
-    (re.compile(r"\.knicken$|\.knick_stab$"),
-     "S1 Knicken: eigsh (ARPACK) ohne festen Startvektor, sigma 1e-3 weit unter den Eigenwerten (statik/stabwerk.py "
-     "_knicken); schwankt zwischen Prozessen"),
     (re.compile(r"\.s0\.rutschen\[\d+\]\.(teil|paarung|quelle)$"),
      "S0 Rutschen: Gleichstand gleicher Teile, entschieden nach der Reihenfolge einer Menge (Hash-Zufall je Prozess, "
      "statik/s0.py rutschen)"),

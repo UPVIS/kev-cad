@@ -33,9 +33,7 @@ ALT = ("erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "druckv
        "bewegungsraum")
 FLUECHTIG = {"ms", "zeiten_ms", "dauer_ms", "duration_ms", "statistik", "laufzeit_ms", "pruef_ms", "aus_gedaechtnis",
              "aus_zwischenspeicher", "zwischenspeicher", "tests", "neu_gerechnet", "neu_geprueft", "dienst_ms",
-             "rechnen_ms", "geprueft_ms",
-             # vorbestehend, nicht Teil von A1: Knicken (S1) rechnet eigsh ohne festen Startvektor (Plan, Abschnitt 10)
-             "knicken", "knick_stab"}
+             "rechnen_ms", "geprueft_ms"}
 
 
 def _ohne_fluechtiges(x: Any) -> Any:

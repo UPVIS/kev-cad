@@ -669,11 +669,61 @@ def _durchbiegung(b: _Aufbau, s: Stab, combo: str, sz: Szenario) -> tuple[float,
     return best[1], best[2]
 
 
+KNICK_DICHT = 2000  # Freiheitsgrade: bis hier dicht (LAPACK), darüber Lanczos mit festem Startvektor
+
+
+def _kleinste_knicklast(K11: Any, G11: Any) -> tuple[float | None, np.ndarray | None]:
+    """Kleinster positiver Lastfaktor λ mit (K − λ G) φ = 0 und seine Form φ, oder (None, None).
+
+    Gelöst wird das symmetrische Kehrwertproblem G φ = μ K φ mit μ = 1/λ (K ist nach dem Abziehen der Lager positiv
+    definit): der größte positive Eigenwert μ gibt die kleinste Knicklast. Dicht über LAPACK bis ``KNICK_DICHT``
+    Freiheitsgrade, darüber ``eigsh`` mit festem Startvektor. Beides ist deterministisch: dasselbe Modell gibt in jedem
+    Prozess dieselbe Knicklast. Bis 07.11.2026 lief hier ``eigsh`` im Modus „buckling“ mit sigma 1e-3 ohne festen
+    Startvektor; die Eigenwerte liegen dort transformiert alle dicht bei 1, ARPACK konvergierte am Kugelschieber nicht
+    und lieferte je Prozess andere, teils um den Faktor 3 bis 6 zu kleine Werte (PLAN-PRUEFUNG-INKREMENTELL.md)."""
+    import scipy.linalg as sla
+    import scipy.sparse as sps
+
+    n = K11.shape[0]
+    if n == 0:
+        return None, None
+    mu, phi = None, None
+    try:
+        if n <= KNICK_DICHT:
+            Kd = K11.toarray() if sps.issparse(K11) else np.asarray(K11, dtype=float)
+            Gd = G11.toarray() if sps.issparse(G11) else np.asarray(G11, dtype=float)
+            Kd, Gd = (Kd + Kd.T) / 2, (Gd + Gd.T) / 2  # Rundungsreste der Montage (bis 4e-6) symmetrisch verteilen
+            w, v = sla.eigh(Gd, Kd, subset_by_index=[n - 1, n - 1])
+            mu, phi = float(w[-1]), v[:, -1]
+        else:
+            from scipy.sparse.linalg import eigsh
+
+            Ks = sps.csc_matrix((K11 + K11.T) / 2)
+            Gs = sps.csc_matrix((G11 + G11.T) / 2)
+            v0 = np.random.default_rng(0).standard_normal(n)
+            w, v = eigsh(Gs, k=min(6, n - 2), M=Ks, which="LA", v0=v0)
+            i = int(np.argmax(w))
+            mu, phi = float(w[i]), v[:, i]
+    except Exception:  # noqa: BLE001 - K nicht positiv definit (beweglich gelagert): allgemein und dicht, wie bisher
+        if n > 900:
+            return None, None
+        Kd = K11.toarray() if sps.issparse(K11) else np.asarray(K11, dtype=float)
+        Gd = G11.toarray() if sps.issparse(G11) else np.asarray(G11, dtype=float)
+        w, v = sla.eig(Kd, Gd)
+        pos = [(float(x.real), v[:, i].real) for i, x in enumerate(w)
+               if np.isfinite(x) and abs(x.imag) < 1e-9 and x.real > 1e-9]
+        if not pos:
+            return None, None
+        return min(pos, key=lambda p: p[0])
+    if mu is None or not np.isfinite(mu) or mu <= 1e-12:
+        return None, None
+    return 1.0 / mu, np.asarray(phi, dtype=float)
+
+
 def _knicken(b: _Aufbau, sz: Szenario, e: S1Ergebnis) -> None:
     """Kleinster Lastfaktor λ mit (K + λ Kg) φ = 0 (nur wenn ein Stab auf Druck steht)."""
     if not any(r.normalkraft_min < -1e-3 for r in e.staebe.values()):
         return
-    import scipy.sparse as sps
     from Pynite.Analysis import _partition_D
 
     fe = b.fe
@@ -684,25 +734,7 @@ def _knicken(b: _Aufbau, sz: Szenario, e: S1Ergebnis) -> None:
     D1 = np.asarray(D1, dtype=int)
     K11 = K[D1][:, D1]
     G11 = -Kg[D1][:, D1]
-    n = K11.shape[0]
-    lam, phi = None, None
-    try:
-        from scipy.sparse.linalg import eigsh
-
-        w, v = eigsh(sps.csc_matrix(K11), k=min(6, n - 2), M=sps.csc_matrix(G11), sigma=1e-3, which="LM",
-                     mode="buckling")
-        pos = [(float(x), v[:, i]) for i, x in enumerate(w) if x > 1e-9]
-        if pos:
-            lam, phi = min(pos, key=lambda p: p[0])
-    except Exception:  # noqa: BLE001 - kleine Modelle dicht
-        if n <= 900:
-            import scipy.linalg as sla
-
-            w, v = sla.eig(K11.toarray(), G11.toarray())
-            pos = [(float(x.real), v[:, i].real) for i, x in enumerate(w)
-                   if np.isfinite(x) and abs(x.imag) < 1e-9 and x.real > 1e-9]
-            if pos:
-                lam, phi = min(pos, key=lambda p: p[0])
+    lam, phi = _kleinste_knicklast(K11, G11)
     if lam is None:
         return
     e.knicken = round(lam, 4)
