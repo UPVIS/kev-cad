@@ -3500,8 +3500,12 @@ def datei_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
 ANSICHT_MODI: tuple[str, ...] = ("gemeinsam", "eigen")
 #: neue Nachrichten App → Kernel
 ANSICHT_APP_NACHRICHTEN: tuple[str, ...] = ("ANSICHT_MODUS", "ANSICHT", "SPRECHEN_LIVE")
-#: Teile einer ANSICHT (je Teil nur, wenn er sich geändert hat; mit ``voll`` alle)
-ANSICHT_TEILE: tuple[str, ...] = ("kamera", "sicht", "auswahl", "darstellung", "schnitt", "explosion")
+#: Teile einer ANSICHT (je Teil nur, wenn er sich geändert hat; mit ``voll`` alle). ``flaeche`` (Leisten und Kacheln)
+#: kam am 07.11.2026 dazu und fehlt bei Apps davor, deshalb verlangt ``voll`` nur ``ANSICHT_TEILE_VOLL``.
+ANSICHT_TEILE: tuple[str, ...] = ("kamera", "sicht", "auswahl", "darstellung", "schnitt", "explosion", "flaeche")
+ANSICHT_TEILE_VOLL: tuple[str, ...] = ("kamera", "sicht", "auswahl", "darstellung", "schnitt", "explosion")
+ANSICHT_FLAECHE_FELDER: tuple[str, ...] = ("kacheln", "gross", "aktiv", "leiste_links", "leiste_rechts", "zeitleiste",
+                                           "zweite_ansicht", "blatt")
 ANSICHT_KAMERA_FELDER: tuple[str, ...] = ("drehung", "ziel", "abstand", "projektion", "fov", "ortho_hoehe")
 #: Nach so langer Ruhe des führenden Geräts darf ein anderes ohne neuen Griff übernehmen (Sekunden)
 FUEHRUNG_PAUSE_S = 1.0
@@ -3533,6 +3537,27 @@ def check_ansicht_kamera(k: Any) -> list[str]:
     return out
 
 
+def check_ansicht_flaeche(f: Any) -> list[str]:
+    """Teil ``flaeche`` einer ANSICHT: Leisten und Kacheln wie ``LAGE.flaeche`` ohne Rand (der gehört dem Fenster)."""
+    if not isinstance(f, dict):
+        return ["flaeche kein Objekt"]
+    out: list[str] = []
+    k = f.get("kacheln")
+    if not isinstance(k, list) or not k or not all(x in KACHELN for x in k) or len(set(k)) != len(k) or len(k) > 4:
+        out.append("flaeche.kacheln ungültig (1 bis 4 verschiedene Kacheln)")
+    for feld in ("gross", "aktiv"):
+        if f.get(feld) is not None and f.get(feld) not in KACHELN:
+            out.append(f"flaeche.{feld} ist keine Kachel")
+    for feld in ("leiste_links", "leiste_rechts", "zeitleiste"):
+        if not isinstance(f.get(feld), bool):
+            out.append(f"flaeche.{feld} kein Wahrheitswert")
+    if not isinstance(f.get("zweite_ansicht"), str):
+        out.append("flaeche.zweite_ansicht fehlt")
+    if f.get("blatt") is not None and not isinstance(f.get("blatt"), str):
+        out.append("flaeche.blatt kein Text")
+    return out
+
+
 def check_ansicht_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
     """Probleme einer Nachricht aus I-6 (leer = gut). Andere Nachrichten: leer."""
     art = header.get("type")
@@ -3554,8 +3579,10 @@ def check_ansicht_message(header: dict[str, Any], payload: bytes = b"") -> list[
             out.append("ANSICHT: von keine Nummer")
         if not any(k in header for k in ANSICHT_TEILE):
             out.append("ANSICHT ohne Inhalt")
-        if header.get("voll") is True and not all(k in header for k in ANSICHT_TEILE):
+        if header.get("voll") is True and not all(k in header for k in ANSICHT_TEILE_VOLL):
             out.append("ANSICHT: voll, aber nicht alle Teile")
+        if "flaeche" in header:
+            out += ["ANSICHT: " + p for p in check_ansicht_flaeche(header["flaeche"])]
         if "kamera" in header:
             out += ["ANSICHT: " + p for p in check_ansicht_kamera(header["kamera"])]
         if "sicht" in header:
@@ -3620,7 +3647,9 @@ def ansicht_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
     voll = {"type": "ANSICHT", "seq": 31, "t": 1793480990.125, "griff": True, "voll": True, "kamera": kamera,
             "sicht": {"verborgen": ["Deckel"], "isoliert": None},
             "auswahl": {"run": 8, "refs": ["Halter/Lasche#f0"]}, "darstellung": "shaded_edges",
-            "schnitt": {"normale": [0.0, 0.0, -1.0], "abstand": 5.0}, "explosion": 0.0}
+            "schnitt": {"normale": [0.0, 0.0, -1.0], "abstand": 5.0}, "explosion": 0.0,
+            "flaeche": {"kacheln": ["modell", "zeichnung"], "gross": None, "aktiv": "zeichnung", "leiste_links": True,
+                        "leiste_rechts": False, "zeitleiste": False, "zweite_ansicht": "top", "blatt": "b-2"}}
     return [
         ("ansicht_modus", {"type": "ANSICHT_MODUS", "seq": 2, "modus": "gemeinsam"}, b"", "app"),
         ("ansicht_modus_eigen", {"type": "ANSICHT_MODUS", "seq": 3, "modus": "eigen"}, b"", "app"),

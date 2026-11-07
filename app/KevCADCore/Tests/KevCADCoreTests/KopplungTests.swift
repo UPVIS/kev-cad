@@ -52,6 +52,8 @@ final class KopplungTests: XCTestCase {
         XCTAssertEqual(KopplungGrenzen.ansichtJeS, e["ansicht_je_s"]?.doubleValue)
         XCTAssertEqual(KopplungGrenzen.sprechenLiveJeS, e["sprechen_live_je_s"]?.doubleValue)
         XCTAssertTrue(LiveFaehigkeit.app.contains(LiveFaehigkeit.ansicht))
+        XCTAssertEqual(e["teile"]?.stringList?.last, "flaeche")
+        XCTAssertEqual(KopplungGrenzen.kachelnNebeneinanderAb, 640)
     }
 
     func testGeraeteUndAnsichtLesen() throws {
@@ -122,6 +124,29 @@ final class KopplungTests: XCTestCase {
         frisch.voll = false
         c.handle(.kopplung(.ansicht(frisch)))
         XCTAssertEqual(try XCTUnwrap(c.kopplungLatenzMs), 20, accuracy: 15)
+    }
+
+    func testLeistenUndKachelnGehenMit() throws {
+        let (c, g) = try verbunden()
+        let a = try JSONDecoder().decode(AnsichtMessage.self, from: Fixtures.frame("ansicht_voll.frame").header)
+        let f = try XCTUnwrap(a.stand.flaeche)
+        XCTAssertEqual(f.kacheln, ["modell", "zeichnung"])
+        c.model.kopplung.fensterBreite = 1200
+        c.handle(.kopplung(.ansicht(a)))
+        XCTAssertEqual(c.model.oberflaeche.kacheln, [.modell, .zeichnung])
+        XCTAssertNil(c.model.oberflaeche.gross)
+        XCTAssertEqual(c.model.oberflaeche.aktiv, .zeichnung)
+        XCTAssertEqual(c.flaecheJetzt(), f, "übernommen ist gleich geteilt: nichts zurück")
+        g.rahmen = []
+        // Schmales Fenster: dieselben Kacheln, die aktive groß; geteilt bleibt „keine groß“
+        let (schmal, _) = try verbunden()
+        schmal.model.kopplung.fensterBreite = 500
+        schmal.handle(.kopplung(.ansicht(a)))
+        XCTAssertEqual(schmal.model.oberflaeche.gross, .zeichnung)
+        XCTAssertNil(schmal.flaecheJetzt().gross)
+        // Kevin ändert dort selbst: dann gilt seine Wahl
+        schmal.oberflaeche(.kachelGross(.modell))
+        XCTAssertEqual(schmal.flaecheJetzt().gross, "modell")
     }
 
     func testEigeneAnsichtFolgtNicht() throws {

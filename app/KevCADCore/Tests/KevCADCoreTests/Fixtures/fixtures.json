@@ -2585,7 +2585,26 @@
    "auswahl",
    "darstellung",
    "schnitt",
+   "explosion",
+   "flaeche"
+  ],
+  "teile_voll": [
+   "kamera",
+   "sicht",
+   "auswahl",
+   "darstellung",
+   "schnitt",
    "explosion"
+  ],
+  "flaeche_felder": [
+   "kacheln",
+   "gross",
+   "aktiv",
+   "leiste_links",
+   "leiste_rechts",
+   "zeitleiste",
+   "zweite_ansicht",
+   "blatt"
   ],
   "kamera_felder": [
    "drehung",

@@ -36,6 +36,8 @@ final class LiveKopplung {
     var liveGesendet: CFTimeInterval = 0
     /// Striche, Zeiger und Text der anderen Geräte (nach Verbindungsnummer).
     var fremd: [Int: FremdesSprechen] = [:]
+    /// Schmales Fenster: diese Kachel zeigt das Gerät groß, obwohl geteilt keine groß ist (geteilt bleibt nil).
+    var flaecheAnpassung: KachelArt?
 
     /// Solange gilt eine Eingabe als „Kevin bedient hier“ (Sekunden).
     static let bedientFenster: CFTimeInterval = 0.35
@@ -181,7 +183,55 @@ extension AppController {
         s.schnitt = .some(scene.section.map { .init(normale: [$0.normal.x, $0.normal.y, $0.normal.z].map { r($0, 1e6) },
                                                      abstand: r($0.distance)) })
         s.explosion = r(scene.explodeFactor)
+        s.flaeche = flaecheJetzt()
         return s
+    }
+
+    /// Leisten und Kacheln zum Teilen. Eine Anpassung an ein schmales Fenster (große Kachel) bleibt hier: geteilt wird,
+    /// was das führende Gerät gezeigt hat, bis Kevin hier selbst etwas ändert.
+    func flaecheJetzt() -> AnsichtStand.Flaeche {
+        let z = model.oberflaeche.zustand
+        var gross = z.gross
+        if let a = liveKopplung.flaecheAnpassung {
+            if z.gross == a { gross = nil } else { liveKopplung.flaecheAnpassung = nil }
+        }
+        return .init(kacheln: z.kacheln.map(\.rawValue), gross: gross?.rawValue, aktiv: z.aktiv?.rawValue,
+                     leisteLinks: z.leisteLinks, leisteRechts: z.leisteRechts, zeitleiste: z.zeitleiste,
+                     zweiteAnsicht: z.zweiteAnsicht, blatt: z.blatt)
+    }
+
+    /// Ist das Fenster zu schmal für Kacheln nebeneinander?
+    var fensterSchmal: Bool {
+        let b = model.kopplung.fensterBreite
+        return b > 0 && b < KopplungGrenzen.kachelnNebeneinanderAb
+    }
+
+    /// Leisten und Kacheln eines anderen Geräts übernehmen. Ausnahme: In einem schmalen Fenster (unter 640 pt) werden
+    /// Kacheln nebeneinander zur großen Kachel (die aktive, sonst die letzte). Leisten blendet die Oberfläche unter 760 pt
+    /// ohnehin aus (`Arbeitsgeometrie`), ihr Zustand geht trotzdem mit.
+    func flaecheUebernehmen(_ f: AnsichtStand.Flaeche) {
+        let kacheln = f.kacheln.compactMap(KachelArt.init(rawValue:))
+        guard !kacheln.isEmpty else { return }
+        var gross = f.gross.flatMap(KachelArt.init(rawValue:))
+        let aktiv = f.aktiv.flatMap(KachelArt.init(rawValue:))
+        liveKopplung.flaecheAnpassung = nil
+        if fensterSchmal, gross == nil, kacheln.contains(where: { $0 != .modell }) {
+            let lokal = aktiv.flatMap { kacheln.contains($0) ? $0 : nil } ?? kacheln.last ?? .modell
+            liveKopplung.flaecheAnpassung = lokal
+            gross = lokal
+        }
+        let o = model.oberflaeche
+        if o.uebersicht { oberflaeche(.uebersicht(false)) }
+        if o.kacheln != kacheln { oberflaeche(.kachelnOrdnen(kacheln)) }
+        if o.gross != gross { oberflaeche(.kachelGross(gross)) }
+        if o.aktiv != aktiv, aktiv.map(kacheln.contains) ?? true { oberflaeche(.kachelAktiv(aktiv)) }
+        if o.leisteLinks != f.leisteLinks { oberflaeche(.leisteLinks(f.leisteLinks)) }
+        if o.leisteRechts != f.leisteRechts { oberflaeche(.leisteRechts(f.leisteRechts)) }
+        if o.zeitleiste != f.zeitleiste { oberflaeche(.zeitleiste(f.zeitleiste)) }
+        if o.zweiteAnsicht != f.zweiteAnsicht, standardAnsichten.contains(f.zweiteAnsicht) {
+            oberflaeche(.zweiteAnsicht(f.zweiteAnsicht))
+        }
+        if let b = f.blatt, o.blatt != b { oberflaeche(.blatt(b)) }
     }
 
     /// Kamera als Teil einer ANSICHT, gerundet (so vergleicht die App ohne Rauschen).
@@ -203,6 +253,7 @@ extension AppController {
         if let x = neu.darstellung, x != alt.darstellung { d.darstellung = x }
         if let x = neu.schnitt, alt.schnitt.map({ $0 != x }) ?? true { d.schnitt = .some(x) }
         if let x = neu.explosion, x != alt.explosion { d.explosion = x }
+        if let f = neu.flaeche, f != alt.flaeche { d.flaeche = f }
         return d
     }
 
@@ -252,6 +303,7 @@ extension AppController {
                 if !weg.isEmpty { scene.setVisible(weg, false); teileGeaendert = true }
             }
         }
+        if let f = s.flaeche { flaecheUebernehmen(f) }
         if let d = s.darstellung, d != lageDarstellung {
             if let modus = ShadingModus.allCases.first(where: { $0.protokollName == d }), Self.displayStyle(protocolName: d) == nil {
                 setShading(modus)

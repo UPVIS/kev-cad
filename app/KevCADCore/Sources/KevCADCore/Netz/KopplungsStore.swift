@@ -24,6 +24,9 @@ public final class KopplungsStore: ObservableObject {
     @Published public internal(set) var modus: AnsichtModus = KopplungsStore.gemerkterModus
     /// Verbundene Geräte laut Kernel (GERAETE), mit diesem Gerät (`ich`).
     @Published public internal(set) var liveGeraete: [GeraetEintrag] = []
+    /// Breite des Hauptfensters in Punkten (die Oberfläche misst sie, ohne Beobachtung); 0 = unbekannt. Unter
+    /// `KopplungGrenzen.kachelnNebeneinanderAb` zeigt das Gerät geteilte Kacheln als große Kachel.
+    public var fensterBreite: Double = 0
 
     public init() {}
 

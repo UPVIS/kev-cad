@@ -1674,6 +1674,13 @@ Striche beim Sprechen.
 | `darstellung` | wie `LAGE.darstellung` |
 | `schnitt` | `{"normale": [x, y, z], "abstand": mm}` (Ebene wie im Viewport) oder null |
 | `explosion` | Faktor wie `LAGE.explosion` |
+| `flaeche` | Leisten und Kacheln (seit 07.11.2026): `kacheln` (1 bis 4, Reihenfolge = Nummern), `gross`, `aktiv` (Kachel oder null), `leiste_links`, `leiste_rechts`, `zeitleiste`, `zweite_ansicht` (Standardansicht der zweiten Ansicht), `blatt` (Kennung oder null). Ohne `rand`: Das Fenster am Bildschirmrand bleibt Sache jedes Geräts. |
+
+`voll` verlangt nur die ersten sechs Teile (`ANSICHT_TEILE_VOLL`), weil Apps vor dem 07.11.2026 `flaeche` nicht kennen;
+der Kernel ergänzt seinen Stand deshalb auch bei `voll` nur und behält die zuletzt geteilte Fläche. **Schmale Fenster:**
+Unter 640 pt Breite (`kachelnNebeneinanderAb`, wie `GA.schmalAb`) zeigt ein Gerät geteilte Kacheln nebeneinander als
+große Kachel (die aktive, sonst die letzte) und schickt dabei weiter „keine groß“, bis Kevin dort selbst etwas ändert.
+Leisten blendet die Oberfläche unter 760 pt ohnehin aus; ihr Zustand geht trotzdem mit.
 
 **Führung:** Es führt, wer zuletzt bedient. Der Kernel nimmt eine `ANSICHT` an, wenn das Gerät führt, wenn niemand
 führt, wenn sie `griff` trägt (gleichzeitige Bedienung: der spätere Griff gewinnt) oder wenn das führende Gerät seit

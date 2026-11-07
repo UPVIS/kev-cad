@@ -22,7 +22,9 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from kevcad_kernel.protocol import ANSICHT_MODI, ANSICHT_TEILE, FAEHIGKEIT_ANSICHT, FUEHRUNG_PAUSE_S, kanonisch
+from kevcad_kernel.protocol import (
+    ANSICHT_MODI, ANSICHT_TEILE, ANSICHT_TEILE_VOLL, FAEHIGKEIT_ANSICHT, FUEHRUNG_PAUSE_S, kanonisch,
+)
 
 if TYPE_CHECKING:
     from kevcad_kernel.app_link import AppConnection, AppLink
@@ -93,10 +95,9 @@ class Kopplung:
             wechsel = f is not conn
             self._link.fuehrt = conn
             self._fuehrt_t = jetzt
-            if header.get("voll") is True:
-                self._stand = dict(teile)
-            else:
-                self._stand.update(teile)
+            # Auch ein voller Stand ergänzt nur: Apps vor dem 07.11.2026 kennen ``flaeche`` nicht, die zuletzt geteilte
+            # Fläche bleibt dann stehen
+            self._stand.update(teile)
             self.zaehler["weiter"] += 1
             if wechsel:
                 self.zaehler["fuehrung"] += 1
@@ -133,7 +134,7 @@ class Kopplung:
             f = self._link.fuehrt
             stand = dict(self._stand) if f is not None and f is not conn and not f.closed else {}
             von = f.number if f is not None else None
-        if stand and all(k in stand for k in ANSICHT_TEILE):
+        if stand and all(k in stand for k in ANSICHT_TEILE_VOLL):  # flaeche fehlt bei Apps vor dem 07.11.2026
             conn.send({"type": "ANSICHT", "t": time.time(), "griff": False, "voll": True, "von": von, **stand})
 
     def stand(self) -> dict[str, Any]:

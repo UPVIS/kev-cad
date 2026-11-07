@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from kevcad_kernel.protocol import (  # noqa: E402
-    ANSICHT_APP_NACHRICHTEN, ANSICHT_JE_S, ANSICHT_KAMERA_FELDER, ANSICHT_MODI, ANSICHT_TEILE, FAEHIGKEIT_ANSICHT,
+    ANSICHT_APP_NACHRICHTEN, ANSICHT_FLAECHE_FELDER, ANSICHT_JE_S, ANSICHT_KAMERA_FELDER, ANSICHT_MODI, ANSICHT_TEILE,
+    ANSICHT_TEILE_VOLL, FAEHIGKEIT_ANSICHT,
     FUEHRUNG_PAUSE_S, SPRECHEN_LIVE_JE_S, ansicht_beispiele, check_ansicht_message, encode_frame,
 )
 
@@ -32,7 +33,8 @@ def main() -> None:
     path = ZIEL / "fixtures.json"
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
     data["kopplung"] = {"frames": frames, "faehigkeit": FAEHIGKEIT_ANSICHT, "modi": list(ANSICHT_MODI),
-                        "nachrichten": list(ANSICHT_APP_NACHRICHTEN), "teile": list(ANSICHT_TEILE),
+                        "nachrichten": list(ANSICHT_APP_NACHRICHTEN), "teile": list(ANSICHT_TEILE), "teile_voll": list(ANSICHT_TEILE_VOLL),
+                        "flaeche_felder": list(ANSICHT_FLAECHE_FELDER),
                         "kamera_felder": list(ANSICHT_KAMERA_FELDER), "fuehrung_pause_s": FUEHRUNG_PAUSE_S,
                         "ansicht_je_s": ANSICHT_JE_S, "sprechen_live_je_s": SPRECHEN_LIVE_JE_S}
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")

@@ -152,10 +152,12 @@ struct Hauptfenster: View {
             // Nur Merkwerte ohne Beobachtung: Eine Größenänderung darf das Fenster nicht neu auswerten
             .onAppear {
                 session.viewerRahmen = g.viewer
+                model.kopplung.fensterBreite = Double(geo.size.width)  // I-6: schmale Fenster teilen Kacheln anders
                 model.viewer.obenFrei = kachelModus ? 0 : GA.kopf + GA.unterKopf
             }
             .onChange(of: g) { _, neu in
                 session.viewerRahmen = neu.viewer
+                model.kopplung.fensterBreite = Double(neu.groesse.width)
                 if neu.kachelModus { session.werkstattGroesse = neu.groesse }
                 let frei: CGFloat = neu.kachelModus ? 0 : GA.kopf + GA.unterKopf
                 if model.viewer.obenFrei != frei { model.viewer.obenFrei = frei }

@@ -20,6 +20,9 @@ public enum KopplungGrenzen {
     /// Punkte je Strich in SPRECHEN_LIVE.
     public static let punkteMax = 2000
     public static let textMax = 2000
+    /// Schmaler als das (Punkte): Kacheln nebeneinander passen nicht, das Gerät zeigt die geteilten Kacheln dann als große
+    /// Kachel (wie `GA.schmalAb` der Oberfläche).
+    public static let kachelnNebeneinanderAb: Double = 640
 }
 
 /// Teile einer ANSICHT; nil = dieser Teil ist nicht dabei (unverändert).
@@ -80,6 +83,30 @@ public struct AnsichtStand: Equatable, Sendable {
         }
     }
 
+    /// Leisten und Kacheln wie `LAGE.flaeche`, ohne Rand (der gehört dem Fenster).
+    public struct Flaeche: Equatable, Sendable {
+        public var kacheln: [String]
+        public var gross: String?
+        public var aktiv: String?
+        public var leisteLinks: Bool
+        public var leisteRechts: Bool
+        public var zeitleiste: Bool
+        public var zweiteAnsicht: String
+        public var blatt: String?
+
+        public init(kacheln: [String], gross: String?, aktiv: String?, leisteLinks: Bool, leisteRechts: Bool,
+                    zeitleiste: Bool, zweiteAnsicht: String, blatt: String?) {
+            self.kacheln = kacheln
+            self.gross = gross
+            self.aktiv = aktiv
+            self.leisteLinks = leisteLinks
+            self.leisteRechts = leisteRechts
+            self.zeitleiste = zeitleiste
+            self.zweiteAnsicht = zweiteAnsicht
+            self.blatt = blatt
+        }
+    }
+
     public var kamera: Kamera?
     public var sicht: Sicht?
     public var auswahl: Auswahl?
@@ -87,9 +114,12 @@ public struct AnsichtStand: Equatable, Sendable {
     /// `.some(nil)`: kein Schnitt; nil: Teil nicht dabei.
     public var schnitt: Schnitt??
     public var explosion: Double?
+    /// Seit 07.11.2026; Apps davor schicken ihn nicht, `voll` verlangt ihn deshalb nicht.
+    public var flaeche: Flaeche?
 
     public init(kamera: Kamera? = nil, sicht: Sicht? = nil, auswahl: Auswahl? = nil, darstellung: String? = nil,
-                schnitt: Schnitt?? = nil, explosion: Double? = nil) {
+                schnitt: Schnitt?? = nil, explosion: Double? = nil, flaeche: Flaeche? = nil) {
+        self.flaeche = flaeche
         self.kamera = kamera
         self.sicht = sicht
         self.auswahl = auswahl
@@ -105,6 +135,7 @@ public struct AnsichtStand: Equatable, Sendable {
 
     public var leer: Bool {
         kamera == nil && sicht == nil && auswahl == nil && darstellung == nil && schnitt == nil && explosion == nil
+            && flaeche == nil
     }
 
     /// Teile aus `neu` übernehmen, die dort dabei sind.
@@ -115,6 +146,7 @@ public struct AnsichtStand: Equatable, Sendable {
         if let d = neu.darstellung { darstellung = d }
         if let s = neu.schnitt { schnitt = .some(s) }
         if let e = neu.explosion { explosion = e }
+        if let f = neu.flaeche { flaeche = f }
     }
 }
 
@@ -176,7 +208,14 @@ public struct AnsichtMessage: OutgoingMessage, Decodable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, seq, t, griff, voll, von, kamera, sicht, auswahl, darstellung, schnitt, explosion
+        case type, seq, t, griff, voll, von, kamera, sicht, auswahl, darstellung, schnitt, explosion, flaeche
+    }
+
+    private enum FlaecheKeys: String, CodingKey {
+        case kacheln, gross, aktiv, zeitleiste, blatt
+        case leisteLinks = "leiste_links"
+        case leisteRechts = "leiste_rechts"
+        case zweiteAnsicht = "zweite_ansicht"
     }
 
     private enum SichtKeys: String, CodingKey { case verborgen, isoliert }
@@ -204,6 +243,17 @@ public struct AnsichtMessage: OutgoingMessage, Decodable, Equatable {
         try c.encodeIfPresent(stand.darstellung, forKey: .darstellung)
         if let s = stand.schnitt { try c.encode(s, forKey: .schnitt) }  // .some(nil) = null
         try c.encodeIfPresent(stand.explosion, forKey: .explosion)
+        if let f = stand.flaeche {
+            var n = c.nestedContainer(keyedBy: FlaecheKeys.self, forKey: .flaeche)
+            try n.encode(f.kacheln, forKey: .kacheln)
+            try n.encode(f.gross, forKey: .gross)  // null = keine groß
+            try n.encode(f.aktiv, forKey: .aktiv)
+            try n.encode(f.leisteLinks, forKey: .leisteLinks)
+            try n.encode(f.leisteRechts, forKey: .leisteRechts)
+            try n.encode(f.zeitleiste, forKey: .zeitleiste)
+            try n.encode(f.zweiteAnsicht, forKey: .zweiteAnsicht)
+            try n.encode(f.blatt, forKey: .blatt)
+        }
     }
 
     public init(from decoder: Decoder) throws {
@@ -227,6 +277,19 @@ public struct AnsichtMessage: OutgoingMessage, Decodable, Equatable {
             s.schnitt = .some((try? c.decodeIfPresent(AnsichtStand.Schnitt.self, forKey: .schnitt)) ?? nil)
         }
         s.explosion = try? c.decodeIfPresent(Double.self, forKey: .explosion)
+        if let n = try? c.nestedContainer(keyedBy: FlaecheKeys.self, forKey: .flaeche),
+           let kacheln = try? n.decode([String].self, forKey: .kacheln) {
+            let gross: String? = (try? n.decodeIfPresent(String.self, forKey: .gross)) ?? nil
+            let aktiv: String? = (try? n.decodeIfPresent(String.self, forKey: .aktiv)) ?? nil
+            let blatt: String? = (try? n.decodeIfPresent(String.self, forKey: .blatt)) ?? nil
+            let links: Bool = (try? n.decodeIfPresent(Bool.self, forKey: .leisteLinks)) ?? true
+            let rechts: Bool = (try? n.decodeIfPresent(Bool.self, forKey: .leisteRechts)) ?? false
+            let zeitleiste: Bool = (try? n.decodeIfPresent(Bool.self, forKey: .zeitleiste)) ?? false
+            let zweite: String = (try? n.decodeIfPresent(String.self, forKey: .zweiteAnsicht)) ?? "top"
+            s.flaeche = AnsichtStand.Flaeche(kacheln: kacheln, gross: gross, aktiv: aktiv, leisteLinks: links,
+                                             leisteRechts: rechts, zeitleiste: zeitleiste, zweiteAnsicht: zweite,
+                                             blatt: blatt)
+        }
         stand = s
     }
 }

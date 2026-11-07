@@ -275,6 +275,26 @@ def test_eigene_ansicht_teilt_nichts_und_bekommt_den_stand_beim_wechsel(env, paa
     assert h["voll"] is True and check_ansicht_message(h) == []
 
 
+def test_leisten_und_kacheln_gehen_mit(env, paar):
+    a, b = paar
+    flaeche = {"kacheln": ["modell", "druck"], "gross": "druck", "aktiv": "druck", "leiste_links": False,
+               "leiste_rechts": True, "zeitleiste": False, "zweite_ansicht": "top", "blatt": None}
+    sb = b.mark()
+    a.send({"type": "ANSICHT", "t": time.time(), "griff": True, "voll": False, "flaeche": flaeche})
+    _, _, h, _ = b.wait_for(lambda h: h["type"] == "ANSICHT" and "flaeche" in h, start=sb, timeout=3)
+    assert h["flaeche"] == flaeche and check_ansicht_message(h) == []
+    # Ein Gerät, das in die Gemeinsame Ansicht wechselt, bekommt die Fläche mit dem Stand
+    _ansicht(a, griff=False, abstand=490.0, voll=True)
+    b.send({"type": "ANSICHT_MODUS", "modus": "eigen"})
+    _warten(lambda: _geraet(env["rt"], "Kopplung iPad")["ansicht"] == "eigen")
+    sb = b.mark()
+    b.send({"type": "ANSICHT_MODUS", "modus": "gemeinsam"})
+    _, _, h, _ = _bekam_ansicht(b, sb, 490.0)
+    assert h["voll"] is True and h["flaeche"] == flaeche
+    assert check_ansicht_message({"type": "ANSICHT", "t": 1.0, "griff": False, "voll": False,
+                                  "flaeche": {**flaeche, "kacheln": ["modell", "fenster"]}})
+
+
 def test_sprechen_live_geht_an_die_anderen_geraete(env, paar):
     alt = env["pad"]
     a, b = paar
