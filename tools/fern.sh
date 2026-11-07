@@ -31,6 +31,7 @@
 #   KEVCAD_FERN_PLATZ_GB  freier Platz auf der Systemplatte, ab dem hier gebaut wird (Vorgabe 15): Ein lokaler Bau legt
 #                       die Python-Umgebungen im Worktree an; mit mehreren Agenten lief die Platte am 07.11.2026 voll.
 #                       Darunter wartet testbau auf einen Platz des Mini, und der Rückfall bricht mit Ausgang 28 ab.
+#   KEVCAD_FERN_PLATZ_IPAD_GB  dasselbe für ipadtests hier (Vorgabe 5; die Bauordner liegen auf UPVIS ULTRA)
 #   KEVCAD_FERN_HOST    anderer ssh-Name (Vorgabe mac-mini; mac-mini-ts über Tailscale)
 #   KEVCAD_FERN_FRIST   Frist eines Laufs auf dem Mini in Sekunden (3600)
 #   KEVCAD_TESTS_SWIFT  tests: nur Swift-Tests mit diesem Filter, ohne pytest (kurze Runden; zum Schluss voll laufen lassen)
@@ -57,7 +58,7 @@ BUILD_LOCK=/tmp/vb-xcodebuild.lock
 LOGDIR="$HOME/Library/Logs/Kev CAD"
 INSTALL_ROOT="${KEVCAD_INSTALL_ROOT:-$HOME/Library/Application Support/de.upvis.kevcad/install}"
 
-usage() { sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=${1:-}
 [ $# -gt 0 ] && shift
@@ -198,11 +199,15 @@ run_local() {
   exit $rc
 }
 
-# Genug Platz auf der Systemplatte für einen Bau hier (KEVCAD_FERN_PLATZ_GB, Vorgabe 15 GB)?
+# Genug Platz auf der Systemplatte für einen Bau hier (KEVCAD_FERN_PLATZ_GB, Vorgabe 15 GB)? iPad-Tests schreiben kaum
+# auf die Systemplatte (Bauordner auf UPVIS ULTRA, nur Testdateien im Simulator): für sie 5 GB (KEVCAD_FERN_PLATZ_IPAD_GB).
+platz_schwelle() {
+  if [ "$MODE" = ipadtests ]; then echo "${KEVCAD_FERN_PLATZ_IPAD_GB:-5}"; else echo "${KEVCAD_FERN_PLATZ_GB:-15}"; fi
+}
 platz_hier() {
   local frei
   frei=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print int($4 / 1048576)}')
-  [ -z "$frei" ] || [ "$frei" -ge "${KEVCAD_FERN_PLATZ_GB:-15}" ]
+  [ -z "$frei" ] || [ "$frei" -ge "$(platz_schwelle)" ]
 }
 
 fallback() {
@@ -211,9 +216,8 @@ fallback() {
   else
     echo "==> Mac mini: $1. $MODE läuft hier auf dem MacBook (./build.sh unter $BUILD_LOCK)." >&2
   fi
-  # Auch iPad-Tests schreiben hier auf die Systemplatte (Simulator), also dieselbe Schwelle
   if ! platz_hier; then
-    echo "==> Systemplatte zu voll für einen Bau hier (unter ${KEVCAD_FERN_PLATZ_GB:-15} GB frei): abgebrochen, später neu starten." >&2
+    echo "==> Systemplatte zu voll für einen Lauf hier (unter $(platz_schwelle) GB frei): abgebrochen, später neu starten." >&2
     log_times 28
     exit 28
   fi

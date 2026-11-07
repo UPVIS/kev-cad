@@ -172,6 +172,14 @@ CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO
 [ "$AKTION" = test ] && CACHE=(COMPILATION_CACHE_ENABLE_CACHING=YES CLANG_ENABLE_CODE_COVERAGE=NO)
 [ -n "$CAS" ] && CACHE+=("COMPILATION_CACHE_CAS_PATH=$CAS")
 
+# Systemplatte: unter 4 GB frei nicht bauen oder testen (der Simulator und Xcode schreiben dort Kleinigkeiten, andere Agenten
+# auch; am 07.11.2026 lief sie mitten in einem Testlauf voll). KEVCAD_IPAD_PLATZ_GB ändert die Schwelle.
+frei_gb=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print int($4 / 1048576)}')
+if [ -n "$frei_gb" ] && [ "$frei_gb" -lt "${KEVCAD_IPAD_PLATZ_GB:-4}" ]; then
+  echo "==> Systemplatte fast voll (${frei_gb} GB frei, unter ${KEVCAD_IPAD_PLATZ_GB:-4} GB): $ART angehalten"
+  exit 28
+fi
+
 start=$(date +%s)
 echo "==> $ART für iPad ($ZIEL), Protokoll $LOG"
 # Kurzfassung der Paritätsprüfung Mac/iPad (tools/paritaet.py); sie hält nichts auf.
