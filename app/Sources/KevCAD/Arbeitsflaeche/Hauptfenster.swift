@@ -91,6 +91,8 @@ struct Hauptfenster: View {
     @State private var kachelnAn = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
+    /// iPad: Statusleiste über dem Fenster; so weit reicht der Viewer nach oben hinaus (am Mac 0).
+    @Environment(\.viewerUeberstand) private var ueberstand
 
     private var material: MaterialZustand { state.materialZustand }
 
@@ -125,6 +127,7 @@ struct Hauptfenster: View {
                             startZeile: g.viewerSichtbar)
                 if let r = g.rechts {
                     RechteSpalte(model: model, parameter: parameter)
+                        .zumRandSchliessen(.trailing) { model.oberflaechenActions?.setzeLeisteRechts(false) }
                         .frame(width: r.width, height: r.height)
                         .position(x: r.midX, y: r.midY)
                 }
@@ -221,9 +224,14 @@ struct Hauptfenster: View {
 
     /// Der Viewer samt Bändern, Vergleich und Durchspielen. Er bleibt an derselben Stelle im Ansichtsbaum und ändert nur
     /// seinen Rahmen, ohne Animation: Die Metal-Ansicht wird so nie neu angelegt.
+    ///
+    /// iPad (I-3b): Liegt der Viewer oben am Fensterrand (ohne Kacheln), reicht er um `ueberstand` bis unter die
+    /// Statusleiste; Bänder, Achsen und das X am Sprechrahmen rücken um dasselbe nach unten und bleiben im sicheren Bereich.
     private func viewerFlaeche(_ g: Arbeitsgeometrie) -> some View {
-        ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false,
-                     obenFrei: g.kachelModus ? 0 : GA.kopf + GA.unterKopf,
+        let ue = g.viewer.minY < 1 ? ueberstand : 0
+        let obenFrei = (g.kachelModus ? 0 : GA.kopf + GA.unterKopf) + ue
+        return ViewportArea(model: model, state: state, zeigeAgent: false, zeigeLeer: false,
+                     obenFrei: obenFrei,
                      linksFrei: !g.kachelModus && oberflaeche.leisteLinks && g.viewer.width >= GA.schmalAb
                         ? GA.xl + GA.gliederung : 0,
                      schmal: g.viewer.width < GA.schmalAb)
@@ -241,10 +249,18 @@ struct Hauptfenster: View {
             }
         }
         .onChange(of: g.viewerEcke) { _, r in viewerEcken(r) }
-        .frame(width: g.viewer.width, height: g.viewer.height)
+        .frame(width: g.viewer.width, height: g.viewer.height + ue)
         .clipped()
         .overlay { Sprechrahmen(an: oberflaeche.spricht, radius: g.viewerEcke) }
-        .position(x: g.viewer.midX, y: g.viewer.midY)
+        .overlay(alignment: .top) {  // Verwerfen am Rahmen (PLAN-IPAD.md 4.5; am Mac auch esc)
+            if oberflaeche.spricht {
+                SprechVerwerfen { model.oberflaechenActions?.sprechenVerwerfen() }
+                    .padding(.top, obenFrei + GA.s)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
+        }
+        .animation(GB.kurz, value: oberflaeche.spricht)
+        .position(x: g.viewer.midX, y: g.viewer.midY - ue / 2)
         .opacity(g.viewerSichtbar ? 1 : 0)
         .allowsHitTesting(g.viewerSichtbar)
         .accessibilityHidden(!g.viewerSichtbar)
@@ -267,6 +283,7 @@ struct Hauptfenster: View {
         ZStack(alignment: .topLeading) {
             if let s = g.spalte {
                 LinkeSpalte(model: model, suche: $suche)
+                    .zumRandSchliessen(.leading) { model.oberflaechenActions?.setzeLeisteLinks(false) }
                     .frame(width: s.width, height: s.height)
                     .position(x: s.midX, y: s.midY)
             }
@@ -483,3 +500,37 @@ private struct FensterZiehen: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 #endif
+
+/// iPad (I-3b): Höhe der Statusleiste über dem Hauptfenster. Der Viewer reicht so weit nach oben hinaus, die Bedienung
+/// bleibt im sicheren Bereich. Die iPad-Hülle setzt den Wert (PadHauptfenster), am Mac bleibt er 0.
+private struct ViewerUeberstandKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    var viewerUeberstand: CGFloat {
+        get { self[ViewerUeberstandKey.self] }
+        set { self[ViewerUeberstandKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// iPad (I-3b, PLAN-IPAD.md 4.2): Eine Leiste mit dem Finger zu ihrem Rand hin wischen schließt sie, wie das Wischen
+    /// vom Rand sie öffnet (RandWischen.swift). Waagrecht, mindestens 60 pt, deutlich mehr quer als längs: Listen und
+    /// Regler darin bleiben bedienbar. Am Mac ohne Wirkung (dort ⌘1, ⌘2 und die Knöpfe der Kopfleiste).
+    @ViewBuilder
+    func zumRandSchliessen(_ rand: HorizontalEdge, _ schliessen: @escaping () -> Void) -> some View {
+        #if os(iOS)
+        simultaneousGesture(
+            DragGesture(minimumDistance: 24).onEnded { v in
+                let dx = v.translation.width
+                guard abs(dx) >= 60, abs(dx) > 2 * abs(v.translation.height) else { return }
+                if (rand == .leading && dx < 0) || (rand == .trailing && dx > 0) {
+                    withAnimation(GB.standard) { schliessen() }
+                }
+            })
+        #else
+        self
+        #endif
+    }
+}

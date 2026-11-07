@@ -10,20 +10,24 @@ import simd
 // auf beiden Geräten derselbe Code sind. Punkte gehen wie am Mac mit Ursprung unten links an den Koordinator.
 //
 // - Finger: einer dreht um den Punkt unter dem Finger, zwei verschieben, Spreizen zoomt zur Mitte der Finger. Tippen
-//   wählt aus, Doppeltippen rahmt das Teil ein (auf leerem Grund alles), langes Drücken öffnet das Kreismenü der
-//   Ansichten an dieser Stelle.
+//   wählt aus, Doppeltippen rahmt das Teil ein (auf leerem Grund alles), langes Drücken öffnet das Kontextmenü am Teil
+//   (Kontextmenue.swift, dieselben Einträge wie die rechte Maustaste am Mac). 2 Finger tippen nimmt Ansicht, Auswahl
+//   oder Sichtbarkeit zurück, 3 Finger tippen wiederholt (AnsichtsVerlauf.swift). Das Kreismenü der Ansichten bleibt
+//   über ^ und später den Werkzeugkranz (I-4) erreichbar. Vom Rand wischen öffnet die Leisten (iPad-Hülle, RandWischen).
 // - Stift: Schweben zeigt wie die Maus (Hervorhebung, Maß-Vorschau, beim Sprechen „das hier“), Tippen wählt aus,
 //   Ziehen zeichnet beim Sprechen, sonst dreht es. Werkzeugkranz, Strichfarben und Start des Sprechens per Strich: I-4.
-// - Trackpad und Maus: Zeiger zeigt wie die Maus, zwei Finger drehen (⇧ verschieben, ⌃ oder ⌘ zoomen), Zoomgeste zoomt.
-// - Magic Keyboard: Kürzel des Viewers aus Tastenbelegung.swift (HID-Codes werden den Tastencodes des Mac zugeordnet).
+// - Trackpad und Maus: Zeiger zeigt wie die Maus, zwei Finger drehen (⇧ verschieben, ⌃ oder ⌘ zoomen), Zoomgeste zoomt,
+//   der Sekundärklick öffnet das Kontextmenü.
+// - Magic Keyboard: Kürzel des Viewers aus Tastenbelegung.swift (HID-Codes werden den Tastencodes des Mac zugeordnet),
+//   ⌘Z und ⇧⌘Z wie am Mac.
 //
 // Hinweisleiste und Übersicht beschreiben diese Gesten aus `Tastenbelegung.gesten`: Wer hier eine Geste ändert oder
 // dazunimmt, trägt sie dort im selben Schritt nach.
 //
-// Noch offen: 2 Finger tippen (Rückgängig), 3 Finger tippen (Wiederholen), Kontextmenü am Teil, Werkzeugkranz (I-4).
+// Noch offen: Werkzeugkranz (I-4).
 
 /// Eingabeebene über dem MTKView (Name wie am Mac, damit Koordinator und Viewport auf beiden Seiten gleich bleiben).
-final class NavigationInputView: UIView, UIGestureRecognizerDelegate {
+final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate {
     weak var coordinator: ViewportCoordinator? {
         didSet { aktivGeaendert() }
     }
@@ -55,7 +59,12 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate {
     private lazy var spreizen = UIPinchGestureRecognizer(target: self, action: #selector(spreizenGeste(_:)))
     private lazy var tippen = UITapGestureRecognizer(target: self, action: #selector(tippenGeste(_:)))
     private lazy var doppeltTippen = UITapGestureRecognizer(target: self, action: #selector(doppeltTippenGeste(_:)))
-    private lazy var langDruecken = UILongPressGestureRecognizer(target: self, action: #selector(langDrueckenGeste(_:)))
+    private lazy var zweiFingerTippen = UITapGestureRecognizer(target: self, action: #selector(zweiFingerTippenGeste(_:)))
+    private lazy var dreiFingerTippen = UITapGestureRecognizer(target: self, action: #selector(dreiFingerTippenGeste(_:)))
+    /// Langes Drücken und Sekundärklick: Kontextmenü am Teil (Einträge nach dem Treffertest nachgeladen).
+    private lazy var kontextMenue = UIContextMenuInteraction(delegate: self)
+    /// Wo das Kontextmenü aufging (UIKit, oben links): dort sitzt die kleine Vorschau am Finger.
+    private var kontextOrt: CGPoint = .zero
     private lazy var stift = UIPanGestureRecognizer(target: self, action: #selector(stiftZiehen(_:)))
     private lazy var schweben = UIHoverGestureRecognizer(target: self, action: #selector(schwebenGeste(_:)))
     private lazy var rollen = UIPanGestureRecognizer(target: self, action: #selector(rollenGeste(_:)))
@@ -64,6 +73,11 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate {
         super.init(frame: frame)
         backgroundColor = .clear
         isMultipleTouchEnabled = true
+        // Ein Element für VoiceOver und die Gesten-Tests; Gesten gehen mit VoiceOver direkt an den Viewer
+        isAccessibilityElement = true
+        accessibilityLabel = "3D-Ansicht"
+        accessibilityIdentifier = "viewer"
+        accessibilityTraits = .allowsDirectInteraction
 
         let finger = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         let stiftArt = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
@@ -78,17 +92,22 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate {
         tippen.allowedTouchTypes = finger + stiftArt
         doppeltTippen.numberOfTapsRequired = 2
         doppeltTippen.allowedTouchTypes = finger
-        langDruecken.minimumPressDuration = 0.45
-        langDruecken.allowedTouchTypes = finger
+        zweiFingerTippen.numberOfTouchesRequired = 2
+        zweiFingerTippen.allowedTouchTypes = finger
+        dreiFingerTippen.numberOfTouchesRequired = 3
+        dreiFingerTippen.allowedTouchTypes = finger
         // Trackpad und Maus: nur das Rollen mit zwei Fingern, keine Berührungen
         rollen.allowedScrollTypesMask = .continuous
         rollen.maximumNumberOfTouches = 0
 
-        for g in [einFinger, zweiFinger, spreizen, tippen, doppeltTippen, langDruecken, stift, rollen] as [UIGestureRecognizer] {
+        for g in [einFinger, zweiFinger, spreizen, tippen, doppeltTippen, zweiFingerTippen, dreiFingerTippen, stift, rollen]
+            as [UIGestureRecognizer]
+        {
             g.delegate = self
             addGestureRecognizer(g)
         }
         addGestureRecognizer(schweben)
+        addInteraction(kontextMenue)
 
         strichLayer.fillColor = nil
         strichLayer.strokeColor = CGColor(srgbRed: CGFloat(ViewerStil.strich.x), green: CGFloat(ViewerStil.strich.y),
@@ -268,12 +287,82 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    @objc private func langDrueckenGeste(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began, let c = coordinator else { return }
+    // 2 Finger tippen: Rückgängig, 3 Finger tippen: Wiederholen (Ansicht, Auswahl, Sichtbarkeit; wie ⌘Z und ⇧⌘Z)
+
+    @objc private func zweiFingerTippenGeste(_ g: UITapGestureRecognizer) {
+        guard g.state == .ended else { return }
         bedient()
-        zeiger = eingabePunkt(g.location(in: self))  // das Kreismenü öffnet an dieser Stelle
-        _ = c.onBefehl?(.ansichtMenue)
-        UISelectionFeedbackGenerator().selectionChanged()
+        _ = coordinator?.onBefehl?(.rueckgaengig)
+    }
+
+    @objc private func dreiFingerTippenGeste(_ g: UITapGestureRecognizer) {
+        guard g.state == .ended else { return }
+        bedient()
+        _ = coordinator?.onBefehl?(.wiederholen)
+    }
+
+    // MARK: Kontextmenü am Teil (langes Drücken, Sekundärklick)
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        guard let c = coordinator, c.onKontextmenue != nil, modus == .ruht else { return nil }
+        // Beim Sprechen zeichnet der Finger bzw. Stift; ein Menü dazwischen wäre im Weg
+        guard !c.zeichnen else { return nil }
+        kontextOrt = location
+        let p = eingabePunkt(location)
+        return UIContextMenuConfiguration(identifier: "teil" as NSString, previewProvider: nil) { [weak self] _ in
+            // Die Einträge hängen am Treffer (das Teil wird ausgewählt): erst nach dem Treffertest nachladen
+            let nachgeladen = UIDeferredMenuElement.uncached { fertig in
+                MainActor.assumeIsolated {
+                    guard let self, let c = self.coordinator else {
+                        fertig([])
+                        return
+                    }
+                    c.pickPoint(p, in: self) { [weak c] result in
+                        guard let c else {
+                            fertig([])
+                            return
+                        }
+                        let gruppen = c.onKontextmenue?(result) ?? []
+                        fertig(KontextmenuePad.elemente(gruppen) { [weak c] befehl in _ = c?.onBefehl?(befehl) })
+                    }
+                }
+            }
+            return UIMenu(children: [nachgeladen])
+        }
+    }
+
+    /// Kleine Vorschau am Finger statt des ganzen Viewers: ein Ring in der Farbe der Striche.
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+                                highlightPreviewForItemWithIdentifier identifier: any NSCopying) -> UITargetedPreview? {
+        kontextVorschau()
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration,
+                                dismissalPreviewForItemWithIdentifier identifier: any NSCopying) -> UITargetedPreview? {
+        kontextVorschau()
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                willDisplayMenuFor configuration: UIContextMenuConfiguration,
+                                animator: (any UIContextMenuInteractionAnimating)?) {
+        bedient()
+        modus = .ruht
+        endeDrehung()
+    }
+
+    private func kontextVorschau() -> UITargetedPreview {
+        let d: CGFloat = 34
+        let ring = UIView(frame: CGRect(x: 0, y: 0, width: d, height: d))
+        ring.backgroundColor = UIColor(white: 1, alpha: 0.12)
+        ring.layer.cornerRadius = d / 2
+        ring.layer.borderWidth = 2
+        ring.layer.borderColor = CGColor(srgbRed: CGFloat(ViewerStil.strich.x), green: CGFloat(ViewerStil.strich.y),
+                                         blue: CGFloat(ViewerStil.strich.z), alpha: 1)
+        let p = UIPreviewParameters()
+        p.backgroundColor = .clear
+        p.visiblePath = UIBezierPath(ovalIn: ring.bounds)
+        return UITargetedPreview(view: ring, parameters: p, target: UIPreviewTarget(container: self, center: kontextOrt))
     }
 
     // MARK: Stift
@@ -439,6 +528,15 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate {
     // MARK: Tastatur (Magic Keyboard)
 
     override var canBecomeFirstResponder: Bool { true }
+
+    // ⌘Z und ⇧⌘Z: kommen sie über das Menü des Systems (`undo:`, `redo:`), sonst über pressesBegan und die Belegung
+    @objc func undo(_ sender: Any?) { _ = coordinator?.onBefehl?(.rueckgaengig) }
+    @objc func redo(_ sender: Any?) { _ = coordinator?.onBefehl?(.wiederholen) }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(undo(_:)) || action == #selector(redo(_:)) { return coordinator != nil }
+        return super.canPerformAction(action, withSender: sender)
+    }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var erledigt = false

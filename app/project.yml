@@ -96,6 +96,10 @@ targets:
     dependencies:
       - package: KevCADCore
       - package: OCCTSwiftViewport
+    # Gesten-Tests (I-3b): tools/ipad-bau.sh gesten
+    scheme:
+      testTargets:
+        - KevCADPadUITests
     info:
       path: Generated/Info-iPad.plist
       properties:
@@ -141,5 +145,24 @@ targets:
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 2GX7UC98J6
+  # Gesten am iPad im Simulator (PLAN-IPAD.md 4.2, I-3b): Tippen, Doppeltippen, langes Drücken, 2/3 Finger tippen, Rand
+  KevCADPadUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: UITests/KevCADPad
+    dependencies:
+      - target: KevCADPad
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.upvis.kevcad.ipad.gesten
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        TARGETED_DEVICE_FAMILY: "2"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: KevCADPad
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 2GX7UC98J6

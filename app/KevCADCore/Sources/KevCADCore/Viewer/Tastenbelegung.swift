@@ -29,6 +29,8 @@ public enum ViewerBefehl: String, CaseIterable, Sendable {
     case bildschirmfoto, video, navigationAufnehmen
     // Sprechen (V2-6)
     case sprechen, sprechenFertig, sprechenVerwerfen
+    // Verlauf von Ansicht, Auswahl und Sichtbarkeit (I-3b)
+    case rueckgaengig, wiederholen
     // Hilfe
     case tastenuebersicht, hinweisleiste
 }
@@ -127,6 +129,7 @@ public enum BelegungsGruppe: String, CaseIterable, Sendable {
     case messen = "Messen"
     case aufnahme = "Bild und Video"
     case sprechen = "Sprechen"
+    case verlauf = "Rückgängig"
     case hilfe = "Hilfe"
 }
 
@@ -182,13 +185,14 @@ public struct MausBelegung: Identifiable, Sendable {
 }
 
 /// Finger- und Stiftgesten am iPad (PLAN-IPAD.md, 4.2 und 4.3; für Hinweisleiste und Übersicht, ausgewertet in
-/// TouchNavigation.swift). Hier steht nur, was die Eingabeebene wirklich tut; eine neue Geste kommt hier und dort im
+/// TouchNavigation.swift, das Wischen vom Rand in der iPad-Hülle, RandWischen.swift). Hier steht nur, was die Eingabeebene wirklich tut; eine neue Geste kommt hier und dort im
 /// selben Schritt dazu.
 public struct GestenBelegung: Identifiable, Sendable {
     /// Kurzname in der Kappe der Hinweisleiste.
     public enum Geste: String, Sendable, CaseIterable {
         case einFinger = "1 Finger", zweiFinger = "2 Finger", spreizen = "Spreizen", tippen = "Tippen",
-            doppeltTippen = "2× Tippen", halten = "Halten", stift = "Stift", schweben = "Schweben"
+            doppeltTippen = "2× Tippen", halten = "Halten", zweiFingerTippen = "2 Finger tippen",
+            dreiFingerTippen = "3 Finger tippen", randWischen = "Vom Rand", stift = "Stift", schweben = "Schweben"
     }
 
     public var geste: Geste
@@ -214,7 +218,10 @@ public struct GestenBelegung: Identifiable, Sendable {
         case .spreizen: return "2 Finger spreizen"
         case .tippen: return "Tippen mit Finger oder Stift"
         case .doppeltTippen: return "Doppeltippen"
-        case .halten: return "Lange drücken"
+        case .halten: return "Lange drücken oder Sekundärklick"
+        case .zweiFingerTippen: return "Mit 2 Fingern tippen"
+        case .dreiFingerTippen: return "Mit 3 Fingern tippen"
+        case .randWischen: return "Vom Rand wischen, zum Rand hin schließt"
         case .stift: return "Stift ziehen"
         case .schweben: return "Stift über dem Glas"
         }
@@ -301,6 +308,12 @@ public enum Tastenbelegung {
         Belegung(befehl: .sprechenFertig, titel: "Fertig, an den Agenten schicken", gruppe: .sprechen,
                  tasten: [Taste(.eingabe)], erklaerung: "mit Text, Zeiger und Strichen"),
         Belegung(befehl: .sprechenVerwerfen, titel: "Sitzung verwerfen", gruppe: .sprechen, tasten: [Taste(.esc)]),
+        // Rückgängig (I-3b): am Mac über das Menü Bearbeiten, solange der Viewer die Tastatur hat; am iPad auch 2 und 3
+        // Finger tippen und die Daumenleiste
+        Belegung(befehl: .rueckgaengig, titel: "Ansicht, Auswahl oder Sichtbarkeit zurück", gruppe: .verlauf,
+                 tasten: [.z("z", .befehl)], erklaerung: "am iPad auch 2 Finger tippen"),
+        Belegung(befehl: .wiederholen, titel: "Wiederholen", gruppe: .verlauf, tasten: [.z("z", [.befehl, .umschalt])],
+                 erklaerung: "am iPad auch 3 Finger tippen"),
         // Hilfe
         Belegung(befehl: .tastenuebersicht, titel: "Tastenübersicht", gruppe: .hilfe, tasten: [.z("?")]),
         Belegung(befehl: .hinweisleiste, titel: "Hinweisleiste an/aus", gruppe: .hilfe,
@@ -350,11 +363,16 @@ public enum Tastenbelegung {
         GestenBelegung(geste: .tippen, wirkung: "Element oder Fangpunkt messen", zustand: .messen, kurz: "Messen"),
         GestenBelegung(geste: .doppeltTippen, wirkung: "Teil einrahmen, auf leerem Grund alles", zustand: .immer,
                        kurz: "Einrahmen"),
-        GestenBelegung(geste: .halten, wirkung: "Ansichten an dieser Stelle (Kreismenü)", zustand: .auswahl,
-                       kurz: "Ansichten"),
+        GestenBelegung(geste: .halten, wirkung: "Kontextmenü am Teil: Ausblenden, Isolieren, Messen …",
+                       zustand: .auswahl, kurz: "Menü"),
+        GestenBelegung(geste: .zweiFingerTippen, wirkung: "Ansicht, Auswahl oder Sichtbarkeit zurück", zustand: .immer,
+                       kurz: "Zurück"),
+        GestenBelegung(geste: .dreiFingerTippen, wirkung: "Wiederholen", zustand: .immer),
         GestenBelegung(geste: .stift, wirkung: "Drehen wie mit einem Finger", zustand: .auswahl, kurz: "Drehen"),
         GestenBelegung(geste: .schweben, wirkung: "Zeigen wie die Maus: Teil leuchtet, beim Messen die Vorschau",
                        zustand: .immer, kurz: "Zeigen"),
+        GestenBelegung(geste: .randWischen, wirkung: "Links die Gliederung, rechts die Eigenschaften (wie ⌘1, ⌘2)",
+                       zustand: .immer, kurz: "Leisten"),
     ]
 
     public static func belegung(_ befehl: ViewerBefehl) -> Belegung? { alle.first { $0.befehl == befehl } }
@@ -386,7 +404,7 @@ public enum Tastenbelegung {
     static let eingabeCodes: Set<UInt16> = [36, 76]
 
     /// Befehl zu einem Tastendruck im Viewport (Ziffernblock, Zahlenreihe, ^, ?); nil = nicht belegt. `keyCode` ist der
-    /// Tastencode des Mac (iPad: Tasten einer Hardware-Tastatur kommen als HID-Code, die Zuordnung folgt in I-3).
+    /// Tastencode des Mac (am iPad ordnet `NavigationInputView.macTastencode` die HID-Codes zu).
     public static func befehl(keyCode: UInt16, zeichen: String?, flags: PlattformTastenFlags) -> ViewerBefehl? {
         var mods = TastenMods(flags)
         let art: Taste.Art

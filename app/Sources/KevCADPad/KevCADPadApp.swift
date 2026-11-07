@@ -51,8 +51,9 @@ enum PadStart {
 }
 
 /// Hauptfenster auf dem iPad: die gemeinsame Oberfläche zwischen Statusleiste und Home-Balken (am Mac reicht sie bis
-/// unter die Titelleiste), die Statusleiste hell darüber. Solange die App ohne Mac läuft, sagt das ein kleiner Hinweis in
-/// der Mitte der Statusleiste.
+/// unter die Titelleiste), die Statusleiste hell darüber. Der Viewer reicht bis unter die Statusleiste
+/// (`viewerUeberstand`, I-3b), die Bedienung bleibt darunter. Solange die App ohne Mac läuft, sagt das ein kleiner Hinweis
+/// in der Mitte der Statusleiste. Vom linken bzw. rechten Rand wischen öffnet die Leisten (`RandWischen`).
 ///
 /// Darum hält das Hauptfenster auf dem iPad die Ränder des Systems selbst ein (kein `ignoresSafeArea`): Ein Abstand
 /// (`padding`) von außen hält ein `ignoresSafeArea` im Inneren nicht auf, es reicht trotzdem bis an den Bildschirmrand, und
@@ -65,9 +66,8 @@ struct PadHauptfenster: View {
     @State private var projekteZeigen = false
     @State private var projektOrdner = PadOrdner.ordner()
 
-    /// Grund unter Statusleiste und Home-Balken: der des Viewers im dunklen Bild (0,12 Grau wie
-    /// `AppController.hintergrundDunkel`), so schließt der Viewer ohne Kacheln nahtlos an. iPad: Viewer bis unter die
-    /// Statusleiste folgt in I-3b, dann entfällt dieser Streifen.
+    /// Grund unter dem Home-Balken (und unter der Statusleiste, solange Kacheln den Viewer nach unten rücken): der des
+    /// Viewers im dunklen Bild (0,12 Grau wie `AppController.hintergrundDunkel`), so schließt der Viewer nahtlos an.
     private static let randGrund = Color(white: 0.12)
 
     private var kopplungsAktionen: KopplungsActions? { session.model.actions as? KopplungsActions }
@@ -77,6 +77,7 @@ struct PadHauptfenster: View {
             let oben = geo.safeAreaInsets.top
             Hauptfenster(model: session.model, oberflaeche: session.model.oberflaeche)
                 .environmentObject(session)
+                .environment(\.viewerUeberstand, oben)
                 .overlay(alignment: .top) {
                     // Mit welchem Mac das iPad verbunden ist; ohne Kopplung der Hinweis aufs Beispielmodell
                     HStack(spacing: 8) {
@@ -90,6 +91,10 @@ struct PadHauptfenster: View {
                 }
         }
         .background(Self.randGrund.ignoresSafeArea())
+        .background(RandWischen(oberflaeche: session.model.oberflaeche, actions: session.model.oberflaechenActions))
+        #if DEBUG
+        .overlay(alignment: .topLeading) { if PadTestZustand.an { PadTestZustand(session: session) } }
+        #endif
         .preferredColorScheme(.dark)
         .sheet(isPresented: $kopplungZeigen) {
             PadKopplungsBlatt(kopplung: session.model.kopplung, aktionen: kopplungsAktionen) { kopplungZeigen = false }

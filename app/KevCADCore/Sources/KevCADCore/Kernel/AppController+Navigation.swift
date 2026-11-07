@@ -5,17 +5,18 @@ import Combine
 import Foundation
 import OCCTSwiftViewport
 
-// Blender-Steuerung im App-Kern: Tastaturbefehle (NavigationActions), Rahmenauswahl, Kontextmenü, Auswahlmodus.
+// Blender-Steuerung im App-Kern: Tastaturbefehle (NavigationActions), Rahmenauswahl, Auswahlmodus. Das Kontextmenü am
+// Teil steht in Viewer/Kontextmenue.swift.
 // Maus und Trackpad selbst verarbeitet die Eingabeebene in Viewer/BlenderNavigation.swift.
 
 extension AppController: NavigationActions {
     func installNavigation() {
         viewport.onBoxSelect = { [weak self] picks, modifiers in self?.handleBoxSelect(picks, modifiers: modifiers) }
-        #if os(macOS)
-        viewport.onContextMenu = { [weak self] in self?.contextMenu() }
+        viewport.onKontextmenue = { [weak self] treffer in self?.kontextEintraege(treffer: treffer) ?? [] }
+        viewport.verlaufTitel = { [weak self] befehl in self?.verlaufTitel(befehl) }
+        #if os(macOS)  // iPad: Ziffernblock kommt über pressesBegan und die Belegung (TouchNavigation)
         viewport.onNumpadKey = { [weak self] code, flags in self?.handleNumpadKey(code, flags) ?? false }
         #endif
-        // iPad: Kontextmenü (langes Drücken) und Tasten einer Hardware-Tastatur folgen in I-3.
         viewport.controller.$cameraState
             .map(\.isOrthographic)
             .removeDuplicates()
@@ -142,7 +143,7 @@ extension AppController: NavigationActions {
         applySelection(refs)
     }
 
-    #if os(macOS)
+    #if os(macOS)  // iPad: Ziffernblock über die Belegung (TouchNavigation.macTastencode)
     /// Ziffernblock wie in Blender (Tastencodes des Mac, unabhängig vom Tastaturlayout).
     func handleNumpadKey(_ code: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
         let ctrl = flags.contains(.control)
@@ -168,61 +169,5 @@ extension AppController: NavigationActions {
         return true
     }
 
-    // MARK: Kontextmenü (rechte Maustaste)
-
-    func contextMenu() -> NSMenu? {
-        let menu = NSMenu()
-        let hasSelection = !scene.selection.isEmpty
-        func add(_ title: String, _ key: String = "", _ mods: NSEvent.ModifierFlags = [], enabled: Bool = true,
-                 _ action: @escaping () -> Void) {
-            let item = NSMenuItem(title: title, action: #selector(MenuClosure.run), keyEquivalent: key)
-            item.keyEquivalentModifierMask = mods
-            let closure = MenuClosure(action)
-            item.target = closure
-            item.representedObject = closure
-            item.isEnabled = enabled
-            menu.addItem(item)
-        }
-        menu.autoenablesItems = false
-        add(hasSelection ? "Auswahl zentrieren" : "Alles zentrieren", ",") { [weak self] in self?.viewSelected() }
-        add("Alles zeigen", String(UnicodeScalar(NSHomeFunctionKey)!)) { [weak self] in self?.viewAll() }
-        menu.addItem(.separator())
-        add("Ausblenden", "h", enabled: hasSelection) { [weak self] in
-            guard let self else { return }
-            self.setVisibility(Array(self.selectedPartNames), visible: false)
-        }
-        add("Andere ausblenden", "h", .shift, enabled: hasSelection) { [weak self] in self?.hideUnselected() }
-        add("Alles einblenden", "h", .option) { [weak self] in self?.showAll() }
-        add(localView == nil ? "Lokale Ansicht" : "Lokale Ansicht beenden", "/", enabled: hasSelection || localView != nil) {
-            [weak self] in self?.toggleLocalView()
-        }
-        menu.addItem(.separator())
-        add(model.measureMode ? "Messen beenden" : "Messen", "m") { [weak self] in
-            guard let self else { return }
-            self.setMeasureMode(!self.model.measureMode)
-        }
-        let hatMasse = !model.measurements.isEmpty || viewer.stehendeAnmerkungen > 0
-        add(viewer.masseSichtbar ? "Maße ausblenden" : "Maße einblenden", "m", .shift, enabled: hatMasse) {
-            [weak self] in self?.ausfuehren(.masseUmschalten)
-        }
-        add("Alle Maße löschen", "m", .option, enabled: hatMasse || !annotations.isEmpty) { [weak self] in
-            self?.ausfuehren(.masseLoeschen)
-        }
-        add(model.selectionMode == .parts ? "Flächen und Kanten auswählen" : "Ganze Teile auswählen", "\t") {
-            [weak self] in
-            guard let self else { return }
-            self.setSelectionMode(self.model.selectionMode == .parts ? .elements : .parts)
-        }
-        return menu
-    }
     #endif
 }
-
-#if os(macOS)
-/// Ziel für Menüeinträge mit Closure (vom Menüeintrag über representedObject festgehalten).
-final class MenuClosure: NSObject {
-    let action: () -> Void
-    init(_ action: @escaping () -> Void) { self.action = action }
-    @objc func run() { action() }
-}
-#endif

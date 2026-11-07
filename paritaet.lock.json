@@ -20,7 +20,7 @@
   },
   "app/Sources/KevCAD/Mac/KevCADApp.swift": {
    "gegenstueck": "app/Sources/KevCADPad/KevCADPadApp.swift",
-   "gegenstueck_summe": "6cd13d02e198ca8b72d7ef5781aae31b3e459003f19917f0d8fe9ffd0e24f638",
+   "gegenstueck_summe": "75436812145eb58e196f722b2b87f6ca37f4c22a8e9d5f52f195f3088401bbc0",
    "summe": "623f30f6cf9d5318938c04575452d368760a38461a7b4b2b990f6b0ca4487d49"
   },
   "app/Sources/KevCAD/Mac/KeyboardGuard.swift": {
@@ -46,6 +46,12 @@
   },
   "app/Sources/KevCAD/Mac/ZukaufCommands.swift": {
    "summe": "57c7ade510069a2dd5579bde34572304e7f9b63ea5c3dffb3778138b1bdba810"
+  },
+  "app/Sources/KevCADPad/PadTestZustand.swift": {
+   "summe": "a2396af2ff1fb39584112771139eaedbc3f55a63c87bc5b9638ef12fa59cc538"
+  },
+  "app/Sources/KevCADPad/RandWischen.swift": {
+   "summe": "53e7a4434ca1192ba7714a501c2f0a8fc30e4657c43c2ecf75c73886c68eb19b"
   }
  },
  "mac_stellen": {

@@ -103,10 +103,10 @@ die Touch- und Stiftgriffe dazu (Hinweisleiste und Übersicht lesen dort).
 | 2 Finger spreizen | Zoomen zur Mitte der Finger | Rad, Zoomgeste |
 | Tippen | Auswählen (Teil; im Elementmodus Fläche, Kante, Punkt) | Links klicken |
 | Doppeltippen | Auf das Teil einrahmen, auf leerem Grund alles | `.` und Pos1 |
-| Lange drücken | Kontextmenü am Teil (Isolieren, Ausblenden, Messen, Umbenennen, Details …) | Rechts klicken |
+| Lange drücken | Kontextmenü am Teil (dieselben Einträge wie am Mac: Zentrieren, Ausblenden, Lokale Ansicht, Messen, Maße, Elementmodus); wählt das gedrückte Teil aus | Rechts klicken (wählt nicht aus, wie Blender) |
 | 2 Finger tippen | Rückgängig (Ansicht, Auswahl, Sichtbarkeit) | ⌘Z |
 | 3 Finger tippen | Wiederholen | ⇧⌘Z |
-| vom linken bzw. rechten Rand wischen | Leiste links (Gliederung) bzw. rechts (Kacheln, Details) | ⌘1, ⌘2 |
+| vom linken bzw. rechten Rand wischen | Leiste links (Gliederung) bzw. rechts (Eigenschaften); zum Rand hin wischen schließt sie | ⌘1, ⌘2 |
 | 4 Finger | bleibt dem System | – |
 
 Um die Blickachse wird nicht gedreht (Z bleibt oben wie am Mac). Ein schnell losgelassener Finger dreht kurz nach
@@ -339,7 +339,7 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-2a Kernel mit mehreren Geräten | Kernel nimmt mehrere Verbindungen an (Regeln in Abschnitt 3), Antworten an die fragende Verbindung, gezielte Anfragen an das aktive Gerät, `HELLO_APP.geraet`, `AKTIV`, `SETTINGS.anlass`; PROTOCOL.md „I-2 Mehrere Geräte“, `kernel/tests/test_mehrere_geraete.py` | – | fertig (Tests grün) |
 | I-2b Eingang und Kopplung | Eingang fürs iPad in der Mac-App (Network.framework, TLS mit Schlüssel je Gerät wie in VoiceBridge, Bonjour `_kevcad._tcp`), reicht Rahmen an den Kernel durch; Kopplung per QR mit Geräteliste und Widerruf; Verbindung im Kern über Unix-Socket oder TLS; Mac-App meldet `geraet` und `SETTINGS.anlass` | I-1, I-2a | fertig: Kern (`KevCADCore/Netz/`, `KernelConnection.open(netz:)`, `AppController+Kopplung`), Oberfläche (Ablage › iPad koppeln … mit QR-Code, Code kopieren und Geräteliste; auf dem iPad Blatt mit Scanner, Einsetzen und Beispiel, Anzeige oben), Tests `NetzTests` und Kettentest `tools/ipad-kette.sh` |
 | I-3a iPad-App-Gerüst | Ziel `KevCADPad` in `app/project.yml` (iPadOS 26, `de.upvis.kevcad.ipad`), gemeinsame Oberfläche übersetzt, Mac-Hülle nach `app/Sources/KevCAD/Mac/`, Beispielmodell ohne Kopplung (`KEVCAD_DEMO_VIEWPORT=kern`), `tools/ipad-bau.sh app`, `starten`, `stoppen` | I-1 | fertig: baut für den iPad-Simulator, startet dort im Graphit-Look mit echtem Metal-Viewer; Mac-Testbau und Swift-Tests grün |
-| I-3b Bedienung am iPad | Eingabeebene mit Fingern, Stift, Trackpad und Magic Keyboard (`TouchNavigation.swift`), Kopplung in der Oberfläche, Hinweisleiste und Übersicht mit Gesten (`Tastenbelegung.gesten`), Leertext ohne „Drück V“; offen: Viewer bis unter die Statusleiste, Kontextmenü am Teil, 2 und 3 Finger tippen, Bonjour über die Kennung des Mac statt seines Namens (NWBrowser mit TXT `mac`), Tests der Gesten (XCUITest im Simulator) | I-2b, I-3a | Eingabe und Kopplung fertig, Kettentest im Simulator grün (Mac-Testvariante ↔ iPad über TLS, Modell live auf dem iPad); Rest offen |
+| I-3b Bedienung am iPad | Eingabeebene mit Fingern, Stift, Trackpad und Magic Keyboard (`TouchNavigation.swift`), Kopplung in der Oberfläche, Hinweisleiste und Übersicht mit Gesten (`Tastenbelegung.gesten`), Leertext ohne „Drück V“, Kontextmenü am Teil aus einer Quelle (`Kontextmenue.swift`: NSMenu am Mac, UIContextMenuInteraction am iPad), Rückgängig und Wiederholen für Ansicht, Auswahl und Sichtbarkeit (`AnsichtsVerlauf.swift`; ⌘Z, ⇧⌘Z, 2 und 3 Finger tippen, ↶ ↷ in der Daumenleiste), vom Rand wischen öffnet und zum Rand hin wischen schließt die Leisten (`RandWischen.swift`, `zumRandSchliessen`), Viewer bis unter die Statusleiste (`viewerUeberstand`), „Verwerfen“ am roten Rahmen, Gesten-Tests (XCUITest `KevCADPadUITests`, `tools/ipad-bau.sh gesten`); offen: Bonjour über die Kennung des Mac (I-6) | I-2b, I-3a | Eingabe, Kopplung und Gesten fertig (07.11.2026), Gesten-Tests und Kettentest im Simulator grün; Abnahme am Gerät offen |
 | I-4 Stift und Werkzeugkranz | Schweben, Auswahl, Zeichnen im Raum mit Vorhersage, Strichfarben, Werkzeugkranz (auch am Mac mit Q), Befehlskatalog mit Auslöser je Gerät und Paritätstest | I-3 | offen |
 | I-5 Sprechen am iPad | SpeechAnalyzer, eine Uhr, Paket wie am Mac (mit `geraet` und Farbe), Postausgang, Daumenleiste | I-3, I-4 | erster Schritt (07.11.2026): Daumenleiste links unten (Sprechen, Pause, Weiter, Senden), Live-Zeile mit Wörtern statt Tasten, Audio-Sitzung fürs Mikrofon, Paket als Nutzlast über die Kopplung (`FEEDBACK_PAKET.nutzlast`, der Kernel legt es ab), Postausgang ohne Mac; offen: Abnahme am Gerät, `geraet` und Strichfarben im Paket (mit I-4), X am Rahmen; Parakeet geprüft (4.5: geht, Einbau groß, vorerst SpeechAnalyzer) |
 | I-6 Live-Kopplung | Gemeinsame und Eigene Ansicht, Führung, Live-Striche, Agent spricht das aktive Gerät an, Lagebild je Gerät | I-2b, I-3 | offen |
@@ -361,7 +361,7 @@ Im Code mit „iPad: folgt in I-x“ markiert; jedes Paket arbeitet seine Zeilen
 | I-7 | `AppInfo.projectsDirectory` ist der Dokumente-Ordner der App, mit dem Schalter „Projekte aus iCloud“ der gewählte Ordner (Prototyp); Ordnernamen unterscheiden auf dem iPad Groß- und Kleinschreibung (`ProjectLocator.uniqueFolder`) |
 | I-8 | Video auf Wunsch des Agenten (ANIM_VIDEO_REQ geht ans aktive Gerät; ist das das iPad, sagt die Antwort, dass die Mac-App es rechnet; besser: der Kernel gibt solche Aufträge an den Mac), Drucken mit eigenem Dialog (`exportDrucken`, `BlattDruck`, `ExportDrucker`; bis dahin Drucken im Teilen-Blatt), `DruckerSchluesselbund.speichern`, Zukauf (Downloads-Ordner des Mac; am iPad per Link). Erledigt 07.11.2026: „Im Finder zeigen“ wird Teilen, Bambu Studio wird „3MF teilen“, Video aus der Animationskachel mit AVAssetWriter |
 | I-9 | Selbsttests: `SprachSelbsttest`, Treffertest in `AppController+SelfTest`, Fensterbild in `AppController+Flaeche` |
-| I-3b (aus I-3a) | Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Zoomflächen, Tippen in den Viewer macht ihn nicht zur aktiven Kachel (`viewerKlickBeobachten`), Auswahl erweitern mit Umschalt oder Befehl, Streifen unter der Statusleiste (Viewer bis unter die Statusleiste) |
+| I-3b (aus I-3a) | Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Zoomflächen, Tippen in den Viewer macht ihn nicht zur aktiven Kachel (`viewerKlickBeobachten`), Auswahl erweitern mit Umschalt oder Befehl (Viewer bis unter die Statusleiste: erledigt, nur ohne Kacheln; neben Kacheln bleibt der Streifen) |
 | I-7 (aus I-3a) | „Ordner öffnen“ ist ausgeblendet (`presentOpenPanel`; mit dem Schalter wählt die Projektliste den Ordner), ein fehlendes Projekt in der Liste meldet sich nur statt „Entfernen?“ zu fragen |
 | I-8 (aus I-3a) | Berichte und Dokument-Export (`ExportSteuerung` nur am Mac, am iPad weder Drucken noch PDF), Referenz- und CAD-Dateien wählen (braucht den Weg vom Gerät zum Mac), Blätter bearbeiten, Protokoll, Lagerkatalog und Zukauf (keine eigene Szene). Erledigt 07.11.2026: Finder und Editor (`AppSession`, `ErrorBanner`, `Kopfleiste`: model.py teilen), Teilen in `BestandAnsicht`, `DruckAnsicht`, `ExportDialog`, `RenderDialog`, `DruckenDialog`; `ZukaufBanner` bleibt am Mac (Datei in dessen Downloads) |
 | I-9 (aus I-3a) | alle Selbsttests der Oberfläche; Menüs liegen nur in `Mac/`, iPadOS 26 hätte eine Menüleiste (Rückweg über den Befehlskatalog in I-4) |
@@ -409,7 +409,7 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
   Start einer App bis zu drei Minuten. Vor GUI-Tests `uptime` und `ps -Ao stat,comm | awk '$1 ~ /U/'` ansehen.
 - **Bonjour hängt ohne Fehler:** Eine Verbindung zu `.service(name:…)` blieb im Aufbau stehen, ohne `.waiting` oder
   `.failed`, als es keinen Dienst unter genau diesem Namen gab. Jeder Weg hat deshalb eine Frist (Bonjour 3 s, Adresse
-  5 s); dauerhaft besser ist die Suche über die Kennung des Mac im TXT-Eintrag (offen, I-3b).
+  5 s); dauerhaft besser ist die Suche über die Kennung des Mac im TXT-Eintrag (offen, I-6).
 - **Eingang neu öffnen:** Ein Listener auf demselben Port lässt sich erst öffnen, wenn der alte ganz geschlossen ist
   (`.cancelled`). `IPadEingang` wartet darauf und versucht es sonst kurz erneut (`testNeueKopplungWaehrendDerEingangLaeuft`).
 - **Einsetzen statt Einfügen:** Der Knopf des Systems zum Einfügen heißt auf Deutsch „Einsetzen“ (`PasteButton`, ohne
@@ -450,6 +450,26 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 - **Dateien des Mac auf dem iPad** (07.11.2026): Pfade, die der Kernel nennt, gibt es nur am Mac; ein `ShareLink` darauf
   (Rendern) ging auf dem iPad ins Leere. Jede Datei, die die Oberfläche weitergibt, geht über `DateiActions`: am Mac die
   Datei selbst, am iPad eine Kopie vom Mac im Zwischenspeicher (Stücke zu 4 MiB, damit Live-Nachrichten dazwischen laufen).
+
+- **Rückgängig über Ruhe statt über Befehle** (I-3b, 07.11.2026): Der Verlauf merkt sich Kamera, Auswahl und Sichtbarkeit,
+  sobald der Viewer 0,4 s ruhig ist, statt jeden Befehl einzeln einzutragen. Ein Drehen ist so ein Schritt, und auch
+  Ansichten des Agenten lassen sich zurücknehmen. Kameras vergleicht er mit Toleranz (q und −q, Fahrten enden nicht
+  bitgleich), sonst wäre jedes angewandte Rückgängig selbst ein neuer Schritt. ⌘Z direkt nach einer Änderung schreibt die
+  wartende Änderung erst fest, sonst nähme es den Schritt davor zurück.
+- **⌘Z am Mac über die Responder-Kette:** Der Viewer antwortet auf `undo:` und `redo:` (mit `validateMenuItem` für den Titel
+  im Menü Bearbeiten). So bleibt das Rückgängig von Textfeldern und Zeichnungsblatt unberührt, ohne das Menü zu ersetzen.
+- **Kontextmenü mit nachgeladenen Einträgen:** `UIContextMenuInteraction` fragt die Einträge synchron, der Treffertest ist
+  asynchron. Ein `UIDeferredMenuElement.uncached` lädt sie nach dem Treffer; die Vorschau ist ein kleiner Ring am Finger
+  (`highlightPreviewForItemWithIdentifier`), nicht der ganze Viewer. Das langes Drücken der Interaktion ersetzt den
+  eigenen Recognizer; den Sekundärklick mit Trackpad oder Maus bringt sie gleich mit.
+- **UIView hat ein eigenes `gestureRecognizerShouldBegin`:** Eine UIView als Delegate eigener Gesten lässt sich deshalb
+  nicht übersetzen („overriding declaration requires an override keyword“); die Regeln der Randgesten sind ein eigenes
+  Objekt (`RandRegeln`).
+- **XCUITest und das Fenster:** `twoFingerTap()` auf `app.windows.firstMatch` scheitert („unable to compute coordinates
+  for gesture“). Der Viewer ist deshalb ein eigenes Element (`viewer`, mit `.allowsDirectInteraction` auch für
+  VoiceOver richtig). Zustand für die Tests liefert ein unsichtbarer Text `test.zustand` (`KEVCAD_PAD_UITEST=1`, nur Debug).
+- **Schemata fest im Projekt:** Mit einem Testziel legt Xcode die Schemata nicht mehr von selbst an; `project.yml` nennt
+  sie (`scheme:` bei KevCAD und KevCADPad, das iPad-Schema mit `KevCADPadUITests` als Test).
 
 ## 11. Offene Fragen und Risiken
 

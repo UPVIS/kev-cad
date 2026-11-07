@@ -185,6 +185,9 @@ public final class ViewerStore: ObservableObject {
     /// Stehende Einblendungen des Agenten (annotate ohne dauer_s, keine Beschriftung einer Hervorhebung); zählen im
     /// Knopf „Maße“ mit den Messungen zusammen.
     @Published public var stehendeAnmerkungen = 0
+    /// I-3b: „Rückgängig: Auswahl“ bzw. „Wiederholen: Ansicht“ für Menü und Daumenleiste; nil = nichts da.
+    @Published public internal(set) var rueckgaengigTitel: String?
+    @Published public internal(set) var wiederholenTitel: String?
 
     static let hinweisKey = "viewer.hinweisleiste"
     static let hauchKey = "viewer.hauch"

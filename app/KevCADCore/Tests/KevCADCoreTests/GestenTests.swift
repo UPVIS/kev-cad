@@ -25,4 +25,16 @@ final class GestenTests: XCTestCase {
         let sprechen = Tastenbelegung.gesten.filter { $0.zustand == .sprechen }
         XCTAssertEqual(sprechen.map(\.geste), [.stift], "beim Sprechen zeichnet der Stift")
     }
+
+    func testRueckgaengigUndKontextmenueWieAmMac() {
+        // 2 und 3 Finger tippen sind die Gesten zu ⌘Z und ⇧⌘Z; langes Drücken ist die rechte Maustaste
+        XCTAssertEqual(Tastenbelegung.menuTaste(.rueckgaengig), .z("z", .befehl))
+        XCTAssertEqual(Tastenbelegung.menuTaste(.wiederholen), .z("z", [.befehl, .umschalt]))
+        let halten = Tastenbelegung.gesten.first { $0.geste == .halten }
+        XCTAssertTrue(halten?.wirkung.contains("Kontextmenü") == true)
+        XCTAssertTrue(Tastenbelegung.maus.contains { $0.geraet == .rechts && $0.wirkung == "Kontextmenü" })
+        XCTAssertEqual(Tastenbelegung.befehl(keyCode: 6, zeichen: "z", flags: [.command]), .rueckgaengig)
+        XCTAssertEqual(Tastenbelegung.befehl(keyCode: 6, zeichen: "z", flags: [.command, .shift]), .wiederholen)
+        XCTAssertEqual(Tastenbelegung.befehl(keyCode: 6, zeichen: "z", flags: []), .shadingMenue, "Z allein bleibt die Darstellung")
+    }
 }

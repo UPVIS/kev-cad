@@ -48,6 +48,7 @@ tools/fern/kachel-selbsttest.sh "build/Kev CAD Test ui.app" "<Projekt>"       # 
 tools/abnahme.sh           # Testvariante „abnahme“ für Kevin, mit Kopien von Katalog und Projekt
 tools/ipad-bau.sh kern     # Kern (KevCADCore, KevCADWire, Viewport) für den iPad-Simulator übersetzen; `kern geraet` fürs Gerät
 tools/ipad-bau.sh test     # Kern-Tests im iPad-Simulator (bootet ohne Fenster)
+tools/ipad-bau.sh gesten   # Gesten-Tests der iPad-App (XCUITest) im Simulator, unter der Simulator-Sperre
 tools/ipad-bau.sh app      # iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
 tools/ipad-bau.sh starten  # Simulator ohne Simulator.app booten, App im Demomodus starten, Foto build/ipad-start.png
 tools/ipad-bau.sh stoppen  # App beenden, Simulator aus, wenn `starten` ihn gebootet hat (`stoppen immer`: auch sonst)

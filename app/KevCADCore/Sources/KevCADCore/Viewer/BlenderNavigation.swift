@@ -370,10 +370,10 @@ extension ViewportCoordinator {
 
 // MARK: - Eingabeebene
 
-#if os(macOS)
+#if os(macOS)  // iPad: Eingabeebene in TouchNavigation.swift
 /// Liegt über dem MTKView und nimmt alle Maus- und Trackpad-Eingaben im Viewport entgegen. Das Paket selbst bekommt
 /// keine Mausereignisse mehr (dort sitzen Einrasten und Nachlaufen).
-final class NavigationInputView: NSView {
+final class NavigationInputView: NSView, NSMenuItemValidation {
     weak var coordinator: ViewportCoordinator?
 
     private enum Mode {
@@ -817,8 +817,30 @@ final class NavigationInputView: NSView {
     // Rechte Maustaste: Kontextmenü
 
     override func rightMouseDown(with event: NSEvent) {
-        guard let menu = coordinator?.onContextMenu?() else { return }
+        // Einträge aus Kontextmenue.swift (dieselben wie am iPad); der Mac lässt die Auswahl dabei stehen
+        guard let c = coordinator, let gruppen = c.onKontextmenue?(nil), !gruppen.isEmpty else { return }
+        let menu = KontextmenueMac.menu(gruppen) { [weak c] befehl in _ = c?.onBefehl?(befehl) }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    // Rückgängig und Wiederholen (I-3b, AnsichtsVerlauf.swift): Menü Bearbeiten, ⌘Z und ⇧⌘Z kommen über die
+    // Responder-Kette hierher, solange der Viewer die Tastatur hat. Textfelder und das Zeichnungsblatt stehen davor in
+    // der Kette und behalten ihr eigenes Rückgängig.
+
+    @objc func undo(_ sender: Any?) { _ = coordinator?.onBefehl?(.rueckgaengig) }
+
+    @objc func redo(_ sender: Any?) { _ = coordinator?.onBefehl?(.wiederholen) }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        let befehl: ViewerBefehl
+        switch item.action {
+        case #selector(undo(_:)): befehl = .rueckgaengig
+        case #selector(redo(_:)): befehl = .wiederholen
+        default: return true
+        }
+        let titel = coordinator?.verlaufTitel?(befehl)
+        item.title = titel ?? (befehl == .rueckgaengig ? "Rückgängig" : "Wiederholen")
+        return titel != nil
     }
 
     override func menu(for event: NSEvent) -> NSMenu? { nil }

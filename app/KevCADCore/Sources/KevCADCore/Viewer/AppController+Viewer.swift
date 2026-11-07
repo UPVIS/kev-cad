@@ -84,6 +84,8 @@ extension AppController: ViewerActions {
         case .sprechen: oberflaeche(.sprechen(!model.oberflaeche.spricht))
         case .sprechenFertig: sprache.fertig()
         case .sprechenVerwerfen: sprache.verwerfen()
+        case .rueckgaengig: rueckgaengig()
+        case .wiederholen: wiederholen()
         case .tastenuebersicht: viewer.tastenuebersicht.toggle()
         case .hinweisleiste: viewer.hinweisleiste.toggle()
         }

@@ -51,6 +51,7 @@ struct FokusEbenen: View {
             // Neuaufbau beim Zurückschalten kostete über 100 ms (Selbsttest V2-9)
             if !schmal && !model.parts.isEmpty {
                 Gliederung(model: model, imBild: true, maxHoehe: max(120, (flaeche.height - obenFrei) * 0.6))
+                    .zumRandSchliessen(.leading) { model.oberflaechenActions?.setzeLeisteLinks(false) }
                     .frame(width: GA.gliederung)
                     .modifier(InselImHellen(an: hell))
                     .padding(.leading, hell ? GA.l : GA.xl)
@@ -118,7 +119,8 @@ struct FokusEbenen: View {
             ZStack(alignment: .bottomTrailing) {
                 #if os(iOS)
                 // iPad: Sprechen und Senden im Griff des Daumens (am Mac V und ↩)
-                Daumenleiste(oberflaeche: oberflaeche, sprache: model.sprache, actions: model.oberflaechenActions)
+                Daumenleiste(oberflaeche: oberflaeche, sprache: model.sprache, viewer: model.viewer,
+                             actions: model.oberflaechenActions, viewerActions: model.actions as? ViewerActions)
                     .padding(.leading, GA.l + 4)
                     .padding(.bottom, untenFrei)
                     .frame(maxWidth: .infinity, alignment: .leading)

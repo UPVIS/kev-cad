@@ -92,6 +92,9 @@ public final class AppController: AppActions {
     private var projectSeenSinceHello = false
     /// Lokale Ansicht (Taste /): vorherige Sichtbarkeit und Kamera, solange sie aktiv ist.
     var localView: (hidden: Set<String>, camera: CameraState)?
+    /// I-3b: Rückgängig und Wiederholen für Ansicht, Auswahl und Sichtbarkeit (AnsichtsVerlauf.swift).
+    var verlauf = Verlauf<AnsichtsStand>(gleich: AnsichtsStand.gleich)
+    var verlaufTimer: Timer?
     /// V2 Viewer: Darstellung vor Röntgen (⌥Z schaltet dorthin zurück).
     var vorRoentgen: ShadingModus?
     /// V2 Viewer: Mitschnitt der Navigation (Kameras je Bild), siehe AppController+Aufnahme.swift.
@@ -158,6 +161,7 @@ public final class AppController: AppActions {
             guard let self else { return }
             self.viewport.bodies = self.cameraFilteredBodies(self.scene.renderBodies)
             self.referenzSzeneGeaendert()  // Phase 4: Fotoansicht rechnet das Modell neu
+            self.verlaufVormerken()  // I-3b: Auswahl oder Sichtbarkeit geändert, Stand nach der Ruhezeit merken
         }
         // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
         setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
@@ -170,6 +174,7 @@ public final class AppController: AppActions {
         installNavigation()
         installViewer()  // V2: Belegung, Hinweisleiste, Messen beim Darüberfahren, Darstellung
         installZweiterViewer()  // V2-10: zweite Ansicht als zweiter Viewer
+        installVerlauf()  // I-3b: Rückgängig und Wiederholen für Ansicht, Auswahl und Sichtbarkeit
         sprache.controller = self
         process.onOutput = { [weak self] line, isErr in self?.logKernelOutput(line, stderr: isErr) }
         process.onExit = { [weak self] code, expected in self?.processExited(code: code, expected: expected) }

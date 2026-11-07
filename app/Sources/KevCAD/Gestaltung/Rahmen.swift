@@ -260,6 +260,39 @@ struct Sprechrahmen: View {
     }
 }
 
+/// Verwerfen am roten Rahmen, solange Kevin spricht (PLAN-IPAD.md 4.5): oben in der Mitte, gut antippbar (44 pt hoch).
+/// Am Mac steht esc dabei, das wie bisher verwirft.
+struct SprechVerwerfen: View {
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            HStack(spacing: 7) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Verwerfen")
+                    .font(GS.text)
+                #if os(macOS)  // nur am Mac: Am iPad zählt das X, esc gibt es nur mit Tastatur
+                Text("esc")
+                    .font(GS.klein)
+                    .foregroundStyle(GF.kreide.opacity(0.6))
+                #endif
+            }
+            .foregroundStyle(GF.kreide)
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            .background(Capsule().fill(GF.aufnahme.opacity(0.85)))
+            .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Sitzung verwerfen (esc)")
+        .accessibilityLabel("Sitzung verwerfen")
+        .accessibilityIdentifier("sprechen.verwerfen")
+    }
+}
+
 /// Kleiner Punkt, der „atmet“, solange etwas läuft (Agent arbeitet, Lauf rechnet).
 struct AtmenderPunkt: View {
     let farbe: Color

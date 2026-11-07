@@ -6,6 +6,7 @@
 #   tools/ipad-bau.sh kern geraet     dasselbe für ein echtes iPad (ohne Signatur)
 #   tools/ipad-bau.sh test            Tests des Kerns im iPad-Simulator (ohne Simulatorfenster, Schema KevCADCore-Package)
 #   tools/ipad-bau.sh app             iPad-App (Ziel KevCADPad) für den Simulator bauen, nach "build/Kev CAD iPad.app"
+#   tools/ipad-bau.sh gesten          Gesten-Tests (XCUITest, UITests/KevCADPad) im iPad-Simulator, ohne Simulatorfenster
 #   tools/ipad-bau.sh symbol          nur das App-Symbol aus app/icon.svg erzeugen (steht nicht im Git)
 #   tools/ipad-bau.sh starten         Simulator booten (ohne Simulator.app, kein Fenster), App installieren, im Demomodus
 #                                     starten, Bildschirmfoto nach build/ipad-start.png
@@ -38,7 +39,7 @@ PAD_BUNDLE_ID=de.upvis.kevcad.ipad
 PAD_APP="$REPO/build/Kev CAD iPad.app"
 GEBOOTET="$REPO/build/ipad-sim-gebootet"
 
-hilfe() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
+hilfe() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # UDID des Simulators mit diesem Namen (der neueste, falls es mehrere Laufzeiten gibt)
 sim_udid() {
@@ -83,6 +84,11 @@ case "$ART" in
   app)
     SCHEMA=KevCADPad
     ZIEL=simulator ;;
+  gesten)
+    # XCUITest der App (I-3b): wie test nur über xcodebuild, unter der Simulator-Sperre
+    SCHEMA=KevCADPad
+    AKTION=test
+    ZIEL=test ;;
   foto)
     # Unter der Simulator-Sperre: starten, Foto kopieren, stoppen (ein anderer Agent wartet so, statt mitten hineinzufunken)
     if [ -z "${KEVCAD_IPAD_SIM_GESPERRT:-}" ]; then
@@ -184,7 +190,7 @@ start=$(date +%s)
 echo "==> $ART für iPad ($ZIEL), Protokoll $LOG"
 # Kurzfassung der Paritätsprüfung Mac/iPad (tools/paritaet.py); sie hält nichts auf.
 [ -f tools/paritaet.py ] && { python3 tools/paritaet.py --kurz 2>/dev/null || true; }
-if [ "$ART" = app ]; then
+if [ "$ART" = app ] || [ "$ART" = gesten ]; then
   command -v xcodegen > /dev/null || { echo "xcodegen fehlt (brew install xcodegen)"; exit 1; }
   symbol || exit 1
   xcodegen generate --spec app/project.yml --quiet || exit 1
@@ -192,9 +198,15 @@ if [ "$ART" = app ]; then
   COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
   [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] && COMMIT="$COMMIT+"
   # Nur arm64: Der Simulator auf dem Mac mit Apple-Chip braucht kein x86_64 (sonst übersetzt alles doppelt)
-  (cd app && lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj -scheme "$SCHEMA" \
-    -configuration Debug -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-    KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" "$AKTION") > "$LOG" 2>&1
+  NUR=()
+  SIM_SPERRE=()
+  if [ "$ART" = gesten ]; then
+    NUR=(-only-testing:KevCADPadUITests -parallel-testing-enabled NO)
+    SIM_SPERRE=(lockf -k /tmp/kevcad-ipad-sim.lock)
+  fi
+  (cd app && ${SIM_SPERRE[@]+"${SIM_SPERRE[@]}"} lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj \
+    -scheme "$SCHEMA" -configuration Debug -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 \
+    ONLY_ACTIVE_ARCH=YES KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" ${NUR[@]+"${NUR[@]}"} "$AKTION") > "$LOG" 2>&1
   rc=$?
 else
   SIM_SPERRE=()
@@ -211,7 +223,7 @@ if [ $rc -ne 0 ]; then
   fi
   echo "==> fehlgeschlagen nach ${dauer} s (Ausgang $rc)"
 else
-  [ "$AKTION" = test ] && grep -E "Executed [0-9]+ tests|Test run with [0-9]+ tests" "$LOG" | tail -2
+  [ "$AKTION" = test ] && grep -E "Executed [0-9]+ tests|Test run with [0-9]+ tests|Test Case .* (passed|failed)" "$LOG" | tail -8
   if [ "$ART" = app ]; then
     rm -rf "$PAD_APP"
     cp -R "$DD/Build/Products/Debug-iphonesimulator/Kev CAD.app" "$PAD_APP" || { rc=1; echo "App fehlt im Bauordner"; }

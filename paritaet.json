@@ -21,7 +21,10 @@
     "app/Sources/KevCAD/Mac/WindowPlacement.swift": "Testfenster auf dem zweiten Monitor; das iPad läuft im Simulator",
     "app/Sources/KevCAD/Mac/ExportFenster.swift": "Dialog Dokumente exportieren als NSWindow-Blatt; am iPad als SwiftUI-Blatt aus dem Bereich Dokumente"
   },
-  "nur_ipad": {},
+  "nur_ipad": {
+    "app/Sources/KevCADPad/RandWischen.swift": "Vom Rand wischen öffnet die Leisten (I-3b); am Mac gibt es keinen Rand zum Wischen, dort ⌘1, ⌘2 und die Knöpfe der Kopfleiste",
+    "app/Sources/KevCADPad/PadTestZustand.swift": "Zustand für die Gesten-Tests im Simulator (XCUITest, nur Debug); am Mac prüfen die Selbsttests der App direkt am App-Kern"
+  },
   "gemeinsam": ["app/Sources/KevCAD/**/*.swift", "app/KevCADCore/Sources/**/*.swift"],
   "gemeinsam_ohne": ["app/Sources/KevCAD/Mac/"],
   "begruendung_muster": "nur am Mac|nur Mac|nur auf dem Mac|nur der Mac|gibt es nur am Mac|am Mac allein|Mac-only|ohne Gegenstück|kein Gegenstück|iPad:|auf dem iPad (nicht|ohne|gibt es|braucht|übernimmt|hat|kommt|geht|liegt)|am iPad (nicht|ohne|gibt es|braucht|übernimmt|hat|kommt|geht)",

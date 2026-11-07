@@ -30,8 +30,9 @@ extension AppController {
         let z = zweiterViewer.coordinator
         z.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
         z.onBoxSelect = { [weak self] picks, modifiers in self?.handleBoxSelect(picks, modifiers: modifiers) }
-        #if os(macOS)
-        z.onContextMenu = { [weak self] in self?.contextMenu() }
+        z.onKontextmenue = { [weak self] treffer in self?.kontextEintraege(treffer: treffer) ?? [] }
+        z.verlaufTitel = { [weak self] befehl in self?.verlaufTitel(befehl) }
+        #if os(macOS)  // iPad: Ziffernblock über pressesBegan und die Belegung
         z.onNumpadKey = { [weak self] code, flags in self?.handleNumpadKey(code, flags) ?? false }
         #endif
         z.onBefehl = { [weak self] befehl in

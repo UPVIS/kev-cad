@@ -24,9 +24,12 @@ public final class ViewportCoordinator: ObservableObject {
     public var onClickPunkt: ((PickResult?, SIMD3<Float>?, PlattformTastenFlags) -> Bool)?
     /// Rahmenauswahl (linke Maustaste ziehen): alle Treffer im Rahmen und die Sondertasten.
     public var onBoxSelect: (([PickResult], PlattformTastenFlags) -> Void)?
-    #if os(macOS)
-    /// Kontextmenü (rechte Maustaste).
-    public var onContextMenu: (() -> NSMenu?)?
+    /// Kontextmenü am Teil (Kontextmenue.swift): Einträge zum Treffer unter dem Finger (iPad) bzw. nil (Mac, rechte
+    /// Maustaste); ausgeführt wird über `onBefehl`.
+    public var onKontextmenue: ((PickResult?) -> [[KontextEintrag]])?
+    /// I-3b: Titel für Rückgängig bzw. Wiederholen (`.rueckgaengig`, `.wiederholen`); nil = nichts da.
+    public var verlaufTitel: ((ViewerBefehl) -> String?)?
+    #if os(macOS)  // iPad: Tasten über onBefehl (TouchNavigation)
     /// Taste des Ziffernblocks im Viewport (Tastencode des Mac, Sondertasten); true = verarbeitet.
     public var onNumpadKey: ((UInt16, NSEvent.ModifierFlags) -> Bool)?
     #endif
