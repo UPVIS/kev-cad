@@ -181,6 +181,46 @@ public struct MausBelegung: Identifiable, Sendable {
     }
 }
 
+/// Finger- und Stiftgesten am iPad (PLAN-IPAD.md, 4.2 und 4.3; für Hinweisleiste und Übersicht, ausgewertet in
+/// TouchNavigation.swift). Hier steht nur, was die Eingabeebene wirklich tut; eine neue Geste kommt hier und dort im
+/// selben Schritt dazu.
+public struct GestenBelegung: Identifiable, Sendable {
+    /// Kurzname in der Kappe der Hinweisleiste.
+    public enum Geste: String, Sendable, CaseIterable {
+        case einFinger = "1 Finger", zweiFinger = "2 Finger", spreizen = "Spreizen", tippen = "Tippen",
+            doppeltTippen = "2× Tippen", halten = "Halten", stift = "Stift", schweben = "Schweben"
+    }
+
+    public var geste: Geste
+    public var wirkung: String
+    public var zustand: MausBelegung.Zustand
+    /// Kurzform für die Hinweisleiste (sonst `wirkung`).
+    public var kurz: String?
+
+    public init(geste: Geste, wirkung: String, zustand: MausBelegung.Zustand, kurz: String? = nil) {
+        self.geste = geste
+        self.wirkung = wirkung
+        self.zustand = zustand
+        self.kurz = kurz
+    }
+
+    public var id: String { "\(geste.rawValue)-\(zustand)" }
+
+    /// Ausführlich für die Übersicht: „1 Finger ziehen“, „Lange drücken“.
+    public var eingabe: String {
+        switch geste {
+        case .einFinger: return "1 Finger ziehen"
+        case .zweiFinger: return "2 Finger ziehen"
+        case .spreizen: return "2 Finger spreizen"
+        case .tippen: return "Tippen mit Finger oder Stift"
+        case .doppeltTippen: return "Doppeltippen"
+        case .halten: return "Lange drücken"
+        case .stift: return "Stift ziehen"
+        case .schweben: return "Stift über dem Glas"
+        }
+    }
+}
+
 /// Die Belegung des Viewers.
 public enum Tastenbelegung {
     public static let alle: [Belegung] = [
@@ -291,6 +331,24 @@ public enum Tastenbelegung {
         MausBelegung(geraet: .zweiFinger, ziehen: false, mods: .umschalt, wirkung: "Verschieben", zustand: .immer),
         MausBelegung(geraet: .zweiFinger, ziehen: false, mods: .strg, wirkung: "Zoomen", zustand: .immer),
         MausBelegung(geraet: .zusammenziehen, ziehen: false, mods: [], wirkung: "Zoomen zur Maus", zustand: .immer),
+    ]
+
+    /// Gesten am iPad; Reihenfolge = Wichtigkeit in der Hinweisleiste (bei wenig Platz fallen die hinteren weg).
+    public static let gesten: [GestenBelegung] = [
+        GestenBelegung(geste: .einFinger, wirkung: "Drehen um den Punkt unter dem Finger", zustand: .immer,
+                       kurz: "Drehen"),
+        GestenBelegung(geste: .zweiFinger, wirkung: "Verschieben", zustand: .immer),
+        GestenBelegung(geste: .spreizen, wirkung: "Zoomen zur Mitte der Finger", zustand: .immer, kurz: "Zoom"),
+        GestenBelegung(geste: .stift, wirkung: "Zeichnen auf dem Modell", zustand: .sprechen, kurz: "Zeichnen"),
+        GestenBelegung(geste: .tippen, wirkung: "Auswählen", zustand: .auswahl),
+        GestenBelegung(geste: .tippen, wirkung: "Element oder Fangpunkt messen", zustand: .messen, kurz: "Messen"),
+        GestenBelegung(geste: .doppeltTippen, wirkung: "Teil einrahmen, auf leerem Grund alles", zustand: .immer,
+                       kurz: "Einrahmen"),
+        GestenBelegung(geste: .halten, wirkung: "Ansichten an dieser Stelle (Kreismenü)", zustand: .auswahl,
+                       kurz: "Ansichten"),
+        GestenBelegung(geste: .stift, wirkung: "Drehen wie mit einem Finger", zustand: .auswahl, kurz: "Drehen"),
+        GestenBelegung(geste: .schweben, wirkung: "Zeigen wie die Maus: Teil leuchtet, beim Messen die Vorschau",
+                       zustand: .immer, kurz: "Zeigen"),
     ]
 
     public static func belegung(_ befehl: ViewerBefehl) -> Belegung? { alle.first { $0.befehl == befehl } }

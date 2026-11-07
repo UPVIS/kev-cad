@@ -144,6 +144,12 @@ private struct StartZeile: View {
             Text("Was soll entstehen?")
                 .font(schmal ? GS.startSchmal : GS.start)
                 .foregroundStyle(GF.kreide.opacity(0.94))
+            #if os(iOS)
+            // iPad: Sprechen kommt mit der Daumenleiste (PLAN-IPAD.md, I-5); bis dahin führt der Weg über den Chat
+            Text("Schreib es im Chat.")
+                .font(GS.startZeile)
+                .foregroundStyle(GF.asche)
+            #else
             HStack(spacing: 4) {
                 Text("Drück")
                 Tastenkappe(text: "V")
@@ -151,6 +157,7 @@ private struct StartZeile: View {
             }
             .font(GS.startZeile)
             .foregroundStyle(GF.asche)
+            #endif
             if !schmal {
                 Text("Der Agent baut hier Schritt für Schritt mit.")
                     .font(GS.startZeile)

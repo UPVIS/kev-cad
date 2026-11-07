@@ -17,6 +17,9 @@ import simd
 // - Trackpad und Maus: Zeiger zeigt wie die Maus, zwei Finger drehen (⇧ verschieben, ⌃ oder ⌘ zoomen), Zoomgeste zoomt.
 // - Magic Keyboard: Kürzel des Viewers aus Tastenbelegung.swift (HID-Codes werden den Tastencodes des Mac zugeordnet).
 //
+// Hinweisleiste und Übersicht beschreiben diese Gesten aus `Tastenbelegung.gesten`: Wer hier eine Geste ändert oder
+// dazunimmt, trägt sie dort im selben Schritt nach.
+//
 // Noch offen: 2 Finger tippen (Rückgängig), 3 Finger tippen (Wiederholen), Kontextmenü am Teil, Werkzeugkranz (I-4).
 
 /// Eingabeebene über dem MTKView (Name wie am Mac, damit Koordinator und Viewport auf beiden Seiten gleich bleiben).

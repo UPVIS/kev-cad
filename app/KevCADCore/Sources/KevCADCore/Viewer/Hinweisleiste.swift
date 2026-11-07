@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Schmale Leiste am unteren Rand des Viewports wie Blenders Statusleiste: zeigt je Zustand, was Maustasten,
 /// Trackpad und Sondertasten gerade tun. Inhalt aus Tastenbelegung.swift. Rechts der Maßstab und „?“ für alle Tasten.
-/// Steht die Maus nicht über dem Viewport und passiert nichts, tritt sie zurück.
+/// Steht die Maus nicht über dem Viewport und passiert nichts, tritt sie zurück. Am iPad zeigt sie die Gesten
+/// (`Tastenbelegung.gesten`, PLAN-IPAD.md 4.6) statt der Maus.
 struct Hinweisleiste: View {
     @ObservedObject var eingabe: ViewerEingabe
     @ObservedObject var model: AppModel
@@ -45,11 +46,11 @@ struct Hinweisleiste: View {
             } label: {
                 HStack(spacing: 4) {
                     TastenKappe(text: "?")
-                    if groesse.width > 700 { Text("Tasten").foregroundStyle(ViewerStil.textLeise) }
+                    if groesse.width > 700 { Text(Self.uebersichtTitel).foregroundStyle(ViewerStil.textLeise) }
                 }
             }
             .buttonStyle(.plain)
-            .help("Alle Tasten (?)")
+            .help(Self.uebersichtHilfe)
         }
         .font(ViewerStil.schrift)
         .padding(.horizontal, 10)
@@ -83,6 +84,55 @@ struct Hinweisleiste: View {
         if case .navigation = viewer.aufnahme { teile.append("● Aufnahme") }
         return teile.joined(separator: " · ")
     }
+
+    #if os(iOS)
+    private static let uebersichtTitel = "Gesten"
+    private static let uebersichtHilfe = "Alle Gesten und Tasten (?)"
+
+    /// iPad: Gesten statt Maus. Tasten nur dort, wo es ohne Tastatur noch nicht geht (Sprechen startet am iPad bis
+    /// I-5 nur mit V an einer Tastatur).
+    private var eintraege: [Eintrag] {
+        if let n = eingabe.navigation { return Self.gestenWaehrend(n) }
+        if oberflaeche.sitzungOffen && !oberflaeche.spricht {  // angehalten, die Sitzung ist offen
+            return [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
+                    Eintrag(tasten: ["V"], maus: nil, text: "Weitersprechen"),
+                    Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")]
+        }
+        let zustand: MausBelegung.Zustand = oberflaeche.spricht ? .sprechen : model.measureMode ? .messen : .auswahl
+        var out = Tastenbelegung.gesten.filter { $0.zustand == .immer || $0.zustand == zustand }
+            .map { Eintrag(tasten: [$0.geste.rawValue], maus: nil, text: $0.kurz ?? $0.wirkung) }
+        if oberflaeche.spricht {
+            out.insert(contentsOf: [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
+                                    Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")], at: min(1, out.count))
+        } else if model.measureMode, let u = eingabe.unterMaus {
+            out.insert(Eintrag(tasten: [], maus: nil, text: u), at: 0)
+        }
+        return out
+    }
+
+    /// Während einer Geste: was gerade passiert und womit es weitergeht.
+    private static func gestenWaehrend(_ n: ViewerEingabe.Navigation) -> [Eintrag] {
+        switch n {
+        case .drehen:
+            return [Eintrag(tasten: ["1 Finger"], maus: nil, text: "Drehen um den Punkt unter dem Finger"),
+                    Eintrag(tasten: ["2 Finger"], maus: nil, text: "Verschieben")]
+        case .verschieben:
+            return [Eintrag(tasten: ["2 Finger"], maus: nil, text: "Verschieben"),
+                    Eintrag(tasten: ["Spreizen"], maus: nil, text: "Zoomen")]
+        case .zoomen:
+            return [Eintrag(tasten: ["Spreizen"], maus: nil, text: "Zoomen zur Mitte der Finger")]
+        case .rahmen:
+            return [Eintrag(tasten: [], maus: nil, text: "Rahmen aufziehen")]
+        case .griff:
+            return [Eintrag(tasten: [], maus: nil, text: "Griff ziehen")]
+        case .strich:
+            return [Eintrag(tasten: ["Stift"], maus: nil, text: "Strich zeichnen"),
+                    Eintrag(tasten: ["Abheben"], maus: nil, text: "Ende")]
+        }
+    }
+    #else
+    private static let uebersichtTitel = "Tasten"
+    private static let uebersichtHilfe = "Alle Tasten (?)"
 
     private var eintraege: [Eintrag] {
         // Während einer Bewegung: was gerade passiert und was die Sondertasten daraus machen
@@ -140,6 +190,7 @@ struct Hinweisleiste: View {
         }
         return out
     }
+    #endif
 }
 
 /// Kleine Tastenkappe („⇧“, „Esc“, „1“).

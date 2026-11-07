@@ -94,6 +94,15 @@ struct Tastenuebersicht: View {
         let q = suche.trimmingCharacters(in: .whitespaces).lowercased()
         func passt(_ texte: [String]) -> Bool { q.isEmpty || texte.contains { $0.lowercased().contains(q) } }
         var out: [(String, [Zeile])] = []
+        #if os(iOS)
+        // iPad: Finger und Stift zuerst (Tastenbelegung.gesten), dann Maus und Trackpad für Magic Keyboard und Maus
+        let gesten = Tastenbelegung.gesten.filter { passt([$0.wirkung, $0.eingabe]) }.map { g in
+            Zeile(id: "geste-" + g.id, tasten: [g.geste.rawValue], maus: nil, titel: g.wirkung,
+                  erklaerung: g.eingabe + (g.zustand == .messen ? " · im Messmodus"
+                                           : g.zustand == .sprechen ? " · beim Sprechen" : ""))
+        }
+        if !gesten.isEmpty { out.append(("Finger und Stift", gesten)) }
+        #endif
         // Maus und Trackpad zuerst
         let maus = Tastenbelegung.maus.filter { passt([$0.wirkung, $0.eingabe]) }.map { m in
             Zeile(id: m.id, tasten: m.mods.isEmpty ? [] : [m.mods.zeichen], maus: m.geraet, titel: m.wirkung,

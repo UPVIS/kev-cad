@@ -76,13 +76,14 @@ case "$ART" in
     echo "==> App installieren und starten"
     xcrun simctl terminate "$UDID" "$PAD_BUNDLE_ID" > /dev/null 2>&1 || true
     xcrun simctl install "$UDID" "$PAD_APP" || exit 1
-    UMGEBUNG=()
+    # Ohne das Blatt zum Koppeln, damit das Foto die Oberfläche zeigt (PadStart.kopplungsBlattBeimStart)
+    UMGEBUNG=(SIMCTL_CHILD_KEVCAD_PAD_OHNE_KOPPLUNGSBLATT=1)
     case "${KEVCAD_IPAD_DEMO:-kern}" in
       aus) ;;
-      *) UMGEBUNG=(SIMCTL_CHILD_KEVCAD_DEMO=1 "SIMCTL_CHILD_KEVCAD_DEMO_VIEWPORT=${KEVCAD_IPAD_DEMO:-kern}"
+      *) UMGEBUNG+=(SIMCTL_CHILD_KEVCAD_DEMO=1 "SIMCTL_CHILD_KEVCAD_DEMO_VIEWPORT=${KEVCAD_IPAD_DEMO:-kern}"
            SIMCTL_CHILD_KEVCAD_DEMO_STATE=live) ;;
     esac
-    env ${UMGEBUNG[@]+"${UMGEBUNG[@]}"} xcrun simctl launch "$UDID" "$PAD_BUNDLE_ID" || exit 1
+    env "${UMGEBUNG[@]}" xcrun simctl launch "$UDID" "$PAD_BUNDLE_ID" || exit 1
     sleep "${KEVCAD_IPAD_WARTEN:-8}"
     FOTO="$REPO/build/ipad-start.png"
     xcrun simctl io "$UDID" screenshot "$FOTO" > /dev/null 2>&1 || { echo "Bildschirmfoto ging nicht"; exit 1; }
