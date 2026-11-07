@@ -32,14 +32,10 @@ FLUECHTIG = {
     "neu_geprueft", "geprueft_ms", "lauf_ok",
 }
 
-# Vorbestehend (gemessen am Stand vor A1, 07.11.2026; Knicken ist seit 07.11.2026 deterministisch, stabwerk.py): Werte, die schon zwischen zwei frischen Prozessen schwanken,
-# also nichts mit Zwischenspeichern zu tun haben. Sie stehen im Ergebnis unter ``bekannt`` und lassen die Probe nicht
-# scheitern; ihr Grund steht dabei.
-BEKANNT = [
-    (re.compile(r"\.s0\.rutschen\[\d+\]\.(teil|paarung|quelle)$"),
-     "S0 Rutschen: Gleichstand gleicher Teile, entschieden nach der Reihenfolge einer Menge (Hash-Zufall je Prozess, "
-     "statik/s0.py rutschen)"),
-]
+# Vorbestehend: Werte, die schon zwischen zwei frischen Prozessen schwanken, also nichts mit Zwischenspeichern zu tun
+# haben. Sie stehen im Ergebnis unter ``bekannt`` und lassen die Probe nicht scheitern; ihr Grund steht dabei. Knicken
+# (S1) und Rutschen (S0) standen hier bis 07.11.2026 und sind seitdem deterministisch (stabwerk.py, s0.py).
+BEKANNT: list[tuple[re.Pattern[str], str]] = []
 AMG_RESIDUUM = re.compile(r"\.festkoerper\.teile\[\d+\]\.loeser\.residuum$")
 AMG_GRUND = "AMG: Startvektor der Spektralradius-Schätzung von pyamg zufällig (bis A3)"
 

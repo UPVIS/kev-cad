@@ -185,14 +185,17 @@ def rutschen(m: StatikModell, sz: Szenario, katalog: Any, rollen: bool) -> list[
         if N <= 1e-9:
             continue
         mu_erf = H / N
-        unten = [n for n in teile if n in m.teile and m.teile[n].bmin[2] <= z0 + BODEN_TOL and n not in m.rollend]
+        # nach Namen: bei gleicher Haftung (vier gleiche Räder) entscheidet sonst die Reihenfolge der Menge, und die
+        # ändert sich mit dem Hash-Zufall von Prozess zu Prozess (Gleichheitsprobe, PLAN-PRUEFUNG-INKREMENTELL.md)
+        unten = [n for n in sorted(teile)
+                 if n in m.teile and m.teile[n].bmin[2] <= z0 + BODEN_TOL and n not in m.rollend]
         werte = []
         for n in unten:
             r = reibwert(katalog, _material(m, n), sz.untergrund or m.untergrund)
             werte.append((r["haft"] if r else MU_ANNAHME, n, r))
         if not werte:
             continue
-        mu, teil, r = min(werte, key=lambda w: w[0])
+        mu, teil, r = min(werte, key=lambda w: (w[0], w[1]))
         e = {"teile": sorted(teile)[:3], "gruppe": len(teile), "mu_erf": round(mu_erf, 3), "mu_vorh": round(mu, 3),
              "reserve": None if mu_erf < 1e-9 else round(mu / mu_erf, 3), "teil": teil,
              "untergrund": sz.untergrund or m.untergrund,

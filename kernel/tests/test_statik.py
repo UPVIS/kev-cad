@@ -388,3 +388,34 @@ def test_laufzeit_statics_statik_und_szenario_rechnen(env):
     _, _, st2, _ = app.wait_for(lambda h: h["type"] == "STATICS" and h.get("aktiv") == "Draufsetzen 90 kg",
                                 start=start, timeout=30)
     assert any(e["name"] == "Draufsetzen 90 kg" for e in st2["szenarien"])
+
+
+def _rutschen_vier_raeder() -> str:
+    """Vier gleiche Räder ohne Rolle unter einer Gruppe (für den Test in Prozessen mit anderem Hash-Zufall)."""
+    from types import SimpleNamespace
+
+    from kevcad_kernel.statik import s0
+
+    namen = [f"Rad {i}" for i in (3, 1, 4, 2)]
+    teile = {n: SimpleNamespace(bmin=np.zeros(3)) for n in namen}
+    m = SimpleNamespace(boden_z=0.0, gruppen=[{"teile": list(namen)}], rollend=set(), teile=teile, untergrund="beton")
+    s0._kraefte_auf = lambda m, sz, teile, innere=True: [(np.array([1.0, 0.0, -10.0]), np.zeros(3))]
+    s0._material = lambda m, n: "gummi"
+    s0.reibwert = lambda katalog, a, b: {"haft": 0.6, "paarung": [a, b], "quelle": "Test"}
+    return repr(s0.rutschen(m, SimpleNamespace(untergrund=None), None, False))
+
+
+def test_rutschen_gleichstand_unabhaengig_vom_hash_zufall():
+    """S0 Rutschen: Bei gleicher Haftung entscheidet der Name, nicht die Reihenfolge einer Menge (vorher je Prozess
+    „Lenkrolle 3“ oder „Lenkrolle 1“)."""
+    import os
+    import subprocess
+    import sys
+
+    hier = str(Path(__file__).parent)
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); from test_statik import _rutschen_vier_raeder; "
+            "print(_rutschen_vier_raeder())")
+    aus = {subprocess.run([sys.executable, "-c", code, hier], capture_output=True, text=True, check=True, cwd=hier,
+                          env={**os.environ, "PYTHONHASHSEED": str(seed)}).stdout.strip().splitlines()[-1]
+           for seed in range(6)}
+    assert len(aus) == 1 and "'teil': 'Rad 1'" in next(iter(aus))
