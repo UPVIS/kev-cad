@@ -37,6 +37,9 @@ struct PadTestZustand: View {
             ("wieder", m.viewer.wiederholenTitel ?? ""),
             ("meldung", m.viewer.meldung?.text ?? ""),
             ("abstand", kamera.map { String(format: "%.1f", $0.distance) } ?? ""),
+            ("drehung", kamera.map { q in [q.rotation.vector.x, q.rotation.vector.y, q.rotation.vector.z, q.rotation.vector.w]
+                .map { String(format: "%.5f", $0) }.joined(separator: ",") } ?? ""),
+            ("mehrfach", m.viewer.mehrfach ? "1" : "0"),
         ]
         return werte.map { "\($0.0)=\($0.1)" }.joined(separator: ";")
     }

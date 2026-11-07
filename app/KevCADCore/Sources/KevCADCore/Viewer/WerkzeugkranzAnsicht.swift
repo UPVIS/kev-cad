@@ -46,7 +46,7 @@ struct WerkzeugkranzOverlay: View {
                         }
                     }
                 KranzScheibe(zustand: k, farbe: viewer.strichfarbe, stiftSprechen: viewer.stiftSprechen,
-                             sitzungOffen: oberflaeche.sitzungOffen, spricht: oberflaeche.spricht,
+                             schwung: viewer.schwung, sitzungOffen: oberflaeche.sitzungOffen, spricht: oberflaeche.spricht,
                              ausfuehren: ausfuehren, farbeWaehlen: farbeWaehlen)
                     .position(k.mitte)
                     .allowsHitTesting(false)
@@ -307,6 +307,7 @@ private struct KranzScheibe: View {
     let zustand: KranzZustand
     let farbe: Strichfarbe
     let stiftSprechen: Bool
+    let schwung: Bool
     let sitzungOffen: Bool
     let spricht: Bool
     let ausfuehren: (KranzAktion) -> Void
@@ -427,7 +428,8 @@ private struct KranzScheibe: View {
             ForEach(Array(eintraege.enumerated()), id: \.offset) { j, e in
                 let lage = G.lage(index: j, anzahl: eintraege.count, radius: G.unterRadius)
                 let an = zustand.markiert == .unter(j)
-                KranzSymbol(symbol: e.aktion == .stiftSprechen && !stiftSprechen ? "pencil.slash" : e.symbol, an: an,
+                KranzSymbol(symbol: e.aktion == .stiftSprechen && !stiftSprechen ? "pencil.slash"
+                                : e.aktion == .schwung && !schwung ? "pause" : e.symbol, an: an,
                             groesse: 36, farbe: nil)
                     .background(Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
                     .background(Circle().fill(ViewerStil.kranzGrund))
@@ -470,6 +472,7 @@ private struct KranzScheibe: View {
             let e = offenesFeld.map { Tastenbelegung.kranz($0) } ?? []
             guard j < e.count else { return nil }
             if e[j].aktion == .stiftSprechen { return "Stift beginnt Sprechen: " + (stiftSprechen ? "an" : "aus") }
+            if e[j].aktion == .schwung { return "Schwung: " + (schwung ? "an" : "aus") }
             return e[j].name
         default: return nil
         }

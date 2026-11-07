@@ -140,3 +140,60 @@ final class AnsichtsVerlaufTests: XCTestCase {
         XCTAssertEqual(c.model.selection.count, 2)
     }
 }
+
+/// I-3b: Auswahl erweitern ohne Tastatur („Mehrfach“) und Schwung nach schnellem Loslassen.
+@MainActor
+final class BeruehrungTests: XCTestCase {
+    func testMehrfachNimmtDazuWieUmschalt() throws {
+        let c = AppController(model: AppModel())
+        let events = try FrameReader().feed(Fixtures.data("stream.bin")).map(KernelConnection.decode)
+        c.handle(Array(events.prefix(7)))
+        let platte = SceneStore.bodyID(part: "Grundplatte", chunk: 0)
+        let bolzen = SceneStore.bodyID(part: "Halter/Bolzen", chunk: 0)
+        func pick(_ o: UInt32) -> PickResult? {
+            PickResult(rawValue: o | (3 << 16), indexMap: [0: platte, 1: bolzen])
+        }
+        c.handleClick(pick(0), modifiers: [])
+        c.handleClick(pick(1), modifiers: [])
+        XCTAssertEqual(c.model.selection.map(\.ref), ["Halter/Bolzen"], "ohne Mehrfach ersetzt der Tipp")
+        c.setzeMehrfach(true)
+        XCTAssertTrue(c.model.viewer.mehrfach)
+        c.handleClick(pick(0), modifiers: [])
+        XCTAssertEqual(c.model.selection.map(\.ref), ["Halter/Bolzen", "Grundplatte"], "Mehrfach nimmt dazu")
+        c.handleClick(pick(1), modifiers: [])
+        XCTAssertEqual(c.model.selection.map(\.ref), ["Grundplatte"], "… und wieder heraus")
+        c.setzeMehrfach(false)
+        c.handleClick(pick(1), modifiers: [])
+        XCTAssertEqual(c.model.selection.map(\.ref), ["Halter/Bolzen"])
+    }
+
+    func testSchwungKlingtAb() {
+        XCTAssertNil(Schwung(geschwindigkeit: CGVector(dx: 100, dy: 0)), "langsam losgelassen: kein Schwung")
+        guard var s = Schwung(geschwindigkeit: CGVector(dx: 1000, dy: -500)) else { return XCTFail("schnell: Schwung") }
+        var weg = CGVector.zero
+        var bilder = 0
+        while let d = s.schritt(1.0 / 120) {
+            weg.dx += d.dx
+            weg.dy += d.dy
+            bilder += 1
+            XCTAssertLessThan(bilder, 240, "nach zwei Sekunden ist Ruhe")
+        }
+        XCTAssertGreaterThan(bilder, 40, "läuft spürbar nach (über 0,3 s)")
+        // Gesamtweg ≈ v · τ (Integral der abklingenden Geschwindigkeit), Richtung bleibt
+        XCTAssertEqual(weg.dx, 1000 * CGFloat(Schwung.zeitkonstante), accuracy: 15)
+        XCTAssertEqual(weg.dy / weg.dx, -0.5, accuracy: 0.001)
+        var t = Schwung(geschwindigkeit: CGVector(dx: 1000, dy: 0))!
+        let lang = t.schritt(1.0)!
+        XCTAssertLessThanOrEqual(lang.dx, 1000 * 0.05 + 0.001, "ein Hänger von 1 s zählt höchstens 0,05 s")
+    }
+
+    func testSchwungAmIPadVorgabeAn() {
+        UserDefaults.standard.removeObject(forKey: ViewerStore.schwungKey)
+        #if os(iOS)
+        XCTAssertTrue(ViewerStore().schwung)
+        #else
+        XCTAssertFalse(ViewerStore().schwung, "am Mac bleibt es wie in Blender")
+        #endif
+        XCTAssertNotNil(Tastenbelegung.kranz(.mehr).first { $0.aktion == .schwung }, "abschaltbar im Kranz")
+    }
+}

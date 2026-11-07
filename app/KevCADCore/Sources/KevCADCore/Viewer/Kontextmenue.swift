@@ -43,7 +43,7 @@ extension AppController {
                 ? scene.selection.contains { $0.part == ref.part } : scene.selection.contains(ref)
             if !drin {
                 measurePending = []
-                applySelection([ref])
+                applySelection(viewer.mehrfach ? scene.selection + [ref] : [ref])  // „Mehrfach“: dazunehmen
             }
         }
         let hatAuswahl = !scene.selection.isEmpty

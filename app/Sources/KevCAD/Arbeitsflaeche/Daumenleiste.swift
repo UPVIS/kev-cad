@@ -5,7 +5,8 @@ import SwiftUI
 /// Daumenleiste am iPad (PLAN-IPAD.md 4.5 und 4.6): links unten im Griff des Daumens, der Stift bleibt in der rechten
 /// Hand. Sprechen beginnt, hält an und geht weiter (am Mac V), Senden schickt Text, Zeiger und Striche an den Agenten (am
 /// Mac ↩). Verwerfen steht in der Zeile mit dem Gesagten und als X am roten Rahmen. Darunter Rückgängig und Wiederholen
-/// für Ansicht, Auswahl und Sichtbarkeit (am Mac ⌘Z und ⇧⌘Z, hier auch 2 und 3 Finger tippen). „Kranz“ öffnet den
+/// für Ansicht, Auswahl und Sichtbarkeit (am Mac ⌘Z und ⇧⌘Z, hier auch 2 und 3 Finger tippen) und „Mehrfach“ (Tippen
+/// nimmt dazu, wie ⇧ am Mac). „Kranz“ öffnet den
 /// Werkzeugkranz an der letzten Berührung (I-4; mit dem Pencil doppelt tippen, am Mac Q). Zeichnen mit dem Finger folgt.
 struct Daumenleiste: View {
     @ObservedObject var oberflaeche: OberflaechenStore
@@ -37,6 +38,7 @@ struct Daumenleiste: View {
                 VerlaufKnopf(symbol: "arrow.uturn.forward", titel: "Wiederholen", moeglich: viewer.wiederholenTitel) {
                     viewerActions?.ausfuehren(.wiederholen)
                 }
+                MehrfachKnopf(an: viewer.mehrfach) { viewerActions?.setzeMehrfach(!viewer.mehrfach) }
             }
             DaumenKnopf(titel: "Kranz", symbol: "circle.circle", farbe: GF.kreide, gefuellt: false, groesse: 44) {
                 viewerActions?.ausfuehren(.werkzeugkranz)
@@ -76,6 +78,29 @@ private struct VerlaufKnopf: View {
         .accessibilityLabel(titel)
         .accessibilityValue(moeglich ?? "")
         .accessibilityIdentifier(titel == "Rückgängig" ? "daumen.rueckgaengig" : "daumen.wiederholen")
+    }
+}
+
+/// Schalter „Mehrfach“ (I-3b): Tippen nimmt Teile dazu bzw. wieder heraus, wie ⇧ am Mac. Leuchtet, solange er an ist.
+private struct MehrfachKnopf: View {
+    let an: Bool
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            Image(systemName: "plus.square.on.square")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(an ? GF.tief : GF.kreide.opacity(0.9))
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(an ? GF.kevin : Color.white.opacity(0.08)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(an ? 0 : 0.12), lineWidth: 1))
+                .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Mehrfach auswählen")
+        .accessibilityAddTraits(an ? .isSelected : [])
+        .accessibilityIdentifier("daumen.mehrfach")
     }
 }
 

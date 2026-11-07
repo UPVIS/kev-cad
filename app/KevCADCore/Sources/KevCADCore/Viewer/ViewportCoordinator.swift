@@ -27,6 +27,11 @@ public final class ViewportCoordinator: ObservableObject {
     /// Kontextmenü am Teil (Kontextmenue.swift): Einträge zum Treffer unter dem Finger (iPad) bzw. nil (Mac, rechte
     /// Maustaste); ausgeführt wird über `onBefehl`.
     public var onKontextmenue: ((PickResult?) -> [[KontextEintrag]])?
+    /// I-3b: Der Viewer wurde berührt (iPad: jede Berührung der Eingabeebene, vor jeder Geste). Die Oberfläche macht damit
+    /// das Modell zur aktiven Kachel; am Mac erledigt das ein Mausmonitor der Oberfläche.
+    public var onBeruehrt: (() -> Void)?
+    /// I-3b: Schwung nach schnellem Loslassen beim Drehen (`ViewerStore.schwung`, Schwung.swift).
+    public var schwung = false
     /// I-3b: Titel für Rückgängig bzw. Wiederholen (`.rueckgaengig`, `.wiederholen`); nil = nichts da.
     public var verlaufTitel: ((ViewerBefehl) -> String?)?
     #if os(macOS)  // iPad: Tasten über onBefehl (TouchNavigation)

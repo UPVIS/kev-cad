@@ -50,7 +50,8 @@ struct FokusEbenen: View {
             // Bleibt eingehängt und wird nur ausgeblendet: Neben Kacheln ist die Gliederung die linke Spalte, und ein
             // Neuaufbau beim Zurückschalten kostete über 100 ms (Selbsttest V2-9)
             if !schmal && !model.parts.isEmpty {
-                Gliederung(model: model, imBild: true, maxHoehe: max(120, (flaeche.height - obenFrei) * 0.6))
+                Gliederung(model: model, imBild: true, maxHoehe: max(120, (flaeche.height - obenFrei) * 0.6),
+                           tastenAktiv: gliederung)
                     .zumRandSchliessen(.leading) { model.oberflaechenActions?.setzeLeisteLinks(false) }
                     .frame(width: GA.gliederung)
                     .modifier(InselImHellen(an: hell))

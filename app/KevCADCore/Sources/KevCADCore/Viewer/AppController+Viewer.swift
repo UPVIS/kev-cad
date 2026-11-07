@@ -162,6 +162,11 @@ extension AppController: ViewerActions {
 
     public func setHauch(_ an: Bool) { viewer.hauch = an }
 
+    public func setzeMehrfach(_ an: Bool) {
+        viewer.mehrfach = an
+        viewer.zeige(an ? "Mehrfach: Tippen nimmt dazu" : "Mehrfach aus")
+    }
+
     // MARK: Darstellung (Schritt 5 erweitert)
 
     /// Röntgen schaltet mit ⌥Z zurück auf die Darstellung davor.

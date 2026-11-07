@@ -110,7 +110,9 @@ die Touch- und Stiftgriffe dazu (Hinweisleiste und Übersicht lesen dort).
 | 4 Finger | bleibt dem System | – |
 
 Um die Blickachse wird nicht gedreht (Z bleibt oben wie am Mac). Ein schnell losgelassener Finger dreht kurz nach
-(Schwung, abschaltbar).
+(Schwung, `Schwung.swift`; abschaltbar unter Kranz › Mehr; am Mac Vorgabe aus, dort läuft dann der Nachlauf des
+Trackpads). Auswahl erweitern: ⇧ oder ⌘ am Magic Keyboard wie am Mac, ohne Tastatur der Schalter „Mehrfach“ in der
+Daumenleiste (Tippen nimmt dazu oder wieder heraus, auch langes Drücken für das Kontextmenü).
 
 ### 4.3 Stift
 
@@ -371,7 +373,7 @@ Im Code mit „iPad: folgt in I-x“ markiert; jedes Paket arbeitet seine Zeilen
 | I-7 | `AppInfo.projectsDirectory` ist der Dokumente-Ordner der App, mit dem Schalter „Projekte aus iCloud“ der gewählte Ordner (Prototyp); Ordnernamen unterscheiden auf dem iPad Groß- und Kleinschreibung (`ProjectLocator.uniqueFolder`) |
 | I-8 | Zugang zum Drucker vom iPad an den Kernel am Mac geben (gespeichert wird er im Schlüsselbund des iPad, der Kernel liest aber nur den des Mac; braucht eine Protokoll-Erweiterung); Zukauf aus dem Teilen-Blatt von Safari (Teilen-Erweiterung); Filament wählen beim 3MF-Sichern am iPad (nimmt das angenommene der Vorschau). Erledigt 07.11.2026 (dritte Runde): Drucken je Format über AirPrint, `DruckerSchluesselbund.speichern`, Shop-Link auf den Viewer ziehen, 3MF sichern. Erledigt 07.11.2026: „Im Finder zeigen“ wird Teilen, Bambu Studio wird „3MF teilen“, Video aus der Animationskachel mit AVAssetWriter, Video auf Wunsch des Agenten immer am Mac (`AppLink.mac`), Bildschirmfoto und Viewer-Videos im eigenen Zwischenspeicher mit „Teilen“ |
 | I-9 | Selbsttests: `SprachSelbsttest` (Zeigen und Striche). Ohne Gegenstück mit Grund (`paritaet.json`, `pruefungen_nur_mac`): Treffertest in `AppController+SelfTest` (am iPad Gesten-Tests), Fensterbild in `AppController+Flaeche` (am iPad Bilder im Selbsttest), Tastenkürzel über NSEvent, Fenster am Rand. Erledigt 07.11.2026: Bereiche mit Daten vom Kernel über `tools/ipad-kette.sh --bereiche`; `PadSelbsttest` (Start, Leisten, jede Kachel mit Pausenmessung, Blätter, Teilen ohne Umweg) über `tools/ipad-bau.sh selbsttest` |
-| I-3b (aus I-3a) | Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Zoomflächen, Tippen in den Viewer macht ihn nicht zur aktiven Kachel (`viewerKlickBeobachten`), Auswahl erweitern mit Umschalt oder Befehl (Viewer bis unter die Statusleiste: erledigt, nur ohne Kacheln; neben Kacheln bleibt der Streifen) |
+| I-3b (aus I-3a) | erledigt (07.11.2026): Tippen in den Viewer macht ihn zur aktiven Kachel (`ViewportCoordinator.onBeruehrt`), Auswahl erweitern mit ⇧ oder ⌘ am Magic Keyboard (Viewer über die Geste, Gliederung über GameController) und ohne Tastatur mit „Mehrfach“ in der Daumenleiste, Pfeiltasten in der Gliederung, Zoomen mit zwei Fingern in Bauplan und Druckplatten (Zeichnungen: Leinwand aus I-8), Grund bis unter die Statusleiste auch neben Kacheln, Schwung nach schnellem Loslassen (Kranz › Mehr) |
 | I-7 (aus I-3a) | „Ordner öffnen“ ist ausgeblendet (`presentOpenPanel`; mit dem Schalter wählt die Projektliste den Ordner), ein fehlendes Projekt in der Liste meldet sich nur statt „Entfernen?“ zu fragen |
 | I-8 (aus I-3a) | Abnahme am Gerät: Blätter mit Finger und Stift bearbeiten (Simulator geprüft: Leinwand, Kontextmenü, Zeichnen), AirPrint mit echtem Drucker (Papierwahl, 1:1). Erledigt 07.11.2026 (dritte Runde): Blätter bearbeiten, Drucken je Format. Erledigt 07.11.2026: Berichte und Dokument-Export als PDF am Gerät mit Teilen und AirPrint, Referenz- und CAD-Dateien wählen (Dateien-App, `DATEI_HOCH`), Protokoll, Lagerkatalog und Zukaufteil als Blatt (`padBlatt`), Finder und Editor (`AppSession`, `ErrorBanner`, `Kopfleiste`: model.py teilen), Teilen in `BestandAnsicht`, `DruckAnsicht`, `ExportDialog`, `RenderDialog`, `DruckenDialog`; `ZukaufBanner` bleibt am Mac (Datei in dessen Downloads) |
 | I-9 (aus I-3a) | Selbsttests der Oberfläche mit Bildern von außen und Fenster am Rand (am iPad gibt es dafür `PadSelbsttest`); Menüs liegen nur in `Mac/`, iPadOS 26 hätte eine Menüleiste (Rückweg über den Befehlskatalog in I-4) |
@@ -557,6 +559,17 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 - **Ein leerer Wert ist kein fehlender** (Kettentest): `SIMCTL_CHILD_KEVCAD_SELFTEST=""` kommt in der App als gesetzte
   Variable an, und Stellen wie `env["KEVCAD_SELFTEST"] != nil` halten das für einen Selbsttest. Das Skript lässt die
   Variable deshalb weg, statt sie leer zu setzen.
+
+- **Sondertasten ohne Ereignis am iPad:** UIKit kennt den Zustand von ⇧ und ⌘ nur in einem Ereignis (`modifierFlags` der
+  Geste). Wo SwiftUI eine Zeile per Tipp wählt (Gliederung), liest `auswahlErweitern` die Hardware-Tastatur über
+  GameController (`GCKeyboard.coalesced`); ohne Tastatur übernimmt der Schalter „Mehrfach“.
+- **Schwung als reine Rechnung:** Die abklingende Drehung (`Schwung`, Zeitkonstante 0,18 s, ab 280 pt/s) ist ein Wert
+  ohne UIKit und deshalb auf beiden Plattformen testbar; die Eingabeebene treibt sie mit einem CADisplayLink. Ein Finger
+  auf dem Glas hält sie sofort an (`touchesBegan`), der Verlauf merkt sich erst den Endstand (Modus bleibt „drehen“).
+- **Gesten-Test für Schwung:** Gleicher Weg einmal langsam, einmal schnell; schnell muss deutlich weiter drehen. Der
+  Zustand im Bedienbaum frischt nur alle 0,5 s auf, Zeitpunkte direkt nach der Geste wären Zufall.
+- **Zoomflächen in Listen:** Vergrößert nimmt das Ziehen am iPad Vorrang (`highPriorityGesture`), sonst rollte die Liste
+  darum gleichzeitig mit; eingepasst rollt sie wie gewohnt.
 
 ## 11. Offene Fragen und Risiken
 

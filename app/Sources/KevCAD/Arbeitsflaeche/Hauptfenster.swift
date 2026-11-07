@@ -108,7 +108,11 @@ struct Hauptfenster: View {
                                                        links: oberflaeche.leisteLinks, rechts: oberflaeche.leisteRechts,
                                                        kacheln: oberflaeche.kacheln, gross: nil)
             ZStack(alignment: .topLeading) {
+                // iPad (I-3b): Der Grund reicht bis unter die Statusleiste. Ohne Kacheln liegt dort der Viewer
+                // (viewerFlaeche), neben Kacheln der Grund wie um die Kopfleiste; die Kacheln selbst bleiben im sicheren
+                // Bereich, ihre Köpfe gehören nicht unter die Uhr.
                 GraphitGrund()
+                    .padding(.top, -ueberstand)
                 if viewerAn { viewerFlaeche(g) }
                 // Einmal geöffnet bleibt die Kachelfläche eingehängt: Schwere Kacheln abzubauen und neu aufzubauen
                 // kostet bei jedem Umschalten Sekunden, Ausblenden nichts
@@ -299,7 +303,7 @@ struct Hauptfenster: View {
     private func kachelEbene(_ g: Arbeitsgeometrie) -> some View {
         ZStack(alignment: .topLeading) {
             if let s = g.spalte {
-                LinkeSpalte(model: model, suche: $suche)
+                LinkeSpalte(model: model, suche: $suche, tastenAktiv: oberflaeche.kachelflaeche)
                     .zumRandSchliessen(.leading) { model.oberflaechenActions?.setzeLeisteLinks(false) }
                     .frame(width: s.width, height: s.height)
                     .position(x: s.midX, y: s.midY)
@@ -460,6 +464,8 @@ private struct FensterBaender: View {
 private struct LinkeSpalte: View {
     @ObservedObject var model: AppModel
     @Binding var suche: String
+    /// iPad: Pfeiltasten nur in der sichtbaren Gliederung (die Spalte bleibt neben dem Modell eingehängt).
+    var tastenAktiv = true
 
     private var form: RoundedRectangle { RoundedRectangle(cornerRadius: GR.insel, style: .continuous) }
 
@@ -475,7 +481,7 @@ private struct LinkeSpalte: View {
                     .foregroundStyle(GF.rauch)
                 Spacer(minLength: 0)
             } else {
-                Gliederung(model: model, filter: suche)
+                Gliederung(model: model, filter: suche, tastenAktiv: tastenAktiv)
                     .frame(maxHeight: .infinity, alignment: .top)
             }
         }

@@ -108,6 +108,13 @@ extension AppController {
     static let verlaufRuhe: TimeInterval = 0.4
 
     func installVerlauf() {
+        // I-3b: Schalter „Schwung“ an beide Viewer weiterreichen
+        model.viewer.$schwung
+            .sink { [weak self] an in
+                self?.viewport.schwung = an
+                self?.zweiterViewer.coordinator.schwung = an
+            }
+            .store(in: &navCancellables)
         viewport.controller.$cameraState
             .dropFirst()
             .sink { [weak self] _ in self?.verlaufVormerken() }

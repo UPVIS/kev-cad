@@ -237,7 +237,8 @@ if [ "$ART" = app ] || [ "$ART" = gesten ] || [ "$ART" = release ]; then
   NUR=()
   SIM_SPERRE=()
   if [ "$ART" = gesten ]; then
-    NUR=(-only-testing:KevCADPadUITests -parallel-testing-enabled NO)
+    # KEVCAD_GESTEN_NUR=testName: nur dieser Test (kurze Runden)
+    NUR=("-only-testing:KevCADPadUITests${KEVCAD_GESTEN_NUR:+/GestenUITests/$KEVCAD_GESTEN_NUR}" -parallel-testing-enabled NO)
     SIM_SPERRE=(lockf -k /tmp/kevcad-ipad-sim.lock)
   fi
   (cd app && ${SIM_SPERRE[@]+"${SIM_SPERRE[@]}"} lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj \

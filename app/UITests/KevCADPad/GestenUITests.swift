@@ -18,6 +18,10 @@ final class GestenUITests: XCTestCase {
             "KEVCAD_DEMO_VIEWPORT": "kern",
             "KEVCAD_DEMO_STATE": "live",
         ]
+        // Fester Ausgangszustand: Der Simulator ist geteilt, die App merkt sich Leisten und Kacheln (UserDefaults). Die
+        // Argumente gehen dem Gemerkten vor: Gliederung an, Eigenschaften zu, nur das Modell, Schwung an.
+        app.launchArguments = ["-oberflaeche.leisten", "(links)", "-oberflaeche.kacheln", "(modell)",
+                               "-viewer.schwung", "YES"]
         app.launch()
     }
 
@@ -93,17 +97,24 @@ final class GestenUITests: XCTestCase {
 
         // Doppeltippen rahmt das Teil ein: die Kamera rückt näher
         teil.doubleTap()
-        let nah = warte("Doppeltippen rahmt ein") { $0["abstand"] != gewaehlt["abstand"] && !($0["abstand"] ?? "").isEmpty }
+        warte("Doppeltippen rahmt ein") { $0["abstand"] != gewaehlt["abstand"] && !($0["abstand"] ?? "").isEmpty }
+        var vorig = ""
+        let nah = warte("Kamera nach dem Einrahmen ruhig") { z in  // nicht mitten in der Fahrt lesen
+            defer { vorig = z["abstand"] ?? "" }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+            return z["abstand"] == vorig
+        }
         warte("Schritt im Verlauf", frist: 5) { !($0["rueck"] ?? "").isEmpty }
 
         // 2 Finger tippen: zurück (die Ansicht vor dem Einrahmen), 3 Finger tippen: wieder vor
         try Mehrfinger.tippen(2, auf: viewer)
         warte("2 Finger tippen nimmt das Einrahmen zurück") {
-            $0["abstand"] == gewaehlt["abstand"] && ($0["meldung"] ?? "").hasPrefix("Rückgängig")
+            $0["abstand"] == gewaehlt["abstand"] && !($0["wieder"] ?? "").isEmpty
         }
         try Mehrfinger.tippen(3, auf: viewer)
-        warte("3 Finger tippen wiederholt") {
-            $0["abstand"] == nah["abstand"] && ($0["meldung"] ?? "").hasPrefix("Wiederholt")
+        // Die kurze Meldung („Wiederholt …“) kann unter Last schon wieder weg sein; der Verlauf zählt
+        warte("3 Finger tippen wiederholt (erwartet Abstand \(nah["abstand"] ?? "?"))") {
+            $0["abstand"] == nah["abstand"] && ($0["wieder"] ?? "x").isEmpty
         }
 
         // Die Knöpfe der Daumenleiste tun dasselbe
@@ -136,6 +147,81 @@ final class GestenUITests: XCTestCase {
         // Rückgängig holt das Teil zurück
         try Mehrfinger.tippen(2, auf: viewer)
         warte("2 Finger tippen blendet wieder ein") { $0["verborgen"] == "0" && $0["auswahl"] == z["auswahl"] }
+    }
+
+    func testMehrfachNimmtDazu() throws {
+        _ = bereit()
+        // Zwei Punkte auf verschiedenen Teilen suchen (ohne „Mehrfach“ ersetzt jeder Tipp die Auswahl)
+        let fenster = app.windows.firstMatch
+        var treffer: [(XCUICoordinate, String)] = []
+        for (x, y) in [(0.5, 0.5), (0.3, 0.42), (0.44, 0.64), (0.58, 0.54), (0.6, 0.66), (0.35, 0.6), (0.25, 0.3)] {
+            let p = fenster.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y))
+            p.tap()
+            RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+            let a = zustand()["auswahl"] ?? ""
+            if !a.isEmpty, !treffer.contains(where: { $0.1 == a }) { treffer.append((p, a)) }
+            if treffer.count == 2 { break }
+        }
+        guard treffer.count == 2 else { return XCTFail("keine zwei Teile gefunden: \(treffer.map(\.1))") }
+        treffer[0].0.tap()
+        warte("erstes Teil gewählt") { $0["auswahl"] == treffer[0].1 }
+        let knopf = app.buttons["daumen.mehrfach"]
+        XCTAssertTrue(knopf.waitForExistence(timeout: 5), "„Mehrfach“ in der Daumenleiste")
+        knopf.tap()
+        warte("Mehrfach an") { $0["mehrfach"] == "1" }
+        treffer[1].0.tap()
+        warte("mit „Mehrfach“ nimmt Tippen das zweite Teil dazu") { $0["auswahl"] == "\(treffer[0].1),\(treffer[1].1)" }
+        treffer[0].0.tap()
+        warte("… und nimmt es wieder heraus") { $0["auswahl"] == treffer[1].1 }
+        knopf.tap()
+        warte("Mehrfach aus") { $0["mehrfach"] == "0" }
+    }
+
+    /// Winkel zwischen zwei Drehungen (Grad) aus „x,y,z,w“.
+    private func winkel(_ a: String?, _ b: String?) -> Double {
+        let q1 = (a ?? "").split(separator: ",").compactMap { Double($0) }
+        let q2 = (b ?? "").split(separator: ",").compactMap { Double($0) }
+        guard q1.count == 4, q2.count == 4 else { return .nan }
+        let d = min(1, abs(zip(q1, q2).map(*).reduce(0, +)))
+        return 2 * acos(d) * 180 / .pi
+    }
+
+    /// Wartet, bis die Kamera eine Sekunde lang ruhig ist, und gibt die Drehung zurück.
+    private func ruhigeDrehung() -> String? {
+        var letzte = ""
+        return warte("Kamera ruhig", frist: 15) { z in
+            defer { letzte = z["drehung"] ?? "" }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+            return !(z["drehung"] ?? "").isEmpty && z["drehung"] == letzte
+        }["drehung"]
+    }
+
+    /// Gleicher Weg, einmal langsam, einmal schnell: Schnell losgelassen dreht es mit Schwung deutlich weiter.
+    func testSchwungDrehtNach() {
+        _ = bereit()
+        let fenster = app.windows.firstMatch
+        let von = fenster.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
+        let bis = fenster.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5))
+        let a = ruhigeDrehung()
+        von.press(forDuration: 0.05, thenDragTo: bis, withVelocity: .slow, thenHoldForDuration: 0.3)
+        let b = ruhigeDrehung()
+        von.press(forDuration: 0.05, thenDragTo: bis, withVelocity: .fast, thenHoldForDuration: 0)
+        let c = ruhigeDrehung()
+        let langsam = winkel(a, b), schnell = winkel(b, c)
+        XCTAssertGreaterThan(langsam, 1, "langsames Ziehen dreht")
+        XCTAssertGreaterThan(schnell, langsam * 1.2, "schnell losgelassen läuft es nach (langsam \(langsam)°, schnell \(schnell)°)")
+    }
+
+    func testPfeiltastenInDerGliederung() {
+        _ = bereit()
+        let zeile = app.buttons["Grundplatte"].firstMatch
+        XCTAssertTrue(zeile.waitForExistence(timeout: 10), "Gliederung mit „Grundplatte“")
+        zeile.tap()
+        warte("Grundplatte gewählt") { $0["auswahl"] == "Grundplatte" }
+        app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
+        warte("↓ wählt die nächste Zeile") { ($0["auswahl"] ?? "") != "Grundplatte" && !($0["auswahl"] ?? "").isEmpty }
+        app.typeKey(XCUIKeyboardKey.upArrow, modifierFlags: [])
+        warte("↑ wieder zurück") { $0["auswahl"] == "Grundplatte" }
     }
 
     func testVomRandWischenOeffnetLeisten() {

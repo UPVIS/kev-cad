@@ -395,12 +395,14 @@ public enum Tastenbelegung {
 
     /// Gesten am iPad; Reihenfolge = Wichtigkeit in der Hinweisleiste (bei wenig Platz fallen die hinteren weg).
     public static let gesten: [GestenBelegung] = [
-        GestenBelegung(geste: .einFinger, wirkung: "Drehen um den Punkt unter dem Finger", zustand: .immer,
+        GestenBelegung(geste: .einFinger, wirkung: "Drehen um den Punkt unter dem Finger; schnell losgelassen mit Schwung",
+                       zustand: .immer,
                        kurz: "Drehen"),
         GestenBelegung(geste: .zweiFinger, wirkung: "Verschieben", zustand: .immer),
         GestenBelegung(geste: .spreizen, wirkung: "Zoomen zur Mitte der Finger", zustand: .immer, kurz: "Zoom"),
         GestenBelegung(geste: .stift, wirkung: "Zeichnen auf dem Modell", zustand: .sprechen, kurz: "Zeichnen"),
-        GestenBelegung(geste: .tippen, wirkung: "Auswählen", zustand: .auswahl),
+        GestenBelegung(geste: .tippen, wirkung: "Auswählen; mit ⇧, ⌘ oder „Mehrfach“ dazunehmen", zustand: .auswahl,
+                       kurz: "Auswählen"),
         GestenBelegung(geste: .tippen, wirkung: "Element oder Fangpunkt messen", zustand: .messen, kurz: "Messen"),
         GestenBelegung(geste: .doppeltTippen, wirkung: "Teil einrahmen, auf leerem Grund alles", zustand: .immer,
                        kurz: "Einrahmen"),
@@ -479,6 +481,7 @@ public enum Tastenbelegung {
                     KranzEintrag(KranzRegler.animation.name, KranzRegler.animation.symbol, .regler(.animation)),
                     KranzEintrag(KranzRegler.zoomZweite.name, KranzRegler.zoomZweite.symbol, .regler(.zoomZweite)),
                     KranzEintrag("Stift startet Sprechen", "pencil.and.scribble", .stiftSprechen),
+                    KranzEintrag("Schwung beim Drehen", "wind", .schwung),
                     .befehl(.bildschirmfoto, "camera", "Bildschirmfoto"),
                     .befehl(.video, "video", "Video"),
                     .befehl(.navigationAufnehmen, "record.circle", "Navigation aufnehmen"),

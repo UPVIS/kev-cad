@@ -851,12 +851,31 @@ final class NavigationInputView: NSView, NSMenuItemValidation {
 
     override func menu(for event: NSEvent) -> NSMenu? { nil }
 
+    /// Nachlauf einer Drehung mit zwei Fingern (nur Drehen ohne Sondertasten, um die Bildmitte).
+    private func schwungTrackpad(_ event: NSEvent, _ c: ViewportCoordinator) {
+        let flags = event.modifierFlags
+        guard c.schwung, event.hasPreciseScrollingDeltas, !flags.contains(.shift), !flags.contains(.control),
+            !flags.contains(.command)
+        else { return }
+        if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+            if c.eingabe.navigation == .drehen { c.eingabe.navigation = nil }
+            return
+        }
+        let sign: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
+        c.eingabe.navigation = .drehen
+        c.navOrbit(dx: Float(event.scrollingDeltaX * sign), dy: Float(-event.scrollingDeltaY * sign))
+    }
+
     // Mausrad und Trackpad
 
     override func scrollWheel(with event: NSEvent) {
         guard let c = coordinator else { return }
-        // Nachlauf des Trackpads ignorieren: kein Weiterdrehen nach dem Loslassen
-        if !event.momentumPhase.isEmpty { return }
+        // Nachlauf des Trackpads: wie in Blender kein Weiterdrehen nach dem Loslassen, außer der Schalter „Schwung“ ist an
+        // (Kranz › Mehr, I-3b; am iPad dreht der Finger dann selbst nach, Schwung.swift)
+        if !event.momentumPhase.isEmpty {
+            schwungTrackpad(event, c)
+            return
+        }
         let flags = event.modifierFlags
         let p = point(event)
         maus = p

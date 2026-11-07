@@ -136,6 +136,14 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
 
     required init?(coder: NSCoder) { fatalError("init(coder:) wird nicht benutzt") }
 
+    /// Jede Berührung (Finger, Stift, Klick mit Trackpad oder Maus) meldet sich, bevor eine Geste erkannt ist: Tippen in den
+    /// Viewer macht ihn zur aktiven Kachel.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        schwungStoppen()  // ein Finger hält die nachlaufende Drehung an
+        coordinator?.onBeruehrt?()
+        super.touchesBegan(touches, with: event)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         coordinator?.viewSize = bounds.size
@@ -247,9 +255,54 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             }
         default:
             if modus == .griff { c.onGriffEnde?(p) }
+            // Schnell losgelassen: die Drehung läuft kurz weiter (Schalter „Schwung“, Kranz › Mehr)
+            if g.state == .ended, modus == .drehen, c.schwung {
+                let v = g.velocity(in: self)
+                if let s = Schwung(geschwindigkeit: CGVector(dx: v.x, dy: -v.y)) {
+                    schwungStarten(s)
+                    return
+                }
+            }
             modus = .ruht
             endeDrehung()
         }
+    }
+
+    // MARK: Schwung (PLAN-IPAD.md 4.2)
+
+    private var schwungLink: CADisplayLink?
+    private var schwungLauf: Schwung?
+    private var schwungZeit: CFTimeInterval = 0
+
+    /// Drehpunkt und Modus „drehen“ bleiben, bis der Schwung verklingt (so merkt sich der Verlauf erst den Endstand).
+    private func schwungStarten(_ s: Schwung) {
+        schwungLauf = s
+        schwungZeit = CACurrentMediaTime()
+        let link = CADisplayLink(target: self, selector: #selector(schwungSchritt(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        schwungLink = link
+    }
+
+    @objc private func schwungSchritt(_ link: CADisplayLink) {
+        let jetzt = link.targetTimestamp
+        let dt = jetzt - schwungZeit
+        schwungZeit = jetzt
+        guard let c = coordinator, var s = schwungLauf, let d = s.schritt(dt) else {
+            schwungStoppen()
+            return
+        }
+        schwungLauf = s
+        c.navOrbit(dx: Float(d.dx), dy: Float(d.dy))
+    }
+
+    private func schwungStoppen() {
+        guard schwungLink != nil else { return }
+        schwungLink?.invalidate()
+        schwungLink = nil
+        schwungLauf = nil
+        if modus == .drehen { modus = .ruht }
+        endeDrehung()
     }
 
     @objc private func zweiFingerZiehen(_ g: UIPanGestureRecognizer) {

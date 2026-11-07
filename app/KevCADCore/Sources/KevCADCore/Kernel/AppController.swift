@@ -838,7 +838,8 @@ public final class AppController: AppActions {
             return
         }
         var refs = scene.selection
-        if modifiers.contains(.shift) || modifiers.contains(.command) {
+        // ⇧ oder ⌘, am iPad ohne Tastatur der Schalter „Mehrfach“ (I-3b)
+        if modifiers.contains(.shift) || modifiers.contains(.command) || viewer.mehrfach {
             if let ref {
                 if let i = refs.firstIndex(of: ref) { refs.remove(at: i) } else { refs.append(ref) }
             }

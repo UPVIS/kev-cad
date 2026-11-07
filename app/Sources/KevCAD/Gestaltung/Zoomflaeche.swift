@@ -89,16 +89,13 @@ private struct Zoombar: ViewModifier {
                             zoom.zoomen(s0 * v.magnification / zoom.skala, um: v.startLocation, in: geo.size)
                         }
                         .onEnded { _ in startSkala = nil })
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 4)
-                        .onChanged { v in
-                            guard zoom.vergroessert else { return }
-                            let vorher = gezogen ?? .zero
-                            zoom.verschieben(CGSize(width: v.translation.width - vorher.width,
-                                                    height: v.translation.height - vorher.height), in: geo.size)
-                            gezogen = v.translation
-                        }
-                        .onEnded { _ in gezogen = nil })
+                #if os(iOS)
+                // iPad (I-3b): Vergrößert gehört der Finger dem Bild, eine Liste darum rollt nicht mit; eingepasst
+                // rollt sie wie gewohnt. Zwei Finger spreizen zoomt um ihre Mitte (MagnifyGesture oben).
+                .highPriorityGesture(ziehen(geo.size), including: zoom.vergroessert ? .all : .none)
+                #else
+                .simultaneousGesture(ziehen(geo.size))
+                #endif
                 .simultaneousGesture(TapGesture(count: 2).onEnded { zoom = ZoomZustand() },
                                      including: doppelklick ? .all : .none)
                 .onContinuousHover { phase in
@@ -137,6 +134,19 @@ private struct Zoombar: ViewModifier {
                 .onDisappear { rad.aus() }
         }
     }
+
+    /// Vergrößert verschiebt Ziehen das Bild.
+    private func ziehen(_ groesse: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { v in
+                guard zoom.vergroessert else { return }
+                let vorher = gezogen ?? .zero
+                zoom.verschieben(CGSize(width: v.translation.width - vorher.width,
+                                        height: v.translation.height - vorher.height), in: groesse)
+                gezogen = v.translation
+            }
+            .onEnded { _ in gezogen = nil }
+    }
 }
 
 /// Mausrad und Trackpad über der Ansicht: ⌘ zoomt um den Zeiger, vergrößert verschieben zwei Finger das Bild. Sonst
@@ -149,7 +159,7 @@ private final class ZoomRad: ObservableObject {
     var vergroessert: () -> Bool = { false }
     private var monitor: Any?
 
-    /// Mausrad und Trackpad am Mac. iPad: Zoomen mit zwei Fingern folgt mit der Berührung in I-3b.
+    /// Mausrad und Trackpad am Mac. iPad: zwei Finger spreizen (MagnifyGesture in `Zoombar`), auch am Trackpad.
     func an() {
         #if os(macOS)
         guard monitor == nil else { return }

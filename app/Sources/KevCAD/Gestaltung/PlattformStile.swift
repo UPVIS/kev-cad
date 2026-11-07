@@ -7,6 +7,7 @@ import AppKit
 import UIKit
 #endif
 #else
+import GameController
 import UIKit
 #endif
 
@@ -116,14 +117,16 @@ func fehlerSignal() {
     #endif
 }
 
-/// Sind gerade Umschalt- oder Befehlstaste gedrückt (Auswahl erweitern)? Am Mac aus `NSEvent`; auf dem iPad folgt die
-/// Tastatur in I-3b, bis dahin nein.
+/// Sind gerade Umschalt- oder Befehlstaste gedrückt (Auswahl erweitern)? Am Mac aus `NSEvent`, am iPad von der
+/// Hardware-Tastatur über GameController (UIKit kennt keinen Zustand der Sondertasten außerhalb eines Ereignisses). Ohne
+/// Tastatur erweitert der Schalter „Mehrfach“ (`ViewerStore.mehrfach`), den die Aufrufer selbst dazunehmen.
 @MainActor
 var auswahlErweitern: Bool {
     #if os(macOS)
     let flags = NSEvent.modifierFlags
     return flags.contains(.shift) || flags.contains(.command)
     #else
-    return false
+    guard let k = GCKeyboard.coalesced?.keyboardInput else { return false }
+    return [GCKeyCode.leftShift, .rightShift, .leftGUI, .rightGUI].contains { k.button(forKeyCode: $0)?.isPressed == true }
     #endif
 }

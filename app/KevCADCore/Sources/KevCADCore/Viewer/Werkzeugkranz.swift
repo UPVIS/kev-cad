@@ -155,6 +155,8 @@ public enum KranzAktion: Equatable, Sendable {
     case stiftSprechen
     /// Viewerbild mit den Strichen als Paket an den Agenten, ohne Sprechen.
     case bildAnAgent
+    /// Schwung nach schnellem Loslassen beim Drehen (an/aus, I-3b).
+    case schwung
 }
 
 /// Ein Eintrag im zweiten Ring.

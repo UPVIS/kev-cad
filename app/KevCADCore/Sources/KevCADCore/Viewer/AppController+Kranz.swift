@@ -53,6 +53,9 @@ extension AppController {
             viewer.stiftSprechen.toggle()
             viewer.zeige(viewer.stiftSprechen ? "Ein Stiftstrich beginnt jetzt das Sprechen"
                          : "Der Stift dreht jetzt wie ein Finger")
+        case .schwung:
+            viewer.schwung.toggle()
+            viewer.zeige(viewer.schwung ? "Schwung an: schnell losgelassen dreht es kurz weiter" : "Schwung aus")
         case .regler: break
         }
     }

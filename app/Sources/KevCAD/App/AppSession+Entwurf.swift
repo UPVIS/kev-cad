@@ -262,7 +262,8 @@ extension AppSession {
     }
 
     /// Ein Klick in den Viewer macht in der Werkstatt das Modell zur aktiven Kachel (der Viewer ist eine Metal-Ansicht
-    /// und meldet Klicks nicht an SwiftUI). Das Ereignis läuft unverändert weiter.
+    /// und meldet Klicks nicht an SwiftUI). Das Ereignis läuft unverändert weiter. Am iPad zählt jede Berührung des
+    /// Viewers (Finger, Stift, Klick mit dem Trackpad), gemeldet von der Eingabeebene (`ViewportCoordinator.onBeruehrt`).
     func viewerKlickBeobachten() {
         #if os(macOS)
         guard viewerKlickMonitor == nil else { return }
@@ -270,17 +271,21 @@ extension AppSession {
             nonisolated(unsafe) let event = event
             MainActor.assumeIsolated {
                 guard let self, let w = self.projectWindow, event.window === w, let v = w.contentView else { return }
-                let o = self.model.oberflaeche
-                guard o.kachelflaeche, o.aktiv != .modell, o.kacheln.contains(.modell) else { return }
                 let p = CGPoint(x: event.locationInWindow.x, y: v.bounds.height - event.locationInWindow.y)
-                if self.viewerRahmen.contains(p) {
-                    self.model.oberflaechenActions?.oberflaeche(.kachelAktiv(.modell))
-                }
+                if self.viewerRahmen.contains(p) { self.modellKachelAktivieren() }
             }
             return event
         }
+        #else
+        controller?.viewport.onBeruehrt = { [weak self] in self?.modellKachelAktivieren() }
         #endif
-        // iPad: Tippen in den Viewer macht das Modell zur aktiven Kachel, folgt mit der Berührung im Viewer in I-3b
+    }
+
+    /// Kacheln nebeneinander, das Modell ist dabei und nicht schon aktiv: Modell zur aktiven Kachel machen.
+    func modellKachelAktivieren() {
+        let o = model.oberflaeche
+        guard o.kachelflaeche, o.aktiv != .modell, o.kacheln.contains(.modell) else { return }
+        model.oberflaechenActions?.oberflaeche(.kachelAktiv(.modell))
     }
 
     /// Beim Beenden: Fenster nicht schmal zurücklassen, leeren Entwurf wegräumen.

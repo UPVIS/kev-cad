@@ -187,6 +187,9 @@ public final class ViewerStore: ObservableObject {
     @Published public var stehendeAnmerkungen = 0
     /// I-3b: „Rückgängig: Auswahl“ bzw. „Wiederholen: Ansicht“ für Menü und Daumenleiste; nil = nichts da.
     @Published public internal(set) var rueckgaengigTitel: String?
+    /// I-3b: Auswahl erweitern ohne Tastatur (iPad, Knopf „Mehrfach“ der Daumenleiste): Tippen nimmt dazu bzw. wieder
+    /// heraus wie Klicken mit ⇧ am Mac. Bleibt an, bis es ausgeschaltet wird.
+    @Published public internal(set) var mehrfach = false
     @Published public internal(set) var wiederholenTitel: String?
     /// I-4: offener Werkzeugkranz (nil = zu). Wo er steht, was markiert ist und der Wert eines Drehreglers.
     @Published public var kranz: KranzZustand?
@@ -202,6 +205,11 @@ public final class ViewerStore: ObservableObject {
     @Published public var stiftSprechen: Bool {
         didSet { UserDefaults.standard.set(stiftSprechen, forKey: Self.stiftKey) }
     }
+    /// I-3b: Schwung nach schnellem Loslassen beim Drehen (Kranz › Mehr). Vorgabe am iPad an; am Mac aus, dort bleibt es
+    /// wie in Blender beim Stillstand nach dem Loslassen, bis Kevin den Nachlauf des Trackpads einschaltet.
+    @Published public var schwung: Bool {
+        didSet { UserDefaults.standard.set(schwung, forKey: Self.schwungKey) }
+    }
 
     static let hinweisKey = "viewer.hinweisleiste"
     static let hauchKey = "viewer.hauch"
@@ -210,6 +218,7 @@ public final class ViewerStore: ObservableObject {
     static let stiftKey = "viewer.stiftSprechen"
     /// I-4: Deckkraft im Röntgen (Drehregler im Kranz); gilt für die Szene, gemerkt wie die Strichbreite.
     public static let roentgenKey = "viewer.roentgenDeckkraft"
+    static let schwungKey = "viewer.schwung"
     /// Bereich der Strichbreite (Punkte).
     public static let strichbreiten = KranzReglerBereich(min: 1, max: 11, raster: 1)
 
@@ -220,6 +229,11 @@ public final class ViewerStore: ObservableObject {
         strichfarbe = (d.string(forKey: Self.farbeKey)).flatMap(Strichfarbe.init(rawValue:)) ?? .blau
         strichbreite = Self.strichbreiten.klemmen(d.object(forKey: Self.breiteKey) as? Double ?? 3)
         stiftSprechen = d.object(forKey: Self.stiftKey) as? Bool ?? true
+        #if os(iOS)
+        schwung = d.object(forKey: Self.schwungKey) as? Bool ?? true
+        #else
+        schwung = d.object(forKey: Self.schwungKey) as? Bool ?? false
+        #endif
     }
 
     public func zeige(_ text: String, datei: URL? = nil, fehler: Bool = false) {
@@ -256,6 +270,8 @@ public protocol ViewerActions: AnyObject {
     func lokaleAnsicht(hauch: Bool?)
     /// Vorgabe für die lokale Ansicht: übrige Teile als Hauch (an) oder ausgeblendet (aus).
     func setHauch(_ an: Bool)
+    /// I-3b: Auswahl erweitern ohne Tastatur an/aus (wie gehaltenes ⇧).
+    func setzeMehrfach(_ an: Bool)
     /// Bildschirmfoto der aktuellen Ansicht in den Projektordner.
     func bildschirmfoto(_ groesse: FotoGroesse)
     /// Video: Drehung um das Ziel (8 s, 60 Bilder/s, HEVC).
