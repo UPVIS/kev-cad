@@ -183,3 +183,59 @@ def test_laufzeit_mit_helfern_gleich_wie_ohne(tmp_path, monkeypatch, helfer_zahl
     mit = endstand(helfer_zahl)
     assert mit and mit[0]["schwere"] == "fehler" and mit[0]["teile"] == ["Klappe", "Rahmen"]
     assert endstand("0") == mit
+
+
+def test_leerlauf_beendet_die_helfer_und_der_naechste_lauf_weckt_sie(pool, monkeypatch):
+    """Nach der Leerlauffrist ohne Auftrag beendet der Rechenprozess die Helfer (Speicher); ``aufwecken`` (Beginn des
+    nächsten Laufs) startet sie wieder, und sie rechnen wie vorher."""
+    import time
+
+    monkeypatch.setenv(helfer.LEERLAUF_ENV, "1")
+    s, formen, sk = _modell()
+    erg_l, _ = _selbst(s, formen, sk)
+    _leeren()
+    v = br.vorlauf(s, dict(s.aufgeloest), formen, schluessel=sk, projekt=None, boxen=None)
+    erg, _ = br.bewegungen_pruefen(s, dict(s.aufgeloest), formen, schluessel=sk, projekt=None, zeitlimit_s=None,
+                                   vorlauf=v)
+    assert _ohne(erg) == _ohne(erg_l)
+    prozesse = [h.proc for h in pool.helfer.values()]
+    ende = time.monotonic() + 10
+    while pool.helfer and time.monotonic() < ende:
+        time.sleep(0.1)
+    assert not pool.helfer and pool.schlafend == 2
+    for p in prozesse:
+        p.join(5)
+        assert not p.is_alive()
+    helfer.aufwecken()
+    assert len(pool.helfer) == 2 and all(h.lebt() for h in pool.helfer.values())
+    _leeren()
+    v2 = br.vorlauf(s, dict(s.aufgeloest), formen, schluessel=sk, projekt=None, boxen=None)
+    erg2, _ = br.bewegungen_pruefen(s, dict(s.aufgeloest), formen, schluessel=sk, projekt=None, zeitlimit_s=None,
+                                    vorlauf=v2)
+    assert _ohne(erg2) == _ohne(erg_l)
+    helfer.aufwecken()  # laufen schon: nichts passiert
+    assert len(pool.helfer) == 2
+
+
+def test_leerlauf_wartet_auf_einen_laufenden_auftrag(monkeypatch):
+    monkeypatch.setenv(helfer.LEERLAUF_ENV, "600")
+
+    class Attrappe:
+        nr, bereit = 0, True
+
+        def lebt(self) -> bool:
+            return True
+
+        def beenden(self) -> None:
+            self.beendet = True
+
+    p = helfer.Pool()
+    h = Attrappe()
+    p.helfer = {0: h}
+    assert not p.leerlauf_pruefen(p.zuletzt + 599)  # Frist nicht um
+    p.aktiv = helfer.Auftrag(p, 1, {0: 0, 1: 0})
+    p.aktiv.da[0] = {}
+    assert not p.leerlauf_pruefen(p.zuletzt + 601)  # Weg 1 rechnet noch
+    p.aktiv.da[1] = {}
+    assert p.leerlauf_pruefen(p.zuletzt + 601) and getattr(h, "beendet", False)
+    assert not p.helfer and p.schlafend == 1 and p.aktiv is None

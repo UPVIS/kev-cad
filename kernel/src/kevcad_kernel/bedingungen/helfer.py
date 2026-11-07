@@ -18,6 +18,8 @@ Stand der Bedingungen und an den Formen, nicht an den anderen Prüfungen.
 - Gesendet wird aus einem eigenen Faden (ein Auftrag mit vielen Formen blockiert sonst den Rechenprozess, bis der
   Helfer liest), und Arbeit bekommen nur Helfer, die ihre Module schon geladen haben (rund 3 s nach dem Start).
 - Helfer beenden sich, wenn der Rechenprozess nicht mehr lebt oder die Verbindung zu ihm abreißt.
+- Nach 10 Minuten ohne Prüfung beendet der Rechenprozess die Helfer (Kevins MacBook hat 16 GB, drei Helfer belegen
+  zusammen bis 1,2 GB) und startet sie zu Beginn des nächsten Laufs wieder (``aufwecken``), während model.py läuft.
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ DAUER_ANNAHME_MS = 500.0  # Weg ohne Erfahrung
 KLEIN_TEILE = 40  # kleinere Modelle rechnen den Bewegungsraum selbst (wie die Stufen der Prüfung) …
 KLEIN_MS = 300.0  # … außer der Bewegungsraum brauchte zuletzt mindestens so lange
 NICE = 5  # Priorität der Helfer (Unix nice): Statik und FEM gehen vor
+LEERLAUF_ENV = "KEVCAD_GEO_HELFER_LEERLAUF_S"
+LEERLAUF_S = 600.0  # ohne Prüfung so lange: Helfer beenden (Speicher), beim nächsten Lauf wieder starten
 
 
 def erzwungen() -> int | None:
@@ -203,6 +207,51 @@ class Pool:
         self.zuordnung: dict[str, int] = {}  # Weg → Helfer beim letzten Mal (dort liegen seine Paare)
         self.dauer_ms: dict[str, float] = {}  # Weg → Rechenzeit beim letzten Mal
         self._breps: OrderedDict[str, bytes] = OrderedDict()
+        # Leerlauf: nach LEERLAUF_S ohne Auftrag beenden (Speicher), beim nächsten Lauf wieder starten (``aufwecken``)
+        self._lock = threading.RLock()
+        self.zuletzt = time.monotonic()
+        self.schlafend = 0  # so viele Helfer liefen, bevor der Leerlauf sie beendet hat
+        self._waechter: threading.Thread | None = None
+
+    def _wache_starten(self) -> None:
+        if self._waechter is not None and self._waechter.is_alive():
+            return
+        self._waechter = threading.Thread(target=self._wache, name="geo-helfer-leerlauf", daemon=True)
+        self._waechter.start()
+
+    def _wache(self) -> None:
+        while True:
+            time.sleep(max(0.2, min(30.0, leerlauf_s() / 4)))
+            self.leerlauf_pruefen()
+
+    def leerlauf_pruefen(self, jetzt: float | None = None) -> bool:
+        """Helfer beenden, wenn seit ``leerlauf_s()`` kein Auftrag kam und keiner mehr rechnet. True, wenn beendet."""
+        with self._lock:
+            jetzt = time.monotonic() if jetzt is None else jetzt
+            lebend = [h for h in self.helfer.values() if h.lebt()]
+            if not lebend or jetzt - self.zuletzt < leerlauf_s():
+                return False
+            a = self.aktiv
+            if a is not None and any(i not in a.da for i in a.verteilung):
+                return False  # ein Auftrag rechnet noch (bei 10 min Leerlauf kaum denkbar)
+            n = max(self.helfer) + 1 if self.helfer else 0
+            self.beenden()
+            self.schlafend = n
+            print(f"Geometrie-Helfer: {len(lebend)} nach {leerlauf_s():.0f} s ohne Prüfung beendet", file=sys.stderr)
+            return True
+
+    def aufwecken(self) -> int:
+        """Vom Leerlauf beendete Helfer wieder starten (beim nächsten Lauf, damit sie bis zur Prüfung geladen haben).
+        Gibt die Zahl der gestarteten zurück."""
+        with self._lock:
+            n = self.schlafend
+            if not n or self.helfer:
+                return 0
+            self.schlafend = 0
+            self.zuletzt = time.monotonic()
+            self._helfer_bereit(min(n, anzahl()))
+            self._wache_starten()
+            return len(self.helfer)
 
     def _helfer_bereit(self, n: int) -> list[_Helfer]:
         """Die ersten ``n`` Helfer, fehlende oder tote neu gestartet. Rechnen sollen nur die, die schon bereit sind
@@ -218,6 +267,7 @@ class Pool:
         return [h for h in alle if h.bereit] or alle
 
     def verarbeite(self, nr: int, msg: tuple) -> None:
+        self.zuletzt = time.monotonic()
         a = self.aktiv
         if not msg:
             return
@@ -272,6 +322,14 @@ class Pool:
     def auftrag(self, wege: list[tuple[int, Any, list[str]]], formen: dict[str, Any], schluessel: dict[str, str],
                 boxen: dict[str, tuple[Any, Any]], n: int) -> Auftrag | None:
         """Wege (Index, Bewegung, beteiligte Teile) an ``n`` Helfer. None, wenn keiner startet."""
+        with self._lock:
+            self.zuletzt = time.monotonic()
+            self.schlafend = 0
+            self._wache_starten()
+            return self._auftrag(wege, formen, schluessel, boxen, n)
+
+    def _auftrag(self, wege: list[tuple[int, Any, list[str]]], formen: dict[str, Any], schluessel: dict[str, str],
+                 boxen: dict[str, tuple[Any, Any]], n: int) -> Auftrag | None:
         import numpy as np
 
         from kevcad_kernel.pruefung.koerper import _FORMEN, form_schluessel, lage_von
@@ -332,9 +390,11 @@ class Pool:
         self.dauer_ms[name] = float(ms)
 
     def beenden(self) -> None:
-        for h in self.helfer.values():
-            h.beenden()
-        self.helfer.clear()
+        with self._lock:
+            for h in self.helfer.values():
+                h.beenden()
+            self.helfer.clear()
+            self.aktiv = None
 
 
 _POOL: Pool | None = None
@@ -345,6 +405,26 @@ def pool() -> Pool:
     if _POOL is None:
         _POOL = Pool()
     return _POOL
+
+
+def leerlauf_s() -> float:
+    """Nach so vielen Sekunden ohne Prüfung beendet der Rechenprozess die Helfer (``KEVCAD_GEO_HELFER_LEERLAUF_S``,
+    Vorgabe 600: Kevins MacBook hat 16 GB, drei Helfer belegen zusammen bis 1,2 GB)."""
+    try:
+        return max(0.1, float(os.environ.get(LEERLAUF_ENV) or LEERLAUF_S))
+    except ValueError:
+        return LEERLAUF_S
+
+
+def aufwecken() -> None:
+    """Zu Beginn eines echten Laufs (``worker.py``): vom Leerlauf beendete Helfer gleich wieder starten. Sie laden
+    rund 3 s, der Lauf selbst dauert bei großen Modellen etwa so lange; so warten die Wege nicht auf den Start."""
+    if _POOL is None:
+        return
+    try:
+        _POOL.aufwecken()
+    except Exception as exc:  # noqa: BLE001 - dann startet der nächste Auftrag sie
+        print(f"Geometrie-Helfer aufwecken fehlgeschlagen: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

@@ -183,6 +183,9 @@ def main() -> int:
                 if kind == "RUN":
                     if not header.get("schatten"):
                         fertigrechnen = None  # ein neuer Lauf löst das teilweise Ergebnis des alten ab
+                        from kevcad_kernel.bedingungen import helfer as _geo_helfer
+
+                        _geo_helfer.aufwecken()  # im Leerlauf beendete Geometrie-Helfer laden, während model.py läuft
                     result = runner.run(header)
                     emit(result)
                     if result.get("type") == "RUN_DONE" and header.get("pruefen", True):
