@@ -21,7 +21,8 @@ fertig (``pruefung/lauf.py``, ``PruefLauf.fertig_rechnen``), ersetzt die Befunde
 Stufen (V2-1b): Die Prüfungen laufen in fester Reihenfolge (``ordnen``), die für den nächsten Schritt wichtigen zuerst. Vor
 der ersten aus ``HINTEN`` (Druck, Montage, Statik, Bewegungsraum: nach einer Maßänderung Sekunden) ruft ``pruefe`` die
 Funktion ``zwischenstand``; so erfahren Agent und App Durchdringungen, Bedingungen und Stand, während der Rest rechnet.
-Gerechnet wird davon unabhängig alles.
+Direkt nach der Statik ruft ``pruefe`` ``nach_statik`` (A1: der Rechenprozess schreibt dort den Auftrag der
+Festkörper-FEM, ``pruefung/lauf.py``). Gerechnet wird davon unabhängig alles.
 """
 
 from __future__ import annotations
@@ -317,11 +318,13 @@ def lade_erweiterungen() -> None:
 
 def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, optionen: dict[str, Any] | None = None,
            cache: PaarCache | None = None, abbrechen: Callable[[], None] | None = None,
-           stand_cache: dict | None = None, zwischenstand: Zwischenstand | None = None
+           stand_cache: dict | None = None, zwischenstand: Zwischenstand | None = None,
+           nach_statik: Zwischenstand | None = None
            ) -> tuple[dict[str, Any], list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
     """Alle registrierten Prüfungen; liefert (Ergebnis, Schnittkörper). Bricht mit ``Abgebrochen`` ab, wenn
     ``abbrechen`` das verlangt (neuerer Auftrag). ``zwischenstand(stand, offen, dauer_s)``: Aufruf vor der ersten
-    Prüfung aus ``HINTEN``; ``stand()`` liefert (Ergebnis, Schnittkörper) des bisherigen Stands."""
+    Prüfung aus ``HINTEN``; ``stand()`` liefert (Ergebnis, Schnittkörper) des bisherigen Stands. ``nach_statik`` (A1,
+    PLAN-PRUEFUNG-INKREMENTELL.md): ebenso direkt nach der Prüfung „statik“, ``offen`` nennt die Prüfungen danach."""
     t0 = time.perf_counter()
     lade_erweiterungen()
     aktiv = (optionen or {}).get("pruefungen")
@@ -367,6 +370,10 @@ def pruefe(koerper: list[Koerper], erklaerungen: dict[str, Any] | None = None, o
                                   f"Prüfung „{name}“ ist fehlgeschlagen: {type(exc).__name__}: {exc}",
                                   "Bitte melden; die übrigen Prüfungen sind gelaufen."))
             ctx.ergebnis.setdefault("fehler", []).append(traceback.format_exc(limit=6))
+        if nach_statik is not None and name == "statik":
+            offen = [HINTEN[n] for n, _ in PRUEFUNGEN[i + 1:] if n in HINTEN and laeuft(n)]
+            nach_statik(lambda: ergebnis(copy.deepcopy(befunde), list(ctx.geometrie)), offen,
+                        time.perf_counter() - t0)
     erg, geometrie = ergebnis(befunde, ctx.geometrie)
     if ctx.hintergrund:  # nicht ins Protokoll: PruefLauf nimmt es heraus (Fertigrechnen im Hintergrund)
         erg["_hintergrund"] = dict(ctx.hintergrund)

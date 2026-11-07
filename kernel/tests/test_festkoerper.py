@@ -596,8 +596,14 @@ def test_laufzeit_hintergrund_festigkeit_und_feld(env):
     _, _, st, _ = app.wait_for(lambda h: h["type"] == "STATICS" and any(
         (e.get("festkoerper") or {}).get("stand") == "laeuft" for e in h["szenarien"]), start=start, timeout=60)
     assert not check_statics_message(st)
-    _, _, fertig, _ = app.wait_for(lambda h: h["type"] == "STATICS" and any(
-        (e.get("festkoerper") or {}).get("stand") == "done" for e in h["szenarien"]), start=start, timeout=120)
+    try:
+        _, _, fertig, _ = app.wait_for(lambda h: h["type"] == "STATICS" and any(
+            (e.get("festkoerper") or {}).get("stand") == "done" for e in h["szenarien"]), start=start, timeout=120)
+    except AssertionError:  # Zeitlimit: letzten Stand der FEM nennen (Meldung des FEM-Prozesses)
+        letzte = [h for _, h, _ in app.frames[start:] if h["type"] == "STATICS"][-1:]
+        stand = [{k: (e.get("festkoerper") or {}).get(k) for k in ("stand", "text", "meldung")}
+                 for h in letzte for e in h["szenarien"] if e.get("festkoerper")]
+        raise AssertionError(f"Festkörper nicht fertig: {stand}") from None
     assert not check_statics_message(fertig)
     e = next(e for e in fertig["szenarien"] if e["name"] == "Haken 2 kg")
     t = e["festkoerper"]["teile"][0]

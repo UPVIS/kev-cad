@@ -253,19 +253,30 @@ class DynamikRuntime:
 
     # -- Nach jedem Lauf: Abläufe aus model.py im Hintergrund ----------------------------------------------------------
 
-    def _dynamik_nach_lauf(self, voll: dict[str, Any] | None) -> None:
+    def _dynamik_nach_lauf(self, voll: dict[str, Any] | None, starten: bool = True) -> list[str]:
         """Nach CHECK_DONE: Szenarien mit Ablauf (st.szenario(…, geschwindigkeit=…)) als „läuft“ markieren und im
-        Hintergrund rechnen."""
+        Hintergrund rechnen. ``starten=False`` (A1, Statik aus dem Zwischenstand vor der Montage): nur markieren, sodass
+        der Ablauf als offen zählt; die Namen kommen zurück, ``_dynamik_starten`` rechnet sie mit dem nächsten CHECK
+        (der Ablauf schickt EXEC, das der Rechenprozess erst nach der Prüfung annimmt)."""
         if not voll:
-            return
+            return []
         offen = [e for e in voll.get("szenarien") or [] if (e.get("szenario") or {}).get("ablauf")]
         if not offen:
-            return
+            return []
         for e in offen:
             e["ablauf"] = {"stand": "laeuft", "animation": f"Ablauf: {e['name']}"}
-        with self._lock:  # type: ignore[attr-defined]
-            run = self._statik_run  # type: ignore[attr-defined]
-        self._pool.submit(self._dynamik_hintergrund, [e["name"] for e in offen], run)  # type: ignore[attr-defined]
+        namen = [e["name"] for e in offen]
+        if starten:
+            self._dynamik_starten(namen)
+        return namen
+
+    def _dynamik_starten(self, namen: list[str], run: int | None = None) -> None:
+        if not namen:
+            return
+        if run is None:
+            with self._lock:  # type: ignore[attr-defined]
+                run = self._statik_run  # type: ignore[attr-defined]
+        self._pool.submit(self._dynamik_hintergrund, list(namen), run)  # type: ignore[attr-defined]
 
     def _dynamik_hintergrund(self, namen: list[str], run: int | None) -> None:
         try:

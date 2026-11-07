@@ -284,13 +284,14 @@ class Gestuft(Lauf):
 
 
 def test_zwischenstand_und_gleicher_endstand(tmp_path, stufen):
-    """Der Zwischenstand kommt vor Montage und Statik, der Endstand ist derselbe wie am Stück."""
+    """Der Zwischenstand kommt vor Druck, Statik und Montage, der Endstand ist derselbe wie am Stück (A1: die Statik
+    vor der Montage, PLAN-PRUEFUNG-INKREMENTELL.md)."""
     bezug = Lauf(tmp_path, TISCH)()
     lauf = Gestuft(tmp_path, TISCH)
     end = lauf()
     assert len(lauf.zwischen) == 1
     z = lauf.zwischen[0]
-    assert z["state"] == "teilweise" and z["im_hintergrund"] == ["Druck", "Montage", "Statik"], z.get("im_hintergrund")
+    assert z["state"] == "teilweise" and z["im_hintergrund"] == ["Druck", "Statik", "Montage"], z.get("im_hintergrund")
     assert "montage" not in z and "statik" not in z and "druck" not in z and "stand" in z
     assert z["run"] == lauf.run and "seq" not in z
     assert end["state"] == "done" and "im_hintergrund" not in end
@@ -307,7 +308,7 @@ def test_zwischenstand_nennt_den_bewegungsraum_nur_mit_wegen(tmp_path, stufen):
     assert r.run({"run": 1, "path": str(tmp_path / "model.py"), "params": {}, "inventar_regel": False})["type"] == "RUN_DONE"
     zwischen: list[dict] = []
     r.pruefe(1, zwischenstand=lambda k, n: zwischen.append(k))
-    assert zwischen and zwischen[0]["im_hintergrund"] == ["Druck", "Montage", "Statik", "Bewegungsraum"]
+    assert zwischen and zwischen[0]["im_hintergrund"] == ["Druck", "Statik", "Montage", "Bewegungsraum"]
 
 
 def test_unveraendert_kein_zwischenstand(tmp_path, stufen):
@@ -421,8 +422,10 @@ def test_reihenfolge_der_pruefungen():
     from kevcad_kernel.pruefung import pruefer
 
     namen = [n for n, _ in pruefer.PRUEFUNGEN]
-    assert namen == ["erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "druckvorschau", "gedruckt",
-                     "montage", "statik", "bewegungsraum"]
+    # A1 (PLAN-PRUEFUNG-INKREMENTELL.md): die Statik direkt nach dem Druck, damit der FEM-Auftrag vor der Montage
+    # hinausgeht
+    assert namen == ["erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "statik", "druckvorschau",
+                     "gedruckt", "montage", "bewegungsraum"]
 
 
 def test_kurzer_text_nennt_was_noch_kommt():
@@ -531,7 +534,7 @@ def test_lauf_erst_zwischenstand_dann_endstand(laufzeit):
     _, _, done, _ = app.wait_for(lambda h: h["type"] == "CHECK" and h.get("run") == res["run"]
                                  and h.get("state") == "done", start=start, timeout=60)
     # die App liest offene Prüfungen als Rechnungen, nicht als Gelenke
-    assert teil["statik_im_hintergrund"] == ["Druck", "Montage", "Statik"] and not teil["im_hintergrund"]
+    assert teil["statik_im_hintergrund"] == ["Druck", "Statik", "Montage"] and not teil["im_hintergrund"]
     assert "im_hintergrund" not in done and "statik_im_hintergrund" not in done
     assert isinstance(done.get("montage"), dict)
     # pruefen wartet und liefert den Endstand

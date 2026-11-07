@@ -5,7 +5,9 @@ Szenario, Urteile ``festkoerper``) und als STATICS_FIELD (Oberflächennetz mit A
 Ablauf einer Rechnung:
 
 1. Rechenprozess (EXEC auf ``statik.dienst.auftrag`` mit ``festkoerper``): Fälle aus dem Modell des letzten Laufs,
-   Teile als BREP, Nachbarnetze (Millisekunden, ``festkoerper/auftrag.py``).
+   Teile als BREP, Nachbarnetze (Millisekunden, ``festkoerper/auftrag.py``). Nach einem Lauf schreibt der Rechenprozess
+   den Auftrag schon direkt nach der Statik und schickt ihn mit einem Zwischenstand (A1, ``pruefung/lauf.py``); dann
+   entfällt das EXEC, das erst nach dem Ende der Prüfung angenommen würde.
 2. Eigener Prozess ``python -m kevcad_kernel.statik.festkoerper.prozess``: Gmsh, scikit-fem, pyamg; Fortschritt als
    Zeilen auf stdout, Ergebnis als Datei, Zwischenspeicher je Teilstand und Lastfall. Immer nur einer zugleich; ein
    neuer Lauf oder STATICS_CANCEL beendet ihn.
@@ -27,6 +29,8 @@ from typing import Any
 
 import numpy as np
 
+from kevcad_kernel.statik.festkoerper.auftrag import hat_last, kandidaten, verwerfen
+
 PROZESS_S = 300.0
 PROZESS_S_CCX = 1800.0  # Stufe 4 (CalculiX): Kontakt und Traglast brauchen Minuten
 SENDEN_S = 0.3
@@ -38,25 +42,9 @@ class Abgebrochen(RuntimeError):
     pass
 
 
-def _hat_last(e: dict[str, Any]) -> bool:
-    sz = e.get("szenario") or {}
-    if sz.get("lasten") or sz.get("neigung") or sz.get("ablauf"):
-        return True
-    return any(abs(float(c)) > 1e-9 for c in sz.get("beschleunigung") or [])
-
-
-def _kandidaten(voll: dict[str, Any] | None, nur: str | None = None) -> list[str]:
-    """Szenarien mit Last, in denen ein Teil als Kragträger nachgewiesen ist (Bauteil oder Lager eines Stabs)."""
-    out = []
-    for e in (voll or {}).get("szenarien") or []:
-        if nur is not None and e.get("name") != nur:
-            continue
-        if not _hat_last(e):
-            continue
-        if any(b.get("sicherheit") is not None for b in e.get("bauteile") or []) or any(
-                float(np.linalg.norm(v.get("kraft") or (0, 0, 0))) >= 0.5 for v in e.get("verbinder") or []):
-            out.append(e["name"])
-    return out
+# Auswahl der Szenarien: dieselbe Funktion wie im Rechenprozess (A1, auftrag.nach_statik)
+_hat_last = hat_last
+_kandidaten = kandidaten
 
 
 class FestkoerperRuntime:
@@ -261,10 +249,13 @@ class FestkoerperRuntime:
         return neu_alle
 
     def _fk_rechnen(self, wunsch: dict[str, Any], namen: list[str], run: int | None, token: int,
-                    zeigen: str | None = None, timeout_s: float = PROZESS_S) -> dict[str, Any]:
-        """Auftrag schreiben, FEM-Prozess rechnen lassen, einbauen. Liefert {"job", "out", "teile"}."""
+                    zeigen: str | None = None, timeout_s: float = PROZESS_S,
+                    job: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Auftrag schreiben (oder ``job`` aus dem Rechenprozess nehmen, A1), FEM-Prozess rechnen lassen, einbauen.
+        Liefert {"job", "out", "teile"}."""
         z = self._fk
-        job = self._fk_exec(wunsch)
+        if job is None:
+            job = self._fk_exec(wunsch)
         try:
             if token != z["token"]:
                 raise Abgebrochen("überholt")
@@ -300,17 +291,24 @@ class FestkoerperRuntime:
 
     # -- Nach jedem Lauf -----------------------------------------------------------------------------------------------
 
-    def _festkoerper_nach_lauf(self, voll: dict[str, Any] | None, nur: str | None = None) -> None:
+    def _festkoerper_nach_lauf(self, voll: dict[str, Any] | None, nur: str | None = None,
+                               auftrag: dict[str, Any] | None = None) -> None:
         """Nach CHECK_DONE (bzw. nach ``szenario_rechnen`` für ``nur``): Szenarien mit Teilen unter Last als „läuft“
-        markieren und im Hintergrund rechnen; eine laufende Rechnung eines älteren Laufs endet."""
+        markieren und im Hintergrund rechnen; eine laufende Rechnung eines älteren Laufs endet. ``auftrag`` (A1): vom
+        Rechenprozess direkt nach der Statik geschrieben; passt seine Auswahl nicht (``namen``), wie bisher über EXEC."""
         z = self._fk
         if not voll:  # zweites CHECK desselben Laufs oder keine Statik: nichts Neues, nichts abbrechen
+            verwerfen(auftrag)
             return
         if nur is None:
             self._fk_abbrechen_intern()
             z["felder"] = {}
         namen = _kandidaten(voll, nur)
+        if auftrag is not None and list(auftrag.get("namen") or []) != namen:
+            verwerfen(auftrag)
+            auftrag = None
         if not namen:
+            verwerfen(auftrag)
             return
         for e in (voll or {}).get("szenarien") or []:
             if e.get("name") in namen:
@@ -319,7 +317,7 @@ class FestkoerperRuntime:
         with self._lock:  # type: ignore[attr-defined]
             run = self._statik_run  # type: ignore[attr-defined]
         z["token"] += 1
-        self._pool.submit(self._festkoerper_hintergrund, namen, run, z["token"])  # type: ignore[attr-defined]
+        self._pool.submit(self._festkoerper_hintergrund, namen, run, z["token"], auftrag)  # type: ignore[attr-defined]
 
     def _festkoerper_nach_szenario(self, name: str) -> None:
         with self._lock:  # type: ignore[attr-defined]
@@ -331,7 +329,15 @@ class FestkoerperRuntime:
                 run = self._statik_run  # type: ignore[attr-defined]
             self._pool.submit(self._festkoerper_hintergrund, [name], run, self._fk["token"])  # type: ignore[attr-defined]
 
-    def _festkoerper_hintergrund(self, namen: list[str], run: int | None, token: int) -> None:
+    def _festkoerper_hintergrund(self, namen: list[str], run: int | None, token: int,
+                                 auftrag: dict[str, Any] | None = None) -> None:
+        try:
+            self._festkoerper_rechnen(namen, run, token, auftrag)
+        finally:
+            verwerfen(auftrag)  # gerechnet (dann schon weg) oder überholt
+
+    def _festkoerper_rechnen(self, namen: list[str], run: int | None, token: int,
+                             auftrag: dict[str, Any] | None) -> None:
         z = self._fk
         with z["sperre"]:
             try:
@@ -340,7 +346,7 @@ class FestkoerperRuntime:
                 s4 = self._s4_auftraege(namen)
                 z["s4_folgt"] = {n for a in s4 for n in a["namen"]}
                 try:
-                    self._fk_rechnen({"auto": True, "szenarien": namen}, namen, run, token)
+                    self._fk_rechnen({"auto": True, "szenarien": namen}, namen, run, token, job=auftrag)
                 finally:
                     z["s4_folgt"] = set()
                 for a in s4:  # Stufe 4 aus model.py (st.festigkeit): nach S3, je Auftrag ein CalculiX-Lauf

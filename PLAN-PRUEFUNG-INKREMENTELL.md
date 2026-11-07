@@ -408,3 +408,35 @@ zurückkommt. Rohdaten unter `/Volumes/UPVIS ULTRA/_cache/kevcad-pruefzeit/` (Or
 - Tests: Kragbalken und Lochplatte mit beiden Lösern, AMG gegen SuperLU an einem Klotz mit rund 30.000
   Freiheitsgraden innerhalb 1e-6, Löserwahl nach Größe und Speicher, AMG Bit für Bit reproduzierbar. Mac mini: 1278
   bestanden, 23 übersprungen.
+
+### A1 FEM direkt nach der Statik (07.11.2026)
+
+- Reihenfolge der Prüfungen jetzt `erklaerungen, durchdringung, bedingungen, stand, druck, statik, druckvorschau,
+  gedruckt, montage, bewegungsraum` (`pruefung/lauf.py` `REIHENFOLGE`). Direkt nach der Statik schreibt der Rechenprozess
+  den FEM-Auftrag selbst (`statik/festkoerper/auftrag.nach_statik`: dieselbe Auswahl `kandidaten`, die bisher in der
+  Laufzeit stand und jetzt von beiden benutzt wird, derselbe Wunsch wie über EXEC) und schickt einen zweiten
+  Zwischenstand (`teilweise`, offen Montage und Bewegungsraum, mit Druck und Statik). Das Feld `festkoerper_auftrag` geht
+  nur vom Rechenprozess zur Laufzeit; die Laufzeit nimmt es heraus, startet den FEM-Prozess sofort, ohne EXEC
+  (`runtime._nach_statik`), und schickt das CHECK wie jedes andere `teilweise` an die App.
+- Nur mit Stufen (`KEVCAD_PRUEF_STUFEN`), nicht für Läufe der Versionen. Passt die Auswahl der Laufzeit nicht zum
+  Auftrag oder scheitert das Schreiben, gilt der bisherige Weg (EXEC nach dem Endstand). Genau ein FEM-Auftrag je Lauf;
+  ein neuer Lauf bricht die FEM ab wie bisher (mit seiner Statik). Abläufe (S2) werden mit dem Zwischenstand markiert
+  (zählen als offen), starten aber wie die Topologie erst mit dem CHECK nach der Montage: Beide schicken EXEC, das der
+  Rechenprozess erst nach der Prüfung annimmt und das bis dahin einen neuen Lauf aufhielte. Ein abgebrochener oder
+  gescheiterter Lauf startet sie nicht; ein CHECK eines Schattenlaufs der Versionen dazwischen ändert nichts.
+- Messung (Ablage `20261107-070509-a1`, Netze der Basis, Last 5 bis 16): Endstand nach `laufrolle_l=90` **16,0 s**,
+  nach `laufrolle_l=95` 16,8 s (A3: 20,0 und 19,4 s, aber bei Last 12 bis 26). Lastunabhängig an der Zeitleiste: Der
+  FEM-Prozess startet bei 5,2 s, 1,6 s vor dem Ende der Hauptprüfung (6,8 s); in A3 startete er erst nach ihr (7,3 s).
+  Kalt 32,1 s; dort ist die FEM jetzt vor dem Bewegungsraum fertig (29,6 gegen 32,1 s).
+- Gleichheitsprobe in allen Schritten gleich; Vergleich mit A3 (alte Reihenfolge, Auftrag über EXEC) mit denselben
+  Netzen in allen Schritten genau gleich (Befunde, Montage, Statik samt Festkörper, Felder).
+- Tests: `test_pruefung_inkrementell.py` (alte gegen neue Reihenfolge an HALTER, STANGE, ECKE, TURM und drei kleinen
+  Stand- und Montagefällen; Zwischenstand mit Auftrag im Rechenprozess, keiner ohne Last oder ohne Stufen; Laufzeit:
+  FEM aus dem Auftrag genau einmal ohne EXEC, Abbruch durch den nächsten Lauf, Ablauf erst mit dem CHECK nach der
+  Montage, nicht nach Abbruch, Schattenlauf dazwischen, Auftrag eines überholten Laufs verworfen). In
+  `test_tempo_pruefung.py` die Reihenfolge der offenen Prüfungen nachgezogen (Druck, Statik, Montage). Mac mini, dritter
+  Lauf: 1288 bestanden, 23 übersprungen. In den ersten beiden Läufen je ein einzelner Ausreißer, beide nicht wieder
+  aufgetreten und lokal (auch fünfmal einzeln) nicht nachstellbar: `test_simulation2::test_gleitendes_lager_schraeg_im_
+  stabwerk` (Statikmodell eines früheren Tests noch in `LETZTER`) und `test_festkoerper::test_laufzeit_hintergrund_
+  festigkeit_und_feld` (Festkörper binnen 120 s nicht fertig, passt zum schon bekannten sporadischen Absturz des
+  FEM-Prozesses). Der zweite Test nennt bei einem Zeitlimit jetzt den Stand und die Meldung des FEM-Prozesses.

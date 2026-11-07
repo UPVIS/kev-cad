@@ -269,6 +269,57 @@ def faelle(st: Any, wunsch: dict[str, Any]) -> list[dict[str, Any]]:
                   key=lambda f: (reihenfolge.index(f["teil"]), f["szenario"]))
 
 
+def hat_last(e: dict[str, Any]) -> bool:
+    sz = e.get("szenario") or {}
+    if sz.get("lasten") or sz.get("neigung") or sz.get("ablauf"):
+        return True
+    return any(abs(float(c)) > 1e-9 for c in sz.get("beschleunigung") or [])
+
+
+def kandidaten(voll: dict[str, Any] | None, nur: str | None = None) -> list[str]:
+    """Szenarien mit Last, in denen ein Teil als Kragträger nachgewiesen ist (Bauteil oder Lager eines Stabs): die
+    rechnet die Laufzeit nach jedem Lauf mit der Festkörper-FEM (``laufzeit._festkoerper_nach_lauf``)."""
+    out = []
+    for e in (voll or {}).get("szenarien") or []:
+        if nur is not None and e.get("name") != nur:
+            continue
+        if not hat_last(e):
+            continue
+        if any(b.get("sicherheit") is not None for b in e.get("bauteile") or []) or any(
+                float(np.linalg.norm(v.get("kraft") or (0, 0, 0))) >= 0.5 for v in e.get("verbinder") or []):
+            out.append(e["name"])
+    return out
+
+
+def nach_statik(statik: dict[str, Any] | None, run: int) -> dict[str, Any] | None:
+    """A1 (PLAN-PRUEFUNG-INKREMENTELL.md): im Rechenprozess direkt nach der Statik den Auftrag schreiben, den die
+    Laufzeit nach dem Lauf rechnet: dieselben Szenarien (``kandidaten``), derselbe Wunsch wie über EXEC
+    (``statik.dienst.auftrag``), dazu ``namen``. None ohne Kandidaten oder wenn das Schreiben scheitert (dann wie bisher
+    über EXEC)."""
+    import sys
+
+    from kevcad_kernel.statik import anbindung
+
+    st = anbindung.LETZTER
+    try:
+        namen = kandidaten(statik)
+        if not namen or st.modell is None or st.run != run:
+            return None
+        job = schreibe(st, {"auto": True, "szenarien": namen})
+    except Exception as exc:  # noqa: BLE001 - die Laufzeit schreibt ihn dann selbst (EXEC)
+        print(f"Festkörper: Auftrag nach der Statik nicht geschrieben: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return None
+    return {**job, "namen": namen}
+
+
+def verwerfen(job: dict[str, Any] | None) -> None:
+    """Ordner eines nicht (mehr) gebrauchten Auftrags löschen."""
+    import shutil
+
+    if job and job.get("ordner"):
+        shutil.rmtree(str(job["ordner"]), ignore_errors=True)
+
+
 def schreibe(st: Any, wunsch: dict[str, Any]) -> dict[str, Any]:
     """Ordner mit ``auftrag.json``, BREP je Teil und Nachbarnetzen; Rückgabe: Pfade, Fälle (mit Schlüssel)."""
     from OCP.BRepTools import BRepTools

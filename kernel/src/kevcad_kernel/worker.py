@@ -24,7 +24,7 @@ Rechenprozess → Eltern:
 | ``STEP`` | ``run``, ``index``, ``text`` | – |
 | ``PART`` | ``run``, ``name``, ``key`` (Formschlüssel), ``cached``, ``tess_ms``, ``density``, ``app`` (Kopf des PART_UPSERT ohne seq), ``app_len`` | Nutzlast des PART_UPSERT, danach BRep-Binärform |
 | ``RUN_DONE`` / ``RUN_FAILED`` | ``run``, ``shown``, ``steps``, ``warnings``, ``params``, ``stdout``, ``duration_ms``, ``error`` (nur FAILED) | – |
-| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist; mit ``app.state`` "teilweise" folgt später ein weiteres ``CHECK_DONE`` desselben Laufs (Zwischenstand vor Montage und Statik, Bewegungsraum im Hintergrund), zuletzt mit "done" | Nutzlast von CHECK |
+| ``CHECK_DONE`` | ``run``, ``app`` (Kopf der Nachricht CHECK ohne seq), ``app_len`` – nach jedem ``RUN_DONE``, wenn ``RUN.pruefen`` nicht false ist; mit ``app.state`` "teilweise" folgt später ein weiteres ``CHECK_DONE`` desselben Laufs (Zwischenstand vor Druck und Statik, Zwischenstand direkt nach der Statik mit ``app.festkoerper_auftrag``, Bewegungsraum im Hintergrund), zuletzt mit "done". ``festkoerper_auftrag`` (A1): Auftrag der Festkörper-FEM (Ordner, Fälle, ``namen``), nimmt die Laufzeit heraus, bevor das CHECK zur App geht | Nutzlast von CHECK |
 | ``EXEC_RES`` | ``ok``, ``result``, ``stdout``, ``shown``, ``warnings``, ``error``/``line``/``excerpt``/``hint`` | – |
 """
 

@@ -180,6 +180,9 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         self._run_end_run = 0  # letzter Lauf, für den RUN_END an die App ging (unter _app_lock)
         self._lauf_start: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter beim Start (unter _lock)
         self._pruef_ankunft: dict[int, float] = {}  # zeiten_ms: Lauf → perf_counter, als sein Prüfergebnis ankam
+        # A1: Statik aus dem Zwischenstand nach der Statik (Lauf, Statik, Abläufe), deren Ablauf und Topologie mit dem
+        # nächsten CHECK dieses Laufs starten (_nach_statik)
+        self._statik_nachlauf: tuple[int, dict[str, Any], list[str]] | None = None
         self.pruef_warten_s = 120.0  # obere Grenze für run(warten_s=…): so lange wartet run höchstens auf die Prüfung
         self.run_warten_s: float | None = None  # Vorgabe von run; None: nach der Dauer des Laufs (``_run_warten``)
         self.bedingungen_warten_s = 60.0  # so lange wartet bedingungen() auf den Bewegungsraum im Hintergrund
@@ -1322,11 +1325,11 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         if kind == "CHECK_DONE":  # kommt nach RUN_DONE, wenn der Lauf schon abgeschlossen ist
             app_len = int(header.get("app_len", 0))
             check = dict(header.get("app") or {})
+            fk_auftrag = check.pop("festkoerper_auftrag", None)  # A1: FEM-Auftrag des Rechenprozesses (nach der Statik)
             self._pruefung_protokollieren(check)
             statik = self._statik_check(check)  # Statik: volles Ergebnis heraus, im CHECK bleibt die Kurzfassung
-            self._dynamik_nach_lauf(statik)  # Statik S2: Abläufe aus model.py im Hintergrund (eigener Prozess)
-            self._festkoerper_nach_lauf(statik)  # Statik S3: Festkörper-FEM für Teile mit Last (eigener Prozess)
-            self._topologie_nach_lauf(check, statik)  # Topologie: fehlende Ergebnisse aus model.py im Hintergrund
+            # Statik S2 (Abläufe) und S3 (Festkörper-FEM) in eigenen Prozessen, Topologie: fehlende Ergebnisse aus model.py
+            self._nach_statik(check, statik, fk_auftrag)
             # Druckvorschau: Geometrie je Druckteil aus der Prüfung, und zwar bevor fertig() das wartende run weckt;
             # sonst fragt ein Aufrufer direkt nach run (PRINT_JOB_REQ, druckvorschau) eine Vorschau ohne Eingang ab,
             # während die Versionen hier noch schreiben (Wettlauf, sichtbar seit die Statik die Prüfung verlängert)
@@ -1385,6 +1388,47 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         elif kind in ("RUN_DONE", "RUN_FAILED", "EXEC_RES"):
             job.final = header
             job.finished.set()
+
+    def _nach_statik(self, check: dict[str, Any], statik: dict[str, Any] | None,
+                     fk_auftrag: dict[str, Any] | None) -> None:
+        """Ablauf (S2), Festkörper (S3) und Topologie nach dem ersten CHECK eines Laufs mit Statik.
+
+        A1 (PLAN-PRUEFUNG-INKREMENTELL.md): Kommt die Statik mit dem FEM-Auftrag des Rechenprozesses (Zwischenstand direkt
+        nach ihr, vor Montage und Bewegungsraum), startet nur der Festkörper sofort, aus diesem Auftrag. Der Ablauf wird
+        markiert (zählt als offen) und startet wie die Topologie erst mit dem nächsten CHECK dieses Laufs: beide schicken
+        EXEC, das der Rechenprozess erst nach der Prüfung annimmt und das bis dahin einen neuen Lauf aufhielte. Endet die
+        Prüfung abgebrochen oder gescheitert, startet keiner von beiden (wie bisher, da kam die Statik gar nicht an)."""
+        from kevcad_kernel.pruefung.lauf import SCHATTEN_RUN
+        from kevcad_kernel.statik.festkoerper.auftrag import verwerfen
+
+        run = int(check.get("run") or 0)
+        if fk_auftrag is not None and statik is None:  # Schattenlauf der Versionen oder Statik schon da
+            verwerfen(fk_auftrag)
+            fk_auftrag = None
+        if run >= SCHATTEN_RUN:  # Läufe der Versionen: keine Statik-Nachläufe, der offene des echten Laufs bleibt
+            return
+        with self._lock:  # das nächste CHECK dieses Laufs nimmt den offenen Nachlauf, ein neuerer Lauf verwirft ihn
+            offen = self._statik_nachlauf
+            if offen is not None and run >= offen[0]:
+                self._statik_nachlauf = None
+                if run != offen[0]:
+                    offen = None
+            else:
+                offen = None
+        if fk_auftrag is not None:
+            ablauf = self._dynamik_nach_lauf(statik, starten=False)
+            self._festkoerper_nach_lauf(statik, auftrag=fk_auftrag)
+            with self._lock:
+                self._statik_nachlauf = (run, statik, ablauf)  # type: ignore[arg-type]
+            return
+        if offen is not None:
+            if check.get("state") in ("done", "teilweise"):
+                self._dynamik_starten(offen[2], run)
+                self._topologie_nach_lauf(check, offen[1])
+            return
+        self._dynamik_nach_lauf(statik)
+        self._festkoerper_nach_lauf(statik)
+        self._topologie_nach_lauf(check, statik)
 
     def _pruefung_protokollieren(self, check: dict[str, Any]) -> None:
         """zeiten_ms: Ankunft des Prüfergebnisses merken und als eigene Zeile in runs.jsonl schreiben (``art``

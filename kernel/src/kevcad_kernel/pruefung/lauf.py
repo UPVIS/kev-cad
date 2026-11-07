@@ -20,6 +20,13 @@ Zwischenspeicher kommt sonst alles im ersten Anlauf, dann bleibt es bei einem ``
 Prüfung braucht, wartet mit ``PruefStand.abwarten``. Der Bewegungsraum bekommt in Stufen nur den Rest des Budgets ``VORNE_S``,
 was er nicht schafft, rechnet ``fertig_rechnen``. Am Inhalt ändert das nichts: Gerechnet wird dasselbe, der Endstand ist
 derselbe. Aus mit ``KEVCAD_PRUEF_STUFEN=0``.
+
+FEM direkt nach der Statik (A1, PLAN-PRUEFUNG-INKREMENTELL.md): Die Statik läuft direkt nach dem Druck. Hat ein Szenario
+Teile, die die Laufzeit danach mit der Festkörper-FEM rechnet (``statik/festkoerper/auftrag.kandidaten``), schreibt der
+Rechenprozess den Auftrag gleich dort (``auftrag.nach_statik``) und schickt einen zweiten Zwischenstand (``teilweise``,
+offen noch Montage und Bewegungsraum) mit Druck, Statik und dem Auftrag (``festkoerper_auftrag``, nur zwischen
+Rechenprozess und Laufzeit). Die Laufzeit startet den FEM-Prozess damit sofort statt nach dem Ende der Prüfung über EXEC
+(das nimmt der Rechenprozess nur zwischen zwei Aufträgen an). Nicht für Läufe der Versionen und nur mit Stufen.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ KLEIN_S = 0.2  # Stufen: darunter bleibt es bei einem CHECK (die erste Stufe und
 KLEIN_TEILE = 40  # … und das Modell hat weniger Teile
 HINTEN_ZEITEN = ("druck", "druckvorschau", "montage", "statik", "bewegungsraum")
 STAENDE_MERKEN = 8  # wie viele geprüfte Stände der Teile (wie die Statik, statik/merken.py)
+SCHATTEN_RUN = 1_000_000_000  # Läufe der Versionen (versionen/laufzeit.py SCHATTEN_RUN_BASIS): keine FEM
 
 
 def stufen_an() -> bool:
@@ -104,13 +112,39 @@ class PruefLauf:
             kopf.pop("seq", None)
             zwischenstand(kopf, nutz)
 
+        def fem_stufe(stand: Callable[[], tuple[dict[str, Any], list]], offen: list[str], dauer_s: float) -> None:
+            """A1: direkt nach der Statik den Auftrag der Festkörper-FEM schreiben und mit diesem Stand schicken; die
+            Laufzeit startet den FEM-Prozess damit sofort (über EXEC müsste sie bis zum Ende der Prüfung warten)."""
+            if zwischenstand is None or run >= SCHATTEN_RUN:
+                return
+            from kevcad_kernel.statik.festkoerper.auftrag import nach_statik, verwerfen
+
+            job = None
+            try:
+                erg, geo = stand()
+                job = nach_statik(erg.get("statik"), run)
+                if job is None:
+                    return
+                if not _bedingungen.wege_da():
+                    offen = [o for o in offen if o != "Bewegungsraum"]
+                kopf, nutz = self._kopf(run, "teilweise", erg, geo, offen)
+            except Exception as exc:  # noqa: BLE001 - dann wie bisher: die Laufzeit schreibt den Auftrag nach dem Ende
+                import sys
+
+                print(f"Zwischenstand nach der Statik nicht geschickt: {type(exc).__name__}: {exc}", file=sys.stderr)
+                verwerfen(job)
+                return
+            kopf["festkoerper_auftrag"] = job
+            kopf.pop("seq", None)
+            zwischenstand(kopf, nutz)
+
         stufen = zwischenstand is not None and stufen_an()
         if stufen:
             opt["vorne_s"] = VORNE_S
         try:
             ks = self.koerper_fuer(erfassung, shown, daten.get("teile") or {})
             erg, geo = pruefe(ks, daten.get("erklaerungen") or {}, opt, self.cache, abbrechen, self.stand_cache,
-                              stufe if stufen else None)
+                              stufe if stufen else None, nach_statik=fem_stufe if stufen else None)
             zeiten = erg.get("zeiten_ms") or {}
             self._hinten_ms = max(self._hinten_ms, sum(float(zeiten.get(k) or 0.0) for k in HINTEN_ZEITEN))
             stand = frozenset((k.name, k.key) for k in ks)
@@ -233,6 +267,10 @@ from kevcad_kernel.pruefung.pruefer import ordnen as _ordnen  # noqa: E402
 
 _registriere("bewegungsraum", _bedingungen.pruefe_bewegungsraum)
 # Reihenfolge (Stufen): Stand liest nur Kontakte, Druck liest weder Stand noch Bedingungen; Montage braucht Stand, die Statik
-# Stand und Druck, deshalb erst die Stufe bis zum Zwischenstand, dann der Rest
-_ordnen(("erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "druckvorschau", "gedruckt", "montage", "statik",
-         "bewegungsraum"))
+# Stand, Druck (nur die Teile, nicht Vorschau und gedruckt) und die Paare, deshalb erst die Stufe bis zum Zwischenstand,
+# dann der Rest. A1 (PLAN-PRUEFUNG-INKREMENTELL.md): die Statik direkt nach dem Druck, damit der Auftrag der
+# Festkörper-FEM vor Druckvorschau, gedruckt und Montage hinausgeht (Druckvorschau, gedruckt und Montage lesen nichts aus
+# der Statik, die Statik nichts aus ihnen)
+REIHENFOLGE = ("erklaerungen", "durchdringung", "bedingungen", "stand", "druck", "statik", "druckvorschau", "gedruckt",
+               "montage", "bewegungsraum")
+_ordnen(REIHENFOLGE)
