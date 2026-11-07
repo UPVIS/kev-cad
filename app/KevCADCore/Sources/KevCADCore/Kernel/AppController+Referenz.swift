@@ -232,6 +232,28 @@ extension AppController: ReferenzActions {
         einstellung: String
     ) {
         guard !urls.isEmpty else { return }
+        // iPad (über das Netz verbunden): Video und Fotos liegen hier, der Kernel liest am Mac. Erst hinüberschicken
+        // (DATEI_HOCH, I-8), dann wie am Mac mit den Pfaden im Eingang des Kernels.
+        if connection.istNetz, urls.contains(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            referenzen.meldung = "Wird an den Mac geschickt …"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    var amMac: [URL] = []
+                    for (i, u) in urls.enumerated() {
+                        amMac.append(try await self.dateiAnMac(u) { anteil in
+                            self.referenzen.meldung = "Wird an den Mac geschickt … \(Int(((Double(i) + anteil) / Double(urls.count)) * 100)) %"
+                        })
+                    }
+                    self.referenzHinzufuegen(amMac, name: name, masz: masz, auflage: auflage, von: von, bis: bis,
+                                             einstellung: einstellung)
+                } catch {
+                    self.referenzen.meldung = "Nicht an den Mac geschickt: \(error)"
+                    self.log(.error, "Referenz an den Mac: \(error)")
+                }
+            }
+            return
+        }
         let msg = ReferenzHinzufuegenMessage(
             id: nextRequestID(), pfade: urls.map(\.path), name: name?.isEmpty == false ? name : nil,
             masz: masz?.isEmpty == false ? masz : nil, auflage: auflage, von: von, bis: bis, einstellung: einstellung)

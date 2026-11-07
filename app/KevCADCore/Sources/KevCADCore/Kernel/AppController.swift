@@ -383,14 +383,21 @@ public final class AppController: AppActions {
             completion(.failure(RequestError(message: "Kernel nicht verbunden")))
             return
         }
-        let id = message.id
+        warteAufAntwort(id: message.id, kind: M.type, timeout: timeout, completion: completion)
+    }
+
+    /// Antwort auf eine schon gesendete Anfrage erwarten (für Anfragen mit Nutzlast, etwa DATEI_HOCH).
+    func warteAufAntwort(
+        id: String, kind: String, timeout: TimeInterval,
+        completion: @escaping (Result<KernelMessage, RequestError>) -> Void
+    ) {
         let timer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let p = self.pending.removeValue(forKey: id) else { return }
                 p.completion(.failure(RequestError(message: "\(p.kind): keine Antwort nach \(Int(timeout)) s")))
             }
         }
-        pending[id] = PendingRequest(kind: M.type, completion: completion, timer: timer)
+        pending[id] = PendingRequest(kind: kind, completion: completion, timer: timer)
     }
 
     private func failAllPending(_ reason: String) {
@@ -677,7 +684,7 @@ public final class AppController: AppActions {
             model.agentenspur.aktualisieren(m.schritt)
         case .lageAnfrage(let r):
             lageBeantworten(r)
-        case .datei:
+        case .datei, .dateiHochStand:
             break  // I-8: nur als Antwort auf DATEI_REQ (oben); eine verspätete nach Zeitüberschreitung fällt weg
         case .kopplung(let k):  // I-6 (AppController+LiveKopplung.swift)
             handleKopplung(k)

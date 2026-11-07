@@ -30,6 +30,53 @@ final class DateiTests: XCTestCase {
         XCTAssertTrue(LiveFaehigkeit.app.allSatisfy { $0 != LiveFaehigkeit.datei }, "nur der Kernel meldet datei-1")
     }
 
+    func testHochNachrichtenGleichDenTestdateien() throws {
+        let erwartet = try XCTUnwrap(Fixtures.expected()["datei"])
+        XCTAssertEqual(erwartet["faehigkeit_hoch"]?.stringValue, DateiAnsGeraet.faehigkeitHoch)
+        var m = DateiHochMessage(id: "a-33", sitzung: "c1a2b3c4", name: "Auszug.step", groesse: 29, ab: 0)
+        m.seq = 32
+        let rahmen = try Fixtures.frame("datei_hoch.frame")
+        XCTAssertEqual(try json(m.encodedHeader()), try json(rahmen.header))
+        XCTAssertEqual(rahmen.payload.count, 16)
+        guard case .dateiHochStand(let zwischen) = try Fixtures.message("datei_hoch_stand.frame"),
+              case .dateiHochStand(let fertig) = try Fixtures.message("datei_hoch_fertig.frame")
+        else { return XCTFail("DATEI_HOCH_STAND nicht erkannt") }
+        XCTAssertNil(zwischen.pfad)
+        XCTAssertEqual(zwischen.empfangen, 16)
+        XCTAssertEqual(fertig.empfangen, fertig.groesse)
+        XCTAssertTrue(fertig.pfad?.hasSuffix("/Eingang/c1a2b3c4/Auszug.step") == true)
+        XCTAssertEqual(KernelMessage.dateiHochStand(fertig).replyTo, "a-34")
+    }
+
+    func testHochladenInStuecken() async throws {
+        let c = AppController(model: AppModel())
+        c.handle([.connected])
+        let inhalt = Data((0..<(DateiAnsGeraet.stueckVorgabe + 100)).map { UInt8($0 % 251) })
+        let lokal = FileManager.default.temporaryDirectory.appendingPathComponent("kevcad-hoch-\(UUID().uuidString).step")
+        try inhalt.write(to: lokal)
+        defer { try? FileManager.default.removeItem(at: lokal) }
+        var empfangen = Data()
+        c.sendeBeobachter = { [weak c] rahmen in
+            guard let kopf = try? JSONDecoder().decode(JSONValue.self, from: rahmen.header),
+                  kopf["type"]?.stringValue == "DATEI_HOCH", let id = kopf["id"]?.stringValue,
+                  let ab = kopf["ab"]?.intValue, let groesse = kopf["groesse"]?.intValue
+            else { return }
+            XCTAssertEqual(ab, empfangen.count)
+            empfangen.append(rahmen.payload)
+            let fertig = empfangen.count == groesse
+            let stand = DateiHochStandMessage(replyTo: id, sitzung: kopf["sitzung"]?.stringValue ?? "", name: "x.step",
+                                              groesse: groesse, empfangen: empfangen.count,
+                                              pfad: fertig ? "/Users/kevin/Eingang/x.step" : nil)
+            DispatchQueue.main.async { c?.handle([.message(.dateiHochStand(stand))]) }
+        }
+        let ziel = try await c.dateiHochladen(lokal, fortschritt: nil)
+        XCTAssertEqual(ziel.path, "/Users/kevin/Eingang/x.step")
+        XCTAssertEqual(empfangen, inhalt)
+        // Am Mac (ohne Netzverbindung) bleibt die Datei, wo sie ist
+        let mac = try await AppController(model: AppModel()).dateiAnMac(lokal)
+        XCTAssertEqual(mac, lokal)
+    }
+
     func testFalscheLaengeWirdAbgelehnt() throws {
         let kopf = #"{"type":"DATEI","reply_to":"a","pfad":"/x/y","name":"y","groesse":4,"ab":0,"laenge":3}"#
         XCTAssertThrowsError(try KernelMessage.decode(Frame(header: Data(kopf.utf8), payload: Data([1, 2]))))

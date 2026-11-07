@@ -85,3 +85,64 @@ public struct DateiStueckMessage: Sendable, Equatable {
                                   laenge: k.laenge, geaendert: k.geaendert ?? 0, daten: payload)
     }
 }
+
+// MARK: - Gegenrichtung: Datei vom Gerät an den Mac (DATEI_HOCH, Fähigkeit datei-hoch-1)
+
+extension DateiAnsGeraet {
+    public static let faehigkeitHoch = "datei-hoch-1"
+}
+
+/// DATEI_HOCH: ein Stück einer Datei vom Gerät; die Bytes gehen als Nutzlast mit. Den Ort am Mac bestimmt der Kernel.
+public struct DateiHochMessage: OutgoingRequest {
+    public static let type = "DATEI_HOCH"
+    public var seq = 0
+    public var id: String
+    public var sitzung: String
+    public var name: String
+    public var groesse: Int
+    public var ab: Int
+
+    public init(id: String, sitzung: String, name: String, groesse: Int, ab: Int) {
+        self.id = id
+        self.sitzung = sitzung
+        self.name = name
+        self.groesse = groesse
+        self.ab = ab
+    }
+
+    enum CodingKeys: String, CodingKey { case type, seq, id, sitzung, name, groesse, ab }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(Self.type, forKey: .type)
+        try c.encode(seq, forKey: .seq)
+        try c.encode(id, forKey: .id)
+        try c.encode(sitzung, forKey: .sitzung)
+        try c.encode(name, forKey: .name)
+        try c.encode(groesse, forKey: .groesse)
+        try c.encode(ab, forKey: .ab)
+    }
+}
+
+/// DATEI_HOCH_STAND: wie viel angekommen ist; nach dem letzten Stück der Pfad am Mac.
+public struct DateiHochStandMessage: Decodable, Sendable, Equatable {
+    public var replyTo: String?
+    public var sitzung: String
+    public var name: String
+    public var groesse: Int
+    public var empfangen: Int
+    public var pfad: String?
+
+    public init(replyTo: String?, sitzung: String, name: String, groesse: Int, empfangen: Int, pfad: String?) {
+        self.replyTo = replyTo
+        self.sitzung = sitzung
+        self.name = name
+        self.groesse = groesse
+        self.empfangen = empfangen
+        self.pfad = pfad
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case replyTo = "reply_to", sitzung, name, groesse, empfangen, pfad
+    }
+}

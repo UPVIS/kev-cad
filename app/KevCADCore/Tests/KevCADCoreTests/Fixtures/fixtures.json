@@ -2317,7 +2317,8 @@
    "feedback-1",
    "flaeche-1",
    "datei-1",
-   "ansicht-1"
+   "ansicht-1",
+   "datei-hoch-1"
   ],
   "nachrichten": {
    "PART_SAME": "delta-1",
@@ -2495,9 +2496,28 @@
     "type": "DATEI",
     "payload_bytes": 13,
     "richtung": "kernel"
+   },
+   {
+    "file": "datei_hoch.frame",
+    "type": "DATEI_HOCH",
+    "payload_bytes": 16,
+    "richtung": "app"
+   },
+   {
+    "file": "datei_hoch_stand.frame",
+    "type": "DATEI_HOCH_STAND",
+    "payload_bytes": 0,
+    "richtung": "kernel"
+   },
+   {
+    "file": "datei_hoch_fertig.frame",
+    "type": "DATEI_HOCH_STAND",
+    "payload_bytes": 0,
+    "richtung": "kernel"
    }
   ],
   "faehigkeit": "datei-1",
+  "faehigkeit_hoch": "datei-hoch-1",
   "stueck_vorgabe": 4194304,
   "stueck_max": 8388608
  },

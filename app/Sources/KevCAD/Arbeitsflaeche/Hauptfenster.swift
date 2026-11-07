@@ -175,6 +175,15 @@ struct Hauptfenster: View {
             session.fensterEinrichten(fenster)
         })
         #endif
+        #if os(iOS)
+        // iPad: Dateien wählen (Referenz, CAD-Datei) über die Dateien-App; der Mac hat dafür den Dialog von AppKit
+        .fileImporter(isPresented: Binding(get: { session.dateiWahl != nil },
+                                           set: { if !$0 { session.dateiWahlSchliessen() } }),
+                      allowedContentTypes: session.dateiWahl?.typen ?? [.item],
+                      allowsMultipleSelection: session.dateiWahl?.mehrere ?? false) { ergebnis in
+            session.dateiWahlBeendet(ergebnis)
+        }
+        #endif
         .focusedSceneObject(state)
         .focusedSceneObject(versionen)
         .focusedSceneObject(dokumente)

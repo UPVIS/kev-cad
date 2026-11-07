@@ -579,6 +579,8 @@ public enum KernelMessage: Sendable {
     case datei(DateiStueckMessage)
     /// I-6 (ansicht-1): Geräteliste, Gemeinsame Ansicht, Live-Striche.
     case kopplung(KopplungNachricht)
+    /// I-8 (datei-hoch-1): Stand einer Datei vom Gerät an den Mac, Antwort auf DATEI_HOCH.
+    case dateiHochStand(DateiHochStandMessage)
     /// Typ, den diese App-Version nicht kennt (wird ignoriert und protokolliert).
     case unknown(type: String, header: JSONValue)
 
@@ -630,6 +632,7 @@ public enum KernelMessage: Sendable {
         case .lageAnfrage: return "LAGE_REQ"
         case .datei: return "DATEI"
         case .kopplung(let k): return k.typeName
+        case .dateiHochStand: return "DATEI_HOCH_STAND"
         case .unknown(let t, _): return t
         }
     }
@@ -654,6 +657,7 @@ public enum KernelMessage: Sendable {
         case .statik(let m): return m.replyTo
         case .simulation(let m): return m.replyTo
         case .datei(let m): return m.replyTo
+        case .dateiHochStand(let m): return m.replyTo
         default: return nil
         }
     }
@@ -720,6 +724,7 @@ public enum KernelMessage: Sendable {
         case "LAGE_REQ": return .lageAnfrage(try dec.decode(LageRequestMessage.self, from: h))
         case "DATEI": return .datei(try DateiStueckMessage.decode(h, payload: frame.payload))
         case let t where KopplungNachricht.types.contains(t): return .kopplung(try KopplungNachricht.decode(type: t, header: h))
+        case "DATEI_HOCH_STAND": return .dateiHochStand(try dec.decode(DateiHochStandMessage.self, from: h))
         default:
             let raw = (try? dec.decode(JSONValue.self, from: h)) ?? .null
             return .unknown(type: env.type, header: raw)

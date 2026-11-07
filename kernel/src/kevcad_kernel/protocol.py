@@ -2555,10 +2555,11 @@ FAEHIGKEIT_FEEDBACK = "feedback-1"  # V2-6 (Abschnitt „V2-6 Sprach-Feedback“
 FAEHIGKEIT_FLAECHE = "flaeche-1"  # V2-7: Kacheln, Modus, Rand (PROTOCOL.md, „Fläche“)
 FAEHIGKEIT_DATEI = "datei-1"  # I-8: Datei ans Gerät (PROTOCOL.md, „I-8 Datei ans Gerät“)
 FAEHIGKEIT_ANSICHT = "ansicht-1"  # I-6: Live-Kopplung der Geräte (PROTOCOL.md, „I-6 Live-Kopplung“)
+FAEHIGKEIT_DATEI_HOCH = "datei-hoch-1"  # I-8: Datei vom Gerät an den Mac (DATEI_HOCH)
 #: was der Kernel kann (HELLO.faehigkeiten)
 KERNEL_FAEHIGKEITEN: tuple[str, ...] = (FAEHIGKEIT_DELTA, FAEHIGKEIT_IN_ARBEIT, FAEHIGKEIT_SPUR, FAEHIGKEIT_LAGE,
                                         FAEHIGKEIT_LIVE_MASSE, FAEHIGKEIT_FEEDBACK, FAEHIGKEIT_FLAECHE,
-                                        FAEHIGKEIT_DATEI, FAEHIGKEIT_ANSICHT)
+                                        FAEHIGKEIT_DATEI, FAEHIGKEIT_ANSICHT, FAEHIGKEIT_DATEI_HOCH)
 #: neue Nachrichten Kernel → App und die Fähigkeit, die eine App dafür gemeldet haben muss
 LIVE_NACHRICHTEN: dict[str, str] = {
     "PART_SAME": FAEHIGKEIT_DELTA, "WIE_ZUVOR": FAEHIGKEIT_DELTA, "IN_ARBEIT": FAEHIGKEIT_IN_ARBEIT,
@@ -3382,7 +3383,7 @@ _BEISPIEL_JSON = json.dumps(feedback_beispiel(), ensure_ascii=False, separators=
 #: Stückgröße, wenn die App keine nennt, und die größte, die der Kernel schickt (Byte)
 DATEI_STUECK_VORGABE = 4 * 1024 * 1024
 DATEI_STUECK_MAX = 8 * 1024 * 1024
-DATEI_NACHRICHTEN = ("DATEI_REQ", "DATEI")
+DATEI_NACHRICHTEN = ("DATEI_REQ", "DATEI", "DATEI_HOCH", "DATEI_HOCH_STAND")
 
 
 def check_datei_message(header: dict[str, Any], payload: bytes = b"") -> list[str]:
@@ -3391,6 +3392,8 @@ def check_datei_message(header: dict[str, Any], payload: bytes = b"") -> list[st
     if art not in DATEI_NACHRICHTEN:
         return []
     out: list[str] = []
+    if art in ("DATEI_HOCH", "DATEI_HOCH_STAND"):
+        return _check_datei_hoch(art, header, payload)
     if art == "DATEI_REQ":
         if not isinstance(header.get("id"), str) or not header["id"]:
             out.append("DATEI_REQ: id fehlt")
@@ -3424,6 +3427,38 @@ def check_datei_message(header: dict[str, Any], payload: bytes = b"") -> list[st
     return out
 
 
+def _check_datei_hoch(art: str, header: dict[str, Any], payload: bytes) -> list[str]:
+    out: list[str] = []
+    feld = "id" if art == "DATEI_HOCH" else "reply_to"
+    if not isinstance(header.get(feld), str) or not header[feld]:
+        out.append(f"{art}: {feld} fehlt")
+    for f in ("sitzung", "name"):
+        if not isinstance(header.get(f), str) or not header[f]:
+            out.append(f"{art}: {f} fehlt")
+    if isinstance(header.get("name"), str) and ("/" in header["name"] or header["name"].startswith(".")):
+        out.append(f"{art}: name ist kein Dateiname")
+    zahlen = ("groesse", "ab") if art == "DATEI_HOCH" else ("groesse", "empfangen")
+    for f in zahlen:
+        v = header.get(f)
+        if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+            out.append(f"{art}: {f} ist keine Zahl ab 0")
+    if art == "DATEI_HOCH":
+        if not out and header["ab"] + len(payload) > header["groesse"]:
+            out.append("DATEI_HOCH: Stück reicht über die Größe")
+        if len(payload) > DATEI_STUECK_MAX:
+            out.append("DATEI_HOCH: Stück größer als erlaubt")
+    else:
+        if payload:
+            out.append("DATEI_HOCH_STAND mit Nutzlast")
+        pfad = header.get("pfad")
+        fertig = not out and header["empfangen"] == header["groesse"]
+        if fertig and not (isinstance(pfad, str) and pfad.startswith("/")):
+            out.append("DATEI_HOCH_STAND: fertig ohne pfad")
+        if not fertig and pfad is not None:
+            out.append("DATEI_HOCH_STAND: pfad vor dem letzten Stück")
+    return out
+
+
 def datei_antwort(reply_to: str, pfad: str, groesse: int, ab: int, daten: bytes,
                   geaendert: float) -> tuple[dict[str, Any], bytes]:
     """Kopf und Nutzlast der Antwort DATEI auf DATEI_REQ (ein Stück ab ``ab``)."""
@@ -3442,6 +3477,16 @@ def datei_beispiele() -> list[tuple[str, dict[str, Any], bytes, str]]:
         ("datei_req", {"type": "DATEI_REQ", "seq": 31, "id": "a-31", "pfad": pfad, "ab": 0, "max": 16}, b"", "app"),
         ("datei_stueck", {**erstes, "seq": 40}, nutz1, "kernel"),
         ("datei_stueck_ende", {**zweites, "seq": 41}, nutz2, "kernel"),
+        # Gegenrichtung: das iPad schickt eine CAD-Datei in zwei Stücken an den Mac
+        ("datei_hoch", {"type": "DATEI_HOCH", "seq": 32, "id": "a-33", "sitzung": "c1a2b3c4", "name": "Auszug.step",
+                        "groesse": len(inhalt), "ab": 0}, inhalt[:16], "app"),
+        ("datei_hoch_stand", {"type": "DATEI_HOCH_STAND", "seq": 42, "reply_to": "a-33", "sitzung": "c1a2b3c4",
+                              "name": "Auszug.step", "groesse": len(inhalt), "empfangen": 16, "pfad": None},
+         b"", "kernel"),
+        ("datei_hoch_fertig", {"type": "DATEI_HOCH_STAND", "seq": 43, "reply_to": "a-34", "sitzung": "c1a2b3c4",
+                               "name": "Auszug.step", "groesse": len(inhalt), "empfangen": len(inhalt),
+                               "pfad": "/Users/kevin/Library/Application Support/de.upvis.kevcad/Eingang/c1a2b3c4/"
+                                       "Auszug.step"}, b"", "kernel"),
     ]
 
 

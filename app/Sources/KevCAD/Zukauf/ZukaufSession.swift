@@ -75,8 +75,15 @@ extension AppSession {
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in self?.model.zukaufActions?.assignCAD(file: url, to: teil) }
         }
+        #else
+        // iPad: Datei aus der Dateien-App; der App-Kern schickt sie vor dem Übernehmen an den Mac (I-8)
+        dateienWaehlen(titel: "CAD-Datei für „\(zukaufName(teil))“",
+                       typen: ["step", "stp", "zip"].compactMap { UTType(filenameExtension: $0) }, mehrere: false) {
+            [weak self] urls in
+            guard let url = urls.first else { return }
+            self?.model.zukaufActions?.assignCAD(file: url, to: teil)
+        }
         #endif
-        // iPad: CAD-Datei wählen (Dateien-App) folgt in I-8
     }
 
     /// Ein Fenster per id öffnen (über das `openWindow`, das jedes Fenster bei `attach` meldet).

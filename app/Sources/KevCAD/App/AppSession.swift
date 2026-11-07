@@ -51,6 +51,10 @@ final class AppSession: ObservableObject {
     @Published var catalogSectionRequest: CatalogSection?
     /// Phase 3: Auftrag für das Fenster „Zukaufteil hinzufügen …“ (wird dort verbraucht), siehe ZukaufSession.swift.
     @Published var zukaufRequest: ZukaufDialogRequest?
+    /// iPad: offene Dateiwahl (Dateien-App), gezeigt vom Hauptfenster (`dateienWaehlen`, I-8). Am Mac immer nil.
+    @Published var dateiWahl: DateiWahl?
+    /// Die zuletzt gezeigte Dateiwahl, bis ihr Ergebnis da ist (SwiftUI schließt den Dialog teils vor dem Ergebnis).
+    private var dateiWahlOffen: DateiWahl?
 
     /// V2-3: kurze Meldung in der Kopfleiste (Umbenennen ging nicht, Name entsteht im Code …).
     @Published var meldung: Meldung?
@@ -294,6 +298,45 @@ final class AppSession: ObservableObject {
     /// Projektordner im Finder)? Am Mac ja; auf dem iPad gehen Dateien über das Teilen-Blatt (`dateienTeilen`).
     static var kannDateienOeffnen: Bool { Dateiablage.kannImFinderZeigen }
 
+    /// Dateien dieses Geräts wählen. Am Mac nicht benutzt (dort der Dateidialog von AppKit); auf dem iPad zeigt das
+    /// Hauptfenster die Dateien-App. Gewählte Dateien werden in den eigenen Zwischenspeicher kopiert, damit sie ohne
+    /// Freigabe lesbar bleiben, bis der App-Kern sie an den Mac geschickt hat.
+    func dateienWaehlen(titel: String, typen: [UTType], mehrere: Bool, fertig: @escaping ([URL]) -> Void) {
+        dateiWahl = DateiWahl(titel: titel, typen: typen, mehrere: mehrere, fertig: fertig)
+    }
+
+    /// Der Dialog ist zu (gewählt oder abgebrochen); das Ergebnis kann danach noch kommen.
+    func dateiWahlSchliessen() {
+        if let w = dateiWahl { dateiWahlOffen = w }
+        dateiWahl = nil
+    }
+
+    func dateiWahlBeendet(_ ergebnis: Result<[URL], Error>) {
+        guard let wahl = dateiWahl ?? dateiWahlOffen else { return }
+        dateiWahl = nil
+        dateiWahlOffen = nil
+        switch ergebnis {
+        case .success(let urls):
+            let ordner = FileManager.default.temporaryDirectory.appendingPathComponent("Gewaehlt-\(UUID().uuidString)")
+            var kopien: [URL] = []
+            for u in urls {
+                let frei = u.startAccessingSecurityScopedResource()
+                defer { if frei { u.stopAccessingSecurityScopedResource() } }
+                do {
+                    try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+                    let ziel = ordner.appendingPathComponent(u.lastPathComponent)
+                    try FileManager.default.copyItem(at: u, to: ziel)
+                    kopien.append(ziel)
+                } catch {
+                    melde("\(u.lastPathComponent) ließ sich nicht lesen: \(error.localizedDescription)", fehler: true)
+                }
+            }
+            if !kopien.isEmpty { wahl.fertig(kopien) }
+        case .failure(let e):
+            melde("Dateiwahl: \(e.localizedDescription)", fehler: true)
+        }
+    }
+
     /// Dateien des Kernels weitergeben: am Mac im Finder zeigen, auf dem iPad vom Mac holen (I-8, PROTOCOL.md „Datei ans
     /// Gerät“) und das Teilen-Blatt öffnen. Fehler meldet die Kopfleiste.
     func dateienTeilen(_ urls: [URL]) {
@@ -460,4 +503,13 @@ extension AppModel {
         }
         return (lo, hi)
     }
+}
+
+/// Offene Dateiwahl auf dem iPad (`AppSession.dateienWaehlen`).
+struct DateiWahl: Identifiable {
+    let id = UUID()
+    var titel: String
+    var typen: [UTType]
+    var mehrere: Bool
+    var fertig: ([URL]) -> Void
 }

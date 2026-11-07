@@ -13,10 +13,14 @@ public protocol DateiActions: AnyObject {
     /// im Zwischenspeicher (unverändert seit dem letzten Holen: ohne neue Übertragung). `fortschritt` bekommt den Anteil
     /// von 0 bis 1.
     func dateiFuerGeraet(_ pfad: URL, fortschritt: (@MainActor (Double) -> Void)?) async throws -> URL
+    /// Gegenrichtung: Pfad am Mac zu einer Datei dieses Geräts (Referenz, CAD-Datei). Am Mac die Datei selbst; auf dem
+    /// iPad schickt die App sie stückweise an den Kernel (DATEI_HOCH), der sie in seinen Eingang legt.
+    func dateiAnMac(_ lokal: URL, fortschritt: (@MainActor (Double) -> Void)?) async throws -> URL
 }
 
 extension DateiActions {
     public func dateiFuerGeraet(_ pfad: URL) async throws -> URL { try await dateiFuerGeraet(pfad, fortschritt: nil) }
+    public func dateiAnMac(_ lokal: URL) async throws -> URL { try await dateiAnMac(lokal, fortschritt: nil) }
 }
 
 extension AppController: DateiActions {
@@ -88,6 +92,54 @@ extension AppController: DateiActions {
             request(msg, timeout: 60) { result in
                 switch result {
                 case .success(.datei(let s)): fertig.resume(returning: s)
+                case .success(let m): fertig.resume(throwing: RequestError(message: "Datei: unerwartete Antwort \(m.typeName)"))
+                case .failure(let e): fertig.resume(throwing: e)
+                }
+            }
+        }
+    }
+
+    public func dateiAnMac(_ lokal: URL, fortschritt: (@MainActor (Double) -> Void)?) async throws -> URL {
+        guard connection.istNetz else { return lokal }  // am Mac liegt die Datei schon dort
+        guard connected else { throw RequestError(message: "Nicht mit dem Mac verbunden") }
+        guard live.kernelFaehigkeiten.contains(DateiAnsGeraet.faehigkeitHoch) else {
+            throw RequestError(message: "Kev CAD am Mac nimmt noch keine Dateien an (Mac aktualisieren)")
+        }
+        return try await dateiHochladen(lokal, fortschritt: fortschritt)
+    }
+
+    /// Schickt eine lokale Datei in Stücken an den Kernel; Antwort ist der Pfad im Eingang am Mac.
+    func dateiHochladen(_ lokal: URL, fortschritt: (@MainActor (Double) -> Void)?) async throws -> URL {
+        // Dateien aus der Dateien-App sind nur mit Freigabe lesbar
+        let freigabe = lokal.startAccessingSecurityScopedResource()
+        defer { if freigabe { lokal.stopAccessingSecurityScopedResource() } }
+        let h = try FileHandle(forReadingFrom: lokal)
+        defer { try? h.close() }
+        let groesse = Int(try h.seekToEnd())
+        try h.seek(toOffset: 0)
+        let sitzung = String(UUID().uuidString.prefix(8)).lowercased()
+        var ab = 0
+        repeat {
+            let stueck = try h.read(upToCount: DateiAnsGeraet.stueckVorgabe) ?? Data()
+            let stand = try await dateiHochStueck(
+                DateiHochMessage(id: nextRequestID(), sitzung: sitzung, name: lokal.lastPathComponent,
+                                 groesse: groesse, ab: ab), daten: stueck)
+            ab += stueck.count
+            fortschritt?(groesse > 0 ? Double(ab) / Double(groesse) : 1)
+            guard stand.empfangen == ab else { throw RequestError(message: "Mac hat \(stand.empfangen) statt \(ab) Byte") }
+            if let pfad = stand.pfad { return URL(fileURLWithPath: pfad) }
+            guard !stueck.isEmpty else { break }
+        } while ab < groesse
+        throw RequestError(message: "Mac hat die Datei nicht abgeschlossen")
+    }
+
+    private func dateiHochStueck(_ msg: DateiHochMessage, daten: Data) async throws -> DateiHochStandMessage {
+        guard send(msg, payload: daten) else { throw RequestError(message: "Nicht mit dem Mac verbunden") }
+        // Antwort über die Liste offener Anfragen (wie request, nur mit Nutzlast)
+        return try await withCheckedThrowingContinuation { fertig in
+            warteAufAntwort(id: msg.id, kind: DateiHochMessage.type, timeout: 60) { result in
+                switch result {
+                case .success(.dateiHochStand(let s)): fertig.resume(returning: s)
                 case .success(let m): fertig.resume(throwing: RequestError(message: "Datei: unerwartete Antwort \(m.typeName)"))
                 case .failure(let e): fertig.resume(throwing: e)
                 }

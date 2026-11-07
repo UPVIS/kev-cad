@@ -57,7 +57,7 @@ enum ReferenzDateien {
         panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie, .jpeg, .png, .heic, .tiff]
         return panel.runModal() == .OK ? passend(panel.urls) : []
         #else
-        // iPad: Video und Fotos aus Kamera und Fotos-App wählen folgt in I-8 (Vorbild ios/KevScan)
+        // iPad: der Knopf wählt über `AppSession.dateienWaehlen` (Dateien-App, asynchron)
         return []
         #endif
     }
@@ -80,6 +80,7 @@ private final class URLSammler: @unchecked Sendable {
 
 /// Abschnitt „Referenzen“ im Inspektor.
 struct ReferenzInspectorSection: View {
+    @EnvironmentObject private var session: AppSession
     @ObservedObject var model: AppModel
     @ObservedObject var store: ReferenzStore
     @ObservedObject var state: ProjectWindowState
@@ -113,8 +114,16 @@ struct ReferenzInspectorSection: View {
                 Text("Referenzen")
                 Spacer()
                 Button {
+                    #if os(macOS)
                     let urls = ReferenzDateien.waehlen()
                     if !urls.isEmpty { state.referenzDateien = urls }
+                    #else
+                    // iPad: aus Dateien und Fotos; der App-Kern schickt sie beim Hinzufügen an den Mac (I-8)
+                    session.dateienWaehlen(titel: "Referenz hinzufügen", typen: [.movie, .image], mehrere: true) { urls in
+                        let passend = ReferenzDateien.passend(urls)
+                        if !passend.isEmpty { state.referenzDateien = passend }
+                    }
+                    #endif
                 } label: {
                     Image(systemName: "plus")
                 }

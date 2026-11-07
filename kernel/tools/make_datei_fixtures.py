@@ -13,7 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from kevcad_kernel.protocol import (  # noqa: E402
-    DATEI_STUECK_MAX, DATEI_STUECK_VORGABE, FAEHIGKEIT_DATEI, check_datei_message, datei_beispiele, encode_frame,
+    DATEI_STUECK_MAX, DATEI_STUECK_VORGABE, FAEHIGKEIT_DATEI, FAEHIGKEIT_DATEI_HOCH, check_datei_message,
+    datei_beispiele, encode_frame,
 )
 
 ZIEL = Path(__file__).resolve().parents[2] / "app/KevCADCore/Tests/KevCADCoreTests/Fixtures"
@@ -30,7 +31,8 @@ def main() -> None:
                        "richtung": richtung})
     path = ZIEL / "fixtures.json"
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"protocol": 1, "frames": [], "parts": {}}
-    data["datei"] = {"frames": frames, "faehigkeit": FAEHIGKEIT_DATEI, "stueck_vorgabe": DATEI_STUECK_VORGABE,
+    data["datei"] = {"frames": frames, "faehigkeit": FAEHIGKEIT_DATEI, "faehigkeit_hoch": FAEHIGKEIT_DATEI_HOCH,
+                     "stueck_vorgabe": DATEI_STUECK_VORGABE,
                      "stueck_max": DATEI_STUECK_MAX}
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(frames)} Testdateien für I-8 Datei ans Gerät nach {ZIEL}")

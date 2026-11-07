@@ -127,3 +127,62 @@ def test_ueber_die_verbindung_nur_an_die_fragende_app():
         else:
             os.environ["KEVCAD_PROJECTS_DIR"] = alt
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+# --- Gegenrichtung: DATEI_HOCH ---------------------------------------------------------------------------------------
+
+def test_hoch_in_stuecken(ablage):
+    inhalt = bytes(range(256)) * 20
+    ordner = ablage / "Eingang"
+    stand = None
+    for ab in range(0, len(inhalt), 1000):
+        stand = datei_teilen.hoch_stueck({"sitzung": "s1234", "name": "Auszug.step", "groesse": len(inhalt), "ab": ab},
+                                         inhalt[ab:ab + 1000], ordner)
+        assert not isinstance(stand, str), stand
+        assert check_datei_message({"type": "DATEI_HOCH_STAND", "reply_to": "a", **stand}) == []
+        if ab + 1000 < len(inhalt):
+            assert stand["pfad"] is None and not (ordner / "s1234" / "Auszug.step").exists()
+    assert stand["empfangen"] == len(inhalt)
+    assert Path(stand["pfad"]).read_bytes() == inhalt
+    assert Path(stand["pfad"]).parent.parent == ordner.resolve()
+
+
+def test_hoch_grenzen(ablage):
+    ordner = ablage / "Eingang"
+    kopf = {"sitzung": "s1234", "name": "a.step", "groesse": 10, "ab": 0}
+    # Pfadanteile fallen weg: die Datei landet immer im Eingang
+    stand = datei_teilen.hoch_stueck({**kopf, "name": "../../boese.step", "groesse": 3}, b"abc", ordner)
+    assert Path(stand["pfad"]) == (ordner / "s1234" / "boese.step").resolve()
+    assert "kein Dateiname" in datei_teilen.hoch_stueck({**kopf, "name": ".versteckt"}, b"", ordner)
+    assert "sitzung" in datei_teilen.hoch_stueck({**kopf, "sitzung": "../x"}, b"", ordner)
+    assert "über die angesagte Größe" in datei_teilen.hoch_stueck(kopf, b"x" * 11, ordner)
+    datei_teilen.hoch_stueck(kopf, b"12345", ordner)
+    assert "erwartet ab 5" in datei_teilen.hoch_stueck({**kopf, "ab": 7}, b"67", ordner)
+
+
+def test_hoch_ueber_die_verbindung():
+    tmp = Path(tempfile.mkdtemp(prefix="kc", dir=tempfile.gettempdir()))
+    sock = str(tmp / "k.sock")
+    rt = make_runtime(sock, start_worker=False)
+    pad = FakeApp(sock, geraet={"id": "pad-h", "art": "ipad", "name": "iPad"})
+    try:
+        _, _, hallo, _ = pad.wait_for(lambda h: h["type"] == "HELLO")
+        assert "datei-hoch-1" in hallo.get("faehigkeiten", [])
+        b = pad.mark()
+        pad.send({"type": "DATEI_HOCH", "id": "h-1", "sitzung": "abcd1234", "name": "Teil.step", "groesse": 6, "ab": 0},
+                 b"abc")
+        _, _, s1, _ = pad.wait_for(lambda h: h.get("reply_to") == "h-1", start=b)
+        assert s1["type"] == "DATEI_HOCH_STAND" and s1["empfangen"] == 3 and s1["pfad"] is None
+        pad.send({"type": "DATEI_HOCH", "id": "h-2", "sitzung": "abcd1234", "name": "Teil.step", "groesse": 6, "ab": 3},
+                 b"def")
+        _, _, s2, _ = pad.wait_for(lambda h: h.get("reply_to") == "h-2", start=b)
+        assert Path(s2["pfad"]).read_bytes() == b"abcdef"
+        assert Path(s2["pfad"]).resolve().is_relative_to((tmp / "Eingang").resolve())
+        # und über DATEI_REQ wieder abholbar (Eingang liegt im Datenordner, einer Wurzel)
+        pad.send({"type": "DATEI_REQ", "id": "h-3", "pfad": s2["pfad"]})
+        _, _, d, nutz = pad.wait_for(lambda h: h.get("reply_to") == "h-3", start=b)
+        assert d["type"] == "DATEI" and nutz == b"abcdef"
+    finally:
+        pad.close()
+        rt.close()
+        shutil.rmtree(tmp, ignore_errors=True)

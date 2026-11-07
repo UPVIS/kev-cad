@@ -1689,6 +1689,8 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
             self.zukauf.app_download_seen(header)
         elif kind == "DATEI_REQ":  # I-8: Datei ans Gerät (das iPad teilt, was der Kernel am Mac geschrieben hat)
             self._pool.submit(self._datei_anfrage, header)
+        elif kind == "DATEI_HOCH":  # I-8: Datei vom Gerät an den Mac (Referenz, CAD-Datei vom iPad)
+            self._pool.submit(self._datei_hoch, header, payload)
         elif kind in ("PROJECT_OPEN", "PROJECT_NEW", "RUN_REQ", "MEASURE_REQ", "EXPORT_REQ", "CATALOG_REQ",
                       "CATALOG_SAVE", "CATALOG_DELETE", "ZUKAUF_NEU", "ZUKAUF_CAD"):
             self._pool.submit(self._handle_app_request, header)
@@ -1739,6 +1741,23 @@ class KernelRuntime(BestandAnbindung, AnimationRuntimeMixin, CameraRuntime, Druc
         else:
             kopf, nutz = antwort
             self._send_app({**kopf, "reply_to": rid}, nutz)
+
+    def _datei_hoch(self, header: dict[str, Any], payload: bytes) -> None:
+        """DATEI_HOCH (I-8): ein Stück einer Datei vom Gerät in den Eingang im Datenordner; Antwort DATEI_HOCH_STAND."""
+        from kevcad_kernel import datei_teilen
+
+        rid = header.get("id")
+        try:
+            stand = datei_teilen.hoch_stueck(header, payload, datei_teilen.eingang(self.socket_path))
+        except Exception as e:  # noqa: BLE001 - jede Anfrage bekommt eine Antwort
+            stand = f"Datei empfangen fehlgeschlagen: {e}"
+        if isinstance(stand, str):
+            self._log(f"[kernel] DATEI_HOCH {header.get('name')!r}: {stand}")
+            self._send_app({"type": "ERROR", "reply_to": rid, "message": stand})
+        else:
+            if stand["pfad"]:
+                self._log(f"[kernel] Datei vom Gerät angekommen: {stand['pfad']}")
+            self._send_app({"type": "DATEI_HOCH_STAND", "reply_to": rid, **stand})
 
     def _handle_app_request(self, header: dict[str, Any]) -> None:
         kind = header.get("type")

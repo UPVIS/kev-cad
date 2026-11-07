@@ -1620,6 +1620,24 @@ bietet das iPad das Teilen nicht an. Referenz in `protocol.py` (Abschnitt „I-8
   während des Holens, bricht sie ab und meldet das.
 - Am Mac liegt jede Datei, die der Kernel nennt, schon vor; die Mac-App fragt nie.
 
+
+**Gegenrichtung: Datei vom Gerät an den Mac** (seit 07.11.2026, Fähigkeit `datei-hoch-1`). Das iPad wählt eine Referenz
+(Video, Fotos) oder eine CAD-Datei in der Dateien-App; der Kernel am Mac liest aber nur Pfade am Mac. Der App-Kern schickt
+die Datei deshalb vorher stückweise hinüber und nimmt danach den Pfad am Mac für `REF_ADD` bzw. `ZUKAUF_CAD`, wie die
+Mac-App den Pfad aus dem Dateidialog.
+
+| type | Richtung | Felder | Wirkung |
+|---|---|---|---|
+| `DATEI_HOCH` | App → Kernel | `id`, `sitzung` (4 bis 64 Zeichen `A-Z a-z 0-9 -`, je Datei neu), `name` (nur der Dateiname), `groesse` (höchstens 4 GiB), `ab`; Nutzlast: das Stück (höchstens 8 MiB) | Antwort `DATEI_HOCH_STAND` oder `ERROR` |
+| `DATEI_HOCH_STAND` | Kernel → App | `reply_to`, `sitzung`, `name`, `groesse`, `empfangen`, `pfad` (erst nach dem letzten Stück, sonst null) | Das nächste Stück setzt bei `empfangen` an |
+
+- **Den Ort wählt der Kernel**, nicht das Gerät: `Eingang/<sitzung>/<name>` im Datenordner des Kernels, also unter
+  denselben Wurzeln wie bei `DATEI_REQ`. Pfadanteile im Namen fallen weg, versteckte Namen (`.x`) und ungültige
+  Sitzungen enden mit `ERROR`. Bis zum letzten Stück heißt die Datei `.<name>.teil`, danach erscheint sie unter ihrem
+  Namen. Ein Stück muss genau bei der bisherigen Länge ansetzen. Eingänge älter als eine Woche räumt der Kernel beim
+  nächsten Hochladen weg.
+- Testdateien `datei_hoch.frame`, `datei_hoch_stand.frame`, `datei_hoch_fertig.frame`.
+
 ## I-6 Live-Kopplung
 
 Stand 07.11.2026 (PLAN-IPAD.md, Abschnitt 5 und Paket I-6; Entscheidungen I9 und I10). Rein additiv, `protocol` bleibt 1.

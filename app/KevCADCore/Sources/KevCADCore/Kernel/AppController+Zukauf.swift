@@ -281,6 +281,20 @@ extension AppController: ZukaufActions {
     }
 
     public func assignCAD(file: URL, to teil: String) {
+        // iPad (über das Netz verbunden): die Datei aus der Dateien-App erst an den Mac schicken (DATEI_HOCH, I-8)
+        if connection.istNetz, FileManager.default.fileExists(atPath: file.path) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let amMac = try await self.dateiAnMac(file)
+                    self.submitCAD(file: amMac, teil: teil)
+                } catch {
+                    let name = self.model.zukaufStatus(for: teil)?.name ?? teil
+                    self.setZukaufError(teil, name: name, "Die Datei kam nicht beim Mac an: \(error)")
+                }
+            }
+            return
+        }
         zukaufState.answered.insert(file.path)
         if model.downloadOffer?.file == file { showNextOffer() }
         submitCAD(file: file, teil: teil)
