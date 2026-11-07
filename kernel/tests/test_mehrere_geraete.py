@@ -283,14 +283,19 @@ def test_leisten_und_kacheln_gehen_mit(env, paar):
     a.send({"type": "ANSICHT", "t": time.time(), "griff": True, "voll": False, "flaeche": flaeche})
     _, _, h, _ = b.wait_for(lambda h: h["type"] == "ANSICHT" and "flaeche" in h, start=sb, timeout=3)
     assert h["flaeche"] == flaeche and check_ansicht_message(h) == []
-    # Ein Gerät, das in die Gemeinsame Ansicht wechselt, bekommt die Fläche mit dem Stand
+    # Ein Gerät, das in die Gemeinsame Ansicht wechselt, bekommt die Fläche mit dem Stand, auch wenn der letzte volle
+    # Stand (einer älteren App) keine Fläche trug. Erst warten, bis b diesen Stand hat: Sonst liegt er beim Wechsel noch
+    # im Socket und kommt nach der Marke an (Befund 07.11.2026, Volllauf unter Last).
+    sb = b.mark()
     _ansicht(a, griff=False, abstand=490.0, voll=True)
+    _bekam_ansicht(b, sb, 490.0)
     b.send({"type": "ANSICHT_MODUS", "modus": "eigen"})
     _warten(lambda: _geraet(env["rt"], "Kopplung iPad")["ansicht"] == "eigen")
     sb = b.mark()
     b.send({"type": "ANSICHT_MODUS", "modus": "gemeinsam"})
-    _, _, h, _ = _bekam_ansicht(b, sb, 490.0)
-    assert h["voll"] is True and h["flaeche"] == flaeche
+    _, _, h, _ = b.wait_for(lambda h: h["type"] == "ANSICHT" and h.get("voll") is True and "flaeche" in h,
+                            start=sb, timeout=3)
+    assert h["kamera"]["abstand"] == 490.0 and h["flaeche"] == flaeche
     assert check_ansicht_message({"type": "ANSICHT", "t": 1.0, "griff": False, "voll": False,
                                   "flaeche": {**flaeche, "kacheln": ["modell", "fenster"]}})
 
