@@ -16,6 +16,13 @@ Ordner mit der Endung ``.nosync`` lässt iCloud aus (gemessen: ``isExcludedFromS
 als Link. Liegt ein Projekt in der iCloud, wird ``.kevcad`` deshalb ein Link auf ``.kevcad.nosync`` daneben: Der übrige
 Kernel arbeitet unverändert mit ``<projekt>/.kevcad``, die Daten bleiben auf diesem Mac. Ein zweiter Mac bekommt nur den
 Link; fehlt das Ziel, legt ``lokale_daten_sicherstellen`` es an.
+
+**Sicherung beim Meilenstein** (nur Projekte in der iCloud, ``icloud_sichern``): ``vorschau.png`` (das Bild des Meilensteins,
+für die Projektliste am iPad) und ``versionen.bundle`` (alle Versionen als eine Datei, ``git bundle``, dazu ``index.json``
+mit Meilensteinen und Titeln auf dem Ref ``refs/kevcad/sicherung``). Beide werden erst als ``.tmp`` geschrieben (lässt iCloud
+aus) und dann ersetzt, so lädt iCloud nie eine halbe Datei hoch. Ein anderer Mac, der nur den Link bekommt, stellt
+``.kevcad.nosync`` daraus wieder her (``versionen_wiederherstellen``); Vorschaubilder und Vergleichsdaten der Versionen
+entstehen dort neu. Lokale Projekte bleiben äußerlich unverändert.
 """
 
 from __future__ import annotations
@@ -34,6 +41,9 @@ LOKAL_ORDNER = Path.home() / "Documents" / "Kev CAD"
 SCHALTER = "projektablage.json"
 DATEN = ".kevcad"
 DATEN_LOKAL = ".kevcad.nosync"
+VORSCHAU = "vorschau.png"
+BUNDLE = "versionen.bundle"
+SICHERUNG_REF = "refs/kevcad/sicherung"
 
 
 def _datenordner_app() -> Path:
@@ -109,18 +119,91 @@ def lokale_daten_sicherstellen(projekt: str | Path) -> str | None:
     link, ziel = p / DATEN, p / DATEN_LOKAL
     try:
         if link.is_symlink():
-            ziel.mkdir(exist_ok=True)  # zweiter Mac: Link kam über die iCloud, das Ziel nicht
+            if not ziel.exists():  # zweiter Mac: Link kam über die iCloud, das Ziel nicht
+                ziel.mkdir()
+                return versionen_wiederherstellen(p)
             return None
         if link.is_dir():
             if ziel.exists():
                 return (f"{DATEN} und {DATEN_LOKAL} liegen beide im Projekt; {DATEN} bleibt in der iCloud. "
                         f"Bitte eines davon entfernen.")
             link.rename(ziel)  # vorhandene Versionen und Protokolle ziehen mit um
-        else:
-            ziel.mkdir(exist_ok=True)
+            link.symlink_to(DATEN_LOKAL, target_is_directory=True)
+            return None
+        neu = not ziel.exists()
+        ziel.mkdir(exist_ok=True)
         link.symlink_to(DATEN_LOKAL, target_is_directory=True)
     except OSError as exc:
         return f"Interne Daten ließen sich nicht lokal halten ({exc}); sie liegen in der iCloud."
+    return versionen_wiederherstellen(p) if neu else None
+
+
+def _ersetzen(ziel: Path, schreiben) -> None:
+    """Erst ``.<name>.tmp`` schreiben (iCloud lässt ``.tmp`` aus), dann in einem Schritt ersetzen."""
+    tmp = ziel.with_name(f".{ziel.name}.{os.getpid()}.tmp")
+    try:
+        schreiben(tmp)
+        os.replace(tmp, ziel)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def icloud_sichern(projekt: str | Path, bild: Path | None = None) -> list[str]:
+    """Beim Meilenstein, nur für Projekte in der iCloud: ``vorschau.png`` und ``versionen.bundle`` ins Projekt (siehe
+    Kopf). Rückgabe: geschriebene Dateinamen. Aufrufer hält die Sperre des Versionsarchivs (kein Git daneben)."""
+    from kevcad_kernel.versionen.git import GitRepo
+
+    p = Path(projekt)
+    if not in_icloud(p) or not p.is_dir():
+        return []
+    geschrieben: list[str] = []
+    if bild is not None and bild.is_file():
+        daten = bild.read_bytes()
+        _ersetzen(p / VORSCHAU, lambda t: t.write_bytes(daten))
+        geschrieben.append(VORSCHAU)
+    repo = GitRepo(p)
+    if not repo.vorhanden or repo.head() is None:
+        return geschrieben
+    repo.schreibe_ausschluss()  # vorschau.png und versionen.bundle gehören nicht in die Versionen
+    index = p / DATEN / "versionen" / "index.json"
+    eintraege = [("HEAD", repo.zweig().encode("utf-8"))]
+    if index.is_file():
+        eintraege.append(("index.json", index.read_bytes()))
+    zeilen = []
+    for name, inhalt in eintraege:
+        blob = repo.text("hash-object", "-w", "--stdin", input=inhalt).strip()
+        zeilen.append(f"100644 blob {blob}\t{name}")
+    baum = repo.text("mktree", input="\n".join(zeilen) + "\n").strip()
+    commit = repo.text("commit-tree", baum, "-m", "Kev CAD: Sicherung der Versionen (index.json, HEAD)").strip()
+    repo.run("update-ref", SICHERUNG_REF, commit)
+    _ersetzen(p / BUNDLE, lambda t: repo.run("bundle", "create", "-q", str(t), "--all"))
+    geschrieben.append(BUNDLE)
+    return geschrieben
+
+
+def versionen_wiederherstellen(projekt: str | Path) -> str | None:
+    """Versionen aus ``versionen.bundle`` in ein leeres ``.kevcad`` holen (anderer Mac). Rückgabe: Hinweis oder None."""
+    from kevcad_kernel.versionen.git import GitFehler, GitRepo
+
+    p = Path(projekt)
+    bundle = p / BUNDLE
+    repo = GitRepo(p)
+    if not bundle.is_file() or repo.vorhanden:
+        return None
+    try:
+        repo.init()
+        repo.run("fetch", "-q", "--update-head-ok", str(bundle), "+refs/*:refs/*")
+        zweig = repo.text("show", f"{SICHERUNG_REF}:HEAD").strip()
+        if zweig and repo.rev(f"refs/heads/{zweig}"):
+            repo.run("symbolic-ref", "HEAD", f"refs/heads/{zweig}")
+        repo.run("reset", "-q")  # Index auf den Stand von HEAD, die Dateien im Projekt bleiben
+        index = repo.run("show", f"{SICHERUNG_REF}:index.json", check=False)
+        if index.returncode == 0:
+            ziel = p / DATEN / "versionen" / "index.json"
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_bytes(index.stdout)
+    except (GitFehler, OSError) as exc:
+        return f"Versionen aus {BUNDLE} ließen sich nicht wiederherstellen ({exc})."
     return None
 
 

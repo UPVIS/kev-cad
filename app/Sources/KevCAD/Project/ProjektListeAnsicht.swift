@@ -1,3 +1,4 @@
+import ImageIO
 import KevCADCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -45,6 +46,8 @@ struct ProjektListeAnsicht: View {
     let ordnerGewaehlt: (URL) -> Void
 
     @State private var eintraege: [ProjektEintrag] = []
+    /// Vorschaubilder je Projektpfad (`vorschau.png` vom Mac, I-7), im Hintergrund geladen
+    @State private var bilder: [String: CGImage] = [:]
     @State private var laedt = false
     @State private var waehlen = false
     @State private var fehler: String?
@@ -120,6 +123,24 @@ struct ProjektListeAnsicht: View {
     }
 
     private func zeile(_ e: ProjektEintrag) -> some View {
+        HStack(spacing: GA.m) {
+            Group {
+                if let bild = bilder[e.id] {
+                    Image(decorative: bild, scale: 1).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "cube").font(.title2).foregroundStyle(GF.rauch)
+                }
+            }
+            .frame(width: 64, height: 48)
+            .background(GF.tief)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            text(e)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func text(_ e: ProjektEintrag) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(e.name).font(.headline).foregroundStyle(GF.kreide)
             HStack(spacing: GA.s) {
@@ -137,8 +158,6 @@ struct ProjektListeAnsicht: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
     }
 
     private func laden() async {
@@ -147,5 +166,24 @@ struct ProjektListeAnsicht: View {
         let liste = await Task.detached(priority: .userInitiated) { ProjektListe.lesen(ordner) }.value
         eintraege = liste
         laedt = false
+        // Nur Bilder, die schon auf dem Gerät liegen (nichts aus der iCloud laden, nur um eine Liste zu zeigen)
+        let mitBild = liste.compactMap { e in e.vorschau.map { (e.id, $0) } }
+        let neu = await Task.detached(priority: .utility) {
+            var b: [String: CGImage] = [:]
+            for (id, url) in mitBild {
+                let status = (try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?
+                    .ubiquitousItemDownloadingStatus
+                guard status == nil || status == .current,
+                      let q = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let img = CGImageSourceCreateThumbnailAtIndex(q, 0, [
+                          kCGImageSourceCreateThumbnailFromImageAlways: true,
+                          kCGImageSourceThumbnailMaxPixelSize: 160,
+                      ] as CFDictionary)
+                else { continue }
+                b[id] = img
+            }
+            return b
+        }.value
+        bilder = neu
     }
 }

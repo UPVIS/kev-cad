@@ -87,11 +87,14 @@ final class ProjektablageTests: XCTestCase {
         try projekt("Kein Projekt", modell: false, alter: 5)
         try projekt("Nur in der iCloud", modell: false, platzhalter: true, alter: 20)
         try Data().write(to: ordner.appendingPathComponent("Neu/model 2.py"))
+        try Data("png".utf8).write(to: ordner.appendingPathComponent("Alt/vorschau.png"))  // legt der Kernel beim Meilenstein ab
         let liste = ProjektListe.lesen(ordner)
         XCTAssertEqual(liste.map(\.name), ["Neu", "Nur in der iCloud", "Alt"])
         XCTAssertEqual(liste[0].konflikte, ["model 2.py"])
         XCTAssertTrue(liste[0].geladen)
         XCTAssertFalse(liste[1].geladen)
+        XCTAssertEqual(liste[2].vorschau?.lastPathComponent, "vorschau.png")
+        XCTAssertNil(liste[0].vorschau)
         XCTAssertNil(ProjectLocator.check(ordner.appendingPathComponent("Nur in der iCloud")))  // Platzhalter reicht
     }
 }

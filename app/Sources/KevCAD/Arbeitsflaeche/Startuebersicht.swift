@@ -245,15 +245,23 @@ final class Vorschaubilder: ObservableObject {
         bilder[RecentProjects.normalizedPath(projekt)] = nil
     }
 
+    /// Neuestes Versionsbild des Projekts; sonst `vorschau.png`, das der Kernel bei Projekten in der iCloud beim Meilenstein
+    /// ins Projekt legt (I-7). Auf dem iPad stehen in „Zuletzt geöffnet“ Pfade des Mac: gelesen wird dort, wo das iPad den
+    /// Ordner sieht (`PadOrdner.pruefpfad`, nur iCloud); lokale Projekte des Mac haben dort kein Bild.
     nonisolated static func vorschau(_ projekt: URL) -> CGImage? {
+        #if os(iOS)
+        guard let projekt = PadOrdner.pruefpfad(projekt) else { return nil }
+        #endif
         let ordner = projekt.appendingPathComponent(".kevcad/versionen/bilder", isDirectory: true)
-        guard let dateien = try? FileManager.default.contentsOfDirectory(atPath: ordner.path) else { return nil }
+        let dateien = (try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []
         let nummern = dateien.compactMap { f -> (Int, String)? in
             guard f.hasSuffix(".png"), let n = Int(f.dropLast(4)) else { return nil }
             return (n, f)
         }
-        guard let neueste = nummern.max(by: { $0.0 < $1.0 }),
-              let quelle = CGImageSourceCreateWithURL(ordner.appendingPathComponent(neueste.1) as CFURL, nil)
+        let datei = nummern.max(by: { $0.0 < $1.0 }).map { ordner.appendingPathComponent($0.1) }
+            ?? projekt.appendingPathComponent(ProjektListe.vorschauDatei)
+        guard FileManager.default.fileExists(atPath: datei.path),
+              let quelle = CGImageSourceCreateWithURL(datei as CFURL, nil)
         else { return nil }
         let optionen: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

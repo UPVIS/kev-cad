@@ -50,6 +50,7 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
+from kevcad_kernel.ablage import icloud_sichern, in_icloud
 from kevcad_kernel.versionen.archiv import HAUPT, KevinsMeilenstein, Version, Versionsarchiv, VersionsFehler
 from kevcad_kernel.versionen.git import GitFehler
 from kevcad_kernel.versionen.schnappschuss import (
@@ -1067,7 +1068,20 @@ class VersionenRuntimeMixin:
         except Exception as exc:  # noqa: BLE001
             self._log(f"[versionen] Vorschaubild Meilenstein V{v.nr}: {exc!r}")
         finally:
+            self._icloud_sichern(archiv, v)
             self._versionen_senden()
+
+    def _icloud_sichern(self, archiv: Versionsarchiv, v: Version) -> None:
+        """Projekt in der iCloud (I-7): Vorschaubild und Versionen als eine Datei ins Projekt (ablage.icloud_sichern)."""
+        if not in_icloud(archiv.projekt):
+            return
+        try:
+            with archiv.lock:
+                dateien = icloud_sichern(archiv.projekt, archiv.ordner / "bilder" / f"{v.nr}.png")
+            if dateien:
+                self._log(f"[versionen] iCloud-Sicherung V{v.nr}: {', '.join(dateien)}")
+        except Exception as exc:  # noqa: BLE001 - Sicherung darf den Meilenstein nicht stören
+            self._log(f"[versionen] iCloud-Sicherung V{v.nr}: {exc!r}")
 
     def variante(self, aktion: str = "liste", name: str | None = None, von: Any = None, neuer_name: str | None = None,
                  *, wer: str = "agent", warten: bool = True, timeout_s: float = 300.0) -> dict[str, Any]:

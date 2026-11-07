@@ -26,6 +26,8 @@ AUSSCHLUSS = """\
 /.kevcad/
 /.kevcad
 /.kevcad.nosync/
+/vorschau.png
+/versionen.bundle
 /bestand.json
 /feedback/
 __pycache__/
