@@ -279,7 +279,7 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-6 Live-Kopplung | Gemeinsame und Eigene Ansicht, Führung, Live-Striche, Agent spricht das aktive Gerät an, Lagebild je Gerät | I-2b, I-3 | offen |
 | I-7 iCloud | Spike (Zugriff, Versionen, Auslagern), Ordner der App, Zwischenspeicher draußen, Projektliste am iPad, Umzug nach Kevins Ja | I-3 | offen |
 | I-8 Volle Parität | Prüfliste in Abschnitt 9 abarbeiten | I-3 | offen |
-| I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig: Archiv fürs iPad und Export für App Store Connect geprüft (Build 1, signiert mit dem Team-Schlüssel, `beta-reports-active`); Hochladen wartet auf Kevins App-Eintrag; automatischer Takt und Paritätsprüfung offen |
+| I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); automatischer Takt und Paritätsprüfung offen |
 | I-10 Abnahme | Kevin am echten iPad: Gesten, Stift, Latenz, Kopplung; Learnings in Plan, Skill und Regeln | alle | offen |
 
 ### Offene Stellen auf dem iPad nach I-1
@@ -305,7 +305,7 @@ Tests, die auf dem iPad nicht laufen können (Prozesse, ffmpeg, NSPrintInfo, Uni
 `#if os(macOS)` ausgenommen; `tools/ipad-bau.sh test` fährt die übrigen im iPad-Simulator.
 
 Reihenfolge: I-1 und I-2a, dann I-2b und I-3 nebeneinander (Mac-Eingang gegen iPad-Hülle), dann I-4 bis I-7; I-8 läuft
-mit jedem Paket mit. Den ersten TestFlight-Build gibt es, sobald Kevin den App-Eintrag angelegt hat (I-9). Höchstens zwei Agenten zugleich mit voller Denktiefe (Wochenlimit, siehe Gedächtnis).
+mit jedem Paket mit. Build 1 steht seit 07.11.2026 in TestFlight (I-9); neue Builds mit `tools/ipad-testflight.sh`, bis der automatische Takt steht. Höchstens zwei Agenten zugleich mit voller Denktiefe (Wochenlimit, siehe Gedächtnis).
 
 ## 9. Parität im Alltag
 
@@ -352,6 +352,9 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
 - **Kettentest ohne Kamera:** Testvarianten am Mac schreiben mit `KEVCAD_TEST_KOPPLUNG_DATEI` einen Kopplungscode, die
   iPad-App übernimmt ihn in Debug-Bauten über `KEVCAD_PAD_KOPPLUNG`. `tools/ipad-kette.sh` fährt die ganze Strecke und
   baut über MCP ein Modell.
+- **TestFlight-Tester je App** (07.11.2026): Apple führt interne Tester je App als eigenen Eintrag; einen Eintrag aus
+  Akquise Mobil oder VoiceBridge nimmt die Gruppe von Kev CAD nicht an (409). `tools/ipad-testflight.sh` legt Tester
+  deshalb über die Mail-Adresse in der Gruppe an und schickt die Einladung (Regel `apple-app-verteilung.md`).
 
 ## 11. Offene Fragen und Risiken
 

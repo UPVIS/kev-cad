@@ -92,14 +92,15 @@ if [ -z "$GRUPPE" ]; then
     echo "==> Testgruppe „Kevin“ ließ sich nicht anlegen: in App Store Connect › TestFlight selbst anlegen (intern, alle Builds)"
   fi
 fi
-# Tester: alle aus den internen Gruppen der anderen Apps des Teams. Kevin steht dort mit zwei Apple-Accounts (einer bei
-# Akquise Mobil, einer bei VoiceBridge); welcher auf dem iPad angemeldet ist, ist offen, also kommen beide in die Gruppe.
-# Interne Gruppen nehmen nur Nutzer von App Store Connect, deshalb nur Tester aus internen Gruppen.
+# Tester: alle aus den internen Gruppen der anderen Apps des Teams (interne Gruppen nehmen nur Nutzer von App Store
+# Connect). Apple führt interne Tester je App als eigenen Eintrag mit derselben Mail-Adresse; einen Eintrag aus einer
+# anderen App nimmt eine neue Gruppe nicht an (409 „Tester(s) cannot be assigned“, 07.11.2026). Deshalb über die
+# Mail-Adresse neu anlegen, gleich in der Gruppe, und die Einladung ausdrücklich schicken.
 if [ -n "$GRUPPE" ]; then
-  python3 - "$GRUPPE" << 'PYEOF'
+  python3 - "$GRUPPE" "$APP_ID" << 'PYEOF'
 import json, subprocess, sys
 
-gruppe = sys.argv[1]
+gruppe, app = sys.argv[1], sys.argv[2]
 
 
 def api(*args):
@@ -109,26 +110,34 @@ def api(*args):
     return json.loads(r.stdout) if r.stdout.strip() else {}
 
 
-def ids(antwort):
-    return {x["id"] for x in (antwort or {}).get("data") or []}
+def tester(gruppe_id):
+    """Tester einer Gruppe nach Mail-Adresse (klein geschrieben)."""
+    antwort = api("GET", f"/v1/betaGroups/{gruppe_id}/betaTesters?limit=200") or {}
+    return {t["attributes"]["email"].lower(): t["attributes"] for t in antwort.get("data") or []
+            if t["attributes"].get("email")}
 
 
-tester = set()
+gesucht = {}
 for g in (api("GET", "/v1/betaGroups?limit=200") or {}).get("data") or []:
     if g["id"] != gruppe and g["attributes"].get("isInternalGroup"):
-        tester |= ids(api("GET", f"/v1/betaGroups/{g['id']}/relationships/betaTesters?limit=200"))
-schon = ids(api("GET", f"/v1/betaGroups/{gruppe}/relationships/betaTesters?limit=200"))
-neu = sorted(tester - schon)
-if neu:
-    koerper = json.dumps({"data": [{"type": "betaTesters", "id": t} for t in neu]})
-    if api("POST", f"/v1/betaGroups/{gruppe}/relationships/betaTesters", koerper) is None:
-        print(f"==> Tester ließen sich nicht eintragen ({len(neu)}): in App Store Connect › TestFlight › Gruppe „Kevin“ selbst eintragen")
-    else:
-        print(f"==> Tester in der Gruppe „Kevin“: {len(schon) + len(neu)} ({len(neu)} neu)")
-elif schon:
-    print(f"==> Tester in der Gruppe „Kevin“: {len(schon)}")
+        for mail, a in tester(g["id"]).items():
+            gesucht.setdefault(mail, a)
+schon = tester(gruppe)
+for mail, a in sorted(gesucht.items()):
+    if mail in schon:
+        continue
+    koerper = {"data": {"type": "betaTesters",
+                        "attributes": {"email": a["email"], "firstName": a.get("firstName"), "lastName": a.get("lastName")},
+                        "relationships": {"betaGroups": {"data": [{"type": "betaGroups", "id": gruppe}]}}}}
+    neu = ((api("POST", "/v1/betaTesters", json.dumps(koerper)) or {}).get("data") or {}).get("id")
+    if neu:
+        api("POST", "/v1/betaTesterInvitations", json.dumps({"data": {"type": "betaTesterInvitations", "relationships": {
+            "app": {"data": {"type": "apps", "id": app}}, "betaTester": {"data": {"type": "betaTesters", "id": neu}}}}}))
+jetzt = tester(gruppe)
+if jetzt:
+    print(f"==> Tester in der Gruppe „Kevin“: {len(jetzt)}, neu eingeladen: {len(set(jetzt) - set(schon))}")
 else:
-    print("==> Kein Tester gefunden: in App Store Connect › TestFlight › Gruppe „Kevin“ selbst eintragen")
+    print("==> Kein Tester in der Gruppe: in App Store Connect › TestFlight › Gruppe „Kevin“ selbst eintragen")
 PYEOF
 fi
 echo "==> Hochgeladen: Build $NR. App Store Connect verarbeitet ihn (meist 5 bis 30 Minuten), danach steht er in TestFlight."
