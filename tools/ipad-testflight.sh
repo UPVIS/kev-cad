@@ -86,12 +86,49 @@ GRUPPE=$(asc-api GET "/v1/apps/$APP_ID/betaGroups" 2>/dev/null \
 if [ -z "$GRUPPE" ]; then
   GRUPPE=$(asc-api POST /v1/betaGroups "{\"data\":{\"type\":\"betaGroups\",\"attributes\":{\"name\":\"Kevin\",\"isInternalGroup\":true,\"hasAccessToAllBuilds\":true},\"relationships\":{\"app\":{\"data\":{\"type\":\"apps\",\"id\":\"$APP_ID\"}}}}}" \
     | python3 -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('id',''))")
-  echo "==> Testgruppe „Kevin“ angelegt ($GRUPPE)"
+  if [ -n "$GRUPPE" ]; then
+    echo "==> Testgruppe „Kevin“ angelegt ($GRUPPE)"
+  else
+    echo "==> Testgruppe „Kevin“ ließ sich nicht anlegen: in App Store Connect › TestFlight selbst anlegen (intern, alle Builds)"
+  fi
 fi
-# Kevin als Tester: derselbe wie in einer anderen App mit Gruppe „Kevin“
-TESTER=$(asc-api GET "/v1/betaTesters?limit=50" 2>/dev/null \
-  | python3 -c "import sys,json; t=[x['id'] for x in json.load(sys.stdin).get('data') or []]; print(t[0] if len(t)==1 else '')")
-if [ -n "$GRUPPE" ] && [ -n "$TESTER" ]; then
-  asc-api POST "/v1/betaGroups/$GRUPPE/relationships/betaTesters" "{\"data\":[{\"type\":\"betaTesters\",\"id\":\"$TESTER\"}]}" > /dev/null 2>&1
+# Tester: alle aus den internen Gruppen der anderen Apps des Teams. Kevin steht dort mit zwei Apple-Accounts (einer bei
+# Akquise Mobil, einer bei VoiceBridge); welcher auf dem iPad angemeldet ist, ist offen, also kommen beide in die Gruppe.
+# Interne Gruppen nehmen nur Nutzer von App Store Connect, deshalb nur Tester aus internen Gruppen.
+if [ -n "$GRUPPE" ]; then
+  python3 - "$GRUPPE" << 'PYEOF'
+import json, subprocess, sys
+
+gruppe = sys.argv[1]
+
+
+def api(*args):
+    r = subprocess.run(["asc-api", *args], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    return json.loads(r.stdout) if r.stdout.strip() else {}
+
+
+def ids(antwort):
+    return {x["id"] for x in (antwort or {}).get("data") or []}
+
+
+tester = set()
+for g in (api("GET", "/v1/betaGroups?limit=200") or {}).get("data") or []:
+    if g["id"] != gruppe and g["attributes"].get("isInternalGroup"):
+        tester |= ids(api("GET", f"/v1/betaGroups/{g['id']}/relationships/betaTesters?limit=200"))
+schon = ids(api("GET", f"/v1/betaGroups/{gruppe}/relationships/betaTesters?limit=200"))
+neu = sorted(tester - schon)
+if neu:
+    koerper = json.dumps({"data": [{"type": "betaTesters", "id": t} for t in neu]})
+    if api("POST", f"/v1/betaGroups/{gruppe}/relationships/betaTesters", koerper) is None:
+        print(f"==> Tester ließen sich nicht eintragen ({len(neu)}): in App Store Connect › TestFlight › Gruppe „Kevin“ selbst eintragen")
+    else:
+        print(f"==> Tester in der Gruppe „Kevin“: {len(schon) + len(neu)} ({len(neu)} neu)")
+elif schon:
+    print(f"==> Tester in der Gruppe „Kevin“: {len(schon)}")
+else:
+    print("==> Kein Tester gefunden: in App Store Connect › TestFlight › Gruppe „Kevin“ selbst eintragen")
+PYEOF
 fi
 echo "==> Hochgeladen: Build $NR. App Store Connect verarbeitet ihn (meist 5 bis 30 Minuten), danach steht er in TestFlight."
