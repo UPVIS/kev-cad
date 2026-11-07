@@ -128,8 +128,41 @@ def zeitlimit(ctx: PruefKontext) -> float:
     return min(ZEITLIMIT_S, max(0.05, float(vorne) - (time.perf_counter() - ctx.beginn)))
 
 
+# Vorlauf (B3, PLAN-PRUEFUNG-INKREMENTELL.md): Geometrie-Helfer rechnen die Wege seit Beginn der Prüfung; (Stand, Vorlauf)
+VORLAUF: tuple[Stand, Any] | None = None
+_LETZTE_MS = 0.0  # so lange brauchte der Bewegungsraum zuletzt samt Hintergrund (kleine Modelle rechnen ihn selbst)
+
+
+def vorlauf_starten() -> None:
+    """Zu Beginn der Prüfung eines echten Laufs (nicht der Versionen, nur mit Stufen; ``pruefung/lauf.py``): die Wege,
+    die nicht im Zwischenspeicher stehen, an die Geometrie-Helfer geben. Sie rechnen, während der Rechenprozess
+    Durchdringung, Druck, Statik und Montage prüft; ``pruefe_bewegungsraum`` holt die Ergebnisse ab. Scheitert hier
+    etwas, rechnet der Bewegungsraum wie bisher selbst."""
+    global VORLAUF
+    VORLAUF = None
+    stand = STAND
+    if stand.sammlung is None or stand.bericht is None:
+        return
+    try:
+        from .bewegungsraum import vorlauf
+
+        v = vorlauf(stand.sammlung, dict(stand.sammlung.aufgeloest or {}), dict(stand.formen),
+                    schluessel=dict(stand.schluessel), projekt=stand.projekt, boxen=dict(stand.boxen),
+                    letzte_ms=_LETZTE_MS)
+    except Exception as exc:  # noqa: BLE001
+        import sys
+        import traceback
+
+        print(f"Vorlauf des Bewegungsraums fehlgeschlagen, rechne selbst: {type(exc).__name__}: {exc}\n"
+              f"{traceback.format_exc(limit=6)}", file=sys.stderr)
+        return
+    if v is not None:
+        VORLAUF = (stand, v)
+
+
 def pruefe_bewegungsraum(ctx: PruefKontext) -> list[dict[str, Any]]:
     """Prüffunktion „bewegungsraum“ (registriert in pruefung/lauf.py, ganz am Ende)."""
+    global _LETZTE_MS
     t0 = time.perf_counter()
     stand = STAND
     if not _stand_passt(ctx, stand):
@@ -142,20 +175,27 @@ def pruefe_bewegungsraum(ctx: PruefKontext) -> list[dict[str, Any]]:
     # STAND, bevor der Hintergrund fertig ist
     sammlung, aufgeloest, formen = stand.sammlung, dict(stand.sammlung.aufgeloest or {}), dict(stand.formen)
     schluessel, projekt, boxen = dict(stand.schluessel), stand.projekt, dict(stand.boxen)
+    vorlauf = VORLAUF[1] if VORLAUF is not None and VORLAUF[0] is stand else None
     bewegungen, bew_befunde = bewegungen_pruefen(
         sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt, zeitlimit_s=zeitlimit(ctx), boxen=boxen,
-        abbrechen=ctx.abbrechen, offen=offen)
+        abbrechen=ctx.abbrechen, offen=offen, vorlauf=vorlauf)
     out = [als_pruefbefund(b) for b in bew_befunde]
     if bewegungen:
         ctx.ergebnis["bewegungen"] = bewegungen
+    ms = (time.perf_counter() - t0) * 1000
     if offen:
         def rechne(abbrechen: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+            global _LETZTE_MS
+            t1 = time.perf_counter()
             alle, befunde = bewegungen_pruefen(sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt,
-                                               zeitlimit_s=None, boxen=boxen, abbrechen=abbrechen)
+                                               zeitlimit_s=None, boxen=boxen, abbrechen=abbrechen, vorlauf=vorlauf)
+            _LETZTE_MS = ms + (time.perf_counter() - t1) * 1000
             return [als_pruefbefund(b) for b in befunde], {"bewegungen": alle}
 
         ctx.hintergrund["bewegungsraum"] = Fortsetzung(arten={"bewegungsraum"}, offen=list(offen), rechne=rechne)
-    ctx.zeiten["bewegungsraum"] = (time.perf_counter() - t0) * 1000
+    else:
+        _LETZTE_MS = ms
+    ctx.zeiten["bewegungsraum"] = ms
     return out
 
 

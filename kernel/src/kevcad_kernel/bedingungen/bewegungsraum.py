@@ -410,11 +410,24 @@ def _groesste(bs: list[Any]) -> Any:
     return max(bs, key=lambda b: round(float(b.volumen), 3))
 
 
-def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str],
-                    zeitlimit_s: float | None, abbrechen: Any = None, nur_gemerkt: bool = False
-                    ) -> dict[str, Any] | None:
-    """Ergebnis eines Wegs. ``nur_gemerkt``: None, wenn er nicht im Zwischenspeicher steht (nichts wird gerechnet)."""
-    t0 = time.perf_counter()
+@dataclass
+class _WegDaten:
+    """Was ein Weg braucht, bevor gerechnet wird: Stellungen, beteiligte Teile und der Schlüssel des Ergebnisses."""
+
+    werte: list[float]
+    lagen_liste: np.ndarray
+    bewegt: dict[str, Any]
+    statisch: dict[str, Any]
+    griffraum: bool
+    griff_kand: dict[str, Any]
+    key: tuple
+
+    def beteiligt(self) -> list[str]:
+        """Alle Teile, die das Rechnen des Wegs liest (für die Geometrie-Helfer, B2)."""
+        return list(dict.fromkeys([*self.bewegt, *self.statisch, *self.griff_kand]))
+
+
+def weg_daten(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str]) -> _WegDaten:
     werte = bew.werte()
     lagen_liste = np.array([bew.lage(w) for w in werte])
     bewegt = {n: formen[n] for n in bew.teile if n in formen}
@@ -440,6 +453,7 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
             lo, hi = _box(f)
             if np.all(lo < g_hi + 2 * rand) and np.all(hi > g_lo - 2 * rand):
                 griff_kand[n] = f
+
     def stand(teile: dict[str, Any]) -> tuple:
         return tuple(sorted((n, schluessel.get(n) or str(id(f))) for n, f in teile.items()))
 
@@ -450,6 +464,28 @@ def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str,
            bew.ist, tuple(round(float(w), 6) for w in werte), bew.freiraum, bew.bedienung, griffraum,
            None if bew.griff is None else tuple(np.round(bew.griff, 3)), bew.achse_teil, TOLERANZ, MIN_VOLUMEN,
            GRIFF_INNEN, AUFLAGE_TOL, stand(bewegt), stand(statisch), tuple(sorted(bew.ignorieren)), stand(griff_kand))
+    return _WegDaten(werte, lagen_liste, bewegt, statisch, griffraum, griff_kand, key)
+
+
+def gemerkt(daten: _WegDaten) -> dict[str, Any] | None:
+    hit = _CACHE.get(daten.key)
+    return None if hit is None else {**hit, "zwischenspeicher": True}
+
+
+def merken(daten: _WegDaten, ergebnis: dict[str, Any]) -> None:
+    """Ergebnis eines Wegs, das ein Geometrie-Helfer gerechnet hat, hier merken (wie nach dem eigenen Rechnen)."""
+    if not ergebnis.get("teilweise"):
+        _CACHE[daten.key] = {**ergebnis, "zwischenspeicher": False}
+
+
+def pruefe_bewegung(bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str],
+                    zeitlimit_s: float | None, abbrechen: Any = None, nur_gemerkt: bool = False,
+                    daten: _WegDaten | None = None) -> dict[str, Any] | None:
+    """Ergebnis eines Wegs. ``nur_gemerkt``: None, wenn er nicht im Zwischenspeicher steht (nichts wird gerechnet)."""
+    t0 = time.perf_counter()
+    d = daten or weg_daten(bew, formen, schluessel)
+    werte, lagen_liste, bewegt, statisch = d.werte, d.lagen_liste, d.bewegt, d.statisch
+    griffraum, griff_kand, key = d.griffraum, d.griff_kand, d.key
     hit = _CACHE.get(key)
     if hit is not None:
         return {**hit, "zwischenspeicher": True}
@@ -802,27 +838,37 @@ def _befunde(erg: dict[str, Any], hintergrund: bool = False) -> list[dict[str, A
 def bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any], *,
                        schluessel: dict[str, str], projekt: str | Path | None, zeitlimit_s: float | None,
                        boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None = None, abbrechen: Any = None,
-                       offen: list[str] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+                       offen: list[str] | None = None, vorlauf: Vorlauf | None = None
+                       ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Alle Wege prüfen: (Ergebnisse je Weg, Befunde). ``zeitlimit_s`` None: ohne Zeitlimit (Fertigrechnen im
     Hintergrund). ``abbrechen`` wird vor jeder exakten Rechnung aufgerufen und darf mit einer Ausnahme unterbrechen
     (was gerechnet ist, bleibt im Zwischenspeicher). ``offen``: Liste, in die die Namen der Wege kommen, die das
-    Zeitlimit nicht ganz geschafft haben; mit ihr sagen die Hinweise „wird im Hintergrund fertig gerechnet“."""
-    _BOXEN.clear()
-    for n, f in formen.items():
-        if boxen and n in boxen:
-            _BOXEN[id(f)] = boxen[n]
-    try:
+    Zeitlimit nicht ganz geschafft haben; mit ihr sagen die Hinweise „wird im Hintergrund fertig gerechnet“.
+    ``vorlauf``: Wege, die Geometrie-Helfer schon rechnen (``vorlauf``, B3); sie kommen von dort, sonst wie bisher."""
+    with _boxen_gesetzt(formen, boxen):
         return _bewegungen_pruefen(sammlung, aufgeloest, formen, schluessel=schluessel, projekt=projekt,
-                                   zeitlimit_s=zeitlimit_s, abbrechen=abbrechen, offen=offen)
-    finally:
+                                   zeitlimit_s=zeitlimit_s, abbrechen=abbrechen, offen=offen, vorlauf=vorlauf)
+
+
+class _boxen_gesetzt:
+    """Hüllquader der gezeigten Formen (aus der Vernetzung) für ``_box``, solange gerechnet wird."""
+
+    def __init__(self, formen: dict[str, Any], boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None) -> None:
+        self.formen, self.boxen = formen, boxen
+
+    def __enter__(self) -> None:
+        _BOXEN.clear()
+        for n, f in self.formen.items():
+            if self.boxen and n in self.boxen:
+                _BOXEN[id(f)] = self.boxen[n]
+
+    def __exit__(self, *exc: Any) -> None:
         _BOXEN.clear()
 
 
-def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any], *,
-                        schluessel: dict[str, str], projekt: str | Path | None, zeitlimit_s: float | None,
-                        abbrechen: Any = None, offen: list[str] | None = None
-                        ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    t0 = time.perf_counter()
+def wege_liste(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any],
+               projekt: str | Path | None) -> tuple[list[Bewegung], list[str]]:
+    """Die Wege des Stands (Gelenke aus model.py, dazu bewegungen.json) und Hinweise zu bewegungen.json."""
     liste: list[Bewegung] = []
     for c in sammlung.bedingungen:
         if isinstance(c, Gelenk) and c.id in aufgeloest:
@@ -840,10 +886,73 @@ def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
         if doppelt:
             hinweise.append(f"bewegungen.json: {len(doppelt)} Einträge übergangen, weil die Teile ein Gelenk in model.py "
                             f"haben ({', '.join(doppelt[:3])}{' …' if len(doppelt) > 3 else ''})")
+    return liste, hinweise
+
+
+@dataclass
+class Vorlauf:
+    """Wege, die Geometrie-Helfer seit Beginn der Prüfung rechnen (B3): die Liste wie in ``wege_liste``, je Index die
+    Daten des Wegs (Schlüssel) und der Auftrag bei den Helfern."""
+
+    liste: list[Bewegung]
+    hinweise: list[str]
+    daten: dict[int, _WegDaten]
+    auftrag: Any
+
+
+def vorlauf(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any], *,
+            schluessel: dict[str, str], projekt: str | Path | None,
+            boxen: dict[str, tuple[np.ndarray, np.ndarray]] | None, letzte_ms: float = 0.0) -> Vorlauf | None:
+    """Die Wege, die nicht im Zwischenspeicher stehen, gleich an die Geometrie-Helfer geben (B2, B3). None: rechnet
+    der Rechenprozess selbst (Helfer aus, kleines Modell, nichts zu rechnen, Start gescheitert)."""
+    from . import helfer
+
+    if helfer._POOL is not None:
+        helfer._POOL.abbrechen()  # ein neuer Stand: der alte Auftrag ist überholt
+    n = helfer.erzwungen()
+    if n == 0:
+        return None
+    if n is None and len(formen) < helfer.KLEIN_TEILE and letzte_ms < helfer.KLEIN_MS:
+        return None
+    with _boxen_gesetzt(formen, boxen):
+        liste, hinweise = wege_liste(sammlung, aufgeloest, formen, projekt)
+        daten: dict[int, _WegDaten] = {}
+        wege: list[tuple[int, Bewegung, list[str]]] = []
+        for i, bew in enumerate(liste):
+            d = weg_daten(bew, formen, schluessel)
+            if gemerkt(d) is None:
+                daten[i] = d
+                wege.append((i, bew, d.beteiligt()))
+    if not wege:
+        return None
+    auftrag = helfer.pool().auftrag(wege, formen, schluessel, boxen or {}, min(helfer.anzahl(), len(wege)))
+    if auftrag is None:
+        return None
+    return Vorlauf(liste, hinweise, daten, auftrag)
+
+
+def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]], formen: dict[str, Any], *,
+                        schluessel: dict[str, str], projekt: str | Path | None, zeitlimit_s: float | None,
+                        abbrechen: Any = None, offen: list[str] | None = None, vorlauf: Vorlauf | None = None
+                        ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    t0 = time.perf_counter()
+    if vorlauf is not None:
+        liste, hinweise = vorlauf.liste, list(vorlauf.hinweise)
+    else:
+        liste, hinweise = wege_liste(sammlung, aufgeloest, formen, projekt)
     ergebnisse, befunde = [], []
     hintergrund = offen is not None
-    for bew in liste:
+    for i, bew in enumerate(liste):
         rest = None if zeitlimit_s is None else zeitlimit_s - (time.perf_counter() - t0)
+        if vorlauf is not None and i in vorlauf.daten:
+            erg = _vom_helfer(vorlauf, i, bew, formen, schluessel, rest, abbrechen)
+            if erg is not None:
+                ergebnisse.append(erg)
+                if erg["teilweise"] and hintergrund:
+                    offen.append(bew.name)  # type: ignore[union-attr]
+                befunde.extend(_befunde(erg, hintergrund))
+                continue
+            rest = 0.0  # noch nicht da: wie nach dem Zeitlimit
         gemerkt = pruefe_bewegung(bew, formen, schluessel, 0.0, nur_gemerkt=True) if rest is not None and rest <= 0 \
             else None  # ein gemerkter Weg kostet nichts: auch nach dem Zeitlimit nehmen
         if gemerkt is not None:
@@ -876,3 +985,25 @@ def _bewegungen_pruefen(sammlung: Any, aufgeloest: dict[str, tuple[Bezug, Bezug]
 
         befunde.append(_befund(pruefung="bewegungsraum", teile=[], schwere="hinweis", text=h))
     return ergebnisse, befunde
+
+
+def _vom_helfer(vorlauf: Vorlauf, i: int, bew: Bewegung, formen: dict[str, Any], schluessel: dict[str, str],
+                rest: float | None, abbrechen: Any) -> dict[str, Any] | None:
+    """Ergebnis von Weg ``i`` aus dem Vorlauf: gemerkt, vom Helfer (dann hier gemerkt), bei Fehler oder totem Helfer
+    selbst gerechnet; None, wenn es in ``rest`` Sekunden nicht kommt (``rest`` None: warten)."""
+    from . import helfer
+
+    d = vorlauf.daten[i]
+    hit = gemerkt(d)
+    if hit is not None:
+        return hit
+    erg = vorlauf.auftrag.ergebnis(i, None if rest is None else max(0.0, rest), abbrechen)
+    if erg is None:
+        return None
+    if erg is helfer.Auftrag.FEHLT:
+        return pruefe_bewegung(bew, formen, schluessel, rest, abbrechen, daten=d)
+    merken(d, erg)
+    ms = vorlauf.auftrag.dauer_ms.get(i)
+    if ms is not None:
+        helfer.pool().dauer_merken(bew.name, ms)
+    return erg

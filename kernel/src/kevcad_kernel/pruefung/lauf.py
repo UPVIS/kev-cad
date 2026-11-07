@@ -27,6 +27,11 @@ Rechenprozess den Auftrag gleich dort (``auftrag.nach_statik``) und schickt eine
 offen noch Montage und Bewegungsraum) mit Druck, Statik und dem Auftrag (``festkoerper_auftrag``, nur zwischen
 Rechenprozess und Laufzeit). Die Laufzeit startet den FEM-Prozess damit sofort statt nach dem Ende der Prüfung über EXEC
 (das nimmt der Rechenprozess nur zwischen zwei Aufträgen an). Nicht für Läufe der Versionen und nur mit Stufen.
+
+Bewegungsraum von Beginn an (B2, B3): Gleich nach dem Aufbau der Körper gibt der Rechenprozess die Wege, die nicht im
+Zwischenspeicher stehen, an eigene Geometrie-Prozesse (``bedingungen/helfer.py``); an der Stelle des Bewegungsraums holt er
+ihre Ergebnisse ab, was noch fehlt, kommt wie bisher im Hintergrund. Ebenfalls nicht für Läufe der Versionen und nur mit
+Stufen.
 """
 
 from __future__ import annotations
@@ -143,8 +148,17 @@ class PruefLauf:
             opt["vorne_s"] = VORNE_S
         try:
             ks = self.koerper_fuer(erfassung, shown, daten.get("teile") or {})
+            vorlauf_ms = None
+            if stufen and run < SCHATTEN_RUN:
+                import time
+
+                t_vor = time.perf_counter()
+                _bedingungen.vorlauf_starten()  # B3: Bewegungsraum bei den Geometrie-Helfern, ab jetzt
+                vorlauf_ms = (time.perf_counter() - t_vor) * 1000
             erg, geo = pruefe(ks, daten.get("erklaerungen") or {}, opt, self.cache, abbrechen, self.stand_cache,
                               stufe if stufen else None, nach_statik=fem_stufe if stufen else None)
+            if vorlauf_ms is not None:
+                erg.setdefault("zeiten_ms", {})["bewegungsraum_vorlauf"] = round(vorlauf_ms, 1)
             zeiten = erg.get("zeiten_ms") or {}
             self._hinten_ms = max(self._hinten_ms, sum(float(zeiten.get(k) or 0.0) for k in HINTEN_ZEITEN))
             stand = frozenset((k.name, k.key) for k in ks)
