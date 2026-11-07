@@ -68,6 +68,9 @@ final class AppSession: ObservableObject {
     @Published var meldung: Meldung?
     /// V2-3: Menü „Benennen …“ (⇧⌘S) bittet die Kopfleiste, den Projektnamen zu bearbeiten (zählt hoch).
     @Published var umbenennenAnfrage = 0
+    /// iPad: Menü „Mit dem Mac koppeln …“ bittet das Hauptfenster, das Blatt zum Koppeln zu zeigen (zählt hoch). Am Mac
+    /// öffnet `ipadKoppelnZeigen()` das Fenster „iPad koppeln“.
+    @Published var kopplungsBlattAnfrage = 0
 
     struct Meldung: Equatable {
         var text: String
@@ -202,6 +205,11 @@ final class AppSession: ObservableObject {
     /// I-2b: Fenster „iPad koppeln“ zeigen (neuer QR-Code beim Öffnen).
     func ipadKoppelnZeigen() {
         openWindowAction?(id: WindowID.kopplung)
+    }
+    #else
+    /// iPad: Blatt zum Koppeln mit dem Mac zeigen (Menü Ablage, wie der Kopplungs-Chip oben).
+    func macKoppelnZeigen() {
+        kopplungsBlattAnfrage += 1
     }
     #endif
 
@@ -557,8 +565,8 @@ struct DateiWahl: Identifiable {
     var fertig: ([URL]) -> Void
 }
 
-/// Blätter auf dem iPad, die am Mac eigene Fenster sind.
+/// Blätter auf dem iPad, die am Mac eigene Fenster sind (Dokumente exportieren: am Mac ein Blatt am Projektfenster).
 enum PadBlatt: String, Identifiable {
-    case protokoll, lagerkatalog, zukauf, projekte
+    case protokoll, lagerkatalog, zukauf, projekte, export
     var id: String { rawValue }
 }

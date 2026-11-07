@@ -3,7 +3,7 @@ import SwiftUI
 
 // iPad-Hülle von Kev CAD (PLAN-IPAD.md, I2): Einstieg, Fenster, Statusleiste und Hinweis auf den Demomodus. Die Oberfläche
 // selbst ist dieselbe wie am Mac (app/Sources/KevCAD); was nur am Mac geht, steht dort hinter `#if os(macOS)`, die Hülle des
-// Mac (Menüs, Fenster, Tastaturwächter) liegt in app/Sources/KevCAD/Mac/.
+// Mac (Fenster, Tastaturwächter) liegt in app/Sources/KevCAD/Mac/. Die Menüs sind gemeinsam (app/Sources/KevCAD/Menues/).
 
 /// Einstieg der iPad-App: ein Fenster mit dem Hauptfenster der gemeinsamen Oberfläche, im Graphit-Look wie am Mac.
 @main
@@ -21,6 +21,9 @@ struct KevCADPadApp: App {
         // vorn, statt ein zweites Fenster zu öffnen (Info.plist: UIApplicationSupportsMultipleScenes aus).
         WindowGroup(id: WindowID.project) {
             PadHauptfenster(session: session)
+        }
+        .commands {
+            KevCADMenues(session: session)  // Menues/KevCADMenues.swift, dieselben Menüs wie am Mac (Menüleiste, ⌘ halten)
         }
     }
 }
@@ -101,6 +104,8 @@ struct PadHauptfenster: View {
         }
         // Der Mac kennt das iPad nicht mehr (Schlüssel passt nicht): gleich das Blatt zum neu Koppeln
         .onReceive(session.model.kopplung.$meldung.dropFirst()) { meldung in if meldung != nil { kopplungZeigen = true } }
+        // Menü Ablage › Mit dem Mac koppeln … (am Mac Ablage › iPad koppeln …)
+        .onChange(of: session.kopplungsBlattAnfrage) { _, _ in kopplungZeigen = true }
     }
 }
 

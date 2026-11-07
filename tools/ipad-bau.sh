@@ -237,15 +237,29 @@ if [ "$ART" = app ] || [ "$ART" = gesten ] || [ "$ART" = release ]; then
   NUR=()
   SIM_SPERRE=()
   if [ "$ART" = gesten ]; then
-    # KEVCAD_GESTEN_NUR=testName: nur dieser Test (kurze Runden)
-    NUR=("-only-testing:KevCADPadUITests${KEVCAD_GESTEN_NUR:+/GestenUITests/$KEVCAD_GESTEN_NUR}" -parallel-testing-enabled NO)
+    # KEVCAD_GESTEN_NUR=testName: nur dieser Test aus GestenUITests (kurze Runden);
+    # KEVCAD_IPAD_UITEST=Klasse[/Test] (etwa MenueUITests): nur diese Tests
+    NUR_ZIEL=${KEVCAD_IPAD_UITEST:-${KEVCAD_GESTEN_NUR:+GestenUITests/$KEVCAD_GESTEN_NUR}}
+    NUR=("-only-testing:KevCADPadUITests${NUR_ZIEL:+/$NUR_ZIEL}" -parallel-testing-enabled NO)
     SIM_SPERRE=(lockf -k /tmp/kevcad-ipad-sim.lock)
   fi
-  (cd app && ${SIM_SPERRE[@]+"${SIM_SPERRE[@]}"} lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj \
-    -scheme "$SCHEMA" -configuration "$KONF" -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 \
-    ONLY_ACTIVE_ARCH=YES KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" ${EXTRA[@]+"${EXTRA[@]}"} \
-    ${NUR[@]+"${NUR[@]}"} "$AKTION") > "$LOG" 2>&1
-  rc=$?
+  xc_app() {
+    (cd app && ${SIM_SPERRE[@]+"${SIM_SPERRE[@]}"} lockf -k /tmp/vb-xcodebuild.lock xcodebuild -project KevCAD.xcodeproj \
+      -scheme "$SCHEMA" -configuration "$KONF" -destination "$DEST" -derivedDataPath "$DD" "${CACHE[@]}" ARCHS=arm64 \
+      ONLY_ACTIVE_ARCH=YES KEVCAD_BUILD="$BUILD_NUMBER" KEVCAD_COMMIT="$COMMIT" ${EXTRA[@]+"${EXTRA[@]}"} "$@" "$AKTION")
+  }
+  if [ "$ART" = gesten ] && [ -z "${NUR_ZIEL:-}" ]; then
+    # Menüs zuerst in einem eigenen Lauf: ⌘-Kürzel kommen im Simulator nur beim ersten App-Start eines Testlaufs an
+    # (PLAN-IPAD.md, Erfahrungen), danach alle übrigen Oberflächentests
+    xc_app -only-testing:KevCADPadUITests/MenueUITests -parallel-testing-enabled NO > "$LOG" 2>&1
+    rc=$?
+    xc_app -only-testing:KevCADPadUITests -skip-testing:KevCADPadUITests/MenueUITests -parallel-testing-enabled NO >> "$LOG" 2>&1
+    rc2=$?
+    [ $rc -eq 0 ] && rc=$rc2
+  else
+    xc_app ${NUR[@]+"${NUR[@]}"} > "$LOG" 2>&1
+    rc=$?
+  fi
 else
   SIM_SPERRE=()
   [ "$AKTION" = test ] && SIM_SPERRE=(lockf -k /tmp/kevcad-ipad-sim.lock)

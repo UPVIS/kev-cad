@@ -1,8 +1,9 @@
 import KevCADCore
 import SwiftUI
 
-/// Menüs und Tastenkürzel. Einbuchstabige Kürzel wirken nur, wenn das Projektfenster vorne ist, und nicht, solange ein
-/// Textfeld den Fokus hat (siehe `KeyboardGuard`).
+/// Menüs und Tastenkürzel für Mac und iPad (Menüleiste, am iPad auch die Übersicht beim Halten von ⌘). Einbuchstabige
+/// Kürzel wirken nur, wenn das Projektfenster vorne ist, und nicht, solange ein Textfeld den Fokus hat (am Mac
+/// `KeyboardGuard`, am iPad gibt UIKit Textfeldern den Vorrang). Eingebunden über `KevCADMenues`.
 struct KevCADCommands: Commands {
     @ObservedObject var session: AppSession
     @ObservedObject var model: AppModel
@@ -11,6 +12,14 @@ struct KevCADCommands: Commands {
     @FocusedObject private var window: ProjectWindowState?
 
     private var hasProject: Bool { model.project != nil }
+    /// iPad-App (Titel einiger Einträge sagen dort, was sie auf dem iPad tun)
+    static var ipad: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
     /// Projektfenster vorne und 3D-Bereich sichtbar (in „Dokumente“ und „Material“ gelten deren Kürzel bzw. keine).
     private var inProject: Bool { window != nil && hasProject && window?.bereich == .modell }
     private var hasSelection: Bool { !model.selection.isEmpty }
@@ -63,18 +72,27 @@ struct KevCADCommands: Commands {
                     .disabled(recents.items.isEmpty)
             }
             Divider()
+            #if os(macOS)
             // I-2b (PLAN-IPAD.md): QR-Code für Kev CAD auf dem iPad, gekoppelte iPads verwalten
             Button("iPad koppeln …") { session.ipadKoppelnZeigen() }
                 .disabled(!(model.actions is KopplungsActions))
+            #else
+            // iPad: Blatt zum Koppeln (Scanner, Code einsetzen), wie der Kopplungs-Chip oben
+            Button("Mit dem Mac koppeln …") { session.macKoppelnZeigen() }
+            #endif
             // I-6: Gemeinsame oder Eigene Ansicht (am iPad am Kopplungs-Chip oben)
             AnsichtTeilenMenue(kopplung: model.kopplung, aktionen: model.actions as? KopplungsActions)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("model.py im Editor öffnen") { session.openModelInEditor() }
+            // Am iPad gibt es keinen Editor für model.py: dort geht die Datei vom Mac über das Teilen-Blatt weiter
+            Button(Self.ipad ? "model.py teilen …" : "model.py im Editor öffnen") { session.openModelInEditor() }
                 .keyboardShortcut("o", modifiers: [.command, .option])
                 .disabled(!hasProject)
+            #if os(macOS)
+            // nur am Mac: Finder; am iPad kommen Dateien einzeln über „Teilen“ (Export, model.py)
             Button("Projektordner im Finder zeigen") { session.revealProjectInFinder() }
                 .disabled(!hasProject)
+            #endif
         }
         CommandGroup(replacing: .importExport) {
             Menu("Exportieren") {
@@ -274,9 +292,23 @@ struct KevCADCommands: Commands {
             Divider()
             ModellUntermenues(session: session, model: model)  // V2-3: statt eigener Menüs in der Menüleiste
             Divider()
-            Button("Kernel neu starten") { model.actions?.restartKernel() }
+            // Am iPad läuft der Kernel am Mac: Neustart heißt dort, die Verbindung neu aufzubauen (`AppController.start`)
+            Button(Self.ipad ? "Verbindung zum Mac neu aufbauen" : "Kernel neu starten") { model.actions?.restartKernel() }
                 .keyboardShortcut("k", modifiers: [.command, .option])
         }
+
+        #if os(iOS)
+        // iPad: Am Mac sind Protokoll (⌥⌘L) und Lagerkatalog (⇧⌘K) eigene Fenster mit diesen Kürzeln im Menü „Fenster“
+        // (KevCADApp.swift); auf dem iPad gibt es eine Szene, dort öffnen dieselben Kürzel die Blätter, im Menü „Darstellung“
+        // (die Fensterliste ist für eigene Einträge unter iOS gesperrt).
+        CommandGroup(after: .sidebar) {
+            Button("Protokoll") { session.showLog() }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+            Button("Lagerkatalog") { session.showCatalog() }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+            Divider()
+        }
+        #endif
 
         // Hilfe
         CommandGroup(replacing: .help) {

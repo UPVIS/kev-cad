@@ -97,10 +97,36 @@ enum SelfTest {
             check(found || uebersetzt, "Menü: \(titel) auf \(zeichen == "\u{1B}" ? "Esc" : zeichen.uppercased())")
         }
 
+        // 4. Die ganze Menüleiste in Reihenfolge (Titel und Kürzel) in eine eigene Datei: Die Menüs sind seit I-9 gemeinsam
+        //    mit dem iPad (Menues/), ein Vergleich zweier Stände zeigt, ob sich am Mac etwas verschoben hat.
+        let abzug = menueAbzug(NSApp.mainMenu, tiefe: 0)
+        let ordner = ProcessInfo.processInfo.environment["KEVCAD_SELFTEST_AUSGABE"].map { URL(fileURLWithPath: $0) }
+            ?? AppInfo.supportDirectory  // kernel/tools/selbsttests.py holt den Ordner der Ausgabe zurück
+        let datei = ordner.appendingPathComponent("selftest-keys-menue.txt")
+        try? abzug.joined(separator: "\n").write(to: datei, atomically: true, encoding: .utf8)
+        lines.append("Menüleiste: \(abzug.count) Einträge in \(datei.lastPathComponent)")
+
         demo.showAll()
         demo.setStandardView(.iso)
         window.makeFirstResponder(nil)
         finish(lines, passed: passed)
+    }
+
+    /// Eine Zeile je Menüeintrag: Einrückung, Titel, Kürzel (⌃⌥⇧⌘ und Taste).
+    private static func menueAbzug(_ menu: NSMenu?, tiefe: Int) -> [String] {
+        guard let menu else { return [] }
+        return menu.items.flatMap { item -> [String] in
+            let einzug = String(repeating: "  ", count: tiefe)
+            var zeile = einzug + (item.isSeparatorItem ? "---" : item.title)
+            if !item.keyEquivalent.isEmpty {
+                let m = item.keyEquivalentModifierMask
+                let mods = (m.contains(.control) ? "⌃" : "") + (m.contains(.option) ? "⌥" : "")
+                    + (m.contains(.shift) ? "⇧" : "") + (m.contains(.command) ? "⌘" : "")
+                let taste = item.keyEquivalent.unicodeScalars.map { String(format: "U+%04X", $0.value) }.joined()
+                zeile += "  [\(mods)\(taste)]"
+            }
+            return [zeile] + menueAbzug(item.submenu, tiefe: tiefe + 1)
+        }
     }
 
     private static func finish(_ lines: [String], passed: Bool) {

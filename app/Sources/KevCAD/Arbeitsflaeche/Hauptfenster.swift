@@ -572,7 +572,7 @@ private struct PadBlattAnsicht: View {
             inhalt
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    if blatt != .zukauf {
+                    if blatt != .zukauf && blatt != .export {  // beide haben eigene Knöpfe zum Schließen
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Fertig") { session.padBlatt = nil }
                         }
@@ -595,6 +595,9 @@ private struct PadBlattAnsicht: View {
                 .navigationTitle("Zukaufteil hinzufügen")
         case .projekte:
             ProjekteBlatt(model: model).navigationTitle("Projekte")
+        case .export:  // Ablage › Dokumente exportieren … (⇧⌘E), am Mac `ExportDialogFenster`
+            ExportDialog(model: model, vorauswahl: nil) { session.padBlatt = nil }
+                .navigationTitle("Dokumente exportieren")
         }
     }
 }

@@ -59,15 +59,7 @@ struct KevCADApp: App {
         .defaultLaunchBehavior(.presented)
         .restorationBehavior(.disabled)
         .commands {
-            KevCADCommands(session: session, model: session.model, recents: session.recents)
-            OberflaechenCommands(session: session, model: session.model, oberflaeche: session.model.oberflaeche)
-            DemoCommands(session: session)
-            StockCommands(session: session, model: session.model)
-            BestandCommands(model: session.model)
-            ZukaufCommands(session: session, model: session.model)
-            DokumenteCommands(model: session.model)  // Ablage › Drucken
-            DokumenteExportCommands(session: session, model: session.model)  // Dokumente exportieren (⇧⌘E)
-            RenderCommands(model: session.model)  // Phase 7: Rendern … (⌥⌘R)
+            KevCADMenues(session: session)  // Menues/KevCADMenues.swift, dieselben Menüs wie am iPad
         }
 
         Window("Protokoll", id: WindowID.log) {

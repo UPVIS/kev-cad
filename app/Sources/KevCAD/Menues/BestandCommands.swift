@@ -13,7 +13,9 @@ struct BestandCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .importExport) {
-            Button("Einkaufsliste als CSV exportieren") { EinkaufExport.sichern(model) }
+            Button(KevCADCommands.ipad ? "Einkaufsliste als CSV teilen …" : "Einkaufsliste als CSV exportieren") {
+                EinkaufExport.ausMenue(model)
+            }
                 .disabled(model.project == nil || model.materialDaten.einkauf.isEmpty)
             Divider()
             Button("Gebaut …") { BestandUI.shared.zeigeGebaut() }

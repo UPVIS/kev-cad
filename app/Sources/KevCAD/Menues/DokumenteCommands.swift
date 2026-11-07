@@ -66,3 +66,25 @@ struct DokumenteCommands: Commands {
         }
     }
 }
+
+/// Menüpunkt: Ablage › Dokumente exportieren … (⇧⌘E). ⌘P und ⌥⌘P gehören den Blättern (P6-A1). Am Mac ein Blatt am
+/// Projektfenster (`ExportDialogFenster`, Mac/ExportFenster.swift), auf dem iPad dieselbe Ansicht als Blatt (`padBlatt`).
+struct DokumenteExportCommands: Commands {
+    @ObservedObject var session: AppSession
+    @ObservedObject var model: AppModel
+
+    var body: some Commands {
+        CommandGroup(after: .importExport) {
+            Button("Dokumente exportieren …") {
+                #if os(macOS)
+                ExportDialogFenster.zeige(session: session, model: model)
+                #else
+                model.exportActions?.exportVorlagenLaden()
+                session.padBlatt = .export
+                #endif
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .disabled(model.project == nil || model.exportActions == nil)
+        }
+    }
+}

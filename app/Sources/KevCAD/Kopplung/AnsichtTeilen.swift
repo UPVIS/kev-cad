@@ -154,16 +154,18 @@ struct AnsichtTeilenKapsel: View {
     }
 }
 
-/// Menü Ablage › Ansicht mit dem iPad: dieselben Einträge (beobachtet den Zustand, damit der Haken stimmt).
+#endif
+
+/// Menü Ablage › Ansicht mit dem iPad (am iPad: mit dem Mac): dieselben Einträge (beobachtet den Zustand, damit der Haken
+/// stimmt). Gemeinsame Menüs für Mac und iPad (Menues/).
 struct AnsichtTeilenMenue: View {
     @ObservedObject var kopplung: KopplungsStore
     let aktionen: KopplungsActions?
 
     var body: some View {
-        Menu("Ansicht mit dem iPad") {
+        Menu(KevCADCommands.ipad ? "Ansicht mit dem Mac" : "Ansicht mit dem iPad") {
             AnsichtTeilenEintraege(kopplung: kopplung, aktionen: aktionen)
         }
         .disabled(aktionen == nil)
     }
 }
-#endif

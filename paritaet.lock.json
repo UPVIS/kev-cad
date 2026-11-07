@@ -1,54 +1,24 @@
 {
  "huellen": {
-  "app/Sources/KevCAD/Mac/AnimationCommands.swift": {
-   "summe": "873bdf3fb7a1d4fb00fe46ab7c6d416a59f0ca1ea91455293ca8327074657eb1"
-  },
-  "app/Sources/KevCAD/Mac/BestandCommands.swift": {
-   "summe": "b59bf288dd30e8fee4b2bf3f10942b1359436c8fd194729e5fab3ca824c5c98c"
-  },
-  "app/Sources/KevCAD/Mac/Commands.swift": {
-   "summe": "cf732c49b2750fc259535d04b1bd368137f1be85fc9933edf0b3a4e57e6f0840"
-  },
-  "app/Sources/KevCAD/Mac/DokumenteCommands.swift": {
-   "summe": "57d8002988515106d9701ac55f59b04d50ed105ea738e1d038817c94356e39ad"
-  },
   "app/Sources/KevCAD/Mac/ExportFenster.swift": {
-   "summe": "0e709a2125725bd311c30ebbe12a58aec8bd9329fd599a3cab58ac4ff3c76547"
+   "summe": "bc8bb76ec1b7c6875760faaf1426b0a67e5707ff403b0a292e81e9fa51c9a406"
   },
   "app/Sources/KevCAD/Mac/FensterRand.swift": {
    "summe": "f413e867371251728faff4a95037ca2a741bee4c8fb6c85d50b94aefee0eed0f"
   },
   "app/Sources/KevCAD/Mac/KevCADApp.swift": {
    "gegenstueck": "app/Sources/KevCADPad/KevCADPadApp.swift",
-   "gegenstueck_summe": "aa35216b3ee956ffa6e8960e584c8a9f4cc13d18c6ee2b7349f9875a7a2e00e7",
-   "summe": "623f30f6cf9d5318938c04575452d368760a38461a7b4b2b990f6b0ca4487d49"
+   "gegenstueck_summe": "72e679df0cf3d21938b0b0331eeba9eca1ee64f98452bbc3f53251b5f0a40e24",
+   "summe": "7f4bf6eb995820d0a2cbd6cba29604610b00a5af66966d88bfbe16ce56e33e3d"
   },
   "app/Sources/KevCAD/Mac/KeyboardGuard.swift": {
    "summe": "5285c5e06c491208487dd58788e71aab1dd6897e3322b93f6075fa50bb1ded29"
   },
-  "app/Sources/KevCAD/Mac/MaterialCommands.swift": {
-   "summe": "f5d7e1f73269efbd04060d80cef24ab5db126b7852525c0186d139dfb22346a1"
-  },
-  "app/Sources/KevCAD/Mac/OberflaechenCommands.swift": {
-   "summe": "61bbcf7865b360aa5f2c9bb44114fd28eae2877d6a2e23636c834803e253c8f2"
-  },
-  "app/Sources/KevCAD/Mac/RenderCommands.swift": {
-   "summe": "148c7f8eaa555ae58ad39b041721808c1f46950946b6f8f16671a1d315d196f0"
-  },
-  "app/Sources/KevCAD/Mac/StockCommands.swift": {
-   "summe": "1a170e8667b1690aec38cd8fda2b92529c1f906444dd92cc7c936507212eb83e"
-  },
-  "app/Sources/KevCAD/Mac/VersionenCommands.swift": {
-   "summe": "20234e9f6e500fc3f240e4743aa1c12d007d48a3157ca1583c5a5b30fdb09bfe"
-  },
   "app/Sources/KevCAD/Mac/WindowPlacement.swift": {
    "summe": "86d88c9adbe2b767b906bb816af986c0642d618d2a4e9cd0ddb8b5897a649ca0"
   },
-  "app/Sources/KevCAD/Mac/ZukaufCommands.swift": {
-   "summe": "57c7ade510069a2dd5579bde34572304e7f9b63ea5c3dffb3778138b1bdba810"
-  },
   "app/Sources/KevCADPad/PadTestZustand.swift": {
-   "summe": "c173ae37c0cd8847da9ddd1b1de9ce27cb9f2112c397065b84624dc9346b226f"
+   "summe": "049d6010b8864b4bc4b6ee7b7adea44ce179d7e02ae3ecc669a40f50e664fad6"
   },
   "app/Sources/KevCADPad/RandWischen.swift": {
    "summe": "53e7a4434ca1192ba7714a501c2f0a8fc30e4657c43c2ecf75c73886c68eb19b"

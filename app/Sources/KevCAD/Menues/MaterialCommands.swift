@@ -37,7 +37,9 @@ struct MaterialMenue: View {
                     abgehakt: material?.abgehakt.schluessel ?? []))
             }
             .disabled(d.einkauf.isEmpty)
-            Button("Einkaufsliste als CSV sichern") { EinkaufExport.sichern(model) }
+            Button(KevCADCommands.ipad ? "Einkaufsliste als CSV teilen …" : "Einkaufsliste als CSV sichern") {
+                EinkaufExport.ausMenue(model)
+            }
                 .disabled(model.project == nil || d.einkauf.isEmpty)
             Button("Zukaufteil hinzufügen …") { session.showZukaufDialog() }
             Divider()

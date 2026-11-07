@@ -6,24 +6,14 @@
     "app/Sources/KevCAD/Mac/KevCADApp.swift": "app/Sources/KevCADPad/KevCADPadApp.swift"
   },
   "nur_mac": {
-    "app/Sources/KevCAD/Mac/Commands.swift": "Menüleiste des Mac; am iPad erreicht man die Befehle über Oberfläche, Gesten und den Befehlskatalog (I-4). Neuer Menübefehl: iPad-Weg im selben Schritt",
-    "app/Sources/KevCAD/Mac/AnimationCommands.swift": "Menü Animation; am iPad Leiste der Animationskachel",
-    "app/Sources/KevCAD/Mac/BestandCommands.swift": "Menüpunkte Bestand; am iPad im Bereich Material",
-    "app/Sources/KevCAD/Mac/DokumenteCommands.swift": "Menü Dokumente; am iPad Werkzeugleiste des Bereichs Dokumente",
-    "app/Sources/KevCAD/Mac/MaterialCommands.swift": "Menü Material; am iPad im Bereich Material",
-    "app/Sources/KevCAD/Mac/OberflaechenCommands.swift": "Untermenüs des Menüs Modell; am iPad Kopfleiste, Kacheln und Befehlskatalog (I-4)",
-    "app/Sources/KevCAD/Mac/RenderCommands.swift": "Menüpunkt Rendern; am iPad Kachel Rendern",
-    "app/Sources/KevCAD/Mac/StockCommands.swift": "Menüpunkte Stückliste; am iPad Kachel Stückliste",
-    "app/Sources/KevCAD/Mac/VersionenCommands.swift": "Menü Versionen; am iPad Versionsleiste",
-    "app/Sources/KevCAD/Mac/ZukaufCommands.swift": "Menüpunkt Zukaufteil; am iPad über das Teilen-Blatt aus Safari (I-8)",
     "app/Sources/KevCAD/Mac/KeyboardGuard.swift": "NSEvent-Monitor gegen Menükürzel in Textfeldern; UIKit leitet Tasten an Textfelder, kein Gegenstück nötig",
     "app/Sources/KevCAD/Mac/FensterRand.swift": "Fenster an den Bildschirmrand (AppKit); am iPad übernehmen Stage Manager und geteilter Bildschirm",
     "app/Sources/KevCAD/Mac/WindowPlacement.swift": "Testfenster auf dem zweiten Monitor; das iPad läuft im Simulator",
-    "app/Sources/KevCAD/Mac/ExportFenster.swift": "Dialog Dokumente exportieren als NSWindow-Blatt; am iPad als SwiftUI-Blatt aus dem Bereich Dokumente"
+    "app/Sources/KevCAD/Mac/ExportFenster.swift": "Dialog Dokumente exportieren als NSWindow-Blatt; am iPad dieselbe Ansicht als SwiftUI-Blatt (padBlatt .export, Menü Ablage, Bereich Dokumente)"
   },
   "pruefungen_nur_mac": {
     "_hinweis": "I-9: Selbsttests, die nur am Mac laufen, und womit das iPad dasselbe prüft. Nur Doku, die Prüfung liest den Schlüssel nicht.",
-    "Tastenkürzel über NSEvent (Dokumente-, Viewer-, Oberflächen-Selbsttest)": "NSEvent und Menüs gibt es am iPad nicht; die Hardware-Tastatur geht dort über pressesBegan und keyCommands (BlattLeinwand), Gesten prüft XCUITest (tools/ipad-bau.sh gesten)",
+    "Tastenkürzel über NSEvent (Dokumente-, Viewer-, Oberflächen-Selbsttest)": "NSEvent gibt es am iPad nicht; die Menüs sind gemeinsam (app/Sources/KevCAD/Menues), ihre Kürzel prüft XCUITest MenueUITests mit typeKey, die übrige Hardware-Tastatur geht über pressesBegan und keyCommands (BlattLeinwand), Gesten prüft XCUITest (tools/ipad-bau.sh gesten)",
     "Fenster an den Rand, eigene Fenster (Protokoll, Lagerkatalog, Zukauf)": "Das iPad hat eine Szene; die Fenster sind dort Blätter (padBlatt), PadSelbsttest prüft sie",
     "Bilder von außen (screencapture, Fensterbild über MCP in AppController+Flaeche)": "Am iPad macht der Selbsttest seine Bilder selbst (drawHierarchy), der Kettentest dazu simctl io screenshot",
     "Klick in die Bildmitte trifft den Viewer (AppController+SelfTest)": "Am iPad tippen die Gesten-Tests von außen wie ein Finger",

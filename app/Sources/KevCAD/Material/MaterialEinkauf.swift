@@ -436,6 +436,25 @@ struct EinkaufCSVDatei: Transferable {
 /// Normteilen zum Abzählen und Filament) und byteweise wie der Export des Kernels.
 @MainActor
 enum EinkaufExport {
+    /// Aus dem Menü (Ablage, Modell › Material): am Mac in output/ sichern und im Finder zeigen; am iPad liegt der
+    /// Projektordner auf dem Mac, dort entsteht die CSV im Zwischenspeicher und geht über das Teilen-Blatt weiter.
+    static func ausMenue(_ model: AppModel) {
+        #if os(macOS)
+        _ = sichern(model)
+        #else
+        guard model.project != nil else { return }
+        let ordner = FileManager.default.temporaryDirectory.appendingPathComponent("Kev CAD Teilen", isDirectory: true)
+        let datei = ordner.appendingPathComponent(EinkaufslisteFormat.dateiname(projekt: model.project?.name ?? "Projekt"))
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+            try MaterialText.einkaufCSV(model.materialDaten).write(to: datei, atomically: true, encoding: .utf8)
+            Dateiablage.teilen([datei])
+        } catch {
+            model.append(LogLine(level: .error, text: "Einkaufsliste nicht geteilt: \(error.localizedDescription)"))
+        }
+        #endif
+    }
+
     @discardableResult
     static func sichern(_ model: AppModel, zeigen: Bool = true) -> URL? {
         guard let p = model.project else { return nil }

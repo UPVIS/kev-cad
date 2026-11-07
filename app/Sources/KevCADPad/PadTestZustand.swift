@@ -2,7 +2,7 @@
 import KevCADCore
 import SwiftUI
 
-/// Gesten-Tests (I-3b, UITests/KevCADPad): Mit `KEVCAD_PAD_UITEST=1` legt die App ein unsichtbares Element mit dem
+/// Gesten- und Menü-Tests (I-3b, I-9, UITests/KevCADPad): Mit `KEVCAD_PAD_UITEST=1` legt die App ein unsichtbares Element mit dem
 /// Zustand des Viewers in den Bedienbaum, damit der XCUITest prüfen kann, was Tippen, Doppeltippen, langes Drücken und
 /// 2/3 Finger tippen bewirkt haben. Nur in Debug-Bauten und nur auf dem iPad: Am Mac prüfen die Selbsttests der App
 /// (`KEVCAD_SELFTEST`) direkt am App-Kern, dort gibt es keine Gesten zu simulieren.
@@ -40,6 +40,11 @@ struct PadTestZustand: View {
             ("drehung", kamera.map { q in [q.rotation.vector.x, q.rotation.vector.y, q.rotation.vector.z, q.rotation.vector.w]
                 .map { String(format: "%.5f", $0) }.joined(separator: ",") } ?? ""),
             ("mehrfach", m.viewer.mehrfach ? "1" : "0"),
+            // Menü-Tests (MenueUITests): Kacheln, Projektion, Blatt
+            ("kacheln", m.oberflaeche.kacheln.map(\.rawValue).joined(separator: ",")),
+            ("ortho", m.orthographic ? "1" : "0"),
+            ("blatt", session.padBlatt?.rawValue ?? ""),
+            ("umbenennen", "\(session.umbenennenAnfrage)"),
         ]
         return werte.map { "\($0.0)=\($0.1)" }.joined(separator: ";")
     }
