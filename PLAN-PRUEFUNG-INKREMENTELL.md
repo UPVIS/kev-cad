@@ -726,6 +726,12 @@ Rechenprozess (7,8 → 12,2 s) und bestimmt mit der FEM (Ende 13,0 s) den Endsta
   Kernel, Last bis 146) in das Zeitlimit der Montage (60 s, 110 Einheiten offen, daher „1 Teil nicht einbaubar“), sonst
   gleich. Wiederholt bei Last 9 bis 11 (`20261108-094827-b4-nachprobe`, `kalt;laufrolle_l=90`, Probe Schritt 1): gleich;
   Endstand 9,2 s, Montage 1,7 s. Kern-Tests auf dem Mac mini mit B2 und B4: 1370 bestanden.
+- Messung bei mäßiger Last (08.11.2026 ab 10:34, Last 7 beim Start, 12 bis 14 während der Messung; `…-ruhig-basis`
+  mit cc8ec4a gegen `…-ruhig-neu` mit 5d717de, direkt nacheinander). Prüfung nach dem Lauf (Endstand minus Lauf):
+  `laufrolle_l=90` 7,8 → 6,2 s, `laufrolle_l=95` 8,9 → 7,1 s, kalt 21,1 → 12,2 s. Den Unterschied macht hier vor allem
+  die Statik (4,5 bis 5,0 → 2,8 bis 3,3 s: B2, die Helfer hatten Luft); die Montage blieb bei 1,4 bis 1,9 s (B4 wirkt vor
+  allem unter hoher Last). Im neuen Stand dauerte der Lauf bei `laufrolle_l=90` einmal 6,0 statt 2,5 s (Modell 4,0 statt
+  1,8 s), das hat mit B2 und B4 nichts zu tun.
 
 ## Übergabe (08.11.2026): Punktlasten relativ zum Teil (Aufgabe 2, zurückgestellt)
 
