@@ -699,3 +699,68 @@ Rechenprozess (7,8 → 12,2 s) und bestimmt mit der FEM (Ende 13,0 s) den Endsta
   `_ohne_mechanismen`, Schwelle 1e-13); Beweglichkeit meldet die Statik getrennt. Die Bewertung teilt nicht mehr durch
   eine Knicklast von 0. Am Kugelschieber in allen 16 Knickproblemen dieselbe Knicklast wie vorher. Voller Lauf auf dem
   Mac mini danach grün (1369 bestanden).
+
+### B2 für die Statik-Schnitte (08.11.2026, Entscheidung Kevin)
+
+- `statik/bauteil.py` `schnitte`: Die sechs Schnitte je Teil und Lage (`SCHNITTE`) verteilt `helfer.schnitte_verteilen`
+  reihum auf den Rechenprozess und die bereiten Geometrie-Helfer (Nachricht `schnitte`, die Form geht als Formschlüssel
+  plus BREP wie beim Bewegungsraum). Der Rechenprozess rechnet seinen Anteil selbst und nimmt danach fehlende Schnitte
+  auch der Helfer selbst (wer zuerst fertig ist, gewinnt), denn die Helfer sind während der Statik oft noch mit dem
+  Bewegungsraum belegt (nice 5). Ohne bereiten Helfer, mit `KEVCAD_GEO_HELFER=0` oder `KEVCAD_STATIK_HELFER=0` wie vorher
+  der Reihe nach. Ergebnis Bit für Bit gleich (`test_statik_schnitte_ueber_die_helfer_gleich`).
+- Gemessen: Schnitte im Schritt `laufrolle_l=90` 2,0 s (Last 15 bis 20) bzw. 2,5 s (Last 25 bis 50) statt 2,5 s bei
+  Last 5 bis 7; der Rechenprozess rechnete 28 bis 49 von 84 Schnitten selbst. Die 0,9 s aus dem Plan erreicht das nur mit
+  freien Helfern; der Bewegungsraum belegt sie in dieser Phase.
+
+### B4 Montageplanung beschleunigt (08.11.2026, Entscheidung Kevin)
+
+- `pruefung/montage.py`: `sperrt` merkt sich je Planung (Teil, Hindernis, Richtung) ab dem Planen, `_richtung` die
+  Hüllrechtecke je Richtung über die Bytes des Vektors, `kandidaten` und `frei` nehmen den Rest als Maske über alle Teile
+  statt die Liste je Aufruf neu umzurechnen. `pruefung/raster.py`: `rastern` lässt Dreiecke außerhalb des Gitters vorab
+  weg (`tri_grenzen`, je Projektion gemerkt; dieselben Bedingungen wie im Raster, Ergebnis bitgleich, geprüft an 480
+  Rastern). Den alten Plan wiederverwenden war nicht nötig.
+- Gemessen (Wanduhr `montage.Planer.plane`): 1,9 bzw. 2,6 s bei Last 25 bis 50 (vorher 4,6 bzw. 7,5 s bei Last 29 bis 39,
+  1,5 bzw. 2,0 s bei Last 5 bis 7). Rund die Hälfte steckt danach in `raster.blockiert` für die Paare, die der
+  Schritt wirklich neu stellt (258 Prüfungen), der Rest in den zweistufigen Wegen.
+
+## Übergabe (08.11.2026): Punktlasten relativ zum Teil (Aufgabe 2, offen)
+
+Kevin, 08.11.2026: „Fangrolle und Schieberolle sollen aus dem Zwischenspeicher kommen, wenn sich nur ihre Lage ändert
+und die Last am Teil gleich bleibt. Ergebnis muss gleich bleiben, mit Test.“
+
+**Befund vorab:** Im Messmodell ändert `laufrolle_l` die Länge der Rollen (Fangrolle 100 → 90 → 95 mm, Sicherheit 175,9 →
+162,0 → 169,2). Dort kann kein Zwischenspeicher greifen. Einen reinen Lagewechsel gibt `vorn_luft` (Schritte
+`kalt;vorn_luft=6;vorn_luft=8`, Ablage `…-vl`, Last über 100): Die Fangrolle wird 2,15 s neu gerechnet und ist der
+längste FEM-Pfad, alle anderen Teile kommen in 0,1 bis 0,2 s aus dem Speicher.
+
+**Warum ein Schlüssel allein nicht reicht:** Netz (`_netz_schluessel` über `schluessel_teil` = Weltschlüssel),
+Einheitsfälle und Fallschlüssel (`auftrag.py` Zeile ~553: `k.key`, Nachbarschlüssel, Lasten in Weltkoordinaten) hängen an
+der Weltlage. Gmsh vernetzt ein verschobenes Teil anders; ein Ergebnis, das nur verschoben zurückgegeben wird, wiche von
+einem frisch gerechneten um die Netzabweichung ab (bis 1 %, siehe A5). Gleich bleibt es nur, wenn jedes Teil immer in
+seinem eigenen System gerechnet wird.
+
+**Entwurf (A5 plus relative Schlüssel):**
+
+1. `auftrag.py` beim Aufbau von `T`: BREP ohne Lage schreiben (`k.shape.Located(TopLoc_Location())`, dieselbe Form wie
+   `koerper.form_schluessel`), `T["lage"]` = `k.lage`, `schluessel_teil` = `k.form`. Ins Teilsystem umrechnen
+   (x_l = Rᵀ(x_w − t), Vektoren v_l = Rᵀ v_w): Nachbarnetze (`nachbar_npz`), Lagerflächen (`lager_npz`) und ihre
+   Richtungen (`gehalten`, `drehachsen`, `normale`), Flächen ganzer Lasten (`flaechen_netz`), Lasten (`kraft`, `moment`,
+   `punkt`), `feld`, `schicht`, `ausrichtungen`, `bmin`/`bmax` (Hülle im Teilsystem, sonst hängt die Größe der Ersatzfläche
+   an der Drehung). Die Lasten in Weltkoordinaten als `lasten_welt` daneben für die Ausgabe.
+2. Fallschlüssel: `k.form` statt `k.key`, je Nachbar Formschlüssel plus relative Lage (`_rel_schluessel` wie im
+   Bewegungsraum, gerundet) statt Weltschlüssel, Lasten und Feld im Teilsystem. `VERSION`/`RECHENSTAND` erhöhen.
+3. `prozess.py`: rechnet unverändert, aber im Teilsystem. Am Ende von `rechne_teil` jedes Ergebnis (aus dem Speicher und
+   frisch, dieselbe Funktion) in die Welt drehen: `ort`, `ort_lagerrand`, `verformung_ort`, `lagerkraefte`, `kraft_n`,
+   `eigengewicht_n`, `lasten` (aus `lasten_welt`), `_felder.punkte`, `_felder.verschiebung`; in `grenzen_suchen` den `ort`.
+   Die Dateien unter `faelle/` bleiben im Teilsystem.
+4. `laufzeit.py` `_fk_feld_senden` liest `faelle/<schluessel>.npz` direkt und schickt `punkte`/`verschiebung` an die App:
+   dort ebenfalls mit der Lage des Teils drehen (Lage im Kopf des Falls mitgeben).
+5. A6 (`vorab_teile`): Vorlage aus dem Teilsystem übernehmen; `geaendert` dann über Form und relative Lage der Nachbarn.
+6. `topologie/auftrag.py` nutzt `faelle`, `lager_npz`, `_toleranz`, `_werkstoff` aus `auftrag.py`: dort nichts ändern
+   (Umrechnung nur im Aufbau von `T`).
+7. Tests (`test_festkoerper.py`): Teil verschoben und gedreht, Last am Teil gleich → aus dem Speicher (`aus_speicher`),
+   Ergebnis in der Welt gleich dem frisch gerechneten (Bit für Bit, frisch im neuen Ablauf); andere Last → neu; Feld an
+   die App liegt an der Weltlage. Danach Gleichheitsprobe mit `--schritte "kalt;vorn_luft=6;vorn_luft=8" --probe`.
+
+Erwarteter Gewinn: im Schritt `vorn_luft=6` die FEM der Fangrolle (bei Last 5 bis 7 rund 1,2 s, unter Last 2,2 s) fällt
+weg; bei `laufrolle_l` nichts.

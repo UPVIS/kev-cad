@@ -60,15 +60,34 @@ def _expand(starts: np.ndarray, counts: np.ndarray) -> tuple[np.ndarray, np.ndar
     return owner, starts[owner] + (np.arange(total) - offs[owner])
 
 
-def rastern(uvw: np.ndarray, tri: np.ndarray, g: Gitter, modus: str) -> np.ndarray:
+def tri_grenzen(proj, tri: np.ndarray) -> np.ndarray:
+    """Hüllrechtecke der Dreiecke einer Projektion (umin, umax, vmin, vmax je Dreieck), an der Projektion gemerkt."""
+    gr = getattr(proj, "_tri_grenzen", None)
+    if gr is None or len(gr) != len(tri):
+        P = proj.uvw[tri]
+        gr = np.stack([P[:, :, 0].min(axis=1), P[:, :, 0].max(axis=1),
+                       P[:, :, 1].min(axis=1), P[:, :, 1].max(axis=1)], axis=1) if len(tri) else np.zeros((0, 4))
+        proj._tri_grenzen = gr
+    return gr
+
+
+def rastern(uvw: np.ndarray, tri: np.ndarray, g: Gitter, modus: str, grenzen: np.ndarray | None = None) -> np.ndarray:
     """Kleinste (``modus="min"``) oder größte Tiefe je Pixel; leer = +inf bzw. -inf. Form (nu, nv).
 
     Zeilenweise (Scanline): je Dreieck und Pixelzeile das Intervall der Pixelmitten im Dreieck, die Tiefe aus der
-    Ebenengleichung des Dreiecks."""
+    Ebenengleichung des Dreiecks. ``grenzen`` (aus ``tri_grenzen``): Dreiecke außerhalb des Gitters vorab weglassen;
+    dieselben Bedingungen wie unten, das Ergebnis bleibt bitgleich."""
     leer = np.inf if modus == "min" else -np.inf
     buf = np.full(g.nu * g.nv, leer)
     if not len(tri):
         return buf.reshape(g.nu, g.nv)
+    if grenzen is not None:
+        vor = ((grenzen[:, 1] >= g.u0) & (grenzen[:, 0] <= g.u0 + g.nu * g.h)
+               & (np.floor((grenzen[:, 3] - g.v0) / g.h - 0.5) >= 0)
+               & (np.ceil((grenzen[:, 2] - g.v0) / g.h - 0.5) <= g.nv - 1))
+        tri = tri[vor]
+        if not len(tri):
+            return buf.reshape(g.nu, g.nv)
     P = uvw[tri]  # (m, 3 Ecken, 3)
     vmin, vmax = P[:, :, 1].min(axis=1), P[:, :, 1].max(axis=1)
     umin, umax = P[:, :, 0].min(axis=1), P[:, :, 0].max(axis=1)
@@ -167,8 +186,8 @@ def blockiert(p: Koerper, q: Koerper, d: np.ndarray, tol: float = TOL) -> Sperre
     # Erst grob: deutliche Sperren (viele Treffer) stehen damit schon fest
     for n_px, mindest in ((GROB_PIXEL, 8), (N_PIXEL, 30)):
         g = gitter_fuer(*box, n_pixel=n_px)
-        pmin = rastern(Pp.uvw, p.tri, g, "min")
-        qmax = rastern(Pq.uvw, q.tri, g, "max")
+        pmin = rastern(Pp.uvw, p.tri, g, "min", tri_grenzen(Pp, p.tri))
+        qmax = rastern(Pq.uvw, q.tri, g, "max", tri_grenzen(Pq, q.tri))
         hit = qmax > pmin + tol
         n = int(np.count_nonzero(hit))
         if n == 0:

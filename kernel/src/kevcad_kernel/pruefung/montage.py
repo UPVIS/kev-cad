@@ -113,6 +113,10 @@ class Planer:
         self.befunde: list[dict[str, Any]] = []
         self._idx = {n: i for i, n in enumerate(self.reihenfolge)}
         self._dirs: dict[tuple, tuple] = {}
+        self._dirs_b: dict[bytes, tuple] = {}  # B4: dasselbe nach den Bytes der Richtung (ohne Runden je Aufruf)
+        # B4: Antwort von ``sperrt`` je (Teil, Teil, Richtung), ab Beginn der Planungsschleife (dann ist alles fest,
+        # was sie bestimmt: Formen, Lagen, Ausschlüsse, Gewinde, Schnappen)
+        self._sperr_memo: dict[tuple[str, str, bytes], bool] | None = None
         self._rel: dict[tuple[str, str], tuple] = {}
         self.schnappt: dict[str, set[str]] = {}  # Teil → Teile, über die es beim Einbau schnappt
         # (Teil, mögliche Hindernisse): zweistufiger Weg bei diesem Stand schon vergeblich gesucht
@@ -138,6 +142,16 @@ class Planer:
 
     def sperrt(self, p: str, q: str, d: np.ndarray) -> bool:
         """Stößt p beim Herausziehen entlang d an q? (zwischengespeichert nach Form und relativer Lage)"""
+        memo = self._sperr_memo
+        if memo is None:
+            return self._sperrt(p, q, d)
+        mk = (p, q, np.asarray(d, dtype=float).tobytes())
+        hit = memo.get(mk)
+        if hit is None:
+            hit = memo[mk] = self._sperrt(p, q, d)
+        return hit
+
+    def _sperrt(self, p: str, q: str, d: np.ndarray) -> bool:
         if frozenset((p, q)) in self.ausschluss or q in self.nachgiebig:
             return False
         if q in self.schnappt.get(p, ()):  # schnappt über q (montage(..., schnappt=True))
@@ -268,6 +282,10 @@ class Planer:
 
     def _richtung(self, d: np.ndarray) -> tuple:
         """Hüllrechtecke und Tiefen aller Teile in Richtung d (zwischengespeichert)."""
+        kb = np.asarray(d, dtype=float).tobytes()
+        schnell = self._dirs_b.get(kb)
+        if schnell is not None:
+            return schnell
         key = (round(float(d[0]), 9), round(float(d[1]), 9), round(float(d[2]), 9))
         hit = self._dirs.get(key)
         if hit is None:
@@ -277,13 +295,17 @@ class Planer:
             hit = (np.array([p.uv_min for p in P]).reshape(-1, 2), np.array([p.uv_max for p in P]).reshape(-1, 2),
                    np.array([p.w_min for p in P]), np.array([p.w_max for p in P]))
             self._dirs[key] = hit
+        self._dirs_b[kb] = hit
         return hit
 
-    def kandidaten(self, teile: list[str], rest: list[str], d: np.ndarray) -> list[str]:
-        """Mögliche Hindernisse für die Teile entlang d, wahrscheinlichste zuerst (große Überdeckung)."""
+    def kandidaten(self, teile: list[str], rest: list[str] | None, d: np.ndarray,
+                   maske: np.ndarray | None = None) -> list[str]:
+        """Mögliche Hindernisse für die Teile entlang d, wahrscheinlichste zuerst (große Überdeckung). ``maske``
+        (B4): ``rest`` als Wahrheitswerte in der Reihenfolge der Teile, statt die Liste je Aufruf umzurechnen."""
         umin, umax, wmin, wmax = self._richtung(d)
-        maske = np.zeros(len(self.reihenfolge), dtype=bool)
-        maske[[self._idx[n] for n in rest]] = True
+        if maske is None:
+            maske = np.zeros(len(self.reihenfolge), dtype=bool)
+            maske[[self._idx[n] for n in rest or ()]] = True
         best = np.zeros(len(self.reihenfolge))
         for p in teile:
             i = self._idx[p]
@@ -293,12 +315,14 @@ class Planer:
         order = np.argsort(-best, kind="stable")
         return [self.reihenfolge[j] for j in order if best[j] > 0]
 
-    def frei(self, e: Einheit, rest: list[str]) -> tuple[np.ndarray | None, dict[str, str]]:
-        """Erste freie Ausbaurichtung der Einheit gegen ``rest`` und je Richtung das erste Hindernis."""
+    def frei(self, e: Einheit, rest: list[str] | None, maske: np.ndarray | None = None
+             ) -> tuple[np.ndarray | None, dict[str, str]]:
+        """Erste freie Ausbaurichtung der Einheit gegen ``rest`` (oder ``maske``) und je Richtung das erste
+        Hindernis."""
         sperren: dict[str, str] = {}
         for d in e.richtungen:
             hindernis = None
-            for q in self.kandidaten(e.teile, rest, d):
+            for q in self.kandidaten(e.teile, rest, d, maske):
                 if any(self.sperrt(p, q, d) for p in e.teile):
                     hindernis = q
                     break
@@ -421,18 +445,22 @@ class Planer:
     def plane(self) -> MontageErgebnis:
         erg = MontageErgebnis()
         einheiten = self.einheiten()
+        self._sperr_memo = {}  # B4: ab hier ist alles fest, was ``sperrt`` beantwortet
         runde = 0
         try:
             while einheiten:
                 runde += 1
                 uebrig = {n for e in einheiten for n in e.teile}
+                uebrig_m = np.zeros(len(self.reihenfolge), dtype=bool)
+                uebrig_m[[self._idx[n] for n in uebrig]] = True
                 frei: list[tuple[Einheit, np.ndarray]] = []
                 letzte_sperren: dict[str, dict[str, str]] = {}
                 for e in sorted(einheiten, key=self._prio):
                     if not self._reihenfolge_ok(e, uebrig):
                         continue
-                    rest = [n for n in self.reihenfolge if n in uebrig and n not in e.teile]
-                    d, sp = self.frei(e, rest)
+                    rest_m = uebrig_m.copy()
+                    rest_m[[self._idx[n] for n in e.teile]] = False
+                    d, sp = self.frei(e, None, rest_m)
                     if d is not None:
                         frei.append((e, d))
                     else:
