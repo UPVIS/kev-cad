@@ -722,6 +722,10 @@ Rechenprozess (7,8 → 12,2 s) und bestimmt mit der FEM (Ende 13,0 s) den Endsta
 - Gemessen (Wanduhr `montage.Planer.plane`): 1,9 bzw. 2,6 s bei Last 25 bis 50 (vorher 4,6 bzw. 7,5 s bei Last 29 bis 39,
   1,5 bzw. 2,0 s bei Last 5 bis 7). Rund die Hälfte steckt danach in `raster.blockiert` für die Paare, die der
   Schritt wirklich neu stellt (258 Prüfungen), der Rest in den zweistufigen Wegen.
+- Gleichheitsprobe (`20261108-093047-b4b`): Schritte 0 und 2 gleich. In Schritt 1 lief nur die Referenz (frischer
+  Kernel, Last bis 146) in das Zeitlimit der Montage (60 s, 110 Einheiten offen, daher „1 Teil nicht einbaubar“), sonst
+  gleich. Wiederholt bei Last 9 bis 11 (`20261108-094827-b4-nachprobe`, `kalt;laufrolle_l=90`, Probe Schritt 1): gleich;
+  Endstand 9,2 s, Montage 1,7 s. Kern-Tests auf dem Mac mini mit B2 und B4: 1370 bestanden.
 
 ## Übergabe (08.11.2026): Punktlasten relativ zum Teil (Aufgabe 2, offen)
 
