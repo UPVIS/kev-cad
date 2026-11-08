@@ -727,10 +727,14 @@ Rechenprozess (7,8 → 12,2 s) und bestimmt mit der FEM (Ende 13,0 s) den Endsta
   gleich. Wiederholt bei Last 9 bis 11 (`20261108-094827-b4-nachprobe`, `kalt;laufrolle_l=90`, Probe Schritt 1): gleich;
   Endstand 9,2 s, Montage 1,7 s. Kern-Tests auf dem Mac mini mit B2 und B4: 1370 bestanden.
 
-## Übergabe (08.11.2026): Punktlasten relativ zum Teil (Aufgabe 2, offen)
+## Übergabe (08.11.2026): Punktlasten relativ zum Teil (Aufgabe 2, zurückgestellt)
 
-Kevin, 08.11.2026: „Fangrolle und Schieberolle sollen aus dem Zwischenspeicher kommen, wenn sich nur ihre Lage ändert
-und die Last am Teil gleich bleibt. Ergebnis muss gleich bleiben, mit Test.“
+Auftrag (Kevin, 08.11.2026, auf die Frage, ob Punktlasten relativ zum Teil gemerkt werden sollen: „Ja, mit einbauen“):
+Fangrolle und Schieberolle sollen aus dem Zwischenspeicher kommen, wenn sich nur ihre Lage ändert und die Last am Teil
+gleich bleibt; das Ergebnis bleibt gleich, mit Test.
+
+**Zurückgestellt:** Nach dem Befund unten (hilft nur bei reinem Verschieben, verschiebt die FEM-Werte einmalig um bis zu
+1 %) entschied Kevin am 08.11.2026: „Erst mal nicht“. Der Entwurf bleibt hier für später.
 
 **Befund vorab:** Im Messmodell ändert `laufrolle_l` die Länge der Rollen (Fangrolle 100 → 90 → 95 mm, Sicherheit 175,9 →
 162,0 → 169,2). Dort kann kein Zwischenspeicher greifen. Einen reinen Lagewechsel gibt `vorn_luft` (Schritte

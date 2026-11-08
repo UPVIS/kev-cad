@@ -46,7 +46,11 @@ def _ohne_fluechtiges(x: Any) -> Any:
 
 @pytest.fixture
 def reihenfolge():
-    """Reihenfolge der Prüfungen setzen und danach zurück."""
+    """Reihenfolge der Prüfungen setzen und danach zurück. Erst ``lauf`` laden: Es meldet Statik, Druckvorschau, gedruckt
+    und Bewegungsraum an und ordnet. Ohne das fehlten sie in ``vorher`` (etwa wenn vorher nur ``pruefer.pruefe`` lief),
+    und das Zurücksetzen stellte sie ans Ende: In späteren Tests lief die Montage dann vor der Statik."""
+    from kevcad_kernel.pruefung import lauf  # noqa: F401
+
     vorher = tuple(n for n, _ in pruefer.PRUEFUNGEN)
 
     def setzen(r: tuple[str, ...]) -> None:
