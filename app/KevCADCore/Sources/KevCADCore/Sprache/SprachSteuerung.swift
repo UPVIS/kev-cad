@@ -423,7 +423,12 @@ public final class SprachSteuerung {
             let punkte = s.punkte.compactMap { p -> SIMD3<Float>? in
                 p.welt.count == 3 ? SIMD3(Float(p.welt[0]), Float(p.welt[1]), Float(p.welt[2])) : nil
             }
-            return punkte.count >= 2 ? .polyline(points: punkte, color: s.strichfarbe.rgba, width: breite) : nil
+            guard let erster = punkte.first else { return nil }
+            // Nadel (Stifttipp, Klick beim Sprechen): ein Punkt bzw. lauter gleiche Punkte, als Punkt gezeichnet
+            if punkte.allSatisfy({ simd_distance($0, erster) < 1e-4 }) {
+                return .dot(point: erster, color: s.strichfarbe.rgba, radius: max(4, breite * 1.6))
+            }
+            return .polyline(points: punkte, color: s.strichfarbe.rgba, width: breite)
         }
     }
 

@@ -40,6 +40,7 @@ struct PadTestZustand: View {
             ("drehung", kamera.map { q in [q.rotation.vector.x, q.rotation.vector.y, q.rotation.vector.z, q.rotation.vector.w]
                 .map { String(format: "%.5f", $0) }.joined(separator: ",") } ?? ""),
             ("mehrfach", m.viewer.mehrfach ? "1" : "0"),
+            ("spricht", m.oberflaeche.spricht ? "1" : "0"),
             // Menü-Tests (MenueUITests): Kacheln, Projektion, Blatt
             ("kacheln", m.oberflaeche.kacheln.map(\.rawValue).joined(separator: ",")),
             ("ortho", m.orthographic ? "1" : "0"),

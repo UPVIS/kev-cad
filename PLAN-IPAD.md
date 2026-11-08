@@ -102,7 +102,7 @@ die Touch- und Stiftgriffe dazu (Hinweisleiste und Übersicht lesen dort).
 | 2 Finger ziehen | Verschieben | ⇧ Mitte ziehen |
 | 2 Finger spreizen | Zoomen zur Mitte der Finger | Rad, Zoomgeste |
 | Tippen | Auswählen (Teil; im Elementmodus Fläche, Kante, Punkt) | Links klicken |
-| Doppeltippen | Auf das Teil einrahmen, auf leerem Grund alles | `.` und Pos1 |
+| Doppeltippen | Auf das Teil einrahmen, auf leerem Grund alles; wählt nicht aus (der erste Tipp wählt sofort, das Doppeltippen nimmt das zurück) | `.` und Pos1 |
 | Lange drücken | Kontextmenü am Teil (dieselben Einträge wie am Mac: Zentrieren, Ausblenden, Lokale Ansicht, Messen, Maße, Elementmodus); wählt das gedrückte Teil aus | Rechts klicken (wählt nicht aus, wie Blender) |
 | 2 Finger tippen | Rückgängig (Ansicht, Auswahl, Sichtbarkeit) | ⌘Z |
 | 3 Finger tippen | Wiederholen | ⇧⌘Z |
@@ -113,6 +113,21 @@ Um die Blickachse wird nicht gedreht (Z bleibt oben wie am Mac). Ein schnell los
 (Schwung, `Schwung.swift`; abschaltbar unter Kranz › Mehr; am Mac Vorgabe aus, dort läuft dann der Nachlauf des
 Trackpads). Auswahl erweitern: ⇧ oder ⌘ am Magic Keyboard wie am Mac, ohne Tastatur der Schalter „Mehrfach“ in der
 Daumenleiste (Tippen nimmt dazu oder wieder heraus, auch langes Drücken für das Kontextmenü).
+
+**Schutz vor Fehlgriffen** (Kevin, 08.11.2026, nach dem ersten Test am Gerät: „eigentlich soll das Teil dann insofern
+gelockt sein, als dass man wirklich nichts verändern kann. Man kann nur drauf schreiben“; `EingabeSchutz.swift`, gleiche
+Logik am Mac):
+
+- **Beim Sprechen ist das Modell gesperrt** (roter Rahmen): Tippen wählt nicht aus, sondern zeigt („das hier“), der Stift
+  setzt einen Bezug (Nadel); Doppeltippen, langes Drücken, 2 und 3 Finger tippen und Griffe ruhen. Drehen, Verschieben,
+  Zoomen, Zeigen, Striche, Kranz, Senden und Verwerfen bleiben, ebenso Tasten (bewusste Eingabe). Am Mac setzt ein Klick
+  die Nadel, Rahmen und Kontextmenü ruhen. In der Pause (kein roter Rahmen) gilt wieder alles. Die Hinweisleiste nennt
+  „Modell gesperrt“.
+- **Handballen:** Liegt der Stift auf oder schwebt er, und eine halbe Sekunde danach, zählt eine Berührung im Umkreis
+  von 110 pt um die Spitze und bis 480 pt auf der Seite der Hand (Richtung aus dem Azimut des Pencil, ohne ihn rechts
+  unten) nicht: kein Tippen, Drehen, Kontextmenü, Randwischen, Mehrfinger-Tippen. Kontaktflächen ab 42 pt Radius zählen
+  nie, auch ohne Stift; wächst eine Berührung während des Drehens dahin, endet die Drehung. Zwei Finger der anderen Hand
+  navigieren weiter. Der Stift öffnet keine Leiste vom Rand.
 
 ### 4.3 Stift
 
@@ -127,7 +142,8 @@ Kevins iPad Pro 12,9″ (6. Generation, M2) kann Pencil 2 und Pencil USB-C: Schw
 | Doppeltippen, am Pencil Pro Drücken | Werkzeugkranz an der Spitze | Werkzeugkranz, oben „Senden“ |
 | Rollen (Pencil Pro) | dreht die Wahl im Kranz | – |
 
-Die Finger navigieren weiter, während der Stift zeichnet; Handballen zählen nicht, solange der Stift aufliegt. Die
+Die Finger navigieren weiter, während der Stift zeichnet; Handballen zählen nicht, solange der Stift aufliegt oder
+schwebt (4.2, Schutz vor Fehlgriffen). Die
 Systemeinstellung „Nur mit Apple Pencil zeichnen“ gilt; ohne Stift zeichnet der Finger, wenn die Daumenleiste auf
 „Zeichnen“ steht.
 
@@ -180,7 +196,8 @@ den Wert dunkel hinterlegt („28/32“, „0.1x“). Neben der Scheibe klappt b
 1. **Starten:** Daumenleiste „Sprechen“, Kranz oben, ein Stiftstrich oder V auf der Tastatur. Der rote Rahmen zeigt, dass
    zugehört wird (wie am Mac).
 2. **Währenddessen:** reden, mit dem Stift zeigen und zeichnen, mit den Fingern drehen. Alles läuft auf einer Uhr, die
-   Wörter erscheinen live als Text.
+   Wörter erscheinen live als Text. Das Modell ist dabei gesperrt (4.2): Tippen zeigt, der Stifttipp setzt eine Nadel,
+   nichts wählt aus oder blendet aus.
 3. **Abschicken:** Kranz oben, Daumenleiste „Senden“ oder ↩. **Verwerfen:** X am Rahmen oder Esc.
 4. **Erkennung** auf dem Gerät mit Apples SpeechAnalyzer (am Mac der Rückfall hinter Wortlaut). Wortlaut mit Parakeet
    läuft nur am Mac. **Geprüft am 07.11.2026 (I-7):** Parakeet ginge aufs iPad, der Einbau ist aber kein kleiner Tausch.
@@ -364,7 +381,8 @@ Gemessen wird mit Selbsttests im iPad-Simulator; Bildrate, Stift und Latenz miss
 | I-7 iCloud | Spike (Zugriff, Versionen, Auslagern), Ordner der App, Zwischenspeicher draußen, Projektliste am iPad, Umzug nach Kevins Ja | I-3 | Spike fertig (07.11.2026, Abschnitt 6): Empfehlung Ordner in iCloud Drive statt eigenem Container. Prototyp hinter Schaltern (aus): `projektablage.json` am Mac (App und MCP), `.kevcad` bleibt lokal (`ablage.py`), Projektliste am iPad mit Ordnerwahl und Vorschau, Öffnen über den Mac mit `~`-Pfad, „Öffnen …“ und „Neues Projekt“ am iPad (bloßer Name bzw. `~`-Pfad, der Mac legt an), „Entfernen?“ für fehlende Projekte, beim Meilenstein `vorschau.png` und `versionen.bundle` mit Wiederherstellung auf einem anderen Mac; Tests `test_ablage.py`, `ProjektablageTests`. Offen: Kevins Ja zum Umzug, Test am echten iPad (Ordnerwahl, Lesezeichen nach Neustart, ohne Netz) |
 | I-8 Volle Parität | Prüfliste in Abschnitt 9 abarbeiten | I-3 | begonnen (07.11.2026): Datei ans Gerät (PROTOCOL.md „I-8 Datei ans Gerät“, `DATEI_REQ`/`DATEI` in Stücken, Fähigkeit `datei-1`, nur Dateien unter den Wurzeln des Kernels); am iPad „Teilen“ statt „Im Finder zeigen“ (`DateiKnopf`, `DateiTeilenKnopf`, `AppSession.dateienTeilen`): Bestand, 3MF statt Bambu Studio, Dokument-Export, Rendern, Drucken-Dialog, model.py in Kopfleiste und Fehlerband; was der Kern nach einer Aktion im Finder zeigen würde (Export, CSV, Video, Referenz), öffnet am iPad das Teilen-Blatt mit Drucken, Dateien, AirDrop. Video aus Animationen am iPad mit AVAssetWriter statt ffmpeg (H.264 bzw. ProRes, im Zwischenspeicher, dann Teilen). Zweite Runde (07.11.2026): Video auf Wunsch des Agenten immer am Mac; Dateien vom iPad an den Mac (`DATEI_HOCH`, Fähigkeit `datei-hoch-1`) für Referenzen und CAD-Dateien aus der Dateien-App; Protokoll, Lagerkatalog und Zukaufteil als Blatt; Bildschirmfoto und Viewer-Videos im eigenen Zwischenspeicher. Berichte und Dokument-Export als PDF am iPad: das PDF entsteht am Gerät (CoreGraphics, ohne Mac), Teilen und Drucken über AirPrint, Exportdialog als Blatt. Dritte Runde (07.11.2026): Drucken je Format ein AirPrint-Auftrag wie am Mac (`ExportDrucker.drucke`, Papier per `bestPaper`, Seiten 1:1 und mittig, quer auf hoch gedreht: `PDFSeitenDruck`), auch für Blätter (`BlattDruck.drucken`) und auf Wunsch des Agenten; Blätter bearbeiten mit Finger und Stift (`BlattLeinwand` für beide Geräte: Tippen wählt, Ziehen verschiebt Maße, Ansichten und Notizen, Doppeltippen ändert Text, Kneifen und zwei Finger zoomen und verschieben, schwebender Stift hebt hervor, langes Drücken öffnet das Menü mit Rückgängig, Hardware-Tastatur wie am Mac); 3MF sichern am iPad (Kernel schreibt nach output/, dann „3MF teilen“; vorher fragt ein Blatt nach dem Filament wie der Sichern-Dialog am Mac); Drucker-Zugang im Schlüsselbund des iPad; Shop-Link auf den Viewer ziehen öffnet „Zukaufteil hinzufügen …“ (Mac und iPad). Offen: Zeilen I-8 in der Tabelle unten |
 | I-9 Verteilung und Prüfung | TestFlight automatisch aus main (höchstens stündlich), Selbsttests im iPad-Simulator über `tools/fern.sh`, Paritätsprüfung in jedem Testbau | I-3 | `tools/ipad-testflight.sh` fertig; Build 1 seit 07.11.2026 in TestFlight (App 6831891464, interne Gruppe „Kevin“); Takt fertig (`tools/ipad-testflight-takt.sh` aus `tools/auto-update.sh`, eigene Arbeitskopie, höchstens stündlich, Testhinweise mit den Änderungen an der App); Paritätsprüfung fertig (07.11.2026: `tools/paritaet.py`, `paritaet.json`, Kurzfassung in `tools/fern.sh testbau` und `tools/ipad-bau.sh`, Tests `tools/test_paritaet.py` in `tools/fern.sh tests`; Befehle ohne iPad-Auslöser vorbereitet, aktiv sobald I-4 sie im Katalog führt); Kern-Tests im iPad-Simulator über `tools/fern.sh ipadtests` auf dem Mini (iOS-27-Laufzeit seit 07.11.2026; am MacBook nur iOS 26.0); Release-Übersetzung ohne Signatur über `tools/fern.sh ipadrelease` auf dem Mini (findet Fehler, die sonst erst das Archiv für TestFlight zeigt; geprüft mit absichtlichem Fehler unter `#if !DEBUG`, warm 45 s); Selbsttest der Oberfläche im iPad-Simulator (`tools/ipad-bau.sh selbsttest`, `PadSelbsttest`, 07.11.2026); Selbsttest der Bereiche am iPad mit Daten vom Kernel am Mac (`tools/ipad-kette.sh --bereiche`, Stufe `pad-bereiche`: Zeichnung mit Leinwand und Kontextmenü, Bauplan, Druckvorschau, Bestand, Simulation, 07.11.2026 bestanden); Selbsttest Sprechen am iPad (`tools/ipad-kette.sh --sprache`, Stufe `pad-sprache`, derselbe `SprachSelbsttest` wie am Mac: Sätze aus einem Skript, Zeigen mit dem schwebenden Stift, grüner Stiftstrich, Paket als Nutzlast; der Kettentest prüft beim Kernel über `feedback()` und die abgelegte Datei Wörter, Zeigewort, Strich mit Farbe und Gerät, Bild und dass nach esc nichts kommt, 07.11.2026); Menüs am iPad aus derselben Quelle wie am Mac (`app/Sources/KevCAD/Menues/`, 07.11.2026): XCUITest `MenueUITests` (Kürzel ⌘1, ⌘2, 5, ⌃⌘3, ⌥⌘L wirken, Textfeld behält einbuchstabige Tasten), am Mac schreibt der Selbsttest `keys` die ganze Menüleiste nach `selftest-keys-menue.txt` (vor und nach dem Umzug gleich, 330 Einträge); was nur am Mac geprüft wird, steht mit Gegenweg in `paritaet.json` (`pruefungen_nur_mac`); `ipadtests` hier ab 5 GB frei, `ipad-bau.sh` hält unter 4 GB an |
-| I-10 Abnahme | Kevin am echten iPad: Gesten, Stift, Latenz, Kopplung; Learnings in Plan, Skill und Regeln | alle | offen |
+| I-3c Schutz vor Fehlgriffen | Kevin, 08.11.2026 nach dem ersten Test am Gerät: Sperre beim Sprechen (Mac und iPad), Handballen, Doppeltippen ohne Auswahl nebenbei (4.2) | I-3b, I-4 | fertig (08.11.2026): `EingabeSchutz.swift` (reine Funktionen `EingabeSchutz.erlaubt`, `Handballen.istHand`, `TippFolge`), `StiftWache` und Prüfungen in `TouchNavigation.swift`, Mac in `BlenderNavigation.swift` (Klick beim Sprechen setzt eine Nadel), Randwischen ohne Stift und ohne Handballen, Nadel im Viewer als Punkt; Tests `EingabeSchutzTests` (Mac und iPad-Simulator), XCUITest `testSprechenSperrtDasModell`; Doppeltippen: Einzeltippen wartet nicht (0 ms mehr), das Doppeltippen nimmt die Auswahl zurück. Offen: Prüfliste am Gerät (I-10) |
+| I-10 Abnahme | Kevin am echten iPad: Gesten, Stift, Latenz, Kopplung; Learnings in Plan, Skill und Regeln | alle | offen; Prüfliste Fehlgriffe (I-3c): mit aufgelegter Hand schreiben (kein Drehen, keine Auswahl, keine Leiste), die andere Hand zoomt dabei, Daumen fest aufgelegt dreht noch, Doppeltippen im Elementmodus wählt keine Fläche, beim Sprechen Tippen, Halten, 2 Finger tippen ohne Wirkung, Stifttipp setzt einen Punkt, Linkshänder (Azimut) |
 
 ### Offene Stellen auf dem iPad nach I-1
 
@@ -600,6 +618,17 @@ nennt sie Kevin. Geht etwas auf einem Gerät grundsätzlich nicht (Wortlaut-XPC,
   nicht auseinanderlaufen. Der Kettentest `--bereiche` baut dafür ein Druckteil ins Modell (ohne hat die Druckvorschau
   keine Platten, und die Prüfung liefe ins Leere).
 - **Python-MCP-Client:** `CallToolResult` heißt dort `is_error`, nicht `isError` wie im Protokoll.
+- **Fehlgriffe am Gerät** (08.11.2026, I-3c): Kevin tippte beim Erklären doppelt auf ein Teil, danach war eine Fläche
+  gewählt. Ursache: Tippen und Doppeltippen liefen nebeneinander, jeder Tipp wählte, und beim Sprechen prüfte keine
+  Geste, ob das Modell frei ist. Regeln daraus: (1) Wer im Viewer etwas am Modell ändert, fragt `coordinator.erlaubt(_:)`
+  (eine Quelle für Mac und iPad). (2) Kontaktgröße und Stiftlage prüft jede Fingergeste beim Aufsetzen
+  (`shouldReceive`) und noch einmal beim Auslösen (`ohneHand`): Ein Ballen setzt oft klein auf und wird erst dann groß.
+  (3) Der zweite Tipp eines Doppeltippens (`tapCount` 2) wählt nicht. (4) Ein aufliegender Pencil meldet sich nur, wenn
+  er sich bewegt; das Abheben kommt über `touchesEnded`/`touchesCancelled` der Eingabeebene, ohne Meldung gilt er nach
+  4 s als weg. (5) XCUITest: Knöpfe über ihre Kennung ansprechen (`daumen.sprechen`), „Sprechen“ und „Pause“ gibt es
+  mehrfach im Bedienbaum (Menüs, Leiste), der Tipp traf sonst ein anderes Element. Handballen lässt sich im Simulator
+  nicht nachstellen (XCUITest kennt keine Kontaktgröße und keinen Stift); geprüft sind die Funktionen, das Gerät prüft
+  Kevin.
 
 ## 11. Offene Fragen und Risiken
 

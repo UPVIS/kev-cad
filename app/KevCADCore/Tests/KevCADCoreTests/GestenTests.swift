@@ -23,7 +23,7 @@ final class GestenTests: XCTestCase {
         let messen = Tastenbelegung.gesten.filter { $0.zustand == .messen }
         XCTAssertEqual(messen.map(\.geste), [.tippen], "im Messmodus misst der Tipp")
         let sprechen = Tastenbelegung.gesten.filter { $0.zustand == .sprechen }
-        XCTAssertEqual(sprechen.map(\.geste), [.stift], "beim Sprechen zeichnet der Stift")
+        XCTAssertEqual(sprechen.map(\.geste), [.stift, .tippen], "beim Sprechen zeichnet der Stift, Tippen zeigt")
     }
 
     func testRueckgaengigUndKontextmenueWieAmMac() {

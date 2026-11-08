@@ -177,6 +177,37 @@ final class GestenUITests: XCTestCase {
         warte("Mehrfach aus") { $0["mehrfach"] == "0" }
     }
 
+    /// Beim Sprechen ist das Modell gesperrt (Kevin, 08.11.2026; EingabeSchutz.swift): Tippen, Doppeltippen, langes
+    /// Drücken und 2 Finger tippen ändern weder Auswahl noch Ansicht. Danach wirkt Tippen wieder.
+    func testSprechenSperrtDasModell() throws {
+        _ = bereit()
+        guard let teil = punktAufTeil() else {
+            XCTFail("kein Teil unter der Bildmitte gefunden")
+            return
+        }
+        let gewaehlt = warte("Teil gewählt") { !($0["auswahl"] ?? "").isEmpty }
+        let sprechen = app.buttons["daumen.sprechen"]
+        XCTAssertTrue(sprechen.waitForExistence(timeout: 5), "„Sprechen“ in der Daumenleiste")
+        sprechen.tap()
+        warte("Sitzung läuft") { $0["spricht"] == "1" }
+        let leer = viewer.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.22))
+        leer.tap()  // auf leerem Grund hebt Tippen sonst die Auswahl auf
+        teil.doubleTap()
+        teil.press(forDuration: 1.2)
+        XCTAssertFalse(app.descendants(matching: .any)["kontext.ausblenden"].waitForExistence(timeout: 2),
+                       "kein Kontextmenü beim Sprechen")
+        try Mehrfinger.tippen(2, auf: viewer)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let z = zustand()
+        XCTAssertEqual(z["auswahl"], gewaehlt["auswahl"], "Auswahl unverändert")
+        XCTAssertEqual(z["abstand"], gewaehlt["abstand"], "kein Einrahmen, kein Rückgängig")
+        XCTAssertEqual(z["spricht"], "1")
+        sprechen.tap()  // Pause: ohne roten Rahmen gehört das Modell wieder Kevin
+        warte("Sitzung angehalten") { $0["spricht"] == "0" }
+        leer.tap()
+        warte("ohne roten Rahmen wirkt Tippen wieder") { ($0["auswahl"] ?? "x").isEmpty }
+    }
+
     /// Winkel zwischen zwei Drehungen (Grad) aus „x,y,z,w“.
     private func winkel(_ a: String?, _ b: String?) -> Double {
         let q1 = (a ?? "").split(separator: ",").compactMap { Double($0) }

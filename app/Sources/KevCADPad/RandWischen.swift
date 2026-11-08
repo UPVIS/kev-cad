@@ -60,6 +60,7 @@ final class RandWischenView: UIView {
         for rand in [UIRectEdge.left, .right] {
             let g = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(gewischt(_:)))
             g.edges = rand
+            g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]  // der Stift öffnet keine Leiste
             g.delegate = regeln
             g.name = rand == .left ? "rand.links" : "rand.rechts"
             window.addGestureRecognizer(g)
@@ -78,6 +79,11 @@ final class RandRegeln: NSObject, UIGestureRecognizerDelegate {
     // Über einem Blatt (Kopplung, Dialoge) gehört der Rand dem Blatt
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         g.view?.window?.rootViewController?.presentedViewController == nil
+    }
+
+    // Die aufliegende Schreibhand wischt nicht vom Rand (Handballen, EingabeSchutz.swift)
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        !StiftWache.istHand(touch)
     }
 
     // Die übrigen Gesten (Drehen mit einem Finger, Listen) warten, bis feststeht, dass es kein Wischen vom Rand ist

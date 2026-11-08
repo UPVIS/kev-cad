@@ -77,6 +77,8 @@ public final class AppController: AppActions {
     // Szene
     private var fitOnFirstPart = true
     private var fitAtRunEnd = false
+    /// Stand der Auswahl vor dem ersten Tipp einer Tippfolge (Doppeltippen nimmt ihn zurück, EingabeSchutz.swift).
+    var tippFolge = TippFolge<[ElementRef]>()
     var measurePending: [ElementRef] = [] {
         didSet { if measurePending.isEmpty { messZiele = [] } }
     }
@@ -172,6 +174,7 @@ public final class AppController: AppActions {
         // Phase 5: Videos durch benannte Kameras (animation_video(kamera=…)); die Kamera fährt mit ihrem Teil
         setAnimationCameraResolver { [weak self] name, _ in self?.animationCameraState(name) }
         viewport.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
+        viewport.onDoppeltTippen = { [weak self] pick in self?.doppeltTippen(pick, in: self?.viewport) }
         viewport.onClickPunkt = { [weak self] pick, punkt, _ in  // Phase 4: Maßstab; Simulation: Kraft, Lager, Schutz
             guard let self else { return false }
             return self.massstabKlick(pick, punkt) || self.simulationKlick(pick, punkt)
@@ -829,6 +832,8 @@ public final class AppController: AppActions {
     // MARK: Auswahl und Messen
 
     func handleClick(_ pick: PickResult?, modifiers: PlattformTastenFlags) {
+        // Wird der Tipp zum Doppeltippen, nimmt `doppeltTippen` die Auswahl auf diesen Stand zurück (EingabeSchutz.swift)
+        tippFolge.tipp(stand: scene.selection, zeit: ProcessInfo.processInfo.systemUptime)
         var ref = pick.flatMap { scene.resolve($0) }
         // Wie Blenders Objektmodus: im Teilemodus wählt ein Klick das ganze Teil; Messen braucht immer Elemente
         if !model.measureMode, model.selectionMode == .parts, let r = ref { ref = r.partRef }
@@ -847,6 +852,24 @@ public final class AppController: AppActions {
             refs = ref.map { [$0] } ?? []
         }
         applySelection(refs)
+    }
+
+    /// Doppeltippen (iPad, PLAN-IPAD.md 4.2): rahmt das getippte Teil ein, auf leerem Grund alles. Der erste Tipp hat
+    /// schon ausgewählt (im Elementmodus eine Fläche); das nimmt es zurück, Doppeltippen wählt nie nebenbei aus.
+    func doppeltTippen(_ pick: PickResult?, in viewer: ViewportCoordinator? = nil) {
+        let ziel = viewer ?? eingabeViewport
+        if let vorher = tippFolge.doppelt(zeit: ProcessInfo.processInfo.systemUptime), vorher != scene.selection,
+            !model.measureMode
+        {
+            applySelection(vorher)
+        }
+        guard let teil = pick.flatMap({ scene.resolve($0) })?.partRef,
+            let b = scene.worldBounds(of: [teil])
+        else {
+            ziel.fit(scene.visibleBounds(), animated: true)
+            return
+        }
+        ziel.fit(b, animated: true)
     }
 
     /// Auswahl setzen, anzeigen und dem Kernel melden.

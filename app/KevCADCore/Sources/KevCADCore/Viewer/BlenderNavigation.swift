@@ -18,6 +18,8 @@ import simd
 // - Trackpad mit zwei Fingern: drehen (um den Punkt unter der Maus), mit Umschalt schwenken, mit Strg zoomen.
 // - Linke Maustaste: auswählen (Umschalt ergänzt), ziehen: Rahmen (Umschalt erweitert, Strg zieht ab).
 // - Rechte Maustaste: Kontextmenü.
+// - Beim Sprechen (roter Rahmen) ist das Modell gesperrt (EingabeSchutz.swift): Ziehen zeichnet, ein Klick setzt einen Bezug
+//   (Nadel) statt auszuwählen, Rahmen, Kontextmenü und Griffe ruhen. Tasten bleiben (bewusste Eingabe).
 // - Tasten bei Fokus oder Maus über dem Viewport: Ziffernblock und Zahlenreihe („Numpad emulieren“), ^ Ansichtsmenü.
 //
 // Kein Einrasten auf Standardansichten, kein Nachlaufen.
@@ -612,14 +614,17 @@ final class NavigationInputView: NSView, NSMenuItemValidation {
         last = p
         let flags = event.modifierFlags
         coordinator?.griffModifiers = flags
-        if !flags.contains(.option), let griff = coordinator?.onGriffBeginnt, griff(p) {
+        if !flags.contains(.option), coordinator?.erlaubt(.griff) == true, let griff = coordinator?.onGriffBeginnt,
+            griff(p)
+        {
             mode = .griff
             return
         }
         if flags.contains(.option) {
             mode = navMode(flags)
             if case .orbit = mode { beginneDrehung(bei: p) }
-        } else if coordinator?.zeichnen == true, flags.intersection([.shift, .control, .command]).isEmpty {
+        } else if coordinator?.zeichnen == true {
+            // Beim Sprechen zeichnet die linke Maustaste auch mit ⇧, ⌃ oder ⌘ (kein Rahmen, das Modell ist gesperrt)
             mode = .pendingStrich(start: p, modifiers: flags)
         } else {
             mode = .pendingSelect(start: p, modifiers: flags)
@@ -657,7 +662,12 @@ final class NavigationInputView: NSView, NSMenuItemValidation {
     override func mouseUp(with event: NSEvent) {
         let p = point(event)
         switch mode {
+        case .pendingStrich where coordinator?.erlaubt(.nadel) == true:
+            // Klick beim Sprechen: ein Bezug auf die Stelle (Nadel), wie der Stifttipp am iPad
+            strichBeginnen(p)
+            strichBeenden(p)
         case .pendingSelect(_, let flags), .pendingStrich(_, let flags):
+            guard coordinator?.erlaubt(.auswaehlen) == true else { break }  // das Sprechen begann während des Klicks
             coordinator?.pickPoint(p, in: self) { [weak self] result in
                 guard let self, let c = self.coordinator else { return }
                 if let punkt = c.onClickPunkt {
@@ -670,6 +680,7 @@ final class NavigationInputView: NSView, NSMenuItemValidation {
             strichBeenden(p)
         case .boxSelect(let start, let flags):
             boxLayer.isHidden = true
+            guard coordinator?.erlaubt(.rahmen) == true else { break }
             let rect = CGRect(
                 x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
             coordinator?.pickRect(rect, in: self) { [weak self] results in
@@ -824,7 +835,8 @@ final class NavigationInputView: NSView, NSMenuItemValidation {
 
     override func rightMouseDown(with event: NSEvent) {
         // Einträge aus Kontextmenue.swift (dieselben wie am iPad); der Mac lässt die Auswahl dabei stehen
-        guard let c = coordinator, let gruppen = c.onKontextmenue?(nil), !gruppen.isEmpty else { return }
+        guard let c = coordinator, c.erlaubt(.kontextmenue), let gruppen = c.onKontextmenue?(nil), !gruppen.isEmpty
+        else { return }
         let menu = KontextmenueMac.menu(gruppen) { [weak c] befehl in _ = c?.onBefehl?(befehl) }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }

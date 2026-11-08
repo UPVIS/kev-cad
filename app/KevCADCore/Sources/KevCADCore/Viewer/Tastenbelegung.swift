@@ -370,6 +370,9 @@ public enum Tastenbelegung {
         MausBelegung(geraet: .links, ziehen: true, mods: [], wirkung: "Zeichnen auf dem Modell", zustand: .sprechen,
                      kurz: "Zeichnen"),
         MausBelegung(geraet: .links, ziehen: false, mods: [], wirkung: "Auswählen", zustand: .auswahl),
+        // Beim Sprechen ist das Modell gesperrt (EingabeSchutz.swift): Der Klick setzt einen Bezug statt auszuwählen
+        MausBelegung(geraet: .links, ziehen: false, mods: [], wirkung: "Bezug setzen (Nadel)", zustand: .sprechen,
+                     kurz: "Nadel"),
         MausBelegung(geraet: .links, ziehen: false, mods: [], wirkung: "Element oder Fangpunkt messen",
                      zustand: .messen, kurz: "Messen"),
         MausBelegung(geraet: .links, ziehen: true, mods: [], wirkung: "Rahmen aufziehen", zustand: .auswahl,
@@ -401,10 +404,15 @@ public enum Tastenbelegung {
         GestenBelegung(geste: .zweiFinger, wirkung: "Verschieben", zustand: .immer),
         GestenBelegung(geste: .spreizen, wirkung: "Zoomen zur Mitte der Finger", zustand: .immer, kurz: "Zoom"),
         GestenBelegung(geste: .stift, wirkung: "Zeichnen auf dem Modell", zustand: .sprechen, kurz: "Zeichnen"),
+        // Beim Sprechen ist das Modell gesperrt (EingabeSchutz.swift): Tippen wählt nicht aus, Doppeltippen, Halten und
+        // 2/3 Finger tippen ruhen
+        GestenBelegung(geste: .tippen, wirkung: "Zeigen; mit dem Stift ein Bezug auf die Stelle (Nadel)", zustand: .sprechen,
+                       kurz: "Zeigen"),
         GestenBelegung(geste: .tippen, wirkung: "Auswählen; mit ⇧, ⌘ oder „Mehrfach“ dazunehmen", zustand: .auswahl,
                        kurz: "Auswählen"),
         GestenBelegung(geste: .tippen, wirkung: "Element oder Fangpunkt messen", zustand: .messen, kurz: "Messen"),
-        GestenBelegung(geste: .doppeltTippen, wirkung: "Teil einrahmen, auf leerem Grund alles", zustand: .immer,
+        GestenBelegung(geste: .doppeltTippen, wirkung: "Teil einrahmen, auf leerem Grund alles (wählt nicht aus)",
+                       zustand: .immer,
                        kurz: "Einrahmen"),
         GestenBelegung(geste: .halten, wirkung: "Kontextmenü am Teil: Ausblenden, Isolieren, Messen …",
                        zustand: .auswahl, kurz: "Menü"),

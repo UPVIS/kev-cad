@@ -85,6 +85,10 @@ struct Hinweisleiste: View {
         return teile.joined(separator: " · ")
     }
 
+    /// Beim Sprechen ändern Zeiger und Finger nichts am Modell (EingabeSchutz.swift); der rote Rahmen zeigt den Zustand,
+    /// die Leiste sagt es in Worten.
+    private static let gesperrt = Eintrag(tasten: [], maus: nil, text: "Modell gesperrt: zeigen und zeichnen")
+
     #if os(iOS)
     private static let uebersichtTitel = "Gesten"
     private static let uebersichtHilfe = "Alle Gesten und Tasten (?)"
@@ -94,8 +98,11 @@ struct Hinweisleiste: View {
     private var eintraege: [Eintrag] {
         if let n = eingabe.navigation { return Self.gestenWaehrend(n) }
         let zustand: MausBelegung.Zustand = oberflaeche.spricht ? .sprechen : model.measureMode ? .messen : .auswahl
+        // Beim Sprechen fehlt, was das Modell ändern würde (EingabeSchutz.swift); vorn steht, dass es gesperrt ist
         var out = Tastenbelegung.gesten.filter { $0.zustand == .immer || $0.zustand == zustand }
+            .filter { $0.zustand == zustand || EingabeSchutz.erlaubt(EingabeSchutz.art($0.geste), gesperrt: oberflaeche.spricht) }
             .map { Eintrag(tasten: [$0.geste.rawValue], maus: nil, text: $0.kurz ?? $0.wirkung) }
+        if oberflaeche.spricht { out.insert(Self.gesperrt, at: 0) }
         if model.measureMode, !oberflaeche.spricht, let u = eingabe.unterMaus {
             out.insert(Eintrag(tasten: [], maus: nil, text: u), at: 0)
         }
@@ -167,7 +174,7 @@ struct Hinweisleiste: View {
                                text: m.kurz ?? m.wirkung))
         }
         if oberflaeche.spricht {
-            out.insert(contentsOf: [Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
+            out.insert(contentsOf: [Self.gesperrt, Eintrag(tasten: ["↩"], maus: nil, text: "Fertig"),
                                     Eintrag(tasten: ["V"], maus: nil, text: "Aufhören"),
                                     Eintrag(tasten: ["Esc"], maus: nil, text: "Verwerfen")], at: min(1, out.count))
         } else if model.measureMode {

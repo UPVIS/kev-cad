@@ -26,7 +26,10 @@ import simd
 // Hinweisleiste und Übersicht beschreiben diese Gesten aus `Tastenbelegung.gesten`: Wer hier eine Geste ändert oder
 // dazunimmt, trägt sie dort im selben Schritt nach.
 //
-// Noch offen: Rollen am Pencil Pro für den Drehregler des Werkzeugkranzes (I-4).
+// Schutz vor Fehleingaben (Kevin, 08.11.2026, EingabeSchutz.swift): Beim Sprechen ändern Finger und Stift nichts am Modell
+// (kein Auswählen, Einrahmen, Kontextmenü, Rückgängig); ein Fingertipp zeigt nur, ein Stifttipp setzt einen Bezug (Nadel).
+// Handballen: Solange der Stift aufliegt oder schwebt und eine halbe Sekunde danach zählt eine Berührung nahe dem Stift auf
+// der Seite der Hand nicht, große Kontaktflächen nie (`Handballen`). Doppeltippen nimmt die Auswahl des ersten Tipps zurück.
 
 /// Eingabeebene über dem MTKView (Name wie am Mac, damit Koordinator und Viewport auf beiden Seiten gleich bleiben).
 final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate,
@@ -49,6 +52,8 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     }
     private var hoverLaeuft = false
     private var hoverNochmal = false
+    /// Berührungen je Geste (Finger und Stift), wie sie `shouldReceive` sah: für Handballen, Größe und Tippzahl.
+    private var gestenBeruehrungen: [ObjectIdentifier: [UITouch]] = [:]
 
     // Strich beim Sprechen (wie am Mac: die Linie folgt sofort, Treffer immer nur einer zugleich)
     private let strichLayer = CAShapeLayer()
@@ -98,6 +103,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         zweiFinger.allowedTouchTypes = finger
         stift.allowedTouchTypes = stiftArt
         stift.maximumNumberOfTouches = 1
+        stift.minimumNumberOfTouches = 1
         tippen.allowedTouchTypes = finger + stiftArt
         doppeltTippen.numberOfTapsRequired = 2
         doppeltTippen.allowedTouchTypes = finger
@@ -144,6 +150,21 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
         super.touchesBegan(touches, with: event)
     }
 
+    // Der Stift hebt ab: ab jetzt läuft die halbe Sekunde, in der die Hand noch als Hand zählt (Handballen)
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        stiftAbgehoben(touches)
+        super.touchesEnded(touches, with: event)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        stiftAbgehoben(touches)
+        super.touchesCancelled(touches, with: event)
+    }
+
+    private func stiftAbgehoben(_ touches: Set<UITouch>) {
+        if let t = touches.first(where: { $0.type == .pencil }) { StiftWache.beruehrung(t, liegtAuf: false) }
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         coordinator?.viewSize = bounds.size
@@ -162,9 +183,40 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
 
     // MARK: Gesten gemeinsam
 
+    /// Handballen sieht keine Geste (EingabeSchutz.swift); Stiftberührungen melden die Lage des Stifts. Jede Berührung
+    /// merkt sich die Geste, damit sie beim Auslösen Größe und Tippzahl noch einmal prüfen kann.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        if g === stiftRolle || g === schweben { return true }
+        if touch.type == .pencil {
+            StiftWache.beruehrung(touch, liegtAuf: true)
+        } else if touch.type == .direct, StiftWache.istHand(touch) {
+            return false
+        }
+        let id = ObjectIdentifier(g)
+        var liste = gestenBeruehrungen[id] ?? []
+        if liste.allSatisfy({ $0.phase == .ended || $0.phase == .cancelled }) { liste = [] }
+        liste.append(touch)
+        gestenBeruehrungen[id] = liste
+        return true
+    }
+
+    /// Die Berührungen der Geste: kein Handballen dazwischen (auch nicht nachträglich gewachsen)?
+    private func ohneHand(_ g: UIGestureRecognizer) -> Bool {
+        !(gestenBeruehrungen[ObjectIdentifier(g)] ?? []).contains { $0.type == .direct && StiftWache.istHand($0) }
+    }
+
+    /// Letzte Berührung der Geste (beim Tippen: die getippte).
+    private func letzteBeruehrung(_ g: UIGestureRecognizer) -> UITouch? { gestenBeruehrungen[ObjectIdentifier(g)]?.last }
+
+    /// Geste sofort abbrechen (UIKit meldet `.cancelled`, der Handler räumt auf).
+    private func abbrechen(_ g: UIGestureRecognizer) {
+        g.isEnabled = false
+        g.isEnabled = true
+    }
+
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool {
-        // Verschieben und Zoomen mit zwei Fingern zugleich; Tippen und Doppeltippen nebeneinander (Doppeltippen wählt
-        // mit dem ersten Tipp schon aus)
+        // Verschieben und Zoomen mit zwei Fingern zugleich; Tippen und Doppeltippen nebeneinander (der erste Tipp wählt
+        // sofort, das Doppeltippen nimmt das zurück: AppController.doppeltTippen)
         if g === stiftRolle || o === stiftRolle { return true }  // stört nichts, liest nur den Winkel
         let paar: Set<ObjectIdentifier> = [ObjectIdentifier(g), ObjectIdentifier(o)]
         return paar == [ObjectIdentifier(zweiFinger), ObjectIdentifier(spreizen)]
@@ -236,7 +288,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             letzteVerschiebung = .zero
             let t = g.translation(in: self)
             let start = eingabePunkt(CGPoint(x: g.location(in: self).x - t.x, y: g.location(in: self).y - t.y))
-            if let griff = c.onGriffBeginnt, griff(start) {
+            if c.erlaubt(.griff), let griff = c.onGriffBeginnt, griff(start) {
                 modus = .griff
                 return
             }
@@ -244,6 +296,14 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             beginneDrehung(bei: start)
             letzteVerschiebung = .zero
         case .changed:
+            // Wächst die Berührung zum Handballen (die Hand legt sich ab), endet die Drehung ohne Schwung
+            if !ohneHand(g) {
+                if modus == .griff { c.onGriffEnde?(p) }
+                modus = .ruht
+                endeDrehung()
+                abbrechen(g)
+                return
+            }
             switch modus {
             case .griff:
                 c.onGriffZiehen?(p)
@@ -255,6 +315,7 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             }
         default:
             if modus == .griff { c.onGriffEnde?(p) }
+            guard modus != .ruht else { return }  // schon wegen Handballen beendet
             // Schnell losgelassen: die Drehung läuft kurz weiter (Schalter „Schwung“, Kranz › Mehr)
             if g.state == .ended, modus == .drehen, c.schwung {
                 let v = g.velocity(in: self)
@@ -313,6 +374,11 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
             letzteVerschiebung = g.translation(in: self)
             modus = .verschieben
         case .changed:
+            guard ohneHand(g) else {
+                modus = .ruht
+                abbrechen(g)
+                return
+            }
             let d = schritt(g)
             c.navPan(dx: d.dx, dy: d.dy)
         default:
@@ -338,11 +404,27 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     }
 
     @objc private func tippenGeste(_ g: UITapGestureRecognizer) {
-        guard g.state == .ended, let c = coordinator else { return }
+        guard g.state == .ended, let c = coordinator, ohneHand(g) else { return }
+        let touch = letzteBeruehrung(g)
+        // Der zweite Tipp eines Doppeltippens wählt nicht noch einmal: das Doppeltippen hat ihn (doppeltTippenGeste)
+        if touch?.type == .direct, (touch?.tapCount ?? 1) >= 2 { return }
         bedient()
         beruehrt(g)
         let p = eingabePunkt(g.location(in: self))
         let flags = g.modifierFlags  // ⇧ am Magic Keyboard ergänzt die Auswahl wie am Mac
+        if !c.erlaubt(.auswaehlen) {
+            // Beim Sprechen: Der Stift setzt einen Bezug (Nadel), der Finger zeigt nur
+            switch EingabeSchutz.tippenBeimSprechen(stift: touch?.type == .pencil) {
+            case .nadel where c.erlaubt(.nadel):
+                zeiger = nil
+                strichBeginnen(p)
+                strichBeenden(p)
+            default:
+                zeiger = p
+                hoverTest()
+            }
+            return
+        }
         c.pickPoint(p, in: self) { [weak self] result in
             guard let self, let c = self.coordinator else { return }
             if let punkt = c.onClickPunkt {
@@ -354,26 +436,25 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     }
 
     @objc private func doppeltTippenGeste(_ g: UITapGestureRecognizer) {
-        guard g.state == .ended, let c = coordinator else { return }
+        guard g.state == .ended, let c = coordinator, c.erlaubt(.einrahmen), ohneHand(g) else { return }
+        bedient()
         let p = eingabePunkt(g.location(in: self))
-        c.pickPoint(p, in: self) { [weak self] result in
-            guard let self, let c = self.coordinator else { return }
-            // Der erste Tipp hat schon ausgewählt: einrahmen, auf leerem Grund alles
-            _ = c.onBefehl?(result == nil ? .allesEinrahmen : .auswahlEinrahmen)
-            _ = self
+        c.pickPoint(p, in: self) { [weak c] result in
+            // Auswahl des ersten Tipps zurück, das getippte Teil einrahmen, auf leerem Grund alles
+            c?.onDoppeltTippen?(result)
         }
     }
 
     // 2 Finger tippen: Rückgängig, 3 Finger tippen: Wiederholen (Ansicht, Auswahl, Sichtbarkeit; wie ⌘Z und ⇧⌘Z)
 
     @objc private func zweiFingerTippenGeste(_ g: UITapGestureRecognizer) {
-        guard g.state == .ended else { return }
+        guard g.state == .ended, coordinator?.erlaubt(.verlauf) == true, ohneHand(g) else { return }
         bedient()
         _ = coordinator?.onBefehl?(.rueckgaengig)
     }
 
     @objc private func dreiFingerTippenGeste(_ g: UITapGestureRecognizer) {
-        guard g.state == .ended else { return }
+        guard g.state == .ended, coordinator?.erlaubt(.verlauf) == true, ohneHand(g) else { return }
         bedient()
         _ = coordinator?.onBefehl?(.wiederholen)
     }
@@ -383,8 +464,8 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                 configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
         guard let c = coordinator, c.onKontextmenue != nil, modus == .ruht else { return nil }
-        // Beim Sprechen zeichnet der Finger bzw. Stift; ein Menü dazwischen wäre im Weg
-        guard !c.zeichnen else { return nil }
+        // Beim Sprechen ist das Modell gesperrt; neben dem Stift ist langes Drücken meist die aufliegende Hand
+        guard c.erlaubt(.kontextmenue), !StiftWache.handBei(convert(location, to: nil)) else { return nil }
         kontextOrt = location
         let p = eingabePunkt(location)
         return UIContextMenuConfiguration(identifier: "teil" as NSString, previewProvider: nil) { [weak self] _ in
@@ -447,6 +528,8 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     @objc private func stiftZiehen(_ g: UIPanGestureRecognizer) {
         guard let c = coordinator else { return }
         let p = eingabePunkt(g.location(in: self))
+        StiftWache.melden(ort: g.location(in: nil), liegtAuf: g.state == .began || g.state == .changed,
+                          zurHand: stift.zurHand)
         switch g.state {
         case .began:
             bedient()
@@ -489,6 +572,10 @@ final class NavigationInputView: UIView, UIGestureRecognizerDelegate, UIContextM
     }
 
     @objc private func stiftRolleGeste(_ g: UIHoverGestureRecognizer) {
+        // Lage des schwebenden Stifts fürs ganze Fenster (Handballen); der Zeiger von Trackpad und Maus schwebt bei 0
+        if g.zOffset > 0, g.state == .began || g.state == .changed {
+            StiftWache.melden(ort: g.location(in: nil), liegtAuf: false, zurHand: g.azimuthUnitVector(in: nil))
+        }
         switch g.state {
         case .began, .changed: _ = coordinator?.onStiftRolle?(Double(g.rollAngle))
         default: _ = coordinator?.onStiftRolle?(nil)
@@ -736,6 +823,8 @@ final class StiftZugErkenner: UIPanGestureRecognizer {
     private(set) var zusammengefasst: [CGPoint] = []
     private(set) var vorhergesagt: [CGPoint] = []
     private(set) var zeitstempel: TimeInterval = 0
+    /// Richtung von der Spitze zur Hand (Azimut im Fenster), fürs Erkennen des Handballens
+    private(set) var zurHand: CGVector?
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         erfassen(touches, event)
@@ -752,6 +841,7 @@ final class StiftZugErkenner: UIPanGestureRecognizer {
         zusammengefasst = []
         vorhergesagt = []
         zeitstempel = 0
+        zurHand = nil
     }
 
     private func erfassen(_ touches: Set<UITouch>, _ event: UIEvent) {
@@ -759,6 +849,33 @@ final class StiftZugErkenner: UIPanGestureRecognizer {
         zusammengefasst = (event.coalescedTouches(for: t) ?? [t]).map { $0.preciseLocation(in: v) }
         vorhergesagt = (event.predictedTouches(for: t) ?? []).map { $0.preciseLocation(in: v) }
         zeitstempel = t.timestamp
+        zurHand = t.azimuthUnitVector(in: nil)
+    }
+}
+
+/// Lage des Stifts fürs ganze Fenster (Handballen, EingabeSchutz.swift): Viewer und Randgesten fragen hier. Fensterpunkte.
+@MainActor
+public enum StiftWache {
+    public private(set) static var lage: StiftLage?
+
+    static func melden(ort: CGPoint, liegtAuf: Bool, zurHand: CGVector?) {
+        lage = StiftLage(ort: ort, zeit: ProcessInfo.processInfo.systemUptime, liegtAuf: liegtAuf,
+                         zurHand: zurHand ?? lage?.zurHand)
+    }
+
+    static func beruehrung(_ t: UITouch, liegtAuf: Bool) {
+        melden(ort: t.location(in: nil), liegtAuf: liegtAuf, zurHand: t.azimuthUnitVector(in: nil))
+    }
+
+    /// Ist die Fingerberührung der Handballen bzw. die Schreibhand?
+    public static func istHand(_ t: UITouch) -> Bool {
+        Handballen.istHand(FingerBeruehrung(ort: t.location(in: nil), radius: t.majorRadius,
+                                            zeit: ProcessInfo.processInfo.systemUptime), stift: lage)
+    }
+
+    /// Läge an diesem Fensterpunkt jetzt die Hand (Stift da und nahe)?
+    public static func handBei(_ ort: CGPoint) -> Bool {
+        Handballen.istHand(FingerBeruehrung(ort: ort, radius: 0, zeit: ProcessInfo.processInfo.systemUptime), stift: lage)
     }
 }
 

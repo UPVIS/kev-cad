@@ -29,6 +29,7 @@ extension AppController {
             .store(in: &navCancellables)
         let z = zweiterViewer.coordinator
         z.onClick = { [weak self] pick, modifiers in self?.handleClick(pick, modifiers: modifiers) }
+        z.onDoppeltTippen = { [weak self, weak z] pick in self?.doppeltTippen(pick, in: z) }
         z.onBoxSelect = { [weak self] picks, modifiers in self?.handleBoxSelect(picks, modifiers: modifiers) }
         z.onKontextmenue = { [weak self] treffer in self?.kontextEintraege(treffer: treffer) ?? [] }
         z.verlaufTitel = { [weak self] befehl in self?.verlaufTitel(befehl) }

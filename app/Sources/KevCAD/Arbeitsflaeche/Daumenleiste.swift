@@ -31,6 +31,7 @@ struct Daumenleiste: View {
                 actions?.setzeSprechen(!oberflaeche.spricht)
             }
             .accessibilityAddTraits(oberflaeche.spricht ? .isSelected : [])
+            .accessibilityIdentifier("daumen.sprechen")
             HStack(spacing: GA.s) {
                 VerlaufKnopf(symbol: "arrow.uturn.backward", titel: "Rückgängig", moeglich: viewer.rueckgaengigTitel) {
                     viewerActions?.ausfuehren(.rueckgaengig)

@@ -59,8 +59,13 @@ public final class ViewportCoordinator: ObservableObject {
     /// Element unter der Maus hat sich geändert (Treffer, Weltpunkt auf der Fläche, Mausposition oben links); nil-Treffer
     /// = nichts unter der Maus oder Maus außerhalb.
     public var onHover: ((PickResult?, SIMD3<Float>?, CGPoint?) -> Void)?
-    /// V2-6: Kevin spricht: Ziehen mit der linken Maustaste zeichnet statt einen Rahmen aufzuziehen.
+    /// V2-6: Kevin spricht: Ziehen mit der linken Maustaste zeichnet statt einen Rahmen aufzuziehen. Zugleich die Sperre
+    /// beim Erklären (EingabeSchutz.swift): Zeiger und Finger ändern dann nichts am Modell.
     public var zeichnen = false
+    /// Darf eine Zeiger- oder Berührungseingabe jetzt wirken? Mac und iPad fragen hier (EingabeSchutz.swift).
+    public func erlaubt(_ art: ViewerEingabeArt) -> Bool { EingabeSchutz.erlaubt(art, gesperrt: zeichnen) }
+    /// Doppeltippen (iPad): Treffer unter dem Finger; die App nimmt die Auswahl des ersten Tipps zurück und rahmt ein.
+    public var onDoppeltTippen: ((PickResult?) -> Void)?
     /// V2-6: Strich im Viewer (Beginn, je Treffer ein Punkt, Ende).
     public var onStrich: ((StrichEreignis) -> Void)?
     /// I-4: Farbe und Breite des nächsten Strichs (Werkzeugkranz); gefragt bei jedem Strichbeginn.
