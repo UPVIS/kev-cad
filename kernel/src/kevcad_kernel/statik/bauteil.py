@@ -82,11 +82,25 @@ def schnitte(k: Any, R: np.ndarray, P: np.ndarray) -> list[dict[str, Any]]:
     L = float(np.linalg.norm(r))
     e = r / L
     groesse = float(np.max(np.asarray(k.bmax) - np.asarray(k.bmin))) + 10.0
+    auftraege = [(R + e * (f * L), e, groesse) for f in SCHNITTE]
+
+    def selbst(i: int) -> dict[str, Any] | None:
+        S, ee, g = auftraege[i]
+        return _schnitt(k.shape, S, ee, g)
+
+    # B2 (PLAN-PRUEFUNG-INKREMENTELL.md): die Ebenen gleichzeitig hier und in den Geometrie-Helfern, sonst nacheinander
+    from kevcad_kernel.bedingungen.helfer import schnitte_verteilen
+
+    try:
+        ergebnisse = schnitte_verteilen(k, auftraege, selbst)
+    except Exception:  # noqa: BLE001 - dann wie bisher
+        ergebnisse = None
+    if ergebnisse is None:
+        ergebnisse = [selbst(i) for i in range(len(auftraege))]
     out = []
-    for f in SCHNITTE:
-        S = R + e * (f * L)
-        s = _schnitt(k.shape, S, e, groesse)
+    for f, s in zip(SCHNITTE, ergebnisse):
         if s is not None:
+            s = dict(s)
             s["s"] = f * L
             out.append(s)
     if len(_SPEICHER) > 256:

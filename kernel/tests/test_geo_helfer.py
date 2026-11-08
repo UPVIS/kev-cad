@@ -239,3 +239,38 @@ def test_leerlauf_wartet_auf_einen_laufenden_auftrag(monkeypatch):
     p.aktiv.da[1] = {}
     assert p.leerlauf_pruefen(p.zuletzt + 601) and getattr(h, "beendet", False)
     assert not p.helfer and p.schlafend == 1 and p.aktiv is None
+
+
+def test_statik_schnitte_ueber_die_helfer_gleich(pool):
+    """B2: Die Schnittebenen der Statik (``bauteil.schnitte``) rechnen dieser Prozess und die bereiten Helfer
+    gleichzeitig; das Ergebnis ist Bit für Bit dasselbe wie nacheinander hier."""
+    import time
+
+    import numpy as np
+    from build123d import Box, Cylinder, Pos, Rot
+
+    from kevcad_kernel.pruefung.koerper import koerper_aus_form
+    from kevcad_kernel.statik import bauteil
+
+    form = Pos(10, 20, 30) * Rot(0, 0, 25) * (Box(80, 20, 15) - Pos(30, 0, 0) * Cylinder(4, 30))
+    k = koerper_aus_form("Haken", form)
+    R, P = np.array([-30.0, 18.0, 30.0]), np.array([45.0, 35.0, 31.0])
+    bauteil._SPEICHER.clear()
+    allein = bauteil.schnitte(k, R, P)
+    pool._helfer_bereit(2)
+    ende = time.monotonic() + 60
+    while not all(h.bereit for h in pool.helfer.values()) and time.monotonic() < ende:
+        time.sleep(0.1)
+    assert all(h.bereit for h in pool.helfer.values())
+    gesendet = []
+    for h in pool.helfer.values():
+        alt = h.senden
+        h.senden = (lambda a: lambda msg: (gesendet.append(msg[0]), a(msg))[1])(alt)
+    bauteil._SPEICHER.clear()
+    verteilt = bauteil.schnitte(k, R, P)
+    assert gesendet.count("schnitte") == 2  # beide Helfer haben Ebenen bekommen
+    assert len(verteilt) == len(allein) == len(bauteil.SCHNITTE)
+    for a, b in zip(allein, verteilt):
+        assert set(a) == set(b)
+        for key in a:
+            assert np.array_equal(np.asarray(a[key]), np.asarray(b[key])), key

@@ -39,6 +39,7 @@ DAUER_ANNAHME_MS = 500.0  # Weg ohne Erfahrung
 KLEIN_TEILE = 40  # kleinere Modelle rechnen den Bewegungsraum selbst (wie die Stufen der Prüfung) …
 KLEIN_MS = 300.0  # … außer der Bewegungsraum brauchte zuletzt mindestens so lange
 NICE = 5  # Priorität der Helfer (Unix nice): Statik und FEM gehen vor
+STATIK_ENV = "KEVCAD_STATIK_HELFER"  # "0": Statik-Schnitte nicht über die Helfer (Vergleiche)
 LEERLAUF_ENV = "KEVCAD_GEO_HELFER_LEERLAUF_S"
 LEERLAUF_S = 600.0  # ohne Prüfung so lange: Helfer beenden (Speicher), beim nächsten Lauf wieder starten
 
@@ -209,6 +210,8 @@ class Pool:
         self._breps: OrderedDict[str, bytes] = OrderedDict()
         # Leerlauf: nach LEERLAUF_S ohne Auftrag beenden (Speicher), beim nächsten Lauf wieder starten (``aufwecken``)
         self._lock = threading.RLock()
+        self._rid = 0
+        self._schnitt_da: dict[int, dict[int, Any]] = {}  # Statik-Schnitte (B2): Anfrage → Index → Ergebnis
         self.zuletzt = time.monotonic()
         self.schlafend = 0  # so viele Helfer liefen, bevor der Leerlauf sie beendet hat
         self._waechter: threading.Thread | None = None
@@ -279,6 +282,10 @@ class Pool:
             _, _, i, text = msg
             print(f"Geometrie-Helfer {nr}: Weg {i} fehlgeschlagen, rechne selbst: {text}", file=sys.stderr)
             a.da[i] = Auftrag.FEHLT
+        elif msg[0] == "schnitt_erg":
+            _, rid, i, erg = msg
+            if rid in self._schnitt_da:
+                self._schnitt_da[rid][i] = erg
         elif msg[0] == "tot":
             h = self.helfer.get(nr)
             if h is not None:
@@ -377,6 +384,76 @@ class Pool:
                 self.zuordnung[bew.name] = nr
         return a
 
+    def schnitte(self, form: str, welt: str, shape: Any, auftraege: list[tuple[Any, Any, float]],
+                 selbst: Any) -> list[Any]:
+        """Statik-Schnitte (B2, ``statik.bauteil.schnitte``): die Schnittebenen ``auftraege`` (Punkt, Richtung, Größe)
+        reihum auf diesen Prozess (``selbst(i)`` rechnet hier) und die bereiten Helfer verteilen. Die Helfer ziehen sie
+        zwischen zwei Schnittmengen des Bewegungsraums vor. Ist dieser Prozess mit seinen Ebenen fertig, rechnet er die
+        noch nicht gelieferten selbst (nie langsamer als nacheinander); gerechnet wird überall mit derselben Funktion."""
+        import numpy as np
+
+        from kevcad_kernel.pruefung.koerper import lage_von
+
+        with self._lock:
+            helfer = [h for h in self.helfer.values() if h.bereit and h.lebt()]
+            if not helfer or len(auftraege) < 2:
+                return [selbst(i) for i in range(len(auftraege))]
+            self._rid += 1
+            rid = self._rid
+            self._schnitt_da[rid] = {}
+            L = lage_von(shape)
+            wer: dict[int, Any] = {}
+            plaetze = [None, *helfer]  # None: dieser Prozess
+            je: dict[int, list[tuple[int, Any]]] = {}
+            for i, a in enumerate(auftraege):
+                h = plaetze[i % len(plaetze)]
+                if h is not None:
+                    je.setdefault(h.nr, []).append((i, a))
+                    wer[i] = h
+            for h in helfer:
+                meine = je.get(h.nr)
+                if not meine:
+                    continue
+                brep = None if form in h.bekannt else self.brep(form, _Koerperform(shape))
+                if h.senden(("schnitte", rid, form, welt, L, brep,
+                             [(i, np.asarray(S, float), np.asarray(e, float), float(g)) for i, (S, e, g) in meine])):
+                    h.bekannt.add(form)
+                else:
+                    for i, _ in meine:
+                        wer.pop(i, None)
+        out: dict[int, Any] = {}
+        da = self._schnitt_da[rid]
+
+        def einsammeln() -> None:
+            while True:
+                try:
+                    nr, msg = self.eingang.get_nowait()
+                except queue.Empty:
+                    return
+                self.verarbeite(nr, msg)
+
+        def nehmen(i: int) -> bool:
+            erg = da.get(i)
+            if isinstance(erg, dict) and "r" in erg:
+                out[i] = erg["r"]
+                return True
+            return False
+
+        for i in range(len(auftraege)):
+            if i not in wer:
+                out[i] = selbst(i)
+        # Arbeit stehlen: Ebenen, die ein Helfer noch nicht geliefert hat (er rechnet vielleicht gerade eine Schnittmenge
+        # des Bewegungsraums), rechnet dieser Prozess selbst; das Ergebnis ist dasselbe, das erste zählt
+        offen = [i for i in wer]
+        while offen:
+            einsammeln()
+            offen = [i for i in offen if not nehmen(i)]
+            if offen:
+                i = offen.pop()
+                out[i] = selbst(i)
+        self._schnitt_da.pop(rid, None)
+        return [out[i] for i in range(len(auftraege))]
+
     def abbrechen(self) -> None:
         """Laufenden Auftrag abbrechen (neuer Lauf); die Helfer behalten, was sie schon gerechnet haben."""
         if self.aktiv is None:
@@ -395,6 +472,26 @@ class Pool:
                 h.beenden()
             self.helfer.clear()
             self.aktiv = None
+
+
+class _Koerperform:
+    """TopoDS-Form mit ``wrapped`` (für ``Pool.brep``)."""
+
+    def __init__(self, shape: Any) -> None:
+        self.wrapped = shape
+
+
+def schnitte_verteilen(k: Any, auftraege: list[tuple[Any, Any, float]], selbst: Any) -> list[Any] | None:
+    """Statik-Schnitte eines Körpers der Prüfung über die Helfer (B2). None: keine bereiten Helfer (dann rechnet der
+    Aufrufer wie bisher selbst)."""
+    p = _POOL
+    if p is None or erzwungen() == 0 or not getattr(k, "form", None) or not getattr(k, "key", None):
+        return None
+    if (os.environ.get(STATIK_ENV) or "1").strip().lower() in ("0", "aus", "false", "nein", "no"):
+        return None
+    if not any(h.bereit and h.lebt() for h in list(p.helfer.values())):
+        return None
+    return p.schnitte(k.form, k.key, k.shape, auftraege, selbst)
 
 
 _POOL: Pool | None = None
@@ -472,9 +569,41 @@ def _helfer_main(conn: Any, eltern: int) -> None:  # pragma: no cover - läuft i
     def naechste() -> tuple:
         return vorrat.popleft() if vorrat else conn.recv()
 
+    def form_holen(wk: str, fk: str, L: Any) -> Any:
+        f = welt.get(wk) if wk else None
+        if f is None:
+            f = Shape.cast(roh[fk].Located(TopLoc_Location(matrix_trsf(L))))
+            if wk:
+                welt[wk] = f
+                koerper._FORMEN[wk] = fk
+        return f
+
+    def schnitte(msg: tuple) -> None:
+        """Statik-Schnitte (B2): kurz, deshalb sofort, auch zwischen zwei Schnittmengen eines Wegs."""
+        from kevcad_kernel.statik.bauteil import _schnitt
+
+        _, rid, fk, wk, L, brep, items = msg
+        try:
+            if brep is not None:
+                roh[fk] = deserialize_shape(brep).wrapped
+            shape = form_holen(wk, fk, L).wrapped
+        except Exception:  # noqa: BLE001 - der Rechenprozess rechnet selbst
+            for i, *_ in items:
+                conn.send(("schnitt_erg", rid, i, None))
+            return
+        for i, S, e, g in items:
+            try:
+                conn.send(("schnitt_erg", rid, i, {"r": _schnitt(shape, S, e, g)}))
+            except Exception:  # noqa: BLE001
+                conn.send(("schnitt_erg", rid, i, None))
+
     def abbrechen() -> None:
         while conn.poll():
-            vorrat.append(conn.recv())
+            m = conn.recv()
+            if m and m[0] == "schnitte":
+                schnitte(m)
+                continue
+            vorrat.append(m)
         if vorrat:
             raise _Neu()
 
@@ -485,6 +614,9 @@ def _helfer_main(conn: Any, eltern: int) -> None:  # pragma: no cover - läuft i
             return
         if not msg or msg[0] == "ende":
             return
+        if msg[0] == "schnitte":
+            schnitte(msg)
+            continue
         if msg[0] != "auftrag":
             continue
         _, jid, neue, teile, wege = msg
@@ -497,12 +629,7 @@ def _helfer_main(conn: Any, eltern: int) -> None:  # pragma: no cover - läuft i
         boxen: dict[str, Any] = {}
         try:
             for name, (wk, fk, L, box) in teile.items():
-                f = welt.get(wk) if wk else None
-                if f is None:
-                    f = Shape.cast(roh[fk].Located(TopLoc_Location(matrix_trsf(L))))
-                    if wk:
-                        welt[wk] = f
-                        koerper._FORMEN[wk] = fk
+                f = form_holen(wk, fk, L)
                 formen[name] = f
                 if wk:
                     schluessel[name] = wk
